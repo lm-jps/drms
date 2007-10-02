@@ -5,7 +5,7 @@
  * arta 5/30/2007
  */
 
-static char rcsid[] = "$Header: /home/akoufos/Development/Testing/jsoc-4-repos-0914/JSOC-mirror/JSOC/src/base/local/libs/soi/Attic/errstk.c,v 1.1 2007/10/02 00:12:20 arta Exp $";
+static char rcsid[] = "$Header: /home/akoufos/Development/Testing/jsoc-4-repos-0914/JSOC-mirror/JSOC/src/base/local/libs/soi/Attic/errstk.c,v 1.1.1.1 2007/10/02 00:12:20 arta Exp $";
 /* errstk.c
  *
  * This is a library of routines to maintain an error stack. Each time a 
@@ -109,13 +109,13 @@ void perrstk(int (*errfunc)())
  */
 
 /*
-$Id: errstk.c,v 1.1 2007/10/02 00:12:20 arta Exp $
+$Id: errstk.c,v 1.1.1.1 2007/10/02 00:12:20 arta Exp $
 $Source: /home/akoufos/Development/Testing/jsoc-4-repos-0914/JSOC-mirror/JSOC/src/base/local/libs/soi/Attic/errstk.c,v $
 $Author: arta $
 */
 /* $Log: errstk.c,v $
- * Revision 1.1  2007/10/02 00:12:20  arta
- * *** empty log message ***
+ * Revision 1.1.1.1  2007/10/02 00:12:20  arta
+ * First new, reorganized JSOC tree
  *
 /* Revision 1.1  2007/06/21 19:45:40  arta
 /* Rechecking these in.  CVS checked them into su_interal, not su_internal last time.

@@ -1,4 +1,4 @@
-#! $Id: in_air_cal.c,v 1.1 2007/10/02 00:12:21 arta Exp $
+#! $Id: in_air_cal.c,v 1.1.1.1 2007/10/02 00:12:21 arta Exp $
 #! $Name:  $
 #! Description: Cal/Focus Table based on D. Akin email 11-08-2005 info
 

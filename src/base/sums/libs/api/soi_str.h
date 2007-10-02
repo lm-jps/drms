@@ -43,12 +43,12 @@ extern char *getinc (TIME a, TIME b, double *dt);
  */
 
 /*
-$Id: soi_str.h,v 1.1 2007/10/02 00:12:19 arta Exp $
+$Id: soi_str.h,v 1.1.1.1 2007/10/02 00:12:19 arta Exp $
 $Source: /home/akoufos/Development/Testing/jsoc-4-repos-0914/JSOC-mirror/JSOC/src/base/sums/libs/api/Attic/soi_str.h,v $
 $Author: arta $
  * $Log: soi_str.h,v $
- * Revision 1.1  2007/10/02 00:12:19  arta
- * *** empty log message ***
+ * Revision 1.1.1.1  2007/10/02 00:12:19  arta
+ * First new, reorganized JSOC tree
  *
  * Revision 1.3  2007/05/11 23:27:02  karen
  * New timeio lib
