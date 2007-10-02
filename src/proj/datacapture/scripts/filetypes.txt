@@ -1,0 +1,81 @@
+     Here are the file types that are exchanged:
+
+Extention   Originator  Frequency   Content
+---------   ----------  ---------   -------
+.tlm         DDS         1minute     HMI VCDUs
+.qac         DDS         1minute     Ascii quality and accounting information
+.dsf         DDS         1hour       DDS delivery status file
+.asf         SOC         1hour       SOC acknowledgement status file
+.ack         SOC         1day        tlm file names succesfully archived
+
+------------------------------------------------------------------------------
+The .qac file will be an ascii file with the following keywords:
+ Keyword            |Description                                        |
+ FILE_NAME=         |Name of corresponding TLM file                     |
+ VERSION=           |Version number (recording time the format of this  |
+                    |QAC file was modified)                             |
+ QAC_FILE_SIZE=     |Size in bytes of this .qac file                    |
+ TLM_FILE_SIZE=     |Size in bytes of associated .tlm file. Under normal|
+                    |conditions this number should be constant for a    |
+                    |given VD ID                                        |
+ TOTAL_VCDU=        |Total number of VCDUs in TLM file.                 |
+ DISCONTINUITY=     |Flag to indicate discontinuity in 24-bit VCDU      |
+                    |counter.                                           |
+                    |0=continuous, 1= discontinuous                     |
+ TOTAL_BAD_VCDU=    |Total number of zero-filled VCDUs in TLM file. They|
+                    |may correspond to missing VCDUs (discontinuity in  |
+                    |sequence number) or non-correctable VCDUs.         |
+ FIRST_VCDU_SEQ=    |Sequence number of first VCDU in TLM file          |
+ FIRST_VCDU_TIME=   |MET time of first packet in this file (TBD)        |
+ LAST_VCDU_SEQ=     |Sequence number of last VCDU in TLM file           |
+ LAST_VCDU_TIME=    |MET time of last packet in this file (TBD)         |
+ GAP_START=  (1)    |Sequence number of last VCDU before gap            |
+ GAP_END=  (1)      |Sequence number of first VCDU after gap            |
+ EOF_MARKER=        |Constant and recognizable ASCII string             |
+
+(1) Repeat pair as necessary for each gap in the VCDU sequence number
+
+------------------------------------------------------------------------------
+This .dsf contains the file names of all the telemetry files that the DDS
+has that have not yet been acknowledged or have not yet been retransmission 
+requested by the SOC.
+
+The dsf file will contain ASCII text entries as follow:
+ Keyword            |Description                                      |
+ FILE_NAME=         |Name of TLM file (present in DDS and Not         |
+                    |acknowledged or Not rexmit request by SOC)       |
+ FILE_SIZE=         |Size in bytes of TLM file.                       |
+ STATUS=            |Status of TLM file (see below)                   |
+ 
+ Code |Status         |Description                                   |
+ 1    |Active         |Delivery Attempted, Not acknowledged nor      |
+                      !rexmit request by SOC                         |
+ 2    |Expunged       |Removed from active list, Not acknowledged,   |
+      |               |Only issued once                              |
+
+------------------------------------------------------------------------------
+The .asf file will contain ASCII text entries as follows:
+ Keyword            |Description                                      |
+ FILE_NAME=         |Name of a TLM file, present in the DSF file.     |
+ FILE_SIZE=         |Size in bytes of TLM file.                       |
+ STATUS=            |Status of TLM file, Allowable values are         |
+                    |described below                                  |
+ MACHINE=           |If STATUS=2, Host receiving retransmission, if   |
+                    |blank, default used                              |
+ DIRECTORY=         |If STATUS=2, Directory receiving retransmission. |
+
+ Code |Status         |Description                                   |
+ 2    |Retransmit     |SOC requested retransmit                      |
+ 3    |Acknowledge    |SOC acknowledges receipt of this TLM file.    |
+
+------------------------------------------------------------------------------
+At the end of each day the SOC will write a .ack file to /soc2dds
+containing the tlm file names that have been archived successfully on
+that day.
+The .ack file will contain ASCII text entries as follows:
+ Keyword            |Description                                      |
+ FILE_NAME=         |Name of a TLM file.                              |
+ FILE_SIZE=         |Size in bytes of TLM file.                       |
+ STATUS=            |4= Archived is the only valid value in the ACK   |
+                    |file                                             |
+

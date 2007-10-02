@@ -1,0 +1,68 @@
+/* SUMLIB_EffDateUpdate.pc
+*/
+#include <SUM.h>
+#include <sum_rpc.h>
+#include <soi_error.h>
+#include <printk.h>
+
+/* Called to update the effective_date in the sum_group table for the group_id
+ * for the given tapeid.
+ * If operation = 0 then a tape read has occured and the effective_date is set
+ * to the later of today or what it is already set to.
+ * If operation n.e. 0 then a tape write has occured and the effective_date is
+ * set to today + retain_days from the sum_group table for this group.
+ * Return 1 on error, else 0.
+*/
+int SUMLIB_EffDateUpdate
+  (char *tapeid, int operation);
+
+int SUMLIB_EffDateUpdate
+  (char *tapeid, int operation)
+{
+EXEC SQL BEGIN DECLARE SECTION;
+  VARCHAR l_tapeid[20];
+  VARCHAR l_eff_date[20];
+  int     l_gpid; 
+  int     l_retaindays; 
+EXEC SQL END DECLARE SECTION;
+  int cmp, update;
+  char *neweffdate;
+
+    EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
+    EXEC SQL WHENEVER NOT FOUND GOTO sqlerror;
+
+    sprintf(l_tapeid.arr,"%s", tapeid);
+    l_tapeid.len = strlen(l_tapeid.arr);
+
+  EXEC SQL SELECT group_id INTO :l_gpid from SUM_TAPE where tapeid = :l_tapeid;
+
+  EXEC SQL SELECT retain_days, effective_date INTO :l_retaindays, :l_eff_date from SUM_GROUP where group_id = :l_gpid;
+  /* printk("retain=%d eff_date=%s\n", l_retaindays, l_eff_date.arr); */
+  update = 0;
+  if(operation) {		/* this is for a write to tape */
+    neweffdate = (char *)get_effdate(l_retaindays);
+    update = 1;
+  }
+  else {
+    neweffdate = (char *)get_effdate(0);
+    cmp = strcmp(neweffdate, l_eff_date.arr);
+    if(cmp > 0) {  /* neweffdate > current eff date so update table */
+      update = 1;
+    }
+  }
+  if(update) {
+    sprintf(l_eff_date.arr, "%s", neweffdate);
+    l_eff_date.len = strlen(l_eff_date.arr);
+    EXEC SQL UPDATE SUM_GROUP SET effective_date = :l_eff_date WHERE group_id = :l_gpid;
+    EXEC SQL COMMIT WORK;
+  }
+  return(0);
+        
+sqlerror:
+	  printk("Error in SUMLIB_EffDateUpdate()\n"); 
+	  printk("% .70s \n", sqlca.sqlerrm.sqlerrmc); 
+    EXEC SQL WHENEVER SQLERROR CONTINUE;
+    EXEC SQL ROLLBACK WORK;
+    return(1);
+}
+

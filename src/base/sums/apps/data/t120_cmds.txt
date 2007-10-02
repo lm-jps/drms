@@ -1,0 +1,148 @@
+Get status of drives and slots:
+> mtx -f /dev/sg10 status
+
+Load tape in slot 1 to drive 0:
+lws:/home/jim/cvs/PROTO/src/SUM> mtx -f /dev/sg10 load 1 0
+Drive 0 Full (Storage Element 1 loaded)
+
+Unload tape in drive 1 to slot 15:
+lws:/home/jim/cvs/PROTO/src/SUM> mtx -f /dev/sg10 unload 15 1
+Unloading Data Transfer Element into Storage Element 15...done
+
+Unload tape in drive 0 to slot 1:
+lws:/home/jim/cvs/PROTO/src/SUM> mtx -f /dev/sg10 unload 1 0
+Unloading Data Transfer Element into Storage Element 1...done
+
+Move tape in slot 20 to I/E slot 31:
+lws:/home/jim/cvs/PROTO/src/SUM> mtx -f /dev/sg10 transfer 20 31
+
+
+Load drive 0 from the last slot in the changer. Unloads drive if there is
+already a tape in it:
+> mtx -f /dev/sg10 last 0	  !!!!!!DIDN'T WORK!!!!!!!!!!!!!!!
+source Element Address 23 is Empty
+
+Load drive 0 from the first slot in changer. Unloads drive if needed.
+> mtx -f /dev/sg10 first 0	!!!!!!!!DIDN'T WORK!!!!!!!!!!!!!!!!!!
+
+
+########################################################################
+read from tape:
+
+gtar -C /tmp/jim -xvf /dev/nst0 -b 8192
+
+########################################################################
+
+from write_tape_loop.pl:
+
+  DB<11> p $cmd
+gtar -cvf /dev/nst0 -b 8192 -C /home/jim/cvs/PROTO/src/SUM/mtdirs/dirx .
+  DB<12> if($stat=system($cmd)) { print "stat: $stat  $!\n"; }
+......
+./00000583
+./00000584
+./00000585
+gtar: /dev/nst0: Wrote only 0 of 4194304 bytes
+gtar: Error is not recoverable: exiting now
+stat: 512  Illegal seek
+
+lws:/home/jim/cvs/PROTO/src/SUM> !mt
+mt -f /dev/nst0 status
+SCSI 2 tape drive:
+File number=17101, block number=0, partition=0.
+Tape block size 512 bytes. Density code 0x40 (DLT1 40 GB, or Ultrium).
+Soft error count since last status=0
+General status bits on (a1010000):
+ EOF EOT ONLINE IM_REP_EN
+lws:/home/jim/cvs/PROTO/src/SUM> mt -f /dev/nst0 tell
+At block 2107576512.
+(for 512 byte block this = 1079079174144 (1TB, so compressed x2 on tape)
+
+in /home/jim/cvs/PROTO/src/SUM/mtdirs/dirx:
+-rw-rw-r--    1 jim      humans       6359 Jun 30 08:22 00019466
+
+If try to move tape from here:
+lws:/home/jim/cvs/PROTO/src/SUM> mt -f /dev/nst0 fsf 1
+/dev/nst0: Input/output error
+
+lws:/home/jim/cvs/PROTO/src/SUM> mt -f /dev/nst0 bsf 1
+lws:/home/jim/cvs/PROTO/src/SUM> mt -f /dev/nst0 status
+SCSI 2 tape drive:
+File number=17100, block number=-1, partition=0.
+Tape block size 512 bytes. Density code 0x40 (DLT1 40 GB, or Ultrium).
+Soft error count since last status=0
+General status bits on (1010000):
+ ONLINE IM_REP_EN
+
+lws:/tmp/jim> mt -f /dev/nst0 bsf 1
+lws:/tmp/jim> mt -f /dev/nst0 status
+SCSI 2 tape drive:
+File number=17099, block number=-1, partition=0.
+Tape block size 512 bytes. Density code 0x40 (DLT1 40 GB, or Ultrium).
+Soft error count since last status=0
+General status bits on (1010000):
+ ONLINE IM_REP_EN
+lws:/tmp/jim> mt -f /dev/nst0 fsf 1
+lws:/tmp/jim> mt -f /dev/nst0 status
+SCSI 2 tape drive:
+File number=17100, block number=0, partition=0.
+Tape block size 512 bytes. Density code 0x40 (DLT1 40 GB, or Ultrium).
+Soft error count since last status=0
+General status bits on (81010000):
+ EOF ONLINE IM_REP_EN
+lws:/tmp/jim>  gtar -C /tmp/jim -xvf /dev/nst0 -b 8192
+gtar: Record size = 64 blocks
+./
+./00000000
+./00000001
+./00000002
+./00000003
+./00000004
+gtar: Unexpected EOF in archive
+gtar: Unexpected EOF in archive
+gtar: Error is not recoverable: exiting now
+lws:/tmp/jim> mt -f /dev/nst0 status
+SCSI 2 tape drive:
+File number=17101, block number=0, partition=0.
+Tape block size 512 bytes. Density code 0x40 (DLT1 40 GB, or Ultrium).
+Soft error count since last status=0
+General status bits on (81010000):
+ EOF ONLINE IM_REP_EN
+
+Try reading from first block of file 17098
+lws:/tmp/jim> mt -f /dev/nst0 status
+SCSI 2 tape drive:
+File number=17098, block number=0, partition=0.
+Tape block size 512 bytes. Density code 0x40 (DLT1 40 GB, or Ultrium).
+Soft error count since last status=0
+General status bits on (81010000):
+ EOF ONLINE IM_REP_EN
+lws:/tmp/jim> !gtar
+gtar -C /tmp/jim -xvf /dev/nst0 -b 8192
+gtar: Record size = 64 blocks
+./
+./00000000
+./00000001
+./00000002
+./00000003
+./00000004
+gtar: Unexpected EOF in archive
+gtar: Unexpected EOF in archive
+gtar: Error is not recoverable: exiting now
+
+
+Last good file is 17058.
+
+##########################################################################
+./5805
+./5806
+./5807
+gtar -cvf /dev/nst0 -b 8192 -C /home/jim/cvs/PROTO/src/SUM/mtdirs/dirx .
+./
+./0
+./binfile
+gtar: /dev/nst0: Wrote only 32768 of 4194304 bytes
+gtar: Error is not recoverable: exiting now
+!!FAILED: gtar -cvf /dev/nst0 -b 8192 -C
+/home/jim/cvs/PROTO/src/SUM/mtdirs/dirx .
+

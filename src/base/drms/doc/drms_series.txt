@@ -1,0 +1,27 @@
+DRMS command line utilities
+
+drms_query (currently called testnames for historical reasons)
+
+  Take a list of DRMS dataset names from the command line. Query
+  DRMS and print a list DRMS dataset names of the form
+  "<seriesname>[:<record number>]" to stdout.
+
+create_series [-f] definition.jsd
+
+  Create entries and tables for a new series in the DRMS database.
+
+describe_series seriesname
+
+  Prints a verbose description of the series and it current highest
+  record number on stdout.
+
+delete_series
+  
+   Removes a series and all its associated entries from DRMS.
+
+masterlists
+
+   Clears the entire DRMS database and rebuilds the master tables.
+
+
+   

@@ -1,0 +1,1 @@
+int soi_errno;

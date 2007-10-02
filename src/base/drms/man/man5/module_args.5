@@ -1,0 +1,173 @@
+.\"
+.TH module_args 5  13-Sep-2006  "DRMS MANPAGE" "DRMS Programmer's Manual"
+.SH NAME
+module_argse \- the DRMS module arguments list
+
+.SH SYNOPSIS
+#include <cmdparams.h>
+
+typedef struct ModuleArgs_t {
+  int type;
+  char *name;
+  char *value;
+  char *description;
+  char *range;
+} ModuleArgs_t; 
+
+.SH DESCRIPTION
+
+A global \fImodule_args\fR struct of type \fBModuleArgs_t\fR must be declared
+in every module. It is used by the \fIcmdparams_parse()\fR function called by
+\fIjsoc_main()\fR (or other driver).
+
+module_args->type must have one of the following values:
+
+.IP \fBARG_INT 10
+parameter is to be interpreted as type \fIint\fR
+.IP \fBARG_FLOAT 10
+parameter is to be interpreted as type \fIdouble\fR
+.IP \fBARG_DOUBLE 15
+synonymous with type \fBARG_FLOAT\fR
+.IP \fBARG_TIME 10
+parameter is to be interpreted as type \fIdouble\fR with a conversion
+from standard date-time string formats to a standard reference epoch
+.IP \fBARG_STRING 15
+parameter is to be interpreted as type \fIchar*\fR
+.IP \fBARG_FLAG 10
+The parameter is (ordinarily) a single-character named one which can take
+the value of 0 or 1. The default value, if present, should be 0; as the
+command-line flag specifier can only set its parameter values to 1; however,
+it is better to leave the default value empty, so that the
+\fIcmdparams_exists()\fR function can be used in the code.
+.IP \fBARG_NUME 10
+the parameter value is string-compared with the members of the
+module_args->range list, and replaced with the string representation
+of the number corresponding to the order number of the (first) matching
+token in the list; its value is subsequently to be interpreted as type
+\fIint\fR. Basically equivalent to type \fIenum\fR.
+.IP \fBARG_INTS 10
+(not yet implemented)
+.IP \fBARG_FLOATS 15
+(not yet implemented)
+.IP \fBARG_DOUBLES 15
+synonymous with type \fBARG_FLOATS\fR
+.IP \fBARG_VOID 10
+(not yet implemented)
+.IP \fBARG_END 10
+Signals the end of the parsed argument list. Elements may follow in the
+declaration, but will be ignored. Since \fBARG_END\fR is defined as 0, an
+empty (null) member serves the same purpose.
+.PP
+A module_args->name must be supplied for every element of the array,
+except those of type \fBARG_VOID\fR (or \fBARG_END\fR).
+
+Note that except in the case of arguments of type \fBARG_NUME\fR (or
+others for which range checking may be specified in future) there is
+no actual type checking; all parsed values remain as strings, and
+are only cast by the appropriate call to the \fIcmdparams_get()\fR
+family.
+
+The module_args->value string is optional, but if it is missing
+(or zero-length), a value must be supplied from the command line
+parsing for the module to be executed. The exception is for arguments
+of type \fBARG_FLAG\fR, for which it is actually recommended to leave
+the default value null or zero-length; if the flag is not set on the
+command line, the corresponding entry will simply not be set in
+\fIcmdparams\fR.  It is permissible to specify "illegal" values as
+defaults, such as \fI"Not Specified"\fR for arguments of type
+\fBARG_INT\fR for example.
+
+The optional module_args->description is a free-form descriptive string
+that may be used by the module driver, for example in printing help messages.
+
+The module_args->range is at present ignored, except for arguments of
+type \fBARG_NUME\fR. For such arguments it is a required comma-separated
+list of string tokens.
+
+.SH BUGS
+Multiple declarations of the same module_arg->name should be avoided.
+
+Arguments of type ARG_INTS, ARG_FLOATS, and ARG_VOID are not yet supported.
+
+.SH "SEE ALSO"
+.B module(1)
+.B cmdparams_parse(3)
+.I <jsoc_time(5)>
+
+.SH EXAMPLES
+
+ModuleArgs_t *module_args;
+
+ModuleArgs_t module_args[] = {};
+
+ModuleArgs_t module_args[] = {
+  {ARG_END}
+};
+
+ModuleArgs_t module_args[] = {
+.br
+  {ARG_STRING, "name_0", "default value", "comment"},
+.br
+  {}
+};
+
+ModuleArgs_t module_args[] = {
+.br
+  {ARG_STRING, "name_0", "default value", "comment"},
+.br
+  {},
+.br
+  {ARG_STRING, "name_1", "default value", "comment"}
+};
+
+ModuleArgs_t module_args[] = {
+.br
+  {ARG_STRING, "name_0", "default value", "comment"},
+.br
+  {ARG_END},
+.br
+  {ARG_STRING, "name_1", "default value", "comment"}
+};
+
+ModuleArgs_t module_args[] = {
+.br
+  {ARG_STRING, "name_0", "default value 0", "comment"},
+.br
+  {ARG_STRING, "name_1", "default value 1", "comment"},
+.br
+  {}
+};
+
+The first three all declare an empty arguments list. The next three all
+declare an arguments list with a single key-value pair. The last declares
+an arguments list with two key-value pairs.
+
+ModuleArgs_t module_args[] = {
+.br
+.br
+  {ARG_STRING, "message",    "Hello, world"},
+.br
+  {ARG_STRING, "file",       "",             "filename (required)"},
+.br
+  {ARG_INT,    "iterations", "1",            "number of iterations",
+.br
+      "[0"},
+.br
+  {ARG_FLOAT,  "scale",      "1.0",          "scaling factor",
+.br
+      "(0.0"},
+.br
+  {ARG_TIME,   "time",       "2009.01.01_08:00_UT",
+.br
+      "image observation time"},
+.br
+  {ARG_NUME,   "projection", "Mercator",     "mapping projection"
+.br
+      "orthographic, stereographic, Mercator,Postels,gnomonic"},
+.br
+  {ARG_FLAG,   "v",          "",             "run in verboses mode"},
+.br
+  {}
+.br
+};
+

@@ -1,0 +1,11 @@
+This version was make on Aug 10, 2006 14:00.
+It is only a safety fallback before the major update for Postgres
+namespace implementation.
+
+It is tagged as:
+
+cvs -d /home/cvsuser/cvsroot rtag -r HEAD Ver_2-3 jsoc
+
+
+No user action is required. This is for CM only in case we need
+a fallback.

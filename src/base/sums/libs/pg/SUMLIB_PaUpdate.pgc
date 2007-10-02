@@ -1,0 +1,92 @@
+/* NC_PaUpdate.pc 
+*/
+#include <SUM.h>
+#include <sum_rpc.h>
+#include <soi_error.h>
+#include <printk.h>
+
+/* Called to insert/delete an entry from the SUM_PARTN_ALLOC db table.
+*/
+int NC_PaUpdate
+  (char *wd, uint64_t uid, double bytes, int status, int archsub, 
+   char *eff_date, int gpid, int sid, uint64_t ds_index, int flg, int commit);
+
+int NC_PaUpdate
+  (char *wd, uint64_t uid, double bytes, int status, int archsub, 
+   char *eff_date, int gpid, int sid, uint64_t ds_index, int flg, int commit)
+{
+  EXEC SQL TYPE uint64_t IS unsigned long long;
+
+EXEC SQL BEGIN DECLARE SECTION;
+  VARCHAR l_wd[80];
+  VARCHAR l_eff_date[20];
+  uint64_t l_uid;
+  double  l_bytes;
+  int 	  l_status;
+  int	  l_archsub; 
+  int     l_gpid; 
+  int     l_sid;
+  uint64_t l_ds_index;
+EXEC SQL END DECLARE SECTION;
+
+   sprintf(l_wd.arr,"%s", wd);
+   l_wd.len = strlen(l_wd.arr);
+   if(eff_date) {    /* check if the eff_date is null */
+	sprintf(l_eff_date.arr,"%s", eff_date); 
+        l_eff_date.len = strlen(l_eff_date.arr);
+   } else {		/* if eff_date is null then l_eff_date string 0 */
+	sprintf(l_eff_date.arr,"%s", "0");  
+        l_eff_date.len = strlen(l_eff_date.arr);
+   }
+   l_uid = uid;
+   l_bytes = bytes;
+   l_status = status;
+   l_archsub = archsub;
+   l_gpid = gpid;
+   l_sid = sid;
+   l_ds_index = ds_index;
+   if(!strcmp(l_wd.arr, "")) {
+           return DS_PALC_ERR;
+   }
+
+    EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
+    EXEC SQL WHENEVER NOT FOUND GOTO sqlerror;
+
+    if(flg == 1){
+
+      if(status == DADP) {	/* make sure don't have 2 del pend entries */
+        EXEC SQL WHENEVER SQLERROR GOTO sqlinsert;
+        EXEC SQL WHENEVER NOT FOUND GOTO sqlinsert;
+        EXEC SQL DELETE FROM SUM_PARTN_ALLOC 
+              WHERE DS_INDEX = :l_ds_index
+              AND STATUS = :l_status;
+        EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
+        EXEC SQL WHENEVER NOT FOUND GOTO sqlerror;
+      }
+sqlinsert:
+	EXEC SQL INSERT INTO SUM_PARTN_ALLOC (WD, SUMID, STATUS, BYTES, 
+	 EFFECTIVE_DATE, ARCHIVE_SUBSTATUS, GROUP_ID, SAFE_ID, DS_INDEX)
+         VALUES (:l_wd, :l_uid, :l_status, :l_bytes, :l_eff_date, :l_archsub, :l_gpid, :l_sid, :l_ds_index);
+        if(commit)
+        EXEC SQL COMMIT WORK;
+        return NO_ERROR;
+    } else if(flg == 0) {
+         EXEC SQL DELETE FROM SUM_PARTN_ALLOC 
+              WHERE WD = :l_wd
+              AND SUMID = :l_uid
+              AND STATUS = :l_status;
+         if(commit)
+         EXEC SQL COMMIT WORK;
+		return NO_ERROR;
+        } else {
+		return DS_PALC_ERR;
+    }
+        
+sqlerror:
+	  printk("Error in NC_PaUpdate\n"); 
+	  printk("% .70s \n", sqlca.sqlerrm.sqlerrmc); 
+    EXEC SQL WHENEVER SQLERROR CONTINUE;
+    EXEC SQL ROLLBACK WORK;
+    return DS_PALC_ERR;
+}
+

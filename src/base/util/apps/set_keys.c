@@ -1,0 +1,261 @@
+/* set_keys - set keyword information and/or file path for given recordset. */
+
+#include "jsoc_main.h"
+#include "drms.h"
+#include "drms_names.h"
+
+ModuleArgs_t module_args[] =
+{ 
+  {ARG_STRING, "ds", "Not Specified", "Series name with optional record spec"},
+  {ARG_FLAG, "h", "0", "Print usage message and quit"},
+  {ARG_FLAG, "c", "0", "Create new record(s) if needed"},
+  {ARG_FLAG, "m", "0", "allow multiple records to be updated"},
+  {ARG_FLAG, "v", "0", "verbose flag"},
+  {ARG_END}
+};
+
+char *module_name = "set_keys";
+
+int verbose = 0;
+
+int nice_intro(int help)
+  {
+  int usage = cmdparams_get_int(&cmdparams, "h", NULL) != 0;
+  verbose = cmdparams_get_int(&cmdparams, "v", NULL) != 0;
+  if (usage || help)
+    {
+    printf("set_keys {-c}|{-m} {-h} {-v}  "
+	"ds=<recordset query> {keyword=value} ... \n"
+	"  -h: print this message\n"
+	"  -c: create - allow creation of new record\n"
+	"  -m: multiple - allow multiple records to be updated\n"
+	"  -v: verbose\n"
+	"ds=<recordset query> as <series>{[record specifier]} - required\n"
+	"keyword=value pairs as needed\n"
+        "segment=filename pairs \n");
+    return(1);
+    }
+  return(0);
+  }
+
+#define DIE(msg) {fprintf(stderr,"$$$$ set_keys error: %s\n",msg); return 1;}
+
+DRMS_Type_Value_t cmdparams_get_type(CmdParams_t *cmdparams, char *keyname, DRMS_Type_t keytype, int *status);
+
+/* Module main function. */
+int DoIt(void)
+{
+  int status = 0;
+  int multiple = 0;
+  int create = 0;
+  int nrecs, irec;
+  char *keyname;
+  char prime_names[100][32];
+  char *query;
+  char *p;
+  DRMS_Type_t keytype;
+  DRMS_Type_Value_t key_anyval;
+  DRMS_Record_t *rec;
+  DRMS_RecordSet_t *rs;
+  DRMS_Keyword_t *key, **prime_keys;
+  DRMS_Segment_t *seg;
+  HIterator_t key_hit;
+  int nprime, iprime;
+  int nsegments, isegment;
+  int is_new_seg = 0;
+
+  if (nice_intro(0))
+    return(0);
+
+/* Get command line arguments */
+   query = strdup(cmdparams_get_str(&cmdparams, "ds", NULL));
+
+   multiple = cmdparams_get_int(&cmdparams, "m", NULL) != 0;
+   create = cmdparams_get_int(&cmdparams, "c", NULL) != 0;
+   if (multiple && create)
+	DIE("-c and -m not compatible");
+  p = index(query,'[');
+  if (!p && !create)
+	DIE ("must be in create mode if no record spec given");
+  if (p && create)
+	DIE("can only create new record, record set not allowed");
+  /* Now can test on create and multiple for program control */
+
+  if (create)
+    {
+    if (verbose)printf("Make new record\n");
+    rs = drms_create_records(drms_env, 1, query, DRMS_PERMANENT, &status);
+    if (status)
+	DIE("cant create records from in given series");
+    nrecs = 1;
+    rec = rs->records[0];
+    nprime = rec->seriesinfo->pidx_num;
+    prime_keys = rec->seriesinfo->pidx_keywords;
+    for (iprime = 0; iprime < nprime; iprime++)
+        {
+        keyname = prime_keys[iprime]->info->name;
+
+	strcpy(prime_names[iprime], keyname);
+        key = drms_keyword_lookup(rec, keyname, 1);
+        keytype = key->info->type;
+	if (status)
+		DIE("series bad, prime key missing");
+        if (!cmdparams_exists(&cmdparams, keyname))
+	  DIE("some prime key not specified on command line");
+        key_anyval = cmdparams_get_type(&cmdparams, keyname, keytype, &status); 
+	status = drms_setkey(rec, keyname, keytype, &key_anyval); 
+	if (status)
+		DIE("keyval bad, cant set prime key val with keyname");
+	}
+
+    /* now record exists with prime keys set. */
+    }
+  else
+   {
+   DRMS_RecordSet_t *ors;
+   if (verbose)printf("Clone record for update\n");
+   ors = drms_open_records(drms_env, query, &status);
+   if (status)
+	DIE("cant open recordset query");
+    nrecs = ors->n;
+   if (nrecs > 1 && !multiple)
+	DIE("multiple records not expected");
+    if (nrecs == 0)
+	{
+	printf("No records found for %s\n", query);
+	return 0;
+	}
+    rec = ors->records[0];
+    nprime = rec->seriesinfo->pidx_num;
+    prime_keys = rec->seriesinfo->pidx_keywords;
+    for (iprime = 0; iprime < nprime; iprime++)
+        {
+        keyname = prime_keys[iprime]->info->name;
+	strcpy(prime_names[iprime], keyname);
+        }
+    /* now clone with sharing the existing record set.  Someday this may
+       be replaced with code to delete the old record in the case where
+       this module is in the same session that created the original
+       record.
+     */
+    /* if a segment is present matching the name of a keyword=filename then copy instead of share */
+    nsegments = hcon_size(&rec->segments);
+    for (isegment=0; isegment<nsegments; isegment++)
+      {
+	   seg = drms_segment_lookupnum(rec, isegment);
+	   
+	   if (seg->info->protocol == DRMS_GENERIC)
+	   {
+		char *segname, *filename;
+		segname = seg->info->name;
+		filename = cmdparams_get_str(&cmdparams, segname, NULL);
+		if (filename && *filename)
+		{
+		  is_new_seg = 1;
+		  break; /* Stop iterating if we found a segment file. */
+		}
+	   }
+      }
+   rs = drms_clone_records(ors, DRMS_PERMANENT, (is_new_seg ? DRMS_COPY_SEGMENTS : DRMS_SHARE_SEGMENTS), &status);
+   if (rs->n != nrecs || status)
+	DIE("failed to clone records from query");
+   }
+
+  /* at this point the records ready for new keyword values and/or files */
+  for (irec = 0; irec<nrecs; irec++)
+    {
+    rec = rs->records[irec];
+
+    nsegments = hcon_size(&rec->segments);
+    for (isegment=0; isegment<nsegments; isegment++)
+    { 
+	 seg = drms_segment_lookupnum(rec, isegment);
+	 char *filename = NULL;
+	 char *segname = seg->info->name;
+	 filename = cmdparams_get_str(&cmdparams, segname, NULL);
+
+	 if (filename && *filename)
+	 {
+	      /* check to see if generic segment(s) present */
+	      if (seg->info->protocol == DRMS_GENERIC)
+	      {
+		   if ((status = drms_segment_write_from_file(seg, filename)))
+		     DIE("segment name matches cmdline arg but file copy failed.\n");
+	      }
+	 }
+    } /* foreach(seg) */
+    
+    hiter_new(&key_hit, &rec->keywords);
+    while( (key = (DRMS_Keyword_t *)hiter_getnext(&key_hit)) )
+      {
+      int is_prime = 0;
+      keyname = key->info->name;
+      keytype = key->info->type;
+
+      /* look to see if given on command line */
+      if (cmdparams_exists(&cmdparams, keyname))
+        {
+        /* check to see if prime key */
+        for (is_prime=0, iprime = 0; iprime < nprime; iprime++)
+          if (strcasecmp(keyname,  prime_names[iprime]) == 0)
+            is_prime = 1;
+        if (is_prime)
+          { /* is prime, so DIE unless just made in create mode */
+          if (!create)
+	    DIE("Attempt to change prime key - not allowed");
+          }
+        else
+          { /* not prime, so update this value */
+	  key_anyval = cmdparams_get_type(&cmdparams, keyname, keytype, &status);
+	  status = drms_setkey(rec, keyname, keytype, &key_anyval);
+           if (status)
+             DIE("keyval bad, cant set  key val with keyname");
+          }
+	}
+      }
+    } /* foreach(rec) */
+
+  status = drms_close_records(rs, DRMS_INSERT_RECORD);
+  if (status)
+	DIE("close failure");
+  return 0;
+}
+
+/* cmdparams_get_type - get a keyword value from command line as a specified type */
+
+DRMS_Type_Value_t cmdparams_get_type(CmdParams_t *cmdparams, char *keyname, DRMS_Type_t keytype, int *status)
+{
+DRMS_Type_Value_t value;
+switch (keytype) 
+  {
+  case DRMS_TYPE_CHAR:
+    value.char_val = cmdparams_get_int8(cmdparams, keyname, status);
+    break;
+  case DRMS_TYPE_SHORT:
+    value.short_val = cmdparams_get_int16(cmdparams, keyname, status);
+    break;
+  case DRMS_TYPE_INT:
+    value.int_val = cmdparams_get_int32(cmdparams, keyname, status);
+    break;
+  case DRMS_TYPE_LONGLONG:
+    value.longlong_val = cmdparams_get_int64(cmdparams, keyname, status);
+    break;
+  case DRMS_TYPE_FLOAT:
+    value.float_val = cmdparams_get_float(cmdparams, keyname, status);
+    break;
+  case DRMS_TYPE_DOUBLE:
+    value.double_val = cmdparams_get_double(cmdparams, keyname, status);
+    break;
+  case DRMS_TYPE_TIME:
+    value.time_val = cmdparams_get_time(cmdparams, keyname, status);
+    break;
+  case DRMS_TYPE_STRING:
+    value.string_val = strdup(cmdparams_get_str(cmdparams, keyname, status));
+    break;
+  default:
+    *status=1;
+    break;
+  }
+return value;
+}
+

@@ -1,0 +1,163 @@
+.\"
+.TH DRMS_ARRAY 3  2006-05-19 "DRMS MANPAGE" "DRMS Programmer's Manual"
+.SH NAME
+drms_array \- DRMS array data structures
+.SH SYNOPSIS
+.EX 5
+#include <drms.h>
+
+typedef struct DRMS_Array_struct
+{
+  /* Basic array info: */ 
+  DRMS_Type_t type;       /* Datatype of the data elements. */
+  int naxis;              /* Number of dimensions. */
+  int axis[DRMS_MAXRANK]; /* Size of each dimension. */
+  void *data;             /* Data stored in column major order. */
+
+  /* Fields relating to scaling and slicing. */
+  DRMS_Segment_t *parent_segment; /* Parent segment. */
+  int israw;            /* Is this read in with type=DRMS_TYPE_RAW? 
+                           If israw==0 then shift and scaling have 
+                           been applied to the data and they represent
+                           the "true" values. If israw==1 then no shift
+                           and scaling have been applied to the data.*/
+  double bzero;           /* Shift. */
+  double bscale;          /* Scaling. */
+  int start[DRMS_MAXRANK];/* Start offset of slice in parent. */
+
+  /* Private fields used for array index calculation. */
+  int dope[DRMS_MAXRANK]; /* Dimension offset multipliers. */
+
+  /* Private fields used for packed string arrays. */
+  char *strbuf;     /* String buffer used for packed string arrays. */
+  long long buflen; /* Size of string buffer. */
+} DRMS_Array_t;
+.EE
+.sp
+.SH DESCRIPTION
+This data stucture represents an n-dimensional array of scalar data. 
+The array data is stored in column major order at the memory location 
+pointed to by
+.IR data .
+.PP
+The fields
+.I israw, bscale, bzero
+describe how the data contained in the array data structure relate to
+the "true" values it is supposed to represent.
+In the most frequently used case
+.I israw=0 
+the data stored in memory represent the "true" values of the array,
+and
+.I bzero, bscale 
+contain the shift and scaling (if any) applied to the data when it was 
+read in. If
+.I israw=1 
+then the data stored in memory represent the unscaled "raw" values of
+the array, and the true values may be obtained by applying the
+transformation
+
+.br
+.B "f(x) = bzero + bscale * x, if x != MISSING"
+.br
+.B "       MISSING           , if x == MISSING"
+.PP
+If the array structure contains data from a DRMS data segment, as returned
+by the functions
+.B drms_segment_readslice
+or
+.BR drms_segment_read .
+then the 
+.I parent_segment 
+field points to the data segment from which the array data originates.
+.PP
+If the array contains a slice of the parent then the 
+.I start
+field contains the starting indices of the slice in the parent array.
+For example: If an array contains the lower 2x2 elements of a 4x3 data 
+segment then the struct would contain
+.br
+array.naxis = 2
+.br
+array.axis = [2,2]
+.br
+array.start = [2,1]
+.br
+.SH FUNCTIONS
+.PP
+.I "Creation and destruction"
+.br
+\fB
+DRMS_Array_t *drms_array_create(DRMS_Type_t type, int naxis, int *axis, 
+                                void *data, int *status)
+.br
+void drms_free_array(DRMS_Array_t *src)
+\fR
+.PP
+.I "Slicing and permutation"
+.br
+\fB
+DRMS_Array_t *drms_array_slice(int *start, int *end, DRMS_Array_t *src)
+.br
+DRMS_Array_t *drms_array_permute(DRMS_Array_t *src, int *perm, 
+                                 int *status)
+\fR
+.PP
+.I "Scaling and type conversion"
+.br
+\fB
+DRMS_Array_t *drms_array_convert(DRMS_Type_t dsttype, double bzero, 
+				 double bscale, DRMS_Array_t *src)
+.br
+void drms_array_convert_inplace(DRMS_Type_t newtype, double bzero, 
+				double bscale, DRMS_Array_t *src)
+.br
+\fR
+.PP
+.I "Pretty printing"
+.br
+\fB
+void drms_array_print(DRMS_Array_t *arr, const char *colsep, 
+		      const char *rowsep)
+.br
+\fR
+.PP
+.I "Element count and array size in bytes"
+.br
+\fB
+long long drms_array_count(DRMS_Array_t *arr)
+.br
+long long drms_array_size(DRMS_Array_t *arr)
+\fR
+.PP
+.I "Filling with single value"
+.br
+\fB
+void drms_array2missing(DRMS_Array_t *arr)
+.br
+int drms_array_set(DRMS_Array_t *arr, int *index, DRMS_Type_t srctype, 
+                    DRMS_Type_Value_t *src)
+.br
+int drms_setarray_char(DRMS_Array_t *arr, int *index, char value)
+.br
+int drms_setarray_short(DRMS_Array_t *arr, int *index, short value)
+.br
+int drms_setarray_int(DRMS_Array_t *arr, int *index, int value)
+.br
+int drms_setarray_longlong(DRMS_Array_t *arr, int *index, 
+                            long long value)
+.br
+int drms_setarray_float(DRMS_Array_t *arr, int *index, float value)
+.br
+int drms_setarray_double(DRMS_Array_t *arr, int *index, double value)
+.br
+int drms_setarray_time(DRMS_Array_t *arr, int *index, double value)
+.br
+int drms_setarray_string(DRMS_Array_t *arr, int *index, char *value)
+\fR
+
+.SH "SEE ALSO"
+.BR drms_record (3),
+.BR drms_keyword (3),
+.BR drms_link (3),
+.BR drms_segment (3),
+.BR drms_types (3)

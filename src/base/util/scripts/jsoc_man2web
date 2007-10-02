@@ -1,0 +1,61 @@
+#! /bin/csh -f
+
+# Makes .txt version of man pages found in $JSOCROOT/man and puts them
+# in /web/jsoc/htdocs/man.  Also builds a web page pointing to these files
+# and puts it as index.html in /web/jsoc/htdocs/man
+
+# WARNING - this must be run on a machine that has solarweb:/web mounted.
+ 
+# set echo
+
+set TARG = /web/jsoc/htdocs/man
+set SRC = $JSOCROOT/man
+
+set TMPDIR = /tmp/jsocmans.$$
+rm -rf $TMPDIR
+mkdir  $TMPDIR
+set INDEX = $TMPDIR/index.html
+
+cat >$INDEX <<!
+<html>
+<head>
+</head>
+<body>
+<H2>JSOC Man Pages</H2>
+!
+
+cd  $SRC
+foreach dir (man[1-9])
+  cat >> $INDEX <<!
+<A name= $dir ></A>
+<P><B>$dir</B><P>
+<UL>
+!
+  pushd $dir
+  foreach doc (*.[1-9])
+    if (! (-e $TARG/$dir)) mkdir $TARG/$dir
+    groff -t -e -mandoc -Tascii $doc  | col -bx > $TARG/$dir/$doc.txt
+    cat >> $INDEX <<!
+<LI><A HREF=$dir/$doc.txt>$doc</A> --
+!
+    grep -A 1 -m 1 ".SH NAME" $doc | tail -1 | sed -e "s/^.*-//" >> $INDEX
+    cat >> $INDEX <<!
+</LI>
+
+!
+  end
+  cat >> $INDEX <<!
+</UL>
+!
+  popd
+end
+
+cat >> $INDEX <<!
+<HR>
+<A HREF=http://jsoc.stanford.edu/>JSOC home page</A>
+</body>
+</html>
+!
+
+mv $INDEX $TARG
+rm -rf $TMPDIR

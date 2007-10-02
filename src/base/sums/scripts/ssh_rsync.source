@@ -1,0 +1,6 @@
+SSH_AUTH_SOCK=/tmp/ssh-XguR18946/agent.18946
+SSH_AGENT_PID=18947
+export SSH_AUTH_SOCK
+export SSH_AGENT_PID
+/usr/bin/rsync --rsh=/usr/bin/ssh --rsync-path=/usr/bin/rsync -avz /home/jim/cvs/jsoc xim:/home/jim/dcs0_backup
+/usr/bin/rsync --rsh=/usr/bin/ssh --rsync-path=/usr/bin/rsync -avz /srv/www xim:/home/jim/dcs0_backup

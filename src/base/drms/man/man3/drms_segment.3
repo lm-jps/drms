@@ -1,0 +1,107 @@
+.\"
+.TH DRMS_SEGMENT 3  2006-05-19 "DRMS MANPAGE" "DRMS Programmer's Manual"
+.SH NAME
+drms_segment \- DRMS segment data structures
+.SH SYNOPSIS
+.nf
+#include <drms.h>
+
+typedef struct DRMS_Segment_struct {
+  DRMS_Record_t *record;   /* The record this segment belongs to. */
+  DRMS_SegmentInfo_t *info; /* Series-wide attribute values. */
+
+  int axis[DRMS_MAXRANK];      /* Size of each dimension. */
+  int blocksize[DRMS_MAXRANK]; /* block sizes for TAS storage. */
+} DRMS_Segment_t;
+
+
+typedef struct DRMS_SegmentInfo_struct {
+  char name[DRMS_MAXNAMELEN];  /* Segment name. */
+  int segnum;                  /* Segment number within the record. */
+  DRMS_Type_t type;            /* Datatype of the data elements. */
+  int naxis;                   /* Number of dimensions (rank). */
+  DRMS_Protocol_t protocol;    /* Storage protocol. */
+  char unit[DRMS_MAXUNITLEN];  /* Physical unit. */
+  char description[DRMS_MAXCOMMENTLEN];  /* Description string. */
+  DRMS_Segment_Scope_t scope;  
+} DRMS_SegmentInfo_t;
+
+
+typedef enum {DRMS_CONSTANT, DRMS_VARIABLE, DRMS_VARDIM} 
+DRMS_Segment_Scope_t;
+
+/* Recognized storage protocols: */
+typedef enum  {DRMS_BINARY, DRMS_BINZIP, DRMS_FITZ, DRMS_FITS,
+	       DRMS_TAS} DRMS_Protocol_t;
+.fi
+.sp
+.SH DESCRIPTION
+A DRMS data segment is a named n-dimensional scalar array stored in a
+file. One or more such segments constitute the data part(s) of the
+DRMS record pointed to by the
+.I record
+field. The 
+.I info
+field points to a structure containing attributes common to all
+records in a series, while the segment structure itself contains the fields
+.I axis
+and 
+.I blocksize
+that can vary from record to record if scope=DRMS_VARDIM. 
+The 
+.I protocol
+field determines the internal storage format used for storing segment data.
+It is recommended that protocol=DRMS_TAS be used always.
+
+.SH FUNCTIONS
+.PP
+.I "Read and write"
+.br
+\fB
+DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, 
+                                DRMS_Type_t type, 
+                                int *status);
+.br
+DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, 
+                                     DRMS_Type_t type, 
+                                     int *start, int *end,  
+                                     int *status);
+.br
+int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, 
+                       int autoscale);
+\fR
+.PP
+.I "Lookup"
+.br
+\fB
+DRMS_Segment_t *drms_segment_lookup(DRMS_Record_t *record, 
+                                    const char *segname);
+.br
+DRMS_Segment_t *drms_segment_lookupnum(DRMS_Record_t *record, 
+                                       int segnum);
+.br
+#define name2seg(rec, name) drms_segment_lookup(rec, name)
+.br
+#define num2seg(rec, num) drms_segment_lookupnum(rec, num)
+\fR
+.PP
+.I "Scaling & blocksize"
+.br
+\fB
+void drms_segment_autoscale(DRMS_Segment_t *seg, DRMS_Array_t *array);
+.br
+int drms_segment_setscaling(DRMS_Segment_t *seg, double bzero, 
+                            double bscale);
+.br
+int drms_segment_getscaling(DRMS_Segment_t *seg, double *bzero, 
+                            double *bscale);
+.br
+void drms_segment_setblocksize(DRMS_Segment_t *seg, int *blksz);
+.br
+void drms_segment_getblocksize(DRMS_Segment_t *seg, int *blksz);
+\fR
+.SH "SEE ALSO"
+.BR drms_record (3),
+.BR drms_keyword (3),
+.BR drms_link (3),
+.BR drms_array (3)

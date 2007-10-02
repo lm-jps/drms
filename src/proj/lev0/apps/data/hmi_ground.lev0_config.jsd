@@ -1,0 +1,45 @@
+# JSD file for configuration indexed by filtergram serial number FSN
+#================================Global Series information============================
+SeriesName:  "hmi_ground.lev0_config"
+Description: "ground test configuration for each image"
+Author:      "sdodata"
+Owners:      "sdodata"
+Unitsize:     0
+Archive:      0
+Retention:    30
+Tapegroup:    0
+Index:        FSN
+#=====================================Keywords ========================================
+Keyword: FSN,  int, variable, record, 0, %07d,  "frame", "Image number"
+Keyword: LASTFSN,  int, variable, record, 0, %07d,  "frame", "Prior Image number to writing the FTS log file"
+Keyword: T_OBS,  time, variable, record, 1977.01.01, UT,  "UT", "Image time"
+Keyword: HPCUPOLR,  float,  variable, record, 10000, %8.3f, "degrees", "Polarizer angle"
+Keyword: HPCUPOLM,  float,  variable, record, 10000, %8.3f, "mm", "Polarizer position"
+Keyword: HPCURETR,  float,  variable, record, 10000, %8.3f, "degrees", "Retarder rotation angle"
+Keyword: HPCURETM,  float,  variable, record, 10000, %8.3f, "mm", "Retarder rotation position"
+Keyword: HSTOLNAM,  string,  variable, record, " ", %s, " ", "STOL Procedure"
+Keyword: HSTRTIME,  string,  variable, record, " ", %s, " ", "STOL run time"
+Keyword: OBSERVER,  string,  variable, record, " ", %s, " ", "Observer"
+Keyword: HUSRCOM0,  string,  variable, record, " ", %s, " ", "Operator Comments"
+Keyword: HUSRCOM1,  string,  variable, record, " ", %s, " ", "Operator Comments"
+Keyword: HUSRCOM2,  string,  variable, record, " ", %s, " ", "Operator Comments"
+Keyword: HUSRCOM3,  string,  variable, record, " ", %s, " ", "Operator Comments"
+Keyword: HUSRCOM4,  string,  variable, record, " ", %s, " ", "Operator Comments"
+Keyword: HUSRCOM5,  string,  variable, record, " ", %s, " ", "Operator Comments"
+Keyword: HUSRCOM6,  string,  variable, record, " ", %s, " ", "Operator Comments"
+Keyword: HUSRCOM7,  string,  variable, record, " ", %s, " ", "Operator Comments"
+Keyword: HUSRCOM8,  string,  variable, record, " ", %s, " ", "Operator Comments"
+Keyword: HUSRCOM9,  string,  variable, record, " ", %s, " ", "Operator Comments"
+Keyword: HLASWAVL,  string,  variable, record, " ", %s, " ", "Laser wavelength"
+Keyword: HLASINT,  string,  variable, record, " ", %s, " ", "Laser intensity"
+Keyword: HSTIMIN,  string,  variable, record, " ", %s, " ", "Stim Tel light source"
+Keyword: HAL1POS,  int,  variable, record, 4095, %d, "step", "HMI leg 1 position"
+Keyword: HAL2POS,  int,  variable, record, 4095, %d, "step", "HMI leg 2 position"
+Keyword: HFTSNAM,  string,  variable, record, " ", %s, " ", "Framelist name"
+Keyword: HFTSID,  string,  variable, record, " ", %s, " ", "Framelist ID"
+Keyword: FTS_FILE,  string,  variable, record, " ", %s, " ", "FTS info filename used"
+Keyword: PCU_FILE,  string,  variable, record, " ", %s, " ", "PCU info filename used"
+#======================================Links===========================================
+#Not applicable
+#=====================================Segment==========================================
+#Not applicable

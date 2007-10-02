@@ -1,0 +1,266 @@
+eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
+    if 0;
+#Called by socdc to simulate the DDS sending data to the SOC.
+#Called by: exec "soc_scp $tname $dsf_interval $tlmsec $DIRDDS2SOC $logscp"
+#where: $tname = target name - hmi or aia
+#	$dsf_interval = minutes cadence to send .dsf file (normally 60)
+#       $tlmsec = seconds cadence to send .tlm/.qac files (normally 60)
+#       $DIRDDS2SOC = dir to put file in
+#       $logscp = log file name
+#e.g.
+#soc_scp hmi 60 60 /dds/dds2soc /usr/local/logs/soc/soc_scp_hmi_jim_2007.02.14_12:10:02.log
+#
+$GENTLM1 = "VCz.tlm";           #file of telemetry to inject in sim mode
+$GENTLM2 = "VCz.tlm";           #file of telemetry to inject in sim mode
+$flipflop = 0;
+$QAC_SIZE = 1003;               #size of a qac file (!!!TBD)
+
+$init = 1;			#for testing !!!TBD
+
+if(!($tname = $ARGV[0])) {
+  print  "Usage: soc_scp tname dsf_interval tlmsec DIRDDS2SOC logscp\n";
+  exit;
+}
+if(!($dsf_interval = $ARGV[1])) {
+  print  "Usage: soc_scp tname dsf_interval tlmsec DIRDDS2SOC logscp\n";
+  exit;
+}
+if(!($tlmsec = $ARGV[2])) {
+  print  "Usage: soc_scp tname dsf_interval tlmsec DIRDDS2SOC logscp\n";
+  exit;
+}
+if(!($DIRDDS2SOC = $ARGV[3])) {
+  print  "Usage: soc_scp tname dsf_interval tlmsec DIRDDS2SOC logscp\n";
+  exit;
+}
+if(!($log = $ARGV[4])) {
+  print  "Usage: soc_scp tname dsf_interval tlmsec DIRDDS2SOC logscp\n";
+  exit;
+}
+$ldate = &labeldate();
+open(LOG, ">>$log") || die "Can't open $log: $!\n";
+select(LOG); $| = 1; select(STDOUT);    #make unbuffered
+print LOG "$ldate\n\n";
+print LOG "soc_scp $dsf_interval $tlmsec $DIRDDS2SOC $log\n";
+
+@alltlm = ();
+$dsfmin = 1;
+$dsf_interval_cnt = $dsf_interval * (60/$tlmsec);
+
+sleep($tlmsec/2);		#start with a delay
+while(1) {
+  &Sim_DDS;
+  sleep($tlmsec-$elapsed);
+}
+
+sub Sim_DDS 
+{
+  $sec1 = time();
+  $time = &labelddd;
+  $namefile = &tlmfilename;
+  $tlmfile = $namefile.".tlm";
+    #Put a canned .tlm file in the dds2soc dir with the current time stamp
+    if($flipflop == 0) {
+      `cp $GENTLM1 $DIRDDS2SOC/$tlmfile`;
+       $md5res = `/usr/bin/md5sum -b $GENTLM1`;
+       ($md5tlm, $b) = split(/\s/, $md5res);
+       $flipflop++;
+    } else {
+      `cp $GENTLM2 $DIRDDS2SOC/$tlmfile`;
+       $md5res = `/usr/bin/md5sum -b $GENTLM2`;
+       ($md5tlm, $b) = split(/\s/, $md5res);
+       $flipflop = 0;
+    }    
+
+#  (my $dev,my $ino,my $mode,my $nlink,my $uid,my $gid,my $rdev,my $size, 
+#   my $atime,my $mtime,my $ctime,my $blksize,my $blocks) = 
+#   stat "$DIRDDS2SOC/$tlmfile";
+  $size = (-s "$DIRDDS2SOC/$tlmfile");
+  push(@alltlm, $tlmfile);
+  #Now make a corresponding .qac file for the .tlm file
+  #A .qac file looks like:
+  # TLM_FILE_NAME=      Name of corresponding TLM file.                    
+  #                     Will be zeroes if only ERR file exists. 
+  # TLM_FILE_SIZE=      Size in bytes of associated .tlm file. Under normal
+  #                     conditions this number should be constant for a    
+  #                     given VCID. 0 if only ERR file exists.             
+  # TLM_FILE_FINGER_PRINT= MD5 calculation on the TLM file. 0 if only ERR 
+  #                     file exists.                                       
+  # TLM_CRC_FAILURES=   Number of VCDUs that have CRC errors in the TLM file.
+  #			Nominally zero.
+  # QAC_FILE_SIZE=      Size in bytes of this .qac file  
+  # ERR_FILE_NAME=	Name of ERR file. Will be zeros if no ERR file exists.
+  # ERR_FILE_SIZE=	Size in bytes of ERR file. 0 if none.
+  # ERR_FILE_FINGER_PRINT= MD5 calculation on the ERR file. 
+  # TOTAL_TLM_VCDU=	Total number of valid VCDUs in TLM file 
+  #			(Not theoretical)
+  # TOTAL_MISSING_VCDU= Total number of missing VCDUs in TLM file. This number 
+  #			is based on gaps in the 24 bit VCDU sequence number.
+  # TOTAL_MISSING_IM_PDU= Total number of missing IM_PDUs in TLM file. This 
+  #			number is based on gaps in the 42 bit IM_PDU 
+  #			sequence number.
+  # TOTAL_ERROR_VCDU=	Total number of ERR VCDUs in ERR file. 
+  # TOTAL_GAPS=		Total gaps in file. This number is based on gaps in 
+  #			the IM_PDU sequence number.
+  # FIRST_IM_PDU_SEQ=	42 bit IM_PDU Sequence number of first VCDU in TLM 
+  #			file (Not theoretical)
+  # FIRST_VCDU_SEQ=	24 bit VCDU Sequence number of first VCDU in TLM file 
+  # FIRST_IM_PDU_TIME=	Converted UTC Time of first packet in this file (from 
+  #			packet secondary hdr) in format yyyy_ddd_hh_mm_ss.sss 
+  # LAST_IM_PDU_SEQ=	42 bit IM_PDU Sequence number of last VCDU in TLM file
+  # LAST_VCDU_SEQ=	24 bit VCDU Sequence number of last VCDU in TLM file
+  # LAST_IM_PDU_TIME= 	Time of last packet in this file
+  # GAP_START_SEQ=  	42 bit IM_PDU Sequence number of last VCDU before gap 
+  # GAP_START_TIME= 	Converted UTC Time of last packet before gap (from 
+  #			packet secondary hdr) in format yyyy_ddd_hh_mm_ss.sss
+  # DISCONTINUITY=	Flag to indicate a discontinuity occurred in the 42 bit 
+  #			IM_PDU counter, but not the 24 bit VCDU counter.
+  #			Argument = VC Seq gap - IM_PDU_SEQ gap 
+  # VCDU_ERROR_CNT= 	Number of error VCDUs received during gap
+  # GAP_STOP_SEQ=  	42 bit IM_PDU Sequence number of first VCDU after gap.
+  # GAP_STOP_TIME= 	Converted UTC Time of first packet after gap (from 
+  #			packet secondary hdr) in format yyyy_ddd_hh_mm_ss.sss
+  # EOF_MARKER= 	Constant and recognizable ASCII string. C5C5 
+  # 
+  #NOTE:  Gap info is repeated as necessary for each gap in the VCDU sequence 
+  #number. Each set of gap info is preceede by a blank line, as is EOF_MARKER
+  #
+  $txtfile = "$DIRDDS2SOC/".$namefile.".qac";
+  open(TXT, ">$txtfile") || die "Can't open $txtfile: $!\n";
+  print TXT "TLM_FILE_NAME=$tlmfile\n";
+if(!$init) {
+  print TXT "TLM_FILE_SIZE=$size\n";
+}
+else {
+  print TXT "TLM_FILE_SIZE=99\n"; 		#force size error
+  $init = 0;
+}
+  print TXT "TLM_FILE_FINGER_PRINT=$md5tlm\n";
+  print TXT "TLM_CRC_FAILURES=000000000\n";
+  print TXT "QAC_FILE_SIZE=$QAC_SIZE\n";
+  print TXT "ERR_FILE_NAME=00000000000000000000000000000000000000000000000\n";
+  #print TXT "ERR_FILE_NAME=junk_err_file.err\n";
+  print TXT "ERR_FILE_SIZE=000000000\n";
+  print TXT "ERR_FILE_FINGER_PRINT=00000000000000000000000000000000\n";
+  print TXT "TOTAL_TLM_VCDU=000029360\n";	#!!TEMP fix values below
+  print TXT "TOTAL_MISSING_VCDU=000000002\n";
+  print TXT "TOTAL_MISSING_IM_PDU=000000004\n";
+  print TXT "TOTAL_ERROR_VCDU=000000000\n";
+  print TXT "TOTAL_GAPS=000000002\n";
+  print TXT "FIRST_IM_PDU_SEQ=0000bdf129f\n";
+  print TXT "FIRST_VCDU_SEQ=df129f\n";
+  print TXT "FIRST_IM_PDU_TIME=2005_116_11_59_31.000\n";
+  print TXT "LAST_IM_PDU_SEQ=0000bdf2f4b\n";
+  print TXT "LAST_VCDU_SEQ=df2f4b\n";
+  print TXT "LAST_IM_PDU_TIME=2005_116_12_00_31.000\n";
+  print TXT "\nGAP_START_SEQ=0000bdf16f0\n";
+  print TXT "GAP_START_TIME=2005_116_11_59_32.000\n";
+  print TXT "DISCONTINUITY=000000000\n";
+  print TXT "VCDU_ERROR_CNT=00000000\n";
+  print TXT "GAP_STOP_SEQ=0000bdf16f2\n";
+  print TXT "GAP_STOP_TIME=2005_116_11_59_32.004\n";
+  print TXT "\nGAP_START_SEQ=0000bdf1ada\n";
+  print TXT "GAP_START_TIME=2005_116_11_59_34.000\n";
+  print TXT "DISCONTINUITY=000000000\n";
+  print TXT "VCDU_ERROR_CNT=00000000\n";
+  print TXT "GAP_STOP_SEQ=0000bdf1adc\n";
+  print TXT "GAP_STOP_TIME=2005_116_11_59_34.004\n";
+  print TXT "\nEOF_MARKER=C5C5\n";
+  close(TXT);
+  if($dsfmin++ >= $dsf_interval_cnt) {
+    $dsfmin = 1;
+    if($tname eq "hmi") {
+      $dsffile = "$DIRDDS2SOC/"."HMI_".$time.".dsf";
+    } else {
+      $dsffile = "$DIRDDS2SOC/"."AIA_".$time.".dsf";
+    }
+    open(DSF, ">$dsffile") || die "Can't open $dsffile: $!\n";
+    while($x = shift(@alltlm)) {
+      #Status values are:
+      # 1    |Active         |Delivery Attempted, Not acknowledged nor      |
+      #                      !rexmit request by SOC                         |
+      # 2    |Expunged       |Removed from active list, Not acknowledged,   |
+      #      |               |Only issued once                              |
+      print DSF "$x $size 1\n";
+      #print DSF "$x $size 2\n";
+      #print DSF "$x $size 3\n"; #!!TEMP illegal value
+    }
+    close(DSF);
+    @alltlm = ();
+  }
+  $sec2 = time();
+  $elapsed = $sec2 - $sec1;
+}
+
+#Return a  file name in the form:
+#VCid_yyyy_ddd_hh_mm_ss_seq_mod_vers
+#seq: 	11 hex characters, 0x00000000000-0xFFFFFFFFFFF, First theoretical
+#  Insert Zone sequence number in the file. If an instrument resets, the current
+#  file will be padded and closed. The next file will begin at sequence #0.
+#mod:  5 hex characters, 0x00000-0xFFFFF theoretical number of VCDUs in the
+#  file.
+#vers: 2 decimal characters, 00-99, Monotonically increasing count of the number
+#  of times a file has been opened after close. All versions of a file will be
+#  archived. Initial value is 0.
+#Example:  VC02_2008_365_23_59_59_0123456789A_FFFFF_01 
+sub tlmfilename {
+  local($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst,$name,$sec2,$min2,$hour2,$mday2);
+  ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+  $sec2 = sprintf("%02d", $sec);
+  $min2 = sprintf("%02d", $min);
+  $hour2 = sprintf("%02d", $hour);
+  $yday3 = sprintf("%03d", $yday+1);
+  $year4 = sprintf("%04d", $year+1900);
+  if($flipflop) { 	#AIA or HMI VCID
+    if($tname eq "hmi") {
+      $name = "VC05_".$year4."_".$yday3."_".$hour2."_".$min2."_".$sec2."_0123456789A_FFFFF_00";
+    }
+    else {
+      $name = "VC04_".$year4."_".$yday3."_".$hour2."_".$min2."_".$sec2."_0123456789A_FFFFF_00";
+    }
+  }
+  else {
+    if($tname eq "hmi") {
+      $name = "VC02_".$year4."_".$yday3."_".$hour2."_".$min2."_".$sec2."_0123456789A_FFFFF_00";
+    }
+    else {
+      $name = "VC01_".$year4."_".$yday3."_".$hour2."_".$min2."_".$sec2."_0123456789A_FFFFF_00";
+    }
+  }
+  return($name);
+}
+
+#Return time in form for a label e.g. 14:42:00
+sub labeltime {
+  my $d = &labeldate;
+  my $pos = index($d, '_');
+  my $t = substr($d, $pos+1);
+  return($t);
+}
+
+#Return date in form for a label e.g. 2008_365_23_59
+sub labelddd {
+  local($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst,$name,$sec2,$min2,$hour2,$mday2);
+  ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+  $sec2 = sprintf("%02d", $sec);
+  $min2 = sprintf("%02d", $min);
+  $hour2 = sprintf("%02d", $hour);
+  $yday3 = sprintf("%03d", $yday+1);
+  $year4 = sprintf("%04d", $year+1900);
+  $name = $year4."_".$yday3."_".$hour2."_".$min2;
+  return($name); 
+}
+
+#Return date in form for a label e.g. 1998.01.07_14:42:00
+sub labeldate {
+  local($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst,$date,$sec2,$min2,$hour2,$mday2);
+  ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+  $sec2 = sprintf("%02d", $sec);
+  $min2 = sprintf("%02d", $min);
+  $hour2 = sprintf("%02d", $hour);
+  $mday2 = sprintf("%02d", $mday);
+  $mon2 = sprintf("%02d", $mon+1);
+  $year4 = sprintf("%04d", $year+1900);
+  $date = $year4.".".$mon2.".".$mday2._.$hour2.":".$min2.":".$sec2;
+  return($date);
+}

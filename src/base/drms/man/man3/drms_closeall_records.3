@@ -1,0 +1,54 @@
+.\"
+.TH drms_closeall_records 3  11-Jan-2007  "DRMS MANPAGE" "DRMS Programmer's Manual"
+.SH NAME
+drms_closeall_records - Close all records in the record cache, optionally inserting modified writeable records into the database.
+
+.SH SYNOPSIS
+.nf
+#include "drms.h"
+
+int drms_closeall_records(DRMS_Env_t *env, int action);
+
+.SH DESCRIPTION
+
+Iterates through all records in the record cache (\fIenv\fR->record_cache).  If \fIaction\fR == DRMS_INSERT_RECORD, then for each such record that is not marked read-only, this function calls drms_close_records(3), passing the record as an argument.  The result is preservation of the record's data in the database.  If \fIaction\fR == DRMS_FREE_RECORD, then the record's data is discarded.  Please see drms_close_records(3) for more details.  For each record in the record cache, this function calls drms_free_record(3) to deallocate the DRMS_Record_t structure associated with the record, and it removes the record from the record cache.
+
+This function is typically called just before the return of a module.
+
+.SH RETURN VALUES
+Upon successful completion, the function returns 0.  If an error occurs, the function returns an appropriate error code defined in drms_statuscodes.h.  Please see drms_close_records(3) for more details.
+
+.SH EXAMPLES
+.nf
+#include "drms.h"
+
+int main (int argc, char **argv) 
+{
+     /* The following call will insert a record to the record cache. */
+     DRMS_Record_t *rec = drms_create_record(drmsEnv, 
+                                             seriesOut, 
+                                             DRMS_PERMANENT, 
+                                             &status);
+
+     if (rec != NULL && status == 0)
+     {
+          /* Do something to the record, setting keys for instance. */
+     }
+
+     /* Pretend we're just about to exit the module */
+     if (status == 0)
+     {
+          drms_closeall_records(drmsEnv, DRMS_INSERT_RECORD);
+     }
+     else
+     {
+          drms_closeall_records(drmsEnv, DRMS_FREE_RECORD);
+     }
+
+     return status;
+}
+
+.SH SEE ALSO
+
+drms_clone_records(3), drms_clone_record(3), drms_close_records(3), drms_close_record(3), drms_create_records(3), drms_create_record(3), drms_open_records(3), drms_retrieve_records(3), drms_retrieve_record(3)
+

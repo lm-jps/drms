@@ -1,0 +1,6 @@
+rem this is Oracle stuff. Haven't tried yet for Postgres
+create user dsowner identified by hmi4sdo  DEFAULT TABLESPACE USERS
+QUOTA UNLIMITED on USERS;
+
+grant DBA to dsowner;
+

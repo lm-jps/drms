@@ -1,0 +1,141 @@
+.\"
+.TH DRMS_RECORD 3  2006-05-19 "DRMS MANPAGE" "DRMS Programmer's Manual"
+.SH NAME
+drms_record \- DRMS record data structures
+.SH SYNOPSIS
+.nf
+#include <drms.h>
+
+/* Simple array container for a set of records. */
+typedef struct DRMS_RecordSet_struct
+{
+  int n;
+  DRMS_Record_t **records;
+} DRMS_RecordSet_t;
+
+
+/* Datastructure representing a single data record. */
+typedef struct DRMS_Record_struct
+{
+  /* Record attributes. */
+  long long recnum;    /* Unique record number. */
+  long long sessionid; /* ID of session that created this record. */
+  DRMS_RecLifetime_t lifetime; /* Flag indicating whether record is 
+                                  session-temporary or "permanent". */
+  DRMS_SeriesInfo_t *seriesinfo; /* Info shared by all record in 
+                                    series. */
+  HContainer_t keywords;        /* Container of named keywords. */
+  HContainer_t links;           /* Container of named links. */
+  HContainer_t segments;        /* Container of named data segments. */
+
+  /* Storage unit info. */ 
+  long long sunum;     /* Storage unit associated with record. */
+  int slotnum;         /* Number of the slot assigned to this record 
+                          within storage unit. */
+  DRMS_StorageUnit_t *su; /* Associated storage unit. Until the storage 
+                             unit has been requested from SUMS this 
+                             pointer is NULL. */
+
+  /* Fields for internal use in DRMS. */
+  DRMS_Env_t *env; /* Pointer to global DRMS environment. */
+  int init;        /* Flag used for series cache initialization. */
+  int readonly;    /* Record is read-only. */
+} DRMS_Record_t;
+
+
+/* Record attributes common to all records in a series. */
+typedef struct DRMS_SeriesInfo_struct
+{
+  char seriesname[DRMS_MAXNAMELEN];      
+  char description[DRMS_MAXCOMMENTLEN];
+  char author[DRMS_MAXCOMMENTLEN];
+  char owner[DRMS_MAXNAMELEN];
+  int unitsize;   /* How many records to a storage unit. */
+  int archive;    /* Should this series be archived? */
+  int retention;  /* Default retention time in seconds. */
+  int tapegroup;  /* Tapegroup of the series. */
+
+  /* Primary index information. */
+  int pidx_num;   /* Number of keywords in primary index. */
+  DRMS_Keyword_t *pidx_keywords[DRMS_MAXPRIMIDX]; 
+                /* Pointers to keywords that make up the primary key.*/
+} DRMS_SeriesInfo_t;
+
+
+.fi
+.sp
+.SH DESCRIPTION
+.SH FUNCTIONS
+.PP
+.I "Creating and closing"
+.br
+\fB
+DRMS_RecordSet_t *drms_create_records(DRMS_Env_t *env, int n, 
+                                      char *seriesname, 
+                                      DRMS_RecLifetime_t lifetime, 
+                                      int *status)
+.br
+DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *recset, 
+                                     DRMS_RecLifetime_t lifetime, 
+                                     DRMS_CloneAction_t mode, 
+                                     int *status)
+.br
+int drms_close_records(DRMS_RecordSet_t *rs, int action)
+\fR
+.PP
+.I "Opening/querying"
+.br
+\fB
+DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, 
+                                    char *recordsetname, 
+                                    int *status)
+.br
+\fR
+.PP
+.I "Pretty printing"
+.br
+\fB
+void  drms_print_record(DRMS_Record_t *rec)
+.br
+\fR
+.PP
+.I "Informational"
+.br
+\fB
+long long drms_record_size(DRMS_Record_t *rec)
+.br
+int drms_record_numkeywords(DRMS_Record_t *rec)
+.br
+int drms_record_numlinks(DRMS_Record_t *rec)
+.br
+int drms_record_numsegments(DRMS_Record_t *rec)
+\fR
+.PP
+.I "Record directory access"
+.br
+\fB
+FILE *drms_record_fopen(DRMS_Record_t *rec, char *filename, 
+                        const char *mode)
+.br
+void drms_record_directory(DRMS_Record_t *rec, char *dirname)
+\fR
+.PP
+.I "Single record versions"
+.br
+\fB
+DRMS_Record_t *drms_clone_record(DRMS_Record_t *record, 
+                                 DRMS_RecLifetime_t lifetime, 
+                                 DRMS_CloneAction_t mode, int *status)
+.br
+DRMS_Record_t *drms_create_record(DRMS_Env_t *env, char *seriesname, 
+                                  DRMS_RecLifetime_t lifetime,
+                                  int *status)
+.br
+int drms_close_record(DRMS_Record_t *rec, int action)
+.br
+\fR
+.SH "SEE ALSO"
+.BR drms_keyword (3),
+.BR drms_segment (3),
+.BR drms_link (3),
+.BR drms_array (3)

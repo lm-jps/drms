@@ -1,0 +1,15 @@
+#undef ASUM  
+#undef AXPY  
+#undef COPY  
+#undef DOT   
+#undef DOTU  
+#undef DOTC  
+#undef NRM2  
+#undef ROT   
+#undef ROTG  
+#undef ROTM  
+#undef ROTMG 
+#undef SCAL  
+#undef SWAP  
+#undef AMAX  
+#undef AMIN  

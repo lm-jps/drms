@@ -1,0 +1,51 @@
+.\"
+.TH set_keys 1  13-Sept-2006  "DRMS MANPAGE" "DRMS Programmer's Manual"
+.SH NAME
+set_keys \- DRMS update keyword contents for a DataSeries record
+.SH SYNOPSIS
+.nf
+.B set_keys {-h} {-c} {-m} {-v} ds=<recordset query> {<keyword>=<value>}... {<segname>=<filename>}...
+
+.SH DESCRIPTION
+Set_keys updates keywords and/or generic files in a JSOC dataseries record(s). 
+The flags that control set_keys are:
+.PP
+.B -c
+Create a new record
+.br
+.B -h
+Print usage message and exit
+.br
+.B -m
+Multiple records may be updated
+.br
+.B -v
+Verbose - noisy.
+.br
+.B ds=<recordset query>
+The recordset query specifies a series and set of records to update.
+It may be just a series name in which case the "-c" flag is expected and
+ALL of the prime key keywords must be present as keyword=value pairs.
+To update an existing record(s) use one or more record specifier clauses in square brackets.
+If the query matches more than one record the "-m" flag must be
+set and all records will get the same new values for the keywords provided
+on the command line.
+.br
+.B <keyword>=<value>
+The new keyword values to be used to create a new or update and existing record.
+.br
+.B <segname>=<filename>
+If segname is  generic type data segment then <filename> is copied into the segment storage.
+.PP
+The "-m" multiple record mode should be used with caution.  A typo could
+damage many records.  Do not use -m unless you are sure the query will
+specify ONLY the records you want to update.
+.PP
+.SH BUGS
+At present updates of segments fails.  Please use only with the -c flag and prime keys
+when inserting files into generic type data segments.
+.PP
+At present, updated records are cloned leaving the original record as a prior
+version for that prime key index value.
+.SH "SEE ALSO"
+.BR show_keys(1)

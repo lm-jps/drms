@@ -1,0 +1,76 @@
+
+.\"
+.TH store_dir 1  06-December-2006  "DRMS MANPAGE" "DRMS Programmer's Manual"
+.SH NAME
+store_dir \- DRMS store files into a SUMS directory.
+.SH SYNOPSIS
+.nf
+.B store_dir \fR[\fB-cv\fR<jsoc_flags>] \fBseries=\fR<series_name> \fBdirname=\fR<path> \fBsel=<sel_text>\fR [\fBnote=\fR<note_text>] [\fBperm=0\fR|\fB1\fR]
+
+
+.SH DESCRIPTION
+.PP
+store_dir and retrieve_dir are a pair of utilities to store (and retrieve) an arbitrary 
+set of files to (from) DRMS/SUMS.  Files stored with store_dir can be easily retrieved by 
+the retrieve_dir utility.
+.PP
+If the series <series_name> does not exist, store_dir will first create that series,
+provided that the user supplies the "c" flag.  
+store_dir then creates a record in the series <series_name> and then creates a subdirectory, 
+<subdir>, of the record's SUMS directory, <record_directory> (each record "owns" a SUMS 
+directory).  The subdirectory created, <subdir>, is given the name of the directory in 
+<path> (i.e., it is all of the string after the last '/' in <path>).  store_dir 
+copies all files in <path> to <record_directory>/<subdir>.  <sel_text> and <note_text>
+allow the user to link additional information to the record to facilitate the subsequent
+search for files in the series.  The series <series_name> must contain prime keywords named
+"dirname" and "sel", and it must contain the keyword named "note".
+.PP
+Example to store files:
+
+  store_dir series=su_arta.TestStoreDir dirname=/auto/home2/arta/savedFilesJanuary sel=January 
+note="All my January work"
+
+Example to retrieve files:
+
+  retrieve_dir series=su_arta.TestStoreDir to=/auto/home2/arta/restoredFilesJanuary/ dirkey=dirname
+
+.SH FLAGS
+.SS module-specific flags
+.IP \fB-c\fR 20
+Silently create the series <series_name> if it does not exist.
+.IP \fB-v\fR 20
+Run in verbose mode.
+.SS jsoc-driver flags
+.IP \fB-H\fR|\fB--help\fR 20
+Show jsoc_main usage information.
+.IP \fB-L\fR 20
+Run jsoc_main driver without logging.
+.IP \fB-V\fR 20
+Run jsoc_main driver in verbose mode.
+.IP \fB-Q\fR 20
+Run jsoc_main driver in quiet mode (no terminal output).
+
+.SH ARGUMENTS
+.IP \fBseries=\fR<series_name> 20 
+Specifies the series, <series_name>, to which the file-referring record will be added.
+Should a record-set specifier be provided, it will be ignored.
+.IP \fBdirname=\fR<path> 20
+<path> contains the files to be stored in SUMS.  The record created will contain 
+a prime keyword named "dirname" whose value will be <path>.
+.IP \fBsel=\fR<sel_text> 20
+<sel_text> contains a string that will be the keyword value for the "sel" prime keyword of the 
+record created.  This extra prime keyword facilitates selection between multiple 
+records containing equivalent values for the "dirname" keyword (it may be desirable
+(to save files in the same directly repeatedly).
+.IP \fBnote=\fR<note_text> 20
+An optional string that will be the keyword value for the "note" keyword of the record created.
+.IP \fBperm=0\fR|\fB1 20
+Relevant only when the "c" flag is used and a series is created.  A perm of 0 will make the 
+created series accessible only by the current user.  A perm of 1 will make the series globally
+accessible.
+
+.PP
+.SH "SEE ALSO"
+.BR retrieve_dir(1)
+.BR retrieve_file(1)
+.BR store_file(1)

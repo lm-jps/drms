@@ -1,0 +1,80 @@
+			Release Notes JSOC V2.1		24May2006
+			-----------------------		---------
+
+
+The official release version is in /home/production/cvs/jsoc.
+This will remain unchanged until the next release.
+You may make any changes you want in your sandbox, but anything that you 
+commit will appear in the next offical release.
+
+****************************** Sandbox ***************************************
+
+You need a cvs "sandbox" to contain your view of the V2.1 release:
+(There is no need to do this unless you're going to be a jsoc developer.)
+
+Set the env variables:
+CVSROOT=:ext:sunroom.stanford.edu:/home/cvsuser/cvsroot
+CVS_RSH=ssh
+
+################# If you don't already have a sandbox do this: #############
+Make a cvs dir and do:
+> cd /home/you/cvs
+> cvs checkout jsoc
+############################################################################
+
+Resync your sandbox with the V2.1 release:
+
+> cd /home/you/cvs/jsoc
+> cvs update -APd
+
+Check for any files that have not been commited (not Status: Up-to-date):
+
+> cvs status | egrep ^File: | egrep -v Up-to-date
+
+These should only be files that have local changes that you are aware of.
+If you have a file here that you wanted in the release, please contact CM.
+
+
+You now need to make on linux_ia64 (lws) or linux_x86_64 or linuxia32 
+(some workstations) machines depending on where you want to run:
+Please use n12 and n00 for x86_64 and linuxia32 builds. (good compilers)
+
+> ssh lws		(and then again for d00, etc.)
+> cd /home/you/cvs/jsoc
+> ./configure -force -client -static (this static is new 3/2/06)
+> make clean
+> make -j 4  		(run 4 jobs in parallel for speed)
+
+Set your path for /home/you/cvs/jsoc/bin/linux_ia64 (or linux_x86_64)
+
+The command 
+
+> configure -help
+
+will print information about how to create a customized build,
+to e.g. use a different compiler or turn on debugging flags.
+
+If you are unfamiliar with the use of cvs see the file:
+jsoc/CM/working_with_sandbox.txt. 
+
+
+There's a linux4 cvs gui at xim:/usr/bin/lincvs
+
+****************************** SUMS ******************************************
+
+The Storage Unit Management (SUM) subsystem is discussed and its API
+presented in:
+
+http://sun.stanford.edu/web.hmi/development/SU_Development_Plan/SUM_API.html
+
+The V2.1 release notes are in:
+
+jsoc/CM/V2.1/sum_release.txt
+
+NOTE: Only DRMS needs to be concerned with SUMS.
+
+
+************************** DRMS ***********************
+
+A complete DRMS documentation suite is in progress.
+

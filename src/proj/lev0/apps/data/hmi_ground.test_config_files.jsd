@@ -1,0 +1,20 @@
+# JSD file for test configuration text files from Lockheed:
+#================================Global Series information============================
+SeriesName:  "hmi_ground.test_config_files"
+Description: "Test configuration text files, sequence, user notes, PCU status, etc"
+Author:      "sdodata"
+Owners:      "sdodata"
+Unitsize:     10
+Archive:      1
+Retention:    30
+Tapegroup:    2
+Index:        date,type
+#=====================================Keywords ========================================
+Keyword: date, time, variable, record, 1977.01.01_TAI, UT,  "UT", "Date of file"
+Keyword: type,  string, variable, record, 0, %s,  "none", "type code for this file"
+#
+#======================================Links===========================================
+#Not applicable
+#=====================================Segment==========================================
+#<Data:> <name>, <scope>,  <datatype>, <naxis>, <unit>,  <protocol>, <comment>
+Data:    file,   variable, short,      0,       "none",  generic,    "file from LMSAL"

@@ -1,0 +1,2461 @@
+eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
+    if 0;
+#
+#/home/production/cvs/EGSE/src/perl_tk/socplay (!!!TEMP dev version)
+#HMI Science Operation Center (SOC) Simulation.
+#Perl/Tk gui.
+#Shows files transfered from DDS to SOC and SOC to DDS.
+#
+#First presents a page to allow setting of the configuration variables
+#to specify the directories to be used in the file transfers. Whenever the
+#configuration variables are changed they are saved in the file $CONFIGFILE
+#for future reference. Other variables are set to specify options of:
+#       Remove files from the dirs to start
+#       Simulate DDS file creation in $DIRDDS2SOC
+#       If simulate, send .dsf file every n minutes
+#       If simulate, create .tlm file every n seconds
+#Once the configuration is submitted, three pages are
+#displayed to show the files transfered between the DDS & SOC, the SOC &
+#SOC and the SOC & DDS. These three pages display the files in the dirs in
+#reverse time order. The display is updated every $REPEAT milliseconds.
+#A seperate button exists to pause and resume this display update.
+#A double click on a file name will display the contents of the file, except a
+#binary .tlm file which will give the option of displaying the corresponding
+#.qac file or doing an octal dump of the start of the file.
+#
+use Tk;
+
+$GENTLM1 = "VCz.tlm";		#file of telemetry to inject in sim mode
+$GENTLM2 = "VCz.tlm";		#file of telemetry to inject in sim mode
+#$GENTLM1 = "VC02_1.tlm";		#file of telemetry to inject in sim mode
+#$GENTLM2 = "VC02_2.tlm";		#file of telemetry to inject in sim mode
+#$GENTLM1 = "tlm5";		#file of telemetry to inject in sim mode
+#$GENTLM2 = "tlm5";		#file of telemetry to inject in sim mode
+#$GENTLM1 = "gentlm1.out";	#file of telemetry to inject in sim mode
+#$GENTLM1 = "4portraw.tlm";	#file of telemetry to inject in sim mode
+#$GENTLM2 = "4portraw.tlm";	#file of telemetry to inject in sim mode
+#$GENTLM2 = "gentlm2.out";	#file of telemetry to inject in sim mode
+#$GENTLM1 = "hmi_primary.tlm";	#see mail from D. Smith July 22, 2004
+#$GENTLM2 = "hmi_primary.tlm";
+$CONFIGFILE = "DDSSOC_PLAY.cfg";	#file containing the config vrbls
+$IMAGEDIR = "/tmp/jim";
+$REPEAT = 60000;		#default milliseconds for update cycle 
+$QAC_SIZE = 999;		#size of a qac file (!!!TBD)
+$FILETYPES = "filetypes.txt";
+$INSTANCE = 0;			#0=hmi, 1=aia
+$DIRPIPEFE = "/dds/socdc";	#pipeline front end dir to send data to
+$FEHOST = "d00.stanford.edu";   #pipeline front end host name
+$THISHOST = `hostname`;
+$pos = index($THISHOST, '.');
+$THISHOST = substr($THISHOST, 0, $pos);
+$scount = 0;			#counter for each soc received .qac file
+$pid0 = -1;
+$pid00 = -1;
+$pid000 = -1;
+$pid1 = -1;
+$flipflop = 0;
+$fitzmode = " ";
+@xmitpend = ();
+
+#Set up environment for hk decode to Carl's for now...
+$ENV{'HK_CONFIG_DIRECTORY'} = "/home/carl/EGSE/tables/hk_config_file/";
+$ENV{'HK_ZERO_FILL_FLAG'} = "0";
+$ENV{'HK_INITIAL_HEADER_APID'} = "431";
+$ENV{'HK_INITIAL_HEADER_PKT_VERSION'} = "1.67";
+$ENV{'HK_SIM_DIRECTORY'} = "/home/production/cvs/EGSE/tables/hk_sim_data/";
+$ENV{'HK_CONFIG_DIRECTORY'} = "/home/production/cvs/EGSE/tables/hk_config_file/";
+$ENV{'HK_GTCIDS_FILE'} = "gtcids.txt";
+$ENV{'HK_GTCIDS_DIRECTORY'} = "/home/production/cvs/EGSE/Lockheed_DB/GSE/";
+$ENV{'HK_STHA_FILENAME'} = "STANFORD_TLM_HMI_AIA.txt";
+$ENV{'HK_STHA_DIRECTORY'} = "/home/production/cvs/EGSE/Lockheed_DB/STANFORD/";
+$ENV{'HK_APID_LIST'} = "0x1BD 0x1DB";
+
+$SIG{INT} = 'Exit_sub';
+
+$ldate = &labeldate();
+$user = $ENV{'USER'};
+if($user ne "production") {
+#  print "You must be user \'production\' to run soc\n";
+#  exit;
+}
+while ($ARGV[0] =~ /^-/) {
+  $_ = shift;
+  if (/^-z(.*)/) {
+    $fitzmode = "-z";
+  }
+  else {
+    &usage;
+  }
+}
+$INTLM = $ARGV[0];
+$mw = MainWindow->new;
+  my(@pl) = qw/-side top -anchor nw/;
+  my(@pl1) = qw/-side top/;
+  my(@pl2) = qw/-side top -pady 5.0m/;
+  my(@pl3) = qw/-side top -pady 3.0m/;
+  $mw->Photo('image1', -file => 'SDO_Badge.gif');
+  $mw->Label(-image => 'image1')->pack(@pl);
+
+  $mw->Label(-text => 'DDS_SOC Data Capture Processing', -font => 'arial 18 bold')->pack(@pl1);
+  $mw->Photo('image2', -file => 'GRAD_BLUE_LINE.gif');
+  $mw->Label(-image => 'image2')->pack(@pl2);
+
+  $mw->Label(-text => 'Configuration Variables:', -font => 'arial 18 bold')->pack(@pl2);
+
+  my $f = $mw->Frame(-borderwidth => 8)->pack(-fill => 'both');
+  my $row = 0;
+  @configvars = ();
+#Get the values from the $CONFIGFILE
+#The order of the variables in the file is fixed. See $CONFIGFILE.
+open(CF, "<$CONFIGFILE") || die "Can't open $CONFIGFILE: $!\n";
+while(<CF>) {
+  if(/^#/ || /^\n/) { #ignore any comment or blank lines
+    next;
+  }
+  if($_ =~ /^\$DIRDDS2SOC/) {
+    ($a, $b, $dirdds) = split(/\s/);
+    chop($dirdds);
+    $txt = "Dir (\$DIRDDS2SOC/[hmi,aia]) where DDS puts files for SOC:";
+    my $e = $f->Entry(qw/-relief sunken -width 40/);
+    $e->insert(0, $dirdds);
+    $e->configure(-font => 'arial 16 bold');
+    push(@configvars, $e);
+    my $l = $f->Label(-text => $txt, -anchor => 'e', -justify => 'right');
+    Tk::grid( $l, -row => $row, -column => 0, -sticky => 'e', -pady => 5);
+    Tk::grid( $e, -row => $row++, -column => 1,-sticky => 'ew', -pady => 5);
+    $f->gridRowconfigure(1,-weight => 1);
+  }
+  elsif($_ =~ /^\$DIRSOC2SOC/) {
+    ($a, $b, $dirmv) = split(/\s/);
+    chop($dirmv);
+    $txt = "Dir (\$DIRSOC2SOC/[hmi,aia]) where processed file are move to from \$DIRDDS2SOC:";
+    my $e = $f->Entry(qw/-relief sunken -width 40/);
+    $e->insert(0, $dirmv);
+    $e->configure(-font => 'arial 16 bold');
+    push(@configvars, $e);
+    my $l = $f->Label(-text => $txt, -anchor => 'e', -justify => 'right');
+    Tk::grid( $l, -row => $row, -column => 0, -sticky => 'e', -pady => 5);
+    Tk::grid( $e, -row => $row++, -column => 1,-sticky => 'ew', -pady => 5);
+    $f->gridRowconfigure(1,-weight => 1);
+  }
+  elsif($_ =~ /^\$DIRSOC2DDS/) {
+    ($a, $b, $dirsoc) = split(/\s/);
+    chop($dirsoc);
+    $txt = "Dir (\$DIRSOC2DDS/[hmi,aia]) where SOC puts files for DDS:";
+    my $e = $f->Entry(qw/-relief sunken -width 40/);
+    $e->insert(0, $dirsoc);
+    $e->configure(-font => 'arial 16 bold');
+    push(@configvars, $e);
+    my $l = $f->Label(-text => $txt, -anchor => 'e', -justify => 'right');
+    Tk::grid( $l, -row => $row, -column => 0, -sticky => 'e', -pady => 5);
+    Tk::grid( $e, -row => $row++, -column => 1,-sticky => 'ew', -pady => 5);
+    $f->gridRowconfigure(1,-weight => 1);
+  }
+  elsif($_ =~ /^\$DIRSOC2PIPE/) {
+    ($a, $b, $dirpipe) = split(/\s/);
+    chop($dirpipe);
+    $txt = "Dir (\$DIRSOC2PIPE/[hmi,aia]) where SOC puts files for Pipeline:";
+    my $e = $f->Entry(qw/-relief sunken -width 40/);
+    $e->insert(0, $dirpipe);
+    $e->configure(-font => 'arial 16 bold');
+    push(@configvars, $e);
+    my $l = $f->Label(-text => $txt, -anchor => 'e', -justify => 'right');
+    Tk::grid( $l, -row => $row, -column => 0, -sticky => 'e', -pady => 5);
+    Tk::grid( $e, -row => $row++, -column => 1,-sticky => 'ew', -pady => 5);
+    $f->gridRowconfigure(1,-weight => 1);
+  }
+  elsif($_ =~ /^\$DIRPIPE2SOC/) {
+    ($a, $b, $dirpipe2soc) = split(/\s/);
+    chop($dirpipe2soc);
+    $txt = "Dir (\$DIRPIPE2SOC/[hmi,aia]) where Pipeline puts files for SOC:";
+    my $e = $f->Entry(qw/-relief sunken -width 40/);
+    $e->insert(0, $dirpipe2soc);
+    $e->configure(-font => 'arial 16 bold');
+    push(@configvars, $e);
+    my $l = $f->Label(-text => $txt, -anchor => 'e', -justify => 'right');
+    Tk::grid( $l, -row => $row, -column => 0, -sticky => 'e', -pady => 5);
+    Tk::grid( $e, -row => $row++, -column => 1,-sticky => 'ew', -pady => 5);
+    $f->gridRowconfigure(1,-weight => 1);
+  }
+  elsif($_ =~ /^\$DIRREJECT/) {
+    ($a, $b, $dirreject) = split(/\s/);
+    chop($dirreject);
+    $txt = "Directory (\$DIRREJECT/[hmi,aia]) where SOC puts rejected files:";
+    my $e = $f->Entry(qw/-relief sunken -width 40/);
+    $e->insert(0, $dirreject);
+    $e->configure(-font => 'arial 16 bold');
+    push(@configvars, $e);
+    my $l = $f->Label(-text => $txt, -anchor => 'e', -justify => 'right');
+    Tk::grid( $l, -row => $row, -column => 0, -sticky => 'e', -pady => 5);
+    Tk::grid( $e, -row => $row++, -column => 1,-sticky => 'ew', -pady => 5);
+    $f->gridRowconfigure(1,-weight => 1);
+  }
+  elsif($_ =~ /^\$TLMSEC/) {
+    ($a, $b, $tlmsec) = split(/\s/);
+    chop($tlmsec);
+    $txt = "Seconds (\$TLMSEC) to inspect (and create if sim mode) .tlm files:";
+    my $e = $f->Entry(qw/-relief sunken -width 40/);
+    $e->insert(0, $tlmsec);
+    $e->configure(-font => 'arial 16 bold');
+    push(@configvars, $e);
+    my $l = $f->Label(-text => $txt, -anchor => 'e', -justify => 'right');
+    Tk::grid( $l, -row => $row, -column => 0, -sticky => 'e', -pady => 5);
+    Tk::grid( $e, -row => $row++, -column => 1,-sticky => 'ew', -pady => 5);
+    $f->gridRowconfigure(1,-weight => 1);
+  }
+}
+close(CF);
+
+  $rf0 = $mw->Frame()->pack(-expand => '1', -fill => 'both', -side => 'top');
+  $rf0->Label(-text => "    Remove all files from the above dirs to start:", -padx=>16, -justify => 'left')->pack(-side => 'left');
+  $dir_init = "no";			#default is no
+  $rb0 = $rf0->Radiobutton(-text => "No", -variable => \$dir_init, 
+			-padx=>9, -value => "no")->pack(-side => 'left');
+  $rb0 = $rf0->Radiobutton(-text => "Yes", -variable => \$dir_init, 
+			-padx=>4, -value => "yes")->pack(-side => 'left');
+
+  $rf1 = $mw->Frame()->pack(-expand => '1', -fill => 'both', -side => 'top');
+  $rf1->Label(-text => "    Simulate DDS files in \$DIRDDS2SOC/[hmi,aia]:        ", 
+			-padx=>0, -justify => 'left')->pack(-side => 'left');
+  $dds_sim = "no";			#default is no
+  $rb1 = $rf1->Radiobutton(-text => "No", -variable => \$dds_sim, 
+			-padx=>9, -value => "no")->pack(-side => 'left');
+  $rb1 = $rf1->Radiobutton(-text => "Yes", -variable => \$dds_sim, 
+			-padx=>4, -value => "yes")->pack(-side => 'left');
+
+  $rf2 = $mw->Frame()->pack(-expand => '1', -fill => 'both', -side => 'top');
+  $rf2->Label(-text => "    If simulate, send .dsf file every n minutes:    ", 
+		-padx=>16, -justify => 'left')->pack(-side => 'left');
+  $dsf_interval = "60";			#send .dsf file every n minutes
+  $rb2 = $rf2->Radiobutton(-text => "60min", -variable => \$dsf_interval, 
+                         -value => "60")->pack(-side => 'left');
+  $rb2 = $rf2->Radiobutton(-text => "30min", -variable => \$dsf_interval, 
+			-padx=>4, -value => "30")->pack(-side => 'left');
+  $rb2 = $rf2->Radiobutton(-text => "10min", -variable => \$dsf_interval, 
+			-padx=>4, -value => "10")->pack(-side => 'left');
+  $rb2 = $rf2->Radiobutton(-text => "5min", -variable => \$dsf_interval, 
+			-padx=>4, -value => "5")->pack(-side => 'left');
+
+  $b = $mw->Button(
+	-text => 'Start Instances for HMI',
+	-background => 'lightblue',
+	-command => [\&Submit_b, 0],
+	);
+  #$b->pack(-side=> 'top', -pady => 30);
+  $b->pack(-side=> 'left', -pady => 20, -padx => 20);
+
+  $b = $mw->Button(
+	-text => 'Start Instances for AIA',
+	-background => 'lightyellow',
+	-command => [\&Submit_b, 1],
+	);
+  #$b->pack(-side=> 'top', -pady => 30);
+  $b->pack(-side=> 'left', -pady => 20, -padx => 20);
+
+  $b = $mw->Button(
+	-text => 'Exit',
+	-background => 'red',
+	-command => \&Exit_sub,
+	);
+  #$b->pack(-side=> 'top', -pady => 10);
+  $b->pack(-side=> 'left', -pady => 10);
+  $mw->bind('all', '<Control-c>' => \&Exit_sub);
+  #$mw->bind('all', '<Destroy>' => \&exit);#No, will exit incorrectly
+
+#When user hits the Start button we will display the file lists
+MainLoop;
+
+###########################################################################
+
+#The Submit button was pressed on the main window ($mw)
+#Save the current configuration in the file $CONFIGFILE.
+#Take down the Configuration page and bring up the three file list pages
+#for the DDS<-> SOC, Status & Statistics, and SOC<->Pipeline displays.
+#Start to simulate DDS file creation if enabled ($dds_sim = 'yes').
+sub Submit_b
+{
+  my ($XX) = @_;
+  $INSTANCE = $XX;		# make global 0=hmi, 1=aia
+  if($INSTANCE == 0) { 
+    $tname = "hmi";
+    $vaname = "VC02";
+    $vbname = "VC05";
+    #$bgcolor = "lightblue";
+    $bgcolor = "#ADD8E6";
+  }
+  else { 
+    $tname = "aia";
+    $vaname = "VC01";
+    $vbname = "VC04";
+    $bgcolor = "lightyellow";
+  }
+  $extva = "$tname"."_$vaname"."_$user"."_$ldate";
+  $log1 = "/usr/local/logs/soc/soc_$extva.log";
+  `touch $log1`;		#need to be there at start
+  $extvb = "$tname"."_$vbname"."_$user"."_$ldate";
+  $log2 = "/usr/local/logs/soc/soc_$extvb.log";
+  `touch $log2`;		#need to be there at start
+  $ext = "$tname"."_$user"."_$ldate"; 
+  $logfe = "/usr/local/logs/soc/soc_fe_$ext.log";
+  open(LOG, ">>$logfe") || die "Can't open $logfe: $!\n";
+  select(LOG); $| = 1; select(STDOUT);	#make unbuffered
+  print LOG "$ldate $logfe\n\n";
+  &Update_Config();		#update config file from main window vars
+  if($INSTANCE == 0) {
+    $DIRDDS2SOC = $DIRDDS2SOC."/hmi";
+    $DIRSOC2SOC = $DIRSOC2SOC."/hmi";
+    $DIRSOC2DDS = $DIRSOC2DDS."/hmi";
+    $DIRSOC2PIPE = $DIRSOC2PIPE."/hmi";
+    $DIRPIPE2SOC = $DIRPIPE2SOC."/hmi";
+    $DIRREJECT = $DIRREJECT."/hmi";
+    $DIRPIPEFE = $DIRPIPEFE."/hmi";
+  }
+  else {
+    $DIRDDS2SOC = $DIRDDS2SOC."/aia";
+    $DIRSOC2SOC = $DIRSOC2SOC."/aia";
+    $DIRSOC2DDS = $DIRSOC2DDS."/aia";
+    $DIRSOC2PIPE = $DIRSOC2PIPE."/aia";
+    $DIRPIPE2SOC = $DIRPIPE2SOC."/aia";
+    $DIRREJECT = $DIRREJECT."/aia";
+    $DIRPIPEFE = $DIRPIPEFE."/aia";
+  }
+  my $t = &labeltime;
+  $REPEAT = $tlmsec * 1000;	#millisec for update cycle
+  print LOG "$t Call to Submit_b \$dds_sim=$dds_sim, \$dsf_interval=$dsf_interval, \$dir_init=$dir_init\n";
+  if($dir_init eq 'yes') {	#rm files from the given dirs
+    print "Files being removed (can take awhile) ...\n";
+    print LOG "Files being removed...\n";
+    #$cmd = "/bin/rm -f $DIRDDS2SOC/HMI\*"; #N.G. can get arg list too long
+    $cmd = "/bin/rm -rf $DIRDDS2SOC";
+    print LOG "$cmd\n";
+    `$cmd`;
+    $cmd = "/bin/mkdir -p $DIRDDS2SOC";
+    print LOG "$cmd\n";
+    `$cmd`;
+    $cmd = "/bin/rm -rf $DIRSOC2SOC";
+    print LOG "$cmd\n";
+    `$cmd`;
+    $cmd = "/bin/mkdir -p $DIRSOC2SOC";
+    print LOG "$cmd\n";
+    `$cmd`;
+    $cmd = "/bin/rm -rf $DIRSOC2DDS";
+    print LOG "$cmd\n";
+    `$cmd`;
+    $cmd = "/bin/mkdir -p $DIRSOC2DDS";
+    print LOG "$cmd\n";
+    `$cmd`;
+    $cmd = "/bin/rm -rf $DIRSOC2PIPE";
+    print LOG "$cmd\n";
+    `$cmd`;
+    $cmd = "/bin/mkdir -p $DIRSOC2PIPE";
+    print LOG "$cmd\n";
+    `$cmd`;
+    $cmd = "/bin/rm -rf $DIRPIPE2SOC";
+    print LOG "$cmd\n";
+    `$cmd`;
+    $cmd = "/bin/mkdir -p $DIRPIPE2SOC";
+    print LOG "$cmd\n";
+    `$cmd`;
+    $cmd = "/bin/rm -rf $DIRREJECT";
+    print LOG "$cmd\n";
+    `$cmd`;
+    $cmd = "/bin/mkdir -p $DIRREJECT";
+    print LOG "$cmd\n";
+    `$cmd`;
+#Can't remove from IMAGEDIR with multiple processes. Will adjust itself...
+#    $cmd = "/bin/rm -rf $IMAGEDIR/*";
+#    print LOG "$cmd\n";
+#    `$cmd`;
+    print "File removal complete.\n";
+    print LOG "File removal complete.\n";
+    $tlmsechalf = $tlmsec/2;
+    print "Will attempt input processing in approx $tlmsechalf seconds\n";
+    print LOG "Will attempt input processing in approx $tlmsechalf seconds\n";
+  }
+  if($dds_sim eq 'yes') {	#simulate the DDS sending files to SOC
+    #@alltlm = ();
+    #$dsfmin = 1;
+    #$dsf_interval_cnt = $dsf_interval * (60/$tlmsec);
+    #&Sim_DDS();		#just wait for the 1st repeat update below
+
+      if($pid1 = fork) {
+        #This is the parent. The child's pid is in $pid1
+        print LOG "          \n";       #!!don't lose first few chars on line??
+        print LOG "fork soc_scp pid=$pid1 for simulation data.\n";
+      } elsif (defined $pid1) {     # $pid1 is zero here if defined.
+        $logscp = "/usr/local/logs/soc/soc_scp_"."$tname_$ext.log";
+        print "Starting soc_scp $tname $dsf_interval $tlmsec $DIRDDS2SOC $logscp\n";
+        print LOG "Starting soc_scp $tname $dsf_interval $tlmsec $DIRDDS2SOC $logscp\n";
+        exec "soc_scp $tname $dsf_interval $tlmsec $DIRDDS2SOC $logscp";
+      }  else {
+        #fork error
+        print "!!Abort: Can't fork: $!\n";
+        #exit(1);
+        &Exit_sub;
+      }
+
+  }
+  &Top_DDS2SOC();		#new top level for DDS to SOC display
+  &Top_STATUS();		#new top level for status display
+  &Top_SOC2PIPE();		#new top level for SOC to PIPE display
+  #first cancel if timer already running from a prev submit button.
+  $mw->afterCancel($repeat_id);
+  $repeat_id = $mw->repeat($REPEAT, \&all_update); #update periodically
+  if($dds_sim ne 'yes') {
+    #if data input via ftp then update the ls frequently
+    $repeat_id = $mw->repeat(8000, \&ls_update);  #every 8 seconds
+  }
+  &all_update();		#do the firs update immediately
+}
+
+###########################################################################
+
+#Show the file list for the DDS to SOC and SOC to DDS directory
+sub Top_DDS2SOC
+{
+  #make a new top level window
+  $tldds = $mw->Toplevel(-background =>"$bgcolor");
+  #$tldds->geometry("405x640+10+20");
+  $tldds->geometry("405x675+10+20");
+  $tldds->title("DDS <--> SOC");
+  #!!TBD make label for HMI or AIA 
+  $tldds->Label(-text => "DDS_SOC Program $THISHOST", -background =>"$bgcolor", 
+		-font => 'arial 18 bold')->pack(@pl1);
+  $tldds->Photo('image2', -file => 'GRAD_BLUE_LINE.gif');
+  $tldds->Label(-image => 'image2', -background =>"$bgcolor")->pack(@pl2);
+  $tldds->Label(-text => 'DDS to SOC', -background =>"$bgcolor", -font =>
+		 'arial 18 bold')->pack(@pl1);
+#  $tldds->Label(-text => '')->pack(@pl1);	#leave blank line
+#  $tldds->Label(-image => 'image2')->pack(@pl2);
+
+  #make listbox with the DDS to soc dir:
+  $tldds->Label(-text => "$DIRDDS2SOC", -background =>"$bgcolor", 
+		-font => 'arial 16 bold')->pack(@pl1);
+  $tldds->Label(-text => "File name & size in reverse time order: (Double click to view)", -background =>"$bgcolor")->pack(@pl1);
+
+  $lb = $tldds->Scrolled("Listbox", -scrollbars => "se", -width => 50,
+	-background =>'white', -selectmode => "single")->pack(-pady => 10);
+  $lb->bind('<Double-Button-1>' => [\&Dbl_click_dds, "normal"]);
+  &ls_update();			#update the list of files in $DIRDDS2SOC
+  $mw->withdraw();		#don't show main window any longer
+
+  #make listbox with the soc to dds dir:
+  $tldds->Label(-text => 'SOC to DDS', -background =>"$bgcolor", -font =>
+		 'arial 18 bold')->pack(@pl1);
+  $tldds->Label(-text => "$DIRSOC2DDS", -background =>"$bgcolor", 
+		-font => 'arial 16 bold')->pack(@pl1);
+  $lbsoc = $tldds->Scrolled("Listbox", -scrollbars => "se", -width => 50,
+                -background =>'white', -selectmode => "single")->pack();
+  $lbsoc->bind('<Double-Button-1>' => [\&Dbl_click_soc, "normal"]);
+  &ls_update_soc();                 #update the list of files in $DIRSOC2DDS
+  $btdds4 = $tldds->Button(
+	-text => 'Readme',
+	-background => 'grey',
+	-command => \&Readme_b,
+	);
+  $btdds4->pack(-side=> 'left', -padx => 10);
+#  $btdds2 = $tldds->Button(
+#	-text => 'Configure',
+#	-background => 'grey',
+#	-command => \&Showmain_b,
+#	);
+#  $btdds2->pack(-side=> 'left', -padx => 10);
+  $btdds5 = $tldds->Button(
+	-text => 'Display log',
+	-background => 'grey',
+	-command => \&Log_b,
+	);
+  $btdds5->pack(-side=> 'left', -padx => 10);
+  $btdds3 = $tldds->Button(
+	-text => 'Exit',
+	-background => 'red',
+	-command => \&Exit_sub,
+	);
+  $btdds3->pack(-side=> 'left', -padx => 10, -pady => 10);
+}
+
+###########################################################################
+
+#Show the file list for the SOC to PIPE and PIPE to SOC directories.
+#(i.e. files moved from $DIRSOC2SOC to $DIRSOC2PIPE).
+sub Top_SOC2PIPE
+{
+  #make a new top level window
+  $tls2s = $mw->Toplevel(-background =>"$bgcolor");
+  #$tls2s->geometry("405x675+430+20");
+  $tls2s->geometry("405x675+850+20");
+  $tls2s->title("SOC<->PIPE");
+  #!!TBD make label for HMI or AIA 
+  $tls2s->Label(-text => "DDS_SOC Program $THISHOST", -background =>"$bgcolor", 
+		-font => 'arial 18 bold')->pack(@pl1);
+  $tls2s->Photo('image2', -file => 'GRAD_BLUE_LINE.gif');
+  $tls2s->Label(-image => 'image2', -background =>"$bgcolor")->pack(@pl2);
+
+  #make listbox with the soc to pipeline dir:
+  $tls2s->Label(-text => 'SOC to PIPELINE', -background =>"$bgcolor", -font =>
+	 'arial 18 bold')->pack(-side=> 'top', -pady => 10);
+  $tls2s->Label(-text => "$DIRSOC2PIPE", -background =>"$bgcolor", 
+	-font => 'arial 16 bold')->pack(@pl1);
+  $lbs3s = $tls2s->Scrolled("Listbox", -scrollbars => "se", -width => 50,
+	-background =>'white', -selectmode => "single")->pack(-pady => 10);
+  $lbs3s->bind('<Double-Button-1>' => [\&Dbl_click_s2p, "normal"]);
+  &ls_update_s2p;		#update the list of files in $DIRSOC2PIPE
+
+  #make listbox with the pipeline to soc dir:
+  $tls2s->Label(-text => 'PIPELINE to SOC', -background =>"$bgcolor", -font =>
+		 'arial 18 bold')->pack(@pl1);
+  $tls2s->Label(-text => "$DIRPIPE2SOC", -background =>"$bgcolor", 
+		-font => 'arial 16 bold')->pack(@pl1);
+  $lbs2s = $tls2s->Scrolled("Listbox", -scrollbars => "se", -width => 50,
+		-background =>'white', -selectmode => "single")->pack();
+  $lbs2s->bind('<Double-Button-1>' => [\&Dbl_click_p2s, "normal"]);
+  &ls_update_p2s;		#update the list of files in $DIRPIPE2SOC
+
+  $mw->withdraw();		#don't show main window any longer
+  $bts2s4 = $tls2s->Button(
+	-text => 'Readme',
+	-background => 'grey',
+	-command => \&Readme_b,
+	);
+  $bts2s4->pack(-side=> 'left', -padx => 10);
+#  $bts2s2 = $tls2s->Button(
+#	-text => 'Configure',
+#	-background => 'grey',
+#	-command => \&Showmain_b,
+#	);
+#  $bts2s2->pack(-side=> 'left', -padx => 10);
+  $bts2s5 = $tls2s->Button(
+	-text => 'Display log',
+	-background => 'grey',
+	-command => \&Log_b,
+	);
+  $bts2s5->pack(-side=> 'left', -padx => 10);
+  $bts2s3 = $tls2s->Button(
+	-text => 'Exit',
+	-background => 'red',
+	-command => \&Exit_sub,
+	);
+  $bts2s3->pack(-side=> 'left', -padx => 10, -pady => 10);
+}
+
+###########################################################################
+
+#Show the status window
+sub Top_STATUS
+{
+  #make a new top level window
+  $tlstat = $mw->Toplevel(-background =>"$bgcolor");
+  #$tlstat->geometry("405x675+850+20");
+  #$tlstat->geometry("405x675+430+20");
+  $tlstat->geometry("405x850+430+20");
+  $tlstat->title("STATUS&STATS");
+  #!!TBD make label for HMI or AIA 
+  $tlstat->Label(-text => "DDS_SOC Program $THISHOST", -background =>"$bgcolor",
+                -font => 'arial 18 bold')->pack(@pl1);
+  $tlstat->Photo('image2', -file => 'GRAD_BLUE_LINE.gif');
+  $tlstat->Label(-image => 'image2', -background =>"$bgcolor")-> pack(@pl3);
+  $tlstat->Label(-text => 'Status & Stats', -background =>"$bgcolor", -font =>
+                 'arial 18 bold')->pack(@pl1);
+  $tlstat->Label(-text => '(events extracted from log files)', 
+		-background =>"$bgcolor",)-> pack(-side=> 'top', -pady => 0);
+  $tlstat->Label(-text => "$vaname", -background =>"$bgcolor", -font =>
+                 'arial 18 bold')->pack(@pl1);
+
+  #make listbox with the status:
+  #$tlstat->Label(-text => "status", -font => 'arial 16 bold')->pack(@pl1);
+  #$tlstat->Label(-text => '')->pack(@pl1);
+  $lbstat = $tlstat->Scrolled("Listbox", -scrollbars => "se", -width => 52,
+           -background =>'white', -selectmode => "single")->pack(-pady => 20);
+  $mw->afterCancel($log_id);
+  $log_id = $mw->repeat(3000, \&tail_update); #update every 3 secs
+
+  $mw->withdraw();		#don't show main window any longer
+#  $tlstat->Label(-text => 'Statistics', -background =>"$bgcolor", -font =>
+#                 'arial 18 bold')->pack(@pl1);
+#  $tlstat->Label(-text => 'TBD - figure out what stats we want', 
+#		-background =>"$bgcolor")-> pack(-side=> 'top', -pady => 5);
+  #
+  #make 2nd VC status listbox and statistics
+  $tlstat->Label(-text => "$vbname", -background =>"$bgcolor", -font =>
+                 'arial 18 bold')->pack(@pl1);
+  #make listbox with the status:
+  $lbstat2 = $tlstat->Scrolled("Listbox", -scrollbars => "se", -width => 52,
+           -background =>'white', -selectmode => "single")->pack(-pady => 20);
+  #make line with current file being processed info
+#  my $fz = $tlstat->Frame(-borderwidth => 0, -background =>"$bgcolor",)
+#		->pack(-fill => 'both');
+#  $fz->Label(-text => 'File:', -background =>"$bgcolor")->
+#		pack(-side=> 'left', -pady => 0);
+#  $efpz = $fz->Entry(qw/-relief sunken -width 50/)->
+#		pack(-side=> 'left', -pady => 0);
+#  $efpz->insert(0, "<none>");
+
+  my $ffx = $tlstat->Frame(-borderwidth => 0, -background =>"$bgcolor")
+		->pack(-fill => 'both');
+  $ffx->Label(-text => "$vaname:", -background =>"$bgcolor")->
+		pack(-side=> 'left', -pady => 0);
+  my $ffx2 = $tlstat->Frame(-borderwidth => 0, -background =>"$bgcolor")
+		->pack(-fill => 'both');
+  #make line with current file being processed info
+  $ffx2->Label(-text => 'File:', -background =>"$bgcolor")->
+		pack(-side=> 'left', -pady => 0);
+  $efp = $ffx2->Entry(qw/-relief sunken -width 50/)->
+		pack(-side=> 'left', -pady => 0);
+  $efp->insert(0, "<none>");
+
+  my $ff = $tlstat->Frame(-borderwidth => 0, -background =>"$bgcolor")
+		->pack(-fill => 'both');
+  $ff->Label(-text => 'Last fsn:', -background =>"$bgcolor")->
+		pack(-side=> 'left', -pady => 0);
+  $efsn = $ff->Entry(qw/-relief sunken -width 10/)->
+		pack(-side=> 'left', -pady => 0);
+  $efsn->insert(0, "<none>");
+  $ff->Label(-text => '# of VCDU:', -background =>"$bgcolor",)->
+		pack(-side=> 'left', -pady => 0);
+  $evcdu = $ff->Entry(qw/-relief sunken -width 10/)->
+		pack(-side=> 'left', -pady => 0);
+  $evcdu->insert(0, "<0>");
+  my $fff = $tlstat->Frame(-borderwidth => 0, -background =>"$bgcolor")
+		->pack(-fill => 'both');
+  $fff->Label(-text => 'Mbs:', -background =>"$bgcolor")->
+		pack(-side=> 'left', -pady => 0);
+  $embs = $fff->Entry(qw/-relief sunken -width 5/)->
+		pack(-side=> 'left', -pady => 0);
+  $embs->insert(0, "<0>");
+  $fff->Label(-text => 'In sec:', -background =>"$bgcolor")->
+		pack(-side=> 'left', -pady => 0);
+  $embssec = $fff->Entry(qw/-relief sunken -width 5/)->
+		pack(-side=> 'left', -pady => 0);
+  $embssec->insert(0, "<0>");
+  $fff->Label(-text => '#Re-xmit Pend:', -background =>"$bgcolor")->
+		pack(-side=> 'left', -pady => 0);
+  $embsrex = $fff->Entry(qw/-relief sunken -width 5/)->
+		pack(-side=> 'left', -pady => 0);
+  $embsrex->insert(0, "<0>");
+#  my $ffg = $tlstat->Frame(-borderwidth => 0, -background =>"$bgcolor")
+#		->pack(-fill => 'both');
+#  $ffg->Label(-text => 'Last Reject Reason:', -background =>"$bgcolor")->
+#		pack(-side=> 'left', -pady => 0);
+#  $embr = $ffg->Entry(qw/-relief sunken -width 60/)->
+#		pack(-side=> 'left', -pady => 0);
+#  $embr->insert(0, "FIRST_VCDU_SEQ reject");
+
+  my $ffy = $tlstat->Frame(-borderwidth => 0, -background =>"$bgcolor")
+		->pack(-fill => 'both');
+  $ffy->Label(-text => "\n$vbname:", -background =>"$bgcolor")->
+		pack(-side=> 'left', -pady => 0);
+  my $ffy2 = $tlstat->Frame(-borderwidth => 0, -background =>"$bgcolor")
+		->pack(-fill => 'both');
+  #make line with current file being processed info
+  $ffy2->Label(-text => 'File:', -background =>"$bgcolor")->
+		pack(-side=> 'left', -pady => 0);
+  $efpy = $ffy2->Entry(qw/-relief sunken -width 50/)->
+		pack(-side=> 'left', -pady => 0);
+  $efpy->insert(0, "<none>");
+
+  my $ffz = $tlstat->Frame(-borderwidth => 0, -background =>"$bgcolor")
+		->pack(-fill => 'both');
+  $ffz->Label(-text => 'Last fsn:', -background =>"$bgcolor")->
+		pack(-side=> 'left', -pady => 0);
+  $efsnz = $ffz->Entry(qw/-relief sunken -width 10/)->
+		pack(-side=> 'left', -pady => 0);
+  $efsnz->insert(0, "<none>");
+  $ffz->Label(-text => '# of VCDU:', -background =>"$bgcolor",)->
+		pack(-side=> 'left', -pady => 0);
+  $evcduz = $ffz->Entry(qw/-relief sunken -width 10/)->
+		pack(-side=> 'left', -pady => 0);
+  $evcduz->insert(0, "<0>");
+  my $fffz = $tlstat->Frame(-borderwidth => 0, -background =>"$bgcolor")
+		->pack(-fill => 'both');
+  $fffz->Label(-text => 'Mbs:', -background =>"$bgcolor")->
+		pack(-side=> 'left', -pady => 0);
+  $embsz = $fffz->Entry(qw/-relief sunken -width 5/)->
+		pack(-side=> 'left', -pady => 0);
+  $embsz->insert(0, "<0>");
+  $fffz->Label(-text => 'In sec:', -background =>"$bgcolor")->
+		pack(-side=> 'left', -pady => 0);
+  $embssecz = $fffz->Entry(qw/-relief sunken -width 5/)->
+		pack(-side=> 'left', -pady => 0);
+  $embssecz->insert(0, "<0>");
+  $fffz->Label(-text => '#Re-xmit Pend:', -background =>"$bgcolor")->
+		pack(-side=> 'left', -pady => 0);
+  $embsrexz = $fffz->Entry(qw/-relief sunken -width 5/)->
+		pack(-side=> 'left', -pady => 0);
+  $embsrexz->insert(0, "<0>");
+}
+###########################################################################
+
+sub Showmain_b
+{
+  $mw->afterCancel($repeat_id);
+  $mw->afterCancel($after_id);
+  $mw->afterCancel($log_id);
+  $mw->afterCancel($log_id_fe);
+  close(LOGTAIL);
+  close(LOGTAILFE);
+  $tailopened1 = 0;
+  $tailopened2 = 0;
+  $tldds->destroy();	#destroy top level listbox window
+  $tls2s->destroy();	#destroy top level listbox window
+  $tlstat->destroy();	#destroy top level listbox window
+  if(Exists($logf)) {
+    $logf->destroy();	#destroy any tail -f window
+  }
+  $mw->deiconify();
+  $mw->raise();
+}
+
+###########################################################################
+#Called every $REPEAT milliseconds (originally 60 secs) to update the
+#file list of files in the various directories.
+#Scheduled by Submit_b().
+sub all_update 
+{
+  if($dds_sim eq 'yes') {
+    #&Sim_DDS();		#simulate the DDS sending file(s) to SOC
+    &ls_update();       #show all the file in $DIRDDS2SOC
+  }
+  #Now simulate the other action half of $tlmsec seconds later
+  $after_id = $mw->after((($tlmsec*1000)/2), \&all_20_update);
+}
+
+#Called half of $tlmsec seconds after all_update().
+sub all_20_update
+{
+  &socget();		#check and mv files from $DIRDDS2SOC to $DIRSOC2SOC
+  &ls_update();		#show all the file in $DIRDDS2SOC
+  &ls_update_soc();	#show all the file in $DIRSOC2DDS
+  sleep(3);		#give ingest_tlm a chance to process
+  &ls_update_s2p();	#show all the file in $DIRSOC2PIPE
+  &ls_update_p2s();	#show all the file in $DIRPIPE2SOC 
+}
+
+###########################################################################
+
+#Called every $REPEAT milliseconds to update the
+#file list of files in DDS to SOC directory ($DIRDDS2SOC).
+#Called by all_update().
+sub ls_update
+{
+  $t = &labeldate;  #!!TEMP
+  #print "This is ls_update() $t\n"; #!!TEMP
+  if($pause) { return; }
+  @selected = $lb->curselection();
+  @dds2soc_ls = `ls -lt $DIRDDS2SOC`;
+  #@dds2soc_ls = `ls -l $DIRDDS2SOC`;
+  @filenames = ();
+  $lb->delete(0, 'end');
+  shift(@dds2soc_ls);			#elim "total" line in front of ls
+  foreach $x (@dds2soc_ls) {
+    if($x =~ /^l/) { next; }            #ignore links
+    ($a1,$a2,$a3,$a4,$size,$a6,$a7,$a8,$name) = split(/\s+/, $x);
+    chomp($name);
+    #$lb->insert('end', "$name    $size");
+    $lb->insert('end', "$name");
+    push(@filenames, $name);
+  }
+  foreach(@selected) {
+    $lb->selectionSet($_);
+  }
+  #$lb->see(@selected[0]);	#keep same 1st selection on display
+}
+
+#Called every $REPEAT milliseconds to update the
+#file list of files in the SOC to DDS directory ($DIRSOC2DDS).
+#Called by all_20_update().
+sub ls_update_soc
+{
+  if($pause_soc) { return; }
+  @selected_soc = $lbsoc->curselection();
+  @soc2dds_ls = `ls -lt $DIRSOC2DDS`;
+  #@soc2dds_ls = `ls -l $DIRSOC2DDS`;
+  @filenames_soc = ();
+  $lbsoc->delete(0, 'end');
+  shift(@soc2dds_ls);                   #elim "total" line in front of ls
+  foreach $x (@soc2dds_ls) {
+    if($x =~ /^l/) { next; }            #ignore links
+    ($a1,$a2,$a3,$a4,$size,$a6,$a7,$a8,$name) = split(/\s+/, $x);
+    chomp($name);
+    #$lbsoc->insert('end', "$name    $size");
+    $lbsoc->insert('end', "$name");
+    push(@filenames_soc, $name);
+  }
+  #$lbsoc->insert('end', "test insert only"); #!!TEMP
+  foreach(@selected_soc) {
+    $lbsoc->selectionSet($_);
+  }
+}
+
+#Called every $REPEAT milliseconds to update the
+#file list of files in the SOC to PIPE directory ($DIRSOC2PIPE).
+#Called by all_20_update().
+sub ls_update_s2p
+{
+  if($pause_s2p) { return; }
+  @selected_s2p = $lbs3s->curselection();
+  @soc2pipe_ls = `ls -lt $DIRSOC2PIPE`;
+  #@soc2pipe_ls = `ls -l $DIRSOC2PIPE`;
+  @filenames_s2p = ();
+  $lbs3s->delete(0, 'end');
+  shift(@soc2pipe_ls);			#elim "total" line in front of ls
+  foreach $x (@soc2pipe_ls) {
+    ($a1,$a2,$a3,$a4,$size,$a6,$a7,$a8,$name) = split(/\s+/, $x);
+    chomp($name);
+    $lbs3s->insert('end', "$name");
+    push(@filenames_s2p, $name);
+  }
+  foreach(@selected_s2p) {
+    $lbs3s->selectionSet($_);
+  }
+}
+
+#Called every $REPEAT milliseconds to update the
+#file list of files in the PIPE to SOC directory ($DIRPIPE2SOC).
+#Called by all_20_update().
+sub ls_update_p2s
+{
+  if($pause_p2s) { return; }
+  @selected_p2s = $lbs2s->curselection();
+  @pipe2soc_ls = `ls -lt $DIRPIPE2SOC`;
+  #@pipe2soc_ls = `ls -l $DIRPIPE2SOC`;
+  @filenames_p2s = ();
+  $lbs2s->delete(0, 'end');
+  shift(@pipe2soc_ls);			#elim "total" line in front of ls
+  foreach $x (@pipe2soc_ls) {
+    ($a1,$a2,$a3,$a4,$size,$a6,$a7,$a8,$name) = split(/\s+/, $x);
+    chomp($name);
+    $lbs2s->insert('end', "$name");
+    push(@filenames_p2s, $name);
+  }
+  foreach(@selected_p2s) {
+    $lbs2s->selectionSet($_);
+  }
+}
+
+sub Pause_b
+{
+  $btdds1->configure(-background => 'orange', -text => 'List paused - Resume',
+	-activebackground => 'orange',
+	-activeforeground => 'blue',
+	-command => \&Resume_b);
+  $pause = 1;
+}
+
+sub Resume_b
+{
+  $btdds1->configure(-background => 'grey', -text => 'List active - Pause',
+	-activebackground => 'grey',
+	-activeforeground => 'blue',
+	-command => \&Pause_b);
+  $pause = 0;
+  &ls_update();			#update the list of files in $DIRDDS2SOC
+}
+
+sub Pause_b_soc
+{
+  $btsoc1->configure(-background => 'orange', -text => 'List paused - Resume',
+	-activebackground => 'orange',
+	-activeforeground => 'blue',
+	-command => \&Resume_b_soc);
+  $pause_soc = 1;
+}
+
+sub Pause_b_s2s
+{
+  $bts2s1->configure(-background => 'orange', -text => 'List paused - Resume',
+	-activebackground => 'orange',
+	-activeforeground => 'blue',
+	-command => \&Resume_b_s2s);
+  $pause_s2s = 1;
+}
+
+sub Resume_b_soc
+{
+  $btsoc1->configure(-background => 'grey', -text => 'List active - Pause',
+	-activebackground => 'grey',
+	-activeforeground => 'blue',
+	-command => \&Pause_b_soc);
+  $pause_soc = 0;
+  &ls_update_soc();
+}
+
+sub Resume_b_s2s
+{
+  $bts2s1->configure(-background => 'grey', -text => 'List active - Pause',
+	-activebackground => 'grey',
+	-activeforeground => 'blue',
+	-command => \&Pause_b_s2s);
+  $pause_s2s = 0;
+  &ls_update_s2s();
+}
+
+#Show the selected file in a seperate window. There is a total of
+#10 seperate windows available for this feature.
+#Called from the bind call:
+#  $lb->bind('<Double-Button-1>' => [\&Dbl_click_dds, "normal"]);
+#or from the sub Show_qac_link():
+#  &Dbl_click_dds(NULL, $i);
+#
+sub Dbl_click_dds
+{
+  my ($z, $selected) = @_;
+  my $t = &labeltime;
+  #print "Dbl_click_dds called\n";
+  #print "\$z = $z  \$selected = $selected\n"; #!!TEMP
+  if($selected eq "normal") {		#this is a normal bind call
+    #$selected = $lb->curselection();	#old way
+    @selected = $lb->curselection();
+    $selected = shift(@selected);       # -selectmode is "single"
+  }
+  else {			#restore orig pause saved in Show_qac_link()
+    $pause = $svpause;
+  }
+  if(!defined $selected) { $file = "<none>"; $selected = -1; }
+  else { $file = $filenames[$selected]; }
+  #Note: the $selected may not pick up a file name after a screen update
+  if(!$file) { $file = "<none>"; }
+  print LOG "$t Dbl_click_dds() file selected is: $file\n";
+  $fullfile = "$DIRDDS2SOC/$file";
+  
+  $tlf = "\$tl$selected";	#get unique name for new window & button
+  $btf = "\$bttn$selected";
+  #$btg = "\$button$selected";
+  #stager the positions of different windows displayed
+  $rem = $selected % 10;
+  $xpos = 10 + ($rem * 40);
+  $ypos = 580 + ($rem * 40);
+  $x = "Exists($tlf)";
+  if(eval($x)) {
+    $x = "$tlf->destroy()";
+    eval($x);
+  }
+  $x1 = "$tlf = \$mw->Toplevel(); $tlf->geometry(\"500x300+$xpos+$ypos\")";
+  $x2 = "$tlf->title(\"D2S\")";
+  $x3 = "$tlf->Label(-text => \"$file:\", -font => 'arial 18 bold')->pack()";
+  $x4 = "$btf = $tlf->Button(
+        -text => 'Close',
+	-background => 'grey',
+        -command => sub {$tlf->destroy();},
+        )->pack()";
+
+  $x5 = "\$textw = $tlf->Scrolled(\"Text\")->pack()";
+  if($file eq "<none>") {
+    eval($x1);
+    eval($x2);
+    eval($x3);
+    eval($x4);
+    eval($x5);
+    $textw->insert('end', "<Stale Link (file may have been moved or removed)>");
+    $textw->configure(-state => 'disabled');
+  }
+  elsif($file =~ /.tlm$/) {
+    if($pid2 = fork) {
+      #This is the parent. The child's pid2 is in $pid2
+      print LOG "          \n";       #!!don't lose first few chars on line??
+      print LOG "fork tlmview pid=$pid2 for tlm data.\n";
+    } elsif (defined $pid2) {     # $pid2 is zero here if defined.
+      print "Starting tlmview $fullfile\n";
+      print LOG "Starting tlmview $fullfile\n";
+      exec "/home/production/cvs/jsoc/src/datacapture/tlmview $fullfile";
+    }  else {
+      #fork error
+      print "!!Abort: Can't fork: $!\n";
+      #exit(1);
+      &Exit_sub;
+    }
+#Noop out old way below
+#    #save for Show_od_dds() so can overlay this window
+#    $selected_dds = $selected;
+#    $pos = rindex($file, '.');
+#    $part = substr($file, 0, $pos);
+#    $qname = "$part".".qac";
+#    $textw->tagConfigure('link', -underline => 1);
+#    $textw->tagConfigure('linkA', -underline => 1);
+#
+#    #Setup Bindings to change cursor when over that line
+#    $textw->tagBind('link', "<Any-Enter>", 
+#                   sub { shift->configure(-cursor => 'hand2')});
+#    $textw->tagBind('link', "<Any-Leave>", 
+#                   sub { shift->configure(-cursor => 'xterm')});
+#    $textw->tagBind('linkA', "<Any-Enter>",
+#                   sub { shift->configure(-cursor => 'hand2')});
+#    $textw->tagBind('linkA', "<Any-Leave>",
+#                   sub { shift->configure(-cursor => 'xterm')});
+#
+#    $textw->tagBind('link', "<Button-1>", [\&Show_qac_link, $qname]);
+#    $textw->tagBind('linkA', "<Button-1>", [\&Show_od_dds, $file]);
+#    $textw->insert('end', "NOTE: This is a binary telemetry file.\n");
+#    $textw->insert('end', "Please see the corresponding .qac file:\n\n");
+#    $textw->insert('end', "$qname\n\n", "link");
+#    $textw->insert('end', "Or do a tlmview of the .tlm file:\n\n");
+#    $textw->insert('end', "tlmview $file\n\n", "linkA");
+  }
+  elsif(!-e $fullfile) {
+    eval($x1);
+    eval($x2);
+    eval($x3);
+    eval($x4);
+    eval($x5);
+    $textw->insert('end', "<Stale Link (file may have been moved or removed)>");
+    $textw->configure(-state => 'disabled');
+  }
+  else {
+    eval($x1);
+    eval($x2);
+    eval($x3);
+    eval($x4);
+    eval($x5);
+    @content = `cat $fullfile`;
+    $textw->insert('end', " @content");
+    $textw->configure(-state => 'disabled');
+  }
+}
+
+#Show the selected file in a seperate window. There is a total of
+#10 seperate windows available for this feature.
+#Called from the bind call:
+#  $lbsoc->bind('<Double-Button-1>' => [\&Dbl_click_soc, "normal"]);
+#or from the sub Show_qac_link_soc():
+#  &Dbl_click_soc(NULL, $i);
+#
+sub Dbl_click_soc
+{
+  my ($z, $selected) = @_;
+  my $t = &labeltime;
+  #print "Dbl_click_soc called\n";
+  #print "\$z = $z  \$selected = $selected\n"; #!!TEMP
+  if($selected eq "normal") {           #this is a normal bind call
+    #$selected = $lbsoc->curselection(); #old way
+    @selected = $lbsoc->curselection();
+    $selected = shift(@selected);       # -selectmode is "single"
+  }
+  else {                        #restore orig pause saved in Show_qac_link()
+    $pause_soc = $svpause_soc;
+  }
+  if(!defined $selected) { $file = "<none>"; $selected = -1; }
+  else { $file = $filenames_soc[$selected]; }
+  #Note: the $selected may not pick up a file name after a screen update
+  if(!$file) { $file = "<none>"; }
+  print LOG "$t Dbl_click_soc() file selected is: $file\n";
+  $fullfile = "$DIRSOC2DDS/$file";
+
+  $tlfsoc = "\$tlsoc$selected"; #get unique name for new window & button
+  $btfsoc = "\$bttnsoc$selected";
+  #stager the positions of different windows displayed
+  $rem = $selected % 10;
+  $xpos = 640 + ($rem * 40);
+  $ypos = 580 + ($rem * 40);
+  $x = "Exists($tlfsoc)";
+  if(eval($x)) {
+    $x = "$tlfsoc->destroy()";
+    eval($x);
+  }
+  $x1 = "$tlfsoc = \$mw->Toplevel(); $tlfsoc->geometry(\"500x300+$xpos+$ypos\")";
+  $x2 = "$tlfsoc->title(\"S2D\")";
+  $x3 = "$tlfsoc->Label(-text => \"$file:\", -font => 'arial 18 bold')->pack()";
+  $x4 = "$btfsoc = $tlfsoc->Button(
+        -text => 'Close',
+        -background => 'grey',
+        -command => sub {$tlfsoc->destroy();},
+        )->pack()";
+  $x5 = "\$textwsoc = $tlfsoc->Scrolled(\"Text\")->pack()";
+  if($file eq "<none>") {
+    eval($x1);
+    eval($x2);
+    eval($x3);
+    eval($x4);
+    eval($x5);
+    $textwsoc->insert('end', "<Stale Link (file may have been moved or removed)>");
+    $textwsoc->configure(-state => 'disabled');
+  }
+  elsif($file =~ /.tlm$/) {
+    if($pid3 = fork) {
+      #This is the parent. The child's pid3 is in $pid3
+      print LOG "          \n";       #!!don't lose first few chars on line??
+      print LOG "fork tlmview pid=$pid3 for tlm data.\n";
+    } elsif (defined $pid3) {     # $pid3 is zero here if defined.
+      print "Starting tlmview $fullfile\n";
+      print LOG "Starting tlmview $fullfile\n";
+      exec "/home/production/cvs/jsoc/src/datacapture/tlmview $fullfile";
+    }  else {
+      #fork error
+      print "!!Abort: Can't fork: $!\n";
+      #exit(1);
+      &Exit_sub;
+    }
+  }
+  elsif(!-e $fullfile) {
+    eval($x1);
+    eval($x2);
+    eval($x3);
+    eval($x4);
+    eval($x5);
+    $textwsoc->insert('end', "<Stale Link (file may have been moved or removed)>");
+    $textwsoc->configure(-state => 'disabled');
+  }
+  else {
+    eval($x1);
+    eval($x2);
+    eval($x3);
+    eval($x4);
+    eval($x5);
+    #print LOG "Going to cat: $fullfile\n"; #!!TEMP
+    @content = `cat $fullfile`;
+    $textwsoc->insert('end', " @content");
+    $textwsoc->configure(-state => 'disabled');
+  }
+}
+
+#Show the selected file in a seperate window. There is a total of
+#10 seperate windows available for this feature.
+#Called from the bind call:
+#  $lbs3s->bind('<Double-Button-1>' => [\&Dbl_click_s2p, "normal"]);
+#or from the sub Show_qac_link_s2p():
+#  &Dbl_click_s2p(NULL, $i);
+#
+sub Dbl_click_s2p
+{
+  my ($z, $selected) = @_;
+  my $t = &labeltime;
+  #print "Dbl_click_s2p called\n";
+  #print "\$z = $z  \$selected = $selected\n"; #!!TEMP
+  if($selected eq "normal") {		#this is a normal bind call
+    #$selected = $lbs3s->curselection(); #old way
+    @selected = $lbs3s->curselection();
+    $selected = shift(@selected);       # -selectmode is "single"
+  }
+  else {			#restore orig pause saved in Show_qac_link()
+    $pause_s2p = $svpause_s2p;
+  }
+  if(!defined $selected) { $file = "<none>"; $selected = -1; }
+  else { $file = $filenames_s2p[$selected]; }
+  #Note: the $selected may not pick up a file name after a screen update
+  if(!$file) { $file = "<none>"; }
+  print LOG "$t Dbl_click_s2p() file selected is: $file\n";
+  $fullfile = "$DIRSOC2PIPE/$file";
+  
+  $tlfs2p = "\$tls2p$selected";	#get unique name for new window & button
+  $btfs2p = "\$bttns2p$selected";
+  #stager the positions of different windows displayed
+  $rem = $selected % 10;
+  $xpos = 380 + ($rem * 40);
+  $ypos = 530 + ($rem * 40);
+  $x = "Exists($tlfs2p)";
+  if(eval($x)) {
+    $x = "$tlfs2p->destroy()";
+    eval($x);
+  }
+  $x1 = "$tlfs2p = \$mw->Toplevel(); $tlfs2p->geometry(\"500x300+$xpos+$ypos\")";
+  $x2 = "$tlfs2p->title(\"S2P\")";
+  $x3 = "$tlfs2p->Label(-text => \"$file:\", -font => 'arial 18 bold')->pack()";
+  $x4 = "$btfs2p = $tlfs2p->Button(
+        -text => 'Close',
+	-background => 'grey',
+        -command => sub {$tlfs2p->destroy();},
+        )->pack()";
+  $x5 = "\$textws2p = $tlfs2p->Scrolled(\"Text\")->pack()";
+  if($file eq "<none>") {
+    eval($x1);
+    eval($x2);
+    eval($x3);
+    eval($x4);
+    eval($x5);
+    $textws2p->insert('end', "<Stale Link (file may have been moved or removed)>");
+    $textws2p->configure(-state => 'disabled');
+  }
+  elsif($file =~ /.tlm$/) {
+    if($pid4 = fork) {
+      #This is the parent. The child's pid4 is in $pid4
+      print LOG "          \n";       #!!don't lose first few chars on line??
+      print LOG "fork tlmview pid=$pid4 for tlm data.\n";
+    } elsif (defined $pid4) {     # $pid4 is zero here if defined.
+      print "Starting tlmview $fullfile\n";
+      print LOG "Starting tlmview $fullfile\n";
+      exec "/home/production/cvs/jsoc/src/datacapture/tlmview $fullfile";
+    }  else {
+      #fork error
+      print "!!Abort: Can't fork: $!\n";
+      #exit(1);
+      &Exit_sub;
+    }
+  }
+  elsif(!-e $fullfile) {
+    eval($x1);
+    eval($x2);
+    eval($x3);
+    eval($x4);
+    eval($x5);
+    $textws2p->insert('end', "<Stale Link (file may have been moved or removed)>");
+    $textws2p->configure(-state => 'disabled');
+  }
+  else {
+    eval($x1);
+    eval($x2);
+    eval($x3);
+    eval($x4);
+    eval($x5);
+    print LOG "Going to cat: $fullfile\n"; #!!TEMP
+    @content = `cat $fullfile`;
+    $textws2p->insert('end', " @content");
+    $textws2p->configure(-state => 'disabled');
+  }
+}
+
+#Show the selected file in a seperate window. There is a total of
+#10 seperate windows available for this feature.
+#Called from the bind call:
+#  $lbs2s->bind('<Double-Button-1>' => [\&Dbl_click_p2s, "normal"]);
+#  &Dbl_click_p2s(NULL, $i);
+#
+sub Dbl_click_p2s
+{
+  my ($z, $selected) = @_;
+  my $t = &labeltime;
+  #print "Dbl_click_p2s called\n";
+  #print "\$z = $z  \$selected = $selected\n"; #!!TEMP
+  if($selected eq "normal") {		#this is a normal bind call
+    #$selected = $lbs2s->curselection(); #old way
+    @selected = $lbs2s->curselection();
+    $selected = shift(@selected);       # -selectmode is "single"
+  }
+  else {			#restore orig pause saved in Show_qac_link()
+    $pause_p2s = $svpause_p2s;
+  }
+  if(!defined $selected) { $file = "<none>"; $selected = -1; }
+  else { $file = $filenames_p2s[$selected]; }
+  #Note: the $selected may not pick up a file name after a screen update
+  if(!$file) { $file = "<none>"; }
+  print LOG "$t Dbl_click_p2s() file selected is: $file\n";
+  $fullfile = "$DIRPIPE2SOC/$file";
+  
+  $tlfp2s = "\$tlp2s$selected";	#get unique name for new window & button
+  $btfp2s = "\$bttnp2s$selected";
+  #stager the positions of different windows displayed
+  $rem = $selected % 10;
+  $xpos = 430 + ($rem * 40);
+  $ypos = 580 + ($rem * 40);
+  $x = "Exists($tlfp2s)";
+  if(eval($x)) {
+    $x = "$tlfp2s->destroy()";
+    eval($x);
+  }
+  #$x = "$tlfp2s = \$mw->Toplevel(); $tlfp2s->geometry(\"400x300+$xpos+$ypos\")";
+  $x = "$tlfp2s = \$mw->Toplevel(); $tlfp2s->geometry(\"500x300+$xpos+$ypos\")";
+  eval($x);
+  $x = "$tlfp2s->title(\"P2S\")";
+  eval($x);
+  #$x = "$tlfp2s->Label(-text => \"Contents of $file:\", -font => 'arial 18 bold')->pack()";
+  $x = "$tlfp2s->Label(-text => \"$file:\", -font => 'arial 18 bold')->pack()";
+  eval($x);
+  $x = "$btfp2s = $tlfp2s->Button(
+        -text => 'Close',
+	-background => 'grey',
+        -command => sub {$tlfp2s->destroy();},
+        )->pack()";
+  eval($x);
+  $x = "\$textwp2s = $tlfp2s->Scrolled(\"Text\")->pack()";
+  eval($x);
+  if($file eq "<none>") {
+    $textwp2s->insert('end', "<Stale Link (file may have been moved or removed)>");
+  }
+  elsif(!-e $fullfile) {
+      $textwp2s->insert('end', "<Stale Link (file may have been moved or removed)>");
+  }
+  else {
+    print LOG "Going to cat: $fullfile\n"; #!!TEMP
+    @content = `cat $fullfile`;
+    $textwp2s->insert('end', " @content");
+  }
+  $textwp2s->configure(-state => 'disabled');
+}
+
+sub Show_qac_link
+{
+  my ($z, $qfile) = @_;
+  #print "This will show the qac link $qfile\n";
+  my($i) = 0;
+  $svpause = $pause;		#disable ls_update until show this qac file
+  $pause = 1;
+  foreach(@filenames) {
+    if($_ eq $qfile) { last; }
+    $i++;
+  }
+  &Dbl_click_dds(NULL, $i);
+}
+
+sub Show_qac_link_soc
+{
+  my ($z, $qfile) = @_;
+  #print "This will show the qac link $qfile\n";
+  my($i) = 0;
+  $svpause_soc = $pause_soc;    #disable ls_update_soc until show this qac file
+  $pause_soc = 1;
+  foreach(@filenames_soc) {
+    if($_ eq $qfile) { last; }
+    $i++;
+  }
+  &Dbl_click_soc(NULL, $i);
+}
+
+sub Show_qac_link_s2s
+{
+  my ($z, $qfile) = @_;
+  #print "This will show the qac link $qfile\n";
+  my($i) = 0;
+  $svpause_s2s = $pause_s2s;	#disable ls_update_s2s until show this qac file
+  $pause_s2s = 1;
+  foreach(@filenames_s2s) {
+    if($_ eq $qfile) { last; }
+    $i++;
+  }
+  &Dbl_click_s2s(NULL, $i);
+}
+
+sub Show_qac_link_s2p
+{
+  my ($z, $qfile) = @_;
+  #print "This will show the qac link $qfile\n";
+  my($i) = 0;
+  $svpause_s2p = $pause_s2p;	#disable ls_update_s2p until show this qac file
+  $pause_s2p = 1;
+  foreach(@filenames_s2p) {
+    if($_ eq $qfile) { last; }
+    $i++;
+  }
+  &Dbl_click_s2p(NULL, $i);
+}
+
+#Called from Dbl_click_dds when a tlm file is requested to be shown as an 
+#octal dump. The od will occur in the same window that the request was
+#just made from.
+sub Show_od_dds
+{
+  my ($z, $ofile) = @_;
+  my $oxfile = "$DIRDDS2SOC/$ofile";
+  #print "This will show the od link $oxfile\n";
+  my $t = &labeltime;
+  print LOG "$t octal dump selected for: $ofile\n";
+  $tlf = "\$tl$selected_dds"; #get unique name for new window & button
+  $btf = "\$bttn$selected_dds";
+  #stager the positions of different windows displayed
+  $rem = $selected_dds % 10;
+  $xpos = 10 + ($rem * 40);
+  $ypos = 580 + ($rem * 40);
+  $x = "Exists($tlf)";
+  if(eval($x)) {
+    $x = "$tlf->destroy()";
+    eval($x);
+  }
+  $x = "$tlf = \$mw->Toplevel(); $tlf->geometry(\"470x300+$xpos+$ypos\")";
+  eval($x);
+  $x = "$tlf->title(\"D2S\")";
+  eval($x);
+  $x = "$tlf->Label(-text => \"od -tx1 of\n$ofile:\", -font => 'arial 18 bold')->pack()";
+  eval($x);
+  $x = "$btf = $tlf->Button(
+        -text => 'Close',
+        -background => 'grey',
+        -command => sub {$tlf->destroy();},
+        )->pack()";
+  eval($x);
+  $x = "\$textw = $tlf->Scrolled(\"Text\")->pack()";
+  eval($x);
+  if(!-e $oxfile) {
+    $textw->insert('end', "<Stale Link (file may have been moved or removed)>");
+  }
+  else {
+    @odtlm = `head -n20 $oxfile | od -tx1`;
+    $textw->insert('end', " @odtlm");
+  }
+}
+
+#Called from Dbl_click_soc when a tlm file is requested to be shown as an
+#octal dump. The od will occur in the same window that the request was
+#just made from.
+sub Show_od_soc
+{
+  my ($z, $ofile) = @_;
+  my $oxfile = "$DIRSOC2DDS/$ofile";
+  print "This will show the od link $oxfile\n";
+  my $t = &labeltime;
+  print LOG "$t octal dump selected for: $ofile\n";
+  $tlfsoc = "\$tlsoc$selected_soc"; #get unique name for new window & button
+  $btfsoc = "\$bttnsoc$selected_soc";
+  #stager the positions of different windows displayed
+  $rem = $selected_soc % 10;
+  $xpos = 640 + ($rem * 40);
+  $ypos = 580 + ($rem * 40);
+  $x = "Exists($tlfsoc)";
+  if(eval($x)) {
+    $x = "$tlfsoc->destroy()";
+    eval($x);
+  }
+  $x = "$tlfsoc = \$mw->Toplevel(); $tlfsoc->geometry(\"470x300+$xpos+$ypos\")";
+  eval($x);
+  $x = "$tlfsoc->title(\"S2D\")";
+  eval($x);
+  $x = "$tlfsoc->Label(-text => \"od -tx1 of\n$ofile:\", -font => 'arial 18 bold')->pack()";
+  eval($x);
+  $x = "$btfsoc = $tlfsoc->Button(
+        -text => 'Close',
+        -background => 'grey',
+        -command => sub {$tlfsoc->destroy();},
+        )->pack()";
+  eval($x);
+  $x = "\$textwsoc = $tlfsoc->Scrolled(\"Text\")->pack()";
+  eval($x);
+  if(!-e $oxfile) {
+    $textwsoc->insert('end', "<Stale Link (file may have been moved or removed)>");
+  }
+  else {
+    @odtlm = `head -n20 $oxfile | od -tx1`;
+    $textwsoc->insert('end', " @odtlm");
+  }
+}
+
+#Called from Dbl_click_s2s when a tlm file is requested to be shown as an 
+#octal dump. The od will occur in the same window that the request was
+#just made from.
+sub Show_od_s2s
+{
+  my ($z, $ofile) = @_;
+  my $oxfile = "$DIRSOC2SOC/$ofile";
+  #print "This will show the od link $oxfile\n";
+  my $t = &labeltime;
+  print LOG "$t octal dump selected for: $ofile\n";
+  $tlfs2s = "\$tls2s$selected_s2s"; #get unique name for new window & button
+  $btfs2s = "\$bttns2s$selected_s2s";
+  #stager the positions of different windows displayed
+  $rem = $selected_s2s % 10;
+  $xpos = 430 + ($rem * 40);
+  $ypos = 580 + ($rem * 40);
+  $x = "Exists($tlfs2s)";
+  if(eval($x)) {
+    $x = "$tlfs2s->destroy()";
+    eval($x);
+  }
+  $x = "$tlfs2s = \$mw->Toplevel(); $tlfs2s->geometry(\"470x300+$xpos+$ypos\")";
+  eval($x);
+  $x = "$tlfs2s->title(\"S2S\")";
+  eval($x);
+  $x = "$tlfs2s->Label(-text => \"od -tx1 of\n$ofile:\", -font => 'arial 18 bold')->pack()";
+  eval($x);
+  $x = "$btfs2s = $tlfs2s->Button(
+        -text => 'Close',
+        -background => 'grey',
+        -command => sub {$tlfs2s->destroy();},
+        )->pack()";
+  eval($x);
+  $x = "\$textws2s = $tlfs2s->Scrolled(\"Text\")->pack()";
+  eval($x);
+  if(!-e $oxfile) {
+    $textws2s->insert('end', "<Stale Link (file may have been moved or removed)>");
+  }
+  else {
+    @odtlm = `head -n20 $oxfile | od -tx1`;
+    $textws2s->insert('end', " @odtlm");
+  }
+}
+
+#Called from Dbl_click_s2p when a tlm file is requested to be shown as an 
+#octal dump. The od will occur in the same window that the request was
+#just made from.
+sub Show_od_s2p
+{
+  my ($z, $ofile) = @_;
+  my $oxfile = "$DIRSOC2PIPE/$ofile";
+  #print "This will show the od link $oxfile\n";
+  my $t = &labeltime;
+  print LOG "$t octal dump selected for: $ofile\n";
+  $tlfs2p = "\$tls2p$selected_s2p"; #get unique name for new window & button
+  $btfs2p = "\$bttns2p$selected_s2p";
+  #stager the positions of different windows displayed
+  $rem = $selected_s2p % 10;
+  $xpos = 430 + ($rem * 40);
+  $ypos = 580 + ($rem * 40);
+  $x = "Exists($tlfs2p)";
+  if(eval($x)) {
+    $x = "$tlfs2p->destroy()";
+    eval($x);
+  }
+  $x = "$tlfs2p = \$mw->Toplevel(); $tlfs2p->geometry(\"470x300+$xpos+$ypos\")";
+  eval($x);
+  $x = "$tlfs2p->title(\"S2P\")";
+  eval($x);
+  $x = "$tlfs2p->Label(-text => \"od -tx1 of\n$ofile:\", -font => 'arial 18 bold')->pack()";
+  eval($x);
+  $x = "$btfs2p = $tlfs2p->Button(
+        -text => 'Close',
+        -background => 'grey',
+        -command => sub {$tlfs2p->destroy();},
+        )->pack()";
+  eval($x);
+  $x = "\$textws2p = $tlfs2p->Scrolled(\"Text\")->pack()";
+  eval($x);
+  if(!-e $oxfile) {
+    $textws2p->insert('end', "<Stale Link (file may have been moved or removed)>");
+  }
+  else {
+    @odtlm = `head -n20 $oxfile | od -tx1`;
+    $textws2p->insert('end', " @odtlm");
+  }
+}
+
+#Update the configuration file with the current config variables.
+#The variables are found in @configvars in the fixed order of the config file.
+sub Update_Config
+{
+  $e = shift(@configvars);
+  push(@configvars, $e);	#put back on list for next submit button hit
+  $DIRDDS2SOC = $e->get();
+  $dirdds = $DIRDDS2SOC;
+  print LOG "  DIRDDS2SOC = $DIRDDS2SOC\n";
+  $e = shift(@configvars);
+  push(@configvars, $e);
+  $DIRSOC2SOC = $e->get();
+  $dirmv = $DIRSOC2SOC;
+  print LOG "  DIRSOC2SOC = $DIRSOC2SOC\n";
+  $e = shift(@configvars);
+  push(@configvars, $e);
+  $DIRSOC2DDS = $e->get();
+  $dirsoc = $DIRSOC2DDS;
+  print LOG "  DIRSOC2DDS = $DIRSOC2DDS\n";
+  $e = shift(@configvars);
+  push(@configvars, $e);
+  $DIRSOC2PIPE = $e->get();
+  $dirpipe = $DIRSOC2PIPE;
+  print LOG "  DIRSOC2PIPE = $DIRSOC2PIPE\n";
+  $e = shift(@configvars);
+  push(@configvars, $e);
+  $DIRPIPE2SOC = $e->get();
+  $dirpipe2soc = $DIRPIPE2SOC;
+  print LOG "  DIRPIPE2SOC = $DIRPIPE2SOC\n";
+  $e = shift(@configvars);
+  push(@configvars, $e);
+  $DIRREJECT = $e->get();
+  $dirreject = $DIRREJECT;
+  print LOG "  DIRREJECT = $DIRREJECT\n";
+  $e = shift(@configvars);
+  push(@configvars, $e);
+  $TLMSEC = $e->get();
+  $tlmsec = $TLMSEC;
+  print LOG "  TLMSEC = $TLMSEC\n";
+  #Now update the config file with the current variable values
+  open(CF, ">$CONFIGFILE") || die "Can't open $CONFIGFILE: $!\n";
+  print CF "#Configuration Variables for DDS to SOC processing.\n";
+  print CF "#The order of variabes in this file must be:\n";
+  print CF "# \$DIRDDS2SOC\n";
+  print CF "# \$DIRSOC2SOC\n";
+  print CF "# \$DIRSOC2DDS\n";
+  print CF "# \$DIRSOC2PIPE\n";
+  print CF "# \$DIRPIPE2SOC\n";
+  print CF "# \$DIRREJECT\n";
+  print CF "# \$TLMSEC\n";
+  print CF "#\n";
+  print CF "#directory where DDS puts files for SOC\n";
+  print CF "\$DIRDDS2SOC = $DIRDDS2SOC;\n";
+  print CF "#Directory where processed file are move to\n";
+  print CF "\$DIRSOC2SOC = $DIRSOC2SOC;\n";
+  print CF "#Directory where SOC puts files for DDS\n";
+  print CF "\$DIRSOC2DDS = $DIRSOC2DDS;\n";
+  print CF "#Directory where SOC puts files for Pipeline\n";
+  print CF "\$DIRSOC2PIPE = $DIRSOC2PIPE;\n";
+  print CF "#Directory where Pipeline puts files for SOC\n";
+  print CF "\$DIRPIPE2SOC = $DIRPIPE2SOC;\n";
+  print CF "#Directory where SOC puts rejected files\n";
+  print CF "\$DIRREJECT = $DIRREJECT;\n";
+  print CF "#Seconds to inspect (and create if sim mode) .tlm files:\n";
+  print CF "\$TLMSEC = $TLMSEC;\n";
+  close(CF);
+}
+
+sub Readme_b
+{
+  my $t = &labeltime;
+  print LOG "$t Readme_b() called\n";
+  if(Exists($rme)) {
+    $rme->destroy();
+  }
+  $rme = $mw->Toplevel(); $rme->geometry("600x620+200+200");
+  $rme->title("Readme");
+  $rme->Photo('imagerme', -file => 'dds_soc_bold_0.5.gif');
+  $rme->Label(-image => 'imagerme')->pack(@pl);
+  @ftypes = `cat $FILETYPES`;
+  $rmelb = $rme->Scrolled("Listbox", -scrollbars => "e", -width => 0,
+                -background =>'white', -font => 'andale_mono 12')->pack();
+  foreach $line (@ftypes) {
+    chomp($line);
+    $rmelb->insert('end', "$line");
+  }
+  $btclose = $rme->Button(
+        -text => 'Close',
+	-background => 'grey',
+        -command => sub {$rme->destroy();})->pack();
+  $btclose->pack(-side=> 'left', -padx => 10);
+  $btprint = $rme->Button(
+        -text => 'Print text',
+	-background => 'grey',
+        -command => sub {`lpr $FILETYPES`;})->pack();
+  $btprint->pack(-side=> 'left', -padx => 10);
+  $bttlm = $rme->Button(
+        -text => 'Show tlm format',
+	-background => 'grey',
+	-command => \&Showtlm_b)->pack();
+  $bttlm->pack(-side=> 'left', -padx => 10);
+}
+
+sub Showtlm_b
+{
+  my $t = &labeltime;
+  print LOG "$t Showtlm_b() called\n";
+  if(Exists($sht)) {
+    $sht->destroy();
+  }
+  $sht = $mw->Toplevel(); $sht->geometry("1130x825+100+100");
+  $sht->title("Showtlm");
+  $sht->Photo('imagetlm', -file => 'SDO_HSB_CCSDS_Data_Structures.gif');
+  $sht->Label(-image => 'imagetlm')->pack(@pl);
+  $shtclose = $sht->Button(
+        -text => 'Close',
+	-background => 'grey',
+        -command => sub {$sht->destroy();})->pack();
+  $shtclose->pack(-side=> 'left', -padx => 10);
+  $shttlm = $sht->Button(
+        -text => 'Science Pkt Fmt Table',
+	-background => 'grey',
+	-command => \&Showpktfmt_b)->pack();
+  $shttlm->pack(-side=> 'left', -padx => 10);
+}
+
+sub Showpktfmt_b 
+{
+  my $t = &labeltime;
+  print LOG "$t Showpktfmt_b() called\n";
+  if(Exists($fmt)) {
+    $fmt->destroy();
+  }
+  $fmt = $mw->Toplevel(); $fmt->geometry("500x600+350+400");
+  $fmt->title("Showpktfmt");
+  $fmt->Photo('imagepktfmt', -file => 'sci_data_pkt_fmt.gif');
+  $fmt->Label(-image => 'imagepktfmt')->pack(@pl);
+  $fmtclose = $fmt->Button(
+        -text => 'Close',
+	-background => 'grey',
+        -command => sub {$fmt->destroy();})->pack();
+  $fmtclose->pack(-side=> 'left', -padx => 10);
+}
+
+#!!!TBD Elim!!!!!!!!!!!!!1
+#Called if user requests to simulate the DDS sending files to SOC.
+#(i.e. $dds_sim eq 'yes')
+#Called by all_update() which runs every $REPEAT milliseconds.
+sub Sim_DDS 
+{
+  $time = &labelddd;
+  #$tlmfile = "HMI_".$time.".tlm";
+  $namefile = &tlmfilename;
+  $tlmfile = $namefile.".tlm";
+  #First check if any tlm file given as ARGV[0] at startup
+  if($INTLM) {
+    `cp $INTLM $DIRDDS2SOC/$tlmfile`;
+    $md5res = `/usr/bin/md5sum -b $INTLM`;
+    ($md5tlm, $b) = split(/\s/, $md5res);
+  }
+  else {
+    #Put a canned .tlm file in the dds2soc dir with the current time stamp
+    if($flipflop == 0) {
+      `cp $GENTLM1 $DIRDDS2SOC/$tlmfile`;
+       $md5res = `/usr/bin/md5sum -b $GENTLM1`;
+       ($md5tlm, $b) = split(/\s/, $md5res);
+       $flipflop++;
+    } else {
+      `cp $GENTLM2 $DIRDDS2SOC/$tlmfile`;
+       $md5res = `/usr/bin/md5sum -b $GENTLM2`;
+       ($md5tlm, $b) = split(/\s/, $md5res);
+       $flipflop = 0;
+    }    
+  }
+
+#  (my $dev,my $ino,my $mode,my $nlink,my $uid,my $gid,my $rdev,my $size, 
+#   my $atime,my $mtime,my $ctime,my $blksize,my $blocks) = 
+#   stat "$DIRDDS2SOC/$tlmfile";
+  $size = (-s "$DIRDDS2SOC/$tlmfile");
+  push(@alltlm, $tlmfile);
+  #Now make a corresponding .qac file for the .tlm file
+  #A .qac file looks like:
+  # TLM_FILE_NAME=      Name of corresponding TLM file.                    
+  #                     Will be zeroes if only ERR file exists. 
+  # TLM_FILE_SIZE=      Size in bytes of associated .tlm file. Under normal
+  #                     conditions this number should be constant for a    
+  #                     given VCID. 0 if only ERR file exists.             
+  # TLM_FILE_FINGER_PRINT= MD5 calculation on the TLM file. 0 if only ERR 
+  #                     file exists.                                       
+  # TLM_CRC_FAILURES=   Number of VCDUs that have CRC errors in the TLM file.
+  #			Nominally zero.
+  # QAC_FILE_SIZE=      Size in bytes of this .qac file  
+  # ERR_FILE_NAME=	Name of ERR file. Will be zeros if no ERR file exists.
+  # ERR_FILE_SIZE=	Size in bytes of ERR file. 0 if none.
+  # ERR_FILE_FINGER_PRINT= MD5 calculation on the ERR file. 
+  # TOTAL_TLM_VCDU=	Total number of valid VCDUs in TLM file 
+  #			(Not theoretical)
+  # TOTAL_MISSING_VCDU= Total number of missing VCDUs in TLM file. This number 
+  #			is based on gaps in the 24 bit VCDU sequence number.
+  # TOTAL_MISSING_IM_PDU= Total number of missing IM_PDUs in TLM file. This 
+  #			number is based on gaps in the 42 bit IM_PDU 
+  #			sequence number.
+  # TOTAL_ERROR_VCDU=	Total number of ERR VCDUs in ERR file. 
+  # TOTAL_GAPS=		Total gaps in file. This number is based on gaps in 
+  #			the IM_PDU sequence number.
+  # FIRST_IM_PDU_SEQ=	42 bit IM_PDU Sequence number of first VCDU in TLM 
+  #			file (Not theoretical)
+  # FIRST_VCDU_SEQ=	24 bit VCDU Sequence number of first VCDU in TLM file 
+  # FIRST_IM_PDU_TIME=	Converted UTC Time of first packet in this file (from 
+  #			packet secondary hdr) in format yyyy_ddd_hh_mm_ss.sss 
+  # LAST_IM_PDU_SEQ=	42 bit IM_PDU Sequence number of last VCDU in TLM file
+  # LAST_VCDU_SEQ=	24 bit VCDU Sequence number of last VCDU in TLM file
+  # LAST_IM_PDU_TIME= 	Time of last packet in this file
+  # GAP_START_SEQ=  	42 bit IM_PDU Sequence number of last VCDU before gap 
+  # GAP_START_TIME= 	Converted UTC Time of last packet before gap (from 
+  #			packet secondary hdr) in format yyyy_ddd_hh_mm_ss.sss
+  # DISCONTINUITY=	Flag to indicate a discontinuity occurred in the 42 bit 
+  #			IM_PDU counter, but not the 24 bit VCDU counter.
+  #			Argument = VC Seq gap - IM_PDU_SEQ gap 
+  # VCDU_ERROR_CNT= 	Number of error VCDUs received during gap
+  # GAP_STOP_SEQ=  	42 bit IM_PDU Sequence number of first VCDU after gap.
+  # GAP_STOP_TIME= 	Converted UTC Time of first packet after gap (from 
+  #			packet secondary hdr) in format yyyy_ddd_hh_mm_ss.sss
+  # EOF_MARKER= 	Constant and recognizable ASCII string. C5C5 
+  # 
+  #NOTE:  Gap info is repeated as necessary for each gap in the VCDU sequence 
+  #number. Each set of gap info is preceede by a blank line, as is EOF_MARKER
+  #
+  $txtfile = "$DIRDDS2SOC/".$namefile.".qac";
+  #`cp $DIRDDS2SOC/tmp/stub.txt $DIRDDS2SOC/$txtfile`;
+  open(TXT, ">$txtfile") || die "Can't open $txtfile: $!\n";
+  print TXT "TLM_FILE_NAME=$tlmfile\n";
+  print TXT "TLM_FILE_SIZE=$size\n";
+  #print TXT "TLM_FILE_SIZE=666\n"; 	#!!!TEMP for test
+  print TXT "TLM_FILE_FINGER_PRINT=$md5tlm\n";
+  print TXT "TLM_CRC_FAILURES=000000000\n";
+  print TXT "QAC_FILE_SIZE=$QAC_SIZE\n";
+  print TXT "ERR_FILE_NAME=00000000000000000000000000000000000000000000000\n";
+  print TXT "ERR_FILE_SIZE=000000000\n";
+  print TXT "ERR_FILE_FINGER_PRINT=00000000000000000000000000000000\n";
+  print TXT "TOTAL_TLM_VCDU=000029360\n";	#!!TEMP fix values below
+  print TXT "TOTAL_MISSING_VCDU=000000002\n";
+  print TXT "TOTAL_MISSING_IM_PDU=000000002\n";
+  print TXT "TOTAL_ERROR_VCDU=000000000\n";
+  print TXT "TOTAL_GAPS=000000002\n";
+  print TXT "FIRST_IM_PDU_SEQ=0000bdf129f\n";
+  print TXT "FIRST_VCDU_SEQ=df129f\n";
+  print TXT "FIRST_IM_PDU_TIME=2005_116_11_59_31.000\n";
+  print TXT "LAST_IM_PDU_SEQ=0000bdf2f4b\n";
+  print TXT "LAST_VCDU_SEQ=df2f4b\n";
+  print TXT "LAST_IM_PDU_TIME=2005_116_12_00_31.000\n";
+  print TXT "\nGAP_START_SEQ=0000bdf16f0\n";
+  print TXT "GAP_START_TIME=2005_116_11_59_32.000\n";
+  print TXT "DISCONTINUITY=000000000\n";
+  print TXT "VCDU_ERROR_CNT=00000000\n";
+  print TXT "GAP_STOP_SEQ=0000bdf16f2\n";
+  print TXT "GAP_STOP_TIME=2005_116_11_59_32.004\n";
+  print TXT "\nGAP_START_SEQ=0000bdf1ada\n";
+  print TXT "GAP_START_TIME=2005_116_11_59_34.000\n";
+  print TXT "DISCONTINUITY=000000000\n";
+  print TXT "VCDU_ERROR_CNT=00000000\n";
+  print TXT "GAP_STOP_SEQ=0000bdf1adc\n";
+  print TXT "GAP_STOP_TIME=2005_116_11_59_34.004\n";
+  print TXT "\nEOF_MARKER=C5C5\n";
+  close(TXT);
+  if($dsfmin++ >= $dsf_interval_cnt) {
+    $dsfmin = 1;
+    $dsffile = "$DIRDDS2SOC/"."HMI_".$time.".dsf";
+    open(DSF, ">$dsffile") || die "Can't open $dsffile: $!\n";
+    while($x = shift(@alltlm)) {
+      #Status values are:
+      # 1    |Active         |Delivery Attempted, Not acknowledged nor      |
+      #                      !rexmit request by SOC                         |
+      # 2    |Expunged       |Removed from active list, Not acknowledged,   |
+      #      |               |Only issued once                              |
+      print DSF "$x $size 1\n";
+      #print DSF "$x $size 2\n";
+      #print DSF "$x $size 3\n"; #!!TEMP illegal value
+    }
+    close(DSF);
+    @alltlm = ();
+  }
+}
+
+#This simulates the SOC getting files from the $DIRDDS2SOC directory.
+#If the files are good they are moved from $DIRDDS2SOC to $DIRSOC2SOC.
+#This is called by all_20_update. The files last seen
+#by ls_update are in @filenames.
+sub socget {
+  $t = &labeltime;
+  print LOG "$t Call to socget()\n";
+  #Get all the .qac files in the current $DIRDDS2SOC dir
+  @qacfiles = grep(/\.qac/, @filenames);
+  #Get all the .dsf files in the current $DIRDDS2SOC dir
+  @dsffiles = grep(/\.dsf/, @filenames);
+  #
+  #Determine if .qac file ok. See above for what a .qac file looks like.
+  #And determine if the given TLM file exists
+  while($file = shift(@qacfiles)) {
+    print LOG "  $scount: $file.\n";
+    $scount++;
+    if(!open(TXT, "$DIRDDS2SOC/$file")) {
+      print LOG "\n*  **ERROR: Can't open $DIRDDS2SOC/$file\n";
+      next;
+    }
+    $tlmfile = 0; $size = 0; $rexmit = 0; $eofmarker = 0;
+    $gapcntr = 0; $totalgaps = 0;
+    @gaps = ();
+    while(<TXT>) {
+      if(/^TLM_FILE_NAME/) {
+        ($x, $tlmfile) = split(/=/);
+        chomp($tlmfile);
+      }
+      elsif(/^TLM_FILE_SIZE/) {
+        ($x, $size) = split(/=/);
+        chomp($size);
+      }
+      elsif(/^TLM_FILE_FINGER_PRINT/) {
+        ($x, $tlmfingerprint) = split(/=/);
+        chomp($tlmfingerprint);
+      }
+      elsif(/^TLM_CRC_FAILURES/) {
+        ($x, $tlmcrcfailures) = split(/=/);
+        chomp($tlmcrcfailures);
+      }
+      elsif(/^QAC_FILE_SIZE/) {
+        ($x, $qacsize) = split(/=/);
+        chomp($qacsize);
+      }
+      elsif(/^ERR_FILE_NAME/) {
+        ($x, $errfilename) = split(/=/);
+        chomp($errfilename);
+      }
+      elsif(/^ERR_FILE_SIZE/) {
+        ($x, $errfilesize) = split(/=/);
+        chomp($errfilesize);
+      }
+      elsif(/^ERR_FILE_FINGER_PRINT/) {
+        ($x, $errfingerprint) = split(/=/);
+        chomp($errfingerprint);
+      }
+      elsif(/^TOTAL_TLM_VCDU/) {
+        ($x, $totaltlmvcdu) = split(/=/);
+        chomp($totaltlmvcdu);
+      }
+      elsif(/^TOTAL_MISSING_VCDU/) {
+        ($x, $totalmissingvcdu) = split(/=/);
+        chomp($totalmissingvcdu);
+      }
+      elsif(/^TOTAL_MISSING_IM_PDU/) {
+        ($x, $totalmissingimpdu) = split(/=/);
+        chomp($totalmissingimpdu);
+      }
+      elsif(/^TOTAL_ERROR_VCDU/) {
+        ($x, $totalerrorvcdu) = split(/=/);
+        chomp($totalerrorvcdu);
+      }
+      elsif(/^TOTAL_GAPS/) {
+        ($x, $totalgaps) = split(/=/);
+        chomp($totalgaps);
+        $gapcntr = $totalgaps;
+      }
+      elsif(/^FIRST_IM_PDU_SEQ/) {
+        ($x, $firstimpduseq) = split(/=/);
+        chomp($firstimpduseq);
+      }
+      elsif(/^FIRST_VCDU_SEQ/) {
+        ($x, $firstvcduseq) = split(/=/);
+        chomp($firstvcduseq);
+      }
+      elsif(/^FIRST_IM_PDU_TIME/) {
+        ($x, $firstimpdutime) = split(/=/);
+        chomp($firstimpdutime);
+      }
+      elsif(/^LAST_IM_PDU_SEQ/) {
+        ($x, $lastimpduseq) = split(/=/);
+        chomp($lastimpduseq);
+      }
+      elsif(/^LAST_VCDU_SEQ/) {
+        ($x, $lastvcduseq) = split(/=/);
+        chomp($lastvcduseq);
+      }
+      elsif(/^LAST_IM_PDU_TIME/) {
+        ($x, $lastimpdutime) = split(/=/);
+        chomp($lastimpdutime);
+      }
+      # the gap fields are repeated $gapcntr times 
+      elsif(/^GAP_START_SEQ/) {
+        ($x, $gapstartseq) = split(/=/);
+        chomp($gapstartseq);
+        push(@gaps, $gapstartseq);
+        $gapcntr--;
+      }
+      elsif(/^GAP_START_TIME/) {
+        ($x, $gapstarttime) = split(/=/);
+        chomp($gapstarttime);
+        push(@gaps, $gapstarttime);
+      }
+      elsif(/^DISCONTINUITY/) {
+        ($x, $discontinuity) = split(/=/);
+        chomp($discontinuity);
+        push(@gaps, $discontinuity);
+      }
+      elsif(/^VCDU_ERROR_CNT/) {
+        ($x, $vcduerrorcnt) = split(/=/);
+        chomp($vcduerrorcnt);
+        push(@gaps, $vcduerrorcnt);
+      }
+      elsif(/^GAP_STOP_SEQ/) {
+        ($x, $gapstopseq) = split(/=/);
+        chomp($gapstopseq);
+        push(@gaps, $gapstopseq);
+      }
+      elsif(/^GAP_STOP_TIME/) {
+        ($x, $gapstoptime) = split(/=/);
+        chomp($gapstoptime);
+        push(@gaps, $gapstoptime);
+      }
+      elsif(/^EOF_MARKER/) {
+        ($x, $eofmarker) = split(/=/);
+        chomp($eofmarker);
+      }
+    }
+    close(TXT);
+    #ck size of .qac file and give warning msg only, if wrong
+    $f = "$DIRDDS2SOC/$file";
+    $getsize = (-s $f);
+    if($qacsize != $getsize) {
+      print LOG "*  **WARNING: Bad qac size $file\n";
+      print LOG "*  **WARNING: qac size expect=$qacsize, got=$getsize\n";
+    }
+    if($errfilename ne "00000000000000000000000000000000000000000000000") {
+      print LOG "*  **WARNING: .err file received\n";
+      $f = "$DIRDDS2SOC/$errfilename";
+      $getsize = (-s $f);
+      if(!$getsize) {
+        print LOG "\n*  **WARNING: Missing $errfilename\n";
+        #new 28Jun2007 - request rexmit
+        $rexmitname = $errfilename;
+        $size = $errfilesize;
+        $rexmit = 1;
+      }
+      else {
+        if($errfilesize != $getsize) {
+          print LOG "*  **WARNING: Bad errfile size $errfilename\n";
+          print LOG "*  **WARNING: size expect=$errfilesize, got=$getsize\n";
+        }
+        $cmd = "mv $DIRDDS2SOC/$errfilename $DIRREJECT";#reject the .err file
+        print LOG "$cmd\n";
+        `$cmd`;
+      }
+    }
+    if($gapcntr) {			#info for all gaps not in .qac file
+      print LOG "\n*  **Info for $totalgaps gaps not in .qac file. Proceed anyway.\n";
+      #proceed anyway and try to process the .tlm file
+    }
+    $gaplines = $totalgaps * 6;		#6 lines of info per gap
+    if($gaplines != ($#gaps + 1)) {
+      print LOG "\n*  **Info incomplete for $totalgaps gaps not in .qac file. Proceed anyway.\n";
+      #proceed anyway and try to process the .tlm file
+    }
+    if(!$tlmfile) {
+      print LOG "\n*  **ERROR: No TLM_FILE_NAME= in $file\n";
+      print LOG "  The .tlm file will not be processed.\n";
+      $cmd = "mv $DIRDDS2SOC/$file $DIRREJECT";	#reject the .qac file
+      print LOG "$cmd\n";
+      `$cmd`;
+      #there might be a .tlm file anyway so move it too
+      $pos = rindex($file, '.');
+      $part = substr($file, 0, $pos);
+      $tlmfile = "$part".".tlm";
+      $cmd = "mv $DIRDDS2SOC/$tlmfile $DIRREJECT";
+      print LOG "$cmd\n";
+      `$cmd`;
+      next;
+    }
+    else {
+      $ftlm = "$DIRDDS2SOC/$tlmfile";
+      $getsize = (-s $ftlm);
+      if(!$getsize) {
+        print LOG "\n*  **ERROR: Missing $tlmfile\n";
+        print LOG "  Retransmission request will be made.\n";
+        $cmd = "mv $DIRDDS2SOC/$file $DIRREJECT";	#reject the .qac file
+        print LOG "$cmd\n";
+        `$cmd`;
+        $rexmitname = $tlmfile;
+        $rexmit = 1;
+      }
+      else {
+        print LOG "  Found: $tlmfile\n";
+        $md5res = `/usr/bin/md5sum -b $ftlm`;
+        ($md5tlm, $b) = split(/\s/, $md5res);
+      }
+    }
+    if(!$size) {
+      print LOG "*  **ERROR: No TLM_FILE_SIZE= in $file\n";
+      print LOG "  Retransmission request will be made.\n";
+      $cmd = "mv $DIRDDS2SOC/$file $DIRREJECT";	#reject the .qac file
+      print LOG "$cmd\n";
+      `$cmd`;
+      $cmd = "mv $DIRDDS2SOC/$tlmfile $DIRREJECT";	#and the .tlm file
+      print LOG "$cmd\n";
+      `$cmd`;
+      $rexmitname = $tlmfile;
+      $rexmit = 1;
+    }
+    else {
+      if($size != $getsize) {
+        print LOG "*  **ERROR: Incorrect tlm size $tlmfile\n";
+        print LOG "  Retransmission request will be made.\n";
+        $cmd = "mv $DIRDDS2SOC/$file $DIRREJECT";	#reject the .qac file
+        print LOG "$cmd\n";
+        `$cmd`;
+        $cmd = "mv $DIRDDS2SOC/$tlmfile $DIRREJECT"; #and the .tlm file
+        print LOG "$cmd\n";
+        `$cmd`;
+        $rexmitname = $tlmfile;
+        $rexmit = 1;
+      }
+    }
+    if($tlmfingerprint ne $md5tlm) {
+      print LOG "*  **ERROR: TLM_FILE_FINGER_PRINT not verified\n";
+      print LOG "  Retransmission request will be made.\n";
+      $cmd = "mv $DIRDDS2SOC/$file $DIRREJECT";	#reject the .qac file
+      print LOG "$cmd\n";
+      `$cmd`;
+      $cmd = "mv $DIRDDS2SOC/$tlmfile $DIRREJECT";	#and the .tlm file
+      print LOG "$cmd\n";
+      `$cmd`;
+      $rexmitname = $tlmfile;
+      $rexmit = 1;
+    }
+    if($eofmarker ne "C5C5") {
+      print LOG "*  **ERROR: No EOF_MARKER tag in $file\n";
+      print LOG "  Retransmission request will be made.\n";
+      $cmd = "mv $DIRDDS2SOC/$file $DIRREJECT";	#reject the .qac file
+      print LOG "$cmd\n";
+      `$cmd`;
+      $cmd = "mv $DIRDDS2SOC/$tlmfile $DIRREJECT";	#and the .tlm file
+      print LOG "$cmd\n";
+      `$cmd`;
+      $rexmitname = $tlmfile;
+      $rexmit = 1;
+    }
+    if($rexmit) {
+      if(!grep(/$rexmitname/, @xmitpend)) {         #no dups
+        push(@rexmitfiles, "$rexmitname $size");
+      }
+    }
+    else {
+      push(@tlmreceived, $tlmfile);
+      $qacx = 0;
+      if(grep(/$tlmfile/, @xmitpend)) {		#this is a rexmission
+        $qacx = 1;
+        @tmppend = ();
+        while($x = shift(@xmitpend)) {		#remove from list
+          if($x ne $tlmfile) {
+            push(@tmppend, $x);
+          }
+        }
+        @xmitpend = @tmppend;
+      }
+      #!!!TBD mv of files to $DIRSOC2PIPE will be done by ingest_tlm
+      #$cmd = "cp -p $ftlm $DIRSOC2PIPE";	#cp .tlm to pipe dir
+      #print LOG "  $cmd\n";
+      #`$cmd`;
+      $cmd = "mv $ftlm $DIRSOC2SOC";		#move the good .tlm file
+      print LOG "  $cmd\n";
+      `$cmd`;
+      #$cmd = "cp -p $DIRDDS2SOC/$file $DIRSOC2PIPE"; #cp .qac to pipe dir
+      #print LOG "  $cmd\n";
+      #`$cmd`;
+      if($qacx) {
+        $filex = $file."x";			   #make this a .qacx file 
+        $cmd = "mv $DIRDDS2SOC/$file $DIRSOC2SOC/$filex";
+      } else {
+        $cmd = "mv $DIRDDS2SOC/$file $DIRSOC2SOC"; #and the good .qac file
+      }
+      print LOG "  $cmd\n";
+      `$cmd`;
+    }
+    if($pid0 == -1) {
+      &Sched_ingest;		#schedule the ingest processing
+    }
+  }
+  #Now process any .dsf files and send a proper .dsf file to the pipeline
+  #backend system and reply to the DDS with an .asf file.
+  while($dsffile = shift(@dsffiles)) {
+    print LOG "*  RECEIVED: $dsffile:\n";
+    $f = "$DIRDDS2SOC/$dsffile";
+    @x = `cat $f`;
+    print LOG " @x\n";
+    `/bin/rm $f`;
+    $dsfpipefile = "$DIRSOC2PIPE/$dsffile";
+    if(!open(DSFPIPE, ">$dsfpipefile")) {
+      print LOG "*  **ERROR: Can't open $dsfpipefile\n";
+      print LOG "  Skip attempt to make a .dsf file for the pipeline for this cycle.\n";
+      next;                     #skip creating a .asf
+    }
+    #send back and acknowledgement status file (.asf)
+    $pos = rindex($dsffile, ".dsf");
+    $asf = substr($dsffile, 0, $pos);
+    $asf = $asf.".asf";
+    $asffile = "$DIRSOC2DDS/$asf";
+    if(!open(ASF, ">$asffile")) {
+      print LOG "*  **ERROR: Can't open $asffile\n";
+      print LOG "  Skip attempt to make a .asf file for this cycle.\n";
+      #sleep(30);
+      next;                     #skip creating a .asf
+    }
+    #print ASF "asffile = $asffile\n"; #!!TEMP
+    #ASF status values are:
+    # 2    |Retransmit     |SOC requested retransmit                      |
+    # 3    |Acknowledge    |SOC acknowledges receipt of this TLM file.    |
+    while($line = shift(@x)) {
+      ($lfile, $lsize, $lstat) = split(/\s/, $line);
+      #print LOG "  $lfile   $lsize   $lstat\n";      #!!TEMP
+      if($lstat == 1) {
+        if(grep(/$lfile/, @tlmreceived)) {      #send back positive ack
+          print ASF "$lfile $lsize 3\n";
+          print DSFPIPE "$lfile $lsize 1\n";	#and good status for pipe .dsf
+        }
+        else {
+          if(!grep(/$lfile/, @rexmitfiles)) {	#we never saw this file
+            print ASF "$lfile $lsize 2\n";      #request rexmit
+            push(@xmitpend, $lfile);		#remember we requested this
+          }
+        }
+      }
+      elsif($lstat == 2) {
+        print LOG "***DDS expunged $lfile which was never acknowledged\n";
+      }
+      else {
+        print LOG "**ERROR: Illegal status = $lstat in .dsf file\n";
+      }
+    }
+    #now include all the rexmit requests
+    while($line = shift(@rexmitfiles)) {
+      print ASF "$line 2\n";
+      print LOG "  Rexmit request for: $line\n"; #!!TEMP
+      push(@xmitpend, $line);			#remember we requested this
+    }
+    close(ASF);
+    close(DSFPIPE);
+    print LOG "  SENT: $asf:\n";
+    @cat = `cat $asffile`;
+    print LOG " @cat\n";
+    @tlmreceived = ();
+    @rexmitfiles = ();
+  }
+}
+
+#Fork off the ingest processing if not done already
+sub Sched_ingest {
+  #Now schedule the lev0 processing
+  #!!TBD detect if already running?
+  if($pid0 == -1) {
+    if($pid0 = fork) {
+      #This is the parent. The child's pid is in $pid0
+      print LOG "          \n"; 	#!!don't lose first few chars on line??
+      print LOG "fork ingest processing pid=$pid0 for $tlmfile.\n";
+    } elsif (defined $pid0) {     # $pid0 is zero here if defined. run ingest
+      if($INSTANCE == 0) {	  #hmi
+        print "Starting ingest_tlm -pVC02 $DIRSOC2SOC $DIRSOC2PIPE $DIRPIPE2SOC $log1\n";
+        print "Hit \"Display log\" to view\n";
+        print LOG "Starting ingest_tlm -pVC02 $DIRSOC2SOC $DIRSOC2PIPE $DIRPIPE2SOC $log1\n";
+        exec "ingest_tlm -pVC02 $DIRSOC2SOC $DIRSOC2PIPE $DIRPIPE2SOC $log1";
+      }
+      else {
+        print "Starting ingest_tlm -pVC01 $DIRSOC2SOC $DIRSOC2PIPE $DIRPIPE2SOC $log1\n";
+        print "Hit \"Display log\" to view\n";
+        print LOG "Starting ingest_tlm -pVC01 $DIRSOC2SOC $DIRSOC2PIPE $DIRPIPE2SOC $log1\n";
+        exec "ingest_tlm -pVC01 $DIRSOC2SOC $DIRSOC2PIPE $DIRPIPE2SOC $log1";
+      }
+    }  else {
+      #fork error
+      print "!!Abort: Can't fork: $!\n";
+      #exit(1);
+      &Exit_sub;
+    }
+  }
+  if($pid00 == -1) {
+    if($pid00 = fork) {
+      #This is the parent. The child's pid is in $pid00
+      print LOG "          \n"; 	#!!don't lose first few chars on line??
+      print LOG "fork ingest processing pid=$pid00 for $tlmfile.\n";
+    } elsif (defined $pid00) {     # $pid00 is zero here if defined. run ingest
+      if($INSTANCE == 0) {	  #hmi
+        print "Starting ingest_tlm -pVC05 $DIRSOC2SOC $DIRSOC2PIPE $DIRPIPE2SOC $log2\n";
+        print LOG "Starting ingest_tlm -pVC05 $DIRSOC2SOC $DIRSOC2PIPE $DIRPIPE2SOC $log2\n";
+        exec "ingest_tlm -pVC05 $DIRSOC2SOC $DIRSOC2PIPE $DIRPIPE2SOC $log2";
+      }
+      else {
+        print "Starting ingest_tlm -pVC04 $DIRSOC2SOC $DIRSOC2PIPE $DIRPIPE2SOC $log2\n";
+        print LOG "Starting ingest_tlm -pVC04 $DIRSOC2SOC $DIRSOC2PIPE $DIRPIPE2SOC $log2\n";
+        exec "ingest_tlm -pVC04 $DIRSOC2SOC $DIRSOC2PIPE $DIRPIPE2SOC $log2";
+      }
+    }  else {
+      #fork error
+      print "!!Abort: Can't fork: $!\n";
+      #exit(1);
+      &Exit_sub;
+    }
+  }
+  if($pid000 == -1) {
+    if($pid000 = fork) {
+      #This is the parent. The child's pid is in $pid000
+      print LOG "          \n"; 	#!!don't lose first few chars on line??
+      print LOG "fork ingest processing pid=$pid000 for $tlmfile.\n";
+    } elsif (defined $pid000) {   # $pid000 is zero here if defined.
+        print "Starting soc_pipe_scp $DIRSOC2PIPE $DIRPIPEFE $FEHOST $tlmsec\n";
+        print LOG "Starting soc_pipe_scp $DIRSOC2PIPE $DIRPIPEFE $FEHOST $tlmsec\n";
+        exec "soc_pipe_scp $DIRSOC2PIPE $DIRPIPEFE $FEHOST $tlmsec";
+    }  else {
+      #fork error
+      print "!!Abort: Can't fork: $!\n";
+      #exit(1);
+      &Exit_sub;
+    }
+  }
+}
+
+#Called from the Display log button on the top level pages.
+#Will do a tail -f of the $logfe file (front end gui log).
+sub Log_b {
+  if(Exists($logf)) {
+    $logf->destroy();
+    close(LOGTAILFE);
+  }
+  $mw->afterCancel($log_id_fe);
+  $log_id_fe = $mw->repeat(2000, \&tail_update_fe); #update every 2 secs
+  $logf = $mw->Toplevel();
+  $logf->geometry("590x400+25+500");
+  $logf->title("GUI Log Tail");
+  $logf->Label(-text => "tail -f of $logfe", -font => 'arial 18 bold')->pack();
+  $logf->Button(
+        -text => 'Close',
+        -background => 'grey',
+        -command => sub {$logf->destroy();},
+        )->pack();
+  $textlog = $logf->Scrolled("Text")->pack();
+  open(LOGTAILFE, $logfe) || die "Can't open $logfe: $!\n";
+  while(<LOGTAILFE>) {
+    $textlog->insert('end', $_);
+  }
+  $textlog->see('end');
+}
+
+#Called every 2 sec after the Log_b rte is called after the Display Log
+#button is hit.
+sub tail_update_fe {
+  seek(LOGTAILFE, 0, 1);
+  $newline = 0;
+  while(<LOGTAILFE>) {
+    if(Exists($logf)) { $textlog->insert('end', $_); }
+    $newline = 1;
+#!!!TBD ck if these in new fe log???
+    if(/^tlm file is/) {
+      ($a, $b, $c, $tfile) = split(/\s/);
+      $efp->delete(0, 'end');
+      $efp->insert(0, "$tfile");
+    }
+    elsif(/^Rate tlm/) {
+      ($a, $b, $tbytes, $d, $e, $tsec) = split(/\s/);
+      $tlm_mbps = (($tbytes*8)/$tsec)/1048576;
+      $embs->delete(0, 'end');
+      $embs->insert(0, "$tlm_mbps");
+      $embssec->delete(0, 'end');
+      $embssec->insert(0, "$tsec");
+    }
+    elsif(/^\*/) {
+      chomp;
+      if(/^\*FSN/) {
+        ($a, $b, $c, $d, $e, $f, $fsnnew) = split(/\s/);
+        $efsn->delete(0, 'end');
+        $efsn->insert(0, "$fsnnew");
+      }
+      elsif(/^\*\*complete images/) {
+        ($a, $b, $num_img, $d, $num_vcdu, $f, $g, $num_sec) = split(/\s/);
+        $evcdu->delete(0, 'end');
+        $evcdu->insert(0, "$num_vcdu");
+      }
+      $textlog->insert('end', $_);
+      $textlog->see('end');
+    }
+  }
+  if($newline && Exists($logf)) { $textlog->see('end'); }
+}
+
+#Called every 3 sec when the program is running.
+#!!!TBD: do for $log1 and $log2
+sub tail_update {
+  if(!$tailopened1) {    
+    open(LOGTAIL, $log1) || die "Can't open $log1: $!\n";
+    $tailopened1 = 1;
+  } 
+  else {
+    seek(LOGTAIL, 0, 1);
+  }
+  while(<LOGTAIL>) {
+    if(/^tlm file is/) {
+      ($a, $b, $c, $tfile) = split(/\s/);
+      $efp->delete(0, 'end');
+      $efp->insert(0, "$tfile");
+    }
+    elsif(/^Rate tlm/) {
+      ($a, $b, $tbytes, $d, $e, $tsec) = split(/\s/);
+      $tlm_mbps = (($tbytes*8)/$tsec)/1048576;
+      $embs->delete(0, 'end');
+      $embs->insert(0, "$tlm_mbps");
+      $embssec->delete(0, 'end');
+      $embssec->insert(0, "$tsec");
+    }
+    elsif(/^\*/) {
+      chomp;
+      if(/^\*FSN/) {
+        ($a, $b, $c, $d, $e, $f, $fsnnew) = split(/\s/);
+        $efsn->delete(0, 'end');
+        $efsn->insert(0, "$fsnnew");
+      }
+      elsif(/^\*\*complete images/) {
+        ($a, $b, $num_img, $d, $num_vcdu, $f, $g, $num_sec) = split(/\s/);
+        $evcdu->delete(0, 'end');
+        $evcdu->insert(0, "$num_vcdu");
+      }
+      $lbstat->insert('end', $_);
+      $lbstat->see('end');
+    }
+  }
+  #now do the same for $log2
+  if(!$tailopened2) {    
+    open(LOGTAIL2, $log2) || die "Can't open $log2: $!\n";
+    $tailopened2 = 1;
+  } 
+  else {
+    seek(LOGTAIL2, 0, 1);
+  }
+  while(<LOGTAIL2>) {
+    if(/^tlm file is/) {
+      ($a, $b, $c, $tfile) = split(/\s/);
+      $efpy->delete(0, 'end');
+      $efpy->insert(0, "$tfile");
+    }
+    elsif(/^Rate tlm/) {
+      ($a, $b, $tbytes, $d, $e, $tsec) = split(/\s/);
+      $tlm_mbps = (($tbytes*8)/$tsec)/1048576;
+      $embsz->delete(0, 'end');
+      $embsz->insert(0, "$tlm_mbps");
+      $embssecz->delete(0, 'end');
+      $embssecz->insert(0, "$tsec");
+    }
+    elsif(/^\*/) {
+      chomp;
+      if(/^\*FSN/) {
+        ($a, $b, $c, $d, $e, $f, $fsnnew) = split(/\s/);
+        $efsnz->delete(0, 'end');
+        $efsnz->insert(0, "$fsnnew");
+      }
+      elsif(/^\*\*complete images/) {
+        ($a, $b, $num_img, $d, $num_vcdu, $f, $g, $num_sec) = split(/\s/);
+        $evcduz->delete(0, 'end');
+        $evcduz->insert(0, "$num_vcdu");
+      }
+      $lbstat2->insert('end', $_);
+      $lbstat2->see('end');
+    }
+  }
+}
+
+#Return date in form for a label e.g. 1998.01.07_14:42:00
+sub labeldate {
+  local($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst,$date,$sec2,$min2,$hour2,$mday2);
+  ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+  $sec2 = sprintf("%02d", $sec);
+  $min2 = sprintf("%02d", $min);
+  $hour2 = sprintf("%02d", $hour);
+  $mday2 = sprintf("%02d", $mday);
+  $mon2 = sprintf("%02d", $mon+1);
+  $year4 = sprintf("%04d", $year+1900);
+  $date = $year4.".".$mon2.".".$mday2._.$hour2.":".$min2.":".$sec2;
+  return($date);
+}
+
+#Return date in form for a label e.g. 2008_365_23_59
+sub labelddd {
+  local($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst,$name,$sec2,$min2,$hour2,$mday2);
+  ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+  $sec2 = sprintf("%02d", $sec);
+  $min2 = sprintf("%02d", $min);
+  $hour2 = sprintf("%02d", $hour);
+  $yday3 = sprintf("%03d", $yday+1);
+  $year4 = sprintf("%04d", $year+1900);
+  $name = $year4."_".$yday3."_".$hour2."_".$min2;
+  return($name);
+}
+
+#Return a  file name in the form:
+#VCid_yyyy_ddd_hh_mm_ss_seq_mod_vers
+#seq: 	11 hex characters, 0x00000000000-0xFFFFFFFFFFF, First theoretical
+#  Insert Zone sequence number in the file. If an instrument resets, the current
+#  file will be padded and closed. The next file will begin at sequence #0.
+#mod:  5 hex characters, 0x00000-0xFFFFF theoretical number of VCDUs in the
+#  file.
+#vers: 2 decimal characters, 00-99, Monotonically increasing count of the number
+#  of times a file has been opened after close. All versions of a file will be
+#  archived. Initial value is 0.
+#Example:  VC02_2008_365_23_59_59_0123456789A_FFFFF_01 
+sub tlmfilename {
+  local($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst,$name,$sec2,$min2,$hour2,$mday2);
+  ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+  $sec2 = sprintf("%02d", $sec);
+  $min2 = sprintf("%02d", $min);
+  $hour2 = sprintf("%02d", $hour);
+  $yday3 = sprintf("%03d", $yday+1);
+  $year4 = sprintf("%04d", $year+1900);
+  if($flipflop) { 	#AIA or HMI VCID
+    $name = "VC05_".$year4."_".$yday3."_".$hour2."_".$min2."_".$sec2."_0123456789A_FFFFF_00";
+  }
+  else {
+    $name = "VC02_".$year4."_".$yday3."_".$hour2."_".$min2."_".$sec2."_0123456789A_FFFFF_00";
+  }
+  return($name);
+}
+
+#Return time in form for a label e.g. 14:42:00
+sub labeltime {
+  my $d = &labeldate;
+  my $pos = index($d, '_');
+  my $t = substr($d, $pos+1);
+  return($t);
+}
+
+sub Exit_sub {
+  if($pid0) {			#kill off our child
+    `kill $pid0`;
+  }
+  if($pid00) {			#kill off our child
+    `kill $pid00`;
+  }
+  if($pid000) {			#kill off our child
+    `kill $pid000`;
+  }
+  if($pid1) {			#kill off our child
+    `kill $pid1`;
+  }
+  exit;
+}
+
+sub usage {
+  print "Execute the soc program:\n";
+  print "soc [-z] [tlm_file]\n";
+  print "     -z = create lev0 compressed .fitz files instead of .fits\n";
+  print "     tlm_file = .tlm file to use as input\n";
+  print "\nThe Data Capture System Spec is at:\n";
+  print "http://hmi.stanford.edu/development/JSOC_Documents/Data_Capture_Documents/DataCapture.html\n";
+  exit;
+}
+

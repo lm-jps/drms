@@ -1,0 +1,66 @@
+.\"
+.TH show_keys 1  13-Sep-2006  "DRMS MANPAGE" "DRMS Programmer's Manual"
+.SH NAME
+show_keys \- DRMS List keyword contents for a DataSeries
+
+.SH SYNOPSIS
+.nf
+\fBshow_keys [-aklpqr] \fRds=\fR<recordset query> \fB[n=\fRnrecords] \fB[key=\fR<keylist>\fB] [seg=\fR<segmentlist>\fB]\fR
+
+.SH DESCRIPTION
+Show_keys lists keywords and/or segment filenames from a JSOC dataseries.  It can optionally list the full path
+to the record direcory in SUMS.
+
+.SH FLAGS
+.IP \fB-a\fR 20
+Select all keywords
+.IP \fB-k\fR 20
+List keywords and values one per line, otherwise use table format
+.IP \fB-l\fR 20
+Just list all series keywords and descriptions, then exit
+.IP \fB-p\fR 20
+Show the StorageUnit path for the record, as part of segment file if seg= specified.
+.IP \fB-q\fR 20
+Quiet - omit the header line listing keyword names
+.IP \fB-r\fR 20
+Show the absolute record number as the first "keyword"
+
+.SH ARGUMENTS
+.IP \fBds=<recordset_query>\fR 20
+The recordset query specifies a data series and set of records to list.
+It may be just a series name, in which case the entire series is used, or it
+may have one or more record specifier clauses in square brackets.
+This parameter is required.  If no record specifier part "[...]" is given then n=recs must be present.
+.IP \fBn=<record_count>\fR 20
+n specifies the maximum number of records to show.  I n<0 it is the count from the
+end of the selected recordset.  Thus if no "[...]" record spec is given and e.g. n=-1, the last
+record in the dataseries will be shown.  Similarly if n=1 only the first will be shown.
+.IP \fBkey=\fI{key0[,key1[...]]}\fR 20
+A comma separated list of keywords to examine. If no key list is specified,
+all keyword values in the selected record set will be reported.
+If the "-a" flag is used, all kwywords will be selected and the "key=" argument will be ignored.
+.IP \fBseg=\fI{segment_list}\fR 20
+Comma separated list of segment names for which the associated filename will be shown.
+.PP
+\fIshow_keys\fR will simply list all series keywords and exit if the -l flag is set.
+Otherwise, it will
+go through the recordset and, for each record, print a line of tab-delimited
+values for the selected keywords and segments.  
+If the "-p" flag is present the full path for the segment files will be given if
+any segments are requested, or if no segments requested then the full path of the storage unit for the record will be shown.
+The -q flag makes the output convenient for capture for use by another
+program.
+.PP
+If the \fB-k\fR flag is set the listing will be one \fIkeyword=value\fR pair per
+line.  A comment line will preceed the keywords for each record giving the
+record specification query that will produce that record.
+
+.SH BUGS
+The program will fail if called with the \fB-p\fR flag or if a \fIfile
+\fRparameter is specified, and if there are no data segments associated with
+the requested data series.
+
+.SH "SEE ALSO"
+.B retrieve_file(1)
+.R <drms_query(1)>
+.R <describe_series(1)>

@@ -1,0 +1,44 @@
+/* SUMLIB_PavailUpdate.pgc
+*/
+#include <SUM.h>
+#include <sum_rpc.h>
+#include <soi_error.h>
+#include <printk.h>
+
+int SUMLIB_PavailUpdate(char *name, double bytes);
+
+int SUMLIB_PavailUpdate(char *name, double bytes)
+{
+EXEC SQL BEGIN DECLARE SECTION;
+  VARCHAR l_name[80];
+  double  l_bytes;
+EXEC SQL END DECLARE SECTION;
+
+EXEC SQL INCLUDE sqlca;
+
+    sprintf(l_name.arr,"%s", name);
+    l_name.len = strlen(l_name.arr);
+    l_bytes = bytes;
+    if(strcmp(l_name.arr, "")){
+    /*printf("not null wd:: %s\n", l_wd.arr); */
+    } else {
+    /*printf("null l_wd.arr:: %s\n", l_wd.arr); */
+            return DS_PAVAIL_ERR;
+    }
+    EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
+
+    EXEC SQL WHENEVER NOT FOUND GOTO sqlerror;
+
+    EXEC SQL UPDATE SUM_PARTN_AVAIL 
+		SET AVAIL_BYTES = :l_bytes
+        WHERE PARTN_NAME = :l_name;
+    EXEC SQL COMMIT WORK;
+	return NO_ERROR;
+    
+sqlerror:
+	printk("Error in NC_PavailUpdate_WR\n");  
+	printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);  
+    EXEC SQL WHENEVER SQLERROR CONTINUE;
+    EXEC SQL ROLLBACK WORK;
+    return DS_PAVAIL_ERR;
+}

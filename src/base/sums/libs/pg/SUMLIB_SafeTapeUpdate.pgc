@@ -1,0 +1,50 @@
+/* SUMLIB_SafeTapeUpdate.pgc
+ *
+ * Called by ingest_tlm when it gets a .parc file from the pipeline
+ * backend and needs to update sum_main with info on where the tlm
+ * file was archived on the pipeline tape.
+*/
+#include <SUM.h>
+#include <sum_rpc.h>
+#include <soi_error.h>
+#include <printk.h>
+
+int SUMLIB_SafeTapeUpdate(char *suname, char *tapeid, int tapefn, char *tapedate);
+
+int SUMLIB_SafeTapeUpdate(char *suname, char *tapeid, int tapefn, char *tapedate)
+{
+
+EXEC SQL BEGIN DECLARE SECTION;
+  VARCHAR safe_tape[20];
+  int safe_tape_fn;
+  VARCHAR safe_tape_date[32];
+  VARCHAR owning_series[80];
+EXEC SQL END DECLARE SECTION;
+
+    sprintf(owning_series.arr, "%s", suname);
+    owning_series.len = strlen(owning_series.arr);
+    sprintf(safe_tape.arr, "%s", tapeid);
+    safe_tape.len = strlen(safe_tape.arr);
+    sprintf(safe_tape_date.arr, "%s", tapedate);
+    safe_tape_date.len = strlen(safe_tape_date.arr);
+    safe_tape_fn = tapefn;
+
+     EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
+     EXEC SQL WHENEVER NOT FOUND GOTO sqlerror;
+
+     EXEC SQL UPDATE SUM_MAIN
+        SET SAFE_TAPE = :safe_tape,
+        SAFE_TAPE_FN = :safe_tape_fn,
+        SAFE_TAPE_DATE = :safe_tape_date
+        WHERE OWNING_SERIES = :owning_series;
+
+  EXEC SQL COMMIT WORK;
+  return(0);
+
+sqlerror:
+     printk("Error in SUMLIB_SafeTapeUpdate() \n");
+     printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
+     EXEC SQL WHENEVER SQLERROR CONTINUE;
+     EXEC SQL ROLLBACK WORK;
+     return(1);
+}

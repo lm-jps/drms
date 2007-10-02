@@ -1,0 +1,148 @@
+#! /bin/csh -f
+
+set CLEAN = "no"
+set CHKLIBS = "no"
+set CCMD = "c"
+set LCMD = "l"
+
+foreach ARG ($argv)
+    set FLAG = `echo $ARG | awk '{print substr($0, 2)}'`
+    if ($FLAG == $CCMD) then
+      set CLEAN = "yes"
+    else if ($FLAG == $LCMD) then
+      set CHKLIBS = "yes"
+    endif
+end
+
+if ($CHKLIBS == "no") then
+    echo -n "Remove links to man pages..."
+    if (-d man/man1) then
+	cd man/man1
+	rm -f *.*
+	cd ../..
+    endif
+    if (-d man/man3) then
+	cd man/man3
+	rm -f *.*
+	cd ../..
+    endif
+    echo "done"
+
+    echo -n "Removing links to headers..."
+    if (-d src/base/include) then
+	cd src/base/include
+	rm -f *.h
+	cd ../../..
+    endif
+    echo "done"
+
+    echo -n "Removing links to scripts..."
+    if (-d scripts) then
+	cd scripts
+	rm -f *
+	cd ..
+    endif
+    echo "done"
+
+    echo -n "Removing links to jsds..."
+    if (-d jsds) then
+	cd jsds
+	rm -f *
+	cd ..
+    endif
+    echo "done"
+
+    echo
+
+    if ($CLEAN == "yes") then
+
+	if (-x src/base/local/libs/dsds/scripts/rmlinks.csh) then
+	    src/base/local/libs/dsds/scripts/rmlinks.csh
+	endif
+
+	if (-x src/base/local/libs/soi/scripts/rmlinks.csh) then
+	    src/base/local/libs/soi/scripts/rmlinks.csh
+	endif
+    else
+	echo -n "Setting links to man pages..."
+	if (!(-d man/man1)) then
+	    mkdir -p man/man1
+	endif
+	if (!(-d man/man3)) then
+	    mkdir -p man/man3
+	endif
+	cd man/man1
+	find ../.. -path '../../man/man1' -prune -o -path '*/man/man1/*' -exec ln -s {} . \;
+	cd ../../man/man3
+	find ../.. -path '../../man/man3' -prune -o -path '*/man/man3/*' -exec ln -s {} . \;
+	cd ../..
+	echo "done"
+
+	echo "Setting links to headers..."
+	if (!(-d src/base/include)) then
+	    mkdir -p src/base/include
+	endif
+	cd src/base/include
+	find .. -path '../include' -prune -o -name \*.h  \( \( -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \; \)
+	cd ../../..
+	echo "done"
+	echo
+	
+	echo "Setting links to scripts..."
+        if (!(-d scripts)) then
+	    mkdir scripts
+	endif
+	cd scripts
+	find ../src/base/sums/scripts -mindepth 1 \( -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
+	cd ..
+	echo "done"
+	echo
+
+	echo "Setting links to jsds..."
+	if (!(-d jsds)) then
+	    mkdir jsds
+	endif
+	cd jsds
+	find ../src/base \( -name \*.jsd -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o \( -name \*.jsd -exec echo "  " {} " ERROR - couldn't create link" \; \)
+	cd ..
+	echo "done"
+	echo
+
+	# generate links for DSDS/SOI dynamic libraries - only do this if 
+	# user's environment has access to /home/soi/CM
+	if (-d /home/soi/CM/include && -d /home/soi/CM/src) then
+	    if (-x src/base/local/libs/dsds/scripts/genlinks.csh) then
+		src/base/local/libs/dsds/scripts/genlinks.csh
+	    endif
+
+	    if (-x src/base/local/libs/soi/scripts/genlinks.csh) then
+		src/base/local/libs/soi/scripts/genlinks.csh
+	    endif
+	endif
+    endif
+endif
+
+# Enter required library names and versions here.
+if ($CHKLIBS == "yes") then
+
+    echo
+    echo "JSOC expects all third-party library header files to be located at $JSOCROOT/lib_third_party/include/ and all third-party libraries to be located at $JSOCROOT/lib_third_party/$JSOC_MACHINE/.  If you wish to build a target that uses one of the following third-paty libraries, please install the required library version and create a link from from $JSOCROOT/lib_third_party/include/ and $JSOCROOT/lib_third_party/$JSOC_MACHINE/ to the installed library headers and binary files, respectively."
+    echo
+    echo "Example:"
+    echo "  cd $JSOCROOT/lib_third_party/"
+    echo "  ln -s /usr/local/include include"
+    echo "  cd $JSOCROOT/lib_third_party/$JSOC_MACHINE/"
+    echo "  ln -s /usr/local/lib/libfftw3f.a libfftw3f.a "
+    echo
+    echo "Library libfftw3f.a (v. 3.1.2) required for targets: universe, examples, helloworld, xinterp, demo_td08062007"
+    echo "Library libcfitsio.a (v. 3.03) required for targets: universe, examples, f_ingest_gong_mrv, f_dup_gong_mrv"
+
+#    echo "Library libcfitsio.a (v. 3.03) required for targets: examples, helloworld"
+#    echo "Library libmkl.so (v. 9.0) required for targets: examples, helloworld"
+#    if ($JSOC_MACHINE == "linux_x86_64") then 
+#	echo "Library libmkl_lapack64.so (v. 9.0) required for targets: examples, helloworld"
+#    else echo "Library libmkl_lapack32.so (v. 9.0) required for targets: examples, helloworld"
+#    endif
+
+
+endif 

@@ -1,0 +1,44 @@
+.\"
+.TH drms_template_record 3  5-Jan-2007  "DRMS MANPAGE" "DRMS Programmer's Manual"
+.SH NAME
+drms_template_record \- Return a series template record containing default values.
+
+.SH SYNOPSIS
+.nf
+#include "drms.h"
+
+DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname, 
+				    int *status)
+
+.SH DESCRIPTION
+
+Within the current DRMS session (whose information is stored in \fIenv\fR), this function returns a template record for the series named \fIseriesname\fR.  If such a template record exists in the series template-record cache (\fIenv\fR->series_cache), that one is returned.  Otherwise a new template record is created, cached, and returned to the caller.  The template-record structure is allocated and assigned default values derived from entries in the global database tables: drms_series, drms_segment, drms_link, and drms_keyword.  drms_template_record() calls drms_template_segments(), drms_template_links(), and drms_template_keywords() to populate segment, link, and keyword values.
+
+Typical uses of this function include obtaining a list of keywords or a particular keyword, primary or otherwise, obtaining a list of segments or a particular segment, obtaining a list of links or a particular link, and obtaining series information.
+
+.SH RETURN VALUES
+
+Upon successful completion, the function returns a DRMS_Record_t pointer, and sets *\fIstatus\fR to DRMS_SUCCESS.  If an error occurs, the function returns NULL and sets *\fIstatus\fR to an appropriate error code defined in drms_statuscodes.h.  Typical errors are as follows.  If \fIseriesname\fR does not exist in the series cache, then *\fIstatus\fR is set to DRMS_ERROR_UNKNOWNSERIES.  If a problem occurs during communication with the database server, *\fIstatus\fR is set to DRMS_ERROR_QUERYFAILED.  If a database table is malformed or corrupt, *\fIstatus\fR is set to DRMS_ERROR_BADQUERYRESULT.  
+
+The caller does not own the allocated memory associated with the returned record and should not release it (i.e., the caller should not call drms_close_record()).
+
+.SH EXAMPLES
+.nf
+
+#include "drms.h"
+
+int status = 0;
+DRMS_Record_t *template = drms_template_record(drms_env, 
+                                               seriesNameStr, 
+                                               &status);
+
+if (status == DRMS_SUCCESS && template != NULL)
+{
+     /* Do something with template here. */
+     int nPrime = template->seriesinfo->pidx_num;
+     ...
+}
+
+.SH APPLICATION USAGE
+
+This function should probably not be a member of any public or private API.  Instead, future development will lead to other, more specific APIs that provide the functionality that this API currently provides.

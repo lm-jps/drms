@@ -1,0 +1,80 @@
+.\"
+.TH cmdparams_parse 3  22-Jan-2007  "DRMS MANPAGE" "DRMS Programmer's Manual"
+.SH NAME
+cmdparams_parse \- parse command line and module arguments struct and
+  create hashed parms list
+
+.SH SYNOPSIS
+int cmdparams_parse (CmdParams_t *parms, int argc, char **argv)
+
+.SH DESCRIPTION
+
+The function cmdparams_parse(), ordinarily called by the jsoc_main() or
+other driver program, but accessible from any program, parses the command
+line (or other array of strings described by argc and argv!), included files
+if any, and the global module_args struct to create a hash table of all
+arguments available in the parms struct. Parsing obeys the following rules:
+
+1. All tokens after the first in the command line (argv) are parsed for
+include file references, flags, or parameter name value pairs.
+
+2. Included files, described by tokens of the form @filename in either
+the command line or an included file, are parsed according to the same
+rules as the command line.
+
+3. The declared module_args list is scanned, and all named parameters
+not already assigned values are assigned their declared defaults, if any.
+
+If any declared module argument cannot be assigned a value by the above
+rules, processing of the argument list ceases and the function returns
+the value -1. The exception is for arguments declared to be of type
+ARG_FLAG, which are simply not set.
+
+All values in the parms struct are strings, regardless of the declared
+type of the argument. For arguments of type ARG_NUME, the value from
+parsing will be string-compared with the set of valid strings in the
+argument range, and then set to the character representation of the
+numeric order of the (first) matching value in the range, counting from
+0.
+
+Command line tokens can take any of the following forms:
+.IP --name value 20
+(name cannot begin with a digit)
+.IP -chars 20
+where chars is a set of one or more characters, all of which are
+set as key names with the value "1"
+.IP name=[]value
+white space following the \fI=\fR is optional
+.IP @filename
+specifies name of file containing tokens to be parsed following same rules
+as command line
+.IP value 20
+assigned to successive unnamed argument $n
+.PP
+If a parameter value (or name) has embedded white space, it must be quoted.
+
+An extern \fImodule_args\fR declaration is required, though it can be empty.
+A member with a module_args.type of \fBARG_END\fR (0), must terminate the
+the list of parsed members; any members following it in the declarator
+will be ignored.
+
+.SH RETURN VALUES
+On successful completion the function returns the number of elements in
+the hash table of command parameters. If an error is encountered, due to
+inability to parse the command line, a missing value for a member of the
+module arguments list, or a value that is out of the permissible range,
+the function returns -1.
+
+.SH BUGS
+Multiple assignments to a given parameter name could result in unpredictable
+values. The last token in the command line should be parsed last and take
+precedence. Thus, for example, an assignment following an @filename declaration
+will supersed the assignment in the corresponding file, and \fIvice versa\fR
+
+Parsing of tokens in included files does not properly deal with embedded
+white space in quoted strings.
+
+.SH "SEE ALSO"
+.B module(1)
+.B cmdparams_get(3)
+.R <module_args(5)>

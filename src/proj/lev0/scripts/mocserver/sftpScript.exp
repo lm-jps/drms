@@ -1,0 +1,297 @@
+#!/usr/bin/expect -f
+
+# Script to recursively return file tree of sftp site.
+# Usage:
+#   sftpScript.exp <user@remotehost> <remote root> [t=<timeout>] <fileSpec>
+#
+#      <fileSpec> = {{n|r}=<path>::<fileExpList>}+ | f=<fslistfile>
+#      <path> - path relative to <remote root>
+#      <fileExpList> = comma-separated list of reg exp that specify files
+#      <fslistfile> = file in working directory; each line = {n|r}=<path>::<fileExpList>
+#      n - non-recursive filespecs
+#      r - recursive filespecs
+
+set prompt "sftp> "
+
+# Returns "yes" if the subDirectory passed in contains wildcard characters.
+# Returns "no" otherwise.
+proc HasWildcards {subDir} {
+    set ret "no"
+
+    if {[regexp {[\*\?\[\]]} $subDir -> ]} {
+	set ret "yes"
+    }
+
+    return $ret
+}
+
+# Parses a string ls -l listing, creating a list of subdirectories and a list of files.
+#   listing - input.
+#   retDirList - output, list of subdirectories
+#   retFileList - output, list of files
+#
+# Returns number of subdirectories parsed.
+proc GetSubdirs {listing retDirList retFileList} {
+    upvar $retDirList retDirsL
+    upvar $retFileList retFilesL
+
+    set stIdx 0
+    set done 0
+
+    while {!$done} {
+	set endIdx [string first "\n" $listing $stIdx]
+	if {$endIdx >= 0} {
+	    incr endIdx -1
+	    set lineToProc [string range $listing $stIdx $endIdx]
+	} else {
+	    set lineToProc [string range $listing $stIdx end]
+	    set done 1
+	}
+
+	# extract directory name from listing
+	if {[regexp {^d.+\s+(\S+)\s*$} $lineToProc -> dirName]} {
+	    lappend retDirsL $dirName
+	} elseif {[regexp {^\-.+\s+(\S+)\s*$} $lineToProc -> fpath]} {
+	    lappend retFilesL $fpath
+	}
+
+	set stIdx [expr $endIdx + 2]
+    }
+
+    return [llength $retDirsL]
+}
+
+# List all files in a directory, and optionally list all files in the subdirectories
+# of that top-level directory.  Each file is delimited by a newline character.
+#   remoteRoot - input, root on remote server
+#   subDir - input, relative to root (complete directory is remoteRoot/subDir)
+#   recursive - input, inicates whether the subDir should be processed recursively
+#
+# Returns the list of relative paths to the files contained within remoteRoot/subDir.
+# subDir should always be a directory, not a file
+proc ProcessSubdir {remoteRoot subDir fileExpListStr recursive isFileSpec fsNum totalFs} {
+    global prompt 
+    set result ""
+
+    if {!$isFileSpec} {
+	puts -nonewline "Processing directory "
+	puts -nonewline $remoteRoot
+	puts $subDir
+    } else {
+	puts -nonewline "Processing path specification "
+	puts -nonewline $remoteRoot
+	puts -nonewline $subDir
+	puts -nonewline " ("
+	puts -nonewline $fsNum
+	puts -nonewline " of "
+	puts -nonewline $totalFs
+	puts ")"
+    }
+
+    flush stdout
+
+    set cmd "ls -l "
+    append cmd $subDir
+    append cmd "\r"
+
+    send $cmd
+    expect $prompt
+    puts ""
+
+    set answer $expect_out(buffer)
+
+    # remove leading newlines
+    set done 0
+    set stIdx 0
+
+    while {!$done} {
+	set firstChar [string index $answer $stIdx]
+	if {$firstChar eq "\n"} {
+	    incr stIdx
+	} else {
+	    set done 1
+	}
+    }
+
+    set answer [string range $answer $stIdx end]
+    set subDirs {}
+    set fileNames {}
+
+    GetSubdirs $answer subDirs fileNames
+
+    # At this point, fileNames may have too many entries (did an ls on the whole directory).
+    # Keep only the files that match the file expression.  Must loop through all elements of 
+    # fileNames, comparing it against ALL filespecs for this directory.
+
+    set fNamesKeep {}
+
+    set feList [split $fileExpListStr ,]
+    set count [llength $feList]
+
+    if {$count > 0} {
+	for {set fnidx 0} {$fnidx < [llength $fileNames]} {incr fnidx 1} {
+	    set oneFName [lindex $fileNames $fnidx]
+	    
+	    for {set idx 0} {$idx < $count} {incr idx 1} {
+		set oneFileExp [lindex $feList $idx]
+		regexp $oneFileExp {}
+		if {[regexp $oneFileExp $oneFName ->]} {
+		    lappend fNamesKeep $oneFName
+		    break
+		}
+	    }
+	}
+    } else {
+	set fNamesKeep $fileNames
+    }
+
+    set nFPaths [llength $fNamesKeep]
+
+    for {set idx 0} {$idx < $nFPaths} {incr idx 1} {
+	set oneFPath $remoteRoot
+	if {![regexp {/$} $remoteRoot ->]} {
+	    append oneFPath "/"
+	}
+
+	if {[HasWildcards $subDir] eq "no"} {
+	    append oneFPath $subDir
+	    if {![regexp {/$} $subDir ->]} {
+		append oneFPath "/"
+	    }
+	}
+
+	append oneFPath [lindex $fNamesKeep $idx]
+	append result $oneFPath
+	append result "\n"
+	
+	# Print out files matching a file expression
+	puts -nonewline "  found: "
+	puts $oneFPath
+    }
+
+    if ($recursive) {
+	set sdLength [llength $subDirs]
+	
+	for {set idx 0} {$idx < $sdLength} {incr idx 1} {
+	    if {[HasWildcards $subDir] eq "no"} {
+		set oneSubDir $subDir
+		if {![regexp {/$} $subDir ->]} {
+		    append oneSubDir "/"
+		}
+	    } else {
+		set oneSubDir ""
+	    }
+
+	    append oneSubDir [lindex $subDirs $idx]
+	    append result [ProcessSubdir $remoteRoot $oneSubDir $fileExpListStr $recursive 0 0 0]
+	}
+    }
+
+    return $result
+}
+
+# main program
+
+set result ""
+
+set sftpArg [lindex $argv 0]
+set remoteRoot [lindex $argv 1]
+
+spawn sftp $sftpArg
+
+# set expect's capture buffer size
+match_max 131072
+
+expect $prompt
+
+set cmd "cd "
+append cmd $remoteRoot
+append cmd "\r"
+
+send $cmd
+expect $prompt
+
+set fsFile ""
+set recFS {}
+set nrecFS {}
+set nRecFS 0
+set nNRecFS 0
+
+# parse arguments
+for {set idx 2} {$idx < $argc} {incr idx 1} {
+    set oneArg [lindex $argv $idx]
+
+    if {[regexp {^r\=(.+)} $oneArg -> fsStr]} {
+	lappend recFS $fsStr
+    } elseif {[regexp {^n\=(.+)} $oneArg -> fsStr]} {
+	lappend nrecFS $fsStr	
+    } elseif {[regexp {^t\=(.+)} $oneArg -> toStr]} {
+	set timeout $toStr
+    } elseif {[regexp {^f\=(.+)} $oneArg -> fsf]} {
+	set fsFile $fsf
+    }
+}
+
+# Parse fsfile, adding elements to recFS and nrecFS
+if {[string length $fsFile] > 0} {
+    set fp [open $fsFile r]
+    set line ""
+
+    while {[gets $fp line] >= 0} {
+	# $line is a <fileSpec>
+	if {[regexp {^r\=(.+)} $line -> fsStr]} {
+	    lappend recFS $fsStr
+	} elseif {[regexp {^n\=(.+)} $line -> fsStr]} {
+	    lappend nrecFS $fsStr	
+	} 
+    }
+}
+
+puts "Begin query"
+flush stdout
+
+set nRecFS [llength $recFS]
+set nNRecFS [llength $nrecFS]
+
+if {$nRecFS > 0} {
+    set idx 0
+    set count 0
+    set pathSpec ""
+    set fileexp ""
+
+    for {set idx 0} {$idx < $nRecFS} {incr idx 1} {
+	set oneSpec [lindex $recFS $idx]
+
+	# split the pathspec from the file expression
+	if {[regexp {(.+)::(.*)} $oneSpec -> pathSpec fileExpList]} {
+	    append result [ProcessSubdir $remoteRoot $pathSpec $fileExpList 1 1 [expr $idx + 1] $nRecFS]
+	}
+    }
+}
+
+if {$nNRecFS > 0} {
+    set idx 0
+    set count 0
+    set pathSpec ""
+    set fileExpList ""
+
+    for {set idx 0} {$idx < $nNRecFS} {incr idx 1} {
+	set oneSpec [lindex $nrecFS $idx]
+
+	# split the pathspec from the file expression
+	if {[regexp {(.+)::(.*)} $oneSpec -> pathSpec fileExpList]} {
+	    append result [ProcessSubdir $remoteRoot $pathSpec $fileExpList 0 1 [expr $idx + 1] $nNRecFS]
+	}
+    }
+}
+
+puts "End query"
+    
+# Wrap it up!
+send "bye"
+flush stdout
+
+puts "\n"
+puts "<<<<<RESULTS>>>>>"
+puts $result
+flush stdout

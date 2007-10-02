@@ -1,0 +1,102 @@
+
+.\"
+.TH store_file 1  26-July-2006  "DRMS MANPAGE" "DRMS Programmer's Manual"
+.SH NAME
+store_file \- DRMS store a file in DRMS/SUMS
+.SH SYNOPSIS
+.nf
+.B store_file ds=<series> {note=<comment>} in=<file> {sel=<desc>} {perm=1}
+
+.SH DESCRIPTION
+.PP
+Retrieve_file and store_file are a pair of programs to enable easy use
+(or abuse perhaps) of the DRMS/SUMS system to store and retrieve archived copies of
+any file.  These can be used for an individuals data which is too large to
+reside in backed-up filesystems.  They may also be used to hold raw versions
+of imported data which we need to retain but has not yet or will not be entered
+into DRMS in the normal means.
+.PP
+Store a file into SUMS using DRMS as a catalog.
+"in" is the file that will be stored in SUMS
+in the dataseries <series>.  
+No <record spec> (i.e. no "[...]") should be given with the series.
+(maybe later this will be changed to allow specification of a record directly)
+If <note> is present the comment will be stored with the data.
+The keyword "sel" can be used to provide lookup selection info in case
+multiple files with the same name will be stored.
+The DRMS prime keys will be "filename" and "sel".  Multiple calls of
+store_file with the same seriesname, filename, and sel will result in
+multiple records with the same prime key.  Only the most recent
+will be easily retrieved. 
+If the filename in the "in" keyword is sufficient it can be used as
+the prime key.  The optional "sel" may be used to help describe the file
+for later retrieval.
+For example:
+
+  store_file in=0000.fits ds=myseries sel=test002 note= "fits file from test002"
+
+will be retrieved with simply:
+
+  retrieve_file ds=myseries[][test002]
+
+or, if multiple files for test002 and multiple sels with 0000.fits then:
+
+  retrieve_file ds=myseries[0000.fits][test002]
+
+Prior to first use, the series should be created. 
+String keywords of "filename", "sel", and "note" should be included.
+If the series does not exist it is made from a standard JSD template if the -c flag is
+or if the user answers "yes" when asked.  If a series is made the
+parameter "perm" supplies the series access permissions.  Default is 1 which is like
+"perm=s" for create_series.  Set perm to 0 if you want to exclude other users from
+accessing your stored file.
+
+.PP
+Flags:
+.PP
+.B -c
+Create the series without confirmation if it does not already exist.
+.br
+.B -h
+Print usage message and exit
+.br
+.B -v
+Verbose - noisy.
+.PP
+.B ds=
+DRMS dataseries name to use for storing your catalog of stored files.
+.br
+.B in=
+File name to store.  If a full path is given only the terminal filename will be used.
+.br
+.B sel=
+Selection information to aid in locating the file in the DRMS series.
+.br
+.B note=
+Descriptive text, should not exceed 250 characters.  Terse is better.
+.br
+.B perm=
+DRMS table access permissions.  Useful values are 1 (default) which allows other read-only access and 0 which prevents others from any access.
+.PP
+The JSD used by default is below.  The <series> and <user> are replaced by the provided series name
+and the environment variable $USER.
+.PP
+
+    Seriesname:     <series>
+    Author:         <user>
+    Owners:         <user>
+    Unitsize:       1
+    Archive:        1
+    Retention:      7
+    Tapegroup:      1
+    Index:          file,sel
+    Description:    "File storage"
+    Keyword: file,  string, variable, record, " ",  %s, none, "Original filename"
+    Keyword: sel, string, variable, record, " ", %s, none, " "
+    Keyword: note, string, variable, record, " ", %s, none, " "
+    Data: file_seg, variable, int, 0, none, generic, " "
+
+.PP
+.PP
+.SH "SEE ALSO"
+.BR retrieve_file(1)

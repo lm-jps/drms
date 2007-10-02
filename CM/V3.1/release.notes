@@ -1,0 +1,14 @@
+			Release Notes JSOC V3.0		24Aug2006
+			-----------------------		---------
+
+No user action needed:
+
+SUMS changes:
+
+driven.c was update to expand its error detection when writting to
+tape.
+The stderr of the gtar is checked and a mt -f /dev/nstx status is done
+on the tape and the tape file # is compared with that that we would
+expect. 
+
+

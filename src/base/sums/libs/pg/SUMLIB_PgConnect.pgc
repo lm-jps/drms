@@ -1,0 +1,103 @@
+#include <SUM.h>
+#include <soi_error.h>
+#include <printk.h>
+
+int DS_ConnectDB(char *dbname)
+{
+EXEC SQL BEGIN DECLARE SECTION;
+  varchar target[80];
+  varchar user[80];
+EXEC SQL END DECLARE SECTION;
+  char *dbuser, *dbhost;
+
+
+    EXEC SQL WHENEVER SQLERROR GOTO sqlerror1;
+
+    if(!(dbuser = (char *)getenv("USER"))) dbuser = "production";
+#ifdef SUMDC
+    if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = "dcs0";
+#else
+    if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = "hmidb.stanford.edu";
+#endif
+    sprintf(target.arr, "%s@%s", dbname, dbhost);
+    target.len = strlen(target.arr);
+    sprintf(user.arr, "%s", dbuser);
+    user.len = strlen(user.arr);
+
+    	EXEC SQL CONNECT TO :target USER :user;
+    printk("Connect to Postgres host=%s db=%s user=%s OK\n", 
+		dbhost, dbname, dbuser);
+    return NO_ERROR;
+	
+sqlerror1:
+	printk("Error in DS_ConnectDB host=%s db=%s user=%s\n", 
+		dbhost, dbname, dbuser); 
+	printk("% .80s \n", sqlca.sqlerrm.sqlerrmc); 
+    EXEC SQL WHENEVER SQLERROR CONTINUE;
+    return DS_CONNECT_DB;
+}
+
+
+int DS_DisConnectDB()
+{
+
+    EXEC SQL WHENEVER SQLERROR GOTO sqlerror2;
+    EXEC SQL DISCONNECT;
+    printk("Disconnect from Postgres OK\n");
+    return NO_ERROR;
+	
+sqlerror2:
+	printk("Error in DS_DisConnectDB\n"); 
+	printk("% .70s \n", sqlca.sqlerrm.sqlerrmc); 
+    EXEC SQL WHENEVER SQLERROR CONTINUE;
+    return DS_DISCONNECT_DB;
+}
+
+/* Quiet mode with no opening msg */
+int DS_ConnectDB_Q(char *dbname)
+{
+EXEC SQL BEGIN DECLARE SECTION;
+  varchar target[80];
+  varchar user[80];
+EXEC SQL END DECLARE SECTION;
+  char *dbuser, *dbhost;
+
+    EXEC SQL WHENEVER SQLERROR GOTO sqlerror1;
+
+    if(!(dbuser = (char *)getenv("USER"))) dbuser = "production";
+#ifdef SUMDC
+    if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = "dcs0";
+#else
+    if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = "hmidb.stanford.edu";
+#endif
+    sprintf(target.arr, "%s@%s", dbname, dbhost);
+    target.len = strlen(target.arr);
+    sprintf(user.arr, "%s", dbuser);
+    user.len = strlen(user.arr);
+
+    	EXEC SQL CONNECT TO :target USER :user;
+    return NO_ERROR;
+	
+sqlerror1:
+	printk("Error in DS_ConnectDB host=%s db=%s user=%s\n", 
+		dbhost, dbname, dbuser); 
+	printk("% .80s \n", sqlca.sqlerrm.sqlerrmc); 
+    EXEC SQL WHENEVER SQLERROR CONTINUE;
+    return DS_CONNECT_DB;
+}
+
+
+int DS_DisConnectDB_Q()
+{
+
+    EXEC SQL WHENEVER SQLERROR GOTO sqlerror2;
+    EXEC SQL DISCONNECT;
+    return NO_ERROR;
+	
+sqlerror2:
+	printk("Error in DS_DisConnectDB\n"); 
+	printk("% .70s \n", sqlca.sqlerrm.sqlerrmc); 
+    EXEC SQL WHENEVER SQLERROR CONTINUE;
+    return DS_DISCONNECT_DB;
+}
+

@@ -1,0 +1,61 @@
+.\"
+.TH drms_template_record 3  5-Jan-2007  "DRMS MANPAGE" "DRMS Programmer's Manual"
+.SH NAME
+drms_clone_records \- Create a new set of records using values from an original set of records to populate the new records.
+
+.SH SYNOPSIS
+.nf
+
+DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *recset,  
+                                     DRMS_RecLifetime_t lifetime, 
+                                     DRMS_CloneAction_t mode, int *status);
+
+.SH DESCRIPTION
+
+Within the current DRMS session (whose information is stored in \fIenv\fR), this function creates a record-set structure (DRMS_RecordSet_t) that contains "copies" of the record structures contained in \fIrecset\fR.  For each record in \fIrecset\fR, a new DRMS_Record_t structure is created and assigned a unique record number from the drms database.  The values of the keywords, links, and segments of the original record in \fIrecset\fR are used to populate the newly created record.  If \fImode\fR == DRMS_SHARE_SEGMENTS, the newly created segments will share the segment files with the original record, i.e. the new record will have the same storage unit number (DSINDEX) as the original record.  However, keyword and link data will be replicated.  If \fImode\fR == DRMS_COPY_SEGMENTS, the original record's segment files will be copied to a new storage unit slot, and the copied files will be associated with the new record.
+
+The newly created records are placed in the record cache (\fIenv\fR->record_cache) and are made writeable and assigned a lifetime of \fIlifetime\fR (please see drms_reclifetime(3) for details on lifetime).
+
+.SH RETURN VALUE
+
+Upon successful completion, the function returns a DRMS_RecordSet_t pointer, and sets *\fIstatus\fR to 0.  If an error occurs, the function returns NULL and sets *\fIstatus\fR to an appropriate error code defined in drms_statuscodes.h.  Typical errors are as follows.  If \fIrecset\fR does not have any legitimate records, then *\fIstatus\fR is set to DRMS_ERROR_BADRECORDCOUNT.  If there was an error receiving one or more proper record numbers from the database server, then *\fIstatus\fR is set to DRMS_ERROR_BADSEQUENCE.  If an error occurs while creating a SUMS slot directory, then *\fIstatus\fR is set to DRMS_ERROR_MKDIRFAILED.
+
+The caller owns the allocated memory associated with the returned record set and must release it by calling drms_close_records().
+
+.SH EXAMPLES
+.nf
+
+#include "drms.h"
+
+int status = 0;
+DRMS_RecordSet_t *recSet = drms_open_records(drms_env, recSetStr, &status);
+DRMS_RecordSet_t *recSetClone = NULL;
+
+if (status == DRMS_SUCCESS && recSet != NULL)
+{
+     DRMS_RecordSet_t *recSetClone = 
+          drms_clone_records(recSet, 
+                             DRMS_PERMANENT, 
+                             DRMS_SHARE_SEGMENTS, 
+                             &status);
+
+     if (status == 0 && recSetClone != NULL)
+     {
+          /* Do something with recSetClone here. */
+     }
+}
+
+if (recSet != NULL)
+{
+     drms_close_records(recSet, DRMS_FREE_RECORD);
+}
+
+if (recSetClone != NULL)
+{
+     drms_close_records(recSetClone, DRMS_INSERT_RECORD);
+}
+
+.SH SEE ALSO
+
+drms_create_records(3), drms_open_records(3), drms_retrieve_records(3), drms_close_records(3)
+

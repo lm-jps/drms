@@ -1,0 +1,23 @@
+# The root on the MOC server (assuming login occurs as hmiroboto)
+root:moc/lzp
+
+# The syntax for the filespec directive is:
+#   filespec:['|'n|'|'r]<pathspec>::<fileexp>
+#
+# where
+#   n - non-recursive (when searching for files, do not descend into sub directories)
+#   r - recursive (when searching for files, descend into sub directories)
+#   <pathspec> - A string describing one or more directories.  May contain csh wildcards.
+#      May also contain dlMOCDataFiles.pl escape sequences.  These escape sequences
+#      are resolved before the MOC Product Server is queried.  May or may not end in '/'.
+#   <fileexp> - A Tcl regular expression that each file in <pathspec> will be matched
+#      against.  Only files that match will be downloaded.
+#
+# The following <pathspec> escape sequences are recognized:
+#
+#   "|s'['<start>-<end>']'" - A span of integers.  A <pathspec> containing a span will resolve 
+#      into <end> - <start> + 1 directories.
+
+filespec:2007_|s[001-366]::000[1-9]_2007_[0-9][0-9][0-9]_[0-9][0-9]\.hkt\S*
+filespec:2007_|s[001-366]::00[1-5][0-9]_2007_[0-9][0-9][0-9]_[0-9][0-9]\.hkt\S*
+filespec:2007_|s[001-366]::006[0-3]_2007_[0-9][0-9][0-9]_[0-9][0-9]\.hkt\S*

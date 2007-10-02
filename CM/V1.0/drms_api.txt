@@ -1,0 +1,188 @@
+=================== DRMS data types and structures ==================
+
+For full definitions see jsoc/src/base/libdrms/drms_types.h
+
+Main DRMS types visible to a module:
+
+ DRMS_Type_t      : Basic scalar and string type enumerator.
+ DRMS_Type_Value_t: Basic scalar and string values.
+
+ DRMS_Record_t    : A single data record.
+ DRMS_Keyword_t   : A record keyword (meta-data, headers)
+ DRMS_Link_t      : A record link (links to other records)
+ DRMS_Segment_t   : A record data segment holding bulk data of the record
+ DRMS_Array_t     : A generic array of scalar values or strings. Used to
+                    access the contents of a segment.
+ DRMS_RecordSet_t : A set of data records.
+
+
+DMRS types used internally:
+
+ DRMS_Env_t       : The main DRMS environment. Contains information about the
+                    DRMS session as well as caches of records, storage units
+                    and series template records. In the DRMS server it 
+                    contains mutexes (locks), signal masks and other data 
+                    structures synchronize the server threads and allowing 
+                    them to communicate.                    
+ DRMS_Session_t   : A DRMS session handle. Holds information about the 
+                    connection to a DRMS server.
+ DRMS_ThreadInfo_t: Information passed to a thread in the DRMS server when 
+                    it is spawned to service a new client.
+ DRMS_SumRequest_t: Structure used to pass requests regarding storage units to
+                    the designated SUMS communications thread in the server.
+
+
+============ Record and RecordSet functions ===============
+
+For full definitions see jsoc/src/base/libdrms/drms_record.{c,h}.
+
+/* drms_open_records: Retrieve a recordset specified by the DRMS
+   dataset name string given in the argument "datasetname". The
+   records are inserted into the record cache and marked read-only. */
+DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname, 
+int *status);
+
+/* drms_clone_records: Clone a set of records, i.e. create a new set
+   of records and copy the value of keywords, links and segments from
+   the pre-existing records given in "rs".  If
+   mode=DRMS_SHARE_SEGMENTS the new segments will share segment files
+   with the old records, i.e. it will have the same storage unit
+   number, and only keyword and link data will be replicated.  If
+   mode=DRMS_COPY_SEGMENTS the segment files for the old records will
+   be copied to a new storage unit slots and assigned to the new
+   records. */
+DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *recset, int mode, 
+				     int *status);
+
+/* drms_create_records: Create a new set of n records. Fill keywords,
+   links and segments with their default values from the series
+   definition. Each record will be assigned a new storage unit slot to
+   store its segment files in. */
+DRMS_RecordSet_t *drms_create_records(DRMS_Env_t *env, int n, char *seriesname,
+				      int *status);
+
+/* drms_close_records: Close a set of records. 
+   1. a) If action=DRMS_COMMIT_RECORD the record meta-data (keywords
+      and links) will be inserted into the database and the data
+      segments will be left in the storage unit directory for later
+      archiving by SUMS. NOTICE: The records will only be comitted 
+      permanently to the database if the session finishes without
+      error.
+      b) If action=DRMS_DISCARD_RECORD the data segment files are
+      deleted from disk.
+   2. The record structures are freed from the record cache. */
+int drms_close_records(DRMS_RecordSet_t *rs, int action);
+
+/* drms_closeall_records: Execute drms_close_record for all records in
+   the record cache that are not marked read-only, i.e. which were
+   created by the present program. */
+int drms_closeall_records(DRMS_Env_t *env, int action);
+
+/* drms_record_print: Print the contents of a record data structure to
+   stdout. */
+void  drms_record_print(DRMS_Record_t *rec);
+
+/* Calculate size of a record and its segment arrays in bytes. */
+long long drms_record_size(DRMS_Record_t *rec);
+
+
+/* Single record versions: */
+DRMS_Record_t *drms_clone_record(DRMS_Record_t *record, int mode, int *status);
+DRMS_Record_t *drms_create_record(DRMS_Env_t *env, char *seriesname, 
+				  int *status);
+int drms_close_record(DRMS_Record_t *rec, int action);
+
+
+
+======================== Keyword functions ========================
+
+For full definitions see jsoc/src/base/libdrms/drms_keyword.{c,h}.
+
+/* Versions with type conversion. */
+char drms_getkey_char(DRMS_Record_t *rec, const char *key,int *status);
+short drms_getkey_short(DRMS_Record_t *rec, const char *key, int *status);
+int drms_getkey_int(DRMS_Record_t *rec, const char *key, int *status);
+long long drms_getkey_longlong(DRMS_Record_t *rec, const char *key, int *status);
+float drms_getkey_float(DRMS_Record_t *rec, const char *key, int *status);
+double drms_getkey_double(DRMS_Record_t *rec, const char *key, int *status);
+char *drms_getkey_string(DRMS_Record_t *rec, const char *key, int *status);
+
+/* Generic version. */
+DRMS_Type_Value_t drms_getkey(DRMS_Record_t *rec, const char *key, 
+				DRMS_Type_t *type, int *status);
+
+/* Versions with type conversion. */
+int drms_setkey_char(DRMS_Record_t *rec, const char *key, char value);
+int drms_setkey_short(DRMS_Record_t *rec, const char *key, short value);
+int drms_setkey_int(DRMS_Record_t *rec, const char *key, int value);
+int drms_setkey_longlong(DRMS_Record_t *rec, const char *key, long long value);
+int drms_setkey_float(DRMS_Record_t *rec, const char *key, float value);
+int drms_setkey_double(DRMS_Record_t *rec, const char *key, double value);
+int drms_setkey_string(DRMS_Record_t *rec, const char *key, char *value);
+
+/* Generic version. */
+int drms_setkey(DRMS_Record_t *rec, const char *key, DRMS_Type_t type, 
+		DRMS_Type_Value_t *value);
+
+=== Utility keyword functions: ===
+/* drms_keyword_print: Print all fields of the DRMS_Keyword_t struct 
+   to stdout. */
+void drms_keyword_print(DRMS_Keyword_t *key);
+/* drms_keyword_printval: print formatted keyword value to stdout. */
+void drms_keyword_printval(DRMS_Keyword_t *key);
+DRMS_Keyword_t *drms_keyword_lookup(DRMS_Record_t *rec, const char *key);
+
+
+======================== Link functions ========================
+
+For full definitions see jsoc/src/base/libdrms/drms_link.{c,h}.
+
+/* Set a static link to point to the record with absolute 
+   record number "recnum" in the target series of link "linkname"
+   associated with record "rec". */
+int drms_setlink_static(DRMS_Record_t *rec, const char *linkname, int recnum);
+
+/* Set a dynamic link to point to the record(s) with primary index values
+   mathing those given in the "types" and "values" arrays. When a dynamic
+   link is resolved the record with the highest record number of the ones
+   matching the primary index is selected. */
+int drms_setlink_dynamic(DRMS_Record_t *rec, const char *linkname, 
+			 DRMS_Type_t *types, DRMS_Type_Value_t *values);
+
+/* Follow a link to its destination record, retrieve it and return a 
+   pointer to it. */
+DRMS_Record_t *drms_link_follow(DRMS_Record_t *rec, const char *linkname, 
+				int *status);
+
+=== Utility Link functions: ===
+/* Print the contents of a link structure to stdout. */
+void drms_link_print(DRMS_Link_t *link);
+
+
+======================== Segment functions ========================
+
+For full definitions see jsoc/src/base/libdrms/drms_segment.{c,h}.
+
+Storage protocols currently supported: 
+   DRMS_BINARY: Raw binary format
+   DRMS_BINZIP: GZIP compressed raw binary format.
+
+/* drms_segment_readraw: Read the data coresponding to the segment
+   argument from file.  the data values will be read into an array of
+   the same type that the segment values are stored on disk and no
+   scaling will be done. */
+DRMS_Array_t *drms_segment_readraw(DRMS_Segment_t *seg, int *status);
+
+/* drms_segment_writeraw: Write the array argument to the (partial)
+   file occupied by the segment argument. The array dimension and type
+   must match the segment type and dimension. */
+int drms_segment_writeraw(DRMS_Segment_t *seg, DRMS_Array_t *arr);
+
+=== Utility Segment functions: ===
+/* Print the fields of a keyword struct to stdout. */
+void drms_segment_print(DRMS_Segment_t *seg)
+/* Calculate segment size in bytes. */
+long long drms_segment_size(DRMS_Segment_t *seg)
+/* Look up a segment structure by name and return a pointer to it. */
+DRMS_Segment_t *drms_segment_lookup(DRMS_Record_t *rec, const char *segname)
+
