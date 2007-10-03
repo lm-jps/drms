@@ -6,13 +6,13 @@ d		:= $(dir)
 # Local variables
 SUMEXE_$(d)	:= $(addprefix $(d)/, ingest_lev0)
 CEXE_$(d)       := $(addprefix $(d)/, fix_hmi_config_file_date)
-CEXE		:= $(CEXE) $(SUMEXE_$(d)) $(CEXE_$(d))
-CEXESUMS	:= $(CEXESUMS) $(SUMEXE_$(d))
+CEXE		:= $(CEXE) $(CEXE_$(d))
+MODEXESUMS	:= $(MODEXESUMS) $(SUMEXE_$(d))
 
 MODEXE_$(d)	:= $(addprefix $(d)/, convert_fds extract_fds_statev)
 MODEXEDR_$(d)	:= $(addprefix $(d)/, hmi_import_egse_lev0 aia_import_egse_lev0)
 MODEXEDR	:= $(MODEXEDR) $(MODEXEDR_$(d))
-MODEXE		:= $(MODEXE) $(MODEXE_$(d)) $(MODEXEDR_$(d))
+MODEXE		:= $(MODEXE) $(SUMEXE_$(d)) $(MODEXE_$(d)) $(MODEXEDR_$(d))
 
 MODEXE_SOCK_$(d):= $(MODEXE_$(d):%=%_sock) $(MODEXEDR_$(d):%=%_sock)
 MODEXE_SOCK	:= $(MODEXE_SOCK) $(MODEXE_SOCK_$(d))

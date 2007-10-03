@@ -2239,7 +2239,7 @@ sub Log_b {
   $logf->Button(
         -text => 'Close',
         -background => 'grey',
-        -command => sub {$logf->destroy();},
+	-command => \&Close_fe,
         )->pack();
   $textlog = $logf->Scrolled("Text")->pack();
   open(LOGTAILFE, $logfe) || die "Can't open $logfe: $!\n";
@@ -2257,41 +2257,19 @@ sub tail_update_fe {
   while(<LOGTAILFE>) {
     if(Exists($logf)) { $textlog->insert('end', $_); }
     $newline = 1;
-#!!!TBD ck if these in new fe log???
-    if(/^tlm file is/) {
-      ($a, $b, $c, $tfile) = split(/\s/);
-      $efp->delete(0, 'end');
-      $efp->insert(0, "$tfile");
-    }
-    elsif(/^Rate tlm/) {
-      ($a, $b, $tbytes, $d, $e, $tsec) = split(/\s/);
-      $tlm_mbps = (($tbytes*8)/$tsec)/1048576;
-      $embs->delete(0, 'end');
-      $embs->insert(0, "$tlm_mbps");
-      $embssec->delete(0, 'end');
-      $embssec->insert(0, "$tsec");
-    }
-    elsif(/^\*/) {
-      chomp;
-      if(/^\*FSN/) {
-        ($a, $b, $c, $d, $e, $f, $fsnnew) = split(/\s/);
-        $efsn->delete(0, 'end');
-        $efsn->insert(0, "$fsnnew");
-      }
-      elsif(/^\*\*complete images/) {
-        ($a, $b, $num_img, $d, $num_vcdu, $f, $g, $num_sec) = split(/\s/);
-        $evcdu->delete(0, 'end');
-        $evcdu->insert(0, "$num_vcdu");
-      }
-      $textlog->insert('end', $_);
-      $textlog->see('end');
-    }
   }
   if($newline && Exists($logf)) { $textlog->see('end'); }
 }
 
+sub Close_fe {
+  if(Exists($logf)) {
+    $logf->destroy();
+    close(LOGTAILFE);
+  }
+  $mw->afterCancel($log_id_fe);
+}
+
 #Called every 3 sec when the program is running.
-#!!!TBD: do for $log1 and $log2
 sub tail_update {
   if(!$tailopened1) {    
     open(LOGTAIL, $log1) || die "Can't open $log1: $!\n";

@@ -58,7 +58,7 @@
 #include <printk.h>
 #include <sys/statvfs.h>
 
-#define CFG_FILE "/home/jim/cvs/jsoc/tables/sum_rm.cfg"
+#define CFG_FILE "/home/production/cvs/jsoc/tables/sum_rm.cfg"
 
 double stat_storage();
 void get_cfg();

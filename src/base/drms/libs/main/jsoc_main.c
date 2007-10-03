@@ -46,19 +46,27 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   xmem_config(1,1,1,1,1000000,1,0,0); 
 #endif
   /* Parse command line parameters. */
-  if (cmdparams_parse(&cmdparams, argc, argv)==-1)
-  {
-    fprintf(stderr,"Error: Command line parsing failed. Aborting.\n");
+  status = cmdparams_parse (&cmdparams, argc, argv);
+  if (status == CMDPARAMS_QUERYMODE) {
+    cmdparams_usage (argv[0]);
+    return 0;
+  } else if (status == CMDPARAMS_NODEFAULT) {
+    fprintf (stderr, "For usage, type %s [-H|--help]\n", argv[0]);
+    return 0;
+  } else if (status < 0) {
+    fprintf (stderr, "Error: Command line parsing failed. Aborting.\n");
+    fprintf (stderr, "For usage, type %s [-H|--help]\n", argv[0]);
     return 1;
   }
-  verbose = cmdparams_exists(&cmdparams,"V");
-  nagleoff = cmdparams_exists(&cmdparams,"n");
-  dolog = cmdparams_exists(&cmdparams,"L");
-  quiet = cmdparams_exists (&cmdparams, "Q");
 
-  /* Print command line parameters in verbose mode. */
-  if (verbose)
-    cmdparams_printall(&cmdparams);
+  verbose = (cmdparams_exists (&cmdparams, "V") &&
+	     cmdparams_get_int (&cmdparams, "V", NULL) != 0);
+  if (verbose) cmdparams_printall (&cmdparams);
+  quiet = (cmdparams_exists (&cmdparams, "Q") &&
+	   cmdparams_get_int (&cmdparams, "Q", NULL) != 0);
+  dolog = (cmdparams_exists (&cmdparams, "L") &&
+	   cmdparams_get_int (&cmdparams, "L", NULL) != 0);
+  nagleoff = cmdparams_exists(&cmdparams,"n");
 
   if (gethostname(hostname, sizeof(hostname)))
       return 1;
@@ -93,8 +101,12 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   db_handle = drms_env->session->db_handle;
 
   drms_env->archive     = cmdparams_exists(&cmdparams,"A");
-  drms_env->retention   = cmdparams_get_int(&cmdparams, "DRMS_RETENTION", NULL);
-  drms_env->query_mem   = cmdparams_get_int(&cmdparams, "DRMS_QUERY_MEM", NULL);
+  if (cmdparams_exists (&cmdparams, "DRMS_RETENTION")) {
+    drms_env->retention = cmdparams_get_int(&cmdparams, "DRMS_RETENTION", NULL);
+  }
+  if (cmdparams_exists (&cmdparams, "DRMS_QUERY_MEM")) {
+    drms_env->query_mem = cmdparams_get_int(&cmdparams, "DRMS_QUERY_MEM", NULL);
+  }
   drms_env->server_wait = 0;
   drms_env->verbose     = verbose;
 

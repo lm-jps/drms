@@ -43,8 +43,8 @@ EXEC SQL END DECLARE SECTION;
       EXEC SQL FETCH pfind INTO :l_tapeid, :l_nxtwrtfn, :l_spare, :l_availblocks, :l_closed;
       size = (double)l_availblocks;
       size = size * 512.0;
-      /*if(size >= (bytes + 10000000.0)) {   give 10MB leeway */
-      if(size >= bytes) {
+      /*if(size >= bytes) { */
+      if(size >= (bytes + 100000000.0)) {   /* give 100MB leeway */
         found = 1;
         /* fill in the tape structure */
         tape->nxtwrtfn = l_nxtwrtfn;

@@ -10,9 +10,20 @@
 #include <soi_error.h>
 #include <tape.h>
 #include <printk.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <stropts.h>
+#include <sys/mtio.h>
+
+
+#define MAX_WAIT 20  /* max times to wait for rdy drive in drive_ready() */
 
 void write_time();
 void logkey();
+int drive_ready();
 extern int errno;
 #ifdef ROBOT_0
 static void robot0prog_1();
@@ -352,9 +363,10 @@ KEY *robotdo_1(KEY *params)
 {
   CLIENT *client;
   static KEY *retlist;
-  int sim;
+  int sim, d, s, ret;
+  int loadcmd = 0;
   char *cmd;
-  char errstr[128];
+  char errstr[128], scr[80];
 
   debugflg = getkey_int(params, "DEBUGFLG");
   if(debugflg) {
@@ -375,6 +387,11 @@ KEY *robotdo_1(KEY *params)
 
   if(findkey(params, "cmd1")) {
     cmd = GETKEY_str(params, "cmd1");
+    if(strstr(cmd, " load ")) {	/* cmd like: mtx -f /dev/sg12 load 14 1 */
+      loadcmd = 1;
+      sscanf(cmd, "%s %s %s %s %d %d", scr, scr, scr, scr, &s, &d);
+      s--;                       /* must use internal slot # */
+    }
     write_log("*Rb:cmd: %s\n", cmd);
     if(sim) {				/* simulation mode only */
       sleep(4);
@@ -394,6 +411,11 @@ KEY *robotdo_1(KEY *params)
   }
   if(findkey(params, "cmd2")) {
     cmd = GETKEY_str(params, "cmd2");
+    if(strstr(cmd, " load ")) {	/* cmd like: mtx -f /dev/sg12 load 14 1 */
+      loadcmd = 1;
+      sscanf(cmd, "%s %s %s %s %d %d", scr, scr, scr, scr, &s, &d);
+      s--;                       /* must use internal slot # */
+    }
     write_log("*Rb:cmd: %s\n", cmd);
     if(sim) {				/* simulation mode only */
       sleep(4);
@@ -414,6 +436,13 @@ KEY *robotdo_1(KEY *params)
   current_client = clnttape;            /* set for call to tape_svc */
   procnum = TAPERESPROBOTDO;            /* this proc number */
   setkey_int(&retlist, "STATUS", 0);   /* give success back to caller */
+  if(loadcmd) {				/* make sure drive is rdy after load */
+    if(!drive_ready(sim, d)) {
+      setkey_int(&retlist, "STATUS", 1);   /* give error back to caller */
+      sprintf(errstr, "Error: drive not ready after: %s", cmd);
+      setkey_str(&retlist, "ERRSTR", errstr);
+    }
+  }
   return(retlist);
 }
 
@@ -496,6 +525,35 @@ KEY *robotdoordo_1(KEY *params)
   return(retlist);
 }
 
+/* Return with 1 if the given drive goes ready before the timeout.
+ * Else return 0.
+*/
+int drive_ready(int sim, int drive)
+{
+  int fd;
+  int ret = 1;
+  int waitcnt = 0;
+  char devname[16];
+  struct mtget mt_stat;
+
+  if(sim) { return(1); }
+  sprintf(devname, "/dev/nst%d", drive);
+  fd = open(devname, O_RDONLY | O_NONBLOCK);
+  while(1) {
+    ioctl(fd, MTIOCGET, &mt_stat);
+    /*write_log("mt_gstat = 0x%0x\n", mt_stat.mt_gstat); /* !!!TEMP */
+    if(mt_stat.mt_gstat == 0) {		/* not ready yet */
+      if(++waitcnt == MAX_WAIT) {
+        ret = 0;
+        break;
+      }
+      sleep(1);
+    }
+    else break;
+  }
+  close(fd);
+  return(ret);
+}
 
 void write_time()
 {

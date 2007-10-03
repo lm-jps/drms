@@ -156,7 +156,7 @@ int kick_next_entry_rd() {
           setkey_int(&poff->list, "tapemode", TAPE_RD_CONT);
         setkey_int(&poff->list, "filenum", drives[d].filenum);
         /* call drive[0,1]_svc and tell our caller to wait for completion */
-        write_log("Calling: clnt_call(clntdrv%d, READDRVDO, ...) \n", d);
+        /*write_log("Calling: clnt_call(clntdrv%d, READDRVDO, ...) \n", d);*/
         status = clnt_call(clntdrv[d], READDRVDO, (xdrproc_t)xdr_Rkey, 
 	(char *)poff->list, (xdrproc_t)xdr_uint32_t,(char *)&driveback,TIMEOUT);
         if(status != RPC_SUCCESS) {
@@ -197,7 +197,12 @@ int kick_next_entry_rd() {
     }
     /* ck if tape in any slot or drive */
     if(((snum=tapeinslot(p->tapeid)) == -1) && (d == -1)) {
+#ifdef SUMDC
+      /* the datacapture t50 is write oriented. needs to know this is for rd */
+      write_log("*Tp:Need:Rd tapeid=%s is not in live slots\n", p->tapeid);
+#else
       write_log("*Tp:Need: tapeid=%s is not in live slots\n", p->tapeid);
+#endif
       send_mail("tapeid=%s is not in live slot\n", p->tapeid);
       ptmp = delete_q_rd(p);      /* remove from q */
       p = p->next;
@@ -237,17 +242,17 @@ int kick_next_entry_rd() {
       sprintf(cmd, "mtx -f %s unload %d %d 1> /tmp/mtx_robot_%d.log 2>&1", 
   		libdevname, (drives[d].slotnum)+1, d, robotcmdseq++);
       setkey_str(&p->list, "cmd1", cmd);
-      sprintf(cmd,"mtx -f %s load %d %d 1> /tmp/mtx_robot_%d.log 2>&1; sleep 8", 
+      sprintf(cmd,"mtx -f %s load %d %d 1> /tmp/mtx_robot_%d.log 2>&1", 
   		libdevname, snum+1, d, robotcmdseq++);
       setkey_str(&p->list, "cmd2", cmd);
     }
     else {
-      sprintf(cmd,"mtx -f %s load %d %d 1> /tmp/mtx_robot_%d.log 2>&1; sleep 8", 
+      sprintf(cmd,"mtx -f %s load %d %d 1> /tmp/mtx_robot_%d.log 2>&1", 
   		libdevname, snum+1, d, robotcmdseq++);
       setkey_str(&p->list, "cmd1", cmd);
     }
     /* !!TBD eventually do switch(robotnum) */
-    write_log("Calling: clnt_call(clntrobot0, ROBOTDO, ...) \n");
+    /*write_log("Calling: clnt_call(clntrobot0, ROBOTDO, ...) \n");*/
     status = clnt_call(clntrobot0, ROBOTDO, (xdrproc_t)xdr_Rkey,(char *)p->list,
                         (xdrproc_t)xdr_uint32_t, (char *)&robotback, TIMEOUT);
     if(status != RPC_SUCCESS) {
@@ -351,7 +356,7 @@ int kick_next_entry_wt() {
         drives[d].busy = 1;       /* set drive busy */
         write_log("*Tp:DrBusy: drv=%d\n", d);
         /* call drive[0,1]_svc and tell our caller to wait for completion */
-        write_log("Calling: clnt_call(clntdrv%d, WRITEDRVDO, ...) \n", d);
+        /*write_log("Calling: clnt_call(clntdrv%d, WRITEDRVDO, ...) \n", d);*/
         status = clnt_call(clntdrv[d], WRITEDRVDO, (xdrproc_t)xdr_Rkey, 
 	(char *)poff->list, (xdrproc_t)xdr_uint32_t,(char *)&driveback,TIMEOUT);
         if(status != RPC_SUCCESS) {
@@ -455,17 +460,17 @@ int kick_next_entry_wt() {
       sprintf(cmd, "mtx -f %s unload %d %d 1> /tmp/mtx_robot_%d.log 2>&1", 
   		libdevname, (drives[d].slotnum)+1, d, robotcmdseq++);
       setkey_str(&p->list, "cmd1", cmd);
-      sprintf(cmd,"mtx -f %s load %d %d 1> /tmp/mtx_robot_%d.log 2>&1; sleep 8", 
+      sprintf(cmd,"mtx -f %s load %d %d 1> /tmp/mtx_robot_%d.log 2>&1", 
   		libdevname, snum+1, d, robotcmdseq++);
       setkey_str(&p->list, "cmd2", cmd);
     }
     else {
-      sprintf(cmd,"mtx -f %s load %d %d 1> /tmp/mtx_robot_%d.log 2>&1; sleep 8", 
+      sprintf(cmd,"mtx -f %s load %d %d 1> /tmp/mtx_robot_%d.log 2>&1", 
   		libdevname, snum+1, d, robotcmdseq++);
       setkey_str(&p->list, "cmd1", cmd);
     }
     /* !!TBD eventually do switch(robotnum) */
-    write_log("Calling: clnt_call(clntrobot0, ROBOTDO, ...) \n");
+    /*write_log("Calling: clnt_call(clntrobot0, ROBOTDO, ...) \n");*/
     status = clnt_call(clntrobot0, ROBOTDO, (xdrproc_t)xdr_Rkey,(char *)p->list,
                         (xdrproc_t)xdr_uint32_t, (char *)&robotback, TIMEOUT);
     if(status != RPC_SUCCESS) {
@@ -619,8 +624,8 @@ KEY *readdo_1(KEY *params) {
     				/* poff set if entry removed from q */
   free(user);
   write_time(); 
-  write_log("kick_next_entry_rd() ret w/status=%d for tapeid=%s\n", 
-    		state, state ?  poff->tapeid : "NA");
+  /*write_log("kick_next_entry_rd() ret w/status=%d for tapeid=%s\n", */
+  /*  		state, state ?  poff->tapeid : "NA"); */
   switch(state) {
   case 0:		    /* can't process now, remains on q */
     rinfo = RESULT_PEND;    /* tell caller to wait later for results */
@@ -754,8 +759,8 @@ KEY *writedo_1(KEY *params) {
   state = kick_next_entry_wt(); /* see if can start an entry */
                                 /* poff set if entry removed from q */
   write_time();
-  write_log("kick_next_entry_wt() ret w/status=%d for tapeid=%s\n",
-                state, state ? poff->tapeid : "NA");
+  /*write_log("kick_next_entry_wt() ret w/status=%d for tapeid=%s\n", */
+  /*              state, state ? poff->tapeid : "NA"); */
   switch(state) {
   case 0:		/* can't process now, remains on q */
     rinfo = RESULT_PEND;    /* tell caller to wait later for results */
@@ -1278,7 +1283,7 @@ KEY *taperesprobotdo_1_rd(KEY *params) {
   setkey_int(&retlist, "filenum", drives[d].filenum);
 
   /* call drive[0,1]_svc and tell our caller to wait for completion */
-  write_log("Calling: clnt_call(clntdrv%d, READDRVDO, ...) \n", dnum);
+  /*write_log("Calling: clnt_call(clntdrv%d, READDRVDO, ...) \n", dnum);*/
   status = clnt_call(clntdrv[dnum], READDRVDO, (xdrproc_t)xdr_Rkey,
          (char *)retlist, (xdrproc_t)xdr_uint32_t, (char *)&driveback, TIMEOUT);
   if(status != RPC_SUCCESS) {
@@ -1380,7 +1385,7 @@ KEY *taperesprobotdo_1_wt(KEY *params) {
   setkey_int(&retlist, "nxtwrtfn", nxtwrtfn);
 
   /* call drive[0,1]_svc and tell our caller to wait for completion */
-  write_log("Calling: clnt_call(clntdrv%d, WRITEDRVDO, ...) \n", dnum);
+  /*write_log("Calling: clnt_call(clntdrv%d, WRITEDRVDO, ...) \n", dnum);*/
   status = clnt_call(clntdrv[dnum], WRITEDRVDO, (xdrproc_t)xdr_Rkey,
         (char *)retlist, (xdrproc_t)xdr_uint32_t, (char *)&driveback, TIMEOUT);
   if(status != RPC_SUCCESS) {

@@ -294,10 +294,10 @@ int main(int argc, char **argv) {
   return 1;
  usage:
   printf("Usage:    %s [-h]\n"
-	 "          %s [dbhost=] [dbname=] [dbuser=] namespace= nsgrp=\n"
+	 "          %s [JSOC_DBHOST=] [JSOC_DBNAME=] [dbuser=] namespace= nsgrp=\n"
 	 "Options:  -h:        print this help message.\n"
-         "          dbhost:    DB host to connect to. default is 'hmidb'.\n"
-         "          dbname:    DB name to connect to. default is 'jsoc'.\n"
+	 "          JSOC_DBHOST: DB host to connect to. default is 'hmidb'.\n"
+	 "          JSOC_DBNAME: DB name to connect to. default is 'jsoc'.\n"
 	 "          dbuser:    DB user who owns master tables drms_*. \n"
 	 "                     default is the unix username.\n"
          "          namespace: namespace where the master tables reside.\n"

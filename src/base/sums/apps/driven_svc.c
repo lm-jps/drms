@@ -17,7 +17,15 @@
 #include <tape.h>
 #include <string.h>
 #include <printk.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <stropts.h>
+#include <sys/mtio.h>
 
+#define MAX_WAIT 20  /* max times to wait for rdy in get_tape_file_num() */
 #define CMDLENWRT 16384
 #define GTARLOGDIR "/var/logs/SUM/gtar"
 #define GTAR "/usr/local/bin/gtar"	/* gtar 1.16 on 29May2007 */
@@ -28,6 +36,7 @@ int position_tape_bot();
 int position_tape_file_asf();
 int position_tape_file_fsf();
 int get_tape_file_num(); 
+void drive_reset();
 uint64_t tell_blocks();
 int get_cksum();
 int read_drive_to_wd();
@@ -476,7 +485,10 @@ KEY *readdrvdo_1(KEY *params)
   CLIENT *client;
   static KEY *retlist;
   int sim;
+  uint64_t file_dsix[MAXSUMREQCNT+1]; /* the ds_index of all SU in a tape file*/
+  uint64_t file_dsix_off[MAXSUMREQCNT+1]; /* the ds_index that are offline*/
   uint64_t uid, ds_index;
+  double file_bytes[MAXSUMREQCNT+1];  /* bytes of all SU in a tape file */
   double bytes;
   int dnum, tapefilenum, reqofflinenum, status, tapemode, filenum, touch;
   int reqcnt, xtapefilenum, i, j, filenumdelta;
@@ -484,6 +496,7 @@ KEY *readdrvdo_1(KEY *params)
   char *wd, *oldwd, *token, *lasttoken;
   char *tapeid, *xtapeid, *cptr, *delday;
   char *initdirs[MAXSUMREQCNT];
+  
 
 
   debugflg = getkey_int(params, "DEBUGFLG");
@@ -550,66 +563,61 @@ KEY *readdrvdo_1(KEY *params)
     write_log("Dr%d:rd:Next file on tape=%d\n", dnum, tapefilenum);
   }
   /* now read any SU that is offline and has the same tape/file# */
+  /* NOTE: Changed 19Sep2007 
+   * NOTE: Grouping the SU into a tape file for effeciency of write may not 
+   *       have been a good idea. It created a new entity that the logic
+   *       was not designed for. The tape files were to be individual SUs.
+   *       So here's a kludge that tries to localize the damage.
+   * It was found that subsequent read request were frequently for other SU
+   * in the same tape file, so the tape was going back and forth reading the
+   * same file. We will now read all the SU in a file regardless of whether
+   * they are offline or not. But in order to get the current tracking which
+   * is by individual SU to work, we will have to take all SU in the file 
+   * offline, and mark their current wd del pending, before the read. Also
+   * make sure that when the original wd is removed by sum_rm it does not
+   * use the ds_index to mark the sum_main offline, as it is online in the
+   * new wd that was assigned to the read.
+   * (The original code here was saved in driven_svc.c.ORIG_RD)
+  */
+
   reqcnt = getkey_int(params, "reqcnt");
   sprintf(tmpname, "tapeid_%d", reqofflinenum);
   tapeid = getkey_str(params, tmpname);
   sprintf(tmpname, "tapefilenum_%d", reqofflinenum);
   tapefilenum = getkey_int(params, tmpname);
-  for(i=0, j=0; i < reqcnt; i++) {
-    sprintf(tmpname, "online_status_%d", i);
-    cptr = GETKEY_str(params, tmpname);
-    if(strcmp(cptr, "N") == 0) {        /* this su offline */
-      sprintf(tmpname, "tapeid_%d", i);
-      xtapeid = GETKEY_str(params, tmpname);
-      sprintf(tmpname, "tapefilenum_%d", i);
-      xtapefilenum = getkey_int(params, tmpname);
-      if((!strcmp(xtapeid, tapeid)) && (xtapefilenum == tapefilenum)) {
-        sprintf(tmpname, "wd_%d", i);
-        oldwd = getkey_str(params, tmpname);
-        lasttoken = token = (char *)strtok(oldwd, "/");
-        while(1) {
-          if(!(token = (char *)strtok(NULL, "/"))) break;
-          lasttoken = token;
-        }
-        initdirs[j++] = lasttoken;
-      }
-    }  
+  /* get ds_index of each SU in the file */
+  if(SUMLIB_Ds_Ix_Find(tapeid, tapefilenum, file_dsix, file_bytes)) {
+      write_log("***Error: SUMLIB_Ds_Ix_Find(%s, %d)\n", tapeid, tapefilenum);
+      setkey_int(&retlist, "STATUS", 1); /* give error back to caller */
+      sprintf(errstr, "Error: SUMLIB_Ds_Ix_Find(%s, %d)", tapeid, tapefilenum);
+      setkey_str(&retlist, "ERRSTR", errstr);
+      free(wd);
+      free(tapeid);
+      return(retlist);
   }
-  sprintf(rdlog, "%s/gtar_rd_%d_%s_%d.log",
+
+  /* now determine if all these ds_index are online. If so there is nothing
+   * to do. Else retrieve the ones that are offline from the tape.
+  */
+  if(SUMLIB_Ds_Ix_File(file_dsix, file_dsix_off) == 1) {  
+    /* at least one is offline */
+    sprintf(rdlog, "%s/gtar_rd_%d_%s_%d.log",
                         GTARLOGDIR, dnum, tapeid, tapefilenum);
-  if((status = read_drive_to_wd(sim, wd, dnum, initdirs, j, tapeid, tapefilenum,
-		rdlog))== -1) {
-    setkey_int(&retlist, "STATUS", 1);   /* give error back to caller */
-    sprintf(errstr, "Error on read drive #%d into %s", dnum, wd);
-    setkey_str(&retlist, "ERRSTR", errstr); 
-    free(wd);
-    free(tapeid);
-    return(retlist); 
-  }
-  /* update the DB for each SU just brought online (same tape/file) */
-  /* update the SUM DB with online 'Y' and the new wd */
-  /* first add the old part of the wd to the new wd (will be last token) */
-  for(i=0; i < reqcnt; i++) {
-    sprintf(tmpname, "online_status_%d", i);
-    cptr = GETKEY_str(params, tmpname);
-    if(strcmp(cptr, "N") == 0) {        /* this su offline */
-      sprintf(tmpname, "tapeid_%d", i);
-      xtapeid = GETKEY_str(params, tmpname);
-      sprintf(tmpname, "tapefilenum_%d", i);
-      xtapefilenum = getkey_int(params, tmpname);
-      if((!strcmp(xtapeid, tapeid)) && (xtapefilenum == tapefilenum)) {
-        sprintf(tmpname, "bytes_%d", i);
-        bytes = getkey_double(params, tmpname);
-        sprintf(tmpname, "wd_%d", i);
-        oldwd = getkey_str(params, tmpname);
-        sprintf(tmpname, "ds_index_%d", i);
-        ds_index = getkey_uint64(params, tmpname);
-        token = (char *)strtok(oldwd, "/");
-        while(1) {
-          if(!(token = (char *)strtok(NULL, "/"))) break;
-          lasttoken = token;
-        }
-        sprintf(newdir, "%s/%s", wd, lasttoken);
+    if((status = read_drive_to_wd(sim, wd, dnum, tapeid, tapefilenum, rdlog, file_dsix_off))== -1) {
+      setkey_int(&retlist, "STATUS", 1);   /* give error back to caller */
+      sprintf(errstr, "Error on read drive #%d into %s", dnum, wd);
+      setkey_str(&retlist, "ERRSTR", errstr); 
+      free(wd);
+      free(tapeid);
+      return(retlist); 
+    }
+    /* update the DB for each SU just brought online (same tape/file) */
+    /* update the SUM DB with online 'Y' and the new wd */
+    for(i=0; ; i++) {
+      ds_index = file_dsix_off[i];
+      if(!ds_index) break;
+      sprintf(newdir, "%s/D%ld", wd, ds_index);
+      bytes = file_bytes[i];
         if(SUM_StatOnline(ds_index, newdir)) {
           setkey_int(&retlist, "STATUS", 1);   /* give error back to caller */
           sprintf(errstr,"Error: can't put SU ix=%ld online in SUM_MAIN table", 
@@ -635,10 +643,12 @@ KEY *readdrvdo_1(KEY *params)
           return(retlist);
         }
         free(delday);
-        sprintf(tmpname, "wd_%d", i);		/* update the target wd */
-        setkey_str(&retlist, tmpname, newdir);
-      }
-    }  
+        /* going to query again anyway so don't need to do this */
+        /*sprintf(tmpname, "wd_%d", i);		/* update the target wd */
+        /*if(findkey(retlist, tmpname)) 
+        /*  setkey_str(&retlist, tmpname, newdir);
+        */
+    }
   }
   setkey_int(&retlist, "STATUS", 0);   /* give success back to caller */
   free(wd);
@@ -830,7 +840,7 @@ int position_tape_bot(int sim, int dnum)
   char cmd[128], dname[80];
 
   sprintf(dname, "%s%d", SUMDR, dnum);
-  sprintf(cmd, "/usr/local/bin/mt -f %s rewind 1>> %s 2>&1; sleep 8", dname, logfile);
+  sprintf(cmd, "/usr/local/bin/mt -f %s rewind 1>> %s 2>&1", dname, logfile);
   write_log("*Dr%d:wt: %s\n", drivenum, cmd);
   if(sim) {			/* simulation mode only */
     sleep(4);
@@ -840,6 +850,11 @@ int position_tape_bot(int sim, int dnum)
       write_log("***Dr%d:wt:error\n", drivenum);
       return(-1);
     }
+  }
+  write_log("**Dr%d:wt:success\n", drivenum); /* only 2 *'s here */
+  if(get_tape_file_num(0, dname, dnum) == -1) { /* make sure ready */
+    write_log("***Dr%d:wt:error\n", drivenum);
+    return(-1);
   }
   write_log("**Dr%d:wt:success\n", drivenum); /* only 2 *'s here */
   return(0);
@@ -861,11 +876,16 @@ int position_tape_file_asf(int sim, int dnum, int fnum)
   else {
     if(system(cmd)) {
       write_log("***Dr%d:rd:error\n", drivenum);
+      drive_reset(dname);
       return(-1);
     }
   }
+  if(get_tape_file_num(0, dname, dnum) == -1) { /* make sure ready */
+    write_log("***Dr%d:rd:error\n", drivenum);
+    drive_reset(dname);
+    return(-1);
+  }
   write_log("**Dr%d:rd:success\n", drivenum);	/* only 2 *'s here */
-
   return(0);
 }
 
@@ -896,11 +916,16 @@ int position_tape_file_fsf(int sim, int dnum, int fdelta)
   else {
     if(system(cmd)) {
       write_log("***Dr%d:rd:error\n", drivenum);
+      drive_reset(dname);
       return(-1);
     }
   }
+  if(get_tape_file_num(0, dname, dnum) == -1) { /* make sure ready */
+    write_log("***Dr%d:rd:error\n", drivenum);
+    drive_reset(dname);
+    return(-1);
+  }
   write_log("**Dr%d:rd:success\n", drivenum);	/* only 2 *'s here */
-
   return(0);
 }
 
@@ -1044,6 +1069,7 @@ int write_wd_to_drive(int sim, KEY *params, int drive, int fnum, char *logname)
   else {
     if(status = system(cmd)) { /* status applies only to last cmd in pipe */
       write_log("***Dr%d:wt:failure. exit status=%d\n",drive,WEXITSTATUS(status));
+      drive_reset(dname);
       return(-1);
     }
   }
@@ -1099,6 +1125,7 @@ int write_hdr_to_drive(int sim, char *tapeid, int group, int drive, char *log)
   else {
     if(status = system(cmd)) {
       write_log("***Dr%d:wt:failure. exit status=%d\n",drivenum,WEXITSTATUS(status));
+      drive_reset(dname);
       return(-1);
     }
   }
@@ -1106,54 +1133,71 @@ int write_hdr_to_drive(int sim, char *tapeid, int group, int drive, char *log)
   return(drive);
 }
 
-/* Get the file number of the current tape in the given drive name & number.
+/* Make sure the drive is ready before a timeout and then
+ * get the file number of the current tape in the given drive name & number.
  * Return -1 on error, else the file number.
 */
 int get_tape_file_num(int sim, char *dname, int drive) 
 {
-  FILE *mfp;
-  int status, tapefilenum;
-  char dlog[128], row[MAXSTR], cmd[CMDLENWRT];
+  int fd;
+  int ret;
+  int waitcnt = 0;
+  struct mtget mt_stat;
 
-  if(sim) { return(999999); }	/* give phoney file# back */
-  sprintf(dlog, "/tmp/mt_status_%d.log", drive);
-  sprintf(cmd, "/usr/local/bin/mt -f %s status 1>%s 2>&1", dname, dlog);
-  if(status = system(cmd)) { 
-    return(-1);
-  }
-  if (!(mfp = fopen(dlog, "r"))) {
-    write_log("***Error: can't open %s\n", dlog);
-    return(-1); 
-  }
-  tapefilenum = -1;
-  while (fgets (row,MAXSTR,mfp)) {
-    if(strstr(row, "File number=")) {
-      tapefilenum = atoi(row+12);
+  if(sim) { return(999999); }   /* give phoney file# back */
+  fd = open(dname, O_RDONLY | O_NONBLOCK);
+  while(1) {
+    ioctl(fd, MTIOCGET, &mt_stat);
+    /*write_log("mt_gstat = 0x%0x\n", mt_stat.mt_gstat); /* !!!TEMP */
+    if(mt_stat.mt_gstat == 0) {         /* not ready yet */
+      if(++waitcnt == MAX_WAIT) {
+        ret = -1;
+        break;
+      }
+      sleep(1);
+    }
+    else {
+      ret = mt_stat.mt_fileno;
       break;
     }
   }
-  fclose(mfp);
-  return(tapefilenum);
+  close(fd);
+  return(ret);
+}
+
+void drive_reset(char *dname) 
+{
+  int fd;
+  struct mtop mt_op;
+
+  fd = open(dname, O_RDONLY | O_NONBLOCK);
+  mt_op.mt_op = MTRESET;	/* reset drive */
+  mt_op.mt_count = 0;
+  ioctl(fd, MTIOCTOP, &mt_op);
+  close(fd);
+  write_log("***RESET: drive %s\n", dname);
 }
 
 /* Read from given drive to the given dir and log in logfile.
  * Returns the drive number on success, else -1.
 */
-int read_drive_to_wd(int sim, char *wd, int drive, char **initdirs, 
-		int cnt, char *tapeid, int tapefilenum, char *logname)
+int read_drive_to_wd(int sim, char *wd, int drive,  
+	 char *tapeid, int tapefilenum, char *logname, uint64_t filedsixoff[])
 {
-  char cmd[512], dname[80], md5file[80], md5sum[36], md5db[36];
-  int status, i;
+  char cmd[512], dname[80], md5file[80], md5sum[36], md5db[36], Ddir[128];
+  uint64_t dsix;
+  int i, status;
 
   sprintf(dname, "%s%d", SUMDR, drive);
   sprintf(md5file, "/usr/local/logs/SUM/md5/rdsum_%d", drive);
   sprintf(cmd, "dd if=%s bs=%db 2> %s | %s %d %s 2>> %s | %s xvf - -b%d -C %s", 
    dname, GTARBLOCK, logname, md5filter, GTARBLOCK, md5file, logname, GTAR, GTARBLOCK, wd);
 
-  /* old gtar read */
-  /*sprintf(cmd, "%s -C %s -xvf %s -b %d", GTAR, wd, dname, GTARBLOCK);*/
-  for(i=0; i < cnt; i++) {
-    sprintf(cmd, "%s %s", cmd, initdirs[i]);
+  for(i=0; ; i++) {
+    dsix = filedsixoff[i];
+    if(!dsix) break;
+    sprintf(Ddir, "D%ld", dsix);
+    sprintf(cmd, "%s %s", cmd, Ddir);
   }
   sprintf(cmd, "%s 1>>%s 2>> %s", cmd, logfile, logname);
   write_time();

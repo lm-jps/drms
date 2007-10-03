@@ -3,6 +3,10 @@
  * NOTE: This originally came from hmi_lev0.c on hmi0
  *-----------------------------------------------------------------------------
  *
+ * This is a module that runs DRMS and continuously extracts images and HK
+ * data from .tlm files that appear in the given input dir. It outputs images
+ * to the DRMS dataset hmi.lev0 and hk data to hmi.!!!!TBD!!!.
+
  * DESCRIPTION:
 
 *!!!!TBD UPDATE THIS DESCRIP!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -32,6 +36,10 @@
  *
  */
 
+#include <jsoc_main.h>
+#include <cmdparams.h>
+#include <drms.h>
+#include <drms_names.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -44,14 +52,14 @@
 #include <dirent.h>
 #include <unistd.h> /* for alarm(2) among other things... */
 #include <printk.h>
-#include "imgstruct.h"
+#include <imgstruct.h>
+/************************************
 #include "hmi_compression.h"
 #include "decompress.h"
 #include "load_hk_config_files.h"
+*************************************/
 
-
-
-#define H0LOGFILE "/tmp/h0.%s.%d.log"
+#define H0LOGFILE "/usr/local/logs/lev0/ingest_lev0.%s.%s.log"
 #define DIRDDS "/egse/ssim2soc"
 #define IMAGEDIR "/tmp/jim"	/* dir to put the last IMAGEDIRCNT images */
 #define IMAGEDIRCNT 20		/* # of images to save */
@@ -63,7 +71,26 @@
 #define TESTAPPID 0x199		/* appid of test pattern packet */
 #define TESTVALUE 0xc0b		/* first value in test pattern packet */
 
+#define NOTSPECIFIED "***NOTSPECIFIED***"
+/* List of default parameter values. */
+ModuleArgs_t module_args[] = { 
+  {ARG_STRING, "vc", NOTSPECIFIED, "Primary virt channel to listen to"},
+  {ARG_STRING, "indir", NOTSPECIFIED, "directory containing the files to ingest"},
+  {ARG_STRING, "outdir", NOTSPECIFIED, "directory to move the files to after the ingest"}, 
+  {ARG_STRING, "logfile", NOTSPECIFIED, "optional log file name. Will create one if not given"},
+  {ARG_FLAG, "v", "0", "verbose flag"},
+  {ARG_FLAG, "h", "0", "help flag"},
+  {ARG_END}
+};
+
+CmdParams_t cmdparams;
+
+/* Module name presented to DRMS. */
+char *module_name = "ingest_lev0";
+
+
 FILE *h0logfp;                  /* fp for h0 ouput log for this run */
+IMG Image;
 
 static char datestr[32];
 static struct timeval first[NUMTIMERS], second[NUMTIMERS];
@@ -76,7 +103,6 @@ static time_t call_time(void);
 static void now_do_alrm_sig();
 
 extern int numcontexts;
-extern Decompress_Context_t *Context[];
 
 unsigned int fsn = 0;
 unsigned int fsn_prev = 0;
@@ -116,10 +142,10 @@ char pchan[8];			/* primary channel to listen to e.g. VC02 */
 char rchan[8];			/* redundant channel to listen to e.g. VC10 */
 char *dbname = DEFAULTDB;	/* !!TBD pass this in as an arg */
 char *username;			/* from getenv("USER") */
-char *tlmdir;			/* tlm dir name passed in as argv[0] */
-char *pipedir;			/* to pipeline backend dir in as argv[1] */
-char *frompipedir;		/* from pipeline backend dir as in argv[2] */
-char *logfile;			/* optional log name passed in as argv[3] */
+char *indir;			/* tlm dir name passed in */
+char *outdir;			/* output dir for .tlm file (can be /dev/null)*/
+char *logfile;			/* optional log name passed in */
+char *vc;			/* virtual channel to process, e.g. VC02 */
 struct p_r_chans {
   char *pchan;
   char *rchan;
@@ -148,6 +174,74 @@ struct openimg {
 typedef struct openimg OPENIMG;
 OPENIMG *openimg_hdr = NULL;	/* linked list of open images */
 OPENIMG *openimg_ptr;		/* current enty */
+
+int nice_intro ()
+  {
+  int usage = cmdparams_get_int (&cmdparams, "h", NULL);
+  if (usage)
+    {
+    printf ("Usage:\ningest_lev0 [-vh] "
+	"vc=<virt chan> indir=</dir> outdir=</dir> [logfile=<file>]\n"
+	"  -h: help - show this message then exit\n"
+	"  -v: verbose\n"
+	"vc= primary virt channel to listen to e.g. VC02\n"
+	"indir= directory containing the files to ingest\n"
+	"outdir= directory to move the files to after the ingest\n"
+	"logfile= optional log file name. Will create one if not given\n");
+    return(1);
+    }
+  return (0);
+  }
+
+/* Returns a time tag like  yyyy.mm.dd.hhmmss */
+char *gettimetag()
+{
+  char timetag[32];
+  struct timeval tvalr;
+  struct tm *t_ptr;
+
+  gettimeofday(&tvalr, NULL);
+  t_ptr = localtime((const time_t *)&tvalr);
+  sprintf(timetag, "%04d.%02d.%02d.%02d%02d%02d",
+        (t_ptr->tm_year+1900), (t_ptr->tm_mon+1), t_ptr->tm_mday, t_ptr->tm_hour, t_ptr->tm_min, t_ptr->tm_sec);
+  return(timetag);
+}
+
+
+/* Module main function. */
+int DoIt(void)
+{
+  char logname[128];
+
+  if (nice_intro())
+    return (0);
+  vc = cmdparams_get_str(&cmdparams, "vc", NULL);
+  indir = cmdparams_get_str(&cmdparams, "indir", NULL);
+  outdir = cmdparams_get_str(&cmdparams, "outdir", NULL);
+  logfile = cmdparams_get_str(&cmdparams, "logfile", NULL);
+  if (strcmp(vc, NOTSPECIFIED) == 0) {
+    fprintf(stderr, "'vc' virt channel must be specified.  Abort\n");
+    return(1);
+  }
+  if (strcmp(indir, NOTSPECIFIED) == 0) {
+    fprintf(stderr, "'indir' must be specified.  Abort\n");
+    return(1);
+  }
+  if (strcmp(outdir, NOTSPECIFIED) == 0) {
+    fprintf(stderr, "'outdir' must be specified.  Abort\n");
+    return(1);
+  }
+  if (strcmp(logfile, NOTSPECIFIED) == 0) {
+    sprintf(logname, H0LOGFILE, username, gettimetag());
+  }
+  else {
+    sprintf(logname, "%s", logfile);
+  }
+  if((h0logfp=fopen(logname, "w")) == NULL)
+    fprintf(stderr, "**Can't open the log file %s\n", logname);
+
+}
+
 
 /* NOTE: This my be vestigial. Now we can only have one open image per process. !!CHECK */
 /* Add an entry with the given values to the OPENIMG linked list */
@@ -199,6 +293,30 @@ OPENIMG *getopenimg(OPENIMG *list, unsigned int fsn)
 }
 
 
+void temp_drms_test_stuff() 
+{
+  DRMS_Record_t *rs;
+  DRMS_Segment_t *segment;
+  DRMS_Array_t *segArray;
+  char seriesname[80];
+  int status;
+  unsigned short *rdat = Image.data;
+
+  sprintf(seriesname, "su_jim.lev0");
+  rs = drms_create_record(drms_env, seriesname, DRMS_PERMANENT, &status);
+  if(status) {
+    printk("Can't create record for %s\n", seriesname);
+  }
+  segment = drms_segment_lookup(rs, "image");
+  status = drms_setkey_int(rs, "FrameSequenceNumber", 1);
+  segArray = drms_array_create(DRMS_TYPE_SHORT,
+                                             segment->info->naxis, 
+                                             segment->axis, 
+                                             rdat,
+                                             &status);
+  status = drms_segment_write(segment, segArray, 0);
+}
+
 void StartTimer(int n)
 {
   gettimeofday (&first[n], NULL);
@@ -215,31 +333,7 @@ float StopTimer(int n)
     (float) (second[n].tv_usec-first[n].tv_usec)/1000000.0;
 }
 
-/* Output a printf type formatted msg string to stdout.
- */
-int msg(char *fmt, ...)
-{
-  va_list args;
-  char string[32768];
-
-  va_start(args, fmt);
-  vsprintf(string, fmt, args);
-  printf(string);
-  fflush(stdout);
-  va_end(args);
-  return(0);
-}
-
-/* Open the h0 log file for this do_tlm run.
- * Open either a new file for write, or a given file for append.
- */
-void open_h0log(char *filename, char *type)
-{
-  if((h0logfp=fopen(filename, type)) == NULL)
-    fprintf(stderr, "**Can't open the log file %s\n", filename);
-}
-
-/* Outputs the variable format message (re: printf) to the pe log file.
+/* Outputs the variable format message (re: printf) to the log file.
  */
 int h0log(const char *fmt, ...)
 {
@@ -259,36 +353,6 @@ int h0log(const char *fmt, ...)
   return(0);
 }
 
-void decompress_next_vcdu_err_str(int status, char *text)
-{
-  if(status == ERROR_BADOFFSET) sprintf(text, "ERROR_BADOFFSET");
-  else if(status == ERROR_CORRUPTDATA) sprintf(text, "ERROR_CORRUPTDATA");
-  else if(status == ERROR_BADHEADER) sprintf(text, "ERROR_BADHEADER");
-  else if(status == ERROR_CTXOVERFLOW) sprintf(text, "ERROR_CTXOVERFLOW");
-  else if(status == ERROR_INVALIDID) sprintf(text, "ERROR_INVALIDID");
-  else if(status == ERROR_TOOMANYPIXELS) sprintf(text, "ERROR_TOOMANYPIXELS");
-  else if(status == ERROR_NOSUCHIMAGE) sprintf(text, "ERROR_NOSUCHIMAGE");
-  else if(status == ERROR_PARTIALOVERWRITE) sprintf(text,
-"ERROR_PARTIALOVERWRITE");
-  else if(status == ERROR_WRONGPACKET) sprintf(text, "ERROR_WRONGPACKET");
-  else if(status == ERROR_MISSING_FSN) sprintf(text, "ERROR_MISSING_FSN");
-  else if(status == ERROR_MISSING_FID) sprintf(text, "ERROR_MISSING_FID");
-  else if(status == ERROR_INVALIDCROPID) sprintf(text, "ERROR_INVALIDCROPID");
-  else if(status == ERROR_NODATA) sprintf(text, "ERROR_NODATA");
-  else if(status == ERROR_HK_UNKNOWN_APID) sprintf(text,
-"ERROR_HK_UNKNOWN_APID");
-  else if(status == ERROR_HK_CANNOT_FIND_VER_NUM) sprintf(text,
-"ERROR_HK_CANNOT_FIND_VER_NUM");
-  else if(status == ERROR_HK_CANNOT_LOAD_HK_VALUES) sprintf(text,
-"ERROR_HK_CANNOT_LOAD_HK_VALUES");
-  else if(status == ERROR_HK_CANNOT_LOAD_ENGR_VALUES) sprintf(text,
-"ERROR_HK_CANNOT_LOAD_ENGR_VALUES");
-  else if(status == ERROR_HK_INVALID_BITFIELD_LENGTH) sprintf(text,
-"ERROR_HK_INVALID_BITFIELD_LENGTH");
-  else if(status == ERROR_HK_UNHANDLED_TYPE) sprintf(text,
-"ERROR_HK_UNHANDLED_TYPE");
-}
-
 /* Got a fatal error sometime after registering with SUMS. 
  * Degregister and close with SUMS as approriate.
  */
@@ -299,7 +363,7 @@ void abortit(int stat)
     SUM_close(sum, h0log);
   }
   printk("**Exit ingest_tlm w/ status = %d\n", stat);
-  msg("Exit ingest_tlm w/ status = %d\n\n", stat);
+  /*msg("Exit ingest_tlm w/ status = %d\n\n", stat);*/
   if (h0logfp) fclose(h0logfp);
   exit(stat);
 }
@@ -321,57 +385,6 @@ void alrm_sig(int sig)
 
 void now_do_alrm_sig()
 {
-  Image_t *image;
-  Decompress_Stat_t *decomp_stat;
-  int nx, i, status;
-  char imgfile[128], cmd[128];
-
-  /* h0log("In now_do_alrm_sig()\n"); */ /* !!TEMP */
-  nx = decompress_status_all(&decomp_stat);
-  for(i=0; i < nx; i++) {
-    fsn = ID2FSN(decomp_stat[i].ID);
-    fid = ID2FID(decomp_stat[i].ID);
-    openimg_ptr = (OPENIMG *)getopenimg(openimg_hdr, fsn);
-    if(openimg_ptr != NULL) {
-      h0log("#Timeout: Found an open image fsn=%d sec=%d call_time=%d\n",
-            openimg_ptr->fsn, openimg_ptr->sec, call_time()); /*!!TEMP*/
-      if((openimg_ptr->sec + ALRMSEC) <= call_time()) { /* image timed out */
-        h0log("decmpress_print_status() says:\n");
-        decompress_print_status(&decomp_stat[i]);
-        h0log("Write partial image for timed out image.\n");
-        status = decompress_flush_image(fsn, fid, &image);
-        if(status == SUCCESS) {
-          h0log("*SUCCESS FLUSH of partial image fsn=%d\n", fsn);
-/**********************************************!!!OLD**************
-          if(catalog_image(image)) {
-            h0log("Error on catalog_image()\n");
-          }
-**********************************************!!!OLD**************/
-          sprintf(imgfile, "%s/%s_%09d.%d.fits", IMAGEDIR, pchan, fsn, imagedircnt++);
-          if(decompress_writefitsimage(imgfile, image, 0)) {
-            h0log("Error on output of %s\n", imgfile);
-          }
-          decompress_free_images(image);
-          /* only keep the last 30 images */
-          if(imagedircnt > IMAGEDIRCNT) {
-            sprintf(cmd,"/bin/rm %s/%s_*.%d.fits",IMAGEDIR,pchan,imagedircnt-IMAGEDIRCNT);
-            h0log("%s\n", cmd);
-            system(cmd);
-          }
-          h0log("*SUCCESS FLUSH of partial image %s for fsn=%d\n", 
-			imgfile, fsn);
-        }
-        else {
-          h0log("Can't flush image for fsn = %d\n", fsn);
-        }
-        remopenimg(&openimg_hdr, fsn);
-      }
-    }
-    else {                      /* add an entry for this fsn */
-      setopenimg(&openimg_hdr, call_time(), fsn);
-    }
-  }
-  free(decomp_stat);
   sigalrmflg = 0;
   alarm(ALRMSEC);
   return;
@@ -386,114 +399,9 @@ void sighandler(sig)
 
 void now_do_term_sig()
 {
-  Image_t *image;
-  Decompress_Stat_t *decomp_stat;
-  int nx, i, status;
-  char imgfile[128], cmd[128];
-
-  printk("\n***ingest_tlm received a termination signal\n");
-  msg("\n***ingest_tlm received a termination signal\n");
-  nx = decompress_status_all(&decomp_stat);
-  msg("# of currently opened images to be flushed = %d\n", nx);
-  if(nx) msg("(see log for more details)\n");
-  h0log("# of currently opened images to be flushed = %d\n", nx);
-  for(i=0; i < nx; i++) {
-    h0log("decmpress_print_status() says:\n");
-    decompress_print_status(&decomp_stat[i]);
-    h0log("Write partial image.\n");
-    fsn = ID2FSN(decomp_stat[i].ID);
-    fid = ID2FID(decomp_stat[i].ID);
-    status = decompress_flush_image(fsn, fid, &image);
-    if(status == SUCCESS) {
-/*********************************************************************
-      if(catalog_image(image)) {
-        h0log("Error on catalog_image()\n");
-      }
-*********************************************************************/
-      sprintf(imgfile, "%s/%s_%09d.%d.fits", IMAGEDIR,pchan,fsn,imagedircnt++);
-      if(decompress_writefitsimage(imgfile, image, 0)) {
-        h0log("Error on output of %s\n", imgfile);
-      }
-      decompress_free_images(image);
-      /* only keep the last 30 images */
-      if(imagedircnt >= IMAGEDIRCNT) {
-        sprintf(cmd,"/bin/rm %s/%s_*.%d.fits",IMAGEDIR,pchan,imagedircnt-IMAGEDIRCNT);
-        h0log("%s\n", cmd);
-        system(cmd);
-      }
-      h0log("*SUCCESS FLUSH of partial image %s for fsn=%d\n", imgfile, fsn);
-    }
-    else {
-      h0log("Can't flush image for fsn = %d. Status=%d\n", fsn, status);
-    }
-  }
-  free(decomp_stat);
   abortit(2);
 }
 
-/* Print the usage message and abort 
- */
-void usage()
-{
-  msg("Usage:\ningest_lev0 [-v] -pVCnn dir_in dir_out [log_file]\n");
-  msg("where: -v = verbose\n");
-  msg("where: -p = primary channel to listen to e.g. VC02\n");
-  msg(" dir_in = directory containing the files to ingest.\n");
-  msg(" dir_out = directory to move the files to after the ingest.\n");
-  msg(" log_file = optional log file name. Will create one if not given.\n");
-  abortit(1);
-}
-
-
-/* Gets the command line and reads the switches.
- */
-void get_cmd(int argc, char *argv[])
-{
-  char *cptr;
-  int c, i;
-
-  while(--argc > 0 && ((*++argv)[0] == '-')) {
-    while((c = *++argv[0]))
-      switch(c) {
-      case 'd':
-        debugflg=1;
-        break;
-      case 'v':
-        verbose=1;
-        break;
-      case 'p':			/* primary chan e.g. VC02 */
-        if(*++argv[0] != NULL) {
-          cptr = argv[0];
-          strcpy(pchan, cptr);
-          for(i=0; ; i++) {	/* ck for valid and get redundant chan */
-            if(!strcmp(p_r_chan_pairs[i].pchan, pchan)) {
-              strcpy(rchan, p_r_chan_pairs[i].rchan);
-              break;
-            }
-            if(!strcmp(p_r_chan_pairs[i].pchan, "n/a")) {
-              printk("!!ERROR: Invalid VCid (%s) specified\n", pchan);
-              usage();
-            }
-          }
-          pflg = 1;
-        }
-        while(*++argv[0] != NULL);
-        --argv[0];
-        break;
-      default:
-        usage();
-        break;
-      }
-  }
-  if(!pflg) usage();
-  if(argc != 3) usage();
-  tlmdir = argv[0];
-  pipedir = argv[1];
-  logfile = argv[2];
-  gethostname(pdshost, MAX_STR);
-  if((cptr = index(pdshost, '.'))) 
-    *cptr = 0;                       /* remove any .Stanford.EDU */
-}
 
 time_t call_time() 
 {
@@ -537,8 +445,10 @@ unsigned short MDI_getshort (unsigned char *c)    /*  machine independent  */
 int get_tlm(char *file)
 {
   FILE *fpin;
+/***************************
   Image_t *images, *sav_images, *im, *partimg;
   CCSDS_Packet_t *hk_packets;
+*******************************/
   unsigned char cbuf[PKTSZ];
   char errtxt[128], imgfile[128], cmd[128];
   long long gap_42_cnt;
@@ -648,10 +558,10 @@ int get_tlm(char *file)
     }
 
     /* Parse tlm packet headers. */
-/** !!!TEMP noop processing for Jul 2006 test w/ DDS **************/
+/** !!!TEMP noop processing for Jul 2006 test w/ DDS **************
     rstatus = decompress_next_vcdu((unsigned short *)(cbuf+10), 
 			&images, &hk_packets);
-/*******************************************************************/
+*******************************************************************/
 /*rstatus = SUCCESS;*/
 /*goto BYPASS;*/
 
@@ -670,113 +580,27 @@ int get_tlm(char *file)
         /* close the image of the prev fsn if not 0 */
         if(fsn_prev != 0) {
           for(nx=0; nx < numcontexts; nx++) {
-            fsn = ID2FSN(Context[nx]->ID);
+            /*fsn = ID2FSN(Context[nx]->ID);*/
             if(fsn == fsn_prev) {
-              im = Context[nx]->image;
-              if(im->keywords != NULL) {  /* the ISP is in */
-                h0log("*New fsn. ISP in for prev fsn. Flush its image\n");
-              }
-              else {
-                h0log("*New fsn. ISP NOT in for prev fsn. Flush its image\n");
-              }
-                fid = ID2FID(Context[nx]->ID);
-                status = decompress_flush_image(fsn, fid, &partimg);
-                if(status == SUCCESS) {
-                  h0log("*SUCCESS FLUSH of partial image fsn=%d\n", fsn);
-/**********************************************!!!OLD**************
-                  if(catalog_image(partimg)) {
-                    h0log("Error on catalog_image()\n");
-                  }
-**********************************************!!!OLD**************/
-                  sprintf(imgfile, "%s/%s_%09d.%d.fits",
-                        IMAGEDIR, pchan, fsn, imagedircnt++);
-                  if(decompress_writefitsimage(imgfile, partimg, 0)) {
-                    h0log("Error on output of %s\n", imgfile);
-                  }
-                  decompress_free_images(partimg);
-                  /* only keep the last 30 images */
-                  if(imagedircnt >= IMAGEDIRCNT) {
-                    sprintf(cmd,"/bin/rm %s/%s_*.%d.fits",
-                          IMAGEDIR,pchan,imagedircnt-IMAGEDIRCNT);
-                    h0log("%s\n", cmd);
-                    system(cmd);
-                  }
-                }
-                else {
-                  h0log("*FAILURE to flush prev fsn=%d\n", fsn);
-                }
-                remopenimg(&openimg_hdr, fsn); /* remove in case it's there */
+               /* !!!!STUFF taken out!!!!!*/
             }
           }
         }
         fsn_prev = fsnx;
       }
       break;
-    case SUCCESS_IMAGECOMPLETE: case SUCCESS_HKCOMPLETE:
-      /* 1: A science data VCDU was successfully decoded.
-      /* The corresponding image is complete, including its image status
-      /* packet keywords. On return *image will contain a pointer to an
-      /* image structure holding the completely reconstructed image and
-      /* its image status info.
-      /* 3: A housekeeping VCDU was successfully decoded, and as a result one
-      /* or more images had their image status info attached. On return
-      /* *hk_packets will point to the head of a linked list of
-      /* CCSDS_Packet_t structs containing the decoded contents of
-      /* each housekeeping packet. On return *image will contain a
-      /* pointer to the head of a linked list of image structures holding
-      /* completely reconstructed images and their image status info.
-      */
-      sav_images = images;
-      while(images) {
-        imagecnt++;
-        fsn = IMAGE_FSN(images);
-        fid = IMAGE_FID(images);
-/***********************************************************************
-        ftmp = StopTimer(2);
-        h0log("Image %d: Time since last IMAGECOMPLETE = %fsec\n", 
-		fsn, ftmp);
-        tsum[2] += ftmp;
-***********************************************************************/
-/********************************************!!OLD*********
-        if(catalog_image(images)) {
-          h0log("Error on catalog_image()\n");	
-        }
-********************************************!!OLD*********/
-        sprintf(imgfile, "%s/%s_%09d.%d.fits",IMAGEDIR,pchan,fsn,imagedircnt++);
-        if(decompress_writefitsimage(imgfile, images, 0)) {
-          h0log("Error on output of %s\n", imgfile);
-        }
-        /* only keep the last 30 images */
-        if(imagedircnt >= IMAGEDIRCNT) {
-          sprintf(cmd, "/bin/rm %s/%s_*.%d.fits",IMAGEDIR,pchan,imagedircnt-IMAGEDIRCNT);
-          h0log("%s\n", cmd);
-          system(cmd);
-        }
-        h0log("*SUCCESS_IMAGECOMPLETE %s\n", imgfile);
-        /*StartTimer(2);			/* time next image */
-        images = images->next;
-      }
-      decompress_free_images(sav_images);
-      alarm(ALRMSEC);			/* reset timer */
-      break;
-    case SUCCESS_HK:
-      /* 2: A housekeeping VCDU was successfully decoded. On return
-      /* *hk_packets will point to the head of a linked list of
-      /* CCSDS_Packet_t structs containing the decoded contents of
-      /* each housekeeping packet.
-      */
-      break;
+   /* !!!!STUFF taken out!!!!!*/
     default:
       /* < 0: An error occured. Consult hmi_compression.h for macro
       /* definitions of negative error codes.
-      */
       h0log("*decompress_next_vcdu() returns err status = %d:\n", rstatus);
       decompress_next_vcdu_err_str(rstatus, errtxt);
       h0log("%s\n\n", errtxt);
+      **********/
       break;
     }
     if(rstatus > 1) {		/* !!TBD just free hk pkts for now */
-      decompress_free_hk(hk_packets);
+      /*decompress_free_hk(hk_packets);*/
     }
 BYPASS:
     if(sigtermflg) { now_do_term_sig(); }
@@ -835,6 +659,8 @@ void do_pipe2soc() {
   int ptape_fn, complete;
   char line[128], fname[128], cmd[128];
   char *su_name, *ptape_id, *ptape_date;
+
+  char *frompipedir; /* !!!TEMP to compile */
 
   /* only run this on the primary channel ingest_tlm process */
   if(strcmp(pchan, "VC01") && strcmp(pchan, "VC02")) { return; }
@@ -895,6 +721,9 @@ void do_ingest()
   char name[128], line[128], mvname[128], tlmfile[128], tlmname[96];
   char cmd[128], xxname[128], tlmsize[80];
   char *token;
+
+  char *tlmdir; /* !!!TEMP to compile */
+  char *pipedir; /* !!!TEMP to compile */
 
   /* init summary timers */
   for(i=0; i < NUMTIMERS; i++) {
@@ -1095,9 +924,9 @@ void setup(int argc, char *argv[])
   if(!(username = (char *)getenv("USER"))) username = "nouser";
   if(!logfile) {		/* no logfile given on command line */
     sprintf(logname, H0LOGFILE, username, getpid());
-    open_h0log(logname, "w");	/* open new file for write */
+    /*open_h0log(logname, "w");	/* open new file for write */
   } else {
-    open_h0log(logfile, "a");   /* open given file for append */
+    /*open_h0log(logfile, "a");   /* open given file for append */
   }
   printk_set(h0log, h0log);	/* set for printk calls */
   printk("%s\n", datestr);
@@ -1117,16 +946,17 @@ void setup(int argc, char *argv[])
   open_sum();			/* open with sum_svc */
 }
 
-int main(int argc, char *argv[])
-{
-  get_cmd(argc, argv);		/* check the calling sequence */
-  setup(argc, argv);		/* start pvm and init things */
-  alarm(ALRMSEC);		/* ck for partial images every 60 sec */
-  while(1) {
-    do_ingest();		/* loop to get files from the input dir */
-    do_pipe2soc();		/* get any .parc files from pipeline backend */
-    sleep(4);
-    if(sigtermflg) { now_do_term_sig(); }
-  }
-}
+/*int main(int argc, char *argv[])
+/*{
+/*  get_cmd(argc, argv);		/* check the calling sequence */
+/*  setup(argc, argv);		/* start pvm and init things */
+/*  alarm(ALRMSEC);		/* ck for partial images every 60 sec */
+/*  while(1) {
+/*    do_ingest();		/* loop to get files from the input dir */
+/*    do_pipe2soc();		/* get any .parc files from pipeline backend */
+/*    sleep(4);
+/*    if(sigtermflg) { now_do_term_sig(); }
+/*  }
+/*}
+*/
 

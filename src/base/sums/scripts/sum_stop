@@ -20,8 +20,8 @@ if($host ne $HOST) {
   print "This can only be run on $HOST.\n";
   exit;
 }
-if(@ARGV[0] eq "-M") { $mail = 0; shift(@ARGV); }
-else { $mail = 1; }
+if(@ARGV[0] eq "-M") { $mailflg = 0; shift(@ARGV); }
+else { $mailflg = 1; }
 
 $PID = getppid;
 $LOGFILE = "/tmp/sum_stop.$PID";
@@ -130,4 +130,4 @@ $mail = "Mail -s \"SUM Stop Complete\"";
 $to = "sssc_crew\@solar2";
 #$to = "jim";
 $cmd = "$mail $to < $MLOGFILE";
-if($mail) { system $cmd; }
+if($mailflg) { system $cmd; }
