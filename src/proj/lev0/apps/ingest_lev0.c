@@ -52,7 +52,7 @@
 #include <dirent.h>
 #include <unistd.h> /* for alarm(2) among other things... */
 #include <printk.h>
-#include <imgstruct.h>
+#include "imgstruct.h"
 /************************************
 #include "hmi_compression.h"
 #include "decompress.h"
