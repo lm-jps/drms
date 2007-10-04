@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-#/home/production/cvs/jsoc/scripts/sum_start
+#/home/production/cvs/JSOC/src/base/sums/scripts/sum_start
 #This is to start the sum_svc and related servers.
 #Call with -M will not send mail notification.
 #

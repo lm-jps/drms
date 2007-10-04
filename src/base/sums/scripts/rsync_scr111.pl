@@ -40,7 +40,7 @@ else {
 
 #set up for ssh w/o password
 #`source /home/jim/cvs/jsoc/scripts/ssh_setenv`;
-$cmd = "source /home/jim/cvs/jsoc/scripts/ssh_rsync.source";
+$cmd = "source /home/jim/cvs/JSOC/src/base/sums/scripts/ssh_rsync.source";
 
 if(system "$cmd 1> $logfile 2>&1") {
   print "Error on: $cmd\n";

@@ -87,10 +87,10 @@
 #define FSN_TAI_FIXED 1000000 /* FSN before this number will have 33 secs added to OBT to fix to TAI */
 
 /* Table directory for mech values when in CIF mode */
-#define TABLE_PATH "/tables/hmi_ground/"
+#define TABLE_PATH "src/proj/lev0/apps/data/"
 
 /* Program to call to update the config dataseries, takes 3 args: T_OBS, FSN, DRMSSESSION */
-#define UPDATE_CONFIG_PROG "scripts/hmi_ground/set_config_by_time.csh"
+#define UPDATE_CONFIG_PROG "src/proj/lev0/scripts/hmi_ground/set_config_by_time.csh"
 
 /* Ancillary series with test config data, prime key FSN */
 #define CONFIG_SERIES "hmi_ground.lev0_config"
@@ -551,6 +551,7 @@ if (!called)
     FILE *fp;
     char line[1024];
     strcpy(tablepath, cmdparams_get_str(&cmdparams, "JSOCROOT", NULL));
+    strcat(tablepath, "/");
     strcat(tablepath, TABLE_PATH);
     strcat(tablepath, tabinfo[tab].filename);
     fp = fopen(tablepath, "r");

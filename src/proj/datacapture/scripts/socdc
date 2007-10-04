@@ -956,7 +956,7 @@ sub Dbl_click_dds
     } elsif (defined $pid2) {     # $pid2 is zero here if defined.
       print "Starting tlmview $fullfile\n";
       print LOG "Starting tlmview $fullfile\n";
-      exec "/home/production/cvs/jsoc/src/datacapture/tlmview $fullfile";
+      exec "/home/production/cvs/JSOC/src/proj/datacapture/scripts/tlmview $fullfile";
     }  else {
       #fork error
       print "!!Abort: Can't fork: $!\n";
@@ -1076,7 +1076,7 @@ sub Dbl_click_soc
     } elsif (defined $pid3) {     # $pid3 is zero here if defined.
       print "Starting tlmview $fullfile\n";
       print LOG "Starting tlmview $fullfile\n";
-      exec "/home/production/cvs/jsoc/src/datacapture/tlmview $fullfile";
+      exec "/home/production/cvs/JSOC/src/proj/datacapture/scripts/tlmview $fullfile";
     }  else {
       #fork error
       print "!!Abort: Can't fork: $!\n";

@@ -309,7 +309,8 @@ sub CallSetKey
 	    system($skCmd) == 0 || die "Error calling set_keys: $?\n";
 	    $numRecsAdded++;
 	    $numFilesAdded++;
-	    VerifyFileCopy($series, $dataType, $prodComp, $jsocDate, $fileFormat, $fileVersion, $filePath);
+	    # XXX - this doesn't work anymore
+	    # VerifyFileCopy($series, $dataType, $prodComp, $jsocDate, $fileFormat, $fileVersion, $filePath);
 	}
 	
 	close (TIMECONV);
@@ -322,6 +323,8 @@ sub VerifyFileCopy
 
     my($skResultLine);
     my($skCmdLine) = "show_keys -apq ds=$series\[$primaryKey[0]=$dataType\]\[$primaryKey[1]=$prodComp\]\[$primaryKey[2]=$jsocDate\]\[$primaryKey[3]=$dataFormat\]\[$primaryKey[4]=$fileVersion\] seg=$segmentName[0] |";
+
+    print(<STDOUT>, "  Verifying $skCmdLine\n");
 
     open (SHOWKEYS, $skCmdLine) || die "Couldn't run show_keys: $skCmdLine\n";
 

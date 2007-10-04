@@ -21,7 +21,7 @@ touch $TRIGGER
 set TARGET = hmi_ground.lev0
 
 set JSROOT = /home/jsoc/hmi/ground
-set KEYMAPS = $JSOCROOT/tables/hmi_ground/jsd
+set KEYMAPS = $JSOCROOT/src/proj/lev0/scripts/hmi_ground
 
 echo $0 $* >>$JSROOT/logs/log_run_q
 

@@ -1,6 +1,6 @@
 eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
     if 0;
-#/home/jim/cvs/jsoc/src/lev0/start_ingest_lev0_hmi
+#/home/jim/cvs/JSOC/src/proj/lev0/scripts/start_ingest_lev0_hmi
 #This is to start the ingest_lev0 for 2 VCs for HMI.
 #
 $| = 1;                 #flush output as we go

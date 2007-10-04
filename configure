@@ -93,7 +93,14 @@ if ($CHKLIBS == "no") then
 	    mkdir scripts
 	endif
 	cd scripts
-	find ../src/base/sums/scripts -mindepth 1 \( -path ../src/base/sums/scripts/CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
+
+	# Sums scripts
+	find ../src/base/sums/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
+
+	# Util scripts
+	find ../src/base/util/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
+
+
 	cd ..
 	echo "done"
 	echo

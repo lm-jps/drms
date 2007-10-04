@@ -10,7 +10,7 @@
  * in DSDDS, of a storage partition associated with a host name is gone.
  * 
  * sum_rm reads its configuration file, named like:
- * 	/home/jim/cvs/jsoc/tables/sum_rm.cfg.<db>.
+ * 	/home/jim/cvs/JSOC/src/base/sums/apps/data/sum_rm.cfg.<db>.
  * This file has parameters to configure the sum_rm run.
  * 
  *	#typical configuration file for sum_rm program
@@ -58,7 +58,7 @@
 #include <printk.h>
 #include <sys/statvfs.h>
 
-#define CFG_FILE "/home/production/cvs/jsoc/tables/sum_rm.cfg"
+#define CFG_FILE "/home/production/cvs/JSOC/src/base/sums/apps/data/sum_rm.cfg"
 
 double stat_storage();
 void get_cfg();

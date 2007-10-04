@@ -8,7 +8,7 @@ set noglob
 
 set MAX_IN_QUEUE = 200
 set JSROOT = /home/jsoc/hmi/ground
-set SCRIPTS = $JSOCROOT/scripts/hmi_ground
+set SCRIPTS = $JSOCROOT/src/proj/lev0/scripts/hmi_ground
 set PEQ = /home/phil/bin/_$MACHINE/PEQ
 
 set BATCHDIR = "$JSROOT/batch_jobs/$HOST.$$"

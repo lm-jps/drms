@@ -57,7 +57,7 @@ while (defined($line =<HELIOFILE>))
     
     if ($endOfHeader == -1)
     {
-	if ($line =~ /\s*Time\s*\(YYYYDDD\)\s+X\s*\(km\)\s+Y*\s*\(km\)\s+Z\s*\(km\)\s+Vx\s*\(km\/sec\)\s+Vy\s*\(km\/sec\)\s+Vz\s*\(km\/sec\)/)
+	if ($line =~ /\s*Time\s*\(YYYYDDD\)\s+X\s*\(km\)\s+Y*\s*\(km\)\s+Z\s*\(km\)\s+Vx\s*\(km\/sec\)\s+Vy\s*\(km\/sec\)\s+Vz\s*\(km\/sec\)\s*/)
 	{
 	    # end of header is next line
 	    $endOfHeader = 1;
@@ -110,7 +110,7 @@ while (defined($line =<HELIOFILE>))
 		    if (!defined($jsocTime))
 		    {
 			my($convTime);
-			my($tcCmdLine) = "time_convert ord=$ordDate" . "_UT -e zone=UT |";
+			my($tcCmdLine) = "time_convert ord=$ordDate" . "_UT o=cal zone=UT |";
 			
 			open (TIMECONV, $tcCmdLine) || die "Couldn't run time_conv: $tcCmdLine\n";
 			
@@ -121,7 +121,7 @@ while (defined($line =<HELIOFILE>))
 			    $ordDateHash{$ordDate} = $jsocTime;
 			}
 		    }
- 
+
 		    if (defined($jsocTime))
 		    {
 			# Add hours/minutes to $jsocTime

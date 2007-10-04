@@ -1,6 +1,6 @@
 eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
     if 0;
-#/home/production/cvs/jsoc/scripts/sum/sumlook.pl
+#/home/production/cvs/JSOC/src/base/sums/scripts/sumlook.pl
 #
 #Show how the storage is distributed (free, del pend, arch pend, etc.)
 #for each /SUM partition in the sum_partn_avail table.
