@@ -100,6 +100,10 @@ if ($CHKLIBS == "no") then
 	# Util scripts
 	find ../src/base/util/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
 
+	# Project-specific scripts - these won't show up if you don't have the project source.
+	if (-x ../src/proj/configure) then
+	    ../src/proj/configure
+	endif
 
 	cd ..
 	echo "done"
