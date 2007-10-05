@@ -1,0 +1,7 @@
+This directory, $JSOCROOT/src/proj/myproj, is intended to serve as a playground
+for developing and testing new code.  Please read all ReadMe files and NOTEs within 
+files for brief descriptions of how to accomplish commonly desired tasks.
+
+Please do NOT check-in to CVS edited versions of any of these files.  This directory 
+is for general use, and should not contain any project- or developer-specific code.  
+All changes that accidentally get checked into CVS will be discarded.  
