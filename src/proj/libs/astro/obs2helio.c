@@ -40,7 +40,7 @@
 #include "astro.h"
 
 const int kMaxCols = 3072;
-const double kOmegaCarr = 2.66622375;
+const double kOmegaCarr = (360 /  27.27527); /* degrees/day - synodic Carrington rotation rate */
 const double kRadsPerDegree = M_PI/180.;
 
 static void Ccker(double *u, double s);
@@ -53,8 +53,6 @@ static void Distort(double x,
 		    double *xd, 
 		    double *yd, 
 		    const LIBASTRO_Dist_t *distpars);
-static double AdjLongForDiffRot(double dLong, double sinLat2);
-
 
 /* Calculate the interpolation kernel. */
 void Ccker(double *u, double s)
@@ -294,18 +292,6 @@ void Distort(double x,
    *yd=y+sign*epsy/distpars->scale;
 }
 
-/* Returns longitude delta (in radians, from Central Meridian) of a point that results
- * when compensating for differential rotation.
- *   dLong - the longitude delta of the original point, in radians, 
- *     from the Central Meridian
- *   sinLat2 - sq(sin(latitude)) of observation point 
- */
-double AdjLongForDiffRot(double dLong, double sinLat2)
-{
-     double omegaLat = 2.730 - 0.4100 * sinLat2 * (1.0 + 1.0216 * sinLat2);
-     return (dLong * omegaLat / kOmegaCarr);
-}
-
 int Obs2helio(
 	       float	*V,		/* input velocity array				*/
 	       /* assumed declared V[ypixels][xpixels]		*/
@@ -345,7 +331,12 @@ int Obs2helio(
 	       double   vsign,
 	       int	NaN_beyond_rmax,
 	       int      carrStretch,    /* adjusts for differential rotation if not zero */
-	       const LIBASTRO_Dist_t *distpars)
+	       const LIBASTRO_Dist_t *distpars,
+	       float   diffrotA,
+	       float   diffrotB,
+	       float   diffrotC,
+	       LIBASTRO_RotRate_t *rRates, /* rotation rates passed by reference*/
+	       int        size)
 {
      
    double xtmp, ytmp;
@@ -395,12 +386,15 @@ int Obs2helio(
    const double limbshift_coef_a2 = 700.;
      
    /*  Variables for optimization  */
-   double savedL[kMaxCols];
+   double savedDeltaL[kMaxCols]; /* delta (radians) between remapped image column and CM */
    double savedsinL[kMaxCols];
    double savedcosL[kMaxCols];
    double cB0sB, cB0cB, sB0sB, sB0cB;
    double sinB2;
    int rowoffset;
+   double omegaLat;
+   double deltaLAdj; /* delta (radians) between remapped image column and CM AFTER
+		      * differential rotation adjustment. */
      
    long i;
    double *vdp;
@@ -457,7 +451,7 @@ int Obs2helio(
    Rmax2 = Rmax * Rmax;
      
    for (col = 0; col < cols; col++) {
-      savedL[col] = (L = Ldelta*col + Lmin -Ladjust); /* delta in radians between col and CM */
+      savedDeltaL[col] = (L = Ldelta*col + Lmin - Ladjust); /* delta in radians between col and CM */
       savedsinL[col] = (sinL = sin(L));
       savedcosL[col] = sqrt(1.0 - sinL*sinL);
    }
@@ -473,7 +467,15 @@ int Obs2helio(
       sB0cB = sinB0*cosB;
       cB0sB = cosB0*sinB;
       cB0cB = cosB0*cosB;
-	  
+      omegaLat = diffrotA + diffrotB * sinB2 + diffrotC * sinB2 * sinB2;
+
+      /* fill in table of sidereal rotation rate vs. row */
+      if (rRates && row < size)
+      {
+	 rRates[row].lat = asin(sinB); /* radians */
+	 rRates[row].r =  14.562 + (diffrotB * sinB2) + (diffrotC * sinB2 * sinB2);
+      }
+
       v_rotation = v_equator*(1.0+sinB2*(rotation_coef_a2+sinB2*rotation_coef_a4));
 	  
       for (col = 0; col < cols; col++) {
@@ -485,14 +487,15 @@ int Obs2helio(
 	 }
 	 else
 	 {
-	    /* Must adjust longitude of observation point to account for
-	     * differential rotation. */
-		    
-	    /* savedL[col] is longitude delta (from cmLong) in radians. */
-	    /* savedL[midCol] is always -Ladjust. */
-	    double longAdj = AdjLongForDiffRot(savedL[col], sinB2);
-	    sinL = sin(longAdj);
-	    cosL = cos(longAdj);
+	    /* savedDeltaL[col] is longitude delta (from CM) in radians. 
+	     * NOTE: This is the ACTUAL (with precision) difference
+	     * between CM and the current column. 
+	     */
+
+	    /* savedDeltaL[midCol] is always (-Ladjust) */
+	    deltaLAdj = savedDeltaL[col] * omegaLat / kOmegaCarr;
+	    sinL = sin(deltaLAdj);
+	    cosL = cos(deltaLAdj);
 	 }
 	       
 	 sinp_sinrho = sinL*cosB;

@@ -51,6 +51,12 @@ typedef struct LIBASTRO_Dist_Struct
   double feff, alpha, cosbeta, sinbeta; /* Tilt constants for FD. */
 } LIBASTRO_Dist_t;
 
+typedef struct LIBASTRO_RotRate_struct
+{
+  float lat;
+  float r;
+} LIBASTRO_RotRate_t;
+
 
 int ConvAndInterpFDS(DRMS_Env_t *drmsEnv, char *seriesName, char *dateRange);
 int SetDistort(CmdParams_t *params, 
@@ -98,7 +104,12 @@ int Obs2helio(
 	       double   vsign,
 	       int	NaN_beyond_rmax,
 	       int      carrStretch,
-	       const LIBASTRO_Dist_t *distpars);
+	       const LIBASTRO_Dist_t *distpars,
+	       float   diffrotA,
+	       float   diffrotB,
+	       float   diffrotC,
+	       LIBASTRO_RotRate_t *rRates, /* rotation rates passed by reference*/
+	       int        size);
 
 float Ccint2(float *f, int nx, int ny, double x, double y);
 double Ccint2d(double *f, int nx, int ny, double x, double y);

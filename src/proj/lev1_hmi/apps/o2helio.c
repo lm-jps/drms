@@ -39,6 +39,7 @@
 #define NO_DATASET	(-1)
 #define NO_IMAGE	(-1)
 #define kMAX_SKIPERRMSG  1024
+#define kMAXROWS        65536
 
 /* cmd-line parameters */
 #define kRecSetIn       "recsin"
@@ -79,6 +80,7 @@
 #define kTILTALPHA      "TILTALPHA"
 #define kTILTBETA       "TILTBETA"
 #define kTILTFEFF       "TILTFEFF"
+#define kDEBUGLOGFLAG   "d"
 
 /* Keywords in the input data */
 #define kT_OBS          "T_OBS"
@@ -131,6 +133,10 @@
 #define BLDVER15        "BLDVER15"
 #define BLDVER18        "BLDVER18"
 #define FDRADIAL        "FDRADIAL"
+#define CARSTRCH        "CARSTRCH"
+#define DIFROT_A        "DIFROT_A"
+#define DIFROT_B        "DIFROT_B"
+#define DIFROT_C        "DIFROT_C"
 
 typedef enum
 {
@@ -184,11 +190,15 @@ ModuleArgs_t module_args[] =
    {ARG_FLOAT,   kTILTALPHA,"2.59", "", ""}, /* TILT of CCD in degrees */
    {ARG_FLOAT,   kTILTBETA, "56.0", "", ""}, /* Direction of TILT in degrees */
    {ARG_FLOAT,   kTILTFEFF, "12972.629", "", ""}, /* Effective focal length */
-   {ARG_FLAG,    kCHECKO_FLAG,        "0", "-1", "1"},	/* Non 0 skips checko (SESW assumed) */
-   {ARG_FLAG,    kRMAX_FLAG   ,        "0", "-1", "1"},	/* Non 0 sets data outside RMAX MISSING */
+   {ARG_FLAG,    kCHECKO_FLAG,  "0", "-1", "1"},  /* Non 0 skips checko (SESW assumed) */
+   {ARG_FLAG,    kRMAX_FLAG,    "0", "-1", "1"},  /* Non 0 sets data outside RMAX MISSING */
+   {ARG_FLAG,    kDEBUGLOGFLAG, "0", "-1", "1"},  /* debug messages */
    {ARG_INT,     kDATASIGN,  "0", "-1", "1"}, 	/* Non 0 forces datasigh to value*/
    {ARG_INT,     kMAXMISSVALS, "0", "", "0"},  /* max. allowed MISSING pixels */
    {ARG_INT,     kCarrStretch, "0", "0", ""},  /* 0 - don't correct for diff rot, 1 - correct */
+   {ARG_FLOAT,   DIFROT_A,   "13.562", "", ""}, /* A coefficient in diff rot adj (offset) */
+   {ARG_FLOAT,   DIFROT_B,   "-2.04", "", ""},  /* B coefficient (to sin(lat) ^ 2) */
+   {ARG_FLOAT,   DIFROT_C,   "-1.4875", "", ""},  /* c coefficient (to sin(lat) ^ 4) */
    {ARG_END,     "", "", "", ""}
 };
 
@@ -351,9 +361,13 @@ int DoIt(void)
    int longitude_shift, velocity_correction, interpolation, apodization;
    int mag_correction;
    int mag_offset;
+   int row;
    int mapped_lmax, sinb_divisions, mapcols, maprows, nmax, nmin;
    int length[2];
    int carrStretch = 0;
+   float diffrotA = 0.0;
+   float diffrotB = 0.0;
+   float diffrotC = 0.0;
    const char *outtypeStr = NULL;
    DRMS_Type_t outtype = DRMS_TYPE_FLOAT;
    V2HStatus_t vret = V2HStatus_Success;
@@ -374,8 +388,10 @@ int DoIt(void)
    double apinner, apwidth, apx, apy;
    double scale, bias;
    double colsperdeg;
+   LIBASTRO_RotRate_t rRates[kMAXROWS];
 
    int skip_checko = cmdparams_isflagset(&cmdparams, kCHECKO_FLAG);
+   int debugLog = cmdparams_isflagset(&cmdparams, kDEBUGLOGFLAG);
    int NaN_beyond_rmax = cmdparams_isflagset(&cmdparams, kRMAX_FLAG);
    int maxmissvals = cmdparams_get_int(&cmdparams, kMAXMISSVALS, &status);
 
@@ -390,6 +406,9 @@ int DoIt(void)
 
    /* read Carrington coordinate correction for differential sun rotation */
    carrStretch = cmdparams_get_int(&cmdparams, kCarrStretch, &status);
+   diffrotA = cmdparams_get_float(&cmdparams, DIFROT_A, &status);
+   diffrotB = cmdparams_get_float(&cmdparams, DIFROT_B, &status);
+   diffrotC = cmdparams_get_float(&cmdparams, DIFROT_C, &status);
 
    longrate = 360.0 / TCARR - 360.0 / DAYSINYEAR; /* degrees per day */
    longrate /= SECSINDAY; /* degrees per sec */
@@ -680,6 +699,11 @@ int DoIt(void)
 	       longshift =  obsl0 - (int)(obsl0);
 	       if (longshift > 0.5) longshift -= 1.0;
 	    }
+	    else if (longitude_shift == 3)  /* Shift center to nearest tenth of a degree */
+	    {
+	       longshift = (obsl0 * 10 - (int)(obsl0 * 10)) / 10;
+	       if (longshift > 0.5) longshift -= 1.0;
+	    }
 	    else
 	    {
 	       longshift = 0.0;
@@ -764,6 +788,16 @@ int DoIt(void)
 	    /* magsynop needs to know whether the fits file contains radial values or not. */
 	    drms_copykey(outrec, inrec, FDRADIAL);
 
+	    /* save the differential rotation correction parameters */
+	    if (carrStretch)
+	    {
+	       int csVal = 1;
+	       drms_setkey_int(outrec, CARSTRCH, csVal);
+	       drms_setkey_float(outrec, DIFROT_A, diffrotA);
+	       drms_setkey_float(outrec, DIFROT_B, diffrotB);
+	       drms_setkey_float(outrec, DIFROT_C, diffrotC);
+	    }
+
 	    if (mag_offset) 
 	    {
 	       float *dat = (float *)inarr->data;
@@ -832,10 +866,25 @@ int DoIt(void)
 				   vsign, 
 				   NaN_beyond_rmax,
 				   carrStretch,
-				   &distP)) 
+				   &distP,
+				   diffrotA,
+				   diffrotB,
+				   diffrotC,
+				   rRates,
+				   sizeof(rRates))) 
 	    {
 	       SkipErr(status, inrec, "Failure in obs2helio");
 	       continue; /* go to next image */
+	    }
+
+	    /* Output to log rotation rate (deg/day) vs. latitude */
+	    if (debugLog)
+	    {
+	       fprintf(stdout, "latitude\tsidereal rotation rate (deg/day)\n");
+	       for (row = 0; row < maprows && row < sizeof(rRates); row++)
+	       {
+		  fprintf(stdout, "%10f\t%32f\n", rRates[row].lat / RADSINDEG, rRates[row].r);
+	       }
 	    }
 
 	    if (status = apodize((float *)outarr->data,
