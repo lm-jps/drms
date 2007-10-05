@@ -11,3 +11,4 @@ $(PROJOBJDIR):
 	+@[ -d $@/lev0/apps ] || mkdir -p $@/lev0/apps
 	+@[ -d $@/lev1_aia/apps ] || mkdir -p $@/lev1_aia/apps
 	+@[ -d $@/lev1_hmi/apps ] || mkdir -p $@/lev1_hmi/apps
+	+@[ -d $@/myproj/apps ] || mkdir -p $@/myproj/apps
