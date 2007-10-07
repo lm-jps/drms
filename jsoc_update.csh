@@ -42,7 +42,8 @@ echo "##"
 echo "## Now Check cvsstatus for files that should be in the release ##"
 echo "####### Start checking status ####################"
 
-alias cvsstatus '$JSOCROOT/scripts/cvsstatus.pl'
+# alias cvsstatus '$JSOCROOT/scripts/cvsstatus.pl'
+alias cvsstatus '$JSOCROOT/src/base/util/scripts/cvsstatus.pl'
 cvsstatus
 
 echo "####### Done checking status ####################"
