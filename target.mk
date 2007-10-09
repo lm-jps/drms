@@ -53,6 +53,7 @@ $(OBJDIR):
 	+@[ -d $@/src/base/sums/libs/api ] || mkdir -p $@/src/base/sums/libs/api
 	+@[ -d $@/src/base/sums/libs/pg ] || mkdir -p $@/src/base/sums/libs/pg
 	+@[ -d $@/src/base/util/apps ] || mkdir -p $@/src/base/util/apps
+	+@[ -d $@/src/proj/example/apps ] || mkdir -p $@/src/proj/example/apps
 	+@$(MAKETARGET)
 
 # These rules keep make from trying to use the match-anything rule below to

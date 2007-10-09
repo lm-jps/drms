@@ -15,6 +15,17 @@ foreach ARG ($argv)
 end
 
 if ($CHKLIBS == "no") then
+    echo -n "Remove links for local project configuration..."
+    if (-d src/proj) then
+	cd src/proj
+	rm configure
+	rm make_basic.mk
+	rm Rules.mk
+	rm target.mk
+	cd ../..
+    endif
+    echo "done"
+
     echo -n "Remove links to man pages..."
     if (-d man/man1) then
 	cd man/man1
@@ -64,6 +75,17 @@ if ($CHKLIBS == "no") then
 	    src/base/local/libs/soi/scripts/rmlinks.csh
 	endif
     else
+	echo -n "Setting links for local project configuration..."
+	if (-d ../JSOC.LOCAL) then
+	    cd src/proj
+	    ln -sf ../../../JSOC.LOCAL/configure configure
+	    ln -sf ../../../JSOC.LOCAL/make_basic.mk make_basic.mk
+	    ln -sf ../../../JSOC.LOCAL/Rules.mk Rules.mk
+	    ln -sf ../../../JSOC.LOCAL/target.mk target.mk
+	    cd ../..
+	endif
+	echo "done"
+
 	echo -n "Setting links to man pages..."
 	if (!(-d man/man1)) then
 	    mkdir -p man/man1
