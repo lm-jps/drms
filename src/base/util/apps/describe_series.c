@@ -212,11 +212,13 @@ int DoIt(void) {
   }
   db_free_text_result(qres);
 
+  int rec_cnt;
   // sprintf(query, "select reltuples from pg_class where relname='%s'",series);
   sprintf(query, "select count(recnum) from %s",series);
   if ((qres = drms_query_txt(drms_env->session, query)) && qres->num_rows>0)
   {
-    printf("Number of records = %s\n",qres->field[0][0]);
+    printf("Number of records = %s\n", qres->field[0][0]);
+    rec_cnt = atoi(qres->field[0][0]);
   }
   db_free_text_result(qres);
 
@@ -239,12 +241,15 @@ int DoIt(void) {
   }
   db_free_text_result(qres);
 
-  sprintf(query, "select pg_total_relation_size('%s')/(select count(*) from %s)", series, series);
-  if ((qres = drms_query_txt(drms_env->session, query)) && qres->num_rows>0)    {
-    printf("Average bytes per record on disk: %s\n", qres->field[0][0]);
+  if (rec_cnt) {
+    sprintf(query, "select pg_total_relation_size('%s')", series);
+    if ((qres = drms_query_txt(drms_env->session, query)) && qres->num_rows>0)    {
+      double tsize = atoi(qres->field[0][0]);
+      printf("Average bytes per record on disk: %.2f\n", tsize/rec_cnt);
+    }
+    db_free_text_result(qres);
   }
-  db_free_text_result(qres);
-  
+
   printf("Bytes per record in memory (est.) = %lld\n", 
 	 drms_record_memsize(template));
 
