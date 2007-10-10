@@ -76,14 +76,19 @@ if ($CHKLIBS == "no") then
 	endif
     else
 	echo -n "Setting links for local project configuration..."
-	if (-d ../JSOC.LOCAL) then
-	    cd src/proj
-	    ln -sf ../../../JSOC.LOCAL/configure configure
-	    ln -sf ../../../JSOC.LOCAL/make_basic.mk make_basic.mk
-	    ln -sf ../../../JSOC.LOCAL/Rules.mk Rules.mk
-	    ln -sf ../../../JSOC.LOCAL/target.mk target.mk
-	    cd ../..
+	cd src/proj
+	if (-e suflag.txt) then
+	    ln -sf ../../projconf/su/configure configure
+	    ln -sf ../../projconf/su/make_basic.mk make_basic.mk
+	    ln -sf ../../projconf/su/Rules.mk Rules.mk
+	    ln -sf ../../projconf/su/target.mk target.mk
+	else
+	    ln -sf ../../projconf/ex/configure configure
+	    ln -sf ../../projconf/ex/make_basic.mk make_basic.mk
+	    ln -sf ../../projconf/ex/Rules.mk Rules.mk
+	    ln -sf ../../projconf/ex/target.mk target.mk
 	endif
+	cd ../..
 	echo "done"
 
 	echo -n "Setting links to man pages..."
