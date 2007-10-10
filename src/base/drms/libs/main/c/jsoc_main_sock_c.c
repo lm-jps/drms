@@ -13,7 +13,8 @@ int CallDoIt()
 
 int main(int argc, char **argv) 
 {
-   return JSOCMAIN_Main(argc, argv, module_name, CallDoIt);
+   int status = JSOCMAIN_Main(argc, argv, module_name, CallDoIt);
+   _exit(status);
 }
 #endif /* !IDLLIB */
 #endif /* !FLIB */

@@ -248,7 +248,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
 
    JSOCMAIN_Term(dolog, verbose, drms_server_pid, tee_pid, abort_flag);
 
-   _exit(abort_flag);
+   return(abort_flag);
 }
 
 	     /*  drms_start_server - mimics initial code in drms_run script  */
