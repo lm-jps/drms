@@ -76,19 +76,21 @@ if ($CHKLIBS == "no") then
 	endif
     else
 	echo -n "Setting links for local project configuration..."
-	cd src/proj
 	if (-e suflag.txt) then
+	    cd src/proj
 	    ln -sf ../../projconf/su/configure configure
 	    ln -sf ../../projconf/su/make_basic.mk make_basic.mk
 	    ln -sf ../../projconf/su/Rules.mk Rules.mk
 	    ln -sf ../../projconf/su/target.mk target.mk
+	    cd ../..
 	else
+	    cd src/proj
 	    ln -sf ../../projconf/ex/configure configure
 	    ln -sf ../../projconf/ex/make_basic.mk make_basic.mk
 	    ln -sf ../../projconf/ex/Rules.mk Rules.mk
 	    ln -sf ../../projconf/ex/target.mk target.mk
+	    cd ../..
 	endif
-	cd ../..
 	echo "done"
 
 	echo -n "Setting links to man pages..."
