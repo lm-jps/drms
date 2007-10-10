@@ -186,7 +186,6 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   if (abort_flag) drms_server_abort (drms_env);
   else drms_server_commit (drms_env);
 
-  _exit(0);
-
+  _exit(abort_flag);
 }
   
