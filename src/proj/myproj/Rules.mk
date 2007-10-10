@@ -4,14 +4,12 @@ dirstack_$(sp)	:= $(d)
 d		:= $(dir)
 
 # ALWAYS put libs subdirectory before other subdirectories.
-dir	:= $(d)/libs
--include		$(SRCDIR)/$(dir)/Rules.mk
+#dir	:= $(d)/libs
+#-include		$(SRCDIR)/$(dir)/Rules.mk
 
 # Subdirectories. Directory-specific rules are optional here. The
 # order DOES matter, always define libraries before applications
 # that use those libraries.
-dir	:= $(d)/libs
--include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/apps
 -include		$(SRCDIR)/$(dir)/Rules.mk
 
