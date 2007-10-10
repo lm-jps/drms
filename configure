@@ -18,10 +18,18 @@ if ($CHKLIBS == "no") then
     echo -n "Remove links for local project configuration..."
     if (-d src/proj) then
 	cd src/proj
-	rm configure
-	rm make_basic.mk
-	rm Rules.mk
-	rm target.mk
+	if (-e configure) then
+	    rm configure
+	endif
+	if (-e make_basic.mk) then
+	    rm make_basic.mk
+	endif
+	if (-e Rules.mk) then
+	    rm Rules.mk
+	endif
+	if (-e target.mk) then
+	    rm target.mk
+	endif
 	cd ../..
     endif
     echo "done"
@@ -29,12 +37,12 @@ if ($CHKLIBS == "no") then
     echo -n "Remove links to man pages..."
     if (-d man/man1) then
 	cd man/man1
-	rm -f *.*
+	find . -name "*.*" -exec rm {} \;
 	cd ../..
     endif
     if (-d man/man3) then
 	cd man/man3
-	rm -f *.*
+	find . -name "*.*" -exec rm {} \;
 	cd ../..
     endif
     echo "done"
@@ -42,7 +50,7 @@ if ($CHKLIBS == "no") then
     echo -n "Removing links to headers..."
     if (-d src/base/include) then
 	cd src/base/include
-	rm -f *.h
+	find . -name "*.h" -exec rm {} \;
 	cd ../../..
     endif
     echo "done"
@@ -50,7 +58,7 @@ if ($CHKLIBS == "no") then
     echo -n "Removing links to scripts..."
     if (-d scripts) then
 	cd scripts
-	rm -f *
+	find . -name "*" -exec rm {} \;
 	cd ..
     endif
     echo "done"
@@ -58,7 +66,7 @@ if ($CHKLIBS == "no") then
     echo -n "Removing links to jsds..."
     if (-d jsds) then
 	cd jsds
-	rm -f *
+	find . -name "*" -exec rm {} \;
 	cd ..
     endif
     echo "done"

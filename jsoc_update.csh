@@ -20,15 +20,25 @@ foreach ARG ($argv)
     endif
 end
 
-set UPDATE = "cvs update -APd $REV"
-set CVSLOG =  "cvsupdate.log"
+if (-e $JSOCROOT/suflag.txt) then
+    set CVSMOD = "JSOC"
+    echo "Updating JSOC (Stanford) user"
+else
+    set CVSMOD = "DRMS"
+    echo "Updating DRM (base system only) user"
+endif
 
-cd $JSOCROOT
+set UPDATE = "cvs checkout -AP $REV $CVSMOD"
+set CVSLOG = "cvsupdate.log"
+
+cd $JSOCROOT/..
+set wd = `pwd`
 
 echo "####### Start cvs update ####################"
-echo $UPDATE ">&" $CVSLOG
+echo "Calling" $UPDATE ">& $JSOCROOT/"$CVSLOG "from $wd"
+$UPDATE >& $JSOCROOT/$CVSLOG
 
-$UPDATE >& $CVSLOG
+cd $JSOCROOT
 
 echo "##"
 echo "## cvs update done, now check cvsupdate.log for any files with a 'C' status."
