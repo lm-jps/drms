@@ -11,6 +11,8 @@ COMMOBJ_$(d)	:= $(addprefix $(d)/../, drms_types.o drms_record.o drms_keyword.o 
 
 OBJ_$(d)	:= $(addprefix $(d)/, drms_client.o drms_env.o drms_storageunit.o drms_server.o)
 
+LIBDRMS_OBJ	:= $(COMMOBJ_$(d)) $(OBJ_$(d))
+
 DEP_$(d)	:= $(COMMOBJ_$(d):%=%.d) $(OBJ_$(d):%=%.d)
 
 CLEAN		:= $(CLEAN) \
@@ -29,7 +31,7 @@ $(COMMOBJ_$(d)):	CF_TGT := $(CF_TGT) -D$(DBNAME)
 $(OBJ_$(d)):		$(SRCDIR)/$(d)/Rules.mk
 $(OBJ_$(d)):		CF_TGT := $(CF_TGT) -D$(DBNAME)
 
-$(LIBDRMS):		$(COMMOBJ_$(d)) $(OBJ_$(d))
+$(LIBDRMS):		$(LIBDRMS_OBJ)
 			$(ARCHIVE)
 			$(SLLIB)
 # Shortcuts

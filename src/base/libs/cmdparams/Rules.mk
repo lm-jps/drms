@@ -19,6 +19,8 @@ FIOBJ			:= $(FIOBJ) $(FIOBJ_$(d))
 CMDPARAMSOBJ_$(d)	:= $(COMMOBJ_$(d))
 CMDPARAMSFOBJ_$(d)	:= $(COMMOBJ_$(d)) $(FIOBJ_$(d))
 
+LIBCMDPARAMS_OBJ	:= $(CMDPARAMSOBJ_$(d))
+LIBCMDPARAMSF_OBJ	:= $(CMDPARAMSFOBJ_$(d))
 
 DEP_$(d)		:= $(COMMOBJ_$(d):%=%.d) $(FIOBJ_$(d):%=%.d)  
 
@@ -38,11 +40,11 @@ $(COMMOBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
 $(FIOBJ_$(d)):		$(SRCDIR)/$(d)/Rules.mk
 
 
-$(LIBCMDPARAMS):	$(CMDPARAMSOBJ_$(d))
+$(LIBCMDPARAMS):	$(LIBCMDPARAMS_OBJ)
 			$(ARCHIVE)
 			$(SLLIB)
 
-$(LIBCMDPARAMSF):	$(CMDPARAMSFOBJ_$(d))
+$(LIBCMDPARAMSF):	$(LIBCMDPARAMSF_OBJ)
 			$(ARCHIVE)
 			$(SLLIB)
 

@@ -13,6 +13,8 @@ COMMOBJ_$(d)		:= $(addprefix $(d)/../, db_common.o db_network.o db_client.o db_s
 DB_$(d)			:= $(d)/db_postgresql.o
 OBJ_$(d)		:= $(addprefix $(d)/, db_server.o db_backend.o) $(DB_$(d))
 
+LIBDB_OBJ		:= $(COMMOBJ_$(d)) $(OBJ_$(d))
+
 DEP_$(d)		:= $(COMMOBJ_$(d):%=%.d) $(OBJ_$(d):%=%.d) 
 
 CLEAN			:= $(CLEAN) \
@@ -31,7 +33,7 @@ $(COMMOBJ_$(d)):	CF_TGT := -D$(DBNAME) -I$(PGIPATH)
 $(OBJ_$(d)):		$(SRCDIR)/$(d)/Rules.mk
 $(OBJ_$(d)):		CF_TGT := -D$(DBNAME) -I$(PGIPATH)
 
-$(LIBDB):		$(COMMOBJ_$(d)) $(OBJ_$(d))
+$(LIBDB):		$(LIBDB_OBJ)
 			$(ARCHIVE)
 			$(SLLIB)
 

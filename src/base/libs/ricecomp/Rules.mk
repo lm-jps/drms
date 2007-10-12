@@ -12,6 +12,8 @@ LIBRICECOMP	:= $(d)/libricecomp.a
 
 OBJ_$(d)	:= $(addprefix $(d)/, rice_decode1.o  rice_encode2.o rice_decode2.o rice_encode4.o rice_decode4.o rice_encode1.o)
 
+LIBRICECOMP_OBJ	:= $(OBJ_$(d))
+
 DEP_$(d)	:= $(OBJ_$(d):%=%.d)
 
 CLEAN		:= $(CLEAN) $(OBJ_$(d)) $(LIBRICECOMP) $(DEP_$(d))
@@ -24,7 +26,7 @@ S_$(d)		:= $(notdir $(LIBRICECOMP))
 $(OBJ_$(d)):		$(SRCDIR)/$(d)/Rules.mk
 $(OBJ_$(d)):		CF_TGT := $(CF_TGT) -D$(DBNAME)
 
-$(LIBRICECOMP):		$(OBJ_$(d))
+$(LIBRICECOMP):		$(LIBRICECOMP_OBJ)
 			$(ARCHIVE)
 			$(SLLIB)
 

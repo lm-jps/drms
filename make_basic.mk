@@ -188,18 +188,14 @@ SERVERLIBS = $(LIBDRMS) $(LIBDB) $(LIBSUMSAPI) $(SRCLIBS)
 EXELIBS = $(LIBDRMSCLIENT) $(LIBDBCLIENT) $(SRCLIBS)
 
 # MODLIBS: Libraries linked with DRMS modules.
-#MODLIBS = $(LIBJSOC_MAIN) $(LIBASTRO) $(SERVERLIBS)
 MODLIBS = $(LIBJSOC_MAIN) $(SERVERLIBS)
 
 # MODLIBS_SOCK: Libraries linked with DRMS modules with socket connection to a drms_server
-#MODLIBS_SOCK = $(LIBJSOC_MAIN_SOCK) $(LIBASTRO) $(LIBDRMSCLIENT) $(LIBDBCLIENT) $(SRCLIBS)
 MODLIBS_SOCK = $(LIBJSOC_MAIN_SOCK) $(LIBDRMSCLIENT) $(LIBDBCLIENT) $(SRCLIBS)
 
 # FMODLIBS: Libraries linked with DRMS Fortran modules
-#FMODLIBS_SOCK = $(LIBJSOC_MAIN_SOCK_F) $(LIBINTHANDLESF) $(LIBASTRO) $(LIBDRMSCLIENT) $(LIBDBCLIENT) $(FSRCLIBS)
 FMODLIBS_SOCK = $(LIBJSOC_MAIN_SOCK_F) $(LIBINTHANDLESF) $(LIBDRMSCLIENT) $(LIBDBCLIENT) $(FSRCLIBS)
 
-#
 MATHLIBS =  $(LIBLSQR) $(LIBBLAS) $(LIBLAPACK)
 
 # Make rules that apply to all projects outside of the base DRMS/SUMS system
@@ -231,13 +227,3 @@ $(MODEXE_SOCK): %_sock: %.o $(MODLIBS_SOCK)
 $(FMODEXE):     %_sock:	%.o $(FMODLIBS_SOCK)
 			$(FLINK)
 			$(SLBIN)
-
-# The metalibs depend on libs that span the entire src/base tree, not just
-# utility libraries in src/base/libs.  If instead of defining those 
-# dependencies here, they are defined a the lower-level Rules.mk files, 
-# then a dependent library (eg., LIBDRMSCLIENT_FPIC) might not be defined
-# at the time the lower-level Rules.mk uses it, which would be a problem.
-# So, define depedencies on libs that could be anywhere in the src tree here.
-$(METALIB_FPIC):	%.so:	%_aux.a $(ALL_LIBS_FPIC)
-			$(LINK)
-		   	$(SLLIB)

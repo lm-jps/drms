@@ -18,6 +18,8 @@ FIOBJ		:= $(FIOBJ) $(FIOBJ_$(d))
 FDRMSMOBJ_$(d)	:= $(addprefix $(d)/, fdrms.o)
 FDRMSMODOBJ	:= $(FDRMSMOBJ_$(d))
 
+LIBDRMSCLIENT_OBJ	:= $(COMMOBJ_$(d)) $(OBJ_$(d)) $(FIOBJ_$(d))
+
 DEP_$(d)	:= $(COMMOBJ_$(d):%=%.d) $(OBJ_$(d):%=%.d) $(FIOBJ_$(d):%=%.d) $(FDRMSMOBJ_$(d):%=%.d)
 
 CLEAN		:= $(CLEAN) \
@@ -41,7 +43,7 @@ $(OBJ_$(d)):		CF_TGT := $(CF_TGT) -D$(DBNAME) -DDRMS_CLIENT
 $(FDRMSMOBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
 $(FDRMSMOBJ_$(d)):	FF_TGT := -module $(d)
 
-$(LIBDRMSCLIENT):	$(COMMOBJ_$(d)) $(OBJ_$(d)) $(FIOBJ_$(d))
+$(LIBDRMSCLIENT):	$(LIBDRMSCLIENT_OBJ)
 			$(ARCHIVE)
 			$(SLLIB)
 # Shortcuts

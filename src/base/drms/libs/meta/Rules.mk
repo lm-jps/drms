@@ -1,0 +1,43 @@
+# Standard things
+sp 		:= $(sp).x
+dirstack_$(sp)	:= $(d)
+d		:= $(dir)
+
+# Local variables
+LIBDRMSALL_SERVER		:= $(d)/libdrmsall_server.a
+LIBDRMSALL_CLIENT		:= $(d)/libdrmsall_client.a
+LIBDRMSALL_CLIENT_FORTRAN	:= $(d)/libdrmsall_client_fortran.a
+
+BASELIBS_OBJ_$(d)		:= $(LIBTHREADUTIL_OBJ) $(LIBRICECOMP_OBJ) $(LIBMISC_OBJ) $(LIBDSTRUCT_OBJ) $(LIBTIMEIO_OBJ)
+
+CLEAN			:= $(CLEAN) \
+			   $(LIBDRMSALL_SERVER) \
+			   $(LIBDRMSALL_CLIENT) \
+			   $(LIBDRMSALL_CLIENT_FORTRAN)
+
+TGT_LIB		 	:= $(TGT_LIB) $(LIBDRMSALL_SERVER) $(LIBDRMSALL_CLIENT) $(LIBDRMSALL_CLIENT_FORTRAN)
+
+S_$(d)			:= $(notdir $(LIBDRMSALL_SERVER) $(LIBDRMSALL_CLIENT) $(LIBDRMSALL_CLIENT_FORTRAN))
+
+# Local rules
+#$(LIBDRMSALL_SERVER) $(LIBDRMSALL_CLIENT) $(LIBDRMSALL_CLIENT_FORTRAN):	$(SRCDIR)/$(d)/Rules.mk
+
+$(LIBDRMSALL_SERVER):		$(LIBJSOC_MAIN_OBJ) $(LIBDRMS_OBJ) $(LIBDB_OBJ) $(LIBSUMSAPI_OBJ) $(LIBCMDPARAMS_OBJ) $(BASELIBS_OBJ_$(d))
+				$(ARCHIVE)
+				$(SLLIB)
+
+$(LIBDRMSALL_CLIENT):		$(LIBJSOC_MAIN_SOCK_OBJ) $(LIBDRMSCLIENT_OBJ) $(LIBDBCLIENT_OBJ) $(LIBCMDPARAMS_OBJ) $(BASELIBS_OBJ_$(d))
+				$(ARCHIVE)
+				$(SLLIB)
+
+$(LIBDRMSALL_CLIENT_FORTRAN):	$(LIBJSOC_MAIN_SOCK_F_OBJ) $(LIBINTHANDLESF) $(LIBDRMSCLIENT_OBJ) $(LIBDBCLIENT_OBJ) $(LIBCMDPARAMSF_OBJ) $(BASELIBS_OBJ_$(d))
+				$(ARCHIVE)
+				$(SLLIB)
+
+# Shortcuts
+.PHONY:	$(S_$(d))
+$(S_$(d)):	%:	$(d)/%
+
+# Standard things
+d		:= $(dirstack_$(sp))
+sp		:= $(basename $(sp))

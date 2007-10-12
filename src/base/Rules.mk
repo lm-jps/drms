@@ -7,14 +7,14 @@ d		:= $(dir)
 dir	:= $(d)/libs
 -include		$(SRCDIR)/$(dir)/Rules.mk
 
-# Subdirectories, in random order. Directory-specific rules are optional here.
+# Order es muy importante!  DRMS can depend on SUMS libs, util can depend on DRMS libs, etc.
+dir	:= $(d)/sums
+-include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/drms
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/example
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/local
--include		$(SRCDIR)/$(dir)/Rules.mk
-dir	:= $(d)/sums
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/util
 -include		$(SRCDIR)/$(dir)/Rules.mk

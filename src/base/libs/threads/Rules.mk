@@ -12,6 +12,8 @@ LIBTHREADUTIL	:= $(d)/libthreadutil.a
 
 OBJ_$(d)	:= $(addprefix $(d)/, fifo.o tagfifo.o)
 
+LIBTHREADUTIL_OBJ	:= $(OBJ_$(d))
+
 DEP_$(d)	:= $(OBJ_$(d):%=%.d)
 
 CLEAN		:= $(CLEAN) $(OBJ_$(d)) $(LIBTHREADUTIL) $(DEP_$(d))
@@ -23,7 +25,7 @@ S_$(d)		:= $(notdir $(LIBTHREADUTIL))
 # Local rules
 $(OBJ_$(d)):		$(SRCDIR)/$(d)/Rules.mk
 
-$(LIBTHREADUTIL):	$(OBJ_$(d))
+$(LIBTHREADUTIL):	$(LIBTHREADUTIL_OBJ)
 			$(ARCHIVE)
 			$(SLLIB)
 

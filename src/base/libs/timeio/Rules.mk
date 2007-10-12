@@ -12,6 +12,8 @@ LIBTIMEIO	:= $(d)/libtimeio.a
 
 OBJ_$(d)	:= $(addprefix $(d)/, timeio.o)
 
+LIBTIMEIO_OBJ	:= $(OBJ_$(d))
+
 DEP_$(d)	:= $(OBJ_$(d):%=%.d) $(IIOBJ_$(d):%=%.d)
 
 CLEAN		:= $(CLEAN) $(OBJ_$(d)) $(IIOBJ_$(d)) $(LIBTIMEIO) $(DEP_$(d))
@@ -23,7 +25,7 @@ S_$(d)		:= $(notdir $(LIBTIMEIO))
 # Local rules
 $(OBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
 
-$(LIBTIMEIO):	$(OBJ_$(d))
+$(LIBTIMEIO):	$(LIBTIMEIO_OBJ)
 		$(ARCHIVE)
 		$(SLLIB)
 

@@ -5,8 +5,6 @@ d		:= $(dir)
 
 # Local variables
 LIBJSOC_MAIN_SOCK_I	:= $(d)/libidl.so
-LIBJSOC_MAIN_SOCK_I_AUX	:= $(d)/libidl_aux.a
-METALIB_FPIC		:= $(METALIB_FPIC) $(LIBJSOC_MAIN_SOCK_I)
 
 WLOPTION_$(d)		:= -soname,$(notdir $(LIBJSOC_MAIN_SOCK_I))
 
@@ -22,21 +20,19 @@ DEP_$(d)		:= $(JM_SOCK_OBJ_$(d):%=%.d) \
 
 CLEAN			:= $(CLEAN) \
 			   $(LIBJSOC_MAIN_SOCK_I) \
-			   $(LIBJSOC_MAIN_SOCK_I_AUX) \
 			   $(JM_SOCK_OBJ_$(d)) \
 			   $(II_JM_SOCK_OBJ_$(d)) \
 			   $(DEP_$(d)) 
 
-S_$(d)			:= $(notdir $(LIBJSOC_MAIN_SOCK_I) $(LIBJSOC_MAIN_SOCK_I_AUX))
+S_$(d)			:= $(notdir $(LIBJSOC_MAIN_SOCK_I))
 
 # Local rules
 $(II_JM_SOCK_OBJ_$(d)):		$(SRCDIR)/$(d)/Rules.mk
 
 $(LIBJSOC_MAIN_SOCK_I):		LF_TGT := -shared -Wl,$(WLOPTION_$(d))
-$(LIBJSOC_MAIN_SOCK_I):		$(LIBINTHANDLESIDL)
-
-$(LIBJSOC_MAIN_SOCK_I_AUX):	$(JM_SOCK_OBJ_$(d)) $(II_JM_SOCK_OBJ_$(d))
-				$(ARCHIVE)
+$(LIBJSOC_MAIN_SOCK_I):		$(JM_SOCK_OBJ_$(d)) $(II_JM_SOCK_OBJ_$(d)) $(LIBINTHANDLESIDL) $(ALL_LIBS_FPIC)
+				$(LINK)
+			   	$(SLLIB)
 
 # Shortcuts
 .PHONY:	$(S_$(d))

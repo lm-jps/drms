@@ -15,6 +15,8 @@ ifeq ($(shell uname),Linux)
   OBJ_$(d) := $(OBJ_$(d)) $(d)/backtrace.o
 endif
 
+LIBMISC_OBJ	:= $(OBJ_$(d))
+
 DEP_$(d)	:= $(OBJ_$(d):%=%.d)
 
 CLEAN		:= $(CLEAN) $(OBJ_$(d)) $(LIBMISC) $(DEP_$(d))
@@ -24,7 +26,7 @@ S_$(d)		:= $(notdir $(LIBMISC))
 # Local rules
 $(OBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
 
-$(LIBMISC):	$(OBJ_$(d))
+$(LIBMISC):	$(LIBMISC_OBJ)
 		$(ARCHIVE)
 		$(SLLIB)
 
