@@ -181,7 +181,8 @@ else {
       #                      !rexmit request by SOC                         |
       # 2    |Expunged       |Removed from active list, Not acknowledged,   |
       #      |               |Only issued once                              |
-      print DSF "$x $size 1\n";
+      print DSF "FILE_NAME=$x\nSTATUS=1\n";
+      #print DSF "$x $size 1\n"; #old format
       #print DSF "$x $size 2\n";
       #print DSF "$x $size 3\n"; #!!TEMP illegal value
     }

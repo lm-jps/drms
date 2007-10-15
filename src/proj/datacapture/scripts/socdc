@@ -344,6 +344,18 @@ sub Submit_b
     $cmd = "/bin/mkdir -p $DIRSOC2DDS";
     print LOG "$cmd\n";
     `$cmd`;
+    $cmd = "/bin/rm -rf $DIRSOC2DDS/asf";
+    print LOG "$cmd\n";
+    `$cmd`;
+    $cmd = "/bin/mkdir -p $DIRSOC2DDS/asf";
+    print LOG "$cmd\n";
+    `$cmd`;
+    $cmd = "/bin/rm -rf $DIRSOC2DDS/arc";
+    print LOG "$cmd\n";
+    `$cmd`;
+    $cmd = "/bin/mkdir -p $DIRSOC2DDS/arc";
+    print LOG "$cmd\n";
+    `$cmd`;
     $cmd = "/bin/rm -rf $DIRSOC2PIPE";
     print LOG "$cmd\n";
     `$cmd`;
@@ -767,8 +779,8 @@ sub ls_update_soc
 {
   if($pause_soc) { return; }
   @selected_soc = $lbsoc->curselection();
-  @soc2dds_ls = `ls -lt $DIRSOC2DDS`;
-  #@soc2dds_ls = `ls -l $DIRSOC2DDS`;
+  #new Oct 5, 2007 there are now 2 subdirs: asf and arc. Ck this out...
+  @soc2dds_ls = `ls -lt $DIRSOC2DDS/asf`;
   @filenames_soc = ();
   $lbsoc->delete(0, 'end');
   shift(@soc2dds_ls);                   #elim "total" line in front of ls
@@ -776,11 +788,22 @@ sub ls_update_soc
     if($x =~ /^l/) { next; }            #ignore links
     ($a1,$a2,$a3,$a4,$size,$a6,$a7,$a8,$name) = split(/\s+/, $x);
     chomp($name);
+    $name = "asf/$name";
     #$lbsoc->insert('end', "$name    $size");
     $lbsoc->insert('end', "$name");
     push(@filenames_soc, $name);
   }
-  #$lbsoc->insert('end', "test insert only"); #!!TEMP
+  @soc2dds_ls = `ls -lt $DIRSOC2DDS/arc`;
+  shift(@soc2dds_ls);                   #elim "total" line in front of ls
+  foreach $x (@soc2dds_ls) {
+    if($x =~ /^l/) { next; }            #ignore links
+    ($a1,$a2,$a3,$a4,$size,$a6,$a7,$a8,$name) = split(/\s+/, $x);
+    chomp($name);
+    $name = "arc/$name";
+    #$lbsoc->insert('end', "$name    $size");
+    $lbsoc->insert('end', "$name");
+    push(@filenames_soc, $name);
+  }
   foreach(@selected_soc) {
     $lbsoc->selectionSet($_);
   }
@@ -956,7 +979,7 @@ sub Dbl_click_dds
     } elsif (defined $pid2) {     # $pid2 is zero here if defined.
       print "Starting tlmview $fullfile\n";
       print LOG "Starting tlmview $fullfile\n";
-      exec "/home/production/cvs/JSOC/src/proj/datacapture/scripts/tlmview $fullfile";
+      exec "/home/production/cvs/jsoc/src/datacapture/tlmview $fullfile";
     }  else {
       #fork error
       print "!!Abort: Can't fork: $!\n";
@@ -1076,7 +1099,7 @@ sub Dbl_click_soc
     } elsif (defined $pid3) {     # $pid3 is zero here if defined.
       print "Starting tlmview $fullfile\n";
       print LOG "Starting tlmview $fullfile\n";
-      exec "/home/production/cvs/JSOC/src/proj/datacapture/scripts/tlmview $fullfile";
+      exec "/home/production/cvs/jsoc/src/datacapture/tlmview $fullfile";
     }  else {
       #fork error
       print "!!Abort: Can't fork: $!\n";
@@ -1953,7 +1976,7 @@ sub socget {
         `$cmd`;
       }
     }
-    if($gapcntr) {			#info for all gaps not in .qac file
+    if($gapcntr != 0) {			#info for all gaps not in .qac file
       print LOG "\n*  **Info for $totalgaps gaps not in .qac file. Proceed anyway.\n";
       #proceed anyway and try to process the .tlm file
     }
@@ -2047,7 +2070,7 @@ sub socget {
     }
     if($rexmit) {
       if(!grep(/$rexmitname/, @xmitpend)) {         #no dups
-        push(@rexmitfiles, "$rexmitname $size");
+        push(@rexmitfiles, "$rexmitname");
       }
     }
     else {
@@ -2093,7 +2116,7 @@ sub socget {
     $f = "$DIRDDS2SOC/$dsffile";
     @x = `cat $f`;
     print LOG " @x\n";
-    `/bin/rm $f`;
+    `/bin/rm -f $f`;
     $dsfpipefile = "$DIRSOC2PIPE/$dsffile";
     if(!open(DSFPIPE, ">$dsfpipefile")) {
       print LOG "*  **ERROR: Can't open $dsfpipefile\n";
@@ -2104,7 +2127,7 @@ sub socget {
     $pos = rindex($dsffile, ".dsf");
     $asf = substr($dsffile, 0, $pos);
     $asf = $asf.".asf";
-    $asffile = "$DIRSOC2DDS/$asf";
+    $asffile = "$DIRSOC2DDS/asf/$asf";
     if(!open(ASF, ">$asffile")) {
       print LOG "*  **ERROR: Can't open $asffile\n";
       print LOG "  Skip attempt to make a .asf file for this cycle.\n";
@@ -2116,16 +2139,25 @@ sub socget {
     # 2    |Retransmit     |SOC requested retransmit                      |
     # 3    |Acknowledge    |SOC acknowledges receipt of this TLM file.    |
     while($line = shift(@x)) {
-      ($lfile, $lsize, $lstat) = split(/\s/, $line);
-      #print LOG "  $lfile   $lsize   $lstat\n";      #!!TEMP
+      #($lfile, $lsize, $lstat) = split(/\s/, $line); #old format
+      #!!!TBD ck for correct sequence of lines
+      if($line =~ /^FILE_NAME=/) {
+        ($a, $lfile) = split(/=/, $line);
+        chomp($lfile);
+        next;
+      }
+      if($line =~ /^STATUS=/) {
+        ($a, $lstat) = split(/=/, $line);
+        chomp($lstat);
+      }
       if($lstat == 1) {
         if(grep(/$lfile/, @tlmreceived)) {      #send back positive ack
-          print ASF "$lfile $lsize 3\n";
-          print DSFPIPE "$lfile $lsize 1\n";	#and good status for pipe .dsf
+          print ASF "FILE_NAME=$lfile\nSTATUS=3\n";
+          print DSFPIPE "FILE_NAME=$lfile\nSTATUS=$lstat\n"; #for pipe .dsf
         }
         else {
           if(!grep(/$lfile/, @rexmitfiles)) {	#we never saw this file
-            print ASF "$lfile $lsize 2\n";      #request rexmit
+            print ASF "FILE_NAME=$lfile\nSTATUS=2\n";
             push(@xmitpend, $lfile);		#remember we requested this
           }
         }
@@ -2139,10 +2171,12 @@ sub socget {
     }
     #now include all the rexmit requests
     while($line = shift(@rexmitfiles)) {
-      print ASF "$line 2\n";
+      chomp($line);
+      print ASF "FILE_NAME=$line\nSTATUS=2\n";
       print LOG "  Rexmit request for: $line\n"; #!!TEMP
       push(@xmitpend, $line);			#remember we requested this
     }
+    print ASF "EOF_MARKER=C5C5\n";
     close(ASF);
     close(DSFPIPE);
     print LOG "  SENT: $asf:\n";

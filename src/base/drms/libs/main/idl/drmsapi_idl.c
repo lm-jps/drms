@@ -3,8 +3,7 @@
 /* This module must be precompiled into straight C code and thence into a    */
 /* shared object library.                                                    */
 /*                                                                           */
-/* Author: R. Davis      Last Update - 20 Aug 2007 by JLS                    */
-/* Copyright 2001 by the Regents of the University of Colorado               */
+/* Last Update - 10 Sept 2007 by Art A                                       */
 /*****************************************************************************/
 
 #include "jsoc_main.h"

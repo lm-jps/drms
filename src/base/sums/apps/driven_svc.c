@@ -1184,7 +1184,7 @@ void drive_reset(char *dname)
 int read_drive_to_wd(int sim, char *wd, int drive,  
 	 char *tapeid, int tapefilenum, char *logname, uint64_t filedsixoff[])
 {
-  char cmd[512], dname[80], md5file[80], md5sum[36], md5db[36], Ddir[128];
+  char cmd[8196], dname[80], md5file[80], md5sum[36], md5db[36], Ddir[128];
   uint64_t dsix;
   int i, status;
 
