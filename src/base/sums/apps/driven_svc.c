@@ -541,7 +541,19 @@ KEY *readdrvdo_1(KEY *params)
     }
   }
   else if(tapemode == TAPE_RD_CONT) {	/* ck if reading next file# */
-    filenum = getkey_int(params, "filenum");
+    /*filenum = getkey_int(params, "filenum"); /* !!NG */
+    /* Can't use the filenum passed in. The drives[] table may not
+     * have gotten updated yet with a return from driven_svc.
+    */
+    if((filenum = get_tape_file_num(sim, dname, dnum)) == -1) {
+      write_log("***Error: can't get file # on drive %d\n", dnum);
+      setkey_int(&retlist, "STATUS", 1); /* give error back to caller */
+      sprintf(errstr, "Error on position tape to file #%d in drive #%d",
+                        tapefilenum, dnum);
+      setkey_str(&retlist, "ERRSTR", errstr);
+      free(wd);
+      return(retlist);
+    }
     filenumdelta = tapefilenum - filenum; /* num of files to skip */
     if(position_tape_file_fsf(sim, dnum, filenumdelta) == -1) {
       setkey_int(&retlist, "STATUS", 1); /* give error back to caller */
@@ -551,7 +563,7 @@ KEY *readdrvdo_1(KEY *params)
       free(wd);
       return(retlist);
     }
-    if((tapefilenum = get_tape_file_num(sim, dname, dnum)) == -1) {
+    if((filenum = get_tape_file_num(sim, dname, dnum)) == -1) {
       write_log("***Error: can't get file # on drive %d\n", dnum);
       setkey_int(&retlist, "STATUS", 1); /* give error back to caller */
       sprintf(errstr, "Error on position tape to file #%d in drive #%d",
@@ -560,7 +572,7 @@ KEY *readdrvdo_1(KEY *params)
       free(wd);
       return(retlist);
     }
-    write_log("Dr%d:rd:Next file on tape=%d\n", dnum, tapefilenum);
+    write_log("Dr%d:rd:Next file on tape=%d\n", dnum, filenum);
   }
   /* now read any SU that is offline and has the same tape/file# */
   /* NOTE: Changed 19Sep2007 
@@ -583,8 +595,6 @@ KEY *readdrvdo_1(KEY *params)
   reqcnt = getkey_int(params, "reqcnt");
   sprintf(tmpname, "tapeid_%d", reqofflinenum);
   tapeid = getkey_str(params, tmpname);
-  sprintf(tmpname, "tapefilenum_%d", reqofflinenum);
-  tapefilenum = getkey_int(params, tmpname);
   /* get ds_index of each SU in the file */
   if(SUMLIB_Ds_Ix_Find(tapeid, tapefilenum, file_dsix, file_bytes)) {
       write_log("***Error: SUMLIB_Ds_Ix_Find(%s, %d)\n", tapeid, tapefilenum);
@@ -896,16 +906,18 @@ int position_tape_file_fsf(int sim, int dnum, int fdelta)
 {
   char cmd[128], dname[80];
 
+  if(fdelta == 0) { return(0); }
   sprintf(dname, "%s%d", SUMDR, dnum);
-  if(fdelta <= 0) {		/* going backwards */
+  if(fdelta < 0) {		/* going backwards */
     fdelta = -fdelta;
-    fdelta += 2;
+    /*fdelta += 2;*/
+    fdelta += 1;
     sprintf(cmd, "/usr/local/bin/mt -f %s bsfm %d 1>> %s 2>&1", 
 		dname, fdelta, logfile);
     
   }
   else {
-    --fdelta;
+    /* --fdelta;  /* NOTE: needed this before did the filenum query again */
     sprintf(cmd, "/usr/local/bin/mt -f %s fsf %d 1>> %s 2>&1", 
 		dname, fdelta, logfile);
   }
@@ -1068,7 +1080,7 @@ int write_wd_to_drive(int sim, KEY *params, int drive, int fnum, char *logname)
   }
   else {
     if(status = system(cmd)) { /* status applies only to last cmd in pipe */
-      write_log("***Dr%d:wt:failure. exit status=%d\n",drive,WEXITSTATUS(status));
+      write_log("***Dr%d:wt:Error. exit status=%d\n",drive,WEXITSTATUS(status));
       drive_reset(dname);
       return(-1);
     }
@@ -1124,7 +1136,7 @@ int write_hdr_to_drive(int sim, char *tapeid, int group, int drive, char *log)
   }
   else {
     if(status = system(cmd)) {
-      write_log("***Dr%d:wt:failure. exit status=%d\n",drivenum,WEXITSTATUS(status));
+      write_log("***Dr%d:wt:Error. exit status=%d\n",drivenum,WEXITSTATUS(status));
       drive_reset(dname);
       return(-1);
     }
@@ -1205,12 +1217,12 @@ int read_drive_to_wd(int sim, char *wd, int drive,
   if(sim) {				/* simulation mode only */
     sleep(7);
     /* !!!TEMP for test */
-    /*write_log("***Dr%d:rd:!!SIM failure. exit status=%d\n", drivenum, 1);*/
+    /*write_log("***Dr%d:rd:!!SIM Error. exit status=%d\n", drivenum, 1);*/
     /*return(-1);*/
   }
   else {
     if(status = system(cmd)) {
-      write_log("***Dr%d:rd:failure. exit status=%d\n", drivenum, WEXITSTATUS(status));
+      write_log("***Dr%d:rd:Error. exit status=%d\n", drivenum, WEXITSTATUS(status));
       return(-1);
     }
   }

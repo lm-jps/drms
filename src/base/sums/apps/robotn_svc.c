@@ -397,6 +397,7 @@ KEY *robotdo_1(KEY *params)
       sleep(4);
     } 
     else {
+      sleep(2);				/* !!!TEMP - test for robot ready*/
       if(system(cmd)) {
         write_log("***Rb:failure\n\n");
         setkey_int(&retlist, "STATUS", 1);   /* give err back to caller */
@@ -421,6 +422,7 @@ KEY *robotdo_1(KEY *params)
       sleep(4);
     } 
     else {
+      sleep(2);				/* !!!TEMP - test for robot ready*/
       if(system(cmd)) {
         write_log("***Rb:failure\n\n");
         setkey_int(&retlist, "STATUS", 1);   /* give err back to caller */
@@ -501,6 +503,7 @@ KEY *robotdoordo_1(KEY *params)
       sleep(4);
     } 
     else {
+      sleep(2);				/* !!!TEMP - test for robot ready*/
       if(system(cmd)) {
         if(mvdoor2slot)
           write_log("**Rb:t50doorfailure\n\n");
