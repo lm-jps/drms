@@ -1,24 +1,14 @@
-//#define DEBUG
-
-
 #include "drms.h"
 #include "drms_tasfile.h"
 #include "adler32.h"
 #include "ndim.h"
 #include "xmem.h"
 
-
-
-
 /* When the blocksize is not specified in a call to tasfile_write, try
    to make the size of a block this many bytes: */
 #define GOAL_SIZE (1<<20) 
 
 #define TRY(code) if(!(code)) goto bailout;
-
-static void print_tasheader(TAS_Header_t *h);
-static int calc_tasblockcount(TAS_Header_t *h, int *blkcount);
-
 
 /* 
 Header:
@@ -48,10 +38,9 @@ heap data |          | Heap of compressed data for each block.
 
 */
 
-
-/* Print header contents. */
-static void print_tasheader(TAS_Header_t *h)
-{
+#ifdef DEBUG
+					/*  Print header contents  */
+static void print_tasheader (TAS_Header_t *h) {
   int i;
  
   printf("magic   = %.8s\n",h->magic);
@@ -60,89 +49,87 @@ static void print_tasheader(TAS_Header_t *h)
   printf("compress= %d\n",h->compress);
   printf("naxis   = %d\n",h->naxis);
   for (i=0; i<h->naxis; i++)
-    printf("axis[%3d] = %d, blksz[%d] = %d\n",i,h->axis[i], i,h->blksz[i]);
+    printf ("axis[%3d] = %d, blksz[%d] = %d\n",i,h->axis[i], i,h->blksz[i]);
 }
+#endif
 
-
-/* Read TAS header from a file. */
-static int tasfile_readheader(FILE *fp, TAS_Header_t *h)
-{
+	/* Calculate number of blocks in i'th dimension given number of 
+						elements and block size. */
+static int calc_tasblockcount (TAS_Header_t *h, int *baxis) {
+  int i, nblk = 1;
+  for (i=0; i<h->naxis; i++) {
+    baxis[i] = (h->axis[i]+h->blksz[i]-1)/h->blksz[i]; 
+    nblk *= baxis[i]; /* total number of blocks. */
+  }
+  return nblk;
+}
+					/*  Read TAS header from a file  */
+static int tasfile_readheader(FILE *fp, TAS_Header_t *h) {
   int i;
 
-  memset(h, 0, sizeof(TAS_Header_t));
-  /* Read header and byteswap fields if necessary. */
-  fread(h, sizeof(TAS_Header_t), 1, fp);
-  if (strncmp(h->magic,"DRMS TAS",8))
-  {
-    fprintf(stderr,"Bad magic string in TAS file: '%.8s'\n",h->magic);
+  memset (h, 0, sizeof(TAS_Header_t));
+			/*  Read header and byteswap fields if necessary  */
+  fread (h, sizeof(TAS_Header_t), 1, fp);
+  if (strncmp (h->magic,"DRMS TAS",8)) {
+    fprintf (stderr, "Bad magic string in TAS file: '%.8s'\n", h->magic);
     return 1;
   }
 #if __BYTE_ORDER == __BIG_ENDIAN
-  byteswap(4,1,&h->version);
-  byteswap(4,1,&h->type);
-  byteswap(4,1,&h->compress);
-  byteswap(4,1,&h->naxis);
+  byteswap (4, 1, (char *)&h->version);
+  byteswap (4, 1, (char *)&h->type);
+  byteswap (4, 1, (char *)&h->compress);
+  byteswap (4, 1, (char *)&h->naxis);
 #endif
-  if (h->naxis > DRMS_MAXRANK)
-  {
-    fprintf(stderr,"ERROR: Naxis (%d) in TAS file exceeds DRMS_MAXRANK "
-	    "(%d)\n", h->naxis, DRMS_MAXRANK);
+  if (h->naxis > DRMS_MAXRANK) {
+    fprintf (stderr, "ERROR: Naxis (%d) in TAS file exceeds DRMS_MAXRANK "
+	    "(%d)\n",  h->naxis, DRMS_MAXRANK);
     return 1;
   }
 #if __BYTE_ORDER == __BIG_ENDIAN
-  for (i=0; i<h->naxis; i++)
-  {
-    byteswap(4,1,&h->axis[i]);
-    byteswap(4,1,&h->bklsz[i]);
+  for (i=0; i < h->naxis; i++) {
+    byteswap (4, 1, (char *)&h->axis[i]);
+    byteswap (4, 1, (char *)&h->blksz[i]);
   }
 #endif
 
-  for (i=0; i<h->naxis; i++)
-  {
+  for (i=0; i<h->naxis; i++) {
     if (h->blksz[i] <= 0 || h->blksz[i] > h->axis[i] )
     {    
-      fprintf(stderr,"ERROR: Bad block size in TAS file: blksz[%d]=%d, "
+      fprintf (stderr,"ERROR: Bad block size in TAS file: blksz[%d]=%d, "
 	      "axis[%d]=%d\n", i, h->blksz[i], i, h->axis[i]);
       return 1;
     }
-    if (h->axis[i] <= 0)
-    {    
-      fprintf(stderr,"ERROR: Bad axis size in TAS file: axis[%d] = %d.\n",
+    if (h->axis[i] <= 0) {    
+      fprintf (stderr,"ERROR: Bad axis size in TAS file: axis[%d] = %d.\n",
 	      i, h->axis[i]);
       return 1;
     }    
   }
   return 0;
 }
-
-
-
-
-/* Write TAS header to a file. */
-static int tasfile_writeheader(FILE *fp, TAS_Header_t *h)
-{
+/*
+ *  Write TAS header to a file
+ */
+static int tasfile_writeheader (FILE *fp, TAS_Header_t *h) {
   TAS_Header_t hswap;
 
-  if (h->naxis>DRMS_MAXRANK)
-  {
-    fprintf(stderr,"ERROR: Naxis (%d) exceeds DRMS_MAXRANK (%d)\n", 
+  if (h->naxis>DRMS_MAXRANK) {
+    fprintf (stderr, "ERROR: Naxis (%d) exceeds DRMS_MAXRANK (%d)\n", 
 	    h->naxis, DRMS_MAXRANK);
     return DRMS_ERROR_INVALIDRANK;
-  }    
-
-  /* Byteswap and write header to file. */
-  memcpy(&hswap,h,sizeof(TAS_Header_t));
+  }
+				/*  Byteswap and write header to file  */
+  memcpy (&hswap, h, sizeof (TAS_Header_t));
 #if __BYTE_ORDER == __BIG_ENDIAN
-  byteswap(4,1,&hswap.version);
-  byteswap(4,1,&hswap.type);
-  byteswap(4,1,&hswap.compress);
-  byteswap(4,1,&hswap.naxis);
-  byteswap(4,h->naxis,&hswap.axis[i]);
-  byteswap(4,h->naxis,&hswap.bklsz[i]);
+  byteswap (4, 1, (char *)&hswap.version);
+  byteswap (4, 1, (char *)&hswap.type);
+  byteswap (4, 1, (char *)&hswap.compress);
+  byteswap (4, 1, (char *)&hswap.naxis);
+  byteswap (4, h->naxis, (char *)&hswap.axis);
+  byteswap (4, h->naxis, (char *)&hswap.blksz);
 #endif
-  if (!fwrite(&hswap,sizeof(hswap),1,fp))
-  {
-    fprintf(stderr,"ERROR: Failed to write TAS header.\n");
+  if (!fwrite (&hswap,sizeof(hswap), 1, fp)) {
+    fprintf (stderr, "ERROR: Failed to write TAS header.\n");
     return 1;
   }
   return 0;
@@ -150,34 +137,31 @@ static int tasfile_writeheader(FILE *fp, TAS_Header_t *h)
 
 
 /* Write index array. */
-static int tasfile_writeindex(FILE *fp, int nblk, TAS_Index_t *index)
-{
+static int tasfile_writeindex(FILE *fp, int nblk, TAS_Index_t *index) {
   int status=0;
   TAS_Index_t *iswap;
   /* Seek to beginning of index. */
-  if (fseek(fp, sizeof(TAS_Header_t), SEEK_SET))
-  {
-    fprintf(stderr,"ERROR: Failed to seek to index in TAS file.\n");
+  if (fseek(fp, sizeof(TAS_Header_t), SEEK_SET)) {
+    fprintf (stderr, "ERROR: Failed to seek to index in TAS file.\n");
     return 1;
   }
 #if __BYTE_ORDER == __BIG_ENDIAN
-  {int i;
+  {
+  int i;
   XASSERT(iswap =  malloc(nblk*sizeof(TAS_Index_t)));  
   memcpy(iswap, index, nblk*sizeof(TAS_Index_t));
-  for (i=0; i<nblk; i++)
-  {
-      byteswap(8,1,&iswap[i].offset);
-      byteswap(8,1,&iswap[i].length);
-      byteswap(4,1,&iswap[i].adler32);
+  for (i=0; i<nblk; i++) {
+      byteswap(8, 1, (char *)&iswap[i].offset);
+      byteswap(8, 1, (char *)&iswap[i].length);
+      byteswap(4, 1, (char *)&iswap[i].adler32);
   }
   }
 #else
   iswap = index;
 #endif
   /* Write index to file. */
-  if (!fwrite(iswap, nblk*sizeof(TAS_Index_t), 1, fp))
-  {
-    fprintf(stderr, "ERROR: Failed to write index to TAS file.\n");
+  if (!fwrite (iswap, nblk * sizeof (TAS_Index_t), 1, fp)) {
+    fprintf (stderr, "ERROR: Failed to write index to TAS file.\n");
    status = 1;
   }
 #if __BYTE_ORDER == __BIG_ENDIAN
@@ -187,60 +171,51 @@ static int tasfile_writeindex(FILE *fp, int nblk, TAS_Index_t *index)
 }
 
 /* Write index array. */
-static  TAS_Index_t *tasfile_readindex(FILE *fp, int nblk, TAS_Header_t *h)
-{
+static  TAS_Index_t *tasfile_readindex (FILE *fp, int nblk, TAS_Header_t *h) {
   TAS_Index_t *index;
-  /* Seek to beginning of index in file. */
-  if (fseek(fp, sizeof(TAS_Header_t), SEEK_SET))
-  {
-    fprintf(stderr,"ERROR: Failed to seek to index in TAS file.\n");
+				/*  Seek to beginning of index in file  */
+  if (fseek (fp, sizeof(TAS_Header_t), SEEK_SET)) {
+    fprintf (stderr, "ERROR: Failed to seek to index in TAS file.\n");
     return NULL;
   }
-
-  /* Read index array from file. */
-  XASSERT(index = malloc(nblk*sizeof(TAS_Index_t)));
-  if (!fread(index, nblk*sizeof(TAS_Index_t), 1, fp))
-  {
-    fprintf(stderr,"ERROR: Failed to read index from TAS file.\n");
-    free(index);
+					/*  Read index array from file  */
+  XASSERT (index = malloc (nblk * sizeof (TAS_Index_t)));
+  if (!fread (index, nblk * sizeof (TAS_Index_t), 1, fp)) {
+    fprintf (stderr, "ERROR: Failed to read index from TAS file.\n");
+    free (index);
     return NULL;
   }
 #if __BYTE_ORDER == __BIG_ENDIAN
-  { int i;
-  for (i=0; i<nblk; i++)
-  {
-      byteswap(8,1,&index[i].offset);
-      byteswap(8,1,&index[i].length);
-      byteswap(4,1,&index[i].adler32);
+{
+  int i;
+  for (i=0; i<nblk; i++) {
+    byteswap (8, 1, (char *)&index[i].offset);
+    byteswap (8, 1, (char *)&index[i].length);
+    byteswap (4, 1, (char *)&index[i].adler32);
   }
-  }
+}
 #endif
 #ifdef DEBUG
-  { int idx;
-  for (idx=0; idx<nblk; idx++)
-  {
+{
+  int idx;
+  for (idx=0; idx<nblk; idx++) {
     printf("index[%d].offset = %llu\n"
 	   "index[%d].length = %llu\n"
 	   "index[%d].adler32 = %x\n",
-	   idx, index[idx].offset,idx,index[idx].length,
-	   idx,index[idx].adler32);
+	   idx, index[idx].offset, idx, index[idx].length,
+	   idx, index[idx].adler32);
   }
-  }
+}
 #endif
   return index;
 }
 
-
-
 /* Check that the hyper-slab designated by start and end is non-empty. */
-static int tasfile_slice_empty(int naxis, int *start, int *end)
-{
+static int tasfile_slice_empty(int naxis, int *start, int *end) {
   int i;
-  for (i=0; i<naxis; i++)
-  {
-    if (start[i]>end[i])
-    {
-      fprintf(stderr,"ERROR: Empty slice: start[%d] = %d > end[%d] = %d\n", 
+  for (i=0; i<naxis; i++) {
+    if (start[i]>end[i]) {
+      fprintf (stderr, "ERROR: Empty slice: start[%d] = %d > end[%d] = %d\n", 
 	      i,start[i],i,end[i]);
       return i+1;
     }
@@ -251,77 +226,22 @@ static int tasfile_slice_empty(int naxis, int *start, int *end)
 
 /* Check that the hyper-slab designated by "start" and "end" is contained
    in the hypercube spanned by the origin and the point in "axis". */
-static int tasfile_slice_notcontained(int naxis, int *start, int *end, int *axis)
-{
+static int tasfile_slice_notcontained (int naxis, int *start, int *end,
+    int *axis) {
   int i;
-  for (i=0; i<naxis; i++)
-  {
-    if (start[i]<0 || start[i]>=axis[i])
-    {
-      fprintf(stderr,"ERROR: Requested slice exceeds array bounds: "
+  for (i=0; i<naxis; i++) {
+    if (start[i]<0 || start[i]>=axis[i]) {
+      fprintf (stderr, "ERROR: Requested slice exceeds array bounds: "
 	      "start[%d] = %d, axis[%d] = %d\n", i,start[i],i,axis[i]);
       return i+1;
     }
-    if (end[i]<0 || end[i]>=axis[i])
-    {
-      fprintf(stderr,"ERROR: Requested slice exceeds array bounds: "
+    if (end[i]<0 || end[i]>=axis[i]) {
+      fprintf (stderr, "ERROR: Requested slice exceeds array bounds: "
 	      "end[%d] = %d, axis[%d] = %d\n", i,end[i],i,axis[i]);
       return i+1;
     }
   }
   return 0;
-}
-
-/* Check that size of the hyper-slab designated by "start" and "end" does 
-   not exceed the given size. */
-static int tasfile_slice_larger(int naxis, int *start, int *end, int *size)
-{
-  int i;
-  for (i=0; i<naxis; i++)
-  {
-    if ((end[i]-start[i]+1) > size[i])
-    {
-      fprintf(stderr,"ERROR: Slice and input array dimensions do not match: "
-	      "end[%d]-start[%d]+1 = %d, size[%d] = %d\n", 
-	      i, i, end[i]-start[i]+1, i, size[i]);
-      return i+1;
-    }
-  }
-  return 0;
-}
-
-
-
-/* Check that the hyper-slab designated by start and end matches 
-   the given size. */
-static int tasfile_slice_incongruent(int naxis, int *start, int *end, int *size)
-{
-  int i;
-  for (i=0; i<naxis; i++)
-  {
-    if ((end[i]-start[i]+1) != size[i])
-    {
-      fprintf(stderr,"ERROR: Slice and input array dimensions do not match: "
-	      "end[%d]-start[%d]+1 = %d, size[%d] = %d\n", 
-	      i, i, end[i]-start[i]+1, i, size[i]);
-      return i+1;
-    }
-  }
-  return 0;
-}
-
-
-/* Calculate number of blocks in i'th dimension given number of 
-   elements and block size. */
-static int calc_tasblockcount(TAS_Header_t *h, int *baxis)
-{
-  int i, nblk = 1;
-  for (i=0; i<h->naxis; i++)
-  {
-    baxis[i] = (h->axis[i]+h->blksz[i]-1)/h->blksz[i]; 
-    nblk *= baxis[i]; /* total number of blocks. */
-  }
-  return nblk;
 }
 
 
@@ -362,7 +282,7 @@ int drms_tasfile_read(char *filename, DRMS_Type_t type,
     /* Read index array from file. */
     if ((index = tasfile_readindex(fp, nblk, &h)) == NULL)
     {
-      fprintf(stderr,"ERROR: Failed to read index from TAS file %s\n",
+      fprintf (stderr, "ERROR: Failed to read index from TAS file %s\n",
 	      filename);
       goto bailout1;
     }
@@ -439,7 +359,7 @@ int drms_tasfile_read(char *filename, DRMS_Type_t type,
 #endif
 	  if (fseek(fp, ip->offset, SEEK_SET))
 	  {
-	    fprintf(stderr,"ERROR: Failed to seek to index in TAS file.\n");
+	    fprintf (stderr, "ERROR: Failed to seek to index in TAS file.\n");
 	    goto bailout2;
 	  }
 	}
@@ -453,7 +373,7 @@ int drms_tasfile_read(char *filename, DRMS_Type_t type,
 	/* Verify block checksum. */
 	if ((chksum = adler32sum(1, ip->length, zbuf)) != ip->adler32)
 	{
-	  fprintf(stderr,"ERROR: Checksum error in data block %d in file %s\n",
+	  fprintf (stderr, "ERROR: Checksum error in data block %d in file %s\n",
 		  j,filename);
 	  goto bailout2;
 	}
@@ -505,7 +425,7 @@ int drms_tasfile_read(char *filename, DRMS_Type_t type,
   }
   else
   {
-    fprintf(stderr,"ERROR: Couldn't open file '%s'\n",filename);
+    fprintf (stderr, "ERROR: Couldn't open file '%s'\n",filename);
     return 1;
   }
  bailout2:
@@ -516,7 +436,7 @@ int drms_tasfile_read(char *filename, DRMS_Type_t type,
   free(rf->data);
  bailout0:
   fclose(fp);
-  fprintf(stderr,"ERROR: drms_tasfile_read failed '%s'\n",filename);
+  fprintf (stderr, "ERROR: drms_tasfile_read failed '%s'\n",filename);
   return 1;
 }
 
@@ -552,7 +472,7 @@ int drms_tasfile_readslice(FILE *fp, DRMS_Type_t type, double bzero,
      the size of the array in the file. */
   if (naxis!=h.naxis)
   {
-    fprintf(stderr,"ERROR: Number of dimensions (%d) in TAS file does not "
+    fprintf (stderr, "ERROR: Number of dimensions (%d) in TAS file does not "
 	    "matvhes number of dimensions in requested slice (%d)\n", 
 	    h.naxis, naxis);
     goto bailout0;
@@ -579,7 +499,7 @@ int drms_tasfile_readslice(FILE *fp, DRMS_Type_t type, double bzero,
   /* Read index array from file. */
   if ((index = tasfile_readindex(fp, nblk, &h)) == NULL)
   {
-    fprintf(stderr,"ERROR: Failed to read index from TAS file/\n");
+    fprintf (stderr, "ERROR: Failed to read index from TAS file/\n");
     goto bailout0;
   }
 
@@ -654,7 +574,7 @@ int drms_tasfile_readslice(FILE *fp, DRMS_Type_t type, double bzero,
       /* Seek to the beginning of the block. */
       if (fseek(fp, ip->offset, SEEK_SET))
       {
-	fprintf(stderr,"ERROR: Seek to data block %d in TAS file failed\n",j);
+	fprintf (stderr, "ERROR: Seek to data block %d in TAS file failed\n",j);
 	goto bailout2;
       }
 	
@@ -671,7 +591,7 @@ int drms_tasfile_readslice(FILE *fp, DRMS_Type_t type, double bzero,
 	
       if ((chksum = adler32sum(1, ip->length, zbuf)) != ip->adler32)
       {
-	fprintf(stderr,"ERROR: Checksum error in data block %d in TAS file.\n",j);
+	fprintf (stderr, "ERROR: Checksum error in data block %d in TAS file.\n",j);
 	goto bailout2;
       }
 	
@@ -752,7 +672,7 @@ int drms_tasfile_readslice(FILE *fp, DRMS_Type_t type, double bzero,
   free(index);
   free(rf->data);
  bailout0:
-  fprintf(stderr,"ERROR: drms_tasfile_readslice failed\n");
+  fprintf (stderr, "ERROR: drms_tasfile_readslice failed\n");
   return 1;
 }
 
@@ -783,7 +703,7 @@ int drms_tasfile_writeslice(FILE *fp, double bzero, double bscale,
 
   if (fstat(fileno(fp), &file_stat)) 
   {
-    fprintf(stderr,"ERROR: Can't stat TAS file.\n");
+    fprintf (stderr, "ERROR: Can't stat TAS file.\n");
     goto bailout0;
    
   }
@@ -792,7 +712,7 @@ int drms_tasfile_writeslice(FILE *fp, double bzero, double bscale,
      and read it if that is the case. */
   if (file_stat.st_size <= sizeof(TAS_Header_t) || tasfile_readheader(fp, &h))
   {
-    fprintf(stderr,"Trying to write slice to invalid TAS file.\n");
+    fprintf (stderr, "Trying to write slice to invalid TAS file.\n");
     status = DRMS_ERROR_IOERROR; 
     goto bailout0;
   }
@@ -800,7 +720,7 @@ int drms_tasfile_writeslice(FILE *fp, double bzero, double bscale,
   /* Sanity check input dimensions. */
   if (h.naxis != array->naxis)
   {
-    fprintf(stderr,"ERROR: Number of dimensions (%d) in the TAS file "
+    fprintf (stderr, "ERROR: Number of dimensions (%d) in the TAS file "
 	    "does not match that (%d) of the slice being written to it\n", 
 	    h.naxis, array->naxis);
     status = DRMS_ERROR_IOERROR;
@@ -823,7 +743,7 @@ int drms_tasfile_writeslice(FILE *fp, double bzero, double bscale,
     if ( (start[i] % h.blksz[i]) || 
 	 (((end[i]+1) % h.blksz[i]) && ((end[i]+1)<h.axis[i])))
     {
-      fprintf(stderr,"ERROR: Slice does not correspond to a set of whole "
+      fprintf (stderr, "ERROR: Slice does not correspond to a set of whole "
 	      "tiles: start[%d] = %d, end[%d]=%d, blksz[%d] = %d, "
 	      "axis[%d] = %d\n", 
 	      i, start[i], i, end[i], i, h.blksz[i], i, h.axis[i]);
@@ -836,7 +756,7 @@ int drms_tasfile_writeslice(FILE *fp, double bzero, double bscale,
   /* Read index array from file. */
   if ((index = tasfile_readindex(fp, nblk, &h)) == NULL)
   {
-    fprintf(stderr,"ERROR: Failed to read index from TAS file\n");
+    fprintf (stderr, "ERROR: Failed to read index from TAS file\n");
     goto bailout1;
   }
   
@@ -890,7 +810,7 @@ int drms_tasfile_writeslice(FILE *fp, double bzero, double bscale,
      compressed data blocks. */
   if (fseek(fp, 1, SEEK_END))
   {
-    fprintf(stderr,"ERROR: Failed to seek to end of TAS file\n");
+    fprintf (stderr, "ERROR: Failed to seek to end of TAS file\n");
     goto bailout1;
   }
   lastoffset = fend = ftell(fp);
@@ -975,7 +895,7 @@ int drms_tasfile_writeslice(FILE *fp, double bzero, double bscale,
 #endif
       if (fseek(fp,index[idx].offset,SEEK_SET))
       {
-	fprintf(stderr,"ERROR: fseek failed on TAS file.\n");
+	fprintf (stderr, "ERROR: fseek failed on TAS file.\n");
 	status = DRMS_ERROR_IOERROR;
 	goto bailout1;
       }
@@ -984,7 +904,7 @@ int drms_tasfile_writeslice(FILE *fp, double bzero, double bscale,
     /* Write compressed data to file. */
     if (!fwrite(bbuf,index[idx].length, 1, fp))
     {
-      fprintf(stderr,"ERROR: Failed to write data block %d to "
+      fprintf (stderr, "ERROR: Failed to write data block %d to "
 	      "TAS file.\n",j);
       status = DRMS_ERROR_IOERROR;
       goto bailout1;
@@ -1007,41 +927,34 @@ int drms_tasfile_writeslice(FILE *fp, double bzero, double bscale,
 
   /* Write the entries in the index that were actually changed. */
 #if __BYTE_ORDER == __BIG_ENDIAN
-  for (i=0; i<slblk; i++)
-  {
-      byteswap(8,1,&index[idx_list[i]].offset);
-      byteswap(8,1,&index[idx_list[i]].length);
-      byteswap(4,1,&index[idx_list[i]].adler32);
+  for (i=0; i<slblk; i++) {
+    byteswap (8, 1, (char *)&index[idx_list[i]].offset);
+    byteswap (8, 1, (char *)&index[idx_list[i]].length);
+    byteswap (4, 1, (char *)&index[idx_list[i]].adler32);
   }
 #endif
-  j=0;
-  while( j<slblk )
-  {
-    /* Find next consecutive run if indices. */
-    i = j+1;
-    while(i<slblk && idx_list[i-1]==idx_list[i]-1) 
-      ++i;
+  j = 0;
+  while (j < slblk ) {
+				/*  Find next consecutive run if indices  */
+    i = j + 1;
+    while (i < slblk && idx_list[i-1] == idx_list[i] - 1) ++i;
 #ifdef DEBUG
-    printf("Writing indices %d-%d.\n",idx_list[j],idx_list[i-1]);
+    printf ("Writing indices %d-%d.\n",idx_list[j],idx_list[i-1]);
 #endif
-    if (fseek(fp, sizeof(TAS_Header_t)+idx_list[j]*sizeof(TAS_Index_t), 
-	      SEEK_SET))
-    {
-      fprintf(stderr,"ERROR: Failed to seek to index in TAS file.\n");
+    if (fseek (fp, sizeof (TAS_Header_t) + idx_list[j] * sizeof (TAS_Index_t), 
+	      SEEK_SET)) {
+      fprintf (stderr, "ERROR: Failed to seek to index in TAS file.\n");
       goto bailout1;
     }
-    if (!fwrite(&index[idx_list[j]], (i-j)*sizeof(TAS_Index_t), 1, fp))
-    {
-      fprintf(stderr, "ERROR: Failed to write index to TAS file.\n");
+    if (!fwrite (&index[idx_list[j]], (i-j)*sizeof (TAS_Index_t), 1, fp)) {
+      fprintf (stderr, "ERROR: Failed to write index to TAS file.\n");
       goto bailout1;
     }  
     j = i;
   }
-
-  free(idx_list);
-  free(zbuf);
-  free(bbuf);
-
+  free (idx_list);
+  free (zbuf);
+  free (bbuf);
   return 0;
 
  bailout1:
@@ -1076,14 +989,14 @@ int drms_tasfile_write(char *filename, DRMS_Type_t type, double bzero,
   if ((status = drms_tasfile_create(filename, compression, type, array->naxis, 
 				    array->axis, blocksize, &h)))
   {
-    fprintf(stderr,"ERROR: Failed to create new TAS file '%s'.\n",filename);
+    fprintf (stderr, "ERROR: Failed to create new TAS file '%s'.\n",filename);
     return status;
   }
 
   /* (re-) Open the new file. */
   if ((fp = fopen(filename,"r+"))==NULL)
   {
-    fprintf(stderr,"ERROR: Failed to open newly created TAS file '%s'.\n",
+    fprintf (stderr, "ERROR: Failed to open newly created TAS file '%s'.\n",
 	    filename);
     return DRMS_ERROR_IOERROR;
   }
@@ -1115,7 +1028,7 @@ int drms_tasfile_write(char *filename, DRMS_Type_t type, double bzero,
   /* Skip over header and index part of file, which will be written last. */
   if (fseek(fp, sizeof(TAS_Header_t) + nblk*sizeof(TAS_Index_t), SEEK_SET))
   {
-    fprintf(stderr,"ERROR: Failed to seek past index while writing TAS "
+    fprintf (stderr, "ERROR: Failed to seek past index while writing TAS "
 	    "file %s.\n", filename);
     goto bailout0;
   }
@@ -1187,7 +1100,7 @@ int drms_tasfile_write(char *filename, DRMS_Type_t type, double bzero,
     /* Write compressed data to file. */
     if (!fwrite(bbuf,ip->length, 1, fp))
     {
-      fprintf(stderr,"ERROR: Failed to write data block %d to "
+      fprintf (stderr, "ERROR: Failed to write data block %d to "
 	      "TAS file %s.\n",j,filename);
       goto bailout1;
     }
@@ -1210,7 +1123,7 @@ int drms_tasfile_write(char *filename, DRMS_Type_t type, double bzero,
   /* Write index to file. */
   if (tasfile_writeindex(fp, nblk, index))
   {
-    fprintf(stderr,"ERROR: Failed to seek to end of TAS file %s\n",
+    fprintf (stderr, "ERROR: Failed to seek to end of TAS file %s\n",
 	    filename);
     goto bailout1;
   }
@@ -1227,7 +1140,7 @@ int drms_tasfile_write(char *filename, DRMS_Type_t type, double bzero,
   free(bbuf);
   free(index);
  bailout0:
-  fprintf(stderr,"ERROR:drms_ tasfile_write failed '%s'\n",filename);
+  fprintf (stderr, "ERROR:drms_ tasfile_write failed '%s'\n",filename);
   fclose(fp);
   return 1;
 }
@@ -1236,43 +1149,37 @@ int drms_tasfile_write(char *filename, DRMS_Type_t type, double bzero,
 
 
 /* Create an empty TAS file. */
-int drms_tasfile_create(char *filename, DRMS_Compress_t compression, 
-			DRMS_Type_t type, int naxis, int *axis, int *blocksize,
-			TAS_Header_t *header)
-{
+int drms_tasfile_create (char *filename, DRMS_Compress_t compression, 
+    DRMS_Type_t type, int naxis, int *axis, int *blocksize,
+    TAS_Header_t *header) {
   FILE *fp;
   int i, n, sz, nblk;
   int tmp[DRMS_MAXRANK] = {0}, baxis[DRMS_MAXRANK]={0};
   TAS_Header_t h={"DRMS TAS", TASFILE_VERSION};
   float B;
 
-  if (naxis>DRMS_MAXRANK)
-  {
-    fprintf(stderr,"ERROR: Naxis (%d) exceeds DRMS_MAXRANK (%d)\n", 
+  if (naxis > DRMS_MAXRANK) {
+    fprintf (stderr, "ERROR: Naxis (%d) exceeds DRMS_MAXRANK (%d)\n", 
 	    naxis, DRMS_MAXRANK);
     return DRMS_ERROR_INVALIDRANK;
   }    
 
-  if ((fp = fopen(filename,"w")))
-  {
+  if ((fp = fopen (filename, "w"))) {
     h.type = type;
-    /* Calculate number of elements. */
+    /*  Calculate number of elements. */
     sz = drms_sizeof(type);
     n = 1;
     for (i=0; i<naxis; i++)
       n *= axis[i];
 
-    if (blocksize==NULL)
-    {
+    if (blocksize == NULL) {
       blocksize = tmp;
-      if (compression == DRMS_COMP_NONE)
-      { 
+      if (compression == DRMS_COMP_NONE) { 
 	/* Pick a blocksize. Try to divide all dimension in the same number 
 	   of times a such that the size of a single block is GOAL_SIZE.  */
 	B = powf(((float)n*sz)/GOAL_SIZE, 1.0f/naxis);
 	
-	for (i=0; i<naxis; i++)
-	{
+	for (i=0; i<naxis; i++) {
 	  if ( B <= 1 )
 	    blocksize[i] = axis[i];
 	  else if ( B >= axis[i])
@@ -1285,11 +1192,9 @@ int drms_tasfile_create(char *filename, DRMS_Compress_t compression,
 #endif
 	}
       }
-      else
-      {
+      else {
 	n = 1;
-	for (i=0; i<naxis; i++)
-	{
+	for (i=0; i<naxis; i++) {
 	  n *= axis[i];
 	  if (n*sz>=GOAL_SIZE)
 	    blocksize[i] = 1;
@@ -1304,8 +1209,7 @@ int drms_tasfile_create(char *filename, DRMS_Compress_t compression,
     }
     h.compress = compression;
     h.naxis = naxis;
-    for (i=0; i<h.naxis; i++)
-    {
+    for (i=0; i<h.naxis; i++) {
       h.axis[i] = axis[i];
       h.blksz[i] = blocksize[i];
     }
@@ -1318,15 +1222,13 @@ int drms_tasfile_create(char *filename, DRMS_Compress_t compression,
     nblk = calc_tasblockcount(&h,baxis);
 
     /* Skip over index part of file, which will be written last. */
-    if (fseek(fp, nblk*sizeof(TAS_Index_t)-1, SEEK_CUR))
-    {
-      fprintf(stderr,"ERROR: Failed to seek past index while writing TAS "
+    if (fseek (fp, nblk*sizeof(TAS_Index_t)-1, SEEK_CUR)) {
+      fprintf (stderr, "ERROR: Failed to seek past index while writing TAS "
 	      "file %s.\n", filename);
       goto bailout0;
     }
-    if (fputc(0, fp))
-    {
-      fprintf(stderr,"ERROR: Failed to zero byte to TAS file %s.\n",filename);
+    if (fputc (0, fp)) {
+      fprintf (stderr, "ERROR: Failed to zero byte to TAS file %s.\n",filename);
       goto bailout0;
     }
     if (header)
@@ -1348,8 +1250,7 @@ int drms_tasfile_create(char *filename, DRMS_Compress_t compression,
 /*****************************************************************************/
 
 /* Defragment a TAS file. */
-int drms_tasfile_defrag(char *tasfile, char *scratchdir)
-{
+int drms_tasfile_defrag (char *tasfile, char *scratchdir) {
   char *template;
   int i, j, nblk, baxis[DRMS_MAXRANK], fdout;
   unsigned char *buf;
@@ -1360,9 +1261,8 @@ int drms_tasfile_defrag(char *tasfile, char *scratchdir)
   FILE *fp, *fpout;  
   int donothing=1;
 
-  if (!(fp = fopen(tasfile,"r")))
-  {
-    fprintf(stderr,"Failed to open TAS file '%s' for reading.\n",tasfile);
+  if (!(fp = fopen(tasfile,"r"))) {
+    fprintf (stderr, "Failed to open TAS file '%s' for reading.\n",tasfile);
     return 1;
   }
   /* Read file header. */
@@ -1372,9 +1272,8 @@ int drms_tasfile_defrag(char *tasfile, char *scratchdir)
   /* calculate number of blocks per dimension and in total. */
   nblk = calc_tasblockcount(&h,baxis);
   /* Read index array from file. */
-  if ((index = tasfile_readindex(fp, nblk, &h)) == NULL)
-  {
-    fprintf(stderr,"ERROR: Failed to read index from TAS file %s\n",
+  if ((index = tasfile_readindex (fp, nblk, &h)) == NULL) {
+    fprintf (stderr, "ERROR: Failed to read index from TAS file %s\n",
 	    tasfile);
     return 1;
   }
@@ -1397,79 +1296,65 @@ int drms_tasfile_defrag(char *tasfile, char *scratchdir)
 
   XASSERT(buf = malloc(len));
   
-  if (scratchdir)
-  {
-    XASSERT(template = malloc(strlen(scratchdir)+20));
+  if (scratchdir) {
+    XASSERT(template = malloc (strlen(scratchdir)+20));
     sprintf(template,"%s/XXXXXX",scratchdir);
   }
-  else
-  {
+  else {
     XASSERT(template = malloc(25));
-    sprintf(template,"/tmp/XXXXXX");
+    sprintf (template, "/tmp/XXXXXX");
   }
-  if ((fdout = mkstemp(template)) == -1)
-  {
-    perror("Failed to create temporary file");
+  if ((fdout = mkstemp (template)) == -1) {
+    perror ("Failed to create temporary file");
     return 1;
   }
-  if (!(fpout = fdopen(fdout,"w")))
-  {
-    fprintf(stderr,"Failed to open TAS file '%s' for reading",tasfile);
-    perror("");
+  if (!(fpout = fdopen (fdout,"w"))) {
+    fprintf (stderr, "Failed to open TAS file '%s' for reading",tasfile);
+    perror ("");
     return 1;
   }
     /* Write header to file. */
-  if(tasfile_writeheader(fpout, &h))
-    return 1;
+  if (tasfile_writeheader(fpout, &h)) return 1;
 
 
   /* Main loop: Read one block at a time and unpack it into the
      main array. */
   lastoffset = -1;
   outoffset = sizeof(TAS_Header_t) + nblk*sizeof(TAS_Index_t);
-  for (j=0; j < nblk; j++)
-  {
-    if (lastoffset != index[i].offset)
-    {
+  for (j=0; j < nblk; j++) {
+    if (lastoffset != index[i].offset) {
 #ifdef DEBUG	  
-      printf("Doing fseek to %lu. (lastoffset = %lu)\n",
+      printf ("Doing fseek to %lu. (lastoffset = %lu)\n",
 	     index[i].offset, lastoffset);
 #endif
-      if (fseek(fp, index[i].offset, SEEK_SET))
-      {
-	fprintf(stderr,"ERROR: Failed to seek to index in TAS file.\n");
+      if (fseek (fp, index[i].offset, SEEK_SET)) {
+	fprintf (stderr, "ERROR: Failed to seek to index in TAS file.\n");
 	return 1;
       }
     }
-    if (!fread(buf, index[i].length, 1, fp))
-    {
+    if (!fread (buf, index[i].length, 1, fp)) {
       free(index);
       return 1;
     }
     lastoffset = index[i].offset+index[i].length;
-
-    /* Update offset and write out. */
+					/*  Update offset and write out  */
     index[i].offset = outoffset;
-    if (!fwrite(buf,index[i].length, 1, fpout))
-    {
-      fprintf(stderr,"ERROR: Failed to write data block %d to "
+    if (!fwrite(buf,index[i].length, 1, fpout)) {
+      fprintf (stderr, "ERROR: Failed to write data block %d to "
 	      "TAS file %s.\n", j,template);
       return 1;
     }
     outoffset += index[i].length;
   }
-
-  /* Write index to file. */
-  if (tasfile_writeindex(fp, nblk, index))
-  {
-    fprintf(stderr,"ERROR: Failed to seek to end of TAS file %s\n",tasfile);
+						/*  Write index to file  */
+  if (tasfile_writeindex (fp, nblk, index)) {
+    fprintf (stderr, "ERROR: Failed to seek to end of TAS file %s\n",tasfile);
     return 1;
   }
   fclose(fp);
   fclose(fpout);
-  if (rename(template, tasfile))
-  {
-    perror("ERROR: Failed to overwrite %s with defragmented version");
+  if (rename (template, tasfile)) {
+    perror ("ERROR: Failed to overwrite %s with defragmented version");
     return 1;
   }
 
