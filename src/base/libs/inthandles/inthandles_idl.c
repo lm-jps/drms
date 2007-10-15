@@ -1,5 +1,6 @@
 /* inthandles_idl.c */
 #ifdef IDLLIB
+#include "xassert.h"
 #include "jsoc.h"
 #include "inthandles.h"
 #include "hcontainer.h"
