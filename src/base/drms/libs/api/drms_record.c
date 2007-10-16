@@ -1,6 +1,7 @@
 // #define DEBUG
 #include <dirent.h>
 #include <dlfcn.h>
+#include <sys/stat.h>
 #include "drms.h"
 #include "xmem.h"
 #include "drms_dsdsapi.h"
@@ -25,6 +26,9 @@ typedef enum
    kRSParseState_EndRS,       /* Another RS to follow (comma seen) */
    kRSParseState_LastRS,      /* No RS's to follow */
    kRSParseState_BeginDSDS,   /* A '{' seen */
+   kRSParseState_BeginAtFile, /* A '@' - file that contains queries */
+   kRSParseState_AtFile,      /* Parsing "@file". */
+   kRSParseState_EndAtFile,   /* A comma or end of input seen while parsing "@file". */
    kRSParseState_DSDS,        /* Parsing 'prog' specification */
    kRSParseState_TrailDSDS,   /* Trailing spaces after 'prog' specification and before '}' */
    kRSParseState_EndDSDS,     /* A '}' seen */
@@ -422,7 +426,7 @@ static void RSFree(const void *val)
       if (theRS)
       {
 	 drms_close_records(theRS, DRMS_FREE_RECORD);
-	 free(theRS);
+	 /* free(theRS); - don't free, drms_close_records() already does this! */
       }
    }
 }
@@ -2748,6 +2752,8 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
    int count = 0;
    char buf[kMAXRSETSPEC];
    char *pcBuf = buf;
+   char **multiRS = NULL;
+   int countMultiRS = 0;
    char *endInput = rsstr + strlen(rsstr); /* points to null terminator */
 
    *nsets = 0;
@@ -2782,6 +2788,13 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 		    if (*pc == '{')
 		    {
 		       state = kRSParseState_BeginDSDS;
+		       pc++;
+		    }
+		    else if (*pc == '@')
+		    {
+		       /* text file that contains one or more recset queries */
+		       /* recursively parse those queries! */
+		       state = kRSParseState_BeginAtFile;
 		       pc++;
 		    }
 		    else
@@ -2995,9 +3008,26 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 	      /* pc points to next RS (or whatever is after ',') */
 	      /* buf does not contain the comma or whitespace */
 	      *pcBuf = '\0';
-	      intSets[count] = strdup(buf);
 	      pcBuf = buf;
-	      count++;
+
+	      if (!multiRS)
+	      {
+		 intSets[count] = strdup(buf);
+		 count++;
+	      }
+	      else
+	      {
+		 int iSet;
+		 for (iSet = 0; iSet < countMultiRS; iSet++)
+		 {
+		    intSets[count] = multiRS[iSet];
+		    count++;
+		 }
+
+		 free(multiRS); /* don't deep-free; intSets now owns strings */
+		 multiRS = NULL;
+		 countMultiRS = 0;
+	      }
 
 	      if (pc < endInput)
 	      {
@@ -3014,6 +3044,11 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 		    state = kRSParseState_BeginDSDS;
 		    pc++;
 		 }
+		 else if (*pc == '@')
+		 {
+		    state = kRSParseState_BeginAtFile;
+		    pc++;
+		 }
 		 else
 		 {
 		    state = kRSParseState_NameChar;
@@ -3027,9 +3062,26 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 	    case kRSParseState_LastRS:
 	      /* pc points to endInput or whitespace */ 
 	      *pcBuf = '\0';
-	      intSets[count] = strdup(buf);
 	      pcBuf = buf;
-	      count++;
+
+	      if (!multiRS)
+	      {		
+		 intSets[count] = strdup(buf);
+		 count++;
+	      }
+	      else
+	      {
+		 int iSet;
+		 for (iSet = 0; iSet < countMultiRS; iSet++)
+		 {
+		    intSets[count] = multiRS[iSet];
+		    count++;
+		 }
+
+		 free(multiRS); /* don't deep-free; intSets now owns strings */
+		 multiRS = NULL;
+		 countMultiRS = 0;
+	      }
 	      
 	      if (pc < endInput)
 	      {
@@ -3045,6 +3097,140 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 	      else
 	      {
 		 state = kRSParseState_End;
+	      }
+	      break;
+	    case kRSParseState_BeginAtFile:
+	      if (pc < endInput)
+	      {
+		 if (*pc == ',')
+		 {
+		    state = kRSParseState_Error;
+		 }
+		 else
+		 {
+		    state = kRSParseState_AtFile; 
+		 }
+	      }
+	      else
+	      {
+		 state = kRSParseState_Error;
+	      }
+	      break;
+	    case kRSParseState_AtFile:
+	      if (pc < endInput)
+	      {
+		 if (*pc == ',')
+		 {
+		    state = kRSParseState_EndAtFile;
+		 }
+		 else
+		 {
+		    *pcBuf++ = *pc++;
+		 }
+	      }
+	      else
+	      {
+		 state = kRSParseState_EndAtFile;
+	      }
+	      break;
+	    case kRSParseState_EndAtFile:
+	      {
+		 char lineBuf[LINE_MAX];
+		 char **setsAtFile = NULL;
+		 int nsetsAtFile = 0;
+		 int iSet = 0;
+		 struct stat stBuf;
+		 FILE *atfile = NULL;
+
+		 /* finished reading an AtFile filename - read file one line at a time,
+		  * parsing each line recursively. */
+		 if (multiRS)
+		 {
+		    state = kRSParseState_Error;
+		    break;
+		 }
+		 else
+		 {
+		    multiRS = (char **)malloc(sizeof(char *) * kMAXRSETS);
+
+		    /* buf has filename */
+		    if (buf && !stat(buf, &stBuf))
+		    {
+		       if (S_ISREG(stBuf.st_mode))
+		       {
+			  /* read a line */
+			  if ((atfile = fopen(buf, "r")) == NULL)
+			  {
+			     fprintf(stderr, "Cannot open @file %s for reading, skipping.\n", buf);
+			  }
+			  else
+			  {
+			     int len = 0;
+			     while (!(fgets(lineBuf, LINE_MAX, atfile) == NULL))
+			     {
+				/* strip \n from end of lineBuf */
+				len = strlen(lineBuf);
+
+				/* skip empty lines*/
+				if (len > 1)
+				{
+				   if (lineBuf[len - 1] == '\n')
+				   {
+				      lineBuf[len - 1] = '\0';
+				   }
+			
+				   status = ParseRecSetDesc(lineBuf, &setsAtFile, &nsetsAtFile);
+				   if (status == DRMS_SUCCESS)
+				   {
+				      /* add all nsetsAtFile recordsets to multiRS */
+				      for (iSet = 0; iSet < nsetsAtFile; iSet++)
+				      {
+					 multiRS[countMultiRS] = strdup(setsAtFile[iSet]);
+					 countMultiRS++;
+				      }
+				   }
+				   else
+				   {
+				      state = kRSParseState_Error;
+				      break;
+				   }
+
+				   FreeRecSetDescArr(&setsAtFile, nsetsAtFile);
+				}
+			     }
+			  }
+		       }
+		       else
+		       {
+			  fprintf(stderr, "@file %s is not a regular file, skipping.\n", buf);
+		       }
+		    }
+		    else
+		    {
+		       fprintf(stderr, "Cannot find @file %s, skipping.\n", buf);
+		    }
+		 }
+	      }
+
+	      if (pc < endInput)
+	      {
+		 if (*pc == ',')
+		 {
+		    /* AtFile filename was terminated by comma */
+		    if (pc + 1 < endInput)
+		    {
+		       state = kRSParseState_EndRS;
+		       pc++;
+		    }
+		    else
+		    {
+		       state = kRSParseState_Error;
+		    }
+		 }		 
+	      }
+	      else
+	      {
+		 state = kRSParseState_LastRS;
 	      }
 	      break;
 	    case kRSParseState_BeginDSDS:
@@ -3063,6 +3249,10 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 		 {
 		    state = kRSParseState_DSDS;
 		 }
+	      }
+	      else
+	      {
+		 state = kRSParseState_Error;
 	      }
 	      break;
 	    case kRSParseState_DSDS:
@@ -3162,7 +3352,7 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
       free(rsstr);
    } /* rsstr */
 
-   if (status == DRMS_SUCCESS && state == kRSParseState_Done)
+   if (status == DRMS_SUCCESS && state == kRSParseState_Done && count > 0)
    {
       *sets = (char **)malloc(sizeof(char *) * count);
 
