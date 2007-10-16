@@ -2,6 +2,8 @@
 
 # script for synchronizing your CVS working directory with the CVS JSOC module (new tree)
 
+# must run from root of JSOC tree (not necessarily from $JSOCROOT)
+
 # run this on each machine to be used.
 #    n02 - for linux_X86_64 machines
 #    n00 - for linux4 machines such as n00, phil, etc.
@@ -20,7 +22,7 @@ foreach ARG ($argv)
     endif
 end
 
-if (-e $JSOCROOT/suflag.txt) then
+if (-e suflag.txt) then
     set CVSMOD = "JSOC"
     echo "Synchronizing to JSOC (Stanford) user"
 else
