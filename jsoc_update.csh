@@ -18,7 +18,8 @@ set jsocd = `pwd`
 cd scrwd
 
 if ($scrwd != $jsocd) then
-    echo "WARNING: updating JSOC tree rooted at $jsocd, which differs from JSOC tree in working directory"
+    echo "***WARNING: updating JSOC tree rooted at $jsocd"
+    echo "   not the JSOC tree in working directory $scrwd"
 endif
 
 set LCMD = "R" # latest release, default is latest source
