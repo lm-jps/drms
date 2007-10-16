@@ -2,12 +2,24 @@
 
 # script for updating jsoc cvs release in my "sandbox"
 
+# can be run from anywhere, but updates the JSOC tree rooted at $JSOCROOT only.
+
 # run this on each machine to be used.
 #    n02 - for linux_X86_64 machines
 #    n00 - for linux4 machines such as n00, phil, etc.
 # 
 #    n12 formerly used for AMD x86-64 can also be used instead of n02
 #    lws Itaniam processors no longer supported for JSOC
+
+# check to see if the user is running from within $JSOCROOT
+set scrwd = `pwd`
+cd $JSOCROOT
+set jsocd = `pwd`
+cd scrwd
+
+if ($scrwd != $jsocd) then
+    echo "WARNING: updating JSOC tree rooted at $jsocd, which differs from JSOC tree in working directory"
+endif
 
 set LCMD = "R" # latest release, default is latest source
 set REV = ""
