@@ -105,18 +105,18 @@ endif
 ifeq ($(DEBUG), 0)
 
   ifeq ($(JSOC_MACHINE), linux_x86_64)
-    GCC_CF_ALL	= -I$(SRCDIR)/src/base/include -std=gnu99 -O2 -march=opteron $(GCC_WARN) $(GCC_CF_GCCCOMP)
+    GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=opteron $(GCC_WARN) $(GCC_CF_GCCCOMP)
   else
-    GCC_CF_ALL	= -I$(SRCDIR)/src/base/include -std=gnu99 -O2 -march=i686 $(GCC_WARN) $(GCC_CF_GCCCOMP)
+    GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=i686 $(GCC_WARN) $(GCC_CF_GCCCOMP)
   endif	
 
-  ICC_CF_ALL	= -I$(SRCDIR)/src/base/include -std=c99 -xW $(ICC_WARN) $(ICC_CF_ICCCOMP)
+  ICC_CF_ALL	= -I$(SRCDIR)/base/include -std=c99 -xW $(ICC_WARN) $(ICC_CF_ICCCOMP)
 
 else
 
-  GCC_CF_ALL	= -I$(SRCDIR)/src/base/include -std=gnu99 -g $(GCC_WARN) $(GCC_CF_GCCCOMP)
+  GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -g $(GCC_WARN) $(GCC_CF_GCCCOMP)
 
-  ICC_CF_ALL	= -I$(SRCDIR)/src/base/include -std=c99 -g $(ICC_WARN) $(ICC_CF_ICCCOMP)
+  ICC_CF_ALL	= -I$(SRCDIR)/base/include -std=c99 -g $(ICC_WARN) $(ICC_CF_ICCCOMP)
 
 endif
 
@@ -199,7 +199,7 @@ FMODLIBS_SOCK = $(LIBJSOC_MAIN_SOCK_F) $(LIBINTHANDLESF) $(LIBDRMSCLIENT) $(LIBD
 MATHLIBS =  $(LIBLSQR) $(LIBBLAS) $(LIBLAPACK)
 
 # Make rules that apply to all projects outside of the base DRMS/SUMS system
--include $(SRCDIR)/src/proj/make_basic.mk
+-include $(SRCDIR)/proj/make_basic.mk
 
 # Make rules that apply to all projects, inside and outside of the base DRMS/SUMS system
 $(CEXE):	%:	%.o $(EXELIBS)

@@ -11,7 +11,7 @@ ifndef JSOC_MACHINE
 endif
 
 OBJDIR 		:= _$(JSOC_MACHINE)
-PROJOBJDIR	:= $(OBJDIR)/src/proj
+PROJOBJDIR	:= $(OBJDIR)/proj
 
 all:    $(PROJOBJDIR) $(OBJDIR)
 
@@ -23,38 +23,38 @@ MAKETARGET = $(MAKE) --no-print-directory -C $@ -f $(CURDIR)/Makefile \
 .PHONY: $(PROJOBJDIR) $(OBJDIR) 
 
 # Create the project-specific directories too, if they exist.
--include $(CURDIR)/src/proj/target.mk
+-include $(CURDIR)/proj/target.mk
 
 $(OBJDIR):
 	+@[ -d bin/$(JSOC_MACHINE) ] || mkdir -p bin/$(JSOC_MACHINE)
 	+@[ -d lib/$(JSOC_MACHINE) ] || mkdir -p lib/$(JSOC_MACHINE)
 	+@[ -d $@ ] || mkdir -p $@
-	+@[ -d $@/src/base/drms/apps ] || mkdir -p $@/src/base/drms/apps
-	+@[ -d $@/src/base/drms/libs/api/client ] || mkdir -p $@/src/base/drms/libs/api/client
-	+@[ -d $@/src/base/drms/libs/api/client_fpic ] || mkdir -p $@/src/base/drms/libs/api/client_fpic
-	+@[ -d $@/src/base/drms/libs/api/server ] || mkdir -p $@/src/base/drms/libs/api/server
-	+@[ -d $@/src/base/drms/libs/main/c ] || mkdir -p $@/src/base/drms/libs/main/c
-	+@[ -d $@/src/base/drms/libs/main/f ] || mkdir -p $@/src/base/drms/libs/main/f
-	+@[ -d $@/src/base/drms/libs/main/idl ] || mkdir -p $@/src/base/drms/libs/main/idl
-	+@[ -d $@/src/base/drms/libs/meta ] || mkdir -p $@/src/base/drms/libs/meta
-	+@[ -d $@/src/base/libs/cmdparams/fpic ] || mkdir -p $@/src/base/libs/cmdparams/fpic
-	+@[ -d $@/src/base/libs/db/client ] || mkdir -p $@/src/base/libs/db/client
-	+@[ -d $@/src/base/libs/db/client_fpic ] || mkdir -p $@/src/base/libs/db/client_fpic
-	+@[ -d $@/src/base/libs/db/server ] || mkdir -p $@/src/base/libs/db/server
-	+@[ -d $@/src/base/libs/dstruct/fpic ] || mkdir -p $@/src/base/libs/dstruct/fpic
-	+@[ -d $@/src/base/libs/ricecomp/fpic ] || mkdir -p $@/src/base/libs/ricecomp/fpic
-	+@[ -d $@/src/base/libs/inthandles ] || mkdir -p $@/src/base/libs/inthandles
-	+@[ -d $@/src/base/libs/threads/fpic ] || mkdir -p $@/src/base/libs/threads/fpic
-	+@[ -d $@/src/base/libs/timeio/fpic ] || mkdir -p $@/src/base/libs/timeio/fpic
-	+@[ -d $@/src/base/libs/misc/fpic ] || mkdir -p $@/src/base/libs/misc/fpic
-	+@[ -d $@/src/base/local/libs/dsds ] || mkdir -p $@/src/base/local/libs/dsds
-	+@[ -d $@/src/base/local/libs/soi ] || mkdir -p $@/src/base/local/libs/soi
-	+@[ -d $@/src/base/sums/apps ] || mkdir -p $@/src/base/sums/apps
-	+@[ -d $@/src/base/sums/libs/api ] || mkdir -p $@/src/base/sums/libs/api
-	+@[ -d $@/src/base/sums/libs/pg ] || mkdir -p $@/src/base/sums/libs/pg
-	+@[ -d $@/src/base/util/apps ] || mkdir -p $@/src/base/util/apps
-	+@[ -d $@/src/proj/example/apps ] || mkdir -p $@/src/proj/example/apps
-	+@[ -d $@/src/proj/myproj/apps ] || mkdir -p $@/src/proj/myproj/apps
+	+@[ -d $@/base/drms/apps ] || mkdir -p $@/base/drms/apps
+	+@[ -d $@/base/drms/libs/api/client ] || mkdir -p $@/base/drms/libs/api/client
+	+@[ -d $@/base/drms/libs/api/client_fpic ] || mkdir -p $@/base/drms/libs/api/client_fpic
+	+@[ -d $@/base/drms/libs/api/server ] || mkdir -p $@/base/drms/libs/api/server
+	+@[ -d $@/base/drms/libs/main/c ] || mkdir -p $@/base/drms/libs/main/c
+	+@[ -d $@/base/drms/libs/main/f ] || mkdir -p $@/base/drms/libs/main/f
+	+@[ -d $@/base/drms/libs/main/idl ] || mkdir -p $@/base/drms/libs/main/idl
+	+@[ -d $@/base/drms/libs/meta ] || mkdir -p $@/base/drms/libs/meta
+	+@[ -d $@/base/libs/cmdparams/fpic ] || mkdir -p $@/base/libs/cmdparams/fpic
+	+@[ -d $@/base/libs/db/client ] || mkdir -p $@/base/libs/db/client
+	+@[ -d $@/base/libs/db/client_fpic ] || mkdir -p $@/base/libs/db/client_fpic
+	+@[ -d $@/base/libs/db/server ] || mkdir -p $@/base/libs/db/server
+	+@[ -d $@/base/libs/dstruct/fpic ] || mkdir -p $@/base/libs/dstruct/fpic
+	+@[ -d $@/base/libs/ricecomp/fpic ] || mkdir -p $@/base/libs/ricecomp/fpic
+	+@[ -d $@/base/libs/inthandles ] || mkdir -p $@/base/libs/inthandles
+	+@[ -d $@/base/libs/threads/fpic ] || mkdir -p $@/base/libs/threads/fpic
+	+@[ -d $@/base/libs/timeio/fpic ] || mkdir -p $@/base/libs/timeio/fpic
+	+@[ -d $@/base/libs/misc/fpic ] || mkdir -p $@/base/libs/misc/fpic
+	+@[ -d $@/base/local/libs/dsds ] || mkdir -p $@/base/local/libs/dsds
+	+@[ -d $@/base/local/libs/soi ] || mkdir -p $@/base/local/libs/soi
+	+@[ -d $@/base/sums/apps ] || mkdir -p $@/base/sums/apps
+	+@[ -d $@/base/sums/libs/api ] || mkdir -p $@/base/sums/libs/api
+	+@[ -d $@/base/sums/libs/pg ] || mkdir -p $@/base/sums/libs/pg
+	+@[ -d $@/base/util/apps ] || mkdir -p $@/base/util/apps
+	+@[ -d $@/proj/example/apps ] || mkdir -p $@/proj/example/apps
+	+@[ -d $@/proj/myproj/apps ] || mkdir -p $@/proj/myproj/apps
 	+@$(MAKETARGET)
 
 # These rules keep make from trying to use the match-anything rule below to

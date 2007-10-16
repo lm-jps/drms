@@ -3,6 +3,6 @@
 $(CEXESUMS):			$(LIBSUMSAPI) $(LIBSUM)
 $(MODEXESUMS):			$(LIBSUMSAPI) $(LIBSUM)
 
-$(MODEXEDROBJ):			CF_TGT := $(CF_TGT) -I$(SRCDIR)/src/proj/libs/dr
+$(MODEXEDROBJ):			CF_TGT := $(CF_TGT) -I$(SRCDIR)/proj/libs/dr
 $(MODEXEDR) $(MODEXEDR_SOCK):	$(LIBDR)
 

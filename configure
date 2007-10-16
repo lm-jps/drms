@@ -16,8 +16,8 @@ end
 
 if ($CHKLIBS == "no") then
     echo -n "Remove links for local project configuration..."
-    if (-d src/proj) then
-	cd src/proj
+    if (-d proj) then
+	cd proj
 	if (-e configure) then
 	    rm configure
 	endif
@@ -30,7 +30,7 @@ if ($CHKLIBS == "no") then
 	if (-e target.mk) then
 	    rm target.mk
 	endif
-	cd ../..
+	cd ..
     endif
     echo "done"
 
@@ -48,10 +48,10 @@ if ($CHKLIBS == "no") then
     echo "done"
 
     echo -n "Removing links to headers..."
-    if (-d src/base/include) then
-	cd src/base/include
+    if (-d base/include) then
+	cd base/include
 	find . -name "*.h" -exec rm {} \;
-	cd ../../..
+	cd ../..
     endif
     echo "done"
 
@@ -75,29 +75,29 @@ if ($CHKLIBS == "no") then
 
     if ($CLEAN == "yes") then
 
-	if (-x src/base/local/libs/dsds/scripts/rmlinks.csh) then
-	    src/base/local/libs/dsds/scripts/rmlinks.csh
+	if (-x base/local/libs/dsds/scripts/rmlinks.csh) then
+	    base/local/libs/dsds/scripts/rmlinks.csh
 	endif
 
-	if (-x src/base/local/libs/soi/scripts/rmlinks.csh) then
-	    src/base/local/libs/soi/scripts/rmlinks.csh
+	if (-x base/local/libs/soi/scripts/rmlinks.csh) then
+	    base/local/libs/soi/scripts/rmlinks.csh
 	endif
     else
 	echo -n "Setting links for local project configuration..."
 	if (-e suflag.txt) then
-	    cd src/proj
-	    ln -sf ../../projconf/su/configure configure
-	    ln -sf ../../projconf/su/make_basic.mk make_basic.mk
-	    ln -sf ../../projconf/su/Rules.mk Rules.mk
-	    ln -sf ../../projconf/su/target.mk target.mk
-	    cd ../..
+	    cd proj
+	    ln -sf ../projconf/su/configure configure
+	    ln -sf ../projconf/su/make_basic.mk make_basic.mk
+	    ln -sf ../projconf/su/Rules.mk Rules.mk
+	    ln -sf ../projconf/su/target.mk target.mk
+	    cd ..
 	else
-	    cd src/proj
-	    ln -sf ../../projconf/ex/configure configure
-	    ln -sf ../../projconf/ex/make_basic.mk make_basic.mk
-	    ln -sf ../../projconf/ex/Rules.mk Rules.mk
-	    ln -sf ../../projconf/ex/target.mk target.mk
-	    cd ../..
+	    cd proj
+	    ln -sf ../projconf/ex/configure configure
+	    ln -sf ../projconf/ex/make_basic.mk make_basic.mk
+	    ln -sf ../projconf/ex/Rules.mk Rules.mk
+	    ln -sf ../projconf/ex/target.mk target.mk
+	    cd ..
 	endif
 	echo "done"
 
@@ -116,12 +116,12 @@ if ($CHKLIBS == "no") then
 	echo "done"
 
 	echo "Setting links to headers..."
-	if (!(-d src/base/include)) then
-	    mkdir -p src/base/include
+	if (!(-d base/include)) then
+	    mkdir -p base/include
 	endif
-	cd src/base/include
+	cd base/include
 	find .. -path '../include' -prune -o -name \*.h  \( \( -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \; \)
-	cd ../../..
+	cd ../..
 	echo "done"
 	echo
 	
@@ -132,17 +132,17 @@ if ($CHKLIBS == "no") then
 	cd scripts
 
 	# Sums scripts
-	find ../src/base/sums/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
+	find ../base/sums/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
 
 	# Util scripts
-	find ../src/base/util/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
+	find ../base/util/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
 
 	# DRMS / IDL-interface scripts
-	find ../src/base/drms/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
+	find ../base/drms/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
 
 	# Project-specific scripts - these won't show up if you don't have the project source.
-	if (-x ../src/proj/configure) then
-	    ../src/proj/configure
+	if (-x ../proj/configure) then
+	    ../proj/configure
 	endif
 
 	cd ..
@@ -154,7 +154,7 @@ if ($CHKLIBS == "no") then
 	    mkdir jsds
 	endif
 	cd jsds
-	find ../src/base \( -name \*.jsd -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o \( -name \*.jsd -exec echo "  " {} " ERROR - couldn't create link" \; \)
+	find ../base \( -name \*.jsd -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o \( -name \*.jsd -exec echo "  " {} " ERROR - couldn't create link" \; \)
 	cd ..
 	echo "done"
 	echo
@@ -162,12 +162,12 @@ if ($CHKLIBS == "no") then
 	# generate links for DSDS/SOI dynamic libraries - only do this if 
 	# user's environment has access to /home/soi/CM
 	if (-d /home/soi/CM/include && -d /home/soi/CM/src) then
-	    if (-x src/base/local/libs/dsds/scripts/genlinks.csh) then
-		src/base/local/libs/dsds/scripts/genlinks.csh
+	    if (-x base/local/libs/dsds/scripts/genlinks.csh) then
+		base/local/libs/dsds/scripts/genlinks.csh
 	    endif
 
-	    if (-x src/base/local/libs/soi/scripts/genlinks.csh) then
-		src/base/local/libs/soi/scripts/genlinks.csh
+	    if (-x base/local/libs/soi/scripts/genlinks.csh) then
+		base/local/libs/soi/scripts/genlinks.csh
 	    endif
 	endif
     endif

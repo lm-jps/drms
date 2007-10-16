@@ -13,7 +13,7 @@ after Ver_3-5-PreRelease.
 A new make system is in place after Ver_3-5-PreRelease. If you have a
 cvs working directory of or before Ver_3-5-PreRelease, you'll need to
 run 'make clean' before 'cvs update' in order to clean up the .c files
-generated from .pgc files in src/base/libsum_pg.
+generated from .pgc files in base/libsum_pg.
 
 ./configure only makes symbolic links for all header files in the JSOC
 tree.  The binaries, as well as .c files generated from .pgc files,
@@ -22,11 +22,11 @@ _linux_ia32. Symbolic links to executables and libraries are also made
 in bin/ and lib/.
 
 The default compiler is icc with optimization and without debug. Two
-exceptions to this rule are src/base/libsum_pg and src/base/sum, both
+exceptions to this rule are base/libsum_pg and base/sum, both
 of which are fixed to compile with 'gcc -g -O0'.
 
-src/base/sum is not part of the default targets. Uncomment the
-following line in src/base/sum/Rules.mk to change it.
+base/sum is not part of the default targets. Uncomment the
+following line in base/sum/Rules.mk to change it.
 #TGT_BIN		:= $(TGT_BIN) $(TGT_$(d))
 
 Except for src/third_party/su, nothing in src/third_party is among the

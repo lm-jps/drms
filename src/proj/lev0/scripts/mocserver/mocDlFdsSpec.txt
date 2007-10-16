@@ -1,4 +1,0 @@
-#this is a comment
-root:moc
-#another comment
-filespec:|rfds:: 

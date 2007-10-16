@@ -14,7 +14,9 @@ all:		targets
 
 # Subdirectories, in random order
 
-dir	:= src
+dir	:= base
+-include		$(SRCDIR)/$(dir)/Rules.mk
+dir	:= proj
 -include		$(SRCDIR)/$(dir)/Rules.mk
 
 # Non-default targets
