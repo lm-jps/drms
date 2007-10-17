@@ -1646,7 +1646,7 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
 #ifdef DEBUG
     printf("Getting template for series '%s'\n",seriesname);
 #endif
-  if ( (template = hcon_lookup(&env->series_cache, seriesname)) == NULL )
+  if ( (template = hcon_lookup_lower(&env->series_cache, seriesname)) == NULL )
   {
     if (status) {
       *status = DRMS_ERROR_UNKNOWNSERIES;
@@ -1676,7 +1676,7 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
     char *namespace = ns(seriesname);
     sprintf(query, "select seriesname, description, author, owner, "
 	    "unitsize, archive, retention, tapegroup, primary_idx "
-	    "from %s.%s where seriesname='%s'", 
+	    "from %s.%s where seriesname ~~* '%s'", 
 	    namespace, DRMS_MASTER_SERIES_TABLE, seriesname);
     free(namespace);
 #ifdef DEBUG
@@ -1741,7 +1741,7 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
 #ifdef DEBUG
 	printf("adding primary key '%s'\n",q);
 #endif
-	kw = hcon_lookup(&template->keywords,q);
+	kw = hcon_lookup_lower(&template->keywords,q);
 	XASSERT(kw);
 	template->seriesinfo->pidx_keywords[(template->seriesinfo->pidx_num)++] =
 	kw; 
