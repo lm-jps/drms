@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-#/home/production/cvs/JSOC/src/base/sums/scripts/sum_start
+#/home/production/cvs/JSOC/base/sums/scripts/sum_start
 #This is to start the sum_svc and related servers.
 #
 $| = 1;                 #flush output as we go

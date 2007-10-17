@@ -48,7 +48,7 @@ tie %Hofreplace, "Tie::IxHash"; #lets you take out keys in input order
 tie %Hofneed, "Tie::IxHash"; #lets you take out keys in input order
 
 #NOTE: must have our full path name here for any restart signaled by sum_svc
-$OURPATH = "/home/production/cvs/JSOC/src/base/sums/scripts/t120view"; #!!this program
+$OURPATH = "/home/production/cvs/JSOC/base/sums/scripts/t120view"; #!!this program
 
 $DEFAULTDB = "hmidbX";		#default DB
 $HOSTDB = "hmidb";		#host where DB runs

@@ -18,7 +18,7 @@
 #define TAR_FILE_SZ_BLKS 976563 /* TAR_FILE_SZ/512 */
 #define LIBDEV "/dev/t50"
 /* If /dev/ name in this file then override the LIBDEV above */
-#define LIBDEVFILE "/home/jim/cvs/jsoc/tables/libdevfile_50.cfg"
+#define LIBDEVFILE "/home/jim/cvs/JSOC/base/sums/apps/data/libdevfile_50.cfg"
 #define SUMDR0 "/dev/nst0"
 #define SUMDR  "/dev/nst"
 #define GTARBLOCK 256   /* the gtar default is this */
@@ -36,7 +36,7 @@
 #define TAR_FILE_SZ_BLKS 976563 /* TAR_FILE_SZ/512 */
 #define LIBDEV "/dev/sg12"
 /* If /dev/ name in this file then override the LIBDEV above */
-#define LIBDEVFILE "/home/production/cvs/JSOC/src/base/sums/apps/data/libdevfile.cfg"
+#define LIBDEVFILE "/home/production/cvs/JSOC/base/sums/apps/data/libdevfile.cfg"
 #define SUMDR0 "/dev/nst0"
 #define SUMDR1 "/dev/nst1"
 #define SUMDR  "/dev/nst"

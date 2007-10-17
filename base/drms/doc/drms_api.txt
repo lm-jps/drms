@@ -14,7 +14,7 @@
 
 1.1 ----- Summary -----
 
-For full definitions see jsoc/src/base/libdrms/drms_types.h
+For full definitions see JSOC/base/drms/libs/api/drms_types.h
 
 Main DRMS types visible to a module:
 
@@ -275,7 +275,7 @@ typedef struct DRMS_Segment_struct
 
 2. ============ Record and RecordSet functions ===============
 
-For a full list of functions see jsoc/src/base/libdrms/drms_record.{c,h}.
+For a full list of functions see JSOC/base/drms/libs/api/drms_record.{c,h}.
 
 2.1 ----- RecordSet dunctions -----
 
@@ -393,7 +393,7 @@ void drms_record_directory(DRMS_Record_t *rec, char *path)
 
 3. ======================== Keyword functions ========================
 
-For full definitions see jsoc/src/base/libdrms/
+For full definitions see JSOC/base/drms/libs/api/
 drms_keyword.{c,h}, drms_statuscodes.h
 
 
@@ -499,7 +499,7 @@ int drms_convert(DRMS_Type_t dsttype, DRMS_Type_Value_t *dst,
 
 4. ======================== Link functions ========================
 
-For full definitions see jsoc/src/base/libdrms/drms_link.{c,h}.
+For full definitions see JSOC/base/drms/libs/api/drms_link.{c,h}.
 
 
 DRMS_Record_t *drms_link_follow(DRMS_Record_t *rec, const char *linkname, 
@@ -544,7 +544,7 @@ void drms_link_print(DRMS_Link_t *link);
 
 5. ======================== Segment functions ========================
 
-For full definitions see jsoc/src/base/libdrms/drms_segment.{c,h}.
+For full definitions see JSOC/base/drms/libs/api/drms_segment.{c,h}.
 
 
 DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type, 

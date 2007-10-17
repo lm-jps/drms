@@ -1,4 +1,4 @@
-# /home/jim/cvs/JSOC/src/base/sums/scripts/tapeid_t50.list
+# /home/jim/cvs/JSOC/base/sums/scripts/tapeid_t50.list
 #Here are all the tapeids that we have for the t50.
 #This is used by the perl script sum_tape_insert_t50.pl to initialize 
 #the sum_tape table by inserting these tapeids.

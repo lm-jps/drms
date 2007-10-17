@@ -992,8 +992,8 @@ int drms_series_checksegcompat(DRMS_Env_t *drmsEnv,
       ret = 1;
       for (; iSeg < nSegs; iSeg++)
       {
-	 DRMS_Keyword_t *oneSeg = &(segs[iSeg]);
-	 DRMS_Keyword_t *sSeg = drms_segment_lookup(recTempl, oneSeg->info->name);
+	 DRMS_Segment_t *oneSeg = &(segs[iSeg]);
+	 DRMS_Segment_t *sSeg = drms_segment_lookup(recTempl, oneSeg->info->name);
 
 	 if (sSeg)
 	 {

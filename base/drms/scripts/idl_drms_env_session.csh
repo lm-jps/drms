@@ -1,7 +1,7 @@
 #!/bin/csh -f
 #This script runs a basic drms connection environment from the local directory.
 
-setenv APIDIR "$JSOCROOT/src/base/drms/scripts"
+setenv APIDIR "$JSOCROOT/base/drms/scripts"
 setenv IDL_STARTUP idl_startup_auto.pro
 setenv JSOCDB "jsoc"
 

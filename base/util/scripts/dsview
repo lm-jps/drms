@@ -1,7 +1,7 @@
 eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
     if 0;
 #
-#/home/jim/cvs/JSOC/src/base/util/scripts/dsview
+#/home/jim/cvs/JSOC/base/util/scripts/dsview
 #Perl/Tk gui to view DRMS series tables.
 #
 #

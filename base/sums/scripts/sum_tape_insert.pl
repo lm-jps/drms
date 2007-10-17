@@ -10,7 +10,7 @@ use Term::ReadKey;
 $DB = "jsoc";
 
 #$IDTBL = "/home/ora10/SUM/tapeid.list"; # our initial set of tapes
-#$IDTBL = "/home/jim/cvs/JSOC/src/base/sums/script/tapeid.list"; #for t120
+#$IDTBL = "/home/jim/cvs/JSOC/base/sums/script/tapeid.list"; #for t120
 
 sub usage {
   print "Initialize the sum_tape table for database = $DB (edit \$DB to change).\n";

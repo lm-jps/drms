@@ -1,5 +1,5 @@
 /*-----------------------------------------------------------------------------
- * /home/jim/cvs/jsoc/src/base/sum/tapearc.c
+ * /home/jim/cvs/JSOC/base/sum/tapearc.c
  *
  * This is a stand alone program that will archive all the SUMS archive pending 
  * storage units to the tape_svc supported drives . 

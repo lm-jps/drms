@@ -8,7 +8,7 @@ use Term::ReadKey;
 
 $DB = "jsocdc";
 
-#$IDTBL = "/home/jim/cvs/JSOC/src/base/sums/scripts/tapeid_t50.list"; #for t50
+#$IDTBL = "/home/jim/cvs/JSOC/base/sums/scripts/tapeid_t50.list"; #for t50
 
 sub usage {
   print "Initialize the sum_tape table for database = $DB (edit \$DB to change).\n";

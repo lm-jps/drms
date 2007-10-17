@@ -1,7 +1,7 @@
 1. ============= DRMS Module overview ==============
 
 DRMS modules share a common main function found in
-jsoc/src/base/drms/jsoc_main.c. The module executable is run like a
+JSOC/base/drms/jsoc_main.c. The module executable is run like a
 normal Unix command line program (see below) and its main function
 performs the following steps:
 

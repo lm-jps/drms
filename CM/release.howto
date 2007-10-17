@@ -2,23 +2,23 @@ Art's suggested release recipe:
 
 1. Notify users (jsoc_dev@sun.stanford.edu) that a new release will be built.  Allow users time to submit changes they want in the new release.
 2. From a cluster-node (eg., n00), perform a clean sync to head as a non-Production user (cvs checkout -r HEAD jsoc).  The -r rev option is sticky, which means that if you used -r Ver_3-2 on a previous checkout, that "cvs checkout jsoc" will check out Ver_3-2.  Use "-r HEAD" to force the use of the head revision.
-3. From one machine, update $JSOCROOT/src/base/libdrms/jsoc_version.h to the latest release version and build again (make clean, make universe).  The version macros should be of the form:
+3. From one machine, update $JSOCROOT/base/libdrms/jsoc_version.h to the latest release version and build again (make clean, make universe).  The version macros should be of the form:
 
 #define jsoc_version "V3R5"
 #define jsoc_vers_num (305)
 
 4. Build all binaries (ie., make universe) and ensure there are no make problems.
 5. Repeat 2 and 4 for all machine types supported.
-6. From the machine used in step 3, commit $JSOCROOT/src/base/libdrms/jsoc_version.h.
+6. From the machine used in step 3, commit $JSOCROOT/base/libdrms/jsoc_version.h.
 7. From the machine used in step 3, create a tag for the new release.  cd to $JSOCROOT.  Run "cvs tag -c Ver_<MAJ>-<MIN> ."  Replace <MAJ> with the major version number and <MIN> with the minor version number.
 8. Update the "Ver_LATEST" tag.  This tag always points to the latest release.  "cd $JSOCROOT; cvs rtag -r Ver_<MAJ>-<MIN> Ver_LATEST jsoc", where <MAJ> and <MIN> are the current release.
-9. Once again, edit $JSOCROOT/src/base/libdrms/jsoc_version.h.  The version macros should be of the form:
+9. Once again, edit $JSOCROOT/base/libdrms/jsoc_version.h.  The version macros should be of the form:
 
 #define jsoc_version "V3R5X"
 #define jsoc_vers_num (-305)
 
 The "X" and "-" denote that binaries were created from non-release code.
-10. From the machine used in step 8, commit $JSOCROOT/src/base/libdrms/jsoc_version.h.  You might have to run "cvs update -A src/base/libdrms/jsoc_version.h" to clear the stick flag created when you first sync'd in step 2 (if you used the "-r" flag).
+10. From the machine used in step 8, commit $JSOCROOT/base/libdrms/jsoc_version.h.  You might have to run "cvs update -A base/libdrms/jsoc_version.h" to clear the stick flag created when you first sync'd in step 2 (if you used the "-r" flag).
 11. Ensure that the tag was successfully created and create actual release binaries (not just the binaries in your sandbox).  Login as the production user, checkout the tagged files (cvs checkout -r Ver_<MAJ>-<MIN> jsoc) and build on all machines supported.  
 12. Update the "working release".  The source for these binaries lives in /home/jsoc/cvs/jsoc.  cd to /home/jsoc/cvs, and do "cvs checkout -r Ver_<MAJ>-<MIN> jsoc" and build on all machines supported.
 13. Send instructions for using the new release to users.
@@ -112,7 +112,7 @@ Also on our jsoc web page:
 http://jsoc.stanford.edu/cvs/jsoc/
 
 Use the Apache cvs gui to see the diffs. For example, go to
-http://jsoc.stanford.edu/cvs/jsoc/src/base/libdrms/
+http://jsoc.stanford.edu/cvs/JSOC/base/drms/
 and click on the name in the File column and then click on
 "diffs to previous #" to see the diffs.
 
@@ -126,7 +126,7 @@ End Example New Release Instructions
 
 					/home/jim/cvs/jsoc/CM/release.howto
 
-Make sure the cvs/jsoc/src/base/libdrms/jsoc_version.h is updated.
+Make sure the cvs/JSOC/base/jsoc_version.h is updated.
 
 A release is done from a sandbox. Get the production user sandbox to work:
 
@@ -195,8 +195,8 @@ Get the all the makes to work:
 !!!!!!!!!!!!!!!!!Check that libsum, sumsapi, and sum dirs use gcc !!!!!!!!!!!
 !!!!!!!!!!! Don't have to do this if gcc is already in the Makefile !!!!!!!!!
 Now go to the dirs that need to have the gcc compile and edit Makefile:
-cd /home2/production/cvs/jsoc/src/base/
-cd libsum
+cd /home2/production/cvs/JSOC/base/
+cd sums/libs/pg
 vi Makefile
 ***ADD after the line:
 include ../../make.mk
