@@ -100,8 +100,8 @@ DRMS_Env_t *drms_open (char *host, char *user, char *password, char *dbname,
 #ifdef DEBUG  
     printf("Inserting '%s'...\n",qres->field[i][0]);
 #endif
-    template = (DRMS_Record_t *)hcon_allocslot(&env->series_cache, 
-					       qres->field[i][0]);
+    template = (DRMS_Record_t *)hcon_allocslot_lower(&env->series_cache, 
+						     qres->field[i][0]);
     memset(template,0,sizeof(DRMS_Record_t));
     template->init = 0;
     //    strcpy(template->seriesinfo->seriesname, qres->field[i][0]);
@@ -148,8 +148,8 @@ void drms_abort (DRMS_Env_t *env) {
 }
 
 void drms_free_env (DRMS_Env_t *env) {
-  hcon_free (&env->series_cache);
   hcon_free (&env->record_cache);
+  hcon_free (&env->series_cache);
   hcon_free (&env->storageunit_cache);
 #ifndef DRMS_CLIENT
   free (env->drms_lock);
