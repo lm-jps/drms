@@ -248,7 +248,7 @@ int  drms_template_keywords(DRMS_Record_t *template)
 
       
       /* Allocate space for new structure in hashed container. */
-      key = hcon_allocslot(&template->keywords, name);
+      key = hcon_allocslot_lower(&template->keywords, name);
       memset(key,0,sizeof(DRMS_Keyword_t));      
       /* Set parent pointer. */
       key->record = template;
@@ -332,7 +332,7 @@ DRMS_Keyword_t *drms_keyword_lookup(DRMS_Record_t *rec, const char *key, int fol
       fprintf(stderr,"WARNING keyword name too long, %s\n",tmp);
   }    
   if (!followlink) 
-    return hcon_lookup(&rec->keywords, tmp);
+    return hcon_lookup_lower(&rec->keywords, tmp);
   return __drms_keyword_lookup(rec, tmp, 0);
 }  
 
@@ -349,7 +349,7 @@ static DRMS_Keyword_t * __drms_keyword_lookup(DRMS_Record_t *rec,
   int stat;
   DRMS_Keyword_t *keyword;
 
-  keyword = hcon_lookup(&rec->keywords, key);
+  keyword = hcon_lookup_lower(&rec->keywords, key);
   if (keyword!=NULL && depth<DRMS_MAXLINKDEPTH )
   {
     if (keyword->info->islink)
