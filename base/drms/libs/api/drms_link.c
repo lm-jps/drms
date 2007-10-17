@@ -156,7 +156,7 @@ int drms_setlink_static(DRMS_Record_t *rec, const char *linkname, long long recn
 {
   DRMS_Link_t *link;
 
-  if ( (link = hcon_lookup(&rec->links,linkname)) == NULL )
+  if ( (link = hcon_lookup_lower(&rec->links,linkname)) == NULL )
     return DRMS_ERROR_UNKNOWNLINK;
 
   if (link->info->type==STATIC_LINK)
@@ -175,7 +175,7 @@ int drms_setlink_dynamic(DRMS_Record_t *rec, const char *linkname,
   int i;
   DRMS_Link_t *link;
 
-  if ( (link = hcon_lookup(&rec->links,linkname)) == NULL )
+  if ( (link = hcon_lookup_lower(&rec->links,linkname)) == NULL )
     return DRMS_ERROR_UNKNOWNLINK;
   
   if (link->info->type==DYNAMIC_LINK)
@@ -204,7 +204,7 @@ DRMS_Record_t *drms_link_follow(DRMS_Record_t *rec, const char *linkname,
 {
   DRMS_Link_t *link;
 
-  if ( (link = hcon_lookup(&rec->links,linkname)) == NULL )
+  if ( (link = hcon_lookup_lower(&rec->links,linkname)) == NULL )
   {
     if (status)
       *status = DRMS_ERROR_UNKNOWNLINK;
@@ -242,7 +242,7 @@ DRMS_RecordSet_t *drms_link_followall(DRMS_Record_t *rec, const char *linkname,
   long long *recnums;
 
   XASSERT(result = malloc(sizeof(DRMS_RecordSet_t)));
-  if ( (link = hcon_lookup(&rec->links,linkname)) == NULL )
+  if ( (link = hcon_lookup_lower(&rec->links,linkname)) == NULL )
   {
     stat = DRMS_ERROR_UNKNOWNLINK;
     goto bailout;
@@ -473,7 +473,7 @@ int  drms_template_links(DRMS_Record_t *template)
   {
     /* Allocate space for new structure in hashed container. */
     db_binary_field_getstr(qres, i, 0, DRMS_MAXNAMELEN, buf);
-    link = hcon_allocslot(&template->links, buf);
+    link = hcon_allocslot_lower(&template->links, buf);
     memset(link,0,sizeof(DRMS_Link_t));
     XASSERT(link->info = malloc(sizeof(DRMS_LinkInfo_t)));
     memset(link->info,0,sizeof(DRMS_LinkInfo_t));
