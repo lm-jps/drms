@@ -29,10 +29,6 @@ typedef struct {
 COMMON_BLOCK_DEF(MArgsB,mab);
 MArgsB mab; /* default modules args C strings */
 
-CmdParams_t *GetGlobalCmdParams() {
-  return &cmdparams;
-}
-
 /*  DoIt() Module entry point - defined in <modulename>.c or <modulename>.f  */
 PROTOCCALLSFFUN0(INT, DoIt, doit) /* return type, C function name, F function name*/
 #define DoIt() CCALLSFFUN0(DoIt, doit) /* C function name, F function name */
@@ -149,6 +145,47 @@ static ModuleArgs_Type_t TokenToArgType (const char *token) {
       exit(1);
    }
 }
+
+/* C functions that wrap around the JSOC C API functions.  They are directly callable
+ * from Fortran code.  Each then calls the corresponding JSOC C API function.  Results
+ * are passed back to Fortran code by reference. */
+void f_cmdparams_get_handle(pFHandleCmdParams handle)
+{
+   int err = 1;
+
+   FHandleCmdParams cphandle = kgModCmdParams;
+   CmdParams_t *pCP = (CmdParams_t *)GetJSOCStructure((void *)&cphandle, kFHandleTypeCmdParams);
+
+   if (pCP == NULL)
+   {
+      /* The one global CmdParams_t has not been inserted into the Fortran-interface structure 
+       * map.*/
+      CmdParams_t *cp = GetGlobalCmdParams();
+      const char *key = NULL;
+      err = InsertJSOCStructure((void *)&cphandle, (void *)cp, kFHandleTypeCmdParams, &key);
+   }
+   else
+   {
+      err = 0;
+   }
+
+   if (!err)
+   {
+      *handle = kgModCmdParams;
+   }
+   else
+   {
+      *handle = -1;
+   }
+}
+
+char *f_cmdparams_gethandle2()
+{
+   return "blahblah";
+}
+
+FCALLSCSUB1(f_cmdparams_get_handle, cpgethandle, cpgethandle, PINT)
+FCALLSCFUN0(STRING, f_cmdparams_gethandle2, CPGETHANDLE2, cpgethandle2)
 
 /* Top-level function that initializes all containers holding structures used within 
  * the Fortran doit function.  Each type of structure is contained within a single
@@ -282,5 +319,3 @@ int main(int argc, char **argv)
 }
 
 #endif /* FLIB */
-
-

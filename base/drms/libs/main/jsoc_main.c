@@ -15,6 +15,11 @@ DRMS_Env_t *drms_env;
 
 ModuleArgs_t *gModArgs = module_args;
 
+CmdParams_t *GetGlobalCmdParams() 
+{
+  return &cmdparams;
+}
+
 static void atexit_action (void) {
   fprintf (stderr, "WARNING: DRMS server called exit.\n");
 #ifdef DEBUG

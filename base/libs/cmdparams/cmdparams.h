@@ -7,10 +7,9 @@
 #ifdef FLIB
 /* Fortran interface */
 #include "cfortran.h"
+#include "inthandles.h"
 #define kgModCmdParams 1
 #define kgModCmdParamsStr "1"
-typedef int FHandleCmdParams;
-typedef int *pFHandleCmdParams;
 #endif /* FLIB */
 
 #define CMDPARAMS_INITBUFSZ (4096)
@@ -101,9 +100,6 @@ int params_get_int (CmdParams_t *parms, char *name);
 int params_isflagset (CmdParams_t *parms, char *name);
 
 #ifdef FLIB
-void f_cmdparams_get_handle(pFHandleCmdParams handle);
-char *f_cmdparams_gethandle2();
-
 void f_cmdparams_get_str(pFHandleCmdParams handle, 
 			 const char *name, 
 			 char *ret, 

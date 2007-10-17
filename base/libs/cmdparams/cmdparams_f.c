@@ -25,39 +25,6 @@
 
 /* ********** Fortran interface to JSOC C CmdParams API. ********** */
 
-/* C functions that wrap around the JSOC C API functions.  They are directly callable
- * from Fortran code.  Each then calls the corresponding JSOC C API function.  Results
- * are passed back to Fortran code by reference. */
-void f_cmdparams_get_handle(pFHandleCmdParams handle)
-{
-   int err = 1;
-
-   FHandleCmdParams cphandle = kgModCmdParams;
-   CmdParams_t *pCP = (CmdParams_t *)GetJSOCStructure((void *)&cphandle, kFHandleTypeCmdParams);
-
-   if (pCP == NULL)
-   {
-      /* The one global CmdParams_t has not been inserted into the Fortran-interface structure 
-       * map.*/
-      CmdParams_t *cp = GetGlobalCmdParams();
-      const char *key = NULL;
-      err = InsertJSOCStructure((void *)&cphandle, (void *)cp, kFHandleTypeCmdParams, &key);
-   }
-   else
-   {
-      err = 0;
-   }
-
-   if (!err)
-   {
-      *handle = kgModCmdParams;
-   }
-   else
-   {
-      *handle = -1;
-   }
-}
-
 /* the ret parameter is set to the size of the Fortran string after spaces have been 
  * removed PLUS 1 for C's null character.  Upon return, the non-null chars are copied
  * back into Fortran's string buffer. */
@@ -592,11 +559,6 @@ void f_params_get_time(pFHandleCmdParams handle, char *name, double *ret)
    }
 }
 
-char *f_cmdparams_gethandle2()
-{
-   return "blahblah";
-}
-
 /* Macros defined by cfortran.h that magically handle parameter passing between 
  * Fortran and C.  These are actually function definitions, not protocols - so 
  * don't put them in cmdparams.h.  They define the functions named by
@@ -608,11 +570,6 @@ char *f_cmdparams_gethandle2()
 /* The use of cfortran.h for creating C wrapper functions called by Fortran code will 
  * cause this warning to display.  cfortran.h does  not provide a way to prototype 
  * these functions, it only provides a way to define them. */
-
-FCALLSCFUN0(STRING, f_cmdparams_gethandle2, CPGETHANDLE2, cpgethandle2)
-
-FCALLSCSUB1(f_cmdparams_get_handle, cpgethandle, cpgethandle, PINT)
-
 FCALLSCSUB4(f_cmdparams_get_str, cpgetstr, cpgetstr, PINT, STRING, PSTRING, PINT)
 FCALLSCSUB3(f_cmdparams_isflagset, cpflagset, cpflagset, PINT, STRING, PINT)
 FCALLSCSUB4(f_cmdparams_get_int, cpgetint, cpgetint, PINT, STRING, PINT, PINT)

@@ -50,4 +50,9 @@ int JSOCMAIN_Init(int argc,
 		  int *cont);
 int JSOCMAIN_Term(int dolog, int verbose, pid_t drms_server_pid, pid_t tee_pid, int abort_flag);
 
+#ifdef FLIB
+void f_cmdparams_get_handle(pFHandleCmdParams handle);
+char *f_cmdparams_gethandle2();
+#endif
+
 #endif

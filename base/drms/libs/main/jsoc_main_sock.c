@@ -24,6 +24,11 @@ DRMS_Env_t *drms_env;
 
 ModuleArgs_t *gModArgs = module_args;
 
+CmdParams_t *GetGlobalCmdParams() 
+{
+  return &cmdparams;
+}
+
 /* The atexit function can't take arguments...so make a global. */
 const char *mn = NULL;
 
