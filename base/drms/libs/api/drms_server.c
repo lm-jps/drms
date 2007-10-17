@@ -1135,6 +1135,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
     }
     reply->sunum[0] = sum->dsix_ptr[0];
     reply->sudir[0] = strdup(sum->wd[0]);
+    free(sum->wd[0]);
 #ifdef DEBUG
   printf("SUM_alloc returned sunum=%llu, sudir=%s.\n",reply->sunum[0],
 	 reply->sudir[0]);
@@ -1199,6 +1200,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
     for (i=0; i<request->reqcnt; i++)
     {
       reply->sudir[i] = strdup(sum->wd[i]);
+      free(sum->wd[i]);
 #ifdef DEBUG
       printf("SUM thread: got sudir[%d] = %s = %s\n",i,reply->sudir[i],sum->wd[i]);
 #endif
