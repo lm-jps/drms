@@ -1118,7 +1118,7 @@ int drms_create_series(DRMS_Record_t *rec, int perms)
 	    "ERROR: Cannot create series '%s' because it already exists.\n", series);
     return 1;
   }
-  template = (DRMS_Record_t *)hcon_allocslot(&env->series_cache, series);
+  template = (DRMS_Record_t *)hcon_allocslot_lower(&env->series_cache, series);
   drms_copy_record_struct(template, rec);  
 
   // Set pidx keywords pointers 
