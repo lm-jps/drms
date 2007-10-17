@@ -4,6 +4,7 @@
 #include <assert.h>
 #include "hash_table.h"
 #include "hcontainer.h"
+#include "util.h"
 #include "xassert.h"
 #include "xmem.h"
 
@@ -47,6 +48,14 @@ void hcon_init(HContainer_t *hc, int datasize, int keysize,
   memset(buf->freelist, 1, buf->num_max*sizeof(char));
 }
 
+void *hcon_allocslot_lower(HContainer_t *hc, const char *key)
+{
+  char *tmp = strdup(key);
+  strtolower(tmp);
+  void *slot = hcon_allocslot(hc, tmp);
+  free(tmp);
+  return slot;
+}
 
 /*
   Allocate a new slot indexed by the string "key". Returns a void
@@ -141,6 +150,14 @@ void *hcon_index2slot(HContainer_t *hc, int index, HCBuf_t **outbuf)
   return &buf->data[index*hc->datasize];
 }
 
+void *hcon_lookup_lower(HContainer_t *hc, const char *key)
+{
+  char *tmp = strdup(key);
+  strtolower(tmp);
+  void *slot = hcon_lookup(hc, tmp);
+  free(tmp);
+  return slot;
+}
 
 /*
   Returns a pointer to the slot indexed by key.  If no element 

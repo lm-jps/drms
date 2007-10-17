@@ -37,8 +37,10 @@ typedef struct HIterator_struct {
 void hcon_init(HContainer_t *hc, int datasize, int keysize,
 	       void (*deep_free)(const void *value),
 	       void (*deep_copy)(const void *dst, const void *src));
+void *hcon_allocslot_lower(HContainer_t *hc, const char *key);
 void *hcon_allocslot(HContainer_t *hc, const char *key);
 void *hcon_index2slot(HContainer_t *hc, int index, HCBuf_t **outbuf);
+void *hcon_lookup_lower(HContainer_t *hc, const char *key);
 void *hcon_lookup(HContainer_t *hc, const char *key);
 void *hcon_lookup_ext(HContainer_t *hc, const char *keyin, const char **keyout);
 void *hcon_lookupindex(HContainer_t *hc, int index);
