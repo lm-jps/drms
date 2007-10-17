@@ -1448,7 +1448,7 @@ double drms2double(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
       stat = DRMS_BADSTRING;
       result = DRMS_MISSING_DOUBLE;
     }
-    else if ((IsPosHugeVal(val) || IsNegHugeVal) && errno==ERANGE)
+    else if ((IsPosHugeVal(val) || IsNegHugeVal(val)) && errno==ERANGE)
     {
       stat = DRMS_RANGE;
       result = DRMS_MISSING_DOUBLE;
