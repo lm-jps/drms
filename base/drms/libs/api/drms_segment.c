@@ -148,7 +148,7 @@ int drms_template_segments(DRMS_Record_t *template)
   {
     /* Name */
     db_binary_field_getstr(qres, i, 0, 1024, buf);    
-    seg = hcon_allocslot(&template->segments, buf);
+    seg = hcon_allocslot_lower(&template->segments, buf);
     memset(seg,0,sizeof(DRMS_Segment_t));
     XASSERT(seg->info = malloc(sizeof( DRMS_SegmentInfo_t)));
     memset(seg->info,0,sizeof(DRMS_SegmentInfo_t));
@@ -573,7 +573,7 @@ static DRMS_Segment_t * __drms_segment_lookup(DRMS_Record_t *rec,
   int stat;
   DRMS_Segment_t *segment;
 
-  segment = hcon_lookup(&rec->segments, segname);
+  segment = hcon_lookup_lower(&rec->segments, segname);
   if (segment!=NULL && depth<DRMS_MAXLINKDEPTH )
   {
     if (segment->info->islink)
