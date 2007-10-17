@@ -50,6 +50,7 @@
 #include <stddef.h>
 #endif
 
+#include <ctype.h>
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
@@ -241,7 +242,7 @@ static int _parse_date (char *str) {
  */
   double fracday;
   int status, dfrac;
-  char *endptr = strdup (str);
+  char *endptr;
   char *field0, *field1, *field2, *field3;
   char daystr[32];
 
@@ -304,7 +305,6 @@ static int _parse_date_time (char *str) {
  *    form, and -1 if it cannot be successfully parsed (in which case the
  *    time is cleared to JD 0.0).
  */
-  double fdofm;
   int status;
   int length;
   char *field0, *field1, *field2;
@@ -901,4 +901,5 @@ int time_is_invalid (TIME t) {
  *  07.06.21	minor fix to guarantee null-terminated strings in sscan_time
  *  07.06.26	additional fix to guarantee null-terminated strings in
  *	memory element dattim.zone
+ *  07.10.16	plugged memory leak from strdup
  */
