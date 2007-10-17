@@ -217,7 +217,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum)
 
   /* Collect tokens */
   if (!gettoken(&q,name,sizeof(name))) goto failure;
-  XASSERT((seg = hcon_allocslot(&template->segments, name)));
+  XASSERT((seg = hcon_allocslot_lower(&template->segments, name)));
   memset(seg,0,sizeof(DRMS_Segment_t));
   XASSERT(seg->info = malloc(sizeof(DRMS_SegmentInfo_t)));
   memset(seg->info,0,sizeof(DRMS_SegmentInfo_t));
@@ -345,7 +345,7 @@ static int parse_link(char **in, DRMS_Record_t *template)
   if (!gettoken(&q,type,sizeof(type))) goto failure;
   if (getstring(&q,description,sizeof(description))<0) goto failure;
   
-  XASSERT((link = hcon_allocslot(&template->links, name)));
+  XASSERT((link = hcon_allocslot_lower(&template->links, name)));
   memset(link,0,sizeof(DRMS_Link_t));
   XASSERT(link->info = malloc(sizeof(DRMS_LinkInfo_t)));
   memset(link->info,0,sizeof(DRMS_LinkInfo_t)); /* ISS */
@@ -459,7 +459,7 @@ static int parse_keyword(char **in, DRMS_Record_t *template)
   /* Populate structure */
   if ( !strcasecmp(type,"link") )
   {
-    XASSERT(key = hcon_allocslot(&template->keywords,name));
+    XASSERT(key = hcon_allocslot_lower(&template->keywords,name));
     memset(key,0,sizeof(DRMS_Keyword_t));
     XASSERT(key->info = malloc(sizeof(DRMS_KeywordInfo_t)));    
     memset(key->info,0,sizeof(DRMS_KeywordInfo_t));
@@ -494,11 +494,11 @@ static int parse_keyword(char **in, DRMS_Record_t *template)
       else
 	strcpy(name1,name);
 
-      if ((key = hcon_lookup(&template->keywords,name1))) {
+      if ((key = hcon_lookup_lower(&template->keywords,name1))) {
 	// this is an earlier definition
 	free(key->info);
       }
-      XASSERT(key = hcon_allocslot(&template->keywords,name1));
+      XASSERT(key = hcon_allocslot_lower(&template->keywords,name1));
       memset(key,0,sizeof(DRMS_Keyword_t));
       XASSERT(key->info = malloc(sizeof(DRMS_KeywordInfo_t)));
 
@@ -584,7 +584,7 @@ static int parse_primaryindex(char *desc, DRMS_Record_t *template)
 #ifdef DEBUG
 	printf("adding primary key '%s'\n",name);
 #endif
-	key = hcon_lookup(&template->keywords,name);
+	key = hcon_lookup_lower(&template->keywords,name);
 	if (key==NULL)
 	{
 	  printf("Invalid keyword '%s' in primary index.\n",name);
