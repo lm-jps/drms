@@ -829,6 +829,7 @@ int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows,
   char header[20] = "PGCOPY\n\377\r\n\0\0\0\0\0\0\0\0\0";
   unsigned short nfield;
   unsigned int len;
+  int status = 0;
 
 #ifdef DEBUG
   FILE *fp;
@@ -838,11 +839,14 @@ int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows,
   if (dbin==NULL)
     return 1;
   db = dbin->db_connection;
-  if (dbin->abort_now)
+  if (dbin->abort_now) {
+    status = 1;
     goto failure;
+  }
   if (n_args>=MAXARG)
   {
     fprintf(stderr,"Maximum number of arguments exceeded.\n");
+    status = 1;
     goto failure;
   }
   
@@ -921,6 +925,7 @@ int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows,
   {
     fprintf(stderr, "query failed: %s", PQerrorMessage(db));
     PQclear(res);
+    status = 1;
     goto failure;
   }
   PQclear(res);
@@ -928,12 +933,14 @@ int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows,
   if (PQputCopyData(db, buf, bufsize) == -1)
   {
     fprintf(stderr, "query failed: %s", PQerrorMessage(db));
+    status = 1;
     goto failure;
   }
   /* Tell the server that we are done. */
   if (PQputCopyEnd(db, NULL) == -1)
   {
     fprintf(stderr, "query failed: %s", PQerrorMessage(db));
+    status = 1;
     goto failure;
   }
   /* Get result */
@@ -942,12 +949,10 @@ int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows,
   {
     fprintf(stderr, "query failed: %s", PQerrorMessage(db));
     PQclear(res);
+    status = 1;
     goto failure;
   }
-  db_unlock(dbin);
   PQclear(res);
-  free(buf);
-  free(query);
 #if __BYTE_ORDER == __LITTLE_ENDIAN
   for (i=0; i<n_args; i++)
     db_byteswap(intype[i],n_rows,argin[i]);
@@ -955,18 +960,22 @@ int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows,
 #ifdef DEBUG
   printf("Exiting db_dms_array status=0\n");
 #endif
-  return 0;
 
  failure:
   db_unlock(dbin);
-  if (buf)
-    free(buf);
-  if (query)
-    free(query);
+  for (j=0; j<n_args; j++)
+  {
+    if (intype[j] == DB_STRING || intype[j] == DB_VARCHAR )
+    {
+      free(paramLengths[j]);
+    }  
+  }
+  free(buf);
+  free(query);
 #ifdef DEBUG
-  printf("Exiting db_dms_array status=1\n");
+  printf("Exiting db_dms_array status=%d\n", status);
 #endif
-  return 1;
+  return status;
 }
 
 /* Set transaction isolation level
