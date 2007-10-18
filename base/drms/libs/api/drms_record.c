@@ -1521,6 +1521,9 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
 	drms_link_getpidx(rs->records[i]);
 	/* Set new unique record number. */
 	rs->records[i]->recnum = recnum;
+      } else {
+	// the old record is going to be overridden
+	free(rs->records[i]->sessionns);
       }
       rs->records[i]->readonly = 1;
     }
