@@ -315,7 +315,7 @@ int main(int argc, char **argv)
    ret = JSOCMAIN_Main(argc, argv, module_name, CallDoIt);
    JSOCMAIN_F_Terminate(nArgs);
 
-   return ret;
+   _exit(ret);
 }
 
 #endif /* FLIB */
