@@ -529,47 +529,63 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 	}
      } /* iSet */
 
-     if (nsets > 1)
+     /* create the record set structure to return if necessary */
+     if (!ret)
      {
-	if (realSets && realSets->num_total > 0)
+	ret = (DRMS_RecordSet_t *)malloc(sizeof(DRMS_RecordSet_t));
+	if (ret)
 	{
-	   ret = (DRMS_RecordSet_t *)malloc(sizeof(DRMS_RecordSet_t));
+	   ret->records = NULL;
+	   ret->n = 0;
+	}
+     }
 
-	   if (ret)
+     if (ret)
+     {
+	if (nsets > 1)
+	{
+	   if (realSets && realSets->num_total > 0)
 	   {
-	      ret->records = (DRMS_Record_t **)malloc(sizeof(DRMS_Record_t *) * nRecs);
-	      ret->n = nRecs;
-
-	      /* retain record set order */
-	      j = 0;
-	      DRMS_RecordSet_t **prs = NULL;
-	      DRMS_RecordSet_t *oners = NULL;
-
-	      for (iSet = 0; iSet < nsets; iSet++)
+	      if (ret)
 	      {
-		 snprintf(buf, sizeof(buf), "%d", iSet);
-		 if ((prs = hcon_lookup(realSets, buf)) != NULL)
-		 {
-		    oners = *prs;
-		    if (oners)
-		    {
-		       /* Move oners to return RecordSet */
-		       for (i = 0; i < oners->n; i++)
-		       {
-			  ret->records[j] = oners->records[i];
-			  j++;
-		       }
-		    }
+		 ret->records = (DRMS_Record_t **)malloc(sizeof(DRMS_Record_t *) * nRecs);
+		 ret->n = nRecs;
 
-		    oners = NULL;
-		 }
-		 else
+		 /* retain record set order */
+		 j = 0;
+		 DRMS_RecordSet_t **prs = NULL;
+		 DRMS_RecordSet_t *oners = NULL;
+
+		 for (iSet = 0; iSet < nsets; iSet++)
 		 {
-		    stat = DRMS_ERROR_INVALIDDATA;
-		 }
-	      } /* iSet */
+		    snprintf(buf, sizeof(buf), "%d", iSet);
+		    if ((prs = hcon_lookup(realSets, buf)) != NULL)
+		    {
+		       oners = *prs;
+		       if (oners)
+		       {
+			  /* Move oners to return RecordSet */
+			  for (i = 0; i < oners->n; i++)
+			  {
+			     ret->records[j] = oners->records[i];
+			     j++;
+			  }
+		       }
+
+		       oners = NULL;
+		    }
+		    else
+		    {
+		       stat = DRMS_ERROR_INVALIDDATA;
+		    }
+		 } /* iSet */
+	      }
 	   }
 	}
+     }
+     else
+     {
+	stat = DRMS_ERROR_OUTOFMEMORY;
      }
 
      if (realSets)
@@ -3157,6 +3173,7 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 		    multiRS = (char **)malloc(sizeof(char *) * kMAXRSETS);
 
 		    /* buf has filename */
+		    *pcBuf = '\0';
 		    if (buf && !stat(buf, &stBuf))
 		    {
 		       if (S_ISREG(stBuf.st_mode))

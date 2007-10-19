@@ -74,7 +74,6 @@ if ($CHKLIBS == "no") then
     echo
 
     if ($CLEAN == "yes") then
-
 	if (-x base/local/libs/dsds/scripts/rmlinks.csh) then
 	    base/local/libs/dsds/scripts/rmlinks.csh
 	endif
