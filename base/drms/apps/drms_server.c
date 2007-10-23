@@ -174,6 +174,8 @@ int main (int argc, char *argv[]) {
   sigaddset(&env->signal_mask, SIGQUIT);
   sigaddset(&env->signal_mask, SIGTERM);
   sigaddset(&env->signal_mask, SIGUSR1);
+  sigaddset(&env->signal_mask, SIGPIPE);
+
   if( (status = pthread_sigmask(SIG_BLOCK, &env->signal_mask, &env->old_signal_mask)))
   {
     fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);          
