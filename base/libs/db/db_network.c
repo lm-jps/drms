@@ -133,6 +133,7 @@ ssize_t Readn(int fd, void *ptr, size_t nbytes)
   if ( (n = readn(fd, ptr, nbytes)) < 0)
   {
     perror("readn error");
+    fprintf(stderr, "aborted: exit called in file %s, line %d\n",__FILE__,__LINE__);
     exit(1);
   }
   return(n);
@@ -169,6 +170,7 @@ Writen(int fd, const void *ptr, size_t nbytes)
   if (writen(fd, ptr, nbytes) != nbytes)
   {
     perror("writen error");
+    fprintf(stderr, "aborted: exit called in file %s, line %d\n",__FILE__,__LINE__);
     exit(1);
   }
 }
@@ -233,6 +235,7 @@ Writevn(int fd, struct iovec *vector, int count )
   if (writevn(fd, vector, count, nbytes) != nbytes)
   {
     perror("writen error");
+    fprintf(stderr, "aborted: exit called in file %s, line %d\n",__FILE__,__LINE__);
     exit(1);
   }
 }
