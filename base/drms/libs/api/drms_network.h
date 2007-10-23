@@ -15,6 +15,7 @@
 
 
 int drms_send_commandcode(int sockfd, int command);
+int drms_send_commandcode_noecho(int sockfd, int command);
 DRMS_Session_t *drms_connect(char *host, unsigned short port, 
 			     char *user, char *passwd);
 DRMS_Session_t *drms_connect_direct(char *host, char *user, 
@@ -23,6 +24,9 @@ DRMS_Session_t *drms_connect_direct(char *host, char *user,
 int drms_commit(DRMS_Env_t *env);
 int drms_rollback(DRMS_Session_t *session);
 void drms_disconnect(DRMS_Env_t *env, int abort);
+#ifdef DRMS_CLIENT
+void drms_disconnect_now(DRMS_Env_t *env, int abort);
+#endif
 DB_Binary_Result_t *drms_query_bin(DRMS_Session_t *session, char *query);
 DB_Binary_Result_t *drms_query_binv(DRMS_Session_t *session, char *query,
 				    ...);

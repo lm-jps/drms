@@ -34,6 +34,9 @@ DRMS_Env_t *drms_open(char *host, char *user, char *password, char *dbname, char
    - Close database connection and free DRMS data structures. */
 int drms_close(DRMS_Env_t *env, int commit); 
 void drms_abort(DRMS_Env_t *env);
+#ifdef DRMS_CLIENT
+void drms_abort_now(DRMS_Env_t *env);
+#endif
 void drms_free_env(DRMS_Env_t *env);
 long long drms_su_size(DRMS_Env_t *env, char *series);
 

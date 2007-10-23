@@ -61,7 +61,6 @@ DRMS_Env_t *drms_open (char *host, char *user, char *password, char *dbname,
     env->templist = NULL;
     env->retention = -1;
     env->query_mem = 512;
-    env->abort_now = 0;    
     env->verbose = 0;
 #else
     fprintf (stderr, "Port number missing from hostname.\n");
@@ -142,10 +141,27 @@ int drms_close (DRMS_Env_t *env, int action) {
 }
 
 void drms_abort (DRMS_Env_t *env) {
+  int status;
+
+  if ((status = drms_closeall_records(env, DRMS_FREE_RECORD)))
+    fprintf (stderr, "ERROR in drms_close: failed to close records in cache.\n");
+
 					   /*  Close connection to database  */
   drms_disconnect (env, 1);
   drms_free_env (env);
 }
+#ifdef DRMS_CLIENT
+void drms_abort_now (DRMS_Env_t *env) {
+  int status;
+
+  if ((status = drms_closeall_records(env, DRMS_FREE_RECORD)))
+    fprintf (stderr, "ERROR in drms_close: failed to close records in cache.\n");
+
+					   /*  Close connection to database  */
+  drms_disconnect_now (env, 1);
+  drms_free_env (env);
+}
+#endif
 
 void drms_free_env (DRMS_Env_t *env) {
   hcon_free (&env->record_cache);

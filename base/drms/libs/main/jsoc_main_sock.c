@@ -40,6 +40,16 @@ static void atexit_action (void) {
       " will be aborted and the database rolled back.\n", mn);
 }
 
+static void sighandler(int signo)
+{
+  fprintf(stderr,"Module received signal %d. Aborting.\n",signo);
+
+  drms_abort_now(drms_env);
+
+  // don't wait for self-start drms_server
+  exit(1);
+}  
+
 int JSOCMAIN_Init(int argc, 
 		  char **argv, 
 		  const char *module_name, 
@@ -139,6 +149,15 @@ int JSOCMAIN_Init(int argc,
        */
       atexit (atexit_action);   
 #endif
+
+
+      struct sigaction act;
+      /* Set signal handler to clean up. */
+      act.sa_handler = sighandler;
+      sigfillset(&(act.sa_mask));
+      sigaction(SIGINT, &act, NULL);
+      sigaction(SIGTERM, &act, NULL);
+
    }
 
    /* continue with calling module or otherwise interacing with DRMS. */

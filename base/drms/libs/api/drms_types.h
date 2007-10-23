@@ -183,7 +183,6 @@ typedef struct DRMS_Env_struct
   int clientcounter;
   pid_t tee_pid;
 
-  int abort_now;
   pthread_mutex_t *drms_lock;
 
   /* SUM service thread. */
@@ -191,6 +190,7 @@ typedef struct DRMS_Env_struct
   /* Tagged FIFOs for communicating with the SUM service thread. */
   tqueue_t *sum_inbox;
   tqueue_t *sum_outbox;
+  long sum_tag; // tag of the request currently being served.
 
   /* Signal catching thread: */
   pthread_t signal_thread;

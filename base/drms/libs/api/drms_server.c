@@ -276,15 +276,30 @@ void drms_server_abort(DRMS_Env_t *env)
   /* Unregister */
   drms_server_close_session(env, abortstring, env->clientcounter, 7, 0);
 
+  // Either a sums thread or a server thread might be waiting on
+  // either sum_inbox or sum_outbox. Need to put something into the
+  // respective queue to release the mutex and conditional variables
+  // in order to destroy them in drms_free_env().  Given the
+  // head-of-line blocking queue design, there is at most one
+  // outstanding request.
   if (env->sum_thread) {
-    // This is needed to stop the sums_thread from waiting for the next
-    // SUMS request to arrive in the sum_inbox, hence make it possible
-    // to destroy q->mut and q->notEmpty later.
-    /* Tell SUM thread to finish up. */
-    request.opcode = DRMS_SUMCLOSE;
-    tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *) &request);
-    /* Wait for SUM service thread to finish. */
-    pthread_join(env->sum_thread, NULL);
+    // a server thread might be waiting for reply on sum_outbox, tell
+    // it we are aborting.
+    if (env->sum_tag) {
+      // has to be dynamically allocated since it's going to be freed.
+      DRMS_SumRequest_t *reply;
+      XASSERT(reply = malloc(sizeof(DRMS_SumRequest_t)));      
+      reply->opcode = DRMS_ERROR_ABORT;
+      tqueueAdd(env->sum_outbox, env->sum_tag, (char *)reply);
+    } else {
+      // a sums thread might be waiting for requests on sum_inbox, tell
+      // it we are aborting.
+      /* tell the sums thread to finish up. */
+      // looks like all requests are not dyanmically allocated.
+      DRMS_SumRequest_t request;
+      request.opcode = DRMS_SUMCLOSE;
+      tqueueAdd(env->sum_inbox, (long)pthread_self(), (char *)&request);
+    }
   }
 
   db_disconnect(env->session->stat_conn);
@@ -293,12 +308,10 @@ void drms_server_abort(DRMS_Env_t *env)
   db_abort(env->session->db_handle);
 
   /* Wait for other threads to finish cleanly. */
-  if (env->server_wait) {
-    if (env->verbose) 
-      fprintf(stderr, "WARNING: DRMS server aborting in %d seconds...\n", 
-	      DRMS_ABORT_SLEEP);
-    sleep(DRMS_ABORT_SLEEP);
-  }
+  //if (env->verbose) 
+    fprintf(stderr, "WARNING: DRMS server aborting in %d seconds...\n", 
+	    DRMS_ABORT_SLEEP);
+  sleep(DRMS_ABORT_SLEEP);
 
   /* Free memory.*/
   drms_free_env(env);
@@ -1011,7 +1024,7 @@ void *drms_sums_thread(void *arg)
   DRMS_Env_t *env;
   SUM_t *sum=NULL;
   DRMS_SumRequest_t *request, *reply;
-  long tag, stop, empty;
+  long stop, empty;
   int connected = 0;
   char *ptmp;
 
@@ -1046,7 +1059,8 @@ void *drms_sums_thread(void *arg)
 	fprintf(stderr,"Warning in sums_thread: Couldn't update session entry.\n");
     }
     /* Wait for the next SUMS request to arrive in the inbox. */
-    empty = tqueueDelAny(env->sum_inbox, &tag,  &ptmp );
+    env->sum_tag = 0;
+    empty = tqueueDelAny(env->sum_inbox, &env->sum_tag,  &ptmp );
     request = (DRMS_SumRequest_t *) ptmp;
 
     if (!connected && request->opcode!=DRMS_SUMCLOSE)
@@ -1060,7 +1074,7 @@ void *drms_sums_thread(void *arg)
 	reply->opcode = DRMS_ERROR_SUMOPEN;
 	/* Give the service thread a chance to deliver the bad news to
 	   the client. */
-	tqueueAdd(env->sum_outbox, tag, (char *) reply);
+	tqueueAdd(env->sum_outbox, env->sum_tag, (char *) reply);
 	sleep(1);
 	Exit(1); /* Take down the DRMS server. */
       }
@@ -1088,7 +1102,8 @@ void *drms_sums_thread(void *arg)
       /* Send the request to SUMS. */
       reply = drms_process_sums_request(env, sum, request);
       /* Put the reply in the outbox. */
-      tqueueAdd(env->sum_outbox, tag, (char *) reply);
+      tqueueAdd(env->sum_outbox, env->sum_tag, (char *) reply);
+      env->sum_tag = 0; // done processing
     }
   }
 

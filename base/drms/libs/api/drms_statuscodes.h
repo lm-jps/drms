@@ -82,6 +82,7 @@
 #define DRMS_ERROR_INVALIDDATA      (-10048) /* Bad parameters to a drms function call. */
 #define DRMS_ERROR_NODSDSSUPPORT    (-10049)
 #define DRMS_ERROR_LIBDSDS          (-10050)
+#define DRMS_ERROR_ABORT            (-10051)
 
 /* Warnings */
 #define DRMS_WARNING_BADBLANK         (10000)

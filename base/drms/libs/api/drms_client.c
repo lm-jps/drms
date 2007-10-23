@@ -141,6 +141,11 @@ int drms_send_commandcode (int sockfd, int command) {
   return 0;
 }  
 
+int drms_send_commandcode_noecho (int sockfd, int command) {
+  Writeint (sockfd, command);
+  return 0;
+}  
+
 #ifndef DRMS_CLIENT
 DRMS_Session_t *drms_connect_direct(char *dbhost, char *dbuser, 
 				    char *dbpasswd, char *dbname,
@@ -218,6 +223,14 @@ void drms_disconnect(DRMS_Env_t *env, int abort)
     Writeint(env->session->sockfd, abort);
   }
 }
+
+#ifdef DRMS_CLIENT
+void drms_disconnect_now(DRMS_Env_t *env, int abort)
+{
+  drms_send_commandcode_noecho(env->session->sockfd, DRMS_DISCONNECT);
+  Writeint(env->session->sockfd, abort);
+}
+#endif
 
 int drms_commit(DRMS_Env_t *env)
 {
