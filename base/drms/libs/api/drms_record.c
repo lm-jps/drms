@@ -1483,7 +1483,7 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
       p += sprintf(p, " order by recnum");
     }
   }
-
+  p += sprintf(p, " limit %lld", limit);
 #ifdef DEBUG
   printf("query = '%s'\n",query);
   printf("\nMemory used = %Zu\n\n",xmem_recenthighwater());
