@@ -954,7 +954,7 @@ short drms2short(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     }
     break;
   case DRMS_TYPE_STRING: 
-    val = strtoll(value->string_val,&endptr,0);
+    val = strtod(value->string_val,&endptr);
     if (val==0 && endptr==value->string_val )	
     {
       stat = DRMS_BADSTRING;
@@ -1074,7 +1074,7 @@ int drms2int(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     }
     break;
   case DRMS_TYPE_STRING: 
-    val = strtoll(value->string_val,&endptr,0);
+    val = strtod(value->string_val,&endptr);
     if (val==0 && endptr==value->string_val )	
     {
       stat = DRMS_BADSTRING;
@@ -1200,7 +1200,7 @@ long long drms2longlong(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     }
     break;
   case DRMS_TYPE_STRING: 
-    val = strtoll(value->string_val,&endptr,0);
+    val = strtod(value->string_val,&endptr);
     if (val==0 && endptr==value->string_val )	
     {
       stat = DRMS_BADSTRING;
