@@ -702,7 +702,7 @@ int8_t cmdparams_get_int8 (CmdParams_t *parms, char *name, int *status) {
   str_value = cmdparams_get_str (parms, name, &stat);
   
   if (!stat) {
-    val = strtoll (str_value, &endptr, 10);
+    val = (int64_t)strtod(str_value, &endptr);
     if ((val==0 && endptr==str_value) || (val < INT8_MIN || val > INT8_MAX)) {
       value = CP_MISSING_CHAR;
       stat = CMDPARAMS_INVALID_CONVERSION;
@@ -725,7 +725,7 @@ int16_t cmdparams_get_int16 (CmdParams_t *parms, char *name, int *status) {
   str_value = cmdparams_get_str (parms, name, &stat);
   
   if (!stat) {
-    val = strtoll (str_value, &endptr, 10);
+    val = (int64_t)strtod(str_value, &endptr);
     if ((val==0 && endptr==str_value) || (val < INT16_MIN || val > INT16_MAX)) {
       value = CP_MISSING_SHORT;
       stat = CMDPARAMS_INVALID_CONVERSION;
@@ -752,7 +752,7 @@ int32_t cmdparams_get_int32 (CmdParams_t *parms, char *name, int *status) {
   str_value = cmdparams_get_str (parms, name, &stat);
 
   if (!stat) {
-    val = strtoll (str_value, &endptr, 10);
+    val = (int64_t)strtod(str_value, &endptr);
     if ((val==0 && endptr==str_value) || (val < INT32_MIN || val > INT32_MAX)) {
       value = CP_MISSING_INT;
       stat = CMDPARAMS_INVALID_CONVERSION;
@@ -775,7 +775,7 @@ int64_t cmdparams_get_int64 (CmdParams_t *parms, char *name, int *status) {
   str_value = cmdparams_get_str (parms, name, &stat);
  
   if (!stat) {
-    val = strtoll (str_value, &endptr, 10);
+    val = (int64_t)strtod(str_value, &endptr);
     if ((val==0 && endptr==str_value)) {
       value = CP_MISSING_LONGLONG;
       stat = CMDPARAMS_INVALID_CONVERSION;

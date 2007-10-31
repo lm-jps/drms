@@ -464,7 +464,7 @@ int drms_array2char(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	stat = DRMS_SUCCESS;
 	for (i=0; i<n; i++, ssrc++, dst++)
 	{
-	  val = strtoll(*ssrc,&endptr,10);
+	  val = (long long)strtod(*ssrc,&endptr);
 	  if (val==0 && endptr==*ssrc )	
 	  {	  
 	    stat = DRMS_BADSTRING;
@@ -803,7 +803,7 @@ int drms_array2short(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	stat = DRMS_SUCCESS;
 	for (i=0; i<n; i++, ssrc++, dst++)
 	{
-	  val = strtoll(*ssrc,&endptr,10);
+	  val = (long long)strtod(*ssrc,&endptr);
 	  if (val==0 && endptr==*ssrc )	
 	  {	  
 	    stat = DRMS_BADSTRING;
@@ -1131,7 +1131,7 @@ int drms_array2int(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	stat = DRMS_SUCCESS;
 	for (i=0; i<n; i++, ssrc++, dst++)
 	{
-	  val = strtoll(*ssrc,&endptr,10);
+	  val = (long long)strtod(*ssrc,&endptr);
 	  if (val==0 && endptr==*ssrc )	
 	  {	  
 	    stat = DRMS_BADSTRING;
@@ -1458,7 +1458,7 @@ int drms_array2longlong(int n, DRMS_Type_t src_type, double bzero,
 	stat = DRMS_SUCCESS;
 	for (i=0; i<n; i++, ssrc++, dst++)
 	{
-	  val = strtoll(*ssrc,&endptr,10);
+	  val = (long long)strtod(*ssrc,&endptr);
 	  if (val==0 && endptr==*ssrc )	
 	  {	  
 	    stat = DRMS_BADSTRING;
