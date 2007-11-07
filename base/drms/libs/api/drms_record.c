@@ -179,11 +179,11 @@ DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, const char *dsRecSet, i
 			   snprintf(drmsKeyName, sizeof(drmsKeyName), "%s", sKey->info->name);
 			}
 
-			if (!hcon_lookup(&(template->keywords), drmsKeyName))
+			if (!hcon_lookup_lower(&(template->keywords), drmsKeyName))
 			{
 			   /* insert into template */
 			   XASSERT(tKey = 
-				   hcon_allocslot(&(template->keywords), drmsKeyName));
+				   hcon_allocslot_lower(&(template->keywords), drmsKeyName));
 			   memset(tKey, 0, sizeof(DRMS_Keyword_t));
 			   XASSERT(tKey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
 			   memset(tKey->info, 0, sizeof(DRMS_KeywordInfo_t));
@@ -263,7 +263,7 @@ DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, const char *dsRecSet, i
 		  /* segments */
 		  DRMS_Segment_t *tSeg = NULL;
 
-		  XASSERT(tSeg = hcon_allocslot(&(template->segments), seg->info->name));
+		  XASSERT(tSeg = hcon_allocslot_lower(&(template->segments), seg->info->name));
 		  memset(tSeg, 0, sizeof(DRMS_Segment_t));
 		  XASSERT(tSeg->info = malloc(sizeof(DRMS_SegmentInfo_t)));
 		  memset(tSeg->info, 0, sizeof(DRMS_SegmentInfo_t));
@@ -323,7 +323,7 @@ DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, const char *dsRecSet, i
 	    }
 	    else
 	    {
-	       cached = (DRMS_Record_t *)hcon_allocslot(&(env->series_cache), seriesName);
+	       cached = (DRMS_Record_t *)hcon_allocslot_lower(&(env->series_cache), seriesName);
 	       drms_copy_record_struct(cached, template);  
 
 	       for (int i = 0; i < cached->seriesinfo->pidx_num; i++) 
