@@ -44,9 +44,12 @@ void *hcon_lookup_lower(HContainer_t *hc, const char *key);
 void *hcon_lookup(HContainer_t *hc, const char *key);
 void *hcon_lookup_ext(HContainer_t *hc, const char *keyin, const char **keyout);
 void *hcon_lookupindex(HContainer_t *hc, int index);
+int hcon_member_lower(HContainer_t *hc, const char *key);
 int hcon_member(HContainer_t *hc, const char *key);
 void hcon_free(HContainer_t *hc);
 void hcon_remove(HContainer_t *hc, const char *key);
+void hcon_print(HContainer_t *hc);
+void hcon_printf(FILE *fp, HContainer_t *hc);
 void hcon_map(HContainer_t *hc, void (*fmap)(const void *value));
 void hcon_copy(HContainer_t *dst, HContainer_t *src);
 //int hcon_size(HContainer_t *hc);
@@ -57,8 +60,6 @@ void hiter_new(HIterator_t *hit, HContainer_t *hc);
 void hiter_rewind(HIterator_t *hit);
 //void *hiter_getcurrent(HIterator_t *hit);
 //void *hiter_getnext(HIterator_t *hit);
-
-
 
 /*
   Print the total number of elements in the container.

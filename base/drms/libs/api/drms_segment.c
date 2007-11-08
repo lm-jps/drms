@@ -50,7 +50,7 @@ HContainer_t *drms_create_segment_prototypes(DRMS_Record_t *target,
       {
 	 if (sSeg->info && strlen(sSeg->info->name) > 0)
 	 {
-	    XASSERT(tSeg = hcon_allocslot(&(target->segments), sSeg->info->name));
+	    XASSERT(tSeg = hcon_allocslot_lower(&(target->segments), sSeg->info->name));
 	    memset(tSeg, 0, sizeof(DRMS_Segment_t));
 	    XASSERT(tSeg->info = malloc(sizeof(DRMS_SegmentInfo_t)));
 	    memset(tSeg->info, 0, sizeof(DRMS_SegmentInfo_t));

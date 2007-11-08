@@ -122,7 +122,7 @@ int DoIt(void) {
 
     // retain the spot in the series_cache. this is a hack to undo
     // hcon_remove()
-    hcon_allocslot(&drms_env->series_cache, series);
+    hcon_allocslot_lower(&drms_env->series_cache, series);
     //    drms_print_record(template);
 
     // create a new series

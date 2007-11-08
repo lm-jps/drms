@@ -133,8 +133,10 @@ int drms_su_newslots(DRMS_Env_t *env, int n, char *series,
       {
 	if ((template = drms_template_record(env, series, &status)) == NULL)
 	{
-	  fprintf(stderr,"ERROR: failed to look up up template in "
-		  "drms_su_newslots'n");
+	  fprintf(stderr,"ERROR: failed to look up series %s template in "
+		  "drms_su_newslots()\n", series);
+	  fprintf(stderr, "num items in series_cache %d\n", hcon_size(&(env->series_cache)));
+	  hcon_printf(stderr, &(env->series_cache));
 	  goto bail;
 	}
       }

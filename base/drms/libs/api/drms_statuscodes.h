@@ -83,6 +83,7 @@
 #define DRMS_ERROR_NODSDSSUPPORT    (-10049)
 #define DRMS_ERROR_LIBDSDS          (-10050)
 #define DRMS_ERROR_ABORT            (-10051)
+#define DRMS_ERROR_CANTOPENLIBRARY  (-10052)
 
 /* Warnings */
 #define DRMS_WARNING_BADBLANK         (10000)

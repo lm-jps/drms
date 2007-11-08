@@ -5,7 +5,7 @@
 						   /*  Recognized protocols  */
 typedef enum  {
   DRMS_GENERIC, DRMS_BINARY, DRMS_BINZIP, DRMS_FITZ, DRMS_FITS, DRMS_MSI,
-  DRMS_TAS, DRMS_DSDS
+  DRMS_TAS, DRMS_DSDS, DRMS_LOCAL
 } DRMS_Protocol_t;
 	/*  N.B. To add a protocol, also add info to the static declartions
 							 in drms_protocol.c  */

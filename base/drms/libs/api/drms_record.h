@@ -4,6 +4,10 @@
 #include "drms_types.h"
 #include "db.h"
 
+#define kLocalSegName "local_data" /* Name of segment created when reading 
+				    * fits files from local disk (outside 
+				    * of any database). */
+
 /************* Constants for mode and action flags etc. *************/
 typedef enum {DRMS_COPY_SEGMENTS, DRMS_SHARE_SEGMENTS} DRMS_CloneAction_t;
 typedef enum {DRMS_FREE_RECORD, DRMS_INSERT_RECORD} DRMS_CloseAction_t;

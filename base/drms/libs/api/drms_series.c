@@ -579,8 +579,8 @@ static int drms_series_intpkeysmatch(DRMS_Record_t *recTemp1,
       {
 	 if (strcmp(pkArray1[i], pkArray2[i]) == 0)
 	 {
-	    key1 = hcon_lookup(&(recTemp1->keywords), pkArray1[i]);
-	    key2 = hcon_lookup(&(recTemp2->keywords), pkArray1[i]);
+	    key1 = hcon_lookup_lower(&(recTemp1->keywords), pkArray1[i]);
+	    key2 = hcon_lookup_lower(&(recTemp2->keywords), pkArray1[i]);
 	    
 	    XASSERT(key1 != NULL && key2 != NULL);
 	    if (key1 != NULL && key2 != NULL)
@@ -688,7 +688,8 @@ static int drms_series_intcreatematchsegs(DRMS_Env_t *drmsEnv,
 	    
 	    while ((s1Seg = (DRMS_Segment_t *)hiter_getnext(s1Hit)) != NULL)
 	    {
-	       if ((s2Seg = (DRMS_Segment_t *)hcon_lookup(s2SegCont, s1Seg->info->name)) != NULL)
+	       if ((s2Seg = 
+		    (DRMS_Segment_t *)hcon_lookup_lower(s2SegCont, s1Seg->info->name)) != NULL)
 	       {
 		  /* Must check for segment equivalence. */
 		  if (drms_segment_segsmatch(s1Seg, s2Seg))

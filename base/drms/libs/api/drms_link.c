@@ -88,7 +88,7 @@ HContainer_t *drms_create_link_prototypes(DRMS_Record_t *target,
       {
 	 if (sLink->info && strlen(sLink->info->name) > 0)
 	 {
-	    XASSERT(tLink = hcon_allocslot(&(target->links), sLink->info->name));
+	    XASSERT(tLink = hcon_allocslot_lower(&(target->links), sLink->info->name));
 	    memset(tLink, 0, sizeof(DRMS_Link_t));
 	    XASSERT(tLink->info = malloc(sizeof(DRMS_LinkInfo_t)));
 	    memset(tLink->info, 0, sizeof(DRMS_LinkInfo_t));

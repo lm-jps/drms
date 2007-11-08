@@ -201,6 +201,16 @@ void *hcon_lookupindex(HContainer_t *hc, int index)
   Returns 1 if an element indexed by key exists in the container.
   Returns 0 otherwise.
 */
+int hcon_member_lower(HContainer_t *hc, const char *key)
+{
+   int exists = 0;
+   char *tmp = strdup(key);
+   strtolower(tmp);
+   exists = (hash_lookup(&hc->hash, tmp) != 0);
+   free(tmp);
+   return exists;
+}
+
 int hcon_member(HContainer_t *hc, const char *key)
 {
   return (hash_lookup(&hc->hash, key) != 0);
@@ -270,9 +280,36 @@ void hcon_remove(HContainer_t *hc, const char *key)
 }
 
 
+void hcon_print(HContainer_t *hc)
+{
+   const char *key;
+   char printbuf[2048];
+   void *data = NULL;
+
+   HIterator_t *hit = hiter_create(hc);
+   while((data = hiter_extgetnext(hit, &key)) != NULL)
+   {
+      fprintf(stdout, "%s\n", key);
+   }
+}
+
+void hcon_printf(FILE *fp, HContainer_t *hc)
+{
+   const char *key;
+   char printbuf[2048];
+   void *data = NULL;
+
+   HIterator_t *hit = hiter_create(hc);
+   while((data = hiter_extgetnext(hit, &key)) != NULL)
+   {
+      fprintf(fp, "%s\n", key);
+   }
+}
+
 /*
   Apply the function fmap to every element in the container. 
 */
+/* XXX - THIS MAY NOT WORK */
 void hcon_map(HContainer_t *hc, void (*fmap)(const void *value))
 {
   int i;
@@ -546,5 +583,3 @@ void hiter_destroy(HIterator_t **iter)
 	  *iter = NULL;
      }
 }
-
-

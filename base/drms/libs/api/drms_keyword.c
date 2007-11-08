@@ -70,7 +70,7 @@ HContainer_t *drms_create_keyword_prototypes(DRMS_Record_t *target,
       {
 	 if (sKey->info && strlen(sKey->info->name) > 0)
 	 {
-	    XASSERT(tKey = hcon_allocslot(&(target->keywords), sKey->info->name));
+	    XASSERT(tKey = hcon_allocslot_lower(&(target->keywords), sKey->info->name));
 	    memset(tKey, 0, sizeof(DRMS_Keyword_t));
 	    XASSERT(tKey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
 	    memset(tKey->info, 0, sizeof(DRMS_KeywordInfo_t));

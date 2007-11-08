@@ -47,7 +47,9 @@ typedef enum Soifn_enum
    kSOI_SDS_ATTRTYPE,
    kSOI_SDS_ATTRVALUE,
    kSOI_SDS_ATTRCOMMENT,
-   kSOI_SDS_NFNS
+   kSOI_SDS_GET_FITS_HEAD,
+   kSOI_SDS_FREE,
+   kSOI_NFNS
 } Soifn_t;
 
 char *SoifnNames[] =
@@ -78,6 +80,8 @@ char *SoifnNames[] =
    "sds_attrtype",
    "sds_attrvalue",
    "sds_attrcomment",
+   "sds_get_fits_head",
+   "sds_free",
    ""
 };
 
@@ -108,6 +112,8 @@ typedef char *(*pSOIFn_sds_attrname_t)(ATTRIBUTES *);
 typedef int (*pSOIFn_sds_attrtype_t)(ATTRIBUTES *);
 typedef void *(*pSOIFn_sds_attrvalue_t)(ATTRIBUTES *);
 typedef char *(*pSOIFn_sds_attrcomment_t)(ATTRIBUTES *);
+typedef SDS * (*pSOIFn_sds_get_fits_head_t)(char *);
+typedef void (*pSOIFn_sds_free_t)(SDS **);
 
 /* Global function pointers - don't assign more than once */
 void **gpFn = NULL;
@@ -122,7 +128,7 @@ const int kDSDS_MaxHandles = 4096;
 
 /* Forward decls */
 void DSDS_free_keylistarr(DSDS_KeyList_t ***pklarr, int n);
-void DSDS_free_segarr(DRMS_Segment_t **psarr);
+void DSDS_free_segarr(DRMS_Segment_t **psarr, int n);
 
 static void *GetSOI(kDSDS_Stat_t *stat)
 {
@@ -317,7 +323,7 @@ static void *GetSOIFPtr(void *hSOI, Soifn_t fnNum)
 	    ENTRY *entryRet = NULL;
 	    int nfn;
 
-	    for (nfn = 0; err == 0 && nfn < kSOI_SDS_NFNS; nfn++)
+	    for (nfn = 0; err == 0 && nfn < kSOI_NFNS; nfn++)
 	    {
 	       entry.key = SoifnNames[nfn];
 	       entry.data = &(gpFn[nfn]); /* data is address of global function pointer */
@@ -899,11 +905,194 @@ static void FreeDSDSKeyList(DSDS_KeyList_t **list)
    while (pList)
    {      
       nElem = pList->next;
+
+      /* need to free malloc'd mem */
+      if (pList->elem)
+      {
+	 if (pList->elem->info)
+	 {
+	    free (pList->elem->info);
+	 }
+	 free(pList->elem);
+      }
       free(pList);
       pList = nElem;
    }
 
    *list = NULL;
+}
+
+/* returns number of attributes processed */
+static int LoopAttrs(void *hSOI, 
+		     SDS *sds, 
+		     DSDS_KeyList_t *pHead, 
+		     kDSDS_Stat_t *stat)
+{
+   kDSDS_Stat_t status = kDSDS_Stat_Success;
+   int nAttrs = 0;
+   
+   if (sds && pHead && hSOI)
+   {
+      pSOIFn_sds_first_attr_t pFn_sds_first_attr =
+	(pSOIFn_sds_first_attr_t)GetSOIFPtr(hSOI, kSOI_SDS_FIRST_ATTR);
+      pSOIFn_sds_next_attr_t pFn_sds_next_attr =
+	(pSOIFn_sds_next_attr_t)GetSOIFPtr(hSOI, kSOI_SDS_NEXT_ATTR);
+      pSOIFn_sds_last_attr_t pFn_sds_last_attr =
+	(pSOIFn_sds_last_attr_t)GetSOIFPtr(hSOI, kSOI_SDS_LAST_ATTR);
+      pSOIFn_sds_attrname_t pFn_sds_attrname =
+	(pSOIFn_sds_attrname_t)GetSOIFPtr(hSOI, kSOI_SDS_ATTRNAME);
+      pSOIFn_sds_attrtype_t pFn_sds_attrtype =
+	(pSOIFn_sds_attrtype_t)GetSOIFPtr(hSOI, kSOI_SDS_ATTRTYPE);
+      pSOIFn_sds_attrvalue_t pFn_sds_attrvalue =
+	(pSOIFn_sds_attrvalue_t)GetSOIFPtr(hSOI, kSOI_SDS_ATTRVALUE);
+      pSOIFn_sds_attrcomment_t pFn_sds_attrcomment =
+	(pSOIFn_sds_attrcomment_t)GetSOIFPtr(hSOI, kSOI_SDS_ATTRCOMMENT);
+
+      if (pFn_sds_first_attr &&
+	  pFn_sds_next_attr && pFn_sds_last_attr &&
+	  pFn_sds_attrname && pFn_sds_attrtype &&
+	  pFn_sds_attrvalue && pFn_sds_attrcomment)
+      {
+	 DSDS_KeyList_t *pKL = pHead;
+
+	 char *attrName = NULL;
+	 int attrType;
+	 void *attrVal = NULL;
+	 char *attrComment = NULL;
+	 DRMS_Keyword_t *drmskey = NULL;
+      
+	 /* loop through attributes */
+	 nAttrs = 0;
+	 ATTRIBUTES *attr = (*pFn_sds_first_attr)(sds);
+	 ATTRIBUTES *lastAttr = (*pFn_sds_last_attr)(sds);
+
+	 while (attr)
+	 {
+	    if (pKL->elem != NULL)
+	    {
+	       pKL->next = (DSDS_KeyList_t *)malloc(sizeof(DSDS_KeyList_t));
+	       pKL = pKL->next;
+	       pKL->next = NULL;
+	    }
+
+	    attrName = (*pFn_sds_attrname)(attr);
+
+	    if (attrName && *attrName)
+	    {
+	       attrType = (*pFn_sds_attrtype)(attr);
+	       attrVal = (*pFn_sds_attrvalue)(attr);
+	       attrComment = (*pFn_sds_attrcomment)(attr);
+
+	       /* make a drms keyword (make stand-alone keyword->info) */
+	       drmskey = (DRMS_Keyword_t *)malloc(sizeof(DRMS_Keyword_t));
+	       memset(drmskey, 0, sizeof(DRMS_Keyword_t));
+	       drmskey->info = 
+		 (DRMS_KeywordInfo_t *)malloc(sizeof(DRMS_KeywordInfo_t));
+	       memset(drmskey->info, 0, sizeof(DRMS_KeywordInfo_t));
+
+	       snprintf(drmskey->info->name, DRMS_MAXNAMELEN, "%s", attrName);
+	       drmskey->info->type = SOITypeToDRMSType(attrType);
+	       GetKWFormat(drmskey->info->format, 
+			   DRMS_MAXFORMATLEN, 
+			   drmskey->info->type);
+
+	       if (attrComment)
+	       {
+		  snprintf(drmskey->info->description, 
+			   DRMS_MAXCOMMENTLEN,
+			   "%s",
+			   attrComment);
+	       }
+		  
+	       if (PolyValueToDRMSValue(attrType, attrVal, &(drmskey->value)))
+	       {
+		  status = kDSDS_Stat_TypeErr;
+		  break;
+	       }
+		     
+	       pKL->elem = drmskey;
+	       nAttrs++;
+
+	       if (attr == lastAttr)
+	       {
+		  break;
+	       }
+	    }
+
+	    attr = (*pFn_sds_next_attr)(attr);
+
+	 } /* attr loop */
+
+      }
+   }
+
+   if (stat)
+   {
+      *stat = status;
+   }
+
+   return nAttrs;
+}
+
+static void FillDRMSSeg(void *hSOI, 
+			SDS *sds, 
+			DRMS_Segment_t *segout,
+			const char *segname,
+			DRMS_Protocol_t protocol,
+			kDSDS_Stat_t *stat)
+{
+   kDSDS_Stat_t status = kDSDS_Stat_InvalidParams;
+
+   if (hSOI && segout)
+   {
+       pSOIFn_sds_rank_t pFn_sds_rank = 
+	(pSOIFn_sds_rank_t)GetSOIFPtr(hSOI, kSOI_SDS_RANK);
+      pSOIFn_sds_length_t pFn_sds_length = 
+	(pSOIFn_sds_length_t)GetSOIFPtr(hSOI, kSOI_SDS_LENGTH);
+      pSOIFn_sds_datatype_t pFn_sds_datatype = 
+	(pSOIFn_sds_datatype_t)GetSOIFPtr(hSOI, kSOI_SDS_DATATYPE);
+
+      if (pFn_sds_rank && pFn_sds_length && pFn_sds_datatype)
+      {
+	 /* One segment per record only! */
+	 int rank = (*pFn_sds_rank)(sds);
+	 int *dims = (*pFn_sds_length)(sds);
+	 memset(segout, 0, sizeof(DRMS_Segment_t));
+	 segout->info = (DRMS_SegmentInfo_t *)malloc(sizeof(DRMS_SegmentInfo_t));
+
+	 if (segout->info)
+	 {
+	    memset(segout->info, 0, sizeof(DRMS_SegmentInfo_t));
+	    snprintf(segout->info->name, DRMS_MAXNAMELEN, "%s", segname);
+	    segout->info->segnum = 0; /* only one segment */
+	    segout->info->type = SOITypeToDRMSType((*pFn_sds_datatype)(sds));
+
+	    /* SOI will convert to either float or double */
+	    if (segout->info->type == DRMS_TYPE_CHAR || 
+		segout->info->type == DRMS_TYPE_SHORT)
+	    {
+	       segout->info->type = DRMS_TYPE_FLOAT;
+	    }
+	    else
+	    {
+	       segout->info->type = DRMS_TYPE_DOUBLE;
+	    }
+
+	    segout->info->naxis = rank;
+	    segout->info->protocol = protocol;
+	    segout->info->scope = DRMS_VARIABLE;
+	 }
+	 
+	 memcpy(segout->axis, dims, sizeof(int) * rank);
+
+	 status = kDSDS_Stat_Success;
+      }
+   }
+
+   if (stat)
+   {
+      *stat = status;
+   }
 }
 
 /* Creates a prototype DRMS_RecordSet_t that contains containers for keywords and segments 
@@ -1265,7 +1454,7 @@ long long DSDS_open_records(const char *dsspec,
       }
       if (segs)
       {
-	 DSDS_free_segarr(segs);
+	 DSDS_free_segarr(segs, nRecs);
       }
    }
 
@@ -1275,6 +1464,14 @@ long long DSDS_open_records(const char *dsspec,
    }
 
    return nRecs;
+}
+
+void DSDS_free_keylist(DSDS_KeyList_t **pkl)
+{
+   if (pkl)
+   {
+      FreeDSDSKeyList(pkl);
+   }
 }
 
 void DSDS_free_keylistarr(DSDS_KeyList_t ***pklarr, int n)
@@ -1302,16 +1499,51 @@ void DSDS_free_keylistarr(DSDS_KeyList_t ***pklarr, int n)
    }
 }
 
-void DSDS_free_segarr(DRMS_Segment_t **psarr)
+void DSDS_free_seg(DRMS_Segment_t **seg)
 {
-   if (psarr)
+   if (seg && *seg)
    {
-      if (*psarr)
+      if ((*seg)->info)
       {
-	 free(*psarr);
+	 free((*seg)->info);
       }
 
-      *psarr = NULL;
+      free(*seg);
+      *seg = NULL;
+   }
+}
+
+/* frees array of DRMS_Segment_ts that were malloc'd as a continguous block. */
+void DSDS_free_segarr(DRMS_Segment_t **psarr, int n)
+{
+   if (psarr && *psarr)
+   {
+      int i;
+      for (i = 0; i < n; i++)
+      {
+	 DRMS_Segment_t *seg = (*psarr + i);
+
+	 /* need to free malloc'd mem within each segment */
+	 if (seg->info)
+	 {
+	    free(seg->info);
+	 }
+      }
+
+      free(*psarr);
+   }
+
+   *psarr = NULL;
+}
+
+void DSDS_steal_seginfo(DRMS_Segment_t *thief, DRMS_Segment_t *victim)
+{
+   /* Not only purloins seg->info, but copies all of seg too */
+   if (thief && victim)
+   {
+      *thief = *victim;
+      victim->info = NULL;
+      victim->record = NULL;
    }
 }
 
@@ -1503,4 +1735,97 @@ void DSDS_handle_todesc(DSDS_Handle_t handle, char *desc, kDSDS_Stat_t *stat)
 void DSDS_free_handle(DSDS_pHandle_t pHandle)
 {
    DestroyHandle(pHandle);
+}
+
+/* returns number of keywords */
+int DSDS_read_fitsheader(const char *file, 
+			 DSDS_KeyList_t **keylist,
+			 DRMS_Segment_t **seg,
+			 const char *segname,
+			 kDSDS_Stat_t *stat)
+{
+   kDSDS_Stat_t status = kDSDS_Stat_InvalidFITS;
+   DSDS_KeyList_t *retlist = NULL;
+   DRMS_Segment_t *retseg = NULL;
+   int nKeys = 0;
+
+   void *hSOI = GetSOI(&status);
+
+   if (hSOI)
+   {
+      pSOIFn_sds_get_fits_head_t pFn_sds_get_fits_head = 
+	(pSOIFn_sds_get_fits_head_t)GetSOIFPtr(hSOI, kSOI_SDS_GET_FITS_HEAD);
+      pSOIFn_sds_free_t pFn_sds_free = 
+	(pSOIFn_sds_free_t)GetSOIFPtr(hSOI, kSOI_SDS_FREE);
+
+      if (pFn_sds_get_fits_head && pFn_sds_free)
+      {
+	 char *fitsfile = strdup(file);
+	 SDS *sds = (*pFn_sds_get_fits_head)(fitsfile);
+	 if (sds)
+	 {
+	    /* create keyword list */
+	    retlist = (DSDS_KeyList_t *)malloc(sizeof(DSDS_KeyList_t));
+	    if (retlist)
+	    {
+	       retlist->elem = NULL;
+	       retlist->next = NULL;
+
+	       /* loop through attributes */
+	       nKeys = LoopAttrs(hSOI, sds, retlist, &status);
+	    }
+	    else
+	    {
+	       status = kDSDS_Stat_NoMemory;
+	    }
+
+	    retseg = (DRMS_Segment_t *)malloc(sizeof(DRMS_Segment_t));
+	    if (retseg)
+	    {
+	       FillDRMSSeg(hSOI, sds, retseg, segname, DRMS_LOCAL, &status);
+	    }
+	    else
+	    {
+	       status = kDSDS_Stat_NoMemory;
+	    }
+
+	    (*pFn_sds_free)(&sds);
+	 }
+
+	 if (fitsfile)
+	 {
+	    free(fitsfile);
+	 }
+      }
+   }
+
+   if (stat)
+   {
+      *stat = status;
+   }
+
+   if (stat == kDSDS_Stat_Success)
+   {
+      if (keylist)
+      {
+	 *keylist = retlist;
+      }
+      if (seg)
+      {
+	 *seg = retseg;
+      }
+   }
+   else
+   {
+      if (retlist)
+      {
+	 free(retlist);
+      }
+      if (retseg)
+      {
+	 free(retseg);
+      }
+   }
+
+   return nKeys;
 }

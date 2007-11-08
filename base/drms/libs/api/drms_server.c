@@ -925,7 +925,7 @@ int drms_server_newseries(DRMS_Env_t *env, int sockfd)
   DRMS_Record_t *template;
 
   series = receive_string(sockfd);
-  template = (DRMS_Record_t *)hcon_allocslot(&env->series_cache, series);
+  template = (DRMS_Record_t *)hcon_allocslot_lower(&env->series_cache, series);
   template->init = 0;
   XASSERT(template->seriesinfo = (DRMS_SeriesInfo_t *)malloc(sizeof(DRMS_SeriesInfo_t)) );
   strcpy(template->seriesinfo->seriesname, series);
