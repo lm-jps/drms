@@ -48,6 +48,352 @@ static int CopyPrimaryIndex(DRMS_Record_t *target, DRMS_Record_t *source);
 static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets);
 static int FreeRecSetDescArr(char ***sets, int nsets);
 
+/* drms_open_records() helpers */
+static int FileFilter(const struct dirent *entry);
+static int IsLocalSpec(const char *recSetSpec, 
+		       DSDS_KeyList_t ***klarrout, 
+		       DRMS_Segment_t **segarrout,
+		       int *nRecsout,
+		       int *status);
+static void RSFree(const void *val);
+
+
+static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
+					DSDS_KeyList_t **keylistarr, 
+					DRMS_Segment_t *segarr,
+					int nRecs,
+					DRMS_KeyMapClass_t fitsclass,
+					DRMS_Record_t **proto,
+					DRMS_Segment_t **segout,
+					int *status)
+{
+
+   DRMS_Record_t *template = NULL;
+   DRMS_Segment_t *seg = NULL;
+   int iRec = 0;
+   int stat = DRMS_SUCCESS;
+	   
+   if (stat == DRMS_SUCCESS)
+   {
+      XASSERT(template = calloc(1, sizeof(DRMS_Record_t)));
+      XASSERT(template->seriesinfo = calloc(1, sizeof(DRMS_SeriesInfo_t)));
+   }
+
+   if (template && template->seriesinfo)
+   {	    
+      template->env = env;
+      template->init = 1;
+      template->recnum = 0;
+      template->sunum = -1;
+      template->sessionid = 0;
+      template->sessionns = NULL;
+      template->su = NULL;
+      
+      /* Initialize container structure. */
+      hcon_init(&template->segments, sizeof(DRMS_Segment_t), DRMS_MAXHASHKEYLEN, 
+		(void (*)(const void *)) drms_free_segment_struct, 
+		(void (*)(const void *, const void *)) drms_copy_segment_struct);
+      /* Initialize container structures for links. */
+      hcon_init(&template->links, sizeof(DRMS_Link_t), DRMS_MAXHASHKEYLEN, 
+		(void (*)(const void *)) drms_free_link_struct, 
+		(void (*)(const void *, const void *)) drms_copy_link_struct);
+      /* Initialize container structure. */
+      hcon_init(&template->keywords, sizeof(DRMS_Keyword_t), DRMS_MAXHASHKEYLEN, 
+		(void (*)(const void *)) drms_free_keyword_struct, 
+		(void (*)(const void *, const void *)) drms_copy_keyword_struct);
+
+      /* Loop through DSDS records - put a superset of keywords in rec->keywords and 
+       * ensure segments match */
+      for (iRec = 0; iRec < nRecs; iRec++)
+      {
+	 /* multiple keywords per record - walk keylistarr */
+	 DSDS_KeyList_t *kl = keylistarr[iRec];
+	 DRMS_Segment_t *oneSeg = &(segarr[iRec]); 
+	 DRMS_Keyword_t *sKey = NULL;
+	 DRMS_Keyword_t *tKey = NULL;
+	 char drmsKeyName[DRMS_MAXNAMELEN];
+
+	 if (kl && oneSeg)
+	 {
+	    while (kl != NULL && ((sKey = kl->elem) != NULL))
+	    {
+	       /* generate a valid drms keyword (fits might not be valid) */
+	       if (!drms_keyword_getintname_ext(sKey->info->name, 
+						&fitsclass,
+						NULL, 
+						drmsKeyName, 
+						sizeof(drmsKeyName)))
+	       {
+		  *drmsKeyName = '\0';
+		  stat = DRMS_ERROR_INVALIDDATA;
+		  break;
+	       }
+
+	       if (!hcon_lookup_lower(&(template->keywords), drmsKeyName))
+	       {
+		  /* insert into template */
+		  XASSERT(tKey = 
+			  hcon_allocslot_lower(&(template->keywords), drmsKeyName));
+		  memset(tKey, 0, sizeof(DRMS_Keyword_t));
+		  XASSERT(tKey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
+		  memset(tKey->info, 0, sizeof(DRMS_KeywordInfo_t));
+	    
+		  if (tKey && tKey->info)
+		  {
+		     /* record */
+		     tKey->record = template;
+
+		     /* keyword info */
+		     memcpy(tKey->info, sKey->info, sizeof(DRMS_KeywordInfo_t));
+		     snprintf(tKey->info->name, 
+			      DRMS_MAXNAMELEN,
+			      "%s",
+			      drmsKeyName);
+
+		     /* default value - missing */
+		     drms_missing(tKey->info->type, &(tKey->value));
+		  }
+		  else
+		  {
+		     stat = DRMS_ERROR_OUTOFMEMORY;
+		  }
+	       }
+		     
+	       kl = kl->next;
+	    }
+
+	    if (stat == DRMS_SUCCESS)
+	    {
+	       /* one segment per record */
+	       if (!seg)
+	       {
+		  seg = oneSeg;
+	       }
+	       else if (!drms_segment_segsmatch(seg, oneSeg))
+	       {
+		  stat = DRMS_ERROR_INVALIDDATA;
+	       }
+	    }
+	 }
+      } /* iRec */
+   }
+
+   if (status)
+   {
+      *status = stat;
+   }
+
+   if (stat == DRMS_SUCCESS)
+   {
+      *proto = template;
+      *segout = seg;
+   }
+
+   return iRec;
+}
+
+static void AdjustRecordProtoSeriesInfo(DRMS_Env_t *env, 
+					DRMS_Record_t *proto, 
+					const char *seriesName) 
+{
+   /* series info */
+   char *user = getenv("USER");
+   snprintf(proto->seriesinfo->seriesname,
+	    DRMS_MAXNAMELEN,
+	    "%s",
+	    seriesName);
+
+   strcpy(proto->seriesinfo->author, "unknown");
+   strcpy(proto->seriesinfo->owner, "unknown");
+
+   if (user)
+   {
+      if (strlen(user) < DRMS_MAXCOMMENTLEN)
+      {
+	 strcpy(proto->seriesinfo->author, user);
+      }
+		    
+      if (strlen(user) < DRMS_MAXNAMELEN)
+      {
+	 strcpy(proto->seriesinfo->owner, user);
+      }
+   }
+
+   /* discard "Owner", fill it with the dbuser */
+   if (env->session->db_direct) 
+   {
+      strcpy(proto->seriesinfo->owner, env->session->db_handle->dbuser);
+   }
+}
+
+static void AllocRecordProtoSeg(DRMS_Record_t *template, DRMS_Segment_t *seg, int *status)
+{
+   int stat = DRMS_SUCCESS;
+   DRMS_Segment_t *tSeg = NULL;
+
+   XASSERT(tSeg = hcon_allocslot_lower(&(template->segments), seg->info->name));
+   memset(tSeg, 0, sizeof(DRMS_Segment_t));
+   XASSERT(tSeg->info = malloc(sizeof(DRMS_SegmentInfo_t)));
+   memset(tSeg->info, 0, sizeof(DRMS_SegmentInfo_t));
+
+   if (tSeg && tSeg->info)
+   {
+      /* record */
+      tSeg->record = template;
+	       
+      /* segment info*/
+      memcpy(tSeg->info, seg->info, sizeof(DRMS_SegmentInfo_t));
+
+      /* axis is allocated as static array */
+      memcpy(tSeg->axis, seg->axis, sizeof(int) * DRMS_MAXRANK);
+   }
+   else
+   {
+      stat = DRMS_ERROR_OUTOFMEMORY;
+   }
+
+   if (status)
+   {
+      *status = stat;
+   }
+}
+
+static void SetRecordProtoPKeys(DRMS_Record_t *template, 
+				const char **pkeyarr, 
+				int nkeys, 
+				int *status)
+{
+   int stat = DRMS_SUCCESS;
+   DRMS_Keyword_t *pkey = NULL;
+   int ikey = 0;
+
+   for (; ikey < nkeys; ikey++)
+   {
+      pkey = hcon_lookup_lower(&(template->keywords), pkeyarr[ikey]);
+      if (pkey != NULL)
+      {
+	 template->seriesinfo->pidx_keywords[ikey] = pkey;
+      }
+      else
+      {
+	 stat = DRMS_ERROR_INVALIDKEYWORD;
+	 break;
+      }
+   }
+
+   template->seriesinfo->pidx_num = ikey;
+
+   if (status)
+   {
+      *status = stat;
+   }
+}
+
+static DRMS_Record_t *CacheRecordProto(DRMS_Env_t *env, 
+				       DRMS_Record_t *proto, 
+				       const char *seriesName, 
+				       int *status)
+{
+   int stat = DRMS_SUCCESS;
+   DRMS_Record_t *cached = NULL;
+
+   if (hcon_member_lower(&(env->series_cache), seriesName))
+   {
+      fprintf(stderr,"drms_open_dsdsrecords(): "
+	      "ERROR: Series '%s' already exists.\n", seriesName);
+      drms_free_template_record_struct(proto);
+      stat = DRMS_ERROR_INVALIDDATA;
+   }
+   else
+   {
+      cached = (DRMS_Record_t *)hcon_allocslot_lower(&(env->series_cache), seriesName);
+      drms_copy_record_struct(cached, proto);  
+
+      for (int i = 0; i < cached->seriesinfo->pidx_num; i++) 
+      {
+	 cached->seriesinfo->pidx_keywords[i] = 
+	   drms_keyword_lookup(cached, 
+			       proto->seriesinfo->pidx_keywords[i]->info->name, 
+			       0);
+      }
+
+      drms_free_record_struct(proto);
+   }
+
+   if (status)
+   {
+      *status = stat;
+   }
+   
+   return cached;
+}
+
+static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
+						      int nRecs,
+						      DRMS_Record_t *cached,
+						      DSDS_KeyList_t **klarr,
+						      DRMS_KeyMapClass_t fitsclass,
+						      int *status)
+{
+   int stat = DRMS_SUCCESS;
+   int iRec;
+   DRMS_RecordSet_t *rset = (DRMS_RecordSet_t *)malloc(sizeof(DRMS_RecordSet_t));
+   rset->n = nRecs;
+   rset->records = (DRMS_Record_t **)malloc(sizeof(DRMS_Record_t *) * nRecs);
+   memset(rset->records, 0, sizeof(DRMS_Record_t *) * nRecs);
+
+   int iNewRec = 1;
+   for (iRec = 0; stat == DRMS_SUCCESS && iRec < nRecs; iRec++)
+   {
+      DSDS_KeyList_t *kl = klarr[iRec];
+
+      if (kl)
+      {
+	 rset->records[iRec] = drms_alloc_record2(cached, iNewRec, &stat);
+	 if (stat == DRMS_SUCCESS)
+	 {
+	    rset->records[iRec]->sessionid = env->session->sessionid;  
+	    rset->records[iRec]->sessionns = strdup(env->session->sessionns);
+	    rset->records[iRec]->lifetime = DRMS_TRANSIENT;
+	 }
+
+	 /* populate the new records with information from keylistarr and segarr */
+	 DRMS_Keyword_t *sKey = NULL;
+	 char drmsKeyName[DRMS_MAXNAMELEN];
+
+	 while (stat == DRMS_SUCCESS && kl && ((sKey = kl->elem) != NULL))
+	 {
+	    if (!drms_keyword_getintname_ext(sKey->info->name, 
+					     &fitsclass,
+					     NULL, 
+					     drmsKeyName, 
+					     sizeof(drmsKeyName)))
+	    {
+	       *drmsKeyName = '\0';
+	       stat = DRMS_ERROR_INVALIDDATA;
+	       break;
+	    }
+
+	    stat = drms_setkey(rset->records[iRec], 
+			       drmsKeyName,
+			       sKey->info->type,
+			       &(sKey->value));
+	    kl = kl->next;
+	 } /* while */
+
+	 rset->records[iRec]->readonly = 1;
+	 iNewRec++;
+      }
+   }
+
+   if (status)
+   {
+      *status = stat;
+   }
+
+   return rset;
+}
+
 /*********************** Public functions *********************/
 
 /* dsRecSet may resolve into more than one record (fits file) */
@@ -98,9 +444,7 @@ DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, const char *dsRecSet, i
 	 DSDS_KeyList_t **keylistarr;
 	 DRMS_Segment_t *segarr;
 	 kDSDS_Stat_t dsdsStat;
-	 long long nRecs; /* info returned from libdsds.so */
-	 long long nRecsAct; /* number of valid drms records */
-	 int iRec;
+	 long long nRecs = 0; /* info returned from libdsds.so */
 
 	 /* Returns one keylist per record and one segment per record. Even though
 	  * this could involve a lot of alloc'd memory, and it isn't 100% necessary 
@@ -117,286 +461,59 @@ DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, const char *dsRecSet, i
 					  &dsdsStat);
 	 if (dsdsStat == kDSDS_Stat_Success)
 	 {
-	    /* make template record from this morass of information */
+	    /* make record prototype from this morass of information */
 	    DRMS_Record_t *template = NULL;
 	    DRMS_Segment_t *seg = NULL;
-	   
+	    DRMS_Record_t *cached = NULL;
+
+	    CreateRecordProtoFromFitsAgg(env, 
+					 keylistarr, 
+					 segarr, 
+					 nRecs, 
+					 kKEYMAPCLASS_DSDS,
+					 &template,
+					 &seg,
+					 &stat);
+
 	    if (stat == DRMS_SUCCESS)
 	    {
-	       XASSERT(template = calloc(1, sizeof(DRMS_Record_t)));
-	       XASSERT(template->seriesinfo = calloc(1, sizeof(DRMS_SeriesInfo_t)));
-	    }
-
-	    if (template && template->seriesinfo)
-	    {	    
-	       template->env = env;
-	       template->init = 1;
-	       template->recnum = 0;
-	       template->sunum = -1;
-	       template->sessionid = 0;
-	       template->sessionns = NULL;
-	       template->su = NULL;
-      
-	       /* Initialize container structure. */
-	       hcon_init(&template->segments, sizeof(DRMS_Segment_t), DRMS_MAXHASHKEYLEN, 
-			 (void (*)(const void *)) drms_free_segment_struct, 
-			 (void (*)(const void *, const void *)) drms_copy_segment_struct);
-	       /* Initialize container structures for links. */
-	       hcon_init(&template->links, sizeof(DRMS_Link_t), DRMS_MAXHASHKEYLEN, 
-			 (void (*)(const void *)) drms_free_link_struct, 
-			 (void (*)(const void *, const void *)) drms_copy_link_struct);
-	       /* Initialize container structure. */
-	       hcon_init(&template->keywords, sizeof(DRMS_Keyword_t), DRMS_MAXHASHKEYLEN, 
-			 (void (*)(const void *)) drms_free_keyword_struct, 
-			 (void (*)(const void *, const void *)) drms_copy_keyword_struct);
-
-	       /* put a superset of keywords in rec->keywords and 
-		* ensure segments match */
-	       for (iRec = 0; iRec < nRecs; iRec++)
-	       {
-		  /* multiple keywords per record - walk keylistarr */
-		  DSDS_KeyList_t *kl = keylistarr[iRec];
-		  DRMS_Segment_t *oneSeg = &(segarr[iRec]); 
-		  DRMS_Keyword_t *sKey = NULL;
-		  DRMS_Keyword_t *tKey = NULL;
-		  char drmsKeyName[DRMS_MAXNAMELEN];
-
-		  if (kl && oneSeg)
-		  {
-		     while (kl != NULL && ((sKey = kl->elem) != NULL))
-		     {
-			/* generate a valid drms keyword (fits might not be valid) */
-			if (!IsValidDRMSKeyName(sKey->info->name))
-			{
-			   if(!GenerateDRMSKeyName(sKey->info->name, 
-						  drmsKeyName, 
-						  sizeof(drmsKeyName)))
-			   {
-			      *drmsKeyName = '\0';
-			      stat = DRMS_ERROR_INVALIDDATA;
-			   }
-			}
-			else
-			{
-			   snprintf(drmsKeyName, sizeof(drmsKeyName), "%s", sKey->info->name);
-			}
-
-			if (!hcon_lookup_lower(&(template->keywords), drmsKeyName))
-			{
-			   /* insert into template */
-			   XASSERT(tKey = 
-				   hcon_allocslot_lower(&(template->keywords), drmsKeyName));
-			   memset(tKey, 0, sizeof(DRMS_Keyword_t));
-			   XASSERT(tKey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
-			   memset(tKey->info, 0, sizeof(DRMS_KeywordInfo_t));
-	    
-			   if (tKey && tKey->info)
-			   {
-			      /* record */
-			      tKey->record = template;
-
-			      /* keyword info */
-			      memcpy(tKey->info, sKey->info, sizeof(DRMS_KeywordInfo_t));
-			      snprintf(tKey->info->name, 
-				       DRMS_MAXNAMELEN,
-				       "%s",
-				       drmsKeyName);
-
-			      /* default value - missing */
-			      drms_missing(tKey->info->type, &(tKey->value));
-			   }
-			   else
-			   {
-			      stat = DRMS_ERROR_OUTOFMEMORY;
-			   }
-			}
-		     
-			kl = kl->next;
-		     }
-
-		     /* one segment per record */
-		     if (!seg)
-		     {
-			seg = oneSeg;
-		     }
-		     else if (!drms_segment_segsmatch(seg, oneSeg))
-		     {
-			stat = DRMS_ERROR_INVALIDDATA;
-		     }
-		  }
-	       } /* iRec */
-
-	       /* actual records created */
-	       nRecsAct = iRec;
-
-	       /* series info */
-	       char *user = getenv("USER");
-	       snprintf(template->seriesinfo->seriesname,
-			DRMS_MAXNAMELEN,
-			"%s",
-			seriesName);
-
-	       strcpy(template->seriesinfo->author, "unknown");
-	       strcpy(template->seriesinfo->owner, "unknown");
+	       /* Adjust seriesinfo */
+	       AdjustRecordProtoSeriesInfo(env, template, seriesName);
 	       DSDS_SetDSDSParams(ghDSDS, template->seriesinfo, hparams);
-
-	       if (user)
-	       {
-		  if (strlen(user) < DRMS_MAXCOMMENTLEN)
-		  {
-		     strcpy(template->seriesinfo->author, user);
-		  }
-		    
-		  if (strlen(user) < DRMS_MAXNAMELEN)
-		  {
-		     strcpy(template->seriesinfo->owner, user);
-		  }
-	       }
-
-	       /* discard "Owner", fill it with the dbuser */
-	       if (env->session->db_direct) 
-	       {
-		  strcpy(template->seriesinfo->owner, 
-			 env->session->db_handle->dbuser);
-	       }
-
-	       if (stat == DRMS_SUCCESS)
-	       {
-		  /* segments */
-		  DRMS_Segment_t *tSeg = NULL;
-
-		  XASSERT(tSeg = hcon_allocslot_lower(&(template->segments), seg->info->name));
-		  memset(tSeg, 0, sizeof(DRMS_Segment_t));
-		  XASSERT(tSeg->info = malloc(sizeof(DRMS_SegmentInfo_t)));
-		  memset(tSeg->info, 0, sizeof(DRMS_SegmentInfo_t));
-
-		  if (tSeg && tSeg->info)
-		  {
-		     /* record */
-		     tSeg->record = template;
-	       
-		     /* segment info*/
-		     memcpy(tSeg->info, seg->info, sizeof(DRMS_SegmentInfo_t));
-
-		     /* axis is allocated as static array */
-		     memcpy(tSeg->axis, seg->axis, sizeof(int) * DRMS_MAXRANK);
-		  }
-		  else
-		  {
-		     stat = DRMS_ERROR_OUTOFMEMORY;
-		  }
-	       }
-
-	       if (stat == DRMS_SUCCESS)
-	       {
-		  /* primary index - series_num and rn */
-		  DRMS_Keyword_t *pkey = 
-		    hcon_lookup_lower(&(template->keywords), kDSDS_SERIES_NUM);
-		  if (pkey != NULL)
-		  {
-		     template->seriesinfo->pidx_keywords[0] = pkey;
-		  }
-		  else
-		  {
-		     stat = DRMS_ERROR_INVALIDKEYWORD;
-		  }
-
-		  pkey = hcon_lookup_lower(&(template->keywords), kDSDS_RN);
-		  if (pkey != NULL)
-		  {
-		     template->seriesinfo->pidx_keywords[1] = pkey;
-		  }
-		  else
-		  {
-		     stat = DRMS_ERROR_INVALIDKEYWORD;
-		  }
-
-		  template->seriesinfo->pidx_num = 2;
-	       }
+	      
+	       /* alloc segments */
+	       AllocRecordProtoSeg(template, seg, &stat);
 	    }
 
-	    /* place template in cache */
-	    DRMS_Record_t *cached = NULL;
-	    if (hcon_member_lower(&(env->series_cache), seriesName))
+	    if (stat == DRMS_SUCCESS)
 	    {
-	       fprintf(stderr,"drms_open_dsdsrecords(): "
-		       "ERROR: Series '%s' already exists.\n", seriesName);
-	       drms_free_template_record_struct(template);
-	       stat = DRMS_ERROR_INVALIDDATA;
+	       /* primary index - series_num and rn */
+	       const char *pkeyarr[2] = {kDSDS_SERIES_NUM, kDSDS_RN};
+	       SetRecordProtoPKeys(template, pkeyarr, 2, &stat);
 	    }
-	    else
+
+	    if (stat == DRMS_SUCCESS)
 	    {
-	       cached = (DRMS_Record_t *)hcon_allocslot_lower(&(env->series_cache), seriesName);
-	       drms_copy_record_struct(cached, template);  
-
-	       for (int i = 0; i < cached->seriesinfo->pidx_num; i++) 
-	       {
-		  cached->seriesinfo->pidx_keywords[i] = 
-		    drms_keyword_lookup(cached, 
-					template->seriesinfo->pidx_keywords[i]->info->name, 
-					0);
-	       }
-
-	       drms_free_record_struct(template);
+	       /* place proto in cache */
+	       cached = CacheRecordProto(env, template, seriesName, &stat);
 	    }
 
 	    /* create a new record (read-only) for each record */
-	    rset = (DRMS_RecordSet_t *)malloc(sizeof(DRMS_RecordSet_t));
-	    rset->n = nRecsAct;
-	    rset->records = (DRMS_Record_t **)malloc(sizeof(DRMS_Record_t *) * nRecsAct);
-	    
-	    int iNewRec = 1;
-	    for (iRec = 0; stat == DRMS_SUCCESS && iRec < nRecs; iRec++)
-	    {
-	       if (keylistarr[iRec] && &(segarr[iRec]))
-	       {
-		  rset->records[iRec] = drms_alloc_record2(cached, iNewRec, &stat);
-		  if (stat == DRMS_SUCCESS)
-		  {
-		     rset->records[iRec]->sessionid = env->session->sessionid;  
-		     rset->records[iRec]->sessionns = strdup(env->session->sessionns);
-		     rset->records[iRec]->lifetime = DRMS_TRANSIENT;
-		  }
+	    rset = CreateRecordsFromDSDSKeylist(env,
+						nRecs, 
+						cached, 
+						keylistarr,
+						kKEYMAPCLASS_DSDS,
+						&stat);
 
-		  /* populate the new records with information from keylistarr and segarr */
-		  DSDS_KeyList_t *kl = keylistarr[iRec];
-		  DRMS_Keyword_t *skey = NULL;
-		  char drmsKeyName[DRMS_MAXNAMELEN];
-
-		  while (stat == DRMS_SUCCESS && kl && ((skey = kl->elem) != NULL))
-		  {
-		     if (!IsValidDRMSKeyName(skey->info->name))
-		     {
-			if(!GenerateDRMSKeyName(skey->info->name, 
-						drmsKeyName, 
-						sizeof(drmsKeyName)))
-			{
-			   *drmsKeyName = '\0';
-			   stat = DRMS_ERROR_INVALIDDATA;
-			}
-		     }
-		     else
-		     {
-			snprintf(drmsKeyName, sizeof(drmsKeyName), "%s", skey->info->name);
-		     }
-
-		     stat = drms_setkey(rset->records[iRec], 
-					drmsKeyName,
-					skey->info->type,
-					&(skey->value));
-		     kl = kl->next;
-		  }
-
-		  rset->records[iRec]->readonly = 1;
-
-		  iNewRec++;
-	       }
-	    }
-	   
 	    /* clean up - let libdsds clean up the stuff it created */
 	    (*pFn_DSDS_free_keylistarr)(&keylistarr, nRecs);
 	    (*pFn_DSDS_free_segarr)(&segarr, nRecs);
-	 }      
+	 }
+	 else
+	 {
+	    stat = DRMS_ERROR_LIBDSDS;
+	 }
       }
    }
    else
@@ -409,6 +526,8 @@ DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, const char *dsRecSet, i
    {
       *status = stat;
    }
+
+   /* Clean-up in the case of an error happens in calling function */
 
    return rset;
 }
@@ -429,7 +548,7 @@ static int FileFilter(const struct dirent *entry)
    return 0;
 }
 
-static int IsLOCALSpec(const char *recSetSpec, 
+static int IsLocalSpec(const char *recSetSpec, 
 		       DSDS_KeyList_t ***klarrout, 
 		       DRMS_Segment_t **segarrout,
 		       int *nRecsout,
@@ -632,7 +751,7 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
   int j = 0;
   char buf[64];
   DSDS_KeyList_t **kl = NULL;
-  DRMS_Segment_t *seg = NULL;
+  DRMS_Segment_t *segarr = NULL;
   int nRecsLocal = 0;
 
   /* recordsetname is a list of comma-separated record sets
@@ -654,7 +773,7 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 
 	if (oneSet && strlen(oneSet) > 0)
 	{
-	   if (IsLOCALSpec(oneSet, &kl, &seg, &nRecsLocal, &stat))
+	   if (IsLocalSpec(oneSet, &kl, &segarr, &nRecsLocal, &stat))
 	   {
 	      // XXX - do stuff that drms_open_dsdsrecords does
 	      if (stat)

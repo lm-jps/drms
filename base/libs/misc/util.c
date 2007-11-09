@@ -212,6 +212,7 @@ int IsValidFitsKeyName(const char *fitsName)
 }
 
 /* Phil's scheme for arbitrary fits names. */
+/* XXX This has to change to Phil's default scheme */
 int GenerateFitsKeyName(const char *drmsName, char *fitsName, int size)
 {
    return 1;
@@ -292,6 +293,7 @@ int IsValidDRMSKeyName(const char *drmsName)
    return !error;
 }
 
+/* XXX This has to change to Phil's default scheme */
 int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size)
 {
    int error = 0;

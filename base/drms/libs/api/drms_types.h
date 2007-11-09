@@ -570,7 +570,8 @@ typedef struct DRMS_StorageUnit_struct {
 /************ Exporting FITS files ***************/
 typedef enum DRMS_KeyMapClass_enum {
    kKEYMAPCLASS_DEFAULT = 0,
-   kKEYMAPCLASS_SSW = 1
+   kKEYMAPCLASS_DSDS = 1,
+   kKEYMAPCLASS_SSW = 2
    /* xxx etc*/
 } DRMS_KeyMapClass_t;
 

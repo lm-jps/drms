@@ -908,10 +908,88 @@ int drms_setkey_string(DRMS_Record_t *rec, const char *key, const char *value)
   return ret;
 }
 
+int drms_keyword_getintname(const char *keyname, char *nameOut, int size)
+{
+   int success = 0;
+   char *potential = NULL;
+
+   *nameOut = '\0';
+
+   /* 1 - Try FITS name. */
+   if (IsValidDRMSKeyName(keyname))
+   {
+      strcpy(nameOut, keyname);
+      success = 1;
+   }
+
+   /* 2 - Use default rule. */
+   if (!success)
+   {
+      potential = (char *)malloc(sizeof(char) * size);
+      if (potential)
+      {
+	 if (GenerateDRMSKeyName(keyname, potential, size))
+	 {
+	    strcpy(nameOut, potential);
+	    success = 1;
+	 }
+
+	 free(potential);
+      }
+   }
+
+   return success;
+}
+
+int drms_keyword_getintname_ext(const char *keyname, 
+				DRMS_KeyMapClass_t *classid, 
+				DRMS_KeyMap_t *map,
+				char *nameOut, 
+				int size)
+{
+   int success = 0;
+   const char *potential = NULL;
+   *nameOut = '\0';
+
+   /* 1 - Try KeyMap */
+   if (map != NULL)
+   {
+      potential = drms_keymap_intname(map, keyname);
+      if (potential)
+      {
+	 snprintf(nameOut, size, "%s", potential);
+	 success = 1;
+      }
+   }
+
+   /* 2 - Try KeyMapClass */
+   if (!success && classid != NULL)
+   {
+      potential = drms_keymap_classidintname(*classid, keyname);
+      if (potential)
+      {
+	 snprintf(nameOut, size, "%s", potential);
+	 success = 1;
+      }
+   }
+
+   if (!success)
+   {
+      /* Now try the map- and class-independent schemes. */
+      char buf[DRMS_MAXNAMELEN];
+      success = drms_keyword_getintname(keyname, buf, sizeof(buf));
+      if (success)
+      {
+	 strncpy(nameOut, buf, size);
+      }
+   }
+   
+   return success;
+}
+
 int drms_keyword_getextname(DRMS_Keyword_t *key, char *nameOut,	int size)
 {
    int success = 0;
-
    char *desc = strdup(key->info->description);
    char *pFitsName = NULL;
    char *potential = NULL;
@@ -986,8 +1064,7 @@ int drms_keyword_getextname_ext(DRMS_Keyword_t *key,
 				DRMS_KeyMapClass_t *classid, 
 				DRMS_KeyMap_t *map,
 				char *nameOut,
-				int size,
-				int *status)
+				int size)
 {
    int success = 0;
    const char *potential = NULL;
@@ -1005,7 +1082,7 @@ int drms_keyword_getextname_ext(DRMS_Keyword_t *key,
    }
 
    /* 2 - Try KeyMapClass. */
-   if (classid != NULL)
+   if (!success && classid != NULL)
    {
       potential = drms_keymap_classidextname(*classid, key->info->name);
       if (potential)
@@ -1018,7 +1095,7 @@ int drms_keyword_getextname_ext(DRMS_Keyword_t *key,
    if (!success)
    {
       /* Now try the map- and class-independent schemes. */
-      char buf[16];
+      char buf[DRMS_MAXNAMELEN];
       success = drms_keyword_getextname(key, buf, sizeof(buf));
       if (success)
       {
