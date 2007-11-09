@@ -571,7 +571,8 @@ typedef struct DRMS_StorageUnit_struct {
 typedef enum DRMS_KeyMapClass_enum {
    kKEYMAPCLASS_DEFAULT = 0,
    kKEYMAPCLASS_DSDS = 1,
-   kKEYMAPCLASS_SSW = 2
+   kKEYMAPCLASS_LOCAL = 2,
+   kKEYMAPCLASS_SSW = 3,
    /* xxx etc*/
 } DRMS_KeyMapClass_t;
 

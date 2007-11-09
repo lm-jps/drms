@@ -332,6 +332,7 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
 						      int nRecs,
 						      DRMS_Record_t *cached,
 						      DSDS_KeyList_t **klarr,
+						      DRMS_Segment_t *segarr,
 						      DRMS_KeyMapClass_t fitsclass,
 						      int *status)
 {
@@ -346,6 +347,8 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
    for (iRec = 0; stat == DRMS_SUCCESS && iRec < nRecs; iRec++)
    {
       DSDS_KeyList_t *kl = klarr[iRec];
+      DRMS_Segment_t *sSeg = &(segarr[iRec]);
+      DRMS_Segment_t *tSeg = NULL;
 
       if (kl)
       {
@@ -381,10 +384,25 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
 	    kl = kl->next;
 	 } /* while */
 
+	 /* enter segment file names (kKEYMAPCLASS_LOCAL) */
+	 if (fitsclass == kKEYMAPCLASS_LOCAL)
+	 {
+	    if ((tSeg = 
+		 hcon_lookup_lower(&(rset->records[iRec]->segments), kLocalSegName)) != NULL)
+	    {
+	       snprintf(sSeg->filename, DRMS_MAXSEGFILENAME, "%s", tSeg->filename);
+	    }
+	    else
+	    {
+	       stat = DRMS_ERROR_INVALIDDATA;
+	       break;
+	    }
+	 }
+
 	 rset->records[iRec]->readonly = 1;
 	 iNewRec++;
       }
-   }
+   } /* for iRec */
 
    if (status)
    {
@@ -392,6 +410,138 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
    }
 
    return rset;
+}
+
+static DRMS_RecordSet_t *OpenLocalRecords(DRMS_Env_t *env, 
+					  DSDS_KeyList_t ***klarr,
+					  DRMS_Segment_t **segarr,
+					  int nRecs,
+					  int *status)
+{
+   DRMS_RecordSet_t *rset = NULL;
+   int stat = DRMS_SUCCESS;
+
+   if (!gAttemptedDSDS && !ghDSDS)
+   {
+      char lpath[PATH_MAX];
+      const char *root = getenv(kJSOCROOT);
+      const char *mach = getenv(kJSOC_MACHINE);
+      if (root && mach)
+      {
+	 char *msg = NULL;
+	 snprintf(lpath, 
+		  sizeof(lpath), 
+		  "%s/lib/%s/libdsds.so", 
+		  root, 
+		  mach);
+	 dlerror();
+	 ghDSDS = dlopen(lpath, RTLD_NOW);
+	 if ((msg = dlerror()) != NULL)
+	 {
+	    /* library not found */
+	    fprintf(stderr, "dlopen(%s) error: %s.\n", lpath, msg);
+	    stat = DRMS_ERROR_CANTOPENLIBRARY;
+	 }
+      }
+
+      gAttemptedDSDS = 1;
+   }
+
+   if (stat == DRMS_SUCCESS && ghDSDS)
+   {
+      pDSDSFn_DSDS_free_keylistarr_t pFn_DSDS_free_keylistarr = 
+	(pDSDSFn_DSDS_free_keylistarr_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_FREE_KEYLISTARR);
+
+      if (pFn_DSDS_free_keylistarr)
+      {
+	 char seriesName[DRMS_MAXNAMELEN];
+	
+	 /* make record prototype from this morass of information */
+	 DRMS_Record_t *proto = NULL;
+	 DRMS_Segment_t *seg = NULL;
+	 DRMS_Record_t *cached = NULL;
+
+	 CreateRecordProtoFromFitsAgg(env, 
+				      *klarr, 
+				      *segarr, 
+				      nRecs, 
+				      kKEYMAPCLASS_DSDS,
+				      &proto,
+				      &seg,
+				      &stat);
+
+	 if (stat == DRMS_SUCCESS)
+	 {
+	    /* Adjust seriesinfo */
+	    AdjustRecordProtoSeriesInfo(env, proto, seriesName);
+	      
+	    /* alloc segments */
+	    AllocRecordProtoSeg(proto, seg, &stat);
+	 }
+
+	 if (stat == DRMS_SUCCESS)
+	 {
+	    /* primary index - series_num and rn */
+	    const char *pkeyarr[2] = {kDSDS_SERIES_NUM, kDSDS_RN};
+	    SetRecordProtoPKeys(proto, pkeyarr, 2, &stat);
+	 }
+
+	 if (stat == DRMS_SUCCESS)
+	 {
+	    /* place proto in cache */
+	    cached = CacheRecordProto(env, proto, seriesName, &stat);
+	 }
+
+	 /* create a new record (read-only) for each record */
+	 rset = CreateRecordsFromDSDSKeylist(env,
+					     nRecs, 
+					     cached, 
+					     *klarr,
+					     *segarr,
+					     kKEYMAPCLASS_LOCAL,
+					     &stat);
+
+	 /* libdsds created the keylists in the array, it needs to clean them */
+	 (*pFn_DSDS_free_keylistarr)(klarr, nRecs);
+
+	 /* segarr was created by DRMS, clean segments here */
+	 if (segarr && *segarr)
+	 {
+	    int i;
+	    for (i = 0; i < nRecs; i++)
+	    {
+	       seg = (*segarr + i);
+
+	       /* need to free malloc'd mem within each segment */
+	       if (seg->info)
+	       {
+		  free(seg->info);
+	       }
+	    }
+
+	    free(*segarr);
+	 }
+
+	 *segarr = NULL;
+	 
+	
+      }
+   }
+   else
+   {
+      fprintf(stdout, "Your JSOC environment does not support DSDS database access.\n");
+      stat = DRMS_ERROR_NODSDSSUPPORT;
+   }
+
+   if (status)
+   {
+      *status = stat;
+   }
+
+   /* Clean-up in the case of an error happens in calling function */
+
+   return rset;
+
 }
 
 /*********************** Public functions *********************/
@@ -503,6 +653,7 @@ DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, const char *dsRecSet, i
 						nRecs, 
 						cached, 
 						keylistarr,
+						segarr,
 						kKEYMAPCLASS_DSDS,
 						&stat);
 
@@ -624,18 +775,19 @@ static int IsLocalSpec(const char *recSetSpec,
 		     *segarrout = (DRMS_Segment_t *)malloc(sizeof(DRMS_Segment_t));
 
 		     (*klarrout)[0] = kl;
-		     (*pFn_DSDS_steal_seginfo)(*segarrout, seg);
+		     /* For local data, add filepath for use with later calls to 
+		      * drms_segment_read(). */
+		     snprintf((*segarrout)[0].filename, 
+			      DRMS_MAXSEGFILENAME, 
+			      "%s", 
+			      recSetSpec);
+		     (*pFn_DSDS_steal_seginfo)(&((*segarrout)[0]), seg);
 		     (*pFn_DSDS_free_seg)(&seg);
 		     *nRecsout = 1;
 		  }
 		  else
 		  {
 		     fitshead = 0;
-		  }
-
-		  if (seg)
-		  {
-		     free(seg); /* don't deep-free; that will happen later */
 		  }
 	       }
 	       else 
@@ -671,9 +823,14 @@ static int IsLocalSpec(const char *recSetSpec,
 
 				 if (dsdsStat == kDSDS_Stat_Success)
 				 {
-				
 				    (*klarrout)[iRec] = kl;
-				    (*pFn_DSDS_steal_seginfo)((*segarrout + iRec), seg);
+				    /* For local data, add filepath for use with later calls to 
+				     * drms_segment_read(). */
+				    snprintf((*segarrout)[iRec].filename, 
+					     DRMS_MAXSEGFILENAME, 
+					     "%s", 
+					     oneFile);
+				    (*pFn_DSDS_steal_seginfo)(&((*segarrout)[iRec]), seg);
 				    (*pFn_DSDS_free_seg)(&seg);
 				    iRec++;
 				 }
@@ -681,11 +838,6 @@ static int IsLocalSpec(const char *recSetSpec,
 				 {
 				    fitshead = 0;
 				    break;
-				 }
-
-				 if (seg)
-				 {
-				    free(seg); /* don't deep-free; that will happen later */
 				 }
 			      }
 			   }
@@ -750,7 +902,7 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
   int nRecs = 0;
   int j = 0;
   char buf[64];
-  DSDS_KeyList_t **kl = NULL;
+  DSDS_KeyList_t **klarr = NULL;
   DRMS_Segment_t *segarr = NULL;
   int nRecsLocal = 0;
 
@@ -773,9 +925,9 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 
 	if (oneSet && strlen(oneSet) > 0)
 	{
-	   if (IsLocalSpec(oneSet, &kl, &segarr, &nRecsLocal, &stat))
+	   if (IsLocalSpec(oneSet, &klarr, &segarr, &nRecsLocal, &stat))
 	   {
-	      // XXX - do stuff that drms_open_dsdsrecords does
+	      rs = OpenLocalRecords(env, &klarr, &segarr, nRecsLocal, &stat);
 	      if (stat)
 		goto failure;
 	   }
