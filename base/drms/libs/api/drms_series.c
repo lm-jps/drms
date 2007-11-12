@@ -449,7 +449,7 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
   DRMS_Session_t *session;
 
   session = env->session;
-  sprintf(query,"select seriesname from %s() where seriesname=\'%s\'",
+  sprintf(query,"select seriesname from %s() where seriesname ~~* '%s'",
 	  DRMS_MASTER_SERIES_TABLE, series);
 #ifdef DEBUG
   printf("drms_delete_series: query = %s\n",query);
@@ -480,23 +480,23 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
       fprintf(stderr, "Failed: %s\n", query);
       goto bailout;
     }
-    sprintf(query,"delete from %s where seriesname='%s'",
+    sprintf(query,"delete from %s where seriesname ~~* '%s'",
 	    DRMS_MASTER_LINK_TABLE,series);
     if (drms_dms(session,NULL,query))
       goto bailout;
-    sprintf(query,"delete from %s where seriesname='%s'",
+    sprintf(query,"delete from %s where seriesname ~~* '%s'",
 	    DRMS_MASTER_KEYWORD_TABLE, series);
     if (drms_dms(session,NULL,query))
       goto bailout;
-    sprintf(query,"delete from %s where seriesname='%s'",
+    sprintf(query,"delete from %s where seriesname ~~* '%s'",
 	    DRMS_MASTER_SEGMENT_TABLE, series);
     if (drms_dms(session,NULL,query))
       goto bailout;
-    sprintf(query,"delete from %s where seriesname='%s'",
+    sprintf(query,"delete from %s where seriesname ~~* '%s'",
 	    DRMS_MASTER_SERIES_TABLE,series);
     if (drms_dms(session,NULL,query))
       goto bailout;
-    hcon_remove(&env->series_cache,series);
+    hcon_remove(&env->series_cache,series_lower);
   }
   else if (qres->num_rows>1)
   {

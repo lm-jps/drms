@@ -1125,7 +1125,7 @@ int drms_create_series(DRMS_Record_t *rec, int perms)
 
   series = rec->seriesinfo->seriesname;
   env = rec->env;
-  if (hcon_member(&env->series_cache, series))
+  if (hcon_member_lower(&env->series_cache, series))
   {
     fprintf(stderr,"drms_create_series(): "
 	    "ERROR: Cannot create series '%s' because it already exists.\n", series);
@@ -1159,7 +1159,7 @@ int drms_update_series(DRMS_Record_t *rec, int perms)
 
   series = rec->seriesinfo->seriesname;
   env = rec->env;
-  template = hcon_lookup(&env->series_cache, series);
+  template = hcon_lookup_lower(&env->series_cache, series);
   if (!template)
   {
     fprintf(stderr,"ERROR: Cannot update series '%s' because it does not "

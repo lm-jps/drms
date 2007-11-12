@@ -938,11 +938,12 @@ int drms_server_newseries(DRMS_Env_t *env, int sockfd)
    server series_cache */
 int drms_server_dropseries(DRMS_Env_t *env, int sockfd)
 { 
-  char *series;
+  char *series_lower;
 
-  series = receive_string(sockfd);
-  hcon_remove(&env->series_cache, series);
-  free(series);
+  series_lower = receive_string(sockfd);
+  strtolower(series_lower);
+  hcon_remove(&env->series_cache, series_lower);
+  free(series_lower);
   return 0;
 }
 
