@@ -454,7 +454,7 @@ int  drms_template_links(DRMS_Record_t *template)
   /* Get link definitions from database and add to template. */
   char *namespace = ns(template->seriesinfo->seriesname);
   sprintf(query, "select linkname, target_seriesname, type, description "
-	  "from %s.%s where seriesname='%s' order by linkname", 
+	  "from %s.%s where seriesname ~~* '%s' order by linkname", 
 	  namespace, DRMS_MASTER_LINK_TABLE, template->seriesinfo->seriesname);
   free(namespace);
   if ((qres = drms_query_bin(env->session, query)) == NULL)

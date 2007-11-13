@@ -221,7 +221,7 @@ int  drms_template_keywords(DRMS_Record_t *template)
   char *namespace = ns(template->seriesinfo->seriesname);
   sprintf(query, "select keywordname, islink, linkname, targetkeyw, type, "
 	  "defaultval, format, unit, isconstant, persegment, "
-	  "description from %s.%s where seriesname='%s' order by keywordname",
+	  "description from %s.%s where seriesname ~~* '%s' order by keywordname",
 	  namespace, DRMS_MASTER_KEYWORD_TABLE, template->seriesinfo->seriesname);
   free(namespace);
   if ((qres = drms_query_bin(env->session, query)) == NULL)

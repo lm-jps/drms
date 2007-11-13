@@ -128,7 +128,7 @@ int drms_template_segments(DRMS_Record_t *template)
   sprintf(query, "select segmentname, segnum, scope, type, "
 	  "naxis, axis, unit, protocol, description, "
 	  "islink, linkname, targetseg, cseg_recnum from %s.%s where "
-	  "seriesname='%s' order by segnum", 
+	  "seriesname ~~* '%s' order by segnum", 
 	  namespace, DRMS_MASTER_SEGMENT_TABLE, template->seriesinfo->seriesname);
   free(namespace);
   if ((qres = drms_query_bin(env->session, query)) == NULL)
