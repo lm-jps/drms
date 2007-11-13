@@ -156,4 +156,5 @@ int drms_create_series_fromprototype(DRMS_Record_t **prototype,
 #define DRMS_BULK_INSERT_ARRAY     (18)
 #define DRMS_SEQUENCE_GETLAST      (19)
 #define DRMS_ALLOC_RECNUM          (20)
+#define DRMS_GETTMPGUID            (21)
 #endif

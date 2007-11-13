@@ -54,14 +54,272 @@ static int IsLocalSpec(const char *recSetSpec,
 		       DSDS_KeyList_t ***klarrout, 
 		       DRMS_Segment_t **segarrout,
 		       int *nRecsout,
+		       char **pkeysout,
 		       int *status);
+static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
+					DSDS_KeyList_t **keylistarr, 
+					DRMS_Segment_t *segarr,
+					int nRecs,
+					int pkeysSpecified,
+					DRMS_KeyMapClass_t fitsclass,
+					DRMS_Record_t **proto,
+					DRMS_Segment_t **segout,
+					int *status);
+static void AdjustRecordProtoSeriesInfo(DRMS_Env_t *env, 
+					DRMS_Record_t *proto, 
+					const char *seriesName);
+static void AllocRecordProtoSeg(DRMS_Record_t *template, DRMS_Segment_t *seg, int *status);
+static void SetRecordProtoPKeys(DRMS_Record_t *template, 
+				char **pkeyarr, 
+				int nkeys, 
+				int *status);
+static DRMS_Record_t *CacheRecordProto(DRMS_Env_t *env, 
+				       DRMS_Record_t *proto, 
+				       const char *seriesName, 
+				       int *status);
+static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
+						      int nRecs,
+						      DRMS_Record_t *cached,
+						      DSDS_KeyList_t **klarr,
+						      DRMS_Segment_t *segarr,
+						      int pkeysSpecified,
+						      DRMS_KeyMapClass_t fitsclass,
+						      int *status);
+static DRMS_RecordSet_t *OpenLocalRecords(DRMS_Env_t *env, 
+					  DSDS_KeyList_t ***klarr,
+					  DRMS_Segment_t **segarr,
+					  int nRecs,
+					  char **pkeysout,
+					  int *status);
 static void RSFree(const void *val);
+/* end drms_open_records() helpers */
 
+static int FileFilter(const struct dirent *entry)
+{
+   const char *oneFile = entry->d_name;
+   struct stat stBuf;
+
+   if (oneFile && !stat(oneFile, &stBuf))
+   {
+      if (S_ISREG(stBuf.st_mode) || S_ISLNK(stBuf.st_mode))
+      {
+	 return 1;
+      }
+   }
+
+   return 0;
+}
+
+/* A valid local spec is:
+ *   ( <file> | <directory> ) { '[' <keyword1>, <keyword2>, <...> ']' }
+ *
+ * where () denotes grouping, {} denotes optional, and '' denotes literal
+ */
+static int IsLocalSpec(const char *recSetSpecIn, 
+		       DSDS_KeyList_t ***klarrout, 
+		       DRMS_Segment_t **segarrout,
+		       int *nRecsout,
+		       char **pkeysout,
+		       int *status)
+{
+   int isLocSpec = 0;
+   struct stat stBuf;
+   int lstat = DRMS_SUCCESS;
+   char *lbrack = NULL;
+   int keylistSize = sizeof(char) * (strlen(recSetSpecIn) + 1);
+   char *keylist = malloc(keylistSize);
+   char *recSetSpec = strdup(recSetSpecIn);
+
+   /* There could be an optional clause at the end of the file/directory spec. */
+   if ((lbrack = strchr(recSetSpec, '[')) != NULL)
+   {
+      if (strchr(lbrack, ']'))
+      {
+	 *lbrack = '\0';
+	 snprintf(keylist, keylistSize, "%s", lbrack + 1);
+	 *(strchr(keylist, ']')) = '\0';
+	 *pkeysout = strdup(keylist);
+	 free(keylist);
+      }
+   }
+   else
+   {
+      *pkeysout = NULL;
+   }
+
+   /* Basically, if recSetSpec is a FITS file, directory of FITS files, or 
+    * a link to either of these, then it refers to a set of local files */
+   if (recSetSpec && !stat(recSetSpec, &stBuf) && klarrout && segarrout)
+   {
+      if (S_ISREG(stBuf.st_mode) || S_ISLNK(stBuf.st_mode) || S_ISDIR(stBuf.st_mode))
+      {
+	 /* ensure these files are all fits files - okay to use libdsds.so for now 
+	  * but this should be divorced from Stanford-specific code in the future */
+	 if (!gAttemptedDSDS && !ghDSDS)
+	 {
+	    char lpath[PATH_MAX];
+	    const char *root = getenv(kJSOCROOT);
+	    const char *mach = getenv(kJSOC_MACHINE);
+	    if (root && mach)
+	    {
+	       char *msg = NULL;
+	       snprintf(lpath, 
+			sizeof(lpath), 
+			"%s/lib/%s/libdsds.so", 
+			root, 
+			mach);
+	       dlerror();
+	       ghDSDS = dlopen(lpath, RTLD_NOW);
+	       if ((msg = dlerror()) != NULL)
+	       {
+		  /* dsds library not found */
+		  fprintf(stderr, "dlopen(%s) error: %s.\n", lpath, msg);
+		  lstat = DRMS_ERROR_CANTOPENLIBRARY;
+	       }
+	    }
+
+	    gAttemptedDSDS = 1;
+	 }
+
+	 if (lstat == DRMS_SUCCESS && ghDSDS)
+	 {
+	    DSDS_KeyList_t *kl = NULL;
+	    DRMS_Segment_t *seg = NULL;
+	    int iRec = 0;
+
+	    pDSDSFn_DSDS_read_fitsheader_t pFn_DSDS_read_fitsheader = 
+	      (pDSDSFn_DSDS_read_fitsheader_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_READ_FITSHEADER);
+	    pDSDSFn_DSDS_free_keylist_t pFn_DSDS_free_keylist = 
+	      (pDSDSFn_DSDS_free_keylist_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_FREE_KEYLIST);
+	    pDSDSFn_DSDS_steal_seginfo_t pFn_DSDS_steal_seginfo =
+	      (pDSDSFn_DSDS_steal_seginfo_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_STEAL_SEGINFO);
+	    pDSDSFn_DSDS_free_seg_t pFn_DSDS_free_seg = 
+	      (pDSDSFn_DSDS_free_seg_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_FREE_SEG);
+
+	    /* for each file, check for a valid FITS header */
+	    if (pFn_DSDS_read_fitsheader && pFn_DSDS_free_keylist &&
+		pFn_DSDS_steal_seginfo && pFn_DSDS_free_seg)
+	    {
+	       kDSDS_Stat_t dsdsStat;
+	       int fitshead = 1;
+
+	       if (S_ISREG(stBuf.st_mode) || S_ISLNK(stBuf.st_mode))
+	       {
+		  (*pFn_DSDS_read_fitsheader)(recSetSpec, &kl, &seg, kLocalSegName, &dsdsStat);
+
+		  if (dsdsStat == kDSDS_Stat_Success)
+		  {
+		     *klarrout = (DSDS_KeyList_t **)malloc(sizeof(DSDS_KeyList_t *));
+		     *segarrout = (DRMS_Segment_t *)malloc(sizeof(DRMS_Segment_t));
+
+		     (*klarrout)[0] = kl;
+		     (*pFn_DSDS_steal_seginfo)(&((*segarrout)[0]), seg);
+		     /* For local data, add filepath for use with later calls to 
+		      * drms_segment_read(). */
+		     snprintf((*segarrout)[0].filename, 
+			      DRMS_MAXSEGFILENAME, 
+			      "%s", 
+			      recSetSpec);
+		     (*pFn_DSDS_free_seg)(&seg);
+		     *nRecsout = 1;
+		  }
+		  else
+		  {
+		     fitshead = 0;
+		  }
+	       }
+	       else 
+	       {
+		  struct dirent **fileList = NULL;
+		  int nFiles = -1;
+
+		  if ((nFiles = scandir(recSetSpec, &fileList, FileFilter, NULL)) > 0 && 
+		      fileList != NULL)
+		  {
+		     int fileIndex = 0;
+		     iRec = 0;
+
+		     /* nFiles is the maximum number of fits files possible */
+		     *klarrout = (DSDS_KeyList_t **)malloc(sizeof(DSDS_KeyList_t *) * nFiles);
+		     *segarrout = (DRMS_Segment_t *)malloc(sizeof(DRMS_Segment_t) * nFiles);
+
+		     while (fileIndex < nFiles)
+		     {
+			struct dirent *entry = fileList[fileIndex];
+			if (entry != NULL)
+			{
+			   char *oneFile = entry->d_name;
+			   if (oneFile != NULL && *oneFile !=  '\0' && !stat(oneFile, &stBuf));
+			   {
+			      if (S_ISREG(stBuf.st_mode) || S_ISLNK(stBuf.st_mode))
+			      {
+				 (*pFn_DSDS_read_fitsheader)(oneFile, 
+							     &kl, 
+							     &seg, 
+							     kLocalSegName, 
+							     &dsdsStat);
+
+				 if (dsdsStat == kDSDS_Stat_Success)
+				 {
+				    (*klarrout)[iRec] = kl;
+				    (*pFn_DSDS_steal_seginfo)(&((*segarrout)[iRec]), seg);
+				    /* For local data, add filepath for use with later calls to 
+				     * drms_segment_read(). */
+				    snprintf((*segarrout)[iRec].filename, 
+					     DRMS_MAXSEGFILENAME, 
+					     "%s", 
+					     oneFile);
+				    (*pFn_DSDS_free_seg)(&seg);
+				    iRec++;
+				 }
+				 else
+				 {
+				    fitshead = 0;
+				    break;
+				 }
+			      }
+			   }
+
+			   free(entry);
+			}
+		 
+			fileIndex++;
+		     } /* while */
+
+		     if (nRecsout)
+		     {
+			*nRecsout = iRec;
+		     }
+	      
+		     free(fileList);
+		  }
+	       }
+
+	       isLocSpec = fitshead;
+	    }
+	 }
+      }	 
+   }
+   
+
+   if (recSetSpec)
+   {
+      free(recSetSpec);
+   }
+
+   if (status)
+   {
+      *status = lstat;
+   }
+
+   return isLocSpec;
+}
 
 static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
 					DSDS_KeyList_t **keylistarr, 
 					DRMS_Segment_t *segarr,
 					int nRecs,
+					int pkeysSpecified,
 					DRMS_KeyMapClass_t fitsclass,
 					DRMS_Record_t **proto,
 					DRMS_Segment_t **segout,
@@ -80,7 +338,12 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
    }
 
    if (template && template->seriesinfo)
-   {	    
+   {
+      char drmsKeyName[DRMS_MAXNAMELEN];
+      DRMS_Keyword_t *sKey = NULL;
+      DRMS_Keyword_t *tKey = NULL;
+	 
+
       template->env = env;
       template->init = 1;
       template->recnum = 0;
@@ -109,9 +372,6 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
 	 /* multiple keywords per record - walk keylistarr */
 	 DSDS_KeyList_t *kl = keylistarr[iRec];
 	 DRMS_Segment_t *oneSeg = &(segarr[iRec]); 
-	 DRMS_Keyword_t *sKey = NULL;
-	 DRMS_Keyword_t *tKey = NULL;
-	 char drmsKeyName[DRMS_MAXNAMELEN];
 
 	 if (kl && oneSeg)
 	 {
@@ -176,6 +436,46 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
 	    }
 	 }
       } /* iRec */
+
+      /* Ensure that primary keywords specified exist in fits header */
+      if (fitsclass == kKEYMAPCLASS_LOCAL && !pkeysSpecified)
+      {
+	 /* Add a keyword that will serve as primary key - not sure what to use here. 
+	  * What about an increasing integer? 
+	  */
+	 snprintf(drmsKeyName, sizeof(drmsKeyName), kLocalPrimekey);
+
+	 /* insert into template */
+	 XASSERT(tKey = 
+		 hcon_allocslot_lower(&(template->keywords), drmsKeyName));
+	 memset(tKey, 0, sizeof(DRMS_Keyword_t));
+	 XASSERT(tKey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
+	 memset(tKey->info, 0, sizeof(DRMS_KeywordInfo_t));
+	    
+	 if (tKey && tKey->info)
+	 {
+	    /* record */
+	    tKey->record = template;
+
+	    /* keyword info */
+	      
+	    //memcpy(tKey->info, sKey->info, sizeof(DRMS_KeywordInfo_t));
+	    snprintf(tKey->info->name, 
+		     DRMS_MAXNAMELEN,
+		     "%s",
+		     drmsKeyName);
+
+	    tKey->info->type = DRMS_TYPE_LONGLONG;
+	    strcpy(tKey->info->format, "%lld");
+
+	    /* default value - missing */
+	    drms_missing(tKey->info->type, &(tKey->value));
+	 }
+	 else
+	 {
+	    stat = DRMS_ERROR_OUTOFMEMORY;
+	 }
+      }
    }
 
    if (status)
@@ -259,7 +559,7 @@ static void AllocRecordProtoSeg(DRMS_Record_t *template, DRMS_Segment_t *seg, in
 }
 
 static void SetRecordProtoPKeys(DRMS_Record_t *template, 
-				const char **pkeyarr, 
+				char **pkeyarr, 
 				int nkeys, 
 				int *status)
 {
@@ -333,6 +633,7 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
 						      DRMS_Record_t *cached,
 						      DSDS_KeyList_t **klarr,
 						      DRMS_Segment_t *segarr,
+						      int pkeysSpecified,
 						      DRMS_KeyMapClass_t fitsclass,
 						      int *status)
 {
@@ -344,6 +645,7 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
    memset(rset->records, 0, sizeof(DRMS_Record_t *) * nRecs);
 
    int iNewRec = 1;
+   int primekeyCnt = 0;
    for (iRec = 0; stat == DRMS_SUCCESS && iRec < nRecs; iRec++)
    {
       DSDS_KeyList_t *kl = klarr[iRec];
@@ -361,6 +663,7 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
 	 }
 
 	 /* populate the new records with information from keylistarr and segarr */
+
 	 DRMS_Keyword_t *sKey = NULL;
 	 char drmsKeyName[DRMS_MAXNAMELEN];
 
@@ -384,13 +687,22 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
 	    kl = kl->next;
 	 } /* while */
 
-	 /* enter segment file names (kKEYMAPCLASS_LOCAL) */
 	 if (fitsclass == kKEYMAPCLASS_LOCAL)
 	 {
+	    /* set and increment primekey (if no prime key specified by user ) */
+	    if (!pkeysSpecified)
+	    {
+	       stat = drms_setkey_longlong(rset->records[iRec], 
+					   kLocalPrimekey,
+					   primekeyCnt);
+	       primekeyCnt++;
+	    }
+
+	    /* enter segment file names (kKEYMAPCLASS_LOCAL) */
 	    if ((tSeg = 
 		 hcon_lookup_lower(&(rset->records[iRec]->segments), kLocalSegName)) != NULL)
 	    {
-	       snprintf(sSeg->filename, DRMS_MAXSEGFILENAME, "%s", tSeg->filename);
+	       snprintf(tSeg->filename, DRMS_MAXSEGFILENAME, "%s", sSeg->filename);
 	    }
 	    else
 	    {
@@ -416,6 +728,7 @@ static DRMS_RecordSet_t *OpenLocalRecords(DRMS_Env_t *env,
 					  DSDS_KeyList_t ***klarr,
 					  DRMS_Segment_t **segarr,
 					  int nRecs,
+					  char **pkeys,
 					  int *status)
 {
    DRMS_RecordSet_t *rset = NULL;
@@ -455,23 +768,81 @@ static DRMS_RecordSet_t *OpenLocalRecords(DRMS_Env_t *env,
       if (pFn_DSDS_free_keylistarr)
       {
 	 char seriesName[DRMS_MAXNAMELEN];
+	 int nPkeys = 0;
 	
 	 /* make record prototype from this morass of information */
 	 DRMS_Record_t *proto = NULL;
 	 DRMS_Segment_t *seg = NULL;
 	 DRMS_Record_t *cached = NULL;
 
-	 CreateRecordProtoFromFitsAgg(env, 
-				      *klarr, 
-				      *segarr, 
-				      nRecs, 
-				      kKEYMAPCLASS_DSDS,
-				      &proto,
-				      &seg,
-				      &stat);
+
+	 DRMS_KeyMapClass_t fitsclass = kKEYMAPCLASS_LOCAL;
+	 char drmsKeyName[DRMS_MAXNAMELEN];
+	 char *pkeyarr[DRMS_MAXPRIMIDX] = {0};
+
+	 if (pkeys && *pkeys)
+	 {
+	    char *pkeyname = strtok(*pkeys, ",");
+	    nPkeys = 0;
+	    while(pkeyname != NULL)
+	    {
+	       if (!drms_keyword_getintname_ext(pkeyname, 
+						&fitsclass,
+						NULL, 
+						drmsKeyName, 
+						sizeof(drmsKeyName)))
+	       {
+		  *drmsKeyName = '\0';
+		  stat = DRMS_ERROR_INVALIDDATA;
+		  break;
+	       }
+
+	       pkeyname = strtok(NULL, ",");
+	       pkeyarr[nPkeys] = strdup(drmsKeyName);
+	       nPkeys++;
+	    }
+	 }
+	 else
+	 {
+	    pkeyarr[0] = strdup(kLocalPrimekey);
+	    nPkeys = 1;
+	 }
 
 	 if (stat == DRMS_SUCCESS)
 	 {
+	    CreateRecordProtoFromFitsAgg(env, 
+					 *klarr, 
+					 *segarr, 
+					 nRecs, 
+					 *pkeys != NULL,
+					 kKEYMAPCLASS_LOCAL,
+					 &proto,
+					 &seg,
+					 &stat);
+	 }
+
+	 if (stat == DRMS_SUCCESS)
+	 {
+	    /* xxxx Get series name - this should be "su_tmp.<GUID>.  The GUID should
+	     * be stored in libdrmsserver.a.  It should be a monotonically
+	     * increasing integer that lives for the life of libdrmsserver.a. 
+	     *
+	     * I believe this is the way to achieve this:
+	     * send_string
+	     */
+
+	    long long guid = -1;
+
+#ifdef DRMS_CLIENT
+	       drms_send_commandcode(env->session->sockfd, DRMS_GETTMPGUID);
+	       guid = Readlonglong(env->session->sockfd);
+#else
+	       /* has direct access to drms_server.c. */
+	       guid = drms_server_gettmpguid(NULL);
+#endif /* DRMS_CLIENT */
+
+	       snprintf(seriesName, sizeof(seriesName), "su_tmp.%lld", guid);
+
 	    /* Adjust seriesinfo */
 	    AdjustRecordProtoSeriesInfo(env, proto, seriesName);
 	      
@@ -481,9 +852,8 @@ static DRMS_RecordSet_t *OpenLocalRecords(DRMS_Env_t *env,
 
 	 if (stat == DRMS_SUCCESS)
 	 {
-	    /* primary index - series_num and rn */
-	    const char *pkeyarr[2] = {kDSDS_SERIES_NUM, kDSDS_RN};
-	    SetRecordProtoPKeys(proto, pkeyarr, 2, &stat);
+	    /* primary index */
+	    SetRecordProtoPKeys(proto, pkeyarr, nPkeys, &stat);
 	 }
 
 	 if (stat == DRMS_SUCCESS)
@@ -498,6 +868,7 @@ static DRMS_RecordSet_t *OpenLocalRecords(DRMS_Env_t *env,
 					     cached, 
 					     *klarr,
 					     *segarr,
+					     *pkeys != NULL,
 					     kKEYMAPCLASS_LOCAL,
 					     &stat);
 
@@ -524,7 +895,18 @@ static DRMS_RecordSet_t *OpenLocalRecords(DRMS_Env_t *env,
 
 	 *segarr = NULL;
 	 
-	
+	 /* free primary key list */
+	 if (pkeys && *pkeys)
+	 {
+	    free(*pkeys);
+	    *pkeys = NULL;
+	 }
+
+	 for (nPkeys = 0; nPkeys < DRMS_MAXPRIMIDX; nPkeys++)
+	 if (pkeyarr[nPkeys])
+	 {
+	    free(pkeyarr[nPkeys]);
+	 }
       }
    }
    else
@@ -541,10 +923,48 @@ static DRMS_RecordSet_t *OpenLocalRecords(DRMS_Env_t *env,
    /* Clean-up in the case of an error happens in calling function */
 
    return rset;
+}
 
+/* Deep-frees recordsets in realSets container */
+static void RSFree(const void *val)
+{
+   DRMS_RecordSet_t **realPtr = (DRMS_RecordSet_t **)val;
+   DRMS_RecordSet_t *theRS = NULL;
+
+   if (realPtr)
+   {
+      theRS = *realPtr;
+      if (theRS)
+      {
+	 drms_close_records(theRS, DRMS_FREE_RECORD);
+	 /* free(theRS); - don't free, drms_close_records() already does this! */
+      }
+   }
 }
 
 /*********************** Public functions *********************/
+
+DRMS_RecordSet_t *drms_open_localrecords(DRMS_Env_t *env, const char *dsRecSet, int *status)
+{
+   DRMS_RecordSet_t *rs = NULL;
+   int stat = DRMS_SUCCESS;
+   DSDS_KeyList_t **klarr = NULL;
+   DRMS_Segment_t *segarr = NULL;
+   int nRecsLocal = 0;
+   char *pkeys = NULL;
+
+   if (IsLocalSpec(dsRecSet, &klarr, &segarr, &nRecsLocal, &pkeys, &stat))
+   {
+      rs = OpenLocalRecords(env, &klarr, &segarr, nRecsLocal, &pkeys, &stat);
+   }
+
+   if (status)
+   {
+      *status = stat;
+   }
+
+   return rs;
+}
 
 /* dsRecSet may resolve into more than one record (fits file) */
 DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, const char *dsRecSet, int *status)
@@ -620,6 +1040,7 @@ DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, const char *dsRecSet, i
 					 keylistarr, 
 					 segarr, 
 					 nRecs, 
+					 0,
 					 kKEYMAPCLASS_DSDS,
 					 &template,
 					 &seg,
@@ -638,7 +1059,7 @@ DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, const char *dsRecSet, i
 	    if (stat == DRMS_SUCCESS)
 	    {
 	       /* primary index - series_num and rn */
-	       const char *pkeyarr[2] = {kDSDS_SERIES_NUM, kDSDS_RN};
+	       char *pkeyarr[2] = {kDSDS_SERIES_NUM, kDSDS_RN};
 	       SetRecordProtoPKeys(template, pkeyarr, 2, &stat);
 	    }
 
@@ -654,6 +1075,7 @@ DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, const char *dsRecSet, i
 						cached, 
 						keylistarr,
 						segarr,
+						0,
 						kKEYMAPCLASS_DSDS,
 						&stat);
 
@@ -683,211 +1105,6 @@ DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, const char *dsRecSet, i
    return rset;
 }
 
-static int FileFilter(const struct dirent *entry)
-{
-   const char *oneFile = entry->d_name;
-   struct stat stBuf;
-
-   if (oneFile && !stat(oneFile, &stBuf))
-   {
-      if (S_ISREG(stBuf.st_mode) || S_ISLNK(stBuf.st_mode))
-      {
-	 return 1;
-      }
-   }
-
-   return 0;
-}
-
-static int IsLocalSpec(const char *recSetSpec, 
-		       DSDS_KeyList_t ***klarrout, 
-		       DRMS_Segment_t **segarrout,
-		       int *nRecsout,
-		       int *status)
-{
-   int isLocSpec = 0;
-   struct stat stBuf;
-   int lstat = DRMS_SUCCESS;
-   
-   /* Basically, if recSetSpec is a FITS file, directory of FITS files, or 
-    * a link to either of these, then it refers to a set of local files */
-   if (recSetSpec && !stat(recSetSpec, &stBuf) && klarrout && segarrout)
-   {
-      if (S_ISREG(stBuf.st_mode) || S_ISLNK(stBuf.st_mode) || S_ISDIR(stBuf.st_mode))
-      {
-	 /* ensure these files are all fits files - okay to use libdsds.so for now 
-	  * but this should be divorced from Stanford-specific code in the future */
-	 if (!gAttemptedDSDS && !ghDSDS)
-	 {
-	    char lpath[PATH_MAX];
-	    const char *root = getenv(kJSOCROOT);
-	    const char *mach = getenv(kJSOC_MACHINE);
-	    if (root && mach)
-	    {
-	       char *msg = NULL;
-	       snprintf(lpath, 
-			sizeof(lpath), 
-			"%s/lib/%s/libdsds.so", 
-			root, 
-			mach);
-	       dlerror();
-	       ghDSDS = dlopen(lpath, RTLD_NOW);
-	       if ((msg = dlerror()) != NULL)
-	       {
-		  /* dsds library not found */
-		  fprintf(stderr, "dlopen(%s) error: %s.\n", lpath, msg);
-		  lstat = DRMS_ERROR_CANTOPENLIBRARY;
-	       }
-	    }
-
-	    gAttemptedDSDS = 1;
-	 }
-
-	 if (lstat == DRMS_SUCCESS && ghDSDS)
-	 {
-	    DSDS_KeyList_t *kl = NULL;
-	    DRMS_Segment_t *seg = NULL;
-	    int iRec = 0;
-
-	    pDSDSFn_DSDS_read_fitsheader_t pFn_DSDS_read_fitsheader = 
-	      (pDSDSFn_DSDS_read_fitsheader_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_READ_FITSHEADER);
-	    pDSDSFn_DSDS_free_keylist_t pFn_DSDS_free_keylist = 
-	      (pDSDSFn_DSDS_free_keylist_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_FREE_KEYLIST);
-	    pDSDSFn_DSDS_steal_seginfo_t pFn_DSDS_steal_seginfo =
-	      (pDSDSFn_DSDS_steal_seginfo_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_STEAL_SEGINFO);
-	    pDSDSFn_DSDS_free_seg_t pFn_DSDS_free_seg = 
-	      (pDSDSFn_DSDS_free_seg_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_FREE_SEG);
-
-	    /* for each file, check for a valid FITS header */
-	    if (pFn_DSDS_read_fitsheader && pFn_DSDS_free_keylist &&
-		pFn_DSDS_steal_seginfo && pFn_DSDS_free_seg)
-	    {
-	       kDSDS_Stat_t dsdsStat;
-	       int fitshead = 1;
-
-	       if (S_ISREG(stBuf.st_mode) || S_ISLNK(stBuf.st_mode))
-	       {
-		  (*pFn_DSDS_read_fitsheader)(recSetSpec, &kl, &seg, kLocalSegName, &dsdsStat);
-
-		  if (dsdsStat == kDSDS_Stat_Success)
-		  {
-		     *klarrout = (DSDS_KeyList_t **)malloc(sizeof(DSDS_KeyList_t *));
-		     *segarrout = (DRMS_Segment_t *)malloc(sizeof(DRMS_Segment_t));
-
-		     (*klarrout)[0] = kl;
-		     /* For local data, add filepath for use with later calls to 
-		      * drms_segment_read(). */
-		     snprintf((*segarrout)[0].filename, 
-			      DRMS_MAXSEGFILENAME, 
-			      "%s", 
-			      recSetSpec);
-		     (*pFn_DSDS_steal_seginfo)(&((*segarrout)[0]), seg);
-		     (*pFn_DSDS_free_seg)(&seg);
-		     *nRecsout = 1;
-		  }
-		  else
-		  {
-		     fitshead = 0;
-		  }
-	       }
-	       else 
-	       {
-		  struct dirent **fileList = NULL;
-		  int nFiles = -1;
-
-		  if ((nFiles = scandir(recSetSpec, &fileList, FileFilter, NULL)) > 0 && 
-		      fileList != NULL)
-		  {
-		     int fileIndex = 0;
-		     iRec = 0;
-
-		     /* nFiles is the maximum number of fits files possible */
-		     *klarrout = (DSDS_KeyList_t **)malloc(sizeof(DSDS_KeyList_t *) * nFiles);
-		     *segarrout = (DRMS_Segment_t *)malloc(sizeof(DRMS_Segment_t) * nFiles);
-
-		     while (fileIndex < nFiles)
-		     {
-			struct dirent *entry = fileList[fileIndex];
-			if (entry != NULL)
-			{
-			   char *oneFile = entry->d_name;
-			   if (oneFile != NULL && *oneFile !=  '\0' && !stat(oneFile, &stBuf));
-			   {
-			      if (S_ISREG(stBuf.st_mode) || S_ISLNK(stBuf.st_mode))
-			      {
-				 (*pFn_DSDS_read_fitsheader)(oneFile, 
-							     &kl, 
-							     &seg, 
-							     kLocalSegName, 
-							     &dsdsStat);
-
-				 if (dsdsStat == kDSDS_Stat_Success)
-				 {
-				    (*klarrout)[iRec] = kl;
-				    /* For local data, add filepath for use with later calls to 
-				     * drms_segment_read(). */
-				    snprintf((*segarrout)[iRec].filename, 
-					     DRMS_MAXSEGFILENAME, 
-					     "%s", 
-					     oneFile);
-				    (*pFn_DSDS_steal_seginfo)(&((*segarrout)[iRec]), seg);
-				    (*pFn_DSDS_free_seg)(&seg);
-				    iRec++;
-				 }
-				 else
-				 {
-				    fitshead = 0;
-				    break;
-				 }
-			      }
-			   }
-
-			   free(entry);
-			}
-		 
-			fileIndex++;
-		     } /* while */
-
-		     if (nRecsout)
-		     {
-			*nRecsout = iRec;
-		     }
-	      
-		     free(fileList);
-		  }
-	       }
-
-	       isLocSpec = fitshead;
-	    }
-	 }
-      }	 
-   }
-   
-   if (status)
-   {
-      *status = lstat;
-   }
-
-   return isLocSpec;
-}
-
-/* Deep-frees recordsets in realSets container */
-static void RSFree(const void *val)
-{
-   DRMS_RecordSet_t **realPtr = (DRMS_RecordSet_t **)val;
-   DRMS_RecordSet_t *theRS = NULL;
-
-   if (realPtr)
-   {
-      theRS = *realPtr;
-      if (theRS)
-      {
-	 drms_close_records(theRS, DRMS_FREE_RECORD);
-	 /* free(theRS); - don't free, drms_close_records() already does this! */
-      }
-   }
-}
-
 /* recordsetname is a comma-separated list of recordsets.  
  * Must surround DSDS queries with '{' and '}'. 
  */
@@ -905,6 +1122,7 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
   DSDS_KeyList_t **klarr = NULL;
   DRMS_Segment_t *segarr = NULL;
   int nRecsLocal = 0;
+  char *pkeys = NULL;
 
   /* recordsetname is a list of comma-separated record sets
    * commas may appear within record sets, so need to use a parsing 
@@ -925,9 +1143,9 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 
 	if (oneSet && strlen(oneSet) > 0)
 	{
-	   if (IsLocalSpec(oneSet, &klarr, &segarr, &nRecsLocal, &stat))
+	   if (IsLocalSpec(oneSet, &klarr, &segarr, &nRecsLocal, &pkeys, &stat))
 	   {
-	      rs = OpenLocalRecords(env, &klarr, &segarr, nRecsLocal, &stat);
+	      rs = OpenLocalRecords(env, &klarr, &segarr, nRecsLocal, &pkeys, &stat);
 	      if (stat)
 		goto failure;
 	   }

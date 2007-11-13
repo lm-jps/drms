@@ -453,7 +453,15 @@ void drms_segment_destroyinfocon(HContainer_t **info)
    filename must be able the hold at least DRMS_MAXPATHLEN bytes. */
 void drms_segment_filename(DRMS_Segment_t *seg, char *filename)
 {
-   if (seg->info->protocol != DRMS_DSDS)
+   if (seg->info->protocol == DRMS_DSDS)
+   {
+      /* For the DSDS protocol, filename is not used. */
+      if (filename)
+      {
+	 *filename = '\0';
+      }
+   }
+   else if (seg->info->protocol != DRMS_LOCAL)
    {
       if (strlen(seg->filename)) {
 	 if (seg->info->protocol == DRMS_TAS)
@@ -472,14 +480,7 @@ void drms_segment_filename(DRMS_Segment_t *seg, char *filename)
 				  drms_prot2str(seg->info->protocol)), DRMS_MAXPATHLEN);
       }
    }
-   else
-   {
-      /* For the DSDS protocol, filename is not used. */
-      if (filename)
-      {
-	 *filename = '\0';
-      }
-   }
+   /* for DRMS_LOCAL, filename is already set */
 }
 
 /* Delete the file storing the data of a segment. */  
@@ -796,7 +797,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 	fprintf(stdout, "Your JSOC environment does not support DSDS database access.\n");
 	stat = DRMS_ERROR_NODSDSSUPPORT;
      }
-  }
+  } /* protocol DRMS_DSDS */
   else if ((fp = fopen(filename,"r")) == NULL)
   {
     /* No such file. Create a new array filled with MISSING. */

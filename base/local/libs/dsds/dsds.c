@@ -1804,7 +1804,7 @@ int DSDS_read_fitsheader(const char *file,
       *stat = status;
    }
 
-   if (stat == kDSDS_Stat_Success)
+   if (status == kDSDS_Stat_Success)
    {
       if (keylist)
       {

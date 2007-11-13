@@ -579,6 +579,11 @@ void *drms_server_thread(void *arg)
       status = drms_server_dropseries(env, sockfd);
       drms_unlock_server(env);
       break;
+    case DRMS_GETTMPGUID:
+      drms_lock_server(env);
+      drms_server_gettmpguid(&sockfd);
+      drms_unlock_server(env);
+      break;
     default:
       fprintf(stderr,"Error: Unknown command code '%d'\n",command);
     }
@@ -963,9 +968,18 @@ void drms_unlock_server(DRMS_Env_t *env)
     pthread_mutex_unlock( env->drms_lock );
 }
  
+long long drms_server_gettmpguid(int *sockfd)
+{
+   static long long GUID = 1;
 
+   if (sockfd)
+   {
+      Writelonglong(*sockfd, GUID);
+   }
 
-
+   GUID++;
+   return GUID - 1;
+}
 
 /* Loop though all open storage units and delete temporary records
    found there from the DRMS database. */
@@ -1004,7 +1018,6 @@ void drms_delete_temporaries(DRMS_Env_t *env)
     ds = ds->next;
   }
 }
-
 
 
 /****************** SUMS server thread functions **********************/

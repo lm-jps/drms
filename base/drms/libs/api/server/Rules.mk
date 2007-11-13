@@ -7,9 +7,9 @@ d		:= $(dir)
 LIBDRMS		:= $(d)/libdrmsserver.a
 
 # Common to client and server - keep .o files in parent.
-COMMOBJ_$(d)	:= $(addprefix $(d)/../, drms_types.o drms_record.o drms_keyword.o drms_link.o drms_segment.o drms_protocol.o drms_binfile.o drms_series.o drms_parser.o drms_names.o drms_compress.o drms_tasfile.o drms_fits.o drms_array.o drms_keymap.o drms_dsdsapi.o)
+COMMOBJ_$(d)	:= $(addprefix $(d)/../, drms_types.o drms_keyword.o drms_link.o drms_segment.o drms_protocol.o drms_binfile.o drms_series.o drms_parser.o drms_names.o drms_compress.o drms_tasfile.o drms_fits.o drms_array.o drms_keymap.o drms_dsdsapi.o)
 
-OBJ_$(d)	:= $(addprefix $(d)/, drms_client.o drms_env.o drms_storageunit.o drms_server.o)
+OBJ_$(d)	:= $(addprefix $(d)/, drms_client.o drms_env.o drms_record.o drms_storageunit.o drms_server.o)
 
 LIBDRMS_OBJ	:= $(COMMOBJ_$(d)) $(OBJ_$(d))
 

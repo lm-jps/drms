@@ -36,7 +36,7 @@ int drms_server_newslots(DRMS_Env_t *env, int sockfd);
 int drms_server_getunit(DRMS_Env_t *env, int sockfd);
 int drms_server_newseries(DRMS_Env_t *env, int sockfd);
 int drms_server_dropseries(DRMS_Env_t *env, int sockfd);
-
+long long drms_server_gettmpguid(int *sockfd);
 
 int drms_server_alloc_recnum(DRMS_Env_t *env, int sockfd);
 int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients, 

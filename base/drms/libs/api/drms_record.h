@@ -7,6 +7,8 @@
 #define kLocalSegName "local_data" /* Name of segment created when reading 
 				    * fits files from local disk (outside 
 				    * of any database). */
+#define kLocalPrimekey "primekey"
+#define kLocalPrimekeyType DRMS_TYPE_LONGLONG
 
 /************* Constants for mode and action flags etc. *************/
 typedef enum {DRMS_COPY_SEGMENTS, DRMS_SHARE_SEGMENTS} DRMS_CloneAction_t;
@@ -26,6 +28,12 @@ typedef enum {DRMS_FREE_RECORD, DRMS_INSERT_RECORD} DRMS_CloseAction_t;
    the record cache and marked read-only. */
 DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname, 
 				    int *status);
+DRMS_RecordSet_t *drms_open_localrecords(DRMS_Env_t *env, 
+					 const char *dsRecSet, 
+					 int *status);
+DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, 
+					const char *dsRecSet, 
+					int *status);
 
 /* Clone a set of records, i.e. create a new set of records and copy
    the value of keywords, links and segments from the pre-existing
