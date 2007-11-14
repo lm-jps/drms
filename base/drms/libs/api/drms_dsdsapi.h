@@ -83,6 +83,7 @@ typedef void (*pDSDSFn_DSDS_steal_seginfo_t)(DRMS_Segment_t *thief, DRMS_Segment
 typedef DRMS_Array_t *(*pDSDSFn_DSDS_segment_read_t)(char *paramsDesc, 
 						     int ds, 
 						     int rn, 
+						     const char *filename,
 						     kDSDS_Stat_t *stat);
 typedef void (*pDSDSFn_DSDS_free_array_t)(DRMS_Array_t **arr);
 typedef int (*pDSDSFn_DSDS_handle_todesc_t)(DSDS_Handle_t handle, 

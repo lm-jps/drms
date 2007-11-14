@@ -49,6 +49,7 @@ typedef enum Soifn_enum
    kSOI_SDS_ATTRCOMMENT,
    kSOI_SDS_GET_FITS_HEAD,
    kSOI_SDS_FREE,
+   kSOI_SDS_READ_FITS,
    kSOI_NFNS
 } Soifn_t;
 
@@ -82,6 +83,7 @@ char *SoifnNames[] =
    "sds_attrcomment",
    "sds_get_fits_head",
    "sds_free",
+   "sds_read_fits",
    ""
 };
 
@@ -114,6 +116,7 @@ typedef void *(*pSOIFn_sds_attrvalue_t)(ATTRIBUTES *);
 typedef char *(*pSOIFn_sds_attrcomment_t)(ATTRIBUTES *);
 typedef SDS * (*pSOIFn_sds_get_fits_head_t)(char *);
 typedef void (*pSOIFn_sds_free_t)(SDS **);
+typedef SDS * (*pSOIFn_sds_read_fits_t)(FILE *);
 
 /* Global function pointers - don't assign more than once */
 void **gpFn = NULL;
@@ -1024,6 +1027,10 @@ static int LoopAttrs(void *hSOI,
 	 } /* attr loop */
 
       }
+      else
+      {
+	 status = kDSDS_Stat_MissingAPI;
+      }
    }
 
    if (stat)
@@ -1045,7 +1052,7 @@ static void FillDRMSSeg(void *hSOI,
 
    if (hSOI && segout)
    {
-       pSOIFn_sds_rank_t pFn_sds_rank = 
+      pSOIFn_sds_rank_t pFn_sds_rank = 
 	(pSOIFn_sds_rank_t)GetSOIFPtr(hSOI, kSOI_SDS_RANK);
       pSOIFn_sds_length_t pFn_sds_length = 
 	(pSOIFn_sds_length_t)GetSOIFPtr(hSOI, kSOI_SDS_LENGTH);
@@ -1087,6 +1094,10 @@ static void FillDRMSSeg(void *hSOI,
 
 	 status = kDSDS_Stat_Success;
       }
+      else
+      {
+	 status = kDSDS_Stat_MissingAPI;
+      }
    }
 
    if (stat)
@@ -1094,6 +1105,122 @@ static void FillDRMSSeg(void *hSOI,
       *stat = status;
    }
 }
+
+static DRMS_Array_t *CreateDRMSArray(void *hSOI, SDS *sds, kDSDS_Stat_t *stat)
+{
+   DRMS_Array_t *ret = NULL;
+   DRMS_Array_t *local = NULL;
+   kDSDS_Stat_t status = kDSDS_Stat_Success;
+
+   if (hSOI)
+   {
+      pSOIFn_sds_data_t pFn_sds_data =
+	(pSOIFn_sds_data_t)GetSOIFPtr(hSOI, kSOI_SDS_DATA);
+      pSOIFn_sds_datatype_t pFn_sds_datatype =
+	(pSOIFn_sds_datatype_t)GetSOIFPtr(hSOI, kSOI_SDS_DATATYPE);
+      pSOIFn_sds_data_length_t pFn_sds_data_length =
+	(pSOIFn_sds_data_length_t)GetSOIFPtr(hSOI, kSOI_SDS_DATA_LENGTH);
+      pSOIFn_sds_numbytes_t pFn_sds_numbytes =
+	(pSOIFn_sds_numbytes_t)GetSOIFPtr(hSOI, kSOI_SDS_NUMBYTES);
+      pSOIFn_sds_rank_t pFn_sds_rank =
+	(pSOIFn_sds_rank_t)GetSOIFPtr(hSOI, kSOI_SDS_RANK);
+      pSOIFn_sds_length_t pFn_sds_length =
+	(pSOIFn_sds_length_t)GetSOIFPtr(hSOI, kSOI_SDS_LENGTH);
+
+      if (pFn_sds_data && pFn_sds_datatype &&
+	  pFn_sds_data_length && pFn_sds_numbytes &&
+	  pFn_sds_rank && pFn_sds_length)
+      {
+
+	 void *data = (*pFn_sds_data)(sds);
+
+	 /* create DRMS_Array_t */ 
+	 local = (DRMS_Array_t *)calloc(1, sizeof(DRMS_Array_t));
+	 if (local)
+	 {
+	    int datasize = (*pFn_sds_numbytes)(sds);
+	    long long datalen = (*pFn_sds_data_length)(sds) * datasize;
+	    local->type = SOITypeToDRMSType((*pFn_sds_datatype)(sds));
+	    local->naxis = (*pFn_sds_rank)(sds);
+
+	    if (local->naxis < DRMS_MAXRANK)
+	    {
+	       int *dims = (*pFn_sds_length)(sds);
+	       memcpy(local->axis, dims, sizeof(int) * local->naxis);
+
+	       if (data)
+	       {
+		  local->data = calloc(1, datalen);
+		  if (local->data)
+		  {
+		     memcpy(local->data, data, datalen);
+		  }
+		  else
+		  {
+		     status = kDSDS_Stat_NoMemory;
+		  }
+	       }
+	    }
+	    else
+	    {
+	       fprintf(stderr, "Unsupported data rank %d.\n", local->naxis);
+	       status = kDSDS_Stat_InvalidRank;
+	    }
+
+	    if (status == kDSDS_Stat_Success)
+	    {
+	       /* SDS's always created with bzero == 0.0 and bscale = 1.0. */
+	       local->bzero = 0.0;
+	       local->bscale = 1.0;
+	       local->israw = 1; /* bzero and bscale have NOT been applied to data.
+				  * Point is moot because drms_segment_read() will
+				  * change this to 0 if the type requested is 
+				  * anything but DRMS_TYPE_RAW, otherwise it
+				  * is set to 1. */
+	       /* The rest are irrelevant - except parent_segment, which is 
+		* is set in drms_segment_read(). */
+
+	       /* Set offset multiplier. */
+	       int i;
+	       local->dope[0] = datasize;
+	       for (i = 1; i < local->naxis; i++)
+	       {
+		  local->dope[i] = local->dope[i-1] * local->axis[i-1];
+	       }
+
+	       ret = local;
+	    }
+	    else
+	    {
+	       if (local->data)
+	       {
+		  free(local->data);
+		  local->data = NULL;
+	       }
+
+	       free(local);
+	       local = NULL;
+	    }
+	 }
+	 else
+	 {
+	    status = kDSDS_Stat_NoMemory;
+	 }
+      }
+      else
+      {
+	 status = kDSDS_Stat_MissingAPI;
+      }
+   } /* hSOI */
+
+   if (stat)
+   {
+      *stat = status;
+   }
+
+   return ret;
+}
+
 
 /* Creates a prototype DRMS_RecordSet_t that contains containers for keywords and segments 
  *   Cannot call any DRMS functions from here, so just create structures.
@@ -1439,6 +1566,10 @@ long long DSDS_open_records(const char *dsspec,
 	    } /* vds */
 	 } /* dataset loop */
       }
+      else
+      {
+	 status = kDSDS_Stat_MissingAPI;
+      }
    }
 
    if (status == kDSDS_Stat_Success)
@@ -1549,8 +1680,15 @@ void DSDS_steal_seginfo(DRMS_Segment_t *thief, DRMS_Segment_t *victim)
 
 /* keylist must come from series (all recs have the same keylist).  So, in 
  * drms_segment_read(), get record, then seriesinfo, then keylist handle.
+ *
+ * If no paramsDesc is provided, then create an SDS from filename, if it 
+ * exists, otherwise, fail.
  */
-DRMS_Array_t *DSDS_segment_read(char *paramsDesc, int ds, int rn, kDSDS_Stat_t *stat)
+DRMS_Array_t *DSDS_segment_read(char *paramsDesc, 
+				int ds, 
+				int rn, 
+				const char *filename,
+				kDSDS_Stat_t *stat)
 {
    kDSDS_Stat_t status = kDSDS_Stat_Success;
    void *hSOI = GetSOI(&status);
@@ -1559,129 +1697,79 @@ DRMS_Array_t *DSDS_segment_read(char *paramsDesc, int ds, int rn, kDSDS_Stat_t *
 
    if (hSOI)
    {
-      pSOIFn_vds_open_t pFn_vds_open = 
-	(pSOIFn_vds_open_t)GetSOIFPtr(hSOI, kSOI_VDS_OPEN);
-      pSOIFn_VDS_select_rec_t pFn_VDS_select_rec =
-	(pSOIFn_VDS_select_rec_t)GetSOIFPtr(hSOI, kSOI_VDS_SELECT_REC);
-     pSOIFn_vds_close_t pFn_vds_close =
-	(pSOIFn_vds_close_t)GetSOIFPtr(hSOI, kSOI_VDS_CLOSE);
-      pSOIFn_sds_data_t pFn_sds_data =
-	(pSOIFn_sds_data_t)GetSOIFPtr(hSOI, kSOI_SDS_DATA);
-      pSOIFn_sds_free_data_t pFn_sds_free_data =
-	(pSOIFn_sds_free_data_t)GetSOIFPtr(hSOI, kSOI_SDS_FREE_DATA); 
-      pSOIFn_sds_datatype_t pFn_sds_datatype =
-	(pSOIFn_sds_datatype_t)GetSOIFPtr(hSOI, kSOI_SDS_DATATYPE);
-      pSOIFn_sds_data_length_t pFn_sds_data_length =
-	(pSOIFn_sds_data_length_t)GetSOIFPtr(hSOI, kSOI_SDS_DATA_LENGTH);
-      pSOIFn_sds_numbytes_t pFn_sds_numbytes =
-	(pSOIFn_sds_numbytes_t)GetSOIFPtr(hSOI, kSOI_SDS_NUMBYTES);
-      pSOIFn_sds_rank_t pFn_sds_rank =
-	(pSOIFn_sds_rank_t)GetSOIFPtr(hSOI, kSOI_SDS_RANK);
-      pSOIFn_sds_length_t pFn_sds_length =
-	(pSOIFn_sds_length_t)GetSOIFPtr(hSOI, kSOI_SDS_LENGTH);
-
-      SDS *sds = NULL;
-      VDS *vds = NULL;
-      KEY *keylist = NULL;
-      char dsname[kDSDS_MaxKeyName];
-
-      if (pFn_vds_open && pFn_VDS_select_rec && pFn_vds_close &&
-	  pFn_sds_data && pFn_sds_free_data && pFn_sds_datatype &&
-	  pFn_sds_data_length && pFn_sds_numbytes &&
-	  pFn_sds_rank && pFn_sds_length)
+      if (!paramsDesc)
       {
-	 DSDS_Handle_t hparams = FindHandle(paramsDesc);
-	 GetStructure(hparams, (void **)&keylist);
-	 sprintf(dsname, "in_%d", ds);
-	 vds = (*pFn_vds_open)(keylist, dsname);
-	 if (vds)
+	 pSOIFn_sds_read_fits_t pFn_sds_read_fits = 
+	   (pSOIFn_sds_read_fits_t)GetSOIFPtr(hSOI, kSOI_SDS_READ_FITS);
+	 pSOIFn_sds_free_t pFn_sds_free = 
+	   (pSOIFn_sds_free_t)GetSOIFPtr(hSOI, kSOI_SDS_FREE);
+
+	 if (pFn_sds_read_fits && pFn_sds_free)
 	 {
-	    sds = (*pFn_VDS_select_rec)(vds, 0, rn);
-
-	    if (sds)
+	    FILE *fp = fopen(filename, "r");
+	    if (fp)
 	    {
-	       void *data = (*pFn_sds_data)(sds);
-
-	       /* create DRMS_Array_t */ 
-	       local = (DRMS_Array_t *)calloc(1, sizeof(DRMS_Array_t));
-	       if (local)
+	       SDS *sds = (*pFn_sds_read_fits)(fp);
+	       if (sds)
 	       {
-		  int datasize = (*pFn_sds_numbytes)(sds);
-		  long long datalen = (*pFn_sds_data_length)(sds) * datasize;
-		  local->type = SOITypeToDRMSType((*pFn_sds_datatype)(sds));
-		  local->naxis = (*pFn_sds_rank)(sds);
-
-		  if (local->naxis < DRMS_MAXRANK)
-		  {
-		     int *dims = (*pFn_sds_length)(sds);
-		     memcpy(local->axis, dims, sizeof(int) * local->naxis);
-
-		     if (data)
-		     {
-			local->data = calloc(1, datalen);
-			if (local->data)
-			{
-			   memcpy(local->data, data, datalen);
-			}
-			else
-			{
-			   status = kDSDS_Stat_NoMemory;
-			}
-		     }
-		  }
-		  else
-		  {
-		     fprintf(stderr, "Unsupported data rank %d.\n", local->naxis);
-		     status = kDSDS_Stat_InvalidRank;
-		  }
-
-		  if (status == kDSDS_Stat_Success)
-		  {
-		     /* SDS's always created with bzero == 0.0 and bscale = 1.0. */
-		     local->bzero = 0.0;
-		     local->bscale = 1.0;
-		     local->israw = 1; /* bzero and bscale have NOT been applied to data.
-					* Point is moot because drms_segment_read() will
-					* change this to 0 if the type requested is 
-					* anything but DRMS_TYPE_RAW, otherwise it
-					* is set to 1. */
-		     /* The rest are irrelevant - except parent_segment, which is 
-		      * is set in drms_segment_read(). */
-
-		     /* Set offset multiplier. */
-		     int i;
-		     local->dope[0] = datasize;
-		     for (i = 1; i < local->naxis; i++)
-		     {
-			local->dope[i] = local->dope[i-1] * local->axis[i-1];
-		     }
-
-		     ret = local;
-		  }
-		  else
-		  {
-		     if (local->data)
-		     {
-			free(local->data);
-			local->data = NULL;
-		     }
-
-		     free(local);
-		     local = NULL;
-		  }
+		  fclose(fp);
+		  fp = NULL;
+		  local = CreateDRMSArray(hSOI, sds, &status);
+		  (*pFn_sds_free)(&sds);
 	       }
-	       else
-	       {
-		  status = kDSDS_Stat_NoMemory;
-	       }
-
-	       (*pFn_sds_free_data)(sds);
 	    }
-
-	    (*pFn_vds_close)(&vds);
 	 }
-      }    
-   }  
+	 else
+	 {
+	    status = kDSDS_Stat_MissingAPI;
+	 }
+      }
+      else
+      {
+	 pSOIFn_vds_open_t pFn_vds_open = 
+	   (pSOIFn_vds_open_t)GetSOIFPtr(hSOI, kSOI_VDS_OPEN);
+	 pSOIFn_VDS_select_rec_t pFn_VDS_select_rec =
+	   (pSOIFn_VDS_select_rec_t)GetSOIFPtr(hSOI, kSOI_VDS_SELECT_REC);
+	 pSOIFn_vds_close_t pFn_vds_close =
+	   (pSOIFn_vds_close_t)GetSOIFPtr(hSOI, kSOI_VDS_CLOSE);
+	 pSOIFn_sds_free_data_t pFn_sds_free_data =
+	   (pSOIFn_sds_free_data_t)GetSOIFPtr(hSOI, kSOI_SDS_FREE_DATA); 
+
+	 SDS *sds = NULL;
+	 VDS *vds = NULL;
+	 KEY *keylist = NULL;
+	 char dsname[kDSDS_MaxKeyName];
+
+	 if (pFn_vds_open && pFn_VDS_select_rec && pFn_vds_close && pFn_sds_free_data)
+	 {
+	    DSDS_Handle_t hparams = FindHandle(paramsDesc);
+	    GetStructure(hparams, (void **)&keylist);
+	    sprintf(dsname, "in_%d", ds);
+	    vds = (*pFn_vds_open)(keylist, dsname);
+	    if (vds)
+	    {
+	       sds = (*pFn_VDS_select_rec)(vds, 0, rn);
+
+	       if (sds)
+	       {
+		  local = CreateDRMSArray(hSOI, sds, &status);
+		  (*pFn_sds_free_data)(sds);
+	       }
+
+	       (*pFn_vds_close)(&vds);
+	    }
+	 }
+	 else
+	 {
+	    status = kDSDS_Stat_MissingAPI;
+	 }
+      }  
+   }
+
+   if (status == kDSDS_Stat_Success)
+   {
+      ret = local;
+   }
 
    if (stat)
    {
@@ -1796,6 +1884,10 @@ int DSDS_read_fitsheader(const char *file,
 	 {
 	    free(fitsfile);
 	 }
+      }
+      else
+      {
+	 status = kDSDS_Stat_MissingAPI;
       }
    }
 

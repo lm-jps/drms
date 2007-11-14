@@ -677,9 +677,37 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 #ifdef DEBUG
   printf("Trying to open segment file '%s'.\n",filename);
 #endif
-  if (seg->info->protocol == DRMS_DSDS)
+
+  if (seg->info->protocol == DRMS_DSDS || seg->info->protocol == DRMS_LOCAL)
   {
-     /* The DSDS protocol does not use SUMS.  Call into libdsds (if available) 
+     char *dsdsParams;
+     int ds;
+     int rn;
+     char *locfilename;
+
+     if (seg->info->protocol == DRMS_DSDS)
+     {
+	dsdsParams = (char *)malloc(sizeof(char) * kDSDS_MaxHandle);
+	if (DSDS_GetDSDSParams(seg->record->seriesinfo, dsdsParams))
+	{
+	   fprintf(stderr, "Couldn't get DSDS keylist.\n");
+	   goto bailout1;
+	}
+
+	ds = drms_getkey_int(seg->record, kDSDS_DS, &stat);
+	rn = drms_getkey_int(seg->record, kDSDS_RN, &stat);
+
+	locfilename = NULL;
+     }
+     else
+     {
+	dsdsParams = NULL;
+	ds = -1;
+	rn = -1;
+	locfilename = strdup(seg->filename);
+     }
+
+     /* The DSDS and LOCAL protocols do not use SUMS.  Call into libdsds (if available) 
       * to obtain data. */
      static void *hDSDS = NULL;
      static int attempted = 0;
@@ -717,23 +745,13 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 	pDSDSFn_DSDS_free_array_t pFn_DSDS_free_array = 
 	  (pDSDSFn_DSDS_free_array_t)DSDS_GetFPtr(hDSDS, kDSDS_DSDS_FREE_ARRAY);
 
-	char dsdsParams[kDSDS_MaxHandle];
-
-	if (DSDS_GetDSDSParams(seg->record->seriesinfo, dsdsParams))
-	{
-	   fprintf(stderr, "Couldn't get DSDS keylist.\n");
-	   goto bailout1;
-	}
-
 	if (pFn_DSDS_segment_read && pFn_DSDS_free_array)
 	{
-	   int ds = drms_getkey_int(seg->record, kDSDS_DS, &stat);
-	   int rn = drms_getkey_int(seg->record, kDSDS_RN, &stat);
 	   DRMS_Array_t *copy = NULL;
 	   
 	   if (stat == DRMS_SUCCESS)
 	   {
-	      arr = (*pFn_DSDS_segment_read)(dsdsParams, ds, rn, &dsdsStat);
+	      arr = (*pFn_DSDS_segment_read)(dsdsParams, ds, rn, locfilename, &dsdsStat);
 	   }
 	   else
 	   {
@@ -797,7 +815,18 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 	fprintf(stdout, "Your JSOC environment does not support DSDS database access.\n");
 	stat = DRMS_ERROR_NODSDSSUPPORT;
      }
-  } /* protocol DRMS_DSDS */
+
+     if (dsdsParams)
+     {
+	free(dsdsParams);
+     }
+
+     if (locfilename)
+     {
+	free(locfilename);
+     }
+
+  } /* protocols DRMS_DSDS || DRMS_LOCAL */
   else if ((fp = fopen(filename,"r")) == NULL)
   {
     /* No such file. Create a new array filled with MISSING. */
