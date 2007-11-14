@@ -114,6 +114,8 @@ int drms_recproto_setseriesinfo(DRMS_Record_t *rec,
 				int *tapeGroup,
 				const char *description);
 
+DRMS_RecordQueryType_t drms_record_getquerytype(const char *query);
+
 
 /********************************* DRMS Internal functions. **************/
 void drms_free_record(DRMS_Record_t *rec);

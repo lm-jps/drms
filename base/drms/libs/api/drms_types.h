@@ -255,7 +255,12 @@ typedef struct DRMS_SumRequest_struct
 */
 typedef enum {DRMS_PERMANENT, DRMS_TRANSIENT} DRMS_RecLifetime_t;
 
-
+typedef enum DRMS_RecordQueryType_struct
+{
+   kRecordQueryType_DRMS = 0,
+   kRecordQueryType_DSDS,
+   kRecordQueryType_LOCAL
+} DRMS_RecordQueryType_t;
 
 /* Simple container for a set of records. */
 typedef struct DRMS_RecordSet_struct

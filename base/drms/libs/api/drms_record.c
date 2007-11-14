@@ -56,11 +56,13 @@ static int IsLocalSpec(const char *recSetSpec,
 		       int *nRecsout,
 		       char **pkeysout,
 		       int *status);
+static void AddLocalPrimekey(DRMS_Record_t *template, int *status);
 static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
 					DSDS_KeyList_t **keylistarr, 
 					DRMS_Segment_t *segarr,
 					int nRecs,
-					int pkeysSpecified,
+					char **pkeyarr,
+					int nPKeys,
 					DRMS_KeyMapClass_t fitsclass,
 					DRMS_Record_t **proto,
 					DRMS_Segment_t **segout,
@@ -315,21 +317,67 @@ static int IsLocalSpec(const char *recSetSpecIn,
    return isLocSpec;
 }
 
+static void AddLocalPrimekey(DRMS_Record_t *template, int *status)
+{
+   int stat = DRMS_SUCCESS;
+   char drmsKeyName[DRMS_MAXNAMELEN];
+   DRMS_Keyword_t *tKey = NULL;
+
+   snprintf(drmsKeyName, sizeof(drmsKeyName), kLocalPrimekey);
+
+   /* insert into template */
+   XASSERT(tKey = 
+	   hcon_allocslot_lower(&(template->keywords), drmsKeyName));
+   memset(tKey, 0, sizeof(DRMS_Keyword_t));
+   XASSERT(tKey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
+   memset(tKey->info, 0, sizeof(DRMS_KeywordInfo_t));
+	    
+   if (tKey && tKey->info)
+   {
+      /* record */
+      tKey->record = template;
+
+      /* keyword info */
+	      
+      //memcpy(tKey->info, sKey->info, sizeof(DRMS_KeywordInfo_t));
+      snprintf(tKey->info->name, 
+	       DRMS_MAXNAMELEN,
+	       "%s",
+	       drmsKeyName);
+
+      tKey->info->type = DRMS_TYPE_LONGLONG;
+      strcpy(tKey->info->format, "%lld");
+
+      /* default value - missing */
+      drms_missing(tKey->info->type, &(tKey->value));
+   }
+   else
+   {
+      stat = DRMS_ERROR_OUTOFMEMORY;
+   }
+
+   if (status)
+   {
+      *status = stat;
+   }
+}
+
 static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
 					DSDS_KeyList_t **keylistarr, 
 					DRMS_Segment_t *segarr,
 					int nRecs,
-					int pkeysSpecified,
+					char **pkeyarr,
+					int nPKeys,
 					DRMS_KeyMapClass_t fitsclass,
 					DRMS_Record_t **proto,
 					DRMS_Segment_t **segout,
 					int *status)
 {
-
    DRMS_Record_t *template = NULL;
    DRMS_Segment_t *seg = NULL;
    int iRec = 0;
    int stat = DRMS_SUCCESS;
+   int pkeysSpecified = (pkeyarr != NULL);
 	   
    if (stat == DRMS_SUCCESS)
    {
@@ -342,7 +390,6 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
       char drmsKeyName[DRMS_MAXNAMELEN];
       DRMS_Keyword_t *sKey = NULL;
       DRMS_Keyword_t *tKey = NULL;
-	 
 
       template->env = env;
       template->init = 1;
@@ -437,43 +484,42 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
 	 }
       } /* iRec */
 
-      /* Ensure that primary keywords specified exist in fits header */
-      if (fitsclass == kKEYMAPCLASS_LOCAL && !pkeysSpecified)
+      /* Add a keyword that will serve as primary key - not sure what to use here. 
+       * What about an increasing integer? */
+      if (fitsclass == kKEYMAPCLASS_LOCAL)
       {
-	 /* Add a keyword that will serve as primary key - not sure what to use here. 
-	  * What about an increasing integer? 
-	  */
-	 snprintf(drmsKeyName, sizeof(drmsKeyName), kLocalPrimekey);
-
-	 /* insert into template */
-	 XASSERT(tKey = 
-		 hcon_allocslot_lower(&(template->keywords), drmsKeyName));
-	 memset(tKey, 0, sizeof(DRMS_Keyword_t));
-	 XASSERT(tKey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
-	 memset(tKey->info, 0, sizeof(DRMS_KeywordInfo_t));
-	    
-	 if (tKey && tKey->info)
+	 if (!pkeysSpecified)
 	 {
-	    /* record */
-	    tKey->record = template;
-
-	    /* keyword info */
-	      
-	    //memcpy(tKey->info, sKey->info, sizeof(DRMS_KeywordInfo_t));
-	    snprintf(tKey->info->name, 
-		     DRMS_MAXNAMELEN,
-		     "%s",
-		     drmsKeyName);
-
-	    tKey->info->type = DRMS_TYPE_LONGLONG;
-	    strcpy(tKey->info->format, "%lld");
-
-	    /* default value - missing */
-	    drms_missing(tKey->info->type, &(tKey->value));
+	    AddLocalPrimekey(template, &stat);
 	 }
 	 else
 	 {
-	    stat = DRMS_ERROR_OUTOFMEMORY;
+	    /* pkeysSpecified - ensure they exist; if kLocalPrimekey is specified, but
+	     * doesn't exist, add it */
+	    int iKey;
+	    for (iKey = 0; iKey < nPKeys && stat == DRMS_SUCCESS; iKey++)
+	    {
+	       if (!hcon_member_lower(&(template->keywords), pkeyarr[iKey]))
+	       {
+		  if (strcasecmp(pkeyarr[iKey], kLocalPrimekey) == 0)
+		  {
+		     /* user specified kLocalPrimekey, but it doesn't 
+		      * exist in the local data being read in.  This is 
+		      * a special keyword that may have gotten added the last 
+		      * time this code was run, so add it now. */
+		     AddLocalPrimekey(template, &stat);
+		  }
+		  else
+		  {
+		     /* error - user specified a prime keyword that doesn't exist
+		      * in the local data being read in. */
+		     stat = DRMS_ERROR_INVALIDDATA;
+		     fprintf(stderr, 
+			     "keyword %s doesn't exist in fits file header\n", 
+			     pkeyarr[iKey]);
+		  }
+	       }
+	    }
 	 }
       }
    }
@@ -633,7 +679,7 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
 						      DRMS_Record_t *cached,
 						      DSDS_KeyList_t **klarr,
 						      DRMS_Segment_t *segarr,
-						      int pkeysSpecified,
+						      int setPrimeKey,
 						      DRMS_KeyMapClass_t fitsclass,
 						      int *status)
 {
@@ -690,7 +736,7 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
 	 if (fitsclass == kKEYMAPCLASS_LOCAL)
 	 {
 	    /* set and increment primekey (if no prime key specified by user ) */
-	    if (!pkeysSpecified)
+	    if (setPrimeKey)
 	    {
 	       stat = drms_setkey_longlong(rset->records[iRec], 
 					   kLocalPrimekey,
@@ -779,6 +825,7 @@ static DRMS_RecordSet_t *OpenLocalRecords(DRMS_Env_t *env,
 	 DRMS_KeyMapClass_t fitsclass = kKEYMAPCLASS_LOCAL;
 	 char drmsKeyName[DRMS_MAXNAMELEN];
 	 char *pkeyarr[DRMS_MAXPRIMIDX] = {0};
+	 int setPrimeKey = 0;
 
 	 if (pkeys && *pkeys)
 	 {
@@ -797,6 +844,11 @@ static DRMS_RecordSet_t *OpenLocalRecords(DRMS_Env_t *env,
 		  break;
 	       }
 
+	       if (strcasecmp(drmsKeyName, kLocalPrimekey) == 0)
+	       {
+		  setPrimeKey = 1;
+	       }
+
 	       pkeyname = strtok(NULL, ",");
 	       pkeyarr[nPkeys] = strdup(drmsKeyName);
 	       nPkeys++;
@@ -806,6 +858,7 @@ static DRMS_RecordSet_t *OpenLocalRecords(DRMS_Env_t *env,
 	 {
 	    pkeyarr[0] = strdup(kLocalPrimekey);
 	    nPkeys = 1;
+	    setPrimeKey = 1;
 	 }
 
 	 if (stat == DRMS_SUCCESS)
@@ -814,7 +867,8 @@ static DRMS_RecordSet_t *OpenLocalRecords(DRMS_Env_t *env,
 					 *klarr, 
 					 *segarr, 
 					 nRecs, 
-					 *pkeys != NULL,
+					 pkeyarr,
+					 nPkeys,
 					 kKEYMAPCLASS_LOCAL,
 					 &proto,
 					 &seg,
@@ -863,14 +917,17 @@ static DRMS_RecordSet_t *OpenLocalRecords(DRMS_Env_t *env,
 	 }
 
 	 /* create a new record (read-only) for each record */
-	 rset = CreateRecordsFromDSDSKeylist(env,
-					     nRecs, 
-					     cached, 
-					     *klarr,
-					     *segarr,
-					     *pkeys != NULL,
-					     kKEYMAPCLASS_LOCAL,
-					     &stat);
+	 if (stat == DRMS_SUCCESS)
+	 {
+	    rset = CreateRecordsFromDSDSKeylist(env,
+						nRecs, 
+						cached, 
+						*klarr,
+						*segarr,
+						setPrimeKey,
+						kKEYMAPCLASS_LOCAL,
+						&stat);
+	 }
 
 	 /* libdsds created the keylists in the array, it needs to clean them */
 	 (*pFn_DSDS_free_keylistarr)(klarr, nRecs);
@@ -1040,6 +1097,7 @@ DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, const char *dsRecSet, i
 					 keylistarr, 
 					 segarr, 
 					 nRecs, 
+					 NULL,
 					 0,
 					 kKEYMAPCLASS_DSDS,
 					 &template,
@@ -4156,6 +4214,53 @@ int drms_recproto_setseriesinfo(DRMS_Record_t *rec,
    }
 
    return status;
+}
+
+static int IsFileOrDir(const char *q)
+{
+   int ret = 0;
+   char *lbrack = NULL;
+   char *query = strdup(q);
+   struct stat stBuf;
+
+   if (query)
+   {
+      if ((lbrack = strchr(query, '[')) != NULL)
+      {
+	 *lbrack = '\0';      
+      }
+
+      if (!stat(query, &stBuf))
+      {
+	 if (S_ISREG(stBuf.st_mode) || S_ISLNK(stBuf.st_mode) || S_ISDIR(stBuf.st_mode))
+	 {
+	    ret = 1;
+	 }
+      }
+   }
+
+   return ret;
+}
+
+DRMS_RecordQueryType_t drms_record_getquerytype(const char *query)
+{
+   DRMS_RecordQueryType_t ret;
+   const char *pQ = (*query == '{') ? query + 1 : query;
+
+   if (DSDS_IsDSDSSpec(pQ))
+   {
+      ret = kRecordQueryType_DSDS;
+   }
+   else if (IsFileOrDir(query))
+   {
+      ret = kRecordQueryType_LOCAL;
+   }
+   else
+   {
+      ret = kRecordQueryType_DRMS;
+   }
+
+   return ret;
 }
 
 char *drms_record_jsoc_version(DRMS_Env_t *env, DRMS_Record_t *rec) {
