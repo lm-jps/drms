@@ -49,7 +49,6 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets);
 static int FreeRecSetDescArr(char ***sets, int nsets);
 
 /* drms_open_records() helpers */
-static int FileFilter(const struct dirent *entry);
 static int IsLocalSpec(const char *recSetSpec, 
 		       DSDS_KeyList_t ***klarrout, 
 		       DRMS_Segment_t **segarrout,
@@ -96,21 +95,6 @@ static DRMS_RecordSet_t *OpenLocalRecords(DRMS_Env_t *env,
 static void RSFree(const void *val);
 /* end drms_open_records() helpers */
 
-static int FileFilter(const struct dirent *entry)
-{
-   const char *oneFile = entry->d_name;
-   struct stat stBuf;
-
-   if (oneFile && !stat(oneFile, &stBuf))
-   {
-      if (S_ISREG(stBuf.st_mode) || S_ISLNK(stBuf.st_mode))
-      {
-	 return 1;
-      }
-   }
-
-   return 0;
-}
 
 /* A valid local spec is:
  *   ( <file> | <directory> ) { '[' <keyword1>, <keyword2>, <...> ']' }
@@ -235,7 +219,7 @@ static int IsLocalSpec(const char *recSetSpecIn,
 		  struct dirent **fileList = NULL;
 		  int nFiles = -1;
 
-		  if ((nFiles = scandir(recSetSpec, &fileList, FileFilter, NULL)) > 0 && 
+		  if ((nFiles = scandir(recSetSpec, &fileList, NULL, NULL)) > 0 && 
 		      fileList != NULL)
 		  {
 		     int fileIndex = 0;
@@ -251,11 +235,18 @@ static int IsLocalSpec(const char *recSetSpecIn,
 			if (entry != NULL)
 			{
 			   char *oneFile = entry->d_name;
-			   if (oneFile != NULL && *oneFile !=  '\0' && !stat(oneFile, &stBuf));
+			   char dirEntry[PATH_MAX] = {0};
+			   snprintf(dirEntry, 
+				    sizeof(dirEntry), 
+				    "%s%s%s", 
+				    recSetSpec, 
+				    recSetSpec[strlen(recSetSpec) - 1] == '/' ? "" : "/",
+				    oneFile);
+			   if (*dirEntry !=  '\0' && !stat(dirEntry, &stBuf));
 			   {
 			      if (S_ISREG(stBuf.st_mode) || S_ISLNK(stBuf.st_mode))
 			      {
-				 (*pFn_DSDS_read_fitsheader)(oneFile, 
+				 (*pFn_DSDS_read_fitsheader)(dirEntry, 
 							     &kl, 
 							     &seg, 
 							     kLocalSegName, 
@@ -270,7 +261,7 @@ static int IsLocalSpec(const char *recSetSpecIn,
 				    snprintf((*segarrout)[iRec].filename, 
 					     DRMS_MAXSEGFILENAME, 
 					     "%s", 
-					     oneFile);
+					     dirEntry);
 				    (*pFn_DSDS_free_seg)(&seg);
 				    iRec++;
 				 }
@@ -4237,6 +4228,8 @@ static int IsFileOrDir(const char *q)
 	    ret = 1;
 	 }
       }
+
+      free(query);
    }
 
    return ret;

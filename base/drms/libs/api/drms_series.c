@@ -645,6 +645,14 @@ static int drms_series_pkeysmatch(DRMS_Env_t *drmsEnv,
       if (*status == DRMS_SUCCESS)
       {
 	 ret = drms_series_intpkeysmatch(recTemp1, pkArray1, nPKeys1, recTemp2, pkArray2, nPKeys2);
+
+	 if (!ret)
+	 {
+	    fprintf(stdout, 
+		    "Series %s prime key does not match series %s prime key.\n",
+		    series1,
+		    series2);
+	 }
       }
 
       if (pkArray1)
@@ -756,6 +764,11 @@ static int drms_series_creatematchsegs(DRMS_Env_t *drmsEnv,
 						 s2RecTempl,
 						 matchSegs,
 						 status);
+
+	 if (nMatch == 0)
+	 {
+	    fprintf(stdout, "Series %s and %s have no matching segments.\n", series1, series2);
+	 }
       }
    }
    else
@@ -856,6 +869,11 @@ int drms_series_checkseriescompat(DRMS_Env_t *drmsEnv,
    {
       /* Create a list of matching segments, if they exist. */
       nMatch = drms_series_creatematchsegs(drmsEnv, series1, series2, matchSegs, status);
+
+      if (nMatch == 0)
+      {
+	 fprintf(stdout, "Series %s and %s have no matching segments.\n", series1, series2);
+      }
    }
 
    if (*status == DRMS_SUCCESS)
@@ -916,6 +934,21 @@ int drms_series_checkrecordcompat(DRMS_Env_t *drmsEnv,
 						       recTempl, 
 						       matchSegs, 
 						       status);
+
+	       if (nMatch == 0)
+	       {
+		  fprintf(stdout, 
+			  "No series %s segment matches a series %s segment.\n",
+			  recTempl->seriesinfo->seriesname,
+			  series);  
+	       }
+	    }
+	    else
+	    {
+	       fprintf(stdout, 
+		       "Series %s prime key does not match series %s prime key.\n",
+		       recTempl->seriesinfo->seriesname,
+		       series);
 	    }
 	 }
       }
