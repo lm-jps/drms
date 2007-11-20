@@ -379,142 +379,137 @@ static inline int drms_array_setlonglong(DRMS_Array_t *arr, int *indexarr, long 
    return DRMS_ERROR_INVALIDDATA;
 }
 
-static inline int drms_array_setfloat_ext(DRMS_Array_t *arr, long long index, float value)
-{
-   if (arr->type == DRMS_TYPE_FLOAT)
-   {
-      float *p = arr->data;
-      p[index] = value;
-      return DRMS_SUCCESS;
-   }
+static inline int drms_array_setfloat_ext (DRMS_Array_t *arr, long long index,
+    float value) {
+  if (arr->type == DRMS_TYPE_FLOAT) {
+    float *p = arr->data;
+    p[index] = value;
+    return DRMS_SUCCESS;
+  }
    
-   return DRMS_ERROR_INVALIDDATA;
+  return DRMS_ERROR_INVALIDDATA;
 }
 
-static inline int drms_array_setfloat(DRMS_Array_t *arr, int *indexarr, float value)
-{
-  if (arr->type == DRMS_TYPE_FLOAT)
-  {
-     int index = drms_array_offset(arr, indexarr);
-     float *p = arr->data;
-     p[index] = value;
-     return DRMS_SUCCESS;
+static inline int drms_array_setfloat (DRMS_Array_t *arr, int *indexarr,
+    float value) {
+  if (arr->type == DRMS_TYPE_FLOAT) {
+    int index = drms_array_offset (arr, indexarr);
+    float *p = arr->data;
+    p[index] = value;
+    return DRMS_SUCCESS;
   }
 
-   return DRMS_ERROR_INVALIDDATA;
+  return DRMS_ERROR_INVALIDDATA;
 }
 
-static inline int drms_array_setdouble_ext(DRMS_Array_t *arr, long long index, double value)
-{
-   if (arr->type == DRMS_TYPE_DOUBLE)
-   {
-      double *p = arr->data;
-      p[index] = value;
-      return DRMS_SUCCESS;
-   }
+static inline int drms_array_setdouble_ext (DRMS_Array_t *arr, long long index,
+    double value) {
+  if (arr->type == DRMS_TYPE_DOUBLE) {
+    double *p = arr->data;
+    p[index] = value;
+    return DRMS_SUCCESS;
+  }
    
-   return DRMS_ERROR_INVALIDDATA;
+  return DRMS_ERROR_INVALIDDATA;
 }
 
-static inline int drms_array_setdouble(DRMS_Array_t *arr, int *indexarr, double value)
-{
-  if (arr->type == DRMS_TYPE_DOUBLE)
-  {
-     int index = drms_array_offset(arr, indexarr);
-     double *p = arr->data;
-     p[index] = value;
-     return DRMS_SUCCESS;
+static inline int drms_array_setdouble (DRMS_Array_t *arr, int *indexarr,
+    double value) {
+  if (arr->type == DRMS_TYPE_DOUBLE) {
+    int index = drms_array_offset (arr, indexarr);
+    double *p = arr->data;
+    p[index] = value;
+    return DRMS_SUCCESS;
   }
 
-   return DRMS_ERROR_INVALIDDATA;
+  return DRMS_ERROR_INVALIDDATA;
 }
 
-static inline int drms_array_settime_ext(DRMS_Array_t *arr, long long index, double value)
-{
-   if (arr->type == DRMS_TYPE_TIME)
-   {
-      double *p = arr->data;
-      p[index] = value;
-      return DRMS_SUCCESS;
-   }
-   
-   return DRMS_ERROR_INVALIDDATA;
-}
-
-static inline int drms_array_settime(DRMS_Array_t *arr, int *indexarr, double value)
-{
-  if (arr->type == DRMS_TYPE_TIME)
-  {
-     int index = drms_array_offset(arr, indexarr);
-     double *p = arr->data;
-     p[index] = value;
-     return DRMS_SUCCESS;
+static inline int drms_array_settime_ext (DRMS_Array_t *arr, long long index,
+    double value) {
+  if (arr->type == DRMS_TYPE_TIME) {
+    double *p = arr->data;
+    p[index] = value;
+    return DRMS_SUCCESS;
   }
-
-   return DRMS_ERROR_INVALIDDATA;
-}
-
-static inline int drms_array_setstring_ext(DRMS_Array_t *arr, long long index, char *value)
-{
-   if (arr->type == DRMS_TYPE_STRING)
-   {
-      char **p = arr->data;
-      p[index] = value;
-      return DRMS_SUCCESS;
-   }
    
-   return DRMS_ERROR_INVALIDDATA;
+  return DRMS_ERROR_INVALIDDATA;
 }
 
-static inline int drms_array_setstring(DRMS_Array_t *arr, int *indexarr, char *value)
-{
-  if (arr->type == DRMS_TYPE_STRING)
-  {
-     int index = drms_array_offset(arr, indexarr);
+static inline int drms_array_settime (DRMS_Array_t *arr, int *indexarr,
+    double value) {
+  if (arr->type == DRMS_TYPE_TIME) {
+    int index = drms_array_offset (arr, indexarr);
+    double *p = arr->data;
+    p[index] = value;
+    return DRMS_SUCCESS;
+  }
+  return DRMS_ERROR_INVALIDDATA;
+}
+
+static inline int drms_array_setstring_ext (DRMS_Array_t *arr, long long index,
+    char *value) {
+  if (arr->type == DRMS_TYPE_STRING) {
      char **p = arr->data;
      p[index] = value;
      return DRMS_SUCCESS;
   }
-
-   return DRMS_ERROR_INVALIDDATA;
+  return DRMS_ERROR_INVALIDDATA;
 }
 
-DRMS_Array_t *drms_array_permute(DRMS_Array_t *src, int *perm, int *status);
+static inline int drms_array_setstring (DRMS_Array_t *arr, int *indexarr,
+    char *value) {
+  if (arr->type == DRMS_TYPE_STRING) {
+    int index = drms_array_offset (arr, indexarr);
+    char **p = arr->data;
+    p[index] = value;
+    return DRMS_SUCCESS;
+  }
+  return DRMS_ERROR_INVALIDDATA;
+}
 
-void drms_array_print(DRMS_Array_t *arr, const char *colsep, 
-		      const char *rowsep);
+DRMS_Array_t *drms_array_permute (DRMS_Array_t *src, int *perm, int *status);
 
-DRMS_Array_t *drms_array_create(DRMS_Type_t type, int naxis, 
-				int *axis, void *data, int *status);
-void drms_free_array(DRMS_Array_t *src);
+void drms_array_print (DRMS_Array_t *arr, const char *colsep,
+    const char *rowsep);
 
-DRMS_Array_t *drms_array_convert(DRMS_Type_t dsttype, double bzero, 
-				 double bscale, DRMS_Array_t *src);
+DRMS_Array_t *drms_array_create(DRMS_Type_t type, int naxis, int *axis,
+    void *data, int *status);
 
-void drms_array_convert_inplace(DRMS_Type_t newtype, double bzero, 
-				double bscale, DRMS_Array_t *src);
+void drms_free_array (DRMS_Array_t *src);
 
-void drms_array2missing(DRMS_Array_t *arr);
+DRMS_Array_t *drms_array_convert (DRMS_Type_t dsttype, double bzero,
+    double bscale, DRMS_Array_t *src);
 
-DRMS_Array_t *drms_array_slice(int *start, int *end, DRMS_Array_t *src);
+void drms_array_convert_inplace (DRMS_Type_t newtype, double bzero,
+    double bscale, DRMS_Array_t *src);
+
+void drms_array2missing (DRMS_Array_t *arr);
+
+DRMS_Array_t *drms_array_slice (int *start, int *end, DRMS_Array_t *src);
 
 
 /**** Internal functions (not for modules) ****/
 
-int drms_array_rawconvert(int n, DRMS_Type_t dsttype, double bzero, 
-			  double bscale, void *dst, DRMS_Type_t srctype, 
-			  void *src);
+int drms_array_rawconvert (int n, DRMS_Type_t dsttype, double bzero, 
+    double bscale, void *dst, DRMS_Type_t srctype, void *src);
 
 /* Low level array conversion functions. */
-int drms_array2char(int n, DRMS_Type_t src_type, double bzero, double bscale, void *src, char *dst);
-int drms_array2short(int n, DRMS_Type_t src_type, double bzero, double bscale, void *src, short *dst);
-int drms_array2int(int n, DRMS_Type_t src_type, double bzero, double bscale, void *src, int *dst);
-int drms_array2longlong(int n, DRMS_Type_t src_type, double bzero, double bscale, void *src, long long *dst);
-int drms_array2float(int n, DRMS_Type_t src_type, double bzero, double bscale, void *src, float *dst);
-int drms_array2double(int n, DRMS_Type_t src_type, double bzero, double bscale, void *src, double *dst);
-int drms_array2time(int n, DRMS_Type_t src_type, double bzero, double bscale, void *src, double *dst);
-int drms_array2string(int n, DRMS_Type_t src_type, double bzero, double bscale, void *src, char **dst);
-
-
+int drms_array2char (int n, DRMS_Type_t src_type, double bzero, double bscale,
+    void *src, char *dst);
+int drms_array2short (int n, DRMS_Type_t src_type, double bzero, double bscale,
+    void *src, short *dst);
+int drms_array2int (int n, DRMS_Type_t src_type, double bzero, double bscale,
+    void *src, int *dst);
+int drms_array2longlong (int n, DRMS_Type_t src_type, double bzero,
+    double bscale, void *src, long long *dst);
+int drms_array2float (int n, DRMS_Type_t src_type, double bzero, double bscale,
+    void *src, float *dst);
+int drms_array2double (int n, DRMS_Type_t src_type, double bzero, double bscale,
+    void *src, double *dst);
+int drms_array2time (int n, DRMS_Type_t src_type, double bzero, double bscale,
+    void *src, double *dst);
+int drms_array2string (int n, DRMS_Type_t src_type, double bzero, double bscale,
+    void *src, char **dst);
 
 #endif
