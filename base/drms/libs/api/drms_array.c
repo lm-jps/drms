@@ -173,7 +173,7 @@ int drms_array_rawconvert (int n, DRMS_Type_t dsttype, double bzero,
       stat = drms_array2time (n, srctype, bzero, bscale, src, (double *)dst);
       break;
     case DRMS_TYPE_STRING: 
-      stat = drms_array2string(n, srctype, bzero, bscale, src, (char **)dst);
+      stat = drms_array2string (n, srctype, bzero, bscale, src, (char **)dst);
       break;
     default:
       fprintf (stderr, "ERROR: Unhandled DRMS type %d\n", (int)dsttype);    
@@ -270,7 +270,7 @@ void drms_array_print (DRMS_Array_t *arr, const char *colsep,
 	  printf("%s",colsep);
 	  drms_printfval_raw (arr->type, p);
 	}
-        printf("%s",rowsep);
+        printf ("%s",rowsep);
       }
       break;
     default:
@@ -278,12 +278,12 @@ void drms_array_print (DRMS_Array_t *arr, const char *colsep,
 #ifdef DEBUG
       printf ("count = %d, sz = %d\n", count, sz);
 #endif
-      memset(index,0,arr->naxis*sizeof(int));
+      memset (index, 0, arr->naxis*sizeof(int));
 //    chunk = sz*arr->axis[0]*arr->axis[1];
     i = 0;
     while (i < count ) {
       printf ("array");
-      for (j=arr->naxis-1; j>1; j--) printf("[%d]", index[j]);
+      for (j=arr->naxis-1; j>1; j--) printf ("[%d]", index[j]);
       printf ("[*][*] = \n");
       for (j=2; j<arr->naxis-1; j++) {
 	if (index[j] == arr->axis[j]-1) {
