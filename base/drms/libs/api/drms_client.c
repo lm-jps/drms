@@ -25,6 +25,12 @@
  *	drms_sequence_getcurrent
  *	drms_sequence_getlast
  *	drms_alloc_recnum
+ *	drms_getunit
+ *	drms_newslots
+ *	drms_slot_setstate
+ *	drms_create_series
+ *	drms_update_series
+ *	drms_create_series_fromprototype
  */
 #include "drms.h"
 //#include "xmem.h"
