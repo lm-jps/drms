@@ -1,3 +1,10 @@
+/*
+ *  drms_compress.c						2007.11.21
+ *
+ *  functions defined:
+ *	drms_compress
+ *	drms_uncompress
+ */
 #include "drms.h"
 #include <zlib.h>
 
@@ -15,24 +22,23 @@ static int drms_uncompress_gzip(int nin, unsigned char *in,
 				DRMS_Type_t type, int maxout, void *out);
 
 
-int drms_compress(DRMS_Compress_t method, DRMS_Type_t type, int nin, void *in, 
-		  int maxout, unsigned char *out)
-{
+int drms_compress (DRMS_Compress_t method, DRMS_Type_t type, int nin, void *in,
+    int maxout, unsigned char *out) {
   int sz;
   switch(method)
   {   
   case DRMS_COMP_NONE:
-    sz = drms_sizeof(type);
+    sz = drms_sizeof (type);
     if (sz*nin > maxout )
       return DRMS_ERROR_OUTOFMEMORY;
-    memcpy(out,in,sz*nin);
+    memcpy (out,in,sz*nin);
     return sz*nin;
     break;
   case DRMS_COMP_RICE:
-    return drms_compress_rice(type, nin, in, maxout, out);
+    return drms_compress_rice (type, nin, in, maxout, out);
     break;
   case DRMS_COMP_GZIP:
-    return drms_compress_gzip(type, nin, in, maxout, out);
+    return drms_compress_gzip (type, nin, in, maxout, out);
     break;
   default:
     return DRMS_ERROR_UNKNOWNCOMPMETH;
@@ -86,34 +92,25 @@ static int drms_compress_gzip(DRMS_Type_t type, int nin, void *in,
   else
     return DRMS_ERROR_COMPRESSFAILED;
 }
-
-
-
-
-
-
-
-
-
-
-int drms_uncompress(DRMS_Compress_t method, int nin, unsigned char *in, 
-		    DRMS_Type_t type, int nout, void *out)
-{
+/*
+ *
+ */
+int drms_uncompress (DRMS_Compress_t method, int nin, unsigned char *in,
+    DRMS_Type_t type, int nout, void *out) {
   int sz;
-  switch(method)
-  {   
+  switch (method) {   
   case DRMS_COMP_NONE:
-    sz = drms_sizeof(type);
+    sz = drms_sizeof (type);
     if (sz*nout > nin )
       return DRMS_ERROR_OUTOFMEMORY;
-    memcpy(out,in,sz*nout);
+    memcpy (out, in, sz*nout);
     return nout;
     break;
   case DRMS_COMP_RICE:
-    return drms_uncompress_rice(nin, in, type, nout, out);
+    return drms_uncompress_rice (nin, in, type, nout, out);
     break;
   case DRMS_COMP_GZIP:
-    return drms_uncompress_gzip(nin, in, type, nout, out);
+    return drms_uncompress_gzip (nin, in, type, nout, out);
     break;
   default:
     return DRMS_ERROR_UNKNOWNCOMPMETH;
