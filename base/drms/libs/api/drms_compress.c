@@ -20,8 +20,9 @@ static int drms_uncompress_rice(int nin, unsigned char *in,
 				DRMS_Type_t type, int maxout, void *out);
 static int drms_uncompress_gzip(int nin, unsigned char *in, 
 				DRMS_Type_t type, int maxout, void *out);
-
-
+/*
+ *
+ */
 int drms_compress (DRMS_Compress_t method, DRMS_Type_t type, int nin, void *in,
     int maxout, unsigned char *out) {
   int sz;
@@ -44,53 +45,51 @@ int drms_compress (DRMS_Compress_t method, DRMS_Type_t type, int nin, void *in,
     return DRMS_ERROR_UNKNOWNCOMPMETH;
   }
 }
-
-
-static int drms_compress_rice(DRMS_Type_t type, int nin, void *in, 
-			      int maxout, unsigned char *out)
-{
+/*
+ *
+ */
+static int drms_compress_rice (DRMS_Type_t type, int nin, void *in, 
+    int maxout, unsigned char *out) {
   int stat;
-  switch(type)
-  {
+  switch(type) {
   case DRMS_TYPE_CHAR: 
-    stat = rice_encode1(in, nin, (unsigned char *)out, maxout, 32);
+    stat = rice_encode1 (in, nin, (unsigned char *)out, maxout, 32);
     if (stat < 0)     
       return DRMS_ERROR_COMPRESSFAILED;
     else
       return stat;
     break;
   case DRMS_TYPE_SHORT:
-    stat = rice_encode2(in, nin, (unsigned char *)out, maxout, 32);
+    stat = rice_encode2 (in, nin, (unsigned char *)out, maxout, 32);
     if (stat < 0)     
       return DRMS_ERROR_COMPRESSFAILED;
     else
       return stat;
     break;
   case DRMS_TYPE_INT:  
-    stat = rice_encode4(in, nin, (unsigned char *)out, maxout, 32);
+    stat = rice_encode4 (in, nin, (unsigned char *)out, maxout, 32);
     if (stat < 0)     
       return DRMS_ERROR_COMPRESSFAILED;
     else
       return stat;
     break;
   default:
-    fprintf(stderr, "ERROR in drms_compress: Unhandled DRMS type %d\n",(int)type);
+    fprintf (stderr, "ERROR in drms_compress: Unhandled DRMS type %d\n"
+        (int)type);
     return DRMS_ERROR_INVALIDTYPE;
     break;
   }
 }
-
-
-static int drms_compress_gzip(DRMS_Type_t type, int nin, void *in, 
-			      int maxout, unsigned char *out)
-{
+/*
+ *
+ */
+static int drms_compress_gzip (DRMS_Type_t type, int nin, void *in, 
+    int maxout, unsigned char *out) {
   int stat;
   unsigned long zlen = maxout;
   stat = compress (out, &zlen, in, nin*drms_sizeof(type));
-  if (stat == Z_OK)
-    return zlen;
-  else
-    return DRMS_ERROR_COMPRESSFAILED;
+  if (stat == Z_OK) return zlen;
+  else return DRMS_ERROR_COMPRESSFAILED;
 }
 /*
  *
@@ -116,49 +115,49 @@ int drms_uncompress (DRMS_Compress_t method, int nin, unsigned char *in,
     return DRMS_ERROR_UNKNOWNCOMPMETH;
   }
 }
-
-
-static int drms_uncompress_rice(int nin, unsigned char *in, DRMS_Type_t type,  
-				int nout, void *out)
-{
+/*
+ *
+ */
+static int drms_uncompress_rice (int nin, unsigned char *in, DRMS_Type_t type,  
+    int nout, void *out) {
   int stat;
-  switch(type)
-  {
+  switch(type) {
   case DRMS_TYPE_CHAR: 
-    stat = rice_decode1(in, nin, (char *)out, nout, 32);
+    stat = rice_decode1 (in, nin, (char *)out, nout, 32);
     if (stat < 0)     
       return DRMS_ERROR_COMPRESSFAILED;
     else
       return nout;
     break;
   case DRMS_TYPE_SHORT:
-    stat = rice_decode2(in, nin, (int16_t *)out, nout, 32);
+    stat = rice_decode2 (in, nin, (int16_t *)out, nout, 32);
     if (stat < 0)     
       return DRMS_ERROR_COMPRESSFAILED;
     else
       return nout;
     break;
   case DRMS_TYPE_INT:  
-    stat = rice_decode4(in, nin, (int32_t *)out, nout, 32);
+    stat = rice_decode4 (in, nin, (int32_t *)out, nout, 32);
     if (stat < 0)     
       return DRMS_ERROR_COMPRESSFAILED;
     else
       return nout;
     break;
   default:
-    fprintf(stderr, "ERROR in drms_compress: Unhandled DRMS type %d\n",(int)type);
+    fprintf (stderr, "ERROR in drms_compress: Unhandled DRMS type %d\n",
+        (int)type);
     return DRMS_ERROR_INVALIDTYPE;
     break;
   }
 }
-
-
-static int drms_uncompress_gzip(int nin, unsigned char *in, DRMS_Type_t type, 
-				int nout, void *out)
-{
+/*
+ *
+ */
+static int drms_uncompress_gzip (int nin, unsigned char *in, DRMS_Type_t type, 
+    int nout, void *out) {
   int stat, sz=drms_sizeof(type);
   unsigned long len = nout*sz;
-  stat = uncompress(out, &len, in, nin);
+  stat = uncompress (out, &len, in, nin);
   if (stat == Z_OK)
     return len/sz;
   else
