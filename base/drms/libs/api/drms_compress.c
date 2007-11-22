@@ -74,8 +74,7 @@ static int drms_compress_rice (DRMS_Type_t type, int nin, void *in,
       return stat;
     break;
   default:
-    fprintf (stderr, "ERROR in drms_compress: Unhandled DRMS type %d\n"
-        (int)type);
+    fprintf (stderr, "ERROR in drms_compress: Unhandled DRMS type %d\n", (int)type);
     return DRMS_ERROR_INVALIDTYPE;
     break;
   }
