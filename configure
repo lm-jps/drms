@@ -45,6 +45,11 @@ if ($CHKLIBS == "no") then
 	find . -name "*.*" -exec rm {} \;
 	cd ../..
     endif
+    if (-d man/man5) then
+	cd man/man5
+	find . -name "*.*" -exec rm {} \;
+	cd ../..
+    endif
     echo "done"
 
     echo -n "Removing links to headers..."
@@ -107,10 +112,15 @@ if ($CHKLIBS == "no") then
 	if (!(-d man/man3)) then
 	    mkdir -p man/man3
 	endif
+	if (!(-d man/man5)) then
+	    mkdir -p man/man5
+	endif
 	cd man/man1
-	find ../.. -path '../../man/man1' -prune -o -path '*/man/man1/*.1' -exec ln -s {} . \;
+	find ../.. -path '../../man/man1' -prune -o -path '*/man/man1/*.1*' -exec ln -s {} . \;
 	cd ../../man/man3
-	find ../.. -path '../../man/man3' -prune -o -path '*/man/man3/*.3' -exec ln -s {} . \;
+	find ../.. -path '../../man/man3' -prune -o -path '*/man/man3/*.3*' -exec ln -s {} . \;
+	cd ../../man/man5
+	find ../.. -path '../../man/man5' -prune -o -path '*/man/man5/*.5*' -exec ln -s {} . \;
 	cd ../..
 	echo "done"
 
