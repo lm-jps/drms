@@ -1,3 +1,17 @@
+/*
+ *  drms_series.c						2007.11.26
+ *
+ *  functions defined:
+ *	drms_series_exists
+ *	drms_insert_series
+ *	drms_delete_series
+ *	drms_series_createpkeyarray
+ *	drms_series_destroypkeyarray
+ *	drms_series_checkseriescompat
+ *	drms_series_checkrecordcompat
+ *	drms_series_checkkeycompat
+ *	drms_series_checksegcompat
+ */
 //#define DEBUG
 #define _GNU_SOURCE
 #include "drms.h"
@@ -7,25 +21,19 @@
 extract namespace from series name. 
 return error if no '.' present
 */ 
-static int get_namespace(char *seriesname, char **namespace, char **shortname) {
-  if (strchr(seriesname, '.')) {
-    char *p = seriesname;
-    while (*p != '.') {
-      p++;
-    }
-    *namespace = strndup(seriesname, p-seriesname);
-    if (shortname) {
-      *shortname = strdup(p+1);
-    }
+static int get_namespace (char *sername, char **namespace, char **shortname) {
+  if (strchr (sername, '.')) {
+    char *p = sername;
+    while (*p != '.') p++;
+    *namespace = strndup (sername, p-sername);
+    if (shortname) *shortname = strdup (p+1);
     return 0;
-  } else {
-    return 1;
-  }
+  } else return 1;
 }
-
-
-int drms_series_exists(DRMS_Env_t *drmsEnv, const char *sname, int *status)
-{
+/*
+ *
+ */
+int drms_series_exists (DRMS_Env_t *drmsEnv, const char *sname, int *status) {
    int ret = 0;
 
    if (sname != NULL && *sname != '\0')
@@ -48,7 +56,6 @@ int drms_series_exists(DRMS_Env_t *drmsEnv, const char *sname, int *status)
 
    return ret;
 }
-
 /* Create/update the database tables and entries for a new/existing series.
    The series is created from the information in the series template record
    given in the argument "template".
@@ -56,9 +63,8 @@ int drms_series_exists(DRMS_Env_t *drmsEnv, const char *sname, int *status)
    created. If update=0 and a series of the same name already exists an
    error code is returned.
 */
-int drms_insert_series(DRMS_Session_t *session, int update, 
-		       DRMS_Record_t *template, int perms)
-{
+int drms_insert_series (DRMS_Session_t *session, int update,
+    DRMS_Record_t *template, int perms) {
   int n, i, len=0, segnum;
   char *pidx_buf=0, scopestr[100], *axisstr=0;
   DRMS_SeriesInfo_t *si;
@@ -439,11 +445,10 @@ int drms_insert_series(DRMS_Session_t *session, int update,
   free(createstmt);
   return 1;
 }
-
-
-
-int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
-{
+/*
+ *
+ */
+int drms_delete_series (DRMS_Env_t *env, char *series, int cascade) {
   char query[1024], *series_lower, *namespace;
   DB_Binary_Result_t *qres;
   DRMS_Session_t *session;
@@ -527,42 +532,26 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
   free(namespace);
   return 1;
 }
-
-static int drms_series_keynamesort(const void *first, const void *second)
-{
-   if (first && second)
-   {
+/*
+ *
+ */
+static int drms_series_keynamesort (const void *first, const void *second) {
+   if (first && second) {
       const char *rFirst = *((const char **)first);
       const char *rSecond = *((const char **)second);
 
-      if (!rFirst && !rSecond)
-      {
-	 return 0;
-      }
-      else if (!rFirst)
-      {
-	 return 1;
-      }
-      else if (!rSecond)
-      {
-	 return -1;
-      }
-      else
-      {
-	 return strcmp(rFirst, rSecond);
-      }
+      if (!rFirst && !rSecond) return 0;
+      else if (!rFirst) return 1;
+      else if (!rSecond) return -1;
+      else return strcmp (rFirst, rSecond);
    }
-
    return 0;
 }
-
-static int drms_series_intpkeysmatch(DRMS_Record_t *recTemp1, 
-				     char **pkArray1, 
-				     int nPKeys1, 
-				     DRMS_Record_t *recTemp2, 
-				     char **pkArray2, 
-				     int nPKeys2)
-{
+/*
+ *
+ */
+static int drms_series_intpkeysmatch (DRMS_Record_t *recTemp1, char **pkArray1,
+    int nPKeys1, DRMS_Record_t *recTemp2, char **pkArray2, int nPKeys2) {
    int ret = 0;
 
    if (nPKeys1 == nPKeys2)
@@ -579,8 +568,8 @@ static int drms_series_intpkeysmatch(DRMS_Record_t *recTemp1,
       {
 	 if (strcmp(pkArray1[i], pkArray2[i]) == 0)
 	 {
-	    key1 = hcon_lookup_lower(&(recTemp1->keywords), pkArray1[i]);
-	    key2 = hcon_lookup_lower(&(recTemp2->keywords), pkArray1[i]);
+	    key1 = hcon_lookup_lower (&(recTemp1->keywords), pkArray1[i]);
+	    key2 = hcon_lookup_lower (&(recTemp2->keywords), pkArray1[i]);
 	    
 	    XASSERT(key1 != NULL && key2 != NULL);
 	    if (key1 != NULL && key2 != NULL)
@@ -611,14 +600,13 @@ static int drms_series_intpkeysmatch(DRMS_Record_t *recTemp1,
 
    return ret;
 }
-
+/*
+ *
+ */
 /* Returns 0 on error. */
 /* Returns 1 if keys2 is equal to keys1. */
-static int drms_series_pkeysmatch(DRMS_Env_t *drmsEnv, 
-				  const char *series1, 
-				  const char *series2, 
-				  int *status)
-{
+static int drms_series_pkeysmatch (DRMS_Env_t *drmsEnv, const char *series1,
+    const char *series2, int *status) {
    int ret = 0;
 
    int nPKeys1 = 0;
@@ -629,22 +617,22 @@ static int drms_series_pkeysmatch(DRMS_Env_t *drmsEnv,
 
    if (*status == DRMS_SUCCESS)
    {
-      recTemp2 = drms_template_record(drmsEnv, series2, status);
+      recTemp2 = drms_template_record (drmsEnv, series2, status);
    }
 
    if (*status == DRMS_SUCCESS)
    {
-      char **pkArray1 = drms_series_createpkeyarray(drmsEnv, series1, &nPKeys1, status);
+      char **pkArray1 = drms_series_createpkeyarray (drmsEnv, series1, &nPKeys1, status);
       char **pkArray2 = NULL;
       
       if (*status == DRMS_SUCCESS)
       {
-	 pkArray2 = drms_series_createpkeyarray(drmsEnv, series2, &nPKeys2, status);
+	 pkArray2 = drms_series_createpkeyarray (drmsEnv, series2, &nPKeys2, status);
       }
       
       if (*status == DRMS_SUCCESS)
       {
-	 ret = drms_series_intpkeysmatch(recTemp1, pkArray1, nPKeys1, recTemp2, pkArray2, nPKeys2);
+	 ret = drms_series_intpkeysmatch (recTemp1, pkArray1, nPKeys1, recTemp2, pkArray2, nPKeys2);
 
 	 if (!ret)
 	 {
@@ -657,27 +645,26 @@ static int drms_series_pkeysmatch(DRMS_Env_t *drmsEnv,
 
       if (pkArray1)
       {
-	 drms_series_destroypkeyarray(&pkArray1, nPKeys1);
+	 drms_series_destroypkeyarray (&pkArray1, nPKeys1);
       }
 
       if (pkArray2)
       {
-	 drms_series_destroypkeyarray(&pkArray2, nPKeys2);
+	 drms_series_destroypkeyarray (&pkArray2, nPKeys2);
       }
    }
    
    return ret;
 }
-
-static int drms_series_intcreatematchsegs(DRMS_Env_t *drmsEnv, 
-					  const char *series, 
-					  DRMS_Record_t *recTempl,
-					  HContainer_t *matchSegs, 
-					  int *status)
-{
+/*
+ *
+ */
+static int drms_series_intcreatematchsegs (DRMS_Env_t *drmsEnv,
+    const char *series, DRMS_Record_t *recTempl, HContainer_t *matchSegs,
+    int *status) {
    int nMatch = 0;
 
-   DRMS_Record_t *seriesRec = drms_template_record(drmsEnv, series, status);
+   DRMS_Record_t *seriesRec = drms_template_record (drmsEnv, series, status);
 
    if (*status ==  DRMS_SUCCESS)
    {
@@ -686,27 +673,27 @@ static int drms_series_intcreatematchsegs(DRMS_Env_t *drmsEnv,
       
       if (s1SegCont && s2SegCont)
       {
-	 HIterator_t *s1Hit = hiter_create(s1SegCont);
-	 HIterator_t *s2Hit = hiter_create(s2SegCont);
+	 HIterator_t *s1Hit = hiter_create (s1SegCont);
+	 HIterator_t *s2Hit = hiter_create (s2SegCont);
 	 
 	 if (s1Hit && s2Hit)
 	 {
 	    DRMS_Segment_t *s1Seg = NULL;
 	    DRMS_Segment_t *s2Seg = NULL;
 	    
-	    while ((s1Seg = (DRMS_Segment_t *)hiter_getnext(s1Hit)) != NULL)
+	    while ((s1Seg = (DRMS_Segment_t *)hiter_getnext (s1Hit)) != NULL)
 	    {
 	       if ((s2Seg = 
-		    (DRMS_Segment_t *)hcon_lookup_lower(s2SegCont, s1Seg->info->name)) != NULL)
+		    (DRMS_Segment_t *)hcon_lookup_lower (s2SegCont, s1Seg->info->name)) != NULL)
 	       {
 		  /* Must check for segment equivalence. */
-		  if (drms_segment_segsmatch(s1Seg, s2Seg))
+		  if (drms_segment_segsmatch (s1Seg, s2Seg))
 		  {
 		     nMatch++;
 		     
 		     if (nMatch == 1)
 		     {
-			hcon_init(matchSegs, 
+			hcon_init (matchSegs, 
 				  DRMS_MAXNAMELEN, 
 				  DRMS_MAXNAMELEN, 
 				  NULL, 
@@ -731,35 +718,33 @@ static int drms_series_intcreatematchsegs(DRMS_Env_t *drmsEnv,
 	 
 	 if (s1Hit)
 	 {
-	    hiter_destroy(&s1Hit);
+	    hiter_destroy (&s1Hit);
 	 }
 	 
 	 if (s2Hit)
 	 {
-	    hiter_destroy(&s2Hit);
+	    hiter_destroy (&s2Hit);
 	 }
       }
    }
 
    return nMatch;
 }
-
-/* Fills in matchSegs with pointers to template segments. */
-static int drms_series_creatematchsegs(DRMS_Env_t *drmsEnv, 
-				       const char *series1, 
-				       const char *series2, 
-				       HContainer_t *matchSegs, 
-				       int *status)
-{
+/*
+ *  Fills in matchSegs with pointers to template segments
+ */
+static int drms_series_creatematchsegs (DRMS_Env_t *drmsEnv,
+    const char *series1, const char *series2, HContainer_t *matchSegs,
+    int *status) {
    int nMatch = 0;
 
    if (matchSegs)
    {
-      DRMS_Record_t *s2RecTempl = drms_template_record(drmsEnv, series2, status);   
+      DRMS_Record_t *s2RecTempl = drms_template_record (drmsEnv, series2, status);   
      
       if (*status == DRMS_SUCCESS)
       {
-	 nMatch = drms_series_intcreatematchsegs(drmsEnv,
+	 nMatch = drms_series_intcreatematchsegs (drmsEnv,
 						 series1,
 						 s2RecTempl,
 						 matchSegs,
@@ -778,13 +763,11 @@ static int drms_series_creatematchsegs(DRMS_Env_t *drmsEnv,
 
    return nMatch;
 }
-
-
-static char **drms_series_intcreatepkeyarray(DRMS_Env_t *env, 
-					     DRMS_Record_t *recTempl, 
-					     int *nPKeys,
-					     int *status)
-{
+/*
+ *
+ */
+static char **drms_series_intcreatepkeyarray (DRMS_Env_t *env,
+    DRMS_Record_t *recTempl, int *nPKeys, int *status) {
    char **ret = NULL;
 
    if (recTempl != NULL)
@@ -817,26 +800,24 @@ static char **drms_series_intcreatepkeyarray(DRMS_Env_t *env,
 
    return ret;
 }
-
-char **drms_series_createpkeyarray(DRMS_Env_t *env, 
-				   const char *seriesName, 
-				   int *nPKeys,
-				   int *status)
-{
+/*
+ *
+ */
+char **drms_series_createpkeyarray (DRMS_Env_t *env, const char *seriesName,
+    int *nPKeys, int *status) {
      char **ret = NULL;
 
      DRMS_Record_t *template = drms_template_record(env, seriesName, status);
 
      if (template != NULL && *status == DRMS_SUCCESS)
-     {
 	ret = drms_series_intcreatepkeyarray(env, template, nPKeys, status);
-     }
 
      return ret;
 }
-
-void drms_series_destroypkeyarray(char ***pkeys, int nElements)
-{
+/*
+ *
+ */
+void drms_series_destroypkeyarray (char ***pkeys, int nElements) {
      int iElement = 0;
      char **array = *pkeys;
 
@@ -853,14 +834,12 @@ void drms_series_destroypkeyarray(char ***pkeys, int nElements)
      free(array);
      *pkeys = NULL;
 }
-
+/*
+ *
+ */
 /* For modules like arithtool */
-int drms_series_checkseriescompat(DRMS_Env_t *drmsEnv,
-				  const char *series1, 
-				  const char *series2, 
-				  HContainer_t *matchSegs,
-				  int *status)
-{
+int drms_series_checkseriescompat (DRMS_Env_t *drmsEnv, const char *series1,
+    const char *series2, HContainer_t *matchSegs, int *status) {
    int ret = 0;
    int nMatch = 0;
 
@@ -883,7 +862,9 @@ int drms_series_checkseriescompat(DRMS_Env_t *drmsEnv,
    
    return ret;
 }
-
+/*
+ *
+ */
 /* For modules like regrid */
 /* Caller must specify a segment in the series to check. A segment is really specified 
  * by not only a series and segment name, but also by a primaryIndex, so the caller 
@@ -893,12 +874,8 @@ int drms_series_checkseriescompat(DRMS_Env_t *drmsEnv,
  * be a prototype record or template. */
 /* The difference between this function and the previous one is that recTempl may 
  * refer to a record in a series that hasn't been created yet. */
-int drms_series_checkrecordcompat(DRMS_Env_t *drmsEnv,
-				  const char *series,
-				  DRMS_Record_t *recTempl,
-				  HContainer_t *matchSegs,
-				  int *status)
-{
+int drms_series_checkrecordcompat (DRMS_Env_t *drmsEnv, const char *series,
+    DRMS_Record_t *recTempl, HContainer_t *matchSegs, int *status) {
    int ret = 0;
    int nMatch = 0;
    DRMS_Record_t *seriesTempl = NULL;
@@ -971,13 +948,11 @@ int drms_series_checkrecordcompat(DRMS_Env_t *drmsEnv,
    
    return ret;
 }
-
-int drms_series_checkkeycompat(DRMS_Env_t *drmsEnv,
-			       const char *series,
-			       DRMS_Keyword_t *keys,
-			       int nKeys,
-			       int *status)
-{
+/*
+ *
+ */
+int drms_series_checkkeycompat (DRMS_Env_t *drmsEnv, const char *series,
+    DRMS_Keyword_t *keys, int nKeys, int *status) {
    int ret = 0;
    
    DRMS_Record_t *recTempl = drms_template_record(drmsEnv, series, status);
@@ -1010,13 +985,11 @@ int drms_series_checkkeycompat(DRMS_Env_t *drmsEnv,
    
    return ret;
 }
-
-int drms_series_checksegcompat(DRMS_Env_t *drmsEnv,
-			       const char *series,
-			       DRMS_Segment_t *segs,
-			       int nSegs,
-			       int *status)
-{
+/*
+ *
+ */
+int drms_series_checksegcompat (DRMS_Env_t *drmsEnv, const char *series,
+    DRMS_Segment_t *segs, int nSegs, int *status) {
    int ret = 0;
    
    DRMS_Record_t *recTempl = drms_template_record(drmsEnv, series, status);

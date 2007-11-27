@@ -1,3 +1,42 @@
+/*
+ *  db_common.c							2007.11.26
+ *
+ *  functions defined:
+ *	db_set_error_message
+ *	db_get_error_message
+ *	db_type_string
+ *	strtof
+ *	db_stringtype_maxlen
+ *	db_sizeof
+ *	db_print_text_result
+ *	db_binary_field_getchar
+ *	db_binary_field_getint
+ *	db_binary_field_getlonglong
+ *	db_binary_field_getfloat
+ *	db_binary_field_getdouble
+ *	db_binary_field_getstr
+ *	db_binary_field_is_null
+ *	db_binary_default_width
+ *	db_print_binary_result
+ *	db_print_binary_field_type
+ *	db_sprint_binary_field
+ *	db_print_binary_field
+ *	db_free_binary_result
+ *	db_free_text_result
+ *	search_replace
+ *	dbtype2char
+ *	dbtype2short
+ *	dbtype2int
+ *	dbtype2longlong
+ *	dbtype2float
+ *	dbtype2double
+ *	dbtype2str
+ *	db_lock
+ *	db_unlock
+ *	db_binary_to_text
+ *	db_hton
+ *	db_byteswap
+ */
 #include <stdio.h>
 #ifndef __USE_ISOC99
   #define  __USE_ISOC99
@@ -33,21 +72,41 @@ static const char *dbtype_string[] = {"char","int2","int2","int4","int8",
 				      "unknown"};
 #endif
 const char  UNKNOWN_TYPE_STR[] = "unknown type";
-
-void db_set_error_message(char *err)
-{
+/*
+ *
+ */
+static void print_separator (int width) {
+  int i;
+  putchar ('+');
+  for (i=0;i<width-2;i++) putchar ('-');
+  putchar ('+');
+  putchar ('\n');
+}
+/*
+ *
+ */
+static void print_separator1 (int width) {
+  int i;
+  for (i=0;i<width;i++) putchar ('-');
+  putchar ('\n');
+}
+/*
+ *
+ */
+void db_set_error_message (char *err) {
   strncpy(__db_error_message, err, 4095);
 }
-
-void db_get_error_message(int maxlen, char *err)
-{
+/*
+ *
+ */
+void db_get_error_message (int maxlen, char *err) {
   strncpy(err, __db_error_message, maxlen);
 }
-
-const char *db_type_string(DB_Type_t dbtype)
-{
-  switch(dbtype)
-  {
+/*
+ *
+ */
+const char *db_type_string (DB_Type_t dbtype) {
+  switch (dbtype) {
   case DB_CHAR:
     return dbtype_string[0];
   case DB_INT1:
@@ -70,39 +129,34 @@ const char *db_type_string(DB_Type_t dbtype)
     return UNKNOWN_TYPE_STR;
   }
 }
-
-
-/* Static prototypes */
-static void print_separator(int width);
-
+/*
+ *
+ */
 #ifndef LINUX
-float strtof (const char *nptr, char **endptr)
-{
+float strtof (const char *nptr, char **endptr) {
   return (float) strtod( nptr,  endptr);
 }   
 #endif
-
-
-
+/*
+ *
+ */
 #ifdef ORACLE
-char *db_stringtype_maxlen(int maxlen)
-{
+char *db_stringtype_maxlen (int maxlen) {
   char *str;
   XASSERT( str = malloc(20));
   sprintf(str,"varchar(%d)",maxlen);
   return str;
 }
 #else
-char *db_stringtype_maxlen(int maxlen)
-{
+char *db_stringtype_maxlen (int maxlen) {
   return (char *)db_type_string(DB_STRING);
 }
 #endif
-
-int db_sizeof(DB_Type_t dbtype)
-{
-  switch(dbtype)
-  {
+/*
+ *
+ */
+int db_sizeof (DB_Type_t dbtype) {
+  switch (dbtype) {
     /* ORACLE is retarded when it comes to native integer types. 
        It basically only has 32 bit integers. */
   case DB_CHAR:
@@ -126,29 +180,10 @@ int db_sizeof(DB_Type_t dbtype)
     return 0;
   }
 }
-
-
-static void print_separator(int width)
-{
-  int i;
-  putchar('+');
-  for (i=0;i<width-2;i++)
-    putchar('-');
-  putchar('+');
-  putchar('\n');
-}
-
-static void print_separator1(int width)
-{
-  int i;
-  for (i=0;i<width;i++)
-    putchar('-');
-  putchar('\n');
-}
-
-
-void db_print_text_result(DB_Text_Result_t *res)
-{
+/*
+ *
+ */
+void db_print_text_result (DB_Text_Result_t *res) {
   unsigned int i,j,tw, len;
   unsigned int *column_width;
 
@@ -199,13 +234,11 @@ void db_print_text_result(DB_Text_Result_t *res)
 
   print_separator(tw);
 }
-
-
-
-/* Type conversion routines. */
-char db_binary_field_getchar(DB_Binary_Result_t *res, unsigned int row, 
-			     unsigned int col)
-{  
+/*
+ *  Type conversion routines
+ */
+char db_binary_field_getchar (DB_Binary_Result_t *res, unsigned int row,
+    unsigned int col) {  
   if ( row<res->num_rows && col<res->num_cols)
     return dbtype2char(res->column[col].type,
 		      res->column[col].data+row*res->column[col].size);
@@ -218,9 +251,8 @@ char db_binary_field_getchar(DB_Binary_Result_t *res, unsigned int row,
   }  
 }
 
-int db_binary_field_getint(DB_Binary_Result_t *res, unsigned int row, 
-			   unsigned int col)
-{  
+int db_binary_field_getint (DB_Binary_Result_t *res, unsigned int row,
+    unsigned int col) {  
   if ( row<res->num_rows && col<res->num_cols)
     return dbtype2int(res->column[col].type,
 		      res->column[col].data+row*res->column[col].size);
@@ -232,11 +264,11 @@ int db_binary_field_getint(DB_Binary_Result_t *res, unsigned int row,
     return 0;
   }  
 }
-
-
-long long db_binary_field_getlonglong(DB_Binary_Result_t *res, unsigned int row, 
-			   unsigned int col)
-{  
+/*
+ *
+ */
+long long db_binary_field_getlonglong (DB_Binary_Result_t *res,
+    unsigned int row, unsigned int col) {  
   if ( row<res->num_rows && col<res->num_cols)
     return dbtype2longlong(res->column[col].type,
 		      res->column[col].data+row*res->column[col].size);
@@ -248,10 +280,11 @@ long long db_binary_field_getlonglong(DB_Binary_Result_t *res, unsigned int row,
     return 0L;
   }  
 }
-
-float db_binary_field_getfloat(DB_Binary_Result_t *res, unsigned int row, 
-			   unsigned int col)
-{  
+/*
+ *
+ */
+float db_binary_field_getfloat (DB_Binary_Result_t *res, unsigned int row,
+    unsigned int col) {  
   if ( row<res->num_rows && col<res->num_cols)
     return dbtype2float(res->column[col].type,
 		      res->column[col].data+row*res->column[col].size);
@@ -263,10 +296,11 @@ float db_binary_field_getfloat(DB_Binary_Result_t *res, unsigned int row,
     return 0;
   }  
 }
-
-double db_binary_field_getdouble(DB_Binary_Result_t *res, unsigned int row, 
-			   unsigned int col)
-{  
+/*
+ *
+ */
+double db_binary_field_getdouble (DB_Binary_Result_t *res, unsigned int row,
+    unsigned int col) {  
   if ( row<res->num_rows && col<res->num_cols)
     return dbtype2double(res->column[col].type,
 		      res->column[col].data+row*res->column[col].size);
@@ -278,10 +312,11 @@ double db_binary_field_getdouble(DB_Binary_Result_t *res, unsigned int row,
     return 0;
   }  
 }
-
-void db_binary_field_getstr(DB_Binary_Result_t *res, unsigned int row, 
-			    unsigned int col, int len, char *str)
-{  
+/*
+ *
+ */
+void db_binary_field_getstr (DB_Binary_Result_t *res, unsigned int row,
+    unsigned int col, int len, char *str) {  
   if ( row<res->num_rows && col<res->num_cols)
     dbtype2str(res->column[col].type,
 	       res->column[col].data+row*res->column[col].size,
@@ -293,21 +328,19 @@ void db_binary_field_getstr(DB_Binary_Result_t *res, unsigned int row,
     XASSERT(0);
   }
 }
-
-
-
-int db_binary_field_is_null(DB_Binary_Result_t *res, unsigned int row, 
-		       unsigned int col)
-{  
+/*
+ *
+ */
+int db_binary_field_is_null (DB_Binary_Result_t *res, unsigned int row,
+    unsigned int col) {  
   XASSERT( row<res->num_rows && col<res->num_cols );
   return res->column[col].is_null[row];
 }
-
-
-int db_binary_default_width(DB_Type_t dbtype)
-{
-  switch(dbtype)
-  {
+/*
+ *
+ */
+int db_binary_default_width (DB_Type_t dbtype) {
+  switch (dbtype) {
   case DB_CHAR:    
     return 1; 
   case DB_INT1:    
@@ -330,10 +363,10 @@ int db_binary_default_width(DB_Type_t dbtype)
     return 0;
   }
 }
-
-
-void db_print_binary_result(DB_Binary_Result_t *res)
-{
+/*
+ *
+ */
+void db_print_binary_result (DB_Binary_Result_t *res) {
   unsigned int i,j, len, total_width;
   unsigned int *column_width;
   
@@ -394,12 +427,11 @@ void db_print_binary_result(DB_Binary_Result_t *res)
     printf("\n");
   }
 }
-
-
-void db_print_binary_field_type(DB_Type_t dbtype)
-{
-  switch(dbtype)
-  {
+/*
+ *
+ */
+void db_print_binary_field_type (DB_Type_t dbtype) {
+  switch (dbtype) {
   case DB_CHAR:    
     printf("DB_CHAR");
     break;
@@ -431,14 +463,12 @@ void db_print_binary_field_type(DB_Type_t dbtype)
     return;
   }
 }
-
-
-int db_sprint_binary_field(DB_Type_t dbtype, int width, char *data, char *dst)
-{
-  if (width>0)
-  {
-    switch(dbtype)
-    {
+/*
+ *
+ */
+int db_sprint_binary_field (DB_Type_t dbtyp, int width, char *data, char *dst) {
+  if (width>0) {
+    switch (dbtyp) {
     case DB_CHAR:    
       return snprintf(dst,width+1,"%*c",width,*((char *)data));
     case DB_INT1:    
@@ -460,11 +490,8 @@ int db_sprint_binary_field(DB_Type_t dbtype, int width, char *data, char *dst)
     default:
       return 0;
     }
-  }
-  else
-  {
-    switch(dbtype)
-    {
+  } else {
+    switch (dbtyp) {
     case DB_CHAR:    
       return sprintf(dst,"%c",*((db_char_t *)data));
     case DB_INT1:    
@@ -488,23 +515,20 @@ int db_sprint_binary_field(DB_Type_t dbtype, int width, char *data, char *dst)
     }
   }    
 }
-
-
-
-void db_print_binary_field(DB_Type_t dbtype, int width, char *data)
-{
+/*
+ *
+ */
+void db_print_binary_field (DB_Type_t dbtype, int width, char *data) {
   char *buf;
 
   buf = alloca(width+1);
   db_sprint_binary_field(dbtype, width, data, buf);
   fputs(buf,stdout);
 }
-
-
-
-  
-void db_free_binary_result(DB_Binary_Result_t *db_result)
-{
+/*
+ *
+ */
+void db_free_binary_result (DB_Binary_Result_t *db_result) {
   unsigned int i;
   if (db_result)
   {
@@ -524,10 +548,10 @@ void db_free_binary_result(DB_Binary_Result_t *db_result)
     free(db_result);
   }
 }
-  
-
-void db_free_text_result(DB_Text_Result_t *db_result)
-{
+/*
+ *
+ */
+void db_free_text_result (DB_Text_Result_t *db_result) {
   if (db_result)
   {
     if (db_result->num_rows>0)
@@ -544,11 +568,11 @@ void db_free_text_result(DB_Text_Result_t *db_result)
     free(db_result);
   }
 }
-  
-    
-char *search_replace(const char *string, const char *search, 
-		     const char *replace)
-{
+/*
+ *
+ */
+char *search_replace (const char *string, const char *search,
+    const char *replace) {
   int len, ls,lr;
   char *output,*outq, *next, *prev;
     
@@ -573,14 +597,11 @@ char *search_replace(const char *string, const char *search,
     
   return output;
 }
-
-
-
-
-char dbtype2char(DB_Type_t dbtype, char *data)
-{
-  switch(dbtype)
-  {
+/*
+ *
+ */
+char dbtype2char (DB_Type_t dbtype, char *data) {
+  switch (dbtype) {
   case DB_CHAR:    
     return (char) *((db_char_t *) data);
   case DB_INT1:    
@@ -601,13 +622,13 @@ char dbtype2char(DB_Type_t dbtype, char *data)
     return *data;
   }
 }  
-
-short dbtype2short(DB_Type_t dbtype, char *data)
-{
+/*
+ *
+ */
+short dbtype2short (DB_Type_t dbtype, char *data) {
   int val;
   char *endptr;
-  switch(dbtype)
-  {
+  switch (dbtype) {
   case DB_CHAR: 
     return (short) *((db_char_t *) data);
   case DB_INT1:    
@@ -631,14 +652,13 @@ short dbtype2short(DB_Type_t dbtype, char *data)
     return val;
   }
 }  
-
-
-int dbtype2int(DB_Type_t dbtype, char *data)
-{
+/*
+ *
+ */
+int dbtype2int (DB_Type_t dbtype, char *data) {
   int val;
   char *endptr;
-  switch(dbtype)
-  {
+  switch (dbtype) {
   case DB_CHAR: 
     return (int) *((db_char_t *) data);
   case DB_INT1:    
@@ -662,13 +682,13 @@ int dbtype2int(DB_Type_t dbtype, char *data)
     return val;
   }
 }  
-
-long long dbtype2longlong(DB_Type_t dbtype, char *data)
-{
+/*
+ *
+ */
+long long dbtype2longlong (DB_Type_t dbtype, char *data) {
   int val;
   char *endptr;
-  switch(dbtype)
-  {
+  switch (dbtype) {
   case DB_CHAR: 
     return (long long) *((db_char_t *) data);
   case DB_INT1:    
@@ -692,14 +712,13 @@ long long dbtype2longlong(DB_Type_t dbtype, char *data)
     return val;
   }
 }  
-
-
-float dbtype2float(DB_Type_t dbtype, char *data)
-{
+/*
+ *
+ */
+float dbtype2float (DB_Type_t dbtype, char *data) {
   float val;
   char *endptr;
-  switch(dbtype)
-  {
+  switch (dbtype) {
   case DB_CHAR: 
     return (float) *((db_char_t *) data);
   case DB_INT1:    
@@ -723,14 +742,13 @@ float dbtype2float(DB_Type_t dbtype, char *data)
     return val;
   }
 }  
-
-
-double dbtype2double(DB_Type_t dbtype, char *data)
-{
+/*
+ *
+ */
+double dbtype2double (DB_Type_t dbtype, char *data) {
   double val;
   char *endptr;
-  switch(dbtype)
-  {
+  switch (dbtype) {
   case DB_CHAR: 
     return (double) *((db_char_t *) data);
   case DB_INT1:    
@@ -754,12 +772,11 @@ double dbtype2double(DB_Type_t dbtype, char *data)
     return val;
   }
 }  
-
-
-void dbtype2str(DB_Type_t dbtype, char *data, int len, char *str)
-{
-  switch(dbtype)
-  {
+/*
+ *
+ */
+void dbtype2str (DB_Type_t dbtype, char *data, int len, char *str) {
+  switch (dbtype) {
   case DB_CHAR:    
     snprintf(str, len, "%1c", *((db_char_t *) data));
     break;
@@ -789,28 +806,28 @@ void dbtype2str(DB_Type_t dbtype, char *data, int len, char *str)
   }
 }  
 
-
-
-
-void db_lock(DB_Handle_t *h)
-{
+/*
+ *
+ */
+void db_lock (DB_Handle_t *h) {
   if ( h->db_lock == NULL )
     return;
   else
     pthread_mutex_lock( h->db_lock );
 }
-
-void db_unlock(DB_Handle_t *h)
-{
+/*
+ *
+ */
+void db_unlock (DB_Handle_t *h) {
   if ( h->db_lock == NULL )
     return;
   else
     pthread_mutex_unlock( h->db_lock );
 }
- 
-
-DB_Text_Result_t *db_binary_to_text(DB_Binary_Result_t *binres)
-{
+/*
+ *
+ */
+DB_Text_Result_t *db_binary_to_text (DB_Binary_Result_t *binres) {
   DB_Text_Result_t *result;  
   unsigned int i,j,buflen;
   int total_width, n,len;
@@ -939,19 +956,20 @@ DB_Text_Result_t *db_binary_to_text(DB_Binary_Result_t *binres)
 #endif
   return result;
 }
-
-
-void db_hton(DB_Type_t dbtype, int n, void *data)
-{
+/*
+ *
+ */
+void db_hton (DB_Type_t dbtype, int n, void *data) {
 #if __BYTE_ORDER == __LITTLE_ENDIAN
   db_byteswap(dbtype, n, data);
 #else
   return;
 #endif
 }  
-
-void db_byteswap(DB_Type_t dbtype, int n, char *val)
-{
+/*
+ *
+ */
+void db_byteswap (DB_Type_t dbtype, int n, char *val) {
 #if __BYTE_ORDER == __LITTLE_ENDIAN
   if ( !(dbtype == DB_STRING || dbtype == DB_VARCHAR) )
     byteswap(db_sizeof(dbtype), n, val);

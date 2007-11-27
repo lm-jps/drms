@@ -1,3 +1,12 @@
+/*
+ *  db_network.c							2007.11.26
+ *
+ *  functions defined:
+ *	db_type_compare
+ *	db_binary_record_compare
+ *	db_sort_binary_result
+ *	db_maxbygroup
+ */
 #include <stdio.h>
 #ifndef __USE_ISOC99
   #define  __USE_ISOC99
@@ -11,21 +20,45 @@
 #include "xassert.h"
 #include "xmem.h"
 
-
-
-/* Global variables used to pass information needed by qsort 
-   comparison function on the side. */
+		/* Global variables used to pass information needed by qsort 
+					comparison function on the side. */
 static DB_Binary_Result_t *__sort_res;
 static int *__sort_cols;
 static int __num_sort_cols;
-static void db_permute(DB_Binary_Result_t *res, int n, int *p);
+/*
+ *
+ */
+static void db_permute (DB_Binary_Result_t *res, int n, int *p) {
+  int i,j;
+  char *buf;
+				/*  Permute rows according to indices in p  */
+  for (i=0;i<res->num_cols; i++) {
+    XASSERT(buf = malloc (res->column[i].size*n));
+    for (j=0; j<n; j++)
+      memcpy (buf + j*res->column[i].size,
+          res->column[i].data + p[j]*res->column[i].size, res->column[i].size); 
+    free (res->column[i].data);
+    res->column[i].data = buf;
+    res->column[i].num_rows = n;
+  }
+  res->num_rows = n;
+}
+/*
+ *  Qsort wrapper for comparison
+ */
+static int qsort_compare (const void *p1, const void *p2) {
+  int i1, i2;
 
-
-
-int db_type_compare(DB_Type_t type, char *p1, char *p2)
-{
-  switch(type)
-  {
+  i1 = *((int *) p1);
+  i2 = *((int *) p2);
+  return db_binary_record_compare (__sort_res, __num_sort_cols, __sort_cols,
+      i1, i2);
+}
+/*
+ *
+ */
+int db_type_compare (DB_Type_t type, char *p1, char *p2) {
+  switch (type) {
   case DB_CHAR:    
     return *p1 - *p2; 
   case DB_INT1:    
@@ -78,12 +111,11 @@ int db_type_compare(DB_Type_t type, char *p1, char *p2)
   }
   return 0;
 }
-
-
-
-int db_binary_record_compare(DB_Binary_Result_t *res, int num_cols, int *cols,
-			     int i1, int i2)
-{
+/*
+ *
+ */
+int db_binary_record_compare (DB_Binary_Result_t *res, int num_cols, int *cols,
+    int i1, int i2) {
   int i;
   int col, comp, size;
   DB_Type_t type;
@@ -103,21 +135,10 @@ int db_binary_record_compare(DB_Binary_Result_t *res, int num_cols, int *cols,
   }
   return 0;
 }
-
-/* Qsort wrapper for comparison. */
-static int qsort_compare(const void *p1, const void *p2)
-{
-  int i1, i2;
-
-  i1 = *((int *) p1);
-  i2 = *((int *) p2);
-  return db_binary_record_compare(__sort_res, __num_sort_cols, __sort_cols, 
-				  i1, i2);
-}
-
-/* Sort query result on the columns given in "cols". */
-int db_sort_binary_result(DB_Binary_Result_t *res, int num_cols, int *cols)
-{
+/*
+ *  Sort query result on the columns given in "cols"
+ */
+int db_sort_binary_result (DB_Binary_Result_t *res, int num_cols, int *cols) {
   int i, permute;
   int *p;
   int num_rows;
@@ -165,70 +186,39 @@ int db_sort_binary_result(DB_Binary_Result_t *res, int num_cols, int *cols)
   free(p);
   return 0;
 }
-
-
-static void db_permute(DB_Binary_Result_t *res, int n, int *p)
-{
-  int i,j;
-  char *buf;
-
-  /* Permute rows according to indices in p. */
-  for (i=0;i<res->num_cols; i++)
-  {
-    XASSERT(buf = malloc(res->column[i].size*n));
-    for (j=0; j<n; j++)
-      memcpy(buf + j*res->column[i].size, 
-	     res->column[i].data + p[j]*res->column[i].size, 
-	     res->column[i].size); 
-    free(res->column[i].data);
-    res->column[i].data = buf;
-    res->column[i].num_rows = n;
-  }
-  res->num_rows = n;
-}
-
-
-/* */
-int db_maxbygroup(DB_Binary_Result_t *res, int maxcol, int num_cols, int *cols)
-{
+/*
+ *
+ */
+int db_maxbygroup (DB_Binary_Result_t *res, int maxcol, int num_cols,
+    int *cols) {
   int i, n, *p, max;
-
-  /* Sanity check input arguments. */
-  if (!cols || !res || num_cols<0)
-    return 1;
+					/*  Sanity check input arguments  */
+  if (!cols || !res || num_cols<0) return 1;
 
   for (i=0; i<num_cols; i++)
     if (cols[i] == maxcol)
-      return 1; /* max columm cannot be in the grouping set. */
+      return 1;		    /*  max columm cannot be in the grouping set  */
+						    /*  Start by sorting  */
+  if (db_sort_binary_result (res, num_cols, cols)) return 1;
   
-
-  /* Start by sorting. */
-  if (db_sort_binary_result(res, num_cols, cols))
-    return 1;
-  
-  if (res->num_rows==1)
-    return 0;
-
-  /* Select max(maxcolumn),* group by cols[*] */
-  XASSERT( (p = malloc(res->num_rows*sizeof(int))));
+  if (res->num_rows == 1) return 0;
+			    /*  Select max(maxcolumn),* group by cols[*]  */
+  XASSERT( (p = malloc (res->num_rows*sizeof (int))));
   n = 0;
   max = 0; 
   i = 1;
-  while (i<res->num_rows)
-  {
-    while(i<res->num_rows && 
-	  !db_binary_record_compare(res, num_cols, cols, i, max))
-    {
-      if (db_binary_record_compare(res, 1, &maxcol, i, max) > 0)
+  while (i<res->num_rows) {
+    while (i<res->num_rows && 
+	  !db_binary_record_compare (res, num_cols, cols, i, max)) {
+      if (db_binary_record_compare (res, 1, &maxcol, i, max) > 0)
 	max = i;
       i++;
     }
     p[n++] = max;
     max = i++;
-    if (i==res->num_rows)
-      p[n++] = max;      
+    if (i==res->num_rows) p[n++] = max;      
   }
-  db_permute(res, n, p);
-  free(p);
+  db_permute (res, n, p);
+  free (p);
   return 0;
 }  

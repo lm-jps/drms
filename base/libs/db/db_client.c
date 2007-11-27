@@ -1,3 +1,24 @@
+/*
+ *  db_client.c							2007.11.26
+ *
+ *  functions defined:
+ *	db_recv_text_query
+ *	db_unpack_text
+ *	db_recv_binary_query
+ *	db_client_query_txt
+ *	db_client_query_bin
+ *	db_client_query_bin_array
+ *	db_client_dms
+ *	db_client_dms_array
+ *	db_client_bulk_insert_array
+ *	db_client_sequence_drop
+ *	db_client_sequence_create
+ *	db_client_sequence_getnext
+ *	db_client_sequence_getnext_n
+ *	db_client_sequence_getcurrent
+ *	db_client_sequence_getlast
+ */
+
 #include <stdio.h> 
 #include <stdlib.h> 
 #include <unistd.h>  
@@ -16,10 +37,13 @@
 #include "xassert.h"
 #include "timer.h"
 #include "xmem.h"
+
 /***************  Client side functions *******************/
 
-DB_Text_Result_t *db_recv_text_query(int sockfd, int comp)
-{
+/*
+ *
+ */
+DB_Text_Result_t *db_recv_text_query (int sockfd, int comp) {
   DB_Text_Result_t *result;
   char *buffer, *zbuf;
   int nrows, ncols;
@@ -99,10 +123,10 @@ DB_Text_Result_t *db_recv_text_query(int sockfd, int comp)
     return db_unpack_text(buffer);
   }
 }
-
-
-DB_Text_Result_t *db_unpack_text(char *buf)
-{
+/*
+ *
+ */
+DB_Text_Result_t *db_unpack_text (char *buf) {
   DB_Text_Result_t *result;
   char *p;
   int buflen;
@@ -154,9 +178,10 @@ DB_Text_Result_t *db_unpack_text(char *buf)
   }  
   return result;
 }
-
-DB_Binary_Result_t *db_recv_binary_query(int sockfd, int comp)
-{
+/*
+ *
+ */
+DB_Binary_Result_t *db_recv_binary_query (int sockfd, int comp) {
   //  uint64_t size=0;
   int i, anynull, nrows;
   DB_Column_t *col;
@@ -206,9 +231,10 @@ DB_Binary_Result_t *db_recv_binary_query(int sockfd, int comp)
   //printf("nrows = %d, size = %lld, size/row=%f\n",result->num_rows,size,(float)size/result->num_rows);
   return result;
 }
-
-DB_Text_Result_t *db_client_query_txt(int sockfd, char *query, int compress)
-{
+/*
+ *
+ */
+DB_Text_Result_t *db_client_query_txt (int sockfd, char *query, int compress) {
   int len,ctmp;
   struct iovec vec[3];
   
@@ -228,10 +254,10 @@ DB_Text_Result_t *db_client_query_txt(int sockfd, char *query, int compress)
   /* Get result back from server. */
   return db_recv_text_query(sockfd, compress);
 }
-
-
-DB_Binary_Result_t *db_client_query_bin(int sockfd, char *query, int compress)
-{
+/*
+ *
+ */
+DB_Binary_Result_t *db_client_query_bin (int sockfd, char *query, int compress) {
   int len,ctmp;
   struct iovec vec[3];
 
@@ -251,12 +277,11 @@ DB_Binary_Result_t *db_client_query_bin(int sockfd, char *query, int compress)
   /* Get result back from server. */
   return db_recv_binary_query(sockfd, compress);
 }
-
-
-DB_Binary_Result_t *db_client_query_bin_array(int sockfd, char *query, 
-					      int compress, int n_args,  
-					      DB_Type_t *intype, void **argin )
-{
+/*
+ *
+ */
+DB_Binary_Result_t *db_client_query_bin_array (int sockfd, char *query,
+    int compress, int n_args, DB_Type_t *intype, void **argin ) {
   int i,vc,tc;  
   int *tmp;
   struct iovec *vec;
@@ -325,10 +350,10 @@ DB_Binary_Result_t *db_client_query_bin_array(int sockfd, char *query,
   /* Get result back from server. */
   return db_recv_binary_query(sockfd, compress);
 }
-
-
-int db_client_dms(int sockfd, int *row_count, char *query)
-{
+/*
+ *
+ */
+int db_client_dms (int sockfd, int *row_count, char *query) {
   int status, n;
 
   /* Send query to server. */
@@ -342,12 +367,11 @@ int db_client_dms(int sockfd, int *row_count, char *query)
 
   return status;
 }
-
-
-int db_client_dms_array(int sockfd,  int *row_count, char *query, 
-			int n_rows, int n_args, DB_Type_t *intype, 
-			void **argin )
-{
+/*
+ *
+ */
+int db_client_dms_array (int sockfd,  int *row_count, char *query,
+    int n_rows, int n_args, DB_Type_t *intype, void **argin ) {
   int status, n, i, j, tmp[10+MAXARG], tc, vc;
   int *len, sum;
   char *str, *buffer[MAXARG], *p;
@@ -443,14 +467,11 @@ int db_client_dms_array(int sockfd,  int *row_count, char *query,
 
   return status;
 }
-
-
-
-
-int db_client_bulk_insert_array(int sockfd, char *table, 
-				int n_rows, int n_args, DB_Type_t *intype, 
-				void **argin )
-{
+/*
+ *
+ */
+int db_client_bulk_insert_array (int sockfd, char *table, int n_rows,
+    int n_args, DB_Type_t *intype, void **argin) {
   int status, i, j, tmp[10+MAXARG], tc, vc;
   int *len, sum;
   char *str, *buffer[MAXARG], *p;
@@ -543,29 +564,31 @@ int db_client_bulk_insert_array(int sockfd, char *table,
 
   return status;
 }
-
-
-int db_client_sequence_drop(int sockfd,  char *table)
-{
+/*
+ *
+ */
+int db_client_sequence_drop (int sockfd,  char *table) {
   send_string(sockfd, table);
   return Readint(sockfd);
 }
-
-int db_client_sequence_create(int sockfd,  char *table)
-{
+/*
+ *
+ */
+int db_client_sequence_create (int sockfd,  char *table) {
   send_string(sockfd, table);
   return Readint(sockfd);
 }
-
-long long db_client_sequence_getnext(int sockfd,  char *table)
-{
+/*
+ *
+ */
+long long db_client_sequence_getnext (int sockfd,  char *table) {
   send_string(sockfd, table);
   return Readlonglong(sockfd);
 }
-
-
-long long *db_client_sequence_getnext_n(int sockfd,  char *table, int n)
-{
+/*
+ *
+ */
+long long *db_client_sequence_getnext_n (int sockfd,  char *table, int n) {
   int i, status;
   long long *seqnums;
   struct iovec vec[3];
@@ -592,16 +615,17 @@ long long *db_client_sequence_getnext_n(int sockfd,  char *table, int n)
   else
     return NULL;
 }
-
-
-long long db_client_sequence_getcurrent(int sockfd,  char *table)
-{
+/*
+ *
+ */
+long long db_client_sequence_getcurrent (int sockfd,  char *table) {
   send_string(sockfd, table);
   return (long long)Readlonglong(sockfd);
 }
-
-long long db_client_sequence_getlast(int sockfd,  char *table)
-{
+/*
+ *
+ */
+long long db_client_sequence_getlast (int sockfd,  char *table) {
   send_string(sockfd, table);
   return (long long)Readlonglong(sockfd);
 }

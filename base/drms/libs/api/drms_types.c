@@ -1,3 +1,33 @@
+/*
+ *  drms_types.c						2007.11.26
+ *
+ *  functions defined:
+ *	drms2dbtype
+ *	drms_copy_db2drms
+ *	drms_copy_drms2drms
+ *	drms_str2type
+ *	drms_type2str
+ *	drms_sizeof
+ *	drms_equal
+ *	drms_missing
+ *	drms_strval
+ *	drms_sprintfval_format
+ *	drms_sprintfval
+ *	drms_printfval_raw
+ *	drms_sscanf
+ *	drms_memset
+ *	drms_convert
+ *	drms2char
+ *	drms2short
+ *	drms2int
+ *	drms2longlong
+ *	drms2float
+ *	drms2double
+ *	drms2time
+ *	drms2string
+ *	drms_byteswap
+ *	drms_daxpy
+ */
 //#define DEBUG
 
 #define _GNU_SOURCE
@@ -7,12 +37,11 @@
 #undef DRMS_TYPES_C
 #include "xmem.h"
 #include "timeio.h"
-
-
-DB_Type_t drms2dbtype(DRMS_Type_t type)
-{
-  switch(type)
-  {
+/*
+ *
+ */
+DB_Type_t drms2dbtype (DRMS_Type_t type) {
+  switch (type) {
   case DRMS_TYPE_CHAR: 
     return DB_CHAR;
     break;
@@ -41,17 +70,15 @@ DB_Type_t drms2dbtype(DRMS_Type_t type)
     break;
   }
 }
-
-/* Copy a field in a DB_Binary_Result_t table to a field
-   in  an DRMS_Type_Value_t union. */
-int drms_copy_db2drms(DRMS_Type_t drms_type, DRMS_Type_Value_t *drms_dst, 
-		      DB_Type_t db_type, char *db_src)
-{
+/*
+ *  Copy a field in a DB_Binary_Result_t table to a field
+ *    in  an DRMS_Type_Value_t union
+ */
+int drms_copy_db2drms (DRMS_Type_t drms_type, DRMS_Type_Value_t *drms_dst,
+    DB_Type_t db_type, char *db_src) {
   int len;
 
-  
-  switch(drms_type)
-  {
+  switch (drms_type) {
   case DRMS_TYPE_CHAR: 
     drms_dst->char_val = dbtype2char(db_type,db_src);
     break;
@@ -93,23 +120,21 @@ int drms_copy_db2drms(DRMS_Type_t drms_type, DRMS_Type_Value_t *drms_dst,
   }
   return 0;
 }
-
-
-
-/* Copy a field in a DB_Binary_Result_t table to a field
-   in  an DRMS_Type_Value_t union. */
-void drms_copy_drms2drms(DRMS_Type_t type, DRMS_Type_Value_t *dst, 
-			 DRMS_Type_Value_t *src)
-{
+/*
+ *  Copy a field in a DB_Binary_Result_t table to a field
+ *    in  an DRMS_Type_Value_t union
+ */
+void drms_copy_drms2drms (DRMS_Type_t type, DRMS_Type_Value_t *dst,
+    DRMS_Type_Value_t *src) {
   if (type==DRMS_TYPE_STRING)
     copy_string(&dst->string_val, src->string_val);
   else
     memcpy(dst, src, sizeof(DRMS_Type_Value_t));
 }
-
-
-DRMS_Type_t drms_str2type(const char *str)
-{
+/*
+ *
+ */
+DRMS_Type_t drms_str2type (const char *str) {
   if (!strncasecmp(str,drms_type_names[DRMS_TYPE_CHAR],DRMS_MAXTYPENAMELEN))
     return DRMS_TYPE_CHAR;
   else if (!strncasecmp(str,drms_type_names[DRMS_TYPE_SHORT],
@@ -140,19 +165,17 @@ DRMS_Type_t drms_str2type(const char *str)
     return DRMS_TYPE_RAW;
   }
 }
-
-
-const char  *drms_type2str(DRMS_Type_t type)
-{
+/*
+ *
+ */
+const char *drms_type2str (DRMS_Type_t type) {
   return drms_type_names[(int) type];
 }
-
-
-/* Return size of simple types in bytes. */
-int drms_sizeof(DRMS_Type_t type)
-{
-  switch(type)
-  {
+/*
+ *  Return size of simple types in bytes
+ */
+int drms_sizeof (DRMS_Type_t type) {
+  switch (type) {
   case DRMS_TYPE_CHAR: 
   case DRMS_TYPE_SHORT:
   case DRMS_TYPE_INT:  
@@ -172,11 +195,11 @@ int drms_sizeof(DRMS_Type_t type)
     break;
   }
 }
-
-int drms_equal(DRMS_Type_t type, DRMS_Type_Value_t *x, DRMS_Type_Value_t *y)
-{
-  switch(type)
-  {
+/*
+ *
+ */
+int drms_equal (DRMS_Type_t type, DRMS_Type_Value_t *x, DRMS_Type_Value_t *y) {
+  switch (type) {
   case DRMS_TYPE_CHAR: 
     return x->char_val == y->char_val;
     break;
@@ -238,11 +261,11 @@ int drms_equal(DRMS_Type_t type, DRMS_Type_Value_t *x, DRMS_Type_Value_t *y)
     return 0;
   }
 }
-
-int drms_missing(DRMS_Type_t type, DRMS_Type_Value_t *val)
-{
-  switch(type)
-  {
+/*
+ *
+ */
+int drms_missing (DRMS_Type_t type, DRMS_Type_Value_t *val) {
+  switch (type) {
   case DRMS_TYPE_CHAR: 
     val->char_val = DRMS_MISSING_CHAR;
     break;
@@ -273,13 +296,11 @@ int drms_missing(DRMS_Type_t type, DRMS_Type_Value_t *val)
   }
   return 0;
 }
-
-
-
-int drms_strval(DRMS_Type_t type, DRMS_Type_Value_t *val, char *str)
-{
-  switch(type)
-  {
+/*
+ *
+ */
+int drms_strval (DRMS_Type_t type, DRMS_Type_Value_t *val, char *str) {
+  switch (type) {
   case DRMS_TYPE_CHAR: 
     val->char_val = str[0];
     break;
@@ -314,20 +335,16 @@ int drms_strval(DRMS_Type_t type, DRMS_Type_Value_t *val, char *str)
   }
   return 0;
 }
-
-
-
-
-
-int drms_sprintfval_format(char *dst, DRMS_Type_t type, DRMS_Type_Value_t *val, 
-			   char *format, int internal)
-{
+/*
+ *
+ */
+int drms_sprintfval_format (char *dst, DRMS_Type_t type, DRMS_Type_Value_t *val,
+    char *format, int internal) {
   if (format==NULL)
     return drms_sprintfval(dst, type, val, internal);
   else
   {
-    switch(type)
-    {
+    switch (type) {
     case DRMS_TYPE_CHAR: 
       return sprintf(dst, format, val->char_val);
       break;
@@ -367,14 +384,12 @@ int drms_sprintfval_format(char *dst, DRMS_Type_t type, DRMS_Type_Value_t *val,
     return 0;
   }
 }
-
-
-
-int drms_sprintfval(char *dst, DRMS_Type_t type, DRMS_Type_Value_t *val, 
-		    int internal)
-{
-  switch(type)
-  {
+/*
+ *
+ */
+int drms_sprintfval (char *dst, DRMS_Type_t type, DRMS_Type_Value_t *val,
+    int internal) {
+  switch (type) {
   case DRMS_TYPE_CHAR: 
     return sprintf(dst, "%hhd", val->char_val);
     break;
@@ -411,12 +426,11 @@ int drms_sprintfval(char *dst, DRMS_Type_t type, DRMS_Type_Value_t *val,
   }
   return 0;
 }
-
-
-
-/* Print value according to type. */
-int drms_printfval(DRMS_Type_t type, DRMS_Type_Value_t *val) {
-  switch(type) {
+/*
+ *  Print value according to type
+ */
+int drms_printfval (DRMS_Type_t type, DRMS_Type_Value_t *val) {
+  switch (type) {
   case DRMS_TYPE_CHAR: 
     return printf("%hhd", val->char_val);
     break;
@@ -451,13 +465,11 @@ int drms_printfval(DRMS_Type_t type, DRMS_Type_Value_t *val) {
   }
   return 0;
 }
-
-
-/* Print value according to type. */
-int drms_printfval_raw(DRMS_Type_t type, void *val)
-{
-  switch(type)
-  {
+/*
+ *  Print value according to type
+ */
+int drms_printfval_raw (DRMS_Type_t type, void *val) {
+  switch (type) {
   case DRMS_TYPE_CHAR: 
     return printf("%hhd", *((char *)val));
     break;
@@ -492,11 +504,9 @@ int drms_printfval_raw(DRMS_Type_t type, void *val)
   }
   return 0;
 }
-
-
-
-/* scan for one instance of dsttype.  If dsttype is DRMS_STRING it is terminated by
- * the end of input string, a comma, or a right square bracket.
+/*
+ *  scan for one instance of dsttype.  If dsttype is DRMS_STRING it is terminated by
+ *  the end of input string, a comma, or a right square bracket.
  */
 int drms_sscanf (char *str, DRMS_Type_t dsttype, DRMS_Type_Value_t *dst) {
   char *endptr = 0;
@@ -602,14 +612,13 @@ int drms_sscanf (char *str, DRMS_Type_t dsttype, DRMS_Type_Value_t *dst) {
   }
   return -1;
 }
-
-void drms_memset(DRMS_Type_t type, int n, void *array, 
-		 DRMS_Type_Value_t val)
-{
+/*
+ *
+ */
+void drms_memset (DRMS_Type_t type, int n, void *array, DRMS_Type_Value_t val) {
   int i;
 
-  switch(type)
-  {
+  switch (type) {
   case DRMS_TYPE_CHAR: 
     { char *p;
       p  = (char *) array;
@@ -658,13 +667,11 @@ void drms_memset(DRMS_Type_t type, int n, void *array,
     XASSERT(0);
   }
 }
-
-
-/* Return address of data value. */
-void *drms_addr(DRMS_Type_t type, DRMS_Type_Value_t *val)
-{
-  switch(type)
-  {
+/*
+ *  Return address of data value
+ */
+void *drms_addr (DRMS_Type_t type, DRMS_Type_Value_t *val) {
+  switch (type) {
   case DRMS_TYPE_CHAR: 
     return (void *) &(val->char_val);
     break;
@@ -693,16 +700,14 @@ void *drms_addr(DRMS_Type_t type, DRMS_Type_Value_t *val)
   }
   return NULL;
 }
-
-
-/* Convert value from one DRMS type to another. */
-int drms_convert(DRMS_Type_t dsttype, DRMS_Type_Value_t *dst, 
-		 DRMS_Type_t srctype, DRMS_Type_Value_t *src)
-{
+/*
+ *  Convert value from one DRMS type to another
+ */
+int drms_convert (DRMS_Type_t dsttype, DRMS_Type_Value_t *dst,
+    DRMS_Type_t srctype, DRMS_Type_Value_t *src) {
   int status;
 
-  switch(dsttype)
-  {
+  switch (dsttype) {
   case DRMS_TYPE_CHAR: 
     dst->char_val = drms2char(srctype, src, &status);
     break;
@@ -736,11 +741,12 @@ int drms_convert(DRMS_Type_t dsttype, DRMS_Type_Value_t *dst,
   return status;
 }
 
-
-
 /*************** Careful conversion routines. ********************/
-char drms2char(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
-{
+
+/*
+ *
+ */
+char drms2char (DRMS_Type_t type, DRMS_Type_Value_t *value, int *status) {
   int stat;
   int ustat;
   volatile char result;
@@ -749,8 +755,7 @@ char drms2char(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
 
   result =  DRMS_MISSING_CHAR;
   stat = DRMS_RANGE;  
-  switch(type)
-  {
+  switch (type) {
   case DRMS_TYPE_CHAR:       
     stat = DRMS_SUCCESS;
     result = value->char_val;      
@@ -858,10 +863,10 @@ char drms2char(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     *status = stat;
   return result;  
 }
-
-
-short drms2short(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
-{
+/*
+ *
+ */
+short drms2short (DRMS_Type_t type, DRMS_Type_Value_t *value, int *status) {
   int stat;
   int ustat;
   volatile short result;
@@ -870,8 +875,7 @@ short drms2short(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
 
   result =  DRMS_MISSING_SHORT;
   stat = DRMS_RANGE;  
-  switch(type)
-  {
+  switch (type) {
   case DRMS_TYPE_CHAR:       
     if (value->char_val == DRMS_MISSING_CHAR)
     {
@@ -978,10 +982,10 @@ short drms2short(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     *status = stat;
   return result;  
 }
-
-
-int drms2int(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
-{
+/*
+ *
+ */
+int drms2int (DRMS_Type_t type, DRMS_Type_Value_t *value, int *status) {
   int stat;
   int ustat;
   volatile int result;
@@ -990,8 +994,7 @@ int drms2int(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
 
   result =  DRMS_MISSING_INT;
   stat = DRMS_RANGE;  
-  switch(type)
-  {
+  switch (type) {
   case DRMS_TYPE_CHAR:       
     if (value->char_val == DRMS_MISSING_CHAR)
     {
@@ -1098,10 +1101,11 @@ int drms2int(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     *status = stat;
   return result;  
 }
-
-
-long long drms2longlong(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
-{
+/*
+ *
+ */
+long long drms2longlong (DRMS_Type_t type, DRMS_Type_Value_t *value,
+    int *status) {
   int stat;
   int ustat;
   volatile long long result;
@@ -1110,8 +1114,7 @@ long long drms2longlong(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
 
   result =  DRMS_MISSING_LONGLONG;
   stat = DRMS_RANGE;  
-  switch(type)
-  {
+  switch (type) {
   case DRMS_TYPE_CHAR:       
     if (value->char_val == DRMS_MISSING_CHAR)
     {
@@ -1219,11 +1222,10 @@ long long drms2longlong(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     *status = stat;
   return result;  
 }
-
-
-
-float drms2float(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
-{
+/*
+ *
+ */
+float drms2float (DRMS_Type_t type, DRMS_Type_Value_t *value, int *status) {
   int stat;
   volatile float result;
   float val;
@@ -1231,8 +1233,7 @@ float drms2float(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
 
   result =  DRMS_MISSING_FLOAT;
   stat = DRMS_RANGE;  
-  switch(type)
-  {
+  switch (type) {
   case DRMS_TYPE_CHAR:       
     if (value->char_val == DRMS_MISSING_CHAR)
     {
@@ -1348,11 +1349,10 @@ float drms2float(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     *status = stat;
   return result;  
 }
-
-
-
-double drms2double(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
-{
+/*
+ *
+ */
+double drms2double (DRMS_Type_t type, DRMS_Type_Value_t *value, int *status) {
   int stat;
   volatile double result;
   double val;
@@ -1360,8 +1360,7 @@ double drms2double(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
 
   result =  DRMS_MISSING_DOUBLE;
   stat = DRMS_RANGE;  
-  switch(type)
-  {
+  switch (type) {
   case DRMS_TYPE_CHAR:       
     if (value->char_val == DRMS_MISSING_CHAR)
     {
@@ -1466,17 +1465,16 @@ double drms2double(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     *status = stat;
   return result;  
 }
-
-
-double drms2time(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
-{
+/*
+ *
+ */
+double drms2time (DRMS_Type_t type, DRMS_Type_Value_t *value, int *status) {
   int stat;
   volatile double result;
 
   result =  DRMS_MISSING_TIME;
   stat = DRMS_RANGE;  
-  switch(type)
-  {
+  switch (type) {
   case DRMS_TYPE_CHAR:       
     if (value->char_val == DRMS_MISSING_CHAR)
     {
@@ -1575,10 +1573,10 @@ double drms2time(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     *status = stat;
   return result;  
 }
-
-
-char *drms2string(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
-{
+/*
+ *
+ */
+char *drms2string (DRMS_Type_t type, DRMS_Type_Value_t *value, int *status) {
   int stat;
   char *result;
   
@@ -1595,8 +1593,7 @@ char *drms2string(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
   {
     XASSERT(result = malloc(30));
     memset(result,0,30);
-    switch(type)
-    {
+    switch (type) {
     case DRMS_TYPE_CHAR:       
       CHECKSNPRINTF(snprintf(result, 30, "%hhd", value->char_val), 30);
       break;
@@ -1627,26 +1624,20 @@ char *drms2string(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     *status = stat;
   return result;  
 }
-
-
-void drms_byteswap(DRMS_Type_t type, int n, char *val)
-{
-  if (type == DRMS_TYPE_STRING)
-    return;
+/*
+ *
+ */
+void drms_byteswap (DRMS_Type_t type, int n, char *val) {
+  if (type == DRMS_TYPE_STRING) return;
   
-  byteswap(drms_sizeof(type), n, val);
+  byteswap (drms_sizeof(type), n, val);
 }
-
-
-
-
-
-/* Arithmetic operation y = y + alpha*x for DRMS data types. */
-int drms_daxpy(DRMS_Type_t type, const double alpha, DRMS_Type_Value_t *x, 
-	       DRMS_Type_Value_t *y )
-{
-  switch(type)
-  {
+/*
+ *  Arithmetic operation y = y + alpha*x for DRMS data types
+ */
+int drms_daxpy (DRMS_Type_t type, const double alpha, DRMS_Type_Value_t *x,
+    DRMS_Type_Value_t *y) {
+  switch (type) {
   case DRMS_TYPE_CHAR: 
     if (x->char_val == DRMS_MISSING_CHAR)
       y->char_val =  DRMS_MISSING_CHAR;

@@ -1,3 +1,28 @@
+/*
+ *  db_network.c							2007.11.26
+ *
+ *  functions defined:
+ *	send_string
+ *	db_getsocketbufsize
+ *	db_setsocketbufsize
+ *	receive_string
+ *	readn
+ *	Readn
+ *	writen
+ *	Writen
+ *	writevn
+ *	Writevn
+ *	readlonglong
+ *	readint
+ *	readshort
+ *	Readlonglong
+ *	Readint
+ *	Readshort
+ *	Read_dbtype
+ *	Write_dbtype
+ *	htonll
+ *	ntohll
+ */
 #include <stdio.h> 
 #include <stdlib.h> 
 #include <unistd.h>  
@@ -18,8 +43,10 @@
 
 /************** General functions. ************/
 
-void send_string(int fd, char *str)
-{
+/*
+ *
+ */
+void send_string (int fd, char *str) {
   int len;
   struct iovec vec[2];
 
@@ -31,9 +58,10 @@ void send_string(int fd, char *str)
   
   Writevn(fd, vec, 2);
 }
-
-int db_getsocketbufsize(int sockfd, int *sndbuf, int *rcvbuf)
-{
+/*
+ *
+ */
+int db_getsocketbufsize (int sockfd, int *sndbuf, int *rcvbuf) {
   union val {
     int i_val;
     long l_val;
@@ -64,10 +92,10 @@ int db_getsocketbufsize(int sockfd, int *sndbuf, int *rcvbuf)
   }
   return 0;
 }
-
-
-int db_setsocketbufsize(int sockfd, int sndbuf, int rcvbuf)
-{
+/*
+ *
+ */
+int db_setsocketbufsize (int sockfd, int sndbuf, int rcvbuf) {
   if ( setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf)) == -1)
   {
     perror("getsockopt error");
@@ -81,12 +109,10 @@ int db_setsocketbufsize(int sockfd, int sndbuf, int rcvbuf)
   }
   return 0;
 }
-
-
-  
-
-char *receive_string(int fd)
-{
+/*
+ *
+ */
+char *receive_string (int fd) {
   int len;
   char *str;
 
@@ -98,11 +124,10 @@ char *receive_string(int fd)
   str[len] = '\0';
   return str;
 }
-
-
-/* Read "n" bytes from a descriptor. */
-ssize_t readn(int fd, void *vptr, size_t n)
-{
+/*
+ *  Read "n" bytes from a descriptor
+ */
+ssize_t readn (int fd, void *vptr, size_t n) {
   size_t    nleft;
   ssize_t   nread;
   char      *ptr;
@@ -124,10 +149,10 @@ ssize_t readn(int fd, void *vptr, size_t n)
   return(n - nleft);                /* return >= 0 */
 }
 /* end readn */
-
-
-ssize_t Readn(int fd, void *ptr, size_t nbytes)
-{
+/*
+ *
+ */
+ssize_t Readn (int fd, void *ptr, size_t nbytes) {
   ssize_t		n;
 
   if ( (n = readn(fd, ptr, nbytes)) < 0)
@@ -138,11 +163,10 @@ ssize_t Readn(int fd, void *ptr, size_t nbytes)
   }
   return(n);
 }
-
-
-/* Write "n" bytes to a descriptor. */
-ssize_t  writen(int fd, const void *vptr, size_t n)
-{
+/*
+ *  Write "n" bytes to a descriptor
+ */
+ssize_t writen (int fd, const void *vptr, size_t n) {
   size_t          nleft;
   ssize_t         nwritten;
   const char      *ptr;
@@ -163,10 +187,10 @@ ssize_t  writen(int fd, const void *vptr, size_t n)
   return(n);
 }
 /* end writen */
-
-void
-Writen(int fd, const void *ptr, size_t nbytes)
-{
+/*
+ *
+ */
+void Writen (int fd, const void *ptr, size_t nbytes) {
   if (writen(fd, ptr, nbytes) != nbytes)
   {
     perror("writen error");
@@ -174,13 +198,10 @@ Writen(int fd, const void *ptr, size_t nbytes)
     exit(1);
   }
 }
-
-
-
-
-/* Write "n" bytes to a descriptor using gathering write. */
-ssize_t  writevn(int fd, struct iovec *vector, int count, size_t n)
-{
+/*
+ *  Write "n" bytes to a descriptor using gathering write
+ */
+ssize_t writevn (int fd, struct iovec *vector, int count, size_t n) {
   int i;
   size_t          nleft;
   ssize_t         nwritten;
@@ -220,10 +241,10 @@ ssize_t  writevn(int fd, struct iovec *vector, int count, size_t n)
   return(n);
 }
 /* end writevn */
-
-void
-Writevn(int fd, struct iovec *vector, int count )
-{
+/*
+ *
+ */
+void Writevn (int fd, struct iovec *vector, int count ) {
   int i;
   size_t nbytes;
   nbytes = 0;
@@ -239,67 +260,67 @@ Writevn(int fd, struct iovec *vector, int count )
     exit(1);
   }
 }
-
-
-
-int readlonglong(int fd, long long *val)
-{
+/*
+ *
+ */
+int readlonglong (int fd, long long *val) {
   long long tmp; 
   int n;
   if ( (n = readn(fd, &tmp, sizeof(long long))) == sizeof(long long))
     *val = htonll(tmp); 
   return n;
 }
-
-
-int readint(int fd, int *val)
-{
+/*
+ *
+ */
+int readint (int fd, int *val) {
   int tmp; 
   int n;
   if ( (n = readn(fd, &tmp, sizeof(int))) == sizeof(int))
     *val = htonl(tmp); 
   return n;
 }
-
-
-int readshort(int fd, int *val)
-{
+/*
+ *
+ */
+int readshort (int fd, int *val) {
   short tmp; 
   int n;
   if ( (n = readn(fd, &tmp, sizeof(short))) == sizeof(short))
     *val = htons(tmp); 
   return n;
 }
-
-
-
-long long Readlonglong(int fd)
-{
+/*
+ *
+ */
+long long Readlonglong (int fd) {
   long long tmp; 
   Readn(fd, &tmp, sizeof(long long)); 
 
   return htonll(tmp); 
 }
-
-int Readint(int fd)
-{
+/*
+ *
+ */
+int Readint (int fd) {
   int tmp; 
   Readn(fd, &tmp, sizeof(int)); 
 
   return htonl(tmp); 
 }
-
-short Readshort(int fd)
-{
+/*
+ *
+ */
+short Readshort (int fd) {
   short tmp; 
   Readn(fd, &tmp, sizeof(short)); 
 
   return htons(tmp); 
 }
-
-
-void *Read_dbtype(DB_Type_t *type, int fd)
-{
+/*
+ *
+ */
+void *Read_dbtype (DB_Type_t *type, int fd) {
   void *value;
   int size;
 
@@ -315,9 +336,10 @@ void *Read_dbtype(DB_Type_t *type, int fd)
   }
   return value;
 }
-
-void Write_dbtype(DB_Type_t type, char *val, int fd)
-{
+/*
+ *
+ */
+void Write_dbtype (DB_Type_t type, char *val, int fd) {
   int tmp, len;
   struct iovec vec[3];
 
@@ -341,9 +363,6 @@ void Write_dbtype(DB_Type_t type, char *val, int fd)
     Writevn(fd, vec, 2);
     db_byteswap(type, 1, val);    
   }
-
-
-
   /*
   if (type == DB_STRING || type==DB_VARCHAR)
   {
@@ -359,10 +378,10 @@ void Write_dbtype(DB_Type_t type, char *val, int fd)
   }
   */
 }
- 
-
-long long htonll(long long val)
-{
+/*
+ *
+ */
+long long htonll (long long val) {
 #if __BYTE_ORDER == __LITTLE_ENDIAN
   char *p,tmp;
   p = (char *)&val;
@@ -381,8 +400,9 @@ long long htonll(long long val)
 #endif
   return val;
 }
-
-long long ntohll(long long val)
-{
+/*
+ *
+ */
+long long ntohll (long long val) {
   return htonll(val);
 }

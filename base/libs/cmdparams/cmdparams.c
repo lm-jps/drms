@@ -76,38 +76,24 @@ const double gNHugeValF = -HUGE_VALF;
 const double gHugeVal = HUGE_VAL;
 const double gNHugeVal = -HUGE_VAL;
 
-static char *RemoveTrailSp(const char *str, int *status)
-{
-   char *ret = NULL;
-   char *cstr = strdup(str);
-   int len = strlen(cstr);
-   int idx = 0;
+static char *RemoveTrailSp (const char *str, int *status) {
+  char *ret = NULL;
+  char *cstr = strdup(str);
+  int len = strlen(cstr);
+  int idx = 0;
 
-   if (!cstr)
-   {
-      *status = CMDPARAMS_OUTOFMEMORY;
-   }
-   else
-   {
+  if (!cstr) *status = CMDPARAMS_OUTOFMEMORY;
+  else {
+    for (idx = len - 1; idx >= 0; idx--) {
+      if (cstr[idx] == ' ' || cstr[idx] == '\t')
+	cstr[idx] = '\0';
+       else break;
+    }
+    ret = strdup (cstr);
+    free (cstr);
+  }
 
-      for (idx = len - 1; idx >= 0; idx--)
-      {
-	 if (cstr[idx] == ' ' || cstr[idx] == '\t')
-	 {
-	    cstr[idx] = '\0';
-	 }
-	 else
-	 {
-	    break;
-	 }
-      }
-
-      ret = strdup(cstr);
-
-      free(cstr);
-   }
-
-   return ret;
+  return ret;
 }
 
 static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[], 
@@ -303,7 +289,8 @@ static int parse_range_float (char *range, double *min, double *max,
     range[strlen(range)-1] = '\0';
   }
 /*  look for required comma separator and parse min and max vals separately  */
-  /* This function doesn't look fully implemented, but unused min/max are causing compiler warnings. */
+			/* This function doesn't look fully implemented,
+			   but unused min/max are causing compiler warnings. */
   if (min)
   {
 

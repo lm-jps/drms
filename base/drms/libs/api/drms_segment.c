@@ -1,3 +1,33 @@
+/*
+ *  drms_segment.c						2007.11.26
+ *
+ *  functions defined:
+ *	drms_free_template_segment_struct
+ *	drms_free_segment_struct
+ *	drms_copy_segment_struct
+ *	drms_create_segment_prototypes
+ *	drms_template_segments
+ *	drms_segment_print
+ *	drms_segment_size
+ *	drms_segment_setdims
+ *	drms_segment_getdims
+ *	drms_segment_createinfocon
+ *	drms_segment_destroyinfocon
+ *	drms_segment_filename
+ *	drms_delete_segmentfile
+ *	drms_segment_setscaling
+ *	drms_segment_getscaling
+ *	drms_segment_lookup
+ *	drms_segment_lookupnum
+ *	drms_segment_read
+ *	drms_segment_readslice
+ *	drms_segment_write
+ *	drms_segment_write_from_file
+ *	drms_segment_setblocksize
+ *	drms_segment_getblocksize
+ *	drms_segment_autoscale
+ *	drms_segment_segsmatch
+ */
 //#define DEBUG
 
 #include "drms.h"
@@ -6,34 +36,116 @@
 #include "xmem.h"
 #include "drms_dsdsapi.h"
 
-static DRMS_Segment_t * __drms_segment_lookup(DRMS_Record_t *rec, 
-					      const char *segname, int depth);
+/******** helper functions that don't get exported as part of API ********/
 
-static int drms_segment_set_const(DRMS_Segment_t *seg);
-static int drms_segment_checkscaling (const DRMS_Array_t* arr, double bzero, 
-    double bscale, const char *filename);
+/* 
+   Recursive segment lookup that follows linked segment to 
+   their destination until a non-link segment is reached. If the 
+   recursion depth exceeds DRMS_MAXLINKDEPTH it is assumed that there 
+   is an erroneous link cycle, an error message is written to stderr,
+   and a NULL pointer is returned.
+*/
+static DRMS_Segment_t * __drms_segment_lookup(DRMS_Record_t *rec,
+    const char *segname, int depth) {
+  int stat;
+  DRMS_Segment_t *segment;
 
+  segment = hcon_lookup_lower(&rec->segments, segname);
+  if (segment!=NULL && depth<DRMS_MAXLINKDEPTH )
+  {
+    if (segment->info->islink)
+    {
+      rec = drms_link_follow (rec, segment->info->linkname, &stat);
+      if (stat)
+	return NULL;
+      else
+	return __drms_segment_lookup (rec, segment->info->target_seg, depth+1);
+    }
+    else
+    {
+      return segment;
+    }
+  }
+  if (depth>=DRMS_MAXLINKDEPTH)
+    fprintf(stderr, "WARNING: Max link depth exceeded for segment '%s' in "
+	    "record %lld from series '%s'\n", segment->info->name, rec->recnum, 
+	    rec->seriesinfo->seriesname);
+  
+  return NULL;
+}
+/*
+ *
+ */
+static int drms_segment_set_const (DRMS_Segment_t *seg) {
+  XASSERT(seg->info->scope == DRMS_CONSTANT && !seg->info->cseg_recnum);
+  DRMS_Record_t *rec = seg->record;
+  seg->info->cseg_recnum = rec->recnum;
+				       /*  write back to drms_segment table  */
+  char stmt[DRMS_MAXQUERYLEN];
+  char *namespace = ns(rec->seriesinfo->seriesname);
+  sprintf(stmt, "UPDATE %s." DRMS_MASTER_SEGMENT_TABLE
+	  " SET cseg_recnum = %lld WHERE seriesname = '%s' and segmentname = '%s'", 
+	  namespace, rec->recnum, rec->seriesinfo->seriesname, seg->info->name);
+  free (namespace);
+  if (drms_dms (rec->env->session, NULL, stmt)) {
+    fprintf (stderr, "Failed to update drms_segment table for constant segment\n");
+    return DRMS_ERROR_QUERYFAILED;
+  }
+  return DRMS_SUCCESS;
+}
+/*
+ *
+ */
+static int drms_segment_checkscaling (const DRMS_Array_t *a, double zero,
+    double scale, const char *filename) {
+  int ret = 1;
+  double numz = fabs (a->bzero - zero);
+  double nums = fabs (a->bscale - scale);
+  double denz = fabs (zero);
+  double dens = fabs (scale);
+
+  denz += fabs (a->bzero);
+  dens += fabs (a->bscale);
+
+  if ((numz > 1.0e-11 * denz) || (nums > 1.0e-11 * dens)) {
+    fprintf (stderr, "BZERO and BSCALE in FITS file '%s' do not match "
+        "those in DRMS database.\n", filename);    
+    fprintf (stderr, "reldif (bzero) = %g,  reldif (bscale) = %g\n",
+	numz / denz, nums / dens); 
+    ret = 0;
+  }
+  return ret;
+}
+
+/****************************** API functions ******************************/
+
+/*
+ *
+ */
 void drms_free_template_segment_struct (DRMS_Segment_t *segment) {
   free (segment->info);
 }
-
+/*
+ *
+ */
 void drms_free_segment_struct (DRMS_Segment_t *segment) {
   XASSERT(segment);
   return;
 }
-
-void drms_copy_segment_struct(DRMS_Segment_t *dst, DRMS_Segment_t *src)
-{
+/*
+ *
+ */
+void drms_copy_segment_struct (DRMS_Segment_t *dst, DRMS_Segment_t *src) {
   /* Copy struct. */
   memcpy(dst,src,sizeof(DRMS_Segment_t));
   return;
 }
-
+/*
+ *
+ */
 /* returns a pointer to the target's segment container. */
-HContainer_t *drms_create_segment_prototypes(DRMS_Record_t *target, 
-					     DRMS_Record_t *source, 
-					     int *status)
-{
+HContainer_t *drms_create_segment_prototypes (DRMS_Record_t *target,
+    DRMS_Record_t *source, int *status) {
    HContainer_t *ret = NULL;
    DRMS_Segment_t *tSeg = NULL;
    DRMS_Segment_t *sSeg = NULL;
@@ -100,7 +212,6 @@ HContainer_t *drms_create_segment_prototypes(DRMS_Record_t *target,
 
    return ret;
 }
-
 /* 
    Build the segment part of a dataset template by
    using the query result holding a list of 
@@ -108,8 +219,7 @@ HContainer_t *drms_create_segment_prototypes(DRMS_Record_t *target,
    naxis, axis, unit, protocol, description)
    tuples to initialize the array of segment descriptors.
 */
-int drms_template_segments(DRMS_Record_t *template)
-{
+int drms_template_segments (DRMS_Record_t *template) {
   DRMS_Env_t *env;
   int i,n,status = DRMS_NO_ERROR;
   char buf[1024], query[DRMS_MAXQUERYLEN], *p, *q;
@@ -241,12 +351,10 @@ int drms_template_segments(DRMS_Record_t *template)
   db_free_binary_result(qres);
   return status;
 }
-
-
-
-/* Print the fields of a keyword struct to stdout. */
-void drms_segment_print(DRMS_Segment_t *seg)
-{
+/*
+ *  Print the fields of a keyword struct to stdout
+ */
+void drms_segment_print (DRMS_Segment_t *seg) {
   int i;
   const int fieldwidth=13;
 
@@ -333,11 +441,10 @@ void drms_segment_print(DRMS_Segment_t *seg)
   }
 
 }
-
-  
-/* Return segment size in bytes. */  
-long long drms_segment_size(DRMS_Segment_t *seg, int *status)
-{
+/*
+ *  Return segment size in bytes
+ */
+long long drms_segment_size (DRMS_Segment_t *seg, int *status) {
   int i;
   long long size;
 
@@ -352,9 +459,10 @@ long long drms_segment_size(DRMS_Segment_t *seg, int *status)
     *status = DRMS_SUCCESS;
   return size;
 }
-
-int drms_segment_setdims(DRMS_Segment_t *seg, DRMS_SegmentDimInfo_t *di)
-{
+/*
+ *
+ */
+int drms_segment_setdims (DRMS_Segment_t *seg, DRMS_SegmentDimInfo_t *di) {
    int status = DRMS_SUCCESS;
 
    if (seg && di)
@@ -369,10 +477,10 @@ int drms_segment_setdims(DRMS_Segment_t *seg, DRMS_SegmentDimInfo_t *di)
 
    return status;
 }
-
-/* Get the record's segment axis dimensions. */
-int drms_segment_getdims(DRMS_Segment_t *seg, DRMS_SegmentDimInfo_t *di)
-{
+/*
+ *  Get the record's segment axis dimensions
+ */
+int drms_segment_getdims (DRMS_Segment_t *seg, DRMS_SegmentDimInfo_t *di) {
    int status = DRMS_SUCCESS;
 
    if (seg && di)
@@ -383,11 +491,11 @@ int drms_segment_getdims(DRMS_Segment_t *seg, DRMS_SegmentDimInfo_t *di)
 
    return status;
 }
-
-HContainer_t *drms_segment_createinfocon(DRMS_Env_t *drmsEnv, 
-					 const char *seriesName, 
-					 int *status)
-{
+/*
+ *
+ */
+HContainer_t *drms_segment_createinfocon (DRMS_Env_t *drmsEnv,
+    const char *seriesName, int *status) {
      HContainer_t *ret = NULL;
 
      DRMS_Record_t *template = drms_template_record(drmsEnv, seriesName, status);
@@ -443,16 +551,17 @@ HContainer_t *drms_segment_createinfocon(DRMS_Env_t *drmsEnv,
 
      return ret;
 }
-
-void drms_segment_destroyinfocon(HContainer_t **info)
-{
+/*
+ *
+ */
+void drms_segment_destroyinfocon (HContainer_t **info) {
    hcon_destroy(info);
 }
-
-/* Return absolute path to segment file in filename.
-   filename must be able the hold at least DRMS_MAXPATHLEN bytes. */
-void drms_segment_filename(DRMS_Segment_t *seg, char *filename)
-{
+/*.
+ *  Return absolute path to segment file in filename
+ *    filename must be able the hold at least DRMS_MAXPATHLEN bytes
+ */
+void drms_segment_filename (DRMS_Segment_t *seg, char *filename) {
    if (seg->info->protocol == DRMS_DSDS)
    {
       /* For the DSDS protocol, filename is not used. */
@@ -482,8 +591,9 @@ void drms_segment_filename(DRMS_Segment_t *seg, char *filename)
    }
    /* for DRMS_LOCAL, filename is already set */
 }
-
-/* Delete the file storing the data of a segment. */  
+/*
+ *  Delete the file storing the data of a segment
+ */
 int drms_delete_segmentfile (DRMS_Segment_t *seg) {
   char filename[DRMS_MAXPATHLEN];
 
@@ -493,10 +603,10 @@ int drms_delete_segmentfile (DRMS_Segment_t *seg) {
     return DRMS_ERROR_UNLINKFAILED;
   } else return DRMS_SUCCESS;
 }
-
-/* Set segment scaling. Can only be done when creating a new segment. */
-int drms_segment_setscaling(DRMS_Segment_t *seg, double bzero, double bscale)
-{
+/*
+ *  Set segment scaling. Can only be done when creating a new segment
+ */
+int drms_segment_setscaling (DRMS_Segment_t *seg, double bzero, double bscale) {
   int status;
   char tmpstr[20];
 
@@ -514,10 +624,10 @@ int drms_segment_setscaling(DRMS_Segment_t *seg, double bzero, double bscale)
   else
     return DRMS_ERROR_RECORDREADONLY;
 }
-
-
-/* Set segment scaling. Can only be done when creating a new segment. */
-int drms_segment_getscaling(DRMS_Segment_t *seg, double *bzero, double *bscale)
+/*
+ *  Set segment scaling. Can only be done when creating a new segment
+ */
+int drms_segment_getscaling (DRMS_Segment_t *seg, double *bzero, double *bscale)
 {
   int status;
   char tmpstr[20];
@@ -532,8 +642,9 @@ int drms_segment_getscaling(DRMS_Segment_t *seg, double *bzero, double *bscale)
     *bscale = 1.0;
   return status;
 }
-
-/*  Wrapper for __drms_segment_lookup without the recursion depth counter  */
+/*
+ *   Wrapper for __drms_segment_lookup without the recursion depth counter
+ */
 DRMS_Segment_t *drms_segment_lookup (DRMS_Record_t *rec, const char *segname) {
   DRMS_Segment_t *seg = __drms_segment_lookup (rec, segname, 0);
 
@@ -560,57 +671,16 @@ DRMS_Segment_t *drms_segment_lookup (DRMS_Record_t *rec, const char *segname) {
     }
   } else return seg;
 }
-
-/* 
-   Recursive segment lookup that follows linked segment to 
-   their destination until a non-link segment is reached. If the 
-   recursion depth exceeds DRMS_MAXLINKDEPTH it is assumed that there 
-   is an erroneous link cycle, an error message is written to stderr,
-   and a NULL pointer is returned.
-*/
-static DRMS_Segment_t * __drms_segment_lookup(DRMS_Record_t *rec, 
-					      const char *segname, int depth)
-{
-  int stat;
-  DRMS_Segment_t *segment;
-
-  segment = hcon_lookup_lower(&rec->segments, segname);
-  if (segment!=NULL && depth<DRMS_MAXLINKDEPTH )
-  {
-    if (segment->info->islink)
-    {
-      rec = drms_link_follow(rec, segment->info->linkname, &stat);
-      if (stat)
-	return NULL;
-      else
-	return __drms_segment_lookup(rec, segment->info->target_seg, depth+1);
-    }
-    else
-    {
-      return segment;
-    }
-  }
-  if (depth>=DRMS_MAXLINKDEPTH)
-    fprintf(stderr, "WARNING: Max link depth exceeded for segment '%s' in "
-	    "record %lld from series '%s'\n", segment->info->name, rec->recnum, 
-	    rec->seriesinfo->seriesname);
-  
-  return NULL;
-}
-
-
-DRMS_Segment_t *drms_segment_lookupnum(DRMS_Record_t *rec, int segnum)
-{
+/*
+ *
+ */
+DRMS_Segment_t *drms_segment_lookupnum (DRMS_Record_t *rec, int segnum) {
   DRMS_Segment_t *seg = hcon_index2slot(&rec->segments, segnum, NULL);
   // This is to properly handle link segment and constant segment.
   return drms_segment_lookup(rec, seg->info->name);
 }
 
-
-
 /*************************** Segment Data functions **********************/
-
-
 
 /* Open an array data segment. 
 
@@ -624,11 +694,8 @@ DRMS_Segment_t *drms_segment_lookupnum(DRMS_Record_t *rec, int segnum)
    The read functions do not apply bscale or bzero.  This conversion is
    performed at the end of the function (via drms_array_convert_inplace()).
 */  
-
-
-DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type, 
-				int *status)
-{
+DRMS_Array_t *drms_segment_read (DRMS_Segment_t *seg, DRMS_Type_t type,
+    int *status) {
   int stat=0,i;
   DRMS_Array_t *arr;
   char filename[DRMS_MAXPATHLEN];
@@ -640,9 +707,6 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
   CHECKNULL_STAT(seg,status);
   
   rec = seg->record;
-
-
-
   if (seg->info->scope == DRMS_CONSTANT &&
       !seg->info->cseg_recnum) {
     fprintf(stderr, "ERROR in drms_segment_read: constant segment has not yet"
@@ -996,9 +1060,6 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
     *status = stat;
   return NULL;  
 }
-
-
-
 /* Open a data segment. 
 
    a) If the corresponding data file exists, read the 
@@ -1008,9 +1069,8 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
    b) If the data file does not exist, then return a data array filed with 
    the MISSING value for the given type.
 */  
-DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type, 
-				     int *start, int *end,   int *status)
-{
+DRMS_Array_t *drms_segment_readslice (DRMS_Segment_t *seg, DRMS_Type_t type,
+    int *start, int *end,   int *status) {
   int stat=0,i;
   DRMS_Array_t *arr, *tmp;
   char filename[DRMS_MAXPATHLEN];
@@ -1189,15 +1249,11 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
     *status = stat;
   return NULL;
 }
-
-
-
-
 /* Write the array argument to the file occupied by the
    segment argument. The array dimension and type must match the
-   segment dimension and type. */
-int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
-{
+   segment dimension and type
+ */
+int drms_segment_write (DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale) {
   int status,i;
   char filename[DRMS_MAXPATHLEN]; 
   DRMS_Array_t *out;
@@ -1369,8 +1425,10 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
   fprintf(stderr,"ERROR: Couldn't write segment to file '%s'.\n", filename);
   return status;
 }
-
-int drms_segment_write_from_file(DRMS_Segment_t *seg, char *infile) {
+/*
+ *
+ */
+int drms_segment_write_from_file (DRMS_Segment_t *seg, char *infile) {
   char *filename;            /* filename without path */
   char outfile[DRMS_MAXPATHLEN];
   FILE *in, *out;            /* input and output file stream */
@@ -1452,24 +1510,22 @@ int drms_segment_write_from_file(DRMS_Segment_t *seg, char *infile) {
     free(buf);
   return 1;
 }
-
-void drms_segment_setblocksize(DRMS_Segment_t *seg, int *blksz)
-{
+/*
+ *
+ */
+void drms_segment_setblocksize (DRMS_Segment_t *seg, int *blksz) {
   memcpy(seg->blocksize,blksz,seg->info->naxis*sizeof(int));
 }
-
-
-void drms_segment_getblocksize(DRMS_Segment_t *seg, int *blksz)
-{
+/*
+ *
+ */
+void drms_segment_getblocksize (DRMS_Segment_t *seg, int *blksz) {
   memcpy(blksz,seg->blocksize,seg->info->naxis*sizeof(int));
 }
- 
-
 /* Set the scaling of the segment such that the values in the array
    can be stored in an (scaled) integer data segment without overflow.
 */
-void drms_segment_autoscale(DRMS_Segment_t *seg, DRMS_Array_t *arr)
-{
+void drms_segment_autoscale (DRMS_Segment_t *seg, DRMS_Array_t *arr) {
   int i, n, iscale;
   double outmin, outmax;
   double inmin, inmax;
@@ -1761,7 +1817,7 @@ void drms_segment_autoscale(DRMS_Segment_t *seg, DRMS_Array_t *arr)
   }
 }
 
-int drms_segment_segsmatch(const DRMS_Segment_t *s1, const DRMS_Segment_t *s2)
+int drms_segment_segsmatch (const DRMS_Segment_t *s1, const DRMS_Segment_t *s2)
 {
    int ret = 1;
 
@@ -1813,46 +1869,4 @@ int drms_segment_segsmatch(const DRMS_Segment_t *s1, const DRMS_Segment_t *s2)
    }
 
    return ret;
-}
-
-/* helper functions that don't get exported as API */
-int drms_segment_set_const(DRMS_Segment_t *seg) {
-  XASSERT(seg->info->scope == DRMS_CONSTANT &&
-	  !seg->info->cseg_recnum);
-  DRMS_Record_t *rec = seg->record;
-  seg->info->cseg_recnum = rec->recnum;
-
-  // write back to drms_segment table
-  char stmt[DRMS_MAXQUERYLEN];
-  char *namespace = ns(rec->seriesinfo->seriesname);
-  sprintf(stmt, "UPDATE %s." DRMS_MASTER_SEGMENT_TABLE
-	  " SET cseg_recnum = %lld WHERE seriesname = '%s' and segmentname = '%s'", 
-	  namespace, rec->recnum, rec->seriesinfo->seriesname, seg->info->name);
-  free(namespace);
-  if(drms_dms(rec->env->session, NULL, stmt)) {
-    fprintf(stderr, "Failed to update drms_segment table for constant segment\n");
-    return DRMS_ERROR_QUERYFAILED;
-  }
-  return DRMS_SUCCESS;
-}
-
-int drms_segment_checkscaling (const DRMS_Array_t *a, double zero, double scale,
-    const char *filename) {
-  int ret = 1;
-  double numz = fabs (a->bzero - zero);
-  double nums = fabs (a->bscale - scale);
-  double denz = fabs (zero);
-  double dens = fabs (scale);
-
-  denz += fabs (a->bzero);
-  dens += fabs (a->bscale);
-
-  if ((numz > 1.0e-11 * denz) || (nums > 1.0e-11 * dens)) {
-    fprintf (stderr, "BZERO and BSCALE in FITS file '%s' do not match "
-        "those in DRMS database.\n", filename);    
-    fprintf (stderr, "reldif (bzero) = %g,  reldif (bscale) = %g\n",
-	numz / denz, nums / dens); 
-    ret = 0;
-  }
-  return ret;
 }
