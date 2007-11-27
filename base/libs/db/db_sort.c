@@ -1,5 +1,5 @@
 /*
- *  db_network.c							2007.11.26
+ *  db_sort.c							2007.11.26
  *
  *  functions defined:
  *	db_type_compare

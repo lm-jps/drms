@@ -1,3 +1,25 @@
+/*
+ *  db_server.c							2007.11.26
+ *
+/***************  Server side functions ******************
+ *
+ *  functions defined:
+ *	db_write_statncnt
+ *	db_tcp_listen
+ *	db_send_text_result
+ *	db_send_binary_result
+ *	db_server_query_bin
+ *	db_server_query_bin_array
+ *	db_server_query_txt
+ *	db_server_dms
+ *	db_server_dms_array
+ *	db_server_bulk_insert_array
+ *	db_server_sequence_drop
+ *	db_server_sequence_create
+ *	db_server_sequence_getnext
+ *	db_server_sequence_getcurrent
+ *	db_server_sequence_getlast
+ */
 #include <stdio.h> 
 #include <stdlib.h> 
 #include <unistd.h>  
@@ -18,9 +40,10 @@
 #include "timer.h"
 #endif
 
-/***************  Server side functions *******************/
-void db_write_statncnt(int sockfd, int status, int row_count)
-{
+/*
+ *
+ */
+void db_write_statncnt (int sockfd, int status, int row_count) {
   struct iovec vec[2];
   status = htonl(status);
   vec[0].iov_len = sizeof(status);
@@ -30,10 +53,10 @@ void db_write_statncnt(int sockfd, int status, int row_count)
   vec[1].iov_base = &row_count;
   Writevn(sockfd, vec, 2);
 }
-
-
-int db_tcp_listen(char *host, int len, short *port)
-{
+/*
+ *
+ */
+int db_tcp_listen (char *host, int len, short *port) {
   int on;
   struct sockaddr_in server;
   int sockfd, size = sizeof(struct sockaddr_in);
@@ -103,11 +126,10 @@ int db_tcp_listen(char *host, int len, short *port)
   *port = ntohs(server.sin_port);
   return sockfd;
 }
-
-
-/* Send query result to client. */
-int db_send_text_result(int sockfd, DB_Text_Result_t *result, int comp)
-{
+/*
+ *  Send query result to client
+ */
+int db_send_text_result (int sockfd, DB_Text_Result_t *result, int comp) {
   int buflen;
   int zlen;  
   char *zbuf;
@@ -166,11 +188,10 @@ int db_send_text_result(int sockfd, DB_Text_Result_t *result, int comp)
   }
   return 0;
 }
-
-
-/* Send query result to client. */
-int db_send_binary_result(int sockfd, DB_Binary_Result_t *result, int comp)
-{
+/*
+ *  Send query result to client
+ */
+int db_send_binary_result (int sockfd, DB_Binary_Result_t *result, int comp) {
   int i,j;
   int vc,tc;
   DB_Column_t *col;
@@ -263,9 +284,10 @@ int db_send_binary_result(int sockfd, DB_Binary_Result_t *result, int comp)
   }
   return 0;
 }
-
-int db_server_query_bin(int sockfd, DB_Handle_t *db_handle)
-{
+/*
+ *
+ */
+int db_server_query_bin (int sockfd, DB_Handle_t *db_handle) {
   int tmp, len,status, comp;
   char *query;
   DB_Binary_Result_t *result;
@@ -306,12 +328,10 @@ int db_server_query_bin(int sockfd, DB_Handle_t *db_handle)
 
   return status;  
 }
-
-
-
-
-int db_server_query_bin_array(int sockfd, DB_Handle_t *db_handle)
-{
+/*
+ *
+ */
+int db_server_query_bin_array (int sockfd, DB_Handle_t *db_handle) {
   int i, tmp, len,status, comp, n_args;
   char *query;
   DB_Binary_Result_t *result;
@@ -365,10 +385,10 @@ int db_server_query_bin_array(int sockfd, DB_Handle_t *db_handle)
 
   return status;  
 }
-
-
-int db_server_query_txt(int sockfd, DB_Handle_t *db_handle)
-{
+/*
+ *
+ */
+int db_server_query_txt (int sockfd, DB_Handle_t *db_handle) {
   int tmp, len, status;
   char *query;
   DB_Text_Result_t *result;
@@ -409,10 +429,10 @@ int db_server_query_txt(int sockfd, DB_Handle_t *db_handle)
 
   return status;
 }
-
-
-int db_server_dms(int sockfd, DB_Handle_t *db_handle)
-{
+/*
+ *
+ */
+int db_server_dms (int sockfd, DB_Handle_t *db_handle) {
   int tmp, len, status, row_count;
   char *query;
 
@@ -432,10 +452,10 @@ int db_server_dms(int sockfd, DB_Handle_t *db_handle)
 
   return status;
 }
-
-
-int db_server_dms_array(int sockfd, DB_Handle_t *db_handle)
-{
+/*
+ *
+ */
+int db_server_dms_array (int sockfd, DB_Handle_t *db_handle) {
   int i,j;
   int tmp, len, status, row_count;
   char *query, *p, **buffer;
@@ -521,10 +541,10 @@ int db_server_dms_array(int sockfd, DB_Handle_t *db_handle)
 
   return status;
 }
-
-
-int db_server_bulk_insert_array(int sockfd, DB_Handle_t *db_handle)
-{
+/*
+ *
+ */
+int db_server_bulk_insert_array (int sockfd, DB_Handle_t *db_handle) {
   int i,j;
   int tmp, len, status;
   char *table, *p, **buffer;
@@ -611,11 +631,10 @@ int db_server_bulk_insert_array(int sockfd, DB_Handle_t *db_handle)
 
   return status;
 }
-
-
-
-int db_server_sequence_drop(int sockfd, DB_Handle_t *db_handle)
-{
+/*
+ *
+ */
+int db_server_sequence_drop (int sockfd, DB_Handle_t *db_handle) {
   int status;
   char *table;
   
@@ -625,9 +644,10 @@ int db_server_sequence_drop(int sockfd, DB_Handle_t *db_handle)
   free(table);
   return status;
 }
-
-int db_server_sequence_create(int sockfd, DB_Handle_t *db_handle)
-{
+/*
+ *
+ */
+int db_server_sequence_create (int sockfd, DB_Handle_t *db_handle) {
   int status;
   char *table;
   
@@ -637,10 +657,10 @@ int db_server_sequence_create(int sockfd, DB_Handle_t *db_handle)
   free(table);
   return status;
 }
-
-
-int db_server_sequence_getnext(int sockfd, DB_Handle_t *db_handle)
-{
+/*
+ *
+ */
+int db_server_sequence_getnext (int sockfd, DB_Handle_t *db_handle) {
   char *table;
   long long id;
 
@@ -653,7 +673,9 @@ int db_server_sequence_getnext(int sockfd, DB_Handle_t *db_handle)
   else
     return 0;
 }
-
+/*
+ *
+ */
 int db_server_sequence_getnext_n(int sockfd, DB_Handle_t *db_handle)
 {
   char *table;
@@ -686,9 +708,10 @@ int db_server_sequence_getnext_n(int sockfd, DB_Handle_t *db_handle)
   free(table);
   return status;
 }
-
-int db_server_sequence_getcurrent(int sockfd, DB_Handle_t *db_handle)
-{
+/*
+ *
+ */
+int db_server_sequence_getcurrent (int sockfd, DB_Handle_t *db_handle) {
   char *table;
   
   table = receive_string(sockfd);
@@ -696,9 +719,10 @@ int db_server_sequence_getcurrent(int sockfd, DB_Handle_t *db_handle)
   free(table);
   return 0;
 }
-
-int db_server_sequence_getlast(int sockfd, DB_Handle_t *db_handle)
-{
+/*
+ *
+ */
+int db_server_sequence_getlast (int sockfd, DB_Handle_t *db_handle) {
   char *table;
   
   table = receive_string(sockfd);
@@ -706,4 +730,3 @@ int db_server_sequence_getlast(int sockfd, DB_Handle_t *db_handle)
   free(table);
   return 0;
 }
-
