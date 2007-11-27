@@ -34,11 +34,18 @@ foreach dir (man[1-9])
   pushd $dir
   foreach doc (*.[1-9])
     if (! (-e $TARG/$dir)) mkdir $TARG/$dir
-    groff -t -e -mandoc -Tascii $doc  | col -bx > $TARG/$dir/$doc.txt
+    groff -U -t -e -mandoc -Tascii $doc  | col -bx > $TARG/$dir/$doc.txt
     cat >> $INDEX <<!
 <LI><A HREF=$dir/$doc.txt>$doc</A> --
 !
-    grep -A 1 -m 1 ".SH NAME" $doc | tail -1 | sed -e "s/^.*-//" >> $INDEX
+    set FIRSTTHREE = `tail -1 $doc | awk '{print substr($0, 1, 3)}'`
+    if ($FIRSTTHREE == ".so") then
+	set REALDOC = `tail -1 $doc | awk '{print substr($0, 4)}'`
+	grep -A 1 -m 1 ".SH NAME" $REALDOC | tail -1 | sed -e "s/^.*-//" >> $INDEX
+    else
+	grep -A 1 -m 1 ".SH NAME" $doc | tail -1 | sed -e "s/^.*-//" >> $INDEX	
+    endif
+
     cat >> $INDEX <<!
 </LI>
 
