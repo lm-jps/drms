@@ -10,9 +10,9 @@ int drms_insert_series(DRMS_Session_t *session, int update, DRMS_Record_t *templ
 /* returns number of matching segments */
 
 char **drms_series_createpkeyarray(DRMS_Env_t *env, 
-				     const char *seriesName, 
-				     int *nPKeys,
-				     int *status);
+				   const char *seriesName, 
+				   int *nPKeys,
+				   int *status);
 
 void drms_series_destroypkeyarray(char ***pkeys, int nElements);
 
