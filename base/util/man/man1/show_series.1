@@ -1,28 +1,33 @@
 
 .\"
-.TH show_series 1  23-July-2006  "DRMS MANPAGE" "DRMS Programmer's Manual"
+.TH show_series 1  28-Nov-2007  "DRMS MANPAGE" "DRMS Programmer's Manual"
 .SH NAME
-show_series \- DRMS List DataSeries names with optional information
+show_series \- list all DRMS dataseries names.
 .SH SYNOPSIS
 .nf
-.B show_series {filter} {-p} {-v}
+.B show_series \fR[\fB-hpv\fRDRIVER_FLAGS] [<filter>]
 
 .SH DESCRIPTION
-Show_series lists JSOC dataseries.  It can optionally show the prime keywords and
-description.  The list can be filtered by specifying a grep-like regular expression.
+show_series lists the names of DRMS dataseries. If the \fB-p\fR flag is set, it 
+displays the prime-keyword names and series description. The information displayed
+is restricted to a subset of DRMS series by specifying <filter>,
+a grep-like regular expression.
+
+.SH FLAGS
 The flags that control show_keys are:
 .PP
-.B -p
-Show the Prime Keys and Description
-.br
-.B -h
+.IP \fB-h\fR 5
 Print usage message and exit
 .br
-.B -v
-Verbose - noisy.
+.IP \fB-p\fR 5
+Print prime-keyword names and the series description
 .br
-.B <filter>
-A pattern using grep-like rules to select the series to list.
+.IP \fB-v\fR 5
+Verbose - noisy.
+
+.SH ARGUMENTS
+.IP <filter> 15
+A pattern using grep-like rules to select a subset of series
 .br
 .PP
 .SH "SEE ALSO"
