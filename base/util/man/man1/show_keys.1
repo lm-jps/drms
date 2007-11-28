@@ -1,66 +1,78 @@
 .\"
-.TH show_keys 1  13-Sep-2006  "DRMS MANPAGE" "DRMS Programmer's Manual"
+.TH show_keys 1  27-Nov-2007  "DRMS MANPAGE" "DRMS Programmer's Manual"
 .SH NAME
-show_keys \- DRMS List keyword contents for a DataSeries
+show_keys \- list the keyword values for each record in a DRMS record set
 
 .SH SYNOPSIS
 .nf
-\fBshow_keys [-aklpqr] \fRds=\fR<recordset query> \fB[n=\fRnrecords] \fB[key=\fR<keylist>\fB] [seg=\fR<segmentlist>\fB]\fR
+\fBshow_keys\fR [\fB-aklpqr\fRDRIVER_FLAGS] \fBds=\fR<record_set> [\fBn=\fR<nrecords>] [\fBkey=\fR<keylist>] [\fBseg=\fR<seglist>]
 
 .SH DESCRIPTION
-Show_keys lists keywords and/or segment filenames from a JSOC dataseries.  It can optionally list the full path
-to the record direcory in SUMS.
+show_keys can list the keyword names and values, and the segment names and file names (full paths) 
+for each record in a record set. It can also list the full path to the record direcory in SUMS, 
+which contains the segment files. Exactly what information gets printed is controlled by 
+command-line flags (see below). The \fB-k\fR flag controls the format of the output. If it is set, 
+then the output is in table format, with a header row showing the keyword names. 
+Otherwise, keyword name=value pairs are listed one per line.
+If the \fB-a\fR flag is set, show_keys lists the names of all series keywords, 
+prime keywords, and segments, and exits. Otherwise, it prints keyword and
+segment information as specified by the other flags and arguments. 
+If the \fB-p\fR flag is set and <seglist> is specified, then the full paths 
+for the segment files will be displayed. If the \fB-p\fR flag is set, but <seglist>
+is not specified, then only the full path to the record's storage unit will be displayed.
+.PP
+The number of records for which information will be printed must be specified, either by
+supplying a <record_set> string that selects a subset of records from a series, or by 
+supplying the \fBn=\fR<nrecords> argument, which indicates the number of records.
+.PP
+Example to show the storage-unit paths for a maximum of 10 records:
+  show_keys -p ds=su_arta.TestStoreFile n=10
+
+Example to show information, in non-table format, for all keywords, plus 
+the segment named file_seg, for a maximum of 10 records:
+  show_keys ds=su_arta.TestStoreFile -akr n=10 seg=file_seg
 
 .SH FLAGS
-.IP \fB-a\fR 20
-Select all keywords
-.IP \fB-k\fR 20
-List keywords and values one per line, otherwise use table format
-.IP \fB-l\fR 20
-Just list all series keywords and descriptions, then exit
-.IP \fB-p\fR 20
-Show the StorageUnit path for the record, as part of segment file if seg= specified.
-.IP \fB-q\fR 20
-Quiet - omit the header line listing keyword names
-.IP \fB-r\fR 20
-Show the absolute record number as the first "keyword"
+.IP \fB-a\fR 5
+Show all keyword names and values for each record specified by <record_set> or <nrecords>.
+\fB-a\fR takes precedence over <keylist>.
+.IP \fB-k\fR 5
+List keyword name=value pairs, one per line. Otherwise print all keyword values 
+on a single line and print a header line containing the keyword names (table format).
+.IP \fB-l\fR 5
+List the names of all series keywords, prime keywords, and segments, and exit. Otherwise,
+print keyword and segment information as specified by the other flags and arguments.
+.IP \fB-p\fR 5
+Include in the output the full storage-unit path for each record
+.IP \fB-q\fR 5
+Quiet - omit the header line listing keyword names if the \fB-k\fR flag is set
+.IP \fB-r\fR 5
+Include in the output the record number keyword
 
 .SH ARGUMENTS
-.IP \fBds=<recordset_query>\fR 20
-The recordset query specifies a data series and set of records to list.
-It may be just a series name, in which case the entire series is used, or it
-may have one or more record specifier clauses in square brackets.
-This parameter is required.  If no record specifier part "[...]" is given then n=recs must be present.
-.IP \fBn=<record_count>\fR 20
-n specifies the maximum number of records to show.  I n<0 it is the count from the
-end of the selected recordset.  Thus if no "[...]" record spec is given and e.g. n=-1, the last
-record in the dataseries will be shown.  Similarly if n=1 only the first will be shown.
-.IP \fBkey=\fI{key0[,key1[...]]}\fR 20
-A comma separated list of keywords to examine. If no key list is specified,
-all keyword values in the selected record set will be reported.
-If the "-a" flag is used, all kwywords will be selected and the "key=" argument will be ignored.
-.IP \fBseg=\fI{segment_list}\fR 20
-Comma separated list of segment names for which the associated filename will be shown.
-.PP
-\fIshow_keys\fR will simply list all series keywords and exit if the -l flag is set.
-Otherwise, it will
-go through the recordset and, for each record, print a line of tab-delimited
-values for the selected keywords and segments.  
-If the "-p" flag is present the full path for the segment files will be given if
-any segments are requested, or if no segments requested then the full path of the storage unit for the record will be shown.
-The -q flag makes the output convenient for capture for use by another
-program.
-.PP
-If the \fB-k\fR flag is set the listing will be one \fIkeyword=value\fR pair per
-line.  A comment line will preceed the keywords for each record giving the
-record specification query that will produce that record.
-
+.IP <record_set> 15
+A series name followed by an optional record-set specification 
+(i.e., <seriesname>[RecordSet_filter]). Causes selection of a subset of 
+records in the series. This argument is required, and if no record-set filter is specified, 
+then \fBn=\fR<nrecords> must be present.
+.IP <nrecords> 15
+<nrecords> specifies the maximum number of records for which information is printed. 
+If <nrecords> < 0, show_keys displays information for the last <nrecords> records in
+the record set. If <nrecords> > 0, show_keys displays information for the first <nrecords> 
+records in the record set. If <record_set> contains a record-set filter, then <nrecords> 
+can reduce the total number of records for which information is displayed.
+.IP <keylist> 15
+Comma-separated list of keyword names. For each keyword listed, information will be displayed.
+<keylist> is ignored in the case that the \fB-a\fR flag is set.
+.IP <seglist> 15
+Comma-separated list of segment names. For each segment listed, the full path to the segment's 
+file is displayed (if the \fB-p\fR flag is set) or the file name 
+of the segment's file name is displayed (if the \fB-p\fR flag is unset).
 .SH BUGS
-The program will fail if called with the \fB-p\fR flag or if a \fIfile
-\fRparameter is specified, and if there are no data segments associated with
-the requested data series.
+The program will produce superflous and non-meaningful output if called with the 
+\fB-p\fR flag and <seglist> is provided on the command line.
 
 .SH "SEE ALSO"
 .B retrieve_file(1)
 .R <drms_query(1)>
-.R <describe_series(1)>
+
