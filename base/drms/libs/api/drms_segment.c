@@ -1490,57 +1490,24 @@ void drms_segment_autoscale (DRMS_Segment_t *seg, DRMS_Array_t *arr) {
   }
 }
 
+int drms_segment_segsmatch (const DRMS_Segment_t *s1,
+    const DRMS_Segment_t *s2) {
+  int i;
 
-int drms_segment_segsmatch(const DRMS_Segment_t *s1, const DRMS_Segment_t *s2)
-{
-   int ret = 1;
+  if (s1 && s2) {
+    int nDims = s1->info->naxis;
+    if (nDims != s2->info->naxis) return 0;
+    if (s1->info->protocol != s2->info->protocol) return 0;
+    if (s1->info->type != s2->info->type) return 0;
+    if (s2->info->scope != s2->info->scope) return 0;
+ 
+    for (i = 0; i < nDims; i++)
+      if (s1->axis[i] != s2->axis[i]) return 0;
 
-   if (s1 && s2)
-   {
-      int nDims = s1->info->naxis;
-      if (nDims == s2->info->naxis)
-      {
-	 int i = 0;
-	 for (; i < nDims; i++)
-	 {
-	    if (s1->axis[i] != s2->axis[i])
-	    {
-	       ret = 0;
-	       break;
-	    }
-	 }
-
-	 if (s1->info->protocol == DRMS_TAS && s2->info->protocol == DRMS_TAS)
-	 {
-	    for (i = 0; ret == 1 && i < nDims; i++)
-	    {
-	       if (s1->blocksize[i] != s2->blocksize[i])
-	       {
-		  ret = 0;
-		  break;
-	       }
-	    }
-	 }
-      }
-      else
-      {
-	 ret = 0;
-      }
-
-      if (ret == 1)
-      {
-	 if ((s1->info->type != s2->info->type) ||
-	     (s1->info->protocol != s2->info->protocol) ||
-	     (s2->info->scope != s2->info->scope))
-	 {
-	    ret = 0;
-	 }
-      }
-   }
-   else if (s1 || s2)
-   {
-      ret = 0;
-   }
-
-   return ret;
+    if (s1->info->protocol == DRMS_TAS) {
+      for (i = 0; i < nDims; i++)
+	if (s1->blocksize[i] != s2->blocksize[i]) return 0;
+    }
+  } else if (s1 || s2) return 0;
+  return 1;
 }
