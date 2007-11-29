@@ -1,18 +1,3 @@
-/*
- *  parse_params.c						2007.11.26
- *
- *  functions defined:
- *	XXX_params_parse_arguments
- *	XXX_params_free
- *	params_print
- *	XXX_params_stat
- *	XXX_params_isdef
- *	XXX_params_get_int
- *	XXX_params_get_float
- *	XXX_params_get_double
- *	XXX_params_get_string
- *	XXX_params_get_char
- */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,45 +11,50 @@ static char param_buffer[PARAMBUFLEN];
 static Hash_Table_t ParamHash;
 
 /* Missing prototype in stdlib.h?!? */
-float strtof (const char *nptr, char **endptr);
+float strtof(const char *nptr, char **endptr);
 
-/*
- *  Operators defining a Hash table on strings
- */
-static unsigned int hash (const void *v) {
+/* Prototypes for static functions. */
+static unsigned int hash(const void *v);
+static int equal(const void *a, const void *b);
+static void print(const void *key, const void *value);
+static int parse_line(char *inbuf, char **outbuf, char **pname, char **pvalue);
+static int parse_file(FILE *stream, Hash_Table_t *h, char **bufstart, char *bufend);
+
+/* Operators defining a Hash table on strings. */
+static unsigned int hash(const void *v)
+{
   char *c = (char *) v;
   unsigned int sum = 0;
 
-  while (*c) sum += (unsigned int)*c++ + 31 * sum;
+  while ( *c ) 
+    sum += (unsigned int) *c++ + 31*sum;
   return sum;
 }
-/*
- *
- */
-static int equal (const void *a, const void *b) {
-  return  strncmp ((char *)a, (char *)b, LINEMAX);
+
+static int equal(const void *a, const void *b)
+{
+  return  strncmp((char *)a, (char *)b, LINEMAX);
 }
-/*
- *
- */
-static void print (const void *key, const void *value) {
-  printf("%s = %s\n", (char *)key, (char *)value);
+
+static void print(const void *key, const void *value)
+{
+  printf("%s = %s\n",(char *) key, (char *) value);
 }
-/*
- *  Simple parameter parsing functions. The parameters are read in
- *    and a Hash table mapping parameter names to their values is
- *    constructed
- */
-/*  parse a line of the form
- *     <ws>* <name> <ws>* '=' <ws>* <value> <ws>* '#' <comments>, 
- *     where <ws> = white space
- *           <value> =  <char \ <ws>> | '"' <char>* '"'
- *     It i assumed that the string in inbuf ends in '\0'
- *     and that strlen(inbuf) is smaller than the length of
- *     the buffers for name and value.
- */
-static int parse_line (char *inbuf, char **outbuf, char **pname,
-    char **pvalue) {
+
+
+/* Simple parameter parsing functions. The parameters are read in
+   and a Hash table mapping parameter names to their values is
+   constructed. */
+static int parse_line(char *inbuf, char **outbuf, char **pname, char **pvalue)
+{
+  /* parse a line of the form
+     <ws>* <name> <ws>* '=' <ws>* <value> <ws>* '#' <comments>, 
+     where <ws> = white space
+           <value> =  <char \ <ws>> | '"' <char>* '"'
+     It i assumed that the string in inbuf ends in '\0'
+     and that strlen(inbuf) is smaller than the length of
+     the buffers for name and value.
+  */
   char *instart, *name, *value;
 
   instart = inbuf;
@@ -114,11 +104,9 @@ static int parse_line (char *inbuf, char **outbuf, char **pname,
 
   return 2;
 }
-/*
- *
- */
-static int parse_file (FILE *stream, Hash_Table_t *h, char **bufstart,
-    char *bufend) {
+
+static int parse_file(FILE *stream, Hash_Table_t *h, char **bufstart, char *bufend) 
+{
   int count, status;
   char linebuf[LINEMAX], *name, *value;
 
@@ -137,10 +125,9 @@ static int parse_file (FILE *stream, Hash_Table_t *h, char **bufstart,
   }
   return count;
 }
-/*
- *
- */
-int XXX_params_parse_arguments (int argc, char *argv[]) {
+
+int XXX_params_parse_arguments(int argc, char *argv[])
+{
   int count;
   int i, status;
   char *bufstart = param_buffer, *bufend = &param_buffer[PARAMBUFLEN-1];
@@ -172,28 +159,31 @@ int XXX_params_parse_arguments (int argc, char *argv[]) {
   }
   return count;  
 }
-/*
- *  Free data structures allocated for Hash table and empty buffer
- */
-void XXX_params_free (void) {
-  hash_free (&ParamHash);
+
+
+void XXX_params_free(void)
+/* Free data structures allocated for Hash table and empty
+   buffer. */
+{
+  hash_free(&ParamHash);
 }
-/*
- *  Debugging functions
- */
-void params_print (void) {
+
+
+/* Debugging functions */
+void params_print(void)
+{
   hash_map(&ParamHash,print);
 }
-/*
- *
- */
-void XXX_params_stat (void) {
+ 
+void XXX_params_stat(void)
+{
   hash_stat(&ParamHash); 
 }
-/*
- *  Functions for looking up the value of an argument in the Hash table
- */
-int XXX_params_isdef (const char *name) {
+
+
+/* Functions for looking up the value of an argument in the Hash table. */
+int XXX_params_isdef( const char *name )
+{
   int i;
   char buf[LINEMAX], *p=buf;
   
@@ -202,10 +192,9 @@ int XXX_params_isdef (const char *name) {
   *p = '\0';
   return hash_member(&ParamHash, buf);
 }
-/*
- *
- */
-int XXX_params_get_int (const char *name) {
+
+int XXX_params_get_int( const char *name)
+{
   int i;
   const char *value;
   char *endptr;
@@ -227,10 +216,9 @@ int XXX_params_get_int (const char *name) {
     fprintf(stderr,"Unknown parameter '%s'.\n",name);
   exit(1);    
 }
-/*
- *
- */
-float XXX_params_get_float (const char *name) {
+
+float XXX_params_get_float( const char *name)
+{
   int i;
   const char *value;
   char *endptr;
@@ -252,10 +240,9 @@ float XXX_params_get_float (const char *name) {
     fprintf(stderr,"Unknown parameter '%s'.\n",name);
   exit(1);
 }
-/*
- *
- */
-float XXX_params_get_double (const char *name) {
+
+float XXX_params_get_double( const char *name)
+{
   int i;
   const char *value;
   char *endptr;
@@ -278,10 +265,9 @@ float XXX_params_get_double (const char *name) {
     fprintf(stderr,"Unknown parameter '%s'.\n",name);
   exit(1);
 }
-/*
- *
- */
-const char *XXX_params_get_string (const char *name) {
+
+const char *XXX_params_get_string( const char *name)
+{
   int i;
   const char *value;
   char buf[LINEMAX], *p=buf;
@@ -295,10 +281,9 @@ const char *XXX_params_get_string (const char *name) {
     fprintf(stderr,"Unknown parameter '%s'.\n",name);
   exit(1);
 }
-/*
- *
- */
-char XXX_params_get_char (const char *name) {
+
+char XXX_params_get_char( const char *name)
+{
   int i;
   const char *value;
   char buf[LINEMAX], *p=buf;
@@ -315,4 +300,3 @@ char XXX_params_get_char (const char *name) {
     fprintf(stderr,"Unknown parameter '%s'.\n",name);
   exit(1);
 }
-

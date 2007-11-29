@@ -1,17 +1,3 @@
-/*
- * table.c							2007.11.26
- *
- *  functions defined:
- *	table_init
- *	table_copy
- *	table_free
- *	table_insert
- *	table_remove
- *	table_lookup
- *	table_map
- *	table_member
- *	table_len
- */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,11 +7,10 @@
 
 #define TRUE 1
 #define FALSE 0
-/*
- *
- */
-void table_init (int maxsize, Table_t *S,
-    int (*not_equal)(const void *, const void *)) {
+
+void table_init(int maxsize, Table_t *S, 
+		int (*not_equal)(const void *, const void *))
+{
   S->not_equal = not_equal;
   if (maxsize>0)
   {
@@ -37,28 +22,28 @@ void table_init (int maxsize, Table_t *S,
   S->size = 0;
   S->maxsize = maxsize;
 }
-/*
- *
- */
-void table_copy (Table_t *dst, Table_t *src) {
+
+
+void table_copy(Table_t *dst, Table_t *src)
+{
   table_init(src->maxsize, dst, src->not_equal);
   dst->size = src->size;  
   memcpy(dst->data, src->data, src->size*sizeof(Entry_t));
 }
-/*
- *
- */
-void table_free (Table_t *S) {
+
+
+
+void table_free(Table_t *S)
+{
   if (S->data)
   {
     free(S->data);
     S->data=NULL;
   }
 }
-/*
- *
- */
-void table_insert (Table_t *S, const void *key, const void *value) {
+
+void table_insert(Table_t *S, const void *key, const void *value)
+{
   int i;
   Entry_t *tmp;
 
@@ -89,10 +74,9 @@ void table_insert (Table_t *S, const void *key, const void *value) {
   S->data[i].key = key;
   S->data[i].value = value;
 }
-/*
- *
- */
-int table_remove (Table_t *S, const void *key) {
+
+int table_remove(Table_t *S, const void *key)
+{
   int i;
   
   for(i=0; i < S->size; i++) 
@@ -107,10 +91,9 @@ int table_remove (Table_t *S, const void *key) {
   }
   return 1;
 }
-/*
- *
- */
-const void *table_lookup (Table_t *S, const void *key) {
+
+const void *table_lookup(Table_t *S, const void *key)
+{
   int i;
 
   for(i=0; i < S->size; i++) 
@@ -120,19 +103,19 @@ const void *table_lookup (Table_t *S, const void *key) {
   }
   return NULL;
 }
-/*
- *
- */
-void table_map (Table_t *S, void (*f)(const void *key, const void *value)) {
+
+
+void table_map(Table_t *S, void (*f)(const void *key, const void *value))
+{
   int i;
 
   for(i=0; i < S->size; i++) 
     f(S->data[i].key, S->data[i].value);
 }
-/*
- *
- */
-int table_member (Table_t *S, const void *key) {
+
+
+int table_member(Table_t *S, const void *key)
+{
   int i;
 
   for(i=0; i < S->size; i++) 
@@ -142,10 +125,8 @@ int table_member (Table_t *S, const void *key) {
   }
   return FALSE;
 }
-/*
- *
- */
-int table_len (Table_t *S) {
+
+int table_len(Table_t *S)
+{
   return S->size;
 }
-

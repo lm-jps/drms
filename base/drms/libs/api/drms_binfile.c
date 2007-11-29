@@ -1,18 +1,9 @@
-/*
- *  drms_binfile.c						2007.11.20
- *
- *  functions defined:
- *	drms_binfile_read
- *	drms_binfile_write
- *	drms_zipfile_read
- *	drms_zipfile_write
- */
 #include "drms.h"
 #include <zlib.h>
 
 /*
  *  I/O of nearly raw binary files and gz compressed versions of same
- *  The (uncompressed) files have a header with the following format:
+ *  The (uncompressed) files habe a header with the following format:
  *
  *	field    |  size    | meaning
  *	-----------------------------------
@@ -34,9 +25,7 @@
  */
 
 #define TRY(code) if(!(code)) goto bailout;
-/*
- *
- */
+
 int drms_binfile_read (char *filename, int nodata, DRMS_Array_t *rf) {
   int i;
   FILE *fp;
@@ -119,9 +108,7 @@ bailout:
   fclose (fp);
   return 1;
 }
-/*
- *
- */
+
 int drms_binfile_write (char *filename, DRMS_Array_t *rf) {
   int i;
   FILE *fp;
@@ -173,16 +160,16 @@ int drms_binfile_write (char *filename, DRMS_Array_t *rf) {
   TRY (fwrite (&rf->buflen, 8, 1, fp));           
   fwrite (rf->data, bufsize, 1, fp);
 #endif
-  fclose (fp);
+  fclose(fp);
   return 0;
 bailout:
-  fclose (fp);
-  unlink (filename);
+  fclose(fp);
+  unlink(filename);
   return 1;
 }
-/*
- *********************  ZIPFILE  *******************
- */
+
+	/**********************  ZIPFILE  ********************/
+
 int drms_zipfile_read (char *filename, int nodata, DRMS_Array_t *rf) {
   int i;
   gzFile fp;
@@ -266,9 +253,9 @@ bailout:
   gzclose (fp);
   return 1;
 }
-/*
- *
- */
+
+
+
 int drms_zipfile_write (char *filename, DRMS_Array_t *rf) {
   gzFile *fp;
   int i;
@@ -282,7 +269,7 @@ int drms_zipfile_write (char *filename, DRMS_Array_t *rf) {
 		  /*  Use Huffman coding only for floating point data - NO!. */
 /*
   if (rf->type == DRMS_TYPE_FLOAT || rf->type == DRMS_TYPE_DOUBLE)
-    fp = gzopen (filename,"wb1h");
+    fp = gzopen(filename,"wb1h");
   else
 */
   fp = gzopen (filename, "wb1");

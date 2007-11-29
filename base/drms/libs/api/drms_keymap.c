@@ -56,6 +56,90 @@ static void KMFree(const void *val);
 static int drms_keymap_initcltables();
 static void drms_keymap_termcltables();
 
+/* KMFree() - This function frees all HContainer_t memory associated with a 
+ * drms keymap. Used as the deep_free function in the call to hcon_create()
+ * when the global class table (gClassTables) is created.
+ */
+static void KMFree(const void *val)
+{
+   DRMS_KeyMap_t *km = (DRMS_KeyMap_t *)val;
+   
+   if (km)
+   {
+      hcon_free(&(km->int2ext));
+      hcon_free(&(km->ext2int));
+   }
+}
+
+/* drms_keymap_initcltables() - JSOC defines several default keyword mappings. Each
+ * such default mapping is considered a mapping "class". For each mapping class
+ * defined in defkeymapclass.h, this function reads the mapping data and creates 
+ * a DRMS_KeyMap_t structure. These DRMS_KeyMap_t structures are saved in a global
+ * container - gClassTables. Once drms_keymap_initcltables() completes, programs
+ * then have access to these classes with the drms_keymap_classidextname(), 
+ * drms_keymap_classextname(), drms_keymap_classidintname(), and 
+ * drms_keymap_classintname() functions.
+ */
+static int drms_keymap_initcltables()
+{
+   int ret = 0;
+
+   if (!gClassTables)
+   {
+      gClassTables = hcon_create(sizeof(DRMS_KeyMap_t), MAXCLKEY, KMFree, NULL, NULL, NULL, 0);
+   }
+
+   if (gClassTables)
+   {
+      int ok = 1;
+      int i = kKEYMAPCL_UNDEF + 1;
+      for (; ok && i < kKEYMAPCL_NUMTABLESPLUSONE; i++)
+      {
+	 DRMS_KeyMap_t *km = drms_keymap_create();
+	 if (km)
+	 {
+	    /* Parse keyword mapping table */
+	    ok = drms_keymap_parsetable(km, KeyMapClassTables[i]);
+
+	    if (ok)
+	    {
+	       ok = !hcon_insert(gClassTables, KeyMapClassIDMap[i], km);
+	       free(km); /* don't deep-free since gClassTables points to malloc'd mem */
+	    }
+	    else
+	    {
+	       /* deep-free since km never got copied into gClassTables */
+	       drms_keymap_destroy(&km);
+	    }
+	 }
+	 else
+	 {
+	    ok = 0;
+	 }
+      }
+
+      ret = ok;
+   }
+
+   if (!ret && gClassTables)
+   {
+      hcon_destroy(&gClassTables);
+   }
+   
+   return ret;
+}
+
+/* drms_keymap_termcltables() - Free all memory allocated by the drms_keymap_initcltables()
+ * function call.
+ */
+static void drms_keymap_termcltables()
+{
+   if (gClassTables)
+   {
+      hcon_destroy(&gClassTables);
+   }
+}
+
 DRMS_KeyMap_t *drms_keymap_create()
 {
    DRMS_KeyMap_t *ret = NULL;
@@ -82,6 +166,9 @@ void drms_keymap_destroy(DRMS_KeyMap_t **km)
    }
 }
 
+/* drms_keymap_parsetable() - 
+ *
+ */
 int drms_keymap_parsetable(DRMS_KeyMap_t *keymap, const char *text)
 {
    int success = 1;
@@ -189,89 +276,17 @@ int drms_keymap_parsefile(DRMS_KeyMap_t *keymap, FILE *fPtr)
    return success;
 }
 
-static void KMFree(const void *val)
-{
-   DRMS_KeyMap_t *km = (DRMS_KeyMap_t *)val;
-   
-   if (km)
-   {
-      hcon_free(&(km->int2ext));
-      hcon_free(&(km->ext2int));
-   }
-}
-
-/* drms_keymap_initcltables() - JSOC defines several default keyword mappings. Each
- * such default mapping is considered a mapping "class". For each mapping class
- * defined in defkeymapclass.h, this function reads the mapping data and creates 
- * a DRMS_KeyMap_t structure. These DRMS_KeyMap_t structures are saved in a global
- * container - gClassTables. Once drms_keymap_initcltables() completes, programs
- * then have access to these classes with the drms_keymap_classidextname(), 
- * drms_keymap_classextname(), drms_keymap_classidintname(), and 
- * drms_keymap_classintname() functions.
+/* drms_keymap_init() - This function calls all keymap initialization functions().
+ * This function should be called during program initialization.
  */
-
-static int drms_keymap_initcltables()
-{
-   int ret = 0;
-
-   if (!gClassTables)
-   {
-      gClassTables = hcon_create(sizeof(DRMS_KeyMap_t), MAXCLKEY, KMFree, NULL, NULL, NULL, 0);
-   }
-
-   if (gClassTables)
-   {
-      int ok = 1;
-      int i = kKEYMAPCL_UNDEF + 1;
-      for (; ok && i < kKEYMAPCL_NUMTABLESPLUSONE; i++)
-      {
-	 DRMS_KeyMap_t *km = drms_keymap_create();
-	 if (km)
-	 {
-	    /* Parse keyword mapping table */
-	    ok = drms_keymap_parsetable(km, KeyMapClassTables[i]);
-
-	    if (ok)
-	    {
-	       ok = !hcon_insert(gClassTables, KeyMapClassIDMap[i], km);
-	       free(km); /* don't deep-free since gClassTables points to malloc'd mem */
-	    }
-	    else
-	    {
-	       /* deep-free since km never got copied into gClassTables */
-	       drms_keymap_destroy(&km);
-	    }
-	 }
-	 else
-	 {
-	    ok = 0;
-	 }
-      }
-
-      ret = ok;
-   }
-
-   if (!ret && gClassTables)
-   {
-      hcon_destroy(&gClassTables);
-   }
-   
-   return ret;
-}
-
 int drms_keymap_init()
 {
    return drms_keymap_initcltables();
 }
 
-static void drms_keymap_termcltables()
-{
-   if (gClassTables)
-   {
-      hcon_destroy(&gClassTables);
-   }
-}
-
+/* drms_keymap_term() - This function calls all keymap termination functions().
+ * This function should be called immediately prior to program termination..
+ */
 void drms_keymap_term()
 {
    drms_keymap_termcltables();
