@@ -1,27 +1,3 @@
-/*
- *  drms_server.c						2007.11.26
- *
- *  functions defined:
- *	drms_server_authenticate
- *	drms_server_open_session
- *	drms_server_session_status
- *	drms_server_close_session
- *	drms_server_abort
- *	drms_server_commit
- *	drms_server_thread
- *	drms_server_newslots
- *	drms_server_getunit
- *	drms_server_alloc_recnum
- *	drms_server_slot_setstate
- *	drms_server_newseries
- *	drms_server_dropseries
- *	drms_lock_server
- *	drms_unlock_server
- *	drms_server_gettmpguid
- *	drms_delete_temporaries
- *	drms_sums_thread
- *	drms_signal_thread
- */
 //#define DEBUG
 
 #define __DRMS_SERVER_C
@@ -34,161 +10,14 @@
 #include <sched.h>
 #endif
 #include <dirent.h>
-
-/*
- *
- */
-static DRMS_SumRequest_t *drms_process_sums_request (DRMS_Env_t  *env,
-    SUM_t *sum, DRMS_SumRequest_t *request) {
-  int i;
-  DRMS_SumRequest_t *reply;
-  
-  XASSERT(reply = malloc(sizeof(DRMS_SumRequest_t)));
-  switch(request->opcode)
-  {
-  case DRMS_SUMALLOC:
-#ifdef DEBUG
-    printf("Processing SUMALLOC request.\n");
-#endif
-    if (request->reqcnt!=1)
-    {
-      fprintf(stderr,"SUM thread: Invalid reqcnt (%d) in SUMALLOC request.\n",
-	     request->reqcnt);
-      reply->opcode = DRMS_ERROR_SUMALLOC;
-      break;
-    }
-    sum->reqcnt = 1;
-    sum->bytes = request->bytes;
-    /* Make RPC call to the SUM server. */
-    if ((reply->opcode = SUM_alloc (sum, printf)))
-    {
-      fprintf(stderr,"SUM thread: SUM_alloc RPC call failed with "
-	      "error code %d\n",reply->opcode);
-      break;
-    }
-    reply->sunum[0] = sum->dsix_ptr[0];
-    reply->sudir[0] = strdup(sum->wd[0]);
-    free(sum->wd[0]);
-#ifdef DEBUG
-  printf("SUM_alloc returned sunum=%llu, sudir=%s.\n",reply->sunum[0],
-	 reply->sudir[0]);
-#endif
-    break;
-
-  case DRMS_SUMGET:
-#ifdef DEBUG
-    printf("Processing SUMGET request.\n");
-#endif
-    if (request->reqcnt<1 || request->reqcnt>DRMS_MAX_REQCNT)
-    {
-      fprintf(stderr,"SUM thread: Invalid reqcnt (%d) in SUMGET request.\n",
-	     request->reqcnt);
-      reply->opcode = DRMS_ERROR_SUMGET;
-      break;
-    }
-    sum->reqcnt = request->reqcnt;
-    sum->mode = request->mode;
-    sum->tdays = request->tdays;
-    for (i=0; i<request->reqcnt; i++)
-      sum->dsix_ptr[i] = request->sunum[i];
-
-#ifdef DEBUG
-    printf("SUM thread: calling SUM_get\n");
-#endif
-   
-    /* Make RPC call to the SUM server. */
-    reply->opcode = SUM_get(sum, printf);
-
-#ifdef DEBUG
-    printf("SUM thread: SUM_get returned %d\n",reply->opcode);
-#endif
-
-    if (reply->opcode == RESULT_PEND)
-    {
-      /* Set status in session table */
-      char stmt[1024];
-      sprintf(stmt, "UPDATE %s." DRMS_SESSION_TABLE
-	      " SET sums_thread_status='waiting for SUMS to stage data',"
-	      "lastcontact=LOCALTIMESTAMP(0) WHERE sessionid=?", env->session->sessionns);
-      if (db_dmsv (env->session->stat_conn, NULL, stmt,
-		  -1, DB_INT8, env->session->sessionid))
-	fprintf(stderr,"Error in sums_thread: Couldn't update session entry.\n");
-      /* FIXME: For now we just wait for SUMS. */
-      reply->opcode = SUM_wait(sum);
-      if (reply->opcode || sum->status)
-      {
-	fprintf(stderr,"SUM thread: SUM_wait call failed with "
-		"error code = %d, sum->status = %d.\n",
-		reply->opcode,sum->status);
-	reply->opcode = DRMS_ERROR_SUMWAIT;
-	break;
-      }
-    }
-    else if (reply->opcode != 0)
-    {
-      fprintf(stderr,"SUM thread: SUM_get RPC call failed with "
-	      "error code %d\n",reply->opcode);
-      break;
-    }
-    for (i=0; i<request->reqcnt; i++)
-    {
-      reply->sudir[i] = strdup(sum->wd[i]);
-      free(sum->wd[i]);
-#ifdef DEBUG
-      printf("SUM thread: got sudir[%d] = %s = %s\n",i,reply->sudir[i],sum->wd[i]);
-#endif
-    }
-    break;
-
-  case DRMS_SUMPUT:
-#ifdef DEBUG
-    printf("Processing SUMPUT request.\n");
-#endif
-    if (request->reqcnt<1 || request->reqcnt>DRMS_MAX_REQCNT)
-    {
-      fprintf(stderr,"SUM thread: Invalid reqcnt (%d) in SUMPUT request.\n",
-	     request->reqcnt);
-      reply->opcode = DRMS_ERROR_SUMPUT;
-      break;
-    }
-    sum->dsname = request->dsname;
-    sum->group = request->group;
-    sum->mode = request->mode;
-    sum->tdays = request->tdays;
-    sum->reqcnt = request->reqcnt;
-    sum->history_comment = request->comment;
-    for (i=0; i<request->reqcnt; i++)
-    {
-      sum->dsix_ptr[i] = request->sunum[i];
-      sum->wd[i] = request->sudir[i];
-#ifdef DEBUG
-      printf("putting SU with sunum=%lld and sudir='%s' to SUMS.\n",
-	     request->sunum[i],request->sudir[i]);
-#endif
-    }
-    /* Make RPC call to the SUM server. */
-    if ((reply->opcode = SUM_put (sum, printf)))
-    {
-      fprintf(stderr,"SUM thread: SUM_put call failed with stat=%d.\n",
-	      reply->opcode);
-      break;
-    }
-    break;
-  default:
-    fprintf(stderr,"SUM thread: Invalid command code (%d) in request.\n",
-	   request->opcode);
-    reply->opcode = DRMS_ERROR_SUMBADOPCODE;
-    break;
-  }
-  return reply;
-}
-
 /******************* Main server thread(s) functions ************************/
 
-/*
- *
- */
-int drms_server_authenticate (int sockfd, DRMS_Env_t *env, int clientid) {
+static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
+						    SUM_t *sum,
+						    DRMS_SumRequest_t *request);
+
+int drms_server_authenticate(int sockfd, DRMS_Env_t *env, int clientid)
+{
   char *username, *sha1_passwd;
   char query[1024];
   int status=1;
@@ -245,12 +74,14 @@ int drms_server_authenticate (int sockfd, DRMS_Env_t *env, int clientid) {
 
   return status;
 }
-/*
- *  Get a new DRMS session ID from the database and insert a session
- *    record in the drms_session_table table
- */
-int drms_server_open_session (DRMS_Env_t *env, char *host, unsigned short port,
-    char *user, int dolog) {
+
+
+
+/* Get a new DRMS session ID from the database and insert a session 
+   record in the drms_session_table table. */
+int drms_server_open_session(DRMS_Env_t *env, char *host, unsigned short port,
+			     char *user, int dolog)
+{
   int status;
   struct passwd *pwd = getpwuid(geteuid());
 
@@ -308,11 +139,11 @@ int drms_server_open_session (DRMS_Env_t *env, char *host, unsigned short port,
 
   return 0;
 }
-/*
- *  Update the record corresponding to the session associated with env
- *    in the session table
- */
-int drms_server_session_status (DRMS_Env_t *env, char *stat_str, int clients) {
+
+/* Update the record corresponding to the session associated with env
+   in the session table. */
+int drms_server_session_status(DRMS_Env_t *env, char *stat_str, int clients)
+{
   /* Set sessionid and insert an entry in the session table */
   char stmt[1024];
   sprintf(stmt, "UPDATE %s."DRMS_SESSION_TABLE
@@ -327,12 +158,13 @@ int drms_server_session_status (DRMS_Env_t *env, char *stat_str, int clients) {
   }
   return 0;
 }
-/*
- *  Update record corresponding to the session associated with env
- *    from the session table and close the extra database connection
- */
-int drms_server_close_session (DRMS_Env_t *env, char *stat_str, int clients,
-    int log_retention, int archive_log) {
+
+      
+/* Update record corresponding to the session associated with env
+   from the session table and close the extra database connection. */
+int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
+			      int log_retention, int archive_log)
+{
   DRMS_StorageUnit_t su;
   char *command;
   DIR *dp;
@@ -422,17 +254,17 @@ int drms_server_close_session (DRMS_Env_t *env, char *stat_str, int clients,
   */
   return 0;
 }
-/*
- *  1. Roll back any outstandings modifications to the database.
+
+/* 1. Roll back any outstandings modifications to the database.
    2. Remove the session from the session list in the database.
       In POSTGRES this can require starting a new transaction if
       an error occurred in the old one.
    3. Set the abort flag on the DB connection flag telling all threads 
       that the session is about to be aborted and keep them from
       initiating any new database commands.
-   4. Free the environment
- */
-void drms_server_abort (DRMS_Env_t *env) {
+   4. Free the environment. */
+void drms_server_abort(DRMS_Env_t *env)
+{
   DRMS_SumRequest_t request;
 
   drms_lock_server(env);
@@ -489,17 +321,18 @@ void drms_server_abort (DRMS_Env_t *env) {
   printf("Exiting drms_server_abort()\n");
 #endif
 }
-/*
- *  1. Commit all outstandings modifications to the database and SUMS.
+
+
+/* 1. Commit all outstandings modifications to the database and SUMS.
    2. Remove the session from the session list in the database.
       In POSTGRES this can require starting a new transaction if
       an error occurred in the old one.
    3. Set the abort flag on the DB connection flag telling all threads 
       that the session is about to be aborted and keep them from
       initiating any new database commands.
-   4. Free the environment
- */
-void drms_server_commit (DRMS_Env_t *env) {
+   4. Free the environment. */
+void drms_server_commit(DRMS_Env_t *env)
+{
   int log_retention, archive_log;
   DRMS_SumRequest_t request;
 
@@ -555,12 +388,13 @@ void drms_server_commit (DRMS_Env_t *env) {
 #endif
 }
 
+
+
+
 /*************** Main function executed by DRMS server threads. ************/
 
-/*
- *
- */
-void *drms_server_thread (void *arg) {
+void *drms_server_thread(void *arg)
+{
   DRMS_ThreadInfo_t *tinfo;
   struct sockaddr_in client;
   int noshare, tnum, sockfd;
@@ -867,12 +701,13 @@ void *drms_server_thread (void *arg) {
   close(sockfd);
   return NULL;
 }
-/*
- *  Server stub for drms_su_newslot. Allocate a new slots in storage units. 
- *    If no storage unit with a free slot is found in the storage unit cache
- *    allocate a new one from SUMS
- */
-int drms_server_newslots (DRMS_Env_t *env, int sockfd) {
+
+
+/* Server stub for drms_su_newslot. Allocate a new slots in storage units. 
+   If no storage unit with a free slot is found in the storage unit cache
+   allocate a new one from SUMS. */
+int drms_server_newslots(DRMS_Env_t *env, int sockfd)
+{
   int status,n,i;
   char *series;
   int *slotnum;
@@ -927,12 +762,13 @@ int drms_server_newslots (DRMS_Env_t *env, int sockfd) {
   free(series);
   return status;
 }
-/*
- *  Server stub for drms_getunit. Get the path to a storage unit and
+
+
+/* Server stub for drms_getunit. Get the path to a storage unit and
    return it to the client.  If the storage unit is not in the storage 
-   unit cache, request it from SUMS.
- */
-int drms_server_getunit (DRMS_Env_t *env, int sockfd) { 
+   unit cache, request it from SUMS. */
+int drms_server_getunit(DRMS_Env_t *env, int sockfd)
+{ 
   int status;
   long long sunum;
   char *series;
@@ -970,10 +806,11 @@ int drms_server_getunit (DRMS_Env_t *env, int sockfd) {
   free(series);
   return status;
 }
-/*
- *  Server stub for drms_su_freeslot and drms_su_markstate
- */
-int drms_server_alloc_recnum (DRMS_Env_t *env, int sockfd) {
+
+
+/* Server stub for drms_su_freeslot and drms_su_markstate. */
+int drms_server_alloc_recnum(DRMS_Env_t *env, int sockfd)
+{ 
   int status, n, i;
   char *series;
   DRMS_RecLifetime_t lifetime;
@@ -1059,10 +896,12 @@ int drms_server_alloc_recnum (DRMS_Env_t *env, int sockfd) {
   free(series);
   return status;
 }
-/*
- *  Server stub for drms_su_freeslot and drms_su_markstate
- */
-int drms_server_slot_setstate (DRMS_Env_t *env, int sockfd) { 
+
+
+
+/* Server stub for drms_su_freeslot and drms_su_markstate. */
+int drms_server_slot_setstate(DRMS_Env_t *env, int sockfd)
+{ 
   int status, state;
   char *series;
   int slotnum;
@@ -1080,12 +919,13 @@ int drms_server_slot_setstate (DRMS_Env_t *env, int sockfd) {
   free(series);
   return status;
 }
-/*
- *  A client created a new series. Create an entry in the
+
+
+/* A client created a new series. Create an entry in the
    server series_cache for it in case the client requests
-   storage units or a template for it.
- */
-int drms_server_newseries (DRMS_Env_t *env, int sockfd) { 
+   storage units or a template for it. */
+int drms_server_newseries(DRMS_Env_t *env, int sockfd)
+{ 
   char *series;
   DRMS_Record_t *template;
 
@@ -1097,10 +937,12 @@ int drms_server_newseries (DRMS_Env_t *env, int sockfd) {
   free(series);
   return 0;
 }
-/*
- *  A client destroyed a series. Remove its entry from the server series_cache
- */
-int drms_server_dropseries (DRMS_Env_t *env, int sockfd) { 
+
+
+/* A client destroyed a series. Remove its entry in the
+   server series_cache */
+int drms_server_dropseries(DRMS_Env_t *env, int sockfd)
+{ 
   char *series_lower;
 
   series_lower = receive_string(sockfd);
@@ -1109,28 +951,25 @@ int drms_server_dropseries (DRMS_Env_t *env, int sockfd) {
   free(series_lower);
   return 0;
 }
-/*
- *
- */
-void drms_lock_server (DRMS_Env_t *env) {
+
+void drms_lock_server(DRMS_Env_t *env)
+{
   if ( env->drms_lock == NULL )
     return;
   else
     pthread_mutex_lock( env->drms_lock );
 }
-/*
- *
- */
-void drms_unlock_server (DRMS_Env_t *env) {
+
+void drms_unlock_server(DRMS_Env_t *env)
+{
   if ( env->drms_lock == NULL )
     return;
   else
     pthread_mutex_unlock( env->drms_lock );
 }
-/*
- *
- */
-long long drms_server_gettmpguid (int *sockfd) {
+ 
+long long drms_server_gettmpguid(int *sockfd)
+{
    static long long GUID = 1;
 
    if (sockfd)
@@ -1141,11 +980,11 @@ long long drms_server_gettmpguid (int *sockfd) {
    GUID++;
    return GUID - 1;
 }
-/*
- *  Loop though all open storage units and delete temporary records
- *     found there from the DRMS database
- */
-void drms_delete_temporaries (DRMS_Env_t *env) {
+
+/* Loop though all open storage units and delete temporary records
+   found there from the DRMS database. */
+void drms_delete_temporaries(DRMS_Env_t *env)
+{
   int i, status;
   char *command, *p;
   DS_node_t *ds;
@@ -1180,19 +1019,21 @@ void drms_delete_temporaries (DRMS_Env_t *env) {
   }
 }
 
+
 /****************** SUMS server thread functions **********************/
 
-/*
- *  This is the thread in the DRMS server which is responsible for
+
+
+/* This is the thread in the DRMS server which is responsible for
    forwarding requests to the SUM server. It receives requests from the
    ordinary drms_server_thread(s) in env->sum_inbox (a FIFO), forwards them
    to SUMS via the SUMS RPC protocol, and puts the reply into 
    env->sum_outbox (also a FIFO) for the drms_server_thread to pick it up. 
    Messages are tagged by the drms_server_thread(s) with the value 
    pthread_self() to make sure messages from different requesters are not 
-   mixed.
- */
-void *drms_sums_thread (void *arg) {
+   mixed. */
+void *drms_sums_thread(void *arg)
+{
   int status;
   DRMS_Env_t *env;
   SUM_t *sum=NULL;
@@ -1288,12 +1129,163 @@ void *drms_sums_thread (void *arg) {
   return NULL;
 }
 
-/****************** Server signal handler thread functions *******************/
 
-/*
- *
- */
-void *drms_signal_thread (void *arg) {
+
+
+static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
+						    SUM_t *sum,
+						    DRMS_SumRequest_t *request)
+{
+  int i;
+  DRMS_SumRequest_t *reply;
+  
+  XASSERT(reply = malloc(sizeof(DRMS_SumRequest_t)));
+  switch(request->opcode)
+  {
+  case DRMS_SUMALLOC:
+#ifdef DEBUG
+    printf("Processing SUMALLOC request.\n");
+#endif
+    if (request->reqcnt!=1)
+    {
+      fprintf(stderr,"SUM thread: Invalid reqcnt (%d) in SUMALLOC request.\n",
+	     request->reqcnt);
+      reply->opcode = DRMS_ERROR_SUMALLOC;
+      break;
+    }
+    sum->reqcnt = 1;
+    sum->bytes = request->bytes;
+    /* Make RPC call to the SUM server. */
+    if ((reply->opcode = SUM_alloc(sum, printf)))
+    {
+      fprintf(stderr,"SUM thread: SUM_alloc RPC call failed with "
+	      "error code %d\n",reply->opcode);
+      break;
+    }
+    reply->sunum[0] = sum->dsix_ptr[0];
+    reply->sudir[0] = strdup(sum->wd[0]);
+    free(sum->wd[0]);
+#ifdef DEBUG
+  printf("SUM_alloc returned sunum=%llu, sudir=%s.\n",reply->sunum[0],
+	 reply->sudir[0]);
+#endif
+    break;
+
+  case DRMS_SUMGET:
+#ifdef DEBUG
+    printf("Processing SUMGET request.\n");
+#endif
+    if (request->reqcnt<1 || request->reqcnt>DRMS_MAX_REQCNT)
+    {
+      fprintf(stderr,"SUM thread: Invalid reqcnt (%d) in SUMGET request.\n",
+	     request->reqcnt);
+      reply->opcode = DRMS_ERROR_SUMGET;
+      break;
+    }
+    sum->reqcnt = request->reqcnt;
+    sum->mode = request->mode;
+    sum->tdays = request->tdays;
+    for (i=0; i<request->reqcnt; i++)
+      sum->dsix_ptr[i] = request->sunum[i];
+
+#ifdef DEBUG
+    printf("SUM thread: calling SUM_get\n");
+#endif
+   
+    /* Make RPC call to the SUM server. */
+    reply->opcode = SUM_get(sum, printf);
+
+#ifdef DEBUG
+    printf("SUM thread: SUM_get returned %d\n",reply->opcode);
+#endif
+
+    if (reply->opcode == RESULT_PEND)
+    {
+      /* Set status in session table */
+      char stmt[1024];
+      sprintf(stmt, "UPDATE %s." DRMS_SESSION_TABLE
+	      " SET sums_thread_status='waiting for SUMS to stage data',"
+	      "lastcontact=LOCALTIMESTAMP(0) WHERE sessionid=?", env->session->sessionns);
+      if (db_dmsv(env->session->stat_conn, NULL, stmt,
+		  -1, DB_INT8, env->session->sessionid))
+	fprintf(stderr,"Error in sums_thread: Couldn't update session entry.\n");
+      /* FIXME: For now we just wait for SUMS. */
+      reply->opcode = SUM_wait(sum);
+      if (reply->opcode || sum->status)
+      {
+	fprintf(stderr,"SUM thread: SUM_wait call failed with "
+		"error code = %d, sum->status = %d.\n",
+		reply->opcode,sum->status);
+	reply->opcode = DRMS_ERROR_SUMWAIT;
+	break;
+      }
+    }
+    else if (reply->opcode != 0)
+    {
+      fprintf(stderr,"SUM thread: SUM_get RPC call failed with "
+	      "error code %d\n",reply->opcode);
+      break;
+    }
+    for (i=0; i<request->reqcnt; i++)
+    {
+      reply->sudir[i] = strdup(sum->wd[i]);
+      free(sum->wd[i]);
+#ifdef DEBUG
+      printf("SUM thread: got sudir[%d] = %s = %s\n",i,reply->sudir[i],sum->wd[i]);
+#endif
+    }
+    break;
+
+  case DRMS_SUMPUT:
+#ifdef DEBUG
+    printf("Processing SUMPUT request.\n");
+#endif
+    if (request->reqcnt<1 || request->reqcnt>DRMS_MAX_REQCNT)
+    {
+      fprintf(stderr,"SUM thread: Invalid reqcnt (%d) in SUMPUT request.\n",
+	     request->reqcnt);
+      reply->opcode = DRMS_ERROR_SUMPUT;
+      break;
+    }
+    sum->dsname = request->dsname;
+    sum->group = request->group;
+    sum->mode = request->mode;
+    sum->tdays = request->tdays;
+    sum->reqcnt = request->reqcnt;
+    sum->history_comment = request->comment;
+    for (i=0; i<request->reqcnt; i++)
+    {
+      sum->dsix_ptr[i] = request->sunum[i];
+      sum->wd[i] = request->sudir[i];
+#ifdef DEBUG
+      printf("putting SU with sunum=%lld and sudir='%s' to SUMS.\n",
+	     request->sunum[i],request->sudir[i]);
+#endif
+    }
+    /* Make RPC call to the SUM server. */
+    if ((reply->opcode = SUM_put(sum, printf)))
+    {
+      fprintf(stderr,"SUM thread: SUM_put call failed with stat=%d.\n",
+	      reply->opcode);
+      break;
+    }
+    break;
+  default:
+    fprintf(stderr,"SUM thread: Invalid command code (%d) in request.\n",
+	   request->opcode);
+    reply->opcode = DRMS_ERROR_SUMBADOPCODE;
+    break;
+  }
+  return reply;
+}
+
+
+
+
+
+/****************** Server signal handler thread functions *******************/
+void *drms_signal_thread(void *arg)
+{
   int status, signo;
   DRMS_Env_t *env = (DRMS_Env_t *) arg;
 
@@ -1363,4 +1355,3 @@ void *drms_signal_thread (void *arg) {
     }
   }
 }
-

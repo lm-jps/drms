@@ -1,30 +1,15 @@
-/*
- *  drms_storageunit.c						2007.11.26
- *
- *  functions defined:
- *	drms_su_alloc
- *	drms_su_newslots
- *	drms_su_getsudir
- *	drms_commitunit
- *	drms_commit_all_units
- *	drms_su_lookup
- *	drms_su_freeunit
- *	drms_freeunit
- *	drms_su_freeslot
- *	drms_su_markslot
- */
 //#define DEBUG
 
 #include "drms.h"  
 #include "xmem.h"
 
-/*
- *  Allocate a storage unit of the indicated size from SUMS and return
- *    its sunum and directory
- */
+
+/* Allocate a storage unit of the indicated size from SUMS and return
+   its sunum and directory. */
 #ifndef DRMS_CLIENT
-long long drms_su_alloc (DRMS_Env_t *env, uint64_t size, char **sudir,
-    int *status) {
+long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir, 
+			int *status)
+{
   int stat;
   DRMS_SumRequest_t request, *reply;
   long long sunum;
@@ -77,8 +62,8 @@ long long drms_su_alloc (DRMS_Env_t *env, uint64_t size, char **sudir,
   return sunum;   
 }
 #endif
-/*
- *  Get a new empty slot for a record from "series". If no storage units 
+
+/* Get a new empty slot for a record from "series". If no storage units 
    from this series with empty slots are currently open, allocate a new 
    one from SUMS. When an appropriate storate unit is found, a new
    slot number (slot) is assigned corresponding to the 
@@ -88,14 +73,18 @@ long long drms_su_alloc (DRMS_Env_t *env, uint64_t size, char **sudir,
    slot number.
 */
 #ifndef DRMS_CLIENT
-int drms_su_newslots (DRMS_Env_t *env, int n, char *series, long long *recnum,
-    DRMS_RecLifetime_t lifetime, int *slotnum, DRMS_StorageUnit_t **su) {
+int drms_su_newslots(DRMS_Env_t *env, int n, char *series, 
+		     long long *recnum, DRMS_RecLifetime_t lifetime,
+		     int *slotnum, DRMS_StorageUnit_t **su)
+{
   int i, status, slot;
   HContainer_t *scon; 
   HIterator_t hit; 
   long long sunum;
   char slotdir[DRMS_MAXPATHLEN+40], hashkey[DRMS_MAXHASHKEYLEN], *sudir;
   DRMS_Record_t *template=NULL;
+
+
 
   XASSERT(env->session->db_direct==1);
   
@@ -229,11 +218,11 @@ int drms_su_newslots (DRMS_Env_t *env, int n, char *series, long long *recnum,
   return status;
 }
 #endif
-/*
- *  Get the actual storage unit directory from SUMS
- */
+
+/* Get the actual storage unit directory from SUMS. */
 #ifndef DRMS_CLIENT
-int drms_su_getsudir (DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve) {  
+int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
+{  
   DRMS_SumRequest_t request, *reply;
 
   request.opcode = DRMS_SUMGET;
@@ -271,11 +260,11 @@ int drms_su_getsudir (DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve) {
   return DRMS_SUCCESS;
 }
 #endif
-/*
- *  Tell SUMS to save this storage unit
- */
+
+/* Tell SUMS to save this storage unit. */
 #ifndef DRMS_CLIENT
-int drms_commitunit (DRMS_Env_t *env, DRMS_StorageUnit_t *su) {
+int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
+{
   int i;
   DRMS_SumRequest_t request, *reply;
   FILE *fp;
@@ -342,14 +331,14 @@ int drms_commitunit (DRMS_Env_t *env, DRMS_StorageUnit_t *su) {
   return 0;
 }
 #endif
-/*
- *  Loop though all open storage units and commits the 
+
+/* Loop though all open storage units and commits the 
    ones open for writing that have slots marked as full
    (i.e. non-temporary) to SUMS. Return the largest retention 
-   time of any unit committed.
- */
+   time of any unit committed. */
 #ifndef DRMS_CLIENT
-int drms_commit_all_units (DRMS_Env_t *env, int *archive) {
+int drms_commit_all_units(DRMS_Env_t *env, int *archive)
+{
   int i, docommit;
   HContainer_t *scon; 
   HIterator_t hit_outer, hit_inner; 
@@ -398,11 +387,11 @@ int drms_commit_all_units (DRMS_Env_t *env, int *archive) {
     return env->retention;
 }
 #endif
-/*
- *  Look up a storage unit and its container in the storage unit cache
- */
-DRMS_StorageUnit_t *drms_su_lookup (DRMS_Env_t *env, char *series,
-    long long sunum, HContainer_t **scon_out) {
+
+/* Look up a storage unit and its container in the storage unit cache. */
+DRMS_StorageUnit_t *drms_su_lookup(DRMS_Env_t *env, char *series,
+				   long long sunum, HContainer_t **scon_out)
+{
   HIterator_t hit; 
   HContainer_t *scon;
   DRMS_StorageUnit_t *su;
@@ -437,10 +426,9 @@ DRMS_StorageUnit_t *drms_su_lookup (DRMS_Env_t *env, char *series,
     *scon_out = scon;
   return su;
 }
-/*
- *
- */
-void drms_su_freeunit (DRMS_StorageUnit_t *su) {
+
+void drms_su_freeunit(DRMS_StorageUnit_t *su)
+{
   if (su->state)
   {
     free(su->state);
@@ -452,10 +440,9 @@ void drms_su_freeunit (DRMS_StorageUnit_t *su) {
     su->recnum=NULL;
   }
 }
-/*
- *
- */
-void drms_freeunit (DRMS_Env_t *env, DRMS_StorageUnit_t *su) {
+
+void drms_freeunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
+{
   char hashkey[DRMS_MAXHASHKEYLEN];
   HContainer_t *scon;
 
@@ -475,13 +462,15 @@ void drms_freeunit (DRMS_Env_t *env, DRMS_StorageUnit_t *su) {
     hcon_remove(scon, hashkey);
   }      
 }
-/*
- *  Mark a storage unit slot as free and remove the associated directory 
+
+
+
+/* Mark a storage unit slot as free and remove the associated directory 
    (if any). This is only valid if the storage
-   unit is open in mode DRMS_READWRITE.
- */
-int drms_su_freeslot (DRMS_Env_t *env, char *series, long long sunum,
-    int slotnum) {
+   unit is open in mode DRMS_READWRITE. */
+int drms_su_freeslot(DRMS_Env_t *env, char *series, long long sunum,
+		     int slotnum)
+{
   DRMS_StorageUnit_t *su;
   char slotdir[DRMS_MAXPATHLEN];
   int state;
@@ -500,15 +489,17 @@ int drms_su_freeslot (DRMS_Env_t *env, char *series, long long sunum,
     return 0;
   }
 }
-/*
- *  Change state of a storage unit slot. This is only valid if 
+
+
+/* Change state of a storage unit slot. This is only valid if 
    the storage unit is open in mode DRMS_READWRITE. On entry *state
    must contain the new state. On exit *state will contain the old
    state.
     Possible states are DRMS_SLOT_FREE, DRMS_SLOT_FULL, DRMS_SLOT_TEMP.
 */
-DRMS_StorageUnit_t *drms_su_markslot (DRMS_Env_t *env, char *series,
-    long long sunum, int slotnum, int *state) {
+DRMS_StorageUnit_t *drms_su_markslot(DRMS_Env_t *env, char *series, 
+				     long long sunum, int slotnum, int *state)
+{
   int oldstate;
   HContainer_t *scon;
   DRMS_StorageUnit_t *su;

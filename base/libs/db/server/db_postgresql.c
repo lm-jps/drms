@@ -1,26 +1,3 @@
-/*
- *  db_postgresql.c						2007.11.26
- *
- *  functions defined:
- *	db_connect
- *	db_disconnect
- *	db_abort
- *	db_query_txt
- *	db_query_bin
- *	db_query_bin_array
- *	db_dms
- *	db_dms_array
- *	db_bulk_insert_array
- *	db_isolation_level
- *	db_start_transaction
- *	db_commit
- *	db_sequence_getnext
- *	db_sequence_getnext_n
- *	db_sequence_getcurrent
- *	db_sequence_getlast
- *	db_sequence_create
- *	db_sequence_drop
- */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,11 +22,13 @@
 #define PG_VARCHAR_OID (1043)
 
 //#define DEBUG 
-/*
- *
- */
-static int db2pgsql_type (DB_Type_t dbtype) {
-  switch (dbtype) {
+
+
+
+static int db2pgsql_type(DB_Type_t dbtype)
+{
+  switch(dbtype)
+  {
   case DB_CHAR:
     return PG_CHAR_OID;
   case DB_INT1:
@@ -72,11 +51,11 @@ static int db2pgsql_type (DB_Type_t dbtype) {
     return PG_STRING_OID;
   }
 }
-/*
- *
- */
-static DB_Type_t pgsql2db_type (int pgtype) {
-  switch (pgtype) {
+
+static DB_Type_t pgsql2db_type(int pgtype)
+{
+  switch(pgtype)
+  {
   case PG_CHAR_OID:
     return DB_CHAR;
   case PG_INT2_OID:
@@ -98,11 +77,14 @@ static DB_Type_t pgsql2db_type (int pgtype) {
     return DB_STRING;    
   }
 }
-/*
- *
- */
-DB_Handle_t *db_connect (const char *host, const char *user,
-    const char *passwd, const char *db_name, const int lock) {
+
+
+
+
+DB_Handle_t *db_connect(const char *host, const char *user, 
+			const char *passwd, const char *db_name,
+			const int lock)
+{
   DB_Handle_t  *handle;
   PGconn *db;
   char *p,conninfo[8192]={0};
@@ -153,11 +135,12 @@ DB_Handle_t *db_connect (const char *host, const char *user,
 
   return handle;
 }
-/*
- *
- */
-void db_disconnect (DB_Handle_t *dbin) {
-  if (dbin) {
+
+    
+void db_disconnect(DB_Handle_t  *dbin)
+{
+  if (dbin)
+  {
     db_lock(dbin);
 
     PQfinish(dbin->db_connection);
@@ -169,10 +152,11 @@ void db_disconnect (DB_Handle_t *dbin) {
     free(dbin);    
   }
 }
-/*
- *  Roll back and set the abort flag
- */
-int db_abort (DB_Handle_t *dbin) {
+
+
+/* Roll back and set the abort flag. */
+int db_abort(DB_Handle_t  *dbin)
+{
   PGconn *db;  
 
   db = (PGconn *) dbin->db_connection;
@@ -192,10 +176,11 @@ int db_abort (DB_Handle_t *dbin) {
   db_unlock(dbin);
   return 1;
 }
-/*
- *
- */
-DB_Text_Result_t *db_query_txt (DB_Handle_t *dbin,  char *query_string) {
+
+
+
+DB_Text_Result_t *db_query_txt(DB_Handle_t  *dbin,  char *query_string)
+{
   PGconn *db;
   PGresult *res;
   DB_Text_Result_t *result=NULL;
@@ -306,10 +291,11 @@ DB_Text_Result_t *db_query_txt (DB_Handle_t *dbin,  char *query_string) {
   db_unlock(dbin);
   return result;
 }
-/*
- *
- */
-DB_Binary_Result_t *db_query_bin (DB_Handle_t *dbin,  char *query_string) {
+  
+
+
+DB_Binary_Result_t *db_query_bin(DB_Handle_t  *dbin,  char *query_string)
+{
   PGconn *db;
   PGresult *res;
   DB_Binary_Result_t *db_res;
@@ -407,11 +393,13 @@ failure:
   db_unlock(dbin);
   return NULL;
 }
-/*
- *
- */
-DB_Binary_Result_t *db_query_bin_array (DB_Handle_t *dbin, char *query,
-    int n_args, DB_Type_t *intype, void **argin ) {
+
+
+
+DB_Binary_Result_t *db_query_bin_array(DB_Handle_t  *dbin, 
+				        char *query, int n_args,
+				       DB_Type_t *intype, void **argin )
+{
   PGconn *db;
   PGresult *res;
   DB_Binary_Result_t *db_res;
@@ -579,10 +567,11 @@ failure:
   db_unlock(dbin);
   return NULL;
 }
-/*
- *  Execute a data manipulation statement (DMS)
- */
-int db_dms (DB_Handle_t *dbin, int *row_count, char *query_string) {
+
+
+/* Execute a data manipulation statement (DMS). */
+int db_dms(DB_Handle_t  *dbin, int *row_count,  char *query_string)
+{
   PGconn *db;
   PGresult *res;
   char *str;
@@ -627,12 +616,13 @@ int db_dms (DB_Handle_t *dbin, int *row_count, char *query_string) {
   db_unlock(dbin);
   return 1;
 }
-/*
- *
- */
+
+
 #define MAXARG 1024
-int db_dms_array (DB_Handle_t *dbin, int *row_count, char *query, int n_rows,
-    int n_args, DB_Type_t *intype, void **argin ) {
+int db_dms_array(DB_Handle_t  *dbin, int *row_count, 
+		 char *query, int n_rows, 
+		 int n_args, DB_Type_t *intype, void **argin )
+{
   PGconn *db;
   PGresult *res;
   int n,i,j;
@@ -823,11 +813,12 @@ int db_dms_array (DB_Handle_t *dbin, int *row_count, char *query, int n_rows,
 #endif
   return 1;
 }
-/*
- *
- */
-int db_bulk_insert_array (DB_Handle_t *dbin, char *table, int n_rows,
-    int n_args, DB_Type_t *intype, void **argin ) {
+
+
+
+int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows, 
+			 int n_args, DB_Type_t *intype, void **argin )
+{
   PGconn *db;
   PGresult *res;
   int n,i,j;
@@ -986,13 +977,14 @@ int db_bulk_insert_array (DB_Handle_t *dbin, char *table, int n_rows,
 #endif
   return status;
 }
-/*
- *  Set transaction isolation level
- *    0 = read commited
- *    1 = serializable.
- *    2 = read only.
+
+/* Set transaction isolation level
+   0 = read commited
+   1 = serializable.
+   2 = read only.
  */
-int db_isolation_level (DB_Handle_t *dbin, int level) {
+int db_isolation_level(DB_Handle_t  *dbin, int level)
+{
   switch(level)
   {
   case DB_TRANS_READCOMMIT:
@@ -1013,28 +1005,31 @@ int db_isolation_level (DB_Handle_t *dbin, int level) {
     break;    
   }
 }
-/*
- *  Begin new transaction
- */
-int db_start_transaction (DB_Handle_t  *db) {
+  
+/* Begin new transaction */
+int db_start_transaction(DB_Handle_t  *db)
+{
   return db_dms(db,NULL,"BEGIN");  
 }
-/*
- *  Commit the current transaction
- */
-int db_commit (DB_Handle_t  *db) {  
+
+
+/* Commit the current transaction. */
+int db_commit(DB_Handle_t  *db)
+{  
   return db_dms(db,NULL,"COMMIT");
 }
-/*
- *  Roll back the current transaction
- */
-int db_rollback (DB_Handle_t  *db) {
+
+/* Roll back the current transaction. */
+int db_rollback(DB_Handle_t  *db)
+{
   return db_dms(db,NULL,"ROLLBACK");
 }
-/*
- *  Functions for SEQUENCE operations
- */
-long long db_sequence_getnext (DB_Handle_t *db, char *tablename) {
+
+
+
+/* Functions for SEQUENCE operations. */
+long long db_sequence_getnext(DB_Handle_t *db,  char *tablename)
+{
   DB_Text_Result_t *res;
   char query[1024];  
   long long val;
@@ -1050,11 +1045,11 @@ long long db_sequence_getnext (DB_Handle_t *db, char *tablename) {
 
   return val;
 }
-/*
- *  Get n new values
- */
+
+/* Get n new values. */
 #define PG_MAXARGS (1600)
-long long *db_sequence_getnext_n (DB_Handle_t *db, char *tablename, int n) {
+long long *db_sequence_getnext_n(DB_Handle_t *db,  char *tablename, int n)
+{
   DB_Binary_Result_t *res;
   int len,count,chunk, i;
   char *query,*p;  
@@ -1096,10 +1091,10 @@ long long *db_sequence_getnext_n (DB_Handle_t *db, char *tablename, int n) {
 
   return val;
 }
-/*
- *
- */
-long long db_sequence_getcurrent (DB_Handle_t *db, char *tablename) {
+
+
+long long db_sequence_getcurrent(DB_Handle_t *db,  char *tablename)
+{
   DB_Text_Result_t *res;
   char query[512];  
   unsigned int val;
@@ -1115,11 +1110,11 @@ long long db_sequence_getcurrent (DB_Handle_t *db, char *tablename) {
 
   return val;
 }
-/*
- *  This reads the current last value in the table. This can be unreliable
- *    since other session might be caching values beyond it.
- */
-long long db_sequence_getlast (DB_Handle_t *db, char *tablename) {
+
+/* This read the current last value in the table. This can be unreliable
+   since other session might be caching values beyond it. */
+long long db_sequence_getlast(DB_Handle_t *db,  char *tablename)
+{
   DB_Text_Result_t *res;
   char query[512];  
   unsigned int val;
@@ -1135,18 +1130,16 @@ long long db_sequence_getlast (DB_Handle_t *db, char *tablename) {
 
   return val;
 }
-/*
- *
- */
-int db_sequence_create (DB_Handle_t *db, char *tablename) {
+
+int db_sequence_create(DB_Handle_t *db,  char *tablename)
+{
   char query[512];
   sprintf(query, "CREATE SEQUENCE %s_seq",tablename);
   return db_dms(db,NULL,query);
 }
-/*
- *
- */
-int db_sequence_drop (DB_Handle_t *db, char *tablename) {
+
+int db_sequence_drop(DB_Handle_t *db,  char *tablename)
+{
   char query[512];
   sprintf(query, "DROP SEQUENCE %s_seq",tablename);
   return db_dms(db,NULL,query);

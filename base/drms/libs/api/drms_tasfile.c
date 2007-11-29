@@ -1,14 +1,3 @@
-/*
- *  drms_tasfile.c						2007.11.26
- *
- *  functions defined:
- *	drms_tasfile_read
- *	drms_tasfile_readslice
- *	drms_tasfile_writeslice
- *	drms_tasfile_write
- *	drms_tasfile_create
- *	drms_tasfile_defrag
- */
 #include "drms.h"
 #include "drms_tasfile.h"
 #include "adler32.h"
@@ -50,9 +39,7 @@ heap data |          | Heap of compressed data for each block.
 */
 
 #ifdef DEBUG
-/*
- *  Print header contents
- */
+					/*  Print header contents  */
 static void print_tasheader (TAS_Header_t *h) {
   int i;
  
@@ -65,10 +52,9 @@ static void print_tasheader (TAS_Header_t *h) {
     printf ("axis[%3d] = %d, blksz[%d] = %d\n",i,h->axis[i], i,h->blksz[i]);
 }
 #endif
-/*
- *  Calculate number of blocks in i'th dimension given number of
- *    elements and block size
- */
+
+	/* Calculate number of blocks in i'th dimension given number of 
+						elements and block size. */
 static int calc_tasblockcount (TAS_Header_t *h, int *baxis) {
   int i, nblk = 1;
   for (i=0; i<h->naxis; i++) {
@@ -77,10 +63,8 @@ static int calc_tasblockcount (TAS_Header_t *h, int *baxis) {
   }
   return nblk;
 }
-/*
- *  Read TAS header from a file
- */
-static int tasfile_readheader (FILE *fp, TAS_Header_t *h) {
+					/*  Read TAS header from a file  */
+static int tasfile_readheader(FILE *fp, TAS_Header_t *h) {
   int i;
 
   memset (h, 0, sizeof(TAS_Header_t));
@@ -150,10 +134,10 @@ static int tasfile_writeheader (FILE *fp, TAS_Header_t *h) {
   }
   return 0;
 }
-/*
- *  Write index array
- */
-static int tasfile_writeindex (FILE *fp, int nblk, TAS_Index_t *index) {
+
+
+/* Write index array. */
+static int tasfile_writeindex(FILE *fp, int nblk, TAS_Index_t *index) {
   int status=0;
   TAS_Index_t *iswap;
   /* Seek to beginning of index. */
@@ -185,9 +169,8 @@ static int tasfile_writeindex (FILE *fp, int nblk, TAS_Index_t *index) {
 #endif
   return status;
 }
-/*
- *  Write index array
- */
+
+/* Write index array. */
 static  TAS_Index_t *tasfile_readindex (FILE *fp, int nblk, TAS_Header_t *h) {
   TAS_Index_t *index;
 				/*  Seek to beginning of index in file  */
@@ -226,10 +209,9 @@ static  TAS_Index_t *tasfile_readindex (FILE *fp, int nblk, TAS_Header_t *h) {
 #endif
   return index;
 }
-/*
- *  Check that the hyper-slab designated by start and end is non-empty
- */
-static int tasfile_slice_empty (int naxis, int *start, int *end) {
+
+/* Check that the hyper-slab designated by start and end is non-empty. */
+static int tasfile_slice_empty(int naxis, int *start, int *end) {
   int i;
   for (i=0; i<naxis; i++) {
     if (start[i]>end[i]) {
@@ -240,10 +222,10 @@ static int tasfile_slice_empty (int naxis, int *start, int *end) {
   }
   return 0;
 }
-/*
- *  Check that the hyper-slab designated by "start" and "end" is contained
- *    in the hypercube spanned by the origin and the point in "axis"
- */
+
+
+/* Check that the hyper-slab designated by "start" and "end" is contained
+   in the hypercube spanned by the origin and the point in "axis". */
 static int tasfile_slice_notcontained (int naxis, int *start, int *end,
     int *axis) {
   int i;
@@ -262,13 +244,14 @@ static int tasfile_slice_notcontained (int naxis, int *start, int *end,
   return 0;
 }
 
+
+
 /*****************************************************************************/
 
-/*
- *  Read an entire TAS file into memory
- */
-int drms_tasfile_read (char *filename, DRMS_Type_t type, double bzero,
-    double bscale, DRMS_Array_t *rf) {
+/* Read an entire TAS file into memory. */
+int drms_tasfile_read(char *filename, DRMS_Type_t type, 
+		      double bzero, double bscale, DRMS_Array_t *rf)
+{
   int stat, i, j, insz, outsz, maxzblk;
   int nblk, blksz, count, chksum;
   unsigned char *zbuf, *bbuf;
@@ -456,11 +439,14 @@ int drms_tasfile_read (char *filename, DRMS_Type_t type, double bzero,
   fprintf (stderr, "ERROR: drms_tasfile_read failed '%s'\n",filename);
   return 1;
 }
-/*
- *  Read an arbitrary slice of a TAS file into memory
- */
-int drms_tasfile_readslice (FILE *fp, DRMS_Type_t type, double bzero,
-    double bscale,  int naxis, int *start, int *end, DRMS_Array_t *rf) {
+
+
+
+/* Read an arbitrary slice of a TAS file into memory. */
+int drms_tasfile_readslice(FILE *fp, DRMS_Type_t type, double bzero, 
+			   double bscale,  int naxis, int *start, int *end, 
+			   DRMS_Array_t *rf)
+{
   int stat, i, j, insz, outsz, maxzblk, count, chksum, contained, skip;
   unsigned char *zbuf, *bbuf;
   long long n;
@@ -689,11 +675,13 @@ int drms_tasfile_readslice (FILE *fp, DRMS_Type_t type, double bzero,
   fprintf (stderr, "ERROR: drms_tasfile_readslice failed\n");
   return 1;
 }
-/*
- *  Write an array into a slice of a TAS file
- */
-int drms_tasfile_writeslice (FILE *fp, double bzero, double bscale, int *start,
-    DRMS_Array_t *array) {
+
+
+
+/* Write an array into a slice of a TAS file. */
+int drms_tasfile_writeslice(FILE *fp, double bzero, double bscale, 
+			    int *start, DRMS_Array_t *array)
+{
   int i, j, zsize, status = DRMS_NO_ERROR, insz, outsz, slblk, n_blk, n, count;
   int end[DRMS_MAXRANK]={0}, boffset[DRMS_MAXRANK]={0};
   int sbaxis[DRMS_MAXRANK] = {0}, baxis[DRMS_MAXRANK] = {0}, nblk;
@@ -975,12 +963,16 @@ int drms_tasfile_writeslice (FILE *fp, double bzero, double bscale, int *start,
  bailout0:
   return status;
 }
-/*
- *  Write an entire TAS file to disk
- */
-int drms_tasfile_write (char *filename, DRMS_Type_t type, double bzero,
-    double bscale, DRMS_Compress_t compression, int *blocksize,
-    DRMS_Array_t *array) {
+
+
+
+
+
+/* Write an entire TAS file to disk. */
+int drms_tasfile_write(char *filename, DRMS_Type_t type, double bzero, 
+		       double bscale, DRMS_Compress_t compression, 
+		       int *blocksize, DRMS_Array_t *array)
+{
   int i, j, insz, outsz, count, zsize, status;
   FILE *fp;
   unsigned char *zbuf, *bbuf;
@@ -1152,9 +1144,11 @@ int drms_tasfile_write (char *filename, DRMS_Type_t type, double bzero,
   fclose(fp);
   return 1;
 }
-/*
- *  Create an empty TAS file
- */
+
+
+
+
+/* Create an empty TAS file. */
 int drms_tasfile_create (char *filename, DRMS_Compress_t compression, 
     DRMS_Type_t type, int naxis, int *axis, int *blocksize,
     TAS_Header_t *header) {
@@ -1250,11 +1244,12 @@ int drms_tasfile_create (char *filename, DRMS_Compress_t compression,
   return DRMS_ERROR_IOERROR;
 }
 
+
+
+
 /*****************************************************************************/
 
-/*
- *  Defragment a TAS file
- */
+/* Defragment a TAS file. */
 int drms_tasfile_defrag (char *tasfile, char *scratchdir) {
   char *template;
   int i, j, nblk, baxis[DRMS_MAXRANK], fdout;
@@ -1365,4 +1360,3 @@ int drms_tasfile_defrag (char *tasfile, char *scratchdir) {
 
   return 0;
 }
-

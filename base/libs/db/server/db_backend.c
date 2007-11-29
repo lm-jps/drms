@@ -1,15 +1,3 @@
-/*
- *  db_backend.c						2007.11.26
- *
- *  This file contains backend functions that are database independent. 
- *    The remaining backend functions are found in the database specific
- *    files db_oracle.c, db_mysql.c, and db_postgresql.c.
- *
- *  functions defined:
- *	db_dmsv
- *	db_bulk_insertv
- *	db_query_binv
- */
 #include <stdio.h>
 #ifndef __USE_ISOC99
   #define  __USE_ISOC99
@@ -25,12 +13,20 @@
 #include "xassert.h"
 #include "util.h"
 #include "xmem.h"
-/*
- *  DMS function with variable argument list. Collects arguments in
- *    list of void * and calls db_dms_array.
- */
-int db_dmsv (DB_Handle_t  *dbin, int *row_count,  char *query,
-    int n_rows, ...) {
+
+/* 
+   This file contains backend functions that are database independent. 
+   The remaining backend functions are found in the database specific
+   files db_oracle.c, db_mysql.c, and db_postgresql.c.
+*/
+
+
+
+/* DMS function with variable argument list. Collects arguments in
+   list of void * and calls db_dms_array. */
+int db_dmsv(DB_Handle_t  *dbin, int *row_count,  char *query, 
+	    int n_rows, ...)
+{
   int status=1;
   DB_Type_t intype[MAXARG];
   void *argin[MAXARG];
@@ -44,6 +40,7 @@ int db_dmsv (DB_Handle_t  *dbin, int *row_count,  char *query,
   db_float_t tfloat;  
   db_double_t tdouble; 
   
+
   va_list ap;
   va_start(ap, n_rows);   
   
@@ -128,12 +125,12 @@ int db_dmsv (DB_Handle_t  *dbin, int *row_count,  char *query,
   va_end(ap);
   return status;
 }
-/*
- *  DMS function with variable argument list. Collects arguments in
- *    list of void * and calls db_dms_array.
- */
-int db_bulk_insertv (DB_Handle_t  *dbin, char *table, int n_rows, int n_cols,
-    ...) {
+
+/* DMS function with variable argument list. Collects arguments in
+   list of void * and calls db_dms_array. */
+int db_bulk_insertv(DB_Handle_t  *dbin, char *table, 
+		    int n_rows, int n_cols, ...)
+{
   int status=1;
   DB_Type_t intype[MAXARG];
   void *argin[MAXARG];
@@ -149,7 +146,8 @@ int db_bulk_insertv (DB_Handle_t  *dbin, char *table, int n_rows, int n_cols,
   va_list ap;
   va_start(ap, n_cols);   
   
-  for (i=0; i<n_cols; i++) {
+  for (i=0; i<n_cols; i++)
+  {
     intype[i] = va_arg(ap, DB_Type_t);
     if (n_rows == -1) /* Ac single set of arguments passed by value. */
     {    
@@ -210,11 +208,16 @@ int db_bulk_insertv (DB_Handle_t  *dbin, char *table, int n_rows, int n_cols,
   va_end(ap);
   return status;
 }
-/*
- *  Query function with variable argument list. Collects arguments in
- *    list of void * and calls db_dms_array.
- */
-DB_Binary_Result_t *db_query_binv (DB_Handle_t  *dbin,  char *query, ...) {
+
+
+
+
+
+
+/* Query function with variable argument list. Collects arguments in
+   list of void * and calls db_dms_array. */
+DB_Binary_Result_t *db_query_binv(DB_Handle_t  *dbin,  char *query, ...)
+{
   DB_Type_t intype[MAXARG];
   void *argin[MAXARG];
   int n,i;
@@ -300,7 +303,7 @@ DB_Binary_Result_t *db_query_binv (DB_Handle_t  *dbin,  char *query, ...) {
     
   result = db_query_bin_array(dbin, query, n, intype, argin );
 
-failure:
+ failure:
   va_end(ap);
   return result;
 }
