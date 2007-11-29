@@ -1,34 +1,3 @@
-/*
- *  hcontainer.c						2007.11.26
- *
- *  functions defined:
- *	hcon_init
- *	hcon_allocslot_lower
- *	hcon_allocslot
- *	hcon_index2slot
- *	hcon_lookup_lower
- *	hcon_lookup
- *	hcon_lookup_ext
- *	hcon_lookupindex
- *	hcon_member_lower
- *	hcon_member
- *	hcon_free
- *	hcon_remove
- *	hcon_print
- *	hcon_printf
- *	hcon_map
- *	hcon_copy
- *	hcon_stat
- *	hiter_new
- *	hiter_rewind
- *	hiter_getcurrent
- *	hiter_getnext
- *	hcon_create
- *	hcon_destroy
- *	hcon_insert
- *	hiter_create
- *	hiter_destroy
- */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -52,9 +21,10 @@
   "deep_copy" is an optional function to copy fields inside the data
   slots. Set to NULL to skip deep copying.
 */
-void hcon_init (HContainer_t *hc, int datasize, int keysize,
-    void (*deep_free)(const void *value),
-    void (*deep_copy)(const void *dst, const void *src)) {
+void hcon_init(HContainer_t *hc, int datasize, int keysize,
+	       void (*deep_free)(const void *value),
+	       void (*deep_copy)(const void *dst, const void *src))
+{
   HCBuf_t *buf;
 
   hc->num_total = 0;
@@ -77,22 +47,23 @@ void hcon_init (HContainer_t *hc, int datasize, int keysize,
   buf->next = NULL;
   memset(buf->freelist, 1, buf->num_max*sizeof(char));
 }
-/*
- *
- */
-void *hcon_allocslot_lower (HContainer_t *hc, const char *key) {
+
+void *hcon_allocslot_lower(HContainer_t *hc, const char *key)
+{
   char *tmp = strdup(key);
   strtolower(tmp);
   void *slot = hcon_allocslot(hc, tmp);
   free(tmp);
   return slot;
 }
+
 /*
   Allocate a new slot indexed by the string "key". Returns a void
   pointer to data slot of size "datasize". If an element indexed
   by key already exists this functions returns the same as hcon_lookup. 
 */
-void *hcon_allocslot (HContainer_t *hc, const char *key) {
+void *hcon_allocslot(HContainer_t *hc, const char *key)
+{
   unsigned long index;
   void *slot;
   char *keyslot;
@@ -155,10 +126,12 @@ void *hcon_allocslot (HContainer_t *hc, const char *key) {
   }	  
   return slot;
 }
+
 /*
   Convert index to slot pointer. 
 */
-void *hcon_index2slot (HContainer_t *hc, int index, HCBuf_t **outbuf) {
+void *hcon_index2slot(HContainer_t *hc, int index, HCBuf_t **outbuf)
+{
   HCBuf_t *buf;  
 
   buf = hc->buf;
@@ -176,22 +149,23 @@ void *hcon_index2slot (HContainer_t *hc, int index, HCBuf_t **outbuf) {
     *outbuf=buf;
   return &buf->data[index*hc->datasize];
 }
-/*
- *
- */
-void *hcon_lookup_lower (HContainer_t *hc, const char *key) {
+
+void *hcon_lookup_lower(HContainer_t *hc, const char *key)
+{
   char *tmp = strdup(key);
   strtolower(tmp);
   void *slot = hcon_lookup(hc, tmp);
   free(tmp);
   return slot;
 }
+
 /*
   Returns a pointer to the slot indexed by key.  If no element 
   index by key is present then it return NULL.
  
 */
-void *hcon_lookup (HContainer_t *hc, const char *key) {
+void *hcon_lookup(HContainer_t *hc, const char *key)
+{
   unsigned long index;
   index = (unsigned long)hash_lookup(&hc->hash, key);
   if (index == 0)
@@ -199,11 +173,10 @@ void *hcon_lookup (HContainer_t *hc, const char *key) {
   else
     return hcon_index2slot(hc, index-1, NULL);  
 }
-/*
- *  Same as hcon_lookup, except that it returns the key as well
- */
-void *hcon_lookup_ext (HContainer_t *hc, const char *keyin,
-    const char **keyout) {
+
+/* Same as hcon_lookup, except that it returns the key as well */
+void *hcon_lookup_ext(HContainer_t *hc, const char *keyin, const char **keyout)
+{
   unsigned long index;
   HCBuf_t *outbuf = NULL;
   void *ret = NULL;
@@ -218,17 +191,18 @@ void *hcon_lookup_ext (HContainer_t *hc, const char *keyin,
      return ret;
   }
 }
-/*
- *
- */
-void *hcon_lookupindex (HContainer_t *hc, int index) {
+
+void *hcon_lookupindex(HContainer_t *hc, int index)
+{
    return hcon_index2slot(hc, index, NULL);
 }
+
 /*
- *  Returns 1 if an element indexed by key exists in the container.
- *    Returns 0 otherwise.
- */
-int hcon_member_lower (HContainer_t *hc, const char *key) {
+  Returns 1 if an element indexed by key exists in the container.
+  Returns 0 otherwise.
+*/
+int hcon_member_lower(HContainer_t *hc, const char *key)
+{
    int exists = 0;
    char *tmp = strdup(key);
    strtolower(tmp);
@@ -236,17 +210,19 @@ int hcon_member_lower (HContainer_t *hc, const char *key) {
    free(tmp);
    return exists;
 }
-/*
- *
- */
-int hcon_member (HContainer_t *hc, const char *key) {
+
+int hcon_member(HContainer_t *hc, const char *key)
+{
   return (hash_lookup(&hc->hash, key) != 0);
 }
+
+
 /*
- *  Free container. If "deep_free" is not NULL it is called
- *    with every slot as argument.
- */
-void hcon_free (HContainer_t *hc) {
+  Free container. If "deep_free" is not NULL it is called
+  with every slot as argument.
+*/
+void hcon_free(HContainer_t *hc)
+{
   int i;
   HCBuf_t *buf, *buf0;
 
@@ -272,11 +248,14 @@ void hcon_free (HContainer_t *hc) {
     free(buf0);
   }      
 }
+
+
 /*
- *  Remove the element indexed by key from the container. 
- *  If "deep_free" is not NULL it is called with the slot.
+  Remove the element indexed by key from the container. 
+  If "deep_free" is not NULL it is called with the slot.
 */
-void hcon_remove (HContainer_t *hc, const char *key) {
+void hcon_remove(HContainer_t *hc, const char *key)
+{
   unsigned long index;
   HCBuf_t *buf;
   void *slot;
@@ -299,10 +278,10 @@ void hcon_remove (HContainer_t *hc, const char *key) {
     --hc->num_total;
   }      
 }
-/*
- *
- */
-void hcon_print (HContainer_t *hc) {
+
+
+void hcon_print(HContainer_t *hc)
+{
    const char *key;
    char printbuf[2048];
    void *data = NULL;
@@ -313,10 +292,9 @@ void hcon_print (HContainer_t *hc) {
       fprintf(stdout, "%s\n", key);
    }
 }
-/*
- *
- */
-void hcon_printf (FILE *fp, HContainer_t *hc) {
+
+void hcon_printf(FILE *fp, HContainer_t *hc)
+{
    const char *key;
    char printbuf[2048];
    void *data = NULL;
@@ -327,11 +305,13 @@ void hcon_printf (FILE *fp, HContainer_t *hc) {
       fprintf(fp, "%s\n", key);
    }
 }
+
 /*
- *  Apply the function fmap to every element in the container. 
- */
-		/* XXX - THIS MAY NOT WORK */
-void hcon_map (HContainer_t *hc, void (*fmap)(const void *value)) {
+  Apply the function fmap to every element in the container. 
+*/
+/* XXX - THIS MAY NOT WORK */
+void hcon_map(HContainer_t *hc, void (*fmap)(const void *value))
+{
   int i;
   HCBuf_t *buf;  
 
@@ -346,11 +326,14 @@ void hcon_map (HContainer_t *hc, void (*fmap)(const void *value)) {
     buf = buf->next;
   }
 }
+
+
 /*
- *  Do a deep copy of the entire container. If "deep_copy" is not NULL it is
- *    called for every slot.
- */
-void hcon_copy (HContainer_t *dst, HContainer_t *src) {
+  Do a deep copy of the entire container. If "deep_copy" is not NULL it is
+  called for every slot.
+*/
+void hcon_copy(HContainer_t *dst, HContainer_t *src)
+{
   int i;
   HCBuf_t *oldbuf, *buf, *sbuf;  
 
@@ -407,10 +390,14 @@ void hcon_copy (HContainer_t *dst, HContainer_t *src) {
       XASSERT( buf = malloc(sizeof(HCBuf_t)) );
   }
 }
+
+
+
 /*
- *  Print various statistics about the container.
- */
-void hcon_stat (HContainer_t *hc) {
+  Print various statistics about the container.
+*/
+void hcon_stat(HContainer_t *hc)
+{
   int i, num=1, free, total_free=0, total_slots=0;
   HCBuf_t *buf;
 
@@ -436,6 +423,8 @@ void hcon_stat (HContainer_t *hc) {
   printf("Total number of slots      = %8d\n",total_slots);
   printf("=========================================================================\n");
 }
+
+
 /*
   Print the total number of elements in the container.
 */
@@ -444,36 +433,35 @@ void hcon_stat (HContainer_t *hc) {
   return hc->num_total;
 }
 */
-/*
- * Iterator object allows (forwards) looping over contents of HContainer
- */
-void hiter_new (HIterator_t *hit, HContainer_t *hc) {
+
+/* Iterator object allows (forwards) looping over contents of
+   HContainer. */
+
+void hiter_new(HIterator_t *hit, HContainer_t *hc)
+{
   hit->hc = hc;
   hit->cur_buf = hc->buf;
   hit->cur_idx = -1;
 }
-/*
- *
- */
-void hiter_rewind (HIterator_t *hit) {
+
+void hiter_rewind(HIterator_t *hit)
+{
   hit->cur_buf = hit->hc->buf;
   hit->cur_idx = -1;
 }
 
 #ifdef BLAH
-/*
- *
- */
-void *hiter_getcurrent (HIterator_t *hit) {
+void *hiter_getcurrent(HIterator_t *hit)
+{
   if (hit->cur_idx==-1 || hit->cur_buf==NULL)
     return NULL;
   else
     return &hit->cur_buf->data[hit->cur_idx*hit->hc->datasize];
 }
-/*
- *
- */
-void *hiter_getnext (HIterator_t *hit) {
+
+
+void *hiter_getnext(HIterator_t *hit)
+{
   int idx;
   HCBuf_t *buf;
   
@@ -498,14 +486,17 @@ void *hiter_getnext (HIterator_t *hit) {
   }
   return NULL;
 }
+
 #endif
-/*
- *
- */
-HContainer_t *hcon_create (int datasize, int keysize,
-    void (*deep_free)(const void *value),
-    void (*deep_copy)(const void *dst, const void *src), void **valArr,
-    char **nameArr, int valArrSize) {
+
+HContainer_t *hcon_create(int datasize, 
+			  int keysize,
+			  void (*deep_free)(const void *value),
+			  void (*deep_copy)(const void *dst, const void *src),
+			  void **valArr,
+			  char **nameArr,
+			  int valArrSize)
+{
      HContainer_t *cont = (HContainer_t *)malloc(sizeof(HContainer_t));
      if (cont != NULL)
      {
@@ -532,10 +523,9 @@ HContainer_t *hcon_create (int datasize, int keysize,
 
      return cont;
 }
-/*
- *
- */
-void hcon_destroy (HContainer_t **cont) {
+
+void hcon_destroy(HContainer_t **cont)
+{
      if (*cont != NULL)
      {
 	  hcon_free(*cont);
@@ -543,10 +533,9 @@ void hcon_destroy (HContainer_t **cont) {
 	  *cont = NULL;
      }
 }
-/*
- *
- */
-int hcon_insert (HContainer_t *hcon, const char *key, const void *value) {
+
+int hcon_insert(HContainer_t *hcon, const char *key, const void *value)
+{
    int err = 1;
 
    if (hcon)
@@ -569,10 +558,9 @@ int hcon_insert (HContainer_t *hcon, const char *key, const void *value) {
 
    return err;
 }
-/*
- *
- */
-HIterator_t *hiter_create (HContainer_t *cont) {
+
+HIterator_t *hiter_create(HContainer_t *cont)
+{
      HIterator_t *iter = NULL;
 
      if (cont != NULL)
@@ -586,10 +574,9 @@ HIterator_t *hiter_create (HContainer_t *cont) {
 
      return iter;
 }
-/*
- *
- */
-void hiter_destroy (HIterator_t **iter) {
+
+void hiter_destroy(HIterator_t **iter)
+{
      if (*iter != NULL)
      {
 	  free(*iter);
