@@ -100,10 +100,12 @@ end_fetch:
         sprintf(dirstr, "mkdir %s; chmod 02775 %s", mkpart, mkpart);
         if(system(dirstr)) {
           printk("Error in SUMLIB_PavailGet() for cmd: %s\n", dirstr);
+          EXEC SQL COMMIT;
           return DS_ALLOC_ERR;
         }
 
         printk("Allocate in SUMLIB_PavailGet %g bytes in %s\n", l_bytes, l_name.arr);  /* !!!TEMP */
+        EXEC SQL COMMIT;
 	return NO_ERROR;
     
 sqlerror:

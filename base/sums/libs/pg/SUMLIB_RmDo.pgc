@@ -77,6 +77,7 @@ end_fetch:
       if(DS_RmNow(pcursor[j].p_wd, pcursor[j].p_sumid, pcursor[j].p_bytes, 
 		pcursor[j].p_effdate, 
 		pcursor[j].p_ds_index, pcursor[j].p_archsub, &rmbytes)) {
+        EXEC SQL ROLLBACK WORK;
         return DS_DATA_QRY;
       }
       bytesdeleted += rmbytes;     /* add what we deleted so far */
@@ -90,6 +91,7 @@ end_fetch2:
 sqlerror:
     printk("Error in DS_RmDo\n");
     printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
+    EXEC SQL ROLLBACK WORK;
     return DS_DATA_QRY;
 }
 
@@ -113,12 +115,14 @@ EXEC SQL END DECLARE SECTION;
     if(l_count) {
        printk("%s is open DARO\n", wd);
        *rmbytes = 0.0;
+       EXEC SQL COMMIT;
        return(0);		/* skip this dir opend for read */
     }
     eff_date = (uint64_t)atol(effdate);
     rootdir = strcpy(rwd, wd);
     if(eff_date > today_date) {
       *rmbytes = 0.0;
+      EXEC SQL COMMIT;
       return(0);
     }
     /* remove del pend entry from sum_partn_alloc tbl */
@@ -132,6 +136,7 @@ EXEC SQL END DECLARE SECTION;
     if(!(cptr = strstr(rootdir+1, "/D"))) {
       printk("The wd=%s doesn't have a /.../Dxxx term!\n",rootdir);
       *rmbytes = 0.0;
+      EXEC SQL COMMIT;
       return(0);
     }
     if((cptr1 = strstr(cptr+1, "/"))) {
@@ -153,10 +158,12 @@ EXEC SQL END DECLARE SECTION;
       printk("Cannot rm %s\n", wd);
     }
     *rmbytes = bytes;
+    EXEC SQL COMMIT;
     return(0);
 
 sqlrmerror:
     printk("Error in DS_RmNow\n");
     printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
+    EXEC SQL ROLLBACK WORK;
     return DS_DATA_QRY;
 }

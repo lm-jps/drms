@@ -98,7 +98,7 @@ int tape_inventory(int sim, int catalog)
   }
   else {
     if(system(cmd)) {
-      write_log("***Inv: failure\n\n");
+       /* write_log("***Inv: failure\n\n");/* Can't do this here. caller does*/
       return(0);
     }
   }
@@ -139,7 +139,7 @@ int tape_inventory(int sim, int catalog)
         write_log("tapeid in drive %d = %s\n", 
 			drivenum, drives[drivenum].tapeid);
         if(catalog) { 
-          if((tstate=SUMLIB_TapeCatalog(slots[slotnum].tapeid)) == 0) {
+	  if((tstate=SUMLIB_TapeCatalog(drives[drivenum].tapeid)) == 0) {
             write_log("***ERROR: Can't catalog new tapeid = %s\n", 
 			drives[drivenum].tapeid);
           }

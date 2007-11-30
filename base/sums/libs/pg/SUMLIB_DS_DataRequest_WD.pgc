@@ -58,11 +58,13 @@ sqlnotfound:
         sprintf(dsix_name, "wd_%d", i);
     	setkey_str(results, dsix_name, "");
     }
+        EXEC SQL COMMIT WORK;
 	return NO_ERROR;
 sqlerror:
          printk("Error in DS_DataRequest_WD\n");
          printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
          EXEC SQL WHENEVER SQLERROR CONTINUE;
+         EXEC SQL ROLLBACK WORK;
          return DS_DATA_QRY;
 }
 

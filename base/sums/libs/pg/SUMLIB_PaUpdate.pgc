@@ -75,7 +75,7 @@ sqlinsert:
               WHERE WD = :l_wd
               AND SUMID = :l_uid
               AND STATUS = :l_status;
-         if(commit)
+         /*if(commit)*/         /* no commit is obsolete. always commit */
          EXEC SQL COMMIT WORK;
 		return NO_ERROR;
         } else {

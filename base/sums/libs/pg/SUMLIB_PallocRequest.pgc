@@ -72,6 +72,7 @@ extern PADATA *pahdr_ap;
 		  break;
 	    default:
 		 printk("Unknown status in sum_partn_alloc database\n");
+                 EXEC SQL ROLLBACK WORK;
 		 return DS_DATA_QRY;
 		 break;
 		 }

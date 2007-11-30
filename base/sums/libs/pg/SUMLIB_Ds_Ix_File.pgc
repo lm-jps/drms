@@ -4,6 +4,7 @@
  * ones are offline.
  * If none are offline, returns 0. Else returns 1 with the filedsixoff[]
  * array containing the offline ds_index values with 0 termination.
+ * Return -1 on error.
 */
 
 #include <SUM.h>
@@ -49,10 +50,10 @@ EXEC SQL END DECLARE SECTION;
     if(!offline) return(0);
     return(1);
 sqlerror:
-         printk("Error in SUMLIB_Ds_Ix_File\n");
+         printk("Error in SUMLIB_Ds_Ix_File for ds_index=%u\n", ds_index);
          printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
     	 EXEC SQL COMMIT WORK;
-         return(1);
+         return(-1);
 }
 
 /* Find all the ds_index values that are in sum_main for the given tapeid
@@ -101,5 +102,6 @@ end_fetch:
 sqlerror:
          printk("Error in SUMLIB_Ds_Ix_Find\n");
          printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
+         EXEC SQL ROLLBACK WORK;
          return(1);
 }

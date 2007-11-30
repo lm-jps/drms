@@ -609,7 +609,16 @@ KEY *readdrvdo_1(KEY *params)
   /* now determine if all these ds_index are online. If so there is nothing
    * to do. Else retrieve the ones that are offline from the tape.
   */
-  if(SUMLIB_Ds_Ix_File(file_dsix, file_dsix_off) == 1) {  
+  status = SUMLIB_Ds_Ix_File(file_dsix, file_dsix_off);
+  if(status == -1) {
+     setkey_int(&retlist, "STATUS", 1);   /* give error back to caller */
+     sprintf(errstr, "Error on SUMLIB_Ds_Ix_File() in driven_svc");
+     setkey_str(&retlist, "ERRSTR", errstr);
+     free(wd);
+     free(tapeid);
+     return(retlist);
+  }
+  if(status == 1) {
     /* at least one is offline */
     sprintf(rdlog, "%s/gtar_rd_%d_%s_%d.log",
                         GTARLOGDIR, dnum, tapeid, tapefilenum);
@@ -1180,12 +1189,25 @@ int get_tape_file_num(int sim, char *dname, int drive)
 void drive_reset(char *dname) 
 {
   int fd;
+  int waitcnt = 0;
   struct mtop mt_op;
+  struct mtget mt_stat;
 
+  write_log("***PENDING RESET: drive %s\n", dname);
   fd = open(dname, O_RDONLY | O_NONBLOCK);
   mt_op.mt_op = MTRESET;	/* reset drive */
   mt_op.mt_count = 0;
   ioctl(fd, MTIOCTOP, &mt_op);
+  while(1) {
+     ioctl(fd, MTIOCGET, &mt_stat);
+     if(mt_stat.mt_gstat == 0) {         /* not ready yet */
+	if(++waitcnt == MAX_WAIT) {
+	   write_log("***RESET ERROR: drive %s doesn't go ready\n", dname);
+	   return;
+	}
+	sleep(1);
+     }
+  }
   close(fd);
   write_log("***RESET: drive %s\n", dname);
 }

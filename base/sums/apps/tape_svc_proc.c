@@ -56,6 +56,9 @@ SUMOFFCNT *offcnt_hdr = NULL;/* linked list of offline counts for a uid*/
 int robotbusy = 0;
 int robotcmdseq = 0;
 int eeactive = 0;	/* only allow Qs to rd/wrt tape already in a drive */
+int full_impexp_slotnum_internal[NUM_IMP_EXP_SLOTS];
+int empty_slotnum_internal[NUM_IMP_EXP_SLOTS];
+char dstring[32];
 void write_time();
 int send_mail(char *fmt, ...);
 void logkey ();
@@ -939,7 +942,9 @@ KEY *taperespwritedo_1(KEY *params) {
     }
     md5cksum = getkey_str(retlist, "md5cksum");
     write_log("Tape write md5cksum = %s\n", md5cksum);
-#ifdef SUMDC
+/*#ifdef SUMDC*/
+/* NOTE: the tellblock wasn't accurate. So always use totalbytes */
+    tellblock = 0;              /* force use of totalbytes */
     /* NOTE: There is no mt tell cmd in the data capture system. 
      * tellblock is always 0 here. We will instead send the SUMLIB_TapeUpdate()
      * function a byte count for the current tape file. It will then update
@@ -950,7 +955,7 @@ KEY *taperespwritedo_1(KEY *params) {
       sprintf(tmpname, "bytes_%d", i);
       totalbytes += getkey_double(params, tmpname);
     }
-#endif
+/*#endif*/
     if((filenum_written=SUMLIB_TapeUpdate(tapeid,tellblock,totalbytes)) == 0) {
       send_mail("Error: Can't update sum_tape in DB for tape %s\n",tapeid);
       write_log("***Error: Can't update sum_tape in DB for tape %s\n",tapeid);
@@ -1452,9 +1457,14 @@ KEY *taperesprobotdoordo_1(KEY *params) {
     retry = 6;
     while(retry) {
       if((istat = tape_inventory(sim, 0)) == 0) { /* no catalog here */
+        write_log("***Error: Can't do tape inventory. Will retry...\n");
+	--retry;
+	if(retry == 0) {
         write_log("***Fatal error: Can't do tape inventory\n");
         (void) pmap_unset(TAPEPROG, TAPEVERS);
         exit(1);
+      }
+	continue;
       }
       if(istat == -1) {   /* didn't get full slot count. retry */
         --retry;
@@ -1488,12 +1498,10 @@ KEY *impexpdo_1(KEY *params)
   static KEY *retlist, *xlist;
   enum clnt_stat status;
   char *tid, *call_err, *op;
-  char ext[64], cmd[96];
+  char ext[64], cmd[128];
   uint32_t robotback;
   int reqcnt, i, j, snum, dnum, eeslot, retry, istat;
   int count_impexp_full, count_slots_empty;
-  int full_impexp_slotnum_internal[NUM_IMP_EXP_SLOTS];
-  int empty_slotnum_internal[NUM_IMP_EXP_SLOTS];
 
   /*write_log("!!Keylist in impexpdo_1() is:\n");*/
   /*keyiterate(logkey, params);*/
@@ -1513,13 +1521,20 @@ KEY *impexpdo_1(KEY *params)
 				    /* the same tape types */
 #endif
       if(istat == 0) { 
+	write_log("***Error: Can't do tape inventory. Will retry...\n");
+	--retry;
+	if(retry == 0) {
+	  write_log("***Inv: failure\n\n");
         write_log("***Fatal error: Can't do tape inventory\n");
         (void) pmap_unset(TAPEPROG, TAPEVERS);
         exit(1);
       }
+        continue;
+      }
       if(istat == -1) {   /* didn't get full slot count. retry */
         --retry;
         if(retry == 0) {
+	  write_log("***Inv: failure\n\n");
           write_log("***Fatal error: Can't do tape inventory\n");
           (void) pmap_unset(TAPEPROG, TAPEVERS);
           exit(1);
@@ -1549,6 +1564,7 @@ KEY *impexpdo_1(KEY *params)
       if(!slots[i].tapeid) {
         count_slots_empty++;
         if(count_slots_empty > count_impexp_full) {
+	  /*write_log("WARN: More empty slots than new tapes to import\n");*/
         }
         empty_slotnum_internal[j++] = i;
       }
@@ -1780,10 +1796,9 @@ void write_time()
 {
   struct timeval tvalr;
   struct tm *t_ptr;
-  char datestr[32];
 
   gettimeofday(&tvalr, NULL);
-  t_ptr = localtime((const time_t *)&tvalr.tv_sec);
-  sprintf(datestr, "%s", asctime(t_ptr));
-  write_log("%s", datestr);
+  t_ptr = localtime((const time_t *)&tvalr);
+  sprintf(dstring, "%s", asctime(t_ptr));
+  write_log("%s", dstring);
 }

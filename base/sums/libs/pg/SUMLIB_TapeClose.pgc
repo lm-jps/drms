@@ -37,6 +37,7 @@ EXEC SQL END DECLARE SECTION;
 sqlerror:
 	printk("Error in SUMLIB_TapeState.\n"); 
 	printk("% .70s \n", sqlca.sqlerrm.sqlerrmc); 
+    EXEC SQL ROLLBACK WORK;
     return(0);
 }
 
@@ -68,6 +69,7 @@ EXEC SQL END DECLARE SECTION;
 sqlerror:
 	printk("Error in SUMLIB_TapeClose.\n"); 
 	printk("% .70s \n", sqlca.sqlerrm.sqlerrmc); 
+    EXEC SQL ROLLBACK WORK;
     return(1);
 }
 
@@ -99,6 +101,7 @@ EXEC SQL END DECLARE SECTION;
 sqlerror:
 	printk("Error in SUMLIB_TapeActive.\n"); 
 	printk("% .70s \n", sqlca.sqlerrm.sqlerrmc); 
+    EXEC SQL ROLLBACK WORK;
     return(1);
 }
 

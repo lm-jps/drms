@@ -159,7 +159,10 @@ sqlerror:
      /*EXEC SQL WHENEVER SQLERROR CONTINUE;*/
      /*EXEC SQL ROLLBACK WORK;*/
   }
-  if(eflg) return(1);
+  if(eflg) {
+    EXEC SQL COMMIT WORK;
+    return(1);
+  }
 
   EXEC SQL INSERT INTO SUM_FILE (TAPEID, FILENUM, GTARBLOCK, MD5CKSUM)
 	VALUES (:arch_tape, :arch_tape_fn, :gtarblock, :l_md5cksum);

@@ -28,5 +28,6 @@ EXEC SQL END DECLARE SECTION;
 sqlerror:
     printk("Error in SUMLIB_Open() call \n");
     printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
+    EXEC SQL ROLLBACK WORK;
     return(0);
 }

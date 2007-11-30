@@ -114,7 +114,7 @@ SUMID_t sumrpcopen_1(KEY *argp, CLIENT *clnt, int (*history)(const char *fmt, ..
     (*history)("%s %s status=%d\n", datestring(), call_err, status);
     return (0);
   }
-//  (*history)("suidback = %d\n", suidback); /* !!TEMP */
+  /* (*history)("suidback = %d\n", suidback); /* !!TEMP */
 
   /* register for future calls to receive the sum_svc completion msg */
   /* Use our suidback as the version number. */

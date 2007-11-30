@@ -48,8 +48,8 @@ tie %Hofneed, "Tie::IxHash"; #lets you take out keys in input order
 tie %Hofclosed, "Tie::IxHash"; #lets you take out keys in input order
 
 #NOTE: must have our full path name here for any restart signaled by sum_svc
-#$OURPATH = "/home/production/cvs/JSOC/base/sums/scripts/t50view"; #!!this program
-$OURPATH = "/home/jim/cvs/JSOC/base/sums/scripts/t50view"; #!!this program
+$OURPATH = "/home/production/cvs/JSOC/base/sums/scripts/t50view"; #!!this program
+#$OURPATH = "/home/jim/cvs/JSOC/base/sums/scripts/t50view"; #!!this program
 
 $DEFAULTDB = "jsocdc";		#default DB
 $HOSTDB = "dcs0";		#host where DB runs
@@ -110,8 +110,8 @@ $UID = $<;              #get real user id
 $runtag = "/tmp/t50view_$UID.tag";
 if(-e $runtag) {        #this user already running
   print "Already found a $runtag\n";
-  print "Only one instance of t50view allowed for a user\n";
-  print "If not so do: /bin/rm $runtag\n";
+  print "Only one instance of t50view allowed for a user. ";
+  print "If not so do: \n/bin/rm $runtag\n";
   exit(1);
 }
 

@@ -109,10 +109,12 @@ EXEC SQL END DECLARE SECTION;
 	        WHERE TAPEID = :l_tapeid;
 
    filen = l_nxtwrtfn;	/* this is the next file# to write to this tape */
+   EXEC SQL COMMIT WORK;
    return(filen);
 
 sqlerror:
 	printk("Error in SUMLIB_TapeFilenumber(%s)\n", tapeid); 
 	printk("% .70s \n", sqlca.sqlerrm.sqlerrmc); 
+    EXEC SQL ROLLBACK WORK;
     return 0;
 }

@@ -1,0 +1,26 @@
+.\"
+.TH drms_series 1  29-Nov-2007  "DRMS MANPAGE" "DRMS Programmer's Manual"
+.SH NAME
+drms_keymap \- functions to map an internal DRMS keyword to an external FITS keyword, and vice versa.
+
+.SH SYNOPSIS
+.nf
+#include "drms_keymap.h"
+
+
+
+.SH DESCRIPTION
+
+.SH RETURN VALUES
+Upon success, the functions set *status to DRMS_SUCCESS. In addition to the errors
+described above, the functions could encounter other errors, in which case 
+they set *status to a diagostic status code 
+(see drms_statuscodes(5)), which includes the following:
+
+.br
+.PP
+
+.SH EXAMPLES
+.nf
+
+.SH "SEE ALSO"

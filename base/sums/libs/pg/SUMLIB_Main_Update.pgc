@@ -138,7 +138,10 @@ EXEC SQL INCLUDE sqlca;
 	 );
 
    if(NC_PaUpdate(cwd, create_sumid, bytes, apstatus, archsub, effective_date, 
-	storage_group, safe_id, ds_index, 1, 0)) return(1);
+       storage_group, safe_id, ds_index, 1, 0)) {
+     EXEC SQL ROLLBACK WORK;
+     return(1);
+   }
    free(effective_date);
    free(dsname);
    free(username);

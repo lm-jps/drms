@@ -4,14 +4,10 @@
 SLEEP=300
 #delete until this many Mb free on /SUM set 0, 1, etc.
 #must be in order and no more than MAXSUMSETS
-MAX_FREE_0=3000000
+MAX_FREE_0=3800000
 #MAX_FREE_0=800000
 #MAX_FREE_1=300000
 #MAX_FREE_2=700000
-#delete until Mb free on a single partiton in ea /SUM set
-MAX_PART_FREE_0=300000
-#MAX_PART_FREE_1=21000
-#MAX_PART_FREE_2=90000
 #log file (only opened at startup and pid gets appended to this name)
 LOG=/usr/local/logs/SUM/sum_rm.log
 #whom to bother when there's a notable problem

@@ -15,6 +15,9 @@ endif
 ifeq ($(HOST),dcs1.jsoc.Stanford.EDU)
 	CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMDC
 endif
+ifeq ($(HOST),dcs2.jsoc.Stanford.EDU)
+        CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMDC
+endif
 ifeq ($(HOST),tenerife.tuc.noao.edu)
 	CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMNOAO
 endif
@@ -28,7 +31,7 @@ SUMSVC_$(d)	:= $(d)/sum_svc
 TAPESVC_$(d)	:= $(d)/tape_svc
 TARC_$(d)	:= $(d)/tapearc
 
-BINTGT_$(d)	:= $(addprefix $(d)/, main main2 tapeonoff driveonoff sum_rm impexp drive0_svc drive1_svc drive2_svc drive3_svc robot0_svc md5filter)
+BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main3 tapeonoff driveonoff sum_rm impexp drive0_svc drive1_svc drive2_svc drive3_svc robot0_svc md5filter)
 
 TGT_$(d)	:= $(BINTGT_$(d)) $(SUMSVC_$(d)) $(TAPESVC_$(d)) $(TARC_$(d))
 

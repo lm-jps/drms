@@ -85,6 +85,7 @@ EXEC SQL END DECLARE SECTION;
     EXEC SQL SELECT MD5CKSUM into :l_md5cksum FROM SUM_FILE
     WHERE TAPEID = :l_tapeid and FILENUM = :l_filenum;
     strcpy(md5ret, l_md5cksum.arr);
+    EXEC SQL COMMIT;
     return(0);
 sqlerror:
 end_fetch:

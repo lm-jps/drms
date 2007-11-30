@@ -399,6 +399,8 @@ KEY *robotdo_1(KEY *params)
     else {
       sleep(2);				/* !!!TEMP - test for robot ready*/
       if(system(cmd)) {
+	write_log("Err Retry: %s\n", cmd);
+	if(system(cmd)) {               /* try it again */
         write_log("***Rb:failure\n\n");
         setkey_int(&retlist, "STATUS", 1);   /* give err back to caller */
         sprintf(errstr, "Error on: %s", cmd);
@@ -407,6 +409,7 @@ KEY *robotdo_1(KEY *params)
         procnum = TAPERESPROBOTDO;            /* this proc number */
         return(retlist);
       }
+    }
     }
     write_log("***Rb:success\n\n");
   }
@@ -424,6 +427,8 @@ KEY *robotdo_1(KEY *params)
     else {
       sleep(2);				/* !!!TEMP - test for robot ready*/
       if(system(cmd)) {
+	write_log("Err Retry: %s\n", cmd);
+	if(system(cmd)) {               /* try it again */
         write_log("***Rb:failure\n\n");
         setkey_int(&retlist, "STATUS", 1);   /* give err back to caller */
         sprintf(errstr, "Error on: %s", cmd);
@@ -432,6 +437,7 @@ KEY *robotdo_1(KEY *params)
         procnum = TAPERESPROBOTDO;            /* this proc number */
         return(retlist);
       }
+    }
     }
     write_log("***Rb:success\n\n");
   }
@@ -505,6 +511,8 @@ KEY *robotdoordo_1(KEY *params)
     else {
       sleep(2);				/* !!!TEMP - test for robot ready*/
       if(system(cmd)) {
+	write_log("Err Retry: %s\n", cmd);
+	if(system(cmd)) {               /* try it again */
         if(mvdoor2slot)
           write_log("**Rb:t50doorfailure\n\n");
         else
@@ -514,6 +522,7 @@ KEY *robotdoordo_1(KEY *params)
         setkey_str(&retlist, "ERRSTR", errstr);
         return(retlist);
       }
+    }
     }
     if(mvdoor2slot)
       write_log("**Rb:t50doorsuccess\n\n");

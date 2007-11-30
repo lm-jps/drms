@@ -53,6 +53,8 @@ int i;
 	}
 	if (i==MAX_PART-1){
 		/*printf("more partitions than reqd \n"); */
+                EXEC SQL CLOSE pavail;
+                EXEC SQL COMMIT WORK;
 		return DS_DATA_QRY;
 	} 
 
@@ -117,6 +119,8 @@ extern int part_index_init[];	/* defined in SUMLIB_PavailGet.pgc */
 	}
 	if (i==MAX_PART-1){
 		/*printf("more partitions than reqd \n"); */
+                EXEC SQL CLOSE pavail2;
+                EXEC SQL COMMIT WORK;
 		return DS_DATA_QRY;
 	} 
 

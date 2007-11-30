@@ -54,8 +54,8 @@ EXEC SQL END DECLARE SECTION;
     sprintf(l_eff_date.arr, "%s", neweffdate);
     l_eff_date.len = strlen(l_eff_date.arr);
     EXEC SQL UPDATE SUM_GROUP SET effective_date = :l_eff_date WHERE group_id = :l_gpid;
-    EXEC SQL COMMIT WORK;
   }
+  EXEC SQL COMMIT WORK;
   return(0);
         
 sqlerror:
