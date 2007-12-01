@@ -19,6 +19,11 @@ drms_segment_write_from_file  drms_template_segments
 .nf
 #include <drms.h>
 
+#define DRMS_MAXCOMMENTLEN     (255)
+#define DRMS_MAXNAMELEN        (32)
+#define DRMS_MAXRANK           (16)
+#define DRMS_MAXSEGFILENAME    (256)
+#define DRMS_MAXUNITLEN        (32)
 typedef struct DRMS_Segment_struct {
   DRMS_Record_t *record;              /* Record segment belongs to */
   DRMS_SegmentInfo_t *info;           /* Series-wide attribute values */
@@ -87,7 +92,12 @@ extensions and with only the compliance- and structure-defining keywords
 (SIMPLE, BITPIX, NAXIS, NAXISn, and END, and optionally BLANK, BSCALE and
 BZERO) in the headers. All other ancillary data are to be found in the DRMS
 record. For the DRMS_FITZ protocol, the representation is similar except
-that the entire FITS file is compressed with Rice compression. For the
+that the entire FITS file is compressed with Rice compression. (Note that
+because the memory represeentation for the data supported through the
+API functions drms_segment_read is the DRMS_Array_t struct, which has a
+maximum rank of 16, FITS hypercubes of dimension > 16 are not supported.)
+
+For the
 DRMS_BINARY protocol, the data are written in a binary format, in which
 the first 8 bytes are the characters "DRMS RAW", the next \fI8(n+1)\fR
 are little-endian integer representations of the data type, rank, and

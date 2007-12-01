@@ -1,160 +1,334 @@
 .\"
-.TH DRMS_ARRAY 3  2006-05-19 "DRMS MANPAGE" "DRMS Programmer's Manual"
+.TH drms_array 3  2007-11-28 "DRMS MANPAGE" "DRMS Programmer's Manual"
 .SH NAME
-drms_array \- DRMS array data structures
+drms_array \- functions to access DRMS array data structures
+.nf
+drms_array2char drms_array2double drms_array2float drms_array2int
+drms_array2longlong  drms_array2missing  drms_array2short
+drms_array2string   drms_array2time  drms_array_convert
+drms_array_convert_inplace drms_array_count drms_array_create 
+drms_array_naxis drms_array_nth_axis drms_array_offset
+drms_array_permute drms_array_print drms_array_rawconvert
+drms_array_set drms_array_setchar drms_array_setchar_ext
+drms_array_setdouble drms_array_setdouble_ext drms_array_setext
+drms_array_setfloat drms_array_setfloat_ext
+drms_array_setint drms_array_setint_ext
+drms_array_setlonglong drms_array_setlonglong_ext
+drms_array_setshort drms_array_setshort_ext
+drms_array_setstring drms_array_setstring_ext
+drms_array_settime drms_array_settime_ext
+drms_array_setv drms_array_size drms_array_slice drms_free_array
+
+.De
 .SH SYNOPSIS
-.EX 5
+.nf
 #include <drms.h>
 
-typedef struct DRMS_Array_struct
-{
-  /* Basic array info: */ 
-  DRMS_Type_t type;       /* Datatype of the data elements. */
-  int naxis;              /* Number of dimensions. */
-  int axis[DRMS_MAXRANK]; /* Size of each dimension. */
-  void *data;             /* Data stored in column major order. */
-
-  /* Fields relating to scaling and slicing. */
-  DRMS_Segment_t *parent_segment; /* Parent segment. */
-  int israw;            /* Is this read in with type=DRMS_TYPE_RAW? 
+#define DRMS_MAXRANK           (16)
+typedef struct DRMS_Array_struct {
+                             /*  Basic array info  */
+  DRMS_Type_t type;          /*  Datatype of the data elements. */
+  int naxis;                 /*  Number of dimensions. */
+  int axis[DRMS_MAXRANK];    /*  Size of each dimension. */
+  void *data;                /*  Data stored in column major order */
+                       /*  Fields relating to scaling and slicing  */
+  struct DRMS_Segment_t *parent_segment;       /*  Parent segment  */
+  int israw;           /*  Were data read in with type=DRMS_TYPE_RAW? 
                            If israw==0 then shift and scaling have 
                            been applied to the data and they represent
-                           the "true" values. If israw==1 then no shift
-                           and scaling have been applied to the data.*/
-  double bzero;           /* Shift. */
-  double bscale;          /* Scaling. */
-  int start[DRMS_MAXRANK];/* Start offset of slice in parent. */
-
-  /* Private fields used for array index calculation. */
-  int dope[DRMS_MAXRANK]; /* Dimension offset multipliers. */
-
-  /* Private fields used for packed string arrays. */
-  char *strbuf;     /* String buffer used for packed string arrays. */
-  long long buflen; /* Size of string buffer. */
+                           the "true" values. If israw==1, no shift
+                           and scaling have been applied to the data */
+  double bzero;            /*  Shift  */
+  double bscale;           /*  Scaling  */
+  int start[DRMS_MAXRANK]; /*  Start offset of slice in parent  */
+                  /*  Private field used for array index calculation  */
+  int dope[DRMS_MAXRANK];  /*  Dimension offset multipliers. */
+                    /*  Private fields used for packed string arrays  */
+  char *strbuf;           /*  String buffer for packed string arrays  */
+  long long buflen;       /*  Size of string buffer  */
 } DRMS_Array_t;
-.EE
+				/*  Recognized data types: */
+typedef enum {DRMS_TYPE_CHAR, DRMS_TYPE_SHORT, DRMS_TYPE_INT, 
+	DRMS_TYPE_LONGLONG, DRMS_TYPE_FLOAT, DRMS_TYPE_DOUBLE, 
+	DRMS_TYPE_TIME, DRMS_TYPE_STRING, DRMS_TYPE_RAW} DRMS_Type_t;
+
+#define DRMS_MISSING_CHAR     (SCHAR_MIN)
+#define DRMS_MISSING_SHORT    (SHRT_MIN)
+#define DRMS_MISSING_INT      (INT_MIN)
+#define DRMS_MISSING_LONGLONG (LLONG_MIN)
+#define DRMS_MISSING_FLOAT    (F_NAN)  
+#define DRMS_MISSING_DOUBLE   (D_NAN)
+#define DRMS_MISSING_STRING   ("")
+#define DRMS_MISSING_TIME     (-211087684800.0) 
+.fi
 .sp
 .SH DESCRIPTION
-This data stucture represents an n-dimensional array of scalar data. 
-The array data is stored in column major order at the memory location 
-pointed to by
-.IR data .
-.PP
-The fields
-.I israw, bscale, bzero
-describe how the data contained in the array data structure relate to
-the "true" values it is supposed to represent.
-In the most frequently used case
-.I israw=0 
-the data stored in memory represent the "true" values of the array,
-and
-.I bzero, bscale 
-contain the shift and scaling (if any) applied to the data when it was 
-read in. If
-.I israw=1 
-then the data stored in memory represent the unscaled "raw" values of
-the array, and the true values may be obtained by applying the
-transformation
+The DRMS_Array_t data stucture represents an n-dimensional array of scalar
+data.  It is used for internal memory access to data structures read
+from, or to be written to, record segments. The array data are stored in
+column-major order at the memory location pointed to by the \fIdata\fR
+element.
 
-.br
+The fields \fIisraw, bscale,\fR and \fIbzero\fR describe
+how the data contained in the array data structure relate to
+the "true" values they are supposed to represent.
+In the most frequently used case, \fIisraw=0,\fR
+the data stored in memory represent the "true" values of the array,
+and \fIbzero\fR and \fIbscale\fR contain
+the shift and scaling (if any) applied to the data when they were 
+read in from external storage. If \fIisraw=1,\fR then
+the data stored in memory represent the unscaled "raw" values of
+the array, and the true values may be obtained by applying the
+scaling transformations, if any:
+
 .B "f(x) = bzero + bscale * x, if x != MISSING"
 .br
 .B "       MISSING           , if x == MISSING"
-.PP
-If the array structure contains data from a DRMS data segment, as returned
+
+If the array struct contains data from a DRMS data segment, as returned
 by the functions
-.B drms_segment_readslice
-or
-.BR drms_segment_read .
-then the 
-.I parent_segment 
-field points to the data segment from which the array data originates.
-.PP
-If the array contains a slice of the parent then the 
-.I start
-field contains the starting indices of the slice in the parent array.
+\fBdrms_segment_readslice\fR or \fB drms_segment_read,\fR. then the 
+\fIparent_segment\fR  field points to the data segment from which the
+array data originate.
+
+If the array contains a slice of the parent then the  \fIstart\fR field
+contains the starting indices of the slice in the parent array.
 For example: If an array contains the lower 2x2 elements of a 4x3 data 
 segment then the struct would contain
-.br
-array.naxis = 2
-.br
-array.axis = [2,2]
-.br
-array.start = [2,1]
-.br
-.SH FUNCTIONS
-.PP
-.I "Creation and destruction"
-.br
-\fB
-DRMS_Array_t *drms_array_create(DRMS_Type_t type, int naxis, int *axis, 
-                                void *data, int *status)
-.br
-void drms_free_array(DRMS_Array_t *src)
-\fR
-.PP
-.I "Slicing and permutation"
-.br
-\fB
-DRMS_Array_t *drms_array_slice(int *start, int *end, DRMS_Array_t *src)
-.br
-DRMS_Array_t *drms_array_permute(DRMS_Array_t *src, int *perm, 
-                                 int *status)
-\fR
-.PP
-.I "Scaling and type conversion"
-.br
-\fB
-DRMS_Array_t *drms_array_convert(DRMS_Type_t dsttype, double bzero, 
-				 double bscale, DRMS_Array_t *src)
-.br
-void drms_array_convert_inplace(DRMS_Type_t newtype, double bzero, 
-				double bscale, DRMS_Array_t *src)
-.br
-\fR
-.PP
-.I "Pretty printing"
-.br
-\fB
-void drms_array_print(DRMS_Array_t *arr, const char *colsep, 
-		      const char *rowsep)
-.br
-\fR
-.PP
-.I "Element count and array size in bytes"
-.br
-\fB
-long long drms_array_count(DRMS_Array_t *arr)
-.br
-long long drms_array_size(DRMS_Array_t *arr)
-\fR
-.PP
-.I "Filling with single value"
-.br
-\fB
-void drms_array2missing(DRMS_Array_t *arr)
-.br
-int drms_array_set(DRMS_Array_t *arr, int *index, DRMS_Type_t srctype, 
-                    DRMS_Type_Value_t *src)
-.br
-int drms_setarray_char(DRMS_Array_t *arr, int *index, char value)
-.br
-int drms_setarray_short(DRMS_Array_t *arr, int *index, short value)
-.br
-int drms_setarray_int(DRMS_Array_t *arr, int *index, int value)
-.br
-int drms_setarray_longlong(DRMS_Array_t *arr, int *index, 
-                            long long value)
-.br
-int drms_setarray_float(DRMS_Array_t *arr, int *index, float value)
-.br
-int drms_setarray_double(DRMS_Array_t *arr, int *index, double value)
-.br
-int drms_setarray_time(DRMS_Array_t *arr, int *index, double value)
-.br
-int drms_setarray_string(DRMS_Array_t *arr, int *index, char *value)
-\fR
+.nf
+	array.naxis = 2
+	array.axis = [2,2]
+	array.start = [2,1]
 
+.SH FUNCTIONS
+.nf
+.I "Creation and Destruction"
+
+\fB
+DRMS_Array_t *drms_array_create (DRMS_Type_t type, int naxis,
+	int *axis, void *data, int *status)
+void drms_free_array (DRMS_Array_t *src)
+.fi
+\fR
+\fBdrms_array_create\fR creates a DRMS_Array_t struct with the specified
+values for the elements \fItype, naxis,\fR and \fI*axis\fR. The array
+\fIaxis\fR must be of length \fInaxis\fR (at least) unless it is NULL.
+If \fIdata\fR is
+a nun-NULL pointer, the data pointer of the created array is set to it;
+otherwise, a data space of appropriate size is malloc'd (but left with
+unknown contents). \fItype\fR cannot be DRMS_TYPE_RAW. No checks are made
+for legitimate (positive) values of \fIaxis[n]\fR. None of the other
+elements of the struct are filled except dope.
+
+\fBdrms_free_array\fR frees the array struct \fIsrc\fR as well as its
+member \fIsrc->data\fR as necessary.
+
+.nf
+.I "Slicing and Permutation"
+
+\fB
+DRMS_Array_t *drms_array_slice (int *start, int *end,
+	DRMS_Array_t *src)
+DRMS_Array_t *drms_array_permute (DRMS_Array_t *src, int *perm,
+	int *status)
+.fi
+\fR
+\fBdrms_array_slice\fR returns a newly created array struct (created
+with \fBdrms_array_create\fR, \fIq.v.\fR) in which the data element
+corresponds to a subset hypercube of dimension \fIsrc->naxis\fR with
+only the index values for dimension \fBn\fR in the closed range
+[\fIstart[n], end[n]]\fR. The extraction is performed by the function
+\fBndim_pack\fR.
+
+\fBdrms_array_permute\fR rearranges the array elements in \fIarr->data\fR
+such that the dimensions are ordered  according to the permutation given
+in the vector \fIperm\fR (dimension \fIarr->naxis\fR), using the function
+\fBndim_perm\fR. This is a generalization of the matrix transpose operator
+to n dimensions. The permuted data are returned in a newly created
+array struct, created wih \fBdrms_array_create\fR.
+
+.nf
+.I "Scaling and Type Conversion"
+
+\fB
+DRMS_Array_t *drms_array_convert (DRMS_Type_t dsttype, double bzero, 
+	double bscale, DRMS_Array_t *src)
+void drms_array_convert_inplace (DRMS_Type_t newtype, double bzero, 
+	double bscale, DRMS_Array_t *src)
+int drms_array_rawconvert (int n, DRMS_Type_t dsttype, double bzero,
+	double bscale, void *dst, DRMS_Type_t srctype, void *src)
+int drms_array2char (int n, DRMS_Array_Type_t src_type, double bzero,
+	double bscale, void *src, char *dst)
+int drms_array2short (int n, DRMS_Array_Type_t src_type, double bzero,
+	double bscale, void *src, char *dst)
+int drms_array2int (int n, DRMS_Array_Type_t src_type, double bzero,
+	double bscale, void *src, char *dstt)
+int drms_array2longlong (int n, DRMS_Array_Type_t src_type, double bzero,
+	double bscale, void *src, char *dst)
+int drms_array2float (int n, DRMS_Array_Type_t src_type, double bzero,
+	double bscale, void *src, char *dst)
+int drms_array2double (int n, DRMS_Array_Type_t src_type, double bzero,
+	double bscale, void *src, char *dst)
+int drms_array2time (int n, DRMS_Array_Type_t src_type, double bzero,
+	double bscale, void *src, char *dst)
+int drms_array2string (int n, DRMS_Array_Type_t src_type, double bzero,
+	double bscale, void *src, char *dst)
+.fi
+\fR
+\fBdrms_array_convert\fR converts the data in \fIsrc->data\fR to type
+\fIdattype\fR, scaling by the values \fIbzero\fR and \fIbscale\fR, by
+calling the function \fBdrms_array_rawconvert\fR. It returns a newly
+created array struct with the converted values but without copying or
+setting the elements other than those set by \fBdrms_array_create\fR.
+In particular, the elements bzero and bscale are not set.
+\fBdrms_array_convert_inplace\fR performs the same type conversion,
+but instead of returning a new array simply replaces the \fIsrc->data\fR
+element.
+
+\fBdrms_array_rawconvert\fR converts the first \fIn\fR values of
+\fIsrc->data\fR, interpreted as being of type \fIsrctype\fR, to type
+\fIdattype\fR, with scaling by \fIbzero\fR and \fIbscale\fR as applicable
+for the data type, by calling the appropriate function \fBdrms_array2*\fR.
+
+\fBdrms_array2string\fR converts the first \fIn\fR values of \fIsrc\fR,
+interpreted as being of type \fIsrc_type\fR, to strings which are
+placed in the array \fIdst\fR using a \fBsprintf\fR function with a
+%24.17lg format, if the type is numeric. If the type is DRMS_TYPE_TIME,
+the \fBsprint_time\fR function is used, with a TAI representation accurate
+to the nearest second. If the type is DRMS_TYPE_STRING, the strings are
+simply copied. For numeric types (including DRMS_TYPE_TIME),
+the data are first scaled by \fIbzero\fR and \fIbscale\fR before
+being printed to strings. Data with values representing missing data
+are represented by single-character null terminators; however, no check
+is performed on whether the scaling would result in valid data for the
+type.
+
+\fBdrms_array2time\fR converts the first \fIn\fR values of \fIsrc\fR,
+interpreted as being of type \fIsrc_type\fR, to doubles, scaling them
+by \fIbzero\fR and \fIbscale\fR. If the resulting scaled numeric values
+are outside the representable range for the type, the value is replaced
+by DRMS_MISSING_TIME. If the data are of type DRMS_TYPE_STRING, then they
+are scanned by \fBsscan_time\fR, then scaled, and then checked for validity
+as doubles.
+
+The other \fBdrms_array2\fR* functions convert the first \fIn\fR values
+of \fIsrc\fR, interpreted as being of type \fIsrc_type\fR, to the data
+type of \fIdst\fR (specific to the named function), and place the values
+in \fIdst\fR. The values are first scaled by \fIbzero\fR and \fIbscale\fR.
+If the scaled values are within the representable range of the \fIdst\fR
+type, they are replaced by the missing value for the type \fIsrc_type\fR;
+otherwise, the scaled values are placed in \fIdst\fR. (This is almost
+certainly a bug!) If \fIsrc_type\fR is DRMS_TYPE_STRING, the data
+strings are interpreted as character representations of numbers with
+\fBstrtod\fR, and then scaled. If the resulting values are within the
+representable range for \fIsrc_type\fR, they are placed in \fIdst\fR,
+otherwise the appropriate missing value is used. (This appears to be the
+only case for which these functions behave as expected.)
+
+.nf
+.I "Information and Diagnostics"
+
+\fB
+int drms_array_offset (DRMS_Array_t *arr, int *indexarr)
+void drms_array_print (DRMS_Array_t *arr, const char *colsep,
+	const char *rowsep)
+long long drms_array_count (DRMS_Array_t *arr)
+long long drms_array_size (DRMS_Array_t *arr)
+int drms_array_naxis (DRMS_Array_t *arr)
+int drms_array_nth_axis (DRMS_Array_t *arr, int n)
+.fi
+\fR
+\fBdrms_array_offset\fR returns the offset, in bytes, from the start of the
+array \fIarr->data\fR of the datum at the coordinate value specified by the
+index array \fIindexarr\fR, which must be of dimension \fIarr->naxis\fR
+(at least).
+
+\fBdrms_array_count\fR returns the total number of data points in the
+array \fIarr->data\fR, \fIi.e.\fR the product of \fIarr->axis[i]\fR.
+
+\fBdrms_array_size\fR returns the total size in bytes of the data  array
+\fIarr->data\fR, \fIi.e.\fR the product of \fBdrms_array_count\fR and
+\fBdrms_sizeof(\fRarr->type\fB)\fR.
+
+\fBdrms_array_naxis\fR returns the rank of the array, \fIarr->naxis\fR
+
+\fBdrms_array_nth_naxis\fR returns the dimension of axis \fIn\fR of the
+array, \fIarr->axis[n]\fR.
+
+\fBdrms_array_print\fR prints the values of the data in \fIarr->data\fR
+in tabular form, with colums separated by the string \fIcolsep\fR and
+rows separated by the string \fIrowsep\fR. One-dimensional arrays are
+printed as a single row, two-dimansional arrays in column-major \fIi.e.\fR
+storage order. Arrays of higher dimension are printed as successive tables,
+each labeled by a header line giving the array index or indices for the
+corresponding dimension(s) above the 2nd.
+
+.nf
+.I "Filling"
+
+\fB
+void drms_array2missing (DRMS_Array_t *arr)
+int drms_array_setext (DRMS_Array_t *arr, long long index,
+	DRMS_Value_t *src)
+int drms_array_set (DRMS_Array_t *arr, int *indexarr, DRMS_Value_t *src)
+int drms_array_setchar_ext (DRMS_Array_t *arr, long long index,
+	char value)
+int drms_array_setchar (DRMS_Array_t *arr, int *indexarr, char value)
+int drms_array_setshort_ext (DRMS_Array_t *arr, long long index,
+	short value)
+int drms_array_setshort (DRMS_Array_t *arr, int *indexarr, short value)
+int drms_array_setint_ext (DRMS_Array_t *arr, long long index, int value)
+int drms_array_setint (DRMS_Array_t *arr, int *indexarr, int value)
+int drms_array_setlonglong_ext (DRMS_Array_t *arr, long long index,
+	long long value)
+int drms_array_setlonglong (DRMS_Array_t *arr, int *indexarr,
+	long long value)
+int drms_array_setfloat_ext (DRMS_Array_t *arr, long long index,
+	float value)
+int drms_array_setfloat (DRMS_Array_t *arr, int *indexarr, float value)
+int drms_array_setdouble_ext (DRMS_Array_t *arr, long long index,
+	double value)
+int drms_array_setdouble (DRMS_Array_t *arr, int *indexarr, double value)
+int drms_array_settime_ext (DRMS_Array_t *arr, long long index,
+	double value)
+int drms_array_settime (DRMS_Array_t *arr, int *indexarr, double value)
+int drms_array_setstring_ext (DRMS_Array_t *arr, long long index,
+	char *value)
+int drms_array_setstring (DRMS_Array_t *arr, int *indexarr, char *value)
+.fi
+\fR
+\fBdrms_array2missing\fR sets all the values in the array \fIarr->data\fR
+to the DRMS entity representing missing (fill) data for the data type
+\fIarr->type\fR, for example DRMS_MISSING_SHORT or DRMS_MISSING_DOUBLE.
+If the data type is DRMS_TYPE_STRING, the values are set to single-byte
+null terminators. Note that the value defined for DRMS_MISSING_TIME is in
+fact a valid double-precision number, and that this value is defined
+differently from the definitions used for representation of invalid
+strings in \fBsscan_time\fR.
+
+\fBdrms_array_setext\fR sets the value of the array element indexed by
+\fIindex\fR from the start of the array \fIarr->data\fR (in units of the
+size of the array data type) to the value \fIsrc\fR, converted to the type
+\fIsrc->type\fR by \fBdrms2*\fR as necessary.
+\fBdrms_array_set\fR sets the value of the \fIarr->data\fR array element
+indexed by the vector \fIindexarr\fR, of length \fIarr->naxis\fR (at least)
+to the value \fIsrc\fR, similarly converted.
+
+The other \fBdrms_array_set*\fR functions do the same thing as
+\fBdrms_array_set\fR or \fBdrms_array_setext\fR, except that no type
+conversion is performed; the array data type \fIarr->type\fR must match
+the type of \fIvalue\fR (except for \fBdrms_array_settime*\fR, for which it
+must be of type DRMS_TYPE_TIME). \fBdrms_array_set_string*\fR place the
+start address of the string in the array, they do not do a string
+copy.
+
+.nf
+.I "Unimplemented (Reserved)"
+
+\fB
+void drms_array_setv (DRMS_Array_t *arr, ...)
+\fR
+\fB
 .SH "SEE ALSO"
 .BR drms_record (3),
 .BR drms_keyword (3),
