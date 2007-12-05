@@ -139,7 +139,10 @@ static void drms_keymap_termcltables()
       hcon_destroy(&gClassTables);
    }
 }
-
+/* drms_keymap_create() - Allocate an empty DRMS_KeyMap_t and return a pointer to it if 
+ * memory was successfully allocated. It is the caller's responsiblity to free the returned
+ * DRMS_KeyMap_t by calling drms_keymap_destroy().
+ */
 DRMS_KeyMap_t *drms_keymap_create()
 {
    DRMS_KeyMap_t *ret = NULL;
@@ -155,6 +158,9 @@ DRMS_KeyMap_t *drms_keymap_create()
    return ret;
 }
 
+/* drms_keymap_destroy() - Free all allocated memory associated with a DRMS_KeyMap_t. 
+ * The DRMS_KeyMap_t pointer contained in km is set to NULL.
+ */
 void drms_keymap_destroy(DRMS_KeyMap_t **km)
 {
    if (*km)
@@ -166,8 +172,12 @@ void drms_keymap_destroy(DRMS_KeyMap_t **km)
    }
 }
 
-/* drms_keymap_parsetable() - 
- *
+/* drms_keymap_parsetable() - Parse a buffer containing FITS-keyword-name-to-DRMS-keyword-name
+ * mappings. The buffer, <text>, can contain zero or more mappings, each of the form 
+ * <fitsname>(<whitespace> | ',')<drmsname>. Each pair of mappings must be separated by
+ * a newline character ('\n'). Comments or emtpy strings may appear between newline characters
+ * as well. If <keymap> is not NULL, the resulting set of mappings is used to 
+ * initialize <keymap>.
  */
 int drms_keymap_parsetable(DRMS_KeyMap_t *keymap, const char *text)
 {
@@ -241,7 +251,12 @@ int drms_keymap_parsetable(DRMS_KeyMap_t *keymap, const char *text)
 
    return success;
 }
-
+/* drms_keymap_parsefile() - Parse a file containing FITS-keyword-name-to-DRMS-keyword-name
+ * mappings. <fPtr> must contain a valid file pointer. If <keymap> is not NULL, the 
+ * resulting set of mappings is used to initialize <keymap>. This function 
+ * calls drms_keymap_parsetable() to parse the content of the file to which <fPtr>
+ * refers.
+ */
 int drms_keymap_parsefile(DRMS_KeyMap_t *keymap, FILE *fPtr)
 {
    int success = 1;

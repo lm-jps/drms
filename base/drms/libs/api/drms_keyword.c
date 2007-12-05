@@ -3,6 +3,7 @@
 #include "xmem.h"
 
 #include "drms_keymap.h"
+#include "drms_keymap_internal.h"
 
 
 /* Prototypes for static functions. */

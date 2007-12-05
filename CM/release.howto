@@ -1,27 +1,25 @@
 Art's suggested release recipe:
 
-1. Notify users (jsoc_dev@sun.stanford.edu) that a new release will be built.  Allow users time to submit changes they want in the new release.
-2. From a cluster-node (eg., n00), perform a clean sync to head as a non-Production user (cvs checkout -r HEAD jsoc).  The -r rev option is sticky, which means that if you used -r Ver_3-2 on a previous checkout, that "cvs checkout jsoc" will check out Ver_3-2.  Use "-r HEAD" to force the use of the head revision.
-3. From one machine, update $JSOCROOT/base/libdrms/jsoc_version.h to the latest release version and build again (make clean, make universe).  The version macros should be of the form:
+1. Notify users (jsoc_dev@sun.stanford.edu) that a new release will be built.  Allow users time to submit changes they want in the new release.  This includes changes made by the CM that have not been committed.
+2. From a cluster-node (eg., n00), perform a clean sync to head as a non-Production user (cvs checkout -r HEAD JSOC).  The -r rev option is sticky, which means that if you used -r Ver_3-2 on a previous checkout, that "cvs checkout JSOC" will check out Ver_3-2.  Use "-r HEAD" to force the use of the head revision. Update $JSOCROOT/base/jsoc_version.h to the latest release version and build again (make clean, make universe).  The version macros should be of the form:
 
 #define jsoc_version "V3R5"
 #define jsoc_vers_num (305)
 
-4. Build all binaries (ie., make universe) and ensure there are no make problems.
-5. Repeat 2 and 4 for all machine types supported.
-6. From the machine used in step 3, commit $JSOCROOT/base/libdrms/jsoc_version.h.
-7. From the machine used in step 3, create a tag for the new release.  cd to $JSOCROOT.  Run "cvs tag -c Ver_<MAJ>-<MIN> ."  Replace <MAJ> with the major version number and <MIN> with the minor version number.
-8. Update the "Ver_LATEST" tag.  This tag always points to the latest release.  "cd $JSOCROOT; cvs rtag -r Ver_<MAJ>-<MIN> Ver_LATEST jsoc", where <MAJ> and <MIN> are the current release.
-9. Once again, edit $JSOCROOT/base/libdrms/jsoc_version.h.  The version macros should be of the form:
+3. Repeat step 2 for all machine types supported.
+4. From the machine used in step 2, commit $JSOCROOT/base/libdrms/jsoc_version.h.
+5. From the machine used in step 2, create a tag for the new release.  cd to $JSOCROOT.  Run "cvs tag -c Ver_<MAJ>-<MIN> ."  Replace <MAJ> with the major version number and <MIN> with the minor version number.
+6. Update the "Ver_LATEST" tag.  This tag always points to the latest release.  "cd $JSOCROOT; cvs rtag -r Ver_<MAJ>-<MIN> Ver_LATEST JSOC", where <MAJ> and <MIN> are the current release.
+7. Once again, edit $JSOCROOT/base/libdrms/jsoc_version.h.  The version macros should be of the form:
 
 #define jsoc_version "V3R5X"
 #define jsoc_vers_num (-305)
 
 The "X" and "-" denote that binaries were created from non-release code.
-10. From the machine used in step 8, commit $JSOCROOT/base/libdrms/jsoc_version.h.  You might have to run "cvs update -A base/libdrms/jsoc_version.h" to clear the stick flag created when you first sync'd in step 2 (if you used the "-r" flag).
-11. Ensure that the tag was successfully created and create actual release binaries (not just the binaries in your sandbox).  Login as the production user, checkout the tagged files (cvs checkout -r Ver_<MAJ>-<MIN> jsoc) and build on all machines supported.  
-12. Update the "working release".  The source for these binaries lives in /home/jsoc/cvs/jsoc.  cd to /home/jsoc/cvs, and do "cvs checkout -r Ver_<MAJ>-<MIN> jsoc" and build on all machines supported.
-13. Send instructions for using the new release to users.
+8. From the machine used in step 7, commit $JSOCROOT/base/libdrms/jsoc_version.h.  You might have to run "cvs update -A base/libdrms/jsoc_version.h" to clear the stick flag created when you first sync'd in step 2 (if you used the "-r" flag).
+9. Ensure that the tag was successfully created and create actual release binaries (not just the binaries in your sandbox).  Login as the production user, checkout the tagged files (cvs checkout -r Ver_<MAJ>-<MIN> JSOC) and build on all machines supported.  
+10. Update the "working release".  The source for these binaries lives in /home/jsoc/cvs/JSOC.  cd to /home/jsoc/cvs, and do "cvs checkout -r Ver_<MAJ>-<MIN> JSOC" and build on all machines supported.
+11. Send instructions for using the new release to users.
 
 ================================================================================
 Example New Release Instructions
@@ -44,16 +42,16 @@ properly).
 
 There are several ways to use this release.  If you wish to simply use pre-built
 binaries, you can simply use the production binaries, which are located at 
-/home/production/cvs/jsoc.  Every time a release is created, the binaries in
+/home/production/cvs/JSOC.  Every time a release is created, the binaries in
 this location get updated.  Only the production user can update these binaries.
-So, you could run /home/production/cvs/jsoc/bin/linux_x86_64/show_keys, for example.
+So, you could run /home/production/cvs/JSOC/bin/linux_x86_64/show_keys, for example.
 If instead you want to work with stable source files, then you must have a sandbox,
 which is a local copy (in your home directory) of the files in the cvs depot.  
 You would probably want to work with a sandbox if you plan on making eventual 
 changes to the depot files.  Changes you make to your sandbox files are not visible 
 to other users until you "commit" those changes back to the cvs depot.  Please see
 "If You Don't Have a Sandbox" below for more information on how to create a sandbox.  
-There is also a "working" release which resides in in /home/jsoc/cvs/jsoc.  New 
+There is also a "working" release which resides in in /home/jsoc/cvs/JSOC.  New 
 files may be placed here and existing files may be edited for common use before the 
 next official release.  Each time a release gets created, the source and binaries of 
 the working release get updated.  WARNING: the files you see here may not be stable 
@@ -88,13 +86,13 @@ CVS_RSH=ssh
 
 Make a cvs dir and do:
 > cd /home/you/cvs
-> cvs checkout jsoc
+> cvs checkout JSOC
 
-This will copy the LATEST version of all cvs depot files to /home/you/cvs/jsoc.
+This will copy the LATEST version of all cvs depot files to /home/you/cvs/JSOC.
 These are not guaranteed to be stable.  This is something you may want to do if 
 you are a developer, perhaps you are fixing a broken build.  If instead you want 
-this stable release, then substitute "cvs checkout -r Ver_3-8 jsoc" for the above 
-"cvs checkout jsoc" command.
+this stable release, then substitute "cvs checkout -r Ver_3-8 JSOC" for the above 
+"cvs checkout JSOC" command.
 
 You would then make changes to the checked-out files, and commit them back to the
 depot with the "cvs commit files..." command.  Only after running this command
@@ -104,12 +102,12 @@ their sandbox with the latest changes to the depot ("cd $JSOCROOT; cvs update -A
 Additional Info
 ---------------
 If you are unfamiliar with the use of cvs see the file:
-jsoc/CM/working_with_sandbox.txt.
+JSOC/CM/working_with_sandbox.txt.
 
 There's a linux4 cvs gui at xim:/usr/bin/lincvs
 Also on our jsoc web page:
 
-http://jsoc.stanford.edu/cvs/jsoc/
+http://jsoc.stanford.edu/cvs/JSOC/
 
 Use the Apache cvs gui to see the diffs. For example, go to
 http://jsoc.stanford.edu/cvs/JSOC/base/drms/
@@ -124,15 +122,15 @@ End Example New Release Instructions
 
 
 
-					/home/jim/cvs/jsoc/CM/release.howto
+					/home/jim/cvs/JSOC/CM/release.howto
 
 Make sure the cvs/JSOC/base/jsoc_version.h is updated.
 
 A release is done from a sandbox. Get the production user sandbox to work:
 
-> cd /home/production/cvs/jsoc
+> cd /home/production/cvs/JSOC
 
-d00:/home/production/cvs/jsoc>  $JSOCROOT/jsoc_update.csh
+d00:/home/production/cvs/JSOC>  $JSOCROOT/jsoc_update.csh
 
 Do a sanity check on the make log files:
 $JSOCROOT/make_jsoc_linux_X86_64.log
@@ -143,13 +141,13 @@ $JSOCROOT/make_jsoc_linux_ia32.log
 -----------------------------------------------------------------------------
 When all the makes are ok, tag all the most recent revisions in the repository:
 
-> cvs -d /home/cvsuser/cvsroot rtag -r HEAD Ver_1-0 jsoc
+> cvs -d /home/cvsuser/cvsroot rtag -r HEAD Ver_1-0 JSOC
 
 To remove this tag do:
 
-> cvs -d /home/cvsuser/cvsroot rtag -d Ver_1-0 jsoc
+> cvs -d /home/cvsuser/cvsroot rtag -d Ver_1-0 JSOC
 
-NOTE: Tell users about Phil's script cvs/jsoc/jsoc_update.csh  to do
+NOTE: Tell users about Phil's script cvs/JSOC/jsoc_update.csh  to do
 their release update.
 
 
@@ -182,7 +180,7 @@ repository version before proceeding.
 -----------------------------------------------------------------------------
 Get the all the makes to work:
 > ssh production@lws               (and then again for d00 and n00(32bit))
-> cd /home/production/cvs/jsoc
+> cd /home/production/cvs/JSOC
 ####(OLD) > setenv ORACLE_HOME /u01/app/oracle/product/10.1.0/db_1
 > ./configure -force  (for n00: ./configure -force -client)
 (may have to do a make cleandep; make depend)
