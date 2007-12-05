@@ -24,26 +24,12 @@
 #define CMDPARAMS_INVALID_CONVERSION	(-5) 
 #define CMDPARAMS_OUTOFMEMORY   	(-6) 
 	       /*  Argument types in ModuleArgs_t used by cmdparams_parse()  */
-
-typedef enum
-{
+typedef enum {
    ARG_END = 0,
-   ARG_FLAG,
-   ARG_TIME,
-   ARG_INT,
-   ARG_FLOAT,
-   ARG_DOUBLE,
-   ARG_STRING,
-   ARG_VOID,
-   ARG_INTS,
-   ARG_FLOATS,
-   ARG_DOUBLES,
-   /* ARG_STRINGS, */
-   ARG_NUME,
-   ARG_DATASET,
-   ARG_DATASERIES,
-   ARG_NEWDATA,
-   ARG_NUMARGS
+   ARG_FLAG,   ARG_TIME,    ARG_INT,        ARG_FLOAT,   ARG_DOUBLE,
+   ARG_STRING, ARG_VOID,    ARG_INTS,       ARG_FLOATS,  ARG_DOUBLES,
+/* ARG_STRINGS, */
+   ARG_NUME,   ARG_DATASET, ARG_DATASERIES, ARG_NEWDATA, ARG_NUMARGS
 } ModuleArgs_Type_t;
 
 typedef struct ModuleArgs_t {
