@@ -57,6 +57,8 @@ of parameters expected to be available to a module as a global variable.
 where \fIXXX\fR is not \fIstr\fR or \fItime\fR returns the value in the
 parameters list associated with the specified name. If there is no entry
 with that name or if the type does not correspond to \fIXXX\fR,
+then the value representing missing (fill) data for that type is returned,
+and the \fIstatus\fR value is set to a non-zero code.
 \fIcmdparams_get_str()\fR returns a pointer to the associated string,
 and \fIcmdparams_get_time()\fR returns a double representing the internal
 time representation of a parsed date-time string.
