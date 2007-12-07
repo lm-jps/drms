@@ -1,6 +1,7 @@
 //#define DEBUG
 
-#include "drms.h"  
+#include "drms.h"
+#include "drms_priv.h"
 #include "xmem.h"
 
 

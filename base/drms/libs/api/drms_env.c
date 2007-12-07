@@ -1,5 +1,6 @@
 //#define DEBUG
 #include "drms.h"
+#include "drms_priv.h"
 #include "SUM.h"
 #include "sum_rpc.h"
 #include "xmem.h"

@@ -3,6 +3,7 @@
 #include <dlfcn.h>
 #include <sys/stat.h>
 #include "drms.h"
+#include "drms_priv.h"
 #include "xmem.h"
 #include "drms_dsdsapi.h"
 

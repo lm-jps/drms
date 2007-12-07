@@ -32,6 +32,7 @@
 //#define DEBUG
 
 #include "drms.h"
+#include "drms_priv.h"
 #include <float.h>
 #include <dlfcn.h>
 #include "xmem.h"

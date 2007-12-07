@@ -1,3 +1,5 @@
+// XXX need to restrict this to non-internal functions XXX
+
 //#define DEBUG
 //#define FHASH
 #define EXPANDAPI 0          /* 0 - Exclude functions that are not part of the module API. */

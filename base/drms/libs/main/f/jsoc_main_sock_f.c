@@ -5,6 +5,7 @@
 #include "cfortran.h"
 #include "jsoc_main.h"
 #include "inthandles.h"
+#include "drms_env.h"
 
 
 			 /* Global structure holding command line parameters */

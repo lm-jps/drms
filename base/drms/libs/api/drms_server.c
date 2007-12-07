@@ -2,6 +2,7 @@
 
 #define __DRMS_SERVER_C
 #include "drms.h"
+#include "drms_priv.h"
 #include "tee.h"
 #undef __DRMS_SERVER_C
 #include "xmem.h"

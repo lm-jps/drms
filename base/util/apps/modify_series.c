@@ -111,6 +111,8 @@ int DoIt(void) {
 
     // delete current series without dropping the series table and
     // sequence. take care not to free the template.
+    void (*pFn)(const void *);
+    pFn = (drms_env->series_cache).deep_free; /* temp var to hold fn. */
     (drms_env->series_cache).deep_free = NULL;
     if (drms_delete_series(drms_env, series, 0)) {
       fprintf(stderr, "Failed to remove previous definitions\n");
@@ -118,7 +120,7 @@ int DoIt(void) {
       goto bailout;
     }
     // restore deep_free function
-    (drms_env->series_cache).deep_free = (void (*)(const void *)) drms_free_template_record_struct;
+    (drms_env->series_cache).deep_free = pFn;
 
     // retain the spot in the series_cache. this is a hack to undo
     // hcon_remove()

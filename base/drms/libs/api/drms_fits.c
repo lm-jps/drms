@@ -2,6 +2,7 @@
 #define _GNU_SOURCE
 
 #include "drms.h"
+#include "drms_priv.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

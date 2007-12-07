@@ -1,3 +1,6 @@
+/**
+\file drms_types.h
+*/
 #ifndef _DRMS_TYPES_H
 #define _DRMS_TYPES_H
 
@@ -57,7 +60,8 @@ char *drms_type_names[] = {"char", "short", "int", "longlong",
 			   "float", "double", "time", "string", "raw"};
 #endif
 
-typedef union DRMS_Type_Value
+/** \brief DRMS type value */
+union DRMS_Type_Value
 {
   char char_val;
   short short_val;
@@ -67,7 +71,10 @@ typedef union DRMS_Type_Value
   double double_val;
   double time_val;
   char *string_val;
-} DRMS_Type_Value_t;
+};
+
+/** \brief DRMS type value reference */
+typedef union DRMS_Type_Value DRMS_Type_Value_t;
 
 /* DRMS_Type_Value_t is fine as long as you know the type.  But we also need a construct 
  * that is useful in generic code (type-unaware), for example, using the results of 
@@ -108,7 +115,8 @@ static union { uint64_t rep; double val; } __d_nan__ __attribute_used__ = {0xfff
 
 
 /* Database or DRMS client connection info. */
-typedef struct DRMS_Session_struct
+/** \brief DRMS Session struct */
+struct DRMS_Session_struct
 { 
   int db_direct;    /* If db_direct == 1 then go directly to the DB
 		       without passing calls through a DRMS server. */
@@ -139,8 +147,10 @@ typedef struct DRMS_Session_struct
   char hostname[DRMS_MAXHOSTNAME]; 
   unsigned short port;
   int sockfd;
-} DRMS_Session_t;
+};
 
+/** DRMS session struct reference */
+typedef struct DRMS_Session_struct DRMS_Session_t;
 
 /* Link list node for keeping track of temporary records in the server. 
    quick UGLY  hack. */
@@ -152,8 +162,8 @@ typedef struct DS_node_struct
   struct DS_node_struct *next;
 } DS_node_t;
 
-
-typedef struct DRMS_Env_struct
+/** \brief DRMS environment struct */
+struct DRMS_Env_struct
 {
   DRMS_Session_t *session;     /* Database connection handle or socket
 				  connection to DRMS server. */
@@ -191,15 +201,15 @@ typedef struct DRMS_Env_struct
   tqueue_t *sum_inbox;
   tqueue_t *sum_outbox;
   long sum_tag; // tag of the request currently being served.
-
+ 
   /* Signal catching thread: */
   pthread_t signal_thread;
   sigset_t signal_mask;
   sigset_t old_signal_mask;
-} DRMS_Env_t;
+};
 
-
-
+/** \brief DRMS environment struct reference */
+typedef struct DRMS_Env_struct DRMS_Env_t;
 
 typedef struct DRMS_ThreadInfo_struct
 {
@@ -296,7 +306,8 @@ typedef struct DRMS_SeriesInfo_struct
 
 
 /* Datastructure representing a single data record. */
-typedef struct DRMS_Record_struct
+/** \brief DRMS record struct */
+struct DRMS_Record_struct
 {
   struct DRMS_Env_struct *env;  /* Pointer to global DRMS environment. */
 
@@ -321,9 +332,10 @@ typedef struct DRMS_Record_struct
   HContainer_t keywords;        /* Container of named keywords. */
   HContainer_t links;           /* Container of named links. */
   HContainer_t segments;        /* Container of named data segments. */
-} DRMS_Record_t;
+};
 
-
+/** DRMS record struct reference */
+typedef struct DRMS_Record_struct DRMS_Record_t;
 
 /**************************** Keywords ***************************/
 typedef struct  DRMS_KeywordInfo_struct
@@ -355,18 +367,20 @@ typedef struct  DRMS_KeywordInfo_struct
                                      "blah[1]", etc. */
 } DRMS_KeywordInfo_t;
 
-
-typedef struct  DRMS_Keyword_struct
+/**
+DRMS keyword struct
+*/
+struct DRMS_Keyword_struct
 {
   struct DRMS_Record_struct *record; /* The record this keyword belongs to.*/
   struct  DRMS_KeywordInfo_struct *info; /* Series-wide info. */
   DRMS_Type_Value_t value;               /* Keyword data. If this keyword is in
 					  * the series cache, it contains the
 					  * default value. */
-} DRMS_Keyword_t;
+};
 
-
-
+/** \brief DRMS keyword struct reference */
+typedef struct DRMS_Keyword_struct DRMS_Keyword_t;
 
 /**************************** Links ***************************/
 
@@ -390,8 +404,8 @@ typedef struct DRMS_LinkInfo_struct
   char *pidx_name[DRMS_MAXPRIMIDX];
 } DRMS_LinkInfo_t;
 
-
-typedef struct DRMS_Link_struct
+/** \brief DRMS link struct */
+struct DRMS_Link_struct
 {
   struct DRMS_Record_struct *record;   /* The record this link belongs to. */
   DRMS_LinkInfo_t *info;
@@ -404,15 +418,17 @@ typedef struct DRMS_Link_struct
   int isset;
   DRMS_Type_Value_t pidx_value[DRMS_MAXPRIMIDX]; /* Primary index values of
 						    target record(s). */
-} DRMS_Link_t;
+};
 
-
+/** \brief DRMS link struct reference */
+typedef struct DRMS_Link_struct DRMS_Link_t;
 
 /********************************** Data Segments ***************************/
 
 /* An n-dimensional array (e.g. part or all of a segment array) 
    stored consecutively in memory. */
-typedef struct DRMS_Array_struct
+/** \brief DRMS array struct */
+struct DRMS_Array_struct
 {
   /* Array info: */ 
   DRMS_Type_t type;            /* Datatype of the data elements. */
@@ -437,8 +453,10 @@ typedef struct DRMS_Array_struct
   /* Private fields used for packed string arrays. */
   char *strbuf; /* String buffer used for packed string arrays. */
   long long buflen;              /* Size of string buffer. */
-} DRMS_Array_t;
+}; 
 
+/** \brief DRMS array struct reference*/
+typedef struct DRMS_Array_struct DRMS_Array_t;
 
 
 
@@ -539,16 +557,18 @@ typedef struct DRMS_SegmentInfo_struct {
 
 } DRMS_SegmentInfo_t;
 
-
-typedef struct DRMS_Segment_struct {
+/** \brief DRMS segment struct */
+struct DRMS_Segment_struct {
   struct DRMS_Record_struct *record; /*  The record this segment belongs to. */
   DRMS_SegmentInfo_t *info;				      /*  see above  */
   char filename[DRMS_MAXSEGFILENAME];		      /*  Storage file name  */
   int axis[DRMS_MAXRANK];      			 /*  Size of each dimension. */
   int blocksize[DRMS_MAXRANK];		/*  block sizes for tiled/blocked
 							  storage protocols. */
-} DRMS_Segment_t;
+};
 
+/** \brief DRMS segment struct reference */
+typedef struct DRMS_Segment_struct DRMS_Segment_t;
 
 #define DRMS_READONLY  1
 #define DRMS_READWRITE 2
@@ -581,10 +601,15 @@ typedef enum DRMS_KeyMapClass_enum {
    /* xxx etc*/
 } DRMS_KeyMapClass_t;
 
-typedef struct 	DRMS_KeyMap_struct {
+
+/** \brief DRMS keymap struct */
+struct DRMS_KeyMap_struct {
   HContainer_t int2ext;
   HContainer_t ext2int;
-} DRMS_KeyMap_t;
+}; 
+
+/** \b DRMS keymap struct reference */
+typedef struct DRMS_KeyMap_struct DRMS_KeyMap_t;
 
 /*********** Various utility functions ****************/
 DRMS_Type_t drms_str2type(const char *);

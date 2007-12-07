@@ -1,5 +1,6 @@
 // #define DEBUG
 #include "drms.h"
+#include "drms_priv.h"
 #include "drms_names.h"
 
 

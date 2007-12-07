@@ -1,5 +1,8 @@
 //#define DEBUG_MEM
 //#define DEBUG
+
+#define DRMS_CLIENT
+
 #include "jsoc.h"
 #include "drms.h"
 #ifdef DEBUG_MEM
@@ -16,7 +19,7 @@
 
 #include "cfortran.h"
 #include "jsoc_main.h"
-#include "drms_keymap.h"
+#include "drms_env.h"
 
 CmdParams_t cmdparams;
 /* Global DRMS Environment handle. */

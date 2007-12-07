@@ -8,6 +8,7 @@
  */
 
 #include "drms.h"
+#include "drms_priv.h"
 
 /* KeyMapClass table enum */
 #define DEFKEYMAPCLASS(A,B,C) A,

@@ -75,12 +75,6 @@ void drms_destroy_recproto(DRMS_Record_t **proto);
    2. The record structures are freed from the record cache. */
 int drms_close_records(DRMS_RecordSet_t *rs, int action);
 
-/* Execute drms_close_record for all records in the record cache that
-   are not marked read-only, i.e. which were created by the present
-   program. */
-int drms_closeall_records(DRMS_Env_t *env, int action);
-
-
 
 /**** For a single record. ****/
 DRMS_Record_t *drms_clone_record(DRMS_Record_t *record, 
@@ -103,8 +97,6 @@ int drms_record_numsegments(DRMS_Record_t *rec);
 int drms_record_num_nonlink_segments(DRMS_Record_t *rec);
 /* Storage Unit Directory associated with a record. */
 void drms_record_directory(DRMS_Record_t *rec, char *dirname, int retrieve);
-/* Special fopen for accessing files in record directory. */
-FILE *drms_record_fopen(DRMS_Record_t *rec, char *filename, const char *mode);
 
 /**** Can modify seriesinfo only if the record is a record prototype  ****/
 int drms_recproto_setseriesinfo(DRMS_Record_t *rec,
@@ -115,53 +107,6 @@ int drms_recproto_setseriesinfo(DRMS_Record_t *rec,
 				const char *description);
 
 DRMS_RecordQueryType_t drms_record_getquerytype(const char *query);
-
-
-/********************************* DRMS Internal functions. **************/
-void drms_free_record(DRMS_Record_t *rec);
-void drms_free_records(DRMS_RecordSet_t *rs);
-long long drms_estimatesize(DRMS_Env_t *env, char *series);
-
-/* Retrieve the record with record number given in "recnum" from the series
-   given in "seriesname". */
-DRMS_Record_t *drms_retrieve_record(DRMS_Env_t *env, const char *seriesname, 
-				    long long recnum, int *status);
-/* Retrieve the records from the series given in "seriesname" satisfying
-   the condition in the string "where". "where" must be a valid SQL
-   clause involving the column names of the main record table for the 
-   series. */
-DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env, 
-					const char *seriesname, char *where, 
-					int filter, int mixed, int *status);
-/* Insert multiple records in the database using the 
-   fast bulk insert interface. */
-int drms_insert_records(DRMS_RecordSet_t *recset);
-/* Get a pointer to the template record structure for series. */
-DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname, int *status);
-/* Populate a record structure with the meta-data for record number "recnum"
-   from its series (given by record->seriesinfo.seriesname). */
-int drms_populate_record(DRMS_Record_t *record, long long recnum);
-/* Populate multiple records with the meta-data values returned 
-   from a database query. */
-int drms_populate_records( DRMS_RecordSet_t *rs, DB_Binary_Result_t *qres);
-/* Allocate a new record structure and assign it the record number
-   recnum and insert it in the record cache. */
-DRMS_Record_t *drms_alloc_record(DRMS_Env_t *env, const char *series, 
-				 long long recnum, int *status);
-/* Allocate a new record structure based on a template, assign it 
-   the record number recnum and insert it in the record cache. */
-DRMS_Record_t *drms_alloc_record2(DRMS_Record_t *template,
-				  long long recnum, int *status);
-
-/* Generate a string containing a comma-separated list column
-   names of the database table containing the meta-data of the 
-   given record. Return the number of columns in num_args. */
-char *drms_field_list(DRMS_Record_t *rec, int *num_args);
-/* Deep copy the contents of a record structure. */
-void drms_copy_record_struct(DRMS_Record_t *dst, DRMS_Record_t *src);
-/* Deep free the contents of a record structure. */
-void drms_free_record_struct(DRMS_Record_t *rec);
-void drms_free_template_record_struct(DRMS_Record_t *rec);
 
 /* Estimate how much memory is used per record. */
 long long drms_record_memsize(DRMS_Record_t *rec);

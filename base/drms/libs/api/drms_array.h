@@ -3,6 +3,7 @@
 
 #include "drms_statuscodes.h"
 #include "drms_array.h"
+#include "drms_priv.h"
 
 
 #define DRMS_ARRAY2STRING_LEN 30   // use in drms_array2string

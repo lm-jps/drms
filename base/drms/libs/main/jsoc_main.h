@@ -10,6 +10,7 @@
 #include "drms_series.h"
 #include "drms_keyword.h"
 #include "drms_keymap.h"
+#include "drms_keymap_priv.h"
 #include "drms_link.h"
 #include "drms_record.h"
 #include "drms_segment.h"

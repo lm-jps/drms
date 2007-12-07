@@ -1,4 +1,5 @@
 #include "drms.h"
+#include "drms_priv.h"
 #include <zlib.h>
 
 /*

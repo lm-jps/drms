@@ -1,3 +1,8 @@
+/**
+\file drms_keyword.h
+\brief Functions to access DRMS keyword values, and to convert DRMS keywords to FITS keywords and vice versa.
+*/
+
 #ifndef _DRMS_ATTRIBUTE_H
 #define _DRMS_ATTRIBUTE_H
 

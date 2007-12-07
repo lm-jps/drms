@@ -4,6 +4,7 @@
 #include <string.h>
 #define DRMS_TYPES_C
 #include "drms.h"
+#include "drms_priv.h"
 #undef DRMS_TYPES_C
 #include "xmem.h"
 #include "timeio.h"

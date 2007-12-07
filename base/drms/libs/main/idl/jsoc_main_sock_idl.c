@@ -12,6 +12,7 @@
 #endif
 #include "jsoc_main.h"
 #include "inthandles.h"
+#include "drms_env.h"
 
 typedef const char *IDLHandleDRMS;
 typedef IDLHandleDRMS *pIDLHandleDRMS;

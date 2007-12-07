@@ -1,10 +1,7 @@
 //#define DEBUG 
 #include "drms.h"
+#include "drms_priv.h"
 #include "xmem.h"
-
-#include "drms_keymap.h"
-#include "drms_keymap_priv.h"
-
 
 /* Prototypes for static functions. */
 static DRMS_Keyword_t * __drms_keyword_lookup(DRMS_Record_t *rec, 
