@@ -368,10 +368,12 @@ KEY *robotdo_1(KEY *params)
   char *cmd;
   char errstr[128], scr[80];
 
+  if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
   if(debugflg) {
     write_log("!!Keylist in robotdo_1() is:\n");
     keyiterate(logkey, params);
+  }
   }
   rinfo = 0;			/* assume success */
   send_ack();			/* give ack to caller */

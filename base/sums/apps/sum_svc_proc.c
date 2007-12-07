@@ -124,10 +124,12 @@ KEY *getdo_1(KEY *params)
   char tmpname[80];
   double bytes;
 
+  if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
   if(debugflg) {
     write_log("!!Keylist in getdo_1() is:\n");
     keyiterate(logkey, params);
+  }
   }
   retlist=newkeylist();
   uid = getkey_uint64(params, "uid");
@@ -234,12 +236,13 @@ KEY *allocdo_1(KEY *params)
   double bytes;
   char *wd;
 
+  if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
   if(debugflg) {
     write_log("!!Keylist in allocdo_1() is:\n");
     keyiterate(logkey, params);
   }
-  debugflg = getkey_int(params, "DEBUGFLG");
+  }
   uid = getkey_uint64(params, "uid");
   if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
     write_log("**Error: allocdo_1() called with unopened uid=%ld\n", uid);
@@ -302,10 +305,12 @@ KEY *putdo_1(KEY *params)
   char *cptr, *wd;
   double dsize;
 
+  if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
   if(debugflg) {
     write_log("!!Keylist in putdo_1() is:\n");
     keyiterate(logkey, params);
+  }
   }
   uid = getkey_uint64(params, "uid");
   if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
@@ -356,10 +361,12 @@ KEY *closedo_1(KEY *params)
 {
   uint64_t uid;
 
+  if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
   if(debugflg) {
     write_log("!!Keylist in closedo_1() is:\n");
     keyiterate(logkey, params);
+  }
   }
   uid = getkey_uint64(params, "uid");
   if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
@@ -388,10 +395,12 @@ KEY *closedo_1(KEY *params)
 */
 KEY *delseriesdo_1(KEY *params)
 {
+  if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
   if(debugflg) {
     write_log("!!Keylist in delseriesdo_1() is:\n");
     keyiterate(logkey, params);
+  }
   }
   rinfo = 0;
   write_log("DELSERIESDO for user=%s\n", GETKEY_str(params, "USER"));
@@ -458,10 +467,12 @@ KEY *delseriesdo_1(KEY *params)
 */
 KEY *sumrespdo_1(KEY *params)
 {
+  if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
   if(debugflg) {
     write_log("!!Keylist in sumrespdo_1() is:\n");
     keyiterate(logkey, params);
+  }
   }
   retlist = newkeylist();
   add_keys(params, &retlist);

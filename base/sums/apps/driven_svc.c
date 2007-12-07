@@ -29,6 +29,7 @@
 #define CMDLENWRT 16384
 #define GTARLOGDIR "/var/logs/SUM/gtar"
 #define GTAR "/usr/local/bin/gtar"	/* gtar 1.16 on 29May2007 */
+static errstr[256];
 int write_wd_to_drive();
 int write_hdr_to_drive();
 int position_tape_eod();
@@ -492,18 +493,22 @@ KEY *readdrvdo_1(KEY *params)
   double bytes;
   int dnum, tapefilenum, reqofflinenum, status, tapemode, filenum, touch;
   int reqcnt, xtapefilenum, i, j, filenumdelta;
-  char tmpname[80], newdir[80], errstr[128], dname[64], rdlog[80];
+  char tmpname[80], newdir[80], dname[64], rdlog[80];
   char *wd, *oldwd, *token, *lasttoken;
   char *tapeid, *xtapeid, *cptr, *delday;
   char *initdirs[MAXSUMREQCNT];
   
-
-
+  if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
   if(debugflg) {
     write_log("!!Keylist in readdrvdo_1() is:\n");
     keyiterate(logkey, params);
   }
+  }
+  if(findkey(params, "tdays"))
+    touch = getkey_int(params, "tdays");
+  else
+    touch = 2;
   retlist = newkeylist();
   add_keys(params, &retlist);           /* NOTE:does not do fileptr */
   client = (CLIENT *)getkey_fileptr(params, "current_client");
@@ -646,10 +651,6 @@ KEY *readdrvdo_1(KEY *params)
           free(tapeid);
           return(retlist);
         }
-        if(findkey(params, "tdays"))
-          touch = getkey_int(params, "tdays");
-        else
-          touch = 2;
         delday = (char *)get_effdate(touch);  /* delete in touch days */
         /* put on delete pending list in sum_partn_alloc table */
         if(NC_PaUpdate(newdir, uid, bytes, DADP, 0, delday,
@@ -732,13 +733,15 @@ KEY *writedrvdo_1(KEY *params)
   uint64_t tell;
   int dnum, sim, tape_closed, group, filenumwrt;
   char *tapeid;
-  char  errstr[128], gtarlog[80], md5sum[64];
+  char  gtarlog[80], md5sum[64];
 
   write_log("Called writedrvdo_1() in driven_svc\n");
+  if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
   if(debugflg) {
     write_log("!!Keylist in writedrvdo_1() is:\n");
     keyiterate(logkey, params);
+  }
   }
   dnum = getkey_int(params, "dnum");
   filenumwrt = getkey_int(params, "nxtwrtfn"); /* file# to be written */

@@ -13,7 +13,9 @@ char *get_effdate(int plusdays)
   time_t newtime;
   char *timestr;
 
-  gettimeofday(&tvalr, NULL);
+  if(gettimeofday(&tvalr, NULL) == -1) {
+    return("200712121212");     /* give a phoney return */
+  }
   t_ptr = localtime(&tvalr.tv_sec);
   t_ptr->tm_mday = t_ptr->tm_mday + plusdays;
   newtime = mktime(t_ptr);

@@ -556,10 +556,12 @@ KEY *readdo_1(KEY *params) {
 
   setkey_str(&params, "OP", "rd");
   setkey_int(&params, "sim", sim);
+  if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
   if(debugflg) {
     write_log("TEMP in readdo_1() call in tape_svc. keylist is:\n");
     keyiterate(logkey, params);
+  }
   }
   user = getkey_str(params, "username");
   uid = getkey_uint64(params, "uid");
@@ -704,10 +706,12 @@ KEY *writedo_1(KEY *params) {
   double total_bytes;
 
   setkey_str(&params, "OP", "wt");
+  if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
   if(debugflg) {
     write_log("writedo_1() call in tape_svc. keylist is:\n");
     keyiterate(logkey, params);
+  }
   }
   user = getkey_str(params, "username_0");
   sumid = getkey_uint64(params, "sumid_0");
@@ -850,10 +854,12 @@ KEY *taperespwritedo_1(KEY *params) {
 
   /*write_log("You've called taperespwritedo_1() in tape_svc\n"); /* !!TEMP*/
   send_ack();
+  if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
   if(debugflg) {
     write_log("!!Keylist in taperespwritedo_1() is:\n");
     keyiterate(logkey, params);
+  }
   }
   dnum = getkey_int(params, "dnum");	/* get drive # that wrote */
   slotnum = drives[dnum].slotnum;
@@ -944,7 +950,6 @@ KEY *taperespwritedo_1(KEY *params) {
     write_log("Tape write md5cksum = %s\n", md5cksum);
 /*#ifdef SUMDC*/
 /* NOTE: the tellblock wasn't accurate. So always use totalbytes */
-    tellblock = 0;              /* force use of totalbytes */
     /* NOTE: There is no mt tell cmd in the data capture system. 
      * tellblock is always 0 here. We will instead send the SUMLIB_TapeUpdate()
      * function a byte count for the current tape file. It will then update
@@ -955,6 +960,7 @@ KEY *taperespwritedo_1(KEY *params) {
       sprintf(tmpname, "bytes_%d", i);
       totalbytes += getkey_double(params, tmpname);
     }
+    tellblock = 0;              /* force use of totalbytes */
 /*#endif*/
     if((filenum_written=SUMLIB_TapeUpdate(tapeid,tellblock,totalbytes)) == 0) {
       send_mail("Error: Can't update sum_tape in DB for tape %s\n",tapeid);
@@ -1078,10 +1084,12 @@ KEY *taperespreaddo_1(KEY *params) {
   char tmpname[80];
   char *rwd, *tapeid;
 
+  if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
   if(debugflg) {
     write_log("!!Keylist in taperespreaddo_1() is:\n");
     keyiterate(logkey, params);
+  }
   }
   dnum = getkey_int(params, "dnum");
   status = getkey_int(params, "STATUS");
@@ -1181,10 +1189,12 @@ KEY *taperesprobotdo_1(KEY *params) {
 
   robotbusy = 0;
   send_ack();
+  if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
   if(debugflg) {
     write_log("!!Keylist in taperesprobotdo_1() is:\n");
     keyiterate(logkey, params);
+  }
   }
   cptr = GETKEY_str(params, "OP");
   if(!strcmp(cptr, "rd")) {
@@ -1667,10 +1677,12 @@ KEY *tapetestdo_1(KEY *params) {
   static CLIENT *clresp;
 
   write_log("You've called tapetestdo_1() in tape_svc\n");
+  if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
   if(debugflg) {
     write_log("!!Keylist in taperespwritedo_1() is:\n");
     keyiterate(logkey, params);
+  }
   }
   retlist = newkeylist();
   add_keys(params, &retlist);
@@ -1797,7 +1809,10 @@ void write_time()
   struct timeval tvalr;
   struct tm *t_ptr;
 
-  gettimeofday(&tvalr, NULL);
+  if(gettimeofday(&tvalr, NULL) == -1) {
+     write_log("Error on gettimeofday() in write_time()\n");
+     return;
+  }
   t_ptr = localtime((const time_t *)&tvalr);
   sprintf(dstring, "%s", asctime(t_ptr));
   write_log("%s", dstring);

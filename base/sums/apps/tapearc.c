@@ -474,10 +474,12 @@ KEY *tapearcdo_1(KEY *params)
 
   groupid = getkey_int(params, "group_id");
   index = getkey_uint64(params, "ds_index_0");
+  if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
   if(debugflg) {
     printf("!!TEMP in tapearcdo_1() call in tapearc. keylist is:\n");
     keyiterate(printkey, params);
+  }
   }
   if(WRTSTATUS = getkey_int(params, "STATUS")) {
     printf("**Error return for write of group_id=%d 1st ds_index=%ld\n", 

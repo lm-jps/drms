@@ -9,6 +9,11 @@
 #include <rpc/rpc.h>
 #include <sum_rpc.h>
 #include <soi_error.h>
+/*************************/
+#include <stropts.h>
+#include <sys/mtio.h>
+/*************************/
+#include <scsi/sg.h>
 
 extern int errno;
 /*static void respd();*/
@@ -58,6 +63,65 @@ float StopTimer(int n)
 int main(int argc, char *argv[])
 {
   /*char touched[128];*/
+/*******************************TEMP stuff******************
+  int fd;
+  int ret;
+  int waitcnt = 0;
+  struct mtget mt_stat;
+
+  fd = open("/dev/sg12", O_RDONLY | O_NONBLOCK);
+  while(1) {
+    ioctl(fd, MTIOCGET, &mt_stat);
+    if(mt_stat.mt_gstat == 0) {  
+      printf("/dev/nst0 NOT READY\n");
+      if(++waitcnt == 10) {
+        ret = -1;
+        break;
+      }
+      sleep(1);
+    }
+    else {
+      ret = mt_stat.mt_fileno;
+      break;
+    }
+  }
+  close(fd);
+  printf("/dev/nst0  ret= %d\n", ret);
+  exit(0);
+*******************************END TEMP stuff******************/
+
+/*  unsigned int Xstatus;
+/*  sg_io_hdr_t io_hdr;
+/*  unsigned char CDB[6];
+/*  unsigned char DataBuffer[6];
+/*  unsigned char RequestSense[18];
+/*  int fd;
+/*
+/*  CDB[0] = 0x00;          /* TEST_UNIT_READY */
+/*  CDB[1] = 0;
+/*  CDB[2] = 0;
+/*  CDB[3] = 0;                     /* 1-5 all unused. */
+/*  CDB[4] = 0;
+/*  CDB[5] = 0;
+/*
+/*  fd = open("/dev/sg12", O_RDONLY | O_NONBLOCK);
+/*  memset(&io_hdr, 0, sizeof(sg_io_hdr_t));
+/*        /* Fill in the common stuff... */
+/*        io_hdr.interface_id = 'S';
+/*        io_hdr.cmd_len = 6;
+/*        io_hdr.mx_sb_len = 18;
+/*        io_hdr.dxfer_len = 6;
+/*        io_hdr.cmdp = (unsigned char *) CDB;
+/*        io_hdr.sbp = (unsigned char *) RequestSense;
+/*        io_hdr.dxferp = DataBuffer;
+/*        io_hdr.timeout = 60;
+/*        io_hdr.dxfer_direction=SG_DXFER_FROM_DEV;
+/*        if ((Xstatus = ioctl(fd, SG_IO , &io_hdr)) || io_hdr.masked_status)
+/*        {
+/*        }
+/*        printf("Xstatus = %d\n", Xstatus);
+/*  close(fd);
+*/
 
   if((sum = SUM_open(NULL, NULL, printf)) == 0) {
     printf("Failed on SUM_open()\n");
@@ -92,13 +156,16 @@ int main(int argc, char *argv[])
 /*  system(cmd);
 */
 
-  sum->mode = RETRIEVE + TOUCH;
+  /*sum->mode = RETRIEVE + TOUCH;*/
   sum->mode = NORETRIEVE;
   sum->tdays = 5;
-  sum->reqcnt = 2;
+  sum->reqcnt = 3;
   dsixpt = sum->dsix_ptr;
-  *dsixpt++ = 17500;
-  *dsixpt++ = 17499;
+  *dsixpt++ = 131047;
+  *dsixpt++ = 99;
+  *dsixpt++ = 131049;
+/*  *dsixpt++ = 1159350; */
+/*  *dsixpt++ = 17499; */
 /*  *dsixpt++ = 14802;   */
 /*  *dsixpt++ = 14539;   */
 /*  *dsixpt++ = 14686;   */
@@ -143,5 +210,6 @@ int main(int argc, char *argv[])
 ftmp = StopTimer(0);
 /*printf("\nTime sec for %d SUM_get() in one call = %f\n\n", MAXSUMREQCNT, ftmp);*/
 
+  SUM_close(sum, printf);
 exit(0);
 }
