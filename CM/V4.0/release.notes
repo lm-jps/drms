@@ -1,0 +1,94 @@
+                       Release Notes JSOC V4.0         7Dec2007
+                       -----------------------         ---------
+
+A release is a set of files, each having a specific version.  And a release typcially
+has a version number because over time you have newer and newer releases of the 
+same product.  For example, a hypothetical 1.3 release may contain fileA#1.8, 
+fileB#1.2, fileC#2.2 and a 1.4 release may contain fileA#2.5, fileB#2.1, fileC#2.9. 
+JSOC releases are similarly versioned and contain a set of such files.  JSOC release
+code is guaranteed to compile on cluster nodes (eg., n00, n02).  The resulting binaries
+have been minimally tested.  At the time of the creation of the release, the
+release versions of each file will be the most recent.  But as time passes, newer versions 
+of some files will be made, and there is no guarantee that these changes will
+not destabilize JSOC (ie., they may cause JSOC to no longer compile or execute
+properly).  
+
+There are several ways to use this release.  If you wish to simply use pre-built
+binaries, you can simply use the production binaries, which are located at 
+/home/production/cvs/JSOC.  Every time a release is created, the binaries in
+this location get updated.  Only the production user can update these binaries.
+So, you could run /home/production/cvs/JSOC/bin/linux_x86_64/show_keys, for example.
+If instead you want to work with stable source files, then you must have a sandbox,
+which is a local copy (in your home directory) of the files in the cvs depot.  
+You would probably want to work with a sandbox if you plan on making eventual 
+changes to the depot files.  Changes you make to your sandbox files are not visible 
+to other users until you "commit" those changes back to the cvs depot.  Please see
+"If You Don't Have a Sandbox" below for more information on how to create a sandbox.  
+There is also a "working" release which resides in in /home/jsoc/cvs/JSOC.  New 
+files may be placed here and existing files may be edited for common use before the 
+next official release.  Each time a release gets created, the source and binaries of 
+the working release get updated.  WARNING: the files you see here may not be stable 
+since by the time you see them, another user may have edited them. Only the production 
+release is guaranteed to be stable and unchanged between releases.
+
+Obtaining the Release
+---------------------
+To update your working directory to this release, or to check-out this release anew, 
+please visit http://jsoc.stanford.edu/jsocwiki/CvsInit. Please keep in mind that
+users may have modified files since the release was created, so use of the 
+scripts documented in the web page may result in a working directory whose
+content is not identical to the release.  If updating, you can supply 
+the flag "-R" to the jsoc_update.csh and jsoc_sync.csh scripts to download the
+latest release.  This will ensure that your working directory has the exact, latest
+release versions of the files (eg., jsoc_sync.csh -R). If checking-out, 
+you can supply the argument "-r Ver_LATEST" to the "cvs checkout" command
+to achieve the analogous result, but for a fresh checkout.  WARNING: if you use 
+the "-R" or "-r" flags, please use only jsoc_update.csh or jsoc_sync.csh to update 
+your sources thereafter.  Use of "-R" or "-r Ver_LATEST" will result in a cvs
+"sticky flag" being set.  jsoc_update.csh and jsoc_sync.csh clear this sticky flag.
+
+Additional Info
+---------------
+If you are unfamiliar with the use of cvs see the file:
+JSOC/CM/working_with_sandbox.txt.
+
+There's a linux4 cvs gui at xim:/usr/bin/lincvs
+Also on our jsoc web page:
+
+http://jsoc.stanford.edu/cvs/JSOC/
+
+Use the Apache cvs gui to see the diffs. For example, go to
+http://jsoc.stanford.edu/cvs/JSOC/base/drms/
+and click on the name in the File column and then click on
+"diffs to previous #" to see the diffs.
+
+Changes since last release (Version 3.8)
+--------------------------------------------------------------------
+
+* New JSOC tree!
+* Fix missing JSOC/man/man5.
+* Use agglomerated man (several man pages can link to one real man page, like drms_series_exists linking to drms_series).
+* Make jsoc_sync.csh work from any location, not just for $JSOCROOT tree.
+* Documentation for several drms files, plus some helper libraries; man pages; header comments.
+* Block signal SIGPIPE in orde r to properly exit drms_server
+* Fix hard-coded paths to use JSOC/base and JSOC/proj, not JSOC/src/base and JSOC/src/proj.
+* Add doxygen comments to some drms headers, some example code fragments, split some drms headers into public v. private. Also add doxygen configuration files.
+* Proper exit for drms_server
+* Split some drms API headers into external API and internal API (denoted by _priv.h).
+* Open local fits files into DRMS records implementation.
+* Fix problems with conversion to case-insensitive comparisons of keywords, links, segments, series names.  Also, initial bits for reading fits files locally (not inside of a database): added new libdsds.so API for reading fits headers, added code to drms_record.c to detect whether a record specification refers to local files or not.
+* Move Fortran interface function that gets module's global cmdparams struct to jsoc_main.  Rename metalibraries to libdrms.a, libdrms_sock.a and libdrms_sock_f.a
+* Documentation of V 0.7 (NetDRMS).
+* Synchronizing new JSOC tree with old jsoc tree. This is check point 5. The old jsoc tree tag is NewTree01_cp05, which corresponds to NewTree01_cp05_JSOC in the new tree.
+* NetDRMS.sql, for NetDRMS admin.
+* PostgreSQL function definitions.
+* Reorganize code (factor out functions) in drms_open_dsdsrecords() so that drms_open_localrecords() can share those functions.
+* Plugged memory leak and two compiler warnings in timeio.c
+* When @file cannot be found, make it return, not a null DRMS_RecordSet_t, but an allocated one that has n=0 and records=NULL.  Make libdsds.so use libdstruct_fpic and libmisc_fpic instead of linking in source code.
+* Documentation for module.1.
+* Set MAXSUMREQCNT 500.
+* Fix jsoc_man2web so it works with man files containing .so fileXXX.1.
+* Add APID 129 for Jennifer (for moc server downloads).
+* Move the locale-specific config and make files again.
+
+--Art Amezcua 12/7/2007
