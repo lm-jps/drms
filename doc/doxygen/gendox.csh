@@ -9,7 +9,8 @@
 set NONE = "///none///"
 set MINUS = "-"
 set SLASH = "/"
-set INDIR = "/tmp/doxygen/input/JSOC/doc/doxygen" # default input (contains repository copy)
+set INTREE = "/tmp/doxygen/input/JSOC/" #default input JSOC tree
+set INDIR = "$INTREE/doc/doxygen" # default input (contains repository copy)
 set MANOUTDIR = "/home/jsoc/man/man3j" # default man output
 set HTMLOUTDIR = "/home/arta/testhtml" # default html output
 set TMPOUTDIR = "/tmp/doxygen/output" # tmp place to put output
@@ -53,14 +54,14 @@ if ($CMDIN == $NONE) then
     # user didn't specify "in"; download CVS respository to $INDIR
     # and run doxygen from there
     # create download directory if it doesn't exist
-    if (!(-d $INDIR)) then
-	mkdir -p $INDIR/../..
+    if (!(-d $INTREE)) then
+	mkdir -p $INTREE
     else
-	find $INDIR -name "*" -exec rm -rf {} \;
+	find $INTREE -mindepth 1 -name "*" -exec rm -rf {} \;
     endif
 
     # download from CVS
-    cd $INDIR/../../..
+    cd $INTREE/..
     cvs checkout -AP JSOC
     set CMDIN = $INDIR
 else
@@ -69,22 +70,6 @@ else
 	# error
 	echo "Can't access $CMDIN/doxygen_publ.cfg."
 	set CMDIN = $NONE
-    endif
-endif
-
-
-if ($CMDMANOUT == $NONE) then
-    # user didn't specify "out"; put the output in the JSOC man-page directory
-    if (!(-e $MANOUTDIR)) then
-	echo "Can't access JSOC man page directory $MANOUTDIR."
-    else
-	set CMDMANOUT = $MANOUTDIR
-    endif
-else
-    # "manout" was specified; check <manoutdir> access
-    if (!(-d $CMDMANOUT)) then
-	echo "Can't access $CMDMANOUT."
-	set CMDMANOUT = $NONE
     endif
 endif
 
@@ -103,6 +88,21 @@ else
     endif
 endif
 
+if ($CMDMANOUT == $NONE) then
+    # user didn't specify "out"; put the output in the JSOC man-page directory
+    if (!(-e $MANOUTDIR)) then
+	echo "Can't access JSOC man page directory $MANOUTDIR."
+    else
+	set CMDMANOUT = $MANOUTDIR
+    endif
+else
+    # "manout" was specified; check <manoutdir> access
+    if (!(-d $CMDMANOUT)) then
+	echo "Can't access $CMDMANOUT."
+	set CMDMANOUT = $NONE
+    endif
+endif
+
 # run doxygen from $CMDIN
 if ($CMDIN != $NONE && $CMDMANOUT != $NONE && $CMDHTMLOUT != $NONE) then
     # ensure tmp output directory is present
@@ -114,16 +114,16 @@ if ($CMDIN != $NONE && $CMDMANOUT != $NONE && $CMDHTMLOUT != $NONE) then
     endif
 
     # clean
-    find $TMPOUTDIR -name "*" -exec rm {} \;
+    find $TMPOUTDIR -mindepth 1 -name "*" -exec rm {} \;
 
     # call doxygen
     cd $CMDIN
     #doxygen doxygen_publ.cfg
 
-    find $CMDHTMLOUT -name "*" -exec rm {} \;
+    find $CMDHTMLOUT -mindepth 1 -name "*" -exec rm {} \;
     #cp -r $TMPOUTDIR/html/* $CMDHTMLOUT
     
-    find $CMDMANOUT -name "*" -exec rm {} \;
+    find $CMDMANOUT -mindepth 1 -name "*" -exec rm {} \;
     #cp -r $TMPOUTDIR/man/man3j/* $CMDMANOUT
 else
     echo "Invalid input or output directory; bailing!"
