@@ -4,11 +4,12 @@
 #   if "in" is not specified, then the files in the CVS respository are assumed
 #   if "in" is specified, <indir> must be of the form <jsoctreeroot>/doc/doxygen
 #     and <indir> must contain doxygen_publ.cfg
-#   if "out" is not specified, then /home/jsoc/man/man3 is assumed
+#   if "manout" is not specified, then /home/jsoc/man/man3 is assumed
+#   if "htmlout" is not specified, then /web/jsoc/htdocs/doxygen is assumed
 
 set NONE = "///none///"
 set MINUS = "-"
-set SLASH = "/"
+set SLASH = "\/"
 
 set TMPINDIR = "/tmp/doxygen/input" # tmp place to put JSOC tree
 set TMPOUTDIR = "/tmp/doxygen/output" # tmp place to put output
@@ -22,21 +23,19 @@ set CMDMANOUT = $NONE
 
 foreach ARG ($argv)
     set FIRSTCH = `echo $ARG | awk '{print substr($0, 1, 1)}'`
-    if ($FIRSTCH == $MINUS || $FIRSTCH == $SLASH) then
+    if (($FIRSTCH == $MINUS) || ($FIRSTCH == $SLASH)) then
 	set FLAG = `echo $ARG | awk '{print substr($0, 2)}'`
     else
 	# not a flag, must be an input or output path
 	set EQINDEX = `echo $ARG | awk '{print index($0, "=")}'`
-	# set EV = `expr $EQINDEX \> 1`
-	# if ($EV == "1") then
-	if ($EV > 1)
+
+	if ($EQINDEX > 1) then
 	    # we have a name-value argument
-	    # set ENDANAME = `expr $EQINDEX - 1`
-	    # set BEGINVAL = `expr $EQINDEX + 1`
 	    @ ENDANAME = $EQINDEX - 1
 	    @ BEGINVAL = $EQINDEX + 1
-	    set CMD = `echo $ARG | awk '{print tolower(substr($0, 1, $ENDNAME))}'`
-	    set CMDDATA = `echo $ARG | awk '{print substr($0, $BEGINVAL)}'`
+
+	    set CMD = `echo $ARG | awk '{endaname=ARGV[1];eq=substr(endaname,10);print tolower(substr($0, 1, eq))}' endaname=$ENDANAME`
+	    set CMDDATA = `echo $ARG | awk '{beginval=ARGV[1];eq=substr(beginval,10);print substr($0, eq)}' beginval=$BEGINVAL`
 
 	    # look for valid cmds
 	    if ($CMD == "in") then
