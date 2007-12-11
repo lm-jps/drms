@@ -4,14 +4,14 @@
 #   if "in" is not specified, then the files in the CVS respository are assumed
 #   if "in" is specified, <indir> must be of the form <jsoctreeroot>/doc/doxygen
 #     and <indir> must contain doxygen_publ.cfg
-#   if "out" is not specified, then /home/jsoc/man/man3j is assumed
+#   if "out" is not specified, then /home/jsoc/man/man3 is assumed
 
 set NONE = "///none///"
 set MINUS = "-"
 set SLASH = "/"
 set INTREE = "/tmp/doxygen/input/JSOC/" #default input JSOC tree
 set INDIR = "$INTREE/doc/doxygen" # default input (contains repository copy)
-set MANOUTDIR = "/home/jsoc/man/man3j" # default man output
+set MANOUTDIR = "/home/jsoc/man/man3" # default man output
 set HTMLOUTDIR = "/home/arta/testhtml" # default html output
 set TMPOUTDIR = "/tmp/doxygen/output" # tmp place to put output
 set CMDIN = $NONE
@@ -113,18 +113,32 @@ if ($CMDIN != $NONE && $CMDMANOUT != $NONE && $CMDHTMLOUT != $NONE) then
 	endif
     endif
 
-    # clean
+    # clean tmp dir
     find $TMPOUTDIR -mindepth 1 -name "*" -exec rm {} \;
 
     # call doxygen
     cd $CMDIN
-    #doxygen doxygen_publ.cfg
+    doxygen doxygen_publ.cfg
 
+    # clean html destination, then copy html output
     find $CMDHTMLOUT -mindepth 1 -name "*" -exec rm {} \;
-    #cp -r $TMPOUTDIR/html/* $CMDHTMLOUT
+    cp -v $TMPOUTDIR/html/* $CMDHTMLOUT
+
+    cd $CMDMANOUT
     
-    find $CMDMANOUT -mindepth 1 -name "*" -exec rm {} \;
-    #cp -r $TMPOUTDIR/man/man3j/* $CMDMANOUT
+    # clean *.3 --> *.3j links in man destination
+    find . -mindepth 1 -name "*.3j" | awk '{sub(".3j",".3");system("rm "$0)}'
+    
+    # clean *.3j man-page files in man destination
+    find . -mindepth 1 -name "*.3j" -exec rm {} \;
+
+    # copy *.3j man-page files into man destination
+    cd $TMPOUTDIR/man/man3
+    find . -name "*.3" | awk '{manpath=ARGV[1];filename=substr($0,3);realpath=substr(manpath,9);system("cp -v "$0" "realpath"/"filename"j")}' manpath=$CMDMANOUT
+
+    # create *.3 --> *.3j links in man destination
+    cd $CMDMANOUT
+    find . -mindepth 1 -name "*.3j" | awk '{sub(".3j",".3");system("ln -s "$0"j " $0)}'
 else
     echo "Invalid input or output directory; bailing!"
 endif
