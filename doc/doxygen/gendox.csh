@@ -9,11 +9,13 @@
 set NONE = "///none///"
 set MINUS = "-"
 set SLASH = "/"
-set INTREE = "/tmp/doxygen/input/JSOC/" #default input JSOC tree
+
+set TMPINDIR = "/tmp/doxygen/input" # tmp place to put JSOC tree
+set TMPOUTDIR = "/tmp/doxygen/output" # tmp place to put output
+set INTREE = "$TMPINDIR/JSOC/" # default input JSOC tree
 set INDIR = "$INTREE/doc/doxygen" # default input (contains repository copy)
 set MANOUTDIR = "/home/jsoc/man/man3" # default man output
 set HTMLOUTDIR = "/home/arta/testhtml" # default html output
-set TMPOUTDIR = "/tmp/doxygen/output" # tmp place to put output
 set CMDIN = $NONE
 set CMDHTMLOUT = $NONE
 set CMDMANOUT = $NONE
@@ -141,6 +143,15 @@ if ($CMDIN != $NONE && $CMDMANOUT != $NONE && $CMDHTMLOUT != $NONE) then
     find . -mindepth 1 -name "*.3j" | awk '{sub(".3j",".3");system("ln -s "$0"j " $0)}'
 else
     echo "Invalid input or output directory; bailing!"
+endif
+
+# clean temporary files
+if (-d $TMPINDIR) then
+    rm -rf $TMPINDIR/*
+endif
+
+if (-d $TMPOUTDIR) then
+    rm -rf $TMPOUTDIR/*
 endif
 
 cd $WD
