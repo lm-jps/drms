@@ -35,20 +35,8 @@ if ($CHKLIBS == "no") then
     echo "done"
 
     echo -n "Remove links to man pages..."
-    if (-d man/man1) then
-	cd man/man1
-	find . -name "*.*" -exec rm {} \;
-	cd ../..
-    endif
-    if (-d man/man3) then
-	cd man/man3
-	find . -name "*.*" -exec rm {} \;
-	cd ../..
-    endif
-    if (-d man/man5) then
-	cd man/man5
-	find . -name "*.*" -exec rm {} \;
-	cd ../..
+    if (-e man) then
+	rm -rf man
     endif
     echo "done"
 
@@ -105,23 +93,12 @@ if ($CHKLIBS == "no") then
 	endif
 	echo "done"
 
-	echo -n "Setting links to man pages..."
-	if (!(-d man/man1)) then
-	    mkdir -p man/man1
+	echo "Setting links to man pages..."
+	if (-d /home/jsoc/man) then
+	    if (!(-e man)) then
+		ln -s /home/jsoc/man man
+	    endif
 	endif
-	if (!(-d man/man3)) then
-	    mkdir -p man/man3
-	endif
-	if (!(-d man/man5)) then
-	    mkdir -p man/man5
-	endif
-	cd man/man1
-	find ../.. -path '../../man/man1' -prune -o -path '*/man/man1/*.1*' -exec ln -s {} . \;
-	cd ../../man/man3
-	find ../.. -path '../../man/man3' -prune -o -path '*/man/man3/*.3*' -exec ln -s {} . \;
-	cd ../../man/man5
-	find ../.. -path '../../man/man5' -prune -o -path '*/man/man5/*.5*' -exec ln -s {} . \;
-	cd ../..
 	echo "done"
 
 	echo "Setting links to headers..."
