@@ -1,20 +1,11 @@
 /**
 @file cmdparams.h
 @brief Functions to get values in appropriate form from parsed command line and module arguments list.
-@sa ::module ::module_args
-@bug ::cmdparams_get_str - If ::cmdparams_get_str (which is called by all the other versions of
-\a cmdparams_get_XXX)cannot find a hash table entry for the requested
-name, it will use the corresponding environment variable, if it exists.
-@bug ::cmdparams_parse - Multiple assignments to a given parameter name 
-could result in unpredictable
-values. The last token in the command line should be parsed last and take
-precedence. Thus, for example, an assignment following an \@filename declaration
-will superseed the assignment in the corresponding file, and \a vice versa
-@bug ::cmdparams_parse - Parsing of tokens in included files does not properly deal with embedded
-white space in quoted strings.
 
 These functions return values of the appropriate type from the hash list
 of parameters expected to be available to a module as a global variable.
+
+@sa ::module ::module_args
 */
 
 #ifndef _CMDPARAMS_H
@@ -129,6 +120,14 @@ typedef struct CmdParams_t_struct {
    A member with a ::module_args.type of ::ARG_END, must terminate the
    the list of parsed members; any members following it in the declarator
    will be ignored.
+
+   @bug Multiple assignments to a given parameter name 
+   could result in unpredictable
+   values. The last token in the command line should be parsed last and take
+   precedence. Thus, for example, an assignment following an \@filename declaration
+   will superseed the assignment in the corresponding file, and \a vice versa
+   @bug Parsing of tokens in included files does not properly 
+   deal with embedded white space in quoted strings.
 */
 int cmdparams_parse (CmdParams_t *parms, int argc,  char *argv[]);
 
@@ -187,6 +186,10 @@ Returns a pointer to the associated string.
 On a failure, such as inability to locate the named key or to successfully
 parse the associated value string according to the prescribed datatype,
 returns a NULL pointer.
+
+@bug If cmdparams_get_str (which is called by all the other versions of
+\a cmdparams_get_XXX) cannot find a hash table entry for the requested
+name, it will use the corresponding environment variable, if it exists.
 */
 char *cmdparams_get_str (CmdParams_t *parms, char *name, int *status);
 
