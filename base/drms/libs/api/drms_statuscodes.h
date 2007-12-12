@@ -1,3 +1,6 @@
+/**
+\file drms_statuscodes.h
+*/
 #ifndef _DRMS_STATUSCODES_H
 #define _DRMS_STATUSCODES_H
 
@@ -34,6 +37,9 @@
 /* Error codes. */
 #define DRMS_ERROR_BADSEQUENCE      (-10001)
 #define DRMS_ERROR_BADTEMPLATE      (-10002)
+/**
+\brief the  parameter specifying the series name refers to a non-existent series
+*/
 #define DRMS_ERROR_UNKNOWNSERIES    (-10003)
 #define DRMS_ERROR_UNKNOWNRECORD    (-10004)
 #define DRMS_ERROR_UNKNOWNLINK      (-10005)
@@ -58,6 +64,9 @@
 #define DRMS_ERROR_SYNTAXERROR      (-10024)
 #define DRMS_ERROR_BADRECORDCOUNT   (-10025)
 #define DRMS_ERROR_NULLENV          (-10026)
+/**
+\brief a memory allocation fails due to insufficient memory available
+*/
 #define DRMS_ERROR_OUTOFMEMORY      (-10027)
 #define DRMS_ERROR_UNKNOWNCOMPMETH  (-10028)
 #define DRMS_ERROR_COMPRESSFAILED   (-10029)
@@ -79,6 +88,9 @@
 #define DRMS_ERROR_INVALIDKEYWORD   (-10045)
 #define DRMS_ERROR_INVALIDSEGMENT   (-10046)
 #define DRMS_ERROR_INVALIDLINK      (-10047)
+/**
+\brief a parameter to a function has an unexpected value (such as providing a null pointer when a character string is expected) 
+*/
 #define DRMS_ERROR_INVALIDDATA      (-10048) /* Bad parameters to a drms function call. */
 #define DRMS_ERROR_NODSDSSUPPORT    (-10049)
 #define DRMS_ERROR_LIBDSDS          (-10050)

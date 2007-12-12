@@ -6,6 +6,32 @@
  *
  */
 
+/**
+\defgroup show_series show_series
+
+show_series lists the names of DRMS dataseries. If the -p flag is set,
+it displays the prime-keyword names and series description. The
+information displayed is restricted to a subset of DRMS series by
+specifying \a filter, a grep-like regular expression.
+
+\par Flags:
+\c -h: Print usage message and exit
+\par
+\c -p: Print prime-keyword names and the series description
+
+\par
+\c -v: Verbose - noisy
+
+\par Usage:
+\code
+show_series [-hpvDRIVER_FLAGS] [<filter>]
+\endcode
+
+\param filter A pattern using grep-like rules to select a subset of
+series
+
+@{
+*/
 #include "jsoc_main.h"
 #include "drms.h"
 #include "drms_names.h"
@@ -29,7 +55,7 @@ ModuleArgs_t module_args[] = {
 
 					    /* Module name presented to DRMS */
 char *module_name = "show_series";
-
+/** @} */
 /* Some global variables for this module. */
 int verbose = 0;
 

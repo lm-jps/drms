@@ -1,3 +1,6 @@
+/**
+\file hcontainer.h
+*/
 #ifndef _HCONTAINER_H
 #define _HCONTAINER_H
 
@@ -17,8 +20,8 @@ typedef struct HCBuf_struct {
   struct HCBuf_struct *next; /* Next buffer. */
 } HCBuf_t;
 
-
-typedef struct HContainer_struct {
+/** \brief HContainer struct */
+struct HContainer_struct {
   int num_total;          /* Number of items in container. */
   int datasize;           /* Size of data items in bytes. */
   int keysize;            /* Max size of key string in bytes. */
@@ -26,7 +29,10 @@ typedef struct HContainer_struct {
   void (*deep_free)(const void *value);               /* Function for deep freeing items. */
   void (*deep_copy)(const void *dst, const void *src); /* Function for deep copy. */
   HCBuf_t *buf;
-} HContainer_t;
+}; 
+
+/** \brief HContainer struct reference */
+typedef struct HContainer_struct HContainer_t;
 
 typedef struct HIterator_struct {
   struct HContainer_struct *hc;

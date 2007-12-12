@@ -9,6 +9,104 @@
  *	  requested series
  */
 
+
+/**
+\defgroup show_keys show_keys
+
+show_keys can list the keyword names and values, and the segment names
+and file names (full paths) for each record in a record set. It can
+also list the full path to the record direcory in SUMS, which contains
+the segment files. Exactly what information gets printed is controlled
+by command-line flags (see below). The -k flag controls the format of
+the output.  If it is set, then the output is in table format, with a
+header row showing the keyword names.  Otherwise, keyword name=value
+pairs are listed one per line.  If the -a flag is set, show_keys lists
+the names of all series keywords, prime keywords, and segments, and
+exits.  Otherwise, it prints keyword and segment information as
+specified by the other flags and arguments.  If the -p flag is set and
+<seglist> is specified, then the full paths for the segment files will
+be displayed. If the -p flag is set, but <seglist> is not specified,
+then only the full path to the record's storage unit will be
+displayed.
+
+The number of records for which information will be printed must be
+specified, either by supplying a <record_set> string that selects a
+subset of records from a series, or by supplying the n=<nrecords>
+argument, which indicates the number of records.
+
+\par Usage:
+\code
+show_keys [-aklpqrDRIVER_FLAGS] ds=<record_set> [n=<nrecords>] [key=<keylist>] [seg=<seglist>]
+\endcode
+
+\b Example:
+To show the storage-unit paths for a maximum of 10
+records:
+\code
+  show_keys -p ds=su_arta.TestStoreFile n=10
+\endcode
+
+\b Example:
+To show information, in non-table format, for all keywords,
+plus the segment named file_seg, for a maximum of 10 records:
+\code
+  show_keys ds=su_arta.TestStoreFile -akr n=10 seg=file_seg
+\endcode
+
+\par Flags:
+\c -a: Show all keyword names and values for each  record  specified  by <record_set>  or <nrecords>.  -a takes precedence over <keylist>. 
+\par
+\c -k: List keyword name=value pairs, one per line. Otherwise print
+all keyword values on a single line and print a header line containing
+the keyword names (table format).
+\par
+\c -l: List the names of all series keywords, prime keywords,  and
+segments, and exit. Otherwise, print keyword and segment information
+as specified by the other flags and arguments. 
+\par
+\c -p: Include in the output the full storage-unit path for each record
+\par
+\c -q: Quiet - omit the header line listing keyword names if the -k
+flag is set
+\par
+\c -r:  Include in the output the record number keyword
+
+\param record_set
+A series name followed by an optional record-set specification (i.e.,
+<seriesname>[RecordSet_filter]). Causes selection of a subset of
+records in the series. This argument is required, and if no record-set
+filter is specified, then n=<nrecords> must be present.
+
+\param nrecords
+\a nrecords specifies the maximum number of records for which
+information is printed.  If <nrecords> < 0, show_keys displays
+information for the last <nrecords> records in the record set. If
+<nrecords> > 0, show_keys displays information for the first
+<nrecords> records in the record set. If <record_set> contains a
+record set filter, then <nrecords> can reduce the total number of
+records for which information is displayed.
+
+\param keylist
+Comma-separated list of keyword names. For each keyword listed,
+information will be displayed.  <keylist> is ignored in the case that
+the -a flag is set.
+
+\param seglist
+Comma-separated list of segment names. For each segment listed, the
+full path to the segment's file is displayed
+(if the -p flag is set) or the file name of the
+segment's file name is displayed (if the -p flag is unset).
+
+\bug
+The program will produce superflous and non-meaningful output if
+called with the -p flag and <seglist> is provided on the command line.
+
+\sa
+retrieve_file drms_query describe_series
+
+@{
+*/
+
 #include "jsoc_main.h"
 #include "drms.h"
 #include "drms_names.h"
@@ -31,7 +129,7 @@ ModuleArgs_t module_args[] =
 };
 
 char *module_name = "show_keys";
-
+/** @}*/
 int nice_intro ()
   {
   int usage = cmdparams_get_int (&cmdparams, "h", NULL);
