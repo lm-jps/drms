@@ -8,8 +8,9 @@
 
 /**
 \defgroup show_series show_series
+List all DRMS dataseries names.
 
-show_series lists the names of DRMS dataseries. If the -p flag is set,
+show_series lists the names of DRMS dataseries. If the \a -p flag is set,
 it displays the prime-keyword names and series description. The
 information displayed is restricted to a subset of DRMS series by
 specifying \a filter, a grep-like regular expression.
@@ -32,6 +33,7 @@ series
 
 @{
 */
+
 #include "jsoc_main.h"
 #include "drms.h"
 #include "drms_names.h"
