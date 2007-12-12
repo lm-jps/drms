@@ -1,3 +1,13 @@
+/**
+@file drms_record.h
+@brief Functions that retrieve, close, populate, copy, allocate, and free DRMS_Record_t structures.
+@sa drms_keymap.h drms_keyword.h drms_segment.h drms_series.h drms_env.h
+@example drms_record_ex1.c 
+@example drms_record_ex2.c 
+@example drms_record_ex3.c
+@example drms_record_ex4.c
+*/
+
 #ifndef _DRMS_RECORD_H
 #define _DRMS_RECORD_H
 
@@ -26,6 +36,42 @@ typedef enum {DRMS_FREE_RECORD, DRMS_INSERT_RECORD} DRMS_CloseAction_t;
 /* Retrieve a recordset specified by the DRMS dataset name string
    given in the argument "datasetname". The records are inserted into
    the record cache and marked read-only. */
+
+/**
+   Retrieve a set of records specified by a recordset query.
+   Within the current DRMS session (whose information is stored  in \a env),
+   this  function  submits a database query specified in \a recordsetname and
+   creates  a  record-set  structure  (::DRMS_RecordSet_t)  to  contain  the
+   results  of  the  query.   If,  at  the time this function is called, a
+   requested record structure (::DRMS_Record_t) exists in the  record  cache
+   (\a env->record_cache),  then  a  pointer  to  that  record  structure  is
+   inserted into the results record set.  Otherwise, a new  record  struc-
+   ture  is created, populated from the database, inserted into the record
+   cache, and inserted into the results record  set.   The  newly  created
+   record is marked read-only and assigned a permanent lifetime (DRMS_PER-
+   MANENT).
+
+   Upon successful completion, the  function  returns  a  ::DRMS_RecordSet_t
+   pointer,  and  sets  \a *status  to ::DRMS_SUCCESS.  If an error occurs, the
+   function returns NULL and sets \a *status to  an  appropriate  error  code
+   defined  in  drms_statuscodes.h.   Typical errors are as follows.  If a
+   problem occurs during communication with the database  server,  \a *status
+   is  set  to  ::DRMS_ERROR_QUERYFAILED.   If  the  number of records to be
+   returned  exceeds  the  allowable  number,  then  \a *status  is  set   to
+   ::DRMS_QUERY_TRUNCATED.
+
+   The  caller  owns  the  allocated  memory  associated with the returned
+   record set and must release it by calling ::drms_close_records.
+
+   @param env (::DRMS_Env_t)DRMS session information.
+   @param recordsetname (char *)A string that specifies a database query. It 
+   includes a series name and clauses to extract a subset of records from that series.
+   Please see http://jsoc.stanford.edu/jsocwiki/DrmsNames for more 
+   information about database queries.
+   @param status (int *)Pointer to DRMS status (see drms_statuscodes.h) returned
+   by reference. 0 if successful, non-0 otherwise.
+   @return (::DRMS_RecordSet_t)The set of records retrieved by the query.
+*/
 DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname, 
 				    int *status);
 DRMS_RecordSet_t *drms_open_localrecords(DRMS_Env_t *env, 
@@ -43,6 +89,51 @@ DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env,
    and link data will be replicated.  If mode=DRMS_COPY_SEGMENTS the
    segment files for the old records will be copied to a new storage
    unit slots and assigned to the new records. */ 
+
+/**
+   Create a new set of records using values from an
+   original set of records to populate the new records. Within the current DRMS session,
+   this  function  creates  a record-set structure (::DRMS_RecordSet_t) that
+   contains "copies" of the record structures contained  in  \a recset.  For
+   each  record  in  \a recset,  a new ::DRMS_Record_t structure is created and
+   assigned a unique record number from the DRMS database.  The values  of
+   the  keywords, links, and segments of the original record in recset are
+   used to populate the newly created record.  If \a mode == ::DRMS_SHARE_SEGMENTS, 
+   the newly created segments will share the segment files with the
+   original record, i.e. the new record will have the  same  storage  unit
+   number  (DSINDEX)  as  the  original record.  However, keyword and link
+   data will be replicated.  If \a mode == ::DRMS_COPY_SEGMENTS,  the  original
+   record's  segment  files will be copied to a new storage unit slot, and
+   the copied files will be associated with the new record.
+
+   The  newly  created  records   are   placed   in   the   record   cache
+   (::DRMS_Env_t->record_cache)  and  are made writeable and assigned a lifetime of
+   \a lifetime (please see ::drms_reclifetime for details on lifetime).
+
+   Upon successful completion, the  function  returns  a  ::DRMS_RecordSet_t
+   pointer,  and  sets  \a *status  to  0.   If an error occurs, the function
+   returns NULL and sets \a *status to an appropriate error code  defined  in
+   drms_statuscodes.h.  Typical errors are as follows.  If \a recset does not
+   have   any   legitimate   records,   then    \a *status    is    set    to
+   ::DRMS_ERROR_BADRECORDCOUNT.  If there was an error receiving one or more
+   proper record numbers from the database server, then \a *status is set  to
+   ::DRMS_ERROR_BADSEQUENCE.   If an error occurs while creating a SUMS slot
+   directory, then *status is set to ::DRMS_ERROR_MKDIRFAILED.
+
+   The caller owns the  allocated  memory  associated  with  the  returned
+   record set and must release it by calling ::drms_close_records.
+
+   @param recset (DRMS_RecordSet_t *)The original set of records that get cloned.
+   @param lifetime (DRMS_RecLifetime_t)Either ::DRMS_PERMANENT (at the end of the
+   DRMS session, the cloned records should be saved to the database) 
+   or ::DRMS_TRANSIENT (at the end of the DRMS session, the cloned records should be
+   discarded).
+   @param mode (DRMS_CloneAction_t)Either DRMS_COPY_SEGMENTS (copy original data
+   to the newly cloned records) or DRMS_SHARE_SEGMENTS(point to the original data).
+   @param status (int *)Pointer to DRMS status (see drms_statuscodes.h) returned
+   by reference. 0 if successful, non-0 otherwise.
+   @return (::DRMS_RecordSet_t)The set of cloned records.
+*/
 DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *recset,  
 				     DRMS_RecLifetime_t lifetime, 
 				     DRMS_CloneAction_t mode, int *status);
@@ -51,6 +142,45 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *recset,
    with their default values from the series definition. Each record
    will be assigned a new storage unit slot to store its segment files
    in. */
+
+/**
+   Create a new set of \a n records for series \a seriesname. 
+   Within the current DRMS session, this function creates a 
+   record-set structure (::DRMS_RecordSet_t) that
+   contains \a n newly created record structures (::DRMS_Record_t). Each created record 
+   is assigned a unique record number from the DRMS database. The values of
+   the keywords, links, and segments from the series' template record (stored 
+   in the series cache (::DRMS_Env_t->record_cache) are used to populate
+   the corresponding values of each of the \a n created records.
+
+   The newly  created  records are placed   in   the   record   cache
+   (::DRMS_Env_t->record_cache)  and  are made writeable and assigned a lifetime of
+   \a lifetime (please see ::drms_reclifetime for details on lifetime).
+   
+   Upon successful completion, the  function  returns  a  ::DRMS_RecordSet_t
+   pointer,  and  sets  \a *status  to  0.   If an error occurs, the function
+   returns NULL and sets \a *status to an appropriate error code  defined  in
+   drms_statuscodes.h.  Typical errors are as follows. If there was an error 
+   receiving one or more 
+   proper record numbers from the database server, then \a *status is set  to
+   ::DRMS_ERROR_BADSEQUENCE.   If an error occurs while creating a SUMS slot
+   directory, then *status is set to ::DRMS_ERROR_MKDIRFAILED.
+
+   The caller owns the  allocated  memory  associated  with  the  returned
+   record set and must release it by calling ::drms_close_records.
+
+   @param env (::DRMS_Env_t *)Contains information about the DRMS session in which the 
+   records should be created.
+   @param n (int)Number of records to create.
+   @param seriesname (char *)Name of the series into which records should be inserted.
+   @param lifetime (::DRMS_RecLifetime_t)Either ::DRMS_PERMANENT (at the end of the
+   DRMS session, the created records should be saved to the database) 
+   or ::DRMS_TRANSIENT (at the end of the DRMS session, the created records should be
+   discarded).
+   @param status (int *)Pointer to DRMS status (see drms_statuscodes.h) returned
+   by reference. 0 if successful, non-0 otherwise.
+   @return (::DRMS_RecordSet_t)The set of created records.
+*/
 DRMS_RecordSet_t *drms_create_records(DRMS_Env_t *env, int n, 
 				      char *seriesname, DRMS_RecLifetime_t lifetime,
 				      int *status);
@@ -73,6 +203,43 @@ void drms_destroy_recproto(DRMS_Record_t **proto);
       b) If action=DRMS_FREE_RECORD the data segment files are
       deleted from disk.
    2. The record structures are freed from the record cache. */
+
+/**
+   Close a set of records and free allocated memory, optionally inserting 
+   new records into the database.
+   If \a action == ::DRMS_FREE_RECORD, then if a record  being  closed  is  the
+   only  reference  to  a  SUMS  storage unit slot, that slot is freed and
+   marked for removal during SUMS garbage collection.  During SUMS garbage
+   collection, all data-segment files stored within this storage unit will
+   be deleted.  In this scenario, segment files written to SUMS during the
+   current    DRMS    session   are   not   preserved.    If   action   ==
+   ::DRMS_INSERT_RECORD, then this function saves  the  keyword,  link,  and
+   segment  information  in  the  appropriate database tables, and ensures
+   that segment files written to SUMS during the current DRMS session  are
+   preserved.   In  order  to  succeed,  no  record contained in rs can be
+   marked read-only.
+
+   Regardless of \a action, this function calls ::drms_free_records  to  deallo-
+   cate  the  \a rs  ::DRMS_RecordSet_t  structure,  the  array  of pointers to
+   ::DRMS_Record_t  structures  contained  within   \a rs,   and   the   actual
+   ::DRMS_Record_t  structures  that  these  pointers  reference.  All these
+   structures and pointers must have been  previously  allocated  in  heap
+   memory  (functions  like  ::drms_open_records ensure this is the case).
+   The records are also removed from the record cache (\a env->record_cache).
+
+   Upon  successful  completion,  the  function  returns  0.   If an error
+   occurs, the function returns  an  appropriate  error  code  defined  in
+   drms_statuscodes.h.   Typical errors are as follows.  If action is nei-
+   ther ::DRMS_FREE_RECORD nor ::DRMS_INSERT_RECORD,  then  ::DRMS_ERROR_INVALI-
+   DACTION  is returned.  If \a action == ::DRMS_INSERT_RECORD and at least one
+   record in \a rs is marked  read-only,  then  ::DRMS_ERROR_COMMITREADONLY  is
+   returned.
+
+   @param rs (DRMS_RecordSet_t *)
+   @param action (int)Specifes whether records being closed are to be
+   inserted into the database (::DRMS_INSERT_RECORD) or not (::DRMS_FREE_RECORD).
+   @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
+*/
 int drms_close_records(DRMS_RecordSet_t *rs, int action);
 
 
