@@ -2,6 +2,7 @@
 #include "serverdefs.h"
 #include "xmem.h"
 #include "cmdparams.h"
+#include "cmdparams_priv.h"
 #include "tee.h"
 #include "jsoc_main.h"
 #ifdef __linux__

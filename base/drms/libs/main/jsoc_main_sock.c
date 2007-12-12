@@ -20,6 +20,7 @@
 #include "cfortran.h"
 #include "jsoc_main.h"
 #include "drms_env.h"
+#include "cmdparams_priv.h"
 
 CmdParams_t cmdparams;
 /* Global DRMS Environment handle. */

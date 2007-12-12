@@ -43,6 +43,7 @@
 #include <ctype.h>
 #include "hash_table.h"
 #include "cmdparams.h"
+#include "cmdparams_priv.h"
 #include "xassert.h"
 #include "xmem.h"
 #include "timeio.h"
