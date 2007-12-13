@@ -4,6 +4,76 @@
 #include "drms.h"
 #include "drms_names.h"
 
+/**
+\defgroup set_keys set_keys
+
+Modify the keyword values of a DRMS record or create a new record with
+specified keyword values.
+
+\par Usage:
+
+\code
+set_keys [-chmvDRIVER_FLAGS] ds=<record_set> [<keyword1>=<value1>]... [<segment1>=<file1>]...
+\endcode
+
+\b Example: to modify a keyword value:
+\code
+set_keys ds=su_arta.TestStoreFile[file=dsds_data.fits][sel=January] note=fred
+\endcode
+
+\b Example: to create a new record and specify keyword values:
+\code
+set_keys -c ds=su_arta.TestStoreFile file=data.txt sel=February file_seg=/home/arta/febdata.txt
+\endcode
+
+\par Flags:
+\c -c: Create a new record
+\par
+\c -h: Print usage message and exit
+\par
+\c -m: Modify the keywords of multiple records. The \c -m flag should be
+       used with caution.  A typo could damage many records. Do not use
+       \c -m unless you are sure the query will specify ONLY the records
+       you want to modify.
+\par
+\c -v: Verbose - noisy
+
+The \c -c and \c -m flags cannot be used simultaneously.
+
+Driver flags: \ref jsoc_main
+
+\param record_set
+
+A series name followed by an optional record-set speci- fication
+(i.e., \a seriesname[RecordSet_filter]). If no record-set filter is
+specified, \ref set_keys requires the \a -c flag, and it creates a new
+record. All of the prime keywords and values must be specified as \a
+keyword=value pairs.  If a record-set filter IS specified, \ref
+set_keys requires the \a -c flag to be unset.  If \a record_set
+resolves to more than one record, then the \a -m flag must be
+set. \ref set_keys will then clone the records specified by the
+record-set filter. For each keyword specified in a \a keyword=value
+pair on the command line, \ref set_keys will set the values for all
+these clones' keywords to \a value.
+
+\param valueN
+The new keyword values to be used to create a new or modify an
+existing record.
+
+\param fileN
+
+If modifying a record(s) and \a segmentN is a generic series segment,
+then first copy the segment to the cloned record(s)' segment storage,
+then replace the copied file with \a fileN. Otherwise, a cloned record
+and its progenitor share the original segment file.
+
+\bug 
+At  present updates of segment files fail.  Please use only with the \a -c
+flag and prime keys  when  inserting  files  into  generic  type  data
+segments.
+
+@{
+*/
 ModuleArgs_t module_args[] =
 { 
   {ARG_STRING, "ds", "Not Specified", "Series name with optional record spec"},
@@ -18,6 +88,7 @@ char *module_name = "set_keys";
 
 int verbose = 0;
 
+/** @}*/
 int nice_intro(int help)
   {
   int usage = cmdparams_get_int(&cmdparams, "h", NULL) != 0;
