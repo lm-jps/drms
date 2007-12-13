@@ -10,41 +10,43 @@
 #include "drms.h"
 #include "drms_priv.h"
 
-/* KeyMapClass table enum */
-#define DEFKEYMAPCLASS(A,B,C) A,
+/* The keymap data used to be defined in defkeymapclass.h, and 
+ * included throught the #include directive, but this confused
+ * doxygen, so removed it.  The ramifications of this change
+ * are that you have to be careful to keep the enum and string 
+ * definitions in synch.
+ */
 
+/* KeyMapClass table enum */
 typedef enum
 {
    kKEYMAPCL_UNDEF = 0,
-#include "defkeymapclass.h"
+   kKEYMAPCL_SSW,
+   kKEYMAPCL_GNG,
    kKEYMAPCL_NUMTABLESPLUSONE
 } KeyMapClassTables_t;
 
-#undef DEFKEYMAPCLASS
-
 /* KeyMapClass tables */
-#define DEFKEYMAPCLASS(A,B,C) C,
-
 const char *KeyMapClassTables[] = 
 {
    "",
-#include "defkeymapclass.h"
+   "BUNIT\tbunit_ssw\n" \
+   "BMAJ Bmajor_ssw\n" \
+   "noexist,intKey3_ssw\n",
+   "LONPOLE\tlongitude_pole_gng\n" \
+   "BUNIT\tbunit_gng\n" \
+   "EQUINOX, intKey_gng\n",
    ""
 };
 
-#undef DEFKEYMAPCLASS
-
 /* KeyMapClass enum to string identifier table */
-#define DEFKEYMAPCLASS(A,B,C) B,
-
 const char *KeyMapClassIDMap[] = 
 {
    "",
-#include "defkeymapclass.h"
+   "ssw",
+   "gng",
    ""
 };
-
-#undef DEFKEYMAPCLASS
 
 #define MAXCLKEY          128 /* key */
 #define MAXMAPPINGKEY     64  /* This is an external keyword name */
@@ -74,7 +76,7 @@ static void KMFree(const void *val)
 
 /* drms_keymap_initcltables() - JSOC defines several default keyword mappings. Each
  * such default mapping is considered a mapping "class". For each mapping class
- * defined in defkeymapclass.h, this function reads the mapping data and creates 
+ * defined above, this function reads the mapping data and creates 
  * a DRMS_KeyMap_t structure. These DRMS_KeyMap_t structures are saved in a global
  * container - gClassTables. Once drms_keymap_initcltables() completes, programs
  * then have access to these classes with the drms_keymap_classidextname(), 

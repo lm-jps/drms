@@ -63,14 +63,14 @@ typedef enum {DRMS_FREE_RECORD, DRMS_INSERT_RECORD} DRMS_CloseAction_t;
    The  caller  owns  the  allocated  memory  associated with the returned
    record set and must release it by calling ::drms_close_records.
 
-   @param env (::DRMS_Env_t)DRMS session information.
-   @param recordsetname (char *)A string that specifies a database query. It 
+   @param env DRMS session information.
+   @param recordsetname A string that specifies a database query. It 
    includes a series name and clauses to extract a subset of records from that series.
    Please see http://jsoc.stanford.edu/jsocwiki/DrmsNames for more 
    information about database queries.
-   @param status (int *)Pointer to DRMS status (see drms_statuscodes.h) returned
+   @param status Pointer to DRMS status (see drms_statuscodes.h) returned
    by reference. 0 if successful, non-0 otherwise.
-   @return (::DRMS_RecordSet_t)The set of records retrieved by the query.
+   @return The set of records retrieved by the query.
 */
 DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname, 
 				    int *status);
@@ -123,16 +123,16 @@ DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env,
    The caller owns the  allocated  memory  associated  with  the  returned
    record set and must release it by calling ::drms_close_records.
 
-   @param recset (DRMS_RecordSet_t *)The original set of records that get cloned.
-   @param lifetime (DRMS_RecLifetime_t)Either ::DRMS_PERMANENT (at the end of the
+   @param recset The original set of records that get cloned.
+   @param lifetime Either ::DRMS_PERMANENT (at the end of the
    DRMS session, the cloned records should be saved to the database) 
    or ::DRMS_TRANSIENT (at the end of the DRMS session, the cloned records should be
    discarded).
-   @param mode (DRMS_CloneAction_t)Either DRMS_COPY_SEGMENTS (copy original data
+   @param mode Either DRMS_COPY_SEGMENTS (copy original data
    to the newly cloned records) or DRMS_SHARE_SEGMENTS(point to the original data).
-   @param status (int *)Pointer to DRMS status (see drms_statuscodes.h) returned
+   @param status Pointer to DRMS status (see drms_statuscodes.h) returned
    by reference. 0 if successful, non-0 otherwise.
-   @return (::DRMS_RecordSet_t)The set of cloned records.
+   @return The set of cloned records.
 */
 DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *recset,  
 				     DRMS_RecLifetime_t lifetime, 
@@ -169,17 +169,17 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *recset,
    The caller owns the  allocated  memory  associated  with  the  returned
    record set and must release it by calling ::drms_close_records.
 
-   @param env (::DRMS_Env_t *)Contains information about the DRMS session in which the 
+   @param env Contains information about the DRMS session in which the 
    records should be created.
-   @param n (int)Number of records to create.
-   @param seriesname (char *)Name of the series into which records should be inserted.
-   @param lifetime (::DRMS_RecLifetime_t)Either ::DRMS_PERMANENT (at the end of the
+   @param n Number of records to create.
+   @param seriesname Name of the series into which records should be inserted.
+   @param lifetime Either ::DRMS_PERMANENT (at the end of the
    DRMS session, the created records should be saved to the database) 
    or ::DRMS_TRANSIENT (at the end of the DRMS session, the created records should be
    discarded).
-   @param status (int *)Pointer to DRMS status (see drms_statuscodes.h) returned
+   @param status Pointer to DRMS status (see drms_statuscodes.h) returned
    by reference. 0 if successful, non-0 otherwise.
-   @return (::DRMS_RecordSet_t)The set of created records.
+   @return The set of created records.
 */
 DRMS_RecordSet_t *drms_create_records(DRMS_Env_t *env, int n, 
 				      char *seriesname, DRMS_RecLifetime_t lifetime,
@@ -235,8 +235,8 @@ void drms_destroy_recproto(DRMS_Record_t **proto);
    record in \a rs is marked  read-only,  then  ::DRMS_ERROR_COMMITREADONLY  is
    returned.
 
-   @param rs (DRMS_RecordSet_t *)
-   @param action (int)Specifes whether records being closed are to be
+   @param rs The set of records to close
+   @param action Specifes whether records being closed are to be
    inserted into the database (::DRMS_INSERT_RECORD) or not (::DRMS_FREE_RECORD).
    @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
 */

@@ -497,141 +497,68 @@ DRMS_Array_t *drms_array_create(DRMS_Type_t type, int naxis,
 				int *axis, void *data, int *status);
 void drms_free_array(DRMS_Array_t *src);
 
-DRMS_Array_t *drms_array_convert(DRMS_Type_t dsttype, double bzero, 
-				 double bscale, DRMS_Array_t *src);
 
-void drms_array_convert_inplace(DRMS_Type_t newtype, double bzero, 
-				double bscale, DRMS_Array_t *src);
 
 void drms_array2missing(DRMS_Array_t *arr);
 
 DRMS_Array_t *drms_array_slice(int *start, int *end, DRMS_Array_t *src);
 
 
-/**** Internal functions (not for modules) ****/
-
-int drms_array_rawconvert(int n, DRMS_Type_t dsttype, double bzero, 
-			  double bscale, void *dst, DRMS_Type_t srctype, 
-			  void *src);
-
 /* Low level array conversion functions. */
-
+/**
+@name Scaling and Type Conversion
+*/
+/* @{ */
 /**
    Convert the first \a n values of \a src,
-   interpreted as being of type \a src_type, to \a char values
+   interpreted as being of type \a src_type, to 
+   values of the destination data type (the data type of \a dst)
    and place the values in \a dst. The values
    are first scaled by \a bzero and \a bscale.  If the scaled values are not within
-   the range representable by the \a char datatype, they are replaced by the \a char miss-
-   ing value; otherwise, the scaled values are
-   placed in dst.  (This is almost certainly a bug!) If src_type is
+   the range representable by the destination datatype, they are replaced by the 
+   destination-datatype-specific missing value; otherwise, the scaled values are
+   placed in \a dst.  (This is almost certainly a bug!) If \a src_type is
    ::DRMS_TYPE_STRING, the data strings are interpreted as character repre-
    sentations of numbers with \a strtod, and then scaled. If the resulting
-   values are within the representable range for the \a char datatype, they are placed
-   in  dst, otherwise the appropriate missing value is used. (This appears
+   values are within the representable range for the destination datatype, they are placed
+   in \a dst, otherwise the appropriate missing value is used. (This appears
    to be the only case for which these functions behave as expected.)
 
+   @param n Number of values to convert.
+   @param src_type Source datatype (see ::DRMS_Type_t).
+   @param bzero Offset by which raw data values are to be shifted to 
+   produce actual data values.
+   @param bscale Scaling factor by which raw data values are to be multiplied to 
+   produce actual data values.
+   @param src Source data, which is of type \a srctype.
+   @param dst Contiguous array of the destination data type into which the converted
+   data are stored upon success.
    @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
 */
 int drms_array2char(int n, DRMS_Type_t src_type, double bzero, double bscale, void *src, char *dst);
-/**
-   Convert the first \a n values of \a src,
-   interpreted as being of type \a src_type, to \a short values
-   and place the values in \a dst. The values
-   are first scaled by \a bzero and \a bscale.  If the scaled values are not within
-   the range representable by the \a short datatype, they are replaced by the \a short miss-
-   ing value; otherwise, the scaled values are
-   placed in dst.  (This is almost certainly a bug!) If src_type is
-   ::DRMS_TYPE_STRING, the data strings are interpreted as character repre-
-   sentations of numbers with \a strtod, and then scaled. If the resulting
-   values are within the representable range for the \a short datatype, they are placed
-   in  dst, otherwise the appropriate missing value is used. (This appears
-   to be the only case for which these functions behave as expected.)
-
-   @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
-*/
 int drms_array2short(int n, DRMS_Type_t src_type, double bzero, double bscale, void *src, short *dst);
-
-/**
-   Convert the first \a n values of \a src,
-   interpreted as being of type \a src_type, to \a int values
-   and place the values in \a dst. The values
-   are first scaled by \a bzero and \a bscale.  If the scaled values are not within
-   the range representable by the \a int datatype, they are replaced by the \a int miss-
-   ing value; otherwise, the scaled values are
-   placed in dst.  (This is almost certainly a bug!) If src_type is
-   ::DRMS_TYPE_STRING, the data strings are interpreted as character repre-
-   sentations of numbers with \a strtod, and then scaled. If the resulting
-   values are within the representable range for the \a int datatype, they are placed
-   in  dst, otherwise the appropriate missing value is used. (This appears
-   to be the only case for which these functions behave as expected.)
-
-   @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
-*/
 int drms_array2int(int n, DRMS_Type_t src_type, double bzero, double bscale, void *src, int *dst);
-
-/**
-   Convert the first \a n values of \a src,
-   interpreted as being of type \a src_type, to \a longlong values
-   and place the values in \a dst. The values
-   are first scaled by \a bzero and \a bscale.  If the scaled values are not within
-   the range representable by the \a longlong datatype, they are replaced by the \a longlong miss-
-   ing value; otherwise, the scaled values are
-   placed in dst.  (This is almost certainly a bug!) If src_type is
-   ::DRMS_TYPE_STRING, the data strings are interpreted as character repre-
-   sentations of numbers with \a strtod, and then scaled. If the resulting
-   values are within the representable range for the \a longlong datatype, they are placed
-   in  dst, otherwise the appropriate missing value is used. (This appears
-   to be the only case for which these functions behave as expected.)
-
-   @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
-*/
 int drms_array2longlong(int n, DRMS_Type_t src_type, double bzero, double bscale, void *src, long long *dst);
-
-/**
-   Convert the first \a n values of \a src,
-   interpreted as being of type \a src_type, to \a float values
-   and place the values in \a dst. The values
-   are first scaled by \a bzero and \a bscale.  If the scaled values are not within
-   the range representable by the \a float datatype, they are replaced by the \a float miss-
-   ing value; otherwise, the scaled values are
-   placed in dst.  (This is almost certainly a bug!) If src_type is
-   ::DRMS_TYPE_STRING, the data strings are interpreted as character repre-
-   sentations of numbers with \a strtod, and then scaled. If the resulting
-   values are within the representable range for the \a float datatype, they are placed
-   in  dst, otherwise the appropriate missing value is used. (This appears
-   to be the only case for which these functions behave as expected.)
-
-   @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
-*/
 int drms_array2float(int n, DRMS_Type_t src_type, double bzero, double bscale, void *src, float *dst);
-
-/**
-   Convert the first \a n values of \a src,
-   interpreted as being of type \a src_type, to \a double values
-   and place the values in \a dst. The values
-   are first scaled by \a bzero and \a bscale.  If the scaled values are not within
-   the range representable by the \a double datatype, they are replaced by the \a double miss-
-   ing value; otherwise, the scaled values are
-   placed in dst.  (This is almost certainly a bug!) If src_type is
-   ::DRMS_TYPE_STRING, the data strings are interpreted as character repre-
-   sentations of numbers with \a strtod, and then scaled. If the resulting
-   values are within the representable range for the \a double datatype, they are placed
-   in  dst, otherwise the appropriate missing value is used. (This appears
-   to be the only case for which these functions behave as expected.)
-
-   @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
-*/
 int drms_array2double(int n, DRMS_Type_t src_type, double bzero, double bscale, void *src, double *dst);
-
 
 /**
    Converts the first \a n values of \a src, interpreted as
    being of type \a src_type, to \a doubles, scaling them by \a bzero and \a bscale.
    If the resulting scaled numeric values are outside the representable
-   range for the type, the value is replaced by DRMS_MISSING_TIME. If the
+   range for the type, the value is replaced by ::DRMS_MISSING_TIME. If the
    data are of type ::DRMS_TYPE_STRING, then they are scanned by ::sscan_time,
    then scaled, and then checked for validity as \a doubles.
 
+   @param n Number of values to convert.
+   @param src_type Source datatype (see ::DRMS_Type_t).
+   @param bzero Offset by which raw data values are to be shifted to 
+   produce actual data values.
+   @param bscale Scaling factor by which raw data values are to be multiplied to 
+   produce actual data values.
+   @param src Source data, which is of type \a srctype.
+   @param dst Contiguous array of the time datatype values into which the converted
+   data are stored upon success.
    @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
 */
 int drms_array2time(int n, DRMS_Type_t src_type, double bzero, double bscale, void *src, double *dst);
@@ -649,10 +576,78 @@ int drms_array2time(int n, DRMS_Type_t src_type, double bzero, double bscale, vo
    however,  no  check is performed on whether the scaling would result in
    valid data for the type.
 
+   @param n Number of values to convert.
+   @param src_type Source datatype (see ::DRMS_Type_t).
+   @param bzero Offset by which raw data values are to be shifted to 
+   produce actual data values.
+   @param bscale Scaling factor by which raw data values are to be multiplied to 
+   produce actual data values.
+   @param src Source data, which is of type \a srctype.
+   @param dst Contiguous array of string pointers into which the converted
+   data are stored upon success.
    @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
 */
 int drms_array2string(int n, DRMS_Type_t src_type, double bzero, double bscale, void *src, char **dst);
 
+/**
+   Converts the data in \a src->data to type
+   \a dsttype, scaling by the values \a bzero and \a bscale, by
+   calling the function ::drms_array_rawconvert. It returns a newly
+   created array struct with the converted values but without copying or
+   setting the elements other than those set by ::drms_array_create.
+   In particular, the elements \a bzero and \a bscale are not set.
+   ::drms_array_convert_inplace performs the same type conversion,
+   but instead of returning a new array simply replaces the \a src->data
+   element.
 
+   @param dst Contiguous array of type \a dsttype into which the converted
+   data are stored upon success.
+   @param bzero Offset by which raw data values are to be shifted to 
+   produce actual data values.
+   @param bscale Scaling factor by which raw data values are to be multiplied to 
+   produce actual data values.
+   @param src The source array containing that data to be converted.
+*/
+DRMS_Array_t *drms_array_convert(DRMS_Type_t dsttype, double bzero, 
+				 double bscale, DRMS_Array_t *src);
+
+/**
+   Performs the same type conversion as ::drms_array_convert,
+   but instead of returning a new array simply replaces the \a src->data
+   element.
+
+   @param dst Contiguous array of type \a dsttype into which the converted
+   data are stored upon success.
+   @param bzero Offset by which raw data values are to be shifted to 
+   produce actual data values.
+   @param bscale Scaling factor by which raw data values are to be multiplied to 
+   produce actual data values.
+   @param src The source array containing that data to be converted.
+*/
+void drms_array_convert_inplace(DRMS_Type_t newtype, double bzero, 
+				double bscale, DRMS_Array_t *src);
+
+/**
+   Converts the first \a n values of \a src->data, interpreted as being
+   of type \a srctype, to type \a dsttype, with scaling by \a bzero
+   and \a bscale as applicable for the datatype, by calling the appropriate
+   function \a drms_array2*. The resulting data are placed in \a dst. 
+
+   @param n Number of values to convert.
+   @param dsttype Destination datatype (see ::DRMS_Type_t).
+   @param bzero Offset by which raw data values are to be shifted to 
+   produce actual data values.
+   @param bscale Scaling factor by which raw data values are to be multiplied to 
+   produce actual data values.
+   @param dst Contiguous array of type \a dsttype into which the converted
+   data are stored upon success.
+   @param srctype Source datatype (see ::DRMS_Type_t).
+   @param src Source data, which is of type \a srctype.
+   @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
+*/			
+int drms_array_rawconvert(int n, DRMS_Type_t dsttype, double bzero, 
+			  double bscale, void *dst, DRMS_Type_t srctype, 
+			  void *src);
+/* @} */
 
 #endif

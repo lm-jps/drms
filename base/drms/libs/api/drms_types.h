@@ -48,10 +48,29 @@
  * RAW is not really a type, but is used when reading segment data
    to indicate that the data should be read in without and type
    conversino or scaling. */
-
-typedef enum {DRMS_TYPE_CHAR, DRMS_TYPE_SHORT, DRMS_TYPE_INT, 
-	      DRMS_TYPE_LONGLONG, DRMS_TYPE_FLOAT, DRMS_TYPE_DOUBLE, 
-	      DRMS_TYPE_TIME, DRMS_TYPE_STRING, DRMS_TYPE_RAW} DRMS_Type_t;
+/**
+   @brief DRMS Data types
+ */
+typedef enum {
+   /** \brief DRMS char type */
+   DRMS_TYPE_CHAR, 
+   /** \brief DRMS short type */
+   DRMS_TYPE_SHORT, 
+   /** \brief DRMS int type */
+   DRMS_TYPE_INT, 
+   /** \brief DRMS longlong type */
+   DRMS_TYPE_LONGLONG, 
+   /** \brief DRMS float type */
+   DRMS_TYPE_FLOAT, 
+   /** \brief DRMS double type */
+   DRMS_TYPE_DOUBLE, 
+   /** \brief DRMS time type */
+   DRMS_TYPE_TIME, 
+   /** \brief DRMS string type */
+   DRMS_TYPE_STRING, 
+   /** \brief DRMS raw type */
+   DRMS_TYPE_RAW
+} DRMS_Type_t;
 
 #ifndef DRMS_TYPES_C
 extern char *drms_type_names[];
@@ -92,13 +111,21 @@ static union { uint64_t rep; double val; } __d_nan__ __attribute_used__ = {0xfff
 #define D_NAN (__d_nan__.val)
 
 /* Default "missing" values for standard types. */
+/** \brief DRMS char missing value */
 #define DRMS_MISSING_CHAR     (SCHAR_MIN)
+/** \brief DRMS short missing value */
 #define DRMS_MISSING_SHORT    (SHRT_MIN)
+/** \brief DRMS int missing value */
 #define DRMS_MISSING_INT      (INT_MIN)
+/** \brief DRMS longlong missing value */
 #define DRMS_MISSING_LONGLONG (LLONG_MIN)
-#define DRMS_MISSING_FLOAT    (F_NAN)  
+/** \brief DRMS float missing value */
+#define DRMS_MISSING_FLOAT    (F_NAN)
+/** \brief DRMS double missing value */
 #define DRMS_MISSING_DOUBLE   (D_NAN)
+/** \brief DRMS C string missing value */
 #define DRMS_MISSING_STRING   ("")
+/** \brief DRMS time missing value */
 #define DRMS_MISSING_TIME     (-211087684800.0) 
 /* equal to '-4712.01.01_12:00:00.000_UT' which is the time value used
    missing in the MDI/SDS system. */
