@@ -3,7 +3,7 @@
 \brief Functions to query the existence of series, get information
 about a series' primary keywords, and check series compatibility.
 
-\sa drms_keyword.h drms_record drms_segment drms_statuscodes.h drms_types.h
+\sa drms_keyword.h drms_record.h drms_segment.h drms_statuscodes.h drms_types.h
 hcontainer.h
 
 \example drms_series_ex1.c
@@ -50,7 +50,8 @@ seriesName.
 
 \return a primary key array upon success.\n
 \a *status is set to DRMS_SUCCESS upon success. 
-Otherwise \a *status is set to a diagostic status code:
+Otherwise \a *status is set to a diagostic status code (see drms_statuscodes.h), 
+which includes the following:
 - ::DRMS_ERROR_UNKNOWNSERIES
 - ::DRMS_ERROR_OUTOFMEMORY
 - ::DRMS_ERROR_INVALIDDATA 
@@ -64,7 +65,8 @@ deallocates an array of strings allocated by
 ::drms_series_createpkeyarray. The user must specify the number of
 primary keywords in the \a nElements parameter. Failure to provide
 the correct number could result in undetermined program behavior.
-Upon success, it sets \a *pkeys to NULL.
+
+Upon success, this function sets \a *pkeys to NULL.
 */
 void drms_series_destroypkeyarray(char ***pkeys, int nElements);
 
@@ -87,8 +89,9 @@ matchSegs container to the function. It is the caller's responsibility
 to deallocate memory associated with the allocation of ::HContainer_t
 elements.
 
-\return 1 if compatible
-
+\return 1 if compatible. Upon success, this function sets \a *status 
+to ::DRMS_SUCCESS. Otherwise \a *status is set to a 
+diagostic status code (see drms_statuscodes.h).
 */
 int drms_series_checkseriescompat(DRMS_Env_t *drmsEnv,
 				  const char *series1, 
@@ -109,7 +112,9 @@ by a means other than drms_create_records or
 drms_clone_records, and the user will attempt to insert that newly
 created record into series \a series.
 
-\return 1 if compatible.
+\return 1 if compatible. Upon success, this function sets \a *status 
+to ::DRMS_SUCCESS. Otherwise \a *status is set to a 
+diagostic status code (see drms_statuscodes.h).
 
 */
 int drms_series_checkrecordcompat(DRMS_Env_t *drmsEnv,
@@ -128,8 +133,9 @@ series \a series. drms_keyword_keysmatch is used to determined if
 the two ::DRMS_Keyword_t match. The caller must provide, in the
 \a nKeys parameter, the number of keywords contained in \a keys.
 
-\return 1 if compatible.
-
+\return 1 if compatible.  Upon success, this function sets \a *status 
+to ::DRMS_SUCCESS. Otherwise \a *status is set to a 
+diagostic status code (see drms_statuscodes.h).
 */
 int drms_series_checkkeycompat(DRMS_Env_t *drmsEnv,
 			       const char *series,
@@ -143,7 +149,9 @@ series \a series. drms_segment_segsmatch is used to determine if
 two segment definitions match. The caller must provide, in the
 \a nSegs parameter, the number of segments contained in \a segs.
 
-\return 1 if compatible.
+\return 1 if compatible. Upon success, this function sets \a *status 
+to ::DRMS_SUCCESS. Otherwise \a *status is set to a 
+diagostic status code (see drms_statuscodes.h).
 
 */
 int drms_series_checksegcompat(DRMS_Env_t *drmsEnv,
