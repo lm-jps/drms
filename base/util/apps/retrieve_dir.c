@@ -29,37 +29,37 @@
 
 Retrieve an arbitrary directory of files from DRMS/SUMS.
 
-For \ref retrieve_dir, \a record_set is a database query that allows the
-user to select a subset of records of a series. In particular, the
+For \ref retrieve_dir, \a record_set is a database query that allows
+the user to select a subset of records of a series. In particular, the
 user can supply values for the sel and note keywords in \a record_set
-to search for files saved with store_dir.  \ref retrieve_dir retrieves the
-set of records specified, and for each record uses the value contained
-within the \a dirname_keyword keyword (defaults to dirname) to identify
-the subdirectory within the record's SUMS directory (i.e., it is all
-of the string after the last '/' in this value) that contains the
-record's files.  It then copies (or links, if the l flag is present)
-all files from this subdirectory to a identically named subdirectory
-of the directory specified by \a dest.  Typically, the files retrieved
-with \ref retrieve_dir have been stored into SUMS with the store_dir
-utility.  \ref retrieve_dir will overwrite any files existing in the
-destination subdirectory whose name matches the name of a file to be
-copied from a SUMS subdirectory.  If the link flag, l, is specified,
-then \ref retrieve_dir will create a link to the SUMS subdirectory instead
-of copying from the SUMS subdirectory to the destination subdirectory.
-Keep in mind that over time this link may become broken as SUMS may
-remove a stored file if it is present in SUMS longer than its
-specified retention time.
+to search for files saved with \ref store_dir.  \ref retrieve_dir
+retrieves the set of records specified, and for each record uses the
+value contained within the \a dirname_keyword keyword (defaults to
+dirname) to identify the subdirectory within the record's SUMS
+directory (i.e., it is all of the string after the last '/' in this
+value) that contains the record's files.  It then copies (or links, if
+the l flag is present) all files from this subdirectory to a
+identically named subdirectory of the directory specified by \a dest.
+Typically, the files retrieved with \ref retrieve_dir have been stored
+into SUMS with the \ref store_dir utility.  \ref retrieve_dir will
+overwrite any files existing in the destination subdirectory whose
+name matches the name of a file to be copied from a SUMS subdirectory.
+If the link flag, l, is specified, then \ref retrieve_dir will create
+a link to the SUMS subdirectory instead of copying from the SUMS
+subdirectory to the destination subdirectory.  Keep in mind that over
+time this link may become broken as SUMS may remove a stored file if
+it is present in SUMS longer than its specified retention time.
 
-For each file in the record set specified by \a record_set, retrieve
-dir will copy the record segment's file to \a dest. If the series
-contains more than one segment, \a segment_name must be present.  Since
-the name of a segment's file is the segment name, any file in \a dest
-whose name matches the segment's name will be overwritten. However, a
-backup will be saved (the file will be renamed with a ~ suffix) if an
-overwrite it to occur, unless the \a f flag is specified.  \ref retrieve_dir
-prints to stdout the list of files retrieved, or NOT_FOUND if a file
-cannot be found. It also prints the contents of the note keyword
-value.
+For each file in the record set specified by \a record_set, \ref
+retrieve_dir will copy the record segment's file to \a dest. If the
+series contains more than one segment, \a segment_name must be
+present.  Since the name of a segment's file is the segment name, any
+file in \a dest whose name matches the segment's name will be
+overwritten. However, a backup will be saved (the file will be renamed
+with a ~ suffix) if an overwrite it to occur, unless the \a f flag is
+specified.  \ref retrieve_dir prints to stdout the list of files
+retrieved, or NOT_FOUND if a file cannot be found. It also prints the
+contents of the note keyword value.
 
 
 \par Usage:
