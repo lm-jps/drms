@@ -1,3 +1,26 @@
+/**
+\defgroup jsoc_main jsoc_main
+
+\par Flags:
+\c -H|--help: Show jsoc_main usage information.
+\par
+\c -L: Run jsoc_main driver with logging.
+\par
+\c -V: Run jsoc_main driver in verbose mode.
+\par
+\c -Q: Run  jsoc_main  driver  in  quiet mode (no terminal output).
+
+\param DRMS_RETENTION
+\param DRMS_QUERY_MEM
+\param JSOC_DBHOST
+\param JSOC_DBNAME
+\param JSOC_DBUSER
+\param JSOC_DBPASSWD
+\param JSOC_SESSIONNS
+
+
+@{
+*/
 #include "drms.h"
 #include "serverdefs.h"
 #include "xmem.h"
@@ -16,6 +39,7 @@ DRMS_Env_t *drms_env;
 
 ModuleArgs_t *gModArgs = module_args;
 
+/** @}*/
 CmdParams_t *GetGlobalCmdParams() 
 {
   return &cmdparams;

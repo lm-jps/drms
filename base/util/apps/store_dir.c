@@ -34,7 +34,82 @@
  *    Set perm to 0 if you want to exclude other users from
  *    accessing your stored dir.
  */
+/**
+\defgroup store_dir store_dir
 
+Store arbitrary directory of files to DRMS/SUMS.  Files stored with
+\ref store_dir can be easily retrieved by the \ref retrieve_dir utility.
+\ref store_file and \ref retrieve_file provide the analogous functionality for a
+single file.
+
+If the series \a series_name does not exist, \ref store_dir will first create
+that  series,  provided  that  the user supplies the c flag. If perm=1,
+then the series will be globally accessible, otherwise, only  the  user
+calling \ref store_dir will have access.  \ref store_dir then creates a record in
+the series \a series_name and creates a subdirectory, \a subdir,  in  the
+record's  SUMS directory (for each record there is a single SUMS direc-
+tory). \ref store_dir copies all files from \a prefix/subdir to \a subdir in
+the  record's  SUMS  directory. It also stores \a prefix/subdir in the
+record's dirname keyword value so that \ref retrieve_dir can locate the sub-
+directory   within   the   SUMS  directory  that  contains  the  files.
+sel=\a sel_text and note=\a note_text allow the user to  link  additional
+information to the record to facilitate the subsequent search for files
+in the series. They set the record's sel and note keywords to have  the
+values  \a sel_text  and \a note_text, respectively. In particular, \a sel
+can be used to differentiate between multiple calls to  \ref store_dir  with
+the  same  value  for \a prefix/subdir.  The series \a series_name must
+contain prime keywords named dirname and sel, and it must  contain  the
+keyword named note.
+
+\par Usage:
+
+\code
+store_dir [-cvDRIVER_FLAGS] series=<series_name> dirname=<prefix>/<subdir> 
+                            sel=<sel_text> [note=<note_text>] [perm=0|1]
+\endcode
+
+\b Example: To store a directory of files,
+\code
+store_dir series=su_arta.TestStoreDir dirname=/auto/home2/arta/savedFilesJanuary 
+          sel=January note="All my January work"
+\endcode
+
+\par Flags:
+\c -c: Silently create the series \a series_name if it does not exist.
+\par
+\c -v: Run in verbose mode.
+
+Driver flags: \ref jsoc_main
+
+\param series_name
+Specifies the series, \a series_name, to which the file-referring
+record will be added.  Should a record-set specifier be provided, it
+will be ignored.
+
+\param prefix/subdir
+The local full path that contains the files to be stored in SUMS. The
+record created will contain a prime keyword named dirname whose value
+will be \a prefix/subdir.
+
+\param sel_text 
+Contains a string that will be the key word value for the sel prime
+keyword of the record created.  This extra prime keyword facilitates
+selection between multiple records containing equivalent values for
+the dirname (\ref store_dir) or file (store_file) keyword (it may be
+desirable to save files in the same directly repeatedly, or save the
+same file over time).
+
+\param note_text
+An optional string that will be the keyword value for the note keyword
+of the record created.
+
+\param perm=0|1 
+Relevant only when the \a c flag is used and a series is created.  A perm
+of 0 will make the created series accessible only by the current user.
+A perm of 1 will make the series globally accessible.  
+
+@{
+*/
 #include "jsoc_main.h"
 #include "drms.h"
 #include "drms_names.h"
@@ -59,6 +134,8 @@ char *module_name = "store_dir";
 
 /* Some global variables for this module. */
 int verbose = 0;
+
+/** @}*/
 
 /* Check DRMS session status and calling arguments and set verbose variable */
 int nice_intro () {

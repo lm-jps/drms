@@ -14,21 +14,21 @@
 
 Prints keyword information and/or file path for given recordset.
 
-show_keys can list the keyword names and values, and the segment names
-and file names (full paths) for each record in a record set. It can
-also list the full path to the record direcory in SUMS, which contains
-the segment files. Exactly what information gets printed is controlled
-by command-line flags (see below). The \a -k flag controls the format of
-the output.  If it is set, then the output is in table format, with a
-header row showing the keyword names.  Otherwise, keyword name=value
-pairs are listed one per line.  If the \a -a flag is set, show_keys lists
-the names of all series keywords, prime keywords, and segments, and
-exits.  Otherwise, it prints keyword and segment information as
-specified by the other flags and arguments.  If the \a -p flag is set and
-\a seglist is specified, then the full paths for the segment files will
-be displayed. If the \a -p flag is set, but \a seglist is not specified,
-then only the full path to the record's storage unit will be
-displayed.
+\ref show_keys can list the keyword names and values, and the segment
+names and file names (full paths) for each record in a record set. It
+can also list the full path to the record direcory in SUMS, which
+contains the segment files. Exactly what information gets printed is
+controlled by command-line flags (see below). The \a -k flag controls
+the format of the output.  If it is set, then the output is in table
+format, with a header row showing the keyword names.  Otherwise,
+keyword name=value pairs are listed one per line.  If the \a -a flag
+is set, \ref show_keys lists the names of all series keywords, prime
+keywords, and segments, and exits.  Otherwise, it prints keyword and
+segment information as specified by the other flags and arguments.  If
+the \a -p flag is set and \a seglist is specified, then the full paths
+for the segment files will be displayed. If the \a -p flag is set, but
+\a seglist is not specified, then only the full path to the record's
+storage unit will be displayed.
 
 The number of records for which information will be printed must be
 specified, either by supplying a \a record_set string that selects a
@@ -36,6 +36,7 @@ subset of records from a series, or by supplying the \a n=nrecords
 argument, which indicates the number of records.
 
 \par Usage:
+
 \code
 show_keys [-aklpqrDRIVER_FLAGS] ds=<record_set> [n=<nrecords>] [key=<keylist>] [seg=<seglist>]
 \endcode
@@ -55,7 +56,9 @@ plus the segment named file_seg, for a maximum of 10 records:
 \endcode
 
 \par Flags:
-\c -a: Show all keyword names and values for each  record  specified  by \a record_set  or \a nrecords.  \a -a takes precedence over \a keylist. 
+\c -a: Show all keyword names and values for each  record  specified
+by \a record_set  or \a nrecords.  \a -a takes precedence over \a
+keylist.  
 \par
 \c -k: List keyword name=value pairs, one per line. Otherwise print
 all keyword values on a single line and print a header line containing
@@ -72,6 +75,8 @@ flag is set
 \par
 \c -r:  Include in the output the record number keyword
 
+Driver flags: \ref jsoc_main
+
 \param record_set
 A series name followed by an optional record-set specification (i.e.,
 \a seriesname[RecordSet_filter]). Causes selection of a subset of
@@ -80,9 +85,9 @@ filter is specified, then \a n=nrecords must be present.
 
 \param nrecords
 \a nrecords specifies the maximum number of records for which
-information is printed.  If \a nrecords < 0, show_keys displays
+information is printed.  If \a nrecords < 0, \ref show_keys displays
 information for the last \a nrecords records in the record set. If
-\a nrecords > 0, show_keys displays information for the first
+\a nrecords > 0, \ref show_keys displays information for the first
 \a nrecords records in the record set. If \a record_set contains a
 record set filter, then \a nrecords can reduce the total number of
 records for which information is displayed.

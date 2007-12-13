@@ -127,9 +127,13 @@ blocks: http://www.stack.nl/~dimitri/doxygen/commands.html
     @ingroup drms_util
     @addtogroup set_keys set_keys
     @ingroup drms_util
-    @addtogroup retrive_file retrieve_file
+    @addtogroup store_file store_file
     @ingroup drms_util
-    @addtogroup retrive_dir retrieve_dir
+    @addtogroup retrieve_file retrieve_file
+    @ingroup drms_util
+    @addtogroup store_dir store_dir
+    @ingroup drms_util
+    @addtogroup retrieve_dir retrieve_dir
     @ingroup drms_util
     @addtogroup create_series create_series
     @ingroup drms_util
@@ -138,6 +142,8 @@ blocks: http://www.stack.nl/~dimitri/doxygen/commands.html
     @addtogroup modify_series modify_series
     @ingroup drms_util
     @addtogroup show_series show_series
+    @ingroup drms_util
+    @addtogroup jsoc_main jsoc_main
     @ingroup drms_util
 @}
 @addtogroup core_api Core DRMS API functions

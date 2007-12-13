@@ -20,6 +20,49 @@
  *    flags:  -l make link into SUMS.
  */
 
+/** 
+\defgroup retrieve_file retrieve_file
+
+Retrieve an arbitrary file from DRMS/SUMS.
+
+\par Usage:
+
+\code
+retrieve_file [-fhlvDRIVER_FLAGS] ds=<record_set> out=<dest> [segment=<segment_name>]
+\endcode
+
+\b Example: to retrieve a single file:
+\code
+retrieve_file ds=myseries[][test002]
+\endcode
+
+\par Flags:
+\c -f: Force removal of a pre-existing file with same name as retreived file.
+\par
+\c -h: Print usage message and exit.
+\par
+\c -l: Create a symbolic link to the SUMS  directory  containing the file(s) of interest.
+\par
+\c -v: Run in verbose mode.
+
+Driver flags: \ref jsoc_main
+
+\param record_set
+A series name followed by an optional record set filter (i.e.,
+\a name[RecordSet_filter]).  Causes selection of a subset of records in
+the series.  Each record retrieved with this \a record_set query will
+refer to one directory/file that will be copied to \a dest.
+
+\param dest
+The destination directory to which the SUMS file(s) should be
+copied/linked.  Do not append a final '/' to the path (i.e.,
+/home/arta/dir1 is acceptable, but /home/arta/dir1/ is not) 
+
+\param segment_name
+Name of the segment whose file should be retrieved.
+
+@{
+*/
 #include "jsoc_main.h"
 #include "drms.h"
 #include "drms_names.h"
@@ -49,6 +92,8 @@ char *module_name = "retrieve_file";
 
 /* Some global variables for this module. */
 int verbose = 0;
+
+/** @}*/
 
 /* Check DRMS session status and calling arguments and set verbose variable */
 int nice_intro (int do_usage) {

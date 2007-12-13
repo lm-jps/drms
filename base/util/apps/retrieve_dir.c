@@ -24,6 +24,77 @@
  *    flags:  -l make link into SUMS.
  */
 
+/**
+\defgroup retrieve_dir retrieve_dir
+
+Retrieve an arbitrary directory of files from DRMS/SUMS.
+
+For \ref retrieve_dir, \a record_set is a database query that allows the
+user to select a subset of records of a series. In particular, the
+user can supply values for the sel and note keywords in \a record_set
+to search for files saved with store_dir.  \ref retrieve_dir retrieves the
+set of records specified, and for each record uses the value contained
+within the \a dirname_keyword keyword (defaults to dirname) to identify
+the subdirectory within the record's SUMS directory (i.e., it is all
+of the string after the last '/' in this value) that contains the
+record's files.  It then copies (or links, if the l flag is present)
+all files from this subdirectory to a identically named subdirectory
+of the directory specified by \a dest.  Typically, the files retrieved
+with \ref retrieve_dir have been stored into SUMS with the store_dir
+utility.  \ref retrieve_dir will overwrite any files existing in the
+destination subdirectory whose name matches the name of a file to be
+copied from a SUMS subdirectory.  If the link flag, l, is specified,
+then \ref retrieve_dir will create a link to the SUMS subdirectory instead
+of copying from the SUMS subdirectory to the destination subdirectory.
+Keep in mind that over time this link may become broken as SUMS may
+remove a stored file if it is present in SUMS longer than its
+specified retention time.
+
+For each file in the record set specified by \a record_set, retrieve
+dir will copy the record segment's file to \a dest. If the series
+contains more than one segment, \a segment_name must be present.  Since
+the name of a segment's file is the segment name, any file in \a dest
+whose name matches the segment's name will be overwritten. However, a
+backup will be saved (the file will be renamed with a ~ suffix) if an
+overwrite it to occur, unless the \a f flag is specified.  \ref retrieve_dir
+prints to stdout the list of files retrieved, or NOT_FOUND if a file
+cannot be found. It also prints the contents of the note keyword
+value.
+
+
+\par Usage:
+
+\code
+retrieve_dir [-lDRIVER_FLAGS] series=<record_set> to=<dest> [dirkey=<dirname_keyword>]
+\endcode
+
+\b Example: to retrieve a directory of files:
+\code
+retrieve_dir series=su_arta.TestStoreDir to=/auto/home2/arta/restoredFilesJanuary/ dirkey=dirname
+\endcode
+
+\par Flags:
+\c -l: Create a symbolic link to the SUMS  directory  containing the file(s) of interest.
+
+Driver flags: \ref jsoc_main
+
+\param record_set
+A series name followed by an optional record set filter (i.e.,
+\a name[RecordSet_filter]).  Causes selection of a subset of records in
+the series.  Each record retrieved with this \a record_set query will
+refer to one directory/file that will be copied to \a dest.
+
+\param dest
+The destination directory to which the SUMS file(s) should be
+copied/linked.  Do not append a final '/' to the path (i.e.,
+/home/arta/dir1 is acceptable, but /home/arta/dir1/ is not) 
+
+\param dirname_keyword
+Name of the keyword containing the path of the directory originally
+stored with \ref store_dir.
+
+@{
+*/
 #include "jsoc_main.h"
 #include "drms.h"
 #include "drms_names.h"
@@ -49,6 +120,7 @@ char *module_name = "retrieve_dir";
 /* Some global variables for this module. */
 int verbose = 0;
 
+/** @}*/
 /* Module main function. */
 int DoIt(void)
 {

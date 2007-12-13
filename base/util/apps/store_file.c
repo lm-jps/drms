@@ -40,6 +40,65 @@
  *        accessing your stored file.
  */
 
+/**
+\defgroup store_file store_file
+
+Store an arbitrary file to DRMS/SUMS.  File stored with \ref
+store_file can be easily retrieved by the \ref retrieve_file utility.
+
+For \ref store_file, \a file is the full path of the file that will be
+stored in SUMS in the dataseries \a series_name. The series
+\a series_name must contain prime keywords named file and sel, and it
+must contain the keyword named note.
+
+\par Usage:
+
+\code
+store_file [-chvDRIVER_FLAGS] ds=<series_name> in=<file> [sel=<sel_text>] [note=<note_text>] [perm=0|1]
+\endcode
+
+\b Example: to store a single file:
+\code
+store_file in=0000.fits ds=myseries sel=test002 note= "fits file from test002"
+\endcode
+
+\par Flags:
+\c -c: Silently create the series \a series_name if it does not exist.
+\par
+\c -h: Print usage message and exit
+\par
+\c -v: Run in verbose mode.
+
+Driver flags: \ref jsoc_main
+
+\param series_name
+Specifies the series, \a series_name, to which the file-referring
+record will be added.  Should a record-set specifier be provided, it
+will be ignored.
+
+\param file
+Full path of the file to store. Only the filename (everything after
+the last '/') will be stored in the file keyword.
+
+\param sel_text 
+Contains a string that will be the key word value for the sel prime
+keyword of the record created.  This extra prime keyword facilitates
+selection between multiple records containing equivalent values for
+the dirname (\ref store_dir) or file (store_file) keyword (it may be
+desirable to save files in the same directly repeatedly, or save the
+same file over time).
+
+\param note_text
+An optional string that will be the keyword value for the note keyword
+of the record created.
+
+\param perm=0|1 
+Relevant only when the \a c flag is used and a series is created.  A perm
+of 0 will make the created series accessible only by the current user.
+A perm of 1 will make the series globally accessible.  
+
+@{
+*/
 #include "jsoc_main.h"
 #include "drms.h"
 #include "drms_names.h"
@@ -65,6 +124,8 @@ char *module_name = "store_file";
 
 /* Some global variables for this module. */
 int verbose = 0;
+
+/** @}*/
 
 /* Check DRMS session status and calling arguments and set verbose variable */
 int nice_intro () {
