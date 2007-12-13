@@ -23,7 +23,30 @@
 /** 
 \defgroup retrieve_file retrieve_file
 
-Retrieve an arbitrary file from DRMS/SUMS.
+Retrieve an arbitrary file from SUMS. Typically used to retrieve 
+a file(s) stored in SUMS with \ref store_file.
+
+\a record_set is a database query that allows
+the user to select a subset of records of a series. In particular, the
+user can supply values for the \a sel and \a note keywords in \a record_set
+to search for files saved with \ref store_file. 
+For each file in the record set specified by \a record_set, \ref
+retrieve_file will copy (or link, if the \a -l flag is present)
+the record segment's file to \a dest. If the
+series contains more than one segment, \a segment_name must be
+present.  Since the name of a segment's file is the segment name, any
+file in \a dest whose name matches the segment's name will be
+overwritten. However, a backup will be saved (the file will be renamed
+with a ~ suffix) if an overwrite is to occur, unless the \a -f flag is
+specified.  \ref retrieve_file prints to stdout the list of files
+retrieved, or NOT_FOUND if a file cannot be found. It also prints the
+contents of the \a note keyword value.
+
+If the link flag, \a -l, is specified, then \ref retrieve_file will create
+a link to the SUMS file instead of copying the SUMS file
+to the destination directory.  Over
+time this link may become broken as SUMS may remove a stored file if
+it is present in SUMS longer than its specified retention time.
 
 \par Usage:
 
@@ -41,7 +64,7 @@ retrieve_file ds=myseries[][test002]
 \par
 \c -h: Print usage message and exit.
 \par
-\c -l: Create a symbolic link to the SUMS  directory  containing the file(s) of interest.
+\c -l: Create a symbolic link to the SUMS file instead of copying it to \a dest.
 \par
 \c -v: Run in verbose mode.
 
@@ -49,9 +72,9 @@ Driver flags: \ref jsoc_main
 
 \param record_set
 A series name followed by an optional record set filter (i.e.,
-\a name[RecordSet_filter]).  Causes selection of a subset of records in
+\a name[\a filter]).  Causes selection of a subset of records in
 the series.  Each record retrieved with this \a record_set query will
-refer to one directory/file that will be copied to \a dest.
+refer to one file that will be copied to \a dest.
 
 \param dest
 The destination directory to which the SUMS file(s) should be

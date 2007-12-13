@@ -43,18 +43,32 @@
 /**
 \defgroup store_file store_file
 
-Store an arbitrary file to DRMS/SUMS.  File stored with \ref
+Store an arbitrary file to SUMS.  File stored with \ref
 store_file can be easily retrieved by the \ref retrieve_file utility.
 
-For \ref store_file, \a file is the full path of the file that will be
-stored in SUMS in the dataseries \a series_name. The series
-\a series_name must contain prime keywords named file and sel, and it
-must contain the keyword named note.
+If the series \a series_name does not exist, \ref store_file will first create
+that  series,  provided  that  the user supplies the \a -c flag. If \a perm=1,
+then the series will be globally accessible, otherwise, only  the  user
+calling \ref store_dir will have access. \ref store_file then creates a record in
+the series \a series_name and copies the file specified by the full path \a file  into  the
+record's SUMS directory (for each record there is a single SUMS directory). 
+\ref store_file stores the filename part of \a file (ie., excludes the path) in the
+record's \a file keyword value so that \ref retrieve_file can locate the file
+within   the   SUMS  directory.
+
+sel=\a sel_text and note=\a note_text allow the user to  link  additional
+information to the record to facilitate the subsequent search for file
+in the series. They set the record's \a sel and \a note keywords to have  the
+values  \a sel_text  and \a note_text, respectively. In particular, \a sel
+can be used to differentiate between multiple calls to \ref store_file with
+the  same  filename part of \a file. \a series_name must contain prime 
+keywords \a file and \a sel, and it must contain the keyword \a note.
 
 \par Usage:
 
 \code
-store_file [-chvDRIVER_FLAGS] ds=<series_name> in=<file> [sel=<sel_text>] [note=<note_text>] [perm=0|1]
+store_file [-chvDRIVER_FLAGS] ds=<series_name> in=<file> 
+                             [sel=<sel_text>] [note=<note_text>] [perm=0|1]
 \endcode
 
 \b Example: to store a single file:
@@ -78,22 +92,22 @@ will be ignored.
 
 \param file
 Full path of the file to store. Only the filename (everything after
-the last '/') will be stored in the file keyword.
+the last '/') will be stored in the \a file keyword.
 
 \param sel_text 
-Contains a string that will be the key word value for the sel prime
+Contains a string that will be the value for the \a sel prime
 keyword of the record created.  This extra prime keyword facilitates
 selection between multiple records containing equivalent values for
-the dirname (\ref store_dir) or file (store_file) keyword (it may be
+the \a file keyword (it may be
 desirable to save files in the same directly repeatedly, or save the
 same file over time).
 
 \param note_text
-An optional string that will be the keyword value for the note keyword
+An optional string that will be the value for the \a note keyword
 of the record created.
 
 \param perm=0|1 
-Relevant only when the \a c flag is used and a series is created.  A perm
+Relevant only when the \a -c flag is used and a series is created.  A perm
 of 0 will make the created series accessible only by the current user.
 A perm of 1 will make the series globally accessible.  
 
