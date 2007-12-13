@@ -229,9 +229,9 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
   request.opcode = DRMS_SUMGET;
   request.reqcnt = 1;
   request.sunum[0] = su->sunum;
-  request.mode = NORETRIEVE;
+  request.mode = NORETRIEVE + TOUCH;
   if (retrieve) 
-    request.mode = RETRIEVE;
+    request.mode = RETRIEVE + TOUCH;
   if (env->retention==-1)   
     request.tdays = su->seriesinfo->retention;
   else
