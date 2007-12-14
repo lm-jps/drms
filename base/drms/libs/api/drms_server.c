@@ -93,13 +93,14 @@ int drms_server_open_session(DRMS_Env_t *env, char *host, unsigned short port,
   free(sn);
 
   char stmt[DRMS_MAXQUERYLEN];
-  snprintf(stmt, DRMS_MAXQUERYLEN, "INSERT INTO %s."DRMS_SESSION_TABLE 
-	  "(sessionid, hostname, port, pid, username, starttime, sunum, "
-	  "sudir, status, clients,lastcontact,sums_thread_status,jsoc_version) VALUES "
-	  "(?,?,?,?,?,LOCALTIMESTAMP(0),?,?,'idle',0,LOCALTIMESTAMP(0),"
-	  "'starting', '%s(%d)')", env->session->sessionns, jsoc_version, jsoc_vers_num);
 
   if (dolog) {
+    snprintf(stmt, DRMS_MAXQUERYLEN, "INSERT INTO %s."DRMS_SESSION_TABLE 
+	     "(sessionid, hostname, port, pid, username, starttime, sunum, "
+	     "sudir, status, clients,lastcontact,sums_thread_status,jsoc_version) VALUES "
+	     "(?,?,?,?,?,LOCALTIMESTAMP(0),?,?,'idle',0,LOCALTIMESTAMP(0),"
+	     "'starting', '%s(%d)')", env->session->sessionns, jsoc_version, jsoc_vers_num);
+
     /* Allocate a 1MB storage unit for log files. */
     env->session->sunum = drms_su_alloc(env, 1<<20, &env->session->sudir, 
 					&status);
@@ -127,11 +128,15 @@ int drms_server_open_session(DRMS_Env_t *env, char *host, unsigned short port,
       return 1;
     }
   } else {
+    snprintf(stmt, DRMS_MAXQUERYLEN, "INSERT INTO %s."DRMS_SESSION_TABLE 
+	     "(sessionid, hostname, port, pid, username, starttime, "
+	     "status, clients,lastcontact,sums_thread_status,jsoc_version) VALUES "
+	     "(?,?,?,?,?,LOCALTIMESTAMP(0),'idle',0,LOCALTIMESTAMP(0),"
+	     "'starting', '%s(%d)')", env->session->sessionns, jsoc_version, jsoc_vers_num);
     if (db_dmsv(env->session->stat_conn, NULL, stmt,
 		-1, DB_INT8, env->session->sessionid,
 		DB_STRING, host, DB_INT4, (int) port, DB_INT4, (int) getpid(),
-		DB_STRING, pwd->pw_name, DB_INT8, 0,
-		DB_STRING, "No log"))
+		DB_STRING, pwd->pw_name))
       {
 	fprintf(stderr,"Error: Couldn't register session.\n");
 	return 1;
