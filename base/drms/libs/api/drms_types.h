@@ -454,32 +454,89 @@ typedef struct DRMS_Link_struct DRMS_Link_t;
 
 /* An n-dimensional array (e.g. part or all of a segment array) 
    stored consecutively in memory. */
-/** \brief DRMS array struct */
+/** 
+    \brief DRMS array struct 
+
+    The ::DRMS_Array_t data stucture represents an n-dimensional array of scalar
+    data.  It is used for internal memory access to data structures read
+    from, or to be written to, record segments. The array data are stored in
+    column-major order at the memory location pointed to by the @ref data
+    element.
+
+    The fields @ref israw, @ref bscale, and @ref bzero describe
+    how the data contained in the array data structure relate to
+    the "true" values they are supposed to represent.
+    In the most frequently used case, @ref israw=0,
+    the data stored in memory represent the "true" values of the array,
+    and @ref bzero and @ref bscale contain
+    the shift and scaling (if any) applied to the data when they were 
+    read in from external storage. If @ref israw=1, then
+    the data stored in memory represent the unscaled "raw" values of
+    the array, and the true values may be obtained by applying the
+    scaling transformations, if any:
+
+    \code
+    f(x) = bzero + bscale * x, if x != MISSING
+         = MISSING           , if x == MISSING
+    \endcode
+
+    If the array struct contains data from a DRMS data segment, as returned
+    by the functions
+    ::drms_segment_readslice or ::drms_segment_read, then the 
+    @ref parent_segment  field points to the data segment from which the
+    array data originate.
+
+    If the array contains a slice of the parent then the  @ref start field
+    contains the starting indices of the slice in the parent array.
+    For example: If an array contains the lower 2x2 elements of a 4x3 data 
+    segment then the struct would contain
+    
+    \code
+    array.naxis = 2
+    array.axis = [2,2]
+    array.start = [2,1]
+    \endcode
+*/
 struct DRMS_Array_struct
 {
   /* Array info: */ 
-  DRMS_Type_t type;            /* Datatype of the data elements. */
-  int naxis;                     /* Number of dimensions. */
-  int axis[DRMS_MAXRANK];        /* Size of each dimension. */
-  void *data;                    /* Data stored in column major order. */
+  /** \brief Datatype of the data elements. */
+  DRMS_Type_t type;            
+  /** \brief Number of dimensions. */
+  int naxis;
+  /** \brief Size of each dimension. */
+  int axis[DRMS_MAXRANK];
+  /** \brief Data stored in column major order. */
+  void *data;                    
 
   /* Fields relating to scaling and slicing. */
-  struct DRMS_Segment_struct *parent_segment; /* Parent segment. */
-  int israw;                 /* Is this read in with type=DRMS_TYPE_RAW? 
-	          		If israw==0 then shift and scaling have been 
-			        applied to the data and they represent the 
-				"true" values. If israw==1 then no shift
-                                and scaling have been applied to the data. */
-  double bzero;              /* Zero point for parent->child mapping. */
-  double bscale;             /* Slope for parent->child. */
-  int start[DRMS_MAXRANK];   /* Start offset of slice in parent. */
+  /** \brief Parent segment. */
+  struct DRMS_Segment_struct *parent_segment; 
+  /** \brief Zero point for parent->child mapping. */
+  double bzero;
+  /**
+     \brief Do the values represent true values?
+     Is this read in with type=DRMS_TYPE_RAW? 
+     If israw==0 then shift and scaling have been 
+     applied to the data and they represent the 
+     "true" values. If israw==1 then no shift
+     and scaling have been applied to the data. 
+  */
+  int israw;    
+  /** \brief Slope for parent->child. */             
+  double bscale;
+  /** \brief Start offset of slice in parent. */
+  int start[DRMS_MAXRANK];
 
   /* Private fields used for array index calculation etc. */
-  int dope[DRMS_MAXRANK]; /* Dimension offset multipliers. */
+  /** \brief Dimension offset multipliers. */
+  int dope[DRMS_MAXRANK];
 
   /* Private fields used for packed string arrays. */
-  char *strbuf; /* String buffer used for packed string arrays. */
-  long long buflen;              /* Size of string buffer. */
+  /** \brief String buffer used for packed string arrays. */
+  char *strbuf;
+  /** \brief Size of string buffer. */
+  long long buflen;
 }; 
 
 /** \brief DRMS array struct reference*/

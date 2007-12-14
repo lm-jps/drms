@@ -109,7 +109,7 @@
 }
 
 /* drms_array_set(array, value, i1, i2, ..., in); */
-static inline void drms_array_setv(DRMS_Array_t *arr, ...)
+inline void drms_array_setv(DRMS_Array_t *arr, ...)
 {
    /* XXX Not implemented - unused arr causes compiler warning */
    if (arr)
@@ -118,10 +118,24 @@ static inline void drms_array_setv(DRMS_Array_t *arr, ...)
    }
 }
 
-
+/**
+   @name Information and Diagnostics
+*/
+/* @{ */
 /* Compute offset (in bytes) into data array of element with indices
    given in index argument. */
-static inline int drms_array_offset(DRMS_Array_t *arr, int *indexarr)
+/**
+   Returns the offset, in bytes, from the start of the
+   array @a arr->data of the datum at the coordinate value specified by the
+   index array @a indexarr, which must be of dimension @a arr->naxis
+   (at least).
+
+   @param arr The DRMS array struct for which the offset is being calculated.
+   @param indexarr The index into @a arr of the datum for which the offset 
+   is being calculated.
+   @return The bytes offset of the datum at @a indexarr.
+*/
+inline int drms_array_offset(DRMS_Array_t *arr, int *indexarr)
 {
   int i, idx;
   
@@ -130,8 +144,31 @@ static inline int drms_array_offset(DRMS_Array_t *arr, int *indexarr)
   return idx;
 }
 
+/**
+   Prints the values of the data in @a arr->data 
+   in tabular form, with colums separated by the string @a colsep and
+   rows separated by the string @a rowsep. One-dimensional arrays are
+   printed as a single row, two-dimansional arrays in column-major @a i.e.
+   storage order. Arrays of higher dimension are printed as successive tables,
+   each labeled by a header line giving the array index or indices for the
+   corresponding dimension(s) above the 2nd.
+
+   @param arr The DRMS array struct whose data values are being printed.
+   @param colsep A string that will be printed between columns of output.
+   @param rowsep A string that will be printed between rows of output.
+*/
+void drms_array_print(DRMS_Array_t *arr, const char *colsep, 
+		      const char *rowsep);
+
 /* Calculate the number of entries in an n-dimensional array. */
-static inline long long drms_array_count(DRMS_Array_t *arr)
+/**
+   Returns the total number of data points in the
+   array @a arr->data, i.e. the product of @a arr->axis[i].
+
+   @param arr The DRMS array struct whose data points are to be counted.
+   @return The number of data points in @a arr.
+*/
+inline long long drms_array_count(DRMS_Array_t *arr)
 {
   int i;
   long long n;
@@ -142,7 +179,15 @@ static inline long long drms_array_count(DRMS_Array_t *arr)
   return n;
 }
 /* Calculate the size in bytes of an n-dimensional array. */
-static inline long long drms_array_size(DRMS_Array_t *arr)
+/**
+   Returns the total size in bytes of the data array
+   @a arr->data, i.e. the product of ::drms_array_count and
+   ::drms_sizeof(@a arr->type).
+
+   @param arr The DRMS array struct whose size is being calculated.
+   @return The byte size of @a arr.
+*/
+inline long long drms_array_size(DRMS_Array_t *arr)
 {
    int size = drms_sizeof(arr->type);
    long long count = drms_array_count(arr);
@@ -150,24 +195,310 @@ static inline long long drms_array_size(DRMS_Array_t *arr)
 }
 
 /* Returned the number of axes in a multi-dimensional array. */
-static inline int drms_array_naxis(DRMS_Array_t *arr)
+/**
+   Returns the rank of the array, @a arr->naxis.
+
+   @param arr The DRMS array struct whose number of axes is being counted.
+   @return The number of axes in @a arr.
+*/
+inline int drms_array_naxis(DRMS_Array_t *arr)
 {
   return arr->naxis;
 }
 
 /* Return the number of entries along the n'th axis of a 
    multi-dimensional array. */
-static inline int drms_array_nth_axis(DRMS_Array_t *arr, int n)
+/**
+   Returns the dimension of axis @a n of the array, @a arr->axis[n].
+
+   @param arr The DRMS array struct whose dimension length is being returned.
+   @param n The axis number of @a arr whose length is being returned.
+   @return The length of axis @a n.
+*/
+inline int drms_array_nth_axis(DRMS_Array_t *arr, int n)
 {
   if (n<arr->naxis)
     return arr->axis[n];
   else
     return DRMS_ERROR_INVALIDDIMS;
 }
+/* @} */
+
+/**
+   @name Filling
+*/
+/* @{ */
+/**
+   Set an array element in manner similar to ::drms_array_set and
+   ::drms_array_setext, except do not perform a type conversion;
+   the array data type @a arr->type must match
+   the type of @a value.
+
+   @param arr  The DRMS array struct whose array element is set.
+   @param index The index of the array element whose value is set.
+   @param value The to value which the designed array element is set.
+   @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
+*/
+inline int drms_array_setchar_ext(DRMS_Array_t *arr, long long index, char value)
+{
+   if (arr->type == DRMS_TYPE_CHAR)
+   {
+      char *p = arr->data;
+      p[index] = value;
+      return DRMS_SUCCESS;
+   }
+   
+   return DRMS_ERROR_INVALIDDATA;
+}
+
+inline int drms_array_setchar(DRMS_Array_t *arr, int *indexarr, char value)
+{
+  if (arr->type == DRMS_TYPE_CHAR)
+  {
+     int index = drms_array_offset(arr, indexarr);
+     char *p = arr->data;
+     p[index] = value;
+     return DRMS_SUCCESS;
+  }
+
+   return DRMS_ERROR_INVALIDDATA;
+}
+
+inline int drms_array_setshort_ext(DRMS_Array_t *arr, long long index, short value)
+{
+   if (arr->type == DRMS_TYPE_SHORT)
+   {
+      short *p = arr->data;
+      p[index] = value;
+      return DRMS_SUCCESS;
+   }
+   
+   return DRMS_ERROR_INVALIDDATA;
+}
+
+inline int drms_array_setshort(DRMS_Array_t *arr, int *indexarr, short value)
+{
+  if (arr->type == DRMS_TYPE_SHORT)
+  {
+     int index = drms_array_offset(arr, indexarr);
+     short *p = arr->data;
+     p[index] = value;
+     return DRMS_SUCCESS;
+  }
+
+   return DRMS_ERROR_INVALIDDATA;
+}
+
+inline int drms_array_setint_ext(DRMS_Array_t *arr, long long index, int value)
+{
+   if (arr->type == DRMS_TYPE_INT)
+   {
+      int *p = arr->data;
+      p[index] = value;
+      return DRMS_SUCCESS;
+   }
+   
+   return DRMS_ERROR_INVALIDDATA;
+}
+
+inline int drms_array_setint(DRMS_Array_t *arr, int *indexarr, int value)
+{
+  if (arr->type == DRMS_TYPE_INT)
+  {
+     int index = drms_array_offset(arr, indexarr);
+     int *p = arr->data;
+     p[index] = value;
+     return DRMS_SUCCESS;
+  }
+
+   return DRMS_ERROR_INVALIDDATA;
+}
+
+inline int drms_array_setlonglong_ext(DRMS_Array_t *arr, long long index, long long value)
+{
+   if (arr->type == DRMS_TYPE_LONGLONG)
+   {
+      long long *p = arr->data;
+      p[index] = value;
+      return DRMS_SUCCESS;
+   }
+   
+   return DRMS_ERROR_INVALIDDATA;
+}
+
+inline int drms_array_setlonglong(DRMS_Array_t *arr, int *indexarr, long long value)
+{
+  if (arr->type == DRMS_TYPE_LONGLONG)
+  {
+     int index = drms_array_offset(arr, indexarr);
+     long long *p = arr->data;
+     p[index] = value;
+     return DRMS_SUCCESS;
+  }
+
+   return DRMS_ERROR_INVALIDDATA;
+}
+
+inline int drms_array_setfloat_ext(DRMS_Array_t *arr, long long index, float value)
+{
+   if (arr->type == DRMS_TYPE_FLOAT)
+   {
+      float *p = arr->data;
+      p[index] = value;
+      return DRMS_SUCCESS;
+   }
+   
+   return DRMS_ERROR_INVALIDDATA;
+}
+
+inline int drms_array_setfloat(DRMS_Array_t *arr, int *indexarr, float value)
+{
+  if (arr->type == DRMS_TYPE_FLOAT)
+  {
+     int index = drms_array_offset(arr, indexarr);
+     float *p = arr->data;
+     p[index] = value;
+     return DRMS_SUCCESS;
+  }
+
+   return DRMS_ERROR_INVALIDDATA;
+}
+
+inline int drms_array_setdouble_ext(DRMS_Array_t *arr, long long index, double value)
+{
+   if (arr->type == DRMS_TYPE_DOUBLE)
+   {
+      double *p = arr->data;
+      p[index] = value;
+      return DRMS_SUCCESS;
+   }
+   
+   return DRMS_ERROR_INVALIDDATA;
+}
+
+inline int drms_array_setdouble(DRMS_Array_t *arr, int *indexarr, double value)
+{
+  if (arr->type == DRMS_TYPE_DOUBLE)
+  {
+     int index = drms_array_offset(arr, indexarr);
+     double *p = arr->data;
+     p[index] = value;
+     return DRMS_SUCCESS;
+  }
+
+   return DRMS_ERROR_INVALIDDATA;
+}
+
+/**
+   Set an array element in manner similar to ::drms_array_set and
+   ::drms_array_setext, except do not perform a type conversion;
+   the array data type @a arr->type must be ::DRMS_TYPE_TIME).
+
+   @param arr  The DRMS array struct whose array element is set.
+   @param index The index of the array element whose value is set.
+   @param value The time to which the designed array element is set.
+   @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
+*/
+inline int drms_array_settime_ext(DRMS_Array_t *arr, long long index, double value)
+{
+   if (arr->type == DRMS_TYPE_TIME)
+   {
+      double *p = arr->data;
+      p[index] = value;
+      return DRMS_SUCCESS;
+   }
+   
+   return DRMS_ERROR_INVALIDDATA;
+}
+
+/**
+   Set an array element in manner similar to ::drms_array_set and
+   ::drms_array_setext, except do not perform a type conversion;
+   the array data type @a arr->type must be ::DRMS_TYPE_TIME).
+
+   @param arr  The DRMS array struct whose array element is set.
+   @param index The index of the array element whose value is set.
+   @param value The to time which the designed array element is set.
+   @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
+*/
+inline int drms_array_settime(DRMS_Array_t *arr, int *indexarr, double value)
+{
+  if (arr->type == DRMS_TYPE_TIME)
+  {
+     int index = drms_array_offset(arr, indexarr);
+     double *p = arr->data;
+     p[index] = value;
+     return DRMS_SUCCESS;
+  }
+
+   return DRMS_ERROR_INVALIDDATA;
+}
+
+/**
+   Set an array element in manner similar to ::drms_array_set and
+   ::drms_array_setext, except do not perform a type conversion;
+   the array data type @a arr->type must match
+   the type of @a value.  This function places the
+   start address of the string in the array, it does not do a string
+   copy.
+
+   @param arr  The DRMS array struct whose array element is set.
+   @param index The index of the array element whose value is set.
+   @param value The string to which the designed array element is set.
+   @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
+*/
+inline int drms_array_setstring_ext(DRMS_Array_t *arr, long long index, char *value)
+{
+   if (arr->type == DRMS_TYPE_STRING)
+   {
+      char **p = arr->data;
+      p[index] = value;
+      return DRMS_SUCCESS;
+   }
+   
+   return DRMS_ERROR_INVALIDDATA;
+}
+
+/**
+   Set an array element in manner similar to ::drms_array_set and
+   ::drms_array_setext, except do not perform a type conversion;
+   the array data type @a arr->type must match
+   the type of @a value.  This function places the
+   start address of the string in the array, it does not do a string
+   copy.
+
+   @param arr  The DRMS array struct whose array element is set.
+   @param index The index of the array element whose value is set.
+   @param value The string to which the designed array element is set.
+   @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
+*/
+inline int drms_array_setstring(DRMS_Array_t *arr, int *indexarr, char *value)
+{
+  if (arr->type == DRMS_TYPE_STRING)
+  {
+     int index = drms_array_offset(arr, indexarr);
+     char **p = arr->data;
+     p[index] = value;
+     return DRMS_SUCCESS;
+  }
+
+   return DRMS_ERROR_INVALIDDATA;
+}
 
 /* index is into a unidimensional data array */
 /* converts src to arr->type if necessary */
-static inline int drms_array_setext(DRMS_Array_t *arr, long long index, DRMS_Value_t *src)
+/**
+   Sets the value of the array element indexed by
+   @a index from the start of the array @a arr->data (in units of the
+   size of the array data type) to the value @a src, converted to the type
+   @a src->type by @a drms2* as necessary.
+
+   @param arr The DRMS array struct whose array element is set.
+   @param index The index of the array element whose value is set.
+   @param src The to which the designed array element is set.
+   @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
+*/
+inline int drms_array_setext(DRMS_Array_t *arr, long long index, DRMS_Value_t *src)
 {
    int status;
    DRMS_Type_t srctype = src->type;
@@ -281,228 +612,112 @@ static inline int drms_array_setext(DRMS_Array_t *arr, long long index, DRMS_Val
    return status;
 }
 
-static inline int drms_array_set(DRMS_Array_t *arr, int *indexarr, DRMS_Value_t *src)
+
+/**
+   Sets the value of the @a arr->data array element
+   indexed by the vector @a indexarr, of length @a arr->naxis (at least)
+   to the value @a src, converted to the type 
+   @a src->type by @a drms2* as necessary.
+
+   @param arr The DRMS array struct whose array element is set.
+   @param indexarr The array of index values that specify an 
+   array element whose value is set.
+   @param src The to which the designed array element is set.
+   @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
+*/
+inline int drms_array_set(DRMS_Array_t *arr, int *indexarr, DRMS_Value_t *src)
 {
   int i;
   i = drms_array_offset(arr,indexarr);
   return drms_array_setext(arr, i, src);
 }
 
-static inline int drms_array_setchar_ext(DRMS_Array_t *arr, long long index, char value)
-{
-   if (arr->type == DRMS_TYPE_CHAR)
-   {
-      char *p = arr->data;
-      p[index] = value;
-      return DRMS_SUCCESS;
-   }
-   
-   return DRMS_ERROR_INVALIDDATA;
-}
+/**
+   Sets all the values in the array @a arr->data
+   to the DRMS entity representing missing (fill) data for the data type
+   @a arr->type, for example ::DRMS_MISSING_SHORT or ::DRMS_MISSING_DOUBLE.
+   If the data type is ::DRMS_TYPE_STRING, the values are set to single-byte
+   null terminators. Note that the value defined for ::DRMS_MISSING_TIME is in
+   fact a valid double-precision number, and that this value is defined
+   differently from the definitions used for representation of invalid
+   strings in ::sscan_time.
 
-static inline int drms_array_setchar(DRMS_Array_t *arr, int *indexarr, char value)
-{
-  if (arr->type == DRMS_TYPE_CHAR)
-  {
-     int index = drms_array_offset(arr, indexarr);
-     char *p = arr->data;
-     p[index] = value;
-     return DRMS_SUCCESS;
-  }
+   @param arr The DRMS array struct whose values are set to missing.
+*/
+void drms_array2missing(DRMS_Array_t *arr);
+/* @} */
 
-   return DRMS_ERROR_INVALIDDATA;
-}
+/**
+   @name Creation and Destruction
+*/
+/* @{ */
+/**
+   Creates a ::DRMS_Array_t struct with the specified
+   values for the elements @a type, @a naxis, and @a axis. The array
+   @a axis must be of length @a naxis (at least) unless it is NULL.
+   If @a data is
+   a nun-NULL pointer, the data pointer of the created array is set to it;
+   otherwise, a data space of appropriate size is malloc'd (but left with
+   unknown contents). @a type cannot be ::DRMS_TYPE_RAW. No checks are made
+   for legitimate (positive) values of @a axis[n]. None of the other
+   elements of the struct are filled except @a dope.
 
-static inline int drms_array_setshort_ext(DRMS_Array_t *arr, long long index, short value)
-{
-   if (arr->type == DRMS_TYPE_SHORT)
-   {
-      short *p = arr->data;
-      p[index] = value;
-      return DRMS_SUCCESS;
-   }
-   
-   return DRMS_ERROR_INVALIDDATA;
-}
-
-static inline int drms_array_setshort(DRMS_Array_t *arr, int *indexarr, short value)
-{
-  if (arr->type == DRMS_TYPE_SHORT)
-  {
-     int index = drms_array_offset(arr, indexarr);
-     short *p = arr->data;
-     p[index] = value;
-     return DRMS_SUCCESS;
-  }
-
-   return DRMS_ERROR_INVALIDDATA;
-}
-
-static inline int drms_array_setint_ext(DRMS_Array_t *arr, long long index, int value)
-{
-   if (arr->type == DRMS_TYPE_INT)
-   {
-      int *p = arr->data;
-      p[index] = value;
-      return DRMS_SUCCESS;
-   }
-   
-   return DRMS_ERROR_INVALIDDATA;
-}
-
-static inline int drms_array_setint(DRMS_Array_t *arr, int *indexarr, int value)
-{
-  if (arr->type == DRMS_TYPE_INT)
-  {
-     int index = drms_array_offset(arr, indexarr);
-     int *p = arr->data;
-     p[index] = value;
-     return DRMS_SUCCESS;
-  }
-
-   return DRMS_ERROR_INVALIDDATA;
-}
-
-static inline int drms_array_setlonglong_ext(DRMS_Array_t *arr, long long index, long long value)
-{
-   if (arr->type == DRMS_TYPE_LONGLONG)
-   {
-      long long *p = arr->data;
-      p[index] = value;
-      return DRMS_SUCCESS;
-   }
-   
-   return DRMS_ERROR_INVALIDDATA;
-}
-
-static inline int drms_array_setlonglong(DRMS_Array_t *arr, int *indexarr, long long value)
-{
-  if (arr->type == DRMS_TYPE_LONGLONG)
-  {
-     int index = drms_array_offset(arr, indexarr);
-     long long *p = arr->data;
-     p[index] = value;
-     return DRMS_SUCCESS;
-  }
-
-   return DRMS_ERROR_INVALIDDATA;
-}
-
-static inline int drms_array_setfloat_ext(DRMS_Array_t *arr, long long index, float value)
-{
-   if (arr->type == DRMS_TYPE_FLOAT)
-   {
-      float *p = arr->data;
-      p[index] = value;
-      return DRMS_SUCCESS;
-   }
-   
-   return DRMS_ERROR_INVALIDDATA;
-}
-
-static inline int drms_array_setfloat(DRMS_Array_t *arr, int *indexarr, float value)
-{
-  if (arr->type == DRMS_TYPE_FLOAT)
-  {
-     int index = drms_array_offset(arr, indexarr);
-     float *p = arr->data;
-     p[index] = value;
-     return DRMS_SUCCESS;
-  }
-
-   return DRMS_ERROR_INVALIDDATA;
-}
-
-static inline int drms_array_setdouble_ext(DRMS_Array_t *arr, long long index, double value)
-{
-   if (arr->type == DRMS_TYPE_DOUBLE)
-   {
-      double *p = arr->data;
-      p[index] = value;
-      return DRMS_SUCCESS;
-   }
-   
-   return DRMS_ERROR_INVALIDDATA;
-}
-
-static inline int drms_array_setdouble(DRMS_Array_t *arr, int *indexarr, double value)
-{
-  if (arr->type == DRMS_TYPE_DOUBLE)
-  {
-     int index = drms_array_offset(arr, indexarr);
-     double *p = arr->data;
-     p[index] = value;
-     return DRMS_SUCCESS;
-  }
-
-   return DRMS_ERROR_INVALIDDATA;
-}
-
-static inline int drms_array_settime_ext(DRMS_Array_t *arr, long long index, double value)
-{
-   if (arr->type == DRMS_TYPE_TIME)
-   {
-      double *p = arr->data;
-      p[index] = value;
-      return DRMS_SUCCESS;
-   }
-   
-   return DRMS_ERROR_INVALIDDATA;
-}
-
-static inline int drms_array_settime(DRMS_Array_t *arr, int *indexarr, double value)
-{
-  if (arr->type == DRMS_TYPE_TIME)
-  {
-     int index = drms_array_offset(arr, indexarr);
-     double *p = arr->data;
-     p[index] = value;
-     return DRMS_SUCCESS;
-  }
-
-   return DRMS_ERROR_INVALIDDATA;
-}
-
-static inline int drms_array_setstring_ext(DRMS_Array_t *arr, long long index, char *value)
-{
-   if (arr->type == DRMS_TYPE_STRING)
-   {
-      char **p = arr->data;
-      p[index] = value;
-      return DRMS_SUCCESS;
-   }
-   
-   return DRMS_ERROR_INVALIDDATA;
-}
-
-static inline int drms_array_setstring(DRMS_Array_t *arr, int *indexarr, char *value)
-{
-  if (arr->type == DRMS_TYPE_STRING)
-  {
-     int index = drms_array_offset(arr, indexarr);
-     char **p = arr->data;
-     p[index] = value;
-     return DRMS_SUCCESS;
-  }
-
-   return DRMS_ERROR_INVALIDDATA;
-}
-
-DRMS_Array_t *drms_array_permute(DRMS_Array_t *src, int *perm, int *status);
-
-void drms_array_print(DRMS_Array_t *arr, const char *colsep, 
-		      const char *rowsep);
-
+   @param type The data type of the DRMS array struct to create.
+   @param naxis The number of axes of the DRMS array struct to create.
+   @param axis The lengths of each axis of the DRMS array struct to create.
+   @param data A linear array of data values, of type @a type, which
+   are "stolen" by the DRMS array struct being created.
+   @param DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
+   @return The created DRMS array struct.
+*/
 DRMS_Array_t *drms_array_create(DRMS_Type_t type, int naxis, 
 				int *axis, void *data, int *status);
+
+/**
+   Frees the array struct @a src as well as its 
+   member @a src->data as necessary.
+
+   @param src The DRMS array struct to free.
+*/
 void drms_free_array(DRMS_Array_t *src);
+/* @} */
 
 
+/**
+   @name Slicing and Permutation
+*/
+/* @{ */
+/**
+   Returns a newly created array struct (created
+   with ::drms_array_create, q.v.) in which the data element
+   corresponds to a subset hypercube of dimension @a src->naxis with
+   only the index values for dimension @a n in the closed range
+   [@a start[n], @a end[n]]. The extraction is performed by the function
+   ::ndim_pack.
 
-void drms_array2missing(DRMS_Array_t *arr);
-
+   @param start The index value of the dimension (orthogonal to the slice) that
+   marks the start of the slice.
+   @param end The index value of the dimension (orthogonal to the slice) that
+   marks the end of the slice.
+   @param src The DRMS array struct from which a slice is to be extracted.
+   @return The created DRMS array struct.
+*/
 DRMS_Array_t *drms_array_slice(int *start, int *end, DRMS_Array_t *src);
+/**
+   Rearranges the array elements in @a arr->data
+   such that the dimensions are ordered according to the permutation given
+   in the vector @a perm (dimension @a arr->naxis), using the function
+   @a ndim_perm. This is a generalization of the matrix transpose operator
+   to n dimensions. The permuted data are returned in a newly created
+   array struct, created wih ::drms_array_create.
 
+   @param src The DRMS array struct whose data will be transposed.
+   @param perm Vector specifying the order in which data should be transposed.
+   @param status DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
+   @return The created DRMS array struct.
+*/
+DRMS_Array_t *drms_array_permute(DRMS_Array_t *src, int *perm, int *status);
+/* @} */
 
 /* Low level array conversion functions. */
 /**
