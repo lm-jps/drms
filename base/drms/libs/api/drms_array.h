@@ -109,7 +109,7 @@
 }
 
 /* drms_array_set(array, value, i1, i2, ..., in); */
-inline void drms_array_setv(DRMS_Array_t *arr, ...)
+extern inline void drms_array_setv(DRMS_Array_t *arr, ...)
 {
    /* XXX Not implemented - unused arr causes compiler warning */
    if (arr)
@@ -135,7 +135,7 @@ inline void drms_array_setv(DRMS_Array_t *arr, ...)
    is being calculated.
    @return The bytes offset of the datum at @a indexarr.
 */
-inline int drms_array_offset(DRMS_Array_t *arr, int *indexarr)
+extern inline int drms_array_offset(DRMS_Array_t *arr, int *indexarr)
 {
   int i, idx;
   
@@ -168,7 +168,7 @@ void drms_array_print(DRMS_Array_t *arr, const char *colsep,
    @param arr The DRMS array struct whose data points are to be counted.
    @return The number of data points in @a arr.
 */
-inline long long drms_array_count(DRMS_Array_t *arr)
+extern inline long long drms_array_count(DRMS_Array_t *arr)
 {
   int i;
   long long n;
@@ -187,7 +187,7 @@ inline long long drms_array_count(DRMS_Array_t *arr)
    @param arr The DRMS array struct whose size is being calculated.
    @return The byte size of @a arr.
 */
-inline long long drms_array_size(DRMS_Array_t *arr)
+extern inline long long drms_array_size(DRMS_Array_t *arr)
 {
    int size = drms_sizeof(arr->type);
    long long count = drms_array_count(arr);
@@ -201,7 +201,7 @@ inline long long drms_array_size(DRMS_Array_t *arr)
    @param arr The DRMS array struct whose number of axes is being counted.
    @return The number of axes in @a arr.
 */
-inline int drms_array_naxis(DRMS_Array_t *arr)
+extern inline int drms_array_naxis(DRMS_Array_t *arr)
 {
   return arr->naxis;
 }
@@ -215,7 +215,7 @@ inline int drms_array_naxis(DRMS_Array_t *arr)
    @param n The axis number of @a arr whose length is being returned.
    @return The length of axis @a n.
 */
-inline int drms_array_nth_axis(DRMS_Array_t *arr, int n)
+extern inline int drms_array_nth_axis(DRMS_Array_t *arr, int n)
 {
   if (n<arr->naxis)
     return arr->axis[n];
@@ -239,7 +239,7 @@ inline int drms_array_nth_axis(DRMS_Array_t *arr, int n)
    @param value The to value which the designed array element is set.
    @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
 */
-inline int drms_array_setchar_ext(DRMS_Array_t *arr, long long index, char value)
+extern inline int drms_array_setchar_ext(DRMS_Array_t *arr, long long index, char value)
 {
    if (arr->type == DRMS_TYPE_CHAR)
    {
@@ -251,7 +251,7 @@ inline int drms_array_setchar_ext(DRMS_Array_t *arr, long long index, char value
    return DRMS_ERROR_INVALIDDATA;
 }
 
-inline int drms_array_setchar(DRMS_Array_t *arr, int *indexarr, char value)
+extern inline int drms_array_setchar(DRMS_Array_t *arr, int *indexarr, char value)
 {
   if (arr->type == DRMS_TYPE_CHAR)
   {
@@ -264,7 +264,7 @@ inline int drms_array_setchar(DRMS_Array_t *arr, int *indexarr, char value)
    return DRMS_ERROR_INVALIDDATA;
 }
 
-inline int drms_array_setshort_ext(DRMS_Array_t *arr, long long index, short value)
+extern inline int drms_array_setshort_ext(DRMS_Array_t *arr, long long index, short value)
 {
    if (arr->type == DRMS_TYPE_SHORT)
    {
@@ -276,7 +276,7 @@ inline int drms_array_setshort_ext(DRMS_Array_t *arr, long long index, short val
    return DRMS_ERROR_INVALIDDATA;
 }
 
-inline int drms_array_setshort(DRMS_Array_t *arr, int *indexarr, short value)
+extern inline int drms_array_setshort(DRMS_Array_t *arr, int *indexarr, short value)
 {
   if (arr->type == DRMS_TYPE_SHORT)
   {
@@ -289,7 +289,7 @@ inline int drms_array_setshort(DRMS_Array_t *arr, int *indexarr, short value)
    return DRMS_ERROR_INVALIDDATA;
 }
 
-inline int drms_array_setint_ext(DRMS_Array_t *arr, long long index, int value)
+extern inline int drms_array_setint_ext(DRMS_Array_t *arr, long long index, int value)
 {
    if (arr->type == DRMS_TYPE_INT)
    {
@@ -301,7 +301,7 @@ inline int drms_array_setint_ext(DRMS_Array_t *arr, long long index, int value)
    return DRMS_ERROR_INVALIDDATA;
 }
 
-inline int drms_array_setint(DRMS_Array_t *arr, int *indexarr, int value)
+extern inline int drms_array_setint(DRMS_Array_t *arr, int *indexarr, int value)
 {
   if (arr->type == DRMS_TYPE_INT)
   {
@@ -314,7 +314,7 @@ inline int drms_array_setint(DRMS_Array_t *arr, int *indexarr, int value)
    return DRMS_ERROR_INVALIDDATA;
 }
 
-inline int drms_array_setlonglong_ext(DRMS_Array_t *arr, long long index, long long value)
+extern inline int drms_array_setlonglong_ext(DRMS_Array_t *arr, long long index, long long value)
 {
    if (arr->type == DRMS_TYPE_LONGLONG)
    {
@@ -326,7 +326,7 @@ inline int drms_array_setlonglong_ext(DRMS_Array_t *arr, long long index, long l
    return DRMS_ERROR_INVALIDDATA;
 }
 
-inline int drms_array_setlonglong(DRMS_Array_t *arr, int *indexarr, long long value)
+extern inline int drms_array_setlonglong(DRMS_Array_t *arr, int *indexarr, long long value)
 {
   if (arr->type == DRMS_TYPE_LONGLONG)
   {
@@ -339,7 +339,7 @@ inline int drms_array_setlonglong(DRMS_Array_t *arr, int *indexarr, long long va
    return DRMS_ERROR_INVALIDDATA;
 }
 
-inline int drms_array_setfloat_ext(DRMS_Array_t *arr, long long index, float value)
+extern inline int drms_array_setfloat_ext(DRMS_Array_t *arr, long long index, float value)
 {
    if (arr->type == DRMS_TYPE_FLOAT)
    {
@@ -351,7 +351,7 @@ inline int drms_array_setfloat_ext(DRMS_Array_t *arr, long long index, float val
    return DRMS_ERROR_INVALIDDATA;
 }
 
-inline int drms_array_setfloat(DRMS_Array_t *arr, int *indexarr, float value)
+extern inline int drms_array_setfloat(DRMS_Array_t *arr, int *indexarr, float value)
 {
   if (arr->type == DRMS_TYPE_FLOAT)
   {
@@ -364,7 +364,7 @@ inline int drms_array_setfloat(DRMS_Array_t *arr, int *indexarr, float value)
    return DRMS_ERROR_INVALIDDATA;
 }
 
-inline int drms_array_setdouble_ext(DRMS_Array_t *arr, long long index, double value)
+extern inline int drms_array_setdouble_ext(DRMS_Array_t *arr, long long index, double value)
 {
    if (arr->type == DRMS_TYPE_DOUBLE)
    {
@@ -376,7 +376,7 @@ inline int drms_array_setdouble_ext(DRMS_Array_t *arr, long long index, double v
    return DRMS_ERROR_INVALIDDATA;
 }
 
-inline int drms_array_setdouble(DRMS_Array_t *arr, int *indexarr, double value)
+extern inline int drms_array_setdouble(DRMS_Array_t *arr, int *indexarr, double value)
 {
   if (arr->type == DRMS_TYPE_DOUBLE)
   {
@@ -399,7 +399,7 @@ inline int drms_array_setdouble(DRMS_Array_t *arr, int *indexarr, double value)
    @param value The time to which the designed array element is set.
    @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
 */
-inline int drms_array_settime_ext(DRMS_Array_t *arr, long long index, double value)
+extern inline int drms_array_settime_ext(DRMS_Array_t *arr, long long index, double value)
 {
    if (arr->type == DRMS_TYPE_TIME)
    {
@@ -421,7 +421,7 @@ inline int drms_array_settime_ext(DRMS_Array_t *arr, long long index, double val
    @param value The to time which the designed array element is set.
    @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
 */
-inline int drms_array_settime(DRMS_Array_t *arr, int *indexarr, double value)
+extern inline int drms_array_settime(DRMS_Array_t *arr, int *indexarr, double value)
 {
   if (arr->type == DRMS_TYPE_TIME)
   {
@@ -447,7 +447,7 @@ inline int drms_array_settime(DRMS_Array_t *arr, int *indexarr, double value)
    @param value The string to which the designed array element is set.
    @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
 */
-inline int drms_array_setstring_ext(DRMS_Array_t *arr, long long index, char *value)
+extern inline int drms_array_setstring_ext(DRMS_Array_t *arr, long long index, char *value)
 {
    if (arr->type == DRMS_TYPE_STRING)
    {
@@ -472,7 +472,7 @@ inline int drms_array_setstring_ext(DRMS_Array_t *arr, long long index, char *va
    @param value The string to which the designed array element is set.
    @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
 */
-inline int drms_array_setstring(DRMS_Array_t *arr, int *indexarr, char *value)
+extern inline int drms_array_setstring(DRMS_Array_t *arr, int *indexarr, char *value)
 {
   if (arr->type == DRMS_TYPE_STRING)
   {
@@ -498,7 +498,7 @@ inline int drms_array_setstring(DRMS_Array_t *arr, int *indexarr, char *value)
    @param src The to which the designed array element is set.
    @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
 */
-inline int drms_array_setext(DRMS_Array_t *arr, long long index, DRMS_Value_t *src)
+extern inline int drms_array_setext(DRMS_Array_t *arr, long long index, DRMS_Value_t *src)
 {
    int status;
    DRMS_Type_t srctype = src->type;
@@ -625,7 +625,7 @@ inline int drms_array_setext(DRMS_Array_t *arr, long long index, DRMS_Value_t *s
    @param src The to which the designed array element is set.
    @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
 */
-inline int drms_array_set(DRMS_Array_t *arr, int *indexarr, DRMS_Value_t *src)
+extern inline int drms_array_set(DRMS_Array_t *arr, int *indexarr, DRMS_Value_t *src)
 {
   int i;
   i = drms_array_offset(arr,indexarr);
@@ -733,8 +733,8 @@ DRMS_Array_t *drms_array_permute(DRMS_Array_t *src, int *perm, int *status);
    the range representable by the destination datatype, they are replaced by the 
    destination-datatype-specific missing value; otherwise, the scaled values are
    placed in \a dst.  (This is almost certainly a bug!) If \a src_type is
-   ::DRMS_TYPE_STRING, the data strings are interpreted as character repre-
-   sentations of numbers with \a strtod, and then scaled. If the resulting
+   ::DRMS_TYPE_STRING, the data strings are interpreted as character representations 
+   of numbers with \a strtod, and then scaled. If the resulting
    values are within the representable range for the destination datatype, they are placed
    in \a dst, otherwise the appropriate missing value is used. (This appears
    to be the only case for which these functions behave as expected.)
