@@ -1,5 +1,5 @@
 #include "drms.h"
-#include "drms_priv.h"d
+#include "drms_priv.h"
 #include "drms_tasfile.h"
 #include "adler32.h"
 #include "ndim.h"

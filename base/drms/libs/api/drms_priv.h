@@ -7,5 +7,6 @@
 
 #include "drms_keymap_priv.h"
 #include "drms_record_priv.h"
+#include "drms_segment_priv.h"
 
 #endif /* _DRMS_PRIV_H*/

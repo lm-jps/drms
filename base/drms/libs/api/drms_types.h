@@ -18,15 +18,25 @@
 #endif
 
 /* Constants */
+/** 
+    Maximum string length of series names, record name, keyword name, link name, etc.
+    !! Series name needs a new define that is larger than 32 chars. !!
+*/
 #define DRMS_MAXNAMELEN        (32)
+/** \brief Maximum DRMS hash byte length */
 #define DRMS_MAXHASHKEYLEN     (DRMS_MAXNAMELEN+22)
+/** \brief Maximum byte length of unit string */
 #define DRMS_MAXUNITLEN        (32)
 #define DRMS_MAXQUERYLEN       (8192)
 #define DRMS_MAXPATHLEN        (512)
 #define DRMS_MAXFORMATLEN      (20)
+/** \brief Maximum dimension of DRMS data */
 #define DRMS_MAXRANK           (16)
+/** \brief Maximum number of DRMS segments per record */
 #define DRMS_MAXSEGMENTS       (255)
+/** \brief Maximum DRMS comment byte length */
 #define DRMS_MAXCOMMENTLEN     (255)
+/** \brief Maximum byte length of DRMS segment file name */
 #define DRMS_MAXSEGFILENAME    (256)
 #define DRMS_MAXPRIMIDX        (5) /* Max number of keywords in the primary index. */
 #define DRMS_DEFVAL_MAXLEN     (1000) /* Max length of the string holding a keyword default value. */
@@ -597,7 +607,18 @@ typedef struct DRMS_Array_struct DRMS_Array_t;
 
 /* The data descriptors hold basic information about the in-memory
    representation of the data. */
-typedef enum  {DRMS_CONSTANT, DRMS_VARIABLE, DRMS_VARDIM} DRMS_Segment_Scope_t;
+/**
+   \brief DRMS segment scope types
+*/
+typedef enum  {
+   /** \brief Indicates data is constant across records */
+   DRMS_CONSTANT,
+   /** \brief Indicates data dimension structure is constant across records */
+   DRMS_VARIABLE, 
+   /** \brief Indicates data dimension structure varies across records */
+   DRMS_VARDIM
+} DRMS_Segment_Scope_t;
+
 #ifndef DRMS_TYPES_C
 extern char *drms_segmentscope_names[];
 #else
@@ -609,46 +630,145 @@ char *drms_segmentscope_names[] = {"constant", "variable", "vardim"};
    It can also be a "generic" segment which is just a file 
    (structure-less as far as DRMS is concerned). */
 
-typedef struct DRMS_SegmentDimInfo_struct {
+/** \brief DRMS segment dimension info struct */
+struct DRMS_SegmentDimInfo_struct {
+  /** \brief Number of dimensions (rank) */
   int naxis;
+  /** \brief Length of each dimension */
   int axis[DRMS_MAXRANK];
-} DRMS_SegmentDimInfo_t;
+};
 
-typedef struct DRMS_SegmentInfo_struct {
+/** \brief DRMS segment dim info struct reference */
+typedef struct DRMS_SegmentDimInfo_struct DRMS_SegmentDimInfo_t;
+
+/** \brief DRMS segment info struct */
+struct DRMS_SegmentInfo_struct {
 						   /*  Context information:  */
-  char name[DRMS_MAXNAMELEN];                              /*  Segment name  */
-  int segnum;                          /*  Segment number within the record  */
-  char description[DRMS_MAXCOMMENTLEN];		     /*  Description string  */
+  /** \brief Segment name */
+  char name[DRMS_MAXNAMELEN];
+  /** \brief Segment number in record */
+  int segnum;
+  /** \brief  Description string */
+  char description[DRMS_MAXCOMMENTLEN];
 		/************  Link segments  ***********/
 		/*  If this is an inherited segment, islink is non-zero,
 	and linkname holds the name of the link which points to the record
 						 holding the actual segment. */
+  /** \brief Non-0 if segment inherited */
   int  islink;
-  char linkname[DRMS_MAXNAMELEN];		   /*  Link to inherit from  */
-  char target_seg[DRMS_MAXNAMELEN];		    /*  Segment to inherit.  */
-
-  DRMS_Type_t type;			  /*  Datatype of the data elements. */
-  int naxis;					   /*  Number of dimensions. */
-  char unit[DRMS_MAXUNITLEN];				  /*  Physical unit. */
-  DRMS_Protocol_t protocol;			       /*  Storage protocol. */
-  DRMS_Segment_Scope_t scope;			/*  Does the segment have a
-                                   a) constant value for all records?
-                                   b) varying value with fixed dimensions?
-                                   c) varying value with varying dimensions?  */
-
+  /** \brief Link to inherit from */
+  char linkname[DRMS_MAXNAMELEN];
+  /** \brief Segment to inherit */
+  char target_seg[DRMS_MAXNAMELEN];
+  /** \brief Datatype of data elements */
+  DRMS_Type_t type;
+  /** \brief Number of dimensions (rank) */
+  int naxis;
+  /** \brief Physical unit */
+  char unit[DRMS_MAXUNITLEN];
+  /** \brief Storage protocol */
+  DRMS_Protocol_t protocol;
+  /** \brief Const, Varies, or DimsVary */
+  DRMS_Segment_Scope_t scope;
+  /** \brief Record number where constant segment is stored */
   long long cseg_recnum;
-      /* recnum of record where the constant segment is stored, default to 0 */
+};
 
-} DRMS_SegmentInfo_t;
+/** \brief DRMS segment info struct reference */
+typedef struct DRMS_SegmentInfo_struct DRMS_SegmentInfo_t;
 
-/** \brief DRMS segment struct */
+/** 
+    \brief DRMS segment struct 
+
+    A DRMS data segment corresponds to a named file, typically containing an
+    n-dimensional scalar array. (It can also be a "generic" segment, which is
+    just an unstructured file as far as DRMS is concerned.) One or more segments
+    constitute the external data part(s) of the DRMS record pointed to by the
+    @ref record field. The 
+    @ref info field points to a structure containing attributes common to all
+    records in a series, while the segment structure itself contains the fields
+    @ref axis and @ref blocksize that can vary from record to record if
+    @ref scope=::DRMS_VARDIM.
+
+    The @ref protocol field determines the external storage format used for
+    storing segment data. Only protocols ::DRMS_BINARY, ::DRMS_BINZIP, ::DRMS_FITS,
+    ::DRMS_FITZ, ::DRMS_GENERIC, and ::DRMS_TAS are fully supported in the base 
+    DRMS system (NetDRMS). Protocol ::DRMS_DSDS is a
+    special protocol for dealing with the format of the Stanford SOI-MDI
+    Data Sorage and Distribution System (DSDS) and requires support outside
+    the DRMS library. Protocol ::DRMS_LOCAL likewise supports the DSDS file-format
+    and requires a non-NetDRMS library. It differs from ::DRMS_DSDS in that
+    it does not depend on the presence of DSDS - it merely allows the user
+    to operate on files external to DSDS (eg., files that may reside on a LOCAL 
+    hard disk) that happen to have the file format that DSDS uses.
+    ::DRMS_GENERIC and ::DRMS_MSI are also reserved for unsupported
+    data formats. In particular, the DRMS_GENERIC protocol is used to refer
+    to any unstructured data format or data formats of unknown structure.
+
+    Data storage for ::DRMS_FITS is in minimal simple FITS files, without
+    extensions and with only the compliance- and structure-defining keywords
+    (SIMPLE, BITPIX, NAXIS, NAXISn, and END, and optionally BLANK, BSCALE and
+    BZERO) in the headers. All other ancillary data are to be found in the DRMS
+    record. For the ::DRMS_FITZ protocol, the representation is similar except
+    that the entire FITS file is compressed with Rice compression. (Note that
+    because the memory representation for the data supported through the
+    API functions ::drms_segment_read is the ::DRMS_Array_t struct, which has a
+    maximum rank of 16, FITS hypercubes of dimension > 16 are not supported.)
+
+    For the
+    ::DRMS_BINARY protocol, the data are written in a binary format, in which
+    the first 8 bytes are the characters "DRMS RAW", the next @c 8(@c n+1)
+    are little-endian integer representations of the data type, rank, and
+    dimensions of the @a n axes, and the remainder the binary data in
+    little-endian format. For the ::DRMS_BINZIP protocol the represntation is
+    the same, except that the file is gzip compressed. The ::DRMS_TAS protocol
+    (for "Tiled Array Storage") is described elsewhere, if at all. It is
+    designed for use with data segments that are small compared with the
+    size of the full data records, in order to minimize file access without
+    keeping all of the segment data in the relational database, by concatenating
+    multiple segments in the external format. The segment @ref blocksize member
+    is for use with the ::DRMS_TAS protocol.
+
+    Segment data types refer to the scalar data type for the segment, and
+    should be mostly self-explanatory. ::DRMS_TYPE_TIME is a special case of
+    double-precision floating point values representing elapsed time from
+    a fixed epoch. Arithmetic is the same as for ::DRMS_TYPE_DOUBLE, only the
+    format for string representations differs from that for normal floating-point
+    data; see ::sprint_time. Data of type ::DRMS_TYPE_STRING are
+    null-terminated byte sequences of any length.  Data type ::DRMS_TYPE_STRING is
+    not supported by the protocols ::DRMS_BINARY, ::DRMS_BINZIP, ::DRMS_FITS, nor
+    ::DRMS_FITZ. Whether it is properly supported by the ::DRMS_TAS protocol is
+    doubtful. The data type ::DRMS_TYPE_RAW is used to describe data that are not
+    to be converted on read from the type of their external representation,
+    which must then be established for type-specific operations. It should
+    be used for ::DRMS_Array_t structures only, not for DRMS segments.
+
+    The scope of a segment can take on three values. The normal scope is
+    expected to be ::DRMS_VARIABLE, for which the particular segment for every
+    record has exactly the same structure (rank and dimensions),
+    only the actual data values vary from one record to another. (Note that
+    different segments of a record, however, need not have the same structure
+    as one another.) If the scope is ::DRMS_VARDIM, then the dimensions and
+    even rank of the particular segment may vary from one record to another,
+    although other features of the segment, in particular the data type,
+    must still be the same. Scope ::DRMS_CONSTANT is used to describe a data
+    segment that is constant for all records. It can be used for example to
+    describe a location index array, or a constant calibration array that
+    applies to all records in the series, so that it can be made available
+    to any record without having to store multiple instances externally.
+
+*/
 struct DRMS_Segment_struct {
-  struct DRMS_Record_struct *record; /*  The record this segment belongs to. */
-  DRMS_SegmentInfo_t *info;				      /*  see above  */
-  char filename[DRMS_MAXSEGFILENAME];		      /*  Storage file name  */
-  int axis[DRMS_MAXRANK];      			 /*  Size of each dimension. */
-  int blocksize[DRMS_MAXRANK];		/*  block sizes for tiled/blocked
-							  storage protocols. */
+  /** \brief  The record this segment belongs to */
+  struct DRMS_Record_struct *record; 
+  /** \brief Contains attributes common to all records in a series */
+  DRMS_SegmentInfo_t *info;
+  /** \brief Storage file name  */
+  char filename[DRMS_MAXSEGFILENAME];
+  /** \brief Size of each dimension */
+  int axis[DRMS_MAXRANK];
+  /** \brief Block sizes for TAS storage */
+  int blocksize[DRMS_MAXRANK];
 };
 
 /** \brief DRMS segment struct reference */

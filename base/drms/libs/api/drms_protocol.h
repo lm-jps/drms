@@ -1,11 +1,35 @@
+/**
+   @file drms_protocol.h
+   
+*/
+
 #ifndef _DRMS_PROTOCOL_H
 #define _DRMS_PROTOCOL_H
 
 #include "drms_types.h"
 						   /*  Recognized protocols  */
+/** 
+    @brief DRMS segment protocols
+*/
 typedef enum  {
-  DRMS_GENERIC, DRMS_BINARY, DRMS_BINZIP, DRMS_FITZ, DRMS_FITS, DRMS_MSI,
-  DRMS_TAS, DRMS_DSDS, DRMS_LOCAL
+   /** \brief Arbitrary file format which can vary across records */
+   DRMS_GENERIC, 
+   /** \brief Binary file format */
+   DRMS_BINARY, 
+   /** \brief Binary file format which is gzip compressed */
+   DRMS_BINZIP, 
+   /** \brief Simple FITS file format which is gzip compressed */
+   DRMS_FITZ, 
+   /** \brief Simple FITS file format */
+   DRMS_FITS, 
+   /** \brief Unsupported */
+   DRMS_MSI,
+   /** \brief "Tiled Array Storage" file format */
+   DRMS_TAS, 
+   /** \brief DSDS file format stored in DSDS (read only) */
+   DRMS_DSDS, 
+   /** \brief DSDS file format stored locally (read only) */
+   DRMS_LOCAL
 } DRMS_Protocol_t;
 	/*  N.B. To add a protocol, also add info to the static declartions
 							 in drms_protocol.c  */
