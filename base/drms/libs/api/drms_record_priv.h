@@ -2,7 +2,8 @@
 @file drms_record_priv.h
 @brief Private functions that retrieve, close, populate, copy, allocate, and free DRMS_Record_t structures.
 @sa drms_keymap.h drms_keyword.h drms_segment.h drms_series.h drms_env.h
-@example drms_record_ex1.c
+@example drms_record_ex1.c 
+@example drms_record_ex5.c
 */
 #ifndef _DRMS_RECORD_PRIV_H
 #define _DRMS_RECORD_PRIV_H
@@ -62,7 +63,7 @@ FILE *drms_record_fopen(DRMS_Record_t *rec, char *filename, const char *mode);
    count on the record's storage-unit directory. When the ref count reaches 0, 
    the entire storage unit is freed with a call to ::drms_freeunit.
 
-   @param  rec (::DRMS_Record_t *) Pointer to the DRMS record to be removed and freed.
+   @param rec Pointer to the DRMS record to be removed and freed.
 */
 void drms_free_record(DRMS_Record_t *rec);
 
@@ -73,15 +74,15 @@ void drms_free_record(DRMS_Record_t *rec);
    to ::drms_free_record. Also frees \a rs->records, an array of ::DRMS_Record_t * 
    and \a rs.
 
-   @param rs (::DRMS_RecordSet_t *) Pointer to the DRMS recordset containing records to be removed.
+   @param rs Pointer to the DRMS recordset containing records to be removed.
 */
 void drms_free_records(DRMS_RecordSet_t *rs);
 
 /**
    Return the actual size in bytes of the data contained in \a rec.
 
-   @param  rec (::DRMS_Record_t *) Pointer to the DRMS record whose data size is being requested.
-   @return (long long) The number of data bytes contained in \a rec.
+   @param rec Pointer to the DRMS record whose data size is being requested.
+   @return The number of data bytes contained in \a rec.
 */
 
 long long drms_record_size(DRMS_Record_t *rec);
@@ -114,8 +115,40 @@ int drms_insert_records(DRMS_RecordSet_t *recset);
 /* Get a pointer to the template record structure for series. */
 
 /**
-This really should be private. If a module wants series information, it should call
-drms_series.h functions.
+   Within the current DRMS session (whose information is stored in @a env), 
+   this function returns a template record for the series @a seriesname.  
+   If such a template record exists in the series template-record cache 
+   (@c env->series_cache), that one is returned. Otherwise a new template record 
+   is created, cached, and returned to the caller. The template-record structure 
+   is allocated and assigned default values derived from entries in the global 
+   database tables: @a drms_series, @a drms_segment, @a drms_link, and @a drms_keyword.
+   ::drms_template_record calls ::drms_template_segments, ::drms_template_links, 
+   and ::drms_template_keywords to populate segment, link, and keyword values.
+
+   The caller does not own the allocated memory associated with the 
+   returned record and should not release it 
+   (i.e., the caller should not call ::drms_close_record).
+
+   Typical uses of this function include obtaining a list of keywords or 
+   a particular keyword, primary or otherwise, obtaining a list of segments or 
+   a particular segment, obtaining a list of links or a particular link, and 
+   obtaining series information.
+
+   This really should be private, and not available to modules. If a module 
+   needs series information, it should call drms_series.h functions.
+   
+   @param env DRMS session information.
+   @param seriesname The name of the series for which the template record is desired.
+   @param status DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
+   @return Upon successful completion, the function returns a ::DRMS_Record_t pointer,
+   and sets @a *status to ::DRMS_SUCCESS.  If an error occurs, the function 
+   returns NULL and sets @a *status to an appropriate error code defined in
+   drms_statuscodes.h. Typical errors are as follows. If @a seriesname does not
+   exist in the series cache, then @a *status is set to 
+   ::DRMS_ERROR_UNKNOWNSERIES. If a problem occurs during communication 
+   with the database server, @a *status is set to ::DRMS_ERROR_QUERYFAILED. 
+   If a database table is malformed or corrupt, @a *status is set to 
+   ::DRMS_ERROR_BADQUERYRESULT.  
 */
 DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname, int *status);
 /* Populate a record structure with the meta-data for record number "recnum"
