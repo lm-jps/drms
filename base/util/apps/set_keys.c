@@ -10,6 +10,9 @@
 Modify the keyword values of a DRMS record or create a new record with
 specified keyword values.
 
+set_keys modifies keyword values and/or inserts generic files into a
+DRMS record(s).
+
 \par Usage:
 
 \code
@@ -44,8 +47,8 @@ Driver flags: \ref jsoc_main
 
 \param record_set
 
-A series name followed by an optional record-set speci- fication
-(i.e., \a seriesname[RecordSet_filter]). If no record-set filter is
+A series name followed by an optional record-set specification
+(i.e., \a seriesname[\a filter]). If no record-set filter is
 specified, \ref set_keys requires the \a -c flag, and it creates a new
 record. All of the prime keywords and values must be specified as \a
 keyword=value pairs.  If a record-set filter IS specified, \ref
@@ -63,7 +66,7 @@ existing record.
 \param fileN
 
 If modifying a record(s) and \a segmentN is a generic series segment,
-then first copy the segment to the cloned record(s)' segment storage,
+then first copy the segment file to the cloned record(s)' segment storage,
 then replace the copied file with \a fileN. Otherwise, a cloned record
 and its progenitor share the original segment file.
 
