@@ -143,12 +143,15 @@ blocks: http://www.stack.nl/~dimitri/doxygen/commands.html
     @ingroup drms_util
     @addtogroup show_series show_series
     @ingroup drms_util
-    @addtogroup jsoc_main jsoc_main
+    @addtogroup jsoc_main module
     @ingroup drms_util
 @}
 @addtogroup core_api Core DRMS API functions
-- drms_open_records
-- drms_create_records
-- drms_close_records
+- ::drms_open_records
+- ::drms_create_records
+- ::drms_clone_records
+- ::drms_close_records
+- ::drms_segment_read
+- ::drms_segment_write
 - ::drms_series_exists
 */

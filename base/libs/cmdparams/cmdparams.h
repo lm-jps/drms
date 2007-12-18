@@ -35,28 +35,76 @@ of parameters expected to be available to a module as a global variable.
 #define CMDPARAMS_OUTOFMEMORY   	(-6) 
 	       /*  Argument types in ModuleArgs_t used by cmdparams_parse()  */
 typedef enum {
+   /** @brief Marker denoting end of ::ModuleArgs_t array */
    ARG_END = 0,
-   ARG_FLAG,   ARG_TIME,    ARG_INT,        ARG_FLOAT,   ARG_DOUBLE,
-   ARG_STRING, ARG_VOID,    ARG_INTS,       ARG_FLOATS,  ARG_DOUBLES,
-/* ARG_STRINGS, */
-   ARG_NUME,   ARG_DATASET, ARG_DATASERIES, ARG_NEWDATA, ARG_NUMARGS
+   /** @brief Marker denoting a cmd-line flag */
+   ARG_FLAG,
+   /** @brief Marker denoting a time-value cmd-line argument */
+   ARG_TIME,
+   /** @brief Marker denoting an integer-value cmd-line argument */
+   ARG_INT,
+   /** @brief Marker denoting a float-value cmd-line argument */
+   ARG_FLOAT,
+   /** @brief Marker denoting a double-value cmd-line argument */
+   ARG_DOUBLE,
+   /** @brief Marker denoting a string-value cmd-line argument */
+   ARG_STRING,
+   /** @brief Marker denoting a void-value cmd-line argument */
+   ARG_VOID,
+   /** @brief Marker denoting an integer-array-value cmd-line argument */
+   ARG_INTS,
+   /** @brief Marker denoting a float-array-value cmd-line argument */
+   ARG_FLOATS,
+   /** @brief Marker denoting a double-array-value cmd-line argument */
+   ARG_DOUBLES,
+   /* ARG_STRINGS, */
+   /** @brief Marker denoting an enumeration-value cmd-line argument */
+   ARG_NUME,
+   /** @brief Marker denoting a dataset-descriptor-value cmd-line argument */
+   ARG_DATASET,
+   /** @brief Marker denoting a dataseries-name-value cmd-line argument */
+   ARG_DATASERIES,
+   /** @brief Marker denoting a created dataset-value cmd-line argument */
+   ARG_NEWDATA,
+   /** @brief The number of elements of this enumeration */
+   ARG_NUMARGS
 } ModuleArgs_Type_t;
 
-typedef struct ModuleArgs_t {
+/** @brief DRMS structure for holding parsed command-line arguments */
+struct ModuleArgs_struct {
+  /** @brief Data type of argument. */
   ModuleArgs_Type_t type;
+  /** @brief Name of argument (where <name>=<value> appears on the command line. */
   char *name;
+  /** @brief Value of argument (where <name>=<value> appears on the command line. */
   char *value;
+  /** @brief Free-form descriptive string. */
   char *description;
+  /** @brief For type==ARG_NUME, this is a list of comma-separated string tokens that name the enum symbols. */
   char *range;
-} ModuleArgs_t; 
+};
+/** 
+    @brief ModuleArgs struct reference 
+    @example moduleargs_ex1.c
+*/
+typedef struct ModuleArgs_struct ModuleArgs_t; 
 
-typedef struct CmdParams_t_struct {
-  int num_args, max_args;
+/** @brief Command-line parameter structure */
+struct CmdParams_struct {
+  /** @brief Number of <name>=<value> cmd-line argument pairs */
+  int num_args;
+  /** @brief Number of argument slots allocated */
+  int max_args;
+  /** @brief Array of <name>=<value> cmd-line argument pairs */
   char **args;
+  /** @brief Hash table mapping <name> to <value> for each cmd-line argument */
   Hash_Table_t hash;
-  int buflen, head;
+  int buflen;
+  int head;
   char *buffer;
-} CmdParams_t;
+};
+/** @brief CmdParams struct reference */
+typedef struct CmdParams_struct CmdParams_t;
 
 /**
    Parse command line and module arguments struct and create hashed parms list.
@@ -116,7 +164,7 @@ typedef struct CmdParams_t_struct {
 
    If a parameter value (or name) has embedded white space, it must be quoted.
 
-   An extern ::module_args declaration is required, though it can be empty.
+   An extern @ref module_args declaration is required, though it can be empty.
    A member with a ::module_args.type of ::ARG_END, must terminate the
    the list of parsed members; any members following it in the declarator
    will be ignored.
