@@ -51,7 +51,7 @@ subdirectory to the destination subdirectory.  Over
 time this link may become broken as SUMS may remove a stored file if
 it is present in SUMS longer than its specified retention time.
 
-\par Usage:
+\par Synopsis:
 
 \code
 retrieve_dir [-lDRIVER_FLAGS] series=<record_set> to=<dest> [dirkey=<dirname_keyword>]
@@ -65,7 +65,8 @@ retrieve_dir series=su_arta.TestStoreDir to=/home/arta/restoredFilesJanuary/ dir
 \par Flags:
 \c -l: Create a symbolic link to the SUMS  directory  containing the file(s) of interest.
 
-Driver flags: \ref jsoc_main
+\par Driver flags: 
+\ref jsoc_main
 
 \param record_set
 A series name followed by an optional record set filter (i.e.,

@@ -64,7 +64,7 @@ can be used to differentiate between multiple calls to \ref store_file with
 the  same  filename part of \a file. \a series_name must contain prime 
 keywords \a file and \a sel, and it must contain the keyword \a note.
 
-\par Usage:
+\par Synopsis:
 
 \code
 store_file [-chvDRIVER_FLAGS] ds=<series_name> in=<file> 
@@ -83,7 +83,8 @@ store_file in=0000.fits ds=myseries sel=test002 note= "fits file from test002"
 \par
 \c -v: Run in verbose mode.
 
-Driver flags: \ref jsoc_main
+\par Driver flags: 
+\ref jsoc_main
 
 \param series_name
 Specifies the series, \a series_name, to which the file-referring

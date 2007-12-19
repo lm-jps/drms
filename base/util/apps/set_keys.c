@@ -13,18 +13,18 @@ specified keyword values.
 set_keys modifies keyword values and/or inserts generic files into a
 DRMS record(s).
 
-\par Usage:
+\par Synopsis:
 
 \code
 set_keys [-chmvDRIVER_FLAGS] ds=<record_set> [<keyword1>=<value1>]... [<segment1>=<file1>]...
 \endcode
 
-\b Example: to modify a keyword value:
+\par Example to modify a keyword value:
 \code
 set_keys ds=su_arta.TestStoreFile[file=dsds_data.fits][sel=January] note=fred
 \endcode
 
-\b Example: to create a new record and specify keyword values:
+\par Example to create a new record and specify keyword values:
 \code
 set_keys -c ds=su_arta.TestStoreFile file=data.txt sel=February file_seg=/home/arta/febdata.txt
 \endcode
@@ -39,11 +39,12 @@ set_keys -c ds=su_arta.TestStoreFile file=data.txt sel=February file_seg=/home/a
        \c -m unless you are sure the query will specify ONLY the records
        you want to modify.
 \par
-\c -v: Verbose - noisy
+\c -v: Verbose - noisy.
 
 The \c -c and \c -m flags cannot be used simultaneously.
 
-Driver flags: \ref jsoc_main
+\par Driver flags: 
+\ref jsoc_main
 
 \param record_set
 

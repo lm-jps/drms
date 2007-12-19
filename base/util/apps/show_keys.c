@@ -35,7 +35,7 @@ specified, either by supplying a \a record_set string that selects a
 subset of records from a series, or by supplying the \a n=nrecords
 argument, which indicates the number of records.
 
-\par Usage:
+\par Synopsis:
 
 \code
 show_keys [-aklpqrDRIVER_FLAGS] ds=<record_set> [n=<nrecords>] [key=<keylist>] [seg=<seglist>]
@@ -75,7 +75,8 @@ flag is set
 \par
 \c -r:  Include in the output the record number keyword
 
-Driver flags: \ref jsoc_main
+\par Driver flags: 
+\ref jsoc_main
 
 \param record_set
 A series name followed by an optional record-set specification (i.e.,

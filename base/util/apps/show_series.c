@@ -15,18 +15,20 @@ it displays the prime-keyword names and series description. The
 information displayed is restricted to a subset of DRMS series by
 specifying \a filter, a grep-like regular expression.
 
+\par Synopsis:
+\code
+show_series [-hpvDRIVER_FLAGS] [<filter>]
+\endcode
+
 \par Flags:
 \c -h: Print usage message and exit
 \par
 \c -p: Print prime-keyword names and the series description
-
 \par
 \c -v: Verbose - noisy
 
-\par Usage:
-\code
-show_series [-hpvDRIVER_FLAGS] [<filter>]
-\endcode
+\par Driver flags: 
+\ref jsoc_main
 
 \param filter A pattern using grep-like rules to select a subset of
 series

@@ -60,7 +60,7 @@ the  same  value  for \a prefix/subdir.  \a series_name must
 contain prime keywords \a dirname and \a sel, and it must  contain  the
 keyword \a note.
 
-\par Usage:
+\par Synopsis:
 
 \code
 store_dir [-cvDRIVER_FLAGS] series=<series_name> dirname=<prefix>/<subdir> 
@@ -78,7 +78,8 @@ store_dir series=su_arta.TestStoreDir dirname=/auto/home2/arta/savedFilesJanuary
 \par
 \c -v: Run in verbose mode.
 
-Driver flags: \ref jsoc_main
+\par Driver flags: 
+\ref jsoc_main
 
 \param series_name
 Specifies the series, \a series_name, to which the file-referring

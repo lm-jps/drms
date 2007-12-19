@@ -146,6 +146,13 @@ blocks: http://www.stack.nl/~dimitri/doxygen/commands.html
     @addtogroup jsoc_main module
     @ingroup drms_util
 @}
+
+@defgroup su_apps Stanford Application Programs
+@{
+   @addtogroup hmi_import_egse_lev0 hmi_import_egse_lev0
+   @ingroup su_apps
+@}
+
 @addtogroup core_api Core DRMS API functions
 - ::drms_open_records
 - ::drms_create_records

@@ -48,7 +48,7 @@ to the destination directory.  Over
 time this link may become broken as SUMS may remove a stored file if
 it is present in SUMS longer than its specified retention time.
 
-\par Usage:
+\par Synopsis:
 
 \code
 retrieve_file [-fhlvDRIVER_FLAGS] ds=<record_set> out=<dest> [segment=<segment_name>]
@@ -68,7 +68,8 @@ retrieve_file ds=myseries[][test002]
 \par
 \c -v: Run in verbose mode.
 
-Driver flags: \ref jsoc_main
+\par Driver flags: 
+\ref jsoc_main
 
 \param record_set
 A series name followed by an optional record set filter (i.e.,
