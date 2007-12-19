@@ -145,6 +145,8 @@ blocks: http://www.stack.nl/~dimitri/doxygen/commands.html
     @ingroup drms_util
     @addtogroup jsoc_main module
     @ingroup drms_util
+    @addtogroup time_convert time_convert
+    @ingroup drms_util
 @}
 
 @defgroup su_apps Stanford Application Programs
