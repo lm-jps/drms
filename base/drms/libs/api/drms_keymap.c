@@ -17,18 +17,11 @@
  * definitions in synch.
  */
 
-/* KeyMapClass table enum */
-typedef enum
-{
-   kKEYMAPCL_UNDEF = 0,
-   kKEYMAPCL_SSW,
-   kKEYMAPCL_GNG,
-   kKEYMAPCL_NUMTABLESPLUSONE
-} KeyMapClassTables_t;
-
 /* KeyMapClass tables */
 const char *KeyMapClassTables[] = 
 {
+   "",
+   "",
    "",
    "BUNIT\tbunit_ssw\n" \
    "BMAJ Bmajor_ssw\n" \
@@ -43,6 +36,8 @@ const char *KeyMapClassTables[] =
 const char *KeyMapClassIDMap[] = 
 {
    "",
+   "dsds",
+   "local",
    "ssw",
    "gng",
    ""
@@ -95,8 +90,8 @@ static int drms_keymap_initcltables()
    if (gClassTables)
    {
       int ok = 1;
-      int i = kKEYMAPCL_UNDEF + 1;
-      for (; ok && i < kKEYMAPCL_NUMTABLESPLUSONE; i++)
+      int i = kKEYMAPCLASS_DEFAULT + 1;
+      for (; ok && i < kKEYMAPCLASS_NUMTABLESPLUSONE; i++)
       {
 	 DRMS_KeyMap_t *km = drms_keymap_create();
 	 if (km)

@@ -155,6 +155,9 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
     return 1;
   }
 
+  /* Initialize global things. */
+  drms_keymap_init(); /* If this slows down init too much, do on-demand init. */
+
 #ifdef DEBUG
   xmem_config(1,1,1,1,1000000,1,0,0); 
 #endif
@@ -298,6 +301,9 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
 
   if (abort_flag) drms_server_abort (drms_env);
   else drms_server_commit (drms_env);
+
+   /* Terminate other global things. */
+   drms_keymap_term();
 
   _exit(abort_flag);
 }
