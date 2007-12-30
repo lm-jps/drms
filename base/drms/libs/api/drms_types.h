@@ -85,6 +85,10 @@ typedef enum {
 #ifndef DRMS_TYPES_C
 extern char *drms_type_names[];
 #else
+/**
+   \brief Strings describing the supported DRMS types
+   \sa ::DRMS_Type_t
+*/
 char *drms_type_names[] = {"char", "short", "int", "longlong", 
 			   "float", "double", "time", "string", "raw"};
 #endif
@@ -802,9 +806,10 @@ typedef enum DRMS_KeyMapClass_enum {
    kKEYMAPCLASS_DSDS = 1,
    kKEYMAPCLASS_LOCAL = 2,
    kKEYMAPCLASS_SSW = 3,
+   kKEYMAPCLASS_GNG = 4,
+   kKEYMAPCLASS_NUMTABLESPLUSONE
    /* xxx etc*/
 } DRMS_KeyMapClass_t;
-
 
 /** \brief DRMS keymap struct */
 struct DRMS_KeyMap_struct {
@@ -812,12 +817,20 @@ struct DRMS_KeyMap_struct {
   HContainer_t ext2int;
 }; 
 
-/** \b DRMS keymap struct reference */
+/** \brief DRMS keymap struct reference */
 typedef struct DRMS_KeyMap_struct DRMS_KeyMap_t;
 
 /*********** Various utility functions ****************/
 DRMS_Type_t drms_str2type(const char *);
-const char  *drms_type2str(DRMS_Type_t type);
+
+/**
+   \brief Return a string representation of a ::DRMS_Type_t value.
+
+   \param type The ::DRMS_Type_t whose string representation is to
+   be returned.
+   \return String representation of the specified ::DRMS_Type_t value.
+*/
+const char *drms_type2str(DRMS_Type_t type);
 int drms_missing(DRMS_Type_t type, DRMS_Type_Value_t *val);
 int drms_copy_db2drms(DRMS_Type_t drms_type, DRMS_Type_Value_t *drms_dst, 
 		      DB_Type_t db_type, char *db_src);
