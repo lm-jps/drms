@@ -124,6 +124,7 @@ if ($CMDIN != $NONE && $CMDMANOUT != $NONE && $CMDHTMLOUT != $NONE) then
     # clean html destination, then copy html output
     find $CMDHTMLOUT -mindepth 1 -name "*" -exec rm {} \;
     cp -v $TMPOUTDIR/html/* $CMDHTMLOUT
+    chmod 664 $CMDHTMLOUT/*
 
     cd $CMDMANOUT
     
@@ -135,11 +136,11 @@ if ($CMDIN != $NONE && $CMDMANOUT != $NONE && $CMDHTMLOUT != $NONE) then
 
     # copy *.3j man-page files into man destination
     cd $TMPOUTDIR/man/man3
-    find . -name "*.3" | awk '{manpath=ARGV[1];filename=substr($0,3);realpath=substr(manpath,9);system("cp -v "$0" "realpath"/"filename"j")}' manpath=$CMDMANOUT
+    find . -name "*.3" | awk '{manpath=ARGV[1];filename=substr($0,3);realpath=substr(manpath,9);system("cp -v "$0" "realpath"/"filename"j");system("chmod 644 "realpath"/"filename"j")}' manpath=$CMDMANOUT
 
     # create *.3 --> *.3j links in man destination
     cd $CMDMANOUT
-    find . -mindepth 1 -name "*.3j" | awk '{sub(".3j",".3");system("ln -s "$0"j " $0)}'
+    find . -mindepth 1 -name "*.3j" | awk '{sub(".3j",".3");system("ln -s "$0"j " $0);system("chmod 664 "$0"j");system("chmod 664 "$0)}'
 else
     echo "Invalid input or output directory; bailing!"
 endif
