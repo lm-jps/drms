@@ -12,10 +12,8 @@
 #include "hcontainer.h"
 #include "util.h"
 #include "tagfifo.h"
-#ifdef REALSUMS
 #include "SUM.h"
 #include "sum_rpc.h"
-#endif
 
 /* Constants */
 /** 
@@ -272,7 +270,7 @@ typedef struct DRMS_ThreadInfo_struct
 #define DRMS_SUMPUT    2
 #define DRMS_SUMCLOSE  3
 #define DRMS_SUMABORT 99
-#define DRMS_MAX_REQCNT 32
+#define DRMS_MAX_REQCNT MAXSUMREQCNT
 
 /* Struct used for communication between service threads and
    the SUMS communication thread. */

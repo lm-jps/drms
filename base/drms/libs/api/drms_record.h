@@ -242,6 +242,13 @@ void drms_destroy_recproto(DRMS_Record_t **proto);
 */
 int drms_close_records(DRMS_RecordSet_t *rs, int action);
 
+/**
+   Stage a set of records. All records must come from the same series
+   @param rs The set of records to stage
+   @param retrieve Whether to retrieve the SU if it's off-line
+   @param dontwait Whether to wait for reply from SUMS
+*/
+int drms_stage_records(DRMS_RecordSet_t *rs, int retrieve, int dontwait);
 
 /**** For a single record. ****/
 DRMS_Record_t *drms_clone_record(DRMS_Record_t *record, 

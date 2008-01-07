@@ -32,6 +32,7 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su);
 int drms_commit_all_units(DRMS_Env_t *env, int *archive);
 void drms_su_freeunit(DRMS_StorageUnit_t *su);
 int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retireve);
+int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retention, int retireve, int dontwait);
 void drms_delete_temporaries(DRMS_Env_t *env);
 
 #endif

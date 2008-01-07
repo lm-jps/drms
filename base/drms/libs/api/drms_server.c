@@ -271,8 +271,6 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
    4. Free the environment. */
 void drms_server_abort(DRMS_Env_t *env)
 {
-  DRMS_SumRequest_t request;
-
   drms_lock_server(env);
   if (env->verbose)
     fprintf(stderr,"WARNING: DRMS is aborting...\n");  
@@ -571,6 +569,13 @@ void *drms_server_thread(void *arg)
       status = drms_server_getunit(env, sockfd);
       drms_unlock_server(env);
       break;
+    case  DRMS_GETUNITS:
+      if (env->verbose)
+	printf("thread %d: Executing DRMS_GETUNITS.\n",tnum);
+      drms_lock_server(env);
+      status = drms_server_getunits(env, sockfd);
+      drms_unlock_server(env);
+      break;
     case DRMS_NEWSERIES:
       if (env->verbose)
 	printf("thread %d: Executing DRMS_NEWSERIES.\n",tnum);
@@ -813,6 +818,65 @@ int drms_server_getunit(DRMS_Env_t *env, int sockfd)
   return status;
 }
 
+/* Server stub for drms_getunits. Get the path to a storage unit and
+   return it to the client.  If the storage unit is not in the storage 
+   unit cache, request it from SUMS. */
+int drms_server_getunits(DRMS_Env_t *env, int sockfd)
+{ 
+  int status;
+  int n;
+
+  char *series;
+  int retrieve, dontwait;
+  DRMS_StorageUnit_t *su;
+
+  series = receive_string(sockfd);
+  n = Readint(sockfd);
+
+  long long *sunum;
+  XASSERT(sunum = malloc(n*sizeof(long long)));
+  for (int i = 0; i < n; i++) {
+    sunum[i] = Readlonglong(sockfd);
+  }
+
+  retrieve = Readint(sockfd);
+  dontwait = Readint(sockfd);
+
+  status = drms_getunits(env, series, n, sunum, retrieve, dontwait);
+  Writeint(sockfd,status);
+  if (status==DRMS_SUCCESS)
+  {
+    int *len;
+    struct iovec *vec;
+
+    XASSERT(len = malloc(n*sizeof(int)));
+    XASSERT(vec = malloc(2*n*sizeof(struct iovec)));
+    for (int i = 0; i < n; i++) {
+      HContainer_t *scon = NULL;
+      su = drms_su_lookup(env, series, sunum[i], &scon);
+      if (su) {
+	vec[2*i+1].iov_len = strlen(su->sudir);
+	vec[2*i+1].iov_base = su->sudir;
+	len[i] = htonl(vec[2*i+1].iov_len);
+	vec[2*i].iov_len = sizeof(len[i]);
+	vec[2*i].iov_base = &len[i];
+      } else {
+	vec[2*i+1].iov_len = 0;
+	vec[2*i+1].iov_base = "\0";
+	len[i] = htonl(vec[2*i+1].iov_len);
+	vec[2*i].iov_len = sizeof(len[i]);
+	vec[2*i].iov_base = &len[i];
+      }      
+    }
+    Writevn(sockfd, vec, 2*n);
+    free(len);
+    free(vec);
+  }
+
+  free(series);
+  free(sunum);
+  return status;
+}
 
 /* Server stub for drms_su_freeslot and drms_su_markstate. */
 int drms_server_alloc_recnum(DRMS_Env_t *env, int sockfd)

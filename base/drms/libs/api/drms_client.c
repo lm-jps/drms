@@ -948,6 +948,113 @@ DRMS_StorageUnit_t *drms_getunit(DRMS_Env_t *env, char *series,
   return su;
 }
 
+int drms_getunits(DRMS_Env_t *env, char *series,
+		  int n, long long *sunum, 
+		  int retrieve,
+		  int dontwait)
+{
+  HContainer_t *scon=NULL;
+  int stat = DRMS_SUCCESS;
+  DRMS_StorageUnit_t *su;
+  char hashkey[DRMS_MAXHASHKEYLEN];
+  DRMS_Record_t *template;
+#ifdef DRMS_CLIENT
+  char *sudir;
+  XASSERT(env->session->db_direct==0);
+#endif
+
+  DRMS_StorageUnit_t **su_nc; // no cached su's
+  XASSERT(su_nc = malloc(n*sizeof(DRMS_StorageUnit_t *)));
+
+  /* Get a template for series info. */
+  if ((template = drms_template_record(env, series, &stat)) == NULL)
+    goto bailout;
+  
+  int cnt = 0;
+  for (int i = 0; i < n; i++) {
+    if ((su = drms_su_lookup(env, series, sunum[i], &scon)) == NULL) {
+      if (!scon)
+	{
+	  scon = hcon_allocslot(&env->storageunit_cache,series);    
+	  hcon_init(scon, sizeof(DRMS_StorageUnit_t), DRMS_MAXHASHKEYLEN, 
+		    (void (*)(const void *)) drms_su_freeunit, NULL);
+	}
+      /* Get a slot in the cache to insert a new entry in. */
+      sprintf(hashkey,DRMS_SUNUM_FORMAT, sunum[i]);
+      su = hcon_allocslot(scon,hashkey);
+#ifdef DEBUG
+      printf("getunit: Got su = %p. Now has %d slots from '%s'\n",su, 
+	     hcon_size(scon), series);
+#endif
+
+      /* Populate the fields in the struct. */
+      su->sunum = sunum[i];
+      su->mode = DRMS_READONLY; /* All storage units previously archived 
+				   by SUMS are read-only. */
+      su->nfree = 0;
+      su->state = NULL;
+      su->recnum = NULL;
+      su->refcount = 0;
+      su->seriesinfo = template->seriesinfo;
+
+      su_nc[cnt] = su;
+      cnt++;
+    } 
+  }
+
+#ifndef DRMS_CLIENT
+    /* Send a query to SUMS for the storage unit directory. */
+  if (cnt) {
+    stat = drms_su_getsudirs(env, cnt, su_nc, template->seriesinfo->retention, retrieve, dontwait);
+  }
+#else
+  if (cnt) {
+    long long *sunum_tmp;
+    struct iovec *vec;
+
+    drms_send_commandcode(env->session->sockfd, DRMS_GETUNITS);
+
+    /* Send seriesname, n, sunum, and retrieve flag */
+    send_string(env->session->sockfd, series);
+    Writeint(env->session->sockfd, cnt);
+
+    XASSERT(vec = malloc(cnt*sizeof(struct iovec)));      
+    XASSERT(sunum_tmp = malloc(cnt*sizeof(long long)));
+    for (int i = 0; i < cnt; i++) {
+      sunum_tmp[i] = htonll(su_nc[i]->sunum);
+      vec[i].iov_len = sizeof(sunum_tmp[i]);
+      vec[i].iov_base = &sunum_tmp[i];
+    }
+    Writevn(env->session->sockfd, vec, cnt);
+    free(sunum_tmp);
+    free(vec);
+
+    Writeint(env->session->sockfd, retrieve);
+    Writeint(env->session->sockfd, dontwait);
+      
+    stat = Readint(env->session->sockfd);
+    if (stat == DRMS_SUCCESS) {
+      for (int i = 0; i < cnt; i++) {
+	sudir = receive_string(env->session->sockfd);
+	strncpy(su_nc[i]->sudir, sudir, sizeof(su->sudir));
+	free(sudir);
+      }
+    } 
+  }
+#endif
+  for (int i = 0; i < cnt; i++) {
+    if (stat || !strlen(su_nc[i]->sudir)) {
+      drms_su_lookup(env, series, su_nc[i]->sunum, &scon);
+      sprintf(hashkey,DRMS_SUNUM_FORMAT, su_nc[i]->sunum);
+      hcon_remove(scon, hashkey);
+    }
+  }
+
+ bailout:
+  free(su_nc);
+
+  return stat;
+}
 
 /* Client version. */
 int drms_newslots(DRMS_Env_t *env, int n, char *series, long long *recnum,

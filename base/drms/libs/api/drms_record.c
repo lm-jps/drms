@@ -1941,6 +1941,57 @@ int drms_close_records(DRMS_RecordSet_t *rs, int action)
   return status;
 }
 
+int drms_stage_records(DRMS_RecordSet_t *rs, int retrieve, int dontwait) {
+
+  if (!rs) {
+    return DRMS_SUCCESS;
+  }
+
+  int status = 0;
+  DRMS_Record_t *record0 = rs->records[0];
+  char *series = record0->seriesinfo->seriesname;
+  DRMS_Env_t *env = record0->env;
+
+  if (rs->n > 1) {
+    // check all records come from the same series
+    for (int i = 1; i < rs->n; i++) {
+      if (strcmp(series, rs->records[i]->seriesinfo->seriesname)) {
+	fprintf(stderr, "Records do not come from the same series: %s %s\n", series, rs->records[i]->seriesinfo->seriesname);
+	return 1;
+      }
+    }
+  }
+
+  long long *sunum;
+  XASSERT(sunum = malloc(rs->n*sizeof(long long)));
+  int cnt = 0;
+  for (int i = 0; i < rs->n; i++) {
+    DRMS_Record_t *rec = rs->records[i];
+    if (rec->sunum != -1LL &&
+	rec->su == NULL) {
+      sunum[cnt] = rec->sunum;
+      cnt++;
+    }
+  }
+
+  if (cnt) {
+    status = drms_getunits(env, series, cnt, sunum, retrieve, dontwait);
+    if (!status) {
+      if (!dontwait) {
+	// matching to each record is done by lookup the SU cache
+	for (int i = 0; i < rs->n; i++) {
+	  DRMS_Record_t *rec = rs->records[i];
+	  HContainer_t *scon;
+	  rec->su = drms_su_lookup(env, series, rec->sunum, &scon);
+	}
+      }
+    }
+  }
+
+  free(sunum);
+  return status;
+}
+
 /* Call drms_free_record for each record in a record set. */
 void drms_free_records(DRMS_RecordSet_t *rs)
 {

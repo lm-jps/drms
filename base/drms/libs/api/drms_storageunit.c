@@ -262,6 +262,56 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 }
 #endif
 
+/* Get the actual storage unit directory from SUMS. */
+#ifndef DRMS_CLIENT
+int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retention, int retrieve, int dontwait)
+{  
+  DRMS_SumRequest_t request, *reply;
+
+  request.opcode = DRMS_SUMGET;
+  request.reqcnt = n;
+  for (int i = 0; i < n; i++) {
+    request.sunum[i] = su[i]->sunum;
+  }
+  request.mode = NORETRIEVE + TOUCH;
+  if (retrieve) 
+    request.mode = RETRIEVE + TOUCH;
+  if (env->retention==-1)   
+    request.tdays = retention;
+  else
+    request.tdays = env->retention;
+
+  if (!env->sum_thread) {
+    int status;
+    if((status = pthread_create(&env->sum_thread, NULL, &drms_sums_thread,
+				(void *) env))) {
+      fprintf(stderr,"Thread creation failed: %d\n", status);
+      return 1;
+    }
+  }
+  /* Submit request to sums server thread. */
+  tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *) &request);
+
+  /* Wait for reply. FIXME: add timeout. */
+  if (!dontwait) {
+    tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
+    if (reply->opcode != 0)
+      {
+	printf("SUM GET failed with error code %d.\n",reply->opcode);
+	free(reply);
+	return 1;
+      }
+    for (int i = 0; i < n; i++) {
+      strncpy(su[i]->sudir, reply->sudir[i], sizeof(su[i]->sudir));
+      free(reply->sudir[i]);
+    }
+
+    free(reply);
+  }
+  return DRMS_SUCCESS;
+}
+#endif
+
 /* Tell SUMS to save this storage unit. */
 #ifndef DRMS_CLIENT
 int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)

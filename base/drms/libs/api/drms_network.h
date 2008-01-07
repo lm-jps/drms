@@ -58,6 +58,8 @@ int drms_newslots(DRMS_Env_t *env,  int n, char *series, long long *recnum,
 		  DRMS_StorageUnit_t **su);
 DRMS_StorageUnit_t *drms_getunit(DRMS_Env_t *env,  char *series, 
 				 long long sunum, int retrieve, int *status);
+int drms_getunits(DRMS_Env_t *env,  char *series, 
+		  int n, long long *sunum, int retrieve, int dontwait);
 long long *drms_alloc_recnum(DRMS_Session_t *session,  char *series, 
 			     DRMS_RecLifetime_t lifetime, int n);
 int drms_slot_setstate(DRMS_Env_t *env, char *series, long long sunum, 
@@ -157,4 +159,5 @@ int drms_create_series_fromprototype(DRMS_Record_t **prototype,
 #define DRMS_SEQUENCE_GETLAST      (19)
 #define DRMS_ALLOC_RECNUM          (20)
 #define DRMS_GETTMPGUID            (21)
+#define DRMS_GETUNITS              (22)
 #endif

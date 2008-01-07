@@ -34,6 +34,7 @@ void *drms_signal_thread(void *arg);
 int drms_server_authenticate(int sockfd, DRMS_Env_t *env, int clientid);
 int drms_server_newslots(DRMS_Env_t *env, int sockfd);
 int drms_server_getunit(DRMS_Env_t *env, int sockfd);
+int drms_server_getunits(DRMS_Env_t *env, int sockfd);
 int drms_server_newseries(DRMS_Env_t *env, int sockfd);
 int drms_server_dropseries(DRMS_Env_t *env, int sockfd);
 long long drms_server_gettmpguid(int *sockfd);
