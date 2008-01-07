@@ -12,18 +12,20 @@ long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir,
 			int *status)
 {
   int stat;
-  DRMS_SumRequest_t request, *reply;
+  DRMS_SumRequest_t *request, *reply;
+  XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
   long long sunum;
 
   //  printf("************** HERE I AM *******************\n");
 
   /* No free slot was found, allocate a new storage unit from SUMS. */
-  request.opcode = DRMS_SUMALLOC;
-  request.reqcnt = 1;
-  request.bytes = size;
-  if (request.bytes <=0 )
+  request->opcode = DRMS_SUMALLOC;
+  request->dontwait = 0;
+  request->reqcnt = 1;
+  request->bytes = size;
+  if (request->bytes <=0 )
   {
-    fprintf(stderr,"Invalid storage unit size %lf\n",request.bytes);
+    fprintf(stderr,"Invalid storage unit size %lf\n",request->bytes);
     return 0;
   }
 
@@ -35,7 +37,7 @@ long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir,
     }
   }
   /* Submit request to sums server thread. */
-  tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *) &request);
+  tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
   /* Wait for reply. FIXME: add timeout. */
   tqueueDel(env->sum_outbox, (long) pthread_self(), (char **)&reply);
   if (reply->opcode)
@@ -224,18 +226,21 @@ int drms_su_newslots(DRMS_Env_t *env, int n, char *series,
 #ifndef DRMS_CLIENT
 int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 {  
-  DRMS_SumRequest_t request, *reply;
-
-  request.opcode = DRMS_SUMGET;
-  request.reqcnt = 1;
-  request.sunum[0] = su->sunum;
-  request.mode = NORETRIEVE + TOUCH;
+  DRMS_SumRequest_t *request, *reply;
+  XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+  request->opcode = DRMS_SUMGET;
+  request->reqcnt = 1;
+  request->sunum[0] = su->sunum;
+  request->mode = NORETRIEVE + TOUCH;
   if (retrieve) 
-    request.mode = RETRIEVE + TOUCH;
+    request->mode = RETRIEVE + TOUCH;
+
+  request->dontwait = 0;
+
   if (env->retention==-1)   
-    request.tdays = su->seriesinfo->retention;
+    request->tdays = su->seriesinfo->retention;
   else
-    request.tdays = env->retention;
+    request->tdays = env->retention;
 
   if (!env->sum_thread) {
     int status;
@@ -246,7 +251,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
     }
   }
   /* Submit request to sums server thread. */
-  tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *) &request);
+  tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
   /* Wait for reply. FIXME: add timeout. */
   tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
   if (reply->opcode != 0)
@@ -266,20 +271,24 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 #ifndef DRMS_CLIENT
 int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retention, int retrieve, int dontwait)
 {  
-  DRMS_SumRequest_t request, *reply;
+  DRMS_SumRequest_t *request, *reply;
+  XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
 
-  request.opcode = DRMS_SUMGET;
-  request.reqcnt = n;
+  request->opcode = DRMS_SUMGET;
+  request->reqcnt = n;
   for (int i = 0; i < n; i++) {
-    request.sunum[i] = su[i]->sunum;
+    request->sunum[i] = su[i]->sunum;
   }
-  request.mode = NORETRIEVE + TOUCH;
+  request->mode = NORETRIEVE + TOUCH;
   if (retrieve) 
-    request.mode = RETRIEVE + TOUCH;
+    request->mode = RETRIEVE + TOUCH;
+
+  request->dontwait = dontwait;
+
   if (env->retention==-1)   
-    request.tdays = retention;
+    request->tdays = retention;
   else
-    request.tdays = env->retention;
+    request->tdays = env->retention;
 
   if (!env->sum_thread) {
     int status;
@@ -289,9 +298,10 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int reten
       return 1;
     }
   }
-  /* Submit request to sums server thread. */
-  tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *) &request);
 
+  /* Submit request to sums server thread. */
+  tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *) request);
+  
   /* Wait for reply. FIXME: add timeout. */
   if (!dontwait) {
     tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
@@ -317,7 +327,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int reten
 int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
 {
   int i;
-  DRMS_SumRequest_t request, *reply;
+  DRMS_SumRequest_t *request, *reply;
   FILE *fp;
   char filename[DRMS_MAXPATHLEN];
 
@@ -342,31 +352,33 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
     fclose(fp);
   }
 
-  request.opcode = DRMS_SUMPUT;
-  request.reqcnt = 1;
-  request.dsname = su->seriesinfo->seriesname;
-  request.group = su->seriesinfo->tapegroup;
+  XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+  request->opcode = DRMS_SUMPUT;
+  request->dontwait = 0;
+  request->reqcnt = 1;
+  request->dsname = su->seriesinfo->seriesname;
+  request->group = su->seriesinfo->tapegroup;
   if (env->archive) 
-    request.mode = ARCH + TOUCH;
+    request->mode = ARCH + TOUCH;
   else {
     if (su->seriesinfo->archive)
-      request.mode = ARCH + TOUCH;
+      request->mode = ARCH + TOUCH;
     else
-      request.mode = TEMP + TOUCH;
+      request->mode = TEMP + TOUCH;
   }
   if (env->retention==-1)   
-    request.tdays = su->seriesinfo->retention;
+    request->tdays = su->seriesinfo->retention;
   else
-    request.tdays = env->retention;
+    request->tdays = env->retention;
 
-  request.sunum[0] = su->sunum;
-  request.sudir[0] = su->sudir;
-  request.comment = NULL;
+  request->sunum[0] = su->sunum;
+  request->sudir[0] = su->sudir;
+  request->comment = NULL;
 
   // must have sum_thread running already
   XASSERT(env->sum_thread);
   /* Submit request to sums server thread. */
-  tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *) &request);
+  tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
   /* Wait for reply. FIXME: add timeout. */
   tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
   if (reply->opcode != 0) 

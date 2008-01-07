@@ -288,6 +288,8 @@ typedef struct DRMS_SumRequest_struct
 
   char *sudir[DRMS_MAX_REQCNT];
   uint64_t sunum[DRMS_MAX_REQCNT];
+  
+  int dontwait;
 } DRMS_SumRequest_t;
 
 

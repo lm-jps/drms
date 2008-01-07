@@ -963,7 +963,7 @@ int drms_getunits(DRMS_Env_t *env, char *series,
   XASSERT(env->session->db_direct==0);
 #endif
 
-  DRMS_StorageUnit_t **su_nc; // no cached su's
+  DRMS_StorageUnit_t **su_nc; // not cached su's
   XASSERT(su_nc = malloc(n*sizeof(DRMS_StorageUnit_t *)));
 
   /* Get a template for series info. */
@@ -989,6 +989,7 @@ int drms_getunits(DRMS_Env_t *env, char *series,
 
       /* Populate the fields in the struct. */
       su->sunum = sunum[i];
+      su->sudir[0] = '\0';
       su->mode = DRMS_READONLY; /* All storage units previously archived 
 				   by SUMS are read-only. */
       su->nfree = 0;
@@ -1034,10 +1035,12 @@ int drms_getunits(DRMS_Env_t *env, char *series,
       
     stat = Readint(env->session->sockfd);
     if (stat == DRMS_SUCCESS) {
-      for (int i = 0; i < cnt; i++) {
-	sudir = receive_string(env->session->sockfd);
-	strncpy(su_nc[i]->sudir, sudir, sizeof(su->sudir));
-	free(sudir);
+      if (!dontwait) {
+	for (int i = 0; i < cnt; i++) {
+	  sudir = receive_string(env->session->sockfd);
+	  strncpy(su_nc[i]->sudir, sudir, sizeof(su->sudir));
+	  free(sudir);
+	}
       }
     } 
   }

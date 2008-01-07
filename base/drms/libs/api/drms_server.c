@@ -300,9 +300,10 @@ void drms_server_abort(DRMS_Env_t *env)
       // it we are aborting.
       /* tell the sums thread to finish up. */
       // looks like all requests are not dyanmically allocated.
-      DRMS_SumRequest_t request;
-      request.opcode = DRMS_SUMCLOSE;
-      tqueueAdd(env->sum_inbox, (long)pthread_self(), (char *)&request);
+      DRMS_SumRequest_t *request;
+      XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+      request->opcode = DRMS_SUMCLOSE;
+      tqueueAdd(env->sum_inbox, (long)pthread_self(), (char *)request);
     }
   }
 
@@ -338,7 +339,6 @@ void drms_server_abort(DRMS_Env_t *env)
 void drms_server_commit(DRMS_Env_t *env)
 {
   int log_retention, archive_log;
-  DRMS_SumRequest_t request;
 
   if (env->verbose) 
     printf("DRMS is committing...stand by...\n");  
@@ -361,8 +361,10 @@ void drms_server_commit(DRMS_Env_t *env)
 
   if (env->sum_thread) {
     /* Tell SUM thread to finish up. */
-    request.opcode = DRMS_SUMCLOSE;
-    tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *) &request);
+    DRMS_SumRequest_t *request;
+    XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+    request->opcode = DRMS_SUMCLOSE;
+    tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
     /* Wait for SUM service thread to finish. */
     pthread_join(env->sum_thread, NULL);
   }
@@ -844,33 +846,34 @@ int drms_server_getunits(DRMS_Env_t *env, int sockfd)
 
   status = drms_getunits(env, series, n, sunum, retrieve, dontwait);
   Writeint(sockfd,status);
-  if (status==DRMS_SUCCESS)
-  {
-    int *len;
-    struct iovec *vec;
+  if (status==DRMS_SUCCESS)  {
+    if (!dontwait) {
+      int *len;
+      struct iovec *vec;
 
-    XASSERT(len = malloc(n*sizeof(int)));
-    XASSERT(vec = malloc(2*n*sizeof(struct iovec)));
-    for (int i = 0; i < n; i++) {
-      HContainer_t *scon = NULL;
-      su = drms_su_lookup(env, series, sunum[i], &scon);
-      if (su) {
-	vec[2*i+1].iov_len = strlen(su->sudir);
-	vec[2*i+1].iov_base = su->sudir;
-	len[i] = htonl(vec[2*i+1].iov_len);
-	vec[2*i].iov_len = sizeof(len[i]);
-	vec[2*i].iov_base = &len[i];
-      } else {
-	vec[2*i+1].iov_len = 0;
-	vec[2*i+1].iov_base = "\0";
-	len[i] = htonl(vec[2*i+1].iov_len);
-	vec[2*i].iov_len = sizeof(len[i]);
-	vec[2*i].iov_base = &len[i];
-      }      
+      XASSERT(len = malloc(n*sizeof(int)));
+      XASSERT(vec = malloc(2*n*sizeof(struct iovec)));
+      for (int i = 0; i < n; i++) {
+	HContainer_t *scon = NULL;
+	su = drms_su_lookup(env, series, sunum[i], &scon);
+	if (su) {
+	  vec[2*i+1].iov_len = strlen(su->sudir);
+	  vec[2*i+1].iov_base = su->sudir;
+	  len[i] = htonl(vec[2*i+1].iov_len);
+	  vec[2*i].iov_len = sizeof(len[i]);
+	  vec[2*i].iov_base = &len[i];
+	} else {
+	  vec[2*i+1].iov_len = 0;
+	  vec[2*i+1].iov_base = "\0";
+	  len[i] = htonl(vec[2*i+1].iov_len);
+	  vec[2*i].iov_len = sizeof(len[i]);
+	  vec[2*i].iov_base = &len[i];
+	}      
+      }
+      Writevn(sockfd, vec, 2*n);
+      free(len);
+      free(vec);
     }
-    Writevn(sockfd, vec, 2*n);
-    free(len);
-    free(vec);
   }
 
   free(series);
@@ -1185,10 +1188,18 @@ void *drms_sums_thread(void *arg)
     {
       /* Send the request to SUMS. */
       reply = drms_process_sums_request(env, sum, request);
-      /* Put the reply in the outbox. */
-      tqueueAdd(env->sum_outbox, env->sum_tag, (char *) reply);
+      if (!request->dontwait) {
+	/* Put the reply in the outbox. */
+	tqueueAdd(env->sum_outbox, env->sum_tag, (char *) reply);
+      } else {
+	for (int i = 0; i < request->reqcnt; i++) {
+	  free(reply->sudir[i]);
+	}
+	free(reply);
+      }
       env->sum_tag = 0; // done processing
     }
+    free(request);
   }
 
   if (connected)
