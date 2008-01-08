@@ -270,6 +270,13 @@ int drms_record_numsegments(DRMS_Record_t *rec);
 /* Number of nonlink segments associated with a record. */
 int drms_record_num_nonlink_segments(DRMS_Record_t *rec);
 /* Storage Unit Directory associated with a record. */
+/**
+   @brief Return the Storage Unit directory associted with a record
+
+   Returns the path to the Storage Unit slot directory associateed with
+   @. If no storage unit slot has been assigned to the record yet,
+   an empty string is returned
+*/
 void drms_record_directory(DRMS_Record_t *rec, char *dirname, int retrieve);
 
 /**** Can modify seriesinfo only if the record is a record prototype  ****/
@@ -280,12 +287,24 @@ int drms_recproto_setseriesinfo(DRMS_Record_t *rec,
 				int *tapeGroup,
 				const char *description);
 
-DRMS_RecordQueryType_t drms_record_getquerytype(const char *query);
+DRMS_RecordSetType_t drms_record_getquerytype(const char *query);
 
 /* Estimate how much memory is used per record. */
 long long drms_record_memsize(DRMS_Record_t *rec);
 
 /* Return the JSOC software version that created the given record. */
 char *drms_record_jsoc_version(DRMS_Env_t *env, DRMS_Record_t *rec);
+
+/* Handling record sets */
+/** @brief Return the number of record subsets */
+int drms_recordset_getnumss(DRMS_RecordSet_t *set);
+/** @brief Return a DRMS record-set subset query */
+const char *drms_recordset_getqueryss(DRMS_RecordSet_t *set, unsigned int setnum, int *status);
+/** @brief Return a DRMS record-set subset query type */
+DRMS_RecordSetType_t *drms_recordset_gettypess(DRMS_RecordSet_t *set, unsigned int setnum, int *status);
+/** @brief Return a DRMS record-set subset */
+DRMS_Record_t *drms_recordset_getss(DRMS_RecordSet_t *set, unsigned int setnum, int *status);
+/** @brief Return the number of records in a DRMS record-set subset */
+int drms_recordset_getssnrecs(DRMS_RecordSet_t *set, unsigned int setnum, int *status);
 
 #endif

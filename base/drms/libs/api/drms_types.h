@@ -306,20 +306,32 @@ typedef struct DRMS_SumRequest_struct
 */
 typedef enum {DRMS_PERMANENT, DRMS_TRANSIENT} DRMS_RecLifetime_t;
 
-typedef enum DRMS_RecordQueryType_struct
+typedef enum DRMS_RecordSetType_struct
 {
-   kRecordQueryType_DRMS = 0,
-   kRecordQueryType_DSDS,
-   kRecordQueryType_LOCAL
-} DRMS_RecordQueryType_t;
+   kRecordSetType_DRMS = 0,
+   kRecordSetType_DSDS,
+   kRecordSetType_LOCAL
+} DRMS_RecordSetType_t;
 
-/* Simple container for a set of records. */
-typedef struct DRMS_RecordSet_struct
+/** \brief DRMS-Record-set container */
+struct DRMS_RecordSet_struct
 {
+  /** /brief Number of records in the set */
   int n;
+  /** /brief The set of records */
   struct DRMS_Record_struct **records;
-} DRMS_RecordSet_t;
+  /** /brief The number of subsets in the set */
+  int ss_n;
+  /** /brief The queries that generated the subsets */
+  char **ss_queries;
+  /** /brief The query types */
+  DRMS_RecordSetType_t *ss_types;
+  /** /brief Pointers to the beginning of each subset */
+  struct DRMS_Record_struct **ss_starts;
+};
 
+/** \brief DRMS record struct reference */
+typedef struct DRMS_RecordSet_struct DRMS_RecordSet_t;
 
 /* Series-wide attributes. */
 typedef struct DRMS_SeriesInfo_struct

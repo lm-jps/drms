@@ -254,6 +254,12 @@ DRMS_RecordSet_t *drms_link_followall(DRMS_Record_t *rec, const char *linkname,
       *status = DRMS_ERROR_LINKNOTSET;
     return NULL;
   }
+
+  result->ss_n = 0;
+  result->ss_queries = NULL;
+  result->ss_types = NULL;
+  result->ss_starts = NULL;
+
   if (drms_link_resolveall(link, &result->n, &recnums))
   {
     if (recnums)

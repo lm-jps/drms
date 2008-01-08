@@ -681,6 +681,10 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
    rset->n = nRecs;
    rset->records = (DRMS_Record_t **)malloc(sizeof(DRMS_Record_t *) * nRecs);
    memset(rset->records, 0, sizeof(DRMS_Record_t *) * nRecs);
+   rset->ss_n = 0;
+   rset->ss_queries = NULL;
+   rset->ss_types = NULL;
+   rset->ss_starts = NULL;
 
    int iNewRec = 1;
    int primekeyCnt = 0;
@@ -1178,6 +1182,9 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
    * commas may appear within record sets, so need to use a parsing 
    * mechanism more sophisticated than strtok() */
   char **sets = NULL;
+  DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
+  DRMS_Record_t **setstarts = NULL;
+  
   int nsets = 0;
   stat = ParseRecSetDesc(recordsetname, &sets, &nsets);
 
@@ -1186,6 +1193,8 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
      int iSet;
 
      CHECKNULL_STAT(env,status);
+     settypes = (DRMS_RecordSetType_t *)malloc(sizeof(DRMS_RecordSetType_t) * nsets);
+     setstarts = (DRMS_Record_t **)malloc(sizeof(DRMS_Record_t *) * nsets);
 
      for (iSet = 0; stat == DRMS_SUCCESS && iSet < nsets; iSet++)
      {
@@ -1198,12 +1207,14 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 	      rs = OpenLocalRecords(env, &klarr, &segarr, nRecsLocal, &pkeys, &stat);
 	      if (stat)
 		goto failure;
+	      settypes[iSet] = kRecordSetType_LOCAL;
 	   }
 	   else if (DSDS_IsDSDSSpec(oneSet))
 	   {
 	      rs = drms_open_dsdsrecords(env, oneSet, &stat);
 	      if (stat)
 		goto failure;
+	      settypes[iSet] = kRecordSetType_DSDS;
 	   }
 	   else
 	   {
@@ -1223,6 +1234,8 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 #endif
 	      if (stat)
 		goto failure;
+
+	      settypes[iSet] = kRecordSetType_DRMS;
 
 	      free(query);
 	      query = NULL;
@@ -1274,8 +1287,12 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 	ret = (DRMS_RecordSet_t *)malloc(sizeof(DRMS_RecordSet_t));
 	if (ret)
 	{
-	   ret->records = NULL;
 	   ret->n = 0;
+	   ret->records = NULL;
+	   ret->ss_n = 0;
+	   ret->ss_queries = NULL;
+	   ret->ss_types = NULL;
+	   ret->ss_starts = NULL;
 	}
      }
 
@@ -1303,6 +1320,9 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 		       oners = *prs;
 		       if (oners)
 		       {
+			  /* Save the number of records in a set into setstarts */
+			  setstarts[iSet] = oners->records[0];
+
 			  /* Move oners to return RecordSet */
 			  for (i = 0; i < oners->n; i++)
 			  {
@@ -1321,6 +1341,31 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 	      }
 	   }
 	}
+	else
+	{
+	   /* One set only - save the number of records in a set into setstarts */
+	   setstarts[0] = ret->records[0];
+	}
+
+	/* Add fields that are used to track record-set sources */
+	ret->ss_n = nsets;
+	ret->ss_types = settypes; /* ret assumes ownership */
+	settypes = NULL;
+	ret->ss_starts = setstarts; /* ret assumes ownership */
+	setstarts = NULL;
+	/* ret can't assume ownership of ss_queries */
+	ret->ss_queries = (char **)malloc(sizeof(char *) * nsets);
+	if (ret->ss_queries)
+	{
+	   for (iSet = 0; iSet < nsets; iSet++)
+	   {
+	      ret->ss_queries[iSet] = strdup(sets[iSet]);
+	   }
+	}
+	else
+	{
+	   stat = DRMS_ERROR_OUTOFMEMORY;
+	}
      }
      else
      {
@@ -1330,6 +1375,16 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
      if (realSets)
      {	
 	hcon_destroy(&realSets);
+     }
+
+     if (settypes)
+     {
+	free(settypes);
+     }
+
+     if (setstarts)
+     {
+	free(setstarts);
      }
 
      FreeRecSetDescArr(&sets, nsets);
@@ -1349,6 +1404,16 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
   if (seriesname)
   {
      free(seriesname);
+  }
+
+  if (settypes)
+  {
+     free(settypes);
+  }
+
+  if (setstarts)
+  {
+     free(setstarts);
   }
 
   FreeRecSetDescArr(&sets, nsets);
@@ -1416,6 +1481,11 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
   XASSERT( rs = malloc(sizeof(DRMS_RecordSet_t)) );
   XASSERT( rs->records = malloc(n*sizeof(DRMS_Record_t *)) );
   rs->n = n;
+  rs->ss_n = 0;
+  rs->ss_queries = NULL;
+  rs->ss_types = NULL;
+  rs->ss_starts = NULL;
+
   series = template->seriesinfo->seriesname;
 
   /* Get unique sequence numbers from the database server. */
@@ -1528,6 +1598,11 @@ DRMS_RecordSet_t *drms_create_recprotos(DRMS_RecordSet_t *recset, int *status)
    if (detached && detached->records)
    {
       *status = DRMS_SUCCESS;
+      detached->n = nRecs;
+      detached->ss_n = 0;
+      detached->ss_queries = NULL;
+      detached->ss_types = NULL;
+      detached->ss_starts = NULL;
    }
    else
    {
@@ -1720,6 +1795,10 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
   XASSERT( rs_out = malloc(sizeof(DRMS_RecordSet_t)) );
   XASSERT( rs_out->records = malloc(n_total*sizeof(DRMS_Record_t *)) );
   rs_out->n = n_total;
+  rs_out->ss_n = 0;
+  rs_out->ss_queries = NULL;
+  rs_out->ss_types = NULL;
+  rs_out->ss_starts = NULL;
   
   /* Outer loop over runs of input records from the same series. */
   first = 0;
@@ -2004,9 +2083,34 @@ void drms_free_records(DRMS_RecordSet_t *rs)
   if (rs->n>0 && rs->records)
     free(rs->records);
   rs->n = 0;
+
+  /* Must free record-subset stuff too */
+  if (rs->ss_queries)
+  {
+     int iSet;
+     for (iSet = 0; iSet < rs->ss_n; iSet++)
+     {
+	if (rs->ss_queries[iSet])
+	{
+	   free(rs->ss_queries[iSet]);
+	}
+     }
+     free(rs->ss_queries);
+     rs->ss_queries = NULL;
+  }
+  rs->ss_n = 0;
+  if (rs->ss_types)
+  {
+     free(rs->ss_types);
+     rs->ss_types = NULL;
+  }
+  if (rs->ss_starts)
+  {
+     free(rs->ss_starts);
+     rs->ss_starts = NULL;
+  }
   free(rs);
 }
-
 
 /*********************** Primary functions *********************/
 
@@ -2050,6 +2154,11 @@ DRMS_Record_t *drms_clone_record(DRMS_Record_t *oldrec,
   rs_old.n = 1;
   rs_old.records = alloca(sizeof(DRMS_Record_t *));
   rs_old.records[0] = oldrec;
+  rs_old.ss_n = 0;
+  rs_old.ss_queries = NULL;
+  rs_old.ss_types = NULL;
+  rs_old.ss_starts = NULL;
+
   rs = drms_clone_records(&rs_old, lifetime, mode, status);
   if (rs && (rs->n==1))
   {
@@ -2084,6 +2193,11 @@ int drms_close_record(DRMS_Record_t *rec, int action)
   rs_old->n = 1;
   rs_old->records = malloc(sizeof(DRMS_Record_t *));
   rs_old->records[0] = rec;
+  rs_old->ss_n = 0;
+  rs_old->ss_queries = NULL;
+  rs_old->ss_types = NULL;
+  rs_old->ss_starts = NULL;
+
   return drms_close_records(rs_old, action);
 }
 
@@ -2299,7 +2413,7 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
   if (qres->num_rows<1)
   {
     rs->n = 0;
-    rs->records = NULL;    
+    rs->records = NULL;
   }
   else
   {
@@ -2348,6 +2462,13 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
     printf("\nMemory used after populate= %Zu\n\n",xmem_recenthighwater());
 #endif
   }
+
+  /* Initialize subset information */
+  rs->ss_n = 0;
+  rs->ss_queries = NULL;
+  rs->ss_types = NULL;
+  rs->ss_starts = NULL;
+
   db_free_binary_result(qres);   
   free(query);
   free(field_list);
@@ -2694,6 +2815,10 @@ int drms_populate_record(DRMS_Record_t *rec, long long recnum)
   XASSERT(rs.records=malloc(sizeof(DRMS_Record_t*)));
   rs.n = 1;
   rs.records[0] = rec;
+  rs.ss_n = 0;
+  rs.ss_queries = NULL;
+  rs.ss_types = NULL;
+  rs.ss_starts = NULL;
 
   stat = drms_populate_records(&rs,qres);
   db_free_binary_result(qres);      
@@ -4287,22 +4412,22 @@ static int IsFileOrDir(const char *q)
    return ret;
 }
 
-DRMS_RecordQueryType_t drms_record_getquerytype(const char *query)
+DRMS_RecordSetType_t drms_record_getquerytype(const char *query)
 {
-   DRMS_RecordQueryType_t ret;
+   DRMS_RecordSetType_t ret;
    const char *pQ = (*query == '{') ? query + 1 : query;
 
    if (DSDS_IsDSDSSpec(pQ))
    {
-      ret = kRecordQueryType_DSDS;
+      ret = kRecordSetType_DSDS;
    }
    else if (IsFileOrDir(query))
    {
-      ret = kRecordQueryType_LOCAL;
+      ret = kRecordSetType_LOCAL;
    }
    else
    {
-      ret = kRecordQueryType_DRMS;
+      ret = kRecordSetType_DRMS;
    }
 
    return ret;
@@ -4321,4 +4446,39 @@ char *drms_record_jsoc_version(DRMS_Env_t *env, DRMS_Record_t *rec) {
   }
   db_free_text_result(qres);
   return jsocversion;
+}
+
+int drms_recordset_getssnrecs(DRMS_RecordSet_t *set, unsigned int setnum, int *status)
+{
+   const DRMS_Record_t *start = NULL;
+   const DRMS_Record_t *end = NULL;
+   int stat = DRMS_SUCCESS;
+   int res = 0;
+
+   if (setnum >= set->ss_n)
+   {
+      stat = DRMS_RANGE;
+   }
+   else 
+   {
+      start = set->ss_starts[setnum];      
+
+      if (setnum == set->ss_n - 1)
+      {
+	 end = set->records[set->n - 1];
+	 res = end - start + 1;
+      }
+      else
+      {
+	 end = set->ss_starts[setnum + 1];
+	 res = end - start;
+      }
+   }
+
+   if (status)
+   {
+      *status = stat;
+   }
+
+   return res;
 }
