@@ -677,6 +677,9 @@ DRMS_Array_t *drms_array_create(DRMS_Type_t type, int naxis,
    Frees the array struct @a src as well as its 
    member @a src->data as necessary.
 
+   IMPORTANT NOTE: Since this function frees @a src->data, do not free @a src->data 
+   before or after calling this function.
+
    @param src The DRMS array struct to free.
 */
 void drms_free_array(DRMS_Array_t *src);
