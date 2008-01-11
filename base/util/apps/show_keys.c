@@ -266,10 +266,9 @@ int DoIt(void)
 
   /* Open record_set */
   recordset = drms_open_records (drms_env, in, &status);
-  if (status) 
+  if (!recordset) 
     {
-    printf ("drms_open_records failed, in=%s, status=%d.  Aborting.\n", in,
-        status);
+    fprintf(stderr,"### show_keys: series %s not found.\n",in);
     return (1);
     }
 
