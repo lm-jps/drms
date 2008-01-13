@@ -20,26 +20,39 @@ static int gAttemptedDSDS = 0;
 
 typedef enum
 {
-   kRSParseState_Begin = 0,   /* First char of the input string */
-   kRSParseState_NameChar,    /* Parsing a drms series name */
-   kRSParseState_EndName,     /* Remove trailing whitespace from drms series name */
-   kRSParseState_FiltChar,    /* Parsing a filter (stuff between '[' and ']') */
-   kRSParseState_EndFilt,     /* A ']' seen */
-   kRSParseState_QuerySQL,    /* A "[?" seen */
-   kRSParseState_EndQuerySQL, /* A "?]" seen */
-   kRSParseState_EndRS,       /* Another RS to follow (comma seen) */
-   kRSParseState_LastRS,      /* No RS's to follow */
-   kRSParseState_BeginDSDS,   /* A '{' seen */
-   kRSParseState_BeginAtFile, /* A '@' - file that contains queries */
-   kRSParseState_AtFile,      /* Parsing "@file". */
-   kRSParseState_EndAtFile,   /* A comma or end of input seen while parsing "@file". */
-   kRSParseState_DSDS,        /* Parsing 'prog' specification */
-   kRSParseState_TrailDSDS,   /* Trailing spaces after 'prog' specification and before '}' */
-   kRSParseState_EndDSDS,     /* A '}' seen */
-   kRSParseState_End,         /* Only spaces or end of input */
-   kRSParseState_Done,         /* Parsing done */
+   /* Parsing starts in this state. */
+   kRSParseState_Begin = 0,
+   /* The start of a new dataset element (may be an RS or an @file). 
+    * There may be whitespace at the beginning. */
+   kRSParseState_BeginElem,
+   /* Parsing a DRMS record set dataset element. Always ends with
+    * either a DRMS RS filter, or a ds delim char. */
+   kRSParseState_DRMS,
+   /* Parsing a DRMS record-set filter (stuff between '[' and ']'). 
+    * A special case is no record-set filter.  This can be specified
+    * with either whitespace, or the empty string. */
+   kRSParseState_DRMSFilt,
+   kRSParseState_DRMSFiltSQL,    /* A "[?" seen */
+   /* An '@' - Begin an @file record set query */
+   /* Parsing 'prog' specification */
+   kRSParseState_DSDS,
+   /* Parsing "@file". */
+   kRSParseState_AtFile,
+   /* Parsed end of filename */
+   kRSParseState_EndAtFile,
+   /* A file or directory to read into memory. */
+   kRSParseState_Plainfile,
+   /* The previous DS elem is done, either by a delimeter or end of non-ws input */
+   kRSParseState_EndElem,
+   /* No more ds elements or non-ws text, but there may be ws */
+   kRSParseState_End,
+   /* Parsing ends with either Success or one of the Errors*/
+   kRSParseState_Success,
    kRSParseState_Error,
 } RSParseState_t;
+
+#define kDSElemParseWS    " \t\b"
+#define kDSElemParseDelim ",;\n"
 
 static int CopySeriesInfo(DRMS_Record_t *target, DRMS_Record_t *source);
 static int CopySegments(DRMS_Record_t *target, DRMS_Record_t *source);
@@ -1302,9 +1315,10 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 	{
 	   if (realSets && realSets->num_total > 0)
 	   {
-	      if (ret)
+	      if (nRecs > 0)
 	      {
-		 ret->records = (DRMS_Record_t **)malloc(sizeof(DRMS_Record_t *) * nRecs);
+		 ret->records = 
+		   (DRMS_Record_t **)malloc(sizeof(DRMS_Record_t *) * nRecs);
 		 ret->n = nRecs;
 
 		 /* retain record set order */
@@ -1320,8 +1334,15 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 		       oners = *prs;
 		       if (oners)
 		       {
-			  /* Save the number of records in a set into setstarts */
-			  setstarts[iSet] = oners->records[0];
+			  if (oners->n > 0)
+			  {
+			     /* Save the number of records in a set into setstarts */
+			     setstarts[iSet] = oners->records[0];
+			  }
+			  else
+			  {
+			     setstarts[iSet] = NULL;
+			  }
 
 			  /* Move oners to return RecordSet */
 			  for (i = 0; i < oners->n; i++)
@@ -1344,7 +1365,19 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 	else
 	{
 	   /* One set only - save the number of records in a set into setstarts */
-	   setstarts[0] = ret->records[0];
+	   if (ret->n > 0)
+	   {
+	      setstarts[0] = ret->records[0];
+	   }
+	   else
+	   {
+	      /* All record queries are saved, even ones that produced
+	       * no records (no records matching query criteria).
+	       * If a query produced no records, then set the pointer
+	       * to the first record to NULL.
+	       */
+	      setstarts[0] = NULL;
+	   }
 	}
 
 	/* Add fields that are used to track record-set sources */
@@ -3675,6 +3708,123 @@ int CopyPrimaryIndex(DRMS_Record_t *target, DRMS_Record_t *source)
    return status;
 }
 
+static int DSElem_IsWS(const char **c)
+{
+   const char *pC = *c;
+   const char *pWS = kDSElemParseWS;
+
+   while (*pWS)
+   {
+      if (*pC == *pWS)
+      {
+	 break;
+      }
+
+      pWS++;
+   }
+
+   if (*pWS)
+   {
+      return 1;
+   }
+
+   return 0;
+}
+
+static int DSElem_IsDelim(const char **c)
+{
+   const char *pDel = kDSElemParseDelim;
+
+   while (*pDel)
+   {
+      if (**c == *pDel)
+      {
+	 break;
+      }
+
+      pDel++;
+   }
+
+   if (*pDel)
+   {
+      return 1;
+   }
+
+   return 0;
+}
+
+static int DSElem_IsComment(const char **c)
+{
+   return (**c == '#');
+}
+
+/* Advance to next non-whitespace char, if one exists before NULL.
+ * Returns 1 if found a non-ws char before NULL, 0 otherwise. */
+static int DSElem_SkipWS(char **c)
+{
+   if (**c == '\0')
+   {
+      return 0;
+   }
+   else if (!DSElem_IsWS((const char **)c))
+   {
+      return 1;
+   }
+   else
+   {
+      char *pC = *c;
+
+      while (*pC)
+      {
+	 const char *pWS = kDSElemParseWS;
+
+	 while (*pWS)
+	 {
+	    if (*pC == *pWS)
+	    {
+	       pC++;
+	       break;
+	    }
+
+	    pWS++;
+	 }
+
+	 if (!(*pWS))
+	 {
+	    *c = pC;
+	    return 1;
+	 }
+      }
+
+      return 0;
+   }
+}
+
+static int DSElem_SkipComment(char **c)
+{
+   char *endc = NULL;
+
+   if (**c == '#')
+   {
+      endc = strchr((*c + 1), '#');
+ 
+      if (endc)
+      {
+	 *c = endc + 1;
+      }
+      else
+      {
+	 *c = strchr(*c, '\0');
+      }
+
+      return 1;
+   }
+   else
+   {
+      return 0;
+   }
+}
+
 /* Caller owns sets. */
 static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 {
@@ -3694,26 +3844,33 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 
    if (rsstr)
    {
-      while (pc <= endInput && state != kRSParseState_Done)
+      while (pc && pc <= endInput && state != kRSParseState_Error)
       {
 	 switch (state)
 	 {
-	    case kRSParseState_Error:
-	      if (status == DRMS_SUCCESS)
+	    case kRSParseState_Begin:
+	      intSets = (char **)malloc(sizeof(char *) * kMAXRSETS);
+	      if (!intSets)
 	      {
-		 state = kRSParseState_Done;
-		 status = DRMS_ERROR_INVALIDDATA;
+		 state = kRSParseState_Error;
+		 status = DRMS_ERROR_OUTOFMEMORY;
+	      }
+	      else
+	      {
+		 memset(intSets, 0, sizeof(char *) * kMAXRSETS);
+		 state = kRSParseState_BeginElem;
 	      }
 	      break;
-	    case kRSParseState_Begin:
+	    case kRSParseState_BeginElem:
 	      if (pc < endInput)
 	      {
-		 if (*pc == ' ' || *pc == '\t')
+		 if (DSElem_IsWS((const char **)&pc))
 		 {
 		    /* skip whitespace */
 		    pc++;
-		 }		
-		 else if (*pc == '[' || *pc == ']' || *pc == ',')
+		 }
+		 else if (*pc == '[' || *pc == ']' || *pc == ',' || 
+			  *pc == ';' || *pc == '#')
 		 {
 		    state = kRSParseState_Error;
 		 }
@@ -3721,129 +3878,139 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 		 {
 		    if (*pc == '{')
 		    {
-		       state = kRSParseState_BeginDSDS;
 		       pc++;
+		       if (DSElem_SkipWS(&pc))
+		       {
+			  state = kRSParseState_DSDS;
+		       }
+		       else
+		       {
+			  state = kRSParseState_Error;
+		       }
 		    }
 		    else if (*pc == '@')
 		    {
 		       /* text file that contains one or more recset queries */
 		       /* recursively parse those queries! */
-		       state = kRSParseState_BeginAtFile;
+		       state = kRSParseState_AtFile;
 		       pc++;
 		    }
-		    else
+		    else if (*pc == '/' || *pc == '.')
 		    {
-		       state = kRSParseState_NameChar;
-		    }
-
-		    intSets = (char **)malloc(sizeof(char *) * kMAXRSETS);
-		    if (!intSets)
-		    {
-		       state = kRSParseState_Error;
-		       status = DRMS_ERROR_OUTOFMEMORY;
+		       state = kRSParseState_Plainfile;
 		    }
 		    else
 		    {
-		       memset(intSets, 0, sizeof(char *) * kMAXRSETS);
+		       state = kRSParseState_DRMS;
 		    }
 		 }
 	      }
 	      break;
-	    case kRSParseState_NameChar:
+	    case kRSParseState_DRMS:
+	      /* first char is not ws */
+	      /* not parsing a DRMS RS filter (yet) */
 	      if (pc < endInput)
 	      {
-		 if (*pc == '{')
+		 if (*pc == '{' || *pc == ']')
 		 {
+		    /* chars not allowed in a DRMS RS */
 		    state = kRSParseState_Error;
 		 }
 		 else if (*pc == '[')
 		 {
-		    if (pc + 1 < endInput && *(pc + 1) == '?')
-		    {
-		       state = kRSParseState_QuerySQL;
-		       *pcBuf++ = *pc++;
-		       *pcBuf++ = *pc++;
-		    }
-		    else
-		    {
-		       state = kRSParseState_FiltChar;
-		       *pcBuf++ = *pc++;
-		    }
+		    *pcBuf++ = *pc++;
+		    state = kRSParseState_DRMSFilt;
 		 }
-		 else if (*pc == ']')
+		 else if (DSElem_IsDelim((const char **)&pc))
 		 {
-		    state = kRSParseState_Error;
+		    pc++;
+		    state = kRSParseState_EndElem;
 		 }
-		 else if (*pc == ',')
+		 else if (DSElem_IsComment((const char **)&pc))
 		 {
-		    if (pc + 1 < endInput)
-		    {
-		       state = kRSParseState_EndRS;
-		       pc++;
-		    }
-		    else
-		    {
-		       state = kRSParseState_Error;
-		    }
+		    DSElem_SkipComment(&pc);
+		    state = kRSParseState_EndElem;
 		 }
-		 else if (*pc == ' ' || *pc == '\t')
+		 else if (DSElem_IsWS((const char **)&pc))
 		 {
 		    /* whitespace between the series name and a filter is allowed */
-		    state = kRSParseState_EndName;
-		    *pcBuf++ = *pc++;
-		 }
-		 else
-		 {
-		    *pcBuf++ = *pc++;
-		 }
-	      }
-	      else
-	      {
-		 state = kRSParseState_LastRS;
-	      }
-	      break;
-	    case kRSParseState_EndName:
-	      if (pc < endInput)
-	      {
-		 if (*pc == ' ' || *pc == '\t')
-		 {
-		    *pcBuf++ = *pc++;
-		 }
-		 else if (*pc == '[')
-		 {
-		    if (pc + 1 < endInput && *(pc + 1) == '?')
+		    if (DSElem_SkipWS(&pc))
 		    {
-		       state = kRSParseState_QuerySQL;
-		       *pcBuf++ = *pc++;
-		       *pcBuf++ = *pc++;
+		       if (*pc == '[')
+		       {
+			  *pcBuf++ = *pc++;
+			  state = kRSParseState_DRMSFilt;
+		       }
+		       else if (DSElem_IsDelim((const char **)&pc))
+		       {
+			  pc++;
+			  state = kRSParseState_EndElem;
+		       }
+		       else if (DSElem_IsComment((const char **)&pc))
+		       {
+			  DSElem_SkipComment(&pc);
+			  state = kRSParseState_EndElem;
+		       }
+		       else
+		       {
+			  state = kRSParseState_Error;
+		       }
 		    }
 		    else
 		    {
-		       state = kRSParseState_FiltChar;
-		       *pcBuf++ = *pc++;
+		       state = kRSParseState_EndElem;
 		    }
 		 }
 		 else
 		 {
-		    state = kRSParseState_Error;
+		    *pcBuf++ = *pc++;
 		 }
 	      }
 	      else
 	      {
-		 state = kRSParseState_End;
+		 state = kRSParseState_EndElem;
 	      }
 	      break;
-	    case kRSParseState_FiltChar:
+	    case kRSParseState_DRMSFilt:
+	      /* first char after '[' */
 	      if (pc < endInput)
 	      {
+		 DSElem_SkipWS(&pc); /* ingore ws, if any */
+
 		 if (*pc == '[')
 		 {
 		    state = kRSParseState_Error;
 		 }
+		 else if (*pc == '?')
+		 {
+		    state = kRSParseState_DRMSFiltSQL;
+		    *pcBuf++ = *pc++;
+		 }
 		 else if (*pc == ']')
 		 {
-		    state = kRSParseState_EndFilt;
 		    *pcBuf++ = *pc++;
+		    if (DSElem_SkipWS(&pc))
+		    {
+		       if (*pc == '[')
+		       {
+			  *pcBuf++ = *pc++;
+			  state = kRSParseState_DRMSFilt;
+		       }
+		       else if (DSElem_IsDelim((const char **)&pc))
+		       {
+			  pc++;
+			  state = kRSParseState_EndElem;
+		       }
+		       else if (DSElem_IsComment((const char **)&pc))
+		       {
+			  DSElem_SkipComment(&pc);
+			  state = kRSParseState_EndElem;
+		       }
+		    }
+		    else
+		    {
+		       state= kRSParseState_EndElem;
+		    }
 		 }
 		 else
 		 {
@@ -3856,52 +4023,21 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 		 state = kRSParseState_Error;
 	      }
 	      break;
-	    case kRSParseState_EndFilt:
-	      if (pc < endInput)
-	      {
-		 if (*pc == '[')
-		 {
-		    if (pc + 1 < endInput && *(pc + 1) == '?')
-		    {
-		       state = kRSParseState_QuerySQL;
-		       *pcBuf++ = *pc++;
-		       *pcBuf++ = *pc++;
-		    }
-		    else
-		    {
-		       state = kRSParseState_FiltChar;
-		       *pcBuf++ = *pc++;
-		    }
-		 }
-		 else if (*pc == ',')
-		 {
-		    if (pc + 1 < endInput)
-		    {
-		       state = kRSParseState_EndRS;
-		       pc++;
-		    }
-		 }
-		 else if (*pc == ' ' || *pc == '\t')
-		 {
-		    state = kRSParseState_LastRS;
-		 }
-		 else
-		 {
-		    state = kRSParseState_Error;
-		 }
-	      }
-	      else
-	      {
-		 state = kRSParseState_LastRS;
-	      }
-	      break;
-	    case kRSParseState_QuerySQL:
+	    case kRSParseState_DRMSFiltSQL:
 	      if (pc < endInput)
 	      {
 		 if (*pc == '?')
 		 {
-		    state = kRSParseState_EndQuerySQL;
 		    *pcBuf++ = *pc++;
+		    if (DSElem_SkipWS(&pc) && (*pc == ']'))
+		    {
+		       *pcBuf++ = *pc++;
+		       state = kRSParseState_DRMS;
+		    }
+		    else
+		    {
+		       state = kRSParseState_Error;
+		    }
 		 }
 		 else
 		 {
@@ -3916,133 +4052,58 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 		 state = kRSParseState_Error;
 	      }
 	      break;
-	    case kRSParseState_EndQuerySQL:
-	      /* closing '?' seen, pc pointing at next char */
+	    case kRSParseState_DSDS:
+	      /* first non-ws after '{' */
 	      if (pc < endInput)
 	      {
-		 if (*pc == ']')
+		 if (*pc == '{')
 		 {
-		    state = kRSParseState_EndFilt;
+		    state = kRSParseState_Error;
+		 }
+		 else if (DSElem_IsWS((const char **)&pc))
+		 {
+		    /* Allow WS anywhere within '{' and '}', but eliminate */
+		    pc++;
+		 }
+		 else if (*pc == '}')
+		 {
+		    pc++;
+
+		    if (pc < endInput)
+		    {
+		       if (DSElem_IsWS((const char **)&pc))
+		       {
+			  if (!DSElem_SkipWS(&pc))
+			  {
+			     state = kRSParseState_EndElem;
+			  }
+		       }
+
+		       if (DSElem_IsDelim((const char **)&pc))
+		       {
+			  pc++;
+			  state = kRSParseState_EndElem;
+		       }
+		       else if (DSElem_IsComment((const char **)&pc))
+		       {
+			  DSElem_SkipComment(&pc);
+			  state = kRSParseState_EndElem;
+		       }
+		       else
+		       {
+			  /* there is something after '}' that isn't
+			   * ws or a delimeter */
+			  state = kRSParseState_Error;
+		       }
+		    }
+		    else
+		    {
+		       state = kRSParseState_EndElem;
+		    }
+		 }
+		 else
+		 {
 		    *pcBuf++ = *pc++;
-		 }
-		 else
-		 {
-		    /* no space allowed between '?' and ']' 
-		     *   see drms_names.c */
-		    state = kRSParseState_Error;
-		 }
-	      }
-	      else
-	      {
-		 /* didn't end with ']' */
-		 state = kRSParseState_Error;
-	      }
-	      break;
-	    case kRSParseState_EndRS:
-	      /* pc points to next RS (or whatever is after ',') */
-	      /* buf does not contain the comma or whitespace */
-	      *pcBuf = '\0';
-	      pcBuf = buf;
-
-	      if (!multiRS)
-	      {
-		 intSets[count] = strdup(buf);
-		 count++;
-	      }
-	      else
-	      {
-		 int iSet;
-		 for (iSet = 0; iSet < countMultiRS; iSet++)
-		 {
-		    intSets[count] = multiRS[iSet];
-		    count++;
-		 }
-
-		 free(multiRS); /* don't deep-free; intSets now owns strings */
-		 multiRS = NULL;
-		 countMultiRS = 0;
-	      }
-
-	      if (pc < endInput)
-	      {
-		 if (*pc == ' ' || 
-		     *pc == '\t'|| 
-		     *pc == '[' || 
-		     *pc == ']' || 
-		     *pc == ',')
-		 {
-		    state = kRSParseState_Error;
-		 }
-		 else if (*pc == '{')
-		 {
-		    state = kRSParseState_BeginDSDS;
-		    pc++;
-		 }
-		 else if (*pc == '@')
-		 {
-		    state = kRSParseState_BeginAtFile;
-		    pc++;
-		 }
-		 else
-		 {
-		    state = kRSParseState_NameChar;
-		 }
-	      }
-	      else
-	      {
-		 state = kRSParseState_Error;
-	      }
-	      break;
-	    case kRSParseState_LastRS:
-	      /* pc points to endInput or whitespace */ 
-	      *pcBuf = '\0';
-	      pcBuf = buf;
-
-	      if (!multiRS)
-	      {		
-		 intSets[count] = strdup(buf);
-		 count++;
-	      }
-	      else
-	      {
-		 int iSet;
-		 for (iSet = 0; iSet < countMultiRS; iSet++)
-		 {
-		    intSets[count] = multiRS[iSet];
-		    count++;
-		 }
-
-		 free(multiRS); /* don't deep-free; intSets now owns strings */
-		 multiRS = NULL;
-		 countMultiRS = 0;
-	      }
-	      
-	      if (pc < endInput)
-	      {
-		 if (*pc == ' ' || *pc == '\t')
-		 {
-		    state = kRSParseState_End;
-		 }
-		 else
-		 {
-		    state = kRSParseState_Error;
-		 }
-	      }
-	      else
-	      {
-		 state = kRSParseState_End;
-	      }
-	      break;
-	    case kRSParseState_BeginAtFile:
-	      if (pc < endInput)
-	      {
-		 if (*pc == ',')
-		 {
-		    state = kRSParseState_Error;
-		 }
-		 else
-		 {
-		    state = kRSParseState_AtFile; 
 		 }
 	      }
 	      else
@@ -4053,9 +4114,46 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 	    case kRSParseState_AtFile:
 	      if (pc < endInput)
 	      {
-		 if (*pc == ',')
+		 if (DSElem_IsDelim((const char **)&pc))
 		 {
+		    pc++;
 		    state = kRSParseState_EndAtFile;
+		 }
+		 else if (DSElem_IsComment((const char **)&pc))
+		 {
+		    DSElem_SkipComment(&pc);
+		    state = kRSParseState_EndAtFile;
+		 }
+		 else if (DSElem_IsWS((const char **)&pc))
+		 {
+		    /* Don't allow ws in filenames! Print an error 
+		     * message if that happens.
+		     */
+		    if (DSElem_SkipWS(&pc))
+		    {
+		       /* Found non-ws */
+		       if (DSElem_IsDelim((const char **)&pc))
+		       {
+			  pc++;
+			  state = kRSParseState_EndAtFile;
+		       }
+		       else if (DSElem_IsComment((const char **)&pc))
+		       {
+			  DSElem_SkipComment(&pc);
+			  state = kRSParseState_EndAtFile;
+		       }
+		       else
+		       {
+			  fprintf(stderr, 
+				  "'@' files containing whitespace are not allowed.\n");
+			  state = kRSParseState_Error;
+		       }
+		    }
+		    else
+		    {
+		       /* All ws after the filename */
+		       state = kRSParseState_EndAtFile;
+		    }
 		 }
 		 else
 		 {
@@ -4147,65 +4245,54 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 		 }
 	      }
 
+	      /* Got into this state because either saw a delimiter, or end of input */
+
+	      state = kRSParseState_EndElem;
+	      break;
+	    case kRSParseState_Plainfile:
+	      /* Pointing to leading '/' or './' */
 	      if (pc < endInput)
 	      {
-		 if (*pc == ',')
+		 if (DSElem_IsDelim((const char **)&pc))
 		 {
-		    /* AtFile filename was terminated by comma */
-		    if (pc + 1 < endInput)
+		    pc++;
+		    state = kRSParseState_EndElem;
+		 }
+		 else if (DSElem_IsComment((const char **)&pc))
+		 {
+		    DSElem_SkipComment(&pc);
+		    state = kRSParseState_EndElem;
+		 }
+		 else if (DSElem_IsWS((const char **)&pc))
+		 {
+		    /* Don't allow ws in filenames! Print an error 
+		     * message if that happens.
+		     */
+		    if (DSElem_SkipWS(&pc))
 		    {
-		       state = kRSParseState_EndRS;
-		       pc++;
+		       /* Found non-ws */
+		       if (DSElem_IsDelim((const char **)&pc))
+		       {
+			  pc++;
+			  state = kRSParseState_EndElem;
+		       }
+		       else if (DSElem_IsComment((const char **)&pc))
+		       {
+			  DSElem_SkipComment(&pc);
+			  state = kRSParseState_EndElem;
+		       }
+		       else
+		       {
+			  fprintf(stderr, 
+				  "'plainfiles' containing whitespace are not allowed.\n");
+			  state = kRSParseState_Error;
+		       }
 		    }
 		    else
 		    {
-		       state = kRSParseState_Error;
+		       /* All ws after the filename */
+		       state = kRSParseState_EndElem;
 		    }
-		 }		 
-	      }
-	      else
-	      {
-		 state = kRSParseState_LastRS;
-	      }
-	      break;
-	    case kRSParseState_BeginDSDS:
-	      if (pc < endInput)
-	      {
-		 if (*pc == ' ' || *pc == '\t')
-		 {
-		    /* skip whitespace */
-		    pc++;
-		 }
-		 else if (*pc == '[' || *pc == ']' || *pc == ',')
-		 {
-		    state = kRSParseState_Error;
-		 }
-		 else
-		 {
-		    state = kRSParseState_DSDS;
-		 }
-	      }
-	      else
-	      {
-		 state = kRSParseState_Error;
-	      }
-	      break;
-	    case kRSParseState_DSDS:
-	      if (pc < endInput)
-	      {
-		 if (*pc == '{')
-		 {
-		    state = kRSParseState_Error;
-		 }
-		 else if (*pc == ' ' || *pc == '\t')
-		 {
-		    /* trailing whitespace */
-		    state = kRSParseState_TrailDSDS;
-		 }
-		 else if (*pc == '}')
-		 {
-		    state = kRSParseState_EndDSDS;
-		    pc++;
 		 }
 		 else
 		 {
@@ -4214,69 +4301,60 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 	      }
 	      else
 	      {
-		 state = kRSParseState_Error;
+		 state = kRSParseState_EndElem;
 	      }
 	      break;
-	    case kRSParseState_TrailDSDS:
+	    case kRSParseState_EndElem:
+	      /* pc points to whatever is after a ds delim, or trailing ws. */
+	      /* could be next ds elem, ws, delim, or NULL (end of input). */
+	      *pcBuf = '\0';
+	      pcBuf = buf;
+
+	      if (!multiRS)
+	      {
+		 intSets[count] = strdup(buf);
+		 count++;
+	      }
+	      else
+	      {
+		 int iSet;
+		 for (iSet = 0; iSet < countMultiRS; iSet++)
+		 {
+		    intSets[count] = multiRS[iSet];
+		    count++;
+		 }
+
+		 free(multiRS); /* don't deep-free; intSets now owns strings */
+		 multiRS = NULL;
+		 countMultiRS = 0;
+	      }
+
 	      if (pc < endInput)
 	      {
-		 if (*pc == ' ' || *pc == '\t')
+		 if (DSElem_SkipWS(&pc))
 		 {
-		    pc++;
-		 }
-		 if (*pc == '}')
-		 {
-		    state = kRSParseState_EndDSDS;
-		    pc++;
+		    state = kRSParseState_BeginElem;
 		 }
 		 else
 		 {
-		    state = kRSParseState_Error;
+		    state = kRSParseState_End;
 		 }
 	      }
 	      else
 	      {
-		 state = kRSParseState_Error;
-	      }
-	      break;
-	    case kRSParseState_EndDSDS:
-	      if (pc < endInput)
-	      {
-		 if (*pc == ',')
-		 {
-		    if (pc + 1 < endInput)
-		    {
-		       state = kRSParseState_EndRS;
-		       pc++;
-		    }
-		    else
-		    {
-		       state = kRSParseState_Error;
-		    }
-		 }
-		 else
-		 {
-		    state = kRSParseState_LastRS;
-		 }
-	      }
-	      else
-	      {
-		 state = kRSParseState_LastRS;
+		 state = kRSParseState_End;
 	      }
 	      break;
 	    case kRSParseState_End:
-	      if (*pc == ' ' || *pc == '\t')
+	      if (DSElem_SkipWS(&pc))
 	      {
-		 /* pc points to whitespace*/
-		 pc++;
-	      }
-	      else if (pc != endInput)
-	      {
+		 /* found non-ws at the end, not acceptable */
 		 state = kRSParseState_Error;
 	      }
 	      else
 	      {
-		 state = kRSParseState_Done;
+		 pc = NULL;
+		 state = kRSParseState_Success;
 	      }
 	      break;
 	    default:
@@ -4287,7 +4365,7 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
       free(rsstr);
    } /* rsstr */
 
-   if (status == DRMS_SUCCESS && state == kRSParseState_Done && count > 0)
+   if (status == DRMS_SUCCESS && state == kRSParseState_Success && count > 0)
    {
       *sets = (char **)malloc(sizeof(char *) * count);
 
@@ -4300,6 +4378,11 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
       {
 	 status = DRMS_ERROR_OUTOFMEMORY;
       }
+   }
+
+   if (status == DRMS_SUCCESS && state != kRSParseState_Success)
+   {
+      status = DRMS_ERROR_INVALIDDATA;
    }
 
    if (intSets)
