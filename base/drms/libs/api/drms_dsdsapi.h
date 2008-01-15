@@ -9,6 +9,7 @@
 #define kDSDS_SERIES_NUM "series_num"
 #define kDSDS_DS "ds"
 #define kDSDS_RN "rn"
+#define kDSDS_PROGTOKEN "prog:"
 
 #define kDSDS_MaxHandle 64
 

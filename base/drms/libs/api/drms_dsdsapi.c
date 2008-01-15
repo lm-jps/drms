@@ -6,6 +6,8 @@
 #include <string.h>
 #include "drms_dsdsapi.h"
 
+#define kProgSpecifier "prog:"
+
 void *DSDS_GetFPtr(void *hDSDS, const char *symbol)
 {
    void *ret = NULL;
@@ -69,3 +71,26 @@ int DSDS_SetDSDSParams(void *hDSDS, DRMS_SeriesInfo_t *si, DSDS_Handle_t in)
 
    return err;
 }
+
+#if 0
+/* Returns 0 if dsquery doesn't contain a DSDS program name; 1 otherwise */
+int DSDS_GetDSDSProgName(const char *dsquery, char *progname, int size)
+{
+   if (strstr(dsquery, kProgSpecifier) && strlen(dsquery) > strlen(kProgSpecifier))
+   {
+      char *q = strdup(dsquery);
+
+      const char *beg = q[strlen(kProgSpecifier)];
+      const char *end = strchr(beg, ',');
+
+      if (end > beg)
+      {
+	 q[end] = '\0';
+	 snprintf(progname, size, "%s", beg);
+	 return 1;
+      }
+   }
+
+   return 0;
+}
+#endif

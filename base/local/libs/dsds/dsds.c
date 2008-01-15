@@ -18,6 +18,8 @@
 void *gHandleSOI = NULL;
 long long gSeriesGuid = 1;
 
+const char kDSDS_GenericSeriesName[] = "dsds_series";
+
 /* libsoi API function names */
 typedef enum Soifn_enum
 {
@@ -477,7 +479,10 @@ static KEY *CreateSOIKeylist(const char *progspec, kDSDS_Stat_t *stat)
 	    fprintf(stderr, "Error calling parse_list(): %d.\n", err);
 	    status = kDSDS_Stat_APIRetErr;
 	 }
-	 else
+
+	 /* If spec is a 'prog' spec, then call peq to obtain certain 
+	  * keys. */
+	 if (strstr(spec, kDSDS_PROGTOKEN) == spec)
 	 {
 	    /* Call peq to add keys for %s_wd, %s_level_sn, and %s_series_sn.  The only
 	     * way to get this information is by communicating with dsds.  And there are
@@ -618,7 +623,7 @@ static KEY *CreateSOIKeylist(const char *progspec, kDSDS_Stat_t *stat)
 		  status = kDSDS_Stat_PeqError;
 	       }
 	    }
-	 }
+	 } /* 'prog' spec */
       }
       else
       {
@@ -847,7 +852,6 @@ static long long NumRecords(void *hSOI, int nds, KEY *params, kDSDS_Stat_t *stat
    return nRecs;
 }
 
-
 static void MakeDRMSSeriesName(void *hSOI,
 			       char *drmsSeriesName, 
 			       int size, 
@@ -872,20 +876,30 @@ static void MakeDRMSSeriesName(void *hSOI,
       snprintf(key, sizeof(key), "%s_level", dsname);
       char *level = (*pFn_getkey_str)(params, key);
       char *dot = NULL;
-      snprintf(drmsLev, sizeof(drmsLev), "%s", level);
 
-      if ((dot = strchr(drmsLev, '.')) != NULL)
+      if (prog && dsdsSeries && level)
       {
-	 *dot = '_';
-      }
+	 snprintf(drmsLev, sizeof(drmsLev), "%s", level);
 
-      snprintf(drmsSeriesName,
-	       size,
-	       "dsds_%s.%s_%s__%lld",
-	       prog,
-	       dsdsSeries,
-	       drmsLev,
-	       gSeriesGuid);
+	 if ((dot = strchr(drmsLev, '.')) != NULL)
+	 {
+	    *dot = '_';
+	 }
+
+	 snprintf(drmsSeriesName,
+		  size,
+		  "dsds_%s.%s_%s__%lld",
+		  prog,
+		  dsdsSeries,
+		  drmsLev,
+		  gSeriesGuid);
+      }
+      else
+      {
+	 /* If the dataset being opened resides in a directory, and did not come
+	  * from the SOI database, then use a generic, but unique name. */
+	 snprintf(drmsSeriesName, size, "%s%d", kDSDS_GenericSeriesName, gSeriesGuid);
+      }
 
       gSeriesGuid++;     
    }
@@ -1247,6 +1261,10 @@ long long DSDS_open_records(const char *dsspec,
    char drmsSeriesName[DRMS_MAXNAMELEN];
    KEY *params = NULL;
 
+   *drmsSeries = NULL;
+   *keys = NULL;
+   *segs = NULL;
+
    if (hSOI)
    {
       pSOIFn_getkey_str_t pFn_getkey_str = 
@@ -1301,6 +1319,7 @@ long long DSDS_open_records(const char *dsspec,
 	 int sn = 0;
 
 	 params = CreateSOIKeylist(dsspec, &status);
+
 	 if (status == kDSDS_Stat_Success)
 	 {
 	    nds = (*pFn_getkey_int)(params, "in_nsets");

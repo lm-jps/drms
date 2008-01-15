@@ -20,55 +20,59 @@ static int gAttemptedDSDS = 0;
 
 typedef enum
 {
-   /* Parsing starts in this state. */
+   /* Begin parsing dataset string. */
    kRSParseState_Begin = 0,
-   /* The start of a new dataset element (may be an RS or an @file). 
-    * There may be whitespace at the beginning. */
+   /* The start of a new dataset element (may be an RS or an @file). */
    kRSParseState_BeginElem,
-   /* Parsing a DRMS record set dataset element. Always ends with
-    * either a DRMS RS filter, or a ds delim char. */
+   /* Parsing the series name of a DRMS record set. */
    kRSParseState_DRMS,
-   /* Parsing a DRMS record-set filter (stuff between '[' and ']'). 
-    * A special case is no record-set filter.  This can be specified
-    * with either whitespace, or the empty string. */
+   /* Parsing a DRMS record-set filter (stuff between '[' and ']'). */
    kRSParseState_DRMSFilt,
-   kRSParseState_DRMSFiltSQL,    /* A "[?" seen */
-   /* An '@' - Begin an @file record set query */
-   /* Parsing 'prog' specification */
+   /* Parsing a DRMS SQL record-set filter (a "[?" seen). */
+   kRSParseState_DRMSFiltSQL,
+   /* Parsing 'prog' (DSDS) specification */
    kRSParseState_DSDS,
+   /* Parsing 'vot' (VOT) specification */
+   kRSParseState_VOT,
    /* Parsing "@file". */
    kRSParseState_AtFile,
-   /* Parsed end of filename */
+   /* Parsed end of filename, now creating sub-recordsets. */
    kRSParseState_EndAtFile,
-   /* A file or directory to read into memory. */
+   /* Parsing a file or directory that will be read into memory. */
    kRSParseState_Plainfile,
-   /* The previous DS elem is done, either by a delimeter or end of non-ws input */
+   /* The previous DS elem is done, either by a delimeter or end of non-ws input. */
    kRSParseState_EndElem,
    /* No more ds elements or non-ws text, but there may be ws */
    kRSParseState_End,
-   /* Parsing ends with either Success or one of the Errors*/
+   /* Parsing ends with either Success or one of the following errors. */
    kRSParseState_Success,
+   /* Generic parsing error - input invalid in some way.
+    * To do - make more specfic errors. */
    kRSParseState_Error,
 } RSParseState_t;
 
 #define kDSElemParseWS    " \t\b"
 #define kDSElemParseDelim ",;\n"
+#define kOverviewFits     "overview.fits"
 
 static int CopySeriesInfo(DRMS_Record_t *target, DRMS_Record_t *source);
 static int CopySegments(DRMS_Record_t *target, DRMS_Record_t *source);
 static int CopyLinks(DRMS_Record_t *target, DRMS_Record_t *source);
 static int CopyKeywords(DRMS_Record_t *target, DRMS_Record_t *source);
 static int CopyPrimaryIndex(DRMS_Record_t *target, DRMS_Record_t *source);
-static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets);
-static int FreeRecSetDescArr(char ***sets, int nsets);
+static int ParseRecSetDesc(const char *recsetsStr, 
+			   char ***sets, 
+			   DRMS_RecordSetType_t **types, 
+			   int *nsets);
+static int FreeRecSetDescArr(char ***sets, DRMS_RecordSetType_t **types, int nsets);
 
 /* drms_open_records() helpers */
-static int IsLocalSpec(const char *recSetSpec, 
-		       DSDS_KeyList_t ***klarrout, 
-		       DRMS_Segment_t **segarrout,
-		       int *nRecsout,
-		       char **pkeysout,
-		       int *status);
+static int IsValidPlainFileSpec(const char *recSetSpec, 
+				DSDS_KeyList_t ***klarrout, 
+				DRMS_Segment_t **segarrout,
+				int *nRecsout,
+				char **pkeysout,
+				int *status);
 static void AddLocalPrimekey(DRMS_Record_t *template, int *status);
 static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
 					DSDS_KeyList_t **keylistarr, 
@@ -100,12 +104,12 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
 						      int pkeysSpecified,
 						      DRMS_KeyMapClass_t fitsclass,
 						      int *status);
-static DRMS_RecordSet_t *OpenLocalRecords(DRMS_Env_t *env, 
-					  DSDS_KeyList_t ***klarr,
-					  DRMS_Segment_t **segarr,
-					  int nRecs,
-					  char **pkeysout,
-					  int *status);
+static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env, 
+					      DSDS_KeyList_t ***klarr,
+					      DRMS_Segment_t **segarr,
+					      int nRecs,
+					      char **pkeysout,
+					      int *status);
 static void RSFree(const void *val);
 /* end drms_open_records() helpers */
 
@@ -115,12 +119,12 @@ static void RSFree(const void *val);
  *
  * where () denotes grouping, {} denotes optional, and '' denotes literal
  */
-static int IsLocalSpec(const char *recSetSpecIn, 
-		       DSDS_KeyList_t ***klarrout, 
-		       DRMS_Segment_t **segarrout,
-		       int *nRecsout,
-		       char **pkeysout,
-		       int *status)
+static int IsValidPlainFileSpec(const char *recSetSpecIn, 
+				DSDS_KeyList_t ***klarrout, 
+				DRMS_Segment_t **segarrout,
+				int *nRecsout,
+				char **pkeysout,
+				int *status)
 {
    int isLocSpec = 0;
    struct stat stBuf;
@@ -779,12 +783,12 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
    return rset;
 }
 
-static DRMS_RecordSet_t *OpenLocalRecords(DRMS_Env_t *env, 
-					  DSDS_KeyList_t ***klarr,
-					  DRMS_Segment_t **segarr,
-					  int nRecs,
-					  char **pkeys,
-					  int *status)
+static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env, 
+					      DSDS_KeyList_t ***klarr,
+					      DRMS_Segment_t **segarr,
+					      int nRecs,
+					      char **pkeys,
+					      int *status)
 {
    DRMS_RecordSet_t *rset = NULL;
    int stat = DRMS_SUCCESS;
@@ -1019,9 +1023,9 @@ DRMS_RecordSet_t *drms_open_localrecords(DRMS_Env_t *env, const char *dsRecSet, 
    int nRecsLocal = 0;
    char *pkeys = NULL;
 
-   if (IsLocalSpec(dsRecSet, &klarr, &segarr, &nRecsLocal, &pkeys, &stat))
+   if (IsValidPlainFileSpec(dsRecSet, &klarr, &segarr, &nRecsLocal, &pkeys, &stat))
    {
-      rs = OpenLocalRecords(env, &klarr, &segarr, nRecsLocal, &pkeys, &stat);
+      rs = OpenPlainFileRecords(env, &klarr, &segarr, nRecsLocal, &pkeys, &stat);
    }
 
    if (status)
@@ -1180,7 +1184,7 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 {
   DRMS_RecordSet_t *rs = NULL;
   DRMS_RecordSet_t *ret = NULL;
-  int i, stat, filter, mixed;
+  int i, filter, mixed;
   char *query=0, *seriesname=0;
   HContainer_t *realSets = NULL;
   int nRecs = 0;
@@ -1191,6 +1195,9 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
   int nRecsLocal = 0;
   char *pkeys = NULL;
 
+  /* conflict with stat var in this scope */
+  int (*filestat)(const char *, struct stat *buf) = stat;
+
   /* recordsetname is a list of comma-separated record sets
    * commas may appear within record sets, so need to use a parsing 
    * mechanism more sophisticated than strtok() */
@@ -1199,14 +1206,13 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
   DRMS_Record_t **setstarts = NULL;
   
   int nsets = 0;
-  stat = ParseRecSetDesc(recordsetname, &sets, &nsets);
+  int stat = ParseRecSetDesc(recordsetname, &sets, &settypes, &nsets);
 
   if (stat == DRMS_SUCCESS)
   {
      int iSet;
 
      CHECKNULL_STAT(env,status);
-     settypes = (DRMS_RecordSetType_t *)malloc(sizeof(DRMS_RecordSetType_t) * nsets);
      setstarts = (DRMS_Record_t **)malloc(sizeof(DRMS_Record_t *) * nsets);
 
      for (iSet = 0; stat == DRMS_SUCCESS && iSet < nsets; iSet++)
@@ -1215,21 +1221,103 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 
 	if (oneSet && strlen(oneSet) > 0)
 	{
-	   if (IsLocalSpec(oneSet, &klarr, &segarr, &nRecsLocal, &pkeys, &stat))
+	   if (settypes[iSet] == kRecordSetType_PlainFile)
 	   {
-	      rs = OpenLocalRecords(env, &klarr, &segarr, nRecsLocal, &pkeys, &stat);
-	      if (stat)
-		goto failure;
-	      settypes[iSet] = kRecordSetType_LOCAL;
-	   }
-	   else if (DSDS_IsDSDSSpec(oneSet))
+	      char pbuf[DRMS_MAXPATHLEN];
+	      struct stat stBuf;
+	      int foundOV = 0;
+
+	      if (!(*filestat)(oneSet, &stBuf) && S_ISDIR(stBuf.st_mode))
+	      {
+		 /* Append '/' if necessary */
+		 snprintf(pbuf, sizeof(pbuf), "%s", oneSet);
+
+		 if (oneSet[strlen(oneSet) - 1] == '/')
+		 {
+		    snprintf(pbuf, sizeof(pbuf), "%s", oneSet);
+		 }
+		 else
+		 {
+		    snprintf(pbuf, sizeof(pbuf), "%s/", oneSet);
+		 }
+
+		 /* Ack - have to examine each file in the dir and figure out
+		  * if any filenames have "overview.fits" int them.  Ignore
+		  * subdirs. */
+		 struct dirent **fileList = NULL;
+		 int nFiles = -1;
+		    
+		 if ((nFiles = scandir(pbuf, &fileList, NULL, NULL)) > 0 && 
+		     fileList != NULL)
+		 {
+		    int fileIndex = 0;
+
+		    while (fileIndex < nFiles)
+		    {
+		       struct dirent *entry = fileList[fileIndex];
+		       if (entry != NULL)
+		       {
+			  char *oneFile = entry->d_name;
+			  char dirEntry[PATH_MAX] = {0};
+			  snprintf(dirEntry, 
+				   sizeof(dirEntry), 
+				   "%s%s", 
+				   pbuf,
+				   oneFile);
+			  if (*dirEntry !=  '\0' && 
+			      !(*filestat)(dirEntry, &stBuf) &&
+			      S_ISREG(stBuf.st_mode))
+			  {
+			     /* Finally, check to see if the file name has
+			      * "overview.fits" in it */
+			     if (strstr(dirEntry, kOverviewFits))
+			     {
+				foundOV = 1;
+				break;
+			     }
+			  }
+
+			  free(entry);
+		       }
+
+		       fileIndex++;
+		    }
+		 }	
+	      }
+
+	      if (foundOV)
+	      {
+		 rs = drms_open_dsdsrecords(env, oneSet, &stat);
+		 if (stat)
+		   goto failure; 
+	      }
+	      else
+	      {
+		 if (IsValidPlainFileSpec(oneSet, &klarr, &segarr, &nRecsLocal, &pkeys, &stat))
+		 {
+		    rs = OpenPlainFileRecords(env, &klarr, &segarr, nRecsLocal, &pkeys, &stat);
+		    if (stat)
+		      goto failure;
+		 }
+		 else
+		 {
+		    fprintf(stderr, "Invalid plain file record-set specification %s.\n", oneSet);
+		    goto failure;
+		 }
+	      }
+	   } /* Plain File */
+	   else if (settypes[iSet] == kRecordSetType_DSDS)
 	   {
 	      rs = drms_open_dsdsrecords(env, oneSet, &stat);
 	      if (stat)
-		goto failure;
-	      settypes[iSet] = kRecordSetType_DSDS;
-	   }
-	   else
+		goto failure; 
+	   } /* DSDS */
+	   else if (settypes[iSet] == kRecordSetType_VOT)
+	   {
+	      /* TBD */
+	      fprintf(stderr, "VOT record-set specification not implemented.\n");
+	   } /* VOT */
+	   else if (settypes[iSet] == kRecordSetType_DRMS)
 	   {
 	      TIME(stat = drms_recordset_query(env, oneSet, &query, &seriesname, 
 					       &filter, &mixed));
@@ -1248,8 +1336,6 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 	      if (stat)
 		goto failure;
 
-	      settypes[iSet] = kRecordSetType_DRMS;
-
 	      free(query);
 	      query = NULL;
 	      free(seriesname); 
@@ -1259,7 +1345,11 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 	      {
 		 rs->records[i]->lifetime = DRMS_PERMANENT; 
 	      }
-	   } /* drms records*/
+	   } /* DRMS */
+	   else
+	   {
+	      fprintf(stderr, "Unexpected record-set specification %s.\n", oneSet);
+	   }
 
 	   if (stat)
 	   {
@@ -1382,17 +1472,17 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 
 	/* Add fields that are used to track record-set sources */
 	ret->ss_n = nsets;
-	ret->ss_types = settypes; /* ret assumes ownership */
-	settypes = NULL;
 	ret->ss_starts = setstarts; /* ret assumes ownership */
 	setstarts = NULL;
-	/* ret can't assume ownership of ss_queries */
+	/* ret can't assume ownership of sets or settypes */
 	ret->ss_queries = (char **)malloc(sizeof(char *) * nsets);
-	if (ret->ss_queries)
+	ret->ss_types = (DRMS_RecordSetType_t *)malloc(sizeof(DRMS_RecordSetType_t) * nsets);
+	if (ret->ss_queries && ret->ss_types)
 	{
 	   for (iSet = 0; iSet < nsets; iSet++)
 	   {
 	      ret->ss_queries[iSet] = strdup(sets[iSet]);
+	      ret->ss_types[iSet] = settypes[iSet];
 	   }
 	}
 	else
@@ -1410,17 +1500,12 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 	hcon_destroy(&realSets);
      }
 
-     if (settypes)
-     {
-	free(settypes);
-     }
-
      if (setstarts)
      {
 	free(setstarts);
      }
 
-     FreeRecSetDescArr(&sets, nsets);
+     FreeRecSetDescArr(&sets, &settypes, nsets);
 
      if (status)
        *status = stat;
@@ -1439,17 +1524,12 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
      free(seriesname);
   }
 
-  if (settypes)
-  {
-     free(settypes);
-  }
-
   if (setstarts)
   {
      free(setstarts);
   }
 
-  FreeRecSetDescArr(&sets, nsets);
+  FreeRecSetDescArr(&sets, &settypes, nsets);
 
   if (rs)
   {
@@ -3826,17 +3906,23 @@ static int DSElem_SkipComment(char **c)
 }
 
 /* Caller owns sets. */
-static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
+static int ParseRecSetDesc(const char *recsetsStr, 
+			   char ***sets, 
+			   DRMS_RecordSetType_t **settypes, 
+			   int *nsets)
 {
    int status = DRMS_SUCCESS;
    RSParseState_t state = kRSParseState_Begin;
    char *rsstr = strdup(recsetsStr);
    char *pc = rsstr;
    char **intSets = NULL;
+   DRMS_RecordSetType_t *intSettypes = NULL;
    int count = 0;
    char buf[kMAXRSETSPEC];
    char *pcBuf = buf;
-   char **multiRS = NULL;
+   char **multiRSQueries = NULL;
+   DRMS_RecordSetType_t *multiRSTypes = NULL;
+   DRMS_RecordSetType_t currSettype;
    int countMultiRS = 0;
    char *endInput = rsstr + strlen(rsstr); /* points to null terminator */
 
@@ -3850,7 +3936,9 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 	 {
 	    case kRSParseState_Begin:
 	      intSets = (char **)malloc(sizeof(char *) * kMAXRSETS);
-	      if (!intSets)
+	      intSettypes = 
+		(DRMS_RecordSetType_t *)malloc(sizeof(DRMS_RecordSetType_t) * kMAXRSETS);
+	      if (!intSets || !intSettypes)
 	      {
 		 state = kRSParseState_Error;
 		 status = DRMS_ERROR_OUTOFMEMORY;
@@ -3858,10 +3946,12 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 	      else
 	      {
 		 memset(intSets, 0, sizeof(char *) * kMAXRSETS);
+		 memset(intSettypes, 0, sizeof(DRMS_RecordSetType_t) * kMAXRSETS);
 		 state = kRSParseState_BeginElem;
 	      }
 	      break;
 	    case kRSParseState_BeginElem:
+	      /* There may be whitespace at the beginning. */
 	      if (pc < endInput)
 	      {
 		 if (DSElem_IsWS((const char **)&pc))
@@ -3881,7 +3971,20 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 		       pc++;
 		       if (DSElem_SkipWS(&pc))
 		       {
-			  state = kRSParseState_DSDS;
+			  if (strstr(pc, "prog:") == pc)
+			  {
+			     state = kRSParseState_DSDS;
+			  }
+			  else if (strstr(pc, "vot:") == pc)
+			  {
+			     state = kRSParseState_VOT;
+			  }
+			  else
+			  {
+			     fprintf(stderr, 
+				     "Unexpected record-set specification within curly brackets.\n" );
+			     state = kRSParseState_Error;
+			  }
 		       }
 		       else
 		       {
@@ -3970,6 +4073,11 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 	      {
 		 state = kRSParseState_EndElem;
 	      }
+
+	      if (state == kRSParseState_EndElem)
+	      {
+		 currSettype = kRecordSetType_DRMS;
+	      }
 	      break;
 	    case kRSParseState_DRMSFilt:
 	      /* first char after '[' */
@@ -4022,6 +4130,11 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 		 /* didn't finish filter */
 		 state = kRSParseState_Error;
 	      }
+
+	      if (state == kRSParseState_EndElem)
+	      {
+		 currSettype = kRecordSetType_DRMS;
+	      }
 	      break;
 	    case kRSParseState_DRMSFiltSQL:
 	      if (pc < endInput)
@@ -4050,6 +4163,11 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 	      {
 		 /* didn't finish query */
 		 state = kRSParseState_Error;
+	      }
+
+	      if (state == kRSParseState_EndElem)
+	      {
+		 currSettype = kRecordSetType_DRMS;
 	      }
 	      break;
 	    case kRSParseState_DSDS:
@@ -4110,6 +4228,75 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 	      {
 		 state = kRSParseState_Error;
 	      }
+
+	      if (state == kRSParseState_EndElem)
+	      {
+		 currSettype = kRecordSetType_DSDS;
+	      }
+	      break;
+	    case kRSParseState_VOT:
+	      /* first non-ws after '{' */
+	      if (pc < endInput)
+	      {
+		 if (*pc == '{')
+		 {
+		    state = kRSParseState_Error;
+		 }
+		 else if (DSElem_IsWS((const char **)&pc))
+		 {
+		    /* Allow WS anywhere within '{' and '}', but eliminate */
+		    pc++;
+		 }
+		 else if (*pc == '}')
+		 {
+		    pc++;
+
+		    if (pc < endInput)
+		    {
+		       if (DSElem_IsWS((const char **)&pc))
+		       {
+			  if (!DSElem_SkipWS(&pc))
+			  {
+			     state = kRSParseState_EndElem;
+			  }
+		       }
+
+		       if (DSElem_IsDelim((const char **)&pc))
+		       {
+			  pc++;
+			  state = kRSParseState_EndElem;
+		       }
+		       else if (DSElem_IsComment((const char **)&pc))
+		       {
+			  DSElem_SkipComment(&pc);
+			  state = kRSParseState_EndElem;
+		       }
+		       else
+		       {
+			  /* there is something after '}' that isn't
+			   * ws or a delimeter */
+			  state = kRSParseState_Error;
+		       }
+		    }
+		    else
+		    {
+		       state = kRSParseState_EndElem;
+		    }
+		 }
+		 else
+		 {
+		    *pcBuf++ = *pc++;
+		 }
+	      }
+	      else
+	      {
+		 state = kRSParseState_Error;
+	      }
+
+	      if (state == kRSParseState_EndElem)
+	      {
+		 currSettype = kRecordSetType_VOT;
+	      }
 	      break;
 	    case kRSParseState_AtFile:
 	      if (pc < endInput)
@@ -4168,7 +4355,8 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 	    case kRSParseState_EndAtFile:
 	      {
 		 char lineBuf[LINE_MAX];
-		 char **setsAtFile = NULL;
+		 char **queriesAtFile = NULL;
+		 DRMS_RecordSetType_t *typesAtFile = NULL;
 		 int nsetsAtFile = 0;
 		 int iSet = 0;
 		 struct stat stBuf;
@@ -4176,14 +4364,16 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 
 		 /* finished reading an AtFile filename - read file one line at a time,
 		  * parsing each line recursively. */
-		 if (multiRS)
+		 if (multiRSQueries)
 		 {
 		    state = kRSParseState_Error;
 		    break;
 		 }
 		 else
 		 {
-		    multiRS = (char **)malloc(sizeof(char *) * kMAXRSETS);
+		    multiRSQueries = (char **)malloc(sizeof(char *) * kMAXRSETS);
+		    multiRSTypes = 
+		      (DRMS_RecordSetType_t *)malloc(sizeof(DRMS_RecordSetType_t) * kMAXRSETS);
 
 		    /* buf has filename */
 		    *pcBuf = '\0';
@@ -4212,13 +4402,18 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 				      lineBuf[len - 1] = '\0';
 				   }
 			
-				   status = ParseRecSetDesc(lineBuf, &setsAtFile, &nsetsAtFile);
+				   status = ParseRecSetDesc(lineBuf, 
+							    &queriesAtFile, 
+							    &typesAtFile, 
+							    &nsetsAtFile);
 				   if (status == DRMS_SUCCESS)
 				   {
-				      /* add all nsetsAtFile recordsets to multiRS */
+				      /* add all nsetsAtFile recordsets to multiRSQueries */
 				      for (iSet = 0; iSet < nsetsAtFile; iSet++)
 				      {
-					 multiRS[countMultiRS] = strdup(setsAtFile[iSet]);
+					 multiRSQueries[countMultiRS] = 
+					   strdup(queriesAtFile[iSet]);
+					 multiRSTypes[countMultiRS] = typesAtFile[iSet];
 					 countMultiRS++;
 				      }
 				   }
@@ -4228,7 +4423,7 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 				      break;
 				   }
 
-				   FreeRecSetDescArr(&setsAtFile, nsetsAtFile);
+				   FreeRecSetDescArr(&queriesAtFile, &typesAtFile, nsetsAtFile);
 				}
 			     }
 			  }
@@ -4303,6 +4498,11 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 	      {
 		 state = kRSParseState_EndElem;
 	      }
+
+	      if (state == kRSParseState_EndElem)
+	      {
+		 currSettype = kRecordSetType_PlainFile;
+	      }
 	      break;
 	    case kRSParseState_EndElem:
 	      /* pc points to whatever is after a ds delim, or trailing ws. */
@@ -4310,9 +4510,10 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 	      *pcBuf = '\0';
 	      pcBuf = buf;
 
-	      if (!multiRS)
+	      if (!multiRSQueries)
 	      {
 		 intSets[count] = strdup(buf);
+		 intSettypes[count] = currSettype;
 		 count++;
 	      }
 	      else
@@ -4320,12 +4521,15 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
 		 int iSet;
 		 for (iSet = 0; iSet < countMultiRS; iSet++)
 		 {
-		    intSets[count] = multiRS[iSet];
+		    intSets[count] = multiRSQueries[iSet];
+		    intSettypes[count] = multiRSTypes[iSet];
 		    count++;
 		 }
 
-		 free(multiRS); /* don't deep-free; intSets now owns strings */
-		 multiRS = NULL;
+		 free(multiRSQueries); /* don't deep-free; intSets now owns strings */
+		 multiRSQueries = NULL;
+		 free(multiRSTypes);
+		 multiRSTypes = NULL;
 		 countMultiRS = 0;
 	      }
 
@@ -4368,11 +4572,13 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
    if (status == DRMS_SUCCESS && state == kRSParseState_Success && count > 0)
    {
       *sets = (char **)malloc(sizeof(char *) * count);
+      *settypes = (DRMS_RecordSetType_t *)malloc(sizeof(DRMS_RecordSetType_t) * count);
 
-      if (*sets)
+      if (*sets && *settypes)
       {
 	 *nsets = count;
 	 memcpy(*sets, intSets, sizeof(char *) * count);
+	 memcpy(*settypes, intSettypes, sizeof(DRMS_RecordSetType_t) * count);
       }
       else
       {
@@ -4390,10 +4596,15 @@ static int ParseRecSetDesc(const char *recsetsStr, char ***sets, int *nsets)
       free(intSets);
    }
 
+   if (intSettypes)
+   {
+      free(intSettypes);
+   }
+
    return status;
 }
 
-int FreeRecSetDescArr(char ***sets, int nsets)
+int FreeRecSetDescArr(char ***sets, DRMS_RecordSetType_t **types, int nsets)
 {
    int error = 0;
 
@@ -4418,6 +4629,12 @@ int FreeRecSetDescArr(char ***sets, int nsets)
       }
 
       *sets = NULL;
+   }
+
+   if (types && *types)
+   {
+      free(*types);
+      types = NULL;
    }
 
    return error;
@@ -4506,7 +4723,7 @@ DRMS_RecordSetType_t drms_record_getquerytype(const char *query)
    }
    else if (IsFileOrDir(query))
    {
-      ret = kRecordSetType_LOCAL;
+      ret = kRecordSetType_PlainFile;
    }
    else
    {
