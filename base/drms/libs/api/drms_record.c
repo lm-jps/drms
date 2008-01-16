@@ -4197,21 +4197,24 @@ static int ParseRecSetDesc(const char *recsetsStr,
 			  }
 		       }
 
-		       if (DSElem_IsDelim((const char **)&pc))
+		       if (state != kRSParseState_EndElem)
 		       {
-			  pc++;
-			  state = kRSParseState_EndElem;
-		       }
-		       else if (DSElem_IsComment((const char **)&pc))
-		       {
-			  DSElem_SkipComment(&pc);
-			  state = kRSParseState_EndElem;
-		       }
-		       else
-		       {
-			  /* there is something after '}' that isn't
-			   * ws or a delimeter */
-			  state = kRSParseState_Error;
+			  if (DSElem_IsDelim((const char **)&pc))
+			  {
+			     pc++;
+			     state = kRSParseState_EndElem;
+			  }
+			  else if (DSElem_IsComment((const char **)&pc))
+			  {
+			     DSElem_SkipComment(&pc);
+			     state = kRSParseState_EndElem;
+			  }
+			  else
+			  {
+			     /* there is something after '}' that isn't
+			      * ws or a delimeter */
+			     state = kRSParseState_Error;
+			  }
 		       }
 		    }
 		    else
