@@ -131,7 +131,7 @@ static int IsValidPlainFileSpec(const char *recSetSpecIn,
    int lstat = DRMS_SUCCESS;
    char *lbrack = NULL;
    int keylistSize = sizeof(char) * (strlen(recSetSpecIn) + 1);
-   char *keylist = malloc(keylistSize);
+   char *keylist;
    char *recSetSpec = strdup(recSetSpecIn);
 
    /* There could be an optional clause at the end of the file/directory spec. */
@@ -140,6 +140,7 @@ static int IsValidPlainFileSpec(const char *recSetSpecIn,
       if (strchr(lbrack, ']'))
       {
 	 *lbrack = '\0';
+	 keylist = malloc(keylistSize);
 	 snprintf(keylist, keylistSize, "%s", lbrack + 1);
 	 *(strchr(keylist, ']')) = '\0';
 	 *pkeysout = strdup(keylist);
