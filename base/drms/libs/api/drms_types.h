@@ -117,11 +117,6 @@ typedef struct DRMS_Value
   DRMS_Type_Value_t value;
 } DRMS_Value_t;
 
-static union { uint32_t rep; float val; } __f_nan__ __attribute_used__ = {0xffc00000};
-#define F_NAN (__f_nan__.val)
-static union { uint64_t rep; double val; } __d_nan__ __attribute_used__ = {0xfff8000000000000};
-#define D_NAN (__d_nan__.val)
-
 /* Default "missing" values for standard types. */
 /** \brief DRMS char missing value */
 #define DRMS_MISSING_CHAR     (SCHAR_MIN)

@@ -81,7 +81,7 @@
 
 #include <soi_key.h>
 #include <soi_error.h>
-#include <soi_NaN.h>
+#include "SUM.h"
 
 #define VERSION_NUM	(4.5)
 
@@ -767,7 +767,7 @@ double getkey_float (KEY *list, char *key) {
         soi_errno = KEY_WRONG_TYPE;
     }
   }
-  return A_Signaling_dNaN ();
+  return D_NAN;
 }
 
 double getkey_double (KEY *list, char *key) {
@@ -785,7 +785,7 @@ double getkey_double (KEY *list, char *key) {
       default:
         soi_errno = KEY_WRONG_TYPE;
     }
-  return A_Signaling_dNaN ();
+  return D_NAN;
 }
 
 TIME getkey_time (KEY *list, char *key) {
@@ -799,7 +799,7 @@ TIME getkey_time (KEY *list, char *key) {
     else
       soi_errno = KEY_WRONG_TYPE;
   }
-  return A_Signaling_dNaN ();
+  return D_NAN;
 }
 
 void setkey_str (KEY **list, char *key, char *val) {

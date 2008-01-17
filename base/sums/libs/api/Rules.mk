@@ -5,7 +5,7 @@ d		:= $(dir)
 
 # Local variables
 LIBSUMSAPI	:= $(d)/libsumsapi.a 
-OBJ_$(d)	:= $(addprefix $(d)/, $(notdir $(patsubst %.c,%.o,$(wildcard $(SRCDIR)/$(d)/*.c))))
+OBJ_$(d)	:= $(addprefix $(d)/, atoinc.o key.o printkey.o soi_error.o str_utils.o sum_open.o sumopened.o sum_xdr.o)
 
 LIBSUMSAPI_OBJ	:= $(OBJ_$(d))
 

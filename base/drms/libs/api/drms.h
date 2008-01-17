@@ -39,6 +39,9 @@ data model. This includes
 
 #include "timeio.h"
 
+/* Lowest-level includes */
+#include "foundation.h"
+
 /* Util includes */
 #include "db.h"
 #include "hcontainer.h"

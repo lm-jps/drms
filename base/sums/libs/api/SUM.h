@@ -16,6 +16,7 @@
 
 #include <jsoc.h>
 #include <stdint.h>	/* need to repeat this for pro-c precompiler */
+#include "foundation.h"
 
 typedef uint32_t SUMID_t;
 
