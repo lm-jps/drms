@@ -23,7 +23,7 @@ $(FPICOBJ_$(d)):	CF_TGT := $(CF_$(d))
 $(FPICOBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
 
 $(LIBDSDS):		LF_TGT := -shared -Wl,$(WLOPTION)
-$(LIBDSDS):		$(FPICOBJ_$(d)) $(LIBDSTRUCT_FPIC) $(LIBMISC_FPIC)
+$(LIBDSDS):		$(FPICOBJ_$(d)) $(LIBDRMSCLIENT_FPIC) $(LIBDSTRUCT_FPIC) $(LIBMISC_FPIC)
 			$(LINK)
 			$(SLLIB)
 

@@ -162,25 +162,11 @@ static int IsValidPlainFileSpec(const char *recSetSpecIn,
 	  * but this should be divorced from Stanford-specific code in the future */
 	 if (!gAttemptedDSDS && !ghDSDS)
 	 {
-	    char lpath[PATH_MAX];
-	    const char *root = getenv(kJSOCROOT);
-	    const char *mach = getenv(kJSOC_MACHINE);
-	    if (root && mach)
+	    kDSDS_Stat_t dsdsstat;
+	    ghDSDS = DSDS_GetLibHandle(kLIBDSDS, &dsdsstat);
+	    if (dsdsstat != kDSDS_Stat_Success)
 	    {
-	       char *msg = NULL;
-	       snprintf(lpath, 
-			sizeof(lpath), 
-			"%s/lib/%s/libdsds.so", 
-			root, 
-			mach);
-	       dlerror();
-	       ghDSDS = dlopen(lpath, RTLD_NOW);
-	       if ((msg = dlerror()) != NULL)
-	       {
-		  /* dsds library not found */
-		  fprintf(stderr, "dlopen(%s) error: %s.\n", lpath, msg);
-		  lstat = DRMS_ERROR_CANTOPENLIBRARY;
-	       }
+	       lstat = DRMS_ERROR_CANTOPENLIBRARY;
 	    }
 
 	    gAttemptedDSDS = 1;
@@ -796,25 +782,11 @@ static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env,
 
    if (!gAttemptedDSDS && !ghDSDS)
    {
-      char lpath[PATH_MAX];
-      const char *root = getenv(kJSOCROOT);
-      const char *mach = getenv(kJSOC_MACHINE);
-      if (root && mach)
+      kDSDS_Stat_t dsdsstat;
+      ghDSDS = DSDS_GetLibHandle(kLIBDSDS, &dsdsstat);
+      if (dsdsstat != kDSDS_Stat_Success)
       {
-	 char *msg = NULL;
-	 snprintf(lpath, 
-		  sizeof(lpath), 
-		  "%s/lib/%s/libdsds.so", 
-		  root, 
-		  mach);
-	 dlerror();
-	 ghDSDS = dlopen(lpath, RTLD_NOW);
-	 if ((msg = dlerror()) != NULL)
-	 {
-	    /* library not found */
-	    fprintf(stderr, "dlopen(%s) error: %s.\n", lpath, msg);
-	    stat = DRMS_ERROR_CANTOPENLIBRARY;
-	 }
+	 stat = DRMS_ERROR_CANTOPENLIBRARY;
       }
 
       gAttemptedDSDS = 1;
@@ -1045,25 +1017,12 @@ DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, const char *dsRecSet, i
 
    if (!gAttemptedDSDS && !ghDSDS)
    {
-      char lpath[PATH_MAX];
-      const char *root = getenv(kJSOCROOT);
-      const char *mach = getenv(kJSOC_MACHINE);
-      if (root && mach)
+      /* Get handle to libdsds.so */
+      kDSDS_Stat_t dsdsstat;
+      ghDSDS = DSDS_GetLibHandle(kLIBDSDS, &dsdsstat);
+      if (dsdsstat != kDSDS_Stat_Success)
       {
-	 char *msg = NULL;
-	 snprintf(lpath, 
-		  sizeof(lpath), 
-		  "%s/lib/%s/libdsds.so", 
-		  root, 
-		  mach);
-	 dlerror();
-	 ghDSDS = dlopen(lpath, RTLD_NOW);
-	 if ((msg = dlerror()) != NULL)
-	 {
-	    /* library not found */
-	    fprintf(stderr, "dlopen(%s) error: %s.\n", lpath, msg);
-	    stat = DRMS_ERROR_CANTOPENLIBRARY;
-	 }
+	 stat = DRMS_ERROR_CANTOPENLIBRARY;
       }
 
       gAttemptedDSDS = 1;

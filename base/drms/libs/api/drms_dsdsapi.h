@@ -4,8 +4,8 @@
 
 #include "drms_types.h"
 
-#define kJSOCROOT "JSOCROOT"
 #define kJSOC_MACHINE "JSOC_MACHINE"
+#define kLIBDSDS "libdsds.so"
 #define kDSDS_SERIES_NUM "series_num"
 #define kDSDS_DS "ds"
 #define kDSDS_RN "rn"
@@ -16,6 +16,8 @@
 typedef enum kDSDS_Stat_enum
 {
    kDSDS_Stat_Success = 0,   /* No errors */
+   kDSDS_Stat_CantReadProcLink,
+   kDSDS_Stat_CantOpenLibrary,
    kDSDS_Stat_NoEnvironment, /* Attempt to access DSDS when 
 				access prohibited */
    kDSDS_Stat_NoSOI,	     /* Attempt to use libsoi.so, 
@@ -54,6 +56,7 @@ void *DSDS_GetFPtr(void *hDSDS, const char *symbol);
 int DSDS_IsDSDSSpec(const char *spec);
 int DSDS_GetDSDSParams(DRMS_SeriesInfo_t *si, char *out);
 int DSDS_SetDSDSParams(void *hDSDS, DRMS_SeriesInfo_t *si, DSDS_Handle_t in);
+void *DSDS_GetLibHandle(const char *libname, kDSDS_Stat_t *status);
 
 /* Internal API (available to su only) */
 #define kDSDS_DSDS_OPEN_RECORDS "DSDS_open_records"

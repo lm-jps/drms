@@ -788,24 +788,11 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 
      if (!attempted && !hDSDS)
      {
-	char lpath[PATH_MAX];
-	const char *root = getenv(kJSOCROOT);
-	const char *mach = getenv(kJSOC_MACHINE);
-	if (root && mach)
+	kDSDS_Stat_t dsdsstat;
+	hDSDS = DSDS_GetLibHandle(kLIBDSDS, &dsdsstat);
+	if (dsdsstat != kDSDS_Stat_Success)
 	{
-	   char *msg = NULL;
-	   snprintf(lpath, 
-		    sizeof(lpath), 
-		    "%s/lib/%s/libdsds.so", 
-		    root, 
-		    mach);
-	   dlerror();
-	   hDSDS = dlopen(lpath, RTLD_NOW);
-	   if ((msg = dlerror()) != NULL)
-	   {
-	      /* symbol not found */
-	      fprintf(stderr, "dlopen(%s) error: %s.\n", lpath, msg);
-	   }
+	   stat = DRMS_ERROR_CANTOPENLIBRARY;
 	}
 
 	attempted = 1;

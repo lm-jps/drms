@@ -19,6 +19,7 @@ void *gHandleSOI = NULL;
 long long gSeriesGuid = 1;
 
 const char kDSDS_GenericSeriesName[] = "dsds_series";
+#define kLIBSOI "libsoi.so"
 
 /* libsoi API function names */
 typedef enum Soifn_enum
@@ -139,33 +140,14 @@ static void *GetSOI(kDSDS_Stat_t *stat)
 {
    static int attempted = 0;
    kDSDS_Stat_t status;
-   char *msg = NULL;
 
    if (!attempted && !gHandleSOI)
    {
-      char lpath[PATH_MAX];
-      const char *root = getenv(kJSOCROOT);
-      const char *mach = getenv(kJSOC_MACHINE);
-
-      if (root && mach)
+      /* Get handle to libdsds.so */
+      gHandleSOI = DSDS_GetLibHandle(kLIBSOI, &status);
+      if (status == kDSDS_Stat_CantOpenLibrary)
       {
-	 snprintf(lpath,
-		  sizeof(lpath),
-		  "%s/lib/%s/libsoi.so",
-		  root,
-		  mach);
-	 dlerror();
-	 gHandleSOI = dlopen(lpath, RTLD_NOW);
-	 msg = dlerror();
-	 status = (gHandleSOI != NULL) ? kDSDS_Stat_Success : kDSDS_Stat_NoSOI;
-	 if (msg)
-	 {
-	    fprintf(stderr, "Problem opening library %s: %s.\n", lpath, msg);
-	 }
-      }
-      else
-      {
-	 status = kDSDS_Stat_NoEnvironment;
+	 status = kDSDS_Stat_NoSOI;
       }
 
       attempted = 1;
@@ -174,6 +156,10 @@ static void *GetSOI(kDSDS_Stat_t *stat)
    if (gHandleSOI)
    {
       status = kDSDS_Stat_Success;
+   }
+   else
+   {
+      status = kDSDS_Stat_NoSOI;
    }
 
    if (stat)
@@ -898,7 +884,7 @@ static void MakeDRMSSeriesName(void *hSOI,
       {
 	 /* If the dataset being opened resides in a directory, and did not come
 	  * from the SOI database, then use a generic, but unique name. */
-	 snprintf(drmsSeriesName, size, "%s%d", kDSDS_GenericSeriesName, gSeriesGuid);
+	 snprintf(drmsSeriesName, size, "%s%lld", kDSDS_GenericSeriesName, gSeriesGuid);
       }
 
       gSeriesGuid++;     
@@ -971,6 +957,7 @@ static int LoopAttrs(void *hSOI,
 	  pFn_sds_attrvalue && pFn_sds_attrcomment)
       {
 	 DSDS_KeyList_t *pKL = pHead;
+	 DSDS_KeyList_t *pPrevKL = NULL;
 
 	 char *attrName = NULL;
 	 int attrType;
@@ -988,6 +975,14 @@ static int LoopAttrs(void *hSOI,
 	    if (pKL->elem != NULL)
 	    {
 	       pKL->next = (DSDS_KeyList_t *)malloc(sizeof(DSDS_KeyList_t));
+
+	       if (!(pKL->next))
+	       {
+		  status = kDSDS_Stat_NoMemory;
+		  break;
+	       }
+
+	       pPrevKL = pKL;
 	       pKL = pKL->next;
 	       pKL->next = NULL;
 	    }
@@ -1009,26 +1004,55 @@ static int LoopAttrs(void *hSOI,
 
 	       snprintf(drmskey->info->name, DRMS_MAXNAMELEN, "%s", attrName);
 	       drmskey->info->type = SOITypeToDRMSType(attrType);
-	       GetKWFormat(drmskey->info->format, 
-			   DRMS_MAXFORMATLEN, 
-			   drmskey->info->type);
-
-	       if (attrComment)
-	       {
-		  snprintf(drmskey->info->description, 
-			   DRMS_MAXCOMMENTLEN,
-			   "%s",
-			   attrComment);
-	       }
-		  
-	       if (PolyValueToDRMSValue(attrType, attrVal, &(drmskey->value)))
+	       if (GetKWFormat(drmskey->info->format, 
+			       DRMS_MAXFORMATLEN, 
+			       drmskey->info->type))
 	       {
 		  status = kDSDS_Stat_TypeErr;
-		  break;
 	       }
-		     
-	       pKL->elem = drmskey;
-	       nAttrs++;
+	       else
+	       {
+		  if (attrComment)
+		  {
+		     snprintf(drmskey->info->description, 
+			      DRMS_MAXCOMMENTLEN,
+			      "%s",
+			      attrComment);
+		  }
+		  
+		  if (PolyValueToDRMSValue(attrType, 
+					   attrVal, 
+					   &(drmskey->value)))
+		  {
+		     status = kDSDS_Stat_TypeErr;
+		  }
+	       }
+
+	       if (status != kDSDS_Stat_Success)
+	       {
+		  /* A bad key - delete and continue */
+		  fprintf(stderr, "A bad fits keyword encountered.\n"
+			  "Some keywords may not have been ingested.\n");
+
+		  if (drmskey)
+		  {
+		     if (drmskey->info)
+		     {
+			free(drmskey->info);
+		     }
+
+		     free(drmskey);
+		  }
+
+		  free(pKL);
+		  pKL = pPrevKL;
+		  pKL->next = NULL;
+	       }
+	       else
+	       {
+		  pKL->elem = drmskey;
+		  nAttrs++;
+	       }
 
 	       if (attr == lastAttr)
 	       {
@@ -1039,7 +1063,6 @@ static int LoopAttrs(void *hSOI,
 	    attr = (*pFn_sds_next_attr)(attr);
 
 	 } /* attr loop */
-
       }
       else
       {
