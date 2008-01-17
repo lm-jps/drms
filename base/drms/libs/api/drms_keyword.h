@@ -21,6 +21,7 @@ HContainer_t *drms_create_keyword_prototypes(DRMS_Record_t *target,
 
 void drms_keyword_print(DRMS_Keyword_t *key);
 void drms_keyword_printval(DRMS_Keyword_t *key);
+void drms_keyword_fprintval(FILE *keyfile, DRMS_Keyword_t *key);
 int  drms_template_keywords(DRMS_Record_t *template);
 DRMS_Keyword_t *drms_keyword_lookup(DRMS_Record_t *rec, const char *key, int followlink);
 DRMS_Type_t drms_keyword_type(DRMS_Keyword_t *key);
