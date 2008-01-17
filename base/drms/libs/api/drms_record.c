@@ -1448,6 +1448,7 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 		    else
 		    {
 		       stat = DRMS_ERROR_INVALIDDATA;
+		       goto failure;
 		    }
 		 } /* iSet */
 	      }
@@ -1489,11 +1490,13 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 	else
 	{
 	   stat = DRMS_ERROR_OUTOFMEMORY;
+	   goto failure;
 	}
      }
      else
      {
 	stat = DRMS_ERROR_OUTOFMEMORY;
+	goto failure;
      }
 
      if (realSets)
