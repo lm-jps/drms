@@ -9,8 +9,13 @@ date
 
 cd $JSOCROOT
 
-make clean 
+# make clean 
 # make -j 4 
- make
+
+if (-e $JSOCROOT/suflag.txt) then
+    make all dsds
+else
+    make
+endif
 
 date
