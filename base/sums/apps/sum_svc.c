@@ -277,7 +277,13 @@ if(strcmp(thishost, "lws") && strcmp(thishost, "flap")) { /* !!TEMP don't fork o
       sprintf(dsvcname, "drive%d_svc", i);
       write_log("execvp of %s\n", dsvcname);
       args[0] = dsvcname;
-      if(sim) { 
+      if(tapeoffline) {                 /* overrides any sim flg */
+	 args[1] = "-o";
+	 args[2] = dbname;
+	 args[3] = timetag;
+	 args[4] = NULL;
+      }
+      else if(sim) {
         args[1] = "-s";
         args[2] = dbname;
         args[3] = timetag;

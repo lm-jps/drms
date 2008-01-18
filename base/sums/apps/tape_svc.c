@@ -255,6 +255,8 @@ int main(int argc, char *argv[])
   /* }
   */
 
+  DS_ConnectDB(dbname); /* connect to Oracle before inventory */
+
   /* now inventory the tape unit to get tapeid and slot and drive info */
   /* Must be done after svc_register() so 
    * sum_svc will see us, as the inventory takes awhile */
@@ -262,13 +264,23 @@ int main(int argc, char *argv[])
    * If so tape_inventory() will ret -1 and we will try again for a number 
    * of times and then finally fail.
   */
+  if(tapeoffline == 0) {
   retry = 6;
   while(retry) {
-    if((istat = tape_inventory(sim, 0)) == 0) {
+#ifdef SUMDC
+     if((istat = tape_inventory(sim, 1)) == 0) {
+#else
+	if((istat = tape_inventory(sim, 0)) == 0) { /* no catalog here */
+#endif
+	   write_log("***Error: Can't do tape inventory. Will retry...\n");
+	   --retry;
+	   if(retry == 0) {
       write_log("***Fatal error: Can't do tape inventory\n");
       (void) pmap_unset(TAPEPROG, TAPEVERS);
       exit(1);
     }
+	   continue;
+	}
     if(istat == -1) {	/* didn't get full slot count. retry */
       --retry;
       if(retry == 0) {
@@ -285,8 +297,7 @@ int main(int argc, char *argv[])
     (void) pmap_unset(TAPEPROG, TAPEVERS);
     exit(1);
   }
-
-  DS_ConnectDB(dbname);	/* connect to Oracle at start */
+  }
 
   /* Enter svc_run() which calls svc_getreqset when msg comes in.
    * svc_getreqset calls tapeprog_1() to process the msg.

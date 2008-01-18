@@ -20,7 +20,7 @@ char *get_effdate(int plusdays)
   t_ptr->tm_mday = t_ptr->tm_mday + plusdays;
   newtime = mktime(t_ptr);
   t_ptr = localtime(&newtime);
-  timestr = (char *)malloc(16);
+  timestr = (char *)malloc(32);
   sprintf(timestr, "%04d%02d%02d%02d%02d", 
 	t_ptr->tm_year+1900, t_ptr->tm_mon+1, t_ptr->tm_mday, 
 	t_ptr->tm_hour, t_ptr->tm_min);

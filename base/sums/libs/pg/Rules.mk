@@ -11,6 +11,9 @@ endif
 ifeq ($(HOST),dcs1.jsoc.Stanford.EDU)
         CF_TGT_$(d) := -DSUMDC
 endif
+ifeq ($(HOST),dcs2.jsoc.Stanford.EDU)
+        CF_TGT_$(d) := -DSUMDC
+endif
 
 LIBSUM 		:= $(d)/libsumspg.a
 PG_$(d)		:= $(addprefix $(d)/, $(notdir $(wildcard $(SRCDIR)/$(d)/*.pgc)))

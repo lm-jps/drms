@@ -87,6 +87,7 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
   sumptr->debugflg = 0;		/* default debug off */
   sumptr->storeset = JSOC;	/* default storage set */
   sumptr->dsname = NULL;
+  sumptr->history_comment = NULL;
   sumptr->dsix_ptr = (uint64_t *)malloc(sizeof(uint64_t) * SUMARRAYSZ);
   sumptr->wd = (char **)malloc(sizeof(char *) * SUMARRAYSZ);
   setsumopened(&sumopened_hdr, sumid, sumptr); /* put in linked list of opens */

@@ -52,6 +52,7 @@ $OURPATH = "/home/production/cvs/JSOC/base/sums/scripts/t120view"; #!!this progr
 
 $DEFAULTDB = "hmidbX";		#default DB
 $HOSTDB = "hmidb";		#host where DB runs
+$NOTAPEARC = "/usr/local/logs/soc/NOTAPEARC";
 $INLOG = 0;			#use default tape_svc log
 #$login = "dsowner";
 #$passw = "hmi4sdo";
@@ -111,7 +112,7 @@ $runtag = "/tmp/t120view_$UID.tag";
 if(-e $runtag) {        #this user already running
   print "Already found a $runtag\n";
   print "Only one instance of t120view allowed for a user\n";
-  print "If not so do: /bin/rm $runtag\n";
+  print "If not so do:\n/bin/rm $runtag\n";
   exit(1);
 }
 
@@ -1077,6 +1078,19 @@ sub ImpExp_sub_unload {
         -command => sub {$ImpExpf->destroy();},
         )->pack();
 
+  #touch file for tapearc not to run (NOTAPEARC)
+  #Do a ps to see if a tapearc is already running.
+  #If so, delete the NOTAPEARC file and give a msg no imp/exp now.
+  #if no tapearc running, continue. rm NOTAPEARC when done.
+  `/bin/touch $NOTAPEARC`;
+  @arctest = `ps -ef | grep "tapearc -v jsocdc"`;
+  if($#arctest > 1) {         #don't count our sh and grep
+    `/bin/rm $NOTAPEARC`;
+    $msg = "\nSorry, you can not do Imp/Exp while a tapearc is busy.";
+    $ImpExpf->Label(-text => $msg, -font => 'arial 12 bold')->pack(@pl);
+    return;
+  }
+
     $ImpExpf->Label(-text=> "Unload of Expired Tapes In Progress (I will notify you when done)", 
 		 -background=>'orange', -font => 'arial 12 bold')->pack(@pl);
     $ImpExpf->Label(-text => "Exit/Entry Slots in Door:", 
@@ -1144,6 +1158,8 @@ sub Imp_Exp_Open_Door {
 		-font => 'arial 12 bold')->pack(@pl);
   $ImpExpf->Label(-text => "Go to the t120 console and hit Import/Export >>Bulk Load.", 
 		-font => 'arial 12 bold')->pack(@pl);
+  $ImpExpf->Label(-text => "When asked, hit 'Yes'",
+                -font => 'arial 12 bold')->pack(@pl);
   $ImpExpf->Label(-text=>"The door will open - remove any tapes in the door and insert the needed tapes.", 
 		-font => 'arial 12 bold')->pack(@pl);
   $ImpExpf->Label(-text => "Need tapes:", 
@@ -1197,11 +1213,12 @@ sub Bulk_Load_Done {
     #fork error
     print "!!Error: Can't fork: $!\n";
   }
-  sleep 5;			#allow impexp to run
+  sleep 6;			#allow impexp to run
   if(Exists($ImpExpf)) {
     $ImpExpf->destroy();
   }
   &show_tape_in_slots;
+  `/bin/rm -f $NOTAPEARC`;          #allow tapearc to run again
 }
 
 #Get tapes that are past the effective_date for their group, as defined in the

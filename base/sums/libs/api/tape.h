@@ -13,7 +13,7 @@
 #define MAX_SLOTS_LIVE (MAX_SLOTS - NUM_IMP_EXP_SLOTS)
 #define MAX_DRIVES 1
 #define MAX_GROUPS 1024
-#define MAX_AVAIL_BLOCKS 800000000      /* max (512) blocks on a t50 tape */
+#define MAX_AVAIL_BLOCKS 1600000000      /* max (512) blocks on a t50 tape */
 #define TAR_FILE_SZ 500000000   /* try to make a tar file this many bytes */
 #define TAR_FILE_SZ_BLKS 976563 /* TAR_FILE_SZ/512 */
 #define LIBDEV "/dev/t50"

@@ -29,7 +29,7 @@
 #define CMDLENWRT 16384
 #define GTARLOGDIR "/var/logs/SUM/gtar"
 #define GTAR "/usr/local/bin/gtar"	/* gtar 1.16 on 29May2007 */
-static errstr[256];
+static char errstr[256];
 int write_wd_to_drive();
 int write_hdr_to_drive();
 int position_tape_eod();
@@ -69,6 +69,7 @@ FILE *logfp;
 CLIENT *current_client, *clnttape, *clntsum;
 SVCXPRT *glb_transp;
 int debugflg = 0;
+int tapeoffline = 0;
 int drivenum;
 int efnum = 0;
 char *dbname;
@@ -155,6 +156,9 @@ void get_cmd(int argc, char *argv[])
       case 'd':
         debugflg=1;	/* can also be sent in by client calls */
         break;
+      case 'o':
+	tapeoffline=1;  /* offline mode */
+	break;
       default:
         break;
       }
@@ -234,6 +238,7 @@ int main(int argc, char *argv[])
 	exit(1);
       }
 #ifndef SUMDC
+    if(tapeoffline == 0) {
       /* turn compression off */
       sprintf(compcmd, "sudo /usr/local/bin/mt -f /dev/nst0 defcompression 0");
       write_log("%s\n", compcmd);
@@ -241,6 +246,7 @@ int main(int argc, char *argv[])
         write_log("***Error on: %s\n", compcmd);
         /*exit(1);*/
       }
+    }
 #endif
       #endif
       #ifdef DRIVE_1
@@ -255,12 +261,14 @@ int main(int argc, char *argv[])
 	exit(1);
       }
 #ifndef SUMDC
+      if(tapeoffline == 0) {
       /* turn compression off */
       sprintf(compcmd, "sudo /usr/local/bin/mt -f /dev/nst1 defcompression 0");
       write_log("%s\n", compcmd);
       if(system(compcmd)) {
         write_log("***Error on: %s\n", compcmd);
         /*exit(1);*/
+      }
       }
 #endif
       #endif
@@ -276,12 +284,14 @@ int main(int argc, char *argv[])
 	exit(1);
       }
 #ifndef SUMDC
+      if(tapeoffline == 0) {
       /* turn compression off */
       sprintf(compcmd, "sudo /usr/local/bin/mt -f /dev/nst2 defcompression 0");
       write_log("%s\n", compcmd);
       if(system(compcmd)) {
         write_log("***Error on: %s\n", compcmd);
         /*exit(1);*/
+      }
       }
 #endif
       #endif
@@ -297,12 +307,14 @@ int main(int argc, char *argv[])
 	exit(1);
       }
 #ifndef SUMDC
+      if(tapeoffline == 0) {
       /* turn compression off */
       sprintf(compcmd, "sudo /usr/local/bin/mt -f /dev/nst3 defcompression 0");
       write_log("%s\n", compcmd);
       if(system(compcmd)) {
         write_log("***Error on: %s\n", compcmd);
         /*exit(1);*/
+      }
       }
 #endif
       #endif
@@ -830,7 +842,7 @@ KEY *writedrvdo_1(KEY *params)
 */
 int position_tape_eod(int sim, int dnum)
 {
-  char cmd[128], dname[80];
+  char cmd[256], dname[80];
   int lastfilenum;
 
   sprintf(dname, "%s%d", SUMDR, dnum);
@@ -859,7 +871,7 @@ int position_tape_eod(int sim, int dnum)
 */
 int position_tape_bot(int sim, int dnum)
 {
-  char cmd[128], dname[80];
+  char cmd[256], dname[80];
 
   sprintf(dname, "%s%d", SUMDR, dnum);
   sprintf(cmd, "/usr/local/bin/mt -f %s rewind 1>> %s 2>&1", dname, logfile);
@@ -887,7 +899,7 @@ int position_tape_bot(int sim, int dnum)
 */
 int position_tape_file_asf(int sim, int dnum, int fnum)
 {
-  char cmd[128], dname[80];
+  char cmd[256], dname[80];
 
   sprintf(dname, "%s%d", SUMDR, dnum);
   sprintf(cmd, "/usr/local/bin/mt -f %s asf %d 1>> %s 2>&1", dname, fnum, logfile);
@@ -916,7 +928,7 @@ int position_tape_file_asf(int sim, int dnum, int fnum)
 */
 int position_tape_file_fsf(int sim, int dnum, int fdelta)
 {
-  char cmd[128], dname[80];
+  char cmd[256], dname[80];
 
   if(fdelta == 0) { return(0); }
   sprintf(dname, "%s%d", SUMDR, dnum);
@@ -980,7 +992,7 @@ int get_cksum(char *cfile, char *cksum)
 
 uint64_t tell_blocks(int sim, int dnum)
 {
-  char cmd[128], dname[64], outname[64], scr[64], row[MAXSTR];
+  char cmd[256], dname[64], outname[64], scr[64], row[MAXSTR];
   uint64_t tell;
   FILE *tfp;
 
@@ -1196,6 +1208,8 @@ void drive_reset(char *dname)
   struct mtop mt_op;
   struct mtget mt_stat;
 
+return; /* !!!TEMP noop */
+
   write_log("***PENDING RESET: drive %s\n", dname);
   fd = open(dname, O_RDONLY | O_NONBLOCK);
   mt_op.mt_op = MTRESET;	/* reset drive */
@@ -1221,7 +1235,7 @@ void drive_reset(char *dname)
 int read_drive_to_wd(int sim, char *wd, int drive,  
 	 char *tapeid, int tapefilenum, char *logname, uint64_t filedsixoff[])
 {
-  char cmd[8196], dname[80], md5file[80], md5sum[36], md5db[36], Ddir[128];
+  char cmd[24576], dname[80], md5file[80], md5sum[36], md5db[36], Ddir[128];
   uint64_t dsix;
   int i, status;
 

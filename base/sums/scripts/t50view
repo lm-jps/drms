@@ -52,7 +52,8 @@ $OURPATH = "/home/production/cvs/JSOC/base/sums/scripts/t50view"; #!!this progra
 #$OURPATH = "/home/jim/cvs/JSOC/base/sums/scripts/t50view"; #!!this program
 
 $DEFAULTDB = "jsocdc";		#default DB
-$HOSTDB = "dcs0";		#host where DB runs
+$HOSTDB = "dcs1";               #host where DB runs
+$NOTAPEARC = "/usr/local/logs/soc/NOTAPEARC";
 $INLOG = 0;			#use default tape_svc log
 #$login = "dsowner";
 $pid0 = 0;
@@ -577,6 +578,9 @@ sub log_update {
       ($a, $tapeidstr) = split(/ /, $_);
       ($a, $tid) = split(/=/, $tapeidstr);
       $Hofclosed{$tid} = 1;	#keep tack of closed tapes
+      $b0text = "Imp/Exp\n$ReClosecnt";
+      $b0->configure(-text => $b0text, -background => 'yellow',
+                     -command =>  \&ImpExp_sub,);
     }
     elsif(/^\*Tp:WtQadd:/) {
       ($a, $uidstr, $tapeidstr, $fnumstr, $userstr, $dxstr) = split(/ /, $_);
@@ -713,6 +717,7 @@ sub log_update {
       eval($x);
     }
     elsif(/^\*\*Rb:t50doorcomplete/) {
+      `/bin/rm -f $NOTAPEARC`;          #allow tapearc to run again
       if(Exists($ImpExpf)) {
         $ImpExpf->destroy();
       }
@@ -806,6 +811,13 @@ sub log_update {
       }
       &show_tape_in_slots;		#display where tapes are
       if($playback) { last; }
+    }
+    elsif(/^\*\*\*ENDInvPhase:/) {
+      %Hofclosed = ();                  #reset all closed tapes
+      $EEcnt = 0;
+      $b0text = "Imp/Exp\n$EEcnt";
+      $b0->configure(-text => $b0text, -background => 'grey',
+                     -command =>  \&ImpExp_sub,);
     }
     elsif(/^\*Dr0:rd:/) {
       $str = substr($_, 9);
@@ -1121,7 +1133,7 @@ sub ImpExp_sub {
   $ImpExpf = $mw->Toplevel();
   #$ImpExpf->geometry("590x400+25+500");
   $ImpExpf->geometry("590x440");
-  $ImpExpf->title("Import/Export Ops");
+  $ImpExpf->title("Import/Export Ops for $hostdb");
   $ImpExpf->Button(
         -text => 'Close',
         -background => 'grey',
@@ -1185,12 +1197,25 @@ sub ImpExp_sub_unload {
   $ImpExpf = $mw->Toplevel();
   #$ImpExpf->geometry("590x400+25+500");
   $ImpExpf->geometry("590x440+300+100");
-  $ImpExpf->title("Import/Export Ops");
+  $ImpExpf->title("Import/Export Ops for $hostdb");
   $ImpExpf->Button(
         -text => 'Close',
         -background => 'grey',
         -command => sub {$ImpExpf->destroy();},
         )->pack();
+
+    #touch file for tapearc not to run (NOTAPEARC)
+    #Do a ps to see if a tapearc is already running.
+    #If so, delete the NOTAPEARC file and give a msg no imp/exp now.
+    #if no tapearc running, continue. rm NOTAPEARC when done.
+    `/bin/touch $NOTAPEARC`;
+    @arctest = `ps -ef | grep "tapearc -v jsocdc"`;
+    if($#arctest > 1) {         #don't count our sh and grep
+      `/bin/rm $NOTAPEARC`;
+      $msg = "\nSorry, you can not do Imp/Exp while a tapearc is busy.";
+      $ImpExpf->Label(-text => $msg, -font => 'arial 12 bold')->pack(@pl);
+      return;
+    }
 
     $ImpExpf->Label(-text=> "Unload of Expired Tapes In Progress (I will notify you when done)", 
 		 -background=>'orange', -font => 'arial 12 bold')->pack(@pl);
@@ -1248,7 +1273,7 @@ sub ImpExp_sub_t50_reload {
   $ImpExpf = $mw->Toplevel();
   #$ImpExpf->geometry("590x400+25+500");
   $ImpExpf->geometry("590x440+300+100");
-  $ImpExpf->title("Import/Export New Tapes Ops");
+  $ImpExpf->title("Import/Export New Tapes Ops for $hostdb");
   $ImpExpf->Button(
         -text => 'Close',
         -background => 'grey',
@@ -1279,7 +1304,7 @@ sub Imp_Exp_Open_Door {
   $ImpExpf = $mw->Toplevel();
   #$ImpExpf->geometry("590x400+25+500");
   $ImpExpf->geometry("490x480");
-  $ImpExpf->title("Import/Export Ops");
+  $ImpExpf->title("Import/Export Ops for $hostdb");
   $ImpExpf->Button(
         -text => 'Close',
         -background => 'grey',

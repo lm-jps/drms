@@ -18,12 +18,13 @@
 #include <soi_error.h>
 #include <printk.h>
 
-extern char *get_effdate(int plusdays);
+char *get_eff_date(int plusdays);
 
-#define TODAY (atol(get_effdate(0)))
+#define TODAY (atol(get_eff_date(0)))
 #define TAR_FILE_SZ 500000000	/* try to make a tar file this size */
 #define WD_MAX_CALL_CNT 512	/* max wds to put in any one call to tape */
 #define ARCH_CHUNK 10		/* this many archive calls to tape_svc */
+#define NOTAPEARC "/usr/local/logs/soc/NOTAPEARC" /* touched by t50view */
 
 extern void printkey (KEY *key);
 void usage();
@@ -212,15 +213,18 @@ void setup()
   int n;
 
   printk_set(printf, printf);
-  n = find_tapearc();
-  if(n != 1) {
-     printf("Only one tapearc %s allowed at a time. I see %d\n", dbname,n);
-     send_mail("Only one tapearc %s allowed at a time. I see %d\n", dbname,n);
-     exit(1); 
-  }
   gethostname(thishost, MAX_STR);
   cptr = index(thishost, '.');       /* must be short form */
   *cptr = (char)NULL;
+  n = find_tapearc();
+  if(n != 1) {
+     printf("%s: Only one tapearc %s allowed at a time. I see %d\n",
+	    thishost, dbname,n);
+     send_mail("%s: Only one tapearc %s allowed at a time. I see %d\n",
+	       thishost, dbname,n);
+     exit(1); 
+  }
+
   if (signal(SIGINT, SIG_IGN) != SIG_IGN)
       signal(SIGINT, sighandler);
   if (signal(SIGTERM, SIG_IGN) != SIG_IGN)
@@ -321,6 +325,7 @@ int call_tape_svc(int groupid, double bytes, uint64_t index) {
 
 int main(int argc, char *argv[])
 { 
+  FILE *notapearc;
 
   get_cmd(argc, argv);                  /* check the calling sequence */
   if(!(username = (char *)getenv("USER"))) username = "nouser";
@@ -331,6 +336,12 @@ int main(int argc, char *argv[])
       exit(1);
     }
   }
+  if((notapearc=fopen(NOTAPEARC, "r")) != NULL) {
+     printf("Can't run a tapearc while Imp/Exp of tapes is active\n");
+     fclose(notapearc);
+     exit(-1);
+  }
+
   printf ("Current effective_date is %ld\n", TODAY);
   time (&now); printf ("%s\n",asctime(localtime(&now)));
   printf ("Datasets will be archived if there are more than %d\n",
@@ -632,4 +643,28 @@ int storeunitarch(int docnt)
     }
   }
   return(0);
+}
+
+/* Return a date as a malloc'd string in yyyymmddhhmm format that is plusdays
+ * from now.
+ */
+char *get_eff_date(int plusdays)
+{
+   struct timeval tvalr;
+   struct tm *t_ptr;
+   time_t newtime;
+   char *timestr;
+  	 
+   if(gettimeofday(&tvalr, NULL) == -1) {
+      return("200712121212");     /* give a phoney return */
+   }
+   t_ptr = localtime(&tvalr.tv_sec);
+   t_ptr->tm_mday = t_ptr->tm_mday + plusdays;
+   newtime = mktime(t_ptr);
+   t_ptr = localtime(&newtime);
+   timestr = (char *)malloc(32);
+   sprintf(timestr, "%04d%02d%02d%02d%02d",
+	   t_ptr->tm_year+1900, t_ptr->tm_mon+1, t_ptr->tm_mday,
+	   t_ptr->tm_hour, t_ptr->tm_min);
+   return(timestr);
 }
