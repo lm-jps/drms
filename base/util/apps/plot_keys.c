@@ -197,7 +197,7 @@ int DoIt(void)
       {
       /*Open file for writing gnuplot data */
       FILE *myfile;
-       myfile = fopen("gnuplot_cmd.txt", "w");  /*  open datafile.txt for writing  */       if (myfile == NULL) {
+       myfile = fopen("/tmp/gnuplot_cmd.txt", "w");  /*  open datafile.txt for writing  */       if (myfile == NULL) {
           fprintf(stderr, "Can't open datafile.txt for reading");
            exit(1);
        }

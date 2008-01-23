@@ -153,40 +153,7 @@ void drms_keyword_print(DRMS_Keyword_t *key)
 /* Print the fields of a keyword struct to stdout. */
 void drms_keyword_printval(DRMS_Keyword_t *key)
 {
-  switch(key->info->type)
-  {
-  case DRMS_TYPE_CHAR: 
-    printf(key->info->format, key->value.char_val);
-    break;
-  case DRMS_TYPE_SHORT:
-    printf(key->info->format, key->value.short_val);
-    break;
-  case DRMS_TYPE_INT:  
-    printf(key->info->format, key->value.int_val);
-    break;
-  case DRMS_TYPE_LONGLONG:  
-    printf(key->info->format, key->value.longlong_val);
-    break;
-  case DRMS_TYPE_FLOAT:
-    printf(key->info->format, key->value.float_val);
-    break;
-  case DRMS_TYPE_DOUBLE: 	
-    printf(key->info->format, key->value.double_val);
-    break;
-  case DRMS_TYPE_TIME: 
-    {
-      char buf[1024];
-      sprint_time(buf, key->value.time_val, key->info->format, 0);
-      // sprint_time(buf, key->value.time_val, "UT", 0);
-      printf("%s",buf);
-    }
-    break;
-  case DRMS_TYPE_STRING: 
-    printf(key->info->format, key->value.string_val);
-    break;
-  default:
-    break;
-  }
+  drms_keyword_fprintval(stdout, key);
 }
 
 
