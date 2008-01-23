@@ -19,59 +19,20 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 
 int drms_server_authenticate(int sockfd, DRMS_Env_t *env, int clientid)
 {
-  char *username, *sha1_passwd;
-  char query[1024];
-  int status=1;
-  DB_Text_Result_t *qres;
-  DB_Handle_t *db_handle = env->session->db_handle;
-
-  /* Get username and password from client. */
-  username = receive_string(sockfd);
-  sha1_passwd = receive_string(sockfd);
-
-  /* FIXME: Always authenticate for now. */
-  status = 0;
-  goto finish;
-
-  /* Get password from database. */
-  CHECKSNPRINTF(snprintf(query, 1024, 
-			 "select sha1_passwd from drms_users where username='%s'",
-			 username), 1024);
-  qres = db_query_txt(db_handle, query);
-  
-  if ( qres != NULL )
-  {
-    if ( qres->num_rows==1 )
-    {
-      /*      printf("True password:\n");
-	      db_print_text_result(qres); */
-      status = strncmp(qres->field[0][0],sha1_passwd,2*SHA_DIGEST_LENGTH);
-    }
-    db_free_text_result(qres);
-  }
- finish:
-  /* Send status to client:
-     status=1 means "access denied", status=0 means "access granted".  */
-  free(username);
-  free(sha1_passwd);
-  if (!status)
-  {
-    int tmp[5],*t;
-    long long ltmp[2];
-    struct iovec vec[8],*v;
-    /* Send session information to the client. */
-    t=tmp; v=vec;
-    net_packint(status, t++, v++);
-    net_packint(clientid, t++, v++);
-    net_packlonglong(env->session->sessionid, &ltmp[0], v++);
-    net_packstring(env->session->sessionns, t++, v);
-    v += 2;
-    net_packlonglong(env->session->sunum, &ltmp[1], v++);
-    net_packstring(env->session->sudir, t, v);
-    Writevn(sockfd, vec, 8);
-  }
-  else
-    Writeint(sockfd,status);
+  int status = 0;
+  int tmp[5],*t;
+  long long ltmp[2];
+  struct iovec vec[8],*v;
+  /* Send session information to the client. */
+  t=tmp; v=vec;
+  net_packint(status, t++, v++);
+  net_packint(clientid, t++, v++);
+  net_packlonglong(env->session->sessionid, &ltmp[0], v++);
+  net_packstring(env->session->sessionns, t++, v);
+  v += 2;
+  net_packlonglong(env->session->sunum, &ltmp[1], v++);
+  net_packstring(env->session->sudir, t, v);
+  Writevn(sockfd, vec, 8);
 
   return status;
 }

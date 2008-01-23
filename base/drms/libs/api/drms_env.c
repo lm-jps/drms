@@ -47,7 +47,7 @@ DRMS_Env_t *drms_open (char *host, char *user, char *password, char *dbname,
       user = empty;
     if( password == NULL)
       password = empty;
-    if ((env->session = drms_connect (hostname, port, user, password)) == NULL)
+    if ((env->session = drms_connect (hostname, port)) == NULL)
       goto bailout1;
   } else {
 #ifndef DRMS_CLIENT

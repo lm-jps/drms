@@ -502,13 +502,13 @@ FCALLSCFUN6(INT, f_drms_array2string, F_DRMS_ARRAY2STRING, f_drms_array2string, 
 // ##### FILE:: drms_client.c #######
 // ####          START           ####
 // ##################################
-char * f_drms_connect(char *host, unsigned short port, char *username, char *passwd) {
+char * f_drms_connect(char *host, unsigned short port) {
   DRMS_Session_t  * _ret_var;
 
-  _ret_var = drms_connect(host, port, username, passwd);
+  _ret_var = drms_connect(host, port);
   return _pointer2handle((void *)_ret_var, "DRMS_Session_t", "drms_connect");
 }
-FCALLSCFUN4(STRING, f_drms_connect, F_DRMS_CONNECT, f_drms_connect, STRING, SHORT, STRING, STRING)
+FCALLSCFUN2(STRING, f_drms_connect, F_DRMS_CONNECT, f_drms_connect, STRING, SHORT)
 
 
 void f_drms_disconnect(char * env_hdl, int abort) {

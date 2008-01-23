@@ -4,18 +4,11 @@
 #include "db.h"
 //#define DEBUG
 
-DRMS_Session_t *drms_connect(char *host, unsigned short port, 
-			     char *username, char *passwd)
+DRMS_Session_t *drms_connect(char *host, unsigned short port)
 {
-  int i;
   struct sockaddr_in server;
   struct hostent *he;
   DRMS_Session_t *session;
-  unsigned char md[SHA_DIGEST_LENGTH];
-  char hex_md[2*SHA_DIGEST_LENGTH+1],*p;
-  int len;
-  int tmp[2];
-  struct iovec vec[4];
   int denied;
 
   /* get the host info */
@@ -59,7 +52,7 @@ DRMS_Session_t *drms_connect(char *host, unsigned short port,
   server.sin_addr = *((struct in_addr *)he->h_addr);
 
   /* connect the socket to the server's address */
-  if ( connect(session->sockfd, (const struct sockadrr *) &server, 
+  if ( connect(session->sockfd, (struct sockadrr *) &server, 
 	       sizeof(struct sockaddr_in)) == -1 )
   {
 #ifdef DEBUG
@@ -79,29 +72,6 @@ DRMS_Session_t *drms_connect(char *host, unsigned short port,
     return NULL;
 */
 
-  /* Now send authentication (username, SHA1(passwd)) to server. */
-  //  printf("sending username %s\n",username);
-  len = strlen(passwd);
-  SHA1((const unsigned char *)passwd, len, md); /* Encrypt password string. */
-  p = hex_md;
-  for (i=0; i<SHA_DIGEST_LENGTH; i++)
-    p += sprintf(p,"%hhx",md[i]);
-
-  *p = 0;
-  /* "Pack" username */
-  vec[1].iov_len = strlen(username);
-  vec[1].iov_base = (void *)username;
-  tmp[0] = htonl(vec[1].iov_len);
-  vec[0].iov_len = sizeof(tmp[0]);
-  vec[0].iov_base = &tmp[0];
-  /* "Pack" SHA1(password) */
-  vec[3].iov_len = strlen(hex_md);
-  vec[3].iov_base = hex_md;
-  tmp[1] = htonl(vec[3].iov_len);
-  vec[2].iov_len = sizeof(tmp[1]);
-  vec[2].iov_base = &tmp[1];
-  Writevn(session->sockfd, vec, 4);
-  
   /* Receive anxiously anticipaqted reply from the server. If denied=1
      we are doomed, but if denied=0 we are on our way to the green
      pastures of DRMS. */

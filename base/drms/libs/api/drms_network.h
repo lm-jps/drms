@@ -16,8 +16,7 @@
 
 int drms_send_commandcode(int sockfd, int command);
 int drms_send_commandcode_noecho(int sockfd, int command);
-DRMS_Session_t *drms_connect(char *host, unsigned short port, 
-			     char *user, char *passwd);
+DRMS_Session_t *drms_connect(char *host, unsigned short port);
 DRMS_Session_t *drms_connect_direct(char *host, char *user, 
 				    char *passwd, char *dbname,
 				    char *sessionns);
