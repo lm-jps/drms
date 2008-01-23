@@ -1472,9 +1472,9 @@ int drms_segment_write_from_file(DRMS_Segment_t *seg, char *infile) {
     filename++;
   else 
     filename = infile;
-  
-  CHECKSNPRINTF(snprintf(outfile, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT "/%s",
-			 seg->record->su->sudir, seg->record->slotnum, filename), DRMS_MAXPATHLEN);
+
+  CHECKSNPRINTF(snprintf(seg->filename, DRMS_MAXSEGFILENAME, "%s", filename), DRMS_MAXSEGFILENAME);
+  drms_segment_filename(seg, outfile);
   if ((out = fopen(outfile, "w")) == NULL) {
     fprintf(stderr, "Error:Unable to open %s\n", outfile);
     goto bailout;
@@ -1493,7 +1493,6 @@ int drms_segment_write_from_file(DRMS_Segment_t *seg, char *infile) {
   }
   fclose(in);
   fclose(out); 
-  CHECKSNPRINTF(snprintf(seg->filename, DRMS_MAXSEGFILENAME, "%s", filename), DRMS_MAXSEGFILENAME);
   free(buf);
   buf = NULL;
   
@@ -1514,6 +1513,7 @@ int drms_segment_write_from_file(DRMS_Segment_t *seg, char *infile) {
  bailout:
   if (buf) 
     free(buf);
+  seg->filename[0] = '\0';
   return 1;
 }
 
