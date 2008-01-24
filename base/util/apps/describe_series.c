@@ -212,13 +212,13 @@ int DoIt(void) {
   }
   db_free_text_result(qres);
 
-  int rec_cnt;
+  long long rec_cnt;
   // sprintf(query, "select reltuples from pg_class where relname='%s'",series);
   sprintf(query, "select count(recnum) from %s",series);
   if ((qres = drms_query_txt(drms_env->session, query)) && qres->num_rows>0)
   {
     printf("Number of records = %s\n", qres->field[0][0]);
-    rec_cnt = atoi(qres->field[0][0]);
+    rec_cnt = atoll(qres->field[0][0]);
   }
   db_free_text_result(qres);
 
