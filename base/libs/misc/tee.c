@@ -314,16 +314,18 @@ int save_stdeo() {
 
 /* Restore stderr and stdout */
 int restore_stdeo() {
-  stderr = fdopen(stderr_sav, "w");
-  if (!stderr) {
-    perror("fdopen failed. Can't restore stderr");
+  if (dup2(stderr_sav, STDERR_FILENO) == -1) {
+    perror("dup2 call failed for stderr");
     return 1;
   }
-  stdout = fdopen(stdout_sav, "w");
-  if (!stdout) {
-    perror("fdopen failed. Can't restore stdout");
+  close(stderr_sav);
+
+  if (dup2(stdout_sav, STDOUT_FILENO) == -1) {
+    perror("dup2 call failed for stdout");
     return 1;
   }
+  close(stdout_sav);
+
   return 0;
 }
 		  

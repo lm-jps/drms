@@ -59,11 +59,7 @@ int main (int argc, char *argv[]) {
   DB_Handle_t *db_handle;
   pid_t pid=0;
   char *dbhost, *dbuser, *dbpasswd, *dbname, *sessionns;
-
-  if (save_stdeo()) {
-    printf("Can't save stdout and stderr\n");
-    return 1;
-  }
+  char drms_server[] = "drms_server";
 
 #ifdef DEBUG
   xmem_config(1,1,1,1,1000000,1,0,0); 
@@ -129,6 +125,12 @@ int main (int argc, char *argv[]) {
   env->server_wait = cmdparams_get_int(&cmdparams, "DRMS_SERVER_WAIT", NULL);
   env->verbose     = verbose;
 
+  env->dbpasswd = dbpasswd;
+  env->user = user;
+  env->logfile_prefix = drms_server;
+  env->dolog = dolog;
+  env->quiet = 1;
+
   /* Start listening on the socket for clients trying to connect. */
   sockfd = db_tcp_listen(hostname, sizeof(hostname), &port);
   printf("DRMS server listening on %s:%hu.\n",hostname,port);
@@ -191,16 +193,6 @@ int main (int argc, char *argv[]) {
   }
 #endif
 
-
-  /******* Spawn a thread to handle communication with SUMS.  **********/
-  if( (status = pthread_create( &env->sum_thread, NULL, &drms_sums_thread, 
-				(void *) env)) )
-  {
-    fprintf(stderr,"Thread creation failed: %d\n", status);          
-    Exit(1);
-  }
-  fflush(stdout);
-
   /* Start a transaction if noshare=FALSE, in which case all database
      operations performed through this server should be treated as
      a single transaction. */
@@ -214,60 +206,18 @@ int main (int argc, char *argv[]) {
       fprintf(stderr,"Failed to set database isolation level.\n");
       Exit(1);
     }
-    if ( db_start_transaction(db_handle))
-    {
-      fprintf(stderr,"Couldn't start database transaction.\n");
-      Exit(1);
-    }
   }
 
-
-  /* Register the session in the database. */
-  if ((env->session->stat_conn = db_connect(dbhost,dbuser,dbpasswd,dbname,1)) == NULL)
-  {
-    fprintf(stderr,"Error: Couldn't establish stat_conn database connection.\n");
-    Exit(1);
-  }
-  drms_server_open_session(env, hostname, port, user, 1);
-  printf("DRMS_HOST = %s\n"
-	 "DRMS_PORT = %hu\n"
-	 "DRMS_PID = %lu\n"
-	 "DRMS_SESSIONID = %lld\n"
-	 "DRMS_SESSIONNS = %s\n"
-	 "DRMS_SUNUM = %lld\n"
-	 "DRMS_SUDIR = %s\n",
-	 hostname, port, (unsigned long) pid, env->session->sessionid,
-	 env->session->sessionns,
-	 env->session->sunum,env->session->sudir);     
+  strncpy(env->session->hostname, hostname, DRMS_MAXHOSTNAME);
+  env->session->port = port;
+  drms_server_begin_transaction(env);
 
   /* Redirect output */
   if (dolog)
   {
-    char filename_e[1024],filename_o[1024];
-    CHECKSNPRINTF(snprintf(filename_e,1023, "%s/drms_server.stderr", env->session->sudir), 1023);
-    printf("Redirecting standard error to  %s\n",filename_e);
-    CHECKSNPRINTF(snprintf(filename_o,1023, "%s/drms_server.stdout", env->session->sudir), 1023);
-    printf("Redirecting standard output to %s\n",filename_o);
-    redirect_stdio(filename_o, 0644, filename_e, 0644);
-    //    setlinebuf(stdout);
-
     /* Print info again into log file in SUMS directory. */
     printf("DRMS server started with pid=%d, noshare=%d\n",
 	   pid,noshare);    
-    printf("DRMS server connected to database '%s' on host '%s' as "
-	   "user '%s'.\n",env->session->db_handle->dbname, 
-	   env->session->db_handle->dbhost,
-	   env->session->db_handle->dbuser);
-    printf("DRMS_HOST = %s\n"
-	   "DRMS_PORT = %hu\n"
-	   "DRMS_PID = %lu\n"
-	   "DRMS_SESSIONID = %lld\n"
-	   "DRMS_SESSIONNS = %s\n"
-	   "DRMS_SUNUM = %lld\n"
-	   "DRMS_SUDIR = %s\n",
-	   hostname, port, (unsigned long) pid, env->session->sessionid,
-	   env->session->sessionns,
-	   env->session->sunum,env->session->sudir);     
     fflush(stdout);
   }
 
@@ -289,7 +239,7 @@ int main (int argc, char *argv[]) {
 
 		       /* Find out who just connected and print it on stdout */
     client_size = sizeof (client);
-    if (getpeername (clientsockfd, &client, &client_size) == -1 ) {
+    if (getpeername (clientsockfd, (struct sockaddr *)&client, &client_size) == -1 ) {
       perror ("getpeername call failed.");
       continue;
     }

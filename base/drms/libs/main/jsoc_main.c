@@ -146,14 +146,9 @@ static void atexit_action (void) {
 int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt)(void)) {
   int verbose=0, nagleoff=0, dolog=0, quiet=0;
   int status;
-  char hostname[1024], *user, unknown[]="unknown";
+  char *user, unknown[]="unknown";
   DB_Handle_t *db_handle;
   char *dbhost, *dbuser, *dbpasswd, *dbname, *sessionns;
-
-  if (save_stdeo()) {
-    printf("Can't save stdout and stderr\n");
-    return 1;
-  }
 
   /* Initialize global things. */
   drms_keymap_init(); /* If this slows down init too much, do on-demand init. */
@@ -184,9 +179,6 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
 	   cmdparams_get_int (&cmdparams, "L", NULL) != 0);
   nagleoff = cmdparams_exists(&cmdparams,"n");
 
-  if (gethostname(hostname, sizeof(hostname)))
-      return 1;
-
   /* Get user name */
   if (!(user = getenv("USER")))
     user = unknown;
@@ -207,6 +199,16 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
     return 1;
   }
 
+  int archive = cmdparams_exists(&cmdparams,"A");
+  int retention = -1;
+  if (cmdparams_exists (&cmdparams, "DRMS_RETENTION")) {
+    retention = cmdparams_get_int(&cmdparams, "DRMS_RETENTION", NULL);
+  }
+  int query_mem = 512;
+  if (cmdparams_exists (&cmdparams, "DRMS_QUERY_MEM")) {
+    query_mem = cmdparams_get_int(&cmdparams, "DRMS_QUERY_MEM", NULL);
+  }
+
   /* Initialize server's own DRMS environment and connect to 
      DRMS database server. */
   if ((drms_env = drms_open(dbhost,dbuser,dbpasswd,dbname,sessionns)) == NULL)
@@ -214,21 +216,10 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
     fprintf(stderr,"Failure during server initialization.\n");
     return 1;
   }
-  db_handle = drms_env->session->db_handle;
-
-  drms_env->archive     = cmdparams_exists(&cmdparams,"A");
-  if (cmdparams_exists (&cmdparams, "DRMS_RETENTION")) {
-    drms_env->retention = cmdparams_get_int(&cmdparams, "DRMS_RETENTION", NULL);
-  }
-  if (cmdparams_exists (&cmdparams, "DRMS_QUERY_MEM")) {
-    drms_env->query_mem = cmdparams_get_int(&cmdparams, "DRMS_QUERY_MEM", NULL);
-  }
-  drms_env->server_wait = 0;
-  drms_env->verbose     = verbose;
-
-  atexit(atexit_action);  
 
   /***************** Set up exit() and signal handling ********************/
+
+  atexit(atexit_action);  
  
   /* Block signals INT, QUIT, TERM, and USR1. They will explicitly
      handled by the signal thread created below. */
@@ -252,11 +243,22 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
     Exit(1);
   }
 #endif
-
   fflush(stdout);
 
-  /* Start a transaction where all database operations performed
-     through this server should be treated as a single transaction. */
+  db_handle = drms_env->session->db_handle;
+
+  drms_env->archive = archive;
+  drms_env->retention = retention;
+  drms_env->query_mem = query_mem;
+  drms_env->verbose = verbose;
+  drms_env->server_wait = 0;
+
+  drms_env->dbpasswd = dbpasswd;
+  drms_env->user = user;
+  drms_env->logfile_prefix = module_name;
+  drms_env->dolog = dolog;
+  drms_env->quiet = quiet;
+
   if (verbose)
     printf("Setting isolation level to SERIALIZABLE.\n");
   /* Set isolation level to serializable. */
@@ -265,45 +267,21 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
       fprintf(stderr,"Failed to set database isolation level.\n");
       Exit(1);
     }
-  if ( db_start_transaction(db_handle))
-    {
-      fprintf(stderr,"Couldn't start database transaction.\n");
-      Exit(1);
-    }
 
-  /* Register the session in the database. */
-  if ((drms_env->session->stat_conn = db_connect(dbhost,dbuser,dbpasswd,dbname,1)) == NULL)
-  {
-    fprintf(stderr,"Error: Couldn't establish stat_conn database connection.\n");
+  char hostname[1024];
+  if (gethostname(hostname, sizeof(hostname))) {
     Exit(1);
   }
-  
-  drms_server_open_session(drms_env, hostname, -1, user, dolog);
+  strncpy(drms_env->session->hostname, hostname, DRMS_MAXHOSTNAME);
 
-  /* Redirect output */
-  if (dolog)
-  {
-    char filename_e[1024],filename_o[1024];
-    if (!quiet) {
-      CHECKSNPRINTF(snprintf(filename_e,1023, "%s/%s.stderr.gz", drms_env->session->sudir, module_name), 1023);
-      CHECKSNPRINTF(snprintf(filename_o,1023, "%s/%s.stdout.gz", drms_env->session->sudir, module_name), 1023);
-      if ((drms_env->tee_pid = tee_stdio (filename_o, 0644, filename_e, 0644)) < 0)
-	Exit(-1);
-    } else {
-      CHECKSNPRINTF(snprintf(filename_e,1023, "%s/%s.stderr", drms_env->session->sudir, module_name), 1023);
-      CHECKSNPRINTF(snprintf(filename_o,1023, "%s/%s.stdout", drms_env->session->sudir, module_name), 1023);
-      if (redirect_stdio (filename_o, 0644, filename_e, 0644))
-	Exit(-1);
-    }
-  }
+  drms_server_begin_transaction(drms_env);
 
   int abort_flag = DoIt();
 
-  if (abort_flag) drms_server_abort (drms_env);
-  else drms_server_commit (drms_env);
+  drms_server_end_transaction(drms_env, abort_flag, 1);
 
-   /* Terminate other global things. */
-   drms_keymap_term();
+  /* Terminate other global things. */
+  drms_keymap_term();
 
   _exit(abort_flag);
 }
