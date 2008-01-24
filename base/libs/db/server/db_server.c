@@ -62,7 +62,8 @@ int db_tcp_listen(char *host, int len, short *port)
   server.sin_addr.s_addr = 0;
   memset(&(server.sin_zero), 0, 8);    /* zero the rest of the struct */
 
-  if ( bind(sockfd, (struct sockadrr *) &server, size) < 0)
+  struct sockaddr *serverp = (struct sockaddr *)&server;
+  if ( bind(sockfd, serverp, size) < 0)
   {
     perror("bind call failed.");
     close(sockfd);
@@ -70,7 +71,7 @@ int db_tcp_listen(char *host, int len, short *port)
   }
 
   /* Get info about socket we just bound to. */
-  if (getsockname(sockfd,&server,&size))
+  if (getsockname(sockfd, serverp, &size))
   {
     perror("getsockname call failed.");
     return -1;
@@ -109,7 +110,7 @@ int db_tcp_listen(char *host, int len, short *port)
 int db_send_text_result(int sockfd, DB_Text_Result_t *result, int comp)
 {
   int buflen;
-  int zlen;  
+  unsigned long zlen;  
   char *zbuf;
   int tmp[4];
   struct iovec vec[5];
