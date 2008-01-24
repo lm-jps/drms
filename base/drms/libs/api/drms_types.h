@@ -224,6 +224,12 @@ struct DRMS_Env_struct
   /* if verbose != 0, then print out many diagnostic messages */
   int verbose; 
 
+  char *dbpasswd;
+  char *user;
+  char *logfile_prefix;
+  int dolog;
+  int quiet;
+
   int clientcounter;
   pid_t tee_pid;
 

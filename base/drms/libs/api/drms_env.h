@@ -1,3 +1,6 @@
+/**
+\file drms_env.h
+*/
 #ifndef _DRMS_ENV_H
 #define _DRMS_ENV_H
 
@@ -37,13 +40,14 @@ void drms_abort(DRMS_Env_t *env);
 #ifdef DRMS_CLIENT
 void drms_abort_now(DRMS_Env_t *env);
 #endif
-void drms_free_env(DRMS_Env_t *env);
+void drms_free_env(DRMS_Env_t *env, int final);
 long long drms_su_size(DRMS_Env_t *env, char *series);
 
 /* Helper function for visualizing the contents of a hash table. */
 void drms_printhash(const void *key, const void *value);
 
-
+/** \brief Initialize drms caches: segment, series, and record*/
+int drms_cache_init(DRMS_Env_t *env);
 
 
 #endif

@@ -51,9 +51,9 @@ DRMS_Session_t *drms_connect(char *host, unsigned short port)
   server.sin_port = htons(port); /* short, network byte order */
   server.sin_addr = *((struct in_addr *)he->h_addr);
 
+  struct sockaddr *serverp = (struct sockaddr *)&server;
   /* connect the socket to the server's address */
-  if ( connect(session->sockfd, (struct sockadrr *) &server, 
-	       sizeof(struct sockaddr_in)) == -1 )
+  if ( connect(session->sockfd, serverp, sizeof(struct sockaddr_in)) == -1 )
   {
 #ifdef DEBUG
     perror("connect");

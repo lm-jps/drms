@@ -37,15 +37,56 @@ int drms_server_authenticate(int sockfd, DRMS_Env_t *env, int clientid)
   return status;
 }
 
+int drms_server_begin_transaction(DRMS_Env_t *env) {
 
+  /* Start a transaction where all database operations performed
+     through this server should be treated as a single transaction. */
+  if (db_start_transaction(env->session->db_handle)) {
+    fprintf(stderr,"Couldn't start database transaction.\n");
+    Exit(1);
+  }
+
+  env->sum_inbox = tqueueInit (100);
+  env->sum_outbox = tqueueInit (100);
+
+  /*  global lock  */
+  XASSERT( env->drms_lock = malloc(sizeof(pthread_mutex_t)) );
+  pthread_mutex_init (env->drms_lock, NULL);    
+
+  if (drms_cache_init(env)) goto bailout;
+
+  if (drms_server_open_session(env)) return 1;
+
+  return 0;
+ bailout:
+  drms_free_env(env, 1);
+  return 1;
+}
+
+void drms_server_end_transaction(DRMS_Env_t *env, int abort, int final) {
+  if (abort) {
+    drms_server_abort(env);
+  } else {
+    drms_server_commit(env, final);
+  }
+}
 
 /* Get a new DRMS session ID from the database and insert a session 
    record in the drms_session_table table. */
-int drms_server_open_session(DRMS_Env_t *env, char *host, unsigned short port,
-			     char *user, int dolog)
+int drms_server_open_session(DRMS_Env_t *env)
 {
   int status;
   struct passwd *pwd = getpwuid(geteuid());
+
+  /* Register the session in the database. */
+  if ((env->session->stat_conn = db_connect(env->session->db_handle->dbhost,
+					    env->session->db_handle->dbuser,
+					    env->dbpasswd,
+					    env->session->db_handle->dbname,1)) == NULL)
+  {
+    fprintf(stderr,"Error: Couldn't establish stat_conn database connection.\n");
+    Exit(1);
+  }
 
   /* Get sessionid etc. */
   char *sn = malloc(sizeof(char)*strlen(env->session->sessionns)+16);
@@ -55,13 +96,9 @@ int drms_server_open_session(DRMS_Env_t *env, char *host, unsigned short port,
 
   char stmt[DRMS_MAXQUERYLEN];
 
-  if (dolog) {
-    snprintf(stmt, DRMS_MAXQUERYLEN, "INSERT INTO %s."DRMS_SESSION_TABLE 
-	     "(sessionid, hostname, port, pid, username, starttime, sunum, "
-	     "sudir, status, clients,lastcontact,sums_thread_status,jsoc_version) VALUES "
-	     "(?,?,?,?,?,LOCALTIMESTAMP(0),?,?,'idle',0,LOCALTIMESTAMP(0),"
-	     "'starting', '%s(%d)')", env->session->sessionns, jsoc_version, jsoc_vers_num);
+  pid_t pid = getpid();
 
+  if (env->dolog || !strcmp(env->logfile_prefix, "drms_server")) {
     /* Allocate a 1MB storage unit for log files. */
     env->session->sunum = drms_su_alloc(env, 1<<20, &env->session->sudir, 
 					&status);
@@ -78,16 +115,82 @@ int drms_server_open_session(DRMS_Env_t *env, char *host, unsigned short port,
 	       env->session->sessionid,env->session->sunum,env->session->sudir);
       }
 #endif
-
-  if (db_dmsv(env->session->stat_conn, NULL, stmt,
-	      -1, DB_INT8, env->session->sessionid, 
-	      DB_STRING, host, DB_INT4, (int) port, DB_INT4, (int) getpid(), 
-	      DB_STRING, pwd->pw_name, DB_INT8, env->session->sunum, 
-	      DB_STRING,env->session->sudir))
-    {
-      fprintf(stderr,"Error: Couldn't register session.\n");
-      return 1;
+    if (!strcmp(env->logfile_prefix, "drms_server")) {
+      // this information is needed by modules that self-start a
+      // drms_server process
+      printf("DRMS server connected to database '%s' on host '%s' as "
+	     "user '%s'.\n",env->session->db_handle->dbname, 
+	     env->session->db_handle->dbhost,
+	     env->session->db_handle->dbuser);
+      printf("DRMS_HOST = %s\n"
+	     "DRMS_PORT = %hu\n"
+	     "DRMS_PID = %lu\n"
+	     "DRMS_SESSIONID = %lld\n"
+	     "DRMS_SESSIONNS = %s\n"
+	     "DRMS_SUNUM = %lld\n"
+	     "DRMS_SUDIR = %s\n",
+	     env->session->hostname, env->session->port, (unsigned long)pid, env->session->sessionid,
+	     env->session->sessionns,
+	     env->session->sunum,env->session->sudir);     
+      fflush(stdout);
     }
+  }
+
+  if (save_stdeo()) {
+    printf("Can't save stdout and stderr\n");
+    return 1;
+  }
+
+  if (env->dolog) {
+
+    snprintf(stmt, DRMS_MAXQUERYLEN, "INSERT INTO %s."DRMS_SESSION_TABLE 
+	     "(sessionid, hostname, port, pid, username, starttime, sunum, "
+	     "sudir, status, clients,lastcontact,sums_thread_status,jsoc_version) VALUES "
+	     "(?,?,?,?,?,LOCALTIMESTAMP(0),?,?,'idle',0,LOCALTIMESTAMP(0),"
+	     "'starting', '%s(%d)')", env->session->sessionns, jsoc_version, jsoc_vers_num);
+
+    if (db_dmsv(env->session->stat_conn, NULL, stmt,
+		-1, DB_INT8, env->session->sessionid, 
+		DB_STRING, env->session->hostname, 
+		DB_INT4, (int)env->session->port, DB_INT4, (int)pid, 
+		DB_STRING, pwd->pw_name, DB_INT8, env->session->sunum, 
+		DB_STRING,env->session->sudir))
+      {
+	fprintf(stderr,"Error: Couldn't register session.\n");
+	return 1;
+      }
+
+    char filename_e[DRMS_MAXPATHLEN], filename_o[DRMS_MAXPATHLEN];
+    if (!env->quiet) {
+      /* Tee output */
+      CHECKSNPRINTF(snprintf(filename_e,DRMS_MAXPATHLEN, "%s/%s.stderr.gz", env->session->sudir, env->logfile_prefix), DRMS_MAXPATHLEN);
+      CHECKSNPRINTF(snprintf(filename_o,DRMS_MAXPATHLEN, "%s/%s.stdout.gz", env->session->sudir, env->logfile_prefix), DRMS_MAXPATHLEN);
+      if ((env->tee_pid = tee_stdio (filename_o, 0644, filename_e, 0644)) < 0)
+	Exit(-1);
+    } else {
+      /* Redirect output */
+      CHECKSNPRINTF(snprintf(filename_e,DRMS_MAXPATHLEN, "%s/%s.stderr", env->session->sudir, env->logfile_prefix), DRMS_MAXPATHLEN);
+      CHECKSNPRINTF(snprintf(filename_o,DRMS_MAXPATHLEN, "%s/%s.stdout", env->session->sudir, env->logfile_prefix), DRMS_MAXPATHLEN);
+      if (redirect_stdio (filename_o, 0644, filename_e, 0644))
+	Exit(-1);
+    }
+    printf("DRMS server connected to database '%s' on host '%s' as "
+	   "user '%s'.\n",env->session->db_handle->dbname, 
+	   env->session->db_handle->dbhost,
+	   env->session->db_handle->dbuser);
+    printf("DRMS_HOST = %s\n"
+	   "DRMS_PORT = %hu\n"
+	   "DRMS_PID = %lu\n"
+	   "DRMS_SESSIONID = %lld\n"
+	   "DRMS_SESSIONNS = %s\n"
+	   "DRMS_SUNUM = %lld\n"
+	   "DRMS_SUDIR = %s\n",
+	   env->session->hostname, env->session->port, 
+	   (unsigned long)pid, env->session->sessionid,
+	   env->session->sessionns,
+	   env->session->sunum,env->session->sudir);     
+    fflush(stdout);
+
   } else {
     snprintf(stmt, DRMS_MAXQUERYLEN, "INSERT INTO %s."DRMS_SESSION_TABLE 
 	     "(sessionid, hostname, port, pid, username, starttime, "
@@ -96,7 +199,8 @@ int drms_server_open_session(DRMS_Env_t *env, char *host, unsigned short port,
 	     "'starting', '%s(%d)')", env->session->sessionns, jsoc_version, jsoc_vers_num);
     if (db_dmsv(env->session->stat_conn, NULL, stmt,
 		-1, DB_INT8, env->session->sessionid,
-		DB_STRING, host, DB_INT4, (int) port, DB_INT4, (int) getpid(),
+		DB_STRING, env->session->hostname, 
+		DB_INT4, (int)env->session->port, DB_INT4, (int)pid,
 		DB_STRING, pwd->pw_name))
       {
 	fprintf(stderr,"Error: Couldn't register session.\n");
@@ -133,14 +237,14 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
 			      int log_retention, int archive_log)
 {
   DRMS_StorageUnit_t su;
-  char *command;
   DIR *dp;
   struct dirent *dirp;
   int emptydir = 1;
 
   /* Flush output to logfile. */
-  fclose(stderr);
-  fclose(stdout);
+  close(STDERR_FILENO);
+  close(STDOUT_FILENO);
+
   if (env->tee_pid > 0) {
     int status = 0;
     waitpid(env->tee_pid, &status, 0);
@@ -155,7 +259,7 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
       fprintf(stderr, "Can't open %s\n", env->session->sudir);
       return 1;
     }
-    XASSERT(command = malloc(strlen(env->session->sudir)+20));
+
     while ((dirp = readdir(dp)) != NULL) {
       if (!strcmp(dirp->d_name, ".") ||
 	  !strcmp(dirp->d_name, "..")) 
@@ -164,7 +268,7 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
       /* Gzip drms_server log files. */
       /* The module log files are now handled with gz* functions. */
       /* Only the server logs are not compressed. */
-      if (strncmp(dirp->d_name, ".gz", 3)) {
+      if (strncmp(dirp->d_name+strlen(dirp->d_name)-3, ".gz", 3)) {
 	char command[DRMS_MAXPATHLEN];
 	sprintf(command,"/bin/gzip %s/%s", env->session->sudir, dirp->d_name);
 	system(command);
@@ -280,7 +384,7 @@ void drms_server_abort(DRMS_Env_t *env)
   sleep(DRMS_ABORT_SLEEP);
 
   /* Free memory.*/
-  drms_free_env(env);
+  drms_free_env(env, 1);
 
   /* Good night and good luck! */
 #ifdef DEBUG
@@ -297,7 +401,7 @@ void drms_server_abort(DRMS_Env_t *env)
       that the session is about to be aborted and keep them from
       initiating any new database commands.
    4. Free the environment. */
-void drms_server_commit(DRMS_Env_t *env)
+void drms_server_commit(DRMS_Env_t *env, int final)
 {
   int log_retention, archive_log;
 
@@ -328,6 +432,7 @@ void drms_server_commit(DRMS_Env_t *env)
     tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
     /* Wait for SUM service thread to finish. */
     pthread_join(env->sum_thread, NULL);
+    env->sum_thread = 0;
   }
 
   db_disconnect(env->session->stat_conn);
@@ -337,7 +442,9 @@ void drms_server_commit(DRMS_Env_t *env)
 
   /* Close DB connection and set abort flag in case any threads 
      are still active... */
-  db_abort(env->session->db_handle);
+  if (final) {
+    db_abort(env->session->db_handle);
+  }
 
   /* Give threads a small window to finish cleanly. */
   if (env->server_wait) {
@@ -348,7 +455,7 @@ void drms_server_commit(DRMS_Env_t *env)
   }
 
   /* Free memory.*/
-  drms_free_env(env);  
+  drms_free_env(env, final);  
 
 #ifdef DEBUG
   printf("Exiting drms_server_commit()\n");
@@ -395,7 +502,7 @@ void *drms_server_thread(void *arg)
   }
 
   
-  if ( getpeername(sockfd,  &client, &client_size) == -1 )
+  if ( getpeername(sockfd,  (struct sockaddr *)&client, &client_size) == -1 )
   {
     perror("accept call failed.");
     goto bail;
@@ -1391,7 +1498,7 @@ void *drms_signal_thread(void *arg)
       Exit(1);
       break; 
     case SIGUSR1:
-      drms_server_commit(env);
+      drms_server_commit(env, 1);
       fflush(stdout);
       _exit(0);
     }

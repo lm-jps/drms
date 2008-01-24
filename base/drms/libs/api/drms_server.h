@@ -42,13 +42,13 @@ long long drms_server_gettmpguid(int *sockfd);
 int drms_server_alloc_recnum(DRMS_Env_t *env, int sockfd);
 int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients, 
 			      int log_retention, int archive_log);
-int drms_server_open_session(DRMS_Env_t *env, char *host, unsigned short port,
-			     char *user, int dolog);
+int drms_server_open_session(DRMS_Env_t *env);
 int drms_server_session_status(DRMS_Env_t *env, char *stat_str, int clients);
 void drms_server_abort(DRMS_Env_t *env);
-void drms_server_commit(DRMS_Env_t *env);
+void drms_server_commit(DRMS_Env_t *env, int final);
 int drms_server_slot_setstate(DRMS_Env_t *env, int sockfd);
 void drms_lock_server(DRMS_Env_t *env);
 void drms_unlock_server(DRMS_Env_t *env);
-
+int drms_server_begin_transaction(DRMS_Env_t *env);
+void drms_server_end_transaction(DRMS_Env_t *env, int abort, int final);
 #endif
