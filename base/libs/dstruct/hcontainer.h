@@ -155,6 +155,7 @@ HContainer_t *hcon_create(int datasize,
 			  int valArrSize);
 void hcon_destroy(HContainer_t **cont);
 int hcon_insert(HContainer_t *hcon, const char *key, const void *value);
+int hcon_insert_lower(HContainer_t *hcon, const char *key, const void *value);
 HIterator_t *hiter_create(HContainer_t *cont);
 void hiter_destroy(HIterator_t **iter);
 

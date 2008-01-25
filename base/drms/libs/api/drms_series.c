@@ -206,7 +206,7 @@ int drms_insert_series(DRMS_Session_t *session, int update,
   n = hcon_size(&template->keywords);
   while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )
   {
-    if (!key->info->islink && !key->info->isconstant )
+    if (!key->info->islink && !drms_keyword_isconstant(key))
     {
       if (key->info->type==DRMS_TYPE_STRING)
       {
@@ -245,7 +245,7 @@ int drms_insert_series(DRMS_Session_t *session, int update,
 		  DB_STRING, drms_type2str(key->info->type), DB_STRING, defval, 
 		  DB_STRING, key->info->format, DB_STRING, key->info->unit,
 		  DB_STRING, key->info->description,
-		  DB_INT4, key->info->islink,DB_INT4, key->info->isconstant, 
+		  DB_INT4, key->info->islink,DB_INT4, key->info->recscope, 
 		  DB_INT4, key->info->per_segment))
       goto failure;
 
@@ -587,7 +587,7 @@ static int drms_series_intpkeysmatch(DRMS_Record_t *recTemp1,
 	    if (key1 != NULL && key2 != NULL)
 	    {
 	       if (key1->info->type != key2->info->type ||
-		   key1->info->isconstant != key2->info->isconstant ||
+		   key1->info->recscope != key2->info->recscope ||
 		   key1->info->per_segment != key2->info->per_segment)
 	       {
 		  break;

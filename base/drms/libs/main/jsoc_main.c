@@ -280,8 +280,9 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
 
   drms_server_end_transaction(drms_env, abort_flag, 1);
 
-  /* Terminate other global things. */
-  drms_keymap_term();
+   /* Terminate other global things. */
+   drms_keymap_term();
+   drms_keyword_term();
 
   _exit(abort_flag);
 }

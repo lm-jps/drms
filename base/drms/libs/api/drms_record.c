@@ -615,6 +615,7 @@ static void SetRecordProtoPKeys(DRMS_Record_t *template,
       if (pkey != NULL)
       {
 	 template->seriesinfo->pidx_keywords[ikey] = pkey;
+	 pkey->info->isdrmsprime = 1;
       }
       else
       {
@@ -2751,6 +2752,7 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
 	XASSERT(kw);
 	template->seriesinfo->pidx_keywords[(template->seriesinfo->pidx_num)++] =
 	kw; 
+	kw->info->isdrmsprime = 1;
       }
 #ifdef DEBUG
       { int i;
@@ -2979,7 +2981,7 @@ int drms_populate_records (DRMS_RecordSet_t *rs, DB_Binary_Result_t *qres) {
       hiter_new(&hit, &rec->keywords);
       while ((key = (DRMS_Keyword_t *)hiter_getnext(&hit)) ) {
 	key->record = rec; /* parent link. */
-	if (likely (!key->info->islink && !key->info->isconstant)) {
+	if (likely (!key->info->islink && !drms_keyword_isconstant(key))) {
 		/*  Copy value only if not null. Otherwise use default value
 					already set from the record template  */
 	  if (!qres->column[col].is_null[row]) {
@@ -3077,7 +3079,7 @@ char *drms_field_list(DRMS_Record_t *rec, int *num_cols)
   hiter_new(&hit, &rec->keywords); /* Iterator for keyword container. */
   while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )
   {
-    if (!key->info->islink && !key->info->isconstant )
+    if (!key->info->islink && !drms_keyword_isconstant(key))
     {
       len += strlen(key->info->name)+5;
       ++ncol;
@@ -3130,7 +3132,7 @@ char *drms_field_list(DRMS_Record_t *rec, int *num_cols)
   hiter_new(&hit, &rec->keywords); /* Iterator for keyword container. */
   while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )
   {
-    if (!key->info->islink && !key->info->isconstant )
+    if (!key->info->islink && !drms_keyword_isconstant(key))
       p += sprintf(p,", %s",key->info->name);
   }
   /* Segment fields. */
@@ -3259,7 +3261,7 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
   hiter_new(&hit, &rec->keywords); /* Iterator for keyword container. */
   while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )
   {
-    if (!key->info->islink && !key->info->isconstant )
+    if (!key->info->islink && !drms_keyword_isconstant(key))
     {
       intype[col] = drms2dbtype(key->info->type);
       if ( key->info->type == DRMS_TYPE_STRING )
@@ -3351,7 +3353,7 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
     hiter_new(&hit, &rec->keywords); /* Iterator for keyword container. */
     while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )
     {
-      if (!key->info->islink && !key->info->isconstant )
+      if (!key->info->islink && !drms_keyword_isconstant(key))
       {
 	if (key->info->type == DRMS_TYPE_STRING )
 	{
@@ -3666,7 +3668,7 @@ long long drms_record_memsize( DRMS_Record_t *rec)
   while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )
   {
     size += sizeof(DRMS_Keyword_t) +  DRMS_MAXNAMELEN + 1;
-    if (!key->info->islink && !key->info->isconstant )
+    if (!key->info->islink && !drms_keyword_isconstant(key))
     {
       if ( key->info->type == DRMS_TYPE_STRING )
       {

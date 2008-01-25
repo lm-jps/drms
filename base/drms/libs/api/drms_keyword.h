@@ -8,6 +8,8 @@
 
 #include "drms_types.h"
 
+void drms_keyword_term();
+
 /******** Keyword functions ********/
 
 void drms_free_template_keyword_struct(DRMS_Keyword_t *key);
@@ -65,6 +67,9 @@ DRMS_Value_t drms_getkey_p(DRMS_Record_t *rec, const char *key, int *status);
 /* Copy functions. */
 int drms_copykey(DRMS_Record_t *target, DRMS_Record_t *source, const char *key);
 
+/* Accessor functions */
+const char *drms_keyword_getname(DRMS_Keyword_t *key);
+
 /******** Functions to handle mapping between internal/external keywords **********/
 
 /* Maps to internal keywords in this order.  If an item does not result in a valid
@@ -104,5 +109,22 @@ int drms_keyword_getextname_ext(DRMS_Keyword_t *key,
 				DRMS_KeyMap_t *map,
 				char *nameOut,
 				int size);
+
+/* Accessor functions */
+DRMS_Type_t drms_keyword_gettype(DRMS_Keyword_t *key);
+const DRMS_Type_Value_t *drms_keyword_getvalue(DRMS_Keyword_t *key);
+int drms_keyword_getsegscope(DRMS_Keyword_t *key);
+DRMS_RecScopeType_t drms_keyword_getrecscope(DRMS_Keyword_t *key);
+const char *drms_keyword_getrecscopestr(DRMS_Keyword_t *key, int *status);
+DRMS_SlotKeyUnit_t drms_keyword_getslotunit(DRMS_Keyword_t *key, int *status);
+
+int drms_keyword_isprime(DRMS_Keyword_t *key);
+int drms_keyword_isvariable(DRMS_Keyword_t *key);
+int drms_keyword_isconstant(DRMS_Keyword_t *key);
+int drms_keyword_isindex(DRMS_Keyword_t *key);
+int drms_keyword_isslotted(DRMS_Keyword_t *key);
+
+/* Utility */
+DRMS_RecScopeType_t drms_keyword_str2recscope(const char *str, int *status);
 
 #endif

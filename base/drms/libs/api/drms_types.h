@@ -393,6 +393,58 @@ struct DRMS_Record_struct
 typedef struct DRMS_Record_struct DRMS_Record_t;
 
 /**************************** Keywords ***************************/
+#define kRecScopeIndex_B 100
+#define kRecScopeSlotted_B 1000
+
+/* Ancillary keys */
+#define kSlotAncKey_Index "_index"
+#define kSlotAncKey_Epoch "_epoch"
+#define kSlotAncKey_Step "_step"
+#define kSlotAncKey_Unit "_unit"
+#define kSlotAncKey_Base "_base"
+#define kSlotAncKey_Vals "_vals"
+
+extern const DRMS_Type_t kIndexKWType;
+extern const char *kIndexKWFormat;
+
+enum DRMS_SlotKeyUnit_enum
+{
+   /** */
+   kSlotKeyUnit_Invalid = 0,
+   kSlotKeyUnit_TSeconds,
+   kSlotKeyUnit_Seconds,
+   kSlotKeyUnit_Minutes,
+   kSlotKeyUnit_Days
+};
+
+typedef enum DRMS_SlotKeyUnit_enum DRMS_SlotKeyUnit_t;
+
+enum DRMS_RecScopeType_enum
+{
+   /** \brief Plain vanilla variable across records. */
+   kRecScopeType_Variable = 0,
+   /** \brief Keyword is constant across records. */
+   kRecScopeType_Constant = 1,
+   /** \brief This value is reserved for 'Index' keywords.  An index keyword
+    *  is one whose per-record values are the integers 'nearest' to the real 
+    *  number values of the corresponding non-index keyword.  If an index keyword
+    *  is named TOBS_index, then the corresponding non-index keyword is TOBS. */
+   kRecScopeType_Index = kRecScopeIndex_B,
+   /** \brief A real-number keyword whose values are 'slotted'. 
+    *  If TOBS_index is an index keyword, and if TOBS is the corresponding 
+    *  TS_EQ-slotted keyword, TOBS has this slottype. */
+   kRecScopeType_TS_EQ = kRecScopeSlotted_B,
+   kRecScopeType_SLOT = kRecScopeSlotted_B + 1,
+   kRecScopeType_ENUM = kRecScopeSlotted_B + 2,
+   kRecScopeType_CARR = kRecScopeSlotted_B + 3
+};
+
+typedef enum DRMS_RecScopeType_enum DRMS_RecScopeType_t;
+
+
+
+
+
 typedef struct  DRMS_KeywordInfo_struct
 {
   char name[DRMS_MAXNAMELEN];         /* Keyword name. */
@@ -406,20 +458,30 @@ typedef struct  DRMS_KeywordInfo_struct
   char target_key[DRMS_MAXNAMELEN]; /* Keyword to inherit.  */
 
   /************ Regular keywords ********/
-  DRMS_Type_t type;             /* Keyword type. */
+  DRMS_Type_t type;               /* Keyword type. */
   char format[DRMS_MAXFORMATLEN]; /* Format string for formatted input 
                                      and output. */
   char unit[DRMS_MAXUNITLEN];     /* Physical unit. */
   char description[DRMS_MAXCOMMENTLEN];
-  int isconstant;                 /* If isconstant=1 then this keyword has the
-                                     same value for all records from the 
-                                     series. */
+  DRMS_RecScopeType_t recscope;   /* If recscope == 0, then this keyword
+				   * has values that vary across records.
+				   * If recscope == 1, then this keyword
+				   * is constant across all records.
+				   * If recscope is not 0 or 1, then 
+				   * the keyword is 'slotted'.  This means
+				   * that the value of the keyword is
+				   * placed into a slot (eg, rounded down)
+				   * before being placed into the database. */
   int per_segment;                /* If per_segment=1 then this keyword has the
                                      has a different for each segment belonging
                                      to the record. If the keyword name is 
                                      "blah" then keywords pertaining to specific
                                      segments are referred to by "blah[0]",
                                      "blah[1]", etc. */
+  /** \brief Indicates if this keyword is a DRMS primary keyword. 
+   *  If 1, then the keyword is DRMS prime; otherwise, it is not prime.
+   */
+  int isdrmsprime;
 } DRMS_KeywordInfo_t;
 
 /**

@@ -3,6 +3,70 @@
 #include "drms_priv.h"
 #include "xmem.h"
 
+/* Slotted keywords - index keyword type (some kind of integer) */
+const DRMS_Type_t kIndexKWType = DRMS_TYPE_INT;
+const char *kIndexKWFormat = "%d";
+
+struct RecScopeStrings_struct
+{
+  DRMS_RecScopeType_t type;
+  const char *str;
+};
+
+typedef struct RecScopeStrings_struct RecScopeStrings_t;
+
+struct SlotKeyUnitStrings_struct
+{
+  DRMS_SlotKeyUnit_t type;
+  const char *str;
+};
+
+typedef struct SlotKeyUnitStrings_struct SlotKeyUnitStrings_t;
+
+static RecScopeStrings_t gSS[] =
+{
+   {kRecScopeType_Variable, "variable"},
+   {kRecScopeType_Constant, "constant"},
+   {kRecScopeType_Index, "index"},
+   {kRecScopeType_TS_EQ, "ts_eq"},
+   {kRecScopeType_SLOT, "slot"},
+   {kRecScopeType_ENUM, "enum"},
+   {kRecScopeType_CARR, "carr"},
+   {(DRMS_RecScopeType_t)-99, ""}
+};
+
+static SlotKeyUnitStrings_t gSUS[] =
+{
+   {kSlotKeyUnit_TSeconds, "tenthsecs"},
+   {kSlotKeyUnit_Seconds, "secs"},
+   {kSlotKeyUnit_Minutes, "mins"},
+   {kSlotKeyUnit_Days, "days"},
+   {(DRMS_SlotKeyUnit_t)-99, ""}
+};
+
+static HContainer_t *gRecScopeStrHC = NULL;
+static HContainer_t *gRecScopeHC = NULL;
+static HContainer_t *gSlotUnitHC = NULL;
+
+const int kMaxRecScopeTypeKey = 4096;
+const int kMaxSlotUnitKey = 128;
+
+void drms_keyword_term()
+{
+   if (gRecScopeStrHC)
+   {
+      hcon_destroy(&gRecScopeStrHC);
+   }
+   if (gRecScopeHC)
+   {
+      hcon_destroy(&gRecScopeHC);
+   }
+   if (gSlotUnitHC)
+   {
+      hcon_destroy(&gSlotUnitHC);
+   }
+}
+
 /* Prototypes for static functions. */
 static DRMS_Keyword_t * __drms_keyword_lookup(DRMS_Record_t *rec, 
 					      const char *key, int depth);
@@ -139,8 +203,9 @@ void drms_keyword_print(DRMS_Keyword_t *key)
     printf("\t%-*s:\t'%s'\n", fieldwidth, "format", key->info->format);
     printf("\t%-*s:\t'%s'\n", fieldwidth, "unit", key->info->unit);
     printf("\t%-*s:\t'%s'\n", fieldwidth, "description", key->info->description);
-    printf("\t%-*s:\t%d\n", fieldwidth, "isconstant", key->info->isconstant);
+    printf("\t%-*s:\t%d\n", fieldwidth, "record_scope", (int)key->info->recscope);
     printf("\t%-*s:\t%d\n", fieldwidth, "per_segment", key->info->per_segment);
+    printf("\t%-*s:\t%d\n", fieldwidth, "isprime", (int)key->info->isdrmsprime);
     printf("\t%-*s:\t",fieldwidth,"value");
   
     drms_keyword_printval(key);
@@ -273,8 +338,9 @@ int  drms_template_keywords(DRMS_Record_t *template)
 	drms_strval(key->info->type, &key->value, defval);
 	db_binary_field_getstr(qres, i, 6, sizeof(key->info->format),  key->info->format);
 	db_binary_field_getstr(qres, i, 7, sizeof(key->info->unit), key->info->unit);
-	key->info->isconstant   = db_binary_field_getint(qres, i, 8);
+	key->info->recscope = (DRMS_RecScopeType_t)db_binary_field_getint(qres, i, 8);
 	key->info->per_segment  = db_binary_field_getint(qres, i, 9);
+	key->info->isdrmsprime = 0;
       }
       else
       {
@@ -284,8 +350,9 @@ int  drms_template_keywords(DRMS_Record_t *template)
 	key->value.int_val = 0;
 	key->info->format[0] = 0;
 	key->info->unit[0] = 0;
-	key->info->isconstant = 0;
+	key->info->recscope = kRecScopeType_Variable;
 	key->info->per_segment = 0;
+	key->info->isdrmsprime = 0;
       }
 	
 #ifdef DEBUG
@@ -470,8 +537,9 @@ int drms_keyword_keysmatch(DRMS_Keyword_t *k1, DRMS_Keyword_t *k2)
 	     strcmp(key1->format, key2->format) == 0 &&
 	     strcmp(key1->unit, key2->unit) == 0 &&
 	     strcmp(key1->description, key2->description) == 0 &&
-	     key1->isconstant == key2->isconstant &&
-	     key1->per_segment == key2->per_segment);
+	     key1->recscope == key2->recscope &&
+	     key1->per_segment == key2->per_segment &&
+	     key1->isdrmsprime == key2->isdrmsprime);
 
   
       ret = (ret && (strcmp(exp1, exp2) == 0));
@@ -911,6 +979,11 @@ int drms_setkey_string(DRMS_Record_t *rec, const char *key, const char *value)
   return ret;
 }
 
+const char *drms_keyword_getname(DRMS_Keyword_t *key)
+{
+   return key->info->name;
+}
+
 int drms_keyword_getintname(const char *keyname, char *nameOut, int size)
 {
    int success = 0;
@@ -1124,4 +1197,225 @@ int drms_copykey(DRMS_Record_t *target, DRMS_Record_t *source, const char *key)
    drms_value_free(&srcval);
 
    return status;
+}
+
+int drms_keyword_getsegscope(DRMS_Keyword_t *key)
+{
+   return key->info->per_segment;
+}
+
+DRMS_RecScopeType_t drms_keyword_getrecscope(DRMS_Keyword_t *key)
+{
+   return key->info->recscope;
+}
+
+const char *drms_keyword_getrecscopestr(DRMS_Keyword_t *key, int *status)
+{
+   int stat = DRMS_SUCCESS;
+   const char *ret = NULL;
+   const char **pRet = NULL;
+   char buf[kMaxRecScopeTypeKey];
+
+   if (!gRecScopeStrHC)
+   {
+      gRecScopeStrHC = hcon_create(sizeof(const char *), 
+			       kMaxRecScopeTypeKey, 
+			       NULL,
+			       NULL,
+			       NULL,
+			       NULL,
+			       0);
+
+      if (gRecScopeStrHC)
+      {
+	 int i = 0;
+
+	 while (gSS[i].type != -99)
+	 {
+	    snprintf(buf, sizeof(buf), "%d", (int)gSS[i].type);
+	    hcon_insert_lower(gRecScopeStrHC, buf, &(gSS[i].str));
+	    i++;
+	 }
+      }
+      else
+      {
+	 fprintf(stderr, "Error creating record scope type string container.\n");
+	 stat = DRMS_ERROR_CANTCREATEHCON;
+      }
+   }
+
+   if (gRecScopeStrHC)
+   {
+      snprintf(buf, sizeof(buf), "%d", (int)key->info->recscope);
+      pRet = (const char **)hcon_lookup(gRecScopeStrHC, buf);
+
+      if (pRet == NULL)
+      {
+	 fprintf(stderr, "Invalid record scope type %d.\n", (int)key->info->recscope);
+	 stat = DRMS_ERROR_INVALIDRECSCOPETYPE;
+      }
+      else
+      {
+	 ret = *pRet;
+      }
+   }
+
+   if (status)
+   {
+      *status = stat;
+   }
+
+   return ret;
+}
+
+DRMS_RecScopeType_t drms_keyword_str2recscope(const char *str, int *status)
+{
+   int stat = DRMS_SUCCESS;
+   DRMS_RecScopeType_t ret = kRecScopeType_Variable;
+
+   if (!gRecScopeHC)
+   {
+      gRecScopeHC = hcon_create(sizeof(int), 
+				kMaxRecScopeTypeKey, 
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				0);
+
+      if (gRecScopeHC)
+      {
+	 int i = 0;
+
+	 while (gSS[i].type != -99)
+	 {
+	    hcon_insert_lower(gRecScopeHC, gSS[i].str, (int *)(&(gSS[i].type)));
+	    i++;
+	 }
+      }
+      else
+      {
+	 fprintf(stderr, "Error creating record scope type container.\n");
+	 stat = DRMS_ERROR_CANTCREATEHCON;
+      }
+   }
+
+   if (gRecScopeHC)
+   {
+      int *pVal = (int *)hcon_lookup_lower(gRecScopeHC, str);
+
+      if (pVal == NULL)
+      {
+	 fprintf(stderr, "Invalid record scope type string %s.\n", str);
+	 stat = DRMS_ERROR_INVALIDRECSCOPETYPE;
+      }
+      else
+      {
+	 ret = (DRMS_RecScopeType_t)(*pVal);
+      }
+   }
+
+   if (status)
+   {
+      *status = stat;
+   }
+
+   return ret;
+}
+
+int drms_keyword_isvariable(DRMS_Keyword_t *key)
+{
+   return (key->info->recscope != kRecScopeType_Constant);
+}
+
+int drms_keyword_isconstant(DRMS_Keyword_t *key)
+{
+   return (key->info->recscope == kRecScopeType_Constant);
+}
+
+int drms_keyword_isindex(DRMS_Keyword_t *key)
+{
+   return (key->info->recscope >= kRecScopeIndex_B &&
+	   key->info->recscope < kRecScopeSlotted_B);
+}
+
+int drms_keyword_isslotted(DRMS_Keyword_t *key)
+{
+   return (key->info->recscope >= kRecScopeSlotted_B);
+}
+
+int drms_keyword_isprime(DRMS_Keyword_t *key)
+{
+   return (key->info->isdrmsprime == 1);
+}
+
+DRMS_Type_t drms_keyword_gettype(DRMS_Keyword_t *key)
+{
+   return key->info->type;
+}
+
+const DRMS_Type_Value_t *drms_keyword_getvalue(DRMS_Keyword_t *key)
+{
+   return &(key->value);
+}
+
+DRMS_SlotKeyUnit_t drms_keyword_getslotunit(DRMS_Keyword_t *key, int *status)
+{
+   DRMS_SlotKeyUnit_t ret = kSlotKeyUnit_Invalid;
+   char buf[kMaxSlotUnitKey];
+   int stat = DRMS_SUCCESS;
+
+   if (key->info->type == DRMS_TYPE_STRING && strstr(key->info->name, kSlotAncKey_Unit))
+   {
+      if (!gSlotUnitHC)
+      {
+	 gSlotUnitHC = hcon_create(sizeof(int), 
+				   kMaxSlotUnitKey, 
+				   NULL,
+				   NULL,
+				   NULL,
+				   NULL,
+				   0);
+
+	 if (gSlotUnitHC)
+	 {
+	    int i = 0;
+
+	    while (gSUS[i].type != -99)
+	    {
+	       snprintf(buf, sizeof(buf), "%s", (int)gSUS[i].str);
+	       hcon_insert_lower(gSlotUnitHC, buf, &(gSUS[i].type));
+	       i++;
+	    }
+	 }
+	 else
+	 {
+	    fprintf(stderr, "Error creating slot unit string container.\n");
+	    stat = DRMS_ERROR_CANTCREATEHCON;
+	 }
+      }
+
+      DRMS_SlotKeyUnit_t *pSU = hcon_lookup_lower(gSlotUnitHC, (key->value).string_val);
+      if (pSU)
+      {
+	 ret = *pSU;
+      }
+      else
+      {
+	 fprintf(stderr, "Invalid slot unit string '%s'.\n", (key->value).string_val);
+      }
+   }
+   else
+   {
+      fprintf(stderr, 
+	      "Keyword '%s' does not contain slotted keyword unit information.\n",
+	      key->info->name);
+   }
+
+   if (status)
+   {
+      *status = stat;
+   }
+
+   return ret;
 }

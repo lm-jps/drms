@@ -534,6 +534,15 @@ void hcon_destroy(HContainer_t **cont)
      }
 }
 
+int hcon_insert_lower(HContainer_t *hcon, const char *key, const void *value)
+{
+   char *tmp = strdup(key);
+   strtolower(tmp);
+   int ret = hcon_insert(hcon, tmp, value);
+   free(tmp);
+   return ret;
+}
+
 int hcon_insert(HContainer_t *hcon, const char *key, const void *value)
 {
    int err = 1;

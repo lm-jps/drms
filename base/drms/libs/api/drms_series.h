@@ -78,7 +78,7 @@ void drms_series_destroypkeyarray(char ***pkeys, int nElements);
 queries the DRMS database to determine if \a series1 and \a series2
 are compatible in terms of their primary-keyword and segment
 definitions.  Two primary keyword definitions "match" if the type,
-isconstant, and per_segment ::DRMS_Keyword_t fields are
+recscope, and per_segment ::DRMS_Keyword_t fields are
 equal. drms_segment_segsmatch is used to determine if two segment
 definitions "match". If all primary keywords and at least one segment
 match and no error occurs, the function intializes \a matchSegs and

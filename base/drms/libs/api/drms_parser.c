@@ -23,7 +23,10 @@ static int getnextline(char **start);
 static int parse_seriesinfo(char *desc, DRMS_Record_t *template);
 static int parse_segments(char *desc, DRMS_Record_t *template);
 static int parse_segment(char **in, DRMS_Record_t *template, int segnum);
-static int parse_keyword(char **in, DRMS_Record_t *ds);
+static int parse_keyword(char **in, 
+			 DRMS_Record_t *ds, 
+			 HContainer_t *slotted,
+			 HContainer_t *indexkws);
 static int parse_links(char *desc, DRMS_Record_t *template);
 static int parse_link(char **in, DRMS_Record_t *template);
 static int parse_primaryindex(char *desc, DRMS_Record_t *template);
@@ -62,6 +65,10 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
   hcon_init(&template->keywords, sizeof(DRMS_Keyword_t), DRMS_MAXHASHKEYLEN, 
 	    (void (*)(const void *)) drms_free_keyword_struct, 
 	    (void (*)(const void *, const void *)) drms_copy_keyword_struct);
+
+  /* IMPORTANT: parse_keywords() can modify the list of primary keywords, 
+  * so initialize here. */
+  template->seriesinfo->pidx_num = 0;
  
   lineno = 0;
   if (parse_seriesinfo(desc, template))
@@ -87,13 +94,16 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
     fprintf(stderr,"Failed to parse links info.\n");
     goto bailout;
   }
+
   lineno = 0;
   if (parse_keywords(desc, template))
   {
     fprintf(stderr,"Failed to parse keywords info.\n");
     goto bailout; 
   }
+
   lineno = 0;
+  /* Ensure that slotted keywords are NOT DRMS-prime */
   if (parse_primaryindex(desc, template))
   {
     fprintf(stderr,"Failed to parse series info.\n");
@@ -382,31 +392,355 @@ int parse_keywords(char *desc, DRMS_Record_t *template)
   int len;
   char *start, *p, *q;
 
-  /* Parse the description line by line, filling 
-     out the template struct. */
-  start = desc;
-  len = getnextline(&start);
-  while(*start)
+  HContainer_t *slotted = hcon_create(sizeof(DRMS_Keyword_t *),
+				      DRMS_MAXNAMELEN,
+				      NULL,
+				      NULL,
+				      NULL,
+				      NULL,
+				      0);
+
+  HContainer_t *indexkws = hcon_create(sizeof(DRMS_Keyword_t *),
+				      DRMS_MAXNAMELEN,
+				      NULL,
+				      NULL,
+				      NULL,
+				      NULL,
+				      0);
+
+
+  if (!slotted || !indexkws)
   {
-    p = start;
-    SKIPWS(p);
-    q = p;
-    if (getkeyword(&q))
-      return 1;
-    
-    if (prefixmatch(p,"Keyword:"))
-    {
-      if (parse_keyword(&q,template))
-	return 1;
-    }
-    start += len+1;
-    len = getnextline(&start);
+     fprintf(stderr, "Couldn't create container in drms_parse_description().\n");
+     return 1;
   }
+  else
+  {
+     /* Parse the description line by line, filling 
+	out the template struct. */
+     start = desc;
+     len = getnextline(&start);
+     while(*start)
+     {
+	p = start;
+	SKIPWS(p);
+	q = p;
+	if (getkeyword(&q))
+	  return 1;
+    
+	if (prefixmatch(p,"Keyword:"))
+	{
+	   if (parse_keyword(&q,template, slotted, indexkws))
+	     return 1;
+	}
+	start += len+1;
+	len = getnextline(&start);
+     }
+
+     if (indexkws->num_total > 0)
+     {
+	HIterator_t *hit_index = hiter_create(indexkws);
+
+	if (hit_index)
+	{
+	   DRMS_Keyword_t **pIndexKey = NULL;
+	   const char *indexKeyname = NULL;
+	   char *kname = NULL;
+	   char *underscore = NULL;
+	   DRMS_Keyword_t *existslotted = NULL;
+
+	   /* Ensure that if there is an index keyword, there is a corresponding
+	    * slotted keyword. */
+	   while ((pIndexKey = 
+		   (DRMS_Keyword_t **)hiter_extgetnext(hit_index, &indexKeyname)) != NULL)
+	   {
+	      if (drms_keyword_isindex(*pIndexKey))
+	      {
+		 kname = strdup(indexKeyname);
+		 underscore = strstr(kname, kSlotAncKey_Index);
+
+		 if (underscore)
+		 {
+		    *underscore = '\0';
+		    if ((existslotted = 
+			 (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), kname)) 
+			== NULL)
+		    {
+		       fprintf(stderr, 
+			       "Can't specify an index keyword (%s) without specifying "
+			       "the corresponding slotted keyword.\n",
+			       indexKeyname);
+		       hiter_destroy(&hit_index);
+		       hcon_destroy(&slotted);
+		       hcon_destroy(&indexkws);
+		       return 1;
+		    }
+
+		    if (!drms_keyword_isslotted(existslotted))
+		    {
+		       fprintf(stderr, 
+			       "Index keyword '%s' must be associated with a "
+			       "slotted keyword, but it is associated with a "
+			       "%s type of keyword.\n",
+			       kname,
+			       drms_keyword_getrecscopestr(existslotted, NULL));
+		       hiter_destroy(&hit_index);
+		       hcon_destroy(&slotted);
+		       hcon_destroy(&indexkws);
+		       return 1;
+		    }
+		 }
+		 else
+		 {
+		    fprintf(stderr, "Invalid index keyword name %s.\n", kname);
+		    hiter_destroy(&hit_index);
+		    hcon_destroy(&slotted);
+		    hcon_destroy(&indexkws);
+		    return 1;
+		 }
+
+		 if (kname)
+		 {
+		    free(kname);
+		 }
+	      }
+	   }
+
+	   hiter_destroy(&hit_index);
+	}
+	else
+	{
+	   fprintf(stderr, "Couldn't create iterator.\n");
+	   hcon_destroy(&slotted);
+	   hcon_destroy(&indexkws);
+	   return 1;
+	}
+     }
+
+     if (slotted->num_total > 0)
+     {
+	/* All keywords have been parsed.  Need to iterate through all slotted keywords.
+	 * For each slotted keyword, check if the corresponding index keyword exists.
+	 * If not, create it and make it prime.  Insert this keyword into
+	 * template->keywords.  If it does exist, ensure that it 
+	 * is prime and that it is of recscope 'index'.  If not, fail.  If no
+	 * failure at this point, 
+	 * find all keywords implied by the slotted keyword type (eg., TS_EQ requires
+	 * _epoch, _step).  They must be recscope constant, if not, fail.  If no
+	 * failure at this point, remove the 'primeness' of the slotted keyword.
+	 */
+	HIterator_t *hit = hiter_create(slotted);
+	
+	if (hit)
+	{
+	   DRMS_Keyword_t **pSlotKey = NULL;
+	   const char *slotKeyname = NULL;
+	   char keyname[DRMS_MAXNAMELEN];
+	   DRMS_Keyword_t *newkey = NULL;
+	   DRMS_Keyword_t *existindex = NULL;
+
+	   while ((pSlotKey = 
+		   (DRMS_Keyword_t **)hiter_extgetnext(hit, &slotKeyname)) != NULL)
+	   {
+	      snprintf(keyname, sizeof(keyname), "%s%s", slotKeyname, kSlotAncKey_Index);
+	      if ((existindex = 
+		   (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), keyname)) 
+		  == NULL)
+	      {
+		 /* The corresponding index keyword does not exist - create. */
+
+		 /* If this is a per-segment keyword, then there will be 
+		  * multiple keywords already (eg., KEY_001, KEY_002, KEY_003).
+		  * So, don't do anything special since this look will be executed
+		  * multiple times, once for each of the per-segment keywords in
+		  * the group. */
+
+		 /* hcon_allocslot puts the new key in template->keywords */
+		 XASSERT(newkey = hcon_allocslot_lower(&(template->keywords), keyname));
+		 memset(newkey,0,sizeof(DRMS_Keyword_t));
+		 XASSERT(newkey->info = malloc(sizeof(DRMS_KeywordInfo_t)));    
+		 memset(newkey->info,0,sizeof(DRMS_KeywordInfo_t));
+		 strcpy(newkey->info->name, keyname);
+		 newkey->record = template;
+		 newkey->info->per_segment = 0; /* Must be per record*/
+		 newkey->info->islink = 0;
+		 newkey->info->linkname[0] = 0;
+		 newkey->info->target_key[0] = 0;
+		 newkey->info->type = kIndexKWType;
+		 strcpy(newkey->info->format, kIndexKWFormat);
+		 strcpy(newkey->info->unit, "none");
+		 newkey->info->recscope = kRecScopeType_Index;
+		 strcpy(newkey->info->description, (*pSlotKey)->info->description);
+
+		 /* Make new key DRMS-prime */
+		 template->seriesinfo->pidx_keywords[(template->seriesinfo->pidx_num)++] =
+		   newkey; 
+		 newkey->info->isdrmsprime = 1;
+	      }
+	      else
+	      {
+		 /* The corresponding index keyword DOES exist - check it. */
+		 
+		 /* Must be prime */
+		 int isprime = drms_keyword_isprime(existindex);
+
+		 /* Must be of recscope kRecScopeType_Index */
+		 DRMS_RecScopeType_t recscope = drms_keyword_getrecscope(existindex);
+
+		 /* Must be of type kIndexKWType */
+		 DRMS_Type_t kwtype = drms_keyword_gettype(existindex);
+
+		 if (!isprime || recscope != kRecScopeType_Index || kwtype != kIndexKWType)
+		 {
+		    fprintf(stderr, "Invalid index keyword %s.\n", keyname);
+		    hiter_destroy(&hit);
+		    hcon_destroy(&slotted);
+		    hcon_destroy(&indexkws);
+		    return 1;
+		 }
+	      }
+
+	      /* Find all other required constant keywords for this type of 
+	       * slotted keyword */
+	      int failure = 0;
+	      switch ((int)drms_keyword_getrecscope(*pSlotKey))
+	      {
+		 case kRecScopeType_TS_EQ:
+		   {
+		      snprintf(keyname, 
+			       sizeof(keyname), "%s%s", 
+			       slotKeyname, 
+			       kSlotAncKey_Epoch);
+		      DRMS_Keyword_t *anckey = 
+			(DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), 
+							    keyname);
+		      if (anckey)
+		      {
+			 /* Must be constant and a time */
+			 if (drms_keyword_isconstant(anckey) &&
+			     drms_keyword_gettype(anckey) == DRMS_TYPE_TIME)
+			 {
+			    snprintf(keyname, 
+				     sizeof(keyname), "%s%s", 
+				     slotKeyname, 
+				     kSlotAncKey_Step);
+			    anckey = 
+			      (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), 
+								  keyname);
+			 }
+			 else
+			 {
+			    fprintf(stderr, "Ancillary keyword '%s' must be constant"
+				    " and of data type 'time'.\n", 
+				    keyname);
+			    failure = 1;
+			 }
+		      }
+
+		      if (!anckey)
+		      {
+			 fprintf(stderr, 
+				 "Missing required ancillary keyword '%s'.\n",
+				 keyname);
+			 failure = 1;
+		      }
+		      
+		      if (!failure && anckey)
+		      {
+			 /* Must be constant */
+			 if (drms_keyword_isconstant(anckey))
+			 {
+			    /* _unit is optional */
+			    snprintf(keyname, 
+				     sizeof(keyname), "%s%s", 
+				     slotKeyname, 
+				     kSlotAncKey_Unit);
+			    anckey = 
+			      (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), 
+								  keyname);
+			 }
+			 else
+			 {
+			    fprintf(stderr, 
+				    "Ancillary keyword '%s' must be constant.\n",
+				    keyname);
+			    failure = 1;
+			 }
+		      }
+
+		      if (!failure && anckey)
+		      {
+			 /* if present, check for valid unit */
+			 if (drms_keyword_gettype(anckey) == DRMS_TYPE_STRING &&
+			     drms_keyword_isconstant(anckey))
+			 {
+			    DRMS_SlotKeyUnit_t utype = 
+			      drms_keyword_getslotunit(anckey, NULL);
+
+			    if (utype == kSlotKeyUnit_Invalid)
+			    {
+			       fprintf(stderr, 
+				       "Slot keyword unit '%s' is not valid.\n",
+				       drms_keyword_getvalue(anckey)->string_val);
+			       failure = 1;
+			    }
+			 }
+			 else
+			 {
+			    fprintf(stderr, 
+				    "Ancillary keyword '%s' must be constant"
+				    " and of data type 'string'.\n",
+				    keyname);
+			    failure = 1;
+			 }
+		      }
+		   }
+		   break;
+		 case kRecScopeType_SLOT:
+		   break;
+		 case kRecScopeType_ENUM:
+		   break;
+		 case kRecScopeType_CARR:
+		   break;
+		 default:
+		   fprintf(stderr, 
+			   "Invalid recscope type '%d'.\n", 
+			   (int)drms_keyword_getrecscope(*pSlotKey));
+		   failure = 1;
+	      }
+
+	      if (failure == 1)
+	      {
+		 hiter_destroy(&hit);
+		 hcon_destroy(&slotted);
+		 hcon_destroy(&indexkws);
+		 return 1;
+	      }
+	   } /* while */
+
+	   hiter_destroy(&hit);
+	}
+	else
+	{
+	   fprintf(stderr, "Couldn't create iterator.\n");
+	   hcon_destroy(&slotted);
+	   hcon_destroy(&indexkws);
+	   return 1;
+	}
+     }
+
+     hcon_destroy(&slotted);
+     hcon_destroy(&indexkws);
+  } /* successful creation of slotted container */
+
   return 0;
 }
 
 
-static int parse_keyword(char **in, DRMS_Record_t *template)
+static int parse_keyword(char **in, 
+			 DRMS_Record_t *template, 
+			 HContainer_t *slotted,
+			 HContainer_t *indexkws)
 {
   char *p,*q;
   char name[DRMS_MAXNAMELEN]={0}, type[DRMS_MAXNAMELEN]={0}, linkname[DRMS_MAXNAMELEN]={0}, defval[DRMS_DEFVAL_MAXLEN]={0};
@@ -430,6 +764,12 @@ static int parse_keyword(char **in, DRMS_Record_t *template)
     if(!gettoken(&q,linkname,sizeof(linkname)))     goto failure;
     if(!gettoken(&q,target_key,sizeof(target_key))) goto failure;
     if(getstring(&q,description,sizeof(description))<0)       goto failure;
+  }
+  else if ( !strcasecmp(type,"index") )
+  {
+     /* Slotted-key index keyword */
+     if(!gettoken(&q,format,sizeof(format)))     goto failure;
+     if(getstring(&q,description,sizeof(description))<0)   goto failure;
   }
   else
   {
@@ -473,27 +813,72 @@ static int parse_keyword(char **in, DRMS_Record_t *template)
     key->value.int_val = 0;
     key->info->format[0] = 0;
     key->info->unit[0] = 0;
-    key->info->isconstant = 0;
-    key->info->per_segment = 0;    
+    key->info->recscope = kRecScopeType_Variable;
+    key->info->per_segment = 0;
+    key->info->isdrmsprime = 0;
     strcpy(key->info->description,description);
   }  
+  else if (!strcasecmp(type,"index"))
+  {
+     /* Index keywords are prime, so they must not be per-segment */
+     strcpy(name1,name);
+     if ((key = hcon_lookup_lower(&template->keywords,name1))) {
+	// this is an earlier definition
+	free(key->info);
+     }
+     XASSERT(key = hcon_allocslot_lower(&template->keywords,name1));
+     memset(key,0,sizeof(DRMS_Keyword_t));
+     XASSERT(key->info = malloc(sizeof(DRMS_KeywordInfo_t)));
+
+     strncpy(key->info->name,name1,DRMS_MAXNAMELEN);
+     if (strlen(name1) >= DRMS_MAXNAMELEN)
+       fprintf(stderr,"WARNING keyword name %s truncated to %d characters.\n", name1, DRMS_MAXNAMELEN-1);
+     key->record = template;
+     key->info->per_segment = 0;
+     key->info->islink = 0;
+     key->info->linkname[0] = 0;
+     key->info->target_key[0] = 0;
+     key->info->type = kIndexKWType;
+     strcpy(key->info->format, format);
+     strcpy(key->info->unit, "none");
+     key->info->recscope = kRecScopeType_Index;
+     strcpy(key->info->description,description);
+
+     /* Index keywords must be prime. */
+     template->seriesinfo->pidx_keywords[(template->seriesinfo->pidx_num)++] =
+       key;
+     key->info->isdrmsprime = 1;
+
+     hcon_insert(indexkws, key->info->name, &key);
+  }
   else
   {
     num_segments = hcon_size(&template->segments);
+
     if (!strcasecmp(scope,"segment"))
       per_segment = 1;
     else if (!strcasecmp(scope,"record"))
       per_segment = 0;
     else
-      goto failure;    
+      goto failure;
+
+    if (per_segment == 1 && num_segments < 1)
+    {
+       fprintf(stderr, 
+	       "'%s' declared per_segment, but no segments declared.\n",
+	       name);
+       goto failure;
+    }
+
     for (seg=0; seg<(per_segment==1?num_segments:1); seg++)
     {    
       /* If this is a per-segment keyword create one copy for each segment
 	 with the segment number formatted as "_%03d" appended to the name */
+
       if (per_segment)
-	sprintf(name1,"%s_%03d",name,seg);
+        sprintf(name1,"%s_%03d",name,seg);
       else
-	strcpy(name1,name);
+        strcpy(name1,name);
 
       if ((key = hcon_lookup_lower(&template->keywords,name1))) {
 	// this is an earlier definition
@@ -521,13 +906,20 @@ static int parse_keyword(char **in, DRMS_Record_t *template)
 #endif
       strcpy(key->info->format, format);
       strcpy(key->info->unit, unit);
-      if (!strcasecmp(constant,"constant"))
-	key->info->isconstant = 1;
-      else if (!strcasecmp(constant,"variable"))
-	key->info->isconstant = 0;
+      key->info->recscope = kRecScopeType_Variable;
+      int stat;
+      DRMS_RecScopeType_t rscope = drms_keyword_str2recscope(constant, &stat);
+      if (stat == DRMS_SUCCESS)
+	key->info->recscope = rscope;
       else
 	goto failure;
       strcpy(key->info->description,description);
+      key->info->isdrmsprime = 0;
+
+      if (drms_keyword_isslotted(key))
+      {
+	 hcon_insert(slotted, key->info->name, &key);
+      }
     }
   }
   p = ++q;
@@ -564,7 +956,7 @@ static int parse_primaryindex(char *desc, DRMS_Record_t *template)
     {
       p = q;
       SKIPWS(p);
-      template->seriesinfo->pidx_num = 0;
+
       while(p<=(start+len) && *p)
       {	
 	if (template->seriesinfo->pidx_num >= DRMS_MAXPRIMIDX)
@@ -582,18 +974,45 @@ static int parse_primaryindex(char *desc, DRMS_Record_t *template)
 	*q++ = 0;
 	p++;
 	
-#ifdef DEBUG
-	printf("adding primary key '%s'\n",name);
-#endif
 	key = hcon_lookup_lower(&template->keywords,name);
 	if (key==NULL)
 	{
-	  printf("Invalid keyword '%s' in primary index.\n",name);
-	  return 1;
+	   printf("Invalid keyword '%s' in primary index.\n",name);
+	   return 1;
 	}
-	template->seriesinfo->pidx_keywords[(template->seriesinfo->pidx_num)++] =
-	key; 
+
+	if (drms_keyword_getsegscope(key) == 1)
+	{
+	   /* The purpose of per-segment keywords is to select 
+	    * among segments within a record, not to select among records
+	    * within a series (which is the purpose of a prime keyword). */
+#ifdef DEBUG
+	   printf("NOT adding primary key '%s' because it is a per-segment keyword.\n",
+		  name);
+#endif
+	}
+	else if (drms_keyword_isslotted(key))
+	{
+#ifdef DEBUG
+	   printf("NOT adding primary key '%s' because it is slotted."
+		  "The corresopnding index key is prime instead.\n",
+		  name);
+
+	   /* But use the isdrmsprime flag to track what was in the jsd's 'index' */
+#endif
+	   key->info->isdrmsprime = 1;
+	}
+	else
+	{
+#ifdef DEBUG
+	   printf("adding primary key '%s'\n",name);
+#endif
+	   template->seriesinfo->pidx_keywords[(template->seriesinfo->pidx_num)++] =
+	     key; 
+	   key->info->isdrmsprime = 1;
+	}
       }
+
 #ifdef DEBUG
       { int i;
       printf("Primary indices: ");
@@ -601,13 +1020,45 @@ static int parse_primaryindex(char *desc, DRMS_Record_t *template)
 	printf("'%s' ",(template->seriesinfo->pidx_keywords[i])->info->name); }
       printf("\n");
 #endif     
-      return 0;
+
+      break;
     }
+
     start += len+1;
     len = getnextline(&start);
   }
-  return 0;
- 
+
+  /* Ensure all index keywords have slotted keys that have been declared prime. */
+  DRMS_Keyword_t *pKey = NULL;
+  const char *keyname = NULL;
+  HIterator_t *hit = hiter_create(&(template->keywords));
+      
+  if (hit)
+  {
+     while ((pKey = 
+	     (DRMS_Keyword_t *)hiter_extgetnext(hit, &keyname)) != NULL)
+     {
+	if (drms_keyword_isslotted(pKey))
+	{
+	   if (!drms_keyword_isprime(pKey))
+	   {
+	      fprintf(stderr, 
+		      "Slotted key '%s' was not declared drms prime.\n",
+		      keyname);
+	      return 1;
+	   }
+	   else
+	   {
+	      /* Now, remove the 'primeness' of the slotted keys */
+	      pKey->info->isdrmsprime = 0;
+	   }
+	}
+     }
+
+     hiter_destroy(&hit);
+  }
+
+  return 0; 
 }
 
 
