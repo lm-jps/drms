@@ -1,3 +1,6 @@
+/**
+\file drms_server.h
+*/
 #ifndef __DRMS_SERVER_H
 #define __DRMS_SERVER_H
 
@@ -49,6 +52,18 @@ void drms_server_commit(DRMS_Env_t *env, int final);
 int drms_server_slot_setstate(DRMS_Env_t *env, int sockfd);
 void drms_lock_server(DRMS_Env_t *env);
 void drms_unlock_server(DRMS_Env_t *env);
+/**
+Begin a new transaction. This function can only be called in direct-connect mode.
+@param env 
+*/
 int drms_server_begin_transaction(DRMS_Env_t *env);
+/**
+End a transaction. This function can only be called in direct-connect mode. All DRMS resources are released except for the signal thread and db data connection.
+@param env 
+@param abort If 1, the current transaction will
+rollback. Otherwise the current transaction will commit. 
+@param final If 1, the db data connection is released. No
+future drms_server_begin_transaction() can be invoked. 
+*/
 void drms_server_end_transaction(DRMS_Env_t *env, int abort, int final);
 #endif
