@@ -42,7 +42,11 @@ int drms_getkey_int(DRMS_Record_t *rec, const char *key, int *status);
 long long drms_getkey_longlong(DRMS_Record_t *rec, const char *key, int *status);
 float drms_getkey_float(DRMS_Record_t *rec, const char *key, int *status);
 double drms_getkey_double(DRMS_Record_t *rec, const char *key, int *status);
+double drms_keyword_getdouble(DRMS_Keyword_t *keyword, int *status);
 char *drms_getkey_string(DRMS_Record_t *rec, const char *key, int *status);
+TIME drms_getkey_time(DRMS_Record_t *rec, const char *key, int *status);
+TIME drms_keyword_gettime(DRMS_Keyword_t *keyword, int *status);
+
 /* Generic version. */
 DRMS_Type_Value_t drms_getkey(DRMS_Record_t *rec, const char *key, 
 			      DRMS_Type_t *type, int *status);
@@ -126,5 +130,10 @@ int drms_keyword_isslotted(DRMS_Keyword_t *key);
 
 /* Utility */
 DRMS_RecScopeType_t drms_keyword_str2recscope(const char *str, int *status);
+DRMS_Keyword_t *drms_keyword_indexfromslot(DRMS_Keyword_t *slot);
+DRMS_Keyword_t *drms_keyword_epochfromslot(DRMS_Keyword_t *slot);
+DRMS_Keyword_t *drms_keyword_stepfromslot(DRMS_Keyword_t *slot);
+DRMS_Keyword_t *drms_keyword_unitfromslot(DRMS_Keyword_t *slot);
+DRMS_Keyword_t *drms_keyword_slotfromindex(DRMS_Keyword_t *indx);
 
 #endif

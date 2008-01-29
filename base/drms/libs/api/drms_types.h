@@ -140,7 +140,59 @@ typedef struct DRMS_Value
 #define DRMS_MAXTYPENAMELEN  (9)
 
 
+/* */
+#ifdef ICCCOMP
+#pragma warning (disable : 1572)
+#endif
+static inline int drms_ismissing(DRMS_Type_t type, void *value)
+{
+   int ret = 0;
 
+   switch (type)
+   {
+      case DRMS_TYPE_CHAR:
+	ret = (DRMS_MISSING_CHAR == *((char *)value));
+	break;
+      case DRMS_TYPE_SHORT:
+	ret = (DRMS_MISSING_SHORT == *((short *)value));
+	break;
+      case DRMS_TYPE_INT:
+	ret = (DRMS_MISSING_INT == *((int *)value));
+	break;
+      case DRMS_TYPE_LONGLONG:
+	ret = (DRMS_MISSING_LONGLONG == *((long long *)value));
+	break;
+      case DRMS_TYPE_FLOAT:
+	ret = (DRMS_MISSING_FLOAT == *((float *)value));
+	break;
+      case DRMS_TYPE_DOUBLE:
+	ret = (DRMS_MISSING_DOUBLE == *((double *)value));
+	break;
+      case DRMS_TYPE_TIME:
+	ret = (DRMS_MISSING_TIME == *((double *)value));
+	break;
+      case DRMS_TYPE_STRING:
+	ret = (*((char *)value) == '\0');
+	break;
+      case DRMS_TYPE_RAW:
+	fprintf(stderr, "What is DRMS_TYPE_RAW?\n");
+	break;
+      default:
+	fprintf(stderr, "Invalid DRMS type '%d'.\n", (int)type);
+	break;
+   }
+
+   return ret;
+}
+
+static inline int drms_ismissingval(DRMS_Value_t *value)
+{
+   return drms_ismissing(value->type, (void *)&(value->value.char_val));
+}
+
+#ifdef ICCCOMP
+#pragma warning (default : 1572)
+#endif
 
 /****************************** DRMS Environment ***************************/
 

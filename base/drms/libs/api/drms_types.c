@@ -1427,15 +1427,17 @@ double drms2double(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     }
     break;
   case DRMS_TYPE_TIME: 
-    if (drms_missing(DRMS_TYPE_TIME, value))
     {
-      stat = DRMS_SUCCESS;
-      result = DRMS_MISSING_DOUBLE;            
-    }
-    else 
-    {
-      stat = DRMS_SUCCESS;
-      result = (double) value->double_val;      
+       DRMS_Value_t v = {DRMS_TYPE_TIME, *value};
+       stat = DRMS_SUCCESS;
+       if (drms_ismissingval(&v))
+       {
+	  result = DRMS_MISSING_DOUBLE;  
+       }
+       else
+       {
+	  result = (double) value->double_val;
+       }
     }
     break;
   case DRMS_TYPE_DOUBLE: 	

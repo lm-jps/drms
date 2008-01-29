@@ -14,13 +14,14 @@ static RecordQuery_t *parse_record_query(char **in);
 static RecordList_t *parse_record_list(DRMS_Record_t *template, char **in);
 static PrimekeyRangeSet_t *parse_primekey_set(DRMS_Keyword_t *keyword, 
 					      char **in);
+static PrimekeyRangeSet_t *parse_slottedkey_set(DRMS_Keyword_t *slotkey,
+						char **in);
 static IndexRangeSet_t *parse_index_set(char **in);
 static ValueRangeSet_t *parse_value_set(DRMS_Type_t datatype, char **in);
 static int parse_duration(char **in, double *duration);
 
 static int syntax_error;
 static int prime_keynum=0;
-static char *query_start;
 static int recnum_filter; /* Did the query refer to absolute record numbers? */ 
 
 
@@ -38,7 +39,6 @@ RecordSet_t *parse_record_set(DRMS_Env_t *env, char **in)
 
   prime_keynum = 0;  
   syntax_error = 0;  /* So far so good... */
-  query_start = *in; /* Handy for error messages. */
   recnum_filter = 0;
 
   XASSERT(rs = malloc(sizeof(RecordSet_t)));
@@ -275,6 +275,7 @@ static RecordList_t *parse_record_list(DRMS_Record_t *template, char **in) {
   char *p = *in;
   char pk[DRMS_MAXNAMELEN];
   DRMS_SeriesInfo_t *si;
+  DRMS_Keyword_t *nprimekey = NULL;
 
 #ifdef DEBUG
   printf ("enter parse_record_list\n");
@@ -313,11 +314,42 @@ static RecordList_t *parse_record_list(DRMS_Record_t *template, char **in) {
 	}
       }
       if (keynum == -1) {
-	/* No match was found - report an error. */
-	fprintf(stderr,"Error: '%s' is not a primary index for series '%s'.\n",
-		pk,si->seriesname);
-	++syntax_error;
-	goto error;
+	 /* The user specified [<key>=value], but <key> was not a prime key.
+	  * This COULD be due to the user querying a slotted key (which is
+	  * NOT drms prime.  It that is the case, then must pass <slotted key>
+	  * to parse_slottedkey_set() (NOTE: parse_slottedkey_set() is the
+	  * same function as parse_primekey_set().  Parsing non-primekeys 
+	  * other than slotted keys is not allowed, so there is no
+	  * parse_key_set() function).
+	  *
+	  * If a user specifies a query of the form [<slotted key> = <valueA>],
+	  * then this is ALWAYS changed into [<index key> = <valueB>],
+	  * where <index key> is the index keyword that is associated with
+	  * the slotted keyword <slotted key).  And <valueB> is what the 
+	  * <valueA> is mapped to (the slot number) when the slotted keyword
+	  * value is mapped onto a slot
+	  */
+
+	 nprimekey = hcon_lookup_lower(&(template->keywords), pk);
+
+	 if (nprimekey == NULL)
+	 {
+	    fprintf(stderr, 
+		    "Error: '%s' is not a keyword of series '%s'.\n",
+		    pk,
+		    si->seriesname);
+	    ++syntax_error;
+	    goto error;
+	 }
+
+	 if (!drms_keyword_isslotted(nprimekey))
+	 {
+	    /* No match was found - report an error. */
+	    fprintf(stderr,"Error: '%s' is not a primary index for series '%s'.\n",
+		    pk,si->seriesname);
+	    ++syntax_error;
+	    goto error;
+	 }
       }
     } else {
       /* No keyword was given - prime key number is implied by order of
@@ -329,10 +361,26 @@ static RecordList_t *parse_record_list(DRMS_Record_t *template, char **in) {
 	goto error;
       }
       p = *in;
+
+
     }
 			/* check if the type of the key is time, and if so
 					skip to the first time type prime key */
-    rl->primekey_rangeset = parse_primekey_set (si->pidx_keywords[keynum], &p);
+    if (nprimekey != NULL)
+    {
+       rl->primekey_rangeset = parse_slottedkey_set (nprimekey, &p);       
+    }
+    else if (drms_keyword_isindex(si->pidx_keywords[keynum]))
+    {
+       DRMS_Keyword_t *slottedkey = 
+	 drms_keyword_slotfromindex(si->pidx_keywords[keynum]);
+       rl->primekey_rangeset = parse_slottedkey_set (slottedkey, &p);
+    }
+    else
+    {
+       rl->primekey_rangeset = parse_primekey_set (si->pidx_keywords[keynum], &p);
+    }
+
     if (rl->primekey_rangeset == NULL) {
       fprintf (stderr, "Syntax error: Expected index list at '%s'\n", *in);
       ++syntax_error;
@@ -388,6 +436,104 @@ static PrimekeyRangeSet_t *parse_primekey_set(DRMS_Keyword_t *keyword,
   return NULL;
 }
 
+/* From the user's point of view, a slotted keyword IS a drms prime keyword. 
+ * the user can substitute, in the grammar, a slotted keyword wherever 
+ * a drms prime keyword is expected. */
+PrimekeyRangeSet_t *parse_slottedkey_set(DRMS_Keyword_t *slotkey,
+					 char **in)
+{
+   PrimekeyRangeSet_t *ret = NULL;
+
+   if (drms_keyword_isslotted(slotkey))
+   {
+      ret = parse_primekey_set(slotkey, in);
+
+      if (ret)
+      {
+	 /* Must convert slotted-key value into associated index-key value */
+	 DRMS_RecScopeType_t recscope = drms_keyword_getrecscope(slotkey);
+	 switch (recscope)
+	 {
+	    case kRecScopeType_TS_EQ:
+	    {
+	       TIME epoch;
+	       double step;
+	       DRMS_SlotKeyUnit_t unit;
+	       double unitVal;
+
+	       DRMS_Keyword_t *epochKey = drms_keyword_epochfromslot(slotkey);
+	       DRMS_Keyword_t *stepKey = drms_keyword_stepfromslot(slotkey);
+	       DRMS_Keyword_t *unitKey = drms_keyword_unitfromslot(slotkey);
+
+	       epoch = drms_keyword_gettime(epochKey, NULL);
+	       step = drms_keyword_getdouble(stepKey, NULL);
+	       if (unitKey)
+	       {
+		  unit = drms_keyword_getslotunit(unitKey, NULL);
+	       }
+	       else
+	       {
+		  unit = kSlotKeyUnit_Seconds; /* default */
+	       }
+
+	       switch(unit)
+	       {
+		  case kSlotKeyUnit_TSeconds:
+		    unitVal = 0.1;
+		    break;
+		  case kSlotKeyUnit_Seconds:
+		    unitVal = 1.0;
+		    break;
+		  case kSlotKeyUnit_Minutes:
+		    unitVal = 60.0;
+		    break;
+		  case kSlotKeyUnit_Days:
+		    unitVal = 86400.0;
+		    break;
+		  default:
+		    fprintf(stderr, "Invalid slotted key unit '%d'.\n", (int)unit);
+		    break;
+	       }
+
+	       TIME starttime = ret->value_rangeset->start.time_val;
+	       ret->value_rangeset->start.int_val = 
+		 (int)((ret->value_rangeset->start.time_val - epoch) / (unitVal * step));
+
+	       /* x could be an end time, or a duration (in seconds) */
+	       if (ret->value_rangeset->type == START_END)
+	       {
+		  ret->value_rangeset->x.int_val = 
+		    (int)((ret->value_rangeset->x.time_val - epoch) / (unitVal * step));
+	       }
+	       else if (ret->value_rangeset->type == START_DURATION)
+	       {
+		  /* A duration is in seconds (a double), so it might not be 
+		   * a multiple of the slot size. If this is the case, then
+		   * round up to the next largest multiple.  Then make
+		   * the duration an integer. */
+		  ret->value_rangeset->x.int_val = 
+		    ceil(ret->value_rangeset->x.time_val / (unitVal * step));
+	       }
+	       else if (ret->value_rangeset->type != SINGLE_VALUE)
+	       {
+		  fprintf(stderr, 
+			  "Invalid range set type '%d'.\n", 
+			  ret->value_rangeset->type);
+	       }
+	    }
+	    break;
+	    default:
+	      fprintf(stderr, "Invalid rec scope '%d'.\n", (int)recscope);
+	 }
+
+	 /* Must associate the parsed range with the slotted keyword's index
+	  * keyword */
+	 ret->keyword = drms_keyword_indexfromslot(slotkey);
+      }
+   }
+   
+   return ret;
+}
 
 static IndexRangeSet_t *parse_index_set(char **in)
 { 
@@ -724,24 +870,19 @@ static int parse_duration(char **in, double *duration)
 
 /***************** Middle-end: Generate SQL from AST ********************/
 
-static int sql_record_set_filter(RecordSet_Filter_t *rs, DRMS_Env_t *env, 
-				 char *seriesname, char **query);
-static int sql_record_query(RecordQuery_t *rs, DRMS_Env_t *env, 
-			    char **query);
-static int sql_record_list(RecordList_t *rs, DRMS_Env_t *env, 
-			   char *seriesname,  char **query);
-static int sql_recnum_set(IndexRangeSet_t  *rs, DRMS_Env_t *env, 
-			  char *seriesname, char **query);
-static int sql_primekey_set(PrimekeyRangeSet_t *rs, DRMS_Env_t *env,
-			    char *seriesname,char **query);
+static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char **query);
+static int sql_record_query(RecordQuery_t *rs, char **query);
+static int sql_record_list(RecordList_t *rs, char *seriesname,  char **query);
+static int sql_recnum_set(IndexRangeSet_t  *rs, char *seriesname, char **query);
+static int sql_primekey_set(PrimekeyRangeSet_t *rs, char *seriesname,char **query);
 static int sql_primekey_index_set(IndexRangeSet_t *rs, DRMS_Keyword_t *keyword,
-				  DRMS_Env_t *env, char *seriesname, char **query);
+				  char *seriesname, char **query);
 static int sql_primekey_value_set(ValueRangeSet_t *rs, DRMS_Keyword_t *keyword,
-				  DRMS_Env_t *env, char *seriesname, char **query);
+				  char *seriesname, char **query);
 
 
 
-int sql_record_set(RecordSet_t *rs, DRMS_Env_t *env, char *seriesname, char *query)
+int sql_record_set(RecordSet_t *rs, char *seriesname, char *query)
 {
   char *p=query;
   /*  char *field_list; */
@@ -758,7 +899,7 @@ int sql_record_set(RecordSet_t *rs, DRMS_Env_t *env, char *seriesname, char *que
   if (rs->recordset_spec)
   {
     /*    p += sprintf(p," WHERE "); */
-    return sql_record_set_filter(rs->recordset_spec, env, seriesname, &p);  
+    return sql_record_set_filter(rs->recordset_spec, seriesname, &p);  
   }
   else
   {
@@ -767,8 +908,7 @@ int sql_record_set(RecordSet_t *rs, DRMS_Env_t *env, char *seriesname, char *que
   }
 }
 
-static int sql_record_set_filter(RecordSet_Filter_t *rs, DRMS_Env_t *env, 
-				 char *seriesname, char **query)
+static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char **query)
 {
   char *p=*query;
 
@@ -780,10 +920,10 @@ static int sql_record_set_filter(RecordSet_Filter_t *rs, DRMS_Env_t *env,
     switch(rs->type)
     {
     case RECORDQUERY:
-      sql_record_query(rs->record_query, env, &p);
+      sql_record_query(rs->record_query, &p);
       break;
     case RECORDLIST:
-      sql_record_list(rs->record_list, env, seriesname, &p);
+      sql_record_list(rs->record_list, seriesname, &p);
       break;
     default:    
       fprintf(stderr,"Wrong type (%d) in sql_record_set_filter.\n",
@@ -803,8 +943,7 @@ static int sql_record_set_filter(RecordSet_Filter_t *rs, DRMS_Env_t *env,
 }
 
 
-static int sql_record_query(RecordQuery_t *rs, DRMS_Env_t *env, 
-			    char **query)
+static int sql_record_query(RecordQuery_t *rs, char **query)
 {
   char *p=*query;
 #ifdef DEBUG
@@ -818,8 +957,7 @@ static int sql_record_query(RecordQuery_t *rs, DRMS_Env_t *env,
   return 0;
 }
 
-static int sql_record_list(RecordList_t *rs, DRMS_Env_t *env, 
-			   char *seriesname, char **query)
+static int sql_record_list(RecordList_t *rs, char *seriesname, char **query)
 {
   char *p=*query;  
 #ifdef DEBUG
@@ -829,10 +967,10 @@ static int sql_record_list(RecordList_t *rs, DRMS_Env_t *env,
   switch(rs->type)
   {
   case RECNUMSET:
-    sql_recnum_set(rs->recnum_rangeset, env, seriesname, &p);
+    sql_recnum_set(rs->recnum_rangeset, seriesname, &p);
     break;
   case PRIMEKEYSET:
-    sql_primekey_set(rs->primekey_rangeset, env, seriesname, &p);
+    sql_primekey_set(rs->primekey_rangeset, seriesname, &p);
     break;
   default:    
     fprintf(stderr,"Wrong type (%d) in sql_record_list.\n",
@@ -847,8 +985,7 @@ static int sql_record_list(RecordList_t *rs, DRMS_Env_t *env,
   return 0;
 }
 
-static int sql_recnum_set(IndexRangeSet_t  *rs, DRMS_Env_t *env, 
-			  char *seriesname, char **query)
+static int sql_recnum_set(IndexRangeSet_t  *rs, char *seriesname, char **query)
 {
   char *p=*query;
 #ifdef DEBUG
@@ -895,19 +1032,19 @@ static int sql_recnum_set(IndexRangeSet_t  *rs, DRMS_Env_t *env,
 }
 
 
-static int sql_primekey_set(PrimekeyRangeSet_t *rs,  DRMS_Env_t *env, char *seriesname, char **query)
+static int sql_primekey_set(PrimekeyRangeSet_t *rs, char *seriesname, char **query)
 {
   if (rs->type == INDEX_RANGE) 
-    return sql_primekey_index_set(rs->index_rangeset, rs->keyword, env, seriesname, query);
+    return sql_primekey_index_set(rs->index_rangeset, rs->keyword, seriesname, query);
   else if(rs->type == VALUE_RANGE) 
-    return sql_primekey_value_set(rs->value_rangeset, rs->keyword, env, seriesname, query);
+    return sql_primekey_value_set(rs->value_rangeset, rs->keyword, seriesname, query);
   else 
     return 1;
 }
 
 
 static int sql_primekey_index_set(IndexRangeSet_t *rs, DRMS_Keyword_t *keyword,
-				  DRMS_Env_t *env, char *seriesname, char **query)
+				  char *seriesname, char **query)
 {
   char *p=*query;
   DRMS_Type_t datatype;
@@ -1021,8 +1158,9 @@ static int sql_primekey_index_set(IndexRangeSet_t *rs, DRMS_Keyword_t *keyword,
    return the record(s) with prime index values of minimal distance from x 
    and contained in the open interval [start-skip/2:start+duration+skip/2).
 */
+
 static int sql_primekey_value_set(ValueRangeSet_t *rs, DRMS_Keyword_t *keyword,
-				  DRMS_Env_t *env, char *seriesname, char **query)
+				  char *seriesname, char **query)
 {
   char *p=*query;
 #ifdef DEBUG
@@ -1287,7 +1425,7 @@ int drms_recordset_query(DRMS_Env_t *env, char *recordsetname,
     XASSERT(*query = malloc(DRMS_MAXQUERYLEN));
     *seriesname = strdup(rs->seriesname);
     *filter = !recnum_filter;
-    sql_record_set(rs,env,*seriesname, *query);
+    sql_record_set(rs,*seriesname, *query);
     free_record_set(rs);
     return 0;
   }

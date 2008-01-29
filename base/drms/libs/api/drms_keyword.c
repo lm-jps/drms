@@ -661,27 +661,39 @@ float drms_getkey_float(DRMS_Record_t *rec, const char *key, int *status)
   return result;  
 }
 
-
-
 double drms_getkey_double(DRMS_Record_t *rec, const char *key, int *status)
 {
   DRMS_Keyword_t *keyword;
-  int stat;
+  int stat;  
   double result;
 
   keyword = drms_keyword_lookup(rec, key, 1);
-  if ( keyword!=NULL )
+
+  if (keyword != NULL)
   {  
-    result = drms2double(keyword->info->type, &keyword->value, &stat);
+     result = drms_keyword_getdouble(keyword, &stat);
   }
   else 
   {
-    result = DRMS_MISSING_DOUBLE;
-    stat = DRMS_ERROR_UNKNOWNKEYWORD;  
+     result = DRMS_MISSING_DOUBLE;
+     stat = DRMS_ERROR_UNKNOWNKEYWORD;  
   }
+
   if (status)
     *status = stat;
   return result;  
+}
+
+double drms_keyword_getdouble(DRMS_Keyword_t *keyword, int *status)
+{
+   double result;
+   int stat = DRMS_SUCCESS;
+
+   result = drms2double(keyword->info->type, &keyword->value, &stat);  
+
+   if (status)
+     *status = stat;
+   return result;
 }
 
 char *drms_getkey_string(DRMS_Record_t *rec, const char *key, int *status)
@@ -703,6 +715,16 @@ char *drms_getkey_string(DRMS_Record_t *rec, const char *key, int *status)
   if (status)
     *status = stat;
   return result;  
+}
+
+TIME drms_getkey_time(DRMS_Record_t *rec, const char *key, int *status)
+{
+   return (TIME)drms_getkey_double(rec, key, status);
+}
+
+TIME drms_keyword_gettime(DRMS_Keyword_t *keyword, int *status)
+{
+   return (TIME)drms_keyword_getdouble(keyword, status);
 }
 
 DRMS_Type_Value_t drms_getkey(DRMS_Record_t *rec, const char *key, 
@@ -1383,7 +1405,7 @@ DRMS_SlotKeyUnit_t drms_keyword_getslotunit(DRMS_Keyword_t *key, int *status)
 
 	    while (gSUS[i].type != -99)
 	    {
-	       snprintf(buf, sizeof(buf), "%s", (int)gSUS[i].str);
+	       snprintf(buf, sizeof(buf), "%s", gSUS[i].str);
 	       hcon_insert_lower(gSlotUnitHC, buf, &(gSUS[i].type));
 	       i++;
 	    }
@@ -1415,6 +1437,69 @@ DRMS_SlotKeyUnit_t drms_keyword_getslotunit(DRMS_Keyword_t *key, int *status)
    if (status)
    {
       *status = stat;
+   }
+
+   return ret;
+}
+
+static DRMS_Keyword_t *GetAncillaryKey(DRMS_Keyword_t *slot, const char *suffix)
+{
+   DRMS_Keyword_t *ret = NULL;
+   char buf[DRMS_MAXNAMELEN];
+
+   if (drms_keyword_isslotted(slot))
+   {
+      snprintf(buf, sizeof(buf), "%s%s", slot->info->name, suffix);
+      DRMS_Record_t *template = 
+	drms_template_record(slot->record->env,
+			     slot->record->seriesinfo->seriesname,
+			     NULL);
+      ret = (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), buf);
+   }
+
+   return ret;
+}
+
+DRMS_Keyword_t *drms_keyword_indexfromslot(DRMS_Keyword_t *slot)
+{
+   return GetAncillaryKey(slot, kSlotAncKey_Index);
+}
+
+DRMS_Keyword_t *drms_keyword_epochfromslot(DRMS_Keyword_t *slot)
+{
+   return GetAncillaryKey(slot, kSlotAncKey_Epoch);
+}
+
+DRMS_Keyword_t *drms_keyword_stepfromslot(DRMS_Keyword_t *slot)
+{
+   return GetAncillaryKey(slot, kSlotAncKey_Step);
+}
+
+DRMS_Keyword_t *drms_keyword_unitfromslot(DRMS_Keyword_t *slot)
+{
+   return GetAncillaryKey(slot, kSlotAncKey_Unit);
+}
+
+DRMS_Keyword_t *drms_keyword_slotfromindex(DRMS_Keyword_t *indx)
+{
+   DRMS_Keyword_t *ret = NULL;
+   char *kname = strdup(indx->info->name);
+
+   if (kname)
+   {
+      char *underscore = strstr(kname, kSlotAncKey_Index);
+
+      if (underscore && drms_keyword_isindex(indx))
+      {
+	 DRMS_Record_t *template = 
+	   drms_template_record(indx->record->env, 
+				indx->record->seriesinfo->seriesname,
+				NULL);
+	 *underscore = '\0';
+	 ret = (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), kname);
+      }
+
+      free(kname);
    }
 
    return ret;
