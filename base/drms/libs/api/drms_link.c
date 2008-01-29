@@ -404,32 +404,37 @@ static int drms_link_resolveall(DRMS_Link_t *link, int *n, long long **recnums)
 
 void drms_link_print(DRMS_Link_t *link)
 {
+	drms_link_fprint(stdout, link);
+}
+
+void drms_link_fprint(FILE *keyfile, DRMS_Link_t *link)
+{
   const int fieldwidth=13;
   int i;
 
-  printf("\t%-*s:\t'%s'\n", fieldwidth, "Name", link->info->name);
-  printf("\t%-*s:\t'%s'\n", fieldwidth, "Target series", link->info->target_series);
-  printf("\t%-*s:\t%s\n", fieldwidth, "Description", link->info->description);  
+  fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "Name", link->info->name);
+  fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "Target series", link->info->target_series);
+  fprintf(keyfile, "\t%-*s:\t%s\n", fieldwidth, "Description", link->info->description);  
   if (link->info->type == STATIC_LINK)
   {
-    printf("\t%-*s:\t%s\n", fieldwidth, "Type", "STATIC_LINK");
+    fprintf(keyfile, "\t%-*s:\t%s\n", fieldwidth, "Type", "STATIC_LINK");
   }
   else
   {
-    printf("\t%-*s:\t%s\n", fieldwidth, "Type", "DYNAMIC_LINK");
-    printf("\t%-*s:\t%d\n", fieldwidth, "Pidx_num", link->info->pidx_num);
+    fprintf(keyfile, "\t%-*s:\t%s\n", fieldwidth, "Type", "DYNAMIC_LINK");
+    fprintf(keyfile, "\t%-*s:\t%d\n", fieldwidth, "Pidx_num", link->info->pidx_num);
     for(i=0;i<link->info->pidx_num; i++)
     {
-      printf("\t%-*s%1d :\t%s\n", fieldwidth-2, "Pidx_name", i,
+      fprintf(keyfile, "\t%-*s%1d :\t%s\n", fieldwidth-2, "Pidx_name", i,
 	     link->info->pidx_name[i]);
-      printf("\t%-*s%1d :\t%s\n", fieldwidth-2, "Pidx_type", i, 
+      fprintf(keyfile, "\t%-*s%1d :\t%s\n", fieldwidth-2, "Pidx_type", i, 
 	     drms_type2str(link->info->pidx_type[i]));
-      printf("\t%-*s%1d :\t", fieldwidth-2, "Pidx_value", i);
-      drms_printfval(link->info->pidx_type[i], &link->pidx_value[i]);
-      printf("\n");
+      fprintf(keyfile, "\t%-*s%1d :\t", fieldwidth-2, "Pidx_value", i);
+      drms_fprintfval(keyfile, link->info->pidx_type[i], &link->pidx_value[i]);
+      fprintf(keyfile, "\n");
     }    
   }
-  printf("\t%-*s:\t%lld\n", fieldwidth, "Recnum", link->recnum);
+  fprintf(keyfile, "\t%-*s:\t%lld\n", fieldwidth, "Recnum", link->recnum);
 }
 
 

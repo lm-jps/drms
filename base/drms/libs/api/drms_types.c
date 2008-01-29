@@ -417,34 +417,38 @@ int drms_sprintfval(char *dst, DRMS_Type_t type, DRMS_Type_Value_t *val,
 
 /* Print value according to type. */
 int drms_printfval(DRMS_Type_t type, DRMS_Type_Value_t *val) {
+	drms_fprintfval(stdout, type, val);
+}
+
+int drms_fprintfval(FILE *keyfile, DRMS_Type_t type, DRMS_Type_Value_t *val) {
   switch(type) {
   case DRMS_TYPE_CHAR: 
-    return printf("%hhd", val->char_val);
+    return fprintf(keyfile, "%hhd", val->char_val);
     break;
   case DRMS_TYPE_SHORT:
-    return printf("%hd", val->short_val );
+    return fprintf(keyfile, "%hd", val->short_val );
     break;
   case DRMS_TYPE_INT:  
-    return printf("%d", val->int_val );
+    return fprintf(keyfile, "%d", val->int_val );
     break;
   case DRMS_TYPE_LONGLONG:  
-    return printf("%lld", val->longlong_val);
+    return fprintf(keyfile, "%lld", val->longlong_val);
     break;
   case DRMS_TYPE_FLOAT:
-    return printf("%15.9g", val->float_val);
+    return fprintf(keyfile, "%15.9g", val->float_val);
     break;
   case DRMS_TYPE_TIME: 
     {
       char buf[128];
       sprint_time(buf, val->time_val, "UTC", 0);
-      printf("%s",buf);
+      fprintf(keyfile, "%s",buf);
     }
     break;
   case DRMS_TYPE_DOUBLE: 	
-    return printf("%24.17lg", val->double_val);
+    return fprintf(keyfile, "%24.17lg", val->double_val);
     break;
   case DRMS_TYPE_STRING: 
-    return printf("'%s'", val->string_val);
+    return fprintf(keyfile, "'%s'", val->string_val);
     break;
   default:
     fprintf(stderr, "ERROR: Unhandled DRMS type %d\n",(int)type);
@@ -457,35 +461,40 @@ int drms_printfval(DRMS_Type_t type, DRMS_Type_Value_t *val) {
 /* Print value according to type. */
 int drms_printfval_raw(DRMS_Type_t type, void *val)
 {
+	drms_fprintfval_raw(stdout, type, val);
+}
+
+int drms_fprintfval_raw(FILE *keyfile, DRMS_Type_t type, void *val)
+{
   switch(type)
   {
   case DRMS_TYPE_CHAR: 
-    return printf("%hhd", *((char *)val));
+    return fprintf(keyfile, "%hhd", *((char *)val));
     break;
   case DRMS_TYPE_SHORT:
-    return printf("%hd", *((short *)val));
+    return fprintf(keyfile, "%hd", *((short *)val));
     break;
   case DRMS_TYPE_INT:  
-    return printf("%d", *((int *)val));
+    return fprintf(keyfile, "%d", *((int *)val));
     break;
   case DRMS_TYPE_LONGLONG:  
-    return printf("%lld", *((long long *)val));
+    return fprintf(keyfile, "%lld", *((long long *)val));
     break;
   case DRMS_TYPE_FLOAT:
-    return printf("%15.9g", *((float *)val));
+    return fprintf(keyfile, "%15.9g", *((float *)val));
     break;
   case DRMS_TYPE_TIME: 
     {
       char buf[128];
       sprint_time(buf, *((double *)val), "UTC", 0);
-      printf("%s",buf);
+      fprintf(keyfile, "%s",buf);
     }
     break;
   case DRMS_TYPE_DOUBLE: 	
-    return printf("%24.17lg", *((double *)val));
+    return fprintf(keyfile, "%24.17lg", *((double *)val));
     break;
   case DRMS_TYPE_STRING: 
-    return printf("'%s'", (char *)val);
+    return fprintf(keyfile, "'%s'", (char *)val);
     break;
   default:
     fprintf(stderr, "ERROR: Unhandled DRMS type %d\n",(int)type);

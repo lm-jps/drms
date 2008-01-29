@@ -183,35 +183,40 @@ HContainer_t *drms_create_keyword_prototypes(DRMS_Record_t *target,
 
    return ret;
 }
-
-/* Print the fields of a keyword struct to stdout. */
+/*Print the fields of a keyword struct to stdout.*/
 void drms_keyword_print(DRMS_Keyword_t *key)
+{ 
+	drms_keyword_fprint(stdout, key);
+}
+
+/* Print the fields of a keyword struct to file "keyfile". */
+void drms_keyword_fprint(FILE *keyfile, DRMS_Keyword_t *key)
 {
   const int fieldwidth=13;
 
-  printf("\t%-*s:\t'%s'\n", fieldwidth, "name", key->info->name);
-  printf("\t%-*s:\t%d\n", fieldwidth, "islink", key->info->islink);
+  fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "name", key->info->name);
+  fprintf(keyfile, "\t%-*s:\t%d\n", fieldwidth, "islink", key->info->islink);
   if (key->info->islink)
   {
-    printf("\t%-*s:\t%s\n", fieldwidth, "linkname", key->info->linkname);
-    printf("\t%-*s:\t%s\n", fieldwidth, "target keyword", key->info->target_key);
-    printf("\t%-*s:\t'%s'\n", fieldwidth, "description", key->info->description);
+    fprintf(keyfile, "\t%-*s:\t%s\n", fieldwidth, "linkname", key->info->linkname);
+    fprintf(keyfile, "\t%-*s:\t%s\n", fieldwidth, "target keyword", key->info->target_key);
+    fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "description", key->info->description);
   }
   else
   {
-    printf("\t%-*s:\t'%s'\n", fieldwidth, "type", drms_type2str(key->info->type));
-    printf("\t%-*s:\t'%s'\n", fieldwidth, "format", key->info->format);
-    printf("\t%-*s:\t'%s'\n", fieldwidth, "unit", key->info->unit);
-    printf("\t%-*s:\t'%s'\n", fieldwidth, "description", key->info->description);
-    printf("\t%-*s:\t%d\n", fieldwidth, "record_scope", (int)key->info->recscope);
-    printf("\t%-*s:\t%d\n", fieldwidth, "per_segment", key->info->per_segment);
-    printf("\t%-*s:\t%d\n", fieldwidth, "isprime", (int)key->info->isdrmsprime);
-    printf("\t%-*s:\t",fieldwidth,"value");
+    fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "type", drms_type2str(key->info->type));
+    fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "format", key->info->format);
+    fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "unit", key->info->unit);
+    fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "description", key->info->description);
+    fprintf(keyfile, "\t%-*s:\t%d\n", fieldwidth, "recordscope", (int)key->info->recscope);
+    fprintf(keyfile, "\t%-*s:\t%d\n", fieldwidth, "per_segment", key->info->per_segment);
+    fprintf(keyfile, "\t%-*s:\t%d\n", fieldwidth, "isprime", (int)key->info->isdrmsprime);
+    fprintf(keyfile, "\t%-*s:\t",fieldwidth,"value");
   
-    drms_keyword_printval(key);
+    drms_keyword_fprintval(keyfile, key);
   }
   
-  printf("\n");
+  fprintf(keyfile, "\n");
 }
 
 

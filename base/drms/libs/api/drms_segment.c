@@ -359,33 +359,40 @@ int drms_template_segments(DRMS_Record_t *template)
 /* Print the fields of a keyword struct to stdout. */
 void drms_segment_print(DRMS_Segment_t *seg)
 {
+  drms_segment_fprint(stdout, seg);
+}
+
+
+/* Prints the fields of a keyword struct to file "keyfile". */
+void drms_segment_fprint(FILE *keyfile, DRMS_Segment_t *seg)
+{
   int i;
   const int fieldwidth=13;
 
-  printf("\t%-*s:\t'%s'\n", fieldwidth, "name", seg->info->name);
-  printf("\t%-*s:\t%d\n", fieldwidth, "segnum", seg->info->segnum);
-  printf("\t%-*s:\t%s\n", fieldwidth, "description", seg->info->description);
+  fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "name", seg->info->name);
+  fprintf(keyfile, "\t%-*s:\t%d\n", fieldwidth, "segnum", seg->info->segnum);
+  fprintf(keyfile, "\t%-*s:\t%s\n", fieldwidth, "description", seg->info->description);
   if (seg->info->islink) {
-    printf("\t%-*s:\t%s\n", fieldwidth, "linkname", seg->info->linkname);
-    printf("\t%-*s:\t%s\n", fieldwidth, "target segment", seg->info->target_seg);
+    fprintf(keyfile, "\t%-*s:\t%s\n", fieldwidth, "linkname", seg->info->linkname);
+    fprintf(keyfile, "\t%-*s:\t%s\n", fieldwidth, "target segment", seg->info->target_seg);
   } else {
     switch(seg->info->scope)
       {
       case DRMS_CONSTANT:
-	printf("\t%-*s:\t'%s'\n", fieldwidth, "scope", "CONSTANT");
+	fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "scope", "CONSTANT");
 	break;
       case DRMS_VARIABLE:
-	printf("\t%-*s:\t'%s'\n", fieldwidth, "scope", "VARIABLE");
+	fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "scope", "VARIABLE");
 	break;
       case DRMS_VARDIM:
-	printf("\t%-*s:\t'%s'\n", fieldwidth, "scope", "VARIABLE DIMENSION");
+	fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "scope", "VARIABLE DIMENSION");
 	break;
       default:
-	printf("\t%-*s:\t%s %d\n", fieldwidth, "scope", "Illegal value",
+	fprintf(keyfile, "\t%-*s:\t%s %d\n", fieldwidth, "scope", "Illegal value",
 	       (int)seg->info->scope);
       }
-    printf("\t%-*s:\t'%s'\n", fieldwidth, "unit", seg->info->unit);
-    printf("\t%-*s:\t'%s'\n", fieldwidth+9, "type", 
+    fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "unit", seg->info->unit);
+    fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth+9, "type", 
 	   drms_type2str(seg->info->type));
 
     /* Scaling information. */
@@ -393,8 +400,8 @@ void drms_segment_print(DRMS_Segment_t *seg)
       double bzero,bscale;
       if (!drms_segment_getscaling(seg,&bzero,&bscale))
 	{
-	  printf("\t%-*s:\t%g\n", fieldwidth+9, "bzero", bzero);
-	  printf("\t%-*s:\t%g\n", fieldwidth+9, "bscale", bscale);
+	  fprintf(keyfile, "\t%-*s:\t%g\n", fieldwidth+9, "bzero", bzero);
+	  fprintf(keyfile, "\t%-*s:\t%g\n", fieldwidth+9, "bscale", bscale);
 	}
     }
 
@@ -402,45 +409,45 @@ void drms_segment_print(DRMS_Segment_t *seg)
     switch(seg->info->protocol)
       {
       case DRMS_GENERIC:
-	printf("\t%-*s:\t'%s'\n", fieldwidth, "protocol", "GENERIC");
+	fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "protocol", "GENERIC");
 	break;
       case DRMS_BINARY:
-	printf("\t%-*s:\t'%s'\n", fieldwidth, "protocol", "BINARY");
+	fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "protocol", "BINARY");
 	break;
       case DRMS_BINZIP:
-	printf("\t%-*s:\t'%s'\n", fieldwidth, "protocol", "BINZIP");
+	fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "protocol", "BINZIP");
 	break;
       case DRMS_FITZ:
-	printf("\t%-*s:\t'%s'\n", fieldwidth, "protocol", "FITZ");
+	fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "protocol", "FITZ");
 	break;
       case DRMS_FITS:
-	printf("\t%-*s:\t'%s'\n", fieldwidth, "protocol", "FITS");
+	fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "protocol", "FITS");
 	break;
       case DRMS_MSI:
-	printf("\t%-*s:\t'%s'\n", fieldwidth, "protocol", "MSI");
+	fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "protocol", "MSI");
 	break;
       case DRMS_TAS:
-	printf("\t%-*s:\t'%s'\n", fieldwidth, "protocol", "TAS");
+	fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "protocol", "TAS");
 	for (i=0; i<seg->info->naxis; i++)
 	  {
-	    printf("\t%-*s[%2d]:\t%d\n", fieldwidth+5, "blocksize", i, 
+	    fprintf(keyfile, "\t%-*s[%2d]:\t%d\n", fieldwidth+5, "blocksize", i, 
 		   seg->blocksize[i]);
 	  }
 	break;
       default:
-	printf("\t%-*s:\t%s %d\n", fieldwidth, "protocol", "Illegal value",
+	fprintf(keyfile, "\t%-*s:\t%s %d\n", fieldwidth, "protocol", "Illegal value",
 	       (int)seg->info->protocol);
       }
 
     if (strlen(seg->filename)) {
-      printf("\t%-*s:\t'%s'\n", fieldwidth, "filename", seg->filename);  
+      fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "filename", seg->filename);  
     }
   }
   /* Array info. */
-  printf("\t%-*s:\t%d\n", fieldwidth+9, "naxis", seg->info->naxis);
+  fprintf(keyfile, "\t%-*s:\t%d\n", fieldwidth+9, "naxis", seg->info->naxis);
   for (i=0; i<seg->info->naxis; i++)
   {
-    printf("\t%-*s[%2d]:\t%d\n", fieldwidth+5, "axis", i, 
+    fprintf(keyfile, "\t%-*s[%2d]:\t%d\n", fieldwidth+5, "axis", i, 
 	   seg->axis[i]);
   }
 

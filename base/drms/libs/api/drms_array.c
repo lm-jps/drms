@@ -260,8 +260,15 @@ void drms_array2missing(DRMS_Array_t *arr)
 
 /* Print array according to type with given coluimn and row 
    separator strings. */
-void drms_array_print(DRMS_Array_t *arr, const char *colsep, 
-		      const char *rowsep)
+void drms_array_print(DRMS_Array_t *arr, const char *colsep, const char *rowsep)
+{
+	drms_array_fprint(stdout, arr, colsep, rowsep);
+}
+
+/*Print array according to file to type with given column and row separator strings. */
+
+void drms_array_fprint(FILE *keyfile, DRMS_Array_t *arr, const char *colsep, 
+			const char *rowsep)
 {
   int i, j, k, sz, count, index[DRMS_MAXRANK];
   unsigned char *p;  
@@ -275,14 +282,14 @@ void drms_array_print(DRMS_Array_t *arr, const char *colsep,
   case 2:
     for (i=0; i<arr->axis[1]; i++)
     {
-      drms_printfval_raw(arr->type, p);
+      drms_fprintfval_raw(keyfile, arr->type, p);
       p += sz;
       for (j=1; j<arr->axis[0]; j++, p += sz)
       {
-	printf("%s",colsep);
-	drms_printfval_raw(arr->type, p);
+	fprintf(keyfile,"%s",colsep);
+	drms_fprintfval_raw(keyfile, arr->type, p);
       }
-      printf("%s",rowsep);
+      fprintf(keyfile, "%s",rowsep);
     }
     break;
   default:
@@ -295,10 +302,10 @@ void drms_array_print(DRMS_Array_t *arr, const char *colsep,
     i = 0;
     while ( i<count )
     {
-      printf("array");
+      fprintf(keyfile, "array");
       for (j=arr->naxis-1; j>1; j--)
-	printf("[%d]",index[j]);
-      printf("[*][*] = \n");
+	fprintf(keyfile, "[%d]",index[j]);
+      fprintf(keyfile, "[*][*] = \n");
       for (j=2; j<arr->naxis-1; j++)
       {
 	if (index[j]==arr->axis[j]-1)
@@ -311,25 +318,20 @@ void drms_array_print(DRMS_Array_t *arr, const char *colsep,
       }
       for (k=0; k<arr->axis[1]; k++)
       {	
-	drms_printfval_raw(arr->type, p);
+	drms_fprintfval_raw(keyfile, arr->type, p);
 	p += sz;
 	i++;
 	for (j=1; j<arr->axis[0]; j++, i++)
 	{
-	  printf("%s",colsep);
-	  drms_printfval_raw(arr->type, p);
+	  fprintf(keyfile, "%s",colsep);
+	  drms_fprintfval_raw(keyfile, arr->type, p);
 	  p += sz;
 	}
-	printf("%s",rowsep);
+	fprintf(keyfile,"%s",rowsep);
       }
     }
   }
 }    
-
-
-
-
-
 
 
 

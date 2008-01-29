@@ -3432,7 +3432,14 @@ long long drms_record_size(DRMS_Record_t *rec)
 
 /* "Pretty" print the fields of a record structure and its keywords, links, 
    and data segments. */
-void  drms_print_record(DRMS_Record_t *rec)
+void drms_print_record(DRMS_Record_t *rec)
+   {
+         drms_fprint_records(stdout, rec);
+   }
+
+/* "Pretty" prints the fields of a record structure and its keywords, links and data
+	segments to a file. */
+void drms_fprint_records(FILE *keyfile, DRMS_Record_t *rec)
 {
   int i;
   const int fwidth=17;
@@ -3446,51 +3453,51 @@ void  drms_print_record(DRMS_Record_t *rec)
     fprintf(stderr,"NULL pointer in drms_print_record.\n");
     return;
   }
-  printf("================================================================================\n");
-  printf("%-*s:\t%s\n",fwidth,"Series name",rec->seriesinfo->seriesname);
-  printf("%-*s:\t%lld\n",fwidth,"Record #",rec->recnum);
-  printf("%-*s:\t%lld\n",fwidth,"Storage unit #",rec->sunum);
+  fprintf(keyfile, "================================================================================\n");
+  fprintf(keyfile, "%-*s:\t%s\n",fwidth,"Series name",rec->seriesinfo->seriesname);
+  fprintf(keyfile, "%-*s:\t%lld\n",fwidth,"Record #",rec->recnum);
+  fprintf(keyfile, "%-*s:\t%lld\n",fwidth,"Storage unit #",rec->sunum);
   if (rec->su)
   {
-    printf("%-*s:\t%s\n",fwidth,"Storage unit dir",rec->su->sudir);
+    fprintf(keyfile, "%-*s:\t%s\n",fwidth,"Storage unit dir",rec->su->sudir);
   }
-  printf("%-*s:\t%d\n",fwidth,"Storage unit slot #",rec->slotnum);
-  printf("%-*s:\t%lld\n",fwidth,"Session ID",rec->sessionid);
-  printf("%-*s:\t%s\n",fwidth,"Session Namespace",rec->sessionns);
-  printf("%-*s:\t%d\n",fwidth,"Readonly",rec->readonly);
-  printf("%-*s:\t%s\n",fwidth,"Description",rec->seriesinfo->description);
-  printf("%-*s:\t%s\n",fwidth,"Author",rec->seriesinfo->author);
-  printf("%-*s:\t%s\n",fwidth,"Owner",rec->seriesinfo->owner);
-  printf("%-*s:\t%d\n",fwidth,"Unitsize",rec->seriesinfo->unitsize);
-  printf("%-*s:\t%d\n",fwidth,"Archive",rec->seriesinfo->archive);
-  printf("%-*s:\t%d\n",fwidth,"Retention",rec->seriesinfo->retention);
-  printf("%-*s:\t%d\n",fwidth,"Tapegroup",rec->seriesinfo->tapegroup);
+  fprintf(keyfile, "%-*s:\t%d\n",fwidth,"Storage unit slot #",rec->slotnum);
+  fprintf(keyfile, "%-*s:\t%lld\n",fwidth,"Session ID",rec->sessionid);
+  fprintf(keyfile, "%-*s:\t%s\n",fwidth,"Session Namespace",rec->sessionns);
+  fprintf(keyfile, "%-*s:\t%d\n",fwidth,"Readonly",rec->readonly);
+  fprintf(keyfile, "%-*s:\t%s\n",fwidth,"Description",rec->seriesinfo->description);
+  fprintf(keyfile, "%-*s:\t%s\n",fwidth,"Author",rec->seriesinfo->author);
+  fprintf(keyfile, "%-*s:\t%s\n",fwidth,"Owner",rec->seriesinfo->owner);
+  fprintf(keyfile, "%-*s:\t%d\n",fwidth,"Unitsize",rec->seriesinfo->unitsize);
+  fprintf(keyfile, "%-*s:\t%d\n",fwidth,"Archive",rec->seriesinfo->archive);
+  fprintf(keyfile, "%-*s:\t%d\n",fwidth,"Retention",rec->seriesinfo->retention);
+  fprintf(keyfile, "%-*s:\t%d\n",fwidth,"Tapegroup",rec->seriesinfo->tapegroup);
 
   for (i=0; i<rec->seriesinfo->pidx_num; i++)
-    printf("%-*s %d:\t%s\n",fwidth,"Primary index",i,
+    fprintf(keyfile, "%-*s %d:\t%s\n",fwidth,"Primary index",i,
 	   (rec->seriesinfo->pidx_keywords[i])->info->name);
 
   hiter_new(&hit, &rec->keywords);
   while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )
   {
-    printf("%-*s '%s':\n",13,"Keyword",key->info->name);
-    drms_keyword_print(key);
+    fprintf(keyfile, "%-*s '%s':\n",13,"Keyword",key->info->name);
+    drms_keyword_fprint(keyfile, key);
   }
 
   hiter_new(&hit, &rec->links); 
   while( (link = (DRMS_Link_t *)hiter_getnext(&hit)) )
   {
-    printf("%-*s '%s':\n",13,"Link",link->info->name);
-    drms_link_print(link);
+    fprintf(keyfile, "%-*s '%s':\n",13,"Link",link->info->name);
+    drms_link_fprint(keyfile, link);
   }
 
   hiter_new(&hit, &rec->segments);
   while( (seg = (DRMS_Segment_t *)hiter_getnext(&hit)) )
   {
-    printf("%-*s '%s':\n",fwidth,"Segment",seg->info->name);
-      drms_segment_print(seg);
+    fprintf(keyfile, "%-*s '%s':\n",fwidth,"Segment",seg->info->name);
+      drms_segment_fprint(keyfile, seg);
   }
-  printf("================================================================================\n");
+  fprintf(keyfile, "================================================================================\n");
 }
 
 int drms_record_numkeywords(DRMS_Record_t *rec)
