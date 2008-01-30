@@ -16,7 +16,7 @@ DRMS_Record_t *drms_link_follow(DRMS_Record_t *rec, const char *linkname,
 DRMS_RecordSet_t *drms_link_followall(DRMS_Record_t *rec, const char *linkname,
 				      int *status);
 void drms_link_print(DRMS_Link_t *link);
-
+void drms_link_fprint(FILE *linkfile, DRMS_Link_t *link);
 void drms_free_template_link_struct(DRMS_Link_t *link);
 void drms_free_link_struct(DRMS_Link_t *link);
 void drms_copy_link_struct(DRMS_Link_t *dst, DRMS_Link_t *src);

@@ -3434,12 +3434,12 @@ long long drms_record_size(DRMS_Record_t *rec)
    and data segments. */
 void drms_print_record(DRMS_Record_t *rec)
    {
-         drms_fprint_records(stdout, rec);
+         drms_fprint_record(stdout, rec);
    }
 
 /* "Pretty" prints the fields of a record structure and its keywords, links and data
 	segments to a file. */
-void drms_fprint_records(FILE *keyfile, DRMS_Record_t *rec)
+void drms_fprint_record(FILE *keyfile, DRMS_Record_t *rec)
 {
   int i;
   const int fwidth=17;

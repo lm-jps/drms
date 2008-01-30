@@ -160,6 +160,9 @@ INLINE int drms_array_offset(DRMS_Array_t *arr, int *indexarr)
 void drms_array_print(DRMS_Array_t *arr, const char *colsep, 
 		      const char *rowsep);
 
+void drms_array_fprint(FILE *arrfile, DRMS_Array_t *arr, const char *colsep, 
+		      const char *rowsep);
+
 /* Calculate the number of entries in an n-dimensional array. */
 /**
    Returns the total number of data points in the

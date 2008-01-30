@@ -124,6 +124,13 @@ void drms_segment_destroyinfocon(HContainer_t **info);
    @param seg DRMS segment struct whose fields will be printed to stdout.
 */
 void drms_segment_print(DRMS_Segment_t *seg);
+/**
+   Prints the full @a seg struct information to @a segfile
+
+   @param seg DRMS segment struct whose fields will be printed to @a segfile
+   @param segfile
+*/
+void drms_segment_fprint(FILE *segfile, DRMS_Segment_t *seg);
 
 /* Return absolute path to segment file in filename.
    filename must be able the hold at DRMS_MAXPATHLEN bytes. */

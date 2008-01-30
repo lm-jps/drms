@@ -259,6 +259,7 @@ DRMS_Record_t *drms_create_record(DRMS_Env_t *env, char *seriesname,
 int drms_close_record(DRMS_Record_t *rec, int action);
 /* Print the contents of a record data structure to stdout. */
 void  drms_print_record(DRMS_Record_t *rec);
+void  drms_fprint_record(FILE *recfile, DRMS_Record_t *rec);
 /* Calculate size of a record and its segment arrays in bytes. */
 long long drms_record_size(DRMS_Record_t *rec);
 /* Number of keywords associated with a record. */
