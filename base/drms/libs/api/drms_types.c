@@ -417,7 +417,7 @@ int drms_sprintfval(char *dst, DRMS_Type_t type, DRMS_Type_Value_t *val,
 
 /* Print value according to type. */
 int drms_printfval(DRMS_Type_t type, DRMS_Type_Value_t *val) {
-	drms_fprintfval(stdout, type, val);
+   return drms_fprintfval(stdout, type, val);
 }
 
 int drms_fprintfval(FILE *keyfile, DRMS_Type_t type, DRMS_Type_Value_t *val) {
@@ -461,7 +461,7 @@ int drms_fprintfval(FILE *keyfile, DRMS_Type_t type, DRMS_Type_Value_t *val) {
 /* Print value according to type. */
 int drms_printfval_raw(DRMS_Type_t type, void *val)
 {
-	drms_fprintfval_raw(stdout, type, val);
+   return drms_fprintfval_raw(stdout, type, val);
 }
 
 int drms_fprintfval_raw(FILE *keyfile, DRMS_Type_t type, void *val)
@@ -561,40 +561,53 @@ int drms_sscanf (char *str, DRMS_Type_t dsttype, DRMS_Type_Value_t *dst) {
     } else dst->double_val = (double) dval;    
     return (int)(endptr-str);
   case DRMS_TYPE_TIME: 
+    {
     // enumerate a few ways a time string terminates. this is to
     // handle command line parameter parsing. 
 
     // assume the time string does not have any leading white spaces
-    endptr = strchr(str, ' ');
-    if (!endptr) {
-      endptr = strrchr(str, '-');
-    }
-    if (!endptr) {
-      endptr = strchr(str, '/');
-    }
-    if (!endptr) {
-      endptr = strchr(str, ',');
-    }
-    if (!endptr) {
-      endptr = strchr(str, ']');
-    }
-    if (endptr) {
-      // sscan_time does not handle any trailing junk
-      char *tmp = strndup(str, endptr-str);
-      dst->time_val = sscan_time(tmp);
-      free(tmp);
-    } else {
-      dst->time_val = sscan_time(str);
-    }
+    /* Ack, can't do this! What if you have 
+     * 1966.12.25_00:00:00_UTC,1966.12.25_00:02:00_UTC-1966.12.25_00:07:08_UTC 
+     endptr = strchr(str, ' ');
+     if (!endptr) {
+       endptr = strrchr(str, '-');
+     }
+     if (!endptr) {
+       endptr = strchr(str, '/');
+     }
+     if (!endptr) {
+       endptr = strchr(str, ',');
+     }
+     if (!endptr) {
+       endptr = strchr(str, ']');
+     }
+    */
 
-    if (time_is_invalid(dst->time_val)) {
-      fprintf (stderr, "Invalid time string at '%s'.\n", str);
-      return -1;
+       char *tokenstr = strdup(str);
+       int ret = -1;
+
+       if (tokenstr)
+       {
+	  char *lasts;
+	  char *ans = strtok_r(tokenstr, " -/,]", &lasts);
+
+	  if (ans) {
+	     dst->time_val = sscan_time(ans);
+	  }
+
+	  if (!ans || time_is_invalid(dst->time_val)) {
+	     fprintf (stderr, "Invalid time string at '%s'.\n", str);
+	  }
+	  else
+	  {
+	     ret = (int)(strlen(ans)); 
+	  }
+
+	  free(tokenstr);
+       }
+
+       return ret;
     }
-    if (!endptr) {
-      return strlen(str);
-    }
-    return (int)(endptr-str);    
   case DRMS_TYPE_STRING: 
     {
     char wrk[DRMS_MAXPATHLEN];

@@ -443,53 +443,54 @@ PrimekeyRangeSet_t *parse_slottedkey_set(DRMS_Keyword_t *slotkey,
 					 char **in)
 {
    PrimekeyRangeSet_t *ret = NULL;
+   ValueRangeSet_t *onerange = NULL;
 
    if (drms_keyword_isslotted(slotkey))
    {
       ret = parse_primekey_set(slotkey, in);
 
-      if (ret)
+      for (onerange = ret->value_rangeset; onerange != NULL; onerange = onerange->next)
       {
-	 DRMS_Value_t valin = {slotkey->info->type, ret->value_rangeset->start};
+	 DRMS_Value_t valin = {slotkey->info->type, onerange->start};
 	 DRMS_Value_t valout;
 	 DRMS_Value_t rangestart = valin;
 	 
 	 drms_keyword_slotval2indexval(slotkey, &valin, &valout, NULL);
-	 ret->value_rangeset->start = valout.value;
+	 onerange->start = valout.value;
 
 	 /* x could be an end time, or a duration (in seconds) */
-	 if (ret->value_rangeset->type == START_END)
+	 if (onerange->type == START_END)
 	 {
 	    valin.type = slotkey->info->type;
-	    valin.value = ret->value_rangeset->x;
+	    valin.value = onerange->x;
 	    drms_keyword_slotval2indexval(slotkey, &valin, &valout, NULL);
-	    ret->value_rangeset->x = valout.value;
+	    onerange->x = valout.value;
 	 }
-	 else if (ret->value_rangeset->type == START_DURATION)
+	 else if (onerange->type == START_DURATION)
 	 {
 	    /* A duration is in seconds (a double), so it might not be 
 	     * a multiple of the slot size. If this is the case, then
 	     * round up to the next largest multiple.  Then make
 	     * the duration an integer. */	    
 	    valin.type = slotkey->info->type;
-	    valin.value = ret->value_rangeset->x;
+	    valin.value = onerange->x;
 	    drms_keyword_slotval2indexval(slotkey, 
 					  &valin, 
 					  &valout, 
 					  &rangestart);
-	    ret->value_rangeset->x = valout.value;
+	    onerange->x = valout.value;
 	 }
-	 else if (ret->value_rangeset->type != SINGLE_VALUE)
+	 else if (onerange->type != SINGLE_VALUE)
 	 {
 	    fprintf(stderr, 
 		    "Invalid range set type '%d'.\n", 
-		    ret->value_rangeset->type);
+		    onerange->type);
 	 }
-
-	 /* Must associate the parsed range with the slotted keyword's index
-	  * keyword */
-	 ret->keyword = drms_keyword_indexfromslot(slotkey);
       }
+
+      /* Must associate the parsed range with the slotted keyword's index
+       * keyword */
+      ret->keyword = drms_keyword_indexfromslot(slotkey);
    }
    
    return ret;

@@ -494,18 +494,25 @@ enum DRMS_RecScopeType_enum
 typedef enum DRMS_RecScopeType_enum DRMS_RecScopeType_t;
 
 /* \brief DRMS Primary key type 
-   From the DRMS module perspective, slotted keywords are DRMS prime.
-   However, under the hood, they are not.  The associated index keyword
-   is DRMS prime, but the slotted keyword is not.  Functions that
-   access 'DRMS prime' keywords can provide kPkeysReal as a parameter
+   From the DRMS module perspective (external to DRMS), 
+   slotted keywords are DRMS prime.
+   However, within DRMS, they are not. Each one is a non-prime key
+   linked to an associated index keyword that IS DRMS prime. These
+   index keywords are not readily visible outside of DRMS (but
+   they can be accessed, just like any other keyword).
+
+   To avoid confusion, index keywords are 'internal DRMS prime' and
+   slotted keywords are 'external DRMS prime'.
+
+   Functions that access 'internal DRMS prime' keywords provide kPkeysDRMSInternal as a parameter
    to indicate that they want DRMS keywords that contain the index keyword.
-   Functions that provide kPkeysPseudo as a parameter
+   Functions that provide kPkeysDRMSExternal as a parameter
    to indicate that they want DRMS keywords that contain the slotted keyword.
 */
 enum DRMS_PrimeKeyType_enum
 {
-   kPkeysReal = 0,
-   kPkeysPseudo
+   kPkeysDRMSInternal = 0,
+   kPkeysDRMSExternal
 };
 
 typedef enum DRMS_PrimeKeyType_enum DRMS_PrimeKeyType_t;
@@ -985,6 +992,7 @@ int drms_sprintfval(char *dst, DRMS_Type_t type, DRMS_Type_Value_t *val, int int
 int drms_sprintfval_format(char *dst, DRMS_Type_t type, DRMS_Type_Value_t *val, 
 			   char *format, int internal);
 int drms_printfval (DRMS_Type_t type, DRMS_Type_Value_t *val);
+int drms_fprintfval(FILE *keyfile, DRMS_Type_t type, DRMS_Type_Value_t *val);
 int drms_sscanf(char *str, DRMS_Type_t dsttype, DRMS_Type_Value_t *dst);
 
 /* Scalar conversion functions. */
@@ -1003,6 +1011,7 @@ char *drms2string(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status);
 
 /* Misc. utility functions. */
 int drms_printfval_raw(DRMS_Type_t type, void *val);
+int drms_fprintfval_raw(FILE *keyfile, DRMS_Type_t type, void *val);
 void drms_byteswap(DRMS_Type_t type, int n, char *val);
 void drms_memset(DRMS_Type_t type, int n, void *array, DRMS_Type_Value_t val);
 int drms_daxpy(DRMS_Type_t type, const double alpha, DRMS_Type_Value_t *x, 

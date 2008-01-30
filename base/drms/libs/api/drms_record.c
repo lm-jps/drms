@@ -3474,8 +3474,23 @@ void drms_fprint_records(FILE *keyfile, DRMS_Record_t *rec)
   fprintf(keyfile, "%-*s:\t%d\n",fwidth,"Tapegroup",rec->seriesinfo->tapegroup);
 
   for (i=0; i<rec->seriesinfo->pidx_num; i++)
-    fprintf(keyfile, "%-*s %d:\t%s\n",fwidth,"Primary index",i,
+    fprintf(keyfile, "%-*s %d:\t%s\n",fwidth,"Internal primary index",i,
 	   (rec->seriesinfo->pidx_keywords[i])->info->name);
+
+  int npkeys = 0;
+  char **extpkeys = 
+    drms_series_createpkeyarray(rec->env, rec->seriesinfo->seriesname, &npkeys, NULL);
+  if (extpkeys && npkeys > 0)
+  {
+     for (i=0; i<npkeys; i++)
+       fprintf(keyfile, "%-*s %d:\t%s\n",fwidth,"External primary index",i,
+	       extpkeys[i]);
+  }
+
+  if (extpkeys)
+  {
+     drms_series_destroypkeyarray(&extpkeys, npkeys);
+  }
 
   hiter_new(&hit, &rec->keywords);
   while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )

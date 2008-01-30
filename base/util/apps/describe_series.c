@@ -139,12 +139,24 @@ void print_jsd(DRMS_Record_t *rec) {
   printf("%-*s\t%d\n",fwidth,"Archive:",rec->seriesinfo->archive);
   printf("%-*s\t%d\n",fwidth,"Retention:",rec->seriesinfo->retention);
   printf("%-*s\t%d\n",fwidth,"Tapegroup:",rec->seriesinfo->tapegroup);
-  if (rec->seriesinfo->pidx_num) {
-    printf("%-*s\t%s",fwidth,"Index:",rec->seriesinfo->pidx_keywords[0]->info->name);
-    for (i=1; i<rec->seriesinfo->pidx_num; i++)
-      printf(", %s", (rec->seriesinfo->pidx_keywords[i])->info->name);
-    printf("\n");
+
+
+  int npkeys = 0;
+  char **extpkeys = 
+    drms_series_createpkeyarray(rec->env, rec->seriesinfo->seriesname, &npkeys, NULL);
+  if (extpkeys && npkeys > 0)
+  {
+     printf("%-*s\t%s",fwidth,"Index:",extpkeys[0]);
+     for (i=1; i<npkeys; i++)
+       printf(", %s", extpkeys[i]);
+     printf("\n");
   }
+
+  if (extpkeys)
+  {
+     drms_series_destroypkeyarray(&extpkeys, npkeys);
+  }
+
   printf("%-*s\t%s\n",fwidth,"Description:",rec->seriesinfo->description);
   printf("\n#=====Links=====\n");
   hiter_new(&hit, &rec->links); 

@@ -804,7 +804,7 @@ static char **drms_series_intcreatepkeyarray(DRMS_Env_t *env,
 	 DRMS_Keyword_t *pkey = recTempl->seriesinfo->pidx_keywords[iKey];
 	 while (iKey < nKeys)
 	 {
-	    if (drms_keyword_isindex(pkey) && pktype == kPkeysPseudo)
+	    if (drms_keyword_isindex(pkey) && pktype == kPkeysDRMSExternal)
 	    {
 	       /* Use slotted keyword */
 	       pkey = drms_keyword_slotfromindex(pkey);
@@ -840,12 +840,18 @@ char **drms_series_createrealpkeyarray(DRMS_Env_t *env,
 				       int *status)
 {
      char **ret = NULL;
+     int stat = 0;
 
-     DRMS_Record_t *template = drms_template_record(env, seriesName, status);
+     DRMS_Record_t *template = drms_template_record(env, seriesName, &stat);
 
-     if (template != NULL && *status == DRMS_SUCCESS)
+     if (template != NULL && stat == DRMS_SUCCESS)
      {
-	ret = drms_series_intcreatepkeyarray(env, template, nPKeys, kPkeysReal, status);
+	ret = drms_series_intcreatepkeyarray(env, template, nPKeys, kPkeysDRMSInternal, &stat);
+     }
+
+     if (status)
+     {
+	*status = stat;
      }
 
      return ret;
@@ -858,16 +864,22 @@ char **drms_series_createpkeyarray(DRMS_Env_t *env,
 				       int *status)
 {
      char **ret = NULL;
+     int stat = 0;
 
-     DRMS_Record_t *template = drms_template_record(env, seriesName, status);
+     DRMS_Record_t *template = drms_template_record(env, seriesName, &stat);
 
-     if (template != NULL && *status == DRMS_SUCCESS)
+     if (template != NULL && stat == DRMS_SUCCESS)
      {
 	ret = drms_series_intcreatepkeyarray(env, 
 					     template, 
 					     nPKeys, 
-					     kPkeysPseudo, 
-					     status);
+					     kPkeysDRMSExternal, 
+					     &stat);
+     }
+
+     if (status)
+     {
+	*status = stat;
      }
 
      return ret;
@@ -954,7 +966,7 @@ int drms_series_checkrecordcompat(DRMS_Env_t *drmsEnv,
       pkArray = drms_series_intcreatepkeyarray(drmsEnv, 
 					       recTempl,
 					       &nPKeys,
-					       kPkeysReal,
+					       kPkeysDRMSInternal,
 					       status);
       
       if (*status == DRMS_SUCCESS)

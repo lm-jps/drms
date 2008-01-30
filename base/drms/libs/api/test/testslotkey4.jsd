@@ -1,0 +1,21 @@
+# *********************** Global information ************************
+Seriesname:	"su_arta.TestSlotkeys4"
+Description:	"One INcorrect way to make a slotted key - index keyword name doesn't match slotted keyword name"
+Author:		"Art Amezcua"
+Owner:		"arta"
+Unitsize:	10000
+Archive:	0
+Retention:	7
+Tapegroup:	0
+Index:		OBSTA
+
+
+# **************************** Keywords ******************************
+Keyword:	OBSTA, time, ts_eq, record, 1977.01.01_00:00UT, UTC, "UTC", "Primary key"
+Keyword:	OBSTA_epoch, time, constant, record, 1966.12.25_00:00UT, UTC, "UTC", "ts_eq epoch"
+Keyword:	OBSTA_step, float, constant, record, 1.0, %f, sec, "ts_eq step"
+Keyword:	OBSTA_unit, string, constant, record, secs, %s, "none", "ts_eq unit"
+Keyword:	OBST_index, index, %d, "Slotted-key index for OBST"
+
+# ************************** Data Segments ***************************
+# None
