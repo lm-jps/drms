@@ -493,9 +493,22 @@ enum DRMS_RecScopeType_enum
 
 typedef enum DRMS_RecScopeType_enum DRMS_RecScopeType_t;
 
+/* \brief DRMS Primary key type 
+   From the DRMS module perspective, slotted keywords are DRMS prime.
+   However, under the hood, they are not.  The associated index keyword
+   is DRMS prime, but the slotted keyword is not.  Functions that
+   access 'DRMS prime' keywords can provide kPkeysReal as a parameter
+   to indicate that they want DRMS keywords that contain the index keyword.
+   Functions that provide kPkeysPseudo as a parameter
+   to indicate that they want DRMS keywords that contain the slotted keyword.
+*/
+enum DRMS_PrimeKeyType_enum
+{
+   kPkeysReal = 0,
+   kPkeysPseudo
+};
 
-
-
+typedef enum DRMS_PrimeKeyType_enum DRMS_PrimeKeyType_t;
 
 typedef struct  DRMS_KeywordInfo_struct
 {

@@ -56,6 +56,11 @@ which includes the following:
 - ::DRMS_ERROR_OUTOFMEMORY
 - ::DRMS_ERROR_INVALIDDATA 
 */
+char **drms_series_createrealpkeyarray(DRMS_Env_t *env, 
+				       const char *seriesName, 
+				       int *nPKeys,
+				       int *status);
+
 char **drms_series_createpkeyarray(DRMS_Env_t *env, 
 				   const char *seriesName, 
 				   int *nPKeys,

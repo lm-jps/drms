@@ -790,220 +790,135 @@ DRMS_Value_t drms_getkey_p(DRMS_Record_t *rec, const char *key, int *status)
 }  
 
 /***************** setkey_<type> family of functions **************/
+static int SetKeyInternal(DRMS_Record_t *rec, const char *key, DRMS_Value_t *value)
+{
+   DRMS_Keyword_t *keyword = NULL;;
+   DRMS_Keyword_t *indexkw = NULL;
+
+   if (rec ->readonly)
+     return DRMS_ERROR_RECORDREADONLY;
+
+   keyword = drms_keyword_lookup(rec, key, 0);
+   if (keyword != NULL )
+   {
+      if (keyword->info->islink)
+	return DRMS_ERROR_KEYWORDREADONLY;
+      else
+      {
+	 int retstat = drms_convert(keyword->info->type, 
+				    &keyword->value, 
+				    value->type, 
+				    &(value->value));
+
+	 if (!retstat && drms_keyword_isslotted(keyword))
+	 {
+	    /* Must also set index keyword */
+	    DRMS_Value_t indexval;
+
+	    retstat = drms_keyword_slotval2indexval(keyword, 
+						    value,
+						    &indexval,
+						    NULL);
+
+	    if (!retstat)
+	    {
+	       indexkw = drms_keyword_indexfromslot(keyword);
+	       retstat = drms_convert(indexkw->info->type,
+				      &(indexkw->value),
+				      indexval.type,
+				      &(indexval.value));
+	    }
+	 }
+
+	 return retstat;
+      }
+   }
+   else
+     return DRMS_ERROR_UNKNOWNKEYWORD; 
+}
+
 int drms_setkey(DRMS_Record_t *rec, const char *key, DRMS_Type_t type, 
 		DRMS_Type_Value_t *value)
 {
-  DRMS_Keyword_t *keyword;
-
-  if (rec ->readonly)
-    return DRMS_ERROR_RECORDREADONLY;
-
-  keyword = drms_keyword_lookup(rec, key, 0);
-  if (keyword != NULL )
-  {
-    if (keyword->info->islink)
-      return DRMS_ERROR_KEYWORDREADONLY;
-    else
-    {
-      //      rec->key_dirty = 1;
-      return drms_convert(keyword->info->type, &keyword->value, type, value);
-    }
-  }
-  else
-    return DRMS_ERROR_UNKNOWNKEYWORD;  
+  DRMS_Value_t val = {type, *value};
+  return SetKeyInternal(rec, key, &val);
 }  
 
 /* This is a more generic version of drms_setkey() - it assumes that the source type
  * is equal to the target type. */
 int drms_setkey_p(DRMS_Record_t *rec, const char *key, DRMS_Value_t *value)
 {
-  DRMS_Keyword_t *keyword;
-
-  if (rec ->readonly)
-    return DRMS_ERROR_RECORDREADONLY;
-
-  keyword = drms_keyword_lookup(rec, key, 0);
-  if (keyword != NULL )
-  {
-    if (keyword->info->islink)
-      return DRMS_ERROR_KEYWORDREADONLY;
-    else
-    {
-      //      rec->key_dirty = 1;
-      return drms_convert(keyword->info->type, &keyword->value, value->type, &(value->value));
-    }
-  }
-  else
-    return DRMS_ERROR_UNKNOWNKEYWORD;  
+  return SetKeyInternal(rec, key, value);
 }  
-
 
 /* Slightly less ugly pieces of crap that should be used instead: */
 int drms_setkey_char(DRMS_Record_t *rec, const char *key, char value)
 {
-  DRMS_Type_Value_t val;
-  DRMS_Keyword_t *keyword;
-
-  if (rec->readonly)
-    return DRMS_ERROR_RECORDREADONLY;
-
-  keyword = drms_keyword_lookup(rec, key, 0);
-  if (keyword != NULL )
-  {
-    if (keyword->info->islink)
-      return DRMS_ERROR_KEYWORDREADONLY;
-    else {
-      //    rec->key_dirty = 1;
-      val.char_val = value;
-      return drms_convert(keyword->info->type, &keyword->value, DRMS_TYPE_CHAR, &val);
-    }
-  }
-  else
-    return DRMS_ERROR_UNKNOWNKEYWORD;  
-  
-  
+   DRMS_Type_Value_t v;
+   v.char_val = value;
+   DRMS_Value_t val = {DRMS_TYPE_CHAR, v};
+   return SetKeyInternal(rec, key, &val);
 }
 
 int drms_setkey_short(DRMS_Record_t *rec, const char *key, short value)
 {
-  DRMS_Type_Value_t val;
-  DRMS_Keyword_t *keyword;
-
-  if (rec->readonly)
-    return DRMS_ERROR_RECORDREADONLY;
-
-  keyword = drms_keyword_lookup(rec, key, 0);
-  if (keyword != NULL )
-  {
-    if (keyword->info->islink)
-      return DRMS_ERROR_KEYWORDREADONLY;
-    else {
-      val.short_val = value;
-      return drms_convert(keyword->info->type, &keyword->value, DRMS_TYPE_SHORT, &val);
-    }
-  }
-  else
-    return DRMS_ERROR_UNKNOWNKEYWORD;  
+   DRMS_Type_Value_t v;
+   v.short_val = value;
+   DRMS_Value_t val = {DRMS_TYPE_SHORT, v};
+   return SetKeyInternal(rec, key, &val);
 }
 
 int drms_setkey_int(DRMS_Record_t *rec, const char *key, int value)
 {
-  DRMS_Type_Value_t val;
-  DRMS_Keyword_t *keyword;
-
-  if (rec->readonly)
-    return DRMS_ERROR_RECORDREADONLY;
-
-  keyword = drms_keyword_lookup(rec, key, 0);
-  if (keyword != NULL )
-  {
-    if (keyword->info->islink)
-      return DRMS_ERROR_KEYWORDREADONLY;
-    else {
-      //    rec->key_dirty = 1;
-      val.int_val = value;
-      return drms_convert(keyword->info->type, &keyword->value, DRMS_TYPE_INT, &val);
-    }
-  }
-  else
-    return DRMS_ERROR_UNKNOWNKEYWORD;  
+   DRMS_Type_Value_t v;
+   v.int_val = value;
+   DRMS_Value_t val = {DRMS_TYPE_INT, v};
+   return SetKeyInternal(rec, key, &val);
 }
 
 int drms_setkey_longlong(DRMS_Record_t *rec, const char *key, long long value)
 {
-  DRMS_Type_Value_t val;
-  DRMS_Keyword_t *keyword;
-
-  if (rec->readonly)
-    return DRMS_ERROR_RECORDREADONLY;
-
-  keyword = drms_keyword_lookup(rec, key, 0);
-  if (keyword != NULL )
-  {
-    if (keyword->info->islink)
-      return DRMS_ERROR_KEYWORDREADONLY;
-    else {
-      val.longlong_val = value;
-      return drms_convert(keyword->info->type, &keyword->value, DRMS_TYPE_LONGLONG, 
-			  &val);
-    }
-  }
-  else
-    return DRMS_ERROR_UNKNOWNKEYWORD;  
+   DRMS_Type_Value_t v;
+   v.longlong_val = value;
+   DRMS_Value_t val = {DRMS_TYPE_LONGLONG, v};
+   return SetKeyInternal(rec, key, &val);
 }
 
 int drms_setkey_float(DRMS_Record_t *rec, const char *key, float value)
 {
-  DRMS_Type_Value_t val;
-  DRMS_Keyword_t *keyword;
-
-  if (rec->readonly)
-    return DRMS_ERROR_RECORDREADONLY;
-
-  keyword = drms_keyword_lookup(rec, key, 0);
-  if (keyword != NULL )
-  {
-    if (keyword->info->islink)
-      return DRMS_ERROR_KEYWORDREADONLY;
-    else {
-      //    rec->key_dirty = 1;
-      val.float_val = value;
-      return drms_convert(keyword->info->type, &keyword->value, DRMS_TYPE_FLOAT, &val);
-    }
-  }
-  else
-    return DRMS_ERROR_UNKNOWNKEYWORD;  
+   DRMS_Type_Value_t v;
+   v.float_val = value;
+   DRMS_Value_t val = {DRMS_TYPE_FLOAT, v};
+   return SetKeyInternal(rec, key, &val);
 }
 
 int drms_setkey_double(DRMS_Record_t *rec, const char *key, double value)
 {
-  DRMS_Type_Value_t val;
-  DRMS_Keyword_t *keyword;
+   DRMS_Type_Value_t v;
+   v.double_val = value;
+   DRMS_Value_t val = {DRMS_TYPE_DOUBLE, v};
+   return SetKeyInternal(rec, key, &val);
+}
 
-  if (rec->readonly)
-    return DRMS_ERROR_RECORDREADONLY;
-
-  keyword = drms_keyword_lookup(rec, key, 0);
-  if (keyword != NULL )
-  {
-    if (keyword->info->islink)
-      return DRMS_ERROR_KEYWORDREADONLY;
-    else {
-      //    rec->key_dirty = 1;
-      val.double_val = value;
-      return drms_convert(keyword->info->type, &keyword->value, DRMS_TYPE_DOUBLE, &val);
-    }
-  }
-  else
-    return DRMS_ERROR_UNKNOWNKEYWORD;  
+int drms_setkey_time(DRMS_Record_t *rec, const char *key, TIME value)
+{
+   DRMS_Type_Value_t v;
+   v.time_val = value;
+   DRMS_Value_t val = {DRMS_TYPE_TIME, v};
+   return SetKeyInternal(rec, key, &val);
 }
 
 int drms_setkey_string(DRMS_Record_t *rec, const char *key, const char *value)
 {
-  DRMS_Type_Value_t val;
-  DRMS_Keyword_t *keyword;
-  int ret;
+   int ret;
 
-  if (rec->readonly)
-    ret = DRMS_ERROR_RECORDREADONLY;
-
-  keyword = drms_keyword_lookup(rec, key, 0);
-  if (keyword != NULL )
-  {
-    if (keyword->info->islink)
-      ret = DRMS_ERROR_KEYWORDREADONLY;
-    else {
-      //    rec->key_dirty = 1;
-      val.string_val = strdup(value);
-      ret = drms_convert(keyword->info->type, &keyword->value, DRMS_TYPE_STRING, &val);
-      free(val.string_val);
-      val.string_val = NULL;
-    }
-  }
-  else
-    ret = DRMS_ERROR_UNKNOWNKEYWORD;  
-
-  return ret;
+   DRMS_Type_Value_t v;
+   v.string_val = strdup(value);
+   DRMS_Value_t val = {DRMS_TYPE_TIME, v};
+   ret = SetKeyInternal(rec, key, &val);
+   free(v.string_val);
+   v.string_val = NULL;
+   return ret;
 }
 
 const char *drms_keyword_getname(DRMS_Keyword_t *key)
@@ -1455,11 +1370,7 @@ static DRMS_Keyword_t *GetAncillaryKey(DRMS_Keyword_t *slot, const char *suffix)
    if (drms_keyword_isslotted(slot))
    {
       snprintf(buf, sizeof(buf), "%s%s", slot->info->name, suffix);
-      DRMS_Record_t *template = 
-	drms_template_record(slot->record->env,
-			     slot->record->seriesinfo->seriesname,
-			     NULL);
-      ret = (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), buf);
+      ret = (DRMS_Keyword_t *)hcon_lookup_lower(&(slot->record->keywords), buf);
    }
 
    return ret;
@@ -1508,4 +1419,91 @@ DRMS_Keyword_t *drms_keyword_slotfromindex(DRMS_Keyword_t *indx)
    }
 
    return ret;
+}
+
+int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey, 
+				  DRMS_Value_t *valin,
+				  DRMS_Value_t *valout,
+				  DRMS_Value_t *startdur)
+{
+   int stat = DRMS_SUCCESS;
+
+   if (valin && valout && drms_keyword_isslotted(slotkey))
+   {
+      valout->type = kIndexKWType;
+      drms_missing(valout->type, &(valout->value));
+
+      /* Must convert slotted-key value into associated index-key value */
+      DRMS_RecScopeType_t recscope = drms_keyword_getrecscope(slotkey);
+      switch (recscope)
+      {
+	 case kRecScopeType_TS_EQ:
+	   {
+	      TIME epoch;
+	      double step;
+	      DRMS_SlotKeyUnit_t unit;
+	      double unitVal;
+
+	      DRMS_Keyword_t *epochKey = drms_keyword_epochfromslot(slotkey);
+	      DRMS_Keyword_t *stepKey = drms_keyword_stepfromslot(slotkey);
+	      DRMS_Keyword_t *unitKey = drms_keyword_unitfromslot(slotkey);
+
+	      epoch = drms_keyword_gettime(epochKey, NULL);
+	      step = drms_keyword_getdouble(stepKey, NULL);
+	      if (unitKey)
+	      {
+		 unit = drms_keyword_getslotunit(unitKey, NULL);
+	      }
+	      else
+	      {
+		 unit = kSlotKeyUnit_Seconds; /* default */
+	      }
+
+	      switch(unit)
+	      {
+		 case kSlotKeyUnit_TSeconds:
+		   unitVal = 0.1;
+		   break;
+		 case kSlotKeyUnit_Seconds:
+		   unitVal = 1.0;
+		   break;
+		 case kSlotKeyUnit_Minutes:
+		   unitVal = 60.0;
+		   break;
+		 case kSlotKeyUnit_Days:
+		   unitVal = 86400.0;
+		   break;
+		 default:
+		   fprintf(stderr, "Invalid slotted key unit '%d'.\n", (int)unit);
+		   break;
+	      }
+
+	      if (startdur)
+	      {
+		 /* The slot val is actually a duration. */
+		 int startslot = (int)((startdur->value.time_val - epoch) / (unitVal * step));
+		 int endslot = (int)((startdur->value.time_val - epoch + valin->value.time_val) / 
+				     (unitVal * step));
+		 /* Must add 1 because a duration query has val <= start && val < end.  
+		  * Although this works for floating point numbers, for integers 
+		  * this query omits the last record (it's an open interval). */
+		 valout->value.int_val = 1 + endslot - startslot;
+	      }
+	      else
+	      {
+		 valout->value.int_val = 
+		   (int)((valin->value.time_val - epoch) / (unitVal * step));
+	      }
+	   }
+	   break;
+	 default:
+	   fprintf(stderr, "Invalid rec scope '%d'.\n", (int)recscope);
+      }
+   }
+   else
+   {
+      stat = DRMS_ERROR_INVALIDDATA;
+   }
+
+   return stat;
 }

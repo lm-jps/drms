@@ -635,12 +635,12 @@ static int drms_series_pkeysmatch(DRMS_Env_t *drmsEnv,
 
    if (*status == DRMS_SUCCESS)
    {
-      char **pkArray1 = drms_series_createpkeyarray(drmsEnv, series1, &nPKeys1, status);
+      char **pkArray1 = drms_series_createrealpkeyarray(drmsEnv, series1, &nPKeys1, status);
       char **pkArray2 = NULL;
       
       if (*status == DRMS_SUCCESS)
       {
-	 pkArray2 = drms_series_createpkeyarray(drmsEnv, series2, &nPKeys2, status);
+	 pkArray2 = drms_series_createrealpkeyarray(drmsEnv, series2, &nPKeys2, status);
       }
       
       if (*status == DRMS_SUCCESS)
@@ -780,10 +780,14 @@ static int drms_series_creatematchsegs(DRMS_Env_t *drmsEnv,
    return nMatch;
 }
 
-
+/* Slotted keywords associated with prime index keywords ARE prime 
+ * keyword from the user's perspective.  So, put those in the array
+ * returned.
+ */
 static char **drms_series_intcreatepkeyarray(DRMS_Env_t *env, 
 					     DRMS_Record_t *recTempl, 
 					     int *nPKeys,
+					     DRMS_PrimeKeyType_t pktype,
 					     int *status)
 {
    char **ret = NULL;
@@ -797,10 +801,20 @@ static char **drms_series_intcreatepkeyarray(DRMS_Env_t *env,
       
       if (ret != NULL)
       {
+	 DRMS_Keyword_t *pkey = recTempl->seriesinfo->pidx_keywords[iKey];
 	 while (iKey < nKeys)
 	 {
-	    const char *pkw = recTempl->seriesinfo->pidx_keywords[iKey]->info->name;
-	    ret[iKey] = strdup(pkw);
+	    if (drms_keyword_isindex(pkey) && pktype == kPkeysPseudo)
+	    {
+	       /* Use slotted keyword */
+	       pkey = drms_keyword_slotfromindex(pkey);
+	       ret[iKey] = strdup(pkey->info->name);
+	    }
+	    else
+	    {
+	       const char *pkw = pkey->info->name;
+	       ret[iKey] = strdup(pkw);
+	    }
 	    iKey++;
 	 }
 	 
@@ -819,10 +833,11 @@ static char **drms_series_intcreatepkeyarray(DRMS_Env_t *env,
    return ret;
 }
 
-char **drms_series_createpkeyarray(DRMS_Env_t *env, 
-				   const char *seriesName, 
-				   int *nPKeys,
-				   int *status)
+/* INTERNAL only! */
+char **drms_series_createrealpkeyarray(DRMS_Env_t *env, 
+				       const char *seriesName, 
+				       int *nPKeys,
+				       int *status)
 {
      char **ret = NULL;
 
@@ -830,7 +845,29 @@ char **drms_series_createpkeyarray(DRMS_Env_t *env,
 
      if (template != NULL && *status == DRMS_SUCCESS)
      {
-	ret = drms_series_intcreatepkeyarray(env, template, nPKeys, status);
+	ret = drms_series_intcreatepkeyarray(env, template, nPKeys, kPkeysReal, status);
+     }
+
+     return ret;
+}
+
+/* External */
+char **drms_series_createpkeyarray(DRMS_Env_t *env, 
+				       const char *seriesName, 
+				       int *nPKeys,
+				       int *status)
+{
+     char **ret = NULL;
+
+     DRMS_Record_t *template = drms_template_record(env, seriesName, status);
+
+     if (template != NULL && *status == DRMS_SUCCESS)
+     {
+	ret = drms_series_intcreatepkeyarray(env, 
+					     template, 
+					     nPKeys, 
+					     kPkeysPseudo, 
+					     status);
      }
 
      return ret;
@@ -908,12 +945,16 @@ int drms_series_checkrecordcompat(DRMS_Env_t *drmsEnv,
    char **seriesPKArray = NULL;
    char **pkArray = NULL;
    
-   seriesPKArray = drms_series_createpkeyarray(drmsEnv, series, &nSeriesPKeys, status);
+   seriesPKArray = drms_series_createrealpkeyarray(drmsEnv, 
+						   series, 
+						   &nSeriesPKeys, 
+						   status);
    if (*status == DRMS_SUCCESS)
    {
       pkArray = drms_series_intcreatepkeyarray(drmsEnv, 
 					       recTempl,
 					       &nPKeys,
+					       kPkeysReal,
 					       status);
       
       if (*status == DRMS_SUCCESS)

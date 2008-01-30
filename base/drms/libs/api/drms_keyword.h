@@ -58,6 +58,7 @@ int drms_setkey_int(DRMS_Record_t *rec, const char *key, int value);
 int drms_setkey_longlong(DRMS_Record_t *rec, const char *key, long long value);
 int drms_setkey_float(DRMS_Record_t *rec, const char *key, float value);
 int drms_setkey_double(DRMS_Record_t *rec, const char *key, double value);
+int drms_setkey_time(DRMS_Record_t *rec, const char *key, TIME value);
 int drms_setkey_string(DRMS_Record_t *rec, const char *key, const char *value);
 
 /* Generic version. */
@@ -135,5 +136,9 @@ DRMS_Keyword_t *drms_keyword_epochfromslot(DRMS_Keyword_t *slot);
 DRMS_Keyword_t *drms_keyword_stepfromslot(DRMS_Keyword_t *slot);
 DRMS_Keyword_t *drms_keyword_unitfromslot(DRMS_Keyword_t *slot);
 DRMS_Keyword_t *drms_keyword_slotfromindex(DRMS_Keyword_t *indx);
+int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey, 
+				  DRMS_Value_t *valin,
+				  DRMS_Value_t *valout,
+				  DRMS_Value_t *startdur);
 
 #endif

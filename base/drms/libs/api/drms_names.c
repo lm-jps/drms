@@ -450,80 +450,40 @@ PrimekeyRangeSet_t *parse_slottedkey_set(DRMS_Keyword_t *slotkey,
 
       if (ret)
       {
-	 /* Must convert slotted-key value into associated index-key value */
-	 DRMS_RecScopeType_t recscope = drms_keyword_getrecscope(slotkey);
-	 switch (recscope)
+	 DRMS_Value_t valin = {slotkey->info->type, ret->value_rangeset->start};
+	 DRMS_Value_t valout;
+	 DRMS_Value_t rangestart = valin;
+	 
+	 drms_keyword_slotval2indexval(slotkey, &valin, &valout, NULL);
+	 ret->value_rangeset->start = valout.value;
+
+	 /* x could be an end time, or a duration (in seconds) */
+	 if (ret->value_rangeset->type == START_END)
 	 {
-	    case kRecScopeType_TS_EQ:
-	    {
-	       TIME epoch;
-	       double step;
-	       DRMS_SlotKeyUnit_t unit;
-	       double unitVal;
-
-	       DRMS_Keyword_t *epochKey = drms_keyword_epochfromslot(slotkey);
-	       DRMS_Keyword_t *stepKey = drms_keyword_stepfromslot(slotkey);
-	       DRMS_Keyword_t *unitKey = drms_keyword_unitfromslot(slotkey);
-
-	       epoch = drms_keyword_gettime(epochKey, NULL);
-	       step = drms_keyword_getdouble(stepKey, NULL);
-	       if (unitKey)
-	       {
-		  unit = drms_keyword_getslotunit(unitKey, NULL);
-	       }
-	       else
-	       {
-		  unit = kSlotKeyUnit_Seconds; /* default */
-	       }
-
-	       switch(unit)
-	       {
-		  case kSlotKeyUnit_TSeconds:
-		    unitVal = 0.1;
-		    break;
-		  case kSlotKeyUnit_Seconds:
-		    unitVal = 1.0;
-		    break;
-		  case kSlotKeyUnit_Minutes:
-		    unitVal = 60.0;
-		    break;
-		  case kSlotKeyUnit_Days:
-		    unitVal = 86400.0;
-		    break;
-		  default:
-		    fprintf(stderr, "Invalid slotted key unit '%d'.\n", (int)unit);
-		    break;
-	       }
-
-	       TIME starttime = ret->value_rangeset->start.time_val;
-	       ret->value_rangeset->start.int_val = 
-		 (int)((ret->value_rangeset->start.time_val - epoch) / (unitVal * step));
-
-	       /* x could be an end time, or a duration (in seconds) */
-	       if (ret->value_rangeset->type == START_END)
-	       {
-		  ret->value_rangeset->x.int_val = 
-		    (int)((ret->value_rangeset->x.time_val - epoch) / (unitVal * step));
-	       }
-	       else if (ret->value_rangeset->type == START_DURATION)
-	       {
-		  /* A duration is in seconds (a double), so it might not be 
-		   * a multiple of the slot size. If this is the case, then
-		   * round up to the next largest multiple.  Then make
-		   * the duration an integer. */
-		  ret->value_rangeset->x.int_val = 
-		    ceil(ret->value_rangeset->x.time_val / (unitVal * step));
-	       }
-	       else if (ret->value_rangeset->type != SINGLE_VALUE)
-	       {
-		  fprintf(stderr, 
-			  "Invalid range set type '%d'.\n", 
-			  ret->value_rangeset->type);
-	       }
-	    }
-	    break;
-	    default:
-	      fprintf(stderr, "Invalid rec scope '%d'.\n", (int)recscope);
+	    valin.type = slotkey->info->type;
+	    valin.value = ret->value_rangeset->x;
+	    drms_keyword_slotval2indexval(slotkey, &valin, &valout, NULL);
+	    ret->value_rangeset->x = valout.value;
+	 }
+	 else if (ret->value_rangeset->type == START_DURATION)
+	 {
+	    /* A duration is in seconds (a double), so it might not be 
+	     * a multiple of the slot size. If this is the case, then
+	     * round up to the next largest multiple.  Then make
+	     * the duration an integer. */	    
+	    valin.type = slotkey->info->type;
+	    valin.value = ret->value_rangeset->x;
+	    drms_keyword_slotval2indexval(slotkey, 
+					  &valin, 
+					  &valout, 
+					  &rangestart);
+	    ret->value_rangeset->x = valout.value;
+	 }
+	 else if (ret->value_rangeset->type != SINGLE_VALUE)
+	 {
+	    fprintf(stderr, 
+		    "Invalid range set type '%d'.\n", 
+		    ret->value_rangeset->type);
 	 }
 
 	 /* Must associate the parsed range with the slotted keyword's index

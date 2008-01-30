@@ -126,13 +126,14 @@ int DoIt(void)
   int nrecs, irec;
   char *keyname;
   char prime_names[100][32];
+  char **pkeys;
   char *query;
   char *p;
   DRMS_Type_t keytype;
   DRMS_Type_Value_t key_anyval;
   DRMS_Record_t *rec;
   DRMS_RecordSet_t *rs;
-  DRMS_Keyword_t *key, **prime_keys;
+  DRMS_Keyword_t *key;
   DRMS_Segment_t *seg;
   HIterator_t key_hit;
   int nprime, iprime;
@@ -164,12 +165,14 @@ int DoIt(void)
 	DIE("cant create records from in given series");
     nrecs = 1;
     rec = rs->records[0];
-    nprime = rec->seriesinfo->pidx_num;
-    prime_keys = rec->seriesinfo->pidx_keywords;
+    pkeys = drms_series_createpkeyarray(drms_env, 
+					rec->seriesinfo->seriesname,
+					&nprime, 
+					&status);
+
     for (iprime = 0; iprime < nprime; iprime++)
         {
-        keyname = prime_keys[iprime]->info->name;
-
+        keyname = pkeys[iprime];
 	strcpy(prime_names[iprime], keyname);
         key = drms_keyword_lookup(rec, keyname, 1);
         keytype = key->info->type;
@@ -201,11 +204,15 @@ int DoIt(void)
 	return 0;
 	}
     rec = ors->records[0];
-    nprime = rec->seriesinfo->pidx_num;
-    prime_keys = rec->seriesinfo->pidx_keywords;
+
+    pkeys = drms_series_createpkeyarray(drms_env, 
+					rec->seriesinfo->seriesname, 
+					&nprime, 
+					&status);
+
     for (iprime = 0; iprime < nprime; iprime++)
         {
-        keyname = prime_keys[iprime]->info->name;
+	keyname = pkeys[iprime];
 	strcpy(prime_names[iprime], keyname);
         }
     /* now clone with sharing the existing record set.  Someday this may
@@ -289,6 +296,11 @@ int DoIt(void)
 	}
       }
     } /* foreach(rec) */
+
+  if (pkeys)
+  {
+     drms_series_destroypkeyarray(&pkeys, nprime);
+  }
 
   status = drms_close_records(rs, DRMS_INSERT_RECORD);
   if (status)
