@@ -993,6 +993,10 @@ int drms_sprintfval_format(char *dst, DRMS_Type_t type, DRMS_Type_Value_t *val,
 			   char *format, int internal);
 int drms_printfval (DRMS_Type_t type, DRMS_Type_Value_t *val);
 int drms_fprintfval(FILE *keyfile, DRMS_Type_t type, DRMS_Type_Value_t *val);
+int drms_sscanf_int (char *str, 
+		     DRMS_Type_t dsttype, 
+		     DRMS_Type_Value_t *dst,
+		     int silent);
 int drms_sscanf(char *str, DRMS_Type_t dsttype, DRMS_Type_Value_t *dst);
 
 /* Scalar conversion functions. */

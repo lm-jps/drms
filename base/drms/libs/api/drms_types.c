@@ -508,7 +508,10 @@ int drms_fprintfval_raw(FILE *keyfile, DRMS_Type_t type, void *val)
 /* scan for one instance of dsttype.  If dsttype is DRMS_STRING it is terminated by
  * the end of input string, a comma, or a right square bracket.
  */
-int drms_sscanf (char *str, DRMS_Type_t dsttype, DRMS_Type_Value_t *dst) {
+int drms_sscanf_int (char *str, 
+		     DRMS_Type_t dsttype, 
+		     DRMS_Type_Value_t *dst,
+		     int silent) {
   char *endptr = 0;
   long long ival;
   float fval;
@@ -518,7 +521,8 @@ int drms_sscanf (char *str, DRMS_Type_t dsttype, DRMS_Type_Value_t *dst) {
   case DRMS_TYPE_CHAR: 
     ival = strtoll(str,&endptr,0);
     if ((ival==0 && endptr==str) ||  ival < SCHAR_MIN || ival > SCHAR_MAX ) {
-      fprintf (stderr, "Integer constant '%s' is not a signed char.\n", str);
+      if (!silent)
+	fprintf (stderr, "Integer constant '%s' is not a signed char.\n", str);
       return -1;
     }
     else dst->char_val = (char) ival;
@@ -526,21 +530,24 @@ int drms_sscanf (char *str, DRMS_Type_t dsttype, DRMS_Type_Value_t *dst) {
   case DRMS_TYPE_SHORT:
     ival = strtoll(str,&endptr,10);
     if ((ival==0 && endptr==str) ||  ival < SHRT_MIN || ival > SHRT_MAX ) {
-      fprintf (stderr, "Integer constant '%s' is not a signed short.\n", str);
+      if (!silent)
+	fprintf (stderr, "Integer constant '%s' is not a signed short.\n", str);
       return -1;
     } else dst->short_val = (short) ival;
     return (int)(endptr-str);
   case DRMS_TYPE_INT:  
     ival = strtoll(str,&endptr,10);
     if ((ival==0 && endptr==str) ||  ival < INT_MIN || ival > INT_MAX ) {
-      fprintf (stderr, "Integer constant '%s' is not a signed int.\n", str);
+      if (!silent)
+	fprintf (stderr, "Integer constant '%s' is not a signed int.\n", str);
       return -1;
     } else dst->int_val = (int) ival;
     return (int)(endptr-str);
   case DRMS_TYPE_LONGLONG:  
     ival = strtoll(str,&endptr,10);
     if ((ival==0 && endptr==str) ||  ival < LLONG_MIN || ival > LLONG_MAX ) {
-      fprintf (stderr, "Integer constant '%s' is not a signed long int.\n", str);
+      if (!silent)
+	fprintf (stderr, "Integer constant '%s' is not a signed long int.\n", str);
       return -1;
     } else dst->longlong_val =  ival;
     return (int)(endptr-str);
@@ -548,7 +555,8 @@ int drms_sscanf (char *str, DRMS_Type_t dsttype, DRMS_Type_Value_t *dst) {
     fval = strtof(str,&endptr);
     if ((IsZeroF(fval) && endptr==str) || 
 	((IsPosHugeValF(fval) || IsNegHugeValF(fval)) && errno==ERANGE)) {
-      fprintf (stderr, "Real constant '%s' is not a float.\n", str);
+      if (!silent)
+	fprintf (stderr, "Real constant '%s' is not a float.\n", str);
       return -1;
     } else dst->float_val = (float) fval;
     return (int)(endptr-str);
@@ -556,7 +564,8 @@ int drms_sscanf (char *str, DRMS_Type_t dsttype, DRMS_Type_Value_t *dst) {
     dval = strtod(str,&endptr);
     if ((IsZero(dval) && endptr==str) || 
 	((IsPosHugeVal(dval) || IsNegHugeVal(dval)) && errno==ERANGE)) {
-      fprintf (stderr, "Real constant '%s' is not a double.\n", str);
+      if (!silent)
+	fprintf (stderr, "Real constant '%s' is not a double.\n", str);
       return -1;
     } else dst->double_val = (double) dval;    
     return (int)(endptr-str);
@@ -596,7 +605,8 @@ int drms_sscanf (char *str, DRMS_Type_t dsttype, DRMS_Type_Value_t *dst) {
 	  }
 
 	  if (!ans || time_is_invalid(dst->time_val)) {
-	     fprintf (stderr, "Invalid time string at '%s'.\n", str);
+	     if (!silent)
+	       fprintf (stderr, "Invalid time string at '%s'.\n", str);
 	  }
 	  else
 	  {
@@ -613,17 +623,23 @@ int drms_sscanf (char *str, DRMS_Type_t dsttype, DRMS_Type_Value_t *dst) {
     char wrk[DRMS_MAXPATHLEN];
     if (dst->string_val) free(dst->string_val);
     if (sscanf(str,"%[^],]",wrk)!=1) {
-      fprintf (stderr, "String value not found at %s.\n", str);
+      if (!silent)
+	fprintf (stderr, "String value not found at %s.\n", str);
       return -1;
     }
     dst->string_val = strdup(wrk);
     return strlen(dst->string_val);
     }
   default:
-    fprintf(stderr, "ERROR: Unhandled DRMS type %d\n",(int)dsttype);
+    if (!silent)
+      fprintf(stderr, "ERROR: Unhandled DRMS type %d\n",(int)dsttype);
     XASSERT(0);
   }
   return -1;
+}
+
+int drms_sscanf(char *str, DRMS_Type_t dsttype, DRMS_Type_Value_t *dst) {
+   return drms_sscanf_int(str, dsttype, dst, 0);
 }
 
 void drms_memset(DRMS_Type_t type, int n, void *array, 

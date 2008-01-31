@@ -17,7 +17,7 @@ static PrimekeyRangeSet_t *parse_primekey_set(DRMS_Keyword_t *keyword,
 static PrimekeyRangeSet_t *parse_slottedkey_set(DRMS_Keyword_t *slotkey,
 						char **in);
 static IndexRangeSet_t *parse_index_set(char **in);
-static ValueRangeSet_t *parse_value_set(DRMS_Type_t datatype, char **in);
+static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword, char **in);
 static int parse_duration(char **in, double *duration);
 
 static int syntax_error;
@@ -420,7 +420,7 @@ static PrimekeyRangeSet_t *parse_primekey_set(DRMS_Keyword_t *keyword,
   else
   {
     pks->type = VALUE_RANGE;
-    if ((pks->value_rangeset = parse_value_set(keyword->info->type,&p))==NULL &&
+    if ((pks->value_rangeset = parse_value_set(keyword,&p))==NULL &&
 	syntax_error)
       goto error;
   }
@@ -626,17 +626,20 @@ static IndexRangeSet_t *parse_index_set(char **in)
 
 
 
-static ValueRangeSet_t *parse_value_set(DRMS_Type_t datatype, 
+static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 					char **in)
 {
   int n;
   char *p=*in;
   ValueRangeSet_t *vr=NULL,*head=NULL;
+  DRMS_Type_t datatype = drms_keyword_gettype(keyword);
+  int slotdur;
 
 #ifdef DEBUG
   printf("enter parse_value_set\n");
 #endif
   do {
+    slotdur = 0;
     if (vr)
     {
       XASSERT(vr->next = malloc(sizeof( ValueRangeSet_t)));
@@ -662,26 +665,53 @@ static ValueRangeSet_t *parse_value_set(DRMS_Type_t datatype,
 	vr->type != LAST_VALUE) {
 
       /* Get start */
-      if ((n = drms_sscanf(p, datatype, &vr->start)) == 0)    
+      if ((n = drms_sscanf_int(p, datatype, &vr->start, 1)) == 0 ||
+	  n == -1)    
 	{
-	  fprintf(stderr,"Syntax Error: Expected start value of type %s in"
-		  " value range, found '%s'.\n",drms_type2str(datatype), p);
-	  goto error;
+	   /* Could be a duration, relative to epoch, for slotted key. */
+	   if (datatype == DRMS_TYPE_TIME &&
+	       drms_keyword_isslotted(keyword))
+	   {
+	      if (parse_duration(&p, &vr->x.time_val))
+	      {
+		 fprintf(stderr,"Syntax Error: Expected time duration "
+			 " in value range, found '%s'.\n", p);
+		 goto error;
+	      }
+	      else
+	      {
+		 DRMS_Keyword_t *epochKey = drms_keyword_epochfromslot(keyword);	     
+		 vr->start.time_val = drms_keyword_gettime(epochKey, NULL);
+		 vr->type = START_DURATION;
+		 slotdur = 1;
+	      }
+	   }
+	   else
+	   {
+	      fprintf(stderr,"Syntax Error: Expected start value of type %s in"
+		      " value range, found '%s'.\n",drms_type2str(datatype), p);
+	      goto error;
+	   }
 	}
       else
 	p += n;     
 
       if (*p=='-')
+      {
 	vr->type = START_END;
+	++p;
+      }
       else if (*p=='/')
+      {
 	vr->type = START_DURATION;
-      else 
+	++p;
+      }
+      else if (vr->type != START_DURATION)
 	vr->type = SINGLE_VALUE;
 
       /* Get end or duration "x" */
       if (vr->type != SINGLE_VALUE)
 	{
-	  ++p;
 	  /* Special handling of time intervals and durations. */
 	  if (datatype==DRMS_TYPE_TIME )
 	    {
@@ -696,7 +726,7 @@ static ValueRangeSet_t *parse_value_set(DRMS_Type_t datatype,
 		  else
 		    p+=n;
 		}
-	      else
+	      else if (slotdur == 0)
 		{
 		  if (parse_duration(&p,&vr->x.time_val))
 		    {
