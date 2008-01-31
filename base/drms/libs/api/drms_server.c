@@ -65,7 +65,7 @@ int drms_server_begin_transaction(DRMS_Env_t *env) {
 
 void drms_server_end_transaction(DRMS_Env_t *env, int abort, int final) {
   if (abort) {
-    drms_server_abort(env);
+    drms_server_abort(env, final);
   } else {
     drms_server_commit(env, final);
   }
@@ -75,6 +75,10 @@ void drms_server_end_transaction(DRMS_Env_t *env, int abort, int final) {
    record in the drms_session_table table. */
 int drms_server_open_session(DRMS_Env_t *env)
 {
+#ifdef DEBUG  
+  printf("In drms_server_open_session()\n");
+#endif
+
   int status;
   struct passwd *pwd = getpwuid(geteuid());
 
@@ -334,11 +338,12 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
       that the session is about to be aborted and keep them from
       initiating any new database commands.
    4. Free the environment. */
-void drms_server_abort(DRMS_Env_t *env)
+void drms_server_abort(DRMS_Env_t *env, int final)
 {
   drms_lock_server(env);
   if (env->verbose)
     fprintf(stderr,"WARNING: DRMS is aborting...\n");  
+
   /* Roll back. */
   db_rollback(env->session->db_handle);
 
@@ -384,7 +389,11 @@ void drms_server_abort(DRMS_Env_t *env)
   sleep(DRMS_ABORT_SLEEP);
 
   /* Free memory.*/
-  drms_free_env(env, 1);
+  if (!final) {
+    drms_free_env(env, 1);
+  } else {
+    fprintf(stderr, "skip freeing drms_free_env()");
+  }
 
   /* Good night and good luck! */
 #ifdef DEBUG
@@ -1085,12 +1094,38 @@ int drms_server_newseries(DRMS_Env_t *env, int sockfd)
 int drms_server_dropseries(DRMS_Env_t *env, int sockfd)
 { 
   char *series_lower;
-
+  char *tn;
   series_lower = receive_string(sockfd);
+  tn = receive_string(sockfd);
   strtolower(series_lower);
   hcon_remove(&env->series_cache, series_lower);
+  drms_server_dropseries_su(env, tn);
   free(series_lower);
+  free(tn);
   return 0;
+}
+
+int drms_server_dropseries_su(DRMS_Env_t *env, char *tn) {
+  int status = DRMS_SUCCESS;
+  DRMS_SumRequest_t *request, *reply;
+  XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+
+  if (!env->sum_thread) {
+    if((status = pthread_create(&env->sum_thread, NULL, &drms_sums_thread, 
+			      (void *) env))) {
+      fprintf(stderr,"Thread creation failed: %d\n", status);          
+      return 1;
+    }
+  }
+
+  tqueueAdd(env->sum_inbox, (long)pthread_self(), (char *)request);
+  tqueueDel(env->sum_outbox, (long)pthread_self(), (char **)&reply);
+  status = reply->opcode;
+  if (status) {
+  }
+  free(reply);
+  
+  return status;
 }
 
 void drms_lock_server(DRMS_Env_t *env)

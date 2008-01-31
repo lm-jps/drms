@@ -137,7 +137,7 @@ static void atexit_action (void) {
   hang (12);
 #endif
 #endif
-  drms_server_abort (drms_env);
+  drms_server_abort (drms_env, 1);
 #ifdef DEBUG
     xmem_leakreport ();
 #endif

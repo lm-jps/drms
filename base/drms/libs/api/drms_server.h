@@ -40,6 +40,13 @@ int drms_server_getunit(DRMS_Env_t *env, int sockfd);
 int drms_server_getunits(DRMS_Env_t *env, int sockfd);
 int drms_server_newseries(DRMS_Env_t *env, int sockfd);
 int drms_server_dropseries(DRMS_Env_t *env, int sockfd);
+/**
+asks SUMS to mark all SUs listed in \a tn as delete pending.
+\param env
+\param tn Name of the db table that stores all SUs to be marked
+\return DRMS_SUCCESS if SUMS is able to mark all SUs listed in \a tn. Other
+*/
+int drms_server_dropseries_su(DRMS_Env_t *env, char *tn);
 long long drms_server_gettmpguid(int *sockfd);
 
 int drms_server_alloc_recnum(DRMS_Env_t *env, int sockfd);
@@ -47,7 +54,7 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
 			      int log_retention, int archive_log);
 int drms_server_open_session(DRMS_Env_t *env);
 int drms_server_session_status(DRMS_Env_t *env, char *stat_str, int clients);
-void drms_server_abort(DRMS_Env_t *env);
+void drms_server_abort(DRMS_Env_t *env, int final);
 void drms_server_commit(DRMS_Env_t *env, int final);
 int drms_server_slot_setstate(DRMS_Env_t *env, int sockfd);
 void drms_lock_server(DRMS_Env_t *env);

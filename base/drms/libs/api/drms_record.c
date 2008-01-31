@@ -2052,7 +2052,7 @@ int drms_close_records(DRMS_RecordSet_t *rs, int action)
       rec = rs->records[i];
       /* If this record was temporarily created by this session then
 	 free its storage unit slot. */
-      if (!rec->readonly && rec->su && rec->su->refcount==1)
+      if (rec && !rec->readonly && rec->su && rec->su->refcount==1)
       {
 	if ((status = drms_freeslot(rec->env, rec->seriesinfo->seriesname, 
 				    rec->su->sunum, rec->slotnum)))
@@ -2156,7 +2156,9 @@ void drms_free_records(DRMS_RecordSet_t *rs)
   if (!rs)
     return;
   for (i=0; i<rs->n; i++)
-    drms_free_record(rs->records[i]);
+    if (rs->records[i]) {
+      drms_free_record(rs->records[i]);
+    }
   if (rs->n>0 && rs->records)
     free(rs->records);
   rs->n = 0;
@@ -2311,10 +2313,12 @@ void drms_free_record(DRMS_Record_t *rec)
 #ifdef DEBUG
    printf("freeing '%s':%lld\n", rec->seriesinfo->seriesname, rec->recnum);
 #endif
-   drms_make_hashkey(hashkey, rec->seriesinfo->seriesname, rec->recnum);
-   /* NOTICE: refcount on rec->su will be decremented when hcon_remove calls
-      drms_free_record_struct via its deep_free callback. */
-   hcon_remove(&rec->env->record_cache, hashkey); 
+   if (rec->seriesinfo) {
+     drms_make_hashkey(hashkey, rec->seriesinfo->seriesname, rec->recnum);
+     /* NOTICE: refcount on rec->su will be decremented when hcon_remove calls
+	drms_free_record_struct via its deep_free callback. */
+     hcon_remove(&rec->env->record_cache, hashkey); 
+   }
 }
 
 
@@ -2819,6 +2823,7 @@ void drms_free_record_struct(DRMS_Record_t *rec)
 	       rec->su->sunum,rec->su->sudir);
 #endif
 	drms_freeunit(rec->env, rec->su);
+	rec->su = NULL;
       }
     }
   }
