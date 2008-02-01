@@ -1339,8 +1339,44 @@ const DRMS_Type_Value_t *drms_keyword_getvalue(DRMS_Keyword_t *key)
    return &(key->value);
 }
 
-/* Operates on a XXX_slot key. */
-DRMS_SlotKeyUnit_t drms_keyword_getslotunit(DRMS_Keyword_t *key, int *status)
+/* Gets the unit value for a slotted keyword. */
+DRMS_SlotKeyUnit_t drms_keyword_getslotunit(DRMS_Keyword_t *slotkey, int *status)
+{
+   DRMS_SlotKeyUnit_t ret = kSlotKeyUnit_Invalid;
+   int stat = DRMS_SUCCESS;
+   DRMS_Keyword_t *unitKey = NULL;
+
+   if (slotkey)
+   {
+      unitKey = drms_keyword_unitfromslot(slotkey);
+   }
+   else
+   {
+      fprintf(stderr, 
+	      "Keyword '%s' is not associated with a unit ancillary keyword.\n",
+	      slotkey->info->name);
+   }
+
+   if (unitKey)
+   {
+      ret = drms_keyword_getunit(unitKey, &stat);
+   }   
+
+   if (ret == kSlotKeyUnit_Invalid)
+   {
+      stat = DRMS_ERROR_INVALIDDATA;
+   }
+
+   if (status)
+   {
+      *status = stat;
+   }
+
+   return ret;
+}
+
+/* Operates on a XXX_unit key. */
+DRMS_SlotKeyUnit_t drms_keyword_getunit(DRMS_Keyword_t *key, int *status)
 {
    DRMS_SlotKeyUnit_t ret = kSlotKeyUnit_Invalid;
    char buf[kMaxSlotUnitKey];
@@ -1401,10 +1437,46 @@ DRMS_SlotKeyUnit_t drms_keyword_getslotunit(DRMS_Keyword_t *key, int *status)
    return ret;
 }
 
-/* Operates on a XXX_epoch key. */
-TIME drms_keyword_getslotepoch(DRMS_Keyword_t *key, int *status)
+/* Gets the epoch value for a slotted keyword. */
+TIME  drms_keyword_getslotepoch(DRMS_Keyword_t *slotkey, int *status)
 {
-   TIME ret;
+   TIME ret = DRMS_MISSING_TIME;
+   int stat = DRMS_SUCCESS;
+   DRMS_Keyword_t *epochKey = NULL;
+
+   if (slotkey)
+   {
+      epochKey = drms_keyword_epochfromslot(slotkey);
+   }
+   else
+   {
+      fprintf(stderr, 
+	      "Keyword '%s' is not associated with an epoch ancillary keyword.\n",
+	      slotkey->info->name);
+   }
+
+   if (epochKey)
+   {
+      ret = drms_keyword_getepoch(epochKey, &stat);
+   }   
+
+   if (drms_ismissing(DRMS_TYPE_TIME, &ret))
+   {
+      stat = DRMS_ERROR_INVALIDDATA;
+   }
+
+   if (status)
+   {
+      *status = stat;
+   }
+
+   return ret;
+}
+   
+/* Operates on a XXX_epoch key. */
+TIME drms_keyword_getepoch(DRMS_Keyword_t *key, int *status)
+{
+   TIME ret = DRMS_MISSING_TIME;
    char buf[kMaxSlotEpochKey];
    int stat = DRMS_SUCCESS;
 
@@ -1468,9 +1540,44 @@ TIME drms_keyword_getslotepoch(DRMS_Keyword_t *key, int *status)
    return ret;
 }
 
-double drms_keyword_getslotstep(DRMS_Keyword_t *key, DRMS_SlotKeyUnit_t *unit, int *status)
+/* Gets the step value for a slotted keyword. */
+double drms_keyword_getslotstep(DRMS_Keyword_t *slotkey, DRMS_SlotKeyUnit_t *unit, int *status)
 {
-   double step;
+   double ret = DRMS_MISSING_DOUBLE;
+   int stat = DRMS_SUCCESS;
+   DRMS_Keyword_t *stepKey = NULL;
+
+   if (slotkey)
+   {
+      stepKey = drms_keyword_stepfromslot(slotkey);
+   }
+   else
+   {
+      fprintf(stderr, "Keyword '%s' is not associated with a step ancillary keyword.\n");
+   }
+
+   if (stepKey)
+   {
+      ret = drms_keyword_getstep(stepKey, unit, &stat);
+   }   
+
+   if (drms_ismissing(DRMS_TYPE_DOUBLE, &ret))
+   {
+      stat = DRMS_ERROR_INVALIDDATA;
+   }
+
+   if (status)
+   {
+      *status = stat;
+   }
+
+   return ret;
+}
+
+/*  Operates on a XXX_step key. */
+double drms_keyword_getstep(DRMS_Keyword_t *key, DRMS_SlotKeyUnit_t *unit, int *status)
+{
+   double step = DRMS_MISSING_DOUBLE;
    int stat = DRMS_SUCCESS;
    *unit = kSlotKeyUnit_Invalid;
 
@@ -1586,12 +1693,11 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 	      double unitVal;
 	      double slotnum;
 
-	      DRMS_Keyword_t *epochKey = drms_keyword_epochfromslot(slotkey);
 	      DRMS_Keyword_t *stepKey = drms_keyword_stepfromslot(slotkey);
 	      DRMS_Keyword_t *unitKey = drms_keyword_unitfromslot(slotkey);
 
-	      epoch = drms_keyword_getslotepoch(epochKey, &stat);
-	      step = drms_keyword_getslotstep(stepKey, &unit, &stat);
+	      epoch = drms_keyword_getslotepoch(slotkey, &stat);
+	      step = drms_keyword_getslotstep(slotkey, &unit, &stat);
 
 	      /* unit will be valid if user provided a string step (eg, 60s) */
 	      if (unit != kSlotKeyUnit_Invalid)
@@ -1610,7 +1716,7 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 	      {
 		 if (unitKey)
 		 {
-		    unit = drms_keyword_getslotunit(unitKey, NULL);
+		    unit = drms_keyword_getunit(unitKey, NULL);
 		 }
 		 else
 		 {

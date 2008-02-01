@@ -124,7 +124,11 @@ int drms_keyword_getsegscope(DRMS_Keyword_t *key);
 DRMS_RecScopeType_t drms_keyword_getrecscope(DRMS_Keyword_t *key);
 const char *drms_keyword_getrecscopestr(DRMS_Keyword_t *key, int *status);
 DRMS_SlotKeyUnit_t drms_keyword_getslotunit(DRMS_Keyword_t *key, int *status);
+DRMS_SlotKeyUnit_t drms_keyword_getunit(DRMS_Keyword_t *key, int *status);
 TIME drms_keyword_getslotepoch(DRMS_Keyword_t *key, int *status);
+TIME drms_keyword_getepoch(DRMS_Keyword_t *key, int *status);
+double drms_keyword_getslotstep(DRMS_Keyword_t *slotkey, DRMS_SlotKeyUnit_t *unit, int *status);
+double drms_keyword_getstep(DRMS_Keyword_t *key, DRMS_SlotKeyUnit_t *unit, int *status);
 
 int drms_keyword_isprime(DRMS_Keyword_t *key);
 int drms_keyword_isvariable(DRMS_Keyword_t *key);

@@ -676,8 +676,7 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 	      }
 	      else
 	      {
-		 DRMS_Keyword_t *epochKey = drms_keyword_epochfromslot(keyword);	     
-		 vr->start.time_val = drms_keyword_getslotepoch(epochKey, NULL);
+		 vr->start.time_val = drms_keyword_getslotepoch(keyword, NULL);
 		 vr->type = START_DURATION;
 		 slotdur = 1;
 	      }

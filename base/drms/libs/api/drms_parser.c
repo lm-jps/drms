@@ -676,7 +676,7 @@ int parse_keywords(char *desc, DRMS_Record_t *template)
 			     drms_keyword_isconstant(anckey))
 			 {
 			    DRMS_SlotKeyUnit_t utype = 
-			      drms_keyword_getslotunit(anckey, NULL);
+			      drms_keyword_getunit(anckey, NULL);
 
 			    if (utype == kSlotKeyUnit_Invalid)
 			    {
