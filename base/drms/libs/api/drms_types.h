@@ -471,6 +471,19 @@ enum DRMS_SlotKeyUnit_enum
 
 typedef enum DRMS_SlotKeyUnit_enum DRMS_SlotKeyUnit_t;
 
+enum DRMS_SlotKeyEpoch_enum
+{
+   /** */
+   kSlotKeyEpoch_Invalid = 0,
+   kSlotKeyEpoch_JSOC,
+   kSlotKeyEpoch_MDI,
+   kSlotKeyEpoch_WSO,
+   kSlotKeyEpoch_TAI,
+   kSlotKeyEpoch_MJD
+};
+
+typedef enum DRMS_SlotKeyEpoch_enum DRMS_SlotKeyEpoch_t;
+
 enum DRMS_RecScopeType_enum
 {
    /** \brief Plain vanilla variable across records. */

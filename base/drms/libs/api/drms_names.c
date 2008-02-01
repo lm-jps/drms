@@ -467,11 +467,7 @@ PrimekeyRangeSet_t *parse_slottedkey_set(DRMS_Keyword_t *slotkey,
 	    onerange->x = valout.value;
 	 }
 	 else if (onerange->type == START_DURATION)
-	 {
-	    /* A duration is in seconds (a double), so it might not be 
-	     * a multiple of the slot size. If this is the case, then
-	     * round up to the next largest multiple.  Then make
-	     * the duration an integer. */	    
+	 {	    
 	    valin.type = slotkey->info->type;
 	    valin.value = onerange->x;
 	    drms_keyword_slotval2indexval(slotkey, 
@@ -681,7 +677,7 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 	      else
 	      {
 		 DRMS_Keyword_t *epochKey = drms_keyword_epochfromslot(keyword);	     
-		 vr->start.time_val = drms_keyword_gettime(epochKey, NULL);
+		 vr->start.time_val = drms_keyword_getslotepoch(epochKey, NULL);
 		 vr->type = START_DURATION;
 		 slotdur = 1;
 	      }
@@ -856,7 +852,20 @@ static int parse_duration(char **in, double *duration)
   return 1;
 }
 
+int drms_names_parseduration(char **in, double *duration)
+{
+   char *tmp = strdup(*in);
+   int ret = 1;
 
+   if (tmp)
+   {
+      char *tmp2 = tmp;
+      ret = parse_duration(&tmp2, duration);
+      free(tmp);
+   }
+
+   return ret;
+}
 
 
 /***************** Middle-end: Generate SQL from AST ********************/

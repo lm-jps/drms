@@ -42,8 +42,9 @@ short drms_getkey_short(DRMS_Record_t *rec, const char *key, int *status);
 int drms_getkey_int(DRMS_Record_t *rec, const char *key, int *status);
 long long drms_getkey_longlong(DRMS_Record_t *rec, const char *key, int *status);
 float drms_getkey_float(DRMS_Record_t *rec, const char *key, int *status);
-double drms_getkey_double(DRMS_Record_t *rec, const char *key, int *status);
 double drms_keyword_getdouble(DRMS_Keyword_t *keyword, int *status);
+double drms_getkey_double(DRMS_Record_t *rec, const char *key, int *status);
+char *drms_getkey_string(DRMS_Record_t *rec, const char *key, int *status);
 char *drms_getkey_string(DRMS_Record_t *rec, const char *key, int *status);
 TIME drms_getkey_time(DRMS_Record_t *rec, const char *key, int *status);
 TIME drms_keyword_gettime(DRMS_Keyword_t *keyword, int *status);
@@ -123,6 +124,7 @@ int drms_keyword_getsegscope(DRMS_Keyword_t *key);
 DRMS_RecScopeType_t drms_keyword_getrecscope(DRMS_Keyword_t *key);
 const char *drms_keyword_getrecscopestr(DRMS_Keyword_t *key, int *status);
 DRMS_SlotKeyUnit_t drms_keyword_getslotunit(DRMS_Keyword_t *key, int *status);
+TIME drms_keyword_getslotepoch(DRMS_Keyword_t *key, int *status);
 
 int drms_keyword_isprime(DRMS_Keyword_t *key);
 int drms_keyword_isvariable(DRMS_Keyword_t *key);

@@ -23,6 +23,15 @@ struct SlotKeyUnitStrings_struct
 
 typedef struct SlotKeyUnitStrings_struct SlotKeyUnitStrings_t;
 
+struct SlotKeyEpochStrings_struct
+{
+  DRMS_SlotKeyEpoch_t type;
+  const char *str;
+  const char *timestr;
+};
+
+typedef struct SlotKeyEpochStrings_struct SlotKeyEpochStrings_t;
+
 static RecScopeStrings_t gSS[] =
 {
    {kRecScopeType_Variable, "variable"},
@@ -44,12 +53,25 @@ static SlotKeyUnitStrings_t gSUS[] =
    {(DRMS_SlotKeyUnit_t)-99, ""}
 };
 
+static SlotKeyEpochStrings_t gSEpochS[] =
+{
+   {kSlotKeyEpoch_JSOC, "JSOC_EPOCH", "1977.01.01_00:00:00_TAI"},
+   {kSlotKeyEpoch_MDI, "MDI_EPOCH", "1993.01.01_00:00:00_TAI"},
+   {kSlotKeyEpoch_WSO, "WSO_EPOCH", "1601.01.01_00:00:00_UT"},
+   {kSlotKeyEpoch_TAI, "TAI_EPOCH", "1958.01.01_00:00:00_TAI"},
+   {kSlotKeyEpoch_MJD, "MJD_EPOCH", "1858.11.17_00:00:00_UT"},
+   {(DRMS_SlotKeyEpoch_t)-99, ""}
+};
+
 static HContainer_t *gRecScopeStrHC = NULL;
 static HContainer_t *gRecScopeHC = NULL;
 static HContainer_t *gSlotUnitHC = NULL;
+static HContainer_t *gSlotEpochHC = NULL;
 
 const int kMaxRecScopeTypeKey = 4096;
 const int kMaxSlotUnitKey = 128;
+const int kMaxSlotEpochKey = 64;
+const int kMaxSlotEpochTimestr = 64;
 
 void drms_keyword_term()
 {
@@ -64,6 +86,10 @@ void drms_keyword_term()
    if (gSlotUnitHC)
    {
       hcon_destroy(&gSlotUnitHC);
+   }
+   if (gSlotEpochHC)
+   {
+      hcon_destroy(&gSlotEpochHC);
    }
 }
 
@@ -701,6 +727,18 @@ double drms_keyword_getdouble(DRMS_Keyword_t *keyword, int *status)
    return result;
 }
 
+char *drms_keyword_getstring(DRMS_Keyword_t *keyword, int *status)
+{
+  char *result = NULL;
+  int stat = DRMS_SUCCESS;
+
+  result = drms2string(keyword->info->type, &keyword->value, &stat);
+ 
+  if (status)
+    *status = stat;
+  return result;
+}
+
 char *drms_getkey_string(DRMS_Record_t *rec, const char *key, int *status)
 {
   DRMS_Keyword_t *keyword;
@@ -710,7 +748,7 @@ char *drms_getkey_string(DRMS_Record_t *rec, const char *key, int *status)
   keyword = drms_keyword_lookup(rec, key, 1);
   if (keyword!=NULL )
   {   
-    result = drms2string(keyword->info->type, &keyword->value, &stat);
+     result = drms_keyword_getstring(keyword, &stat);
   }
   else
   {
@@ -1301,6 +1339,7 @@ const DRMS_Type_Value_t *drms_keyword_getvalue(DRMS_Keyword_t *key)
    return &(key->value);
 }
 
+/* Operates on a XXX_slot key. */
 DRMS_SlotKeyUnit_t drms_keyword_getslotunit(DRMS_Keyword_t *key, int *status)
 {
    DRMS_SlotKeyUnit_t ret = kSlotKeyUnit_Invalid;
@@ -1360,6 +1399,108 @@ DRMS_SlotKeyUnit_t drms_keyword_getslotunit(DRMS_Keyword_t *key, int *status)
    }
 
    return ret;
+}
+
+/* Operates on a XXX_epoch key. */
+TIME drms_keyword_getslotepoch(DRMS_Keyword_t *key, int *status)
+{
+   TIME ret;
+   char buf[kMaxSlotEpochKey];
+   int stat = DRMS_SUCCESS;
+
+   if (key->info->type == DRMS_TYPE_STRING && strstr(key->info->name, kSlotAncKey_Epoch))
+   {
+      if (!gSlotEpochHC)
+      {
+	 gSlotEpochHC = hcon_create(kMaxSlotEpochTimestr, 
+				    kMaxSlotEpochKey, 
+				    NULL,
+				    NULL,
+				    NULL,
+				    NULL,
+				    0);
+
+	 if (gSlotEpochHC)
+	 {
+	    int i = 0;
+
+	    while (gSEpochS[i].type != -99)
+	    {
+	       snprintf(buf, sizeof(buf), "%s", gSEpochS[i].str);
+	       hcon_insert_lower(gSlotEpochHC, buf, gSEpochS[i].timestr);
+	       i++;
+	    }
+	 }
+	 else
+	 {
+	    fprintf(stderr, "Error creating slot epoch string container.\n");
+	    stat = DRMS_ERROR_CANTCREATEHCON;
+	 }
+      }
+
+      DRMS_Type_Value_t se;
+      char *timestr = hcon_lookup_lower(gSlotEpochHC, (key->value).string_val);
+      if (timestr && (drms_sscanf(timestr, DRMS_TYPE_TIME, &se) > 0))
+      {
+	 ret = se.time_val;
+      }
+      else
+      {
+	 fprintf(stderr, "Invalid slot unit string value '%s'.\n", (key->value).string_val);
+      }
+   }
+   else if (key->info->type == DRMS_TYPE_TIME)
+   {
+      ret = drms_keyword_gettime(key, NULL);
+   }
+   else
+   {
+      fprintf(stderr, 
+	      "Keyword '%s' does not contain slotted keyword epoch information.\n",
+	      key->info->name);
+   }
+
+   if (status)
+   {
+      *status = stat;
+   }
+
+   return ret;
+}
+
+double drms_keyword_getslotstep(DRMS_Keyword_t *key, DRMS_SlotKeyUnit_t *unit, int *status)
+{
+   double step;
+   int stat = DRMS_SUCCESS;
+   *unit = kSlotKeyUnit_Invalid;
+
+   if (drms_keyword_gettype(key) == DRMS_TYPE_STRING)
+   {
+      /* This is a duration - parse it. */
+      char *durstr = drms_keyword_getstring(key, NULL);
+      if (durstr)
+      {
+	 if (drms_names_parseduration(&durstr, &step))
+	 {
+	    fprintf(stderr,
+		    "Invalid step keyword value for '%s'.\n",
+		    key->info->name);
+	    stat = DRMS_ERROR_INVALIDDATA;
+	 }
+
+	 *unit = kSlotKeyUnit_Seconds;
+	 free(durstr);
+      }
+   }
+   else
+   {
+      step = drms_keyword_getdouble(key, NULL);
+   }
+
+   if (*status)
+     *status = stat;
+
+   return step;
 }
 
 static DRMS_Keyword_t *GetAncillaryKey(DRMS_Keyword_t *slot, const char *suffix)
@@ -1443,20 +1584,38 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 	      double step;
 	      DRMS_SlotKeyUnit_t unit;
 	      double unitVal;
+	      double slotnum;
 
 	      DRMS_Keyword_t *epochKey = drms_keyword_epochfromslot(slotkey);
 	      DRMS_Keyword_t *stepKey = drms_keyword_stepfromslot(slotkey);
 	      DRMS_Keyword_t *unitKey = drms_keyword_unitfromslot(slotkey);
 
-	      epoch = drms_keyword_gettime(epochKey, NULL);
-	      step = drms_keyword_getdouble(stepKey, NULL);
-	      if (unitKey)
+	      epoch = drms_keyword_getslotepoch(epochKey, &stat);
+	      step = drms_keyword_getslotstep(stepKey, &unit, &stat);
+
+	      /* unit will be valid if user provided a string step (eg, 60s) */
+	      if (unit != kSlotKeyUnit_Invalid)
 	      {
-		 unit = drms_keyword_getslotunit(unitKey, NULL);
+		 if (unitKey)
+		 {
+		    /* This will be ignored because step unit specified in step. */
+		    fprintf(stderr, 
+			    "Warning: '%s' specifies step unit, so '%s' will"
+			    "be ignored.\n", 
+			    stepKey->info->name,
+			    unitKey->info->name);
+		 }
 	      }
 	      else
 	      {
-		 unit = kSlotKeyUnit_Seconds; /* default */
+		 if (unitKey)
+		 {
+		    unit = drms_keyword_getslotunit(unitKey, NULL);
+		 }
+		 else
+		 {
+		    unit = kSlotKeyUnit_Seconds; /* default */
+		 }
 	      }
 
 	      switch(unit)
@@ -1481,9 +1640,11 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 	      if (startdur)
 	      {
 		 /* The slot val is actually a duration. */
-		 int startslot = (int)((startdur->value.time_val - epoch) / (unitVal * step));
-		 int endslot = (int)((startdur->value.time_val - epoch + valin->value.time_val) / 
-				     (unitVal * step));
+		 slotnum = (startdur->value.time_val - epoch) / (unitVal * step);
+		 int startslot = (int)slotnum;
+		 slotnum = (startdur->value.time_val - epoch + valin->value.time_val) / 
+		   (unitVal * step);
+		 int endslot = (int)slotnum;
 		 /* Must add 1 because a duration query has val <= start && val < end.  
 		  * Although this works for floating point numbers, for integers 
 		  * this query omits the last record (it's an open interval). */
@@ -1491,14 +1652,15 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 	      }
 	      else
 	      {
-		 valout->value.int_val = 
-		   (int)((valin->value.time_val - epoch) / (unitVal * step));
+		 slotnum = (valin->value.time_val - epoch) / (unitVal * step);
+		 valout->value.int_val = (int)slotnum;
 	      }
 	   }
 	   break;
 	 default:
 	   fprintf(stderr, "Invalid rec scope '%d'.\n", (int)recscope);
-      }
+	   stat = DRMS_ERROR_INVALIDDATA;
+      } /* case */
    }
    else
    {

@@ -616,9 +616,10 @@ int parse_keywords(char *desc, DRMS_Record_t *template)
 							    keyname);
 		      if (anckey)
 		      {
-			 /* Must be constant and a time */
+			 /* Must be constant and a time or string */
 			 if (drms_keyword_isconstant(anckey) &&
-			     drms_keyword_gettype(anckey) == DRMS_TYPE_TIME)
+			     (drms_keyword_gettype(anckey) == DRMS_TYPE_TIME ||
+			      drms_keyword_gettype(anckey) == DRMS_TYPE_STRING))
 			 {
 			    snprintf(keyname, 
 				     sizeof(keyname), "%s%s", 
