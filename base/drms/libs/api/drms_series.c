@@ -784,8 +784,7 @@ static int drms_series_creatematchsegs(DRMS_Env_t *drmsEnv,
  * keyword from the user's perspective.  So, put those in the array
  * returned.
  */
-static char **drms_series_intcreatepkeyarray(DRMS_Env_t *env, 
-					     DRMS_Record_t *recTempl, 
+static char **drms_series_intcreatepkeyarray(DRMS_Record_t *recTempl, 
 					     int *nPKeys,
 					     DRMS_PrimeKeyType_t pktype,
 					     int *status)
@@ -801,9 +800,10 @@ static char **drms_series_intcreatepkeyarray(DRMS_Env_t *env,
       
       if (ret != NULL)
       {
-	 DRMS_Keyword_t *pkey = recTempl->seriesinfo->pidx_keywords[iKey];
 	 while (iKey < nKeys)
 	 {
+	    DRMS_Keyword_t *pkey = recTempl->seriesinfo->pidx_keywords[iKey];
+
 	    if (drms_keyword_isindex(pkey) && pktype == kPkeysDRMSExternal)
 	    {
 	       /* Use slotted keyword */
@@ -812,8 +812,7 @@ static char **drms_series_intcreatepkeyarray(DRMS_Env_t *env,
 	    }
 	    else
 	    {
-	       const char *pkw = pkey->info->name;
-	       ret[iKey] = strdup(pkw);
+	       ret[iKey] = strdup(pkey->info->name);
 	    }
 	    iKey++;
 	 }
@@ -846,7 +845,7 @@ char **drms_series_createrealpkeyarray(DRMS_Env_t *env,
 
      if (template != NULL && stat == DRMS_SUCCESS)
      {
-	ret = drms_series_intcreatepkeyarray(env, template, nPKeys, kPkeysDRMSInternal, &stat);
+	ret = drms_series_intcreatepkeyarray(template, nPKeys, kPkeysDRMSInternal, &stat);
      }
 
      if (status)
@@ -870,8 +869,7 @@ char **drms_series_createpkeyarray(DRMS_Env_t *env,
 
      if (template != NULL && stat == DRMS_SUCCESS)
      {
-	ret = drms_series_intcreatepkeyarray(env, 
-					     template, 
+	ret = drms_series_intcreatepkeyarray(template, 
 					     nPKeys, 
 					     kPkeysDRMSExternal, 
 					     &stat);
@@ -963,8 +961,7 @@ int drms_series_checkrecordcompat(DRMS_Env_t *drmsEnv,
 						   status);
    if (*status == DRMS_SUCCESS)
    {
-      pkArray = drms_series_intcreatepkeyarray(drmsEnv, 
-					       recTempl,
+      pkArray = drms_series_intcreatepkeyarray(recTempl,
 					       &nPKeys,
 					       kPkeysDRMSInternal,
 					       status);
