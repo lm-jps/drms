@@ -68,7 +68,7 @@ void drms_segment_print_jsd(DRMS_Segment_t *seg) {
 	printf("vardim");
 	break;
       default:
-	printf("Illegal value: %d", seg->info->scope);
+	printf("Illegal value: %d", (int)seg->info->scope);
       }
     printf(", %s, %d", drms_type2str(seg->info->type), seg->info->naxis);
     if (seg->info->naxis) {
@@ -107,7 +107,7 @@ void drms_segment_print_jsd(DRMS_Segment_t *seg) {
 	}
 	break;
       default:
-	printf("Illegal value: %d", seg->info->protocol);
+	printf("Illegal value: %d", (int)seg->info->protocol);
       }
   }
   printf(", \"%s\"\n", seg->info->description);
@@ -139,7 +139,6 @@ void print_jsd(DRMS_Record_t *rec) {
   printf("%-*s\t%d\n",fwidth,"Archive:",rec->seriesinfo->archive);
   printf("%-*s\t%d\n",fwidth,"Retention:",rec->seriesinfo->retention);
   printf("%-*s\t%d\n",fwidth,"Tapegroup:",rec->seriesinfo->tapegroup);
-
 
   int npkeys = 0;
   char **extpkeys = 
@@ -241,7 +240,7 @@ int DoIt(void) {
     }
     if ((qres = drms_query_txt(drms_env->session, query)) && qres->num_rows>0)
       {
-	printf("Number of records with distinct primary index = %d\n",qres->num_rows);
+	printf("Number of records with distinct primary index = %u\n",qres->num_rows);
       }
     db_free_text_result(qres);
   }

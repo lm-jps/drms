@@ -182,15 +182,9 @@ void drms_keyword_print_jsd(DRMS_Keyword_t *key) {
 	     key->info->description);
     } else {
       printf(", %s", drms_type2str(key->info->type));
-      if (key->info->recscope = 1) {
-	printf(", constant");
-      }
-      else {
-        if (key->info->recscope = 0) 
-        printf(", variable");
-        else 
-	  printf(", slotted");
-      }
+      int stat;
+      const char *rscope = drms_keyword_getrecscopestr(key, &stat);
+      fprintf(stdout, ", %s", stat == DRMS_SUCCESS ? rscope : NULL);
       if (key->info->per_segment) 
 	printf(", segment");
       else 
@@ -240,7 +234,7 @@ void drms_segment_print_jsd(DRMS_Segment_t *seg) {
 	printf("vardim");
 	break;
       default:
-	printf("Illegal value: %d", seg->info->scope);
+	printf("Illegal value: %d", (int)seg->info->scope);
       }
     printf(", %s, %d", drms_type2str(seg->info->type), seg->info->naxis);
     if (seg->info->naxis) {
@@ -279,7 +273,7 @@ void drms_segment_print_jsd(DRMS_Segment_t *seg) {
 	}
 	break;
       default:
-	printf("Illegal value: %d", seg->info->protocol);
+	printf("Illegal value: %d", (int)seg->info->protocol);
       }
   }
   printf(", \"%s\"\n", seg->info->description);
@@ -311,12 +305,23 @@ void print_jsd(DRMS_Record_t *rec) {
   printf("%-*s\t%d\n",fwidth,"Archive:",rec->seriesinfo->archive);
   printf("%-*s\t%d\n",fwidth,"Retention:",rec->seriesinfo->retention);
   printf("%-*s\t%d\n",fwidth,"Tapegroup:",rec->seriesinfo->tapegroup);
-  if (rec->seriesinfo->pidx_num) {
-    printf("%-*s\t%s",fwidth,"Index:",rec->seriesinfo->pidx_keywords[0]->info->name);
-    for (i=1; i<rec->seriesinfo->pidx_num; i++)
-      printf(", %s", (rec->seriesinfo->pidx_keywords[i])->info->name);
-    printf("\n");
+
+  int npkeys = 0;
+  char **extpkeys = 
+    drms_series_createpkeyarray(rec->env, rec->seriesinfo->seriesname, &npkeys, NULL);
+  if (extpkeys && npkeys > 0)
+  {
+     printf("%-*s\t%s",fwidth,"Index:",extpkeys[0]);
+     for (i=1; i<npkeys; i++)
+       printf(", %s", extpkeys[i]);
+     printf("\n");
   }
+
+  if (extpkeys)
+  {
+     drms_series_destroypkeyarray(&extpkeys, npkeys);
+  }
+
   printf("%-*s\t%s\n",fwidth,"Description:",rec->seriesinfo->description);
   printf("\n#=====Links=====\n");
   hiter_new(&hit, &rec->links); 
@@ -337,14 +342,12 @@ void print_jsd(DRMS_Record_t *rec) {
 /* find first record in series that owns the given record */
 DRMS_RecordSet_t *drms_find_rec_first(DRMS_Record_t *rec, int wantprime)
   {
-  int iprime, nprime;
+  int nprime;
   int status;
   DRMS_RecordSet_t *rs;
-  DRMS_Keyword_t *rec_key, *key, **prime_keys;
   char query[DRMS_MAXQUERYLEN];
   strcpy(query, rec->seriesinfo->seriesname);
   nprime = rec->seriesinfo->pidx_num;
-  prime_keys = rec->seriesinfo->pidx_keywords;
   if (wantprime && nprime > 0) 
     // only first prime key is used for now
     // for (iprime = 0; iprime < nprime; iprime++)
@@ -358,14 +361,12 @@ DRMS_RecordSet_t *drms_find_rec_first(DRMS_Record_t *rec, int wantprime)
 /* find last record in series that owns the given record */
 DRMS_RecordSet_t *drms_find_rec_last(DRMS_Record_t *rec, int wantprime)
   {
-  int iprime, nprime;
+  int nprime;
   int status;
   DRMS_RecordSet_t *rs;
-  DRMS_Keyword_t *rec_key, *key, **prime_keys;
   char query[DRMS_MAXQUERYLEN];
   strcpy(query, rec->seriesinfo->seriesname);
   nprime = rec->seriesinfo->pidx_num;
-  prime_keys = rec->seriesinfo->pidx_keywords;
   if (wantprime && nprime > 0) 
     // only first prime key is used for now
     // for (iprime = 0; iprime < nprime; iprime++)
@@ -465,11 +466,10 @@ int DoIt(void)
   if (list_keys || jsd_list || show_stats) 
     {
     char *p, *seriesname;
-    DRMS_Record_t *rec;
-    DRMS_Keyword_t *key, **prime_keys;
+    DRMS_Keyword_t *key;
     DRMS_Segment_t *seg;
     HIterator_t hit;
-    int nprime, iprime;
+    int iprime;
     int is_drms_series = 1;
 
     /* Only want keyword info so get only the template record for drms series or first record for other data */
@@ -487,7 +487,7 @@ int DoIt(void)
         }
       if (recordset->n < 1)
         {
-        fprintf(stderr,"### show_info: non-drms series found but is empty.\n",seriesname);
+        fprintf(stderr,"### show_info: non-drms series '%s' found but is empty.\n",seriesname);
         return (1);
         }
       rec = recordset->records[0];
@@ -498,15 +498,21 @@ int DoIt(void)
     if (list_keys)
       {
       /* show the prime index keywords */
-      nprime = rec->seriesinfo->pidx_num;
-      prime_keys = rec->seriesinfo->pidx_keywords;
-      if (nprime > 0) 
+      int npkeys = 0;
+      char **extpkeys = 
+	drms_series_createpkeyarray(rec->env, rec->seriesinfo->seriesname, &npkeys, NULL);
+      if (extpkeys && npkeys > 0)
         {
-        printf("Prime Keys are:\n");
-        for (iprime = 0; iprime < nprime; iprime++)
-          printf("\t%s\n", prime_keys[iprime]->info->name);
+	printf("Prime Keys are:\n");
+	for (iprime = 0; iprime < npkeys; iprime++)
+	  printf("\t%s\n", extpkeys[iprime]);
         }
-  
+
+      if (extpkeys)
+      {
+	 drms_series_destroypkeyarray(&extpkeys, npkeys);
+      }
+
       /* show all keywords */
       printf("All Keywords for series %s:\n",rec->seriesinfo->seriesname);
       hiter_new (&hit, &rec->keywords);
@@ -537,17 +543,17 @@ int DoIt(void)
       printf("First Record: ");
       rs = drms_find_rec_first(rec, 1);
       drms_print_query_rec(rs->records[0]);
-      printf(", Recnum = %ld\n", rs->records[0]->recnum);
+      printf(", Recnum = %lld\n", rs->records[0]->recnum);
       drms_free_records(rs);
 
       printf("Last Record:  ");
       rs = drms_find_rec_last(rec, 1);
       drms_print_query_rec(rs->records[0]);
-      printf(", Recnum = %ld\n", rs->records[0]->recnum);
+      printf(", Recnum = %lld\n", rs->records[0]->recnum);
       drms_free_records(rs);
 
       rs = drms_find_rec_last(rec, 0);
-      printf("Last Recnum:  %ld", rs->records[0]->recnum);
+      printf("Last Recnum:  %lld", rs->records[0]->recnum);
       drms_free_records(rs);
       printf("\n");
 

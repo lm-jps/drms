@@ -449,38 +449,43 @@ PrimekeyRangeSet_t *parse_slottedkey_set(DRMS_Keyword_t *slotkey,
    {
       ret = parse_primekey_set(slotkey, in);
 
-      for (onerange = ret->value_rangeset; onerange != NULL; onerange = onerange->next)
+      /* If the range set is a value range set, then convert the values to 
+       * index keyword values. */
+      if (ret->type == VALUE_RANGE)
       {
-	 DRMS_Value_t valin = {slotkey->info->type, onerange->start};
-	 DRMS_Value_t valout;
-	 DRMS_Value_t rangestart = valin;
+	 for (onerange = ret->value_rangeset; onerange != NULL; onerange = onerange->next)
+	 {
+	    DRMS_Value_t valin = {slotkey->info->type, onerange->start};
+	    DRMS_Value_t valout;
+	    DRMS_Value_t rangestart = valin;
 	 
-	 drms_keyword_slotval2indexval(slotkey, &valin, &valout, NULL);
-	 onerange->start = valout.value;
-
-	 /* x could be an end time, or a duration (in seconds) */
-	 if (onerange->type == START_END)
-	 {
-	    valin.type = slotkey->info->type;
-	    valin.value = onerange->x;
 	    drms_keyword_slotval2indexval(slotkey, &valin, &valout, NULL);
-	    onerange->x = valout.value;
-	 }
-	 else if (onerange->type == START_DURATION)
-	 {	    
-	    valin.type = slotkey->info->type;
-	    valin.value = onerange->x;
-	    drms_keyword_slotval2indexval(slotkey, 
-					  &valin, 
-					  &valout, 
-					  &rangestart);
-	    onerange->x = valout.value;
-	 }
-	 else if (onerange->type != SINGLE_VALUE)
-	 {
-	    fprintf(stderr, 
-		    "Invalid range set type '%d'.\n", 
-		    onerange->type);
+	    onerange->start = valout.value;
+
+	    /* x could be an end time, or a duration (in seconds) */
+	    if (onerange->type == START_END)
+	    {
+	       valin.type = slotkey->info->type;
+	       valin.value = onerange->x;
+	       drms_keyword_slotval2indexval(slotkey, &valin, &valout, NULL);
+	       onerange->x = valout.value;
+	    }
+	    else if (onerange->type == START_DURATION)
+	    {	    
+	       valin.type = slotkey->info->type;
+	       valin.value = onerange->x;
+	       drms_keyword_slotval2indexval(slotkey, 
+					     &valin, 
+					     &valout, 
+					     &rangestart);
+	       onerange->x = valout.value;
+	    }
+	    else if (onerange->type != SINGLE_VALUE)
+	    {
+	       fprintf(stderr, 
+		       "Invalid range set type '%d'.\n", 
+		       onerange->type);
+	    }
 	 }
       }
 
