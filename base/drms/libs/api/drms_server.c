@@ -246,6 +246,8 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
   int emptydir = 1;
 
   /* Flush output to logfile. */
+  fflush(stdout);
+  fflush(stderr);
   close(STDERR_FILENO);
   close(STDOUT_FILENO);
 
