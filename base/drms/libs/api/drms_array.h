@@ -159,7 +159,20 @@ INLINE int drms_array_offset(DRMS_Array_t *arr, int *indexarr)
 */
 void drms_array_print(DRMS_Array_t *arr, const char *colsep, 
 		      const char *rowsep);
-
+/**
+   Prints the values of the data in @a arr->data
+   in tabular form to file @a keyfile, with colums separated by the string @a colsep and
+   rows separated by the string @a rowsep. One-dimensional arrays are
+   printed as a single row, two-dimansional arrays in column-major @a i.e.
+   storage order. Arrays of higher dimension are printed as successive tables,
+   each labeled by a header line giving the array index or indices for the
+   corresponding dimension(s) above the 2nd.
+   
+   @param keyfile The name of the file to be printed to.
+   @param arr The DRMS array struct whose data values are being printed.
+   @param colsep A string that will be printed between columns of output.
+   @param rowsep A string that will be printed between rows of output.
+*/
 void drms_array_fprint(FILE *arrfile, DRMS_Array_t *arr, const char *colsep, 
 		      const char *rowsep);
 
