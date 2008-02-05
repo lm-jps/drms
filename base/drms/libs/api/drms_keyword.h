@@ -22,6 +22,14 @@ HContainer_t *drms_create_keyword_prototypes(DRMS_Record_t *target,
 					     int *status);
 
 void drms_keyword_print(DRMS_Keyword_t *key);
+
+/**
+   Prints the values of the data in @a DRMS_Keyword_t->data
+   to file @a keyfile. 
+
+   @param keyfile The name of the file to be printed to.
+   @param DRMS_Keyword_t The DRMS key value whose data value(s) are being printed.
+*/
 void drms_keyword_fprint(FILE *keyfile, DRMS_Keyword_t *key);
 void drms_keyword_printval(DRMS_Keyword_t *key);
 void drms_keyword_fprintval(FILE *keyfile, DRMS_Keyword_t *key);
