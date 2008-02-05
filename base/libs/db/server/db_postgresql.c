@@ -648,10 +648,6 @@ int db_dms_array(DB_Handle_t  *dbin, int *row_count,
   db = dbin->db_connection;
   XASSERT( pquery = malloc(6*strlen(query)) ); 
 
-  /* Lock database connection if in multi threaded mode. */
-  if (dbin->abort_now)
-    goto failure;
-
   /* Replace wildcards '?' with '$1', '$2', '$3' etc. */
   op = pquery;
   q = (char *)query;
@@ -689,6 +685,10 @@ int db_dms_array(DB_Handle_t  *dbin, int *row_count,
   if (n_rows>1)
   {
     db_lock(dbin);
+    if (dbin->abort_now) {
+      db_unlock(dbin);
+      goto failure;
+    }
     /* Buld the string for a PREPARE statement. */ 
     sprintf(stmtname,"db_tmp_stmt_%d",dbin->stmt_num);
     sprintf(dallocstmt,"deallocate %s",stmtname);
@@ -722,6 +722,10 @@ int db_dms_array(DB_Handle_t  *dbin, int *row_count,
       *row_count=0;
     /* Lock the database connection. */
     db_lock(dbin);
+    if (dbin->abort_now) {
+      db_unlock(dbin);
+      goto failure;
+    }
     for (i=0; i<n_rows; i++)
     {
       for (j=0; j<n_args; j++)
@@ -737,6 +741,7 @@ int db_dms_array(DB_Handle_t  *dbin, int *row_count,
 	else
 	  paramValues[j] = p + i*paramLengths[j];
       }
+
       res = PQexecPrepared(db, stmtname, n_args,
 			   paramValues, paramLengths,
 			   paramFormats, 0);
@@ -745,7 +750,6 @@ int db_dms_array(DB_Handle_t  *dbin, int *row_count,
       {
 	fprintf(stderr, "query failed: %s", PQerrorMessage(db));
 	PQclear(res);
-	db_unlock(dbin);
 	goto failure1;
       }
       if (row_count)
@@ -780,9 +784,12 @@ int db_dms_array(DB_Handle_t  *dbin, int *row_count,
 	paramValues[j] = p;
     }
     db_lock(dbin);
+    if (dbin->abort_now) {
+      db_unlock(dbin);
+      goto failure;
+    }
     res = PQexecParams(db,pquery, n_args, paramTypes,
 		       paramValues, paramLengths, paramFormats, 1);
-    db_unlock(dbin);
     if (PQresultStatus(res) != PGRES_COMMAND_OK)
     {
       fprintf(stderr, "query failed: %s", PQerrorMessage(db));
@@ -790,6 +797,7 @@ int db_dms_array(DB_Handle_t  *dbin, int *row_count,
       goto failure;
     }
     PQclear(res);
+    db_unlock(dbin);
   }
 
 #if __BYTE_ORDER == __LITTLE_ENDIAN
@@ -833,16 +841,12 @@ int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows,
 
 #ifdef DEBUG
   FILE *fp;
-  printf("Entering db_bulk_insert.\n");
+  printf("Entering db_bulk_insert_array.\n");
 #endif
 
   if (dbin==NULL)
     return 1;
   db = dbin->db_connection;
-  if (dbin->abort_now) {
-    status = 1;
-    goto failure;
-  }
   if (n_args>=MAXARG)
   {
     fprintf(stderr,"Maximum number of arguments exceeded.\n");
@@ -919,6 +923,10 @@ int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows,
 
   /* Do the actual database operations. */
   db_lock(dbin);
+  if (dbin->abort_now) {
+    status = 1;
+    goto failure;
+  }
   /* Issue COPY statement. */
   res = PQexec(db, query);
   if (PQresultStatus(res) != PGRES_COPY_IN)
@@ -985,6 +993,9 @@ int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows,
  */
 int db_isolation_level(DB_Handle_t  *dbin, int level)
 {
+  if (dbin == NULL) 
+    return 1;
+
   switch(level)
   {
   case DB_TRANS_READCOMMIT:
