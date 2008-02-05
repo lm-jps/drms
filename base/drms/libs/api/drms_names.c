@@ -634,13 +634,11 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
   char *p=*in;
   ValueRangeSet_t *vr=NULL,*head=NULL;
   DRMS_Type_t datatype = drms_keyword_gettype(keyword);
-  int slotdur;
 
 #ifdef DEBUG
   printf("enter parse_value_set\n");
 #endif
   do {
-    slotdur = 0;
     if (vr)
     {
       XASSERT(vr->next = malloc(sizeof( ValueRangeSet_t)));
@@ -669,11 +667,16 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
       if ((n = drms_sscanf_int(p, datatype, &vr->start, 1)) == 0 ||
 	  n == -1)    
 	{
-	   /* Could be a duration, relative to epoch, for slotted key. */
+	   /* Could be an offset relative to epoch, eg. 3000d 
+	    * (for time slotted key only). */
 	   if (datatype == DRMS_TYPE_TIME &&
 	       drms_keyword_isslotted(keyword))
 	   {
-	      if (parse_duration(&p, &vr->x.time_val))
+	      double offset;
+	      TIME epoch;
+	      int stat;
+
+	      if (parse_duration(&p, &offset))
 	      {
 		 fprintf(stderr,"Syntax Error: Expected time duration "
 			 " in value range, found '%s'.\n", p);
@@ -681,9 +684,13 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 	      }
 	      else
 	      {
-		 vr->start.time_val = drms_keyword_getslotepoch(keyword, NULL);
-		 vr->type = START_DURATION;
-		 slotdur = 1;
+		 /* The start time is really relative to the epoch, 
+		  * so need to convert to DRMS time. */
+		 epoch = drms_keyword_getslotepoch(keyword, &stat);
+		 if (stat == DRMS_SUCCESS)
+		 {
+		    vr->start.time_val = epoch + offset;
+		 }
 	      }
 	   }
 	   else
@@ -706,7 +713,7 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 	vr->type = START_DURATION;
 	++p;
       }
-      else if (vr->type != START_DURATION)
+      else
 	vr->type = SINGLE_VALUE;
 
       /* Get end or duration "x" */
@@ -726,7 +733,7 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 		  else
 		    p+=n;
 		}
-	      else if (slotdur == 0)
+	      else
 		{
 		  if (parse_duration(&p,&vr->x.time_val))
 		    {
