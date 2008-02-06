@@ -702,6 +702,73 @@ int parse_keywords(char *desc, DRMS_Record_t *template)
 		 case kRecScopeType_ENUM:
 		   break;
 		 case kRecScopeType_CARR:
+		   {
+		      snprintf(keyname, 
+			       sizeof(keyname), "%s%s", 
+			       slotKeyname, 
+			       kSlotAncKey_Step);
+		      DRMS_Keyword_t *anckey = 
+			(DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), 
+							    keyname);
+
+		      if (!anckey)
+		      {
+			 fprintf(stderr, 
+				 "Missing required ancillary keyword '%s'.\n",
+				 keyname);
+			 failure = 1;
+		      }
+
+		      if (!failure && anckey)
+		      {
+			 /* Must be constant */
+			 if (drms_keyword_isconstant(anckey))
+			 {
+			    /* _unit is optional */
+			    snprintf(keyname, 
+				     sizeof(keyname), "%s%s", 
+				     slotKeyname, 
+				     kSlotAncKey_Unit);
+			    anckey = 
+			      (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), 
+								  keyname);
+			 }
+			 else
+			 {
+			    fprintf(stderr, 
+				    "Ancillary keyword '%s' must be constant.\n",
+				    keyname);
+			    failure = 1;
+			 }
+		      }
+
+		      if (!failure && anckey)
+		      {
+			 /* if present, check for valid unit */
+			 if (drms_keyword_gettype(anckey) == DRMS_TYPE_STRING &&
+			     drms_keyword_isconstant(anckey))
+			 {
+			    DRMS_SlotKeyUnit_t utype = 
+			      drms_keyword_getunit(anckey, NULL);
+
+			    if (utype == kSlotKeyUnit_Invalid)
+			    {
+			       fprintf(stderr, 
+				       "Slot keyword unit '%s' is not valid.\n",
+				       drms_keyword_getvalue(anckey)->string_val);
+			       failure = 1;
+			    }
+			 }
+			 else
+			 {
+			    fprintf(stderr, 
+				    "Ancillary keyword '%s' must be constant"
+				    " and of data type 'string'.\n",
+				    keyname);
+			    failure = 1;
+			 }
+		      }
+		   }
 		   break;
 		 default:
 		   fprintf(stderr, 

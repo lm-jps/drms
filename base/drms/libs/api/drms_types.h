@@ -466,7 +466,14 @@ enum DRMS_SlotKeyUnit_enum
    kSlotKeyUnit_TSeconds,
    kSlotKeyUnit_Seconds,
    kSlotKeyUnit_Minutes,
-   kSlotKeyUnit_Days
+   kSlotKeyUnit_Hours,
+   kSlotKeyUnit_Days,
+   kSlotKeyUnit_Degrees,
+   kSlotKeyUnit_Arcminutes,
+   kSlotKeyUnit_Arcseconds,
+   kSlotKeyUnit_MAS,
+   kSlotKeyUnit_Radians,
+   kSlotKeyUnit_MicroRadians
 };
 
 typedef enum DRMS_SlotKeyUnit_enum DRMS_SlotKeyUnit_t;

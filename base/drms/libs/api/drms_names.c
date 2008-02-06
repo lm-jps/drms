@@ -833,8 +833,8 @@ static int parse_duration(char **in, double *duration)
   double dval;
 
   dval = (int)strtod(p,&end);
-  if ( (dval == 0 && end==p)  || 
-       ((dval == HUGE_VALF || dval == -HUGE_VALF) && errno==ERANGE))
+  if ( (IsZero(dval) && end==p)  || 
+       ((IsPosHugeVal(dval) || IsNegHugeVal(dval)) && errno==ERANGE))
   {
     fprintf(stderr,"Syntax Error: Expected finite floating point value at "
 	    "beginning of time duration, found '%s'.\n", p);
@@ -884,6 +884,77 @@ int drms_names_parseduration(char **in, double *duration)
    return ret;
 }
 
+int drms_names_parsedegreedelta(char **deltastr, DRMS_SlotKeyUnit_t *unit, double *delta)
+{
+   char *end, *p = *deltastr;
+   double dval;
+   char *unitstr = NULL;
+
+   dval = (int)strtod(p,&end);
+   if ( (IsZero(dval) && end==p)  || 
+	((IsPosHugeVal(dval) || IsNegHugeVal(dval)) && errno==ERANGE))
+   {
+      fprintf(stderr,"Syntax Error: Expected finite floating point value at "
+	      "beginning of time duration, found '%s'.\n", p);
+      ++syntax_error;      
+      goto error;
+   }
+   else
+     p = end;
+
+   unitstr = p;
+
+   if (strncasecmp(unitstr, "d", 1) == 0)
+   {
+      *delta = dval;
+      *unit = kSlotKeyUnit_Degrees;
+      p++;
+   }
+   else if (strncasecmp(unitstr, "m", 1) == 0)
+   {
+      *delta = 60.0 * dval;
+      *unit = kSlotKeyUnit_Arcminutes;
+      p++;
+   }
+   else if (strncasecmp(unitstr, "s", 1) == 0)
+   {
+      *delta = 3600.0 * dval;
+      *unit = kSlotKeyUnit_Arcseconds;
+      p++;
+   }
+   else if (strncasecmp(unitstr, "ms", 2) == 0)
+   {
+      *delta = 3600000.0 * dval;
+      *unit = kSlotKeyUnit_MAS;
+      p++;
+      p++;
+   }
+   else if (strncasecmp(unitstr, "r", 1) == 0)
+   {
+      *delta =  ((M_PI) / 648000) * dval;
+      *unit = kSlotKeyUnit_Radians;
+      p++;
+   }
+   else if (strncasecmp(unitstr, "ur", 2) == 0)
+   {
+      *delta =  ((M_PI) / 648000) * 1000000.0 * dval;
+      *unit = kSlotKeyUnit_MicroRadians;
+      p++;
+      p++;
+   }
+   else
+   {
+      fprintf(stderr,"Syntax Error: Degree delta unit must be one of 'd', "
+	      "'m', 's', 'ms', 'r', 'ur', found '%s'.\n", unitstr);
+      ++syntax_error;      
+      goto error;
+   }
+
+   *deltastr = p;
+   return 0;
+ error:
+   return 1;
+}
 
 /***************** Middle-end: Generate SQL from AST ********************/
 

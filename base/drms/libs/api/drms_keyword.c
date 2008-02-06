@@ -49,7 +49,14 @@ static SlotKeyUnitStrings_t gSUS[] =
    {kSlotKeyUnit_TSeconds, "tenthsecs"},
    {kSlotKeyUnit_Seconds, "secs"},
    {kSlotKeyUnit_Minutes, "mins"},
+   {kSlotKeyUnit_Hours, "hours"},
    {kSlotKeyUnit_Days, "days"},
+   {kSlotKeyUnit_Degrees, "degrees"},
+   {kSlotKeyUnit_Arcminutes, "arcmins"},
+   {kSlotKeyUnit_Arcseconds, "arcsecs"},
+   {kSlotKeyUnit_MAS, "milliarcsecs"},
+   {kSlotKeyUnit_Radians, "rads"},
+   {kSlotKeyUnit_MicroRadians, "microrads"},
    {(DRMS_SlotKeyUnit_t)-99, ""}
 };
 
@@ -62,6 +69,8 @@ static SlotKeyEpochStrings_t gSEpochS[] =
    {kSlotKeyEpoch_MJD, "MJD_EPOCH", "1858.11.17_00:00:00_UT"},
    {(DRMS_SlotKeyEpoch_t)-99, ""}
 };
+
+const double kSlotKeyBase_Carr = 0.0;
 
 static HContainer_t *gRecScopeStrHC = NULL;
 static HContainer_t *gRecScopeHC = NULL;
@@ -1438,7 +1447,7 @@ DRMS_SlotKeyUnit_t drms_keyword_getunit(DRMS_Keyword_t *key, int *status)
 }
 
 /* Gets the epoch value for a slotted keyword. */
-TIME  drms_keyword_getslotepoch(DRMS_Keyword_t *slotkey, int *status)
+TIME drms_keyword_getslotepoch(DRMS_Keyword_t *slotkey, int *status)
 {
    TIME ret = DRMS_MISSING_TIME;
    int stat = DRMS_SUCCESS;
@@ -1446,6 +1455,7 @@ TIME  drms_keyword_getslotepoch(DRMS_Keyword_t *slotkey, int *status)
 
    if (slotkey)
    {
+      /* Shouldn't be an epoch key, unless keyword is of recscope TS_EQ. */
       epochKey = drms_keyword_epochfromslot(slotkey);
    }
    else
@@ -1540,6 +1550,49 @@ TIME drms_keyword_getepoch(DRMS_Keyword_t *key, int *status)
    return ret;
 }
 
+double drms_keyword_getslotcarr0(void)
+{
+   return kSlotKeyBase_Carr;
+}
+
+double drms_keyword_getslotbase(DRMS_Keyword_t *slotkey, int *status)
+{
+   double ret = DRMS_MISSING_DOUBLE;
+   int stat = DRMS_SUCCESS;
+
+   if (slotkey)
+   {
+      switch (slotkey->info->recscope)
+      {
+	 case kRecScopeType_TS_EQ:
+	   ret = drms_keyword_getslotepoch(slotkey, status);
+	   break;
+	 case kRecScopeType_SLOT:
+	   break;
+	 case kRecScopeType_ENUM:
+	   break;
+	 case kRecScopeType_CARR:
+	   ret = drms_keyword_getslotcarr0();
+	   break;
+	 default:
+	   fprintf(stderr, 
+		   "Invalid recscope type '%d'.\n", 
+		   (int)slotkey->info->recscope);
+      }
+   }
+   else
+   {
+      stat = DRMS_ERROR_INVALIDDATA;
+   }
+   
+   if (status)
+   {
+      *status = stat;
+   }
+   
+   return ret;
+}
+
 /* Gets the step value for a slotted keyword. */
 double drms_keyword_getslotstep(DRMS_Keyword_t *slotkey, DRMS_SlotKeyUnit_t *unit, int *status)
 {
@@ -1553,17 +1606,22 @@ double drms_keyword_getslotstep(DRMS_Keyword_t *slotkey, DRMS_SlotKeyUnit_t *uni
    }
    else
    {
-      fprintf(stderr, "Keyword '%s' is not associated with a step ancillary keyword.\n");
+      fprintf(stderr, 
+	      "Keyword '%s' is not associated with a step ancillary keyword.\n",
+	      slotkey->info->name);
    }
 
    if (stepKey)
    {
-      ret = drms_keyword_getstep(stepKey, unit, &stat);
+      ret = drms_keyword_getstep(stepKey, slotkey->info->recscope, unit, &stat);
    }   
 
-   if (drms_ismissing(DRMS_TYPE_DOUBLE, &ret))
+   if (stat == DRMS_SUCCESS)
    {
-      stat = DRMS_ERROR_INVALIDDATA;
+      if (drms_ismissing(DRMS_TYPE_DOUBLE, &ret))
+      {
+	 stat = DRMS_ERROR_INVALIDDATA;
+      }
    }
 
    if (status)
@@ -1575,7 +1633,10 @@ double drms_keyword_getslotstep(DRMS_Keyword_t *slotkey, DRMS_SlotKeyUnit_t *uni
 }
 
 /*  Operates on a XXX_step key. */
-double drms_keyword_getstep(DRMS_Keyword_t *key, DRMS_SlotKeyUnit_t *unit, int *status)
+double drms_keyword_getstep(DRMS_Keyword_t *key, 
+			    DRMS_RecScopeType_t recscope, 
+			    DRMS_SlotKeyUnit_t *unit, 
+			    int *status)
 {
    double step = DRMS_MISSING_DOUBLE;
    int stat = DRMS_SUCCESS;
@@ -1583,20 +1644,52 @@ double drms_keyword_getstep(DRMS_Keyword_t *key, DRMS_SlotKeyUnit_t *unit, int *
 
    if (drms_keyword_gettype(key) == DRMS_TYPE_STRING)
    {
-      /* This is a duration - parse it. */
-      char *durstr = drms_keyword_getstring(key, NULL);
-      if (durstr)
+      switch (recscope)
       {
-	 if (drms_names_parseduration(&durstr, &step))
-	 {
-	    fprintf(stderr,
-		    "Invalid step keyword value for '%s'.\n",
-		    key->info->name);
-	    stat = DRMS_ERROR_INVALIDDATA;
-	 }
+	 case kRecScopeType_TS_EQ:
+	   {
+	      /* This is a duration - parse it. */
+	      char *durstr = drms_keyword_getstring(key, NULL);
+	      if (durstr)
+	      {
+		 /* Always returns in units of seconds */
+		 if (drms_names_parseduration(&durstr, &step))
+		 {
+		    fprintf(stderr,
+			    "Invalid step keyword value for '%s'.\n",
+			    key->info->name);
+		    stat = DRMS_ERROR_INVALIDDATA;
+		 }
 
-	 *unit = kSlotKeyUnit_Seconds;
-	 free(durstr);
+		 *unit = kSlotKeyUnit_Seconds;
+		 free(durstr);
+	      }
+	   }
+	   break;
+	 case kRecScopeType_CARR:
+	   {
+	      /* This is a degree delta - parse it. */
+	      char *deltastr = drms_keyword_getstring(key, NULL);
+	      if (deltastr)
+	      {
+		 /* Always returns in units of degrees */
+		 if (drms_names_parsedegreedelta(&deltastr, unit, &step))
+		 {
+		     fprintf(stderr,
+			    "Invalid step keyword value for '%s'.\n",
+			    key->info->name);
+		    stat = DRMS_ERROR_INVALIDDATA;
+		 }
+
+		 free(deltastr);
+	      }
+	   }
+	   break;
+	 default:
+	   fprintf(stderr, 
+		   "Invalid recscope type '%d'.\n", 
+		   (int)recscope);
+
       }
    }
    else
@@ -1746,6 +1839,7 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 	      if (startdur)
 	      {
 		 /* The slot val is actually a duration. */
+		 /* numerator always in seconds */
 		 slotnum = (startdur->value.time_val - epoch) / (unitVal * step);
 		 int startslot = (int)slotnum;
 		 slotnum = (startdur->value.time_val - epoch + valin->value.time_val) / 
@@ -1763,6 +1857,96 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 	      }
 	   }
 	   break;
+	 case kRecScopeType_CARR:
+	   {
+	      double base;
+	      double step;
+	      DRMS_SlotKeyUnit_t unit;
+	      double unitVal;
+	      double slotnum;
+
+	      DRMS_Keyword_t *stepKey = drms_keyword_stepfromslot(slotkey);
+	      DRMS_Keyword_t *unitKey = drms_keyword_unitfromslot(slotkey);
+
+	      base = drms_keyword_getslotcarr0();
+	      step = drms_keyword_getslotstep(slotkey, &unit, &stat);
+
+	      /* unit will be valid if user provided a string step (eg, 60s) */
+	      if (unit != kSlotKeyUnit_Invalid)
+	      {
+		 if (unitKey)
+		 {
+		    /* This will be ignored because step unit specified in step. */
+		    fprintf(stderr, 
+			    "Warning: '%s' specifies step unit, so '%s' will"
+			    "be ignored.\n", 
+			    stepKey->info->name,
+			    unitKey->info->name);
+		 }
+	      }
+	      else
+	      {
+		 if (unitKey)
+		 {
+		    unit = drms_keyword_getunit(unitKey, NULL);
+		 }
+		 else
+		 {
+		    unit = kSlotKeyUnit_Degrees; /* default */
+		 }
+	      }
+
+	      switch(unit)
+	      {
+		 case kSlotKeyUnit_Degrees:
+		   unitVal = 1.0;
+		   break;
+		 case kSlotKeyUnit_Arcminutes:
+		   unitVal = 60.0;
+		   break;
+		 case kSlotKeyUnit_Arcseconds:
+		   unitVal = 3600.0;
+		   break;
+		 case kSlotKeyUnit_MAS:
+		   unitVal = 3600000.0;
+		   break;
+		 case kSlotKeyUnit_Radians:
+		   unitVal = (M_PI) / 648000;
+		   break;
+		 case kSlotKeyUnit_MicroRadians:
+		   unitVal = ((M_PI) / 648000) * 1000000.0;
+		   break;
+		 default:
+		   fprintf(stderr, "Invalid slotted key unit '%d'.\n", (int)unit);
+		   break;
+	      }
+
+	      double valind = drms2double(valin->type, &(valin->value), NULL);
+
+	      if (startdur)
+	      {
+		 /* The slot val is actually an interval. */
+		 double startdurd = drms2double(startdur->type, &(startdur->value), NULL);
+
+		 /* numerator always in degrees */
+		 slotnum = (startdurd - base) / (step / unitVal);
+		 int startslot = (int)slotnum;
+		 slotnum = (startdurd - base + valin->value.double_val) / 
+		   (step / unitVal);
+		 int endslot = (int)slotnum;
+		 /* Must add 1 because a duration query has val <= start && val < end.  
+		  * Although this works for floating point numbers, for integers 
+		  * this query omits the last record (it's an open interval). */
+		 valout->value.int_val = 1 + endslot - startslot;
+	      }
+	      else
+	      {
+		 slotnum = (valind - base) / (step / unitVal);
+		 valout->value.int_val = (int)slotnum;
+	      }
+	   }
+	   break;
+
 	 default:
 	   fprintf(stderr, "Invalid rec scope '%d'.\n", (int)recscope);
 	   stat = DRMS_ERROR_INVALIDDATA;
