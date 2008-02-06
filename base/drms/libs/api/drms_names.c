@@ -276,6 +276,7 @@ static RecordList_t *parse_record_list(DRMS_Record_t *template, char **in) {
   char pk[DRMS_MAXNAMELEN];
   DRMS_SeriesInfo_t *si;
   DRMS_Keyword_t *nprimekey = NULL;
+  int explKW = 0;
 
 #ifdef DEBUG
   printf ("enter parse_record_list\n");
@@ -303,6 +304,7 @@ static RecordList_t *parse_record_list(DRMS_Record_t *template, char **in) {
     
     if (*p == '=' && !err) {
 					/* A keyword was given explicitly. */
+      explKW = 1;
       ++p;
       keynum = -1;
 		/* Search the primary index list of the series template and
@@ -368,16 +370,20 @@ static RecordList_t *parse_record_list(DRMS_Record_t *template, char **in) {
 					skip to the first time type prime key */
     if (nprimekey != NULL)
     {
+       /* User specified [SLOTKEY=<value>] */
        rl->primekey_rangeset = parse_slottedkey_set (nprimekey, &p);       
     }
-    else if (drms_keyword_isindex(si->pidx_keywords[keynum]))
+    else if (!explKW && drms_keyword_isindex(si->pidx_keywords[keynum]))
     {
+       /* User specified [<value>] */
        DRMS_Keyword_t *slottedkey = 
 	 drms_keyword_slotfromindex(si->pidx_keywords[keynum]);
        rl->primekey_rangeset = parse_slottedkey_set (slottedkey, &p);
     }
     else
     {
+       /* User specified either [INDEXKEY=<indexvalue>] or 
+	* [SOMEOTHERPRIMEKEY=<value>] */
        rl->primekey_rangeset = parse_primekey_set (si->pidx_keywords[keynum], &p);
     }
 
