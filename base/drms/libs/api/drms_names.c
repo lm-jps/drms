@@ -1151,6 +1151,7 @@ static int sql_primekey_index_set(IndexRangeSet_t *rs, DRMS_Keyword_t *keyword,
   {
     /* No step given in series definition. Defaults to 1. */
     one.double_val = 1.0;
+    memset(&(step.char_val), 0, sizeof(step));
     drms_convert(datatype, &step, DRMS_TYPE_DOUBLE, &one);
   }
   else
