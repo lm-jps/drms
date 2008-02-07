@@ -54,6 +54,8 @@ ModuleArgs_t module_args[] = {
   {ARG_FLAG, "h", "0", "prints this message and quits."},   /* help flag, print usage and quit  */
   {ARG_FLAG, "p", "0", "enables print prime keys and description."},   /* print details */
   {ARG_FLAG, "v", "0", "verbose"},   /* verbose flag, normally do not use  */
+  {ARG_FLAG, "z", "0", "JSON"},   /* generate output in JSON format */
+  {ARG_STRING, "QUERY_STRING", "Not Specified", "AJAX query from the web"},
   {ARG_END}
 };
 
@@ -73,7 +75,8 @@ int nice_intro() {
 	"  filter is regular expression to select series names.\n"
 	"  -h prints this message and quits.\n"
 	"  -p enables print prime keys and description.\n"
-	"  -v verbose \n");
+	"  -v verbose \n"
+	"  -z JSON formatted output \n");
     return (1);
   }
   if (verbose) cmdparams_printall (&cmdparams);
@@ -90,22 +93,37 @@ DB_Text_Result_t *qres;
 char seriesfilter[1024];
 regmatch_t pmatch[10];
 char *filter;
-int printinfo = cmdparams_get_int(&cmdparams, "p", NULL);
+char *web_query;
+int from_web;
+int want_JSON;
+int printinfo;
+char *index();
 
-if (nice_intro())
-  return(0);
+if (nice_intro()) return(0);
+
+web_query = strdup (cmdparams_get_str (&cmdparams, "QUERY_STRING", NULL));
+from_web = strcmp (web_query, "Not Specified") != 0;
+want_JSON = from_web || cmdparams_get_int (&cmdparams, "z", NULL) != 0;
+
+printinfo = cmdparams_get_int(&cmdparams, "p", NULL);
 
 if (cmdparams_numargs(&cmdparams)==2)
   { /* series filter provided, treat as regular expression. */
   filter = cmdparams_getarg(&cmdparams, 1);
+  }
+else if (from_web && *web_query)
+  filter = index(web_query,'=')+1;
+else
+  filter = NULL;
+
+if (filter)
+  {
   if (regcomp((regex_t *)seriesfilter, filter, (REG_EXTENDED | REG_ICASE)))
     {
     fprintf(stderr,"Series filter format error in %s\n", filter);
     return 1;
     }
   }
-else
-  filter = NULL;
   
 /* Query the database to get all series names from the master list. */
 sprintf(query, "select seriesname from %s()", DRMS_MASTER_SERIES_TABLE);
@@ -120,6 +138,13 @@ nseries = qres->num_rows;
  printf("%d series available.\n",nseries);
 */
 
+if (want_JSON)
+  {
+  printf("Content-type: application/json\n\n");
+  if (nseries)
+    printf("{\"names\":[\n");
+  }
+
 nused = 0;
 for (iseries=0; iseries<nseries; iseries++)
   {
@@ -127,8 +152,15 @@ for (iseries=0; iseries<nseries; iseries++)
 
   if (!filter || !regexec((regex_t *)seriesfilter, seriesname, 10, pmatch, 0)) 
     {
+    if (want_JSON && nused > 0)
+      printf(",");
+
     nused++;
-    printf("  %s\n",seriesname);
+    if (want_JSON)
+      printf("\"%s\"",seriesname);
+    else
+      printf("  %s\n",seriesname);
+
     if (printinfo)
       { /* fetch series info and print */
       DRMS_Record_t *rec = drms_template_record(drms_env, seriesname, &status);
@@ -154,8 +186,19 @@ for (iseries=0; iseries<nseries; iseries++)
     }
   }
 
-if (filter)
-  printf("%d series found the matching %s\n", nused, filter);
+
+if (want_JSON)
+  {
+  if (nseries)
+    printf("],\"n\":%d",nused);
+  printf("}\n");
+  fflush(stdout);
+  }
+else 
+  {
+  if (filter)
+    printf("%d series found the matching %s\n", nused, filter);
+  }
 
 db_free_text_result(qres);
 

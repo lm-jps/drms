@@ -454,9 +454,9 @@ void drms_print_query_rec(DRMS_Record_t *rec)
         drms_keyword_printval (rec_key);
         printf("\"");
         }
-    printf("]");
+      printf("]");
+      }
     }
+  else
+    printf("[:#%lld]",rec->recnum);
   }
-else
-printf("[:#%lld]",rec->recnum);
-}

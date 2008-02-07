@@ -139,6 +139,8 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "q", "0", "quiet - skip header of chosen keywords"},
   {ARG_FLAG, "r", "0", "recnum - show record number as first keyword"},
   {ARG_FLAG, "s", "0", "stats - show some statistics about the series"},
+  {ARG_FLAG, "z", "0", "JSON formatted output - present output in JSON format"},
+  {ARG_STRING, "QUERY_STRING", "Not Specified", "AJAX query from the web"},
   {ARG_END}
 };
 
@@ -162,6 +164,7 @@ int nice_intro ()
 	"  -q: quiet - skip header of chosen keywords\n"
 	"  -r: recnum - show record number as first keyword\n"
 	"  -s: stats - show some statistics for how many records, etc.\n"
+	"  -z: present the output in JSON format\n"
 	"ds=<recordset query> as <series>{[record specifier]} - required\n"
 	"n=0 number of records in query to show, +n from start or -n from end\n"
 	"key=<comma delimited keyword list>, for all use -a flag\n"
@@ -354,7 +357,9 @@ DRMS_RecordSet_t *drms_find_rec_first(DRMS_Record_t *rec, int wantprime)
       strcat(query, "[#^]");
   else
     strcat(query, "[:#^]");
+// fprintf(stderr,"test 1 query is %s\n",query);
   rs = drms_open_records(rec->env, query, &status);
+// fprintf(stderr,"test 1 status is %d\n",status);
   return(rs);
   }
 
@@ -378,16 +383,21 @@ DRMS_RecordSet_t *drms_find_rec_last(DRMS_Record_t *rec, int wantprime)
   }
 
 /* print a query that will return the given record */
-void drms_print_query_rec(DRMS_Record_t *rec)
+void drms_print_query_rec(DRMS_Record_t *rec, int want_JSON)
+  {
+  drms_fprint_query_rec(stdout, rec, want_JSON);
+  }
+
+void drms_fprint_query_rec(FILE *fp, DRMS_Record_t *rec, int want_JSON)
   {
   int iprime, nprime;
   DRMS_Keyword_t *rec_key, *key, **prime_keys;
   if (!rec)
     {
-    printf("** No Record **");
+    fprintf(fp, "** No Record **");
     return;
     }
-  printf("%s",rec->seriesinfo->seriesname);
+  fprintf(fp, "%s",rec->seriesinfo->seriesname);
   nprime = rec->seriesinfo->pidx_num;
   prime_keys = rec->seriesinfo->pidx_keywords;
   if (nprime > 0) 
@@ -396,20 +406,29 @@ void drms_print_query_rec(DRMS_Record_t *rec)
       {
       key = prime_keys[iprime];
       rec_key = drms_keyword_lookup (rec, key->info->name, 1); 
-      printf("[");
+      fprintf(fp, "[");
       if (key->info->type != DRMS_TYPE_STRING)
-        drms_keyword_printval (rec_key);
+        drms_keyword_fprintval (fp, rec_key);
       else
         {
-        printf("\"");
-        drms_keyword_printval (rec_key);
-        printf("\"");
+        if (want_JSON)
+          {
+          fprintf(fp, "\\\"");
+          drms_keyword_fprintval (fp, rec_key);
+          fprintf(fp, "\\\"");
+          }
+        else
+          {
+          fprintf(fp, "\"");
+          drms_keyword_fprintval (fp, rec_key);
+          fprintf(fp, "\"");
+          }
         }
-      printf("]");
+      fprintf(fp, "]");
       }
     }
   else
-    printf("[:#%lld]",rec->recnum);
+    fprintf(fp, "[:#%lld]",rec->recnum);
 }
 
 
@@ -427,25 +446,71 @@ int DoIt(void)
   int iseg, nsegs = 0;
   char *inqry;
 						/* Get command line arguments */
-  char *in = cmdparams_get_str (&cmdparams, "ds", NULL);
-  char *keylist = strdup (cmdparams_get_str (&cmdparams, "key", NULL));
-  char *seglist = strdup (cmdparams_get_str (&cmdparams, "seg", NULL));
-  int show_keys = strcmp (keylist, "Not Specified");
-  int show_segs = strcmp (seglist, "Not Specified");
-  int jsd_list = cmdparams_get_int (&cmdparams, "j", NULL) != 0;
-  int list_keys = cmdparams_get_int (&cmdparams, "l", NULL) != 0;
-  int show_all = cmdparams_get_int (&cmdparams, "a", NULL) != 0;
-  int show_stats = cmdparams_get_int (&cmdparams, "s", NULL) != 0;
-  int max_recs =  cmdparams_get_int (&cmdparams, "n", NULL);
-  int quiet = cmdparams_get_int (&cmdparams, "q", NULL) != 0;
-  int show_recnum =  cmdparams_get_int(&cmdparams, "r", NULL) != 0;
-  int keyword_list =  cmdparams_get_int(&cmdparams, "k", NULL) != 0;
-  int want_path = cmdparams_get_int (&cmdparams, "p", NULL) != 0;
-  int want_path_noret = cmdparams_get_int (&cmdparams, "P", NULL) != 0;
+  char *in;
+  char *keylist;
+  char *seglist;
+  char *web_query;
+  int from_web;
+  int show_keys;
+  int show_segs;
+  int jsd_list;
+  int list_keys;
+  int show_all;
+  int show_stats;
+  int max_recs;
+  int quiet;
+  int show_recnum;
+  int keyword_list;
+  int want_path;
+  int want_path_noret;
+  int want_JSON;
+  int not_silent;
 
   if (nice_intro ()) return (0);
 
+  web_query = strdup (cmdparams_get_str (&cmdparams, "QUERY_STRING", NULL));
+  from_web = strcmp (web_query, "Not Specified") != 0;
+  want_JSON = cmdparams_get_int (&cmdparams, "z", NULL) != 0;
+
+  if (from_web)
+    {
+    want_JSON = 1;
+    not_silent = 0;
+// parse web_query here to get args setup
+// for testing just extract the ds= first keyword
+      {
+      char *dsraw, *ds, *p;
+      dsraw = strdup (web_query);
+      ds = strdup (web_query); // make sure there is room
+      sscanf(dsraw,"ds=%s",ds);
+      if ((p = index(ds,'&'))) *p = '\0';
+      cmdparams_set (&cmdparams, "ds", ds);
+      cmdparams_set (&cmdparams,"s", "1");
+      free(dsraw);
+      free(ds);
+      }
+    }
+
+  in = cmdparams_get_str (&cmdparams, "ds", NULL);
+  keylist = strdup (cmdparams_get_str (&cmdparams, "key", NULL));
+  seglist = strdup (cmdparams_get_str (&cmdparams, "seg", NULL));
+  show_keys = strcmp (keylist, "Not Specified");
+  show_segs = strcmp (seglist, "Not Specified");
+  jsd_list = cmdparams_get_int (&cmdparams, "j", NULL) != 0;
+  list_keys = cmdparams_get_int (&cmdparams, "l", NULL) != 0;
+  show_all = cmdparams_get_int (&cmdparams, "a", NULL) != 0;
+  show_stats = cmdparams_get_int (&cmdparams, "s", NULL) != 0;
+  max_recs =  cmdparams_get_int (&cmdparams, "n", NULL);
+  quiet = cmdparams_get_int (&cmdparams, "q", NULL) != 0;
+  show_recnum =  cmdparams_get_int(&cmdparams, "r", NULL) != 0;
+  keyword_list =  cmdparams_get_int(&cmdparams, "k", NULL) != 0;
+  want_path = cmdparams_get_int (&cmdparams, "p", NULL) != 0;
+  want_path_noret = cmdparams_get_int (&cmdparams, "P", NULL) != 0;
+
   if(want_path_noret) want_path = 1;	/* also set this flag */
+
+  if (want_JSON)
+    printf("Content-type: application/json\n\n");
 
   /* At least seriesname must be specified */
   if (strcmp(in, "Not Specified") == 0)
@@ -536,31 +601,63 @@ int DoIt(void)
       return(0);
       }
     if (show_stats)
+     {
      if (is_drms_series)
       {
       DRMS_RecordSet_t *rs;
 
-      printf("First Record: ");
       rs = drms_find_rec_first(rec, 1);
-      drms_print_query_rec(rs->records[0]);
-      printf(", Recnum = %lld\n", rs->records[0]->recnum);
-      drms_free_records(rs);
-
-      printf("Last Record:  ");
-      rs = drms_find_rec_last(rec, 1);
-      drms_print_query_rec(rs->records[0]);
-      printf(", Recnum = %lld\n", rs->records[0]->recnum);
-      drms_free_records(rs);
-
-      rs = drms_find_rec_last(rec, 0);
-      printf("Last Recnum:  %lld", rs->records[0]->recnum);
-      drms_free_records(rs);
-      printf("\n");
-
+      if (!rs || rs->n < 1)
+        {
+        if (want_JSON)
+          printf("{ \"status\":1}\n");
+        else
+          printf("No records Present\n");
+        }
+      else
+        {
+        if (want_JSON)
+          {
+          printf("{ \"status\":0,\n");
+          printf(" \"FirstRecord\" : \"");
+          }
+        else
+          printf("First Record: ");
+        drms_print_query_rec(rs->records[0], want_JSON);
+        if (want_JSON)
+          printf("\",\n \"FirstRecnum\" : %ld,\n", rs->records[0]->recnum);
+        else
+          printf(", Recnum = %ld\n", rs->records[0]->recnum);
+        drms_free_records(rs);
+  
+        rs = drms_find_rec_last(rec, 1);
+        if (want_JSON)
+          printf(" \"LastRecord\" : \"");
+        else
+          printf("Last Record:  ");
+        drms_print_query_rec(rs->records[0], want_JSON);
+        if (want_JSON)
+          printf("\",\n \"LastRecnum\" : %ld,\n", rs->records[0]->recnum);
+        else
+          printf(", Recnum = %ld\n", rs->records[0]->recnum);
+        drms_free_records(rs);
+  
+        rs = drms_find_rec_last(rec, 0);
+        if (want_JSON)
+          printf(" \"MaxRecnum\" : %ld\n", rs->records[0]->recnum);
+        else
+          printf("Last Recnum:  %ld", rs->records[0]->recnum);
+        if (want_JSON)
+          printf("}\n");
+        else
+          printf("\n");
+        }
       return(0);
       }
      else printf("### Can not use '-s' flag for non-drms series. Sorry.\n");
+     }
     }
+  if (want_JSON) return(0);
 
   /* check for poor usage of no query and no n=record_count */
   inqry = index(in, '[');
@@ -571,7 +668,10 @@ int DoIt(void)
     }
 
   /* Open record_set */
+
+fprintf(stderr,"test 1 query is %s\n",in);
   recordset = drms_open_records (drms_env, in, &status);
+fprintf(stderr,"test 1 query is %d\n",status);
   if (!recordset) 
     {
     fprintf(stderr,"### show_info: series %s not found.\n",in);
@@ -648,9 +748,8 @@ int DoIt(void)
 
     if (keyword_list) /* if not in table mode, i.e. value per line mode then show record query for each rec */
       {
-      void drms_print_query_rec(DRMS_Record_t *rec);
       printf("# ");
-      drms_print_query_rec(rec);
+      drms_print_query_rec(rec, 0);
       printf("\n");
       }
 
