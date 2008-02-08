@@ -177,6 +177,7 @@ int nice_intro ()
   return (0);
   }
 
+#ifdef NEED_JSD_STUFF
 void drms_keyword_print_jsd(DRMS_Keyword_t *key) {
     printf("Keyword:%s",key->info->name);
     if (key->info->islink) {
@@ -291,7 +292,6 @@ void drms_link_print_jsd(DRMS_Link_t *link) {
   printf(", \"%s\"\n", link->info->description);
 }
 
-
 void print_jsd(DRMS_Record_t *rec) {
   const int fwidth=17;
   int i;
@@ -299,6 +299,8 @@ void print_jsd(DRMS_Record_t *rec) {
   DRMS_Link_t *link;
   DRMS_Keyword_t *key;
   DRMS_Segment_t *seg;
+  int npkeys = 0;
+  char **extpkeys; 
 
   printf("#=====General Series Information=====\n");
   printf("%-*s\t%s\n",fwidth,"Seriesname:",rec->seriesinfo->seriesname);
@@ -309,21 +311,18 @@ void print_jsd(DRMS_Record_t *rec) {
   printf("%-*s\t%d\n",fwidth,"Retention:",rec->seriesinfo->retention);
   printf("%-*s\t%d\n",fwidth,"Tapegroup:",rec->seriesinfo->tapegroup);
 
-  int npkeys = 0;
-  char **extpkeys = 
-    drms_series_createpkeyarray(rec->env, rec->seriesinfo->seriesname, &npkeys, NULL);
-  if (extpkeys && npkeys > 0)
-  {
-     printf("%-*s\t%s",fwidth,"Index:",extpkeys[0]);
-     for (i=1; i<npkeys; i++)
-       printf(", %s", extpkeys[i]);
-     printf("\n");
-  }
-
+  extpkeys = drms_series_createpkeyarray(rec->env, rec->seriesinfo->seriesname, &npkeys, NULL);
   if (extpkeys)
-  {
-     drms_series_destroypkeyarray(&extpkeys, npkeys);
-  }
+    {
+    if ( npkeys > 0)
+      { int i;
+      printf("%-*s\t%s",fwidth,"Index:",extpkeys[0]);
+      for (i=1; i<npkeys; i++)
+        printf(", %s", extpkeys[i]);
+      printf("\n");
+      }
+    drms_series_destroypkeyarray(&extpkeys, npkeys);
+    }
 
   printf("%-*s\t%s\n",fwidth,"Description:",rec->seriesinfo->description);
   printf("\n#=====Links=====\n");
@@ -341,11 +340,12 @@ void print_jsd(DRMS_Record_t *rec) {
   while( (seg = (DRMS_Segment_t *)hiter_getnext(&hit)) )
     drms_segment_print_jsd(seg);
 }
+#endif
 
 /* find first record in series that owns the given record */
 DRMS_RecordSet_t *drms_find_rec_first(DRMS_Record_t *rec, int wantprime)
   {
-  int nprime;
+  int iprime, nprime;
   int status;
   DRMS_RecordSet_t *rs;
   char query[DRMS_MAXQUERYLEN];
@@ -353,7 +353,7 @@ DRMS_RecordSet_t *drms_find_rec_first(DRMS_Record_t *rec, int wantprime)
   nprime = rec->seriesinfo->pidx_num;
   if (wantprime && nprime > 0) 
     // only first prime key is used for now
-    // for (iprime = 0; iprime < nprime; iprime++)
+     // for (iprime = 0; iprime < nprime; iprime++)
       strcat(query, "[#^]");
   else
     strcat(query, "[:#^]");
@@ -366,7 +366,7 @@ DRMS_RecordSet_t *drms_find_rec_first(DRMS_Record_t *rec, int wantprime)
 /* find last record in series that owns the given record */
 DRMS_RecordSet_t *drms_find_rec_last(DRMS_Record_t *rec, int wantprime)
   {
-  int nprime;
+  int iprime, nprime;
   int status;
   DRMS_RecordSet_t *rs;
   char query[DRMS_MAXQUERYLEN];
@@ -374,7 +374,7 @@ DRMS_RecordSet_t *drms_find_rec_last(DRMS_Record_t *rec, int wantprime)
   nprime = rec->seriesinfo->pidx_num;
   if (wantprime && nprime > 0) 
     // only first prime key is used for now
-    // for (iprime = 0; iprime < nprime; iprime++)
+     // for (iprime = 0; iprime < nprime; iprime++)
       strcat(query, "[#$]");
   else
     strcat(query, "[:#$]");
@@ -413,15 +413,15 @@ void drms_fprint_query_rec(FILE *fp, DRMS_Record_t *rec, int want_JSON)
         {
         if (want_JSON)
           {
-          fprintf(fp, "\\\"");
+          // fprintf(fp, "\\\"");
           drms_keyword_fprintval (fp, rec_key);
-          fprintf(fp, "\\\"");
+          // fprintf(fp, "\\\"");
           }
         else
           {
-          fprintf(fp, "\"");
+          // fprintf(fp, "\"");
           drms_keyword_fprintval (fp, rec_key);
-          fprintf(fp, "\"");
+          // fprintf(fp, "\"");
           }
         }
       fprintf(fp, "]");
@@ -515,14 +515,9 @@ int DoIt(void)
   /* At least seriesname must be specified */
   if (strcmp(in, "Not Specified") == 0)
     {
-    printf("### show_info: ds=<record_query> parameter is required, but I will look for a query without the ds=\n");
-    if (cmdparams_numargs(&cmdparams) >= 1 && (in = cmdparams_getarg (&cmdparams, 1)))
+    if (cmdparams_numargs(&cmdparams) < 1 || !(in=cmdparams_getarg (&cmdparams, 1)))
       {
-      printf("### found \"%s\", using it for the record_query.\n",in);
-      }
-    else 
-      {
-      printf("### show_info: Oops, still no query found, quit\n");
+      printf("### show_info: ds=<record_query> parameter is required, must quit\n");
       return(1);
       }
     }
@@ -624,10 +619,11 @@ int DoIt(void)
         else
           printf("First Record: ");
         drms_print_query_rec(rs->records[0], want_JSON);
+        if (rs->n > 1) printf(" is first of %d records matching first keyword", rs->n);
         if (want_JSON)
-          printf("\",\n \"FirstRecnum\" : %ld,\n", rs->records[0]->recnum);
+          printf("\",\n \"FirstRecnum\" : %lld,\n", rs->records[0]->recnum);
         else
-          printf(", Recnum = %ld\n", rs->records[0]->recnum);
+          printf(", Recnum = %lld\n", rs->records[0]->recnum);
         drms_free_records(rs);
   
         rs = drms_find_rec_last(rec, 1);
@@ -636,17 +632,18 @@ int DoIt(void)
         else
           printf("Last Record:  ");
         drms_print_query_rec(rs->records[0], want_JSON);
+        if (rs->n > 1) printf(" is first of %d records matching first keyword", rs->n);
         if (want_JSON)
-          printf("\",\n \"LastRecnum\" : %ld,\n", rs->records[0]->recnum);
+          printf("\",\n \"LastRecnum\" : %lld,\n", rs->records[0]->recnum);
         else
-          printf(", Recnum = %ld\n", rs->records[0]->recnum);
+          printf(", Recnum = %lld\n", rs->records[0]->recnum);
         drms_free_records(rs);
   
         rs = drms_find_rec_last(rec, 0);
         if (want_JSON)
-          printf(" \"MaxRecnum\" : %ld\n", rs->records[0]->recnum);
+          printf(" \"MaxRecnum\" : %lld\n", rs->records[0]->recnum);
         else
-          printf("Last Recnum:  %ld", rs->records[0]->recnum);
+          printf("Last Recnum:  %lld", rs->records[0]->recnum);
         if (want_JSON)
           printf("}\n");
         else
@@ -656,6 +653,7 @@ int DoIt(void)
       }
      else printf("### Can not use '-s' flag for non-drms series. Sorry.\n");
      }
+    fflush(stdout);
     }
   if (want_JSON) return(0);
 
@@ -669,9 +667,9 @@ int DoIt(void)
 
   /* Open record_set */
 
-fprintf(stderr,"test 1 query is %s\n",in);
+// fprintf(stderr,"test 1 query is %s\n",in);
   recordset = drms_open_records (drms_env, in, &status);
-fprintf(stderr,"test 1 query is %d\n",status);
+// fprintf(stderr,"test 1 query is %d\n",status);
   if (!recordset) 
     {
     fprintf(stderr,"### show_info: series %s not found.\n",in);
@@ -833,6 +831,7 @@ fprintf(stderr,"test 1 query is %d\n",status);
   for (ikey=0; ikey<nkeys; ikey++) 
     free(keys[ikey]);
   drms_close_records(recordset, DRMS_FREE_RECORD);
+  fflush(stdout);
   return status;
   }
 

@@ -8,6 +8,7 @@ ModuleArgs_t module_args[] = {
 
 char *module_name = "describe_series";
 
+#ifdef NEED_JSD_STUFF
 void drms_keyword_print_jsd(DRMS_Keyword_t *key) {
     printf("Keyword:%s",key->info->name);
     if (key->info->islink) {
@@ -172,6 +173,7 @@ void print_jsd(DRMS_Record_t *rec) {
   while( (seg = (DRMS_Segment_t *)hiter_getnext(&hit)) )
     drms_segment_print_jsd(seg);
 }
+#endif
      
 int DoIt(void) {
   int status;
