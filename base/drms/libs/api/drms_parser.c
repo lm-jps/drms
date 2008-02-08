@@ -215,8 +215,8 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum)
 {
   int i;
   char *p,*q;
-  char name[DRMS_MAXSEGNAMELEN]={0}, scope[DRMS_MAXNAMELEN2]={0};
-  char type[DRMS_MAXNAMELEN2]={0}, naxis[24]={0}, axis[24]={0}, protocol[DRMS_MAXNAMELEN2]={0};
+  char name[DRMS_MAXSEGNAMELEN]={0}, scope[DRMS_MAXNAMELEN]={0};
+  char type[DRMS_MAXNAMELEN]={0}, naxis[24]={0}, axis[24]={0}, protocol[DRMS_MAXNAMELEN]={0};
   char unit[DRMS_MAXUNITLEN]={0};
   DRMS_Segment_t *seg;
   
@@ -341,7 +341,7 @@ static int parse_links(char *desc, DRMS_Record_t *template)
 static int parse_link(char **in, DRMS_Record_t *template)
 {
   char *p,*q;
-  char name[DRMS_MAXLINKNAMELEN]={0}, target[DRMS_MAXSERIESNAMELEN]={0}, type[DRMS_MAXNAMELEN2]={0},
+  char name[DRMS_MAXLINKNAMELEN]={0}, target[DRMS_MAXSERIESNAMELEN]={0}, type[DRMS_MAXNAMELEN]={0},
        description[DRMS_MAXCOMMENTLEN]={0};
   DRMS_Link_t *link;
   
@@ -811,9 +811,9 @@ static int parse_keyword(char **in,
 			 HContainer_t *indexkws)
 {
   char *p,*q;
-  char name[DRMS_MAXKEYNAMELEN]={0}, type[DRMS_MAXNAMELEN2]={0}, linkname[DRMS_MAXLINKNAMELEN]={0}, defval[DRMS_DEFVAL_MAXLEN]={0};
+  char name[DRMS_MAXKEYNAMELEN]={0}, type[DRMS_MAXNAMELEN]={0}, linkname[DRMS_MAXLINKNAMELEN]={0}, defval[DRMS_DEFVAL_MAXLEN]={0};
   char unit[DRMS_MAXUNITLEN]={0}, description[DRMS_MAXCOMMENTLEN]={0}, format[DRMS_MAXFORMATLEN]={0};
-  char target_key[DRMS_MAXKEYNAMELEN]={0}, constant[DRMS_MAXNAMELEN2]={0},  scope[DRMS_MAXNAMELEN2]={0}, name1[DRMS_MAXKEYNAMELEN+10]={0};
+  char target_key[DRMS_MAXKEYNAMELEN]={0}, constant[DRMS_MAXNAMELEN]={0},  scope[DRMS_MAXNAMELEN]={0}, name1[DRMS_MAXKEYNAMELEN+10]={0};
   int num_segments, per_segment, seg;
   DRMS_Keyword_t *key;
   

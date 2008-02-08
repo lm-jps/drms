@@ -395,32 +395,32 @@ pid_t drms_start_server (int verbose, int dolog)  {
       argv[i++] = strdup ("-L");
     if (cmdparams_exists(&cmdparams,"A")) 
       argv[i++] = strdup ("-A");      
-    argv[i] = malloc (strlen (dbhost)+DRMS_MAXNAMELEN2);
+    argv[i] = malloc (strlen (dbhost)+DRMS_MAXNAMELEN);
     sprintf (argv[i++], "JSOC_DBHOST=%s", dbhost);
-    argv[i] = malloc (strlen (dbname)+DRMS_MAXNAMELEN2);
+    argv[i] = malloc (strlen (dbname)+DRMS_MAXNAMELEN);
     sprintf (argv[i++], "JSOC_DBNAME=%s", dbname);
     if (dbuser) {
-      argv[i] = malloc (strlen (dbuser)+DRMS_MAXNAMELEN2);
+      argv[i] = malloc (strlen (dbuser)+DRMS_MAXNAMELEN);
       sprintf (argv[i++], "JSOC_DBUSER=%s", dbuser);
     }
     if (dbpasswd) {
-      argv[i] = malloc (strlen (dbpasswd)+DRMS_MAXNAMELEN2);
+      argv[i] = malloc (strlen (dbpasswd)+DRMS_MAXNAMELEN);
       sprintf(argv[i++], "JSOC_DBPASSWD=%s", dbpasswd);
     }
     if (sessionns) {
-      argv[i] = malloc (strlen (sessionns)+DRMS_MAXNAMELEN2);
+      argv[i] = malloc (strlen (sessionns)+DRMS_MAXNAMELEN);
       sprintf (argv[i++], "JSOC_SESSIONNS=%s", sessionns);
     }
     if (retention > 0) {
-      argv[i] = malloc (DRMS_MAXNAMELEN2*2);      
+      argv[i] = malloc (DRMS_MAXNAMELEN*2);      
       sprintf (argv[i++], "DRMS_RETENTION=%d", retention);
     }
     if (query_mem != 512) {
-      argv[i] = malloc (DRMS_MAXNAMELEN2*2);
+      argv[i] = malloc (DRMS_MAXNAMELEN*2);
       sprintf (argv[i++], "DRMS_QUERY_MEM=%d", query_mem);
     }
     if (!server_wait) {
-      argv[i] = malloc (DRMS_MAXNAMELEN2*2);
+      argv[i] = malloc (DRMS_MAXNAMELEN*2);
       sprintf (argv[i++], "DRMS_SERVER_WAIT=%d", server_wait);
     }
     for (; i < num_args; i++) {

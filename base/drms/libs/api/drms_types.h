@@ -16,17 +16,12 @@
 #include "sum_rpc.h"
 
 /* Constants */
-/** 
-    Maximum string length of series names, record name, keyword name, link name, etc.
-    !! Series name needs a new define that is larger than 32 chars. !!
-*/
-#define DRMS_MAXNAMELEN        (32waka)
-#define DRMS_MAXNAMELEN2       (32)
+#define DRMS_MAXNAMELEN        (32)
 #define DRMS_MAXSERIESNAMELEN  (64)
-#define DRMS_MAXOWNERLEN       DRMS_MAXNAMELEN2
-#define DRMS_MAXKEYNAMELEN     DRMS_MAXNAMELEN2
-#define DRMS_MAXLINKNAMELEN    DRMS_MAXNAMELEN2
-#define DRMS_MAXSEGNAMELEN     DRMS_MAXNAMELEN2
+#define DRMS_MAXOWNERLEN       DRMS_MAXNAMELEN
+#define DRMS_MAXKEYNAMELEN     DRMS_MAXNAMELEN
+#define DRMS_MAXLINKNAMELEN    DRMS_MAXNAMELEN
+#define DRMS_MAXSEGNAMELEN     DRMS_MAXNAMELEN
 /** \brief Maximum DRMS hash byte length */
 #define DRMS_MAXHASHKEYLEN     (DRMS_MAXSERIESNAMELEN+22)
 /** \brief Maximum byte length of unit string */
