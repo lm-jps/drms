@@ -1455,51 +1455,65 @@ void drms_link_print_jsd(DRMS_Link_t *link) {
   printf(", \"%s\"\n", link->info->description);
 }
 
-void print_jsd(DRMS_Record_t *rec) {
-  const int fwidth=17;
-  int i;
-  HIterator_t hit;
-  DRMS_Link_t *link;
-  DRMS_Keyword_t *key;
-  DRMS_Segment_t *seg;
-  int npkeys = 0;
-  char **extpkeys; 
+void drms_jsd_printfromrec(DRMS_Record_t *rec) {
+   const int fwidth=17;
+   int i;
+   HIterator_t hit;
+   DRMS_Link_t *link;
+   DRMS_Keyword_t *key;
+   DRMS_Segment_t *seg;
+   int npkeys = 0;
+   char **extpkeys; 
 
-  printf("#=====General Series Information=====\n");
-  printf("%-*s\t%s\n",fwidth,"Seriesname:",rec->seriesinfo->seriesname);
-  printf("%-*s\t\"%s\"\n",fwidth,"Author:",rec->seriesinfo->author);
-  printf("%-*s\t%s\n",fwidth,"Owner:",rec->seriesinfo->owner);
-  printf("%-*s\t%d\n",fwidth,"Unitsize:",rec->seriesinfo->unitsize);
-  printf("%-*s\t%d\n",fwidth,"Archive:",rec->seriesinfo->archive);
-  printf("%-*s\t%d\n",fwidth,"Retention:",rec->seriesinfo->retention);
-  printf("%-*s\t%d\n",fwidth,"Tapegroup:",rec->seriesinfo->tapegroup);
+   printf("#=====General Series Information=====\n");
+   printf("%-*s\t%s\n",fwidth,"Seriesname:",rec->seriesinfo->seriesname);
+   printf("%-*s\t\"%s\"\n",fwidth,"Author:",rec->seriesinfo->author);
+   printf("%-*s\t%s\n",fwidth,"Owner:",rec->seriesinfo->owner);
+   printf("%-*s\t%d\n",fwidth,"Unitsize:",rec->seriesinfo->unitsize);
+   printf("%-*s\t%d\n",fwidth,"Archive:",rec->seriesinfo->archive);
+   printf("%-*s\t%d\n",fwidth,"Retention:",rec->seriesinfo->retention);
+   printf("%-*s\t%d\n",fwidth,"Tapegroup:",rec->seriesinfo->tapegroup);
 
-  extpkeys = drms_series_createpkeyarray(rec->env, rec->seriesinfo->seriesname, &npkeys, NULL);
-  if (extpkeys)
-    {
-    if ( npkeys > 0)
+   extpkeys = drms_series_createpkeyarray(rec->env, rec->seriesinfo->seriesname, &npkeys, NULL);
+   if (extpkeys)
+   {
+      if ( npkeys > 0)
       { int i;
       printf("%-*s\t%s",fwidth,"Index:",extpkeys[0]);
       for (i=1; i<npkeys; i++)
         printf(", %s", extpkeys[i]);
       printf("\n");
       }
-    drms_series_destroypkeyarray(&extpkeys, npkeys);
-    }
+      drms_series_destroypkeyarray(&extpkeys, npkeys);
+   }
 
-  printf("%-*s\t%s\n",fwidth,"Description:",rec->seriesinfo->description);
-  printf("\n#=====Links=====\n");
-  hiter_new(&hit, &rec->links); 
-  while( (link = (DRMS_Link_t *)hiter_getnext(&hit)) )
-    drms_link_print_jsd(link);
+   printf("%-*s\t%s\n",fwidth,"Description:",rec->seriesinfo->description);
+   printf("\n#=====Links=====\n");
+   hiter_new(&hit, &rec->links); 
+   while( (link = (DRMS_Link_t *)hiter_getnext(&hit)) )
+     drms_link_print_jsd(link);
 
-  printf("\n#=====Keywords=====\n");
-  hiter_new(&hit, &rec->keywords);
-  while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )
-    drms_keyword_print_jsd(key);
+   printf("\n#=====Keywords=====\n");
+   hiter_new(&hit, &rec->keywords);
+   while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )
+     drms_keyword_print_jsd(key);
 
-  printf("\n#=====Segments=====\n");
-  hiter_new(&hit, &rec->segments);
-  while( (seg = (DRMS_Segment_t *)hiter_getnext(&hit)) )
-    drms_segment_print_jsd(seg);
+   printf("\n#=====Segments=====\n");
+   hiter_new(&hit, &rec->segments);
+   while( (seg = (DRMS_Segment_t *)hiter_getnext(&hit)) )
+     drms_segment_print_jsd(seg);
+}
+
+void drms_jsd_print(DRMS_Env_t *drms_env, const char *seriesname) {
+   int status = DRMS_SUCCESS;
+
+   DRMS_Record_t *rec = drms_template_record(drms_env, seriesname, status);
+   if (rec==NULL)
+   {
+      printf("Series '%s' does not exist. drms_template_record returned "
+	     "status=%d\n",seriesname,status);
+      return;
+   }
+
+   return drms_jsd_printfromrec(rec);
 }

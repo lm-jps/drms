@@ -543,17 +543,23 @@ int DoIt(void)
       if (!recordset) 
         {
         fprintf(stderr,"### show_info: series %s not found.\n",seriesname);
+	if (seriesname)
+	  free (seriesname);
         return (1);
         }
       if (recordset->n < 1)
         {
         fprintf(stderr,"### show_info: non-drms series '%s' found but is empty.\n",seriesname);
+	if (seriesname)
+	  free (seriesname);
         return (1);
         }
       rec = recordset->records[0];
       is_drms_series = 0;
       }
-    free (seriesname);
+
+    if (seriesname)
+      free (seriesname);
 
     if (list_keys)
       {
@@ -592,7 +598,7 @@ int DoIt(void)
       }
     else if (jsd_list) 
       {
-      print_jsd(rec);
+      drms_jsd_print(drms_env, rec->seriesinfo->seriesname);
       return(0);
       }
     if (show_stats)

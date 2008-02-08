@@ -201,7 +201,7 @@ int DoIt(void) {
 
   jsd = cmdparams_exists(&cmdparams,"j");
   if (jsd) {
-    print_jsd(template);
+    drms_jsd_print(drms_env, series);
     goto done;
   }
   /* Print out the template record. */
