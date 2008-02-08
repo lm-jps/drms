@@ -153,17 +153,14 @@ if ($CHKLIBS == "no") then
 
 	# Set links to third-party libraries
 	echo "Setting links to third-party libraries"
-	if (!(-d lib_third_party) || (-d lib_third_party/lib)) then
-	    mkdir -p lib_third_party/lib
+	if (!(-d lib_third_party)) then
+	    mkdir lib_third_party
 	endif
 	cd lib_third_party
 
 	if (-e ../suflag.txt) then
 	    ln -sf /home/jsoc/include include
-	    cd lib
-	    ln -sfv /home/jsoc/lib/linux-x86_64 linux_x86_64
-	    ln -sfv /home/jsoc/lib/linux-ia32 linux_ia32
-	    cd ..
+	    ln -sf /home/jsoc/lib lib
 	else
 	    # Non-stanford users.
 	endif
