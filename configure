@@ -64,6 +64,12 @@ if ($CHKLIBS == "no") then
     endif
     echo "done"
 
+    echo -n "Removing links to third-party libraries..."
+    if (-d lib_third_party) then
+	rm -rf lib_third_party
+    endif
+    echo "done"
+
     echo
 
     if ($CLEAN == "yes") then
@@ -141,6 +147,52 @@ if ($CHKLIBS == "no") then
 	endif
 	cd jsds
 	find ../base \( -name \*.jsd -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o \( -name \*.jsd -exec echo "  " {} " ERROR - couldn't create link" \; \)
+	cd ..
+	echo "done"
+	echo
+
+	# Set links to third-party libraries
+	echo "Setting links to third-party libraries"
+	if (!(-d lib_third_party) || (-d lib_third_party/lib)) then
+	    mkdir -p lib_third_party/lib
+	endif
+	cd lib_third_party
+
+	if (-e ../suflag.txt) then
+	    ln -sf /home/jsoc/include include
+	    cd lib
+	    ln -sfv /home/jsoc/lib/linux-x86_64 linux_x86_64
+	    ln -sfv /home/jsoc/lib/linux-ia32 linux_ia32
+	    cd ..
+	else
+	    # Non-stanford users.
+	endif
+
+	set TPWARN = 0
+	if (!(-e lib/linux_x86_64/libfftw3f.a)) then
+	    echo "D'OH! - Can't find required library: $JSOCROOT/lib/linux_x86_64/libfftw3f.a"
+	    set TPWARN = 1
+	endif
+
+	if (!(-e lib/linux_x86_64/libcfitsio.a)) then
+	    echo "D'OH! - Can't find required library: lib/linux_x86_64/libcfitsio.a"
+	    set TPWARN = 1
+	endif
+
+	if (!(-e lib/linux_ia32/libfftw3f.a)) then
+	    echo "D'OH! - Can't find required library: $JSOCROOT/lib/linux_ia32/libfftw3f.a"
+	    set TPWARN = 1
+	endif
+
+	if (!(-e lib/linux_ia32/libcfitsio.a)) then
+	    echo "D'OH! - Can't find required library: lib/linux_ia32/libcfitsio.a"
+	    set TPWARN = 1
+	endif
+
+	if ($TPWARN) then
+	    echo "Did you update $JSOCROOT/configure to create links to installed third-party libraries?"
+	endif
+
 	cd ..
 	echo "done"
 	echo
