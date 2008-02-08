@@ -123,7 +123,7 @@ IDLAPI_BEGIN(drms_open_records)
    const char *seriesin = (char *)argv[0];
    char *handleout = (char *)argv[1];
    const int *bufsize = (char *)argv[2];
-   char si[DRMS_MAXNAMELEN];
+   char si[DRMS_MAXSERIESNAMELEN];
    const char *keyout = NULL;
    long success = 0;
    int stat;

@@ -2207,7 +2207,7 @@ void f_drms_series_createpkeyarray(void * fpkw, char * env_hdl, const char *seri
   ret = drms_series_createpkeyarray(env, seriesName, nPKeys, status);
 
   if (!*status) {
-    convert_C2F_string_array(  (Fort_Alloc_t *) fpkw, ret, *nPKeys, DRMS_MAXNAMELEN);
+    convert_C2F_string_array(  (Fort_Alloc_t *) fpkw, ret, *nPKeys, DRMS_MAXKEYNAMELEN);
   }
   return;
 }

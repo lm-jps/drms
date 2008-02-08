@@ -142,11 +142,11 @@ static int parse_seriesinfo (char *desc, DRMS_Record_t *template) {
     if (getkeyword (&q)) return 1;
 	/* Branch on keyword and insert appropriate information into struct. */
     if (prefixmatch (p, "Seriesname"))
-      TRY(getstring (&q, template->seriesinfo->seriesname, DRMS_MAXNAMELEN) <= 0)
+      TRY(getstring (&q, template->seriesinfo->seriesname, DRMS_MAXSERIESNAMELEN) <= 0)
     else if (prefixmatch (p, "Description"))
       TRY(getstring (&q, template->seriesinfo->description, DRMS_MAXCOMMENTLEN) <= 0)
     else if (prefixmatch (p, "Owner"))
-      TRY(getstring (&q, template->seriesinfo->owner, DRMS_MAXNAMELEN) <= 0)
+      TRY(getstring (&q, template->seriesinfo->owner, DRMS_MAXOWNERLEN) <= 0)
     else if (prefixmatch (p, "Author"))
       TRY(getstring (&q, template->seriesinfo->author, DRMS_MAXCOMMENTLEN) <= 0)
     else if (prefixmatch (p, "Archive"))
@@ -215,8 +215,8 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum)
 {
   int i;
   char *p,*q;
-  char name[DRMS_MAXNAMELEN]={0}, scope[DRMS_MAXNAMELEN]={0};
-  char type[DRMS_MAXNAMELEN]={0}, naxis[24]={0}, axis[24]={0}, protocol[DRMS_MAXNAMELEN]={0};
+  char name[DRMS_MAXSEGNAMELEN]={0}, scope[DRMS_MAXNAMELEN2]={0};
+  char type[DRMS_MAXNAMELEN2]={0}, naxis[24]={0}, axis[24]={0}, protocol[DRMS_MAXNAMELEN2]={0};
   char unit[DRMS_MAXUNITLEN]={0};
   DRMS_Segment_t *seg;
   
@@ -341,7 +341,7 @@ static int parse_links(char *desc, DRMS_Record_t *template)
 static int parse_link(char **in, DRMS_Record_t *template)
 {
   char *p,*q;
-  char name[DRMS_MAXNAMELEN]={0}, target[DRMS_MAXNAMELEN]={0}, type[DRMS_MAXNAMELEN]={0},
+  char name[DRMS_MAXLINKNAMELEN]={0}, target[DRMS_MAXSERIESNAMELEN]={0}, type[DRMS_MAXNAMELEN2]={0},
        description[DRMS_MAXCOMMENTLEN]={0};
   DRMS_Link_t *link;
   
@@ -393,7 +393,7 @@ int parse_keywords(char *desc, DRMS_Record_t *template)
   char *start, *p, *q;
 
   HContainer_t *slotted = hcon_create(sizeof(DRMS_Keyword_t *),
-				      DRMS_MAXNAMELEN,
+				      DRMS_MAXKEYNAMELEN,
 				      NULL,
 				      NULL,
 				      NULL,
@@ -401,7 +401,7 @@ int parse_keywords(char *desc, DRMS_Record_t *template)
 				      0);
 
   HContainer_t *indexkws = hcon_create(sizeof(DRMS_Keyword_t *),
-				      DRMS_MAXNAMELEN,
+				      DRMS_MAXKEYNAMELEN,
 				      NULL,
 				      NULL,
 				      NULL,
@@ -535,7 +535,7 @@ int parse_keywords(char *desc, DRMS_Record_t *template)
 	{
 	   DRMS_Keyword_t **pSlotKey = NULL;
 	   const char *slotKeyname = NULL;
-	   char keyname[DRMS_MAXNAMELEN];
+	   char keyname[DRMS_MAXKEYNAMELEN];
 	   DRMS_Keyword_t *newkey = NULL;
 	   DRMS_Keyword_t *existindex = NULL;
 
@@ -811,9 +811,9 @@ static int parse_keyword(char **in,
 			 HContainer_t *indexkws)
 {
   char *p,*q;
-  char name[DRMS_MAXNAMELEN]={0}, type[DRMS_MAXNAMELEN]={0}, linkname[DRMS_MAXNAMELEN]={0}, defval[DRMS_DEFVAL_MAXLEN]={0};
+  char name[DRMS_MAXKEYNAMELEN]={0}, type[DRMS_MAXNAMELEN2]={0}, linkname[DRMS_MAXLINKNAMELEN]={0}, defval[DRMS_DEFVAL_MAXLEN]={0};
   char unit[DRMS_MAXUNITLEN]={0}, description[DRMS_MAXCOMMENTLEN]={0}, format[DRMS_MAXFORMATLEN]={0};
-  char target_key[DRMS_MAXNAMELEN]={0}, constant[DRMS_MAXNAMELEN]={0},  scope[DRMS_MAXNAMELEN]={0}, name1[DRMS_MAXNAMELEN+10]={0};
+  char target_key[DRMS_MAXKEYNAMELEN]={0}, constant[DRMS_MAXNAMELEN2]={0},  scope[DRMS_MAXNAMELEN2]={0}, name1[DRMS_MAXKEYNAMELEN+10]={0};
   int num_segments, per_segment, seg;
   DRMS_Keyword_t *key;
   
@@ -898,9 +898,12 @@ static int parse_keyword(char **in,
      memset(key,0,sizeof(DRMS_Keyword_t));
      XASSERT(key->info = malloc(sizeof(DRMS_KeywordInfo_t)));
 
-     strncpy(key->info->name,name1,DRMS_MAXNAMELEN);
-     if (strlen(name1) >= DRMS_MAXNAMELEN)
-       fprintf(stderr,"WARNING keyword name %s truncated to %d characters.\n", name1, DRMS_MAXNAMELEN-1);
+     strncpy(key->info->name,name1,sizeof(key->info->name));
+     if (strlen(name1) >= sizeof(key->info->name))
+       fprintf(stderr,
+	       "WARNING keyword name %s truncated to %d characters.\n", 
+	       name1, 
+	       sizeof(key->info->name)-1);
      key->record = template;
      key->info->per_segment = 0;
      key->info->islink = 0;
@@ -956,9 +959,12 @@ static int parse_keyword(char **in,
       memset(key,0,sizeof(DRMS_Keyword_t));
       XASSERT(key->info = malloc(sizeof(DRMS_KeywordInfo_t)));
 
-      strncpy(key->info->name,name1,DRMS_MAXNAMELEN);
-      if (strlen(name1) >= DRMS_MAXNAMELEN)
-        fprintf(stderr,"WARNING keyword name %s truncated to %d characters.\n", name1, DRMS_MAXNAMELEN-1);
+      strncpy(key->info->name,name1,sizeof(key->info->name));
+      if (strlen(name1) >= sizeof(key->info->name))
+        fprintf(stderr,
+		"WARNING keyword name %s truncated to %d characters.\n", 
+		name1, 
+		sizeof(key->info->name)-1);
       key->record = template;
       key->info->per_segment = per_segment;
       key->info->islink = 0;
@@ -1006,7 +1012,7 @@ static int parse_primaryindex(char *desc, DRMS_Record_t *template)
   int len;
   char *start, *p, *q;
   DRMS_Keyword_t *key;
-  char name[DRMS_MAXNAMELEN];
+  char name[DRMS_MAXKEYNAMELEN];
 
   /* Parse the description line by line, filling 
      out the template struct. */

@@ -314,7 +314,7 @@ int  drms_template_keywords(DRMS_Record_t *template)
 {
   DRMS_Env_t *env;
   int i,num_segments, per_segment, seg, status;
-  char name0[DRMS_MAXNAMELEN], name[DRMS_MAXNAMELEN];
+  char name0[DRMS_MAXKEYNAMELEN], name[DRMS_MAXKEYNAMELEN];
   char defval[DRMS_DEFVAL_MAXLEN], query[DRMS_MAXQUERYLEN];
   DRMS_Keyword_t *key;
   DB_Binary_Result_t *qres;
@@ -417,7 +417,7 @@ int  drms_template_keywords(DRMS_Record_t *template)
 DRMS_Keyword_t *drms_keyword_lookup(DRMS_Record_t *rec, const char *key, int followlink)
 {
   char *lb,*rb;
-  char tmp[DRMS_MAXNAMELEN+5]={0};
+  char tmp[DRMS_MAXKEYNAMELEN+5]={0};
   int segnum;
   /* Handle array syntax for per-segment keywords. */
 
@@ -438,7 +438,7 @@ DRMS_Keyword_t *drms_keyword_lookup(DRMS_Record_t *rec, const char *key, int fol
 #ifdef DEBUG
     printf("Mangled keyword name = '%s'.\n",tmp);
 #endif
-    if (strlen(tmp) >= DRMS_MAXNAMELEN)
+    if (strlen(tmp) >= DRMS_MAXKEYNAMELEN)
       fprintf(stderr,"WARNING keyword name too long, %s\n",tmp);
   }    
   if (!followlink) 
@@ -521,7 +521,7 @@ HContainer_t *drms_keyword_createinfocon(DRMS_Env_t *drmsEnv,
 		    }
 
 		    ret = hcon_create(sizeof(DRMS_KeywordInfo_t), 
-				      DRMS_MAXNAMELEN,
+				      DRMS_MAXKEYNAMELEN,
 				      NULL,
 				      NULL,
 				      (void **)valArr,
@@ -560,8 +560,8 @@ int drms_keyword_keysmatch(DRMS_Keyword_t *k1, DRMS_Keyword_t *k2)
    DRMS_KeywordInfo_t *key1 = k1->info;
    DRMS_KeywordInfo_t *key2 = k2->info;
 
-   char exp1[DRMS_MAXNAMELEN];
-   char exp2[DRMS_MAXNAMELEN];
+   char exp1[DRMS_MAXKEYNAMELEN];
+   char exp2[DRMS_MAXKEYNAMELEN];
    int exp1Valid = drms_keyword_getextname(k1, exp1, sizeof(exp1));
    int exp2Valid = drms_keyword_getextname(k2, exp2, sizeof(exp2));
 
@@ -1041,7 +1041,7 @@ int drms_keyword_getintname_ext(const char *keyname,
    if (!success)
    {
       /* Now try the map- and class-independent schemes. */
-      char buf[DRMS_MAXNAMELEN];
+      char buf[DRMS_MAXKEYNAMELEN];
       success = drms_keyword_getintname(keyname, buf, sizeof(buf));
       if (success)
       {
@@ -1160,7 +1160,7 @@ int drms_keyword_getextname_ext(DRMS_Keyword_t *key,
    if (!success)
    {
       /* Now try the map- and class-independent schemes. */
-      char buf[DRMS_MAXNAMELEN];
+      char buf[DRMS_MAXKEYNAMELEN];
       success = drms_keyword_getextname(key, buf, sizeof(buf));
       if (success)
       {
@@ -1706,7 +1706,7 @@ double drms_keyword_getstep(DRMS_Keyword_t *key,
 static DRMS_Keyword_t *GetAncillaryKey(DRMS_Keyword_t *slot, const char *suffix)
 {
    DRMS_Keyword_t *ret = NULL;
-   char buf[DRMS_MAXNAMELEN];
+   char buf[DRMS_MAXKEYNAMELEN];
 
    if (drms_keyword_isslotted(slot))
    {
@@ -1941,6 +1941,10 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 	      }
 	      else
 	      {
+		 /* NOT SURE HOW THIS IS GOING TO WORK!  Most likely 
+		  * valin will be a TIME, base will be a TIME.  So
+		  * need to convert step/unitVal (degrees) to TIME, 
+		  * or convert valind and base to degrees. */
 		 slotnum = (valind - base) / (step / unitVal);
 		 valout->value.int_val = (int)slotnum;
 	      }

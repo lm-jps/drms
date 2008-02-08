@@ -1270,7 +1270,7 @@ int drms_create_series_fromprototype(DRMS_Record_t **prototype,
 {
    int status = DRMS_SUCCESS;
    
-   if (prototype && *prototype && strlen(outSeriesName) < DRMS_MAXNAMELEN)
+   if (prototype && *prototype && strlen(outSeriesName) < DRMS_MAXSERIESNAMELEN)
    {
       char *user = getenv("USER");
       DRMS_Record_t *proto = *prototype;
@@ -1288,7 +1288,7 @@ int drms_create_series_fromprototype(DRMS_Record_t **prototype,
 	    strcpy(proto->seriesinfo->author, "unknown");
 	 }
 
-	 if (strlen(user) < DRMS_MAXNAMELEN)
+	 if (strlen(user) < DRMS_MAXOWNERLEN)
 	 {
 	    strcpy(proto->seriesinfo->owner, user);
 	 }

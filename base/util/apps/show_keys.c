@@ -226,7 +226,6 @@ int DoIt(void)
       fprintf(stderr,"### show_keys: series %s not found.\n",seriesname);
       return(1);
       }
-    free (seriesname);
 
     /* show the prime index keywords */
     nprime = rec->seriesinfo->pidx_num;
@@ -239,7 +238,7 @@ int DoIt(void)
       }
 
     /* show all keywords */
-    printf("All Keywords for series %s:\n",rec->seriesinfo->seriesname);
+    printf("All Keywords for series %s:\n",seriesname);
     hiter_new (&hit, &rec->keywords);
     while ((key = (DRMS_Keyword_t *)hiter_getnext (&hit)))
       printf ("\t%-10s\t%s (%s)\n", key->info->name, key->info->description,
@@ -248,11 +247,17 @@ int DoIt(void)
     /* show the segments */
     if (rec->segments.num_total)
       {
-      printf("Segments for series %s:\n",rec->seriesinfo->seriesname);
+      printf("Segments for series %s:\n",seriesname);
       hiter_new (&hit, &rec->segments);
       while ((seg = (DRMS_Segment_t *)hiter_getnext (&hit)))
           printf ("\t%-10s\t%s\n", seg->info->name, seg->info->description);
       }
+
+    if (seriesname)
+    {
+       free (seriesname);
+    }
+
     return (0);
     }
 

@@ -329,7 +329,7 @@ static int drms_link_resolve(DRMS_Link_t *link)
 /* Resolve a link to all matching records. A static link only has one match. */
 static int drms_link_resolveall(DRMS_Link_t *link, int *n, long long **recnums)
 {
-  char query[DRMS_MAXQUERYLEN+DRMS_MAXPRIMIDX*DRMS_MAXNAMELEN], *p;
+  char query[DRMS_MAXQUERYLEN+DRMS_MAXPRIMIDX*DRMS_MAXKEYNAMELEN], *p;
   DB_Binary_Result_t  *qres;
   DRMS_Env_t *env;
   int i;
@@ -451,7 +451,7 @@ int  drms_template_links(DRMS_Record_t *template)
 {
   int i,j, status = DRMS_NO_ERROR;
   DRMS_Env_t *env;
-  char buf[DRMS_MAXNAMELEN], query[DRMS_MAXQUERYLEN];
+  char buf[DRMS_MAXLINKNAMELEN], query[DRMS_MAXQUERYLEN];
   DRMS_Link_t *link;
   DB_Binary_Result_t *qres;
 
@@ -484,7 +484,7 @@ int  drms_template_links(DRMS_Record_t *template)
   for (i = 0; i<(int)qres->num_rows; i++)
   {
     /* Allocate space for new structure in hashed container. */
-    db_binary_field_getstr(qres, i, 0, DRMS_MAXNAMELEN, buf);
+    db_binary_field_getstr(qres, i, 0, sizeof(buf), buf);
     link = hcon_allocslot_lower(&template->links, buf);
     memset(link,0,sizeof(DRMS_Link_t));
     XASSERT(link->info = malloc(sizeof(DRMS_LinkInfo_t)));
@@ -492,8 +492,8 @@ int  drms_template_links(DRMS_Record_t *template)
     /* Copy field values from query result. */
     link->record = template;
     strcpy(link->info->name, buf);
-    db_binary_field_getstr(qres, i, 1, DRMS_MAXNAMELEN, link->info->target_series);
-    db_binary_field_getstr(qres, i, 2, DRMS_MAXNAMELEN, buf);
+    db_binary_field_getstr(qres, i, 1, sizeof(link->info->target_series), link->info->target_series);
+    db_binary_field_getstr(qres, i, 2, sizeof(buf), buf);
     if (!strcmp(buf,"static"))
       link->info->type = STATIC_LINK;
     else if (!strcmp(buf,"dynamic"))

@@ -148,8 +148,8 @@ DRMS_KeyMap_t *drms_keymap_create()
    DRMS_KeyMap_t *km = (DRMS_KeyMap_t *)malloc(sizeof(DRMS_KeyMap_t));
    if (km)
    {
-      hcon_init(&(km->int2ext), MAXMAPPINGKEY, DRMS_MAXNAMELEN, NULL, NULL);
-      hcon_init(&(km->ext2int), DRMS_MAXNAMELEN, MAXMAPPINGKEY, NULL, NULL);
+      hcon_init(&(km->int2ext), MAXMAPPINGKEY, DRMS_MAXKEYNAMELEN, NULL, NULL);
+      hcon_init(&(km->ext2int), DRMS_MAXKEYNAMELEN, MAXMAPPINGKEY, NULL, NULL);
       ret = km;
    }
 
@@ -184,7 +184,7 @@ int drms_keymap_parsetable(DRMS_KeyMap_t *keymap, const char *text)
    if (keymap)
    {
       /* Read in keyword mappings from keyword map file. */
-      char token[MAX(MAXMAPPINGKEY, DRMS_MAXNAMELEN)];
+      char token[MAX(MAXMAPPINGKEY, DRMS_MAXKEYNAMELEN)];
       char *pCh = NULL;
       char *fits = NULL;
       char *drms = NULL;
@@ -230,7 +230,7 @@ int drms_keymap_parsetable(DRMS_KeyMap_t *keymap, const char *text)
 
 	 if (fits && drms)
 	 {
-	    char drmsKeyName[DRMS_MAXNAMELEN];
+	    char drmsKeyName[DRMS_MAXKEYNAMELEN];
 	    snprintf(drmsKeyName, sizeof(drmsKeyName), "%s", drms);
 	    hcon_insert(&(keymap->ext2int), fits, drmsKeyName);
 	    hcon_insert(&(keymap->int2ext), drmsKeyName, fits);

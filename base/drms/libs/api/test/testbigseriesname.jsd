@@ -1,6 +1,6 @@
 # *********************** Global information ************************
-Seriesname:	"su_arta.TestSlotkeys9"
-Description:	"One correct way to make a slotted key"
+Seriesname:	"su_arta.TestReallyBigBigBigBigBigBigBigBigBigSeriesname"
+Description:	"Testing out a large series name (> 32 bytes)"
 Author:		"Art Amezcua"
 Owner:		"arta"
 Unitsize:	10000

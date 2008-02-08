@@ -847,7 +847,7 @@ static void MakeDRMSSeriesName(void *hSOI,
 {
    kDSDS_Stat_t status = kDSDS_Stat_Success;
 
-   char drmsLev[DRMS_MAXNAMELEN];
+   char drmsLev[DRMS_MAXSERIESNAMELEN];
    char key[kDSDS_MaxKeyName];
 
    pSOIFn_getkey_str_t pFn_getkey_str = 
@@ -1002,7 +1002,7 @@ static int LoopAttrs(void *hSOI,
 		 (DRMS_KeywordInfo_t *)malloc(sizeof(DRMS_KeywordInfo_t));
 	       memset(drmskey->info, 0, sizeof(DRMS_KeywordInfo_t));
 
-	       snprintf(drmskey->info->name, DRMS_MAXNAMELEN, "%s", attrName);
+	       snprintf(drmskey->info->name, DRMS_MAXKEYNAMELEN, "%s", attrName);
 	       drmskey->info->type = SOITypeToDRMSType(attrType);
 	       if (GetKWFormat(drmskey->info->format, 
 			       DRMS_MAXFORMATLEN, 
@@ -1107,7 +1107,7 @@ static void FillDRMSSeg(void *hSOI,
 	 if (segout->info)
 	 {
 	    memset(segout->info, 0, sizeof(DRMS_SegmentInfo_t));
-	    snprintf(segout->info->name, DRMS_MAXNAMELEN, "%s", segname);
+	    snprintf(segout->info->name, DRMS_MAXSEGNAMELEN, "%s", segname);
 	    segout->info->segnum = 0; /* only one segment */
 	    segout->info->type = SOITypeToDRMSType((*pFn_sds_datatype)(sds));
 
@@ -1281,7 +1281,7 @@ long long DSDS_open_records(const char *dsspec,
    kDSDS_Stat_t status = kDSDS_Stat_Success;
    void *hSOI = GetSOI(&status);
    long long nRecs = 0;
-   char drmsSeriesName[DRMS_MAXNAMELEN];
+   char drmsSeriesName[DRMS_MAXSERIESNAMELEN];
    KEY *params = NULL;
 
    *drmsSeries = NULL;
@@ -1436,7 +1436,7 @@ long long DSDS_open_records(const char *dsspec,
 		     drmskey->info = (DRMS_KeywordInfo_t *)malloc(sizeof(DRMS_KeywordInfo_t));
 		     memset(drmskey->info, 0, sizeof(DRMS_KeywordInfo_t));
 
-		     snprintf(drmskey->info->name, DRMS_MAXNAMELEN, "%s", kDSDS_SERIES_NUM);
+		     snprintf(drmskey->info->name, DRMS_MAXKEYNAMELEN, "%s", kDSDS_SERIES_NUM);
 		     drmskey->info->type = DRMS_TYPE_INT;
 		     GetKWFormat(drmskey->info->format, DRMS_MAXFORMATLEN, drmskey->info->type);
 
@@ -1459,7 +1459,7 @@ long long DSDS_open_records(const char *dsspec,
 		     drmskey->info = (DRMS_KeywordInfo_t *)malloc(sizeof(DRMS_KeywordInfo_t));
 		     memset(drmskey->info, 0, sizeof(DRMS_KeywordInfo_t));
 
-		     snprintf(drmskey->info->name, DRMS_MAXNAMELEN, "%s", kDSDS_RN);
+		     snprintf(drmskey->info->name, DRMS_MAXKEYNAMELEN, "%s", kDSDS_RN);
 		     drmskey->info->type = DRMS_TYPE_INT;
 		     GetKWFormat(drmskey->info->format, DRMS_MAXFORMATLEN, drmskey->info->type);
 
@@ -1482,7 +1482,7 @@ long long DSDS_open_records(const char *dsspec,
 		     drmskey->info = (DRMS_KeywordInfo_t *)malloc(sizeof(DRMS_KeywordInfo_t));
 		     memset(drmskey->info, 0, sizeof(DRMS_KeywordInfo_t));
 
-		     snprintf(drmskey->info->name, DRMS_MAXNAMELEN, "%s", kDSDS_DS);
+		     snprintf(drmskey->info->name, DRMS_MAXKEYNAMELEN, "%s", kDSDS_DS);
 		     drmskey->info->type = DRMS_TYPE_INT;
 		     GetKWFormat(drmskey->info->format, DRMS_MAXFORMATLEN, drmskey->info->type);
 
@@ -1520,7 +1520,7 @@ long long DSDS_open_records(const char *dsspec,
 			     (DRMS_KeywordInfo_t *)malloc(sizeof(DRMS_KeywordInfo_t));
 			   memset(drmskey->info, 0, sizeof(DRMS_KeywordInfo_t));
 
-			   snprintf(drmskey->info->name, DRMS_MAXNAMELEN, "%s", attrName);
+			   snprintf(drmskey->info->name, DRMS_MAXKEYNAMELEN, "%s", attrName);
 			   drmskey->info->type = SOITypeToDRMSType(attrType);
 			   GetKWFormat(drmskey->info->format, 
 				       DRMS_MAXFORMATLEN, 
@@ -1567,7 +1567,7 @@ long long DSDS_open_records(const char *dsspec,
 			if (drmsseg->info)
 			{
 			   memset(drmsseg->info, 0, sizeof(DRMS_SegmentInfo_t));
-			   snprintf(drmsseg->info->name, DRMS_MAXNAMELEN, "%s", kDSDS_Segment);
+			   snprintf(drmsseg->info->name, DRMS_MAXSEGNAMELEN, "%s", kDSDS_Segment);
 			   drmsseg->info->segnum = 0; /* only one segment */
 			   drmsseg->info->type = SOITypeToDRMSType((*pFn_sds_datatype)(sds));
 
@@ -1616,7 +1616,7 @@ long long DSDS_open_records(const char *dsspec,
 
    if (status == kDSDS_Stat_Success)
    {
-      snprintf(drmsSeries, DRMS_MAXNAMELEN, "%s", drmsSeriesName);
+      snprintf(drmsSeries, DRMS_MAXSERIESNAMELEN, "%s", drmsSeriesName);
       GenerateHandle("DSDS_KEY", params, hparams);
    }
    else

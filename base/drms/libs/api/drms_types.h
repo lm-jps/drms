@@ -20,9 +20,15 @@
     Maximum string length of series names, record name, keyword name, link name, etc.
     !! Series name needs a new define that is larger than 32 chars. !!
 */
-#define DRMS_MAXNAMELEN        (32)
+#define DRMS_MAXNAMELEN        (32waka)
+#define DRMS_MAXNAMELEN2       (32)
+#define DRMS_MAXSERIESNAMELEN  (64)
+#define DRMS_MAXOWNERLEN       DRMS_MAXNAMELEN2
+#define DRMS_MAXKEYNAMELEN     DRMS_MAXNAMELEN2
+#define DRMS_MAXLINKNAMELEN    DRMS_MAXNAMELEN2
+#define DRMS_MAXSEGNAMELEN     DRMS_MAXNAMELEN2
 /** \brief Maximum DRMS hash byte length */
-#define DRMS_MAXHASHKEYLEN     (DRMS_MAXNAMELEN+22)
+#define DRMS_MAXHASHKEYLEN     (DRMS_MAXSERIESNAMELEN+22)
 /** \brief Maximum byte length of unit string */
 #define DRMS_MAXUNITLEN        (32)
 #define DRMS_MAXQUERYLEN       (8192)
@@ -390,10 +396,10 @@ typedef struct DRMS_RecordSet_struct DRMS_RecordSet_t;
 /* Series-wide attributes. */
 typedef struct DRMS_SeriesInfo_struct
 {
-  char seriesname[DRMS_MAXNAMELEN];      
+  char seriesname[DRMS_MAXSERIESNAMELEN];      
   char description[DRMS_MAXCOMMENTLEN];
   char author[DRMS_MAXCOMMENTLEN];
-  char owner[DRMS_MAXNAMELEN]; /* Who is allowed to modify the series 
+  char owner[DRMS_MAXOWNERLEN];  /* Who is allowed to modify the series 
 				  definition. FIXME: WE PROBABLY NEED 
 				  PERMISSIONS TO INSERT NEW RECORDS. WE DON;T
 				  WANT CASUAL USERS ACCIDENTALLY INSERTING 
@@ -539,15 +545,15 @@ typedef enum DRMS_PrimeKeyType_enum DRMS_PrimeKeyType_t;
 
 typedef struct  DRMS_KeywordInfo_struct
 {
-  char name[DRMS_MAXNAMELEN];         /* Keyword name. */
+  char name[DRMS_MAXKEYNAMELEN];         /* Keyword name. */
 
   /************ Link keywords ***********/
   /* If this is an inherited keyword, islink is non-zero,
      and linkname holds the name of the link which points
      to the record holding the actual keyword value. */
   int  islink;
-  char linkname[DRMS_MAXNAMELEN];   /* Link to inherit from. */
-  char target_key[DRMS_MAXNAMELEN]; /* Keyword to inherit.  */
+  char linkname[DRMS_MAXLINKNAMELEN];   /* Link to inherit from. */
+  char target_key[DRMS_MAXKEYNAMELEN]; /* Keyword to inherit.  */
 
   /************ Regular keywords ********/
   DRMS_Type_t type;               /* Keyword type. */
@@ -602,8 +608,8 @@ typedef enum { STATIC_LINK, DYNAMIC_LINK } DRMS_Link_Type_t;
 /* Series-wide Link info that does not vary from record to record. */
 typedef struct DRMS_LinkInfo_struct
 {
-  char name[DRMS_MAXNAMELEN];          /* Link name. */
-  char target_series[DRMS_MAXNAMELEN]; /* Series pointed to. */  
+  char name[DRMS_MAXLINKNAMELEN];          /* Link name. */
+  char target_series[DRMS_MAXSERIESNAMELEN]; /* Series pointed to. */  
   char description[DRMS_MAXCOMMENTLEN]; 
   DRMS_Link_Type_t type;               /* Static or dynamic. */
 
@@ -817,7 +823,7 @@ typedef struct DRMS_SegmentDimInfo_struct DRMS_SegmentDimInfo_t;
 struct DRMS_SegmentInfo_struct {
 						   /*  Context information:  */
   /** \brief Segment name */
-  char name[DRMS_MAXNAMELEN];
+  char name[DRMS_MAXSEGNAMELEN];
   /** \brief Segment number in record */
   int segnum;
   /** \brief  Description string */
@@ -829,9 +835,9 @@ struct DRMS_SegmentInfo_struct {
   /** \brief Non-0 if segment inherited */
   int  islink;
   /** \brief Link to inherit from */
-  char linkname[DRMS_MAXNAMELEN];
+  char linkname[DRMS_MAXLINKNAMELEN];
   /** \brief Segment to inherit */
-  char target_seg[DRMS_MAXNAMELEN];
+  char target_seg[DRMS_MAXSEGNAMELEN];
   /** \brief Datatype of data elements */
   DRMS_Type_t type;
   /** \brief Number of dimensions (rank) */

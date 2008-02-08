@@ -116,7 +116,7 @@ int main(int argc, char **argv) {
   /* Create master tables. */
   p = stmt;
   p += sprintf(p,"create table %s (\n",DRMS_MASTER_SERIES_TABLE);
-  p += sprintf(p,"seriesname %s not null,\n",db_stringtype_maxlen(DRMS_MAXNAMELEN));
+  p += sprintf(p,"seriesname %s not null,\n",db_stringtype_maxlen(DRMS_MAXSERIESNAMELEN));
   p += sprintf(p,"author %s not null,\n",db_stringtype_maxlen(255));
   p += sprintf(p,"owner %s not null,\n",db_stringtype_maxlen(255));
   p += sprintf(p,"unitsize %s not null,\n",db_type_string(drms2dbtype(DRMS_TYPE_INT)));
@@ -139,10 +139,10 @@ int main(int argc, char **argv) {
   /* Create master keyword table. */
   p = stmt;
   p += sprintf(p,"create table " DRMS_MASTER_KEYWORD_TABLE  " (\n");
-  p += sprintf(p,"seriesname %s not null,\n",db_stringtype_maxlen(DRMS_MAXNAMELEN));
-  p += sprintf(p,"keywordname %s not null,\n",db_stringtype_maxlen(DRMS_MAXNAMELEN));
-  p += sprintf(p,"linkname %s ,\n",db_stringtype_maxlen(DRMS_MAXNAMELEN));
-  p += sprintf(p,"targetkeyw %s ,\n",db_stringtype_maxlen(DRMS_MAXNAMELEN));
+  p += sprintf(p,"seriesname %s not null,\n",db_stringtype_maxlen(DRMS_MAXSERIESNAMELEN));
+  p += sprintf(p,"keywordname %s not null,\n",db_stringtype_maxlen(DRMS_MAXKEYNAMELEN));
+  p += sprintf(p,"linkname %s ,\n",db_stringtype_maxlen(DRMS_MAXLINKNAMELEN));
+  p += sprintf(p,"targetkeyw %s ,\n",db_stringtype_maxlen(DRMS_MAXLINKNAMELEN));
   p += sprintf(p,"type %s,\n",db_stringtype_maxlen(20));
   p += sprintf(p,"defaultval %s ,\n",db_stringtype_maxlen(4000));
   p += sprintf(p,"format %s ,\n",db_stringtype_maxlen(20));
@@ -164,9 +164,9 @@ int main(int argc, char **argv) {
   /* Create master link table. */
   p = stmt;
   p += sprintf(p,"create table "DRMS_MASTER_LINK_TABLE" (\n");
-  p += sprintf(p,"seriesname %s not null,\n",db_stringtype_maxlen(DRMS_MAXNAMELEN));
-  p += sprintf(p,"linkname %s not null,\n",db_stringtype_maxlen(DRMS_MAXNAMELEN));
-  p += sprintf(p,"target_seriesname %s not null,\n",db_stringtype_maxlen(DRMS_MAXNAMELEN));
+  p += sprintf(p,"seriesname %s not null,\n",db_stringtype_maxlen(DRMS_MAXSERIESNAMELEN));
+  p += sprintf(p,"linkname %s not null,\n",db_stringtype_maxlen(DRMS_MAXLINKNAMELEN));
+  p += sprintf(p,"target_seriesname %s not null,\n",db_stringtype_maxlen(DRMS_MAXSERIESNAMELEN));
   p += sprintf(p,"type %s ,\n",db_stringtype_maxlen(20));
   p += sprintf(p,"description %s ,\n",db_stringtype_maxlen(4000));
   p += sprintf(p,"primary key (seriesname, linkname));\n");
@@ -183,8 +183,8 @@ int main(int argc, char **argv) {
   /* Create master segment table. */
   p = stmt;
   p += sprintf(p,"create table "DRMS_MASTER_SEGMENT_TABLE" (\n");
-  p += sprintf(p,"seriesname %s not null,\n",db_stringtype_maxlen(DRMS_MAXNAMELEN));
-  p += sprintf(p,"segmentname %s not null,\n",db_stringtype_maxlen(DRMS_MAXNAMELEN));
+  p += sprintf(p,"seriesname %s not null,\n",db_stringtype_maxlen(DRMS_MAXSERIESNAMELEN));
+  p += sprintf(p,"segmentname %s not null,\n",db_stringtype_maxlen(DRMS_MAXSERIESNAMELEN));
   p += sprintf(p,"segnum %s ,\n",db_type_string(drms2dbtype(DRMS_TYPE_INT)));
   p += sprintf(p,"scope %s ,\n",db_stringtype_maxlen(10));
   p += sprintf(p,"type %s,\n",db_stringtype_maxlen(20));
@@ -194,8 +194,8 @@ int main(int argc, char **argv) {
   p += sprintf(p,"protocol %s ,\n",db_stringtype_maxlen(64));
   p += sprintf(p,"description %s ,\n",db_stringtype_maxlen(4000));
   p += sprintf(p,"islink %s default 0 ,\n",db_type_string(drms2dbtype(DRMS_TYPE_INT)));
-  p += sprintf(p,"linkname %s ,\n",db_stringtype_maxlen(DRMS_MAXNAMELEN));
-  p += sprintf(p,"targetseg %s, \n",db_stringtype_maxlen(DRMS_MAXNAMELEN));
+  p += sprintf(p,"linkname %s ,\n",db_stringtype_maxlen(DRMS_MAXLINKNAMELEN));
+  p += sprintf(p,"targetseg %s, \n",db_stringtype_maxlen(DRMS_MAXSEGNAMELEN));
   p += sprintf(p,"cseg_recnum bigint default 0 ,\n");
   p += sprintf(p,"primary key (seriesname, segmentname));\n");
   p += sprintf(p,"grant select on %s to public", DRMS_MASTER_SEGMENT_TABLE);

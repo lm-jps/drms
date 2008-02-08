@@ -13,7 +13,7 @@
 #endif
 
 #define kMAXRSETS 128
-#define kMAXRSETSPEC (DRMS_MAXNAMELEN + DRMS_MAXQUERYLEN + 128)
+#define kMAXRSETSPEC (DRMS_MAXSERIESNAMELEN + DRMS_MAXQUERYLEN + 128)
 
 static void *ghDSDS = NULL;
 static int gAttemptedDSDS = 0;
@@ -316,7 +316,7 @@ static int IsValidPlainFileSpec(const char *recSetSpecIn,
 static void AddLocalPrimekey(DRMS_Record_t *template, int *status)
 {
    int stat = DRMS_SUCCESS;
-   char drmsKeyName[DRMS_MAXNAMELEN];
+   char drmsKeyName[DRMS_MAXKEYNAMELEN];
    DRMS_Keyword_t *tKey = NULL;
 
    snprintf(drmsKeyName, sizeof(drmsKeyName), kLocalPrimekey);
@@ -337,7 +337,7 @@ static void AddLocalPrimekey(DRMS_Record_t *template, int *status)
 	      
       //memcpy(tKey->info, sKey->info, sizeof(DRMS_KeywordInfo_t));
       snprintf(tKey->info->name, 
-	       DRMS_MAXNAMELEN,
+	       DRMS_MAXKEYNAMELEN,
 	       "%s",
 	       drmsKeyName);
 
@@ -383,7 +383,7 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
 
    if (template && template->seriesinfo)
    {
-      char drmsKeyName[DRMS_MAXNAMELEN];
+      char drmsKeyName[DRMS_MAXKEYNAMELEN];
       DRMS_Keyword_t *sKey = NULL;
       DRMS_Keyword_t *tKey = NULL;
 
@@ -449,7 +449,7 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
 		     /* keyword info */
 		     memcpy(tKey->info, sKey->info, sizeof(DRMS_KeywordInfo_t));
 		     snprintf(tKey->info->name, 
-			      DRMS_MAXNAMELEN,
+			      DRMS_MAXKEYNAMELEN,
 			      "%s",
 			      drmsKeyName);
 
@@ -541,7 +541,7 @@ static void AdjustRecordProtoSeriesInfo(DRMS_Env_t *env,
    /* series info */
    char *user = getenv("USER");
    snprintf(proto->seriesinfo->seriesname,
-	    DRMS_MAXNAMELEN,
+	    DRMS_MAXSERIESNAMELEN,
 	    "%s",
 	    seriesName);
 
@@ -555,7 +555,7 @@ static void AdjustRecordProtoSeriesInfo(DRMS_Env_t *env,
 	 strcpy(proto->seriesinfo->author, user);
       }
 		    
-      if (strlen(user) < DRMS_MAXNAMELEN)
+      if (strlen(user) < DRMS_MAXOWNERLEN)
       {
 	 strcpy(proto->seriesinfo->owner, user);
       }
@@ -712,7 +712,7 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
 	 /* populate the new records with information from keylistarr and segarr */
 
 	 DRMS_Keyword_t *sKey = NULL;
-	 char drmsKeyName[DRMS_MAXNAMELEN];
+	 char drmsKeyName[DRMS_MAXKEYNAMELEN];
 
 	 while (stat == DRMS_SUCCESS && kl && ((sKey = kl->elem) != NULL))
 	 {
@@ -800,7 +800,7 @@ static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env,
 
       if (pFn_DSDS_free_keylistarr)
       {
-	 char seriesName[DRMS_MAXNAMELEN];
+	 char seriesName[DRMS_MAXSERIESNAMELEN];
 	 int nPkeys = 0;
 	
 	 /* make record prototype from this morass of information */
@@ -810,7 +810,7 @@ static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env,
 
 
 	 DRMS_KeyMapClass_t fitsclass = kKEYMAPCLASS_LOCAL;
-	 char drmsKeyName[DRMS_MAXNAMELEN];
+	 char drmsKeyName[DRMS_MAXKEYNAMELEN];
 	 char *pkeyarr[DRMS_MAXPRIMIDX] = {0};
 	 int setPrimeKey = 0;
 
@@ -1040,7 +1040,7 @@ DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, const char *dsRecSet, i
 
       if (pFn_DSDS_open_records && pFn_DSDS_free_keylistarr && pFn_DSDS_free_segarr)
       {
-	 char seriesName[DRMS_MAXNAMELEN];
+	 char seriesName[DRMS_MAXSERIESNAMELEN];
 	 DSDS_Handle_t hparams;
 	 DSDS_KeyList_t **keylistarr;
 	 DRMS_Segment_t *segarr;
@@ -2649,7 +2649,7 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
   int stat;
   DB_Binary_Result_t *qres;
   DRMS_Record_t *template;
-  char *p, *q, query[DRMS_MAXQUERYLEN], buf[DRMS_MAXPRIMIDX*DRMS_MAXNAMELEN];
+  char *p, *q, query[DRMS_MAXQUERYLEN], buf[DRMS_MAXPRIMIDX*DRMS_MAXKEYNAMELEN];
   DRMS_Keyword_t *kw;
   XASSERT(env);
   XASSERT(seriesname);
@@ -2709,13 +2709,13 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
       stat = DRMS_ERROR_BADQUERYRESULT;
       goto bailout;
     }
-    db_binary_field_getstr(qres, 0, 0, DRMS_MAXNAMELEN, 
+    db_binary_field_getstr(qres, 0, 0, DRMS_MAXSERIESNAMELEN, 
 			   template->seriesinfo->seriesname);
     db_binary_field_getstr(qres, 0, 1, DRMS_MAXCOMMENTLEN, 
 			   template->seriesinfo->description);
     db_binary_field_getstr(qres, 0, 2, DRMS_MAXCOMMENTLEN, 
 			   template->seriesinfo->author);
-    db_binary_field_getstr(qres, 0, 3, DRMS_MAXNAMELEN, 
+    db_binary_field_getstr(qres, 0, 3, DRMS_MAXOWNERLEN, 
 			   template->seriesinfo->owner);
     template->seriesinfo->unitsize = db_binary_field_getint(qres, 0, 4);
     template->seriesinfo->archive = db_binary_field_getint(qres, 0, 5);
@@ -2733,7 +2733,7 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
     /* Set up primary index list. */
     if ( !db_binary_field_is_null(qres, 0, 8) )
     {
-      db_binary_field_getstr(qres, 0, 8, DRMS_MAXPRIMIDX*DRMS_MAXNAMELEN, buf);
+      db_binary_field_getstr(qres, 0, 8, DRMS_MAXPRIMIDX*DRMS_MAXKEYNAMELEN, buf);
       p = buf;
 #ifdef DEBUG
       printf("Primary index string = '%s'\n",p);
@@ -2880,7 +2880,7 @@ int drms_populate_record(DRMS_Record_t *rec, long long recnum)
   strtolower(series_lower);
 
   /* Do query. */
-  XASSERT( (query = malloc(strlen(field_list)+10*DRMS_MAXNAMELEN)) );
+  XASSERT( (query = malloc(strlen(field_list)+10*DRMS_MAXSERIESNAMELEN)) );
   sprintf(query, "select %s from %s where recnum=%lld", 
 	  field_list, series_lower, recnum);
 
@@ -3199,7 +3199,7 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
 
 
   /* Construct SQL string. */
-  XASSERT( (query = malloc(strlen(field_list)+10*DRMS_MAXNAMELEN)) );
+  XASSERT( (query = malloc(strlen(field_list)+10*DRMS_MAXSERIESNAMELEN)) );
   p = query;
   p += sprintf(p, "%s (%s)",  series_lower, field_list);
 #ifdef DEBUG
@@ -3684,7 +3684,7 @@ long long drms_record_memsize( DRMS_Record_t *rec)
   hiter_new(&hit, &rec->links);/* Iterator for link container. */
   while( (link = (DRMS_Link_t *)hiter_getnext(&hit)) )
   {
-    size += sizeof(DRMS_Link_t) +  DRMS_MAXNAMELEN;
+    size += sizeof(DRMS_Link_t) +  DRMS_MAXLINKNAMELEN;
     if (link->info->type != STATIC_LINK)
       size += link->info->pidx_num*10;/* NOTE: Just a wild guess. */
   }
@@ -3694,7 +3694,7 @@ long long drms_record_memsize( DRMS_Record_t *rec)
   hiter_new(&hit, &rec->keywords); /* Iterator for keyword container. */
   while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )
   {
-    size += sizeof(DRMS_Keyword_t) +  DRMS_MAXNAMELEN + 1;
+    size += sizeof(DRMS_Keyword_t) +  DRMS_MAXKEYNAMELEN + 1;
     if (!key->info->islink && !drms_keyword_isconstant(key))
     {
       if ( key->info->type == DRMS_TYPE_STRING )
@@ -3709,7 +3709,7 @@ long long drms_record_memsize( DRMS_Record_t *rec)
   //printf("keyword size = %lld\n",size);
 
   /* Loop through Segment fields. */
-  size += hcon_size(&rec->segments) * (sizeof(DRMS_Segment_t) + DRMS_MAXNAMELEN);
+  size += hcon_size(&rec->segments) * (sizeof(DRMS_Segment_t) + DRMS_MAXSEGNAMELEN);
   //printf("segment size = %lld\n",size);
 
   return size;

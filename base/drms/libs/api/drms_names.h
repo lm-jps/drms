@@ -30,7 +30,7 @@
 typedef struct RecordSet_struct
 {
   /* Grammar components */
-  char seriesname[DRMS_MAXNAMELEN];  
+  char seriesname[DRMS_MAXSERIESNAMELEN];  
   struct RecordSet_Filter_struct *recordset_spec;
 
   /* Semantic information. */

@@ -708,8 +708,8 @@ static int drms_series_intcreatematchsegs(DRMS_Env_t *drmsEnv,
 		     if (nMatch == 1)
 		     {
 			hcon_init(matchSegs, 
-				  DRMS_MAXNAMELEN, 
-				  DRMS_MAXNAMELEN, 
+				  DRMS_MAXSEGNAMELEN, 
+				  DRMS_MAXSEGNAMELEN, 
 				  NULL, 
 				  NULL);
 		     }
@@ -717,8 +717,8 @@ static int drms_series_intcreatematchsegs(DRMS_Env_t *drmsEnv,
 		     char *newSeg = (char *)hcon_allocslot(matchSegs, s1Seg->info->name);
 		     if (newSeg != NULL)
 		     {
-			strncpy(newSeg, s1Seg->info->name, DRMS_MAXNAMELEN);
-			newSeg[DRMS_MAXNAMELEN - 1] = '\0';
+			strncpy(newSeg, s1Seg->info->name, DRMS_MAXSEGNAMELEN);
+			newSeg[DRMS_MAXSEGNAMELEN - 1] = '\0';
 		     }
 		     else
 		     {

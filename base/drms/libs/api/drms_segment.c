@@ -231,7 +231,7 @@ int drms_template_segments(DRMS_Record_t *template)
   env = template->env;
 
   /* Initialize container structure. */
-  hcon_init(&template->segments, sizeof(DRMS_Segment_t), DRMS_MAXNAMELEN, 
+  hcon_init(&template->segments, sizeof(DRMS_Segment_t), DRMS_MAXSEGNAMELEN, 
 	    (void (*)(const void *)) drms_free_segment_struct, 
 	    (void (*)(const void *, const void *)) drms_copy_segment_struct);
 
@@ -536,7 +536,7 @@ HContainer_t *drms_segment_createinfocon(DRMS_Env_t *drmsEnv,
 		    }
 
 		    ret = hcon_create(sizeof(DRMS_SegmentInfo_t), 
-				      DRMS_MAXNAMELEN,
+				      DRMS_MAXSEGNAMELEN,
 				      NULL,
 				      NULL,
 				      (void **)valArr,

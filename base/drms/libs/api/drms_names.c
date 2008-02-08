@@ -45,7 +45,7 @@ RecordSet_t *parse_record_set(DRMS_Env_t *env, char **in)
   memset(rs,0,sizeof(RecordSet_t));
   /* Remove leading whitespace. */
   SKIPWS(p);
-  if (!parse_name(&p, rs->seriesname, DRMS_MAXNAMELEN))
+  if (!parse_name(&p, rs->seriesname, DRMS_MAXSERIESNAMELEN))
   {
     /* Force series name to be all lower case. */
     //    strtolower(rs->seriesname);
@@ -273,7 +273,7 @@ static RecordList_t *parse_record_list(DRMS_Record_t *template, char **in) {
   int err,i,keynum;
   RecordList_t *rl;
   char *p = *in;
-  char pk[DRMS_MAXNAMELEN];
+  char pk[DRMS_MAXKEYNAMELEN];
   DRMS_SeriesInfo_t *si;
   DRMS_Keyword_t *nprimekey = NULL;
   int explKW = 0;
@@ -300,7 +300,7 @@ static RecordList_t *parse_record_list(DRMS_Record_t *template, char **in) {
     si = template->seriesinfo;
 
     /* Try to match an optional '<prime_key>=' string. */
-    err = parse_name (&p, pk, DRMS_MAXNAMELEN);
+    err = parse_name (&p, pk, sizeof(pk));
     
     if (*p == '=' && !err) {
 					/* A keyword was given explicitly. */
