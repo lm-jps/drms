@@ -159,8 +159,8 @@ if ($CHKLIBS == "no") then
 	cd lib_third_party
 
 	if (-e ../suflag.txt) then
-	    ln -sf /home/jsoc/include include
-	    ln -sf /home/jsoc/lib lib
+	    ln -sfv /home/jsoc/include include
+	    ln -sfv /home/jsoc/lib lib
 	else
 	    # Non-Stanford users.
 	endif
