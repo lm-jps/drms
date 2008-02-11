@@ -162,28 +162,35 @@ if ($CHKLIBS == "no") then
 	    ln -sf /home/jsoc/include include
 	    ln -sf /home/jsoc/lib lib
 	else
-	    # Non-stanford users.
+	    # Non-Stanford users.
 	endif
 
 	set TPWARN = 0
-	if (!(-e lib/linux_x86_64/libfftw3f.a)) then
-	    echo "D'OH! - Can't find required library: $JSOCROOT/lib/linux_x86_64/libfftw3f.a"
-	    set TPWARN = 1
-	endif
 
+	# Libraries required by all
 	if (!(-e lib/linux_x86_64/libcfitsio.a)) then
 	    echo "D'OH! - Can't find required library: lib/linux_x86_64/libcfitsio.a"
-	    set TPWARN = 1
-	endif
-
-	if (!(-e lib/linux_ia32/libfftw3f.a)) then
-	    echo "D'OH! - Can't find required library: $JSOCROOT/lib/linux_ia32/libfftw3f.a"
 	    set TPWARN = 1
 	endif
 
 	if (!(-e lib/linux_ia32/libcfitsio.a)) then
 	    echo "D'OH! - Can't find required library: lib/linux_ia32/libcfitsio.a"
 	    set TPWARN = 1
+	endif
+
+	if (-e ../suflag.txt) then
+	    # Stanford users' required libs.
+	    if (!(-e lib/linux_x86_64/libfftw3f.a)) then
+		echo "D'OH! - Can't find required library: $JSOCROOT/lib/linux_x86_64/libfftw3f.a"
+		set TPWARN = 1
+	    endif
+
+	    if (!(-e lib/linux_ia32/libfftw3f.a)) then
+		echo "D'OH! - Can't find required library: $JSOCROOT/lib/linux_ia32/libfftw3f.a"
+		set TPWARN = 1
+	    endif
+	else
+	    # Non-Stanford users' required libs.
 	endif
 
 	if ($TPWARN) then
