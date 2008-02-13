@@ -385,7 +385,7 @@ void drms_server_abort(DRMS_Env_t *env, int final)
   db_abort(env->session->db_handle);
 
   /* Wait for other threads to finish cleanly. */
-  //if (env->verbose) 
+  if (env->verbose) 
     fprintf(stderr, "WARNING: DRMS server aborting in %d seconds...\n", 
 	    DRMS_ABORT_SLEEP);
   sleep(DRMS_ABORT_SLEEP);
@@ -394,7 +394,7 @@ void drms_server_abort(DRMS_Env_t *env, int final)
   if (!final) {
     drms_free_env(env, 1);
   } else {
-    fprintf(stderr, "skip freeing drms_free_env()");
+    //    fprintf(stderr, "skip freeing drms_free_env()");
   }
 
   /* Good night and good luck! */
