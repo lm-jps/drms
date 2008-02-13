@@ -86,7 +86,8 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
 					int *status);
 static void AdjustRecordProtoSeriesInfo(DRMS_Env_t *env, 
 					DRMS_Record_t *proto, 
-					const char *seriesName);
+					const char *seriesName,
+					unsigned int unitsize);
 static void AllocRecordProtoSeg(DRMS_Record_t *template, DRMS_Segment_t *seg, int *status);
 static void SetRecordProtoPKeys(DRMS_Record_t *template, 
 				char **pkeyarr, 
@@ -536,7 +537,8 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
 
 static void AdjustRecordProtoSeriesInfo(DRMS_Env_t *env, 
 					DRMS_Record_t *proto, 
-					const char *seriesName) 
+					const char *seriesName,
+					unsigned int unitsize) 
 {
    /* series info */
    char *user = getenv("USER");
@@ -565,6 +567,17 @@ static void AdjustRecordProtoSeriesInfo(DRMS_Env_t *env,
    if (env->session->db_direct) 
    {
       strcpy(proto->seriesinfo->owner, env->session->db_handle->dbuser);
+   }
+
+   if (unitsize > 0)
+   {
+      proto->seriesinfo->unitsize = unitsize;
+   }
+   else
+   {
+      fprintf(stderr, 
+	      "The series unit size must be at least 1, but it is %ud.\n",
+	      unitsize);
    }
 }
 
@@ -885,7 +898,7 @@ static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env,
 	       snprintf(seriesName, sizeof(seriesName), "su_tmp.%lld", guid);
 
 	    /* Adjust seriesinfo */
-	    AdjustRecordProtoSeriesInfo(env, proto, seriesName);
+	    AdjustRecordProtoSeriesInfo(env, proto, seriesName, 32);
 	      
 	    /* alloc segments */
 	    AllocRecordProtoSeg(proto, seg, &stat);
@@ -1081,7 +1094,7 @@ DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, const char *dsRecSet, i
 	    if (stat == DRMS_SUCCESS)
 	    {
 	       /* Adjust seriesinfo */
-	       AdjustRecordProtoSeriesInfo(env, template, seriesName);
+	       AdjustRecordProtoSeriesInfo(env, template, seriesName, 32);
 	       DSDS_SetDSDSParams(ghDSDS, template->seriesinfo, hparams);
 	      
 	       /* alloc segments */

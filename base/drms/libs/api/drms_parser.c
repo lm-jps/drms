@@ -152,7 +152,16 @@ static int parse_seriesinfo (char *desc, DRMS_Record_t *template) {
     else if (prefixmatch (p, "Archive"))
       TRY(getint (&q, &(template->seriesinfo->archive)))
     else if (prefixmatch (p, "Unitsize"))
-      TRY(getint (&q, &(template->seriesinfo->unitsize)))
+    {
+       TRY(getint (&q, &(template->seriesinfo->unitsize)))
+	 if (template->seriesinfo->unitsize < 1)
+	 {
+	    fprintf(stderr, 
+		    "The series unit size must be at least 1, but it is %d.\n",
+		    template->seriesinfo->unitsize);
+	    return 1;
+	 }
+    }
     else if (prefixmatch (p, "Tapegroup"))
       TRY(getint (&q, &(template->seriesinfo->tapegroup)))
     else if (prefixmatch (p, "Retention"))
