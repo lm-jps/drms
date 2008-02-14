@@ -17,6 +17,7 @@ $CVSLOG = "cvsupdate.log";
 
 my($aidx) = 0;
 my($arg);
+my($pos);
 my($rev) = "";
 my($line);
 
@@ -26,9 +27,13 @@ my($su);
 
 while ($arg = shift(@ARGV))
 {
-    if ($arg eq "R")
+    if ($arg eq "-R")
     {
 	$rev = "-r $LATESTREL";
+    }
+    elsif (($pos = index($arg, "-l", 0)) == 0)
+    {
+	$CVSLOG = substr($arg, 2);
     }
 
     $aidx++;
@@ -97,9 +102,14 @@ if ($su)
 	    }
 	    else
 	    {
-
+		print STDERR "Syntax error '$line' in module specification file $MODSPEC\n";
 	    }
 	}
+    }
+    else
+    {
+	# Just do CVS JSOC module
+	CallCVS($rev, $JSOC);
     }
 }
 else
@@ -113,8 +123,6 @@ else
 
     CallCVS($rev, $DRMS);
 }
-
-close CVSLOG;
 
 print "JSOC synchronization finished.\n";
 
