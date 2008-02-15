@@ -72,7 +72,12 @@ if ($su)
 	open(SPECFILE, $MODSPEC);
 	while ($line = <SPECFILE>)
 	{
+	    chomp($line);
 	    if ($line =~ /^\#.*/)
+	    {
+		next;
+	    }
+	    elsif ($line !~ /\S+/)
 	    {
 		next;
 	    }
@@ -123,7 +128,12 @@ else
 	open(SPECFILE, $MODSPEC);
 	while ($line = <SPECFILE>)
 	{
+	    chomp($line);
 	    if ($line =~ /^\#.*/)
+	    {
+		next;
+	    }
+	    elsif ($line !~ /\S+/)
 	    {
 		next;
 	    }
