@@ -137,14 +137,7 @@ else
 		
 		if (defined($cvsmod = $mods{uc($1)}))
 		{
-		    if ($cvsmod ne $JSOC)
-		    {
-			CallCVS($rev, $cvsmod);
-		    }
-		    else
-		    {
-			print STDERR "Your working directory contains the base JSOC code. Can't specify the CVS module 'JSOC' - skipping.\n";
-		    }
+		    CallCVS($rev, $cvsmod);
 		}
 		else
 		{
