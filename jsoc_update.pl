@@ -41,30 +41,39 @@ while ($arg = shift(@ARGV))
     if (-d $arg)
     {
 	# Script will update working directory - ensure this is an absolute path.
-
-	my($lfspath) = GetFSPath("local", $arg);
+	# May be a relative path
+	my($lfspath);
 	my($rfspath);
 	my($rsp);
 	my($savedp);
+	my(@rsp);
 
-	foreach $mach (@machines)
-	{
-	    @rsp = GetFSPath($mach, $arg);
-	    $rfspath = shift(@rsp);
-
-	    if ($lfspath ne $rfspath)
-	    {
-		print STDERR "Path '$lfspath' is not mounted on '$mach'; bailng.\n";
-		exit(1);
-	    }
-	}
-
-	# May be a relative path
 	$savedp = `pwd`;
 	chdir($arg);
 	$lwd = `pwd`;
 	chdir($savedp);
 	chomp($lwd);
+
+	@rsp = GetFSPath("local", $lwd);
+	$lfspath = shift(@rsp);
+
+	if ($lfspath !~ /:\S+::/)
+	{
+	    print STDERR "Path '$lwd' is mounted locally only; bailing.\n";
+	    exit(1);
+	}
+
+	foreach $mach (@machines)
+	{
+	    # check for existence of mountpath on $mach that points to $lfspath
+	    $rwd = GetMountPath($mach, $lfspath);
+
+	    if ($rwd eq "")
+	    {
+		print STDERR "Path '$lwd' is not a network filesystem mounted on '$mach'; bailing.\n";
+		exit(1);
+	    }
+	}
 
 	$wdupdate = 1;
     }
@@ -134,7 +143,13 @@ if (-e $CVSSTATUS)
 	system("(cd $lwd ./configure)");
 
 	@rsp = GetFSPath("local", $lwd);
-	$lfspath = shift(@rsp);
+	$lfspath = shift(@rsp); # could be local only
+
+	if ($lfspath !~ /:\S+::/)
+	{
+	    print STDERR "Path '$lwd' is mounted locally only; bailing.\n";
+	    exit(1);
+	}
 
 	foreach $mach (@machines)
 	{
@@ -180,7 +195,7 @@ sub InitMaps
 	    next;
 	}
 	chomp($line);
-	if ($line =~ /^(\S+)\s+.+\s+(\S+)$/)
+	if ($line =~ /^(\S+:\S+)\s+.+\s+(\S+)$/)
 	{
 	    if (defined($1) && defined($2))
 	    {
@@ -189,9 +204,12 @@ sub InitMaps
 		$fs =~ s/g:/:/;
 		$fs2mount{"local"}->{$fs} = $mountpoint;
 		$mount2fs{"local"}->{$mountpoint} = $fs;
+
+		#print "$fs\t$mountpoint\n";
 	    }
 	}
     }
+
     close DFCMD;
 
     # remote machines
@@ -207,7 +225,7 @@ sub InitMaps
 		next;
 	    }
 	    chomp($line);
-	    if ($line =~ /^(\S+)\s+.+\s+(\S+)$/)
+	    if ($line =~ /^(\S+:\S+)\s+.+\s+(\S+)$/)
 	    {
 		if (defined($1) && defined($2))
 		{
@@ -216,6 +234,8 @@ sub InitMaps
 		    $fs =~ s/g:/:/;
 		    $fs2mount{$mach}->{$fs} = $mountpoint;
 		    $mount2fs{$mach}->{$mountpoint} = $fs;
+
+		    #print "$fs\t$mountpoint\n";
 		}
 	    }
 	}
@@ -224,24 +244,15 @@ sub InitMaps
     }
 }
 
-# input is a mount path (could be relative to working directory)
+# input is an absolute path on $mach
 sub GetFSPath
 {
-    my($mach, $path) = @_;
-    my($mountpath);
+    my($mach, $mountpath) = @_;
     my($fs);
     my($mountpoint);
     my(@fsinfo);
     my(@ret);
     my($fspath);
-    my($savedp);
-
-    # May be a relative path
-    $savedp = `pwd`;
-    chdir($path);
-    $mountpath = `pwd`;
-    chdir($savedp);
-    chomp($mountpath);
 
     @fsinfo = GetFS($mach, $mountpath);
     $fs = shift(@fsinfo);
@@ -253,7 +264,7 @@ sub GetFSPath
     return @ret;
 }
 
-# input is a FS path
+# input is an FS path and a machine on which the FS is mounted
 sub GetMountPath
 {
     my($mach, $fspath) = @_;
@@ -261,7 +272,10 @@ sub GetMountPath
     my($mountpoint);
     my($fs);
     my(@ret);
-    
+    my($rsp);
+
+    print "$mach\t$fspath\n";
+
     $fs = $fspath;
     if ($fs =~ /(.+)::/)
     {
@@ -270,26 +284,89 @@ sub GetMountPath
 
     $mountpoint = $fs2mount{$mach}->{$fs};
 
-    $mountpath = $fspath;
-    $mountpath =~ s/${fs}::/$mountpoint/;
-    push(@ret, $mountpath);
+    if (defined($mountpoint))
+    {
+	$mountpath = $fspath;
+	$mountpath =~ s/${fs}::/$mountpoint/;
+
+	if ($mach eq "local")
+	{
+	    if (!(-d $mountpath))
+	    {
+		print STDERR "Directory '$mountpath' does not exist on machine '$mach'; bailing.\n";
+		exit(1);
+	    }
+	}
+	else
+	{
+	    open(STATCMD, "(ssh $mach stat $mountpath | sed 's/^/STDOUT:/') 2>&1 |");
+
+	    while (defined($line = <STATCMD>))
+	    {
+		chomp($line);
+		if ($line !~ /^STDOUT:/)
+		{
+		    if ($line =~ /No such file or directory/)
+		    {
+			print STDERR "Directory '$mountpath' does not exist on machine '$mach'; bailing.\n";
+			close STATCMD;
+			exit(1);
+		    }
+		}
+	    }
+
+	    close STATCMD;
+	}
+
+	push(@ret, $mountpath);
+    }
+    else
+    {
+	push(@ret, "");
+    }
+
     return @ret;
 }
 
+# input is an absolute path on $mach 
 sub GetFS
 {
     my($mach, $path) = @_;
     my($fs);
     my($mountpoint);
     my(@ret);
-
+    my($rsp);
 
     if ($mach eq "local")
     {
-	$fs = `df $path`;
+	if (-d $path)
+	{
+	    $fs = `df $path`;
+	}
+	else
+	{
+	    print STDERR "Directory '$path' does not exist on machine '$mach'; bailing.\n";
+	    exit(1);
+	}
     }
     else
     {
+	open(STATCMD, "(ssh $mach stat $path | sed 's/^/STDOUT:/') 2>&1 |");
+
+	while (defined($line = <STATCMD>))
+	{
+	    chomp($line);
+	    if ($line !~ /^STDOUT:/)
+	    {
+		if ($line =~ /No such file or directory/)
+		{
+		    print STDERR "Directory '$path' does not exist on machine '$mach'; bailing.\n";
+		    close STATCMD;
+		    exit(1);
+		}
+	    }
+	}
+
 	$fs = `ssh $mach df $path`;
     }
 
@@ -300,7 +377,7 @@ sub GetFS
     }
     else
     {
-	 print STDERR "Invalid 'df' response; bailing.\n";
+	 print STDERR "Invalid 'df' response '$fs'; bailing.\n";
 	 exit(1);
     }
 
