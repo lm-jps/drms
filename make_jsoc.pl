@@ -14,6 +14,11 @@ if ($wd =~ /(.+)\/\S+$/)
 {
     $wd = $1;
 }
+else
+{
+    print STDERR "Invalid make_jsoc.pl path; bailing!\n";
+    exit(1);
+}
 
 chdir($wd);
 
