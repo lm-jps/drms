@@ -4,12 +4,15 @@
 #    n00 - for linux_ia32 machines such as n00, ..., n11, etc.
 #    n12 - for linux_x86_64 machines
 
-my($scriptpath) = $0;
+use Cwd qw(realpath);
+
+my($scriptpath) = realpath($0);
 print STDOUT "make of JSOC $scriptpath\n";
 system("date");
 
 my($wd);
 $wd = $scriptpath;
+
 if ($wd =~ /(.+)\/\S+$/)
 {
     $wd = $1;
