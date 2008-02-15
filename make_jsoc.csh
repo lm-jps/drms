@@ -7,12 +7,10 @@
 echo  make of JSOC $0
 date
 
-cd $JSOCROOT
-
 # make clean 
 # make -j 4 
 
-if (-e $JSOCROOT/suflag.txt) then
+if (-e suflag.txt) then
     make all dsds
 else
     make
