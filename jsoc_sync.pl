@@ -92,7 +92,7 @@ if ($su)
 		    }
 		    else
 		    {
-			print STDERR "Your working directory contains the full JSOC code. Can't specify the CVS module DRMS - skipping.\n";
+			print STDERR "Your working directory contains the full JSOC code. Can't specify the CVS module 'DRMS' - skipping.\n";
 		    }
 		}
 		else
@@ -105,6 +105,8 @@ if ($su)
 		print STDERR "Syntax error '$line' in module specification file $MODSPEC\n";
 	    }
 	}
+
+	close SPECFILE;
     }
     else
     {
@@ -118,10 +120,49 @@ else
 
     if (-e $MODSPEC)
     {
-	printf "Ignoring module specification file $MODSPEC, which is applicable to full JSOC users only.\n";
-    }
+	open(SPECFILE, $MODSPEC);
+	while ($line = <SPECFILE>)
+	{
+	    if ($line =~ /^\#.*/)
+	    {
+		next;
+	    }
+	    elsif (length($line) == 0)
+	    {
+		next;
+	    }
+	    elsif ($line =~ /\s*(.+)\s*(\#*\s*)?/)
+	    {
+		$cvsmod = $1;
+		
+		if (defined($cvsmod = $mods{uc($1)}))
+		{
+		    if ($cvsmod ne $JSOC)
+		    {
+			CallCVS($rev, $cvsmod);
+		    }
+		    else
+		    {
+			print STDERR "Your working directory contains the base JSOC code. Can't specify the CVS module 'JSOC' - skipping.\n";
+		    }
+		}
+		else
+		{
+		    print STDERR "Invalid CVS module name $1 - skipping.\n";
+		}
+	    }
+	    else
+	    {
+		print STDERR "Syntax error '$line' in module specification file $MODSPEC\n";
+	    }
+	}
 
-    CallCVS($rev, $DRMS);
+	close SPECFILE;
+    }
+    else
+    {
+	CallCVS($rev, $DRMS);
+    }
 }
 
 print "JSOC synchronization finished.\n";
