@@ -155,7 +155,7 @@ if (-e $CVSSTATUS)
 	    print STDOUT "start build on $machtype\n";
 	    @rsp = GetMountPath($mach, $lfspath);
 	    $rwd = shift(@rsp);	    
-	    system("(ssh $mach $rwd/make_jsoc.csh) 1>make_jsoc_$machtype.log 2>&1");
+	    system("(ssh $mach $rwd/make_jsoc.pl) 1>make_jsoc_$machtype.log 2>&1");
 	    print STDOUT "done on $machtype\n";
 	}
     }
