@@ -8,6 +8,15 @@ my($scriptpath) = $0;
 print STDOUT "make of JSOC $scriptpath\n";
 system("date");
 
+my($wd);
+$wd = $scriptpath;
+if ($wd =~ /(.+)\/\S+$/)
+{
+    $wd = $1;
+}
+
+chdir($wd);
+
 # make clean 
 # make -j 4 
 
