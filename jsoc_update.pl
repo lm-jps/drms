@@ -23,6 +23,7 @@ my($wdupdate) = 0;
 my($lwd); # local working directory
 my($rwd); # remote working directory
 my($mach);
+my(@rsp);
 
 my(%fs2mount);
 my(%mount2fs);
@@ -44,15 +45,10 @@ while ($arg = shift(@ARGV))
 	# May be a relative path
 	my($lfspath);
 	my($rfspath);
-	my($rsp);
 	my($savedp);
-	my(@rsp);
 
-	$savedp = `pwd`;
-	chdir($arg);
-	$lwd = `pwd`;
-	chdir($savedp);
-	chomp($lwd);
+	@rsp = ResolvePath($arg);
+	$lwd = shift(@rsp);
 
 	@rsp = GetFSPath("local", $lwd);
 	$lfspath = shift(@rsp);
@@ -100,7 +96,8 @@ if ($wdupdate != 1)
 	exit(1);
     }
 
-    $lwd = $JSOCROOT;
+    @rsp = ResolvePath($JSOCROOT);
+    $lwd = shift(@rsp);
 }
 
 # First, synchronize with CVS repository
@@ -135,7 +132,6 @@ if (-e $CVSSTATUS)
 
     if ($line =~ /.*cont.*/)
     {
-	my(@rsp);
 	my($lfspath);
 	my($machtype);
 	my($echocmd) = 'echo $JSOC_MACHINE';
@@ -244,6 +240,23 @@ sub InitMaps
     }
 }
 
+sub ResolvePath
+{
+    my($path) = @_;
+    my($savedp);
+    my($rpath);
+    my(@ret);
+
+    $savedp = `pwd`;
+    chdir($path);
+    $rpath = `pwd`;
+    chdir($savedp);
+    chomp($rpath);
+
+    push(@ret, $rpath);
+    return @ret;
+}
+
 # input is an absolute path on $mach
 sub GetFSPath
 {
@@ -257,6 +270,7 @@ sub GetFSPath
     @fsinfo = GetFS($mach, $mountpath);
     $fs = shift(@fsinfo);
     $mountpoint = shift(@fsinfo);
+
     $fspath = $mountpath;
     $fspath =~ s/$mountpoint/${fs}::/;
 
@@ -272,9 +286,6 @@ sub GetMountPath
     my($mountpoint);
     my($fs);
     my(@ret);
-    my($rsp);
-
-    print "$mach\t$fspath\n";
 
     $fs = $fspath;
     if ($fs =~ /(.+)::/)
@@ -335,7 +346,6 @@ sub GetFS
     my($fs);
     my($mountpoint);
     my(@ret);
-    my($rsp);
 
     if ($mach eq "local")
     {
