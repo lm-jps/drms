@@ -771,12 +771,34 @@ char *drms_getkey_string(DRMS_Record_t *rec, const char *key, int *status)
 
 TIME drms_getkey_time(DRMS_Record_t *rec, const char *key, int *status)
 {
-   return (TIME)drms_getkey_double(rec, key, status);
+  DRMS_Keyword_t *keyword;
+  int stat;
+  TIME result=DRMS_MISSING_TIME;
+
+  keyword = drms_keyword_lookup(rec, key, 1);
+  if (keyword!=NULL )
+  {   
+     result = drms_keyword_gettime(keyword, &stat);
+  }
+  else
+  {
+    stat = DRMS_ERROR_UNKNOWNKEYWORD;
+  }
+  if (status)
+    *status = stat;
+  return result;  
 }
 
 TIME drms_keyword_gettime(DRMS_Keyword_t *keyword, int *status)
 {
-   return (TIME)drms_keyword_getdouble(keyword, status);
+   double result;
+   int stat = DRMS_SUCCESS;
+
+   result = drms2time(keyword->info->type, &keyword->value, &stat);  
+
+   if (status)
+     *status = stat;
+   return (TIME)result;
 }
 
 DRMS_Type_Value_t drms_getkey(DRMS_Record_t *rec, const char *key, 
@@ -790,6 +812,7 @@ DRMS_Type_Value_t drms_getkey(DRMS_Record_t *rec, const char *key,
   if (keyword != NULL )
   {
     *type = keyword->info->type;
+    value.string_val = NULL;
     drms_copy_drms2drms(keyword->info->type, &value, &keyword->value);
     stat = DRMS_SUCCESS;
   }
@@ -818,6 +841,7 @@ DRMS_Value_t drms_getkey_p(DRMS_Record_t *rec, const char *key, int *status)
   if (keyword != NULL )
   {
     retval.type = keyword->info->type;
+    value.string_val = NULL;
     drms_copy_drms2drms(keyword->info->type, &value, &keyword->value);
     stat = DRMS_SUCCESS;
   }

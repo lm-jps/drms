@@ -1373,7 +1373,7 @@ void drms_keyword_print_jsd(DRMS_Keyword_t *key) {
       }
       else 
 	drms_keyword_printval(key);      
-      if (key->info->unit[0] != ' ') {
+      if (key->info->unit[0] && key->info->unit[0] != ' ') {
 	printf(", %s, %s, \"%s\"", key->info->format,
 	       key->info->unit,
 	       key->info->description);
