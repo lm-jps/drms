@@ -985,7 +985,7 @@ int drms_setkey_string(DRMS_Record_t *rec, const char *key, const char *value)
 
    DRMS_Type_Value_t v;
    v.string_val = strdup(value);
-   DRMS_Value_t val = {DRMS_TYPE_TIME, v};
+   DRMS_Value_t val = {DRMS_TYPE_STRING, v};
    ret = SetKeyInternal(rec, key, &val);
    free(v.string_val);
    v.string_val = NULL;
