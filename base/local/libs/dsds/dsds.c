@@ -1087,7 +1087,15 @@ static void FillDRMSSeg(void *hSOI,
 {
    kDSDS_Stat_t status = kDSDS_Stat_InvalidParams;
 
-   if (hSOI && segout)
+   if (!hSOI)
+   {
+      status = kDSDS_Stat_NoSOI;
+   }
+   else if (!segout)
+   {
+      status = kDSDS_Stat_InvalidParams;
+   }
+   else
    {
       pSOIFn_sds_rank_t pFn_sds_rank = 
 	(pSOIFn_sds_rank_t)GetSOIFPtr(hSOI, kSOI_SDS_RANK);
@@ -1125,11 +1133,15 @@ static void FillDRMSSeg(void *hSOI,
 	    segout->info->naxis = rank;
 	    segout->info->protocol = protocol;
 	    segout->info->scope = DRMS_VARIABLE;
-	 }
-	 
-	 memcpy(segout->axis, dims, sizeof(int) * rank);
 
-	 status = kDSDS_Stat_Success;
+	    memcpy(segout->axis, dims, sizeof(int) * rank);
+ 
+	    status = kDSDS_Stat_Success;
+	 }
+	 else
+	 {
+	    status = kDSDS_Stat_NoMemory;
+	 }
       }
       else
       {
@@ -1305,31 +1317,10 @@ long long DSDS_open_records(const char *dsspec,
 	(pSOIFn_VDS_select_hdr_t)GetSOIFPtr(hSOI, kSOI_VDS_SELECT_HDR);
       pSOIFn_sds_datatype_t pFn_sds_datatype =
 	(pSOIFn_sds_datatype_t)GetSOIFPtr(hSOI, kSOI_SDS_DATATYPE);
-      pSOIFn_sds_rank_t pFn_sds_rank =
-	(pSOIFn_sds_rank_t)GetSOIFPtr(hSOI, kSOI_SDS_RANK);
-      pSOIFn_sds_length_t pFn_sds_length =
-	(pSOIFn_sds_length_t)GetSOIFPtr(hSOI, kSOI_SDS_LENGTH);
-      pSOIFn_sds_first_attr_t pFn_sds_first_attr =
-	(pSOIFn_sds_first_attr_t)GetSOIFPtr(hSOI, kSOI_SDS_FIRST_ATTR);
-      pSOIFn_sds_next_attr_t pFn_sds_next_attr =
-	(pSOIFn_sds_next_attr_t)GetSOIFPtr(hSOI, kSOI_SDS_NEXT_ATTR);
-      pSOIFn_sds_last_attr_t pFn_sds_last_attr =
-	(pSOIFn_sds_last_attr_t)GetSOIFPtr(hSOI, kSOI_SDS_LAST_ATTR);
-      pSOIFn_sds_attrname_t pFn_sds_attrname =
-	(pSOIFn_sds_attrname_t)GetSOIFPtr(hSOI, kSOI_SDS_ATTRNAME);
-      pSOIFn_sds_attrtype_t pFn_sds_attrtype =
-	(pSOIFn_sds_attrtype_t)GetSOIFPtr(hSOI, kSOI_SDS_ATTRTYPE);
-      pSOIFn_sds_attrvalue_t pFn_sds_attrvalue =
-	(pSOIFn_sds_attrvalue_t)GetSOIFPtr(hSOI, kSOI_SDS_ATTRVALUE);
-      pSOIFn_sds_attrcomment_t pFn_sds_attrcomment =
-	(pSOIFn_sds_attrcomment_t)GetSOIFPtr(hSOI, kSOI_SDS_ATTRCOMMENT);
 
       if (pFn_getkey_str && 
 	  pFn_getkey_int && pFn_vds_last_record && pFn_vds_open &&
-	  pFn_vds_close && pFn_VDS_select_hdr && pFn_sds_datatype &&
-	  pFn_sds_rank && pFn_sds_length && pFn_sds_first_attr && 
-	  pFn_sds_next_attr && pFn_sds_last_attr && pFn_sds_attrname &&
-	  pFn_sds_attrtype && pFn_sds_attrvalue && pFn_sds_attrcomment)
+	  pFn_vds_close && pFn_VDS_select_hdr && pFn_sds_datatype)
       {
 	 VDS *vds = NULL;
 	 SDS *sds = NULL;
@@ -1416,10 +1407,6 @@ long long DSDS_open_records(const char *dsspec,
 	       int series_num = (*pFn_getkey_int)(params, key);
 
 	       /* loop through records (fits files) within a dataset */
-	       char *attrName = NULL;
-	       int attrType;
-	       void *attrVal = NULL;
-	       char *attrComment = NULL;
 	       DRMS_Keyword_t *drmskey = NULL;
 
 	       for (sn = fsn; status == kDSDS_Stat_Success && sn <= lsn; sn++)
@@ -1499,109 +1486,21 @@ long long DSDS_open_records(const char *dsspec,
 
 		     pKL->elem = drmskey;
 
+
 		     /* loop through attributes */
-		     ATTRIBUTES *attr = (*pFn_sds_first_attr)(sds);
-		     ATTRIBUTES *lastAttr = (*pFn_sds_last_attr)(sds);
-
-		     while (attr)
-		     {
-			pKL->next = (DSDS_KeyList_t *)malloc(sizeof(DSDS_KeyList_t));
-			pKL = pKL->next;
-			pKL->next = NULL;
-
-			attrName = (*pFn_sds_attrname)(attr);
-
-			if (attrName && *attrName)
-			{
-			   attrType = (*pFn_sds_attrtype)(attr);
-			   attrVal = (*pFn_sds_attrvalue)(attr);
-			   attrComment = (*pFn_sds_attrcomment)(attr);
-
-			   /* make a drms keyword (make stand-alone keyword->info) */
-			   drmskey = (DRMS_Keyword_t *)malloc(sizeof(DRMS_Keyword_t));
-			   memset(drmskey, 0, sizeof(DRMS_Keyword_t));
-			   drmskey->info = 
-			     (DRMS_KeywordInfo_t *)malloc(sizeof(DRMS_KeywordInfo_t));
-			   memset(drmskey->info, 0, sizeof(DRMS_KeywordInfo_t));
-
-			   snprintf(drmskey->info->name, DRMS_MAXKEYNAMELEN, "%s", attrName);
-			   drmskey->info->type = SOITypeToDRMSType(attrType);
-			   GetKWFormat(drmskey->info->format, 
-				       DRMS_MAXFORMATLEN, 
-				       drmskey->info->type);
-
-			   if (attrComment)
-			   {
-			      snprintf(drmskey->info->description, 
-				       DRMS_MAXCOMMENTLEN,
-				       "%s",
-				       attrComment);
-			   }
-		  
-			   if (PolyValueToDRMSValue(attrType, attrVal, &(drmskey->value)))
-			   {
-			      status = kDSDS_Stat_TypeErr;
-			   }
-		     
-			   pKL->elem = drmskey;
-
-			   if (attr == lastAttr)
-			   {
-			      break;
-			   }
-			}
-
-			attr = (*pFn_sds_next_attr)(attr);
-
-		     } /* attr loop */
+		     LoopAttrs(hSOI, sds, pKL, &status);
 
 		     /* Must make segment now */
 		     DRMS_Segment_t *drmsseg = &((*segs)[nDRMSRecs]);
+		     kDSDS_Stat_t segstatus = kDSDS_Stat_Success;
 
-		     if (drmsseg)
-		     {
-			/* One segment per record only! */
-			int rank = (*pFn_sds_rank)(sds);
-			int *dims = (*pFn_sds_length)(sds);
+		     FillDRMSSeg(hSOI, sds, drmsseg, kDSDS_Segment, DRMS_DSDS, &segstatus);
 
-			memset(drmsseg, 0, sizeof(DRMS_Segment_t));
-
-			drmsseg->info = (DRMS_SegmentInfo_t *)malloc(sizeof(DRMS_SegmentInfo_t));
-			
-			if (drmsseg->info)
-			{
-			   memset(drmsseg->info, 0, sizeof(DRMS_SegmentInfo_t));
-			   snprintf(drmsseg->info->name, DRMS_MAXSEGNAMELEN, "%s", kDSDS_Segment);
-			   drmsseg->info->segnum = 0; /* only one segment */
-			   drmsseg->info->type = SOITypeToDRMSType((*pFn_sds_datatype)(sds));
-
-			   /* SOI will convert to either float or double */
-			   if (drmsseg->info->type == DRMS_TYPE_CHAR || 
-			       drmsseg->info->type == DRMS_TYPE_SHORT)
-			   {
-			      drmsseg->info->type = DRMS_TYPE_FLOAT;
-			   }
-			   else
-			   {
-			      drmsseg->info->type = DRMS_TYPE_DOUBLE;
-			   }
-
-			   drmsseg->info->naxis = rank;
-			   drmsseg->info->protocol = DRMS_DSDS;
-			   drmsseg->info->scope = DRMS_VARIABLE;
-			}
-
-			int iDim;
-
-			for (iDim = 0; iDim < rank; iDim++)
-			{
-			   (drmsseg->axis)[iDim] = dims[iDim];
-			}
-		     }
-		     else
+		     if (segstatus != kDSDS_Stat_Success)
 		     {
 			/* free rec and its keyword list */
 			FreeDSDSKeyList(&((*keys)[nDRMSRecs]));
+			status = segstatus;
 		     }
 
 		     nDRMSRecs++;
