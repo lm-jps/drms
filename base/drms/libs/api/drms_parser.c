@@ -1526,3 +1526,38 @@ void drms_jsd_print(DRMS_Env_t *drms_env, const char *seriesname) {
 
    return drms_jsd_printfromrec(rec);
 }
+
+/* print a query that will return the given record */
+void drms_print_rec_query(DRMS_Record_t *rec)
+  {
+  drms_fprint_rec_query(stdout, rec);
+  }
+
+void drms_fprint_rec_query(FILE *fp, DRMS_Record_t *rec)
+  {
+  int iprime, nprime=0;
+  char **external_pkeys, *pkey;
+  DRMS_Keyword_t *rec_key;
+  if (!rec)
+    {
+    fprintf(fp, "** No Record **");
+    return;
+    }
+  fprintf(fp, "%s",rec->seriesinfo->seriesname);
+  external_pkeys =
+        drms_series_createpkeyarray(rec->env, rec->seriesinfo->seriesname, &nprime, NULL);
+  if (external_pkeys && nprime > 0)
+    {
+    for (iprime = 0; iprime < nprime; iprime++)
+      {
+      pkey = external_pkeys[iprime];
+      rec_key = drms_keyword_lookup (rec, pkey, 1);
+      fprintf(fp, "[");
+      drms_keyword_fprintval (fp, rec_key);
+      fprintf(fp, "]");
+      }
+    }
+  else
+    fprintf(fp, "[:#%lld]",rec->recnum);
+}
+
