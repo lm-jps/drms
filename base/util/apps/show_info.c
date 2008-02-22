@@ -217,56 +217,6 @@ DRMS_RecordSet_t *drms_find_rec_last(DRMS_Record_t *rec, int wantprime)
   return(rs);
   }
 
-/* print a query that will return the given record */
-void drms_print_rec_query(DRMS_Record_t *rec, int want_JSON)
-  {
-  drms_fprint_rec_query(stdout, rec, want_JSON);
-  }
-
-void drms_fprint_rec_query(FILE *fp, DRMS_Record_t *rec, int want_JSON)
-  {
-  int iprime, nprime;
-  DRMS_Keyword_t *rec_key, *key, **prime_keys;
-  if (!rec)
-    {
-    fprintf(fp, "** No Record **");
-    return;
-    }
-  fprintf(fp, "%s",rec->seriesinfo->seriesname);
-  nprime = rec->seriesinfo->pidx_num;
-  prime_keys = rec->seriesinfo->pidx_keywords;
-  if (nprime > 0) 
-    {
-    for (iprime = 0; iprime < nprime; iprime++)
-      {
-      key = prime_keys[iprime];
-      rec_key = drms_keyword_lookup (rec, key->info->name, 1); 
-      fprintf(fp, "[");
-      if (key->info->type != DRMS_TYPE_STRING)
-        drms_keyword_fprintval (fp, rec_key);
-      else
-        {
-        if (want_JSON)
-          {
-          // fprintf(fp, "\\\"");
-          drms_keyword_fprintval (fp, rec_key);
-          // fprintf(fp, "\\\"");
-          }
-        else
-          {
-          // fprintf(fp, "\"");
-          drms_keyword_fprintval (fp, rec_key);
-          // fprintf(fp, "\"");
-          }
-        }
-      fprintf(fp, "]");
-      }
-    }
-  else
-    fprintf(fp, "[:#%lld]",rec->recnum);
-}
-
-
 /* Module main function. */
 int DoIt(void)
   {
@@ -459,7 +409,7 @@ int DoIt(void)
           }
         else
           printf("First Record: ");
-        drms_print_rec_query(rs->records[0], want_JSON);
+        drms_print_rec_query(rs->records[0]);
         if (rs->n > 1) printf(" is first of %d records matching first keyword", rs->n);
         if (want_JSON)
           printf("\",\n \"FirstRecnum\" : %lld,\n", rs->records[0]->recnum);
@@ -472,7 +422,7 @@ int DoIt(void)
           printf(" \"LastRecord\" : \"");
         else
           printf("Last Record:  ");
-        drms_print_rec_query(rs->records[0], want_JSON);
+        drms_print_rec_query(rs->records[0]);
         if (rs->n > 1) printf(" is first of %d records matching first keyword", rs->n);
         if (want_JSON)
           printf("\",\n \"LastRecnum\" : %lld,\n", rs->records[0]->recnum);
@@ -588,7 +538,7 @@ int DoIt(void)
     if (keyword_list) /* if not in table mode, i.e. value per line mode then show record query for each rec */
       {
       printf("# ");
-      drms_print_rec_query(rec, 0);
+      drms_print_rec_query(rec);
       printf("\n");
       }
 
