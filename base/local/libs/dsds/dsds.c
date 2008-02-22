@@ -1280,7 +1280,8 @@ long long DSDS_open_records(const char *dsspec,
 {
    kDSDS_Stat_t status = kDSDS_Stat_Success;
    void *hSOI = GetSOI(&status);
-   long long nRecs = 0;
+   long long nRecs = 0; /* No. of SOI records (some may have no data files) */
+   long long nDRMSRecs = 0; /* No. of DRMS records (all have data files) */
    char drmsSeriesName[DRMS_MAXSERIESNAMELEN];
    KEY *params = NULL;
 
@@ -1353,6 +1354,9 @@ long long DSDS_open_records(const char *dsspec,
 	       /* can now malloc structures */
 	       if (keys && segs)
 	       {
+		  /* The actual number of drms records created is <= nRecs, so
+		   * some of these DSDS_KeyList_ts may not get used. But *keys
+		   * will get freed by DSDS_free_keylistarr() */
 		  *keys = (DSDS_KeyList_t **)malloc(sizeof(DSDS_KeyList_t *) * nRecs);
 		  *segs = (DRMS_Segment_t *)malloc(sizeof(DRMS_Segment_t) * nRecs);
 		  if (*keys && *segs)
@@ -1424,11 +1428,11 @@ long long DSDS_open_records(const char *dsspec,
 	       
 		  sds = (*pFn_VDS_select_hdr)(vds, 0, sn);
 
-		  if (sds)
+		  if (sds && sds->filename && *(sds->filename))
 		  {
 		     /* make primary index keywords - series_num and sn */
-		     (*keys)[iRec] = (DSDS_KeyList_t *)malloc(sizeof(DSDS_KeyList_t));
-		     pKL = (*keys)[iRec];
+		     (*keys)[nDRMSRecs] = (DSDS_KeyList_t *)malloc(sizeof(DSDS_KeyList_t));
+		     pKL = (*keys)[nDRMSRecs];
 		     pKL->next = NULL;
 
 		     drmskey = (DRMS_Keyword_t *)malloc(sizeof(DRMS_Keyword_t));
@@ -1552,7 +1556,7 @@ long long DSDS_open_records(const char *dsspec,
 		     } /* attr loop */
 
 		     /* Must make segment now */
-		     DRMS_Segment_t *drmsseg = &((*segs)[iRec]);
+		     DRMS_Segment_t *drmsseg = &((*segs)[nDRMSRecs]);
 
 		     if (drmsseg)
 		     {
@@ -1597,8 +1601,10 @@ long long DSDS_open_records(const char *dsspec,
 		     else
 		     {
 			/* free rec and its keyword list */
-			FreeDSDSKeyList(&((*keys)[iRec]));
+			FreeDSDSKeyList(&((*keys)[nDRMSRecs]));
 		     }
+
+		     nDRMSRecs++;
 		  }
 
 		  iRec++;
@@ -1623,11 +1629,11 @@ long long DSDS_open_records(const char *dsspec,
    {
       if (keys)
       {
-	 DSDS_free_keylistarr(keys, nRecs);
+	 DSDS_free_keylistarr(keys, nDRMSRecs);
       }
       if (segs)
       {
-	 DSDS_free_segarr(segs, nRecs);
+	 DSDS_free_segarr(segs, nDRMSRecs);
       }
    }
 
@@ -1636,7 +1642,7 @@ long long DSDS_open_records(const char *dsspec,
       *stat = status;
    }
 
-   return nRecs;
+   return nDRMSRecs;
 }
 
 void DSDS_free_keylist(DSDS_KeyList_t **pkl)

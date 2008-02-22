@@ -433,7 +433,7 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
 		  break;
 	       }
 
-	       if (!hcon_lookup_lower(&(template->keywords), drmsKeyName))
+	       if (!(tKey = hcon_lookup_lower(&(template->keywords), drmsKeyName)))
 	       {
 		  /* insert into template */
 		  XASSERT(tKey = 
@@ -461,6 +461,22 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
 		  {
 		     stat = DRMS_ERROR_OUTOFMEMORY;
 		  }
+	       }
+	       else if (sKey->info->type != tKey->info->type &&
+			tKey->info->type != DRMS_TYPE_STRING)
+	       {
+		  /* If the keyword already exists, and the type of 
+		   * the current keyword doesn't match the type of the
+		   * existing template keyword, then make the 
+		   * template keyword's data type be string. */
+		  tKey->info->type = DRMS_TYPE_STRING;
+		  tKey->info->format[0] = '%';
+		  tKey->info->format[1] = 's';
+		  tKey->info->format[2] = '\0';
+		  /* The following uses copy_string(), which frees the value,
+		   * unless the value is zero. So set it to zero. */
+		  tKey->value.string_val = NULL;
+		  drms_missing(DRMS_TYPE_STRING, &(tKey->value));		  
 	       }
 		     
 	       kl = kl->next;
@@ -726,6 +742,7 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
 
 	 DRMS_Keyword_t *sKey = NULL;
 	 char drmsKeyName[DRMS_MAXKEYNAMELEN];
+	 int iKey = 0;
 
 	 while (stat == DRMS_SUCCESS && kl && ((sKey = kl->elem) != NULL))
 	 {
@@ -744,7 +761,14 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
 			       drmsKeyName,
 			       sKey->info->type,
 			       &(sKey->value));
+
+	    if (stat != DRMS_SUCCESS)
+	    {
+	       fprintf(stderr, "Couldn't set keyword '%s'.\n", drmsKeyName);
+	    }
+
 	    kl = kl->next;
+	    iKey++;
 	 } /* while */
 
 	 if (fitsclass == kKEYMAPCLASS_LOCAL)
