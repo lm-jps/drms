@@ -347,9 +347,8 @@ int DoIt(void)
 
     if (keyword_list) /* if not in table mode, i.e. value per line mode then show record query for each rec */
       {
-      void drms_print_query_rec(DRMS_Record_t *rec);
       printf("# ");
-      drms_print_query_rec(rec);
+      drms_print_rec_query(rec);
       printf("\n");
       }
 
@@ -434,34 +433,4 @@ int DoIt(void)
     free(keys[ikey]);
   drms_close_records(recordset, DRMS_FREE_RECORD);
   return status;
-  }
-
-/* print a query that will return the given record */
-void drms_print_query_rec(DRMS_Record_t *rec)
-  {
-  int iprime, nprime;
-  DRMS_Keyword_t *rec_key, *key, **prime_keys;
-  printf("%s",rec->seriesinfo->seriesname);
-  nprime = rec->seriesinfo->pidx_num;
-  prime_keys = rec->seriesinfo->pidx_keywords;
-  if (nprime > 0) 
-    {
-    for (iprime = 0; iprime < nprime; iprime++)
-      {
-      key = prime_keys[iprime];
-      rec_key = drms_keyword_lookup (rec, key->info->name, 1); 
-      printf("[");
-      if (key->info->type != DRMS_TYPE_STRING)
-        drms_keyword_printval (rec_key);
-      else
-        {
-        printf("\"");
-        drms_keyword_printval (rec_key);
-        printf("\"");
-        }
-      printf("]");
-      }
-    }
-  else
-    printf("[:#%lld]",rec->recnum);
   }
