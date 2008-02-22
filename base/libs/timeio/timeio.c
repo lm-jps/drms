@@ -56,7 +56,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <strings.h>
-#include <timeio.h>
+#include "timeio.h"
 
 static struct date_time {
     double second;
@@ -614,6 +614,8 @@ void sprint_time (char *out, TIME t, char *zone, int precision) {
     strncpy (pzone, zone, 5);
     _raise_case (pzone);
   }
+  if (isnan (t) || isinf (t)) t = JULIAN_DAY_ZERO;
+  if (fabs (t) > 6.776e+16) zone = "JD";
 
   if (!strcasecmp (zone, "JD") || !strcasecmp (zone, "MJD")) {
     t += tai_adjustment (t, "TDT");
@@ -902,4 +904,7 @@ int time_is_invalid (TIME t) {
  *  07.06.26	additional fix to guarantee null-terminated strings in
  *	memory element dattim.zone
  *  07.10.16	plugged memory leak from strdup
+ *  08.02.21	in sprint_time, put in checks for NaN's or Inf's, forcing
+ *	printing of JD_0.0, and for times that would result in years out of
+ *	signed int range, force JD format
  */
