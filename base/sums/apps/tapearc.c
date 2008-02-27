@@ -296,13 +296,13 @@ int call_tape_svc(int groupid, double bytes, uint64_t index) {
       else {			/* so what do we do with a timeout? */
         /* !!!TEMP try this for now */
         call_tape_svc_cnt++;
-        printf("RESULT_PEND (!!ASSUMED) group_id=%d bytes=%g 1st_ds_index=%ld. Arc in progress...\n", groupid, bytes, index);
+        printf("RESULT_PEND (!!ASSUMED) group_id=%d bytes=%g 1st_ds_index=%lu. Arc in progress...\n", groupid, bytes, index);
         return(0);
       }
     }
     if(retstat == RESULT_PEND) {
       call_tape_svc_cnt++;
-      printf("RESULT_PEND group_id=%d bytes=%g 1st_ds_index=%ld. Arc in progress...\n",
+      printf("RESULT_PEND group_id=%d bytes=%g 1st_ds_index=%lu. Arc in progress...\n",
 		groupid, bytes, index);
     }
     else {
@@ -493,11 +493,11 @@ KEY *tapearcdo_1(KEY *params)
   }
   }
   if(WRTSTATUS = getkey_int(params, "STATUS")) {
-    printf("**Error return for write of group_id=%d 1st ds_index=%ld\n", 
+    printf("**Error return for write of group_id=%d 1st ds_index=%lu\n",
 			groupid, index);
   }
   else {
-    printf("Successful write for group_id=%d 1st_ds_index=%ld\n", 
+  printf("Successful write for group_id=%d 1st_ds_index=%lu\n",
 			groupid, index);
   }
   --call_tape_svc_cnt;

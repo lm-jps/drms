@@ -134,7 +134,7 @@ KEY *getdo_1(KEY *params)
   retlist=newkeylist();
   uid = getkey_uint64(params, "uid");
   if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
-    write_log("**Error: getdo_1() called with unopened uid=%ld\n", uid);
+    write_log("**Error: getdo_1() called with unopened uid=%lu\n", uid);
     rinfo = 1;	/* give err status back to original caller */
     send_ack();	/* ack original sum_svc caller */
     return((KEY *)1);	/* error. nothing to be sent */ 
@@ -169,7 +169,7 @@ KEY *getdo_1(KEY *params)
           bytes = getkey_double(retlist, tmpname);
           storeset = JSOC;         /* always use JSOC set for now */
           if((status=SUMLIB_PavailGet(bytes,storeset,uid,&retlist))) {
-            write_log("***Can't alloc storage for retrieve uid = %ld\n", uid);
+            write_log("***Can't alloc storage for retrieve uid = %lu\n", uid);
             freekeylist(&retlist);
             rinfo = 1;  /* give err status back to original caller */
             send_ack();	/* ack original sum_svc caller */
@@ -179,7 +179,7 @@ KEY *getdo_1(KEY *params)
           wd = GETKEY_str(retlist, "partn_name");
           sprintf(tmpname, "rootwd_%d", i);
           setkey_str(&retlist, tmpname, wd);
-          write_log("\nAlloc for retrieve wd = %s for sumid = %ld\n", wd, uid);
+          write_log("\nAlloc for retrieve wd = %s for sumid = %lu\n", wd, uid);
         }
       }
       setkey_int(&retlist, "offcnt", offcnt);
@@ -245,7 +245,7 @@ KEY *allocdo_1(KEY *params)
   }
   uid = getkey_uint64(params, "uid");
   if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
-    write_log("**Error: allocdo_1() called with unopened uid=%ld\n", uid);
+    write_log("**Error: allocdo_1() called with unopened uid=%lu\n", uid);
     rinfo = 1;	/* give err status back to original caller */
     send_ack();	/* ack original sum_svc caller */
     return((KEY *)1);	/* error. nothing to be sent */ 
@@ -257,7 +257,7 @@ KEY *allocdo_1(KEY *params)
   storeset = getkey_int(params, "storeset");
   if(!(status=SUMLIB_PavailGet(bytes, storeset, uid, &retlist))) {
     wd = GETKEY_str(retlist, "partn_name");
-    write_log("Alloc bytes=%e wd=%s for user=%s sumid=%ld\n", bytes, wd,
+    write_log("Alloc bytes=%e wd=%s for user=%s sumid=%lu\n", bytes, wd,
 		getkey_str(retlist, "USER"), uid);
     if(!(set_client_handle(RESPPROG, (uint32_t)uid))) { /*set up for response*/
       freekeylist(&retlist);
@@ -314,7 +314,7 @@ KEY *putdo_1(KEY *params)
   }
   uid = getkey_uint64(params, "uid");
   if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
-    write_log("**Error: putdo_1() called with unopened uid=%ld\n", uid);
+    write_log("**Error: putdo_1() called with unopened uid=%lu\n", uid);
     rinfo = 1;	/* give err status back to original caller */
     send_ack();	/* ack original sum_svc caller */
     return((KEY *)1);	/* error. nothing to be sent */ 
@@ -370,14 +370,14 @@ KEY *closedo_1(KEY *params)
   }
   uid = getkey_uint64(params, "uid");
   if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
-    write_log("**Error: closedo_1() called with unopened uid=%ld\n", uid);
+    write_log("**Error: closedo_1() called with unopened uid=%lu\n", uid);
     rinfo = 1;	/* give err status back to original caller */
     send_ack();	/* ack original sum_svc caller */
     return((KEY *)1);	/* error. nothing to be sent */ 
   }
   remsumopened(&sumopened_hdr, (uint32_t)uid); /* rem from linked list */
   rinfo = SUMLIB_Close(params);
-  write_log("SUMLIB_Close for user=%s uid=%ld\n", 
+  write_log("SUMLIB_Close for user=%s uid=%lu\n",
 		GETKEY_str(params, "USER"), getkey_uint64(params, "uid"));
   send_ack();
   return((KEY *)1);	/* nothing will be sent later */

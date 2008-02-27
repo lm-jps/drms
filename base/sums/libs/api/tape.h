@@ -25,6 +25,25 @@
 #define UNLOADDUMP "/tmp/t50_unload_dump.out"
 #define UNLOADCMD "/usr/sbin/mtx -f /dev/t50 unload"
 #define POSITIONDUMP "/tmp/t50_position_dump.out"
+#elif SUMT950
+#define MAX_SLOTS 2200
+#define NUM_IMP_EXP_SLOTS 50  /* assumes these slots are the highest slot#s */
+#define MAX_SLOTS_LIVE (MAX_SLOTS - NUM_IMP_EXP_SLOTS)
+#define MAX_DRIVES 12
+#define MAX_GROUPS 1024
+#define MAX_AVAIL_BLOCKS 1600000000     /* max (512) blocks on a LTO4 tape */
+#define TAR_FILE_SZ 500000000   /* try to make a tar file this many bytes */
+#define TAR_FILE_SZ_BLKS 976563 /* TAR_FILE_SZ/512 */
+#define LIBDEV "/dev/sg6"
+/* If /dev/ name in this file then override the LIBDEV above */
+#define LIBDEVFILE "/home/production/cvs/jsoc/tables/libdevfile.cfg"
+#define SUMDR0 "/dev/nst0"
+#define SUMDR1 "/dev/nst1"
+#define SUMDR  "/dev/nst"
+#define GTARBLOCK 256   /* the gtar default is this */
+#define UNLOADDUMP "/tmp/t950_unload_dump.out"
+#define UNLOADCMD "/usr/sbin/mtx -f /dev/sg6 unload"
+#define POSITIONDUMP "/tmp/t950_position_dump.out"
 #else
 #define MAX_SLOTS 128
 #define NUM_IMP_EXP_SLOTS 8  /* assumes these slots are the highest slot#s */

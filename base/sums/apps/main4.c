@@ -15,8 +15,6 @@ extern int errno;
 /*static char datestr[32];*/
 /*char *datestring();*/
 
- #define MAXSUMREQCNT 3
-
 
 KEY *rlist;             /* The global keylist returned by unpackmsg() */
 FILE *logfp;
@@ -66,14 +64,15 @@ int main(int argc, char *argv[])
     exit(1);
   }
   uid = sum->uid;
-  /*sum->debugflg = 1;			/* use debug mode for future calls */
+  //sum->debugflg = 1;			/* use debug mode for future calls */
   /*sum->debugflg = 0;*/
-  sum->username = "production";		/* !!TEMP */
+  //sum->username = "production";		/* !!TEMP */
+  sum->username = "jim";		/* !!TEMP */
   printf("Opened with sumid = %d\n", uid);
 
   sum->bytes = (double)120000000;	/* 120MB */
   sum->reqcnt = 1;
-  if(status = SUM_alloc(sum, printf)) {	/* allocate a data segment */
+  if(status = SUM_alloc(sum, printf)) {	
    printf("SUM_alloc() failed to alloc %g bytes. Error code = %d\n", 
 			sum->bytes, status);
    SUM_close(sum, printf);
@@ -83,33 +82,29 @@ int main(int argc, char *argv[])
   dsixpt = sum->dsix_ptr;
   alloc_index = *dsixpt;
   strcpy(alloc_wd, *cptr);
-  printf("Allocated %g bytes at %s with dsindex=%ld\n", 
+  printf("Allocated %g bytes at %s with dsindex=%lu\n", 
 			sum->bytes, *cptr, alloc_index);
-  /* put something in the alloc wd for this test */
-  //sprintf(cmd, "cp -rp /home/jim/cvs/PROTO/src/SUM %s", *cptr);
-  //printf("cmd is: %s\n", cmd);
-  //system(cmd);
+  // put something in the alloc wd for this test
+//  sprintf(cmd, "cp -rp /home/jim/cvs/PROTO/src/SUM %s", *cptr);
+//  printf("cmd is: %s\n", cmd);
+//  system(cmd);
   sprintf(cmd, "touch %s/%s%d", *cptr, "touch", uid);
   printf("cmd is: %s\n", cmd);
   system(cmd);
-  /*sum->mode = RETRIEVE + TOUCH;*/
+
+  sum->mode = RETRIEVE + TOUCH;
   sum->mode = NORETRIEVE;
   sum->tdays = 5;
-/*******************************************
   sum->reqcnt = 3;
-  *dsixpt++ = 634590;
-  *dsixpt++ = 634591; 
-  *dsixpt++ = 634592; 
-*******************************************/
-sum->reqcnt = 1;
-/*inum = 588650;			/* starting ds_index for get calls */
-inum = 612311;			/* starting ds_index for get calls */
-StartTimer(0);
-for(j=0; j < MAXSUMREQCNT; j++) {
-  *dsixpt++ = inum++;
-}
-  /**dsixpt = inum++;*/
-sum->reqcnt = MAXSUMREQCNT;
+  dsixpt = sum->dsix_ptr;
+  *dsixpt++ = 4294967317;
+  *dsixpt++ = 666;
+  *dsixpt++ = 4294967327;
+/*  *dsixpt++ = 14802;   */
+/*  *dsixpt++ = 14539;   */
+/*  *dsixpt++ = 14686;   */
+/*  *dsixpt++ = 634591;  */
+/*  *dsixpt++ = 634592;  */
   status = SUM_get(sum, printf); 
   switch(status) {
   case 0:			/* success. data in sum */
@@ -129,10 +124,6 @@ sum->reqcnt = MAXSUMREQCNT;
     while(1) {
       if(!SUM_poll(sum)) break;
     }
-    /* !!TEMP wait for second msg too!!!! */
-    /*printf("About to do second SUM_wait()\n");
-    /*SUM_wait(sum);
-    */
 
       if(sum->status) {
         printf("***Error on SUM_get() call. tape_svc may have died or\n");
@@ -150,13 +141,9 @@ sum->reqcnt = MAXSUMREQCNT;
     printf("Error: unknown status from SUM_get()\n");
     break;
   }
-/*}*/
 ftmp = StopTimer(0);
-printf("\nTime sec for %d SUM_get() in one call = %f\n\n", MAXSUMREQCNT, ftmp);
+/*printf("\nTime sec for %d SUM_get() in one call = %f\n\n", MAXSUMREQCNT, ftmp);*/
 
-
-
-  /*sum->mode = ARCH;*/
   sum->mode = TEMP;
   sum->dsname = "testname";
   sum->group = 100;
@@ -164,7 +151,9 @@ printf("\nTime sec for %d SUM_get() in one call = %f\n\n", MAXSUMREQCNT, ftmp);
   /*sum->group = 101;*/
   sum->reqcnt = 1;
   dsixpt = sum->dsix_ptr;
-  *dsixpt = alloc_index;	/* ds_index of alloced data segment */
+  *dsixpt = alloc_index;        /* ds_index of alloced data segment */
+//*dsixpt = 669;        /* !!!TEMP */
+  //sum->debugflg = 1;		/* !!TEMP use debug mode for future calls */
   cptr = sum->wd;
   *cptr = (char *)malloc(64);
   strcpy(*cptr, alloc_wd);
@@ -173,31 +162,15 @@ printf("\nTime sec for %d SUM_get() in one call = %f\n\n", MAXSUMREQCNT, ftmp);
   /*sum->group = 99;*/
   sum->storeset = 0;
   sum->bytes = 120000000.0;
-//  if(SUM_put(sum, printf)) {  /* save the data segment for archiving */
-//    printf("Error: on SUM_put()\n");
-//  }
-//  else {
-//    printf("The put wd = %s\n", *sum->wd);
-//    printf("Marked for archive data unit ds_index=%ld\n", *dsixpt);
-//  }
+  if(SUM_put(sum, printf)) {    /* save the data segment for archiving */
+    printf("Error: on SUM_put()\n");
+  }
+  else {
+    printf("The put wd = %s\n", *sum->wd);
+    printf("Marked for archive data unit ds_index=%lu\n", *dsixpt);
+  }
+
   SUM_close(sum, printf);
+
+
 }
-
-/*!!! THIS IS IN sumsapi/sum_open.c */
-/* Return ptr to "mmm dd hh:mm:ss". Uses global datestr[].
-*/
-/*char *datestring()
-/*{
-/*  struct timeval tvalr;
-/*  struct tm *t_ptr;
-/*  int tvalr_int;
-/*                                                                              
-/*  gettimeofday(&tvalr, NULL);
-/*  tvalr_int = (int)tvalr.tv_sec; /* need int vrbl for this to work on sgi4*/
-/*  t_ptr = localtime((const time_t *)&tvalr_int);
-/*  sprintf(datestr, "%s", asctime(t_ptr));
-/*  datestr[19] = NULL;
-/*  return(&datestr[4]);          /* isolate the mmm dd hh:mm:ss */
-/*}
-*/
-

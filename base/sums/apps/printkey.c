@@ -51,11 +51,11 @@ case KEYTYP_UINT:
   break;
 case KEYTYP_ULONG:
   printf ("KEYTYP_ULONG\t");
-  printf ("%ld\n", *(unsigned long *)key->val);
+  printf ("%lu\n", *(unsigned long *)key->val);
   break;
 case KEYTYP_UINT64:
   printf ("KEYTYP_UINT64\t");
-  printf ("%ld\n", *(uint64_t *)key->val);
+  printf ("%lu\n", *(uint64_t *)key->val);
   break;
 case KEYTYP_UINT32:
   printf ("KEYTYP_UINT32\t");
@@ -63,7 +63,7 @@ case KEYTYP_UINT32:
   break;
 case KEYTYP_FILEP:
   printf ("KEYTYP_FILEP\t");
-  printf ("%ld\n", *(unsigned long *)key->val);
+  printf ("%lu\n", *(unsigned long *)key->val);
   break;
 default:
   printf ("(void)\n");

@@ -1,0 +1,4 @@
+#!/bin/csh
+echo "DELETING /tmp files over 60 days old"
+find /tmp  -ctime +60 -type f -exec /bin/rm -f {} \; -print
+

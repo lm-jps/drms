@@ -149,7 +149,7 @@ int kick_next_entry_rd() {
         }
         setkey_int(&p->list, "dnum", d);   /* tape is in drive d */
         poff = delete_q_rd(p);    /* remove from q */
-        write_log("*Tp:RdQdel: dsix=%ld drv=%d\n", poff->ds_index, d);
+        write_log("*Tp:RdQdel: dsix=%lu drv=%d\n", poff->ds_index, d);
         drives[d].busy = 1;       /* set drive busy */
         write_log("*Tp:DrBusy: drv=%d\n", d);
         drives[d].tapemode = TAPE_RD_CONT;
@@ -210,7 +210,7 @@ int kick_next_entry_rd() {
       ptmp = delete_q_rd(p);      /* remove from q */
       p = p->next;
       ptmp->next = NULL;
-      write_log("*Tp:RdQdel: dsix=%ld drv=**WRN:tape_not_in_robot\n", 
+      write_log("*Tp:RdQdel: dsix=%lu drv=**WRN:tape_not_in_robot\n",
 			ptmp->ds_index);
       insert_tq_entry_rd_need(ptmp); /* put at end of need rd q */
       write_log("NEED RD Q:\n");
@@ -266,7 +266,7 @@ int kick_next_entry_rd() {
         drives[d].busy = 0;
         write_log("*Tp:DrNotBusy: drv=%d\n", d);
         poff = delete_q_rd(p);      /* remove from q */
-        write_log("*Tp:RdQdel: dsix=%ld drv=%d\n", poff->ds_index, d);
+        write_log("*Tp:RdQdel: dsix=%lu drv=%d\n", poff->ds_index, d);
         sback = 2;
         break;			/* break while(p) */
       }
@@ -277,12 +277,12 @@ int kick_next_entry_rd() {
       drives[d].busy = 0;
       write_log("*Tp:DrNotBusy: drv=%d\n", d);
       poff = delete_q_rd(p);      /* remove from q */
-      write_log("*Tp:RdQdel: dsix=%ld drv=%d\n", poff->ds_index, d);
+      write_log("*Tp:RdQdel: dsix=%lu drv=%d\n", poff->ds_index, d);
       sback = 2;
       break;			/* break while(p) */
     }
     poff = delete_q_rd(p);        /* remove from q */
-    write_log("*Tp:RdQdel: dsix=%ld drv=%d\n", poff->ds_index, d);
+    write_log("*Tp:RdQdel: dsix=%lu drv=%d\n", poff->ds_index, d);
     sback = 1;
     break;			/* break while(p) */
   }
@@ -336,7 +336,7 @@ int kick_next_entry_wt() {
             send_mail("Error: no tape in group %d\n", group_id);
             write_log("*Tp:Need: tapeid=%s\n", "NOGROUP");
             poff = delete_q_wrt(p);    /* remove from q */
-            write_log("*Tp:WtQdel: dsix=%ld drv=**WRN:tape_not_in_robot\n", 
+            write_log("*Tp:WtQdel: dsix=%lu drv=**WRN:tape_not_in_robot\n",
 			poff->ds_index);
             return(2);
           }
@@ -347,7 +347,7 @@ int kick_next_entry_wt() {
           continue;		/* process this Q entry again */
         }
         poff = delete_q_wrt(p);    /* remove from q */
-        write_log("*Tp:WtQdel: dsix=%ld drv=%d\n", p->ds_index, d);
+        write_log("*Tp:WtQdel: dsix=%lu drv=%d\n", p->ds_index, d);
         setkey_int(&poff->list, "tape_closed", tape_closed);
         /* get the next file# to write on this tape. Send it to driven_svc */
         if((nxtwrtfn = SUMLIB_TapeFilenumber(poff->tapeid)) == 0) {
@@ -401,7 +401,7 @@ int kick_next_entry_wt() {
         send_mail("Error: no tape in group %d\n", group_id);
         write_log("*Tp:Need: tapeid=%s\n", "NOGROUP");
         poff = delete_q_wrt(p);      /* remove from q */
-        write_log("*Tp:WtQdel: dsix=%ld drv=**WRN:tape_not_in_robot\n", 
+        write_log("*Tp:WtQdel: dsix=%lu drv=**WRN:tape_not_in_robot\n",
 			poff->ds_index);
         return(2);
       }
@@ -423,14 +423,14 @@ int kick_next_entry_wt() {
 #ifdef SUMDC
       /* give error back to caller for datacapture machine */
       poff = delete_q_wrt(p);      /* remove from q */
-      write_log("*Tp:WtQdel: dsix=%ld drv=**WRN:tape_not_in_robot\n", 
+      write_log("*Tp:WtQdel: dsix=%lu drv=**WRN:tape_not_in_robot\n",
 			poff->ds_index);
       return(2);
 #endif
       ptmp = delete_q_wrt(p);     /* remove from q */
       p = p->next;
       ptmp->next = NULL;
-      write_log("*Tp:WtQdel: dsix=%ld drv=**WRN:tape_not_in_robot\n", 
+      write_log("*Tp:WtQdel: dsix=%lu drv=**WRN:tape_not_in_robot\n",
 			ptmp->ds_index);
       insert_tq_entry_wrt_need(ptmp); /* put at end of need wrt q */
       sback = 0;
@@ -484,7 +484,7 @@ int kick_next_entry_wt() {
         drives[d].busy = 0;
         write_log("*Tp:DrNotBusy: drv=%d\n", d);
         poff = delete_q_wrt(p);      /* remove from q */
-        write_log("*Tp:WtQdel: dsix=%ld drv=%d\n", poff->ds_index, d);
+        write_log("*Tp:WtQdel: dsix=%lu drv=%d\n", poff->ds_index, d);
         sback = 2;
         break;                  /* break while(p) */
       }
@@ -495,12 +495,12 @@ int kick_next_entry_wt() {
       drives[d].busy = 0;
       write_log("*Tp:DrNotBusy: drv=%d\n", d);
       poff = delete_q_wrt(p);      /* remove from q */
-      write_log("*Tp:WtQdel: dsix=%ld drv=%d\n", poff->ds_index, d);
+      write_log("*Tp:WtQdel: dsix=%lu drv=%d\n", poff->ds_index, d);
       sback = 2;
       break;                    /* break while(p) */
     }
     poff = delete_q_wrt(p);        /* remove from q */
-    write_log("*Tp:WtQdel: dsix=%ld drv=%d\n", poff->ds_index, d);
+    write_log("*Tp:WtQdel: dsix=%lu drv=%d\n", poff->ds_index, d);
     sback = 1;
     break;                      /* break while(p) */
   }				/* end while(p) */
@@ -758,7 +758,7 @@ KEY *writedo_1(KEY *params) {
       free(user);
       return((KEY *)1);  /* error. nothing to be sent */
   }
-  write_log("*Tp:WtQadd: uid=%ld tapeid=%s filenum=0 user=%s dsix=%ld\n",
+  write_log("*Tp:WtQadd: uid=%lu tapeid=%s filenum=0 user=%s dsix=%lu\n",
                 sumid, tapeid, user, dsix);
   free(user);
   insert_tq_entry_wrt(p);    /* put at end of wrt q */
@@ -1607,7 +1607,7 @@ KEY *impexpdo_1(KEY *params)
     /* now put the need Q back onto the normal rd or wrt Q */
     while(p = delete_q_rd_need_front()) {
       p->next = NULL;
-      write_log("*Tp:RdQadd: uid=%ld tapeid=%s filenum=%d user=%s dsix=%ld\n",
+      write_log("*Tp:RdQadd: uid=%lu tapeid=%s filenum=%d user=%s dsix=%lu\n",
 		p->uid, p->tapeid, p->filenum, p->username, p->ds_index);
       insert_tq_entry_rd(p);
       write_log("RD Q:\n");
@@ -1615,7 +1615,7 @@ KEY *impexpdo_1(KEY *params)
     }
     while((p = delete_q_wrt_need_front())) {
       p->next = NULL;
-      write_log("*Tp:WtQadd: uid=%ld tapeid=%s filenum=0 user=%s dsix=%ld\n",
+      write_log("*Tp:WtQadd: uid=%lu tapeid=%s filenum=0 user=%s dsix=%lu\n",
                 p->uid, p->tapeid, p->username, p->ds_index);
       insert_tq_entry_wrt(p);
     }

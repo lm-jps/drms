@@ -276,7 +276,7 @@ TQ *q_entry_make(KEY *list, SUMID_t uid, char *tapeid, int filenum,
 void tq_entry_rd_dump(char *user) {
   TQ *q = q_rd_front;
   while(q) {
-    write_log("*Tp:RdQadd: uid=%ld tapeid=%s filenum=%d user=%s dsix=%ld\n",
+    write_log("*Tp:RdQadd: uid=%lu tapeid=%s filenum=%d user=%s dsix=%lu\n",
                 q->uid, q->tapeid, q->filenum, user, q->ds_index);
     q = q->next;
   }
@@ -343,7 +343,7 @@ void insert_tq_entry_wrt_need(TQ *p) {
 
 void rd_q_print(TQ *p) {
   while(p) {
-    write_log("next=%ld, dsix=%ld, filenum=%d, tapeid=%s, user=%s\n",
+  write_log("next=%ld, dsix=%lu, filenum=%d, tapeid=%s, user=%s\n",
 	p->next, p->ds_index, p->filenum, p->tapeid, p->username);
     p = p->next;
   }

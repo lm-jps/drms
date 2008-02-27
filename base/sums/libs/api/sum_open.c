@@ -1,5 +1,6 @@
 /* sum_open.c */
 /* Here are the API functions for SUMS.
+ * This is linked in with each program that is going to call SUMS.
 */
 #include <SUM.h>
 #include <soi_key.h>
@@ -22,6 +23,10 @@ extern void printkey (KEY *key);
 static struct timeval TIMEOUT = { 120, 0 };
 static int RESPDO_called;
 static SUMOPENED *sumopened_hdr = NULL;/* linked list of opens for this client*/
+static CLIENT *cl;
+static SVCXPRT *transp[MAXSUMOPEN];
+static SUMID_t transpid[MAXSUMOPEN];
+static int numopened = 0;
 
 /* This must be the first thing called by DRMS to open with the SUMS.
  * Any one client may open up to MAXSUMOPEN times (TBD check) 
@@ -29,15 +34,19 @@ static SUMOPENED *sumopened_hdr = NULL;/* linked list of opens for this client*/
  * with SUMS, but it's built this way in case a use arises.).
  * Returns 0 on error else a pointer to a SUM structure.
  * **NEW 7Oct2005 the db arg has been depricated and has no effect. The db
- * you will get depends on how sum_svc was started, e.g. "sum_svc hmidb".
+ * you will get depends on how sum_svc was started, e.g. "sum_svc jsoc".
 */
 SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
 {
-  CLIENT *cl;
   KEY *klist;
   SUM_t *sumptr;
   SUMID_t sumid;
   char *server_name, *cptr, *username;
+
+  if(numopened >= MAXSUMOPEN) {
+    (*history)("Exceeded max=%d SUM_open() for a client\n", MAXSUMOPEN);
+    return(NULL);
+  }
 
   if (server)
   {
@@ -76,9 +85,11 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
   /* get a unique id from sum_svc for this open */
   if((sumid = sumrpcopen_1(klist, cl, history)) == 0) {
     (*history)("Failed to get SUMID from sum_svc\n");
+    clnt_destroy(cl);
     freekeylist(&klist);
     return(NULL);
   }
+  numopened++;
   sumptr = (SUM_t *)malloc(sizeof(SUM_t));
   sumptr->cl = cl;
   sumptr->uid = sumid;
@@ -89,7 +100,7 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
   sumptr->dsname = NULL;
   sumptr->history_comment = NULL;
   sumptr->dsix_ptr = (uint64_t *)malloc(sizeof(uint64_t) * SUMARRAYSZ);
-  sumptr->wd = (char **)malloc(sizeof(char *) * SUMARRAYSZ);
+  sumptr->wd = (char **)calloc(SUMARRAYSZ, sizeof(char *));
   setsumopened(&sumopened_hdr, sumid, sumptr); /* put in linked list of opens */
   freekeylist(&klist);
   return(sumptr);
@@ -101,9 +112,9 @@ SUMID_t sumrpcopen_1(KEY *argp, CLIENT *clnt, int (*history)(const char *fmt, ..
 {
   char *call_err;
   enum clnt_stat status;
-  SVCXPRT *transp;
   SUMID_t suidback;
-                                                                              
+  SVCXPRT *xtp;
+                                                                        
   status = clnt_call(clnt, OPENDO, (xdrproc_t)xdr_Rkey, (char *)argp, 
 			(xdrproc_t)xdr_uint32_t, (char *)&suidback, TIMEOUT);
   suidback = (SUMID_t)suidback;
@@ -121,15 +132,17 @@ SUMID_t sumrpcopen_1(KEY *argp, CLIENT *clnt, int (*history)(const char *fmt, ..
   /* Use our suidback as the version number. */
   if(suidback) {
     (void)pmap_unset(RESPPROG, suidback); /* first unreg any left over */
-    transp = (SVCXPRT *)svctcp_create(RPC_ANYSOCK, 0, 0);
-    if (transp == NULL) {
+    xtp = (SVCXPRT *)svctcp_create(RPC_ANYSOCK, 0, 0);
+    if (xtp == NULL) {
       (*history)("cannot create tcp service in sumrpcopen_1() for responses\n");
       return(0);
     }
-    if (!svc_register(transp, RESPPROG, suidback, respd, IPPROTO_TCP)) {
+    if (!svc_register(xtp, RESPPROG, suidback, respd, IPPROTO_TCP)) {
       (*history)("unable to register RESPPROG in sumrpcopen_1()\n");
       return(0);
     }
+    transp[numopened] = xtp;
+    transpid[numopened] = suidback;
   }
   return (suidback);
 }
@@ -195,12 +208,14 @@ int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
 {
   KEY *klist;
   char *call_err;
+  char **cptr;
   static char res;
   enum clnt_stat status;
+  int i;
   int errflg = 0;
 
   if(sum->debugflg) {
-    (*history)("SUM_close() call: uid = %ld\n", sum->uid);
+    (*history)("SUM_close() call: uid = %lu\n", sum->uid);
   }
   klist = newkeylist();
   setkey_uint64(&klist, "uid", sum->uid); 
@@ -223,10 +238,23 @@ int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
     }
   }
 
-  (void)pmap_unset(RESPPROG, sum->uid); /* unreg response server */
+  //(void)pmap_unset(RESPPROG, sum->uid); /* unreg response server */
   remsumopened(&sumopened_hdr, sum->uid); /* rem from linked list */
   clnt_destroy(sum->cl);	/* destroy handle to sum_svc */
+  for(i=0; i < MAXSUMOPEN; i++) {
+    if(transpid[i] == sum->uid) {
+      svc_destroy(transp[i]);
+      --numopened;
+      break;
+    }
+  }
   free(sum->dsix_ptr);
+  /* free all getkey_str() mallocs that ended up in **wd */
+  cptr = sum->wd;
+  for(i=0; i < SUMARRAYSZ; i++) {
+    if(*cptr) { free(*cptr); }
+    *cptr++;
+  }
   free(sum->wd);
   free(sum);
   freekeylist(&klist);
@@ -327,7 +355,7 @@ int SUM_put(SUM_t *sum, int (*history)(const char *fmt, ...))
   cptr = sum->wd;
   dsixpt = sum->dsix_ptr;
   if(sum->debugflg) {
-    (*history)("Going to PUT wd=%s, ix=%ld\n", *cptr, *dsixpt);
+    (*history)("Going to PUT wd=%s, ix=%lu\n", *cptr, *dsixpt);
   }
   klist = newkeylist();
   setkey_uint64(&klist, "uid", sum->uid);
@@ -569,7 +597,7 @@ KEY *respdo_1(KEY *params)
       wd = getkey_str(params, name);
       *cptr++ = wd;
       if(findkey(params, "ERRSTR")) {
-        printf("%s\n", getkey_str(params, "ERRSTR"));
+        printf("%s\n", GETKEY_str(params, "ERRSTR"));
       }
     } 
     break;

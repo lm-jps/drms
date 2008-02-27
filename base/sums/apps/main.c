@@ -22,6 +22,8 @@ uint64_t *dsixpt;
 uint64_t alloc_index;
 char alloc_wd[64];
 char cmd[128];
+char datestr[32];
+char timetag[32];
 char mod_name[] = "sum_rpc";
 char dbname[] = "jsoc";
 char dsname[] = "hmi_lev1_fd_V";	/* !!TEMP name */
@@ -57,6 +59,16 @@ int SUM_delete_series_test(SUMID_t *ids)
   return(i);
 }
 
+/* Return ptr to "mmm dd hh:mm:ss". Uses global datestr[]. */
+void timestring()
+{
+   struct timeval tvalr;
+   struct tm *t_ptr;
+  	 
+   gettimeofday(&tvalr, NULL);
+   t_ptr = localtime((const time_t *)&tvalr);
+   sprintf(timetag, "%04d%02d%02d%02d%02d.%02d", (t_ptr->tm_year+1900), (t_ptr->tm_mon+1), t_ptr->tm_mday, t_ptr->tm_hour, t_ptr->tm_min, t_ptr->tm_sec);
+}
 
 /* Before running this you must have the sum_svc running on d00 like so:
  * sum_svc hmidb &
@@ -67,7 +79,14 @@ int main(int argc, char *argv[])
   double bytesdel;
   float ftmp;
 
+  /**************************
+  	   timestring();
+  	   printf("log file = log_name.%s.log\n", timetag);
+  	   exit(1);
+  **************************/
+
   printk_set(printf, printf);
+
 /**************************************
   DS_ConnectDB(dbname);
   DS_RmDo(&bytesdel);
@@ -85,12 +104,12 @@ int main(int argc, char *argv[])
   uid = sum1->uid;
   printf("Opened sum1 with sumid = %d\n", uid);
   /*sum1->mode = RETRIEVE + TOUCH;*/
-  sum1->mode = RETRIEVE;
+  sum1->mode = NORETRIEVE;
   sum1->tdays = 10;
   sum1->reqcnt = 1;
   sum1->status = -1;
   dsixpt = sum1->dsix_ptr;
-  *dsixpt++ = 861;
+  *dsixpt++ = 644891;
   /* *dsixpt++ = 50; */
   StartTimer(1);
   status = SUM_get(sum1, printf); 
@@ -122,16 +141,14 @@ int main(int argc, char *argv[])
   uid = sum2->uid;
   printf("Opened sum2 with sumid = %d\n", uid);
   /*sum2->mode = RETRIEVE + TOUCH;*/
-  sum2->mode = RETRIEVE;
+  sum2->mode = NORETRIEVE;
   sum2->tdays = 10;
-  sum2->reqcnt = 5;
+  sum2->reqcnt = 3;
   sum2->status = -1;
   dsixpt = sum2->dsix_ptr;
-  *dsixpt++ = 894;
-  *dsixpt++ = 871;
-  *dsixpt++ = 864;
-  *dsixpt++ = 909;
-  *dsixpt++ = 877;
+  *dsixpt++ = 63217;
+  *dsixpt++ = 63264;
+  *dsixpt++ = 63237;
   /* *dsixpt++ = 51; */
   StartTimer(2);
   status = SUM_get(sum2, printf); 
@@ -158,12 +175,12 @@ int main(int argc, char *argv[])
   }
   uid = sum3->uid;
   printf("Opened sum3 with sumid = %d\n", uid);
-  sum3->mode = RETRIEVE;
+  sum3->mode = NORETRIEVE;
   sum3->tdays = 10;
   sum3->reqcnt = 1;
   sum3->status = -1;
   dsixpt = sum3->dsix_ptr;
-  *dsixpt++ = 885;
+  *dsixpt++ = 644921;
   /* *dsixpt++ = 51; */
   status = SUM_get(sum3, printf); 
   switch(status) {

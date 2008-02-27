@@ -652,11 +652,11 @@ KEY *readdrvdo_1(KEY *params)
     for(i=0; ; i++) {
       ds_index = file_dsix_off[i];
       if(!ds_index) break;
-      sprintf(newdir, "%s/D%ld", wd, ds_index);
+      sprintf(newdir, "%s/D%lu", wd, ds_index);
       bytes = file_bytes[i];
         if(SUM_StatOnline(ds_index, newdir)) {
           setkey_int(&retlist, "STATUS", 1);   /* give error back to caller */
-          sprintf(errstr,"Error: can't put SU ix=%ld online in SUM_MAIN table", 
+          sprintf(errstr,"Error: can't put SU ix=%lu online in SUM_MAIN table",
 			ds_index);
           setkey_str(&retlist, "ERRSTR", errstr); 
           free(wd);
@@ -1017,7 +1017,7 @@ uint64_t tell_blocks(int sim, int dnum)
   }
   while (fgets (row,MAXSTR,tfp)) {
     if(strstr(row, "At block ")) {
-      sscanf(row, "%s %s %ld", scr, scr, &tell);
+      sscanf(row, "%s %s %lu", scr, scr, &tell);
     }
   }
   fclose(tfp);
@@ -1247,7 +1247,7 @@ int read_drive_to_wd(int sim, char *wd, int drive,
   for(i=0; ; i++) {
     dsix = filedsixoff[i];
     if(!dsix) break;
-    sprintf(Ddir, "D%ld", dsix);
+    sprintf(Ddir, "D%lu", dsix);
     sprintf(cmd, "%s %s", cmd, Ddir);
   }
   sprintf(cmd, "%s 1>>%s 2>> %s", cmd, logfile, logname);

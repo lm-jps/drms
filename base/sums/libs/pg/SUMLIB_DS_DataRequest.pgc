@@ -109,9 +109,9 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
       sprintf(dsix_name, "wd_%d", i);
       setkey_str(results, dsix_name, ""); /* preset blank in case doen't exist*/
       if(i == (reqcnt - 1))
-        sprintf(stmt, "%s%u);", stmt, ds_index);
+	sprintf(stmt, "%s%lu);", STMT, ds_index);
       else
-        sprintf(stmt, "%s%u,", stmt, ds_index);
+	sprintf(stmt, "%s%lu,", STMT, ds_index);
      }
 
      EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
@@ -166,6 +166,7 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
 		and STATUS != :daro;
           EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
           EXEC SQL WHENEVER NOT FOUND GOTO end_fetch;
+	  free(eff_date);
         }
       } 
     }

@@ -33,7 +33,7 @@ EXEC SQL END DECLARE SECTION;
     for(i=0, j=0; ; i++ ) {
       ds_index = filedsix[i];
       if(!ds_index) break;
-      /*printk("SUMLIB_Ds_Ix_File ds_index = %ld\n", ds_index); */
+      /*printk("SUMLIB_Ds_Ix_File ds_index = %lu\n", ds_index); */
       EXEC SQL SELECT ONLINE_STATUS 
 	INTO  :online_status
 	FROM SUM_MAIN 
@@ -41,7 +41,7 @@ EXEC SQL END DECLARE SECTION;
 
       if(strcmp(online_status.arr, "N")==0) {
         offline = 1;
-        /*printk("SUMLIB_Ds_Ix_File offline ds_index = %ld\n", ds_index); */
+	/*printk("SUMLIB_Ds_Ix_File offline ds_index = %lu\n", ds_index); */
         filedsixoff[j++] = ds_index;
       }
     }
@@ -50,7 +50,7 @@ EXEC SQL END DECLARE SECTION;
     if(!offline) return(0);
     return(1);
 sqlerror:
-         printk("Error in SUMLIB_Ds_Ix_File for ds_index=%u\n", ds_index);
+         printk("Error in SUMLIB_Ds_Ix_File for ds_index=%lu\n", ds_index);
          printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
     	 EXEC SQL COMMIT WORK;
          return(-1);

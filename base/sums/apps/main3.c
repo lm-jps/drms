@@ -156,13 +156,13 @@ int main(int argc, char *argv[])
 /*  system(cmd);
 */
 
-  /*sum->mode = RETRIEVE + TOUCH;*/
-  sum->mode = NORETRIEVE;
-  sum->tdays = 5;
+  sum->mode = RETRIEVE + TOUCH;
+  //sum->mode = NORETRIEVE + TOUCH;
+  sum->tdays = 30;
   sum->reqcnt = 3;
   dsixpt = sum->dsix_ptr;
   *dsixpt++ = 131047;
-  *dsixpt++ = 99;
+  *dsixpt++ = 202908;
   *dsixpt++ = 131049;
 /*  *dsixpt++ = 1159350; */
 /*  *dsixpt++ = 17499; */

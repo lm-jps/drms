@@ -5,6 +5,7 @@ d		:= $(dir)
 
 # Local variables
 sum_svc_obj_$(d)	:= $(addprefix $(d)/, sum_svc_proc.o sum_init.o du_dir.o)
+xsum_svc_obj_$(d)	:= $(addprefix $(d)/, sum_svc_proc.o sum_init.o du_dir.o)
 tape_svc_obj_$(d)	:= $(addprefix $(d)/, tape_svc_proc.o tapeutil.o tape_inventory.o)
 tapearc_obj_$(d)	:= $(addprefix $(d)/, padata.o)
 
@@ -18,6 +19,9 @@ endif
 ifeq ($(HOST),dcs2.jsoc.Stanford.EDU)
         CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMDC
 endif
+ifeq ($(HOST),d01.Stanford.EDU)
+        CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMT950
+endif
 ifeq ($(HOST),tenerife.tuc.noao.edu)
 	CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMNOAO
 endif
@@ -28,12 +32,13 @@ endif
 LL_TGT_$(d) := -lecpg -lpq
 
 SUMSVC_$(d)	:= $(d)/sum_svc
+XSUMSVC_$(d)	:= $(d)/xsum_svc
 TAPESVC_$(d)	:= $(d)/tape_svc
 TARC_$(d)	:= $(d)/tapearc
 
-BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main3 tapeonoff driveonoff sum_rm impexp drive0_svc drive1_svc drive2_svc drive3_svc robot0_svc md5filter)
+BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main3 main4 tapeonoff driveonoff sum_rm impexp drive0_svc drive1_svc drive2_svc drive3_svc robot0_svc md5filter)
 
-TGT_$(d)	:= $(BINTGT_$(d)) $(SUMSVC_$(d)) $(TAPESVC_$(d)) $(TARC_$(d))
+TGT_$(d)	:= $(BINTGT_$(d)) $(SUMSVC_$(d)) $(XSUMSVC_$(d)) $(TAPESVC_$(d)) $(TARC_$(d))
 
 SUMS_BIN	:= $(SUMS_BIN) $(TGT_$(d))
 
@@ -68,6 +73,7 @@ $(d)/robot%_svc.o:	$(d)/robotn_svc.c
 $(filter-out $(d)/drive%_svc.o $(d)/robot%_svc.o, $(OBJ_$(d))):	%.o:	%.c
 			$(GCC_COMP)
 
+$(XSUMSVC_$(d)):	$(sum_svc_obj_$(d))
 $(SUMSVC_$(d)):		$(sum_svc_obj_$(d))
 $(TAPESVC_$(d)):	$(tape_svc_obj_$(d))
 $(TARC_$(d)):		$(tapearc_obj_$(d))
