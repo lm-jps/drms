@@ -1,5 +1,0 @@
-#!/bin/csh -f
-/bin/mv /tmp/tapearc_cron.log /tmp/tapearc_cron.log.old
-date >& /tmp/tapearc_cron.log
-/home/production/cvs/jsoc/bin/linux_x86_64/tapearc -v jsoc >>& /tmp/tapearc_cron.log
-date >> /tmp/tapearc_cron.log
