@@ -335,7 +335,7 @@ KEY *putdo_1(KEY *params)
     cptr = GETKEY_str(params, "wd_0");
     sprintf(sysstr, "sudo chmod -R go-w %s; sudo chown -Rf production %s", 
 			cptr, cptr);
-    /*sprintf(sysstr, "sudo /home/jim/cvs/jsoc/scripts/sutest.pl %s", cptr);*/
+    /*sprintf(sysstr, "sudo /home/jim/cvs/JSOC/scripts/sutest.pl %s", cptr);*/
     write_log("%s\n", sysstr);
     if(system(sysstr)) {
         write_log("**Warning: Error on: %s\n", sysstr);

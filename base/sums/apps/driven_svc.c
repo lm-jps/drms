@@ -206,7 +206,7 @@ void setup()
   write_log("\n## %s %s for pid = %d ##\n", 
 		datestring(), drvname, pid);
   write_log("Database to connect to is %s\n", dbname);
-  sprintf(md5filter, "/home/production/cvs/jsoc/bin/%s/md5filter",
+  sprintf(md5filter, "/home/production/cvs/JSOC/bin/%s/md5filter",
 		getenv("JSOC_MACHINE"));
   write_log("md5filter=%s\n", md5filter); /* !!!TEMP */
   if (signal(SIGINT, SIG_IGN) != SIG_IGN)
