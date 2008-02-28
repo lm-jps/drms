@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-#/home/jim/cvs/jsoc/scripts/sum/sum_bad_permissions.pl
+#/home/jim/cvs/JSOC/scripts/sum/sum_bad_permissions.pl
 #
 #Cleans up SUM storage and DB tables for Storage Units with bad permissions
 #like was found for:

@@ -1118,18 +1118,6 @@ static void FillDRMSSeg(void *hSOI,
 	    snprintf(segout->info->name, DRMS_MAXSEGNAMELEN, "%s", segname);
 	    segout->info->segnum = 0; /* only one segment */
 	    segout->info->type = SOITypeToDRMSType((*pFn_sds_datatype)(sds));
-
-	    /* SOI will convert to either float or double */
-	    if (segout->info->type == DRMS_TYPE_CHAR || 
-		segout->info->type == DRMS_TYPE_SHORT)
-	    {
-	       segout->info->type = DRMS_TYPE_FLOAT;
-	    }
-	    else
-	    {
-	       segout->info->type = DRMS_TYPE_DOUBLE;
-	    }
-
 	    segout->info->naxis = rank;
 	    segout->info->protocol = protocol;
 	    segout->info->scope = DRMS_VARIABLE;

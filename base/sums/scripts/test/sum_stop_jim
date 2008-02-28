@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-#/home/production/cvs/jsoc/scripts/sum_stop_jim
+#/home/production/cvs/JSOC/scripts/sum_stop_jim
 #This is to stop the sum_svc and related servers.
 #
 $| = 1;                 #flush output as we go

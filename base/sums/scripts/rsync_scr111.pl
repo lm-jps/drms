@@ -1,16 +1,16 @@
 #!/usr/bin/perl
-#/home/jim/cvs/jsoc/scripts/rsync_scr111.pl
+#/home/jim/cvs/JSOC/scripts/rsync_scr111.pl
 #
 #Usage: rsync_scr111.pl [log_file]
 #where log_file is an optional file to store the output log.
 #      If none is given then the log goes to
 #      /tmp/rsync_scr111_YYYY.MM.DD_HH:MM:SS.log
 #
-#rsync's dcs0:/home/jim/cvs/jsoc to xim:/scr111/dcs0_backup and to
+#rsync's dcs0:/home/jim/cvs/JSOC to xim:/scr111/dcs0_backup and to
 #xim:/home/jim/dcs0_backup
 #
 #NOTE!! were the backup is place is determined in 
-#/home/jim/cvs/jsoc/scripts/ssh_rsync.source and may not be /scr111.
+#/home/jim/cvs/JSOC/scripts/ssh_rsync.source and may not be /scr111.
 #
 #Typically this is run as a user jim cron job.
 #
@@ -39,7 +39,7 @@ else {
 }
 
 #set up for ssh w/o password
-#`source /home/jim/cvs/jsoc/scripts/ssh_setenv`;
+#`source /home/jim/cvs/JSOC/scripts/ssh_setenv`;
 $cmd = "source /home/jim/cvs/JSOC/base/sums/scripts/ssh_rsync.source";
 
 if(system "$cmd 1> $logfile 2>&1") {

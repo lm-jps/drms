@@ -36,7 +36,7 @@
 #define TAR_FILE_SZ_BLKS 976563 /* TAR_FILE_SZ/512 */
 #define LIBDEV "/dev/sg6"
 /* If /dev/ name in this file then override the LIBDEV above */
-#define LIBDEVFILE "/home/production/cvs/jsoc/tables/libdevfile.cfg"
+#define LIBDEVFILE "/home/production/cvs/JSOC/tables/libdevfile.cfg"
 #define SUMDR0 "/dev/nst0"
 #define SUMDR1 "/dev/nst1"
 #define SUMDR  "/dev/nst"
