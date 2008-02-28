@@ -37,13 +37,16 @@
 #define DRMS_MAXCOMMENTLEN     (255)
 /** \brief Maximum byte length of DRMS segment file name */
 #define DRMS_MAXSEGFILENAME    (256)
-#define DRMS_MAXPRIMIDX        (5) /* Max number of keywords in the primary index. */
-#define DRMS_DEFVAL_MAXLEN     (1000) /* Max length of the string holding a keyword default value. */
-
-#define DRMS_MAXLINKDEPTH  (20) /* The maximal length we allow of a 
-				   chain of links. If a chain longer than this
-				   is encountered we assume that there is a 
-				   cyclic link. */
+/** \brief Max number of keywords in the primary index. */
+#define DRMS_MAXPRIMIDX        (15) 
+/** \brief Max number of keywords to make db index. */
+#define DRMS_MAXDBIDX          (10) 
+/** \brief Max length of the string holding a keyword default value. */
+#define DRMS_DEFVAL_MAXLEN     (1000) 
+/** \brief The maximal length we allow of a chain of links. If a chain
+longer than this is encountered we assume that there is a cyclic
+link. */
+#define DRMS_MAXLINKDEPTH  (20) 
 #define DRMS_MAXHOSTNAME (128)
 
 #include "drms_protocol.h"
@@ -404,11 +407,15 @@ typedef struct DRMS_SeriesInfo_struct
   int retention;  /* Default retention time in seconds. */
   int tapegroup;  /* Tapegroup of the series. */
 
-  /* Primary index information. */
+  /* Prime key information. */
   int pidx_num;   /* Number of keywords in primary index. */
   struct DRMS_Keyword_struct *pidx_keywords[DRMS_MAXPRIMIDX]; 
                 /* Pointers to keyword structs for keywords that
 		   make up the primary key.*/
+  /* DB index information. */
+  int dbidx_num;   /* Number of keywords to make db index. */
+  struct DRMS_Keyword_struct *dbidx_keywords[DRMS_MAXDBIDX]; 
+
 }  DRMS_SeriesInfo_t;
 
 

@@ -1,5 +1,4 @@
 // #define DEBUG
-
 #include "drms.h"
 #include "drms_priv.h"
 #include "ctype.h"
@@ -30,7 +29,7 @@ static int parse_keyword(char **in,
 static int parse_links(char *desc, DRMS_Record_t *template);
 static int parse_link(char **in, DRMS_Record_t *template);
 static int parse_primaryindex(char *desc, DRMS_Record_t *template);
-
+static int parse_dbindex(char *desc, DRMS_Record_t *template);
 
 /* This macro advances the character pointer argument past all 
    whitespace or until it points to end-of-string (0). */
@@ -69,7 +68,9 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
   /* IMPORTANT: parse_keywords() can modify the list of primary keywords, 
   * so initialize here. */
   template->seriesinfo->pidx_num = 0;
- 
+
+  template->seriesinfo->dbidx_num = 0;
+
   lineno = 0;
   if (parse_seriesinfo(desc, template))
   {
@@ -105,6 +106,12 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
   lineno = 0;
   /* Ensure that slotted keywords are NOT DRMS-prime */
   if (parse_primaryindex(desc, template))
+  {
+    fprintf(stderr,"Failed to parse series info.\n");
+    goto bailout;
+  }
+
+  if (parse_dbindex(desc, template))
   {
     fprintf(stderr,"Failed to parse series info.\n");
     goto bailout;
@@ -1144,6 +1151,97 @@ static int parse_primaryindex(char *desc, DRMS_Record_t *template)
   return 0; 
 }
 
+static int parse_dbindex(char *desc, DRMS_Record_t *template)
+{
+  int len;
+  char *start, *p, *q;
+  DRMS_Keyword_t *key;
+  char name[DRMS_MAXNAMELEN];
+  int exist = 0;
+
+  /* Parse the description line by line, filling 
+     out the template struct. */
+  start = desc;
+  len = getnextline(&start);
+  while(*start)
+  {
+    p = start;
+    SKIPWS(p);
+    q = p;
+    if (getkeyword(&q))
+      return 1;
+    
+    if (prefixmatch(p,"DBIndex:"))
+    {
+      exist = 1;
+      p = q;
+      SKIPWS(p);
+
+      while(p<=(start+len) && *p)
+      {	
+	if (template->seriesinfo->dbidx_num >= DRMS_MAXDBIDX)
+	{
+	  printf("Too many keywords in primary index.\n");
+	  return 1;
+	}
+	  
+
+	while(p<=(start+len)  && isspace(*p))
+	  ++p;
+	q = name;
+	while(p<=(start+len) && q<name+sizeof(name) && !isspace(*p) && *p!=',')
+	  *q++ = *p++;	       
+	*q++ = 0;
+	p++;
+	
+	key = hcon_lookup_lower(&template->keywords,name);
+	if (key==NULL)
+	{
+	   printf("Invalid keyword '%s' in db index.\n",name);
+	   return 1;
+	}
+
+	if (drms_keyword_getsegscope(key) == 1)
+	{
+	   /* The purpose of per-segment keywords is to select 
+	    * among segments within a record, not to select among records
+	    * within a series (which is the purpose of a prime keyword). */
+#ifdef DEBUG
+	   printf("NOT adding primary key '%s' because it is a per-segment keyword.\n",
+		  name);
+#endif
+	}
+	else
+	{
+#ifdef DEBUG
+	   printf("adding db idx '%s'\n",name);
+#endif
+	   template->seriesinfo->dbidx_keywords[(template->seriesinfo->dbidx_num)++] =
+	     key; 
+	}
+      }
+
+#ifdef DEBUG
+      { int i;
+      printf("DB indices: ");
+      for (i=0; i<template->seriesinfo->dbidx_num; i++)
+	printf("'%s' ",(template->seriesinfo->dbidx_keywords[i])->info->name); }
+      printf("\n");
+#endif     
+
+      break;
+    }
+
+    start += len+1;
+    len = getnextline(&start);
+  }
+
+  if (!exist) {
+      template->seriesinfo->dbidx_num = -1;
+  }
+
+  return 0; 
+}
 
 
 /* Skip empty lines and lines where the first non-whitespace character 
@@ -1466,7 +1564,6 @@ void drms_link_print_jsd(DRMS_Link_t *link) {
 
 void drms_jsd_printfromrec(DRMS_Record_t *rec) {
    const int fwidth=17;
-   int i;
    HIterator_t hit;
    DRMS_Link_t *link;
    DRMS_Keyword_t *key;
@@ -1516,7 +1613,7 @@ void drms_jsd_printfromrec(DRMS_Record_t *rec) {
 void drms_jsd_print(DRMS_Env_t *drms_env, const char *seriesname) {
    int status = DRMS_SUCCESS;
 
-   DRMS_Record_t *rec = drms_template_record(drms_env, seriesname, status);
+   DRMS_Record_t *rec = drms_template_record(drms_env, seriesname, &status);
    if (rec==NULL)
    {
       printf("Series '%s' does not exist. drms_template_record returned "

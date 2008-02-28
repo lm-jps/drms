@@ -337,13 +337,30 @@ int drms_insert_series(DRMS_Session_t *session, int update,
   /* Create the main table for the series. */
   if(drms_dms(session, NULL, createstmt))
     goto failure;
-  
-  /* Build an index of the primary index columns. */
-  if (si->pidx_num>0)
+
+  /* 
+     Backward compatibility: don't create composite index unless there
+     is no DBIndex in jsd. 
+     Since we are increasing the max number of prime keys allowed,
+     make sure no composite index with > 5 keyword is made.
+  */
+  if (si->dbidx_num == -1 && si->pidx_num>0 && si->pidx_num <= 5)
   {
+    /* Build an index of the primary index columns. */
     p = createstmt;
     p += sprintf(p,"create index %s_prime_idx on %s ( %s )",
 		 series_lower, series_lower, pidx_buf);
+    if(drms_dms(session, NULL, createstmt))
+      goto failure;
+  }
+
+  if (si->dbidx_num > 0) {
+    p = createstmt;
+    for (i = 0; i < si->dbidx_num; i++) {
+      char *dbidx_name = (si->dbidx_keywords[i])->info->name;
+      p += sprintf(p,"create index %s_%s on %s ( %s );",
+		   series_lower, dbidx_name, series_lower, dbidx_name);
+    }
     if(drms_dms(session, NULL, createstmt))
       goto failure;
   }
