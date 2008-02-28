@@ -249,12 +249,6 @@ int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
     }
   }
   free(sum->dsix_ptr);
-  /* free all getkey_str() mallocs that ended up in **wd */
-  cptr = sum->wd;
-  for(i=0; i < SUMARRAYSZ; i++) {
-    if(*cptr) { free(*cptr); }
-    *cptr++;
-  }
   free(sum->wd);
   free(sum);
   freekeylist(&klist);
