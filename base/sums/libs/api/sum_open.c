@@ -208,7 +208,6 @@ int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
 {
   KEY *klist;
   char *call_err;
-  char **cptr;
   static char res;
   enum clnt_stat status;
   int i;
