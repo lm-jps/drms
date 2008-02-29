@@ -26,7 +26,7 @@
 #include <sys/mtio.h>
 
 #define MAX_WAIT 20  /* max times to wait for rdy in get_tape_file_num() */
-#define CMDLENWRT 16384
+#define CMDLENWRT 24576
 #define GTARLOGDIR "/var/logs/SUM/gtar"
 #define GTAR "/usr/local/bin/gtar"	/* gtar 1.16 on 29May2007 */
 static char errstr[256];
@@ -46,6 +46,7 @@ void write_time();
 char logfile[MAX_STR];
 char md5file[64];
 char md5filter[128];
+char rcmd[CMDLENWRT];
 
 void logkey();
 extern int errno;
@@ -1235,24 +1236,24 @@ return; /* !!!TEMP noop */
 int read_drive_to_wd(int sim, char *wd, int drive,  
 	 char *tapeid, int tapefilenum, char *logname, uint64_t filedsixoff[])
 {
-  char cmd[24576], dname[80], md5file[80], md5sum[36], md5db[36], Ddir[128];
+  char dname[80], md5file[80], md5sum[36], md5db[36], Ddir[128];
   uint64_t dsix;
   int i, status;
 
   sprintf(dname, "%s%d", SUMDR, drive);
   sprintf(md5file, "/usr/local/logs/SUM/md5/rdsum_%d", drive);
-  sprintf(cmd, "dd if=%s bs=%db 2> %s | %s %d %s 2>> %s | %s xvf - -b%d -C %s", 
+  sprintf(rcmd, "dd if=%s bs=%db 2> %s | %s %d %s 2>> %s | %s xvf - -b%d -C %s", 
    dname, GTARBLOCK, logname, md5filter, GTARBLOCK, md5file, logname, GTAR, GTARBLOCK, wd);
 
   for(i=0; ; i++) {
     dsix = filedsixoff[i];
     if(!dsix) break;
     sprintf(Ddir, "D%lu", dsix);
-    sprintf(cmd, "%s %s", cmd, Ddir);
+    sprintf(rcmd, "%s %s", rcmd, Ddir);
   }
-  sprintf(cmd, "%s 1>>%s 2>> %s", cmd, logfile, logname);
+  sprintf(rcmd, "%s 1>>%s 2>> %s", rcmd, logfile, logname);
   write_time();
-  write_log("*Dr%d:rd: %s\n", drivenum, cmd);
+  write_log("*Dr%d:rd: %s\n", drivenum, rcmd);
   if(sim) {				/* simulation mode only */
     sleep(7);
     /* !!!TEMP for test */
@@ -1260,7 +1261,7 @@ int read_drive_to_wd(int sim, char *wd, int drive,
     /*return(-1);*/
   }
   else {
-    if(status = system(cmd)) {
+    if(status = system(rcmd)) {
       write_log("***Dr%d:rd:Error. exit status=%d\n", drivenum, WEXITSTATUS(status));
       return(-1);
     }
