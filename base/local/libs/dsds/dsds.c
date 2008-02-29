@@ -1135,7 +1135,8 @@ static void FillDRMSSeg(void *hSOI,
 	    if (segout->info->type == DRMS_TYPE_CHAR || 	 
 		segout->info->type == DRMS_TYPE_SHORT ||
 		segout->info->type == DRMS_TYPE_INT ||
-		segout->info->type == DRMS_TYPE_LONGLONG)
+		segout->info->type == DRMS_TYPE_LONGLONG ||
+		segout->info->type == DRMS_TYPE_FLOAT)
 	    { 	 
 	       segout->info->type = DRMS_TYPE_FLOAT; 	 
 	    } 	 
