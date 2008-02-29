@@ -52,13 +52,14 @@ endif
 
 # Path to 3rd-party library headers
 FMATHLIBSH = -I$(_JSOCROOT_)/lib_third_party/include
-
+CFITSIOH = -I$(_JSOCROOT_)/lib_third_party/include
 
 ifeq ($(COMPILER), icc)
   ifeq ($(JSOC_MACHINE), linux_x86_64)
 #    FMATHLIBS = -lmkl_lapack -lmkl -L$(_JSOCROOT_)/lib_third_party/lib/linux-x86_64/ -lfftw3f -lcfitsio
     # Path to 64-bit 3rd-party libraries
     FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
+    CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
 
     # All 3rd-party math libraries - local rules can define a subset
     FMATHLIBS = $(FMATHLIBSL) -lfftw3f -lcfitsio
@@ -66,6 +67,7 @@ ifeq ($(COMPILER), icc)
 #    FMATHLIBS = -lmkl_lapack -lmkl -L$(_JSOCROOT_)/lib_third_party/lib/linux-ia32/ -lfftw3f -lcfitsio
     # Path to 32-bit 3rd-party libraries
     FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
+    CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
 
     # All 3rd-party math libraries - local rules can define a subset
     FMATHLIBS = $(FMATHLIBSL) -lfftw3f -lcfitsio
@@ -166,7 +168,7 @@ FLINK		= $(F77) $(F_LF_ALL) $(LF_TGT) -o $@ $^ $(LL_TGT) $(LL_ALL)
 SLBIN           = ln -sf ../../_$(JSOC_MACHINE)/$@ ../bin/$(JSOC_MACHINE)/
 SLLIB		= ln -sf ../../_$(JSOC_MACHINE)/$@ ../lib/$(JSOC_MACHINE)/
 
-ALL_LIBS_FPIC = $(LIBDRMSCLIENT_FPIC) $(LIBDBCLIENT_FPIC) $(LIBCMDPARAMS_FPIC) $(LIBTHREADUTIL_FPIC) $(LIBRICECOMP_FPIC) $(LIBDSTRUCT_FPIC) $(LIBMISC_FPIC) $(LIBTIMEIO_FPIC)
+ALL_LIBS_FPIC = $(LIBDRMSCLIENT_FPIC) $(LIBDBCLIENT_FPIC) $(LIBCMDPARAMS_FPIC) $(LIBTHREADUTIL_FPIC) $(LIBRICECOMP_FPIC) $(LIBDSTRUCT_FPIC) $(LIBMISC_FPIC) $(LIBTIMEIO_FPIC) $(LIBFITSRW_FPIC)
 
 ### Standard parts
 #
@@ -174,8 +176,8 @@ include	$(SRCDIR)/Rules.mk
 
 # Libraries from src/util linked with all programs.
 SYSLIBS = -lz -ldl -lpthread -lm
-SRCLIBS = $(LIBTHREADUTIL) $(LIBRICECOMP) $(LIBCMDPARAMS) $(LIBMISC) $(LIBDSTRUCT) $(LIBTIMEIO)
-FSRCLIBS = $(LIBTHREADUTIL) $(LIBRICECOMP) $(LIBCMDPARAMSF) $(LIBMISC) $(LIBDSTRUCT) $(LIBTIMEIO)
+SRCLIBS = $(LIBTHREADUTIL) $(LIBRICECOMP) $(LIBCMDPARAMS) $(LIBMISC) $(LIBDSTRUCT) $(LIBTIMEIO) $(LIBFITSRW)
+FSRCLIBS = $(LIBTHREADUTIL) $(LIBRICECOMP) $(LIBCMDPARAMSF) $(LIBMISC) $(LIBDSTRUCT) $(LIBTIMEIO) $(LIBFITSRW)
 
 ########## Libraries to link for server executables,    ##############
 ########## standalone executables and pipeline modules. ##############

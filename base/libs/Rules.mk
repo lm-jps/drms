@@ -20,6 +20,8 @@ dir	:= $(d)/threads
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/timeio
 -include		$(SRCDIR)/$(dir)/Rules.mk
+dir	:= $(d)/fitsrw
+-include		$(SRCDIR)/$(dir)/Rules.mk
 
 # Standard things
 d		:= $(dirstack_$(sp))
