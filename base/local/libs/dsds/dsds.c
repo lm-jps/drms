@@ -1123,6 +1123,26 @@ static void FillDRMSSeg(void *hSOI,
 	    segout->info->scope = DRMS_VARIABLE;
 
 	    memcpy(segout->axis, dims, sizeof(int) * rank);
+
+	    /* IMPORTANT: If bscale OR bzero are present, SOI code (sds_read_fits()) will 
+	     * convert data to either float or double.  bzero and bscale are needed
+	     * to do the scaling part of the conversion.  If |bitpix| > 16, 
+	     * then conversion to double happens, else conversion to float. 
+	     * sds_get_fits_head() will always give you the raw data type. 
+	     * So, adjust for this now.  */
+	    
+	    /* SOI will convert to either float or double */ 	 
+	    if (segout->info->type == DRMS_TYPE_CHAR || 	 
+		segout->info->type == DRMS_TYPE_SHORT ||
+		segout->info->type == DRMS_TYPE_INT ||
+		segout->info->type == DRMS_TYPE_LONGLONG)
+	    { 	 
+	       segout->info->type = DRMS_TYPE_FLOAT; 	 
+	    } 	 
+	    else 	 
+	    { 	 
+	       segout->info->type = DRMS_TYPE_DOUBLE; 	 
+	    }
  
 	    status = kDSDS_Stat_Success;
 	 }
@@ -1403,7 +1423,7 @@ long long DSDS_open_records(const char *dsspec,
 	       
 		  sds = (*pFn_VDS_select_hdr)(vds, 0, sn);
 
-		  if (sds && sds->filename && *(sds->filename))
+		  if (sds)
 		  {
 		     /* make primary index keywords - series_num and sn */
 		     (*keys)[nDRMSRecs] = (DSDS_KeyList_t *)malloc(sizeof(DSDS_KeyList_t));
