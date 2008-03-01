@@ -60,7 +60,7 @@ $(d)/drive1_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_1
 $(d)/drive2_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_2
 $(d)/drive3_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_3
 $(d)/drive%_svc.o:	$(d)/driven_svc.c
-			$(GCC_COMP)
+			$(ICC_COMP)
 
 # Special rules for building robotX_svc.o, X=0,1,2,3 from from driven_svc.c
 $(d)/robot0_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DROBOT_0
@@ -68,10 +68,10 @@ $(d)/robot1_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DROBOT_1
 $(d)/robot2_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DROBOT_2
 $(d)/robot3_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DROBOT_3
 $(d)/robot%_svc.o:	$(d)/robotn_svc.c
-			$(GCC_COMP)
+			$(ICC_COMP)
 
 $(filter-out $(d)/drive%_svc.o $(d)/robot%_svc.o, $(OBJ_$(d))):	%.o:	%.c
-			$(GCC_COMP)
+			$(ICC_COMP)
 
 $(XSUMSVC_$(d)):	$(sum_svc_obj_$(d))
 $(SUMSVC_$(d)):		$(sum_svc_obj_$(d))
@@ -82,7 +82,7 @@ $(TARC_$(d)):		$(tapearc_obj_$(d))
 
 $(TGT_$(d)):		LL_TGT :=  $(LIBSUM) $(LIBSUMSAPI) $(LL_TGT) $(LL_TGT_$(d))
 $(TGT_$(d)):	%:	%.o $(LIBSUM) $(LIBSUMSAPI) $(LIBMISC)
-			$(GCC_LINK)
+			$(ICC_LINK)
 			$(SLBIN)
 
 # Shortcuts
