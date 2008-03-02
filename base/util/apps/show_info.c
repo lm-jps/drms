@@ -217,6 +217,101 @@ DRMS_RecordSet_t *drms_find_rec_last(DRMS_Record_t *rec, int wantprime)
   return(rs);
   }
 
+
+static void list_series_info(DRMS_Record_t *rec)
+  {
+  DRMS_Keyword_t *key;
+  DRMS_Segment_t *seg;
+  DRMS_Link_t *link;
+  HIterator_t hit;
+  int iprime;
+  /* show the prime index keywords */
+  int npkeys = 0;
+  char **extpkeys = 
+      drms_series_createpkeyarray(rec->env, rec->seriesinfo->seriesname, &npkeys, NULL);
+  if (extpkeys && npkeys > 0)
+    {
+    printf("Prime Keys are:\n");
+    for (iprime = 0; iprime < npkeys; iprime++)
+        printf("\t%s\n", extpkeys[iprime]);
+    }
+
+  if (extpkeys)
+    {
+    drms_series_destroypkeyarray(&extpkeys, npkeys);
+    }
+
+  /* show all keywords */
+  printf("All Keywords for series %s:\n",rec->seriesinfo->seriesname);
+  hiter_new (&hit, &rec->keywords);
+  while ((key = (DRMS_Keyword_t *)hiter_getnext (&hit)))
+    {
+    printf ("\t%-10s", key->info->name);
+    if (key->info->islink)
+        {
+        printf("\tlink through %s",seg->info->linkname);
+        }
+    else
+        {
+        printf ("\t(%s)", drms_type_names[key->info->type]);
+        }
+    printf ("\t%s\n", key->info->description);
+    }
+  
+  /* show the segments */
+  if (rec->segments.num_total)
+    {
+    printf("Segments for series %s:\n",rec->seriesinfo->seriesname);
+    hiter_new (&hit, &rec->segments);
+    while ((seg = (DRMS_Segment_t *)hiter_getnext (&hit)))
+        { /* segment name, units, protocol, dims, description */
+	char prot[DRMS_MAXNAMELEN];
+	int iaxis, naxis = seg->info->naxis;
+	strcpy(prot, drms_prot2str(seg->info->protocol));
+	if (seg->info->islink)
+	    {
+	    printf("\tlink through %s",seg->info->linkname);
+	    }
+	else
+	    {
+            printf ("\t%-10s", seg->info->name);
+	    printf ("\t%7s", seg->info->unit);
+	    printf ("\t%7s",prot);
+	    for (iaxis=0; iaxis<naxis; iaxis++)
+	        {
+	        if (iaxis == 0)
+	            printf("\t");
+	        else
+		    printf("x");
+		if (seg->info->scope == DRMS_VARDIM)
+		    printf("VAR");
+		else
+		    printf("%d",seg->axis[iaxis]);
+		}
+            }
+	    printf ("\t%s\n", seg->info->description);
+        }
+    }
+
+  /* show the links */
+  if (rec->links.num_total)
+    {
+    printf("Links for series %s:\n",rec->seriesinfo->seriesname);
+    hiter_new (&hit, &rec->links);
+    while ((link = (DRMS_Link_t *)hiter_getnext (&hit)))
+        {
+        printf ("\t%-10s", link->info->name);
+        if (link->info->type == STATIC_LINK)
+            printf("\tSTATIC");
+        else
+             printf("\tDYNAMIC");
+        printf ("\t%s", link->info->target_series);
+        printf ("\t%s\n", link->info->description);
+        }
+    }
+  return;
+  }
+
 /* Module main function. */
 int DoIt(void)
   {
@@ -347,39 +442,9 @@ int DoIt(void)
       free (seriesname);
 
     if (list_keys)
-      {
-      /* show the prime index keywords */
-      int npkeys = 0;
-      char **extpkeys = 
-	drms_series_createpkeyarray(rec->env, rec->seriesinfo->seriesname, &npkeys, NULL);
-      if (extpkeys && npkeys > 0)
-        {
-	printf("Prime Keys are:\n");
-	for (iprime = 0; iprime < npkeys; iprime++)
-	  printf("\t%s\n", extpkeys[iprime]);
-        }
-
-      if (extpkeys)
-      {
-	 drms_series_destroypkeyarray(&extpkeys, npkeys);
-      }
-
-      /* show all keywords */
-      printf("All Keywords for series %s:\n",rec->seriesinfo->seriesname);
-      hiter_new (&hit, &rec->keywords);
-      while ((key = (DRMS_Keyword_t *)hiter_getnext (&hit)))
-        printf ("\t%-10s\t%s (%s)\n", key->info->name, key->info->description,
-            drms_type_names[key->info->type]);
-  
-      /* show the segments */
-      if (rec->segments.num_total)
-        {
-        printf("Segments for series %s:\n",rec->seriesinfo->seriesname);
-        hiter_new (&hit, &rec->segments);
-        while ((seg = (DRMS_Segment_t *)hiter_getnext (&hit)))
-            printf ("\t%-10s\t%s\n", seg->info->name, seg->info->description);
-        }
-      return (0);
+      { 
+      list_series_info(rec);
+      return(0);
       }
     else if (jsd_list) 
       {
