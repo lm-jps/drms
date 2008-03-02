@@ -1042,7 +1042,7 @@ static int parse_primaryindex(char *desc, DRMS_Record_t *template)
     if (getkeyword(&q))
       return 1;
     
-    if (prefixmatch(p,"Index:") || prefixmatch(p,"Primekeys:"))
+    if (prefixmatch(p,"Index:") || prefixmatch(p,"Primekey:"))
     {
       p = q;
       SKIPWS(p);
