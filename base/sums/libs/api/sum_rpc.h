@@ -16,7 +16,7 @@
 #define MAX_PART 64		/* max # +1 of dedicated /SUM partitions */
 #define MAXSUMSETS 4		/* max # of SUM sets */
 #define MAXSUMOPEN 16		/* max# of SUM opens for a single client */
-#define MAXSUMREQCNT 500	/* max# of SU that can request in a single
+#define MAXSUMREQCNT 512	/* max# of SU that can request in a single
 			         * SUM_get() call */
 #define MAX_STR 256		/* max size of a char[] */
 #define MAXSTRING 4096
