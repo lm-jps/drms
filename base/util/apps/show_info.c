@@ -241,6 +241,19 @@ static void list_series_info(DRMS_Record_t *rec)
     drms_series_destroypkeyarray(&extpkeys, npkeys);
     }
 
+#ifdef WAITFORTEMPOLATERECPRDPATCH
+  /* show DB index keywords */
+  if (rec->seriesinfo->dbidx_num > 0)
+    {
+    int i;
+    printf("DB Index Keys are:\n");
+    for (i=0; i<rec->seriesinfo->dbidx_num; i++)
+        printf("\t%s\n",(rec->seriesinfo->dbidx_keywords[i])->info->name);
+    }
+  else
+    printf("DB Index Keys are same as Prime Keys\n");
+#endif
+
   /* show all keywords */
   printf("All Keywords for series %s:\n",rec->seriesinfo->seriesname);
   hiter_new (&hit, &rec->keywords);
