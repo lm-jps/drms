@@ -250,7 +250,6 @@ static void list_series_info(DRMS_Record_t *rec)
   else
     printf("No Prime Keys are defined for this series.\n");
 
-#ifdef WAITFORTEMPOLATERECPRDPATCH
   /* show DB index keywords */
   if (rec->seriesinfo->dbidx_num > 0)
     {
@@ -261,7 +260,6 @@ static void list_series_info(DRMS_Record_t *rec)
     }
   else
     printf("DB Index Keys are same as Prime Keys\n");
-#endif
 
   /* show all keywords */
   printf("All Keywords for series %s:\n",rec->seriesinfo->seriesname);
