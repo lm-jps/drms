@@ -6,6 +6,8 @@
 #
 #   Ex: extcvscomm.pl 2007-12-7
 
+$NCOMM = 256;
+
 my($cmd);
 my($arg);
 my($line);
@@ -13,10 +15,14 @@ my($nextfile) = 0;
 my($grabtext) = 0;
 my($lastRelDate);
 my($file);
+my($date);
+my($author);
+my($commprefix);
 my($key);
 my(@clarr);
 my(%clmap);
 my(%fmap);
+my(%tmap);
 
 while ($arg = shift(@ARGV))
 {
@@ -56,22 +62,35 @@ while (defined($line = <CMDRET>))
 	}
 	else
 	{
-	    if ($line =~ /^date:(.+)author:(.+?);.*/)
+	    if ($line =~ /^date:\s*(.+?)\s*;\s+author:\s*(.+?);.*/)
 	    {
-		$key = "::D:$1::A:$2";
+		# Unfortunately, CVS!
+		# To work around this deficiency, use the first 256 bytes of the
+		# actual comment used during the commit.  Some people won't provide
+		# that - skip those lines.
+		$date = $1;
+		$author = $2;
+
 		$line = <CMDRET>;
 		chomp($line);
-		my($files);
+		$commprefix = substr($line, 0, $NCOMM);
+
+		if ($commprefix !~ /\S/)
+		{
+		    next;
+		}
+
+		$key = "::A:${author}::C:$commprefix";
 
 		if (defined($clmap{$key}))
 		{
-		    $clmap{$key} = "$clmap{$key}.$line";
 		    $fmap{$key} = "$fmap{$key}||$file";
 		}
 		else
 		{
 		    $clmap{$key} = $line;
 		    $fmap{$key} = $file;
+		    $tmap{$key} = "$date";
 		    push(@clarr, $key);
 		}
 	    }
@@ -87,11 +106,8 @@ while (defined($line = <CMDRET>))
 
 while (defined($key = shift(@clarr)))
 {
-    if ($key =~ /::D:\s*(\S+)\s*(\S+);\s*::A:\s*(\S+)/)
+    if ($key =~ /::A:(\S+)::C:.+/)
     {
-	print STDOUT "date: $1 $2 ($3)\nfiles: $fmap{$key}\ncomments: $clmap{$key}\n\n";
+	print STDOUT "date: $tmap{$key} ($1)\nfiles: $fmap{$key}\ncomments: $clmap{$key}\n\n";
     }
 }
-
-
-
