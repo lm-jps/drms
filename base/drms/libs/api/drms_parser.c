@@ -1042,7 +1042,7 @@ static int parse_primaryindex(char *desc, DRMS_Record_t *template)
     if (getkeyword(&q))
       return 1;
     
-    if (prefixmatch(p,"Index:") || prefixmatch(p,"Primekey:"))
+    if (prefixmatch(p,"Index:") || prefixmatch(p,"PrimeKeys:"))
     {
       p = q;
       SKIPWS(p);
@@ -1585,12 +1585,20 @@ void drms_jsd_printfromrec(DRMS_Record_t *rec) {
    {
       if ( npkeys > 0)
       { int i;
-      printf("%-*s\t%s",fwidth,"Index:",extpkeys[0]);
+      printf("%-*s\t%s",fwidth,"PrimeKeys:",extpkeys[0]);
       for (i=1; i<npkeys; i++)
         printf(", %s", extpkeys[i]);
       printf("\n");
       }
       drms_series_destroypkeyarray(&extpkeys, npkeys);
+   }
+
+   if (rec->seriesinfo->dbidx_num) {
+     printf("%-*s\t%s",fwidth,"DBIndex:", rec->seriesinfo->dbidx_keywords[0]->info->name);
+     for (int i = 1; i < rec->seriesinfo->dbidx_num; i++) {
+       printf(", %s", rec->seriesinfo->dbidx_keywords[i]->info->name);
+     }
+     printf("\n");
    }
 
    printf("%-*s\t%s\n",fwidth,"Description:",rec->seriesinfo->description);

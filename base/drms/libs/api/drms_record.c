@@ -2764,7 +2764,7 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
     /* Populate series info part */
     char *namespace = ns(seriesname);
     sprintf(query, "select seriesname, description, author, owner, "
-	    "unitsize, archive, retention, tapegroup, primary_idx "
+	    "unitsize, archive, retention, tapegroup, primary_idx, dbidx "
 	    "from %s.%s where seriesname ~~* '%s'", 
 	    namespace, DRMS_MASTER_SERIES_TABLE, seriesname);
     free(namespace);
@@ -2779,7 +2779,7 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
       stat = DRMS_ERROR_QUERYFAILED;
       goto bailout;
     }
-    if (qres->num_cols != 9 || qres->num_rows != 1)
+    if (qres->num_cols != 10 || qres->num_rows != 1)
     {
       printf("Invalid sized query result for global series information for"
 	     " series %s.\n", seriesname);      
@@ -2847,6 +2847,43 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
     }
     else
       template->seriesinfo->pidx_num = 0;
+
+    /* Set up db index list. */
+    if ( !db_binary_field_is_null(qres, 0, 9) ) {
+      db_binary_field_getstr(qres, 0, 9, DRMS_MAXDBIDX*DRMS_MAXKEYNAMELEN, buf);
+      p = buf;
+#ifdef DEBUG
+      printf("DB index string = '%s'\n",p);
+#endif
+      template->seriesinfo->dbidx_num = 0;
+      while(*p) {
+	XASSERT(template->seriesinfo->dbidx_num < DRMS_MAXDBIDX);
+	while(*p && isspace(*p))
+	  ++p;
+	q = p;
+	while(*p && !isspace(*p) && *p!=',')
+	  ++p;	       
+	*p++ = 0;
+	
+#ifdef DEBUG
+	printf("adding db index '%s'\n",q);
+#endif
+	kw = hcon_lookup_lower(&template->keywords,q);
+	XASSERT(kw);
+	template->seriesinfo->dbidx_keywords[(template->seriesinfo->dbidx_num)++] = kw; 
+      }
+#ifdef DEBUG
+      { int i;
+	printf("DB indices: ");
+	for (i=0; i<template->seriesinfo->dbidx_num; i++)
+	  printf("'%s' ",(template->seriesinfo->dbidx_keywords[i])->info->name); 
+      }
+      printf("\n");    
+#endif
+    } else {
+      template->seriesinfo->dbidx_num = 0;
+    }
+
     db_free_binary_result(qres);   
   }
   if (status)
@@ -3574,6 +3611,10 @@ void drms_fprint_record(FILE *keyfile, DRMS_Record_t *rec)
   {
      drms_series_destroypkeyarray(&extpkeys, npkeys);
   }
+
+  for (i=0; i<rec->seriesinfo->dbidx_num; i++)
+    fprintf(keyfile, "%-*s %d:\t%s\n",fwidth,"DB index",i,
+	   (rec->seriesinfo->dbidx_keywords[i])->info->name);
 
   hiter_new(&hit, &rec->keywords);
   while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )

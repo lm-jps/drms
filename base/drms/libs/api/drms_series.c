@@ -61,7 +61,7 @@ int drms_insert_series(DRMS_Session_t *session, int update,
 		       DRMS_Record_t *template, int perms)
 {
   int n, i, len=0, segnum;
-  char *pidx_buf=0, scopestr[100], *axisstr=0;
+  char *pidx_buf=0, *dbidx_buf=0, scopestr[100], *axisstr=0;
   DRMS_SeriesInfo_t *si;
   DRMS_Keyword_t *key;
   DRMS_Segment_t *seg;
@@ -147,15 +147,34 @@ int drms_insert_series(DRMS_Session_t *session, int update,
       p += sprintf(p,", %s",(si->pidx_keywords[i])->info->name);
   }
 
+  if (si->dbidx_num==0)
+  {
+    XASSERT(dbidx_buf = malloc(2));
+    *dbidx_buf = 0;
+  }
+  else
+  {
+    len = 0;
+    for (i=0; i<si->dbidx_num; i++)
+      len += strlen((si->dbidx_keywords[i])->info->name) + 3;
+    XASSERT((dbidx_buf = malloc(len+1)));
+    memset(dbidx_buf,0,len+1);
+    p = dbidx_buf;
+    p += sprintf(p,"%s",(si->dbidx_keywords[0])->info->name);
+    for (i=1; i<si->dbidx_num; i++)
+      p += sprintf(p,", %s",(si->dbidx_keywords[i])->info->name);
+  }
+
   if (drms_dmsv(session, NULL, "insert into " DRMS_MASTER_SERIES_TABLE
 		"(seriesname, description, author, owner, unitsize, archive,"
-		"retention, tapegroup, primary_idx, created) values (?,?,?,"
-		"?,?,?,?,?,?,LOCALTIMESTAMP(0))", -1,
+		"retention, tapegroup, primary_idx, dbidx, created) values (?,?,?,"
+		"?,?,?,?,?,?,?,LOCALTIMESTAMP(0))", -1,
 		DB_STRING, si->seriesname, DB_STRING, si->description, 
 		DB_STRING, si->author, DB_STRING, si->owner,
 		DB_INT4, si->unitsize, DB_INT4, si->archive, 
 		DB_INT4, si->retention, DB_INT4, si->tapegroup, 
-		DB_STRING, pidx_buf))
+		DB_STRING, pidx_buf,
+		DB_STRING, dbidx_buf))
     goto failure;
   
   p = createstmt;
