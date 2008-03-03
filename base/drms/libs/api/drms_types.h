@@ -1007,7 +1007,7 @@ DRMS_Type_t drms_str2type(const char *);
    \return String representation of the specified ::DRMS_Type_t value.
 */
 const char *drms_type2str(DRMS_Type_t type);
-int drms_missing(DRMS_Type_t type, DRMS_Type_Value_t *val);
+void drms_missing(DRMS_Type_t type, DRMS_Type_Value_t *val);
 int drms_copy_db2drms(DRMS_Type_t drms_type, DRMS_Type_Value_t *drms_dst, 
 		      DB_Type_t db_type, char *db_src);
 void drms_copy_drms2drms(DRMS_Type_t type, DRMS_Type_Value_t *dst, 
