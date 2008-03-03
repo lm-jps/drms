@@ -22,7 +22,6 @@ char *get_eff_date(int plusdays);
 
 #define TODAY (atol(get_eff_date(0)))
 #define TAR_FILE_SZ 500000000	/* try to make a tar file this size */
-#define WD_MAX_CALL_CNT 512	/* max wds to put in any one call to tape */
 #define ARCH_CHUNK 10		/* this many archive calls to tape_svc */
 #define NOTAPEARC "/usr/local/logs/soc/NOTAPEARC" /* touched by t50view */
 
@@ -587,7 +586,7 @@ int storeunitarch(int docnt)
       i++;
       walker=walker->next;
     }
-    else if((walker->group_id == curr_group_id) && (curr_group_sz < TAR_FILE_SZ) && (wd_max_call_cnt < WD_MAX_CALL_CNT)) {
+    else if((walker->group_id == curr_group_id) && (curr_group_sz < TAR_FILE_SZ) && (wd_max_call_cnt < MAXSUMREQCNT)) {
       total_bytes = curr_group_sz;
       wd_max_call_cnt++;
       sprintf(name, "wd_%d", i);
