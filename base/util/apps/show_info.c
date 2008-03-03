@@ -226,20 +226,29 @@ static void list_series_info(DRMS_Record_t *rec)
   HIterator_t hit;
   int iprime;
   /* show the prime index keywords */
-  int npkeys = 0;
-  char **extpkeys = 
-      drms_series_createpkeyarray(rec->env, rec->seriesinfo->seriesname, &npkeys, NULL);
-  if (extpkeys && npkeys > 0)
+  int npkeys = rec->seriesinfo->pidx_num;
+  if (npkeys > 0)
     {
+    int i;
     printf("Prime Keys are:\n");
-    for (iprime = 0; iprime < npkeys; iprime++)
-        printf("\t%s\n", extpkeys[iprime]);
+    for (i=0; i<npkeys; i++)
+        {
+        DRMS_Keyword_t *skey, *pkey;
+	int status;
+        skey = pkey = rec->seriesinfo->pidx_keywords[i];
+	if (pkey->info->recscope > 1)
+            pkey = drms_keyword_slotfromindex(pkey);
+        printf("\t%s", pkey->info->name);
+        if (pkey != skey)
+	    {
+	    printf(" is slotted '%s' using %s",
+		drms_keyword_getrecscopestr(pkey, &status), skey->info->name);
+	    }
+	printf("\n");
+        }
     }
-
-  if (extpkeys)
-    {
-    drms_series_destroypkeyarray(&extpkeys, npkeys);
-    }
+  else
+    printf("No Prime Keys are defined for this series.\n");
 
 #ifdef WAITFORTEMPOLATERECPRDPATCH
   /* show DB index keywords */
