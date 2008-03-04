@@ -124,6 +124,7 @@ int main(int argc, char **argv) {
   p += sprintf(p,"retention %s not null,\n",db_type_string(drms2dbtype(DRMS_TYPE_INT)));
   p += sprintf(p,"tapegroup %s not null,\n",db_type_string(drms2dbtype(DRMS_TYPE_INT)));
   p += sprintf(p,"primary_idx %s not null,\n",db_stringtype_maxlen(1024));
+  p += sprintf(p,"dbidx %s,\n",db_stringtype_maxlen(1024));
   p += sprintf(p,"created %s not null,\n",db_stringtype_maxlen(30));
   p += sprintf(p,"description %s,\n",db_stringtype_maxlen(4000));
   p += sprintf(p,"primary key (seriesname));\n");
