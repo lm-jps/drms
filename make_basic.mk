@@ -116,7 +116,7 @@ ifeq ($(DEBUG), 0)
   endif
 
   ifeq ($(JSOC_MACHINE), linux_ia64)
-    GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=itanium2 $(GCC_WARN) $(GCC_CF_GCCCOMP)
+    GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 $(GCC_WARN) $(GCC_CF_GCCCOMP)
     ICC_CF_ALL	= -I$(SRCDIR)/base/include -std=c99 $(ICC_WARN) $(ICC_CF_ICCCOMP)
   endif
 
