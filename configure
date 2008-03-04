@@ -150,7 +150,6 @@ if ($CHKLIBS == "no") then
 	cd ..
 	echo "done"
 	echo
-
 	# Set links to third-party libraries
 	echo "Setting links to third-party libraries"
 	if (!(-d lib_third_party)) then
@@ -162,7 +161,10 @@ if ($CHKLIBS == "no") then
 	    ln -sfv /home/jsoc/include include
 	    ln -sfv /home/jsoc/lib lib
 	else
-	    # Non-Stanford users.
+# Non-Stanford users: edit these lines to reflect the location of required
+#  3rd party libs: cfitsio.a
+	    ln -sfv /usr/local/include include
+	    ln -sfv /usr/local/lib lib
 	endif
 
 	set TPWARN = 0
