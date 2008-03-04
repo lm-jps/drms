@@ -108,14 +108,16 @@ endif
 
 # can't figure out how to get stupid make to do if/else if/else
 ifeq ($(DEBUG), 0)
-
-  ICC_CF_ALL	= -I$(SRCDIR)/base/include -std=c99 -xW $(ICC_WARN) $(ICC_CF_ICCCOMP)
+# defaults for generic architecture
+  GCC_CF_ALL = -I$(SRCDIR)/base/include -std=gnu99 -O2 $(GCC_WARN) $(GCC_CF_GCCCOMP)
+  ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -xW $(ICC_WARN) $(ICC_CF_ICCCOMP)
 
   ifeq ($(JSOC_MACHINE), linux_x86_64)
     GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=opteron $(GCC_WARN) $(GCC_CF_GCCCOMP)
   endif
 
   ifeq ($(JSOC_MACHINE), linux_ia64)
+# these are superfluous, since they are identical to the generic defines
     GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 $(GCC_WARN) $(GCC_CF_GCCCOMP)
     ICC_CF_ALL	= -I$(SRCDIR)/base/include -std=c99 $(ICC_WARN) $(ICC_CF_ICCCOMP)
   endif
@@ -126,8 +128,8 @@ ifeq ($(DEBUG), 0)
 
 else
 
-  GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -g $(GCC_WARN) $(GCC_CF_GCCCOMP)
-  ICC_CF_ALL	= -I$(SRCDIR)/base/include -std=c99 -g $(ICC_WARN) $(ICC_CF_ICCCOMP)
+  GCC_CF_ALL = -I$(SRCDIR)/base/include -std=gnu99 -g $(GCC_WARN) $(GCC_CF_GCCCOMP)
+  ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -g $(ICC_WARN) $(ICC_CF_ICCCOMP)
 
 endif
 
