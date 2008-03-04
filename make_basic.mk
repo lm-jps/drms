@@ -2,7 +2,9 @@ VPATH  = $(SRCDIR)
 STATIC = 
 DBNAME = POSTGRESQL
 
+# USED BY NEITHER linux_x86_64 nor linux_ia32
 PGIPATH	= /usr/include/pgsql	
+
 
 COMPILER = icc
 
@@ -104,20 +106,27 @@ GCC_WARN = -Wno-comment
 F77_WARN = -vec-report0
 endif
 
+# can't figure out how to get stupid make to do if/else if/else
 ifeq ($(DEBUG), 0)
+
+  ICC_CF_ALL	= -I$(SRCDIR)/base/include -std=c99 -xW $(ICC_WARN) $(ICC_CF_ICCCOMP)
 
   ifeq ($(JSOC_MACHINE), linux_x86_64)
     GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=opteron $(GCC_WARN) $(GCC_CF_GCCCOMP)
-  else
+  endif
+
+  ifeq ($(JSOC_MACHINE), linux_ia64)
+    GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=itanium2 $(GCC_WARN) $(GCC_CF_GCCCOMP)
+    ICC_CF_ALL	= -I$(SRCDIR)/base/include -std=c99 $(ICC_WARN) $(ICC_CF_ICCCOMP)
+  endif
+
+  ifeq ($(JSOC_MACHINE), linux_ia32)
     GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=i686 $(GCC_WARN) $(GCC_CF_GCCCOMP)
   endif	
-
-  ICC_CF_ALL	= -I$(SRCDIR)/base/include -std=c99 -xW $(ICC_WARN) $(ICC_CF_ICCCOMP)
 
 else
 
   GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -g $(GCC_WARN) $(GCC_CF_GCCCOMP)
-
   ICC_CF_ALL	= -I$(SRCDIR)/base/include -std=c99 -g $(ICC_WARN) $(ICC_CF_ICCCOMP)
 
 endif
