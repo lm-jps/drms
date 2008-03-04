@@ -122,6 +122,14 @@
    the ISO time-zone designator.
 
    @par
+   If the time value is a NaN or Infinite, ::sprint_time will print the
+   appropriate string for the "invalid" time JULIAN_DAY_ZERO. If the time
+   value is so large that the year number in conventional date-time format
+   would exceed the range of signed 4-byte integers, the format is automatically
+   converted to "JD" regardless of what was requested; this occurs for absolute
+   time values greater than 6.776e16.
+
+   @par
    Ephemeris Time and "Carrington Time" are not supported.
 */
 
