@@ -147,7 +147,7 @@ int drms_insert_series(DRMS_Session_t *session, int update,
       p += sprintf(p,", %s",(si->pidx_keywords[i])->info->name);
   }
 
-  if (si->dbidx_num==0)
+  if (si->dbidx_num <= 0)
   {
     XASSERT(dbidx_buf = malloc(2));
     *dbidx_buf = 0;
