@@ -1,8 +1,10 @@
 //#define DEBUG
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/select.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/wait.h>

@@ -81,7 +81,11 @@ endif
 LL_ALL		= $(SYSLIBS)
 
 GCC_LF_ALL	= $(STATIC) -g 
-ICC_LF_ALL	= $(STATIC) -xW
+ifeq ($(JSOC_MACHINE), linux_ia64)
+  ICC_LF_ALL	= $(STATIC)
+else
+  ICC_LF_ALL	= $(STATIC) -xW
+endif
 
 GCC_CF_GCCCOMP  = -DGCCCOMP $(D_GCC_FORT)
 ICC_CF_ICCCOMP  = -DICCCOMP $(D_GCC_FORT)
@@ -108,8 +112,7 @@ endif
 
 # can't figure out how to get stupid make to do if/else if/else
 ifeq ($(DEBUG), 0)
-# defaults for generic architecture
-  GCC_CF_ALL = -I$(SRCDIR)/base/include -std=gnu99 -O2 $(GCC_WARN) $(GCC_CF_GCCCOMP)
+  GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 $(GCC_WARN) $(GCC_CF_GCCCOMP)
   ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -xW $(ICC_WARN) $(ICC_CF_ICCCOMP)
 
   ifeq ($(JSOC_MACHINE), linux_x86_64)
@@ -117,7 +120,6 @@ ifeq ($(DEBUG), 0)
   endif
 
   ifeq ($(JSOC_MACHINE), linux_ia64)
-# these are superfluous, since they are identical to the generic defines
     GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 $(GCC_WARN) $(GCC_CF_GCCCOMP)
     ICC_CF_ALL	= -I$(SRCDIR)/base/include -std=c99 $(ICC_WARN) $(ICC_CF_ICCCOMP)
   endif
