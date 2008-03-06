@@ -10,8 +10,8 @@ Art's suggested release recipe:
 4. From the machine used in step 2, commit $JSOCROOT/base/libdrms/jsoc_version.h.
 4a. Add a new file, JSOC/CM/V<MAJ>.<MIN>/release.notes. This has the release notes (see below).  Commit.
 5. From the machine used in step 2, create a tag for the new release.  cd to $JSOCROOT.  Run "cvs tag -c Ver_<MAJ>-<MIN> ."  Replace <MAJ> with the major version number and <MIN> with the minor version number.
-5a. The NetDRMS release version number should also be incremented and tagged. From another machine, do "cvs checkout -AP DRMS".  Then cd to the root (JSOC). Then "find . -path '*CVS' -prune -o \( -type f -exec cvs tag -c NetDRMS_Ver_<MAJ>-<MIN> {} \; \)"
-6. Update the "Ver_LATEST" tag.  This tag always points to the latest release.  "cd $JSOCROOT; cvs rtag -r Ver_<MAJ>-<MIN> Ver_LATEST JSOC", where <MAJ> and <MIN> are the current release.
+5a. The NetDRMS release version number should also be incremented and tagged. From another machine, do "cvs checkout -AP DRMS".  Then cd to the root (JSOC). Then "find . -path '*CVS' -prune -o \( -type f -exec cvs tag -c NetDRMS_Ver_<MAJ>-<MIN> {} \; \)".  Actually, the commands "cvs checkout -r Ver_<MAJ>-<MIN> DRMS" followed by "cvs tag -c Net_Ver_<MAJ>-<MIN> will work".
+6. Update the "Ver_LATEST" tag.  This tag always points to the latest release.  "cd $JSOCROOT; cvs rtag -r Ver_<MAJ>-<MIN> Ver_LATEST JSOC", where <MAJ> and <MIN> are the current release.  If that doesn't work try "cvs checkout -r Ver_<MAJ>-<MIN> JSOC" followed by "cvs tag -c Ver_LATEST".
 7. Once again, edit $JSOCROOT/base/libdrms/jsoc_version.h.  The version macros should be of the form:
 
 #define jsoc_version "V3R5X"
