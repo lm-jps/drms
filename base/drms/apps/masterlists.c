@@ -1,3 +1,28 @@
+/**
+\defgroup masterlists masterlists
+
+Create DB namespace and master DRMS tables. This program prompts you
+for postgres DB password.
+
+\par Synopsis:
+
+\code
+masterlists [JSOC_DBHOST=] [JSOC_DBNAME=] [dbuser=<user>] namespace=<ns> nsgrp=<user|sys>
+\endcode
+
+\par Flags:
+\c -h: print brief usage information.
+
+\param JSOC_DBHOST Specifies (overrides) the database host to connect to. Default is ::SERVER.
+\param JSOC_DBNAME Specifies (overrides) the database name to use. Default is ::DBNAME.
+\param dbuser Specifies DB user who owns master tables drms_*. Default is the unix user who runs \ref masterlists.
+\param namespace Specifies the namespace where the master tables reside.
+\param nsgrp     Specifies the namespace group, must be either 'user' or 'sys'.
+\sa
+create_series describe_series delete_series modify_series show_info 
+
+@{
+*/
 #include <pwd.h>
 #include "drms.h"
 #include "serverdefs.h"
@@ -8,7 +33,7 @@ ModuleArgs_t module_args[] = {
   {ARG_END}
 };
 ModuleArgs_t *gModArgs = module_args;
-
+/** @}*/
 int main(int argc, char **argv) {
   DB_Handle_t *db_handle;
   char stmt[8000]={0}, *p;

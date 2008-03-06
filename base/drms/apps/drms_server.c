@@ -3,6 +3,54 @@
         This is the main program for the DRMS server.
 
 ***********************************************************************/
+/**
+\defgroup drms_server drms_server
+
+Start a DRMS server program.
+
+\par Synopsis:
+
+\code
+drms_server [FLAGS] [SESSION_ARGUMENTS]
+\endcode
+
+\par FLAGS (can be grouped together):
+\c -h: Show \ref drms_server usage information.
+\par
+\c -V: Run \ref drms_server in verbose mode.
+\par
+\c -Q: Run \ref drms_server in quiet mode.
+\par
+\c -f: Run \ref drms_server in the foreground. Without \c -f \ref
+drms_server spawns a server in a background process, prints the
+connection info to stdout and exits. 
+\par
+\c -A: Archive SUs opened for writing during this session.
+\par
+\c -L: Redirect stdout and stderr to SU log files.
+\par
+\c -n: Turn off Nagle's algorithm on TCP/IP sockets. 
+
+\par SESSION_ARGUMENTS:
+To specify an argument that affects properties of the DRMS session,
+use @c param=value, where @c param is one of the following.
+
+\arg \c JSOC_DBHOST Specifies (overrides) the database host to connect to. Default is ::DBNAME
+\arg \c JSOC_DBNAME Specifies (overrides) the database name to use. Default is ::DBNAME
+\arg \c JSOC_DBUSER Specifies (overrides) the username used during database host connection. Default is ::USER.
+\arg \c JSOC_DBPASSWD Specifies (overrides) the password for the username. Default is ::PASSWD.
+\arg \c JSOC_SESSIONNS Specifies (overrides) the DRMS session namespace.
+\arg \c DRMS_RETENTION Sets (forces) the storage-unit retention time for the DRMS session
+started by <module>.
+\arg \c DRMS_QUERY_MEM Sets the memory maximum for a database query.
+\arg \c DRMS_SERVER_WAIT Non-zero value indicates waiting 2 seconds
+before exiting, otherwise don't wait.
+
+\sa
+create_series describe_series delete_series modify_series show_info 
+
+@{
+*/
 
 //#define DEBUG
 
@@ -31,7 +79,7 @@ ModuleArgs_t *gModArgs = module_args;
 int threadcounter = 0;
 char *abortmessage=NULL;
 DRMS_Env_t *env;
-
+/** @}*/
 static void atexit_action (void) {
   fprintf (stderr, "WARNING: DRMS server called exit.\n");
 #ifdef DEBUG

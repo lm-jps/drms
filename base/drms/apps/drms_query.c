@@ -1,3 +1,25 @@
+/**
+\defgroup drms_query drms_query
+
+Query recnum for given dataset names.
+
+\par Synopsis:
+
+\code
+drms_query [getdir=] dsname1 [dsname2 ...]
+\endcode
+
+\par Driver flags: 
+\ref jsoc_main
+
+\param getdir 1: print data segment directory (stage data if
+off-line). 0: do not print data segement directory.
+
+\sa
+create_series delete_series describe_series modify_series show_info
+
+@{
+*/
 #include "drms.h"
 #include "drms_names.h"
 #include "jsoc_main.h"
@@ -8,7 +30,7 @@ ModuleArgs_t module_args[] = {
 };
 
 char *module_name = "drms_query";
-
+/** @}*/
 int DoIt (void) {
   int i, j, status, getdir;
   DRMS_RecordSet_t *rs;

@@ -1,3 +1,22 @@
+/**
+\defgroup drms_log drms_log
+
+Query session log SU and JSOC version for given dataset names.
+
+\par Synopsis:
+
+\code
+drms_log dsname1 [dsname2 ...]
+\endcode
+
+\par Driver flags: 
+\ref jsoc_main
+
+\sa
+create_series delete_series describe_series modify_series show_info
+
+@{
+*/
 #include "drms.h"
 #include "jsoc_main.h"
 
@@ -6,7 +25,7 @@ ModuleArgs_t module_args[] = {
 };
 
 char *module_name = "drms_log";
-
+/** @}*/
 int DoIt(void) {
   int status = 0;
   int i = 1;
