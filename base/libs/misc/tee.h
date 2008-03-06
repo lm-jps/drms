@@ -10,4 +10,7 @@ int redirect_stdeo (int fd_e, int fd_o);
 int save_stdeo (void);
 int restore_stdeo (void);
 
+/* Per Keh-Cheng's recommendation, adding posix flag.  This ameliorates a conflict 
+ * between icc10 and the -std=c99 flag, and gcc and the same flag. */
+#define _POSIX_SOURCE 1
 #endif
