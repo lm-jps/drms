@@ -137,11 +137,17 @@ blocks: http://www.stack.nl/~dimitri/doxygen/commands.html
     @ingroup drms_util
     @addtogroup create_series create_series
     @ingroup drms_util
+    @addtogroup delete_series delete_series
+    @ingroup drms_util
     @addtogroup describe_series describe_series
     @ingroup drms_util
     @addtogroup modify_series modify_series
     @ingroup drms_util
     @addtogroup show_series show_series
+    @ingroup drms_util
+    @addtogroup drms_query drms_query
+    @ingroup drms_util
+    @addtogroup drms_log drms_log
     @ingroup drms_util
     @addtogroup jsoc_main module
     @ingroup drms_util
