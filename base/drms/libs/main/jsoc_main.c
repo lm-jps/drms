@@ -62,7 +62,7 @@ optional. Flags can be concatenated as shown below.
 \par DRIVER_FLAGS (can be grouped together):
 \c -H|--help: Show jsoc_main usage information.
 \par
-\c -L: Run jsoc_main driver with logging.
+\c -L: Run jsoc_main driver with logging. Stdout and stderr are tee-ed to files in SU directory.
 \par
 \c -V: Run jsoc_main driver in verbose mode.
 \par
@@ -77,10 +77,10 @@ use @c param=value, where @c param is one of the following.
 \arg \c DRMS_RETENTION Sets (forces) the storage-unit retention time for the DRMS session
 started by <module>.
 \arg \c DRMS_QUERY_MEM Sets the memory maximum for a database query.
-\arg \c JSOC_DBHOST Specifies (overrides) the database host to connect to.
-\arg \c JSOC_DBNAME Specifies (overrides) the database name to use.
-\arg \c JSOC_DBUSER Specifies (overrides) the username used during database host connection.
-\arg \c JSOC_DBPASSWD Specifies (overrides) the password for the username.
+\arg \c JSOC_DBHOST Specifies (overrides) the database host to connect to. Default is ::DBNAME
+\arg \c JSOC_DBNAME Specifies (overrides) the database name to use. Default is ::DBNAME
+\arg \c JSOC_DBUSER Specifies (overrides) the username used during database host connection. Default is ::USER.
+\arg \c JSOC_DBPASSWD Specifies (overrides) the password for the username. Default is ::PASSWD.
 \arg \c JSOC_SESSIONNS Specifies (overrides) the DRMS session namespace.
 
 \par MODULE_ARGUMENTS:
