@@ -596,23 +596,23 @@ int drms_sscanf_int (char *str,
        {
 	  char *lasts;
 	  char *ans = strtok_r(tokenstr, " -/,]", &lasts);
+	  int maybebad = 0;
 
 	  if (ans) {
 	     dst->time_val = sscan_time(ans);
-	  }
-
-	  if (!ans || time_is_invalid(dst->time_val)) {
-	     int isreallyvalid = (ans && (!strcasecmp (ans, "nan") || !strncasecmp (ans, "JD_0", 4)));
-
-	     if (isreallyvalid)
-	       ret = 0;
-
-	     if (!silent && !isreallyvalid) 
-		fprintf (stderr, "Invalid time string at '%s'.\n", str);	
-	  }
-	  else
-	  {
 	     ret = (int)(strlen(ans)); 
+	     maybebad = 
+	       (time_is_invalid(dst->time_val) && 
+		strcasecmp (ans, "nan") && strncasecmp (ans, "JD_0", 4));
+
+	     if (maybebad) {
+		if (!silent) 
+		  fprintf (stderr, "Potentially invalid time string '%s'.\n", str);
+	     }
+	  }
+	  else {
+	     if (!silent) 
+	       fprintf (stderr, "Invalid time string '%s'.\n", str);
 	  }
 
 	  free(tokenstr);

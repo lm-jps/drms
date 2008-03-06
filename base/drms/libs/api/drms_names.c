@@ -18,6 +18,7 @@ static PrimekeyRangeSet_t *parse_slottedkey_set(DRMS_Keyword_t *slotkey,
 						char **in);
 static IndexRangeSet_t *parse_index_set(char **in);
 static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword, char **in);
+static int is_duration(const char *in);
 static int parse_duration(char **in, double *duration);
 
 static int syntax_error;
@@ -640,11 +641,14 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
   char *p=*in;
   ValueRangeSet_t *vr=NULL,*head=NULL;
   DRMS_Type_t datatype = drms_keyword_gettype(keyword);
+  int gotstart;
 
 #ifdef DEBUG
   printf("enter parse_value_set\n");
 #endif
   do {
+    gotstart = 0;
+
     if (vr)
     {
       XASSERT(vr->next = malloc(sizeof( ValueRangeSet_t)));
@@ -669,45 +673,47 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
     if (vr->type != FIRST_VALUE &&
 	vr->type != LAST_VALUE) {
 
-      /* Get start */
-      if ((n = drms_sscanf_int(p, datatype, &vr->start, 1)) == 0 ||
-	  n == -1)    
-	{
-	   /* Could be an offset relative to epoch, eg. 3000d 
-	    * (for time slotted key only). */
-	   if (datatype == DRMS_TYPE_TIME &&
-	       drms_keyword_isslotted(keyword))
-	   {
-	      double offset;
-	      TIME epoch;
-	      int stat;
+       /* Get start */
 
-	      if (parse_duration(&p, &offset))
-	      {
-		 fprintf(stderr,"Syntax Error: Expected time duration "
-			 " in value range, found '%s'.\n", p);
-		 goto error;
-	      }
-	      else
-	      {
-		 /* The start time is really relative to the epoch, 
-		  * so need to convert to DRMS time. */
-		 epoch = drms_keyword_getslotepoch(keyword, &stat);
-		 if (stat == DRMS_SUCCESS)
-		 {
-		    vr->start.time_val = epoch + offset;
-		 }
-	      }
-	   }
-	   else
-	   {
-	      fprintf(stderr,"Syntax Error: Expected start value of type %s in"
-		      " value range, found '%s'.\n",drms_type2str(datatype), p);
-	      goto error;
-	   }
-	}
-      else
-	p += n;     
+       /* If this is a time-slotted key, this could be a duration 
+	* instead of a drms type value, check for that. 
+	* If that fails, try to parse as a drms value. */
+       if (datatype == DRMS_TYPE_TIME &&
+	   drms_keyword_isslotted(keyword) &&
+	   is_duration(p))
+       {
+	  /* Could be an offset relative to epoch, eg. 3000d 
+	   * (for time slotted key only). */
+	  double offset;
+	  TIME epoch;
+	  int stat;
+
+	  if (!parse_duration(&p, &offset))
+	  {
+	     /* The start time is really relative to the epoch, 
+	      * so need to convert to DRMS time. */
+	     epoch = drms_keyword_getslotepoch(keyword, &stat);
+	     if (stat == DRMS_SUCCESS)
+	     {
+		vr->start.time_val = epoch + offset;
+		gotstart = 1;
+	     }
+	  }
+       }
+
+       if (!gotstart)
+       {
+	  if ((n = drms_sscanf_int(p, datatype, &vr->start, 1)) == 0 ||
+	      n == -1)
+	  {
+	     fprintf(stderr,"Syntax Error: Expected either time duraton " 
+		     "or start value of type %s in "
+		     "value range, found '%s'.\n",drms_type2str(datatype), p);
+	     goto error;
+	  }
+	  else
+	    p += n;
+       }
 
       if (*p=='-')
       {
@@ -822,11 +828,40 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 }
 
 
+static int is_duration(const char *in)
+{
+   char *end = NULL;
+   const char *p = in;
+   double dval;
+   int ret = 0;
 
+   dval = (int)strtod(p,&end);
+   if ( (IsZero(dval) && end==p)  || 
+	((IsPosHugeVal(dval) || IsNegHugeVal(dval)) && errno==ERANGE))
+   {
+      ret = 0;
+   }
+   else
+   {
+      p = end;
+
+      switch(*p++)
+      {
+	 case 's':
+	 case 'm':
+	 case 'h':
+	 case 'd':
+	   ret = 1;
+	   break;
+	 default:
+	   break;
+      }
+   }
+
+   return ret;
+}
 
 /* Parse time duration constant */
-
-
 static int parse_duration(char **in, double *duration)
 {
   char *end, *p = *in;
