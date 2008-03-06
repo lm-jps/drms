@@ -1,0 +1,150 @@
+                       Release Notes JSOC V4.1         3Mar2008
+                       -----------------------         --------
+
+A release is a set of files, each having a specific version.  And a release typcially
+has a version number because over time you have newer and newer releases of the 
+same product.  For example, a hypothetical 1.3 release may contain fileA#1.8, 
+fileB#1.2, fileC#2.2 and a 1.4 release may contain fileA#2.5, fileB#2.1, fileC#2.9. 
+JSOC releases are similarly versioned and contain a set of such files.  JSOC release
+code is guaranteed to compile on cluster nodes (eg., n00, n02).  The resulting binaries
+have been minimally tested.  At the time of the creation of the release, the
+release versions of each file will be the most recent.  But as time passes, newer versions 
+of some files will be made, and there is no guarantee that these changes will
+not destabilize JSOC (ie., they may cause JSOC to no longer compile or execute
+properly).  
+
+There are several ways to use this release.  If you wish to simply use pre-built
+binaries, you can simply use the production binaries, which are located at 
+/home/production/cvs/JSOC.  Every time a release is created, the binaries in
+this location get updated.  Only the production user can update these binaries.
+So, you could run /home/production/cvs/JSOC/bin/linux_x86_64/show_keys, for example.
+If instead you want to work with stable source files, then you must have a sandbox,
+which is a local copy (in your home directory) of the files in the cvs depot.  
+You would probably want to work with a sandbox if you plan on making eventual 
+changes to the depot files.  Changes you make to your sandbox files are not visible 
+to other users until you "commit" those changes back to the cvs depot.  Please see
+"If You Don't Have a Sandbox" below for more information on how to create a sandbox.  
+There is also a "working" release which resides in in /home/jsoc/cvs/JSOC.  New 
+files may be placed here and existing files may be edited for common use before the 
+next official release.  Each time a release gets created, the source and binaries of 
+the working release get updated.  WARNING: the files you see here may not be stable 
+since by the time you see them, another user may have edited them. Only the production 
+release is guaranteed to be stable and unchanged between releases.
+
+Obtaining the Release
+---------------------
+To update your working directory to this release, or to check-out this release anew, 
+please visit http://jsoc.stanford.edu/jsocwiki/CvsInit. Please keep in mind that
+users may have modified files since the release was created, so use of the 
+scripts documented in the web page may result in a working directory whose
+content is not identical to the release.  If updating, you can supply 
+the flag "-R" to the jsoc_update.pl and jsoc_sync.pl scripts to download the
+latest release.  This will ensure that your working directory has the exact, latest
+release versions of the files (eg., jsoc_sync.csh -R). If checking-out, 
+you can supply the argument "-r Ver_LATEST" to the "cvs checkout" command
+to achieve the analogous result, but for a fresh checkout.  WARNING: if you use 
+the "-R" or "-r" flags, please use only jsoc_update.pl or jsoc_sync.pl to update 
+your sources thereafter.  Use of "-R" or "-r Ver_LATEST" will result in a cvs
+"sticky flag" being set.  jsoc_update.pl and jsoc_sync.pl clear this sticky flag.
+
+Additional Info
+---------------
+If you are unfamiliar with the use of cvs see the file:
+JSOC/CM/working_with_sandbox.txt.
+
+There's a linux4 cvs gui at xim:/usr/bin/lincvs
+Also on our jsoc web page:
+
+http://jsoc.stanford.edu/cvs/JSOC/
+
+Use the Apache cvs gui to see the diffs. For example, go to
+http://jsoc.stanford.edu/cvs/JSOC/base/drms/
+and click on the name in the File column and then click on
+"diffs to previous #" to see the diffs.
+
+Changes since previous release (V4.0)
+-------------------------------------
+* Finalized integration of 'old' jsoc SUMS code into 'new' JSOC tree.  As of this release, we are running SUMS from the new JSOC tree.
+* Put all Level-0 Housekeeping data tables into a new CVS module: TBL_JSOC. To obtain these files type cvs co LEV0TBLS from $CVSROOT.
+* Most of the EGSE level-0 processing code was migrated to the new JSOC tree.
+* Added show_info as expansion of show_keys capabilities. Show_info can print a matching .jsd file. Show_info tells more info about segments, prime keys, and includes information about links when the "-l" flag is used.  Also the "ds=" is no longer required.  Allowed but not complained about when omitted.  When the "-k" flag is set, the query printed for each record no longer has quote around string prime key values.  This makes the output of "show_info XXX -k" work as input to show_info via the "ds=@filename" syntax (in this case the ds= is needed to allow the @filename be parsed by drms_open_records instead of the command line parser) except for the leading "#".  A new flag, "-s" not prints the first and last record in the series.  A test "-z" causes the output of the "-s" flag to be in JSON rather than more user friendly format.  The JSON capability will probably be removed to another program soon.
+* A new program ingest_dsds_a has been added.  It reads DSDS datasets and updates a JSOC series.  It takes an ancillary map table that tells which target keywords need special attention to make an HMI similar data series.  With a proper matching series it supports keywords described in the "Keywords for Meta" document for lev0-lev1.5. That document is now linked via jsocwiki.  No doc for ingest_dsds_a yet but there are readme files in the per-product directories in ~phil/proj/myproj/apps e.g. vw_V_06h/.  Dataseries for a few days of vw_V, fd_V, and fd_M have been made.
+* The front page of jsocwiki has been rearranged with a new summary page for gathering info about the various names, series names, keyword names, namespace names, etc.
+* Added some functions to drms library - functions to print jsd from a template (copied from Karen's code in describe_series) and to print query that would result in given record (used in show_keys and
+show_info) so that they would be generally accessible.
+* Updated naming document and keywords document. Both accessible via jsocwiki
+* Updates to Level 0 Software Code and Data files(housekeeping) 
+(1)Integrated high speed bus Level 0 housekeeping decoding modules to level 0 main module. Added modules to write decoded keywords to DRMS housekeeping(HK) series by APID and save packets to dayfiles. This code decodes keywords in HK packets for hmi and aia image status packet(ISP) and writes keywords and values to DRMS. Each of the ISP packets are saved to dayfiles per apid and per day in production directory /surge/production/lev0/hk_hsb_dayfile. HMI ISP Packets are APID 445 and 475. AIA ISP Packets are APID 529 and 569. 
+(2)Added code for saving packets to dayfiles per apid per day for the following packets:
+---AIA Sequencer Packets which are packets with APID 536 and 576 ---AIA OBT Packets which are packets with APID 540 and 580 ---HMI Sequencer Packets which are packets with APID 451 and 481 ---HMI OBT Packets which are packets with APID 448 and 478
+(3)Added code that passes back only ISP HK Keywords structure to the main Level 0 module. Added function for the main level 0 module to write ISP HK Keywords to DRMS Level 0 data series.
+(4)Moved from EGSE and checked into cvs the housekeeping configuration files(apid-#-version# files), HK JSD by APID files, and JSOC Version Number Map files to the JSOC environment. Moved from EGSE and checked in cvs Lockheed's STANFORD and GROUND files with our cvs version number matching Lockheed's cvs version number. Setup working directory for the preliminary JSD files but did not check into cvs.
+* Modified sprint_time() (base/libs/timeio/timeio.c) to trap non-numeric values of the input time and better handle large values.
+* configure script changes: create third-party links verbosely; separate library checkes into libraries required by all configurations, libraries required by Stanford, libraries required by everybody else; change third-party lib link to use Keh-Cheng's new links inside /home/jsoc/lib
+* Use Doxygen to create man pages.
+* Port jsoc_sync.csh, jsoc_update.csh, and make_jsoc.csh to perl.  Can now use a file $CVSROOT/modulespec.txt to cause CVS to track (checkout, update, etc.) CVS modules, like DRMS and JSOC. make_jsoc.pl now works on the directory in which it resides.  Removed *.csh from the CVS modules definitions and replaced with *.pl.
+* FITSRW library added.  This library contains wrappers around cfitsio.a.  
+*  Removed authentication between drms_server and client module. -lcrypto is no longer needed.
+* 'dsds' is now a default make target.
+* Created CVS modules to provide access to the Level-0 tables.
+* Created new CVS module named 'CORE'.  For internal (within the CVS modules file) use only.  It has the common set of files used by the 'DRMS' and 'JSOC' modules.
+* Created a doc folder in $CVSROOT to contain Doxygen files.
+* Remove use of signaling NaNs from SUMS.  Use D_NAN and F_NAN.  These were available to DRMS only, so they were moved to a lower-level header that is used by both DRMS and SUMS.  Remove SOI NaN code - not used by anbody in JSOC.
+* Added drms_server_dropseries_su() pending a new SUMS call. added final flag to drms_server_abort() to decide whether to call drms_free_env().
+* Add drms_server_begin_transaction() and drms_server_end_transaction().
+* Change maximum seriesname length to 64 bytes (from 32 bytes).  Also, divide MAXNAMELEN into several different defines so that it will be easier in the future to change buf sizes
+* Add doxygen comments to some drms headers, some example code fragments, split some drms headers into public v. private. Also add doxygen configuration files.
+* Migrate all 'old' man-page documentation to Doxygen comments in header files.
+* Added up dontwait option for drms_stage_records().
+* Added drms_stage_records() to stage SU's in one SUMS request.
+* Executables can now find libdsds.so and libsoi.so relative to the executable's location.  This allows use regardless of the location of the JSOC tree.
+* Implementation for reading a DSDS dataset, given the path to the dataset; no querying of Oracle done
+* Removed drms_error.h since it's not used anywhere.
+* Fixed drms_setkey_string() memory leak/double free problems.
+* Fixed drms_getkey_time and drms_keyword_gettime to do proper conversions from strings.
+* Slotted keywords implemented.  Can now specify records whose primary keyword(s)has a floating point data type.  Under the hood, DRMS converts the floating-point number into an integer in a way that no two possible floating-point numbers map to the same integer.
+* Can specify certain time epochs by a string, in addition to specifying a time string.
+* Changed drms_keyword_printval to use function drms_keyword_fprintval with stdout as the input.  More object oriented, no duplicate code.
+* Added new utility "plot_keys" modeled from show_keys, meant to create a gnuplot file, gather data from DRMS and launch gnu_plot with the data.  Had to modify drms_keyword.c in order to create a new function drms_keyword_fprintval (to print to file instead of stdout).
+* Added 4 more fields to DRMS_RecordSet_t to track recordset subsets.
+* Fixed some code that overwrote memory (memory stompers).
+* describe_series now shows slotted keys as part of the 'external' index, and the associated index key as the 'internal' index.
+* Fix for drms_sscanf() not locating time-string termination correctly.
+* Store dbindex information into drms_series table.
+* Added DBIndex in jsd.
+* Added print_rec_query().
+* Make seriesinfo->unitsize at least 1 when opening records from fits files.
+* libdsds.so now creates drms seg of the correct data type (used to convert float to double by mistake; also don't use keywords with values that are blank or empty strings or whitespace.
+* Check for records with no data in libdsds; if conflicting keyword types when ingesting fits files, use type string.
+* Fixed several memory leaks.
+* Code changes to make DRMS Naming convention line up with code.  
+* Modified drms_segment_write_from_file() to use drms_segment_filename().
+* Fix bug in function that gathers prime keys.
+* Removed diagnostic message from drms_server_abort().
+* Attempt to fix a mysterious problem in drms_session table when no log SU is allocated.
+* Brief documentation for drms_server_begin_transaction() and drms_server_end_transaction().
+* Added TOUCH mode for SUM_get request
+* Change inappropriate uses of drms_missing() to drms_ismissing(); change signature of drms_missing() so that future uses are less likely to be wrong. ; added a new script for helping to generate cvs comments since a specified date.
+* Changed printf() functions to stubs that now call fprintf() corresponding functions.  Printf() functions still work, calling fprintf() functions with parameter keyfile=stdout.
+* Added NetDRMS.sql for NetDRMS admin.
+* Rework the fds ingest scripts to accept a single file as input, and also to filter out unneeded data products; move script to a better location too.
+* Made sure abort_flag is checked after db handle is locked.
+* Clean up libdsds.so (use factored functions, not inline duplicate code).
+* Change cmd to rcmd in read_drive_to_wd() and change CMDLENWRT.
+* Resolution of who (SUMS or DRMS) owns dynamic memory associated with a SUMS working directory.
+* Changed rec_cnt from int to longlong.
+* Add imgdecode.c.
+* New file - SOURCE_ENV_FOR_HK_DECODE. Environment variables to source before running HK Decode and HK keyword writes to drms.
+* Change argument for look_fsn().
+* Updated argument to lookup_fsn and decode_next_hk_vcdu to *Fsn.
+* Added lookup FSN function.
+* Updated APID number for AIA OBT Packet to 580.
+* decode_hk_vcdu.h: hmi_import_egse_lev0.c: Fixed subseconds calc.
+* imgdecode.c: imgstat() did not do MIN, MAX, MEDN for reopened images.
+* imgdecode.c: added header error and overflow flags.
+* imgdecode.c: if packet is in a retransmitted tlm file, don't rely on existing.
+* New code to write hk keywords to Level 0 data series and Level 0 by APID data series
+* Use moc server scripts within cvs tree - don't copy to a new location in /home/jsoc anymore.
+* Create a slotted time key for fds data; make the ingest script work on files as well as directories.
+* mocDlLzp.csh: Implement a 'window' of search time.  Script examines MOC lzp files within a 3 month window of the current date.  If any file exists on server that hasn't been downloaded, it gets downloaded.
+* Added support for gsl apps.
