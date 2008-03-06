@@ -3,6 +3,10 @@ sp 		:= $(sp).x
 dirstack_$(sp)	:= $(d)
 d		:= $(dir)
 
+# Compiler
+SUMSCOMP_$(d)		:= $(ICC_COMP)
+SUMSLINK_$(d)		:= $(ICC_LINK)
+
 # Local variables
 sum_svc_obj_$(d)	:= $(addprefix $(d)/, sum_svc_proc.o sum_init.o du_dir.o)
 xsum_svc_obj_$(d)	:= $(addprefix $(d)/, sum_svc_proc.o sum_init.o du_dir.o)
@@ -60,7 +64,7 @@ $(d)/drive1_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_1
 $(d)/drive2_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_2
 $(d)/drive3_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_3
 $(d)/drive%_svc.o:	$(d)/driven_svc.c
-			$(ICC_COMP)
+			$(SUMSCOMP_$(d))
 
 # Special rules for building robotX_svc.o, X=0,1,2,3 from from driven_svc.c
 $(d)/robot0_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DROBOT_0
@@ -68,10 +72,10 @@ $(d)/robot1_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DROBOT_1
 $(d)/robot2_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DROBOT_2
 $(d)/robot3_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DROBOT_3
 $(d)/robot%_svc.o:	$(d)/robotn_svc.c
-			$(ICC_COMP)
+			$(SUMSCOMP_$(d))
 
 $(filter-out $(d)/drive%_svc.o $(d)/robot%_svc.o, $(OBJ_$(d))):	%.o:	%.c
-			$(ICC_COMP)
+			$(SUMSCOMP_$(d))
 
 $(XSUMSVC_$(d)):	$(sum_svc_obj_$(d))
 $(SUMSVC_$(d)):		$(sum_svc_obj_$(d))
@@ -79,10 +83,18 @@ $(TAPESVC_$(d)):	$(tape_svc_obj_$(d))
 $(TARC_$(d)):		$(tapearc_obj_$(d))
 
 # NOTE: tapearc.o depends on libsumspg.a, which in turn depends on padata.o.
+# Make doesn't seem to use else ifeq.
+ifeq ($(SUMSLINK_$(d)), $(ICC_LINK))
+SUMSICCLIBS_$(d)	:= -lirc
+endif
 
-$(TGT_$(d)):		LL_TGT :=  $(LIBSUM) $(LIBSUMSAPI) -lirc $(LL_TGT) $(LL_TGT_$(d))
+ifeq ($(SUMSLINK_$(d)), $(GCC_LINK))
+SUMSICCLIBS_$(d)	:= 
+endif
+
+$(TGT_$(d)):		LL_TGT :=  $(LIBSUM) $(LIBSUMSAPI) $(SUMSICCLIBS_$(d)) $(LL_TGT) $(LL_TGT_$(d))
 $(TGT_$(d)):	%:	%.o $(LIBSUM) $(LIBSUMSAPI) $(LIBMISC)
-			$(ICC_LINK)
+			$(SUMSLINK_$(d))
 			$(SLBIN)
 
 # Shortcuts
