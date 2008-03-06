@@ -11,8 +11,23 @@
 #    n12 formerly used for AMD x86-64 can also be used instead of n02
 #    lws Itaniam processors no longer supported for JSOC
 
+# This just in:
+#   The cvs update "-d" flag will cause files outside of the CVS module
+#   originally checked out to be downloaded.  This is bad, because
+#   if a user checks out DRMS, then does a 'cvs update -d .', the
+#   user then has the JSOC-module files in their working directory.
+#   BUT, as long as the "-d" flag is not used, cvs update respects
+#   boundaries of the module originally checked out: so 'cvs checkout DRMS'
+#   followed by 'cvs update DRMS' will not result in any new files being 
+#   downloaded that are outside of the DRMS module.  But new files
+#   within the DRMS module WILL be downloaded.
+#
+#   So, this script should use 'cvs update' not 'cvs checkout'.  checkout
+#   doesn't know how to remove files from the working directory that
+#   have been deleted from the repository.  Since this script uses
+#   'cvs update', there is no need to look at the 'modulespec.txt' file.
+
 $LATESTREL = "Ver_LATEST";
-$MODSPEC = "modulespec.txt";
 $CVSLOG = "cvsupdate.log";
 
 my($aidx) = 0;
@@ -20,10 +35,6 @@ my($arg);
 my($pos);
 my($rev) = "";
 my($line);
-
-my($cvsmod);
-my(%mods);
-my($su);
 
 while ($arg = shift(@ARGV))
 {
@@ -39,159 +50,28 @@ while ($arg = shift(@ARGV))
     $aidx++;
 }
 
-# Initialize mods map
-$DRMS = "DRMS";
-$JSOC = "JSOC";
-$LEV0 = "LEV0TBLS";
-
-$mods{$DRMS} = $DRMS;
-$mods{$JSOC} = $JSOC;
-$mods{$LEV0} = $LEV0;
-
-if (-e "suflag.txt")
-{
-    $su = 1;
-}
-else
-{
-    $su = 0;
-}
-
 # remove old log file
 if (-e $CVSLOG)
 {
     unlink $CVSLOG;
 }
 
-if ($su)
-{
-    print "Synchronizing JSOC (Stanford) user\n";
-
-    if (-e $MODSPEC)
-    {
-	open(SPECFILE, $MODSPEC);
-	while ($line = <SPECFILE>)
-	{
-	    chomp($line);
-	    if ($line =~ /^\#.*/)
-	    {
-		next;
-	    }
-	    elsif ($line !~ /\S+/)
-	    {
-		next;
-	    }
-	    elsif (length($line) == 0)
-	    {
-		next;
-	    }
-	    elsif ($line =~ /\s*(.+)\s*(\#*\s*)?/)
-	    {
-		$cvsmod = $1;
-		
-		if (defined($cvsmod = $mods{uc($1)}))
-		{
-		    if ($cvsmod ne $DRMS)
-		    {
-			CallCVS($rev, $cvsmod);
-		    }
-		    else
-		    {
-			print STDERR "Your working directory contains the full JSOC code. Can't specify the CVS module 'DRMS' - skipping.\n";
-		    }
-		}
-		else
-		{
-		    print STDERR "Invalid CVS module name $1 - skipping.\n";
-		}
-	    }
-	    else
-	    {
-		print STDERR "Syntax error '$line' in module specification file $MODSPEC\n";
-	    }
-	}
-
-	close SPECFILE;
-    }
-    else
-    {
-	# Just do CVS JSOC module
-	CallCVS($rev, $JSOC);
-    }
-}
-else
-{
-    print "Synchronizing DRMS (base system only) user\n";
-
-    if (-e $MODSPEC)
-    {
-	open(SPECFILE, $MODSPEC);
-	while ($line = <SPECFILE>)
-	{
-	    chomp($line);
-	    if ($line =~ /^\#.*/)
-	    {
-		next;
-	    }
-	    elsif ($line !~ /\S+/)
-	    {
-		next;
-	    }
-	    elsif (length($line) == 0)
-	    {
-		next;
-	    }
-	    elsif ($line =~ /\s*(.+)\s*(\#*\s*)?/)
-	    {
-		$cvsmod = $1;
-		
-		if (defined($cvsmod = $mods{uc($1)}))
-		{
-		    CallCVS($rev, $cvsmod);
-		}
-		else
-		{
-		    print STDERR "Invalid CVS module name $1 - skipping.\n";
-		}
-	    }
-	    else
-	    {
-		print STDERR "Syntax error '$line' in module specification file $MODSPEC\n";
-	    }
-	}
-
-	close SPECFILE;
-    }
-    else
-    {
-	CallCVS($rev, $DRMS);
-    }
-}
+CallCVS($rev);
 
 print "JSOC synchronization finished.\n";
 
 sub CallCVS
 {
-    my($rev, $cvsmod) = @_;
+    my($rev) = @_;
     my($updatecmd);
-    my($wd);
-    my($parent);
 
-    $updatecmd = "cvs checkout -AP $rev $cvsmod";
-    $wd = `pwd`;
-    chomp($wd);
-
-    # Ack, need to manually determine parent directory - don't use ".."
-    if ($wd =~ /(.+)\/[^\/]+$/)
-    {
-	$parent = $1;
-    }
+    $updatecmd = "cvs update -AP $rev \.";
 
     #Things that didn't really work:
     #$updatecmd = "(cd ..; $updatecmd | sed 's/^/STDOUT:/') 2>&1 |";
     #$updatecmd = "(cd $parent; $updatecmd) |";
 
-    $updatecmd = "(cd $parent; $updatecmd) 1>>$CVSLOG 2>&1";
+    $updatecmd = "($updatecmd) 1>>$CVSLOG 2>&1";
     print "Calling '$updatecmd'.\n";
     system($updatecmd);
 }
