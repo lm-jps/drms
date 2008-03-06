@@ -1,3 +1,38 @@
+/**
+\defgroup create_series create_series
+
+Read a <a href="http://jsoc.stanford.edu/jsocwiki/Jsd">JSOC Series
+Definition file</a> and create the series table in the DRMS
+database. By default, all series are created with public read
+permission, but update and insert permission for the owner only.
+Upon success, \ref create_series prints out the following message: 
+\code
+NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "xxyx_pkey" for table "xxyx"
+\endcode
+
+\par Synopsis:
+
+\code
+create_series [-f] jsdfile
+\endcode
+
+\par Flags: 
+\c -f: replace an existing series definition with the new
+one. Since this removes all the metadata for a series - essentially
+deleting the series - the user is prompted to confirm. Except for
+initial debugging of the .jsd file it is probably an error to use the
+\c -f flag.
+
+\par Driver flags: 
+\ref jsoc_main
+
+\param jsdfile JSOC series definition file name
+
+\sa
+delete_series describe_series modify_series show_info
+
+@{
+*/
 #include "drms.h"
 #include "jsoc_main.h"
 
@@ -7,7 +42,7 @@ ModuleArgs_t module_args[] = {
 };
 
 char *module_name = "create_series";
-
+/** @}*/
 int DoIt(void) {
   int force, len, perms;
   char *filename;

@@ -1,3 +1,32 @@
+/**
+\defgroup modify_series modify_series
+
+Modify a series definition. It does one of the following:
+ - Change archive flag
+ - Add keywords as specified in jsdfile
+
+\par Synopsis:
+
+\code
+modify_series series=<seriesname> [archive={0|1}] [jsdfile]
+\endcode
+
+\par Driver flags: 
+\ref jsoc_main
+
+\param seriesname
+\param jsdfile JSOC series definition file name. This file contains keywords to add.
+\param archive 0: not to achive, 1: to archive.
+
+\par Limitations:
+ - \ref describe_series does not deal with duplications in keyword definition
+ - \ref describe_series does not fill in defaultval for the newly added keywords.
+
+\sa
+create_series delete_series describe_series show_info
+
+@{
+*/
 #include "drms.h"
 #include "jsoc_main.h"
 
@@ -7,7 +36,7 @@ ModuleArgs_t module_args[] = {
 };
 
 char *module_name = "modify_series";
-
+/** @}*/
 typedef enum {ARCHIVE, ADD_KEYWORD} action_t;
 
 int DoIt(void) {

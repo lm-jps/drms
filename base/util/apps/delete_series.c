@@ -1,3 +1,30 @@
+/**
+\defgroup delete_series delete_series
+
+Removes the data series from the DRMS database. This program SHOULD BE USED
+WITH GREAT CARE.  The program will ask you twice to confirm that you
+REALLY want to remove all records. If data segments have been made and
+if they are marked with a large retention or are archivable, data
+storage will remain occupied by the unreachable data. This will be
+examined later and this command will be removed or modified to prevent
+garbage from being left behind.
+
+\par Synopsis:
+
+\code
+delete_series seriesname
+\endcode
+
+\par Driver flags: 
+\ref jsoc_main
+
+\param seriesname
+
+\sa
+show_info create_series modify_series
+
+@{
+*/
 #include "drms.h"
 #include "jsoc_main.h"
 
@@ -7,7 +34,7 @@ ModuleArgs_t module_args[] = {
 };
 
 char *module_name = "delete_series";
-
+/** @}*/
 int DoIt(void) {
   int len;
   char *series;
