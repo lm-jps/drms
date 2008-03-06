@@ -1,0 +1,23 @@
+# *********************** Global information ************************
+Seriesname:	"su_arta.TestSlotkeys10"
+Description:	"One correct way to make a slotted key"
+Author:		"Art Amezcua"
+Owner:		"arta"
+Unitsize:	10000
+Archive:	0
+Retention:	7
+Tapegroup:	0
+Index:		OBSL
+
+# **************************** Keywords ******************************
+Keyword:	OBSL, double, "carr", record, CT:2000:20, %f, "none", "Primary key"
+
+# can make step a string
+#Keyword:	OBSL_step, string, constant, record, 2d, %s, "none", "carr step"
+Keyword:	OBSL_step, double, constant, record, 2.0, %f, "none", "carr step"
+Keyword:	OBSL_unit, string, constant, record, degrees, %s, "none", "carr unit"
+Keyword:	EXTRA, string, variable, record, pineapple, %s, "none", "an extra keyword with which to test to make sure I didn't mess something up"
+
+
+# ************************** Data Segments ***************************
+# None
