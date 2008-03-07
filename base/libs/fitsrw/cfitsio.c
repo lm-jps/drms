@@ -570,7 +570,11 @@ int cfitsio_header_to_keylist(char* header, CFITSIO_KEYWORD** keylist)
 //****************************************************************************
 
 
-//int cfitsio_read_file(char* fits_filename, CFITSIO_KEYWORD** keylist,  void** image)
+int cfitsio_read_file(char* fits_filename, CFITSIO_KEYWORD** keylist,  void** image)
+{
+   return cfitsio_read_file_and_info(fits_filename, keylist, image, NULL);
+}
+
 int cfitsio_read_file_and_info(char* fits_filename, CFITSIO_KEYWORD** keylist,  void** image, CFITSIO_IMAGE_INFO* image_info)
 {
 
@@ -775,7 +779,10 @@ int cfitsio_read_file_and_info(char* fits_filename, CFITSIO_KEYWORD** keylist,  
 
    //---------------------------   image_info --------------------------------
 
-   memcpy((char*) image_info, (char*) &info,sizeof(CFITSIO_IMAGE_INFO));
+   if (image_info)
+   {
+      memcpy((char*) image_info, (char*) &info,sizeof(CFITSIO_IMAGE_INFO));
+   }
 
 
 
