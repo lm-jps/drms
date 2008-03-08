@@ -273,7 +273,7 @@ print "effdate = $date\n";
 		-background=>'green')->pack(-side=> 'left');
   my $lopd = $fop->Label(-text => 'tape write', -anchor => 'w',
 		-background=>'lightblue')->pack(-side=> 'left');
-  my $lope = $fop->Label(-text => ' find ', -anchor => 'w',
+  my $lope = $fop->Label(-text => ' tape find ', -anchor => 'w',
 		-background=>'salmon')->pack(-side=> 'left');
 
   #drive #0 & 1
@@ -1603,7 +1603,7 @@ sub Id_ck {
 
 sub Id_go {
   foreach $id_i (1 .. $MAX_SLOTS) {
-    if($idfind eq $slottapes[$id_i-1]) {
+    if($idfind == $slottapes[$id_i-1]) {
       $idpg = int(($id_i-1)/$MAX_SLOTS_PAGE); 
       $current_page = -1;		#force a clean page
       &Display_tape_in_slots($idpg);
