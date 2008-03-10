@@ -58,9 +58,12 @@
 #ifdef SUMDC
   #define STATUSDUMP "/tmp/t50_status_dump.out"
   #define STATUSDUMPSIM "/usr/local/logs/SUM/t50_status_dump.out.sim"
-#else
+#elif SUMT120
   #define STATUSDUMP "/tmp/t120_status_dump.out"
   #define STATUSDUMPSIM "/usr/local/logs/SUM/t120_status_dump.out.sim"
+#elif SUMT950
+  #define STATUSDUMP "/tmp/t950_status_dump.out"
+  #define STATUSDUMPSIM "/usr/local/logs/SUM/t950_status_dump.out.sim"
 #endif
 
 extern int write_log();
