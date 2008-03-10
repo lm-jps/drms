@@ -1517,38 +1517,17 @@ void drms_segment_print_jsd(DRMS_Segment_t *seg) {
 	printf(", %d", seg->axis[i]);
       }
     }
-    printf(", %s, ", seg->info->unit);  
-    switch(seg->info->protocol)
-      {
-      case DRMS_GENERIC:
-	printf("generic");
-	break;
-      case DRMS_BINARY:
-	printf("binary");
-	break;
-      case DRMS_BINZIP:
-	printf("binzip");
-	break;
-      case DRMS_FITZ:
-	printf("fitz");
-	break;
-      case DRMS_FITS:
-	printf("fits");
-	break;
-      case DRMS_MSI:
-	printf("msi");
-	break;
-      case DRMS_TAS:
-	printf("tas");
-	if (seg->info->naxis) {
-	  printf(", %d", seg->blocksize[0]);      
-	  for (i=1; i<seg->info->naxis; i++)
-	    printf(", %d", seg->blocksize[i]);
-	}
-	break;
-      default:
-	printf("Illegal value: %d", (int)seg->info->protocol);
-      }
+    printf(", %s, ", seg->info->unit);
+
+    const char *protstr = drms_prot2str(seg->info->protocol);
+    if (protstr)
+    {
+       printf(protstr);
+    }
+    else
+    {
+       printf("Illegal protocol: %d", (int)seg->info->protocol);
+    }
   }
   printf(", \"%s\"\n", seg->info->description);
 }

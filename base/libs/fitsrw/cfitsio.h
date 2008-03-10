@@ -8,6 +8,7 @@
 //****************************************************************************
 
 #define CFITSIO_MAX_DIM		          9
+#define CFITSIO_MAX_BLANK                 32
 
 #define CFITSIO_SUCCESS                   0
 #define CFITSIO_FAIL                     -1
@@ -44,6 +45,11 @@ typedef struct cfitsio_keyword
 
 } CFITSIO_KEYWORD;
 
+extern const unsigned int kInfoPresent_SIMPLE;
+extern const unsigned int kInfoPresent_EXTEND;
+extern const unsigned int kInfoPresent_BLANK;
+extern const unsigned int kInfoPresent_BSCALE;
+extern const unsigned int kInfoPresent_BZERO;
 
 typedef	struct cfitsio_image_info
 {
@@ -52,13 +58,15 @@ typedef	struct cfitsio_image_info
       int bitpix;
       int naxis;
       long naxes[CFITSIO_MAX_DIM];
+      int nkeys;
 
       // For drms_segment() validity checking
-   
-      int simple;
-      int extend;
-      double bscale;
-      double bzero;
+      unsigned int bitfield; /* describes which of the following are present */
+      int simple;            /* bit 0 (least significant bit) */
+      int extend;            /* bit 1 */
+      long long blank;       /* bit 2 */
+      double bscale;         /* bit 3 */
+      double bzero;          /* bit 4 */
 
 } CFITSIO_IMAGE_INFO;
 
@@ -92,10 +100,14 @@ int cfitsio_free_image(void** image);
 int cfitsio_get_image_info(CFITSIO_KEYWORD* keys, CFITSIO_IMAGE_INFO* info);
 
 int cfitsio_read_file(char* fits_filename, CFITSIO_KEYWORD** list,  void** image);
-int cfitsio_read_file_and_info(char* fits_filename, CFITSIO_KEYWORD** keys,  void** image, CFITSIO_IMAGE_INFO* info);
+int cfitsio_read_file_and_info(char* fits_filename, 
+			       CFITSIO_KEYWORD** keylist,  
+			       CFITSIO_IMAGE_INFO* image_info,
+			       void** image);
 
-int cfitsio_write_file(char* fits_filename, CFITSIO_KEYWORD* keys,  void* image, 
-		       CFITSIO_COMPRESSION_TYPE compression_type);
+int cfitsio_write_file(char* fits_filename, CFITSIO_KEYWORD* keylist, 
+		       CFITSIO_IMAGE_INFO *info,
+		       void* image, CFITSIO_COMPRESSION_TYPE compression_type);
 
 void cfitsio_free_keysandimg(CFITSIO_KEYWORD** list, void** image);
 

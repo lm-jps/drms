@@ -25,6 +25,11 @@
 #define DEBUGMSG(msg)  //nop
 #endif
 
+const unsigned int kInfoPresent_SIMPLE = 0x00000001;
+const unsigned int kInfoPresent_EXTEND = 0x00000002;
+const unsigned int kInfoPresent_BLANK  = 0x00000004;
+const unsigned int kInfoPresent_BSCALE = 0x00000008;
+const unsigned int kInfoPresent_BZERO  = 0x00000010;
 
 //****************************************************************************
 //*********************   Using CFITSIO_KEYWORD  *****************************
@@ -572,10 +577,13 @@ int cfitsio_header_to_keylist(char* header, CFITSIO_KEYWORD** keylist)
 
 int cfitsio_read_file(char* fits_filename, CFITSIO_KEYWORD** keylist,  void** image)
 {
-   return cfitsio_read_file_and_info(fits_filename, keylist, image, NULL);
+   return cfitsio_read_file_and_info(fits_filename, keylist, NULL, image);
 }
 
-int cfitsio_read_file_and_info(char* fits_filename, CFITSIO_KEYWORD** keylist,  void** image, CFITSIO_IMAGE_INFO* image_info)
+int cfitsio_read_file_and_info(char* fits_filename, 
+			       CFITSIO_KEYWORD** keylist,  
+			       CFITSIO_IMAGE_INFO* image_info,
+			       void** image)
 {
 
    fitsfile *fptr=NULL;        
@@ -827,8 +835,9 @@ void cfitsio_free_keysandimg(CFITSIO_KEYWORD** keylist, void** image)
 
 //****************************************************************************
 
-int cfitsio_write_file(char* fits_filename, CFITSIO_KEYWORD* keylist, void* image, 
-		       CFITSIO_COMPRESSION_TYPE compression_type)
+int cfitsio_write_file(char* fits_filename, CFITSIO_KEYWORD* keylist, 
+		       CFITSIO_IMAGE_INFO *imginfo,
+		       void* image, CFITSIO_COMPRESSION_TYPE compression_type)
 {
 
    fitsfile *fptr=NULL; 

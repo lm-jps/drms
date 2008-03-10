@@ -1008,6 +1008,7 @@ DRMS_Type_t drms_str2type(const char *);
 */
 const char *drms_type2str(DRMS_Type_t type);
 void drms_missing(DRMS_Type_t type, DRMS_Type_Value_t *val);
+void drms_missing_vp(DRMS_Type_t type, void *val);
 int drms_copy_db2drms(DRMS_Type_t drms_type, DRMS_Type_Value_t *drms_dst, 
 		      DB_Type_t db_type, char *db_src);
 void drms_copy_drms2drms(DRMS_Type_t type, DRMS_Type_Value_t *dst, 
@@ -1036,6 +1037,7 @@ char drms2char(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status);
 short drms2short(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status);
 int drms2int(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status);
 long long drms2longlong(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status);
+long long conv2longlong(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status);
 float drms2float(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status);
 double drms2double(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status);
 double drms2time(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status);
@@ -1070,28 +1072,28 @@ static inline void drms_value_free(DRMS_Value_t *val)
    switch (T)                                                   \
    {                                                            \
       case DRMS_TYPE_CHAR:                                      \
-	OV.value.char_val = *(char *)inval;                     \
+	OV.value.char_val = *(char *)IV;                     \
 	break;                                                  \
       case DRMS_TYPE_SHORT:                                     \
-	OV.value.short_val = *(short *)inval;                   \
+	OV.value.short_val = *(short *)IV;                   \
 	break;                                                  \
       case DRMS_TYPE_INT:                                       \
-	OV.value.int_val = *(int *)inval;                       \
+	OV.value.int_val = *(int *)IV;                       \
 	break;                                                  \
       case DRMS_TYPE_LONGLONG:                                  \
-	OV.value.longlong_val = *(long long *)inval;            \
+	OV.value.longlong_val = *(long long *)IV;            \
 	break;                                                  \
       case DRMS_TYPE_FLOAT:                                     \
-	OV.value.float_val = *(float *)inval;                   \
+	OV.value.float_val = *(float *)IV;                   \
 	break;                                                  \
       case DRMS_TYPE_DOUBLE:                                    \
-	OV.value.double_val = *(double *)inval;                 \
+	OV.value.double_val = *(double *)IV;                 \
 	break;                                                  \
       case DRMS_TYPE_TIME:                                      \
-	OV.value.time_val = *(double *)inval;                   \
+	OV.value.time_val = *(double *)IV;                   \
 	break;                                                  \
       case DRMS_TYPE_STRING:                                    \
-	OV.value.string_val = strdup((char *)inval);            \
+	OV.value.string_val = strdup((char *)IV);            \
 	break;                                                  \
       default:                                                  \
 	fprintf(stderr, "Invalid drms type: %d\n", (int)T);     \

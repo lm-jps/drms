@@ -274,6 +274,40 @@ void drms_missing(DRMS_Type_t type, DRMS_Type_Value_t *val)
   }
 }
 
+void drms_missing_vp(DRMS_Type_t type, void *val)
+{
+ switch(type)
+  {
+  case DRMS_TYPE_CHAR: 
+    *((char *)val) = DRMS_MISSING_CHAR;
+    break;
+  case DRMS_TYPE_SHORT:
+    *((short *)val) = DRMS_MISSING_SHORT;
+    break;
+  case DRMS_TYPE_INT:  
+    *((int *)val) = DRMS_MISSING_INT;
+    break;
+  case DRMS_TYPE_LONGLONG:  
+    *((long long *)val) = DRMS_MISSING_LONGLONG;
+    break;
+  case DRMS_TYPE_FLOAT:
+    *((float *)val) = DRMS_MISSING_FLOAT;
+    break;
+  case DRMS_TYPE_DOUBLE: 	
+    *((double *)val) = DRMS_MISSING_DOUBLE;
+    break;
+  case DRMS_TYPE_TIME: 
+    *((double *)val) = DRMS_MISSING_TIME;
+    break;
+  case DRMS_TYPE_STRING: 
+    copy_string((char **)val, DRMS_MISSING_STRING);
+    break;
+  default:
+    fprintf(stderr, "ERROR: Unsupported DRMS type %d\n",(int)type);
+    XASSERT(0);
+  }
+}
+
 int drms_strval(DRMS_Type_t type, DRMS_Type_Value_t *val, char *str)
 {
   switch(type)
@@ -1140,7 +1174,6 @@ int drms2int(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
   return result;  
 }
 
-
 long long drms2longlong(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
 {
   int stat;
@@ -1261,7 +1294,85 @@ long long drms2longlong(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
   return result;  
 }
 
+/* Don't treat missing as special. */
+long long conv2longlong(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
+{
+  int stat;
+  int ustat;
+  volatile long long result;
+  long long val;
+  char *endptr;
 
+  result =  DRMS_MISSING_LONGLONG;
+  stat = DRMS_RANGE;  
+  switch(type)
+  {
+  case DRMS_TYPE_CHAR:       
+    stat = DRMS_SUCCESS;
+    result = (long long) value->char_val;      
+   
+    break;
+  case DRMS_TYPE_SHORT:
+      stat = DRMS_SUCCESS;
+      result = (long long)value->short_val;      
+    break;
+  case DRMS_TYPE_INT:   
+    stat = DRMS_SUCCESS;
+    result = (long long) value->int_val;      
+
+    break;
+  case DRMS_TYPE_LONGLONG:  
+    stat = DRMS_SUCCESS;
+    result = value->longlong_val;      
+
+    break;
+  case DRMS_TYPE_FLOAT:
+    if (isnan(value->float_val))
+    {
+      stat = DRMS_SUCCESS;
+      result = DRMS_MISSING_LONGLONG;            
+    }
+    else if (!(value->float_val < LLONG_MIN || 
+	       value->float_val > LLONG_MAX))
+    {
+       result = FloatToLongLong(value->float_val, &ustat);
+       stat = (ustat == kExact) ? DRMS_SUCCESS : DRMS_INEXACT;
+    }
+    break;
+  case DRMS_TYPE_TIME: 
+  case DRMS_TYPE_DOUBLE: 	
+    if (isnan(value->double_val))
+    {
+      stat = DRMS_SUCCESS;
+      result = DRMS_MISSING_LONGLONG;            
+    }
+    else if (!(value->double_val < LLONG_MIN || 
+	       value->double_val > LLONG_MAX))
+    {
+       result = DoubleToLongLong(value->double_val, &ustat);
+       stat = (ustat == kExact) ? DRMS_SUCCESS : DRMS_INEXACT;
+    }
+    break;
+  case DRMS_TYPE_STRING: 
+    val = strtod(value->string_val,&endptr);
+    if (val==0 && endptr==value->string_val )	
+    {
+      stat = DRMS_BADSTRING;
+      result = DRMS_MISSING_LONGLONG;
+    }
+    else {
+      stat = DRMS_SUCCESS;
+      result = val;
+    }
+    break;
+  default:
+    stat = DRMS_RANGE;
+    result = DRMS_MISSING_LONGLONG;    
+  }
+  if (status)
+    *status = stat;
+  return result;  
+}
 
 float drms2float(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
 {

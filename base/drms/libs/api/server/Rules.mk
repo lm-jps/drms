@@ -27,7 +27,7 @@ S_$(d)		:= $(notdir $(LIBDRMS))
 
 # Local rules
 $(COMMOBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
-$(COMMOBJ_$(d)):	CF_TGT := $(CF_TGT) -D$(DBNAME)
+$(COMMOBJ_$(d)):	CF_TGT := $(CF_TGT) -D$(DBNAME) $(CFITSIOH)
 $(OBJ_$(d)):		$(SRCDIR)/$(d)/Rules.mk
 $(OBJ_$(d)):		CF_TGT := $(CF_TGT) -D$(DBNAME)
 

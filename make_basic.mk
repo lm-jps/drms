@@ -65,6 +65,7 @@ ifeq ($(COMPILER), icc)
 
     # All 3rd-party math libraries - local rules can define a subset
     FMATHLIBS = $(FMATHLIBSL) -lfftw3f -lcfitsio
+    CFITSIOLIBS = $(CFITSIOL) -lcfitsio
   else
 #    FMATHLIBS = -lmkl_lapack -lmkl -L$(_JSOCROOT_)/lib_third_party/lib/linux-ia32/ -lfftw3f -lcfitsio
     # Path to 32-bit 3rd-party libraries
@@ -73,6 +74,7 @@ ifeq ($(COMPILER), icc)
 
     # All 3rd-party math libraries - local rules can define a subset
     FMATHLIBS = $(FMATHLIBSL) -lfftw3f -lcfitsio
+    CFITSIOLIBS = $(CFITSIOL) -lcfitsio
   endif
 endif
 
@@ -181,7 +183,7 @@ FLINK		= $(F77) $(F_LF_ALL) $(LF_TGT) -o $@ $^ $(LL_TGT) $(LL_ALL)
 SLBIN           = ln -sf ../../_$(JSOC_MACHINE)/$@ ../bin/$(JSOC_MACHINE)/
 SLLIB		= ln -sf ../../_$(JSOC_MACHINE)/$@ ../lib/$(JSOC_MACHINE)/
 
-ALL_LIBS_FPIC = $(LIBDRMSCLIENT_FPIC) $(LIBDBCLIENT_FPIC) $(LIBCMDPARAMS_FPIC) $(LIBTHREADUTIL_FPIC) $(LIBRICECOMP_FPIC) $(LIBDSTRUCT_FPIC) $(LIBMISC_FPIC) $(LIBTIMEIO_FPIC) $(LIBFITSRW_FPIC)
+ALL_LIBS_FPIC = $(LIBDRMSCLIENT_FPIC) $(LIBDBCLIENT_FPIC) $(LIBCMDPARAMS_FPIC) $(LIBTHREADUTIL_FPIC) $(LIBRICECOMP_FPIC) $(LIBDSTRUCT_FPIC) $(LIBMISC_FPIC) $(LIBTIMEIO_FPIC) $(LIBFITSRW_FPIC) 
 
 ### Standard parts
 #
@@ -225,20 +227,22 @@ $(FEXE):	%:	%.o $(MATHLIBS)
 		$(FLINK)
 		$(SLBIN)
 
-$(SERVEREXE):   LL_TGT := $(LL_TGT) -lpq
+$(SERVEREXE):   LL_TGT := $(LL_TGT) -lpq $(CFITSIOLIBS)
 $(SERVEREXE):	%:	%.o $(SERVERLIBS)
 			$(LINK)
 			$(SLBIN)
 
-$(MODEXE):      LL_TGT := $(LL_TGT) -lpq
+$(MODEXE):      LL_TGT := $(LL_TGT) -lpq $(CFITSIOLIBS)
 $(MODEXE):	%:	%.o $(MODLIBS)
 			$(LINK)
 			$(SLBIN)
 
+$(MODEXE_SOCK):	LL_TGT := $(LL_TGT) $(CFITSIOLIBS)
 $(MODEXE_SOCK): %_sock: %.o $(MODLIBS_SOCK)
 			$(LINK)
 			$(SLBIN)
 
+$(FMODEXE):	LL_TGT := $(LL_TGT) $(CFITSIOLIBS)
 $(FMODEXE):     %_sock:	%.o $(FMODLIBS_SOCK)
 			$(FLINK)
 			$(SLBIN)

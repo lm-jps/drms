@@ -4,10 +4,10 @@
 
 static char *prot_string[] = {
   "bin",       "bin.gz",    "fits",   "fitz",     "msi",    "tas",
-  "generic",   "dsds",      "local"};
+  "generic",   "dsds",      "local",  "fitsio"};
 static int prot_type[] = {
   DRMS_BINARY, DRMS_BINZIP, DRMS_FITS, DRMS_FITZ, DRMS_MSI, DRMS_TAS,
-  DRMS_GENERIC, DRMS_DSDS, DRMS_LOCAL};
+  DRMS_GENERIC, DRMS_DSDS, DRMS_LOCAL, DRMS_FITSIO};
 
 /*  N.B.: If you add types to the above lists you must also add them to
 			the enum list of DRMS_Protocol_t in drms_protocol.h  */

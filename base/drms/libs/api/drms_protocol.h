@@ -29,7 +29,9 @@ typedef enum  {
    /** \brief DSDS file format stored in DSDS (read only) */
    DRMS_DSDS, 
    /** \brief DSDS file format stored locally (read only) */
-   DRMS_LOCAL
+   DRMS_LOCAL,
+   /** \brief Format that uses cfitsio to read and write FITS files */
+   DRMS_FITSIO
 } DRMS_Protocol_t;
 	/*  N.B. To add a protocol, also add info to the static declartions
 							 in drms_protocol.c  */

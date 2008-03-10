@@ -37,6 +37,12 @@
 #include <dlfcn.h>
 #include "xmem.h"
 #include "drms_dsdsapi.h"
+#include "cfitsio.h"
+
+const char kSIMPLE[] = "SIMPLE";
+const char kBITPIX[] = "BITPIX";
+const char kNAXIS[] = "NAXIS";
+const char kNAXISn[] = "NAXIS%d";
 
 /******** helper functions that don't get exported as part of API ********/
 static DRMS_Segment_t * __drms_segment_lookup(DRMS_Record_t *rec, 
@@ -81,6 +87,272 @@ static DRMS_Segment_t * __drms_segment_lookup(DRMS_Record_t *rec,
 	    rec->seriesinfo->seriesname);
   
   return NULL;
+}
+
+static DRMS_Type_t Bitpix2Type(int bitpix, int *err)
+{
+   DRMS_Type_t type = DRMS_TYPE_CHAR;
+   int error = 0;
+
+   switch(bitpix)
+   {
+      case 8:
+	type = DRMS_TYPE_CHAR; 
+	break;
+      case 16:
+	type = DRMS_TYPE_SHORT;
+	break;
+      case 32:
+	type = DRMS_TYPE_INT;
+	break;
+      case 64:
+	type = DRMS_TYPE_LONGLONG;  
+	break;
+      case -32:
+	type = DRMS_TYPE_FLOAT;
+	break;
+      case -64:
+	type = DRMS_TYPE_DOUBLE; 	
+	break;
+      default:
+	fprintf(stderr, "ERROR: Invalid bitpix value %d\n", bitpix);
+	error = 1;
+	break;
+   }
+
+   if (err)
+   {
+      *err = error;
+   }
+
+   return type;
+}
+
+static int Type2Bitpix(DRMS_Type_t type, int *err)
+{
+   int bitpix = 0;
+   int error = 0;
+
+   switch(type)
+   {
+      case DRMS_TYPE_CHAR: 
+	bitpix = 8;
+	break;
+      case DRMS_TYPE_SHORT:
+	bitpix = 16;
+	break;
+      case DRMS_TYPE_INT:  
+	bitpix = 32;
+	break;
+      case DRMS_TYPE_LONGLONG:  
+	bitpix = 64;
+	break;
+      case DRMS_TYPE_FLOAT:
+	bitpix = -32;
+	break;
+      case DRMS_TYPE_DOUBLE: 	
+      case DRMS_TYPE_TIME: 
+	bitpix = -64;
+	break;
+      case DRMS_TYPE_STRING: 
+      default:
+	fprintf(stderr, "ERROR: Unsupported DRMS type %d\n", (int)type);
+	error = 1;
+	break;
+   }
+
+   if (err)
+   {
+      *err = error;
+   }
+
+   return bitpix;
+}
+
+static void ShootBlanks(DRMS_Array_t *arr, long long blank)
+{
+   if (arr->type != DRMS_TYPE_FLOAT &&
+       arr->type != DRMS_TYPE_DOUBLE &&
+       arr->type != DRMS_TYPE_TIME)
+   {
+      int nelem = drms_array_count(arr);
+      DRMS_Value_t val;
+      long long dataval;
+
+      while (nelem > 0)
+      {
+	 void *elem = (char *)arr->data + nelem;
+
+	 DRMS_VAL_SET(arr->type, elem, val);
+	 dataval = conv2longlong(arr->type, &(val.value), NULL);
+
+	 if (dataval == blank)
+	 {
+	    drms_missing_vp(arr->type, elem);
+	 }
+
+	 nelem--;
+      }
+   }
+}
+
+static int CreateDRMSArray(CFITSIO_IMAGE_INFO *info, void *data, DRMS_Array_t **arrout)
+{
+   DRMS_Array_t *retarr = NULL;
+   int err = 0;
+   DRMS_Type_t datatype;
+   int drmsstatus = DRMS_SUCCESS;
+   int naxis = 0;
+   int axes[DRMS_MAXRANK] = {0};
+   int ia;
+
+   if (info && data && arrout)
+   {
+      if (!(info->bitfield & kInfoPresent_SIMPLE) || !info->simple)
+      {
+	  err = 1;
+	  fprintf(stderr, "Simple FITS file expected.\n");
+      }
+
+      if (!err)
+      {
+	 datatype = Bitpix2Type(info->bitpix, &err);
+	 if (err)
+	 {
+	    fprintf(stderr, "BITPIX = %d not allowed\n", info->bitpix);
+	 }
+      }
+
+      if (!err)
+      {
+	 if (info->naxis >= 1 && info->naxis <= DRMS_MAXRANK)
+	 {
+	    naxis = info->naxis;
+	 }
+	 else
+	 {
+	    err = 1;
+	    fprintf(stderr, 
+		    "%s = %d outside allowable DRMS range [1-%d].\n", 
+		    kNAXIS,
+		    info->naxis,
+		    DRMS_MAXRANK);
+	 }
+      }
+
+      if (!err)
+      {
+	 for (ia = 0; ia < naxis; ia++)
+	 {
+	    axes[ia] = (int)(info->naxes[ia]);
+	 }
+      }
+
+      if (!err)
+      {
+	 retarr = drms_array_create(datatype, naxis, axes, data, &drmsstatus);
+      }
+      else
+      {
+	 err = 1;
+      }
+
+      if (!err && info->bitpix > 0)
+      {
+	 /* BLANK isn't stored anywhere in DRMS.  Just use DRMS_MISSING_XXX. 
+	  * But need to convert data blanks to missing. */
+	 if (info->bitfield & kInfoPresent_BLANK)
+	 {
+	    ShootBlanks(retarr, info->blank);
+	 }
+
+	 if (info->bitfield & kInfoPresent_BZERO)
+	 {
+	    retarr->bzero = info->bzero;
+	 }
+
+	 if (info->bitfield & kInfoPresent_BSCALE)
+	 {
+	    retarr->bscale = info->bscale;
+	 }
+      }
+
+      if (!err)
+      {
+	 retarr->israw = 1; /* FITSRW should never apply BSCALE or BZERO */
+	 *arrout = retarr;
+      }
+   }
+
+   return err;
+}
+
+static int SetImageInfo(DRMS_Array_t *arr, CFITSIO_IMAGE_INFO *info)
+{
+   int err = 0;
+   int ia;
+
+   if (info)
+   {
+      memset(info, 0, sizeof(CFITSIO_IMAGE_INFO));
+      info->bitpix = Type2Bitpix(arr->type, &err);
+
+      if (!err)
+      {
+	 if (arr->naxis > 0)
+	 {
+	    info->naxis = arr->naxis;
+	 }
+	 else
+	 {
+	    err = 1;
+	 }
+      }
+
+      if (!err)
+      {
+	 for (ia = 0; ia < arr->naxis; ia++)
+	 {
+	    info->naxes[ia] = (long)(arr->axis[ia]);
+	 }
+
+	 info->simple = 1;
+	 info->extend = 0; /* baby steps - trying to dupe what happens in FITS protocol. */
+	 info->bitfield = (info->bitfield | kInfoPresent_SIMPLE);
+	 
+	 if (info->bitpix > 0)
+	 {
+	    /* An integer type - need to set BLANK, and possibly BZERO and BSCALE. */
+	    DRMS_Type_Value_t missing;
+	    drms_missing(arr->type, &missing);
+
+	    info->blank = conv2longlong(arr->type, &missing, NULL);
+	    info->bitfield = (info->bitfield | kInfoPresent_BLANK);
+
+	    if (arr->israw)
+	    {
+	       /* This means that the data COULD BE not real values,
+		* and to get real values they need to be scaled by bzero/bscale. */
+#ifdef ICCCOMP
+#pragma warning (disable : 1572)
+#endif
+	       if (arr->bscale != 1.0 || fabs(arr->bzero) != 0.0)
+	       {
+		  info->bscale = arr->bscale;
+		  info->bzero = arr->bzero;
+
+		  info->bitfield = (info->bitfield | kInfoPresent_BSCALE);
+		  info->bitfield = (info->bitfield | kInfoPresent_BZERO);
+	       }
+#ifdef ICCCOMP
+#pragma warning (default : 1572)
+#endif
+	    }
+	 }
+      }
+   }
+
+   return err;
 }
 
 int drms_segment_set_const(DRMS_Segment_t *seg) {
@@ -406,38 +678,16 @@ void drms_segment_fprint(FILE *keyfile, DRMS_Segment_t *seg)
     }
 
     /* Protocol info. */ 
-    switch(seg->info->protocol)
-      {
-      case DRMS_GENERIC:
-	fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "protocol", "GENERIC");
-	break;
-      case DRMS_BINARY:
-	fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "protocol", "BINARY");
-	break;
-      case DRMS_BINZIP:
-	fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "protocol", "BINZIP");
-	break;
-      case DRMS_FITZ:
-	fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "protocol", "FITZ");
-	break;
-      case DRMS_FITS:
-	fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "protocol", "FITS");
-	break;
-      case DRMS_MSI:
-	fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "protocol", "MSI");
-	break;
-      case DRMS_TAS:
-	fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "protocol", "TAS");
-	for (i=0; i<seg->info->naxis; i++)
-	  {
-	    fprintf(keyfile, "\t%-*s[%2d]:\t%d\n", fieldwidth+5, "blocksize", i, 
-		   seg->blocksize[i]);
-	  }
-	break;
-      default:
-	fprintf(keyfile, "\t%-*s:\t%s %d\n", fieldwidth, "protocol", "Illegal value",
+    const char *protstr = drms_prot2str(seg->info->protocol);
+    if (protstr)
+    {
+       fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "protocol", protstr);
+    }
+    else
+    {
+       fprintf(keyfile, "\t%-*s:\t%s %d\n", fieldwidth, "protocol", "Illegal value",
 	       (int)seg->info->protocol);
-      }
+    }
 
     if (strlen(seg->filename)) {
       fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "filename", seg->filename);  
@@ -711,7 +961,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 				int *status)
 {
   int stat=0,i;
-  DRMS_Array_t *arr;
+  DRMS_Array_t *arr = NULL;
   char filename[DRMS_MAXPATHLEN];
   int start[DRMS_MAXRANK+1], end[DRMS_MAXRANK+1];	
   FILE *fp;
@@ -993,6 +1243,39 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 	}
       }
       break;
+    case DRMS_FITSIO:
+      {
+	 fclose(fp);
+
+	 CFITSIO_IMAGE_INFO info;
+	 void *image = NULL;
+
+	 /* Call Tim's function to read data */
+	 if (cfitsio_read_file_and_info(filename, NULL, &info, &image) == CFITSIO_SUCCESS)
+	 {
+	    if (CreateDRMSArray(&info, image, &arr))
+	    {
+	       fprintf(stderr,"Couldn't read segment from file '%s'.\n", filename);      
+	       goto bailout1;
+	    }
+
+	    /* Check that values of BZERO, BSCALE in the file and in the DRMS
+	       database agrees. */
+	    if (!drms_segment_checkscaling(arr, bzero, bscale, filename))
+	    {
+	       stat = 1;
+	       goto bailout;
+	    }
+
+	    cfitsio_free_keysandimg(NULL, &image);
+	 }
+	 else
+	 {
+	    fprintf(stderr,"Couldn't FITS file '%s'.\n", filename); 
+	    stat = 1;
+	    goto bailout1;
+	 }
+      }
     case DRMS_GENERIC:
     case DRMS_MSI:
       fclose(fp);
@@ -1031,7 +1314,8 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
   arr->parent_segment = seg;
   
   /* Scale and convert to desired type. */
-  arr->bzero = bzero;
+  /* If this is protocol FITSIO, then arr->bzero == bzero. */
+  arr->bzero = bzero; /* RHS is what the DRMS keyword says; LHS is what the FITS file says.  */
   arr->bscale = bscale;
   if (type == DRMS_TYPE_RAW)
   {
@@ -1385,6 +1669,27 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
     case DRMS_FITS:
       if ((status = drms_writefits(filename, 0, 0, NULL, out)))
 	goto bailout;
+      break;
+    case DRMS_FITSIO:
+      {
+	 if (out->type == DRMS_TYPE_STRING)
+	 {
+	    fprintf(stderr, "Can't save string data into a fits file.\n");
+	    goto bailout;
+	 }
+
+	 CFITSIO_IMAGE_INFO imginfo;
+
+	 if (SetImageInfo(out, &imginfo))
+	 {
+	    if (cfitsio_write_file(filename, NULL, &imginfo, out->data, C_NONE))
+	      goto bailout;
+	 }
+	 else
+	 {
+	    goto bailout;
+	 }
+      }
       break;
     case DRMS_TAS:
       
@@ -1885,3 +2190,4 @@ int drms_segment_segsmatch(const DRMS_Segment_t *s1, const DRMS_Segment_t *s2)
 
    return ret;
 }
+
