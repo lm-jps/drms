@@ -23,7 +23,10 @@ endif
 ifeq ($(HOST),dcs2.jsoc.Stanford.EDU)
         CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMDC
 endif
-ifeq ($(HOST),d01.Stanford.EDU)
+ifeq ($(HOST),d00.Stanford.EDU)
+        CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMT120
+endif
+ifeq ($(HOST),d02.jsoc.Stanford.EDU)
         CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMT950
 endif
 ifeq ($(HOST),tenerife.tuc.noao.edu)
