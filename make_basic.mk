@@ -190,7 +190,11 @@ ALL_LIBS_FPIC = $(LIBDRMSCLIENT_FPIC) $(LIBDBCLIENT_FPIC) $(LIBCMDPARAMS_FPIC) $
 include	$(SRCDIR)/Rules.mk
 
 # Libraries from src/util linked with all programs.
-SYSLIBS = -lz -ldl -lpthread -lm
+ifneq ($(COMPILER), icc)
+  SYSLIBS = -lz -ldl -lpthread -lm
+else
+  SYSLIBS = -lz -ldl -lpthread
+endif
 SRCLIBS = $(LIBTHREADUTIL) $(LIBRICECOMP) $(LIBCMDPARAMS) $(LIBMISC) $(LIBDSTRUCT) $(LIBTIMEIO) $(LIBFITSRW)
 FSRCLIBS = $(LIBTHREADUTIL) $(LIBRICECOMP) $(LIBCMDPARAMSF) $(LIBMISC) $(LIBDSTRUCT) $(LIBTIMEIO) $(LIBFITSRW)
 
