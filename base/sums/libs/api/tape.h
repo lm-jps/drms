@@ -26,25 +26,36 @@
 #define UNLOADCMD "/usr/sbin/mtx -f /dev/t50 unload"
 #define POSITIONDUMP "/tmp/t50_position_dump.out"
 #elif SUMT950
-#define MAX_SLOTS 2200
+#define MAX_SLOTS 2250
 #define NUM_IMP_EXP_SLOTS 50  /* assumes these slots are the highest slot#s */
 #define MAX_SLOTS_LIVE (MAX_SLOTS - NUM_IMP_EXP_SLOTS)
-#define MAX_DRIVES 12
+//#define MAX_DRIVES 12
+#define MAX_DRIVES 4			/* !!TEMP for testing */
 #define MAX_GROUPS 1024
 #define MAX_AVAIL_BLOCKS 1600000000     /* max (512) blocks on a LTO4 tape */
 #define TAR_FILE_SZ 500000000   /* try to make a tar file this many bytes */
 #define TAR_FILE_SZ_BLKS 976563 /* TAR_FILE_SZ/512 */
-#define LIBDEV "/dev/sg6"
+#define LIBDEV "/dev/t950"
 /* If /dev/ name in this file then override the LIBDEV above */
 #define LIBDEVFILE "/home/production/cvs/JSOC/tables/libdevfile.cfg"
-#define SUMDR0 "/dev/nst0"
-#define SUMDR1 "/dev/nst1"
-#define SUMDR  "/dev/nst"
+#define SUMDR0 "/dev/sum_nst0"
+#define SUMDR1 "/dev/sum_nst1"
+#define SUMDR2 "/dev/sum_nst2"
+#define SUMDR3 "/dev/sum_nst3"
+#define SUMDR4 "/dev/sum_nst4"
+#define SUMDR5 "/dev/sum_nst5"
+#define SUMDR6 "/dev/sum_nst6"
+#define SUMDR7 "/dev/sum_nst7"
+#define SUMDR8 "/dev/sum_nst8"
+#define SUMDR9 "/dev/sum_nst9"
+#define SUMDR10 "/dev/sum_nst10"
+#define SUMDR11 "/dev/sum_nst11"
+#define SUMDR  "/dev/sum_nst"
 #define GTARBLOCK 256   /* the gtar default is this */
 #define UNLOADDUMP "/tmp/t950_unload_dump.out"
-#define UNLOADCMD "/usr/sbin/mtx -f /dev/sg6 unload"
+#define UNLOADCMD "/usr/sbin/mtx -f /dev/t950 unload"
 #define POSITIONDUMP "/tmp/t950_position_dump.out"
-#else
+#elif SUMT120
 #define MAX_SLOTS 128
 #define NUM_IMP_EXP_SLOTS 8  /* assumes these slots are the highest slot#s */
 #define MAX_SLOTS_LIVE (MAX_SLOTS - NUM_IMP_EXP_SLOTS)
@@ -58,6 +69,8 @@
 #define LIBDEVFILE "/home/production/cvs/JSOC/base/sums/apps/data/libdevfile.cfg"
 #define SUMDR0 "/dev/nst0"
 #define SUMDR1 "/dev/nst1"
+#define SUMDR2 "/dev/nst2"
+#define SUMDR3 "/dev/nst3"
 #define SUMDR  "/dev/nst"
 #define GTARBLOCK 256	/* the gtar default is this */
 #define UNLOADDUMP "/tmp/t120_unload_dump.out"
