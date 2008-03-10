@@ -14,6 +14,18 @@ endif
 ifeq ($(HOST),dcs2.jsoc.Stanford.EDU)
         CF_TGT_$(d) := -DSUMDC
 endif
+ifeq ($(HOST),d00.Stanford.EDU)
+        CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMT120
+endif
+ifeq ($(HOST),d02.jsoc.Stanford.EDU)
+        CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMT950
+endif
+ifeq ($(HOST),tenerife.tuc.noao.edu)
+        CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMNOAO
+endif
+ifeq ($(HOST),xim.Stanford.EDU)
+        CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMNOAO
+endif
 
 LIBSUM 		:= $(d)/libsumspg.a
 PG_$(d)		:= $(addprefix $(d)/, $(notdir $(wildcard $(SRCDIR)/$(d)/*.pgc)))
