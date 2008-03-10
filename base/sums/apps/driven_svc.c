@@ -238,10 +238,10 @@ int main(int argc, char *argv[])
 	write_log("***unable to register (DRIVE0PROG, DRIVE0VERS, tcp)\n");
 	exit(1);
       }
-#ifndef SUMDC
+#ifdef SUMT120
     if(tapeoffline == 0) {
       /* turn compression off */
-      sprintf(compcmd, "sudo /usr/local/bin/mt -f /dev/nst0 defcompression 0");
+      sprintf(compcmd, "sudo /usr/local/bin/mt -f %s defcompression 0", SUMDR0);
       write_log("%s\n", compcmd);
       if(system(compcmd)) {
         write_log("***Error on: %s\n", compcmd);
@@ -261,10 +261,10 @@ int main(int argc, char *argv[])
 	write_log("***unable to register (DRIVE1PROG, DRIVE1VERS, tcp)\n");
 	exit(1);
       }
-#ifndef SUMDC
+#ifdef SUMT120
       if(tapeoffline == 0) {
       /* turn compression off */
-      sprintf(compcmd, "sudo /usr/local/bin/mt -f /dev/nst1 defcompression 0");
+      sprintf(compcmd, "sudo /usr/local/bin/mt -f %s defcompression 0", SUMDR1);
       write_log("%s\n", compcmd);
       if(system(compcmd)) {
         write_log("***Error on: %s\n", compcmd);
@@ -284,10 +284,10 @@ int main(int argc, char *argv[])
 	write_log("***unable to register (DRIVE2PROG, DRIVE2VERS, tcp)\n");
 	exit(1);
       }
-#ifndef SUMDC
+#ifdef SUMT120
       if(tapeoffline == 0) {
       /* turn compression off */
-      sprintf(compcmd, "sudo /usr/local/bin/mt -f /dev/nst2 defcompression 0");
+      sprintf(compcmd, "sudo /usr/local/bin/mt -f %s defcompression 0", SUMDR2);
       write_log("%s\n", compcmd);
       if(system(compcmd)) {
         write_log("***Error on: %s\n", compcmd);
@@ -307,10 +307,10 @@ int main(int argc, char *argv[])
 	write_log("***unable to register (DRIVE3PROG, DRIVE3VERS, tcp)\n");
 	exit(1);
       }
-#ifndef SUMDC
+#ifdef SUMT120
       if(tapeoffline == 0) {
       /* turn compression off */
-      sprintf(compcmd, "sudo /usr/local/bin/mt -f /dev/nst3 defcompression 0");
+      sprintf(compcmd, "sudo /usr/local/bin/mt -f %s defcompression 0", SUMDR3);
       write_log("%s\n", compcmd);
       if(system(compcmd)) {
         write_log("***Error on: %s\n", compcmd);
@@ -823,7 +823,7 @@ KEY *writedrvdo_1(KEY *params)
       return(retlist);
     }
     setkey_str(&retlist, "md5cksum", md5sum);
-#ifndef SUMDC
+#ifdef SUMT120
     if((tell = tell_blocks(sim, dnum)) == -1) { /* get current blk# */
       write_log("**Can't get current block# on drive %d. Proceed w/o it.\n",
 		dnum);
