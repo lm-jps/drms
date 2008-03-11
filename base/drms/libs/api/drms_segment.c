@@ -1247,13 +1247,13 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
       {
 	 fclose(fp);
 
-	 CFITSIO_IMAGE_INFO info;
+	 CFITSIO_IMAGE_INFO *info = NULL;
 	 void *image = NULL;
 
 	 /* Call Tim's function to read data */
-	 if (cfitsio_read_file_and_info(filename, NULL, &info, &image) == CFITSIO_SUCCESS)
+	 if (cfitsio_read_file(filename, info, &image, NULL) == CFITSIO_SUCCESS)
 	 {
-	    if (CreateDRMSArray(&info, image, &arr))
+	    if (CreateDRMSArray(info, image, &arr))
 	    {
 	       fprintf(stderr,"Couldn't read segment from file '%s'.\n", filename);      
 	       goto bailout1;
@@ -1267,7 +1267,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 	       goto bailout;
 	    }
 
-	    cfitsio_free_keysandimg(NULL, &image);
+	    cfitsio_free_these(&info, &image, NULL);
 	 }
 	 else
 	 {
@@ -1682,7 +1682,7 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
 
 	 if (SetImageInfo(out, &imginfo))
 	 {
-	    if (cfitsio_write_file(filename, NULL, &imginfo, out->data, C_NONE))
+	    if (cfitsio_write_file(filename, &imginfo, out->data, C_NONE, NULL))
 	      goto bailout;
 	 }
 	 else
