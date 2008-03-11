@@ -5,27 +5,30 @@ dirstack_$(sp)	:= $(d)
 d		:= $(dir)
 
 # Local variables
+ADD_TGT_$(d) := -DSUMT120 -DSUMNOAO
+
 ifeq ($(HOST),dcs0.jsoc.Stanford.EDU)
-        CF_TGT_$(d) := -DSUMDC
+        ADD_TGT_$(d) := -DSUMDC
 endif
 ifeq ($(HOST),dcs1.jsoc.Stanford.EDU)
-        CF_TGT_$(d) := -DSUMDC
+        ADD_TGT_$(d) := -DSUMDC
 endif
 ifeq ($(HOST),dcs2.jsoc.Stanford.EDU)
-        CF_TGT_$(d) := -DSUMDC
+        ADD_TGT_$(d) := -DSUMDC
 endif
 ifeq ($(HOST),d00.Stanford.EDU)
-        CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMT120
+        ADD_TGT_$(d) := -DSUMT120
 endif
 ifeq ($(HOST),d02.jsoc.Stanford.EDU)
-        CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMT950
+        ADD_TGT_$(d) := -DSUMT950
 endif
-ifeq ($(HOST),tenerife.tuc.noao.edu)
-        CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMNOAO
-endif
-ifeq ($(HOST),xim.Stanford.EDU)
-        CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMNOAO
-endif
+#ifeq ($(HOST),tenerife.tuc.noao.edu)
+#       ADD_TGT_$(d) := -DSUMNOAO -DSUMT120
+#endif
+#ifeq ($(HOST),xim.Stanford.EDU)
+#       ADD_TGT_$(d) := -DXXX -DSUMNOAO -DSUMT120
+#endif
+CF_TGT_$(d) := $(CF_TGT_$(d)) $(ADD_TGT_$(d))
 
 LIBSUM 		:= $(d)/libsumspg.a
 PG_$(d)		:= $(addprefix $(d)/, $(notdir $(wildcard $(SRCDIR)/$(d)/*.pgc)))

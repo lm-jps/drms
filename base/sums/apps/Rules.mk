@@ -14,27 +14,30 @@ tape_svc_obj_$(d)	:= $(addprefix $(d)/, tape_svc_proc.o tapeutil.o tape_inventor
 tapearc_obj_$(d)	:= $(addprefix $(d)/, padata.o)
 
 CF_TGT_$(d)	:= -O0 -Wno-parentheses -fno-strict-aliasing
+ADD_TGT_$(d) := -DSUMT120 -DSUMNOAO
+
 ifeq ($(HOST),dcs0.jsoc.Stanford.EDU)
-	CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMDC
+	ADD_TGT_$(d) := -DSUMDC
 endif
 ifeq ($(HOST),dcs1.jsoc.Stanford.EDU)
-	CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMDC
+	ADD_TGT_$(d) := -DSUMDC
 endif
 ifeq ($(HOST),dcs2.jsoc.Stanford.EDU)
-        CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMDC
+	ADD_TGT_$(d) := -DSUMDC
 endif
 ifeq ($(HOST),d00.Stanford.EDU)
-        CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMT120
+	ADD_TGT_$(d) := -DSUMT120
 endif
 ifeq ($(HOST),d02.jsoc.Stanford.EDU)
-        CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMT950
+	ADD_TGT_$(d) := -DSUMT950
 endif
-ifeq ($(HOST),tenerife.tuc.noao.edu)
-	CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMNOAO
-endif
-ifeq ($(HOST),xim.Stanford.EDU)
-	CF_TGT_$(d) := $(CF_TGT_$(d)) -DSUMNOAO
-endif
+#ifeq ($(HOST),tenerife.tuc.noao.edu)
+#	ADD_TGT_$(d) := -DSUMNOAO -DSUMT120
+#endif
+#ifeq ($(HOST),xim.Stanford.EDU)
+#	ADD_TGT_$(d) := -DXXX -DSUMNOAO -DSUMT120
+#endif
+CF_TGT_$(d) := $(CF_TGT_$(d)) $(ADD_TGT_$(d))
 
 LL_TGT_$(d) := -lecpg -lpq
 
