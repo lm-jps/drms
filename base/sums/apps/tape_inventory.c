@@ -64,9 +64,6 @@
 #elif SUMT950
   #define STATUSDUMP "/tmp/t950_status_dump.out"
   #define STATUSDUMPSIM "/usr/local/logs/SUM/t950_status_dump.out.sim"
-#else /* XXX fix build 3/10/2006, arta */
-  #define STATUSDUMP "/tmp/t120_status_dump.out"
-  #define STATUSDUMPSIM "/usr/local/logs/SUM/t120_status_dump.out.sim"
 #endif
 
 extern int write_log();
