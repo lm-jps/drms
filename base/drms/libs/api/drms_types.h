@@ -132,14 +132,18 @@ typedef struct DRMS_Value
 #define DRMS_MISSING_LONGLONG (LLONG_MIN)
 /** \brief DRMS float missing value */
 #define DRMS_MISSING_FLOAT    (F_NAN)
+#define _DRMS_IS_F_MISSING(v) (isnan(v))
 /** \brief DRMS double missing value */
 #define DRMS_MISSING_DOUBLE   (D_NAN)
+#define _DRMS_IS_D_MISSING(v) (isnan(v))
 /** \brief DRMS C string missing value */
 #define DRMS_MISSING_STRING   ("")
 /** \brief DRMS time missing value */
 #define DRMS_MISSING_TIME     (-211087684800.0) 
 /* equal to '-4712.01.01_12:00:00.000_UT' which is the time value used
    missing in the MDI/SDS system. */
+#define _DRMS_IS_T_MISSING(v)  (isnan(value) || DRMS_MISSING_TIME == value)
+
 
 #define DRMS_MAXTYPENAMELEN  (9)
 
@@ -148,50 +152,44 @@ typedef struct DRMS_Value
 #ifdef ICCCOMP
 #pragma warning (disable : 1572)
 #endif
-static inline int drms_ismissing(DRMS_Type_t type, void *value)
+static inline int drms_ismissing_char(char value)
 {
-   int ret = 0;
-
-   switch (type)
-   {
-      case DRMS_TYPE_CHAR:
-	ret = (DRMS_MISSING_CHAR == *((char *)value));
-	break;
-      case DRMS_TYPE_SHORT:
-	ret = (DRMS_MISSING_SHORT == *((short *)value));
-	break;
-      case DRMS_TYPE_INT:
-	ret = (DRMS_MISSING_INT == *((int *)value));
-	break;
-      case DRMS_TYPE_LONGLONG:
-	ret = (DRMS_MISSING_LONGLONG == *((long long *)value));
-	break;
-      case DRMS_TYPE_FLOAT:
-	ret = (DRMS_MISSING_FLOAT == *((float *)value));
-	break;
-      case DRMS_TYPE_DOUBLE:
-	ret = (DRMS_MISSING_DOUBLE == *((double *)value));
-	break;
-      case DRMS_TYPE_TIME:
-	ret = (DRMS_MISSING_TIME == *((double *)value));
-	break;
-      case DRMS_TYPE_STRING:
-	ret = (*((char *)value) == '\0');
-	break;
-      case DRMS_TYPE_RAW:
-	fprintf(stderr, "What is DRMS_TYPE_RAW?\n");
-	break;
-      default:
-	fprintf(stderr, "Invalid DRMS type '%d'.\n", (int)type);
-	break;
-   }
-
-   return ret;
+   return (DRMS_MISSING_CHAR == value);
 }
 
-static inline int drms_ismissingval(DRMS_Value_t *value)
+static inline int drms_ismissing_short(short value)
 {
-   return drms_ismissing(value->type, (void *)&(value->value.char_val));
+   return (DRMS_MISSING_SHORT == value);
+}
+
+static inline int drms_ismissing_int(int value)
+{
+   return (DRMS_MISSING_INT == value);
+}
+
+static inline int drms_ismissing_longlong(long long value)
+{
+   return (DRMS_MISSING_LONGLONG == value);
+}
+
+static inline int drms_ismissing_float(float value)
+{
+   return (_DRMS_IS_F_MISSING(value));
+}
+
+static inline int drms_ismissing_double(double value)
+{
+   return (_DRMS_IS_D_MISSING(value));
+}
+
+static inline int drms_ismissing_time(TIME value)
+{
+   return (_DRMS_IS_T_MISSING(value));
+}
+
+static inline int drms_ismissing_string(char *value)
+{
+   return (!value || *value == '\0');
 }
 
 #ifdef ICCCOMP

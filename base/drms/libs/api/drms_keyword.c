@@ -1494,7 +1494,7 @@ TIME drms_keyword_getslotepoch(DRMS_Keyword_t *slotkey, int *status)
       ret = drms_keyword_getepoch(epochKey, &stat);
    }   
 
-   if (drms_ismissing(DRMS_TYPE_TIME, &ret))
+   if (drms_ismissing_time(ret))
    {
       stat = DRMS_ERROR_INVALIDDATA;
    }
@@ -1642,7 +1642,7 @@ double drms_keyword_getslotstep(DRMS_Keyword_t *slotkey, DRMS_SlotKeyUnit_t *uni
 
    if (stat == DRMS_SUCCESS)
    {
-      if (drms_ismissing(DRMS_TYPE_DOUBLE, &ret))
+      if (drms_ismissing_double(ret))
       {
 	 stat = DRMS_ERROR_INVALIDDATA;
       }

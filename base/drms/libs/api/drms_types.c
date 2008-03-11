@@ -883,7 +883,7 @@ char drms2char(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     }
     break;
   case DRMS_TYPE_TIME:
-    if (drms_ismissing(DRMS_TYPE_TIME, value))
+    if (drms_ismissing_time(value->time_val))
     {
       stat = DRMS_SUCCESS;
       result = DRMS_MISSING_CHAR;            
@@ -1003,7 +1003,7 @@ short drms2short(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     }
     break;
   case DRMS_TYPE_TIME: 
-    if (drms_ismissing(DRMS_TYPE_TIME, value))
+    if (drms_ismissing_time(value->time_val))
     {
       stat = DRMS_SUCCESS;
       result = DRMS_MISSING_SHORT;            
@@ -1123,7 +1123,7 @@ int drms2int(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     }
     break;
   case DRMS_TYPE_TIME: 
-    if (drms_ismissing(DRMS_TYPE_TIME, value))
+    if (drms_ismissing_time(value->time_val))
     {
       stat = DRMS_SUCCESS;
       result = DRMS_MISSING_INT;            
@@ -1248,7 +1248,7 @@ long long drms2longlong(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     }
     break;
   case DRMS_TYPE_TIME: 
-    if (drms_ismissing(DRMS_TYPE_TIME, value))
+    if (drms_ismissing_time(value->time_val))
     {
       stat = DRMS_SUCCESS;
       result = DRMS_MISSING_LONGLONG;            
@@ -1444,7 +1444,7 @@ float drms2float(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     result = value->float_val;      
     break;
   case DRMS_TYPE_TIME: 
-    if (drms_ismissing(DRMS_TYPE_TIME, value))
+    if (drms_ismissing_time(value->time_val))
     {
       stat = DRMS_SUCCESS;
       result = DRMS_MISSING_FLOAT;            
@@ -1579,15 +1579,14 @@ double drms2double(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     break;
   case DRMS_TYPE_TIME: 
     {
-       DRMS_Value_t v = {DRMS_TYPE_TIME, *value};
        stat = DRMS_SUCCESS;
-       if (drms_ismissingval(&v))
+       if (drms_ismissing_time(value->time_val))
        {
 	  result = DRMS_MISSING_DOUBLE;  
        }
        else
        {
-	  result = (double) value->double_val;
+	  result = (double) value->time_val;
        }
     }
     break;
@@ -1838,7 +1837,7 @@ int drms_daxpy(DRMS_Type_t type, const double alpha, DRMS_Type_Value_t *x,
       y->double_val = (double)(alpha*x->double_val + y->double_val);
     break;
   case DRMS_TYPE_TIME: 
-    if (drms_ismissing(DRMS_TYPE_TIME, x))
+    if (drms_ismissing_time(x->time_val))
       y->time_val =  DRMS_MISSING_TIME;
     else
       y->time_val = (double)(alpha*x->time_val + y->time_val);
