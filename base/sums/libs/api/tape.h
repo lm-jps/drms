@@ -76,6 +76,26 @@
 #define UNLOADDUMP "/tmp/t120_unload_dump.out"
 #define UNLOADCMD "/usr/sbin/mtx -f /dev/sg12 unload"
 #define POSITIONDUMP "/tmp/t120_position_dump.out"
+/* XXX - Added to fix build, 3/10/2008 arta*/
+#else
+#define MAX_SLOTS 128
+#define NUM_IMP_EXP_SLOTS 8  /* assumes these slots are the highest slot#s */
+#define MAX_SLOTS_LIVE (MAX_SLOTS - NUM_IMP_EXP_SLOTS)
+#define MAX_DRIVES 4
+#define MAX_GROUPS 1024
+#define MAX_AVAIL_BLOCKS 1000000000	/* max (512) blocks on a t120 tape */
+#define TAR_FILE_SZ 500000000   /* try to make a tar file this many bytes */
+#define TAR_FILE_SZ_BLKS 976563 /* TAR_FILE_SZ/512 */
+#define LIBDEV "/dev/sg12"
+/* If /dev/ name in this file then override the LIBDEV above */
+#define LIBDEVFILE "/home/production/cvs/JSOC/base/sums/apps/data/libdevfile.cfg"
+#define SUMDR0 "/dev/nst0"
+#define SUMDR1 "/dev/nst1"
+#define SUMDR  "/dev/nst"
+#define GTARBLOCK 256	/* the gtar default is this */
+#define UNLOADDUMP "/tmp/t120_unload_dump.out"
+#define UNLOADCMD "/usr/sbin/mtx -f /dev/sg12 unload"
+#define POSITIONDUMP "/tmp/t120_position_dump.out"
 #endif
 
 /* tapemode values in DRIVE struct */
