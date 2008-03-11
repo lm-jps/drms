@@ -257,18 +257,19 @@ DRMS_Record_t *drms_clone_record(DRMS_Record_t *record,
 DRMS_Record_t *drms_create_record(DRMS_Env_t *env, char *seriesname, 
 				  DRMS_RecLifetime_t lifetime, int *status);
 int drms_close_record(DRMS_Record_t *rec, int action);
-/* Print the contents of a record data structure to stdout. */
+/** \brief Print the contents of a record data structure to stdout. */
 void  drms_print_record(DRMS_Record_t *rec);
+/** \brief Print the contents of a record data structure to a stream. */
 void  drms_fprint_record(FILE *recfile, DRMS_Record_t *rec);
-/* Calculate size of a record and its segment arrays in bytes. */
+/** \brief Calculate size of a record and its segment arrays in bytes. */
 long long drms_record_size(DRMS_Record_t *rec);
-/* Number of keywords associated with a record. */
+/** \brief Number of keywords associated with a record. */
 int drms_record_numkeywords(DRMS_Record_t *rec);
-/* Number of links associated with a record. */
+/** \brief Number of links associated with a record. */
 int drms_record_numlinks(DRMS_Record_t *rec);
-/* Number of segments associated with a record. */
+/** \brief Number of segments associated with a record. */
 int drms_record_numsegments(DRMS_Record_t *rec);
-/* Number of nonlink segments associated with a record. */
+/** \brief Number of nonlink segments associated with a record. */
 int drms_record_num_nonlink_segments(DRMS_Record_t *rec);
 /* Storage Unit Directory associated with a record. */
 /**
