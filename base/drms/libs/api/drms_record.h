@@ -29,6 +29,8 @@ typedef enum {DRMS_FREE_RECORD, DRMS_INSERT_RECORD} DRMS_CloseAction_t;
 #define DRMS_COMMIT_RECORD (DRMS_INSERT_RECORD)
 */
 
+/** \brief DRMS query type */
+typedef enum {DRMS_QUERY_COUNT, DRMS_QUERY_FL, DRMS_QUERY_ALL} DRMS_QueryType_t;
 
 /************** User level record functions ************/
 
@@ -308,5 +310,15 @@ DRMS_RecordSetType_t *drms_recordset_gettypess(DRMS_RecordSet_t *set, unsigned i
 DRMS_Record_t *drms_recordset_getss(DRMS_RecordSet_t *set, unsigned int setnum, int *status);
 /** @brief Return the number of records in a DRMS record-set subset */
 int drms_recordset_getssnrecs(DRMS_RecordSet_t *set, unsigned int setnum, int *status);
+
+/** \brief generate drms query string
+
+\param qtype:
+\return query string
+*/
+char *drms_query_string(DRMS_Env_t *env, 
+			const char *seriesname,
+			char *where, int filter, int mixed,
+			DRMS_QueryType_t qtype, char *fl);
 
 #endif
