@@ -1786,6 +1786,15 @@ DRMS_Keyword_t *drms_keyword_slotfromindex(DRMS_Keyword_t *indx)
    return ret;
 }
 
+/* Maps the floating-point value of the slotted keyword, into 
+ * the index value of the corresponding index keyword.
+ *
+ * A floating-point value exactly (within precision) on the boundary
+ * between slots maps to the slot number with a smaller value.  So, if the
+ * slot boundaries are 122305305.0 for slot 0, 122305315.0 for slot 1, 
+ * 122305325.0 for slot 2, ..., then a value of 122305315.0 falls into 
+ * slot 0.
+ */
 int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey, 
 				  DRMS_Value_t *valin,
 				  DRMS_Value_t *valout,
@@ -1799,46 +1808,60 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
       drms_missing(valout->type, &(valout->value));
 
       /* Must convert slotted-key value into associated index-key value */
+      double step;
+      DRMS_SlotKeyUnit_t unit;
+      double unitVal;
+      int usedefunit = 0;
+
+      DRMS_Keyword_t *stepKey = drms_keyword_stepfromslot(slotkey);
+      DRMS_Keyword_t *unitKey = drms_keyword_unitfromslot(slotkey);
+
+      double base;
+      double valind;
+      double startdurd;
+
+      int onbound = 0;
+
+      step = drms_keyword_getslotstep(slotkey, &unit, &stat);
+
+      /* unit will be valid if user provided a string step (eg, 60s) */
+      if (unit != kSlotKeyUnit_Invalid)
+      {
+	 if (unitKey)
+	 {
+	    /* This will be ignored because step unit specified in step. */
+	    fprintf(stderr, 
+		    "Warning: '%s' specifies step unit, so '%s' will"
+		    "be ignored.\n", 
+		    stepKey->info->name,
+		    unitKey->info->name);
+	 }
+      }
+      else
+      {
+	 if (unitKey)
+	 {
+	    unit = drms_keyword_getunit(unitKey, NULL);
+	 }
+	 else
+	 {
+	    usedefunit = 1;
+	 }
+      }
+
       DRMS_RecScopeType_t recscope = drms_keyword_getrecscope(slotkey);
       switch (recscope)
       {
 	 case kRecScopeType_TS_EQ:
 	   {
 	      TIME epoch;
-	      double step;
-	      DRMS_SlotKeyUnit_t unit;
-	      double unitVal;
-	      double slotnum;
-
-	      DRMS_Keyword_t *stepKey = drms_keyword_stepfromslot(slotkey);
-	      DRMS_Keyword_t *unitKey = drms_keyword_unitfromslot(slotkey);
 
 	      epoch = drms_keyword_getslotepoch(slotkey, &stat);
-	      step = drms_keyword_getslotstep(slotkey, &unit, &stat);
+	      base = epoch;
 
-	      /* unit will be valid if user provided a string step (eg, 60s) */
-	      if (unit != kSlotKeyUnit_Invalid)
+	      if (usedefunit)
 	      {
-		 if (unitKey)
-		 {
-		    /* This will be ignored because step unit specified in step. */
-		    fprintf(stderr, 
-			    "Warning: '%s' specifies step unit, so '%s' will"
-			    "be ignored.\n", 
-			    stepKey->info->name,
-			    unitKey->info->name);
-		 }
-	      }
-	      else
-	      {
-		 if (unitKey)
-		 {
-		    unit = drms_keyword_getunit(unitKey, NULL);
-		 }
-		 else
-		 {
-		    unit = kSlotKeyUnit_Seconds; /* default */
-		 }
+		 unit = kSlotKeyUnit_Seconds;
 	      }
 
 	      switch(unit)
@@ -1860,64 +1883,21 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 		   break;
 	      }
 
+	      valind = valin->value.time_val;
+
 	      if (startdur)
 	      {
-		 /* The slot val is actually a duration. */
-		 /* numerator always in seconds */
-		 slotnum = (startdur->value.time_val - epoch) / (unitVal * step);
-		 int startslot = (int)slotnum;
-		 slotnum = (startdur->value.time_val - epoch + valin->value.time_val) / 
-		   (unitVal * step);
-		 int endslot = (int)slotnum;
-		 /* Must add 1 because a duration query has val <= start && val < end.  
-		  * Although this works for floating point numbers, for integers 
-		  * this query omits the last record (it's an open interval). */
-		 valout->value.int_val = 1 + endslot - startslot;
-	      }
-	      else
-	      {
-		 slotnum = (valin->value.time_val - epoch) / (unitVal * step);
-		 valout->value.int_val = (int)slotnum;
+		 startdurd = startdur->value.time_val;
 	      }
 	   }
 	   break;
 	 case kRecScopeType_CARR:
 	   {
-	      double base;
-	      double step;
-	      DRMS_SlotKeyUnit_t unit;
-	      double unitVal;
-	      double slotnum;
-
-	      DRMS_Keyword_t *stepKey = drms_keyword_stepfromslot(slotkey);
-	      DRMS_Keyword_t *unitKey = drms_keyword_unitfromslot(slotkey);
-
 	      base = drms_keyword_getslotcarr0();
-	      step = drms_keyword_getslotstep(slotkey, &unit, &stat);
 
-	      /* unit will be valid if user provided a string step (eg, 60s) */
-	      if (unit != kSlotKeyUnit_Invalid)
+	      if (usedefunit)
 	      {
-		 if (unitKey)
-		 {
-		    /* This will be ignored because step unit specified in step. */
-		    fprintf(stderr, 
-			    "Warning: '%s' specifies step unit, so '%s' will"
-			    "be ignored.\n", 
-			    stepKey->info->name,
-			    unitKey->info->name);
-		 }
-	      }
-	      else
-	      {
-		 if (unitKey)
-		 {
-		    unit = drms_keyword_getunit(unitKey, NULL);
-		 }
-		 else
-		 {
-		    unit = kSlotKeyUnit_Degrees; /* default */
-		 }
+		 unit = kSlotKeyUnit_Degrees;
 	      }
 
 	      switch(unit)
@@ -1926,51 +1906,31 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 		   unitVal = 1.0;
 		   break;
 		 case kSlotKeyUnit_Arcminutes:
-		   unitVal = 60.0;
+		   unitVal = 1/ 60.0;
 		   break;
 		 case kSlotKeyUnit_Arcseconds:
-		   unitVal = 3600.0;
+		   unitVal = 1/ 3600.0;
 		   break;
 		 case kSlotKeyUnit_MAS:
-		   unitVal = 3600000.0;
+		   unitVal = 1 / 3600000.0;
 		   break;
 		 case kSlotKeyUnit_Radians:
-		   unitVal = (M_PI) / 648000;
+		   unitVal = 180.0 / (M_PI);
 		   break;
 		 case kSlotKeyUnit_MicroRadians:
-		   unitVal = ((M_PI) / 648000) * 1000000.0;
+		   unitVal = (180.0 / (M_PI)) / 1000.0;
 		   break;
 		 default:
 		   fprintf(stderr, "Invalid slotted key unit '%d'.\n", (int)unit);
 		   break;
 	      }
 
-	      double valind = drms2double(valin->type, &(valin->value), NULL);
+	      valind = drms2double(valin->type, &(valin->value), NULL);
 
 	      if (startdur)
 	      {
 		 /* The slot val is actually an interval. */
-		 double startdurd = drms2double(startdur->type, &(startdur->value), NULL);
-
-		 /* numerator always in degrees */
-		 slotnum = (startdurd - base) / (step / unitVal);
-		 int startslot = (int)slotnum;
-		 slotnum = (startdurd - base + valin->value.double_val) / 
-		   (step / unitVal);
-		 int endslot = (int)slotnum;
-		 /* Must add 1 because a duration query has val <= start && val < end.  
-		  * Although this works for floating point numbers, for integers 
-		  * this query omits the last record (it's an open interval). */
-		 valout->value.int_val = 1 + endslot - startslot;
-	      }
-	      else
-	      {
-		 /* NOT SURE HOW THIS IS GOING TO WORK!  Most likely 
-		  * valin will be a TIME, base will be a TIME.  So
-		  * need to convert step/unitVal (degrees) to TIME, 
-		  * or convert valind and base to degrees. */
-		 slotnum = (valind - base) / (step / unitVal);
-		 valout->value.int_val = (int)slotnum;
+		 startdurd = drms2double(startdur->type, &(startdur->value), NULL);
 	      }
 	   }
 	   break;
@@ -1979,6 +1939,29 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 	   fprintf(stderr, "Invalid rec scope '%d'.\n", (int)recscope);
 	   stat = DRMS_ERROR_INVALIDDATA;
       } /* case */
+
+
+      if (startdur)
+      {
+	 /* valin is actually a duration. */
+	 /* numerator always in seconds */
+	 int startslot = CalcSlot(startdurd, base, unitVal, step, &onbound);
+	 int endslot = CalcSlot(startdurd + valind, base, unitVal, step, &onbound);
+
+	 /* Must add 1 because a duration query has val <= start && val < end.  
+	  * Although this works for floating point numbers, for integers 
+	  * this query omits the last record (it's an open interval). */
+	 valout->value.int_val = endslot - startslot;
+
+	 if (!onbound)
+	 {
+	    valout->value.int_val++;
+	 }
+      }
+      else
+      {
+	 valout->value.int_val = CalcSlot(valind, base, unitVal, step, &onbound);
+      }
    }
    else
    {

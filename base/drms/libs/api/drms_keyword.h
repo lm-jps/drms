@@ -160,4 +160,38 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 				  DRMS_Value_t *valout,
 				  DRMS_Value_t *startdur);
 
+static inline long long CalcSlot(double slotkeyval, 
+				 double base, 
+				 double unitval, 
+				 double step,
+				 int *isonboundary)
+{
+   double slotvald = (slotkeyval - base) / (unitval * step);
+   long long slotval = (long long)slotvald;
+
+   if (isonboundary)
+   {
+      *isonboundary = 0;
+   }
+
+   if (slotval + 1 - slotvald < 1.0e-6)
+   {
+      slotval++;
+
+      if (isonboundary)
+      {
+	 *isonboundary = 1;
+      }
+   }
+   else if (slotvald - slotval < 1.0e-6)
+   {
+      if (isonboundary)
+      {
+	 *isonboundary = 1;
+      }
+   }
+
+   return slotval;
+}
+
 #endif
