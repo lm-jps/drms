@@ -56,26 +56,24 @@ endif
 FMATHLIBSH = -I$(_JSOCROOT_)/lib_third_party/include
 CFITSIOH = -I$(_JSOCROOT_)/lib_third_party/include
 
-ifeq ($(COMPILER), icc)
-  ifeq ($(JSOC_MACHINE), linux_x86_64)
+ifeq ($(JSOC_MACHINE), linux_x86_64)
 #    FMATHLIBS = -lmkl_lapack -lmkl -L$(_JSOCROOT_)/lib_third_party/lib/linux-x86_64/ -lfftw3f -lcfitsio
-    # Path to 64-bit 3rd-party libraries
-    FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
-    CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
+  # Path to 64-bit 3rd-party libraries
+  FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
+  CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
 
-    # All 3rd-party math libraries - local rules can define a subset
-    FMATHLIBS = $(FMATHLIBSL) -lfftw3f -lcfitsio
-    CFITSIOLIBS = $(CFITSIOL) -lcfitsio
-  else
+  # All 3rd-party math libraries - local rules can define a subset
+  FMATHLIBS = $(FMATHLIBSL) -lfftw3f -lcfitsio
+  CFITSIOLIBS = $(CFITSIOL) -lcfitsio
+else
 #    FMATHLIBS = -lmkl_lapack -lmkl -L$(_JSOCROOT_)/lib_third_party/lib/linux-ia32/ -lfftw3f -lcfitsio
-    # Path to 32-bit 3rd-party libraries
-    FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
-    CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
+  # Path to 32-bit 3rd-party libraries
+  FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
+  CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
 
-    # All 3rd-party math libraries - local rules can define a subset
-    FMATHLIBS = $(FMATHLIBSL) -lfftw3f -lcfitsio
-    CFITSIOLIBS = $(CFITSIOL) -lcfitsio
-  endif
+  # All 3rd-party math libraries - local rules can define a subset
+  FMATHLIBS = $(FMATHLIBSL) -lfftw3f -lcfitsio
+  CFITSIOLIBS = $(CFITSIOL) -lcfitsio
 endif
 
 ### Build flags for all targets
