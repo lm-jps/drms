@@ -136,7 +136,7 @@ if (-e $CVSSTATUS)
 	my($machtype);
 	my($echocmd) = 'echo $JSOC_MACHINE';
 
-	system("(cd $lwd ./configure)");
+	system("(cd $lwd; ./configure)");
 
 	@rsp = GetFSPath("local", $lwd);
 	$lfspath = shift(@rsp); # could be local only
