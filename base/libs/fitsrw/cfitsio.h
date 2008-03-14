@@ -20,6 +20,7 @@
 #define CFITSIO_ERROR_ARGS               -6
 #define CFITSIO_ERROR_DATA_EMPTY         -7
 #define CFITSIO_ERROR_ALREADY_COMPRESSED -8
+#define CFITSIO_INVALIDFILE              -9
 
 //****************************************************************************
 

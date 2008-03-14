@@ -250,12 +250,16 @@ static int CreateDRMSArray(CFITSIO_IMAGE_INFO *info, void *data, DRMS_Array_t **
 
       if (!err)
       {
+	 /* retarr steals data */
 	 retarr = drms_array_create(datatype, naxis, axes, data, &drmsstatus);
       }
       else
       {
 	 err = 1;
       }
+
+      retarr->bzero = 0.0;
+      retarr->bscale = 1.0;
 
       if (!err && info->bitpix > 0)
       {
@@ -846,7 +850,7 @@ void drms_segment_filename(DRMS_Segment_t *seg, char *filename)
 	 else
 	   CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT "/%s.%s",
 				  seg->record->su->sudir, seg->record->slotnum, seg->info->name,
-				  drms_prot2str(seg->info->protocol)), DRMS_MAXPATHLEN);
+				  drms_prot2ext(seg->info->protocol)), DRMS_MAXPATHLEN);
       }
    }
    /* for DRMS_LOCAL, filename is already set */
@@ -1251,7 +1255,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 	 void *image = NULL;
 
 	 /* Call Tim's function to read data */
-	 if (cfitsio_read_file(filename, info, &image, NULL) == CFITSIO_SUCCESS)
+	 if (cfitsio_read_file(filename, &info, &image, NULL) == CFITSIO_SUCCESS)
 	 {
 	    if (CreateDRMSArray(info, image, &arr))
 	    {
@@ -1267,7 +1271,8 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 	       goto bailout;
 	    }
 
-	    cfitsio_free_these(&info, &image, NULL);
+	    /* Don't free image - arr has stolen it. */
+	    cfitsio_free_these(&info, NULL, NULL);
 	 }
 	 else
 	 {
@@ -1276,6 +1281,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 	    goto bailout1;
 	 }
       }
+      break;
     case DRMS_GENERIC:
     case DRMS_MSI:
       fclose(fp);
@@ -1680,7 +1686,7 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
 
 	 CFITSIO_IMAGE_INFO imginfo;
 
-	 if (SetImageInfo(out, &imginfo))
+	 if (!SetImageInfo(out, &imginfo))
 	 {
 	    if (cfitsio_write_file(filename, &imginfo, out->data, C_NONE, NULL))
 	      goto bailout;

@@ -5,6 +5,10 @@
 static char *prot_string[] = {
   "bin",       "bin.gz",    "fits",   "fitz",     "msi",    "tas",
   "generic",   "dsds",      "local",  "fitsio"};
+static char *prot_fileext[] = {
+   "bin",       "bin.gz",    "fits",   "fitz",     "msi",    "tas",
+   "generic",   "dsds",      "local",  "fits"};
+
 static int prot_type[] = {
   DRMS_BINARY, DRMS_BINZIP, DRMS_FITS, DRMS_FITZ, DRMS_MSI, DRMS_TAS,
   DRMS_GENERIC, DRMS_DSDS, DRMS_LOCAL, DRMS_FITSIO};
@@ -26,6 +30,15 @@ const char *drms_prot2str (DRMS_Protocol_t prot) {
   int n, prot_count = sizeof prot_type / sizeof (int);
   for (n = 0; n < prot_count; n++)
     if (prot == prot_type[n]) return prot_string[n];
+  fprintf (stderr,"Unknown DRMS protocol %d\n", prot);
+  XASSERT(0);
+  return NULL;
+}
+
+const char *drms_prot2ext (DRMS_Protocol_t prot) {
+  int n, prot_count = sizeof prot_type / sizeof (int);
+  for (n = 0; n < prot_count; n++)
+    if (prot == prot_type[n]) return prot_fileext[n];
   fprintf (stderr,"Unknown DRMS protocol %d\n", prot);
   XASSERT(0);
   return NULL;

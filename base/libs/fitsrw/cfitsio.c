@@ -359,33 +359,73 @@ int cfitsio_get_image_info(CFITSIO_KEYWORD* keylist, CFITSIO_IMAGE_INFO* info)
 {
 
    CFITSIO_KEYWORD* kptr;
+   int bitpix = 0;
+   int naxis = 0;
+   int axisnum = 0;
 
    memset(info,0,sizeof(CFITSIO_IMAGE_INFO));
 
    kptr = keylist;
    while(kptr)
    {
-      if(!strcmp(kptr->key_name,"SIMPLE")) info->simple = kptr->key_value.vl;
-      else if(!strcmp(kptr->key_name,"EXTEND")) info->simple = kptr->key_value.vl;
-      else if(!strcmp(kptr->key_name,"BITPIX")) info->bitpix = kptr->key_value.vi;
-      else if(!strcmp(kptr->key_name,"BSCALE")) info->bscale = kptr->key_value.vf;
-      else if(!strcmp(kptr->key_name,"BZERO")) info->bzero = kptr->key_value.vf;
-      else if(!strcmp(kptr->key_name,"NAXIS")) info->naxis = kptr->key_value.vi;
-      else if(!strcmp(kptr->key_name,"NAXIS1")) info->naxes[0] = kptr->key_value.vi;
-      else if(!strcmp(kptr->key_name,"NAXIS2")) info->naxes[1] = kptr->key_value.vi;		
-      else if(!strcmp(kptr->key_name,"NAXIS3")) info->naxes[2] = kptr->key_value.vi;
-
-      else if(info->naxis > 3) //check the rests
+      if(!strcmp(kptr->key_name,"SIMPLE")) 
       {
-	 if(!strcmp(kptr->key_name,"NAXIS4")) info->naxes[3] = kptr->key_value.vi;
-	 else if(!strcmp(kptr->key_name,"NAXIS5")) info->naxes[4] = kptr->key_value.vi;
-	 else if(!strcmp(kptr->key_name,"NAXIS6")) info->naxes[5] = kptr->key_value.vi;
-	 else if(!strcmp(kptr->key_name,"NAXIS7")) info->naxes[6] = kptr->key_value.vi;
-	 else if(!strcmp(kptr->key_name,"NAXIS8")) info->naxes[7] = kptr->key_value.vi;
-	 else if(!strcmp(kptr->key_name,"NAXIS9")) info->naxes[8] = kptr->key_value.vi;
+	 info->simple = kptr->key_value.vl;
+	 info->bitfield |= kInfoPresent_SIMPLE;
+      }
+      else if(!strcmp(kptr->key_name,"EXTEND")) 
+      {
+	 info->extend = kptr->key_value.vl;
+	 info->bitfield |= kInfoPresent_EXTEND;
+      }
+      else if(!strcmp(kptr->key_name,"BITPIX"))
+      {
+	 info->bitpix = kptr->key_value.vi;
+	 bitpix = 1;
+      }
+      else if(!strcmp(kptr->key_name,"BLANK"))
+      {
+	 info->blank = kptr->key_value.vi;
+	 info->bitfield |= kInfoPresent_BLANK;
+      }
+      else if(!strcmp(kptr->key_name,"BSCALE"))
+      {
+	 info->bscale = kptr->key_value.vf;
+	 info->bitfield |= kInfoPresent_BSCALE;
+      }
+      else if(!strcmp(kptr->key_name,"BZERO")) 
+      {
+	 info->bzero = kptr->key_value.vf;
+	 info->bitfield |= kInfoPresent_BZERO;
+      }
+      else if(!strcmp(kptr->key_name,"NAXIS"))
+      {
+	 info->naxis = kptr->key_value.vi;
+	 naxis = 1;
+      }
+      else if (sscanf(kptr->key_name, "NAXIS%d", &axisnum) == 1)
+      {
+	 info->naxes[axisnum - 1] =  kptr->key_value.vi;
       }
 
       kptr = kptr->next;
+   }
+
+   axisnum = info->naxis - 1;
+   while (axisnum >= 0)
+   {
+      if (info->naxes[axisnum] == 0)
+      {
+	 return CFITSIO_INVALIDFILE;
+      }
+
+      axisnum--;
+   }
+
+   if (!bitpix || !naxis)
+   {
+      /* These are required. */
+      return CFITSIO_INVALIDFILE;
    }
 
    return CFITSIO_SUCCESS;
@@ -543,8 +583,19 @@ int cfitsio_read_file(char* fits_filename, CFITSIO_IMAGE_INFO** image_info, void
 
    memset((void*) &info,0,sizeof(CFITSIO_IMAGE_INFO));
 
+   /* Fill in info with keylist first. */
+   if (keylist)
+   {
+      cfitsio_get_image_info(keylist, &info);
+   }
 
-   fits_get_img_dim(fptr, &info.naxis, &status);
+   /* Don't know if fits_get_img_dim() and fits_get_img_param() need to be called, since
+    * this information was already culled from keylist.
+    *
+    * Removed because fits_get_img_param() was initializing info.naxis values to non-zero
+    * values.
+    */
+   // fits_get_img_dim(fptr, &info.naxis, &status);
    if(info.naxis == 0)
    {
       DEBUGMSG(("No image in this HDU."));
@@ -552,8 +603,8 @@ int cfitsio_read_file(char* fits_filename, CFITSIO_IMAGE_INFO** image_info, void
       goto error_exit;
    }
 
-   fits_get_img_param(fptr, CFITSIO_MAX_DIM, &info.bitpix, &info.naxis, 
-		      &info.naxes[0], &status); 
+   // fits_get_img_param(fptr, CFITSIO_MAX_DIM, &info.bitpix, &info.naxis, 
+   //   &info.naxes[0], &status); 
 
    DEBUGMSG(("naxis = %d, bitpix = %d, ", info.naxis, info.bitpix));
    for(i=0;i<info.naxis;i++) DEBUGMSG(("axes[%d] = %ld ",i,info.naxes[i]));
@@ -696,6 +747,8 @@ int cfitsio_write_file(char* fits_filename, CFITSIO_IMAGE_INFO* image_info,
 
    long	npixels;
 
+   int iaxis = 0;
+
    CFITSIO_IMAGE_INFO info;
 
 
@@ -712,12 +765,27 @@ int cfitsio_write_file(char* fits_filename, CFITSIO_IMAGE_INFO* image_info,
    else if (image_info)
    {
       memcpy((char*) &info, (char*) image_info, sizeof(CFITSIO_IMAGE_INFO));
+      if (info.bitfield & kInfoPresent_BLANK)
+      {
+	 long oblank = (long)image_info->blank;
+	 fits_update_key(fptr, TLONG, "BLANK", &oblank, "", &status);
+      }
+      if (info.bitfield & kInfoPresent_BZERO)
+      {
+	 float obzero = (float)image_info->bzero;
+	 fits_update_key(fptr, TFLOAT, "BZERO", &obzero, "", &status);
+      }
+      if (info.bitfield & kInfoPresent_BSCALE)
+      {
+	 float obscale = (float)image_info->bscale;
+	 fits_update_key(fptr, TFLOAT, "BSCALE", &obscale, "", &status);
+      }
    }
    else
-     {
-       error_code = CFITSIO_ERROR_ARGS;
-       goto error_exit;
-     }
+   {
+      error_code = CFITSIO_ERROR_ARGS;
+      goto error_exit;
+   }
 
    DEBUGMSG(("BITPIX=%d\n",info.bitpix));
    DEBUGMSG(("NAXIS=%d\n",info.naxis));
@@ -728,7 +796,11 @@ int cfitsio_write_file(char* fits_filename, CFITSIO_IMAGE_INFO* image_info,
 
 
    first_pixel = 1;                              
-   npixels = ((info.naxes[0]) * (info.naxes[1]));    
+
+   for (iaxis = 0, npixels = 1; iaxis < info.naxis; iaxis++)
+   {
+      npixels *= info.naxes[iaxis];
+   }
 
    switch(info.bitpix)
    {
