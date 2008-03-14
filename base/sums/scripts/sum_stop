@@ -121,6 +121,9 @@ while($_ = shift(@ps_prod)) {
     `kill -9 $psid`; #!!!TEMP noop
   }
 }
+print "Removing lock file /usr/local/logs/soc/NOTAPEARC\n";
+print LOG "Removing lock file /usr/local/logs/soc/NOTAPEARC\n";
+`/bin/rm -f /usr/local/logs/soc/NOTAPEARC`;
 
 print "SUM Stop Complete\n";
 print LOG "SUM Stop Complete\n";
