@@ -790,6 +790,7 @@ int db_dms_array(DB_Handle_t  *dbin, int *row_count,
     }
     res = PQexecParams(db,pquery, n_args, paramTypes,
 		       paramValues, paramLengths, paramFormats, 1);
+    db_unlock(dbin);
     if (PQresultStatus(res) != PGRES_COMMAND_OK)
     {
       fprintf(stderr, "query failed: %s", PQerrorMessage(db));
@@ -797,7 +798,6 @@ int db_dms_array(DB_Handle_t  *dbin, int *row_count,
       goto failure;
     }
     PQclear(res);
-    db_unlock(dbin);
   }
 
 #if __BYTE_ORDER == __LITTLE_ENDIAN
