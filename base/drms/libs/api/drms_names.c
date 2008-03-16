@@ -275,6 +275,7 @@ static RecordList_t *parse_record_list(DRMS_Record_t *template, char **in) {
   RecordList_t *rl;
   char *p = *in;
   char pk[DRMS_MAXKEYNAMELEN];
+  char strbuf[DRMS_MAXQUERYLEN];
   DRMS_SeriesInfo_t *si;
   DRMS_Keyword_t *nprimekey = NULL;
   int explKW = 0;
@@ -294,17 +295,26 @@ static RecordList_t *parse_record_list(DRMS_Record_t *template, char **in) {
     if (template->seriesinfo->pidx_num <= 0) {
       fprintf (stderr, "Error: Primary key query issued for series with no "
 	      "primary keys, query is '%s'\n", p);
-      return NULL;
+      goto error;
     }
 
     rl->type = PRIMEKEYSET;
     si = template->seriesinfo;
 
     /* Try to match an optional '<prime_key>=' string. */
-    err = parse_name (&p, pk, sizeof(pk));
+    err = parse_name (&p, strbuf, sizeof(strbuf));
     
     if (*p == '=' && !err) {
 					/* A keyword was given explicitly. */
+      if (strlen(strbuf) > DRMS_MAXKEYNAMELEN)
+      {
+	 fprintf(stderr, 
+		 "Error: Keyword name expected but '%s' exceeds maximum name length.\n", 
+		 strbuf);
+	 goto error;
+      }
+
+      snprintf(pk, sizeof(pk), "%s", strbuf);
       explKW = 1;
       ++p;
       keynum = -1;
