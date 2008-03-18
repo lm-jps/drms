@@ -17,7 +17,8 @@ masterlists [JSOC_DBHOST=] [JSOC_DBNAME=] [dbuser=<user>] namespace=<ns> nsgrp=<
 \param JSOC_DBNAME Specifies (overrides) the database name to use. Default is ::DBNAME.
 \param dbuser Specifies DB user who owns master tables drms_*. Default is the unix user who runs \ref masterlists.
 \param namespace Specifies the namespace where the master tables reside.
-\param nsgrp     Specifies the namespace group, must be either 'user' or 'sys'.
+\param nsgrp     Specifies the namespace group, must be either 'user'
+or 'sys'. For personal or test usage, please use 'user', and 'sys' is reserved for project like HMI.
 \sa
 create_series describe_series delete_series modify_series show_info 
 
