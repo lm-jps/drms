@@ -17,7 +17,7 @@ specifying \a filter, a grep-like regular expression.
 
 \par Synopsis:
 \code
-show_series [-hpvDRIVER_FLAGS] [<filter>]
+show_series [-hpvzDRIVER_FLAGS] [<filter>]
 \endcode
 
 \par Flags:
@@ -26,6 +26,8 @@ show_series [-hpvDRIVER_FLAGS] [<filter>]
 \c -p: Print prime-keyword names and the series description
 \par
 \c -v: Verbose - noisy
+\par
+\c -z: Emit JSON instead of normal output
 
 \par Driver flags: 
 \ref jsoc_main
@@ -83,8 +85,25 @@ int nice_intro() {
   return(0);
 }
 
+#define SS_OK	0
+#define SS_FORMATERROR 1
+#define SS_NODRMS 2
+
+static struct show_Series_errors
+  {
+  int errcode;
+  char errmsg[100];
+  } SS_ERRORS[] =
+    {
+    SS_OK, "SUCCESS",
+    SS_FORMATERROR, "Series filter format error",
+    SS_NODRMS, "Cant find DRMS"
+    };
+
+
 /* Module main function. */
-int DoIt (void) {
+int DoIt (void)
+{
 int status = 0;
 
 int iseries, nseries, nused;
@@ -120,8 +139,8 @@ if (filter)
   {
   if (regcomp((regex_t *)seriesfilter, filter, (REG_EXTENDED | REG_ICASE)))
     {
-    fprintf(stderr,"Series filter format error in %s\n", filter);
-    return 1;
+    status = SS_FORMATERROR;
+    goto Failure;
     }
   }
   
@@ -129,8 +148,8 @@ if (filter)
 sprintf(query, "select seriesname from %s()", DRMS_MASTER_SERIES_TABLE);
 if ( (qres = drms_query_txt(drms_env->session, query)) == NULL)
   {
-  fprintf(stderr, "Cant find DRMS\n");
-  return 1;
+  status = SS_NODRMS;
+  goto Failure;
   }
 
 nseries = qres->num_rows;
@@ -142,7 +161,10 @@ if (want_JSON)
   {
   printf("Content-type: application/json\n\n");
   if (nseries)
-    printf("{\"names\":[\n");
+    {
+    printf("{\"status\":0,\n");
+    printf(" \"names\":[\n");
+    }
   }
 
 nused = 0;
@@ -152,46 +174,61 @@ for (iseries=0; iseries<nseries; iseries++)
 
   if (!filter || !regexec((regex_t *)seriesfilter, seriesname, 10, pmatch, 0)) 
     {
-    if (want_JSON && nused > 0)
-      printf(",");
-
-    nused++;
     if (want_JSON)
-      printf("\"%s\"",seriesname);
+      printf("%s  {\"name\":\"%s\",",(nused ? ",\n" : ""),seriesname);
     else
       printf("  %s\n",seriesname);
 
-    if (printinfo)
+    nused++;
+    if (printinfo || want_JSON)
       { /* fetch series info and print */
       DRMS_Record_t *rec = drms_template_record(drms_env, seriesname, &status);
       if (!rec || status)
         {
-        printf("      Cant open series. status=%d\n", status);
+        if (want_JSON)
+	  printf("\"primekeys\":\"NOT KNOWN\",\"note\":\"SERIES READ ERROR\"\},\n"); 
+        else
+          printf("      Cant open series. status=%d\n", status);
         continue;
         }
       if (rec->seriesinfo->pidx_num)
         {
         int pidx;
-        printf("      Prime Keys are:");
+        if (want_JSON)
+	  printf("\"primekeys\":\""); 
+        else
+          printf("      Prime Keys are:");
         for (pidx = 0; pidx < rec->seriesinfo->pidx_num; pidx++)
           printf("%s %s", (pidx ? "," : ""), rec->seriesinfo->pidx_keywords[pidx]->info->name);
+        if (want_JSON)
+	  printf("\",");
         }
       else
-        printf("      No Prime Keys found.");
-      printf("\n");
-      printf("      Note: %s", rec->seriesinfo->description);
-      printf("\n");
+        {
+	if (want_JSON)
+	  printf("\"primekeys\":\"NONE\","); 
+	else
+          printf("      No Prime Keys found.");
+        }
+      if (want_JSON)
+	{
+	printf("\"note\":\"%s\"}",rec->seriesinfo->description);
+	}
+      else
+	{
+        printf("\n");
+        printf("      Note: %s", rec->seriesinfo->description);
+        printf("\n");
+	}
+        
       drms_free_record(rec);
       }
     }
   }
 
-
 if (want_JSON)
   {
-  if (nseries)
-    printf("],\"n\":%d",nused);
-  printf("}\n");
+  printf("],\n\"n\":%d}\n", nused);
   fflush(stdout);
   }
 else 
@@ -203,4 +240,10 @@ else
 db_free_text_result(qres);
 
 return status;
+
+Failure:
+if (want_JSON)
+  printf("{\"status\":1,\"errmsg\":%s}\n", SS_ERRORS[status]);
+else
+  printf("show_keys error: %s\n",SS_ERRORS[status]);
 }
