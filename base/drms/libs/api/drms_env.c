@@ -113,7 +113,7 @@ DRMS_Env_t *drms_open (char *host, char *user, char *password, char *dbname,
 
     // sum_inbox sum_outbox, drms_lock, and caches (seg, series,
     // record)  will be initialized in
-    // drms_server_start_transaction().
+    // drms_server_begin_transaction().
 
     env->templist = NULL;
     env->retention = -1;
@@ -180,8 +180,12 @@ void drms_free_env (DRMS_Env_t *env, int final) {
   hcon_free (&env->storageunit_cache);
 #ifndef DRMS_CLIENT
   free (env->drms_lock);
-  tqueueDelete (env->sum_inbox);
-  tqueueDelete (env->sum_outbox);
+  if (env->sum_inbox) {
+    tqueueDelete (env->sum_inbox);
+  }
+  if (env->sum_outbox) {
+    tqueueDelete (env->sum_outbox);
+  }
 #endif
   if (env->session) {
       free (env->session->sudir);
