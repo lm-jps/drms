@@ -1995,9 +1995,15 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
       switch(mode)
       {
       case DRMS_SHARE_SEGMENTS:
-	for (i=0; i<n; i++)    
-          if ( rs_out->records[first+i]->su )
-	    ++rs_out->records[first+i]->su->refcount;
+	for (i=0; i<n; i++) 
+	{   
+	   drms_record_directory(rs_in->records[first+i], dir_in, 1);
+	   if ( rs_in->records[first+i]->su )
+	   {
+	      rs_out->records[first+i]->su = rs_in->records[first+i]->su;
+	      rs_out->records[first+i]->su->refcount++;
+	   }
+	}
 	break;
       case DRMS_COPY_SEGMENTS:
 	XASSERT(su = malloc(n*sizeof(DRMS_StorageUnit_t *)));
@@ -4941,4 +4947,285 @@ int drms_recordset_getssnrecs(DRMS_RecordSet_t *set, unsigned int setnum, int *s
    }
 
    return res;
+}
+
+/* Export */
+static int CallExportToFile(DRMS_Segment_t *segout, 
+			    DRMS_Segment_t *segin, 
+			    const char *clname,
+			    const char *mapfile,
+			    unsigned long long *szout)
+{
+   int status = DRMS_SUCCESS;
+   char fileout[DRMS_MAXPATHLEN];
+   char filein[DRMS_MAXPATHLEN];
+   char *basename = NULL;
+   unsigned long long size = 0;
+   struct stat filestat;
+
+   if (segout)
+   {
+      drms_segment_filename(segin, filein); /* input seg file name */
+      if (!stat(filein, &filestat))
+      {
+	 size = filestat.st_size;
+	 basename = rindex(filein, '/');
+	 if (basename) 
+	 {
+	    basename++;
+	 }
+	 else 
+	 {
+	    basename = filein;
+	 }
+
+	 CHECKSNPRINTF(snprintf(segout->filename, DRMS_MAXSEGFILENAME, "%s", basename), DRMS_MAXSEGFILENAME);
+	 drms_segment_filename(segout, fileout);
+
+	 status = drms_segment_mapexport_tofile(segin, clname, mapfile, fileout);
+      }
+      else
+      {
+	 fprintf(stderr, "Unable to open source file '%s'.\n", filein);
+	 status = DRMS_ERROR_EXPORT;
+      }
+   }
+
+   *szout = 0;
+   if (status == DRMS_SUCCESS)
+   {
+      *szout = size;
+   }
+
+   return status;
+}
+
+/* recout is the export series' record to which the exported data will be saved. 
+ * reqid is the primary key in the export series 
+ *
+ */
+int drms_record_export(DRMS_Record_t *recout,
+		       DRMS_Record_t *recin,
+		       const char *seglist,
+		       int *status)
+{
+   return drms_record_mapexport(recout,
+				recin,
+				seglist,
+				NULL,
+				NULL,
+				status);
+}
+
+/* recout is the export series' record to which the exported data will be saved. */
+int drms_record_mapexport(DRMS_Record_t *recout,
+			  DRMS_Record_t *recin,
+			  const char *seglist,
+			  const char *classname, 
+			  const char *mapfile,
+			  int *status)
+{
+   int stat = DRMS_SUCCESS;
+   HIterator_t *hit = NULL;
+   DRMS_Segment_t *segout = NULL;
+   DRMS_Segment_t *segin = NULL;
+   unsigned long long size = 0;
+   unsigned long long tsize = 0;
+   char dir[DRMS_MAXPATHLEN];
+
+   segout = drms_segment_lookupnum(recout, 0);
+
+   drms_record_directory(recin, dir, 1); /* This fetches the input data from SUMS. */
+
+   if (segout)
+   {
+      if (seglist && *seglist != 0)
+      {
+	 char *lasts = NULL;
+	 char *ans;
+	 char *seglistcpy = strdup(seglist);
+
+	 if (seglistcpy)
+	 {
+	    ans = strtok_r(seglistcpy, " ,;:", &lasts);
+
+	    do
+	    {
+	       segin = drms_segment_lookup(recin, ans);
+	       if (segin)
+	       {
+		  stat = CallExportToFile(segout, segin, classname, mapfile, &size);
+		  if (stat != DRMS_SUCCESS)
+		  {
+		     fprintf(stderr, "Failure exporting segment '%s'.\n", segin->info->name);
+		     break;
+		  }
+		  else
+		  {
+		     tsize += size;
+		  }
+	       }
+	    }
+	    while ((ans = strtok_r(NULL, " ,;:", &lasts)) != NULL);
+
+	    free(seglistcpy);
+	 }
+      }
+
+      if (tsize == 0)
+      {
+	 /* segments not specified - do them all */
+	 hit = hiter_create(&(recin->segments));
+	 while ((segin = hiter_getnext(hit)) != NULL)
+	 {
+	    size = 0;
+	    stat = CallExportToFile(segout, segin, classname, mapfile, &size);
+	    if (stat != DRMS_SUCCESS)
+	    {
+	       fprintf(stderr, "Failure exporting segment '%s'.\n", segin->info->name);
+	       break;
+	    }
+	    else
+	    {
+	       tsize += size;
+	    }
+	 }
+
+	 hiter_destroy(&hit);
+      }
+   }
+   else
+   {
+      fprintf(stderr, "Export series contains no segment!\n");
+      stat = DRMS_ERROR_EXPORT;
+   }
+
+   if (status)
+   {
+      *status = stat;
+   }
+
+   return tsize;
+}			  
+
+int drms_recordset_export(DRMS_Env_t *env,
+			  const char *reqid,
+			  int *status)
+{
+   return drms_recordset_mapexport(env,
+				   reqid, 
+				   NULL, 
+				   NULL, 
+				   status);
+}
+
+int drms_recordset_mapexport(DRMS_Env_t *env,
+			     const char *reqid,
+			     const char *classname, 
+			     const char *mapfile,
+			     int *status)
+{
+   int stat;
+   int nSets = 0;
+   int iSet = 0;
+   int nRecs = 0;
+   int iRec = 0;
+   unsigned long long tsize = 0;
+   DRMS_Record_t *recout = NULL;
+   DRMS_Record_t *recin = NULL;
+   DRMS_RecordSet_t *rs = NULL;
+   DRMS_RecordSet_t *rsout = NULL;
+   DRMS_RecordSet_t *rsin = NULL;
+   char rsoutquery[DRMS_MAXQUERYLEN];
+   char *rsinquery = NULL;
+   char *seglist = NULL;
+
+   snprintf(rsoutquery, sizeof(rsoutquery), "%s[%s]", kEXPORTSERIES, reqid);
+
+   rs = drms_open_records(env, rsoutquery, &stat);
+
+   if (rs)
+   {
+      /* XXX Change to DRMS_REPLACE_SEGMENTS (which isn't implemented yet). */
+      rsout = drms_clone_records(rs, DRMS_PERMANENT, DRMS_COPY_SEGMENTS, &stat);
+      drms_close_records(rs, DRMS_FREE_RECORD);
+   }
+   
+   if (rsout && rsout->n == 1)
+   {
+      recout = rsout->records[0];
+      rsinquery = drms_getkey_string(recout, gExpStr[kExport_Request].str, &stat);
+      seglist = drms_getkey_string(recout, gExpStr[kExport_SegList].str, &stat);
+      
+      if (rsinquery && (rsin = drms_open_records(env, rsinquery, &stat)))
+      {
+	 nSets = rsin->ss_n;
+
+	 for (iSet = 0; stat == DRMS_SUCCESS && iSet < nSets; iSet++)
+	 {
+	    /* Perhaps we will need this in the future?
+	     * request = rsin->ss_queries[iSet];
+	     */
+	    nRecs = drms_recordset_getssnrecs(rsin, iSet, &stat);
+
+	    for (iRec = 0; stat == DRMS_SUCCESS && iRec < nRecs; iRec++)
+	    {
+	       recin = (rsin->ss_starts)[iSet] + iRec;
+	       tsize += drms_record_mapexport(recout, 
+					      recin,
+					      seglist,
+					      classname, 
+					      mapfile, 
+					      &stat);
+	    }
+	 }
+	 
+	 if (stat != DRMS_SUCCESS)
+	 {
+	    fprintf(stderr, "Export halted due to DRMS failure.\n");
+	 }
+      }
+      else
+      {
+	 fprintf(stderr, 
+		 "Export series keyword '%s' did not contain a valid recordset query.\n", 
+		 gExpStr[kExport_Request].str);
+	 stat = DRMS_ERROR_INVALIDDATA; 
+      }
+   }
+   else
+   {
+      fprintf(stderr, "Could not open export destination record set with query '%s'.\n", reqid);
+      stat = DRMS_ERROR_INVALIDDATA;
+   }
+
+   /* Set output record keywords. */
+   if (stat == DRMS_SUCCESS)
+   {
+      drms_setkey_time(recout, gExpStr[kExport_ExpTime].str, CURRENT_SYSTEM_TIME);
+      drms_setkey_int(recout, gExpStr[kExport_DataSize].str, tsize);
+      drms_setkey_int(recout, gExpStr[kExport_Status].str, 1);
+   }
+
+   if (rsout)
+   {
+      drms_close_records(rsout, DRMS_INSERT_RECORD);
+   }
+
+   if (rsinquery)
+   {
+      free(rsinquery);
+   }
+
+   if (seglist)
+   {
+      free(seglist);
+   }
+
+   if (status)
+   {
+      *status = stat;
+   }
+   
+   return tsize;
 }

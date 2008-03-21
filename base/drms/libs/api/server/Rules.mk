@@ -29,7 +29,7 @@ S_$(d)		:= $(notdir $(LIBDRMS))
 $(COMMOBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
 $(COMMOBJ_$(d)):	CF_TGT := $(CF_TGT) -D$(DBNAME) $(CFITSIOH)
 $(OBJ_$(d)):		$(SRCDIR)/$(d)/Rules.mk
-$(OBJ_$(d)):		CF_TGT := $(CF_TGT) -D$(DBNAME)
+$(OBJ_$(d)):		CF_TGT := $(CF_TGT) -D$(DBNAME) $(CFITSIOH)
 
 $(LIBDRMS):		$(LIBDRMS_OBJ)
 			$(ARCHIVE)

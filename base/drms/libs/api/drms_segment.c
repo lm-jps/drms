@@ -2197,3 +2197,183 @@ int drms_segment_segsmatch(const DRMS_Segment_t *s1, const DRMS_Segment_t *s2)
    return ret;
 }
 
+int drms_segment_export_tofile(DRMS_Segment_t *seg, const char *fileout)
+{
+   return drms_segment_mapexport_tofile(seg, NULL, NULL, fileout);
+}
+
+int drms_segment_mapexport_tofile(DRMS_Segment_t *seg, 
+				  const char *clname, 
+				  const char *mapfile,
+				  const char *fileout)
+{
+   int stat = DRMS_SUCCESS;
+
+   CFITSIO_KEYWORD *fitskeys = NULL;
+   HContainer_t *keys = &(seg->record->keywords);
+   HIterator_t *hit = hiter_create(keys);
+
+   if (hit)
+   {
+      DRMS_Keyword_t *key = NULL;
+      const char *keyname = NULL;
+      char segnum[4];
+
+      snprintf(segnum, sizeof(segnum), "%d", seg->info->segnum);
+
+      while ((key = hiter_getnext(hit)) != NULL)
+      {
+	 keyname = drms_keyword_getname(key);
+
+	 if (drms_keyword_getperseg(key))
+	 {
+	    /* Ensure that this keyword is relevant to this segment. */
+	    if (!strstr(keyname, segnum))
+	    {
+	       continue;
+	    }
+	 }
+	    
+	 if (drms_keyword_mapexport(key, clname, mapfile, &fitskeys))
+	 {
+	    fprintf(stderr, "Couldn't export keyword '%s'.\n", keyname);
+	    stat = DRMS_ERROR_EXPORT;
+	 }
+      }
+
+      hiter_destroy(&hit);
+   }
+   
+   if (!stat)
+   {
+      switch (seg->info->protocol)
+      {
+	 case DRMS_FITSIO:
+	   {
+	      DRMS_Array_t *arrout = drms_segment_read(seg, DRMS_TYPE_RAW, &stat);
+	      if (arrout)
+	      {
+		 /* Need to manually add required keywords that don't exist in the record's 
+		  * DRMS keywords. */
+		 CFITSIO_IMAGE_INFO imginfo;
+      
+		 if (!SetImageInfo(arrout, &imginfo))
+		 {
+		    /* Not sure if data need to be scaled, or if the original blank value
+		     * should be resurrected. */
+		    if (arrout->type == DRMS_TYPE_STRING)
+		    {
+		       fprintf(stderr, "Can't save string data into a fits file.\n");
+		       stat = DRMS_ERROR_EXPORT;
+		    }
+		    else
+		    {
+		       if (cfitsio_write_file(fileout, &imginfo, arrout->data, C_NONE, fitskeys))
+		       {
+			  fprintf(stderr, "Can't write fits file '%s'.\n", fileout);
+			  stat = DRMS_ERROR_EXPORT;
+		       }
+		    }
+		 }
+		 else
+		 {
+		    fprintf(stderr, "Data array being exported is invalid.\n");
+		    stat = DRMS_ERROR_EXPORT;
+		 }
+
+		 drms_free_array(arrout);
+	      }
+	   }
+	   break;
+	 default:
+	   fprintf(stderr, 
+		   "Data export does not support data segment protocol '%s'.\n", 
+		   drms_prot2str(seg->info->protocol));
+      }
+   }
+
+   if (fitskeys)
+   {
+      cfitsio_free_keylist(&fitskeys);
+   }
+
+   return stat;
+}
+
+/* recout is the export series' output record (which was cloned from the original). */
+int drms_segment_export(DRMS_Record_t *recout,
+			DRMS_Segment_t *segin)
+{
+   return drms_segment_mapexport(recout, segin, NULL, NULL);
+}
+
+/* recout is the export series' output record (which was cloned from the original). */
+int drms_segment_mapexport(DRMS_Record_t *recout,
+			   DRMS_Segment_t *segin,
+			   const char *clname,
+			   const char *mapfile)
+{
+   int status = DRMS_SUCCESS;
+   DRMS_Segment_t *segout = NULL;
+   char filein[DRMS_MAXPATHLEN];
+   char fileout[DRMS_MAXPATHLEN];
+   char *basename = NULL;
+   unsigned long long tsize = 0;
+   struct stat filestat;
+   char dir[DRMS_MAXPATHLEN];
+
+   if (recout)
+   {
+      segout = drms_segment_lookupnum(recout, 0);
+   }
+   else
+   {
+      fprintf(stderr, "Must provide export series record to export data to.\n");
+      status = DRMS_ERROR_EXPORT;  
+   }
+
+   if (segout)
+   {
+      drms_record_directory(segin->record, dir, 1); /* This fetches the input data from SUMS. */
+      drms_segment_filename(segin, filein); /* input seg file name */
+
+      if (!stat(filein, &filestat))
+      {
+	 tsize = filestat.st_size;
+	 basename = rindex(filein, '/');
+	 if (basename) 
+	 {
+	    basename++;
+	 }
+	 else 
+	 {
+	    basename = filein;
+	 }
+
+	 CHECKSNPRINTF(snprintf(segout->filename, DRMS_MAXSEGFILENAME, "%s", basename), DRMS_MAXSEGFILENAME);
+	 drms_segment_filename(segout, fileout);
+
+	 status = drms_segment_mapexport_tofile(segin, clname, mapfile, fileout);
+
+	 if (status == DRMS_SUCCESS)
+	 {
+	    /* Set output record keywords. */
+	    drms_setkey_time(recout, gExpStr[kExport_ExpTime].str, CURRENT_SYSTEM_TIME);
+	    drms_setkey_int(recout, gExpStr[kExport_DataSize].str, tsize);
+	    drms_setkey_int(recout, gExpStr[kExport_Status].str, 1);
+	 }
+      }
+      else
+      {
+	 fprintf(stderr, "Unable to open source file '%s'.\n", filein);
+	 status = DRMS_ERROR_EXPORT;
+      }
+   }
+   else
+   {
+      fprintf(stderr, "Series '%s' contains no data segments.\n", kEXPORTSERIES);
+      status = DRMS_ERROR_EXPORT;
+   }
+
+   return status;
+}

@@ -3,12 +3,17 @@
 #ifndef __CFITSIO__
 #define __CFITSIO__
 
-#include <fitsio.h>
-
+/* #include <fitsio.h> Don't include this!  Otherwise, every .c file in DRMS
+ * will require the -I compile flag.  There is no need to include this header.
+ */ 
 //****************************************************************************
 
 #define CFITSIO_MAX_DIM		          9
 #define CFITSIO_MAX_BLANK                 32
+#define CFITSIO_MAX_STR                   128 /* Use this instead of defines in 
+					       * fitsio.h, otherwise all files
+					       * that include this file will 
+					       * be dependent on fitsio.h */
 
 #define CFITSIO_SUCCESS                   0
 #define CFITSIO_FAIL                     -1
@@ -20,13 +25,18 @@
 #define CFITSIO_ERROR_ARGS               -6
 #define CFITSIO_ERROR_DATA_EMPTY         -7
 #define CFITSIO_ERROR_ALREADY_COMPRESSED -8
-#define CFITSIO_INVALIDFILE              -9
+#define CFITSIO_ERROR_INVALIDFILE        -9
 
 //****************************************************************************
 
+extern const char kFITSRW_Type_String;
+extern const char kFITSRW_Type_Logical;
+extern const char kFITSRW_Type_Integer;
+extern const char kFITSRW_Type_Float;
+
 typedef union cfitsio_value
 {
-      char      vs[FLEN_VALUE];
+      char      vs[CFITSIO_MAX_STR];
       int       vl;		//logical 1: true 0: false
       long      vi;
       double    vf;
@@ -37,12 +47,12 @@ typedef union cfitsio_value
 
 typedef struct cfitsio_keyword
 {
-      char	key_name[FLEN_KEYWORD]; 
+      char	key_name[CFITSIO_MAX_STR]; 
       char	key_type; // C: string, L: logical, I: integer, F: float, X: complex 
       CFITSIO_KEY_VALUE	key_value;
-      char	key_comment[FLEN_COMMENT];
-      char	key_printf_format[FLEN_KEYWORD];
-      void*	next; // For fixed card size, just access as array element and return "nkeys"
+      char	key_comment[CFITSIO_MAX_STR];
+      char	key_printf_format[CFITSIO_MAX_STR];
+      struct cfitsio_keyword*	next; // For fixed card size, just access as array element and return "nkeys"
 
 } CFITSIO_KEYWORD;
 
@@ -90,7 +100,7 @@ int cfitsio_read_file(char* fits_filename, CFITSIO_IMAGE_INFO** image_info, void
 		      CFITSIO_KEYWORD** keylist);
 
 
-int cfitsio_write_file(char* fits_filename, CFITSIO_IMAGE_INFO* info,  void* image, 
+int cfitsio_write_file(const char* fits_filename, CFITSIO_IMAGE_INFO* info,  void* image, 
 		       CFITSIO_COMPRESSION_TYPE compression_type,  
 		       CFITSIO_KEYWORD* keylist); //keylist == NULL if not needed
 
@@ -105,8 +115,13 @@ void cfitsio_free_these(CFITSIO_IMAGE_INFO** image_info, void** image,
 int cfitsio_read_keys(char* filename, CFITSIO_KEYWORD** list);
 int cfitsio_print_keys(CFITSIO_KEYWORD* list);
 int cfitsio_free_keys(CFITSIO_KEYWORD** keys);
-
-
+void cfitsio_free_keylist(CFITSIO_KEYWORD** keylist);
+int cfitsio_keys_insert(CFITSIO_KEYWORD** list, 
+			const char *name, 
+			char type, 
+			const char *comment,
+			const char *format,
+			void *data);
 
 int cfitsio_read_image(char* filename, void** image);
 int cfitsio_dump_image(void* image, CFITSIO_IMAGE_INFO* info, 

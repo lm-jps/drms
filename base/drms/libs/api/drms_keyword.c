@@ -2,6 +2,23 @@
 #include "drms.h"
 #include "drms_priv.h"
 #include "xmem.h"
+#include "cfitsio.h"
+
+ExportStrings_t gExpStr[] =
+{
+   {kExport_ReqID, "RequestID"},
+   {kExport_Request, "DataSet"},
+   {kExport_SegList, "Seg"},
+   {kExport_Requestor, "Requestor"},
+   {kExport_Notification, "Notify"},
+   {kExport_ReqTime, "ReqTime"},
+   {kExport_ExpTime, "ExpTime"},
+   {kExport_DataSize, "Size"},
+   {kExport_Format, "Format"},
+   {kExport_FileNameFormat, "FilenameFmt"},
+   {kExport_Status, "Status"},
+   {(DRMS_ExportKeyword_t)-99, ""}
+};
 
 /* Slotted keywords - index keyword type (some kind of integer) */
 const DRMS_Type_t kIndexKWType = DRMS_TYPE_INT;
@@ -81,6 +98,50 @@ const int kMaxRecScopeTypeKey = 4096;
 const int kMaxSlotUnitKey = 128;
 const int kMaxSlotEpochKey = 64;
 const int kMaxSlotEpochTimestr = 64;
+
+/* Per Tim, FITS doesn't support char, short, long long, or float keyword types. */
+static int DRMSKeyValToFITSKeyType(DRMS_Value_t *valin, char *fitstype)
+{
+   int err = 0;
+
+   if (valin && fitstype)
+   {
+      switch(valin->type)
+      {
+	 case DRMS_TYPE_CHAR:
+	   /* intentional fall-through */
+	 case DRMS_TYPE_SHORT:
+	   /* intentional fall-through */
+	 case DRMS_TYPE_INT:
+	   /* intentional fall-through */
+	 case DRMS_TYPE_LONGLONG:
+	   *fitstype = 'I';
+	   break;
+	 case DRMS_TYPE_FLOAT:
+	   /* intentional fall-through */
+	 case DRMS_TYPE_DOUBLE:
+	   /* intentional fall-through */
+	 case DRMS_TYPE_TIME:
+	   *fitstype = 'F';
+	   break;
+	 case DRMS_TYPE_STRING:
+	   *fitstype = 'C';
+	   break;
+	 default:
+	   fprintf(stderr, "Unsupported DRMS type '%d'.\n", (int)valin->type);
+	   err = 1;
+	   break;
+
+      }
+   }
+   else
+   {
+      fprintf(stderr, "DRMSKeyValToFITSKeyVal() - Invalid argument.\n");
+      err = 1;
+   }
+
+   return err;
+}
 
 void drms_keyword_term()
 {
@@ -992,11 +1053,6 @@ int drms_setkey_string(DRMS_Record_t *rec, const char *key, const char *value)
    return ret;
 }
 
-const char *drms_keyword_getname(DRMS_Keyword_t *key)
-{
-   return key->info->name;
-}
-
 int drms_keyword_getintname(const char *keyname, char *nameOut, int size)
 {
    int success = 0;
@@ -1078,82 +1134,15 @@ int drms_keyword_getintname_ext(const char *keyname,
 
 int drms_keyword_getextname(DRMS_Keyword_t *key, char *nameOut,	int size)
 {
-   int success = 0;
-   char *desc = strdup(key->info->description);
-   char *pFitsName = NULL;
-   char *potential = NULL;
-   *nameOut = '\0';
-
-   /* 1 - Try keyword name in description field. */
-   if (desc)
-   {
-      pFitsName = strtok(desc, " ");
-      if (pFitsName)
-      {
-	 int len = strlen(pFitsName);
-
-	 if (len > 2 &&
-	     pFitsName[0] == '[' &&
-	     pFitsName[len - 1] == ']')
-	 {
-	    if (len - 2 < size)
-	    {
-	       potential = (char *)malloc(sizeof(char) * size);
-	       if (potential)
-	       {
-		  memcpy(potential, pFitsName + 1, len - 2);
-		  potential[len - 2] = '\0';
-
-		  if (IsValidFitsKeyName(potential))
-		  {
-		     strcpy(nameOut, potential);
-		     success = 1;
-		  }
-
-		  free(potential);
-	       }
-	    }
-	 }
-      }
-
-      free(desc);
-   }
-   
-   /* 2 - Try DRMS name. */
-   if (!success)
-   {
-      if (IsValidFitsKeyName(key->info->name))
-      {
-	 strcpy(nameOut, key->info->name);
-	 success = 1;
-      }
-   }
-
-   /* 3 - Use default rule. */
-   if (!success)
-   {
-      potential = (char *)malloc(sizeof(char) * size);
-      if (potential)
-      {
-	 if (GenerateFitsKeyName(key->info->name, potential, size))
-	 {
-	    strcpy(nameOut, potential);
-	    success = 1;
-	 }
-
-	 free(potential);
-      }
-   }
-
-   return success;
+   return drms_keyword_getmappedextname(key, NULL, NULL, nameOut, size);
 }
 
 /* Same as above, but try a KeyMap first, then a KeyMapClass */
-int drms_keyword_getextname_ext(DRMS_Keyword_t *key, 
-				DRMS_KeyMapClass_t *classid, 
-				DRMS_KeyMap_t *map,
-				char *nameOut,
-				int size)
+int drms_keyword_getmappedextname(DRMS_Keyword_t *key, 
+				  const char *class, 
+				  DRMS_KeyMap_t *map,
+				  char *nameOut,
+				  int size)
 {
    int success = 0;
    const char *potential = NULL;
@@ -1167,13 +1156,12 @@ int drms_keyword_getextname_ext(DRMS_Keyword_t *key,
 	 snprintf(nameOut, size, "%s", potential);
 	 success = 1;
       }
-
    }
 
    /* 2 - Try KeyMapClass. */
-   if (!success && classid != NULL)
+   if (!success && class != NULL)
    {
-      potential = drms_keymap_classidextname(*classid, key->info->name);
+      potential = drms_keymap_classextname(class, key->info->name);
       if (potential)
       {
 	 snprintf(nameOut, size, "%s", potential);
@@ -1184,11 +1172,70 @@ int drms_keyword_getextname_ext(DRMS_Keyword_t *key,
    if (!success)
    {
       /* Now try the map- and class-independent schemes. */
-      char buf[DRMS_MAXKEYNAMELEN];
-      success = drms_keyword_getextname(key, buf, sizeof(buf));
-      if (success)
+      char *pot = NULL;
+      char *desc = strdup(key->info->description);
+      char *pFitsName = NULL;
+      *nameOut = '\0';
+
+      /* 1 - Try keyword name in description field. */
+      if (desc)
       {
-	 strncpy(nameOut, buf, size);
+	 pFitsName = strtok(desc, " ");
+	 if (pFitsName)
+	 {
+	    int len = strlen(pFitsName);
+
+	    if (len > 2 &&
+		pFitsName[0] == '[' &&
+		pFitsName[len - 1] == ']')
+	    {
+	       if (len - 2 < size)
+	       {
+		  pot = (char *)malloc(sizeof(char) * size);
+		  if (pot)
+		  {
+		     memcpy(pot, pFitsName + 1, len - 2);
+		     pot[len - 2] = '\0';
+
+		     if (IsValidFitsKeyName(pot))
+		     {
+			strcpy(nameOut, pot);
+			success = 1;
+		     }
+
+		     free(pot);
+		  }
+	       }
+	    }
+	 }
+
+	 free(desc);
+      }
+   
+      /* 2 - Try DRMS name. */
+      if (!success)
+      {
+	 if (IsValidFitsKeyName(key->info->name))
+	 {
+	    strcpy(nameOut, key->info->name);
+	    success = 1;
+	 }
+      }
+
+      /* 3 - Use default rule. */
+      if (!success)
+      {
+	 pot = (char *)malloc(sizeof(char) * size);
+	 if (pot)
+	 {
+	    if (GenerateFitsKeyName(key->info->name, pot, size))
+	    {
+	       strcpy(nameOut, pot);
+	       success = 1;
+	    }
+
+	    free(pot);
+	 }
       }
    }
 
@@ -1970,3 +2017,75 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 
    return stat;
 }
+
+int drms_keyword_export(DRMS_Keyword_t *key, CFITSIO_KEYWORD **fitskeys)
+{
+   return drms_keyword_mapexport(key, NULL, NULL, fitskeys);
+}
+
+
+int drms_keyword_mapexport(DRMS_Keyword_t *key,
+			   const char *clname, 
+			   const char *mapfile,
+			   CFITSIO_KEYWORD **fitskeys)
+{
+   int stat = DRMS_SUCCESS;
+
+   if (key && fitskeys)
+   {
+      char nameout[16];
+      char kwtype;
+
+      DRMS_KeyMap_t *map = NULL;
+      DRMS_KeyMap_t intmap;
+      FILE *fptr = NULL;
+      
+      if (mapfile)
+      {
+	 fptr = fopen(mapfile, "r");
+	 if (drms_keymap_parsefile(&intmap, fptr))
+	 {
+	    map = &intmap;
+	 }
+      }
+      
+      if (drms_keyword_getmappedextname(key, clname, map, nameout, sizeof(nameout)))
+      {
+	 DRMS_Value_t v;
+	 int fitsrwRet = 0;
+
+	 v.type = key->info->type;
+	 v.value = key->value;
+	 if (!DRMSKeyValToFITSKeyType(&v, &kwtype))
+	 {
+	    if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_keys_insert(fitskeys, 
+								    nameout, 
+								    kwtype, 
+								    NULL,
+								    NULL,
+								    &(key->value.char_val))))
+	    {
+	       fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
+	       stat = DRMS_ERROR_FITSRW;
+	    }
+	 }
+	 else
+	 {
+	    fprintf(stderr, 
+		    "Could not convert DRMS keyword '%s' to FITS keyword.\n", 
+		    key->info->name);
+	    stat = DRMS_ERROR_INVALIDDATA;
+	 }
+      }
+      else
+      {
+	 fprintf(stderr, 
+		 "Could not determine external FITS keyword name for DRMS name '%s'.\n", 
+		 key->info->name);
+	 stat = DRMS_ERROR_INVALIDDATA;
+      }
+   }
+
+   return stat;  
+}
+

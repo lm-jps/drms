@@ -376,3 +376,8 @@ const char *drms_keymap_classintname(const char *class, const char *extName)
 
    return ret;
 }
+
+DRMS_KeyMap_t *drms_keymap_getfromclname(const char *classname)
+{
+   return hcon_lookup(gClassTables, classname);
+}

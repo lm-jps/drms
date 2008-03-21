@@ -31,6 +31,11 @@ const unsigned int kInfoPresent_BLANK  = 0x00000004;
 const unsigned int kInfoPresent_BSCALE = 0x00000008;
 const unsigned int kInfoPresent_BZERO  = 0x00000010;
 
+extern const char kFITSRW_Type_String = 'C';
+extern const char kFITSRW_Type_Logical = 'L';
+extern const char kFITSRW_Type_Integer = 'I';
+extern const char kFITSRW_Type_Float = 'F';
+
 //****************************************************************************
 //*********************   Using CFITSIO_KEYWORD  *****************************
 //****************************************************************************
@@ -201,6 +206,95 @@ int cfitsio_free_keys(CFITSIO_KEYWORD** keylist)
    *keylist = NULL;
 
    return CFITSIO_SUCCESS;
+}
+
+void cfitsio_free_keylist(CFITSIO_KEYWORD** keylist)
+{
+   if (keylist)
+   {
+      CFITSIO_KEYWORD *kptr = *keylist;
+      CFITSIO_KEYWORD *del = NULL;
+   
+      while (kptr)
+      {
+	 del = kptr;
+	 kptr = kptr->next;
+	 free(del);
+      }
+
+      *keylist = NULL;
+   }
+}
+
+int cfitsio_keys_insert(CFITSIO_KEYWORD** list, 
+			const char *name, 
+			char type, 
+			const char *comment,
+			const char *format,
+			void *data)
+{
+   int ret = CFITSIO_SUCCESS;
+
+   if (list && name && data)
+   {
+      CFITSIO_KEYWORD *node = (CFITSIO_KEYWORD *)malloc(sizeof(CFITSIO_KEYWORD));
+      if (!node)
+      {
+	 ret = CFITSIO_ERROR_OUT_OF_MEMORY;
+      }
+      else
+      {
+	 memset(node, 0, sizeof(CFITSIO_KEYWORD));
+	 node->next = NULL;
+
+	 if (*list)
+	 {
+	    CFITSIO_KEYWORD *head = *list;
+	    node->next = head;
+	 }
+
+	 *list = node;
+
+	 snprintf(node->key_name, FLEN_KEYWORD, "%s", name);
+	 node->key_type = type;
+
+	 switch (type)
+	 {
+	    case (kFITSRW_Type_String):
+	      snprintf(node->key_value.vs, FLEN_VALUE, "%s", *(char **)data);
+	      break;
+	    case (kFITSRW_Type_Logical):
+	      node->key_value.vl = *((int *)data);
+	      break;
+	    case (kFITSRW_Type_Integer):
+	      node->key_value.vi = *((long *)data);
+	      break;
+	    case (kFITSRW_Type_Float):
+	      node->key_value.vf = *((double *)data);
+	      break;
+	    default:
+	      fprintf(stderr, "Invalid FITSRW keyword type '%c'.\n", (char)type);
+	      ret = CFITSIO_ERROR_ARGS;
+	      break;
+	 }
+
+	 if (comment)
+	 {
+	    snprintf(node->key_comment, FLEN_COMMENT, "%s", comment);
+	 }
+
+	 if (format)
+	 {
+	    snprintf(node->key_printf_format, FLEN_KEYWORD, "%s", format);
+	 }
+      }
+   }
+   else
+   {
+      ret = CFITSIO_ERROR_ARGS; 
+   }
+
+   return ret;
 }
 
 //****************************************************************************
@@ -416,7 +510,7 @@ int cfitsio_get_image_info(CFITSIO_KEYWORD* keylist, CFITSIO_IMAGE_INFO* info)
    {
       if (info->naxes[axisnum] == 0)
       {
-	 return CFITSIO_INVALIDFILE;
+	 return CFITSIO_ERROR_INVALIDFILE;
       }
 
       axisnum--;
@@ -425,7 +519,7 @@ int cfitsio_get_image_info(CFITSIO_KEYWORD* keylist, CFITSIO_IMAGE_INFO* info)
    if (!bitpix || !naxis)
    {
       /* These are required. */
-      return CFITSIO_INVALIDFILE;
+      return CFITSIO_ERROR_INVALIDFILE;
    }
 
    return CFITSIO_SUCCESS;
@@ -726,7 +820,7 @@ void cfitsio_free_these(CFITSIO_IMAGE_INFO** image_info, void** image, CFITSIO_K
 }
 
 //****************************************************************************
-int cfitsio_write_file(char* fits_filename, CFITSIO_IMAGE_INFO* image_info,  
+int cfitsio_write_file(const char* fits_filename, CFITSIO_IMAGE_INFO* image_info,  
 		       void* image, CFITSIO_COMPRESSION_TYPE compression_type,  
 		       CFITSIO_KEYWORD* keylist)
 {
@@ -748,21 +842,24 @@ int cfitsio_write_file(char* fits_filename, CFITSIO_IMAGE_INFO* image_info,
    long	npixels;
 
    int iaxis = 0;
+   int gotimginfo = 0;
 
    CFITSIO_IMAGE_INFO info;
 
-
    DEBUGMSG(("cfitsio_write_file() => fits_filename = %s\n",fits_filename));
 
+   /* If both a keylist and a image_info are provided, and the two sets of 
+    * contained keywords overlap, the image_info's keywords take precedence.
+    */
    if(keylist)
    {
-      if(cfitsio_get_image_info(keylist, &info)!= CFITSIO_SUCCESS)
+      if(!cfitsio_get_image_info(keylist, &info)!= CFITSIO_SUCCESS)
       {
-	 error_code = CFITSIO_ERROR_ARGS;
-	 goto error_exit;
+	 gotimginfo = 1;
       }
    }
-   else if (image_info)
+
+   if (image_info)
    {
       memcpy((char*) &info, (char*) image_info, sizeof(CFITSIO_IMAGE_INFO));
       if (info.bitfield & kInfoPresent_BLANK)
@@ -780,8 +877,11 @@ int cfitsio_write_file(char* fits_filename, CFITSIO_IMAGE_INFO* image_info,
 	 float obscale = (float)image_info->bscale;
 	 fits_update_key(fptr, TFLOAT, "BSCALE", &obscale, "", &status);
       }
+
+      gotimginfo = 1;
    }
-   else
+   
+   if (!gotimginfo || (!keylist && !image_info))
    {
       error_code = CFITSIO_ERROR_ARGS;
       goto error_exit;

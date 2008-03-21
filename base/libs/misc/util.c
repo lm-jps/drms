@@ -171,7 +171,7 @@ int IsValidFitsKeyName(const char *fitsName)
    }
    else
    {
-      while (*pc != 0)
+      while (*pc != 0 && !error)
       {
 	 switch (state)
 	 {
@@ -215,6 +215,34 @@ int IsValidFitsKeyName(const char *fitsName)
 /* XXX This has to change to Phil's default scheme */
 int GenerateFitsKeyName(const char *drmsName, char *fitsName, int size)
 {
+   const char *pC = drmsName;
+   int nch = 0;
+
+   memset(fitsName, 0, size);
+
+   if (size >= 9)
+   {
+      while (*pC && nch < 8)
+      {
+	 if (*pC >= 65 && *pC <= 90)
+	 {
+	    fitsName[nch] = *pC;
+	    nch++; 
+	 }
+	 else if (*pC >= 97 && *pC <= 122)
+	 {
+	    fitsName[nch] = toupper(*pC);
+	    nch++;
+	 }
+
+	 pC++;
+      }
+   }
+   else
+   {
+      return 0;
+   }
+
    return 1;
 }
 

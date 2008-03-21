@@ -40,8 +40,11 @@ S_$(d)			:= $(notdir $(LIBJSOC_MAIN) $(LIBJSOC_MAIN_SOCK))
 
 # Local rules
 $(JM_OBJ_$(d)):		$(SRCDIR)/$(d)/Rules.mk
+$(JM_OBJ_$(d)):		CF_TGT := $(CF_TGT) 
 $(JM_SOCK_OBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
+$(JM_SOCK_OBJ_$(d)):	CF_TGT := $(CF_TGT) 
 $(CI_JM_OBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
+$(CI_JM_OBJ_$(d)):	CF_TGT := $(CF_TGT) 
 $(CI_JM_SOCK_OBJ_$(d)): $(SRCDIR)/$(d)/Rules.mk
 
 $(LIBJSOC_MAIN):	$(LIBJSOC_MAIN_OBJ)

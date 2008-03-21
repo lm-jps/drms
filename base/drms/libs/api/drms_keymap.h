@@ -62,6 +62,8 @@ refers.
 */
 int drms_keymap_parsefile(DRMS_KeyMap_t *keymap, FILE *fPtr);
 
+DRMS_KeyMap_t *drms_keymap_getfromclname(const char *classname);
+
 /* End API */
 
 #endif /* _DRMS_KEYMAP_H */

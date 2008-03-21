@@ -465,6 +465,33 @@ typedef struct DRMS_Record_struct DRMS_Record_t;
 extern const DRMS_Type_t kIndexKWType;
 extern const char *kIndexKWFormat;
 
+enum DRMS_ExportKeyword_enum
+{
+   kExport_ReqID = 0,
+   kExport_Request,
+   kExport_SegList,
+   kExport_Requestor,
+   kExport_Notification,
+   kExport_ReqTime,
+   kExport_ExpTime,
+   kExport_DataSize,
+   kExport_Format,
+   kExport_FileNameFormat,
+   kExport_Status
+};
+
+typedef enum DRMS_ExportKeyword_enum DRMS_ExportKeyword_t;
+
+struct ExportStrings_struct
+{
+  DRMS_ExportKeyword_t kw;
+  const char *str;
+};
+
+typedef struct ExportStrings_struct ExportStrings_t;
+
+extern ExportStrings_t gExpStr[];
+
 enum DRMS_SlotKeyUnit_enum
 {
    /** */
