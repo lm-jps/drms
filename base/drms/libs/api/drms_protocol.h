@@ -7,13 +7,14 @@
 #define _DRMS_PROTOCOL_H
 
 #include "drms_types.h"
-						   /*  Recognized protocols  */
+
 /** 
     @brief DRMS segment protocols
 */
-typedef enum  {
+enum  DRMS_Protocol_enum {
+   DRMS_PROTOCOL_INVALID = -1,
    /** \brief Arbitrary file format which can vary across records */
-   DRMS_GENERIC, 
+   DRMS_GENERIC = 0, 
    /** \brief Binary file format */
    DRMS_BINARY, 
    /** \brief Binary file format which is gzip compressed */
@@ -31,14 +32,13 @@ typedef enum  {
    /** \brief DSDS file format stored locally (read only) */
    DRMS_LOCAL,
    /** \brief Format that uses cfitsio to read and write FITS files */
-   DRMS_FITSIO
-} DRMS_Protocol_t;
-	/*  N.B. To add a protocol, also add info to the static declartions
-							 in drms_protocol.c  */
+   DRMS_FITSIO,
+   DRMS_PROTOCOL_END
+};
 
-/*  Protocol specific data kept in file headers  */
-/* FIXME: To be completed later: */
-							   /*  Generic file  */
+typedef enum DRMS_Protocol_enum DRMS_Protocol_t;
+
+
 typedef struct DRMS_GenericSpecific_struct { 
   int spare;  /* Nothing yet */
 } DRMS_GenericSpecific_t ;

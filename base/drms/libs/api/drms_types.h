@@ -831,6 +831,13 @@ char *drms_segmentscope_names[] = {"constant", "variable", "vardim"};
 
 #endif
 
+
+/***********************************************************
+ *
+ * Segments
+ *
+ ***********************************************************/
+
 /* A data segment is typically an n-dimensional array of a simple type.
    It can also be a "generic" segment which is just a file 
    (structure-less as far as DRMS is concerned). */

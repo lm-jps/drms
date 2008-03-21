@@ -232,6 +232,7 @@ int JSOCMAIN_Term(int dolog, int verbose, pid_t drms_server_pid, pid_t tee_pid, 
    /* Terminate other global things. */
    drms_keymap_term();
    drms_keyword_term();
+   drms_protocol_term();
 
 #ifdef DEBUG_MEM
    xmem_leakreport ();

@@ -283,6 +283,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
    /* Terminate other global things. */
    drms_keymap_term();
    drms_keyword_term();
+   drms_protocol_term();
 
   _exit(abort_flag);
 }

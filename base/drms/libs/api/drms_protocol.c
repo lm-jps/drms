@@ -3,43 +3,94 @@
 #include "xmem.h"
 
 static char *prot_string[] = {
-  "bin",       "bin.gz",    "fits",   "fitz",     "msi",    "tas",
-  "generic",   "dsds",      "local",  "fitsio"};
+   "generic", 
+   "bin",
+   "bin.gz",
+   "fitz",
+   "fits",
+   "msi",
+   "tas",
+   "dsds",
+   "local",
+   "fitsio"
+};
+
 static char *prot_fileext[] = {
-   "bin",       "bin.gz",    "fits",   "fitz",     "msi",    "tas",
-   "generic",   "dsds",      "local",  "fits"};
+   "generic",   
+   "bin",
+   "bin.gz",
+   "fitz",
+   "fits",
+   "msi",
+   "tas",
+   "dsds",
+   "local",
+   "fits"
+};
 
-static int prot_type[] = {
-  DRMS_BINARY, DRMS_BINZIP, DRMS_FITS, DRMS_FITZ, DRMS_MSI, DRMS_TAS,
-  DRMS_GENERIC, DRMS_DSDS, DRMS_LOCAL, DRMS_FITSIO};
+static HContainer_t *gProtMap = NULL;
 
-/*  N.B.: If you add types to the above lists you must also add them to
-			the enum list of DRMS_Protocol_t in drms_protocol.h  */
+const int kMAXPROTSTR = 16;
 
 DRMS_Protocol_t drms_str2prot (const char *str) {
-  int n, prot_count = sizeof prot_type / sizeof (int);
-  for (n = 0; n < prot_count; n++)
-    if (!strcasecmp (str, prot_string[n])) return (DRMS_Protocol_t)prot_type[n];
-  fprintf (stderr, "Unknown DRMS protocol \"%s\"\n", str);
-  XASSERT(0);
-  return (DRMS_Protocol_t) -1;
+   int status = DRMS_SUCCESS;
+   DRMS_Protocol_t ret = DRMS_PROTOCOL_INVALID;
+   DRMS_Protocol_t *ans = NULL;
+
+   if (!gProtMap)
+   {
+      gProtMap = hcon_create(sizeof(DRMS_Protocol_t), kMAXPROTSTR, NULL, NULL, NULL, NULL, 0);      
+
+      if (gProtMap)
+      {
+	 int iprot;
+	 for (iprot = 0; status == DRMS_SUCCESS && iprot < DRMS_PROTOCOL_END; iprot++)
+	 {
+	    if (hcon_insert(gProtMap, prot_string[iprot], (void *)&iprot))
+	    {
+	       status = DRMS_ERROR_CANTCREATEHCON;
+	       break;
+	    }
+	 }
+      }
+      else
+      {
+	 status = DRMS_ERROR_CANTCREATEHCON;
+      }
+   }
+
+   if (status == DRMS_SUCCESS && gProtMap)
+   {
+      if ((ans = (DRMS_Protocol_t *)hcon_lookup(gProtMap, str)) != NULL)
+      {
+	 ret = *ans;
+      }
+   }
+
+   return ret;
 }
 
-
 const char *drms_prot2str (DRMS_Protocol_t prot) {
-  int n, prot_count = sizeof prot_type / sizeof (int);
-  for (n = 0; n < prot_count; n++)
-    if (prot == prot_type[n]) return prot_string[n];
-  fprintf (stderr,"Unknown DRMS protocol %d\n", prot);
-  XASSERT(0);
-  return NULL;
+   if (prot > DRMS_PROTOCOL_INVALID && prot < DRMS_PROTOCOL_END)
+   {
+      return prot_string[prot];
+   }
+
+   return NULL;
 }
 
 const char *drms_prot2ext (DRMS_Protocol_t prot) {
-  int n, prot_count = sizeof prot_type / sizeof (int);
-  for (n = 0; n < prot_count; n++)
-    if (prot == prot_type[n]) return prot_fileext[n];
-  fprintf (stderr,"Unknown DRMS protocol %d\n", prot);
-  XASSERT(0);
-  return NULL;
+if (prot > DRMS_PROTOCOL_INVALID && prot < DRMS_PROTOCOL_END)
+   {
+      return prot_fileext[prot];
+   }
+
+ return NULL;
+}
+
+void drms_protocol_term() {
+   if (gProtMap)
+   {
+      hcon_destroy(&gProtMap);
+   }
 }
