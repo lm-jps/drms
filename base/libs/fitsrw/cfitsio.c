@@ -190,7 +190,10 @@ int cfitsio_print_keys(CFITSIO_KEYWORD* keylist)
 	 case('F'): printf("%19f",kptr->key_value.vf); break;
 	 case('X'): printf("%s",kptr->key_value.vs); break;
       }
-      printf(" / %s\n",kptr->key_comment);
+      
+      if (strlen(kptr->key_comment)) printf(" / %s\n",kptr->key_comment);
+      else printf("\n");
+ 
       kptr = (CFITSIO_KEYWORD*) kptr->next;
    }
 
