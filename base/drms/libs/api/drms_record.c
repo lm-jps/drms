@@ -1635,6 +1635,7 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
   /* Allocate the outer record set structure. */
   XASSERT( rs = malloc(sizeof(DRMS_RecordSet_t)) );
   XASSERT( rs->records = malloc(n*sizeof(DRMS_Record_t *)) );
+  memset(rs->records, 0, sizeof(DRMS_Record_t *) * n);
   rs->n = n;
   rs->ss_n = 0;
   rs->ss_queries = NULL;
@@ -2696,9 +2697,6 @@ char *drms_query_string(DRMS_Env_t *env,
   }
   if (qtype != DRMS_QUERY_COUNT) {      
     p += sprintf(p, " order by %s", pidx_names);
-  }
-
-  if (qtype != DRMS_QUERY_COUNT) {
     p += sprintf(p, " limit %lld", limit);
   }
 
