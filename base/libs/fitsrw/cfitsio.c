@@ -264,21 +264,21 @@ int cfitsio_keys_insert(CFITSIO_KEYWORD** list,
 	 switch (type)
 	 {
 	    case (kFITSRW_Type_String):
-	      snprintf(node->key_value.vs, FLEN_VALUE, "%s", *(char **)data);
-	      break;
+	       snprintf(node->key_value.vs, FLEN_VALUE, "%s", *(char **)data);
+	       break;
 	    case (kFITSRW_Type_Logical):
-	      node->key_value.vl = *((int *)data);
-	      break;
+	       node->key_value.vl = *((int *)data);
+	       break;
 	    case (kFITSRW_Type_Integer):
-	      node->key_value.vi = *((long *)data);
-	      break;
+	       node->key_value.vi = *((long *)data);
+	       break;
 	    case (kFITSRW_Type_Float):
-	      node->key_value.vf = *((double *)data);
-	      break;
+	       node->key_value.vf = *((double *)data);
+	       break;
 	    default:
-	      fprintf(stderr, "Invalid FITSRW keyword type '%c'.\n", (char)type);
-	      ret = CFITSIO_ERROR_ARGS;
-	      break;
+	       fprintf(stderr, "Invalid FITSRW keyword type '%c'.\n", (char)type);
+	       ret = CFITSIO_ERROR_ARGS;
+	       break;
 	 }
 
 	 if (comment)
@@ -751,21 +751,21 @@ int cfitsio_read_file(char* fits_filename, CFITSIO_IMAGE_INFO** image_info, void
 
 
    if (image_info)
-     {
-       *image_info = calloc(1, sizeof(CFITSIO_IMAGE_INFO));
-       if(*image_info==NULL)
-	 {
-	   error_code = CFITSIO_ERROR_OUT_OF_MEMORY;
-	   goto error_exit;
-	 }
+   {
+      *image_info = calloc(1, sizeof(CFITSIO_IMAGE_INFO));
+      if(*image_info==NULL)
+      {
+	 error_code = CFITSIO_ERROR_OUT_OF_MEMORY;
+	 goto error_exit;
+      }
        
-       memcpy((char*) *image_info, (char*) &info, sizeof(CFITSIO_IMAGE_INFO));
-     }
+      memcpy((char*) *image_info, (char*) &info, sizeof(CFITSIO_IMAGE_INFO));
+   }
 
    if (keylistout)
-     {
-       *keylistout = keylist;
-     }
+   {
+      *keylistout = keylist;
+   }
    
    if (status == 0) return (CFITSIO_SUCCESS);
 
@@ -959,23 +959,23 @@ int cfitsio_write_file(const char* fits_filename, CFITSIO_IMAGE_INFO* image_info
    }
 
    if (keylist)
-     {
-       kptr = keylist;
-       while(kptr)
+   {
+      kptr = keylist;
+      while(kptr)
+      {
+
+	 if( cfitsio_key_to_card(kptr,card) != CFITSIO_SUCCESS)
 	 {
-
-	   if( cfitsio_key_to_card(kptr,card) != CFITSIO_SUCCESS)
-	     {
-	       error_code = CFITSIO_ERROR_ARGS;
-	       goto error_exit;
-	     }
-
-	   if(fits_get_keyclass(card) > TYP_CMPRS_KEY)  
-	     fits_write_record(fptr, card, &status);
-		
-	   kptr = kptr->next;
+	    error_code = CFITSIO_ERROR_ARGS;
+	    goto error_exit;
 	 }
-     }
+
+	 if(fits_get_keyclass(card) > TYP_CMPRS_KEY)  
+	    fits_write_record(fptr, card, &status);
+		
+	 kptr = kptr->next;
+      }
+   }
 
    //Turn off scaling and offset and null_value
    fits_set_bscale(fptr, bscale, bzero, &status);
@@ -1038,24 +1038,63 @@ int cfitsio_key_to_card(CFITSIO_KEYWORD* kptr, char* card)
    {
       case('C'):
       case('X'):
-	 sprintf(temp,"%-8s= %s / %s",kptr->key_name, kptr->key_value.vs, kptr->key_comment); break;
-      case('L'):
-	 if(kptr->key_value.vl)
-	    sprintf(temp,"%-8s=                    T / %s", kptr->key_name, kptr->key_comment);
+	 if(strlen(kptr->key_comment) >0)
+	 {
+	    nsprintf(temp,"%-8s= %s / %s",kptr->key_name, kptr->key_value.vs, kptr->key_comment);
+	 }
 	 else
-	    sprintf(temp,"%-8s=                    F / %s", kptr->key_name, kptr->key_comment);
+	 {
+	    nsprintf(temp,"%-8s= %s",kptr->key_name, kptr->key_value.vs);
+	 }
 	 break;
+	  
+      case('L'):
+	 if(strlen(kptr->key_comment) >0)
+	 {
+	    if(kptr->key_value.vl)
+	       sprintf(temp,"%-8s=                    T / %s", kptr->key_name, kptr->key_comment);
+	    else
+	       sprintf(temp,"%-8s=                    F / %s", kptr->key_name, kptr->key_comment);
+	 }
+	 else
+	 {
+	    if(kptr->key_value.vl)
+	       sprintf(temp,"%-8s=                    T", kptr->key_name);
+	    else
+	       sprintf(temp,"%-8s=                    F", kptr->key_name);
+	 }
+	    
+	 break;
+	 
       case('I'):
-	 sprintf(temp,"%-8s= %20ld / %s", kptr->key_name, kptr->key_value.vi, kptr->key_comment); break;
+	 if(strlen(kptr->key_comment) >0)
+	 {
+	    sprintf(temp,"%-8s= %20ld / %s", kptr->key_name, kptr->key_value.vi, kptr->key_comment);
+	 }
+	 else
+	 {
+	    sprintf(temp,"%-8s= %20ld", kptr->key_name, kptr->key_value.vi);
+	 }
+	 break;
+	 
       case('F'):
-	 sprintf(temp,"%-8s= %20G / %s", kptr->key_name, kptr->key_value.vf, kptr->key_comment); break;
+	 if(strlen(kptr->key_comment) >0)
+	 {
+	    sprintf(temp,"%-8s= %20G / %s", kptr->key_name, kptr->key_value.vf, kptr->key_comment);
+	 }
+	 else
+	 {
+	    sprintf(temp,"%-8s= %20G", kptr->key_name, kptr->key_value.vf);
+	 }
+	 break;
+	 
 	 //sprintf(temp,"%-8s= %20lf / %s", kptr->key_name, kptr->key_value.vf, kptr->key_comment); break;
 
    }
 
    sprintf(card,"%-80s",temp); // append space to the end to 80 chars
   
-   //DEBUGMSG(("[01234567890123456789012345678901234567890123456789012345678901234567890123456789]\n"));
+//DEBUGMSG(("[01234567890123456789012345678901234567890123456789012345678901234567890123456789]\n"));
    DEBUGMSG(("[%s]\n",card));
 
    return CFITSIO_SUCCESS;
