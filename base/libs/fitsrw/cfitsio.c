@@ -1040,11 +1040,11 @@ int cfitsio_key_to_card(CFITSIO_KEYWORD* kptr, char* card)
       case('X'):
 	 if(strlen(kptr->key_comment) >0)
 	 {
-	    nsprintf(temp,"%-8s= %s / %s",kptr->key_name, kptr->key_value.vs, kptr->key_comment);
+	    sprintf(temp,"%-8s= %s / %s",kptr->key_name, kptr->key_value.vs, kptr->key_comment);
 	 }
 	 else
 	 {
-	    nsprintf(temp,"%-8s= %s",kptr->key_name, kptr->key_value.vs);
+	    sprintf(temp,"%-8s= %s",kptr->key_name, kptr->key_value.vs);
 	 }
 	 break;
 	  
