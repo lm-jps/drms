@@ -12,19 +12,21 @@ static char *prot_string[] = {
    "tas",
    "dsds",
    "local",
-   "fitsio"
+   "fitzdep",
+   "fitsdep"
 };
 
 static char *prot_fileext[] = {
    "generic",   
    "bin",
    "bin.gz",
-   "fitz",
+   "fits",
    "fits",
    "msi",
    "tas",
    "dsds",
    "local",
+   "fitz",
    "fits"
 };
 

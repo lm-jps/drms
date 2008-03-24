@@ -19,10 +19,10 @@ enum  DRMS_Protocol_enum {
    DRMS_BINARY, 
    /** \brief Binary file format which is gzip compressed */
    DRMS_BINZIP, 
-   /** \brief Simple FITS file format which is gzip compressed */
-   DRMS_FITZ, 
-   /** \brief Simple FITS file format */
-   DRMS_FITS, 
+   /** \brief Format that uses lib FITSRW to read and write FITS files */
+   DRMS_FITZ,
+   /** \brief Format that uses lib FITSRW to read and write FITS files */
+   DRMS_FITS,
    /** \brief Unsupported */
    DRMS_MSI,
    /** \brief "Tiled Array Storage" file format */
@@ -31,8 +31,10 @@ enum  DRMS_Protocol_enum {
    DRMS_DSDS, 
    /** \brief DSDS file format stored locally (read only) */
    DRMS_LOCAL,
-   /** \brief Format that uses cfitsio to read and write FITS files */
-   DRMS_FITSIO,
+   /** \brief Simple FITS file format which is gzip compressed (DEPRECATED) */
+   DRMS_FITZDEPRECATED,
+   /** \brief Simple FITS file format (DEPRECATED) */
+   DRMS_FITSDEPRECATED,
    DRMS_PROTOCOL_END
 };
 

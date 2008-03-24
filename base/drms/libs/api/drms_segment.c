@@ -1178,6 +1178,12 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 
     switch(seg->info->protocol)
     {
+    case DRMS_GENERIC:
+    case DRMS_MSI:
+      fclose(fp);
+      stat = DRMS_ERROR_NOTIMPLEMENTED;
+      goto bailout1;
+      break;
     case DRMS_BINARY:
       fclose(fp);
       XASSERT(arr = malloc(sizeof(DRMS_Array_t)));
@@ -1198,56 +1204,8 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 	goto bailout1;
       }
       break;
-    case DRMS_TAS:
-      /* Read the slice in the TAS file corresponding to this record's 
-	 slot. */
-      for (i=0; i<seg->info->naxis; i++)
-      {
-	start[i] = 0;
-	end[i] = seg->axis[i]-1;
-      }
-      start[seg->info->naxis] = seg->record->slotnum;
-      end[seg->info->naxis] =  seg->record->slotnum;
-      
-      XASSERT(arr = malloc(sizeof(DRMS_Array_t)));
-#ifdef DEBUG
-      printf("segment_read: bzero = %f, bscale=%f\n",bzero,bscale);
-#endif
-      if ((stat = drms_tasfile_readslice(fp, type, bzero, bscale,  
-					 seg->info->naxis+1, start, end, arr)))
-      {
-	fprintf(stderr,"Couldn't read segment from file '%s'.\n",
-		filename);      
-	goto bailout1;
-      }
-      arr->naxis -= 1;
-      fclose(fp);
-      //      drms_array_print(arr," ","\n");
-      break;
     case DRMS_FITZ:
     case DRMS_FITS:
-      {
-	int headlen;
-	char *header;
-	
-	fclose(fp);
-	if ((arr=drms_readfits(filename, 1, &headlen, &header, NULL)) == NULL)
-	{
-	  fprintf(stderr,"Couldn't read segment from file '%s'.\n",
-		  filename);      
-	  goto bailout1;
-	}
-	free(header);
-	/* Check that value of BZERO, BSCALE in the file and in the DRMS
-	   database agrees. */
-	if (!drms_segment_checkscaling(arr, bzero, bscale, filename))
-	{
-	   stat = 1;
-	   goto bailout;
-	}
-      }
-      break;
-    case DRMS_FITSIO:
       {
 	 fclose(fp);
 
@@ -1282,11 +1240,54 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 	 }
       }
       break;
-    case DRMS_GENERIC:
-    case DRMS_MSI:
+    case DRMS_FITZDEPRECATED:
+    case DRMS_FITSDEPRECATED:
+      {
+	int headlen;
+	char *header;
+	
+	fclose(fp);
+	if ((arr=drms_readfits(filename, 1, &headlen, &header, NULL)) == NULL)
+	{
+	  fprintf(stderr,"Couldn't read segment from file '%s'.\n",
+		  filename);      
+	  goto bailout1;
+	}
+	free(header);
+	/* Check that value of BZERO, BSCALE in the file and in the DRMS
+	   database agrees. */
+	if (!drms_segment_checkscaling(arr, bzero, bscale, filename))
+	{
+	   stat = 1;
+	   goto bailout;
+	}
+      }
+      break;
+    case DRMS_TAS:
+      /* Read the slice in the TAS file corresponding to this record's 
+	 slot. */
+      for (i=0; i<seg->info->naxis; i++)
+      {
+	start[i] = 0;
+	end[i] = seg->axis[i]-1;
+      }
+      start[seg->info->naxis] = seg->record->slotnum;
+      end[seg->info->naxis] =  seg->record->slotnum;
+      
+      XASSERT(arr = malloc(sizeof(DRMS_Array_t)));
+#ifdef DEBUG
+      printf("segment_read: bzero = %f, bscale=%f\n",bzero,bscale);
+#endif
+      if ((stat = drms_tasfile_readslice(fp, type, bzero, bscale,  
+					 seg->info->naxis+1, start, end, arr)))
+      {
+	fprintf(stderr,"Couldn't read segment from file '%s'.\n",
+		filename);      
+	goto bailout1;
+      }
+      arr->naxis -= 1;
       fclose(fp);
-      stat = DRMS_ERROR_NOTIMPLEMENTED;
-      goto bailout1;
+      //      drms_array_print(arr," ","\n");
       break;
     default:
       fclose(fp);
@@ -1451,6 +1452,22 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
     case DRMS_FITZ:
     case DRMS_FITS:
       {
+	 fprintf(stderr, "Readslice not implemented for DRMS_FITZ and DRMS_FITS protocols.\n");
+	 goto bailout;
+      }
+    case DRMS_GENERIC:
+      fclose(fp);
+      *status = DRMS_ERROR_INVALIDACTION;
+      return NULL;    
+      break;
+    case DRMS_MSI:
+      fclose(fp);
+      *status = DRMS_ERROR_NOTIMPLEMENTED;
+      return NULL;    
+      break;
+    case DRMS_FITZDEPRECATED:
+    case DRMS_FITSDEPRECATED:
+      {
       double abscale = fabs(bscale);
       int headlen;
       char *header;
@@ -1472,16 +1489,6 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
 	}
       break;
       }
-    case DRMS_GENERIC:
-      fclose(fp);
-      *status = DRMS_ERROR_INVALIDACTION;
-      return NULL;    
-      break;
-    case DRMS_MSI:
-      fclose(fp);
-      *status = DRMS_ERROR_NOTIMPLEMENTED;
-      return NULL;    
-      break;
     default:
       fclose(fp);
       if (status)
@@ -1669,14 +1676,6 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
 	goto bailout;
       break;
     case DRMS_FITZ:
-      if ((status = drms_writefits(filename, 1, 0, NULL, out)))
-	goto bailout;
-      break;
-    case DRMS_FITS:
-      if ((status = drms_writefits(filename, 0, 0, NULL, out)))
-	goto bailout;
-      break;
-    case DRMS_FITSIO:
       {
 	 if (out->type == DRMS_TYPE_STRING)
 	 {
@@ -1688,6 +1687,8 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
 
 	 if (!SetImageInfo(out, &imginfo))
 	 {
+	    /* Need to change the compression parameter to something meaningful 
+	     * (although new users should just use the DRMS_FITS protocol )*/
 	    if (cfitsio_write_file(filename, &imginfo, out->data, C_NONE, NULL))
 	      goto bailout;
 	 }
@@ -1697,6 +1698,31 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
 	 }
       }
       break;
+    case DRMS_FITS:
+      {
+	 if (out->type == DRMS_TYPE_STRING)
+	 {
+	    fprintf(stderr, "Can't save string data into a fits file.\n");
+	    goto bailout;
+	 }
+
+	 CFITSIO_IMAGE_INFO imginfo;
+
+	 if (!SetImageInfo(out, &imginfo))
+	 {
+	    /* */
+	    if (cfitsio_write_file(filename, &imginfo, out->data, C_NONE, NULL))
+	      goto bailout;
+	 }
+	 else
+	 {
+	    goto bailout;
+	 }
+      }
+      break;  
+    case DRMS_MSI:
+      return DRMS_ERROR_NOTIMPLEMENTED;
+      break;   
     case DRMS_TAS:
       
 #ifdef DEBUG      
@@ -1721,9 +1747,14 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
       if (status)
 	goto bailout;
       break;
-    case DRMS_MSI:
-      return DRMS_ERROR_NOTIMPLEMENTED;
+    case DRMS_FITZDEPRECATED:
+      if ((status = drms_writefits(filename, 1, 0, NULL, out)))
+	goto bailout;
       break;
+    case DRMS_FITSDEPRECATED:
+      if ((status = drms_writefits(filename, 0, 0, NULL, out)))
+	goto bailout;
+      break; 
     default:
       return DRMS_ERROR_UNKNOWNPROTOCOL;
     }
@@ -2248,7 +2279,7 @@ int drms_segment_mapexport_tofile(DRMS_Segment_t *seg,
    {
       switch (seg->info->protocol)
       {
-	 case DRMS_FITSIO:
+	 case DRMS_FITS:
 	   {
 	      DRMS_Array_t *arrout = drms_segment_read(seg, DRMS_TYPE_RAW, &stat);
 	      if (arrout)
