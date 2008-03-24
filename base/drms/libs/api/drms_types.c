@@ -9,6 +9,7 @@
 #include "xmem.h"
 #include "timeio.h"
 
+const char kDRMS_MISSING_VALUE[] = "DRMS_MISSING_VALUE";
 
 DB_Type_t drms2dbtype(DRMS_Type_t type)
 {
@@ -547,82 +548,143 @@ int drms_sscanf_int (char *str,
   long long ival;
   float fval;
   double dval;
+  int usemissing = 0;
+  int usemissinglen = sizeof(kDRMS_MISSING_VALUE);
+
+  if (!strncasecmp(kDRMS_MISSING_VALUE, str, usemissinglen))
+  {
+     usemissing = 1;
+  }
 
   switch (dsttype) {
   case DRMS_TYPE_CHAR: 
-    ival = strtoll(str,&endptr,0);
-    if ((ival==0 && endptr==str) ||  ival < SCHAR_MIN || ival > SCHAR_MAX ) {
-      if (!silent)
-	fprintf (stderr, "Integer constant '%s' is not a signed char.\n", str);
-      return -1;
-    }
-    else dst->char_val = (char) ival;
-    return (int)(endptr-str);
-  case DRMS_TYPE_SHORT:
-    ival = strtoll(str,&endptr,10);
-    if ((ival==0 && endptr==str) ||  ival < SHRT_MIN || ival > SHRT_MAX ) {
-      if (!silent)
-	fprintf (stderr, "Integer constant '%s' is not a signed short.\n", str);
-      return -1;
-    } else dst->short_val = (short) ival;
-    return (int)(endptr-str);
-  case DRMS_TYPE_INT:  
-    ival = strtoll(str,&endptr,10);
-    if ((ival==0 && endptr==str) ||  ival < INT_MIN || ival > INT_MAX ) {
-      if (!silent)
-	fprintf (stderr, "Integer constant '%s' is not a signed int.\n", str);
-      return -1;
-    } else dst->int_val = (int) ival;
-    return (int)(endptr-str);
-  case DRMS_TYPE_LONGLONG:  
-    ival = strtoll(str,&endptr,10);
-    if ((ival==0 && endptr==str) ||  ival < LLONG_MIN || ival > LLONG_MAX ) {
-      if (!silent)
-	fprintf (stderr, "Integer constant '%s' is not a signed long int.\n", str);
-      return -1;
-    } else dst->longlong_val =  ival;
-    return (int)(endptr-str);
-  case DRMS_TYPE_FLOAT:
-    fval = strtof(str,&endptr);
-    if ((IsZeroF(fval) && endptr==str) || 
-	((IsPosHugeValF(fval) || IsNegHugeValF(fval)) && errno==ERANGE)) {
-      if (!silent)
-	fprintf (stderr, "Real constant '%s' is not a float.\n", str);
-      return -1;
-    } else dst->float_val = (float) fval;
-    return (int)(endptr-str);
-  case DRMS_TYPE_DOUBLE: 	
-    dval = strtod(str,&endptr);
-    if ((IsZero(dval) && endptr==str) || 
-	((IsPosHugeVal(dval) || IsNegHugeVal(dval)) && errno==ERANGE)) {
-      if (!silent)
-	fprintf (stderr, "Real constant '%s' is not a double.\n", str);
-      return -1;
-    } else dst->double_val = (double) dval;    
-    return (int)(endptr-str);
-  case DRMS_TYPE_TIME: 
+    if (usemissing)
     {
-    // enumerate a few ways a time string terminates. this is to
-    // handle command line parameter parsing. 
+       dst->char_val = DRMS_MISSING_CHAR;
+       return usemissinglen;
+    }
+    else
+    {
+       ival = strtoll(str,&endptr,0);
+       if ((ival==0 && endptr==str) ||  ival < SCHAR_MIN || ival > SCHAR_MAX ) {
+	  if (!silent)
+	    fprintf (stderr, "Integer constant '%s' is not a signed char.\n", str);
+	  return -1;
+       }
+       else dst->char_val = (char) ival;
+       return (int)(endptr-str);
+    }
+  case DRMS_TYPE_SHORT:
+    if (usemissing)
+    {
+       dst->short_val = DRMS_MISSING_SHORT;
+       return usemissinglen;
+    }
+    else
+    {
+       ival = strtoll(str,&endptr,10);
+       if ((ival==0 && endptr==str) ||  ival < SHRT_MIN || ival > SHRT_MAX ) {
+	  if (!silent)
+	    fprintf (stderr, "Integer constant '%s' is not a signed short.\n", str);
+	  return -1;
+       } else dst->short_val = (short) ival;
+       return (int)(endptr-str);
+    }
+  case DRMS_TYPE_INT:  
+    if (usemissing)
+    {
+       dst->int_val = DRMS_MISSING_INT;
+       return usemissinglen;
+    }
+    else
+    {
+       ival = strtoll(str,&endptr,10);
+       if ((ival==0 && endptr==str) ||  ival < INT_MIN || ival > INT_MAX ) {
+	  if (!silent)
+	    fprintf (stderr, "Integer constant '%s' is not a signed int.\n", str);
+	  return -1;
+       } else dst->int_val = (int) ival;
+       return (int)(endptr-str);
+    }
+  case DRMS_TYPE_LONGLONG:  
+    if (usemissing)
+    {
+       dst->longlong_val = DRMS_MISSING_LONGLONG;
+       return usemissinglen;
+    }
+    else
+    {
+       ival = strtoll(str,&endptr,10);
+       if ((ival==0 && endptr==str) ||  ival < LLONG_MIN || ival > LLONG_MAX ) {
+	  if (!silent)
+	    fprintf (stderr, "Integer constant '%s' is not a signed long int.\n", str);
+	  return -1;
+       } else dst->longlong_val =  ival;
+       return (int)(endptr-str);
+    }
+  case DRMS_TYPE_FLOAT:
+    if (usemissing)
+    {
+       dst->float_val = DRMS_MISSING_FLOAT;
+       return usemissinglen;
+    }
+    else
+    {
+       fval = strtof(str,&endptr);
 
-    // assume the time string does not have any leading white spaces
-    /* Ack, can't do this! What if you have 
-     * 1966.12.25_00:00:00_UTC,1966.12.25_00:02:00_UTC-1966.12.25_00:07:08_UTC 
-     endptr = strchr(str, ' ');
-     if (!endptr) {
-       endptr = strrchr(str, '-');
+       if ((IsZeroF(fval) && endptr==str) || 
+	   ((IsPosHugeValF(fval) || IsNegHugeValF(fval)) && errno==ERANGE)) {
+	  if (!silent)
+	    fprintf (stderr, "Real constant '%s' is not a float.\n", str);
+	  return -1;
+       } else dst->float_val = (float) fval;
+       return (int)(endptr-str);
+    }
+  case DRMS_TYPE_DOUBLE:
+    if (usemissing)
+    {
+       dst->double_val = DRMS_MISSING_DOUBLE;
+       return usemissinglen;
+    }
+    else
+    {
+       dval = strtod(str,&endptr);
+       if ((IsZero(dval) && endptr==str) || 
+	   ((IsPosHugeVal(dval) || IsNegHugeVal(dval)) && errno==ERANGE)) {
+	  if (!silent)
+	    fprintf (stderr, "Real constant '%s' is not a double.\n", str);
+	  return -1;
+       } else dst->double_val = (double) dval;    
+       return (int)(endptr-str);
+    }
+   case DRMS_TYPE_TIME: 
+     if (usemissing)
+     {
+	dst->time_val = DRMS_MISSING_TIME;
+	return usemissinglen;
      }
-     if (!endptr) {
-       endptr = strchr(str, '/');
-     }
-     if (!endptr) {
-       endptr = strchr(str, ',');
-     }
-     if (!endptr) {
-       endptr = strchr(str, ']');
-     }
-    */
+     else
+     {
+	// enumerate a few ways a time string terminates. this is to
+	// handle command line parameter parsing. 
 
+	// assume the time string does not have any leading white spaces
+	/* Ack, can't do this! What if you have 
+	 * 1966.12.25_00:00:00_UTC,1966.12.25_00:02:00_UTC-1966.12.25_00:07:08_UTC 
+	 endptr = strchr(str, ' ');
+	 if (!endptr) {
+	 endptr = strrchr(str, '-');
+	 }
+	 if (!endptr) {
+	 endptr = strchr(str, '/');
+	 }
+	 if (!endptr) {
+	 endptr = strchr(str, ',');
+	 }
+	 if (!endptr) {
+	 endptr = strchr(str, ']');
+	 }
+	*/
        char *tokenstr = strdup(str);
        int ret = -1;
 
@@ -655,16 +717,22 @@ int drms_sscanf_int (char *str,
        return ret;
     }
   case DRMS_TYPE_STRING: 
+    if (usemissing)
     {
-    char wrk[DRMS_MAXPATHLEN];
-    if (dst->string_val) free(dst->string_val);
-    if (sscanf(str,"%[^],]",wrk)!=1) {
-      if (!silent)
-	fprintf (stderr, "String value not found at %s.\n", str);
-      return -1;
+       dst->string_val = strdup(DRMS_MISSING_STRING);
+       return usemissinglen;
     }
-    dst->string_val = strdup(wrk);
-    return strlen(dst->string_val);
+    else
+    {
+       char wrk[DRMS_MAXPATHLEN];
+       if (dst->string_val) free(dst->string_val);
+       if (sscanf(str,"%[^],]",wrk)!=1) {
+	  if (!silent)
+	    fprintf (stderr, "String value not found at %s.\n", str);
+	  return -1;
+       }
+       dst->string_val = strdup(wrk);
+       return strlen(dst->string_val);
     }
   default:
     if (!silent)

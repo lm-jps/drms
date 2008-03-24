@@ -4,7 +4,6 @@
 #include "ctype.h"
 #include "xmem.h"
 
-
 /* Utility functions. */
 static int getstring(char **inn, char *out, int maxlen);
 /*
