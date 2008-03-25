@@ -16,61 +16,92 @@
 
 
 
-
+/** \brief Send command code via socket */
 int drms_send_commandcode(int sockfd, int command);
+/** \brief Send command code via socket. The form does not expect echo from the server */
 int drms_send_commandcode_noecho(int sockfd, int command);
+/** \brief Establish socket connection to server, receive from server session information*/
 DRMS_Session_t *drms_connect(char *host, unsigned short port);
+/** \brief Establish DB connection, initialize session information */
 DRMS_Session_t *drms_connect_direct(char *host, char *user, 
 				    char *passwd, char *dbname,
 				    char *sessionns);
+/** \brief Tell DB to commit transaction 
+\warning This function should not be used unless you know what you are doing.
+*/
 int drms_commit(DRMS_Env_t *env);
+/** \brief Tell DB to rollback transaction
+\warning This function should not be used unless you know what you are doing.
+*/
 int drms_rollback(DRMS_Session_t *session);
+/** \brief Server disconnects from DB. Client disconnects from server*/
 void drms_disconnect(DRMS_Env_t *env, int abort);
-#ifdef DRMS_CLIENT
+/** \brief Client sends ::DRMS_DISCONNECT command code without echo*/
 void drms_disconnect_now(DRMS_Env_t *env, int abort);
-#endif
+/** \brief Perform query and receive query results in DB_Binary_Result_t*/
 DB_Binary_Result_t *drms_query_bin(DRMS_Session_t *session, char *query);
+/** \brief Same as drms_query_bin() with query parameters in variable argument list, calls drms_query_bin_array()*/
 DB_Binary_Result_t *drms_query_binv(DRMS_Session_t *session, char *query,
 				    ...);
+/** \brief Same as drms_query_bin() with query parameters*/
 DB_Binary_Result_t *drms_query_bin_array(DRMS_Session_t *session, 
 					  char *query,
 					 int n_args, DB_Type_t *intype, 
 					 void **argin);
+/** \brief Perform query and receive query results in DB_Text_Result_t*/
 DB_Text_Result_t *drms_query_txt(DRMS_Session_t *session, char *query);
+/** \brief Execute a data manipulation statement (DMS). */
 int drms_dms(DRMS_Session_t *session, int *row_count, char *query);
+/** \brief Same as drmm_dms() with DMS parameters*/
 int drms_dms_array(DRMS_Session_t *session, int *row_count, 
 		    char *query, int n_rows, int n_args, 
 		   DB_Type_t *intype, void **argin);
+/** \brief Same as drms_dms() with DMS parameters in variable argument list, calls drms_dms_array()*/
 int drms_dmsv(DRMS_Session_t *session, int *row_count,  char *query, 
 	      int n_rows, ...);
+/** \brief Bulk insert*/
 int drms_bulk_insert_array(DRMS_Session_t *session,
 			   char *table, int n_rows, int n_args, 
 			   DB_Type_t *intype, void **argin );
+/** \brief Bulk insert with parameters in variable argument list, calls drms_bulk_insert_array() */
 int drms_bulk_insertv(DRMS_Session_t *session, char *table, 
 		      int n_rows, int n_cols, ...);
 
 /* Sequence functions */
+/** \brief Get next n sequence values */
 long long *drms_sequence_getnext(DRMS_Session_t *session,  char *name, int n);
+/** \brief Get the current sequence value */
 long long drms_sequence_getcurrent(DRMS_Session_t *session,  char *name);
+/** \brief Get the last sequence value */
 long long drms_sequence_getlast(DRMS_Session_t *session,  char *table);
+/** \brief Create sequence */
 int drms_sequence_create(DRMS_Session_t *session,  char *name);
+/** \brief Drop sequence */
 int drms_sequence_drop(DRMS_Session_t *session,  char *name);
+/** \brief Create new slots */
 int drms_newslots(DRMS_Env_t *env,  int n, char *series, long long *recnum, 
 		  DRMS_RecLifetime_t lifetime, int *slotnum, 
 		  DRMS_StorageUnit_t **su);
+/** \brief Retrieve the storage unit specified by \a sunum */
 DRMS_StorageUnit_t *drms_getunit(DRMS_Env_t *env,  char *series, 
 				 long long sunum, int retrieve, int *status);
+/** \brief Retrieve the storage units specified by \a sunum */
 int drms_getunits(DRMS_Env_t *env,  char *series, 
 		  int n, long long *sunum, int retrieve, int dontwait);
+/** \brief Request \c n recnum */
 long long *drms_alloc_recnum(DRMS_Session_t *session,  char *series, 
 			     DRMS_RecLifetime_t lifetime, int n);
+/** \brief Mark a storage unit slot as either ::DRMS_SLOT_FREE, ::DRMS_SLOT_FULL, or ::DRMS_SLOT_TEMP. */
 int drms_slot_setstate(DRMS_Env_t *env, char *series, long long sunum, 
 		       int slotnum, int state);
+/** \brief Create a series */
 int drms_create_series(DRMS_Record_t *rec, int perms);
+/** \brief Update an existing series */
 int drms_update_series(DRMS_Record_t *rec, int perms);
+/** \brief Delete an existing series */
 int drms_delete_series(DRMS_Env_t *env, char *series, int cascade);
 
-/* Create a new series on-the-fly, using a series record prototype. */
+/** \brief Create a new series on-the-fly, using a series record prototype. */
 int drms_create_series_fromprototype(DRMS_Record_t **prototype, 
 				     const char *outSeriesName, 
 				     int perms);

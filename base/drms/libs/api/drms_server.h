@@ -30,18 +30,28 @@ extern char abortstring[1024];
 #define DRMS_ABORT_SLEEP (2)
 
 /******************************** Prototypes *************************/
+/**\brief drms server thread */
 void *drms_server_thread(void *arg);
+/**\brief drms sum thread */
 void *drms_sums_thread(void *arg);
+/**\brief drms signal thread */
 void *drms_signal_thread(void *arg);
 
+/** \brief Send session information to the client. */
 int drms_server_authenticate(int sockfd, DRMS_Env_t *env, int clientid);
+/** \brief Server function for command code ::DRMS_NEWSLOTS. */
 int drms_server_newslots(DRMS_Env_t *env, int sockfd);
+/** \brief Server function for command code ::DRMS_GETUNIT. */
 int drms_server_getunit(DRMS_Env_t *env, int sockfd);
+/** \brief Server function for command code ::DRMS_GETUNITS. */
 int drms_server_getunits(DRMS_Env_t *env, int sockfd);
+/** \brief Server function for command code ::DRMS_NEWSERIES. */
 int drms_server_newseries(DRMS_Env_t *env, int sockfd);
+/** \brief Server function for command code ::DRMS_DROPSERIES. */
 int drms_server_dropseries(DRMS_Env_t *env, int sockfd);
 /**
-asks SUMS to mark all SUs listed in \a tn as delete pending.
+\brief asks SUMS to mark all SUs listed in \a tn as delete pending.
+
 \param env
 \param tn Name of the db table that stores all SUs to be marked
 \return DRMS_SUCCESS if SUMS is able to mark all SUs listed in \a tn. Other
@@ -49,15 +59,24 @@ asks SUMS to mark all SUs listed in \a tn as delete pending.
 int drms_server_dropseries_su(DRMS_Env_t *env, char *tn);
 long long drms_server_gettmpguid(int *sockfd);
 
+/** \brief Server function for command code ::DRMS_ALLOC_RECNUM. */
 int drms_server_alloc_recnum(DRMS_Env_t *env, int sockfd);
+/** \brief Close DRMS session */
 int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients, 
 			      int log_retention, int archive_log);
+/** \brief Open DRMS session */
 int drms_server_open_session(DRMS_Env_t *env);
+/** \brief Update DRMS session information in the drms_session table */
 int drms_server_session_status(DRMS_Env_t *env, char *stat_str, int clients);
+/** \brief Abort DRMS */
 void drms_server_abort(DRMS_Env_t *env, int final);
+/** \brief Commit DRMS */
 void drms_server_commit(DRMS_Env_t *env, int final);
+/** \brief Server function for command code ::DRMS_SLOT_SETSTATE. */
 int drms_server_slot_setstate(DRMS_Env_t *env, int sockfd);
+/** \brief Lock DRMS env */
 void drms_lock_server(DRMS_Env_t *env);
+/** \brief Unlock DRMS env */
 void drms_unlock_server(DRMS_Env_t *env);
 /**
 Begin a new transaction. This function can only be called in direct-connect mode.

@@ -2,12 +2,116 @@
 
         This is the main program for the DRMS server.
 
-***********************************************************************/
+******************************************************-****************/
 /**
 \defgroup drms_server drms_server
 
 Start a DRMS server program.
 
+<pre>
+					       	       	       	       	       	      
+				      drms_server				      
+		    +----------------------------------------------+		      
+		    |                          	                   |		      
+     +----------+   |   +--------+ +--------+++	 +-------------+   |		      
+     |          |   |   |        +-+   in   ||+--+             |   |		      
+     |   SUMS   +---+---+  SUMS  | +--------+++	 |             +---+-------- client 0 
+     |          |   |   | thread | +++--------+	 |             |   |		      
+     |          |   |   |        +-+|| out    +--+             +---+-------- client 1 
+     +----------+   |   +--------+ +++--------+	 |             |   |		      
+                    |   +--------+             	 |             |   |		      
+                    |   |        |             	 |             |   |		      
+                    |   | signal ----------------+             +---+-------- client n
+                    |   | thread |               |    server   |   |
+		    |   |      	 |               | thread pool |   |
+	 	    |   +--------+               +------++-----+   |
+		    +-----------------------------------++---------+
+		                                 +------++-----+
+						 |             |
+						 |     	DB     |
+						 |             |
+						 +-------------+
+
+</pre>
+The \ref drms_server is designed to support multiple client modules
+running at the same time. It performs the following major tasks: 
+<ul>
+<li>Connection to DRMS DB.
+
+    \ref drms_server opens a single DB connection. This DB connection is
+    shared by all modules connected to the same \ref drms_server program
+    via sockets. Such shared DB connection makes drms_commit() issued
+    from the client modules extremely hazardous, e.g., one client
+    module can inadvadently commit another client module data. The
+    correct usage of drms_commit requires higher level coordination
+    among the client modules.
+
+<li>Communication with SUMS
+
+    \ref drms_server talks the SUMS via SUMS API. All the interactions
+    with SUMS are happenning in the SUMS thread,
+    drms_sums_thread. This thread retrieves SUMS request from the
+    sum_inbox, and places SUMS reply in sum_outbox. Both sum_inbox and
+    sum_outbox are FIFO queues with the thread id as tag. They are
+    shared memory.  Don't insert local variable into the queue unless
+    you are sure to get the reply back before the local variable
+    vanishes.  Due to FIFO queue implementation, only the head of the
+    queue is examined. if the head is not removed, nothing behind it
+    can be removed.
+
+    <table border="1" cellspacing="3" cellpadding="3">
+    <tr>
+    <td></td>
+    <td>producer</td>
+    <td>consumer</td>
+    </tr>
+    <tr>
+    <td>sum_inbox</td>
+    <td>any call to SUMS API</td>
+    <td>drms_sums_thread</td>
+    </tr>
+    <tr>
+    <td>sum_outbox</td>
+    <td>drms_sums_thread</td>
+    <td>function that needs SUMS call reply</td>
+    </tr>
+    </table>
+<li>Exiting: either abort or commit
+
+The closing sequence can be tricky, one might run into race condition if not careful.
+There are two exit routes:  drms_server_commit() and
+drms_server_abort().
+<ol>
+<li>drms_server_commit()
+<pre>
+   drms_delete_temporaries() removes all records created as ::DRMS_TRANSIENT
+   drms_commit_all_units() commits all data units (does not include log SU)
+   drms_server_close_session() {
+    fflush() on stdout and stderr
+    restore_stder()
+    drms_commit() log SU
+    update drms_session table entry
+   }
+   wait for SUMS threads to finish via pthread_join()
+   disconnect stat db connection
+   db_commit() for data db connection
+   db_abort()  for data db connection?
+   drms_free_env()
+</pre>
+<li>drms_server_abort() 
+<pre>
+   db_rollback() on db data connection
+   drms_server_close_session()
+   add to sums inbox/outbox to thaw thread that may be waiting
+   disconnect stat db connection
+   db_abort() for data db connection
+   sleep() to wait for other threads to finish cleanly.
+   drms_free_env()
+</pre>
+</ol>
+</ul>
+
+\par The signal thread 
 \par Synopsis:
 
 \code

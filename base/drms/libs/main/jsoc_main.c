@@ -32,6 +32,34 @@ a module named @c myprogram.c would produce executables named @c myprogram and
 @c myprogram_sock. (Additional drivers to produce, for example, CGI scripts
 such as @c myprogram_cgi can also be provided.)
 
+\par Socket-connect vs direct-connect modules
+
+In socket connect mode, a module talks to \ref drms_server program via
+a socket. Concurrent access is protected by locks drms_lock_server()
+and drms_unlock_server(). The following command codes employ locking:
+::DRMS_ROLLBACK, ::DRMS_COMMIT, ::DRMS_NEWSERIES, ::DRMS_DROPSERIES,
+::DRMS_NEWSLOTS, ::DRMS_SLOT_SETSTATE, ::DRMS_GETUNIT.  This is a very
+high level locking that gives the correct results but not necessarily
+the max amount of parallelism. For example, we could lock at a lower
+level inside drms_su_getdirs(). Direct-connect is most handy when
+there is only a single client module. In that case, the socket
+presents a mere overhead. We thus fuse \ref drms_server program with
+the client module. The object file for both socket-connect and
+direct-connect are the same. They simply link to different libraries
+to produce the two executables with and without the _sock
+suffix. \note drms_server_begin_transaction() and
+drms_server_end_transaction() can only be used in direct-connect
+mode. Why? Because we don't want to deal with concurrency issues when
+beginning/ending a transaction.
+
+A socket-connect module looks for DRMSSESSION which identifies the
+host and port of a running \ref drms_server program. In case
+DRMSSESSION information is absent, the module would attempt to fork a
+\ref drms_server program and connect itself to it via a socket. When
+the module finishes executing the DoIt() function, it sends either
+SIGTERM upon failure, or SIGUSR1 upon success, to the \ref drms_server
+process and waits until the latter returns before exiting.
+
 The @a -H option prints out the list of required arguments and their
 default or set values, then quits. (The argument @a --help has
 the same effect.)  The @a -V option
