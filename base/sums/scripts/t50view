@@ -35,7 +35,6 @@ sub usage {
   exit;
 }
 
-
 %Hofrdq = ();		#hash key is ds_index
 %Hofwtq = ();		#hash key is ds_index
 %Hofreplace = ();	#key is tapeid. tape replaced in input order
@@ -48,16 +47,18 @@ tie %Hofneed, "Tie::IxHash"; #lets you take out keys in input order
 tie %Hofclosed, "Tie::IxHash"; #lets you take out keys in input order
 
 #NOTE: must have our full path name here for any restart signaled by sum_svc
-$OURPATH = "/home/production/cvs/JSOC/base/sums/scripts/t50view"; #!!this program
-#$OURPATH = "/home/jim/cvs/JSOC/base/sums/scripts/t50view"; #!!this program
+$OURPATH = "/home/production/cvs/jsoc/scripts/sum/t50view"; #!!this program
+#$OURPATH = "/home/jim/cvs/jsoc/scripts/sum/t50view"; #!!this program
 
 $DEFAULTDB = "jsocdc";		#default DB
-$HOSTDB = "dcs1";               #host where DB runs
+$HOSTDB = "dcs2";		#host where DB runs
 $NOTAPEARC = "/usr/local/logs/soc/NOTAPEARC";
 $INLOG = 0;			#use default tape_svc log
 #$login = "dsowner";
 $pid0 = 0;
 
+$CLEANSLOT = 25;		#slot with cleaning tape
+$CLEANDRIVE = 0;		#drive # to clean
 $MAX_DRIVES = 1;
 $MAX_SLOTS = 25;
 $NUM_IMP_EXP_SLOTS = 5;
@@ -197,7 +198,14 @@ print "effdate = $date\n";
         -background => 'grey',
         -command =>  \&ImpExp_sub, 
         );
-  $b0->pack(-side=> 'left', -pady => 0, -padx => 40);
+  $b0->pack(-side=> 'left', -pady => 0, -padx => 20);
+  $b1text = "Start\nCleaning";
+  $b1 = $tframe->Button(
+        -text => $b1text,
+        -background => 'lightsalmon',
+        -command => \&Clean_sub,
+        );
+  $b1->pack(-side=> 'left', -padx => 10);
   $b = $tframe->Button(
         -text => 'Exit',
         -background => 'red',
@@ -239,6 +247,8 @@ print "effdate = $date\n";
 		-background=>'green')->pack(-side=> 'left');
   my $lopd = $fop->Label(-text => 'tape write', -anchor => 'w',
 		-background=>'lightblue')->pack(-side=> 'left');
+  my $lope = $fop->Label(-text => 'drive clean', -anchor => 'w',
+		-background=>'lightsalmon')->pack(-side=> 'left');
 
   if($MAX_DRIVES >= 5) { 
     print("Sorry S/W not configured for 5 or more drives. FIX IT!\n");
@@ -580,7 +590,7 @@ sub log_update {
       $Hofclosed{$tid} = 1;	#keep tack of closed tapes
       $b0text = "Imp/Exp\n$ReClosecnt";
       $b0->configure(-text => $b0text, -background => 'yellow',
-                     -command =>  \&ImpExp_sub,);
+      		-command =>  \&ImpExp_sub,); 
     }
     elsif(/^\*Tp:WtQadd:/) {
       ($a, $uidstr, $tapeidstr, $fnumstr, $userstr, $dxstr) = split(/ /, $_);
@@ -671,6 +681,16 @@ sub log_update {
     elsif(/^\*Tp:DrNotBusy:/) {
       $drivebusy = 0;
     }
+    elsif(/^\*Tp:CleanInProgress/) {
+      $b01_drv0->configure(-background => 'lightsalmon');
+    }
+    elsif(/^\*Tp:CleaningDone/) {
+      $b01_drv0->configure(-background => 'grey');
+      if(Exists($cleanf)) {
+        $cleanf->destroy();
+      }
+      $drivebusy = 0;
+    }
     elsif(/^\*Rb:door:/) {		#a imp/exp door transfer cmd
       $str = substr($_, 10);
       $trobot0->insert('end', $str);
@@ -717,7 +737,7 @@ sub log_update {
       eval($x);
     }
     elsif(/^\*\*Rb:t50doorcomplete/) {
-      `/bin/rm -f $NOTAPEARC`;          #allow tapearc to run again
+      `/bin/rm -f $NOTAPEARC`;		#allow tapearc to run again
       if(Exists($ImpExpf)) {
         $ImpExpf->destroy();
       }
@@ -813,11 +833,11 @@ sub log_update {
       if($playback) { last; }
     }
     elsif(/^\*\*\*ENDInvPhase:/) {
-      %Hofclosed = ();                  #reset all closed tapes
+      %Hofclosed = ();			#reset all closed tapes
       $EEcnt = 0;
       $b0text = "Imp/Exp\n$EEcnt";
       $b0->configure(-text => $b0text, -background => 'grey',
-                     -command =>  \&ImpExp_sub,);
+      		-command =>  \&ImpExp_sub,); 
     }
     elsif(/^\*Dr0:rd:/) {
       $str = substr($_, 9);
@@ -1206,17 +1226,17 @@ sub ImpExp_sub_unload {
 
     #touch file for tapearc not to run (NOTAPEARC)
     #Do a ps to see if a tapearc is already running.
-    #If so, delete the NOTAPEARC file and give a msg no imp/exp now.
+    #If so, delete the NOTAPEARC file and give a msg no imp/exp now. 
     #if no tapearc running, continue. rm NOTAPEARC when done.
     `/bin/touch $NOTAPEARC`;
     @arctest = `ps -ef | grep "tapearc -v jsocdc"`;
-    if($#arctest > 1) {         #don't count our sh and grep
+    if($#arctest > 1) {		#don't count our sh and grep 
       `/bin/rm $NOTAPEARC`;
       $msg = "\nSorry, you can not do Imp/Exp while a tapearc is busy.";
       $ImpExpf->Label(-text => $msg, -font => 'arial 12 bold')->pack(@pl);
       return;
     }
-
+ 
     $ImpExpf->Label(-text=> "Unload of Expired Tapes In Progress (I will notify you when done)", 
 		 -background=>'orange', -font => 'arial 12 bold')->pack(@pl);
     $ImpExpf->Label(-text => "Exit/Entry Slots in Door:", 
@@ -1553,6 +1573,79 @@ sub Exit_sub {
   }
   system "/bin/rm $runtag";
   exit;
+}
+
+sub Clean_sub {
+  if(Exists($cleanf)) {
+    $cleanf->destroy();
+  }
+  $cleanf = $mw->Toplevel();
+  #$statf->geometry("400x200-10-500");
+  $cleanf->geometry("300x150");
+  $cleanf->title("tape clean");
+  $txt = "Cleaning tape in slot $CLEANSLOT\nOk to proceed?";
+  $cleanf->Label(-text => "$txt", -font => 'arial 16')->pack();
+  if(!$interactive) {
+    $txt = "\nError: you must be the\ninteractive user to clean";
+    $cleanf->Label(-text => "$txt", -font => 'arial 16')->pack();
+    $cleanf->Button(
+        -text => 'Close',
+        -background => 'grey',
+        -command => sub {$cleanf->destroy();},
+        )->pack();
+  }
+  else {
+    $cleanf->Button(
+        -text => 'OK',
+        -background => 'grey',
+        -command => \&Clean_ok_sub,
+        )->pack(-pady => 10);
+    $cleanf->Button(
+        -text => 'Cancel',
+        -background => 'grey',
+        -command => sub {$cleanf->destroy();},
+        )->pack();
+  }
+}
+
+sub Clean_ok_sub {
+  if(Exists($cleanf)) {
+    $cleanf->destroy();
+  }
+  $cleanf = $mw->Toplevel();
+  $cleanf->geometry("300x150");
+  $cleanf->title("tape clean ok");
+  if($drivebusy) {
+    $txt = "\nError: you cannot do cleaning\nwhile the drive is busy";
+    $cleanf->Label(-text => "$txt", -font => 'arial 16')->pack();
+    $cleanf->Button(
+        -text => 'Close',
+        -background => 'grey',
+        -command => sub {$cleanf->destroy();},
+        )->pack();
+    return;
+  }
+  $drivebusy = 1;		#make sure reset when CleaningDone
+  $txt = "Clean drive 0 in progress...";
+  $cleanf->Label(-text => "$txt", -font => 'arial 16', -background => 'lightsalmon')->pack(-pady=>20);
+  $cleanf->Button(
+        -text => 'Close',
+        -background => 'grey',
+        -command => sub {$cleanf->destroy();},
+        )->pack();
+  $txt = "$CLEANSLOT $CLEANDRIVE";
+    if($pid0 = fork) {
+      #This is the parent. The child's pid is in $pid0
+      print LOG "          \n";	#!!don't lose first few chars on line??
+      print LOG "fork impexp start processing pid=$pid0 for impexp clean.\n";
+    } elsif (defined $pid0) {     # $pid0 is zero here if defined. run impexp
+      exec "impexp clean $txt";
+    }  else {
+      #fork error
+      $cleanf->Label(-text => "Fatal Error: Can't fork", -font => 'arial 12 bold')->pack(@pl);
+      print "!!Fatal Error: Can't fork: $!\n";
+      return;
+    }
 }
 
 sub commify {
