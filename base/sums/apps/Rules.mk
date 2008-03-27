@@ -28,7 +28,7 @@ endif
 ifeq ($(HOST),d00.Stanford.EDU)
 	ADD_TGT_$(d) := -DSUMT120
 endif
-ifeq ($(HOST),d02.jsoc.Stanford.EDU)
+ifeq ($(HOST),d02.Stanford.EDU)
 	ADD_TGT_$(d) := -DSUMT950
 endif
 #ifeq ($(HOST),tenerife.tuc.noao.edu)
