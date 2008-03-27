@@ -139,6 +139,12 @@ int main(int argc, char *argv[])
   if(!strcmp(argv[1], "stop")) {
     setkey_str(&retlist, "OP", "stop");
   }
+  else if(!strcmp(argv[1], "clean")) {
+    setkey_str(&retlist, "OP", "clean");
+    setkey_str(&retlist, "cleanslot", argv[2]);
+    setkey_str(&retlist, "cleandrive", argv[3]);
+    write_log("In impexp: cleanslot=%s cleandrive=%s\n", argv[2], argv[3]);
+  }
   else {
     argc = argc - 2;		/* skip prog name and start/stop field */
     setkey_int(&retlist, "reqcnt", argc);	/* # of tapeids */
@@ -161,5 +167,5 @@ int main(int argc, char *argv[])
   }
   clnt_destroy(clnttape);
   fclose(logfp);
-  exit(0);		/* that's it. we're done */
+  // that's it. we're done
 }
