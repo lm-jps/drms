@@ -20,7 +20,6 @@ extern TQ *q_wrt_need_front;     /* front of tape write need Q */
 extern TQ *q_wrt_need_rear;      /* rear of tape write need Q */
 
 
-
 /* !!NOTE: These routines use internal slot#, i.e. 0 to MAX_SLOTS_LIVE-1 */
 
 /* Move the tape from the given slot# to the given drive#.
@@ -195,12 +194,20 @@ int position_tape(int dnum, int filenum)
 int tape_free_drives()
 {
   int d, s;
+  int nobar = 0;
   char cmd[128];
 
   for(d=0; d < MAX_DRIVES; d++) {
     if(!drives[d].tapeid) continue;
+#ifdef SUMDC
+    //for data capture ck if cleaning tape (NoBar) and put in last slot
+    if(strstr(drives[d].tapeid, "NoBar")) { nobar = 1; }
+#endif
     /* now find first free slot to put the tape in drive #d into */
     for(s=0; s < MAX_SLOTS_LIVE; s++) {
+      if(nobar) {
+        s = MAX_SLOTS_LIVE - 1;
+      }
       if(!slots[s].tapeid) { /* this is a free slot */
         sprintf(cmd, "%s %d %d 1> %s 2>&1", UNLOADCMD, s+1, d, UNLOADDUMP);
         write_log("*Rb:cmd: %s\n", cmd);   /* need for t120view to work */
@@ -222,7 +229,10 @@ int tape_free_drives()
       }
     }
     if(s == MAX_SLOTS_LIVE) {
-      write_log("No free slots to unload drive\n");
+      if(nobar) 
+       write_log("Must have slot# %d free for cleaning tape\n", MAX_SLOTS_LIVE);
+      else
+       write_log("No free slots to unload drive\n");
       return(0);
     }
   }
@@ -343,7 +353,7 @@ void insert_tq_entry_wrt_need(TQ *p) {
 
 void rd_q_print(TQ *p) {
   while(p) {
-  write_log("next=%ld, dsix=%lu, filenum=%d, tapeid=%s, user=%s\n",
+    write_log("next=%ld, dsix=%lu, filenum=%d, tapeid=%s, user=%s\n",
 	p->next, p->ds_index, p->filenum, p->tapeid, p->username);
     p = p->next;
   }
