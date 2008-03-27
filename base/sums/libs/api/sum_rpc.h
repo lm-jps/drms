@@ -154,6 +154,7 @@ extern KEY *delseriesdo_1();
 #define TAPETESTDO ((uint32_t)8)
 #define ONOFFDO ((uint32_t)9)
 #define DRONOFFDO ((uint32_t)10)
+#define ROBOTONOFFDO ((uint32_t)11)
 
 extern KEY *readdo_1();
 extern KEY *writedo_1();
@@ -165,6 +166,7 @@ extern KEY *impexpdo_1();
 extern KEY *tapetestdo_1();
 extern KEY *onoffdo_1();
 extern KEY *dronoffdo_1();
+extern KEY *robotonoffdo_1();
 
 /* This is the SUM client API code response handling registration */
 #define RESPPROG ((uint32_t)0x20000613)  /* 536872467 */

@@ -44,6 +44,7 @@ SVCXPRT *glb_transp;
 int debugflg = 0;
 int sim = 0;
 int tapeoffline = 0;
+int robotoffline = 0;
 int driveonoffstatus = 0;
 int current_client_destroy;
 char *dbname;
@@ -255,7 +256,7 @@ int main(int argc, char *argv[])
   /* }
   */
 
-  DS_ConnectDB(dbname); /* connect to Oracle before inventory */
+  DS_ConnectDB(dbname);	/* connect to Oracle before inventory */
 
   /* now inventory the tape unit to get tapeid and slot and drive info */
   /* Must be done after svc_register() so 
@@ -265,38 +266,38 @@ int main(int argc, char *argv[])
    * of times and then finally fail.
   */
   if(tapeoffline == 0) {
-  retry = 6;
-  while(retry) {
+    retry = 6;
+    while(retry) {
 #ifdef SUMDC
-     if((istat = tape_inventory(sim, 1)) == 0) {
+      if((istat = tape_inventory(sim, 1)) == 0) { 
 #else
-	if((istat = tape_inventory(sim, 0)) == 0) { /* no catalog here */
-#endif
-	   write_log("***Error: Can't do tape inventory. Will retry...\n");
-	   --retry;
-	   if(retry == 0) {
-      write_log("***Fatal error: Can't do tape inventory\n");
+      if((istat = tape_inventory(sim, 0)) == 0) { /* no catalog here */
+#endif 
+        write_log("***Error: Can't do tape inventory. Will retry...\n");
+        --retry;
+        if(retry == 0) {
+          write_log("***Fatal error: Can't do tape inventory\n");
+          (void) pmap_unset(TAPEPROG, TAPEVERS);
+          exit(1);
+        }
+        continue;
+      }
+      if(istat == -1) {	/* didn't get full slot count. retry */
+        --retry;
+        if(retry == 0) {
+          write_log("***Fatal error: Can't do tape inventory\n");
+          (void) pmap_unset(TAPEPROG, TAPEVERS);
+          exit(1);
+        }
+      }
+      else { retry = 0; }
+    }
+    /* Return any tapes in drives to free slots */
+    if(!tape_free_drives()) {
+      write_log("**Fatal error: Can't free tapes in drives\n");
       (void) pmap_unset(TAPEPROG, TAPEVERS);
       exit(1);
     }
-	   continue;
-	}
-    if(istat == -1) {	/* didn't get full slot count. retry */
-      --retry;
-      if(retry == 0) {
-        write_log("***Fatal error: Can't do tape inventory\n");
-        (void) pmap_unset(TAPEPROG, TAPEVERS);
-        exit(1);
-      }
-    }
-    else { retry = 0; }
-  }
-  /* Return any tapes in drives to free slots */
-  if(!tape_free_drives()) {
-    write_log("**Fatal error: Can't free tapes in drives\n");
-    (void) pmap_unset(TAPEPROG, TAPEVERS);
-    exit(1);
-  }
   }
 
   /* Enter svc_run() which calls svc_getreqset when msg comes in.
@@ -379,6 +380,12 @@ tapeprog_1(rqstp, transp)
 		xdr_argument = xdr_Rkey;
                 xdr_result = xdr_uint32_t;
 		local = (char *(*)()) onoffdo_1;
+		break;
+	case ROBOTONOFFDO:
+                force = 1;			/* always make this call */
+		xdr_argument = xdr_Rkey;
+                xdr_result = xdr_uint32_t;
+		local = (char *(*)()) robotonoffdo_1;
 		break;
 	case DRONOFFDO:
                 force = 1;			/* always make this call */
