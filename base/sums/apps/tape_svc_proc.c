@@ -37,6 +37,7 @@ extern int debugflg;
 extern int current_client_destroy;
 extern int sim;
 extern int tapeoffline;
+extern int robotoffline;
 extern int driveonoffstatus;
 extern char libdevname[];
 extern SLOT slots[];
@@ -210,7 +211,7 @@ int kick_next_entry_rd() {
       ptmp = delete_q_rd(p);      /* remove from q */
       p = p->next;
       ptmp->next = NULL;
-      write_log("*Tp:RdQdel: dsix=%lu drv=**WRN:tape_not_in_robot\n",
+      write_log("*Tp:RdQdel: dsix=%lu drv=**WRN:tape_not_in_robot\n", 
 			ptmp->ds_index);
       insert_tq_entry_rd_need(ptmp); /* put at end of need rd q */
       write_log("NEED RD Q:\n");
@@ -336,7 +337,7 @@ int kick_next_entry_wt() {
             send_mail("Error: no tape in group %d\n", group_id);
             write_log("*Tp:Need: tapeid=%s\n", "NOGROUP");
             poff = delete_q_wrt(p);    /* remove from q */
-            write_log("*Tp:WtQdel: dsix=%lu drv=**WRN:tape_not_in_robot\n",
+            write_log("*Tp:WtQdel: dsix=%lu drv=**WRN:tape_not_in_robot\n", 
 			poff->ds_index);
             return(2);
           }
@@ -401,7 +402,7 @@ int kick_next_entry_wt() {
         send_mail("Error: no tape in group %d\n", group_id);
         write_log("*Tp:Need: tapeid=%s\n", "NOGROUP");
         poff = delete_q_wrt(p);      /* remove from q */
-        write_log("*Tp:WtQdel: dsix=%lu drv=**WRN:tape_not_in_robot\n",
+        write_log("*Tp:WtQdel: dsix=%lu drv=**WRN:tape_not_in_robot\n", 
 			poff->ds_index);
         return(2);
       }
@@ -423,14 +424,14 @@ int kick_next_entry_wt() {
 #ifdef SUMDC
       /* give error back to caller for datacapture machine */
       poff = delete_q_wrt(p);      /* remove from q */
-      write_log("*Tp:WtQdel: dsix=%lu drv=**WRN:tape_not_in_robot\n",
+      write_log("*Tp:WtQdel: dsix=%lu drv=**WRN:tape_not_in_robot\n", 
 			poff->ds_index);
       return(2);
 #endif
       ptmp = delete_q_wrt(p);     /* remove from q */
       p = p->next;
       ptmp->next = NULL;
-      write_log("*Tp:WtQdel: dsix=%lu drv=**WRN:tape_not_in_robot\n",
+      write_log("*Tp:WtQdel: dsix=%lu drv=**WRN:tape_not_in_robot\n", 
 			ptmp->ds_index);
       insert_tq_entry_wrt_need(ptmp); /* put at end of need wrt q */
       sback = 0;
@@ -557,11 +558,11 @@ KEY *readdo_1(KEY *params) {
   setkey_str(&params, "OP", "rd");
   setkey_int(&params, "sim", sim);
   if(findkey(params, "DEBUGFLG")) {
-  debugflg = getkey_int(params, "DEBUGFLG");
-  if(debugflg) {
-    write_log("TEMP in readdo_1() call in tape_svc. keylist is:\n");
-    keyiterate(logkey, params);
-  }
+    debugflg = getkey_int(params, "DEBUGFLG");
+    if(debugflg) {
+      write_log("TEMP in readdo_1() call in tape_svc. keylist is:\n");
+      keyiterate(logkey, params);
+    }
   }
   user = getkey_str(params, "username");
   uid = getkey_uint64(params, "uid");
@@ -707,11 +708,11 @@ KEY *writedo_1(KEY *params) {
 
   setkey_str(&params, "OP", "wt");
   if(findkey(params, "DEBUGFLG")) {
-  debugflg = getkey_int(params, "DEBUGFLG");
-  if(debugflg) {
-    write_log("writedo_1() call in tape_svc. keylist is:\n");
-    keyiterate(logkey, params);
-  }
+    debugflg = getkey_int(params, "DEBUGFLG");
+    if(debugflg) {
+      write_log("writedo_1() call in tape_svc. keylist is:\n");
+      keyiterate(logkey, params);
+    }
   }
   user = getkey_str(params, "username_0");
   sumid = getkey_uint64(params, "sumid_0");
@@ -855,11 +856,11 @@ KEY *taperespwritedo_1(KEY *params) {
   /*write_log("You've called taperespwritedo_1() in tape_svc\n"); /* !!TEMP*/
   send_ack();
   if(findkey(params, "DEBUGFLG")) {
-  debugflg = getkey_int(params, "DEBUGFLG");
-  if(debugflg) {
-    write_log("!!Keylist in taperespwritedo_1() is:\n");
-    keyiterate(logkey, params);
-  }
+    debugflg = getkey_int(params, "DEBUGFLG");
+    if(debugflg) {
+      write_log("!!Keylist in taperespwritedo_1() is:\n");
+      keyiterate(logkey, params);
+    }
   }
   dnum = getkey_int(params, "dnum");	/* get drive # that wrote */
   slotnum = drives[dnum].slotnum;
@@ -960,7 +961,7 @@ KEY *taperespwritedo_1(KEY *params) {
       sprintf(tmpname, "bytes_%d", i);
       totalbytes += getkey_double(params, tmpname);
     }
-    tellblock = 0;              /* force use of totalbytes */
+    tellblock = 0;		/* force use of totalbytes */
 /*#endif*/
     if((filenum_written=SUMLIB_TapeUpdate(tapeid,tellblock,totalbytes)) == 0) {
       send_mail("Error: Can't update sum_tape in DB for tape %s\n",tapeid);
@@ -1085,11 +1086,11 @@ KEY *taperespreaddo_1(KEY *params) {
   char *rwd, *tapeid;
 
   if(findkey(params, "DEBUGFLG")) {
-  debugflg = getkey_int(params, "DEBUGFLG");
-  if(debugflg) {
-    write_log("!!Keylist in taperespreaddo_1() is:\n");
-    keyiterate(logkey, params);
-  }
+    debugflg = getkey_int(params, "DEBUGFLG");
+    if(debugflg) {
+      write_log("!!Keylist in taperespreaddo_1() is:\n");
+      keyiterate(logkey, params);
+    }
   }
   dnum = getkey_int(params, "dnum");
   status = getkey_int(params, "STATUS");
@@ -1185,16 +1186,17 @@ KEY *taperespreaddo_1(KEY *params) {
 KEY *taperesprobotdo_1(KEY *params) {
   static KEY *retlist;
   int s, d;
-  char *cptr;
+  char scr[80];
+  char *cptr, *cmd;
 
   robotbusy = 0;
   send_ack();
   if(findkey(params, "DEBUGFLG")) {
-  debugflg = getkey_int(params, "DEBUGFLG");
-  if(debugflg) {
-    write_log("!!Keylist in taperesprobotdo_1() is:\n");
-    keyiterate(logkey, params);
-  }
+    debugflg = getkey_int(params, "DEBUGFLG");
+    if(debugflg) {
+      write_log("!!Keylist in taperesprobotdo_1() is:\n");
+      keyiterate(logkey, params);
+    }
   }
   cptr = GETKEY_str(params, "OP");
   if(!strcmp(cptr, "rd")) {
@@ -1214,6 +1216,53 @@ KEY *taperesprobotdo_1(KEY *params) {
     drives[d].slotnum = -1;
     drives[d].tapemode = TAPE_NOT_LOADED;
     drives[d].filenum = 0;
+    drives[d].busy = 0;
+    write_log("*Tp:DrNotBusy: drv=%d\n", d);
+    retlist = (KEY *)1;
+  }
+  else if(!strcmp(cptr, "clean")) {
+    if(findkey(params, "cmd1")) {
+      cmd = GETKEY_str(params, "cmd1");
+      if(strstr(cmd, " load ")) {  /* cmd like: mtx -f /dev/sg7 load 14 1 */
+       sscanf(cmd, "%s %s %s %s %d %d", scr, scr, scr, scr, &s, &d); 
+       s--;			/* must use internal slot # */
+       /*write_log("!!!TEMP load cmd1 s=%d d=%d\n", s, d);*/
+       drives[d].tapeid = slots[s].tapeid;
+       drives[d].slotnum = s;
+       slots[s].tapeid = NULL; 
+      }
+      if(strstr(cmd, " unload ")) { /* cmd like: mtx -f /dev/sg7 unload 15 0 */
+       sscanf(cmd, "%s %s %s %s %d %d", scr, scr, scr, scr, &s, &d); 
+       s--;			/* must use internal slot # */
+       /*write_log("!!!TEMP unload cmd1 s=%d d=%d\n", s, d);*/
+       slots[s].tapeid = drives[d].tapeid; 
+       drives[d].tapeid = NULL;
+       drives[d].slotnum = -1;
+      }
+    }
+    if(findkey(params, "cmd2")) {
+      cmd = GETKEY_str(params, "cmd2");
+      if(strstr(cmd, " load ")) {  /* cmd like: mtx -f /dev/sg7 load 14 1 */
+       sscanf(cmd, "%s %s %s %s %d %d", scr, scr, scr, scr, &s, &d); 
+       s--;			/* must use internal slot # */
+       /*write_log("!!!TEMP load cmd2 s=%d d=%d\n", s, d);*/
+       drives[d].tapeid = slots[s].tapeid;
+       drives[d].slotnum = s;
+       slots[s].tapeid = NULL; 
+      }
+      if(strstr(cmd, " unload ")) { /* cmd like: mtx -f /dev/sg7 unload 15 0 */
+       sscanf(cmd, "%s %s %s %s %d %d", scr, scr, scr, scr, &s, &d); 
+       s--;			/* must use internal slot # */
+       /*write_log("!!!TEMP unload cmd2 s=%d d=%d\n", s, d);*/
+       slots[s].tapeid = drives[d].tapeid; 
+       drives[d].tapeid = NULL;
+       drives[d].slotnum = -1;
+      }
+    }
+    write_log("*Tp:CleanInProgress: drv=%d\n", d);
+    //!!!TBD can't do this for t950. there are multiple drives
+    sleep(180);			// let the cleaning tape work. max is 3min
+    write_log("*Tp:CleaningDone: drv=%d\n", d);
     drives[d].busy = 0;
     write_log("*Tp:DrNotBusy: drv=%d\n", d);
     retlist = (KEY *)1;
@@ -1468,13 +1517,13 @@ KEY *taperesprobotdoordo_1(KEY *params) {
     while(retry) {
       if((istat = tape_inventory(sim, 0)) == 0) { /* no catalog here */
         write_log("***Error: Can't do tape inventory. Will retry...\n");
-	--retry;
-	if(retry == 0) {
-        write_log("***Fatal error: Can't do tape inventory\n");
-        (void) pmap_unset(TAPEPROG, TAPEVERS);
-        exit(1);
-      }
-	continue;
+        --retry;
+        if(retry == 0) {
+          write_log("***Fatal error: Can't do tape inventory\n");
+          (void) pmap_unset(TAPEPROG, TAPEVERS);
+          exit(1);
+        }
+        continue;
       }
       if(istat == -1) {   /* didn't get full slot count. retry */
         --retry;
@@ -1496,28 +1545,86 @@ KEY *taperesprobotdoordo_1(KEY *params) {
  * to unload tapes into the imp/exp door. Calls the robot_svc to unload 
  * the given tapeids (start option). This is also called again when the 
  * operator has indicated that the Bulk Load is done (stop option).
+ * Also called for a drive cleaning operation (clean option) where
+ * keywords cleanslot = slot # with cleaning tape, cleandrive = drive #
+ * to clean.
  * The keylist looks like:
  * tapeid_1:       KEYTYP_STRING   013401S1
  * tapeid_0:       KEYTYP_STRING   013389S1
  * OP:             KEYTYP_STRING   start (or stop)
  * reqcnt: KEYTYP_INT      2
+ *
+ * or for clean:
+ * cleanslot:      KEYTYP_INT   25
+ * cleandrive:     KEYTYP_INT   0
+ * OP:             KEYTYP_STRING   clean
 */
 KEY *impexpdo_1(KEY *params)
 {
   TQ *p;
   static KEY *retlist, *xlist;
   enum clnt_stat status;
-  char *tid, *call_err, *op;
+  char *tid, *call_err, *op, *tapeid;
   char ext[64], cmd[128];
   uint32_t robotback;
   int reqcnt, i, j, snum, dnum, eeslot, retry, istat;
-  int count_impexp_full, count_slots_empty;
+  int count_impexp_full, count_slots_empty, cleanslot, cleandrive;
+  int slotnum;
 
   /*write_log("!!Keylist in impexpdo_1() is:\n");*/
   /*keyiterate(logkey, params);*/
   poff = NULL;
   rinfo = 0;
   op = GETKEY_str(params, "OP");
+  if(!strcmp(op, "clean")) {	/* do drive cleaning */
+    cleanslot = atoi(getkey_str(params, "cleanslot"));
+    cleandrive = atoi(getkey_str(params, "cleandrive"));
+    write_log("cleanslot=%d cleandrive=%d\n", cleanslot, cleandrive);
+    xlist = newkeylist();
+    robotbusy = 1;
+    drives[cleandrive].busy = 1;
+    write_log("*Tp:DrBusy: drv=%d\n", cleandrive);
+    setkey_str(&xlist, "OP", "clean");
+    setkey_int(&xlist, "dnum", cleandrive);
+    setkey_int(&xlist, "snum", slotnum);
+    if(tapeid = drives[cleandrive].tapeid) { /* unload the current tape */
+      slotnum = drives[cleandrive].slotnum;
+      sprintf(cmd, "mtx -f %s unload %d %d 1> /tmp/mtx_robot_%d.log 2>&1",
+                libdevname, slotnum+1, cleandrive, robotcmdseq++);
+      setkey_str(&xlist, "cmd1", cmd);
+      sprintf(cmd, "mtx -f %s load %d %d 1> /tmp/mtx_robot_%d.log 2>&1",
+		libdevname, cleanslot, cleandrive, robotcmdseq++);
+      setkey_str(&xlist, "cmd2", cmd);
+    }
+    else {			/* just load the cleaning tape */
+      sprintf(cmd, "mtx -f %s load %d %d 1> /tmp/mtx_robot_%d.log 2>&1",
+                libdevname, cleanslot, cleandrive, robotcmdseq++);
+      setkey_str(&xlist, "cmd1", cmd);
+    }
+    setkey_int(&xlist, "DEBUGFLG", 0);
+    setkey_fileptr(&xlist,  "current_client", (FILE *)current_client);
+    status = clnt_call(clntrobot0, ROBOTDO, (xdrproc_t)xdr_Rkey,(char *)xlist,
+                        (xdrproc_t)xdr_uint32_t, (char *)&robotback, TIMEOUT);
+    if(status != RPC_SUCCESS) {
+      if(status != RPC_TIMEDOUT) {  /* allow timeout?? */
+        call_err = clnt_sperror(clntrobot0, "Err clnt_call for ROBOTDO");
+        write_log("%s %s\n", datestring(), call_err);
+        robotbusy = 0;
+        drives[cleandrive].busy = 0;
+        write_log("*Tp:DrNotBusy: drv=%d\n", cleandrive);
+      }
+    }
+    if(robotback == 1) {
+      write_log("**Error in ROBOTDO for impexp clean call in tape_svc_proc.c\n");
+      robotbusy = 0;
+      drives[cleandrive].busy = 0;
+      write_log("*Tp:DrNotBusy: drv=%d\n", cleandrive);
+    }
+    freekeylist(&xlist);
+    send_ack();			/* ack original impexp caller */
+    return((KEY *)1);		/* nothing will be sent later */
+  }
+
   if(!strcmp(op, "stop")) {	/* end of imp/exp cycle */
     eeactive = 0;	/* enable the Q code again */
     send_ack();
@@ -1531,20 +1638,20 @@ KEY *impexpdo_1(KEY *params)
 				    /* the same tape types */
 #endif
       if(istat == 0) { 
-	write_log("***Error: Can't do tape inventory. Will retry...\n");
-	--retry;
-	if(retry == 0) {
-	  write_log("***Inv: failure\n\n");
-        write_log("***Fatal error: Can't do tape inventory\n");
-        (void) pmap_unset(TAPEPROG, TAPEVERS);
-        exit(1);
-      }
+        write_log("***Error: Can't do tape inventory. Will retry...\n");
+        --retry;
+        if(retry == 0) {
+          write_log("***Inv: failure\n\n");
+          write_log("***Fatal error: Can't do tape inventory\n");
+          (void) pmap_unset(TAPEPROG, TAPEVERS);
+          exit(1);
+        }
         continue;
       }
       if(istat == -1) {   /* didn't get full slot count. retry */
         --retry;
         if(retry == 0) {
-	  write_log("***Inv: failure\n\n");
+          write_log("***Inv: failure\n\n");
           write_log("***Fatal error: Can't do tape inventory\n");
           (void) pmap_unset(TAPEPROG, TAPEVERS);
           exit(1);
@@ -1574,7 +1681,7 @@ KEY *impexpdo_1(KEY *params)
       if(!slots[i].tapeid) {
         count_slots_empty++;
         if(count_slots_empty > count_impexp_full) {
-	  /*write_log("WARN: More empty slots than new tapes to import\n");*/
+          /*write_log("WARN: More empty slots than new tapes to import\n");*/
         }
         empty_slotnum_internal[j++] = i;
       }
@@ -1622,6 +1729,13 @@ KEY *impexpdo_1(KEY *params)
     return((KEY *)1);
   }
 
+  if(strcmp(op, "start")) {	/* this must be start */
+      write_log("!!ERR impexpdo_1(): Illegal option=%s\n", op);
+      rinfo = 1;
+      send_ack();
+      return((KEY *)1);
+  }
+  //this is the start option
   eeactive = 1;		/* tell Q code that imp/exp is underway */
   retlist = newkeylist();
   add_keys(params, &retlist);
@@ -1678,11 +1792,11 @@ KEY *tapetestdo_1(KEY *params) {
 
   write_log("You've called tapetestdo_1() in tape_svc\n");
   if(findkey(params, "DEBUGFLG")) {
-  debugflg = getkey_int(params, "DEBUGFLG");
-  if(debugflg) {
-    write_log("!!Keylist in taperespwritedo_1() is:\n");
-    keyiterate(logkey, params);
-  }
+    debugflg = getkey_int(params, "DEBUGFLG");
+    if(debugflg) {
+      write_log("!!Keylist in taperespwritedo_1() is:\n");
+      keyiterate(logkey, params);
+    }
   }
   retlist = newkeylist();
   add_keys(params, &retlist);
@@ -1714,6 +1828,22 @@ KEY *onoffdo_1(KEY *params)
   if(!strcmp(action, "on")) tapeoffline = 0;
   else if(!strcmp(action, "off")) tapeoffline = 1;
   rinfo = tapeoffline;
+  send_ack();
+  return((KEY *)1);
+}
+
+/* Called from the robotonoff utility program to turn the robot on/off.
+*/
+//!!!NOTE: This is preliminary and is not fully implemented yet.
+KEY *robotonoffdo_1(KEY *params)
+{
+  char *action;
+
+  action = getkey_str(params, "action");
+  write_log("%s: robotonoff = %s\n", datestring(), action);
+  if(!strcmp(action, "on")) robotoffline = 0;
+  else if(!strcmp(action, "off")) robotoffline = 1;
+  rinfo = robotoffline;
   send_ack();
   return((KEY *)1);
 }
@@ -1810,8 +1940,8 @@ void write_time()
   struct tm *t_ptr;
 
   if(gettimeofday(&tvalr, NULL) == -1) {
-     write_log("Error on gettimeofday() in write_time()\n");
-     return;
+    write_log("Error on gettimeofday() in write_time()\n");
+    return;
   }
   t_ptr = localtime((const time_t *)&tvalr);
   sprintf(dstring, "%s", asctime(t_ptr));
