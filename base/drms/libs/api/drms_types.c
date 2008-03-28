@@ -717,7 +717,13 @@ int drms_sscanf_int (char *str,
        return ret;
     }
   case DRMS_TYPE_STRING: 
-    if (usemissing)
+    if (*str == '\0')
+    {
+       /* Empty string is acceptable. */
+       dst->string_val = strdup("");
+       return 0;
+    }
+    else if (usemissing)
     {
        dst->string_val = strdup(DRMS_MISSING_STRING);
        return usemissinglen;

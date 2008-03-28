@@ -11,7 +11,6 @@ static int getdouble(char **in, double *val);
 static int getfloat(char **in, float *val); 
 */
 static int getint(char **in, int *val);
-static int stripcomma(char **in, char *copy, int len, int maxlen);
 static inline int prefixmatch(char *token, const char *pattern);
 static int gettoken(char **in, char *copy, int maxlen);
 
@@ -242,7 +241,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum)
 
 
   /* Collect tokens */
-  if (!gettoken(&q,name,sizeof(name))) goto failure;
+  if (gettoken(&q,name,sizeof(name)) <= 0) goto failure;
   XASSERT((seg = hcon_allocslot_lower(&template->segments, name)));
   memset(seg,0,sizeof(DRMS_Segment_t));
   XASSERT(seg->info = malloc(sizeof(DRMS_SegmentInfo_t)));
@@ -253,22 +252,22 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum)
   /* Number */
   seg->info->segnum = segnum;
 
-  if (!gettoken(&q,scope,sizeof(scope))) goto failure;
+  if (gettoken(&q,scope,sizeof(scope)) <= 0) goto failure;
   if ( !strcasecmp(scope,"link") ) {
     /* Link segment */
     seg->info->islink = 1;
     seg->info->scope= DRMS_VARIABLE;
     seg->info->type = DRMS_TYPE_INT;
     seg->info->protocol = DRMS_GENERIC;
-    if(!gettoken(&q,seg->info->linkname,sizeof(seg->info->linkname)))     goto failure;
-    if(!gettoken(&q,seg->info->target_seg,sizeof(seg->info->target_seg))) goto failure;
+    if(gettoken(&q,seg->info->linkname,sizeof(seg->info->linkname)) <= 0)     goto failure;
+    if(gettoken(&q,seg->info->target_seg,sizeof(seg->info->target_seg)) <= 0) goto failure;
     /* Naxis */      
-    if (!gettoken(&q,naxis,sizeof(naxis))) goto failure;
+    if (gettoken(&q,naxis,sizeof(naxis)) <= 0) goto failure;
     seg->info->naxis = atoi(naxis);
     /* Axis */
     for (i=0; i<seg->info->naxis; i++)
       {
-	if (!gettoken(&q,axis,sizeof(axis))) goto failure;
+	if (gettoken(&q,axis,sizeof(axis)) <= 0) goto failure;
 	seg->axis[i] = atoi(axis);
       }
     if (getstring(&q,seg->info->description,sizeof(seg->info->description))<0) goto failure;
@@ -285,27 +284,27 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum)
     else goto failure;
 
     /* Type */
-    if (!gettoken(&q,type,sizeof(type))) goto failure;
+    if (gettoken(&q,type,sizeof(type)) <= 0) goto failure;
     seg->info->type  = drms_str2type(type);
     /* Naxis */      
-    if (!gettoken(&q,naxis,sizeof(naxis))) goto failure;
+    if (gettoken(&q,naxis,sizeof(naxis)) <= 0) goto failure;
     seg->info->naxis = atoi(naxis);
     /* Axis */
     for (i=0; i<seg->info->naxis; i++)
       {
-	if (!gettoken(&q,axis,sizeof(axis))) goto failure;
+	if (gettoken(&q,axis,sizeof(axis)) <= 0) goto failure;
 	seg->axis[i] = atoi(axis);
       }
-    if (!gettoken(&q,unit,sizeof(unit))) goto failure;
+    if (gettoken(&q,unit,sizeof(unit)) <= 0) goto failure;
     strcpy(seg->info->unit, unit);
-    if (!gettoken(&q,protocol,sizeof(protocol))) goto failure;
+    if (gettoken(&q,protocol,sizeof(protocol)) <= 0) goto failure;
     seg->info->protocol = drms_str2prot(protocol);
     if (seg->info->protocol == DRMS_TAS)
       {
 	/* Tile sizes */
 	for (i=0; i<seg->info->naxis; i++)
 	  {
-	    if (!gettoken(&q,axis,sizeof(axis))) goto failure;
+	    if (gettoken(&q,axis,sizeof(axis)) <= 0) goto failure;
 	    seg->blocksize[i] = atoi(axis);
 	  }
       }
@@ -366,9 +365,9 @@ static int parse_link(char **in, DRMS_Record_t *template)
   q = p;
 
   /* Collect tokens */
-  if (!gettoken(&q,name,sizeof(name))) goto failure;
-  if (!gettoken(&q,target,sizeof(target))) goto failure;
-  if (!gettoken(&q,type,sizeof(type))) goto failure;
+  if (gettoken(&q,name,sizeof(name)) <= 0) goto failure;
+  if (gettoken(&q,target,sizeof(target)) <= 0) goto failure;
+  if (gettoken(&q,type,sizeof(type)) <= 0) goto failure;
   if (getstring(&q,description,sizeof(description))<0) goto failure;
   
   XASSERT((link = hcon_allocslot_lower(&template->links, name)));
@@ -819,7 +818,6 @@ int parse_keywords(char *desc, DRMS_Record_t *template)
   return 0;
 }
 
-
 static int parse_keyword(char **in, 
 			 DRMS_Record_t *template, 
 			 HContainer_t *slotted,
@@ -831,7 +829,7 @@ static int parse_keyword(char **in,
   char target_key[DRMS_MAXKEYNAMELEN]={0}, constant[DRMS_MAXNAMELEN]={0},  scope[DRMS_MAXNAMELEN]={0}, name1[DRMS_MAXKEYNAMELEN+10]={0};
   int num_segments, per_segment, seg;
   DRMS_Keyword_t *key;
-  
+  int chused = 0;
 
   p = q = *in;
   SKIPWS(p);
@@ -839,30 +837,30 @@ static int parse_keyword(char **in,
 
 
   /* Collect tokens */
-  if (!gettoken(&q,name,sizeof(name))) goto failure;
-  if (!gettoken(&q,type,sizeof(type))) goto failure;
+  if (gettoken(&q,name,sizeof(name)) <= 0) goto failure;
+  if (gettoken(&q,type,sizeof(type)) <= 0) goto failure;
   if ( !strcasecmp(type,"link") )
   {
     /* Link keyword. */
-    if(!gettoken(&q,linkname,sizeof(linkname)))     goto failure;
-    if(!gettoken(&q,target_key,sizeof(target_key))) goto failure;
-    if(getstring(&q,description,sizeof(description))<0)       goto failure;
+    if(gettoken(&q,linkname,sizeof(linkname)) <= 0)     goto failure;
+    if(gettoken(&q,target_key,sizeof(target_key)) <= 0) goto failure;
+    if(gettoken(&q,description,sizeof(description)) < 0)       goto failure;
   }
   else if ( !strcasecmp(type,"index") )
   {
      /* Slotted-key index keyword */
-     if(!gettoken(&q,format,sizeof(format)))     goto failure;
-     if(getstring(&q,description,sizeof(description))<0)   goto failure;
+     if(gettoken(&q,format,sizeof(format)) <= 0)     goto failure;
+     if(gettoken(&q,description,sizeof(description)) < 0)   goto failure;
   }
   else
   {
     /* Simple keyword. */
-    if(!gettoken(&q,constant,sizeof(constant))) goto failure;
-    if(!gettoken(&q,scope,sizeof(scope)))       goto failure;
-    if(!gettoken(&q,defval,sizeof(defval)))     goto failure;
-    if(!gettoken(&q,format,sizeof(format)))     goto failure;
-    if(!gettoken(&q,unit,sizeof(unit)))         goto failure;
-    if(getstring(&q,description,sizeof(description))<0)   goto failure;
+    if(gettoken(&q,constant,sizeof(constant)) <= 0) goto failure;
+    if(gettoken(&q,scope,sizeof(scope)) <= 0)       goto failure;
+    if(gettoken(&q,defval,sizeof(defval)) < 0)     goto failure;
+    if(gettoken(&q,format,sizeof(format)) <= 0)     goto failure;
+    if(gettoken(&q,unit,sizeof(unit)) <= 0)         goto failure;
+    if(gettoken(&q,description,sizeof(description)) < 0)   goto failure;
   }
 
 
@@ -916,9 +914,9 @@ static int parse_keyword(char **in,
      strncpy(key->info->name,name1,sizeof(key->info->name));
      if (strlen(name1) >= sizeof(key->info->name))
        fprintf(stderr,
-	       "WARNING keyword name %s truncated to %d characters.\n", 
+	       "WARNING keyword name %s truncated to %lld characters.\n", 
 	       name1, 
-	       sizeof(key->info->name)-1);
+	       (long long)sizeof(key->info->name)-1);
      key->record = template;
      key->info->per_segment = 0;
      key->info->islink = 0;
@@ -977,16 +975,17 @@ static int parse_keyword(char **in,
       strncpy(key->info->name,name1,sizeof(key->info->name));
       if (strlen(name1) >= sizeof(key->info->name))
         fprintf(stderr,
-		"WARNING keyword name %s truncated to %d characters.\n", 
+		"WARNING keyword name %s truncated to %lld characters.\n", 
 		name1, 
-		sizeof(key->info->name)-1);
+		(long long)sizeof(key->info->name)-1);
       key->record = template;
       key->info->per_segment = per_segment;
       key->info->islink = 0;
       key->info->linkname[0] = 0;
       key->info->target_key[0] = 0;
-      key->info->type = drms_str2type(type);  
-      if (drms_sscanf(defval, key->info->type, &key->value) <= 0)
+      key->info->type = drms_str2type(type);
+      chused = drms_sscanf(defval, key->info->type, &key->value);
+      if (chused < 0 || (chused == 0 && key->info->type != DRMS_TYPE_STRING))
 	goto failure;
 #ifdef DEBUG      
       printf("Default value = '%s' = ",defval);
@@ -1272,7 +1271,7 @@ static int getnextline(char **start)
 }
 
 
-/* getstring: Copy a non-empty string starting at address 
+/* getstring: Copy a (possibly empty) string starting at address 
    *in to *out. Copy a maximum of maxlen-1 characters. 
    A string is either any sequence of characters quoted by " or ', 
    or an unquoted sequence of non-whitespace characters.
@@ -1289,14 +1288,6 @@ static int getstring(char **inn, char *out, int maxlen) {
   in = *inn;
   /* Skip leading whitespace. */
   SKIPWS(in);
-
-  /* Check for empty string. */
-  if (*in == 0)
-  {
-    fprintf(stderr,"%s, line %d: Expected non-empty string on line %d of JSOC series descriptor.\n",
-	    __FILE__, __LINE__,lineno);
-    return -1;
-  }
 
   len = 0;
   if ( *in=='"' || *in=='\'' )
@@ -1326,7 +1317,8 @@ static int getstring(char **inn, char *out, int maxlen) {
   /* Terminate output string. */
   *out = 0;
 
-  /* Forward input pointer past the string. */
+  /* Forward input pointer past the string and WS. */
+  SKIPWS(in);
   *inn = in;
   return len;
 }
@@ -1385,38 +1377,28 @@ static int getdouble(char **in, double *val)
 }
 */
 
-/* Get a string followed by comma. */
+/* Get a string followed by comma (if the comma exists). */
 static int gettoken(char **in, char *copy, int maxlen) 
 {
   int len;
-  if( (len = getstring(in,copy,maxlen))<=0)
-    return 0;
-  if (stripcomma(in, copy, len, maxlen))
-    return 0;
-  else
-    return len;
-}
-  
-    
-/* Really ugly hack: */
-int stripcomma(char **in, char *copy, int len, int maxlen) 
-{ 
-  if ((len)<(maxlen-1) && copy[(len)-1]==',') 
-  {
-    copy[(len)-1] = 0;
-  }
-  else
-  {
-    if (**in != ',')
-    {
-      fprintf(stderr,"%s, line %d: Expected comma (',') on line %d of JSOC series descriptor.\n", __FILE__, __LINE__, lineno);
-      return 1;
-    }
-    ++(*in);
-  }    
-  return 0;
-}
+  int ln = lineno;
 
+  if((len = getstring(in,copy,maxlen))<0)
+    return -1;
+
+  if (**in != '\0' && ln == lineno)
+  {
+     if (**in != ',')
+     {
+	fprintf(stderr,"%s, line %d: Expected comma (',') on line %d of JSOC series descriptor.\n", __FILE__, __LINE__, lineno);
+	return 0;
+     }
+
+     ++(*in);
+  }
+ 
+  return len;
+}
 
 static inline int prefixmatch(char *token, const char *pattern)
 {

@@ -358,7 +358,7 @@ int cfitsio_read_image(char* fits_filename, void** image)
    {
       case(BYTE_IMG):    data_type = TBYTE; break;
       case(SHORT_IMG):   data_type = TSHORT; break;
-      case(LONG_IMG):    data_type = TLONG; break; 
+      case(LONG_IMG):    data_type = TINT; break; 
       case(LONGLONG_IMG):data_type = TLONGLONG; break;
       case(FLOAT_IMG):   data_type = TFLOAT; break;
       case(DOUBLE_IMG):  data_type = TDOUBLE; break;
@@ -711,7 +711,7 @@ int cfitsio_read_file(char* fits_filename, CFITSIO_IMAGE_INFO** image_info, void
    {
       case(BYTE_IMG):    data_type = TBYTE; break;
       case(SHORT_IMG):   data_type = TSHORT; break;
-      case(LONG_IMG):    data_type = TLONG; break; 
+      case(LONG_IMG):    data_type = TINT; break; 
       case(LONGLONG_IMG):data_type = TLONGLONG; break;
       case(FLOAT_IMG):   data_type = TFLOAT; break;
       case(DOUBLE_IMG):  data_type = TDOUBLE; break;
@@ -856,7 +856,7 @@ int cfitsio_write_file(const char* fits_filename, CFITSIO_IMAGE_INFO* image_info
     */
    if(keylist)
    {
-      if(!cfitsio_get_image_info(keylist, &info)!= CFITSIO_SUCCESS)
+      if(cfitsio_get_image_info(keylist, &info) != CFITSIO_SUCCESS)
       {
 	 gotimginfo = 1;
       }
@@ -865,26 +865,9 @@ int cfitsio_write_file(const char* fits_filename, CFITSIO_IMAGE_INFO* image_info
    if (image_info)
    {
       memcpy((char*) &info, (char*) image_info, sizeof(CFITSIO_IMAGE_INFO));
-      if (info.bitfield & kInfoPresent_BLANK)
-      {
-	 long oblank = (long)image_info->blank;
-	 fits_update_key(fptr, TLONG, "BLANK", &oblank, "", &status);
-      }
-      if (info.bitfield & kInfoPresent_BZERO)
-      {
-	 float obzero = (float)image_info->bzero;
-	 fits_update_key(fptr, TFLOAT, "BZERO", &obzero, "", &status);
-      }
-      if (info.bitfield & kInfoPresent_BSCALE)
-      {
-	 float obscale = (float)image_info->bscale;
-	 fits_update_key(fptr, TFLOAT, "BSCALE", &obscale, "", &status);
-      }
-
-      gotimginfo = 1;
    }
-   
-   if (!gotimginfo || (!keylist && !image_info))
+  
+   if (!(gotimginfo || image_info))
    {
       error_code = CFITSIO_ERROR_ARGS;
       goto error_exit;
@@ -909,7 +892,7 @@ int cfitsio_write_file(const char* fits_filename, CFITSIO_IMAGE_INFO* image_info
    {
       case(BYTE_IMG):	data_type = TBYTE; break;
       case(SHORT_IMG):	data_type = TSHORT; break;
-      case(LONG_IMG):	data_type = TLONG; break; 
+      case(LONG_IMG):	data_type = TINT; break; 
       case(LONGLONG_IMG):	data_type = TLONGLONG; break;
       case(FLOAT_IMG):	data_type = TFLOAT; break;
       case(DOUBLE_IMG):	data_type = TDOUBLE; break;
@@ -975,6 +958,26 @@ int cfitsio_write_file(const char* fits_filename, CFITSIO_IMAGE_INFO* image_info
 		
 	 kptr = kptr->next;
       }
+   }
+
+   /* override keylist special keywords (these may have come from 
+    * the keylist to begin with - they should have been removed from
+    * the keylist if this is the case, but I don't think they were removed).
+    */
+   if (info.bitfield & kInfoPresent_BLANK)
+   {
+      long oblank = (long)image_info->blank;
+      fits_update_key(fptr, TLONG, "BLANK", &oblank, "", &status);
+   }
+   if (info.bitfield & kInfoPresent_BZERO)
+   {
+      float obzero = (float)image_info->bzero;
+      fits_update_key(fptr, TFLOAT, "BZERO", &obzero, "", &status);
+   }
+   if (info.bitfield & kInfoPresent_BSCALE)
+   {
+      float obscale = (float)image_info->bscale;
+      fits_update_key(fptr, TFLOAT, "BSCALE", &obscale, "", &status);
    }
 
    //Turn off scaling and offset and null_value
@@ -1476,7 +1479,7 @@ int cfitsio_pure_write_file_using_header(char* fits_filename, char* header, void
    {
       case(BYTE_IMG):	data_type = TBYTE; break;
       case(SHORT_IMG):	data_type = TSHORT; break;
-      case(LONG_IMG):	data_type = TLONG; break; 
+      case(LONG_IMG):	data_type = TINT; break; 
       case(LONGLONG_IMG):	data_type = TLONGLONG; break;
       case(FLOAT_IMG):	data_type = TFLOAT; break;
       case(DOUBLE_IMG):	data_type = TDOUBLE; break;
@@ -1580,7 +1583,7 @@ int cfitsio_write_file_using_header(char* fits_filename, char* header, void* ima
    {
       case(BYTE_IMG):		data_type = TBYTE; break;
       case(SHORT_IMG):	data_type = TSHORT; break;
-      case(LONG_IMG):		data_type = TLONG; break; 
+      case(LONG_IMG):		data_type = TINT; break; 
       case(LONGLONG_IMG):	data_type = TLONGLONG; break;
       case(FLOAT_IMG):	data_type = TFLOAT; break;
       case(DOUBLE_IMG):	data_type = TDOUBLE; break;
