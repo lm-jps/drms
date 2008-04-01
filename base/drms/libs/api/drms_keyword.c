@@ -21,7 +21,7 @@ ExportStrings_t gExpStr[] =
 };
 
 /* Slotted keywords - index keyword type (some kind of integer) */
-const DRMS_Type_t kIndexKWType = DRMS_TYPE_INT;
+const DRMS_Type_t kIndexKWType = DRMS_TYPE_LONGLONG;
 const char *kIndexKWFormat = "%d";
 
 struct RecScopeStrings_struct
