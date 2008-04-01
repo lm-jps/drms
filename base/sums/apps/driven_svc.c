@@ -881,12 +881,17 @@ int position_tape_bot(int sim, int dnum)
     sleep(4);
   }
   else {
+    if(get_tape_file_num(0, dname, dnum) == -1) { //must be ready for rewind
+      write_log("***Dr%d:wt:NotReady\n", drivenum);
+      write_log("***Dr%d:wt:error\n", drivenum);
+      return(-1);
+    }
     if(system(cmd)) {
       write_log("***Dr%d:wt:error\n", drivenum);
       return(-1);
     }
   }
-  write_log("**Dr%d:wt:success\n", drivenum); /* only 2 *'s here */
+  //write_log("**Dr%d:wt:success\n", drivenum); /* only 2 *'s here */
   if(get_tape_file_num(0, dname, dnum) == -1) { /* make sure ready */
     write_log("***Dr%d:wt:error\n", drivenum);
     return(-1);
@@ -1182,23 +1187,30 @@ int get_tape_file_num(int sim, char *dname, int drive)
   struct mtget mt_stat;
 
   if(sim) { return(999999); }   /* give phoney file# back */
-  fd = open(dname, O_RDONLY | O_NONBLOCK);
   while(1) {
+    fd = open(dname, O_RDONLY | O_NONBLOCK);
+    if(fd == -1) {
+      write_log("Failed to open %s. errno=%d\n", dname, errno);
+      return(-1);
+    }
     ioctl(fd, MTIOCGET, &mt_stat);
-    /*write_log("mt_gstat = 0x%0x\n", mt_stat.mt_gstat); /* !!!TEMP */
-    if(mt_stat.mt_gstat == 0) {         /* not ready yet */
+    write_log("mt_gstat = 0x%0x\n", mt_stat.mt_gstat); /* !!!TEMP */
+    //if(mt_stat.mt_gstat == 0) {         /* not ready yet */ //OLD ??
+    if(!GMT_ONLINE(mt_stat.mt_gstat)) {
       if(++waitcnt == MAX_WAIT) {
         ret = -1;
         break;
       }
-      sleep(1);
+      write_log("Wait for ready %d of %d\n", waitcnt, MAX_WAIT);
+      sleep(2);
     }
     else {
       ret = mt_stat.mt_fileno;
+      close(fd);
       break;
     }
+    close(fd);
   }
-  close(fd);
   return(ret);
 }
 
