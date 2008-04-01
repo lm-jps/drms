@@ -62,7 +62,7 @@
 
 double stat_storage();
 void get_cfg();
-char *datestring(void);
+static char *datestring(void);
 
 char mod_name[] = "sum_rm";
 
@@ -460,7 +460,7 @@ int main(int argc, char *argv[])
 }
 
 /* Return ptr to "mmm dd hh:mm:ss". */
-char *datestring(void)
+static char *datestring(void)
 {
   time_t t;
   char *str;

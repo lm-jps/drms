@@ -9,6 +9,11 @@
 
 #include "drms.h"
 #include "drms_priv.h"
+#ifdef __APPLE__
+  #include <sys/param.h>
+#endif /* __APPLE__ */
+
+
 
 /* The keymap data used to be defined in defkeymapclass.h, and 
  * included throught the #include directive, but this confused

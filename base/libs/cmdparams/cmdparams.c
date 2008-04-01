@@ -41,6 +41,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <ctype.h>
+#include "foundation.h"
 #include "hash_table.h"
 #include "cmdparams.h"
 #include "cmdparams_priv.h"
@@ -49,13 +50,6 @@
 #include "timeio.h"
 					       /* declared module parameters */
 extern ModuleArgs_t *gModArgs;
-
-/* Used to have dependency on DRMS.  This is a base library, so it shouldn't.
- * Use internal definitions  */
-static union { uint32_t rep; float val; } __f_nan__ __attribute_used__ = {0xffc00000};
-#define F_NAN (__f_nan__.val)
-static union { uint64_t rep; double val; } __d_nan__ __attribute_used__ = {0xfff8000000000000};
-#define D_NAN (__d_nan__.val)
 
 #define CP_MAXNAMELEN        (32)
 #define CP_MISSING_CHAR     (SCHAR_MIN)

@@ -74,6 +74,13 @@
 */
 #endif
 
+#ifdef __APPLE__
+#define xdr_uint_t xdr_u_int_t    
+#define xdr_uint16_t xdr_u_int16_t
+#define xdr_uint32_t xdr_u_int32_t
+#define xdr_uint64_t xdr_u_int64_t
+#endif /* __APPLE__ */
+
 typedef char *nametype;
 bool_t xdr_nametype(XDR *xdr, nametype *objp);
 
@@ -430,7 +437,6 @@ void remuidpadata(PADATA **start, PADATA **end, char *wd, uint64_t sumid);
 void rempadata(PADATA **list, char *wd, uint64_t sumid);
 char *get_effdate(int plusdays);
 char *get_datetime();
-char *datestring(void);
 void write_time();
 void send_ack();
 CLIENT *set_client_handle(uint32_t prognum, uint32_t versnum);

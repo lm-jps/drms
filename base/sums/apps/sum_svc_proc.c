@@ -19,6 +19,22 @@ extern int debugflg;
 void write_time();
 void logkey();
 
+/*********************************************************/
+/* Return ptr to "mmm dd hh:mm:ss". Uses global datestr[]. 
+*/
+static char *datestring()
+{
+  char datestr[32];
+  struct timeval tvalr;
+  struct tm *t_ptr;
+
+  gettimeofday(&tvalr, NULL);
+  t_ptr = localtime((const time_t *)&tvalr);
+  sprintf(datestr, "%s", asctime(t_ptr));
+  datestr[19] = (char)NULL;
+  return(&datestr[4]);          /* isolate the mmm dd hh:mm:ss */
+}
+
 static KEY *retlist;		/* must be static for svc dispatch rte */
 static SUMOPENED *sumopened_hdr = NULL; /* linked list of active opens*/
 

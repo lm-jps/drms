@@ -68,6 +68,21 @@ KEY *taperesprobotdo_1_rd(KEY *params);
 KEY *taperesprobotdo_1_wt(KEY *params);
 static struct timeval TIMEOUT = { 120, 0 };
 
+/*********************************************************/
+/* Return ptr to "mmm dd hh:mm:ss". Uses global datestr[].
+*/
+static char *datestring()
+{
+  char datestr[32];
+  struct timeval tvalr;
+  struct tm *t_ptr;
+
+  gettimeofday(&tvalr, NULL);
+  t_ptr = localtime((const time_t *)&tvalr);
+  sprintf(datestr, "%s", asctime(t_ptr));
+  datestr[19] = (char)NULL;
+  return(&datestr[4]);          /* isolate the mmm dd hh:mm:ss */
+}
 
 /* Get client handle for return of result and store in glb vrbl current_client.
 */

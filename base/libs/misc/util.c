@@ -1,4 +1,6 @@
+#if LINUX
 #define _GNU_SOURCE
+#endif /* LINUX */
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
