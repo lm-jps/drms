@@ -1856,6 +1856,7 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 
       /* Must convert slotted-key value into associated index-key value */
       double step;
+      double stepsecs;
       DRMS_SlotKeyUnit_t unit;
       double unitVal;
       int usedefunit = 0;
@@ -1866,8 +1867,6 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
       double base;
       double valind;
       double startdurd;
-
-      int onbound = 0;
 
       step = drms_keyword_getslotstep(slotkey, &unit, &stat);
 
@@ -1987,27 +1986,27 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 	   stat = DRMS_ERROR_INVALIDDATA;
       } /* case */
 
+      stepsecs = unitVal * step;
 
       if (startdur)
       {
-	 /* valin is actually a duration. */
-	 /* numerator always in seconds */
-	 int startslot = CalcSlot(startdurd, base, unitVal, step, &onbound);
-	 int endslot = CalcSlot(startdurd + valind, base, unitVal, step, &onbound);
+	 /* valin is actually a duration, in seconds. */
+	 int startslot = CalcSlot(startdurd, base, stepsecs);
 
-	 /* Must add 1 because a duration query has val <= start && val < end.  
-	  * Although this works for floating point numbers, for integers 
-	  * this query omits the last record (it's an open interval). */
-	 valout->value.int_val = endslot - startslot;
+	 /* Must add 1 to slotinc because a duration query is val >= start && val < start + inc.  
+	  * So, normally, slotinc would be MAX((int)(valind / stepsecs) - 1, 0). */
+	 int slotinc = (int)(valind / stepsecs);
 
-	 if (!onbound)
+	 if (slotinc == 0)
 	 {
-	    valout->value.int_val++;
+	    slotinc++;
 	 }
+
+	 valout->value.int_val = slotinc;
       }
       else
       {
-	 valout->value.int_val = CalcSlot(valind, base, unitVal, step, &onbound);
+	 valout->value.int_val = CalcSlot(valind, base, stepsecs);
       }
    }
    else

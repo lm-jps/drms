@@ -10,7 +10,7 @@ Tapegroup:	0
 Index:		OBST
 
 # **************************** Keywords ******************************
-Keyword:	OBST, time, ts_eq, record, 1977.01.01_00:00UT, UTC, "UTC", "Primary key"
+Keyword:	OBST, time, ts_eq, record, 1977.01.01_00:00TAI, TAI, "TAI", "Primary key"
 
 # can make epoch a string
 Keyword:	OBST_epoch, string, constant, record, MDI_EPOCH, %s, "none", "ts_eq epoch"
