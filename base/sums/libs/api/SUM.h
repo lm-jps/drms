@@ -6,11 +6,17 @@
 #define SUMDB "dcs0"
 #define TAPEVIEWERNAME "t50view"
 #define SUM_STOP_NOT "/usr/local/logs/SUM/SUM_STOP_NOT"
-#else
+#elif SUMT120
 #define SUM_VERSION_NUM    (1.0)
 #define SUMSERVER "d00.Stanford.EDU"
 #define SUMDB "hmidb"
 #define TAPEVIEWERNAME "t120view"
+#define SUM_STOP_NOT "/usr/local/logs/SUM/SUM_STOP_NOT"
+#elif SUMT950
+#define SUM_VERSION_NUM    (1.0)
+#define SUMSERVER "d02.Stanford.EDU"
+#define SUMDB "hmidb"
+#define TAPEVIEWERNAME "t950view"
 #define SUM_STOP_NOT "/usr/local/logs/SUM/SUM_STOP_NOT"
 #endif
 
