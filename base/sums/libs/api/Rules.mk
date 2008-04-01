@@ -7,6 +7,26 @@ d		:= $(dir)
 LIBSUMSAPI	:= $(d)/libsumsapi.a 
 OBJ_$(d)	:= $(addprefix $(d)/, $(notdir $(patsubst %.c,%.o,$(wildcard $(SRCDIR)/$(d)/*.c))))
 
+CF_TGT_$(d)     := -O0 -Wno-parentheses -fno-strict-aliasing
+ADD_TGT_$(d) := -DSUMT120 -DSUMNOAO
+
+ifeq ($(HOST),dcs0.jsoc.Stanford.EDU)
+        ADD_TGT_$(d) := -DSUMDC
+endif
+ifeq ($(HOST),dcs1.jsoc.Stanford.EDU)
+        ADD_TGT_$(d) := -DSUMDC
+endif
+ifeq ($(HOST),dcs2.jsoc.Stanford.EDU)
+        ADD_TGT_$(d) := -DSUMDC
+endif
+ifeq ($(HOST),d00.Stanford.EDU)
+        ADD_TGT_$(d) := -DSUMT120
+endif
+ifeq ($(HOST),d02.Stanford.EDU)
+        ADD_TGT_$(d) := -DSUMT950
+endif
+CF_TGT_$(d) := $(CF_TGT_$(d)) $(ADD_TGT_$(d))
+
 LIBSUMSAPI_OBJ	:= $(OBJ_$(d))
 
 DEP_$(d)	:= $(OBJ_$(d):%=%.d)
@@ -19,9 +39,9 @@ S_$(d)		:= $(notdir $(LIBSUMSAPI))
 
 # Local rules
 $(OBJ_$(d)):   $(SRCDIR)/$(d)/Rules.mk
-ifneq ($(COMPILER), icc)
-$(OBJ_$(d)):	CF_TGT := -Wno-parentheses
-endif
+##ifneq ($(COMPILER), icc)
+$(OBJ_$(d)):	CF_TGT := $(CF_TGT_$(d))
+##endif
 $(LIBSUMSAPI):	$(LIBSUMSAPI_OBJ)
 		$(ARCHIVE)
 		$(SLLIB)
