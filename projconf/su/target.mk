@@ -12,4 +12,4 @@ $(PROJOBJDIR):
 	+@[ -d $@/lev1_aia/apps ] || mkdir -p $@/lev1_aia/apps
 	+@[ -d $@/lev1_hmi/apps ] || mkdir -p $@/lev1_hmi/apps
 	+@[ -d $@/export/apps ] || mkdir -p $@/export/apps
-	+@[ -d $@/export/webapps ] || mkdir -p $@/export/webapps
+
