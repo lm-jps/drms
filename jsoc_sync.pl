@@ -106,7 +106,7 @@ sub CallCVS
     open(CVSLOG, ">>$CVSLOG");
     print CVSLOG "Calling '$checkoutcmd'.\n";
     close(CVSLOG);
-    $checkoutcmd = "cd ..; ($checkoutcmd) 1>>$CVSLOG 2>&1";
+    $checkoutcmd = "(cd ..; $checkoutcmd) 1>>$CVSLOG 2>&1";
     print "Calling '$checkoutcmd'.\n";
     system($checkoutcmd);
 }
