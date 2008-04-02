@@ -185,14 +185,18 @@ if ($CHKLIBS == "no") then
 	set TPWARN = 0
 
 	# Libraries required by all
-	if (!(-e lib/linux_x86_64/libcfitsio.a)) then
-	    echo "D'OH! - Can't find required library: lib/linux_x86_64/libcfitsio.a"
-	    set TPWARN = 1
+	if ($JSOC_MACHINE == "linux_x86_64") then
+	    if (!(-e lib/linux_x86_64/libcfitsio.a)) then
+		echo "Can't find required library: lib/linux_x86_64/libcfitsio.a"
+		set TPWARN = 1
+	    endif
 	endif
 
-	if (!(-e lib/linux_ia32/libcfitsio.a)) then
-	    echo "D'OH! - Can't find required library: lib/linux_ia32/libcfitsio.a"
-	    set TPWARN = 1
+	if ($JSOC_MACHINE == "linux_ia32") then
+	    if (!(-e lib/linux_ia32/libcfitsio.a)) then
+		echo "Can't find required library: lib/linux_ia32/libcfitsio.a"
+		set TPWARN = 1
+	    endif
 	endif
 
 	if (-e ../suflag.txt) then
