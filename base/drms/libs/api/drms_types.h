@@ -511,18 +511,18 @@ enum DRMS_SlotKeyUnit_enum
 
 typedef enum DRMS_SlotKeyUnit_enum DRMS_SlotKeyUnit_t;
 
-enum DRMS_SlotKeyEpoch_enum
+enum DRMS_TimeEpoch_enum
 {
    /** */
-   kSlotKeyEpoch_Invalid = 0,
-   kSlotKeyEpoch_JSOC,
-   kSlotKeyEpoch_MDI,
-   kSlotKeyEpoch_WSO,
-   kSlotKeyEpoch_TAI,
-   kSlotKeyEpoch_MJD
+   kTimeEpoch_Invalid = 0,
+   kTimeEpoch_DRMS,
+   kTimeEpoch_MDI,
+   kTimeEpoch_WSO,
+   kTimeEpoch_TAI,
+   kTimeEpoch_MJD
 };
 
-typedef enum DRMS_SlotKeyEpoch_enum DRMS_SlotKeyEpoch_t;
+typedef enum DRMS_TimeEpoch_enum DRMS_TimeEpoch_t;
 
 enum DRMS_RecScopeType_enum
 {

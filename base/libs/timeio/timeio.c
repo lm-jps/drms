@@ -73,6 +73,8 @@ static struct date_time {
     char zone[8];
 } dattim;
 
+const int kTIMEIO_MaxTimeEpochStr = 64;
+
 static int molen[] = {31, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 
 static double ut_leap_time[] = {

@@ -40,14 +40,15 @@ struct SlotKeyUnitStrings_struct
 
 typedef struct SlotKeyUnitStrings_struct SlotKeyUnitStrings_t;
 
-struct SlotKeyEpochStrings_struct
+struct TimeEpochStrings_struct
 {
-  DRMS_SlotKeyEpoch_t type;
+  DRMS_TimeEpoch_t type;
   const char *str;
   const char *timestr;
+  TIME internalTime;
 };
 
-typedef struct SlotKeyEpochStrings_struct SlotKeyEpochStrings_t;
+typedef struct TimeEpochStrings_struct TimeEpochStrings_t;
 
 static RecScopeStrings_t gSS[] =
 {
@@ -77,14 +78,14 @@ static SlotKeyUnitStrings_t gSUS[] =
    {(DRMS_SlotKeyUnit_t)-99, ""}
 };
 
-static SlotKeyEpochStrings_t gSEpochS[] =
+static TimeEpochStrings_t gSEpochS[] =
 {
-   {kSlotKeyEpoch_JSOC, "JSOC_EPOCH", "1977.01.01_00:00:00_TAI"},
-   {kSlotKeyEpoch_MDI, "MDI_EPOCH", "1993.01.01_00:00:00_TAI"},
-   {kSlotKeyEpoch_WSO, "WSO_EPOCH", "1601.01.01_00:00:00_UT"},
-   {kSlotKeyEpoch_TAI, "TAI_EPOCH", "1958.01.01_00:00:00_TAI"},
-   {kSlotKeyEpoch_MJD, "MJD_EPOCH", "1858.11.17_00:00:00_UT"},
-   {(DRMS_SlotKeyEpoch_t)-99, ""}
+   {kTimeEpoch_DRMS, "DRMS_EPOCH", DRMS_EPOCH_S, DRMS_EPOCH},
+   {kTimeEpoch_MDI, "MDI_EPOCH", MDI_EPOCH_S, MDI_EPOCH},
+   {kTimeEpoch_WSO, "WSO_EPOCH", WSO_EPOCH_S, WSO_EPOCH},
+   {kTimeEpoch_TAI, "TAI_EPOCH", TAI_EPOCH_S, TAI_EPOCH},
+   {kTimeEpoch_MJD, "MJD_EPOCH", MJD_EPOCH_S, MJD_EPOCH},
+   {(DRMS_TimeEpoch_t)-99, ""}
 };
 
 const double kSlotKeyBase_Carr = 0.0;
@@ -96,8 +97,6 @@ static HContainer_t *gSlotEpochHC = NULL;
 
 const int kMaxRecScopeTypeKey = 4096;
 const int kMaxSlotUnitKey = 128;
-const int kMaxSlotEpochKey = 64;
-const int kMaxSlotEpochTimestr = 64;
 
 /* Per Tim, FITS doesn't support char, short, long long, or float keyword types. */
 static int DRMSKeyValToFITSKeyType(DRMS_Value_t *valin, char *fitstype)
@@ -1558,15 +1557,15 @@ TIME drms_keyword_getslotepoch(DRMS_Keyword_t *slotkey, int *status)
 TIME drms_keyword_getepoch(DRMS_Keyword_t *key, int *status)
 {
    TIME ret = DRMS_MISSING_TIME;
-   char buf[kMaxSlotEpochKey];
+   char buf[kTIMEIO_MaxTimeEpochStr];
    int stat = DRMS_SUCCESS;
 
    if (key->info->type == DRMS_TYPE_STRING && strstr(key->info->name, kSlotAncKey_Epoch))
    {
       if (!gSlotEpochHC)
       {
-	 gSlotEpochHC = hcon_create(kMaxSlotEpochTimestr, 
-				    kMaxSlotEpochKey, 
+	 gSlotEpochHC = hcon_create(sizeof(TIME), 
+				    kTIMEIO_MaxTimeEpochStr, 
 				    NULL,
 				    NULL,
 				    NULL,
@@ -1580,7 +1579,7 @@ TIME drms_keyword_getepoch(DRMS_Keyword_t *key, int *status)
 	    while (gSEpochS[i].type != -99)
 	    {
 	       snprintf(buf, sizeof(buf), "%s", gSEpochS[i].str);
-	       hcon_insert_lower(gSlotEpochHC, buf, gSEpochS[i].timestr);
+	       hcon_insert_lower(gSlotEpochHC, buf, &(gSEpochS[i].internalTime));
 	       i++;
 	    }
 	 }
@@ -1591,11 +1590,10 @@ TIME drms_keyword_getepoch(DRMS_Keyword_t *key, int *status)
 	 }
       }
 
-      DRMS_Type_Value_t se;
-      char *timestr = hcon_lookup_lower(gSlotEpochHC, (key->value).string_val);
-      if (timestr && (drms_sscanf(timestr, DRMS_TYPE_TIME, &se) > 0))
+      TIME *timeval = (TIME *)hcon_lookup_lower(gSlotEpochHC, (key->value).string_val);
+      if (timeval)
       {
-	 ret = se.time_val;
+	 ret = *timeval;
       }
       else
       {
@@ -1991,7 +1989,6 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
       if (startdur)
       {
 	 /* valin is actually a duration, in seconds. */
-	 int startslot = CalcSlot(startdurd, base, stepsecs);
 
 	 /* Must add 1 to slotinc because a duration query is val >= start && val < start + inc.  
 	  * So, normally, slotinc would be MAX((int)(valind / stepsecs) - 1, 0). */
