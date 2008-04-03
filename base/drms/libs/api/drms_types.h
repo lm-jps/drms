@@ -514,12 +514,13 @@ typedef enum DRMS_SlotKeyUnit_enum DRMS_SlotKeyUnit_t;
 enum DRMS_TimeEpoch_enum
 {
    /** */
-   kTimeEpoch_Invalid = 0,
+   kTimeEpoch_Invalid = -1,
    kTimeEpoch_DRMS,
    kTimeEpoch_MDI,
    kTimeEpoch_WSO,
    kTimeEpoch_TAI,
-   kTimeEpoch_MJD
+   kTimeEpoch_MJD,
+   kTimeEpoch_END
 };
 
 typedef enum DRMS_TimeEpoch_enum DRMS_TimeEpoch_t;
@@ -1083,6 +1084,10 @@ void drms_memset(DRMS_Type_t type, int n, void *array, DRMS_Type_Value_t val);
 int drms_daxpy(DRMS_Type_t type, const double alpha, DRMS_Type_Value_t *x, 
 	       DRMS_Type_Value_t *y );
 int drms_equal(DRMS_Type_t type, DRMS_Type_Value_t *x, DRMS_Type_Value_t *y);
+
+/* time stuff */
+const TIME *drms_time_getepoch(const char *str, DRMS_TimeEpoch_t *epochenum, int *status);
+void drms_time_term();
 
 /* Frees value, only if it is of type string. */
 static inline void drms_value_free(DRMS_Value_t *val)

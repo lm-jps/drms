@@ -40,16 +40,6 @@ struct SlotKeyUnitStrings_struct
 
 typedef struct SlotKeyUnitStrings_struct SlotKeyUnitStrings_t;
 
-struct TimeEpochStrings_struct
-{
-  DRMS_TimeEpoch_t type;
-  const char *str;
-  const char *timestr;
-  TIME internalTime;
-};
-
-typedef struct TimeEpochStrings_struct TimeEpochStrings_t;
-
 static RecScopeStrings_t gSS[] =
 {
    {kRecScopeType_Variable, "variable"},
@@ -78,22 +68,11 @@ static SlotKeyUnitStrings_t gSUS[] =
    {(DRMS_SlotKeyUnit_t)-99, ""}
 };
 
-static TimeEpochStrings_t gSEpochS[] =
-{
-   {kTimeEpoch_DRMS, "DRMS_EPOCH", DRMS_EPOCH_S, DRMS_EPOCH},
-   {kTimeEpoch_MDI, "MDI_EPOCH", MDI_EPOCH_S, MDI_EPOCH},
-   {kTimeEpoch_WSO, "WSO_EPOCH", WSO_EPOCH_S, WSO_EPOCH},
-   {kTimeEpoch_TAI, "TAI_EPOCH", TAI_EPOCH_S, TAI_EPOCH},
-   {kTimeEpoch_MJD, "MJD_EPOCH", MJD_EPOCH_S, MJD_EPOCH},
-   {(DRMS_TimeEpoch_t)-99, ""}
-};
-
 const double kSlotKeyBase_Carr = 0.0;
 
 static HContainer_t *gRecScopeStrHC = NULL;
 static HContainer_t *gRecScopeHC = NULL;
 static HContainer_t *gSlotUnitHC = NULL;
-static HContainer_t *gSlotEpochHC = NULL;
 
 const int kMaxRecScopeTypeKey = 4096;
 const int kMaxSlotUnitKey = 128;
@@ -155,10 +134,6 @@ void drms_keyword_term()
    if (gSlotUnitHC)
    {
       hcon_destroy(&gSlotUnitHC);
-   }
-   if (gSlotEpochHC)
-   {
-      hcon_destroy(&gSlotEpochHC);
    }
 }
 
@@ -1557,40 +1532,12 @@ TIME drms_keyword_getslotepoch(DRMS_Keyword_t *slotkey, int *status)
 TIME drms_keyword_getepoch(DRMS_Keyword_t *key, int *status)
 {
    TIME ret = DRMS_MISSING_TIME;
-   char buf[kTIMEIO_MaxTimeEpochStr];
    int stat = DRMS_SUCCESS;
 
    if (key->info->type == DRMS_TYPE_STRING && strstr(key->info->name, kSlotAncKey_Epoch))
    {
-      if (!gSlotEpochHC)
-      {
-	 gSlotEpochHC = hcon_create(sizeof(TIME), 
-				    kTIMEIO_MaxTimeEpochStr, 
-				    NULL,
-				    NULL,
-				    NULL,
-				    NULL,
-				    0);
+      TIME *timeval = drms_time_getepoch((key->value).string_val, NULL, &stat);
 
-	 if (gSlotEpochHC)
-	 {
-	    int i = 0;
-
-	    while (gSEpochS[i].type != -99)
-	    {
-	       snprintf(buf, sizeof(buf), "%s", gSEpochS[i].str);
-	       hcon_insert_lower(gSlotEpochHC, buf, &(gSEpochS[i].internalTime));
-	       i++;
-	    }
-	 }
-	 else
-	 {
-	    fprintf(stderr, "Error creating slot epoch string container.\n");
-	    stat = DRMS_ERROR_CANTCREATEHCON;
-	 }
-      }
-
-      TIME *timeval = (TIME *)hcon_lookup_lower(gSlotEpochHC, (key->value).string_val);
       if (timeval)
       {
 	 ret = *timeval;
@@ -1992,18 +1939,18 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 
 	 /* Must add 1 to slotinc because a duration query is val >= start && val < start + inc.  
 	  * So, normally, slotinc would be MAX((int)(valind / stepsecs) - 1, 0). */
-	 int slotinc = (int)(valind / stepsecs);
+	 long long slotinc = (long long)(valind / stepsecs);
 
 	 if (slotinc == 0)
 	 {
 	    slotinc++;
 	 }
 
-	 valout->value.int_val = slotinc;
+	 valout->value.longlong_val = slotinc;
       }
       else
       {
-	 valout->value.int_val = CalcSlot(valind, base, stepsecs);
+	 valout->value.longlong_val = CalcSlot(valind, base, stepsecs);
       }
    }
    else

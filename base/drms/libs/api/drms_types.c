@@ -11,6 +11,26 @@
 
 const char kDRMS_MISSING_VALUE[] = "DRMS_MISSING_VALUE";
 
+static HContainer_t *gSlotEpochHC = NULL;
+struct TimeEpochStrings_struct
+{
+  DRMS_TimeEpoch_t type;
+  const char *str;
+  const char *timestr;
+  TIME internalTime;
+};
+
+typedef struct TimeEpochStrings_struct TimeEpochStrings_t;
+static TimeEpochStrings_t gSEpochS[] =
+{
+   {kTimeEpoch_DRMS, "DRMS_EPOCH", DRMS_EPOCH_S, DRMS_EPOCH},
+   {kTimeEpoch_MDI, "MDI_EPOCH", MDI_EPOCH_S, MDI_EPOCH},
+   {kTimeEpoch_WSO, "WSO_EPOCH", WSO_EPOCH_S, WSO_EPOCH},
+   {kTimeEpoch_TAI, "TAI_EPOCH", TAI_EPOCH_S, TAI_EPOCH},
+   {kTimeEpoch_MJD, "MJD_EPOCH", MJD_EPOCH_S, MJD_EPOCH},
+   {(DRMS_TimeEpoch_t)-99, ""}
+};
+
 DB_Type_t drms2dbtype(DRMS_Type_t type)
 {
   switch(type)
@@ -1927,4 +1947,64 @@ int drms_daxpy(DRMS_Type_t type, const double alpha, DRMS_Type_Value_t *x,
     return 1;
   }
   return 0;
+}
+
+const TIME *drms_time_getepoch(const char *str, DRMS_TimeEpoch_t *epochenum, int *status)
+{
+   int stat = DRMS_SUCCESS;
+   char buf[kTIMEIO_MaxTimeEpochStr];
+   TIME *ret = NULL;
+
+   /* If the enum value is provided, it overrides the string. */
+   if (epochenum && *epochenum > kTimeEpoch_Invalid && *epochenum < kTimeEpoch_END)
+   {
+      ret = &(gSEpochS[*epochenum].internalTime);
+   }
+   else 
+   {
+      if (!gSlotEpochHC)
+      {
+	 gSlotEpochHC = hcon_create(sizeof(TIME), 
+				    kTIMEIO_MaxTimeEpochStr, 
+				    NULL,
+				    NULL,
+				    NULL,
+				    NULL,
+				    0);
+
+	 if (gSlotEpochHC)
+	 {
+	    int i = 0;
+
+	    while (gSEpochS[i].type != -99)
+	    {
+	       snprintf(buf, sizeof(buf), "%s", gSEpochS[i].str);
+	       hcon_insert_lower(gSlotEpochHC, buf, &(gSEpochS[i].internalTime));
+	       i++;
+	    }
+	 }
+	 else
+	 {
+	    fprintf(stderr, "Error creating slot epoch string container.\n");
+	    stat = DRMS_ERROR_CANTCREATEHCON;
+	 }
+      }
+
+      ret = (TIME *)hcon_lookup_lower(gSlotEpochHC, str);  
+   }
+
+   if (status)
+   {
+      *status = stat;
+   }
+
+   return ret;
+}
+
+void drms_time_term()
+{
+   if (gSlotEpochHC)
+   {
+      hcon_destroy(&gSlotEpochHC);
+   }
 }
