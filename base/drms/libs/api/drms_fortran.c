@@ -1309,7 +1309,7 @@ FCALLSCSUB2(get_array_data, F_GET_ARRAY_DATA_INTEGER, f_get_array_data_integer, 
 FCALLSCSUB2(get_array_data, F_GET_ARRAY_DATA_INTEGER8, f_get_array_data_integer8, PVOID, STRING)
 FCALLSCSUB2(get_array_data, F_GET_ARRAY_DATA_REAL, f_get_array_data_real, PVOID, STRING)
 FCALLSCSUB2(get_array_data, F_GET_ARRAY_DATA_REAL8, f_get_array_data_real8, PVOID, STRING)
-FCALLSCSUB2(get_array_data, F_GET_ARRAY_DATA_DOUBLE, f_get_array_data_DOUBLE, PVOID, STRING)
+FCALLSCSUB2(get_array_data, F_GET_ARRAY_DATA_DOUBLE, f_get_array_data_double, PVOID, STRING)
 
 
 /* Fields relating to scaling and slicing. */
@@ -2701,3 +2701,25 @@ FCALLSCFUN4(INT, f_drms_daxpy, F_DRMS_DAXPY, f_drms_daxpy, INT, DOUBLE)
 // ##### FILE:: drms_types.c ########
 // ####          END             ####
 // ##################################
+
+/* Stuff added by Art */
+int f_drms_recordset_getnrecs(char * rs_hdl) {
+  DRMS_RecordSet_t *rs = (DRMS_RecordSet_t  *)  _convert_handle(rs_hdl);
+
+  return drms_recordset_getnrecs(rs);
+}
+FCALLSCFUN1(INT, f_drms_recordset_getnrecs, F_DRMS_RECORDSET_GETNRECS, f_drms_recordset_getnrecs, STRING)
+
+char *f_drms_recordset_getrec(char * rs_hdl, long long recnum) {
+  DRMS_RecordSet_t *rs = (DRMS_RecordSet_t  *)  _convert_handle(rs_hdl);
+  DRMS_Record_t *_ret_var = drms_recordset_getrec(rs, recnum);;
+  return _pointer2handle((void *)_ret_var, "DRMS_Record_t", "drms_recordset_getrec");
+}
+FCALLSCFUN2(STRING, f_drms_recordset_getrec, F_DRMS_RECORDSET_GETREC, f_drms_recordset_getrec, STRING, INT)
+
+int f_drms_segment_getnaxis(char * seg_hdl) {
+  DRMS_Segment_t *seg = (DRMS_Segment_t  *)  _convert_handle(seg_hdl);
+
+  return drms_segment_getnaxis(seg);
+}
+FCALLSCFUN1(INT, f_drms_segment_getnaxis, F_DRMS_SEGMENT_GETNAXIS, f_drms_segment_getnaxis, STRING)

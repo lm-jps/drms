@@ -404,6 +404,11 @@ int drms_segment_mapexport(DRMS_Record_t *recout,
 			   const char *clname,
 			   const char *mapfile);
 
+/* accessor functions */
+static inline int drms_segment_getnaxis(DRMS_Segment_t *seg)
+{
+   return seg->info->naxis;
+}
 #endif
 
 

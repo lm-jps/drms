@@ -301,6 +301,10 @@ long long drms_record_memsize(DRMS_Record_t *rec);
 char *drms_record_jsoc_version(DRMS_Env_t *env, DRMS_Record_t *rec);
 
 /* Handling record sets */
+static inline int drms_recordset_getnrecs(DRMS_RecordSet_t *set)
+{
+   return set->n;
+}
 /** @brief Return the number of record subsets */
 int drms_recordset_getnumss(DRMS_RecordSet_t *set);
 /** @brief Return a DRMS record-set subset query */
@@ -311,6 +315,15 @@ DRMS_RecordSetType_t *drms_recordset_gettypess(DRMS_RecordSet_t *set, unsigned i
 DRMS_Record_t *drms_recordset_getss(DRMS_RecordSet_t *set, unsigned int setnum, int *status);
 /** @brief Return the number of records in a DRMS record-set subset */
 int drms_recordset_getssnrecs(DRMS_RecordSet_t *set, unsigned int setnum, int *status);
+static inline DRMS_Record_t *drms_recordset_getrec(DRMS_RecordSet_t *rs, long long recnum)
+{
+   if (rs)
+   {
+      return rs->records[recnum];
+   }
+
+   return NULL;
+}
 
 /** \brief generate drms query string
 

@@ -1011,7 +1011,7 @@ CC          END SUBROUTINE f_drms_copy_drms2drms
           END SUBROUTINE f_get_array_data_real8
 
           SUBROUTINE f_get_array_data_double(A1, A2)
-            CHARACTER(*) A2
+            CHARACTER*256 A2
             DOUBLE PRECISION, ALLOCATABLE :: A1(:)
           END SUBROUTINE f_get_array_data_double
 
@@ -1019,5 +1019,15 @@ CC          END SUBROUTINE f_drms_copy_drms2drms
              INTEGER*2, ALLOCATABLE :: A (:)
              INTEGER AXIS
            END SUBROUTINE
+
+           INTEGER FUNCTION f_drms_recordset_getnrecs(A1)
+             CHARACTER*256 A1
+           END FUNCTION f_drms_recordset_getnrecs
+
+           CHARACTER*256 FUNCTION f_drms_recordset_getrec(A1, N1)
+             CHARACTER*256 A1
+             INTEGER N1
+           END FUNCTION f_drms_recordset_getrec
+      
         END INTERFACE
       END MODULE FDRMS

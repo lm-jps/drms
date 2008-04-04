@@ -884,4 +884,9 @@ int drms_array_rawconvert(int n, DRMS_Type_t dsttype, double bzero,
 			  void *src);
 /* @} */
 
+static inline void *drms_array_getdata(DRMS_Array_t *arr)
+{
+   return arr->data;
+}
+
 #endif
