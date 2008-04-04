@@ -46,6 +46,7 @@ tie %Hofrdq, "Tie::IxHash"; #lets you take out keys in input order
 tie %Hofwtq, "Tie::IxHash"; #lets you take out keys in input order
 tie %Hofreplace, "Tie::IxHash"; #lets you take out keys in input order
 tie %Hofneed, "Tie::IxHash"; #lets you take out keys in input order
+@emptyslottapes = ();
 
 #NOTE: must have our full path name here for any restart signaled by sum_svc
 $OURPATH = "/home/production/cvs/JSOC/base/sums/scripts/t950view"; #!!this program
@@ -275,7 +276,7 @@ print "effdate = $date\n";
   my $lopd = $fop->Label(-text => 'tape write', -anchor => 'w',
 		-background=>'lightblue')->pack(-side=> 'left');
   my $lope = $fop->Label(-text => ' tape find ', -anchor => 'w',
-		-background=>'salmon')->pack(-side=> 'left');
+		-background=>'orange')->pack(-side=> 'left');
 
   #drive #0 & 1
   my $f1 = $mw->Frame(-borderwidth => 0, -relief=>'flat')
@@ -838,6 +839,9 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d0tape;
         $d0tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
+        if($y eq "-------------") {
+          $emptyslottapes[$snum-1] = $d0tape;
+        }
       }
       elsif($rbdnum == 1) {
         $b_drv1->configure(-background=>'grey', -text=>$slottapes[$snum-1]);
@@ -846,6 +850,9 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d1tape;
         $d1tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
+        if($y eq "-------------") {
+          $emptyslottapes[$snum-1] = $d1tape;
+        }
       }
       elsif($rbdnum == 2) {
         $b_drv2->configure(-background=>'grey', -text=>$slottapes[$snum-1]);
@@ -854,6 +861,9 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d2tape;
         $d2tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
+        if($y eq "-------------") {
+          $emptyslottapes[$snum-1] = $d2tape;
+        }
       }
       elsif($rbdnum == 3) {
         $b_drv3->configure(-background=>'grey', -text=>$slottapes[$snum-1]);
@@ -862,6 +872,9 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d3tape;
         $d3tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
+        if($y eq "-------------") {
+          $emptyslottapes[$snum-1] = $d3tape;
+        }
       }
       elsif($rbdnum == 4) {
         $b_drv4->configure(-background=>'grey', -text=>$slottapes[$snum-1]);
@@ -870,6 +883,9 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d4tape;
         $d4tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
+        if($y eq "-------------") {
+          $emptyslottapes[$snum-1] = $d4tape;
+        }
       }
       elsif($rbdnum == 5) {
         $b_drv5->configure(-background=>'grey', -text=>$slottapes[$snum-1]);
@@ -878,6 +894,9 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d5tape;
         $d5tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
+        if($y eq "-------------") {
+          $emptyslottapes[$snum-1] = $d5tape;
+        }
       }
       elsif($rbdnum == 6) {
         $b_drv6->configure(-background=>'grey', -text=>$slottapes[$snum-1]);
@@ -886,6 +905,9 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d6tape;
         $d6tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
+        if($y eq "-------------") {
+          $emptyslottapes[$snum-1] = $d6tape;
+        }
       }
       elsif($rbdnum == 7) {
         $b_drv7->configure(-background=>'grey', -text=>$slottapes[$snum-1]);
@@ -894,6 +916,9 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d7tape;
         $d7tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
+        if($y eq "-------------") {
+          $emptyslottapes[$snum-1] = $d7tape;
+        }
       }
       elsif($rbdnum == 8) {
         $b_drv8->configure(-background=>'grey', -text=>$slottapes[$snum-1]);
@@ -902,6 +927,9 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d8tape;
         $d8tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
+        if($y eq "-------------") {
+          $emptyslottapes[$snum-1] = $d8tape;
+        }
       }
       elsif($rbdnum == 9) {
         $b_drv9->configure(-background=>'grey', -text=>$slottapes[$snum-1]);
@@ -910,6 +938,9 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d9tape;
         $d9tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
+        if($y eq "-------------") {
+          $emptyslottapes[$snum-1] = $d9tape;
+        }
       }
       elsif($rbdnum == 10) {
         $b_drv10->configure(-background=>'grey', -text=>$slottapes[$snum-1]);
@@ -918,6 +949,9 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d10tape;
         $d10tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
+        if($y eq "-------------") {
+          $emptyslottapes[$snum-1] = $d10tape;
+        }
       }
       elsif($rbdnum == 11) {
         $b_drv11->configure(-background=>'grey', -text=>$slottapes[$snum-1]);
@@ -926,6 +960,9 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d11tape;
         $d11tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
+        if($y eq "-------------") {
+          $emptyslottapes[$snum-1] = $d11tape;
+        }
       }
       #if($playback) { last; }
     }
@@ -1303,8 +1340,8 @@ sub Display_tape_in_slots {
     $tapeid = $slottapes[$i-1];
     #print "i=$i tapeid=$tapeid\n"; #!!!TEMP
     if($tapeid eq "-------------") {
-      #$tapeidinfo = shift(@emptyslottapes);  #!!!TBD change for 2200 slots?
       $tapeidinfo = $emptyslottapes[$i-1];
+print "AA:\$emptyslottapes[$i-1] = $tapeidinfo\n"; #!!!TEMP
     }
     else {
       $tapeidinfo = $tapeid;
@@ -1342,7 +1379,6 @@ sub show_tape_in_slots {
   $row = $column = $slnum = $freeslots = $tapesindrives = 0;
   $rows_per_col = 40;
   @slottapes = ();
-  @emptyslottapes = ();
   while(<LOGL>) {
     if(/^\*\*\*ENDInv:/) { last; }
     if(/^tapeid in drive 0 /) {
@@ -1501,6 +1537,7 @@ sub show_tape_in_slots {
           eval($x);
           #push(@emptyslottapes, $stape);
           $emptyslottapes[$slnum] = $stape;
+print "BB:\$emptyslottapes[\$slnum] =$stape  \$slnum=$slnum\n"; #!!!!TEMP
         }
         $stape = "-------------";
         if($slnum < $MAX_SLOTS) {       #don't count tapes in EE slots
@@ -1614,7 +1651,7 @@ sub Id_go {
       $idpg = int(($id_i-1)/$MAX_SLOTS_PAGE); 
       $current_page = -1;		#force a clean page
       &Display_tape_in_slots($idpg);
-      $x = "\$slotbt$id_i->configure(-background => 'salmon')";
+      $x = "\$slotbt$id_i->configure(-background => 'orange')";
       eval($x);
       return;
     }
