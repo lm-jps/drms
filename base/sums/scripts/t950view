@@ -155,7 +155,8 @@ if($interactive && !$restartmode) {
   print "\n";
   if($passwd ne "hmi4sdo") {
     print "Invalid passwd\n";
-    exit(1);
+    print "!!TEMP Continue for now...\n";
+    #exit(1);
   }
 }
 $ext = "$user"."_$ldate";
@@ -596,7 +597,7 @@ sub log_update {
       $bix = 0;
       while(1) {
         if($bix < $MAX_Q_ENTIRES) {
-          $x = "\$brdq$bix->configure(-text => '------------')";
+          $x = "\$brdq$bix->configure(-text => '-------------')";
           eval($x);
           $bix++;
         }
@@ -653,7 +654,7 @@ sub log_update {
       $brdq_ix = $bix;
       while(1) {
         if($bix < $MAX_Q_ENTIRES) {
-          $x = "\$brdq$bix->configure(-text => '------------')";
+          $x = "\$brdq$bix->configure(-text => '-------------')";
           eval($x);
           $bix++;
         }
@@ -723,7 +724,7 @@ print "needorder is:\n@needorder\n";  #!!TEMP
       $bwtq_ix = $bix;
       while(1) {
         if($bix < $MAX_Q_ENTIRES) {
-          $x = "\$bwtq$bix->configure(-text => '------------')";
+          $x = "\$bwtq$bix->configure(-text => '-------------')";
           eval($x);
           $bix++;
         }
@@ -778,6 +779,9 @@ print "needorder is:\n@needorder\n";  #!!TEMP
       $trobot0->insert('end', $str);
       $trobot0->see('end');
       ($a,$b,$dev,$com,$snum,$rbdnum) = split(/ /, $str);
+      $idpg = int(($snum-1)/$MAX_SLOTS_PAGE);
+      $current_page = -1;
+      &Display_tape_in_slots($idpg);
       $x = "\$slotbt$snum->configure(-background => 'yellow')";
       eval($x);
       if($com eq "load") {		#loading tape to a drive
@@ -930,7 +934,7 @@ print "needorder is:\n@needorder\n";  #!!TEMP
       $trobot0->insert('end', "$str\n");
       $trobot0->see('end');
       foreach $i (1 .. $MAX_SLOTS_PAGE) {	#turn all slots yellow
-        $x = "\$slotbt$i->configure(-background => 'yellow',-text=>'----------')";
+        $x = "\$slotbt$i->configure(-background => 'yellow',-text=>'-------------')";
         eval($x);
       }
       #always go away to give time to see the display change
@@ -1299,7 +1303,8 @@ sub Display_tape_in_slots {
     $tapeid = $slottapes[$i-1];
     #print "i=$i tapeid=$tapeid\n"; #!!!TEMP
     if($tapeid eq "-------------") {
-      $tapeidinfo = shift(@emptyslottapes);  #!!!TBD change for 2200 slots?
+      #$tapeidinfo = shift(@emptyslottapes);  #!!!TBD change for 2200 slots?
+      $tapeidinfo = $emptyslottapes[$i-1];
     }
     else {
       $tapeidinfo = $tapeid;
@@ -1310,7 +1315,7 @@ sub Display_tape_in_slots {
 	-font => 'courier 8 bold',
         -background => 'grey',
         -relief => 'sunken',
-        -command => \[\\&Tape_info, \$tapeid\],
+        -command => \[\\&Tape_info, \$tapeidinfo\],
         )";
      eval($x);
      $txt = "      ".$i;
@@ -1462,7 +1467,7 @@ sub show_tape_in_slots {
     }
     elsif(/^tapeid in drive 10 /) {
       $pos = index($_, "10 = ");
-      $d10tape = substr($_, $pos+4);
+      $d10tape = substr($_, $pos+5);
       chomp($d10tape);
       if($d10tape eq "(null)") {
         $d10tape = "-------------";
@@ -1474,7 +1479,7 @@ sub show_tape_in_slots {
     }
     elsif(/^tapeid in drive 11 /) {
       $pos = index($_, "11 = ");
-      $d11tape = substr($_, $pos+4);
+      $d11tape = substr($_, $pos+5);
       chomp($d11tape);
       if($d11tape eq "(null)") {
         $d11tape = "-------------";
@@ -1494,9 +1499,10 @@ sub show_tape_in_slots {
           chomp($indrv);
           $x = "\$stape = \$d$indrv"."tape";
           eval($x);
-          push(@emptyslottapes, $stape);
+          #push(@emptyslottapes, $stape);
+          $emptyslottapes[$slnum] = $stape;
         }
-        $stape = "----------";
+        $stape = "-------------";
         if($slnum < $MAX_SLOTS) {       #don't count tapes in EE slots
           $freeslots++;
         }
@@ -1585,7 +1591,8 @@ sub show_notape_in_slots_impexp {
   foreach $i (($MAX_SLOTS + 1) .. ($MAX_SLOTS + $NUM_IMP_EXP_SLOTS)) {
     $tapeid = $slottapes[$i-1];
     if($tapeid eq "-------------") {
-      $tapeidinfo = shift(@emptyslottapes);
+      #$tapeidinfo = shift(@emptyslottapes);
+      $tapeidinfo = $emptyslottapes[$i-1];
     }
     else {
       $tapeidinfo = $tapeid;
@@ -1850,7 +1857,7 @@ sub Bulk_Load_Done {
 sub get_exp_tapes{
   @exptape = ();
   $sqlcmd = "select * from sum_group order by effective_date";
-  print "sqlcmd is: $sqlcmd\n\n"; #!!TEMP
+  #print "sqlcmd is: $sqlcmd\n\n"; #!!TEMP
   $sth = $dbh->prepare($sqlcmd);
   if ( !defined $sth ) {
     print "Cannot prepare statement: $DBI::errstr\n";
@@ -1926,7 +1933,7 @@ sub labeltime {
 
 sub Tape_info {
   my($tapeid) = @_;
-  #chop($tapeid); chop($tapeid); #elim 2 extra spaces
+  chop($tapeid); chop($tapeid); #elim 2 extra spaces
   if(Exists($statf)) {
     $statf->destroy();
   }
@@ -1980,7 +1987,7 @@ sub Mt_stat {
   $statf = $mw->Toplevel();
   $statf->geometry("400x200-10-500");
   $statf->title("mt");
-  $cmd = "mt -f /dev/nst$drnum status";
+  $cmd = "mt -f /dev/sum_nst$drnum status";
   $statf->Label(-text => "$cmd", -font => 'arial 18 bold')->pack();
   $statf->Button(
         -text => 'Close',
@@ -1990,7 +1997,7 @@ sub Mt_stat {
   $textlog = $statf->Scrolled("Text")->pack();
   $statlog = "/tmp/Mt_stat.$user.log";
   `$cmd 1> $statlog 2>&1`;
-#  $cmd = "mt -f /dev/nst$drnum tell";
+#  $cmd = "mt -f /dev/sum_nst$drnum tell";
 #  `$cmd 1>> $statlog 2>&1`;
   if(!open(LOGSTAT, $statlog)) { 
     print "Can't open $statlog: $!\n";
@@ -2000,7 +2007,7 @@ sub Mt_stat {
   while(<LOGSTAT>) {
     if(/^^File number=/) {
       if(!/^File number=-1/) {	# a tell cmd will hang if drive empty 
-        $cmd = "mt -f /dev/nst$drnum tell";
+        $cmd = "mt -f /dev/sum_nst$drnum tell";
         `$cmd 1>> $statlog 2>&1`;
       }
     }
