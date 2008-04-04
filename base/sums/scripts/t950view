@@ -839,9 +839,6 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d0tape;
         $d0tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
-        if($y eq "-------------") {
-          $emptyslottapes[$snum-1] = $d0tape;
-        }
       }
       elsif($rbdnum == 1) {
         $b_drv1->configure(-background=>'grey', -text=>$slottapes[$snum-1]);
@@ -850,9 +847,6 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d1tape;
         $d1tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
-        if($y eq "-------------") {
-          $emptyslottapes[$snum-1] = $d1tape;
-        }
       }
       elsif($rbdnum == 2) {
         $b_drv2->configure(-background=>'grey', -text=>$slottapes[$snum-1]);
@@ -861,9 +855,6 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d2tape;
         $d2tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
-        if($y eq "-------------") {
-          $emptyslottapes[$snum-1] = $d2tape;
-        }
       }
       elsif($rbdnum == 3) {
         $b_drv3->configure(-background=>'grey', -text=>$slottapes[$snum-1]);
@@ -872,9 +863,6 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d3tape;
         $d3tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
-        if($y eq "-------------") {
-          $emptyslottapes[$snum-1] = $d3tape;
-        }
       }
       elsif($rbdnum == 4) {
         $b_drv4->configure(-background=>'grey', -text=>$slottapes[$snum-1]);
@@ -883,9 +871,6 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d4tape;
         $d4tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
-        if($y eq "-------------") {
-          $emptyslottapes[$snum-1] = $d4tape;
-        }
       }
       elsif($rbdnum == 5) {
         $b_drv5->configure(-background=>'grey', -text=>$slottapes[$snum-1]);
@@ -894,9 +879,6 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d5tape;
         $d5tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
-        if($y eq "-------------") {
-          $emptyslottapes[$snum-1] = $d5tape;
-        }
       }
       elsif($rbdnum == 6) {
         $b_drv6->configure(-background=>'grey', -text=>$slottapes[$snum-1]);
@@ -905,9 +887,6 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d6tape;
         $d6tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
-        if($y eq "-------------") {
-          $emptyslottapes[$snum-1] = $d6tape;
-        }
       }
       elsif($rbdnum == 7) {
         $b_drv7->configure(-background=>'grey', -text=>$slottapes[$snum-1]);
@@ -916,9 +895,6 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d7tape;
         $d7tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
-        if($y eq "-------------") {
-          $emptyslottapes[$snum-1] = $d7tape;
-        }
       }
       elsif($rbdnum == 8) {
         $b_drv8->configure(-background=>'grey', -text=>$slottapes[$snum-1]);
@@ -927,9 +903,6 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d8tape;
         $d8tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
-        if($y eq "-------------") {
-          $emptyslottapes[$snum-1] = $d8tape;
-        }
       }
       elsif($rbdnum == 9) {
         $b_drv9->configure(-background=>'grey', -text=>$slottapes[$snum-1]);
@@ -938,9 +911,6 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d9tape;
         $d9tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
-        if($y eq "-------------") {
-          $emptyslottapes[$snum-1] = $d9tape;
-        }
       }
       elsif($rbdnum == 10) {
         $b_drv10->configure(-background=>'grey', -text=>$slottapes[$snum-1]);
@@ -949,9 +919,6 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d10tape;
         $d10tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
-        if($y eq "-------------") {
-          $emptyslottapes[$snum-1] = $d10tape;
-        }
       }
       elsif($rbdnum == 11) {
         $b_drv11->configure(-background=>'grey', -text=>$slottapes[$snum-1]);
@@ -960,9 +927,6 @@ print "needorder is:\n@needorder\n";  #!!TEMP
         $y = $d11tape;
         $d11tape = $slottapes[$snum-1];
         $slottapes[$snum-1] = $y;
-        if($y eq "-------------") {
-          $emptyslottapes[$snum-1] = $d11tape;
-        }
       }
       #if($playback) { last; }
     }
@@ -1535,7 +1499,6 @@ sub show_tape_in_slots {
           chomp($indrv);
           $x = "\$stape = \$d$indrv"."tape";
           eval($x);
-          #push(@emptyslottapes, $stape);
           $emptyslottapes[$slnum] = $stape;
 print "BB:\$emptyslottapes[\$slnum] =$stape  \$slnum=$slnum\n"; #!!!!TEMP
         }
@@ -1548,6 +1511,7 @@ print "BB:\$emptyslottapes[\$slnum] =$stape  \$slnum=$slnum\n"; #!!!!TEMP
         if($slnum < $MAX_SLOTS) {	#don't count tapes in EE slots
           $Hofreplace{$stape} = 1;	#tape eligible to be replaced
         }
+        $emptyslottapes[$slnum] = $stape;
       }
       $slnum++;
       push(@slottapes, $stape);
@@ -1628,7 +1592,6 @@ sub show_notape_in_slots_impexp {
   foreach $i (($MAX_SLOTS + 1) .. ($MAX_SLOTS + $NUM_IMP_EXP_SLOTS)) {
     $tapeid = $slottapes[$i-1];
     if($tapeid eq "-------------") {
-      #$tapeidinfo = shift(@emptyslottapes);
       $tapeidinfo = $emptyslottapes[$i-1];
     }
     else {
