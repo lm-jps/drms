@@ -2696,7 +2696,9 @@ char *drms_query_string(DRMS_Env_t *env,
     }
   }
   if (qtype != DRMS_QUERY_COUNT) {      
-    p += sprintf(p, " order by %s", pidx_names);
+    if (template->seriesinfo->pidx_num > 0) {
+      p += sprintf(p, " order by %s", pidx_names);
+    }
     p += sprintf(p, " limit %lld", limit);
   }
 
