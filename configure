@@ -199,15 +199,22 @@ if ($CHKLIBS == "no") then
 	    endif
 	endif
 
+	if ($JSOC_MACHINE == "mac_osx") then
+	    if (!(-e lib/mac_osx/libcfitsio.a)) then
+		echo "Can't find required library: lib/mac_osx/libcfitsio.a"
+		set TPWARN = 1
+	    endif
+	endif
+
 	if (-e ../suflag.txt) then
 	    # Stanford users' required libs.
 	    if (!(-e lib/linux_x86_64/libfftw3f.a)) then
-		echo "D'OH! - Can't find required library: $JSOCROOT/lib/linux_x86_64/libfftw3f.a"
+		echo "Can't find required library: <JSOCROOT>/lib/linux_x86_64/libfftw3f.a"
 		set TPWARN = 1
 	    endif
 
 	    if (!(-e lib/linux_ia32/libfftw3f.a)) then
-		echo "D'OH! - Can't find required library: $JSOCROOT/lib/linux_ia32/libfftw3f.a"
+		echo "Can't find required library: <JSOCROOT>/lib/linux_ia32/libfftw3f.a"
 		set TPWARN = 1
 	    endif
 	else
@@ -215,7 +222,7 @@ if ($CHKLIBS == "no") then
 	endif
 
 	if ($TPWARN) then
-	    echo "Did you update $JSOCROOT/configure to create links to installed third-party libraries?"
+	    echo "Did you update <JSOCROOT>/configure to create links to installed third-party libraries?"
 	endif
 
 	cd ..
