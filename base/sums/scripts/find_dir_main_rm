@@ -1,0 +1,68 @@
+#!/usr/bin/perl
+#/home/production/cvs/jsoc/scripts/sum/find_dir_main_rm
+#
+#Usage: find_dir_main_rm in_file
+#
+#NOTICE: Runs on the database for the $DB defined below.
+#
+#Removes the dirs in the in_file. The in_file is created by find_dir_main
+#and looks like this:
+#No dsds_main: /PDS7/D131115
+#No dsds_main: /PDS7/D131118
+#No dsds_main: /PDS7/D131120
+#Dsds_main not online: /PDS1/D231596/lev0/42472040_01h/032072 ds_index=140705
+#Dsds_main not online: /PDS1/D231596/lev0/48472040_01h/032072 ds_index=140708
+#Dsds_main not online: /PDS1/D231596/lev0/42474800_01h/032072 ds_index=140711
+#No dsds_main: /PDS1/D231642
+#[etc.]
+#
+#Also can take an in_file from find_dir_sum_partn_alloc which looks like:
+#No partn_alloc: /SUM1/D426798
+#No partn_alloc: /SUM1/D426806
+#No partn_alloc: /SUM1/D427225
+#[etc]
+#
+$| = 1;			#flush output as we go
+$DB = jsoc;
+$UID = $<;              #get real user id
+$runtag = "/tmp/find_dir_main_rm_sum_$UID.tag";
+$user = $ENV{'USER'};
+if($user ne "production") {
+  print "You must be user \'production\' to run find_dir_main_rm\n";
+  exit;
+}
+
+if($#ARGV != 0) {
+  print "Usage: $0 in_file\n";
+  exit(1);
+}
+$infile = $ARGV[0];
+if(-e $runtag) {         #this user already running
+  print "Already found a $runtag\n";
+  print "Only one instance of find_dir_main_rm allowed for a user\n";
+  print "If not so do: /bin/rm $runtag\n";
+  exit(1);
+}
+open(IN, "<$infile") || die "Can't open $infile: $!\n";
+system "touch $runtag";
+
+while(<IN>) {
+  if(/^No sum_partn_alloc:/) {
+    #find the last space to get to the dir
+    $pos = rindex($_, " ") + 1;
+    $dir_name = substr($_, $pos);
+    chop($dir_name);
+  }
+  else { next; }
+  if(! -d $dir_name) {
+    print "No dir: $dir_name\n";
+    next;
+  }
+  $cmd = "sudo /bin/rm -r -f $dir_name";
+  print "$cmd\n";
+  if(system "$cmd") {
+    print "Err: $cmd\n";
+  }
+}
+close(IN);
+system "/bin/rm $runtag";
