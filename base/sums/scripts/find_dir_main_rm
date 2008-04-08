@@ -17,9 +17,9 @@
 #[etc.]
 #
 #Also can take an in_file from find_dir_sum_partn_alloc which looks like:
-#No sum_partn_alloc: /SUM1/D426798
-#No sum_partn_alloc: /SUM1/D426806
-#No sum_partn_alloc: /SUM1/D427225
+#No partn_alloc: /SUM1/D426798
+#No partn_alloc: /SUM1/D426806
+#No partn_alloc: /SUM1/D427225
 #[etc]
 #
 $| = 1;			#flush output as we go
