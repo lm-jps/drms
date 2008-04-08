@@ -1,0 +1,130 @@
+                       Release Notes JSOC V4.1         8Apr2008
+                       -----------------------         --------
+
+A release is a set of files, each having a specific version.  And a release typcially
+has a version number because over time you have newer and newer releases of the 
+same product.  For example, a hypothetical 1.3 release may contain fileA#1.8, 
+fileB#1.2, fileC#2.2 and a 1.4 release may contain fileA#2.5, fileB#2.1, fileC#2.9. 
+JSOC releases are similarly versioned and contain a set of such files.  JSOC release
+code is guaranteed to compile on cluster nodes (eg., n00, n02).  The resulting binaries
+have been minimally tested.  At the time of the creation of the release, the
+release versions of each file will be the most recent.  But as time passes, newer versions 
+of some files will be made, and there is no guarantee that these changes will
+not destabilize JSOC (ie., they may cause JSOC to no longer compile or execute
+properly).  
+
+There are several ways to use this release.  If you wish to simply use pre-built
+binaries, you can simply use the production binaries, which are located at 
+/home/production/cvs/JSOC.  Every time a release is created, the binaries in
+this location get updated.  Only the production user can update these binaries.
+So, you could run /home/production/cvs/JSOC/bin/linux_x86_64/show_keys, for example.
+If instead you want to work with stable source files, then you must have a sandbox,
+which is a local copy (in your home directory) of the files in the cvs depot.  
+You would probably want to work with a sandbox if you plan on making eventual 
+changes to the depot files.  Changes you make to your sandbox files are not visible 
+to other users until you "commit" those changes back to the cvs depot.  Please see
+"If You Don't Have a Sandbox" below for more information on how to create a sandbox.  
+There is also a "working" release which resides in in /home/jsoc/cvs/JSOC.  New 
+files may be placed here and existing files may be edited for common use before the 
+next official release.  Each time a release gets created, the source and binaries of 
+the working release get updated.  WARNING: the files you see here may not be stable 
+since by the time you see them, another user may have edited them. Only the production 
+release is guaranteed to be stable and unchanged between releases.
+
+Obtaining the Release
+---------------------
+To update your working directory to this release, or to check-out this release anew, 
+please visit http://jsoc.stanford.edu/jsocwiki/CvsInit. Please keep in mind that
+users may have modified files since the release was created, so use of the 
+scripts documented in the web page may result in a working directory whose
+content is not identical to the release.  If updating, you can supply 
+the flag "-R" to the jsoc_update.pl and jsoc_sync.pl scripts to download the
+latest release.  This will ensure that your working directory has the exact, latest
+release versions of the files (eg., jsoc_sync.csh -R). If checking-out, 
+you can supply the argument "-r Ver_LATEST" to the "cvs checkout" command
+to achieve the analogous result, but for a fresh checkout.  WARNING: if you use 
+the "-R" or "-r" flags, please use only jsoc_update.pl or jsoc_sync.pl to update 
+your sources thereafter.  Use of "-R" or "-r Ver_LATEST" will result in a cvs
+"sticky flag" being set.  jsoc_update.pl and jsoc_sync.pl clear this sticky flag.
+
+Additional Info
+---------------
+If you are unfamiliar with the use of cvs see the file:
+JSOC/CM/working_with_sandbox.txt.
+
+There's a linux4 cvs gui at xim:/usr/bin/lincvs
+Also on our jsoc web page:
+
+http://jsoc.stanford.edu/cvs/JSOC/
+
+Use the Apache cvs gui to see the diffs. For example, go to
+http://jsoc.stanford.edu/cvs/JSOC/base/drms/
+and click on the name in the File column and then click on
+"diffs to previous #" to see the diffs.
+
+Changes since previous release (V4.1 - March 3, 2008)
+-------------------------------------
+* drms_segment_read() and drms_segment_write() now use a new library, fitsrw, to read and write FITS files.  Previously, this FITS access was achieved via functionality in drms_fits.c.  fitsrw, a wrapper around CFITSIO, is much more robust.
+* Implemented drms_export API.  This includes several functions that export fits files to an output series (eg, jsoc.exports).  A recordset, a record, a segment can all be exported.  These functions convert internal drms kewords into external fits keywords, using a hierarchy of mapping instructions (user-specified mapping, class mapping, default mapping).  Also created a module, jsoc_export, that takes as input a recordset query and exports one or more records into the export series jsoc.exports.
+* Added Level 0 scripts for getting and making housekeeping(hk) configuration data and creating hk data series. Currently runs on local JSOC workspace(carl@yeti) and in future to run on production account. 
+* Moved scripts to JSOC environment from EGSE environment. These scripts are used in JSOC in cron job to get latest STANFORD_TLM_HMI_AIA.txt(STANFORD) and GROUND_to_CODE_ids.txt (GROUND) files from solserv.lmsal.com server and then calls other scripts to create HKPDF small apid files, check into cvs STANFORD, GROUND, gtcids.txt, and HKPDF small apid files, build preliminary and final hk JSDs files, build map file for JSOC version numbers, create hk data series, and send email to interested parties on status. Also creates a log file to trace status.
+* Added scripts which run on LMSAL HMIFSW1 machine which secure copy  latest STANFORD and GROUND files to solserv.lmsal.com for scripts on JSOC to pickup.
+* Changes so that our JSOC code builds on Mac: don't use strndup as it is not POSIX-compliant (rewrote code to use strdup instead); modify make files and configure to use $JSOC_MACHINE == mac_osx; don't use the _GNU_SOURCE flag; ensure SUMS functions that were defined in multiple files and had the same name didn't collide; work-around if __attribute_used__ is not defined (in apple); add defines like #define xdr_uint_t xdr_u_int_t; Fix case constants so they are POSIX-compliant (they were const ints variables - changed them to const ints); remove hard-coded icc compilation from SUMS.
+* Update configure script to make the check for 3rd-part libraries machine dependendent (in other words, display linux_x86_64-specific warnings if the user machine is linux_x86_64).
+* Update configure script to make links from the top-level include directory to base/include.
+* Update configure script with template 3rd-party links for non-Stanford users.
+* Fix the capture of the output of the jsoc_sync.pl script.
+* Update jsoc_sync.pl to better synchronize the user's workspace with the repository.  First call 'cvs update'.  This will add/remove files from the existing working directory directories.  This will remove obsolete files from the user's working directory.  Then call 'cvs checkout <module>.  This will add directories to the working directory that were added to cvs (within the module <module>) since the last checkout by the user.
+* Fix jsoc_update.pl - it wasn't running the configure script because there was a missing semicolon.
+* Set -L and -l flags for cfitsio compile for gcc build.
+* Remove -lm from icc builds.
+* Change SUMS from gcc/icc hybrid to either all icc (default) or all gcc.
+* Added minimal SUMS support for Itanium.  SUMS builds and runs on ia64, but has not been tested.
+* Documentation for several drms utilities added: drms_log, drms_query, drms_server, masterlists, create_series, delete_series, describe_series, modify_series.  Add masterlists description for user vs sys for nsgrp.
+* masterlists: added dbidx to drms_series table.
+* Add ringfit_ssw.f in the proj/examples/apps directory - this is a Fortran module that calls D. Haber's ringanalysis Fortran function.
+* Fixed drms_free_env() to handle early bailout, e.g., missing namespace.
+* Added time mapping (from date strings or enum vals to doubles) to drms_types.c since TIME is one of the drms types.  There are only a couple of time functions so keep them merged in drms_types.c, not a separate new file.  Add time epoch defines to timeio, and have drms use them.
+* Change index keyword type to long long (was type 'int' before).
+* slotted-keywords: move the 0th slot so that its CENTER corresponds to the epoch.
+* Break up drms_ismissing() into type-specific inline functions.
+* Remove the 32-byte limit on primekey query string that does not have the keyword name in it.
+* Fix drms_sscanf(), when parsing time, always succeeds if a string is passed in.  Make drms_names check for duration first before attempting to parse time.
+* Allow empty strings in jsds and command line when a drms string is expected; fix crash in cfitsio_write_file - don't use unitialized fptr; fix problem with fitsio type TLONG - it corresponds to C 'long' data type.
+* Define 'DRMS_MISSING_VALUE' as the string to use in the jsd to cause DRMS to set a value to missing.
+* Store dbindex information in the drms_series table.
+* Fix the drms_protocol code - got rid of redundant enum listing all types (one enum was in a different order than the other too), enhance efficiency of lookup.
+* Removed order by clause if no prime key.
+* Initialize rs->records to prevent segfault when fail to allocate recnum.
+* Add drms_query_string().
+* Bug fix to handle no dbidx case.
+* Fix drms_sscanf() - must return a value to indicate an invalid time because drms uses this code to test time strings and performs one action if the time string is valid, and another if the time string is invalid.  This value should be -1 to be consistent with the non-time data types.  If it is ever changed from -1, then the entire drms must be scanned to find the reliance upon -1 and changed appropriately.
+* Fixes for release - change inappropriate uses of drms_missing() to drms_ismissing(); change signature of drms_missing() so that future uses are less likely to be wrong. ; added a new script for helping to generate cvs comments since a specified date.
+* Update jsoc_main documentation.
+* Unlock db handle in db_dms_array upon query error.
+* In FITSRW, remove trailing / if no comment follows.
+* In FITSRW, added combined read img + header function.
+* Set _POSIX_SOURCE to prevent compilation problems with icc10 and gcc.
+* Add new SUMS flags: SUMT120, SUMT950.
+* show_info: reinstate DBindex printing in -l case.
+* show_series: modified JSON output to include prime keys and note.
+* extcvscomm.pl: use actual comment as key, not time because CVS lamely records the actual modification time of files being modified, not the time that the commit was performed.
+* Addition of the module jsoc_info.
+* Add webapp (lookdata) that provides series information.
+* Various minor fixes to hmi_time_setting, hmi_import_egse_lev0.
+* Move img->dat and img->hist initialization to the end of img struct initialization.
+* ingest_lev0: fixed up some lev0 keywords, add exposure time and mech values.
+* hk dayfiles: update sprint_time format argument from UT to UTC, Added line to fix bug. Initialized pointed to NULL, Update with checks for environment variable setting, Added write to ISPSNAME and  ISPPKTIM for lev0 data series.
+* Moved script to JSOC enviroment from EGSE environment. This scripts builds HKPDF small apid files, checks into JSOC cvs automatically the STANFORD,GROUND, gtcids.txt, and HKPDF small apid files for the Level 0 code to use.
+* Moved script to JSOC enviroment from EGSE environment. This scripts builds HKPDF small apid files, checks into JSOC cvs automatically the STANFORD,GROUND, gtcids.txt, and HKPDF small apid files for the Level 0 code to use.
+* cjds.pl: updated archive setting for temporary test data series to "Archive  0".
+* cjds.pl: moved script to JSOC enviroment from EGSE environment. This script creates JSD files based on a list of new JSD files creates.
+* clmq.pl: Moved script to JSOC enviroment from EGSE environment.This script is used in cron job to get latest STANFORD and GROUND file from solserv.lmsal.com server and then calls other scripts to create HKPDF small apid files, checkin STANFORD,GROUND,gtcids.txt, and HKPDF small apid files, build preliminary and final JSDs files, build map file for JSOC version numbers, create data series, and send email to interested parties of status. Also creates a log fileto trace status.
+* do_all_jsd_files.pl, do_all_hkpdf.pl: Move from EGSE environment to JSOC workspace enviornment.
+* do_jsvn_map_file.pl: moved script to JSOC enviroment from EGSE environment. This script create the JSOC Version Number map file per APID, updated script to create map files for only HK Packets with the VER_NUM keyword.
+* make_hkpdf.pl: moved script to JSOC enviroment from EGSE environment. This script is used to create HKPDF small apid files based on the STANFORD_TLM_HMI_AIA.txt file. The HKPDF file are save in a directory based on the File Version Number in the STANFORD file. This File Version number matches the version number in CVS. There are HKPDF files created for each APID or based a list of APID given to script.
+* make_jsd_file.pl: updated script to create final and Preliminary JSD files for only; fixed path to new_jsd_file.txt file which contains a list new jsd file versions created; moved script to JSOC enviroment from EGSE environment. This script create preliminary and final JSD files based on arguments passed to script. The preliminary JSD files are used to help create the JSOC Version Number map files by another script. The final JSDs are created for each APID when new keyword data occurs. The final JSDs are used to create data series for housekeeping data in DRMS.
+* mhds.pl: moved script to JSOC enviroment from EGSE environment. The Make Housekeeping Data Series(mhds) script is use to detect new JSDfile has been created. The onces created are added to file based on a list of APID data series want to create. This scripts call cjds.pl to create the new data series.
+* Hook in the fds ingest script into the cron job script so that FDS data files are downloaded to /surge, then ingested into sdo.moc_fds, then deleted from /surge.
+* mocDlFds.csh: use real jsoc:sdo.moc_fds data series to ingest to; use ~jsoc/sdo/fds for download status file.
+* Add json creation tool library.
