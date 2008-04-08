@@ -1,18 +1,18 @@
 /* SUM.h */
 #ifndef SUM_INCL
-#ifdef SUMDC
+#if defined SUMDC
 #define SUM_VERSION_NUM    (1.0)
 #define SUMSERVER "dcs0.Stanford.EDU"
 #define SUMDB "dcs0"
 #define TAPEVIEWERNAME "t50view"
 #define SUM_STOP_NOT "/usr/local/logs/SUM/SUM_STOP_NOT"
-#elif SUMT120
+#elif defined SUMT120
 #define SUM_VERSION_NUM    (1.0)
 #define SUMSERVER "d00.Stanford.EDU"
 #define SUMDB "hmidb"
 #define TAPEVIEWERNAME "t120view"
 #define SUM_STOP_NOT "/usr/local/logs/SUM/SUM_STOP_NOT"
-#elif SUMT950
+#elif defined SUMT950
 #define SUM_VERSION_NUM    (1.0)
 #define SUMSERVER "d02.Stanford.EDU"
 #define SUMDB "hmidb"

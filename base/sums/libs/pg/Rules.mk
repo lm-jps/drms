@@ -52,7 +52,7 @@ S_$(d)		:= $(notdir $(LIBSUM))
 $(OBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk $(PG_$(d))
 $(OBJ_$(d)):	CF_TGT := -I$(PGIPATH) -O0 $(CF_TGT_$(d))
 $(OBJ_$(d)):	%.o:	%.c
-		$(ICC_COMP)
+		$(COMP)
 
 $(LIBSUM):	$(OBJ_$(d))
 		$(ARCHIVE)

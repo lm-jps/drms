@@ -75,15 +75,6 @@ const char *db_type_string(DB_Type_t dbtype)
 /* Static prototypes */
 static void print_separator(int width);
 
-#ifndef LINUX
-float strtof (const char *nptr, char **endptr)
-{
-  return (float) strtod( nptr,  endptr);
-}   
-#endif
-
-
-
 #ifdef ORACLE
 char *db_stringtype_maxlen(int maxlen)
 {

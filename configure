@@ -208,14 +208,25 @@ if ($CHKLIBS == "no") then
 
 	if (-e ../suflag.txt) then
 	    # Stanford users' required libs.
-	    if (!(-e lib/linux_x86_64/libfftw3f.a)) then
-		echo "Can't find required library: <JSOCROOT>/lib/linux_x86_64/libfftw3f.a"
-		set TPWARN = 1
+	    if ($JSOC_MACHINE == "linux_x86_64") then
+		if (!(-e lib/linux_x86_64/libfftw3f.a)) then
+		    echo "Can't find required library: <JSOCROOT>/lib/linux_x86_64/libfftw3f.a"
+		    set TPWARN = 1
+		endif
 	    endif
 
-	    if (!(-e lib/linux_ia32/libfftw3f.a)) then
-		echo "Can't find required library: <JSOCROOT>/lib/linux_ia32/libfftw3f.a"
-		set TPWARN = 1
+	    if ($JSOC_MACHINE == "linux_ia32") then
+		if (!(-e lib/linux_ia32/libfftw3f.a)) then
+		    echo "Can't find required library: <JSOCROOT>/lib/linux_ia32/libfftw3f.a"
+		    set TPWARN = 1
+		endif
+	    endif
+
+	    if ($JSOC_MACHINE == "mac_osx") then
+		if (!(-e lib/mac_osx/libfftw3f.a)) then
+		    echo "Can't find required library: <JSOCROOT>/lib/mac_osx/libfftw3f.a"
+		    set TPWARN = 1
+		endif
 	    endif
 	else
 	    # Non-Stanford users' required libs.

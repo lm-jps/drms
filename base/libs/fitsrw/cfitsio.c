@@ -31,11 +31,6 @@ const unsigned int kInfoPresent_BLANK  = 0x00000004;
 const unsigned int kInfoPresent_BSCALE = 0x00000008;
 const unsigned int kInfoPresent_BZERO  = 0x00000010;
 
-extern const char kFITSRW_Type_String = 'C';
-extern const char kFITSRW_Type_Logical = 'L';
-extern const char kFITSRW_Type_Integer = 'I';
-extern const char kFITSRW_Type_Float = 'F';
-
 //****************************************************************************
 //*********************   Using CFITSIO_KEYWORD  *****************************
 //****************************************************************************

@@ -4,8 +4,8 @@ dirstack_$(sp)	:= $(d)
 d		:= $(dir)
 
 # Compiler
-SUMSCOMP		= $(ICC_COMP)
-SUMSLINK		= $(ICC_LINK)
+SUMSCOMP		= $(COMP)
+SUMSLINK		= $(LINK)
 
 # Local variables
 sum_svc_obj_$(d)	:= $(addprefix $(d)/, sum_svc_proc.o sum_init.o du_dir.o)
@@ -46,7 +46,7 @@ XSUMSVC_$(d)	:= $(d)/xsum_svc
 TAPESVC_$(d)	:= $(d)/tape_svc
 TARC_$(d)	:= $(d)/tapearc
 
-BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main3 main4 tapeonoff driveonoff sum_rm impexp drive0_svc drive1_svc drive2_svc drive3_svc robot0_svc md5filter)
+BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main4 tapeonoff driveonoff sum_rm impexp drive0_svc drive1_svc drive2_svc drive3_svc robot0_svc md5filter)
 
 TGT_$(d)	:= $(BINTGT_$(d)) $(SUMSVC_$(d)) $(XSUMSVC_$(d)) $(TAPESVC_$(d)) $(TARC_$(d))
 

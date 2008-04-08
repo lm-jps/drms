@@ -29,10 +29,10 @@
 
 //****************************************************************************
 
-extern const char kFITSRW_Type_String;
-extern const char kFITSRW_Type_Logical;
-extern const char kFITSRW_Type_Integer;
-extern const char kFITSRW_Type_Float;
+#define kFITSRW_Type_String 'C'
+#define kFITSRW_Type_Logical 'L'
+#define kFITSRW_Type_Integer 'I'
+#define kFITSRW_Type_Float 'F'
 
 typedef union cfitsio_value
 {

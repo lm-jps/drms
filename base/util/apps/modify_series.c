@@ -63,7 +63,7 @@ int DoIt(void) {
     printf("Invalid series name\n");
     return 1;
   }
-  namespace = strndup(series, p-series);
+  namespace = ns(series);
   series_short  = strdup(p+1);
 
   archive = cmdparams_get_int(&cmdparams, "archive", &status);

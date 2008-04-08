@@ -14,7 +14,7 @@ static int get_namespace(char *seriesname, char **namespace, char **shortname) {
     while (*p != '.') {
       p++;
     }
-    *namespace = strndup(seriesname, p-seriesname);
+    *namespace = ns(seriesname);
     if (shortname) {
       *shortname = strdup(p+1);
     }

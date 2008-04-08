@@ -15,6 +15,7 @@ extern int errno;
 SUMID_t sumrpcopen_1(KEY *argp, CLIENT *clnt, int (*history)(const char *fmt, ...));
 static void respd(struct svc_req *rqstp, SVCXPRT *transp);
 int getanymsg(int block);
+static char *datestring(void);
 
 /* External prototypes */
 extern void pmap_unset();
@@ -654,7 +655,7 @@ static void respd(rqstp, transp)
 
 /*********************************************************/
 /* Return ptr to "mmm dd hh:mm:ss". */
-static char *datestring(void)
+char *datestring(void)
 {
   time_t t;
   char *str;

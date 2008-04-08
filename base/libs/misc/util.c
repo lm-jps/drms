@@ -29,7 +29,12 @@ typedef enum
 
 // To extract namespace from a fully qulified name
 char *ns(const char *name) {
-  return strndup(name, strrchr(name, '.')-name);
+   char *nspace = strdup(name);
+   char *pc = strrchr(nspace, '.');
+   if (pc) {
+      *pc = '\0';
+   }
+   return nspace;
 }
 
 void copy_string(char **dst, char *src)
