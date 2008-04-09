@@ -923,7 +923,7 @@ DRMS_Segment_t *drms_segment_lookup (DRMS_Record_t *rec, const char *segname) {
 	return seg;
       } else {
 	int status = 0;
-	DRMS_Record_t *rec2 = drms_retrieve_record(rec->env, rec->seriesinfo->seriesname, seg->info->cseg_recnum, &status);
+	DRMS_Record_t *rec2 = drms_retrieve_record(rec->env, rec->seriesinfo->seriesname, seg->info->cseg_recnum, NULL, &status);
 	if (status) {
 	  fprintf(stderr, "Failed to retrieve record for constant segment, recnum = %lld", seg->info->cseg_recnum);
 	  return NULL;

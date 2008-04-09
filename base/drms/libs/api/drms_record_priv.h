@@ -94,7 +94,9 @@ long long drms_record_size(DRMS_Record_t *rec);
 xxx
 */
 DRMS_Record_t *drms_retrieve_record(DRMS_Env_t *env, const char *seriesname, 
-				    long long recnum, int *status);
+				    long long recnum, 
+				    HContainer_t *goodsegcont,
+				    int *status);
 /* Retrieve the records from the series given in "seriesname" satisfying
    the condition in the string "where". "where" must be a valid SQL
    clause involving the column names of the main record table for the 
@@ -105,7 +107,9 @@ xxx
 */
 DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env, 
 					const char *seriesname, char *where, 
-					int filter, int mixed, int *status);
+					int filter, int mixed, 
+					HContainer_t *goodsegcont,
+					int *status);
 /* Insert multiple records in the database using the 
    fast bulk insert interface. */
 /**

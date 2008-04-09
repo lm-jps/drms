@@ -620,18 +620,6 @@ CC        END seriesinfo getors
             CHARACTER*256 A1
           END SUBROUTINE f_drms_free_record
 
-          CHARACTER*256 FUNCTION f_drms_retrieve_record(A1,A2,M1,N1)
-            INTEGER N1
-            INTEGER*8 M1
-            CHARACTER*256 A1,A2
-          END FUNCTION f_drms_retrieve_record
-
-          CHARACTER*256 FUNCTION f_drms_retrieve_records(A1,A2,A3,N1,N2
-     2,N3)
-            INTEGER N1,N2,N3
-            CHARACTER*256 A1,A2,A3
-          END FUNCTION f_drms_retrieve_records
-
           CHARACTER*256 FUNCTION f_drms_alloc_record2(A1,M1,N1)
             INTEGER N1
             INTEGER*8 M1

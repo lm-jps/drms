@@ -1768,27 +1768,6 @@ void f_drms_free_record(char * rec_hdl) {
 }
 FCALLSCSUB1(f_drms_free_record, F_DRMS_FREE_RECORD, f_drms_free_record, STRING)
 
-
-char * f_drms_retrieve_record(char * env_hdl, const char *seriesname, long long recnum, int *status) {
-  DRMS_Env_t  * env = (DRMS_Env_t  *)  _convert_handle(env_hdl);
-  DRMS_Record_t  * _ret_var;
-
-  _ret_var = drms_retrieve_record(env, seriesname, recnum, status);
-  return _pointer2handle((void *)_ret_var, "DRMS_Record_t", "drms_retrieve_record");
-}
-FCALLSCFUN4(STRING, f_drms_retrieve_record, F_DRMS_RETRIEVE_RECORD, f_drms_retrieve_record, STRING, STRING, LONG, PINT)
-
-
-char * f_drms_retrieve_records(char * env_hdl, const char *seriesname, char *where, int filter, int mixed, int *status) {
-  DRMS_Env_t  * env = (DRMS_Env_t  *)  _convert_handle(env_hdl);
-  DRMS_RecordSet_t  * _ret_var;
-
-  _ret_var = drms_retrieve_records(env, seriesname, where, filter, mixed, status);
-  return _pointer2handle((void *)_ret_var, "DRMS_RecordSet_t", "drms_retrieve_records");
-}
-FCALLSCFUN6(STRING, f_drms_retrieve_records, F_DRMS_RETRIEVE_RECORDS, f_drms_retrieve_records, STRING, STRING, STRING, INT, INT, PINT)
-
-
 char * f_drms_alloc_record2(char * template_hdl, long long recnum, int *status) {
   DRMS_Record_t  * template = (DRMS_Record_t  *)  _convert_handle(template_hdl);
   DRMS_Record_t  * _ret_var;

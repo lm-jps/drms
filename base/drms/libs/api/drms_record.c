@@ -30,6 +30,8 @@ typedef enum
    kRSParseState_DRMSFilt,
    /* Parsing a DRMS SQL record-set filter (a "[?" seen). */
    kRSParseState_DRMSFiltSQL,
+   /* Parsing a DRMS segment-list specifier (a '{' seen). */
+   kRSParseState_DRMSSeglist,
    /* Parsing 'prog' (DSDS) specification */
    kRSParseState_DSDS,
    /* Parsing 'vot' (VOT) specification */
@@ -1233,6 +1235,11 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
   DRMS_Segment_t *segarr = NULL;
   int nRecsLocal = 0;
   char *pkeys = NULL;
+  char *seglist = NULL;
+  char *psl = NULL;
+  char *lasts = NULL;
+  char *ans = NULL;
+  HContainer_t *goodsegcont = NULL;
 
   /* conflict with stat var in this scope */
   int (*filestat)(const char *, struct stat *buf) = stat;
@@ -1358,8 +1365,20 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 	   } /* VOT */
 	   else if (settypes[iSet] == kRecordSetType_DRMS)
 	   {
+	      /* oneSet may have a segement specifier - strip that off and 
+	       * generate the HContainer_t that contains the requested segment 
+	       * names. */
+	      psl = strchr(oneSet, '{');
+	      if (psl)
+	      {
+		 seglist = malloc(sizeof(char) * (strlen(oneSet) + 1));
+		 snprintf(seglist, sizeof(char) * (strlen(oneSet) + 1), 
+			  "%s", psl);
+	      }
+	      
 	      TIME(stat = drms_recordset_query(env, oneSet, &query, &seriesname, 
 					       &filter, &mixed));
+
 	      if (stat)
 		goto failure;
 
@@ -1368,7 +1387,41 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 	      printf("query = %s\n",query);
 #endif
 
-	      TIME(rs = drms_retrieve_records(env, seriesname, query, filter, mixed, &stat));
+	      if (seglist)
+	      {
+		 goodsegcont = hcon_create(DRMS_MAXSEGNAMELEN, 
+					   DRMS_MAXSEGNAMELEN,
+					   NULL,
+					   NULL,
+					   NULL,
+					   NULL,
+					   0);
+
+		 ans = strtok_r(seglist, " ,;:{}", &lasts);
+
+		 do
+		 {
+		    /* ans is a segment name */
+		    hcon_insert(goodsegcont, ans, ans);
+		 }
+		 while ((ans = strtok_r(NULL, " ,;:{}", &lasts)) != NULL);
+
+		 free(seglist);
+	      }
+
+	      TIME(rs = drms_retrieve_records(env, 
+					      seriesname, 
+					      query, 
+					      filter, 
+					      mixed, 
+					      goodsegcont, 
+					      &stat));
+
+	      if (goodsegcont)
+	      {
+		 hcon_destroy(&goodsegcont);
+	      }
+
 #ifdef DEBUG
 	      printf("rs=%p, env=%p, seriesname=%s, filter=%d, stat=%d\n  query=%s\n",rs,env,seriesname,filter,stat,query);
 #endif
@@ -2414,11 +2467,15 @@ void drms_free_record(DRMS_Record_t *rec)
    case, add it to the record cache and hash tables for fast future
    retrieval. */
 DRMS_Record_t *drms_retrieve_record(DRMS_Env_t *env, const char *seriesname, 
-				    long long recnum, int *status)
+				    long long recnum, 
+				    HContainer_t *goodsegcont,
+				    int *status)
 {
   int stat;
   DRMS_Record_t *rec;
   char hashkey[DRMS_MAXHASHKEYLEN];
+  HIterator_t *hit = NULL;
+  const char *hkey = NULL;
 
   CHECKNULL_STAT(env,status);
   
@@ -2436,6 +2493,25 @@ DRMS_Record_t *drms_retrieve_record(DRMS_Env_t *env, const char *seriesname,
 	*status = stat;
       return NULL;
     }
+
+    /* Remove unrequested segments */
+    if (goodsegcont)
+    {
+       hit = hiter_create(&(rec->segments));
+       if (hit)
+       {
+	  while (hiter_extgetnext(hit, &hkey) != NULL)
+	  {
+	     if (!hcon_lookup(goodsegcont, hkey))
+	     {
+		hcon_remove(&(rec->segments), hkey);
+	     }
+	  }
+	   
+	  hiter_destroy(&hit);
+       }
+    }
+
 #ifdef DEBUG
     printf("Allocated the following template for dataset (%s,%lld):\n",
 	   seriesname, recnum);
@@ -2482,7 +2558,8 @@ DRMS_Record_t *drms_retrieve_record(DRMS_Env_t *env, const char *seriesname,
 DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env, 
 					const char *seriesname, 
 					char *where, int filter, int mixed,
-                                        int *status)
+					HContainer_t *goodsegcont,
+					int *status)
 {
   int i,throttled;
   int stat = 0;
@@ -2493,6 +2570,8 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
   char hashkey[DRMS_MAXHASHKEYLEN];
   char *series_lower;
   long long recsize, limit;
+  HIterator_t *hit = NULL;
+  const char *hkey = NULL;
   
   CHECKNULL_STAT(env,status);
   
@@ -2561,6 +2640,25 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
 	rs->records[i] = hcon_allocslot(&env->record_cache, hashkey);
 	/* Populate the slot with values from the template. */
 	drms_copy_record_struct(rs->records[i], template);
+
+	/* Remove unrequested segments */
+	if (goodsegcont)
+	{
+	   hit = hiter_create(&(rs->records[i]->segments));
+	   if (hit)
+	   {
+	      while (hiter_extgetnext(hit, &hkey) != NULL)
+	      {
+		 if (!hcon_lookup(goodsegcont, hkey))
+		 {
+		    hcon_remove(&(rs->records[i]->segments), hkey);
+		 }
+	      }
+	   
+	      hiter_destroy(&hit);
+	   }
+	}
+
 	/* Set pidx in links */
 	drms_link_getpidx(rs->records[i]);
 	/* Set new unique record number. */
@@ -2649,7 +2747,7 @@ char *drms_query_string(DRMS_Env_t *env,
     field_list = drms_field_list(template, NULL);
     break;
   default:
-    printf("Unknown query type: %d\n", qtype);
+    printf("Unknown query type: %d\n", (int)qtype);
     return NULL;
   }
 
@@ -4177,7 +4275,7 @@ static int ParseRecSetDesc(const char *recsetsStr,
 	      /* not parsing a DRMS RS filter (yet) */
 	      if (pc < endInput)
 	      {
-		 if (*pc == '{' || *pc == ']')
+		 if (*pc == ']')
 		 {
 		    /* chars not allowed in a DRMS RS */
 		    state = kRSParseState_Error;
@@ -4186,6 +4284,11 @@ static int ParseRecSetDesc(const char *recsetsStr,
 		 {
 		    *pcBuf++ = *pc++;
 		    state = kRSParseState_DRMSFilt;
+		 }
+		 else if (*pc == '{')
+		 {
+		    *pcBuf++ = *pc++;
+		    state = kRSParseState_DRMSSeglist;
 		 }
 		 else if (DSElem_IsDelim((const char **)&pc))
 		 {
@@ -4206,6 +4309,11 @@ static int ParseRecSetDesc(const char *recsetsStr,
 		       {
 			  *pcBuf++ = *pc++;
 			  state = kRSParseState_DRMSFilt;
+		       }
+		       else if (*pc == '{')
+		       {
+			  *pcBuf++ = *pc++;
+			  state = kRSParseState_DRMSSeglist;
 		       }
 		       else if (DSElem_IsDelim((const char **)&pc))
 		       {
@@ -4243,7 +4351,7 @@ static int ParseRecSetDesc(const char *recsetsStr,
 	      }
 	      break;
 	    case kRSParseState_DRMSFilt:
-	      /* first char after '[' */
+	      /* inside '[' and ']' */
 	      if (pc < endInput)
 	      {
 		 DSElem_SkipWS(&pc); /* ingore ws, if any */
@@ -4267,6 +4375,11 @@ static int ParseRecSetDesc(const char *recsetsStr,
 			  *pcBuf++ = *pc++;
 			  state = kRSParseState_DRMSFilt;
 		       }
+		       else if (*pc == '{')
+		       {
+			  *pcBuf++ = *pc++;
+			  state = kRSParseState_DRMSSeglist;
+		       }
 		       else if (DSElem_IsDelim((const char **)&pc))
 		       {
 			  pc++;
@@ -4276,6 +4389,10 @@ static int ParseRecSetDesc(const char *recsetsStr,
 		       {
 			  DSElem_SkipComment(&pc);
 			  state = kRSParseState_EndElem;
+		       }
+		       else
+		       {
+			  state = kRSParseState_Error;
 		       }
 		    }
 		    else
@@ -4307,8 +4424,8 @@ static int ParseRecSetDesc(const char *recsetsStr,
 		    *pcBuf++ = *pc++;
 		    if (DSElem_SkipWS(&pc) && (*pc == ']'))
 		    {
-		       *pcBuf++ = *pc++;
-		       state = kRSParseState_DRMS;
+		       *pcBuf++ = *pc;
+		       state = kRSParseState_DRMSFilt;
 		    }
 		    else
 		    {
@@ -4326,6 +4443,72 @@ static int ParseRecSetDesc(const char *recsetsStr,
 	      {
 		 /* didn't finish query */
 		 state = kRSParseState_Error;
+	      }
+	      break;
+	    case kRSParseState_DRMSSeglist:
+	      /* first char after '{' */
+	      if (pc < endInput)
+	      {
+		 DSElem_SkipWS(&pc); /* ingore ws, if any */
+		 
+		 while (*pc != '}' && pc < endInput)
+		 {
+		    if (DSElem_IsWS((const char **)&pc))
+		    {
+		       DSElem_SkipWS(&pc);
+		    }
+		    else if (*pc == ',' || *pc == ':' || *pc == ';')
+		    {
+		       DSElem_SkipWS(&pc);
+		       if (*pc == '}')
+		       {
+			  state = kRSParseState_Error;
+			  break;
+		       }
+		    }
+		    else
+		    {
+		       *pcBuf++ = *pc++;
+		    }
+		 }
+
+		 if (state != kRSParseState_Error && *pc != '}')
+		 {
+		    state = kRSParseState_Error;
+		 }
+	      }
+	      else
+	      {
+		 /* didn't finish seglist */
+		 state = kRSParseState_Error;
+	      }
+
+	      if (state != kRSParseState_Error)
+	      {
+		 /* *pc == '}' */
+		 *pcBuf++ = *pc++;
+	      }
+
+	      if (DSElem_SkipWS(&pc))
+	      {
+		 if (DSElem_IsDelim((const char **)&pc))
+		 {
+		    pc++;
+		    state = kRSParseState_EndElem;
+		 }
+		 else if (DSElem_IsComment((const char **)&pc))
+		 {
+		    DSElem_SkipComment(&pc);
+		    state = kRSParseState_EndElem;
+		 }
+		 else
+		 {
+		    state = kRSParseState_Error;
+		 }
+	      }
+	      else
+	      {
+		 state= kRSParseState_EndElem;
 	      }
 
 	      if (state == kRSParseState_EndElem)

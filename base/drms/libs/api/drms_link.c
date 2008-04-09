@@ -225,6 +225,7 @@ DRMS_Record_t *drms_link_follow(DRMS_Record_t *rec, const char *linkname,
     return NULL;
   }
   return drms_retrieve_record(rec->env, link->info->target_series, link->recnum,
+			      NULL,
                               status);  
 }
 
@@ -271,7 +272,7 @@ DRMS_RecordSet_t *drms_link_followall(DRMS_Record_t *rec, const char *linkname,
   for (i=0; i<result->n; i++)
   {
     result->records[i] = drms_retrieve_record(rec->env, link->info->target_series,
-					      recnums[i], &stat);  
+					      recnums[i], NULL, &stat);  
     if (stat)
     {
       fprintf(stderr, "ERROR in drms_link_followall: drms_retrieve failed "
