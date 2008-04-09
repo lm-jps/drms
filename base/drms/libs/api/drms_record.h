@@ -338,19 +338,17 @@ char *drms_query_string(DRMS_Env_t *env,
 /* Export */
 int drms_record_export(DRMS_Record_t *recout,
 		       DRMS_Record_t *recin,
-		       const char *seglist,
 		       int *status);
 int drms_record_mapexport(DRMS_Record_t *recout,
 			  DRMS_Record_t *recin,
-			  const char *seglist,
 			  const char *classname, 
 			  const char *mapfile,
 			  int *status);
 int drms_recordset_export(DRMS_Env_t *env,
-			  const char *reqid,
+			  long long reqid,
 			  int *status);
 int drms_recordset_mapexport(DRMS_Env_t *env,
-			     const char *reqid,
+			     long long reqid,
 			     const char *classname, 
 			     const char *mapfile,
 			     int *status);

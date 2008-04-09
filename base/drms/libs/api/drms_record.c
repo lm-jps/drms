@@ -1236,6 +1236,7 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
   int nRecsLocal = 0;
   char *pkeys = NULL;
   char *seglist = NULL;
+  char *actualSet = NULL;
   char *psl = NULL;
   char *lasts = NULL;
   char *ans = NULL;
@@ -1368,16 +1369,21 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 	      /* oneSet may have a segement specifier - strip that off and 
 	       * generate the HContainer_t that contains the requested segment 
 	       * names. */
-	      psl = strchr(oneSet, '{');
-	      if (psl)
+	      actualSet = strdup(oneSet);
+	      if (actualSet)
 	      {
-		 seglist = malloc(sizeof(char) * (strlen(oneSet) + 1));
-		 snprintf(seglist, sizeof(char) * (strlen(oneSet) + 1), 
-			  "%s", psl);
-	      }
+		 psl = strchr(actualSet, '{');
+		 if (psl)
+		 {
+		    seglist = strdup(psl);
+		    *psl = '\0';
+		 }
 	      
-	      TIME(stat = drms_recordset_query(env, oneSet, &query, &seriesname, 
+		 TIME(stat = drms_recordset_query(env, actualSet, &query, &seriesname, 
 					       &filter, &mixed));
+	      }
+	      else
+		goto failure;
 
 	      if (stat)
 		goto failure;
@@ -5189,12 +5195,10 @@ static int CallExportToFile(DRMS_Segment_t *segout,
  */
 int drms_record_export(DRMS_Record_t *recout,
 		       DRMS_Record_t *recin,
-		       const char *seglist,
 		       int *status)
 {
    return drms_record_mapexport(recout,
 				recin,
-				seglist,
 				NULL,
 				NULL,
 				status);
@@ -5203,7 +5207,6 @@ int drms_record_export(DRMS_Record_t *recout,
 /* recout is the export series' record to which the exported data will be saved. */
 int drms_record_mapexport(DRMS_Record_t *recout,
 			  DRMS_Record_t *recin,
-			  const char *seglist,
 			  const char *classname, 
 			  const char *mapfile,
 			  int *status)
@@ -5222,60 +5225,24 @@ int drms_record_mapexport(DRMS_Record_t *recout,
 
    if (segout)
    {
-      if (seglist && *seglist != 0)
+      /* segments not specified - do them all */
+      hit = hiter_create(&(recin->segments));
+      while ((segin = hiter_getnext(hit)) != NULL)
       {
-	 char *lasts = NULL;
-	 char *ans;
-	 char *seglistcpy = strdup(seglist);
-
-	 if (seglistcpy)
+	 size = 0;
+	 stat = CallExportToFile(segout, segin, classname, mapfile, &size);
+	 if (stat != DRMS_SUCCESS)
 	 {
-	    ans = strtok_r(seglistcpy, " ,;:", &lasts);
-
-	    do
-	    {
-	       segin = drms_segment_lookup(recin, ans);
-	       if (segin)
-	       {
-		  stat = CallExportToFile(segout, segin, classname, mapfile, &size);
-		  if (stat != DRMS_SUCCESS)
-		  {
-		     fprintf(stderr, "Failure exporting segment '%s'.\n", segin->info->name);
-		     break;
-		  }
-		  else
-		  {
-		     tsize += size;
-		  }
-	       }
-	    }
-	    while ((ans = strtok_r(NULL, " ,;:", &lasts)) != NULL);
-
-	    free(seglistcpy);
+	    fprintf(stderr, "Failure exporting segment '%s'.\n", segin->info->name);
+	    break;
+	 }
+	 else
+	 {
+	    tsize += size;
 	 }
       }
 
-      if (tsize == 0)
-      {
-	 /* segments not specified - do them all */
-	 hit = hiter_create(&(recin->segments));
-	 while ((segin = hiter_getnext(hit)) != NULL)
-	 {
-	    size = 0;
-	    stat = CallExportToFile(segout, segin, classname, mapfile, &size);
-	    if (stat != DRMS_SUCCESS)
-	    {
-	       fprintf(stderr, "Failure exporting segment '%s'.\n", segin->info->name);
-	       break;
-	    }
-	    else
-	    {
-	       tsize += size;
-	    }
-	 }
-
-	 hiter_destroy(&hit);
-      }
+      hiter_destroy(&hit);
    }
    else
    {
@@ -5292,7 +5259,7 @@ int drms_record_mapexport(DRMS_Record_t *recout,
 }			  
 
 int drms_recordset_export(DRMS_Env_t *env,
-			  const char *reqid,
+			  long long reqid,
 			  int *status)
 {
    return drms_recordset_mapexport(env,
@@ -5303,7 +5270,7 @@ int drms_recordset_export(DRMS_Env_t *env,
 }
 
 int drms_recordset_mapexport(DRMS_Env_t *env,
-			     const char *reqid,
+			     long long reqid,
 			     const char *classname, 
 			     const char *mapfile,
 			     int *status)
@@ -5321,9 +5288,8 @@ int drms_recordset_mapexport(DRMS_Env_t *env,
    DRMS_RecordSet_t *rsin = NULL;
    char rsoutquery[DRMS_MAXQUERYLEN];
    char *rsinquery = NULL;
-   char *seglist = NULL;
 
-   snprintf(rsoutquery, sizeof(rsoutquery), "%s[%s]", kEXPORTSERIES, reqid);
+   snprintf(rsoutquery, sizeof(rsoutquery), "%s[%lld]", kEXPORTSERIES, reqid);
 
    rs = drms_open_records(env, rsoutquery, &stat);
 
@@ -5338,7 +5304,6 @@ int drms_recordset_mapexport(DRMS_Env_t *env,
    {
       recout = rsout->records[0];
       rsinquery = drms_getkey_string(recout, gExpStr[kExport_Request].str, &stat);
-      seglist = drms_getkey_string(recout, gExpStr[kExport_SegList].str, &stat);
       
       if (rsinquery && (rsin = drms_open_records(env, rsinquery, &stat)))
       {
@@ -5356,7 +5321,6 @@ int drms_recordset_mapexport(DRMS_Env_t *env,
 	       recin = (rsin->ss_starts)[iSet] + iRec;
 	       tsize += drms_record_mapexport(recout, 
 					      recin,
-					      seglist,
 					      classname, 
 					      mapfile, 
 					      &stat);
@@ -5378,7 +5342,7 @@ int drms_recordset_mapexport(DRMS_Env_t *env,
    }
    else
    {
-      fprintf(stderr, "Could not open export destination record set with query '%s'.\n", reqid);
+      fprintf(stderr, "Could not open export destination record set with query '%lld'.\n", reqid);
       stat = DRMS_ERROR_INVALIDDATA;
    }
 
@@ -5398,11 +5362,6 @@ int drms_recordset_mapexport(DRMS_Env_t *env,
    if (rsinquery)
    {
       free(rsinquery);
-   }
-
-   if (seglist)
-   {
-      free(seglist);
    }
 
    if (status)
