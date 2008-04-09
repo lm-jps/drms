@@ -202,6 +202,8 @@ int tape_free_drives()
 #ifdef SUMDC
     //for data capture ck if cleaning tape (NoBar) and put in last slot
     if(strstr(drives[d].tapeid, "NoBar")) { nobar = 1; }
+    //can also be a cleaning tape with a label
+    if(strstr(drives[d].tapeid, "CLN")) { nobar = 1; }
 #endif
     /* now find first free slot to put the tape in drive #d into */
     for(s=0; s < MAX_SLOTS_LIVE; s++) {
@@ -212,8 +214,11 @@ int tape_free_drives()
         sprintf(cmd, "%s %d %d 1> %s 2>&1", UNLOADCMD, s+1, d, UNLOADDUMP);
         write_log("*Rb:cmd: %s\n", cmd);   /* need for t120view to work */
         if(system(cmd)) {
-          write_log("***Rb:failure\n\n");
-          return(0);
+          write_log("Err Retry: %s\n", cmd);
+          if(system(cmd)) {               /* try it again */
+            write_log("***Rb:failure\n\n");
+            return(0);
+          }
         }
         write_log("***Rb:success\n\n");
         slots[s].tapeid = drives[d].tapeid;
