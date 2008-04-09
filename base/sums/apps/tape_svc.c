@@ -222,23 +222,26 @@ int main(int argc, char *argv[])
 	exit(1);
       }
   /* Create client handle used for calling the sum_svc */
-  sleep(3); /* driven_svc & robotn_svc forked by sum_svc, let it start */
   clntsum = clnt_create(thishost, SUMPROG, SUMVERS, "tcp");
   if(!clntsum) {       /* server not there */
     clnt_pcreateerror("Can't get client handle to sum_svc in tape_svc");
     write_log("***tape_svc can't get sum_svc on %s\n", thishost);
     exit(1);
   }
+  sleep(3); /* driven_svc & robotn_svc forked by sum_svc, let it start */
   for(i=0; i < MAX_DRIVES; i++) {
     /* Create client handle used for calling drive[0,1,2,3]_svc */
     clntdrv0 = clnt_create(thishost, DRIVE0PROG+i, DRIVE0VERS, "tcp");
     if(!clntdrv0) {       /* program not there */
       clnt_pcreateerror("Can't get client handle to driven_svc in tape_svc");
-      write_log("***tape_svc can't get drive%d_svc on %s\n", i, thishost);
+      write_log("***tape_svc can't get drive%d_svc on %s for %u\n", 
+			i, thishost, DRIVE0PROG+i);
 /**********************TEMP NOOP exit****TBD put in special staus**********
       exit(1);
 ***************************************/
     }
+    else { write_log("##tape_svc gets handle for drive%d_svc for %u\n", 
+			i, DRIVE0PROG+i); }
     clntdrv[i] = clntdrv0;
   }
   clntrobot0 = clnt_create(thishost, ROBOT0PROG, ROBOT0VERS, "tcp");
