@@ -1803,7 +1803,7 @@ sub ImpExp_sub_unload {
   		->pack(-side => 'left');
     &show_notape_in_slots_impexp;	#show blank tape slots
     $f00f = $ImpExpf->Frame(-borderwidth => 0) ->pack(-side => 'left');
-    $f00f->Label(-text => "(NOTE!! Only use this force button\nif you previously hit Bulk Load Done\nprematurely and the unload is already done)", -font => 'arial 12 bold')->pack(@pl);
+    $f00f->Label(-text => "(NOTE!! Only use this force button\nif you previously hit Exp/Exch Done\nprematurely and the unload is already done)", -font => 'arial 12 bold')->pack(@pl);
     $f00f->Button(
             -text => 'Force',
             -background => 'red',
@@ -1847,9 +1847,9 @@ sub Imp_Exp_Open_Door {
 		-font => 'arial 12 bold')->pack(@pl);
   $ImpExpf->Label(-text => "Now complete each step in the order given:", 
 		-font => 'arial 12 bold')->pack(@pl);
-  $ImpExpf->Label(-text => "Go to the t950 console and hit Import/Export >>Bulk Load.", 
+  $ImpExpf->Label(-text => "Go to the t950 console and hit 'Import/Export'", 
 		-font => 'arial 12 bold')->pack(@pl);
-  $ImpExpf->Label(-text => "When asked, hit 'Yes'", 
+  $ImpExpf->Label(-text => "Hit the bottom 'Export/Exchange' button", 
 		-font => 'arial 12 bold')->pack(@pl);
   $ImpExpf->Label(-text=>"The door will open - remove any tapes in the door and insert the needed tapes.", 
 		-font => 'arial 12 bold')->pack(@pl);
@@ -1868,18 +1868,28 @@ sub Imp_Exp_Open_Door {
   		-background=>'orange', -font => 'arial 12 bold')->pack(@pl);
     delete($Hofneed{$tid});	#remove this tape as needed from the hash
   }
-  $ImpExpf->Label(-text=>"When these tapes are in the EE slots, hit Continue.", 
+  $ImpExpf->Label(-text=>"When these tapes are in the EE slots, hit 'Continue'",
 		-font => 'arial 12 bold')->pack(@pl);
-  $ImpExpf->Label(-text => "When the tape load is complete hit Finished.", 
+  $msg = "When Export/Exchange is finished, hit 'Inventory'";
+  $ImpExpf->Label(-text => $msg, 
 		-font => 'arial 12 bold')->pack(@pl);
-  $msg = "When bulk load is finished, hit the done button below:\n";
+  $msg = "Select the tapes in the EE slots to be moved into the live slots";
+  $ImpExpf->Label(-text => $msg, 
+		-font => 'arial 12 bold')->pack(@pl);
+  $msg = "Hit 'Add Move'";
+  $ImpExpf->Label(-text => $msg, 
+		-font => 'arial 12 bold')->pack(@pl);
+  $msg = "When all are selected hit 'Start Moves'";
+  $ImpExpf->Label(-text => $msg, 
+		-font => 'arial 12 bold')->pack(@pl);
+  $msg = "When all moves are done, hit the 'Exp/Exch Done' button below";
   $ImpExpf->Label(-text => $msg, 
 		-font => 'arial 12 bold')->pack(@pl);
   $msg = "(NOTE: when hit below, there will be a delay for a new inventory)\n";
   $ImpExpf->Label(-text => $msg, 
 		-font => 'arial 12 bold')->pack(@pl);
   $ImpExpf->Button(
-        -text => 'Bulk Load Done',
+        -text => 'Exp/Exch Done',
         -background => 'red',
         -command => \&Bulk_Load_Done,
         )->pack();
