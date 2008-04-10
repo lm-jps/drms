@@ -55,37 +55,37 @@ endif
 # Path to 3rd-party library headers
 FMATHLIBSH = -I$(_JSOCROOT_)/lib_third_party/include
 CFITSIOH = -I$(_JSOCROOT_)/lib_third_party/include
+OPENMPH = -I$(_JSOCROOT_)/lib_third_party/include
 
 ifeq ($(JSOC_MACHINE), linux_x86_64) 
 #    FMATHLIBS = -lmkl_lapack -lmkl -L$(_JSOCROOT_)/lib_third_party/lib/linux-x86_64/ -lfftw3f -lcfitsio
   # Path to 64-bit 3rd-party libraries
   FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
   CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
-
-  # All 3rd-party math libraries - local rules can define a subset
-  FMATHLIBS = $(FMATHLIBSL) -lfftw3f -lcfitsio
-  CFITSIOLIBS = $(CFITSIOL) -lcfitsio
+  OPENMPL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
+  ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
 endif
 ifeq ($(JSOC_MACHINE), linux_ia32) 
 #    FMATHLIBS = -lmkl_lapack -lmkl -L$(_JSOCROOT_)/lib_third_party/lib/linux-ia32/ -lfftw3f -lcfitsio
   # Path to 32-bit 3rd-party libraries
   FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
   CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
-
-  # All 3rd-party math libraries - local rules can define a subset
-  FMATHLIBS = $(FMATHLIBSL) -lfftw3f -lcfitsio
-  CFITSIOLIBS = $(CFITSIOL) -lcfitsio
+  OPENMPL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
+  ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
 endif
 ifeq ($(JSOC_MACHINE), mac_osx) 
 #    FMATHLIBS = -lmkl_lapack -lmkl -L$(_JSOCROOT_)/lib_third_party/lib/linux-ia32/ -lfftw3f -lcfitsio
   # Path to 32-bit 3rd-party libraries
   FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx/
   CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx/
-
-  # All 3rd-party math libraries - local rules can define a subset
-  FMATHLIBS = $(FMATHLIBSL) -lfftw3f -lcfitsio
-  CFITSIOLIBS = $(CFITSIOL) -lcfitsio
+  OPENMPL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx/
+  ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx/
 endif
+
+# All 3rd-party math libraries - local rules can define a subset
+FMATHLIBS = $(FMATHLIBSL) -lfftw3f -lcfitsio
+CFITSIOLIBS = $(CFITSIOL) -lcfitsio
+OPENMPLIBS = $(OPENMPL) -lgsl -lgslcblas 
 
 ### Build flags for all targets
 #
