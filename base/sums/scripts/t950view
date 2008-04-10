@@ -42,6 +42,7 @@ sub usage {
 %Hofwtq = ();		#hash key is ds_index
 %Hofreplace = ();	#key is tapeid. tape replaced in input order
 %Hofneed = ();		#key is tapeid. tape imported in input order
+%Hofslotused = ();		#key is external slot# in use for cleaning
 tie %Hofrdq, "Tie::IxHash"; #lets you take out keys in input order
 tie %Hofwtq, "Tie::IxHash"; #lets you take out keys in input order
 tie %Hofreplace, "Tie::IxHash"; #lets you take out keys in input order
@@ -65,6 +66,7 @@ $MAX_SLOTS = 2200;
 $NUM_IMP_EXP_SLOTS = 50;
 $MAX_Q_ENTIRES = 5;
 $MAX_PAGE_NUM = 10;
+$MAX_DRIVES = 12;
 $EEcnt = 0;
 $current_page = 0;
 $ldate = &labeldate();
@@ -169,6 +171,10 @@ my(@pl) = qw/-side top -anchor nw/;
 my(@pl1) = qw/-side top/;
 my(@pl2) = qw/-side top -pady 1.0m/;
 my(@pl3) = qw/-side left/;
+@drivebusy = ();
+for($i=0; $i < $MAX_DRIVES; $i++) {
+  $drivebusy[$i] = 0;
+}
 
 #First connect to database
   #$dbh = DBI->connect( '', "$login", "$passw", 'Oracle' );
@@ -222,7 +228,14 @@ print "effdate = $date\n";
         -background => 'grey',
         -command =>  \&ImpExp_sub, 
         );
-  $b0->pack(-side=> 'left', -pady => 0, -padx => 40);
+  $b0->pack(-side=> 'left', -pady => 0, -padx => 20);
+  $b1text = "Start\nCleaning";
+  $b1 = $tframe->Button(
+        -text => $b1text,
+        -background => 'lightsalmon',
+        -command => \&Clean_sub,
+        );
+  $b1->pack(-side=> 'left', -padx => 10);
   $b = $tframe->Button(
         -text => 'Exit',
         -background => 'red',
@@ -276,7 +289,9 @@ print "effdate = $date\n";
   my $lopd = $fop->Label(-text => 'tape write', -anchor => 'w',
 		-background=>'lightblue')->pack(-side=> 'left');
   my $lope = $fop->Label(-text => ' tape find ', -anchor => 'w',
-		-background=>'orange')->pack(-side=> 'left');
+		-background=>'darkorange')->pack(-side=> 'left');
+  my $lopf = $fop->Label(-text => 'drive clean', -anchor => 'w',
+                -background=>'lightsalmon')->pack(-side=> 'left');
 
   #drive #0 & 1
   my $f1 = $mw->Frame(-borderwidth => 0, -relief=>'flat')
@@ -672,8 +687,8 @@ sub log_update {
       }
       $b0text = "Imp/Exp\n$EEcnt";
       $b0->configure(-text => $b0text, -background => 'yellow' );
-@needorder = keys %Hofneed;          #any keys in order of insert
-print "needorder is:\n@needorder\n";  #!!TEMP
+      @needorder = keys %Hofneed;          #any keys in order of insert
+      print "needorder is:\n@needorder\n";  #!!TEMP
     }
     elsif(/^\*Tp:WtQadd:/) {
       ($a, $uidstr, $tapeidstr, $fnumstr, $userstr, $dxstr) = split(/ /, $_);
@@ -749,6 +764,38 @@ print "needorder is:\n@needorder\n";  #!!TEMP
 		-command =>  \&ImpExp_sub,); 
       }
     }
+    elsif(/^\*Tp:DrBusy:/) {
+      $pos = index($_, "drv="); 
+      $d = substr($_, $pos+4);
+      $drivebusy[$d] = 1;
+    }
+    elsif(/^\*Tp:DrNotBusy:/) {
+      $pos = index($_, "drv="); 
+      $d = substr($_, $pos+4);
+      $drivebusy[$d] = 0;
+    }
+    elsif(/^\*Tp:CleanInProgress/) {
+      $pos = index($_, "drv="); 
+      $d = substr($_, $pos+4);
+      $drivebusy[$d] = 1;
+      $x = "\$b_drv$d->configure(-background => 'lightsalmon')";
+      eval($x);
+    }
+    elsif(/^\*Tp:CleaningDone/) {
+      $pos = index($_, "drv="); 
+      $d = substr($_, $pos+4, 2);
+      #print "clean done for drive=$d\n"; #!!!TEMP for test
+      $drivebusy[$d] = 0;
+      $x = "\$b_drv$d->configure(-background => 'grey')";
+      eval($x);
+      $pos = index($_, "slot="); 
+      $cslot = substr($_, $pos+5);
+      #print "clean done for  slot = $cslot\n";
+      $Hofslotused{$cslot} = 0;
+      if(Exists($cleanf)) {
+        $cleanf->destroy();
+      }
+    }
     elsif(/^\*Rb:door:/) {		#a imp/exp door transfer cmd
       $str = substr($_, 10);
       $trobot0->insert('end', $str);
@@ -791,6 +838,10 @@ print "needorder is:\n@needorder\n";  #!!TEMP
       elsif($com eq "unload") {		#unloading tape from a drive
         $x = eval("\$d".$rbdnum."tape");
         $Hofreplace{$x} = 1;		#eligible for replace again
+        #now ck if a cleaning tape unloaded at startup time
+        if(index($x, "CLN") == 0) {	#a cleaning tape
+          $Hofslotused{$snum} = 0;
+        }
       }
       if($rbdnum == 0) {
         $b_drv0->configure(-background => 'yellow');
@@ -1305,7 +1356,6 @@ sub Display_tape_in_slots {
     #print "i=$i tapeid=$tapeid\n"; #!!!TEMP
     if($tapeid eq "-------------") {
       $tapeidinfo = $emptyslottapes[$i-1];
-print "AA:\$emptyslottapes[$i-1] = $tapeidinfo\n"; #!!!TEMP
     }
     else {
       $tapeidinfo = $tapeid;
@@ -1340,9 +1390,11 @@ print "AA:\$emptyslottapes[$i-1] = $tapeidinfo\n"; #!!!TEMP
 #
 sub show_tape_in_slots {
   my ($page) = @_;
-  $row = $column = $slnum = $freeslots = $tapesindrives = 0;
+  #$itmp = 0;  #!!!TEMP for testing w/o cleaning tapes
+  $row = $column = $slnum = $freeslots = $tapesindrives = $numclean = 0;
   $rows_per_col = 40;
-  @slottapes = ();
+  @slottapes = ();		#has tape numbers
+  @cleanslots = ();		#has internal slot numbers
   while(<LOGL>) {
     if(/^\*\*\*ENDInv:/) { last; }
     if(/^tapeid in drive 0 /) {
@@ -1493,6 +1545,10 @@ sub show_tape_in_slots {
       $pos = index($_, " = ");
       $stape = substr($_, $pos+3);
       chomp($stape);
+      #if($slnum >= 2197 && $slnum < 2200) { #!!!TEMP test w/o cleaning tapes
+      #  $stape = "CLN00"."$itmp";
+      #  $itmp++;
+      #}
       if(index($stape, "null") != -1) {
         if(($pos = index($stape, "drive #")) != -1) {
           $indrv = substr($stape, $pos+7);
@@ -1500,7 +1556,6 @@ sub show_tape_in_slots {
           $x = "\$stape = \$d$indrv"."tape";
           eval($x);
           $emptyslottapes[$slnum] = $stape;
-print "BB:\$emptyslottapes[\$slnum] =$stape  \$slnum=$slnum\n"; #!!!!TEMP
         }
         $stape = "-------------";
         if($slnum < $MAX_SLOTS) {       #don't count tapes in EE slots
@@ -1513,8 +1568,12 @@ print "BB:\$emptyslottapes[\$slnum] =$stape  \$slnum=$slnum\n"; #!!!!TEMP
         }
         $emptyslottapes[$slnum] = $stape;
       }
-      $slnum++;
       push(@slottapes, $stape);
+      if(index($stape, "CLN") == 0) {	#a cleaning tape
+        push(@cleanslots, $slnum);	#save internal slot#
+        $numclean++;
+      }
+      $slnum++;
     }
   }
   $freeslots = $freeslots - $tapesindrives; # #of slots not assigned
@@ -1608,9 +1667,11 @@ sub Id_ck {
   return(1);
 }
 
+# find slot with first characters matching $idfind
 sub Id_go {
   foreach $id_i (1 .. $MAX_SLOTS) {
-    if($idfind == $slottapes[$id_i-1]) {
+    #if($idfind eq $slottapes[$id_i-1]) {
+    if(($pos = index($slottapes[$id_i-1], $idfind)) == 0) {
       $idpg = int(($id_i-1)/$MAX_SLOTS_PAGE); 
       $current_page = -1;		#force a clean page
       &Display_tape_in_slots($idpg);
@@ -2024,6 +2085,135 @@ sub Exit_sub {
   }
   system "/bin/rm $runtag";
   exit;
+}
+
+sub Clean_sub {
+  if(Exists($cleanf)) {
+    $cleanf->destroy();
+  }
+  $cleanf = $mw->Toplevel();
+  #$statf->geometry("400x200-10-500");
+  $cleanf->geometry("300x150");
+  $cleanf->title("tape clean");
+  for($i = 0; $i < $numclean; $i++) {
+    $xslot = $cleanslots[$i];
+    if(index($slottapes[$xslot], "CLN") == 0) {
+      $CLEANSLOT = $xslot + 1;
+      if($Hofslotused{$CLEANSLOT}) { 
+        next; #already in use 
+      }
+      last;
+    }
+  }
+  if($i == $numclean) {		#no free cleaning tape
+    $txt = "No available cleaning tape\nTry later";
+    $cleanf->Label(-text => "$txt", -font => 'arial 16')->pack();
+    $cleanf->Button(
+        -text => 'Close',
+        -background => 'grey',
+        -command => sub {$cleanf->destroy();},
+        )->pack();
+    return;
+  }
+  $txt = "Cleaning tape in slot $CLEANSLOT\nSelect drive# to clean:";
+  $cleanf->Label(-text => "$txt", -font => 'arial 16')->pack();
+  if(!$interactive) {
+    $txt = "\nError: you must be the\ninteractive user to clean";
+    $cleanf->Label(-text => "$txt", -font => 'arial 16')->pack();
+    $cleanf->Button(
+        -text => 'Close',
+        -background => 'grey',
+        -command => sub {$cleanf->destroy();},
+        )->pack();
+  }
+  else {
+    $drivetoclean = -1;
+    $cleanf->Label(-text => 'Drive#:') ->pack(-side => 'left');
+    $cleanf->Entry(-textvariable => \$drivetoclean, -width => 6, 
+	-font=>'courier 10 bold',
+        -validate => 'key', -validatecommand => \&Id_ck)
+        ->pack(-side=>'left');
+    $cleanf->Button(-text => "Go", -font=>'courier 10 bold', 
+	-command => \&Clean_ok_sub,)
+        ->pack(-side=> 'left');
+  }
+}
+
+sub Clean_ok_sub {
+  if(Exists($cleanf)) {
+    $cleanf->destroy();
+  }
+  $cleanf = $mw->Toplevel();
+  $cleanf->geometry("310x150");
+  $cleanf->title("tape clean ok");
+  
+    if($drivetoclean < 0 || $drivetoclean >= $MAX_DRIVES) {
+      $txt = "\nIllegal drive #. Please start over.";
+      $cleanf->Label(-text => "$txt", -font => 'arial 16')->pack();
+      $cleanf->Button(
+          -text => 'Close',
+          -background => 'grey',
+          -command => sub {$cleanf->destroy();},
+          )->pack();
+      return;
+    }
+  $txt = "\nDrive to clean is drive# $drivetoclean";
+  $cleanf->Label(-text => "$txt", -font => 'arial 16')->pack();
+  $txt = "(Please wait for any previous\ncleaning tape to load before starting)";
+  $cleanf->Label(-text => "$txt", -font => 'arial 16')->pack();
+  if($drivebusy[$drivetoclean] == 1) {
+    $txt = "\nSorry drive is busy. Try again later.";
+    $cleanf->Label(-text => "$txt", -font => 'arial 16')->pack();
+    $cleanf->Button(
+        -text => 'Close',
+        -background => 'grey',
+        -command => sub {$cleanf->destroy();},
+        )->pack();
+    return;
+  }
+      $cleanf->Button(
+          -text => 'Start Clean',
+          -background => 'lightsalmon',
+	  -command => \&Clean_start_sub,
+          )->pack();
+
+      $cleanf->Button(
+          -text => 'Cancel',
+          -background => 'grey',
+          -command => sub {$cleanf->destroy();},
+          )->pack();
+  return;
+}
+
+sub Clean_start_sub {
+  if(Exists($cleanf)) {
+    $cleanf->destroy();
+  }
+  $cleanf = $mw->Toplevel();
+  $cleanf->geometry("300x150");
+  $cleanf->title("tape clean start");
+  $drivebusy[$drivetoclean] = 1;         #make sure reset when CleaningDone
+  $txt = "\nTape clean in progress for drive# $drivetoclean";
+  $cleanf->Label(-text => "$txt", -font => 'arial 16', -background => 'lightsalmon')->pack(-pady=>20);
+  $cleanf->Button(
+        -text => 'Close',
+        -background => 'grey',
+        -command => sub {$cleanf->destroy();},
+        )->pack();
+  $txt = "$CLEANSLOT $drivetoclean";
+  $Hofslotused{$CLEANSLOT} = 1;
+    if($pid0 = fork) {
+      #This is the parent. The child's pid is in $pid0
+      print LOG "          \n"; #!!don't lose first few chars on line??
+      print LOG "fork impexp start processing pid=$pid0 for impexp clean.\n";
+    } elsif (defined $pid0) {     # $pid0 is zero here if defined. run impexp
+      exec "impexp clean $txt";
+    }  else {
+      #fork error
+      $cleanf->Label(-text => "Fatal Error: Can't fork", -font => 'arial 12 bold')->pack(@pl);
+      print "!!Fatal Error: Can't fork: $!\n";
+      return;
+    }
 }
 
 sub commify {
