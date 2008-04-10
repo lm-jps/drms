@@ -129,18 +129,17 @@ ModuleArgs_t module_args[] =
   {ARG_STRING, "key", "Not Specified", "<comma delimited keyword list>"},
   {ARG_STRING, "seg", "Not Specified", "<comma delimited segment list>"},
   {ARG_FLAG, "a", "0", "Show info for all keywords"},
+  {ARG_FLAG, "c", "0", "Show count of records in query"},
   {ARG_FLAG, "h", "0", "help - print usage info"},
   {ARG_FLAG, "j", "0", "list series info in jsd format"},
   {ARG_FLAG, "l", "0", "just list series keywords with descriptions"},
-  {ARG_INT, "n", "0", "number of records to show, +from first, -from last"},
+  {ARG_INT,  "n", "0", "number of records to show, +from first, -from last"},
   {ARG_FLAG, "p", "0", "list the record\'s storage_unit path"},
   {ARG_FLAG, "P", "0", "list the record\'s storage_unit path but no retrieve"},
   {ARG_FLAG, "k", "0", "keyword list one per line"},
   {ARG_FLAG, "q", "0", "quiet - skip header of chosen keywords"},
   {ARG_FLAG, "r", "0", "recnum - show record number as first keyword"},
   {ARG_FLAG, "s", "0", "stats - show some statistics about the series"},
-  {ARG_FLAG, "z", "0", "JSON formatted output - present output in JSON format"},
-  {ARG_STRING, "QUERY_STRING", "Not Specified", "AJAX query from the web"},
   {ARG_END}
 };
 
@@ -155,6 +154,7 @@ int nice_intro ()
 	"ds=<recordset query> {n=0} {key=<keylist>} {seg=<segment_list>}\n"
         "  details are:\n"
 	"  -a: show information for all keywords\n"
+        "  -c: count records in query\n"
 	"  -h: help - show this message then exit\n"
 	"  -j: list all series, keyword, segment, and link items in jsd file format, then exit\n"
 	"  -k: list keyword names and values, one per line\n"
@@ -164,7 +164,6 @@ int nice_intro ()
 	"  -q: quiet - skip header of chosen keywords\n"
 	"  -r: recnum - show record number as first keyword\n"
 	"  -s: stats - show some statistics for how many records, etc.\n"
-	"  -z: present the output in JSON format\n"
 	"ds=<recordset query> as <series>{[record specifier]} - required\n"
 	"n=0 number of records in query to show, +n from start or -n from end\n"
 	"key=<comma delimited keyword list>, for all use -a flag\n"
@@ -332,6 +331,43 @@ static void list_series_info(DRMS_Record_t *rec)
   return;
   }
 
+int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status)
+  {
+  int stat, filter, mixed;
+  char *query=NULL, *where=NULL, *seriesname=NULL;
+  int count = 0;
+  DB_Text_Result_t *tres;
+
+  stat = drms_recordset_query(env, recordsetname, &where, &seriesname, &filter, &mixed);
+      if (stat)
+        goto failure;
+
+  stat = 1;
+  query = drms_query_string(env, seriesname, where, filter, mixed, DRMS_QUERY_COUNT, NULL);
+      if (!query)
+        goto failure;
+
+  tres = drms_query_txt(env->session,  query);
+
+  if (tres && tres->num_rows == 1 && tres->num_cols == 1)
+    count = atoi(tres->field[0][0]);
+  else
+    goto failure;
+
+  free(seriesname);
+  free(query);
+  free(where);
+  *status = DRMS_SUCCESS;
+  return(count);
+
+  failure:
+  if (seriesname) free(seriesname);
+  if (query) free(query);
+  if (where) free(where);
+  *status = stat;
+  return(0);
+  }
+
 /* Module main function. */
 int DoIt(void)
   {
@@ -349,8 +385,6 @@ int DoIt(void)
   char *in;
   char *keylist;
   char *seglist;
-  char *web_query;
-  int from_web;
   int show_keys;
   int show_segs;
   int jsd_list;
@@ -361,35 +395,12 @@ int DoIt(void)
   int quiet;
   int show_recnum;
   int keyword_list;
+  int want_count;
   int want_path;
   int want_path_noret;
-  int want_JSON;
   int not_silent;
 
   if (nice_intro ()) return (0);
-
-  web_query = strdup (cmdparams_get_str (&cmdparams, "QUERY_STRING", NULL));
-  from_web = strcmp (web_query, "Not Specified") != 0;
-  want_JSON = cmdparams_get_int (&cmdparams, "z", NULL) != 0;
-
-  if (from_web)
-    {
-    want_JSON = 1;
-    not_silent = 0;
-// parse web_query here to get args setup
-// for testing just extract the ds= first keyword
-      {
-      char *dsraw, *ds, *p;
-      dsraw = strdup (web_query);
-      ds = strdup (web_query); // make sure there is room
-      sscanf(dsraw,"ds=%s",ds);
-      if ((p = index(ds,'&'))) *p = '\0';
-      cmdparams_set (&cmdparams, "ds", ds);
-      cmdparams_set (&cmdparams,"s", "1");
-      free(dsraw);
-      free(ds);
-      }
-    }
 
   in = cmdparams_get_str (&cmdparams, "ds", NULL);
   keylist = strdup (cmdparams_get_str (&cmdparams, "key", NULL));
@@ -399,6 +410,7 @@ int DoIt(void)
   jsd_list = cmdparams_get_int (&cmdparams, "j", NULL) != 0;
   list_keys = cmdparams_get_int (&cmdparams, "l", NULL) != 0;
   show_all = cmdparams_get_int (&cmdparams, "a", NULL) != 0;
+  want_count = cmdparams_get_int (&cmdparams, "c", NULL) != 0;
   show_stats = cmdparams_get_int (&cmdparams, "s", NULL) != 0;
   max_recs =  cmdparams_get_int (&cmdparams, "n", NULL);
   quiet = cmdparams_get_int (&cmdparams, "q", NULL) != 0;
@@ -408,9 +420,6 @@ int DoIt(void)
   want_path_noret = cmdparams_get_int (&cmdparams, "P", NULL) != 0;
 
   if(want_path_noret) want_path = 1;	/* also set this flag */
-
-  if (want_JSON)
-    printf("Content-type: application/json\n\n");
 
   /* At least seriesname must be specified */
   if (strcmp(in, "Not Specified") == 0)
@@ -422,7 +431,9 @@ int DoIt(void)
       }
     }
 
-  /*  if -l or -j is set, just get all the keywords and print them  */
+  
+
+  /*  if -j, -l or -s is set, just do the short function and exit */
   if (list_keys || jsd_list || show_stats) 
     {
     char *p, *seriesname;
@@ -479,51 +490,25 @@ int DoIt(void)
 
       rs = drms_find_rec_first(rec, 1);
       if (!rs || rs->n < 1)
-        {
-        if (want_JSON)
-          printf("{ \"status\":1}\n");
-        else
-          printf("No records Present\n");
-        }
+        printf("No records Present\n");
       else
         {
-        if (want_JSON)
-          {
-          printf("{ \"status\":0,\n");
-          printf(" \"FirstRecord\" : \"");
-          }
-        else
-          printf("First Record: ");
+        printf("First Record: ");
         drms_print_rec_query(rs->records[0]);
         if (rs->n > 1) printf(" is first of %d records matching first keyword", rs->n);
-        if (want_JSON)
-          printf("\",\n \"FirstRecnum\" : %lld,\n", rs->records[0]->recnum);
-        else
-          printf(", Recnum = %lld\n", rs->records[0]->recnum);
+        printf(", Recnum = %lld\n", rs->records[0]->recnum);
         drms_free_records(rs);
   
         rs = drms_find_rec_last(rec, 1);
-        if (want_JSON)
-          printf(" \"LastRecord\" : \"");
-        else
-          printf("Last Record:  ");
+        printf("Last Record:  ");
         drms_print_rec_query(rs->records[0]);
         if (rs->n > 1) printf(" is first of %d records matching first keyword", rs->n);
-        if (want_JSON)
-          printf("\",\n \"LastRecnum\" : %lld,\n", rs->records[0]->recnum);
-        else
-          printf(", Recnum = %lld\n", rs->records[0]->recnum);
+        printf(", Recnum = %lld\n", rs->records[0]->recnum);
         drms_free_records(rs);
   
         rs = drms_find_rec_last(rec, 0);
-        if (want_JSON)
-          printf(" \"MaxRecnum\" : %lld\n", rs->records[0]->recnum);
-        else
-          printf("Last Recnum:  %lld", rs->records[0]->recnum);
-        if (want_JSON)
-          printf("}\n");
-        else
-          printf("\n");
+        printf("Last Recnum:  %lld", rs->records[0]->recnum);
+        printf("\n");
         }
       return(0);
       }
@@ -531,7 +516,22 @@ int DoIt(void)
      }
     fflush(stdout);
     }
-  if (want_JSON) return(0);
+
+  /* get count if -c flag set */
+  if (want_count)
+    {
+    int count = drms_count_records(drms_env, in, &status);
+    if (status)
+      {
+      fprintf(stderr,"### show_info: series %s not found.\n",in);
+      return (1);
+      }
+    printf("%d", count);
+    if (!quiet)
+      printf(" records match the query");
+    printf("\n");
+    return(0);
+    }
 
   /* check for poor usage of no query and no n=record_count */
   inqry = index(in, '[');
@@ -543,9 +543,7 @@ int DoIt(void)
 
   /* Open record_set */
 
-// fprintf(stderr,"test 1 query is %s\n",in);
   recordset = drms_open_records (drms_env, in, &status);
-// fprintf(stderr,"test 1 query is %d\n",status);
   if (!recordset) 
     {
     fprintf(stderr,"### show_info: series %s not found.\n",in);
