@@ -53,6 +53,7 @@ EXEC SQL BEGIN DECLARE SECTION;
   int touch;
   char *effective_date;
 EXEC SQL END DECLARE SECTION;
+  char dsnamestr[128];
   
 EXEC SQL INCLUDE sqlca;
 
@@ -80,6 +81,12 @@ EXEC SQL INCLUDE sqlca;
    strcpy(offsite_ack.arr, "N");
    offsite_ack.len = strlen(offsite_ack.arr);
    dsname = getkey_str(params, "dsname");
+   if(!dsname) { strcpy(dsnamestr,  "<none>"); }
+   else { 
+     strcpy(dsnamestr, dsname);
+     free(dsname);
+   }
+   dsname = dsnamestr;
    storage_group = getkey_int(params, "group");
    storage_set = getkey_int(params, "storage_set");
    bytes = getkey_double(params, "bytes");
@@ -143,7 +150,6 @@ EXEC SQL INCLUDE sqlca;
      return(1);
    }
    free(effective_date);
-   free(dsname);
    free(username);
    EXEC SQL COMMIT WORK;
    return(0);
