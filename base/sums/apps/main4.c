@@ -66,8 +66,8 @@ int main(int argc, char *argv[])
   uid = sum->uid;
   //sum->debugflg = 1;			/* use debug mode for future calls */
   /*sum->debugflg = 0;*/
-  //sum->username = "production";		/* !!TEMP */
-  sum->username = "jim";		/* !!TEMP */
+  sum->username = "production";		/* !!TEMP */
+  //sum->username = "jim";		/* !!TEMP */
   printf("Opened with sumid = %d\n", uid);
 
   sum->bytes = (double)120000000;	/* 120MB */
@@ -85,21 +85,22 @@ int main(int argc, char *argv[])
   printf("Allocated %g bytes at %s with dsindex=%lu\n", 
 			sum->bytes, *cptr, alloc_index);
   // put something in the alloc wd for this test
-//  sprintf(cmd, "cp -rp /home/jim/cvs/PROTO/src/SUM %s", *cptr);
-//  printf("cmd is: %s\n", cmd);
-//  system(cmd);
+  sprintf(cmd, "cp -rp /home/jim/junk %s", *cptr);
+  printf("cmd is: %s\n", cmd);
+  system(cmd);
   sprintf(cmd, "touch %s/%s%d", *cptr, "touch", uid);
   printf("cmd is: %s\n", cmd);
   system(cmd);
 
+  //sum->mode = NORETRIEVE + TOUCH;
+  //sum->mode = NORETRIEVE;
   sum->mode = RETRIEVE + TOUCH;
-  sum->mode = NORETRIEVE;
-  sum->tdays = 5;
+  sum->tdays = 10;
   sum->reqcnt = 3;
   dsixpt = sum->dsix_ptr;
-  *dsixpt++ = 4294967317;
-  *dsixpt++ = 666;
-  *dsixpt++ = 4294967327;
+  *dsixpt++ = 4294967501;
+  *dsixpt++ = 4294967578 ;
+  *dsixpt++ = 4294967579;
 /*  *dsixpt++ = 14802;   */
 /*  *dsixpt++ = 14539;   */
 /*  *dsixpt++ = 14686;   */
@@ -144,9 +145,11 @@ int main(int argc, char *argv[])
 ftmp = StopTimer(0);
 /*printf("\nTime sec for %d SUM_get() in one call = %f\n\n", MAXSUMREQCNT, ftmp);*/
 
-  sum->mode = TEMP;
-  sum->dsname = "testname";
-  sum->group = 100;
+  //sum->mode = TEMP;
+  sum->mode = ARCH;
+  //sum->dsname = "testname";
+  //sum->group = 100;
+  sum->group = 1;
   /*sum->group = 65;*/
   /*sum->group = 101;*/
   sum->reqcnt = 1;
