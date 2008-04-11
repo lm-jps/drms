@@ -565,6 +565,8 @@ int drms_sscanf_int (char *str,
 		     DRMS_Type_t dsttype, 
 		     DRMS_Type_Value_t *dst,
 		     int silent) {
+  int status = DRMS_SUCCESS;
+  TIME *te = NULL;
   char *endptr = 0;
   long long ival;
   float fval;
@@ -683,6 +685,13 @@ int drms_sscanf_int (char *str,
      {
 	dst->time_val = DRMS_MISSING_TIME;
 	return usemissinglen;
+     }
+     else if ((te = drms_time_getepoch(str, NULL, &status)) != NULL)
+     {
+	/* If this is a string identifying an epoch, use the double this
+	 * refers to. */
+	dst->time_val = *te;
+	return strlen(str);
      }
      else
      {
