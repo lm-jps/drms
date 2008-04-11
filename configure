@@ -1,5 +1,9 @@
 #! /bin/csh -f
 
+# set up $JSOC_MACHINE
+set JSOC_MACHINE = `build/jsoc_machine.csh`
+echo "Machine type is $JSOC_MACHINE"
+echo ""
 
 set CLEAN = "no"
 set CHKLIBS = "no"
