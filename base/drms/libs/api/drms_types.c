@@ -28,6 +28,7 @@ static TimeEpochStrings_t gSEpochS[] =
    {kTimeEpoch_WSO, "WSO_EPOCH", WSO_EPOCH_S, WSO_EPOCH},
    {kTimeEpoch_TAI, "TAI_EPOCH", TAI_EPOCH_S, TAI_EPOCH},
    {kTimeEpoch_MJD, "MJD_EPOCH", MJD_EPOCH_S, MJD_EPOCH},
+   {kTimeEpoch_TSEQ, "TSEQ_EPOCH", TSEQ_EPOCH_S, TSEQ_EPOCH},
    {(DRMS_TimeEpoch_t)-99, ""}
 };
 

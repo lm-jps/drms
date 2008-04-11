@@ -144,6 +144,9 @@ typedef struct DRMS_Value
    missing in the MDI/SDS system. */
 #define _DRMS_IS_T_MISSING(v)  (isnan(value) || DRMS_MISSING_TIME == value)
 
+#define TSEQ_EPOCH_S MDI_EPOCH_S
+#define TSEQ_EPOCH_F MDI_EPOCH_F
+#define TSEQ_EPOCH MDI_EPOCH
 
 #define DRMS_MAXTYPENAMELEN  (9)
 
@@ -520,6 +523,7 @@ enum DRMS_TimeEpoch_enum
    kTimeEpoch_WSO,
    kTimeEpoch_TAI,
    kTimeEpoch_MJD,
+   kTimeEpoch_TSEQ,
    kTimeEpoch_END
 };
 
