@@ -1,6 +1,5 @@
 #! /bin/csh -f
 
-# test changing this file to test the file locking feature
 
 set CLEAN = "no"
 set CHKLIBS = "no"
