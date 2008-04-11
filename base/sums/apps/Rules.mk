@@ -39,7 +39,7 @@ endif
 #endif
 CF_TGT_$(d) := $(CF_TGT_$(d)) $(ADD_TGT_$(d))
 
-LL_TGT_$(d) := -lecpg -lpq
+LL_TGT_$(d) := $(ECPGL) -lecpg -lpgtypes -lpq
 
 SUMSVC_$(d)	:= $(d)/sum_svc
 XSUMSVC_$(d)	:= $(d)/xsum_svc
