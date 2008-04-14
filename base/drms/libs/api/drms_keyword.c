@@ -323,8 +323,12 @@ void drms_keyword_fprintval(FILE *keyfile, DRMS_Keyword_t *key)
   case DRMS_TYPE_TIME:
     {
       char buf[1024];
-      sprint_time(buf, key->value.time_val, key->info->format, 0);
-      // sprint_time(buf, key->value.time_val, "UT", 0);
+      char *endptr = NULL;
+
+      /* key->info->format can be converted to an integer safely - it has been checked already */
+      int format = (int)strtod(key->info->format, &endptr);
+
+      sprint_time(buf, key->value.time_val, key->info->unit, format);
       fprintf(keyfile,"%s",buf);
     }
     break;
@@ -428,6 +432,59 @@ int  drms_template_keywords(DRMS_Record_t *template)
 	key->info->recscope = kRecScopeType_Variable;
 	key->info->per_segment = 0;
 	key->info->isdrmsprime = 0;
+      }
+
+      /* perform an amazing switcheroo - per Phil, existing series 
+       * have not been using the format and unit fields for TIME 
+       * keywords consistently.
+       * -format is supposed to specify precision when printing out
+       * a time string.  0 means whole seconds, 1 means nearest tenth
+       * of a second, etc.
+       * -unit is supposed to specify time zone.
+       *
+       * Apply a bandaid:
+       *   if format is a number, keep it (to be used as precision)
+       *   else if format is a recognized zone, assign the zone to unit
+       *   else set format to 0 (means round to nearest whole second).
+       *   if unit is not set, or if unit is none or time or "" or whitespace,
+       *     set unit to UTC. */
+      if (key->info->type == DRMS_TYPE_TIME)
+      {
+	 char formatn = 0;
+	 char *format = key->info->format;
+	 char *unit = key->info->unit;
+	 char *unittmp = strdup(unit);
+	 char *endptr = NULL;
+	 int64_t val = strtod(format, &endptr);
+
+	 if (val != 0 || endptr != format)
+	 {
+	    /* a recognizable number */
+	    if (val >= INT8_MIN && val <= INT8_MAX)
+	    {
+	       formatn = val;
+	    }
+	 }
+	 else if (zone_isvalid(format))
+	 {
+	    /* format is a zone */
+	    snprintf(unit, DRMS_MAXUNITLEN, "%s", format);
+	 }
+
+	 snprintf(format, DRMS_MAXFORMATLEN, "%d", formatn);
+
+	 if (*unit == '\0' || 
+	     !strcasecmp(unit, "none") || 
+	     !strcasecmp(unit, "time") ||
+	     !strtok(unittmp, " \t\b"))
+	 {
+	    snprintf(unit, DRMS_MAXUNITLEN, "%s", "UTC");
+	 }
+
+	 if (unittmp)
+	 {
+	    free(unittmp);
+	 }
       }
 	
 #ifdef DEBUG

@@ -287,6 +287,8 @@ extern double tai_adjustment (TIME t, char *zone);
 */
 extern double zone_adjustment (char *zone);
 
+int zone_isvalid (char *zone);
+
 /** 
     @brief Checks for the validity of an internal time value
 

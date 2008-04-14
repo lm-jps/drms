@@ -146,6 +146,7 @@ static double ut_leap_time[] = {
 
 static void date_from_epoch_time (TIME t);
 static TIME epoch_time_from_julianday ();
+static double zone_adjustment_inner (char *zone, int *valid);
 
 static void _clear_date_time () {
 /*
@@ -766,86 +767,7 @@ void sprint_time (char *out, TIME t, char *zone, int precision) {
     }
   }
 }
-                                                  /*  Zone time corrections  */
-double zone_adjustment (char *zone) {
-  TIME dt;
-  int status, offset, hours, minutes;
-  
-  dt = 0.0;
-  hours = minutes = 0;
-  if (((zone[0] == '+') || (zone[0] == '-')) && strlen (zone) >= 5) {
-    status = sscanf (zone, "%3d:%2d", &hours, &minutes);
-    if (status == 2) {
-      if (hours < 0) minutes *= -1;
-    } else {
-      status = sscanf (zone, "%5d", &offset);
-      if (status) {
-        hours = offset / 100;
-        minutes = offset % 100;
-      }
-    }
-    dt += 60.0 * (minutes + 60.0 * hours);
-    return dt;
-  }
-  if (strlen (zone) == 1) {
-    int tz = toupper (zone[0]);
-    hours = tz - 'A' + 1;
-    if (tz > 'I') hours--;
-    if (tz > 'M') {
-      hours = 'M' - tz;
-      if (tz == 'Z') hours = 0;
-    }
-    dt += 3600.0 * hours;
-    return dt;
-  }
-  if (!strcasecmp (zone, "IST")) dt += 3600.0 * 5.5;
-  else if (!strcasecmp (zone, "ACST")) dt += 3600.0 * 9.5;
-  else if (!strcasecmp (zone, "ACDT")) dt += 3600.0 * 10.5;
-  else if (!strcasecmp (zone, "NST")) dt -= 3600.0 * 3.5;
-  else if (!strcasecmp (zone, "NDT")) dt -= 3600.0 * 2.5;
-  if (!strcasecmp (zone, "PST") || !strcasecmp (zone, "YDT"))
-    hours = -8;
-  else if (!strcasecmp (zone, "MST") || !strcasecmp (zone, "PDT"))
-    hours = -7;
-  else if (!strcasecmp (zone, "CST") || !strcasecmp (zone, "MDT"))
-    hours = -6;
-  else if (!strcasecmp (zone, "EST") || !strcasecmp (zone, "CDT"))
-    hours = -5;
-  else if (!strcasecmp (zone, "AST") || !strcasecmp (zone, "EDT"))
-    hours = -4;
-  else if (!strcasecmp (zone, "ADT"))
-    hours = -3;
-  else if (!strcasecmp (zone, "GMT") || !strcasecmp (zone, "WET"))
-    hours = 0;
-  else if (!strcasecmp (zone, "CET"))
-    hours = 1;
-  else if (!strcasecmp (zone, "EET"))
-    hours = 2;
-  else if (!strcasecmp (zone, "AWST") ||
-      !strcasecmp (zone, "SST") || !strcasecmp (zone, "WST"))
-    hours = 8;
-  else if (!strcasecmp (zone, "JST") || !strcasecmp (zone, "AWDT"))
-    hours = 9;
-  else if (!strcasecmp (zone, "JDT") || !strcasecmp (zone, "AEST"))
-    hours = 10;
-  else if (!strcasecmp (zone, "AEDT"))
-    hours = 11;
-  else if (!strcasecmp (zone, "NZST"))
-    hours = 12;
-  else if (!strcasecmp (zone, "NZDT"))
-    hours = 13;
-/*
-  else if (!strcasecmp (zone, "BST"))
-    hours = -11;
-*/
-  else if (!strcasecmp (zone, "HST") || !strcasecmp (zone, "BDT"))
-    hours = -10;
-  else if (!strcasecmp (zone, "YST") || !strcasecmp (zone, "HDT") ||
-      !strcasecmp (zone, "AKST"))
-    hours = -9;
-  dt += 3600.0 * hours;
-  return dt;
-}
+
                                   /*  UTC (and zone) / TAI time corrections  */
 /*
   This function takes a scanned time from a zone-designated string and
@@ -874,6 +796,102 @@ double tai_adjustment (TIME t, char *zone) {
     if (t < ut_leap_time[ct]) dattim.ut_flag = 1;
   }
   return (dt + zone_adjustment (zone));
+}
+
+double zone_adjustment_inner (char *zone, int *valid) {
+  TIME dt;
+  int status, offset, hours, minutes;
+
+  if (valid)
+    *valid = 1;
+ 
+  dt = 0.0;
+  hours = minutes = 0;
+  status = sscanf (zone, "%5d", &offset);
+  if (status) {
+    hours = offset / 100;
+    minutes = offset % 100;
+    dt += 60.0 * (minutes + 60.0 * hours);
+    return dt;
+  }
+  if (strlen (zone) == 1) {
+    hours = zone[0] - 'A' + 1;
+    if (zone[0] > 'I')
+      hours--;
+    if (zone[0] > 'M') {
+      hours = 'M' - zone[0];
+      if (zone[0] == 'Z')
+        hours = 0;
+    }
+    dt += 3600.0 * hours;
+    return dt;
+  }
+  if (!strcmp (zone, "PST") || !strcmp (zone, "YDT"))
+    hours = -8;
+  else if (!strcmp (zone, "MST") || !strcmp (zone, "PDT"))
+    hours = -7;
+  else if (!strcmp (zone, "CST") || !strcmp (zone, "MDT"))
+    hours = -6;
+  else if (!strcmp (zone, "EST") || !strcmp (zone, "CDT"))
+    hours = -5;
+  else if (!strcmp (zone, "AST") || !strcmp (zone, "EDT"))
+    hours = -4;
+  else if (!strcmp (zone, "ADT"))
+    hours = -3;
+  else if (!strcmp (zone, "GMT") || !strcmp (zone, "WET"))
+    hours = 0;
+  else if (!strcmp (zone, "CET") || !strcmp (zone, "BST"))
+    hours = 1;
+  else if (!strcmp (zone, "EET"))
+    hours = 2;
+  else if (!strcmp (zone, "SST") || !strcmp (zone, "WST"))
+    hours = 8;
+  else if (!strcmp (zone, "JST"))
+    hours = 9;
+  else if (!strcmp (zone, "JDT"))
+    hours = 10;
+  else if (!strcmp (zone, "NZST"))
+    hours = 12;
+  else if (!strcmp (zone, "BST"))
+    hours = -11;
+  else if (!strcmp (zone, "HST") || !strcmp (zone, "BDT"))
+    hours = -10;
+  else if (!strcmp (zone, "YST") || !strcmp (zone, "HDT"))
+    hours = -9;
+  else if (!strcmp (zone, "NZDT"))
+    hours = 13;
+  else {
+     /* Crap - you'd think a function named zone_adjustment would recognize  
+      * TDT, TAI, UTC, etc */
+     if (strcasecmp(zone, "TDT") &&
+	 strcasecmp(zone, "TAI") &&
+	 strcasecmp(zone, "TT") &&
+	 strcasecmp(zone, "GPS") &&
+	 strcasecmp(zone, "UT") &&
+	 strcasecmp(zone, "UTC") &&
+	 strcasecmp(zone, "ISO") &&
+	 strcasecmp(zone, "TAI") &&
+	 strcasecmp(zone, "JD") &&
+	 strcasecmp(zone, "MJD")) {
+	/* Invalid time zone */
+	if (valid)
+	  *valid = 0;
+     }
+  }
+    
+  dt += 3600.0 * hours;
+  return dt;
+}
+
+                                                  /*  Zone time corrections  */
+double zone_adjustment (char *zone) {
+   return zone_adjustment_inner(zone, NULL);
+}
+
+int zone_isvalid (char *zone) {
+   int valid = 0;
+   zone_adjustment_inner(zone, &valid);
+   return valid;
 }
 
 int time_is_invalid (TIME t) {
