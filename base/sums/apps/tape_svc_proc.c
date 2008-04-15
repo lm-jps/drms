@@ -31,6 +31,7 @@ extern CLIENT *clntdrv2, *clntdrv3;
 extern CLIENT *clntdrv[];
 extern CLIENT *clntrobot0;
 extern SVCXPRT *glb_transp;
+extern int drive_order[];
 extern uint64_t rinfo;
 extern uint32_t procnum;
 extern int debugflg;
@@ -141,7 +142,7 @@ void send_ack()
 int kick_next_entry_rd() {
   TQ *p, *ptmp;
   uint32_t driveback, robotback;
-  int d, snum, sback;
+  int d, e, snum, sback;
   char cmd[80];
   char *call_err, *tapeid;
   enum clnt_stat status;
@@ -235,15 +236,17 @@ int kick_next_entry_rd() {
       continue;			/* see if there's more */
     }
     /* try to find a free drive, first w/no tape and then not busy */
-    for(d=0; d < MAX_DRIVES; d++) {
+    for(e=0; e < MAX_DRIVES; e++) {
+      d = drive_order[e];
       if((!drives[d].tapeid) && (!drives[d].offline)) break;
     }
-    if(d == MAX_DRIVES) {         /* all drives have a tape or offline */
-      for(d=0; d < MAX_DRIVES; d++) {
+    if(e == MAX_DRIVES) {         /* all drives have a tape or offline */
+      for(e=0; e < MAX_DRIVES; e++) {
+        d = drive_order[e];
         if((!drives[d].busy) && (!drives[d].offline)) break;
       }
     }
-    if(d == MAX_DRIVES) {         /* all drives are busy */
+    if(e == MAX_DRIVES) {         /* all drives are busy */
       sback = 0;
       break;			/* break while(p) */
     }
@@ -318,7 +321,7 @@ int kick_next_entry_wt() {
   TQ *p, *ptmp;
   TAPE tapeinfo;
   uint64_t driveback, robotback;
-  int d, snum, sback, tape_closed, group_id, nxtwrtfn;
+  int d, e, snum, sback, tape_closed, group_id, nxtwrtfn;
   double total_bytes;
   char cmd[80];
   char *call_err, *tapeid;
@@ -453,15 +456,17 @@ int kick_next_entry_wt() {
       continue;			/* see if there's more */
     }
     /* try to find a free drive, first w/no tape and then not busy */
-    for(d=0; d < MAX_DRIVES; d++) {
+    for(e=0; e < MAX_DRIVES; e++) {
+      d = drive_order[e];
       if((!drives[d].tapeid) && (!drives[d].offline)) break;
     }
-    if(d == MAX_DRIVES) {         /* all drives have a tape or offline */
-      for(d=0; d < MAX_DRIVES; d++) {
+    if(e == MAX_DRIVES) {         /* all drives have a tape or offline */
+      for(e=0; e < MAX_DRIVES; e++) {
+        d = drive_order[e];
         if((!drives[d].busy) && (!drives[d].offline)) break;
       }
     }
-    if(d == MAX_DRIVES) {         /* all drives are busy */
+    if(e == MAX_DRIVES) {         /* all drives are busy */
       sback = 0;
       break;                    /* break while(p) */
     }
@@ -1275,16 +1280,28 @@ KEY *taperesprobotdo_1(KEY *params) {
       }
     }
     write_log("*Tp:CleanInProgress: drv=%d\n", d);
-    //!!!TBD can't do this for t950. there are multiple drives
-    sleep(180);			// let the cleaning tape work. max is 3min
-    write_log("*Tp:CleaningDone: drv=%d\n", d);
+    // next thing is a call to IMPEXPDO by impexp for clean_stop
+    retlist = (KEY *)1;
+  }
+  else if(!strcmp(cptr, "clean_robot_unload")) {
+    if(findkey(params, "cmd1")) {
+      cmd = GETKEY_str(params, "cmd1");
+      if(strstr(cmd, " unload ")) { /* cmd like: mtx -f /dev/sg7 unload 15 0 */
+       sscanf(cmd, "%s %s %s %s %d %d", scr, scr, scr, scr, &s, &d); 
+       s--;			/* must use internal slot # */
+       /*write_log("!!!TEMP unload cmd1 s=%d d=%d\n", s, d);*/
+       slots[s].tapeid = drives[d].tapeid; 
+       drives[d].tapeid = NULL;
+       drives[d].slotnum = -1;
+      }
+    }
+    write_log("*Tp:CleaningDone: drv=%d slot=%d\n", d, s+1);
     drives[d].busy = 0;
     write_log("*Tp:DrNotBusy: drv=%d\n", d);
     retlist = (KEY *)1;
   }
   return(retlist);
 }
-
 
 /* Called from taperesprobotdo_1() to start a read operation after a 
  * robot operation completes. See taperesprobotdo_1() for sample keylist.
@@ -1591,7 +1608,7 @@ KEY *impexpdo_1(KEY *params)
   poff = NULL;
   rinfo = 0;
   op = GETKEY_str(params, "OP");
-  if(!strcmp(op, "clean")) {	/* do drive cleaning */
+  if(!strcmp(op, "clean_start")) {	/* do drive cleaning */
     cleanslot = atoi(getkey_str(params, "cleanslot"));
     cleandrive = atoi(getkey_str(params, "cleandrive"));
     write_log("cleanslot=%d cleandrive=%d\n", cleanslot, cleandrive);
@@ -1639,7 +1656,42 @@ KEY *impexpdo_1(KEY *params)
     send_ack();			/* ack original impexp caller */
     return((KEY *)1);		/* nothing will be sent later */
   }
-
+  if(!strcmp(op, "clean_stop")) {	/* drive cleaning done */
+    cleandrive = atoi(getkey_str(params, "cleandrive"));
+    cleanslot = atoi(getkey_str(params, "cleanslot"));
+    xlist = newkeylist();		/* now unload the cleaning tape*/
+    robotbusy = 1;
+    drives[cleandrive].busy = 1;
+    write_log("*Tp:DrBusy: drv=%d\n", cleandrive);
+    setkey_str(&xlist, "OP", "clean_robot_unload");
+    setkey_int(&xlist, "dnum", cleandrive);
+    setkey_int(&xlist, "snum", cleanslot);
+    sprintf(cmd, "mtx -f %s unload %d %d 1> /tmp/mtx_robot_%d.log 2>&1",
+                libdevname, cleanslot, cleandrive, robotcmdseq++);
+    setkey_str(&xlist, "cmd1", cmd);
+    setkey_int(&xlist, "DEBUGFLG", 0);
+    setkey_fileptr(&xlist,  "current_client", (FILE *)current_client);
+    status = clnt_call(clntrobot0, ROBOTDO, (xdrproc_t)xdr_Rkey,(char *)xlist,
+                        (xdrproc_t)xdr_uint32_t, (char *)&robotback, TIMEOUT);
+    if(status != RPC_SUCCESS) {
+      if(status != RPC_TIMEDOUT) {  /* allow timeout?? */
+        call_err = clnt_sperror(clntrobot0, "Err clnt_call for ROBOTDO");
+        write_log("%s %s\n", datestring(), call_err);
+        robotbusy = 0;
+        drives[cleandrive].busy = 0;
+        write_log("*Tp:DrNotBusy: drv=%d\n", cleandrive);
+      }
+    }
+    if(robotback == 1) {
+      write_log("**Error in ROBOTDO for impexp clean call in tape_svc_proc.c\n");
+      robotbusy = 0;
+      drives[cleandrive].busy = 0;
+      write_log("*Tp:DrNotBusy: drv=%d\n", cleandrive);
+    }
+    freekeylist(&xlist);
+    send_ack();			/* ack original impexp caller */
+    return((KEY *)1);		/* nothing will be sent later */
+  }
   if(!strcmp(op, "stop")) {	/* end of imp/exp cycle */
     eeactive = 0;	/* enable the Q code again */
     send_ack();

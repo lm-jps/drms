@@ -17,6 +17,7 @@
 
 SLOT slots[MAX_SLOTS];
 DRIVE drives[MAX_DRIVES];
+int drive_order[MAX_DRIVES];
 int Empty_Slot_Cnt;
 
 void logkey();
@@ -158,8 +159,8 @@ void get_cmd(int argc, char *argv[])
 /*********************************************************/
 void setup()
 {
-  FILE *sgfp;
-  int pid;
+  FILE *sgfp, *drfp;
+  int pid, order0, neworder, i;
   char *cptr;
   char logname[MAX_STR], line[256];
 
@@ -174,6 +175,28 @@ void setup()
   write_log("\n## %s tape_svc for pid = %d ##\n", 
 		datestring(), pid);
   write_log("Database to connect to is %s\n", dbname);
+  sprintf(logname, "/usr/local/logs/SUM/drive_order.txt");
+  if((drfp=fopen(logname, "r")) == NULL) {
+    fprintf(stderr, "Can't open the file file %s\n", logname);
+    order0 = 0;
+  }
+  else {
+    fgets(line, 256, drfp);
+    sscanf(line, "%d", &order0);
+  }
+  fclose(drfp);
+  neworder = order0 + 1;
+  if(neworder >= MAX_DRIVES) neworder = 0;
+  drfp=fopen(logname, "w");
+  fprintf(drfp, "%d", neworder);
+  fclose(drfp);
+  for(i=0; i < MAX_DRIVES; i++) {
+    drive_order[i] = order0;
+    printf("drive_order[%d] = %d\n", i, order0); //!!!TEMP
+    order0++;
+    if(order0 >= MAX_DRIVES) order0 = 0;
+  }
+
   if (signal(SIGINT, SIG_IGN) != SIG_IGN)
       signal(SIGINT, sighandler);
   if (signal(SIGTERM, SIG_IGN) != SIG_IGN)
@@ -296,11 +319,13 @@ int main(int argc, char *argv[])
       else { retry = 0; }
     }
     /* Return any tapes in drives to free slots */
+    /* LEAVE THE TAPES (AND BRITTNEY) ALONE *************************/
     if(!tape_free_drives()) {
       write_log("**Fatal error: Can't free tapes in drives\n");
       (void) pmap_unset(TAPEPROG, TAPEVERS);
       exit(1);
     }
+    /****************************************************************/
   }
 
   /* Enter svc_run() which calls svc_getreqset when msg comes in.
