@@ -25,7 +25,7 @@
 #include <stropts.h>
 #include <sys/mtio.h>
 
-#define MAX_WAIT 20  /* max times to wait for rdy in get_tape_file_num() */
+#define MAX_WAIT 20  /* max times to wait for rdy in get_tape_fnum_rdy() */
 #define CMDLENWRT 24576
 #define GTARLOGDIR "/var/logs/SUM/gtar"
 #define GTAR "/usr/local/bin/gtar"	/* gtar 1.16 on 29May2007 */
@@ -36,7 +36,7 @@ int position_tape_eod();
 int position_tape_bot();
 int position_tape_file_asf();
 int position_tape_file_fsf();
-int get_tape_file_num(); 
+int get_tape_fnum_rdy(); 
 void drive_reset();
 uint64_t tell_blocks();
 int get_cksum();
@@ -61,6 +61,30 @@ static void drive2prog_1();
 #endif
 #ifdef DRIVE_3
 static void drive3prog_1();
+#endif
+#ifdef DRIVE_4
+static void drive4prog_1();
+#endif
+#ifdef DRIVE_5
+static void drive5prog_1();
+#endif
+#ifdef DRIVE_6
+static void drive6prog_1();
+#endif
+#ifdef DRIVE_7
+static void drive7prog_1();
+#endif
+#ifdef DRIVE_8
+static void drive8prog_1();
+#endif
+#ifdef DRIVE_9
+static void drive9prog_1();
+#endif
+#ifdef DRIVE_10
+static void drive10prog_1();
+#endif
+#ifdef DRIVE_11
+static void drive11prog_1();
 #endif
 static struct timeval TIMEOUT = { 300, 0 };
 uint32_t rinfo;		/* info returned by XXXdo_1() calls */
@@ -199,6 +223,38 @@ void setup()
   sprintf(drvname, "drive3_svc");
   drivenum = 3;
   #endif
+  #ifdef DRIVE_4
+  sprintf(drvname, "drive4_svc");
+  drivenum = 4;
+  #endif
+  #ifdef DRIVE_5
+  sprintf(drvname, "drive5_svc");
+  drivenum = 5;
+  #endif
+  #ifdef DRIVE_6
+  sprintf(drvname, "drive6_svc");
+  drivenum = 6;
+  #endif
+  #ifdef DRIVE_7
+  sprintf(drvname, "drive7_svc");
+  drivenum = 7;
+  #endif
+  #ifdef DRIVE_8
+  sprintf(drvname, "drive8_svc");
+  drivenum = 8;
+  #endif
+  #ifdef DRIVE_9
+  sprintf(drvname, "drive9_svc");
+  drivenum = 9;
+  #endif
+  #ifdef DRIVE_10
+  sprintf(drvname, "drive10_svc");
+  drivenum = 10;
+  #endif
+  #ifdef DRIVE_11
+  sprintf(drvname, "drive11_svc");
+  drivenum = 11;
+  #endif
   /*sprintf(logfile, "/usr/local/logs/SUM/%s_%s.log", drvname, timetag);*/
   pid = getppid();		/* pid of sum_svc */
   sprintf(logfile, "/usr/local/logs/SUM/tape_svc_%s.log", timetag);
@@ -209,7 +265,7 @@ void setup()
   write_log("Database to connect to is %s\n", dbname);
   sprintf(md5filter, "/home/production/cvs/JSOC/bin/%s/md5filter",
 		getenv("JSOC_MACHINE"));
-  write_log("md5filter=%s\n", md5filter); /* !!!TEMP */
+  //write_log("md5filter=%s\n", md5filter); /* !!!TEMP */
   if (signal(SIGINT, SIG_IGN) != SIG_IGN)
       signal(SIGINT, sighandler);
   if (signal(SIGTERM, SIG_IGN) != SIG_IGN)
@@ -225,6 +281,7 @@ int main(int argc, char *argv[])
   char compcmd[256];
 
   get_cmd(argc, argv);
+  setup();
 
       /* register for tape_svc to talk to us */
       #ifdef DRIVE_0
@@ -319,8 +376,192 @@ int main(int argc, char *argv[])
       }
 #endif
       #endif
-  sleep(2);			/* give time to start */
-  setup();
+      #ifdef DRIVE_4
+      (void) pmap_unset(DRIVE4PROG, DRIVE4VERS);
+      transp = svctcp_create(RPC_ANYSOCK, 0, 0);
+      if (transp == NULL) {
+	write_log("***cannot create tcp service\n");
+	exit(1);
+      }
+      if(!svc_register(transp,DRIVE4PROG,DRIVE4VERS,drive4prog_1,IPPROTO_TCP)) {
+	write_log("***unable to register (DRIVE4PROG, DRIVE4VERS, tcp)\n");
+	exit(1);
+      }
+#ifdef SUMT120
+      if(tapeoffline == 0) {
+      /* turn compression off */
+      sprintf(compcmd, "sudo /usr/local/bin/mt -f %s defcompression 0", SUMDR4);
+      write_log("%s\n", compcmd);
+      if(system(compcmd)) {
+        write_log("***Error on: %s\n", compcmd);
+        /*exit(1);*/
+      }
+      }
+#endif
+      #endif
+      #ifdef DRIVE_5
+      (void) pmap_unset(DRIVE5PROG, DRIVE5VERS);
+      transp = svctcp_create(RPC_ANYSOCK, 0, 0);
+      if (transp == NULL) {
+	write_log("***cannot create tcp service\n");
+	exit(1);
+      }
+      if(!svc_register(transp,DRIVE5PROG,DRIVE5VERS,drive5prog_1,IPPROTO_TCP)) {
+	write_log("***unable to register (DRIVE5PROG, DRIVE5VERS, tcp)\n");
+	exit(1);
+      }
+#ifdef SUMT120
+      if(tapeoffline == 0) {
+      /* turn compression off */
+      sprintf(compcmd, "sudo /usr/local/bin/mt -f %s defcompression 0", SUMDR5);
+      write_log("%s\n", compcmd);
+      if(system(compcmd)) {
+        write_log("***Error on: %s\n", compcmd);
+        /*exit(1);*/
+      }
+      }
+#endif
+      #endif
+      #ifdef DRIVE_6
+      (void) pmap_unset(DRIVE6PROG, DRIVE6VERS);
+      transp = svctcp_create(RPC_ANYSOCK, 0, 0);
+      if (transp == NULL) {
+	write_log("***cannot create tcp service\n");
+	exit(1);
+      }
+      if(!svc_register(transp,DRIVE6PROG,DRIVE6VERS,drive6prog_1,IPPROTO_TCP)) {
+	write_log("***unable to register (DRIVE6PROG, DRIVE6VERS, tcp)\n");
+	exit(1);
+      }
+#ifdef SUMT120
+      if(tapeoffline == 0) {
+      /* turn compression off */
+      sprintf(compcmd, "sudo /usr/local/bin/mt -f %s defcompression 0", SUMDR6);
+      write_log("%s\n", compcmd);
+      if(system(compcmd)) {
+        write_log("***Error on: %s\n", compcmd);
+        /*exit(1);*/
+      }
+      }
+#endif
+      #endif
+      #ifdef DRIVE_7
+      (void) pmap_unset(DRIVE7PROG, DRIVE7VERS);
+      transp = svctcp_create(RPC_ANYSOCK, 0, 0);
+      if (transp == NULL) {
+	write_log("***cannot create tcp service\n");
+	exit(1);
+      }
+      if(!svc_register(transp,DRIVE7PROG,DRIVE7VERS,drive7prog_1,IPPROTO_TCP)) {
+	write_log("***unable to register (DRIVE7PROG, DRIVE7VERS, tcp)\n");
+	exit(1);
+      }
+#ifdef SUMT120
+      if(tapeoffline == 0) {
+      /* turn compression off */
+      sprintf(compcmd, "sudo /usr/local/bin/mt -f %s defcompression 0", SUMDR7);
+      write_log("%s\n", compcmd);
+      if(system(compcmd)) {
+        write_log("***Error on: %s\n", compcmd);
+        /*exit(1);*/
+      }
+      }
+#endif
+      #endif
+      #ifdef DRIVE_8
+      (void) pmap_unset(DRIVE8PROG, DRIVE8VERS);
+      transp = svctcp_create(RPC_ANYSOCK, 0, 0);
+      if (transp == NULL) {
+	write_log("***cannot create tcp service\n");
+	exit(1);
+      }
+      if(!svc_register(transp,DRIVE8PROG,DRIVE8VERS,drive8prog_1,IPPROTO_TCP)) {
+	write_log("***unable to register (DRIVE8PROG, DRIVE8VERS, tcp)\n");
+	exit(1);
+      }
+#ifdef SUMT120
+      if(tapeoffline == 0) {
+      /* turn compression off */
+      sprintf(compcmd, "sudo /usr/local/bin/mt -f %s defcompression 0", SUMDR8);
+      write_log("%s\n", compcmd);
+      if(system(compcmd)) {
+        write_log("***Error on: %s\n", compcmd);
+        /*exit(1);*/
+      }
+      }
+#endif
+      #endif
+      #ifdef DRIVE_9
+      (void) pmap_unset(DRIVE9PROG, DRIVE9VERS);
+      transp = svctcp_create(RPC_ANYSOCK, 0, 0);
+      if (transp == NULL) {
+	write_log("***cannot create tcp service\n");
+	exit(1);
+      }
+      if(!svc_register(transp,DRIVE9PROG,DRIVE9VERS,drive9prog_1,IPPROTO_TCP)) {
+	write_log("***unable to register (DRIVE9PROG, DRIVE9VERS, tcp)\n");
+	exit(1);
+      }
+#ifdef SUMT120
+      if(tapeoffline == 0) {
+      /* turn compression off */
+      sprintf(compcmd, "sudo /usr/local/bin/mt -f %s defcompression 0", SUMDR9);
+      write_log("%s\n", compcmd);
+      if(system(compcmd)) {
+        write_log("***Error on: %s\n", compcmd);
+        /*exit(1);*/
+      }
+      }
+#endif
+      #endif
+      #ifdef DRIVE_10
+      (void) pmap_unset(DRIVE10PROG, DRIVE10VERS);
+      transp = svctcp_create(RPC_ANYSOCK, 0, 0);
+      if (transp == NULL) {
+	write_log("***cannot create tcp service\n");
+	exit(1);
+      }
+      if(!svc_register(transp,DRIVE10PROG,DRIVE10VERS,drive10prog_1,IPPROTO_TCP)) {
+	write_log("***unable to register (DRIVE10PROG, DRIVE10VERS, tcp)\n");
+	exit(1);
+      }
+#ifdef SUMT120
+      if(tapeoffline == 0) {
+      /* turn compression off */
+      sprintf(compcmd, "sudo /usr/local/bin/mt -f %s defcompression 0", SUMDR10);
+      write_log("%s\n", compcmd);
+      if(system(compcmd)) {
+        write_log("***Error on: %s\n", compcmd);
+        /*exit(1);*/
+      }
+      }
+#endif
+      #endif
+      #ifdef DRIVE_11
+      (void) pmap_unset(DRIVE11PROG, DRIVE11VERS);
+      transp = svctcp_create(RPC_ANYSOCK, 0, 0);
+      if (transp == NULL) {
+	write_log("***cannot create tcp service\n");
+	exit(1);
+      }
+      if(!svc_register(transp,DRIVE11PROG,DRIVE11VERS,drive11prog_1,IPPROTO_TCP)) {
+	write_log("***unable to register (DRIVE11PROG, DRIVE11VERS, tcp)\n");
+	exit(1);
+      }
+#ifdef SUMT120
+      if(tapeoffline == 0) {
+      /* turn compression off */
+      sprintf(compcmd, "sudo /usr/local/bin/mt -f %s defcompression 0", SUMDR11);
+      write_log("%s\n", compcmd);
+      if(system(compcmd)) {
+        write_log("***Error on: %s\n", compcmd);
+        /*exit(1);*/
+      }
+      }
+#endif
+      #endif
+
+  sleep(2);			// let tape_svc start
   /* Create client handle used for calling the tape_svc */
   clnttape = clnt_create(thishost, TAPEPROG, TAPEVERS, "tcp");
   if(!clnttape) {       /* server not there */
@@ -362,6 +603,30 @@ drive2prog_1(rqstp, transp)
 #endif
 #ifdef DRIVE_3
 drive3prog_1(rqstp, transp)
+#endif
+#ifdef DRIVE_4
+drive4prog_1(rqstp, transp)
+#endif
+#ifdef DRIVE_5
+drive5prog_1(rqstp, transp)
+#endif
+#ifdef DRIVE_6
+drive6prog_1(rqstp, transp)
+#endif
+#ifdef DRIVE_7
+drive7prog_1(rqstp, transp)
+#endif
+#ifdef DRIVE_8
+drive8prog_1(rqstp, transp)
+#endif
+#ifdef DRIVE_9
+drive9prog_1(rqstp, transp)
+#endif
+#ifdef DRIVE_10
+drive10prog_1(rqstp, transp)
+#endif
+#ifdef DRIVE_11
+drive11prog_1(rqstp, transp)
 #endif
 	struct svc_req *rqstp;
 	SVCXPRT *transp;
@@ -545,8 +810,17 @@ KEY *readdrvdo_1(KEY *params)
   rinfo = RESULT_PEND;
   send_ack();			/* give ack to caller so doesn't wait */
 
-  current_client = clnttape;            /* set for call to tape_svc */
-  procnum = TAPERESPREADDO;            /* this proc number */
+  if((filenum = get_tape_fnum_rdy(sim, dname)) == -1) { //start w/rdy drive
+    write_log("***Error: can't get file # on drive %d\n", dnum);
+    setkey_int(&retlist, "STATUS", 1); /* give error back to caller */
+    sprintf(errstr, "Error on tape ready for read in drive #%d", dnum);
+    setkey_str(&retlist, "ERRSTR", errstr);
+    free(wd);
+    return(retlist);
+  }
+
+  current_client = clnttape;    /* set for call to tape_svc */
+  procnum = TAPERESPREADDO;     /* this proc number */
   tapemode = getkey_int(params, "tapemode");
   if(tapemode == TAPE_RD_INIT) {	/* position from bot */
     if(position_tape_file_asf(sim, dnum, tapefilenum) == -1) {
@@ -557,21 +831,13 @@ KEY *readdrvdo_1(KEY *params)
       free(wd);
       return(retlist); 
     }
+    get_tape_fnum_rdy(sim, dname);	//make sure rdy
   }
   else if(tapemode == TAPE_RD_CONT) {	/* ck if reading next file# */
     /*filenum = getkey_int(params, "filenum"); /* !!NG */
     /* Can't use the filenum passed in. The drives[] table may not
      * have gotten updated yet with a return from driven_svc.
     */
-    if((filenum = get_tape_file_num(sim, dname, dnum)) == -1) {
-      write_log("***Error: can't get file # on drive %d\n", dnum);
-      setkey_int(&retlist, "STATUS", 1); /* give error back to caller */
-      sprintf(errstr, "Error on position tape to file #%d in drive #%d",
-                        tapefilenum, dnum);
-      setkey_str(&retlist, "ERRSTR", errstr);
-      free(wd);
-      return(retlist);
-    }
     filenumdelta = tapefilenum - filenum; /* num of files to skip */
     if(position_tape_file_fsf(sim, dnum, filenumdelta) == -1) {
       setkey_int(&retlist, "STATUS", 1); /* give error back to caller */
@@ -581,7 +847,7 @@ KEY *readdrvdo_1(KEY *params)
       free(wd);
       return(retlist);
     }
-    if((filenum = get_tape_file_num(sim, dname, dnum)) == -1) {
+    if((filenum = get_tape_fnum_rdy(sim, dname)) == -1) {
       write_log("***Error: can't get file # on drive %d\n", dnum);
       setkey_int(&retlist, "STATUS", 1); /* give error back to caller */
       sprintf(errstr, "Error on position tape to file #%d in drive #%d",
@@ -746,7 +1012,7 @@ KEY *writedrvdo_1(KEY *params)
   uint64_t tell;
   int dnum, sim, tape_closed, group, filenumwrt;
   char *tapeid;
-  char  gtarlog[80], md5sum[64];
+  char  gtarlog[80], md5sum[64], dname[64];
 
   write_log("Called writedrvdo_1() in driven_svc\n");
   if(findkey(params, "DEBUGFLG")) {
@@ -757,6 +1023,7 @@ KEY *writedrvdo_1(KEY *params)
   }
   }
   dnum = getkey_int(params, "dnum");
+  sprintf(dname, "%s%d", SUMDR, dnum);
   filenumwrt = getkey_int(params, "nxtwrtfn"); /* file# to be written */
   sim = 0;
   if(findkey(params, "sim")) {
@@ -767,6 +1034,13 @@ KEY *writedrvdo_1(KEY *params)
   tape_closed = getkey_int(params, "tape_closed");
   rinfo = RESULT_PEND;
   send_ack();                   /* give ack to caller so doesn't wait */
+  if(get_tape_fnum_rdy(sim, dname) == -1) { //start w/rdy drive
+    write_log("***Error: can't get ready for write on drive %d\n", dnum);
+    setkey_int(&retlist, "STATUS", 1); /* give error back to caller */
+    sprintf(errstr, "Error on tape ready for read in drive #%d", dnum);
+    setkey_str(&retlist, "ERRSTR", errstr);
+    return(retlist);
+  }
 
   retlist = newkeylist();
   add_keys(params, &retlist);           /* NOTE:does not do fileptr */
@@ -798,6 +1072,7 @@ KEY *writedrvdo_1(KEY *params)
       setkey_str(&retlist, "ERRSTR", errstr); 
       return(retlist);
     }
+    get_tape_fnum_rdy(sim, dname);	//make sure ready
   }
     if(position_tape_eod(sim, dnum) == -1) {
       setkey_int(&retlist, "STATUS", 1);   /* give error back to caller */
@@ -858,7 +1133,7 @@ int position_tape_eod(int sim, int dnum)
       write_log("***Dr%d:wt:error\n", dnum);
       return(-1);
     }
-    if((lastfilenum = get_tape_file_num(sim, dname, dnum)) == -1) { 
+    if((lastfilenum = get_tape_fnum_rdy(sim, dname)) == -1) { 
       write_log("***Error: can't get file # on drive %d\n", dnum);
       return(-1);
     }
@@ -881,18 +1156,13 @@ int position_tape_bot(int sim, int dnum)
     sleep(4);
   }
   else {
-    if(get_tape_file_num(0, dname, dnum) == -1) { //must be ready for rewind
-      write_log("***Dr%d:wt:NotReady\n", drivenum);
-      write_log("***Dr%d:wt:error\n", drivenum);
-      return(-1);
-    }
     if(system(cmd)) {
       write_log("***Dr%d:wt:error\n", drivenum);
       return(-1);
     }
   }
   //write_log("**Dr%d:wt:success\n", drivenum); /* only 2 *'s here */
-  if(get_tape_file_num(0, dname, dnum) == -1) { /* make sure ready */
+  if(get_tape_fnum_rdy(0, dname) == -1) {	/* make sure ready */
     write_log("***Dr%d:wt:error\n", drivenum);
     return(-1);
   }
@@ -919,11 +1189,6 @@ int position_tape_file_asf(int sim, int dnum, int fnum)
       drive_reset(dname);
       return(-1);
     }
-  }
-  if(get_tape_file_num(0, dname, dnum) == -1) { /* make sure ready */
-    write_log("***Dr%d:rd:error\n", drivenum);
-    drive_reset(dname);
-    return(-1);
   }
   write_log("**Dr%d:rd:success\n", drivenum);	/* only 2 *'s here */
   return(0);
@@ -961,11 +1226,6 @@ int position_tape_file_fsf(int sim, int dnum, int fdelta)
       drive_reset(dname);
       return(-1);
     }
-  }
-  if(get_tape_file_num(0, dname, dnum) == -1) { /* make sure ready */
-    write_log("***Dr%d:rd:error\n", drivenum);
-    drive_reset(dname);
-    return(-1);
   }
   write_log("**Dr%d:rd:success\n", drivenum);	/* only 2 *'s here */
   return(0);
@@ -1115,7 +1375,7 @@ int write_wd_to_drive(int sim, KEY *params, int drive, int fnum, char *logname)
       return(-1);
     }
   }
-  if((tapefilenum = get_tape_file_num(sim, dname, drive)) == -1) {
+  if((tapefilenum = get_tape_fnum_rdy(sim, dname)) == -1) {
     write_log("***Error: can't get file # on drive %d\n", drive);
     return(-1);
   }
@@ -1178,8 +1438,9 @@ int write_hdr_to_drive(int sim, char *tapeid, int group, int drive, char *log)
 /* Make sure the drive is ready before a timeout and then
  * get the file number of the current tape in the given drive name & number.
  * Return -1 on error, else the file number.
+ * This is called in general to make sure the tape is ready.
 */
-int get_tape_file_num(int sim, char *dname, int drive) 
+int get_tape_fnum_rdy(int sim, char *dname) 
 {
   int fd;
   int ret;
@@ -1198,19 +1459,20 @@ int get_tape_file_num(int sim, char *dname, int drive)
     //if(mt_stat.mt_gstat == 0) {         /* not ready yet */ //OLD ??
     if(!GMT_ONLINE(mt_stat.mt_gstat)) {
       if(++waitcnt == MAX_WAIT) {
+        write_log("%s does not go ready\n", dname);
         ret = -1;
         break;
       }
-      write_log("Wait for ready %d of %d\n", waitcnt, MAX_WAIT);
+      write_log("Wait for ready %s %d of %d\n", dname, waitcnt, MAX_WAIT);
       sleep(2);
     }
     else {
       ret = mt_stat.mt_fileno;
-      close(fd);
       break;
     }
     close(fd);
   }
+  close(fd);
   return(ret);
 }
 
