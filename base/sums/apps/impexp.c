@@ -140,7 +140,7 @@ int main(int argc, char *argv[])
     setkey_str(&retlist, "OP", "stop");
   }
   else if(!strcmp(argv[1], "clean")) {
-    setkey_str(&retlist, "OP", "clean");
+    setkey_str(&retlist, "OP", "clean_start");
     setkey_str(&retlist, "cleanslot", argv[2]);
     setkey_str(&retlist, "cleandrive", argv[3]);
     write_log("In impexp: cleanslot=%s cleandrive=%s\n", argv[2], argv[3]);
@@ -164,6 +164,22 @@ int main(int argc, char *argv[])
   }
   if(tapeback == 1) {
     write_log("**Error in IMPEXPDO call to tape_svc in impexp\n");
+  }
+  if(!strcmp(argv[1], "clean")) {
+    sleep(180);			// let the cleaning tape work. max is 3min
+    setkey_str(&retlist, "OP", "clean_stop");
+    write_log("In impexp: clean_stop cleanslot=%s cleandrive=%s\n", 
+			argv[2], argv[3]);
+    status = clnt_call(clnttape, IMPEXPDO, (xdrproc_t)xdr_Rkey, (char *)retlist,
+                      (xdrproc_t)xdr_uint32_t, (char *)&tapeback, TIMEOUT);
+    write_log("impexp: tapeback=%ld, status=%d\n", tapeback, status);
+    if(status != RPC_SUCCESS) {
+        call_err = clnt_sperror(clnttape, "Err clnt_call for IMPEXPDO");
+        write_log("%s %s\n", datestring(), call_err);
+    }
+    if(tapeback == 1) {
+      write_log("**Error in IMPEXPDO call to tape_svc in impexp\n");
+    }
   }
   clnt_destroy(clnttape);
   fclose(logfp);
