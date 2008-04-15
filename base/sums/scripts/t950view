@@ -801,21 +801,46 @@ sub log_update {
       $trobot0->insert('end', $str);
       $trobot0->see('end');
       ($a,$b,$dev,$com,$sslot,$dslot) = split(/ /, $str);
-      $x = "\$slotbt$sslot->configure(-background => 'yellow')";
-      eval($x);
-      $x = "\$slotbtx$dslot->configure(-background => 'yellow')";
-      eval($x);
+      if($com eq "unload") {		#this is slot# & drive # cmd
+        $x = "\$b_drv$dslot->configure(-background => 'yellow')";
+        eval($x);
+        $x = "\$slotbtx$sslot->configure(-background => 'yellow')";
+        eval($x);
+        $unloadmode = 1;
+      }
+      else {
+        $x = "\$slotbt$sslot->configure(-background => 'yellow')";
+        eval($x);
+        $x = "\$slotbtx$dslot->configure(-background => 'yellow')";
+        eval($x);
+        $unloadmode = 0;
+      }
     }
     elsif((/^\*\*Rb:doorsuccess/) || (/^\*\*Rb:doorfailure/)) {
-      $x = "\$slotbt$sslot->configure(-background => 'grey',
+      if($unloadmode) {
+        $x = "\$stape = \$d$dslot"."tape";
+        eval($x);
+        $x = "\$slotbt$sslot->configure(-background => 'grey',
+			-text=>'$stape')";
+        eval($x);
+        $slottapes[$sslot-1] = $stape;
+        $x = "\$b_drv$dslot->configure(-background => 'grey',
+			-text=>'-------------')";
+        eval($x);
+        $x = "\$d$dslot"."tape"."= \"-------------\"";
+        eval($x);
+      }
+      else {
+        $x = "\$slotbt$sslot->configure(-background => 'grey',
 			-text=>'$slottapes[$dslot-1]')";
-      eval($x);
-      $y = $slottapes[$sslot-1];
-      $slottapes[$sslot-1] = $slottapes[$dslot-1];
-      $slottapes[$dslot-1] = $y;
-      $x = "\$slotbtx$dslot->configure(-background => 'grey',
+        eval($x);
+        $y = $slottapes[$sslot-1];
+        $slottapes[$sslot-1] = $slottapes[$dslot-1];
+        $slottapes[$dslot-1] = $y;
+        $x = "\$slotbtx$dslot->configure(-background => 'grey',
 			-text=>\$y)";
-      eval($x);
+        eval($x);
+      }
     }
     elsif(/^\*\*Rb:doorcomplete/) {
       #the Expired tapes have been unloaded. resume the imp/exp operations
@@ -1781,7 +1806,11 @@ sub ImpExp_sub_unload {
       $ImpExpf->Label(-text => $msg, -font => 'arial 12 bold')->pack(@pl);
       return;
     }
-
+    if($numexp == 0) {
+      $msg = "\nThere are no tapes to export.\nChange effective_date in sum_group in DB to unload more tapes.\n";
+      $ImpExpf->Label(-text => $msg, -font => 'arial 12 bold')->pack(@pl);
+      return;
+    }
     $ImpExpf->Label(-text=> "Unload of Expired Tapes In Progress (I will notify you when done)", 
 		 -background=>'orange', -font => 'arial 12 bold')->pack(@pl);
     $ImpExpf->Label(-text => "Exit/Entry Slots in Door:", 
@@ -1877,6 +1906,9 @@ sub Imp_Exp_Open_Door {
   $ImpExpf->Label(-text => $msg, 
 		-font => 'arial 12 bold')->pack(@pl);
   $msg = "Hit 'Add Move'";
+  $ImpExpf->Label(-text => $msg, 
+		-font => 'arial 12 bold')->pack(@pl);
+  $msg = "(Any warning msgs about a slot already assigned to a drive\ncan be ignored. A new Inventory is done)";
   $ImpExpf->Label(-text => $msg, 
 		-font => 'arial 12 bold')->pack(@pl);
   $msg = "When all are selected hit 'Start Moves'";
