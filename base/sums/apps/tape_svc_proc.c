@@ -1825,8 +1825,14 @@ KEY *impexpdo_1(KEY *params)
       return((KEY *)1);
     }
     slots[eeslot].tapeid = tid;	
-    sprintf(cmd, "mtx -f %s transfer %d %d 1> /tmp/mtx_robot_%d.log 2>&1",
+    if(snum == -1) {			//tape is in a drive
+      sprintf(cmd, "mtx -f %s unload %d %d 1> /tmp/mtx_robot_%d.log 2>&1",
+                libdevname, eeslot+1, dnum, robotcmdseq++);
+    }
+    else {
+      sprintf(cmd, "mtx -f %s transfer %d %d 1> /tmp/mtx_robot_%d.log 2>&1",
                 libdevname, snum+1, eeslot+1, robotcmdseq++);
+    }
     sprintf(ext, "cmd_%d", i);
     setkey_str(&retlist, ext, cmd);
   }
