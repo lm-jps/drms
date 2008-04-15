@@ -268,7 +268,8 @@ if(strcmp(thishost, "lws") && strcmp(thishost, "flap")) { /* !!TEMP don't fork o
       exit(1);
     }
   }
-  for(i=0; i < MAX_DRIVES; i++) {	/* start all the driven_svc */
+  sleep(1);				/* let tape_svc start */
+  for(i=0; i < MAX_DRIVES; i++) { 	/* start all the driven_svc */
     if((pid = fork()) < 0) {
       write_log("***Can't fork(). errno=%d\n", errno);
       exit(1);
@@ -337,7 +338,7 @@ if(strcmp(thishost, "lws") && strcmp(thishost, "flap")) { /* !!TEMP don't fork o
 #ifndef SUMNOAO
 if(strcmp(thishost, "lws") && strcmp(thishost, "flap")) { /* !!TEMP don't fork on lws or flap */
   /* Create client handle used for calling the tape_svc */
-  sleep(2);			/* give time to start */
+  sleep(3);			/* give time to start */
   clnttape = clnt_create(thishost, TAPEPROG, TAPEVERS, "tcp");
   if(!clnttape) {       /* server not there */
     clnt_pcreateerror("Can't get client handle to tape_svc");
