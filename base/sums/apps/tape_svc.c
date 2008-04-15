@@ -192,7 +192,7 @@ void setup()
   fclose(drfp);
   for(i=0; i < MAX_DRIVES; i++) {
     drive_order[i] = order0;
-    printf("drive_order[%d] = %d\n", i, order0); //!!!TEMP
+    //printf("drive_order[%d] = %d\n", i, order0); //!!!TEMP
     order0++;
     if(order0 >= MAX_DRIVES) order0 = 0;
   }
@@ -319,13 +319,13 @@ int main(int argc, char *argv[])
       else { retry = 0; }
     }
     /* Return any tapes in drives to free slots */
-    /* LEAVE THE TAPES (AND BRITTNEY) ALONE *************************/
+    /* LEAVE THE TAPES (AND BRITTNEY) ALONE *************************
     if(!tape_free_drives()) {
       write_log("**Fatal error: Can't free tapes in drives\n");
       (void) pmap_unset(TAPEPROG, TAPEVERS);
       exit(1);
     }
-    /****************************************************************/
+    ****************************************************************/
   }
 
   /* Enter svc_run() which calls svc_getreqset when msg comes in.
