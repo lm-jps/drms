@@ -2916,11 +2916,11 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
     template->sessionid = 0;
     template->sessionns = NULL;
     template->su = NULL;
-    XASSERT(template->seriesinfo = malloc(sizeof(DRMS_SeriesInfo_t)));
+    XASSERT(template->seriesinfo = calloc(1, sizeof(DRMS_SeriesInfo_t)));
     /* Populate series info part */
     char *namespace = ns(seriesname);
     sprintf(query, "select seriesname, description, author, owner, "
-	    "unitsize, archive, retention, tapegroup, primary_idx, dbidx "
+	    "unitsize, archive, retention, tapegroup, version, primary_idx, dbidx "
 	    "from %s.%s where seriesname ~~* '%s'", 
 	    namespace, DRMS_MASTER_SERIES_TABLE, seriesname);
     free(namespace);
@@ -2935,7 +2935,7 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
       stat = DRMS_ERROR_QUERYFAILED;
       goto bailout;
     }
-    if (qres->num_cols != 10 || qres->num_rows != 1)
+    if (qres->num_cols != 11 || qres->num_rows != 1)
     {
       printf("Invalid sized query result for global series information for"
 	     " series %s.\n", seriesname);      
@@ -2965,9 +2965,9 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
       goto bailout;
 
     /* Set up primary index list. */
-    if ( !db_binary_field_is_null(qres, 0, 8) )
+    if ( !db_binary_field_is_null(qres, 0, 9) )
     {
-      db_binary_field_getstr(qres, 0, 8, DRMS_MAXPRIMIDX*DRMS_MAXKEYNAMELEN, buf);
+      db_binary_field_getstr(qres, 0, 9, DRMS_MAXPRIMIDX*DRMS_MAXKEYNAMELEN, buf);
       p = buf;
 #ifdef DEBUG
       printf("Primary index string = '%s'\n",p);
@@ -3039,6 +3039,10 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
     } else {
       template->seriesinfo->dbidx_num = 0;
     }
+
+    db_binary_field_getstr(qres, 0, 10, DRMS_MAXSERIESVERSION, 
+			   template->seriesinfo->version);
+
 
     db_free_binary_result(qres);   
   }
@@ -3274,6 +3278,10 @@ int drms_populate_records (DRMS_RecordSet_t *rs, DB_Binary_Result_t *qres) {
     /* Segment fields. */
     if (hcon_size(&rec->segments) > 0)
     {
+       /* This function has parts that are conditional on the series version being 
+	* greater than or equal to version 2.0. */
+       DRMS_SeriesVersion_t vers = {"2.0", ""};
+
       hiter_new(&hit, &rec->segments); /* Iterator for segment container. */
       segnum = 0;
       while( (seg = (DRMS_Segment_t *)hiter_getnext(&hit)) )
@@ -3286,6 +3294,11 @@ int drms_populate_records (DRMS_RecordSet_t *rs, DB_Binary_Result_t *qres) {
 	  /* segment dim names are stored as columns "sg_XXX_axisXXX" */	
 	  for (i=0; i<seg->info->naxis; i++)
 	    seg->axis[i] = db_binary_field_getint(qres, row, col++);
+	}
+	if (drms_series_isvers(rec->seriesinfo, &vers))
+	{
+	   /* compression parameters are stored as columns cparms_XXX */
+	   db_binary_field_getstr(qres, row, col++, DRMS_MAXCPARMS, seg->cparms);
 	}
 	seg->info->segnum = segnum++;
       }
@@ -3316,6 +3329,9 @@ char *drms_field_list(DRMS_Record_t *rec, int *num_cols)
   int ncol=0, segnum;
   DRMS_Segment_t *seg;
 
+  /* This function has parts that are conditional on the series version being 
+   * greater than or equal to version 2.0. */
+  DRMS_SeriesVersion_t vers = {"2.0", ""};
 
   XASSERT(rec);
   /**** First get length of string buffer required. ****/
@@ -3374,6 +3390,12 @@ char *drms_field_list(DRMS_Record_t *rec, int *num_cols)
       len += 16*seg->info->naxis;      
       ncol += seg->info->naxis;
     }
+    if (drms_series_isvers(rec->seriesinfo, &vers))
+    {
+       /* compression parameters are stored as columns cparms_XXX */
+       len += 12; /* It looks like you just add 2 to the strlen. */
+       ++ncol;
+    }
   }
   /* Malloc string buffer. */
   XASSERT( buf = malloc(len+1) );
@@ -3413,6 +3435,7 @@ char *drms_field_list(DRMS_Record_t *rec, int *num_cols)
   }
   /* Segment fields. */
   hiter_new(&hit, &rec->segments); /* Iterator for segment container. */
+
   segnum = 0;
   while( (seg = (DRMS_Segment_t *)hiter_getnext(&hit)) )
   {
@@ -3420,11 +3443,20 @@ char *drms_field_list(DRMS_Record_t *rec, int *num_cols)
     if (seg->info->scope==DRMS_VARDIM)
     {
       /* segment dim names are stored as columns "sgXXX_axisXXX" */	
-      for (i=0; i<seg->info->naxis; i++)
+      for (i=0; i<seg->info->naxis; i++)	
 	p += sprintf(p,", sg_%03d_axis%03d",segnum,i);
     }
+
+    /* cparms - version 2.0 of the master series table */
+    if (drms_series_isvers(rec->seriesinfo, &vers))
+    {
+       /* compression parameters are stored as columns cparms_XXX */
+       p += sprintf(p, ", cparms_%03d", segnum);
+    } 
+
     segnum++;
   }
+
   buf[len] = 0; /* Hopefully we got the length right! */
 
   if (num_cols)
@@ -3452,6 +3484,10 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
   char **argin;
   int status;
   int *sz;
+
+  /* This function has parts that are conditional on the series version being 
+   * greater than or equal to version 2.0. */
+  DRMS_SeriesVersion_t vers = {"2.0", ""};
 
   CHECKNULL(recset);
 
@@ -3570,6 +3606,13 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
 	XASSERT(argin[col] = malloc(num_rows*db_sizeof(intype[col])));
 	col++;
       }
+    }
+
+    if (drms_series_isvers(rec->seriesinfo, &vers))
+    {
+       /* compression parameters are stored as columns cparms_XXX */
+       intype[col] = drms2dbtype(DRMS_TYPE_STRING);
+       XASSERT(argin[col++] = malloc(num_rows*sizeof(char *)));
     }
   }
 
@@ -3731,6 +3774,7 @@ void drms_fprint_record(FILE *keyfile, DRMS_Record_t *rec)
   }
   fprintf(keyfile, "================================================================================\n");
   fprintf(keyfile, "%-*s:\t%s\n",fwidth,"Series name",rec->seriesinfo->seriesname);
+  fprintf(keyfile, "%-*s:\t%s\n",fwidth,"Version",rec->seriesinfo->version);
   fprintf(keyfile, "%-*s:\t%lld\n",fwidth,"Record #",rec->recnum);
   fprintf(keyfile, "%-*s:\t%lld\n",fwidth,"Storage unit #",rec->sunum);
   if (rec->su)

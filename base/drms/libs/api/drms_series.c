@@ -60,7 +60,7 @@ int drms_series_exists(DRMS_Env_t *drmsEnv, const char *sname, int *status)
 int drms_insert_series(DRMS_Session_t *session, int update, 
 		       DRMS_Record_t *template, int perms)
 {
-  int n, i, len=0, segnum;
+  int i, len=0, segnum;
   char *pidx_buf=0, *dbidx_buf=0, scopestr[100], *axisstr=0;
   DRMS_SeriesInfo_t *si;
   DRMS_Keyword_t *key;
@@ -74,6 +74,9 @@ int drms_insert_series(DRMS_Session_t *session, int update,
   char *createstmt=0, *series_lower=0, *namespace=0;
   DB_Text_Result_t *qres;
   
+  /* This function has parts that are conditional on the series version being 
+   * greater than or equal to version 2.0. */
+  DRMS_SeriesVersion_t vers = {"2.0", ""};
 
   XASSERT(createstmt = malloc(30000));
   drms_link_getpidx(template); /* Make sure links have pidx's set. */
@@ -167,12 +170,13 @@ int drms_insert_series(DRMS_Session_t *session, int update,
 
   if (drms_dmsv(session, NULL, "insert into " DRMS_MASTER_SERIES_TABLE
 		"(seriesname, description, author, owner, unitsize, archive,"
-		"retention, tapegroup, primary_idx, dbidx, created) values (?,?,?,"
+		"retention, tapegroup, version, primary_idx, dbidx, created) values (?,?,?,?,"
 		"?,?,?,?,?,?,?,LOCALTIMESTAMP(0))", -1,
 		DB_STRING, si->seriesname, DB_STRING, si->description, 
 		DB_STRING, si->author, DB_STRING, si->owner,
 		DB_INT4, si->unitsize, DB_INT4, si->archive, 
 		DB_INT4, si->retention, DB_INT4, si->tapegroup, 
+		DB_STRING, si->version,
 		DB_STRING, pidx_buf,
 		DB_STRING, dbidx_buf))
     goto failure;
@@ -222,7 +226,6 @@ int drms_insert_series(DRMS_Session_t *session, int update,
   }
   /* Keyword fields. */
   hiter_new(&hit, &template->keywords); /* Iterator for keyword container. */
-  n = hcon_size(&template->keywords);
   while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )
   {
     if (!key->info->islink && !drms_keyword_isconstant(key))
@@ -289,7 +292,7 @@ int drms_insert_series(DRMS_Session_t *session, int update,
       strcpy(scopestr,"vardim");
       break;
     default:
-      printf("ERROR: Invalid value of scope (%d).\n",seg->info->scope);
+      printf("ERROR: Invalid value of scope (%d).\n", (int)seg->info->scope);
       goto failure;
     }
     if (seg->info->naxis < 0 || seg->info->naxis>DRMS_MAXRANK)
@@ -345,6 +348,12 @@ int drms_insert_series(DRMS_Session_t *session, int update,
       {
 	p += sprintf(p,", sg_%03d_axis%03d integer",segnum,i);
       }
+    }
+
+    if (drms_series_isvers(si, &vers))
+    {
+       /* compression parameters are stored as columns cparms_XXX */
+       p += sprintf(p, ", cparms_%03d text", segnum);
     }
     segnum++;
   }
@@ -1133,4 +1142,59 @@ int drms_series_checksegcompat(DRMS_Env_t *drmsEnv,
    }
 
    return ret;
+}
+
+/* Returns true iff si >= v.first && si <= v.last */
+int drms_series_isvers(DRMS_SeriesInfo_t *si, DRMS_SeriesVersion_t *v)
+{
+   long long smajor;
+   long long sminor;
+   long long vmajor;
+   long long vminor;
+
+   int ok = 1;
+
+   if (sscanf(si->version, "%lld.%lld", &smajor, &sminor) == 2)
+   {
+      if (v->first != '\0')
+      {
+	 /* Series must be GTE to first */
+	 if (sscanf(v->first, "%lld.%lld", &vmajor, &vminor) == 2)
+	 {
+	    if (smajor < vmajor || (smajor == vmajor && sminor < vminor))
+	    {
+	       ok = 0;
+	    }
+	 }
+	 else
+	 {
+	    fprintf(stderr, "Invalid series version '%s'.\n", v->first);
+	    ok = 0;
+	 }
+      }
+
+      if (ok && v->last != '\0')
+      {
+	 /* Series must be LTE to last */
+	 if (sscanf(v->last, "%lld.%lld", &vmajor, &vminor) == 2)
+	 {
+	    if (smajor > vmajor || (smajor == vmajor && sminor > vminor))
+	    {
+	       ok = 0;
+	    }
+	 }
+	 else
+	 {
+	     fprintf(stderr, "Invalid series version '%s'.\n", v->last);
+	     ok = 0;
+	 }
+      }
+   }
+   else
+   {
+      fprintf(stderr, "Invalid series version '%s'.\n", si->version);
+      ok = 0;
+   }
+
+   return ok;
 }

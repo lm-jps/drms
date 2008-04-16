@@ -19,6 +19,7 @@
 #define DRMS_MAXNAMELEN        (32)
 #define DRMS_MAXSERIESNAMELEN  (64)
 #define DRMS_MAXOWNERLEN       DRMS_MAXNAMELEN
+#define DRMS_MAXSERIESVERSION  (64)
 #define DRMS_MAXKEYNAMELEN     DRMS_MAXNAMELEN
 #define DRMS_MAXLINKNAMELEN    DRMS_MAXNAMELEN
 #define DRMS_MAXSEGNAMELEN     DRMS_MAXNAMELEN
@@ -37,6 +38,8 @@
 #define DRMS_MAXCOMMENTLEN     (255)
 /** \brief Maximum byte length of DRMS segment file name */
 #define DRMS_MAXSEGFILENAME    (256)
+/** \brief Maximum byte length of a segment's compression-parameter string */
+#define DRMS_MAXCPARMS         (256)
 /** \brief Max number of keywords in the primary index. */
 #define DRMS_MAXPRIMIDX        (15) 
 /** \brief Max number of keywords to make db index. */
@@ -392,6 +395,14 @@ struct DRMS_RecordSet_struct
 /** \brief DRMS record struct reference */
 typedef struct DRMS_RecordSet_struct DRMS_RecordSet_t;
 
+struct DRMS_SeriesVersion_struct
+{
+  char first[DRMS_MAXSERIESVERSION];
+  char last[DRMS_MAXSERIESVERSION];
+};
+
+typedef struct DRMS_SeriesVersion_struct DRMS_SeriesVersion_t;
+
 /* Series-wide attributes. */
 typedef struct DRMS_SeriesInfo_struct
 {
@@ -416,7 +427,7 @@ typedef struct DRMS_SeriesInfo_struct
   /* DB index information. */
   int dbidx_num;   /* Number of keywords to make db index. */
   struct DRMS_Keyword_struct *dbidx_keywords[DRMS_MAXDBIDX]; 
-
+  char version[DRMS_MAXSERIESVERSION];
 }  DRMS_SeriesInfo_t;
 
 
@@ -986,6 +997,7 @@ struct DRMS_Segment_struct {
   int axis[DRMS_MAXRANK];
   /** \brief Block sizes for TAS storage */
   int blocksize[DRMS_MAXRANK];
+  char cparms[DRMS_MAXCPARMS];
 };
 
 /** \brief DRMS segment struct reference */

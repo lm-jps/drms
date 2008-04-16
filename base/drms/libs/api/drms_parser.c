@@ -148,6 +148,8 @@ static int parse_seriesinfo (char *desc, DRMS_Record_t *template) {
 	/* Branch on keyword and insert appropriate information into struct. */
     if (prefixmatch (p, "Seriesname"))
       TRY(getstring (&q, template->seriesinfo->seriesname, DRMS_MAXSERIESNAMELEN) <= 0)
+    if (prefixmatch (p, "Version"))
+      TRY(getstring (&q, template->seriesinfo->version, DRMS_MAXSERIESVERSION) <= 0)
     else if (prefixmatch (p, "Description"))
       TRY(getstring (&q, template->seriesinfo->description, DRMS_MAXCOMMENTLEN) <= 0)
     else if (prefixmatch (p, "Owner"))
@@ -231,9 +233,12 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum)
   char *p,*q;
   char name[DRMS_MAXSEGNAMELEN]={0}, scope[DRMS_MAXNAMELEN]={0};
   char type[DRMS_MAXNAMELEN]={0}, naxis[24]={0}, axis[24]={0}, protocol[DRMS_MAXNAMELEN]={0};
+  char cparms[DRMS_MAXCPARMS]={0};
   char unit[DRMS_MAXUNITLEN]={0};
   DRMS_Segment_t *seg;
-  
+
+  /* This function contains code that is conditional on series version. */
+  DRMS_SeriesVersion_t vers = {"2.0", ""};
 
   p = q = *in;
   SKIPWS(p);
@@ -270,6 +275,14 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum)
 	if (gettoken(&q,axis,sizeof(axis)) <= 0) goto failure;
 	seg->axis[i] = atoi(axis);
       }
+
+    /* Version was already parsed from jsd at this point. */
+    if (drms_series_isvers(template->seriesinfo, &vers))
+    {
+       if (gettoken(&q,cparms,sizeof(cparms)) <= 0) goto failure;
+       snprintf(seg->cparms, DRMS_MAXCPARMS, "%s", cparms);
+    }
+
     if (getstring(&q,seg->info->description,sizeof(seg->info->description))<0) goto failure;
   } else {
     /* Simple segment */
@@ -295,6 +308,13 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum)
 	if (gettoken(&q,axis,sizeof(axis)) <= 0) goto failure;
 	seg->axis[i] = atoi(axis);
       }
+
+    if (drms_series_isvers(template->seriesinfo, &vers))
+    {
+       if (gettoken(&q,cparms,sizeof(cparms)) <= 0) goto failure;
+       snprintf(seg->cparms, DRMS_MAXCPARMS, "%s", cparms);
+    }
+
     if (gettoken(&q,unit,sizeof(unit)) <= 0) goto failure;
     strcpy(seg->info->unit, unit);
     if (gettoken(&q,protocol,sizeof(protocol)) <= 0) goto failure;

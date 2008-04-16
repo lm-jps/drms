@@ -1,0 +1,21 @@
+# *********************** Global information ************************
+Seriesname:	"su_arta.TestSeriesVersion"
+Version:        2.0
+Description:	"Test versioning of series."
+Author:		"Art Amezcua"
+Owner:		"arta"
+Unitsize:	32
+Archive:	0
+Retention:	7
+Tapegroup:	0
+Index:		OBST
+
+# **************************** Keywords ******************************
+Keyword:	OBST, time, ts_eq, record, 1977.01.01_00:00UT, 2, UTC, "Primary key"
+Keyword:	OBST_epoch, time, constant, record, TSEQ_EPOCH, 2, UTC, "ts_eq epoch"
+Keyword:	OBST_step, float, constant, record, 1.0, %f, sec, "ts_eq step"
+Keyword:	OBST_unit, string, constant, record, secs, %s, "none", "ts_eq unit"
+Keyword:	EXTRA, string, variable, record, pineapple, %s, "none", "an extra keyword with which to test to make sure I didn't mess something up"
+
+# ************************** Data Segments ***************************
+# None

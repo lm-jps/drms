@@ -195,4 +195,5 @@ int drms_series_describe_data(DRMS_Record_t *series_template, int depth,
 			    DRMS_Storage_Protocol_t protocol);
 */
 
+int drms_series_isvers(DRMS_SeriesInfo_t *si, DRMS_SeriesVersion_t *v);
 #endif
