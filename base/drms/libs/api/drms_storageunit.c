@@ -445,7 +445,8 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive)
     *archive = 1;
 
   if (env->retention==-1)   
-    return max_retention;    
+    return 10;
+    //    return max_retention;    
   else
     return env->retention;
 }
