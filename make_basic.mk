@@ -6,12 +6,12 @@ DBNAME = POSTGRESQL
 PGIPATH	= /usr/include/pgsql	
 
 
-COMPILER = icc
+COMPILER = gcc
 
 # Check for debug vs. release build - release is default.
 #   To do a debug build, either set the environment variable JSOC_DEBUG to 1, OR
 #   modify the following line so that DEBUG = 1.  The environment variable takes precedence.
-DEBUG = 0
+DEBUG = 1
 
 ifdef JSOC_DEBUG
 ifeq ($(JSOC_DEBUG), 1)
@@ -166,6 +166,7 @@ ICC_CMPLR	= $(SRCDIR)/build/ccd-icc
 ARCHIVE		= ar crus $@ $^
 
 ECPG		= ecpg -o $@ -c $<
+SWIG		= swig -perl5 -o $@ $<
 
 GCC_COMP	= $(GCC_CMPLR) $(GCC_CF_ALL) $(CF_TGT) -o $@ -c $<
 ICC_COMP	= $(ICC_CMPLR) $(ICC_CF_ALL) $(CF_TGT) -o $@ -c $<

@@ -37,6 +37,8 @@ $(IIOBJ):	CF_TGT := $(CF_TGT) -DIDLLIB
 # General directory-independent rules
 %.c:		%.pgc
 		$(ECPG)
+%.c:		%.i
+		$(SWIG)
 
 %.o:		%.f
 		$(FCOMP)

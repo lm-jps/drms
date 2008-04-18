@@ -3,6 +3,10 @@ sp 		:= $(sp).x
 dirstack_$(sp)	:= $(d)
 d		:= $(dir)
 
+# Subdirectories, in random order. Directory-specific rules are optional here.
+dir	:= $(d)/perl
+-include		$(SRCDIR)/$(dir)/Rules.mk
+
 # Local variables
 LIBSUMSAPI	:= $(d)/libsumsapi.a 
 OBJ_$(d)	:= $(addprefix $(d)/, $(notdir $(patsubst %.c,%.o,$(wildcard $(SRCDIR)/$(d)/*.c))))
