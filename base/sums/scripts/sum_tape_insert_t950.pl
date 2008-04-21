@@ -1,4 +1,5 @@
-#!/usr/bin/perl
+eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S  $0 "$@"'
+    if 0;
 #sum_tape_insert_t950.pl
 #
 #Takes a file of tapeids for the t950 and inserts them into the sum_tape
@@ -51,9 +52,16 @@ while(<ID>) {
   if(/^#/ || /^\n/) { #ignore any comment or blank lines
     next;
   }
-  print "$_";
-  chomp;
-  $sqlcmd = "insert into sum_tape (TAPEID,NXTWRTFN,SPARE,GROUP_ID,AVAIL_BLOCKS,CLOSED) values ('$_',1,-1,-1,30000000000000,-1)";
+  if(/^tapeid /) {	#accept format from tape_svc log
+   ($a, $b, $c, $d, $e, $f) = split(/ /);
+   print "$f\n";
+   $_ = $f;
+  }
+  else {
+    print "$_";
+    chomp;
+  }
+  $sqlcmd = "insert into sum_tape (TAPEID,NXTWRTFN,SPARE,GROUP_ID,AVAIL_BLOCKS,CLOSED) values ('$_',1,-1,-1,1600000000,-1)";
   print "SQL: $sqlcmd\n";
   $sth = $dbh->prepare($sqlcmd);
   if ( !defined $sth ) {
