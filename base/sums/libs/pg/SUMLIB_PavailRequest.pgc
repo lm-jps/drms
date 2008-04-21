@@ -15,11 +15,6 @@ int DS_PavailRequest2();
 PART ptab[MAX_PART]; 		/* used in sum_rm.c */
 PART ptabx[MAX_PART]; 		/* used in sum_svc.c */
 
-int *part_index_local = NULL;
-int *part_index_init_local = NULL;
-
-void PG_GetPartIndex(int **ii, int **i);
-
 int DS_PavailRequest()
 {
 EXEC SQL BEGIN DECLARE SECTION;
@@ -94,6 +89,9 @@ EXEC SQL BEGIN DECLARE SECTION;
 EXEC SQL END DECLARE SECTION;
 int i, setnum, pnum;
 
+extern int part_index[];	/* defined in SUMLIB_PavailGet.pgc */
+extern int part_index_init[];	/* defined in SUMLIB_PavailGet.pgc */
+
     printk("DS_PavailRequest2 \n");  
 
     EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
@@ -137,13 +135,11 @@ end_fetch:
          * starts. Notice: The qsort above has made the PDS sets  
          * sequential in the ptabx table. */
         setnum = -1;
-
-	PG_GetPartIndex(&part_index_init_local, &part_index_local);
         for(i=0; i < pnum ; i++) {
           if(ptabx[i].pds_set_num != setnum) {
             setnum++;
-            part_index_local[setnum] = i;
-            part_index_init_local[setnum] = i;
+            part_index[setnum] = i;
+            part_index_init[setnum] = i;
           }
         }
 	EXEC SQL CLOSE pavail2;

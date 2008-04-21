@@ -16,18 +16,6 @@
 int part_index_init[MAX_PART];
 int part_index[MAX_PART];
 
-void PG_GetPartIndex(int **ii, int **i)
-{
-  if (ii)
-  {
-    *ii = part_index_init;
-  }
-  if (i)
-  {
-    *i = part_index;
-  }
-}
-
 extern PADATA *pahdr_rw;
 
 int SUMLIB_PavailGet(double bytes, int pds_set, uint64_t uid, KEY **results);
