@@ -217,8 +217,56 @@ extern KEY *writedrvdo_1();
 #define READDRVDO ((uint32_t)1)
 #define WRITEDRVDO ((uint32_t)2)
 
+/* This is the drive4_svc program registration */
+#define DRIVE4PROG ((uint32_t)0x20000619)
+#define DRIVE4VERS ((uint32_t)1)
+#define READDRVDO ((uint32_t)1)
+#define WRITEDRVDO ((uint32_t)2)
+
+/* This is the drive5_svc program registration */
+#define DRIVE5PROG ((uint32_t)0x2000061a)
+#define DRIVE5VERS ((uint32_t)1)
+#define READDRVDO ((uint32_t)1)
+#define WRITEDRVDO ((uint32_t)2)
+
+/* This is the drive6_svc program registration */
+#define DRIVE6PROG ((uint32_t)0x2000061b)
+#define DRIVE6VERS ((uint32_t)1)
+#define READDRVDO ((uint32_t)1)
+#define WRITEDRVDO ((uint32_t)2)
+
+/* This is the drive7_svc program registration */
+#define DRIVE7PROG ((uint32_t)0x2000061c)
+#define DRIVE7VERS ((uint32_t)1)
+#define READDRVDO ((uint32_t)1)
+#define WRITEDRVDO ((uint32_t)2)
+
+/* This is the drive8_svc program registration */
+#define DRIVE8PROG ((uint32_t)0x2000061d)
+#define DRIVE8VERS ((uint32_t)1)
+#define READDRVDO ((uint32_t)1)
+#define WRITEDRVDO ((uint32_t)2)
+
+/* This is the drive9_svc program registration */
+#define DRIVE9PROG ((uint32_t)0x2000061e)
+#define DRIVE9VERS ((uint32_t)1)
+#define READDRVDO ((uint32_t)1)
+#define WRITEDRVDO ((uint32_t)2)
+
+/* This is the drive10_svc program registration */
+#define DRIVE10PROG ((uint32_t)0x2000061f)
+#define DRIVE10VERS ((uint32_t)1)
+#define READDRVDO ((uint32_t)1)
+#define WRITEDRVDO ((uint32_t)2)
+
+/* This is the drive11_svc program registration */
+#define DRIVE11PROG ((uint32_t)0x20000620)
+#define DRIVE11VERS ((uint32_t)1)
+#define READDRVDO ((uint32_t)1)
+#define WRITEDRVDO ((uint32_t)2)
+
 /* This is the robot0_svc program registration */
-#define ROBOT0PROG ((uint32_t)0x20000619)
+#define ROBOT0PROG ((uint32_t)0x20000627)
 #define ROBOT0VERS ((uint32_t)1)
 #define ROBOTDO ((uint32_t)1)
 #define ROBOTDOORDO ((uint32_t)2)
@@ -227,19 +275,19 @@ extern KEY *robotdo_1();
 extern KEY *robotdoordo_1();
 
 /* This is the robot1_svc program registration */
-#define ROBOT1PROG ((uint32_t)0x20000620)
+#define ROBOT1PROG ((uint32_t)0x20000628)
 #define ROBOT1VERS ((uint32_t)1)
 #define ROBOTDO ((uint32_t)1)
 
 /* This is the sum_rm program registration */
 /* OBSOLETE no longer used */
-#define SUMRMPROG ((uint32_t)0x20000621)
+#define SUMRMPROG ((uint32_t)0x20000629)
 #define SUMRMVERS ((uint32_t)1)
 /*#define RMRESPDO ((uint32_t)1)*/
 /*extern KEY *rmrespdo_1();*/
 
 /* This is the sum_pe_svc program registration */
-#define SUMPEPROG ((uint32_t)0x20000622) 
+#define SUMPEPROG ((uint32_t)0x2000062a) 
 #define SUMPEVERS ((uint32_t)1)
 #define SUMPEVERS2 ((uint32_t)2)
 #define SUMPEDO ((uint32_t)1)
@@ -248,7 +296,7 @@ extern KEY *sumpedo_1();
 extern KEY *sumpeack_1();
 
 /* This is the pe/peq program registration for answers from sum_pe_svc */
-#define PEPEQPROG ((uint32_t)0x20000623)
+#define PEPEQPROG ((uint32_t)0x2000062b)
 #define PEPEQVERS ((uint32_t)1)
 #define PEPEQRESPDO ((uint32_t)1)
 extern KEY *pepeqdo_1();
