@@ -46,7 +46,7 @@ XSUMSVC_$(d)	:= $(d)/xsum_svc
 TAPESVC_$(d)	:= $(d)/tape_svc
 TARC_$(d)	:= $(d)/tapearc
 
-BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main4 tapeonoff driveonoff sum_rm impexp drive0_svc drive1_svc drive2_svc drive3_svc robot0_svc md5filter)
+BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main3 main4 sumget tapeonoff driveonoff sum_rm impexp drive0_svc drive1_svc drive2_svc drive3_svc drive4_svc drive5_svc drive6_svc drive7_svc drive8_svc drive9_svc drive10_svc drive11_svc robot0_svc md5filter)
 
 TGT_$(d)	:= $(BINTGT_$(d)) $(SUMSVC_$(d)) $(XSUMSVC_$(d)) $(TAPESVC_$(d)) $(TARC_$(d))
 
@@ -69,6 +69,14 @@ $(d)/drive0_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_0
 $(d)/drive1_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_1
 $(d)/drive2_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_2
 $(d)/drive3_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_3
+$(d)/drive4_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_4
+$(d)/drive5_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_5
+$(d)/drive6_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_6
+$(d)/drive7_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_7
+$(d)/drive8_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_8
+$(d)/drive9_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_9
+$(d)/drive10_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_10
+$(d)/drive11_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_11
 $(d)/drive%_svc.o:	$(d)/driven_svc.c
 			$(SUMSCOMP)
 
