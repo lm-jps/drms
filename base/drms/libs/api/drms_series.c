@@ -1154,7 +1154,11 @@ int drms_series_isvers(DRMS_SeriesInfo_t *si, DRMS_SeriesVersion_t *v)
 
    int ok = 1;
 
-   if (sscanf(si->version, "%lld.%lld", &smajor, &sminor) == 2)
+   if (*(si->version) == '\0')
+   {
+      ok = 0;
+   }
+   else if (sscanf(si->version, "%lld.%lld", &smajor, &sminor) == 2)
    {
       if (v->first != '\0')
       {

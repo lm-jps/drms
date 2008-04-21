@@ -2920,7 +2920,7 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
     /* Populate series info part */
     char *namespace = ns(seriesname);
     sprintf(query, "select seriesname, description, author, owner, "
-	    "unitsize, archive, retention, tapegroup, version, primary_idx, dbidx "
+	    "unitsize, archive, retention, tapegroup, primary_idx, dbidx, version "
 	    "from %s.%s where seriesname ~~* '%s'", 
 	    namespace, DRMS_MASTER_SERIES_TABLE, seriesname);
     free(namespace);
@@ -2965,9 +2965,9 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
       goto bailout;
 
     /* Set up primary index list. */
-    if ( !db_binary_field_is_null(qres, 0, 9) )
+    if ( !db_binary_field_is_null(qres, 0, 8) )
     {
-      db_binary_field_getstr(qres, 0, 9, DRMS_MAXPRIMIDX*DRMS_MAXKEYNAMELEN, buf);
+      db_binary_field_getstr(qres, 0, 8, DRMS_MAXPRIMIDX*DRMS_MAXKEYNAMELEN, buf);
       p = buf;
 #ifdef DEBUG
       printf("Primary index string = '%s'\n",p);
@@ -3040,9 +3040,10 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
       template->seriesinfo->dbidx_num = 0;
     }
 
-    db_binary_field_getstr(qres, 0, 10, DRMS_MAXSERIESVERSION, 
-			   template->seriesinfo->version);
-
+    if ( !db_binary_field_is_null(qres, 0, 10) ) {
+       db_binary_field_getstr(qres, 0, 10, DRMS_MAXSERIESVERSION, 
+			      template->seriesinfo->version);
+    }
 
     db_free_binary_result(qres);   
   }
