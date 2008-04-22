@@ -21,7 +21,7 @@ static char *datestring(void);
 extern void pmap_unset();
 extern void printkey (KEY *key);
 
-static struct timeval TIMEOUT = { 120, 0 };
+static struct timeval TIMEOUT = { 240, 0 };
 static int RESPDO_called;
 static SUMOPENED *sumopened_hdr = NULL;/* linked list of opens for this client*/
 static CLIENT *cl;
