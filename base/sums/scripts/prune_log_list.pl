@@ -25,6 +25,6 @@ while(<IN>) {
   ($a,$b,$c,$d,$e,$f,$g,$h,$name) = split(/\s+/);
   print "$name\n";
   #`/bin/rm $name`;
-  `gzip $name`;
+  `gzip -f $name`;
   #exit(0);
 }
