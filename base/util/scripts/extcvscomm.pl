@@ -215,9 +215,10 @@ while (defined($key = shift(@clarr)))
 
 sub PrintUsage
 {
+    print "extcvscomm.pl DATE           #Show all changes on DATE\n";
     print "extcvscomm.pl <DATE          #Show all changes on DATE or before\n";
     print "extcvscomm.pl >DATE          #Show all changes on DATE or after\n";
-    print "extcvscomm.pl DATE1:DATE2\n  #Show all changes on or after DATE1 and on or before DATE2";
+    print "extcvscomm.pl DATE1:DATE2    #Show all changes on or after DATE1 and on or before DATE2\n";
     return;
 }
 
