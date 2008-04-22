@@ -6,6 +6,15 @@
 #
 #   Ex: extcvscomm.pl 2007-12-7
 
+# Not surprisingly, CVS botches the "cvs log -d" command.  If you provide a date argument
+# and there is a change on that date, 
+# it appears that CVS finds the last change on that date, and then prints the change right
+# before that.  If there was no change on that date, then it prints the last change before
+# that date.
+# Man, does CVS stink!
+
+use Time::Local; # to compensate for CVS's stinkiness
+
 $NCOMM = 256;
 
 my($cmd);
@@ -13,7 +22,7 @@ my($arg);
 my($line);
 my($nextfile) = 0;
 my($grabtext) = 0;
-my($lastRelDate);
+my($dateArg);
 my($file);
 my($date);
 my($author);
@@ -23,20 +32,77 @@ my(@clarr);
 my(%clmap);
 my(%fmap);
 my(%tmap);
+my(@dateArr);
+my(@desiredDateArr);
+my(@desiredDateArrB);
+my(@desiredDateArrInt);
+my($secs);
+my($desiredSecs);
+my($desiredSecsB);
+my($dateArgB);
+my($range) = "na";
 
 while ($arg = shift(@ARGV))
 {
-    $lastRelDate = $arg;
+    $dateArg = $arg;
     $aidx++;
 }
 
 if ($aidx > 1)
 {
-    print STDERR "extcvscomm.pl takes a single argument: a date\n";
+    PrintUsage();
     exit(1);
 }
 
-$cmd = "((cvs log -Nd \">$lastRelDate\" \.) 2>&1) |";
+if ($dateArg =~ /^\s*\<(.+)\s*$/)
+{
+    # Less than or equal to a date
+    @desiredDateArr = GetTimeArgs($1);
+    $desiredSecs = timelocal(@desiredDateArr);
+    @desiredDateArrInt = AddDay(1, @desiredDateArr);
+    $dateArg = GetDate(@desiredDateArrInt);
+    $dateArg = "<$dateArg";
+    $range = "lt";
+}
+elsif ($dateArg =~ /^\s*\>(.+)\s*$/)
+{
+    # Greater than or equal to a date
+    @desiredDateArr = GetTimeArgs($1);
+    $desiredSecs = timelocal(@desiredDateArr);
+    @desiredDateArrInt = AddDay(-1, @desiredDateArr);
+    $dateArg = GetDate(@desiredDateArrInt);
+    $dateArg = ">$dateArg";
+    $range = "gt";
+}
+elsif ($dateArg =~ /^\s*(.+)\s*:\s*(.+)\s*$/)
+{
+    # An interval of dates
+    @desiredDateArrB = GetTimeArgs($1);
+    @desiredDateArr = GetTimeArgs($2);
+    $desiredSecsB = timelocal(@desiredDateArrB);
+    $desiredSecs = timelocal(@desiredDateArr);
+    @desiredDateArrInt = AddDay(-1, @desiredDateArrB);
+    $dateArgB = GetDate(@desiredDateArrInt);
+    @desiredDateArrInt = AddDay(1, @desiredDateArr);
+    $dateArg = GetDate(@desiredDateArrInt);
+    $dateArg = "$dateArgB<$dateArg";
+    $range = "int";
+}
+elsif ($dateArg =~ /^\s*(.+)\s*$/)
+{
+    @desiredDateArr = GetTimeArgs($1);
+    $desiredSecs = timelocal(@desiredDateArr);
+    @desiredDateArrInt = AddDay(-1, @desiredDateArr);
+    $dateArgB = GetDate(@desiredDateArrInt);
+    @desiredDateArrInt = AddDay(1, @desiredDateArr);
+    $dateArg = GetDate(@desiredDateArrInt);
+    $dateArg = "$dateArgB<$dateArg";
+    $range = "na";
+}
+
+$cmd = "((cvs log -Nd \"$dateArg\" \.) 2>&1) |";
+
+# print "$cmd\n";
 open(CMDRET, $cmd);
 
 while (defined($line = <CMDRET>))
@@ -71,6 +137,40 @@ while (defined($line = <CMDRET>))
 		$date = $1;
 		$author = $2;
 
+		# skip things caused by CVS's stink
+		@dateArr = GetTimeArgs($date);
+		$secs = timelocal(@dateArr);
+#		print "secs: $secs, desiredsecs: $desiredSecs\n";
+
+		if ($range eq "na")
+		{
+		    if ($secs != $desiredSecs)
+		    {
+			next;
+		    }
+		}
+		elsif ($range eq "lt")
+		{
+		    if ($secs > $desiredSecs)
+		    {
+			next;
+		    }
+		}
+		elsif ($range eq "gt")
+		{
+		    if ($secs < $desiredSecs)
+		    {
+			next;
+		    }
+		}
+		elsif ($range eq "int")
+		{
+		    if ($secs < $desiredSecsB || $secs > $desiredSecs)
+		    {
+			next;
+		    }
+		}
+
 		$line = <CMDRET>;
 		chomp($line);
 		$commprefix = substr($line, 0, $NCOMM);
@@ -93,6 +193,7 @@ while (defined($line = <CMDRET>))
 		    $tmap{$key} = "$date";
 		    push(@clarr, $key);
 		}
+
 	    }
 	}
     }
@@ -110,4 +211,66 @@ while (defined($key = shift(@clarr)))
     {
 	print STDOUT "date: $tmap{$key} ($1)\nfiles: $fmap{$key}\ncomments: $clmap{$key}\n\n";
     }
+}
+
+sub PrintUsage
+{
+    print "extcvscomm.pl <DATE          #Show all changes on DATE or before\n";
+    print "extcvscomm.pl >DATE          #Show all changes on DATE or after\n";
+    print "extcvscomm.pl DATE1:DATE2\n  #Show all changes on or after DATE1 and on or before DATE2";
+    return;
+}
+
+sub GetTimeArgs
+{
+    my($date) = @_;
+    my(@args);
+    my($dom);
+    my($month);
+    my($year);
+
+    $date =~ s/\//-/g;
+
+    if ($date =~ /([0-9][0-9][0-9][0-9])\-([0-9]+)\-([0-9]+)/)
+    {
+	$year = $1;
+	$month = $2;
+	$dom = $3;
+    }
+    else
+    {
+	print STDERR "Invalid date '$date'\n";
+	exit(1);
+    }
+
+    push(@args, 0); # sec
+    push(@args, 0); # min
+    push(@args, 0); # hr
+    push(@args, $dom); # day of month
+    push(@args, $month - 1); # month, 0-based
+    push(@args, $year - 1900); # year is relative to 1900
+
+    return @args;
+}
+
+sub GetDate
+{
+    my($sec, $min, $hr, $dom, $month, $yr) = @_;
+
+    $month++; #dates are 1-based, but args are 0-based
+    $yr = $yr + 1900;
+    $date = "$yr-$month-$dom";
+    return $date
+}
+
+sub AddDay
+{
+    my($ndays, $sec, $min, $hr, $dom, $month, $yr) = @_;
+    my($resultSecs);
+    my(@resultArr);
+
+    $resultSecs = timelocal($sec, $min, $hr, $dom, $month, $yr) + $ndays * 86400;
+    @resultArr = localtime($resultSecs);
+
+    return @resultArr;
 }
