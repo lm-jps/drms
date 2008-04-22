@@ -29,8 +29,7 @@
 #define MAX_SLOTS 2250
 #define NUM_IMP_EXP_SLOTS 50  /* assumes these slots are the highest slot#s */
 #define MAX_SLOTS_LIVE (MAX_SLOTS - NUM_IMP_EXP_SLOTS)
-//#define MAX_DRIVES 12
-#define MAX_DRIVES 4			/* !!TEMP for testing */
+#define MAX_DRIVES 12
 #define MAX_GROUPS 1024
 #define MAX_AVAIL_BLOCKS 1600000000     /* max (512) blocks on a LTO4 tape */
 #define TAR_FILE_SZ 500000000   /* try to make a tar file this many bytes */
