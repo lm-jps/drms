@@ -2,6 +2,7 @@
 #include <dirent.h>
 #include <dlfcn.h>
 #include <sys/stat.h>
+#include <strings.h>
 #include "drms.h"
 #include "drms_priv.h"
 #include "xmem.h"
@@ -2728,7 +2729,7 @@ char *drms_query_string(DRMS_Env_t *env,
 			char *where, int filter, int mixed,
 			DRMS_QueryType_t qtype, char *fl) {
   DRMS_Record_t *template;
-  char *field_list, *query;
+  char *field_list, *query=0;
   char *series_lower;
   long long recsize, limit;
   char pidx_names[1024]; // comma separated pidx keyword names
@@ -2748,16 +2749,20 @@ char *drms_query_string(DRMS_Env_t *env,
     break;
   case DRMS_QUERY_FL:
     field_list = strdup(fl);
+    recsize = drms_keylist_memsize(template, fl);
+    if (!recsize) {
+      goto bailout;
+    }
     break;
   case DRMS_QUERY_ALL:
     field_list = drms_field_list(template, NULL);
+    recsize = drms_record_memsize(template);
     break;
   default:
     printf("Unknown query type: %d\n", (int)qtype);
     return NULL;
   }
 
-  recsize = drms_record_memsize(template);
   limit  = (long long)((0.4e6*env->query_mem)/recsize);
 #ifdef DEBUG
   printf("limit  = (%f / %lld) = %lld\n",0.4e6*env->query_mem, recsize, limit);
@@ -2807,6 +2812,7 @@ char *drms_query_string(DRMS_Env_t *env,
   }
 
   free(series_lower);
+ bailout:
   free(field_list);
   return query;
 }
@@ -4032,6 +4038,64 @@ long long drms_record_memsize( DRMS_Record_t *rec)
   size += hcon_size(&rec->segments) * (sizeof(DRMS_Segment_t) + DRMS_MAXSEGNAMELEN);
   //printf("segment size = %lld\n",size);
 
+  return size;
+}
+
+// estimate the size of keyword lists. input: comma separated keyword names
+// do not check duplicate
+long long drms_keylist_memsize(DRMS_Record_t *rec, char *keylist) {
+
+  int size = 0;
+
+  char *list = strdup(keylist);
+
+  // remove whitespaces in list
+  char *src, *dst;
+  src = dst = list;
+  while (*src != '\0') {
+    if (*src != ' ') {
+      *dst = *src;
+      dst++;
+    } 
+    src++;
+  }
+  *dst = '\0';
+
+  char *p = list;
+  int len = 0;
+  while (*p != '\0') {
+    char *start = p;
+    int len = 0;
+    while (*p != ',' && *p != '\0') {
+      len++;
+      p++;
+    }
+    char *key = strndup(start, len);
+    DRMS_Keyword_t *keyword = drms_keyword_lookup(rec, key, 0);
+    free(key);
+    if (keyword) {
+      size += sizeof(DRMS_Keyword_t) +  DRMS_MAXKEYNAMELEN + 1;
+      if (!keyword->info->islink && !drms_keyword_isconstant(keyword)) {
+	if ( keyword->info->type == DRMS_TYPE_STRING ) {
+	  if (keyword->value.string_val)
+	    size += strlen(keyword->value.string_val); 
+	  else 
+	    size += 40;
+	}    
+      }
+    } else {
+      printf("Unknown keyword: %s\n", key);
+      size = 0;
+      goto bailout;
+    }
+    // skip the comma
+    if (*p != '\0') {
+      p++;
+    }
+  }
+
+ bailout:
+  free(list);
   return size;
 }
 

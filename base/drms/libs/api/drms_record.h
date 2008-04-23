@@ -294,8 +294,11 @@ int drms_recproto_setseriesinfo(DRMS_Record_t *rec,
 
 DRMS_RecordSetType_t drms_record_getquerytype(const char *query);
 
-/* Estimate how much memory is used per record. */
+/** \brief Estimate how much memory is used per record. */
 long long drms_record_memsize(DRMS_Record_t *rec);
+
+/** \brief Estimate how much memory is used for keywords in the keylist. */
+long long drms_keylist_memsize(DRMS_Record_t *rec, char *keylist);
 
 /* Return the JSOC software version that created the given record. */
 char *drms_record_jsoc_version(DRMS_Env_t *env, DRMS_Record_t *rec);
