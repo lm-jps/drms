@@ -1528,10 +1528,6 @@ DRMS_SlotKeyUnit_t drms_keyword_getunit(DRMS_Keyword_t *key, int *status)
       {
 	 ret = *pSU;
       }
-      else
-      {
-	 fprintf(stderr, "Invalid slot unit string '%s'.\n", (key->value).string_val);
-      }
    }
    else
    {
@@ -1559,18 +1555,18 @@ TIME drms_keyword_getslotepoch(DRMS_Keyword_t *slotkey, int *status)
    {
       /* Shouldn't be an epoch key, unless keyword is of recscope TS_EQ. */
       epochKey = drms_keyword_epochfromslot(slotkey);
-   }
-   else
-   {
-      fprintf(stderr, 
-	      "Keyword '%s' is not associated with an epoch ancillary keyword.\n",
-	      slotkey->info->name);
-   }
 
-   if (epochKey)
-   {
-      ret = drms_keyword_getepoch(epochKey, &stat);
-   }   
+      if (epochKey)
+      {
+	 ret = drms_keyword_getepoch(epochKey, &stat);
+      }   
+      else
+      {
+	 fprintf(stderr, 
+		 "Keyword '%s' is not associated with an epoch ancillary keyword.\n",
+		 slotkey->info->name);
+      }
+   }
 
    if (drms_ismissing_time(ret))
    {
@@ -1641,6 +1637,25 @@ double drms_keyword_getslotbase(DRMS_Keyword_t *slotkey, int *status)
 	   ret = drms_keyword_getslotepoch(slotkey, status);
 	   break;
 	 case kRecScopeType_SLOT:
+	   {
+	      DRMS_Keyword_t *baseKey = drms_keyword_basefromslot(slotkey);
+
+	      if (baseKey)
+	      {
+		 ret = drms2double(baseKey->info->type, &baseKey->value, &stat);
+	      }   
+	      else
+	      {
+		 fprintf(stderr, 
+			 "Keyword '%s' is not associated with a base ancillary keyword.\n",
+			 slotkey->info->name);
+	      }
+
+	      if (drms_ismissing_double(ret))
+	      {
+		 stat = DRMS_ERROR_INVALIDDATA;
+	      }
+	   }
 	   break;
 	 case kRecScopeType_ENUM:
 	   break;
@@ -1759,6 +1774,9 @@ double drms_keyword_getstep(DRMS_Keyword_t *key,
 	   }
 	   break;
 	 default:
+	   /* kRecScopeType_SLOT isn't necessarily a time or degrees, so 
+	    * it can't really be a string because we wouldn't know how to 
+	    * parse and interpret that string.  The string could be anything. */
 	   fprintf(stderr, 
 		   "Invalid recscope type '%d'.\n", 
 		   (int)recscope);
@@ -1798,6 +1816,11 @@ DRMS_Keyword_t *drms_keyword_indexfromslot(DRMS_Keyword_t *slot)
 DRMS_Keyword_t *drms_keyword_epochfromslot(DRMS_Keyword_t *slot)
 {
    return GetAncillaryKey(slot, kSlotAncKey_Epoch);
+}
+
+DRMS_Keyword_t *drms_keyword_basefromslot(DRMS_Keyword_t *slot)
+{
+   return GetAncillaryKey(slot, kSlotAncKey_Base);
 }
 
 DRMS_Keyword_t *drms_keyword_stepfromslot(DRMS_Keyword_t *slot)
@@ -1872,7 +1895,8 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 
       step = drms_keyword_getslotstep(slotkey, &unit, &stat);
 
-      /* unit will be valid if user provided a string step (eg, 60s) */
+      /* unit will be valid if user provided a string step (eg, 60s).
+       * if kRecScopeType_SLOT, unit will never be valid. */
       if (unit != kSlotKeyUnit_Invalid)
       {
 	 if (unitKey)
@@ -1982,7 +2006,19 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 	      }
 	   }
 	   break;
+	 case kRecScopeType_SLOT:
+	   {
+	      base = drms_keyword_getslotbase(slotkey, &stat);
+	      unitVal = 1.0;
 
+	      valind = valin->value.time_val;
+
+	      if (startdur)
+	      {
+		 startdurd = startdur->value.time_val;
+	      }
+	   }
+	   break;
 	 default:
 	   fprintf(stderr, "Invalid rec scope '%d'.\n", (int)recscope);
 	   stat = DRMS_ERROR_INVALIDDATA;

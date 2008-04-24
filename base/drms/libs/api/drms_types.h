@@ -471,6 +471,7 @@ typedef struct DRMS_Record_struct DRMS_Record_t;
 /* Ancillary keys */
 #define kSlotAncKey_Index "_index"
 #define kSlotAncKey_Epoch "_epoch"
+#define kSlotAncKey_Base "_base"
 #define kSlotAncKey_Step "_step"
 #define kSlotAncKey_Unit "_unit"
 #define kSlotAncKey_Base "_base"

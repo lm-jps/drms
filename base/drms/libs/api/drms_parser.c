@@ -650,7 +650,7 @@ int parse_keywords(char *desc, DRMS_Record_t *template)
 							    keyname);
 		      if (anckey)
 		      {
-			 /* Must be constant and a time or string */
+			 /* Epoch must be constant and a time or string */
 			 if (drms_keyword_isconstant(anckey) &&
 			     (drms_keyword_gettype(anckey) == DRMS_TYPE_TIME ||
 			      drms_keyword_gettype(anckey) == DRMS_TYPE_STRING))
@@ -666,7 +666,7 @@ int parse_keywords(char *desc, DRMS_Record_t *template)
 			 else
 			 {
 			    fprintf(stderr, "Ancillary keyword '%s' must be constant"
-				    " and of data type 'time'.\n", 
+				    " and of data type 'time' or 'string'.\n", 
 				    keyname);
 			    failure = 1;
 			 }
@@ -682,7 +682,7 @@ int parse_keywords(char *desc, DRMS_Record_t *template)
 		      
 		      if (!failure && anckey)
 		      {
-			 /* Must be constant */
+			 /* Step must be constant */
 			 if (drms_keyword_isconstant(anckey))
 			 {
 			    /* _unit is optional */
@@ -705,7 +705,7 @@ int parse_keywords(char *desc, DRMS_Record_t *template)
 
 		      if (!failure && anckey)
 		      {
-			 /* if present, check for valid unit */
+			 /* if Unit present, check for valid unit */
 			 if (drms_keyword_gettype(anckey) == DRMS_TYPE_STRING &&
 			     drms_keyword_isconstant(anckey))
 			 {
@@ -732,6 +732,87 @@ int parse_keywords(char *desc, DRMS_Record_t *template)
 		   }
 		   break;
 		 case kRecScopeType_SLOT:
+		   {
+		      snprintf(keyname, 
+			       sizeof(keyname), "%s%s", 
+			       slotKeyname, 
+			       kSlotAncKey_Base);
+		      DRMS_Keyword_t *anckey = 
+			(DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), 
+							    keyname);
+
+		      if (anckey)
+		      {
+			 /* Base must be constant and a double, float, or time */
+			 if (drms_keyword_isconstant(anckey) &&
+			     (drms_keyword_gettype(anckey) == DRMS_TYPE_DOUBLE ||
+			      drms_keyword_gettype(anckey) == DRMS_TYPE_FLOAT ||
+			      drms_keyword_gettype(anckey) == DRMS_TYPE_TIME))
+
+			 {
+			    snprintf(keyname, 
+				     sizeof(keyname), "%s%s", 
+				     slotKeyname, 
+				     kSlotAncKey_Step);
+			    anckey = 
+			      (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), 
+								  keyname);
+			 }
+			 else
+			 {
+			    fprintf(stderr, "Ancillary keyword '%s' must be constant"
+				    " and of data type 'double', 'float', or 'time'.\n", 
+				    keyname);
+			    failure = 1;
+			 }
+		      }
+
+		      if (!anckey)
+		      {
+			 fprintf(stderr, 
+				 "Missing required ancillary keyword '%s'.\n",
+				 keyname);
+			 failure = 1;
+		      }
+
+		      if (!failure && anckey)
+		      {
+			 /* Step must be constant */
+			 if (drms_keyword_isconstant(anckey))
+			 {
+			    /* _unit is optional */
+			    snprintf(keyname, 
+				     sizeof(keyname), "%s%s", 
+				     slotKeyname, 
+				     kSlotAncKey_Unit);
+			    anckey = 
+			      (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), 
+								  keyname);
+			 }
+			 else
+			 {
+			    fprintf(stderr, 
+				    "Ancillary keyword '%s' must be constant.\n",
+				    keyname);
+			    failure = 1;
+			 }
+		      }
+
+		      if (!failure && anckey)
+		      {
+			 /* if Unit present, check for valid unit, which can be any string for a SLOT
+			  * type of slotted key  */
+			 if (drms_keyword_gettype(anckey) != DRMS_TYPE_STRING ||
+			     !drms_keyword_isconstant(anckey))
+			 {
+			    fprintf(stderr, 
+				    "Ancillary keyword '%s' must be constant"
+				    " and of data type 'string'.\n",
+				    keyname);
+			    failure = 1;
+			 }
+		      }
+		   }
 		   break;
 		 case kRecScopeType_ENUM:
 		   break;

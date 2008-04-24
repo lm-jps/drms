@@ -158,6 +158,7 @@ int drms_keyword_isslotted(DRMS_Keyword_t *key);
 DRMS_RecScopeType_t drms_keyword_str2recscope(const char *str, int *status);
 DRMS_Keyword_t *drms_keyword_indexfromslot(DRMS_Keyword_t *slot);
 DRMS_Keyword_t *drms_keyword_epochfromslot(DRMS_Keyword_t *slot);
+DRMS_Keyword_t *drms_keyword_basefromslot(DRMS_Keyword_t *slot);
 DRMS_Keyword_t *drms_keyword_stepfromslot(DRMS_Keyword_t *slot);
 DRMS_Keyword_t *drms_keyword_unitfromslot(DRMS_Keyword_t *slot);
 DRMS_Keyword_t *drms_keyword_slotfromindex(DRMS_Keyword_t *indx);

@@ -902,9 +902,14 @@ static int parse_duration(char **in, double *duration)
   case 'd':
     *duration = 86400.0*dval;
     break;
+  case 'u':
+    /* Means 'unit' - for SLOT type slotted keys, can have a query of the form
+     * [392.3/100u].  This just means [392.3 - 492.3). */
+    *duration = 1.0*dval;
+    break;
   default:
     fprintf(stderr,"Syntax Error: Time duration unit must be one of 's', "
-	    "'m', 'h', 'd', found '%c', '%s'.\n", *(p-1), p);
+	    "'m', 'h', 'd', 'u', found '%c', '%s'.\n", *(p-1), p);
     ++syntax_error;      
     goto error;
   }
