@@ -82,7 +82,10 @@ if(argc != 2) {
   dsixpt = sum->dsix_ptr;
   *dsixpt = atol(argv[1]);
   //*dsixpt = 60331;
+    StartTimer(1);
   status = SUM_get(sum, printf); 
+    ftmp = StopTimer(1);
+    printf("Time SUM_get = %fsec\n", ftmp);
   switch(status) {
   case 0:			/* success. data in sum */
       cnt = sum->reqcnt;
