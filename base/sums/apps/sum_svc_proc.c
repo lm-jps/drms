@@ -130,7 +130,8 @@ KEY *opendo_1(KEY *params)
 */
 KEY *getdo_1(KEY *params)
 {
-  static struct timeval TIMEOUT = { 120, 0 }; 
+  //static struct timeval TIMEOUT = { 180, 0 }; 
+  static struct timeval TIMEOUT = { 4, 0 }; 
   static CLIENT *clresp;
   uint32_t tapeback;
   uint64_t uid;
@@ -204,16 +205,17 @@ KEY *getdo_1(KEY *params)
         write_log("Calling tape_svc to bring data unit online\n");
       }
       rinfo = RESULT_PEND;  /* now tell caller to wait for results */
-
       status = clnt_call(clnttape,READDO, (xdrproc_t)xdr_Rkey, (char *)retlist, 
 			(xdrproc_t)xdr_uint32_t, (char *)&tapeback, TIMEOUT);
       if(status != RPC_SUCCESS) {
-          rinfo = 1;
-          send_ack();
-          call_err = clnt_sperror(clnttape, "Err clnt_call for READDO");
-          write_log("%s %s\n", datestring(), call_err);
           if(status != RPC_TIMEDOUT) {
+            rinfo = 1;
+            send_ack();
+            call_err = clnt_sperror(clnttape, "Error clnt_call for READDO");
+            write_log("%s %d %s\n", datestring(), status, call_err);
             return((KEY *)1);
+          } else {
+            write_log("%s timeout ignored in getdo_1()\n", datestring());
           }
       }
       if(tapeback == 1) {
