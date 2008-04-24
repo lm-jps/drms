@@ -1,0 +1,20 @@
+# *********************** Global information ************************
+Seriesname:	"su_arta.TestSlotkeys13"
+Description:	"Test SLOT type of slotted keyword."
+Author:		"Art Amezcua"
+Owner:		"arta"
+Unitsize:	32
+Archive:	0
+Retention:	7
+Tapegroup:	0
+Index:		OBST
+
+# **************************** Keywords ******************************
+Keyword:	OBST, float, slot, record, DRMS_MISSING_VALUE, %f, "none", "Primary key"
+Keyword:	OBST_base, float, constant, record, 11.0, %f, "none", "SLOT base"
+Keyword:	OBST_step, float, constant, record, 2.0, %f, tribbles, "SLOT step"
+Keyword:	OBST_unit, string, constant, record, "tribbles (fractional tribbles?)", %s, "none", "some bogus unit"
+Keyword:	EXTRA, string, variable, record, pineapple, %s, "none", "an extra keyword with which to test to make identify records better"
+
+# ************************** Data Segments ***************************
+# None

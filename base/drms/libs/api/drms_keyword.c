@@ -1891,7 +1891,6 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 
       double base;
       double valind;
-      double startdurd;
 
       step = drms_keyword_getslotstep(slotkey, &unit, &stat);
 
@@ -1956,11 +1955,6 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 	      }
 
 	      valind = valin->value.time_val;
-
-	      if (startdur)
-	      {
-		 startdurd = startdur->value.time_val;
-	      }
 	   }
 	   break;
 	 case kRecScopeType_CARR:
@@ -1998,12 +1992,6 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 	      }
 
 	      valind = drms2double(valin->type, &(valin->value), NULL);
-
-	      if (startdur)
-	      {
-		 /* The slot val is actually an interval. */
-		 startdurd = drms2double(startdur->type, &(startdur->value), NULL);
-	      }
 	   }
 	   break;
 	 case kRecScopeType_SLOT:
@@ -2011,12 +1999,7 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 	      base = drms_keyword_getslotbase(slotkey, &stat);
 	      unitVal = 1.0;
 
-	      valind = valin->value.time_val;
-
-	      if (startdur)
-	      {
-		 startdurd = startdur->value.time_val;
-	      }
+	      valind = drms2double(valin->type, &valin->value, &stat);
 	   }
 	   break;
 	 default:

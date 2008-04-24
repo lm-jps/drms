@@ -652,6 +652,7 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
   ValueRangeSet_t *vr=NULL,*head=NULL;
   DRMS_Type_t datatype = drms_keyword_gettype(keyword);
   int gotstart;
+  int stat;
 
 #ifdef DEBUG
   printf("enter parse_value_set\n");
@@ -685,27 +686,31 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 
        /* Get start */
 
-       /* If this is a time-slotted key, this could be a duration 
+       /* If this is a TS_EQ- or SLOT-slotted key, this could be a duration 
 	* instead of a drms type value, check for that. 
 	* If that fails, try to parse as a drms value. */
-       if (datatype == DRMS_TYPE_TIME &&
+       if ((datatype == DRMS_TYPE_TIME ||
+	    datatype == DRMS_TYPE_FLOAT ||
+	    datatype == DRMS_TYPE_DOUBLE) &&
 	   drms_keyword_isslotted(keyword) &&
 	   is_duration(p))
        {
 	  /* Could be an offset relative to epoch, eg. 3000d 
 	   * (for time slotted key only). */
 	  double offset;
-	  TIME epoch;
-	  int stat;
+	  double base;
+	  
 
 	  if (!parse_duration(&p, &offset))
 	  {
 	     /* The start time is really relative to the epoch, 
 	      * so need to convert to DRMS time. */
-	     epoch = drms_keyword_getslotepoch(keyword, &stat);
+	     base = drms_keyword_getslotbase(keyword, &stat);
 	     if (stat == DRMS_SUCCESS)
 	     {
-		vr->start.time_val = epoch + offset;
+		DRMS_Type_Value_t sum;
+		sum.double_val = base + offset;
+		drms_convert(datatype, &(vr->start), DRMS_TYPE_DOUBLE, &sum);
 		gotstart = 1;
 	     }
 	  }
@@ -742,8 +747,11 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
       if (vr->type != SINGLE_VALUE)
 	{
 	  /* Special handling of time intervals and durations. */
-	  if (datatype==DRMS_TYPE_TIME )
+	  if (datatype==DRMS_TYPE_TIME || datatype == DRMS_TYPE_FLOAT || datatype == DRMS_TYPE_DOUBLE)
 	    {
+	      double dval = 0.0;
+	      DRMS_Type_Value_t dvalval;
+
 	      if (vr->type == START_END)
 		{
 		  if ((n = drms_sscanf(p, datatype, &vr->x)) == 0)    
@@ -757,24 +765,31 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 		}
 	      else
 		{
-		  if (parse_duration(&p,&vr->x.time_val))
-		    {
-		      fprintf(stderr,"Syntax Error: Expected time duration "
+		   if (parse_duration(&p,&dval))
+		   {
+		      fprintf(stderr,"Syntax Error: Expected time or float duration "
 			      " in value range, found '%s'.\n", p);
 		      goto error;
-		    }	  
+		   }
+ 
+		   dvalval.double_val = dval;
+		   drms_convert(datatype, &(vr->x), DRMS_TYPE_DOUBLE, &dvalval);
+
 		}
 	      /* Get skip */
 	      if (*p=='@')
 		{
 		  ++p;
 		  vr->has_skip = 1;
-		  if (parse_duration(&p,&vr->skip.time_val))    
+
+		  if (parse_duration(&p,&dval))    
 		    {
-		      fprintf(stderr,"Syntax Error: Expected skip (time duration)"
+		      fprintf(stderr,"Syntax Error: Expected skip (time or float duration)"
 			      " in value range, found '%s'.\n", p);
 		      goto error;
 		    }
+		  dvalval.double_val = dval;
+		  drms_convert(datatype, &(vr->skip), DRMS_TYPE_DOUBLE, &dvalval);
 		}
 	      else
 		vr->has_skip = 0;
@@ -837,7 +852,7 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
   return NULL;
 }
 
-
+/* Detect either a time duration or a generic duration (denoted by 'u' - used by SLOT slotted key) */
 static int is_duration(const char *in)
 {
    char *end = NULL;
@@ -861,6 +876,7 @@ static int is_duration(const char *in)
 	 case 'm':
 	 case 'h':
 	 case 'd':
+	 case 'u':
 	   ret = 1;
 	   break;
 	 default:
