@@ -32,7 +32,7 @@ extern TQ *q_wrt_front;
 extern TQ *q_need_front;
 extern SUMOFFCNT *offcnt_hdr;
 static void tapeprog_1();
-static struct timeval TIMEOUT = { 180, 0 };
+static struct timeval TIMEOUT = { 120, 0 };
 uint32_t rinfo;		/* info returned by XXXdo_1() calls */
 uint32_t procnum;	/* remote procedure # to call for current_client call*/
 
@@ -461,7 +461,7 @@ tapeprog_1(rqstp, transp)
             clnt_perrno(clnt_stat);		/* outputs to stderr */
             write_log("***Error in tape_svc on clnt_call() back to %ld procedure\n", procnum);
             call_err = clnt_sperror(current_client, "Err");
-            write_log("%s\n", call_err);
+            write_log("%s %s\n", datestring(), call_err);
           }
           freekeylist((KEY **)&result);
         }
