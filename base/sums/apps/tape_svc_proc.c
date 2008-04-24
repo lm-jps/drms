@@ -186,6 +186,8 @@ int kick_next_entry_rd() {
             write_log("*Tp:DrNotBusy: drv=%d\n", d);
             write_log("%s %s\n", datestring(), call_err);
             return(2);
+          } else {
+            write_log("%s timeout occured for READDRVDO drv#%d in kick_next_entry_rd()\n", datestring(), d);
           }
         }
         if(driveback == 1) {
@@ -288,6 +290,9 @@ int kick_next_entry_rd() {
         write_log("*Tp:RdQdel: dsix=%lu drv=%d\n", poff->ds_index, d);
         sback = 2;
         break;			/* break while(p) */
+      } else {
+        write_log("%s timeout occured for ROBOTDO in kick_next_entry_rd() \n", 
+		datestring());
       }
     }
     if(robotback == 1) {
@@ -639,6 +644,8 @@ KEY *readdo_1(KEY *params) {
       free(user);
       return((KEY *)1);  /* error. nothing to be sent */
     }
+    rinfo = RESULT_PEND;    /* tell caller to wait later for results */
+    send_ack();		    /* ack to caller */
     insert_tq_entry_rd_sort(p);	/* put in file# order in rd q */
     /*insert_tq_entry_rd(p);	/* put at end of rd q */
     /*write_log("RD Q:\n");*/
@@ -654,17 +661,12 @@ KEY *readdo_1(KEY *params) {
   /*  		state, state ?  poff->tapeid : "NA"); */
   switch(state) {
   case 0:		    /* can't process now, remains on q */
-    rinfo = RESULT_PEND;    /* tell caller to wait later for results */
-    send_ack();		    /* ack to caller */
     return((KEY *)1);
     break;
   case 1:		    /* entry started and removed from q */
-    rinfo = RESULT_PEND;    /* tell caller to wait later for results */
-    send_ack();		    /* ack to caller */
     return((KEY *)1);
     break;
   case 2:		    /* removed from q, error occured */
-    send_ack();
     setkey_int(&poff->list, "STATUS", 1); /* give error back to caller */
     current_client = clntsum;
     procnum = SUMRESPDO;
@@ -1390,6 +1392,8 @@ KEY *taperesprobotdo_1_rd(KEY *params) {
       current_client = clntsum;
       procnum = SUMRESPDO;
       return(retlist);
+    } else {
+      write_log("%s timeout occured for READDRVDO in taperesprobotdo_1_rd()\n", datestring());
     }
   }
   if(driveback == 1) {
@@ -1492,6 +1496,8 @@ KEY *taperesprobotdo_1_wt(KEY *params) {
       current_client = client;
       procnum = getkey_uint32(params, "procnum");
       return(retlist);
+    } else {
+      write_log("%s timeout occured for WRITEDRVDO in taperesprobotdo_1_wt()\n", datestring());
     }
   }
   if(driveback == 1) {
