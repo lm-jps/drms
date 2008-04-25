@@ -73,10 +73,6 @@ int drms_insert_series(DRMS_Session_t *session, int update,
   char defval[2048]={0};
   char *createstmt=0, *series_lower=0, *namespace=0;
   DB_Text_Result_t *qres;
-  
-  /* This function has parts that are conditional on the series version being 
-   * greater than or equal to version 2.0. */
-  DRMS_SeriesVersion_t vers = {"2.0", ""};
 
   XASSERT(createstmt = malloc(30000));
   drms_link_getpidx(template); /* Make sure links have pidx's set. */
@@ -350,11 +346,6 @@ int drms_insert_series(DRMS_Session_t *session, int update,
       }
     }
 
-    if (drms_series_isvers(si, &vers))
-    {
-       /* compression parameters are stored as columns cparms_XXX */
-       p += sprintf(p, ", cparms_%03d text", segnum);
-    }
     segnum++;
   }
   p += sprintf(p,", primary key(recnum))");
@@ -1160,7 +1151,7 @@ int drms_series_isvers(DRMS_SeriesInfo_t *si, DRMS_SeriesVersion_t *v)
    }
    else if (sscanf(si->version, "%lld.%lld", &smajor, &sminor) == 2)
    {
-      if (v->first != '\0')
+      if (*(v->first) != '\0')
       {
 	 /* Series must be GTE to first */
 	 if (sscanf(v->first, "%lld.%lld", &vmajor, &vminor) == 2)
@@ -1177,7 +1168,7 @@ int drms_series_isvers(DRMS_SeriesInfo_t *si, DRMS_SeriesVersion_t *v)
 	 }
       }
 
-      if (ok && v->last != '\0')
+      if (ok && *(v->last) != '\0')
       {
 	 /* Series must be LTE to last */
 	 if (sscanf(v->last, "%lld.%lld", &vmajor, &vminor) == 2)

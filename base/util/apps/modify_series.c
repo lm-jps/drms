@@ -127,7 +127,7 @@ int DoIt(void) {
       goto bailout;
     }
     // allocate for a record template
-    status = parse_keywords(buf, template);
+    status = parse_keywords(buf, template, NULL);
     free(buf);
 
     // rename series table and sequence

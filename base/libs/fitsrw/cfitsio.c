@@ -14,7 +14,7 @@
 #include <stdlib.h>
 #include "fitsio.h"
 #include "cfitsio.h"
-
+#include "util.h"
 
 //****************************************************************************
 
@@ -819,7 +819,7 @@ void cfitsio_free_these(CFITSIO_IMAGE_INFO** image_info, void** image, CFITSIO_K
 
 //****************************************************************************
 int cfitsio_write_file(const char* fits_filename, CFITSIO_IMAGE_INFO* image_info,  
-		       void* image, CFITSIO_COMPRESSION_TYPE compression_type,  
+		       void* image, const char* compspec,  
 		       CFITSIO_KEYWORD* keylist)
 {
 
@@ -893,33 +893,21 @@ int cfitsio_write_file(const char* fits_filename, CFITSIO_IMAGE_INFO* image_info
       case(DOUBLE_IMG):	data_type = TDOUBLE; break;
    }
 
-   // Remove the file, if alreay exit
+   // Remove the file, if already exist
    strcpy(filename, fits_filename);
    cptr = strstr(filename,"[compress");  //"["
    if(cptr)	*cptr = '\0';
    remove(filename); 
 
-
-   switch(compression_type)
+   if (compspec && *compspec)
    {
-      case (C_DEFAULT):
-      case (C_RICE): strcat(filename,"[compress]");
-	 break;
-
-      case(C_NONE):	// not compress
-      case(C_HCOMPRESS):	// hcompress algorithm, whole image
-      case(C_GZIP):	// gzip algorithm
-      case(C_PLIO):       // plio algorithm
-	 //for now, either rice or none
-	 break;
-
-      case(C_EXTENDED_FILENAME):	// user specified
-	 strcpy(filename, fits_filename);
-	 break;
-      default:
-	 error_code = CFITSIO_ERROR_ARGS;
-	 goto error_exit;
-	 break;
+      char *csp = strdup(compspec);
+      if (csp)
+      {
+	 strtolower(csp);
+	 snprintf(filename, sizeof(filename), "%s[%s]", fits_filename, csp);
+	 free(csp);
+      }
    }
   	
    status = 0; // first thing!

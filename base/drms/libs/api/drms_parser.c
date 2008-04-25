@@ -18,8 +18,8 @@ static int gettoken(char **in, char *copy, int maxlen);
 int getkeyword(char **line);
 static int getnextline(char **start);
 static int parse_seriesinfo(char *desc, DRMS_Record_t *template);
-static int parse_segments(char *desc, DRMS_Record_t *template);
-static int parse_segment(char **in, DRMS_Record_t *template, int segnum);
+static int parse_segments(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys);
+static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContainer_t *cparmkeys);
 static int parse_keyword(char **in, 
 			 DRMS_Record_t *ds, 
 			 HContainer_t *slotted,
@@ -36,6 +36,18 @@ static int parse_dbindex(char *desc, DRMS_Record_t *template);
 #define TRY(__code__) {if ((__code__)) return 1;}
 
 static int lineno;
+
+static void FreeCparmKey(const void *v)
+{
+   /* v is a pointer to DRMS_Keyword_t * */
+   void **vv = (void **)v;
+   if (vv && *vv)
+   {
+      DRMS_Keyword_t *key = (DRMS_Keyword_t *)(*vv);
+      drms_free_keyword_struct(key);
+      free(key);
+   }
+}
 
 DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
 {
@@ -69,6 +81,17 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
 
   template->seriesinfo->dbidx_num = 0;
 
+  /* Possibly creating cparms_sgXXX keywords from information in the segment descriptions. 
+   * Must save that information during parse_segments() and use in 
+   * parse_keywords() */
+  HContainer_t *cparmkeys = hcon_create(sizeof(DRMS_Keyword_t *),
+					DRMS_MAXKEYNAMELEN,
+					FreeCparmKey,
+					NULL,
+					NULL,
+					NULL,
+					0);
+
   lineno = 0;
   if (parse_seriesinfo(desc, template))
   {
@@ -81,7 +104,7 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
   }
 
   lineno = 0;
-  if (parse_segments(desc, template))
+  if (parse_segments(desc, template, cparmkeys))
   {
     fprintf(stderr,"Failed to parse segment info.\n");
     goto bailout;
@@ -95,7 +118,7 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
   }
 
   lineno = 0;
-  if (parse_keywords(desc, template))
+  if (parse_keywords(desc, template, cparmkeys))
   {
     fprintf(stderr,"Failed to parse keywords info.\n");
     goto bailout; 
@@ -115,6 +138,11 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
     goto bailout;
   }
 
+  if (cparmkeys)
+  {
+     hcon_destroy(&cparmkeys);
+  }
+
 #ifdef DEBUG
   printf("SERIES TEMPLATE ASSEMBLED FROM SERIES DEFINITION:\n");
   drms_print_record(template);
@@ -126,6 +154,10 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
   hcon_free(&template->links);
   hcon_free(&template->keywords);
   free(template);
+  if (cparmkeys)
+  {
+     hcon_destroy(&cparmkeys);
+  }
   return NULL;
 }
 
@@ -196,7 +228,7 @@ static int parse_seriesinfo (char *desc, DRMS_Record_t *template) {
 }
 
 
-static int parse_segments (char *desc, DRMS_Record_t *template) {
+static int parse_segments (char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys) {
   int len, segnum;
   char *start, *p, *q;
 
@@ -215,7 +247,7 @@ static int parse_segments (char *desc, DRMS_Record_t *template) {
     
     if (prefixmatch(p,"Data:"))
     {      
-      if (parse_segment(&q, template, segnum))
+      if (parse_segment(&q, template, segnum, cparmkeys))
 	return 1;
       ++segnum;
     }
@@ -227,7 +259,7 @@ static int parse_segments (char *desc, DRMS_Record_t *template) {
 
 
 
-static int parse_segment(char **in, DRMS_Record_t *template, int segnum)
+static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContainer_t *cparmkeys)
 {
   int i;
   char *p,*q;
@@ -279,8 +311,46 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum)
     /* Version was already parsed from jsd at this point. */
     if (drms_series_isvers(template->seriesinfo, &vers))
     {
+     /* Create a cparms_sgXXX keyword for each segment.  It will save 
+      * the compression-parameters string. */
+       char buf[DRMS_MAXKEYNAMELEN];
+
        if (gettoken(&q,cparms,sizeof(cparms)) <= 0) goto failure;
-       snprintf(seg->cparms, DRMS_MAXCPARMS, "%s", cparms);
+       snprintf(buf, sizeof(buf), "cparms_sg%03d", segnum);
+
+       DRMS_Keyword_t *cpkey = calloc(1, sizeof(DRMS_Keyword_t));
+       XASSERT(cpkey);
+       int chused = 0;
+
+       XASSERT(cpkey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
+       snprintf(cpkey->info->name, DRMS_MAXKEYNAMELEN, "%s", buf);
+       cpkey->record = template;
+       cpkey->info->per_segment = 0; /* don't do this, otherwise the _000 gets stripped off */
+       cpkey->info->islink = 0;
+       cpkey->info->linkname[0] = 0;
+       cpkey->info->target_key[0] = 0;
+       cpkey->info->type = DRMS_TYPE_STRING;
+
+       /* By default, cpkey->value.string_val is NULL - set it to the empty string */
+       drms_sscanf("", cpkey->info->type, &cpkey->value);
+
+       if (strlen(cparms) > 0 && strcasecmp(cparms, "none"))
+       {
+	  chused = drms_sscanf(cparms, cpkey->info->type, &cpkey->value);
+	  if (chused < 0)
+	    goto failure;
+       }
+
+       snprintf(cpkey->info->format, DRMS_MAXFORMATLEN, "%s", "%s");
+       snprintf(cpkey->info->unit, DRMS_MAXUNITLEN, "%s", "none");
+       cpkey->info->recscope = kRecScopeType_Variable;
+       snprintf(cpkey->info->description, DRMS_MAXCOMMENTLEN, "%s", "");
+       cpkey->info->isdrmsprime = 0;
+
+       if (cparmkeys)
+       {
+	  hcon_insert(cparmkeys, buf, &cpkey);
+       }
     }
 
     if (getstring(&q,seg->info->description,sizeof(seg->info->description))<0) goto failure;
@@ -309,12 +379,6 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum)
 	seg->axis[i] = atoi(axis);
       }
 
-    if (drms_series_isvers(template->seriesinfo, &vers))
-    {
-       if (gettoken(&q,cparms,sizeof(cparms)) <= 0) goto failure;
-       snprintf(seg->cparms, DRMS_MAXCPARMS, "%s", cparms);
-    }
-
     if (gettoken(&q,unit,sizeof(unit)) <= 0) goto failure;
     strcpy(seg->info->unit, unit);
     if (gettoken(&q,protocol,sizeof(protocol)) <= 0) goto failure;
@@ -328,6 +392,52 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum)
 	    seg->blocksize[i] = atoi(axis);
 	  }
       }
+
+    /* Version was already parsed from jsd at this point. */
+    if (drms_series_isvers(template->seriesinfo, &vers))
+    {
+       /* Create a cparms_sgXXX keyword for each segment.  It will save 
+	* the compression-parameters string. */
+       char buf[DRMS_MAXKEYNAMELEN];
+
+       if (gettoken(&q,cparms,sizeof(cparms)) <= 0) goto failure;
+       snprintf(buf, sizeof(buf), "cparms_sg%03d", segnum);
+
+       DRMS_Keyword_t *cpkey = calloc(1, sizeof(DRMS_Keyword_t));
+       XASSERT(cpkey);
+       int chused = 0;
+
+       XASSERT(cpkey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
+       snprintf(cpkey->info->name, DRMS_MAXKEYNAMELEN, "%s", buf);
+       cpkey->record = template;
+       cpkey->info->per_segment = 0; /* don't do this, otherwise the _000 gets stripped off */
+       cpkey->info->islink = 0;
+       cpkey->info->linkname[0] = 0;
+       cpkey->info->target_key[0] = 0;
+       cpkey->info->type = DRMS_TYPE_STRING;
+
+       /* By default, cpkey->value.string_val is NULL - set it to the empty string */
+       drms_sscanf("", cpkey->info->type, &cpkey->value);
+
+       if (strlen(cparms) > 0 && strcasecmp(cparms, "none"))
+       {
+	  chused = drms_sscanf(cparms, cpkey->info->type, &cpkey->value);
+	  if (chused < 0)
+	    goto failure;
+       }
+
+       snprintf(cpkey->info->format, DRMS_MAXFORMATLEN, "%s", "%s");
+       snprintf(cpkey->info->unit, DRMS_MAXUNITLEN, "%s", "none");
+       cpkey->info->recscope = kRecScopeType_Variable;
+       snprintf(cpkey->info->description, DRMS_MAXCOMMENTLEN, "%s", "");
+       cpkey->info->isdrmsprime = 0;
+
+       if (cparmkeys)
+       {
+	  hcon_insert(cparmkeys, buf, &cpkey);
+       }
+    }
+
     if (getstring(&q,seg->info->description,sizeof(seg->info->description))<0) goto failure;
   }
   p = ++q;
@@ -421,7 +531,7 @@ static int parse_link(char **in, DRMS_Record_t *template)
 
 
 
-int parse_keywords(char *desc, DRMS_Record_t *template)
+int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys)
 {
   int len;
   char *start, *p, *q;
@@ -915,6 +1025,27 @@ int parse_keywords(char *desc, DRMS_Record_t *template)
      hcon_destroy(&slotted);
      hcon_destroy(&indexkws);
   } /* successful creation of slotted container */
+
+  if (cparmkeys)
+  {
+     /* Done with all other keywords - now move cparms_sgXXX keywords to template record. */
+     HIterator_t *hiter = hiter_create(cparmkeys);
+     DRMS_Keyword_t *cpkeyin = NULL;
+     DRMS_Keyword_t **pcpkeyin = NULL;
+     DRMS_Keyword_t *cpkey = NULL;
+     if (hiter)
+     {
+	while ((pcpkeyin = (DRMS_Keyword_t **)hiter_getnext(hiter)) != NULL)
+	{
+	   cpkeyin = *pcpkeyin;
+	   XASSERT(cpkey = hcon_allocslot_lower(&template->keywords, cpkeyin->info->name));
+	   memset(cpkey, 0, sizeof(DRMS_Keyword_t));
+	   drms_copy_keyword_struct(cpkey, cpkeyin);
+	}
+
+	hiter_destroy(&hiter);
+     }
+  }
 
   return 0;
 }

@@ -2894,6 +2894,10 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
   XASSERT(env);
   XASSERT(seriesname);
 
+ /* This function has parts that are conditional on the series version being 
+  * greater than or equal to version 2.0. */
+  DRMS_SeriesVersion_t vers = {"2.0", ""};
+
 #ifdef DEBUG
     printf("Getting template for series '%s'\n",seriesname);
 #endif
@@ -3049,6 +3053,30 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
     if ( !db_binary_field_is_null(qres, 0, 10) ) {
        db_binary_field_getstr(qres, 0, 10, DRMS_MAXSERIESVERSION, 
 			      template->seriesinfo->version);
+    }
+
+    /* Use the implicit, per-segment, keyword variables, cparms_sgXXX to populate the segment 
+     * part of the template. */
+    if (drms_series_isvers(template->seriesinfo, &vers))
+    {
+       HIterator_t *hit = hiter_create(&(template->segments));
+       if (hit)
+       {
+	  DRMS_Segment_t *seg = NULL;
+	  while ((seg = hiter_getnext(hit)) != NULL)
+	  {
+	     /* compression parameters are stored as keywords cparms_sgXXX - these
+	      * keywords should have been populated in the keywords section just above. */
+	     char kbuf[DRMS_MAXKEYNAMELEN];
+	     snprintf(kbuf, sizeof(kbuf), "cparms_sg%03d", seg->info->segnum);
+
+	     DRMS_Keyword_t *cpkey = hcon_lookup_lower(&(template->keywords), kbuf);
+	     if (cpkey)
+	     {
+		snprintf(seg->cparms, DRMS_MAXCPARMS, "%s", cpkey->value.string_val);
+	     }
+	  }
+       }
     }
 
     db_free_binary_result(qres);   
@@ -3304,8 +3332,16 @@ int drms_populate_records (DRMS_RecordSet_t *rs, DB_Binary_Result_t *qres) {
 	}
 	if (drms_series_isvers(rec->seriesinfo, &vers))
 	{
-	   /* compression parameters are stored as columns cparms_XXX */
-	   db_binary_field_getstr(qres, row, col++, DRMS_MAXCPARMS, seg->cparms);
+	   /* compression parameters are stored as keywords cparms_sgXXX - these
+	    * keywords should have been populated in the keywords section just above. */
+	   char buf[DRMS_MAXKEYNAMELEN];
+	   snprintf(buf, sizeof(buf), "cparms_sg%03d", segnum);
+
+	   DRMS_Keyword_t *cpkey = hcon_lookup_lower(&(rec->keywords), buf);
+	   if (cpkey)
+	   {
+	      snprintf(seg->cparms, DRMS_MAXCPARMS, "%s", cpkey->value.string_val);
+	   }
 	}
 	seg->info->segnum = segnum++;
       }
@@ -3313,10 +3349,6 @@ int drms_populate_records (DRMS_RecordSet_t *rs, DB_Binary_Result_t *qres) {
   }
   return 0;
 }
-
-
-
-
 
 /* 
    Build a list of fields corresponding to all the columns in
@@ -3335,10 +3367,6 @@ char *drms_field_list(DRMS_Record_t *rec, int *num_cols)
   DRMS_Keyword_t *key;
   int ncol=0, segnum;
   DRMS_Segment_t *seg;
-
-  /* This function has parts that are conditional on the series version being 
-   * greater than or equal to version 2.0. */
-  DRMS_SeriesVersion_t vers = {"2.0", ""};
 
   XASSERT(rec);
   /**** First get length of string buffer required. ****/
@@ -3397,12 +3425,6 @@ char *drms_field_list(DRMS_Record_t *rec, int *num_cols)
       len += 16*seg->info->naxis;      
       ncol += seg->info->naxis;
     }
-    if (drms_series_isvers(rec->seriesinfo, &vers))
-    {
-       /* compression parameters are stored as columns cparms_XXX */
-       len += 12; /* It looks like you just add 2 to the strlen. */
-       ++ncol;
-    }
   }
   /* Malloc string buffer. */
   XASSERT( buf = malloc(len+1) );
@@ -3454,13 +3476,6 @@ char *drms_field_list(DRMS_Record_t *rec, int *num_cols)
 	p += sprintf(p,", sg_%03d_axis%03d",segnum,i);
     }
 
-    /* cparms - version 2.0 of the master series table */
-    if (drms_series_isvers(rec->seriesinfo, &vers))
-    {
-       /* compression parameters are stored as columns cparms_XXX */
-       p += sprintf(p, ", cparms_%03d", segnum);
-    } 
-
     segnum++;
   }
 
@@ -3491,10 +3506,6 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
   char **argin;
   int status;
   int *sz;
-
-  /* This function has parts that are conditional on the series version being 
-   * greater than or equal to version 2.0. */
-  DRMS_SeriesVersion_t vers = {"2.0", ""};
 
   CHECKNULL(recset);
 
@@ -3613,13 +3624,6 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
 	XASSERT(argin[col] = malloc(num_rows*db_sizeof(intype[col])));
 	col++;
       }
-    }
-
-    if (drms_series_isvers(rec->seriesinfo, &vers))
-    {
-       /* compression parameters are stored as columns cparms_XXX */
-       intype[col] = drms2dbtype(DRMS_TYPE_STRING);
-       XASSERT(argin[col++] = malloc(num_rows*sizeof(char *)));
     }
   }
 

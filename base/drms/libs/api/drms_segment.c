@@ -1689,7 +1689,7 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
 	 {
 	    /* Need to change the compression parameter to something meaningful 
 	     * (although new users should just use the DRMS_FITS protocol )*/
-	    if (cfitsio_write_file(filename, &imginfo, out->data, C_NONE, NULL))
+	    if (cfitsio_write_file(filename, &imginfo, out->data, seg->cparms, NULL))
 	      goto bailout;
 	 }
 	 else
@@ -1711,7 +1711,7 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
 	 if (!SetImageInfo(out, &imginfo))
 	 {
 	    /* */
-	    if (cfitsio_write_file(filename, &imginfo, out->data, C_NONE, NULL))
+	    if (cfitsio_write_file(filename, &imginfo, out->data, seg->cparms, NULL))
 	      goto bailout;
 	 }
 	 else
@@ -2299,7 +2299,7 @@ int drms_segment_mapexport_tofile(DRMS_Segment_t *seg,
 		    }
 		    else
 		    {
-		       if (cfitsio_write_file(fileout, &imginfo, arrout->data, C_NONE, fitskeys))
+		       if (cfitsio_write_file(fileout, &imginfo, arrout->data, seg->cparms, fitskeys))
 		       {
 			  fprintf(stderr, "Can't write fits file '%s'.\n", fileout);
 			  stat = DRMS_ERROR_EXPORT;

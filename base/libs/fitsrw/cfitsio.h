@@ -101,7 +101,7 @@ int cfitsio_read_file(char* fits_filename, CFITSIO_IMAGE_INFO** image_info, void
 
 
 int cfitsio_write_file(const char* fits_filename, CFITSIO_IMAGE_INFO* info,  void* image, 
-		       CFITSIO_COMPRESSION_TYPE compression_type,  
+		       const char* compspec,  
 		       CFITSIO_KEYWORD* keylist); //keylist == NULL if not needed
 
 void cfitsio_free_these(CFITSIO_IMAGE_INFO** image_info, void** image, 

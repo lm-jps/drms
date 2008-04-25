@@ -7,7 +7,7 @@
 /** \brief Parse jsd and fill in a record template */
 DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc);
 /** \brief Parse keywords in jsd and fill in a record template*/
-int parse_keywords(char *desc, DRMS_Record_t *template);
+int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys);
 
 /**\brief Print jsd from record */
 void drms_jsd_printfromrec(DRMS_Record_t *rec);
