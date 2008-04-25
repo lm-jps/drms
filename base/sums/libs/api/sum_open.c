@@ -184,9 +184,9 @@ int SUM_alloc(SUM_t *sum, int (*history)(const char *fmt, ...))
    * error status is set but it should be ignored.
   */
   if(status != RPC_SUCCESS) {
-    call_err = clnt_sperror(sum->cl, "Err clnt_call for ALLOCDO");
-    (*history)("%s %s\n", datestring(), call_err);
     if(status != RPC_TIMEDOUT) {
+      call_err = clnt_sperror(sum->cl, "Err clnt_call for ALLOCDO");
+      (*history)("%s %d %s\n", datestring(), status, call_err);
       freekeylist(&klist);
       return (1);
     }
@@ -231,9 +231,9 @@ int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
  * error status is set but it should be ignored.
 */
   if(status != RPC_SUCCESS) {
-    call_err = clnt_sperror(sum->cl, "Err clnt_call for CLOSEDO");
-    (*history)("%s %s\n", datestring(), call_err);
     if(status != RPC_TIMEDOUT) {
+      call_err = clnt_sperror(sum->cl, "Err clnt_call for CLOSEDO");
+      (*history)("%s %d %s\n", datestring(), status, call_err);
       errflg = 1;
     }
   }
@@ -300,11 +300,14 @@ int SUM_get(SUM_t *sum, int (*history)(const char *fmt, ...))
    * error status is set but it should be ignored.
   */
   if(status != RPC_SUCCESS) {
-    call_err = clnt_sperror(sum->cl, "Err clnt_call for GETDO");
-    (*history)("%s %s\n", datestring(), call_err);
-    if(status != RPC_TIMEDOUT)
+    if(status != RPC_TIMEDOUT) {
+      call_err = clnt_sperror(sum->cl, "Err clnt_call for GETDO");
+      (*history)("%s %d %s\n", datestring(), status, call_err);
       freekeylist(&klist);
       return (1);
+    } else {
+      (*history)("%s Ignore timeout in SUM_get()\n", datestring());
+    }
   }
   freekeylist(&klist);
   if(sum->debugflg) {
@@ -378,9 +381,9 @@ int SUM_put(SUM_t *sum, int (*history)(const char *fmt, ...))
    * error status is set but it should be ignored.
   */
   if(status != RPC_SUCCESS) {
-    call_err = clnt_sperror(sum->cl, "Err clnt_call for PUTDO");
-    (*history)("%s %s\n", datestring(), call_err);
     if(status != RPC_TIMEDOUT) {
+      call_err = clnt_sperror(sum->cl, "Err clnt_call for PUTDO");
+      (*history)("%s %d %s\n", datestring(), status, call_err);
       freekeylist(&klist);
       return (1);
     }
@@ -450,9 +453,9 @@ int SUM_delete_series(uint64_t *ids, int (*history)(const char *fmt, ...))
    * error status is set but it should be ignored.
   */
   if(status != RPC_SUCCESS) {
-    call_err = clnt_sperror(cl, "Err clnt_call for DELSERIESDO");
-    (*history)("%s %s\n", datestring(), call_err);
     if(status != RPC_TIMEDOUT) {
+      call_err = clnt_sperror(cl, "Err clnt_call for DELSERIESDO");
+      (*history)("%s %d %s\n", datestring(), status, call_err);
       freekeylist(&klist);
       return (1);
     }
