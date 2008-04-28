@@ -251,7 +251,21 @@ int drms_insert_series(DRMS_Session_t *session, int update,
 #endif
     }
 
-    XASSERT((drms_sprintfval_format(defval, key->info->type,  &key->value,  key->info->format, 0)<DRMS_DEFVAL_MAXLEN));
+    if (key->info->type == DRMS_TYPE_TIME)
+    {
+       XASSERT((drms_sprintfval_format(defval, key->info->type, 
+				       &key->value, 
+				       key->info->unit, 
+				       0) < DRMS_DEFVAL_MAXLEN));
+    }
+    else
+    {
+       XASSERT((drms_sprintfval_format(defval, key->info->type, 
+				       &key->value, 
+				       key->info->format, 
+				       0) < DRMS_DEFVAL_MAXLEN));
+    }
+
     if (drms_dmsv(session, NULL, "insert into " DRMS_MASTER_KEYWORD_TABLE
 		  "(seriesname, keywordname, linkname, targetkeyw, type, "
 		  "defaultval, format, unit, description, islink, "

@@ -566,7 +566,7 @@ int drms_sscanf_int (char *str,
 		     DRMS_Type_Value_t *dst,
 		     int silent) {
   int status = DRMS_SUCCESS;
-  TIME *te = NULL;
+  const TIME *te = NULL;
   char *endptr = 0;
   long long ival;
   float fval;
