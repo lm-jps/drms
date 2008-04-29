@@ -4075,7 +4075,10 @@ long long drms_keylist_memsize(DRMS_Record_t *rec, char *keylist) {
       p++;
     }
     key = strndup(start, len);
-    if (strcmp(key, "recnum")) {
+    if (strcmp(key, "recnum") == 0) {
+      size  += sizeof(DRMS_Keyword_t) +  DRMS_MAXKEYNAMELEN + 1;
+      size += 20;
+    } else {
       DRMS_Keyword_t *keyword = drms_keyword_lookup(rec, key, 0);
       if (keyword) {
 	size += sizeof(DRMS_Keyword_t) +  DRMS_MAXKEYNAMELEN + 1;
