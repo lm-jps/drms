@@ -1105,6 +1105,7 @@ int drms_equal(DRMS_Type_t type, DRMS_Type_Value_t *x, DRMS_Type_Value_t *y);
 /* time stuff */
 const TIME *drms_time_getepoch(const char *str, DRMS_TimeEpoch_t *epochenum, int *status);
 void drms_time_term();
+TIME _SDO_to_DRMS_time(int sdo_s, int sdo_ss);
 
 /* Frees value, only if it is of type string. */
 static inline void drms_value_free(DRMS_Value_t *val)
