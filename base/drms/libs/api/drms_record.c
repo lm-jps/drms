@@ -4050,7 +4050,7 @@ long long drms_record_memsize( DRMS_Record_t *rec)
 long long drms_keylist_memsize(DRMS_Record_t *rec, char *keylist) {
 
   int size = 0;
-
+  char *key;
   char *list = strdup(keylist);
 
   // remove whitespaces in list
@@ -4074,23 +4074,24 @@ long long drms_keylist_memsize(DRMS_Record_t *rec, char *keylist) {
       len++;
       p++;
     }
-    char *key = strndup(start, len);
-    DRMS_Keyword_t *keyword = drms_keyword_lookup(rec, key, 0);
-    free(key);
-    if (keyword) {
-      size += sizeof(DRMS_Keyword_t) +  DRMS_MAXKEYNAMELEN + 1;
-      if (!keyword->info->islink && !drms_keyword_isconstant(keyword)) {
-	if ( keyword->info->type == DRMS_TYPE_STRING ) {
-	  if (keyword->value.string_val)
-	    size += strlen(keyword->value.string_val); 
-	  else 
-	    size += 40;
-	}    
+    key = strndup(start, len);
+    if (strcmp(key, "recnum")) {
+      DRMS_Keyword_t *keyword = drms_keyword_lookup(rec, key, 0);
+      if (keyword) {
+	size += sizeof(DRMS_Keyword_t) +  DRMS_MAXKEYNAMELEN + 1;
+	if (!keyword->info->islink && !drms_keyword_isconstant(keyword)) {
+	  if ( keyword->info->type == DRMS_TYPE_STRING ) {
+	    if (keyword->value.string_val)
+	      size += strlen(keyword->value.string_val); 
+	    else 
+	      size += 40;
+	  }    
+	}
+      } else {
+	printf("Unknown keyword: %s\n", key);
+	size = 0;
+	goto bailout;
       }
-    } else {
-      printf("Unknown keyword: %s\n", key);
-      size = 0;
-      goto bailout;
     }
     // skip the comma
     if (*p != '\0') {
@@ -4099,6 +4100,7 @@ long long drms_keylist_memsize(DRMS_Record_t *rec, char *keylist) {
   }
 
  bailout:
+  free(key);
   free(list);
   return size;
 }
