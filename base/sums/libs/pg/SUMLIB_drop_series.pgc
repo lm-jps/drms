@@ -1,11 +1,11 @@
 /* SUMLIB_drop_series.pgc
- * This is a function by the delete_series program.
+ * This is a function used by the delete_series program.
  * It is passed a DB table that has the list of sunum (aka ds_index)
  * values to be removed from the SUMS.
  * For each sunum will update any sum_partn_alloc del pending or archive
  * pending entry to be del pend with substatus DAAEDDP with effective
- * date of 0. A DAAEDDP substatus means a temp ds and that after the wd is removed 
- * the sum_main entry is also removed (done in SUMLIB_RmDo.pgc).
+ * date of 0. A DAAEDDP substatus means a temp ds and that after the wd 
+ * is removed the sum_main entry is also removed (done in SUMLIB_RmDo.pgc).
  * Returns 0 on success. 
  */
 #include <SUM.h>
