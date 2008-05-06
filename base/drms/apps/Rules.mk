@@ -31,6 +31,7 @@ S_$(d)		:= $(notdir $(EXE_$(d)) $(MODEXE_SOCK_$(d)))
 # Local rules
 $(OBJ_$(d)):	CF_TGT := $(CF_$(d))
 $(OBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
+$(MODEXE_$(d):%=%.o) : CF_TGT := $(CF_$(d)) -DDRMS_CLIENT
 
 # Shortcuts
 .PHONY:	$(S_$(d))

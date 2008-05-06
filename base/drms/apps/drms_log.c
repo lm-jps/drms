@@ -48,16 +48,20 @@ int DoIt(void) {
 	    if (!want_path) {
 	      printf("Log exists, but has gone off-line\n");
 	    } else {
-	      DRMS_StorageUnit_t *su;
-	      XASSERT(su = malloc(sizeof(DRMS_StorageUnit_t)));
+#ifndef DRMS_CLIENT
+		DRMS_StorageUnit_t *su;
+		XASSERT(su = malloc(sizeof(DRMS_StorageUnit_t)));
 
-	      su->sunum = atoll(qres->field[0][3]);
-	      drms_env->retention = DRMS_LOG_RETENTION;
-	      status = drms_su_getsudir(drms_env, su, 1);
-	      if (!status) {
-		printf("Log SU=%s\n", su->sudir);
-	      }
-	      free(su);
+		su->sunum = atoll(qres->field[0][3]);
+		drms_env->retention = DRMS_LOG_RETENTION;
+		status = drms_su_getsudir(drms_env, su, 1);
+		if (!status) {
+		  printf("Log SU=%s\n", su->sudir);
+		}
+		free(su);
+#else
+	    printf("Must run in direct connection to stage log SU\n");
+#endif
 	    }
 	  }
 	  printf("jsoc version: ");
