@@ -200,19 +200,19 @@ typedef double TIME;
 
 extern const int kTIMEIO_MaxTimeEpochStr;
 #define DRMS_EPOCH_S "1977.01.01_00:00:00_TAI"
-#define DRMS_EPOCH_F (sscan_time(DRMS_EPOCH_STR))
+#define DRMS_EPOCH_F (sscan_time(DRMS_EPOCH_S))
 #define DRMS_EPOCH (0.000)
 #define MDI_EPOCH_S "1993.01.01_00:00:00_TAI"
-#define MDI_EPOCH_F (sscan_time(MDI_EPOCH_STR))
+#define MDI_EPOCH_F (sscan_time(MDI_EPOCH_S))
 #define MDI_EPOCH (504921600.000)
 #define WSO_EPOCH_S "1601.01.01_00:00:00_UT"
-#define WSO_EPOCH_F (sscan_time(WSO_EPOCH_STR))
+#define WSO_EPOCH_F (sscan_time(WSO_EPOCH_S))
 #define WSO_EPOCH (-11865398400.000)
 #define TAI_EPOCH_S "1958.01.01_00:00:00_TAI"
-#define TAI_EPOCH_F (sscan_time(TAI_EPOCH_STR))
+#define TAI_EPOCH_F (sscan_time(TAI_EPOCH_S))
 #define TAI_EPOCH (-599616000.000)
 #define MJD_EPOCH_S "1858.11.17_00:00:00_UT"
-#define MJD_EPOCH_F (sscan_time(MJD_EPOCH_STR))
+#define MJD_EPOCH_F (sscan_time(MJD_EPOCH_S))
 #define MJD_EPOCH (-3727641600.000)
 
 /****************************************************************************/

@@ -10,7 +10,7 @@ dir	:= $(d)/fpic
 # Local variables
 LIBDSTRUCT	:= $(d)/libdstruct.a
 
-OBJ_$(d)	:= $(addprefix $(d)/, hcontainer.o hash_table.o parse_params.o table.o)
+OBJ_$(d)	:= $(addprefix $(d)/, hcontainer.o hash_table.o parse_params.o table.o list.o)
 
 LIBDSTRUCT_OBJ	:= $(OBJ_$(d))
 

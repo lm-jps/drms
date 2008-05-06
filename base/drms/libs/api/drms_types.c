@@ -2019,10 +2019,3 @@ void drms_time_term()
    }
 }
 
-/* sdo_s is number of whole seconds since the SDO EPOCH 
- * sdo_ss is number of subseconds since SDO_EPOCH + sdo_s 
- *   where a subsecond is 1/(2^16) of a second */
-TIME _SDO_to_DRMS_time(int sdo_s, int sdo_ss)
-{
-   return(SOHO_EPOCH + (TIME)sdo_s + (TIME)sdo_ss/65536.0);
-}

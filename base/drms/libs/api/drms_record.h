@@ -13,6 +13,7 @@
 
 #include "drms_types.h"
 #include "db.h"
+#include "list.h"
 
 #define kLocalSegName "local_data" /* Name of segment created when reading 
 				    * fits files from local disk (outside 
@@ -39,6 +40,12 @@ typedef enum {DRMS_QUERY_COUNT, DRMS_QUERY_FL, DRMS_QUERY_ALL} DRMS_QueryType_t;
 /* Retrieve a recordset specified by the DRMS dataset name string
    given in the argument "datasetname". The records are inserted into
    the record cache and marked read-only. */
+
+DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, 
+					     char *recordsetname, 
+					     int retrieverecs, 
+					     LinkedList_t **llistout,
+					     int *status);
 
 /**
    Retrieve a set of records specified by a recordset query.

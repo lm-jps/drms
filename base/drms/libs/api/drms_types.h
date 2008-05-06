@@ -154,6 +154,9 @@ typedef struct DRMS_Value
 #define TSEQ_EPOCH_S MDI_EPOCH_S
 #define TSEQ_EPOCH_F MDI_EPOCH_F
 #define TSEQ_EPOCH MDI_EPOCH
+#define SDO_EPOCH_S "1958.01.01_00:00:00_TAI"
+#define SDO_EPOCH_F (sscan_time (SDO_EPOCH_S))
+#define SDO_EPOCH (-599616000.000)
 
 #define DRMS_MAXTYPENAMELEN  (9)
 
@@ -1146,7 +1149,14 @@ int drms_equal(DRMS_Type_t type, DRMS_Type_Value_t *x, DRMS_Type_Value_t *y);
 /* time stuff */
 const TIME *drms_time_getepoch(const char *str, DRMS_TimeEpoch_t *epochenum, int *status);
 void drms_time_term();
-TIME _SDO_to_DRMS_time(int sdo_s, int sdo_ss);
+
+/* sdo_s is number of whole seconds since the SDO EPOCH 
+ * sdo_ss is number of subseconds since SDO_EPOCH + sdo_s 
+ *   where a subsecond is 1/(2^16) of a second */
+static inline TIME _SDO_to_DRMS_time(int sdo_s, int sdo_ss)
+{
+   return(SDO_EPOCH + (TIME)sdo_s + (TIME)sdo_ss/65536.0);
+}
 
 /* Frees value, only if it is of type string. */
 static inline void drms_value_free(DRMS_Value_t *val)

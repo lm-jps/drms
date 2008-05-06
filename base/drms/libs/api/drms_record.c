@@ -1224,8 +1224,11 @@ DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, const char *dsRecSet, i
 /* recordsetname is a comma-separated list of recordsets.  
  * Must surround DSDS queries with '{' and '}'. 
  */
-DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname, 
-				    int *status)
+DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, 
+					     char *recordsetname, 
+					     int retrieverecs, 
+					     LinkedList_t **llistout,
+					     int *status)
 {
   DRMS_RecordSet_t *rs = NULL;
   DRMS_RecordSet_t *ret = NULL;
@@ -1245,6 +1248,15 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
   char *lasts = NULL;
   char *ans = NULL;
   HContainer_t *goodsegcont = NULL;
+
+  /* Must save SELECT statements if saving the query is desired (retreiverecs == 0) */
+  LinkedList_t *llist = NULL;
+
+  if (llistout)
+  {
+     llist = list_llcreate(sizeof(char *));
+     *llistout = llist;
+  }
 
   /* conflict with stat var in this scope */
   int (*filestat)(const char *, struct stat *buf) = stat;
@@ -1419,13 +1431,49 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 		 free(seglist);
 	      }
 
-	      TIME(rs = drms_retrieve_records(env, 
-					      seriesname, 
-					      query, 
-					      filter, 
-					      mixed, 
-					      goodsegcont, 
-					      &stat));
+	      if (retrieverecs)
+	      {
+		 TIME(rs = drms_retrieve_records(env, 
+						 seriesname, 
+						 query, 
+						 filter, 
+						 mixed, 
+						 goodsegcont, 
+						 &stat));
+	      }
+	      else
+	      {
+		 rs = (DRMS_RecordSet_t *)malloc(sizeof(DRMS_RecordSet_t));
+		 rs->n = 0 /* need to do a query to figure this out */;
+		 if (rs->n > 0)
+		 {
+		    rs->records = (DRMS_Record_t **)calloc(rs->n, sizeof(DRMS_Record_t *));
+		 }
+		 else
+		 {
+		    rs->records = NULL;
+		 }
+
+		 /* The following will be assigned later in this function*/
+		 rs->ss_n = 0;
+		 rs->ss_queries = NULL;
+		 rs->ss_types = NULL;
+		 rs->ss_starts = NULL;
+		 rs->ss_current = -1;
+		 rs->cursor = NULL;		
+	      }
+
+	      if (llist)
+	      {
+		 char *selquery = drms_query_string(env, 
+						    seriesname, 
+						    query, 
+						    filter, 
+						    mixed, 
+						    DRMS_QUERY_ALL, 
+						    NULL);
+		 list_llinsert(llist, &selquery);
+	      }
 
 	      if (goodsegcont)
 	      {
@@ -1659,6 +1707,12 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
   if (status)
     *status = stat;
   return NULL;
+}
+
+DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname, 
+				    int *status)
+{
+   return drms_open_records_internal(env, recordsetname, 1, NULL, status);
 }
 
 /* Create n new records by calling drms_create_record n times.  */
@@ -5735,6 +5789,9 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
    DRMS_RecordSet_t *rs = NULL;
    static long long guid = 1;
    int stat = DRMS_SUCCESS;
+   char cursorquery[DRMS_MAXQUERYLEN];
+   char cursorname[DRMS_MAXCURSORNAMELEN];
+   char selquery[DRMS_MAXQUERYLEN];
 
    if (rsquery)
    {
@@ -5744,16 +5801,26 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
       {
 	 /* XXX This needs to make use of a cursor so that reading records can be chunked. 
 	  * For now, call drms_open_records() - in other words, all records are fetched . */
+
+
+	 /* Create cursor */
+	 snprintf(cursorname, sizeof(cursorname), "%s_%lld", seriesname, guid++);
+	 snprintf(cursorquery, 
+		  sizeof(cursorquery), 
+		  "DECLARE %s SCROLL CURSOR FOR %s", 
+		  cursorname, 
+		  selquery);
+
 	 char *tmp = strdup(rsquery);
 	 rs = drms_open_records(env, tmp, &stat);
 	 if (rs && rs->n > 0)
 	 {
 	    rs->cursor = (DRMS_RecSetCursor_t *)malloc(sizeof(DRMS_RecSetCursor_t));
 	    snprintf(rs->cursor->name, DRMS_MAXCURSORNAMELEN, "%s_%lld", seriesname, guid++);
-	    // rs->cursor->chunksize = drms_recordset_getchunksize();
-	    rs->cursor->chunksize = rs->n;
-	    rs->cursor->currentchunk = 0;
-	    rs->cursor->currentrec = 0;
+	    rs->cursor->chunksize = drms_recordset_getchunksize();
+	    // rs->cursor->chunksize = rs->n;
+	    rs->cursor->currentchunk = -1;
+	    rs->cursor->currentrec = -1;
 	 }
 	 else
 	 {
@@ -5764,6 +5831,8 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
 	 {
 	    free(tmp);
 	 }
+
+	 free(seriesname);
       }
    }
 
