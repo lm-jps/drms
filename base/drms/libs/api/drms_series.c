@@ -406,6 +406,7 @@ int drms_insert_series(DRMS_Session_t *session, int update,
   p = createstmt;
   p += sprintf(p,"grant select on %s to public;",series_lower);
   p += sprintf(p,"grant select on %s_seq to public",series_lower);
+  p += sprintf(p,"grant delete on %s to sumsadmin",series_lower);
   if(drms_dms(session, NULL, createstmt))
     goto failure;
 
