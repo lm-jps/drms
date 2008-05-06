@@ -304,20 +304,33 @@ long long drms_keylist_memsize(DRMS_Record_t *rec, char *keylist);
 char *drms_record_jsoc_version(DRMS_Env_t *env, DRMS_Record_t *rec);
 
 /* Handling record sets */
-static inline int drms_recordset_getnrecs(DRMS_RecordSet_t *set)
+char *drms_recordset_acquireseriesname(const char *query);
+
+static inline int drms_recordset_getnrecs(DRMS_RecordSet_t *rs)
 {
-   return set->n;
+   return rs->n;
 }
+
 /** @brief Return the number of record subsets */
-int drms_recordset_getnumss(DRMS_RecordSet_t *set);
+static inline int drms_recordset_getnumss(DRMS_RecordSet_t *rs)
+{
+   return rs->ss_n;
+}
+
 /** @brief Return a DRMS record-set subset query */
-const char *drms_recordset_getqueryss(DRMS_RecordSet_t *set, unsigned int setnum, int *status);
+const char *drms_recordset_getqueryss(DRMS_RecordSet_t *rs, unsigned int setnum, int *status);
+
 /** @brief Return a DRMS record-set subset query type */
-DRMS_RecordSetType_t *drms_recordset_gettypess(DRMS_RecordSet_t *set, unsigned int setnum, int *status);
+DRMS_RecordSetType_t *drms_recordset_gettypess(DRMS_RecordSet_t *rs, 
+					       unsigned int setnum, 
+					       int *status);
+
 /** @brief Return a DRMS record-set subset */
 DRMS_Record_t *drms_recordset_getss(DRMS_RecordSet_t *set, unsigned int setnum, int *status);
+
 /** @brief Return the number of records in a DRMS record-set subset */
 int drms_recordset_getssnrecs(DRMS_RecordSet_t *set, unsigned int setnum, int *status);
+
 static inline DRMS_Record_t *drms_recordset_getrec(DRMS_RecordSet_t *rs, long long recnum)
 {
    if (rs)
@@ -355,4 +368,19 @@ int drms_recordset_mapexport(DRMS_Env_t *env,
 			     const char *classname, 
 			     const char *mapfile,
 			     int *status);
+
+/* Chunking record queries */
+int drms_recordset_setchunksize(unsigned int size);
+unsigned int drms_recordset_getchunksize();
+int drms_open_recordchunk(DRMS_RecordSet_t *rs, 
+			  DRMS_RecSetCursorSeek_t seektype, 
+			  long long pos,  
+			  int *status);
+int drms_close_recordchunk(DRMS_RecordSet_t *rs);
+DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env, 
+				      const char *rsquery, 
+				      int *status);
+DRMS_Record_t *drms_recordset_fetchnext(DRMS_RecordSet_t *rs, int *status);
+DRMS_Record_t *drms_recordset_fetchprevious(DRMS_RecordSet_t *rs, int *status);
+DRMS_Record_t *drms_recordset_fetchnextinset(DRMS_RecordSet_t *rs, int *setnum, int *status);
 #endif

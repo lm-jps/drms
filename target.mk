@@ -48,6 +48,7 @@ $(OBJDIR):
 	+@[ -d $@/base/libs/timeio/fpic ] || mkdir -p $@/base/libs/timeio/fpic
 	+@[ -d $@/base/libs/misc/fpic ] || mkdir -p $@/base/libs/misc/fpic
 	+@[ -d $@/base/libs/fitsrw/fpic ] || mkdir -p $@/base/libs/fitsrw/fpic
+	+@[ -d $@/base/libs/errlog ] || mkdir -p $@/base/libs/errlog
 	+@[ -d $@/base/local/libs/dsds ] || mkdir -p $@/base/local/libs/dsds
 	+@[ -d $@/base/local/libs/soi ] || mkdir -p $@/base/local/libs/soi
 	+@[ -d $@/base/sums/apps ] || mkdir -p $@/base/sums/apps

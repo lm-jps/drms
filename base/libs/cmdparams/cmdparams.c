@@ -260,11 +260,12 @@ static int parse_numerated (char *klist, char ***names) {
   return found;
 }
 
+/* works on both float and doubles */
 static int parse_range_float (char *range, double *min, double *max,
   int *minopen, int *maxopen) {
 /*
  *  Parse a numeric range identifier string according to the rule
- *    range = {[ | (}{number},{number}{] | )]
+ *    range = {'[' | '('}{number},{number}{']' | ')'}
  *    where the optional left (right) bracket or left (right) parenthesis
  *    specifies a closed or open interval for the minimum (maximum) (closed
  *    by default) and a missing (minimum) maximum number is interpreted as
@@ -367,10 +368,10 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
 				     cmdparams_get_str (parms, defps->name, NULL))))
             fprintf (stderr, "array parsing returned error\n");
 	} 
-	else if (defps->type == ARG_FLOAT) 
+	else if (defps->type == ARG_FLOAT || defps->type == ARG_DOUBLE) 
 	{
-/*  Might want to check range of numeric (and time) type arguments here,
-					 once a syntax has been established  */
+	   /*  Might want to check range of numeric (and time) type arguments here,
+	       once a syntax has been established  */
 	  if (defps->range && strlen (defps->range)) {
 	    double minvalid, maxvalid;
 	    int minopen, maxopen;

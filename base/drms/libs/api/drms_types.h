@@ -23,6 +23,7 @@
 #define DRMS_MAXKEYNAMELEN     DRMS_MAXNAMELEN
 #define DRMS_MAXLINKNAMELEN    DRMS_MAXNAMELEN
 #define DRMS_MAXSEGNAMELEN     DRMS_MAXNAMELEN
+#define DRMS_MAXCURSORNAMELEN  (64) /* by default, postgres identifiers are 63 bytes max */
 /** \brief Maximum DRMS hash byte length */
 #define DRMS_MAXHASHKEYLEN     (DRMS_MAXSERIESNAMELEN+22)
 /** \brief Maximum byte length of unit string */
@@ -51,6 +52,9 @@ longer than this is encountered we assume that there is a cyclic
 link. */
 #define DRMS_MAXLINKDEPTH  (20) 
 #define DRMS_MAXHOSTNAME (128)
+
+/** \brief Maximum number of in-memory records */
+#define DRMS_MAXCHUNKSIZE      (4096)
 
 #include "drms_protocol.h"
 
@@ -367,6 +371,37 @@ typedef struct DRMS_SumRequest_struct
 */
 typedef enum {DRMS_PERMANENT, DRMS_TRANSIENT} DRMS_RecLifetime_t;
 
+/** \brief DRMS cursor seek */
+enum DRMS_RecSetCursorSeek_enum
+{
+   kRSChunk_First = 0,
+   kRSChunk_Last,
+   kRSChunk_Abs,
+   kRSChunk_Next,
+   kRSChunk_Prev
+};
+
+typedef enum DRMS_RecSetCursorSeek_enum DRMS_RecSetCursorSeek_t;
+
+/** \brief DRMS cursor struct */
+struct DRMS_RecSetCursor_struct
+{
+  /** \brief Name of cursor recognized by database query */
+  char name[DRMS_MAXCURSORNAMELEN];
+  /** \brief DRMS session environment - needed for querying db for next chunk */
+  DRMS_Env_t *env; 
+  /** \brief Chunk size */
+  int chunksize;
+  /** \brief The index of the chunk currently loaded in the record-set */
+  /* If this is -1, then there are no chunks in memory. */
+  int currentchunk;
+  /** \brief The index of the current record in the downloaded chunk 0 <= currentrec <= chunksize */
+  int currentrec;
+};
+
+/** \brief DRMS cursor struct reference */
+typedef struct DRMS_RecSetCursor_struct DRMS_RecSetCursor_t;
+
 typedef enum DRMS_RecordSetType_struct
 {
    kRecordSetType_DRMS = 0,
@@ -378,18 +413,23 @@ typedef enum DRMS_RecordSetType_struct
 /** \brief DRMS-Record-set container */
 struct DRMS_RecordSet_struct
 {
-  /** /brief Number of records in the set */
+  /** \brief Number of records in the set */
   int n;
-  /** /brief The set of records */
+  /** \brief The set of records */
   struct DRMS_Record_struct **records;
-  /** /brief The number of subsets in the set */
+  /** \brief The number of subsets in the set */
   int ss_n;
-  /** /brief The queries that generated the subsets */
+  /** \brief The queries that generated the subsets */
   char **ss_queries;
-  /** /brief The query types */
+  /** \brief The query types */
   DRMS_RecordSetType_t *ss_types;
-  /** /brief Pointers to the beginning of each subset */
-  struct DRMS_Record_struct **ss_starts;
+  /** \brief Array of offsets to the beginning of each subset */
+  int *ss_starts;
+  /** \brief Index (relative to first item in subset) of current record in subset. */
+  int ss_current;
+  /** \brief DRMS record-set cursor - essentially a pointer into the return set of database records */
+  /* NULL cursor means that this record-set is NOT chunked. */
+  DRMS_RecSetCursor_t *cursor;
 };
 
 /** \brief DRMS record struct reference */
@@ -1045,6 +1085,7 @@ struct DRMS_KeyMap_struct {
 
 /** \brief DRMS keymap struct reference */
 typedef struct DRMS_KeyMap_struct DRMS_KeyMap_t;
+
 
 /*********** Various utility functions ****************/
 DRMS_Type_t drms_str2type(const char *);
