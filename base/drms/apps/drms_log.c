@@ -21,6 +21,7 @@ create_series delete_series describe_series modify_series show_info
 #include "jsoc_main.h"
 
 ModuleArgs_t module_args[] = { 
+  {ARG_FLAG, "p", "0", "list the record\'s storage_unit path"},
   {ARG_END}
 };
 
@@ -37,22 +38,36 @@ int DoIt(void) {
       for (int j = 0; j < rs->n; j++) {
 	DRMS_Record_t *rec = rs->records[j];
 	printf("recnum = %lld: ", rec->recnum);
-	sprintf(query, "select online_loc, online_status, jsoc_version from sum_main a, %s.drms_session b where a.ds_index = b.sunum and b.sessionid=%lld", rec->sessionns, rec->sessionid);
+	sprintf(query, "select online_loc, online_status, jsoc_version, b.sunum from sum_main a, %s.drms_session b where a.ds_index = b.sunum and b.sessionid=%lld", rec->sessionns, rec->sessionid);
 	DB_Text_Result_t *qres;
 	if ((qres = drms_query_txt(drms_env->session, query)) && qres->num_rows>0) {
 	  if (qres->field[0][1][0] == 'Y') {
 	    printf("Log SU=%s\n",qres->field[0][0]);
 	  } else {
-	    printf("Log exists, but has gone off-line. This should not have happened.\n");
+	    int want_path = cmdparams_get_int (&cmdparams, "p", NULL) != 0;
+	    if (!want_path) {
+	      printf("Log exists, but has gone off-line\n");
+	    } else {
+	      DRMS_StorageUnit_t *su;
+	      XASSERT(su = malloc(sizeof(DRMS_StorageUnit_t)));
+
+	      su->sunum = atoll(qres->field[0][3]);
+	      drms_env->retention = DRMS_LOG_RETENTION;
+	      status = drms_su_getsudir(drms_env, su, 1);
+	      if (!status) {
+		printf("Log SU=%s\n", su->sudir);
+	      }
+	      free(su);
+	    }
+	  }
+	  printf("jsoc version: ");
+	  if (qres->field[0][2][0]) {
+	    printf("%s\n", qres->field[0][2]);
+	  } else {
+	    printf("Undefined\n");
 	  }
 	} else {
 	  printf("No log avaliable\n");
-	}
-	printf("jsoc version: ");
-	if (qres->field[0][2][0]) {
-	  printf("%s\n", qres->field[0][2]);
-	} else {
-	  printf("Undefined\n");
 	}
 	db_free_text_result(qres);
       }
