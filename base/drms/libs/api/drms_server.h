@@ -21,8 +21,10 @@ extern char abortstring[1024];
 
 /* Values used for the storage unit containing the session log file. */
 #define DRMS_LOG_DSNAME     "drms_logs"
+//#define DRMS_LOG_RETENTION  (2592000)
+#define DRMS_LOG_RETENTION  (10)
 #define DRMS_LOG_TAPEGROUP  1
-#define DRMS_LOG_RETENTION  (2592000)
+
 #define WEEK_SECONDS (60*60*24*7)
 
 
