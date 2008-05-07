@@ -64,7 +64,7 @@ ReadMode('normal');
 print "\n";
 if($passwd ne "hmi4sdo") {
   print "Invalid passwd\n";
-  #exit(1);
+  exit(1);
 }
 open(ID, $tapeidfile) || die "Can't open $tapeidfile: $!\n";
 while(<ID>) {
@@ -87,7 +87,7 @@ while(1) {
     }
   }
   print "found $found instances running\n";
-  if($found < 6) {
+  if($found < 7) {
     if(!($tid = shift(@idlist))) {
       print "###All done with list of input tapes\n";
       exit;
