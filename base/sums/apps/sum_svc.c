@@ -24,6 +24,7 @@
 #include <SUM.h>
 #include <sys/socket.h>
 #include <sys/errno.h>
+#include <sys/time.h>
 #include <rpc/rpc.h>
 #include <rpc/pmap_clnt.h>
 #include <signal.h>
@@ -37,8 +38,10 @@ extern PART ptabx[]; 	/* defined in SUMLIB_PavailRequest.pgc */
 void logkey();
 extern int errno;
 static void sumprog_1();
-struct timeval TIMEOUT = { 120, 0 };
+struct timeval TIMEOUT = { 60, 0 };
 uint32_t rinfo;
+float ftmp;
+static struct timeval first[4], second[4];
 
 FILE *logfp;
 CLIENT *current_client, *clnttape;
@@ -51,6 +54,23 @@ int soi_errno = NO_ERROR;
 int debugflg = 0;
 int sim = 0;
 int tapeoffline = 0;
+
+/*********************************************************/
+void StartTimer(int n)
+{
+  gettimeofday (&first[n], NULL);
+}
+
+float StopTimer(int n)
+{
+  gettimeofday (&second[n], NULL);
+  if (first[n].tv_usec > second[n].tv_usec) {
+    second[n].tv_usec += 1000000;
+    second[n].tv_sec--;
+  }
+  return (float) (second[n].tv_sec-first[n].tv_sec) +
+    (float) (second[n].tv_usec-first[n].tv_usec)/1000000.0;
+}
 
 /*********************************************************/
 void open_log(char *filename)
@@ -373,6 +393,9 @@ sumprog_1(rqstp, transp)
 	struct svc_req *rqstp;
 	SVCXPRT *transp;
 {
+  char procname[128];
+
+	StartTimer(1);
 	union __svcargun {
 		Rkey sumdo_1_arg;
 	} argument;
@@ -394,36 +417,43 @@ sumprog_1(rqstp, transp)
 /*		break;
 */
 	case OPENDO:
+		sprintf(procname, "OPENDO");	//!!TEMP name tags
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_uint32_t;
 		local = (char *(*)()) opendo_1;
 		break;
 	case ALLOCDO:
+		sprintf(procname, "ALLOCDO");
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_Rkey;
 		local = (char *(*)()) allocdo_1;
 		break;
 	case GETDO:
+		sprintf(procname, "GETDO");
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_Rkey;
 		local = (char *(*)()) getdo_1;
 		break;
 	case PUTDO:
+		sprintf(procname, "PUTDO");
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_Rkey;
 		local = (char *(*)()) putdo_1;
 		break;
 	case CLOSEDO:
+		sprintf(procname, "CLOSEDO");
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_uint32_t;
 		local = (char *(*)()) closedo_1;
 		break;
 	case SUMRESPDO:
+		sprintf(procname, "SUMRESPDO");
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_Rkey;
 		local = (char *(*)()) sumrespdo_1;
 		break;
 	case DELSERIESDO:
+		sprintf(procname, "DELSERIESDO");
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_uint32_t;
 		local = (char *(*)()) delseriesdo_1;
@@ -478,5 +508,7 @@ sumprog_1(rqstp, transp)
 	write_log("**unable to free arguments\n");
 	/*exit(1);*/
       }
+      ftmp = StopTimer(1);
+      write_log("#END: %s %fsec\n", procname, ftmp);	//!!TEMP for test
       return;
 }
