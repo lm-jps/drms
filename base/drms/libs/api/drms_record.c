@@ -1768,7 +1768,7 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
   series = template->seriesinfo->seriesname;
 
   /* Get unique sequence numbers from the database server. */
-  if ((recnum = drms_alloc_recnum(env->session, series, lifetime, n)) == NULL)
+  if ((recnum = drms_alloc_recnum(env, series, lifetime, n)) == NULL)
   {
     stat = DRMS_ERROR_BADSEQUENCE;
     goto failure;
@@ -2095,7 +2095,7 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
     n = last-first;
     
     /* Get unique sequence numbers from the database server. */
-    if ((recnum = drms_alloc_recnum(env->session, series, lifetime, n)) == NULL)
+    if ((recnum = drms_alloc_recnum(env, series, lifetime, n)) == NULL)
     {
       stat = DRMS_ERROR_BADSEQUENCE;
       goto failure;
@@ -4154,7 +4154,6 @@ long long drms_keylist_memsize(DRMS_Record_t *rec, char *keylist) {
   *dst = '\0';
 
   char *p = list;
-  int len = 0;
   while (*p != '\0') {
     char *start = p;
     int len = 0;

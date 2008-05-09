@@ -89,7 +89,7 @@ DRMS_StorageUnit_t *drms_getunit(DRMS_Env_t *env,  char *series,
 int drms_getunits(DRMS_Env_t *env,  char *series, 
 		  int n, long long *sunum, int retrieve, int dontwait);
 /** \brief Request \c n recnum */
-long long *drms_alloc_recnum(DRMS_Session_t *session,  char *series, 
+long long *drms_alloc_recnum(DRMS_Env_t *env,  char *series, 
 			     DRMS_RecLifetime_t lifetime, int n);
 /** \brief Mark a storage unit slot as either ::DRMS_SLOT_FREE, ::DRMS_SLOT_FULL, or ::DRMS_SLOT_TEMP. */
 int drms_slot_setstate(DRMS_Env_t *env, char *series, long long sunum, 

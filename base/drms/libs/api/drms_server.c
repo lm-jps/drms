@@ -967,7 +967,6 @@ int drms_server_alloc_recnum(DRMS_Env_t *env, int sockfd)
   char *series;
   DRMS_RecLifetime_t lifetime;
   long long *recnums;
-  DS_node_t *ds=(DS_node_t *) NULL; /*ISS - #21*/
   int tmp;
   struct iovec vec[3];
 
@@ -989,47 +988,7 @@ int drms_server_alloc_recnum(DRMS_Env_t *env, int sockfd)
     if (lifetime == DRMS_TRANSIENT)
     {
       drms_lock_server(env);
-      if (!env->templist)
-      {
-	XASSERT(env->templist = ds = malloc(sizeof(DS_node_t)));
-	ds->series = strdup(series);
-	ds->nmax = 512;
-	ds->n = 0;
-	XASSERT(ds->recnums = malloc(ds->nmax*sizeof(long long)));
-	ds->next = NULL;
-      }
-      else
-      {
-	if (ds == (DS_node_t *) NULL) ds = env->templist; /* ISS - #21*/
-	while(1)
-	{
-	  if (!strcmp(ds->series,series))
-	    break;
-	  else
-	  {
-	    if (!ds->next)
-	    {
-	      XASSERT(ds->next = malloc(sizeof(DS_node_t)));
-	      ds = ds->next;
-	      ds->series = strdup(series);
-	      ds->nmax = 512;
-	      ds->n = 0;
-	      XASSERT(ds->recnums = malloc(ds->nmax*sizeof(long long)));
-	      ds->next = NULL;
-	      break;
-	    }
-	    ds = ds->next;
-	  }
-	}    
-      }
-      if ( ds->n+n >= ds->nmax )
-      {
-	ds->nmax *= 2;
-	XASSERT(ds->recnums = realloc(ds->recnums, 
-				      ds->nmax*sizeof(long long)));
-      }
-      for (i=0; i<n; i++)
-	ds->recnums[(ds->n)++] = recnums[i];
+      drms_server_transient_records(env, series, n, recnums);
       drms_unlock_server(env);
     }
 
@@ -1049,6 +1008,51 @@ int drms_server_alloc_recnum(DRMS_Env_t *env, int sockfd)
   return status;
 }
 
+void drms_server_transient_records(DRMS_Env_t *env, char *series, int n, long long *recnums) {
+  DS_node_t *ds=(DS_node_t *) NULL; /*ISS - #21*/
+
+  if (!env->templist)
+    {
+      XASSERT(env->templist = ds = malloc(sizeof(DS_node_t)));
+      ds->series = strdup(series);
+      ds->nmax = 512;
+      ds->n = 0;
+      XASSERT(ds->recnums = malloc(ds->nmax*sizeof(long long)));
+      ds->next = NULL;
+    }
+  else
+    {
+      if (ds == (DS_node_t *) NULL) ds = env->templist; /* ISS - #21*/
+      while(1)
+	{
+	  if (!strcmp(ds->series,series))
+	    break;
+	  else
+	    {
+	      if (!ds->next)
+		{
+		  XASSERT(ds->next = malloc(sizeof(DS_node_t)));
+		  ds = ds->next;
+		  ds->series = strdup(series);
+		  ds->nmax = 512;
+		  ds->n = 0;
+		  XASSERT(ds->recnums = malloc(ds->nmax*sizeof(long long)));
+		  ds->next = NULL;
+		  break;
+		}
+	      ds = ds->next;
+	    }
+	}    
+    }
+  if ( ds->n+n >= ds->nmax )
+    {
+      ds->nmax *= 2;
+      XASSERT(ds->recnums = realloc(ds->recnums, 
+				    ds->nmax*sizeof(long long)));
+    }
+  for (int i=0; i<n; i++)
+    ds->recnums[(ds->n)++] = recnums[i];
+}
 
 
 /* Server stub for drms_su_freeslot and drms_su_markstate. */

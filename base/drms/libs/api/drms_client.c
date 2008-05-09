@@ -759,7 +759,7 @@ long long drms_sequence_getlast(DRMS_Session_t *session,  char *table)
 
 
 
-long long *drms_alloc_recnum(DRMS_Session_t *session,  char *series, 
+long long *drms_alloc_recnum(DRMS_Env_t *env,  char *series, 
 			     DRMS_RecLifetime_t lifetime, int n)
 {
   int i, status;
@@ -768,16 +768,19 @@ long long *drms_alloc_recnum(DRMS_Session_t *session,  char *series,
   int tmp[2], len;
 
 #ifndef DRMS_CLIENT
-  if (session->db_direct)
+  if (env->session->db_direct)
   {
-    return db_sequence_getnext_n(session->db_handle, series, n);
+    seqnums = db_sequence_getnext_n(env->session->db_handle, series, n);
+    drms_server_transient_records(env, series, n, seqnums);
+    return seqnums;
   }
   else
 #else
-    XASSERT(session->db_direct==0);
+    XASSERT(env->session->db_direct==0);
 #endif
   {
-    drms_send_commandcode(session->sockfd, DRMS_ALLOC_RECNUM);
+    int sockfd = env->session->sockfd;
+    drms_send_commandcode(sockfd, DRMS_ALLOC_RECNUM);
     vec[1].iov_len = strlen(series);
     vec[1].iov_base = series;
     len = htonl(vec[1].iov_len);
@@ -789,14 +792,14 @@ long long *drms_alloc_recnum(DRMS_Session_t *session,  char *series,
     tmp[1] = htonl((int)lifetime);
     vec[3].iov_len = sizeof(tmp[1]);
     vec[3].iov_base = &tmp[1];
-    Writevn(session->sockfd, vec, 4);
+    Writevn(sockfd, vec, 4);
     
-    status = Readint(session->sockfd);
+    status = Readint(sockfd);
     if (status==0)
     {
       XASSERT(seqnums = malloc(n*sizeof(long long)));
       for (i=0; i<n; i++)
-	seqnums[i] = (long long)Readlonglong(session->sockfd);
+	seqnums[i] = (long long)Readlonglong(sockfd);
       return seqnums;
     }
     else

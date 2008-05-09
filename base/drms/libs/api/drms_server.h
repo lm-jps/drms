@@ -63,6 +63,8 @@ long long drms_server_gettmpguid(int *sockfd);
 
 /** \brief Server function for command code ::DRMS_ALLOC_RECNUM. */
 int drms_server_alloc_recnum(DRMS_Env_t *env, int sockfd);
+/** \brief Add recnums of transient records to templist for future removal */
+void drms_server_transient_records(DRMS_Env_t *env, char *series, int n, long long *recnums);
 /** \brief Close DRMS session */
 int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients, 
 			      int log_retention, int archive_log);
