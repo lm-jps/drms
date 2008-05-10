@@ -771,7 +771,10 @@ long long *drms_alloc_recnum(DRMS_Env_t *env,  char *series,
   if (env->session->db_direct)
   {
     seqnums = db_sequence_getnext_n(env->session->db_handle, series, n);
-    drms_server_transient_records(env, series, n, seqnums);
+    if (lifetime == DRMS_TRANSIENT)
+    {
+       drms_server_transient_records(env, series, n, seqnums);
+    }
     return seqnums;
   }
   else
