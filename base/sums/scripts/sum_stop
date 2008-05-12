@@ -3,8 +3,8 @@
 #This is to stop the sum_svc and related servers.
 #
 $| = 1;                 #flush output as we go
-$DB = "jsoc";		#the "real" db that production uses
-#$DB = "jsocdc";		#the "real" db that production uses
+$DB = "jsoc_sums";	#the "real" db that production uses for sums
+$DBDRMS = "jsoc";	#the db sum_pe_rpc uses for drms
 $GREPPS = "388";
 #$GREPPS = "jim";
 $HOST = "d00.Stanford.EDU"; #where sum_svc runs
@@ -109,7 +109,7 @@ while($_ = shift(@ps_prod)) {
       ($a, $psid, $c) = split(/\s+/, $_);
       $process = "sum_rm";
     }
-    elsif(/sum_pe_svc $DB/) {
+    elsif(/sum_pe_svc $DBDRMS/) {
       ($a, $psid, $c) = split(/\s+/, $_);
       $process = "sum_pe_svc";
     }

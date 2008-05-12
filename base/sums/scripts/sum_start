@@ -4,8 +4,8 @@
 #Call with -M will not send mail notification.
 #
 $| = 1;                 #flush output as we go
-$DB = "jsoc";		#the "real" db that production uses
-#$DB = "jsocdc";		#the "real" db that production uses
+$DB = "jsoc_sums";	#the "real" db that production uses for sums
+$DBDRMS = "jsoc";	#the db use for drms (used by sum_pe_svc)
 $GREPPS = "388";	#grep for this in ps -ef
 #$GREPPS = "jim";
 $HOST = "d00.Stanford.EDU"; #where sum_svc runs
@@ -83,7 +83,7 @@ while($_ = shift(@ps_prod)) {
       ($a, $psid, $c) = split(/\s+/, $_);
       $process = "sum_rm";
     }
-    elsif(/sum_pe_svc $DB/) {
+    elsif(/sum_pe_svc $DBDRMS/) {
       ($a, $psid, $c) = split(/\s+/, $_);
       $process = "sum_pe_svc";
     }
@@ -139,7 +139,7 @@ while($_ = shift(@ps_prod)) {
               print "Error: sum_rm $DB still running after sum_stop?\n";
               exit;
             }
-            elsif(/sum_pe_svc $DB/) {
+            elsif(/sum_pe_svc $DBDRMS/) {
               print "Error: sum_pe_svc $DB still running after sum_stop?\n";
               exit;
             }
@@ -159,9 +159,9 @@ while($_ = shift(@ps_prod)) {
 }
         print "** Now starting: sum_svc $DB\n";
         print LOG "** Now starting: sum_svc $DB\n";
-        $cmd = "sum_pe_svc $DB &";
+        $cmd = "sum_pe_svc $DBDRMS &";
         if(system($cmd)) {
-          print "Error: failure on sum_pe_svc $DB\n";
+          print "Error: failure on sum_pe_svc $DBDRMS\n";
         }
         $cmd = "sum_svc $DB &";
         if(system($cmd)) {
