@@ -389,8 +389,8 @@ typedef enum DRMS_RecSetCursorSeek_enum DRMS_RecSetCursorSeek_t;
 /** \brief DRMS cursor struct */
 struct DRMS_RecSetCursor_struct
 {
-  /** \brief Name of cursor recognized by database query */
-  char name[DRMS_MAXCURSORNAMELEN];
+  /** \brief Array of cursor names recognized by database query */
+  char **names;
   /** \brief DRMS session environment - needed for querying db for next chunk */
   DRMS_Env_t *env; 
   /** \brief Chunk size */
@@ -428,8 +428,8 @@ struct DRMS_RecordSet_struct
   DRMS_RecordSetType_t *ss_types;
   /** \brief Array of offsets to the beginning of each subset */
   int *ss_starts;
-  /** \brief Index (relative to first item in subset) of current record in subset. */
-  int ss_current;
+  /** \brief Index (relative to first item in subset) of current record in each subset. */
+  int *ss_currentrecs;
   /** \brief DRMS record-set cursor - essentially a pointer into the return set of database records */
   /* NULL cursor means that this record-set is NOT chunked. */
   DRMS_RecSetCursor_t *cursor;

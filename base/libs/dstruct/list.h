@@ -12,11 +12,13 @@ struct LinkedList_struct
 {
   unsigned int dsize;
   ListNode_t *first;
-  struct LinkedList_struct *next;
+  ListNode_t *next; /* used for iterating */
 };
 typedef struct LinkedList_struct LinkedList_t;
 
 LinkedList_t *list_llcreate(unsigned int datasize);
 LinkedList_t *list_llinsert(LinkedList_t *llist, void *data);
+ListNode_t *list_llnext(LinkedList_t *llist);
+void list_llfree(LinkedList_t **llist);
 
 #endif /* _LIST_H */

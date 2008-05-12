@@ -756,7 +756,7 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
    rset->ss_queries = NULL;
    rset->ss_types = NULL;
    rset->ss_starts = NULL;
-   rset->ss_current = -1;
+   rset->ss_currentrecs = NULL;
    rset->cursor = NULL;
 
    int iNewRec = 1;
@@ -1459,7 +1459,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 		 rs->ss_queries = NULL;
 		 rs->ss_types = NULL;
 		 rs->ss_starts = NULL;
-		 rs->ss_current = -1;
+		 rs->ss_currentrecs = NULL;
 		 rs->cursor = NULL;		
 	      }
 
@@ -1546,7 +1546,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 	   ret->ss_queries = NULL;
 	   ret->ss_types = NULL;
 	   ret->ss_starts = NULL;
-	   ret->ss_current = -1;
+	   ret->ss_currentrecs = NULL;
 	   ret->cursor = NULL;
 	}
      }
@@ -1627,17 +1627,18 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 	ret->ss_n = nsets;
 	ret->ss_starts = setstarts; /* ret assumes ownership */
 	setstarts = NULL;
-	ret->ss_current = -1;
+	ret->ss_currentrecs = (int *)malloc(sizeof(int) * nsets);
 	ret->cursor = NULL;
 	/* ret can't assume ownership of sets or settypes */
 	ret->ss_queries = (char **)malloc(sizeof(char *) * nsets);
 	ret->ss_types = (DRMS_RecordSetType_t *)malloc(sizeof(DRMS_RecordSetType_t) * nsets);
-	if (ret->ss_queries && ret->ss_types)
+	if (ret->ss_currentrecs && ret->ss_queries && ret->ss_types)
 	{
 	   for (iSet = 0; iSet < nsets; iSet++)
 	   {
 	      ret->ss_queries[iSet] = strdup(sets[iSet]);
 	      ret->ss_types[iSet] = settypes[iSet];
+	      ret->ss_currentrecs[iSet] = -1;
 	   }
 	}
 	else
@@ -1762,7 +1763,7 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
   rs->ss_queries = NULL;
   rs->ss_types = NULL;
   rs->ss_starts = NULL;
-  rs->ss_current = -1;
+  rs->ss_currentrecs = NULL;
   rs->cursor = NULL;
 
   series = template->seriesinfo->seriesname;
@@ -1882,7 +1883,7 @@ DRMS_RecordSet_t *drms_create_recprotos(DRMS_RecordSet_t *recset, int *status)
       detached->ss_queries = NULL;
       detached->ss_types = NULL;
       detached->ss_starts = NULL;
-      detached->ss_current = -1;
+      detached->ss_currentrecs = NULL;
       detached->cursor = NULL;
    }
    else
@@ -2080,7 +2081,7 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
   rs_out->ss_queries = NULL;
   rs_out->ss_types = NULL;
   rs_out->ss_starts = NULL;
-  rs_out->ss_current = -1;
+  rs_out->ss_currentrecs = NULL;
   rs_out->cursor = NULL;
   
   /* Outer loop over runs of input records from the same series. */
@@ -2408,6 +2409,11 @@ void drms_free_records(DRMS_RecordSet_t *rs)
      free(rs->ss_starts);
      rs->ss_starts = NULL;
   }
+  if (rs->ss_currentrecs)
+  {
+     free(rs->ss_currentrecs);
+     rs->ss_currentrecs = NULL;
+  }
   if (rs->cursor)
   {
      free(rs->cursor);
@@ -2462,7 +2468,7 @@ DRMS_Record_t *drms_clone_record(DRMS_Record_t *oldrec,
   rs_old.ss_queries = NULL;
   rs_old.ss_types = NULL;
   rs_old.ss_starts = NULL;
-  rs_old.ss_current = -1;
+  rs_old.ss_currentrecs = NULL;
   rs_old.cursor = NULL;
 
   rs = drms_clone_records(&rs_old, lifetime, mode, status);
@@ -2503,7 +2509,7 @@ int drms_close_record(DRMS_Record_t *rec, int action)
   rs_old->ss_queries = NULL;
   rs_old->ss_types = NULL;
   rs_old->ss_starts = NULL;
-  rs_old->ss_current = -1;
+  rs_old->ss_currentrecs = NULL;
   rs_old->cursor = NULL;
 
   return drms_close_records(rs_old, action);
@@ -2781,7 +2787,7 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
   rs->ss_queries = NULL;
   rs->ss_types = NULL;
   rs->ss_starts = NULL;
-  rs->ss_current = -1;
+  rs->ss_currentrecs = NULL;
   rs->cursor = NULL;
 
   db_free_binary_result(qres);   
@@ -3298,7 +3304,7 @@ int drms_populate_record(DRMS_Record_t *rec, long long recnum)
   rs.ss_queries = NULL;
   rs.ss_types = NULL;
   rs.ss_starts = NULL;
-  rs.ss_current = -1;
+  rs.ss_currentrecs = NULL;
   rs.cursor = NULL;
 
   stat = drms_populate_records(&rs,qres);
@@ -5646,7 +5652,7 @@ int drms_open_recordchunk(DRMS_RecordSet_t *rs,
    {
       int chunkindex = -1;
       int irec = -1;
-      long long recindex = -1; /* record seeking to */
+      long long recindex = -1; /* record seeking to, absolute index */
       DRMS_RecordSet_t *fetchedrecs = NULL;
       
       switch (seektype)
@@ -5702,18 +5708,57 @@ int drms_open_recordchunk(DRMS_RecordSet_t *rs,
 	 nrecs = (ninchunk < rs->cursor->chunksize) ? ninchunk : rs->cursor->chunksize;
 	 /* Create the cursor fetch query that gets chunksize records */
 
-	 /* Run the fetch query */
-	 // fetchedrecs = drms_query_bin();
+	 /* A chunk may span more than one dbase cursor */
+	 long long recindex_chunkst = rs->cursor->chunksize * chunkindex;
+	 long long recindex_chunkend = recindex_chunkst + rs->cursor->chunksize - 1;
+	 long long recindex_ssst;
+	 long long recindex_ssend;
+	 int ssnrecs;
+	 int iset;
+	 int ifr = 0;
+	 irec = chunkindex * rs->cursor->chunksize;
 
-	 /* Put the records into rs */
-	 int ifr;
-	 for (irec = chunkindex * rs->cursor->chunksize, ifr = 0; irec < nrecs; irec++, ifr++)
+	 for (iset = 0; iset < rs->ss_n; iset++)
 	 {
-	    rs->records[irec] = fetchedrecs->records[ifr]; /* assumes ownership */
-	    fetchedrecs->records[ifr] = NULL;
+	    recindex_ssst = rs->ss_starts[iset];
+	    ssnrecs = drms_recordset_getssnrecs(rs, iset, &stat);
+
+	    if ((recindex_ssst >= recindex_chunkst && recindex_ssst <= recindex_chunkend) ||
+		recindex_ssend >= recindex_chunkst && recindex_ssend <= recindex_chunkend)
+	    {
+	       /* This subset falls within the current chunk - retrieve some
+		* records */
+
+#if 0
+	       fetchedrecs = drms_query_bin(); // try to get nrecs - ifr
+#endif
+	       if (fetchedrecs)
+	       {
+		  /* Put the records into rs */
+		  int nrecs_thisset;
+		  for (nrecs_thisset = 0; 
+		       nrecs_thisset < fetchedrecs->n; 
+		       irec++, ifr++, nrecs_thisset++)
+		  {
+		     rs->records[irec] = 
+		       fetchedrecs->records[nrecs_thisset]; /* assumes ownership */
+		     fetchedrecs->records[nrecs_thisset] = NULL;
+		  }
+
+		  if (ifr == nrecs)
+		  {
+		     /* Got all recs needed from this subset - exit*/
+		     break;
+		  }
+
+		  drms_close_records(fetchedrecs, DRMS_FREE_RECORD);
+	       }
+	    }
 	 }
 
-	 drms_close_records(fetchedrecs, DRMS_FREE_RECORD);
+	
+
+
 
 	 rs->cursor->currentchunk = chunkindex;
 	 rs->cursor->currentrec = recindex % rs->cursor->chunksize;
@@ -5790,49 +5835,75 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
    int stat = DRMS_SUCCESS;
    char cursorquery[DRMS_MAXQUERYLEN];
    char cursorname[DRMS_MAXCURSORNAMELEN];
-   char selquery[DRMS_MAXQUERYLEN];
+   char *seriesname = NULL;
+   char *pQuery = NULL;
+   int iset;
 
    if (rsquery)
    {
-      char *seriesname = drms_recordset_acquireseriesname(rsquery);
+     
+      /* XXX This needs to make use of a cursor so that reading records can be chunked. 
+       * For now, call drms_open_records() - in other words, all records are fetched . */
 
-      if (seriesname)
+      /* Create cursor */
+      LinkedList_t *querylist;
+      char *tmp = strdup(rsquery);
+      if (tmp)
       {
-	 /* XXX This needs to make use of a cursor so that reading records can be chunked. 
-	  * For now, call drms_open_records() - in other words, all records are fetched . */
-
-
-	 /* Create cursor */
-	 snprintf(cursorname, sizeof(cursorname), "%s_%lld", seriesname, guid++);
-	 snprintf(cursorquery, 
-		  sizeof(cursorquery), 
-		  "DECLARE %s SCROLL CURSOR FOR %s", 
-		  cursorname, 
-		  selquery);
-
-	 char *tmp = strdup(rsquery);
-	 rs = drms_open_records(env, tmp, &stat);
-	 if (rs && rs->n > 0)
-	 {
-	    rs->cursor = (DRMS_RecSetCursor_t *)malloc(sizeof(DRMS_RecSetCursor_t));
-	    snprintf(rs->cursor->name, DRMS_MAXCURSORNAMELEN, "%s_%lld", seriesname, guid++);
-	    rs->cursor->chunksize = drms_recordset_getchunksize();
-	    // rs->cursor->chunksize = rs->n;
-	    rs->cursor->currentchunk = -1;
-	    rs->cursor->currentrec = -1;
-	 }
-	 else
-	 {
-	    rs->cursor = NULL;
-	 }
-
-	 if (tmp)
-	 {
-	    free(tmp);
-	 }
-
-	 free(seriesname);
+	 rs = drms_open_records_internal(env, tmp, 0, &querylist, &stat);
+	 free(tmp);
       }
+
+      if (rs && rs->n > 0 && querylist)
+      {
+	 rs->cursor = (DRMS_RecSetCursor_t *)malloc(sizeof(DRMS_RecSetCursor_t));
+	 rs->cursor->names = (char **)malloc(sizeof(char *) * rs->ss_n);
+
+	 iset = 0;
+	 pQuery = (char *)(list_llnext(querylist)->data);
+	 while (pQuery)
+	 {
+	    seriesname = drms_recordset_acquireseriesname(rs->ss_queries[iset]);
+
+	    if (seriesname)
+	    {
+	       snprintf(cursorname, sizeof(cursorname), "%s_%lld", seriesname, guid++);
+	       snprintf(cursorquery, 
+			sizeof(cursorquery), 
+			"DECLARE %s SCROLL CURSOR FOR %s", 
+			cursorname, 
+			pQuery);
+	       rs->cursor->names[iset] = strdup(cursorname);
+	       free(seriesname);
+	    }
+
+	    pQuery = (char *)(list_llnext(querylist)->data);
+	 }
+
+	 list_llfree(&querylist);
+
+	 rs->cursor->chunksize = drms_recordset_getchunksize();
+	 // rs->cursor->chunksize = rs->n;
+	 rs->cursor->currentchunk = -1;
+	 rs->cursor->currentrec = -1;
+      }
+      else
+      {
+	 rs->cursor = NULL;
+      }
+
+      if (querylist)
+      {
+	    
+      }
+
+      if (tmp)
+      {
+	 free(tmp);
+      }
+
+      free(seriesname);
+      
    }
 
    if (status)
@@ -5930,7 +6001,7 @@ DRMS_Record_t *drms_recordset_fetchnextinset(DRMS_RecordSet_t *rs, int *setnum, 
    {
       int endset = drms_recordset_getssnrecs(rs, *setnum, &stat) - 1;
 
-      if (rs->ss_current == -1)
+      if (rs->ss_currentrecs[*setnum] == -1)
       {
 	 /* start of set iteration; point to the first rec in the set */
 	 long long firstinset = rs->ss_starts[*setnum];
@@ -5941,12 +6012,12 @@ DRMS_Record_t *drms_recordset_fetchnextinset(DRMS_RecordSet_t *rs, int *setnum, 
 	 rs->cursor->currentrec++;
 
 	 /* Point to the next in the subset */
-	 rs->ss_current = 1;
+	 rs->ss_currentrecs[*setnum] = 1;
       }
-      else if (rs->ss_current > endset)
+      else if (rs->ss_currentrecs[*setnum] > endset)
       {
 	 /* read past the end of the set */
-	 rs->ss_current = -1;
+	 rs->ss_currentrecs[*setnum] = -1;
 	 ret = NULL;
 
 	 /* Last record in recordset subset was read last time */
@@ -5959,13 +6030,13 @@ DRMS_Record_t *drms_recordset_fetchnextinset(DRMS_RecordSet_t *rs, int *setnum, 
 	 ret = drms_recordset_fetchnext(rs, &stat);
 	 if (!stat)
 	 {
-	    rs->ss_current++;
+	    (rs->ss_currentrecs[*setnum])++;
 	 }
 	 else
 	 {
 	    drms_close_recordchunk(rs);
 	    rs->cursor->currentrec = -1;
-	    rs->ss_current = -1;
+	    rs->ss_currentrecs[*setnum] = -1;
 	 }
       }
    }
