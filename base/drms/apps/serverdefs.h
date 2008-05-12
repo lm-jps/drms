@@ -6,7 +6,7 @@
 #ifndef __SERVERDEFS_H
 #define __SERVERDEFS_H
 /** \brief default dbhost */
-#define SERVER "hmidb2"
+#define SERVER "hmidb"
 /** \brief default user name */
 #define USER NULL
 /** \brief default passwd */
