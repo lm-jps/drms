@@ -636,6 +636,9 @@ static KEY *CreateSOIKeylist(const char *progspec, kDSDS_Stat_t *stat)
    return ret;
 }
 
+/* IMPORTANT NOTE: SDS has a type SDS_LONG, which is truly 
+ * the built-in type 'long'.  This means 32-bits on 32-bit machines, 
+ * and 64-bits on 64-bit machines. */
 static DRMS_Type_t SOITypeToDRMSType(int soiType)
 {
    DRMS_Type_t drmsType;
@@ -644,15 +647,19 @@ static DRMS_Type_t SOITypeToDRMSType(int soiType)
    {
       case SDS_LOGICAL:
       case SDS_BYTE:
+      case SDS_UBYTE:
 	drmsType = DRMS_TYPE_CHAR;
 	break;
       case SDS_SHORT:
+      case SDS_USHORT:
 	drmsType = DRMS_TYPE_SHORT;
 	break;
       case SDS_INT:
+      case SDS_UINT:
 	drmsType = DRMS_TYPE_INT;
 	break;
       case SDS_LONG:
+      case SDS_ULONG:
 	drmsType = DRMS_TYPE_LONGLONG;
 	break;
       case SDS_FLOAT:
@@ -675,6 +682,11 @@ static DRMS_Type_t SOITypeToDRMSType(int soiType)
 }
 
 /* Returns the equivalent drms type. */
+
+
+/* IMPORTANT NOTE: SDS has a type SDS_LONG, which is truly 
+ * the built-in type 'long'.  This means 32-bits on 32-bit machines, 
+ * and 64-bits on 64-bit machines. */
 int PolyValueToDRMSValue(int soiType, void *val, DRMS_Type_Value_t *value)
 {
    int error = 0;
@@ -682,26 +694,50 @@ int PolyValueToDRMSValue(int soiType, void *val, DRMS_Type_Value_t *value)
    switch (soiType)
    {
       case SDS_LOGICAL:
+	value->char_val = *((char *)val);
+	break;
       case SDS_BYTE:
-	value->char_val = *(char *)val;
+	value->char_val = *((signed char *)val);
+	break;
+      case SDS_UBYTE:
+	value->char_val = *((unsigned char *)val);
 	break;
       case SDS_SHORT:
-	value->short_val = *(short *)val;
+	value->short_val = *((short *)val);
+	break;
+      case SDS_USHORT:
+	value->short_val = *((unsigned short *)val);
 	break;
       case SDS_INT:
-	value->int_val = *(int *)val;
+	value->int_val = *((int *)val);
+	break;
+      case SDS_UINT:
+	value->int_val = *((unsigned int *)val);
 	break;
       case SDS_LONG:
-	value->longlong_val = *(long long *)val;
+	/* val is of type 'long', which may be either 32-bits or 64-bits, depending on
+	 * architecture */
+	{
+	  long longval = *((long *)val);
+	  value->longlong_val = (long long)longval;
+	}
+	break;
+      case SDS_ULONG:
+	/* val is of type 'unsigned long', which may be either 32-bits or 64-bits, depending on
+	 * architecture */
+	{
+	  long longval = *((unsigned long *)val);
+	  value->longlong_val = (long long)longval;
+	}
 	break;
       case SDS_FLOAT:
-	value->float_val = *(float *)val;
+	value->float_val = *((float *)val);
 	break;
       case SDS_DOUBLE:
-	value->double_val = *(double *)val;
+	value->double_val = *((double *)val);
 	break;
       case SDS_TIME:
-	value->time_val = *(double *)val;
+	value->time_val = *((double *)val);
 	break;
       case SDS_STRING:
 	value->string_val = strdup((char *)val);
@@ -744,8 +780,9 @@ static int GetKWFormat(char *buf, int size, DRMS_Type_t drmsType)
       case DRMS_TYPE_LONGLONG:
 	formatStr[0] = '%';
 	formatStr[1] = 'l';
-	formatStr[2] = 'd';
-	formatStr[3] = '\0';
+	formatStr[2] = 'l';
+	formatStr[3] = 'd';
+	formatStr[4] = '\0';
 	break;
       case DRMS_TYPE_FLOAT:
 	formatStr[0] = '%';
