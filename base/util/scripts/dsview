@@ -20,7 +20,9 @@ sub usage {
 }
 
 $DEFAULTDB = "jsoc";		#default DB
+$DBSUMS = "jsoc_sums";
 $HOSTDB = "hmidb";		#host where DB runs
+$PGPORT = 5434;			#for connection with jsoc_sum db
 $IMGDIR = "/home/jsoc/gallery"; #dir with the .gif files
 $INLOG = 0;			#use default tape_svc log
 $nsel = 200;			#number of records at a time to fetch
@@ -277,7 +279,7 @@ sub Sum_go {
   }
   $sumsql = "select * from sum_main where ds_index=$summainc";
   #print "sumsql = $sumsql\n";
-  @schema = `echo "$sumsql" | psql -h $hostdb $DB`;
+  @schema = `echo "$sumsql" | psql -h $hostdb -p $PGPORT $DBSUMS`;
   $dtabg = $mw->Toplevel();
   $dtabg->geometry("700x100+540+726");
   $dtabg->title("dsview - $ds");
