@@ -111,6 +111,9 @@ if($playback && $interactive) {
 #$ENV{'ORACLE_SID'} = $DB;
 #$ENV{'TWO_TASK'} = $DB;
 #$user = "jim";
+if($DB eq "jsoc_sums") {
+  $ENV{'PGPORT'} = "5434";      #jsoc_sums db uses non-default PGPORT
+}
 $hostdb = $HOSTDB;      #host where Postgres runs
 $UID = $<;              #get real user id
 #$HOME = $ENV{'HOME'};
