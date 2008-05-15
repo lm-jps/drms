@@ -1,4 +1,5 @@
 #include <SUM.h>
+#include <stdlib.h>
 #include <soi_error.h>
 #include <printk.h>
 
@@ -9,10 +10,13 @@ EXEC SQL BEGIN DECLARE SECTION;
   varchar user[80];
 EXEC SQL END DECLARE SECTION;
   char *dbuser, *dbhost;
+  char pgport[] = "5434";
 
 
     EXEC SQL WHENEVER SQLERROR GOTO sqlerror1;
 
+    
+    setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
     if(!(dbuser = (char *)getenv("USER"))) dbuser = "production";
 #ifdef SUMDC
     if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = "dcs0";
@@ -25,8 +29,8 @@ EXEC SQL END DECLARE SECTION;
     user.len = strlen(user.arr);
 
     	EXEC SQL CONNECT TO :target USER :user;
-    printk("Connect to Postgres host=%s db=%s user=%s OK\n", 
-		dbhost, dbname, dbuser);
+    printk("Connect to Postgres host=%s db=%s user=%s pgport=%s OK\n", 
+		dbhost, dbname, dbuser, pgport);
     EXEC SQL COMMIT WORK;
     return NO_ERROR;
 	
