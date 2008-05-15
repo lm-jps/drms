@@ -10,12 +10,13 @@ EXEC SQL BEGIN DECLARE SECTION;
   varchar user[80];
 EXEC SQL END DECLARE SECTION;
   char *dbuser, *dbhost;
-  char pgport[] = "5434";
+  char pgport[32];
 
 
     EXEC SQL WHENEVER SQLERROR GOTO sqlerror1;
 
-    
+   
+    sprintf(pgport, SUMPGPORT); 
     setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
     if(!(dbuser = (char *)getenv("USER"))) dbuser = "production";
 #ifdef SUMDC
