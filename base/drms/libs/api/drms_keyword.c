@@ -977,9 +977,13 @@ static int SetKeyInternal(DRMS_Record_t *rec, const char *key, DRMS_Value_t *val
 	 {
 	    /* Must also set index keyword */
 	    DRMS_Value_t indexval;
+	    DRMS_Value_t inval;
+
+	    inval.value = keyword->value;
+	    inval.type = keyword->info->type;
 
 	    retstat = drms_keyword_slotval2indexval(keyword, 
-						    value,
+						    &inval,
 						    &indexval,
 						    NULL);
 
