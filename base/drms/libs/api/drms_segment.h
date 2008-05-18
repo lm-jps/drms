@@ -208,39 +208,6 @@ int drms_segment_getdims(DRMS_Segment_t *seg, DRMS_SegmentDimInfo_t *di);
    @name Scaling and Blocksize
 */
 /* @{ */
-/* Set segment scaling. Can only be done when creating a new segment. */
-/**
-   Sets the values for key (metadata) values @c bscale[@c n] and @c bzero[@c n] in the
-   @c seg->record struct to @a bscale and @a bzero respectively,
-   where @a n is the segment number, @c seg->info->segnum.
-   These values are used by ::drms_segment_read and
-   ::drms_segment_write functions to scale the externally represented
-   data.
-
-   @param seg The segment whose data is to be scaled.
-   @param bzero Offset by which raw data values are to be shifted to 
-   produce actual data values.
-   @param bscale Scaling factor by which raw data values are to be multiplied to 
-   produce actual data values.
-   @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
-*/
-int drms_segment_setscaling(DRMS_Segment_t *seg, double bzero, double bscale);
-
-/**
-   Returns the scaling parameter keywords,
-   if they are present in the record struct @c seg->record (see ::drms_segment_setscaling)
-   as @a *bscale and @a *bzero. If no valid values are found,
-   the values 1.0 and 0,0, respectively, are returned.
-
-   @param seg The segment whose scaling is to be retrieved.
-   @param bzero Offset by which raw data values are to be shifted to 
-   produce actual data values, returned by reference.
-   @param bscale Scaling factor by which raw data values are to be multiplied to 
-   produce actual data value, returned by reference.
-   @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
-*/
-int drms_segment_getscaling(DRMS_Segment_t *seg, double *bzero, double *bscale);
-
 /* Set scaling for segment to accomodate data from the given array. */
 /**
    Sets the scaling parameters in the
@@ -258,8 +225,13 @@ int drms_segment_getscaling(DRMS_Segment_t *seg, double *bzero, double *bscale);
 
    @param seg The segment whose scaling is to be retrieved.
    @param array The DRMS array whose data is to be autoscaled.
+   @param autobzero bzero value to offset data by, returned by reference.
+   @param autobscale bscale value to scale data by, returned by reference
 */
-void drms_segment_autoscale(DRMS_Segment_t *seg, DRMS_Array_t *array);
+void drms_segment_autoscale(DRMS_Segment_t *seg, 
+			    DRMS_Array_t *arr, 
+			    double *autobzero, 
+			    double *autobscale);
 
 /* Set block sizes for tiled/blocked storage. */
 /**

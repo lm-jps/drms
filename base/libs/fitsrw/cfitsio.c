@@ -351,7 +351,7 @@ int cfitsio_read_image(char* fits_filename, void** image)
 
    switch(info.bitpix)
    {
-      case(BYTE_IMG):    data_type = TBYTE; break;
+      case(BYTE_IMG):    data_type = TSBYTE; break;
       case(SHORT_IMG):   data_type = TSHORT; break;
       case(LONG_IMG):    data_type = TINT; break; 
       case(LONGLONG_IMG):data_type = TLONGLONG; break;
@@ -543,9 +543,6 @@ int cfitsio_read_file(char* fits_filename, CFITSIO_IMAGE_INFO** image_info, void
    char key_value[FLEN_VALUE];
 
    int  data_type, bytepix, i; 
-   long	null_val = 0;		// don't check for null values in the image 
-   double bscale = 1.0;		// over ride BSCALE, if there is 
-   double bzero = 0.0;		// over ride BZERO, if there is 
 
    long	first_pixel, npixels;
 
@@ -704,7 +701,7 @@ int cfitsio_read_file(char* fits_filename, CFITSIO_IMAGE_INFO** image_info, void
 
    switch(info.bitpix)
    {
-      case(BYTE_IMG):    data_type = TBYTE; break;
+      case(BYTE_IMG):    data_type = TBYTE; break; /* When reading, data are an unsigned char array */
       case(SHORT_IMG):   data_type = TSHORT; break;
       case(LONG_IMG):    data_type = TINT; break; 
       case(LONGLONG_IMG):data_type = TLONGLONG; break;
@@ -724,9 +721,13 @@ int cfitsio_read_file(char* fits_filename, CFITSIO_IMAGE_INFO** image_info, void
       goto error_exit;
    }
 
-   //Turn off scaling and offset and image_null
-   fits_set_bscale(fptr, bscale, bzero, &status);
-   fits_set_imgnull(fptr, null_val, &status);
+   /* Don't let cfitsio apply the scale and blank keywords - scaling done in DRMS. 
+    * This is why, for the BYTE_IMG bitpix type, we must read as unsigned char, not signed char.  
+    * If you read signed char without applying the scale keywords, then the data values
+    * are unsigned values, half of which (128-255) fall outside of the range of 
+    * signed chars.  This would cause overflow. */
+   fits_set_bscale(fptr, 1.0, 0.0, &status); 
+   fits_set_imgnull(fptr, 0, &status);
 
    first_pixel = 1;
    if(fits_read_img(fptr, data_type, first_pixel, npixels, NULL, pixels,
@@ -738,6 +739,45 @@ int cfitsio_read_file(char* fits_filename, CFITSIO_IMAGE_INFO** image_info, void
 
    // Just checking....
    //cfitsio_dump_image(pixels, &info, 1, 2, 1, 10);
+
+   if (info.bitpix == BYTE_IMG)
+   {
+      /* Subtract 128 from data so that it fits into the signed char data type expected
+       * by DRMS */
+      int ipix;
+      unsigned char *pDataIn = (unsigned char *)pixels;
+      signed char *pDataOut = (signed char *)pixels;
+
+      for (ipix = 0; ipix < npixels; ipix++)
+      {
+	 pDataOut[ipix] = (signed char)(pDataIn[ipix] - 128);
+      }
+
+      /* D = d * bscale + bzero
+       *
+       * D - real, physical value
+       * d - value returned by cfitsio, range is [0,255]
+       * bscale - value associated with d
+       * bzero - value associated with d
+       *
+       * ds = d - 128 
+       *
+       * ds - scaled data so range is [-128,127]
+       * 
+       * So, 
+       * D = d * bscale + bzero
+       * D = (ds + 128) * bscale + bzero
+       * D = ds * bscale + 128 * bscale + bzero
+       * D = ds * BSCALE + BZERO
+       *
+       * BSCALE = bscale
+       * BZERO = 128 * bscale + bzero
+       */
+      info.bzero = 128.0 * info.bscale + info.bzero;
+
+      /* The BLANK keyword value must also be shifted by 128. */
+      info.blank = info.blank - 128;
+   }
 
    *image = pixels;
    if(fptr) fits_close_file(fptr, &status);
@@ -830,12 +870,10 @@ int cfitsio_write_file(const char* fits_filename, CFITSIO_IMAGE_INFO* image_info
    char filename[500];
    char card[FLEN_CARD];
    int  data_type, i;
+   int img_type;
 
 
    long	first_pixel = 1;	// starting point 
-   long	null_val = 0;		// don't check for null values in the image 
-   double	bscale = 1.0;	// over ride BSCALE, if there is 
-   double	bzero = 0.0;	// over ride BZERO, if there is 
 
    long	npixels;
 
@@ -885,12 +923,12 @@ int cfitsio_write_file(const char* fits_filename, CFITSIO_IMAGE_INFO* image_info
 
    switch(info.bitpix)
    {
-      case(BYTE_IMG):	data_type = TBYTE; break;
-      case(SHORT_IMG):	data_type = TSHORT; break;
-      case(LONG_IMG):	data_type = TINT; break; 
-      case(LONGLONG_IMG):	data_type = TLONGLONG; break;
-      case(FLOAT_IMG):	data_type = TFLOAT; break;
-      case(DOUBLE_IMG):	data_type = TDOUBLE; break;
+      case(BYTE_IMG):	data_type = TSBYTE; img_type = SBYTE_IMG; break;
+      case(SHORT_IMG):	data_type = TSHORT; img_type = SHORT_IMG; break;
+      case(LONG_IMG):	data_type = TINT; img_type = LONG_IMG; break; 
+      case(LONGLONG_IMG):	data_type = TLONGLONG; img_type = LONGLONG_IMG; break;
+      case(FLOAT_IMG):	data_type = TFLOAT; img_type = FLOAT_IMG; break;
+      case(DOUBLE_IMG):	data_type = TDOUBLE; img_type = DOUBLE_IMG; break;
    }
 
    // Remove the file, if already exist
@@ -918,7 +956,7 @@ int cfitsio_write_file(const char* fits_filename, CFITSIO_IMAGE_INFO* image_info
       goto error_exit;
    }
 
-   if(fits_create_img(fptr, info.bitpix, info.naxis, info.naxes, &status))
+   if(fits_create_img(fptr, img_type, info.naxis, info.naxes, &status))
    {
       error_code = CFITSIO_ERROR_LIBRARY;
       goto error_exit;
@@ -949,12 +987,26 @@ int cfitsio_write_file(const char* fits_filename, CFITSIO_IMAGE_INFO* image_info
     */
    if (info.bitfield & kInfoPresent_BLANK)
    {
-      long oblank = (long)image_info->blank;
-      fits_update_key(fptr, TLONG, "BLANK", &oblank, "", &status);
+      long long oblank = (long long)image_info->blank;
+
+      if (info.bitpix == BYTE_IMG)
+      {
+	 /* Work around the fact that the FITS standard does not support 
+	  * signed byte data.  You have to make missing a valid unsigned
+	  * char - I'm choosing 0.  In DRMS, you have to convert 0 to 
+	  * signed char -128 */
+	 oblank = 0;
+      }
+      fits_update_key(fptr, TLONGLONG, "BLANK", &oblank, "", &status);
    }
    if (info.bitfield & kInfoPresent_BZERO)
    {
       float obzero = (float)image_info->bzero;
+      if (info.bitpix == BYTE_IMG)
+      {
+	 obzero = obzero -(128.0 * (float)image_info->bscale);
+      }
+     
       fits_update_key(fptr, TFLOAT, "BZERO", &obzero, "", &status);
    }
    if (info.bitfield & kInfoPresent_BSCALE)
@@ -963,9 +1015,36 @@ int cfitsio_write_file(const char* fits_filename, CFITSIO_IMAGE_INFO* image_info
       fits_update_key(fptr, TFLOAT, "BSCALE", &obscale, "", &status);
    }
 
-   //Turn off scaling and offset and null_value
-   fits_set_bscale(fptr, bscale, bzero, &status);
-   fits_set_imgnull(fptr, null_val, &status);
+   if (info.bitpix == BYTE_IMG)
+   {
+      /* If you don't do this, then setting the 'BZERO' keyword to something 
+       * other than -128 causes a problem.  cfitsio adds the -BZERO value to 
+       * the signed char data, and if you choose anything other than -128, 
+       * you can get an overflow (outside of the range of unsigned char)
+       * For example, if you choose -120 as BZERO, all signed char values above
+       * 
+       * then for a */
+      fits_set_bscale(fptr, 1.0, -128, &status);
+   }
+   else
+   {
+      fits_set_bscale(fptr, 1.0, 0.0, &status); /* Don't scale data when writing file - 
+						 * if you use values other than 1.0/0.0
+						 * then cfitsio will use those values to 
+						 * scale the data.  If you omit this 
+						 * function call, then cfitsio will use the
+						 * BZERO/BSCALE keywords that you set a few
+						 * lines of code above to scale the data. */
+   }
+
+   fits_set_imgnull(fptr, 0, &status);  /* Don't convert any value to missing -
+					 * just write all values as is.  If you
+					 * put something other than 0 here, 
+					 * I believe cfitsio modifies the data 
+					 * in some way. If you omit this function
+					 * call, then cfitsio will use the BLANK keyword
+					 * that you set a few lines of code above to 
+					 * modify the data. */
 
    if(fits_write_img(fptr, data_type, first_pixel, npixels, image, &status))
    {
@@ -1460,7 +1539,7 @@ int cfitsio_pure_write_file_using_header(char* fits_filename, char* header, void
 
    switch(info.bitpix)
    {
-      case(BYTE_IMG):	data_type = TBYTE; break;
+      case(BYTE_IMG):	data_type = TSBYTE; break;
       case(SHORT_IMG):	data_type = TSHORT; break;
       case(LONG_IMG):	data_type = TINT; break; 
       case(LONGLONG_IMG):	data_type = TLONGLONG; break;
@@ -1564,7 +1643,7 @@ int cfitsio_write_file_using_header(char* fits_filename, char* header, void* ima
 
    switch(info.bitpix)
    {
-      case(BYTE_IMG):		data_type = TBYTE; break;
+      case(BYTE_IMG):		data_type = TSBYTE; break;
       case(SHORT_IMG):	data_type = TSHORT; break;
       case(LONG_IMG):		data_type = TINT; break; 
       case(LONGLONG_IMG):	data_type = TLONGLONG; break;

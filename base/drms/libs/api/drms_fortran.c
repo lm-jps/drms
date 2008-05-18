@@ -2052,7 +2052,7 @@ int f_drms_delete_segmentfile(char * seg_hdl) {
 }
 FCALLSCFUN1(INT, f_drms_delete_segmentfile, F_DRMS_DELETE_SEGMENTFILE, f_drms_delete_segmentfile, STRING)
 
-
+#if EXPANDAPI
 int f_drms_segment_setscaling(char * seg_hdl, double bzero, double bscale) {
   DRMS_Segment_t  * seg = (DRMS_Segment_t  *)  _convert_handle(seg_hdl);
 
@@ -2067,7 +2067,7 @@ int f_drms_segment_getscaling(char * seg_hdl, double *bzero, double *bscale) {
   return drms_segment_getscaling(seg, bzero, bscale);
 }
 FCALLSCFUN3(INT, f_drms_segment_getscaling, F_DRMS_SEGMENT_GETSCALING, f_drms_segment_getscaling, STRING, PDOUBLE, PDOUBLE)
-
+#endif
 
 char * f_drms_segment_lookup(char * rec_hdl, const char *segname) {
   DRMS_Record_t  * rec = (DRMS_Record_t  *)  _convert_handle(rec_hdl);
@@ -2134,6 +2134,7 @@ void f_drms_segment_getblocksize(char * seg_hdl, int *blksz) {
 FCALLSCSUB2(f_drms_segment_getblocksize, F_DRMS_SEGMENT_GETBLOCKSIZE, f_drms_segment_getblocksize, STRING, PINT)
 
 
+#if EXPANDAPI
 void f_drms_segment_autoscale(char * seg_hdl, char * arr_hdl) {
   DRMS_Segment_t  * seg = (DRMS_Segment_t  *)  _convert_handle(seg_hdl);
   DRMS_Array_t  * arr = (DRMS_Array_t  *)  _convert_handle(arr_hdl);
@@ -2141,6 +2142,7 @@ void f_drms_segment_autoscale(char * seg_hdl, char * arr_hdl) {
   return drms_segment_autoscale(seg, arr);
 }
 FCALLSCSUB2(f_drms_segment_autoscale, F_DRMS_SEGMENT_AUTOSCALE, f_drms_segment_autoscale, STRING, STRING)
+#endif
 
 // ##################################
 // ##### FILE:: drms_segment.c ######

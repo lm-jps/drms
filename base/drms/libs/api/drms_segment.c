@@ -15,8 +15,6 @@
  *      drms_segment_destroyinfocon
  *      drms_segment_filename
  *      drms_delete_segmentfile
- *      drms_segment_setscaling
- *      drms_segment_getscaling
  *      drms_segment_lookup
  *      drms_segment_lookupnum
  *      drms_segment_read
@@ -639,7 +637,7 @@ void drms_segment_print(DRMS_Segment_t *seg)
 }
 
 
-/* Prints the fields of a keyword struct to file "keyfile". */
+/* Prints the fields of a segment struct to file "keyfile". */
 void drms_segment_fprint(FILE *keyfile, DRMS_Segment_t *seg)
 {
   int i;
@@ -670,16 +668,6 @@ void drms_segment_fprint(FILE *keyfile, DRMS_Segment_t *seg)
     fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "unit", seg->info->unit);
     fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth+9, "type", 
 	   drms_type2str(seg->info->type));
-
-    /* Scaling information. */
-    {
-      double bzero,bscale;
-      if (!drms_segment_getscaling(seg,&bzero,&bscale))
-	{
-	  fprintf(keyfile, "\t%-*s:\t%g\n", fieldwidth+9, "bzero", bzero);
-	  fprintf(keyfile, "\t%-*s:\t%g\n", fieldwidth+9, "bscale", bscale);
-	}
-    }
 
     /* Protocol info. */ 
     const char *protstr = drms_prot2str(seg->info->protocol);
@@ -865,45 +853,6 @@ int drms_delete_segmentfile (DRMS_Segment_t *seg) {
     perror ("ERROR in drms_delete_segmentfile: unlink failed with");
     return DRMS_ERROR_UNLINKFAILED;
   } else return DRMS_SUCCESS;
-}
-
-/* Set segment scaling. Can only be done when creating a new segment. */
-int drms_segment_setscaling(DRMS_Segment_t *seg, double bzero, double bscale)
-{
-  int status;
-  char tmpstr[20];
-
-  if (!seg->record->readonly)
-  {
-    sprintf(tmpstr,"bzero[%d]",seg->info->segnum);      
-    status = drms_setkey_double(seg->record, tmpstr, bzero);
-    if (!status)
-    {
-      sprintf(tmpstr,"bscale[%d]",seg->info->segnum);      
-      status = drms_setkey_double(seg->record, tmpstr, bscale);
-    }
-    return status;
-  }
-  else
-    return DRMS_ERROR_RECORDREADONLY;
-}
-
-
-/* Set segment scaling. Can only be done when creating a new segment. */
-int drms_segment_getscaling(DRMS_Segment_t *seg, double *bzero, double *bscale)
-{
-  int status;
-  char tmpstr[20];
-
-  sprintf(tmpstr,"bzero[%d]",seg->info->segnum);      
-  *bzero = drms_getkey_double(seg->record, tmpstr,&status);
-  if (status)
-    *bzero = 0.0;
-  sprintf(tmpstr,"bscale[%d]",seg->info->segnum);      
-  *bscale = drms_getkey_double(seg->record, tmpstr,&status);
-  if (status)
-    *bscale = 1.0;
-  return status;
 }
 
 /*  Wrapper for __drms_segment_lookup without the recursion depth counter  */
@@ -1110,14 +1059,6 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 
 	      (*pFn_DSDS_free_array)(&arr);
 	      arr = copy;
-
-	      drms_segment_getscaling(seg, &bzero, &bscale);
-
-	      if (!drms_segment_checkscaling(arr, bzero, bscale, NULL))
-	      {
-		 stat = 1;
-		 goto bailout;
-	      }
 	   }
 	   else
 	   {
@@ -1157,7 +1098,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
     else
       arr = drms_array_create(type, seg->info->naxis,seg->axis, NULL, status);
     drms_array2missing(arr);
-    drms_segment_getscaling(seg, &arr->bzero, &arr->bscale);
+
     if (type == DRMS_TYPE_RAW)
     {
       arr->israw = 1;
@@ -1174,8 +1115,6 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
   }
   else
   {
-    drms_segment_getscaling(seg, &bzero, &bscale);
-
     switch(seg->info->protocol)
     {
     case DRMS_GENERIC:
@@ -1221,14 +1160,6 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 	       goto bailout1;
 	    }
 
-	    /* Check that values of BZERO, BSCALE in the file and in the DRMS
-	       database agrees. */
-	    if (!drms_segment_checkscaling(arr, bzero, bscale, filename))
-	    {
-	       stat = 1;
-	       goto bailout;
-	    }
-
 	    /* Don't free image - arr has stolen it. */
 	    cfitsio_free_these(&info, NULL, NULL);
 	 }
@@ -1254,18 +1185,17 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 	  goto bailout1;
 	}
 	free(header);
-	/* Check that value of BZERO, BSCALE in the file and in the DRMS
-	   database agrees. */
-	if (!drms_segment_checkscaling(arr, bzero, bscale, filename))
-	{
-	   stat = 1;
-	   goto bailout;
-	}
       }
       break;
     case DRMS_TAS:
       /* Read the slice in the TAS file corresponding to this record's 
 	 slot. */
+
+      /* XXX Must modify TAS header so that bzero and bscale are stored there - 
+       * for now assume 0.0/1.0 */
+      bzero = 0.0;
+      bscale = 1.0;
+
       for (i=0; i<seg->info->naxis; i++)
       {
 	start[i] = 0;
@@ -1275,9 +1205,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
       end[seg->info->naxis] =  seg->record->slotnum;
       
       XASSERT(arr = malloc(sizeof(DRMS_Array_t)));
-#ifdef DEBUG
-      printf("segment_read: bzero = %f, bscale=%f\n",bzero,bscale);
-#endif
+
       if ((stat = drms_tasfile_readslice(fp, type, bzero, bscale,  
 					 seg->info->naxis+1, start, end, arr)))
       {
@@ -1321,15 +1249,20 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
   arr->parent_segment = seg;
   
   /* Scale and convert to desired type. */
-  /* If this is protocol FITSIO, then arr->bzero == bzero. */
-  arr->bzero = bzero; /* RHS is what the DRMS keyword says; LHS is what the FITS file says.  */
-  arr->bscale = bscale;
+  /* XXX - THERE ISN'T A WAY TO STORE BZERO/BSCALE FOR PROTOCOLS OTHER THAN FITS,
+   * so we assume 0.0/1.0 */
+
+  if (arr->type == DRMS_TYPE_FLOAT || arr->type == DRMS_TYPE_DOUBLE)
+  {
+     XASSERT(drms_segment_checkscaling(arr, 0.0, 1.0, filename));
+  }
+
   if (type == DRMS_TYPE_RAW)
   {
     arr->israw = 1;
   }
   else if (seg->info->protocol != DRMS_TAS && 
-	   (arr->type != type || bscale != 1.0 || bzero != 0.0))
+	   (arr->type != type || arr->bscale != 1.0 || arr->bzero != 0.0))
   {
     drms_array_convert_inplace(type, arr->bzero, arr->bscale, arr);
 #ifdef DEBUG
@@ -1408,7 +1341,10 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
   }
   else
   {
-    drms_segment_getscaling(seg, &bzero, &bscale);
+     /* XXX - assume bzero/bscale are 0.0/1.0 - no way of specifying 
+      * these for non-FITS protocol. */
+     bzero = 0.0;
+     bscale = 1.0;
 
     switch(seg->info->protocol)
     {
@@ -1570,6 +1506,7 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
   char filename[DRMS_MAXPATHLEN]; 
   DRMS_Array_t *out;
   double bscale, bzero;
+  double autobscale, autobzero;
   int start[DRMS_MAXRANK+1]={0};
   FILE *fp;
 
@@ -1617,49 +1554,133 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
       }
     }
 
+    /* Can autoscale only if output file type is an int. */
     if (autoscale)
-      drms_segment_autoscale(seg, arr);
-      
+      drms_segment_autoscale(seg, arr, &autobzero, &autobscale);
 
-    /* Normally, scale and convert to the format implied by the parent
-       segment type, bzero and bscale. */
-    drms_segment_getscaling(seg, &bzero, &bscale);
-    if (arr->israw)
+    int outisraw = 0;
+    int copyarrscale = 0;
+
+    /* bzero and bscale will be applied before data are written. */
+
+    if (arr->type != DRMS_TYPE_FLOAT && arr->type != DRMS_TYPE_DOUBLE)
     {
-      if (arr->bzero != bzero || arr->bscale != bscale)
-      {
-	/* Writing raw array to a segment with a different scaling. */
-	bzero = (arr->bzero-bzero)/bscale;
-	bscale = arr->bscale/bscale;
-      }
-      else
-      {
-        bzero = 0.0;
-	bscale = 1.0;
-      }
+       /* bzero/bscale are not relevant when the data type is not 
+	* an integer type; so israw is also not relevant */
+       if (arr->israw)
+       {
+	  /* means integer data are in 'scaled' units, not physical units. */
+	  if (seg->info->type == DRMS_TYPE_FLOAT || seg->info->type == DRMS_TYPE_DOUBLE)
+	  {
+	     /* array is RAW integer, file is float - scale */
+	     bzero = arr->bzero;
+	     bscale = arr->bscale;
+
+	     copyarrscale = 0;
+	     outisraw = 0;
+	  }
+	  else
+	  {
+	     /* array is RAW integer, file is integer */
+	     /* No scaling should occur.  Copy bzero/bscale from arr to FITS file. */
+	     if (!autoscale)
+	     {
+		bzero = 0.0;
+		bscale = 1.0;
+	     }
+	     else
+	     {
+		if (arr->bzero != autobzero || arr->bscale != autobscale)
+		{
+		   bzero = (arr->bzero - autobzero) / autobscale;
+		   bscale = (arr->bscale) / autobscale;
+		}
+		else
+		{
+		   bzero = 0.0;
+		   bscale = 1.0;
+		}
+	     }
+
+	     copyarrscale = 1;
+	     outisraw = 1;
+	  }
+       }
+       else 
+       {
+	  /* No scaling should occur - these are integers in physical units */
+	  if (!autoscale)
+	  {
+	     bzero = 0.0;
+	     bscale = 1.0;
+	  }
+	  else if (autobzero != 0.0 || autobscale != 1.0)
+	  {
+	     bzero = -autobzero / autobscale;
+	     bscale = 1.0 / autobscale;
+	  }
+
+	  copyarrscale = 0;
+	  outisraw = 0;
+       }
     }
-    else if (fabs(bzero)!=0.0 || bscale!=1.0)
+    else
     {
-      bzero = -bzero/bscale;
-      bscale = 1.0/bscale;
+       /* float array */
+       if (seg->info->type != DRMS_TYPE_FLOAT && seg->info->type != DRMS_TYPE_DOUBLE)
+       {
+	  /* float array, integer file - scale */
+	  if (!autoscale)
+	  {
+	     bzero = -arr->bzero / arr->bscale;
+	     bscale = 1.0 / arr->bscale;
+	  }
+	  else
+	  {
+	     bzero = -autobzero / autobscale;
+	     bscale = 1.0 / autobscale;
+	  }
+
+	  copyarrscale = 1;
+	  outisraw = 1;
+       }
+       else
+       {
+	  /* array is float, file is float - no scaling */
+	  bzero = 0.0;
+	  bscale = 1.0;
+	  copyarrscale = 0;
+	  outisraw = 0;
+       }
     }
 
 #ifdef DEBUG      
     printf("in write_segment:  bzero=%g, bscale = %g\n",bzero,bscale);
 #endif
+
     /* Convert to desired type. */
     if( seg->info->protocol != DRMS_TAS  && 
 	( arr->type != seg->info->type || fabs(bzero)!=0.0 || bscale!=1.0 ))
     {
-      out = drms_array_convert(seg->info->type, bzero, bscale, arr);
-      drms_segment_getscaling(seg, &out->bzero, &out->bscale);
-      out->israw = 1;
+       out = drms_array_convert(seg->info->type, bzero, bscale, arr);
     }
     else 
     {
-      out = arr;
+       out = arr;
     }
     
+    if (copyarrscale)
+    {
+       out->bzero = arr->bzero;
+       out->bscale = arr->bscale;
+    }
+    else
+    {
+       out->bzero = 0.0;
+       out->bscale = 1.0;
+    }
+    out->israw = outisraw ? 1 : 0;
+
     drms_segment_filename(seg, filename);
     if (!strlen(seg->filename)) {
       strncpy(seg->filename, rindex(filename, '/')+1, DRMS_MAXSEGFILENAME-1);
@@ -1880,8 +1901,12 @@ void drms_segment_getblocksize(DRMS_Segment_t *seg, int *blksz)
 
 /* Set the scaling of the segment such that the values in the array
    can be stored in an (scaled) integer data segment without overflow.
+   The bzero/bscale parameters that the array should be scaled by are returned.
 */
-void drms_segment_autoscale(DRMS_Segment_t *seg, DRMS_Array_t *arr)
+void drms_segment_autoscale(DRMS_Segment_t *seg, 
+			    DRMS_Array_t *arr, 
+			    double *autobzero, 
+			    double *autobscale)
 {
   int i, n, iscale;
   double outmin, outmax;
@@ -1910,7 +1935,6 @@ void drms_segment_autoscale(DRMS_Segment_t *seg, DRMS_Array_t *arr)
   case DRMS_TYPE_DOUBLE: 	
   case DRMS_TYPE_TIME: 
   case DRMS_TYPE_STRING: 
-    drms_segment_setscaling(seg,0.0,1.0);
     return;
   default:
     fprintf(stderr, "ERROR: Unhandled DRMS type %d\n",(int)seg->info->type);
@@ -1969,7 +1993,9 @@ void drms_segment_autoscale(DRMS_Segment_t *seg, DRMS_Array_t *arr)
 	}
       }  
     }
-    drms_segment_setscaling(seg,bzero,bscale);
+
+    *autobzero = bzero;
+    *autobscale = bscale;
     break;
   case DRMS_TYPE_SHORT:
     if (arr->israw || SHRT_MAX>outmax || SHRT_MIN<outmin)
@@ -2016,7 +2042,9 @@ void drms_segment_autoscale(DRMS_Segment_t *seg, DRMS_Array_t *arr)
 	}
       }  
     }
-    drms_segment_setscaling(seg,bzero,bscale);
+
+    *autobzero = bzero;
+    *autobscale = bscale;
     break;
   case DRMS_TYPE_INT:  
     if (arr->israw || INT_MAX>outmax || INT_MIN<outmin)
@@ -2063,7 +2091,9 @@ void drms_segment_autoscale(DRMS_Segment_t *seg, DRMS_Array_t *arr)
 	}
       }  
     }
-    drms_segment_setscaling(seg,bzero,bscale);
+
+    *autobzero = bzero;
+    *autobscale = bscale;
     break;
   case DRMS_TYPE_LONGLONG:  
     if (arr->israw || LLONG_MAX>outmax || LLONG_MIN<outmin)
@@ -2110,11 +2140,16 @@ void drms_segment_autoscale(DRMS_Segment_t *seg, DRMS_Array_t *arr)
 	}
       }  
     }
-    drms_segment_setscaling(seg,bzero,bscale);
+
+    *autobzero = bzero;
+    *autobscale = bscale;
     break;
   case DRMS_TYPE_FLOAT: 
     if (!arr->israw && (seg->info->type==DRMS_TYPE_DOUBLE || seg->info->type==DRMS_TYPE_FLOAT))
-      drms_segment_setscaling(seg,0.0,1.0);
+    {
+       *autobzero = 0.0;
+       *autobscale = 1.0;
+    }
     else
     {
       float *p = (float *)arr->data;
@@ -2135,13 +2170,18 @@ void drms_segment_autoscale(DRMS_Segment_t *seg, DRMS_Array_t *arr)
       }
       bzero = (inmax+inmin)/2;
       bscale = (inmax-inmin)/(outmax-outmin);
-      drms_segment_setscaling(seg,bzero,bscale);
+
+      *autobzero = bzero;
+      *autobscale = bscale;
     }
     break;
   case DRMS_TYPE_DOUBLE: 	
   case DRMS_TYPE_TIME: 
     if (!arr->israw && (seg->info->type==DRMS_TYPE_DOUBLE))
-      drms_segment_setscaling(seg,0.0,1.0);
+    {
+       *autobzero = 0.0;
+       *autobscale = 1.0;
+    }
     else
     {
       double *p = (double *)arr->data;
@@ -2162,11 +2202,14 @@ void drms_segment_autoscale(DRMS_Segment_t *seg, DRMS_Array_t *arr)
       }
       bzero = (inmax+inmin)/2;
       bscale = (inmax-inmin)/(outmax-outmin);
-      drms_segment_setscaling(seg,bzero,bscale);
+
+      *autobzero = bzero;
+      *autobscale = bscale;
     }
     break;
   case DRMS_TYPE_STRING: 
-    drms_segment_setscaling(seg,0.0,1.0);
+    *autobzero = 0.0;
+    *autobscale = 1.0;
     return;
   default:
     fprintf(stderr, "ERROR: Unhandled DRMS type %d\n",(int)arr->type);
