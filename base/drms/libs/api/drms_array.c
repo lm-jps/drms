@@ -342,6 +342,7 @@ int drms_array2char(int n, DRMS_Type_t src_type, double bzero, double bscale,
 {
   int stat, i;
   double value;
+  double rangechk;
 
   if (bzero == 0.0 && bscale==1.0)
   {
@@ -413,12 +414,16 @@ int drms_array2char(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	{
           if (isnan(*ssrc))
             *dst = DRMS_MISSING_CHAR;       
-          else if (!(*ssrc < SCHAR_MIN || *ssrc > SCHAR_MAX))
-	    *dst = (char) *ssrc;
-	  else
+          else 
 	  {
-	    stat = DRMS_RANGE;  
-	    *dst = DRMS_MISSING_CHAR;
+	     rangechk = round(*ssrc);
+	     if (!(rangechk < SCHAR_MIN || rangechk > SCHAR_MAX))
+	       *dst = (char)rangechk;
+	     else
+	     {
+		stat = DRMS_RANGE;  
+		*dst = DRMS_MISSING_CHAR;
+	     }
 	  }
 	}
       }
@@ -431,12 +436,16 @@ int drms_array2char(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	{
           if (*ssrc == DRMS_MISSING_TIME)
             *dst = DRMS_MISSING_CHAR;       
-          else 	  if (!(*ssrc < SCHAR_MIN || *ssrc > SCHAR_MAX))
-	    *dst = (char) *ssrc;
-	  else
+          else 
 	  {
-	    stat = DRMS_RANGE;  
-	    *dst = DRMS_MISSING_CHAR;
+	     rangechk = round(*ssrc);
+	     if (!(rangechk < SCHAR_MIN || rangechk > SCHAR_MAX))
+	       *dst = (char)rangechk;
+	     else
+	     {
+		stat = DRMS_RANGE;  
+		*dst = DRMS_MISSING_CHAR;
+	     }
 	  }
 	}
       }
@@ -448,37 +457,45 @@ int drms_array2char(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	{
           if (isnan(*ssrc))
             *dst = DRMS_MISSING_CHAR;       
-          else 	  if (!(*ssrc < SCHAR_MIN || *ssrc > SCHAR_MAX))
-	    *dst = (char) *ssrc;
-	  else
+          else 
 	  {
-	    stat = DRMS_RANGE;  
-	    *dst = DRMS_MISSING_CHAR;
+	     rangechk = round(*ssrc);
+	     if (!(rangechk < SCHAR_MIN || rangechk > SCHAR_MAX))
+	       *dst = (char)rangechk;
+	     else
+	     {
+		stat = DRMS_RANGE;  
+		*dst = DRMS_MISSING_CHAR;
+	     }
 	  }
 	}
       }
       break;
     case DRMS_TYPE_STRING: 
       {
-	long long val;
+	double val;
 	char *endptr;
 	char **ssrc = (char **) src;
 	stat = DRMS_SUCCESS;
 	for (i=0; i<n; i++, ssrc++, dst++)
 	{
-	  val = (long long)strtod(*ssrc,&endptr);
+	  val = strtod(*ssrc,&endptr);
 	  if (val==0 && endptr==*ssrc )	
 	  {	  
 	    stat = DRMS_BADSTRING;
 	    *dst =  DRMS_MISSING_CHAR;
 	  }
-	  else if ( val < SCHAR_MIN || val > SCHAR_MAX)
-	  {
-	    stat = DRMS_RANGE;
-	    *dst =  DRMS_MISSING_CHAR;
-	  }
 	  else
-	    *dst = (char) val;
+	  {
+	     rangechk = round(val);
+	     if (!(rangechk < SCHAR_MIN || rangechk > SCHAR_MAX))
+	       *dst = (char)rangechk;
+	     else
+	     {
+		stat = DRMS_RANGE;  
+		*dst = DRMS_MISSING_CHAR;
+	     }
+	  }
 	}
       }
       break;
@@ -502,8 +519,9 @@ int drms_array2char(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else
 	  {
 	    value = bscale* *ssrc + bzero;
-	    if (!(value < SCHAR_MIN || value > SCHAR_MAX))
-	      *dst = (char) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < SCHAR_MIN || rangechk > SCHAR_MAX))
+	      *dst = (char)rangechk;
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -524,8 +542,9 @@ int drms_array2char(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else
 	  {
 	    value = bscale* *ssrc + bzero;
-	    if (!(value < SCHAR_MIN || value > SCHAR_MAX))
-	      *dst = (char) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < SCHAR_MIN || rangechk > SCHAR_MAX))
+	      *dst = (char)rangechk;
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -546,8 +565,10 @@ int drms_array2char(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else
 	  {
 	    value = bscale* *ssrc + bzero;
-	    if (!(value < SCHAR_MIN || value > SCHAR_MAX))
-	      *dst = (char) round(value);
+
+	    rangechk = round(value);
+	    if (!(rangechk < SCHAR_MIN || rangechk > SCHAR_MAX))
+	      *dst = (char)rangechk;
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -568,8 +589,10 @@ int drms_array2char(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else
 	  {
 	    value = bscale* *ssrc + bzero;
-	    if (!(value < SCHAR_MIN || value > SCHAR_MAX))
-	      *dst = (char) round(value);
+
+	    rangechk = round(value);
+	    if (!(rangechk < SCHAR_MIN || rangechk > SCHAR_MAX))
+	      *dst = (char)rangechk;
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -590,8 +613,10 @@ int drms_array2char(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else
 	  {
 	    value = bscale* *ssrc + bzero;
-	    if (!(value < SCHAR_MIN || value > SCHAR_MAX))
-	      *dst = (char) round(value);
+
+	    rangechk = round(value);
+	    if (!(rangechk < SCHAR_MIN || rangechk > SCHAR_MAX))
+	      *dst = (char)rangechk;
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -612,8 +637,10 @@ int drms_array2char(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else
 	  {
 	    value = bscale* *ssrc + bzero;
-	    if (!(value < SCHAR_MIN || value > SCHAR_MAX))
-	      *dst = (char) round(value);
+
+	    rangechk = round(value);
+	    if (!(rangechk < SCHAR_MIN || rangechk > SCHAR_MAX))
+	      *dst = (char)rangechk;
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -633,8 +660,9 @@ int drms_array2char(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else
 	  {
 	    value = bscale* *ssrc + bzero;
-	    if (!(value < SCHAR_MIN || value > SCHAR_MAX))
-	      *dst = (char) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < SCHAR_MIN || rangechk > SCHAR_MAX))
+	      *dst = (char)rangechk;
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -660,13 +688,15 @@ int drms_array2char(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else 
 	  {
 	    value  = bscale * value + bzero;
-	    if ( value < SCHAR_MIN || value > SCHAR_MAX)
+	    rangechk = round(value);
+
+	    if ( rangechk < SCHAR_MIN || rangechk > SCHAR_MAX)
 	    {
 	      stat = DRMS_RANGE;
 	      *dst =  DRMS_MISSING_CHAR;
 	    }
 	    else
-	      *dst = (char) round(value);
+	      *dst = (char)rangechk;
 	  }
 	}
       }
@@ -685,6 +715,7 @@ int drms_array2short(int n, DRMS_Type_t src_type, double bzero, double bscale,
 {
   double value;
   int stat, i;
+  double rangechk;
 
   if (fabs(bzero)==0.0 && bscale==1.0)
   {
@@ -751,12 +782,16 @@ int drms_array2short(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	{
 	  if (isnan(*ssrc))
             *dst = DRMS_MISSING_SHORT;       
-	  else 	  if (!(*ssrc < SHRT_MIN || *ssrc > SHRT_MAX))
-	    *dst = (short) *ssrc;
 	  else
 	  {
-	    stat = DRMS_RANGE;  
-	    *dst = DRMS_MISSING_SHORT;
+	     rangechk = round(*ssrc);
+	     if (!(rangechk < SHRT_MIN || rangechk > SHRT_MAX))
+	       *dst = (short)rangechk;
+	     else
+	     {
+		stat = DRMS_RANGE;  
+		*dst = DRMS_MISSING_SHORT;
+	     }
 	  }
 	}
       }
@@ -769,12 +804,16 @@ int drms_array2short(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	{
 	  if (*ssrc == DRMS_MISSING_TIME)
             *dst = DRMS_MISSING_SHORT;       
-	  else 	  if (!(*ssrc < SHRT_MIN || *ssrc > SHRT_MAX))
-	    *dst = (short) *ssrc;
-	  else
+	  else 
 	  {
-	    stat = DRMS_RANGE;  
-	    *dst = DRMS_MISSING_SHORT;
+	     rangechk = round(*ssrc);
+	     if (!(rangechk < SHRT_MIN || rangechk > SHRT_MAX))
+	       *dst = (short)rangechk;
+	     else
+	     {
+		stat = DRMS_RANGE;  
+		*dst = DRMS_MISSING_SHORT;
+	     }
 	  }
 	}
       }
@@ -787,37 +826,45 @@ int drms_array2short(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	{
 	  if (isnan(*ssrc))
             *dst = DRMS_MISSING_SHORT;       
-	  else 	  if (!(*ssrc < SHRT_MIN || *ssrc > SHRT_MAX))
-	    *dst = (short) *ssrc;
 	  else
 	  {
-	    stat = DRMS_RANGE;  
-	    *dst = DRMS_MISSING_SHORT;
+	     rangechk = round(*ssrc);
+	     if (!(rangechk < SHRT_MIN || rangechk > SHRT_MAX))
+	       *dst = (short)rangechk;
+	     else
+	     {
+		stat = DRMS_RANGE;  
+		*dst = DRMS_MISSING_SHORT;
+	     }
 	  }
 	}
       }
       break;
     case DRMS_TYPE_STRING: 
       {
-	long long val;
+	double val;
 	char *endptr;
 	char **ssrc = (char **) src;
 	stat = DRMS_SUCCESS;
 	for (i=0; i<n; i++, ssrc++, dst++)
 	{
-	  val = (long long)strtod(*ssrc,&endptr);
+	  val = strtod(*ssrc,&endptr);
 	  if (val==0 && endptr==*ssrc )	
 	  {	  
 	    stat = DRMS_BADSTRING;
 	    *dst = DRMS_MISSING_SHORT;
 	  }
-	  else if ( val < SHRT_MIN || val > SHRT_MAX)
-	  {
-	    stat = DRMS_RANGE;
-	    *dst =  DRMS_MISSING_SHORT;
-	  }
 	  else
-	    *dst = (short) val;
+	  {
+	     rangechk = round(val);
+	     if (!(rangechk < SHRT_MIN || rangechk > SHRT_MAX))
+	       *dst = (short)rangechk;
+	     else
+	     {
+		stat = DRMS_RANGE;
+		*dst =  DRMS_MISSING_SHORT;
+	     }
+	  }
 	}
       }
       break;
@@ -840,8 +887,9 @@ int drms_array2short(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else
 	  {
 	    value = bscale * *ssrc + bzero;
-	    if (!(value < SHRT_MIN || value > SHRT_MAX))
-	      *dst = (short) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < SHRT_MIN || rangechk > SHRT_MAX))
+	      *dst = (short)round(rangechk);
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -862,8 +910,9 @@ int drms_array2short(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else
 	  {
 	    value = bscale * *ssrc + bzero;
-	    if (!(value < SHRT_MIN || value > SHRT_MAX))
-	      *dst = (short) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < SHRT_MIN || rangechk > SHRT_MAX))
+	      *dst = (short)round(rangechk);
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -884,8 +933,9 @@ int drms_array2short(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else
 	  {
 	    value = bscale * *ssrc + bzero;
-	    if (!(value < SHRT_MIN || value > SHRT_MAX))
-	      *dst = (short) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < SHRT_MIN || rangechk > SHRT_MAX))
+	      *dst = (short)round(rangechk);
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -906,8 +956,9 @@ int drms_array2short(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else
 	  {
 	    value = bscale * *ssrc + bzero;
-	    if (!(value < SHRT_MIN || value > SHRT_MAX))
-	      *dst = (short) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < SHRT_MIN || rangechk > SHRT_MAX))
+	      *dst = (short)round(rangechk);
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -928,8 +979,9 @@ int drms_array2short(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else
 	  {
 	    value = bscale * *ssrc + bzero;
-	    if (!(value < SHRT_MIN || value > SHRT_MAX))
-	      *dst = (short) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < SHRT_MIN || rangechk > SHRT_MAX))
+	      *dst = (short)round(rangechk);
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -950,8 +1002,9 @@ int drms_array2short(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else
 	  {
 	    value = bscale * *ssrc + bzero;
-	    if (!(value < SHRT_MIN || value > SHRT_MAX))
-	      *dst = (short) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < SHRT_MIN || rangechk > SHRT_MAX))
+	      *dst = (short)round(rangechk);
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -971,8 +1024,9 @@ int drms_array2short(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else
 	  {
 	    value = bscale * *ssrc + bzero;
-	    if (!(value < SHRT_MIN || value > SHRT_MAX))
-	      *dst = (short) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < SHRT_MIN || rangechk > SHRT_MAX))
+	      *dst = (short)round(rangechk);
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -998,13 +1052,15 @@ int drms_array2short(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else 
 	  {
 	    value = bscale*value + bzero;
-	    if ( value < SHRT_MIN || value > SHRT_MAX)
+	    rangechk = round(value);
+
+	    if (rangechk < SHRT_MIN || rangechk > SHRT_MAX)
 	    {
 	      stat = DRMS_RANGE;
 	      *dst =  DRMS_MISSING_SHORT;
 	    }
 	    else
-	      *dst = (short) round(value);
+	      *dst = (short)rangechk;
 	  }
 	}
       }
@@ -1023,6 +1079,8 @@ int drms_array2int(int n, DRMS_Type_t src_type, double bzero, double bscale,
 {
   double value;
   int stat, i;
+  double rangechk;
+
   if (fabs(bzero)==0.0 && bscale==1.0)
   {
     switch(src_type)
@@ -1079,12 +1137,16 @@ int drms_array2int(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	{
 	  if (isnan(*ssrc))
             *dst = DRMS_MISSING_INT;       
-	  else if (!(*ssrc < INT_MIN || *ssrc > INT_MAX))
-	    *dst = (int) *ssrc;
-	  else
+	  else 
 	  {
-	    stat = DRMS_RANGE;  
-	    *dst = DRMS_MISSING_INT;
+	     rangechk = round(*ssrc);
+	     if (!(rangechk < INT_MIN || rangechk > INT_MAX))
+	       *dst = (int)rangechk;
+	     else
+	     {
+		stat = DRMS_RANGE;  
+		*dst = DRMS_MISSING_INT;
+	     }
 	  }
 	}
       }
@@ -1097,12 +1159,16 @@ int drms_array2int(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	{
 	  if (*ssrc == DRMS_MISSING_TIME)
             *dst = DRMS_MISSING_INT;       
-	  else 	  if (!(*ssrc < INT_MIN || *ssrc > INT_MAX))
-	    *dst = (int) *ssrc;
 	  else
 	  {
-	    stat = DRMS_RANGE;  
-	    *dst = DRMS_MISSING_INT;
+	     rangechk = round(*ssrc);
+	     if (!(rangechk < INT_MIN || rangechk > INT_MAX))
+	       *dst = (int)rangechk;
+	     else
+	     {
+		stat = DRMS_RANGE;  
+		*dst = DRMS_MISSING_INT;
+	     }
 	  }
 	}
       }
@@ -1115,37 +1181,45 @@ int drms_array2int(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	{
 	  if (isnan(*ssrc))
             *dst = DRMS_MISSING_INT;       
-	  else 	  if (!(*ssrc < INT_MIN || *ssrc > INT_MAX))
-	    *dst = (int) *ssrc;
 	  else
 	  {
-	    stat = DRMS_RANGE;  
-	    *dst = DRMS_MISSING_INT;
+	     rangechk = round(*ssrc);
+	     if (!(rangechk < INT_MIN || rangechk > INT_MAX))
+	       *dst = (int)rangechk;
+	     else
+	     {
+		stat = DRMS_RANGE;  
+		*dst = DRMS_MISSING_INT;
+	     }
 	  }
 	}
       }
       break;
     case DRMS_TYPE_STRING: 
       {
-	long long val;
+	double val;
 	char *endptr;
 	char **ssrc = (char **) src;
 	stat = DRMS_SUCCESS;
 	for (i=0; i<n; i++, ssrc++, dst++)
 	{
-	  val = (long long)strtod(*ssrc,&endptr);
+	  val = strtod(*ssrc,&endptr);
 	  if (val==0 && endptr==*ssrc )	
 	  {	  
 	    stat = DRMS_BADSTRING;
 	    *dst =  DRMS_MISSING_INT;
 	  }
-	  else if ( val < INT_MIN || val > INT_MAX)
-	  {
-	    stat = DRMS_RANGE;
-	    *dst =  DRMS_MISSING_INT;
-	  }
 	  else
-	    *dst = (int) val;
+	  {
+	     rangechk = round(val);
+	     if (!(rangechk < INT_MIN || rangechk > INT_MAX))
+	       *dst = (int)rangechk;
+	     else
+	     {
+		stat = DRMS_RANGE;
+		*dst =  DRMS_MISSING_INT;
+	     }
+	  }
 	}
       }
       break;
@@ -1168,8 +1242,9 @@ int drms_array2int(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else
 	  {
 	    value = bscale * *ssrc + bzero;
-	    if (!(value < INT_MIN || value > INT_MAX))
-	      *dst = (int) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < INT_MIN || rangechk > INT_MAX))
+	      *dst = (int)rangechk;
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -1190,8 +1265,9 @@ int drms_array2int(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else
 	  {
 	    value = bscale * *ssrc + bzero;
-	    if (!(value < INT_MIN || value > INT_MAX))
-	      *dst = (int) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < INT_MIN || rangechk > INT_MAX))
+	      *dst = (int)rangechk;
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -1212,8 +1288,9 @@ int drms_array2int(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else
 	  {
 	    value = bscale * *ssrc + bzero;
-	    if (!(value < INT_MIN || value > INT_MAX))
-	      *dst = (int) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < INT_MIN || rangechk > INT_MAX))
+	      *dst = (int)rangechk;
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -1234,8 +1311,9 @@ int drms_array2int(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else
 	  {
 	    value = bscale * *ssrc + bzero;
-	    if (!(value < INT_MIN || value > INT_MAX))
-	      *dst = (int) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < INT_MIN || rangechk > INT_MAX))
+	      *dst = (int)rangechk;
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -1251,19 +1329,16 @@ int drms_array2int(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	stat = DRMS_SUCCESS;
 	for (i=0; i<n; i++, ssrc++, dst++)
 	{
-	  //	  printf("*ssrc = %f, DRMS_MISSING_FLOAT=%f",*ssrc,DRMS_MISSING_FLOAT);
 	  if (isnan(*ssrc))
 	  {
 	    *dst = DRMS_MISSING_INT;
-	    //	    printf("   isnan!!!\n");
 	  }
 	  else
 	  {
 	    value = bscale * *ssrc + bzero;
-	    /*	    printf("value = %f, INT_MIN=%d, INT_MAX = %d\n",
-	      value,INT_MIN,INT_MAX); */
-	    if (!(value < INT_MIN || value > INT_MAX))
-	      *dst = (int) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < INT_MIN || rangechk > INT_MAX))
+	      *dst = (int)rangechk;
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -1284,8 +1359,9 @@ int drms_array2int(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else
 	  {
 	    value = bscale * *ssrc + bzero;
-	    if (!(value < INT_MIN || value > INT_MAX))
-	      *dst = (int) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < INT_MIN || rangechk > INT_MAX))
+	      *dst = (int)rangechk;
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -1305,8 +1381,9 @@ int drms_array2int(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else
 	  {
 	    value = bscale * *ssrc + bzero;
-	    if (!(value < INT_MIN || value > INT_MAX))
-	      *dst = (int) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < INT_MIN || rangechk > INT_MAX))
+	      *dst = (int)rangechk;
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -1332,13 +1409,15 @@ int drms_array2int(int n, DRMS_Type_t src_type, double bzero, double bscale,
 	  else 
 	  {
 	    value = bscale*value + bzero;
-	    if ( value < INT_MIN || value > INT_MAX)
+	    rangechk = round(value);
+
+	    if ( rangechk < INT_MIN || rangechk > INT_MAX)
 	    {
 	      stat = DRMS_RANGE;
 	      *dst =  DRMS_MISSING_INT;
 	    }
 	    else
-	      *dst = (int) round(value);
+	      *dst = (int)rangechk;
 	  }
 	}
       }
@@ -1350,13 +1429,12 @@ int drms_array2int(int n, DRMS_Type_t src_type, double bzero, double bscale,
   return stat;  
 }
 
-
-
 int drms_array2longlong(int n, DRMS_Type_t src_type, double bzero, 
 			double bscale, void *src, long long *dst)
 {
   double value;
   int stat, i;
+  double rangechk;
 
   if (fabs(bzero)==0.0 && bscale==1.0)
   {
@@ -1407,12 +1485,16 @@ int drms_array2longlong(int n, DRMS_Type_t src_type, double bzero,
 	{
 	  if (isnan(*ssrc))
             *dst = DRMS_MISSING_LONGLONG;       
-	  else if (!(*ssrc < LLONG_MIN || *ssrc > LLONG_MAX))
-	    *dst = (long long) *ssrc;
-	  else
+	  else 
 	  {
-	    stat = DRMS_RANGE;  
-	    *dst = DRMS_MISSING_LONGLONG;
+	     rangechk = round(*ssrc);
+	     if (!(rangechk < LLONG_MIN || rangechk > LLONG_MAX))
+	       *dst = (long long)rangechk;
+	     else
+	     {
+		stat = DRMS_RANGE;  
+		*dst = DRMS_MISSING_LONGLONG;
+	     }
 	  }
 	}
       }
@@ -1425,12 +1507,17 @@ int drms_array2longlong(int n, DRMS_Type_t src_type, double bzero,
 	{
 	  if (*ssrc == DRMS_MISSING_TIME)
             *dst = DRMS_MISSING_LONGLONG;       
-	  else 	  if (!(*ssrc < LLONG_MIN || *ssrc > LLONG_MAX))
-	    *dst = (long long) *ssrc;
-	  else
+	  else 
 	  {
-	    stat = DRMS_RANGE;  
-	    *dst = DRMS_MISSING_LONGLONG;
+	     rangechk = round(*ssrc);
+	     if (!(rangechk < LLONG_MIN || rangechk > LLONG_MAX))
+	       *dst = (long long)rangechk;
+	     else
+	     {
+		stat = DRMS_RANGE;  
+		*dst = DRMS_MISSING_LONGLONG;
+	     }
+
 	  }
 	}
       }
@@ -1442,32 +1529,45 @@ int drms_array2longlong(int n, DRMS_Type_t src_type, double bzero,
 	{
 	  if (isnan(*ssrc))
             *dst = DRMS_MISSING_LONGLONG;       
-	  else 	  if (!(*ssrc < LLONG_MIN || *ssrc > LLONG_MAX))
-	    *dst = (long long) *ssrc;
 	  else
 	  {
-	    stat = DRMS_RANGE;  
-	    *dst = DRMS_MISSING_LONGLONG;
+	     rangechk = round(*ssrc);
+	     if (!(rangechk < LLONG_MIN || rangechk > LLONG_MAX))
+	       *dst = (long long)rangechk;
+	     else
+	     {
+		stat = DRMS_RANGE;  
+		*dst = DRMS_MISSING_LONGLONG;
+	     }
 	  }
 	}
       }
       break;
     case DRMS_TYPE_STRING: 
       {
-	long long val;
+	double val;
 	char *endptr;
 	char **ssrc = (char **) src;
 	stat = DRMS_SUCCESS;
 	for (i=0; i<n; i++, ssrc++, dst++)
 	{
-	  val = (long long)strtod(*ssrc,&endptr);
+	  val = strtod(*ssrc,&endptr);
 	  if (val==0 && endptr==*ssrc )	
 	  {	  
 	    stat = DRMS_BADSTRING;
 	    *dst =  DRMS_MISSING_LONGLONG;
 	  }
 	  else
-	    *dst = (long long) val;
+	  {
+	     rangechk = round(val);
+	     if (!(rangechk < LLONG_MIN || rangechk > LLONG_MAX))
+	       *dst = (long long)rangechk;
+	     else
+	     {
+		stat = DRMS_RANGE;  
+		*dst = DRMS_MISSING_LONGLONG;
+	     }
+	  }
 	}
       }
       break;
@@ -1490,8 +1590,9 @@ int drms_array2longlong(int n, DRMS_Type_t src_type, double bzero,
 	  else
 	  {
 	    value = bscale * *ssrc + bzero;
-	    if (!(value < LLONG_MIN || value > LLONG_MAX))
-	      *dst = (long long) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < LLONG_MIN || rangechk > LLONG_MAX))
+	      *dst = (long long)rangechk;
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -1512,8 +1613,9 @@ int drms_array2longlong(int n, DRMS_Type_t src_type, double bzero,
 	  else
 	  {
 	    value = bscale * *ssrc + bzero;
-	    if (!(value < LLONG_MIN || value > LLONG_MAX))
-	      *dst = (long long) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < LLONG_MIN || rangechk > LLONG_MAX))
+	      *dst = (long long)rangechk;
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -1534,8 +1636,9 @@ int drms_array2longlong(int n, DRMS_Type_t src_type, double bzero,
 	  else
 	  {
 	    value = bscale * *ssrc + bzero;
-	    if (!(value < LLONG_MIN || value > LLONG_MAX))
-	      *dst = (long long) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < LLONG_MIN || rangechk > LLONG_MAX))
+	      *dst = (long long)rangechk;
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -1556,8 +1659,9 @@ int drms_array2longlong(int n, DRMS_Type_t src_type, double bzero,
 	  else
 	  {
 	    value = bscale * *ssrc + bzero;
-	    if (!(value < LLONG_MIN || value > LLONG_MAX))
-	      *dst = (long long) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < LLONG_MIN || rangechk > LLONG_MAX))
+	      *dst = (long long)rangechk;
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -1578,8 +1682,9 @@ int drms_array2longlong(int n, DRMS_Type_t src_type, double bzero,
 	  else
 	  {
 	    value = bscale * *ssrc + bzero;
-	    if (!(value < LLONG_MIN || value > LLONG_MAX))
-	      *dst = (long long) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < LLONG_MIN || rangechk > LLONG_MAX))
+	      *dst = (long long)rangechk;
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -1600,8 +1705,9 @@ int drms_array2longlong(int n, DRMS_Type_t src_type, double bzero,
 	  else
 	  {
 	    value = bscale * *ssrc + bzero;
-	    if (!(value < LLONG_MIN || value > LLONG_MAX))
-	      *dst = (long long) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < LLONG_MIN || rangechk > LLONG_MAX))
+	      *dst = (long long)rangechk;
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -1622,8 +1728,9 @@ int drms_array2longlong(int n, DRMS_Type_t src_type, double bzero,
 	  else
 	  {
 	    value = bscale * *ssrc + bzero;
-	    if (!(value < LLONG_MIN || value > LLONG_MAX))
-	      *dst = (long long) round(value);
+	    rangechk = round(value);
+	    if (!(rangechk < LLONG_MIN || rangechk > LLONG_MAX))
+	      *dst = (long long)rangechk;
 	    else
 	    {
 	      stat = DRMS_RANGE;  
@@ -1649,13 +1756,15 @@ int drms_array2longlong(int n, DRMS_Type_t src_type, double bzero,
 	  else 
 	  {
 	    value = bscale*value + bzero;
-	    if ( value < LLONG_MIN || value > LLONG_MAX)
+	    rangechk = round(value);
+
+	    if ( rangechk < LLONG_MIN || rangechk > LLONG_MAX)
 	    {
 	      stat = DRMS_RANGE;
 	      *dst =  DRMS_MISSING_LONGLONG;
 	    }
 	    else
-	      *dst = (long long) round(value);
+	      *dst = (long long)rangechk;
 	  }
 	}
       }
