@@ -340,6 +340,47 @@ void drms_keyword_fprintval(FILE *keyfile, DRMS_Keyword_t *key)
   }
 }
 
+void drms_keyword_snprintfval(DRMS_Keyword_t *key, char *buf, int size)
+{
+   switch(key->info->type)
+   {
+      case DRMS_TYPE_CHAR:
+	snprintf(buf, size, key->info->format, key->value.char_val);
+	break;
+      case DRMS_TYPE_SHORT:
+	snprintf(buf, size, key->info->format, key->value.short_val);
+	break;
+      case DRMS_TYPE_INT:
+	snprintf(buf, size, key->info->format, key->value.int_val);
+	break;
+      case DRMS_TYPE_LONGLONG:
+	snprintf(buf, size, key->info->format, key->value.longlong_val);
+	break;
+      case DRMS_TYPE_FLOAT:
+	snprintf(buf, size, key->info->format, key->value.float_val);
+	break;
+      case DRMS_TYPE_DOUBLE:
+	snprintf(buf, size, key->info->format, key->value.double_val);
+	break;
+      case DRMS_TYPE_TIME:
+	{
+	   char intbuf[1024];
+	   char *endptr = NULL;
+
+	   /* key->info->format can be converted to an integer safely - it has been checked already */
+	   int format = (int)strtod(key->info->format, &endptr);
+
+	   sprint_time(intbuf, key->value.time_val, key->info->unit, format);
+	   snprintf(buf, size, "%s", intbuf);
+	}
+	break;
+      case DRMS_TYPE_STRING:
+	snprintf(buf, size, key->info->format, key->value.string_val);
+	break;
+      default:
+	break;
+   }
+}
   
 /* 
    Build the keyword part of a dataset template by
