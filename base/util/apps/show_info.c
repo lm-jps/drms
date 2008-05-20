@@ -709,10 +709,7 @@ int DoIt(void)
               {
               if (iaxis)
                 printf("x");
-              if (rec_seg_iseg->info->scope == DRMS_VARDIM)
-                printf("VAR");
-              else
-                printf("%d",rec_seg_iseg->axis[iaxis]);
+              printf("%d",rec_seg_iseg->axis[iaxis]);
               }
             printf("\"");
             }
