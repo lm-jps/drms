@@ -260,3 +260,13 @@ $(FMODEXE):	LL_TGT := $(LL_TGT) $(CFITSIOLIBS)
 $(FMODEXE):     %_sock:	%.o $(FMODLIBS_SOCK)
 			$(FLINK)
 			$(SLBIN)
+
+$(MODEXE_USEF):	LL_TGT := $(LL_TGT) -lpq $(CFITSIOLIBS)
+$(MODEXE_USEF):     %:	%.o $(MODLIBS)
+			$(FLINK)
+			$(SLBIN)
+
+$(MODEXE_USEF_SOCK):	LL_TGT := $(LL_TGT) $(CFITSIOLIBS)
+$(MODEXE_USEF_SOCK): %_sock: %.o $(MODLIBS_SOCK)
+			$(FLINK)
+			$(SLBIN)
