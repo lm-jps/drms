@@ -130,6 +130,7 @@ ModuleArgs_t module_args[] =
   {ARG_STRING, "seg", "Not Specified", "<comma delimited segment list>"},
   {ARG_FLAG, "a", "0", "Show info for all keywords"},
   {ARG_FLAG, "c", "0", "Show count of records in query"},
+  {ARG_FLAG, "d", "0", "Show dimensions of segment files with selected segs"},
   {ARG_FLAG, "h", "0", "help - print usage info"},
   {ARG_FLAG, "j", "0", "list series info in jsd format"},
   {ARG_FLAG, "l", "0", "just list series keywords with descriptions"},
@@ -155,6 +156,7 @@ int nice_intro ()
         "  details are:\n"
 	"  -a: show information for all keywords\n"
         "  -c: count records in query\n"
+  	"  -d: Show dimensions of segment files with selected segs\n"
 	"  -h: help - show this message then exit\n"
 	"  -j: list all series, keyword, segment, and link items in jsd file format, then exit\n"
 	"  -k: list keyword names and values, one per line\n"
@@ -399,6 +401,7 @@ int DoIt(void)
   int want_path;
   int want_path_noret;
   int not_silent;
+  int want_dims;
 
   if (nice_intro ()) return (0);
 
@@ -411,6 +414,7 @@ int DoIt(void)
   list_keys = cmdparams_get_int (&cmdparams, "l", NULL) != 0;
   show_all = cmdparams_get_int (&cmdparams, "a", NULL) != 0;
   want_count = cmdparams_get_int (&cmdparams, "c", NULL) != 0;
+  want_dims = cmdparams_get_int (&cmdparams, "d", NULL) != 0;
   show_stats = cmdparams_get_int (&cmdparams, "s", NULL) != 0;
   max_recs =  cmdparams_get_int (&cmdparams, "n", NULL);
   quiet = cmdparams_get_int (&cmdparams, "q", NULL) != 0;
@@ -611,7 +615,11 @@ int DoIt(void)
         for (ikey=0 ; ikey<nkeys; ikey++)
           printf ("%s\t",keys[ikey]); 
         for (iseg = 0; iseg<nsegs; iseg++)
+          {
           printf ("%s\t",segs[iseg]); 
+          if (want_dims)
+	    printf("%s_info\t",segs[iseg]);
+          }
         if (nsegs==0 && want_path)
           printf("SUDIR");
         printf ("\n");
@@ -660,7 +668,7 @@ int DoIt(void)
 	  drms_keyword_printval (rec_key_ikey);
 	}
       else if (!keyword_list)
-	printf ("MISSING");
+	printf ("InvalidKeyname");
       }
     if(nkeys)
       printf (keyword_list ? "\n" : "\t");
@@ -684,9 +692,34 @@ int DoIt(void)
         if (keyword_list)
           printf("%s=", segs[iseg]);
         printf("%s%s%s", path, (want_path ? "/" : ""), fname);
+        if (want_dims)
+	  {
+          char info[1000];
+          int iaxis, naxis = rec_seg_iseg->info->naxis;
+          if (keyword_list)
+            printf("\n%s_info=",segs[iseg]);
+          else
+            printf("\t");
+          if (rec_seg_iseg->info->islink)
+            sprintf("\"link to %s",rec_seg_iseg->info->linkname);
+          else
+            {
+            printf("\"%s, %s, ",  rec_seg_iseg->info->unit, drms_prot2str(rec_seg_iseg->info->protocol));
+            for (iaxis=0; iaxis<naxis; iaxis++)
+              {
+              if (iaxis)
+                printf("x");
+              if (rec_seg_iseg->info->scope == DRMS_VARDIM)
+                printf("VAR");
+              else
+                printf("%d",rec_seg_iseg->axis[iaxis]);
+              }
+            printf("\"");
+            }
+          }
         }
       else if (!keyword_list)
-	printf ("NO_FILENAME");
+	printf ("InvalidSegName");
       }
     if (nsegs==0 && want_path)
       {
@@ -701,7 +734,7 @@ int DoIt(void)
       printf ("\n");
     }
 
-/* Finished.  Clean up and exit. */
+  /* Finished.  Clean up and exit. */
   for (ikey=0; ikey<nkeys; ikey++) 
     free(keys[ikey]);
   drms_close_records(recordset, DRMS_FREE_RECORD);
