@@ -395,7 +395,7 @@ sumprog_1(rqstp, transp)
 {
   char procname[128];
 
-	StartTimer(1);
+	//StartTimer(1);
 	union __svcargun {
 		Rkey sumdo_1_arg;
 	} argument;
@@ -508,7 +508,7 @@ sumprog_1(rqstp, transp)
 	write_log("**unable to free arguments\n");
 	/*exit(1);*/
       }
-      ftmp = StopTimer(1);
-      write_log("#END: %s %fsec\n", procname, ftmp);	//!!TEMP for test
+      //ftmp = StopTimer(1);
+      //write_log("#END: %s %fsec\n", procname, ftmp);	//!!TEMP for test
       return;
 }
