@@ -39,35 +39,24 @@
 //****************************************************************************
 // External contants defined in DRMS
 
+#define kFITSRW_Type_String 'C' 
+#define kFITSRW_Type_Logical 'L' 	 
+#define kFITSRW_Type_Integer 'I'
+#define kFITSRW_Type_Float 'F'
+
 #ifdef __FOR_LOW_LEVEL_TEST_PROGRAMS__
-
 // defined them here for low level test programs like "testcopy.c" "testimages.c"
-
-const char kFITSRW_Type_String;
-const char kFITSRW_Type_Logical;
-const char kFITSRW_Type_Integer;
-const char kFITSRW_Type_Float;
-
 const unsigned int kInfoPresent_SIMPLE;
 const unsigned int kInfoPresent_EXTEND;
 const unsigned int kInfoPresent_BLANK;
 const unsigned int kInfoPresent_BSCALE;
 const unsigned int kInfoPresent_BZERO;
-
 #else
-
-// use external const define in DRMS
-extern const char kFITSRW_Type_String;
-extern const char kFITSRW_Type_Logical;
-extern const char kFITSRW_Type_Integer;
-extern const char kFITSRW_Type_Float;
-
 extern const unsigned int kInfoPresent_SIMPLE;
 extern const unsigned int kInfoPresent_EXTEND;
 extern const unsigned int kInfoPresent_BLANK;
 extern const unsigned int kInfoPresent_BSCALE;
 extern const unsigned int kInfoPresent_BZERO;
-
 #endif
 
 //****************************************************************************

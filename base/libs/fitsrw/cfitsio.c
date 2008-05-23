@@ -106,7 +106,7 @@ int cfitsio_read_keys(char* fits_filename, CFITSIO_KEYWORD** keylist)
       if((!strcmp(key_name,"COMMENT")) || (!strcmp(key_name,"HISTORY")))
       {
 	 strcpy(node->key_name, key_name);
-	 node->key_type='C';
+	 node->key_type=kFITSRW_Type_String;
 	 strcpy(node->key_value.vs,card); //save the whole card into value
       }					
       else //regular key=value
@@ -125,21 +125,21 @@ int cfitsio_read_keys(char* fits_filename, CFITSIO_KEYWORD** keylist)
 	 switch(node->key_type)
 	 {
 	    case ('X'): //complex number is stored as string, for now.
-	    case ('C'): //Trip off ' ' around cstring? 
+	    case (kFITSRW_Type_String): //Trip off ' ' around cstring? 
 	       strcpy(node->key_value.vs, key_value);
 	       break;
-	    case ('L'): if (key_value[0]=='0') node->key_value.vl = 0;
+	    case (kFITSRW_Type_Logical): if (key_value[0]=='0') node->key_value.vl = 0;
 	    else node->key_value.vl = 1;
 	       break;
 
-	    case ('I'): sscanf(key_value,"%lld", &node->key_value.vi);
+	    case (kFITSRW_Type_Integer): sscanf(key_value,"%lld", &node->key_value.vi);
 	       break;
 
-	    case ('F'): sscanf(key_value,"%lf", &node->key_value.vf);
+	    case (kFITSRW_Type_Float): sscanf(key_value,"%lf", &node->key_value.vf);
 	       break;
 
 	    case (' '): //type not found, set it to NULL string
-	       node->key_type = 'C';
+	       node->key_type = kFITSRW_Type_String;
 	       node->key_value.vs[0]='\0';
 	    default :
 	       DEBUGMSG((stderr,"Key of unknown type detected [%s][%c]?\n",
@@ -182,10 +182,10 @@ int cfitsio_print_keys(CFITSIO_KEYWORD* keylist)
 	
       switch(kptr->key_type)
       {
-	 case('C'): printf("%s",kptr->key_value.vs); break;
-	 case('L'): printf("%19d",kptr->key_value.vl); break;
-	 case('I'): printf("%19d",kptr->key_value.vl); break;
-	 case('F'): printf("%19f",kptr->key_value.vf); break;
+	 case(kFITSRW_Type_String): printf("%s",kptr->key_value.vs); break;
+	 case(kFITSRW_Type_Logical): printf("%19d",kptr->key_value.vl); break;
+	 case(kFITSRW_Type_Integer): printf("%19d",kptr->key_value.vl); break;
+	 case(kFITSRW_Type_Float): printf("%19f",kptr->key_value.vf); break;
 	 case('X'): printf("%s",kptr->key_value.vs); break;
       }
       
@@ -262,16 +262,16 @@ int cfitsio_append_key(CFITSIO_KEYWORD** keylist,
 	 switch (type)
 	 {
 	    case( 'X'):
-	    case ('C'):
+	    case (kFITSRW_Type_String):
 	       snprintf(node->key_value.vs, FLEN_VALUE, "%s", (char *) value);
 	       break;
-	    case ('L'):
+	    case (kFITSRW_Type_Logical):
 	       node->key_value.vl = *((int *)value);
 	       break;
-	    case ('I'):
+	    case (kFITSRW_Type_Integer):
 	       node->key_value.vi = *((long long *)value);
 	       break;
-	    case ('F'):
+	    case (kFITSRW_Type_Float):
 	       node->key_value.vf = *((double *)value);
 	       break;
 	    default:
@@ -540,7 +540,7 @@ int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD** keylis
       if((!strcmp(key_name,"COMMENT")) || (!strcmp(key_name,"HISTORY")))
       {
 	 strcpy(node->key_name, key_name);
-	 node->key_type='C';
+	 node->key_type=kFITSRW_Type_String;
 	 strcpy(node->key_value.vs,card); //save the whole card into value .vs
       }					
       else //regular key=value
@@ -559,21 +559,21 @@ int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD** keylis
 	 switch(node->key_type)
 	 {
 	    case ('X'): //complex number is stored as string, for now.
-	    case ('C'): //Trip off ' ' around cstring? 
+	    case (kFITSRW_Type_String): //Trip off ' ' around cstring? 
 	       strcpy(node->key_value.vs, key_value);
 	       break;
-	    case ('L'): if (key_value[0]=='0') node->key_value.vl = 0;
+	    case (kFITSRW_Type_Logical): if (key_value[0]=='0') node->key_value.vl = 0;
 	    else node->key_value.vl = 1;
 	       break;
 
-	    case ('I'): sscanf(key_value,"%lld", &node->key_value.vi);
+	    case (kFITSRW_Type_Integer): sscanf(key_value,"%lld", &node->key_value.vi);
 	       break;
 
-	    case ('F'): sscanf(key_value,"%lf", &node->key_value.vf);
+	    case (kFITSRW_Type_Float): sscanf(key_value,"%lf", &node->key_value.vf);
 	       break;
 
 	    case (' '): //type not found, set it to NULL string
-	       node->key_type = 'C';
+	       node->key_type = kFITSRW_Type_String;
 	       node->key_value.vs[0]='\0';
 	    default :
 	       DEBUGMSG((stderr,"Key of unknown type detected [%s][%c]?\n",
@@ -1303,7 +1303,7 @@ int cfitsio_key_to_card(CFITSIO_KEYWORD* kptr, char* card)
 
    switch(kptr->key_type)
    {
-      case('C'):
+      case(kFITSRW_Type_String):
       case('X'):
 	 if(strlen(kptr->key_comment) >0)
 	 {
@@ -1315,7 +1315,7 @@ int cfitsio_key_to_card(CFITSIO_KEYWORD* kptr, char* card)
 	 }
 	 break;
 	  
-      case('L'):
+      case(kFITSRW_Type_Logical):
 	 if(strlen(kptr->key_comment) >0)
 	 {
 	    if(kptr->key_value.vl)
@@ -1333,7 +1333,7 @@ int cfitsio_key_to_card(CFITSIO_KEYWORD* kptr, char* card)
 	    
 	 break;
 	 
-      case('I'):
+      case(kFITSRW_Type_Integer):
 	 if(strlen(kptr->key_comment) >0)
 	 {
 	    sprintf(temp,"%-8s= %20lld / %s", kptr->key_name, kptr->key_value.vi, kptr->key_comment);
@@ -1344,7 +1344,7 @@ int cfitsio_key_to_card(CFITSIO_KEYWORD* kptr, char* card)
 	 }
 	 break;
 	 
-      case('F'):
+      case(kFITSRW_Type_Float):
 	 if(strlen(kptr->key_comment) >0)
 	 {
 	    sprintf(temp,"%-8s= %20G / %s", kptr->key_name, kptr->key_value.vf, kptr->key_comment);
