@@ -55,6 +55,18 @@
 #define UNLOADCMD "/usr/sbin/mtx -f /dev/t950 unload"
 #define POSITIONDUMP "/tmp/t950_position_dump.out"
 #elif SUMT120
+#define SUMDR0 "/dev/sum_nst0"
+#define SUMDR1 "/dev/sum_nst1"
+#define SUMDR2 "/dev/sum_nst2"
+#define SUMDR3 "/dev/sum_nst3"
+#define SUMDR4 "/dev/sum_nst4"
+#define SUMDR5 "/dev/sum_nst5"
+#define SUMDR6 "/dev/sum_nst6"
+#define SUMDR7 "/dev/sum_nst7"
+#define SUMDR8 "/dev/sum_nst8"
+#define SUMDR9 "/dev/sum_nst9"
+#define SUMDR10 "/dev/sum_nst10"
+#define SUMDR11 "/dev/sum_nst11"
 #define MAX_SLOTS 128
 #define NUM_IMP_EXP_SLOTS 8  /* assumes these slots are the highest slot#s */
 #define MAX_SLOTS_LIVE (MAX_SLOTS - NUM_IMP_EXP_SLOTS)
