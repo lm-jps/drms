@@ -2,7 +2,7 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
     if 0;
 #/home/production/cvs/JSOC/base/sums/scripts/t120stageall.pl
 #
-#Will keep 3 versions of t120_reachive.pl running.
+#Will keep 4 versions of t120_reachive.pl running.
 #Will use the input file for the list of tape#s to call t120_reachive.pl
 #for.
 #
