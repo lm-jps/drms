@@ -216,7 +216,7 @@ void setup()
   cptr = index(thishost, '.');       /* must be short form */
   *cptr = (char)NULL;
   n = find_tapearc();
-  if(n != 1) {
+  if(n > 1) {
      printf("%s: Only one tapearc %s allowed at a time. I see %d\n",
 	    thishost, dbname,n);
      send_mail("%s: Only one tapearc %s allowed at a time. I see %d\n",
