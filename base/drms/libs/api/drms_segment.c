@@ -208,8 +208,8 @@ static int CreateDRMSArray(CFITSIO_IMAGE_INFO *info, void *data, DRMS_Array_t **
    {
       if (!(info->bitfield & kInfoPresent_SIMPLE) || !info->simple)
       {
-	  err = 1;
-	  fprintf(stderr, "Simple FITS file expected.\n");
+	 err = 1;
+	 fprintf(stderr, "Simple FITS file expected.\n");
       }
 
       if (!err)
@@ -1536,22 +1536,35 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
       fprintf(stderr,"Array contains no data!\n");
       return DRMS_ERROR_NULLPOINTER;
     }
-	
-    if (arr->naxis != seg->info->naxis)
+
+    if (seg->info->scope != DRMS_VARDIM)
     {
-      fprintf(stderr,"Number of axis in file (%d) do not match those in "
-	      "segment descriptor (%d).\n",arr->naxis,seg->info->naxis);
-      return DRMS_ERROR_INVALIDDIMS;
+       if (arr->naxis != seg->info->naxis)
+       {
+	  fprintf(stderr,"Number of axis in file (%d) do not match those in "
+		  "segment descriptor (%d).\n",arr->naxis,seg->info->naxis);
+	  return DRMS_ERROR_INVALIDDIMS;
+       }
+       for (i=0;i<arr->naxis;i++)
+       {
+	  if (arr->axis[i] != seg->axis[i])
+	  {
+	     fprintf(stderr,"Dimension of axis %d in file (%d) do not match those"
+		     " in segment descriptor (%d).\n",i,arr->axis[i], 
+		     seg->axis[i]);
+	     return DRMS_ERROR_INVALIDDIMS;
+	  }
+       }
     }
-    for (i=0;i<arr->naxis;i++)
+    else
     {
-      if (arr->axis[i] != seg->axis[i])
-      {
-	fprintf(stderr,"Dimension of axis %d in file (%d) do not match those"
-		" in segment descriptor (%d).\n",i,arr->axis[i], 
-		seg->axis[i]);
-	return DRMS_ERROR_INVALIDDIMS;
-      }
+       /* Use the input array's axis dimensionality and lengths for the output file */
+       seg->info->naxis = arr->naxis;
+
+       for (i=0;i<arr->naxis;i++)
+       {
+	  seg->axis[i] = arr->axis[i];
+       }
     }
 
     /* Can autoscale only if output file type is an int. */
@@ -2368,7 +2381,7 @@ int drms_segment_mapexport_tofile(DRMS_Segment_t *seg,
 
    if (fitskeys)
    {
-      cfitsio_free_keylist(&fitskeys);
+      cfitsio_free_keys(&fitskeys);
    }
 
    return stat;

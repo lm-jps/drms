@@ -2122,12 +2122,11 @@ int drms_keyword_mapexport(DRMS_Keyword_t *key,
 	 v.value = key->value;
 	 if (!DRMSKeyValToFITSKeyType(&v, &kwtype))
 	 {
-	    if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_keys_insert(fitskeys, 
-								    nameout, 
-								    kwtype, 
-								    NULL,
-								    NULL,
-								    &(key->value.char_val))))
+	    if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key(fitskeys, 
+								   nameout, 
+								   kwtype, 
+								   NULL,
+								   &(key->value.char_val))))
 	    {
 	       fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
 	       stat = DRMS_ERROR_FITSRW;
