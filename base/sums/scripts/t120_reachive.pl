@@ -6,13 +6,14 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
 #and update the sum_partn_alloc table to make each ds archive pending
 #again. Any tape file consists of potentially many data sets.
 #Option to call with second arg that is the filenumber to start at.
+#Also -l flag will give the last file number to read to.
 #
 use DBI;
 
 sub usage {
   print "Read t120 tape sequentially & update sum_partn_alloc to arch pend.\n";
-  print "Usage: t120_rearchive.pl [-hdb_host] [-ddb_name] tapeid [filenumber]\n";
-  print "       The default db_host is $HOSTDB. The db_name is jsoc\n";
+  print "Usage: t120_rearchive.pl [-hdb_host] [-ddb_name] [-llastfnum] tapeid [filenumber]\n";
+  print "       The default db_host is $HOSTDB. The db_name is jsoc_sums\n";
   exit(1);
 }
 
@@ -40,7 +41,9 @@ sub commify {
 
 
 $HOSTDB = "hmidb";      #host where DB runs
-$DB = "jsoc";
+$DB = "jsoc_sums";
+$lastfnum = 0;
+$PGPORT = 5434;
 while ($ARGV[0] =~ /^-/) {
   $_ = shift;
   if (/^-h(.*)/) {
@@ -49,6 +52,9 @@ while ($ARGV[0] =~ /^-/) {
   if (/^-d(.*)/) {
     $DB = $1;
   }
+  if (/^-l(.*)/) {
+    $lastfnum = $1;
+  }   
 }
 
 if(($#ARGV != 0) && ($#ARGV !=1)) {
@@ -71,7 +77,7 @@ if($user ne "production") {
 }
 
 #First connect to database
-  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb", "$user", "$password");
+  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb;port=$PGPORT", "$user", "$password");
   if ( !defined $dbh ) {
     die "Cannot do \$dbh->connect: $DBI::errstr\n";
   }
@@ -104,6 +110,9 @@ if($user ne "production") {
       print "ERROR: no group_id for tapeid=$tapeid\n";
       $dbh->disconnect();
       exit;
+    }
+    if($lastfnum) {
+      $nxtwrtfnum = $lastfnum;
     }
 for($tapefn=$startfn; $tapefn < $nxtwrtfnum; $tapefn++) {
   print "\nProcess for tapeid=$tapeid filenumber=$tapefn\n";
