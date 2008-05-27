@@ -212,7 +212,7 @@ int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
   char *call_err;
   static char res;
   enum clnt_stat status;
-  int i;
+  int i, stat;
   int errflg = 0;
 
   if(sum->debugflg) {
@@ -238,6 +238,8 @@ int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
       errflg = 1;
     }
   }
+
+  stat = getmsgimmed();		//clean up pending response
 
   //(void)pmap_unset(RESPPROG, sum->uid); /* unreg response server */
   remsumopened(&sumopened_hdr, sum->uid); /* rem from linked list */
@@ -516,12 +518,13 @@ int getanymsg(int block)
 {
   fd_set readfds;
   struct timeval timeout;
-  int wait, retcode = ERRMESS, srdy;
-  int ts=getdtablesize();   /* file descriptor table size */
+  int wait, retcode = ERRMESS, srdy, info;
+  static int ts=0;   /* file descriptor table size */
 
   wait = 1;
   timeout.tv_sec=0;
   timeout.tv_usec=500000;
+  if(!ts) ts = getdtablesize();
   while(wait) {
     readfds=svc_fdset;
     srdy=select(ts,&readfds,(fd_set *)0,(fd_set *)0,&timeout); /* # ready */
@@ -551,6 +554,45 @@ int getanymsg(int block)
   return(retcode);
 }
 
+// Like getanymsg() above but w/no timeout for immediate SUM_close() use.
+int getmsgimmed()
+{
+  fd_set readfds;
+  struct timeval timeout;
+  int wait, retcode = ERRMESS, srdy, info;
+  static int ts=0;   /* file descriptor table size */
+
+  wait = 1;
+  timeout.tv_sec=0;
+  timeout.tv_usec=0;
+  if(!ts) ts = getdtablesize();
+  while(wait) {
+    readfds=svc_fdset;
+    srdy=select(ts,&readfds,(fd_set *)0,(fd_set *)0,&timeout); /* # ready */
+    switch(srdy) {
+    case -1:
+      if(errno==EINTR) {
+        continue;
+      }
+      perror("getanymsg: select failed");
+      retcode = ERRMESS;
+      wait = 0;
+      break;
+    case 0:			  /* timeout */
+      retcode = TIMEOUTMSG;
+      wait = 0;
+      break;
+    default:
+      /* can be called w/o dispatch to respd(), but will happen on next call */
+      RESPDO_called = 0;	  /* set by respd() */
+      svc_getreqset(&readfds);    /* calls respd() */
+      retcode = RPCMSG;
+      if(RESPDO_called) wait = 0;
+      break;
+    }
+  }
+  return(retcode);
+}
 
 /* Function called on receipt of a sum_svc response message.
  * Called from respd().
