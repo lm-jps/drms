@@ -2,26 +2,27 @@
 #ifndef SUM_INCL
 #if defined SUMDC
 #define SUM_VERSION_NUM    (1.0)
-#define SUMSERVER "dcs0.Stanford.EDU"
+//#define SUMSERVER "dcs0.Stanford.EDU"
 #define SUMDB "dcs0"
 #define SUMPGPORT "5432"
 #define TAPEVIEWERNAME "t50view"
 #define SUM_STOP_NOT "/usr/local/logs/SUM/SUM_STOP_NOT"
 #elif defined SUMT120
 #define SUM_VERSION_NUM    (1.0)
-#define SUMSERVER "d00.Stanford.EDU"
+//#define SUMSERVER "d00.Stanford.EDU"
 #define SUMDB "hmidb"
 #define SUMPGPORT "5434"
 #define TAPEVIEWERNAME "t120view"
 #define SUM_STOP_NOT "/usr/local/logs/SUM/SUM_STOP_NOT"
 #elif defined SUMT950
 #define SUM_VERSION_NUM    (1.0)
-#define SUMSERVER "d02.Stanford.EDU"
+//#define SUMSERVER "d02.Stanford.EDU"
 #define SUMDB "hmidb"
 #define SUMPGPORT "5434"
 #define TAPEVIEWERNAME "t950view"
 #define SUM_STOP_NOT "/usr/local/logs/SUM/SUM_STOP_NOT"
 #endif
+#define SUMSERVER "d02.Stanford.EDU"
 
 #include <jsoc.h>
 #include <stdint.h>	/* need to repeat this for pro-c precompiler */
