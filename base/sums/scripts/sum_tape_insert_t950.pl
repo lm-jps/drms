@@ -9,9 +9,7 @@ use DBI;
 use Term::ReadKey;
 
 #$DB = "jsoc";
-#$DB = "jim";
-$DB = "jsoc_sums";
-$PGPORT=5434;
+$DB = "jim";
 
 #$IDTBL = "/home/ora10/SUM/tapeid.list"; # our initial set of tapes
 #$IDTBL = "/home/jim/cvs/JSOC/base/sums/script/tapeid.list"; #for t120
@@ -43,7 +41,7 @@ $password = "jimshoom";
 $hostdb = "hmidb";      #host where Postgres runs
 
 #First connect to database
-  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb;port=$PGPORT", "$user", "$password");
+  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb", "$user", "$password");
   if ( !defined $dbh ) {
     die "Cannot do \$dbh->connect: $DBI::errstr\n";
   }
