@@ -33,7 +33,7 @@ EXEC SQL END DECLARE SECTION;
         EXEC SQL DECLARE pfind CURSOR FOR
 	SELECT tapeid, nxtwrtfn, spare, avail_blocks, closed
         FROM SUM_TAPE
-        WHERE GROUP_ID = :l_group_id AND CLOSED != 2 AND CLOSED != -2
+        WHERE GROUP_ID = :l_group_id AND CLOSED != 2
 	ORDER BY tapeid;
 
         EXEC SQL OPEN pfind;
