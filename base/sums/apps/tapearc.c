@@ -36,7 +36,7 @@ void sighandler(int sig);
 KEY *tapearcdo_1(KEY *params);
 static void tapearcprog_1(struct svc_req *rqstp, SVCXPRT *transp);
 
-static struct timeval TIMEOUT = { 180, 0 };
+static struct timeval TIMEOUT = { 60, 0 };
 static int WRTSTATUS;
 uint32_t rinfo;         /* info returned by XXXdo_1() calls */
 int call_tape_svc_cnt;
@@ -59,6 +59,7 @@ time_t now;
 int verbose = 0;
 int debugflg = 0;
 int queryflg = 0;
+int test60d = 0;
 int aminflg = 0;
 int archive_minimum = 0;
 int archive_pending = 0;
@@ -140,6 +141,7 @@ void usage()
   printf(" where -v = verbose mode\n");
   printf("       -q = query only mode\n");
   printf("       -d = run  in debug mode\n");
+  printf("       -6 = 60 day test mode. only archive test groups\n");
   printf("       -n arcmin = don't archive unless # in ap list > arcmin.\n");
   printf("NOTE: you must be user production to run.\n");
   exit(1);
@@ -164,6 +166,9 @@ void get_cmd(int argc, char *argv[])
         break;
       case 'q':
         queryflg=1;
+        break;
+      case '6':
+        test60d=1;
         break;
       default:
         usage();
@@ -210,6 +215,7 @@ void setup()
 {
   char *cptr;
   int n;
+  char pgport[32];
 
   printk_set(printf, printf);
   gethostname(thishost, MAX_STR);
@@ -222,6 +228,12 @@ void setup()
      send_mail("%s: Only one tapearc %s allowed at a time. I see %d\n",
 	       thishost, dbname,n);
      exit(1); 
+  }
+  //don't set pgport on datacapture machines
+  if(strcmp(thishost, "dcs0") && strcmp(thishost, "dcs1") && strcmp(thishost, "dcs2")) {
+
+    sprintf(pgport, SUMPGPORT);
+    setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
   }
 
   if (signal(SIGINT, SIG_IGN) != SIG_IGN)
@@ -348,7 +360,12 @@ int main(int argc, char *argv[])
   setup();
 
   /* get partn_alloc table - all entries with status DAAP or DASAP */
-  aplist = NC_PaRequest_AP();
+  if(test60d) {			//60day test mode. only archive groups 102-105
+    aplist = NC_PaRequest_AP_60d();
+  }
+  else {
+    aplist = NC_PaRequest_AP();
+  }
   archive_pending = count_list(aplist);
   if (verbose || queryflg) {
     printf("\nThere are %d entries in the archive pending list.\n",
