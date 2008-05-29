@@ -258,9 +258,12 @@ int main(int argc, char *argv[])
 	}
 
 #ifndef SUMNOAO
-if(strcmp(thishost, "lws") && strcmp(thishost, "flap")) { /* !!TEMP don't fork on lws or flap */
-  sprintf(pgport, SUMPGPORT);
-  setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
+/* !!TEMP don't fork on lws or flap */
+if(strcmp(thishost, "lws") && strcmp(thishost, "flap")) {
+  if(strcmp(thishost, "dcs0") && strcmp(thishost, "dcs1") && strcmp(thishost, "dcs2")) {
+    sprintf(pgport, SUMPGPORT);
+    setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
+  }
   if((pid = fork()) < 0) {
     write_log("***Can't fork(). errno=%d\n", errno);
     exit(1);
