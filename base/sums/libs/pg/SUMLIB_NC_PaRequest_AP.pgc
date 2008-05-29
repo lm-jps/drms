@@ -41,7 +41,7 @@ EXEC SQL INCLUDE sqlca;
 		FROM SUM_PARTN_ALLOC
 		WHERE 
                 STATUS = 4 OR STATUS = 32
- 		limit 10000;
+ 		limit 2000;
 		//ORDER BY GROUP_ID limit 10000;
 
 	EXEC SQL OPEN palloc;
