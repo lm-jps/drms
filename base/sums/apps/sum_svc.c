@@ -239,7 +239,7 @@ int main(int argc, char *argv[])
   int i;
   pid_t pid;
   char dsvcname[80];
-  char *args[5];
+  char *args[5], pgport[32];
 
   get_cmd(argc, argv);
   printf("\nPlease wait for sum_svc and tape inventory to initialize...\n");
@@ -259,6 +259,8 @@ int main(int argc, char *argv[])
 
 #ifndef SUMNOAO
 if(strcmp(thishost, "lws") && strcmp(thishost, "flap")) { /* !!TEMP don't fork on lws or flap */
+  sprintf(pgport, SUMPGPORT);
+  setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
   if((pid = fork()) < 0) {
     write_log("***Can't fork(). errno=%d\n", errno);
     exit(1);
