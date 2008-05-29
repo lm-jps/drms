@@ -10,14 +10,14 @@ EXEC SQL BEGIN DECLARE SECTION;
   varchar user[80];
 EXEC SQL END DECLARE SECTION;
   char *dbuser, *dbhost;
-  char pgport[32];
+  //char pgport[32];
 
 
     EXEC SQL WHENEVER SQLERROR GOTO sqlerror1;
 
    
-    sprintf(pgport, SUMPGPORT); 
-    setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
+    //sprintf(pgport, SUMPGPORT); 
+    //setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
     if(!(dbuser = (char *)getenv("USER"))) dbuser = "production";
 #ifdef SUMDC
     if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = "dcs0";
@@ -30,12 +30,13 @@ EXEC SQL END DECLARE SECTION;
     user.len = strlen(user.arr);
 
     	EXEC SQL CONNECT TO :target USER :user;
-    printk("Connect to Postgres host=%s db=%s user=%s pgport=%s OK\n", 
-		dbhost, dbname, dbuser, pgport);
+    printk("Connect to Postgres host=%s db=%s user=%s Ok\n", 
+		dbhost, dbname, dbuser);
     EXEC SQL COMMIT WORK;
     return NO_ERROR;
 	
 sqlerror1:
+        printk("!!TEMP TEST\n");
 	printk("Error in DS_ConnectDB host=%s db=%s user=%s\n", 
 		dbhost, dbname, dbuser); 
 	printk("% .80s \n", sqlca.sqlerrm.sqlerrmc); 
@@ -67,9 +68,12 @@ EXEC SQL BEGIN DECLARE SECTION;
   varchar user[80];
 EXEC SQL END DECLARE SECTION;
   char *dbuser, *dbhost;
+  //char pgport[32];
 
-    EXEC SQL WHENEVER SQLERROR GOTO sqlerror1;
+    EXEC SQL WHENEVER SQLERROR GOTO sqlerror3;
 
+    //sprintf(pgport, SUMPGPORT); 
+    //setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
     if(!(dbuser = (char *)getenv("USER"))) dbuser = "production";
 #ifdef SUMDC
     if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = "dcs0";
@@ -85,8 +89,8 @@ EXEC SQL END DECLARE SECTION;
     EXEC SQL COMMIT WORK;
     return NO_ERROR;
 	
-sqlerror1:
-	printk("Error in DS_ConnectDB host=%s db=%s user=%s\n", 
+sqlerror3:
+	printk("Error in DS_ConnectDB_Q host=%s db=%s user=%s\n", 
 		dbhost, dbname, dbuser); 
 	printk("% .80s \n", sqlca.sqlerrm.sqlerrmc); 
     EXEC SQL WHENEVER SQLERROR CONTINUE;
@@ -98,11 +102,11 @@ sqlerror1:
 int DS_DisConnectDB_Q()
 {
 
-    EXEC SQL WHENEVER SQLERROR GOTO sqlerror2;
+    EXEC SQL WHENEVER SQLERROR GOTO sqlerror4;
     EXEC SQL DISCONNECT;
     return NO_ERROR;
 	
-sqlerror2:
+sqlerror4:
 	printk("Error in DS_DisConnectDB\n"); 
 	printk("% .70s \n", sqlca.sqlerrm.sqlerrmc); 
     return DS_DISCONNECT_DB;
