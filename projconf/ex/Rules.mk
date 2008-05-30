@@ -13,6 +13,8 @@ dir	:= $(d)/example
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/myproj
 -include		$(SRCDIR)/$(dir)/Rules.mk
+dir	:= $(d)/cookbook
+-include		$(SRCDIR)/$(dir)/Rules.mk
 
 # Standard things
 d		:= $(dirstack_$(sp))

@@ -15,6 +15,8 @@ dir	:= $(d)/dsdsmigr
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/example
 -include		$(SRCDIR)/$(dir)/Rules.mk
+dir	:= $(d)/cookbook
+-include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/lev0
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/lev1_aia
