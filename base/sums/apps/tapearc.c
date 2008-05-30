@@ -319,6 +319,7 @@ int call_tape_svc(int groupid, double bytes, uint64_t index) {
     else {
       if(retstat == NO_TAPE_IN_GROUP) {
         printf("Can't assign tape for group id %d\n", groupid);
+        printf("Check tape_svc log for any error messages\n");
         printf("I'm aborting now...\n");
         if(is_connected)
         if(DS_DisConnectDB())
