@@ -11,7 +11,7 @@
 #include <tape.h>
 
 /* !!TBD fix up these defs */
-#define OFFSITEHOST "d00.stanford.edu" /* offsite hostname to send .md5 files */
+//#define OFFSITEHOST "d00.stanford.edu" //offsite hostname to send .md5 files
 #define OFFSITEDIR "/dds/socdc" /* offsite dir to put .md5 files */
 #define MAX_PART 64		/* max # +1 of dedicated /SUM partitions */
 #define MAXSUMSETS 4		/* max # of SUM sets */
