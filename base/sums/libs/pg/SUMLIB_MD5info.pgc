@@ -54,12 +54,13 @@ end_fetch:
     fclose(md5fp);
     EXEC SQL CLOSE md5cursor;
     EXEC SQL COMMIT;
-    sprintf(cmd, "scp -p %s %s:%s", md5file, OFFSITEHOST, OFFSITEDIR);
-    printk("%s\n", cmd);
-    if(system(cmd)) { 
-      printk("Error on: %s\n", cmd);
-      return(1);
-    }
+    //NO don't scp it. leave it in the local dcs machine in /dds/socdc
+    //sprintf(cmd, "scp -p %s %s:%s", md5file, OFFSITEHOST, OFFSITEDIR);
+    //printk("%s\n", cmd);
+    //if(system(cmd)) { 
+    //  printk("Error on: %s\n", cmd);
+    //  return(1);
+    //}
     return(0);
 
 sqlerror:
