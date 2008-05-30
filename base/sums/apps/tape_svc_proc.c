@@ -763,6 +763,7 @@ KEY *writedo_1(KEY *params) {
     if((dnum=tapeindrive(tapeinfo.tapeid)) == -1) { /* tape not in any drive */
       rinfo = NO_TAPE_IN_GROUP;  /* give err status back to original caller */
       send_ack();
+      write_log("Tape %s not in T50", tapeinfo.tapeid);
       return((KEY *)1);  /* error. nothing to be sent */
     }
   }
