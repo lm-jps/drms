@@ -438,6 +438,7 @@ PADATA *getpauid(PADATA *list, uint64_t uid);
 PADATA *getpawd(PADATA *list, char *wd);
 PADATA *getpanext(PADATA *list);
 PADATA *NC_PaRequest_AP ();
+PADATA *NC_PaRequest_AP_60d ();
 int DS_ConnectDB (char *dbname);
 int DS_DisConnectDB ();
 int DS_ConnectDB_Q (char *dbname);
