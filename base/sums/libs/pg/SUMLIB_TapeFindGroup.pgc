@@ -68,7 +68,7 @@ end_fetch:
         EXEC SQL DECLARE tfind CURSOR FOR
 	SELECT tapeid, nxtwrtfn, spare, avail_blocks, closed
         FROM SUM_TAPE
-        WHERE GROUP_ID = -1 AND CLOSED != 2
+        WHERE GROUP_ID = -1 AND CLOSED != 2 AND CLOSED != -2
 	ORDER BY tapeid;
 
         EXEC SQL OPEN tfind;
