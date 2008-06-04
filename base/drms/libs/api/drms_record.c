@@ -4641,7 +4641,6 @@ static int ParseRecSetDesc(const char *recsetsStr,
 		    *pcBuf++ = *pc++;
 		    if (DSElem_SkipWS(&pc) && (*pc == ']'))
 		    {
-		       *pcBuf++ = *pc;
 		       state = kRSParseState_DRMSFilt;
 		    }
 		    else
