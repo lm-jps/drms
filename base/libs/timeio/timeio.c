@@ -300,7 +300,7 @@ static int _parse_date (char *str) {
   return status;
 }
 
-static int _parse_date_time (char *str) {
+static int _parse_date_time_inner (char *str, char **first, char **second, char **third) {
 /*
  *  Parse a date-time string in one of the standard forms specified in
  *    SOI TN 94-116
@@ -315,6 +315,12 @@ static int _parse_date_time (char *str) {
   length = strlen (str);
   if (!length) return _parse_error ();
   field0 = strtok (str, "_");
+
+  if (first && field0 && strlen(field0) > 0)
+  {
+     *first = strdup(field0);
+  }
+
   if ((strlen (field0)) == length) {
      /*  No "_" separators: field (if valid) must be of type YYYY.MM.dd.ddd  */
                                                          /*  Default is UTC  */
@@ -328,10 +334,22 @@ static int _parse_date_time (char *str) {
   }
               /*  First field must either be calendar date or "MJD" or "JD"  */
   field1 = strtok (NULL, "_");
+
+  if (second && field1 && strlen(field1) > 0)
+  {
+     *second = strdup(field1);
+  }
+
   if (!(strcasecmp (field0, "MJD")) || !(strcasecmp (field0, "JD"))) {
     status = sscanf (field1, "%lf", &dattim.julday);
     if (status != 1) return _parse_error ();
     field2 = strtok (NULL, "_");
+
+    if (third && field2 && strlen(field2) > 0)
+    {
+       *third = strdup(field2);
+    }
+
     if (field2) {
       strncpy (dattim.zone, field2, 7);
       dattim.zone[7] = '\0';
@@ -347,6 +365,12 @@ static int _parse_date_time (char *str) {
   dattim.julday = 0.0;
   if (!field1) return _parse_error ();
   field2 = strtok (NULL, "_");
+
+  if (third && field2 && strlen(field2) > 0)
+  {
+     *third = strdup(field2);
+  }
+
   if (field2) {
     strncpy (dattim.zone, field2, 7);
     dattim.zone[7] = '\0';
@@ -376,6 +400,11 @@ static int _parse_date_time (char *str) {
   }
   else if (status == 6) field2 = field1;
   return 0;
+}
+
+static int _parse_date_time (char *str)
+{
+   return _parse_date_time_inner (str, NULL, NULL, NULL);
 }
 
 #define JD_EPOCH        (2443144.5)
@@ -821,7 +850,10 @@ double zone_adjustment_inner (char *zone, int *valid) {
     if (zone[0] > 'M') {
       hours = 'M' - zone[0];
       if (zone[0] == 'Z')
+      {
         hours = 0;
+        *valid = 0; /* zone 'Z' means an invalid time zone was parsed. */
+      }
     }
     dt += 3600.0 * hours;
     return dt;
@@ -896,6 +928,136 @@ int zone_isvalid (char *zone) {
 
 int time_is_invalid (TIME t) {
   return (isnan (t) || t == JULIAN_DAY_ZERO);
+}
+
+/* Returns 1 is the time string is a valid time. */
+int parsetimestr (const char *timestr,
+                  int **year,
+                  int **month,
+                  int **dofm,
+                  int **dofy,
+                  int **hour,
+                  int **minute,
+                  double **second,
+                  char **zone,
+                  double **juliday,
+                  int **civil,
+                  int **utflag) {
+
+   int ret = 0;
+   int status;
+   char ls[256];
+
+   char *f1 = NULL;
+   char *f2 = NULL;
+   char *f3 = NULL;
+
+   strncpy (ls, timestr, 255);
+   ls[255] = '\0';
+   status = _parse_date_time_inner (ls, &f1, &f2, &f3);
+   if (status != -1) {
+      /* YYYY.MM.DD is required in a time string */
+      if (year) 
+      {
+         *year = malloc(sizeof(int));
+         **year = dattim.year;
+      }
+
+      if (month)
+      {
+         *month = malloc(sizeof(int));
+         **month = dattim.month;
+      }
+
+      if (dofm) 
+      {
+         *dofm = malloc(sizeof(int));
+         **dofm = dattim.dofm;
+      }
+      
+      if (dofy) 
+      {
+         *dofy = malloc(sizeof(int));
+         **dofy = dattim.dofy;
+      }
+
+      if (f2)
+      {
+         if (hour) 
+         {
+            *hour = malloc(sizeof(int));
+            **hour = dattim.hour;
+         }
+         if (minute) 
+         {
+            *minute = malloc(sizeof(int));
+            **minute = dattim.minute;
+         }
+         if (second) 
+         {
+            *second = malloc(sizeof(double));
+            **second = dattim.second;
+         }
+      }
+      else
+      {
+         if (hour) *hour = NULL;
+         if (minute) *minute = NULL;
+         if (second) *second = NULL;
+      }
+
+      /* Don't use the value of dattim.zone - it is not what was parsed. 
+       * Under the hood the value passed in might be changed to UTC. */
+      if (zone)
+      {
+         if (f3 && zone_isvalid(dattim.zone))
+         {
+            *zone = strdup(dattim.zone);         
+         }
+         else
+         {
+            *zone = NULL;
+         }
+      }
+
+      /* XXX don't know what to do with these */
+      if (juliday)
+      {
+         *juliday = malloc(sizeof(double));
+         **juliday = dattim.julday;
+      }
+
+      if (civil)
+      {
+         *civil = malloc(sizeof(int));
+         **civil = dattim.civil;
+      }
+
+      if (utflag)
+      {
+         *utflag = malloc(sizeof(int));
+         **utflag = dattim.ut_flag;
+      }
+
+      ret = 1;
+   }
+
+   if (f1)
+   {
+      free(f1);
+   }
+
+   if (f2)
+   {
+      free(f2);
+   }
+
+   if (f3)
+   {
+      free(f3);
+   }
+
+   return ret;
 }
 
 /*

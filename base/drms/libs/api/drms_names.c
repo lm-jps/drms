@@ -643,6 +643,92 @@ static IndexRangeSet_t *parse_index_set(char **in)
 }
 
 
+/* Ideally, we woudln't have to parse the time string twice (here and in the 
+ * subsetquent call to drms_sscanf(). But the way we represent times with
+ * strings isn't suitable to parsing time zones without having to parse the
+ * whole time string.  A better time string would not overload '_' as a separator
+ * for time zones and as a separator between other time components.  timeio kind
+ * of has to parse the whole string to get to the point where it can determine if
+ * there is a time zone in the string.
+ * 
+ * Also, you can't simply look for _XXX in a time string and if that exists then
+ * deduce that the time string has a valid time zone.  _XXX may not be a valid time zone
+ * for one thing, but drms_sscanf() will still parse it (it probably shouldn't).
+ *
+ * So, unfortunately, we have to parse the time string twice.
+ *
+ * timeio is buggy.  It will think that the timezone of 1996.05.01_00:00 is UTC.
+ * But it will think that the timezone of 2006.05.01 is not known.  But downstread,
+ * timeio will somehow think that 2006.05.01 is UTC.
+ */
+static char *AdjTimeZone(const char *timestr, DRMS_Keyword_t *keyword, int *len)
+{
+  /* If we are parsing a time string, and the time-string has NO time-zone
+    * specified, use the keyword's unit field as the time-zone*/
+   char *ret = NULL; 
+   int *hour = NULL;
+   int *minute = NULL;
+   char *zone = NULL;
+   double juliday;
+   int civil;
+   int utflag;
+
+   char *lasts;
+   char *tokenstr = strdup(timestr);
+   if (tokenstr)
+   {
+      char *ans = strtok_r(tokenstr, " -/,]", &lasts);
+      if (ans)
+      {
+         *len = strlen(ans);
+
+         if (parsetimestr(tokenstr, NULL, NULL, NULL, NULL, &hour, &minute, 
+                          NULL, &zone, NULL, NULL, NULL))
+         {
+            if (!zone)
+            {
+               /* Valid time, but no zone - append keyword's unit field. */
+               /* Work around sscan_time() requiring HH:MM sometimes */
+               ret = malloc(256);
+
+               if (!hour && !minute)
+               {
+                  /* HH:MM is missing - append 00:00*/
+                  /* Have to modify in! */
+                  snprintf(ret, 256, "%s_00:00_%s", tokenstr, keyword->info->unit);
+               }
+               else
+               {
+                  snprintf(ret, 256, "%s_%s", tokenstr, keyword->info->unit);   
+               }
+            }
+         }
+      }
+      else
+      {
+         *len = 0;
+      }
+
+      free(tokenstr);
+   }
+
+   if (hour)
+   {
+      free(hour);
+   }
+
+   if (minute)
+   {
+      free(minute);
+   }
+
+   if (zone)
+   {
+      free(zone);
+   }
+
+   return ret;
+}
 
 static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 					char **in)
@@ -683,7 +769,6 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 
     if (vr->type != FIRST_VALUE &&
 	vr->type != LAST_VALUE) {
-
        /* Get start */
 
        /* If this is a TS_EQ- or SLOT-slotted key, this could be a duration 
@@ -718,16 +803,46 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 
        if (!gotstart)
        {
-	  if ((n = drms_sscanf_int(p, datatype, &vr->start, 1)) == 0 ||
+          char *valstr = NULL;
+          int adv = -1;
+          int len;
+
+          if (datatype == DRMS_TYPE_TIME)
+          {
+             valstr = AdjTimeZone(p, keyword, &len);
+             if (valstr == NULL)
+             {
+                valstr = p;
+             }
+             else
+             {
+                adv = len;
+             }
+          }
+          else
+          {
+             valstr = p;
+          }
+
+	  if ((n = drms_sscanf_int(valstr, datatype, &vr->start, 1)) == 0 ||
 	      n == -1)
 	  {
 	     fprintf(stderr,"Syntax Error: Expected either time duraton " 
 		     "or start value of type %s in "
 		     "value range, found '%s'.\n",drms_type2str(datatype), p);
+             free(valstr);
 	     goto error;
 	  }
-	  else
-	    p += n;
+          else if (adv > 0)
+          {
+             p += adv;
+          }
+          else
+          {
+             p += n;
+          }
+
+          free(valstr);
        }
 
       if (*p=='-')
@@ -754,14 +869,44 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 
 	      if (vr->type == START_END)
 		{
-		  if ((n = drms_sscanf(p, datatype, &vr->x)) == 0)    
+                   char *valstr = NULL;
+                   int adv = -1;
+                   int len;
+
+                   if (datatype == DRMS_TYPE_TIME)
+                   {
+                      valstr = AdjTimeZone(p, keyword, &len);
+                      if (valstr == NULL)
+                      {
+                         valstr = p;
+                      }
+                      else
+                      {
+                         adv = len;
+                      }
+                   }
+                   else
+                   {
+                      valstr = p;
+                   }
+
+		  if ((n = drms_sscanf(valstr, datatype, &vr->x)) == 0)    
 		    {
 		      fprintf(stderr,"Syntax Error: Expected end value of"
 			      " type %s in value range, found '%s'.\n",drms_type2str(datatype), p);
+                      free(valstr);
 		      goto error;
 		    }
-		  else
-		    p+=n;
+		  else if (adv > 0)
+                  {
+                     p += adv;
+                  }
+                  else
+                  {
+                     p += n;
+                  }
+
+                  free(valstr);
 		}
 	      else
 		{
@@ -803,7 +948,9 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 		  goto error;
 		}
 	      else
-		p+=n;
+              {
+                 p+=n;
+              }
 	      /* Get skip */
 	      if (*p=='@')
 		{
@@ -816,7 +963,9 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 		      goto error;
 		    }
 		  else
-		    p+=n;
+                  {
+                     p+=n;
+                  }
 		}
 	      else
 		vr->has_skip = 0;
@@ -839,7 +988,8 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 	}
     }
   } while(*p++ == ',');
-  *in=p-1;  
+
+  *in=p-1;
 #ifdef DEBUG
   printf("exit parse_value_set\n");
 #endif

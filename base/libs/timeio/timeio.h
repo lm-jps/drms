@@ -301,6 +301,37 @@ int zone_isvalid (char *zone);
 */
 extern int time_is_invalid (TIME t);
 
+/**
+   @brief Parses a time string, returning all the time components.
+
+   @param timestr A time string.
+   @param year The parsed year (return value).
+   @param month The parsed month (return value).
+   @param dofm The parsed day of month (return value).
+   @param dofy The parsed day of year (return value).
+   @param hour The parsed hour (return value).
+   @param minute The parsed minute (return value).
+   @param second The parsed second (return value).
+   @param zone The parsed time zone (return value).  Must be freed by caller.
+   @param juliday The parsed Julian Day (return value).
+   @param civil The parsed civil flag (return value).
+   @param utflag The parsed UT flag (return value).
+
+   @return 1 if the intput time string is valid.
+*/
+
+int parsetimestr (const char *timestr,
+                  int **year,
+                  int **month,
+                  int **dofm,
+                  int **dofy,
+                  int **hour,
+                  int **minute,
+                  double **second,
+                  char **zone,
+                  double **juliday,
+                  int **civil,
+                  int **utflag);
 #endif
 /*
  *  Revision History
