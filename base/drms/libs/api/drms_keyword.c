@@ -1782,6 +1782,8 @@ double drms_keyword_getstep(DRMS_Keyword_t *key,
       switch (recscope)
       {
 	 case kRecScopeType_TS_EQ:
+           /* intentional fall-through */
+         case kRecScopeType_TS_SLOT:
 	   {
 	      /* This is a duration - parse it. */
 	      char *durstr = drms_keyword_getstring(key, NULL);
