@@ -1635,7 +1635,7 @@ TIME drms_keyword_getepoch(DRMS_Keyword_t *key, int *status)
 
    if (key->info->type == DRMS_TYPE_STRING && strstr(key->info->name, kSlotAncKey_Epoch))
    {
-      TIME *timeval = drms_time_getepoch((key->value).string_val, NULL, &stat);
+      const TIME *timeval = drms_time_getepoch((key->value).string_val, NULL, &stat);
 
       if (timeval)
       {
@@ -2071,13 +2071,24 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
       } /* case */
 
       stepsecs = unitVal * step;
-
+      double exact = 0;
+      int inexact = 0;
+      int toosmall = 0;
 
       if (round_down)
       {
          if (startdur)
          {
-            /* valind is actually a duration, in seconds. */   
+            /* valind is actually a duration, in seconds. */
+            exact = valind / roundstep;
+
+            if (valind < roundstep)
+            {
+               toosmall = 1;
+               fprintf(stderr, "Invalid slotted-keyword duration '%f seconds' specified.  Should be at least the step size of '%f seconds'.  Duration was rounded up to step size.\n", valind, roundstep);
+               valind = roundstep; /* ensures that at least one slot is returned */
+            }
+
             valout->value.longlong_val = CalcSlot(valind, 0.0, stepsecs, roundstep);
          }
          else
@@ -2088,10 +2099,29 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
          if (startdur)
          {
             /* valind is actually a duration, in seconds. */  
+            exact = valind / stepsecs;
+
+            if (valind < stepsecs)
+            {
+               toosmall = 1;
+               fprintf(stderr, "Invalid slotted-keyword duration '%f seconds' specified.  Should be at least the step size of '%f seconds'.  Duration was rounded up to step size.\n", valind, stepsecs);
+               valind = stepsecs; /* ensures that at least one slot is returned */ 
+            }
+
             valout->value.longlong_val = CalcSlot(valind, 0.0, stepsecs, stepsecs);
          }
          else
            valout->value.longlong_val = CalcSlot(valind, base, stepsecs, stepsecs);
+      }
+
+      if (startdur)
+      {
+         inexact = (int)exact;
+
+         if (!toosmall && (fabs(exact - inexact) > 1.0e-11 * (fabs(exact) + fabs(inexact))))
+         {
+            fprintf(stderr, "Invalid slotted-keyword duration '%f seconds' specified.  Should be a multiple of step size '%f seconds'.  Duration was rounded to nearest multiple.\n", valind, roundstep);
+         }
       }
    }
    else
