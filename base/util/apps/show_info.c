@@ -132,12 +132,13 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "c", "0", "Show count of records in query"},
   {ARG_FLAG, "d", "0", "Show dimensions of segment files with selected segs"},
   {ARG_FLAG, "h", "0", "help - print usage info"},
+  {ARG_FLAG, "i", "0", "print record query, for each record, will be before any keywwords or segment data"},
   {ARG_FLAG, "j", "0", "list series info in jsd format"},
+  {ARG_FLAG, "k", "0", "keyword list one per line"},
   {ARG_FLAG, "l", "0", "just list series keywords with descriptions"},
   {ARG_INT,  "n", "0", "number of records to show, +from first, -from last"},
   {ARG_FLAG, "p", "0", "list the record\'s storage_unit path"},
   {ARG_FLAG, "P", "0", "list the record\'s storage_unit path but no retrieve"},
-  {ARG_FLAG, "k", "0", "keyword list one per line"},
   {ARG_FLAG, "q", "0", "quiet - skip header of chosen keywords"},
   {ARG_FLAG, "r", "0", "recnum - show record number as first keyword"},
   {ARG_FLAG, "s", "0", "stats - show some statistics about the series"},
@@ -158,6 +159,7 @@ int nice_intro ()
         "  -c: count records in query\n"
   	"  -d: Show dimensions of segment files with selected segs\n"
 	"  -h: help - show this message then exit\n"
+	"  -i: query- show the record query that matches the current record\n"
 	"  -j: list all series, keyword, segment, and link items in jsd file format, then exit\n"
 	"  -k: list keyword names and values, one per line\n"
 	"  -l: list all keywords with description, then exit\n"
@@ -392,6 +394,7 @@ int DoIt(void)
   int jsd_list;
   int list_keys;
   int show_all;
+  int show_recordspec;
   int show_stats;
   int max_recs;
   int quiet;
@@ -410,6 +413,7 @@ int DoIt(void)
   seglist = strdup (cmdparams_get_str (&cmdparams, "seg", NULL));
   show_keys = strcmp (keylist, "Not Specified");
   show_segs = strcmp (seglist, "Not Specified");
+  show_recordspec = cmdparams_get_int (&cmdparams, "i", NULL) != 0;
   jsd_list = cmdparams_get_int (&cmdparams, "j", NULL) != 0;
   list_keys = cmdparams_get_int (&cmdparams, "l", NULL) != 0;
   show_all = cmdparams_get_int (&cmdparams, "a", NULL) != 0;
@@ -612,6 +616,8 @@ int DoIt(void)
         {			/* print keyword and segment name header line */
         if (show_recnum)
           printf ("recnum\t");
+        if (show_recordspec)
+          printf ("query\t");
         for (ikey=0 ; ikey<nkeys; ikey++)
           printf ("%s\t",keys[ikey]); 
         for (iseg = 0; iseg<nsegs; iseg++)
@@ -626,6 +632,9 @@ int DoIt(void)
         }
       }
 
+    /* now do the work for each record */
+    /* record number goes first if wanted */
+
     if (keyword_list) /* if not in table mode, i.e. value per line mode then show record query for each rec */
       {
       printf("# ");
@@ -633,15 +642,18 @@ int DoIt(void)
       printf("\n");
       }
 
-    /* now do the work for each record */
-    /* record number goes first if wanted */
-
     if (show_recnum)
       {
       if (keyword_list)
 	printf("recnum=%lld\n",rec->recnum);
       else
         printf ("%6lld\t", rec->recnum);
+      }
+
+    if (!keyword_list && show_recordspec)
+      {
+      drms_print_rec_query(rec);
+      printf("\t");
       }
 
     /* now print keyword information */
@@ -727,7 +739,7 @@ int DoIt(void)
         printf("SUDIR=");
       printf("%s", path);
       }
-    if (show_recnum || nkeys || nsegs || want_path)
+    if (show_recnum || show_recordspec || nkeys || nsegs || want_path)
       printf ("\n");
     }
 
