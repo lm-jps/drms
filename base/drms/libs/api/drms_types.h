@@ -519,6 +519,7 @@ typedef struct DRMS_Record_struct DRMS_Record_t;
 #define kSlotAncKey_Unit "_unit"
 #define kSlotAncKey_Base "_base"
 #define kSlotAncKey_Vals "_vals"
+#define kSlotAncKey_Round "_round"
 
 extern const DRMS_Type_t kIndexKWType;
 extern const char *kIndexKWFormat;
@@ -601,7 +602,9 @@ enum DRMS_RecScopeType_enum
    kRecScopeType_TS_EQ = kRecScopeSlotted_B,
    kRecScopeType_SLOT = kRecScopeSlotted_B + 1,
    kRecScopeType_ENUM = kRecScopeSlotted_B + 2,
-   kRecScopeType_CARR = kRecScopeSlotted_B + 3
+   kRecScopeType_CARR = kRecScopeSlotted_B + 3,
+   kRecScopeType_TS_SLOT = kRecScopeSlotted_B + 4
+
 };
 
 typedef enum DRMS_RecScopeType_enum DRMS_RecScopeType_t;

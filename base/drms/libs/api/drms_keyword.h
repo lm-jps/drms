@@ -162,6 +162,7 @@ DRMS_Keyword_t *drms_keyword_epochfromslot(DRMS_Keyword_t *slot);
 DRMS_Keyword_t *drms_keyword_basefromslot(DRMS_Keyword_t *slot);
 DRMS_Keyword_t *drms_keyword_stepfromslot(DRMS_Keyword_t *slot);
 DRMS_Keyword_t *drms_keyword_unitfromslot(DRMS_Keyword_t *slot);
+DRMS_Keyword_t *drms_keyword_roundfromslot(DRMS_Keyword_t *slot);
 DRMS_Keyword_t *drms_keyword_slotfromindex(DRMS_Keyword_t *indx);
 int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey, 
 				  DRMS_Value_t *valin,
@@ -170,9 +171,10 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 
 static inline long long CalcSlot(double slotkeyval, 
 				 double base, 
-				 double stepsecs)
+				 double stepsecs,
+                                 double roundstep)
 {
-   double slotvald = floor((slotkeyval - base + (stepsecs / 2.0)) / stepsecs);
+   double slotvald = floor((slotkeyval - base + (roundstep / 2.0)) / stepsecs);
    return slotvald;
 }
 

@@ -49,6 +49,7 @@ static RecScopeStrings_t gSS[] =
    {kRecScopeType_SLOT, "slot"},
    {kRecScopeType_ENUM, "enum"},
    {kRecScopeType_CARR, "carr"},
+   {kRecScopeType_TS_SLOT, "ts_slot"},
    {(DRMS_RecScopeType_t)-99, ""}
 };
 
@@ -1598,7 +1599,7 @@ TIME drms_keyword_getslotepoch(DRMS_Keyword_t *slotkey, int *status)
 
    if (slotkey)
    {
-      /* Shouldn't be an epoch key, unless keyword is of recscope TS_EQ. */
+      /* Shouldn't be an epoch key, unless keyword is of recscope TS_EQ or TS_SLOT. */
       epochKey = drms_keyword_epochfromslot(slotkey);
 
       if (epochKey)
@@ -1679,6 +1680,7 @@ double drms_keyword_getslotbase(DRMS_Keyword_t *slotkey, int *status)
       switch (slotkey->info->recscope)
       {
 	 case kRecScopeType_TS_EQ:
+         case kRecScopeType_TS_SLOT:
 	   ret = drms_keyword_getslotepoch(slotkey, status);
 	   break;
 	 case kRecScopeType_SLOT:
@@ -1878,6 +1880,11 @@ DRMS_Keyword_t *drms_keyword_unitfromslot(DRMS_Keyword_t *slot)
    return GetAncillaryKey(slot, kSlotAncKey_Unit);
 }
 
+DRMS_Keyword_t *drms_keyword_roundfromslot(DRMS_Keyword_t *slot)
+{
+   return GetAncillaryKey(slot, kSlotAncKey_Round);
+}
+
 DRMS_Keyword_t *drms_keyword_slotfromindex(DRMS_Keyword_t *indx)
 {
    DRMS_Keyword_t *ret = NULL;
@@ -1927,15 +1934,23 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
       /* Must convert slotted-key value into associated index-key value */
       double step;
       double stepsecs;
+      double roundstep = 0.0;
       DRMS_SlotKeyUnit_t unit;
       double unitVal;
       int usedefunit = 0;
+      int round_down = 0;
 
       DRMS_Keyword_t *stepKey = drms_keyword_stepfromslot(slotkey);
       DRMS_Keyword_t *unitKey = drms_keyword_unitfromslot(slotkey);
+      DRMS_Keyword_t *roundKey = drms_keyword_roundfromslot(slotkey);
 
       double base;
       double valind;
+
+      if (roundKey)
+      {
+         roundstep = drms_keyword_getdouble(roundKey, NULL);
+      }
 
       step = drms_keyword_getslotstep(slotkey, &unit, &stat);
 
@@ -1968,6 +1983,9 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
       DRMS_RecScopeType_t recscope = drms_keyword_getrecscope(slotkey);
       switch (recscope)
       {
+         case kRecScopeType_TS_SLOT:
+           round_down = 1;
+           /* intential fall-through */
 	 case kRecScopeType_TS_EQ:
 	   {
 	      TIME epoch;
@@ -2054,24 +2072,26 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 
       stepsecs = unitVal * step;
 
-      if (startdur)
+
+      if (round_down)
       {
-	 /* valin is actually a duration, in seconds. */
-
-	 /* Must add 1 to slotinc because a duration query is val >= start && val < start + inc.  
-	  * So, normally, slotinc would be MAX((int)(valind / stepsecs) - 1, 0). */
-	 long long slotinc = (long long)(valind / stepsecs);
-
-	 if (slotinc == 0)
-	 {
-	    slotinc++;
-	 }
-
-	 valout->value.longlong_val = slotinc;
+         if (startdur)
+         {
+            /* valind is actually a duration, in seconds. */   
+            valout->value.longlong_val = CalcSlot(valind, 0.0, stepsecs, roundstep);
+         }
+         else
+           valout->value.longlong_val = CalcSlot(valind, base, stepsecs, roundstep);
       }
       else
       {
-	 valout->value.longlong_val = CalcSlot(valind, base, stepsecs);
+         if (startdur)
+         {
+            /* valind is actually a duration, in seconds. */  
+            valout->value.longlong_val = CalcSlot(valind, 0.0, stepsecs, stepsecs);
+         }
+         else
+           valout->value.longlong_val = CalcSlot(valind, base, stepsecs, stepsecs);
       }
    }
    else

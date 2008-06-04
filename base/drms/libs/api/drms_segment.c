@@ -1228,17 +1228,20 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
   if (seg->info->protocol != DRMS_TAS && arr->type != seg->info->type) {
     fprintf (stderr, "Data types in file (%d) do not match those in segment " 
 	"descriptor (%d).\n", (int)arr->type, (int)seg->info->type);
+    stat = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
     goto bailout;
   }
   if (arr->naxis != seg->info->naxis) {
     fprintf (stderr, "Number of axis in file (%d) do not match those in "
 	    "segment descriptor (%d).\n", arr->naxis, seg->info->naxis);
+    stat = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
     goto bailout;
   }
   for (i=0;i<arr->naxis;i++) {    
     if (arr->axis[i] != seg->axis[i]) {
       fprintf (stderr,"Dimension of axis %d in file (%d) do not match those"
 	  " in segment descriptor (%d).\n", i, arr->axis[i], seg->axis[i]);
+      stat = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
       goto bailout;
     }
   }
