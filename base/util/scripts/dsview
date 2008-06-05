@@ -88,7 +88,8 @@ $date = &get_effdate;
 #print "effdate = $date\n";
 
   $mw = MainWindow->new;
-  $mw->geometry("780x470+1+1");
+  #$mw->geometry("780x470+1+1");
+  $mw->geometry("780x570+1+1");
   $mw->title("dsview");
   $tframe = $mw->Frame(-borderwidth => 1)->pack(-side => 'top');
   $image = $tframe->Photo(-file => "$IMGDIR/SDO_Badge.gif");
@@ -126,6 +127,7 @@ $date = &get_effdate;
 
   $lb = $tframe1->Scrolled("Listbox", -scrollbars => "w", -width => 0,
 		-font => 'arial 14 bold',
+		-height => 400,
                 -selectmode => "single")->pack(-side => 'top', -pady => 10);
   $lb->insert('end', @listbox_items);
   $lb->bind('<Button-1>', \&lb_sub);
@@ -150,7 +152,8 @@ sub lb_sub {
   $ds = $lb->get($lb->curselection(  ));
   @schema = `echo "\\d $ds" | psql -h $hostdb $DB`;
   $queryf = $mw->Toplevel();
-  $queryf->geometry("500x330+5+500");
+  #$queryf->geometry("500x330+5+500");
+  $queryf->geometry("500x330+5+601");
   $queryf->title("dsview - $ds");
 #  my $yf = $queryf->Frame(-borderwidth => 0)
 #			->pack(-fill => 'both', -side => 'top');
