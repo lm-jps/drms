@@ -36,7 +36,6 @@ EXEC SQL END DECLARE SECTION;
     return NO_ERROR;
 	
 sqlerror1:
-        printk("!!TEMP TEST\n");
 	printk("Error in DS_ConnectDB host=%s db=%s user=%s\n", 
 		dbhost, dbname, dbuser); 
 	printk("% .80s \n", sqlca.sqlerrm.sqlerrmc); 
