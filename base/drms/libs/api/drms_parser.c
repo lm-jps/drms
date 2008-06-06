@@ -1068,6 +1068,216 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys)
   return 0;
 }
 
+enum PFormatLMod_enum
+{
+   kPFormatLMod_None = 0,
+   kPFormatLMod_Char,
+   kPFormatLMod_Short,
+   kPFormatLMod_LongLong,
+   kPFormatLMod_LongDouble
+};
+typedef enum PFormatLMod_enum PFormatLMod_t;
+
+static int FormatChk(const char *format, DRMS_Type_t dtype)
+{
+   int ok = 1;
+   int gotformat = 0;
+
+   if (dtype == DRMS_TYPE_TIME)
+   {
+      signed char val; /* must specify 'signed' for some reason. */
+
+      if (sscanf(format, "%hhd", &val) != 1 || val <= -10 || val >= 10)
+      {
+         ok = 0;
+      }
+   }
+   else
+   {
+      /* All format strings must have ONE format specifier (a single '%' followed by a specifiers) */
+      /* But "%%" is allowed, which means 'print a percent sign' */
+      char *fcopy = strdup(format);
+      char *ppcnt = strchr(fcopy, '%');
+
+      while (ok && ppcnt)
+      {
+         while (ppcnt && ppcnt - fcopy < strlen(fcopy) - 1 && *(ppcnt + 1) == '%')
+         {
+            ppcnt = strchr(ppcnt + 2, '%');
+         }
+
+         if (ppcnt && gotformat)
+         {
+            ok = 0;
+            fprintf(stderr, "Too many format specifiers in '%s'.  There should be one only.\n", format); 
+            break;
+         }
+
+         if (ppcnt)
+         {
+            char *lasts;
+            char *fcopy2 = strdup(ppcnt);
+            char *md = NULL; /* modifier */
+            PFormatLMod_t lmod;
+            int fmtstrlen = 0;
+
+            /* Since all DRMS values are signed values:
+             *   ignore unsigned arguments - %u,%c
+             *   ignore pointer arguments - %p,%n 
+             *   ignore Unicode arguments - %C,%S  */
+            md = strtok_r(fcopy2, "dioxXfFeEgGaAs", &lasts);
+            if (md)
+            {
+               fmtstrlen = strlen(md);
+               char sp = ppcnt[fmtstrlen]; /* specifier */
+               gotformat = 1;
+               md++; /* flags/length modifier starts after '%' */
+
+               /* figure out which modifier is present */
+               if (strstr(md, "hh"))
+               {
+                  /* The argument is converted to an int and passed to printf, 
+                     then cast to char before printing */
+                  lmod = kPFormatLMod_Char;
+               }
+               else if (strchr(md, 'h'))
+               {
+                  /* The argument is converted to an int and passed to printf,
+                     then cast to short before printing */
+                  lmod = kPFormatLMod_Short;
+               }
+               else if (strstr(md, "ll"))
+               {
+                  /* The argument is converted to a long long and passed to printf, 
+                     and printed as a long long */
+                  lmod = kPFormatLMod_LongLong;
+               }
+               else if (strchr(md, 'l'))
+               {
+                  /* Don't use this modifier - on 32-bit machines this is 32 bits, but on 
+                   * 64-bit machines, this is 64 bits. So if your data type is long long, 
+                   * this will be converted to long, which could be 32-bits, which is too
+                   * small to hold a 64-bit value, which would result in demotion. */
+                  if (dtype == DRMS_TYPE_STRING)
+                  {
+                     fprintf(stderr, "Format 'ls' implies the string argument is Unicode - DRMS does not support Unicode strings.\n");
+                  }
+                  else
+                  {
+                     fprintf(stderr, "Using format length modifier 'l' is dangerous; on 32-bit machines, a 32-bit value is expected, but on 64-bit machines, a 64-bit value is expected.\n");
+                  }
+                  ok = 0;
+               }
+               else if (strchr(md, 'j'))
+               {
+                  /* same as long long - 64 bits */
+                  lmod = kPFormatLMod_LongLong;
+               }
+               else if (strchr(md, 'L'))
+               {
+                  lmod = kPFormatLMod_LongDouble;
+               }
+               else if (strchr(md, 'z') || strchr(md, 't'))
+               {
+                  /* z - unsigned, but not sure if 32 or 64 bits */
+                  /* Just to be safe, warn about these weird length modifiers */
+                  ok = 0;
+               }
+               else
+               {
+                  lmod = kPFormatLMod_None;
+               }
+
+               if (ok)
+               {
+                  /* d , i , o , u , x , and X cause conversion of argument to int (but length modifiers
+                   * modify this).  The rest cause conversion to double.
+                   */
+                  switch (dtype)
+                  {
+                     case DRMS_TYPE_CHAR:
+                       ok &= (lmod == kPFormatLMod_None || lmod == kPFormatLMod_Char || 
+                              lmod == kPFormatLMod_Short || lmod == kPFormatLMod_LongLong);
+                       ok &= (sp == 'd' || sp == 'i' || sp == 'o' || sp == 'x' || sp == 'X' || 
+                              sp == 'f' || sp == 'F' || sp == 'e' || sp == 'E' || sp == 'g' || sp == 'G' || 
+                              sp == 'a' || sp == 'A');
+                       break;
+                     case DRMS_TYPE_SHORT:
+                       ok &= (lmod == kPFormatLMod_None || lmod == kPFormatLMod_Short || 
+                              lmod == kPFormatLMod_LongLong);
+                       ok &= (sp == 'd' || sp == 'i' || sp == 'o' || sp == 'x' || sp == 'X' || 
+                              sp == 'f' || sp == 'F' || sp == 'e' || sp == 'E' || sp == 'g' || sp == 'G' || 
+                              sp == 'a' || sp == 'A');
+                       break; 
+                     case DRMS_TYPE_INT:
+                       ok &= (lmod == kPFormatLMod_None || lmod == kPFormatLMod_LongLong);
+                       ok &= (sp == 'd' || sp == 'i' || sp == 'o' || sp == 'x' || sp == 'X' || 
+                              sp == 'f' || sp == 'F' || sp == 'e' || sp == 'E' || sp == 'g' || sp == 'G' || 
+                              sp == 'a' || sp == 'A');
+                       break;
+                     case DRMS_TYPE_LONGLONG:
+                       ok &= ((lmod == kPFormatLMod_None && (sp != 'd' && sp!= 'i' 
+                                                             && sp != 'o' && sp != 'x' && sp != 'X')) || 
+                              lmod == kPFormatLMod_LongLong);
+                       ok &= (sp == 'd' || sp == 'i' || sp == 'o' || sp == 'x' || sp == 'X' || 
+                              sp == 'f' || sp == 'F' || sp == 'e' || sp == 'E' || sp == 'g' || sp == 'G' || 
+                              sp == 'a' || sp == 'A');
+                       break;
+                     case DRMS_TYPE_FLOAT:
+                       /* intentional fall-through */
+                     case DRMS_TYPE_DOUBLE:
+                       /* float vals shouldn't be converted to integer vals */
+                       /* length modifiers, other than 'L', have no impact on these and 'L' is fine here. */
+                       ok &= (sp == 'f' || sp == 'F' || sp == 'e' || sp == 'E' || sp == 'g' || sp == 'G' || 
+                              sp == 'a' || sp == 'A');
+                       break;
+                     case DRMS_TYPE_STRING:     
+                       /* The only bad modifier is 'l', which was blocked above */
+                       ok &= (sp == 's');
+                       break;
+                     default:
+                       /* Unsupported data type */
+                       ok = 0;
+                       fprintf(stderr, "Unsupported data type '%s'.\n", drms_type2str(dtype));
+                  }
+               }
+            }
+            else
+            {
+               /* Invalid format specifier */
+               ok = 0;
+               fprintf(stderr, "Invalid format specifier.\n"); 
+            }
+
+            if (fcopy2)
+            {
+               free(fcopy2);
+            }
+
+            if (ok)
+            {
+               /* Start searching with the character immediately following the specifier, which could
+                * be a null termintor. */
+               ppcnt = strchr(ppcnt + fmtstrlen + 1, '%');
+            }
+         }
+      } /* while*/
+
+      if (!gotformat)
+      {
+         ok = 0;
+         fprintf(stderr, "No format specifier found.\n"); 
+      }
+
+      if (fcopy)
+      {
+         free(fcopy);
+      }
+   }
+
+   return ok;
+}
+
 static int parse_keyword(char **in, 
 			 DRMS_Record_t *template, 
 			 HContainer_t *slotted,
@@ -1173,6 +1383,14 @@ static int parse_keyword(char **in,
      key->info->linkname[0] = 0;
      key->info->target_key[0] = 0;
      key->info->type = kIndexKWType;
+     if (!FormatChk(format, key->info->type))
+     {
+        fprintf(stderr, 
+                "WARNING: The format specified '%s' is incompatible with the data type '%s' of keyword '%s'.\n",
+                format, 
+                drms_type2str(key->info->type),
+                key->info->name);
+     }
      strcpy(key->info->format, format);
      strcpy(key->info->unit, "none");
      key->info->recscope = kRecScopeType_Index;
@@ -1242,6 +1460,14 @@ static int parse_keyword(char **in,
       drms_printfval(key->info->type, &key->value);
       printf("\n");
 #endif
+      if (!FormatChk(format, key->info->type))
+      {
+         fprintf(stderr, 
+                 "WARNING: The format specified '%s' is incompatible with the data type '%s' of keyword '%s'.\n",
+                 format, 
+                 drms_type2str(key->info->type),
+                 key->info->name);
+      }
       strcpy(key->info->format, format);
       strcpy(key->info->unit, unit);
       key->info->recscope = kRecScopeType_Variable;

@@ -852,7 +852,8 @@ double zone_adjustment_inner (char *zone, int *valid) {
       if (zone[0] == 'Z')
       {
         hours = 0;
-        *valid = 0; /* zone 'Z' means an invalid time zone was parsed. */
+        if (valid)
+          *valid = 0; /* zone 'Z' means an invalid time zone was parsed. */
       }
     }
     dt += 3600.0 * hours;
@@ -893,8 +894,10 @@ double zone_adjustment_inner (char *zone, int *valid) {
   else if (!strcmp (zone, "NZDT"))
     hours = 13;
   else {
-     /* Crap - you'd think a function named zone_adjustment would recognize  
-      * TDT, TAI, UTC, etc */
+     /* This function didn't originally recognize all 'time zones', such as TDT, TAI, UTC, etc.
+      * These time systems are comingled with the time zones in the parsing code, so include
+      * them here insofar as this is the only place in timeio where the 'time zones' are
+      * listed. */
      if (strcasecmp(zone, "TDT") &&
 	 strcasecmp(zone, "TAI") &&
 	 strcasecmp(zone, "TT") &&
@@ -1020,7 +1023,7 @@ int parsetimestr (const char *timestr,
          }
       }
 
-      /* XXX don't know what to do with these */
+      /* XXX don't know what to do with these - just return them */
       if (juliday)
       {
          *juliday = malloc(sizeof(double));

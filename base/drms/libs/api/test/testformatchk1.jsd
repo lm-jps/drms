@@ -1,0 +1,54 @@
+# *********************** Global information ************************
+Seriesname:	"su_arta.testformatchk1"
+Description:	"Test code that checks the keyword format-data type compatibility."
+Author:		"Art Amezcua"
+Owner:		"arta"
+Unitsize:	10000
+Archive:	0
+Retention:	7
+Tapegroup:	0
+Index:		OBST
+
+# **************************** Keywords ******************************
+Keyword:	OBST, time, ts_eq, record, 1977.01.01_00:00UT, UTC, "UTC", "Primary key"
+Keyword:	OBST_epoch, time, constant, record, 1966.12.25_00:00UT, UTC, "UTC", "ts_eq epoch"
+Keyword:	OBST_step, float, constant, record, 1.0, %f, sec, "ts_eq step"
+Keyword:	OBST_unit, string, constant, record, secs, %s, "none", "ts_eq unit"
+
+# all bad
+Keyword:	AKEY1, string, variable, record, secs, %f, "none", "blah"
+Keyword:	AKEY2, string, variable, record, something, %d, "none", "blah"
+Keyword:	AKEY3, string, variable, record, something, %ls, "none", "blah"
+
+Keyword:	AKEY4, short, variable, record, 30, %hhd, "none", "blah"
+
+Keyword:	AKEY5, int, variable, record, 1230, %hd, "none", "blah"
+Keyword:	AKEY6, int, variable, record, 1230, %z, "none", "blah"
+Keyword:	AKEY7, int, variable, record, 1230, %t, "none", "blah"
+
+Keyword:	AKEY8, longlong, variable, record, 10, %hd, "none", "blah"
+Keyword:	AKEY9, longlong, variable, record, 10, %hhd, "none", "blah"
+Keyword:	AKEY10, longlong, variable, record, 10, %c, "none", "blah"
+Keyword:	AKEY11, longlong, variable, record, 10, %lc, "none", "blah"
+Keyword:	AKEY12, longlong, variable, record, 1230, %ld, "none", "blah"
+
+Keyword:	AKEY12a, longlong, variable, record, 10, %eat%%fe%lld, "none", "blah"
+Keyword:	AKEY12b, longlong, variable, record, 1230, %j, "none", "blah"
+
+# all good
+Keyword:	AKEY13, char, variable, record, 30, %hd, "none", "blah"
+Keyword:	AKEY14, short, variable, record, 30, %hd, "none", "blah"
+
+Keyword:	AKEY15, int, variable, record, 30, %lld, "none", "blah"
+
+Keyword:	AKEY16, longlong, variable, record, 1230, %jd, "none", "blah"
+Keyword:	AKEY17, longlong, variable, record, 1230, %lld, "none", "blah"
+Keyword:	AKEY18, longlong, variable, record, 1230, %lli, "none", "blah"
+Keyword:	AKEY19, longlong, variable, record, 10, %f, "none", "blah"
+Keyword:	AKEY20, longlong, variable, record, 10, %e, "none", "blah"
+
+Keyword:	AKEY21, longlong, variable, record, 10, %%eat%%fe%lld, "none", "blah"
+Keyword:	AKEY22, longlong, variable, record, 10, %%eat%%fe%lld%%, "none", "blah"
+
+# ************************** Data Segments ***************************
+# None
