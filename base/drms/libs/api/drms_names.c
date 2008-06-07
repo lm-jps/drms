@@ -776,6 +776,11 @@ static char *AdjTimeZone(const char *timestr, DRMS_Keyword_t *keyword, int *len)
       free(zone);
    }
 
+   if (juliday)
+   {
+      free(juliday);
+   }
+
    return ret;
 }
 
