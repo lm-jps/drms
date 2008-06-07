@@ -178,12 +178,59 @@ static void _fracday_2_clock (double fdofm) {
   dattim.ut_flag = 0;
 }
 
-static int _parse_clock (char *str) {
+/* returns 1 if clock string is a valid time, 0 otherwise. */
+/* Ideally, there would be only one function that does this logic, 
+ * but the previously existing one, _parse_clock(), sets
+ * global variables, which the check for validity shouldn't do.
+ * And it has returns throughout.  So make a new function.
+ */
+static int clock_isvalid(const char *strin) {
+   int status;
+   char *token = NULL;
+   int hr;
+   int min;
+   double sec;
+   char str[1024];
+
+   snprintf(str, sizeof(str), "%s", strin);
+
+   token = strtok (str, ":");
+   if (token) {
+      /* hour */
+      status = (sscanf (token, "%d", &hr) == 1);
+      if (status) {
+         token = strtok (NULL, ":");
+         if (token) {
+            /* minute, which isn't necessary, but if it IS present
+             * it should be an int */
+            status = (sscanf (token, "%d", &min) == 1);
+            if (status) {
+               token = strtok (NULL, ":");
+               if (token) {
+                  /* second, which isn't necessary, but if it IS present
+                   * it should be a double */
+                  status = (sscanf (token, "%lf", &sec) == 1);
+               }
+            }
+         }
+      }
+   }
+   else {
+      status = 0;
+   }
+
+   return status;
+}
+
+static int _parse_clock (char *strin) {
 /*
  *  Read time elements from wall-clock string HH:MM:SS.SSS
  */
   int status;
   char *field0, *field1, *field2;
+
+  char str[1024];
+  snprintf(str, sizeof(str), "%s", strin);
 
   field0 = strtok (str, ":");
   if (!field0) return 0;
@@ -239,7 +286,7 @@ static int _parse_month_name (char *moname) {
   return (month);
 }
 
-static int _parse_date (char *str) {
+static int _parse_date (char *strin) {
 /*
  *  Read date elements from calendar string YYYY.{MM|nam}.DD[.ddd]
  */
@@ -248,6 +295,9 @@ static int _parse_date (char *str) {
   char *endptr;
   char *field0, *field1, *field2, *field3;
   char daystr[32];
+
+  char str[1024];
+  snprintf(str, sizeof(str), "%s", strin);
 
   field0 = strtok (str, ".");
   field1 = strtok (NULL, ".");
@@ -300,7 +350,7 @@ static int _parse_date (char *str) {
   return status;
 }
 
-static int _parse_date_time_inner (char *str, char **first, char **second, char **third) {
+static int _parse_date_time_inner (char *str, char **first, char **second, char **third, int *jdout) {
 /*
  *  Parse a date-time string in one of the standard forms specified in
  *    SOI TN 94-116
@@ -311,17 +361,35 @@ static int _parse_date_time_inner (char *str, char **first, char **second, char 
   int status;
   int length;
   char *field0, *field1, *field2;
+  char *tmpstr = NULL;
+  int earlytz = 0; /* if 1, then missing clock, but time zone present */
+
+  if (first) {
+     *first = NULL;
+  }
+
+  if (second) {
+     *second = NULL;
+  }
+
+  if (third) {
+     *third = NULL;
+  }
+
+  if (jdout) {
+     *jdout = 0;
+  }
 
   length = strlen (str);
   if (!length) return _parse_error ();
   field0 = strtok (str, "_");
 
-  if (first && field0 && strlen(field0) > 0)
-  {
-     *first = strdup(field0);
-  }
-
   if ((strlen (field0)) == length) {
+     if (first && field0 && strlen(field0) > 0) {
+        *first = strdup(field0);
+     }
+
+     /* Only field0 exists. */
      /*  No "_" separators: field (if valid) must be of type YYYY.MM.dd.ddd  */
                                                          /*  Default is UTC  */
     status = _parse_date (field0);
@@ -335,18 +403,19 @@ static int _parse_date_time_inner (char *str, char **first, char **second, char 
               /*  First field must either be calendar date or "MJD" or "JD"  */
   field1 = strtok (NULL, "_");
 
-  if (second && field1 && strlen(field1) > 0)
-  {
-     *second = strdup(field1);
-  }
-
   if (!(strcasecmp (field0, "MJD")) || !(strcasecmp (field0, "JD"))) {
+    /* For JD times, the date is contained in field1, not field0 and 
+     * there is no clock field.
+     */
+    if (first && field1 && strlen(field1) > 0) {
+       *first = strdup(field1);
+    }
+
     status = sscanf (field1, "%lf", &dattim.julday);
     if (status != 1) return _parse_error ();
     field2 = strtok (NULL, "_");
 
-    if (third && field2 && strlen(field2) > 0)
-    {
+    if (third && field2 && strlen(field2) > 0) {
        *third = strdup(field2);
     }
 
@@ -359,19 +428,73 @@ static int _parse_date_time_inner (char *str, char **first, char **second, char 
     if (field0[0] == 'M')
               /*  Modified Julian date (starts at midnight) : add 2400000.5  */
       dattim.julday += 2400000.5;
+
+    if (jdout)
+    {
+       *jdout = 1;
+    }
+
     return 1;
   }
                 /*  First field is calendar date with optional day fraction  */
   dattim.julday = 0.0;
+
+  if (first && field0 && strlen(field0) > 0) {
+     *first = strdup(field0);
+  }
+
   if (!field1) return _parse_error ();
+
   field2 = strtok (NULL, "_");
 
-  if (third && field2 && strlen(field2) > 0)
-  {
-     *third = strdup(field2);
+  status = _parse_date (field0);
+  if (status == 3) {
+    /* NO factional day exists */
+    status = _parse_clock (field1);
+    if (!status) {
+       /* Add support for  YYYY.MM.DD_TZ. */
+       /* field1 exists - may be a 'time zone' though if there is no field2 */
+       if (!field2) {
+          /* So, only two fields, and the second field was not a valid clock - 
+           * assume it is the 'time zone' (bad time zones are okay in timeio) */
+          earlytz = 1;
+          
+       }
+       else
+         return _parse_error ();
+    }
+    else
+    {
+       if (second && field1 && strlen(field1) > 0) {
+          *second = strdup(field1);
+       }
+    }
+  } else {
+     /* Fractional day exists - but field1 may contain time zone */
+     if (!field2 && !clock_isvalid(field1)) {
+        /* assume time zone*/
+        earlytz = 1;
+     }
+  }
+
+  if (earlytz) {
+     /* field1 is a time zone, and no field2 
+      * Make field1 00:00 and field2 be the time zone */
+     field2 = field1;
+     tmpstr = strdup("00:00");
+     field1 = tmpstr;
+     dattim.hour = 0;
+     dattim.minute = 0;
+     dattim.second = 0.0;
+     if (second)
+       *second = NULL;
   }
 
   if (field2) {
+     if (third && field2 && strlen(field2) > 0) {
+        *third = strdup(field2);
+     }
+
     strncpy (dattim.zone, field2, 7);
     dattim.zone[7] = '\0';
     field2 = strtok (NULL, "_");
@@ -380,12 +503,20 @@ static int _parse_date_time_inner (char *str, char **first, char **second, char 
 			       are misinterpreted as timezone designations!  */
     field2 = strchr (field1, '+');
     if (field2) {
+       if (third && field2 && strlen(field2) > 0) {
+          *third = strdup(field2);
+       }
+
       strncpy (dattim.zone, field2, 7);
       dattim.zone[7] = '\0';
       field2 = strtok (NULL, "_");
     } else {
       field2 = strchr (field1, '-');
       if (field2) {
+         if (third && field2 && strlen(field2) > 0) {
+            *third = strdup(field2);
+         }
+
 	strncpy (dattim.zone, field2, 7);
 	dattim.zone[7] = '\0';
 	field2 = strtok (NULL, "_");
@@ -393,18 +524,15 @@ static int _parse_date_time_inner (char *str, char **first, char **second, char 
       } else strcpy (dattim.zone, "UTC");
     }
   }
-  status = _parse_date (field0);
-  if (status == 3) {
-    status = _parse_clock (field1);
-    if (!status) return _parse_error ();
-  }
-  else if (status == 6) field2 = field1;
+
+  if (tmpstr)
+    free(tmpstr);
   return 0;
 }
 
 static int _parse_date_time (char *str)
 {
-   return _parse_date_time_inner (str, NULL, NULL, NULL);
+   return _parse_date_time_inner (str, NULL, NULL, NULL, NULL);
 }
 
 #define JD_EPOCH        (2443144.5)
@@ -934,6 +1062,12 @@ int time_is_invalid (TIME t) {
 }
 
 /* Returns 1 is the time string is a valid time. */
+/* Didn't include dattim.ut_flag since is isn't really something that 
+ * is parsed from a timestr.  It is deduced from the clock field. 
+ * Didn't include dattim.civil because it is also isn't something that 
+ * is parsed from a time string.  Also, it is never used in timeio (it
+ * is set, but not used).
+ */
 int parsetimestr (const char *timestr,
                   int **year,
                   int **month,
@@ -943,45 +1077,68 @@ int parsetimestr (const char *timestr,
                   int **minute,
                   double **second,
                   char **zone,
-                  double **juliday,
-                  int **civil,
-                  int **utflag) {
-
+                  double **juliday) {
    int ret = 0;
    int status;
    char ls[256];
 
-   char *f1 = NULL;
-   char *f2 = NULL;
-   char *f3 = NULL;
+   char *f1 = NULL; /* date */
+   char *f2 = NULL; /* clock time */
+   char *f3 = NULL; /* time zone */
+   int isjd = 0;
 
    strncpy (ls, timestr, 255);
    ls[255] = '\0';
-   status = _parse_date_time_inner (ls, &f1, &f2, &f3);
+   status = _parse_date_time_inner (ls, &f1, &f2, &f3, &isjd);
    if (status != -1) {
-      /* YYYY.MM.DD is required in a time string */
-      if (year) 
+      if (!isjd)
       {
-         *year = malloc(sizeof(int));
-         **year = dattim.year;
-      }
+         /* YYYY.MM.DD is required in a time string (or juliday) */
+         if (year) 
+         {
+            *year = malloc(sizeof(int));
+            **year = dattim.year;
+         }
 
-      if (month)
-      {
-         *month = malloc(sizeof(int));
-         **month = dattim.month;
-      }
+         if (month)
+         {
+            *month = malloc(sizeof(int));
+            **month = dattim.month;
+         }
 
-      if (dofm) 
-      {
-         *dofm = malloc(sizeof(int));
-         **dofm = dattim.dofm;
+         if (dofm) 
+         {
+            *dofm = malloc(sizeof(int));
+            **dofm = dattim.dofm;
+         }
+
+         if (juliday)
+         {
+            *juliday = NULL;
+         }
       }
-      
-      if (dofy) 
+      else
       {
-         *dofy = malloc(sizeof(int));
-         **dofy = dattim.dofy;
+         if (year)
+         {
+            *year = NULL;
+         }
+
+         if (month)
+         {
+            *month = NULL;
+         }
+
+         if (dofm)
+         {
+            *dofm = NULL;
+         }
+
+         if (juliday)
+         {
+            *juliday = malloc(sizeof(double));
+            **juliday = dattim.julday;
+         }
       }
 
       if (f2)
@@ -1023,23 +1180,10 @@ int parsetimestr (const char *timestr,
          }
       }
 
-      /* XXX don't know what to do with these - just return them */
-      if (juliday)
+      if (dofy)
       {
-         *juliday = malloc(sizeof(double));
-         **juliday = dattim.julday;
-      }
-
-      if (civil)
-      {
-         *civil = malloc(sizeof(int));
-         **civil = dattim.civil;
-      }
-
-      if (utflag)
-      {
-         *utflag = malloc(sizeof(int));
-         **utflag = dattim.ut_flag;
+         /* timeio doesn't ever set or use dattim.dofy - so always return NULL */
+         *dofy = NULL;
       }
 
       ret = 1;

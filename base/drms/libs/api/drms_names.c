@@ -653,9 +653,7 @@ static IndexRangeSet_t *parse_index_set(char **in)
  * 
  * Also, you can't simply look for _XXX in a time string and if that exists then
  * deduce that the time string has a valid time zone.  _XXX may not be a valid time zone
- * for one thing, but drms_sscanf() will still parse it (it probably shouldn't).
- *
- * So, unfortunately, we have to parse the time string twice.
+ * for one thing, but drms_sscanf() will still parse it as UT (it probably shouldn't).
  *
  * timeio is buggy.  It will think that the timezone of 1996.05.01_00:00 is UTC.
  * But it will think that the timezone of 2006.05.01 is not known.  But downstread,
@@ -666,12 +664,14 @@ static char *AdjTimeZone(const char *timestr, DRMS_Keyword_t *keyword, int *len)
   /* If we are parsing a time string, and the time-string has NO time-zone
     * specified, use the keyword's unit field as the time-zone*/
    char *ret = NULL; 
+   int *year = NULL;
+   int *month = NULL;
+   int *dofm = NULL;
    int *hour = NULL;
    int *minute = NULL;
+   double *second = NULL;
+   double *juliday = NULL;
    char *zone = NULL;
-   double juliday;
-   int civil;
-   int utflag;
 
    char *lasts;
    char *tokenstr = strdup(timestr);
@@ -682,25 +682,54 @@ static char *AdjTimeZone(const char *timestr, DRMS_Keyword_t *keyword, int *len)
       {
          *len = strlen(ans);
 
-         if (parsetimestr(tokenstr, NULL, NULL, NULL, NULL, &hour, &minute, 
-                          NULL, &zone, NULL, NULL, NULL))
+         if (parsetimestr(tokenstr, &year, &month, &dofm, NULL, &hour, &minute, 
+                          &second, &zone, &juliday))
          {
             if (!zone)
             {
                /* Valid time, but no zone - append keyword's unit field. */
-               /* Work around sscan_time() requiring HH:MM sometimes */
                ret = malloc(256);
 
-               if (!hour && !minute)
+               /* Either juliday must be not NULL or year/month/dofm must be present */
+               /* timeio automatically provides month = 1 and dofm = 1 if they 
+                * are not in the time string.  Ideally it wouldn't do that so you could 
+                * tell what fields were provided in the time string, but just work
+                * around that and assume those two fields exist. Same thing with 
+                * the hour/day/seconds fields - even if some are not in the time
+                * string, timeio adds them. But you can tell if NO clock field is
+                * in the time string, in which case all three are missing. Otherwise, 
+                * all three are present. */
+               if (juliday)
                {
-                  /* HH:MM is missing - append 00:00*/
-                  /* Have to modify in! */
-                  snprintf(ret, 256, "%s_00:00_%s", tokenstr, keyword->info->unit);
+                  snprintf(ret, 256, "JD_%f_%s", *juliday, keyword->info->unit);
                }
                else
                {
-                  snprintf(ret, 256, "%s_%s", tokenstr, keyword->info->unit);   
+                  int hh = 0;
+                  int mm = 0;
+                  double sec = 0.0;
+
+                  XASSERT(year != NULL && month != NULL && dofm != NULL);
+
+                  if (hour)
+                  {
+                     hh = *hour;
+                  }
+
+                  if (minute)
+                  {
+                     mm = *minute;
+                  }
+
+                  if (second)
+                  {
+                     sec = *second;
+                  }
+
+                  snprintf(ret, 256, "%d.%d.%d_%d:%d:%f_%s", 
+                           *year, *month, *dofm, hh, mm, sec, keyword->info->unit);
                }
+
             }
          }
       }
@@ -712,6 +741,21 @@ static char *AdjTimeZone(const char *timestr, DRMS_Keyword_t *keyword, int *len)
       free(tokenstr);
    }
 
+   if (year)
+   {
+      free(year);
+   }
+
+   if (month)
+   {
+      free(month);
+   }
+
+   if (dofm)
+   {
+      free(dofm);
+   }
+
    if (hour)
    {
       free(hour);
@@ -720,6 +764,11 @@ static char *AdjTimeZone(const char *timestr, DRMS_Keyword_t *keyword, int *len)
    if (minute)
    {
       free(minute);
+   }
+
+   if (second)
+   {
+      free(second);
    }
 
    if (zone)

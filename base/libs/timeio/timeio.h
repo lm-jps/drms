@@ -314,8 +314,6 @@ extern int time_is_invalid (TIME t);
    @param second The parsed second (return value).
    @param zone The parsed time zone (return value).  Must be freed by caller.
    @param juliday The parsed Julian Day (return value).
-   @param civil The parsed civil flag (return value).
-   @param utflag The parsed UT flag (return value).
 
    @return 1 if the intput time string is valid.
 */
@@ -329,9 +327,7 @@ int parsetimestr (const char *timestr,
                   int **minute,
                   double **second,
                   char **zone,
-                  double **juliday,
-                  int **civil,
-                  int **utflag);
+                  double **juliday);
 #endif
 /*
  *  Revision History
