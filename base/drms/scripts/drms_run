@@ -1,0 +1,173 @@
+#!/bin/csh -f
+
+# set echo
+
+########## Command line parsing ##############
+# set verbose
+unset VERBOSE
+unset DRYRUN
+unset NOLOG
+set command
+set repeat=1
+@ i = 1
+set lifetime
+while ($i <= $#argv )
+  set arg = $argv[$i]
+  switch("$arg")
+  case "-L":
+  case "--nolog":
+    set NOLOG
+    breaksw
+  case "-V":
+  case "--verbose":
+    set VERBOSE
+    breaksw
+  case "-h":
+  case "--help":
+    set USAGE
+    breaksw   
+  case "-repeat":
+    @ i++    
+    set repeat =  $argv[$i]
+    breaksw  
+  case "-dryrun":
+    set DRYRUN
+    breaksw 
+  case "-lifetime":
+    @ i++    
+    set lifetime = "DRMS_LOG_RETENTION=$argv[$i]"
+    breaksw 
+  default:
+     set command = "$argv[$i-]"
+     set i = $#argv
+  endsw
+  @ i++
+end
+ 
+if ( $?USAGE  ) then
+  echo "Usage: drms_run [-V|--verbose] [-L|--nolog] [-lifetime num] [-repeat num] [-dryrun] command"
+  echo "       drms_run -h | --help"
+  exit(0)
+endif
+
+
+############## DRMS STARTUP ##################
+if ( ! $?DRMS_STARTLOG ) then
+  setenv DRMS_STARTLOG /tmp/DRMS_startlog.$$
+endif
+if ( $?VERBOSE  ) then
+  echo "drms_run: Starting DRMS server..."
+  echo "drms_run: logfile = $DRMS_STARTLOG"
+endif
+
+# Start DRMS server.
+if ( ! $?DRMS_SERVER_EXE ) then
+  set DRMS_SERVER_EXE=drms_server
+endif
+
+if ( $?VERBOSE  ) then
+  $DRMS_SERVER_EXE $lifetime -V  >& $DRMS_STARTLOG
+else
+  $DRMS_SERVER_EXE $lifetime  >& $DRMS_STARTLOG
+endif
+set stat = $status
+if ( $stat ) then
+  echo "drms_run: Failed to start DRMS server."
+  cat $DRMS_STARTLOG
+  exit(1)
+endif
+
+# Wait for the server to start and write its 
+# DRMS session ID in the logfile.
+set count =  `grep DRMS_PID $DRMS_STARTLOG | wc -l`
+set i = 0
+while ( $count == 0 && $i < 10 )
+  @ i++
+  sleep 0.2
+  set count =  `grep DRMS_PID $DRMS_STARTLOG | wc -l`
+end
+
+
+if ( $i == 10 ) then
+  # Time out. The server didn't initialize within 5 seconds. 
+  # Something is probably wrong. Print the contents of the logfile
+  # and exit with an error code.
+  echo "drms_run: Failed to start DRMS server properly."
+  cat $DRMS_STARTLOG
+  exit(1)
+endif
+
+# Extract information from start of log file:
+setenv DRMS_HOST `grep DRMS_HOST $DRMS_STARTLOG |  head -1 | cut -d' ' -f 3`
+setenv DRMS_PORT `grep DRMS_PORT $DRMS_STARTLOG | head -1 | cut -d' ' -f 3`
+setenv DRMS_PID  `grep DRMS_PID $DRMS_STARTLOG | cut -d' ' -f 3`
+setenv DRMS_SESSIONID  `grep DRMS_SESSIONID $DRMS_STARTLOG | head -1 | cut -d' ' -f 3`
+setenv DRMS_SESSIONNS `grep DRMS_SESSIONNS $DRMS_STARTLOG | head -1 | cut -d' ' -f 3`
+setenv DRMS_SUNUM  `grep DRMS_SUNUM $DRMS_STARTLOG | head -1 | cut -d' ' -f 3`
+setenv DRMS_SUDIR  `grep DRMS_SUDIR $DRMS_STARTLOG | head -1 | cut -d' ' -f 3`
+
+# Set environment variable used by modules to reach the server.
+setenv DRMSSESSION ${DRMS_HOST}:${DRMS_PORT}
+
+if ( $?VERBOSE  ) then
+  echo DRMS_HOST = $DRMS_HOST
+  echo DRMS_PORT = $DRMS_PORT
+  echo DRMS_PID = $DRMS_PID 
+  echo DRMS_SESSIONID = $DRMS_SESSIONID
+  echo DRMS_SESSIONNS = $DRMS_SESSIONNS
+  echo DRMS_SUNUM = $DRMS_SUNUM
+  echo DRMS_SUDIR = $DRMS_SUDIR
+  echo DRMSSESSION = $DRMSSESSION
+endif
+
+# Finally actually run the script or module in the session
+if ( $?VERBOSE  ) then
+  echo Running command "$command"
+endif
+set i=0
+set noglob
+while ( $i < $repeat )
+  if ( $?VERBOSE  ) then
+    echo "$command"
+  endif
+  $command
+  @ i++
+end
+
+########### Copy logfile and command to $DRMS_SUDIR ##########
+if ( $?VERBOSE  ) then
+  echo command = $0 $*
+endif
+echo $0 $* > $DRMS_SUDIR/command.txt
+unset noglob
+if (!( $?NOLOG ) ) then
+  cp $DRMS_STARTLOG $DRMS_SUDIR
+endif
+# NOTE any errors in the server shutdown will only be in the /tmp version of $DRMS_STARTLOG
+
+############ Stop DRMS server ################
+if ( $?DRYRUN ) then
+  kill -s TERM $DRMS_PID
+  exit(0)
+else
+  if ( $status ) then
+    if ( $?VERBOSE  ) then
+      echo "drms_run: Command returned an error code."
+      echo "drms_run: Rolling back database and stopping DRMS server..."
+    endif
+    kill -s TERM $DRMS_PID
+    wait
+    exit(1)
+  else
+    if ( $?VERBOSE  ) then
+      echo "drms_run: Command finished successfully."
+      echo "drms_run: Commiting data to database and stopping DRMS server..."
+    endif
+    kill -s USR1 $DRMS_PID
+    wait
+    exit(0)
+endif
+endif
+
+echo DRMS_SESSIONID = $DRMS_SESSIONID
+####################################
