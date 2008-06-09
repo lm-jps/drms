@@ -10,7 +10,7 @@ Art's suggested release recipe:
 4. From the machine used in step 2, commit $JSOCROOT/base/libdrms/jsoc_version.h.
 4a. Add a new file, JSOC/CM/V<MAJ>.<MIN>/release.notes. This has the release notes (see below).  Commit.
 5. From the machine used in step 2, create a tag for the new release.  cd to $JSOCROOT.  Run "cvs tag -c Ver_<MAJ>-<MIN> ."  Replace <MAJ> with the major version number and <MIN> with the minor version number.
-5a. The NetDRMS release version number should also be incremented and tagged. From another machine, do "cvs checkout -AP DRMS".  Then cd to the root (JSOC). Then "find . -path '*CVS' -prune -o \( -type f -exec cvs tag -c NetDRMS_Ver_<MAJ>-<MIN> {} \; \)".  Actually, the commands "cvs checkout -r Ver_<MAJ>-<MIN> DRMS" followed by "cd $JSOCROOT; cvs tag -c NetDRMS_Ver_<MAJ>-<MIN> will work".
+5a. The NetDRMS release version number should also be incremented and tagged. Do "cvs checkout -r Ver_<MAJ>-<MIN> DRMS" followed by "cd $JSOCROOT; cvs tag -c NetDRMS_Ver_<MAJ>-<MIN>".
 6. Update the "Ver_LATEST" tag.  This tag always points to the latest release.  "cd $JSOCROOT; cvs rtag -r Ver_<MAJ>-<MIN> Ver_LATEST JSOC", where <MAJ> and <MIN> are the current release.  If that doesn't work try "cvs tag -d Ver_LATEST .; cvs checkout -r Ver_<MAJ>-<MIN> JSOC" followed by "cvs tag -c Ver_LATEST".
 7. Once again, edit $JSOCROOT/base/libdrms/jsoc_version.h.  The version macros should be of the form:
 
@@ -19,9 +19,9 @@ Art's suggested release recipe:
 
 The "X" and "-" denote that binaries were created from non-release code.
 8. From the machine used in step 7, commit $JSOCROOT/base/libdrms/jsoc_version.h.  You might have to run "cvs update -A base/libdrms/jsoc_version.h" to clear the stick flag created when you first sync'd in step 2 (if you used the "-r" flag).
-9. Ensure that the tag was successfully created and create actual release binaries (not just the binaries in your sandbox).  Login as the production user, checkout the tagged files (cvs checkout -r Ver_<MAJ>-<MIN> JSOC) and build on all machines supported.  
-10. Update the "working release".  The source for these binaries lives in /home/jsoc/cvs/JSOC.  cd to /home/jsoc/cvs, and do "cvs checkout -r Ver_<MAJ>-<MIN> JSOC" and build on all machines supported.
-12. Send instructions for using the new release to users.
+9. Now you must build all release executables with the release jsoc version numbers in place ("V3R5" and "305"). Ensure that the tag was successfully created and create actual release binaries (not just the binaries in your sandbox).  Login as the 'jsoc' user, cd to /home/jsoc/cvs, and do "cvs checkout -r Ver_<MAJ>-<MIN> JSOC" and build on all machines supported.  You must use the "-r" flag, otherwise you will checkout the latest jsoc_version.h, which has the DEVELOPMENT version of the release numbers.
+
+10. Send instructions for using the new release to users.
 
 ================================================================================
 Example New Release Instructions
