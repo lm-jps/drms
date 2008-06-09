@@ -884,7 +884,10 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 	     fprintf(stderr,"Syntax Error: Expected either time duraton " 
 		     "or start value of type %s in "
 		     "value range, found '%s'.\n",drms_type2str(datatype), p);
-             free(valstr);
+             if (adv >= 0)
+             {
+                free(valstr);
+             }
 	     goto error;
 	  }
           else if (adv > 0)
@@ -895,8 +898,10 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
           {
              p += n;
           }
-
-          free(valstr);
+          if (adv >= 0)
+          {
+             free(valstr);
+          }
        }
 
       if (*p=='-')
@@ -948,7 +953,11 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 		    {
 		      fprintf(stderr,"Syntax Error: Expected end value of"
 			      " type %s in value range, found '%s'.\n",drms_type2str(datatype), p);
-                      free(valstr);
+                      if (adv >= 0)
+                      {
+                         free(valstr);
+                      }
+
 		      goto error;
 		    }
 		  else if (adv > 0)
@@ -960,7 +969,10 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
                      p += n;
                   }
 
-                  free(valstr);
+                  if (adv >= 0)
+                  {
+                     free(valstr);
+                  }
 		}
 	      else
 		{
