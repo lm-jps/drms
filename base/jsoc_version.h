@@ -13,8 +13,8 @@
 
 #define JSOC_VERSION_INCL 1
 
-#define jsoc_version "V4R4"
-#define jsoc_vers_num (404)
+#define jsoc_version "V4R4X"
+#define jsoc_vers_num (-404)
 
 #endif
 
