@@ -6,7 +6,7 @@ use Data::Dumper;
 
 use lib '/home/karen/cvs/jsoc/_linux_x86_64/base/sums/libs/api/perl';
 use SUMSAPI;
-my $sum = SUMSAPI::SUMOpen("d00.Stanford.EDU", "hmidb");
+my $sum = SUMSAPI::SUMOpen("d02.Stanford.EDU", "hmidb");
 # print Dumper($sum->{uid});
 # print Dumper($sum->{tdays});
 # print Dumper($sum->{username});
