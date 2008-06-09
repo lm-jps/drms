@@ -36,9 +36,7 @@ To change your default compiler to gcc, modify the following line in
 make_basic.mk from
 
 COMPILER = icc
-
 to 
-
 COMPILER = gcc
 
 Before changing this make variable, you should run 'make clean'.
@@ -48,15 +46,23 @@ probably not link and/or run properly.
 To enable debug, modify the following line in make_basic.mk from 
 
 DEBUG =
-
 to 
-
 DEBUG = 1
+
+When you have finished making any customizations to make_basic.mk, type:
+
+./configure
+make
+
+If the computer you are building DRMS on has multiple CPUs, you
+might want to save time by typing something like:
+
+make -j 4
 
 Since there is only one Makefile for the whole JSOC tree, you must
 always compile in this top level directory. However, you will be able
 to make specific target, e.g., make drms_server.
 
-To learn more about the new make system, please refer to 
-http://jsoc/trac/wiki/JsocMakefileBackground and
-http://jsoc/trac/wiki/JsocMakefileAdd
+To learn more about the new make system, please refer to
+http://jsoc.stanford.edu/jsocwiki/JsocMakefileBackground      and
+http://jsoc.stanford.edu/jsocwiki/JsocMakefileAdd
