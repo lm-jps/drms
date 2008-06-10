@@ -1397,6 +1397,12 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 	      
 		 TIME(stat = drms_recordset_query(env, actualSet, &query, &seriesname, 
 					       &filter, &mixed));
+
+                 if (actualSet)
+                 {
+                    free(actualSet);
+                    actualSet = NULL;
+                 }
 	      }
 	      else
 		goto failure;
@@ -1429,6 +1435,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 		 while ((ans = strtok_r(NULL, " ,;:{}", &lasts)) != NULL);
 
 		 free(seglist);
+                 seglist = NULL;
 	      }
 
 	      if (retrieverecs)
@@ -1685,6 +1692,15 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
   if (setstarts)
   {
      free(setstarts);
+  }
+  if (actualSet)
+  {
+     free(actualSet);
+  }
+
+  if (seglist)
+  {
+     free(seglist);
   }
 
   FreeRecSetDescArr(&sets, &settypes, nsets);
