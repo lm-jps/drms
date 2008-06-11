@@ -405,6 +405,7 @@ int DoIt(void)
   int want_path_noret;
   int not_silent;
   int want_dims;
+  int i_set, n_sets;
 
   if (nice_intro ()) return (0);
 
@@ -549,7 +550,7 @@ int DoIt(void)
     return(1);
     }
 
-  /* Open record_set */
+  /* Open record_set(s) */
 
   recordset = drms_open_records (drms_env, in, &status);
   if (!recordset) 
@@ -558,7 +559,7 @@ int DoIt(void)
     return (1);
     }
 
-/* records now points to a struct with  count of records found ("n"), and a pointer to an
+/* recordset now points to a struct with  count of records found ("n"), and a pointer to an
  * array of record pointers ("records");
  */
 
@@ -569,6 +570,13 @@ int DoIt(void)
       printf ("** No records in selected data set, query was %s **\n",in);
     return (0);
     }
+
+  /* check for multiple sub-sets */
+  n_sets = recordset->ss_n;
+  i_set = 0;
+// NEED to add stuff to loop over subsets
+
+  /* check max number of records to print.  Better to use restricted query */
   if (max_recs > 0 && max_recs < nrecs)
     nrecs = max_recs;
   last_rec = nrecs - 1;
@@ -596,6 +604,7 @@ int DoIt(void)
   free (keylist);
 
   /* get list of segments to show for each record */
+// NEED to also check for {seglist} notation at end of each ss query 
   nsegs = 0;
   if (show_segs) 
     { /* get specified segment list */

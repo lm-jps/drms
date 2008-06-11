@@ -83,7 +83,9 @@ ModuleArgs_t module_args[] =
   {ARG_STRING, "ds", "Not Specified", "Series name with optional record spec"},
   {ARG_FLAG, "h", "0", "Print usage message and quit"},
   {ARG_FLAG, "c", "0", "Create new record(s) if needed"},
+  {ARG_FLAG, "C", "0", "Force cloning of needed records to be DRMS_COPY_SEGMENT mode"},
   {ARG_FLAG, "m", "0", "allow multiple records to be updated"},
+  {ARG_FLAG, "t", "0", "create any needed records as DRMS_TRANSIENT, default is DRMS_PERMANENT"},
   {ARG_FLAG, "v", "0", "verbose flag"},
   {ARG_END}
 };
@@ -99,11 +101,13 @@ int nice_intro(int help)
   verbose = cmdparams_get_int(&cmdparams, "v", NULL) != 0;
   if (usage || help)
     {
-    printf("set_keys {-c}|{-m} {-h} {-v}  "
+    printf("set_keys {-c}|{-m} {-C} {-t} {-h} {-v}  "
 	"ds=<recordset query> {keyword=value} ... \n"
 	"  -h: print this message\n"
 	"  -c: create - allow creation of new record\n"
 	"  -m: multiple - allow multiple records to be updated\n"
+        "  -C: Force cloning of needed records to be DRMS_COPY_SEGMENT mode\n"
+        "  -t: create any needed records as DRMS_TRANSIENT, default is DRMS_PERMANENT\n"
 	"  -v: verbose\n"
 	"ds=<recordset query> as <series>{[record specifier]} - required\n"
 	"keyword=value pairs as needed\n"
@@ -124,6 +128,8 @@ int DoIt(void)
   int multiple = 0;
   int create = 0;
   int nrecs, irec;
+  int force_transient;
+  int force_copyseg;
   char *keyname;
   char prime_names[100][32];
   char **pkeys;
@@ -146,6 +152,9 @@ int DoIt(void)
 /* Get command line arguments */
    query = strdup(cmdparams_get_str(&cmdparams, "ds", NULL));
 
+   force_copyseg = cmdparams_get_int(&cmdparams, "C", NULL) != 0;
+   force_transient = cmdparams_get_int(&cmdparams, "t", NULL) != 0;
+
    multiple = cmdparams_get_int(&cmdparams, "m", NULL) != 0;
    create = cmdparams_get_int(&cmdparams, "c", NULL) != 0;
    if (multiple && create)
@@ -160,7 +169,7 @@ int DoIt(void)
   if (create)
     {
     if (verbose)printf("Make new record\n");
-    rs = drms_create_records(drms_env, 1, query, DRMS_PERMANENT, &status);
+    rs = drms_create_records(drms_env, 1, query, (force_transient ? DRMS_TRANSIENT : DRMS_PERMANENT), &status);
     if (status)
 	DIE("cant create records from in given series");
     nrecs = 1;
@@ -221,6 +230,7 @@ int DoIt(void)
        record.
      */
     /* if a segment is present matching the name of a keyword=filename then copy instead of share */
+    is_new_seg = 0;
     nsegments = hcon_size(&rec->segments);
     for (isegment=0; isegment<nsegments; isegment++)
       {
@@ -238,16 +248,21 @@ int DoIt(void)
 		}
 	   }
       }
-   rs = drms_clone_records(ors, DRMS_PERMANENT, (is_new_seg ? DRMS_COPY_SEGMENTS : DRMS_SHARE_SEGMENTS), &status);
+   rs = drms_clone_records(ors, (force_transient ? DRMS_TRANSIENT : DRMS_PERMANENT),
+           ((is_new_seg||force_copyseg) ? DRMS_COPY_SEGMENTS : DRMS_SHARE_SEGMENTS), &status);
    if (rs->n != nrecs || status)
 	DIE("failed to clone records from query");
    }
 
-  /* at this point the records ready for new keyword values and/or files */
+  /* at this point the records are ready for new keyword values and/or files */
   for (irec = 0; irec<nrecs; irec++)
     {
+    char recordpath[DRMS_MAXPATHLEN];
     rec = rs->records[irec];
 
+    /* make sure record directory is staged and included in the new record */
+    drms_record_directory(rec, recordpath, 1);
+    /* insert new generic segment files found on command line */
     nsegments = hcon_size(&rec->segments);
     for (isegment=0; isegment<nsegments; isegment++)
     { 
