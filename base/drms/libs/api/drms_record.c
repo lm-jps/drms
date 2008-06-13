@@ -2063,7 +2063,7 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
 				     DRMS_RecLifetime_t lifetime,  
 				     DRMS_CloneAction_t mode, int *status)
 {
-  int i, stat, first, last, n, n_total;
+  int i, stat=0, first, last, n, n_total;
   DRMS_RecordSet_t *rs_out=NULL;
   DRMS_Record_t *rec_in, *rec_out;
   long long *recnum=NULL;
@@ -2124,8 +2124,10 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
     {
       rs_out->records[first+i] = drms_alloc_record2(rs_in->records[first+i], 
 						    recnum[i], &stat);
-      if (rs_out->records[first+i] == NULL)
+      if (rs_out->records[first+i] == NULL) {
+	stat = 1;
 	goto failure;    
+      }
       
       rs_out->records[first+i]->readonly = 0;
       rs_out->records[first+i]->sessionid = env->session->sessionid;      
@@ -2156,8 +2158,10 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
       
 	/* Allocate new SU slots for copies of data segments. */
 	if ((stat = drms_newslots(env, n, series, recnum, lifetime, slotnum, 
-				  su)))
+				  su))) {
+	  stat = 1;
 	  goto failure;    
+	}
       
 	/* Copy record directories and TAS data segments (slices)
 	   record-by-record. */
@@ -2178,6 +2182,7 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
 	  struct dirent *dirp;
 	  if ((dp = opendir(dir_in)) == NULL) {
 	    fprintf(stderr, "Can't open %s\n", dir_in);
+	    stat = 1;
 	    goto failure;
 	  }
 	  while ((dirp = readdir(dp)) != NULL) {
@@ -2192,6 +2197,7 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
 	      {
 		fprintf(stderr, "ERROR: system command to copy record directory"
 			" failed.\n");
+		stat = 1;
 		goto failure;
 	      }
 	    break;
@@ -2224,6 +2230,7 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
 			"segment '%s' of record %s:#%lld\n",__FILE__,__LINE__,
 			seg_in->info->name, rec_in->seriesinfo->seriesname, 
 			rec_in->recnum);
+		stat = 1;
 		goto failure;
 	      }
 	      if (drms_segment_write(seg_out, arr, 0))
@@ -2232,6 +2239,7 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
 			"segment '%s' of record %s:#%lld\n",__FILE__,__LINE__,
 			seg_out->info->name, rec_out->seriesinfo->seriesname, 
 			rec_out->recnum);
+		stat = 1;
 		goto failure;
 	      }
 	      drms_free_array(arr);
