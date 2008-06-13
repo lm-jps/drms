@@ -66,9 +66,9 @@ if ( ! $?DRMS_SERVER_EXE ) then
 endif
 
 if ( $?VERBOSE  ) then
-  $DRMS_SERVER_EXE $lifetime -V  >& $DRMS_STARTLOG
+  $DRMS_SERVER_EXE -f $lifetime -V  >& $DRMS_STARTLOG &
 else
-  $DRMS_SERVER_EXE $lifetime  >& $DRMS_STARTLOG
+  $DRMS_SERVER_EXE -f $lifetime  >& $DRMS_STARTLOG &
 endif
 set stat = $status
 if ( $stat ) then
