@@ -1447,6 +1447,8 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 						 mixed, 
 						 goodsegcont, 
 						 &stat));
+                 
+                 /* Remove unrequested segments now */
 	      }
 	      else
 	      {
@@ -2615,6 +2617,20 @@ DRMS_Record_t *drms_retrieve_record(DRMS_Env_t *env, const char *seriesname,
       return NULL;
     }
 
+#ifdef DEBUG
+    printf("Allocated the following template for dataset (%s,%lld):\n",
+	   seriesname, recnum);
+    drms_print_record(rec);
+#endif
+
+    /* Fill result into dataset structure. */
+    if ((stat = drms_populate_record(rec, recnum)))
+    {
+      if (status)
+	*status = stat;      
+      goto bailout; /* Query result was inconsistent with series template. */
+    }
+
     /* Remove unrequested segments */
     if (goodsegcont)
     {
@@ -2631,20 +2647,6 @@ DRMS_Record_t *drms_retrieve_record(DRMS_Env_t *env, const char *seriesname,
 	   
 	  hiter_destroy(&hit);
        }
-    }
-
-#ifdef DEBUG
-    printf("Allocated the following template for dataset (%s,%lld):\n",
-	   seriesname, recnum);
-    drms_print_record(rec);
-#endif
-
-    /* Fill result into dataset structure. */
-    if ((stat = drms_populate_record(rec, recnum)))
-    {
-      if (status)
-	*status = stat;      
-      goto bailout; /* Query result was inconsistent with series template. */
     }
 
     /* Mark as read-only. */
@@ -2762,24 +2764,6 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
 	/* Populate the slot with values from the template. */
 	drms_copy_record_struct(rs->records[i], template);
 
-	/* Remove unrequested segments */
-	if (goodsegcont)
-	{
-	   hit = hiter_create(&(rs->records[i]->segments));
-	   if (hit)
-	   {
-	      while (hiter_extgetnext(hit, &hkey) != NULL)
-	      {
-		 if (!hcon_lookup(goodsegcont, hkey))
-		 {
-		    hcon_remove(&(rs->records[i]->segments), hkey);
-		 }
-	      }
-	   
-	      hiter_destroy(&hit);
-	   }
-	}
-
 	/* Set pidx in links */
 	drms_link_getpidx(rs->records[i]);
 	/* Set new unique record number. */
@@ -2804,6 +2788,27 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
 #ifdef DEBUG
     printf("\nMemory used after populate= %Zu\n\n",xmem_recenthighwater());
 #endif
+  }
+
+  if (goodsegcont)
+  {
+     for (i=0; i < rs->n; i++)
+     {
+        /* Iterate through records, removing unrequested segments */     
+        hit = hiter_create(&(rs->records[i]->segments));
+        if (hit)
+        {
+           while (hiter_extgetnext(hit, &hkey) != NULL)
+           {
+              if (!hcon_lookup(goodsegcont, hkey))
+              {
+                 hcon_remove(&(rs->records[i]->segments), hkey);
+              }
+           }
+	   
+           hiter_destroy(&hit);
+        }
+     }
   }
 
   /* Initialize subset information */
@@ -4705,6 +4710,8 @@ static int ParseRecSetDesc(const char *recsetsStr,
 			  state = kRSParseState_Error;
 			  break;
 		       }
+                       
+                       *pcBuf++ = *pc++;
 		    }
 		    else
 		    {
