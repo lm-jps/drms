@@ -1165,7 +1165,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 	 }
 	 else
 	 {
-	    fprintf(stderr,"Couldn't FITS file '%s'.\n", filename); 
+	    fprintf(stderr,"Couldn't read FITS file '%s'.\n", filename); 
 	    stat = 1;
 	    goto bailout1;
 	 }

@@ -30,6 +30,121 @@ int cfitsio_read_keylist_and_image_info(fitsfile* fptr,
 					CFITSIO_KEYWORD** keylist,
 					CFITSIO_IMAGE_INFO** image_info);
 
+
+/* Half-assed - just enough to get past a bug.  Should really check that the value
+ * doesn't fall outside the range of the destination type.
+ */
+static int cfitsio_keyval2int(const CFITSIO_KEYWORD *kw, int *stat)
+{
+   int val = 0;
+   int err = 1;
+
+   if (kw)
+   {
+      switch(kw->key_type)
+      {
+         case kFITSRW_Type_String:
+           err = (sscanf(kw->key_value.vs, "%d", &val) != 1);
+           break;
+         case kFITSRW_Type_Logical:
+           val = (int)(kw->key_value.vl);
+           err = 0;
+           break;
+         case kFITSRW_Type_Integer:
+           val = (int)(kw->key_value.vi);
+           err = 0;
+           break;
+         case kFITSRW_Type_Float:
+           val = (int)(kw->key_value.vf);
+           err = 0;
+           break;
+         default:
+           fprintf(stderr, "Unsupported data type '%d'.", kw->key_type);
+      }
+   }
+
+   if (stat)
+   {
+      *stat = err;
+   }
+
+   return val;
+}
+
+static long long cfitsio_keyval2longlong(const CFITSIO_KEYWORD *kw, int *stat)
+{
+   long long val = 0;
+   int err = 1;
+
+   if (kw)
+   {
+      switch(kw->key_type)
+      {
+         case kFITSRW_Type_String:
+           err = (sscanf(kw->key_value.vs, "%lld", &val) != 1);
+           break;
+         case kFITSRW_Type_Logical:
+           val = (long long)(kw->key_value.vl);
+           err = 0;
+           break;
+         case kFITSRW_Type_Integer:
+           val = (long long)(kw->key_value.vi);
+           err = 0;
+           break;
+         case kFITSRW_Type_Float:
+           val = (long long)(kw->key_value.vf);
+           err = 0;
+           break;
+         default:
+           fprintf(stderr, "Unsupported data type '%d'.", kw->key_type);
+      }
+   }
+
+   if (stat)
+   {
+      *stat = err;
+   }
+
+   return val;
+}
+
+static double cfitsio_keyval2double(const CFITSIO_KEYWORD *kw, int *stat)
+{
+   double val = 0;
+   int err = 1;
+
+   if (kw)
+   {
+      switch(kw->key_type)
+      {
+         case kFITSRW_Type_String:
+           err = (sscanf(kw->key_value.vs, "%lf", &val) != 1);
+           break;
+         case kFITSRW_Type_Logical:
+           val = (double)(kw->key_value.vl);
+           err = 0;
+           break;
+         case kFITSRW_Type_Integer:
+           val = (double)(kw->key_value.vi);
+           err = 0;
+           break;
+         case kFITSRW_Type_Float:
+           val = (double)(kw->key_value.vf);
+           err = 0;
+           break;
+         default:
+           fprintf(stderr, "Unsupported data type '%d'.", kw->key_type);
+      }
+   }
+
+   if (stat)
+   {
+      *stat = err;
+   }
+
+   return val;
+}
+
 //****************************************************************************
 //*********************   Using CFITSIO_KEYWORD  *****************************
 //****************************************************************************
@@ -611,35 +726,52 @@ int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD** keylis
    (*image_info)->blank =0;
    (*image_info)->bscale =1.0;
    (*image_info)->bzero =0.0;
-   
+
+   /* You can't just assume the types of the keywords are the exact types 
+    * required by image_info; you need to convert them. */
 
    kptr = keylist;
    while(kptr)
    {
       if(!strcmp(kptr->key_name,"SIMPLE")) 
       {
-	 (*image_info)->simple = kptr->key_value.vl;
-	 (*image_info)->bitfield |= kInfoPresent_SIMPLE;
+	 (*image_info)->simple = cfitsio_keyval2int(kptr, &status);
+         if (!status)
+         {
+            (*image_info)->bitfield |= kInfoPresent_SIMPLE;
+         }
       }
       else if(!strcmp(kptr->key_name,"EXTEND")) 
       {
-	 (*image_info)->extend = kptr->key_value.vl;
-	 (*image_info)->bitfield |= kInfoPresent_EXTEND;
+	 (*image_info)->extend = cfitsio_keyval2int(kptr, &status);
+         if (!status)
+         {
+            (*image_info)->bitfield |= kInfoPresent_EXTEND;
+         }
       }
       else if(!strcmp(kptr->key_name,"BLANK"))
       {
-	 (*image_info)->blank = kptr->key_value.vi;
-	 (*image_info)->bitfield |= kInfoPresent_BLANK;
+	 (*image_info)->blank = cfitsio_keyval2longlong(kptr, &status);
+         if (!status)
+         {
+            (*image_info)->bitfield |= kInfoPresent_BLANK;
+         }
       }
       else if(!strcmp(kptr->key_name,"BSCALE"))
       {
-	 (*image_info)->bscale = kptr->key_value.vf;
-	 (*image_info)->bitfield |= kInfoPresent_BSCALE;
+	 (*image_info)->bscale = cfitsio_keyval2double(kptr, &status);
+         if (!status)
+         {
+            (*image_info)->bitfield |= kInfoPresent_BSCALE;
+         }
       }
       else if(!strcmp(kptr->key_name,"BZERO")) 
       {
-	 (*image_info)->bzero = kptr->key_value.vf;
-	 (*image_info)->bitfield |= kInfoPresent_BZERO;
+	 (*image_info)->bzero = cfitsio_keyval2double(kptr, &status);
+         if (!status)
+         {
+            (*image_info)->bitfield |= kInfoPresent_BZERO;
+         }
       }
       
       kptr = kptr->next;          
@@ -735,6 +867,8 @@ int cfitsio_read_file(char* fits_filename,
    long	npixels;
    
    void* pixels = NULL;
+
+   char cfitsiostat[FLEN_STATUS];
 
    // Move directly to first image
    if (fits_open_image(&fptr, fits_filename, READONLY, &status)) 
@@ -870,6 +1004,8 @@ int cfitsio_read_file(char* fits_filename,
    {
       if(fits_read_img(fptr, data_type, 1, npixels, NULL, pixels, NULL, &status))
       {
+         fits_get_errstatus(status, cfitsiostat);
+         fprintf(stderr, "cfitsio error '%s'.\n", cfitsiostat);
 	 error_code = CFITSIO_ERROR_LIBRARY; 
 	 goto error_exit;
       }
