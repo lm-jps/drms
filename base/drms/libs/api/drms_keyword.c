@@ -4,22 +4,6 @@
 #include "xmem.h"
 #include "cfitsio.h"
 
-ExportStrings_t gExpStr[] =
-{
-   {kExport_ReqID, "RequestID"},
-   {kExport_Request, "DataSet"},
-   {kExport_SegList, "Seg"},
-   {kExport_Requestor, "Requestor"},
-   {kExport_Notification, "Notify"},
-   {kExport_ReqTime, "ReqTime"},
-   {kExport_ExpTime, "ExpTime"},
-   {kExport_DataSize, "Size"},
-   {kExport_Format, "Format"},
-   {kExport_FileNameFormat, "FilenameFmt"},
-   {kExport_Status, "Status"},
-   {(DRMS_ExportKeyword_t)-99, ""}
-};
-
 /* Slotted keywords - index keyword type (some kind of integer) */
 const DRMS_Type_t kIndexKWType = DRMS_TYPE_LONGLONG;
 const char *kIndexKWFormat = "%lld";

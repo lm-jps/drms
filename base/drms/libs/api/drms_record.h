@@ -20,7 +20,6 @@
 				    * of any database). */
 #define kLocalPrimekey "primekey"
 #define kLocalPrimekeyType DRMS_TYPE_LONGLONG
-#define kEXPORTSERIES "jsoc.exports"
 
 /************* Constants for mode and action flags etc. *************/
 typedef enum {DRMS_COPY_SEGMENTS, DRMS_SHARE_SEGMENTS} DRMS_CloneAction_t;
@@ -357,24 +356,6 @@ char *drms_query_string(DRMS_Env_t *env,
 			const char *seriesname,
 			char *where, int filter, int mixed,
 			DRMS_QueryType_t qtype, char *fl);
-
-/* Export */
-int drms_record_export(DRMS_Record_t *recout,
-		       DRMS_Record_t *recin,
-		       int *status);
-int drms_record_mapexport(DRMS_Record_t *recout,
-			  DRMS_Record_t *recin,
-			  const char *classname, 
-			  const char *mapfile,
-			  int *status);
-int drms_recordset_export(DRMS_Env_t *env,
-			  long long reqid,
-			  int *status);
-int drms_recordset_mapexport(DRMS_Env_t *env,
-			     long long reqid,
-			     const char *classname, 
-			     const char *mapfile,
-			     int *status);
 
 /* Chunking record queries */
 int drms_recordset_setchunksize(unsigned int size);
