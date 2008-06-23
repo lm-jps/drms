@@ -11,6 +11,8 @@
 #include <sched.h>
 #endif
 #include <dirent.h>
+#include "printk.h"
+
 /******************* Main server thread(s) functions ************************/
 
 static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
@@ -1262,7 +1264,7 @@ void *drms_sums_thread(void *arg)
     if (!connected && request->opcode!=DRMS_SUMCLOSE)
     {
       /* Connect to SUMS. */
-      if ((sum = SUM_open(NULL, NULL, printf)) == NULL)
+      if ((sum = SUM_open(NULL, NULL, printkerr)) == NULL)
       {
 	fprintf(stderr,"drms_open: Failed to connect to SUMS.\n");
 	fflush(stdout);
