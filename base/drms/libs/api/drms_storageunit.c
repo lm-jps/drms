@@ -256,7 +256,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
   tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
   if (reply->opcode != 0)
   {
-    printf("SUM GET failed with error code %d.\n",reply->opcode);
+    fprintf(stderr, "SUM GET failed with error code %d.\n",reply->opcode);
     free(reply);
     return 1;
   }
@@ -307,7 +307,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int reten
     tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
     if (reply->opcode != 0)
       {
-	printf("SUM GET failed with error code %d.\n",reply->opcode);
+	fprintf(stderr, "SUM GET failed with error code %d.\n",reply->opcode);
 	free(reply);
 	return 1;
       }
@@ -341,6 +341,7 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
 	      filename);
       return 1;
     }
+    //    fprintf(fp, "#sessionid=%lld, sessionns=%s\n", env->session->sessionid, env->session->sessionns);
     fprintf(fp,"series=%s\n", su->seriesinfo->seriesname);
     if (su->nfree<su->seriesinfo->unitsize)
     {
