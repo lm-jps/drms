@@ -33,6 +33,7 @@ parsing, and default-parameter initialization.
 #include "drms_fits.h"
 #include "util.h"
 #include "drms_dsdsapi.h"
+#include "drms_defs.h"
 
 extern CmdParams_t cmdparams;
 /* Global DRMS Environment handle. */

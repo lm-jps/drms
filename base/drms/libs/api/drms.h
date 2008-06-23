@@ -58,6 +58,7 @@ data model. This includes
 
 /* DRMS includes. */
 #include "drms_types.h"
+#include "drms_defs.h"
 #include "drms_env.h"
 #include "drms_series.h"
 #include "drms_keyword.h"

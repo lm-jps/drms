@@ -8,6 +8,8 @@ dir	:= $(d)/cmdparams
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/db
 -include		$(SRCDIR)/$(dir)/Rules.mk
+dir	:= $(d)/defs
+-include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/dstruct
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/ricecomp

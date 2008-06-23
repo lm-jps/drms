@@ -55,6 +55,7 @@ endif
 # Path to 3rd-party library headers
 FMATHLIBSH = -I$(_JSOCROOT_)/lib_third_party/include
 CFITSIOH = -I$(_JSOCROOT_)/lib_third_party/include
+#CFITSIOH = -I/home/kehcheng/include
 GSLH = -I$(_JSOCROOT_)/lib_third_party/include 
 
 ifeq ($(JSOC_MACHINE), linux_x86_64) 
@@ -62,6 +63,7 @@ ifeq ($(JSOC_MACHINE), linux_x86_64)
   # Path to 64-bit 3rd-party libraries
   FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
   CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
+#  CFITSIOL = -L/home/kehcheng/lib/x86_64/
   GSLL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
   ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
 endif
@@ -70,6 +72,7 @@ ifeq ($(JSOC_MACHINE), linux_ia32)
   # Path to 32-bit 3rd-party libraries
   FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
   CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
+#  CFITSIOL = -L/home/kehcheng/lib/x86/
   GSLL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
   ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
 endif
@@ -78,6 +81,7 @@ ifeq ($(JSOC_MACHINE), mac_osx)
   # Path to 32-bit 3rd-party libraries
   FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx/
   CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx/
+#  CFITSIOL = -L/home/kehcheng/lib/mac_osx/
   GSLL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx/
   ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx/
 endif
@@ -100,7 +104,6 @@ endif
 
 GCC_CF_GCCCOMP  = -DGCCCOMP $(D_GCC_FORT)
 ICC_CF_ICCCOMP  = -DICCCOMP $(D_GCC_FORT)
-
 
 # Disable several warnings/remarks when compiling with icc - icc's Wall is a bit picky, it 
 # complains about extern declarations in .c files.
@@ -193,7 +196,7 @@ FLINK		= $(F77) $(F_LF_ALL) $(LF_TGT) -o $@ $^ $(LL_TGT) $(LL_ALL)
 SLBIN           = ln -sf ../../_$(JSOC_MACHINE)/$@ ../bin/$(JSOC_MACHINE)/
 SLLIB		= ln -sf ../../_$(JSOC_MACHINE)/$@ ../lib/$(JSOC_MACHINE)/
 
-ALL_LIBS_FPIC = $(LIBDRMSCLIENT_FPIC) $(LIBDBCLIENT_FPIC) $(LIBCMDPARAMS_FPIC) $(LIBTHREADUTIL_FPIC) $(LIBRICECOMP_FPIC) $(LIBDSTRUCT_FPIC) $(LIBMISC_FPIC) $(LIBTIMEIO_FPIC) $(LIBFITSRW_FPIC) 
+ALL_LIBS_FPIC = $(LIBDRMSCLIENT_FPIC) $(LIBDBCLIENT_FPIC) $(LIBCMDPARAMS_FPIC) $(LIBTHREADUTIL_FPIC) $(LIBRICECOMP_FPIC) $(LIBDEFS_FPIC) $(LIBDSTRUCT_FPIC) $(LIBMISC_FPIC) $(LIBTIMEIO_FPIC) $(LIBFITSRW_FPIC) 
 
 ### Standard parts
 #
@@ -205,8 +208,8 @@ ifneq ($(COMPILER), icc)
 else
   SYSLIBS = -lz -ldl -lpthread
 endif
-SRCLIBS = $(LIBTHREADUTIL) $(LIBRICECOMP) $(LIBCMDPARAMS) $(LIBMISC) $(LIBDSTRUCT) $(LIBTIMEIO) $(LIBFITSRW) $(LIBERRLOG)
-FSRCLIBS = $(LIBTHREADUTIL) $(LIBRICECOMP) $(LIBCMDPARAMSF) $(LIBMISC) $(LIBDSTRUCT) $(LIBTIMEIO) $(LIBFITSRW) $(LIBERRLOG)
+SRCLIBS = $(LIBTHREADUTIL) $(LIBRICECOMP) $(LIBCMDPARAMS) $(LIBMISC) $(LIBDEFS) $(LIBDSTRUCT) $(LIBTIMEIO) $(LIBFITSRW) $(LIBERRLOG)
+FSRCLIBS = $(LIBTHREADUTIL) $(LIBRICECOMP) $(LIBCMDPARAMSF) $(LIBMISC) $(LIBDEFS) $(LIBDSTRUCT) $(LIBTIMEIO) $(LIBFITSRW) $(LIBERRLOG)
 
 ########## Libraries to link for server executables,    ##############
 ########## standalone executables and pipeline modules. ##############
