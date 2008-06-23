@@ -86,7 +86,14 @@ int defs_register(const char *filepath)
                            if (val)
                            {
                               InitGDefs();
-                              hcon_insert(gDefs, key, val);
+                              if (hcon_member(gDefs, key))
+                              {
+                                 fprintf(stderr, "Can't register definition with id '%s' - this id already exists.\n", key);
+                              }
+                              else
+                              {
+                                 hcon_insert(gDefs, key, val);
+                              }
                               free(val);
                            }
                         }
