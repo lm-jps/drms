@@ -378,7 +378,7 @@ int cfitsio_append_key(CFITSIO_KEYWORD** keylist,
 	 {
 	    case( 'X'):
 	    case (kFITSRW_Type_String):
-	       snprintf(node->key_value.vs, FLEN_VALUE, "%s", (char *) value);
+	       snprintf(node->key_value.vs, FLEN_VALUE, "%s", *((char **)value));
 	       break;
 	    case (kFITSRW_Type_Logical):
 	       node->key_value.vl = *((int *)value);
@@ -937,78 +937,13 @@ int cfitsio_read_file(char* fits_filename,
     * So make sure when you write a compressed image that you set BLANK in the primary HDU, 
     * not the image HDU.
     */
-   if (fits_is_compressed_image(fptr, &status) && ((*image_info)->bitfield & kInfoPresent_BLANK))
+
+   if(fits_read_img(fptr, data_type, 1, npixels, NULL, pixels, NULL, &status))
    {
-      long long blankval = 0;
-      long long *bv = NULL;
-      int anynul = 0;
-      int dsize = 0;
-
-      switch(data_type)
-      {
-         case TBYTE:
-	   {
-	      unsigned char val = (unsigned char)(*image_info)->blank;
-	      dsize = sizeof(unsigned char);
-	      memcpy(&blankval, &val, dsize);	   
-	   }
-	   break;
-         case TSHORT:
-	   {
-	      short val = (short)(*image_info)->blank;
-	      dsize = sizeof(short);
-	      memcpy(&blankval, &val, dsize);	   
-	   }
-	   break;
-         case TINT:
-	   {
-	      int val = (int)(*image_info)->blank;
-	      dsize = sizeof(int);
-	      memcpy(&blankval, &val, dsize);	   
-	   }
-	   break;
-         case TLONGLONG:
-	   {
-	      long long val = (long long)(*image_info)->blank;
-	      dsize = sizeof(long long);
-	      memcpy(&blankval, &val, dsize);	   
-	   }
-	   break;
-	 case TFLOAT:
-	   {
-	      float val = (float)(*image_info)->blank;
-	      dsize = sizeof(float);
-	      memcpy(&blankval, &val, dsize);	   
-	   }
-	   break;
-	 case TDOUBLE:
-	   {
-	      double val = (double)(*image_info)->blank;
-	      dsize = sizeof(double);
-	      memcpy(&blankval, &val, dsize);	   
-	   }
-	   break;
-	 default:
-	   fprintf(stderr, "Unsupported data type '%d'.", data_type);
-      }
-
-      bv = &blankval;
-
-      if(fits_read_img(fptr, data_type, 1, npixels, bv, pixels, &anynul, &status))
-      {
-	 error_code = CFITSIO_ERROR_LIBRARY; 
-	 goto error_exit;
-      }
-   }
-   else
-   {
-      if(fits_read_img(fptr, data_type, 1, npixels, NULL, pixels, NULL, &status))
-      {
-         fits_get_errstatus(status, cfitsiostat);
-         fprintf(stderr, "cfitsio error '%s'.\n", cfitsiostat);
-	 error_code = CFITSIO_ERROR_LIBRARY; 
-	 goto error_exit;
-      }
+      fits_get_errstatus(status, cfitsiostat);
+      fprintf(stderr, "cfitsio error '%s'.\n", cfitsiostat);
+      error_code = CFITSIO_ERROR_LIBRARY; 
+      goto error_exit;
    }
  
    if(fptr) fits_close_file(fptr, &status);
