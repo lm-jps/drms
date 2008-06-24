@@ -88,7 +88,9 @@ int defs_register(const char *filepath)
                               InitGDefs();
                               if (hcon_member(gDefs, key))
                               {
-                                 fprintf(stderr, "Can't register definition with id '%s' - this id already exists.\n", key);
+                                 fprintf(stderr, 
+                                         "DEF WARNING: Can't register definition with id '%s' - this id already exists.\n", 
+                                         key);
                               }
                               else
                               {
@@ -105,7 +107,7 @@ int defs_register(const char *filepath)
                else
                {
                   /* invalid line */
-                  fprintf(stderr, "WARNING: invalid defs file line '%s', skipping\n.", tmpstr);
+                  fprintf(stderr, "DEF WARNING: Invalid defs file line '%s', skipping\n.", tmpstr);
                   free(tmpstr);
                   continue;
                }
@@ -136,6 +138,11 @@ const char *defs_getval(const char *key)
    if (gDefs && key)
    {
       ret = hcon_lookup(gDefs, key);
+   }
+
+   if (!ret)
+   {
+      fprintf(stderr, "DEF ERROR: Definition ID '%s' undefined.\n", key);
    }
 
    return ret;
