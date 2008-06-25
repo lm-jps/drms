@@ -166,7 +166,9 @@ void setup()
 
   gethostname(thishost, MAX_STR);
   cptr = index(thishost, '.');       /* must be short form */
-  *cptr = (char)NULL;
+  if(cptr) *cptr = (char)NULL;
+//!!temp for test
+  sprintf(thishost, "localhost");
   cptr = datestring();
   pid = getppid();		/* pid of sum_svc */
   sprintf(logname, "/usr/local/logs/SUM/tape_svc_%s.log", timetag);
@@ -320,12 +322,14 @@ int main(int argc, char *argv[])
     }
     /* Return any tapes in drives to free slots */
     /* LEAVE THE TAPES (AND BRITTNEY) ALONE *************************
+    printf("!!NOTE: tape unload in progress\n");
     if(!tape_free_drives()) {
       write_log("**Fatal error: Can't free tapes in drives\n");
       (void) pmap_unset(TAPEPROG, TAPEVERS);
       exit(1);
     }
-    ****************************************************************/
+   ****************************************************************/
+    printf("!!!NOTE: tape unload disabled\n");
   }
 
   /* Enter svc_run() which calls svc_getreqset when msg comes in.
