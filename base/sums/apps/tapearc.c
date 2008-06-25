@@ -22,7 +22,7 @@ char *get_eff_date(int plusdays);
 
 #define TODAY (atol(get_eff_date(0)))
 #define TAR_FILE_SZ 500000000	/* try to make a tar file this size */
-#define ARCH_CHUNK 10		/* this many archive calls to tape_svc */
+#define ARCH_CHUNK 20		/* this many archive calls to tape_svc */
 #define NOTAPEARC "/usr/local/logs/soc/NOTAPEARC" /* touched by t50view */
 
 extern void printkey (KEY *key);
@@ -36,7 +36,7 @@ void sighandler(int sig);
 KEY *tapearcdo_1(KEY *params);
 static void tapearcprog_1(struct svc_req *rqstp, SVCXPRT *transp);
 
-static struct timeval TIMEOUT = { 60, 0 };
+static struct timeval TIMEOUT = { 20, 0 };
 static int WRTSTATUS;
 uint32_t rinfo;         /* info returned by XXXdo_1() calls */
 int call_tape_svc_cnt;
@@ -220,7 +220,9 @@ void setup()
   printk_set(printf, printf);
   gethostname(thishost, MAX_STR);
   cptr = index(thishost, '.');       /* must be short form */
-  *cptr = (char)NULL;
+  if(cptr) *cptr = (char)NULL;
+//!!temp for test
+  sprintf(thishost, "localhost");
   n = find_tapearc();
   if(n > 1) {
      printf("%s: Only one tapearc %s allowed at a time. I see %d\n",

@@ -144,7 +144,7 @@ void setup()
 
   gethostname(thishost, MAX_STR);
   cptr = index(thishost, '.');       /* must be short form */
-  *cptr = (char)NULL;
+  if(cptr) *cptr = (char)NULL;
   #ifdef ROBOT_0
   sprintf(robotname, "robot0_svc");
   #endif
