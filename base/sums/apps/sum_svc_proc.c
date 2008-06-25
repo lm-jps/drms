@@ -134,7 +134,7 @@ KEY *getdo_1(KEY *params)
   static struct timeval TIMEOUT = { 4, 0 }; 
   static CLIENT *clresp;
   uint32_t tapeback;
-  uint64_t uid;
+  uint64_t uid, sunum;
   enum clnt_stat status;
   int reqcnt, i, offline, storeset, offcnt;
   char *call_err, *cptr, *wd;
@@ -148,6 +148,10 @@ KEY *getdo_1(KEY *params)
     keyiterate(logkey, params);
   }
   }
+  reqcnt = getkey_int(params, "reqcnt");
+  sunum = getkey_uint64(params, "dsix_0");
+  write_log("SUM_get() for user=%s sunum=%lu cnt=%d\n", 
+		GETKEY_str(params, "username"), sunum, reqcnt);
   retlist=newkeylist();
   uid = getkey_uint64(params, "uid");
   if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
@@ -157,7 +161,6 @@ KEY *getdo_1(KEY *params)
     return((KEY *)1);	/* error. nothing to be sent */ 
   }
   add_keys(params, &retlist);
-  reqcnt = getkey_int(params, "reqcnt");
   /* set up for response. sets current_client */
   if(!(clresp = set_client_handle(RESPPROG, (uint32_t)uid))) {
     freekeylist(&retlist);
