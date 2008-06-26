@@ -69,6 +69,26 @@ KEY *taperesprobotdo_1_rd(KEY *params);
 KEY *taperesprobotdo_1_wt(KEY *params);
 static struct timeval TIMEOUT = { 120, 0 };
 
+static struct timeval first[5], second[5];
+float ftmp;
+
+/*********************************************************/
+void StartTimer(int n)
+{
+  gettimeofday (&first[n], NULL);
+}
+
+float StopTimer(int n)
+{
+  gettimeofday (&second[n], NULL);
+  if (first[n].tv_usec > second[n].tv_usec) {
+    second[n].tv_usec += 1000000;
+    second[n].tv_sec--;
+  }
+  return (float) (second[n].tv_sec-first[n].tv_sec) +
+    (float) (second[n].tv_usec-first[n].tv_usec)/1000000.0;
+}
+
 /*********************************************************/
 /* Return ptr to "mmm dd hh:mm:ss". Uses global datestr[].
 */
@@ -277,8 +297,11 @@ int kick_next_entry_rd() {
     }
     /* !!TBD eventually do switch(robotnum) */
     /*write_log("Calling: clnt_call(clntrobot0, ROBOTDO, ...) \n");*/
+    StartTimer(3); //!!TEMP
     status = clnt_call(clntrobot0, ROBOTDO, (xdrproc_t)xdr_Rkey,(char *)p->list,
                         (xdrproc_t)xdr_uint32_t, (char *)&robotback, TIMEOUT);
+    ftmp = StopTimer(3);
+    write_log("Time 3 for ROBOTDO in tape_svc = %f sec\n", ftmp);
     if(status != RPC_SUCCESS) {
       if(status != RPC_TIMEDOUT) {  /* allow timeout?? */
         call_err = clnt_sperror(clntrobot0, "Err clnt_call for ROBOTDO");
@@ -384,8 +407,12 @@ int kick_next_entry_wt() {
         write_log("*Tp:DrBusy: drv=%d\n", d);
         /* call drive[0,1]_svc and tell our caller to wait for completion */
         /*write_log("Calling: clnt_call(clntdrv%d, WRITEDRVDO, ...) \n", d);*/
+    StartTimer(1); //!!TEMP
         status = clnt_call(clntdrv[d], WRITEDRVDO, (xdrproc_t)xdr_Rkey, 
 	(char *)poff->list, (xdrproc_t)xdr_uint32_t,(char *)&driveback,TIMEOUT);
+    ftmp = StopTimer(1);
+    write_log("Time 1 for WRITEDRVDO in tape_svc = %f sec\n", ftmp);
+
         if(status != RPC_SUCCESS) {
           if(status != RPC_TIMEDOUT) {  /* allow timeout? */
             call_err = clnt_sperror(clntdrv[d], "Err clnt_call for WRITEDRVDO");
@@ -500,8 +527,11 @@ int kick_next_entry_wt() {
     }
     /* !!TBD eventually do switch(robotnum) */
     /*write_log("Calling: clnt_call(clntrobot0, ROBOTDO, ...) \n");*/
+    StartTimer(4); //!!TEMP
     status = clnt_call(clntrobot0, ROBOTDO, (xdrproc_t)xdr_Rkey,(char *)p->list,
                         (xdrproc_t)xdr_uint32_t, (char *)&robotback, TIMEOUT);
+    ftmp = StopTimer(4);
+    write_log("Time 4 for ROBOTDO in tape_svc = %f sec\n", ftmp);
     if(status != RPC_SUCCESS) {
       if(status != RPC_TIMEDOUT) {  /* allow timeout?? */
         call_err = clnt_sperror(clntrobot0, "Err clnt_call for ROBOTDO");
@@ -728,6 +758,7 @@ KEY *writedo_1(KEY *params) {
   uint64_t sumid, dsix;
   double total_bytes;
 
+  StartTimer(5); //!!TEMP do time till send ack to caller
   setkey_str(&params, "OP", "wt");
   if(findkey(params, "DEBUGFLG")) {
     debugflg = getkey_int(params, "DEBUGFLG");
@@ -744,6 +775,7 @@ KEY *writedo_1(KEY *params) {
   if(!(clresp = set_client_handle(TAPEARCPROG, TAPEARCVERS))) { 
     rinfo = NO_CLNTTCP_CREATE;  /* give err status back to original caller */
     send_ack();
+    ftmp = StopTimer(5);
     return((KEY *)1);  /* error. nothing to be sent */
   }
   setkey_fileptr(&params, "current_client", (FILE *)clresp);
@@ -756,6 +788,7 @@ KEY *writedo_1(KEY *params) {
   if(SUMLIB_TapeFindGroup(group_id, total_bytes, &tapeinfo)) {
     rinfo = NO_TAPE_IN_GROUP;  /* give err status back to original caller */
     send_ack();
+    ftmp = StopTimer(5);
     return((KEY *)1);  /* error. nothing to be sent */
   }
 #ifdef SUMDC
@@ -763,6 +796,7 @@ KEY *writedo_1(KEY *params) {
     if((dnum=tapeindrive(tapeinfo.tapeid)) == -1) { /* tape not in any drive */
       rinfo = NO_TAPE_IN_GROUP;  /* give err status back to original caller */
       send_ack();
+      ftmp = StopTimer(5);
       write_log("Tape %s not in T50", tapeinfo.tapeid);
       return((KEY *)1);  /* error. nothing to be sent */
     }
@@ -779,6 +813,7 @@ KEY *writedo_1(KEY *params) {
       write_log("**Err: can't malloc a new wrt Q entry\n");
       rinfo = 1;  /* give err status back to original caller */
       send_ack();
+      ftmp = StopTimer(5);
       free(user);
       return((KEY *)1);  /* error. nothing to be sent */
   }
@@ -796,22 +831,30 @@ KEY *writedo_1(KEY *params) {
   case 0:		/* can't process now, remains on q */
     rinfo = RESULT_PEND;    /* tell caller to wait later for results */
     send_ack();
+    ftmp = StopTimer(5);
+    write_log("Time 5 for send_ack() in tape_svc back to tapearc = %f sec\n", ftmp);
     return((KEY *)1);
     break;
   case 1:		/* entry started and removed from q */
     rinfo = RESULT_PEND;    /* tell caller to wait later for results */
     send_ack();
+    ftmp = StopTimer(5);
+    write_log("Time 5 for send_ack() in tape_svc back to tapearc = %f sec\n", ftmp);
     return((KEY *)1);
     break;
   case 2:		/* removed from q, error occured */
     rinfo = 0;
     send_ack();
+    ftmp = StopTimer(5);
+    write_log("Time 5 for send_ack() in tape_svc back to tapearc = %f sec\n", ftmp);
     setkey_int(&poff->list, "STATUS", 1); /* give error back to caller */
     return(poff->list);
     break;
   default:
     rinfo = 0;
     send_ack();
+    ftmp = StopTimer(5);
+    write_log("Time 5 for send_ack() in tape_svc back to tapearc = %f sec\n", ftmp);
     write_log("Error: kick_next_entry_wt() ret = %d invalid\n", state);
     return((KEY *)1);
     break;
@@ -940,8 +983,11 @@ KEY *taperespwritedo_1(KEY *params) {
       setkey_int(&xlist, "DEBUGFLG", 0);
       setkey_fileptr(&xlist,  "current_client", (FILE *)current_client);
 
+    StartTimer(1); //!!TEMP
       status = clnt_call(clntrobot0, ROBOTDO, (xdrproc_t)xdr_Rkey,(char *)xlist,
                         (xdrproc_t)xdr_uint32_t, (char *)&robotback, TIMEOUT);
+    ftmp = StopTimer(1);
+    write_log("Time 1 for ROBOTDO in tape_svc = %f sec\n", ftmp);
       if(status != RPC_SUCCESS) {
         if(status != RPC_TIMEDOUT) {  /* allow timeout?? */
           call_err = clnt_sperror(clntrobot0, "Err clnt_call for ROBOTDO");
@@ -1025,8 +1071,11 @@ KEY *taperespwritedo_1(KEY *params) {
       setkey_int(&xlist, "DEBUGFLG", 0);
       setkey_fileptr(&xlist,  "current_client", (FILE *)current_client);
 
+    StartTimer(2); //!!TEMP
       status = clnt_call(clntrobot0, ROBOTDO, (xdrproc_t)xdr_Rkey,(char *)xlist,
                         (xdrproc_t)xdr_uint32_t, (char *)&robotback, TIMEOUT);
+    ftmp = StopTimer(2);
+    write_log("Time 2 for ROBOTDO in tape_svc = %f sec\n", ftmp);
       if(status != RPC_SUCCESS) {
         if(status != RPC_TIMEDOUT) {  /* allow timeout?? */
           call_err = clnt_sperror(clntrobot0, "Err clnt_call for ROBOTDO");
@@ -1487,8 +1536,11 @@ KEY *taperesprobotdo_1_wt(KEY *params) {
 
   /* call drive[0,1]_svc and tell our caller to wait for completion */
   /*write_log("Calling: clnt_call(clntdrv%d, WRITEDRVDO, ...) \n", dnum);*/
+  StartTimer(2); //!!TEMP
   status = clnt_call(clntdrv[dnum], WRITEDRVDO, (xdrproc_t)xdr_Rkey,
         (char *)retlist, (xdrproc_t)xdr_uint32_t, (char *)&driveback, TIMEOUT);
+  ftmp = StopTimer(2);
+  write_log("Time 2 for WRITEDRVDO in tape_svc = %f sec\n", ftmp);
   if(status != RPC_SUCCESS) {
     if(status != RPC_TIMEDOUT) {  /* allow timeout?? */
       call_err = clnt_sperror(clntdrv[dnum], "Err clnt_call for WRITEDRVDO");
