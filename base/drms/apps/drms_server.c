@@ -279,7 +279,7 @@ int main (int argc, char *argv[]) {
 
   env->dbpasswd = dbpasswd;
   env->user = user;
-  env->logfile_prefix = drms_server;
+  env->logfile_prefix = "drms_server";
   env->dolog = dolog;
   env->quiet = 1;
 
