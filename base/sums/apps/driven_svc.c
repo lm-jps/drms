@@ -206,7 +206,7 @@ void setup()
 
   gethostname(thishost, MAX_STR);
   cptr = index(thishost, '.');       /* must be short form */
-  *cptr = (char)NULL;
+  if(cptr) *cptr = (char)NULL;
   #ifdef DRIVE_0
   sprintf(drvname, "drive0_svc");
   drivenum = 0;
@@ -1417,7 +1417,7 @@ int write_hdr_to_drive(int sim, char *tapeid, int group, int drive, char *log)
     return(-1);
   }
   sprintf(dname, "%s%d", SUMDR, drive);
-  sprintf(cmd, "%s -cvf %s -b %d -C %s TAPELABEL 2> %s", 
+  sprintf(cmd, "%s -cvf %s -b %d -C %s TAPELABEL 1> %s 2>&1", 
 		GTAR, dname, GTARBLOCK, dirname, log);
   write_time();
   write_log("*Dr%d:wt: %s\n", drivenum, cmd);
@@ -1456,7 +1456,6 @@ int get_tape_fnum_rdy(int sim, char *dname)
     }
     ioctl(fd, MTIOCGET, &mt_stat);
     write_log("mt_gstat = 0x%0x\n", mt_stat.mt_gstat); /* !!!TEMP */
-    //if(mt_stat.mt_gstat == 0) {         /* not ready yet */ //OLD ??
     if(!GMT_ONLINE(mt_stat.mt_gstat)) {
       if(++waitcnt == MAX_WAIT) {
         write_log("%s does not go ready\n", dname);
@@ -1466,7 +1465,17 @@ int get_tape_fnum_rdy(int sim, char *dname)
       write_log("Wait for ready %s %d of %d\n", dname, waitcnt, MAX_WAIT);
       sleep(2);
     }
-    else {
+    else {		//drive now ready
+      //this is new code to close & reopen and then get file num. we were
+      //getting a wrong, big file (e.g. 8388612) num about 1 in 1000 calls.
+      close(fd);
+      fd = open(dname, O_RDONLY | O_NONBLOCK);
+      if(fd == -1) {
+        write_log("Failed to open %s. errno=%d\n", dname, errno);
+        return(-1);
+      }
+      ioctl(fd, MTIOCGET, &mt_stat);
+      write_log("After ready mt_fileno=%d\n", mt_stat.mt_fileno); //!!TEMP
       ret = mt_stat.mt_fileno;
       break;
     }
