@@ -12,7 +12,8 @@ SERVEREXE	:= $(SERVEREXE) $(SERVEREXE_$(d))
 MODEXE_$(d)	:= $(addprefix $(d)/, drms_query drms_log)
 MODEXE		:= $(MODEXE) $(MODEXE_$(d))
 
-MODEXE_SOCK_$(d):= $(MODEXE_$(d):%=%_sock)
+MODEXE_$(d)	:= $(addprefix $(d)/, drms_log)
+MODEXE_SOCK_$(d):= $(MODEXE_SOCK_$(d):%=%_sock)
 MODEXE_SOCK	:= $(MODEXE_SOCK) $(MODEXE_SOCK_$(d))
 
 EXE_$(d)	:= $(SERVEREXE_$(d)) $(MODEXE_$(d)) 
@@ -31,7 +32,6 @@ S_$(d)		:= $(notdir $(EXE_$(d)) $(MODEXE_SOCK_$(d)))
 # Local rules
 $(OBJ_$(d)):	CF_TGT := $(CF_$(d))
 $(OBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
-$(MODEXE_$(d):%=%.o) : CF_TGT := $(CF_$(d)) -DDRMS_CLIENT
 
 # Shortcuts
 .PHONY:	$(S_$(d))
