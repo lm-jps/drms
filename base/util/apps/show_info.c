@@ -614,6 +614,10 @@ int DoIt(void)
     }
   free (seglist);
 
+  /* if some segment info wanted and path is needed from SUMS, stage all records. */
+  if (nsegs > 0 && (want_path || want_path_noret))
+    drms_stage_records(recordset, want_path, want_path); 
+
   /* loop over set of selected records */
   for (irec = first_rec; irec <= last_rec; irec++) 
     {
