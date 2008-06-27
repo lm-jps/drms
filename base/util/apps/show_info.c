@@ -129,6 +129,7 @@ ModuleArgs_t module_args[] =
   {ARG_STRING, "key", "Not Specified", "<comma delimited keyword list>"},
   {ARG_STRING, "seg", "Not Specified", "<comma delimited segment list>"},
   {ARG_FLAG, "a", "0", "Show info for all keywords"},
+  {ARG_FLAG, "A", "0", "Show info for all segments"},
   {ARG_FLAG, "c", "0", "Show count of records in query"},
   {ARG_FLAG, "d", "0", "Show dimensions of segment files with selected segs"},
   {ARG_FLAG, "h", "0", "help - print usage info"},
@@ -156,6 +157,7 @@ int nice_intro ()
 	"ds=<recordset query> {n=0} {key=<keylist>} {seg=<segment_list>}\n"
         "  details are:\n"
 	"  -a: show information for all keywords\n"
+	"  -A: show information for all segments\n"
         "  -c: count records in query\n"
   	"  -d: Show dimensions of segment files with selected segs\n"
 	"  -h: help - show this message then exit\n"
@@ -394,6 +396,7 @@ int DoIt(void)
   int jsd_list;
   int list_keys;
   int show_all;
+  int show_all_segs;
   int show_recordspec;
   int show_stats;
   int max_recs;
@@ -418,6 +421,7 @@ int DoIt(void)
   jsd_list = cmdparams_get_int (&cmdparams, "j", NULL) != 0;
   list_keys = cmdparams_get_int (&cmdparams, "l", NULL) != 0;
   show_all = cmdparams_get_int (&cmdparams, "a", NULL) != 0;
+  show_all_segs = cmdparams_get_int (&cmdparams, "A", NULL) != 0;
   want_count = cmdparams_get_int (&cmdparams, "c", NULL) != 0;
   want_dims = cmdparams_get_int (&cmdparams, "d", NULL) != 0;
   show_stats = cmdparams_get_int (&cmdparams, "s", NULL) != 0;
@@ -606,7 +610,15 @@ int DoIt(void)
   /* get list of segments to show for each record */
 // NEED to also check for {seglist} notation at end of each ss query 
   nsegs = 0;
-  if (show_segs) 
+  if (show_all_segs) 
+    { /* if wanted get list of all segments */
+    DRMS_Segment_t *seg;
+    HIterator_t hit;
+    hiter_new (&hit, &recordset->records[0]->segments);
+    while ((seg = (DRMS_Segment_t *)hiter_getnext (&hit)))
+      segs[nsegs++] = strdup (seg->info->name);
+    }
+  else if (show_segs) 
     { /* get specified segment list */
     char *thisseg;
     for (thisseg=strtok(seglist, ","); thisseg; thisseg=strtok(NULL,","))
@@ -615,7 +627,7 @@ int DoIt(void)
   free (seglist);
 
   /* if some segment info wanted and path is needed from SUMS, stage all records. */
-  if (nsegs > 0 && (want_path || want_path_noret))
+  if ((nsegs > 0 && (want_path || want_path_noret)) || want_path || want_path_noret)
     drms_stage_records(recordset, want_path, want_path); 
 
   /* loop over set of selected records */
