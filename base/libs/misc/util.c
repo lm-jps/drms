@@ -46,13 +46,26 @@ void copy_string(char **dst, char *src)
   *dst = strdup(src);
 }
 
-
 void strtolower(char *str)
 {
   int n,i;
   n= strlen(str);
   for (i=0;i<n;i++)
     str[i] = tolower(str[i]);
+}
+
+/* Always NULL-terminates dst */
+size_t base_strlcat(char *dst, const char *src, size_t size)
+{
+   size_t max = size - strlen(dst) - 1; /* max non-NULL can add */
+   size_t start = strlen(dst);
+
+   if (max > 0)
+   {
+      snprintf(dst + start, max + 1, "%s", src); /* add 1 to max for NULL */
+   }
+
+   return start + strlen(src);
 }
 
 int convert_int_field(char *field, int len)

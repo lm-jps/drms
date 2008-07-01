@@ -12,6 +12,7 @@ typedef enum
 char *ns(const char *name);
 void strtolower(char *str);
 void copy_string(char **dst, char *src); /* like strdup with assert on error. */
+size_t base_strlcat(char *dst, const char *src, size_t size);
 int convert_int_field(char *field, int len);
 long convert_long_field(char *field, int len);
 float convert_float_field(char *field, int len);
