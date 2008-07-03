@@ -39,6 +39,10 @@ EXEC SQL END DECLARE SECTION;
         WHERE OWNING_SERIES = :owning_series;
 
   EXEC SQL COMMIT WORK;
+  printk("UPDATE SUM_MAIN SET SAFE_TAPE=%s SAFE_TAPE_FN=%d\n", 
+		safe_tape.arr, safe_tape_fn);
+  printk("SAFE_TAPE_DATE=%s WHERE OWNING_SERIES=%s\n", 
+		safe_tape_date.arr, owning_series.arr);
   return(0);
 
 sqlerror:
