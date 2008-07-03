@@ -2287,6 +2287,52 @@ int drms_segment_segsmatch(const DRMS_Segment_t *s1, const DRMS_Segment_t *s2)
    return ret;
 }
 
+/* keys may be NULL, in which case no extra keywords are placed into the FITS file. */
+static int ExportFITS(DRMS_Array_t *arrout, 
+                      const char *fileout, 
+                      const char *cparms, 
+                      CFITSIO_KEYWORD *fitskeys)
+{
+   int stat = DRMS_SUCCESS;
+
+   if (arrout)
+   {
+      /* Need to manually add required keywords that don't exist in the record's 
+       * DRMS keywords. */
+      CFITSIO_IMAGE_INFO imginfo;
+      
+      if (!SetImageInfo(arrout, &imginfo))
+      {
+         /* Not sure if data need to be scaled, or if the original blank value
+          * should be resurrected. */
+         if (arrout->type == DRMS_TYPE_STRING)
+         {
+            fprintf(stderr, "Can't save string data into a fits file.\n");
+            stat = DRMS_ERROR_EXPORT;
+         }
+         else
+         {
+            if (cfitsio_write_file(fileout, &imginfo, arrout->data, cparms, fitskeys))
+            {
+               fprintf(stderr, "Can't write fits file '%s'.\n", fileout);
+               stat = DRMS_ERROR_EXPORT;
+            }
+         }
+      }
+      else
+      {
+         fprintf(stderr, "Data array being exported is invalid.\n");
+         stat = DRMS_ERROR_EXPORT;
+      }
+   }
+   else
+   {
+      stat = DRMS_ERROR_INVALIDDATA;
+   }
+
+   return stat;
+}
+
 int drms_segment_export_tofile(DRMS_Segment_t *seg, const char *fileout)
 {
    return drms_segment_mapexport_tofile(seg, NULL, NULL, fileout);
@@ -2343,34 +2389,7 @@ int drms_segment_mapexport_tofile(DRMS_Segment_t *seg,
 	      DRMS_Array_t *arrout = drms_segment_read(seg, DRMS_TYPE_RAW, &stat);
 	      if (arrout)
 	      {
-		 /* Need to manually add required keywords that don't exist in the record's 
-		  * DRMS keywords. */
-		 CFITSIO_IMAGE_INFO imginfo;
-      
-		 if (!SetImageInfo(arrout, &imginfo))
-		 {
-		    /* Not sure if data need to be scaled, or if the original blank value
-		     * should be resurrected. */
-		    if (arrout->type == DRMS_TYPE_STRING)
-		    {
-		       fprintf(stderr, "Can't save string data into a fits file.\n");
-		       stat = DRMS_ERROR_EXPORT;
-		    }
-		    else
-		    {
-		       if (cfitsio_write_file(fileout, &imginfo, arrout->data, seg->cparms, fitskeys))
-		       {
-			  fprintf(stderr, "Can't write fits file '%s'.\n", fileout);
-			  stat = DRMS_ERROR_EXPORT;
-		       }
-		    }
-		 }
-		 else
-		 {
-		    fprintf(stderr, "Data array being exported is invalid.\n");
-		    stat = DRMS_ERROR_EXPORT;
-		 }
-
+                 stat = ExportFITS(arrout, fileout, seg->cparms, fitskeys);
 		 drms_free_array(arrout);
 	      }
 	   }
@@ -2385,6 +2404,69 @@ int drms_segment_mapexport_tofile(DRMS_Segment_t *seg,
    if (fitskeys)
    {
       cfitsio_free_keys(&fitskeys);
+   }
+
+   return stat;
+}
+
+int drms_export_tofitsfile(DRMS_Array_t *arr,
+                           HContainer_t *keys,
+                           const char *cparms,
+                           const char *fileout)
+{
+   return drms_mapexport_tofitsfile(arr, keys, cparms, NULL, NULL, fileout);
+}
+
+int drms_mapexport_tofitsfile(DRMS_Array_t *arr,
+                              HContainer_t *keys,
+                              const char *cparms,
+                              const char *clname, 
+                              const char *mapfile,
+                              const char *fileout)
+{
+   int stat = DRMS_SUCCESS;
+
+   if (arr && arr->data)
+   {
+      CFITSIO_KEYWORD *fitskeys = NULL;
+      if (keys)
+      {
+         HIterator_t *hit = hiter_create(keys);
+
+         if (hit)
+         {
+            DRMS_Keyword_t *key = NULL;
+            const char *keyname = NULL;
+
+            while ((key = hiter_getnext(hit)) != NULL)
+            {
+               keyname = drms_keyword_getname(key);
+
+               if (drms_keyword_mapexport(key, clname, mapfile, &fitskeys))
+               {
+                  fprintf(stderr, "Couldn't export keyword '%s'.\n", keyname);
+                  stat = DRMS_ERROR_EXPORT;
+               }
+            }
+
+            hiter_destroy(&hit);
+         }
+      }
+
+      if (!stat)
+      {
+         stat = ExportFITS(arr, fileout, cparms, fitskeys);
+      }
+
+      if (fitskeys)
+      {
+         cfitsio_free_keys(&fitskeys);
+      }
+   }
+   else
+   {
+      fprintf(stderr, "Invalid data array.\n");
+      stat = DRMS_ERROR_INVALIDDATA;
    }
 
    return stat;
