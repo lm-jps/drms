@@ -816,10 +816,15 @@ void drms_segment_filename(DRMS_Segment_t *seg, char *filename)
 {
    if (seg->info->protocol == DRMS_DSDS)
    {
-      /* For the DSDS protocol, filename is not used. */
-      if (filename)
+      /* For the DSDS protocol, filename is not used, except to signify that
+       * ther is no data file.  In that case, it is set to  */
+      if (strlen(seg->filename) > 0)
       {
-	 *filename = '\0';
+         snprintf(filename, DRMS_MAXPATHLEN, "%s", seg->filename);
+      }
+      else if (filename)
+      {
+         *filename = '\0';
       }
    }
    else if (seg->info->protocol != DRMS_LOCAL)
@@ -971,6 +976,16 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 
      if (seg->info->protocol == DRMS_DSDS)
      {
+        if (!*filename)
+        {
+           /* This DSDS record has no data file. We don't actually use the 
+            * filename here - the DSDS parameters are used below to fetch 
+            * the file.  The filename is used to respond to requests for
+            * the segment filename. */
+           fprintf(stderr, "There is no data file for this DSDS data record.\n");
+           goto bailout1;
+        }
+
 	dsdsParams = (char *)malloc(sizeof(char) * kDSDS_MaxHandle);
 	if (DSDS_GetDSDSParams(seg->record->seriesinfo, dsdsParams))
 	{

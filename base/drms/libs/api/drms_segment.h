@@ -16,8 +16,6 @@
 /********                                        ********/
 /********************************************************/
 
-
-
 /**** External functions (for modules) ****/
 /**
    Synonym for ::drms_segment_lookup.

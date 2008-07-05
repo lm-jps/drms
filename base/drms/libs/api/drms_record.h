@@ -371,4 +371,8 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
 DRMS_Record_t *drms_recordset_fetchnext(DRMS_RecordSet_t *rs, int *status);
 DRMS_Record_t *drms_recordset_fetchprevious(DRMS_RecordSet_t *rs, int *status);
 DRMS_Record_t *drms_recordset_fetchnextinset(DRMS_RecordSet_t *rs, int *setnum, int *status);
+
+/* DSDS */
+int drms_record_isdsds(DRMS_Record_t *rec);
+int drms_record_islocal(DRMS_Record_t *rec);
 #endif

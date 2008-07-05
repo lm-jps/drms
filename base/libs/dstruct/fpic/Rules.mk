@@ -6,7 +6,7 @@ d		:= $(dir)
 # Local variables
 LIBDSTRUCT_FPIC	:= $(d)/libdstruct_fpic.a
 
-FPICOBJ_$(d)	:= $(addprefix $(d)/, hcontainer.o hash_table.o parse_params.o table.o)
+FPICOBJ_$(d)	:= $(addprefix $(d)/, hcontainer.o hash_table.o parse_params.o table.o list.o)
 FPICOBJ		:= $(FPICOBJ) $(FPICOBJ_$(d))
 
 DEP_$(d)	:= $(FPICOBJ_$(d):%=%.d)

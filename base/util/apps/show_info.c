@@ -721,17 +721,50 @@ int DoIt(void)
         printf (keyword_list ? "\n" : "\t");
       if (rec_seg_iseg)
         {
-        char fname[DRMS_MAXPATHLEN];
-        char path[DRMS_MAXPATHLEN];
-        if (want_path)
-          if(want_path_noret) drms_record_directory (rec, path, 0);
-          else drms_record_directory (rec, path, 1);
+        char fname[DRMS_MAXPATHLEN] = {0};
+        char path[DRMS_MAXPATHLEN] = {0};
+
+        if (rec_seg_iseg->info->protocol != DRMS_DSDS && rec_seg_iseg->info->protocol != DRMS_LOCAL)
+        {
+           if (want_path)
+             if(want_path_noret) drms_record_directory (rec, path, 0);
+             else drms_record_directory (rec, path, 1);
+           else
+             strcpy(path,"");
+
+           strncpy(fname, rec_seg_iseg->filename, DRMS_MAXPATHLEN);
+        }
         else
-          strcpy(path,"");
-	strncpy(fname, rec_seg_iseg->filename, DRMS_MAXPATHLEN);
+        {
+           char *tmp = strdup(rec_seg_iseg->filename);
+           char *sep = NULL;
+
+           if (tmp)
+           {
+              if ((sep = strrchr(tmp, '/')) != NULL)
+              {
+                 *sep = '\0';
+                 snprintf(path, sizeof(path), "%s", tmp);
+                 snprintf(fname, sizeof(fname), "%s", sep + 1);
+              }
+              else
+              {
+                 snprintf(fname, sizeof(fname), "%s", tmp);
+              }
+
+              free(tmp);
+           }
+
+           if (!want_path) 
+           {
+              *path = '\0';
+           }
+        }
+
         if (keyword_list)
           printf("%s=", segs[iseg]);
         printf("%s%s%s", path, (want_path ? "/" : ""), fname);
+
         if (want_dims)
 	  {
           char info[1000];
@@ -760,12 +793,54 @@ int DoIt(void)
       }
     if (nsegs==0 && want_path)
       {
-      char path[DRMS_MAXPATHLEN];
-      if(want_path_noret) drms_record_directory (rec, path, 0);
-      else drms_record_directory (rec, path, 1);
-      if (keyword_list)
-        printf("SUDIR=");
-      printf("%s", path);
+         char path[DRMS_MAXPATHLEN] = {0};
+
+         if (drms_record_numsegments(rec) <= 0)
+         {
+            snprintf(path, 
+                     sizeof(path), 
+                     "Record does not contain any segments - no record directory.");
+         }
+         else if (drms_record_isdsds(rec) || drms_record_islocal(rec))
+         {
+            /* Can get full path from segment filename.  But beware, there may be no
+             * datafile for a DSDS record.  */
+            DRMS_Segment_t *seg = drms_segment_lookupnum(rec, 0); /* Only 1 seg per DSDS */
+            if (*(seg->filename) == '\0')
+            {
+               /* No file for this DSDS record */
+               snprintf(path, sizeof(path), "Record has no data file.");
+            }
+            else
+            {
+               char *tmp = strdup(seg->filename);
+               char *sep = NULL;
+
+               if (tmp)
+               {
+                  if ((sep = strrchr(tmp, '/')) != NULL)
+                  {
+                     *sep = '\0';
+                     snprintf(path, sizeof(path), "%s", tmp);
+                  }
+                  else
+                  {
+                     snprintf(path, sizeof(path), "%s", tmp);
+                  }
+
+                  free(tmp);
+               }
+            }
+         }
+         else
+         {
+            if(want_path_noret) drms_record_directory (rec, path, 0);
+            else drms_record_directory (rec, path, 1);
+         }
+
+         if (keyword_list)
+           printf("SUDIR=");
+         printf("%s", path);
       }
     if (show_recnum || show_recordspec || nkeys || nsegs || want_path)
       printf ("\n");

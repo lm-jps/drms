@@ -11,6 +11,7 @@
 #include "drms_types.h"
 #include "drms_protocol.h"
 #include "hcontainer.h"
+#include "list.h"
 
 /* from libsoi */
 #include "soi.h"
@@ -20,6 +21,7 @@ long long gSeriesGuid = 1;
 
 const char kDSDS_GenericSeriesName[] = "dsds_series";
 #define kLIBSOI "libsoi.so"
+#define kDATAFILE "DATAFILE"
 
 /* libsoi API function names */
 typedef enum Soifn_enum
@@ -429,7 +431,7 @@ static void Printkey(KEY *key)
 }
 
 /* Turns the "in=prog:..." parameter into a keylist that vds_open() can use. */
-static KEY *CreateSOIKeylist(const char *progspec, kDSDS_Stat_t *stat)
+static KEY *CreateSOIKeylist(const char *progspec, LinkedList_t **wdlist, kDSDS_Stat_t *stat)
 {
    kDSDS_Stat_t status = kDSDS_Stat_Success;
    void *hSOI = GetSOI(&status);
@@ -561,6 +563,18 @@ static KEY *CreateSOIKeylist(const char *progspec, kDSDS_Stat_t *stat)
 				    {
 				       valstr = strtok(NULL, " \t");				 
 				       (*pFn_setkey_str)(&dslist, keystr, valstr);
+
+                                       /* save this path to return with segment */
+                                       if (wdlist && !*wdlist)
+                                       {
+                                          *wdlist = list_llcreate(PATH_MAX);
+                                       }
+
+                                       if (*wdlist)
+                                       {
+                                          list_llinsert(*wdlist, valstr);
+                                       }
+
 				       nGot++;
 				    }
 				 }
@@ -610,6 +624,20 @@ static KEY *CreateSOIKeylist(const char *progspec, kDSDS_Stat_t *stat)
 	       }
 	    }
 	 } /* 'prog' spec */
+         else
+         {
+            /* Must be a local directory that has an overview.fits file in it - 
+             * spec is the file dir containing fits fits. */
+            if (wdlist && !*wdlist)
+            {
+               *wdlist = list_llcreate(PATH_MAX);
+            }
+
+            if (*wdlist)
+            {
+               list_llinsert(*wdlist, spec);
+            }
+         }
       }
       else
       {
@@ -966,7 +994,8 @@ static void FreeDSDSKeyList(DSDS_KeyList_t **list)
 static int LoopAttrs(void *hSOI, 
 		     SDS *sds, 
 		     DSDS_KeyList_t *pHead, 
-		     kDSDS_Stat_t *stat)
+		     kDSDS_Stat_t *stat,
+                     int *dataexists)
 {
    kDSDS_Stat_t status = kDSDS_Stat_Success;
    int nAttrs = 0;
@@ -1003,6 +1032,11 @@ static int LoopAttrs(void *hSOI,
 	 DRMS_Keyword_t *drmskey = NULL;
       
 	 /* loop through attributes */
+         if (dataexists)
+         {
+            *dataexists = 0;
+         }
+
 	 nAttrs = 0;
 	 ATTRIBUTES *attr = (*pFn_sds_first_attr)(sds);
 	 ATTRIBUTES *lastAttr = (*pFn_sds_last_attr)(sds);
@@ -1031,6 +1065,15 @@ static int LoopAttrs(void *hSOI,
 	       attrType = (*pFn_sds_attrtype)(attr);
 	       attrVal = (*pFn_sds_attrvalue)(attr);
 	       attrComment = (*pFn_sds_attrcomment)(attr);
+
+               /* Check to see if a data file exists - if not no DRMS segment will be created */
+               if (dataexists && 
+                   strcmp(attrName, kDATAFILE) == 0 && 
+                   attrType == SDS_STRING && 
+                   strlen(attrVal) > 0)
+               {
+                  *dataexists = 1;
+               }
 
 	       /* make a drms keyword (make stand-alone keyword->info) */
 	       drmskey = (DRMS_Keyword_t *)malloc(sizeof(DRMS_Keyword_t));
@@ -1120,6 +1163,7 @@ static void FillDRMSSeg(void *hSOI,
 			DRMS_Segment_t *segout,
 			const char *segname,
 			DRMS_Protocol_t protocol,
+                        const char *filename,
 			kDSDS_Stat_t *stat)
 {
    kDSDS_Stat_t status = kDSDS_Stat_InvalidParams;
@@ -1181,6 +1225,11 @@ static void FillDRMSSeg(void *hSOI,
 	    { 	 
 	       segout->info->type = DRMS_TYPE_DOUBLE; 	 
 	    }
+
+            if (filename && *filename)
+            {
+               snprintf(segout->filename, DRMS_MAXPATHLEN, "%s", filename);
+            }
  
 	    status = kDSDS_Stat_Success;
 	 }
@@ -1342,6 +1391,7 @@ long long DSDS_open_records(const char *dsspec,
    long long nDRMSRecs = 0; /* No. of DRMS records (all have data files) */
    char drmsSeriesName[DRMS_MAXSERIESNAMELEN];
    KEY *params = NULL;
+   int dataexists = 0;
 
    *drmsSeries = NULL;
    *keys = NULL;
@@ -1379,7 +1429,9 @@ long long DSDS_open_records(const char *dsspec,
 	 int lsn = 0;
 	 int sn = 0;
 
-	 params = CreateSOIKeylist(dsspec, &status);
+         LinkedList_t *wdlist = NULL;
+
+	 params = CreateSOIKeylist(dsspec, &wdlist, &status);
 
 	 if (status == kDSDS_Stat_Success)
 	 {
@@ -1534,13 +1586,22 @@ long long DSDS_open_records(const char *dsspec,
 
 
 		     /* loop through attributes */
-		     LoopAttrs(hSOI, sds, pKL, &status);
+                     dataexists = 0;
+		     LoopAttrs(hSOI, sds, pKL, &status, &dataexists);
 
 		     /* Must make segment now */
 		     DRMS_Segment_t *drmsseg = &((*segs)[nDRMSRecs]);
 		     kDSDS_Stat_t segstatus = kDSDS_Stat_Success;
 
-		     FillDRMSSeg(hSOI, sds, drmsseg, kDSDS_Segment, DRMS_DSDS, &segstatus);
+                     /* It is possible that VDS will create a record with no segment.  This is accomplished 
+                      * by creating a .record.rdb file, but no .fits file.  When this happens, we
+                      * basically have something analogous to a DRMS record with no segment.  Leave the 
+                      * segment undefined (the struct is zero'd out) so that callers of DSDS_open_records()
+                      * know there is no data segment. */
+                     if (dataexists)
+                     {
+                        FillDRMSSeg(hSOI, sds, drmsseg, kDSDS_Segment, DRMS_DSDS, sds->filename, &segstatus);
+                     }
 
 		     if (segstatus != kDSDS_Stat_Success)
 		     {
@@ -1558,6 +1619,8 @@ long long DSDS_open_records(const char *dsspec,
 	       (*pFn_vds_close)(&vds); /* frees sds's */
 	    } /* vds */
 	 } /* dataset loop */
+
+         list_llfree(&wdlist);
       }
       else
       {
@@ -1853,7 +1916,7 @@ int DSDS_read_fitsheader(const char *file,
 	       retlist->next = NULL;
 
 	       /* loop through attributes */
-	       nKeys = LoopAttrs(hSOI, sds, retlist, &status);
+	       nKeys = LoopAttrs(hSOI, sds, retlist, &status, NULL);
 	    }
 	    else
 	    {
@@ -1861,10 +1924,11 @@ int DSDS_read_fitsheader(const char *file,
 	    }
 
 	    retseg = (DRMS_Segment_t *)malloc(sizeof(DRMS_Segment_t));
+            memset(retseg, 0, sizeof(DRMS_Segment_t));
 	    if (retseg)
 	    {
-	       FillDRMSSeg(hSOI, sds, retseg, segname, DRMS_LOCAL, &status);
-	    }
+               FillDRMSSeg(hSOI, sds, retseg, segname, DRMS_LOCAL, fitsfile, &status);
+            }
 	    else
 	    {
 	       status = kDSDS_Stat_NoMemory;

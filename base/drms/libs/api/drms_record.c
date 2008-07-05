@@ -521,15 +521,20 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
 
 	    if (stat == DRMS_SUCCESS)
 	    {
-	       /* one segment per record */
-	       if (!seg)
-	       {
-		  seg = oneSeg;
-	       }
-	       else if (!drms_segment_segsmatch(seg, oneSeg))
-	       {
-		  stat = DRMS_ERROR_INVALIDDATA;
-	       }
+	       /* one segment per record - but some records might now have a segment.
+                * Records that don't have segments will still have a DRMS_Segment_t 
+                * in the segarr, but the structure is zeroed out. */
+               if (oneSeg && oneSeg->info)
+               {
+                  if (!seg)
+                  {
+                     seg = oneSeg;
+                  }
+                  else if (!drms_segment_segsmatch(seg, oneSeg))
+                  {
+                     stat = DRMS_ERROR_INVALIDDATA;
+                  }
+               }
 	    }
 	 }
       } /* iRec */
@@ -637,27 +642,31 @@ static void AdjustRecordProtoSeriesInfo(DRMS_Env_t *env,
 static void AllocRecordProtoSeg(DRMS_Record_t *template, DRMS_Segment_t *seg, int *status)
 {
    int stat = DRMS_SUCCESS;
-   DRMS_Segment_t *tSeg = NULL;
 
-   XASSERT(tSeg = hcon_allocslot_lower(&(template->segments), seg->info->name));
-   memset(tSeg, 0, sizeof(DRMS_Segment_t));
-   XASSERT(tSeg->info = malloc(sizeof(DRMS_SegmentInfo_t)));
-   memset(tSeg->info, 0, sizeof(DRMS_SegmentInfo_t));
-
-   if (tSeg && tSeg->info)
+   if (seg)
    {
-      /* record */
-      tSeg->record = template;
+      DRMS_Segment_t *tSeg = NULL;
+
+      XASSERT(tSeg = hcon_allocslot_lower(&(template->segments), seg->info->name));
+      memset(tSeg, 0, sizeof(DRMS_Segment_t));
+      XASSERT(tSeg->info = malloc(sizeof(DRMS_SegmentInfo_t)));
+      memset(tSeg->info, 0, sizeof(DRMS_SegmentInfo_t));
+
+      if (tSeg && tSeg->info)
+      {
+         /* record */
+         tSeg->record = template;
 	       
-      /* segment info*/
-      memcpy(tSeg->info, seg->info, sizeof(DRMS_SegmentInfo_t));
+         /* segment info*/
+         memcpy(tSeg->info, seg->info, sizeof(DRMS_SegmentInfo_t));
 
-      /* axis is allocated as static array */
-      memcpy(tSeg->axis, seg->axis, sizeof(int) * DRMS_MAXRANK);
-   }
-   else
-   {
-      stat = DRMS_ERROR_OUTOFMEMORY;
+         /* axis is allocated as static array */
+         memcpy(tSeg->axis, seg->axis, sizeof(int) * DRMS_MAXRANK);
+      }
+      else
+      {
+         stat = DRMS_ERROR_OUTOFMEMORY;
+      }
    }
 
    if (status)
@@ -830,17 +839,29 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
 	    }
 
 	    /* enter segment file names (kKEYMAPCLASS_LOCAL) */
-	    if ((tSeg = 
-		 hcon_lookup_lower(&(rset->records[iRec]->segments), kLocalSegName)) != NULL)
-	    {
-	       snprintf(tSeg->filename, DRMS_MAXSEGFILENAME, "%s", sSeg->filename);
-	    }
-	    else
-	    {
-	       stat = DRMS_ERROR_INVALIDDATA;
-	       break;
-	    }
-	 }
+            tSeg = hcon_lookup_lower(&(rset->records[iRec]->segments), kLocalSegName);
+         }
+         else if (fitsclass == kKEYMAPCLASS_DSDS)
+         {
+            tSeg = drms_segment_lookupnum(rset->records[iRec], 0);
+         }
+
+         if (tSeg != NULL)
+         {
+            if (sSeg->info)
+            {
+               /* Not all DSDS records have a data file. This will be used if the protocol
+                * is DRMS_LOCAL.  In this case, the filename is the path to the file(s)
+                * that formed the rec-set query.  If the protocol is DRMS_DSDS, then filename 
+                * is the DSDS path to a fits file. */
+               snprintf(tSeg->filename, DRMS_MAXSEGFILENAME, "%s", sSeg->filename);
+            }
+         }
+         else
+         {
+            stat = DRMS_ERROR_INVALIDDATA;
+            break;
+         }
 
 	 rset->records[iRec]->readonly = 1;
 	 iNewRec++;
@@ -972,7 +993,11 @@ static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env,
 	    AdjustRecordProtoSeriesInfo(env, proto, seriesName, 32);
 	      
 	    /* alloc segments */
-	    AllocRecordProtoSeg(proto, seg, &stat);
+            if (seg)
+            {
+               /* Not all DSDS records have a data file */
+               AllocRecordProtoSeg(proto, seg, &stat);
+            }
 	 }
 
 	 if (stat == DRMS_SUCCESS)
@@ -1169,7 +1194,11 @@ DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, const char *dsRecSet, i
 	       DSDS_SetDSDSParams(ghDSDS, template->seriesinfo, hparams);
 	      
 	       /* alloc segments */
-	       AllocRecordProtoSeg(template, seg, &stat);
+               if (seg)
+               {
+                  /* Not all DSDS records have a segment */
+                  AllocRecordProtoSeg(template, seg, &stat);
+               }
 	    }
 
 	    if (stat == DRMS_SUCCESS)
@@ -4027,6 +4056,17 @@ void drms_record_directory (DRMS_Record_t *rec, char *dirname, int retrieve) {
     return;
   }
 
+  /* If all segments are protocol DRMS_DSDS, then there will be no record
+   * directory, because the fits files are stored in DSDS dirs.  If a segment
+   * is protocol DRMS_DSDS, then there is only one segment. */
+  if (drms_record_isdsds(rec))
+  {
+     /* Can't call drms_record_directory() on a record that contains a DRMS_DSDS 
+      * segment */
+     fprintf(stderr, "ERROR: Cannot call drms_record_directory() on a record that contains a DRMS_DSDS segment.\n");
+     return;
+  }
+
   if (rec->sunum != -1LL && rec->su == NULL) {
 #ifdef DEBUG
     printf ("Getting SU for record %s:#%lld, sunum=%lld\n",
@@ -4046,6 +4086,7 @@ void drms_record_directory (DRMS_Record_t *rec, char *dirname, int retrieve) {
 	   rec->su->sunum, rec->su->sudir);
 #endif
   }
+
   CHECKSNPRINTF(snprintf(dirname, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT, 
 			 rec->su->sudir, rec->slotnum), DRMS_MAXPATHLEN);
 }
@@ -5843,4 +5884,52 @@ DRMS_Record_t *drms_recordset_fetchnextinset(DRMS_RecordSet_t *rs, int *setnum, 
    }
 
    return ret;
+}
+
+int drms_record_isdsds(DRMS_Record_t *rec)
+{
+   int isdsds = 0;
+
+   DRMS_Segment_t *seg = NULL;
+   HIterator_t *hit = hiter_create(&rec->segments);
+
+   if (hit)
+   {
+      while (seg = (DRMS_Segment_t *)hiter_getnext(hit))
+      {
+         if (seg->info->protocol == DRMS_DSDS)
+         {
+            isdsds = 1;
+            break;
+         }
+      }
+
+      hiter_destroy(&hit);
+   }
+
+   return isdsds;
+}
+
+int drms_record_islocal(DRMS_Record_t *rec)
+{
+   int islocal = 0;
+
+   DRMS_Segment_t *seg = NULL;
+   HIterator_t *hit = hiter_create(&rec->segments);
+
+   if (hit)
+   {
+      while (seg = (DRMS_Segment_t *)hiter_getnext(hit))
+      {
+         if (seg->info->protocol == DRMS_LOCAL)
+         {
+            islocal = 1;
+            break;
+         }
+      }
+
+      hiter_destroy(&hit);
+   }
+
+   return islocal;
 }
