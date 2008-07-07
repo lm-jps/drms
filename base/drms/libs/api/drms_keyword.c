@@ -2154,15 +2154,28 @@ int drms_keyword_mapexport(DRMS_Keyword_t *key,
 	 DRMS_Value_t v;
 	 int fitsrwRet = 0;
 
-	 v.type = key->info->type;
-	 v.value = key->value;
+         if (key->info->type == DRMS_TYPE_TIME)
+         {
+            /* Print time keywords as strings. */
+            char tbuf[1024];
+            drms_keyword_snprintfval(key, tbuf, sizeof(tbuf));
+
+            v.type = DRMS_TYPE_STRING;
+            v.value.string_val = tbuf;
+         }
+         else
+         {
+            v.type = key->info->type;
+            v.value = key->value;
+         }
+
 	 if (!DRMSKeyValToFITSKeyType(&v, &kwtype))
 	 {
 	    if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key(fitskeys, 
 								   nameout, 
 								   kwtype, 
 								   NULL,
-								   &(key->value.char_val))))
+								   &(v.value.char_val))))
 	    {
 	       fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
 	       stat = DRMS_ERROR_FITSRW;
