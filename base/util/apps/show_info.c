@@ -377,6 +377,29 @@ int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status)
   return(0);
   }
 
+// these next 2 are needed for the QUERY_STRING reading
+static char x2c (char *what) {
+  register char digit;
+
+  digit = (what[0] >= 'A' ? ((what[0] & 0xdf) - 'A')+10 : (what[0] - '0'));
+  digit *= 16;
+  digit += (what[1] >= 'A' ? ((what[1] & 0xdf) - 'A')+10 : (what[1] - '0'));
+  return (digit);
+}
+
+static void CGI_unescape_url (char *url) {
+  register int x, y;
+
+  for (x = 0, y = 0; url[y]; ++x, ++y) {
+    if ((url[x] = url[y]) == '%') {
+      url[x] = x2c (&url[y+1]);
+      y += 2;
+    }
+  }
+  url[x] = '\0';
+}
+// end of web enabling functions
+
 /* Module main function. */
 int DoIt(void)
   {
@@ -412,6 +435,42 @@ int DoIt(void)
   int not_silent;
   int want_dims;
   int i_set, n_sets;
+
+  // Include this code segment to allow operating show_info as a cgi-bin program.
+  // It will preceed any output to stdout with the content-type info for text.
+  // I.e. if the param QUERY_STRING is present it will assume it was called
+  // via a web GET call.  No other special formatting will be done.
+  // Note: this code could work in most programs that print to stdout.
+  // The variable "from_web" is made just in case some use of the fact might be made.
+  int from_web;
+  char *web_query;
+  web_query = strdup (cmdparams_get_str (&cmdparams, "QUERY_STRING", NULL));
+  from_web = strcmp (web_query, "Not Specified") != 0;
+
+  if (from_web)
+    {
+    char *getstring, *ds, *p;
+    CGI_unescape_url(web_query);
+    getstring = strdup (web_query);
+    for (p=strtok(getstring,"&"); p; p=strtok(NULL, "&"))
+      {
+      char *key=p, *val=index(p,'=');
+      if (!val)
+         {
+	 fprintf(stderr,"Bad QUERY_STRING: %s\n",web_query);
+         return(1);
+	 }
+      *val++ = '\0';
+      cmdparams_set(&cmdparams, key, val);
+      }
+    // Force JSON for now
+    free(getstring);
+    printf("Content-type: text/plain\n\n");
+    }
+  if (web_query)
+    free(web_query);
+  // end of web support stuff
+
 
   if (nice_intro ()) return (0);
 
