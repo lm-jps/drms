@@ -143,6 +143,7 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "q", "0", "quiet - skip header of chosen keywords"},
   {ARG_FLAG, "r", "0", "recnum - show record number as first keyword"},
   {ARG_FLAG, "s", "0", "stats - show some statistics about the series"},
+  {ARG_STRING, "QUERY_STRING", "Not Specified", "show_info called as cgi-bin program args here"},
   {ARG_END}
 };
 
@@ -470,7 +471,6 @@ int DoIt(void)
   if (web_query)
     free(web_query);
   // end of web support stuff
-
 
   if (nice_intro ()) return (0);
 
