@@ -177,6 +177,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   char *user, unknown[]="unknown";
   DB_Handle_t *db_handle;
   char *dbhost, *dbuser, *dbpasswd, *dbname, *sessionns;
+  pthread_t sigthreadID = 0;
 
   /* Initialize global things. */
   drms_keymap_init(); /* If this slows down init too much, do on-demand init. */
@@ -270,6 +271,9 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
     fprintf(stderr,"Thread creation failed: %d\n", status);          
     Exit(1);
   }
+
+  sigthreadID = drms_env->signal_thread;
+
 #endif
   fflush(stdout);
 
@@ -308,12 +312,21 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
 
   drms_server_end_transaction(drms_env, abort_flag, 1);
 
-   /* Terminate other global things. */
-   drms_keymap_term();
-   drms_keyword_term();
-   drms_protocol_term();
-   drms_defs_term();
-   drms_time_term();
+#ifndef DEBUG
+  /* Clean up signal thread */
+  pthread_detach(sigthreadID);
+#endif
+
+  /* Terminate other global things. */
+  drms_keymap_term();
+  drms_keyword_term();
+  drms_protocol_term();
+  drms_defs_term();
+  drms_time_term();
+
+  /* Free cmd-params (valgrind reports this - let's just clean up so it doesn't show up on 
+   * valgrind's radar). */
+  cmdparams_freeall(&cmdparams);
 
   _exit(abort_flag);
 }

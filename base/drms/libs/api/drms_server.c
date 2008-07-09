@@ -379,6 +379,9 @@ void drms_server_abort(DRMS_Env_t *env, int final)
       request->opcode = DRMS_SUMCLOSE;
       tqueueAdd(env->sum_inbox, (long)pthread_self(), (char *)request);
     }
+
+    pthread_detach(env->sum_thread);
+    env->sum_thread = 0;
   }
 
   db_disconnect(env->session->stat_conn);

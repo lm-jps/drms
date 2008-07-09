@@ -589,6 +589,10 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
       *proto = template;
       *segout = seg;
    }
+   else
+   {
+      drms_destroy_recproto(*proto);
+   }
 
    return iRec;
 }
@@ -1010,6 +1014,8 @@ static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env,
 	 {
 	    /* place proto in cache */
 	    cached = CacheRecordProto(env, proto, seriesName, &stat);
+
+            /* Don't free proto here - already done in CacheRecordProto() */
 	 }
 
 	 /* create a new record (read-only) for each record */
