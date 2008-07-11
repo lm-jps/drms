@@ -859,7 +859,16 @@ char *drms_keyword_getstring(DRMS_Keyword_t *keyword, int *status)
   char *result = NULL;
   int stat = DRMS_SUCCESS;
 
-  result = drms2string(keyword->info->type, &keyword->value, &stat);
+  if (keyword->info->type == DRMS_TYPE_TIME)
+  {
+     XASSERT(result = malloc(32));
+     memset(result, 0, 32);
+     drms_keyword_snprintfval(keyword, result, 32);
+  }
+  else
+  {
+     result = drms2string(keyword->info->type, &keyword->value, &stat);
+  }
  
   if (status)
     *status = stat;

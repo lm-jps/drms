@@ -13,7 +13,8 @@
 #include <float.h>
 #include <limits.h>
 #include <math.h>
-#include <setjmp.h>
+//#include <setjmp.h>
+#include <png.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
