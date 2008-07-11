@@ -18,7 +18,7 @@ all:    $(PROJOBJDIR) $(OBJDIR)
 # Define the rules to build in the target subdirectories.
 #
 MAKETARGET = $(MAKE) --no-print-directory -C $@ -f $(CURDIR)/Makefile \
-		SRCDIR=$(CURDIR) $(MAKECMDGOALS)
+		SRCDIR=$(WORKINGDIR) $(MAKECMDGOALS)
 
 .PHONY: $(PROJOBJDIR) $(OBJDIR) 
 

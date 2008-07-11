@@ -1,3 +1,6 @@
+# Define WORKINGDIR so that we don't get that '/auto/home1' crud
+WORKINGDIR	= $(PWD)
+
 ifeq (,$(filter _%,$(notdir $(CURDIR))))
   include target.mk
 else
