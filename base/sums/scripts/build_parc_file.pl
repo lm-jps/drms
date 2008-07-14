@@ -15,26 +15,28 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
 #running. (e.g. if run after midnight on Wed, will find all the data 
 #archived since midnight of Tues).
 #
+#NOTE: aia is always assumed to be on dsc0, and hmi on dcs1
+#
 use DBI;
 
 sub usage {
   print "Make a .parc file of archive info to send to a datacapture host.\n";
   print "Usage: build_parc_file.pl [-h] [-ddc_host] [-thrs] \n";
   print "       -h = help\n";
-  print "       -d = datacapture host to send the parc file to\n";
-  print "	-t = # of hours previous to current time to find data\n";
-  print "            The default is 24hrs previous to find data\n";
-  print "       The default dc_host is $HOSTDC\n";
+#  print "       -d = datacapture host to send the parc file to\n";
+  print "	-t = # of hours+2mins previous to current time to find data\n";
+  print "            The default is 24hrs+2mins previous to find data\n";
+#  print "       The default dc_host is $HOSTDC\n";
   exit(1);
 }
 
 #Return date in form e.g. 2008-05-29 11:38:18
-#where this value is $hrsprev previous to the current time.
+#where this value is $hrsprev+120sec previous to the current time.
 #NOTE: this format must match that in the jsoc_sums DB
 #Also sets $currdate to current time of form 2008-05-29_11:38:18
 sub labeldate {
   local($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst,$date,$sec2,$min2,$hour2,$mday2,$year2);
-  $secprev = $hrsprev*3600;
+  $secprev = ($hrsprev*3600) + 120;	#add extra 2 mins
   ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time-$secprev);
   $sec2 = sprintf("%02d", $sec);
   $min2 = sprintf("%02d", $min);
@@ -56,8 +58,8 @@ sub labeldate {
 
 $HOSTDB = "hmidb";	#db machine
 $HOSTDC = "dcs0";	#default datacapture to send to
-$TLMDSHMI = "hmi.tlm_60d"; #series of .tlm files to query
-$TLMDSAIA = "aia.tlm_60d"; #series of .tlm files to query
+$TLMDSHMI = "hmi.tlm"; #series of .tlm files to query
+$TLMDSAIA = "aia.tlm"; #series of .tlm files to query
 $DB = "jsoc_sums";
 $PGPORT = 5434;
 $PARC_ROOT = "/usr/local/logs/parc/";
@@ -79,7 +81,7 @@ while ($ARGV[0] =~ /^-/) {
 $ldate = &labeldate();
 $parchmi = $PARC_ROOT."HMI_$currdate".".parc";
 $parcaia = $PARC_ROOT."AIA_$currdate".".parc";
-print "Going to find tlm data archived since $ldate\n\n";
+print "Going to find tlm data archived since $ldate\n";
 
 $hostdb = $HOSTDB;      #host where Postgres runs
 $user = $ENV{'USER'};
@@ -141,8 +143,20 @@ for($i = 0; $i < 2; $i++) { 	#do first for HMI then AIA
       print PARC "$fftlm @row\n";
     }
   close(PARC);
-  print "Done: Found $count tlm files for $instru\n";
-  print "Results in $resultfile\n\n";
+  print "\nDone: Found $count tlm files for $instru\n";
+  print "Results in $resultfile\n";
+  #now copy the resulting .parc file to the proper dcs machine
+  if($i == 0) {		#hmi
+    $cmd = "scp $parchmi dcs1:/dds/pipe2soc/hmi";
+  }
+  else {		#aia
+    $cmd = "scp $parcaia dcs0:/dds/pipe2soc/aia";
+  }
+  print "NOTE: if this asks for password, you don't have ssh-agent set up\n";
+  print "$cmd\n";
+  if(system($cmd)) {
+    print "Error on cmd: $cmd\n";
+  }
 }
 $dbh->disconnect();
 
