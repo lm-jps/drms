@@ -36,7 +36,7 @@ void sighandler(int sig);
 KEY *tapearcdo_1(KEY *params);
 static void tapearcprog_1(struct svc_req *rqstp, SVCXPRT *transp);
 
-static struct timeval TIMEOUT = { 20, 0 };
+static struct timeval TIMEOUT = { 3, 0 };
 static int WRTSTATUS;
 uint32_t rinfo;         /* info returned by XXXdo_1() calls */
 int call_tape_svc_cnt;
@@ -65,6 +65,27 @@ int archive_minimum = 0;
 int archive_pending = 0;
 int is_connected=0;
 int ctrlcnt = 0;
+
+static struct timeval first[5], second[5];
+float ftmp;
+
+/*********************************************************/
+void StartTimer(int n)
+{
+  gettimeofday (&first[n], NULL);
+}
+
+float StopTimer(int n)
+{
+  gettimeofday (&second[n], NULL);
+  if (first[n].tv_usec > second[n].tv_usec) {
+    second[n].tv_usec += 1000000;
+    second[n].tv_sec--;
+  }
+  return (float) (second[n].tv_sec-first[n].tv_sec) +
+    (float) (second[n].tv_usec-first[n].tv_usec)/1000000.0;
+}
+
 /************************************************************************/
 
 /* Count the number of tapearc processing running.
@@ -88,7 +109,9 @@ int find_tapearc()
   }
   sprintf(look, " %s", dbname);
   while(fgets(line, 128, fplog)) {       /* get ps lines */
-     if (strstr(line, look) && strstr(line, "tapearc")) count++;
+     if (strstr(line, look) && strstr(line, "tapearc")) {
+       if(!strstr(line, "sh ")) count++;
+     }
   }
   fclose(fplog);
   return (count);
@@ -227,8 +250,8 @@ void setup()
   if(n > 1) {
      printf("%s: Only one tapearc %s allowed at a time. I see %d\n",
 	    thishost, dbname,n);
-     send_mail("%s: Only one tapearc %s allowed at a time. I see %d\n",
-	       thishost, dbname,n);
+//     send_mail("%s: Only one tapearc %s allowed at a time. I see %d\n",
+//	       thishost, dbname,n);
      exit(1); 
   }
   //don't set pgport on datacapture machines
@@ -286,6 +309,7 @@ int call_tape_svc(int groupid, double bytes, uint64_t index) {
   char *call_err;
 
     WRTSTATUS = 0;
+    StartTimer(0); //!!TEMP for debug. time call is case timeout 
     status = clnt_call(clnttape, WRITEDO, (xdrproc_t)xdr_Rkey, (char *)alist,
                     (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
 /*********************!!!TEMP**************
@@ -308,6 +332,8 @@ int call_tape_svc(int groupid, double bytes, uint64_t index) {
       }
       else {			/* so what do we do with a timeout? */
         /* !!!TEMP try this for now */
+        ftmp = StopTimer(0);
+        printf("Measured timeout was %f sec\n", ftmp);
         call_tape_svc_cnt++;
         printf("RESULT_PEND (!!ASSUMED) group_id=%d bytes=%g 1st_ds_index=%lu. Arc in progress...\n", groupid, bytes, index);
         return(0);
@@ -330,6 +356,12 @@ int call_tape_svc(int groupid, double bytes, uint64_t index) {
       }
       else if(retstat == NO_CLNTTCP_CREATE) {
         printf("NO_CLNTTCP_CREATE error on ret from clnt_call(clntape,WRITEDO)\n");
+        printf("Check tape_svc log for any error messages\n");
+        printf("I'm aborting now...\n");
+        if(is_connected)
+        if(DS_DisConnectDB())
+          fprintf(stderr, "DS_DisconnectDB() error\n");
+        exit(1);
       }
       else
         printf("retstat = %d on ret from clnt_call(clntape,WRITEDO)\n",retstat);
