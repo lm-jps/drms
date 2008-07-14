@@ -4,8 +4,10 @@ dirstack_$(sp)	:= $(d)
 d		:= $(dir)
 
 # Subdirectories, in random order. Directory-specific rules are optional here.
+ifneq ($(JSOC_MACHINE), mac_osx) 
 dir	:= $(d)/perl
 -include		$(SRCDIR)/$(dir)/Rules.mk
+endif
 
 # Local variables
 LIBSUMSAPI	:= $(d)/libsumsapi.a 

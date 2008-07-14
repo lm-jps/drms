@@ -4220,7 +4220,7 @@ long long drms_record_memsize( DRMS_Record_t *rec)
 long long drms_keylist_memsize(DRMS_Record_t *rec, char *keylist) {
 
   int size = 0;
-  char *key;
+  char *key = NULL;
   char *list = strdup(keylist);
 
   // remove whitespaces in list
@@ -4243,7 +4243,12 @@ long long drms_keylist_memsize(DRMS_Record_t *rec, char *keylist) {
       len++;
       p++;
     }
+#if LINUX
     key = strndup(start, len);
+#else
+    key = malloc(len + 1);
+    snprintf(key, len + 1, "%s", start);
+#endif
     if (strcmp(key, "recnum") == 0) {
       size  += sizeof(DRMS_Keyword_t) +  DRMS_MAXKEYNAMELEN + 1;
       size += 20;
@@ -4269,10 +4274,20 @@ long long drms_keylist_memsize(DRMS_Record_t *rec, char *keylist) {
     if (*p != '\0') {
       p++;
     }
+
+    if (key)
+    {
+       free(key);
+       key = NULL;
+    }
   }
 
  bailout:
-  free(key);
+  if (key)
+  {
+     free(key);
+     key = NULL;
+  }
   free(list);
   return size;
 }
