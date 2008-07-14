@@ -198,6 +198,7 @@ int tape_free_drives()
   char cmd[128];
 
   for(d=0; d < MAX_DRIVES; d++) {
+    //if(d == 1) continue;		//!!!TEMP dr1 is broken!!
     if(!drives[d].tapeid) continue;
 #ifdef SUMDC
     //for data capture ck if cleaning tape (NoBar) and put in last slot
