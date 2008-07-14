@@ -14,6 +14,11 @@
 #include <soi_error.h>
 #include <tape.h>
 #include <printk.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#define REBOOT "/usr/local/logs/SUM/RESTART_AFTER_REBOOT"
 
 SLOT slots[MAX_SLOTS];
 DRIVE drives[MAX_DRIVES];
@@ -229,6 +234,8 @@ void setup()
 int main(int argc, char *argv[])
 {
   register SVCXPRT *transp;
+  struct stat sbuf;
+  char cmd[80];
   int retry, istat, i;
 
   get_cmd(argc, argv);
@@ -321,17 +328,22 @@ int main(int argc, char *argv[])
       else { retry = 0; }
     }
     /* Return any tapes in drives to free slots */
-    /* LEAVE THE TAPES (AND BRITTNEY) ALONE *************************
-    printf("!!NOTE: tape unload in progress\n");
-    if(!tape_free_drives()) {
-      write_log("**Fatal error: Can't free tapes in drives\n");
-      (void) pmap_unset(TAPEPROG, TAPEVERS);
-      exit(1);
+    /* Do this after machine reboot or tape driver reload. */
+    /* sum_start will ask if reboot and touch the REBOOT file */
+    if(!stat(REBOOT, &sbuf)) {	//it's a reboot
+      printf("!!NOTE: tape unload in progress. May take some time.\n");
+      if(!tape_free_drives()) {
+        write_log("**Fatal error: Can't free tapes in drives\n");
+        (void) pmap_unset(TAPEPROG, TAPEVERS);
+        exit(1);
+      }
+      sprintf(cmd, "/bin/rm -f %s", REBOOT); /* make sure old one gone */
+      system(cmd);
     }
-   ****************************************************************/
-    printf("!!!NOTE: tape unload disabled\n");
+    else {
+      printf("!!!NOTE: tape unload disabled\n");
+    }
   }
-
   /* Enter svc_run() which calls svc_getreqset when msg comes in.
    * svc_getreqset calls tapeprog_1() to process the msg.
    * NOTE: svc_run() never returns.
