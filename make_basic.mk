@@ -5,8 +5,11 @@ DBNAME = POSTGRESQL
 # USED BY NEITHER linux_x86_64 nor linux_ia32
 PGIPATH	= /usr/include/pgsql	
 
-
+ifeq ($(JSOC_MACHINE), mac_osx) 
+COMPILER = gcc
+else
 COMPILER = icc
+endif
 
 # Check for debug vs. release build - release is default.
 #   To do a debug build, either set the environment variable JSOC_DEBUG to 1, OR
@@ -41,7 +44,12 @@ endif
 
 _JSOCROOT_ = ..
 
+ifeq ($(JSOC_MACHINE), mac_osx) 
+F77 = f77
+else
 F77 = ifort
+endif
+
 # if fortran compiler
 D_GCC_FORT = 
 ifeq ($(F77), ifort)

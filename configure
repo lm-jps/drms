@@ -219,7 +219,8 @@ if ($CHKLIBS == "no") then
 # Non-Stanford users: edit these lines to reflect the location of required
 #  3rd party libs: cfitsio.a
 	    ln -sfv /usr/local/include include
-	    ln -sfv /usr/local/lib lib
+            if (!(-d lib)) mkdir lib
+	    ln -sfv /usr/local/lib lib/$JSOC_MACHINE
 	endif
 
 	set TPWARN = 0
