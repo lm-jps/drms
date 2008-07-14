@@ -10,6 +10,7 @@ $DB = "jsoc_sums";		#the "real" db that production uses
 $GREPPS = "388";	#grep for this in ps -ef
 #$GREPPS = "jim";
 $HOST = "d02.Stanford.EDU"; #where sum_svc runs
+#$HOST = "d02"; #where sum_svc runs
 
 $user = $ENV{'USER'};
 if($user ne "production") {
@@ -222,12 +223,26 @@ while($_ = shift(@ps_prod)) {
     }
   }
 }
+    print "Is this sum_start following a d02 reboot?\n";
+    print "If you answer 'y' all the T950 tapes in drives will be unloaded\n";
+    print "Starting after a reboot? (y or n): ";
+    while(<STDIN>) {
+      chop($_);
+      if(($_ eq "Y") || ($_ eq "y")) { 
+        `touch /usr/local/logs/SUM/RESTART_AFTER_REBOOT`;
+      }
+      else {
+        `/bin/rm -f /usr/local/logs/SUM/RESTART_AFTER_REBOOT`;
+      }
+      last;
+    }
+
         print "** Now starting: sum_svc $DB\n";
         print LOG "** Now starting: sum_svc $DB\n";
-#        $cmd = "sum_pe_svc $DB &";
-#        if(system($cmd)) {
-#          print "Error: failure on sum_pe_svc $DB\n";
-#        }
+        $cmd = "sum_pe_svc $DB &";
+        if(system($cmd)) {
+          print "Error: failure on sum_pe_svc $DB\n";
+        }
         $cmd = "sum_svc $DB &";
         if(system($cmd)) {
           print "Error: failure on sum_svc $DB\n";
@@ -238,7 +253,8 @@ while($_ = shift(@ps_prod)) {
         close(MLOG);
         $mail = "Mail -s \"SUM d02 Start Complete\"";
         #$to = "sssc_crew\@solar2";
-        $to = "jim";
+        #$to = "jim";
+        $to = "jsoc_users";
         $cmd = "$mail $to < $MLOGFILE";
         if($mailflg) { system $cmd; }
         exit;
