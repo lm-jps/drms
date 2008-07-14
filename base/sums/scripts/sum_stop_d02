@@ -9,6 +9,7 @@ $DB = "jsoc_sums";		#the "real" db that production uses
 $GREPPS = "388";
 #$GREPPS = "jim";
 $HOST = "d02.Stanford.EDU"; #where sum_svc runs
+#$HOST = "d02"; #where sum_svc runs
 
 $user = $ENV{'USER'};
 if($user ne "production") {
@@ -160,7 +161,7 @@ print LOG "SUM Stop_d02 Complete\n";
 close(LOG);
 close(MLOG);
 $mail = "Mail -s \"SUM Stop_d02 Complete\"";
-#$to = "sssc_crew\@solar2";
-$to = "jim";
+$to = "jsoc_users";
+#$to = "jim";
 $cmd = "$mail $to < $MLOGFILE";
 if($mailflg) { system $cmd; }
