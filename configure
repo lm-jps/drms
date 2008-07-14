@@ -250,37 +250,37 @@ if ($CHKLIBS == "no") then
 	    # Stanford users' required libs.
 	    if ($JSOC_MACHINE == "linux_x86_64") then
 		if (!(-e lib/linux_x86_64/libfftw3f.a)) then
-		    echo "Can't find required library: <JSOCROOT>/lib/linux_x86_64/libfftw3f.a"
+		    echo "Can't find required library: lib/linux_x86_64/libfftw3f.a"
 		    set TPWARN = 1
 		endif
 		if (!(-e lib/linux_x86_64/libgsl.a)) then
-		    echo "Can't find required library: <JSOCROOT>/lib/linux_x86_64/libgsl.a"
+		    echo "Can't find required library: lib/linux_x86_64/libgsl.a"
 		    set TPWARN = 1
 		endif
 		if (!(-e lib/linux_x86_64/libgslcblas.a)) then
-		    echo "Can't find required library: <JSOCROOT>/lib/linux_x86_64/libgslcblas.a"
+		    echo "Can't find required library: lib/linux_x86_64/libgslcblas.a"
 		    set TPWARN = 1
 		endif
 	    endif
 
 	    if ($JSOC_MACHINE == "linux_ia32") then
 		if (!(-e lib/linux_ia32/libfftw3f.a)) then
-		    echo "Can't find required library: <JSOCROOT>/lib/linux_ia32/libfftw3f.a"
+		    echo "Can't find required library: lib/linux_ia32/libfftw3f.a"
 		    set TPWARN = 1
 		endif
 		if (!(-e lib/linux_ia32/libgsl.a)) then
-		    echo "Can't find required library: <JSOCROOT>/lib/linux_ia32/libgsl.a"
+		    echo "Can't find required library: lib/linux_ia32/libgsl.a"
 		    set TPWARN = 1
 		endif
 		if (!(-e lib/linux_ia32/libgslcblas.a)) then
-		    echo "Can't find required library: <JSOCROOT>/lib/linux_ia32/libgslcblas.a"
+		    echo "Can't find required library: lib/linux_ia32/libgslcblas.a"
 		    set TPWARN = 1
 		endif
 	    endif
 
 	    if ($JSOC_MACHINE == "mac_osx") then
 		if (!(-e lib/mac_osx/libfftw3f.a)) then
-		    echo "Can't find required library: <JSOCROOT>/lib/mac_osx/libfftw3f.a"
+		    echo "Can't find required library: lib/mac_osx/libfftw3f.a"
 		    set TPWARN = 1
 		endif
 	    endif
@@ -289,7 +289,7 @@ if ($CHKLIBS == "no") then
 	endif
 
 	if ($TPWARN) then
-	    echo "Did you update <JSOCROOT>/configure to create links to installed third-party libraries?"
+	    echo "Did you update configure to create links to installed third-party libraries?"
 	endif
 
 	cd ..
