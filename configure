@@ -178,8 +178,43 @@ if ($CHKLIBS == "no") then
 	cd lib_third_party
 
 	if (-e ../suflag.txt) then
-	    ln -sfv /home/jsoc/include include
-	    ln -sfv /home/jsoc/lib lib
+            if (!(-d include)) then
+                mkdir include
+            endif
+
+            if (!(-d lib)) then
+                mkdir lib
+            endif
+
+            # Don't make a link directly from include/lib to a directory, else
+            # all includes files/libs must reside in one directory.
+
+            cd include
+            # Standard location for all of JSOC's includes
+            find /home/jsoc/include -maxdepth 1 -name "*.h" -exec ln -sfv {} \;
+            find /home/jsoc/include -mindepth 1 -type d -exec ln -sfv {} \;
+            cd ..
+
+            cd lib
+            # Standard locations for all of JSOC's libraries - x86_64
+            if (!(-d linux_x86_64)) then
+                mkdir linux_x86_64
+            endif
+
+            cd linux_x86_64
+                find /home/jsoc/lib/linux_x86_64/ -maxdepth 1 -name "*.a" -exec ln -sfv {} \;
+            cd ..
+
+            # Standard locations for all of JSOC's libraries - ia32
+            if (!(-d linux_ia32)) then
+                mkdir linux_ia32
+            endif
+
+            cd linux_ia32
+                find /home/jsoc/lib/linux_ia32/ -maxdepth 1 -name "*.a" -exec ln -sfv {} \;
+            cd ..
+
+            cd ..
 	else
 # Non-Stanford users: edit these lines to reflect the location of required
 #  3rd party libs: cfitsio.a
