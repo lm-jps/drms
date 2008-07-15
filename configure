@@ -231,6 +231,11 @@ if ($CHKLIBS == "no") then
 		echo "Can't find required library: lib/linux_x86_64/libcfitsio.a"
 		set TPWARN = 1
 	    endif
+
+            if (!(-e lib/linux_x86_64/libcfitsio_gcc.a)) then
+		echo "Can't find required library: lib/linux_x86_64/libcfitsio_gcc.a"
+		set TPWARN = 1
+	    endif
 	endif
 
 	if ($JSOC_MACHINE == "linux_ia32") then
