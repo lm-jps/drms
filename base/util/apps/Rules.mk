@@ -6,7 +6,7 @@ d		:= $(dir)
 # Local variables
 CF_$(d)		:= -D$(DBNAME)
 
-MODEXE_$(d)	:= $(addprefix $(d)/, create_series describe_series delete_series modify_series retrieve_dir retrieve_file set_keys show_info show_keys show_series store_dir store_dsds_migrate store_file)
+MODEXE_$(d)	:= $(addprefix $(d)/, create_series describe_series delete_series modify_series retrieve_dir retrieve_file set_keys show_info show_keys show_series store_dir store_file)
 
 MODEXE		:= $(MODEXE) $(MODEXE_$(d))
 
