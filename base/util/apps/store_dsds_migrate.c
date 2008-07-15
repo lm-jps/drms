@@ -38,7 +38,7 @@ ModuleArgs_t module_args[] = {
   {ARG_STRING, "dirname", "", "Dir to store into SUMS"},
   {ARG_STRING, "note", "N/A", "comment field"},
   {ARG_FLAG, "v", "0", "verbose flag"},
-  {ARG_FLAG, "j", "0", "print jsd flag"},
+  {ARG_FLAG, "j", "0", "only print the jsd"},
   {ARG_END}
 };
 
@@ -174,7 +174,7 @@ char * make_series_jsd(char *series)
     "Author:         %s\n"
     "Owners:         %s\n"
     "Unitsize:       1\n"
-    "Archive:        0\n"
+    "Archive:        1\n"
     "Retention:      270\n"
     "Tapegroup:      9\n"
     "PrimeKeys:      snum\n"
