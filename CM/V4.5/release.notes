@@ -1,0 +1,292 @@
+                       Release Notes JSOC V4.5         14Jul2008
+                       -----------------------         --------
+
+A release is a set of files, each having a specific version.  And a release typcially
+has a version number because over time you have newer and newer releases of the 
+same product.  For example, a hypothetical 1.3 release may contain fileA#1.8, 
+fileB#1.2, fileC#2.2 and a 1.4 release may contain fileA#2.5, fileB#2.1, fileC#2.9. 
+JSOC releases are similarly versioned and contain a set of such files.  JSOC release
+code is guaranteed to compile on cluster nodes (eg., n00, n02).  The resulting binaries
+have been minimally tested.  At the time of the creation of the release, the
+release versions of each file will be the most recent.  But as time passes, newer versions 
+of some files will be made, and there is no guarantee that these changes will
+not destabilize JSOC (ie., they may cause JSOC to no longer compile or execute
+properly).  
+
+There are several ways to use this release.  If you wish to simply use pre-built
+binaries, you can simply use the production binaries, which are located at 
+/home/production/cvs/JSOC.  Every time a release is created, the binaries in
+this location get updated.  Only the production user can update these binaries.
+So, you could run /home/production/cvs/JSOC/bin/linux_x86_64/show_keys, for example.
+If instead you want to work with stable source files, then you must have a sandbox,
+which is a local copy (in your home directory) of the files in the cvs depot.  
+You would probably want to work with a sandbox if you plan on making eventual 
+changes to the depot files.  Changes you make to your sandbox files are not visible 
+to other users until you "commit" those changes back to the cvs depot.  Please see
+"If You Don't Have a Sandbox" below for more information on how to create a sandbox.  
+There is also a "working" release which resides in in /home/jsoc/cvs/JSOC.  New 
+files may be placed here and existing files may be edited for common use before the 
+next official release.  Each time a release gets created, the source and binaries of 
+the working release get updated.  WARNING: the files you see here may not be stable 
+since by the time you see them, another user may have edited them. Only the production 
+release is guaranteed to be stable and unchanged between releases.
+
+Obtaining the Release
+---------------------
+To update your working directory to this release, or to check-out this release anew, 
+please visit http://jsoc.stanford.edu/jsocwiki/CvsInit. Please keep in mind that
+users may have modified files since the release was created, so use of the 
+scripts documented in the web page may result in a working directory whose
+content is not identical to the release.  If updating, you can supply 
+the flag "-R" to the jsoc_update.pl and jsoc_sync.pl scripts to download the
+latest release.  This will ensure that your working directory has the exact, latest
+release versions of the files (eg., jsoc_sync.csh -R). If checking-out, 
+you can supply the argument "-r Ver_LATEST" to the "cvs checkout" command
+to achieve the analogous result, but for a fresh checkout.  WARNING: if you use 
+the "-R" or "-r" flags, please use only jsoc_update.pl or jsoc_sync.pl to update 
+your sources thereafter.  Use of "-R" or "-r Ver_LATEST" will result in a cvs
+"sticky flag" being set.  jsoc_update.pl and jsoc_sync.pl clear this sticky flag.
+
+Additional Info
+---------------
+If you are unfamiliar with the use of cvs see the file:
+JSOC/CM/working_with_sandbox.txt.
+
+There's a linux4 cvs gui at xim:/usr/bin/lincvs
+Also on our jsoc web page:
+
+http://jsoc.stanford.edu/cvs/JSOC/
+
+Use the Apache cvs gui to see the diffs. For example, go to
+http://jsoc.stanford.edu/cvs/JSOC/base/drms/
+and click on the name in the File column and then click on
+"diffs to previous #" to see the diffs.
+
+Changes since previous release (V4.4 - June 9, 2008)
+-----------------------------------------------------
+
+NEW FEATURES:
+
+* jsoc_export: There now exists a way to export data from the SUMS
+system to a local directory. Web access is from
+http://jsoc.stanford.edu/ajax/lookdata.html. After you fill out the
+forms on this web page and click "Submit Export Request", code in a
+module, jsoc_fetch, executes, which in turn adds a record to a
+dataseries.  Data can be exported "as-is" (which means as a FITS
+files, but with minimal stadard FITS keywords), or "fits" (which means
+all DRMs keywords are converted to FITS keywords which appear in the
+fits header).  When data are exported, a "packing-list text file" is
+created that describes the export request and contains information
+like the time of the request, the size of the data requested, the SUMS
+location of the data, etc.  Data can also be exported with lower-level
+code, such as jsoc_export_as_fits.c, or by writing a module that makes
+use of libdrmsclient.a library calls.  In particular, the
+jsoc_export_as_fits and jsoc_export_as_is modules can accept a
+record-set query string (to specify data files) on the cmd-line.  Much
+of the jsoc_export module code used to reside in libdrmsclient.a in
+the last release, but that has been moved to jsoc_export_as_fits.c.
+jsoc_export_manage, has been implemented.  It is a module that
+searches the export dataseries table looking for new export requests
+to process.  When it finds one, it creates qsub scripts, and drms_run
+scripts that the qsub scripts run.  An executable,
+jsoc_export_make_index, was implemented.  It converts the packing-list
+file to json and html formats.
+
+* Implementation of generic text files that define constants. These
+text files are not compiled they are read into memory during
+runtime. So, you don’t have to re-compile to change the
+definitions. There is one such definition file for now:
+/proj/export/apps/data/export.defs. The call
+drms_defs_register(DEFS_MKPATH("/data/export.defs")) reads the file
+into memory (path relative to your .c file), then when you call
+drms_defs_getval("kPackListFileName"), for ex., you get the definition
+associated with an id string named kPackListFileName.
+
+* Updated version of json-creation library.
+
+* Change drms_getkey_string() to use the format/unit provided in the
+keyword to format the time string output.
+
+* Remove unnecessary prime keyword (FDS_DATA_PRODUCT) from sdo.fds,
+fdsIngest.pl, and extract_fds_statev.c. Make the potential values for
+the DATA_FORMAT field single chars to enhance efficiency.
+
+* Make the idHELIO and idGEO keywords in sdo.fds_orbit_vectors more
+compact, ie make the strings they contain much shorter (these keywords
+identify the original FDS file used to populate this
+record). Rearrange the order in which the contents are saved so that a
+user can simply run 'show_info -p' on these strings and have DRMS
+return the path to the original data files.
+
+* Changes to the master MOC Product Server download scripts so that
+they download 'live' data (i.e., they user j0 to download data from
+the server). Now both 'live' and 'dev' data (data downloaded through
+maelstrom) are being downloaded daily.  These scripts now use
+ssh-agent as a means to provide pass-phraseless use of priv/pub keys
+when downloading files from the MOC Product Server.
+
+* libdrmsclient.a and libdrmsserver.a: Upon export to fits files that
+contain keywords, convert TIME keywords to string keywords.
+
+* Add support to libdsds.so and libdrmsclient.a and libdrmsserver.a to
+provide file paths for DSDS and plainfile type record-set queries.
+
+* show_info: now has the ability to print out data file paths for
+DSDS- and plainfile-type record-set queries.
+
+* libdrmsclient.a/libdrmsserver.a: Add new DRMS APIs for ingest_lev0,
+drms_export_tofitsfile() and drms_mapexport_tofitsfile() - takes
+DRMS_Array_t, keyword list, and compression parms as input parameters.
+
+* libmisc.a: Add function to libmisc.a that safely (or more safely)
+concatenates strings: base_strlcat().
+
+* Added code to verify that keyword format fields in the .jsd are
+compatible with the data type of the keyword. If an incompatibility is
+detected, a warning is printed, but the module will continue to run to
+completion.
+
+* drms_clone_records(): Return error code when problems happen.
+
+* libdrmsclient.a: Certain error messages having to do with
+communication with SUMS were printing to stdout - make those print to
+stderr.
+
+* drms_server: run with -f as a foreground job so that drms_run does
+not exit before drms_server finishes.
+
+* Addition of store_dsds_migrate
+
+* show_info: Added flags to control segment sharing and copying
+
+* set_keys: transient clones
+
+* show_info: Added parsing of command line QUERY_STRING arg to enable use of show_info as
+
+* show_info: Modified the -h help text.
+
+* show_info: Added -A flag to get all segments, similar to -a getting all keywords.
+
+* show_info: Added call to drms_stage_records if segment info wanted and path info wanted.
+
+* jsoc_info: Added call to drms_stage_records if segment info wanted and path info wanted.
+
+* GetJsocRequestID: save history of max per day usage
+
+* lookdata: Changes to support segment selection and export through section 8.
+
+* Added support for small fits and png files to level 0 processing.  
+
+* ingest_dayfile.pl: Added correct location to get xml and dayfile to
+load in dayfile data series. This script is called by movedf.pl script
+to load dayfiles and xml files from moc product server.
+
+* ingest_dayfile.pl: Updated script to load in xml files in data
+series. All dayfile data need to be updated to accept xml file in
+segment.
+
+* jsoc_do_all_jsd_files.pl: Update show help information.
+
+* jsoc_do_jsvn_map_file.pl: Update show help information.
+
+* movedf.pl: script to move dayfiles and xml files from moc product
+server drop off location; Added comments on limitations of script; add
+some log information.
+
+BUG FIXES:
+
+* libfitsrw: Was not properly reading the essential fits keywords (eg,
+NAXIS, BZERO, etc.) from FITS files. Keywords like BZERO could be int,
+but they could be float. The FITSRW code was assuming int, when in
+fact sometimes the value was a float. Added several conversion
+functions (convert to int from any keyword type) and used those in the
+place where FITSRW was failing.
+
+* libfitsrw: The cfitsio_append_key() function was not casting string
+keywords properly. It was assuming that the string value passed in was
+a char *, but it was a char ** (a pointer to a string, not a pointer
+to a char).
+
+* libfitsrw: String keywords should have their values surrounded by single quotes.
+
+* jsoc_export_as_fits: In index.txt, print out prime key values
+correctly in jsoc_export_as_fits. Was using the prime key
+templatevalues instead of the real instances of the prime keys.
+
+* show_info: Fix bug where show_info was trying to get the
+record-directory, even for DSDS and plainfile data sets (which have no
+record-directory).
+
+* Removed some minor leaks in drms_opendsds_records() and other locations.
+
+* drms_open_records(): Fix parsing of record-query segment list that
+was leading to an infinite loop; move the code that removes unneeded
+segments a little downstead - the removed segments were still needed.
+
+* lev0: fix seg fault caused by sprintf() of long TLMDSNAM in dataset
+
+* lev0: Fix bug found during cpt test causing a crash. Updated
+function free_dayfile_data() to free
+
+OTHER CHANGES (esoteric cvs comments)
+
+SUMS:
+* fix up BINTGT_$(d)
+* change to TAPELABEL 1> %s 2>&1 and
+* check for valid cptr
+* add SUM_get() call to log file
+* put in test for /usr/local/logs/SUM/RESTART_AFTER_REBOOT
+* check for valid cptr and use localhost
+* put in some timing
+* elim dup SUMDR0 etc for t120
+* Add log entries for what updated
+* ask if reboot
+* change $to
+* Skip tape with empty md5 file. Add working directory
+* Append tape_verify.log to .ver file and fix bug that return tapes to wrong slots.
+
+DATACAPTURE:
+* missed an fsn for 30 bits
+* make sure fsn is 30 bits
+* add errno for system() error
+* continue after cp err to copy qac or tlm file
+* now ck for lev0 turn-on after every file loop
+* mask fsn to low 30 bits
+* change to %u for fsn in image file name
+* add imagecnt++ for flush of partial image
+* add mv of .parc file to /err dir
+* add prependfits[] to have correct VC name on fits file
+* save 100 images
+* new .qacx stuff is working
+* test to get .qacx
+* look for .qacx also
+* make $size $tlmsize
+* change $getsize to $getsizeerr for .err file
+
+HMI LEV0: 
+* SOURCE_ENV_FOR_HK_DECODE: Updated environment variables
+for running production level 0 software during
+* has John S stuff 
+* makes lev0c
+* fix keyword setting and restore for n, k, r
+* dont return if Can't do drms_open_records()
+* fix resetting of Img->N K and R
+* this is the version that works with the doingestlev0.pl manager
+* add comment on switch from 60d testing to cpt testing. Updated required for location of
+* daily_hk_update.pl: Used to update hk config file directory on dcs0,dcs1,and dcs2
+* df_apid_list_day_file_moc: Updated line contain 0039 and removed spaces
+* hk_apid_list_mapping_jsvn: List of apids to create JSOC version mapping files for using script
+* ingest_dayfile.pl: Updated and corrected comments in scripts.
+* jsoc_do_all_jsd_files.pl: Used for Production(hmi.lev0_<apid>_<jsvn>,etc) to create all
+* jsoc_do_jsvn_map_file.pl:Create Production jsoc version number(jvn)
+mapping files for lev0 code to use
+* jsoc_make_jsd_file.pl: Used to create individual jsd file for "hk by apid" data series.
+* movedf.pl: Described setup process steps in header. Add correct
+place to move production xml and dayfiles for the ingest_dayfile.pl
+script to use.
+* movedf.pl: Added code to use in production to search and move all
+dayfiles and xml files from June 1, 2008 to 2029 forfile from the moc
+production server with .hkt and .xml extentions.
+
+AIA LEV0:
+* Added with Updates from Rock and Carl.
