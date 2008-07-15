@@ -13,10 +13,6 @@
 #include <float.h>
 #include <limits.h>
 #include <math.h>
-//#include <setjmp.h>
-#if defined(__linux__) && __linux__
-#include <png.h>
-#endif
 #include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -33,6 +29,9 @@
 #include <unistd.h>
 #include "jsoc_version.h"
 //#include "xmem.h"
+
+/* Prevent user from directly including png.h.  User should #include "mypng.h" */
+#define PNGCONF_H
 
 #else
 
