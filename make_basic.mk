@@ -93,6 +93,13 @@ endif
 # All 3rd-party math libraries - local rules can define a subset
 FMATHLIBS = $(FMATHLIBSL) -lfftw3f -lcfitsio
 CFITSIOLIBS = $(CFITSIOL) -lcfitsio
+ifeq ($(COMPILER), gcc)
+	ifeq ($(JSOC_MACHINE), linux_x86_64) 
+		FMATHLIBS = $(FMATHLIBSL) -lfftw3f -lcfitsio_gcc
+		CFITSIOLIBS = $(CFITSIOL) -lcfitsio_gcc		
+	endif
+endif
+
 GSLLIBS = $(GSLL) -lgsl -lgslcblas 
 
 ### Build flags for all targets
