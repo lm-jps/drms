@@ -2,6 +2,9 @@ VPATH  = $(SRCDIR)
 STATIC = 
 DBNAME = POSTGRESQL
 
+# This optional file has custom definitions created by the configure script
+-include $(SRCDIR)/custom.mk
+
 # USED BY NEITHER linux_x86_64 nor linux_ia32
 PGIPATH	= /usr/include/pgsql	
 
@@ -93,10 +96,13 @@ endif
 # All 3rd-party math libraries - local rules can define a subset
 FMATHLIBS = $(FMATHLIBSL) -lfftw3f -lcfitsio
 CFITSIOLIBS = $(CFITSIOL) -lcfitsio
+
 ifeq ($(COMPILER), gcc)
 	ifeq ($(JSOC_MACHINE), linux_x86_64) 
-		FMATHLIBS = $(FMATHLIBSL) -lfftw3f -lcfitsio_gcc
-		CFITSIOLIBS = $(CFITSIOL) -lcfitsio_gcc		
+		ifneq ($(CFITSIOFNAME_GCC_X86_64),)
+			FMATHLIBS = $(FMATHLIBSL) -lfftw3f -l$(CFITSIOFNAME_GCC_X86_64)
+			CFITSIOLIBS = $(CFITSIOL) -l$(CFITSIOFNAME_GCC_X86_64)
+		endif
 	endif
 endif
 
