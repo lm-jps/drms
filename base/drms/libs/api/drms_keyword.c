@@ -63,44 +63,73 @@ const int kMaxRecScopeTypeKey = 4096;
 const int kMaxSlotUnitKey = 128;
 
 /* Per Tim, FITS doesn't support char, short, long long, or float keyword types. */
-static int DRMSKeyValToFITSKeyType(DRMS_Value_t *valin, char *fitstype)
+static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key, char *fitstype, void **fitsval)
 {
    int err = 0;
+   DRMS_Type_Value_t *valin = &key->value;
+   void *res = NULL;
 
    if (valin && fitstype)
    {
-      switch(valin->type)
+      switch(key->info->type)
       {
 	 case DRMS_TYPE_CHAR:
-	   /* intentional fall-through */
+           res = malloc(sizeof(long long)); 
+           *(long long *)res = (long long)(valin->char_val);
+           *fitstype = 'I';
+           break;
 	 case DRMS_TYPE_SHORT:
-	   /* intentional fall-through */
+           res = malloc(sizeof(long long)); 
+           *(long long *)res = (long long)(valin->short_val);
+           *fitstype = 'I';
+           break;
 	 case DRMS_TYPE_INT:
-	   /* intentional fall-through */
+           res = malloc(sizeof(long long)); 
+           *(long long *)res = (long long)(valin->int_val);
+           *fitstype = 'I';
+           break;
 	 case DRMS_TYPE_LONGLONG:
+           res = malloc(sizeof(long long)); 
+           *(long long *)res = valin->longlong_val;
 	   *fitstype = 'I';
 	   break;
 	 case DRMS_TYPE_FLOAT:
-	   /* intentional fall-through */
+           res = malloc(sizeof(double));
+           *(double *)res = (double)(valin->float_val);
+           *fitstype = 'F';
+           break;
 	 case DRMS_TYPE_DOUBLE:
-	   /* intentional fall-through */
+           res = malloc(sizeof(double));
+           *(double *)res = valin->double_val;
+           *fitstype = 'F';
+           break;
 	 case DRMS_TYPE_TIME:
-	   *fitstype = 'F';
+           {
+              char tbuf[1024];
+              drms_keyword_snprintfval(key, tbuf, sizeof(tbuf));
+              res = (void *)strdup(tbuf);
+              *fitstype = 'C';
+           }
 	   break;
 	 case DRMS_TYPE_STRING:
+           res = (void *)strdup(valin->string_val);
 	   *fitstype = 'C';
 	   break;
 	 default:
-	   fprintf(stderr, "Unsupported DRMS type '%d'.\n", (int)valin->type);
+	   fprintf(stderr, "Unsupported DRMS type '%d'.\n", (int)key->info->type);
 	   err = 1;
 	   break;
-
       }
    }
    else
    {
       fprintf(stderr, "DRMSKeyValToFITSKeyVal() - Invalid argument.\n");
       err = 1;
+   }
+
+   if (!err)
+   {
+      *fitsval = res;
    }
 
    return err;
@@ -2143,7 +2172,6 @@ int drms_keyword_mapexport(DRMS_Keyword_t *key,
    if (key && fitskeys)
    {
       char nameout[16];
-      char kwtype;
 
       DRMS_KeyMap_t *map = NULL;
       DRMS_KeyMap_t intmap;
@@ -2160,31 +2188,17 @@ int drms_keyword_mapexport(DRMS_Keyword_t *key,
       
       if (drms_keyword_getmappedextname(key, clname, map, nameout, sizeof(nameout)))
       {
-	 DRMS_Value_t v;
 	 int fitsrwRet = 0;
+         char fitskwtype = '\0';
+         void *fitskwval = NULL;
 
-         if (key->info->type == DRMS_TYPE_TIME)
-         {
-            /* Print time keywords as strings. */
-            char tbuf[1024];
-            drms_keyword_snprintfval(key, tbuf, sizeof(tbuf));
-
-            v.type = DRMS_TYPE_STRING;
-            v.value.string_val = tbuf;
-         }
-         else
-         {
-            v.type = key->info->type;
-            v.value = key->value;
-         }
-
-	 if (!DRMSKeyValToFITSKeyType(&v, &kwtype))
+	 if (!DRMSKeyValToFITSKeyVal(key, &fitskwtype, &fitskwval))
 	 {
 	    if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key(fitskeys, 
 								   nameout, 
-								   kwtype, 
+								   fitskwtype, 
 								   NULL,
-								   &(v.value.char_val))))
+								   fitskwval)))
 	    {
 	       fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
 	       stat = DRMS_ERROR_FITSRW;
@@ -2197,6 +2211,11 @@ int drms_keyword_mapexport(DRMS_Keyword_t *key,
 		    key->info->name);
 	    stat = DRMS_ERROR_INVALIDDATA;
 	 }
+
+         if (fitskwval)
+         {
+            free(fitskwval);
+         }
       }
       else
       {

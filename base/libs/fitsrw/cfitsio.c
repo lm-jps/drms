@@ -378,7 +378,7 @@ int cfitsio_append_key(CFITSIO_KEYWORD** keylist,
 	 {
 	    case( 'X'):
 	    case (kFITSRW_Type_String):
-	       snprintf(node->key_value.vs, FLEN_VALUE, "%s", *((char **)value));
+	       snprintf(node->key_value.vs, FLEN_VALUE, "%s", (char *)value);
 	       break;
 	    case (kFITSRW_Type_Logical):
 	       node->key_value.vl = *((int *)value);
