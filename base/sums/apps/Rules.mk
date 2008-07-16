@@ -46,7 +46,7 @@ XSUMSVC_$(d)	:= $(d)/xsum_svc
 TAPESVC_$(d)	:= $(d)/tape_svc
 TARC_$(d)	:= $(d)/tapearc
 
-BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main4 main5 sumget tapeonoff driveonoff sum_rm impexp drive0_svc drive1_svc drive2_svc drive3_svc drive4_svc drive5_svc drive6_svc drive7_svc drive8_svc drive9_svc drive10_svc drive11_svc robot0_svc md5filter)
+BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main4 sumget tapeonoff driveonoff sum_rm impexp drive0_svc drive1_svc drive2_svc drive3_svc drive4_svc drive5_svc drive6_svc drive7_svc drive8_svc drive9_svc drive10_svc drive11_svc robot0_svc md5filter)
 
 #BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main3 main4 main5 sumget tapeonoff driveonoff sum_rm impexp drive0_svc drive1_svc drive2_svc drive3_svc robot0_svc md5filter)
 
