@@ -88,6 +88,9 @@ optional. Flags can be concatenated as shown below.
 \endcode
 
 \par DRIVER_FLAGS (can be grouped together):
+\c -A: Force archiving of storage units during the current DRMS session.  
+This overrides the value of series' archive flag.
+\par
 \c -H|--help: Show jsoc_main usage information.
 \par
 \c -L: Run jsoc_main driver with logging. Stdout and stderr are tee-ed to files in SU directory.
@@ -103,7 +106,8 @@ To specify an argument that affects properties of the DRMS session,
 use @c param=value, where @c param is one of the following.
 
 \arg \c DRMS_RETENTION Sets (forces) the storage-unit retention time for the DRMS session
-started by <module>.
+started by <module>. This affects all storage units created during the session. <value> is 
+the number number of days that the storage units will remain on disk.
 \arg \c DRMS_QUERY_MEM Sets the memory maximum for a database query.
 \arg \c JSOC_DBHOST Specifies (overrides) the database host to connect to. Default is ::DBNAME
 \arg \c JSOC_DBNAME Specifies (overrides) the database name to use. Default is ::DBNAME
