@@ -30,13 +30,17 @@ create table SUM_MAIN (
  SAFE_TAPE_DATE         timestamp(0),
  constraint pk_summain primary key (DS_INDEX)
 );
-
+/*
 Indexes:
     "sum_main_ds_index_idx" btree (ds_index)
 And on dcs0:
   create index sum_main_owner_idx on sum_main (OWNING_SERIES);
+*/
+create index sum_main_ds_index_idx on sum_main (ds_index);
+create index sum_main_owner_idx on sum_main (OWNING_SERIES);
 
-    "sum_main_owner_idx" btree (owning_series)
+
+--    "sum_main_owner_idx" btree (owning_series)
 
 /* =============================================================== */
 
@@ -63,11 +67,16 @@ create table SUM_PARTN_ALLOC (
     safe_id            integer
 );
 
+/*
 Indexes:
     "sum_partn_alloc_ds_index_idx" btree (ds_index)
     "sum_partn_alloc_effdate_idx" btree (effective_date)
     "sum_partn_alloc_sumid_idx" btree (sumid)
 
+*/
+create index sum_partn_alloc_ds_index_idx on SUM_PARTN_ALLOC (ds_index);
+create index sum_partn_alloc_effdate_idx on SUM_PARTN_ALLOC (effective_date);
+create index sum_partn_alloc_sumid_idx on SUM_PARTN_ALLOC (sumid);
 /* ===============================================================*/
 create table SUM_PARTN_AVAIL (
        partn_name    VARCHAR(80) not null,
@@ -88,10 +97,11 @@ create table SUM_TAPE (
         last_write      timestamp(0),
         constraint pk_tape primary key (tapeid)
 );
-
+/*
 Indexes:
     "sum_tape_tapeid_idx" btree (tapeid)
-
+*/
+create index sum_tape_tapeid_idx on SUM_TAPE (tapeid);
 /* ===============================================================*/
 
 create sequence SUM_SEQ
