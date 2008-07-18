@@ -31,6 +31,7 @@
 //#include "xmem.h"
 
 /* Prevent user from directly including png.h.  User should #include "mypng.h" */
+#define PNG_H
 #define PNGCONF_H
 
 #else
