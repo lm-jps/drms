@@ -1,8 +1,5 @@
-#!/usr/bin/perl
-#below has problem when run in cron job
-#eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
-#    if 0;
-#
+eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
+    if 0;
 #/home/production/cvs/JSOC/base/sums/scripts/build_parc_file.pl
 #
 #This make a .parc file to be sent from the pipeline system to a
