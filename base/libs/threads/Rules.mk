@@ -10,7 +10,7 @@ dir	:= $(d)/fpic
 # Local variables
 LIBTHREADUTIL	:= $(d)/libthreadutil.a
 
-OBJ_$(d)	:= $(addprefix $(d)/, fifo.o tagfifo.o)
+OBJ_$(d)	:= $(addprefix $(d)/, fifo.o tagfifo.o tdsignals.o)
 
 LIBTHREADUTIL_OBJ	:= $(OBJ_$(d))
 
