@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include "tdsignals.h"
+#include "dsqueue.h"
 
 struct td_sthreadarg_struct
 {
@@ -14,6 +15,8 @@ struct td_sthreadarg_struct
 typedef struct td_sthreadarg_struct td_sthreadarg_t;
 
 static td_sthreadarg_t gStdarg;
+static Queue_t *queue = NULL;
+static int gArgsConsumed = 0;
 
 static void *td_sigthreadfxn(void *arg)
 {
@@ -21,26 +24,78 @@ static void *td_sigthreadfxn(void *arg)
    sigset_t rsigs;
    int siggot;
    int err = 0;
-   td_sthreadarg_t *stdarg = (td_sthreadarg_t *)arg;
-   unsigned int seconds = stdarg->seconds;
-   void (*shandler)(int, pthread_mutex_t*) = stdarg->shandler;
-   pthread_mutex_t *mutex = stdarg->mutex;
+   td_sthreadarg_t *stdarg = NULL;
+   unsigned int seconds = 0;
+   void (*shandler)(int, pthread_mutex_t*) = NULL;
+   pthread_mutex_t *mutex = NULL;
+   pthread_t fronttd = 0;
+   pthread_t selftd = 0;
+   QueueNode_t *top = NULL;
+   QueueNode_t *thistd = NULL;
+
+   selftd = pthread_self();
+
+   /* Block here if another signal thread is processing an alarm.  Only one 
+    * thread at a time can wait for a given signal with sigwait(). */
+   stdarg = (td_sthreadarg_t *)arg;
+   seconds = stdarg->seconds;
+   shandler = stdarg->shandler;
+   mutex = stdarg->mutex;
+
+   /* Pushd signal thread onto fifo queue.  These will be processed in the
+    * order in which they were received.*/
+   pthread_mutex_lock(mutex);
+   queue_queue(queue, (void *)(&selftd));
+   pthread_mutex_unlock(mutex);
+
+   gArgsConsumed = 1;
 
    /* block all signals */
    sigfillset(&bsigs);
    pthread_sigmask(SIG_BLOCK, &bsigs, NULL);
 
+   /* wait until it is this thread's turn. */
+   while (1)
+   {
+      pthread_mutex_lock(mutex);
+      thistd = queue_find(queue, &selftd);
+      
+      if (!thistd)
+      {
+         /* this alarm was destroyed - return */
+         pthread_mutex_unlock(mutex);
+         return arg;
+      }
+
+      top = queue_front(queue);
+
+      if (!top)
+      {
+         pthread_mutex_unlock(mutex);
+         sched_yield();
+         continue;
+      }
+
+      fronttd = *((pthread_t *)(top->data));
+      if (fronttd != selftd)
+      {
+         pthread_mutex_unlock(mutex);
+         // sleep(1);
+         sched_yield();
+      }
+      else
+      {
+         pthread_mutex_unlock(mutex);
+         break;
+      }
+   }
+
    /* create a set of signals that includes only SIGALRM */
    sigemptyset(&rsigs);
    sigaddset(&rsigs, SIGALRM);
 
-   /* Block here if another signal thread is processing an alarm.  This ensures
-    * that the callback functions provided as td_alarm() arguments get executed 
-    * in the order in which their encompassing td_alarm() calls were called. */
-   pthread_mutex_lock(mutex);
    /* Will block until SIGALRM is received. */
    err = sigwait(&rsigs, &siggot);
-   pthread_mutex_unlock(mutex);
 
    if (!err)
    {
@@ -74,6 +129,12 @@ int td_createalarm(unsigned int seconds,
    int ret = 0;
    pthread_t sigthread = 0;
 
+   /* Create queue. */
+   if (!queue)
+   {
+      queue = queue_create(sizeof(pthread_t));
+   }
+
    /* Ensure that the main thread doesn't handle the SIGALRM signal */
    sigset_t rsigs;
    sigemptyset(&rsigs);
@@ -84,6 +145,7 @@ int td_createalarm(unsigned int seconds,
    gStdarg.seconds = seconds;
    gStdarg.shandler = shandler;
    gStdarg.mutex = mutex;
+
    if((status = pthread_create(&sigthread, NULL, &td_sigthreadfxn, (void *)&gStdarg)))
    {
       fprintf(stderr, "Thread creation failed: %d\n", status);          
@@ -95,10 +157,28 @@ int td_createalarm(unsigned int seconds,
        * <seconds> seconds, then it will call the main thread callback. */
       pthread_kill(sigthread, SIGALRM);
    }
+   
+   while (1)
+   {
+      pthread_mutex_lock(mutex);
+      if (gArgsConsumed)
+      {
+         gArgsConsumed = 0;
+         pthread_mutex_unlock(mutex);
+         sched_yield();
+         break;
+      }
+      else
+      {
+         pthread_mutex_unlock(mutex);   
+      }
+   }
 
    if (!ret && alrmtd)
    {
+      pthread_mutex_lock(mutex);
       *alrmtd = sigthread;
+      pthread_mutex_unlock(mutex);
    }
 
    return ret;
@@ -107,12 +187,44 @@ int td_createalarm(unsigned int seconds,
 /* Must call to before freeing mutex.  If you call pthread_mutex_destory() before all threads
  * have exited, then you might accidentally destroy the mutex and then a thread tries to 
  * use the mutex. */
-void td_destroyalarm(td_alarm_t *alarm)
+void td_destroyalarm(td_alarm_t *alarm, pthread_mutex_t *mutex)
 {
-   if (alarm)
+   int err = 0;
+
+   if (alarm && *alarm)
    {
-      /* Wait until signal thread has terminated. */
-      pthread_join(*((pthread_t *)alarm), NULL);
-      *alarm = 0;
+      pthread_mutex_lock(mutex);
+      QueueNode_t *node = queue_remove(queue, alarm);
+
+      if (node)
+      {
+         queue_freenode(&node);
+      }
+      else
+      {
+         err = 1;
+      }
+
+      pthread_mutex_unlock(mutex);
+
+      if (err)
+      {
+         fprintf(stderr, "Invalid alarm '%lld'\n.", (long long)*alarm);
+      }
+      else
+      {
+         /* Wait until signal thread has terminated. */
+         pthread_join(*((pthread_t *)alarm), NULL);
+         *alarm = 0;
+      }
+
+      pthread_mutex_lock(mutex);
+
+      if (queue_empty(queue))
+      {
+         queue_destroy(&queue);
+      }
+
+      pthread_mutex_unlock(mutex);
    }
 }

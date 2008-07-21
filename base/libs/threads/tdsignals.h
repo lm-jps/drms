@@ -9,6 +9,6 @@ int td_createalarm(unsigned int seconds,
                    void (*shandler)(int, pthread_mutex_t *), 
                    pthread_mutex_t *mutex, 
                    pthread_t *alrmtd);
-void td_destroyalarm(td_alarm_t *alarm);
+void td_destroyalarm(td_alarm_t *alarm, pthread_mutex_t *mutex);
 
 #endif /* _TDSIGNALS_H */

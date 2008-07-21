@@ -572,7 +572,7 @@ static KEY *CreateSOIKeylist(const char *progspec, LinkedList_t **wdlist, kDSDS_
 
                                        if (*wdlist)
                                        {
-                                          list_llinsert(*wdlist, valstr);
+                                          list_llinserthead(*wdlist, valstr);
                                        }
 
 				       nGot++;
@@ -635,7 +635,7 @@ static KEY *CreateSOIKeylist(const char *progspec, LinkedList_t **wdlist, kDSDS_
 
             if (*wdlist)
             {
-               list_llinsert(*wdlist, spec);
+               list_llinserthead(*wdlist, spec);
             }
          }
       }

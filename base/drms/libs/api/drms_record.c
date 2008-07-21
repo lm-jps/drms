@@ -1516,7 +1516,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 						    mixed, 
 						    DRMS_QUERY_ALL, 
 						    NULL);
-		 list_llinsert(llist, &selquery);
+		 list_llinserthead(llist, &selquery);
 	      }
 
 	      if (goodsegcont)

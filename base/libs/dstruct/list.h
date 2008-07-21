@@ -17,8 +17,13 @@ struct LinkedList_struct
 typedef struct LinkedList_struct LinkedList_t;
 
 LinkedList_t *list_llcreate(unsigned int datasize);
-LinkedList_t *list_llinsert(LinkedList_t *llist, void *data);
+ListNode_t *list_llinserthead(LinkedList_t *llist, void *data);
+ListNode_t *list_llinserttail(LinkedList_t *llist, void *data);
+void list_llremove(LinkedList_t *llist, ListNode_t *item);
 ListNode_t *list_llnext(LinkedList_t *llist);
+ListNode_t *list_llfind(LinkedList_t *llist, void *data);
+ListNode_t *list_llgettail(LinkedList_t *llist);
 void list_llfree(LinkedList_t **llist);
+void list_llfreenode(ListNode_t **node);
 
 #endif /* _LIST_H */
