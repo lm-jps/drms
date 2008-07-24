@@ -464,7 +464,7 @@ int SUMLIB_SafeTapeUpdate(char *suname, char *tapeid, int tapefn, char *tapedate
 int DS_SumMainDelete(uint64_t ds_index);
 int SUM_StatOnline(uint64_t ds_index, char *newwd);
 int DS_DataRequest_WD(KEY *params, KEY **results);
-int SUMLIB_TapeUpdate(char *tapeid, uint64_t tellblock, double totalbytes);
+int SUMLIB_TapeUpdate(char *tapeid, int tapenxtfn, uint64_t tellblock, double totalbytes);
 int SUMLIB_TapeFilenumber(char *tapeid);
 int SUMLIB_TapeFindGroup(int group, double bytes, TAPE *tape);
 int SUMLIB_PavailGet(double bytes, int pds_set, uint64_t uid, KEY **results);
