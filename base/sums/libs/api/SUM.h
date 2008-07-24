@@ -40,7 +40,7 @@ typedef uint32_t SUMID_t;
 #define FULL 1024	/* also set this to get full info from DB query */
 
 #define MAXSTR 256	/* max size of a string */
-#define MAX_TAPE_FN 4000     /* max allowed file number on a tape */
+#define MAX_TAPE_FN 7000     /* max allowed file number on a tape */
 
 
 /* SUM error numbers */
