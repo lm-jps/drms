@@ -39,7 +39,9 @@ typedef uint32_t SUMID_t;
 #define NORETRIEVE 32   /* don't retrieve from tape */
 #define FULL 1024	/* also set this to get full info from DB query */
 
-#define MAXSTR 256     /* max size of a string */
+#define MAXSTR 256	/* max size of a string */
+#define MAX_TAPE_FN 4000     /* max allowed file number on a tape */
+
 
 /* SUM error numbers */
 #define NO_TAPE_IN_GROUP 2 /* SUMLIB_TapeFindGroup() can't find  an open */
