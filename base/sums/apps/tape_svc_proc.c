@@ -67,7 +67,7 @@ void logkey ();
 char *find_tape_from_group();
 KEY *taperesprobotdo_1_rd(KEY *params);
 KEY *taperesprobotdo_1_wt(KEY *params);
-static struct timeval TIMEOUT = { 120, 0 };
+static struct timeval TIMEOUT = { 30, 0 };
 
 static struct timeval first[5], second[5];
 float ftmp;
@@ -908,12 +908,14 @@ KEY *writedo_1(KEY *params) {
  * wd_0:	KEYTYP_STRING	/SUM5/D1523
  * dnum:	KEYTYP_INT	0
  * snum:	KEYTYP_INT	14
+ * TAPENXTFN:	KEYTYP_INT	12
  * cmd1:  KEYTYP_STRING	mtx -f /dev/sg7 load 15 0 1> /tmp/mtx_robot.log 2>&1
 */
 KEY *taperespwritedo_1(KEY *params) {
   static KEY *retlist, *xlist;
   uint64_t tellblock, robotback;
   int i, dnum, status, tape_closed, filenum_written, reqcnt, slotnum;
+  int tapenxtfn;
   int tclosed = 0;
   double totalbytes = 0.0;
   char *tapeid, *md5cksum, *call_err, *errstr;
@@ -929,6 +931,7 @@ KEY *taperespwritedo_1(KEY *params) {
     }
   }
   dnum = getkey_int(params, "dnum");	/* get drive # that wrote */
+  tapenxtfn = getkey_int(params, "TAPENXTFN"); /* get next file # on tape */
   slotnum = drives[dnum].slotnum;
   drives[dnum].busy = 0;		/* drive is free now */
   write_log("*Tp:DrNotBusy: drv=%d\n", dnum);
@@ -1032,7 +1035,7 @@ KEY *taperespwritedo_1(KEY *params) {
     }
     tellblock = 0;		/* force use of totalbytes */
 /*#endif*/
-    if((filenum_written=SUMLIB_TapeUpdate(tapeid,tellblock,totalbytes)) == 0) {
+    if((filenum_written=SUMLIB_TapeUpdate(tapeid,tapenxtfn,tellblock,totalbytes)) == 0) {
       send_mail("Error: Can't update sum_tape in DB for tape %s\n",tapeid);
       write_log("***Error: Can't update sum_tape in DB for tape %s\n",tapeid);
       setkey_int(&retlist, "STATUS", 1);
