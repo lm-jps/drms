@@ -1,4 +1,5 @@
-#!/usr/bin/perl
+eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S  $0 "$@"'
+    if 0;
 #/home/production/cvs/JSOC/base/sums/scripts/sum_start_d02
 #This is to start the sum_svc and related servers.
 #Call with -M will not send mail notification.
@@ -223,6 +224,7 @@ while($_ = shift(@ps_prod)) {
     }
   }
 }
+    `/bin/rm -f /usr/local/logs/SUM/RESTART_AFTER_REBOOT`;
     print "Is this sum_start following a d02 reboot?\n";
     print "If you answer 'y' all the T950 tapes in drives will be unloaded\n";
     print "Starting after a reboot? (y or n): ";
@@ -230,9 +232,6 @@ while($_ = shift(@ps_prod)) {
       chop($_);
       if(($_ eq "Y") || ($_ eq "y")) { 
         `touch /usr/local/logs/SUM/RESTART_AFTER_REBOOT`;
-      }
-      else {
-        `/bin/rm -f /usr/local/logs/SUM/RESTART_AFTER_REBOOT`;
       }
       last;
     }
