@@ -37,7 +37,7 @@ extern TQ *q_wrt_front;
 extern TQ *q_need_front;
 extern SUMOFFCNT *offcnt_hdr;
 static void tapeprog_1();
-static struct timeval TIMEOUT = { 120, 0 };
+static struct timeval TIMEOUT = { 30, 0 };
 uint32_t rinfo;		/* info returned by XXXdo_1() calls */
 uint32_t procnum;	/* remote procedure # to call for current_client call*/
 
