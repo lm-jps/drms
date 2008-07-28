@@ -66,6 +66,7 @@ $TLMDSAIA = "aia.tlm"; #series of .tlm files to query
 $DB = "jsoc_sums";
 $PGPORT = 5434;
 $PARC_ROOT = "/usr/local/logs/parc/";
+$SSH_INFO = "/home/production/cvs/JSOC/base/sums/scripts/pgaginfo";
 $hrsprev = 24;
 while ($ARGV[0] =~ /^-/) {
   $_ = shift;
@@ -81,10 +82,19 @@ while ($ARGV[0] =~ /^-/) {
   }
 }
 
+@sshinfo = `cat $SSH_INFO`;
+$map = "/tmp/build_source";
+open(SR, ">$map") || die "Can't open $map: $!\n";
+$x = shift(@sshinfo);
+print SR "$x";
+$x = shift(@sshinfo);
+print SR "$x";
+
 $ldate = &labeldate();
 $parchmi = $PARC_ROOT."HMI_$currdate".".parc";
 $parcaia = $PARC_ROOT."AIA_$currdate".".parc";
 print "Going to find tlm data archived since $ldate\n";
+print "NOTE: uses for ssh: $SSH_INFO\n";
 
 $hostdb = $HOSTDB;      #host where Postgres runs
 $user = $ENV{'USER'};
@@ -151,14 +161,19 @@ for($i = 0; $i < 2; $i++) { 	#do first for HMI then AIA
   #now copy the resulting .parc file to the proper dcs machine
   if($i == 0) {		#hmi
     $cmd = "scp $parchmi dcs1:/dds/pipe2soc/hmi";
+    print SR "$cmd\n";
   }
   else {		#aia
     $cmd = "scp $parcaia dcs0:/dds/pipe2soc/aia";
+    print SR "$cmd\n";
   }
   print "NOTE: if this asks for password, you don't have ssh-agent set up\n";
   print "$cmd\n";
-  if(system($cmd)) {
-    print "Error on cmd: $cmd\n";
+  $logfile = "/tmp/build_parc_file.log";
+  $cmd = "source $map";
+  if(system "$cmd 1> $logfile 2>&1") {
+    print "Error on: $cmd\n";
+    print "See log: $logfile\n";
   }
 }
 $dbh->disconnect();
