@@ -4,7 +4,7 @@
 SLEEP=600
 #delete until this many Mb free on /SUM set 0.
 #NOTE: only one pds type set for SUMS.
-MAX_FREE_0=1900000
+MAX_FREE_0=101000000
 #log file (only opened at startup and pid gets appended to this name)
 LOG=/usr/local/logs/SUM/sum_rm.log
 #whom to bother when there's a notable problem
