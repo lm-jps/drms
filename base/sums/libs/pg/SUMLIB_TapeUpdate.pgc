@@ -2,6 +2,7 @@
 */
 /* This is to update the sum_tape table with avail_blocks, 
  * next_write_file_number and last_write for the given tape barcode id. 
+ * Updated later to pass in the next file# on the tape.
  * Returns 0 on failure, else the current file number (that was just written).
  * NOTE: file numbers are initialized to 1 in the sum_tape db table.
  * Also function to get the next file number to be written to the given tape.
@@ -13,10 +14,10 @@
 #include <sum_rpc.h>
 #include <printk.h>
 
-int SUMLIB_TapeUpdate(char *tapeid, uint64_t tellblock, double totalbytes);
+int SUMLIB_TapeUpdate(char *tapeid, int tapenxtfn,  uint64_t tellblock, double totalbytes);
 int SUMLIB_TapeFilenumber(char *tapeid);
 
-int SUMLIB_TapeUpdate(char *tapeid, uint64_t tellblock, double totalbytes)
+int SUMLIB_TapeUpdate(char *tapeid, int tapenxtfn, uint64_t tellblock, double totalbytes)
 {
   EXEC SQL TYPE uint64_t IS unsigned long long;
 
@@ -42,8 +43,9 @@ EXEC SQL END DECLARE SECTION;
    EXEC SQL SELECT nxtwrtfn, avail_blocks INTO :l_nxtwrtfn, :l_availblocks 
 	        FROM SUM_TAPE WHERE TAPEID = :l_tapeid;
 
-   filen = l_nxtwrtfn;
-   l_nxtwrtfn++;	/* inc to next file # */
+   filen = tapenxtfn - 1;
+   //l_nxtwrtfn++;	/* inc to next file # */
+   l_nxtwrtfn = tapenxtfn;    //next file# on tape
 
     if(tellblock == 0) {	/* get availblocks from totalbytes */
       numblocks = (int)(totalbytes/512.0);
