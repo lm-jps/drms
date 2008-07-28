@@ -86,7 +86,7 @@ static void drive10prog_1();
 #ifdef DRIVE_11
 static void drive11prog_1();
 #endif
-static struct timeval TIMEOUT = { 300, 0 };
+static struct timeval TIMEOUT = { 30, 0 };
 uint32_t rinfo;		/* info returned by XXXdo_1() calls */
 uint32_t procnum;	/* remote procedure # to call for current_client call*/
 
@@ -1010,7 +1010,7 @@ KEY *writedrvdo_1(KEY *params)
   CLIENT *client;
   static KEY *retlist;
   uint64_t tell;
-  int dnum, sim, tape_closed, group, filenumwrt;
+  int dnum, sim, tape_closed, group, filenumwrt, tapenxtfn;
   char *tapeid;
   char  gtarlog[80], md5sum[64], dname[64];
 
@@ -1083,12 +1083,13 @@ KEY *writedrvdo_1(KEY *params)
     }
     sprintf(gtarlog, "%s/gtar_wt_%d_%s_%d.log", 
 			GTARLOGDIR, dnum, tapeid, filenumwrt);
-    if(write_wd_to_drive(sim, params, dnum, filenumwrt, gtarlog) == -1) {
+    if((tapenxtfn =write_wd_to_drive(sim, params, dnum, filenumwrt, gtarlog)) == -1) {
       setkey_int(&retlist, "STATUS", 1);   /* give error back to caller */
       sprintf(errstr,"Error on write to drive #%d", dnum);
       setkey_str(&retlist, "ERRSTR", errstr); 
       return(retlist);
     }
+    setkey_int(&retlist, "TAPENXTFN", tapenxtfn);
     if(get_cksum(md5file, md5sum)) {
       write_log("***Error: can't get md5 cksum for drive %d.\n",dnum);
       setkey_str(&retlist, "md5cksum", "");
@@ -1291,7 +1292,7 @@ uint64_t tell_blocks(int sim, int dnum)
 }
 
 /* Write from given dir(s) to the given drive# and log in logfile.
- * Returns the drive number on success, else -1. 
+ * Returns the next file number on the tape, else -1. 
  * The keylist looks like:
  * reqcnt:      KEYTYP_INT      3
  * username_2:  KEYTYP_STRING   jim
@@ -1382,13 +1383,17 @@ int write_wd_to_drive(int sim, KEY *params, int drive, int fnum, char *logname)
   write_log("Dr%d:wt:Next file on tape=%d\n", drive, tapefilenum);
   if(!sim) {
     if(tapefilenum != (fnum + 1)) {
-      write_log("***Dr%d:wt:Error: Tape file expected=%d, found=%d\n", 
+      write_log("***Dr%d:wt:Advisory: Tape file expected=%d, found=%d\n", 
 			drive, fnum+1, tapefilenum);
-      return(-1); 
+      if(tapefilenum > MAX_TAPE_FN) {	//sanity ck. can get a strange# here
+        write_log("***Dr%d:wt:Error: Tape file %d > max of %d\n", 
+                        drive, tapefilenum, MAX_TAPE_FN);
+        return(-1);
+      }
     }
   }
   write_log("***Dr%d:wt:success\n", drive); /*must be this form for t120 gui*/
-  return(drive);
+  return(tapefilenum);
 }
 
 /* The tape is at bot. Write a label at the file 0 on any tape that needs 
