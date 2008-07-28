@@ -39,7 +39,7 @@ int i, j;
     EXEC SQL FETCH reqcursor INTO :ds_index;
     printk("in SUM_drop_series() ds_index = %lu\n", ds_index);
     EXEC SQL WHENEVER NOT FOUND GOTO sqllp;
-    EXEC SQL UPDATE SUM_PARTN_ALLOC SET ARCHIVE_SUBSTATUS=32,
+    EXEC SQL UPDATE SUM_PARTN_ALLOC SET STATUS=2, ARCHIVE_SUBSTATUS=32,
 	EFFECTIVE_DATE='0' WHERE DS_INDEX=:ds_index;
     EXEC SQL WHENEVER NOT FOUND GOTO end_fetch;
     continue;
