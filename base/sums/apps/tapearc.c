@@ -66,7 +66,7 @@ int archive_pending = 0;
 int is_connected=0;
 int ctrlcnt = 0;
 
-static struct timeval first[5], second[5];
+static struct timeval first[6], second[6];
 float ftmp;
 
 /*********************************************************/
@@ -534,6 +534,7 @@ KEY *tapearcdo_1(KEY *params)
   int groupid;
   uint64_t index;
 
+  //StartTimer(6); //!!TEMP for debug. time for tapearcdo_1()
   groupid = getkey_int(params, "group_id");
   index = getkey_uint64(params, "ds_index_0");
   if(findkey(params, "DEBUGFLG")) {
@@ -560,6 +561,8 @@ KEY *tapearcdo_1(KEY *params)
       exit(0);
     }
   }
+  //ftmp = StopTimer(6);
+  //printf("Time 6 for tapearcdo_1() when a tape wt is done =  %f sec\n", ftmp);
   return((KEY *)1);
 }
 
