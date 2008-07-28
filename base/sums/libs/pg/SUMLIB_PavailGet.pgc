@@ -63,7 +63,7 @@ EXEC SQL INCLUDE sqlca;
 
 end_fetch:
         if(fnum == 0) {
-          printk("Err SUMLIB_PavailGet-can't get requested storage on SUM set %d\n, pds_set");
+          printk("Err SUMLIB_PavailGet-can't get requested storage on SUM set %d\n", pds_set);
 	  EXEC SQL CLOSE availget;
           EXEC SQL COMMIT;
           return DATA_NOT_FOUND;
