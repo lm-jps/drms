@@ -1974,7 +1974,7 @@ void drms_segment_print_jsd(DRMS_Segment_t *seg) {
 	printf(", %d", seg->axis[i]);
       }
     }
-    printf(", %s, ", seg->info->unit);
+    printf(", \"%s\", ", seg->info->unit);
 
     const char *protstr = drms_prot2str(seg->info->protocol);
     if (protstr)

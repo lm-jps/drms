@@ -1267,14 +1267,6 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
   arr->parent_segment = seg;
   
   /* Scale and convert to desired type. */
-  /* XXX - THERE ISN'T A WAY TO STORE BZERO/BSCALE FOR PROTOCOLS OTHER THAN FITS,
-   * so we assume 0.0/1.0 */
-
-  if (arr->type == DRMS_TYPE_FLOAT || arr->type == DRMS_TYPE_DOUBLE)
-  {
-     XASSERT(drms_segment_checkscaling(arr, 0.0, 1.0, filename));
-  }
-
   if (type == DRMS_TYPE_RAW)
   {
     arr->israw = 1;
