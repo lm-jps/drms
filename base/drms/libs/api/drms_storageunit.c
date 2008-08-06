@@ -4,6 +4,7 @@
 #include "drms_priv.h"
 #include "xmem.h"
 
+#define SUMIN(a,b)  ((a) > (b) ? (b) : (a))
 
 /* Allocate a storage unit of the indicated size from SUMS and return
    its sunum and directory. */
@@ -272,23 +273,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retention, int retrieve, int dontwait)
 {  
   DRMS_SumRequest_t *request, *reply;
-  XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
-
-  request->opcode = DRMS_SUMGET;
-  request->reqcnt = n;
-  for (int i = 0; i < n; i++) {
-    request->sunum[i] = su[i]->sunum;
-  }
-  request->mode = NORETRIEVE + TOUCH;
-  if (retrieve) 
-    request->mode = RETRIEVE + TOUCH;
-
-  request->dontwait = dontwait;
-
-  if (env->retention==-1)   
-    request->tdays = retention;
-  else
-    request->tdays = env->retention;
+  int iSUMSsunum;
 
   if (!env->sum_thread) {
     int status;
@@ -299,25 +284,56 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int reten
     }
   }
 
-  /* Submit request to sums server thread. */
-  tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *) request);
-  
-  /* Wait for reply. FIXME: add timeout. */
-  if (!dontwait) {
-    tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
-    if (reply->opcode != 0)
-      {
-	fprintf(stderr, "SUM GET failed with error code %d.\n",reply->opcode);
-	free(reply);
-	return 1;
-      }
-    for (int i = 0; i < n; i++) {
-      strncpy(su[i]->sudir, reply->sudir[i], sizeof(su[i]->sudir));
-      free(reply->sudir[i]);
-    }
+  /* There is a maximum no. of SUs that can be requested from SUMS, MAXSUMREQCNT. So, loop. */
+  int start = 0;
+  int end = SUMIN(MAXSUMREQCNT, n); /* index of SU one past the last one to be processed */
 
-    free(reply);
-  }
+  while (start < n)
+  {
+     /* create SUMS request (apparently, SUMS frees this request) */
+     XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+
+     request->opcode = DRMS_SUMGET;
+     request->reqcnt = end - start;
+
+     for (int i = start, iSUMSsunum = 0; i < end; i++, iSUMSsunum++) {
+        request->sunum[iSUMSsunum] = su[i]->sunum;
+     }
+     request->mode = NORETRIEVE + TOUCH;
+     if (retrieve) 
+       request->mode = RETRIEVE + TOUCH;
+
+     request->dontwait = dontwait;
+
+     if (env->retention==-1)   
+       request->tdays = retention;
+     else
+       request->tdays = env->retention;
+
+     /* Submit request to sums server thread. */
+     tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *) request);
+  
+     /* Wait for reply. FIXME: add timeout. */
+     if (!dontwait) {
+        tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
+        if (reply->opcode != 0)
+        {
+           fprintf(stderr, "SUM GET failed with error code %d.\n",reply->opcode);
+           free(reply);
+           return 1;
+        }
+        for (int i = start, iSUMSsunum = 0; i < end; i++, iSUMSsunum++) {
+           strncpy(su[i]->sudir, reply->sudir[iSUMSsunum], sizeof(su[i]->sudir));
+           free(reply->sudir[iSUMSsunum]);
+        }
+
+        free(reply);
+     }
+
+     start = end;
+     end = SUMIN(MAXSUMREQCNT + start, n);
+  } /* while */
+
   return DRMS_SUCCESS;
 }
 #endif
