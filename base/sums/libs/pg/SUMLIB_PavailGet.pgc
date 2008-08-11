@@ -18,9 +18,9 @@ int part_index[MAX_PART];
 
 extern PADATA *pahdr_rw;
 
-int SUMLIB_PavailGet(double bytes, int pds_set, uint64_t uid, KEY **results);
+int SUMLIB_PavailGet(double bytes, int pds_set, uint64_t uid, uint64_t sunum, KEY **results);
 
-int SUMLIB_PavailGet(double bytes, int pds_set, uint64_t uid, KEY **results) 
+int SUMLIB_PavailGet(double bytes, int pds_set, uint64_t uid, uint64_t sunum, KEY **results) 
 {
   EXEC SQL TYPE uint64_t IS unsigned long long;
 
@@ -93,7 +93,12 @@ end_fetch:
 	EXEC SQL CLOSE availget;
         EXEC SQL COMMIT;
 
-    EXEC SQL SELECT NEXTVAL('SUM_DS_INDEX_SEQ') INTO :ds_index;
+    if(sunum == 0) {	//we assign ds_index
+      EXEC SQL SELECT NEXTVAL('SUM_DS_INDEX_SEQ') INTO :ds_index;
+    }
+    else {		//use the given ds_index
+      ds_index = sunum;
+    }
         setkey_uint64(results, "ds_index", ds_index);
         sprintf(mkpart, "%s/D%ld", l_name.arr, ds_index);
 	setkey_str(results, "partn_name", mkpart);
