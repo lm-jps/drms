@@ -204,6 +204,66 @@ int SUM_alloc(SUM_t *sum, int (*history)(const char *fmt, ...))
   }
 }
 
+/* Allocate the storage given in sum->bytes for the given sunum.
+ * Return non-0 on error, else return wd of allocated storage in *sum->wd.
+*/
+int SUM_alloc2(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
+{
+  KEY *klist;
+  char *call_err;
+  uint32_t retstat;
+  int msgstat;
+  enum clnt_stat status;
+
+  //!!TEMP until learn how to validate the given sunum
+  (*history)("!TEMP reject of SUM_alloc2() call until we can validate sunum\n");
+  return(1);
+
+  if(sum->reqcnt != 1) {
+    (*history)("Invalid reqcnt = %d for SUM_alloc2(). Can only alloc 1.\n",
+		sum->reqcnt);
+    return(1);
+  }
+  klist = newkeylist();
+  setkey_double(&klist, "bytes", sum->bytes);
+  setkey_int(&klist, "storeset", sum->storeset);
+  setkey_int(&klist, "reqcnt", sum->reqcnt);
+  setkey_uint64(&klist, "uid", sum->uid); 
+  setkey_uint64(&klist, "SUNUM", sunum); //unique to the SUM_alloc2() call
+  setkey_int(&klist, "DEBUGFLG", sum->debugflg);
+  setkey_int(&klist, "REQCODE", ALLOCDO);
+  setkey_str(&klist, "USER", sum->username);
+  if(sum->debugflg) {
+    (*history)("In SUM_alloc2() the keylist is:\n");
+    keyiterate(printkey, klist);
+  }
+  status = clnt_call(sum->cl, ALLOCDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
+
+  /* NOTE: These rtes seem to return after the reply has been received despite
+   * the timeout value. If it did take longer than the timeout then the timeout
+   * error status is set but it should be ignored.
+  */
+  if(status != RPC_SUCCESS) {
+    if(status != RPC_TIMEDOUT) {
+      call_err = clnt_sperror(sum->cl, "Err clnt_call for ALLOCDO");
+      (*history)("%s %d %s\n", datestring(), status, call_err);
+      freekeylist(&klist);
+      return (1);
+    }
+  }
+  if(retstat) {			/* error on ALLOCDO call */
+    (*history)("Error in SUM_alloc2()\n");
+    return(retstat);
+  }
+  else {
+    msgstat = getanymsg(1);	/* get answer to ALLOCDO call */
+    freekeylist(&klist);
+    if(msgstat == ERRMESS) return(ERRMESS);
+    return(sum->status);
+  }
+}
+
 /* Close this session with the SUMS. Return non 0 on error.
 */
 int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
