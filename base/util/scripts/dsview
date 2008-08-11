@@ -111,7 +111,7 @@ $date = &get_effdate;
         -font => 'arial 14 bold', -pady => 10)->pack(-side => 'top');
 
   #$sqlcmd = "select seriesname from drms_series";
-  $sqlcmd = "select seriesname from drms_series()";
+  $sqlcmd = "select seriesname from drms_series() where seriesname not like 'dsds.%' order by seriesname";
   #print "sqlcmd is: $sqlcmd\n\n"; #!!TEMP
   $sth = $dbh->prepare($sqlcmd);
   if ( !defined $sth ) {
@@ -121,11 +121,15 @@ $date = &get_effdate;
   }
   # Execute the statement at the database level
   $sth->execute;
+  @listbox_items = ();
   while($result = $sth->fetchrow()) { #get row from the DB
     push(@listbox_items, $result);
   }
 
-  $lb = $tframe1->Scrolled("Listbox", -scrollbars => "w", -width => 0,
+  $showb = $tframe1->Button(-text => "Show 'dsds.'\nnamespace", 
+	-command => \&Show_dsds,) ->pack(-side=> 'left');
+
+  $lb = $tframe1->Scrolled("Listbox", -scrollbars => "w", -width => 40,
 		-font => 'arial 14 bold',
 		-height => 400,
                 -selectmode => "single")->pack(-side => 'top', -pady => 10);
@@ -273,6 +277,52 @@ sub Sum_ck {
 sub Recnum_go {
   $nselnext = ($gotorecnum - 1);
   &Next;
+  return(1);
+}
+
+sub Show_dsds {
+  $sqlcmd = "select seriesname from drms_series() where seriesname like 'dsds.%' order by seriesname";
+  $sth = $dbh->prepare($sqlcmd);
+  if ( !defined $sth ) {
+    print "Cannot prepare statement: $DBI::errstr\n";
+    #system "/bin/rm $runtag";
+    exit;
+  }
+  # Execute the statement at the database level
+  $sth->execute;
+  @listbox_items = ();
+  while($result = $sth->fetchrow()) { #get row from the DB
+    push(@listbox_items, $result);
+  }
+  $showb->configure(-text => "Show non 'dsds.'\nnamespace",
+   		 -command => \&Show_non_dsds,);
+  $lb->delete(0, 'end');
+  $lb->insert('end', @listbox_items);
+  $lb->bind('<Button-1>', \&lb_sub);
+  $sth->finish();
+  return(1);
+}
+
+sub Show_non_dsds {
+  $sqlcmd = "select seriesname from drms_series() where seriesname not like 'dsds.%' order by seriesname";
+  $sth = $dbh->prepare($sqlcmd);
+  if ( !defined $sth ) {
+    print "Cannot prepare statement: $DBI::errstr\n";
+    #system "/bin/rm $runtag";
+    exit;
+  }
+  # Execute the statement at the database level
+  $sth->execute;
+  @listbox_items = ();
+  while($result = $sth->fetchrow()) { #get row from the DB
+    push(@listbox_items, $result);
+  }
+  $showb->configure(-text => "Show 'dsds.'\nnamespace",
+   		 -command => \&Show_dsds,);
+  $lb->delete(0, 'end');
+  $lb->insert('end', @listbox_items);
+  $lb->bind('<Button-1>', \&lb_sub);
+  $sth->finish();
   return(1);
 }
 
