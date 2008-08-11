@@ -188,7 +188,7 @@ KEY *getdo_1(KEY *params)
           sprintf(tmpname, "bytes_%d", i);
           bytes = getkey_double(retlist, tmpname);
           storeset = JSOC;         /* always use JSOC set for now */
-          if((status=SUMLIB_PavailGet(bytes,storeset,uid,&retlist))) {
+          if((status=SUMLIB_PavailGet(bytes,storeset,uid,0,&retlist))) {
             write_log("***Can't alloc storage for retrieve uid = %lu\n", uid);
             freekeylist(&retlist);
             rinfo = 1;  /* give err status back to original caller */
@@ -240,11 +240,12 @@ KEY *getdo_1(KEY *params)
     return(retlist);    /* send ans now */
 }
 
-/* Called when a client does a SUM_alloc() call to get storage. 
+/* Called when a client does a SUM_alloc() or SUM_alloc2() call to get storage. 
  * A typical keylist is:
  * USER:   	   KEYTYP_STRING   production
  * REQCODE:        KEYTYP_INT      6
  * DEBUGFLG:       KEYTYP_INT      1
+ * SUNUM:	   KEYTYP_UINT64   6260386 (unique to SUM_alloc2() call)
  * uid:    KEYTYP_UINT64    574
  * reqcnt: KEYTYP_INT      1
  * storeset:       KEYTYP_INT      0
@@ -254,15 +255,19 @@ KEY *allocdo_1(KEY *params)
 {
   int storeset, status, reqcnt;
   uint64_t uid;
+  uint64_t sunum = 0;
   double bytes;
   char *wd;
 
   if(findkey(params, "DEBUGFLG")) {
-  debugflg = getkey_int(params, "DEBUGFLG");
-  if(debugflg) {
-    write_log("!!Keylist in allocdo_1() is:\n");
-    keyiterate(logkey, params);
+    debugflg = getkey_int(params, "DEBUGFLG");
+    if(debugflg) {
+      write_log("!!Keylist in allocdo_1() is:\n");
+      keyiterate(logkey, params);
+    }
   }
+  if(findkey(params, "SUNUM")) {	//this is a SUM_alloc2() call
+    sunum = getkey_uint64(params, "SUNUM");
   }
   uid = getkey_uint64(params, "uid");
   if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
@@ -276,7 +281,7 @@ KEY *allocdo_1(KEY *params)
   reqcnt = getkey_int(params, "reqcnt"); /* will always be 1 */
   bytes = getkey_double(params, "bytes");
   storeset = getkey_int(params, "storeset");
-  if(!(status=SUMLIB_PavailGet(bytes, storeset, uid, &retlist))) {
+  if(!(status=SUMLIB_PavailGet(bytes, storeset, uid, sunum, &retlist))) {
     wd = GETKEY_str(retlist, "partn_name");
     write_log("Alloc bytes=%e wd=%s for user=%s sumid=%lu\n", bytes, wd,
 		getkey_str(retlist, "USER"), uid);
