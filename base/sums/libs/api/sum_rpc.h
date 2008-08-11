@@ -412,6 +412,7 @@ int SUM_close();
 int SUM_get();
 int SUM_put();
 int SUM_alloc();
+int SUM_alloc2();
 int SUM_poll();
 int SUM_wait();
 int SUM_Init();
@@ -467,7 +468,7 @@ int DS_DataRequest_WD(KEY *params, KEY **results);
 int SUMLIB_TapeUpdate(char *tapeid, int tapenxtfn, uint64_t tellblock, double totalbytes);
 int SUMLIB_TapeFilenumber(char *tapeid);
 int SUMLIB_TapeFindGroup(int group, double bytes, TAPE *tape);
-int SUMLIB_PavailGet(double bytes, int pds_set, uint64_t uid, KEY **results);
+int SUMLIB_PavailGet(double bytes, int pds_set, uint64_t uid, uint64_t sunum, KEY **results);
 int SUMLIB_PavailUpdate(char *name, double bytes);
 int SUMLIB_DelSeriesSU(KEY *params); 
 
