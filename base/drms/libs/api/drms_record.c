@@ -1879,7 +1879,6 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
 	    printf("creating new tasfile '%s'\n",filename);
 #endif
 
-#if 1
             drms_fitstas_create(filename, 
                                 seg->cparms,
                                 seg->info->type, 
@@ -1887,11 +1886,7 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
                                 seg->axis,
                                 seg->bzero,
                                 seg->bscale);
-#else
-	    drms_tasfile_create(filename, DRMS_COMP_RICE, seg->info->type, 
-				seg->info->naxis+1, seg->axis, seg->blocksize,
-				NULL);
-#endif
+
 	    seg->axis[seg->info->naxis] = 0;
 	    seg->blocksize[seg->info->naxis] = 0; 
 	  }

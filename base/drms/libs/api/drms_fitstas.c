@@ -23,6 +23,18 @@ int drms_fitstas_create(const char *filename,
       {
          arr->bzero = bzero;
          arr->bscale = bscale;
+
+         /* If bzero == 0.0 and bscale == 1.0, then the TAS file has physical units 
+          * (data are NOT 'raw'). */
+         if (bzero == 0.0 && bscale == 1.0)
+         {
+            arr->israw = 0;
+         }
+         else
+         {
+            arr->israw = 1;
+         }
+
          drms_array2missing(arr);
 
          if (!drms_fitsrw_SetImageInfo(arr, &info))
@@ -115,21 +127,25 @@ int drms_fitstas_readslice(const char *filename,
 /* Array may be converted in calling function, but not here */
 int drms_fitstas_writeslice(DRMS_Segment_t *seg,
                             const char *filename, 
-			    int *start, 
+                            int naxis,
+                            int *axis,
+                            int slotnum,
                             DRMS_Array_t *arrayout)
 {
-   //fits_open_file
-   //fits_write_subset
-   //fits_close_file
    int status = DRMS_SUCCESS;
    int fitsrwstat = CFITSIO_SUCCESS;
+   int start[DRMS_MAXRANK] = {0};
    int end[DRMS_MAXRANK] = {0};
    int iaxis;
 
-   for (iaxis = 0; iaxis < arrayout->naxis; iaxis++)
+   start[naxis] = slotnum;
+
+   for (iaxis = 0; iaxis < naxis; iaxis++)
    {
-     end[iaxis] = start[iaxis] + arrayout->axis[iaxis] - 1;
+      end[iaxis] = start[iaxis] + axis[iaxis] - 1;
    }
+
+   end[naxis] = slotnum;
 
    fitsrwstat = fitsrw_writeslice(filename, 
                                   start, 
@@ -150,7 +166,7 @@ int drms_fitstas_writeslice(DRMS_Segment_t *seg,
       snprintf(kw, sizeof(kw), "%s_bzero", seg->info->name);
       status = drms_setkey_double(seg->record, kw, arrayout->bzero);
 
-      if (arrayout->bzero != 0.0 && status == DRMS_ERROR_UNKNOWNKEYWORD)
+      if (status == DRMS_ERROR_UNKNOWNKEYWORD)
       {
          fprintf(stderr, "%s keyword not defined, cannot save bzero.\n", kw);
       }
@@ -159,7 +175,7 @@ int drms_fitstas_writeslice(DRMS_Segment_t *seg,
          snprintf(kw, sizeof(kw), "%s_bscale", seg->info->name);
          status = drms_setkey_double(seg->record, kw, arrayout->bscale);
 
-         if (arrayout->bscale != 1.0 && status == DRMS_ERROR_UNKNOWNKEYWORD)
+         if (status == DRMS_ERROR_UNKNOWNKEYWORD)
          {
             fprintf(stderr, "%s keyword not defined, cannot save bscale.\n", kw);
          }
