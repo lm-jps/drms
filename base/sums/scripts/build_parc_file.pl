@@ -18,13 +18,20 @@
 #running. (e.g. if run after midnight on Wed, will find all the data 
 #archived since midnight of Tues).
 #
+#The .parc file built looks like:
+##Created by build_parc_file.pl for query past 2008-08-10 23:58:01
+##owning_series_name                         tape_id  fn  date
+#VC10_2008_218_01_56_51_00006d754c8_1c298_00 012936L4 305 2008-08-11 00:06:02
+#VC13_2008_218_01_57_33_00006d91760_1c298_00 012936L4 312 2008-08-11 00:54:04
+#VC10_2008_218_01_57_55_00006d91760_1c298_00 012936L4 313 2008-08-11 00:54:22
+#
 #NOTE: aia is always assumed to be on dsc0, and hmi on dcs1
 #
 use DBI;
 
 sub usage {
   print "Make a .parc file of archive info to send to a datacapture host.\n";
-  print "Usage: build_parc_file.pl [-h] [-ddc_host] [-thrs] \n";
+  print "Usage: build_parc_file.pl [-h] [-thrs] \n";
   print "       -h = help\n";
 #  print "       -d = datacapture host to send the parc file to\n";
   print "	-t = # of hours+2mins previous to current time to find data\n";
@@ -61,12 +68,13 @@ sub labeldate {
 
 $HOSTDB = "hmidb";	#db machine
 $HOSTDC = "dcs0";	#default datacapture to send to
-$TLMDSHMI = "hmi.tlm"; #series of .tlm files to query
-$TLMDSAIA = "aia.tlm"; #series of .tlm files to query
+$TLMDSHMI = "hmi.tlmd"; #series of .tlm files to query
+$TLMDSAIA = "aia.tlmd"; #series of .tlm files to query
 $DB = "jsoc_sums";
 $PGPORT = 5434;
 $PARC_ROOT = "/usr/local/logs/parc/";
-$SSH_INFO = "/home/production/cvs/JSOC/base/sums/scripts/pgaginfo";
+#$SSH_INFO = "/home/production/cvs/JSOC/base/sums/scripts/pgaginfo";
+$SSH_INFO = "/tmp/ssh-agent.env";
 $hrsprev = 24;
 while ($ARGV[0] =~ /^-/) {
   $_ = shift;
@@ -86,9 +94,13 @@ while ($ARGV[0] =~ /^-/) {
 $map = "/tmp/build_source";
 open(SR, ">$map") || die "Can't open $map: $!\n";
 $x = shift(@sshinfo);
-print SR "$x";
+($a, $b, $ssh_auth_sock) = split(/ /, $x);
+chomp($ssh_auth_sock);
+print SR "SSH_AUTH_SOCK=$ssh_auth_sock export SSH_AUTH_SOCK\n";
 $x = shift(@sshinfo);
-print SR "$x";
+($a, $b, $ssh_agent_pid) = split(/ /, $x);
+chomp($ssh_agent_pid);
+print SR "SSH_AGENT_PID=$ssh_agent_pid export SSH_AGENT_PID\n";
 
 $ldate = &labeldate();
 $parchmi = $PARC_ROOT."HMI_$currdate".".parc";
