@@ -79,6 +79,7 @@ data model. This includes
 #include "drms_tasfile.h"
 #include "drms_fits.h"
 #include "drms_array.h"
+#include "drms_fitsrw.h"
 
 
 /* Copy the string "<name>_<num>" into hashkey. */   

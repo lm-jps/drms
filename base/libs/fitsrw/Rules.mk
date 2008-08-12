@@ -10,7 +10,7 @@ dir	:= $(d)/fpic
 # Local variables
 LIBFITSRW	:= $(d)/libfitsrw.a
 
-OBJ_$(d)	:= $(addprefix $(d)/, cfitsio.o)
+OBJ_$(d)	:= $(addprefix $(d)/, cfitsio.o tasrw.o)
 
 LIBFITSRW_OBJ	:= $(OBJ_$(d))
 

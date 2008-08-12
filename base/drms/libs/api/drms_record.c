@@ -7,6 +7,7 @@
 #include "drms_priv.h"
 #include "xmem.h"
 #include "drms_dsdsapi.h"
+#include "drms_fitstas.h"
 
 #ifndef DEBUG
 #undef TIME
@@ -591,7 +592,7 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
    }
    else
    {
-      drms_destroy_recproto(*proto);
+      drms_destroy_recproto(&template);
    }
 
    return iRec;
@@ -1877,9 +1878,20 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
 #ifdef DEBUG
 	    printf("creating new tasfile '%s'\n",filename);
 #endif
+
+#if 1
+            drms_fitstas_create(filename, 
+                                seg->cparms,
+                                seg->info->type, 
+				seg->info->naxis+1, 
+                                seg->axis,
+                                seg->bzero,
+                                seg->bscale);
+#else
 	    drms_tasfile_create(filename, DRMS_COMP_RICE, seg->info->type, 
 				seg->info->naxis+1, seg->axis, seg->blocksize,
 				NULL);
+#endif
 	    seg->axis[seg->info->naxis] = 0;
 	    seg->blocksize[seg->info->naxis] = 0; 
 	  }
@@ -3098,7 +3110,8 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
 
  /* This function has parts that are conditional on the series version being 
   * greater than or equal to version 2.0. */
-  DRMS_SeriesVersion_t vers = {"2.0", ""};
+  DRMS_SeriesVersion_t vers2_0 = {"2.0", ""};
+  DRMS_SeriesVersion_t vers2_1 = {"2.1", ""};
 
 #ifdef DEBUG
     printf("Getting template for series '%s'\n",seriesname);
@@ -3259,7 +3272,7 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
 
     /* Use the implicit, per-segment, keyword variables, cparms_sgXXX to populate the segment 
      * part of the template. */
-    if (drms_series_isvers(template->seriesinfo, &vers))
+    if (drms_series_isvers(template->seriesinfo, &vers2_0))
     {
        HIterator_t *hit = hiter_create(&(template->segments));
        if (hit)
@@ -3272,11 +3285,32 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
 	     char kbuf[DRMS_MAXKEYNAMELEN];
 	     snprintf(kbuf, sizeof(kbuf), "cparms_sg%03d", seg->info->segnum);
 
-	     DRMS_Keyword_t *cpkey = hcon_lookup_lower(&(template->keywords), kbuf);
-	     if (cpkey)
+	     DRMS_Keyword_t *segkey = hcon_lookup_lower(&(template->keywords), kbuf);
+	     if (segkey)
 	     {
-		snprintf(seg->cparms, DRMS_MAXCPARMS, "%s", cpkey->value.string_val);
+		snprintf(seg->cparms, DRMS_MAXCPARMS, "%s", segkey->value.string_val);
 	     }
+
+             if (drms_series_isvers(template->seriesinfo, &vers2_1))
+             {
+                /* segment-specific bzero and bscale keywords are used to populate 
+                 * the segment structure */
+                snprintf(kbuf, sizeof(kbuf), "%s_bzero", seg->info->name);
+
+                segkey = hcon_lookup_lower(&(template->keywords), kbuf);
+                if (segkey)
+                {
+                   seg->bzero = segkey->value.double_val;
+                }
+
+                snprintf(kbuf, sizeof(kbuf), "%s_bscale", seg->info->name);
+
+                segkey = hcon_lookup_lower(&(template->keywords), kbuf);
+                if (segkey)
+                {
+                   seg->bscale = segkey->value.double_val;
+                }
+             }
 	  }
        }
     }
@@ -3519,7 +3553,10 @@ int drms_populate_records (DRMS_RecordSet_t *rs, DB_Binary_Result_t *qres) {
     {
        /* This function has parts that are conditional on the series version being 
 	* greater than or equal to version 2.0. */
-       DRMS_SeriesVersion_t vers = {"2.0", ""};
+      DRMS_SeriesVersion_t vers2_0 = {"2.0", ""};
+      DRMS_SeriesVersion_t vers2_1 = {"2.1", ""};
+      char kbuf[DRMS_MAXKEYNAMELEN];
+      DRMS_Keyword_t *segkey = NULL;
 
       hiter_new(&hit, &rec->segments); /* Iterator for segment container. */
       segnum = 0;
@@ -3534,19 +3571,41 @@ int drms_populate_records (DRMS_RecordSet_t *rs, DB_Binary_Result_t *qres) {
 	  for (i=0; i<seg->info->naxis; i++)
 	    seg->axis[i] = db_binary_field_getint(qres, row, col++);
 	}
-	if (drms_series_isvers(rec->seriesinfo, &vers))
+	if (drms_series_isvers(rec->seriesinfo, &vers2_0))
 	{
 	   /* compression parameters are stored as keywords cparms_sgXXX - these
 	    * keywords should have been populated in the keywords section just above. */
-	   char buf[DRMS_MAXKEYNAMELEN];
-	   snprintf(buf, sizeof(buf), "cparms_sg%03d", segnum);
+	  
+	   snprintf(kbuf, sizeof(kbuf), "cparms_sg%03d", segnum);
 
-	   DRMS_Keyword_t *cpkey = hcon_lookup_lower(&(rec->keywords), buf);
-	   if (cpkey)
+	   segkey = hcon_lookup_lower(&(rec->keywords), kbuf);
+	   if (segkey)
 	   {
-	      snprintf(seg->cparms, DRMS_MAXCPARMS, "%s", cpkey->value.string_val);
+	      snprintf(seg->cparms, DRMS_MAXCPARMS, "%s", segkey->value.string_val);
 	   }
 	}
+
+        if (drms_series_isvers(rec->seriesinfo, &vers2_1))
+        {
+           /* segment-specific bzero and bscale keywords are used to populate 
+            * the segment structure */
+           snprintf(kbuf, sizeof(kbuf), "%s_bzero", seg->info->name);
+
+           segkey = hcon_lookup_lower(&(rec->keywords), kbuf);
+           if (segkey)
+           {
+              seg->bzero = segkey->value.double_val;
+           }
+
+           snprintf(kbuf, sizeof(kbuf), "%s_bscale", seg->info->name);
+
+           segkey = hcon_lookup_lower(&(rec->keywords), kbuf);
+           if (segkey)
+           {
+              seg->bscale = segkey->value.double_val;
+           }
+        }
+
 	seg->info->segnum = segnum++;
       }
     }

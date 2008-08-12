@@ -782,6 +782,38 @@ int drms_sscanf(char *str, DRMS_Type_t dsttype, DRMS_Type_Value_t *dst) {
    return drms_sscanf_int(str, dsttype, dst, 0);
 }
 
+/* drms_sscanf has a bug - the string cannot contain commas.  But
+ * there are many places in the code that rely upon this bad behavior.
+ * So, don't use sscanf here - do something special for strings. */
+int drms_sscanf_str(char *str, DRMS_Type_Value_t *dst) {
+   int status = DRMS_SUCCESS;
+   int usemissing = 0;
+   int usemissinglen = sizeof(kDRMS_MISSING_VALUE);
+
+   if (!strncasecmp(kDRMS_MISSING_VALUE, str, usemissinglen))
+   {
+      usemissing = 1;
+   }
+
+   if (*str == '\0')
+   {
+      /* Empty string is acceptable. */
+      dst->string_val = strdup("");
+      return 0;
+   }
+   else if (usemissing)
+   {
+      dst->string_val = strdup(DRMS_MISSING_STRING);
+      return usemissinglen;
+   }
+   else
+   {
+      if (dst->string_val) free(dst->string_val);
+      dst->string_val = strdup(str);
+      return strlen(dst->string_val);
+   }
+}
+
 void drms_memset(DRMS_Type_t type, int n, void *array, 
 		 DRMS_Type_Value_t val)
 {

@@ -44,6 +44,8 @@
 #define kFITSRW_Type_Integer 'I'
 #define kFITSRW_Type_Float 'F'
 
+typedef void *FITSRW_fhandle;
+
 #ifdef __FOR_LOW_LEVEL_TEST_PROGRAMS__
 // defined them here for low level test programs like "testcopy.c" "testimages.c"
 const unsigned int kInfoPresent_SIMPLE;
@@ -103,11 +105,14 @@ typedef	struct cfitsio_image_info
 //****************************************************************************
 // drms_segment() call only these functions
 
+int fitsrw_read_keylist_and_image_info(FITSRW_fhandle fhandle, 
+                                       CFITSIO_KEYWORD** keylistout, 
+                                       CFITSIO_IMAGE_INFO** image_info);
+
 int cfitsio_read_file(char* fits_filename,
 		      CFITSIO_IMAGE_INFO** image_info,
 		      void** image, 
 		      CFITSIO_KEYWORD** keylist);
-
 
 int cfitsio_write_file(const char* fits_filename,
 		       CFITSIO_IMAGE_INFO* info,
@@ -118,7 +123,6 @@ int cfitsio_write_file(const char* fits_filename,
 void cfitsio_free_these(CFITSIO_IMAGE_INFO** image_info,
 			void** image, 
 			CFITSIO_KEYWORD** keylist);
-
 
 int cfitsio_append_key(CFITSIO_KEYWORD** keylist, 
 			char *name, 

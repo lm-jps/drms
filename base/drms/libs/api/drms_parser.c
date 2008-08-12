@@ -267,10 +267,13 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
   char type[DRMS_MAXNAMELEN]={0}, naxis[24]={0}, axis[24]={0}, protocol[DRMS_MAXNAMELEN]={0};
   char cparms[DRMS_MAXCPARMS]={0};
   char unit[DRMS_MAXUNITLEN]={0};
+  char bzero[64]; /* for TAS, default scale */
+  char bscale[64]; /* for TAS, default scale */
   DRMS_Segment_t *seg;
 
   /* This function contains code that is conditional on series version. */
-  DRMS_SeriesVersion_t vers = {"2.0", ""};
+  DRMS_SeriesVersion_t vers2_0 = {"2.0", ""};
+  DRMS_SeriesVersion_t vers2_1 = {"2.1", ""};
 
   p = q = *in;
   SKIPWS(p);
@@ -309,7 +312,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
       }
 
     /* Version was already parsed from jsd at this point. */
-    if (drms_series_isvers(template->seriesinfo, &vers))
+    if (drms_series_isvers(template->seriesinfo, &vers2_0))
     {
      /* Create a cparms_sgXXX keyword for each segment.  It will save 
       * the compression-parameters string. */
@@ -332,11 +335,14 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
        cpkey->info->type = DRMS_TYPE_STRING;
 
        /* By default, cpkey->value.string_val is NULL - set it to the empty string */
-       drms_sscanf("", cpkey->info->type, &cpkey->value);
+       drms_sscanf_str("", &cpkey->value);
 
        if (strlen(cparms) > 0 && strcasecmp(cparms, "none"))
        {
-	  chused = drms_sscanf(cparms, cpkey->info->type, &cpkey->value);
+          /* drms_sscanf has a bug - the string cannot contain commas.  But
+           * there are many places in the code that rely upon this bad behavior.
+           * So, don't use sscanf here - do something special for strings. */
+	  chused = drms_sscanf_str(cparms, &cpkey->value);
 	  if (chused < 0)
 	    goto failure;
        }
@@ -383,60 +389,148 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
     strcpy(seg->info->unit, unit);
     if (gettoken(&q,protocol,sizeof(protocol)) <= 0) goto failure;
     seg->info->protocol = drms_str2prot(protocol);
-    if (seg->info->protocol == DRMS_TAS)
-      {
-	/* Tile sizes */
-	for (i=0; i<seg->info->naxis; i++)
-	  {
-	    if (gettoken(&q,axis,sizeof(axis)) <= 0) goto failure;
-	    seg->blocksize[i] = atoi(axis);
-	  }
-      }
 
-    /* Version was already parsed from jsd at this point. */
-    if (drms_series_isvers(template->seriesinfo, &vers))
+    if (!drms_series_isvers(template->seriesinfo, &vers2_0))
     {
-       /* Create a cparms_sgXXX keyword for each segment.  It will save 
-	* the compression-parameters string. */
-       char buf[DRMS_MAXKEYNAMELEN];
-
-       if (gettoken(&q,cparms,sizeof(cparms)) <= 0) goto failure;
-       snprintf(buf, sizeof(buf), "cparms_sg%03d", segnum);
-
-       DRMS_Keyword_t *cpkey = calloc(1, sizeof(DRMS_Keyword_t));
-       XASSERT(cpkey);
-       int chused = 0;
-
-       XASSERT(cpkey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
-       snprintf(cpkey->info->name, DRMS_MAXKEYNAMELEN, "%s", buf);
-       cpkey->record = template;
-       cpkey->info->per_segment = 0; /* don't do this, otherwise the _000 gets stripped off */
-       cpkey->info->islink = 0;
-       cpkey->info->linkname[0] = 0;
-       cpkey->info->target_key[0] = 0;
-       cpkey->info->type = DRMS_TYPE_STRING;
-
-       /* By default, cpkey->value.string_val is NULL - set it to the empty string */
-       drms_sscanf("", cpkey->info->type, &cpkey->value);
-
-       if (strlen(cparms) > 0 && strcasecmp(cparms, "none"))
+       /* .jsd is pre-version 2.0 */
+       if (seg->info->protocol == DRMS_TAS)
        {
-	  chused = drms_sscanf(cparms, cpkey->info->type, &cpkey->value);
-	  if (chused < 0)
-	    goto failure;
-       }
-
-       snprintf(cpkey->info->format, DRMS_MAXFORMATLEN, "%s", "%s");
-       snprintf(cpkey->info->unit, DRMS_MAXUNITLEN, "%s", "none");
-       cpkey->info->recscope = kRecScopeType_Variable;
-       snprintf(cpkey->info->description, DRMS_MAXCOMMENTLEN, "%s", "");
-       cpkey->info->isdrmsprime = 0;
-
-       if (cparmkeys)
-       {
-	  hcon_insert(cparmkeys, buf, &cpkey);
+          /* Tile sizes */
+          for (i=0; i<seg->info->naxis; i++)
+          {
+             if (gettoken(&q,axis,sizeof(axis)) <= 0) goto failure;
+             seg->blocksize[i] = atoi(axis);
+          }
        }
     }
+    else
+    {
+       /* .jsd is version 2.0 or greater */
+       if ((seg->info->protocol == DRMS_FITS || 
+            seg->info->protocol == DRMS_FITZ || 
+            seg->info->protocol == DRMS_TAS))
+       {
+          /* Create a cparms_sgXXX keyword for each segment.  It will save 
+           * the compression-parameters string. */
+
+          /* If this is TAS, then right after the tas identifier and before the comment 
+           * should come a single string  that is the FITSIO compression string 
+           * (eg., "compress Rice 128,192"). 
+           */
+          char buf[DRMS_MAXKEYNAMELEN];
+
+          if (gettoken(&q,cparms,sizeof(cparms)) <= 0) goto failure;
+          snprintf(buf, sizeof(buf), "cparms_sg%03d", segnum);
+
+          DRMS_Keyword_t *cpkey = calloc(1, sizeof(DRMS_Keyword_t));
+          XASSERT(cpkey);
+          int chused = 0;
+
+          XASSERT(cpkey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
+          snprintf(cpkey->info->name, DRMS_MAXKEYNAMELEN, "%s", buf);
+          cpkey->record = template;
+          cpkey->info->per_segment = 0; /* don't do this, otherwise the _000 gets stripped off */
+          cpkey->info->islink = 0;
+          cpkey->info->linkname[0] = 0;
+          cpkey->info->target_key[0] = 0;
+          cpkey->info->type = DRMS_TYPE_STRING;
+
+          /* By default, cpkey->value.string_val is NULL - set it to the empty string */
+          drms_sscanf_str("", &cpkey->value);
+
+          if (strlen(cparms) > 0 && strcasecmp(cparms, "none"))
+          {
+             /* drms_sscanf has a bug - the string cannot contain commas.  But
+              * there are many places in the code that rely upon this bad behavior.
+              * So, don't use sscanf here - do something special for strings. */
+             chused = drms_sscanf_str(cparms, &cpkey->value);
+             if (chused < 0)
+               goto failure;
+          }
+
+          snprintf(cpkey->info->format, DRMS_MAXFORMATLEN, "%s", "%s");
+          snprintf(cpkey->info->unit, DRMS_MAXUNITLEN, "%s", "none");
+          cpkey->info->recscope = kRecScopeType_Variable;
+          snprintf(cpkey->info->description, DRMS_MAXCOMMENTLEN, "%s", "");
+          cpkey->info->isdrmsprime = 0;
+
+          if (cparmkeys)
+          {
+             hcon_insert(cparmkeys, buf, &cpkey);
+          }
+       } /* FITS, FITZ, or TAS */
+    } /* 2.0 */
+    
+    if (drms_series_isvers(template->seriesinfo, &vers2_1))
+    {
+       if (seg->info->protocol == DRMS_TAS || 
+           seg->info->protocol == DRMS_FITS ||
+           seg->info->protocol == DRMS_FITZ)
+       {
+          /* Must create bzero and bscale keywords for all TAS and FITS files. */
+          if (gettoken(&q, bzero, sizeof(bzero)) <= 0) goto failure;
+          if (gettoken(&q, bscale, sizeof(bscale)) <= 0) goto failure;
+
+          char buf[DRMS_MAXKEYNAMELEN];
+          snprintf(buf, sizeof(buf), "%s_bzero", name);
+
+          DRMS_Keyword_t *sckey = calloc(1, sizeof(DRMS_Keyword_t));
+          XASSERT(sckey);
+
+          XASSERT(sckey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
+          snprintf(sckey->info->name, DRMS_MAXKEYNAMELEN, "%s", buf);
+          sckey->record = template;
+          sckey->info->per_segment = 0; 
+          sckey->info->islink = 0;
+          sckey->info->linkname[0] = 0;
+          sckey->info->target_key[0] = 0;
+          sckey->info->type = DRMS_TYPE_DOUBLE;
+          drms_sscanf(bzero, DRMS_TYPE_DOUBLE, &(sckey->value));
+          snprintf(sckey->info->format, DRMS_MAXFORMATLEN, "%s", "%f");
+          snprintf(sckey->info->unit, DRMS_MAXUNITLEN, "%s", "none");
+          sckey->info->recscope = kRecScopeType_Variable;
+          snprintf(sckey->info->description, DRMS_MAXCOMMENTLEN, "%s", "");
+          sckey->info->isdrmsprime = 0;
+
+          /* Although this container was originally used for holding 
+           * the comp params for FITS, it is now being used for
+           * holding TAS bzero/bscale keywords too.
+           */
+          if (cparmkeys)
+          {
+             hcon_insert(cparmkeys, buf, &sckey);
+          }
+
+          snprintf(buf, sizeof(buf), "%s_bscale", name);
+
+          sckey = calloc(1, sizeof(DRMS_Keyword_t));
+          XASSERT(sckey);
+
+          XASSERT(sckey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
+          snprintf(sckey->info->name, DRMS_MAXKEYNAMELEN, "%s", buf);
+          sckey->record = template;
+          sckey->info->per_segment = 0; 
+          sckey->info->islink = 0;
+          sckey->info->linkname[0] = 0;
+          sckey->info->target_key[0] = 0;
+          sckey->info->type = DRMS_TYPE_DOUBLE;
+          drms_sscanf(bscale, DRMS_TYPE_DOUBLE, &(sckey->value));
+          snprintf(sckey->info->format, DRMS_MAXFORMATLEN, "%s", "%f");
+          snprintf(sckey->info->unit, DRMS_MAXUNITLEN, "%s", "none");
+          sckey->info->recscope = kRecScopeType_Variable;
+          snprintf(sckey->info->description, DRMS_MAXCOMMENTLEN, "%s", "");
+          sckey->info->isdrmsprime = 0;
+
+          /* Although this container was originally used for holding 
+           * the comp params for FITS, it is now being used for
+           * holding TAS bzero/bscale keywords too.
+           */
+          if (cparmkeys)
+          {
+             hcon_insert(cparmkeys, buf, &sckey);
+          }
+       } /* TAS, FITS, or FITSZ */
+    } /* 2.1 */
 
     if (getstring(&q,seg->info->description,sizeof(seg->info->description))<0) goto failure;
   }
@@ -1452,7 +1546,17 @@ static int parse_keyword(char **in,
       key->info->linkname[0] = 0;
       key->info->target_key[0] = 0;
       key->info->type = drms_str2type(type);
-      chused = drms_sscanf(defval, key->info->type, &key->value);
+      if (key->info->type == DRMS_TYPE_STRING)
+      {
+         /* drms_sscanf has a bug - the string cannot contain commas.  But
+          * there are many places in the code that rely upon this bad behavior.
+          * So, don't use sscanf here - do something special for strings. */
+         chused = drms_sscanf_str(defval, &key->value);
+      }
+      else
+      {
+         chused = drms_sscanf(defval, key->info->type, &key->value);
+      }
       if (chused < 0 || (chused == 0 && key->info->type != DRMS_TYPE_STRING))
 	goto failure;
 #ifdef DEBUG      

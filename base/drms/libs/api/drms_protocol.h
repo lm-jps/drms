@@ -81,4 +81,6 @@ typedef struct DRMS_TASSpecific_struct {
 DRMS_Protocol_t drms_str2prot(const char *str);
 const char *drms_prot2str(DRMS_Protocol_t prot);
 const char *drms_prot2ext (DRMS_Protocol_t prot);
+void drms_protocol_term();
+
 #endif

@@ -26,11 +26,6 @@ const unsigned int kInfoPresent_BLANK  = 0x00000004;
 const unsigned int kInfoPresent_BSCALE = 0x00000008;
 const unsigned int kInfoPresent_BZERO  = 0x00000010;
 
-int cfitsio_read_keylist_and_image_info(fitsfile* fptr,
-					CFITSIO_KEYWORD** keylist,
-					CFITSIO_IMAGE_INFO** image_info);
-
-
 /* Half-assed - just enough to get past a bug.  Should really check that the value
  * doesn't fall outside the range of the destination type.
  */
@@ -577,7 +572,7 @@ int cfitsio_free_image_info(CFITSIO_IMAGE_INFO** image_info)
 
 /* If can return both keylistout and image_info, and there are conflicting values, then
  * must remove conflicting values from keylistout. */
-int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD** keylistout, CFITSIO_IMAGE_INFO** image_info)
+static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD** keylistout, CFITSIO_IMAGE_INFO** image_info)
 {
 
    char card[FLEN_CARD];
@@ -849,6 +844,12 @@ error_exit:
 
 }
 
+int fitsrw_read_keylist_and_image_info(FITSRW_fhandle fhandle, 
+                                       CFITSIO_KEYWORD** keylistout, 
+                                       CFITSIO_IMAGE_INFO** image_info)
+{
+   return cfitsio_read_keylist_and_image_info((fitsfile *)fhandle, keylistout, image_info);
+}
 
 //****************************************************************************
 
@@ -940,8 +941,6 @@ int cfitsio_read_file(char* fits_filename,
 
    if(fits_read_img(fptr, data_type, 1, npixels, NULL, pixels, NULL, &status))
    {
-      fits_get_errstatus(status, cfitsiostat);
-      fprintf(stderr, "cfitsio error '%s'.\n", cfitsiostat);
       error_code = CFITSIO_ERROR_LIBRARY; 
       goto error_exit;
    }
@@ -1006,6 +1005,9 @@ int cfitsio_read_file(char* fits_filename,
 
 error_exit:
 
+   fits_get_errstatus(status, cfitsiostat);
+   fprintf(stderr, "cfitsio error '%s'.\n", cfitsiostat);
+
    cfitsio_free_these(image_info, &pixels, keylist);
    
    if(fptr) fits_close_file(fptr, &status);
@@ -1068,13 +1070,15 @@ int cfitsio_write_file(const char* fits_filename,
    char card[FLEN_CARD];
    int  data_type;
    int img_type;
+   char cfitsiostat[FLEN_STATUS];
+   long long oblank = 0;
 
-   long	npixels;
+   long	long npixels;
 
    int i = 0;
 
    // image_info contain the image dimensions, can not be missing
-   if(image_info == NULL) return CFITSIO_ERROR_ARGS;
+   if(image_info == NULL || image == NULL) return CFITSIO_ERROR_ARGS;
    
    
    for (i = 0, npixels = 1; i < image_info->naxis; i++)
@@ -1098,11 +1102,6 @@ int cfitsio_write_file(const char* fits_filename,
 
    if (compspec && *compspec)
    {
-      if (data_type == TLONGLONG)
-      {
-	 fprintf(stderr, "CFITSIO doesn't support compression of 64-bit data.\n");
-	 goto error_exit;
-      }
       snprintf(filename, sizeof(filename), "%s[%s]", fits_filename, compspec);
    }
    else
@@ -1124,6 +1123,24 @@ int cfitsio_write_file(const char* fits_filename,
       goto error_exit;
    }
 
+   if (fits_is_compressed_image(fptr, &status))
+   {
+      /* Disallow unsupported types of tile-compressed files */
+      if (data_type == TLONGLONG)
+      {
+         fprintf(stderr, "CFITSIO doesn't support compression of 64-bit data.\n");
+	 goto error_exit;
+      }
+      else if (data_type == TFLOAT || data_type == TDOUBLE)
+      {
+         fprintf(stderr, "CFITSIO compression of floating-point data is lossy, bailing.\n");
+         goto error_exit;
+      }
+   }
+   else if (status)
+   {
+      goto error_exit;
+   }
    
    // keylist is optional. It is avaible only for export 
    if (keylist)
@@ -1158,7 +1175,7 @@ int cfitsio_write_file(const char* fits_filename,
     */
    if (image_info->bitfield & kInfoPresent_BLANK)
    {
-      long long oblank = (long long)image_info->blank;
+      oblank = (long long)image_info->blank;
 
       if (image_info->bitpix == BYTE_IMG)
       {
@@ -1209,22 +1226,23 @@ int cfitsio_write_file(const char* fits_filename,
 						 * lines of code above to scale the data. */
    }
 
-   fits_set_imgnull(fptr, 0, &status);
-   /* Don't convert any value to missing -
-					 * just write all values as is.  If you
-					 * put something other than 0 here, 
-					 * cfitsio converts whatever you specify 
-					 * to whatever you've defined as BLANK with
-					 * the BLANK keyword. If you omit this function
-					 * call, then cfitsio will use the BLANK keyword
-					 * that you set a few lines of code above to 
-					 * modify the data. */
+   fits_set_imgnull(fptr, 0, &status); /* Don't convert any value to missing -
+                                        * just write all values as is.  If you
+                                        * put something other than 0 here, 
+                                        * cfitsio converts whatever you specify 
+                                        * to whatever you've defined as BLANK with
+                                        * the BLANK keyword. If you omit this function
+                                        * call, then cfitsio will use the BLANK keyword
+                                        * that you set a few lines of code above to 
+                                        * modify the data. */
    
+  
    if(fits_write_img(fptr, data_type, 1, npixels, image, &status))
    {
       error_code = CFITSIO_ERROR_LIBRARY;
       goto error_exit;
    }
+  
 	
    fits_close_file(fptr, &status);
 
@@ -1232,8 +1250,9 @@ int cfitsio_write_file(const char* fits_filename,
 
 
   error_exit:
-   
-   cfitsio_print_error(status);
+
+   fits_get_errstatus(status, cfitsiostat);
+   fprintf(stderr, "cfitsio error '%s'.\n", cfitsiostat);
    if(fptr) fits_close_file(fptr, &status);
    return error_code;
 }

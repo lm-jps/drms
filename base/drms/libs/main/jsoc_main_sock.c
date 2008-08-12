@@ -180,6 +180,15 @@ int JSOCMAIN_Term(int dolog, int verbose, pid_t drms_server_pid, pid_t tee_pid, 
 #ifdef DEBUG
    printf ("Module %s returned with status = %d\n", mn, abort_flag);
 #endif
+
+   /* This will close all fitsfile pointers, saving changes to the underlying fits files. 
+    * This must be done in the module process as that is the process that maintains the
+    * list of open fitsfiles (see drms_server_commit() for more information). */
+   if (!abort_flag)
+   {
+      drms_fitsrw_term();
+   }
+
    /* DRMS Epilog:
       If abort_flag=0 all data records created by this module are inserted
       into the database and will become permanent at the next session commit.

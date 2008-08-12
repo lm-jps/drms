@@ -1038,6 +1038,7 @@ struct DRMS_Segment_struct {
   struct DRMS_Record_struct *record; 
   /** \brief Contains attributes common to all records in a series */
   DRMS_SegmentInfo_t *info;
+  /* For TAS, filename will be constant across records. */
   /** \brief Storage file name  */
   char filename[DRMS_MAXSEGFILENAME];
   /** \brief Size of each dimension */
@@ -1045,6 +1046,11 @@ struct DRMS_Segment_struct {
   /** \brief Block sizes for TAS storage */
   int blocksize[DRMS_MAXRANK];
   char cparms[DRMS_MAXCPARMS];
+  /* For TAS, the values of bzero and bscale of each record MUST match the FITS header's values. */
+  /** \brief Data scaling offset */
+  double bzero;
+  /** \brief Data scaling factor */
+  double bscale;
 };
 
 /** \brief DRMS segment struct reference */
@@ -1124,6 +1130,7 @@ int drms_sscanf_int (char *str,
 		     DRMS_Type_Value_t *dst,
 		     int silent);
 int drms_sscanf(char *str, DRMS_Type_t dsttype, DRMS_Type_Value_t *dst);
+int drms_sscanf_str(char *str, DRMS_Type_Value_t *dst);
 
 /* Scalar conversion functions. */
 int drms_convert(DRMS_Type_t dsttype, DRMS_Type_Value_t *dst, 

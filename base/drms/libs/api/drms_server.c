@@ -12,6 +12,7 @@
 #endif
 #include <dirent.h>
 #include "printk.h"
+#include "drms_fitsrw.h"
 
 /******************* Main server thread(s) functions ************************/
 
@@ -433,11 +434,26 @@ void drms_server_commit(DRMS_Env_t *env, int final)
   /* Commit (SUM_put) all storage units to SUMS. */
   if (env->verbose)
     printf("Commiting changes to SUMS.\n");
+
+  /* Must close fitsrw open fitsfiles before calling drms_commit_all_units(). The latter
+   * call makes the SUMS directories read-only. Since the fitsfiles are pointers to files
+   * in SUMS, calling drms_fitsrw_term() after drms_commit_all_units() will fail. This is
+   * only for direct-connect modules. For such modules, the process which contains the 
+   * drms_server_commit() call is the same one that created the list of open fitsfiles (the module's process).
+   * For indirect-connect modules (sock modules), the process that executes drms_server_commit()
+   * is drms_server. So, for indirect-connect modules, you have to have the module process call 
+   * drms_fitsrw_term(), right before it terminates. */
+  if (env->session->db_direct == 1)
+  {
+     drms_fitsrw_term();
+  }
+
   log_retention = drms_commit_all_units(env, &archive_log);  
 
   /* Unregister session */
   if (env->verbose)
     printf("Unregistering DRMS session.\n");
+
   drms_server_close_session(env, "finished", 0, log_retention, archive_log);
 
   if (env->sum_thread) {
