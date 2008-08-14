@@ -137,7 +137,39 @@ const char *drms_keyword_getrecscopestr(DRMS_Keyword_t *key, int *status);
 DRMS_SlotKeyUnit_t drms_keyword_getslotunit(DRMS_Keyword_t *key, int *status);
 static inline int drms_keyword_getperseg(DRMS_Keyword_t *key)
 {
-   return key->info->per_segment;
+   return ((key->info->kwflags & kKeywordFlag_PerSegment) != 0);
+}
+static inline void drms_keyword_setperseg(DRMS_Keyword_t *key)
+{
+   key->info->kwflags |= kKeywordFlag_PerSegment;
+}
+static inline void drms_keyword_unsetperseg(DRMS_Keyword_t *key)
+{
+   key->info->kwflags &= ~kKeywordFlag_PerSegment;
+}
+static inline int drms_keyword_getintprime(DRMS_Keyword_t *key)
+{
+   return ((key->info->kwflags & kKeywordFlag_InternalPrime) != 0);
+}
+static inline void drms_keyword_setintprime(DRMS_Keyword_t *key)
+{
+   key->info->kwflags |= kKeywordFlag_InternalPrime;
+}
+static inline void drms_keyword_unsetintprime(DRMS_Keyword_t *key)
+{
+   key->info->kwflags &= ~kKeywordFlag_InternalPrime;
+}
+static inline int drms_keyword_getextprime(DRMS_Keyword_t *key)
+{
+   return ((key->info->kwflags & kKeywordFlag_ExternalPrime) != 0);
+}
+static inline void drms_keyword_setextprime(DRMS_Keyword_t *key)
+{
+   key->info->kwflags |= kKeywordFlag_ExternalPrime;
+}
+static inline void drms_keyword_unsetextprime(DRMS_Keyword_t *key)
+{
+   key->info->kwflags &= ~kKeywordFlag_ExternalPrime;
 }
 DRMS_SlotKeyUnit_t drms_keyword_getunit(DRMS_Keyword_t *key, int *status);
 TIME drms_keyword_getslotepoch(DRMS_Keyword_t *key, int *status);

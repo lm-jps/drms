@@ -240,7 +240,12 @@ int drms_insert_series(DRMS_Session_t *session, int update,
 #ifdef DEBUG
     printf("keyword '%s'\n",key->info->name);
 #endif
-    if (key->info->per_segment)
+
+    /* key->info->per_segment overload: This will work on <= drms_series.c:1.23 because
+     * in that version of DRMS, the version of drms_parser.c will not have the 
+     * code that overloads key->info->per_segment.
+     */
+    if (drms_keyword_getperseg(key))
     {
       len = strlen(key->info->name);
       if (strcmp(key->info->name+len-4,"_000"))
@@ -266,6 +271,11 @@ int drms_insert_series(DRMS_Session_t *session, int update,
 				       0) < DRMS_DEFVAL_MAXLEN));
     }
 
+    /* The persegment column used to be either 0 or 1 and it said whether the keyword
+     * was a segment-specific column or not.  But starting with series version 2.1, 
+     * the persegment column was overloaded to hold all the keyword flags (including
+     * per_seg).  So, the following code works on both < 2.1 series and >= 2.1 series.
+     */
     if (drms_dmsv(session, NULL, "insert into " DRMS_MASTER_KEYWORD_TABLE
 		  "(seriesname, keywordname, linkname, targetkeyw, type, "
 		  "defaultval, format, unit, description, islink, "
@@ -278,10 +288,14 @@ int drms_insert_series(DRMS_Session_t *session, int update,
 		  DB_STRING, key->info->format, DB_STRING, key->info->unit,
 		  DB_STRING, key->info->description,
 		  DB_INT4, key->info->islink,DB_INT4, key->info->recscope, 
-		  DB_INT4, key->info->per_segment))
+		  DB_INT4, key->info->kwflags))
       goto failure;
 
-    if (key->info->per_segment)
+    /* key->info->per_segment overload: This will work on <= drms_series.c:1.23 because
+     * in that version of DRMS, the version of drms_parser.c will not have the 
+     * code that overloads key->info->per_segment.
+     */
+    if (drms_keyword_getperseg(key))
       key->info->name[len-4] = '_';
 
   }
@@ -639,7 +653,7 @@ static int drms_series_intpkeysmatch(DRMS_Record_t *recTemp1,
 	    {
 	       if (key1->info->type != key2->info->type ||
 		   key1->info->recscope != key2->info->recscope ||
-		   key1->info->per_segment != key2->info->per_segment)
+                   drms_keyword_getperseg(key1) != drms_keyword_getperseg(key2))
 	       {
 		  break;
 	       }

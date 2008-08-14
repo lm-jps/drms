@@ -633,6 +633,47 @@ enum DRMS_PrimeKeyType_enum
 
 typedef enum DRMS_PrimeKeyType_enum DRMS_PrimeKeyType_t;
 
+enum DRMS_KeywordFlag_enum
+{
+   /* If per_segment == 1 then this keyword is one 
+      of a set of keywords and pertains to a single 
+      segment in the record. If the keyword name is 
+      "blah" then keywords in this set are
+      "blah[0]", "blah[1]", etc. */
+   kKeywordFlag_PerSegment      = 0x00000001,
+
+   /* Certain keywords are not specified in the .jsd, but instead are created
+    * as a consequence of the presence of other keywords/segments/links in the 
+    * .jsd.  These keywords are known as "implicit" keywords as they are implicitly
+    * created.  They are part of a record's "keywords" container, but they shouldn't
+    * be part of any .jsd 
+    */
+   kKeywordFlag_Implicit        = 0x00000002,
+   /* There are 3 kinds of primary indices:
+    * 1. The psql primary index 
+    * 2. The DRMS-internal primary index 
+    * 3. The DRMS-external primary index 
+    * 
+    * The first is what psql uses in the series tables to determine row uniqueness.
+    * The second is what DRMS uses in its psql queries to uniquely find a DRMS record.
+    * The third is what a module calling into DRMS uses as the primary key.  An 
+    * example with slotted keys will make this clear.  Suppose there are two keywords
+    * in a series, TOBS and TOBS_index, where TOBS is slotted, and TOBS_index is the 
+    * associated index keyword.  The DRMS-external primary index is (TOBS).  The user
+    * simply provides a time string to uniquely find a record.  The DRMS-internal primary 
+    * index is (TOBS_index).  DRMS will query psql by specifying an index value in 
+    * the psql query (psql may return more than one record, but DRMS will then take
+    * the one with maximum recnum).  The psql primary index is (recnum, TOBS_index).
+    *
+    * Each series has a pidx_keywords field which identifies the
+    * DRMS-internal primary index.
+    */
+   kKeywordFlag_InternalPrime   = 0x00000004,
+   kKeywordFlag_ExternalPrime   = 0x00000008
+};
+
+typedef enum DRMS_KeywordFlag_enum DRMS_KeywordFlag_t;
+
 typedef struct  DRMS_KeywordInfo_struct
 {
   char name[DRMS_MAXKEYNAMELEN];         /* Keyword name. */
@@ -660,16 +701,13 @@ typedef struct  DRMS_KeywordInfo_struct
 				   * that the value of the keyword is
 				   * placed into a slot (eg, rounded down)
 				   * before being placed into the database. */
-  int per_segment;                /* If per_segment=1 then this keyword has the
-                                     has a different for each segment belonging
-                                     to the record. If the keyword name is 
-                                     "blah" then keywords pertaining to specific
-                                     segments are referred to by "blah[0]",
-                                     "blah[1]", etc. */
-  /** \brief Indicates if this keyword is a DRMS primary keyword. 
-   *  If 1, then the keyword is DRMS prime; otherwise, it is not prime.
-   */
-  int isdrmsprime;
+
+  int kwflags;                    /* See DRMS_KeywordFlag_enum for the definitions
+                                   * of these flags.  These flags are stored as bits
+                                   * of a 32-bit integer, and saved in psql as
+                                   * the "persegment" column in the "drm_keyword"
+                                   * table.
+                                   */
 } DRMS_KeywordInfo_t;
 
 /**

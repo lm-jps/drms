@@ -695,7 +695,7 @@ static void SetRecordProtoPKeys(DRMS_Record_t *template,
       if (pkey != NULL)
       {
 	 template->seriesinfo->pidx_keywords[ikey] = pkey;
-	 pkey->info->isdrmsprime = 1;
+         drms_keyword_setintprime(pkey);
       }
       else
       {
@@ -3176,6 +3176,12 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
     template->seriesinfo->retention = db_binary_field_getint(qres, 0, 6);
     template->seriesinfo->tapegroup = db_binary_field_getint(qres, 0, 7);
 
+    /* Need the version early on, so go out of order. */
+    if ( !db_binary_field_is_null(qres, 0, 10) ) {
+       db_binary_field_getstr(qres, 0, 10, DRMS_MAXSERIESVERSION, 
+			      template->seriesinfo->version);
+    }
+
     /* Populate series info segments, keywords, and links part */
     if ((stat=drms_template_segments(template)))
       goto bailout;
@@ -3208,9 +3214,29 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
 #endif
 	kw = hcon_lookup_lower(&template->keywords,q);
 	XASSERT(kw);
+
 	template->seriesinfo->pidx_keywords[(template->seriesinfo->pidx_num)++] =
 	kw; 
-	kw->info->isdrmsprime = 1;
+
+        /* For vers 2.1 and greater, slotted key intprime and extprime are stored in 
+         * the persegment field of the drms_keyword table. For earlier versions, 
+         * all series' primary index keywords are intprime, and index keywords 
+         * (for time slotting) are all extprime. And anything that is not an
+         * index keyword is extprime.
+         */
+        if (!drms_series_isvers(template->seriesinfo, &vers2_1))
+        {
+           drms_keyword_setintprime(kw);
+           if (drms_keyword_isindex(kw))
+           {
+              DRMS_Keyword_t *slotkey = drms_keyword_slotfromindex(kw);
+              drms_keyword_setextprime(slotkey);
+           }
+           else
+           {
+              drms_keyword_setextprime(kw);
+           }
+        }
       }
 #ifdef DEBUG
       { int i;
@@ -3258,11 +3284,6 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
 #endif
     } else {
       template->seriesinfo->dbidx_num = 0;
-    }
-
-    if ( !db_binary_field_is_null(qres, 0, 10) ) {
-       db_binary_field_getstr(qres, 0, 10, DRMS_MAXSERIESVERSION, 
-			      template->seriesinfo->version);
     }
 
     /* Use the implicit, per-segment, keyword variables, cparms_sgXXX to populate the segment 

@@ -293,8 +293,9 @@ void drms_keyword_fprint(FILE *keyfile, DRMS_Keyword_t *key)
     fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "unit", key->info->unit);
     fprintf(keyfile, "\t%-*s:\t'%s'\n", fieldwidth, "description", key->info->description);
     fprintf(keyfile, "\t%-*s:\t%d\n", fieldwidth, "recordscope", (int)key->info->recscope);
-    fprintf(keyfile, "\t%-*s:\t%d\n", fieldwidth, "per_segment", key->info->per_segment);
-    fprintf(keyfile, "\t%-*s:\t%d\n", fieldwidth, "isprime", (int)key->info->isdrmsprime);
+    fprintf(keyfile, "\t%-*s:\t%d\n", fieldwidth, "per_segment", drms_keyword_getperseg(key));
+    fprintf(keyfile, "\t%-*s:\t%d\n", fieldwidth, "intprime", drms_keyword_getintprime(key));
+    fprintf(keyfile, "\t%-*s:\t%d\n", fieldwidth, "extprime", drms_keyword_getextprime(key));
     fprintf(keyfile, "\t%-*s:\t",fieldwidth,"value");
   
     drms_keyword_fprintval(keyfile, key);
@@ -413,6 +414,8 @@ int  drms_template_keywords(DRMS_Record_t *template)
   DRMS_Keyword_t *key;
   DB_Binary_Result_t *qres;
 
+  DRMS_SeriesVersion_t vers2_1 = {"2.1", ""};
+
   env = template->env;
   /* Initialize container structure. */
   hcon_init(&template->keywords, sizeof(DRMS_Keyword_t), DRMS_MAXHASHKEYLEN, 
@@ -438,11 +441,15 @@ int  drms_template_keywords(DRMS_Record_t *template)
   num_segments = hcon_size(&template->segments);
   for (i = 0; i<(int)qres->num_rows; i++)
   {
-    per_segment  = db_binary_field_getint(qres, i, 9);
+    per_segment = ((db_binary_field_getint(qres, i, 9) & kKeywordFlag_PerSegment) != 0);
     for (seg=0; seg<(per_segment==1?num_segments:1); seg++)
     {
       /* Construct name, possibly by appending segment selector. */
       db_binary_field_getstr(qres, i, 0, sizeof(name0), name0);
+
+      /* key->info->per_segment overload: <= drms_keyword.c:1.44 will fail here if the the value in 
+       * the persegment column of the drms_keyword table has been overloaded to contain 
+       * all the keyword bit-flags. */
       if (per_segment)
 	sprintf(name,"%s_%03d",name0,seg);
       else
@@ -473,8 +480,23 @@ int  drms_template_keywords(DRMS_Record_t *template)
 	db_binary_field_getstr(qres, i, 6, sizeof(key->info->format),  key->info->format);
 	db_binary_field_getstr(qres, i, 7, sizeof(key->info->unit), key->info->unit);
 	key->info->recscope = (DRMS_RecScopeType_t)db_binary_field_getint(qres, i, 8);
-	key->info->per_segment  = db_binary_field_getint(qres, i, 9);
-	key->info->isdrmsprime = 0;
+
+        /* The persegment column used to be either 0 or 1 and it said whether the keyword
+         * was a segment-specific column or not.  But starting with series version 2.1, 
+         * the persegment column was overloaded to hold all the keyword flags (including
+         * per_seg).  So, the following code works on both < 2.1 series and >= 2.1 series.
+         */
+        key->info->kwflags = db_binary_field_getint(qres, i, 9);
+
+        /* For vers 2.1 and greater, the persegment column contains the intprime and extprime 
+         * information.  But for older versions, you can figure this out by looking 
+         * at the series' primary index keywords (in drms_template_record()) and knowing
+         * whether a primary index keyword is an index keyword (in the time-slotting sense). */
+        if (!drms_series_isvers(template->seriesinfo, &vers2_1))
+        {
+           drms_keyword_unsetintprime(key);
+           drms_keyword_unsetextprime(key);
+        }
       }
       else
       {
@@ -485,8 +507,9 @@ int  drms_template_keywords(DRMS_Record_t *template)
 	key->info->format[0] = 0;
 	key->info->unit[0] = 0;
 	key->info->recscope = kRecScopeType_Variable;
-	key->info->per_segment = 0;
-	key->info->isdrmsprime = 0;
+        drms_keyword_unsetperseg(key);
+        drms_keyword_unsetintprime(key);
+        drms_keyword_unsetextprime(key);
       }
 
       /* perform an amazing switcheroo - per Phil, existing series 
@@ -725,9 +748,9 @@ int drms_keyword_keysmatch(DRMS_Keyword_t *k1, DRMS_Keyword_t *k2)
 	     strcmp(key1->unit, key2->unit) == 0 &&
 	     strcmp(key1->description, key2->description) == 0 &&
 	     key1->recscope == key2->recscope &&
-	     key1->per_segment == key2->per_segment &&
-	     key1->isdrmsprime == key2->isdrmsprime);
-
+             drms_keyword_getperseg(k1) == drms_keyword_getperseg(k2) &&
+             drms_keyword_getintprime(k1) == drms_keyword_getintprime(k2) &&
+             drms_keyword_getextprime(k1) == drms_keyword_getextprime(k2));
   
       ret = (ret && (strcmp(exp1, exp2) == 0));
    }
@@ -1360,7 +1383,7 @@ int drms_copykey(DRMS_Record_t *target, DRMS_Record_t *source, const char *key)
 
 int drms_keyword_getsegscope(DRMS_Keyword_t *key)
 {
-   return key->info->per_segment;
+   return drms_keyword_getperseg(key);
 }
 
 DRMS_RecScopeType_t drms_keyword_getrecscope(DRMS_Keyword_t *key)
@@ -1505,7 +1528,7 @@ int drms_keyword_isslotted(DRMS_Keyword_t *key)
 
 int drms_keyword_isprime(DRMS_Keyword_t *key)
 {
-   return (key->info->isdrmsprime == 1);
+   return drms_keyword_getintprime(key);
 }
 
 DRMS_Type_t drms_keyword_gettype(DRMS_Keyword_t *key)

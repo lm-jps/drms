@@ -319,6 +319,10 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
        char buf[DRMS_MAXKEYNAMELEN];
 
        if (gettoken(&q,cparms,sizeof(cparms)) <= 0) goto failure;
+
+       /* cparms_sgXXX is NOT a per-segment keyword!  A per-segment keyword means 
+        * that there was a single line in the .jsd that spawned the createion of 
+        * multiple keywords.  There must be one cparms_sgXXX line per keyword though. */
        snprintf(buf, sizeof(buf), "cparms_sg%03d", segnum);
 
        DRMS_Keyword_t *cpkey = calloc(1, sizeof(DRMS_Keyword_t));
@@ -326,9 +330,10 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
        int chused = 0;
 
        XASSERT(cpkey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
+       memset(cpkey->info, 0, sizeof(DRMS_KeywordInfo_t));
        snprintf(cpkey->info->name, DRMS_MAXKEYNAMELEN, "%s", buf);
        cpkey->record = template;
-       cpkey->info->per_segment = 0; /* don't do this, otherwise the _000 gets stripped off */
+       drms_keyword_unsetperseg(cpkey); /* don't do this, otherwise the _000 gets stripped off */
        cpkey->info->islink = 0;
        cpkey->info->linkname[0] = 0;
        cpkey->info->target_key[0] = 0;
@@ -351,7 +356,8 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
        snprintf(cpkey->info->unit, DRMS_MAXUNITLEN, "%s", "none");
        cpkey->info->recscope = kRecScopeType_Variable;
        snprintf(cpkey->info->description, DRMS_MAXCOMMENTLEN, "%s", "");
-       cpkey->info->isdrmsprime = 0;
+       drms_keyword_unsetintprime(cpkey);
+       drms_keyword_unsetextprime(cpkey);
 
        if (cparmkeys)
        {
@@ -427,9 +433,10 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
           int chused = 0;
 
           XASSERT(cpkey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
+          memset(cpkey->info, 0, sizeof(DRMS_KeywordInfo_t));
           snprintf(cpkey->info->name, DRMS_MAXKEYNAMELEN, "%s", buf);
           cpkey->record = template;
-          cpkey->info->per_segment = 0; /* don't do this, otherwise the _000 gets stripped off */
+          drms_keyword_unsetperseg(cpkey); /* don't do this, otherwise the _000 gets stripped off */
           cpkey->info->islink = 0;
           cpkey->info->linkname[0] = 0;
           cpkey->info->target_key[0] = 0;
@@ -452,7 +459,8 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
           snprintf(cpkey->info->unit, DRMS_MAXUNITLEN, "%s", "none");
           cpkey->info->recscope = kRecScopeType_Variable;
           snprintf(cpkey->info->description, DRMS_MAXCOMMENTLEN, "%s", "");
-          cpkey->info->isdrmsprime = 0;
+          drms_keyword_unsetintprime(cpkey);
+          drms_keyword_unsetextprime(cpkey);
 
           if (cparmkeys)
           {
@@ -478,9 +486,10 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
           XASSERT(sckey);
 
           XASSERT(sckey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
+          memset(sckey->info, 0, sizeof(DRMS_KeywordInfo_t));
           snprintf(sckey->info->name, DRMS_MAXKEYNAMELEN, "%s", buf);
           sckey->record = template;
-          sckey->info->per_segment = 0; 
+          drms_keyword_unsetperseg(sckey);
           sckey->info->islink = 0;
           sckey->info->linkname[0] = 0;
           sckey->info->target_key[0] = 0;
@@ -490,7 +499,8 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
           snprintf(sckey->info->unit, DRMS_MAXUNITLEN, "%s", "none");
           sckey->info->recscope = kRecScopeType_Variable;
           snprintf(sckey->info->description, DRMS_MAXCOMMENTLEN, "%s", "");
-          sckey->info->isdrmsprime = 0;
+          drms_keyword_unsetintprime(sckey);
+          drms_keyword_unsetextprime(sckey);
 
           /* Although this container was originally used for holding 
            * the comp params for FITS, it is now being used for
@@ -507,9 +517,10 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
           XASSERT(sckey);
 
           XASSERT(sckey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
+          memset(sckey->info, 0, sizeof(DRMS_KeywordInfo_t));
           snprintf(sckey->info->name, DRMS_MAXKEYNAMELEN, "%s", buf);
           sckey->record = template;
-          sckey->info->per_segment = 0; 
+          drms_keyword_unsetperseg(sckey);;
           sckey->info->islink = 0;
           sckey->info->linkname[0] = 0;
           sckey->info->target_key[0] = 0;
@@ -519,7 +530,8 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
           snprintf(sckey->info->unit, DRMS_MAXUNITLEN, "%s", "none");
           sckey->info->recscope = kRecScopeType_Variable;
           snprintf(sckey->info->description, DRMS_MAXCOMMENTLEN, "%s", "");
-          sckey->info->isdrmsprime = 0;
+          drms_keyword_unsetintprime(sckey);
+          drms_keyword_unsetextprime(sckey);
 
           /* Although this container was originally used for holding 
            * the comp params for FITS, it is now being used for
@@ -800,7 +812,7 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys)
 		 memset(newkey->info,0,sizeof(DRMS_KeywordInfo_t));
 		 strcpy(newkey->info->name, keyname);
 		 newkey->record = template;
-		 newkey->info->per_segment = 0; /* Must be per record*/
+                 drms_keyword_unsetperseg(newkey); /* Must be per record*/
 		 newkey->info->islink = 0;
 		 newkey->info->linkname[0] = 0;
 		 newkey->info->target_key[0] = 0;
@@ -813,7 +825,8 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys)
 		 /* Make new key DRMS-prime */
 		 template->seriesinfo->pidx_keywords[(template->seriesinfo->pidx_num)++] =
 		   newkey; 
-		 newkey->info->isdrmsprime = 1;
+                 drms_keyword_setintprime(newkey);
+                 drms_keyword_unsetextprime(newkey);
 	      }
 	      else
 	      {
@@ -1449,11 +1462,13 @@ static int parse_keyword(char **in,
     key->info->format[0] = 0;
     key->info->unit[0] = 0;
     key->info->recscope = kRecScopeType_Variable;
-    key->info->per_segment = 0;
-    key->info->isdrmsprime = 0;
+    drms_keyword_unsetperseg(key);
+    drms_keyword_unsetintprime(key);
+    drms_keyword_unsetextprime(key);
+
     strcpy(key->info->description,description);
   }  
-  else if (!strcasecmp(type,"index"))
+  else if (!strcasecmp(constant,"index"))
   {
      /* Index keywords are prime, so they must not be per-segment */
      strcpy(name1,name);
@@ -1464,7 +1479,7 @@ static int parse_keyword(char **in,
      XASSERT(key = hcon_allocslot_lower(&template->keywords,name1));
      memset(key,0,sizeof(DRMS_Keyword_t));
      XASSERT(key->info = malloc(sizeof(DRMS_KeywordInfo_t)));
-
+     memset(key->info,0,sizeof(DRMS_KeywordInfo_t));
      strncpy(key->info->name,name1,sizeof(key->info->name));
      if (strlen(name1) >= sizeof(key->info->name))
        fprintf(stderr,
@@ -1472,7 +1487,7 @@ static int parse_keyword(char **in,
 	       name1, 
 	       (long long)sizeof(key->info->name)-1);
      key->record = template;
-     key->info->per_segment = 0;
+     drms_keyword_unsetperseg(key);
      key->info->islink = 0;
      key->info->linkname[0] = 0;
      key->info->target_key[0] = 0;
@@ -1490,13 +1505,15 @@ static int parse_keyword(char **in,
      key->info->recscope = kRecScopeType_Index;
      strcpy(key->info->description,description);
 
-     /* Index keywords must be prime. */
+     /* Index keywords must be DRMS-internal prime (but DRMS-external not prime) */
      template->seriesinfo->pidx_keywords[(template->seriesinfo->pidx_num)++] =
        key;
-     key->info->isdrmsprime = 1;
+
+     drms_keyword_setintprime(key);
+     drms_keyword_unsetextprime(key);
 
      hcon_insert(indexkws, key->info->name, &key);
-  }
+  } /* index keyword */
   else
   {
     num_segments = hcon_size(&template->segments);
@@ -1533,7 +1550,7 @@ static int parse_keyword(char **in,
       XASSERT(key = hcon_allocslot_lower(&template->keywords,name1));
       memset(key,0,sizeof(DRMS_Keyword_t));
       XASSERT(key->info = malloc(sizeof(DRMS_KeywordInfo_t)));
-
+      memset(key->info, 0, sizeof(DRMS_KeywordInfo_t));
       strncpy(key->info->name,name1,sizeof(key->info->name));
       if (strlen(name1) >= sizeof(key->info->name))
         fprintf(stderr,
@@ -1541,7 +1558,16 @@ static int parse_keyword(char **in,
 		name1, 
 		(long long)sizeof(key->info->name)-1);
       key->record = template;
-      key->info->per_segment = per_segment;
+
+      if (per_segment)
+      {
+         drms_keyword_setperseg(key);
+      }
+      else
+      {
+         drms_keyword_unsetperseg(key);
+      }
+
       key->info->islink = 0;
       key->info->linkname[0] = 0;
       key->info->target_key[0] = 0;
@@ -1582,14 +1608,16 @@ static int parse_keyword(char **in,
       else
 	goto failure;
       strcpy(key->info->description,description);
-      key->info->isdrmsprime = 0;
+
+      drms_keyword_unsetintprime(key);
+      drms_keyword_unsetextprime(key);
 
       if (drms_keyword_isslotted(key))
       {
 	 hcon_insert(slotted, key->info->name, &key);
       }
     }
-  }
+  } /* not a link or an index keyword */
   p = ++q;
   *in = q; 
  
@@ -1666,9 +1694,9 @@ static int parse_primaryindex(char *desc, DRMS_Record_t *template)
 		  "The corresopnding index key is prime instead.\n",
 		  name);
 
-	   /* But use the isdrmsprime flag to track what was in the jsd's 'index' */
+	   /* But use the kw flags to track that this keyword was specified as prime in the jsd's 'index' */
 #endif
-	   key->info->isdrmsprime = 1;
+           drms_keyword_setextprime(key);
 	}
 	else
 	{
@@ -1677,7 +1705,11 @@ static int parse_primaryindex(char *desc, DRMS_Record_t *template)
 #endif
 	   template->seriesinfo->pidx_keywords[(template->seriesinfo->pidx_num)++] =
 	     key; 
-	   key->info->isdrmsprime = 1;
+
+           /* This keyword is not slotted, and it is not an index keyword, so 
+            * it is prime in both the DRMS-internal and DRMS-external senses. */
+           drms_keyword_setintprime(key);
+           drms_keyword_setextprime(key);
 	}
       }
 
@@ -1708,17 +1740,12 @@ static int parse_primaryindex(char *desc, DRMS_Record_t *template)
      {
 	if (drms_keyword_isslotted(pKey))
 	{
-	   if (!drms_keyword_isprime(pKey))
+           if (!drms_keyword_getextprime(pKey))
 	   {
 	      fprintf(stderr, 
 		      "Slotted key '%s' was not declared drms prime.\n",
 		      keyname);
 	      return 1;
-	   }
-	   else
-	   {
-	      /* Now, remove the 'primeness' of the slotted keys */
-	      pKey->info->isdrmsprime = 0;
 	   }
 	}
      }
@@ -2020,7 +2047,11 @@ void drms_keyword_print_jsd(DRMS_Keyword_t *key) {
       int stat;
       const char *rscope = drms_keyword_getrecscopestr(key, &stat);
       fprintf(stdout, ", %s", stat == DRMS_SUCCESS ? rscope : NULL);
-      if (key->info->per_segment) 
+
+    /* key->info->per_segment overload: <= drms_parser.c:1.30 will fail here if the the value in 
+     * the persegment column of the drms_keyword table has been overloaded to contain 
+     * all the keyword bit-flags. */
+      if (drms_keyword_getperseg(key))
 	printf(", segment");
       else 
 	printf(", record");
