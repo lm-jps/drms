@@ -118,6 +118,11 @@ xxx
 int drms_insert_records(DRMS_RecordSet_t *recset);
 /* Get a pointer to the template record structure for series. */
 
+DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env, 
+                                        const char *seriesname, 
+                                        int jsd,
+                                        int *status);
+
 /**
    Within the current DRMS session (whose information is stored in @a env), 
    this function returns a template record for the series @a seriesname.  

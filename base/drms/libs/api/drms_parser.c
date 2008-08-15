@@ -2192,7 +2192,12 @@ void drms_jsd_printfromrec(DRMS_Record_t *rec) {
 void drms_jsd_print(DRMS_Env_t *drms_env, const char *seriesname) {
    int status = DRMS_SUCCESS;
 
-   DRMS_Record_t *rec = drms_template_record(drms_env, seriesname, &status);
+   /* Don't use drms_template_record() as it expands per-segment keywords 
+    * into multiple record-specific keywords. */
+   /* DRMS_Record_t *rec = drms_template_record(drms_env, seriesname, &status); */
+
+   DRMS_Record_t *rec = drms_template_record_int(drms_env, seriesname, 1, &status);
+
    if (rec==NULL)
    {
       printf("Series '%s' does not exist. drms_template_record returned "

@@ -396,7 +396,7 @@ void drms_keyword_snprintfval(DRMS_Keyword_t *key, char *buf, int size)
 	break;
    }
 }
-  
+
 /* 
    Build the keyword part of a dataset template by
    using the query result holding a list of 
@@ -405,7 +405,7 @@ void drms_keyword_snprintfval(DRMS_Keyword_t *key, char *buf, int size)
       isconstant, persegment, description)
    tuples to initialize the array of keyword descriptors.
 */
-int  drms_template_keywords(DRMS_Record_t *template)
+int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg)
 {
   DRMS_Env_t *env;
   int i,num_segments, per_segment, seg, status;
@@ -441,7 +441,15 @@ int  drms_template_keywords(DRMS_Record_t *template)
   num_segments = hcon_size(&template->segments);
   for (i = 0; i<(int)qres->num_rows; i++)
   {
-    per_segment = ((db_binary_field_getint(qres, i, 9) & kKeywordFlag_PerSegment) != 0);
+    if (expandperseg)
+    {
+       per_segment = ((db_binary_field_getint(qres, i, 9) & kKeywordFlag_PerSegment) != 0);
+    }
+    else
+    {
+       per_segment = 0;
+    }
+
     for (seg=0; seg<(per_segment==1?num_segments:1); seg++)
     {
       /* Construct name, possibly by appending segment selector. */
@@ -582,6 +590,10 @@ int  drms_template_keywords(DRMS_Record_t *template)
   return status;
 }
 
+int drms_template_keywords(DRMS_Record_t *template)
+{
+   return drms_template_keywords_int(template, 1);
+}
 
 /* Wrapper for __drms_keyword_lookup without the recursion depth counter. */
 DRMS_Keyword_t *drms_keyword_lookup(DRMS_Record_t *rec, const char *key, int followlink)

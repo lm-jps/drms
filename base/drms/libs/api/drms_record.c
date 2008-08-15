@@ -3092,8 +3092,10 @@ DRMS_Record_t *drms_alloc_record(DRMS_Env_t *env, const char *series,
    The data structure is allocated and populated with default values 
    from the database.
 */
-DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname, 
-				    int *status)
+DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env, 
+                                        const char *seriesname, 
+                                        int jsd,
+                                        int *status)
 {
   int stat;
   DB_Binary_Result_t *qres;
@@ -3111,15 +3113,22 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
 #ifdef DEBUG
     printf("Getting template for series '%s'\n",seriesname);
 #endif
-  if ( (template = hcon_lookup_lower(&env->series_cache, seriesname)) == NULL )
+
+  /* Presumably, there won't be many calls to obtain the jsd template during 
+   * modules execution (should be just one).  So, no need to cache the 
+   * template. */
+  if (!jsd)
   {
-    if (status) {
-      *status = DRMS_ERROR_UNKNOWNSERIES;
-    }
-    return NULL;
+     if ( (template = hcon_lookup_lower(&env->series_cache, seriesname)) == NULL )
+     {
+        if (status) {
+           *status = DRMS_ERROR_UNKNOWNSERIES;
+        }
+        return NULL;
+     }
   }
 
-  if (template->init == 0)
+  if (template->init == 0 || jsd)
   {
 #ifdef DEBUG
     printf("Building new template for series '%s'\n",seriesname);
@@ -3187,7 +3196,7 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
       goto bailout;
     if ((stat=drms_template_links(template)))
       goto bailout;
-    if ((stat=drms_template_keywords(template)))
+    if ((stat=drms_template_keywords_int(template, !jsd)))
       goto bailout;
 
     /* Set up primary index list. */
@@ -3343,6 +3352,11 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
   return NULL;
 }
 
+DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname, 
+                                    int *status)
+{
+   return drms_template_record_int(env, seriesname, 0, status);
+}
 
 /* Free the body of a template record data structure. */
 void drms_free_template_record_struct(DRMS_Record_t *rec)
