@@ -2196,16 +2196,18 @@ void drms_jsd_print(DRMS_Env_t *drms_env, const char *seriesname) {
     * into multiple record-specific keywords. */
    /* DRMS_Record_t *rec = drms_template_record(drms_env, seriesname, &status); */
 
-   DRMS_Record_t *rec = drms_template_record_int(drms_env, seriesname, 1, &status);
+   DRMS_Record_t *rec = drms_create_jsdtemplate_record(drms_env, seriesname, &status);
 
    if (rec==NULL)
    {
       printf("Series '%s' does not exist. drms_template_record returned "
 	     "status=%d\n",seriesname,status);
-      return;
    }
-
-   return drms_jsd_printfromrec(rec);
+   else
+   {
+      drms_jsd_printfromrec(rec);
+      drms_destroy_jsdtemplate_record(&rec);
+   }
 }
 
 /* print a query that will return the given record */

@@ -118,11 +118,6 @@ xxx
 int drms_insert_records(DRMS_RecordSet_t *recset);
 /* Get a pointer to the template record structure for series. */
 
-DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env, 
-                                        const char *seriesname, 
-                                        int jsd,
-                                        int *status);
-
 /**
    Within the current DRMS session (whose information is stored in @a env), 
    this function returns a template record for the series @a seriesname.  
@@ -160,6 +155,13 @@ DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
    ::DRMS_ERROR_BADQUERYRESULT.  
 */
 DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname, int *status);
+
+/* Allocate a jsd template record. */
+DRMS_Record_t *drms_create_jsdtemplate_record(DRMS_Env_t *env, 
+                                              const char *seriesname, 
+                                              int *status);
+
+void drms_destroy_jsdtemplate_record(DRMS_Record_t **rec);
 /* Populate a record structure with the meta-data for record number "recnum"
    from its series (given by record->seriesinfo.seriesname). */
 

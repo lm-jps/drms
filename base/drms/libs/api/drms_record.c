@@ -3092,10 +3092,10 @@ DRMS_Record_t *drms_alloc_record(DRMS_Env_t *env, const char *series,
    The data structure is allocated and populated with default values 
    from the database.
 */
-DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env, 
-                                        const char *seriesname, 
-                                        int jsd,
-                                        int *status)
+static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env, 
+                                               const char *seriesname, 
+                                               int jsd,
+                                               int *status)
 {
   int stat;
   DB_Binary_Result_t *qres;
@@ -3126,6 +3126,11 @@ DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
         }
         return NULL;
      }
+  }
+  else
+  {
+     template = malloc(sizeof(DRMS_Record_t));
+     memset(template, 0, sizeof(DRMS_Record_t));
   }
 
   if (template->init == 0 || jsd)
@@ -3356,6 +3361,24 @@ DRMS_Record_t *drms_template_record(DRMS_Env_t *env, const char *seriesname,
                                     int *status)
 {
    return drms_template_record_int(env, seriesname, 0, status);
+}
+
+/* Caller must free record returned. */
+DRMS_Record_t *drms_create_jsdtemplate_record(DRMS_Env_t *env, 
+                                              const char *seriesname, 
+                                              int *status)
+{
+   return drms_template_record_int(env, seriesname, 1, status);  
+}
+
+void drms_destroy_jsdtemplate_record(DRMS_Record_t **rec)
+{
+   if (rec)
+   {
+      drms_free_template_record_struct(*rec);
+   }
+
+   *rec = NULL;
 }
 
 /* Free the body of a template record data structure. */
