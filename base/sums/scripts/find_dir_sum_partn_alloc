@@ -18,9 +18,9 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
 use DBI;
 
 $| = 1;			#flush output as we go
-$DB = jsoc;
+$DB = jsoc_sums;
 $HOSTDB = "hmidb";      #host where DB runs
-
+$ENV{'PGPORT'} = "5434";
 
 if($#ARGV != 0) {
   print "Usage: $0 /SUMn\n";
