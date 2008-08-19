@@ -46,6 +46,28 @@ series
 #include <sys/types.h>
 #include <regex.h>
 
+static char x2c (char *what) {
+  char digit;
+
+  digit = (what[0] >= 'A' ? ((what[0] & 0xdf) - 'A')+10 : (what[0] - '0'));
+  digit *= 16;
+  digit += (what[1] >= 'A' ? ((what[1] & 0xdf) - 'A')+10 : (what[1] - '0'));
+  return (digit);
+}
+
+static void CGI_unescape_url (char *url) {
+  int x, y;
+
+  for (x = 0, y = 0; url[y]; ++x, ++y) {
+    if ((url[x] = url[y]) == '%') {
+      url[x] = x2c (&url[y+1]);
+      y += 2;
+    }
+  }
+  url[x] = '\0';
+}
+
+
 
 /* Some important variables are pre-defined by main.  These include:
  *    DRMS_Env_t *drms_env;    DRMS session information.
@@ -131,9 +153,14 @@ if (cmdparams_numargs(&cmdparams)==2)
   filter = cmdparams_getarg(&cmdparams, 1);
   }
 else if (from_web && *web_query)
+  {
   filter = index(web_query,'=')+1;
+// fprintf(stderr,"raw filter=%s\n",filter);
+  CGI_unescape_url(filter);
+  }
 else
   filter = NULL;
+// fprintf(stderr,"filter=%s\n",filter);
 
 if (filter)
   {
@@ -153,6 +180,8 @@ if ( (qres = drms_query_txt(drms_env->session, query)) == NULL)
   }
 
 nseries = qres->num_rows;
+// if (want_JSON) fprintf(stderr,"nseries=%d\n,nseries);
+
 /*
  printf("%d series available.\n",nseries);
 */
