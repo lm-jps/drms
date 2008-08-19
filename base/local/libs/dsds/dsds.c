@@ -995,7 +995,8 @@ static int LoopAttrs(void *hSOI,
 		     SDS *sds, 
 		     DSDS_KeyList_t *pHead, 
 		     kDSDS_Stat_t *stat,
-                     int *dataexists)
+                     char **datafile,
+                     int dfnlen)
 {
    kDSDS_Stat_t status = kDSDS_Stat_Success;
    int nAttrs = 0;
@@ -1032,9 +1033,9 @@ static int LoopAttrs(void *hSOI,
 	 DRMS_Keyword_t *drmskey = NULL;
       
 	 /* loop through attributes */
-         if (dataexists)
+         if (datafile && *datafile)
          {
-            *dataexists = 0;
+            (*datafile)[0] = '\0';
          }
 
 	 nAttrs = 0;
@@ -1067,12 +1068,13 @@ static int LoopAttrs(void *hSOI,
 	       attrComment = (*pFn_sds_attrcomment)(attr);
 
                /* Check to see if a data file exists - if not no DRMS segment will be created */
-               if (dataexists && 
+               if (datafile && 
+                   *datafile &&
                    strcmp(attrName, kDATAFILE) == 0 && 
                    attrType == SDS_STRING && 
                    strlen(attrVal) > 0)
                {
-                  *dataexists = 1;
+                  snprintf(*datafile, dfnlen, "%s", (char *)attrVal);
                }
 
 	       /* make a drms keyword (make stand-alone keyword->info) */
@@ -1391,7 +1393,8 @@ long long DSDS_open_records(const char *dsspec,
    long long nDRMSRecs = 0; /* No. of DRMS records (all have data files) */
    char drmsSeriesName[DRMS_MAXSERIESNAMELEN];
    KEY *params = NULL;
-   int dataexists = 0;
+   char datafile[PATH_MAX];
+   char datapath[PATH_MAX];
 
    *drmsSeries = NULL;
    *keys = NULL;
@@ -1586,8 +1589,36 @@ long long DSDS_open_records(const char *dsspec,
 
 
 		     /* loop through attributes */
-                     dataexists = 0;
-		     LoopAttrs(hSOI, sds, pKL, &status, &dataexists);
+                     datafile[0] = '\0';
+                     int dataexist = 0;
+                     char *pdf = datafile;
+		     LoopAttrs(hSOI, sds, pKL, &status, &pdf, sizeof(datafile));
+
+                     if (strlen(datafile) > 0)
+                     {
+                        /* There is a data file.  There may be a single record's data
+                         * per FITS file, in which case sds->filename contains
+                         * the FITS file path (protocol RDB.FITS).  Or, there may be multiple 
+                         * records' data per FITS file, in which case 
+                         * vds->filename contains the FITS file path (protocol 
+                         * RDB.FITS_MERGE).
+                         */
+                        dataexist = 1;
+
+                        if (sds->filename && strlen(sds->filename) > 0)
+                        {
+                           snprintf(datapath, sizeof(datapath), "%s", sds->filename);
+                        }
+                        else if (vds->filename && strlen(vds->filename) > 0)
+                        {
+                           snprintf(datapath, sizeof(datapath), "%s", vds->filename);
+                        }
+                        else
+                        {
+                           /* error */
+                           status = kDSDS_Stat_UnkFITSpath;
+                        }
+                     }
 
 		     /* Must make segment now */
 		     DRMS_Segment_t *drmsseg = &((*segs)[nDRMSRecs]);
@@ -1598,9 +1629,15 @@ long long DSDS_open_records(const char *dsspec,
                       * basically have something analogous to a DRMS record with no segment.  Leave the 
                       * segment undefined (the struct is zero'd out) so that callers of DSDS_open_records()
                       * know there is no data segment. */
-                     if (dataexists)
+                     if (status == kDSDS_Stat_Success && dataexist)
                      {
-                        FillDRMSSeg(hSOI, sds, drmsseg, kDSDS_Segment, DRMS_DSDS, sds->filename, &segstatus);
+                        FillDRMSSeg(hSOI, 
+                                    sds, 
+                                    drmsseg, 
+                                    kDSDS_Segment, 
+                                    DRMS_DSDS, 
+                                    datapath, 
+                                    &segstatus);
                      }
 
 		     if (segstatus != kDSDS_Stat_Success)
@@ -1610,10 +1647,16 @@ long long DSDS_open_records(const char *dsspec,
 			status = segstatus;
 		     }
 
-		     nDRMSRecs++;
+                     if (status == kDSDS_Stat_Success)
+                     {
+                        nDRMSRecs++;
+                     }
 		  }
 
-		  iRec++;
+                  if (status == kDSDS_Stat_Success)
+                  { 
+                     iRec++;
+                  }
 	       } /* record loop */
 
 	       (*pFn_vds_close)(&vds); /* frees sds's */
@@ -1916,7 +1959,7 @@ int DSDS_read_fitsheader(const char *file,
 	       retlist->next = NULL;
 
 	       /* loop through attributes */
-	       nKeys = LoopAttrs(hSOI, sds, retlist, &status, NULL);
+	       nKeys = LoopAttrs(hSOI, sds, retlist, &status, NULL, 0);
 	    }
 	    else
 	    {

@@ -35,7 +35,9 @@ typedef enum kDSDS_Stat_enum
 				libdsds.so entry point */
    kDSDS_Stat_InvalidHandle, /* Bad handle passed into a 
 				libdsds.so entry point */
-   kDSDS_Stat_InvalidFITS    /* Not a fits file */
+   kDSDS_Stat_InvalidFITS,   /* Not a fits file */
+   kDSDS_Stat_UnkFITSpath    /* The fits file path was not in vds->filename and 
+                              * not in sds->filename */
 				
 } kDSDS_Stat_t;
 

@@ -318,7 +318,8 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
       * the compression-parameters string. */
        char buf[DRMS_MAXKEYNAMELEN];
 
-       if (gettoken(&q,cparms,sizeof(cparms)) <= 0) goto failure;
+       /* cparms can be empty */
+       if (gettoken(&q,cparms,sizeof(cparms)) < 0) goto failure;
 
        /* cparms_sgXXX is NOT a per-segment keyword!  A per-segment keyword means 
         * that there was a single line in the .jsd that spawned the createion of 
@@ -425,7 +426,8 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
            */
           char buf[DRMS_MAXKEYNAMELEN];
 
-          if (gettoken(&q,cparms,sizeof(cparms)) <= 0) goto failure;
+          /* cparms can be empty */
+          if (gettoken(&q,cparms,sizeof(cparms)) < 0) goto failure;
           snprintf(buf, sizeof(buf), "cparms_sg%03d", segnum);
 
           DRMS_Keyword_t *cpkey = calloc(1, sizeof(DRMS_Keyword_t));
