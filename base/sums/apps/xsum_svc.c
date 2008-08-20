@@ -1,3 +1,5 @@
+/* !!!This is the experimental xsum_svc.c
+*/
 /* sum_svc.c (originally $STAGING/src/pipe/rpc/pe_rpc_svc.c)
 */
 /*
@@ -24,6 +26,7 @@
 #include <SUM.h>
 #include <sys/socket.h>
 #include <sys/errno.h>
+#include <sys/time.h>
 #include <rpc/rpc.h>
 #include <rpc/pmap_clnt.h>
 #include <signal.h>
@@ -37,20 +40,44 @@ extern PART ptabx[]; 	/* defined in SUMLIB_PavailRequest.pgc */
 void logkey();
 extern int errno;
 static void sumprog_1();
-struct timeval TIMEOUT = { 120, 0 };
+struct timeval TIMEOUT = { 60, 0 };
 uint32_t rinfo;
+float ftmp;
+static struct timeval first[4], second[4];
 
 FILE *logfp;
 CLIENT *current_client, *clnttape;
 SVCXPRT *glb_transp;
 char *dbname;
 char thishost[MAX_STR];
+char logname[MAX_STR];
 char datestr[32];
 char timetag[32];
+int thispid;
 int soi_errno = NO_ERROR;
 int debugflg = 0;
 int sim = 0;
 int tapeoffline = 0;
+newlog = 0;
+logcnt = 0;
+
+
+/*********************************************************/
+void StartTimer(int n)
+{
+  gettimeofday (&first[n], NULL);
+}
+
+float StopTimer(int n)
+{
+  gettimeofday (&second[n], NULL);
+  if (first[n].tv_usec > second[n].tv_usec) {
+    second[n].tv_usec += 1000000;
+    second[n].tv_sec--;
+  }
+  return (float) (second[n].tv_sec-first[n].tv_sec) +
+    (float) (second[n].tv_usec-first[n].tv_usec)/1000000.0;
+}
 
 /*********************************************************/
 void open_log(char *filename)
@@ -63,7 +90,7 @@ void open_log(char *filename)
 /*********************************************************/
 /* Return ptr to "mmm dd hh:mm:ss". Uses global datestr[]. 
 */
-static char *datestring()
+char *datestring()
 {
   struct timeval tvalr;
   struct tm *t_ptr;
@@ -129,6 +156,17 @@ void sighandler(sig)
       signal(SIGALRM, sighandler);
 }
 
+/* User signal 1 is sent by a cron job to tell us to close the current
+ * log file and start a new one. Usually sent just after midnight.
+*/
+void usr1_sig(int sig)
+{
+  write_log("%s usr1_sig received\n", datestring());
+  newlog = 1;                   /* tell main loop to start new log */
+  logcnt++;                     /* count # used in log file name */
+  signal(SIGUSR1, &usr1_sig);   /* handle a signal 16 sent by cron job */
+}
+
 /*********************************************************/
 void get_cmd(int argc, char *argv[])
 {
@@ -169,19 +207,19 @@ void get_cmd(int argc, char *argv[])
 void setup()
 {
   FILE *fplog;
-  int pid, tpid, i;
+  int tpid, i;
   char *cptr;
-  char logname[MAX_STR], lfile[MAX_STR], acmd[MAX_STR], line[MAX_STR];
+  char lfile[MAX_STR], acmd[MAX_STR], line[MAX_STR];
 
   gethostname(thishost, MAX_STR);
   cptr = index(thishost, '.');       /* must be short form */
   if(cptr) *cptr = (char)NULL;
-  pid = getpid();
+  thispid = getpid();
   sprintf(logname, "/usr/local/logs/SUM/sum_svc_%s.log", gettimetag());
   open_log(logname);
   printk_set(write_log, write_log);
   write_log("\n## %s sum_svc on %s for pid = %d ##\n", 
-		datestring(), thishost, pid);
+		datestring(), thishost, thispid);
   write_log("Database to connect to is %s\n", dbname);
   if (signal(SIGINT, SIG_IGN) != SIG_IGN)
       signal(SIGINT, sighandler);
@@ -189,6 +227,8 @@ void setup()
       signal(SIGTERM, sighandler);
   if (signal(SIGALRM, SIG_IGN) != SIG_IGN)
       signal(SIGALRM, sighandler);
+  signal(SIGUSR1, &usr1_sig);   /* handle a signal 16 sent by cron job */
+
   /* now touch a file for each t50/t120view that is running so it will know
    * that sum_svc has restarted */
   sprintf(lfile, "/tmp/find_tview.log");
@@ -204,8 +244,8 @@ void setup()
   while(fgets(line, 128, fplog)) {       /* get ps lines */
     if(!(strstr(line, "perl"))) continue;
     sscanf(line, "%s %d", acmd, &tpid); /* get user name & process id */
-    sprintf(logname, "/usr/local/logs/SUM/sum_restart_%d.touch", tpid);
-    sprintf(acmd, "/bin/touch %s", logname);
+    sprintf(lfile, "/usr/local/logs/SUM/sum_restart_%d.touch", tpid);
+    sprintf(acmd, "/bin/touch %s", lfile);
     write_log("%s\n", acmd);
     system(acmd);
   }
@@ -219,7 +259,7 @@ int main(int argc, char *argv[])
   int i;
   pid_t pid;
   char dsvcname[80];
-  char *args[5];
+  char *args[5], pgport[32];
 
   get_cmd(argc, argv);
   printf("\nPlease wait for sum_svc and tape inventory to initialize...\n");
@@ -237,16 +277,22 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
+/****************!!for xsum_svc.c no forks*********************************
 #ifndef SUMNOAO
-if(strcmp(thishost, "lws") && strcmp(thishost, "d00")) { /* !!TEMP don't fork on lws or flap */
+// !!TEMP don't fork on lws or flap
+if(strcmp(thishost, "lws") && strcmp(thishost, "flap")) {
+  if(strcmp(thishost, "dcs0") && strcmp(thishost, "dcs1") && strcmp(thishost, "dcs2")) {
+    sprintf(pgport, SUMPGPORT);
+    setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
+  }
   if((pid = fork()) < 0) {
     write_log("***Can't fork(). errno=%d\n", errno);
     exit(1);
   }
-  else if(pid == 0) {                   /* this is the beloved child */
+  else if(pid == 0) {                   // this is the beloved child 
     write_log("execvp of tape_svc\n");
     args[0] = "tape_svc";
-    if(tapeoffline) { 		/* overrides any sim flg */
+    if(tapeoffline) { 		// overrides any sim flg
       args[1] = "-o";
       args[2] = dbname;
       args[3] = timetag;
@@ -268,22 +314,23 @@ if(strcmp(thishost, "lws") && strcmp(thishost, "d00")) { /* !!TEMP don't fork on
       exit(1);
     }
   }
-  for(i=0; i < MAX_DRIVES; i++) {	/* start all the driven_svc */
+  sleep(1);				// let tape_svc start
+  for(i=0; i < MAX_DRIVES; i++) { 	// start all the driven_svc
     if((pid = fork()) < 0) {
       write_log("***Can't fork(). errno=%d\n", errno);
       exit(1);
     }
-    else if(pid == 0) {                   /* this is the beloved child */
+    else if(pid == 0) {                   // this is the beloved child
       sprintf(dsvcname, "drive%d_svc", i);
       write_log("execvp of %s\n", dsvcname);
       args[0] = dsvcname;
-      if(tapeoffline) { 		/* overrides any sim flg */
-        args[1] = "-o";
-        args[2] = dbname;
-        args[3] = timetag;
-        args[4] = NULL;
+      if(tapeoffline) {                 // overrides any sim flg
+	 args[1] = "-o";
+	 args[2] = dbname;
+	 args[3] = timetag;
+	 args[4] = NULL;
       }
-      else if(sim) { 
+      else if(sim) {
         args[1] = "-s";
         args[2] = dbname;
         args[3] = timetag;
@@ -304,7 +351,7 @@ if(strcmp(thishost, "lws") && strcmp(thishost, "d00")) { /* !!TEMP don't fork on
     write_log("***Can't fork(). errno=%d\n", errno);
     exit(1);
   }
-  else if(pid == 0) {                   /* this is the beloved child */
+  else if(pid == 0) {                   // this is the beloved child
     write_log("execvp of robot0_svc\n");
     args[0] = "robot0_svc";
     args[1] = dbname;
@@ -315,16 +362,18 @@ if(strcmp(thishost, "lws") && strcmp(thishost, "d00")) { /* !!TEMP don't fork on
       exit(1);
     }
   }
-}				/* !!end of TMP for lws only */
+}				// !!end of TMP for lws only
 #endif
+
+*********************************************************************/
 
   if((pid = fork()) < 0) {
     write_log("***Can't fork(). errno=%d\n", errno);
     exit(1);
   }
-  else if(pid == 0) {                   /* this is the beloved child */
+  else if(pid == 0) {                   // this is the beloved child
     write_log("execvp of sum_rm\n");
-    args[0] = "sum_rm";			/* note: no -s to sum_rm */
+    args[0] = "sum_rm";			// note: no -s to sum_rm
     args[1] = dbname;
     args[2] = timetag;
     args[3] = NULL;
@@ -334,18 +383,20 @@ if(strcmp(thishost, "lws") && strcmp(thishost, "d00")) { /* !!TEMP don't fork on
     }
   }
 
+/************************NOOP for xsum_svc.c *************************
 #ifndef SUMNOAO
-if(strcmp(thishost, "lws") && strcmp(thishost, "flap")) { /* !!TEMP don't fork on lws or flap */
-  /* Create client handle used for calling the tape_svc */
-  sleep(2);			/* give time to start */
+if(strcmp(thishost, "lws") && strcmp(thishost, "flap")) { // !!TEMP don't fork on lws or flap
+  // Create client handle used for calling the tape_svc
+  sleep(3);			// give time to start
   clnttape = clnt_create(thishost, TAPEPROG, TAPEVERS, "tcp");
-  if(!clnttape) {       /* server not there */
+  if(!clnttape) {       // server not there
     clnt_pcreateerror("Can't get client handle to tape_svc");
     write_log("tape_svc not there on %s\n", thishost);
     exit(1);
   }
 }
 #endif
+*******************************************************************/
 
   if(SUM_Init(dbname)) {		/* init and connect to db */
     write_log("***Can't SUM_Init()\n");
@@ -372,6 +423,10 @@ sumprog_1(rqstp, transp)
 	struct svc_req *rqstp;
 	SVCXPRT *transp;
 {
+  char procname[128];
+  char newlogname[MAX_STR];
+
+	//StartTimer(1);
 	union __svcargun {
 		Rkey sumdo_1_arg;
 	} argument;
@@ -393,36 +448,43 @@ sumprog_1(rqstp, transp)
 /*		break;
 */
 	case OPENDO:
+		sprintf(procname, "OPENDO");	//!!TEMP name tags
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_uint32_t;
 		local = (char *(*)()) opendo_1;
 		break;
 	case ALLOCDO:
+		sprintf(procname, "ALLOCDO");
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_Rkey;
 		local = (char *(*)()) allocdo_1;
 		break;
 	case GETDO:
+		sprintf(procname, "GETDO");
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_Rkey;
 		local = (char *(*)()) getdo_1;
 		break;
 	case PUTDO:
+		sprintf(procname, "PUTDO");
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_Rkey;
 		local = (char *(*)()) putdo_1;
 		break;
 	case CLOSEDO:
+		sprintf(procname, "CLOSEDO");
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_uint32_t;
 		local = (char *(*)()) closedo_1;
 		break;
 	case SUMRESPDO:
+		sprintf(procname, "SUMRESPDO");
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_Rkey;
 		local = (char *(*)()) sumrespdo_1;
 		break;
 	case DELSERIESDO:
+		sprintf(procname, "DELSERIESDO");
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_uint32_t;
 		local = (char *(*)()) delseriesdo_1;
@@ -477,5 +539,18 @@ sumprog_1(rqstp, transp)
 	write_log("**unable to free arguments\n");
 	/*exit(1);*/
       }
+      //ftmp = StopTimer(1);
+      //write_log("#END: %s %fsec\n", procname, ftmp);	//!!TEMP for test
+
+      if(newlog) {	//got signal to make a new log file
+        newlog = 0;
+        write_log("%s Closing the current log file. Goodby.\n", datestring());
+        fclose(logfp);
+        sprintf(newlogname, "%s_%d", logname, logcnt); 
+        open_log(newlogname);
+        write_log("\n## %s reopen log sum_svc on %s for pid = %d ##\n", 
+		datestring(), thishost, thispid);
+      }
+
       return;
 }
