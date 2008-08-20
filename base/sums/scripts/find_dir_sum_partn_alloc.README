@@ -4,8 +4,8 @@ or crashes. This will find all the dirs under the given /SUM that do
 not have a sum_partn_alloc entry. Theres are lost dirs and s/b deleted.
 This should be done for all /SUM partitions every few months.
 
-%find_dir_sum_partn_alloc /SUM7 > & find_dir_sum_partn_alloc.sum7
+% find_dir_sum_partn_alloc /SUM7 > & find_dir_sum_partn_alloc.sum7
 
 followed when done by (run as production):
 
-%find_dir_main_rm find_dir_sum_partn_alloc.sum7
+% find_dir_main_rm find_dir_sum_partn_alloc.sum7
