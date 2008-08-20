@@ -21,8 +21,8 @@
 char *get_eff_date(int plusdays);
 
 #define TODAY (atol(get_eff_date(0)))
-#define TAR_FILE_SZ 500000000	/* try to make a tar file this size */
-#define ARCH_CHUNK 20		/* this many archive calls to tape_svc */
+#define TAR_FILE_SZ 500000000	/* try to make a tar file this size bytes */
+#define ARCH_CHUNK 30		/* this many archive calls to tape_svc */
 #define NOTAPEARC "/usr/local/logs/soc/NOTAPEARC" /* touched by t50view */
 
 extern void printkey (KEY *key);
@@ -372,6 +372,7 @@ int call_tape_svc(int groupid, double bytes, uint64_t index) {
 int main(int argc, char *argv[])
 { 
   FILE *notapearc;
+  PADATA *ap = NULL;
 
   get_cmd(argc, argv);                  /* check the calling sequence */
   if(!(username = (char *)getenv("USER"))) username = "nouser";
@@ -416,6 +417,101 @@ int main(int argc, char *argv[])
   }
 
   walker = aplist;	/* this list is in descending group_id order */
+
+//!!TEMP reform walker to be by group_id
+  while(walker) {
+    if(walker->group_id == 0) {
+      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
+    }
+    walker = walker->next;
+  }
+  walker = aplist;
+  while(walker) {
+    if(walker->group_id == 1) {
+      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
+    }
+    walker = walker->next;
+  }
+  walker = aplist;
+  while(walker) {
+    if(walker->group_id == 2) {
+      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
+    }
+    walker = walker->next;
+  }
+  walker = aplist;
+  while(walker) {
+    if(walker->group_id == 3) {
+      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
+    }
+    walker = walker->next;
+  }
+  walker = aplist;
+  while(walker) {
+    if(walker->group_id == 4) {
+      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
+    }
+    walker = walker->next;
+  }
+  walker = aplist;
+  while(walker) {
+    if(walker->group_id == 5) {
+      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
+    }
+    walker = walker->next;
+  }
+  walker = aplist;
+  while(walker) {
+    if(walker->group_id == 8) {
+      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
+    }
+    walker = walker->next;
+  }
+  walker = aplist;
+  while(walker) {
+    if(walker->group_id == 9) {
+      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
+    }
+    walker = walker->next;
+  }
+  walker = aplist;
+  while(walker) {
+    if(walker->group_id == 11) {
+      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
+    }
+    walker = walker->next;
+  }
+  walker = aplist;
+  while(walker) {
+    if(walker->group_id == 102) {
+      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
+    }
+    walker = walker->next;
+  }
+  walker = aplist;
+  while(walker) {
+    if(walker->group_id == 103) {
+      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
+    }
+    walker = walker->next;
+  }
+  walker = aplist;
+  while(walker) {
+    if(walker->group_id == 104) {
+      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
+    }
+    walker = walker->next;
+  }
+  walker = aplist;
+  while(walker) {
+    if(walker->group_id == 105) {
+      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
+    }
+    walker = walker->next;
+  }
+  walker = ap;
+//!!END TEMP by group_id
+
   storeunitarch(ARCH_CHUNK); /* kick of first chunk of archives */
   if(call_tape_svc_cnt == 0) { /* wait until all finish */
     if(is_connected)
@@ -672,8 +768,14 @@ int storeunitarch(int docnt)
     setkey_double(&alist, "total_bytes", total_bytes);
     setkey_int(&alist, "reqcnt", i);
     if(i != 0) {	/* make sure didn't hit new group at beginning */
-      if(call_tape_svc(curr_group_id, total_bytes, first_index)) {
-        fprintf(stderr, "**Error on tape write for group %d\n", curr_group_id);
+      if(curr_group_sz >= TAR_FILE_SZ) {	//only do if big enough
+        if(call_tape_svc(curr_group_id, total_bytes, first_index)) {
+          fprintf(stderr, "**Error on tape write for group %d\n", curr_group_id);
+        }
+      }
+      else {
+        printf("Abandon partial block for group=%d index=%lu bytes=%g\n", 
+			curr_group_id, first_index, total_bytes);
       }
     }
     freekeylist(&alist);
@@ -689,11 +791,17 @@ int storeunitarch(int docnt)
     i = 0;
     alist = newkeylist();
   }
-  if(i != 0) {		/* write out anything left over */
-    setkey_double(&alist, "total_bytes", total_bytes);
-    setkey_int(&alist, "reqcnt", i);
-    if(call_tape_svc(curr_group_id, total_bytes, first_index)) {
-      fprintf(stderr, "**Error on tape write for group %d\n", curr_group_id);
+  if(i != 0) {		// write out anything left over 
+    if(curr_group_sz >= TAR_FILE_SZ) {	//only do if big enough
+      setkey_double(&alist, "total_bytes", total_bytes);
+      setkey_int(&alist, "reqcnt", i);
+      if(call_tape_svc(curr_group_id, total_bytes, first_index)) {
+        fprintf(stderr, "**Error on tape write for group %d\n", curr_group_id);
+      }
+    }
+    else {
+      printf("Abandon left over for group=%d index=%lu bytes=%g\n", 
+			curr_group_id, first_index, total_bytes);
     }
   }
   return(0);
