@@ -48,12 +48,16 @@ CLIENT *current_client, *clnttape;
 SVCXPRT *glb_transp;
 char *dbname;
 char thishost[MAX_STR];
+char logname[MAX_STR];
 char datestr[32];
 char timetag[32];
+int thispid;
 int soi_errno = NO_ERROR;
 int debugflg = 0;
 int sim = 0;
 int tapeoffline = 0;
+newlog = 0;
+logcnt = 0;
 
 /*********************************************************/
 void StartTimer(int n)
@@ -149,6 +153,17 @@ void sighandler(sig)
       signal(SIGALRM, sighandler);
 }
 
+/* User signal 1 is sent by a cron job to tell us to close the current
+ * log file and start a new one. Usually sent just after midnight.
+*/
+void usr1_sig(int sig)
+{
+  write_log("%s usr1_sig received\n", datestring());
+  newlog = 1;                   /* tell main loop to start new log */
+  logcnt++;                     /* count # used in log file name */
+  signal(SIGUSR1, &usr1_sig);   /* handle a signal 16 sent by cron job */
+}
+
 /*********************************************************/
 void get_cmd(int argc, char *argv[])
 {
@@ -189,19 +204,19 @@ void get_cmd(int argc, char *argv[])
 void setup()
 {
   FILE *fplog;
-  int pid, tpid, i;
+  int tpid, i;
   char *cptr;
-  char logname[MAX_STR], lfile[MAX_STR], acmd[MAX_STR], line[MAX_STR];
+  char lfile[MAX_STR], acmd[MAX_STR], line[MAX_STR];
 
   gethostname(thishost, MAX_STR);
   cptr = index(thishost, '.');       /* must be short form */
   if(cptr) *cptr = (char)NULL;
-  pid = getpid();
+  thispid = getpid();
   sprintf(logname, "/usr/local/logs/SUM/sum_svc_%s.log", gettimetag());
   open_log(logname);
   printk_set(write_log, write_log);
   write_log("\n## %s sum_svc on %s for pid = %d ##\n", 
-		datestring(), thishost, pid);
+		datestring(), thishost, thispid);
   write_log("Database to connect to is %s\n", dbname);
   if (signal(SIGINT, SIG_IGN) != SIG_IGN)
       signal(SIGINT, sighandler);
@@ -209,6 +224,8 @@ void setup()
       signal(SIGTERM, sighandler);
   if (signal(SIGALRM, SIG_IGN) != SIG_IGN)
       signal(SIGALRM, sighandler);
+  signal(SIGUSR1, &usr1_sig);   /* handle a signal 16 sent by cron job */
+
   /* now touch a file for each t50/t120view that is running so it will know
    * that sum_svc has restarted */
   sprintf(lfile, "/tmp/find_tview.log");
@@ -224,8 +241,8 @@ void setup()
   while(fgets(line, 128, fplog)) {       /* get ps lines */
     if(!(strstr(line, "perl"))) continue;
     sscanf(line, "%s %d", acmd, &tpid); /* get user name & process id */
-    sprintf(logname, "/usr/local/logs/SUM/sum_restart_%d.touch", tpid);
-    sprintf(acmd, "/bin/touch %s", logname);
+    sprintf(lfile, "/usr/local/logs/SUM/sum_restart_%d.touch", tpid);
+    sprintf(acmd, "/bin/touch %s", lfile);
     write_log("%s\n", acmd);
     system(acmd);
   }
@@ -399,6 +416,7 @@ sumprog_1(rqstp, transp)
 	SVCXPRT *transp;
 {
   char procname[128];
+  char newlogname[MAX_STR];
 
 	//StartTimer(1);
 	union __svcargun {
@@ -515,5 +533,16 @@ sumprog_1(rqstp, transp)
       }
       //ftmp = StopTimer(1);
       //write_log("#END: %s %fsec\n", procname, ftmp);	//!!TEMP for test
+
+      if(newlog) {      //got signal to make a new log file
+        newlog = 0;
+        write_log("%s Closing the current log file. Goodby.\n", datestring());
+        fclose(logfp);
+        sprintf(newlogname, "%s_%d", logname, logcnt);
+        open_log(newlogname);
+        write_log("\n## %s reopen log sum_svc on %s for pid = %d ##\n",
+                datestring(), thishost, thispid);
+      }
+
       return;
 }
