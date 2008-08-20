@@ -128,7 +128,7 @@ int main(int argc, char *argv[])
     exit(1);
   }
   uid = sum->uid;
-  /*sum->debugflg = 1;			/* use debug mode for future calls */
+  //sum->debugflg = 1;			/* use debug mode for future calls */
   /*sum->debugflg = 0;*/
   sum->username = "production";		/* !!TEMP */
   printf("Opened with sumid = %d\n", uid);
@@ -161,9 +161,9 @@ int main(int argc, char *argv[])
   sum->tdays = 30;
   sum->reqcnt = 3;
   dsixpt = sum->dsix_ptr;
+  *dsixpt++ = 4294968731;
   *dsixpt++ = 131047;
-  *dsixpt++ = 202908;
-  *dsixpt++ = 131049;
+  *dsixpt++ = 1433434;
 /*  *dsixpt++ = 1159350; */
 /*  *dsixpt++ = 17499; */
 /*  *dsixpt++ = 14802;   */

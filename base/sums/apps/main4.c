@@ -22,7 +22,7 @@ SUM_t *sum;
 SUMID_t uid;
 /*static int errcnt = 0;*/
 int soi_errno = NO_ERROR;
-int bytes, msgtag, petid, req_num, status, cnt, i, j, inum;
+int bytes, msgtag, petid, req_num, status, cnt, i, j, k, inum;
 char **cptr;
 float ftmp;
 uint64_t *dsixpt;
@@ -30,7 +30,8 @@ uint64_t alloc_index;
 char alloc_wd[64];
 char cmd[128];
 char mod_name[] = "sum_rpc";
-char dsname[] = "hmi_lev1_fd_V";	/* !!TEMP name */
+//char dsname[] = "hmi_lev1_fd_V";	/* !!TEMP name */
+char dsname[] = "main4";	/* !!TEMP name */
 char hcomment[] = "this is a dummy history comment that is greater than 80 chars long to check out the code";
 
 static struct timeval first[8], second[8];
@@ -70,9 +71,11 @@ int main(int argc, char *argv[])
   //sum->username = "jim";		/* !!TEMP */
   printf("Opened with sumid = %d\n", uid);
 
+//for(k = 1; k < 14; k++) {
   sum->bytes = (double)120000000;	/* 120MB */
   sum->reqcnt = 1;
-  if(status = SUM_alloc(sum, printf)) {	
+  //if(status = SUM_alloc(sum, printf)) {	
+  if(status = SUM_alloc2(sum, 0x100000000, printf)) {
    printf("SUM_alloc() failed to alloc %g bytes. Error code = %d\n", 
 			sum->bytes, status);
    SUM_close(sum, printf);
@@ -93,14 +96,14 @@ int main(int argc, char *argv[])
   system(cmd);
 
   //sum->mode = NORETRIEVE + TOUCH;
-  //sum->mode = NORETRIEVE;
-  sum->mode = RETRIEVE + TOUCH;
+  sum->mode = NORETRIEVE;
+  //sum->mode = RETRIEVE + TOUCH;
   sum->tdays = 10;
   sum->reqcnt = 3;
   dsixpt = sum->dsix_ptr;
-  *dsixpt++ = 4294967501;
-  *dsixpt++ = 4294967578 ;
-  *dsixpt++ = 4294967579;
+  *dsixpt++ = 4294968731;
+  *dsixpt++ = 4294968746;
+  *dsixpt++ = 4294968722;
 /*  *dsixpt++ = 14802;   */
 /*  *dsixpt++ = 14539;   */
 /*  *dsixpt++ = 14686;   */
@@ -145,11 +148,12 @@ int main(int argc, char *argv[])
 ftmp = StopTimer(0);
 /*printf("\nTime sec for %d SUM_get() in one call = %f\n\n", MAXSUMREQCNT, ftmp);*/
 
-  //sum->mode = TEMP;
-  sum->mode = ARCH;
+  sum->mode = TEMP;
+  //sum->mode = ARCH;
   //sum->dsname = "testname";
   //sum->group = 100;
-  sum->group = 1;
+  //sum->group = 1;
+  sum->group = k;
   /*sum->group = 65;*/
   /*sum->group = 101;*/
   sum->reqcnt = 1;
@@ -165,6 +169,7 @@ ftmp = StopTimer(0);
   /*sum->group = 99;*/
   sum->storeset = 0;
   sum->bytes = 120000000.0;
+  StartTimer(0);
   if(SUM_put(sum, printf)) {    /* save the data segment for archiving */
     printf("Error: on SUM_put()\n");
   }
@@ -172,6 +177,9 @@ ftmp = StopTimer(0);
     printf("The put wd = %s\n", *sum->wd);
     printf("Marked for archive data unit ds_index=%lu\n", *dsixpt);
   }
+  ftmp = StopTimer(0);
+  printf("Time for SUM_put() = %f sec\n", ftmp);
+//}
 
   SUM_close(sum, printf);
 

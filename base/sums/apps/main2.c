@@ -103,7 +103,7 @@ int main(int argc, char *argv[])
 *******************************************/
 sum->reqcnt = 1;
 /*inum = 588650;			/* starting ds_index for get calls */
-inum = 612311;			/* starting ds_index for get calls */
+inum = 131051;			/* starting ds_index for get calls */
 StartTimer(0);
 for(j=0; j < MAXSUMREQCNT; j++) {
   *dsixpt++ = inum++;
