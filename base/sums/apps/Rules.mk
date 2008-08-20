@@ -12,6 +12,7 @@ sum_svc_obj_$(d)	:= $(addprefix $(d)/, sum_svc_proc.o sum_init.o du_dir.o)
 xsum_svc_obj_$(d)	:= $(addprefix $(d)/, sum_svc_proc.o sum_init.o du_dir.o)
 tape_svc_obj_$(d)	:= $(addprefix $(d)/, tape_svc_proc.o tapeutil.o tape_inventory.o)
 tapearc_obj_$(d)	:= $(addprefix $(d)/, padata.o)
+tapearcinfo_obj_$(d)	:= $(addprefix $(d)/, padata.o)
 
 CF_TGT_$(d)	:= -O0 -Wno-parentheses -fno-strict-aliasing
 ADD_TGT_$(d) := -DSUMT120 -DSUMNOAO
@@ -45,16 +46,17 @@ SUMSVC_$(d)	:= $(d)/sum_svc
 XSUMSVC_$(d)	:= $(d)/xsum_svc
 TAPESVC_$(d)	:= $(d)/tape_svc
 TARC_$(d)	:= $(d)/tapearc
+TARCINFO_$(d)	:= $(d)/tapearcinfo
 
-BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main4 sumget tapeonoff driveonoff sum_rm impexp drive0_svc drive1_svc drive2_svc drive3_svc drive4_svc drive5_svc drive6_svc drive7_svc drive8_svc drive9_svc drive10_svc drive11_svc robot0_svc md5filter)
+BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main3 main4 main5 sumget tapeonoff driveonoff sum_rm impexp drive0_svc drive1_svc drive2_svc drive3_svc drive4_svc drive5_svc drive6_svc drive7_svc drive8_svc drive9_svc drive10_svc drive11_svc robot0_svc md5filter)
 
 #BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main3 main4 main5 sumget tapeonoff driveonoff sum_rm impexp drive0_svc drive1_svc drive2_svc drive3_svc robot0_svc md5filter)
 
-TGT_$(d)	:= $(BINTGT_$(d)) $(SUMSVC_$(d)) $(XSUMSVC_$(d)) $(TAPESVC_$(d)) $(TARC_$(d))
+TGT_$(d)	:= $(BINTGT_$(d)) $(SUMSVC_$(d)) $(XSUMSVC_$(d)) $(TAPESVC_$(d)) $(TARC_$(d)) $(TARCINFO_$(d))
 
 SUMS_BIN	:= $(SUMS_BIN) $(TGT_$(d))
 
-OBJ_$(d)	:= $(sum_svc_obj_$(d)) $(tape_svc_obj_$(d)) $(tapearc_obj_$(d)) $(TGT_$(d):%=%.o) 
+OBJ_$(d)	:= $(sum_svc_obj_$(d)) $(tape_svc_obj_$(d)) $(tapearc_obj_$(d)) $(tapearcinfo_obj_$(d)) $(TGT_$(d):%=%.o) 
 
 DEP_$(d)	:= $(OBJ_$(d):%=%.d)
 
@@ -97,6 +99,7 @@ $(XSUMSVC_$(d)):	$(sum_svc_obj_$(d))
 $(SUMSVC_$(d)):		$(sum_svc_obj_$(d))
 $(TAPESVC_$(d)):	$(tape_svc_obj_$(d))
 $(TARC_$(d)):		$(tapearc_obj_$(d))
+$(TARCINFO_$(d)):	$(tapearcinfo_obj_$(d))
 
 # NOTE: tapearc.o depends on libsumspg.a, which in turn depends on padata.o.
 # Make doesn't seem to use else ifeq.
