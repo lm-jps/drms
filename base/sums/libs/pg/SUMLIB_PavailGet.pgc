@@ -109,7 +109,7 @@ end_fetch:
           return DS_ALLOC_ERR;
         }
 
-        printk("Allocate in SUMLIB_PavailGet %g bytes in %s\n", l_bytes, l_name.arr);  /* !!!TEMP */
+        //printk("Allocate in SUMLIB_PavailGet %g bytes in %s\n", l_bytes, l_name.arr);
         EXEC SQL COMMIT;
 	return NO_ERROR;
     
