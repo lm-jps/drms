@@ -531,7 +531,7 @@ int kick_next_entry_wt() {
     status = clnt_call(clntrobot0, ROBOTDO, (xdrproc_t)xdr_Rkey,(char *)p->list,
                         (xdrproc_t)xdr_uint32_t, (char *)&robotback, TIMEOUT);
     ftmp = StopTimer(4);
-    write_log("Time 4 for ROBOTDO in tape_svc = %f sec\n", ftmp);
+    //write_log("Time 4 for ROBOTDO in tape_svc = %f sec\n", ftmp);
     if(status != RPC_SUCCESS) {
       if(status != RPC_TIMEDOUT) {  /* allow timeout?? */
         call_err = clnt_sperror(clntrobot0, "Err clnt_call for ROBOTDO");
@@ -808,7 +808,7 @@ KEY *writedo_1(KEY *params) {
   setkey_uint64(&params, "availblocks", tapeinfo.availblocks);
   tapeid = tapeinfo.tapeid;
   setkey_str(&params, "tapeid", tapeid);
-  write_log("In writedo_1() tapeid = %s\n", tapeid); /* !!TEMP */
+  //write_log("In writedo_1() tapeid = %s\n", tapeid); /* !!TEMP */
   if((p=q_entry_make(params, sumid, tapeid, 0, user, dsix))==NULL) {
       write_log("**Err: can't malloc a new wrt Q entry\n");
       rinfo = 1;  /* give err status back to original caller */
@@ -832,21 +832,21 @@ KEY *writedo_1(KEY *params) {
     rinfo = RESULT_PEND;    /* tell caller to wait later for results */
     send_ack();
     ftmp = StopTimer(5);
-    write_log("Time 5 for send_ack() in tape_svc back to tapearc = %f sec\n", ftmp);
+    //write_log("Time 5 for send_ack() in tape_svc back to tapearc = %f sec\n", ftmp);
     return((KEY *)1);
     break;
   case 1:		/* entry started and removed from q */
     rinfo = RESULT_PEND;    /* tell caller to wait later for results */
     send_ack();
     ftmp = StopTimer(5);
-    write_log("Time 5 for send_ack() in tape_svc back to tapearc = %f sec\n", ftmp);
+    //write_log("Time 5 for send_ack() in tape_svc back to tapearc = %f sec\n", ftmp);
     return((KEY *)1);
     break;
   case 2:		/* removed from q, error occured */
     rinfo = 0;
     send_ack();
     ftmp = StopTimer(5);
-    write_log("Time 5 for send_ack() in tape_svc back to tapearc = %f sec\n", ftmp);
+    //write_log("Time 5 for send_ack() in tape_svc back to tapearc = %f sec\n", ftmp);
     setkey_int(&poff->list, "STATUS", 1); /* give error back to caller */
     return(poff->list);
     break;
@@ -854,7 +854,7 @@ KEY *writedo_1(KEY *params) {
     rinfo = 0;
     send_ack();
     ftmp = StopTimer(5);
-    write_log("Time 5 for send_ack() in tape_svc back to tapearc = %f sec\n", ftmp);
+    //write_log("Time 5 for send_ack() in tape_svc back to tapearc = %f sec\n", ftmp);
     write_log("Error: kick_next_entry_wt() ret = %d invalid\n", state);
     return((KEY *)1);
     break;

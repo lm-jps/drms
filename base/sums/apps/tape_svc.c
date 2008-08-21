@@ -499,8 +499,8 @@ tapeprog_1(rqstp, transp)
         kstatus = kick_next_entry_rd(); /* sets poff if entry removed */
         poffrd = poff;
         write_time(); 
-	write_log("kick_next_entry_rd() call from tapeprog_1() returned %d\n",
-			kstatus);	/* !!TEMP */
+	//write_log("kick_next_entry_rd() call from tapeprog_1() returned %d\n",
+	//		kstatus);	/* !!TEMP */
         switch(kstatus) {
         case 0:			/* can't process now. remains on q */
           break;
@@ -531,8 +531,8 @@ tapeprog_1(rqstp, transp)
         kstatus = kick_next_entry_wt(); /* sets poff if entry removed */
         poffwt = poff;
         write_time(); 
-	write_log("kick_next_entry_wt() call from tapeprog_1() returned %d\n",
-			kstatus);
+	//write_log("kick_next_entry_wt() call from tapeprog_1() returned %d\n",
+	//		kstatus);
         switch(kstatus) {
         case 0:			/* can't process now. remains on q */
           break;
