@@ -39,6 +39,9 @@ typedef enum
    kRSParseState_DSDS,
    /* Parsing 'vot' (VOT) specification */
    kRSParseState_VOT,
+   /* Parsing a DRMS series that has generic segment directories that conform to the 
+    * DSDS VDS standard. */
+   kRSParseState_DSDSPort,
    /* Parsing "@file". */
    kRSParseState_AtFile,
    /* Parsed end of filename, now creating sub-recordsets. */
@@ -1238,6 +1241,11 @@ DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, const char *dsRecSet, i
 	 else
 	 {
 	    stat = DRMS_ERROR_LIBDSDS;
+
+            if (dsdsStat == kDSDS_Stat_DSDSOffline)
+            {
+               stat = DRMS_ERROR_DSDSOFFLINE;
+            }
 	 }
       }
    }
@@ -1409,13 +1417,50 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 	   {
 	      rs = drms_open_dsdsrecords(env, oneSet, &stat);
 	      if (stat)
-		goto failure; 
+              {
+                 if (stat == DRMS_ERROR_DSDSOFFLINE)
+                 {
+                    fprintf(stderr, 
+                            "Series '{%s}' data files are offline.\nBring them online with \"peq -A \'%s\'\".\n",
+                            oneSet,
+                            oneSet);
+                 }
+                 goto failure; 
+              }
 	   } /* DSDS */
 	   else if (settypes[iSet] == kRecordSetType_VOT)
 	   {
 	      /* TBD */
 	      fprintf(stderr, "VOT record-set specification not implemented.\n");
 	   } /* VOT */
+           else if (settypes[iSet] == kRecordSetType_DSDSPort)
+           {
+              /* Issue: if the data are offline, then there MIGHT be a failure. 
+               * You can't create a temporary series unless the data are online
+               * (the DRMS series, eg., ds_mdi.XXX, doesn't have keyword or segment
+               * information.  That information lives in the FITS files, and if they
+               * are offline, you can't return a valid record set.  So, you could 
+               * call 'peq -A' (peq should know about ds_mdi.XXX and dsds.XXX)
+               * and then when the data are put back online you can create your temporary
+               * series and a recordset.  OR, you could simply fail.  The action
+               * taken is determined inside libdsds.so.  
+               *
+               * Currently (8/20/2008), if the data are offline, a failure will occur.
+               */
+              rs = drms_open_dsdsrecords(env, oneSet, &stat);
+	      if (stat)
+              {
+                 if (stat == DRMS_ERROR_DSDSOFFLINE)
+                 {
+                    fprintf(stderr, 
+                            "Series '{%s}' data files are offline.\nBring them online with \"peq -A \'%s\'\".\n",
+                            oneSet,
+                            oneSet);
+                 }
+                 goto failure; 
+              }
+              
+           } /* DSDSPort */
 	   else if (settypes[iSet] == kRecordSetType_DRMS)
 	   {
 	      /* oneSet may have a segement specifier - strip that off and 
@@ -4640,6 +4685,7 @@ static int ParseRecSetDesc(const char *recsetsStr,
 {
    int status = DRMS_SUCCESS;
    RSParseState_t state = kRSParseState_Begin;
+   RSParseState_t oldstate;
    char *rsstr = strdup(recsetsStr);
    char *pc = rsstr;
    char **intSets = NULL;
@@ -4698,7 +4744,7 @@ static int ParseRecSetDesc(const char *recsetsStr,
 		       pc++;
 		       if (DSElem_SkipWS(&pc))
 		       {
-			  if (strstr(pc, "prog:") == pc)
+                          if (DSDS_IsDSDSSpec(pc))
 			  {
 			     state = kRSParseState_DSDS;
 			  }
@@ -4706,6 +4752,10 @@ static int ParseRecSetDesc(const char *recsetsStr,
 			  {
 			     state = kRSParseState_VOT;
 			  }
+                          else if (DSDS_IsDSDSPort(pc))
+                          {
+                             state = kRSParseState_DSDSPort;
+                          }
 			  else
 			  {
 			     fprintf(stderr, 
@@ -4984,7 +5034,10 @@ static int ParseRecSetDesc(const char *recsetsStr,
 	      }
 	      break;
 	    case kRSParseState_DSDS:
+            case kRSParseState_DSDSPort:
 	      /* first non-ws after '{' */
+              oldstate = state;
+
 	      if (pc < endInput)
 	      {
 		 if (*pc == '{')
@@ -5047,7 +5100,18 @@ static int ParseRecSetDesc(const char *recsetsStr,
 
 	      if (state == kRSParseState_EndElem)
 	      {
-		 currSettype = kRecordSetType_DSDS;
+                 if (oldstate == kRSParseState_DSDS)
+                 {
+                    currSettype = kRecordSetType_DSDS;
+                 }
+                 else if (oldstate == kRSParseState_DSDSPort)
+                 {
+                    currSettype = kRecordSetType_DSDSPort;
+                 }
+                 else
+                 {
+                    state = kRSParseState_Error;
+                 }
 	      }
 	      break;
 	    case kRSParseState_VOT:
@@ -5536,6 +5600,10 @@ DRMS_RecordSetType_t drms_record_getquerytype(const char *query)
    if (DSDS_IsDSDSSpec(pQ))
    {
       ret = kRecordSetType_DSDS;
+   }
+   else if (DSDS_IsDSDSPort(query))
+   {
+      ret = kRecordSetType_DSDSPort;
    }
    else if (IsFileOrDir(query))
    {
@@ -6112,3 +6180,4 @@ int drms_record_islocal(DRMS_Record_t *rec)
 
    return islocal;
 }
+

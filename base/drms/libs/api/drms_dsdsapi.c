@@ -6,7 +6,12 @@
 #include <string.h>
 #include "drms_dsdsapi.h"
 
-#define kProgSpecifier "prog:"
+const char *DSDS_PortNS[] =
+{
+   "dsds",
+   "ds_mdi",
+   NULL
+};
 
 void *DSDS_GetFPtr(void *hDSDS, const char *symbol)
 {
@@ -30,6 +35,26 @@ void *DSDS_GetFPtr(void *hDSDS, const char *symbol)
 int DSDS_IsDSDSSpec(const char *spec)
 {
    return (strstr(spec, "prog:") == spec);
+}
+
+int DSDS_IsDSDSPort(const char *query)
+{
+   int isport = 0;
+   int ins = 0;
+   const char *portns = NULL;
+
+   while ((portns = DSDS_PortNS[ins]) != NULL)
+   {
+      if (strstr(query, portns) == query)
+      {
+         isport = 1;
+         break;
+      }
+
+      ins++;
+   }
+
+   return isport;
 }
 
 int DSDS_GetDSDSParams(DRMS_SeriesInfo_t *si, char *out)
@@ -71,29 +96,6 @@ int DSDS_SetDSDSParams(void *hDSDS, DRMS_SeriesInfo_t *si, DSDS_Handle_t in)
 
    return err;
 }
-
-#if 0
-/* Returns 0 if dsquery doesn't contain a DSDS program name; 1 otherwise */
-int DSDS_GetDSDSProgName(const char *dsquery, char *progname, int size)
-{
-   if (strstr(dsquery, kProgSpecifier) && strlen(dsquery) > strlen(kProgSpecifier))
-   {
-      char *q = strdup(dsquery);
-
-      const char *beg = q[strlen(kProgSpecifier)];
-      const char *end = strchr(beg, ',');
-
-      if (end > beg)
-      {
-	 q[end] = '\0';
-	 snprintf(progname, size, "%s", beg);
-	 return 1;
-      }
-   }
-
-   return 0;
-}
-#endif
 
 void *DSDS_GetLibHandle(const char *libname, kDSDS_Stat_t *status)
 {

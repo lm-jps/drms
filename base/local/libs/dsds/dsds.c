@@ -32,6 +32,7 @@ typedef enum Soifn_enum
    kSOI_VDS_SELECT_REC,
    kSOI_VDS_LAST_RECORD,
    kSOI_NEWKEYLIST,
+   kSOI_FREEKEYLIST,
    kSOI_SETKEY_STR,
    kSOI_SETKEY_INT,
    kSOI_GETKEY_STR,
@@ -66,6 +67,7 @@ char *SoifnNames[] =
    "VDS_select_rec",
    "vds_last_record",
    "newkeylist",
+   "freekeylist",
    "setkey_str",
    "setkey_int",
    "getkey_str",
@@ -99,6 +101,7 @@ typedef SDS *(*pSOIFn_VDS_select_hdr_t)(VDS *, int, int);
 typedef SDS *(*pSOIFn_VDS_select_rec_t)(VDS *, int, int);
 typedef int (*pSOIFn_vds_last_record_t)(VDS *);
 typedef KEY *(*pSOIFn_newkeylist_t)(void);
+typedef void (*pSOIFn_freekeylist_t)(KEY **);
 typedef void (*pSOIFn_setkey_str_t)(KEY **, char *, char *);
 typedef void (*pSOIFn_setkey_int_t)(KEY **, char *, int);
 typedef char *(*pSOIFn_getkey_str_t)(KEY *, const char *);
@@ -442,6 +445,8 @@ static KEY *CreateSOIKeylist(const char *progspec, LinkedList_t **wdlist, kDSDS_
    {
       pSOIFn_newkeylist_t pFn_newkeylist = 
 	(pSOIFn_newkeylist_t)GetSOIFPtr(hSOI, kSOI_NEWKEYLIST);
+      pSOIFn_freekeylist_t pFn_freekeylist = 
+	(pSOIFn_freekeylist_t)GetSOIFPtr(hSOI, kSOI_FREEKEYLIST);
       pSOIFn_setkey_str_t pFn_setkey_str = 
 	(pSOIFn_setkey_str_t)GetSOIFPtr(hSOI, kSOI_SETKEY_STR);
       pSOIFn_setkey_int_t pFn_setkey_int = 
@@ -456,7 +461,8 @@ static KEY *CreateSOIKeylist(const char *progspec, LinkedList_t **wdlist, kDSDS_
       KEY *dslist = NULL;
       char *spec = strdup(progspec);
 
-      if (spec && pFn_parse_list && pFn_newkeylist && pFn_setkey_str && 
+      if (spec && pFn_parse_list && pFn_newkeylist && 
+          pFn_freekeylist && pFn_setkey_str && 
 	  pFn_getkey_int && pFn_setkey_int)
       {
 	 dslist = (*pFn_newkeylist)();
@@ -470,7 +476,7 @@ static KEY *CreateSOIKeylist(const char *progspec, LinkedList_t **wdlist, kDSDS_
 
 	 /* If spec is a 'prog' spec, then call peq to obtain certain 
 	  * keys. */
-	 if (strstr(spec, kDSDS_PROGTOKEN) == spec)
+         if (DSDS_IsDSDSSpec(spec) || DSDS_IsDSDSPort(spec))
 	 {
 	    /* Call peq to add keys for %s_wd, %s_level_sn, and %s_series_sn.  The only
 	     * way to get this information is by communicating with dsds.  And there are
@@ -545,6 +551,14 @@ static KEY *CreateSOIKeylist(const char *progspec, LinkedList_t **wdlist, kDSDS_
 			long long ds = 0;
 
 			lineBuf[nRead] = '\0';
+
+                        if (strstr(lineBuf, "is not on-line"))
+                        {
+                           /* DSDS data are on tape, but not on disk - error out. */
+                           status = kDSDS_Stat_DSDSOffline;
+                           break;
+                        }
+
 			keystr = strtok(lineBuf, " \t");			
 
 			if (keystr)
@@ -602,9 +616,9 @@ static KEY *CreateSOIKeylist(const char *progspec, LinkedList_t **wdlist, kDSDS_
 				 }
 			      }
 			   }
-			}
+                        }
 
-			nRead = 0;
+                        nRead = 0;
 		     }
 		  }
 		  else if (nRead < LINE_MAX)
@@ -616,26 +630,89 @@ static KEY *CreateSOIKeylist(const char *progspec, LinkedList_t **wdlist, kDSDS_
 
 	       close(infd[0]);
 
-	       /* there should be three keys per vds */
-	       nds = (*pFn_getkey_int)(dslist, "in_nsets");	       
-	       if (nGot != 3 * nds)
-	       {
-		  status = kDSDS_Stat_PeqError;
-	       }
+               if (status == kDSDS_Stat_Success)
+               {
+                  if (DSDS_IsDSDSSpec(spec))
+                  {
+                     /* there should be three keys per vds - for the DSDSPort case, 
+                        in_%lld_level_sn is missing (don't know why). */
+                     nds = (*pFn_getkey_int)(dslist, "in_nsets");	       
+                     if (nGot != 3 * nds)
+                     {
+                        status = kDSDS_Stat_PeqError;
+                     }
+                  }
+               }
 	    }
-	 } /* 'prog' spec */
-         else
-         {
-            /* Must be a local directory that has an overview.fits file in it - 
-             * spec is the file dir containing fits fits. */
-            if (wdlist && !*wdlist)
-            {
-               *wdlist = list_llcreate(PATH_MAX);
-            }
+	 } /* 'prog' spec or DSDSPort spec */
 
-            if (*wdlist)
+         if (status == kDSDS_Stat_Success)
+         {
+            /* At this point, the soikeylist is "good" if the spec was a "prog" spec, 
+             * or a spec that is a VDS directory.  But it is BAD if it is a 
+             * spec that resolves into a SUMS dir containing a VDS directory.
+             * Fortuantely, we now have, thanks to peq, a SUMS directory containing 
+             * a VDS directory, so we can use that to create a "good" soikeylist.
+             */
+            if (DSDS_IsDSDSPort(spec))
             {
-               list_llinserthead(*wdlist, spec);
+               (*pFn_freekeylist)(&dslist);
+               dslist = (*pFn_newkeylist)();
+
+               /* *wdlist contains the SUMS directory that has the VDS directory */
+               if (wdlist && *wdlist)
+               {
+                  char *sumsdir = (char *)(list_llgethead(*wdlist)->data);
+                  char *tmp = NULL;
+
+                  /* OMG - don't forget to add a trailing '/' otherwise 
+                   * VDS panics and doesn't know what to do.
+                   */
+                  if (sumsdir[strlen(sumsdir) - 1] != '/')
+                  {
+                     tmp = malloc(strlen(sumsdir) + 1);
+                     if (tmp)
+                     {
+                        sprintf(tmp, "%s/", sumsdir);
+                     }
+                  }
+                  else
+                  {
+                     tmp = strdup(sumsdir);
+                  }
+            
+                  if (tmp)
+                  {
+                     (*pFn_setkey_str)(&dslist, "in", tmp);
+                     free(tmp);
+                     tmp = NULL;
+                  }
+
+                  if ((err = (*pFn_parse_list)(&dslist, "in")) != NO_ERROR)
+                  {
+                     fprintf(stderr, "Error calling parse_list(): %d.\n", err);
+                     status = kDSDS_Stat_APIRetErr;
+                  }
+               }
+               else
+               {
+                  status = kDSDS_Stat_PeqError;
+                  fprintf(stderr, "peq failed to find the SUMS directory containing the data files.\n");
+               }
+            } /* DSDSPort spec */
+            else if (!DSDS_IsDSDSSpec(spec))
+            {
+               /* Must be a local directory that has an overview.fits file in it - 
+                * spec is the file dir containing fits fits. */
+               if (wdlist && !*wdlist)
+               {
+                  *wdlist = list_llcreate(PATH_MAX);
+               }
+
+               if (*wdlist)
+               {
+                  list_llinserthead(*wdlist, spec);
+               }
             }
          }
       }

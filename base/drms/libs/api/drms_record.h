@@ -375,4 +375,5 @@ DRMS_Record_t *drms_recordset_fetchnextinset(DRMS_RecordSet_t *rs, int *setnum, 
 /* DSDS */
 int drms_record_isdsds(DRMS_Record_t *rec);
 int drms_record_islocal(DRMS_Record_t *rec);
+
 #endif

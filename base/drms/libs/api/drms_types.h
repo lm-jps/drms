@@ -410,7 +410,8 @@ typedef enum DRMS_RecordSetType_struct
    kRecordSetType_DRMS = 0,
    kRecordSetType_DSDS,
    kRecordSetType_VOT,
-   kRecordSetType_PlainFile
+   kRecordSetType_PlainFile,
+   kRecordSetType_DSDSPort
 } DRMS_RecordSetType_t;
 
 /** \brief DRMS-Record-set container */
