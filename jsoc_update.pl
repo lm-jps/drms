@@ -147,6 +147,8 @@ if (-e $CVSSTATUS)
 	    exit(1);
 	}
 
+        my($cmd);
+
 	foreach $mach (@machines)
 	{
 	    $machtype = `ssh $mach '$echocmd'`;
@@ -154,8 +156,10 @@ if (-e $CVSSTATUS)
 
 	    print STDOUT "start build on $machtype\n";
 	    @rsp = GetMountPath($mach, $lfspath);
-	    $rwd = shift(@rsp);	    
-	    system("(ssh $mach $rwd/make_jsoc.pl) 1>make_jsoc_$machtype.log 2>&1");
+	    $rwd = shift(@rsp);
+            $cmd = "(ssh $mach 'cd $rwd;$rwd/make_jsoc.pl') 1>make_jsoc_$machtype.log 2>&1";
+            print STDOUT "$cmd\n";
+	    system($cmd);
 	    print STDOUT "done on $machtype\n";
 	}
     }
