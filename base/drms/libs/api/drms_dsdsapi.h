@@ -10,6 +10,7 @@
 #define kDSDS_DS "ds"
 #define kDSDS_RN "rn"
 #define kDSDS_PROGTOKEN "prog:"
+#define kDSDS_NSPREFIX "dsdsing"
 
 #define kDSDS_MaxHandle 64
 
@@ -61,6 +62,10 @@ int DSDS_IsDSDSPort(const char *query);
 int DSDS_GetDSDSParams(DRMS_SeriesInfo_t *si, char *out);
 int DSDS_SetDSDSParams(void *hDSDS, DRMS_SeriesInfo_t *si, DSDS_Handle_t in);
 void *DSDS_GetLibHandle(const char *libname, kDSDS_Stat_t *status);
+static inline const char *DSDS_GetNsPrefix()
+{
+   return kDSDS_NSPREFIX;
+}
 
 /* Internal API (available to su only) */
 #define kDSDS_DSDS_OPEN_RECORDS "DSDS_open_records"

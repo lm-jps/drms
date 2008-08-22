@@ -3147,6 +3147,7 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
   DRMS_Record_t *template;
   char *p, *q, query[DRMS_MAXQUERYLEN], buf[DRMS_MAXPRIMIDX*DRMS_MAXKEYNAMELEN];
   DRMS_Keyword_t *kw;
+  int dsdsing = 0;
   XASSERT(env);
   XASSERT(seriesname);
 
@@ -3162,7 +3163,18 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
   /* Presumably, there won't be many calls to obtain the jsd template during 
    * modules execution (should be just one).  So, no need to cache the 
    * template. */
-  if (!jsd)
+  const char *dsdsNsPrefix = DSDS_GetNsPrefix();
+
+  if (strstr(seriesname, dsdsNsPrefix) == seriesname)
+  {
+     dsdsing = 1;
+  }
+  
+  /* Gotta special-case data ingested from DSDS - you can't populate an 
+   * empty record template since the record data are all in memory and
+   * don't reside in pqsl. THIS ASSUMES THAT THERE ARE NO PER-SEGMENT 
+   * KEYWORDS IN INGESTED DSDS DATA (THEY'RE SHOULDN'T BE) */
+  if (!jsd || dsdsing)
   {
      if ( (template = hcon_lookup_lower(&env->series_cache, seriesname)) == NULL )
      {
@@ -3178,7 +3190,7 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
      memset(template, 0, sizeof(DRMS_Record_t));
   }
 
-  if (template->init == 0 || jsd)
+  if (template->init == 0 || (jsd && !dsdsing))
   {
 #ifdef DEBUG
     printf("Building new template for series '%s'\n",seriesname);
@@ -3418,12 +3430,21 @@ DRMS_Record_t *drms_create_jsdtemplate_record(DRMS_Env_t *env,
 
 void drms_destroy_jsdtemplate_record(DRMS_Record_t **rec)
 {
+   /* Don't free the record structure IF this record is from a dsds-ingested series. In that
+    * case, the record IS the template structure cached into the series cache, and 
+    * will be freed upon session close. */
    if (rec)
    {
-      drms_free_template_record_struct(*rec);
-   }
+      const char *dsdsNsPrefix = DSDS_GetNsPrefix();
+      const char *seriesname = (*rec)->seriesinfo->seriesname;
 
-   *rec = NULL;
+      if (strstr(seriesname, dsdsNsPrefix) != seriesname)
+      {
+         drms_free_template_record_struct(*rec);
+      }
+
+      *rec = NULL;
+   }
 }
 
 /* Free the body of a template record data structure. */

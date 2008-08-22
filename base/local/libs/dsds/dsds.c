@@ -991,12 +991,15 @@ static void MakeDRMSSeriesName(void *hSOI,
 
    char drmsLev[DRMS_MAXSERIESNAMELEN];
    char key[kDSDS_MaxKeyName];
+   char *dsdsNsPrefix = NULL;
 
    pSOIFn_getkey_str_t pFn_getkey_str = 
      (pSOIFn_getkey_str_t)GetSOIFPtr(hSOI, kSOI_GETKEY_STR);
 
    if (pFn_getkey_str)
    {
+      dsdsNsPrefix = DSDS_GetNsPrefix();
+
       snprintf(key, sizeof(key), "%s_prog", dsname);
       char *prog = (*pFn_getkey_str)(params, key);
       snprintf(key, sizeof(key), "%s_series", dsname);
@@ -1016,7 +1019,8 @@ static void MakeDRMSSeriesName(void *hSOI,
 
 	 snprintf(drmsSeriesName,
 		  size,
-		  "dsds_%s.%s_%s__%lld",
+		  "%s_%s.%s_%s__%lld",
+                  dsdsNsPrefix,
 		  prog,
 		  dsdsSeries,
 		  drmsLev,
@@ -1026,10 +1030,10 @@ static void MakeDRMSSeriesName(void *hSOI,
       {
 	 /* If the dataset being opened resides in a directory, and did not come
 	  * from the SOI database, then use a generic, but unique name. */
-	 snprintf(drmsSeriesName, size, "%s%lld", kDSDS_GenericSeriesName, gSeriesGuid);
+	 snprintf(drmsSeriesName, size, "%s.%s%lld", dsdsNsPrefix, kDSDS_GenericSeriesName, gSeriesGuid);
       }
 
-      gSeriesGuid++;     
+      gSeriesGuid++;
    }
    else
    {
