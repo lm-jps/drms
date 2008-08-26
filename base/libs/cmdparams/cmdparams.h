@@ -12,6 +12,7 @@ of parameters expected to be available to a module as a global variable.
 #define _CMDPARAMS_H
 
 #include "hash_table.h"
+#include "hcontainer.h"
 #include <stdlib.h>
 
 #ifdef FLIB
@@ -102,6 +103,7 @@ struct CmdParams_struct {
   int buflen;
   int head;
   char *buffer;
+  HContainer_t *actvals;
 };
 /** @brief CmdParams struct reference */
 typedef struct CmdParams_struct CmdParams_t;
@@ -228,7 +230,8 @@ float cmdparams_get_float (CmdParams_t *parms, char *name, int *status);
 double cmdparams_get_double (CmdParams_t *parms, char *name, int *status);
 						/*  Generic integer version  */
 int cmdparams_get_int (CmdParams_t *parms, char *name, int *status);
-				       /*  versions without status argument  */
+int cmdparams_get_intarr(CmdParams_t *parms, char *name, int **arr, int *status);
+
 /**
 Returns a pointer to the associated string.
 On a failure, such as inability to locate the named key or to successfully
@@ -272,6 +275,8 @@ char params_get_char (CmdParams_t *parms, char *name);
 short params_get_short (CmdParams_t *parms, char *name);
 int params_get_int (CmdParams_t *parms, char *name);
 /* @} */
+
+void cmdparams_freeall (CmdParams_t *parms);
 
 #ifdef FLIB
 /**

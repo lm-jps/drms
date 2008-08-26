@@ -216,8 +216,11 @@ int fitsrw_readslice(const char *filename,
    npixels = 1;
    for(i=0;i<(*image_info)->naxis;i++) 
    {
-      npixels *= (lpixel[i]-fpixel[i]+1);
-      increments[i]=1;					// no skipping
+      /* override default axis lengths in image_info - a subset will have potentially 
+       * shorter lengths */
+      (*image_info)->naxes[i] = (lpixel[i]-fpixel[i]+1);
+      npixels *= (*image_info)->naxes[i];
+      increments[i]=1; // no skipping
    }
 
    pixels = calloc(npixels,  bytepix);

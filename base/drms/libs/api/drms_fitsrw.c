@@ -281,3 +281,147 @@ void drms_fitsrw_term()
 {
    fitsrw_closefptrs();
 }
+
+/* Array may be converted in calling function, but not here */
+int drms_fitsrw_readslice(const char *filename, 
+                          int naxis,
+                          int *start,
+                          int *end,
+                          DRMS_Array_t **arr)
+{
+   int status = DRMS_SUCCESS;
+   CFITSIO_IMAGE_INFO *info = NULL;
+   void *image = NULL;
+   int fitsrwstat = CFITSIO_SUCCESS;
+
+   /* Check start and end - end > start, and they should fall into 
+    * an acceptable range. */
+
+   /* This call really should take naxis as a parameter so that it knows how many values 
+    * are in start and end. */
+   fitsrwstat = fitsrw_readslice(filename, start, end, &info, &image);
+
+   if (fitsrwstat != CFITSIO_SUCCESS)
+   {
+      status = DRMS_ERROR_FITSRW;
+      fprintf(stderr, "FITSRW error '%d'.\n", fitsrwstat);
+   }
+   else
+   {
+      if (naxis != info->naxis)
+      {
+         fprintf(stderr, "TAS file axis mismatch.\n");
+         status = DRMS_ERROR_FITSRW;
+      }
+      else
+      {
+         if (drms_fitsrw_CreateDRMSArray(info, image, arr))
+         {
+            status = DRMS_ERROR_ARRAYCREATEFAILED;
+         }
+      }
+
+      /* Don't free image - arr has stolen it. */
+      cfitsio_free_these(&info, NULL, NULL);
+   }
+
+   return status;
+}
+
+/* Array may be converted in calling function, but not here */
+int drms_fitsrw_writeslice(DRMS_Segment_t *seg,
+                           const char *filename, 
+                           int naxis,
+                           int *start,
+                           int *end,
+                           DRMS_Array_t *arrayout)
+{
+   int status = DRMS_SUCCESS;
+   int fitsrwstat = CFITSIO_SUCCESS;
+
+   /* If the file doesn't exist, then must create one with missing data. THIS SHOULD 
+    * NEVER BE THE CASE WITH TAS FILES.  They get created when the DRMS record gets
+    * created. */
+   struct stat stbuf;
+   if (stat(filename, &stbuf) == -1)
+   {
+      CFITSIO_IMAGE_INFO info;
+      DRMS_Array_t *arr = NULL;
+
+      if (seg->info->type != DRMS_TYPE_RAW)
+      {
+         arr = drms_array_create(seg->info->type, seg->info->naxis, seg->axis, NULL, &status);
+
+         if (status == DRMS_SUCCESS)
+         {
+            arr->bzero = seg->bzero;
+            arr->bscale = seg->bscale;
+
+            /* If bzero == 0.0 and bscale == 1.0, then the file has physical units 
+             * (data are NOT 'raw'). */
+            if (seg->bzero == 0.0 && seg->bscale == 1.0)
+            {
+               arr->israw = 0;
+            }
+            else
+            {
+               arr->israw = 1;
+            }
+
+            drms_array2missing(arr);
+
+            if (!drms_fitsrw_SetImageInfo(arr, &info))
+            {
+               if (cfitsio_write_file(filename, &info, arr->data, seg->cparms, NULL) != CFITSIO_SUCCESS)
+               {
+                  fprintf(stderr, "Couldn't create FITS file '%s'.\n", filename); 
+                  status = DRMS_ERROR_CANTCREATETASFILE;
+               }
+            }
+            else
+            {
+               fprintf(stderr, "Couldn't create empty FITS file array.\n"); 
+               status = DRMS_ERROR_CANTCREATETASFILE;
+            }
+
+            drms_free_array(arr);
+         }
+         else
+         {
+            fprintf(stderr, "Couldn't create FITS file array.\n"); 
+            status = DRMS_ERROR_ARRAYCREATEFAILED;
+         }
+      }
+      else
+      {
+         status = DRMS_ERROR_INVALIDTYPE;
+      }
+   } /* file doesn't exist */
+
+   if (status == DRMS_SUCCESS)
+   {
+      if (naxis != arrayout->naxis)
+      {
+         fprintf(stderr, "TAS file axis mismatch.\n");
+         status = DRMS_ERROR_FITSRW;
+      }
+      else
+      {
+         /* This call really should take naxis as a parameter so that it knows how many values 
+          * are in start and end. */
+         fitsrwstat = fitsrw_writeslice(filename, 
+                                        start, 
+                                        end,
+                                        arrayout->data);
+   
+
+         if (fitsrwstat != CFITSIO_SUCCESS)
+         {
+            fprintf(stderr, "FITSRW error '%d'.\n", fitsrwstat);
+            status = DRMS_ERROR_FITSRW;
+         }
+      }
+   }
+
+   return status;
+}

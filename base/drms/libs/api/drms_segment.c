@@ -905,6 +905,8 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
          if ((statint = drms_fitstas_readslice(filename, 
                                                seg->info->naxis,
                                                seg->axis,
+                                               NULL,
+                                               NULL,
                                                seg->record->slotnum,
                                                &arr)) != DRMS_SUCCESS)
          {
@@ -1004,28 +1006,19 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 
 
 
-/* Open a data segment. 
 
-   a) If the corresponding data file exists, read the 
-   entire data array into memory. Convert it to the type given as 
-   argument. If type=DRMS_TYPE_RAW then the data is 
-   read into an array of the same type it is stored as on disk.
-   b) If the data file does not exist, then return a data array filed with 
-   the MISSING value for the given type.
-
-   How does this differ from drms_segment_read
-
-*/  
+/* The dimensionality of start, end, and seg must all match.
+ *
+ */
 DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type, 
-				     int *start, int *end,   int *status)
+				     int *start, int *end, int *status)
 {
   int stat=0,i;
   DRMS_Array_t *arr, *tmp;
   char filename[DRMS_MAXPATHLEN];
-  FILE *fp;
   DRMS_Record_t *rec;
   double bzero, bscale;
-  int start1[DRMS_MAXRANK+1], end1[DRMS_MAXRANK+1];	
+  DRMS_SeriesVersion_t vers2_1 = {"2.1", ""};	
 
   CHECKNULL_STAT(seg,status);
   
@@ -1044,156 +1037,179 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
   }  
 
   drms_segment_filename(seg, filename);
-#ifdef DEBUG
-  printf("Trying to open segment file '%s'.\n",filename);
-#endif
-  if ((fp = fopen(filename,"r")) == NULL)
+
+  /* XXX - assume bzero/bscale are 0.0/1.0 - no way of specifying 
+   * these for non-FITS protocol. */
+  bzero = 0.0;
+  bscale = 1.0;
+
+  /* For FITS, FITSZ, and TAS (which are implemented at the lowest level with a FITS file), 
+   * just read part of the file. cfitsio can read subsets of a file. 
+   * The other protocols read the whole file, then strip away what is needed, 
+   * which is inefficient.
+   */
+  if (seg->info->protocol == DRMS_FITS || 
+      seg->info->protocol == DRMS_FITZ)
   {
-    stat = DRMS_ERROR_UNKNOWNSEGMENT;
-    goto bailout1;
+     /* The underlying fits file will have bzero/bscale fits keywords - 
+      * those are used to populate arr. They must match the values 
+      * that originate in the record's _bzero/_bscale keywords. They cannot 
+      * vary across records. */
+     if ((stat = drms_fitsrw_readslice(filename, 
+                                       seg->info->naxis,
+                                       start,
+                                       end,
+                                       &arr)) != DRMS_SUCCESS)
+     {
+        fprintf(stderr,"Couldn't read slice from file '%s'.\n", filename);      
+        goto bailout1;
+     }
+  }
+  else if (seg->info->protocol == DRMS_TAS)
+  {
+     if ((stat = drms_fitstas_readslice(filename, 
+                                        seg->info->naxis,
+                                        seg->axis,
+                                        start,
+                                        end,
+                                        seg->record->slotnum,
+                                        &arr)) != DRMS_SUCCESS)
+     {
+        fprintf(stderr,"Couldn't read slice from file '%s'.\n", filename);      
+        goto bailout1;
+     }
   }
   else
   {
-     /* XXX - assume bzero/bscale are 0.0/1.0 - no way of specifying 
-      * these for non-FITS protocol. */
-     bzero = 0.0;
-     bscale = 1.0;
+     switch(seg->info->protocol)
+     {
+        case DRMS_BINARY:
+          XASSERT(arr = malloc(sizeof(DRMS_Array_t)));
+          if ((stat = drms_binfile_read(filename, 0, arr)))
+          {
+             fprintf(stderr,"Couldn't read segment from file '%s'.\n",
+                     filename);      
+             goto bailout1;
+          }
+          break;
+        case DRMS_BINZIP:
+          XASSERT(arr = malloc(sizeof(DRMS_Array_t)));
+          if ((stat = drms_zipfile_read(filename, 0, arr)))
+          {
+             fprintf(stderr,"Couldn't read segment from file '%s'.\n",
+                     filename);      
+             goto bailout1;
+          }
+          break;
+        case DRMS_GENERIC:
+          *status = DRMS_ERROR_INVALIDACTION;
+          return NULL;    
+          break;
+        case DRMS_MSI:
+          *status = DRMS_ERROR_NOTIMPLEMENTED;
+          return NULL;    
+          break;
+        case DRMS_FITZDEPRECATED:
+        case DRMS_FITSDEPRECATED:
+          {
+             double abscale = fabs(bscale);
+             int headlen;
+             char *header;
 
-    switch(seg->info->protocol)
-    {
-    case DRMS_BINARY:
-      fclose(fp);
-      XASSERT(arr = malloc(sizeof(DRMS_Array_t)));
-      if ((stat = drms_binfile_read(filename, 0, arr)))
-      {
-	fprintf(stderr,"Couldn't read segment from file '%s'.\n",
-		filename);      
-	goto bailout1;
-      }
-      break;
-    case DRMS_BINZIP:
-      fclose(fp);
-      XASSERT(arr = malloc(sizeof(DRMS_Array_t)));
-      if ((stat = drms_zipfile_read(filename, 0, arr)))
-      {
-	fprintf(stderr,"Couldn't read segment from file '%s'.\n",
-		filename);      
-	goto bailout1;
-      }
-      break;
-    case DRMS_TAS:
-      /* Select the slice from the slot belonging to this record. */
-      memcpy(start1, start, seg->info->naxis*sizeof(int));
-      memcpy(end1, end, seg->info->naxis*sizeof(int));
-      start1[seg->info->naxis] = seg->record->slotnum;
-      end1[seg->info->naxis] = seg->record->slotnum;
-      XASSERT(arr = malloc(sizeof(DRMS_Array_t)));
-      if ((stat = drms_tasfile_readslice(fp, type, bzero, bscale, 
-					 seg->info->naxis+1, start1, end1, arr)))
-      {
-	fprintf(stderr,"Couldn't read segment from file '%s'.\n",
-		filename);      
-	goto bailout1;
-      }
-      arr->naxis -= 1;
-      fclose(fp);
-      break;
-    case DRMS_FITZ:
-    case DRMS_FITS:
-      {
-	 fprintf(stderr, "Readslice not implemented for DRMS_FITZ and DRMS_FITS protocols.\n");
-	 goto bailout;
-      }
-    case DRMS_GENERIC:
-      fclose(fp);
-      *status = DRMS_ERROR_INVALIDACTION;
-      return NULL;    
-      break;
-    case DRMS_MSI:
-      fclose(fp);
-      *status = DRMS_ERROR_NOTIMPLEMENTED;
-      return NULL;    
-      break;
-    case DRMS_FITZDEPRECATED:
-    case DRMS_FITSDEPRECATED:
-      {
-      double abscale = fabs(bscale);
-      int headlen;
-      char *header;
+             if ((arr = drms_readfits (filename, 1, &headlen, &header, NULL)) == NULL)
+             {
+                fprintf (stderr, "Couldn't read segment from file '%s'.\n",
+                         filename);      
+                goto bailout1;
+             }
+             free(header);
+             /*  Check that values of BZERO, BSCALE in the file and in the DRMS
+                 database agree  */
+             if (fabs(arr->bzero - bzero) > 100 * DBL_EPSILON * abscale) {
+                fprintf(stderr,"BZERO and BSCALE in FITS file '%s' do not match those"
+                        " in DRMS database.\n",filename);      
+                goto bailout;
+             }
+             break;
+          }
+        default:
+          if (status)
+            *status = DRMS_ERROR_UNKNOWNPROTOCOL;
+          return NULL;
+     }
 
-      fclose(fp);
-      if ((arr = drms_readfits (filename, 1, &headlen, &header, NULL)) == NULL)
-      {
-	fprintf (stderr, "Couldn't read segment from file '%s'.\n",
-		  filename);      
-	goto bailout1;
-      }
-      free(header);
-	/*  Check that values of BZERO, BSCALE in the file and in the DRMS
-	   						database agree  */
-	if (fabs(arr->bzero - bzero) > 100 * DBL_EPSILON * abscale) {
-	  fprintf(stderr,"BZERO and BSCALE in FITS file '%s' do not match those"
-		  " in DRMS database.\n",filename);      
-	  goto bailout;
-	}
-      break;
-      }
-    default:
-      fclose(fp);
-      if (status)
-	*status = DRMS_ERROR_UNKNOWNPROTOCOL;
-      return NULL;
-    }
+     /* Cut out the desired part of the array. */
+     if ((tmp = drms_array_slice(start,end,arr)) == NULL)
+       drms_free_array(arr);
+     arr = tmp;
+     if (!arr)
+       goto bailout1;       
   }
-				   /*  Check that dimensions match template  */
+
+  /* Check that dimensions match template. */
+  if (arr->type != seg->info->type) {
+     fprintf (stderr, "Data types in file (%d) do not match those in segment " 
+              "descriptor (%d).\n", (int)arr->type, (int)seg->info->type);
+     stat = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
+     goto bailout;
+  }
   if (arr->naxis != seg->info->naxis) {
-    fprintf (stderr, "Number of axis in file (%d) do not match those in "
-	"segment descriptor (%d).\n", arr->naxis, seg->info->naxis);
-    goto bailout;
+     fprintf (stderr, "Number of axis in file (%d) do not match those in "
+              "segment descriptor (%d).\n", arr->naxis, seg->info->naxis);
+     stat = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
+     goto bailout;
   }
-  if (seg->info->protocol != DRMS_TAS) {
-    if (arr->type != seg->info->type) {
-      fprintf (stderr, "Data types in file (%d) do not match those in segment "
-	  "descriptor (%d).\n", (int)arr->type, (int)seg->info->type);
-      goto bailout;
-    }
-    for (i=0;i<arr->naxis;i++) {
-      if (arr->axis[i] != seg->axis[i]) {
-	fprintf(stderr,"Dimension of axis %d in file (%d) do not match those"
-		" in segment descriptor (%d).\n",i,arr->axis[i], 
-		seg->axis[i]);
-	goto bailout;
-      }
-    }
+  for (i=0;i<arr->naxis;i++) {    
+     if (arr->axis[i] > seg->axis[i]) {
+        fprintf (stderr,"Dimension of axis %d in file (%d) is incompatible with those"
+                 " in segment descriptor (%d).\n", i, arr->axis[i], seg->axis[i]);
+        stat = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
+        goto bailout;
+     }
   }
-  arr->parent_segment = seg;
-  for (i=0;i<arr->naxis;i++)
-    arr->start[i] = start[i];
-  arr->bzero = bzero;
-  arr->bscale = bscale;
 
-  /* Cut out the desired part of the array. */
-  if (seg->info->protocol != DRMS_TAS)  
+  /* Ensure that the record's bzero/bscale matches the FITS header's values */
+  if (drms_series_isvers(seg->record->seriesinfo, &vers2_1) && 
+      (seg->info->protocol == DRMS_TAS || 
+       seg->info->protocol == DRMS_FITS ||
+       seg->info->protocol == DRMS_FITZ))
   {
-    if ((tmp = drms_array_slice(start,end,arr)) == NULL)
-    drms_free_array(arr);
-    arr = tmp;
-    if (!arr)
-      goto bailout1;
-    /* Scale and convert to desired type. */
-    if (type != DRMS_TYPE_RAW )
-    {
-      if (arr->type != type || bscale != 1.0 || bzero != 0.0)
-	drms_array_convert_inplace(type, arr->bzero, arr->bscale, arr);
-    }
+     /* The bzero/bscale values must be contained in record keywords - 
+      * they must be allowed to vary across records (for FITS protocol) and segments.  
+      * The keyword name convention is <segname>_bzero and <segname>_bscale. 
+      * These keywords must NOT be defined in the .jsd - they are created implicitly. 
+      * When the template record is populated, these values are copied from
+      * the keyword value to the seg->bzero and seg->bscale fields.
+      */
+     if (!drms_segment_checkscaling(arr, seg->bzero, seg->bscale))
+     {
+        fprintf(stderr, "The FITS file's bzero/bscale values (%f, %f) do not match those of the segment (%f, %f).\n", arr->bzero, arr->bscale, seg->bzero, seg->bscale);
+        stat = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
+        goto bailout;
+     }
   }
 
-  if (type == DRMS_TYPE_RAW )
-    arr->israw=1;
-  else
-    arr->israw=0;
+  for (i=0;i<arr->naxis;i++)
+    arr->start[i] = 0;
 
+  /* Set information about mapping from parent segment to array. */ 
+  arr->parent_segment = seg;
   
+  /* Scale and convert to desired type. */
+  if (type == DRMS_TYPE_RAW)
+  {
+     arr->israw = 1;
+  }
+  else if (arr->type != type || arr->bscale != 1.0 || arr->bzero != 0.0)
+  {
+     /* convert TAS as well. */
+     drms_array_convert_inplace(type, arr->bzero, arr->bscale, arr);
+#ifdef DEBUG
+     printf("converted with bzero=%g, bscale=%g\n",arr->bzero, arr->bscale);
+#endif
+     arr->israw = 0;    
+  }
+
   if (status)
     *status = DRMS_SUCCESS;
   
@@ -1207,8 +1223,143 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
   return NULL;
 }
 
+/* functions shared by drms_segment_write() and drms_segment_writeslice() */
+static DRMS_Array_t *ScaleOutputArray(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
+{
+   double autobscale, autobzero;
+   double bscale, bzero; /* These are actually inverses used to convert arr->data, so that the resulting 
+                          * values must be interpreted with arr->bzero and arr->bscale */
 
+   /* Can autoscale only if output file type is an int. */
+   if (autoscale)
+     drms_segment_autoscale(seg, arr, &autobzero, &autobscale);
 
+   int outisraw = 0;
+   int copyarrscale = 0;
+
+   DRMS_Array_t *out = NULL;
+
+   /* bzero and bscale will be applied before data are written. */
+
+   if (arr->type != DRMS_TYPE_FLOAT && arr->type != DRMS_TYPE_DOUBLE)
+   {
+      /* bzero/bscale are not relevant when the data type is not 
+       * an integer type; so israw is also not relevant */
+      if (arr->israw)
+      {
+         /* means integer data are in 'scaled' units, not physical units. */
+         if (seg->info->type == DRMS_TYPE_FLOAT || seg->info->type == DRMS_TYPE_DOUBLE)
+         {
+            /* array is RAW integer, file is float - scale */
+            bzero = arr->bzero;
+            bscale = arr->bscale;
+
+            copyarrscale = 0;
+            outisraw = 0;
+         }
+         else
+         {
+            /* array is RAW integer, file is integer */
+            /* No scaling should occur.  Copy bzero/bscale from arr to FITS file. */
+            if (!autoscale)
+            {
+               bzero = 0.0;
+               bscale = 1.0;
+            }
+            else
+            {
+               if (arr->bzero != autobzero || arr->bscale != autobscale)
+               {
+                  bzero = (arr->bzero - autobzero) / autobscale;
+                  bscale = (arr->bscale) / autobscale;
+               }
+               else
+               {
+                  bzero = 0.0;
+                  bscale = 1.0;
+               }
+            }
+
+            copyarrscale = 1;
+            outisraw = 1;
+         }
+      }
+      else 
+      {
+         /* No scaling should occur - these are integers in physical units */
+         if (!autoscale)
+         {
+            bzero = 0.0;
+            bscale = 1.0;
+         }
+         else if (autobzero != 0.0 || autobscale != 1.0)
+         {
+            bzero = -autobzero / autobscale;
+            bscale = 1.0 / autobscale;
+         }
+
+         copyarrscale = 0;
+         outisraw = 0;
+      }
+   }
+   else
+   {
+      /* float array */
+      if (seg->info->type != DRMS_TYPE_FLOAT && seg->info->type != DRMS_TYPE_DOUBLE)
+      {
+         /* float array, integer file - scale */
+         if (!autoscale)
+         {
+            bzero = -arr->bzero / arr->bscale;
+            bscale = 1.0 / arr->bscale;
+         }
+         else
+         {
+            bzero = -autobzero / autobscale;
+            bscale = 1.0 / autobscale;
+         }
+
+         copyarrscale = 1;
+         outisraw = 1;
+      }
+      else
+      {
+         /* array is float, file is float - no scaling */
+         bzero = 0.0;
+         bscale = 1.0;
+         copyarrscale = 0;
+         outisraw = 0;
+      }
+   }
+
+#ifdef DEBUG      
+   printf("in write_segment:  bzero=%g, bscale = %g\n",bzero,bscale);
+#endif
+
+   /* Convert to desired type. */
+   if( arr->type != seg->info->type || fabs(bzero)!=0.0 || bscale!=1.0)
+   {
+      out = drms_array_convert(seg->info->type, bzero, bscale, arr);
+   }
+   else 
+   {
+      out = arr;
+   }
+    
+   if (copyarrscale)
+   {
+      out->bzero = arr->bzero;
+      out->bscale = arr->bscale;
+   }
+   else
+   {
+      out->bzero = 0.0;
+      out->bscale = 1.0;
+   }
+   out->israw = outisraw ? 1 : 0;
+
+   return out;
+}
 
 /* Write the array argument to the file occupied by the
    segment argument. The array dimension and type must match the
@@ -1218,9 +1369,7 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
   int status,i;
   char filename[DRMS_MAXPATHLEN]; 
   DRMS_Array_t *out;
-  double bscale, bzero; /* These are actually inverses used to convert arr->data, so that the resulting 
-                         * values must be interpreted with arr->bzero and arr->bscale */
-  double autobscale, autobzero;
+  DRMS_SeriesVersion_t vers2_1 = {"2.1", ""};
 
   if (seg->info->scope == DRMS_CONSTANT &&
       seg->info->cseg_recnum) {
@@ -1279,131 +1428,7 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
        }
     }
 
-    /* Can autoscale only if output file type is an int. */
-    if (autoscale)
-      drms_segment_autoscale(seg, arr, &autobzero, &autobscale);
-
-    int outisraw = 0;
-    int copyarrscale = 0;
-
-    /* bzero and bscale will be applied before data are written. */
-
-    if (arr->type != DRMS_TYPE_FLOAT && arr->type != DRMS_TYPE_DOUBLE)
-    {
-       /* bzero/bscale are not relevant when the data type is not 
-	* an integer type; so israw is also not relevant */
-       if (arr->israw)
-       {
-	  /* means integer data are in 'scaled' units, not physical units. */
-	  if (seg->info->type == DRMS_TYPE_FLOAT || seg->info->type == DRMS_TYPE_DOUBLE)
-	  {
-	     /* array is RAW integer, file is float - scale */
-	     bzero = arr->bzero;
-	     bscale = arr->bscale;
-
-	     copyarrscale = 0;
-	     outisraw = 0;
-	  }
-	  else
-	  {
-	     /* array is RAW integer, file is integer */
-	     /* No scaling should occur.  Copy bzero/bscale from arr to FITS file. */
-	     if (!autoscale)
-	     {
-		bzero = 0.0;
-		bscale = 1.0;
-	     }
-	     else
-	     {
-		if (arr->bzero != autobzero || arr->bscale != autobscale)
-		{
-		   bzero = (arr->bzero - autobzero) / autobscale;
-		   bscale = (arr->bscale) / autobscale;
-		}
-		else
-		{
-		   bzero = 0.0;
-		   bscale = 1.0;
-		}
-	     }
-
-	     copyarrscale = 1;
-	     outisraw = 1;
-	  }
-       }
-       else 
-       {
-	  /* No scaling should occur - these are integers in physical units */
-	  if (!autoscale)
-	  {
-	     bzero = 0.0;
-	     bscale = 1.0;
-	  }
-	  else if (autobzero != 0.0 || autobscale != 1.0)
-	  {
-	     bzero = -autobzero / autobscale;
-	     bscale = 1.0 / autobscale;
-	  }
-
-	  copyarrscale = 0;
-	  outisraw = 0;
-       }
-    }
-    else
-    {
-       /* float array */
-       if (seg->info->type != DRMS_TYPE_FLOAT && seg->info->type != DRMS_TYPE_DOUBLE)
-       {
-	  /* float array, integer file - scale */
-	  if (!autoscale)
-	  {
-	     bzero = -arr->bzero / arr->bscale;
-	     bscale = 1.0 / arr->bscale;
-	  }
-	  else
-	  {
-	     bzero = -autobzero / autobscale;
-	     bscale = 1.0 / autobscale;
-	  }
-
-	  copyarrscale = 1;
-	  outisraw = 1;
-       }
-       else
-       {
-	  /* array is float, file is float - no scaling */
-	  bzero = 0.0;
-	  bscale = 1.0;
-	  copyarrscale = 0;
-	  outisraw = 0;
-       }
-    }
-
-#ifdef DEBUG      
-    printf("in write_segment:  bzero=%g, bscale = %g\n",bzero,bscale);
-#endif
-
-    /* Convert to desired type. */
-    if( arr->type != seg->info->type || fabs(bzero)!=0.0 || bscale!=1.0)
-    {
-       out = drms_array_convert(seg->info->type, bzero, bscale, arr);
-    }
-    else 
-    {
-       out = arr;
-    }
-    
-    if (copyarrscale)
-    {
-       out->bzero = arr->bzero;
-       out->bscale = arr->bscale;
-    }
-    else
-    {
-       out->bzero = 0.0;
-       out->bscale = 1.0;
-    }
-    out->israw = outisraw ? 1 : 0;
+    out = ScaleOutputArray(seg, arr, autoscale);
 
     drms_segment_filename(seg, filename);
     if (!strlen(seg->filename)) {
@@ -1423,7 +1448,6 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
     case DRMS_FITZ:
       {
          char key[DRMS_MAXKEYNAMELEN];
-         DRMS_SeriesVersion_t vers2_1 = {"2.1", ""};
 
 	 if (out->type == DRMS_TYPE_STRING)
 	 {
@@ -1465,7 +1489,6 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
     case DRMS_FITS:
       {
          char key[DRMS_MAXKEYNAMELEN];
-         DRMS_SeriesVersion_t vers2_1 = {"2.1", ""};
 
 	 if (out->type == DRMS_TYPE_STRING)
 	 {
@@ -1509,14 +1532,24 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
          /* seg->bzero and seg->bscale cannot be overridden - all records must 
           * have the same bzero and bscale values, since they share the same
           * fits file */
-         if (!drms_segment_checkscaling(out, seg->bzero, seg->bscale))
+         if (drms_series_isvers(seg->record->seriesinfo, &vers2_1))
          {
-            fprintf(stderr, "The output array's bzero/bscale values (%f, %f) do not match those of the TAS file (%f, %f).\n", out->bzero, out->bscale, seg->bzero, seg->bscale);
-            status = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
-            goto bailout;
+            if (!drms_segment_checkscaling(out, seg->bzero, seg->bscale))
+            {
+               fprintf(stderr, "The output array's bzero/bscale values (%f, %f) do not match those of the TAS file (%f, %f).\n", out->bzero, out->bscale, seg->bzero, seg->bscale);
+               status = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
+               goto bailout;
+            }
          }
 
-         status = drms_fitstas_writeslice(seg, filename, seg->info->naxis, seg->axis, seg->record->slotnum, out);
+         status = drms_fitstas_writeslice(seg, 
+                                          filename, 
+                                          seg->info->naxis, 
+                                          seg->axis, 
+                                          NULL, 
+                                          NULL, 
+                                          seg->record->slotnum, 
+                                          out);
 
          if (status)
            goto bailout;
@@ -1547,6 +1580,179 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
   }
 
   return DRMS_SUCCESS;
+  }
+  else
+    return DRMS_ERROR_NULLPOINTER;
+
+ bailout:
+  if (out && out!=arr)
+    drms_free_array(out);
+  fprintf(stderr,"ERROR: Couldn't write data to file '%s'.\n", filename);
+  return status;
+}
+
+int drms_segment_writeslice(DRMS_Segment_t *seg, DRMS_Array_t *arr, int *start, int *end, int autoscale)
+{
+  int status,i;
+  char filename[DRMS_MAXPATHLEN]; 
+  DRMS_Array_t *out;
+  DRMS_SeriesVersion_t vers2_1 = {"2.1", ""};
+
+  if (seg->info->scope == DRMS_CONSTANT &&
+      seg->info->cseg_recnum) {
+     fprintf(stderr, "ERROR in drms_segment_write: constant segment has already"
+             " been initialized. Series = %s.\n",  seg->record->seriesinfo->seriesname);
+     return DRMS_ERROR_INVALIDACTION;
+  }
+
+  if (seg->info->protocol == DRMS_GENERIC)
+  {
+     fprintf(stderr, "ERROR in drms_segment_write: Not appropriate function"
+             "for DRMS_GENERIC segment.  Series = %s.\n", seg->record->seriesinfo->seriesname);
+     return(DRMS_ERROR_INVALIDACTION);
+  }
+
+  if (seg && arr)
+  {
+     if (seg->record->readonly)
+     {
+        fprintf(stderr,"Cannot write segment to read-only record.\n");
+        return DRMS_ERROR_RECORDREADONLY;
+     }
+     if (arr->data == NULL)
+     {
+        fprintf(stderr,"Array contains no data!\n");
+        return DRMS_ERROR_NULLPOINTER;
+     }
+
+     if (seg->info->scope != DRMS_VARDIM)
+     {
+        if (arr->naxis != seg->info->naxis)
+        {
+           fprintf(stderr,"Number of axis in file (%d) do not match those in "
+                   "segment descriptor (%d).\n",arr->naxis,seg->info->naxis);
+           return DRMS_ERROR_INVALIDDIMS;
+        }
+        for (i=0;i<arr->naxis;i++)
+        {
+           if (start[i] < 0 || end[i] > seg->axis[i] - 1)
+           {
+              fprintf(stderr,
+                      "Axis slice '[%d, %d]' not entirely within data array boundaries.\n", 
+                      start[i], end[i]);
+              return DRMS_ERROR_INVALIDDIMS;
+           }
+
+           if (end[i] - start[i] + 1 != arr->axis[i])
+           {
+              fprintf(stderr,
+                      "Axis slice dimensions (%d) do not match data dimensions (%d).\n",
+                      end[i] - start[i] + 1, arr->axis[i]);
+              return DRMS_ERROR_INVALIDDIMS;
+           }
+        }
+     }
+     else
+     {
+        /* Use the input array's axis dimensionality and lengths for the output file */
+        seg->info->naxis = arr->naxis;
+
+        for (i=0;i<arr->naxis;i++)
+        {
+           seg->axis[i] = arr->axis[i];
+        }
+     }
+
+     out = ScaleOutputArray(seg, arr, autoscale);
+
+     drms_segment_filename(seg, filename);
+     if (!strlen(seg->filename)) {
+        strncpy(seg->filename, rindex(filename, '/')+1, DRMS_MAXSEGFILENAME-1);
+     }
+
+     switch(seg->info->protocol)
+     {
+        case DRMS_GENERIC:
+        case DRMS_BINARY:
+        case DRMS_BINZIP:
+        case DRMS_MSI:
+        case DRMS_FITZDEPRECATED:
+        case DRMS_FITSDEPRECATED:
+          fprintf(stderr, 
+                  "Writing of data slices to protocol '%s' not supported.\n", 
+                  drms_prot2str(seg->info->protocol));
+          status = DRMS_ERROR_NOTIMPLEMENTED;
+          goto bailout;
+          break; 
+        case DRMS_FITZ:
+        case DRMS_FITS:
+          {
+             if (out->type == DRMS_TYPE_STRING)
+             {
+                fprintf(stderr, "Can't save string data into a fits file.\n");
+                goto bailout;
+             }
+
+             /* When writing a slice, bzero/bscale must match the segment's bzero/bscale. 
+              * Otherwise, you could write slices with differing bzero/bscale values, 
+              * which would be a big problem. */
+             if (drms_series_isvers(seg->record->seriesinfo, &vers2_1))
+             {
+                if (!drms_segment_checkscaling(out, seg->bzero, seg->bscale))
+                {
+                   fprintf(stderr, "The output array's bzero/bscale values (%f, %f) do not match those of the FITS file (%f, %f).\n", out->bzero, out->bscale, seg->bzero, seg->bscale);
+                   status = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
+                   goto bailout;
+                }
+             }
+
+             if ((status = drms_fitsrw_writeslice(seg, filename, out->naxis, start, end, out)) != DRMS_SUCCESS)
+               goto bailout;
+          }
+          break;  
+        case DRMS_TAS:
+          {
+             /* seg->bzero and seg->bscale cannot be overridden - all records must 
+              * have the same bzero and bscale values, since they share the same
+              * fits file */
+             if (drms_series_isvers(seg->record->seriesinfo, &vers2_1))
+             {
+                if (!drms_segment_checkscaling(out, seg->bzero, seg->bscale))
+                {
+                   fprintf(stderr, "The output array's bzero/bscale values (%f, %f) do not match those of the TAS file (%f, %f).\n", out->bzero, out->bscale, seg->bzero, seg->bscale);
+                   status = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
+                   goto bailout;
+                }
+             }
+
+             if ((status = drms_fitstas_writeslice(seg, 
+                                                  filename, 
+                                                  seg->info->naxis, 
+                                                  seg->axis, 
+                                                  start, 
+                                                  end, 
+                                                  seg->record->slotnum, 
+                                                  out)) != DRMS_SUCCESS)
+               goto bailout;
+          }
+          break;
+        default:
+          return DRMS_ERROR_UNKNOWNPROTOCOL;
+     }
+
+     if (out!=arr)
+       drms_free_array(out);
+
+     if (seg->info->scope == DRMS_CONSTANT &&
+         !seg->info->cseg_recnum) {
+        if (seg->record->lifetime == DRMS_TRANSIENT) {
+           fprintf(stderr, "Error: cannot set constant segment in a transient record\n");
+           goto bailout;
+        }
+        return drms_segment_set_const(seg);
+     }
+
+     return DRMS_SUCCESS;
   }
   else
     return DRMS_ERROR_NULLPOINTER;

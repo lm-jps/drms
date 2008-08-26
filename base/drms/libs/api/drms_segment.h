@@ -331,6 +331,12 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
 */
 int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale);
 
+int drms_segment_writeslice(DRMS_Segment_t *seg, 
+                            DRMS_Array_t *arr, 
+                            int *start, 
+                            int *end, 
+                            int autoscale);
+
 /* Write a file specified by filename argument to the file occupied by
    the segment argument. The filename of the segment is set.
  */

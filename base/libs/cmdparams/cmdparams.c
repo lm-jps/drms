@@ -48,6 +48,8 @@
 #include "xassert.h"
 #include "xmem.h"
 #include "timeio.h"
+#include "util.h"
+#include "list.h"
 					       /* declared module parameters */
 extern ModuleArgs_t *gModArgs;
 
@@ -70,6 +72,9 @@ const double gHugeValF = HUGE_VALF;
 const double gNHugeValF = -HUGE_VALF;
 const double gHugeVal = HUGE_VAL;
 const double gNHugeVal = -HUGE_VAL;
+
+#define kARGSIZE     (128)
+#define kKEYSIZE     (128)
 
 static char *RemoveTrailSp (const char *str, int *status) {
   char *ret = NULL;
@@ -191,36 +196,170 @@ static char *strip_delimiters (char *s) {
   }
 }
 
-static int parse_array (CmdParams_t *params, char *root, char *valist) {
+static int cmdparams_initactvals(CmdParams_t *params)
+{
+   if (params && !params->actvals)
+   {
+      params->actvals = hcon_create(sizeof(void *), kKEYSIZE, NULL, NULL, NULL, NULL, 0);
+   }
+
+   return (params->actvals == NULL);
+}
+
+static int cmdparams_conv2type(const char *sdata, 
+                               ModuleArgs_Type_t dtype, 
+                               char *bufout, 
+                               int size)
+{
+   int status = CMDPARAMS_SUCCESS;
+   char *endptr = NULL;
+   int64_t intval;
+   float fval;
+   double dval;
+
+   switch (dtype)
+   {
+      case ARG_INT:
+        intval = (int64_t)strtod(sdata, &endptr);
+        if ((intval == 0 && endptr == sdata) || (intval < INT32_MIN || intval > INT32_MAX)) 
+        {
+           intval = CP_MISSING_INT;
+           status = CMDPARAMS_INVALID_CONVERSION;
+        } 
+       
+        XASSERT(sizeof(intval) <= size);
+        memcpy(bufout, &intval, sizeof(intval));
+        
+        break;
+      case ARG_FLOAT:
+        fval = strtof(sdata, &endptr);
+        if ((*endptr != '\0' || endptr == sdata) || 
+            ((IsPosHugeValF(fval) || IsNegHugeValF(fval)) && errno == ERANGE))
+        {
+           status = CMDPARAMS_INVALID_CONVERSION;
+           fval = CP_MISSING_FLOAT;
+        } 
+
+        XASSERT(sizeof(fval) <= size);
+        memcpy(bufout, &fval, sizeof(fval));
+        break;
+      case ARG_DOUBLE:
+        dval = strtod(sdata, &endptr);
+        if ((*endptr != '\0' || endptr == sdata) || 
+            ((IsPosHugeVal(dval) || IsNegHugeVal(dval)) && errno == ERANGE))
+        {
+           status = CMDPARAMS_INVALID_CONVERSION;
+           dval = CP_MISSING_DOUBLE;
+        } 
+
+        XASSERT(sizeof(dval) <= size);
+        memcpy(bufout, &dval, sizeof(dval));
+        break;
+      default:
+        fprintf(stderr, "Incomplete implementation - type '%d' not supported.\n", (int)dtype);
+   }
+
+   return status;
+}
+
+static int parse_array (CmdParams_t *params, char *root, ModuleArgs_Type_t dtype, char *valist) {
   int nvals = 0, status = 0;
   char *name, *next, *nptr, *tmplist;
   static char key[CP_MAXNAMELEN], val[CP_MAXNAMELEN];
+  void *actvals = NULL;
+  LinkedList_t *listvals = NULL;
+  ListNode_t *node = NULL;
+  int dsize = 0;
 
-  tmplist = malloc (strlen (valist) + 1);
-  strcpy (tmplist, valist);
-  str_compress (tmplist);			     /*  remove white space  */
-  name = strip_delimiters (tmplist);			  /*  (), [], or {}  */
-  if (!name) return -1;
-/*
- *  name should contain a comma separated list of entities of the given type
- */
-  next = name;
-  while (next) {
-    nptr = next;
-    if ((next = (char *)strchr (nptr, ',')) != NULL) {
-      *next = 0;
-      next++;
-    }
-    if (!strlen (nptr)) continue;
-					      /*  nptr now points to entity  */
-    sprintf (key, "%s_%d_value", root, nvals);
-    cmdparams_set (params, key, nptr);
-    nvals++;
+  /* Need to store the actual array of values, not just the char * representation, and 
+   * and not a string parameter per value. */
+  if (!params->actvals)
+  {
+     cmdparams_initactvals(params);
   }
-  sprintf (key, "%s_nvals", root);
-  sprintf (val, "%d", nvals);
-  cmdparams_set (params, key, val);
-  free (tmplist);
+
+  if (params->actvals)
+  {
+     /* there is no limit to the size of bytes that an individual argument value
+      * can have - but since the arguments we're dealing with here are either
+      * ints, floats, or doubles, 128 bytes should be sufficient. */
+     listvals = list_llcreate(kARGSIZE);
+
+     tmplist = malloc (strlen (valist) + 1);
+     strcpy (tmplist, valist);
+     str_compress (tmplist);			     /*  remove white space  */
+     name = strip_delimiters (tmplist);			  /*  (), [], or {}  */
+     if (!name) return -1;
+     /*
+      *  name should contain a comma separated list of entities of the given type
+      */
+     next = name;
+     while (next) {
+        nptr = next;
+        if ((next = (char *)strchr (nptr, ',')) != NULL) {
+           *next = 0;
+           next++;
+        }
+        if (!strlen (nptr)) continue;
+        /*  nptr now points to entity  */
+        sprintf (key, "%s_%d_value", root, nvals);
+        cmdparams_set (params, key, nptr);
+
+        list_llinserttail(listvals, nptr);
+
+        nvals++;
+     }
+     sprintf (key, "%s_nvals", root);
+     sprintf (val, "%d", nvals);
+     cmdparams_set (params, key, val);
+     free (tmplist);
+
+
+     switch(dtype)
+     {
+        case ARG_INTS:
+          actvals = malloc(sizeof(int) * nvals);
+          dtype = ARG_INT;
+          dsize = sizeof(int);
+          break;
+        case ARG_FLOATS:
+          actvals = malloc(sizeof(float) * nvals);
+          dtype = ARG_FLOAT;
+          dsize = sizeof(float);
+          break;
+        case ARG_DOUBLES:
+          actvals = malloc(sizeof(double) * nvals);
+          dtype = ARG_DOUBLE;
+          dsize = sizeof(double);
+          break;
+        default:
+          fprintf(stderr, "Unexpected type '%d'\n", (int)dtype);
+     }
+
+     int ival = 0;
+     list_llreset(listvals);
+     while ((node = list_llnext(listvals)) != NULL)
+     {
+        if ((status = cmdparams_conv2type(node->data, 
+                                          dtype, 
+                                          (char *)(actvals) + dsize * ival, 
+                                          kARGSIZE)) != CMDPARAMS_SUCCESS)
+        {
+           break;
+        }
+        ival++;
+     }
+
+     if (!status)
+     {
+        hcon_insert(params->actvals, root, &actvals);
+     }
+
+     if (listvals)
+     {
+        list_llfree(&listvals);
+     }
+  }
 
   return status;
 }
@@ -364,7 +503,7 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
 	    defps->type == ARG_DOUBLES || 
 	    defps->type == ARG_INTS) 
 	{
-	  if ((status = parse_array (parms, defps->name,
+           if ((status = parse_array (parms, defps->name, defps->type, 
 				     cmdparams_get_str (parms, defps->name, NULL))))
             fprintf (stderr, "array parsing returned error\n");
 	} 
@@ -404,6 +543,8 @@ void cmdparams_freeall (CmdParams_t *parms) {
   for (i=0; i<parms->num_args; i++)
     free(parms->args[i]);
   free (parms->args);
+
+  hcon_destroy(&(parms->actvals));
 }
 
 /*
@@ -724,6 +865,27 @@ int16_t cmdparams_get_int16 (CmdParams_t *parms, char *name, int *status) {
 
 int cmdparams_get_int (CmdParams_t *parms, char *name, int *status) {
   return cmdparams_get_int32 (parms, name, status);
+}
+
+int cmdparams_get_intarr(CmdParams_t *parms, char *name, int **arr, int *status)
+{
+   int stat = CMDPARAMS_SUCCESS;
+   char buf[128];
+   int **arrint = NULL;
+
+   if (arr)
+   {
+      arrint = (int **)hcon_lookup(parms->actvals, name);
+      *arr = *arrint;
+   }
+
+   if (status)
+   {
+      *status = stat;
+   }
+
+   snprintf(buf, sizeof(buf), "%s_nvals", name);
+   return cmdparams_get_int(parms, buf, status);
 }
 
 int32_t cmdparams_get_int32 (CmdParams_t *parms, char *name, int *status) {

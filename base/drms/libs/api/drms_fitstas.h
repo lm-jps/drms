@@ -14,6 +14,8 @@ int drms_fitstas_create(const char *filename,
 int drms_fitstas_readslice(const char *filename, 
                            int naxis,
                            int *axis,
+                           int *lower,
+                           int *upper,
                            int slotnum,
                            DRMS_Array_t **arr);
 
@@ -21,6 +23,8 @@ int drms_fitstas_writeslice(DRMS_Segment_t *seg,
                             const char *filename, 
                             int naxis,
                             int *axis,
+                            int *lower,
+                            int *upper,
                             int slotnum,
                             DRMS_Array_t *arrayout);
 

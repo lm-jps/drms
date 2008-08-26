@@ -116,23 +116,18 @@ void list_llremove(LinkedList_t *llist, ListNode_t *item)
    }
 }
 
+void list_llreset(LinkedList_t *llist)
+{
+   llist->next = llist->first;
+}
+
 ListNode_t *list_llnext(LinkedList_t *llist)
 {
    ListNode_t *next = NULL;
 
    if (llist)
    {
-      if (llist->next == NULL)
-      {
-	 if (llist->first != NULL)
-	 {
-	    next = llist->first;
-	 }
-      }
-      else
-      {
-	 next = llist->next;
-      }
+      next = llist->next;
 
       if (llist->next != NULL && llist->next->next != NULL)
       {

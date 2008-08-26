@@ -67,58 +67,43 @@ int drms_fitstas_create(const char *filename,
    return status;
 }
 
-/* Array may be converted in calling function, but not here */
 int drms_fitstas_readslice(const char *filename, 
                            int naxis,
                            int *axis,
+                           int *lower,
+                           int *upper,
                            int slotnum,
                            DRMS_Array_t **arr)
 {
    int status = DRMS_SUCCESS;
-   CFITSIO_IMAGE_INFO *info = NULL;
-   void *image = NULL;
-   int fitsrwstat = CFITSIO_SUCCESS;
    int start[DRMS_MAXRANK+1];
    int end[DRMS_MAXRANK+1];
    int i;
 
-   for (i = 0; i < naxis; i++)
+   if (lower && upper)
    {
-      start[i] = 0;
-      end[i] = axis[i] - 1;
+      memcpy(start, lower, naxis * sizeof(int));
+      memcpy(end, upper, naxis * sizeof(int));
+   }
+   else
+   {
+      for (i = 0; i < naxis; i++)
+      {
+         start[i] = 0;
+         end[i] = axis[i] - 1;
+      }
    }
 
    start[naxis] = slotnum;
    end[naxis] =  slotnum;
 
-   fitsrwstat = fitsrw_readslice(filename, start, end, &info, &image);
+   status = drms_fitsrw_readslice(filename, naxis + 1, start, end, arr);
 
-   if (fitsrwstat != CFITSIO_SUCCESS)
+   if (status == DRMS_SUCCESS)
    {
-      status = DRMS_ERROR_FITSRW;
-      fprintf(stderr, "FITSRW error '%d'.\n", fitsrwstat);
-   }
-   else
-   {
-      /* image has one extra dimension, but its length is 1 (so the extra dim is superfluous) */
-      if (naxis + 1 != info->naxis)
-      {
-         fprintf(stderr, "TAS file axis mismatch.\n");
-         status = DRMS_ERROR_FITSRW;
-      }
-      else
-      {
-         info->naxis--;
-         info->naxes[naxis] = 0;
-
-         if (drms_fitsrw_CreateDRMSArray(info, image, arr))
-         {
-            status = DRMS_ERROR_ARRAYCREATEFAILED;
-         }
-      }
-
-      /* Don't free image - arr has stolen it. */
-      cfitsio_free_these(&info, NULL, NULL);
+      /* arr has one extra dimension in it, but always of length one */
+      ((*arr)->axis)[naxis] = 0;
+      (*arr)->naxis--;
    }
 
    return status;
@@ -129,35 +114,35 @@ int drms_fitstas_writeslice(DRMS_Segment_t *seg,
                             const char *filename, 
                             int naxis,
                             int *axis,
+                            int *lower,
+                            int *upper,
                             int slotnum,
                             DRMS_Array_t *arrayout)
 {
    int status = DRMS_SUCCESS;
-   int fitsrwstat = CFITSIO_SUCCESS;
    int start[DRMS_MAXRANK] = {0};
    int end[DRMS_MAXRANK] = {0};
    int iaxis;
 
-   start[naxis] = slotnum;
-
-   for (iaxis = 0; iaxis < naxis; iaxis++)
+   if (lower && upper)
    {
-      end[iaxis] = start[iaxis] + axis[iaxis] - 1;
-   }
-
-   end[naxis] = slotnum;
-
-   fitsrwstat = fitsrw_writeslice(filename, 
-                                  start, 
-                                  end,
-                                  arrayout->data);
-
-   if (fitsrwstat != CFITSIO_SUCCESS)
-   {
-      status = DRMS_ERROR_FITSRW;
-      fprintf(stderr, "FITSRW error '%d'.\n", fitsrwstat);
+      memcpy(start, lower, naxis * sizeof(int));
+      memcpy(end, upper, naxis * sizeof(int));
    }
    else
+   {
+      for (iaxis = 0; iaxis < naxis; iaxis++)
+      {
+         end[iaxis] = start[iaxis] + axis[iaxis] - 1;
+      }
+   }
+
+   start[naxis] = slotnum;
+   end[naxis] = slotnum;
+
+   status = drms_fitsrw_writeslice(seg, filename, naxis, start, end, arrayout);
+
+   if (status == DRMS_SUCCESS)
    {
       /* arrayout->bzero and arrayout->bscale must be saved, if an appropriately named 
        * keyword exists.  The TAS FITS file cannot save record-and-segment-specific

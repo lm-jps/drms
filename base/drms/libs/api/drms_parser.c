@@ -311,61 +311,6 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
 	seg->axis[i] = atoi(axis);
       }
 
-    /* Version was already parsed from jsd at this point. */
-    if (drms_series_isvers(template->seriesinfo, &vers2_0))
-    {
-     /* Create a cparms_sgXXX keyword for each segment.  It will save 
-      * the compression-parameters string. */
-       char buf[DRMS_MAXKEYNAMELEN];
-
-       /* cparms can be empty */
-       if (gettoken(&q,cparms,sizeof(cparms)) < 0) goto failure;
-
-       /* cparms_sgXXX is NOT a per-segment keyword!  A per-segment keyword means 
-        * that there was a single line in the .jsd that spawned the createion of 
-        * multiple keywords.  There must be one cparms_sgXXX line per keyword though. */
-       snprintf(buf, sizeof(buf), "cparms_sg%03d", segnum);
-
-       DRMS_Keyword_t *cpkey = calloc(1, sizeof(DRMS_Keyword_t));
-       XASSERT(cpkey);
-       int chused = 0;
-
-       XASSERT(cpkey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
-       memset(cpkey->info, 0, sizeof(DRMS_KeywordInfo_t));
-       snprintf(cpkey->info->name, DRMS_MAXKEYNAMELEN, "%s", buf);
-       cpkey->record = template;
-       drms_keyword_unsetperseg(cpkey); /* don't do this, otherwise the _000 gets stripped off */
-       cpkey->info->islink = 0;
-       cpkey->info->linkname[0] = 0;
-       cpkey->info->target_key[0] = 0;
-       cpkey->info->type = DRMS_TYPE_STRING;
-
-       /* By default, cpkey->value.string_val is NULL - set it to the empty string */
-       drms_sscanf_str("", &cpkey->value);
-
-       if (strlen(cparms) > 0 && strcasecmp(cparms, "none"))
-       {
-          /* drms_sscanf has a bug - the string cannot contain commas.  But
-           * there are many places in the code that rely upon this bad behavior.
-           * So, don't use sscanf here - do something special for strings. */
-	  chused = drms_sscanf_str(cparms, &cpkey->value);
-	  if (chused < 0)
-	    goto failure;
-       }
-
-       snprintf(cpkey->info->format, DRMS_MAXFORMATLEN, "%s", "%s");
-       snprintf(cpkey->info->unit, DRMS_MAXUNITLEN, "%s", "none");
-       cpkey->info->recscope = kRecScopeType_Variable;
-       snprintf(cpkey->info->description, DRMS_MAXCOMMENTLEN, "%s", "");
-       drms_keyword_unsetintprime(cpkey);
-       drms_keyword_unsetextprime(cpkey);
-
-       if (cparmkeys)
-       {
-	  hcon_insert(cparmkeys, buf, &cpkey);
-       }
-    }
-
     if (getstring(&q,seg->info->description,sizeof(seg->info->description))<0) goto failure;
   } else {
     /* Simple segment */
@@ -445,7 +390,15 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
           cpkey->info->type = DRMS_TYPE_STRING;
 
           /* By default, cpkey->value.string_val is NULL - set it to the empty string */
-          drms_sscanf_str("", &cpkey->value);
+          if (seg->info->protocol != DRMS_FITZ)
+          {
+             drms_sscanf_str("", &cpkey->value);
+          }
+          else
+          {
+             /* For FITZ, just use defult tile-compression */
+             drms_sscanf_str("compress Rice", &cpkey->value);
+          }
 
           if (strlen(cparms) > 0 && strcasecmp(cparms, "none"))
           {
