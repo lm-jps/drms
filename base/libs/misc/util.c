@@ -1,4 +1,4 @@
-#if LINUX
+#if defined(__linux__) && __linux__
 #define _GNU_SOURCE
 #endif /* LINUX */
 #include <string.h>
