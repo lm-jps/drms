@@ -842,6 +842,11 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 		filename);      
 	goto bailout1;
       }
+
+      /* bzero and bscale are NOT stored in the binfile - set them from the segment */
+      arr->bzero = seg->bzero;
+      arr->bscale = seg->bscale;
+
       break;
     case DRMS_BINZIP:
       XASSERT(arr = malloc(sizeof(DRMS_Array_t)));
@@ -851,6 +856,11 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 		filename);      
 	goto bailout1;
       }
+
+      /* bzero and bscale are NOT stored in the binfile - set them from the segment */
+      arr->bzero = seg->bzero;
+      arr->bscale = seg->bscale;
+
       break;
     case DRMS_FITZ:
     case DRMS_FITS:
@@ -959,7 +969,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
       */
      if (!drms_segment_checkscaling(arr, seg->bzero, seg->bscale))
      {
-        fprintf(stderr, "The FITS file's bzero/bscale values (%f, %f) do not match those of the segment (%f, %f).\n", arr->bzero, arr->bscale, seg->bzero, seg->bscale);
+        fprintf(stderr, "The data file's bzero/bscale values (%f, %f) do not match those of the segment (%f, %f).\n", arr->bzero, arr->bscale, seg->bzero, seg->bscale);
         statint = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
         goto bailout;
      }
@@ -1091,6 +1101,11 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
                      filename);      
              goto bailout1;
           }
+
+          /* bzero and bscale are NOT stored in the binfile - set them from the segment */
+          arr->bzero = seg->bzero;
+          arr->bscale = seg->bscale;
+
           break;
         case DRMS_BINZIP:
           XASSERT(arr = malloc(sizeof(DRMS_Array_t)));
@@ -1100,6 +1115,11 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
                      filename);      
              goto bailout1;
           }
+
+          /* bzero and bscale are NOT stored in the binfile - set them from the segment */
+          arr->bzero = seg->bzero;
+          arr->bscale = seg->bscale;          
+
           break;
         case DRMS_GENERIC:
           *status = DRMS_ERROR_INVALIDACTION;
@@ -1435,20 +1455,46 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
       strncpy(seg->filename, rindex(filename, '/')+1, DRMS_MAXSEGFILENAME-1);
     }
 
+    char key[DRMS_MAXKEYNAMELEN];
+
     switch(seg->info->protocol)
     {
     case DRMS_BINARY:
-      if ((status = drms_binfile_write(filename, out)))
+      status = drms_binfile_write(filename, out);
+
+      if (drms_series_isvers(seg->record->seriesinfo, &vers2_1))
+      {
+         if (!drms_segment_checkscaling(out, seg->bzero, seg->bscale))
+         {
+            snprintf(key, sizeof(key), "%s_bzero", seg->info->name);
+            drms_setkey_double(seg->record, key, out->bzero);
+            snprintf(key, sizeof(key), "%s_bscale", seg->info->name);
+            drms_setkey_double(seg->record, key, out->bscale);
+         }
+      }
+
+      if (status)
 	goto bailout;
       break;
     case DRMS_BINZIP:
-      if ((status = drms_zipfile_write(filename, out)))
+      status = drms_zipfile_write(filename, out);
+
+      if (drms_series_isvers(seg->record->seriesinfo, &vers2_1))
+      {
+         if (!drms_segment_checkscaling(out, seg->bzero, seg->bscale))
+         {
+            snprintf(key, sizeof(key), "%s_bzero", seg->info->name);
+            drms_setkey_double(seg->record, key, out->bzero);
+            snprintf(key, sizeof(key), "%s_bscale", seg->info->name);
+            drms_setkey_double(seg->record, key, out->bscale);
+         }
+      }
+
+      if (status)
 	goto bailout;
       break;
     case DRMS_FITZ:
       {
-         char key[DRMS_MAXKEYNAMELEN];
-
 	 if (out->type == DRMS_TYPE_STRING)
 	 {
 	    fprintf(stderr, "Can't save string data into a fits file.\n");

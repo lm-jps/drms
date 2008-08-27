@@ -372,7 +372,11 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
           char buf[DRMS_MAXKEYNAMELEN];
 
           /* cparms can be empty */
-          if (gettoken(&q,cparms,sizeof(cparms)) < 0) goto failure;
+          if (seg->info->protocol != DRMS_FITZ)
+          {
+             if (gettoken(&q,cparms,sizeof(cparms)) < 0) goto failure;
+          }
+
           snprintf(buf, sizeof(buf), "cparms_sg%03d", segnum);
 
           DRMS_Keyword_t *cpkey = calloc(1, sizeof(DRMS_Keyword_t));
@@ -428,7 +432,9 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
     {
        if (seg->info->protocol == DRMS_TAS || 
            seg->info->protocol == DRMS_FITS ||
-           seg->info->protocol == DRMS_FITZ)
+           seg->info->protocol == DRMS_FITZ ||
+           seg->info->protocol == DRMS_BINARY ||
+           seg->info->protocol == DRMS_BINZIP)
        {
           /* Must create bzero and bscale keywords for all TAS and FITS files. */
           if (gettoken(&q, bzero, sizeof(bzero)) <= 0) goto failure;
