@@ -1,0 +1,87 @@
+                       Release Notes JSOC V4.6         25Aug2008
+                       -----------------------         ---------
+
+IMPORTANT: If you use the scriptj jsoc_update.pl to get the latest release,
+please note that there was a critical bug fixed in this script.  However, 
+previous versions of JSOC (before 4.6) still have this bug - most likely
+you have this bug, so if you run jsoc_update.pl, your update will not
+work properly.  To fix this, first cd to your JSOC tree root, then run 
+"cvs update jsoc_update.pl".  Then you may run jsoc_update.pl to get the 
+latest release.
+
+A release is a set of files, each having a specific version.  And a release typcially
+has a version number because over time you have newer and newer releases of the 
+same product.  For example, a hypothetical 1.3 release may contain fileA#1.8, 
+fileB#1.2, fileC#2.2 and a 1.4 release may contain fileA#2.5, fileB#2.1, fileC#2.9. 
+JSOC releases are similarly versioned and contain a set of such files.  JSOC release
+code is guaranteed to compile on cluster nodes (eg., n00, n02).  The resulting binaries
+have been minimally tested.  At the time of the creation of the release, the
+release versions of each file will be the most recent.  But as time passes, newer versions 
+of some files will be made, and there is no guarantee that these changes will
+not destabilize JSOC (ie., they may cause JSOC to no longer compile or execute
+properly).  
+
+There are several ways to use this release.  If you wish to simply use pre-built
+binaries, you can simply use the production binaries, which are located at 
+/home/production/cvs/JSOC.  Every time a release is created, the binaries in
+this location get updated.  Only the production user can update these binaries.
+So, you could run /home/production/cvs/JSOC/bin/linux_x86_64/show_keys, for example.
+If instead you want to work with stable source files, then you must have a sandbox,
+which is a local copy (in your home directory) of the files in the cvs depot.  
+You would probably want to work with a sandbox if you plan on making eventual 
+changes to the depot files.  Changes you make to your sandbox files are not visible 
+to other users until you "commit" those changes back to the cvs depot.  Please see
+"If You Don't Have a Sandbox" below for more information on how to create a sandbox.  
+There is also a "working" release which resides in in /home/jsoc/cvs/JSOC.  New 
+files may be placed here and existing files may be edited for common use before the 
+next official release.  Each time a release gets created, the source and binaries of 
+the working release get updated.  WARNING: the files you see here may not be stable 
+since by the time you see them, another user may have edited them. Only the production 
+release is guaranteed to be stable and unchanged between releases.
+
+Obtaining the Release
+---------------------
+To update your working directory to this release, or to check-out this release anew, 
+please visit http://jsoc.stanford.edu/jsocwiki/CvsInit. Please keep in mind that
+users may have modified files since the release was created, so use of the 
+scripts documented in the web page may result in a working directory whose
+content is not identical to the release.  If updating, you can supply 
+the flag "-R" to the jsoc_update.pl and jsoc_sync.pl scripts to download the
+latest release.  This will ensure that your working directory has the exact, latest
+release versions of the files (eg., jsoc_sync.csh -R). If checking-out, 
+you can supply the argument "-r Ver_LATEST" to the "cvs checkout" command
+to achieve the analogous result, but for a fresh checkout.  WARNING: if you use 
+the "-R" or "-r" flags, please use only jsoc_update.pl or jsoc_sync.pl to update 
+your sources thereafter.  Use of "-R" or "-r Ver_LATEST" will result in a cvs
+"sticky flag" being set.  jsoc_update.pl and jsoc_sync.pl clear this sticky flag.
+
+Additional Info
+---------------
+If you are unfamiliar with the use of cvs see the file:
+JSOC/CM/working_with_sandbox.txt.
+
+There's a linux4 cvs gui at xim:/usr/bin/lincvs
+Also on our jsoc web page:
+
+http://jsoc.stanford.edu/cvs/JSOC/
+
+Use the Apache cvs gui to see the diffs. For example, go to
+http://jsoc.stanford.edu/cvs/JSOC/base/drms/
+and click on the name in the File column and then click on
+"diffs to previous #" to see the diffs.
+
+Changes since previous release (V4.5 - July 16, 2008)
+-----------------------------------------------------
+
+NEW FEATURES:
+* FITS implementation of TAS files - TAS (Tiled-Array Storage) is a DRMS segment protocol whereby data from more than one DRMS record are stored to the same file. In previous JSOC releases, the file was a homegrown file format (that didn't work 100% and it was not cross-platorm compatible). In this release, TAS uses a FITS file format.  The TAS file has an extra dimension (one more than the number of dimensions of the data) - each value along this dimension corresponds to one DRMS record. The TAS file can be compressed for non-floating point data. For floating-point data, it cannot be compressed (compression would be lossy if this were allowed). Open TAS files are cached so that multiple reads/writes to the same file do not incur unneccessary file open/close overhead. In order to use this feature, the .jsd version that creates the series that uses a TAS file must be at least version 2.1.
+
+* Support for "dsds.XXX" and "ds_mdi.XXX" JSOC data series - These are special data series that contain MDI data. The MDI data have been ingested as is into these series. These JSOC series have a generic segment that points to a VDS directory. drms_open_records() will now recognize these special series and return a temporary record-set that contains DRMS records that represent the ingested MDI data. This temporary series will contain FITS protocol segments 
+
+
+When drms_open_records() sees these data series, it calls drms_open_dsdsrecords() so that libdsds.so can handle them. libdsds.so calls peq to get the soi keylist which VDS knows how to use. And Jim has modified peq so that if it sees a non-prog spec, it will ask SUMS for the data (which is where the "dsds.XXX" and "ds_mdi.XXX" data reside). Unfortunately, in this case, peq doesn't work well - the key list it returns isn't useable by vds_open(). Instead, I had to extract the VDS directory (a SUMS directory) from the keylist, and then create a new keylist from this VDS directory. Then vds_open() was able to use this second keylist to access the data.
+
+BUG FIXES:
+* jsoc_update.pl - This script was not first cd'ing to the JSOC tree on the remote machine (so it was trying to do a make from the directory that becomes the working directory when you ssh into the remote machine).
+* cfitsio - By default, the cfitsio library will be named "libcfitsio.a". However, for 64-bit machines that compile with gcc, this can be overridden in the configure script by setting the CFITSIOFNAME_GCC_X86_64 make variable.
+*
