@@ -18,7 +18,7 @@ should be of the form:
 #define jsoc_version "V3R5"
 #define jsoc_vers_num (305)
 
-4. From the machine used in step 2, commit $JSOCROOT/base/libdrms/jsoc_version.h.
+4. From the machine used in step 2, commit $JSOCROOT/base/jsoc_version.h.
 
 5. Add a new file, JSOC/CM/V<MAJ>.<MIN>/release.notes. This has the
 release notes (see below).  Commit.
@@ -45,7 +45,7 @@ binaries (not just the binaries in your sandbox).  Login as the 'jsoc'
 user, cd to /home/jsoc/cvs, and do "cvs checkout -r Ver_<MAJ>-<MIN>
 JSOC" and build on all machines supported.  
 
-9. Once again, edit $JSOCROOT/base/libdrms/jsoc_version.h.  The
+9. Once again, edit $JSOCROOT/base/jsoc_version.h.  The
 version macros should be of the form:
 
 #define jsoc_version "V3R5X"
@@ -54,8 +54,8 @@ version macros should be of the form:
 The "X" and "-" denote that binaries were created from non-release code.
 
 10. From the machine used in step 9, commit
-$JSOCROOT/base/libdrms/jsoc_version.h.  You might have to run "cvs
-update -A base/libdrms/jsoc_version.h" to clear the sticky flag created
+$JSOCROOT/base/jsoc_version.h.  You might have to run "cvs
+update -A base/jsoc_version.h" to clear the sticky flag created
 when you first sync'd in step 2 (if you used the "-r" flag).
 
 11. Send instructions for using the new release to users.
