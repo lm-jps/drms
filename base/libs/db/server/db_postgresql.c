@@ -347,6 +347,8 @@ DB_Binary_Result_t *db_query_bin(DB_Handle_t  *dbin,  char *query_string)
       db_res->column[i].num_rows = db_res->num_rows;
       XASSERT( db_res->column[i].is_null =  malloc(db_res->num_rows*sizeof(int)) );
       db_res->column[i].size = 0;
+      
+      /* Get the maximum (over all rows) value length */
       for (j=0; j<db_res->num_rows; j++)
       {
 	width = PQgetlength(res,j,i);
@@ -362,6 +364,12 @@ DB_Binary_Result_t *db_query_bin(DB_Handle_t  *dbin,  char *query_string)
       
       XASSERT( db_res->column[i].data = malloc(db_res->num_rows * 
 					       db_res->column[i].size) );
+
+      /* set entire column to NULLS, then fill in non-0 parts. This will
+       * take care of string values too - their PQgetlength() length will
+       * be at least one smaller than db_res->column[i].size. */
+      memset(db_res->column[i].data, 0, db_res->num_rows * db_res->column[i].size);
+
 #ifdef DEBUG
       printf("sizeof column %d = %d\n",i,db_res->column[i].size);
 #endif      
@@ -374,10 +382,7 @@ DB_Binary_Result_t *db_query_bin(DB_Handle_t  *dbin,  char *query_string)
 	db_res->column[i].is_null[j] = PQgetisnull(res,j,i);
 	if (!db_res->column[i].is_null[j])
 	  memcpy(&db_res->column[i].data[j*db_res->column[i].size], 
-		 PQgetvalue(res,j,i), db_res->column[i].size);
-	else
-	  memset(&db_res->column[i].data[j*db_res->column[i].size], 0,
-		 db_res->column[i].size);
+		 PQgetvalue(res,j,i), PQgetlength(res,j,i));
       }
 #if __BYTE_ORDER == __LITTLE_ENDIAN
       db_byteswap(db_res->column[i].type, db_res->num_rows, 
