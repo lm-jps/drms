@@ -688,16 +688,17 @@ int DoIt(void)
     }
   free (seglist);
 
-  /* if some segment info wanted and path is needed from SUMS, stage all records. */
-  if (nsegs > 0)
-  {
-     if (want_path)
-       /* -p */
-       drms_stage_records(recordset, 1, 0); 
-     else if (want_path_noret)
-       /* -P */
-       drms_stage_records(recordset, 0, 1); 
-  }
+  /* stage records if the user has requested the path (regardless if the user has requested 
+   * segment information -- -A or seg=XXX).
+   */
+  if (want_path_noret)
+    /* -P - don't retrieve and don't wait for retrieval */
+    drms_stage_records(recordset, 0, 1); 
+  else if (want_path)
+    /* -p - retrieve and wait for retrieval */
+    drms_stage_records(recordset, 1, 0); 
+
+
 
   /* loop over set of selected records */
   for (irec = first_rec; irec <= last_rec; irec++) 
