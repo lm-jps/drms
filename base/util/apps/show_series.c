@@ -172,7 +172,11 @@ if (filter)
   }
   
 /* Query the database to get all series names from the master list. */
-sprintf(query, "select seriesname from %s()", DRMS_MASTER_SERIES_TABLE);
+if (printinfo || want_JSON)
+  sprintf(query, "select seriesname, primary_idx, description from %s()", DRMS_MASTER_SERIES_TABLE);
+else
+  sprintf(query, "select seriesname from %s()", DRMS_MASTER_SERIES_TABLE);
+
 if ( (qres = drms_query_txt(drms_env->session, query)) == NULL)
   {
   status = SS_NODRMS;
@@ -208,50 +212,37 @@ for (iseries=0; iseries<nseries; iseries++)
     else
       printf("  %s\n",seriesname);
 
-    nused++;
     if (printinfo || want_JSON)
-      { /* fetch series info and print */
-      DRMS_Record_t *rec = drms_template_record(drms_env, seriesname, &status);
-      if (!rec || status)
-        {
-        if (want_JSON)
-	  printf("\"primekeys\":\"NOT KNOWN\",\"note\":\"SERIES READ ERROR\"\},\n"); 
-        else
-          printf("      Cant open series. status=%d\n", status);
-        continue;
-        }
-      if (rec->seriesinfo->pidx_num)
-        {
-        int pidx;
-        if (want_JSON)
-	  printf("\"primekeys\":\""); 
-        else
-          printf("      Prime Keys are:");
-        for (pidx = 0; pidx < rec->seriesinfo->pidx_num; pidx++)
-          printf("%s %s", (pidx ? "," : ""), rec->seriesinfo->pidx_keywords[pidx]->info->name);
-        if (want_JSON)
-	  printf("\",");
-        }
+      { /* fix-up prime key list and print */
+      char *primary_idx = qres->field[iseries][1];
+      char *description = qres->field[iseries][2];
+      char *p;
+      int npk = 0;
+      if (want_JSON)
+        printf("\"primekeys\":\""); 
       else
+	printf("      Prime Keys are: ");
+      for (p = strtok(primary_idx, " "); p; p = strtok(NULL, " "))
         {
-	if (want_JSON)
-	  printf("\"primekeys\":\"NONE\","); 
-	else
-          printf("      No Prime Keys found.");
+	char *ind = strstr(p, "_index");
+        if (ind)
+          *ind = '\0';
+        printf("%s",p);
         }
       if (want_JSON)
+	  printf("\",");
+      if (want_JSON)
 	{
-	printf("\"note\":\"%s\"}",rec->seriesinfo->description);
+	printf("\"note\":\"%s\"}",description);
 	}
       else
 	{
         printf("\n");
-        printf("      Note: %s", rec->seriesinfo->description);
+        printf("      Note: %s", description);
         printf("\n");
 	}
-        
-      drms_free_record(rec);
       }
+    nused++;
     }
   }
 
