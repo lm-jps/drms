@@ -228,6 +228,7 @@ int32_t cmdparams_get_int32 (CmdParams_t *parms, char *name, int *status);
 int64_t cmdparams_get_int64 (CmdParams_t *parms, char *name, int *status);
 float cmdparams_get_float (CmdParams_t *parms, char *name, int *status);
 double cmdparams_get_double (CmdParams_t *parms, char *name, int *status);
+int cmdparams_get_dblarr(CmdParams_t *parms, char *name, double **arr, int *status);
 						/*  Generic integer version  */
 int cmdparams_get_int (CmdParams_t *parms, char *name, int *status);
 int cmdparams_get_intarr(CmdParams_t *parms, char *name, int **arr, int *status);

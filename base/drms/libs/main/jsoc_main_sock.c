@@ -313,8 +313,8 @@ pid_t drms_start_server (int verbose, int dolog)  {
   sessionns = cmdparams_get_str (&cmdparams, "JSOC_SESSIONNS", NULL);
 
   retention = -1;
-  if (cmdparams_exists (&cmdparams, "DRMS_RETENTION")) 
-     retention = cmdparams_get_int (&cmdparams, "DRMS_RETENTION", NULL);
+  if (drms_cmdparams_exists(&cmdparams, "DRMS_RETENTION")) 
+     retention = drms_cmdparams_get_int(&cmdparams, "DRMS_RETENTION", NULL);
   query_mem = 512;
   if (cmdparams_exists (&cmdparams, "DRMS_QUERY_MEM")) 
     query_mem = cmdparams_get_int (&cmdparams,"DRMS_QUERY_MEM", NULL);

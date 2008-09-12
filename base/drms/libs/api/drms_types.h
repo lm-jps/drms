@@ -1170,6 +1170,7 @@ int drms_sscanf_int (char *str,
 		     int silent);
 int drms_sscanf(char *str, DRMS_Type_t dsttype, DRMS_Type_Value_t *dst);
 int drms_sscanf_str(char *str, DRMS_Type_Value_t *dst);
+int drms_sscanf2(const char *str, DRMS_Type_t dsttype, DRMS_Value_t *dst);
 
 /* Scalar conversion functions. */
 int drms_convert(DRMS_Type_t dsttype, DRMS_Type_Value_t *dst, 

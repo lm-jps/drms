@@ -646,7 +646,7 @@ int cmdparams_parsefile (CmdParams_t *parms, char *filename, int depth) {
 #undef SKIPWS
 #undef ISBLANK
 						/*  Add a new keyword  */
-void cmdparams_set (CmdParams_t *parms, char *name, char *value) {
+void cmdparams_set (CmdParams_t *parms, const char *name, const char *value) {
   int name_len, val_len, len;
   char *nambuf, *valbuf;
 				/*  Insert name and value string in buffer  */
@@ -1009,6 +1009,27 @@ double cmdparams_get_double (CmdParams_t *parms, char *name, int *status) {
   }
 
   return value;
+}
+
+int cmdparams_get_dblarr(CmdParams_t *parms, char *name, double **arr, int *status)
+{
+   int stat = CMDPARAMS_SUCCESS;
+   char buf[128];
+   double **arrdbl = NULL;
+
+   if (arr)
+   {
+      arrdbl = (double **)hcon_lookup(parms->actvals, name);
+      *arr = *arrdbl;
+   }
+
+   if (status)
+   {
+      *status = stat;
+   }
+
+   snprintf(buf, sizeof(buf), "%s_nvals", name);
+   return cmdparams_get_int(parms, buf, status);
 }
 
 TIME cmdparams_get_time (CmdParams_t *parms, char *name, int *status) {

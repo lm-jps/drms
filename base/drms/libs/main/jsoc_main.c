@@ -234,8 +234,8 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
 
   int archive = cmdparams_exists(&cmdparams,"A");
   int retention = -1;
-  if (cmdparams_exists (&cmdparams, "DRMS_RETENTION")) {
-    retention = cmdparams_get_int(&cmdparams, "DRMS_RETENTION", NULL);
+  if (drms_cmdparams_exists(&cmdparams, "DRMS_RETENTION")) {
+    retention = drms_cmdparams_get_int(&cmdparams, "DRMS_RETENTION", NULL);
   }
   int query_mem = 512;
   if (cmdparams_exists (&cmdparams, "DRMS_QUERY_MEM")) {

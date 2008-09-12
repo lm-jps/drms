@@ -814,6 +814,45 @@ int drms_sscanf_str(char *str, DRMS_Type_Value_t *dst) {
    }
 }
 
+/* doesn't suffer from the limitation that strings can't contain commas and other chars */
+/* ret == -1 ==> error, else ret == num chars processed; caller owns any string in *dst */
+int drms_sscanf2(const char *str, DRMS_Type_t dsttype, DRMS_Value_t *dst)
+{
+   DRMS_Type_Value_t idst;
+   int err = 0;
+   int ret;
+
+   if (dsttype == DRMS_TYPE_STRING)
+   {
+      if ((ret = drms_sscanf_str(str, &idst)) < 0) 
+      {
+         err = 1;
+      }
+   }
+   else
+   {
+      if ((ret = drms_sscanf_int(str, dsttype, &idst, 0)) <= 0)
+      {
+         err = 1;
+      }
+   }
+
+   if (!err)
+   {
+      if (dst)
+      {
+         (*dst).value = idst;
+         (*dst).type = dsttype;
+      }
+   }
+   else
+   {
+      ret = -1;
+   }
+
+   return ret;
+}
+
 void drms_memset(DRMS_Type_t type, int n, void *array, 
 		 DRMS_Type_Value_t val)
 {

@@ -272,7 +272,7 @@ int main (int argc, char *argv[]) {
 	 env->session->db_handle->dbuser);
 
   env->archive     = cmdparams_exists(&cmdparams,"A");
-  env->retention   = cmdparams_get_int(&cmdparams, "DRMS_RETENTION", NULL);
+  env->retention   = drms_cmdparams_get_int(&cmdparams, "DRMS_RETENTION", NULL);
   env->query_mem   = cmdparams_get_int(&cmdparams, "DRMS_QUERY_MEM", NULL);
   env->server_wait = cmdparams_get_int(&cmdparams, "DRMS_SERVER_WAIT", NULL);
   env->verbose     = verbose;
