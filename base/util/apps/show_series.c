@@ -97,6 +97,8 @@ int nice_intro() {
     printf("show_series gets information about JSOC data series.\n"
 	"usage: show_series {filter} {-p} {-v}\n"
 	"  filter is regular expression to select series names.\n"
+	"     if the filter begins with the word NOT it will exclude the patterns\n"
+	"     following the 'NOT'\n"
 	"  -h prints this message and quits.\n"
 	"  -p enables print prime keys and description.\n"
 	"  -v verbose \n"
@@ -134,6 +136,7 @@ DB_Text_Result_t *qres;
 char seriesfilter[1024];
 regmatch_t pmatch[10];
 char *filter;
+int filterNOT;
 char *web_query;
 int from_web;
 int want_JSON;
@@ -164,6 +167,14 @@ else
 
 if (filter)
   {
+  // check for NOT method of exclusion
+  if (strncmp(filter, "NOT ", 4)==0)
+    {
+    filterNOT = 1;
+    filter += 4;
+    }
+  else
+    filterNOT = 0;
   if (regcomp((regex_t *)seriesfilter, filter, (REG_EXTENDED | REG_ICASE)))
     {
     status = SS_FORMATERROR;
@@ -204,8 +215,11 @@ nused = 0;
 for (iseries=0; iseries<nseries; iseries++)
   {
   char *seriesname = qres->field[iseries][0];
+  int regex_result;
+  if (filter)
+    regex_result = regexec((regex_t *)seriesfilter, seriesname, 10, pmatch, 0);
 
-  if (!filter || !regexec((regex_t *)seriesfilter, seriesname, 10, pmatch, 0)) 
+  if (!filter || (!filterNOT && !regex_result) || (filterNOT && regex_result)) 
     {
     if (want_JSON)
       printf("%s  {\"name\":\"%s\",",(nused ? ",\n" : ""),seriesname);
