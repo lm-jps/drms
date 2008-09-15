@@ -876,7 +876,7 @@ KEY *readdrvdo_1(KEY *params)
   }
   }
   if(findkey(params, "tdays"))
-    touch = getkey_int(params, "tdays");
+    touch = abs(getkey_int(params, "tdays"));
   else
     touch = 2;
   retlist = newkeylist();
