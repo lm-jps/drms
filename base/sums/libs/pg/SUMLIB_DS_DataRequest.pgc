@@ -8,6 +8,8 @@
  *   dsix_0 = first ds_index value 
  *   dsix_1 = second ds_index value 
  *   [etc.]
+ *   mode:   KEYTYP_INT      8
+ *   tdays:  KEYTYP_INT      5
  * Returns 0 on success, else error code.
  * Does the query of all the ds_index values in a single SQL call.
  * This is faster than doing a call for each ds_index.
@@ -71,7 +73,7 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
    char l_tapepos[15];
    char l_tape_id[20];
    char dsix_name[128];
-   int i, reqcnt, mode, tdays, offline, pos;
+   int i, reqcnt, mode, tdays, posdays, offline, pos, change;
 
    uid = getkey_uint64(params, "uid");
    mode = getkey_int(params, "mode");
@@ -83,13 +85,12 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
    * online, it is to have its effective_date for deletion set to today
    * plus "tdays" days. If it is not online, then "TOUCH" is handled 
    * in driven_svc.c if the ds is retrieved from tape.
+   * NEW 15Sep2008: negative tdays means set effective_date to the greater
+   * of the current effective_date or now + ABS(tdays).
+   * Note, a tdays of 0 will set the effective_date to now.
   */
-  if(mode & TOUCH) {
-    touch = tdays;
-    if((touch < 0) && (touch != -1)) /* neg days not allowed (except default)*/
-      return(DS_TOUCH_NEG);
-  }
-  else touch = -1;
+  if(mode & TOUCH) touch = 1;
+  else touch = 0;
 
     reqcnt = getkey_int(params, "reqcnt");
     offline = 0;
@@ -145,17 +146,26 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
      }
      else {                                      /* on-line */		
 
-      /* If "touch" given then make deletable in "touch" days. 
-       * Update any del pend entry in memory table and update all entries
+      /* If "touch" given then make deletable in tdays days. 
+       * Update all entries
        * for the ds_index in the partn_alloc table.
       */
-      if(touch >= 0) {
+      if(touch) {
         /* get the original effective_date and see if ok to change */
         EXEC SQL SELECT EFFECTIVE_DATE INTO :eff_date_str
         FROM SUM_PARTN_ALLOC where DS_INDEX = :ds_index 
 	and STATUS != :daro;
-        if(strcmp(eff_date_str.arr, "9999999")) { /*only change if not "keep"*/
-          eff_date = (char *)get_effdate(touch);
+        if(tdays < 0) {		//if tdays neg, only make eff_date bigger
+          posdays = abs(tdays);
+          eff_date = (char *)get_effdate(posdays);
+          if(strcmp(eff_date, eff_date_str.arr) > 0) change = 1; 
+          else change = 0;
+        }
+        else {
+          eff_date = (char *)get_effdate(tdays);
+          change = 1;
+        }
+        if(change) {
           sprintf(l_eff_date.arr, "%s", eff_date);
           l_eff_date.len = strlen(l_eff_date.arr);
           EXEC SQL WHENEVER SQLERROR CONTINUE;
