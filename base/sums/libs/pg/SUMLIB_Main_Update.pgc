@@ -102,7 +102,7 @@ EXEC SQL INCLUDE sqlca;
    if(mode & PERM) {
      archsub = DAAPERM;
    }
-   if(findkey(params, "tdays")) touch = getkey_int(params, "tdays");
+   if(findkey(params, "tdays")) touch = abs(getkey_int(params, "tdays"));
    else touch = 2;
    effective_date = (char *)get_effdate(touch);
    sprintf(l_date.arr, "%s", get_datetime());
