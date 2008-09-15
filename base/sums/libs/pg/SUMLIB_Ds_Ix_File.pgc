@@ -5,23 +5,26 @@
  * If none are offline, returns 0. Else returns 1 with the filedsixoff[]
  * array containing the offline ds_index values with 0 termination.
  * Return -1 on error.
+ * NOTE: add 10Sep2008 Set ds_mdi arg if Owning_Series is ds_mdi.*
 */
 
 #include <SUM.h>
 #include <sum_rpc.h>
 #include <soi_error.h>
 #include <printk.h>
+#include <string.h>
 
-int SUMLIB_Ds_Ix_File(uint64_t filedsix[], uint64_t filedsixoff[]);
+int SUMLIB_Ds_Ix_File(uint64_t filedsix[], uint64_t filedsixoff[], int *dsmdiflg);
 int SUMLIB_Ds_Ix_Find(char *tapeid, int filenum, uint64_t filedsix[],
 			double filebytes[]);
 
-int SUMLIB_Ds_Ix_File(uint64_t filedsix[],  uint64_t filedsixoff[])
+int SUMLIB_Ds_Ix_File(uint64_t filedsix[],  uint64_t filedsixoff[], int *dsmdiflg)
 {
   EXEC SQL TYPE uint64_t IS unsigned long long;
 
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR online_status[5];
+  VARCHAR own_series[80];
   uint64_t ds_index;
 EXEC SQL END DECLARE SECTION;
    int i, j, offline;
@@ -30,15 +33,18 @@ EXEC SQL END DECLARE SECTION;
     EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
 
     offline = 0;
+    *dsmdiflg = 0;
     for(i=0, j=0; ; i++ ) {
       ds_index = filedsix[i];
       if(!ds_index) break;
       /*printk("SUMLIB_Ds_Ix_File ds_index = %lu\n", ds_index); */
-      EXEC SQL SELECT ONLINE_STATUS 
-	INTO  :online_status
+      EXEC SQL SELECT ONLINE_STATUS, OWNING_SERIES
+	INTO  :online_status, :own_series
 	FROM SUM_MAIN 
 	WHERE DS_INDEX = :ds_index;
 
+      if(strstr(own_series.arr, "ds_mdi.")) { *dsmdiflg = 1; }
+ 
       if(strcmp(online_status.arr, "N")==0) {
         offline = 1;
 	/*printk("SUMLIB_Ds_Ix_File offline ds_index = %lu\n", ds_index); */
