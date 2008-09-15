@@ -24,6 +24,7 @@
 #include <fcntl.h>
 #include <stropts.h>
 #include <sys/mtio.h>
+#include <dirent.h>
 
 #define MAX_WAIT 20  /* max times to wait for rdy in get_tape_fnum_rdy() */
 #define CMDLENWRT 24576
@@ -716,6 +717,97 @@ void send_ack()
   }
 }
 
+/* Here comes a kludge to handle the case of ds_mdi.* datasets that
+ * were originally ingested with an extra Dnnn dir and got archived
+ * that way. So if there is a dir that does not correspond to what's
+ * in file_dsix_off[], then the real dirs are below it. For example,
+ * in file_dsix_off[] are 374396 374398 but what you got in wd was
+ * D2618245 the the dirs D374396/  D374398/ are under it.
+ * So move them up so that the dirs are just below the allocated wd
+ * and so look like a normal retrieve.
+ * The way the tape is read, there can only be one dir in the given wd.
+ * Return 0 on success.
+ *
+ * It was decided that this kludge was better than re-ingesting TBs of data.
+*/
+int kludge_dirs(uint64_t file_dsix_off[], char *wd)
+{
+  DIR *dfd;
+  struct dirent *dp;
+  char name[128], d_name[256], newname[256], nameD[256], cmd[256];
+  char *savename[128];
+  uint64_t ix;
+  int i, k, found;
+  int j=0;
+
+  if((dfd=opendir(wd)) == NULL) {
+    printk("kludge_dirs() can't open dir %s\n", wd);
+    return(1);
+  }
+  savename[0] = NULL;
+  while((dp=readdir(dfd)) != NULL) {
+    if(strcmp(dp->d_name, ".") == 0
+    || strcmp(dp->d_name, "..") == 0)
+      continue;                         /* skip self and parent */
+    sprintf(d_name, dp->d_name);
+    for(i=0; ; i++) {
+      ix = file_dsix_off[i];
+      if(!ix) break;
+      sprintf(name, "D%lu", ix);
+      if(!strcmp(d_name, name)) {       //name match
+        break;
+      }
+    }
+    if(!ix) {				//dir was not found in file_dsix_off[]
+      savename[j++] = strdup(d_name);
+    }
+  }
+  closedir(dfd);
+  if(savename[0]) {			//unexpected dir. mv subdirs up
+    for(i=0; i < j; i++) {
+      sprintf(name, "%s/%s", wd, savename[i]);
+      if((dfd=opendir(name)) == NULL) {
+        printk("kludge_dirs() can't open dir %s\n", name);
+        return(1);
+      }
+      while((dp=readdir(dfd)) != NULL) {
+        if(strcmp(dp->d_name, ".") == 0
+        || strcmp(dp->d_name, "..") == 0)
+          continue;                         /* skip self and parent */
+        //if this is not an requested dir then rm it
+        found = 0;
+        for(k=0; ; k++) {
+          ix = file_dsix_off[k];
+          if(!ix) break;
+          sprintf(nameD, "D%lu", ix);
+          if(!strcmp(nameD, dp->d_name)) {	//name matches
+            found = 1;
+            break;
+          }
+        }
+        if(found) {				//now mv it up a dir
+          sprintf(d_name, "%s/%s", name, dp->d_name);
+          sprintf(newname, "%s/%s", wd, dp->d_name);
+          if(rename(d_name, newname)) {
+            printk("kludge_dirs() error on rename() %s %s\n", d_name, newname);
+            closedir(dfd);
+            return(1);
+          }
+        }
+      }
+    }
+    closedir(dfd);
+    // now rm the original top level dir and anything left below it
+    for(i=0; i < j; i++) {
+      sprintf(cmd, "/bin/rm -rf %s/%s", wd, savename[i]);
+      if(system(cmd)) {
+        printk("Error: %s", cmd);
+      }
+    }
+  }
+  return(0);
+}
+
 /* Called by tape_svc doing: clnt_call(clntdrv[0,1], READDRVDO, ...)
  * The tape is in the drive and we will position it to the given file number
  * and do the read.
@@ -763,7 +855,7 @@ KEY *readdrvdo_1(KEY *params)
 {
   CLIENT *client;
   static KEY *retlist;
-  int sim;
+  int sim, dsmdiflg;
   uint64_t file_dsix[MAXSUMREQCNT+1]; /* the ds_index of all SU in a tape file*/
   uint64_t file_dsix_off[MAXSUMREQCNT+1]; /* the ds_index that are offline*/
   uint64_t uid, ds_index;
@@ -893,7 +985,7 @@ KEY *readdrvdo_1(KEY *params)
   /* now determine if all these ds_index are online. If so there is nothing
    * to do. Else retrieve the ones that are offline from the tape.
   */
-  status = SUMLIB_Ds_Ix_File(file_dsix, file_dsix_off);
+  status = SUMLIB_Ds_Ix_File(file_dsix, file_dsix_off, &dsmdiflg);
   if(status == -1) {
      setkey_int(&retlist, "STATUS", 1);   /* give error back to caller */
      sprintf(errstr, "Error on SUMLIB_Ds_Ix_File() in driven_svc");
@@ -906,13 +998,24 @@ KEY *readdrvdo_1(KEY *params)
     /* at least one is offline */
     sprintf(rdlog, "%s/gtar_rd_%d_%s_%d.log",
                         GTARLOGDIR, dnum, tapeid, tapefilenum);
-    if((status = read_drive_to_wd(sim, wd, dnum, tapeid, tapefilenum, rdlog, file_dsix_off))== -1) {
+    if((status = read_drive_to_wd(sim, wd, dnum, tapeid, tapefilenum, rdlog, file_dsix_off, dsmdiflg))== -1) {
       setkey_int(&retlist, "STATUS", 1);   /* give error back to caller */
       sprintf(errstr, "Error on read drive #%d into %s", dnum, wd);
       setkey_str(&retlist, "ERRSTR", errstr); 
       free(wd);
       free(tapeid);
       return(retlist); 
+    }
+    //fix up any read for bad ds_mdi.* dataset ingest
+    if(dsmdiflg) {
+      if(kludge_dirs(file_dsix_off, wd)) {
+        setkey_int(&retlist, "STATUS", 1);   /* give error back to caller */
+        sprintf(errstr, "Error on kludge_dirs() for %s", wd);
+        setkey_str(&retlist, "ERRSTR", errstr); 
+        free(wd);
+        free(tapeid);
+        return(retlist); 
+      }
     }
     /* update the DB for each SU just brought online (same tape/file) */
     /* update the SUM DB with online 'Y' and the new wd */
@@ -1520,9 +1623,23 @@ return; /* !!!TEMP noop */
 
 /* Read from given drive to the given dir and log in logfile.
  * Returns the drive number on success, else -1.
+ *
+ * An rcmd will end up something like this:
+ * dd if=/dev/sum_nst7 bs=256b 2> /var/logs/SUM/gtar/gtar_rd_7_012821L4_1370.log
+ * | /home/production/cvs/JSOC/bin/linux_ia64/md5filter 256 
+ * /usr/local/logs/SUM/md5/rdsum_7 2>> 
+ * /var/logs/SUM/gtar/gtar_rd_7_012821L4_1370.log
+ * | /usr/local/bin/gtar xvf - -b256 -C /SUM9/D8764649 D161820 D161810 D161812 
+ * D161824 D161818 D161814 D161816 
+ * 1>>/usr/local/logs/SUM/tape_svc_2008.09.03.131906.log 
+ * 2>> /var/logs/SUM/gtar/gtar_rd_7_012821L4_1370.log
+ *
+ * If dsmdiflg is set then this is a read for a ds_mdi.* dataset, some of
+ * which were improperly ingested into SUMS with an exta dir at the top.
+ * A special gtar read is need for these (and a later call to kludge_dirs()).
 */
-int read_drive_to_wd(int sim, char *wd, int drive,  
-	 char *tapeid, int tapefilenum, char *logname, uint64_t filedsixoff[])
+int read_drive_to_wd(int sim, char *wd, int drive, char *tapeid, 
+	int tapefilenum, char *logname, uint64_t filedsixoff[], int dsmdiflg)
 {
   char dname[80], md5file[80], md5sum[36], md5db[36], Ddir[128];
   uint64_t dsix;
@@ -1533,11 +1650,13 @@ int read_drive_to_wd(int sim, char *wd, int drive,
   sprintf(rcmd, "dd if=%s bs=%db 2> %s | %s %d %s 2>> %s | %s xvf - -b%d -C %s", 
    dname, GTARBLOCK, logname, md5filter, GTARBLOCK, md5file, logname, GTAR, GTARBLOCK, wd);
 
-  for(i=0; ; i++) {
-    dsix = filedsixoff[i];
-    if(!dsix) break;
-    sprintf(Ddir, "D%lu", dsix);
-    sprintf(rcmd, "%s %s", rcmd, Ddir);
+  if(!dsmdiflg) {		//this is a normal read into specific targets
+    for(i=0; ; i++) {
+      dsix = filedsixoff[i];
+      if(!dsix) break;
+      sprintf(Ddir, "D%lu", dsix);
+      sprintf(rcmd, "%s %s", rcmd, Ddir);
+    }
   }
   sprintf(rcmd, "%s 1>>%s 2>> %s", rcmd, logfile, logname);
   write_time();
