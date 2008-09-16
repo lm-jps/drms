@@ -17,6 +17,8 @@ hcontainer.h
 
 #include "drms_types.h"
 
+int get_namespace(const char *seriesname, char **namespace, char **shortname);
+
 /**
 queries the DRMS database to determine if the series specified by
 \a sname exists. 

@@ -106,6 +106,9 @@ int drms_create_series_fromprototype(DRMS_Record_t **prototype,
 				     const char *outSeriesName, 
 				     int perms);
 
+int drms_series_cancreaterecord(DRMS_Env_t *env, const char *series);
+int drms_series_candeleterecord(DRMS_Env_t *env, const char *series);
+int drms_series_canupdaterecord(DRMS_Env_t *env, const char *series);
 
 /******************** DRMS client-server protocol stuff. ********************/
 

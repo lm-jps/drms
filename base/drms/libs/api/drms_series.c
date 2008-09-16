@@ -8,7 +8,7 @@
 extract namespace from series name. 
 return error if no '.' present
 */ 
-static int get_namespace(char *seriesname, char **namespace, char **shortname) {
+int get_namespace(const char *seriesname, char **namespace, char **shortname) {
   if (strchr(seriesname, '.')) {
     char *p = seriesname;
     while (*p != '.') {
@@ -23,7 +23,6 @@ static int get_namespace(char *seriesname, char **namespace, char **shortname) {
     return 1;
   }
 }
-
 
 int drms_series_exists(DRMS_Env_t *drmsEnv, const char *sname, int *status)
 {

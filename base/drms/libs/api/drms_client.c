@@ -1324,3 +1324,55 @@ int drms_create_series_fromprototype(DRMS_Record_t **prototype,
 
    return status;
 }
+
+
+static int drms_series_candosomething(DRMS_Env_t *env, const char *series, const char *perm)
+{
+   int result = 0;
+   char query[DRMS_MAXQUERYLEN];
+   char *namespace = NULL;
+   char *sname = NULL;
+   DB_Text_Result_t *qres = NULL;
+
+   if (!get_namespace(series, &namespace, &sname))
+   {
+      sprintf(query, "select * from information_schema.table_privileges where table_schema = '%s' and table_name = '%s' and privilege_type = '%s'", namespace, sname, perm);
+
+      if ((qres = drms_query_txt(env->session, query)) != NULL && qres->num_rows != 0) 
+      {
+         result = 1;
+      }
+   }
+
+   if (qres)
+   {
+      db_free_text_result(qres);
+   }
+
+   if (namespace)
+   {
+      free(namespace);
+   }
+
+   if (sname)
+   {
+      free(sname);
+   }
+
+   return result;
+}
+
+int drms_series_cancreaterecord(DRMS_Env_t *env, const char *series)
+{
+   return drms_series_candosomething(env, series, "INSERT");
+}
+
+int drms_series_candeleterecord(DRMS_Env_t *env, const char *series)
+{
+    return drms_series_candosomething(env, series, "DELETE");
+}
+
+int drms_series_canupdaterecord(DRMS_Env_t *env, const char *series)
+{
+   return drms_series_candosomething(env, series, "UPDATE");
+}
