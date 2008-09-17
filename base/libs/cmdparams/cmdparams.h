@@ -104,6 +104,8 @@ struct CmdParams_struct {
   int head;
   char *buffer;
   HContainer_t *actvals;
+  int argc; /* original argc passed to main() */
+  char **argv; /* contains ALL cmd-line args - args doesn't have them all! */
 };
 /** @brief CmdParams struct reference */
 typedef struct CmdParams_struct CmdParams_t;
@@ -251,6 +253,9 @@ parsed date-time string.
 */
 double cmdparams_get_time (CmdParams_t *parms, char *name, int *status);
 /* @} */
+
+/* get original cmd-line params */
+void cmdparams_get_argv(CmdParams_t *params, char ***argv, int *argc);
 
 /**
 @name params_get_XXX

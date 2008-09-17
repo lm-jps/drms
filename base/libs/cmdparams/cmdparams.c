@@ -103,6 +103,9 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
 				  /* parse options given on the command line */
   arg = 0; 
   while (arg < argc) {
+     /* save the original cmd-line */
+
+
     if (argv[arg][0] == '-' && !isdigit (argv[arg][1])) {
       if (argv[arg][1] == '-') {
         if (strcasecmp (argv[arg], "--help") == 0) return CMDPARAMS_QUERYMODE;
@@ -451,6 +454,19 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
   XASSERT(parms->args = malloc ((argc+1)*sizeof (char *)));
   parms->max_args = argc+1;
   parms->args[0] = strdup (argv[0]);
+
+  /* save original cmd-line */
+  int iarg = 0;
+  XASSERT(parms->argv = malloc(sizeof(char *) * argc));
+  memset(parms->argv, 0, sizeof(char *) * argc);
+  while (iarg < argc)
+  {
+     parms->argv[iarg] = strdup(argv[iarg]);
+     iarg++;
+  }
+
+  parms->argc = iarg;
+
        /*  Parse all command line tokens (including contents of @references) */
   if ((status = cmdparams_parsetokens (parms, argc-1, argv+1, 0)))
     return status;
@@ -543,6 +559,15 @@ void cmdparams_freeall (CmdParams_t *parms) {
   for (i=0; i<parms->num_args; i++)
     free(parms->args[i]);
   free (parms->args);
+
+  for (i = 0; i < parms->argc; i++)
+  {
+     if (parms->argv[i])
+     {
+        free(parms->argv[i]);
+     }
+  }
+  free(parms->argv);
 
   hcon_destroy(&(parms->actvals));
 }
@@ -1052,6 +1077,19 @@ TIME cmdparams_get_time (CmdParams_t *parms, char *name, int *status) {
 
   return value;
 }
+
+void cmdparams_get_argv(CmdParams_t *params, char ***argv, int *argc)
+{
+   if (argv)
+   {
+      *argv = params->argv;
+   }
+   if (argc)
+   {
+      *argc = params->argc;
+   }
+}
+
 			/*  Get values of keywords converted to various types,
 						 but without status options  */
 char *params_get_str (CmdParams_t *parms, char *name) {
