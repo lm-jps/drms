@@ -17,7 +17,7 @@ endif
 # Check for debug vs. release build - release is default.
 #   To do a debug build, either set the environment variable JSOC_DEBUG to 1, OR
 #   modify the following line so that DEBUG = 1.  The environment variable takes precedence.
-DEBUG = 0
+DEBUG = 1
 
 ifdef JSOC_DEBUG
 ifeq ($(JSOC_DEBUG), 1)
