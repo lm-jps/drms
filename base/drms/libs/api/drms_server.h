@@ -16,6 +16,7 @@ char abortstring[1024];
 extern char abortstring[1024];
 #endif
 
+/* exit() causes atexit() function to be executed */
 #define Exit(code) do { snprintf(abortstring,1023,"aborted: exit called in file %s, line %d",__FILE__,__LINE__); exit((code)); } while(0)
 
 

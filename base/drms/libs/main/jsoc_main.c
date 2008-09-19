@@ -171,9 +171,36 @@ static void atexit_action (void) {
 #endif
   drms_server_abort (drms_env, 1);
 #ifdef DEBUG
-    xmem_leakreport ();
+   fprintf (stderr, "drms_server_abort() call completed.\n");
+   xmem_leakreport ();
 #endif
 }
+
+static void StopProcessing(int sig)
+{
+   /* acquire lock */
+   sem_wait(drms_env->shutdownsem);
+
+   if (drms_env->shutdown != kSHUTDOWN_INITIATED)
+   {
+      /* release lock - incorrect state (perhaps somebody other than the signal thread 
+       * sent the SIGUSR2 signal) */
+      sem_post(drms_env->shutdownsem);
+      return;
+   }
+
+   fprintf(stderr,"Stopping main thread (received signal '%d').\n", sig);
+
+   /* main thread now behaving - kSDSTATE_MAIN_BEHAVING */
+   drms_env->shutdown = kSHUTDOWN_MAINBEHAVING;
+   sem_post(drms_env->shutdownsem);
+
+   /* stay out of trouble while process terminates */
+   while (1)
+   {
+      sched_yield();
+   }
+}  
 
 int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt)(void)) {
   int verbose=0, nagleoff=0, dolog=0, quiet=0;
@@ -262,11 +289,37 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   sigaddset(&drms_env->signal_mask, SIGQUIT);
   sigaddset(&drms_env->signal_mask, SIGTERM);
   sigaddset(&drms_env->signal_mask, SIGUSR1);
+
   if( (status = pthread_sigmask(SIG_BLOCK, &drms_env->signal_mask, &drms_env->old_signal_mask)))
   {
     fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);          
     Exit(1);
   }
+
+  /* Set up a main-thread signal-handler. It handles SIGUSR2 signals, which are
+   * sent by the signal thread if that thread in turn is aborting the process.
+   * This is done so that the main thread doesn't continue to attempt SUMS and
+   * dbase access while those threads are being terminated.  
+   * The handler causes the main thread to stop doing whatever it is doing
+   * and go to sleep indefinitely. The signal thread will return the exit code
+   * from the process.
+   */
+  struct sigaction act;
+
+  act.sa_handler = StopProcessing;
+  sigfillset(&(act.sa_mask));
+  sigaction(SIGUSR2, &act, NULL);
+  drms_env->main_thread = pthread_self();
+
+  /* create shutdown (unnamed POSIX) semaphore */
+  drms_env->shutdownsem = malloc(sizeof(sem_t));
+
+  /* Initialize semaphore to 1 - "unlocked" */
+  sem_init(drms_env->shutdownsem, 0, 1);
+
+  /* Initialize shutdown state to kSHUTDOWN_UNINITIATED - no shutdown requested */
+  drms_env->shutdown = kSHUTDOWN_UNINITIATED;
+
   /* Spawn a thread that handles signals and controls server 
      abort or shutdown. */
   if( (status = pthread_create(&drms_env->signal_thread, NULL, &drms_signal_thread, 
@@ -312,8 +365,9 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
 
   drms_server_begin_transaction(drms_env);
 
-  int abort_flag = DoIt();
+  int abort_flag = CallDoIt();
 
+  sem_destroy(drms_env->shutdownsem);
   drms_server_end_transaction(drms_env, abort_flag, 1);
 
 #ifndef DEBUG

@@ -27,6 +27,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include <semaphore.h>
 #include "jsoc_version.h"
 //#include "xmem.h"
 
