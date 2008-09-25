@@ -110,6 +110,15 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
     goto bailout;
   }
 
+  if (template->seriesinfo->unitsize < 1 && (template->segments).num_total > 0)
+  {
+     fprintf(stderr, 
+             "The series unit size must be at least 1, but it is %d.\n",
+             template->seriesinfo->unitsize);
+     goto bailout;
+  }
+
+
   lineno = 0;
   if (parse_links(desc, template))
   {
@@ -193,13 +202,6 @@ static int parse_seriesinfo (char *desc, DRMS_Record_t *template) {
     else if (prefixmatch (p, "Unitsize"))
     {
        TRY(getint (&q, &(template->seriesinfo->unitsize)))
-	 if (template->seriesinfo->unitsize < 1)
-	 {
-	    fprintf(stderr, 
-		    "The series unit size must be at least 1, but it is %d.\n",
-		    template->seriesinfo->unitsize);
-	    return 1;
-	 }
     }
     else if (prefixmatch (p, "Tapegroup"))
       TRY(getint (&q, &(template->seriesinfo->tapegroup)))
@@ -748,14 +750,14 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys)
 	   const char *slotKeyname = NULL;
 	   char keyname[DRMS_MAXKEYNAMELEN];
 	   DRMS_Keyword_t *newkey = NULL;
-	   DRMS_Keyword_t *existindex = NULL;
+           DRMS_Keyword_t *existkey = NULL;
 
 	   while ((pSlotKey = 
 		   (DRMS_Keyword_t **)hiter_extgetnext(hit, &slotKeyname)) != NULL)
 	   {
 	      snprintf(keyname, sizeof(keyname), "%s%s", slotKeyname, kSlotAncKey_Index);
-	      if ((existindex = 
-		   (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), keyname)) 
+	      if ((existkey = 
+                   (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), keyname)) 
 		  == NULL)
 	      {
 		 /* The corresponding index keyword does not exist - create. */
@@ -774,6 +776,7 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys)
 		 strcpy(newkey->info->name, keyname);
 		 newkey->record = template;
                  drms_keyword_unsetperseg(newkey); /* Must be per record*/
+                 drms_keyword_setimplicit(newkey);
 		 newkey->info->islink = 0;
 		 newkey->info->linkname[0] = 0;
 		 newkey->info->target_key[0] = 0;
@@ -788,28 +791,19 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys)
 		   newkey; 
                  drms_keyword_setintprime(newkey);
                  drms_keyword_unsetextprime(newkey);
+
+                 /* Index keywords must have a db index */
+                 template->seriesinfo->dbidx_keywords[(template->seriesinfo->dbidx_num)++]
+                   = newkey;
 	      }
 	      else
 	      {
-		 /* The corresponding index keyword DOES exist - check it. */
-		 
-		 /* Must be prime */
-		 int isprime = drms_keyword_isprime(existindex);
-
-		 /* Must be of recscope kRecScopeType_Index */
-		 DRMS_RecScopeType_t recscope = drms_keyword_getrecscope(existindex);
-
-		 /* Must be of type kIndexKWType */
-		 DRMS_Type_t kwtype = drms_keyword_gettype(existindex);
-
-		 if (!isprime || recscope != kRecScopeType_Index || kwtype != kIndexKWType)
-		 {
-		    fprintf(stderr, "Invalid index keyword %s.\n", keyname);
-		    hiter_destroy(&hit);
-		    hcon_destroy(&slotted);
-		    hcon_destroy(&indexkws);
-		    return 1;
-		 }
+		 /* The corresponding index keyword DOES exist - don't allow this.
+                  * Allowing the user to create it is not good, since they could
+                  * create it improperly.
+                  */
+                 fprintf(stderr, "Keywords with the suffix '_index' are reserved; cannot specify '%s' in a jsd file\n", existkey->info->name);
+                 return 1;
 	      }
 
 	      /* Find all other required constant keywords for this type of 
@@ -1473,6 +1467,10 @@ static int parse_keyword(char **in,
      drms_keyword_setintprime(key);
      drms_keyword_unsetextprime(key);
 
+     /* Index keywords must have a db index */
+     template->seriesinfo->dbidx_keywords[(template->seriesinfo->dbidx_num)++] =
+       key; 
+
      hcon_insert(indexkws, key->info->name, &key);
   } /* index keyword */
   else
@@ -1773,7 +1771,15 @@ static int parse_dbindex(char *desc, DRMS_Record_t *template)
 	    * among segments within a record, not to select among records
 	    * within a series (which is the purpose of a prime keyword). */
 #ifdef DEBUG
-	   printf("NOT adding primary key '%s' because it is a per-segment keyword.\n",
+	   printf("NOT adding index key '%s' because it is a per-segment keyword.\n",
+		  name);
+#endif
+	}
+        else if (drms_keyword_isslotted(key))
+	{
+#ifdef DEBUG
+	   printf("NOT adding index key '%s' because it is slotted."
+		  "The corresopnding index key will have an index instead.\n",
 		  name);
 #endif
 	}
@@ -2025,7 +2031,7 @@ void drms_keyword_print_jsd(DRMS_Keyword_t *key) {
       else 
 	drms_keyword_printval(key);      
       if (key->info->unit[0] && key->info->unit[0] != ' ') {
-	printf(", %s, %s, \"%s\"", key->info->format,
+	printf(", \"%s\", \"%s\", \"%s\"", key->info->format,
 	       key->info->unit,
 	       key->info->description);
       } else {
@@ -2103,7 +2109,13 @@ void drms_jsd_printfromrec(DRMS_Record_t *rec) {
    int npkeys = 0;
    char **extpkeys; 
 
-   printf("#=====General Series Information=====\n");
+   printf("#=====JSD Information=====\n");
+   if (strlen(rec->seriesinfo->version) > 0)
+   {
+      printf("%-*s\t%s\n",fwidth,"Version:",rec->seriesinfo->version);
+   }
+
+   printf("\n#=====General Series Information=====\n");
    printf("%-*s\t%s\n",fwidth,"Seriesname:",rec->seriesinfo->seriesname);
    printf("%-*s\t\"%s\"\n",fwidth,"Author:",rec->seriesinfo->author);
    printf("%-*s\t%s\n",fwidth,"Owner:",rec->seriesinfo->owner);
@@ -2133,7 +2145,7 @@ void drms_jsd_printfromrec(DRMS_Record_t *rec) {
      printf("\n");
    }
 
-   printf("%-*s\t%s\n",fwidth,"Description:",rec->seriesinfo->description);
+   printf("%-*s\t\"%s\"\n",fwidth,"Description:",rec->seriesinfo->description);
    printf("\n#=====Links=====\n");
    hiter_new(&hit, &rec->links); 
    while( (link = (DRMS_Link_t *)hiter_getnext(&hit)) )
@@ -2142,7 +2154,12 @@ void drms_jsd_printfromrec(DRMS_Record_t *rec) {
    printf("\n#=====Keywords=====\n");
    hiter_new(&hit, &rec->keywords);
    while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )
-     drms_keyword_print_jsd(key);
+   {
+      if (!drms_keyword_getimplicit(key))
+      {
+         drms_keyword_print_jsd(key);
+      }
+   }
 
    printf("\n#=====Segments=====\n");
    hiter_new(&hit, &rec->segments);

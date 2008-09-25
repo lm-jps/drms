@@ -148,6 +148,18 @@ static inline void drms_keyword_unsetperseg(DRMS_Keyword_t *key)
 {
    key->info->kwflags &= ~kKeywordFlag_PerSegment;
 }
+static inline int drms_keyword_getimplicit(DRMS_Keyword_t *key)
+{
+   return ((key->info->kwflags & kKeywordFlag_Implicit) != 0);
+}
+static inline void drms_keyword_setimplicit(DRMS_Keyword_t *key)
+{
+   key->info->kwflags |= kKeywordFlag_Implicit;
+}
+static inline void drms_keyword_unsetimplicit(DRMS_Keyword_t *key)
+{
+   key->info->kwflags &= ~kKeywordFlag_Implicit;
+}
 static inline int drms_keyword_getintprime(DRMS_Keyword_t *key)
 {
    return ((key->info->kwflags & kKeywordFlag_InternalPrime) != 0);
