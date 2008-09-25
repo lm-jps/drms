@@ -1384,12 +1384,13 @@ static DRMS_Array_t *ScaleOutputArray(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
 /* Write the array argument to the file occupied by the
    segment argument. The array dimension and type must match the
    segment dimension and type. */
-int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
+static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale, int wkeys)
 {
   int status,i;
   char filename[DRMS_MAXPATHLEN]; 
   DRMS_Array_t *out;
   DRMS_SeriesVersion_t vers2_1 = {"2.1", ""};
+  CFITSIO_KEYWORD *fitskeys = NULL;
 
   if (seg->info->scope == DRMS_CONSTANT &&
       seg->info->cseg_recnum) {
@@ -1501,13 +1502,19 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
 	    goto bailout;
 	 }
 
+         /* If wkeys, then export DRMS keys to FITS keys*/
+         if (wkeys)
+         {
+            fitskeys = drms_segment_mapkeys(seg, NULL, NULL, &status);
+         }
+
 	 CFITSIO_IMAGE_INFO imginfo;
 
 	 if (!drms_fitsrw_SetImageInfo(out, &imginfo))
 	 {
 	    /* Need to change the compression parameter to something meaningful 
 	     * (although new users should just use the DRMS_FITS protocol )*/
-	    if (cfitsio_write_file(filename, &imginfo, out->data, seg->cparms, NULL))
+	    if (cfitsio_write_file(filename, &imginfo, out->data, seg->cparms, fitskeys))
 	      goto bailout;
 
             /* imginfo will contain the correct bzero/bscale.  This may be different 
@@ -1530,6 +1537,11 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
 	 {
 	    goto bailout;
 	 }
+
+         if (fitskeys)
+         {
+            drms_segment_freekeys(&fitskeys);
+         }
       }
       break;
     case DRMS_FITS:
@@ -1542,11 +1554,17 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
 	    goto bailout;
 	 }
 
+         /* If wkeys, then export DRMS keys to FITS keys*/
+         if (wkeys)
+         {
+            fitskeys = drms_segment_mapkeys(seg, NULL, NULL, &status);
+         }
+
 	 CFITSIO_IMAGE_INFO imginfo;
 
 	 if (!drms_fitsrw_SetImageInfo(out, &imginfo))
 	 {	    
-	    if (cfitsio_write_file(filename, &imginfo, out->data, seg->cparms, NULL))
+	    if (cfitsio_write_file(filename, &imginfo, out->data, seg->cparms, fitskeys))
 	      goto bailout;
             
             /* imginfo will contain the correct bzero/bscale.  This may be different 
@@ -1568,6 +1586,11 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
 	 {
 	    goto bailout;
 	 }
+
+         if (fitskeys)
+         {
+            drms_segment_freekeys(&fitskeys);
+         }
       }
       break;  
     case DRMS_MSI:
@@ -1633,8 +1656,24 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
  bailout:
   if (out && out!=arr)
     drms_free_array(out);
+
+  if (fitskeys)
+  {
+     drms_segment_freekeys(&fitskeys);
+  }
+
   fprintf(stderr,"ERROR: Couldn't write data to file '%s'.\n", filename);
   return status;
+}
+
+int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
+{
+   return drms_segment_writeinternal(seg, arr, autoscale, 0);
+}
+
+int drms_segment_writewithkeys(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale)
+{
+   return drms_segment_writeinternal(seg, arr, autoscale, 1);  
 }
 
 int drms_segment_writeslice(DRMS_Segment_t *seg, DRMS_Array_t *arr, int *start, int *end, int autoscale)
@@ -2335,41 +2374,8 @@ int drms_segment_mapexport_tofile(DRMS_Segment_t *seg,
 {
    int stat = DRMS_SUCCESS;
 
-   CFITSIO_KEYWORD *fitskeys = NULL;
-   HContainer_t *keys = &(seg->record->keywords);
-   HIterator_t *hit = hiter_create(keys);
+   CFITSIO_KEYWORD *fitskeys = drms_segment_mapkeys(seg, clname, mapfile, &stat);
 
-   if (hit)
-   {
-      DRMS_Keyword_t *key = NULL;
-      const char *keyname = NULL;
-      char segnum[4];
-
-      snprintf(segnum, sizeof(segnum), "%d", seg->info->segnum);
-
-      while ((key = hiter_getnext(hit)) != NULL)
-      {
-	 keyname = drms_keyword_getname(key);
-
-	 if (drms_keyword_getperseg(key))
-	 {
-	    /* Ensure that this keyword is relevant to this segment. */
-	    if (!strstr(keyname, segnum))
-	    {
-	       continue;
-	    }
-	 }
-	    
-	 if (drms_keyword_mapexport(key, clname, mapfile, &fitskeys))
-	 {
-	    fprintf(stderr, "Couldn't export keyword '%s'.\n", keyname);
-	    stat = DRMS_ERROR_EXPORT;
-	 }
-      }
-
-      hiter_destroy(&hit);
-   }
-   
    if (!stat)
    {
       switch (seg->info->protocol)
@@ -2391,10 +2397,7 @@ int drms_segment_mapexport_tofile(DRMS_Segment_t *seg,
       }
    }
 
-   if (fitskeys)
-   {
-      cfitsio_free_keys(&fitskeys);
-   }
+   drms_segment_freekeys(&fitskeys);
 
    return stat;
 }
@@ -2460,4 +2463,62 @@ int drms_mapexport_tofitsfile(DRMS_Array_t *arr,
    }
 
    return stat;
+}
+
+/* Map keys that are specific to a segment to fits keywords.  User must free. */
+CFITSIO_KEYWORD *drms_segment_mapkeys(DRMS_Segment_t *seg, 
+                                      const char *clname, 
+                                      const char *mapfile, 
+                                      int *status)
+{
+   CFITSIO_KEYWORD *fitskeys = NULL;
+   HContainer_t *keys = &(seg->record->keywords);
+   HIterator_t *hit = hiter_create(keys);
+   int statint = DRMS_SUCCESS;
+
+   if (hit)
+   {
+      DRMS_Keyword_t *key = NULL;
+      const char *keyname = NULL;
+      char segnum[4];
+
+      snprintf(segnum, sizeof(segnum), "%d", seg->info->segnum);
+
+      while ((key = hiter_getnext(hit)) != NULL)
+      {
+	 keyname = drms_keyword_getname(key);
+
+	 if (drms_keyword_getperseg(key))
+	 {
+	    /* Ensure that this keyword is relevant to this segment. */
+	    if (!strstr(keyname, segnum))
+	    {
+	       continue;
+	    }
+	 }
+	    
+	 if (drms_keyword_mapexport(key, clname, mapfile, &fitskeys))
+	 {
+	    fprintf(stderr, "Couldn't export keyword '%s'.\n", keyname);
+	    statint = DRMS_ERROR_EXPORT;
+	 }
+      }
+
+      hiter_destroy(&hit);
+   }
+
+   if (status)
+   {
+      *status = statint;
+   }
+
+   return fitskeys;
+}
+
+void drms_segment_freekeys(CFITSIO_KEYWORD **fitskeys)
+{
+   if (fitskeys && *fitskeys)
+   {
+      cfitsio_free_keys(fitskeys);
+   }
 }
