@@ -81,7 +81,8 @@ int drms_sequence_drop(DRMS_Session_t *session,  char *name);
 /** \brief Create new slots */
 int drms_newslots(DRMS_Env_t *env,  int n, char *series, long long *recnum, 
 		  DRMS_RecLifetime_t lifetime, int *slotnum, 
-		  DRMS_StorageUnit_t **su);
+		  DRMS_StorageUnit_t **su,
+                  int createslotdirs);
 /** \brief Retrieve the storage unit specified by \a sunum */
 DRMS_StorageUnit_t *drms_getunit(DRMS_Env_t *env,  char *series, 
 				 long long sunum, int retrieve, int *status);

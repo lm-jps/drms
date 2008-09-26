@@ -1038,7 +1038,8 @@ int drms_getunits(DRMS_Env_t *env, char *series,
 /* Client version. */
 int drms_newslots(DRMS_Env_t *env, int n, char *series, long long *recnum,
 		  DRMS_RecLifetime_t lifetime, int *slotnum, 
-		  DRMS_StorageUnit_t **su)
+		  DRMS_StorageUnit_t **su,
+                  int createslotdirs)
 {
   int status, i;
   long long sunum;
@@ -1053,14 +1054,14 @@ int drms_newslots(DRMS_Env_t *env, int n, char *series, long long *recnum,
 #ifndef DRMS_CLIENT
   if (env->session->db_direct)
   {
-    return drms_su_newslots(env, n, series, recnum, lifetime, slotnum, su);
+    return drms_su_newslots(env, n, series, recnum, lifetime, slotnum, su, createslotdirs);
   }
   else
 #else
     XASSERT(env->session->db_direct==0);
 #endif
   {
-    int tmp[4], *t;
+    int tmp[5], *t;
     long long *ltmp, *lt;
     struct iovec *vec, *v;
 
@@ -1073,18 +1074,19 @@ int drms_newslots(DRMS_Env_t *env, int n, char *series, long long *recnum,
     }
 
     XASSERT(ltmp = malloc(n*sizeof(long long)));
-    XASSERT(vec = malloc((n+4)*sizeof(struct iovec)));
+    XASSERT(vec = malloc((n+5)*sizeof(struct iovec)));
 
-    /* Send series, n, lifetime and the record numbers with a
+    /* Send series, n, lifetime, createslotdirs flag, and the record numbers with a
        single writev system call. */
     t = tmp; v = vec;
     net_packstring(series, t++, v); v+=2;
     net_packint(n, t++, v++);
     net_packint((int)lifetime, t++, v++);
+    net_packint(createslotdirs, t++, v++);
     lt = ltmp;
     for (i=0; i<n; i++)
       net_packlonglong(recnum[i], lt++, v++);
-    Writevn(env->session->sockfd, vec, n+4);
+    Writevn(env->session->sockfd, vec, n+5);
     free(vec);
     free(ltmp);
    
@@ -1336,7 +1338,7 @@ static int drms_series_candosomething(DRMS_Env_t *env, const char *series, const
 
    if (!get_namespace(series, &namespace, &sname))
    {
-      sprintf(query, "select * from information_schema.table_privileges where table_schema = '%s' and table_name = '%s' and privilege_type = '%s'", namespace, sname, perm);
+      sprintf(query, "select * from information_schema.table_privileges where table_schema = '%s' and table_name ~~* '%s' and privilege_type = '%s'", namespace, sname, perm);
 
       if ((qres = drms_query_txt(env->session, query)) != NULL && qres->num_rows != 0) 
       {

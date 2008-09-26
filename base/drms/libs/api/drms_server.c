@@ -827,13 +827,16 @@ int drms_server_newslots(DRMS_Env_t *env, int sockfd)
   long long *recnum;
   DRMS_StorageUnit_t **su;
   DRMS_RecLifetime_t lifetime;
+  int createslotdirs;
 
   status = DRMS_SUCCESS;
   series = receive_string(sockfd);  
+
   n = Readint(sockfd);  
   if (n>0)
   {    
     lifetime = (DRMS_RecLifetime_t) Readint(sockfd); 
+    createslotdirs = Readint(sockfd);
   
     XASSERT(su = malloc(n*sizeof(DRMS_StorageUnit_t *)));
     XASSERT(slotnum = malloc(n*sizeof(int)));
@@ -841,8 +844,12 @@ int drms_server_newslots(DRMS_Env_t *env, int sockfd)
     for (i=0; i<n; i++)
       recnum[i] = Readlonglong(sockfd);  
       
+#if defined(DEBUG)
+    fprintf(stdout, "series = '%s'\nn = '%d'\nlifetime = '%d'\ncreateslotdirs = '%d'\n", 
+            series, n, lifetime, createslotdirs);
+#endif
 
-    status = drms_su_newslots(env, n, series, recnum, lifetime, slotnum, su);
+    status = drms_su_newslots(env, n, series, recnum, lifetime, slotnum, su, createslotdirs);
     if (status==DRMS_SUCCESS)
     {
       int *tmp, *t;

@@ -79,7 +79,8 @@ long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir,
 #ifndef DRMS_CLIENT
 int drms_su_newslots(DRMS_Env_t *env, int n, char *series, 
 		     long long *recnum, DRMS_RecLifetime_t lifetime,
-		     int *slotnum, DRMS_StorageUnit_t **su)
+		     int *slotnum, DRMS_StorageUnit_t **su,
+                     int createslotdirs)
 {
   int i, status, slot;
   HContainer_t *scon; 
@@ -198,25 +199,29 @@ int drms_su_newslots(DRMS_Env_t *env, int n, char *series,
     */
   }
   /* Create the slot directory. */ 
-  for (i=0; i<n; i++)	
-    {
-      if (su[i])
+  if (createslotdirs)
+  {
+     for (i=0; i<n; i++)	
+     {
+        if (su[i])
 	{
-	  CHECKSNPRINTF(snprintf(slotdir, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT,
-				 su[i]->sudir,slotnum[i]), DRMS_MAXPATHLEN);
+           CHECKSNPRINTF(snprintf(slotdir, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT,
+                                  su[i]->sudir,slotnum[i]), DRMS_MAXPATHLEN);
 #ifdef DEBUG
-	  printf("su->sudir = '%s', slotdir = '%s'\n",su[i]->sudir, slotdir);
+           printf("su->sudir = '%s', slotdir = '%s'\n",su[i]->sudir, slotdir);
 #endif
       
-	  if (mkdir(slotdir,0777))
-	    {
+           if (mkdir(slotdir,0777))
+           {
 	      fprintf(stderr,"ERROR: drms_newslot could not create record "
 		      "directory '%s'.\n",slotdir);
 	      perror("mkdir call failed with error");
 	      status = DRMS_ERROR_MKDIRFAILED;
-	    } 
+           } 
 	}
-    }
+     }
+  }
+
   status = DRMS_SUCCESS;
  bail:
   return status;

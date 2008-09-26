@@ -1842,6 +1842,7 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
   int *slotnum;
   char filename[DRMS_MAXPATHLEN];
   char *series;
+  int createslotdirs = 1;
 
   CHECKNULL_STAT(env,status);
   CHECKNULL_STAT(template,status);
@@ -1896,7 +1897,23 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
     XASSERT(su = malloc(n*sizeof(DRMS_StorageUnit_t *)));
     XASSERT(slotnum = malloc(n*sizeof(int)));
     
-    if ((stat = drms_newslots(env, n, series, recnum, lifetime, slotnum, su)))
+    /* If all segments are TAS segments, then there is no need to create 
+     * slot dirs as all data will go into the SU */
+    HIterator_t *seghit = hiter_create(&(template->segments));
+    if (seghit)
+    {
+       createslotdirs = 0;
+       while((seg = (DRMS_Segment_t *)hiter_getnext(seghit)))
+       {
+          if (seg->info->protocol != DRMS_TAS)
+          {
+             createslotdirs = 1;
+          }
+       }
+       hiter_destroy(&seghit);
+    }
+
+    if ((stat = drms_newslots(env, n, series, recnum, lifetime, slotnum, su, createslotdirs)))
       goto failure;    
     
     for (i=0; i<n; i++)      
@@ -2165,6 +2182,8 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
   char *series;
   DRMS_Env_t *env;
   DRMS_Array_t *arr;
+  int createslotdirs = 1;
+  HIterator_t *seghit = NULL;
 
   CHECKNULL_STAT(rs_in,status);
   n_total = rs_in->n;
@@ -2244,10 +2263,26 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
       case DRMS_COPY_SEGMENTS:
 	XASSERT(su = malloc(n*sizeof(DRMS_StorageUnit_t *)));
 	XASSERT(slotnum = malloc(n*sizeof(int)));
+
+        /* If all segments are TAS segments, then there is no need to create 
+         * slot dirs as all data will go into the SU */
+        seghit = hiter_create(&((rs_out->records[0])->segments));
+        if (seghit)
+        {
+           createslotdirs = 0;
+           while((seg_out = (DRMS_Segment_t *)hiter_getnext(seghit)))
+           {
+              if (seg_out->info->protocol != DRMS_TAS)
+              {
+                 createslotdirs = 1;
+              }
+           }
+           hiter_destroy(&seghit);
+        }
       
 	/* Allocate new SU slots for copies of data segments. */
 	if ((stat = drms_newslots(env, n, series, recnum, lifetime, slotnum, 
-				  su))) {
+				  su, createslotdirs))) {
 	  stat = 1;
 	  goto failure;    
 	}
@@ -4317,8 +4352,35 @@ void drms_record_directory (DRMS_Record_t *rec, char *dirname, int retrieve) {
 #endif
   }
 
-  CHECKSNPRINTF(snprintf(dirname, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT, 
-			 rec->su->sudir, rec->slotnum), DRMS_MAXPATHLEN);
+  /* It could be that the record contains only TAS files, in which case 
+   * there are no slot directories (but there are still slots - it is just
+   * that a slot maps to a slice in the TAS file, which lives at the level
+   * of the sudir). */
+  DRMS_Segment_t *seg = NULL;
+  int hasslotdirs = 0;
+  HIterator_t *seghit = hiter_create(&(rec->segments));
+  if (seghit)
+  {
+     while((seg = (DRMS_Segment_t *)hiter_getnext(seghit)))
+     {
+        if (seg->info->protocol != DRMS_TAS)
+        {
+           hasslotdirs = 1;
+        }
+     }
+     hiter_destroy(&seghit);
+  }
+
+  if (hasslotdirs)
+  {
+     CHECKSNPRINTF(snprintf(dirname, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT, 
+                            rec->su->sudir, rec->slotnum), DRMS_MAXPATHLEN);
+  }
+  else
+  {
+     CHECKSNPRINTF(snprintf(dirname, DRMS_MAXPATHLEN, "%s", 
+                            rec->su->sudir), DRMS_MAXPATHLEN);  
+  }
 }
 
 
@@ -4335,6 +4397,8 @@ FILE *drms_record_fopen(DRMS_Record_t *rec, char *filename, const char *mode)
   int newslot = 0;
   char path[DRMS_MAXPATHLEN];
   FILE *fp;
+  int createslotdirs = 1;
+  DRMS_Segment_t *seg = NULL;
     
   if (drms_record_numsegments(rec) < 0)
   {
@@ -4348,9 +4412,25 @@ FILE *drms_record_fopen(DRMS_Record_t *rec, char *filename, const char *mode)
   case 'a':
     if (rec->su==NULL)
     {
-      if ((stat = drms_newslots(rec->env, 1, rec->seriesinfo->seriesname, 
+       /* If all segments are TAS segments, then there is no need to create 
+        * slot dirs as all data will go into the SU */
+       HIterator_t *seghit = hiter_create(&(rec->segments));
+       if (seghit)
+       {
+          createslotdirs = 0;
+          while((seg = (DRMS_Segment_t *)hiter_getnext(seghit)))
+          {
+             if (seg->info->protocol != DRMS_TAS)
+             {
+                createslotdirs = 1;
+             }
+          }
+          hiter_destroy(&seghit);
+       }
+
+       if ((stat = drms_newslots(rec->env, 1, rec->seriesinfo->seriesname, 
 				&rec->recnum, rec->lifetime, &rec->slotnum, 
-				&rec->su)))
+				&rec->su, createslotdirs)))
       {
 	fprintf(stderr,"ERROR in drms_record_fopen: drms_newslot"
 		" failed with error code %d.\n",stat);
