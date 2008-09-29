@@ -56,8 +56,8 @@ int soi_errno = NO_ERROR;
 int debugflg = 0;
 int sim = 0;
 int tapeoffline = 0;
-newlog = 0;
-logcnt = 0;
+int newlog = 0;
+int logcnt = 0;
 
 /*********************************************************/
 void StartTimer(int n)
