@@ -376,12 +376,9 @@ int main(int argc, char *argv[])
 
   get_cmd(argc, argv);                  /* check the calling sequence */
   if(!(username = (char *)getenv("USER"))) username = "nouser";
-  /********** !!!TMP form user jim or production ********************/
   if(strcmp(username, "production")) {
-    if(strcmp(username, "jim")) {
-      printf("!!NOTE: You must be user production to run tapearc!\n");
-      exit(1);
-    }
+    printf("!!NOTE: You must be user production to run tapearc!\n");
+    exit(1);
   }
   if((notapearc=fopen(NOTAPEARC, "r")) != NULL) {
      printf("Can't run a tapearc while Imp/Exp of tapes is active\n");
@@ -768,14 +765,14 @@ int storeunitarch(int docnt)
     setkey_double(&alist, "total_bytes", total_bytes);
     setkey_int(&alist, "reqcnt", i);
     if(i != 0) {	/* make sure didn't hit new group at beginning */
-      if(curr_group_sz >= TAR_FILE_SZ) {	//only do if big enough
+      //only do if big enough of hit max # of files 
+      if((curr_group_sz >= TAR_FILE_SZ) || (wd_max_call_cnt >= MAXSUMREQCNT)) {
         if(call_tape_svc(curr_group_id, total_bytes, first_index)) {
           fprintf(stderr, "**Error on tape write for group %d\n", curr_group_id);
         }
       }
       else {
-        printf("Abandon partial block for group=%d index=%lu bytes=%g\n", 
-			curr_group_id, first_index, total_bytes);
+        printf("Abandon partial block for group=%d index=%lu files=%d bytes=%g\n", curr_group_id, first_index, wd_max_call_cnt, total_bytes);
       }
     }
     freekeylist(&alist);
