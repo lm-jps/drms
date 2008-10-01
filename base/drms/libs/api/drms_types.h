@@ -403,6 +403,8 @@ typedef enum DRMS_RecSetCursorSeek_enum DRMS_RecSetCursorSeek_t;
 /** \brief DRMS cursor struct */
 struct DRMS_RecSetCursor_struct
 {
+  /** \brief Parent recordset */
+  struct DRMS_RecordSet_struct *parent;
   /** \brief Array of cursor names recognized by database query */
   char **names;
   /** \brief DRMS session environment - needed for querying db for next chunk */
@@ -410,9 +412,11 @@ struct DRMS_RecSetCursor_struct
   /** \brief Chunk size */
   int chunksize;
   /** \brief The index of the chunk currently loaded in the record-set */
-  /* If this is -1, then there are no chunks in memory. */
+  /* If this is -1, then there are no chunks in memory */
   int currentchunk;
-  /** \brief The index of the current record in the downloaded chunk 0 <= currentrec <= chunksize */
+  /** \brief The index of the chunk that was last in memory. */
+  int lastchunk; 
+  /** \brief The relative index of the current record in the downloaded chunk 0 <= currentrec <= chunksize */
   int currentrec;
 };
 
@@ -444,7 +448,7 @@ struct DRMS_RecordSet_struct
   /** \brief Array of offsets to the beginning of each subset */
   int *ss_starts;
   /** \brief Index (relative to first item in subset) of current record in each subset. */
-  int *ss_currentrecs;
+  int *ss_currentrecs; /* Used by drms_recordset_fetchnextinset() */
   /** \brief DRMS record-set cursor - essentially a pointer into the return set of database records */
   /* NULL cursor means that this record-set is NOT chunked. */
   DRMS_RecSetCursor_t *cursor;

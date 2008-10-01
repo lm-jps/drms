@@ -337,6 +337,8 @@ DRMS_Record_t *drms_recordset_getss(DRMS_RecordSet_t *set, unsigned int setnum, 
 /** @brief Return the number of records in a DRMS record-set subset */
 int drms_recordset_getssnrecs(DRMS_RecordSet_t *set, unsigned int setnum, int *status);
 
+int drms_merge_record(DRMS_RecordSet_t *rs, DRMS_Record_t *rec);
+
 static inline DRMS_Record_t *drms_recordset_getrec(DRMS_RecordSet_t *rs, long long recnum)
 {
    if (rs)
@@ -360,17 +362,19 @@ char *drms_query_string(DRMS_Env_t *env,
 /* Chunking record queries */
 int drms_recordset_setchunksize(unsigned int size);
 unsigned int drms_recordset_getchunksize();
-int drms_open_recordchunk(DRMS_RecordSet_t *rs, 
+int drms_open_recordchunk(DRMS_Env_t *env,
+                          DRMS_RecordSet_t *rs, 
 			  DRMS_RecSetCursorSeek_t seektype, 
-			  long long pos,  
+			  long long chunkindex,  
 			  int *status);
 int drms_close_recordchunk(DRMS_RecordSet_t *rs);
 DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env, 
 				      const char *rsquery, 
 				      int *status);
-DRMS_Record_t *drms_recordset_fetchnext(DRMS_RecordSet_t *rs, int *status);
-DRMS_Record_t *drms_recordset_fetchprevious(DRMS_RecordSet_t *rs, int *status);
-DRMS_Record_t *drms_recordset_fetchnextinset(DRMS_RecordSet_t *rs, int *setnum, int *status);
+DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env, DRMS_RecordSet_t *rs, int *status);
+DRMS_Record_t *drms_recordset_fetchprevious(DRMS_Env_t *env, DRMS_RecordSet_t *rs, int *status);
+DRMS_Record_t *drms_recordset_fetchnextinset(DRMS_Env_t *env, DRMS_RecordSet_t *rs, int *setnum, int *status);
+void drms_free_cursor(DRMS_RecSetCursor_t **cursor);
 
 /* DSDS */
 int drms_record_isdsds(DRMS_Record_t *rec);
