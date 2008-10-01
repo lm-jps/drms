@@ -184,9 +184,9 @@ if (filter)
   
 /* Query the database to get all series names from the master list. */
 if (printinfo || want_JSON)
-  sprintf(query, "select seriesname, primary_idx, description from %s()", DRMS_MASTER_SERIES_TABLE);
+  sprintf(query, "select seriesname, primary_idx, description from %s() order by seriesname", DRMS_MASTER_SERIES_TABLE);
 else
-  sprintf(query, "select seriesname from %s()", DRMS_MASTER_SERIES_TABLE);
+  sprintf(query, "select seriesname from %s() order by seriesname", DRMS_MASTER_SERIES_TABLE);
 
 if ( (qres = drms_query_txt(drms_env->session, query)) == NULL)
   {
