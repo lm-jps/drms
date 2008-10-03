@@ -53,8 +53,8 @@ link. */
 #define DRMS_MAXLINKDEPTH  (20) 
 #define DRMS_MAXHOSTNAME (128)
 
-/** \brief Maximum number of in-memory records */
-#define DRMS_MAXCHUNKSIZE      (4096)
+/** \brief Maximum number of in-memory records - 16MB for now */
+#define DRMS_MAXCHUNKSIZE      (16777216)
 
 #include "drms_protocol.h"
 

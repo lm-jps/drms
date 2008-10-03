@@ -110,7 +110,12 @@
 #define DRMS_ERROR_UNKNOWNCMDARG    (-10064)
 #define DRMS_ERROR_INVALIDCMDARGCONV      (-10065)
 #define DRMS_ERROR_RECORDSETSUBSET  (-10066)
-#define DRMS_ERROR_NOMORERECS       (-10067)
+
+/* not errors, but status codes */
+#define DRMS_CHUNKS_NOMORERECS       (-20000)
+#define DRMS_CHUNKS_NEWCHUNK         (-20001)
+#define DRMS_CHUNKS_LASTINCHUNK      (-20002)
+#define DRMS_CHUNKS_LASTINRS         (-20003)
 
 /* Warnings */
 #define DRMS_WARNING_BADBLANK         (10000)

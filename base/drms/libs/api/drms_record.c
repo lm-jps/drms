@@ -5928,10 +5928,11 @@ int drms_merge_record(DRMS_RecordSet_t *rs, DRMS_Record_t *rec)
       if (rs->n == abs(rs->ss_n))
       {
          /* realloc */
-         void *tmp = realloc(rs->records, abs(rs->ss_n) * 2);
+         void *tmp = realloc(rs->records, sizeof(DRMS_Record_t *) * abs(rs->ss_n) * 2);
          if (tmp)
          {
             rs->records = tmp;
+            rs->ss_n = -1 * abs(rs->ss_n) * 2;
          }
          else
          {
@@ -5963,7 +5964,7 @@ int drms_recordset_setchunksize(unsigned int size)
    {
       status = DRMS_ERROR_BADCHUNKSIZE;
       fprintf(stderr, 
-	      "Invalid chunk size '%ud'.  Must be > 0 and <= '%d'.\n", 
+	      "Invalid chunk size '%u'.  Must be > 0 and <= '%d'.\n", 
 	      size, 
 	      DRMS_MAXCHUNKSIZE);
    }
@@ -6078,6 +6079,7 @@ int drms_open_recordchunk(DRMS_Env_t *env,
 	    ssnrecs = drms_recordset_getssnrecs(rs, iset, &stat);
             recindex_ssend = recindex_ssst + ssnrecs - 1;
             seriesname = drms_recordset_acquireseriesname(rs->ss_queries[iset]);
+            ntofetch = 0;
 
             if (!seriesname)
             {
@@ -6086,17 +6088,22 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                break;
             }
 
-	    if ((recindex_ssst >= recindex_chunkst && recindex_ssst <= recindex_chunkend) ||
-		recindex_ssend >= recindex_chunkst && recindex_ssend <= recindex_chunkend)
+            if (recindex_ssst <= recindex_chunkst && recindex_ssend >= recindex_chunkend)
+            {
+               /* The chunk lies within the subset completely */
+               ntofetch = recindex_chunkend - recindex_chunkst + 1;
+            }
+	    else if ((recindex_ssst >= recindex_chunkst && recindex_ssst <= recindex_chunkend) ||
+                     recindex_ssend >= recindex_chunkst && recindex_ssend <= recindex_chunkend)
 	    {
                /* This subset has at least one record that overlaps chunk*/
 
-               if (recindex_ssst <= recindex_chunkst && recindex_ssend >= recindex_chunkend)
-               {
-                  /* The chunk lies within the subset completely */
-                  ntofetch = recindex_chunkend - recindex_chunkst + 1;
+               //if (recindex_ssst <= recindex_chunkst && recindex_ssend >= recindex_chunkend)
+               //{
+               //   /* The chunk lies within the subset completely */
+               //   ntofetch = recindex_chunkend - recindex_chunkst + 1;
 
-               }
+//               }
                if (recindex_ssst < recindex_chunkst)
                {
                   /* end of set falls within chunk - take end of subset */
@@ -6113,7 +6120,10 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                   /* The subset lies completely within the chunk */
                   ntofetch = recindex_ssend - recindex_ssst + 1;
                }
-	    
+            }
+
+            if (ntofetch > 0)
+            {
                snprintf(sqlquery, 
                         sizeof(sqlquery), 
                         "FETCH FORWARD %d FROM %s",
@@ -6263,6 +6273,8 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
    char cursorname[DRMS_MAXCURSORNAMELEN];
    char *seriesname = NULL;
    char *pQuery = NULL;
+   char cursorselect[DRMS_MAXQUERYLEN];
+   char *pLimit = NULL;
    int iset;
 
    if (rsquery)
@@ -6299,6 +6311,15 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
 	 while ((ln = (ListNode_t *)(list_llnext(querylist))) != NULL)
 	 {
             pQuery = *((char **)ln->data);
+
+            /* pQuery has a limit statement in it - remove that else FETCH could 
+             * operate on a subset of the total number of records. */
+            snprintf(cursorselect, sizeof(cursorselect), "%s", pQuery);
+            if ((pLimit = strstr(cursorselect, "limit")) != NULL)
+            {
+               *pLimit = '\0';
+            }
+
 	    seriesname = drms_recordset_acquireseriesname(rs->ss_queries[iset]);
 
 	    if (seriesname)
@@ -6313,7 +6334,7 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
 			sizeof(cursorquery), 
 			"DECLARE %s SCROLL CURSOR FOR (%s)", 
 			cursorname, 
-			pQuery);
+			cursorselect);
 
                /* Now, create cursor in psql */
                if (drms_dms(env->session, NULL, cursorquery))
@@ -6383,7 +6404,16 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env, DRMS_RecordSet_t *rs, i
       if (rs->cursor->currentchunk == -1)
       {
 	 /* No chunks in memory */
-         neednewchunk = (int)kRSChunk_First;
+         if (lastchunk == rs->cursor->lastchunk)
+         {
+            /* no chunks in memory, but last chunk in memory was the last chunk - 
+             * user has fetched all records */
+            stat = DRMS_CHUNKS_NOMORERECS;
+         }
+         else
+         {
+            neednewchunk = (int)kRSChunk_First;
+         }
       }
       else 
       {
@@ -6393,8 +6423,8 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env, DRMS_RecordSet_t *rs, i
          if (rs->cursor->currentrec + rs->cursor->chunksize * rs->cursor->currentchunk == rs->n)
          {
             /* Last record in entire recordset was read last time */
+            stat = DRMS_CHUNKS_NOMORERECS;
             drms_close_recordchunk(rs);
-            stat = DRMS_ERROR_NOMORERECS;
          }
          else if (rs->cursor->currentrec == rs->cursor->chunksize)
          {
@@ -6414,16 +6444,25 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env, DRMS_RecordSet_t *rs, i
          }
          else
          {
-            rs->cursor->currentrec++; /* currentrec in a new chunk is -1 */  
+            rs->cursor->currentrec++; /* currentrec in a new chunk is -1 */
+            stat = DRMS_CHUNKS_NEWCHUNK;
          }
       }
 
-
-      if (stat == DRMS_SUCCESS && rs->cursor->currentrec >= 0)
+      if ((stat == DRMS_SUCCESS || stat == DRMS_CHUNKS_NEWCHUNK) && rs->cursor->currentrec >= 0)
       {
 	 /* Now, get the next record */
 	 ret = rs->records[rs->cursor->currentchunk * rs->cursor->chunksize + 
 			   rs->cursor->currentrec];
+         
+         if (rs->cursor->currentchunk * rs->cursor->chunksize + rs->cursor->currentrec == rs->n - 1)
+         {
+            stat = DRMS_CHUNKS_LASTINRS;  
+         }
+         else if (rs->cursor->currentrec == rs->cursor->chunksize - 1)
+         {
+            stat = DRMS_CHUNKS_LASTINCHUNK;
+         }
       }
    }
    else

@@ -173,7 +173,7 @@ ListNode_t *list_llgettail(LinkedList_t *llist)
 
       while (node)
       {
-         if (node->next = NULL)
+         if (node->next == NULL)
          {
             break;
          }
