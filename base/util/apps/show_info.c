@@ -4,8 +4,6 @@
  *  new version of original show_keys expanded to have more than just keyword info.
  *
  *  Bugs:
- *	Fails (with a segmentation fault) if there are no records in the
- *	  requested series
  *	Fails (with a segmentation fault) if called with -p flag or with a
  *	  value for file and there are no data segments associated with the
  *	  requested series
@@ -80,6 +78,8 @@ flag is set
 \c -r:  Include the record number in the output
 \par
 \c -s:  Include statistics of series in the output
+\par
+\c -S:  Include the sunum number in the output
 
 \par Driver flags: 
 \ref jsoc_main
@@ -143,6 +143,7 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "q", "0", "quiet - skip header of chosen keywords"},
   {ARG_FLAG, "r", "0", "recnum - show record number as first keyword"},
   {ARG_FLAG, "s", "0", "stats - show some statistics about the series"},
+  {ARG_FLAG, "S", "0", "SUNUM - show the sunum for the record"},
   {ARG_STRING, "QUERY_STRING", "Not Specified", "show_info called as cgi-bin program args here"},
   {ARG_END}
 };
@@ -170,6 +171,7 @@ int nice_intro ()
 	"  -p: list the record's storage_unit path (retrieve if necessary)\n"
 	"  -P: list the record's storage_unit path (no retrieve)\n"
 	"  -r: recnum - show record number as first keyword\n"
+	"  -S: sunum - show sunum number as first keyword (but after recnum)\n"
         " output appearance control flags are:\n"
 	"  -k: list keyword names and values, one per line\n"
 	"  -q: quiet - skip header of chosen keywords\n"
@@ -429,6 +431,7 @@ int DoIt(void)
   int max_recs;
   int quiet;
   int show_recnum;
+  int show_sunum;
   int keyword_list;
   int want_count;
   int want_path;
@@ -490,6 +493,7 @@ int DoIt(void)
   max_recs =  cmdparams_get_int (&cmdparams, "n", NULL);
   quiet = cmdparams_get_int (&cmdparams, "q", NULL) != 0;
   show_recnum =  cmdparams_get_int(&cmdparams, "r", NULL) != 0;
+  show_sunum =  cmdparams_get_int(&cmdparams, "S", NULL) != 0;
   keyword_list =  cmdparams_get_int(&cmdparams, "k", NULL) != 0;
   want_path = cmdparams_get_int (&cmdparams, "p", NULL) != 0;
   want_path_noret = cmdparams_get_int (&cmdparams, "P", NULL) != 0;
@@ -711,6 +715,8 @@ int DoIt(void)
         {			/* print keyword and segment name header line */
         if (show_recnum)
           printf ("recnum\t");
+        if (show_sunum)
+          printf ("sunum\t");
         if (show_recordspec)
           printf ("query\t");
         for (ikey=0 ; ikey<nkeys; ikey++)
@@ -743,6 +749,14 @@ int DoIt(void)
 	printf("recnum=%lld\n",rec->recnum);
       else
         printf ("%6lld\t", rec->recnum);
+      }
+
+    if (show_sunum)
+      {
+      if (keyword_list)
+	printf("sunum=%lld\n",rec->sunum);
+      else
+        printf ("%6lld\t", rec->sunum);
       }
 
     if (!keyword_list && show_recordspec)
@@ -909,7 +923,7 @@ int DoIt(void)
            printf("SUDIR=");
          printf("%s", path);
       }
-    if (show_recnum || show_recordspec || nkeys || nsegs || want_path)
+    if (show_recnum || show_sunum || show_recordspec || nkeys || nsegs || want_path)
       printf ("\n");
     }
 
