@@ -148,6 +148,7 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "s", "0", "stats - show some statistics about the series"},
   {ARG_FLAG, "S", "0", "SUNUM - show the sunum for the record"},
   {ARG_FLAG, "t", "0", "types - show types and print formats for keyword values"},
+  {ARG_INT, "sunum", "-1", "SUNUM specified, find matching records"},
   {ARG_STRING, "QUERY_STRING", "Not Specified", "show_info called as cgi-bin program args here"},
   {ARG_END}
 };
@@ -161,6 +162,7 @@ int nice_intro ()
     {
     printf ("Usage:\nshow_info [-ahjklpqr] "
 	"ds=<recordset query> {n=0} {key=<keylist>} {seg=<segment_list>}\n"
+        "sunum=<sunum> - use instead of ds= argument when SUNUM is known.\n"
         " summary information modes are:\n"
         "  -c: count records in query\n"
 	"  -h: help - show this message then exit\n"
@@ -443,6 +445,7 @@ int DoIt(void)
   int want_path_noret;
   int want_dims;
   int i_set, n_sets;
+  long long given_sunum;
 
   // Include this code segment to allow operating show_info as a cgi-bin program.
   // It will preceed any output to stdout with the content-type info for text.
@@ -502,11 +505,31 @@ int DoIt(void)
   keyword_list =  cmdparams_get_int(&cmdparams, "k", NULL) != 0;
   want_path = cmdparams_get_int (&cmdparams, "p", NULL) != 0;
   want_path_noret = cmdparams_get_int (&cmdparams, "P", NULL) != 0;
+  given_sunum = cmdparams_get_int64 (&cmdparams, "sunum", NULL);
 
   if(want_path_noret) want_path = 1;	/* also set this flag */
 
-  /* At least seriesname must be specified */
-  if (strcmp(in, "Not Specified") == 0)
+  /* At least seriesname or sunum must be specified */
+  if (given_sunum >= 0)
+    { /* use sunum to get seriesname instead of ds= or stand-along param */
+    char sunum_query[1000];
+    char sname[DRMS_MAXNAMELEN];
+    char sunum_rs_query[DRMS_MAXQUERYLEN];
+    FILE *sums;
+    sprintf(sunum_query,
+      "echo 'select owning_series from sum_main where ds_index=%lld' |"
+      " psql -h hmidb -p 5434 jsoc_sums |"
+      " head -3 |"
+      " tail -1",
+      given_sunum);
+// fprintf(stderr,"%s\n",sunum_query);
+    sums = popen(sunum_query, "r");
+    fscanf(sums, "%s", sname);
+    fclose(sums);
+    sprintf(sunum_rs_query, "%s[? sunum=%lld ?]", sname, given_sunum);
+    in = strdup(sunum_rs_query);
+    }
+  else if (strcmp(in, "Not Specified") == 0)
     {
     if (cmdparams_numargs(&cmdparams) < 1 || !(in=cmdparams_getarg (&cmdparams, 1)))
       {
@@ -514,8 +537,6 @@ int DoIt(void)
       return(1);
       }
     }
-
-  
 
   /*  if -j, -l or -s is set, just do the short function and exit */
   if (list_keys || jsd_list || show_stats) 
@@ -612,6 +633,8 @@ int DoIt(void)
     printf("\n");
     return(0);
     }
+
+  /* NOW in mode to list per-record information.  Get recordset */
 
   /* check for poor usage of no query and no n=record_count */
   inqry = index(in, '[');
