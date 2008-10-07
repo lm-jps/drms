@@ -80,6 +80,9 @@ flag is set
 \c -s:  Include statistics of series in the output
 \par
 \c -S:  Include the sunum number in the output
+\par
+\c -t:  Include lines with type and format information beneath the keyword name line.  Not
+applicable in the "-k" mode.
 
 \par Driver flags: 
 \ref jsoc_main
@@ -144,6 +147,7 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "r", "0", "recnum - show record number as first keyword"},
   {ARG_FLAG, "s", "0", "stats - show some statistics about the series"},
   {ARG_FLAG, "S", "0", "SUNUM - show the sunum for the record"},
+  {ARG_FLAG, "t", "0", "types - show types and print formats for keyword values"},
   {ARG_STRING, "QUERY_STRING", "Not Specified", "show_info called as cgi-bin program args here"},
   {ARG_END}
 };
@@ -174,6 +178,7 @@ int nice_intro ()
 	"  -S: sunum - show sunum number as first keyword (but after recnum)\n"
         " output appearance control flags are:\n"
 	"  -k: list keyword names and values, one per line\n"
+	"  -t: list keyword types and print formats as 2nd and 3rd lines in table mode\n"
 	"  -q: quiet - skip header of chosen keywords\n"
 	"ds=<recordset query> as <series>{[record specifier]} - required\n"
 	"n=0 number of records in query to show, +n from start or -n from end\n"
@@ -212,7 +217,7 @@ DRMS_RecordSet_t *drms_find_rec_first(DRMS_Record_t *rec, int wantprime)
 /* find last record in series that owns the given record */
 DRMS_RecordSet_t *drms_find_rec_last(DRMS_Record_t *rec, int wantprime)
   {
-  int iprime, nprime;
+  int nprime;
   int status;
   DRMS_RecordSet_t *rs;
   char query[DRMS_MAXQUERYLEN];
@@ -235,7 +240,6 @@ static void list_series_info(DRMS_Record_t *rec)
   DRMS_Segment_t *seg;
   DRMS_Link_t *link;
   HIterator_t hit;
-  int iprime;
   /* show the prime index keywords */
   int npkeys = rec->seriesinfo->pidx_num;
   if (npkeys > 0)
@@ -428,6 +432,7 @@ int DoIt(void)
   int show_all_segs;
   int show_recordspec;
   int show_stats;
+  int show_types;
   int max_recs;
   int quiet;
   int show_recnum;
@@ -436,7 +441,6 @@ int DoIt(void)
   int want_count;
   int want_path;
   int want_path_noret;
-  int not_silent;
   int want_dims;
   int i_set, n_sets;
 
@@ -453,7 +457,7 @@ int DoIt(void)
 
   if (from_web)
     {
-    char *getstring, *ds, *p;
+    char *getstring, *p;
     CGI_unescape_url(web_query);
     getstring = strdup (web_query);
     for (p=strtok(getstring,"&"); p; p=strtok(NULL, "&"))
@@ -494,6 +498,7 @@ int DoIt(void)
   quiet = cmdparams_get_int (&cmdparams, "q", NULL) != 0;
   show_recnum =  cmdparams_get_int(&cmdparams, "r", NULL) != 0;
   show_sunum =  cmdparams_get_int(&cmdparams, "S", NULL) != 0;
+  show_types =  cmdparams_get_int(&cmdparams, "t", NULL) != 0;
   keyword_list =  cmdparams_get_int(&cmdparams, "k", NULL) != 0;
   want_path = cmdparams_get_int (&cmdparams, "p", NULL) != 0;
   want_path_noret = cmdparams_get_int (&cmdparams, "P", NULL) != 0;
@@ -516,10 +521,6 @@ int DoIt(void)
   if (list_keys || jsd_list || show_stats) 
     {
     char *p, *seriesname;
-    DRMS_Keyword_t *key;
-    DRMS_Segment_t *seg;
-    HIterator_t hit;
-    int iprime;
     int is_drms_series = 1;
 
     /* Only want keyword info so get only the template record for drms series or first record for other data */
@@ -713,6 +714,7 @@ int DoIt(void)
       firstrec=0;
       if (!quiet && !keyword_list) 
         {			/* print keyword and segment name header line */
+        /* first print the name line */
         if (show_recnum)
           printf ("recnum\t");
         if (show_sunum)
@@ -730,6 +732,58 @@ int DoIt(void)
         if (nsegs==0 && want_path)
           printf("SUDIR");
         printf ("\n");
+        /* now, if desired, print the type and format lines. */
+        if (show_types)
+	  {
+	  /* types first */
+          /* ASSUME all records have same structure - might not be true for mixed queries, fix later */
+          if (show_recnum)
+            printf ("longlong\t");
+          if (show_sunum)
+            printf ("longlong\t");
+          if (show_recordspec)
+            printf ("string\t");
+          for (ikey=0 ; ikey<nkeys; ikey++)
+            {
+            DRMS_Keyword_t *rec_key_ikey = drms_keyword_lookup (rec, keys[ikey], 1);
+	    printf ("%s\t", drms_type_names[rec_key_ikey->info->type]);
+	    }
+          for (iseg = 0; iseg<nsegs; iseg++)
+            {
+            DRMS_Segment_t *rec_seg_iseg = drms_segment_lookup (rec, segs[iseg]); 
+	    printf ("%s\t", drms_prot2str(rec_seg_iseg->info->protocol));
+            if (want_dims)
+              printf ("string\t");
+            }
+          if (nsegs==0 && want_path)
+            printf("string");
+          printf ("\n");
+	  /* now print format */
+          /* ASSUME all records have same structure - might not be true for mixed queries, fix later */
+          if (show_recnum)
+            printf ("%%lld\t");
+          if (show_sunum)
+            printf ("%%lld\t");
+          if (show_recordspec)
+            printf ("%%s\t");
+          for (ikey=0 ; ikey<nkeys; ikey++)
+            {
+            DRMS_Keyword_t *rec_key_ikey = drms_keyword_lookup (rec, keys[ikey], 1);
+	    if (rec_key_ikey->info->type == DRMS_TYPE_TIME)
+	      printf("%%s\t");
+	    else
+	      printf ("%s\t", rec_key_ikey->info->format);
+	    }
+          for (iseg = 0; iseg<nsegs; iseg++)
+            {
+	    printf ("%%s\t");
+            if (want_dims)
+              printf ("%%s\t");
+            }
+          if (nsegs==0 && want_path)
+            printf("%%s");
+          printf ("\n");
+	  }
         }
       }
 
@@ -848,7 +902,6 @@ int DoIt(void)
 
         if (want_dims)
 	  {
-          char info[1000];
           int iaxis, naxis = rec_seg_iseg->info->naxis;
           if (keyword_list)
             printf("\n%s_info=",segs[iseg]);
