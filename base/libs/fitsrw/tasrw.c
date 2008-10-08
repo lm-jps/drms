@@ -7,10 +7,19 @@
 #include "fitsio.h"
 #include "hcontainer.h"
 
+// #define DEBUG
+
+#ifdef DEBUG
+#include "timer.h"
+#endif
+
 /* Our current set up is 1024 maximum open files per process (/usr/include/linux/limits.h) */
 #define MAXFFILES 128
 
+typedef CFITSIO_IMAGE_INFO TASRW_FilePtrInfo_t;
+
 HContainer_t *gFFiles = NULL;
+HContainer_t *gFFPtrInfo = NULL;
 
 /* fitsfiles can be opened either READWRITE or READONLY. If a request for a READONLY pointer
  * is made, and the fitsfile has already been opened, then regardless of the fitsfile write mode
@@ -27,11 +36,17 @@ static fitsfile *fitsrw_getfptr(const char *filename, int writeable, int *status
    fitsfile **pfptr = NULL;
    char filehashkey[PATH_MAX + 2];
    char tmpfilehashkey[PATH_MAX + 2];
+   char fileinfokey[64];
    int stat = 0;
 
    if (!gFFiles)
    {
       gFFiles = hcon_create(sizeof(fitsfile *), sizeof(filehashkey), NULL, NULL, NULL, NULL, 0);
+   }
+
+   if (!gFFPtrInfo)
+   {
+      gFFPtrInfo = hcon_create(sizeof(TASRW_FilePtrInfo_t), sizeof(fileinfokey), NULL, NULL, NULL, NULL, 0);
    }
 
    snprintf(filehashkey, sizeof(filehashkey), "%s:%s", filename, writeable ? "w" : "r");
@@ -74,11 +89,16 @@ static fitsfile *fitsrw_getfptr(const char *filename, int writeable, int *status
          {
             /* caller requested writeable fitsfile, but the readonly one exists - close
              * readonly one and open a writeable one. */
+
             if (*pfptr)
             {
+               /* remove fileptr info structure */         
+               snprintf(fileinfokey, sizeof(fileinfokey), "%p", (void *)*pfptr);
+               hcon_remove(gFFPtrInfo, fileinfokey);
+
                fits_close_file(*pfptr, &stat);
             }
-               
+                  
             hcon_remove(gFFiles, tmpfilehashkey);
             pfptr = NULL;
          }
@@ -108,6 +128,10 @@ static fitsfile *fitsrw_getfptr(const char *filename, int writeable, int *status
                {
                   if (*pfptr)
                   {
+                     /* remove fileptr into structure */
+                     snprintf(fileinfokey, sizeof(fileinfokey), "%p", (void *)*pfptr);
+                     hcon_remove(gFFPtrInfo, fileinfokey);
+
                      fits_close_file(*pfptr, &stat);
                   }
 
@@ -133,11 +157,55 @@ static fitsfile *fitsrw_getfptr(const char *filename, int writeable, int *status
 
       if (!stat)
       {
+         /* Read essential keyword information and cache that for later use */
+         CFITSIO_IMAGE_INFO *imginfo = NULL;
+
+         if (fitsrw_read_keylist_and_image_info((FITSRW_fhandle)fptr, NULL, &imginfo) != CFITSIO_SUCCESS)
+         {
+            if (status)
+            {
+               *status = CFITSIO_ERROR_CANT_GET_FILEINFO;
+            }
+         }
+         else if (gFFPtrInfo)
+         {
+            snprintf(fileinfokey, sizeof(fileinfokey), "%p", (void *)fptr);
+            hcon_insert(gFFPtrInfo, fileinfokey, imginfo);
+         }
+
+         if (imginfo)
+         {
+            cfitsio_free_these(&imginfo, NULL, NULL);
+         }
+
          hcon_insert(gFFiles, filehashkey, &fptr);
       }
    }
 
    return fptr;
+}
+
+static int fitsrw_getfpinfo(fitsfile *fptr, TASRW_FilePtrInfo_t *info)
+{
+   int err = 1;
+   TASRW_FilePtrInfo_t *pfpinfo = NULL;
+   char fileinfokey[64];
+
+   if (fptr && info)
+   {
+      snprintf(fileinfokey, sizeof(fileinfokey), "%p", (void *)fptr);
+      err = ((pfpinfo = (TASRW_FilePtrInfo_t *)hcon_lookup(gFFPtrInfo, fileinfokey)) == NULL);
+   }
+
+   if (!err)
+   {
+      if (pfpinfo)
+      {
+         *info = *pfpinfo;
+      }
+   }
+
+   return err;
 }
 
 int fitsrw_readslice(const char *filename, 
@@ -159,6 +227,7 @@ int fitsrw_readslice(const char *filename,
    int idim = 0;
    void *pixels = NULL;
    char cfitsiostat[FLEN_STATUS];
+   TASRW_FilePtrInfo_t fpinfo;
 
    long i;
 
@@ -189,11 +258,14 @@ int fitsrw_readslice(const char *filename,
       goto error_exit;
    }
 
-   error_code = fitsrw_read_keylist_and_image_info((FITSRW_fhandle)fptr, NULL, image_info);
-   if(error_code != CFITSIO_SUCCESS) goto error_exit;
+   /* Fetch img parameter info - should have been cached when the file was originally opened */
+   if (fitsrw_getfpinfo(fptr, &fpinfo))
+   {
+      fprintf(stderr, "Unable to get fitsfile image parameters.\n");
+      goto error_exit;
+   }
 
-   /* fits_get_img_param(fptr, CFITSIO_MAX_DIM, &((*image_info)->bitpix), &((*image_info)->naxis), 
-      &((*image_info)->naxes[0]), &status); */
+   **image_info = fpinfo;
 
    if((*image_info)->naxis == 0)
    {
@@ -273,8 +345,6 @@ int fitsrw_readslice(const char *filename,
     * you'd have to account for the fact that cfitsio doesn't understand that 
     * bzero must be -128 for BYTE_IMG type of images. */
 
-   /* fits_close_file(fptr, &status); */
-
    return CFITSIO_SUCCESS;
 
   error_exit:
@@ -295,14 +365,16 @@ int fitsrw_writeslice(const char *filename, int *fpixel, int *lpixel, void *imag
    fitsfile *fptr=NULL;     
    int error_code, status=0;
    int data_type;
-   CFITSIO_IMAGE_INFO info;
    long lfpixel[CFITSIO_MAX_DIM];
    long llpixel[CFITSIO_MAX_DIM];
    int idim = 0;
+   int idim2 = 0;
    char cfitsiostat[FLEN_STATUS];
-
-   // Get the image dimensions from file 
-   memset((void*) &info,0,sizeof(CFITSIO_IMAGE_INFO));
+   long long npix;
+   int contiguous;
+   long long firstpix;
+   long long intermed;
+   TASRW_FilePtrInfo_t fpinfo;
 
    status = 0; // first thing!
 
@@ -312,16 +384,21 @@ int fitsrw_writeslice(const char *filename, int *fpixel, int *lpixel, void *imag
    {
       goto error_exit;
    }
-  
-   fits_get_img_param(fptr, CFITSIO_MAX_DIM, &info.bitpix, &info.naxis, 
-		      &info.naxes[0], &status); 
-   if(info.naxis == 0)
+
+   /* Fetch img parameter info - should have been cached when the file was originally opened */
+   if (fitsrw_getfpinfo(fptr, &fpinfo))
+   {
+      fprintf(stderr, "Unable to get fitsfile image parameters.\n");
+      goto error_exit;
+   }
+
+   if(fpinfo.naxis == 0)
    {
       error_code = CFITSIO_ERROR_DATA_EMPTY;
       goto error_exit;
    }
 
-   switch(info.bitpix)
+   switch(fpinfo.bitpix)
    {
       case(BYTE_IMG): data_type = TSBYTE; break;
       case(SHORT_IMG): data_type = TSHORT; break;
@@ -341,14 +418,17 @@ int fitsrw_writeslice(const char *filename, int *fpixel, int *lpixel, void *imag
     * machines. */
    memset(lfpixel, 0, sizeof(lfpixel));
    memset(llpixel, 0, sizeof(llpixel));
+   npix = 1;
+   firstpix = 0;
+   contiguous = 1;
    
-   for (idim = 0; idim < info.naxis; idim++)
+   for (idim = 0; idim < fpinfo.naxis; idim++)
    {
       /* FITS uses column-major order, and C uses row-major order for its arrays.  So, 
        * the C array equivalent of a FITS-file's data array would be arr[NAXISn][NAXISn-1]...
        * [NAXIS1].  BUT, to be confusing, when specifying a pixel to FITSIO routines, don't do
-       * this.  For some unknown reason, you specify the indicies of a pixel in the opposite order - 
-       * lfpixel[0] = NAXIS1 value, fpixel[1] = NAXIS2 value, ..., fpixel[n-1] = NAXISn value. 
+       * this.  For some unknown reason, you specify the indices of a pixel in the opposite order - 
+       * fpixel[0] = NAXIS1 value, fpixel[1] = NAXIS2 value, ..., fpixel[n-1] = NAXISn value. 
        * NOTE that the array indices of the pixel are 0-based, but the actual NAXISn values are
        * 1-based.  Again, confusing.
        */
@@ -356,17 +436,61 @@ int fitsrw_writeslice(const char *filename, int *fpixel, int *lpixel, void *imag
       /* CFITSIO uses 1-based array indices, not 0-based */
       lfpixel[idim] = (long)fpixel[idim] + 1;
       llpixel[idim] = (long)lpixel[idim] + 1;
+      npix += npix * (lpixel[idim] - fpixel[idim]);
+      intermed = 1;
+      
+      for (idim2 = idim - 1; idim2 >= 0; idim2--)
+      {
+         intermed = intermed * fpinfo.naxes[idim2];
+      }
+
+      firstpix += firstpix + intermed * fpixel[idim];
+
+      /* check for contiguousness - basically if in the current dimension 
+       * the slice has a thickness greater than 1, then all previous dimensions
+       * must span the entire fits file, else the slice isn't contiguous */
+      if (contiguous &&
+          idim > 0 && 
+          (lpixel[idim] - fpixel[idim] > 0) &&
+          (fpixel[idim - 1] > 0 || lpixel[idim - 1] < fpinfo.naxes[idim - 1] - 1))
+      {
+         contiguous = 0;
+      }
    }
 
-   //Set stripe, slice, block
-   if(fits_write_subset(fptr, data_type, lfpixel, llpixel, image, &status))
+   /* This fits_write_subset mofo does all kinds of seeking back and forth in the 
+    * file - if the data are contiguous, just use first_write_img() as an optimization.
+    * This will often be the case, especially for things like TAS slices. */
+
+#ifdef DEBUG
+   StartTimer(26);
+   fprintf(stderr, "Calling fits_write_subset() or fits_write_img().\n");
+#endif
+
+   if (contiguous)
    {
-      error_code = CFITSIO_ERROR_LIBRARY;
-      goto error_exit;
+      /* cfitsio pixel numbers are 1-based */
+      firstpix++;
+
+      if (fits_write_img(fptr, data_type, firstpix, npix, image, &status))
+      {
+         error_code = CFITSIO_ERROR_LIBRARY;
+         goto error_exit;
+      }
+   }
+   else
+   {
+      if(fits_write_subset(fptr, data_type, lfpixel, llpixel, image, &status))
+      {
+         error_code = CFITSIO_ERROR_LIBRARY;
+         goto error_exit;
+      }
    }
 
-   /* fits_close_file(fptr, &status); */
-   //fits_close_file(fptr, &status); 
+#ifdef DEBUG
+   fprintf(stdout, "Time to write subset: %f\n", StopTimer(26));
+#endif
+
    return CFITSIO_SUCCESS;
 
  error_exit:
@@ -386,6 +510,7 @@ void fitsrw_closefptrs()
       fitsfile **pfptr = NULL;
       int stat = 0;
       const char *filehashkey = NULL;
+      char fileinfokey[64];
 
       if (hit)
       {
@@ -393,6 +518,10 @@ void fitsrw_closefptrs()
          {
             if (*pfptr)
             {
+               /* remove fileptr info structure */         
+               snprintf(fileinfokey, sizeof(fileinfokey), "%p", (void *)*pfptr);
+               hcon_remove(gFFPtrInfo, fileinfokey);
+
                fits_close_file(*pfptr, &stat);
             }
 
@@ -408,6 +537,7 @@ void fitsrw_closefptrs()
          hiter_destroy(&hit);
       }
 
+      hcon_destroy(&gFFPtrInfo);
       hcon_destroy(&gFFiles);
    }
 }

@@ -35,6 +35,7 @@
 #define CFITSIO_ERROR_DATA_EMPTY         -7
 #define CFITSIO_ERROR_ALREADY_COMPRESSED -8
 #define CFITSIO_ERROR_INVALIDFILE        -9
+#define CFITSIO_ERROR_CANT_GET_FILEINFO -10
 
 //****************************************************************************
 // External contants defined in DRMS
