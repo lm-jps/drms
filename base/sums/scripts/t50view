@@ -51,9 +51,10 @@ $OURPATH = "/home/production/cvs/jsoc/scripts/sum/t50view"; #!!this program
 #$OURPATH = "/home/jim/cvs/jsoc/scripts/sum/t50view"; #!!this program
 
 $DEFAULTDB = "jsocdc";		#default DB
-$HOSTDB = "dcs2";		#host where DB runs
+$HOSTDB = "localhost";		#host where DB runs
 $NOTAPEARC = "/usr/local/logs/soc/NOTAPEARC";
 $INLOG = 0;			#use default tape_svc log
+$localhost = `hostname -s`;
 #$login = "dsowner";
 $pid0 = 0;
 
@@ -190,7 +191,7 @@ print "effdate = $date\n";
   #$mw->Photo('image1', -file => 'SDO_Badge.gif');
   #$mw->Label(-image => 'image1')->pack(@pl);
   $tframe = $mw->Frame(-borderwidth => 1)->pack(-side => 'top');
-  $tframe->Label(-text => "T50 User Interface (tui) $HOSTDB",
+  $tframe->Label(-text => "T50 User Interface (tui) $localhost",
 	-font => 'arial 18 bold', -padx => 150)->pack(-side => 'left');
   $b0text = "Imp/Exp\n$EEcnt";
   $b0 = $tframe->Button(
