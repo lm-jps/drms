@@ -277,7 +277,7 @@ int main(int argc, char *argv[])
 #ifndef SUMNOAO
 /* !!TEMP don't fork on lws or flap */
 if(strcmp(thishost, "lws") && strcmp(thishost, "flap")) {
-  if(strcmp(thishost, "dcs0") && strcmp(thishost, "dcs1") && strcmp(thishost, "dcs2")) {
+  if(strcmp(thishost, "dcs0") && strcmp(thishost, "dcs1") && strcmp(thishost, "dcs2") && strcmp(thishost, "dcs3")) {
     sprintf(pgport, SUMPGPORT);
     setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
   }
