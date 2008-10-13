@@ -264,8 +264,9 @@ void setup()
   write_log("\n## %s %s for pid = %d ##\n", 
 		datestring(), drvname, pid);
   write_log("Database to connect to is %s\n", dbname);
-  sprintf(md5filter, "/home/production/cvs/JSOC/bin/%s/md5filter",
-		getenv("JSOC_MACHINE"));
+  //sprintf(md5filter, "/home/production/cvs/JSOC/bin/%s/md5filter",
+  //		getenv("JSOC_MACHINE"));
+  sprintf(md5filter, "/usr/local/bin/md5filter");
   //write_log("md5filter=%s\n", md5filter); /* !!!TEMP */
   if (signal(SIGINT, SIG_IGN) != SIG_IGN)
       signal(SIGINT, sighandler);
@@ -1626,7 +1627,7 @@ return; /* !!!TEMP noop */
  *
  * An rcmd will end up something like this:
  * dd if=/dev/sum_nst7 bs=256b 2> /var/logs/SUM/gtar/gtar_rd_7_012821L4_1370.log
- * | /home/production/cvs/JSOC/bin/linux_ia64/md5filter 256 
+ * | /usr/local/bin/md5filter 256 
  * /usr/local/logs/SUM/md5/rdsum_7 2>> 
  * /var/logs/SUM/gtar/gtar_rd_7_012821L4_1370.log
  * | /usr/local/bin/gtar xvf - -b256 -C /SUM9/D8764649 D161820 D161810 D161812 
