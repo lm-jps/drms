@@ -26,6 +26,9 @@ endif
 ifeq ($(HOST),dcs2.jsoc.Stanford.EDU)
 	ADD_TGT_$(d) := -DSUMDC
 endif
+ifeq ($(HOST),dcs3.jsoc.Stanford.EDU)
+	ADD_TGT_$(d) := -DSUMDC
+endif
 ifeq ($(HOST),d00.Stanford.EDU)
 	ADD_TGT_$(d) := -DSUMT120
 endif
