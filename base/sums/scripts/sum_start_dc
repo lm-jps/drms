@@ -10,6 +10,7 @@ $GREPPS = "388";	#grep for this in ps -ef
 #$HOST = "d00.Stanford.EDU"; #where sum_svc runs
 $HOST0 = "dcs0"; #this program can run here 
 $HOST1 = "dcs1"; #or here 
+$HOST2 = "dcs2"; #or here 
 $HOST3 = "dcs3"; #or here temporarily
 
 $user = $ENV{'USER'};
@@ -19,8 +20,8 @@ if($user ne "production") {
 }
 $host = `hostname -s`;
 chomp($host);
-if(($host ne $HOST0) && ($host ne $HOST1)) {
-  print "This can only be run on dcs0 or dcs1.\n";
+if(($host ne $HOST0) && ($host ne $HOST1) && ($host ne $HOST2)) {
+  print "This can only be run on dcs0 or dcs1 or dcs2.\n";
   if($host eq $HOST3) {
     print "But I'll allow $HOST3 for now\n";
   }
