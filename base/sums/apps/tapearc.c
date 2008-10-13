@@ -255,8 +255,7 @@ void setup()
      exit(1); 
   }
   //don't set pgport on datacapture machines
-  if(strcmp(thishost, "dcs0") && strcmp(thishost, "dcs1") && strcmp(thishost, "dcs2")) {
-
+  if(strcmp(thishost, "dcs0") && strcmp(thishost, "dcs1") && strcmp(thishost, "dcs2") && strcmp(thishost, "dcs3")) {
     sprintf(pgport, SUMPGPORT);
     setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
   }
