@@ -50,7 +50,7 @@ while(<ID>) {
   }
   print "$_";
   chomp;
-  $sqlcmd = "insert into sum_tape (TAPEID,NXTWRTFN,SPARE,GROUP_ID,AVAIL_BLOCKS,CLOSED) values ('$_',1,-1,-1,800000000,-1)";
+  $sqlcmd = "insert into sum_tape (TAPEID,NXTWRTFN,SPARE,GROUP_ID,AVAIL_BLOCKS,CLOSED) values ('$_',1,-1,-1,1600000000,-1)";
   print "SQL: $sqlcmd\n";
   $sth = $dbh->prepare($sqlcmd);
   if ( !defined $sth ) {
