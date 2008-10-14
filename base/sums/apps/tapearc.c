@@ -244,8 +244,8 @@ void setup()
   gethostname(thishost, MAX_STR);
   cptr = index(thishost, '.');       /* must be short form */
   if(cptr) *cptr = (char)NULL;
-//!!temp for test
-  sprintf(thishost, "localhost");
+  //!!temp for test
+  //sprintf(thishost, "localhost");
   n = find_tapearc();
   if(n > 1) {
      printf("%s: Only one tapearc %s allowed at a time. I see %d\n",
