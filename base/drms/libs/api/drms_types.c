@@ -726,7 +726,7 @@ int drms_sscanf_int (const char *str,
 
 	  if (ans) {
 	     dst->time_val = sscan_time(ans);
-	     ret = (int)(strlen(ans)); 
+	     ret = (int)(strlen(tokenstr)); 
 	     maybebad = 
 	       (time_is_invalid(dst->time_val) && 
 		strcasecmp (ans, "nan") && strncasecmp (ans, "JD_0", 4));
