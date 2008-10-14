@@ -440,6 +440,8 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
            seg->info->protocol == DRMS_BINARY ||
            seg->info->protocol == DRMS_BINZIP)
        {
+          DRMS_Value_t vholder;
+
           /* Must create bzero and bscale keywords for all TAS and FITS files. */
           if (gettoken(&q, bzero, sizeof(bzero)) <= 0) goto failure;
           if (gettoken(&q, bscale, sizeof(bscale)) <= 0) goto failure;
@@ -459,7 +461,9 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
           sckey->info->linkname[0] = 0;
           sckey->info->target_key[0] = 0;
           sckey->info->type = DRMS_TYPE_DOUBLE;
-          drms_sscanf(bzero, DRMS_TYPE_DOUBLE, &(sckey->value));
+          memset(&vholder, 0, sizeof(DRMS_Value_t));
+          drms_sscanf2(bzero, NULL, 0, DRMS_TYPE_DOUBLE, &vholder);
+          sckey->value = vholder.value;
           snprintf(sckey->info->format, DRMS_MAXFORMATLEN, "%s", "%f");
           snprintf(sckey->info->unit, DRMS_MAXUNITLEN, "%s", "none");
           sckey->info->recscope = kRecScopeType_Variable;
@@ -490,7 +494,9 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
           sckey->info->linkname[0] = 0;
           sckey->info->target_key[0] = 0;
           sckey->info->type = DRMS_TYPE_DOUBLE;
-          drms_sscanf(bscale, DRMS_TYPE_DOUBLE, &(sckey->value));
+          memset(&vholder, 0, sizeof(DRMS_Value_t));
+          drms_sscanf2(bscale, NULL, 0, DRMS_TYPE_DOUBLE, &vholder);
+          sckey->value = vholder.value;
           snprintf(sckey->info->format, DRMS_MAXFORMATLEN, "%s", "%f");
           snprintf(sckey->info->unit, DRMS_MAXUNITLEN, "%s", "none");
           sckey->info->recscope = kRecScopeType_Variable;

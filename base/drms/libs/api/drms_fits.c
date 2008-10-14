@@ -118,7 +118,6 @@ int drms_writefits(const char* file, int compress, int headlen, char *header,
   char *p,*p1;
   unsigned int npix,buflen;
   int ndata_blocks, len;
-  char buf[1024];
   DRMS_Type_Value_t missing;
 
 
@@ -845,11 +844,15 @@ static int fits_get_sizes(int headlen, char *header, int *bitpix,
 static int fits_get_blank(int headlen, char *header, DRMS_Type_t type,
 			  DRMS_Type_Value_t *blank)
 {
+    DRMS_Value_t vholder;
+    memset(&vholder, 0, sizeof(DRMS_Value_t));
+
   while (headlen>0)
   {
     if (!strncmp(header, "BLANK   =", 9)) 
     {
-      drms_sscanf(header+9, type, blank);
+      drms_sscanf2(header+9, NULL, 0, type, &vholder);
+      *blank = vholder.value;
       return 1;
     }
     headlen -= 80;
@@ -883,3 +886,4 @@ static int fits_get_scaling(int headlen, char *header, double *bzero,
   }
   return cnt==3;
 }
+

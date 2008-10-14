@@ -5125,61 +5125,6 @@ static int ParseRecSetDesc(const char *recsetsStr,
                        state = kRSParseState_Error;
                     }
                  }
-
-#if 0
-		 if (*pc == '[')
-		 {
-		    state = kRSParseState_Error;
-		 }
-		 else if (*pc == ']')
-		 {
-		    *pcBuf++ = *pc++;
-		    if (DSElem_SkipWS(&pc))
-		    {
-		       if (*pc == '[')
-		       {
-                          *pcBuf++ = *pc++;
-
-                          if (pc < endInput && *pc == '?')
-                          {
-                             *pcBuf++ = *pc++;
-                             state = kRSParseState_DRMSFiltSQL;
-                          }
-                          else
-                          {
-                             state = kRSParseState_DRMSFilt;
-                          }
-		       }
-		       else if (*pc == '{')
-		       {
-			  *pcBuf++ = *pc++;
-			  state = kRSParseState_DRMSSeglist;
-		       }
-		       else if (DSElem_IsDelim((const char **)&pc))
-		       {
-			  pc++;
-			  state = kRSParseState_EndElem;
-		       }
-		       else if (DSElem_IsComment((const char **)&pc))
-		       {
-			  DSElem_SkipComment(&pc);
-			  state = kRSParseState_EndElem;
-		       }
-		       else
-		       {
-			  state = kRSParseState_Error;
-		       }
-		    }
-		    else
-		    {
-		       state= kRSParseState_EndElem;
-		    }
-		 }
-		 else
-		 {
-		    *pcBuf++ = *pc++;
-		 }
-#endif
 	      }
 	      else
 	      {

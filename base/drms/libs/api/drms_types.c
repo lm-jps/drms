@@ -561,10 +561,10 @@ int drms_fprintfval_raw(FILE *keyfile, DRMS_Type_t type, void *val)
 /* scan for one instance of dsttype.  If dsttype is DRMS_STRING it is terminated by
  * the end of input string, a comma, or a right square bracket.
  */
-int drms_sscanf_int (const char *str, 
-		     DRMS_Type_t dsttype, 
-		     DRMS_Type_Value_t *dst,
-		     int silent) {
+static int drms_sscanf_int(const char *str, 
+                           DRMS_Type_t dsttype, 
+                           DRMS_Type_Value_t *dst,
+                           int silent) {
   int status = DRMS_SUCCESS;
   const TIME *te = NULL;
   char *endptr = 0;
@@ -776,10 +776,6 @@ int drms_sscanf_int (const char *str,
     XASSERT(0);
   }
   return -1;
-}
-
-int drms_sscanf(const char *str, DRMS_Type_t dsttype, DRMS_Type_Value_t *dst) {
-   return drms_sscanf_int(str, dsttype, dst, 0);
 }
 
 /* drms_sscanf has a bug - the string cannot contain commas.  But
