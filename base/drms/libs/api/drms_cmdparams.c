@@ -110,7 +110,7 @@ int drms_cmdparams_get_int(CmdParams_t *parms, const char *name, int *status)
 
    if (statint == DRMS_SUCCESS)
    {
-      if (drms_sscanf2(str, DRMS_TYPE_INT, &value) == -1)
+      if (drms_sscanf2(str, NULL, 0, DRMS_TYPE_INT, &value) == -1)
       {
          statint = DRMS_ERROR_INVALIDCMDARGCONV;
       }

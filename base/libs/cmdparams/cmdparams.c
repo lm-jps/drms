@@ -76,6 +76,68 @@ const double gNHugeVal = -HUGE_VAL;
 #define kARGSIZE     (128)
 #define kKEYSIZE     (128)
 
+/* Handle a few for now - if anybody wants more, add later */
+static int ResolveEscSequence(const char *str, char *resolved, int size)
+{
+   int err = 0;
+   char *pout = resolved;
+   const char *pin = str;
+   int len = 0;
+
+   if (str && resolved)
+   {
+      while (*pin && len < size)
+      {
+         if (*pin == '\\' && *(pin + 1) && len + 1 < size)
+         {
+            if (*(pin + 1) == 't')
+            {
+               *pout = '\t';
+            }
+            else if (*(pin + 1) == 'n')
+            {
+               *pout = '\n';
+            }
+            else if (*(pin + 1) == '\\')
+            {
+               *pout = '\\';
+            }
+            else if (*(pin + 1) == '"')
+            {
+               *pout = '"';
+            }
+            else if (*(pin + 1) == '\'')
+            {
+               *pout = '\'';
+            }
+            else
+            {
+               /* error - bad escape sequence*/
+               err = 1;
+               fprintf(stderr, "Bad escape sequence in '%s'.\n", str);
+               break;
+            }
+
+            pin++;
+            pin++;
+            pout++;
+            len++;
+         }
+         else
+         {
+            *pout = *pin;
+            pin++;
+            pout++;
+            len++;
+         }         
+      }
+
+      *pout = '\0';
+   }
+
+   return err;
+}
+
 static char *RemoveTrailSp (const char *str, int *status) {
   char *ret = NULL;
   char *cstr = strdup(str);
@@ -100,6 +162,7 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
     int depth) {
   int len, arg = 0;
   char *p, flagbuf[2]={0};
+  char escbuf[256];
 				  /* parse options given on the command line */
   arg = 0; 
   while (arg < argc) {
@@ -110,7 +173,14 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
       if (argv[arg][1] == '-') {
         if (strcasecmp (argv[arg], "--help") == 0) return CMDPARAMS_QUERYMODE;
 			/*  This and the next argument  "--name value"  */
-	if (arg < argc-1) cmdparams_set (parms, argv[arg]+2, argv[arg+1]);
+
+        /* This argument might be an escaped string - make sure \t turns into a tab, for example */
+        if (ResolveEscSequence(argv[arg+1], escbuf, sizeof(escbuf)))
+        {
+           return CMDPARAMS_FAILURE;
+        }
+
+	if (arg < argc-1) cmdparams_set (parms, argv[arg]+2, escbuf);
 	else {
 	  fprintf (stderr, "The value of option %s is missing.\n", argv[arg]+2);
 	  return CMDPARAMS_FAILURE;
@@ -135,15 +205,27 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
 	*p = 0;
 	if (p == argv[arg]+len-1 ) {		/* "argument= value" */
 	  if (arg < argc-1) {
-	    cmdparams_set (parms, argv[arg], argv[arg+1]);
-	    arg += 2;
+             /* This argument might be an escaped string - make sure \t turns into a tab, for example */
+             if (ResolveEscSequence(argv[arg+1], escbuf, sizeof(escbuf)))
+             {
+                return CMDPARAMS_FAILURE;
+             }
+
+             cmdparams_set (parms, argv[arg], escbuf);
+             arg += 2;
 	  } else {
 	    fprintf (stderr, "The value of option %s is missing.\n", argv[arg]);
 	    return -1;
 	  }
 	} else {				/* "argument=value" */
-	  cmdparams_set (parms, argv[arg], p+1);
-	  ++arg;
+           /* This argument might be an escaped string - make sure \t turns into a tab, for example */
+           if (ResolveEscSequence(p+1, escbuf, sizeof(escbuf)))
+           {
+              return CMDPARAMS_FAILURE;
+           }
+
+           cmdparams_set (parms, argv[arg], escbuf);
+           ++arg;
 	}
       } else {
 	if (argv[arg][0] == '@') {	/* This is of the form "@filename" */

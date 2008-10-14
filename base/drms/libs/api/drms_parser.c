@@ -6,6 +6,7 @@
 
 /* Utility functions. */
 static int getstring(char **inn, char *out, int maxlen);
+static int getvalstring(char **inn, char *out, int maxlen);
 /*
 static int getdouble(char **in, double *val);
 static int getfloat(char **in, float *val); 
@@ -13,6 +14,7 @@ static int getfloat(char **in, float *val);
 static int getint(char **in, int *val);
 static inline int prefixmatch(char *token, const char *pattern);
 static int gettoken(char **in, char *copy, int maxlen);
+static int getvaltoken(char **in, DRMS_Type_t type, char *copy, int maxlen);
 
 /* Main parsing functions. */
 int getkeyword(char **line);
@@ -398,12 +400,12 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
           /* By default, cpkey->value.string_val is NULL - set it to the empty string */
           if (seg->info->protocol != DRMS_FITZ)
           {
-             drms_sscanf_str("", &cpkey->value);
+             drms_sscanf_str("", NULL, &cpkey->value);
           }
           else
           {
              /* For FITZ, just use defult tile-compression */
-             drms_sscanf_str("compress Rice", &cpkey->value);
+             drms_sscanf_str("compress Rice", NULL, &cpkey->value);
           }
 
           if (strlen(cparms) > 0 && strcasecmp(cparms, "none"))
@@ -411,7 +413,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
              /* drms_sscanf has a bug - the string cannot contain commas.  But
               * there are many places in the code that rely upon this bad behavior.
               * So, don't use sscanf here - do something special for strings. */
-             chused = drms_sscanf_str(cparms, &cpkey->value);
+             chused = drms_sscanf_str(cparms, NULL, &cpkey->value);
              if (chused < 0)
                goto failure;
           }
@@ -1379,7 +1381,7 @@ static int parse_keyword(char **in,
     /* Simple keyword. */
     if(gettoken(&q,constant,sizeof(constant)) <= 0) goto failure;
     if(gettoken(&q,scope,sizeof(scope)) <= 0)       goto failure;
-    if(gettoken(&q,defval,sizeof(defval)) < 0)     goto failure;
+    if(getvaltoken(&q,drms_str2type(type), defval,sizeof(defval)) < 0)  goto failure;
     if(gettoken(&q,format,sizeof(format)) <= 0)     goto failure;
     if(gettoken(&q,unit,sizeof(unit)) <= 0)         goto failure;
     if(gettoken(&q,description,sizeof(description)) < 0)   goto failure;
@@ -1531,17 +1533,15 @@ static int parse_keyword(char **in,
       key->info->linkname[0] = 0;
       key->info->target_key[0] = 0;
       key->info->type = drms_str2type(type);
-      if (key->info->type == DRMS_TYPE_STRING)
-      {
-         /* drms_sscanf has a bug - the string cannot contain commas.  But
-          * there are many places in the code that rely upon this bad behavior.
-          * So, don't use sscanf here - do something special for strings. */
-         chused = drms_sscanf_str(defval, &key->value);
-      }
-      else
-      {
-         chused = drms_sscanf(defval, key->info->type, &key->value);
-      }
+      
+      /* Since we are parsing a value, this could be a string with escape characters or
+       * quotes. We want to preserve the quotes surrounding the string and pass those
+       * through to drms_sscanf2(). */
+      DRMS_Value_t vholder;
+      chused = drms_sscanf2(defval, NULL, 0, key->info->type, &vholder);
+      key->value = vholder.value;
+      memset(&(vholder.value), 0, sizeof(DRMS_Type_Value_t));
+
       if (chused < 0 || (chused == 0 && key->info->type != DRMS_TYPE_STRING))
 	goto failure;
 #ifdef DEBUG      
@@ -1897,6 +1897,52 @@ static int getstring(char **inn, char *out, int maxlen) {
   return len;
 }
 
+/* same as above, but don't strip off quotes - you need these because there might be escape chars 
+ * in the string (like tabs)
+ */
+static int getvalstring(char **inn, char *out, int maxlen)
+{
+   char escape;
+   int len;
+   char *in;
+  
+   in = *inn;
+   /* Skip leading whitespace. */
+   SKIPWS(in);
+
+   len = 0;
+   if ( *in=='"' || *in=='\'' )
+   {
+      /* an escaped string - copy quotes to out */
+      escape = *in;
+      *out++ = *in++;
+      len++;
+
+      while(*in && *in != escape && len<maxlen-1)
+      {
+         *out++ = *in++;
+         len++;
+      }
+      if ( *in==escape )
+      {
+         *out++ = *in++;
+         len++;
+      }
+   }
+   else
+   {
+      /* an un-escaped string (cannot contain whitespace or comma) */    
+      return getstring(inn, out, maxlen);
+   }
+   /* Terminate output string. */
+   *out = 0;
+
+   /* Forward input pointer past the string and WS. */
+   SKIPWS(in);
+   *inn = in;
+   return len;
+}
+
 static int getint(char **in, int *val)
 {
   char *endptr;
@@ -1972,6 +2018,35 @@ static int gettoken(char **in, char *copy, int maxlen)
   }
  
   return len;
+}
+
+static int getvaltoken(char **in, DRMS_Type_t type, char *copy, int maxlen)
+{
+   if (type == DRMS_TYPE_STRING)
+   {
+      int len;
+      int ln = lineno;
+
+      if((len = getvalstring(in,copy,maxlen))<0)
+        return -1;
+
+      if (**in != '\0' && ln == lineno)
+      {
+         if (**in != ',')
+         {
+            fprintf(stderr,"%s, line %d: Expected comma (',') on line %d of JSOC series descriptor.\n", __FILE__, __LINE__, lineno);
+            return 0;
+         }
+
+         ++(*in);
+      }
+
+      return len;
+   }
+   else
+   {
+      return gettoken(in, copy, maxlen);
+   }
 }
 
 static inline int prefixmatch(char *token, const char *pattern)

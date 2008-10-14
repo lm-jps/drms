@@ -4957,8 +4957,17 @@ static int ParseRecSetDesc(const char *recsetsStr,
 		 }
 		 else if (*pc == '[')
 		 {
-		    *pcBuf++ = *pc++;
-		    state = kRSParseState_DRMSFilt;
+                    *pcBuf++ = *pc++;
+
+                    if (pc < endInput && *pc == '?')
+                    {
+                       *pcBuf++ = *pc++;
+                       state = kRSParseState_DRMSFiltSQL;
+                    }
+                    else
+                    {
+                       state = kRSParseState_DRMSFilt;
+                    }
 		 }
 		 else if (*pc == '{')
 		 {
@@ -4983,7 +4992,16 @@ static int ParseRecSetDesc(const char *recsetsStr,
 		       if (*pc == '[')
 		       {
 			  *pcBuf++ = *pc++;
-			  state = kRSParseState_DRMSFilt;
+
+                          if (pc < endInput && *pc == '?')
+                          {
+                             *pcBuf++ = *pc++;
+                             state = kRSParseState_DRMSFiltSQL;
+                          }
+                          else
+                          {
+                             state = kRSParseState_DRMSFilt;
+                          }
 		       }
 		       else if (*pc == '{')
 		       {
@@ -5029,16 +5047,89 @@ static int ParseRecSetDesc(const char *recsetsStr,
 	      /* inside '[' and ']' */
 	      if (pc < endInput)
 	      {
-		 DSElem_SkipWS(&pc); /* ingore ws, if any */
+                 /* just do one pass now */
+                 /* check for SQL filt */
+                 if (*pc == '?')
+                 {
+                    *pcBuf++ = *pc++;
+                    state = kRSParseState_DRMSFiltSQL;
+                 }
+                 else
+                 {
+                    /* Assume the filter value is a string or set of strings */
+                    while (*pc != ']')
+                    {
+                       DRMS_Type_Value_t val;
+                       memset(&val, 0, sizeof(DRMS_Type_Value_t));
+                       int rlen = drms_sscanf_str(pc, "]", &val);
+                       int ilen = 0;
 
+                       /* if ending ']' was found, then pc + rlen is ']', otherwise
+                        * it is the next char after end quote */
+                       while (ilen < rlen)
+                       {
+                          *pcBuf++ = *pc++;
+                          ilen++;
+                       }
+                    }
+
+                    /* skip any ws between last char and right bracket */
+                    //DSElem_SkipWS(&pc);
+
+                    if (*pc == ']')
+                    {
+                       *pcBuf++ = *pc++;
+                       if (DSElem_SkipWS(&pc))
+                       {
+                          if (*pc == '[')
+                          {
+                             *pcBuf++ = *pc++;
+
+                             if (pc < endInput && *pc == '?')
+                             {
+                                *pcBuf++ = *pc++;
+                                state = kRSParseState_DRMSFiltSQL;
+                             }
+                             else
+                             {
+                                state = kRSParseState_DRMSFilt;
+                             }
+                          }
+                          else if (*pc == '{')
+                          {
+                             *pcBuf++ = *pc++;
+                             state = kRSParseState_DRMSSeglist;
+                          }
+                          else if (DSElem_IsDelim((const char **)&pc))
+                          {
+                             pc++;
+                             state = kRSParseState_EndElem;
+                          }
+                          else if (DSElem_IsComment((const char **)&pc))
+                          {
+                             DSElem_SkipComment(&pc);
+                             state = kRSParseState_EndElem;
+                          }
+                          else
+                          {
+                             state = kRSParseState_Error;
+                          }
+                       }
+                       else
+                       {
+                          state= kRSParseState_EndElem;
+                       }
+                    }
+                    else
+                    {
+                       state = kRSParseState_Error;
+                    }
+                 }
+
+#if 0
 		 if (*pc == '[')
 		 {
 		    state = kRSParseState_Error;
-		 }
-		 else if (*pc == '?')
-		 {
-		    state = kRSParseState_DRMSFiltSQL;
-		    *pcBuf++ = *pc++;
 		 }
 		 else if (*pc == ']')
 		 {
@@ -5047,8 +5138,17 @@ static int ParseRecSetDesc(const char *recsetsStr,
 		    {
 		       if (*pc == '[')
 		       {
-			  *pcBuf++ = *pc++;
-			  state = kRSParseState_DRMSFilt;
+                          *pcBuf++ = *pc++;
+
+                          if (pc < endInput && *pc == '?')
+                          {
+                             *pcBuf++ = *pc++;
+                             state = kRSParseState_DRMSFiltSQL;
+                          }
+                          else
+                          {
+                             state = kRSParseState_DRMSFilt;
+                          }
 		       }
 		       else if (*pc == '{')
 		       {
@@ -5079,6 +5179,7 @@ static int ParseRecSetDesc(const char *recsetsStr,
 		 {
 		    *pcBuf++ = *pc++;
 		 }
+#endif
 	      }
 	      else
 	      {
@@ -5094,16 +5195,28 @@ static int ParseRecSetDesc(const char *recsetsStr,
 	    case kRSParseState_DRMSFiltSQL:
 	      if (pc < endInput)
 	      {
-		 if (*pc == '?')
+                 if (*pc == '"' || *pc == '\'')
+                 {
+                    /* skip quoted strings */
+                    DRMS_Type_Value_t val;
+                    memset(&val, 0, sizeof(DRMS_Type_Value_t));
+                    int rlen = drms_sscanf_str(pc, NULL, &val);
+                    int ilen = 0;
+
+                    /* if ending ']' was found, then pc + rlen is ']', otherwise
+                     * it is the next char after end quote */
+                    while (ilen < rlen)
+                    {
+                       *pcBuf++ = *pc++;
+                       ilen++;
+                    }
+                 }
+		 else if (*pc == '?')
 		 {
 		    *pcBuf++ = *pc++;
-		    if (DSElem_SkipWS(&pc) && (*pc == ']'))
+		    if ((pc < endInput) && (*pc == ']'))
 		    {
 		       state = kRSParseState_DRMSFilt;
-		    }
-		    else
-		    {
-		       state = kRSParseState_Error;
 		    }
 		 }
 		 else

@@ -561,7 +561,7 @@ int drms_fprintfval_raw(FILE *keyfile, DRMS_Type_t type, void *val)
 /* scan for one instance of dsttype.  If dsttype is DRMS_STRING it is terminated by
  * the end of input string, a comma, or a right square bracket.
  */
-int drms_sscanf_int (char *str, 
+int drms_sscanf_int (const char *str, 
 		     DRMS_Type_t dsttype, 
 		     DRMS_Type_Value_t *dst,
 		     int silent) {
@@ -778,15 +778,14 @@ int drms_sscanf_int (char *str,
   return -1;
 }
 
-int drms_sscanf(char *str, DRMS_Type_t dsttype, DRMS_Type_Value_t *dst) {
+int drms_sscanf(const char *str, DRMS_Type_t dsttype, DRMS_Type_Value_t *dst) {
    return drms_sscanf_int(str, dsttype, dst, 0);
 }
 
 /* drms_sscanf has a bug - the string cannot contain commas.  But
  * there are many places in the code that rely upon this bad behavior.
  * So, don't use sscanf here - do something special for strings. */
-int drms_sscanf_str(char *str, DRMS_Type_Value_t *dst) {
-   int status = DRMS_SUCCESS;
+int drms_sscanf_str(const char *str, const char *delim, DRMS_Type_Value_t *dst) {
    int usemissing = 0;
    int usemissinglen = sizeof(kDRMS_MISSING_VALUE);
 
@@ -808,30 +807,191 @@ int drms_sscanf_str(char *str, DRMS_Type_Value_t *dst) {
    }
    else
    {
+      /* need a state machine to handle quoted strings that may contain 
+       * quotes within them */
+      int state = 0; /* 0 - start
+                      * 1 - not within quotes, not escaped 
+                      * 2 - within quotes (single or double)
+                      * 3 - escaped (char follows a '\')
+                      * 4 - done
+                      */
+      int len = strlen(str);
+      char *actstr = malloc(len + 1);
+      char *pactstr = actstr;
+      char *pstr = str;
+      int quotetype = 0; /* 1 - single
+                          * 2 - double
+                          */
+
+      while (state != 4)
+      {
+         if (!*pstr)
+         {
+            if (state == 1 || state == 0)
+            {
+               /* always end with pstr pointing to one beyond last char used */
+               state = 4;
+            }
+
+            /* If not state 1 or 0, then function returns -1 below */
+            break;
+         }
+         if (state == 0)
+         {
+            while (pstr && (*pstr == ' ' || *pstr == '\t'))
+            {
+               /* strip leading whitespace */
+               pstr++;
+            }
+
+            if (*pstr == '\'' || *pstr == '"')
+            {
+               if (*pstr == '\'')
+               {
+                  quotetype = 1;
+               }
+               else
+               {
+                  quotetype = 2;
+               }
+
+               state = 2;
+               pstr++; /* skip special char */
+            }
+            else
+            {
+               state = 1;
+            }
+         }
+         else if (state == 1)
+         {
+            int isdelim = 0;
+            if (delim)
+            {
+               const char *pdelim = delim;
+               while (*pdelim)
+               {
+                  if (*pstr == *pdelim) 
+                  {
+                     isdelim = 1;
+                     break;
+                  }
+
+                  pdelim++;
+               }
+            }
+
+            if (isdelim || *pstr == ' ') /* no spaces allowed in unquoted string */
+            {
+               /* always end with pstr pointing to one beyond last char used */
+               state = 4;
+            }
+            else
+            {
+               *pactstr = *pstr;
+               pactstr++;
+               pstr++;
+            }
+         }
+         else if (state == 2)
+         {
+            /* Can's use any stdlib function, like sscanf(), to interpret escaped chars. Escape
+             * sequences are turned into string/char values at compile time.  Must instead
+             * manually do it. For now, just support a couple. */
+
+            /* If inside quotes, can use escape char ('\') */
+            if (*pstr == '\\')
+            {
+               state = 3;
+               pstr++;
+            }
+            else if ((quotetype == 1 && *pstr == '\'') || (quotetype == 2 && *pstr == '"'))
+            {
+               /* end quote */
+               pstr++; /* always end with pstr pointing to one beyond last char used */
+               state = 4;
+            }
+            else
+            {
+               *pactstr = *pstr;
+               pactstr++;
+               pstr++;
+            }
+         }
+         else if (state == 3)
+         {
+            if (*pstr == 't')
+            {
+               *pactstr = '\t';
+            }
+            else if (*pstr == 'n')
+            {
+               *pactstr = '\n';
+            }
+            else if (*pstr == '\\')
+            {
+               *pactstr = '\\';
+            }
+            else if (*pstr == '"')
+            {
+               *pactstr = '"';
+            }
+            else if (*pstr == '\'')
+            {
+               *pactstr = '\'';
+            }
+            else
+            {
+               /* escaped quotes would be here */
+               *pactstr = *pstr;
+            }
+
+            state = 2;
+            pactstr++;
+            pstr++;
+         }
+      }
+
+      *pactstr = '\0';
+
+      if (state != 4)
+      {
+         return -1;
+      }
+
       if (dst->string_val) free(dst->string_val);
-      dst->string_val = strdup(str);
-      return strlen(dst->string_val);
+
+      if (actstr)
+      {
+         dst->string_val = strdup(actstr);
+         free(actstr);
+      }
+
+      return pstr - str;
    }
 }
 
 /* doesn't suffer from the limitation that strings can't contain commas and other chars */
 /* ret == -1 ==> error, else ret == num chars processed; caller owns any string in *dst */
-int drms_sscanf2(const char *str, DRMS_Type_t dsttype, DRMS_Value_t *dst)
+int drms_sscanf2(const char *str, const char *delim, int silent, DRMS_Type_t dsttype, DRMS_Value_t *dst)
 {
    DRMS_Type_Value_t idst;
    int err = 0;
    int ret;
 
+   /* so drms_sscanf_str() doesn't delete something that is being used! */
+   memset(&(idst), 0, sizeof(DRMS_Type_Value_t));
+
    if (dsttype == DRMS_TYPE_STRING)
    {
-      if ((ret = drms_sscanf_str(str, &idst)) < 0) 
+      if ((ret = drms_sscanf_str(str, delim, &idst)) < 0) 
       {
          err = 1;
       }
    }
    else
    {
-      if ((ret = drms_sscanf_int(str, dsttype, &idst, 0)) <= 0)
+      if ((ret = drms_sscanf_int(str, dsttype, &idst, silent)) <= 0)
       {
          err = 1;
       }

@@ -235,12 +235,41 @@ static RecordQuery_t *parse_record_query(char **in)
     /* Remove leading whitespace. */
     // SKIPWS(p);
     len = 0;
+
     /* Get SQL-where-clause-like string.  */
-    while(len<DRMS_MAXQUERYLEN && *p && *p != '?')
+    while(len<DRMS_MAXQUERYLEN && *p)
     {
-      *out++ = *p++;
-      ++len;
-    }    
+       if (*p == '"' || *p == '\'')
+       {
+          /* skip quoted strings */
+          DRMS_Type_Value_t val;
+          memset(&val, 0, sizeof(DRMS_Type_Value_t));
+          int rlen = drms_sscanf_str(p, NULL, &val);
+          int ilen = 0;
+
+          /* if ending ']' was found, then p + rlen is ']', otherwise
+           * it is the next char after end quote */
+          while (ilen < rlen)
+          {
+             *out++ = *p++;
+             ilen++;
+          }
+       }
+       else if (*p == '?')
+       {
+          /* if char after '?' is r bracket, done */
+          if (*(p + 1) == ']')
+          {
+             break;
+          }
+       }
+       else
+       {
+          /* whitespace okay in sql query */
+          *out++ = *p++;
+       }
+    }
+
     if (*p++ =='?')
     {
       *out-- = '\0';
@@ -301,8 +330,15 @@ static RecordList_t *parse_record_list(DRMS_Record_t *template, char **in) {
     rl->type = PRIMEKEYSET;
     si = template->seriesinfo;
 
+    SKIPWS(p);
+
     /* Try to match an optional '<prime_key>=' string. */
     err = parse_name (&p, strbuf, sizeof(strbuf));
+
+    if (!err)
+    {
+       SKIPWS(p);
+    }
     
     if (*p == '=' && !err) {
 					/* A keyword was given explicitly. */
@@ -317,6 +353,7 @@ static RecordList_t *parse_record_list(DRMS_Record_t *template, char **in) {
       snprintf(pk, sizeof(pk), "%s", strbuf);
       explKW = 1;
       ++p;
+      SKIPWS(p);
       keynum = -1;
 		/* Search the primary index list of the series template and
 		match it to the primary key argument given in the descriptor. */
@@ -793,6 +830,7 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
   DRMS_Type_t datatype = drms_keyword_gettype(keyword);
   int gotstart;
   int stat;
+  DRMS_Value_t vholder;
 
 #ifdef DEBUG
   printf("enter parse_value_set\n");
@@ -878,7 +916,7 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
              valstr = p;
           }
 
-	  if ((n = drms_sscanf_int(valstr, datatype, &vr->start, 1)) == 0 ||
+	  if ((n = drms_sscanf2(valstr, ",]", 1, datatype, &vholder)) == 0 ||
 	      n == -1)
 	  {
 	     fprintf(stderr,"Syntax Error: Expected either time duraton " 
@@ -902,6 +940,9 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
           {
              free(valstr);
           }
+
+          vr->start = vholder.value; /* if string, vr->start owns */
+          memset(&(vholder.value), 0, sizeof(DRMS_Type_Value_t));
        }
 
       if (*p=='-')
@@ -949,7 +990,7 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
                       valstr = p;
                    }
 
-		  if ((n = drms_sscanf(valstr, datatype, &vr->x)) == 0)    
+		  if ((n = drms_sscanf2(valstr, ",]", 0, datatype, &vholder)) == 0)    
 		    {
 		      fprintf(stderr,"Syntax Error: Expected end value of"
 			      " type %s in value range, found '%s'.\n",drms_type2str(datatype), p);
@@ -973,6 +1014,9 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
                   {
                      free(valstr);
                   }
+
+                  vr->x = vholder.value;
+                  memset(&(vholder.value), 0, sizeof(DRMS_Type_Value_t));
 		}
 	      else
 		{
@@ -1007,7 +1051,7 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 	    }
 	  else
 	    { /* Non-time types. */
-	      if ((n = drms_sscanf(p, datatype, &vr->x)) == 0)    
+	      if ((n = drms_sscanf2(p, ",]", 0, datatype, &vholder)) == 0)    
 		{
 		  fprintf(stderr,"Syntax Error: Expected end or duration value of"
 			  " type %s in value range, found '%s'.\n",drms_type2str(datatype), p);
@@ -1015,6 +1059,8 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 		}
 	      else
               {
+                 vr->x = vholder.value;
+                 memset(&(vholder.value), 0, sizeof(DRMS_Type_Value_t));
                  p+=n;
               }
 	      /* Get skip */
@@ -1022,7 +1068,7 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 		{
 		  ++p;
 		  vr->has_skip = 1;
-		  if ((n = drms_sscanf(p, datatype, &vr->skip)) == 0)    
+		  if ((n = drms_sscanf2(p, ",]", 0, datatype, &vholder)) == 0)    
 		    {
 		      fprintf(stderr,"Syntax Error: Expected skip value of type %s in"
 			      " value range, found '%s'.\n",drms_type2str(datatype), p);
@@ -1030,6 +1076,8 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 		    }
 		  else
                   {
+                     vr->skip = vholder.value;
+                     memset(&(vholder.value), 0, sizeof(DRMS_Type_Value_t));
                      p+=n;
                   }
 		}
