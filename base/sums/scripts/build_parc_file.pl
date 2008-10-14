@@ -68,8 +68,8 @@ sub labeldate {
 
 $HOSTDB = "hmidb";	#db machine
 $HOSTDC = "dcs0";	#default datacapture to send to
-$TLMDSHMI = "hmi.tlmd"; #series of .tlm files to query
-$TLMDSAIA = "aia.tlmd"; #series of .tlm files to query
+$TLMDSHMI = "hmi.tlme"; #series of .tlm files to query
+$TLMDSAIA = "aia.tlme"; #series of .tlm files to query
 $DB = "jsoc_sums";
 $PGPORT = 5434;
 $PARC_ROOT = "/usr/local/logs/parc/";
