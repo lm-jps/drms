@@ -47,11 +47,12 @@ tie %Hofneed, "Tie::IxHash"; #lets you take out keys in input order
 tie %Hofclosed, "Tie::IxHash"; #lets you take out keys in input order
 
 #NOTE: must have our full path name here for any restart signaled by sum_svc
-$OURPATH = "/home/production/cvs/jsoc/scripts/sum/t50view"; #!!this program
-#$OURPATH = "/home/jim/cvs/jsoc/scripts/sum/t50view"; #!!this program
+#$OURPATH = "/home/production/cvs/jsoc/scripts/sum/t50view"; #!!this program
+$OURPATH = "/home/production/cvs/JSOC/base/sums/scripts/t50view";
 
 $DEFAULTDB = "jsocdc";		#default DB
-$HOSTDB = "localhost";		#host where DB runs
+#$HOSTDB = "localhost";		#host where DB runs
+$HOSTDB = `hostname -s`;	#host where DB runs
 $NOTAPEARC = "/usr/local/logs/soc/NOTAPEARC";
 $INLOG = 0;			#use default tape_svc log
 $localhost = `hostname -s`;
