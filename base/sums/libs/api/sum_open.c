@@ -593,6 +593,7 @@ int getanymsg(int block)
       if(errno==EINTR) {
         continue;
       }
+      fprintf(stderr, "%s\n", datestring());
       perror("getanymsg: select failed");
       retcode = ERRMESS;
       wait = 0;
@@ -634,6 +635,7 @@ int getmsgimmed()
       if(errno==EINTR) {
         continue;
       }
+      fprintf(stderr, "%s\n", datestring());
       perror("getanymsg: select failed");
       retcode = ERRMESS;
       wait = 0;
