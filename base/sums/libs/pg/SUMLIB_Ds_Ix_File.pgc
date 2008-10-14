@@ -5,7 +5,8 @@
  * If none are offline, returns 0. Else returns 1 with the filedsixoff[]
  * array containing the offline ds_index values with 0 termination.
  * Return -1 on error.
- * NOTE: add 10Sep2008 Set ds_mdi arg if Owning_Series is ds_mdi.*
+ * NOTE: add 10Sep2008 Set dsmdiflg arg if Owning_Series is ds_mdi.*
+ * NOTE: add 02Oct2008 Set dsmdiflg arg if Owning_Series is hmi_ground.lev0
 */
 
 #include <SUM.h>
@@ -43,7 +44,12 @@ EXEC SQL END DECLARE SECTION;
 	FROM SUM_MAIN 
 	WHERE DS_INDEX = :ds_index;
 
-      if(strstr(own_series.arr, "ds_mdi.")) { *dsmdiflg = 1; }
+      if(!strcmp(own_series.arr, "hmi_ground.lev0")) { 
+        *dsmdiflg = 1;
+      }
+      else {
+        if(strstr(own_series.arr, "ds_mdi.")) { *dsmdiflg = 1; }
+      }
  
       if(strcmp(online_status.arr, "N")==0) {
         offline = 1;
