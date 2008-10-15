@@ -37,6 +37,12 @@ change dcs3.jsoc.Stanford.EDU to new full host name
 
 /home/production/.login  change all dcs3 to the new short name
 
+5.)
+
+Add to /home/production/.pgpass 
+foo:*:*:production:hmi4sdo
+where 'foo' is the new host name that you have.
+
 --------------------------END CHANGES--------------------------------------
 
 TO TEST:
