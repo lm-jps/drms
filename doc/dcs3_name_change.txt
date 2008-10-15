@@ -1,4 +1,4 @@
-	dcs3.jsoc:/home/production/cvs/JSOC/doc/dcs3_name_change.txt 10/15/2008
+	dcs3:/home/production/cvs/JSOC/doc/dcs3_name_change.txt 10/15/2008
 
 
 The system is configured for a 'hostname -s' of dcs3.
@@ -35,7 +35,7 @@ change dcs3.jsoc.Stanford.EDU to new full host name
 
 4.)
 
-/home/production/.login  change dcs3 to the new short name
+/home/production/.login  change all dcs3 to the new short name
 
 --------------------------END CHANGES--------------------------------------
 
