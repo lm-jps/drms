@@ -1,0 +1,57 @@
+	dcs3.jsoc:/home/production/cvs/JSOC/doc/dcs3_name_change.txt 10/15/2008
+
+
+The system is configured for a 'hostname -s' of dcs3.
+The full host name is dcs3.jsoc.Stanford.EDU
+
+If the machine is renamed, everything will still work if 
+the short hostnmae (hostname -s) is dcs3.
+
+If the short hostname must be different than dcs3 then make
+these changes:
+
+--------------------------START CHANGES--------------------------------------
+Do as user production
+
+1.)
+
+/etc/sudoers  change dcs3 to the new name (use visudo as root)
+
+2.)
+
+/home/production/cvs/JSOC/base/sums/scripts/sum_start_dc and sum_stop_dc
+change $HOST3 from dcs3 to new name.
+
+3.)
+
+/home/production/cvs/JSOC/base/sums/apps/sum_svc.c and tapearc.c
+change dcs3 to the new name.
+
+/home/production/cvs/JSOC/base/sums/apps/Rules.mk
+change dcs3.jsoc.Stanford.EDU to new full host name
+
+> cd /home/production/cvs/JSOC
+> make sums
+
+4.)
+
+/home/production/.login  change dcs3 to the new short name
+
+--------------------------END CHANGES--------------------------------------
+
+TO TEST:
+
+> sum_start_dc
+> cd /home/production/cvs/JSOC/proj/datacapture/scripts
+
+Make sure your DISPLAY is set.
+Normally you would just run:
+> socdc
+
+and just hit "Start Instances for HMI" or "Start Instances for AIA"
+accordingly.
+
+If you want to run in sim mode where data is generated as if coming
+from the DDS, then either run socdc0 or socdc1 for AIA or HMI simulation
+respectively.
+
