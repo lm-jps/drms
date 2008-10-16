@@ -2168,6 +2168,23 @@ void drms_segment_print_jsd(DRMS_Segment_t *seg) {
     {
        printf("Illegal protocol: %d", (int)seg->info->protocol);
     }
+
+    if (seg->info->protocol == DRMS_FITS || 
+        seg->info->protocol == DRMS_TAS)
+    {
+       /* compression string */
+       printf(", \"%s\"", seg->cparms);
+    }
+
+    if (seg->info->protocol == DRMS_TAS || 
+        seg->info->protocol == DRMS_FITS ||
+        seg->info->protocol == DRMS_FITZ ||
+        seg->info->protocol == DRMS_BINARY ||
+        seg->info->protocol == DRMS_BINZIP)
+    {
+       printf(", %f", seg->bzero);
+       printf(", %f", seg->bscale);
+    }
   }
   printf(", \"%s\"\n", seg->info->description);
 }

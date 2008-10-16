@@ -57,6 +57,7 @@
 #include <stdio.h>
 #include <strings.h>
 #include "timeio.h"
+#include "util.h"
 
 static struct date_time {
     double second;
@@ -144,6 +145,7 @@ static double ut_leap_time[] = {
  */
 };
 
+static int parse_zone(const char *zonestr, char *out, int size);
 static void date_from_epoch_time (TIME t);
 static TIME epoch_time_from_julianday ();
 static double zone_adjustment_inner (char *zone, int *valid);
@@ -222,14 +224,15 @@ static int clock_isvalid(const char *strin) {
    return status;
 }
 
-static int _parse_clock (char *strin) {
+static int _parse_clock (char *strin, int *consumed) {
 /*
  *  Read time elements from wall-clock string HH:MM:SS.SSS
  */
   int status;
   char *field0, *field1, *field2;
-
   char str[1024];
+  char *endptr = NULL;
+
   snprintf(str, sizeof(str), "%s", strin);
 
   field0 = strtok (str, ":");
@@ -238,16 +241,31 @@ static int _parse_clock (char *strin) {
   if (status != 1) return 0;
   field1 = strtok (NULL, ":");
   if (!field1) return 1;
-  status = sscanf (field1, "%d", &dattim.minute);
+  dattim.minute = (int)strtol(field1, &endptr, 10);
+  status = (endptr != field1);
   if (status != 1) return 0;
   field2 = strtok (NULL, ":");
   if (!field2) {
+     if (consumed)
+     {
+        *consumed = endptr - str;
+     }
+
                          /*  Optional seconds field missing: default is 0.0  */
     dattim.second = 0.0;
     return (2);
   }
-  status = sscanf (field2, "%lf", &dattim.second);
+
+  dattim.second = strtod(field2, &endptr);
+  status = (endptr != field2);
+
   if (status != 1) return 0;
+
+  if (consumed)
+  {
+     *consumed = endptr - str;
+  }
+
                               /*  Set a flag in case it is a UT leap second  */
   dattim.ut_flag = (dattim.second >= 60.0);
   return (3);
@@ -286,7 +304,7 @@ static int _parse_month_name (char *moname) {
   return (month);
 }
 
-static int _parse_date (char *strin) {
+static int _parse_date (char *strin, int *consumed) {
 /*
  *  Read date elements from calendar string YYYY.{MM|nam}.DD[.ddd]
  */
@@ -305,39 +323,51 @@ static int _parse_date (char *strin) {
   field3 = strtok (NULL, ".");
   dattim.year = status = strtol (str, &endptr, 10);
   if (strlen (endptr)) return _parse_error ();
-/*
-  status = sscanf (field0, "%d", &dattim.year);
-  if (status != 1) return _parse_error ();
-  if (strlen (field0) == 2) {
-	default for 2-digit year strings is that they are base 1900 or 2000
-    if (dattim.year < 10) dattim.year += 100;
-    dattim.year += 1900;
+
+  if (consumed)
+  {
+     *consumed += endptr - str;
   }
-*/
+
   if (field1) {
     dattim.month = status = strtol (field1, &endptr, 10);
+
     if (strlen (endptr)) {
       dattim.month = _parse_month_name (field1);
       if (dattim.month == 0) return _parse_error ();
-    };
-/*
-    status = sscanf (field1, "%d", &dattim.month);
-    if (status != 1) {
-      dattim.month = _parse_month_name (field1);
-      if (dattim.month == 0) return _parse_error ();
+
+      if (consumed)
+      {
+         *consumed += 1 + strlen(field1);  /* one for the '.' between field0 and field1.
+                                            * _parse_month_name() uses all chars, and
+                                            * fails if there isn't a valid month */
+      }
     }
-*/
+    else
+    {
+       /* numeric month */
+       if (consumed)
+       {
+          *consumed += 1 + endptr - field1;  /* one for the '.' between field0 and field1 */
+       }
+    }
   } else dattim.month = 1;
   if (field2) {
     dattim.dofm = status = strtol (field2, &endptr, 10);
-    if (strlen (endptr)) return _parse_error ();
-/*
-    status = sscanf (field2, "%d", &dattim.dofm);
-    if (status != 1) return _parse_error ();
-*/
+
+    if (field3)
+    {
+       if (strlen (endptr)) return _parse_error ();
+    }
+
+    if (consumed)
+    {
+       *consumed += 1 + endptr - field2;  /* one for the '.' between field1 and field2 */
+    }
   } else dattim.dofm = 1;
   if (field3) {
-    status = sscanf (field3, "%d", &dfrac);
+     dfrac = (int)strtol(field3, &endptr, 10);
+     status = (endptr != field3);
     if (status) {
                                      /*  Day of month is in fractional form  */
       sprintf (daystr, "%d.%d", dattim.dofm, dfrac);
@@ -345,12 +375,22 @@ static int _parse_date (char *strin) {
       _fracday_2_clock (fracday);
       status = 6;
     }
+
+    if (consumed)
+    {
+       *consumed += endptr - field3;
+    }
   }
   else status = 3;
   return status;
 }
 
-static int _parse_date_time_inner (char *str, char **first, char **second, char **third, int *jdout) {
+static int _parse_date_time_inner (char *str, 
+                                   char **first, 
+                                   char **second, 
+                                   char **third, 
+                                   int *jdout,
+                                   int *consumed) {
 /*
  *  Parse a date-time string in one of the standard forms specified in
  *    SOI TN 94-116
@@ -363,6 +403,10 @@ static int _parse_date_time_inner (char *str, char **first, char **second, char 
   char *field0, *field1, *field2;
   char *tmpstr = NULL;
   int earlytz = 0; /* if 1, then missing clock, but time zone present */
+  char *endptr = NULL;
+  char realzone[64];
+  int field1consumed = 0;
+  char *field0cpy = NULL;
 
   if (first) {
      *first = NULL;
@@ -380,6 +424,10 @@ static int _parse_date_time_inner (char *str, char **first, char **second, char 
      *jdout = 0;
   }
 
+  if (consumed) {
+     *consumed = 0;
+  }
+
   length = strlen (str);
   if (!length) return _parse_error ();
   field0 = strtok (str, "_");
@@ -392,7 +440,7 @@ static int _parse_date_time_inner (char *str, char **first, char **second, char 
      /* Only field0 exists. */
      /*  No "_" separators: field (if valid) must be of type YYYY.MM.dd.ddd  */
                                                          /*  Default is UTC  */
-    status = _parse_date (field0);
+    status = _parse_date (field0, consumed);
     if (status == 3) {
       dattim.hour = dattim.minute = 0;
       dattim.second = 0.0;
@@ -403,7 +451,19 @@ static int _parse_date_time_inner (char *str, char **first, char **second, char 
               /*  First field must either be calendar date or "MJD" or "JD"  */
   field1 = strtok (NULL, "_");
 
-  if (!(strcasecmp (field0, "MJD")) || !(strcasecmp (field0, "JD"))) {
+  field0cpy = strdup(field0);
+  strtoupper(field0cpy);
+  
+  if (field0cpy && strstr (field0cpy, "JD")) {
+     free(field0cpy);
+
+     char *pc = field0;
+     while (*pc == ' ') pc++;
+     if (strcasecmp (pc, "MJD") && strcasecmp (pc, "JD"))
+     {
+        return _parse_error();
+     }
+
     /* For JD times, the date is contained in field1, not field0 and 
      * there is no clock field.
      */
@@ -411,17 +471,50 @@ static int _parse_date_time_inner (char *str, char **first, char **second, char 
        *first = strdup(field1);
     }
 
-    status = sscanf (field1, "%lf", &dattim.julday);
-    if (status != 1) return _parse_error ();
-    field2 = strtok (NULL, "_");
+    dattim.julday = strtod(field1, &endptr);
+    status = (endptr != field1);
 
-    if (third && field2 && strlen(field2) > 0) {
-       *third = strdup(field2);
+    if (status != 1) return _parse_error ();
+
+    if (consumed)
+    {
+       /* one for the '.' between field0 and field1 */
+       *consumed += strlen(field0) + 1 + endptr - field1; 
     }
 
+    field2 = strtok (NULL, "_");
+
     if (field2) {
-      strncpy (dattim.zone, field2, 7);
-      dattim.zone[7] = '\0';
+
+       if (parse_zone(field2, realzone, sizeof(realzone)))
+       {
+          return _parse_error ();
+       }
+
+       snprintf(dattim.zone, sizeof(dattim.zone), "%s", realzone);
+
+      if (consumed)
+      {
+         /* figure out how many chars were actually used for the zone */
+         
+         /* all of field1 should have been used */
+         if (strlen(field1) != (endptr - field1))
+         {
+            return _parse_error ();
+         }
+
+         *consumed += strlen(realzone) + 1; /* one for the '.' between field1 and field2 */
+
+         if (third && strlen(realzone) > 0) {
+            *third = strdup(realzone);
+         }
+      }
+      else
+      {
+         if (third && strlen(field2) > 0) {
+            *third = strdup(field2);
+         }
+      }
     } else
                                  /*  Default for Julian day notation is TDT  */
       strcpy (dattim.zone, "TDT");
@@ -447,10 +540,20 @@ static int _parse_date_time_inner (char *str, char **first, char **second, char 
 
   field2 = strtok (NULL, "_");
 
-  status = _parse_date (field0);
+  status = _parse_date (field0, consumed);
+
+  if (consumed)
+  {
+     /* Since there is a field0 and field1, we must use up field0 completely */
+     if (strlen(field0) != *consumed)
+     {
+        return _parse_error();
+     }
+  }
+
   if (status == 3) {
     /* NO factional day exists */
-    status = _parse_clock (field1);
+    status = _parse_clock (field1, &field1consumed);
     if (!status) {
        /* Add support for  YYYY.MM.DD_TZ. */
        /* field1 exists - may be a 'time zone' though if there is no field2 */
@@ -477,6 +580,77 @@ static int _parse_date_time_inner (char *str, char **first, char **second, char 
      }
   }
 
+  /* calcuate the number of chars consumed in field1 and field2 */
+  if (consumed)
+  {
+     char *off = NULL;
+     int offsetconsumed = 0;
+
+     if (field1)
+     {
+        if (earlytz)
+        {
+           /* no field2, and field1 is a tz */
+           if (parse_zone(field1, realzone, sizeof(realzone)))
+           {
+              return _parse_error ();
+           }
+
+           *consumed += 1 + strlen(realzone); /* one for the '_' between field0 and field1 */
+
+           if (third && strlen(realzone) > 0) {
+              *third = strdup(realzone);
+           }
+        }
+        else
+        {
+           /* could be the case that there is an offset to the clock, like 12:45:10+800. 
+            * the +800 is really a time zone from timeio's perspective */
+           if ((off = strchr (field1, '+')) != NULL ||
+               (off = strchr (field1, '-')) != NULL)
+           {
+              strtol(off, &endptr, 10);
+              offsetconsumed = endptr - off;
+
+              /* This offset is a time zone */
+              if (third && offsetconsumed > 0) 
+              {
+                 char buf[128];
+                 strncpy(buf, off, offsetconsumed);
+                 *third = strdup(buf);
+              }
+           }
+
+           if (field2)
+           {
+              if (field1consumed + offsetconsumed != strlen(field1))
+              {
+                 /* not everything to the right of the +/- was usable*/
+                 return _parse_error ();
+              }
+
+              /* both a clock and a tz */
+              if (parse_zone(field2, realzone, sizeof(realzone)))
+              {
+                 return _parse_error ();
+              }
+
+              if (consumed)
+              {
+                 *consumed += 1 + strlen(field1) + 1 + strlen(realzone); /* one for the '_' 
+                                                                          * between field0 and field1
+                                                                          * and one for the '_'
+                                                                          * between field1 and field2 */
+              }
+              
+              if (third && strlen(realzone) > 0) {
+                 *third = strdup(realzone);
+              }
+           }
+        }
+     }
+  }
+
   if (earlytz) {
      /* field1 is a time zone, and no field2 
       * Make field1 00:00 and field2 be the time zone */
@@ -491,14 +665,25 @@ static int _parse_date_time_inner (char *str, char **first, char **second, char 
   }
 
   if (field2) {
-     if (third && field2 && strlen(field2) > 0) {
-        *third = strdup(field2);
+     if (!consumed)
+     {
+        if (third && field2 && strlen(field2) > 0) {
+           *third = strdup(field2);
+        }
      }
 
-    strncpy (dattim.zone, field2, 7);
-    dattim.zone[7] = '\0';
+     if (parse_zone(field2, realzone, sizeof(realzone)))
+     {
+        return _parse_error ();
+     }
+
+    snprintf(dattim.zone, sizeof(dattim.zone), "%s", realzone);
+
     field2 = strtok (NULL, "_");
   } else {
+     /* I guess that if field1 (which is a clock) contains '+/-' followed by a number
+      * then the '+/-' and the following number is a time zone (an offset in hours * 100 + minutes)
+      */
 			/*  BUG! optional signs in the clock (or date!) field
 			       are misinterpreted as timezone designations!  */
     field2 = strchr (field1, '+');
@@ -532,7 +717,7 @@ static int _parse_date_time_inner (char *str, char **first, char **second, char 
 
 static int _parse_date_time (char *str)
 {
-   return _parse_date_time_inner (str, NULL, NULL, NULL, NULL);
+   return _parse_date_time_inner (str, NULL, NULL, NULL, NULL, NULL);
 }
 
 #define JD_EPOCH        (2443144.5)
@@ -743,6 +928,30 @@ TIME sscan_time (char *s) {
   dt = utc_adjustment (t, dattim.zone);
   tt = t - dt;
   return (tt);
+}
+
+int sscan_time_ext(char *s, TIME *out)
+{
+   TIME t, tt;
+   double dt;
+   int status;
+   char ls[256];
+   int consumed = -1;
+
+   strncpy (ls, s, 255);
+   ls[255] = '\0';
+   status = _parse_date_time_inner (ls, NULL, NULL, NULL, NULL, &consumed);
+   if (status) t = epoch_time_from_julianday ();
+   else t = epoch_time_from_date ();
+   dt = utc_adjustment (t, dattim.zone);
+   tt = t - dt;
+
+   if (out)
+   {
+      *out = tt;
+   }
+
+   return consumed;
 }
 
 static void _raise_case (char *s) {
@@ -979,6 +1188,7 @@ double zone_adjustment_inner (char *zone, int *valid) {
       hours = 'M' - zone[0];
       if (zone[0] == 'Z')
       {
+         /* BUG: sometimes 'Z' is valid */
         hours = 0;
         if (valid)
           *valid = 0; /* zone 'Z' means an invalid time zone was parsed. */
@@ -987,6 +1197,8 @@ double zone_adjustment_inner (char *zone, int *valid) {
     dt += 3600.0 * hours;
     return dt;
   }
+
+  /* "BST" has to be a bug - it appears twice (so it can never set hours to -11) */
   if (!strcmp (zone, "PST") || !strcmp (zone, "YDT"))
     hours = -8;
   else if (!strcmp (zone, "MST") || !strcmp (zone, "PDT"))
@@ -1057,6 +1269,339 @@ int zone_isvalid (char *zone) {
    return valid;
 }
 
+/* will parse zone out of a possibly larger string */
+int parse_zone(const char *zonestr, char *out, int size)
+{
+   int err = 0;
+   char *zone = strdup(zonestr);
+   strtoupper(zone);
+
+   if (strlen(zone) == 1)
+   {
+      /* single char abbreviation */
+      char abb = zone[0];
+      if (abb == 'A' || abb == 'B' || abb == 'C' || abb == 'D' || abb == 'E' ||
+          abb == 'F' || abb == 'G' || abb == 'H' || abb == 'I' || abb == 'K' ||
+          abb == 'L' || abb == 'M' || abb == 'N' || abb == 'O' || abb == 'P' ||
+          abb == 'Q' || abb == 'R' || abb == 'S' || abb == 'T' || abb == 'U' ||
+          abb == 'V' || abb == 'W' || abb == 'X' || abb == 'Y' || abb == 'Z')
+      {
+         if (size >= 2)
+         {
+            out[0] = abb;
+            out[1] = '\0';
+         }
+      }
+      else
+      {
+         err = 1;
+      }
+   }
+   else
+   {
+      char *pc = zone;
+      char *pout = out;
+      int state;
+
+      /* 'Z' - valid time zone */
+      /* 'X' - invalid time zone */
+      /*  0  - initial state */
+
+      state = 0;
+
+      while (state != 'Z' && state != 'X' && size >= 8)
+      {
+         if (state == 0)
+         {
+            state = 'X';
+
+            if (*pc == 'A' || *pc == 'B' || *pc == 'C' || *pc == 'E' || *pc == 'G' || 
+                *pc == 'H' || *pc == 'J' || *pc == 'M' || *pc == 'N' || *pc == 'P' ||
+                *pc == 'S' || *pc == 'T' || *pc == 'U' || *pc == 'Y' || *pc == 'W')
+            {
+               state = *pc;
+               *pout++ = *pc++;
+            }
+         }
+         else if (state == 'T')
+         {
+            state = 'X';
+
+            if (*pc)
+            {
+               if (*pc == 'A')
+               {
+                  *pout++ = *pc++;
+                  if (*pc && *pc == 'I')
+                  {
+                     /* TAI */                        
+                     state = 'Z';
+                     *pout++ = *pc++;
+                  }
+               }
+               else if (*pc == 'D')
+               {
+                  *pout++ = *pc++;
+                  if (*pc && *pc == 'T')
+                  {
+                     /* TDT */
+                     state = 'Z';
+                     *pout++ = *pc++;
+                  }
+               }
+               else if (*pc == 'T')
+               {
+                  /* TT */
+                  state = 'Z';
+                  *pout++ = *pc++;
+               }
+            }
+         }
+         else if (state == 'U')
+         {
+            state = 'X';
+            
+            if (*pc && *pc == 'T')
+            {
+               state = 'Z';
+               *pout++ = *pc++;
+
+               if (*pc && *pc == 'C')
+               {
+                  /* UTC */
+                  *pout++ = *pc++;
+               }
+               else 
+               {
+                  /* UT */
+               }
+            }
+         }
+         else if (state == 'A')
+         {
+            state = 'X';
+
+            if (*pc && (*pc == 'S' || *pc == 'D'))
+            {
+               *pout++ = *pc++;
+               if (*pc && *pc == 'T')
+               {
+                  /* ADT or AST */
+                  state = 'Z';
+                  *pout++ = *pc++;
+               }
+            }
+         }
+         else if (state == 'B')
+         {
+            state = 'X';
+
+            if (*pc && (*pc == 'S' || *pc == 'D'))
+            {
+               *pout++ = *pc++;
+               if (*pc && *pc == 'T')
+               {
+                  /* BDT or BST */
+                  state = 'Z';
+                  *pout++ = *pc++;
+               }
+            }
+         }
+         else if (state == 'C')
+         {
+            state = 'X';
+
+            if (*pc && (*pc == 'D' || *pc == 'E' || *pc == 'S'))
+            {
+               *pout++ = *pc++;
+               if (*pc && *pc == 'T')
+               {
+                  /* CDT, CET, or CST */
+                  state = 'Z';
+                  *pout++ = *pc++;
+               }
+            }
+         }
+         else if (state == 'E')
+         {
+            state = 'X';
+
+            if (*pc && (*pc == 'D' || *pc == 'E' || *pc == 'S'))
+            {
+               *pout++ = *pc++;
+               if (*pc && *pc == 'T')
+               {
+                  /* EDT, EET, or EST */
+                  state = 'Z';
+                  *pout++ = *pc++;
+               }
+            }
+         }
+         else if (state == 'G')
+         {
+            state = 'X';
+
+            if (*pc && *pc == 'M')
+            {
+               *pout++ = *pc++;
+               if (*pc && *pc == 'T')
+               {
+                  /* GMT */
+                  state = 'Z';
+                  *pout++ = *pc++;
+               }
+            }
+         }
+         else if (state == 'H')
+         {
+            state = 'X';
+
+            if (*pc && (*pc == 'D' || *pc == 'S'))
+            {
+               *pout++ = *pc++;
+               if (*pc && *pc == 'T')
+               {
+                  /* HDT or HST */
+                  state = 'Z';
+                  *pout++ = *pc++;
+               }
+            }
+         }
+         else if (state == 'J')
+         {
+            state = 'X';
+
+            if (*pc && (*pc == 'D' || *pc == 'S'))
+            {
+               *pout++ = *pc++;
+               if (*pc && *pc == 'T')
+               {
+                  /* JDT or JST */
+                  state = 'Z';
+                  *pout++ = *pc++;
+               }
+            }
+         }
+         else if (state == 'M')
+         {
+            state = 'X';
+
+            if (*pc && (*pc == 'D' || *pc == 'S'))
+            {
+               *pout++ = *pc++;
+               if (*pc && *pc == 'T')
+               {
+                  /* MDT or MST */
+                  state = 'Z';
+                  *pout++ = *pc++;
+               }
+            }
+         }
+         else if (state == 'N')
+         {
+            state = 'X';
+
+            if (*pc && (*pc == 'Z'))
+            {
+               *pout++ = *pc++;
+               if (*pc && (*pc == 'D' || *pc == 'S'))
+               {
+                  *pout++ = *pc++;
+                  if (*pc && *pc == 'T')
+                  {
+                     /* NZDT or NZST */
+                     state = 'Z';
+                     *pout++ = *pc++;
+                  }
+               }
+            }
+         }
+         else if (state == 'P')
+         {
+            state = 'X';
+
+            if (*pc && (*pc == 'D' || *pc == 'S'))
+            {
+               *pout++ = *pc++;
+               if (*pc && *pc == 'T')
+               {
+                  /* PDT or PST */
+                  state = 'Z';
+                  *pout++ = *pc++;
+               }
+            }
+         }
+         else if (state == 'S')
+         {
+            state = 'X';
+
+            if (*pc && *pc == 'S')
+            {
+               *pout++ = *pc++;
+               if (*pc && *pc == 'T')
+               {
+                  /* SST */
+                  state = 'Z';
+                  *pout++ = *pc++;
+               }
+            }
+         }
+         else if (state == 'Y')
+         {
+            state = 'X';
+
+            if (*pc && (*pc == 'D' || *pc == 'S'))
+            {
+               *pout++ = *pc++;
+               if (*pc && *pc == 'T')
+               {
+                  /* YDT or YST */
+                  state = 'Z';
+                  *pout++ = *pc++;
+               }
+            }
+         }
+         else if (state == 'W')
+         {
+            state = 'X';
+
+            if (*pc && (*pc == 'E' || *pc == 'S'))
+            {
+               *pout++ = *pc++;
+               if (*pc && *pc == 'T')
+               {
+                  /* WET or WST*/
+                  state = 'Z';
+                  *pout++ = *pc++;
+               }
+            }
+         }
+      }
+
+      if (size < 8)
+      {
+         fprintf(stderr, "parse_zone() buff size too small.\n");
+         err = 1;
+      }
+      else if (state == 'Z')
+      {
+         *pout = '\0';
+      }
+      else if (state == 'X')
+      {
+         fprintf(stderr, "Invalid time zone string '%s'.\n", zonestr);
+         err = 1;
+      }
+   }
+
+   if (zone)
+   {
+      free(zone);
+   }
+
+   return err;
+}
+
 int time_is_invalid (TIME t) {
   return (isnan (t) || t == JULIAN_DAY_ZERO);
 }
@@ -1077,20 +1622,31 @@ int parsetimestr (const char *timestr,
                   int **minute,
                   double **second,
                   char **zone,
-                  double **juliday) {
+                  double **juliday,
+                  int *consumedout) {
    int ret = 0;
    int status;
    char ls[256];
 
+   /* These 3 fields contain the original raw strings from which the date, 
+    * clock and time zone were determined. If there were only 2 fields, and
+    * the second field contained a time zone, then f2 == NULL and f3 = the time 
+    * zone. */
    char *f1 = NULL; /* date */
    char *f2 = NULL; /* clock time */
    char *f3 = NULL; /* time zone */
    int isjd = 0;
+   int consumed = 0;
 
    strncpy (ls, timestr, 255);
    ls[255] = '\0';
-   status = _parse_date_time_inner (ls, &f1, &f2, &f3, &isjd);
+   status = _parse_date_time_inner (ls, &f1, &f2, &f3, &isjd, &consumed);
    if (status != -1) {
+      if (consumedout)
+      {
+         *consumedout = consumed;
+      }
+
       if (!isjd)
       {
          /* YYYY.MM.DD is required in a time string (or juliday) */
@@ -1167,12 +1723,14 @@ int parsetimestr (const char *timestr,
       }
 
       /* Don't use the value of dattim.zone - it is not what was parsed. 
-       * Under the hood the value passed in might be changed to UTC. */
+       * Under the hood the value passed in might be changed to UTC. 
+       * If f3 is not NULL, then the timezone passed in was valid
+       */
       if (zone)
       {
-         if (f3 && zone_isvalid(dattim.zone))
+         if (f3)
          {
-            *zone = strdup(dattim.zone);         
+            *zone = strdup(f3);         
          }
          else
          {

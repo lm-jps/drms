@@ -720,27 +720,20 @@ static int drms_sscanf_int(const char *str,
 
        if (tokenstr)
        {
-	  char *lasts;
-	  char *ans = strtok_r(tokenstr, " -/,]", &lasts);
 	  int maybebad = 0;
 
-	  if (ans) {
-	     dst->time_val = sscan_time(ans);
-	     ret = (int)(strlen(tokenstr)); 
-	     maybebad = 
-	       (time_is_invalid(dst->time_val) && 
-		strcasecmp (ans, "nan") && strncasecmp (ans, "JD_0", 4));
+          /*"ext"  returns the number of parsed chars */
+          ret = sscan_time_ext(tokenstr, &dst->time_val);
 
-	     if (maybebad) {
-		if (!silent) 
-		  fprintf (stderr, "Potentially invalid time string '%s'.\n", str);
-	     }
-	  }
-	  else {
-	     if (!silent) 
-	       fprintf (stderr, "Invalid time string '%s'.\n", str);
-	  }
+          maybebad = 
+            (time_is_invalid(dst->time_val) && 
+             strcasecmp (tokenstr, "nan") && strncasecmp (tokenstr, "JD_0", 4));
 
+          if (maybebad) {
+             if (!silent) 
+               fprintf (stderr, "Potentially invalid time string '%s'.\n", str);
+          }
+	  
 	  free(tokenstr);
        }
 

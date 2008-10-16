@@ -235,6 +235,8 @@ extern const int kTIMEIO_MaxTimeEpochStr;
 */
 extern TIME sscan_time (char *s);
 
+int sscan_time_ext(char *s, TIME *out);
+
 /**
    @brief Converts an internal representation of time into a string representation
    of time.
@@ -327,7 +329,8 @@ int parsetimestr (const char *timestr,
                   int **minute,
                   double **second,
                   char **zone,
-                  double **juliday);
+                  double **juliday,
+                  int *consumedout);
 #endif
 /*
  *  Revision History

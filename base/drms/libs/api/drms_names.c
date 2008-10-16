@@ -712,62 +712,58 @@ static char *AdjTimeZone(const char *timestr, DRMS_Keyword_t *keyword, int *len)
 
    char *lasts;
    char *tokenstr = strdup(timestr);
+   *len = 0;
+
    if (tokenstr)
    {
-      char *ans = strtok_r(tokenstr, " -/,]", &lasts);
-      if (ans)
+      if (parsetimestr(tokenstr, &year, &month, &dofm, NULL, &hour, &minute, 
+                       &second, &zone, &juliday, len))
       {
-         *len = strlen(ans);
-
-         if (parsetimestr(tokenstr, &year, &month, &dofm, NULL, &hour, &minute, 
-                          &second, &zone, &juliday))
+         if (!zone)
          {
-            if (!zone)
+            /* Valid time, but no zone - append keyword's unit field. */
+            ret = malloc(256);
+
+            /* Either juliday must be not NULL or year/month/dofm must be present */
+            /* timeio automatically provides month = 1 and dofm = 1 if they 
+             * are not in the time string.  Ideally it wouldn't do that so you could 
+             * tell what fields were provided in the time string, but just work
+             * around that and assume those two fields exist. Same thing with 
+             * the hour/day/seconds fields - even if some are not in the time
+             * string, timeio adds them. But you can tell if NO clock field is
+             * in the time string, in which case all three are missing. Otherwise, 
+             * all three are present. */
+            if (juliday)
             {
-               /* Valid time, but no zone - append keyword's unit field. */
-               ret = malloc(256);
-
-               /* Either juliday must be not NULL or year/month/dofm must be present */
-               /* timeio automatically provides month = 1 and dofm = 1 if they 
-                * are not in the time string.  Ideally it wouldn't do that so you could 
-                * tell what fields were provided in the time string, but just work
-                * around that and assume those two fields exist. Same thing with 
-                * the hour/day/seconds fields - even if some are not in the time
-                * string, timeio adds them. But you can tell if NO clock field is
-                * in the time string, in which case all three are missing. Otherwise, 
-                * all three are present. */
-               if (juliday)
-               {
-                  snprintf(ret, 256, "JD_%f_%s", *juliday, keyword->info->unit);
-               }
-               else
-               {
-                  int hh = 0;
-                  int mm = 0;
-                  double sec = 0.0;
-
-                  XASSERT(year != NULL && month != NULL && dofm != NULL);
-
-                  if (hour)
-                  {
-                     hh = *hour;
-                  }
-
-                  if (minute)
-                  {
-                     mm = *minute;
-                  }
-
-                  if (second)
-                  {
-                     sec = *second;
-                  }
-
-                  snprintf(ret, 256, "%d.%d.%d_%d:%d:%f_%s", 
-                           *year, *month, *dofm, hh, mm, sec, keyword->info->unit);
-               }
-
+               snprintf(ret, 256, "JD_%f_%s", *juliday, keyword->info->unit);
             }
+            else
+            {
+               int hh = 0;
+               int mm = 0;
+               double sec = 0.0;
+
+               XASSERT(year != NULL && month != NULL && dofm != NULL);
+
+               if (hour)
+               {
+                  hh = *hour;
+               }
+
+               if (minute)
+               {
+                  mm = *minute;
+               }
+
+               if (second)
+               {
+                  sec = *second;
+               }
+
+               snprintf(ret, 256, "%d.%d.%d_%d:%d:%f_%s", 
+                        *year, *month, *dofm, hh, mm, sec, keyword->info->unit);
+            }
+
          }
       }
       else

@@ -54,6 +54,14 @@ void strtolower(char *str)
     str[i] = tolower(str[i]);
 }
 
+void strtoupper(char *str)
+{
+  int n,i;
+  n= strlen(str);
+  for (i=0;i<n;i++)
+    str[i] = toupper(str[i]);
+}
+
 /* Always NULL-terminates dst */
 size_t base_strlcat(char *dst, const char *src, size_t size)
 {
