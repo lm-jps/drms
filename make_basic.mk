@@ -8,15 +8,18 @@ DBNAME = POSTGRESQL
 # USED BY NEITHER linux_x86_64 nor linux_ia32
 PGIPATH	= /usr/include/pgsql	
 
-ifeq ($(JSOC_MACHINE), mac_osx) 
-COMPILER = gcc
-else
 COMPILER = icc
+ifeq ($(JSOC_MACHINE), mac_osx_ppc) 
+COMPILER = gcc
+endif
+ifeq ($(JSOC_MACHINE), mac_osx_ia32)
+COMPILER = gcc
 endif
 
 # Check for debug vs. release build - release is default.
-#   To do a debug build, either set the environment variable JSOC_DEBUG to 1, OR
-#   modify the following line so that DEBUG = 1.  The environment variable takes precedence.
+#  To do a debug build, either set the environment variable JSOC_DEBUG to 1, OR
+#  modify the following line so that DEBUG = 1.  The environment variable takes
+#  precedence.
 DEBUG = 1
 
 ifdef JSOC_DEBUG
@@ -30,8 +33,8 @@ endif
 # No warnings are displayed, by default, for a release build.
 WARN = 0
 
-# Builder can request warnings via environment variable (setenv JSOC_WARN 1).  The
-#   environment variable takes precedence.
+# Builder can request warnings via environment variable (setenv JSOC_WARN 1).
+#   The environment variable takes precedence.
 ifdef JSOC_WARN
 ifeq ($(JSOC_WARN), 1)
 WARN = 1
@@ -84,13 +87,21 @@ ifeq ($(JSOC_MACHINE), linux_ia32)
   GSLL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
   ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
 endif
-ifeq ($(JSOC_MACHINE), mac_osx) 
+ifeq ($(JSOC_MACHINE), mac_osx_ppc) 
 #    FMATHLIBS = -lmkl_lapack -lmkl -L$(_JSOCROOT_)/lib_third_party/lib/linux-ia32/ -lfftw3f -lcfitsio
-  # Path to 32-bit 3rd-party libraries
-  FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx/
-  CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx/
-  GSLL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx/
-  ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx/
+  # Path to appropriate 3rd-party libraries
+  FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ppc/
+  CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ppc/
+  GSLL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ppc/
+  ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ppc/
+endif
+ifeq ($(JSOC_MACHINE), mac_osx_ia32) 
+#    FMATHLIBS = -lmkl_lapack -lmkl -L$(_JSOCROOT_)/lib_third_party/lib/linux-ia32/ -lfftw3f -lcfitsio
+  # Path to appropriate 3rd-party libraries
+  FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ia32/
+  CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ia32/
+  GSLL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ia32/
+  ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ia32/
 endif
 
 # All 3rd-party math libraries - local rules can define a subset
