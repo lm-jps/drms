@@ -980,7 +980,18 @@ int drms_sscanf2(const char *str, const char *delim, int silent, DRMS_Type_t dst
    }
    else
    {
-      if ((ret = drms_sscanf_int(str, dsttype, &idst, silent)) <= 0)
+      ret = drms_sscanf_int(str, dsttype, &idst, silent);
+
+      if (dsttype == DRMS_TYPE_TIME)
+      {
+         /* Okay if nothing was consumed - sscan_time() considers any invalid string
+          * as JD_0.  No other data type works like this. */
+         if (ret < 0)
+         {
+            err = 1;
+         }
+      }
+      else if (ret <= 0)
       {
          err = 1;
       }

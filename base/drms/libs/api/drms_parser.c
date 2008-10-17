@@ -1548,7 +1548,8 @@ static int parse_keyword(char **in,
       key->value = vholder.value;
       memset(&(vholder.value), 0, sizeof(DRMS_Type_Value_t));
 
-      if (chused < 0 || (chused == 0 && key->info->type != DRMS_TYPE_STRING))
+      if (chused < 0 || 
+          (chused == 0 && key->info->type != DRMS_TYPE_STRING && key->info->type != DRMS_TYPE_TIME))
 	goto failure;
 #ifdef DEBUG      
       printf("Default value = '%s' = ",defval);

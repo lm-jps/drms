@@ -145,7 +145,6 @@ static double ut_leap_time[] = {
  */
 };
 
-static int parse_zone(const char *zonestr, char *out, int size);
 static void date_from_epoch_time (TIME t);
 static TIME epoch_time_from_julianday ();
 static double zone_adjustment_inner (char *zone, int *valid);
@@ -1188,10 +1187,7 @@ double zone_adjustment_inner (char *zone, int *valid) {
       hours = 'M' - zone[0];
       if (zone[0] == 'Z')
       {
-         /* BUG: sometimes 'Z' is valid */
         hours = 0;
-        if (valid)
-          *valid = 0; /* zone 'Z' means an invalid time zone was parsed. */
       }
     }
     dt += 3600.0 * hours;
@@ -1295,6 +1291,25 @@ int parse_zone(const char *zonestr, char *out, int size)
       else
       {
          err = 1;
+      }
+   }
+   else if (zone[0] == '+' || zone[1] == '-')
+   {
+      /* time zones or the format +XXX or -XXX */
+      char *endptr = NULL;
+      int tzlen = 0;
+
+      strtol(zone, &endptr, 10);
+      tzlen = endptr - zone;
+
+      if (size < tzlen + 1)
+      {
+         fprintf(stderr, "parse_zone() buff size too small.\n");
+         err = 1;
+      }
+      else
+      {
+         snprintf(out, tzlen + 1, "%s", zone);
       }
    }
    else

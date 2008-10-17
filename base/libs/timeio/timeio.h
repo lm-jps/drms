@@ -331,6 +331,8 @@ int parsetimestr (const char *timestr,
                   char **zone,
                   double **juliday,
                   int *consumedout);
+
+int parse_zone(const char *zonestr, char *out, int size);
 #endif
 /*
  *  Revision History

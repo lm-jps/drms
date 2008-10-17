@@ -542,6 +542,7 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg)
 	 char *unittmp = strdup(unit);
 	 char *endptr = NULL;
 	 int64_t val = strtod(format, &endptr);
+         char tmpout[64];
 
 	 if (val != 0 || endptr != format)
 	 {
@@ -551,7 +552,7 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg)
 	       formatn = val;
 	    }
 	 }
-	 else if (zone_isvalid(format))
+	 else if (!parse_zone(format, tmpout, sizeof(tmpout)))
 	 {
 	    /* format is a zone */
 	    snprintf(unit, DRMS_MAXUNITLEN, "%s", format);
