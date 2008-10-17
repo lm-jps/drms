@@ -67,28 +67,80 @@ Changes since previous release (V4.5 - July 16, 2008)
 -----------------------------------------------------
 
 NEW FEATURES: 
-* Added functions drms_series_cancreaterecord(), drms_series_candeleterecord(), and drms_series_canupdaterecord() that say whether the caller is able to modify records in a series.
-* Record-set chunking. You can use new API functions, drms_open_recordset() and drms_recordset_fetchnext(), that allow you to work with 'chunks' of records in memory. The old drms_open_records() places ALL records in memory. Working with chunks will minimize the memory footprint of your module. Also, sufficiently large queries (queries that result in a large number of records) are truncated with the drms_open_records() call, but not with the drms_open_recordset() call.  Currently, you must traverse the records from the first to the last, in the order returned by the drms_open_recordset() call.
-* libcmdparams.a's cmdparams structure now contains the original cmd-line arguments (use cmdparams_get_argv() to fetch them).
-* show_info now lists the archive, retention, and unitsize in the series info, and the sunum for each record for which information is printed.
-* There is now a way for a user to abort lookdata.html - useful for long queries.
-* Make support for building intel mac architectures. This does not mean that mac binaries will compile and run. It means that the make files will now allow an attempt to compile.
+* Added functions drms_series_cancreaterecord(),
+drms_series_candeleterecord(), and drms_series_canupdaterecord() that
+say whether the caller is able to modify records in a series.
+
+* Record-set chunking. You can use new API functions,
+drms_open_recordset() and drms_recordset_fetchnext(), that allow you
+to work with 'chunks' of records in memory. The old
+drms_open_records() places ALL records in memory. Working with chunks
+will minimize the memory footprint of your module. Also, sufficiently
+large queries (queries that result in a large number of records) are
+truncated with the drms_open_records() call, but not with the
+drms_open_recordset() call.  Currently, you must traverse the records
+from the first to the last, in the order returned by the
+drms_open_recordset() call.
+
+* libcmdparams.a's cmdparams structure now contains the original
+cmd-line arguments (use cmdparams_get_argv() to fetch them).
+
+* show_info now lists the archive, retention, and unitsize in the
+series info, and the sunum for each record for which information is
+printed.
+
+* There is now a way for a user to abort lookdata.html - useful for
+long queries.
+
+* Make support for building intel mac architectures. This does not
+mean that mac binaries will compile and run. It means that the make
+files will now allow an attempt to compile.
+
 * decode_hk now decodes double precision and single precision floats.
-* Initial implementation of iorbit_getinfo (calculates orbit information from FDS orbit data). It operates on FDS data in chunks, caching these "grid-point" orbits vectors for reuse in multiple calls to iorbit_getinfo.
+
+* Initial implementation of iorbit_getinfo (calculates orbit
+information from FDS orbit data). It operates on FDS data in chunks,
+caching these "grid-point" orbits vectors for reuse in multiple calls
+to iorbit_getinfo.
 
 BUG FIXES:
-* Control-C will now cleanly shut down drms modules. Previously, the server was terminated, but the client did not get the memo. So the client would keep trying to contact the server.  This could generate lots of debug messages, and at worst, crashes could occur.
-* Overhaul of parsing of record-set queries containing string values. Also, some problems with parsing time strings were fixed (like the failure when parsing negative time strings). Fix drms_sscanf() which is largely reponsible for parsing these values (it is now named drms_sscanf2()).
+
+* Control-C will now cleanly shut down drms modules. Previously, the
+server was terminated, but the client did not get the memo. So the
+client would keep trying to contact the server.  This could generate
+lots of debug messages, and at worst, crashes could occur.
+
+* Overhaul of parsing of record-set queries containing string
+values. Also, some problems with parsing time strings were fixed (like
+the failure when parsing negative time strings). Fix drms_sscanf()
+which is largely reponsible for parsing these values (it is now named
+drms_sscanf2()).
+
 * Fix many issues with "show_info -j" not producing valid .jsd files.
-* .jsd Fix: .jsd files with 'index' keywords were resulting in series without any dbindex.
-* Fix ingest_lev0 small_img segment - it was not putting the bzero/bscale values into the fits header.
-* Fix a crash in drms_query_bin(). The function was calculating a buffer length the wrong way (it should have used PQgetlength()).
+
+* .jsd Fix: .jsd files with 'index' keywords were resulting in series
+without any dbindex.
+
+* Fix ingest_lev0 small_img segment - it was not putting the
+bzero/bscale values into the fits header.
+
+* Fix a crash in drms_query_bin(). The function was calculating a
+buffer length the wrong way (it should have used PQgetlength()).
 
 PERFORMANCE:
-* Significant improvement in TAS-file and FITS-file slice access.
-* We modified the cfitsio source code to remove a file-buffering conflict - this improved FITS file re-reads performance dramatically.
-* When writing records to a TAS file, no longer are the superfluous and empty slot directories created.
-* Significant improvement in jsoc_info json library - removed an O(n^2) algorithm, and made reallocs more efficient. jsoc_info is used by lookdata.
 
-OTHER:
-* Global debug flag set back to 0 - by default, make will create release (no symbols) binaries.
+* Significant improvement in TAS-file and FITS-file slice access.
+
+* We modified the cfitsio source code to remove a file-buffering
+conflict - this improved FITS file re-reads performance dramatically.
+
+* When writing records to a TAS file, no longer are the superfluous
+and empty slot directories created.
+
+* Significant improvement in jsoc_info json library - removed an
+O(n^2) algorithm, and made reallocs more efficient. jsoc_info is used
+by lookdata.
+
+OTHER: 
+* Global debug flag set back to 0 - by default, make will
+create release (no symbols) binaries.
