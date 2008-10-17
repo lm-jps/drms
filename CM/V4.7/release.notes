@@ -1,0 +1,94 @@
+                       Release Notes JSOC V4.7         16Oct2008
+                       -----------------------         ---------
+
+
+A release is a set of files, each having a specific version.  And a release typcially
+has a version number because over time you have newer and newer releases of the 
+same product.  For example, a hypothetical 1.3 release may contain fileA#1.8, 
+fileB#1.2, fileC#2.2 and a 1.4 release may contain fileA#2.5, fileB#2.1, fileC#2.9. 
+JSOC releases are similarly versioned and contain a set of such files.  JSOC release
+code is guaranteed to compile on cluster nodes (eg., n00, n02).  The resulting binaries
+have been minimally tested.  At the time of the creation of the release, the
+release versions of each file will be the most recent.  But as time passes, newer versions 
+of some files will be made, and there is no guarantee that these changes will
+not destabilize JSOC (ie., they may cause JSOC to no longer compile or execute
+properly).  
+
+There are several ways to use this release.  If you wish to simply use pre-built
+binaries, you can simply use the production binaries, which are located at 
+/home/production/cvs/JSOC.  Every time a release is created, the binaries in
+this location get updated.  Only the production user can update these binaries.
+So, you could run /home/production/cvs/JSOC/bin/linux_x86_64/show_keys, for example.
+If instead you want to work with stable source files, then you must have a sandbox,
+which is a local copy (in your home directory) of the files in the cvs depot.  
+You would probably want to work with a sandbox if you plan on making eventual 
+changes to the depot files.  Changes you make to your sandbox files are not visible 
+to other users until you "commit" those changes back to the cvs depot.  Please see
+"If You Don't Have a Sandbox" below for more information on how to create a sandbox.  
+There is also a "working" release which resides in in /home/jsoc/cvs/JSOC.  New 
+files may be placed here and existing files may be edited for common use before the 
+next official release.  Each time a release gets created, the source and binaries of 
+the working release get updated.  WARNING: the files you see here may not be stable 
+since by the time you see them, another user may have edited them. Only the production 
+release is guaranteed to be stable and unchanged between releases.
+
+Obtaining the Release
+---------------------
+To update your working directory to this release, or to check-out this release anew, 
+please visit http://jsoc.stanford.edu/jsocwiki/CvsInit. Please keep in mind that
+users may have modified files since the release was created, so use of the 
+scripts documented in the web page may result in a working directory whose
+content is not identical to the release.  If updating, you can supply 
+the flag "-R" to the jsoc_update.pl and jsoc_sync.pl scripts to download the
+latest release.  This will ensure that your working directory has the exact, latest
+release versions of the files (eg., jsoc_sync.csh -R). If checking-out, 
+you can supply the argument "-r Ver_LATEST" to the "cvs checkout" command
+to achieve the analogous result, but for a fresh checkout.  WARNING: if you use 
+the "-R" or "-r" flags, please use only jsoc_update.pl or jsoc_sync.pl to update 
+your sources thereafter.  Use of "-R" or "-r Ver_LATEST" will result in a cvs
+"sticky flag" being set.  jsoc_update.pl and jsoc_sync.pl clear this sticky flag.
+
+Additional Info
+---------------
+If you are unfamiliar with the use of cvs see the file:
+JSOC/CM/working_with_sandbox.txt.
+
+There's a linux4 cvs gui at xim:/usr/bin/lincvs
+Also on our jsoc web page:
+
+http://jsoc.stanford.edu/cvs/JSOC/
+
+Use the Apache cvs gui to see the diffs. For example, go to
+http://jsoc.stanford.edu/cvs/JSOC/base/drms/
+and click on the name in the File column and then click on
+"diffs to previous #" to see the diffs.
+
+Changes since previous release (V4.5 - July 16, 2008)
+-----------------------------------------------------
+
+NEW FEATURES: 
+* Added functions drms_series_cancreaterecord(), drms_series_candeleterecord(), and drms_series_canupdaterecord() that say whether the caller is able to modify records in a series.
+* Record-set chunking. You can use new API functions, drms_open_recordset() and drms_recordset_fetchnext(), that allow you to work with 'chunks' of records in memory. The old drms_open_records() places ALL records in memory. Working with chunks will minimize the memory footprint of your module. Also, sufficiently large queries (queries that result in a large number of records) are truncated with the drms_open_records() call, but not with the drms_open_recordset() call.  Currently, you must traverse the records from the first to the last, in the order returned by the drms_open_recordset() call.
+* libcmdparams.a's cmdparams structure now contains the original cmd-line arguments (use cmdparams_get_argv() to fetch them).
+* show_info now lists the archive, retention, and unitsize in the series info, and the sunum for each record for which information is printed.
+* There is now a way for a user to abort lookdata.html - useful for long queries.
+* Make support for building intel mac architectures. This does not mean that mac binaries will compile and run. It means that the make files will now allow an attempt to compile.
+* decode_hk now decodes double precision and single precision floats.
+* Initial implementation of iorbit_getinfo (calculates orbit information from FDS orbit data). It operates on FDS data in chunks, caching these "grid-point" orbits vectors for reuse in multiple calls to iorbit_getinfo.
+
+BUG FIXES:
+* Control-C will now cleanly shut down drms modules. Previously, the server was terminated, but the client did not get the memo. So the client would keep trying to contact the server.  This could generate lots of debug messages, and at worst, crashes could occur.
+* Overhaul of parsing of record-set queries containing string values. Also, some problems with parsing time strings were fixed (like the failure when parsing negative time strings). Fix drms_sscanf() which is largely reponsible for parsing these values (it is now named drms_sscanf2()).
+* Fix many issues with "show_info -j" not producing valid .jsd files.
+* .jsd Fix: .jsd files with 'index' keywords were resulting in series without any dbindex.
+* Fix ingest_lev0 small_img segment - it was not putting the bzero/bscale values into the fits header.
+* Fix a crash in drms_query_bin(). The function was calculating a buffer length the wrong way (it should have used PQgetlength()).
+
+PERFORMANCE:
+* Significant improvement in TAS-file and FITS-file slice access.
+* We modified the cfitsio source code to remove a file-buffering conflict - this improved FITS file re-reads performance dramatically.
+* When writing records to a TAS file, no longer are the superfluous and empty slot directories created.
+* Significant improvement in jsoc_info json library - removed an O(n^2) algorithm, and made reallocs more efficient. jsoc_info is used by lookdata.
+
+OTHER:
+* Global debug flag set back to 0 - by default, make will create release (no symbols) binaries.
