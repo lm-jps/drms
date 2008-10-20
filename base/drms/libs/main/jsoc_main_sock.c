@@ -65,6 +65,7 @@ int JSOCMAIN_Init(int argc,
 {
    int status;
    int quiet;
+   int printrel = 0;
 
    if (cont)
    {
@@ -72,9 +73,6 @@ int JSOCMAIN_Init(int argc,
    }
 
    mn = module_name;
-
-   /* Initialize global things. */
-   drms_keymap_init(); /* If this slows down init too much, do on-demand init. */
 
 #ifdef DEBUG_MEM
    xmem_config (1, 1, 1, 1, 1000000, 1,0, 0); 
@@ -91,6 +89,21 @@ int JSOCMAIN_Init(int argc,
       fprintf (stderr, "Error: Command line parsing failed. Aborting.\n");
       fprintf (stderr, "For usage, type %s [-H|--help]\n", argv[0]);
       return 1;
+   }
+
+   printrel = cmdparams_isflagset(&cmdparams, kREL);
+   if (printrel)
+   {
+      char verstr[32];
+      int isdev = 0;
+
+      jsoc_getversion(verstr, sizeof(verstr), &isdev);
+      fprintf(stdout, 
+              "Module '%s' JSOC version is '%s' (%s)\n", 
+              module_name, 
+              verstr, 
+              isdev ? "development" : "release");
+      return 0;
    }
 
    *verbose = (cmdparams_exists (&cmdparams, "V") &&
@@ -164,7 +177,10 @@ int JSOCMAIN_Init(int argc,
 
    }
 
-   /* continue with calling module or otherwise interacing with DRMS. */
+   /* Initialize global things. */
+   drms_keymap_init(); /* If this slows down init too much, do on-demand init. */
+
+   /* continue with calling module or otherwise interacting with DRMS. */
    if (cont)
    {
       *cont = 1;

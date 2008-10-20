@@ -209,9 +209,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   DB_Handle_t *db_handle;
   char *dbhost, *dbuser, *dbpasswd, *dbname, *sessionns;
   pthread_t sigthreadID = 0;
-
-  /* Initialize global things. */
-  drms_keymap_init(); /* If this slows down init too much, do on-demand init. */
+  int printrel = 0;
 
 #ifdef DEBUG
   xmem_config(1,1,1,1,1000000,1,0,0); 
@@ -228,6 +226,21 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
     fprintf (stderr, "Error: Command line parsing failed. Aborting.\n");
     fprintf (stderr, "For usage, type %s [-H|--help]\n", argv[0]);
     return 1;
+  }
+
+  printrel = cmdparams_isflagset(&cmdparams, kREL);
+  if (printrel)
+  {
+     char verstr[32];
+     int isdev = 0;
+
+     jsoc_getversion(verstr, sizeof(verstr), &isdev);
+     fprintf(stdout, 
+             "Module '%s' JSOC version is '%s' (%s)\n", 
+             module_name, 
+             verstr, 
+             isdev ? "development" : "release");
+     return 0;
   }
 
   verbose = (cmdparams_exists (&cmdparams, "V") &&
@@ -276,6 +289,9 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
     fprintf(stderr,"Failure during server initialization.\n");
     return 1;
   }
+
+  /* Initialize global things. */
+  drms_keymap_init(); /* If this slows down init too much, do on-demand init. */
 
   /***************** Set up exit() and signal handling ********************/
 
