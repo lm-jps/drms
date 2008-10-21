@@ -1,5 +1,6 @@
 /**
-\defgroup masterlists masterlists
+\defgroup masterlists masterlists - create a database namespace and DRMS master tables for that namespace
+@ingroup su_admin
 
 Create DB namespace and master DRMS tables. This program prompts you
 for postgres DB password.

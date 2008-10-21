@@ -25,7 +25,8 @@
  */
 
 /**
-\defgroup retrieve_dir retrieve_dir
+\defgroup retrieve_dir retrieve_dir - retrieve a directory from SUMS
+@ingroup drms_util
 
 Retrieve an arbitrary directory of files from SUMS. Typically used
 to retrieve a directory stored in SUMS with \ref store_dir.

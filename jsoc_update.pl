@@ -25,6 +25,9 @@ my($rwd); # remote working directory
 my($mach);
 my(@rsp);
 
+# Each is a hash of hash references. There will be three elements in this hash: one for
+# the local machine, and one for each of the machines in @machines. For fs2mount, each hash
+# reference will be populated with mappings from a file system to a mount point.
 my(%fs2mount);
 my(%mount2fs);
 

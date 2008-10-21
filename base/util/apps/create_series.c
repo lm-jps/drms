@@ -1,5 +1,7 @@
 /**
-\defgroup create_series create_series
+\defgroup create_series create_series - create a new DRMS series from a .jsd file
+@ingroup drms_util
+
 
 Read a <a href="http://jsoc.stanford.edu/jsocwiki/Jsd">JSOC Series
 Definition file</a> and create the series table in the DRMS

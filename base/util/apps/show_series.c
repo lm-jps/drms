@@ -7,7 +7,9 @@
  */
 
 /**
-\defgroup show_series show_series
+\defgroup show_series show_series - lists currently available DRMS series
+@ingroup drms_util
+
 List all DRMS dataseries names.
 
 show_series lists the names of DRMS dataseries. If the \a -p flag is set,

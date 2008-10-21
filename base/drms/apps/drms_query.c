@@ -1,5 +1,6 @@
 /**
-\defgroup drms_query drms_query
+\defgroup drms_query drms_query - for each record specified, print the psql 'recnum' value, and optionally the record-directory path
+@ingroup drms_util
 
 Query recnum for given dataset names.
 

@@ -1,5 +1,6 @@
 /**
-\defgroup drms_log drms_log
+\defgroup drms_log drms_log - for each record, print the log's storage-unit path
+@ingroup drms_util
 
 Query session log SU and JSOC version for given dataset names.
 

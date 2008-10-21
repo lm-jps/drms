@@ -4,7 +4,8 @@
 
 ******************************************************-****************/
 /**
-\defgroup drms_server drms_server
+\defgroup drms_server drms_server - Manages a database session and passes database requests to database from client modules
+@ingroup drms_util
 
 Start a DRMS server program.
 

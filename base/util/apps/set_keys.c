@@ -5,7 +5,8 @@
 #include "drms_names.h"
 
 /**
-\defgroup set_keys set_keys
+\defgroup set_keys set_keys - for each existing record specified, modifies the keyword values or segment information, or create new records
+@ingroup drms_util
 
 Modify the keyword values of a DRMS record or create a new record with
 specified keyword values.

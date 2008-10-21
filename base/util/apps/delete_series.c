@@ -1,5 +1,6 @@
 /**
-\defgroup delete_series delete_series
+\defgroup delete_series delete_series - delete an existing DRMS series
+@ingroup drms_util
 
 Removes the data series from the DRMS database. This program SHOULD BE USED
 WITH GREAT CARE.  The program will ask you twice to confirm that you

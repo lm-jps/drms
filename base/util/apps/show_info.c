@@ -10,7 +10,8 @@
  */
 
 /**
-\defgroup show_info show_info
+\defgroup show_info show_info - for each record specified, prints keyword, segment, file information
+@ingroup drms_util
 
 Prints keyword, segment, and other information and/or file path for given recordset.
 

@@ -41,7 +41,8 @@
  */
 
 /**
-\defgroup store_file store_file
+\defgroup store_file store_file - store a file to SUMS
+@ingroup drms_util
 
 Store an arbitrary file to SUMS.  File stored with \ref
 store_file can be easily retrieved by the \ref retrieve_file utility.

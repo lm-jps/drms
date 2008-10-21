@@ -1,5 +1,6 @@
 /**
-\defgroup modify_series modify_series
+\defgroup modify_series modify_series - for a series, change the archive flag and/or add keywords as described in a .jsd file
+@ingroup drms_util
 
 Modify a series definition. It does one of the following:
  - Change archive flag

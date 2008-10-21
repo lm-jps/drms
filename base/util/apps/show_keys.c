@@ -9,9 +9,9 @@
  *	  requested series
  */
 
-/**
-\defgroup show_keys show_keys
+/* removed from doxygen module documentation - superceded by show_info */
 
+/**
 Prints keyword information and/or file path for given recordset.
 
 \ref show_keys can list the keyword names and values, and the segment

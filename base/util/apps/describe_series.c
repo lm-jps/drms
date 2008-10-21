@@ -1,5 +1,6 @@
 /**
-\defgroup describe_series describe_series
+\defgroup describe_series describe_series - print summary information about a series
+@ingroup drms_util
 
 Print the global information about the data series including summary
 information about:

@@ -35,7 +35,8 @@
  *    accessing your stored dir.
  */
 /**
-\defgroup store_dir store_dir
+\defgroup store_dir store_dir - store a directory of files to SUMS
+@ingroup drms_util
 
 Store arbitrary directory of files to SUMS.  Files stored with
 \ref store_dir can be easily retrieved by the \ref retrieve_dir utility.

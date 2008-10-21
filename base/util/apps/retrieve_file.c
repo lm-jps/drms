@@ -21,7 +21,8 @@
  */
 
 /** 
-\defgroup retrieve_file retrieve_file
+\defgroup retrieve_file retrieve_file - retrieve a file from SUMS
+@ingroup drms_util
 
 Retrieve an arbitrary file from SUMS. Typically used to retrieve 
 a file(s) stored in SUMS with \ref store_file.

@@ -113,54 +113,27 @@ in the html output.
 
 - List of the special commands you can use within your documentation
 blocks: http://www.stack.nl/~dimitri/doxygen/commands.html
+*/
 
-@defgroup drms_apps DRMS Application Programs
-@{
-    @addtogroup drms_server drms_server
-    @ingroup drms_apps
-    @addtogroup masterlists masterlists
-    @ingroup drms_apps
-@}
+
+/**
 @defgroup drms_util DRMS Utilities
-@{
-    @addtogroup show_keys show_keys
-    @ingroup drms_util
-    @addtogroup set_keys set_keys
-    @ingroup drms_util
-    @addtogroup store_file store_file
-    @ingroup drms_util
-    @addtogroup retrieve_file retrieve_file
-    @ingroup drms_util
-    @addtogroup store_dir store_dir
-    @ingroup drms_util
-    @addtogroup retrieve_dir retrieve_dir
-    @ingroup drms_util
-    @addtogroup create_series create_series
-    @ingroup drms_util
-    @addtogroup delete_series delete_series
-    @ingroup drms_util
-    @addtogroup describe_series describe_series
-    @ingroup drms_util
-    @addtogroup modify_series modify_series
-    @ingroup drms_util
-    @addtogroup show_series show_series
-    @ingroup drms_util
-    @addtogroup drms_query drms_query
-    @ingroup drms_util
-    @addtogroup drms_log drms_log
-    @ingroup drms_util
-    @addtogroup jsoc_main module
-    @ingroup drms_util
-    @addtogroup time_convert time_convert
-    @ingroup drms_util
-@}
+*/
 
-@defgroup su_apps Stanford Application Programs
-@{
-   @addtogroup hmi_import_egse_lev0 hmi_import_egse_lev0
-   @ingroup su_apps
-@}
+/**
+@defgroup su_apps Stanford University Applications
+*/
+/* @{ */
+/**
+        @defgroup su_admin Administrative Utilities
+        @defgroup su_util General Utilities
+        @defgroup su_migration Data Migration
+        @defgroup su_export Data Export
+        @defgroup su_lev0 Level Zero
+*/
+/* @} */
 
+/**
 @addtogroup core_api Core DRMS API functions
 - ::drms_open_records
 - ::drms_create_records

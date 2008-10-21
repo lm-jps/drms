@@ -1,5 +1,5 @@
 /**
-\defgroup jsoc_main module
+\defgroup jsoc_main DRMS Module Reference
 
 Execute the named @a module from a shell.  When a module is executed
 from the command line, all argument values listed in the module are supplied
