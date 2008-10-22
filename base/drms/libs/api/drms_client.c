@@ -170,6 +170,51 @@ DRMS_Session_t *drms_connect_direct(char *dbhost, char *dbuser,
   }
   return session;
 }
+
+DRMS_Session_t *drms_connect_direct_toport (char *dbhost, char *dbport,
+    char *dbuser, char *dbpasswd, char *dbname, char *sessionns) {
+  DRMS_Session_t *session;
+
+  XASSERT( session = malloc (sizeof (DRMS_Session_t)));
+  memset (session, 0, sizeof (DRMS_Session_t));
+  session->db_direct = 1;
+			       /*  Set client variables to some null values  */
+  session->port = -1;
+  session->sockfd = -1;
+			       /*  Authenticate and connect to the database  */
+  if ((session->db_handle = db_connect_toport (dbhost, dbport, dbuser,dbpasswd,
+      dbname,1)) == NULL) {
+    fprintf (stderr,"Couldn't connect to database.\n");
+    free (session);
+    session = NULL;
+  }
+  if (sessionns) session->sessionns = sessionns;
+  else {
+				      /*  get the default session namespace  */
+    DB_Text_Result_t *tresult;
+    char query[1024];
+				      /*  test existance of sessionns table  */
+    sprintf (query, "select c.relname from pg_class c, pg_namespace n where n.oid = c.relnamespace and n.nspname='admin' and c.relname='sessionns'");
+    tresult = db_query_txt (session->db_handle, query);
+    if (tresult->num_rows) {
+      db_free_text_result (tresult);    
+      sprintf (query, "select sessionns from admin.sessionns where username='%s'", session->db_handle->dbuser);
+      tresult = db_query_txt (session->db_handle, query);
+      if (tresult->num_rows)
+	session->sessionns = strdup (tresult->field[0][0]);
+      else goto bailout;
+    }
+    db_free_text_result(tresult);
+    return session;
+bailout:
+    fprintf (stderr, "Can't get default session namespace\n");
+    free (session);
+    session = NULL;
+    db_free_text_result (tresult);
+  }
+  return session;
+}
+
 #endif
 
 
