@@ -94,7 +94,9 @@ DRMS_Env_t *drms_open (char *host, char *user, char *password, char *dbname,
     p = hostname;
     while (*p && *p != ':') ++p;
   }
-  if (host && *p==':') {			 /*  Connect to DRMS server  */
+#ifdef DRMS_CLIENT
+						 /*  Connect to DRMS server  */
+  if (host && *p== ':') {
     *p = 0;
     ++p;
     port = (unsigned short) atoi (p);
@@ -106,8 +108,19 @@ DRMS_Env_t *drms_open (char *host, char *user, char *password, char *dbname,
     if ((env->session = drms_connect (hostname, port)) == NULL)
       goto bailout;
   } else {
-#ifndef DRMS_CLIENT
-    /*  This is a server initalizing  */
+    fprintf (stderr, "Port number missing from hostname.\n");
+    goto bailout;
+  }
+  if (drms_cache_init (env)) goto bailout;
+#else
+					  /*  This is a server initializing  */
+  if (host && *p == ':') {
+    *p = 0;
+    ++p;
+    port = (unsigned short) atoi (p);
+    if ((env->session = drms_connect_direct_toport (hostname, port, user,
+	password, dbname, sessionns)) == NULL) goto bailout;
+  } else
     if ((env->session = drms_connect_direct (host, user, password, dbname,
 	sessionns)) == NULL) goto bailout;
 
@@ -115,20 +128,11 @@ DRMS_Env_t *drms_open (char *host, char *user, char *password, char *dbname,
     // record)  will be initialized in
     // drms_server_begin_transaction().
 
-    env->templist = NULL;
-    env->retention = -1;
-    env->query_mem = 512;
-    env->verbose = 0;
-#else
-    fprintf (stderr, "Port number missing from hostname.\n");
-    goto bailout;
+  env->templist = NULL;
+  env->retention = -1;
+  env->query_mem = 512;
+  env->verbose = 0;
 #endif
-  }
-
-#ifdef DRMS_CLIENT
-  if (drms_cache_init(env)) goto bailout;
-#endif
-
   return env;
 
 bailout:
