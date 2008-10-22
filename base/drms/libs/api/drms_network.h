@@ -26,6 +26,8 @@ DRMS_Session_t *drms_connect(char *host, unsigned short port);
 DRMS_Session_t *drms_connect_direct(char *host, char *user, 
 				    char *passwd, char *dbname,
 				    char *sessionns);
+DRMS_Session_t *drms_connect_direct_toport (char *dbhost, char *dbport,
+    char *dbuser, char *dbpasswd, char *dbname, char *sessionns);
 /** \brief Tell DB to commit transaction 
 \warning This function should not be used unless you know what you are doing.
 */
