@@ -283,15 +283,15 @@ int kick_next_entry_rd() {
     setkey_int(&p->list, "dnum", d);
     setkey_int(&p->list, "snum", snum);
     if(tapeid = drives[d].tapeid) {	/* must unload current tape */
-      sprintf(cmd, "mtx -f %s unload %d %d 1> /data1/tmp/mtx_robot_%d.log 2>&1", 
+      sprintf(cmd, "mtx -f %s unload %d %d 1> /tmp/mtx/mtx_robot_%d.log 2>&1", 
   		libdevname, (drives[d].slotnum)+1, d, robotcmdseq++);
       setkey_str(&p->list, "cmd1", cmd);
-      sprintf(cmd,"mtx -f %s load %d %d 1> /data1/tmp/mtx_robot_%d.log 2>&1", 
+      sprintf(cmd,"mtx -f %s load %d %d 1> /tmp/mtx/mtx_robot_%d.log 2>&1", 
   		libdevname, snum+1, d, robotcmdseq++);
       setkey_str(&p->list, "cmd2", cmd);
     }
     else {
-      sprintf(cmd,"mtx -f %s load %d %d 1> /data1/tmp/mtx_robot_%d.log 2>&1", 
+      sprintf(cmd,"mtx -f %s load %d %d 1> /tmp/mtx/mtx_robot_%d.log 2>&1", 
   		libdevname, snum+1, d, robotcmdseq++);
       setkey_str(&p->list, "cmd1", cmd);
     }
@@ -513,15 +513,15 @@ int kick_next_entry_wt() {
     setkey_int(&p->list, "dnum", d);
     setkey_int(&p->list, "snum", snum);
     if(tapeid = drives[d].tapeid) {	/* must unload current tape */
-      sprintf(cmd, "mtx -f %s unload %d %d 1> /data1/tmp/mtx_robot_%d.log 2>&1", 
+      sprintf(cmd, "mtx -f %s unload %d %d 1> /tmp/mtx/mtx_robot_%d.log 2>&1", 
   		libdevname, (drives[d].slotnum)+1, d, robotcmdseq++);
       setkey_str(&p->list, "cmd1", cmd);
-      sprintf(cmd,"mtx -f %s load %d %d 1> /data1/tmp/mtx_robot_%d.log 2>&1", 
+      sprintf(cmd,"mtx -f %s load %d %d 1> /tmp/mtx/mtx_robot_%d.log 2>&1", 
   		libdevname, snum+1, d, robotcmdseq++);
       setkey_str(&p->list, "cmd2", cmd);
     }
     else {
-      sprintf(cmd,"mtx -f %s load %d %d 1> /data1/tmp/mtx_robot_%d.log 2>&1", 
+      sprintf(cmd,"mtx -f %s load %d %d 1> /tmp/mtx/mtx_robot_%d.log 2>&1", 
   		libdevname, snum+1, d, robotcmdseq++);
       setkey_str(&p->list, "cmd1", cmd);
     }
@@ -980,7 +980,7 @@ KEY *taperespwritedo_1(KEY *params) {
       setkey_str(&xlist, "OP", "mv");
       setkey_int(&xlist, "dnum", dnum);
       setkey_int(&xlist, "snum", slotnum);
-      sprintf(cmd, "mtx -f %s unload %d %d 1> /data1/tmp/mtx_robot_%d.log 2>&1",
+      sprintf(cmd, "mtx -f %s unload %d %d 1> /tmp/mtx/mtx_robot_%d.log 2>&1",
                 libdevname, slotnum+1, dnum, robotcmdseq++);
       setkey_str(&xlist, "cmd1", cmd);
       setkey_int(&xlist, "DEBUGFLG", 0);
@@ -1068,7 +1068,7 @@ KEY *taperespwritedo_1(KEY *params) {
       setkey_str(&xlist, "OP", "mv");
       setkey_int(&xlist, "dnum", dnum);
       setkey_int(&xlist, "snum", slotnum);
-      sprintf(cmd, "mtx -f %s unload %d %d 1> /data1/tmp/mtx_robot_%d.log 2>&1",
+      sprintf(cmd, "mtx -f %s unload %d %d 1> /tmp/mtx/mtx_robot_%d.log 2>&1",
                 libdevname, slotnum+1, dnum, robotcmdseq++);
       setkey_str(&xlist, "cmd1", cmd);
       setkey_int(&xlist, "DEBUGFLG", 0);
@@ -1683,15 +1683,15 @@ KEY *impexpdo_1(KEY *params)
     setkey_int(&xlist, "snum", slotnum);
     if(tapeid = drives[cleandrive].tapeid) { /* unload the current tape */
       slotnum = drives[cleandrive].slotnum;
-      sprintf(cmd, "mtx -f %s unload %d %d 1> /data1/tmp/mtx_robot_%d.log 2>&1",
+      sprintf(cmd, "mtx -f %s unload %d %d 1> /tmp/mtx/mtx_robot_%d.log 2>&1",
                 libdevname, slotnum+1, cleandrive, robotcmdseq++);
       setkey_str(&xlist, "cmd1", cmd);
-      sprintf(cmd, "mtx -f %s load %d %d 1> /data1/tmp/mtx_robot_%d.log 2>&1",
+      sprintf(cmd, "mtx -f %s load %d %d 1> /tmp/mtx/mtx_robot_%d.log 2>&1",
 		libdevname, cleanslot, cleandrive, robotcmdseq++);
       setkey_str(&xlist, "cmd2", cmd);
     }
     else {			/* just load the cleaning tape */
-      sprintf(cmd, "mtx -f %s load %d %d 1> /data1/tmp/mtx_robot_%d.log 2>&1",
+      sprintf(cmd, "mtx -f %s load %d %d 1> /tmp/mtx/mtx_robot_%d.log 2>&1",
                 libdevname, cleanslot, cleandrive, robotcmdseq++);
       setkey_str(&xlist, "cmd1", cmd);
     }
@@ -1728,7 +1728,7 @@ KEY *impexpdo_1(KEY *params)
     setkey_str(&xlist, "OP", "clean_robot_unload");
     setkey_int(&xlist, "dnum", cleandrive);
     setkey_int(&xlist, "snum", cleanslot);
-    sprintf(cmd, "mtx -f %s unload %d %d 1> /data1/tmp/mtx_robot_%d.log 2>&1",
+    sprintf(cmd, "mtx -f %s unload %d %d 1> /tmp/mtx/mtx_robot_%d.log 2>&1",
                 libdevname, cleanslot, cleandrive, robotcmdseq++);
     setkey_str(&xlist, "cmd1", cmd);
     setkey_int(&xlist, "DEBUGFLG", 0);
@@ -1819,7 +1819,7 @@ KEY *impexpdo_1(KEY *params)
       if(full_impexp_slotnum_internal[i] == -1) continue;
       eeslot = full_impexp_slotnum_internal[i];
       snum = empty_slotnum_internal[j];
-      sprintf(cmd, "mtx -f %s transfer %d %d 1> /data1/tmp/mtx_robot_%d.log 2>&1",
+      sprintf(cmd, "mtx -f %s transfer %d %d 1> /tmp/mtx/mtx_robot_%d.log 2>&1",
                 libdevname, eeslot+1, snum+1, robotcmdseq++);
       sprintf(ext, "cmd_%d", j++);
       setkey_str(&xlist, ext, cmd);
@@ -1888,11 +1888,11 @@ KEY *impexpdo_1(KEY *params)
     }
     slots[eeslot].tapeid = tid;	
     if(snum == -1) {			//tape is in a drive
-      sprintf(cmd, "mtx -f %s unload %d %d 1> /data1/tmp/mtx_robot_%d.log 2>&1",
+      sprintf(cmd, "mtx -f %s unload %d %d 1> /tmp/mtx/mtx_robot_%d.log 2>&1",
                 libdevname, eeslot+1, dnum, robotcmdseq++);
     }
     else {
-      sprintf(cmd, "mtx -f %s transfer %d %d 1> /data1/tmp/mtx_robot_%d.log 2>&1",
+      sprintf(cmd, "mtx -f %s transfer %d %d 1> /tmp/mtx/mtx_robot_%d.log 2>&1",
                 libdevname, snum+1, eeslot+1, robotcmdseq++);
     }
     sprintf(ext, "cmd_%d", i);
@@ -2021,7 +2021,7 @@ KEY *dronoffdo_1(KEY *params)
       setkey_str(&xlist, "OP", "mv");
       setkey_int(&xlist, "dnum", drivenum);
       setkey_int(&xlist, "snum", slotnum);
-      sprintf(cmd, "mtx -f %s unload %d %d 1> /data1/tmp/mtx_robot_%d.log 2>&1",
+      sprintf(cmd, "mtx -f %s unload %d %d 1> /tmp/mtx/mtx_robot_%d.log 2>&1",
                 libdevname, slotnum+1, drivenum, robotcmdseq++);
       setkey_str(&xlist, "cmd1", cmd);
       setkey_int(&xlist, "DEBUGFLG", 0);
