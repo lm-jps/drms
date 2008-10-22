@@ -9,7 +9,7 @@ $GREPPS = "388";
 #$GREPPS = "jim";
 $HOST0 = "dcs0"; #this program can run here
 $HOST1 = "dcs1"; #or here
-$HOST1 = "dcs2"; #or here
+$HOST2 = "dcs2"; #or here
 $HOST3 = "dcs3"; #or here temporarily
 
 $user = $ENV{'USER'};
