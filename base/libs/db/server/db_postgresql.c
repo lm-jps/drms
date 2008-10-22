@@ -137,6 +137,49 @@ DB_Handle_t *db_connect(const char *host, const char *user,
 }
 
     
+DB_Handle_t *db_connect_toport (const char *host, const unsigned short port,
+    const char *user, const char *passwd, const char *db_name, const int lock) {
+  DB_Handle_t  *handle;
+  PGconn *db;
+  char *p, conninfo[8192] = {0};
+	/*  If any of the authentication information is missing
+					    rely on ~/.pgpass to contain it  */
+  p = conninfo;
+  if (host) {
+    if (isdigit (host[0])) p += sprintf (p, "hostaddr = %s ",host);
+    else if (strcmp (host,"localhost"))
+      p += sprintf (p, "host = %s ",host); 
+  }
+  if (port) p += sprintf (p, "port = %d ", port); 
+  if (db_name) p += sprintf (p, "dbname = %s ", db_name); 
+  if (user) p += sprintf (p, "user = %s ", user); 
+  if (passwd) p += sprintf (p, "password = %s ", passwd); 
+
+  db = PQconnectdb (conninfo);
+  if (PQstatus(db) != CONNECTION_OK) {
+    fprintf (stderr, "Connection to database '%s' failed.\n", PQdb(db));
+    fprintf (stderr, "%s", PQerrorMessage(db));
+    PQfinish (db);
+    return NULL;
+  }
+					    /*  Initialize DB handle struct  */
+  XASSERT( handle = malloc (sizeof (DB_Handle_t)) );
+  strncpy (handle->dbhost, PQhost (db), 1024);
+  strncpy (handle->dbname, PQdb (db), 1024);
+  strncpy (handle->dbuser, PQuser (db), 1024);
+  handle->db_connection = (void *)db;
+  handle->abort_now = 0;
+  handle->stmt_num = 0; 
+  handle->isolation_level = DB_TRANS_READCOMMIT;
+  if (lock) {
+    XASSERT( handle->db_lock = malloc (sizeof (pthread_mutex_t)) );
+    pthread_mutex_init (handle->db_lock, NULL);
+  } else handle->db_lock = NULL;
+
+  return handle;
+}
+
+    
 void db_disconnect(DB_Handle_t  *dbin)
 {
   if (dbin)
