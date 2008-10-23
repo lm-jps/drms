@@ -418,6 +418,8 @@ struct DRMS_RecSetCursor_struct
   int lastchunk; 
   /** \brief The relative index of the current record in the downloaded chunk 0 <= currentrec <= chunksize */
   int currentrec;
+  /** \brief For each record-set query, 1 means there was a [! ... !] query */
+  int *allvers;
 };
 
 /** \brief DRMS cursor struct reference */

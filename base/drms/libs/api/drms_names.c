@@ -178,7 +178,7 @@ static RecordSet_Filter_t *parse_record_set_filter(DRMS_Record_t *template,
     /* dont do this twice?
     memset(rsp,0,sizeof(RecordSet_Filter_t));
     */
-    if (*p=='?')
+    if (*p=='?' || *p=='!')
     {
       rsp->type = RECORDQUERY;
       if ((rsp->record_query = parse_record_query(&p))==NULL && 
@@ -227,8 +227,11 @@ static RecordQuery_t *parse_record_query(char **in)
 #ifdef DEBUG
   printf("enter parse_record_query\n");
 #endif
-  if (*p++ =='?')
+  char endchar = *p;
+
+  if (*p =='?' || *p == '!')
   {
+    p++;
     XASSERT(query = malloc(sizeof(RecordQuery_t)));
     memset(query,0,sizeof(RecordQuery_t));
     out = query->where;
@@ -255,9 +258,9 @@ static RecordQuery_t *parse_record_query(char **in)
              ilen++;
           }
        }
-       else if (*p == '?')
+       else if (*p == endchar)
        {
-          /* if char after '?' is r bracket, done */
+          /* if char after '?'/'!' is r bracket, done */
           if (*(p + 1) == ']')
           {
              break;
@@ -270,7 +273,7 @@ static RecordQuery_t *parse_record_query(char **in)
        }
     }
 
-    if (*p++ =='?')
+    if (*p++ == endchar)
     {
       *out-- = '\0';
       /* Remove trailing whitespace. */
@@ -279,14 +282,14 @@ static RecordQuery_t *parse_record_query(char **in)
     }
     else
     {
-      fprintf(stderr,"Embedded SQL query should end with '?', query is:%s.\n",*in);
+      fprintf(stderr,"Embedded SQL query should end with '%c', query is:%s.\n", endchar, *in);
       free(query);
       goto error;
     }
   }
   else
   {
-    fprintf(stderr,"Embedded SQL query should start with '?', found '%c', then '%s'.\n", *(p-1), p);
+    fprintf(stderr,"Embedded SQL query should start with '%c', found '%c', then '%s'.\n", endchar, *p, ++p);
     goto error;
   }
 #ifdef DEBUG

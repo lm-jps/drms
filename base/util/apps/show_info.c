@@ -362,7 +362,7 @@ int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status)
         goto failure;
 
   stat = 1;
-  query = drms_query_string(env, seriesname, where, filter, mixed, DRMS_QUERY_COUNT, NULL);
+  query = drms_query_string(env, seriesname, where, filter, mixed, DRMS_QUERY_COUNT, NULL, 0);
       if (!query)
         goto failure;
 

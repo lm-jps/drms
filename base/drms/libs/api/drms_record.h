@@ -44,6 +44,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 					     char *recordsetname, 
 					     int retrieverecs, 
 					     LinkedList_t **llistout,
+                                             char **allversout,
 					     int *status);
 
 /**
@@ -357,7 +358,8 @@ static inline DRMS_Record_t *drms_recordset_getrec(DRMS_RecordSet_t *rs, long lo
 char *drms_query_string(DRMS_Env_t *env, 
 			const char *seriesname,
 			char *where, int filter, int mixed,
-			DRMS_QueryType_t qtype, char *fl);
+			DRMS_QueryType_t qtype, char *fl,
+                        int allvers);
 
 /* Chunking record queries */
 int drms_recordset_setchunksize(unsigned int size);
