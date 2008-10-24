@@ -354,10 +354,6 @@ int drms_strval(DRMS_Type_t type, DRMS_Type_Value_t *val, char *str)
     break;
   case DRMS_TYPE_TIME: 
     val->time_val = sscan_time (str);
-    if (time_is_invalid (val->time_val)) {
-      fprintf (stderr, "ERROR: Invalid time string %s\n", str);
-      XASSERT(0);
-    }
     break;
   case DRMS_TYPE_STRING: 
     copy_string(&val->string_val, str);

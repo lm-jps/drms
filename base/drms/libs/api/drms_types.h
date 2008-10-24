@@ -146,10 +146,10 @@ typedef struct DRMS_Value
 /** \brief DRMS C string missing value */
 #define DRMS_MISSING_STRING   ("")
 /** \brief DRMS time missing value */
-#define DRMS_MISSING_TIME     (-211087684800.0) 
+#define DRMS_MISSING_TIME     (-211087684832.184) 
 /* equal to '-4712.01.01_12:00:00.000_UT' which is the time value used
    missing in the MDI/SDS system. */
-#define _DRMS_IS_T_MISSING(v)  (isnan(value) || DRMS_MISSING_TIME == value)
+#define _DRMS_IS_T_MISSING(v) (isnan(v) || (v < DRMS_MISSING_TIME + 10.0e-5 && v > DRMS_MISSING_TIME - 10.0e-5))
 
 #define TSEQ_EPOCH_S MDI_EPOCH_S
 #define TSEQ_EPOCH_F MDI_EPOCH_F

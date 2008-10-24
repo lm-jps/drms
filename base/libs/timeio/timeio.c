@@ -1618,7 +1618,7 @@ int parse_zone(const char *zonestr, char *out, int size)
 }
 
 int time_is_invalid (TIME t) {
-  return (isnan (t) || t == JULIAN_DAY_ZERO);
+  return (isnan (t) || (t < JULIAN_DAY_ZERO + 10.0e-5 && t > JULIAN_DAY_ZERO - 10.0e-5));
 }
 
 /* Returns 1 is the time string is a valid time. */
