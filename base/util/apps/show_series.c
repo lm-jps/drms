@@ -177,7 +177,7 @@ if (filter)
     }
   else
     filterNOT = 0;
-  if (regcomp((regex_t *)seriesfilter, filter, (REG_EXTENDED | REG_ICASE)))
+  if (regcomp((regex_t *)seriesfilter, filter, (REG_EXTENDED | REG_ICASE | REG_NOSUB)))
     {
     status = SS_FORMATERROR;
     goto Failure;
@@ -249,7 +249,12 @@ for (iseries=0; iseries<nseries; iseries++)
 	  printf("\",");
       if (want_JSON)
 	{
-	printf("\"note\":\"%s\"}",description);
+        char *json_escape(char *desc);
+fprintf(stderr,"show_series desc=%s\n",description);
+        char *desc_escaped = json_escape(description);
+fprintf(stderr,"show_series desc_escaped==%s\n",desc_escaped);
+	printf("\"note\":\"%s\"}",desc_escaped);
+	free(desc_escaped);
 	}
       else
 	{
@@ -283,3 +288,79 @@ if (want_JSON)
 else
   printf("show_keys error: %s\n",SS_ERRORS[status]);
 }
+
+
+char * json_escape (char * text)
+  {
+  char *output, *op;
+  size_t i, length;
+  char buffer[6];
+  /* check if pre-conditions are met */
+  assert (text != NULL);
+
+  /* defining the temporary variables */
+  length = strlen(text);
+  op = output = (char *)malloc(length*6*sizeof(char)); //upper bound
+  if (output == NULL)
+	return NULL;
+  for (i = 0; i < length; i++)
+        {
+	if (text[i] == '\\')
+                {
+		*output++ = '\\';
+		*output++ = '\\';
+                }
+	else if (text[i] == '\"')
+                {
+		*output++ = '\\';
+		*output++ = '"';
+                }
+	else if (text[i] == '/')
+                {
+		*output++ = '\\';
+		*output++ = '/';
+                }
+	else if (text[i] == '\b')
+                {
+		*output++ = '\\';
+		*output++ = 'b';
+                }
+	else if (text[i] == '\f')
+                {
+		*output++ = '\\';
+		*output++ = 'f';
+                }
+	else if (text[i] == '\n')
+                {
+		*output++ = '\\';
+		*output++ = 'n';
+                }
+	else if (text[i] == '\r')
+                {
+		*output++ = '\\';
+		*output++ = 'r';
+                }
+	else if (text[i] == '\t')
+                {
+		*output++ = '\\';
+		*output++ = 't';
+                }
+	else if (text[i] < 0)   /* non-BMP character */
+                {
+		*output++ = text[i];
+                }
+	else if (text[i] < 0x20)
+                {
+		sprintf(buffer,"\\u%4.4x",text[i]);
+		strncpy(output,buffer,6);
+		output += 6;
+                }
+	else
+                {
+		*output++ = text[i];
+                }
+        }
+  *output = '\0';
+  return (op);
+  }
+                                                                                                           
