@@ -356,13 +356,14 @@ int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status)
   char *query=NULL, *where=NULL, *seriesname=NULL;
   int count = 0;
   DB_Text_Result_t *tres;
+  int allvers = 0;
 
-  stat = drms_recordset_query(env, recordsetname, &where, &seriesname, &filter, &mixed);
+  stat = drms_recordset_query(env, recordsetname, &where, &seriesname, &filter, &mixed, &allvers);
       if (stat)
         goto failure;
 
   stat = 1;
-  query = drms_query_string(env, seriesname, where, filter, mixed, DRMS_QUERY_COUNT, NULL, 0);
+  query = drms_query_string(env, seriesname, where, filter, mixed, DRMS_QUERY_COUNT, NULL, allvers);
       if (!query)
         goto failure;
 

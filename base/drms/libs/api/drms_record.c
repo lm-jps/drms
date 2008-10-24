@@ -1495,7 +1495,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 		 }
 	      
 		 TIME(stat = drms_recordset_query(env, actualSet, &query, &seriesname, 
-					       &filter, &mixed));
+					       &filter, &mixed, NULL));
 
                  if (actualSet)
                  {

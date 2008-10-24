@@ -38,6 +38,10 @@ typedef struct RecordSet_struct
 
   /* Semantic information. */
   DRMS_Record_t *template; /* Series template. */
+
+  /* Flag indicating whether there was a [! ... !] filter or not.
+   * If so then all psql record versions of a DRMS record are being requested. */
+  int allvers;
 } RecordSet_t;
 
 
@@ -154,7 +158,7 @@ RecordSet_t *parse_record_set(DRMS_Env_t *env, char **in);
 void free_record_set(RecordSet_t *rs);
 int sql_record_set(RecordSet_t *rs, char *seriesname, char *query);
 int drms_recordset_query(DRMS_Env_t *env, char *recordsetname, 
-			 char **query, char **seriesname, int *filter, int *mixed);
+			 char **query, char **seriesname, int *filter, int *mixed, int *allvers);
 int drms_names_parseduration(char **in, double *duration);
 int drms_names_parsedegreedelta(char **deltastr, DRMS_SlotKeyUnit_t *unit, double *delta);
 

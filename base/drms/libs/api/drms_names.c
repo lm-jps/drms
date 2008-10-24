@@ -9,7 +9,8 @@
 
 static int parse_name(char **in, char *out, int maxlen);
 static RecordSet_Filter_t *parse_record_set_filter(DRMS_Record_t *template, 
-						    char **in);
+                                                   char **in,
+                                                   int *allvers);
 static RecordQuery_t *parse_record_query(char **in);
 static RecordList_t *parse_record_list(DRMS_Record_t *template, char **in);
 static PrimekeyRangeSet_t *parse_primekey_set(DRMS_Keyword_t *keyword, 
@@ -33,6 +34,7 @@ RecordSet_t *parse_record_set(DRMS_Env_t *env, char **in)
   int status;
   char *p = *in;
   RecordSet_t *rs;
+  int allvers = 0;
 
 #ifdef DEBUG
   printf("enter parse_record_set\n");
@@ -79,11 +81,13 @@ RecordSet_t *parse_record_set(DRMS_Env_t *env, char **in)
 	      rs->seriesname, status);
       goto empty;
     }
-    rs->recordset_spec = parse_record_set_filter(rs->template, &p);
+    rs->recordset_spec = parse_record_set_filter(rs->template, &p, &allvers);
 
     if (syntax_error)
       goto empty;
     
+    rs->allvers = allvers;
+
     *in = p;
 #ifdef DEBUG
   printf("exit parse_record_set\n");
@@ -136,13 +140,17 @@ static int parse_name(char **in, char *out, int maxlen)
   return 0;
 }
 
-
-
 static RecordSet_Filter_t *parse_record_set_filter(DRMS_Record_t *template, 
-						   char **in)
+						   char **in,
+                                                   int *allvers)
 {
   RecordSet_Filter_t *head=NULL, *rsp=NULL;
   char *p = *in;
+
+  if (allvers)
+  {
+     *allvers = 0;
+  }
 
 #ifdef DEBUG
   printf("enter parse_record_set_filter\n");
@@ -180,6 +188,11 @@ static RecordSet_Filter_t *parse_record_set_filter(DRMS_Record_t *template,
     */
     if (*p=='?' || *p=='!')
     {
+      if (*p == '!' && allvers)
+      {
+         *allvers = 1;
+      }
+      
       rsp->type = RECORDQUERY;
       if ((rsp->record_query = parse_record_query(&p))==NULL && 
 	  syntax_error)
@@ -1828,7 +1841,8 @@ WHERE
 // involve the query statement, an approximation of the latter case is
 // the where clause in between ?'s.
 int drms_recordset_query(DRMS_Env_t *env, char *recordsetname, 
-			 char **query, char **seriesname, int *filter, int *mixed)
+			 char **query, char **seriesname, int *filter, int *mixed,
+                         int *allvers)
 {
   RecordSet_t *rs;
   char *p = recordsetname;
@@ -1843,6 +1857,12 @@ int drms_recordset_query(DRMS_Env_t *env, char *recordsetname,
     XASSERT(*query = malloc(DRMS_MAXQUERYLEN));
     *seriesname = strdup(rs->seriesname);
     *filter = !recnum_filter;
+
+    if (allvers)
+    {
+       *allvers = rs->allvers;
+    }
+
     sql_record_set(rs,*seriesname, *query);
     free_record_set(rs);
     return 0;
