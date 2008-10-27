@@ -1,0 +1,67 @@
+/**
+   @defgroup module_template Template Doxygen markup for DRMS modules
+
+   @brief A brief module description goes here
+
+   @par Synopsis:
+   @code
+   ModuleName [-bdfxDRIVER_FLAGS] in=<record-set query> out=<out series>
+   @endcode
+
+   The first paragraph of an in-depth description goes here.
+
+   This is the second paragraph of the description
+
+   @par Example:
+   Brief description of the first example goes here
+   @code
+   ModuleName -bx in=<hmi.lev0> out=<hmi.lev03>
+   @endcode
+
+   @par Example:
+   Brief description of the second example goes here
+   @code
+   ModuleName -f in=<hmi.lev0> out=<hmi.lev05>
+   @endcode
+
+   @par Flags:
+   @c -b: Some flag <br>
+   @c -d: Another flag <br>
+   @c -f: Yet another flag <br>
+   @c -x: A fourth flag <br>
+
+   @par Driver flags: 
+   @ref jsoc_main
+
+   @param in A record-set query that identifies input records.
+   @param out The output series.
+
+   @bug
+   A description of any bugs goes here.
+*/
+/* @{ */
+char *module_name = "ModuleName";
+
+ModuleArgs_t module_args[] =
+{
+  {ARG_STRING, "in", "NOT SPECIFIED", "Input record-set query"},
+  {ARG_STRING, "out", "NOT SPECIFIED", "Output series"},
+  {ARG_FLAG, "b", "0", "A flag"},
+  {ARG_FLAG, "d", "0", "A flag"},
+  {ARG_FLAG, "f", "0", "A flag"},
+  {ARG_FLAG, "x", "0", "A flag"},
+  {ARG_END}
+};
+
+ModuleArgs_t *gModArgs = module_args;
+
+
+/* @} */
+
+static void functionA(int var1, double var2);
+static void functionB(float var1, char *var2);
+
+int DoIt(void)
+{
+        return 0;
+}
