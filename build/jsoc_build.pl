@@ -6,29 +6,31 @@ use Data::Dumper;
 
 my($JSOC_DEV) = "jsoc_dev\@sun.stanford.edu";
 # my($JSOC_DEV) = "arta\@sun.stanford.edu"; # for testing purposes
+my($ROOTDIR) = "/tmp/jsoc";
+my($MAKELOG) = "make.log";
 
 $ENV{'CVSROOT'} = ':ext:lws.stanford.edu:/home/cvsuser/cvsroot';
 $ENV{'CVS_RSH'} = 'rsh';
 $ENV{'PATH'} .= ':/usr/local/bin';
 
-my $cmd = "cd /tmp; rm -rf JSOC; cvs co JSOC; cvs update JSOC; cd JSOC; ./configure";
+my $cmd = "cd $ROOTDIR; rm -rf JSOC; cvs co JSOC; cvs update JSOC; cd JSOC; ./configure";
 
 $cmd = join("; ", map {
     $_." 2>&1 1>/dev/null";
 } split("; ", $cmd));
 
-`$cmd; make universe -k >& log`;
+`$cmd; make universe -k >& $MAKELOG`;
 
-# `cd /tmp/JSOC; make universe -k >& log`;
+# `cd $ROOTDIR/JSOC; make universe -k >& $MAKELOG`;
 
-open FH, "cd /tmp/JSOC; \(tail -n 4 log | grep Error\)  |" || die "Can't open log file: $!\n";
+open FH, "cd $ROOTDIR/JSOC; \(tail -n 4 $MAKELOG | grep Error\)  |" || die "Can't open log file: $!\n";
 my @line = <FH>;
 my($oneline);
 my($errmsg) = "";
 
 close FH;
 if (scalar(@line)) {
-    open FH, "/tmp/JSOC/log";
+    open FH, "$ROOTDIR/JSOC/$MAKELOG";
     while($oneline = <FH>)
     {
         chomp($oneline);
@@ -54,9 +56,9 @@ if (scalar(@line)) {
     close FH;
 
 } else {
-    my $cmd = "/tmp/JSOC/doc/doxygen/gendox.csh";
+    my $cmd = "$ROOTDIR/JSOC/doc/doxygen/gendox.csh";
     `chmod +x $cmd`;
-    `$cmd >& /tmp/JSOC/doxygen.log`;
+    `$cmd >& $ROOTDIR/JSOC/doxygen.log`;
     create_sl();
 }
 
