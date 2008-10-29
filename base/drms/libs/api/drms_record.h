@@ -110,13 +110,16 @@ int drms_record_numsegments(DRMS_Record_t *rec);
 int drms_record_num_nonlink_segments(DRMS_Record_t *rec);
 /* Storage Unit Directory associated with a record. */
 /**
-   @brief Return the Storage Unit directory associted with a record
+   @brief Find the Storage Unit directory associated with a record
 
-   Returns the path to the Storage Unit slot directory associateed with
-   @. If no storage unit slot has been assigned to the record yet,
-   an empty string is returned
+   Places the path to the Storage Unit slot directory associateed with
+   rec in dirname. If no storage unit slot has been assigned to the record yet,
+   an empty string is stored at dirname.  Return value is status code.
+   If retrieve=1 then drms_record_directory will block until the data is staged
+   by SUMS.  If retrieve=0 the current string in the record structure will be returned
+   so if the record is offline dirname will contain an ampty string.
 */
-void drms_record_directory(DRMS_Record_t *rec, char *dirname, int retrieve);
+int drms_record_directory(DRMS_Record_t *rec, char *dirname, int retrieve);
 
 /**** Can modify seriesinfo only if the record is a record prototype  ****/
 int drms_recproto_setseriesinfo(DRMS_Record_t *rec,

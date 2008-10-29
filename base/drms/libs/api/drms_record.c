@@ -4397,7 +4397,7 @@ int drms_record_num_nonlink_segments(DRMS_Record_t *rec)
 /* Return the path to the Storage unit slot directory associateed with
    a record. If no storage unit slot has been assigned to the record yet,
    an empty string is returned. */
-void drms_record_directory (DRMS_Record_t *rec, char *dirname, int retrieve) {
+int drms_record_directory (DRMS_Record_t *rec, char *dirname, int retrieve) {
   int stat;
   if (drms_record_numsegments (rec) <= 0) {
 #ifdef DEBUG
@@ -4405,7 +4405,7 @@ void drms_record_directory (DRMS_Record_t *rec, char *dirname, int retrieve) {
 	"records containing data segments.");
 #endif
     dirname[0] = 0;
-    return;
+    return(DRMS_ERROR_NOSEGMENT);
   }
 
   /* If all segments are protocol DRMS_DSDS, then there will be no record
@@ -4416,7 +4416,7 @@ void drms_record_directory (DRMS_Record_t *rec, char *dirname, int retrieve) {
      /* Can't call drms_record_directory() on a record that contains a DRMS_DSDS 
       * segment */
      fprintf(stderr, "ERROR: Cannot call drms_record_directory() on a record that contains a DRMS_DSDS segment.\n");
-     return;
+     return(DRMS_ERROR_NODSDSSUPPORT);
   }
 
   if (rec->sunum != -1LL && rec->su == NULL) {
@@ -4427,10 +4427,13 @@ void drms_record_directory (DRMS_Record_t *rec, char *dirname, int retrieve) {
     if ((rec->su = drms_getunit (rec->env, rec->seriesinfo->seriesname,
 	rec->sunum, retrieve, &stat)) == NULL) {
       if (stat) 
+        {
 	fprintf (stderr, "ERROR in drms_record_directory: Cannot retrieve "
 	    "storage unit. stat = %d\n", stat);
+        return(DRMS_ERROR_SUMGET);
+        }
       dirname[0] = '\0';
-      return;
+      return(DRMS_SUCCESS); /* no SU but no SUMS error either */
     }
     rec->su->refcount++;
 #ifdef DEBUG    
@@ -4468,6 +4471,7 @@ void drms_record_directory (DRMS_Record_t *rec, char *dirname, int retrieve) {
      CHECKSNPRINTF(snprintf(dirname, DRMS_MAXPATHLEN, "%s", 
                             rec->su->sudir), DRMS_MAXPATHLEN);  
   }
+  return(DRMS_SUCCESS);
 }
 
 
