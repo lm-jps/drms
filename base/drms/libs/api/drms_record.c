@@ -14,7 +14,6 @@
 #define TIME(code) code
 #endif
 
-#define kMAXRSETS 128
 #define kMAXRSETSPEC (DRMS_MAXSERIESNAMELEN + DRMS_MAXQUERYLEN + 128)
 
 static void *ghDSDS = NULL;
@@ -4878,9 +4877,10 @@ int ParseRecSetDesc(const char *recsetsStr,
    RSParseState_t oldstate;
    char *rsstr = strdup(recsetsStr);
    char *pc = rsstr;
-   char **intSets = NULL;
-   DRMS_RecordSetType_t *intSettypes = NULL;
-   char *intAllVers = NULL;
+   LinkedList_t *intSets = NULL;
+   LinkedList_t *intSettypes = NULL;
+   LinkedList_t *intAllVers = NULL;
+   char *pset = NULL;
    int count = 0;
    char buf[kMAXRSETSPEC];
    char *pcBuf = buf;
@@ -4901,10 +4901,9 @@ int ParseRecSetDesc(const char *recsetsStr,
 	 switch (state)
 	 {
 	    case kRSParseState_Begin:
-	      intSets = (char **)malloc(sizeof(char *) * kMAXRSETS);
-	      intSettypes = 
-		(DRMS_RecordSetType_t *)malloc(sizeof(DRMS_RecordSetType_t) * kMAXRSETS);
-              intAllVers = (char *)malloc(sizeof(char) * (kMAXRSETS + 1));
+	      intSets = list_llcreate(sizeof(char *));
+	      intSettypes = list_llcreate(sizeof(DRMS_RecordSetType_t));
+              intAllVers = list_llcreate(sizeof(char));
 	      if (!intSets || !intSettypes || !intAllVers)
 	      {
 		 state = kRSParseState_Error;
@@ -4912,10 +4911,6 @@ int ParseRecSetDesc(const char *recsetsStr,
 	      }
 	      else
 	      {
-		 memset(intSets, 0, sizeof(char *) * kMAXRSETS);
-		 memset(intSettypes, 0, sizeof(DRMS_RecordSetType_t) * kMAXRSETS);
-                 memset(intAllVers, 'n', sizeof(char) * kMAXRSETS);
-                 intAllVers[kMAXRSETS] = '\0';
 		 state = kRSParseState_BeginElem;
 	      }
 	      break;
@@ -5539,10 +5534,9 @@ int ParseRecSetDesc(const char *recsetsStr,
 		 }
 		 else
 		 {
-		    multiRSQueries = (char **)malloc(sizeof(char *) * kMAXRSETS);
-		    multiRSTypes = 
-		      (DRMS_RecordSetType_t *)malloc(sizeof(DRMS_RecordSetType_t) * kMAXRSETS);
-                    multiRSAllVers = (char *)malloc(sizeof(char) * (kMAXRSETS + 1));
+		    multiRSQueries = list_llcreate(sizeof(char *));
+                    multiRSTypes = list_llcreate(sizeof(DRMS_RecordSetType_t));
+                    multiRSAllVers = list_llcreate(sizeof(char));
 
 		    /* buf has filename */
 		    *pcBuf = '\0';
@@ -5578,13 +5572,16 @@ int ParseRecSetDesc(const char *recsetsStr,
 							    &nsetsAtFile);
 				   if (status == DRMS_SUCCESS)
 				   {
-				      /* add all nsetsAtFile recordsets to multiRSQueries */
+				      /* add all nsetsAtFile recordsets to multiRSQueries 
+                                       * NOTE: nsetsAtFile is the number of record-sets on
+                                       * the current line.
+                                       */
 				      for (iSet = 0; iSet < nsetsAtFile; iSet++)
 				      {
-					 multiRSQueries[countMultiRS] = 
-					   strdup(queriesAtFile[iSet]);
-					 multiRSTypes[countMultiRS] = typesAtFile[iSet];
-                                         multiRSAllVers[countMultiRS] = allversAtFile[iSet];
+                                         pset = strdup(queriesAtFile[iSet]);
+                                         list_llinserttail(multiRSQueries, &pset);
+                                         list_llinserttail(multiRSTypes, &(typesAtFile[iSet]));
+                                         list_llinserttail(multiRSAllVers, &(allversAtFile[iSet]));
 					 countMultiRS++;
 				      }
 				   }
@@ -5684,20 +5681,45 @@ int ParseRecSetDesc(const char *recsetsStr,
               /* multiRSQueries implies @filename */
 	      if (!multiRSQueries)
 	      {
-		 intSets[count] = strdup(buf);
-		 intSettypes[count] = currSettype;
-                 intAllVers[count] = currAllVers;
+                 pset = strdup(buf);
+                 list_llinserttail(intSets, &pset);
+                 list_llinserttail(intSettypes, &currSettype);
+                 list_llinserttail(intAllVers, &currAllVers);
                  currAllVers = 'n';
 		 count++;
 	      }
 	      else
 	      {
 		 int iSet;
+                 ListNode_t *node = NULL;
+
 		 for (iSet = 0; iSet < countMultiRS; iSet++)
 		 {
-		    intSets[count] = multiRSQueries[iSet];
-		    intSettypes[count] = multiRSTypes[iSet];
-                    intAllVers[count] = multiRSAllVers[iSet];
+                    node = list_llgethead(multiRSQueries);
+                    if (node)
+                    {
+                       /* intSets now owns char * pointed to by node->data */
+                       list_llinserttail(intSets, node->data);
+                       list_llremove(multiRSQueries, node);
+                       list_llfreenode(&node);
+                    }
+
+                    node = list_llgethead(multiRSTypes);
+                    if (node)
+                    {
+                       list_llinserttail(intSettypes, node->data);
+                       list_llremove(multiRSTypes, node);
+                       list_llfreenode(&node);
+                    }
+
+                    node = list_llgethead(multiRSAllVers);
+                    if (node)
+                    {
+                       list_llinserttail(intAllVers, node->data);
+                       list_llremove(multiRSAllVers, node);
+                       list_llfreenode(&node);
+                    }
+
 		    count++;
 		 }
 
@@ -5754,10 +5776,38 @@ int ParseRecSetDesc(const char *recsetsStr,
 
       if (*sets && *settypes && *allvers)
       {
+         int iset;
+         ListNode_t *node = NULL;
 	 *nsets = count;
-	 memcpy(*sets, intSets, sizeof(char *) * count);
-	 memcpy(*settypes, intSettypes, sizeof(DRMS_RecordSetType_t) * count);
-         memcpy(*allvers, intAllVers, sizeof(char) * count);
+
+         for (iset = 0; iset < count; iset++)
+         {
+            node = list_llgethead(intSets);
+            if (node)
+            {
+               /* sets now owns char * pointed to by node->data */
+               memcpy(&((*sets)[iset]), node->data, sizeof(char *));
+               list_llremove(intSets, node);
+               list_llfreenode(&node);
+            }
+
+            node = list_llgethead(intSettypes);
+            if (node)
+            {
+               memcpy(&((*settypes)[iset]), node->data, sizeof(DRMS_RecordSetType_t));
+               list_llremove(intSettypes, node);
+               list_llfreenode(&node);
+            }
+
+            node = list_llgethead(intAllVers);
+            if (node)
+            {
+               memcpy(&((*allvers)[iset]), node->data, sizeof(char));
+               list_llremove(intAllVers, node);
+               list_llfreenode(&node);
+            }
+         }
+
          (*allvers)[count] = '\0';
       }
       else

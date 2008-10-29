@@ -205,6 +205,7 @@ void list_llfree(LinkedList_t **llist)
 	 pElem = nElem;
       }
 
+      free(*llist);
       *llist = NULL;
    }
 }
