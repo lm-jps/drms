@@ -394,7 +394,7 @@ void setup()
 
   gethostname(thishost,MAX_STR);
   cptr = index(thishost, '.');       /* must be short form */
-  *cptr = (char)NULL;
+  if(cptr) *cptr = (char)NULL;
   if(!(username = (char *)getenv("USER"))) username = "nouser";
   get_cfg();			/* get config info */
   pid = getppid();		/* pid of sum_svc */
