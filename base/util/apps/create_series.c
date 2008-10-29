@@ -30,6 +30,10 @@ initial debugging of the .jsd file it is probably an error to use the
 
 \param jsdfile JSOC series definition file name
 
+\bug
+The permissions parameter has been omitted since it is presently ignored in the code.  It
+should be restored with some method to allow marking a series private.
+
 \sa
 delete_series describe_series modify_series show_info
 
