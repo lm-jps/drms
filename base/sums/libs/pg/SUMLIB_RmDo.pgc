@@ -47,7 +47,7 @@ EXEC SQL END DECLARE SECTION;
   EXEC SQL WHENEVER NOT FOUND GOTO end_fetch; 
 	
 /* Warn about SUMDC code commented out below */
-printk("WARN: tmp noop of offsite_ack check\n"); /* !!!TEMP */
+//printk("WARN: tmp noop of offsite_ack check\n"); /* !!!TEMP */
 
   for(i=0; ; i++ ){
     EXEC SQL FETCH palloc INTO :l_wd, :l_sumid, :l_bytes, :l_eff_date, :ds_index, :l_archsub;
@@ -68,11 +68,11 @@ end_fetch:
       /* only rm those with Offsite_Ack, and Safe_Tape */
 
 /* !!!TEMP don't do this for testing with DDS */
-//      ds_index = pcursor[j].p_ds_index;
-//      EXEC SQL  SELECT DS_INDEX into :ds_index from sum_main
-//      WHERE DS_INDEX = :ds_index AND
-//      OFFSITE_ACK = 'Y' AND SAFE_TAPE IS NOT NULL;
-//
+      ds_index = pcursor[j].p_ds_index;
+      EXEC SQL  SELECT DS_INDEX into :ds_index from sum_main
+      WHERE DS_INDEX = :ds_index AND
+      OFFSITE_ACK = 'Y' AND SAFE_TAPE IS NOT NULL;
+
 #endif
       if(DS_RmNow(pcursor[j].p_wd, pcursor[j].p_sumid, pcursor[j].p_bytes, 
 		pcursor[j].p_effdate, 
