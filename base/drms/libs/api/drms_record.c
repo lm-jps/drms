@@ -1279,6 +1279,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 					     int retrieverecs, 
 					     LinkedList_t **llistout,
                                              char **allversout,
+                                             int nrecslimit, 
 					     int *status)
 {
   DRMS_RecordSet_t *rs = NULL;
@@ -1546,6 +1547,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 						 mixed, 
 						 goodsegcont, 
                                                  allvers[iSet] == 'y',
+                                                 nrecslimit, 
 						 &stat));
                  
                  /* Remove unrequested segments now */
@@ -1563,6 +1565,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                                                 filter, 
                                                 mixed, 
                                                 DRMS_QUERY_COUNT, 
+                                                NULL, 
                                                 NULL,
                                                 0);
                  if (!countquery)
@@ -1613,6 +1616,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 						    filter, 
 						    mixed, 
 						    DRMS_QUERY_ALL, 
+                                                    NULL, 
 						    NULL,
                                                     0);
 		 list_llinserttail(llist, &selquery);
@@ -1880,7 +1884,67 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 				    int *status)
 {
    char *allvers = NULL;
-   return drms_open_records_internal(env, recordsetname, 1, NULL, &allvers, status);
+   return drms_open_records_internal(env, recordsetname, 1, NULL, &allvers, 0, status);
+}
+
+DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env, 
+                                     char *recordsetname, 
+                                     int n,
+                                     int *status)
+{
+   char *allvers = NULL;
+   DRMS_RecordSet_t *rs = NULL;
+   DRMS_Record_t **recs = NULL;
+   int statint = DRMS_SUCCESS;
+   int iset;
+   int irec;
+   int nrecs = 0;
+   DRMS_Record_t *rec = NULL;
+
+   rs = drms_open_records_internal(env, recordsetname, 1, NULL, &allvers, n, &statint);
+
+   if (statint == DRMS_SUCCESS && n < 0)
+   {
+      /* loop through each record subset, and reverse the records (which are in descending prime-key order) */
+      for (iset = 0; iset < rs->ss_n; iset++)
+      {
+         nrecs = drms_recordset_getssnrecs(rs, iset, &statint);
+         recs = (DRMS_Record_t **)malloc(sizeof(DRMS_Record_t *) * nrecs);
+         if (recs)
+         {
+            memset(recs, 0, sizeof(DRMS_Record_t *) * nrecs);
+
+            for (irec = 0; irec < nrecs; irec++)
+            {
+               rec = rs->records[(rs->ss_starts)[iset] + irec];
+               recs[nrecs - irec - 1] = rec;
+            }
+         }
+         else
+         {
+            statint = DRMS_ERROR_OUTOFMEMORY;
+            break;
+         }
+      }
+      
+      if (statint == DRMS_SUCCESS)
+      {
+         /* now copy the record ptrs back to rs->records */
+         memcpy(rs->records, recs, sizeof(DRMS_Record_t *) * nrecs);
+      }
+
+      if (recs)
+      {
+         free(recs);
+      }
+   }
+
+   if (status)
+   {
+      *status = statint;
+   }
+
+   return rs;
 }
 
 /* Create n new records by calling drms_create_record n times.  */
@@ -2919,6 +2983,7 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
                                                         HContainer_t *goodsegcont,
                                                         const char *qoverride,
                                                         int allvers, 
+                                                        int nrecs, 
                                                         int *status)
 {
   int i,throttled;
@@ -2947,7 +3012,15 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
   strtolower(series_lower);
 
   char *query = qoverride ? 
-    strdup(qoverride) : drms_query_string(env, seriesname, where, filter, mixed, DRMS_QUERY_ALL, NULL, allvers);
+    strdup(qoverride) : drms_query_string(env, 
+                                          seriesname, 
+                                          where, 
+                                          filter, 
+                                          mixed, 
+                                          nrecs == 0 ? DRMS_QUERY_ALL : DRMS_QUERY_N, 
+                                          &nrecs, 
+                                          NULL, 
+                                          allvers);
 #ifdef DEBUG
   printf("ENTER drms_retrieve_records, env=%p, status=%p\n",env,status);
 #endif
@@ -3088,15 +3161,27 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
                                         char *where, int filter, int mixed,
                                         HContainer_t *goodsegcont,
                                         int allvers, 
+                                        int nrecs, 
                                         int *status)
 {
-   return drms_retrieve_records_internal(env, seriesname, where, filter, mixed, goodsegcont, NULL, allvers, status);
+   return drms_retrieve_records_internal(env, 
+                                         seriesname, 
+                                         where, 
+                                         filter, 
+                                         mixed, 
+                                         goodsegcont, 
+                                         NULL, 
+                                         allvers, 
+                                         nrecs, 
+                                         status);
 }
 
 char *drms_query_string(DRMS_Env_t *env, 
 			const char *seriesname,
 			char *where, int filter, int mixed,
-			DRMS_QueryType_t qtype, char *fl,
+			DRMS_QueryType_t qtype, 
+                        void *data, /* specific to qtype */
+                        char *fl,
                         int allvers) {
   DRMS_Record_t *template;
   char *field_list, *query=0;
@@ -3104,6 +3189,7 @@ char *drms_query_string(DRMS_Env_t *env,
   long long recsize, limit;
   char pidx_names[1024]; // comma separated pidx keyword names
   char *p;
+  int nrecs = 0;
 
   int status = 0;
 
@@ -3127,6 +3213,11 @@ char *drms_query_string(DRMS_Env_t *env,
   case DRMS_QUERY_ALL:
     field_list = drms_field_list(template, NULL);
     recsize = drms_record_memsize(template);
+    break;
+  case DRMS_QUERY_N:
+    field_list = drms_field_list(template, NULL);
+    recsize = drms_record_memsize(template);
+    nrecs = *(int *)(data);
     break;
   default:
     printf("Unknown query type: %d\n", (int)qtype);
@@ -3180,11 +3271,29 @@ char *drms_query_string(DRMS_Env_t *env,
       p += sprintf(p, " and %s", where);
     }
   }
-  if (qtype != DRMS_QUERY_COUNT) {      
-    if (template->seriesinfo->pidx_num > 0) {
-      p += sprintf(p, " order by %s", pidx_names);
-    }
-    p += sprintf(p, " limit %lld", limit);
+  if (qtype != DRMS_QUERY_COUNT) 
+  {
+     if (qtype == DRMS_QUERY_N)
+     {
+        if (template->seriesinfo->pidx_num > 0) 
+        {
+           p += sprintf(p, " order by %s %s", pidx_names, nrecs > 0 ? "ASC" : "DESC");
+        }
+
+        if (abs(nrecs) < limit)
+        {
+           limit = abs(nrecs);
+        }
+
+        p += sprintf(p, " limit %lld", limit);
+     }
+     else
+     {
+        if (template->seriesinfo->pidx_num > 0) {
+           p += sprintf(p, " order by %s", pidx_names);
+        }
+        p += sprintf(p, " limit %lld", limit);
+     }
   }
 
   free(series_lower);
@@ -4888,9 +4997,9 @@ int ParseRecSetDesc(const char *recsetsStr,
    int count = 0;
    char buf[kMAXRSETSPEC];
    char *pcBuf = buf;
-   char **multiRSQueries = NULL;
-   DRMS_RecordSetType_t *multiRSTypes = NULL;
-   char *multiRSAllVers = NULL;
+   LinkedList_t *multiRSQueries = NULL;
+   LinkedList_t *multiRSTypes = NULL;
+   LinkedList_t *multiRSAllVers = NULL;
    DRMS_RecordSetType_t currSettype;
    char currAllVers = 'n';
    int countMultiRS = 0;
@@ -6344,7 +6453,8 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                                                             0, 
                                                             NULL, /* seg filter */
                                                             sqlquery,
-                                                            rs->cursor->allvers[iset], 
+                                                            rs->cursor->allvers[iset],
+                                                            0, 
                                                             &stat);
                if (stat != DRMS_SUCCESS)
                {
@@ -6497,7 +6607,7 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
         
       if (tmp)
       {
-	 rs = drms_open_records_internal(env, tmp, 0, &querylist, &allvers, &stat);
+	 rs = drms_open_records_internal(env, tmp, 0, &querylist, &allvers, 0, &stat);
 	 free(tmp);
       }
       else

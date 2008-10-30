@@ -126,6 +126,7 @@ retrieve_file drms_query describe_series
 #include "jsoc_main.h"
 #include "drms.h"
 #include "drms_names.h"
+#include "cmdparams.h"
 
 ModuleArgs_t module_args[] =
 { 
@@ -363,7 +364,7 @@ int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status)
         goto failure;
 
   stat = 1;
-  query = drms_query_string(env, seriesname, where, filter, mixed, DRMS_QUERY_COUNT, NULL, allvers);
+  query = drms_query_string(env, seriesname, where, filter, mixed, DRMS_QUERY_COUNT, NULL, NULL, allvers);
       if (!query)
         goto failure;
 
@@ -647,8 +648,15 @@ int DoIt(void)
     }
 
   /* Open record_set(s) */
+  if (max_recs != 0)
+  {
+     recordset = drms_open_nrecords (drms_env, in, max_recs, &status);
+  }
+  else
+  {
+     recordset = drms_open_records (drms_env, in, &status);
+  }
 
-  recordset = drms_open_records (drms_env, in, &status);
   if (!recordset) 
     {
     fprintf(stderr,"### show_info: series %s not found.\n",in);
@@ -672,14 +680,11 @@ int DoIt(void)
   i_set = 0;
 // NEED to add stuff to loop over subsets
 
-  /* check max number of records to print.  Better to use restricted query */
-  if (max_recs > 0 && max_recs < nrecs)
-    nrecs = max_recs;
+  /* if max_recs != 0 recordset will have max_recs records (unless the record limit was
+   * exceeded), and the first record will be appropriate for the value of max_recs, 
+   * even if max_recs < 0 */
   last_rec = nrecs - 1;
-  if (max_recs < 0 && nrecs+max_recs > 0)
-    first_rec = nrecs + max_recs;
-  else
-    first_rec = 0;
+  first_rec = 0;
 
   /* get list of keywords to print for each record */
   nkeys = 0;

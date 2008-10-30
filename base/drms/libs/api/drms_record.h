@@ -31,7 +31,7 @@ typedef enum {DRMS_FREE_RECORD, DRMS_INSERT_RECORD} DRMS_CloseAction_t;
 */
 
 /** \brief DRMS query type */
-typedef enum {DRMS_QUERY_COUNT, DRMS_QUERY_FL, DRMS_QUERY_ALL} DRMS_QueryType_t;
+typedef enum {DRMS_QUERY_COUNT, DRMS_QUERY_FL, DRMS_QUERY_ALL, DRMS_QUERY_N} DRMS_QueryType_t;
 
 /************** User level record functions ************/
 
@@ -49,6 +49,10 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 
 DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname, 
 				    int *status);
+DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env, 
+                                     char *recordsetname, 
+                                     int n,
+                                     int *status);
 DRMS_RecordSet_t *drms_open_localrecords(DRMS_Env_t *env, 
 					 const char *dsRecSet, 
 					 int *status);
@@ -188,7 +192,9 @@ static inline DRMS_Record_t *drms_recordset_getrec(DRMS_RecordSet_t *rs, long lo
 char *drms_query_string(DRMS_Env_t *env, 
 			const char *seriesname,
 			char *where, int filter, int mixed,
-			DRMS_QueryType_t qtype, char *fl,
+			DRMS_QueryType_t qtype, 
+                        void *data, 
+                        char *fl,
                         int allvers);
 
 /* Chunking record queries */

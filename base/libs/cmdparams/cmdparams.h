@@ -184,6 +184,7 @@ typedef struct CmdParams_struct CmdParams_t;
 int cmdparams_parse (CmdParams_t *parms, int argc,  char *argv[]);
 
 int cmdparams_parsefile (CmdParams_t *parms, char *filename, int depth);
+void cmdparams_set (CmdParams_t *parms, const char *name, const char *value);
 int cmdparams_exists (CmdParams_t *parms, char *name);
 void cmdparams_printall (CmdParams_t *parms);
 char *cmdparams_getarg (CmdParams_t *parms, int num);

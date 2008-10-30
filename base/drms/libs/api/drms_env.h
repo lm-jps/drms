@@ -23,8 +23,6 @@
 /** \brief DRMS session table */
 #define DRMS_SESSION_TABLE "drms_session"
 
-
-
 /******************************* Functions **********************************/
 
 /************** DRMS Environment ****************/
