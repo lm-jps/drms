@@ -20,7 +20,9 @@ EXEC SQL END DECLARE SECTION;
     //setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
     if(!(dbuser = (char *)getenv("USER"))) dbuser = "production";
 #ifdef SUMDC
-    if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = "dcs0";
+    //if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = "dcs0";
+    //new 31Oct2008 always use localhost for dcs
+    dbhost = "localhost";
 #else
     if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = "hmidb.stanford.edu";
 #endif
