@@ -7,13 +7,16 @@ Doxygen.
 
 \section general General design documents
 
-Blah blah blah
+Start with the "Modules" tab for html versions of the JSOC software manual
+pages.
 
-<a href="../html/index.html">main JSOC website content</a>
-(local)
+<a href="http://jsoc.stanford.edu/doxygen_html/index.html">main JSOC website content</a>
 
-General information on HMI:\n
-http://hmi.stanford.edu
+
+General information on:\n
+ - JSOC: http://jsoc.stanford.edu\n
+ - HMI: http://hmi.stanford.edu\n
+ - AIA: http://aia.lmsal.com\n
 
 \section hacking Hacking on this documentation
 
@@ -80,7 +83,7 @@ nesting of the list:
 
 	End the list with a blank line.
 Use :: at the start of a function or structure to link to the page
-for that function in the doxygen documentation. e.g. ::qof_class_foreach
+for that function in the doxygen documentation. e.g.  ::qof_class_foreach
 
 Use the param command to describe function parameters in the text.
 
@@ -95,7 +98,7 @@ To edit the doxygen configuration, you can use:
 *
 cd doc
 *
-emacs doxygen.cfg &
+vi doxygen_publ.cfg &
 
 */
 
@@ -108,7 +111,7 @@ interesting sections:
 - How to write grouped documentation for files, functions, variables,
 etc.: http://www.stack.nl/~dimitri/doxygen/grouping.html .  Do not
 forget to add a file documentation block (\@file) at the top of your
-file. Otherwise, all documentation in that file will <i>not</i> appear
+file. Otherwise, none of the documentation in that file will appear
 in the html output.
 
 - List of the special commands you can use within your documentation

@@ -7,6 +7,8 @@
 #   if "manout" is not specified, then /home/jsoc/man/man3 is assumed
 #   if "htmlout" is not specified, then /web/jsoc/htdocs/doxygen is assumed
 
+# set echo
+
 set NONE = "///none///"
 set MINUS = "-"
 set SLASH = "\/"
@@ -15,8 +17,8 @@ set TMPINDIR = "/tmp/doxygen/input" # tmp place to put JSOC tree
 set TMPOUTDIR = "/tmp/doxygen/output" # tmp place to put output
 set INTREE = "$TMPINDIR/JSOC/" # default input JSOC tree
 set INDIR = "$INTREE/doc/doxygen" # default input (contains repository copy)
-set MANOUTDIR = "/home/jsoc/man/man3" # default man output
-set HTMLOUTDIR = "/web/jsoc/htdocs/doxygen_html" # default html output
+set MANOUTDIR = "/home/phil/jsoc/man/man3" # default man output
+set HTMLOUTDIR = "/home/phil/public_html/jsoc/doxygen_html" # default html output
 set CMDIN = $NONE
 set CMDHTMLOUT = $NONE
 set CMDMANOUT = $NONE
