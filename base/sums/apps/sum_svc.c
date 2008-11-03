@@ -208,9 +208,12 @@ void setup()
   char *cptr;
   char lfile[MAX_STR], acmd[MAX_STR], line[MAX_STR];
 
-  gethostname(thishost, MAX_STR);
-  cptr = index(thishost, '.');       /* must be short form */
-  if(cptr) *cptr = (char)NULL;
+  //when change name of dcs2 to dcs1 we found out you have to use localhost
+  //gethostname(thishost, MAX_STR);
+  //cptr = index(thishost, '.');       /* must be short form */
+  //if(cptr) *cptr = (char)NULL;
+  sprintf(thishost, "localhost");
+
   thispid = getpid();
   sprintf(logname, "/usr/local/logs/SUM/sum_svc_%s.log", gettimetag());
   open_log(logname);

@@ -169,18 +169,18 @@ void setup()
   char *cptr;
   char logname[MAX_STR], line[256];
 
-  gethostname(thishost, MAX_STR);
-  cptr = index(thishost, '.');       /* must be short form */
-  if(cptr) *cptr = (char)NULL;
-//!!temp for test
+  //when change name of dcs2 to dcs1 we found out you have to use localhost
+  //gethostname(thishost, MAX_STR);
+  //cptr = index(thishost, '.');       /* must be short form */
+  //if(cptr) *cptr = (char)NULL;
   sprintf(thishost, "localhost");
   cptr = datestring();
   pid = getppid();		/* pid of sum_svc */
   sprintf(logname, "/usr/local/logs/SUM/tape_svc_%s.log", timetag);
   open_log(logname);
   printk_set(write_log, write_log);
-  write_log("\n## %s tape_svc for pid = %d ##\n", 
-		datestring(), pid);
+  write_log("\n## %s tape_svc on %s for pid = %d ##\n", 
+		datestring(), thishost, pid);
   write_log("Database to connect to is %s\n", dbname);
   sprintf(logname, "/usr/local/logs/SUM/drive_order.txt");
   if((drfp=fopen(logname, "r")) == NULL) {

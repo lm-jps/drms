@@ -205,9 +205,12 @@ void setup()
   int pid;
   char *cptr;
 
-  gethostname(thishost, MAX_STR);
-  cptr = index(thishost, '.');       /* must be short form */
-  if(cptr) *cptr = (char)NULL;
+  //when change name of dcs2 to dcs1 we found out you have to use localhost
+  //gethostname(thishost, MAX_STR);
+  //cptr = index(thishost, '.');       /* must be short form */
+  //if(cptr) *cptr = (char)NULL;
+  sprintf(thishost, "localhost");
+
   #ifdef DRIVE_0
   sprintf(drvname, "drive0_svc");
   drivenum = 0;

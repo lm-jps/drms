@@ -142,9 +142,11 @@ void setup()
   int pid;
   char *cptr;
 
-  gethostname(thishost, MAX_STR);
-  cptr = index(thishost, '.');       /* must be short form */
-  if(cptr) *cptr = (char)NULL;
+  //when change name of dcs2 to dcs1 we found out you have to use localhost
+  //gethostname(thishost, MAX_STR);
+  //cptr = index(thishost, '.');       /* must be short form */
+  //if(cptr) *cptr = (char)NULL;
+  sprintf(thishost, "localhost");
   #ifdef ROBOT_0
   sprintf(robotname, "robot0_svc");
   #endif
@@ -156,8 +158,8 @@ void setup()
   sprintf(logfile, "/usr/local/logs/SUM/tape_svc_%s.log", timetag);
   open_log(logfile);
   printk_set(write_log, write_log);
-  write_log("\n## %s %s for pid = %d ##\n", 
-		datestring(), robotname, pid);
+  write_log("\n## %s %s on %s for pid = %d ##\n", 
+		datestring(), robotname, thishost, pid);
   /*write_log("Database to connect to is %s\n", dbname);*/
   if (signal(SIGINT, SIG_IGN) != SIG_IGN)
       signal(SIGINT, sighandler);
