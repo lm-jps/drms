@@ -10,19 +10,35 @@
  */
 
 /**
-\defgroup show_info show_info - for each record specified, prints keyword, segment, file information
+\defgroup show_info show_info
 @ingroup drms_util
 
 Prints keyword, segment, and other information and/or file path for given recordset.
 
-\ref show_info can list the keyword names and values, and the segment
-names and file names (full paths) for each record in a record set. It
-can also list the full path to the record direcory in SUMS, which
-contains the segment files. Exactly what information gets printed is
-controlled by command-line flags (see below). The \a -k flag controls
-the format of the output.  If it is set, then the output is in table
-format, with a header row showing the keyword names.  Otherwise,
-keyword name=value pairs are listed one per line.  If the \a -a flag
+\par Synopsis:
+
+\code
+show_info [-ajklpPqrs] {ds=}<record_set>|sunum=<sunum> [n=<nrecords>] [key=<keylist>] [seg=<seglist>]
+\endcode
+
+\par Description:
+
+\ref show_info shows various kinds of information about a data series.
+This can be the series structure, the "jsoc series definition" for
+the series, all or some of the keyword and segment values for a range of records,
+the full path to the SUMS storage for the data segment, etc. 
+Exactly what information gets printed is
+controlled by command-line flags (see below).
+
+The arguments are grouped by function.  The first group controls the overall
+operation of show_info.  If any of these flags (c,h,j,l,s) is present the specified action
+is taken and the program exits.  Otherwise a DRMS query is made and the
+resulting records are examined and the specified quantities are printed for
+each record found.  If the QUERY_STRING argument is present it is parsed to
+extract command line arguments passed via a web cgi-bin call of show_info and
+the results are returned as text.
+
+If the \a -a flag
 is set, \ref show_info lists the names of all series keywords, prime
 keywords, and segments, and exits.  Otherwise, it prints keyword and
 segment information as specified by the other flags and arguments.  If
@@ -36,11 +52,104 @@ specified, either by supplying a \a record_set string that selects a
 subset of records from a series, or by supplying the \a n=nrecords
 argument, which indicates the number of records.
 
-\par Synopsis:
 
-\code
-show_info [-ajklpqrsDRIVER_FLAGS] ds=<record_set> [n=<nrecords>] [key=<keylist>] [seg=<seglist>]
-\endcode
+\par Flags controling operation to perform:
+This group of arguments controls the action of show_info.  The default action is to query for the specified record-set
+and perform the requested display of information.
+\par
+\c  -c: Show count of records in query and exit.  This flag requires a record set query to be specified.
+\par
+\c  -h: help - print usage info and exit
+\par
+\c  -j: list series info in jsd format and exit
+\par
+\c  -l: just list series keyword, segment, and link names with descriptions then exit
+\par
+\c  -s: stats - show some statistics about the series, presently only first and last record.
+\par
+\c  QUERY_STRING=<cgi-bin GET format command line args> - string with default "Not Specified" used when show_info is invoked
+from http://jsoc.stanford.edu/cgi_bin/ajax/show_info
+
+\par Parameters and Flags controling record subset to examine:
+This group of arguments specifies a recordset to examine.  If the "sunum" argument is present it overrides an
+explicit recordset specification and returns the record with that sunum as its record directory in SUMS.
+For normal recordset queries the "ds=" is optional.  In no "where clauses" (i.e. "[xxx]" clauses) are
+present in the recordset query the "n" parameter is required.  Since the "where clauses" are used to
+restrict the number or records retrieved, an empty clause (e.g. "[]") will match all records in the series.
+\par
+\c  ds=<record_set query> - string with default "Not Specified", see below for more information.
+\par
+\c  n=<count> - Max number of records to show, +from first, -from last, see below.
+\par
+\c  sunum=<sunum> - integer with default -1
+\par
+
+\par Parameters and Flags controling selction of keywords and segments to examine:
+This group of arguments specifies the set of keywords, segments, links, or virtual keywords to display.
+(link display not yet implemented/tested).
+
+\par
+\c  key=<comma delimited keyword list> - string with default "Not Specified", see below.
+\par
+\c  seg=<comma delimited segment list> - string with dedfauly "Not Specified", see below.
+\par
+\c  -a: Select all keywords and display their values for the chosen records
+\par
+\c  -A: Select all segments and display their values for the chosen records
+\par
+\c  -i: print record query, for each record, will be before any keywwords or segment data
+\par
+\c  -p: list the record's storage_unit path, waits for retrieval if offline
+\par
+\c  -P: list the record\'s storage_unit path but no retrieve
+\par
+\c  -r: recnum - show record number as first keyword
+\par
+\c  -S: SUNUM - show the sunum for the record
+\par Flags controling how to display values:
+\par
+\c  -d: Show dimensions of segment files with selected segs
+\par
+\c  -k: keyword list one per line
+\par
+\c  -q: quiet - skip header of chosen keywords
+\par
+\c  -t: types - show types and print formats for keyword values
+\par
+\par Driver flags: 
+\ref jsoc_main
+
+\param record_set
+A record_set list is a comma separated list of record_set queries.
+Each query is a series name followed by an optional record-set specification (i.e.,
+\a seriesname[RecordSet_filter]). Causes selection of a subset of
+records in the series. This argument is required, and if no record-set
+filter is specified, then \a n=nrecords must be present.
+
+\param nrecords
+\a n=<nrecords> specifies the maximum number of records for which
+information is printed.  If \a nrecords < 0, \ref show_info displays
+information for the last \a nrecords records in the record set. If
+\a nrecords > 0, \ref show_info displays information for the first
+\a nrecords records in the record set. If \a record_set contains a
+record set filter, then \a nrecords applies to the set of records
+matching the filter.
+
+\param keylist
+Comma-separated list of keyword names. For each keyword listed,
+information will be displayed.  \a keylist is ignored in the case that
+the \a -a flag is set.
+
+\param seglist
+Comma-separated list of segment names.  \a seglist is ignored
+in the case that the \a -A flag is set.  For each segment listed, the
+segment's file is displayed.  If the \a -p flag is set the filename will
+be prefaced by the full path to the file in SUMS.  If the storage unit
+containing the record directory is offline, it will be staged first and
+the new online location is reported.  If the \a -P flag is given the path
+is displayed only if the data is online.  If offline with a \a -P flag then
+only the filename is shown.  If the \a -d flag is set then the dimensions
+of the segment array are displayed along with the path/filename.
 
 \b Example:
 To show the storage-unit paths for a maximum of 10
@@ -55,64 +164,6 @@ plus the segment named file_seg, for a maximum of 10 records:
 \code
   show_info ds=su_arta.TestStoreFile -akr n=10 seg=file_seg
 \endcode
-
-\par Flags:
-\c -a: Show all keyword names and values for each  record  specified
-by \a record_set  or \a nrecords.  \a -a takes precedence over \a
-keylist.  
-\par
-\c -j: List the names of all series keywords, prime keywords, and
-segments, and links in jsd format and exit. 
-\par
-\c -k: List keyword name=value pairs, one per line. Otherwise print
-all keyword values on a single line and print a header line containing
-the keyword names (table format).
-\par
-\c -l: List the names of all series keywords, prime keywords,  and
-segments, and exit. 
-\par
-\c -p: Include in the output the full storage-unit path for each record
-\par
-\c -q: Quiet - omit the header line listing keyword names if the -k
-flag is set
-\par
-\c -r:  Include the record number in the output
-\par
-\c -s:  Include statistics of series in the output
-\par
-\c -S:  Include the sunum number in the output
-\par
-\c -t:  Include lines with type and format information beneath the keyword name line.  Not
-applicable in the "-k" mode.
-
-\par Driver flags: 
-\ref jsoc_main
-
-\param record_set
-A series name followed by an optional record-set specification (i.e.,
-\a seriesname[RecordSet_filter]). Causes selection of a subset of
-records in the series. This argument is required, and if no record-set
-filter is specified, then \a n=nrecords must be present.
-
-\param nrecords
-\a nrecords specifies the maximum number of records for which
-information is printed.  If \a nrecords < 0, \ref show_info displays
-information for the last \a nrecords records in the record set. If
-\a nrecords > 0, \ref show_info displays information for the first
-\a nrecords records in the record set. If \a record_set contains a
-record set filter, then \a nrecords can reduce the total number of
-records for which information is displayed.
-
-\param keylist
-Comma-separated list of keyword names. For each keyword listed,
-information will be displayed.  \a keylist is ignored in the case that
-the \a -a flag is set.
-
-\param seglist
-Comma-separated list of segment names. For each segment listed, the
-full path to the segment's file is displayed
-(if the \a -p flag is set) or the file name of the
-segment's file name is displayed (if the \a -p flag is unset).
 
 \bug
 The program will produce superflous and non-meaningful output if
