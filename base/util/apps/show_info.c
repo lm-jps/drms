@@ -30,28 +30,13 @@ the full path to the SUMS storage for the data segment, etc.
 Exactly what information gets printed is
 controlled by command-line flags (see below).
 
-The arguments are grouped by function.  The first group controls the overall
+The argument descriptions are grouped by function.  The first group controls the overall
 operation of show_info.  If any of these flags (c,h,j,l,s) is present the specified action
 is taken and the program exits.  Otherwise a DRMS query is made and the
 resulting records are examined and the specified quantities are printed for
 each record found.  If the QUERY_STRING argument is present it is parsed to
 extract command line arguments passed via a web cgi-bin call of show_info and
 the results are returned as text.
-
-If the \a -a flag
-is set, \ref show_info lists the names of all series keywords, prime
-keywords, and segments, and exits.  Otherwise, it prints keyword and
-segment information as specified by the other flags and arguments.  If
-the \a -p flag is set and \a seglist is specified, then the full paths
-for the segment files will be displayed. If the \a -p flag is set, but
-\a seglist is not specified, then only the full path to the record's
-storage unit will be displayed.
-
-The number of records for which information will be printed must be
-specified, either by supplying a \a record_set string that selects a
-subset of records from a series, or by supplying the \a n=nrecords
-argument, which indicates the number of records.
-
 
 \par Flags controling operation to perform:
 This group of arguments controls the action of show_info.  The default action is to query for the specified record-set
@@ -89,9 +74,9 @@ This group of arguments specifies the set of keywords, segments, links, or virtu
 (link display not yet implemented/tested).
 
 \par
-\c  key=<comma delimited keyword list> - string with default "Not Specified", see below.
+\c  key=<keylist> - string with default "Not Specified", see below.
 \par
-\c  seg=<comma delimited segment list> - string with dedfauly "Not Specified", see below.
+\c  seg=<seglist> - string with dedfauly "Not Specified", see below.
 \par
 \c  -a: Select all keywords and display their values for the chosen records
 \par
@@ -125,14 +110,17 @@ Each query is a series name followed by an optional record-set specification (i.
 \a seriesname[RecordSet_filter]). Causes selection of a subset of
 records in the series. This argument is required, and if no record-set
 filter is specified, then \a n=nrecords must be present.
+The "ds=" protion of the record_set argument is optional.
+<I>NOTE to the csh user, you need to excape the '[' character and
+some other characters used in the record set specification.</I>
 
-\param nrecords
-\a n=<nrecords> specifies the maximum number of records for which
-information is printed.  If \a nrecords < 0, \ref show_info displays
-information for the last \a nrecords records in the record set. If
-\a nrecords > 0, \ref show_info displays information for the first
-\a nrecords records in the record set. If \a record_set contains a
-record set filter, then \a nrecords applies to the set of records
+\param count
+\a n=<count> specifies the maximum number of records for which
+information is printed.  If \a count < 0, \ref show_info displays
+information for the last \a count records in the record set. If
+\a count > 0, \ref show_info displays information for the first
+\a count records in the record set. If \a record_set contains a
+record set filter, then \a count applies to the set of records
 matching the filter.
 
 \param keylist
