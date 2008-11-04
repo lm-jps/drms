@@ -174,18 +174,62 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
         if (strcasecmp (argv[arg], "--help") == 0) return CMDPARAMS_QUERYMODE;
 			/*  This and the next argument  "--name value"  */
 
-        /* This argument might be an escaped string - make sure \t turns into a tab, for example */
-        if (ResolveEscSequence(argv[arg+1], escbuf, sizeof(escbuf)))
+        /* There may or may not be a value associated with a --<name> flag.
+         * If not, then the argument is a flag with a name that has one or 
+         * chars in it. */
+        int valueexists = 0;
+
+        if (arg + 1 < argc)
         {
-           return CMDPARAMS_FAILURE;
+           valueexists = 1;
+
+           /* This argument might be an escaped string - make sure \t turns into a tab, for example */
+           if (ResolveEscSequence(argv[arg+1], escbuf, sizeof(escbuf)))
+           {
+              return CMDPARAMS_FAILURE;
+           }
+
+           int quoteseen = 0;
+           char *pc = escbuf;
+
+           if (pc[0] == '-' || pc[0] == '@')
+           {
+              valueexists = 0;
+           }
+           else
+           {
+              while (*pc)
+              {
+                 if (*pc == '\'' || *pc == '"')
+                 {
+                    quoteseen = 1;
+                 }
+
+                 if (*pc == '=' && !quoteseen)
+                 {
+                    valueexists = 0;
+                    break;
+                 }
+
+                 pc++;
+              }
+           }
         }
 
-	if (arg < argc-1) cmdparams_set (parms, argv[arg]+2, escbuf);
-	else {
-	  fprintf (stderr, "The value of option %s is missing.\n", argv[arg]+2);
-	  return CMDPARAMS_FAILURE;
+	if (valueexists)
+        {
+           cmdparams_set (parms, argv[arg]+2, escbuf);
+           arg += 2;
+        }
+	else 
+        {
+           /* --X flags are case insensitive */
+           char *fbuf = strdup(argv[arg] + 2);
+           strtolower(fbuf);
+           cmdparams_set(parms, fbuf, "1"); 
+           free(fbuf);
+           arg++;
 	}
-	arg += 2;
       } else {	
 				/* argument is a list of one letter flags. */
 	p = argv[arg]+1; 
@@ -919,6 +963,17 @@ char *cmdparams_get_str (CmdParams_t *parms, char *name, int *status) {
 }
 
 int cmdparams_isflagset (CmdParams_t *parms, char *name) {
+   if (strlen(name) > 0)
+   {
+      char *fbuf = strdup(name);
+      int ret = 0;
+
+      strtolower(fbuf);
+      ret = cmdparams_exists(parms, fbuf);
+      free(fbuf);
+      return ret;
+   }
+
   if (cmdparams_exists (parms, name)) {
     return cmdparams_get_int (parms, name, NULL);
   } else return 0;
@@ -1179,9 +1234,7 @@ char *params_get_str (CmdParams_t *parms, char *name) {
 }
 
 int params_isflagset (CmdParams_t *parms, char *name) {
-  if (cmdparams_exists (parms, name)) {
-    return cmdparams_get_int (parms, name, NULL);
-  } else return 0;
+   return cmdparams_isflagset(parms, name);
 }
 
 int8_t params_get_int8 (CmdParams_t *parms, char *name) {

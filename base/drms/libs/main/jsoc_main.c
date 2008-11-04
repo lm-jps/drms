@@ -228,7 +228,12 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
     return 1;
   }
 
-  printrel = cmdparams_isflagset(&cmdparams, kREL);
+  printrel = cmdparams_isflagset(&cmdparams, "ver") ||
+    cmdparams_isflagset(&cmdparams, "vn") ||
+    cmdparams_isflagset(&cmdparams, "vers") ||
+    cmdparams_isflagset(&cmdparams, "version") ||
+    cmdparams_isflagset(&cmdparams, "about");
+
   if (printrel)
   {
      char verstr[32];

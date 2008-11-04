@@ -35,8 +35,6 @@ parsing, and default-parameter initialization.
 #include "drms_dsdsapi.h"
 #include "drms_defs.h"
 
-#define kREL "R"
-
 extern CmdParams_t cmdparams;
 /* Global DRMS Environment handle. */
 extern DRMS_Env_t *drms_env;
