@@ -5,29 +5,15 @@
 #include "drms_names.h"
 
 /**
-\defgroup set_keys set_keys - for each existing record specified, modifies the keyword values or segment information, or create new records
+\defgroup set_keys set_keys
 @ingroup drms_util
 
-Modify the keyword values of a DRMS record or create a new record with
-specified keyword values.
-
-set_keys modifies keyword values and/or inserts generic files into a
-DRMS record(s).
+\brief  modifies the keyword values or segment information, or create new records
 
 \par Synopsis:
 
 \code
 set_keys [-chmvDRIVER_FLAGS] ds=<record_set> [<keyword1>=<value1>]... [<segment1>=<file1>]...
-\endcode
-
-\par Example to modify a keyword value:
-\code
-set_keys ds=su_arta.TestStoreFile[file=dsds_data.fits][sel=January] note=fred
-\endcode
-
-\par Example to create a new record and specify keyword values:
-\code
-set_keys -c ds=su_arta.TestStoreFile file=data.txt sel=February file_seg=/home/arta/febdata.txt
 \endcode
 
 \par Flags:
@@ -71,6 +57,23 @@ If modifying a record(s) and \a segmentN is a generic series segment,
 then first copy the segment file to the cloned record(s)' segment storage,
 then replace the copied file with \a fileN. Otherwise, a cloned record
 and its progenitor share the original segment file.
+
+\detailed
+Modify the keyword values of a DRMS record or create a new record with
+specified keyword values.
+
+set_keys modifies keyword values and/or inserts generic files into a
+DRMS record(s).
+
+\par Example to modify a keyword value:
+\code
+set_keys ds=su_arta.TestStoreFile[file=dsds_data.fits][sel=January] note=fred
+\endcode
+
+\par Example to create a new record and specify keyword values:
+\code
+set_keys -c ds=su_arta.TestStoreFile file=data.txt sel=February file_seg=/home/arta/febdata.txt
+\endcode
 
 \bug 
 At  present updates of segment files fail.  Please use only with the \a -c
