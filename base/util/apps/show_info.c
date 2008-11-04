@@ -160,7 +160,6 @@ called with the \a -p flag and \a seglist is provided on the command line.
 \sa
 retrieve_file drms_query describe_series
 
-@{
 */
 #include "jsoc_main.h"
 #include "drms.h"
@@ -195,7 +194,6 @@ ModuleArgs_t module_args[] =
 };
 
 char *module_name = "show_info";
-/** @}*/
 int nice_intro ()
   {
   int usage = cmdparams_get_int (&cmdparams, "h", NULL);
