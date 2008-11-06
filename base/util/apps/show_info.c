@@ -10,20 +10,23 @@
  */
 
 /**
-\defgroup show_info show_info
+\defgroup show_info show_info - Examine a dataseries structure or contents
 @ingroup drms_util
 
-Prints keyword, segment, and other information and/or file path for given recordset.
+\brief Prints keyword, segment, and other information and/or file path for given recordset.
 
 \par Synopsis:
-
 \code
-show_info [-ajklpPqrs] {ds=}<record_set>|sunum=<sunum> [n=<nrecords>] [key=<keylist>] [seg=<seglist>]
+show_info -j <seriesname>
+show_info -l <seriesname>
+show_info -c <record_set>
+show_info -s <record_set>
+show_info [-aAipPrS] [-dkqt] {ds=}<record_set>|sunum=<sunum> [n=<count>] [key=<keylist>] [seg=<seglist>]
 \endcode
 
-\par Description:
+\details
 
-\ref show_info shows various kinds of information about a data series.
+\b Show_info shows various kinds of information about a data series.
 This can be the series structure, the "jsoc series definition" for
 the series, all or some of the keyword and segment values for a range of records,
 the full path to the SUMS storage for the data segment, etc. 
@@ -38,84 +41,69 @@ each record found.  If the QUERY_STRING argument is present it is parsed to
 extract command line arguments passed via a web cgi-bin call of show_info and
 the results are returned as text.
 
+\par Options:
+
 \par Flags controling operation to perform:
+
 This group of arguments controls the action of show_info.  The default action is to query for the specified record-set
 and perform the requested display of information.
-\par
-\c  -c: Show count of records in query and exit.  This flag requires a record set query to be specified.
-\par
-\c  -h: help - print usage info and exit
-\par
-\c  -j: list series info in jsd format and exit
-\par
-\c  -l: just list series keyword, segment, and link names with descriptions then exit
-\par
-\c  -s: stats - show some statistics about the series, presently only first and last record.
-\par
-\c  QUERY_STRING=<cgi-bin GET format command line args> - string with default "Not Specified" used when show_info is invoked
+\li \c -c: Show count of records in query and exit.  This flag requires a record set query to be specified.
+\li \c -h: help - print usage info and exit
+\li \c -j: list series info in jsd format and exit
+\li \c -l: just list series keyword, segment, and link names with descriptions then exit
+\li \c -s: stats - show some statistics about the series, presently only first and last record.
+\li \c  QUERY_STRING=<cgi-bin GET format command line args> - string with default "Not Specified" used when show_info is invoked
 from http://jsoc.stanford.edu/cgi_bin/ajax/show_info
 
 \par Parameters and Flags controling record subset to examine:
+
 This group of arguments specifies a recordset to examine.  If the "sunum" argument is present it overrides an
-explicit recordset specification and returns the record with that sunum as its record directory in SUMS.
+explicit recordset specification and returns the record with that \a sunum as its record directory pointer in SUMS.
 For normal recordset queries the "ds=" is optional.  In no "where clauses" (i.e. "[xxx]" clauses) are
 present in the recordset query the "n" parameter is required.  Since the "where clauses" are used to
 restrict the number or records retrieved, an empty clause (e.g. "[]") will match all records in the series.
-\par
-\c  ds=<record_set query> - string with default "Not Specified", see below for more information.
-\par
-\c  n=<count> - Max number of records to show, +from first, -from last, see below.
-\par
-\c  sunum=<sunum> - integer with default -1
-\par
+\li \c  ds=<record_set query> - string with default "Not Specified", see below for more information.
+\li \c  n=<count> - Max number of records to show, +from first, -from last, see below.
+\li \c  sunum=<sunum> - integer with default -1
 
 \par Parameters and Flags controling selction of keywords and segments to examine:
+
 This group of arguments specifies the set of keywords, segments, links, or virtual keywords to display.
 (link display not yet implemented/tested).
+\li \c  key=<keylist> - string with default "Not Specified", see below.
+\li \c  seg=<seglist> - string with dedfauly "Not Specified", see below.
+\li \c  -a: Select all keywords and display their values for the chosen records
+\li \c  -A: Select all segments and display their filenames/paths/dimensions for the chosen records
+\li \c  -i: print record query, for each record, will be before any keywwords or segment data
+\li \c  -p: list the record's storage_unit path, waits for retrieval if offline
+\li \c  -P: list the record\'s storage_unit path but no retrieve
+\li \c  -r: recnum - show record number as first keyword
+\li \c  -S: SUNUM - show the sunum for the record
 
-\par
-\c  key=<keylist> - string with default "Not Specified", see below.
-\par
-\c  seg=<seglist> - string with dedfauly "Not Specified", see below.
-\par
-\c  -a: Select all keywords and display their values for the chosen records
-\par
-\c  -A: Select all segments and display their values for the chosen records
-\par
-\c  -i: print record query, for each record, will be before any keywwords or segment data
-\par
-\c  -p: list the record's storage_unit path, waits for retrieval if offline
-\par
-\c  -P: list the record\'s storage_unit path but no retrieve
-\par
-\c  -r: recnum - show record number as first keyword
-\par
-\c  -S: SUNUM - show the sunum for the record
 \par Flags controling how to display values:
-\par
-\c  -d: Show dimensions of segment files with selected segs
-\par
-\c  -k: keyword list one per line
-\par
-\c  -q: quiet - skip header of chosen keywords
-\par
-\c  -t: types - show types and print formats for keyword values
-\par
-\par Driver flags: 
+
+\li \c  -d: Show dimensions of segment files with selected segs
+\li \c  -k: keyword list one per line
+\li \c  -q: quiet - skip header of chosen keywords
+\li \c  -t: types - show types and print formats for keyword values
+
+\par JSOC flags: 
 \ref jsoc_main
 
-\param record_set
+\par Usage:
+
+\a seriesname
+A seriesname is a JSOC DRMS seriesname.  It is the prefix of a record_set specification.
+
+\a record_set
 A record_set list is a comma separated list of record_set queries.
 Each query is a series name followed by an optional record-set specification (i.e.,
 \a seriesname[RecordSet_filter]). Causes selection of a subset of
 records in the series. This argument is required, and if no record-set
 filter is specified, then \a n=nrecords must be present.
 The "ds=" protion of the record_set argument is optional.
-<I>NOTE to the csh user, you need to excape the '[' character and
-some other characters used in the record set specification.</I>
 
-\param count
-\a n=<count> specifies the maximum number of records for which
+\a count specifies the maximum number of records for which
 information is printed.  If \a count < 0, \ref show_info displays
 information for the last \a count records in the record set. If
 \a count > 0, \ref show_info displays information for the first
@@ -123,12 +111,12 @@ information for the last \a count records in the record set. If
 record set filter, then \a count applies to the set of records
 matching the filter.
 
-\param keylist
+\a keylist
 Comma-separated list of keyword names. For each keyword listed,
 information will be displayed.  \a keylist is ignored in the case that
 the \a -a flag is set.
 
-\param seglist
+\a seglist
 Comma-separated list of segment names.  \a seglist is ignored
 in the case that the \a -A flag is set.  For each segment listed, the
 segment's file is displayed.  If the \a -p flag is set the filename will
@@ -139,26 +127,59 @@ is displayed only if the data is online.  If offline with a \a -P flag then
 only the filename is shown.  If the \a -d flag is set then the dimensions
 of the segment array are displayed along with the path/filename.
 
-\b Example:
+\warning NOTE to the csh user, you need to excape the '[' character and
+some other characters used in the record set specification.
+
+\par Output:
+
+In the normal table mode, show_info presents keyword and segment values in a table with
+a column for each keyword, segment, or other quantity and a row for each record
+in the selected record_set.  The columns are tab separated. Unless the \c -q flag is
+present a header row(s) will be provided.  The normal header is a single row containing
+the column name.  If the \a -t flag is present an expanded header will contain three
+lines: the normal name list line, a second line containing the type of the values, e.g.
+\a int, \a double, \a etc. and a third line containing the type as a \ref printf printing
+format, e.g. \a %s for a string.
+
+In the keyword format, invoked with a \a -k flag, there is one name=<value> pair per
+line.  Lines for each record are preceeded with a line beginning with a '#' and containing
+the record_set query that finds that record and followed by a single blank line.
+
+The \a -q flag is provided to make it convenient to use the output of \a show_info in scripts.
+Example 3 below shows such a usage.
+
+\par Examples:
+
+\b Example 1:
 To show the storage-unit paths for a maximum of 10
 records:
 \code
   show_info -p ds=su_arta.TestStoreFile n=10
 \endcode
 
-\b Example:
+\b Example 2:
 To show information, in non-table format, for all keywords,
-plus the segment named file_seg, for a maximum of 10 records:
+plus the segment named file_seg and storage unit number, for a maximum of 10 records:
 \code
-  show_info ds=su_arta.TestStoreFile -akr n=10 seg=file_seg
+  show_info ds=su_arta.TestStoreFile -akrS n=10 seg=file_seg
+\endcode
+
+\b Example 3:
+To find the path to the most recent hmi level-0 small image and start the ds9 display program:
+\code
+  ds9 `show_info -q -p seg=image_sm 'hmi.lev0e[:#$]'`
+\endcode
+
+\b Example 4:
+To show the structure of a series:
+\code
+  show_info -l su_phil.vw_V_mean
 \endcode
 
 \bug
-The program will produce superflous and non-meaningful output if
-called with the \a -p flag and \a seglist is provided on the command line.
 
 \sa
-retrieve_file drms_query describe_series
+http://jsoc.stanford.edu/ajax/lookdata.html drms_query describe_series jsoc_info create_series
 
 */
 #include "jsoc_main.h"
