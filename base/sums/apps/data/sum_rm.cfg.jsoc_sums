@@ -1,16 +1,16 @@
 #configuration file for sum_rm program
 #
 #when done, sleep for n seconds before re-running
-SLEEP=1800
+SLEEP=900
 #delete until this many Mb free on /SUM set 0.
 #NOTE: only one pds type set for SUMS.
-MAX_FREE_0=101000000
+MAX_FREE_0=40000000
 #log file (only opened at startup and pid gets appended to this name)
 LOG=/usr/local/logs/SUM/sum_rm.log
 #whom to bother when there's a notable problem
 MAIL=jim
 #to prevent sum_rm from doing anything set non-0
-NOOP=1
+NOOP=0
 #sum_rm can only be enabled for a single user 
 USER=production
 #USER=jim
