@@ -3,67 +3,91 @@
 #include "jsoc_main.h"
 #include "drms.h"
 #include "drms_names.h"
-
 /**
-\defgroup set_keys set_keys
+\defgroup set_keys set_keys - Add or update records with new keyword or segment filename values
 @ingroup drms_util
-
-\brief  modifies the keyword values or segment information, or create new records
 
 \par Synopsis:
 
 \code
-set_keys [-chmvDRIVER_FLAGS] ds=<record_set> [<keyword1>=<value1>]... [<segment1>=<file1>]...
+set_keys [-h] 
+set_keys [-ctv] [JSOC_FLAGS] ds=<seriesname> [<keyword>=<value>]... [<segment>=<filename>]...
+set_keys [-Cmtv] [JSOC_FLAGS] ds=<record_set> [<keyword>=<value>]... [<segment>=<filename>]...
+set_keys_soc {options as above}
 \endcode
 
+\details
+
+Sets keyword values for a record in a DRMS dataseries.  \b set_keys runs in one of two modes.
+\li If the "create" \c -c flag is present a new record will be created.  In this case ALL of the prime keys
+must be present in \e keyword=value pairs to specify the locator keywords for the new record.  Other keywords
+and or segments specifications are usually also present.
+\li An existing record_set may be specified and a new version of those record will be made with the specified keywords
+given new values. Usually, almost always, only a single record is updated in one call of set_keys since
+only one set of keyword values can be provided and all records modified will be given the same new
+values for those keywords.  If multiple records are to be changed the \c -m flag is required.
+\b set_keys will then clone the records specified by the record-set filter.
+In the update mode, NONE of the prime keys are allowed in keyword=value pairs on the command line (except
+of course as a where clause as part of the recordset specification)
+
+For each keyword specified in a \a keyword=value pair on the command line, \b set_keys will set the values for all these clones' keywords to \a value.
+
+If a segment in the series is if type \e generic then set_keys can be used to store a given file in
+the SUMS directory associated with the record.
+In this case, for each \c segment=filename parameter the file found at filename will be copied into the
+record directory and the segment filename will be saved in the segment descriptor in DRMS.
+
+In normal usage if NO segments are specified, any segments in the original version of an updated record will
+be shared with the new record.  This allows keyword metadata to be updated without making unnecessary copies
+of file data in SUMS.  However if any segment file is to be updated, a new record directory must be allocated
+and any other segment's files will be copied (cloned) to the new directory and associated with the new record.
+If the \a -C "clone" flag is present then a new record directory will be allocated even if none of the
+segments are to be updated.  This usually only makes sense in a JSOC session script where the same record
+will be incrementally updated by multiple modules and set_keys is invoked as set_keys_sock.  
+
+Only one instance of each keyword name or segment name is allowed.
+
+\par Options:
+
 \par Flags:
-\c -c: Create a new record
-\par
-\c -h: Print usage message and exit
-\par
-\c -m: Modify the keywords of multiple records. The \c -m flag should be
-       used with caution.  A typo could damage many records. Do not use
-       \c -m unless you are sure the query will specify ONLY the records
-       you want to modify.
-\par
-\c -v: Verbose - noisy.
+
+\li \c -c: Create a new record
+\li \c -C: Clone an existing record
+\li \c -h: Print usage message and exit
+\li \c -m: Modify the keywords of multiple records. The \c -m flag should be
+used with caution.  A typo could damage many records. Do not use
+\c -m unless you are sure the query will specify ONLY the records
+you want to modify.
+\li \c -t: Create any needed records as \ref DRMS_TRANSIENT instead of default which is \ref DRMS_PERMANENT
+\li \c -v: Verbose - noisy.
 
 The \c -c and \c -m flags cannot be used simultaneously.
 
-\par Driver flags: 
+\par JSOC flags: 
 \ref jsoc_main
 
-\param record_set
+\par Usage:
 
-A series name followed by an optional record-set specification
-(i.e., \a seriesname[\a filter]). If no record-set filter is
-specified, \ref set_keys requires the \a -c flag, and it creates a new
-record. All of the prime keywords and values must be specified as \a
-keyword=value pairs.  If a record-set filter IS specified, \ref
-set_keys requires the \a -c flag to be unset.  If \a record_set
-resolves to more than one record, then the \a -m flag must be
-set. \ref set_keys will then clone the records specified by the
-record-set filter. For each keyword specified in a \a keyword=value
-pair on the command line, \ref set_keys will set the values for all
-these clones' keywords to \a value.
+\c seriesname is the name of the JSOC DRMS series to be updated.  If new records are being
+created, no \e where clauses are permitted.
+
+\c record_set
+A series name followed by a record-set specification
+(i.e., \a seriesname[\a filter]).
+If \a record_set resolves to more than one record, then the \a -m flag must be
+set to prevent simple typos from doing extensive damage.
 
 \param valueN
 The new keyword values to be used to create a new or modify an
 existing record.
 
-\param fileN
+\param filename
 
-If modifying a record(s) and \a segmentN is a generic series segment,
+If modifying a record(s) the specified \a segment is a generic series segment,
 then first copy the segment file to the cloned record(s)' segment storage,
-then replace the copied file with \a fileN. Otherwise, a cloned record
-and its progenitor share the original segment file.
-
-\detailed
-Modify the keyword values of a DRMS record or create a new record with
-specified keyword values.
-
-set_keys modifies keyword values and/or inserts generic files into a
-DRMS record(s).
+then store the filename with in the segment descriptor.
+Any leading pathname directories will be removed from the filename value prior to
+updating the segment descriptor.
 
 \par Example to modify a keyword value:
 \code
@@ -76,11 +100,7 @@ set_keys -c ds=su_arta.TestStoreFile file=data.txt sel=February file_seg=/home/a
 \endcode
 
 \bug 
-At  present updates of segment files fail.  Please use only with the \a -c
-flag and prime keys  when  inserting  files  into  generic  type  data
-segments.
 
-@{
 */
 ModuleArgs_t module_args[] =
 { 
@@ -98,7 +118,6 @@ char *module_name = "set_keys";
 
 int verbose = 0;
 
-/** @}*/
 int nice_intro(int help)
   {
   int usage = cmdparams_get_int(&cmdparams, "h", NULL) != 0;

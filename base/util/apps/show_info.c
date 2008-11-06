@@ -1,5 +1,5 @@
 /*
- *  show_info - prints keyword information and/or file path for given recordset
+ *  show_info - Prints keyword information and/or file path for given recordset
  *
  *  new version of original show_keys expanded to have more than just keyword info.
  *
@@ -13,8 +13,6 @@
 \defgroup show_info show_info - Examine a dataseries structure or contents
 @ingroup drms_util
 
-\brief Prints keyword, segment, and other information and/or file path for given recordset.
-
 \par Synopsis:
 \code
 show_info -j <seriesname>
@@ -22,6 +20,7 @@ show_info -l <seriesname>
 show_info -c <record_set>
 show_info -s <record_set>
 show_info [-aAipPrS] [-dkqt] {ds=}<record_set>|sunum=<sunum> [n=<count>] [key=<keylist>] [seg=<seglist>]
+show_info_sock {same options as above}
 \endcode
 
 \details
@@ -40,6 +39,9 @@ resulting records are examined and the specified quantities are printed for
 each record found.  If the QUERY_STRING argument is present it is parsed to
 extract command line arguments passed via a web cgi-bin call of show_info and
 the results are returned as text.
+
+\b show_info_sock is the same as show_info but configured to run in a DRMS session via a socket connection
+to a \ref drms_server.
 
 \par Options:
 
