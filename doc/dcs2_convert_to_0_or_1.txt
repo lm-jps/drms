@@ -1,0 +1,29 @@
+		/home/production/cvs/JSOC/doc/dcs2_convert_to_0_or_1.txt
+
+
+        -----------------------------
+        Convert dcs2 to dcs0 or dcs1
+        -----------------------------
+
+Here are the steps to enable network connection to DDS from the
+dcs spare (dcs2).
+
+1. If the system to be replaced is still alive, login and
+   run "ifdown eth3" as root.
+
+2. Log in the spare (dcs2) as root and run the command
+   "/etc/sysconfig/network/XXX-up" where XXX is either
+   AIA or HMI depending on which dcs system it is about
+   to replace.
+
+3. Open the front door of the NASA rack, unplug the red
+   ethernet cable labelled "dcsx XXX ..." where x is 0 
+   for XXX==AIA or 1 for XXX==HMI, and plug the loose 
+   ethernet cable labelled "dcs spare" into the same port 
+   vacated by the cable you've just unplugged.
+ 
+4. To restore the original dcs2 to itself do:
+
+   /etc/sysconfig/network/XXX-up/MYSELF-up
+
+   And don't forget to move the cable back to the dcs0 or dcs1.
