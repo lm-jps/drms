@@ -15,6 +15,7 @@ struct LinkedList_struct
   unsigned int dsize;
   ListNode_t *first;
   ListNode_t *next; /* used for iterating */
+  int nitems; /* number of nodes in list */
 };
 typedef struct LinkedList_struct LinkedList_t;
 

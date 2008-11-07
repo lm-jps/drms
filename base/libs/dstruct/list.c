@@ -8,6 +8,7 @@ LinkedList_t *list_llcreate(unsigned int datasize)
    if (list)
    {
       list->dsize = datasize;
+      list->nitems = 0;
    }
 
    return list;
@@ -38,6 +39,8 @@ ListNode_t *list_llinserthead(LinkedList_t *llist, void *data)
 	    node->next = llist->first;
 	    llist->first = node;
 	 }
+         
+         llist->nitems++;
       }
    }
 
@@ -80,6 +83,8 @@ ListNode_t *list_llinserttail(LinkedList_t *llist, void *data)
                end = end->next;
             }
 	 }
+
+         llist->nitems++;
       }
    }
 
@@ -113,6 +118,8 @@ void list_llremove(LinkedList_t *llist, ListNode_t *item)
       {
          prev->next = node->next;
       }
+
+      llist->nitems--;
    }
 }
 
