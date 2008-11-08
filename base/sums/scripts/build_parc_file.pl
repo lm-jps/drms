@@ -67,7 +67,7 @@ sub labeldate {
 }
 
 $HOSTDB = "hmidb";	#db machine
-$HOSTDC = "dcs0";	#default datacapture to send to
+$HOSTDC = "dcs0";	# (Obsolete) default datacapture to send to
 $TLMDSHMI = "hmi.tlme"; #series of .tlm files to query
 $TLMDSAIA = "aia.tlme"; #series of .tlm files to query
 $DB = "jsoc_sums";
@@ -115,6 +115,22 @@ if($user ne "production") {
   print "You must be user production to run\n";
   exit;
 }
+
+#Get the machine names where AIA and HMI processing live
+@dcsnodes = `ssh j0 cat /home/production/cvs/JSOC/proj/datacapture/scripts/dcstab.txt`;
+while($_ = shift(@dcsnodes)) {
+  if(/^#/ || /^\n/) { #ignore any comment or blank lines
+    next;
+  }
+  chomp;
+  if(/^AIA/) {
+    ($x, $aianode) = split(/=/);
+  }
+  if(/^HMI/) {
+    ($x, $hminode) = split(/=/);
+  }
+}
+print "AIA=$aianode  HMI=$hminode\n";
 
 #First connect to database
   $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb;port=$PGPORT", "$user", "$password");
@@ -172,11 +188,11 @@ for($i = 0; $i < 2; $i++) { 	#do first for HMI then AIA
   print "Results in $resultfile\n";
   #now copy the resulting .parc file to the proper dcs machine
   if($i == 0) {		#hmi
-    $cmd = "scp $parchmi dcs1:/dds/pipe2soc/hmi";
+    $cmd = "scp $parchmi $hminode:/dds/pipe2soc/hmi";
     print SR "$cmd\n";
   }
   else {		#aia
-    $cmd = "scp $parcaia dcs0:/dds/pipe2soc/aia";
+    $cmd = "scp $parcaia $aianode:/dds/pipe2soc/aia";
     print SR "$cmd\n";
   }
   print "NOTE: if this asks for password, you don't have ssh-agent set up\n";
