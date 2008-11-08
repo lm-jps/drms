@@ -454,6 +454,12 @@ sumprog_1(rqstp, transp)
 		xdr_result = xdr_Rkey;
 		local = (char *(*)()) allocdo_1;
 		break;
+	case INFODO:
+		sprintf(procname, "INFODO");
+		xdr_argument = xdr_Rkey;
+		xdr_result = xdr_Rkey;
+		local = (char *(*)()) infodo_1;
+		break;
 	case GETDO:
 		sprintf(procname, "GETDO");
 		xdr_argument = xdr_Rkey;
