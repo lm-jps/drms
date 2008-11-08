@@ -135,10 +135,10 @@ while($_ = shift(@ps_prod)) {
               print "Error: robot0_svc $DB still running after sum_stop?\n";
               exit;
             }
-            elsif(/sum_rm $DB/) {
-              print "Error: sum_rm $DB still running after sum_stop?\n";
-              exit;
-            }
+#            elsif(/sum_rm $DB/) {
+#              print "Error: sum_rm $DB still running after sum_stop?\n";
+#              exit;
+#            }
             elsif(/sum_pe_svc $DBDRMS/) {
               print "Error: sum_pe_svc $DB still running after sum_stop?\n";
               exit;
@@ -160,9 +160,9 @@ while($_ = shift(@ps_prod)) {
         print "** Now starting: sum_svc $DB\n";
         print LOG "** Now starting: sum_svc $DB\n";
         $cmd = "sum_pe_svc $DBDRMS &";
-        if(system($cmd)) {
-          print "Error: failure on sum_pe_svc $DBDRMS\n";
-        }
+#        if(system($cmd)) {
+#          print "Error: failure on sum_pe_svc $DBDRMS\n";
+#        }
         $cmd = "sum_svc $DB &";
         if(system($cmd)) {
           print "Error: failure on sum_svc $DB\n";
