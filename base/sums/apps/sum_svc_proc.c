@@ -306,6 +306,55 @@ KEY *allocdo_1(KEY *params)
   return((KEY *)1);		/* nothing will be sent later */
 }
 
+/* Called when a client does a SUM_info() call to get sum_main info. 
+ * A typical keylist is:
+ * USER:   	   KEYTYP_STRING   production
+ * REQCODE:        KEYTYP_INT      13
+ * DEBUGFLG:       KEYTYP_INT      1
+ * SUNUM:	   KEYTYP_UINT64   6260386 
+ * uid:    KEYTYP_UINT64    574
+*/
+KEY *infodo_1(KEY *params)
+{
+  int status;
+  uint64_t uid;
+  uint64_t sunum = 0;
+
+  if(findkey(params, "DEBUGFLG")) {
+    debugflg = getkey_int(params, "DEBUGFLG");
+    if(debugflg) {
+      write_log("!!Keylist in infodo_1() is:\n");
+      keyiterate(logkey, params);
+    }
+  }
+  sunum = getkey_uint64(params, "SUNUM");
+  uid = getkey_uint64(params, "uid");
+  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
+    write_log("**Error: infodo_1() called with unopened uid=%lu\n", uid);
+    rinfo = 1;	/* give err status back to original caller */
+    send_ack();	/* ack original sum_svc caller */
+    return((KEY *)1);	/* error. nothing to be sent */ 
+  }
+  retlist = newkeylist();
+  add_keys(params, &retlist);		/* NOTE:does not do fileptr */
+
+  if(!(status=SUMLIB_InfoGet(sunum, &retlist))) {
+    if(!(set_client_handle(RESPPROG, (uint32_t)uid))) { /*set up for response*/
+      freekeylist(&retlist);
+      rinfo = 1;  /* give err status back to original caller */
+      send_ack();
+      return((KEY *)1);  /* error. nothing to be sent */
+    }
+    rinfo = 0;
+    send_ack();
+    setkey_int(&retlist, "STATUS", 0);   /* give success back to caller */
+    return(retlist);		/* return the ans now */
+  }
+  rinfo = status;		/* ret err code back to caller */
+  send_ack();
+  return((KEY *)1);		/* nothing will be sent later */
+}
+
 /* Called when a client does a SUM_put() to catalog storage units.
  * Can only put a single SU at a time (reqcnt = 1). Typical call is:
  * wd_0:   KEYTYP_STRING   /SUM1/D1695
