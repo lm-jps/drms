@@ -93,6 +93,7 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
   }
   numopened++;
   sumptr = (SUM_t *)malloc(sizeof(SUM_t));
+  sumptr->sinfo = NULL;
   sumptr->cl = cl;
   sumptr->uid = sumid;
   sumptr->username = username;
@@ -264,6 +265,53 @@ int SUM_alloc2(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
   }
 }
 
+/* Return information from sum_main for the given sunum (ds_index).
+ * Return non-0 on error, else sum->sinfo has the SUM_info_t pointer.
+*/
+int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
+{
+  KEY *klist;
+  char *call_err;
+  uint32_t retstat;
+  int msgstat;
+  enum clnt_stat status;
+
+  if(sum->sinfo == NULL) 
+    sum->sinfo = (SUM_info_t *)malloc(sizeof(SUM_info_t));
+  klist = newkeylist();
+  setkey_uint64(&klist, "SUNUM", sunum); 
+  setkey_str(&klist, "username", sum->username);
+  setkey_uint64(&klist, "uid", sum->uid);
+  setkey_int(&klist, "DEBUGFLG", sum->debugflg);
+  setkey_int(&klist, "REQCODE", INFODO);
+  status = clnt_call(sum->cl, INFODO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
+
+  /* NOTE: These rtes seem to return after the reply has been received despite
+   * the timeout value. If it did take longer than the timeout then the timeout
+   * error status is set but it should be ignored.
+  */
+  if(status != RPC_SUCCESS) {
+    if(status != RPC_TIMEDOUT) {
+      call_err = clnt_sperror(sum->cl, "Err clnt_call for INFODO");
+      (*history)("%s %d %s\n", datestring(), status, call_err);
+      freekeylist(&klist);
+      return (1);
+    }
+  }
+  if(retstat) {			/* error on INFODO call */
+    (*history)("Error in SUM_info()\n");
+    return(retstat);
+  }
+  else {
+    msgstat = getanymsg(1);	/* get answer to ALLOCDO call */
+    freekeylist(&klist);
+    if(msgstat == ERRMESS) return(ERRMESS);
+    return(0);
+  }
+}
+
+
 /* Close this session with the SUMS. Return non 0 on error.
 */
 int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
@@ -313,6 +361,7 @@ int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
   }
   free(sum->dsix_ptr);
   free(sum->wd);
+  if(sum->sinfo) free(sum->sinfo);
   free(sum);
   freekeylist(&klist);
   if(errflg) return(1);
@@ -662,6 +711,7 @@ int getmsgimmed()
 KEY *respdo_1(KEY *params)
 {
   SUM_t *sum;
+  SUM_info_t *sinfo;
   SUMOPENED *sumopened;
   char *wd;
   char **cptr;
@@ -702,6 +752,26 @@ KEY *respdo_1(KEY *params)
         printf("%s\n", GETKEY_str(params, "ERRSTR"));
       }
     } 
+    break;
+  case INFODO:
+    sinfo = sum->sinfo;
+    sinfo->sunum = getkey_uint64(params, "SUNUM");
+    strcpy(sinfo->online_loc, GETKEY_str(params, "online_loc"));
+    strcpy(sinfo->online_status, GETKEY_str(params, "online_status"));
+    strcpy(sinfo->archive_status, GETKEY_str(params, "archive_status"));
+    strcpy(sinfo->offsite_ack, GETKEY_str(params, "offsite_ack"));
+    strcpy(sinfo->history_comment, GETKEY_str(params, "history_comment"));
+    strcpy(sinfo->owning_series, GETKEY_str(params, "owning_series"));
+    sinfo->storage_group = getkey_int(params, "storage_group");
+    sinfo->bytes = getkey_double(params, "bytes");
+    strcpy(sinfo->creat_date, GETKEY_str(params, "creat_date"));
+    strcpy(sinfo->username, GETKEY_str(params, "username"));
+    strcpy(sinfo->arch_tape, GETKEY_str(params, "arch_tape"));
+    sinfo->arch_tape_fn = getkey_int(params, "arch_tape_fn");
+    strcpy(sinfo->arch_tape_date, GETKEY_str(params, "arch_tape_date"));
+    strcpy(sinfo->safe_tape, GETKEY_str(params, "safe_tape"));
+    sinfo->safe_tape_fn = getkey_int(params, "safe_tape_fn");
+    strcpy(sinfo->safe_tape_date, GETKEY_str(params, "safe_tape_date"));
     break;
   case PUTDO:
     break;
