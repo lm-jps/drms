@@ -9,6 +9,7 @@
 #include <rpc/rpc.h>
 #include <soi_key.h>
 #include <tape.h>
+#include <sum_info.h>
 
 /* !!TBD fix up these defs */
 //#define OFFSITEHOST "d00.stanford.edu" //offsite hostname to send .md5 files
@@ -133,11 +134,13 @@ bool_t xdr_Rkey(XDR *xdrs, Rkey *objp);
 **********************************/
 #define DEBUGDO ((uint32_t)11)
 #define DELSERIESDO ((uint32_t)12)
+#define INFODO ((uint32_t)13)
 
 extern KEY *sumdo_1();
 extern KEY *opendo_1();
 extern KEY *closedo_1();
 extern KEY *getdo_1();
+extern KEY *infodo_1();
 extern KEY *sumrespdo_1();
 extern KEY *allocdo_1();
 extern KEY *putdo_1();
@@ -305,6 +308,7 @@ typedef struct SUM_struct
 {
   SUMID_t uid;
   CLIENT *cl;            /* client handle for calling sum_rpc_svc */
+  SUM_info_t *sinfo;	 /* info from sum_main for SUM_info() call */
   int debugflg;		 /* verbose debug mode if set */
   int mode;              /* bit map of various modes */
   int tdays;             /* touch days for retention */
