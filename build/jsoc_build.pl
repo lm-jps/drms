@@ -47,7 +47,7 @@ if (scalar(@line)) {
     while($oneline = <FH>)
     {
         chomp($oneline);
-        if ($oneline =~ /:\serror:\s/)
+        if ($oneline =~ /:\s\S*\serror:\s/)
         {
             $errmsg = "${errmsg}${oneline}\n";
             $oneline = <FH>;
