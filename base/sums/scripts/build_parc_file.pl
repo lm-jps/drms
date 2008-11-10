@@ -116,8 +116,17 @@ if($user ne "production") {
   exit;
 }
 
-#Get the machine names where AIA and HMI processing live
-@dcsnodes = `ssh j0 cat /home/production/cvs/JSOC/proj/datacapture/scripts/dcstab.txt`;
+#Get the machine names where AIA and HMI processing live.
+#The dcstab.txt must be on either dcs0 or dcs1
+@dcsnodes = `ssh dcs0 cat /home/production/cvs/JSOC/proj/datacapture/scripts/dcstab.txt`;
+if(!@dcsnodes) {
+  @dcsnodes = `ssh dcs1 cat /home/production/cvs/JSOC/proj/datacapture/scripts/dcstab.txt`;
+}
+if(!@dcsnodes) {
+  print "ERROR: can't find /home/production/cvs/JSOC/proj/datacapture/scripts/dcstab.txt\n";
+  exit;
+}
+
 while($_ = shift(@dcsnodes)) {
   if(/^#/ || /^\n/) { #ignore any comment or blank lines
     next;
