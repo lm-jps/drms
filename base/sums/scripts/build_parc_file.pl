@@ -101,6 +101,7 @@ $x = shift(@sshinfo);
 ($a, $b, $ssh_agent_pid) = split(/ /, $x);
 chomp($ssh_agent_pid);
 print SR "SSH_AGENT_PID=$ssh_agent_pid export SSH_AGENT_PID\n";
+close(SR);
 
 $ldate = &labeldate();
 $parchmi = $PARC_ROOT."HMI_$currdate".".parc";
@@ -118,12 +119,12 @@ if($user ne "production") {
 
 #Get the machine names where AIA and HMI processing live.
 #The dcstab.txt must be on either dcs0 or dcs1
-@dcsnodes = `ssh dcs0 cat /home/production/cvs/JSOC/proj/datacapture/scripts/dcstab.txt`;
+@dcsnodes = `source $map; ssh dcs0 cat /home/production/cvs/JSOC/proj/datacapture/scripts/dcstab.txt`;
 if(!@dcsnodes) {
-  @dcsnodes = `ssh dcs1 cat /home/production/cvs/JSOC/proj/datacapture/scripts/dcstab.txt`;
+  @dcsnodes = `source $map; ssh dcs1 cat /home/production/cvs/JSOC/proj/datacapture/scripts/dcstab.txt`;
 }
 if(!@dcsnodes) {
-  print "ERROR: can't find /home/production/cvs/JSOC/proj/datacapture/scripts/dcstab.txt\n";
+  print "ERROR: can't ssh or find /home/production/cvs/JSOC/proj/datacapture/scripts/dcstab.txt\n";
   exit;
 }
 
@@ -197,17 +198,16 @@ for($i = 0; $i < 2; $i++) { 	#do first for HMI then AIA
   print "Results in $resultfile\n";
   #now copy the resulting .parc file to the proper dcs machine
   if($i == 0) {		#hmi
-    $cmd = "scp $parchmi $hminode:/dds/pipe2soc/hmi";
-    print SR "$cmd\n";
+    $cmd = "source $map; scp $parchmi $hminode:/dds/pipe2soc/hmi";
+    #print SR "$cmd\n";
   }
   else {		#aia
-    $cmd = "scp $parcaia $aianode:/dds/pipe2soc/aia";
-    print SR "$cmd\n";
+    $cmd = "source $map; scp $parcaia $aianode:/dds/pipe2soc/aia";
+    #print SR "$cmd\n";
   }
   print "NOTE: if this asks for password, you don't have ssh-agent set up\n";
   print "$cmd\n";
   $logfile = "/tmp/build_parc_file.log";
-  $cmd = "source $map";
   if(system "$cmd 1> $logfile 2>&1") {
     print "Error on: $cmd\n";
     print "See log: $logfile\n";
