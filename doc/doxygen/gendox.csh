@@ -13,6 +13,7 @@ set NONE = "///none///"
 set MINUS = "-"
 set SLASH = "\/"
 
+set DOXYGEN = "/home/jsoc/bin/linux_x86_64/doxygen"
 set TMPINDIR = "/tmp/doxygen/input" # tmp place to put JSOC tree
 set TMPOUTDIR = "/tmp/doxygen/output" # tmp place to put output
 set INTREE = "$TMPINDIR/JSOC/" # default input JSOC tree
@@ -121,7 +122,7 @@ if ($CMDIN != $NONE && $CMDMANOUT != $NONE && $CMDHTMLOUT != $NONE) then
 
     # call doxygen
     cd $CMDIN
-    doxygen doxygen_publ.cfg
+    $DOXYGEN doxygen_publ.cfg
 
     # clean html destination, then copy html output
     find $CMDHTMLOUT -mindepth 1 -name "*" -exec rm {} \;
