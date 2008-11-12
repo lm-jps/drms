@@ -10,9 +10,6 @@ Doxygen.
 Start with the "Modules" tab for html versions of the JSOC software manual
 pages.
 
-<a href="http://jsoc.stanford.edu/doxygen_html/index.html">main JSOC website content</a>
-
-
 General information on:\n
  - JSOC: http://jsoc.stanford.edu\n
  - HMI: http://hmi.stanford.edu\n
@@ -22,6 +19,9 @@ General information on:\n
 
 There is the beginning of a style guide for documenting under
 \ref tipshints.
+
+There is an example module documentation man page at
+\ref module_template.
 
 Feel free to start documenting or playing with doxygen configuration.
 This main page can be found in doc/doxygen_main_page.txt .
@@ -119,30 +119,38 @@ blocks: http://www.stack.nl/~dimitri/doxygen/commands.html
 */
 
 
-/**
-@defgroup drms_util DRMS Utilities
-*/
+///@defgroup programs Programs, DRMS Modules, Shell Scripts
 
-/**
-@defgroup su_apps Stanford University Applications
-*/
-/* @{ */
-/**
-        @defgroup su_admin Administrative Utilities
-        @defgroup su_util General Utilities
-        @defgroup su_migration Data Migration
-        @defgroup su_export Data Export
-        @defgroup su_lev0 Level Zero
-*/
-/* @} */
+///  @defgroup jsoc_main
+///  @ingroup programs
 
-/**
-@addtogroup core_api Core DRMS API functions
-- ::drms_open_records
-- ::drms_create_records
-- ::drms_clone_records
-- ::drms_close_records
-- ::drms_segment_read
-- ::drms_segment_write
-- ::drms_series_exists
-*/
+///  @defgroup drms_util DRMS Utilities
+///  @ingroup programs
+
+///  @defgroup su_apps Stanford University Applications
+///  @ingroup programs
+///      @defgroup su_admin Administrative Utilities 
+///      @ingroup su_apps
+///      @defgroup su_util General Utilities 
+///      @ingroup su_apps
+///      @defgroup su_migration Data Migration 
+///      @ingroup su_apps
+///      @defgroup su_export Data Export 
+///      @ingroup su_apps
+///      @defgroup su_lev0 Level Zero 
+///      @ingroup su_apps
+
+///@defgroup api API Libraries
+// @{
+    /**
+    @defgroup core_api Core DRMS API functions
+    @ingroup api
+    - ::drms_open_records
+    - ::drms_create_records
+    - ::drms_clone_records
+    - ::drms_close_records
+    - ::drms_segment_read
+    - ::drms_segment_write
+    - ::drms_series_exists
+    */
+// @}

@@ -1,5 +1,6 @@
 /**
    @defgroup module_template Template Doxygen markup for DRMS modules
+   @ingroup programs
 
    @brief A brief module description goes here
 
