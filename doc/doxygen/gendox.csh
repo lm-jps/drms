@@ -126,8 +126,10 @@ if ($CMDIN != $NONE && $CMDMANOUT != $NONE && $CMDHTMLOUT != $NONE) then
 
     # clean html destination, then copy html output
     find $CMDHTMLOUT -mindepth 1 -name "*" -exec rm {} \;
-    cp -v $TMPOUTDIR/html/* $CMDHTMLOUT
-    chmod 664 $CMDHTMLOUT/*
+    # cp -v $TMPOUTDIR/html/* $CMDHTMLOUT
+    find $TMPOUTDIR/html -mindepth 1 -name "*" -exec cp {} $CMDHTMLOUT \;
+    # chmod 664 $CMDHTMLOUT/*
+    find $CMDHTMLOUT -mindepth 1 -name "*" -exec chmod 664 {} \;
 
     cd $CMDMANOUT
     

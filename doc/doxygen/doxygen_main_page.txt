@@ -121,7 +121,7 @@ blocks: http://www.stack.nl/~dimitri/doxygen/commands.html
 
 ///@defgroup programs Programs, DRMS Modules, Shell Scripts
 
-///  @defgroup jsoc_main
+///  @defgroup jsoc_main JSOC Modules Common Interface
 ///  @ingroup programs
 
 ///  @defgroup drms_util DRMS Utilities
