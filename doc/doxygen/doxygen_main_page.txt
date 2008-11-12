@@ -7,7 +7,7 @@ Doxygen.
 
 \section general General design documents
 
-Start with the "Modules" tab for html versions of the JSOC software manual
+Start with the "ManPage Sections" tab for html versions of the JSOC software manual
 pages.
 
 General information on:\n
