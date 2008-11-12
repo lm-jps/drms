@@ -38,7 +38,15 @@
 \defgroup store_dir store_dir - store a directory of files to SUMS
 @ingroup drms_util
 
-Store arbitrary directory of files to SUMS.  Files stored with
+\brief Store arbitrary directory of files to SUMS. 
+
+\par Synopsis:
+
+\code
+store_dir [-cvGEN_FLAGS] series=<series_name> dirname=<prefix>/<subdir> sel=<sel_text> [note=<note_text>] 
+\endcode
+
+Files stored with
 \ref store_dir can be easily retrieved by the \ref retrieve_dir utility.
 
 If the series \a series_name does not exist, \ref store_dir will first create
@@ -61,25 +69,13 @@ the  same  value  for \a prefix/subdir.  \a series_name must
 contain prime keywords \a dirname and \a sel, and it must  contain  the
 keyword \a note.
 
-\par Synopsis:
-
-\code
-store_dir [-cvDRIVER_FLAGS] series=<series_name> dirname=<prefix>/<subdir> 
-                            sel=<sel_text> [note=<note_text>] [perm=0|1]
-\endcode
-
-\b Example: To store a directory of files,
-\code
-store_dir series=su_arta.TestStoreDir dirname=/auto/home2/arta/savedFilesJanuary 
-          sel=January note="All my January work"
-\endcode
 
 \par Flags:
-\c -c: Silently create the series \a series_name if it does not exist.
-\par
-\c -v: Run in verbose mode.
+\c -c: Silently create the series \a series_name if it does not exist.<br>
+\c -v: Run in verbose mode.<br>
 
-\par Driver flags: 
+\par GEN_FLAGS
+Ubiquitous flags present in every module.
 \ref jsoc_main
 
 \param series_name
@@ -105,11 +101,16 @@ An optional string that will be the keyword value for the \a note keyword
 of the record created.
 
 \param perm=0|1 
-Relevant only when the \a -c flag is used and a series is created.  A \a perm
+<I> Not Implemented <\I> Relevant only when the \a -c flag is used and a series is created.  A \a perm
 of 0 will make the created series accessible only by the current user.
 A \a perm of 1 will make the series globally accessible.  
 
-@{
+\b Example: To store a directory of files,
+\code
+store_dir series=su_arta.TestStoreDir dirname=/auto/home2/arta/savedFilesJanuary 
+          sel=January note="All my January work"
+\endcode
+
 */
 #include "jsoc_main.h"
 #include "drms.h"
@@ -135,8 +136,6 @@ char *module_name = "store_dir";
 
 /* Some global variables for this module. */
 int verbose = 0;
-
-/** @}*/
 
 /* Check DRMS session status and calling arguments and set verbose variable */
 int nice_intro () {

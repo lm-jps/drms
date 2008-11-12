@@ -12,9 +12,12 @@
 /* removed from doxygen module documentation - superceded by show_info */
 
 /**
-Prints keyword information and/or file path for given recordset.
+Deprecated -- Prints keyword information and/or file path for given recordset.
 
-\ref show_keys can list the keyword names and values, and the segment
+Use \ref show_info instead of show_keys. Show_keys is no longer maintained.
+The functionality of show_keys is now a subset of show_info.
+
+Show_keys can list the keyword names and values, and the segment
 names and file names (full paths) for each record in a record set. It
 can also list the full path to the record direcory in SUMS, which
 contains the segment files. Exactly what information gets printed is
@@ -105,13 +108,11 @@ full path to the segment's file is displayed
 segment's file name is displayed (if the \a -p flag is unset).
 
 \bug
-The program will produce superflous and non-meaningful output if
-called with the \a -p flag and \a seglist is provided on the command line.
+Deprecated in favor of show_info
 
 \sa
 retrieve_file drms_query describe_series
 
-@{
 */
 #include "jsoc_main.h"
 #include "drms.h"
@@ -135,7 +136,6 @@ ModuleArgs_t module_args[] =
 };
 
 char *module_name = "show_keys";
-/** @}*/
 int nice_intro ()
   {
   int usage = cmdparams_get_int (&cmdparams, "h", NULL);
