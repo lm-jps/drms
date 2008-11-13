@@ -162,7 +162,7 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
     int depth) {
   int len, arg = 0;
   char *p, flagbuf[2]={0};
-  char escbuf[256];
+  char *escbuf = NULL;
 				  /* parse options given on the command line */
   arg = 0; 
   while (arg < argc) {
@@ -184,8 +184,14 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
            valueexists = 1;
 
            /* This argument might be an escaped string - make sure \t turns into a tab, for example */
-           if (ResolveEscSequence(argv[arg+1], escbuf, sizeof(escbuf)))
+           escbuf = malloc(strlen(argv[arg + 1]) + 128);
+           if (ResolveEscSequence(argv[arg+1], escbuf, strlen(argv[arg + 1]) + 128))
            {
+              if (escbuf)
+              {
+                 free(escbuf);
+              }
+
               return CMDPARAMS_FAILURE;
            }
 
@@ -230,6 +236,11 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
            free(fbuf);
            arg++;
 	}
+
+        if (escbuf)
+        {
+           free(escbuf);
+        }
       } else {	
 				/* argument is a list of one letter flags. */
 	p = argv[arg]+1; 
@@ -250,26 +261,48 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
 	if (p == argv[arg]+len-1 ) {		/* "argument= value" */
 	  if (arg < argc-1) {
              /* This argument might be an escaped string - make sure \t turns into a tab, for example */
-             if (ResolveEscSequence(argv[arg+1], escbuf, sizeof(escbuf)))
+             escbuf = malloc(strlen(argv[arg + 1]) + 128);
+             if (ResolveEscSequence(argv[arg+1], escbuf, strlen(argv[arg + 1]) + 128))
              {
+                if (escbuf)
+                {
+                   free(escbuf);
+                }
+
                 return CMDPARAMS_FAILURE;
              }
 
              cmdparams_set (parms, argv[arg], escbuf);
              arg += 2;
+
+             if (escbuf)
+             {
+                free(escbuf);
+             }
 	  } else {
 	    fprintf (stderr, "The value of option %s is missing.\n", argv[arg]);
 	    return -1;
 	  }
 	} else {				/* "argument=value" */
            /* This argument might be an escaped string - make sure \t turns into a tab, for example */
-           if (ResolveEscSequence(p+1, escbuf, sizeof(escbuf)))
+           escbuf = malloc(strlen(p + 1) + 128);
+           if (ResolveEscSequence(p+1, escbuf, strlen(p + 1) + 128))
            {
+              if (escbuf)
+              {
+                 free(escbuf);
+              }
+
               return CMDPARAMS_FAILURE;
            }
 
            cmdparams_set (parms, argv[arg], escbuf);
            ++arg;
+
+           if (escbuf)
+           {
+              free(escbuf);
+           }
 	}
       } else {
 	if (argv[arg][0] == '@') {	/* This is of the form "@filename" */

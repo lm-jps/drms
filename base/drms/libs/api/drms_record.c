@@ -5235,6 +5235,12 @@ int ParseRecSetDesc(const char *recsetsStr,
                        while (ilen < rlen)
                        {
                           *pcBuf++ = *pc++;
+
+                          if (pc == endInput)
+                          {
+                             state = kRSParseState_Error;
+                          }
+
                           ilen++;
                        }
                     }
@@ -5630,6 +5636,7 @@ int ParseRecSetDesc(const char *recsetsStr,
 	    case kRSParseState_EndAtFile:
 	      {
 		 char lineBuf[LINE_MAX];
+                 char *fullline = NULL;
 		 char **queriesAtFile = NULL;
 		 DRMS_RecordSetType_t *typesAtFile = NULL;
                  char *allversAtFile = NULL;
@@ -5670,15 +5677,36 @@ int ParseRecSetDesc(const char *recsetsStr,
 				/* strip \n from end of lineBuf */
 				len = strlen(lineBuf);
 
+                                fullline = strdup(lineBuf);
+
+                                if (len == LINE_MAX - 1)
+                                {
+                                   /* may be more on this line */
+                                   while (!(fgets(lineBuf, LINE_MAX, atfile) == NULL))
+                                   {
+                                      fullline = realloc(fullline, strlen(fullline) + strlen(lineBuf) + 1);
+                                      snprintf(fullline + strlen(fullline), 
+                                               strlen(lineBuf) + 1, 
+                                               "%s",
+                                               lineBuf);
+                                      if (strlen(lineBuf) > 1 && lineBuf[strlen(lineBuf) - 1] == '\n')
+                                      {
+                                         break;
+                                      }
+                                   }
+                                }
+
+                                len = strlen(fullline);
+
 				/* skip empty lines*/
 				if (len > 1)
 				{
-				   if (lineBuf[len - 1] == '\n')
+				   if (fullline[len - 1] == '\n')
 				   {
-				      lineBuf[len - 1] = '\0';
+				      fullline[len - 1] = '\0';
 				   }
 			
-				   status = ParseRecSetDesc(lineBuf, 
+				   status = ParseRecSetDesc(fullline, 
                                                             &allversAtFile, 
 							    &queriesAtFile, 
 							    &typesAtFile, 
@@ -5706,7 +5734,13 @@ int ParseRecSetDesc(const char *recsetsStr,
 
 				   FreeRecSetDescArr(&allversAtFile, &queriesAtFile, &typesAtFile, nsetsAtFile);
 				}
-			     }
+                                
+                                if (fullline)
+                                {
+                                   free(fullline);
+                                   fullline = NULL;
+                                }
+			     } /* while */
 			  }
 		       }
 		       else
