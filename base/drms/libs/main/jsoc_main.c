@@ -1,6 +1,13 @@
 /**
 \defgroup jsoc_main DRMS Module Reference
 
+\brief Common main program used by all DRMS modules
+
+\par Synopsis:
+\code
+<module> [GEN_FLAGS] [SESSION_ARGUMENTS] [MODULE_ARGUMENTS]
+\endcode
+
 Execute the named @a module from a shell.  When a module is executed
 from the command line, all argument values listed in the module are supplied
 from (in order of precedence): values on the command line; values in a
@@ -82,23 +89,18 @@ All flags (except of course @a -H) are available to be passed down to
 the module. White space between the '=' sign and the argument value is
 optional. Flags can be concatenated as shown below.
 
-\par Usage:
-\code
-<module> [DRIVER_FLAGS] [SESSION_ARGUMENTS] [MODULE_ARGUMENTS]
-\endcode
-
-\par DRIVER_FLAGS (can be grouped together):
+\par GEN_FLAGS (can be grouped together):
 \c -A: Force archiving of storage units during the current DRMS session.  
 This overrides the value of series' archive flag.
-\par
+<br>
 \c -H|--help: Show jsoc_main usage information.
-\par
+<br>
 \c -L: Run jsoc_main driver with logging. Stdout and stderr are tee-ed to files in SU directory.
-\par
+<br>
 \c -V: Run jsoc_main driver in verbose mode.
-\par
+<br>
 \c -Q: Run  jsoc_main  driver  in  quiet mode (no terminal output).
-\par
+<br>
 \c -n: A nop; the module cannot define a flag named @a n.
 
 \par SESSION_ARGUMENTS:
@@ -118,7 +120,6 @@ the number number of days that the storage units will remain on disk.
 \par MODULE_ARGUMENTS:
 These are module-specific; refer to @ref drms_util for module-specific documentation.
 
-@{
 */
 #include "drms.h"
 #include "serverdefs.h"
@@ -146,8 +147,6 @@ CmdParams_t cmdparams;
    @example moduleargs_ex1.c
 */
 ModuleArgs_t *gModArgs = module_args;
-
-/** @}*/
 
 /**
    Returns a pointer to the module's global ::CmdParams_t structure. This static 
