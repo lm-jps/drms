@@ -2,14 +2,16 @@
 \defgroup masterlists masterlists - create a database namespace and DRMS master tables for that namespace
 @ingroup su_admin
 
-Create DB namespace and master DRMS tables. This program prompts you
-for postgres DB password.
+\brief Create DB namespace and master DRMS tables.
 
 \par Synopsis:
 
 \code
 masterlists [JSOC_DBHOST=] [JSOC_DBNAME=] [dbuser=<user>] namespace=<ns> nsgrp=<user|sys>
 \endcode
+
+This program is used only to create a new empty set of DRMS database tables.
+This program prompts you for postgres DB password.
 
 \par Flags:
 \c -h: print brief usage information.
@@ -23,7 +25,6 @@ or 'sys'. For personal or test usage, please use 'user', and 'sys' is reserved f
 \sa
 create_series describe_series delete_series modify_series show_info 
 
-@{
 */
 #include <pwd.h>
 #include "drms.h"
@@ -35,7 +36,6 @@ ModuleArgs_t module_args[] = {
   {ARG_END}
 };
 ModuleArgs_t *gModArgs = module_args;
-/** @}*/
 int main(int argc, char **argv) {
   DB_Handle_t *db_handle;
   char stmt[8000]={0}, *p;

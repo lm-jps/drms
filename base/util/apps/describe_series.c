@@ -2,6 +2,14 @@
 \defgroup describe_series describe_series - print summary information about a series
 @ingroup drms_util
 
+\brief Print detailed structure information about a series
+
+\par Synopsis:
+
+\code
+describe_series [-jGEN_FLAGS] seriesname
+\endcode
+
 Print the global information about the data series including summary
 information about:
  - the number of records 
@@ -11,24 +19,18 @@ information about:
  - the estimate bytes per record in memory
  - the range of prime key values
 
-\par Synopsis:
-
-\code
-describe_series [-j] seriesname
-\endcode
-
 \par Flags:
 \c -j: print out series information in JSD format.
 
-\par Driver flags: 
+\par GEN_FLAGS: 
+Ubiquitous flags present in every module.
 \ref jsoc_main
 
 \param seriesname
 
 \sa
-create_series delete_series modify_series show_info
+create_series delete_series modify_series show_info jsoc_info
 
-@{
 */
 #include "drms.h"
 #include "jsoc_main.h"
@@ -39,7 +41,6 @@ ModuleArgs_t module_args[] = {
 };
 
 char *module_name = "describe_series";
-/** @}*/
 #ifdef NEED_JSD_STUFF
 void drms_keyword_print_jsd(DRMS_Keyword_t *key) {
     printf("Keyword:%s",key->info->name);

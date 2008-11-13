@@ -24,6 +24,13 @@
 \defgroup retrieve_file retrieve_file - retrieve a file from SUMS
 @ingroup drms_util
 
+\brief Retrieve a user's file from SUMS
+
+\par Synopsis:
+\code
+retrieve_file [-fhlvGEN_FLAGS] ds=<record_set> out=<dest> [segment=<segment_name>]
+\endcode
+
 Retrieve an arbitrary file from SUMS. Typically used to retrieve 
 a file(s) stored in SUMS with \ref store_file.
 
@@ -49,12 +56,6 @@ to the destination directory.  Over
 time this link may become broken as SUMS may remove a stored file if
 it is present in SUMS longer than its specified retention time.
 
-\par Synopsis:
-
-\code
-retrieve_file [-fhlvDRIVER_FLAGS] ds=<record_set> out=<dest> [segment=<segment_name>]
-\endcode
-
 \b Example: to retrieve a single file:
 \code
 retrieve_file ds=myseries[][test002]
@@ -62,14 +63,15 @@ retrieve_file ds=myseries[][test002]
 
 \par Flags:
 \c -f: Force removal of a pre-existing file with same name as retreived file.
-\par
+<br>
 \c -h: Print usage message and exit.
-\par
+<br>
 \c -l: Create a symbolic link to the SUMS file instead of copying it to \a dest.
-\par
+<br>
 \c -v: Run in verbose mode.
+<br>
 
-\par Driver flags: 
+\par GEN_FLAGS: 
 \ref jsoc_main
 
 \param record_set
@@ -86,7 +88,7 @@ copied/linked.  Do not append a final '/' to the path (i.e.,
 \param segment_name
 Name of the segment whose file should be retrieved.
 
-@{
+\sa store_file store_dir retrieve_dir show_info
 */
 #include "jsoc_main.h"
 #include "drms.h"
@@ -118,7 +120,6 @@ char *module_name = "retrieve_file";
 /* Some global variables for this module. */
 int verbose = 0;
 
-/** @}*/
 
 /* Check DRMS session status and calling arguments and set verbose variable */
 int nice_intro (int do_usage) {

@@ -2,6 +2,14 @@
 \defgroup create_series create_series - create a new DRMS series from a .jsd file
 @ingroup drms_util
 
+\brief Create a new DRMS series from a JSOC Series Descriptor (jsd) file.
+
+\par Synopsis:
+
+\code
+create_series [-fGEN_FLAGS] jsdfile
+\endcode
+
 
 Read a <a href="http://jsoc.stanford.edu/jsocwiki/Jsd">JSOC Series
 Definition file</a> and create the series table in the DRMS
@@ -12,20 +20,17 @@ Upon success, \ref create_series prints out the following message:
 NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "xxyx_pkey" for table "xxyx"
 \endcode
 
-\par Synopsis:
-
-\code
-create_series [-f] jsdfile
-\endcode
-
 \par Flags: 
 \c -f: replace an existing series definition with the new
 one. Since this removes all the metadata for a series - essentially
 deleting the series - the user is prompted to confirm. Except for
 initial debugging of the .jsd file it is probably an error to use the
+<br>
 \c -f flag.
+<br>
 
-\par Driver flags: 
+\par GEN_FLAGS: 
+Ubiquitous flags present in every module.
 \ref jsoc_main
 
 \param jsdfile JSOC series definition file name
@@ -37,7 +42,6 @@ should be restored with some method to allow marking a series private.
 \sa
 delete_series describe_series modify_series show_info
 
-@{
 */
 #include "drms.h"
 #include "jsoc_main.h"
@@ -48,7 +52,6 @@ ModuleArgs_t module_args[] = {
 };
 
 char *module_name = "create_series";
-/** @}*/
 int DoIt(void) {
   int force, len, perms;
   char *filename;

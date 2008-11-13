@@ -10,34 +10,35 @@
 \defgroup show_series show_series - lists currently available DRMS series
 @ingroup drms_util
 
-List all DRMS dataseries names.
+\brief List DRMS dataseries names.
+
+\par Synopsis:
+\code
+show_series [-hpvzGEN_FLAGS] [<filter>]
+\endcode
 
 show_series lists the names of DRMS dataseries. If the \a -p flag is set,
 it displays the prime-keyword names and series description. The
 information displayed is restricted to a subset of DRMS series by
 specifying \a filter, a grep-like regular expression.
 
-\par Synopsis:
-\code
-show_series [-hpvzDRIVER_FLAGS] [<filter>]
-\endcode
-
 \par Flags:
 \c -h: Print usage message and exit
-\par
+<rb>
 \c -p: Print prime-keyword names and the series description
-\par
+<rb>
 \c -v: Verbose - noisy
-\par
+<rb>
 \c -z: Emit JSON instead of normal output
+<rb>
 
-\par Driver flags: 
+\par GEN_FLAGS: 
+Ubiquitous flags present in every module.
 \ref jsoc_main
 
 \param filter A pattern using grep-like rules to select a subset of
 series
 
-@{
 */
 
 #include "jsoc_main.h"
@@ -87,7 +88,6 @@ ModuleArgs_t module_args[] = {
 
 					    /* Module name presented to DRMS */
 char *module_name = "show_series";
-/** @} */
 /* Some global variables for this module. */
 int verbose = 0;
 

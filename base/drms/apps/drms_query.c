@@ -2,15 +2,18 @@
 \defgroup drms_query drms_query - for each record specified, print the psql 'recnum' value, and optionally the record-directory path
 @ingroup drms_util
 
-Query recnum for given dataset names.
+\brief Query recnum for given dataset names.
 
 \par Synopsis:
 
 \code
-drms_query [getdir=] dsname1 [dsname2 ...]
+drms_query [-GEN_FLAGS] [getdir=] dsname1 [dsname2 ...]
 \endcode
 
-\par Driver flags: 
+Simple reporting of recnum for each record in the query.
+Same capability is available with "show_info -ir <query>".
+
+\par GEN_FLAGS: 
 \ref jsoc_main
 
 \param getdir 1: print data segment directory (stage data if
@@ -19,7 +22,6 @@ off-line). 0: do not print data segement directory.
 \sa
 create_series delete_series describe_series modify_series show_info
 
-@{
 */
 #include "drms.h"
 #include "drms_names.h"

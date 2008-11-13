@@ -7,7 +7,14 @@
 \defgroup drms_server drms_server - Manages a database session and passes database requests to database from client modules
 @ingroup drms_util
 
-Start a DRMS server program.
+\brief Start a DRMS server program.
+
+\par Synopsis:
+\code
+drms_server [FLAGS] [SESSION_ARGUMENTS]
+\endcode
+
+\a drms_server creates a DRMS session enabling multiple modules to run in the same session.
 
 <pre>
 					       	       	       	       	       	      
@@ -113,12 +120,6 @@ drms_server_abort().
 </ul>
 
 \par The signal thread 
-\par Synopsis:
-
-\code
-drms_server [FLAGS] [SESSION_ARGUMENTS]
-\endcode
-
 \par FLAGS (can be grouped together):
 \c -h: Show \ref drms_server usage information.
 \par
@@ -154,7 +155,6 @@ before exiting, otherwise don't wait.
 \sa
 create_series describe_series delete_series modify_series show_info 
 
-@{
 */
 
 //#define DEBUG
@@ -184,7 +184,6 @@ ModuleArgs_t *gModArgs = module_args;
 int threadcounter = 0;
 char *abortmessage=NULL;
 DRMS_Env_t *env;
-/** @}*/
 static void atexit_action (void) {
   fprintf (stderr, "WARNING: DRMS server called exit.\n");
 #ifdef DEBUG

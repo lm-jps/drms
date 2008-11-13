@@ -28,6 +28,13 @@
 \defgroup retrieve_dir retrieve_dir - retrieve a directory from SUMS
 @ingroup drms_util
 
+\brief Retrieve a user's directory from SUMS
+
+\par Synopsis:
+\code
+retrieve_dir [-lGEN_FLAGS] series=<record_set> to=<dest> [dirkey=<dirname_keyword>]
+\endcode
+
 Retrieve an arbitrary directory of files from SUMS. Typically used
 to retrieve a directory stored in SUMS with \ref store_dir.
 
@@ -52,12 +59,6 @@ subdirectory to the destination subdirectory.  Over
 time this link may become broken as SUMS may remove a stored file if
 it is present in SUMS longer than its specified retention time.
 
-\par Synopsis:
-
-\code
-retrieve_dir [-lDRIVER_FLAGS] series=<record_set> to=<dest> [dirkey=<dirname_keyword>]
-\endcode
-
 \b Example: to retrieve a directory of files:
 \code
 retrieve_dir series=su_arta.TestStoreDir to=/home/arta/restoredFilesJanuary/ dirkey=dirname
@@ -66,7 +67,7 @@ retrieve_dir series=su_arta.TestStoreDir to=/home/arta/restoredFilesJanuary/ dir
 \par Flags:
 \c -l: Create a symbolic link to the SUMS  directory  containing the file(s) of interest.
 
-\par Driver flags: 
+\par GEN_FLAGS: 
 \ref jsoc_main
 
 \param record_set
@@ -84,7 +85,7 @@ copied/linked.  Do not append a final '/' to the path (i.e.,
 Name of the keyword containing the path of the directory originally
 stored with \ref store_dir.
 
-@{
+\sa store_dir store_file retrieve_file
 */
 #include "jsoc_main.h"
 #include "drms.h"
@@ -111,7 +112,6 @@ char *module_name = "retrieve_dir";
 /* Some global variables for this module. */
 int verbose = 0;
 
-/** @}*/
 /* Module main function. */
 int DoIt(void)
 {

@@ -2,7 +2,7 @@
 \defgroup drms_log drms_log - for each record, print the log's storage-unit path
 @ingroup drms_util
 
-Query session log SU and JSOC version for given dataset names.
+\brief Query session log SU and JSOC version for given dataset names.
 
 \par Synopsis:
 
@@ -12,7 +12,9 @@ drms_log dsname1 [dsname2 ...] [-pP]
 
 \par Flags:
 \c -p: print the full log storage-unit path for each record
+<br>
 \c -P: print the full log storage-unit path for each record but not retrieve
+<br>
 
 \par Driver flags: 
 \ref jsoc_main
@@ -20,7 +22,6 @@ drms_log dsname1 [dsname2 ...] [-pP]
 \sa
 create_series delete_series describe_series modify_series show_info
 
-@{
 */
 #include "drms.h"
 #include "jsoc_main.h"
@@ -32,7 +33,6 @@ ModuleArgs_t module_args[] = {
 };
 
 char *module_name = "drms_log";
-/** @}*/
 
 // to improve: cache sums results based on sessionns and sessionid
 int DoIt(void) {
