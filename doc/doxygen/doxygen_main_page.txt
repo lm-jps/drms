@@ -119,16 +119,16 @@ blocks: http://www.stack.nl/~dimitri/doxygen/commands.html
 */
 
 
-///@defgroup programs Programs, DRMS Modules, Shell Scripts
+///@defgroup a_programs Section 1. Programs, DRMS Modules, Shell Scripts
 
-///  @defgroup jsoc_main JSOC Modules Common Interface
-///  @ingroup programs
+///  @defgroup jsoc_main All JSOC Modules Common Interface
+///  @ingroup a_programs
 
 ///  @defgroup drms_util DRMS Utilities
-///  @ingroup programs
+///  @ingroup a_programs
 
 ///  @defgroup su_apps Stanford University Applications
-///  @ingroup programs
+///  @ingroup a_programs
 ///      @defgroup su_admin Administrative Utilities 
 ///      @ingroup su_apps
 ///      @defgroup su_util General Utilities 
@@ -140,11 +140,11 @@ blocks: http://www.stack.nl/~dimitri/doxygen/commands.html
 ///      @defgroup su_lev0 Level Zero 
 ///      @ingroup su_apps
 
-///@defgroup api API Libraries
+///@defgroup c_api Section 3. API Libraries
 // @{
     /**
     @defgroup core_api Core DRMS API functions
-    @ingroup api
+    @ingroup c_api
     - ::drms_open_records
     - ::drms_create_records
     - ::drms_clone_records
