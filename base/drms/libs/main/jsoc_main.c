@@ -1,5 +1,6 @@
 /**
-\defgroup jsoc_main DRMS Module Reference
+\defgroup common_main DRMS Module Reference
+\ingroup a_programs
 
 \brief Common main program used by all DRMS modules
 
@@ -121,6 +122,13 @@ the number number of days that the storage units will remain on disk.
 These are module-specific; refer to @ref drms_util for module-specific documentation.
 
 */
+
+/**
+\file jsoc_main.c
+\defgroup jsoc_main DRMS common main program
+\ingroup core_api
+
+*/
 #include "drms.h"
 #include "serverdefs.h"
 #include "xmem.h"
@@ -201,6 +209,13 @@ static void StopProcessing(int sig)
    }
 }  
 
+/**
+@fn main(int argc, char **argv, const char *module_name, int (*CallDoIt)(void)
+\brief jsoc_main entry point
+Common main program for all DRMS program modules.  Actuallt there are several versions of
+this, each tailored for a specific use.  this one is linked for shell callable programs.
+
+*/
 int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt)(void)) {
   int verbose=0, nagleoff=0, dolog=0, quiet=0;
   int status;
