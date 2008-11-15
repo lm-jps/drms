@@ -44,6 +44,14 @@
 \defgroup store_file store_file - store a file to SUMS
 @ingroup drms_util
 
+\brief Store a user's file in SUMS
+
+\par Synopsis:
+\code
+store_file [-chvGEN_FLAGS] ds=<series_name> in=<file> 
+                             [sel=<sel_text>] [note=<note_text>] 
+\endcode
+
 Store an arbitrary file to SUMS.  File stored with \ref
 store_file can be easily retrieved by the \ref retrieve_file utility.
 
@@ -65,13 +73,6 @@ can be used to differentiate between multiple calls to \ref store_file with
 the  same  filename part of \a file. \a series_name must contain prime 
 keywords \a file and \a sel, and it must contain the keyword \a note.
 
-\par Synopsis:
-
-\code
-store_file [-chvDRIVER_FLAGS] ds=<series_name> in=<file> 
-                             [sel=<sel_text>] [note=<note_text>] [perm=0|1]
-\endcode
-
 \b Example: to store a single file:
 \code
 store_file in=0000.fits ds=myseries sel=test002 note= "fits file from test002"
@@ -79,12 +80,12 @@ store_file in=0000.fits ds=myseries sel=test002 note= "fits file from test002"
 
 \par Flags:
 \c -c: Silently create the series \a series_name if it does not exist.
-\par
+<br>
 \c -h: Print usage message and exit
-\par
+<br>
 \c -v: Run in verbose mode.
 
-\par Driver flags: 
+\par GEN_FLAGS: 
 \ref jsoc_main
 
 \param series_name
@@ -108,12 +109,15 @@ same file over time).
 An optional string that will be the value for the \a note keyword
 of the record created.
 
+*/
+
+/* move up when implemented...
+
 \param perm=0|1 
 Relevant only when the \a -c flag is used and a series is created.  A perm
 of 0 will make the created series accessible only by the current user.
 A perm of 1 will make the series globally accessible.  
 
-@{
 */
 #include "jsoc_main.h"
 #include "drms.h"
@@ -141,7 +145,6 @@ char *module_name = "store_file";
 /* Some global variables for this module. */
 int verbose = 0;
 
-/** @}*/
 
 /* Check DRMS session status and calling arguments and set verbose variable */
 int nice_intro () {
