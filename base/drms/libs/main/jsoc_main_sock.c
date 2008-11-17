@@ -78,6 +78,8 @@ int JSOCMAIN_Init(int argc,
    xmem_config (1, 1, 1, 1, 1000000, 1,0, 0); 
 #endif
    /* Parse command line parameters */
+   cmdparams_reserve(&cmdparams, "L,Q,V,ver,vn,vers,version,about", "jsocmain");
+
    status = cmdparams_parse (&cmdparams, argc, argv);
    if (status == CMDPARAMS_QUERYMODE) {
       cmdparams_usage (argv[0]);

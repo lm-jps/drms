@@ -240,6 +240,7 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
         if (escbuf)
         {
            free(escbuf);
+           escbuf = NULL;
         }
       } else {	
 				/* argument is a list of one letter flags. */
@@ -267,6 +268,7 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
                 if (escbuf)
                 {
                    free(escbuf);
+                   escbuf = NULL;
                 }
 
                 return CMDPARAMS_FAILURE;
@@ -278,6 +280,7 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
              if (escbuf)
              {
                 free(escbuf);
+                escbuf = NULL;
              }
 	  } else {
 	    fprintf (stderr, "The value of option %s is missing.\n", argv[arg]);
@@ -291,6 +294,7 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
               if (escbuf)
               {
                  free(escbuf);
+                 escbuf = NULL;
               }
 
               return CMDPARAMS_FAILURE;
@@ -302,6 +306,7 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
            if (escbuf)
            {
               free(escbuf);
+              escbuf = NULL;
            }
 	}
       } else {
@@ -636,6 +641,14 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
   if (defps) {
     while (defps->type != ARG_END) {
       if (defps->name && strlen (defps->name)) {
+         /* Don't allow modules to use reserved names */
+         if (cmdparams_isreserved(parms, defps->name))
+         {
+            fprintf(stderr, 
+                    "WARNING: Default argument list specifies reserved argument '%s'.\n",
+                    defps->name);
+         }
+
 	if (defps->value == NULL || strlen (defps->value) == 0) {
 		/*  Flags do not need to be set or cleared in defaults list  */
 	  if (defps->type == ARG_FLAG) {
@@ -729,6 +742,7 @@ void cmdparams_freeall (CmdParams_t *parms) {
   free(parms->argv);
 
   hcon_destroy(&(parms->actvals));
+  hcon_destroy(&(parms->reserved));
 }
 
 /*
@@ -996,7 +1010,7 @@ char *cmdparams_get_str (CmdParams_t *parms, char *name, int *status) {
 }
 
 int cmdparams_isflagset (CmdParams_t *parms, char *name) {
-   if (strlen(name) > 0)
+   if (strlen(name) > 1)
    {
       char *fbuf = strdup(name);
       int ret = 0;
@@ -1258,6 +1272,101 @@ void cmdparams_get_argv(CmdParams_t *params, char ***argv, int *argc)
    {
       *argc = params->argc;
    }
+}
+
+static void FreeReserved(const void *pitem)
+{
+   if (pitem)
+   {
+      char *item = *((char **)pitem);
+      if (item)
+      {
+         free(item);
+      }
+   }
+}
+
+void cmdparams_reserve(CmdParams_t *params, const char *reserved, const char *owner)
+{
+   if (reserved && owner)
+   {
+      if (params && params->reserved == NULL)
+      {
+         params->reserved = hcon_create(sizeof(char *), 
+                                        kKEYSIZE, 
+                                        (void (*)(const void *))FreeReserved, 
+                                        NULL, 
+                                        NULL, 
+                                        NULL, 
+                                        0);
+      }
+
+      char *orig = strdup(reserved);
+      char *buf = orig;
+      char *pc = orig;
+      char *val = NULL;
+      int adv = 1;
+   
+      if (orig && params->reserved)
+      {
+         while (adv)
+         {
+            if (*pc == '\0')
+            {
+               adv = 0;
+            }
+            else if (*pc == ',')
+            {
+               *pc = '\0';
+            }
+
+            if (*pc == '\0')
+            {
+               val = strdup(owner);
+               if (strlen(buf) > 1)
+               {
+                  /* flags with names greater than a single char are case-insensitive */
+                  hcon_insert_lower(params->reserved, buf, &val);
+               }
+               else
+               {
+                  hcon_insert(params->reserved, buf, &val);
+               }
+
+               if (adv)
+               {
+                  buf = pc + 1;
+               }
+            }
+
+            if (adv)
+            {
+               pc++;
+            }
+         }
+
+         free(orig);
+      }
+   }
+}
+
+int cmdparams_isreserved(CmdParams_t *params, const char *key)
+{
+   int ret = 0;
+
+   if (params && params->reserved)
+   {
+      if (strlen(key) > 1)
+      {
+         ret = (hcon_member_lower(params->reserved, key));
+      }
+      else
+      {
+         ret = (hcon_member(params->reserved, key));
+      }
+   }
+
+   return ret;
 }
 
 			/*  Get values of keywords converted to various types,

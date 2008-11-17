@@ -217,7 +217,7 @@ this, each tailored for a specific use.  this one is linked for shell callable p
 
 */
 int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt)(void)) {
-  int verbose=0, nagleoff=0, dolog=0, quiet=0;
+  int verbose=0, dolog=0, quiet=0;
   int status;
   char *user, unknown[]="unknown";
   DB_Handle_t *db_handle;
@@ -229,6 +229,8 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   xmem_config(1,1,1,1,1000000,1,0,0); 
 #endif
   /* Parse command line parameters. */
+  cmdparams_reserve(&cmdparams, "L,Q,V,ver,vn,vers,version,about,archive", "jsocmain");
+
   status = cmdparams_parse (&cmdparams, argc, argv);
   if (status == CMDPARAMS_QUERYMODE) {
     cmdparams_usage (argv[0]);
@@ -269,7 +271,6 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
 	   cmdparams_get_int (&cmdparams, "Q", NULL) != 0);
   dolog = (cmdparams_exists (&cmdparams, "L") &&
 	   cmdparams_get_int (&cmdparams, "L", NULL) != 0);
-  nagleoff = cmdparams_exists(&cmdparams,"n");
 
   /* Get user name */
   if (!(user = getenv("USER")))
@@ -291,7 +292,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
     return 1;
   }
 
-  int archive = cmdparams_exists(&cmdparams,"A");
+  int archive = cmdparams_isflagset(&cmdparams, "archive");
   int retention = -1;
   if (drms_cmdparams_exists(&cmdparams, "DRMS_RETENTION")) {
     retention = drms_cmdparams_get_int(&cmdparams, "DRMS_RETENTION", NULL);
