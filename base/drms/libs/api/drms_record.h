@@ -6,6 +6,8 @@
 @example drms_record_ex2.c 
 @example drms_record_ex3.c
 @example drms_record_ex4.c
+@example drms_record_ex5.c
+@example drms_record_ex6.c
 */
 
 #ifndef _DRMS_RECORD_H
@@ -388,5 +390,59 @@ int drms_record_islocal(DRMS_Record_t *rec);
    @param retrieve Whether to retrieve the SU if it's off-line
    @param dontwait Whether to wait for reply from SUMS
 */
+
+/**
+   @fn DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env, const char *rsquery, int *status)
+   Retrieve a set of records specified by a recordset query.
+   Within the current DRMS session (whose information is stored  in @a env),
+   this  function  submits a database query specified in @a recordsetname and
+   creates  a  record-set  structure  (::DRMS_RecordSet_t)  to  contain  the
+   results  of  the  query.   If,  at  the time this function is called, a
+   requested record structure (::DRMS_Record_t) exists in the  record  cache
+   (@a env->record_cache),  then  a  pointer  to  that  record  structure  is
+   inserted into the results record set.  Otherwise, a new  record  struc-
+   ture  is created, populated from the database, inserted into the record
+   cache, and inserted into the results record  set.   The  newly  created
+   record is marked read-only and assigned a permanent lifetime (DRMS_PER-
+   MANENT).
+
+   Upon successful completion, the  function  returns  a  ::DRMS_RecordSet_t
+   pointer,  and  sets  @a *status  to ::DRMS_SUCCESS.  If an error occurs, the
+   function returns NULL and sets @a *status to  an  appropriate  error  code
+   defined  in  drms_statuscodes.h.   Typical errors are as follows.  If a
+   problem occurs during communication with the database  server,  @a *status
+   is  set  to  ::DRMS_ERROR_QUERYFAILED.  
+
+   The  caller  owns  the  allocated  memory  associated with the returned
+   record set and must release it by calling ::drms_close_records.
+
+   The main difference between this function and ::drms_open_records is that the former
+   creates a ::DRMS_RecordSet_t structure for each record specified by the record-set query.
+   But the current function creates a ::DRMS_RecordSet_t structure for each member of 
+   the current subset (or 'chunk') of the records specified by the record-set query. Only
+   one chunk of records resides in memory at any time.  When a record in a non-resident chunk
+   is needed, the current chunk of ::DRMS_RecordSet_t structures is freed, and the next
+   chunk is loaded into memory.  The purpose
+   of this function is to conserve memory by facilitating the processing of chunks of
+   records instead of processing the entire set of records.  To override the 
+   default chunk size, the user calls ::drms_recordset_setchunksize.  
+
+   Operating on chunks of records is transparent to the caller who can continue
+   to interate through records without being cognizant of 'chunking'.  
+   To iterate through all records in the set, after calling this function, the caller
+   would call ::drms_recordset_fetchnext in a loop to obtain a pointer to each 
+   record in the sequence.  When ::drms_recordset_fetchnext returns NULL, no more
+   records remain in the record-set.
+
+   @param env DRMS session information.
+   @param rsquery A string that specifies a database query. It 
+   includes a series name and clauses to extract a subset of records from that series.
+   Please see http://jsoc.stanford.edu/jsocwiki/DrmsNames for more 
+   information about database queries.
+   @param status Pointer to DRMS status (see drms_statuscodes.h) returned
+   by reference. 0 if successful, non-0 otherwise.
+   @return The set of records retrieved by the query.
+*/
+
 
 #endif
