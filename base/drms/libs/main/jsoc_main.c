@@ -110,7 +110,8 @@ use @c param=value, where @c param is one of the following.
 
 \arg \c DRMS_RETENTION Sets (forces) the storage-unit retention time for the DRMS session
 started by <module>. This affects all storage units created during the session. <value> is 
-the number number of days that the storage units will remain on disk.
+the number number of days that the storage units will remain on disk. CANNOT BE SPECIFIED 
+IN THE ENVIRONMENT.
 \arg \c DRMS_QUERY_MEM Sets the memory maximum for a database query.
 \arg \c JSOC_DBHOST Specifies (overrides) the database host to connect to. Default is ::DBNAME
 \arg \c JSOC_DBNAME Specifies (overrides) the database name to use. Default is ::DBNAME
@@ -293,7 +294,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   }
 
   int archive = cmdparams_isflagset(&cmdparams, "archive");
-  int retention = -1;
+  int retention = INT_MIN;
   if (drms_cmdparams_exists(&cmdparams, "DRMS_RETENTION")) {
     retention = drms_cmdparams_get_int(&cmdparams, "DRMS_RETENTION", NULL);
   }

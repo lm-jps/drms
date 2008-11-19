@@ -305,6 +305,12 @@ if ($CHKLIBS == "no") then
             echo "CFITSIOFNAME_GCC_X86_64 = cfitsio_gcc" > custom.mk
         endif
 
+        # Make customizations - ensure changes here are synchronized to changes in make_basic.mk
+        if (!(-e suflag.txt)) then
+            # put compilation customizations here
+            # echo "DRMS_DEFAULT_RETENTION = -10" >> custom.mk
+        endif
+
 	echo "done"
 	echo
 

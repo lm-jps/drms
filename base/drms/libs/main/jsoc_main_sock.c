@@ -335,7 +335,7 @@ pid_t drms_start_server (int verbose, int dolog)  {
     dbpasswd = PASSWD;
   sessionns = cmdparams_get_str (&cmdparams, "JSOC_SESSIONNS", NULL);
 
-  retention = -1;
+  retention = INT_MIN;
   if (drms_cmdparams_exists(&cmdparams, "DRMS_RETENTION")) 
      retention = drms_cmdparams_get_int(&cmdparams, "DRMS_RETENTION", NULL);
   query_mem = 512;

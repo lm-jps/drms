@@ -118,6 +118,13 @@ endif
 
 GSLLIBS = $(GSLL) -lgsl -lgslcblas 
 
+# Compilation define customizations (eg., for remote DRMS builds)
+CUSTOMSW =
+ifneq ($(DRMS_DEFAULT_RETENTION),)
+#	CUSTOMSW = $(CUSTOMSW) -DDRMS_DEFAULT_RETENTION="\"$(DRMS_DEFAULT_RETENTION)\""
+	CUSTOMSW := $(CUSTOMSW) -DDRMS_DEFAULT_RETENTION=$(DRMS_DEFAULT_RETENTION)
+endif
+
 ### Build flags for all targets
 #
 LL_ALL		= $(SYSLIBS)
@@ -153,26 +160,26 @@ endif
 
 # can't figure out how to get stupid make to do if/else if/else
 ifeq ($(DEBUG), 0)
-  GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 $(GCC_WARN) $(GCC_CF_GCCCOMP)
-  ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -xW $(ICC_WARN) $(ICC_CF_ICCCOMP)
+  GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW)
+  ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -xW $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW)
 
   ifeq ($(JSOC_MACHINE), linux_x86_64)
-    GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=opteron $(GCC_WARN) $(GCC_CF_GCCCOMP)
+    GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=opteron $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW)
   endif
 
   ifeq ($(JSOC_MACHINE), linux_ia64)
-    GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 $(GCC_WARN) $(GCC_CF_GCCCOMP)
-    ICC_CF_ALL	= -I$(SRCDIR)/base/include -std=c99 $(ICC_WARN) $(ICC_CF_ICCCOMP)
+    GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW)
+    ICC_CF_ALL	= -I$(SRCDIR)/base/include -std=c99 $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW)
   endif
 
   ifeq ($(JSOC_MACHINE), linux_ia32)
-    GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=i686 $(GCC_WARN) $(GCC_CF_GCCCOMP)
+    GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=i686 $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW)
   endif	
 
 else
 
-  GCC_CF_ALL = -I$(SRCDIR)/base/include -std=gnu99 -g $(GCC_WARN) $(GCC_CF_GCCCOMP)
-  ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -g $(ICC_WARN) $(ICC_CF_ICCCOMP)
+  GCC_CF_ALL = -I$(SRCDIR)/base/include -std=gnu99 -g $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW)
+  ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -g $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW)
 
 endif
 

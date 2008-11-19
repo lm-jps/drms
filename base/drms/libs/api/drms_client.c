@@ -1027,7 +1027,7 @@ int drms_getunits(DRMS_Env_t *env, char *series,
 #ifndef DRMS_CLIENT
     /* Send a query to SUMS for the storage unit directory. */
   if (cnt) {
-    stat = drms_su_getsudirs(env, cnt, su_nc, template->seriesinfo->retention, retrieve, dontwait);
+    stat = drms_su_getsudirs(env, cnt, su_nc, retrieve, dontwait);
   }
 #else
   if (cnt) {

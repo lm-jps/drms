@@ -5,6 +5,11 @@
 #include "xmem.h"
 
 #define SUMIN(a,b)  ((a) > (b) ? (b) : (a))
+#ifdef DRMS_DEFAULT_RETENTION
+  #define STDRETENTION DRMS_DEFAULT_RETENTION
+#else
+  #define STDRETENTION (-3)
+#endif
 
 /* Allocate a storage unit of the indicated size from SUMS and return
    its sunum and directory. */
@@ -243,10 +248,29 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 
   request->dontwait = 0;
 
-  if (env->retention==-1)   
-    request->tdays = su->seriesinfo->retention;
+  /* If the user doesn't override on the cmd-line, use the standard retention (some small negative value).
+   * If the user specifies a negative value on the cmd-line, use that.  If the user specifies
+   * a positive value on the cmd-line and the user owns this series, use that value.  But if the
+   * user doesn't own this series multiply the positive value by -1.
+   */
+
+  if (env->retention==INT_MIN) 
+  {
+     request->tdays = STDRETENTION;
+     if (request->tdays > 0)
+     {
+        /* Since STDRETENTION can be customized, don't allow the definition of a positive number */
+        request->tdays *= -1;
+     }
+  }
   else
-    request->tdays = env->retention;
+  {
+     request->tdays = env->retention;
+     if (request->tdays > 0 && !drms_series_cancreaterecord(env, su->seriesinfo->seriesname))
+     {
+        request->tdays *= -1;
+     }
+  }
 
   if (!env->sum_thread) {
     int status;
@@ -275,10 +299,9 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 
 /* Get the actual storage unit directory from SUMS. */
 #ifndef DRMS_CLIENT
-int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retention, int retrieve, int dontwait)
+int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retrieve, int dontwait)
 {  
   DRMS_SumRequest_t *request, *reply;
-  int iSUMSsunum;
 
   if (!env->sum_thread) {
     int status;
@@ -287,6 +310,22 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int reten
       fprintf(stderr,"Thread creation failed: %d\n", status);
       return 1;
     }
+  }
+
+  /* Since this affects more than one storage unit, in order to specify a positive 
+   * retention, must be owner of ALL series to which these storage units belong */
+  int isowner = 1;
+  int isu;
+  DRMS_StorageUnit_t *onesu;
+
+  for (isu = 0; isu < n; isu++)
+  {
+     onesu = su[isu];
+     if (!drms_series_cancreaterecord(env, onesu->seriesinfo->seriesname))
+     {
+        isowner = 0;
+        break;
+     }
   }
 
   /* There is a maximum no. of SUs that can be requested from SUMS, MAXSUMREQCNT. So, loop. */
@@ -310,10 +349,29 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int reten
 
      request->dontwait = dontwait;
 
-     if (env->retention==-1)   
-       request->tdays = retention;
+     /* If the user doesn't override on the cmd-line, use the standard retention (some small negative value).
+      * If the user specifies a negative value on the cmd-line, use that.  If the user specifies
+      * a positive value on the cmd-line and the user owns this series, use that value.  But if the
+      * user doesn't own this series multiply the positive value by -1.
+      */
+     if (env->retention==INT_MIN) 
+     {  
+        request->tdays = STDRETENTION;
+        if (request->tdays > 0)
+        {
+           /* Since STDRETENTION can be customized, don't allow the definition of a positive number */
+           request->tdays *= -1;
+        }
+     }
      else
-       request->tdays = env->retention;
+     {
+        request->tdays = env->retention;
+        
+        if (request->tdays > 0 && !isowner)
+        {
+           request->tdays *= -1;
+        }
+     }
 
      /* Submit request to sums server thread. */
      tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *) request);
@@ -388,10 +446,19 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
     else
       request->mode = TEMP + TOUCH;
   }
-  if (env->retention==-1)   
-    request->tdays = su->seriesinfo->retention;
+
+  /* If the user doesn't override on the cmd-line, start with the jsd retention.  Otherwise, 
+   * start with the cmd-line value.  It doesn't matter if the value is positive or negative 
+   * since only the series owner can create a record in the first place.
+   */
+  if (env->retention==INT_MIN) 
+  {  
+     request->tdays = su->seriesinfo->retention;
+  }
   else
-    request->tdays = env->retention;
+  {
+     request->tdays = env->retention; 
+  }
 
   request->sunum[0] = su->sunum;
   request->sudir[0] = su->sudir;
@@ -466,7 +533,7 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive)
   if (archive && env->archive) 
     *archive = 1;
 
-  if (env->retention==-1)   
+  if (env->retention==INT_MIN)
     return DRMS_LOG_RETENTION;
     //    return max_retention;    
   else
