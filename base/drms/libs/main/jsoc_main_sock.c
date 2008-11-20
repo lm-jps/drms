@@ -66,6 +66,7 @@ int JSOCMAIN_Init(int argc,
    int status;
    int quiet;
    int printrel = 0;
+   char reservebuf[128];
 
    if (cont)
    {
@@ -78,7 +79,15 @@ int JSOCMAIN_Init(int argc,
    xmem_config (1, 1, 1, 1, 1000000, 1,0, 0); 
 #endif
    /* Parse command line parameters */
-   cmdparams_reserve(&cmdparams, "L,Q,V,ver,vn,vers,version,about", "jsocmain");
+   snprintf(reservebuf, 
+            sizeof(reservebuf), 
+            "%s,%s,%s,%s,%s", 
+            "L,Q,V,ver,vn,vers,version,about", 
+            kARCHIVEARG,
+            kRETENTIONARG,
+            kQUERYMEMARG,
+            kSERVERWAITARG);
+   cmdparams_reserve(&cmdparams, reservebuf, "jsocmain");
 
    status = cmdparams_parse (&cmdparams, argc, argv);
    if (status == CMDPARAMS_QUERYMODE) {
@@ -120,8 +129,8 @@ int JSOCMAIN_Init(int argc,
 	    cmdparams_get_int (&cmdparams, "Q", NULL) != 0);
    *dolog = (cmdparams_exists (&cmdparams, "L") &&
 	    cmdparams_get_int (&cmdparams, "L", NULL) != 0);
-   if (!cmdparams_exists (&cmdparams, "DRMS_QUERY_MEM"))
-     cmdparams_set (&cmdparams,"DRMS_QUERY_MEM", "512");
+   if (!cmdparams_exists (&cmdparams, kQUERYMEMARG))
+     cmdparams_set (&cmdparams, kQUERYMEMARG, "512");
    /* if not already in a DRMS session make one */
    if (!cmdparams_exists (&cmdparams, "DRMSSESSION")) {
       if ((*drms_server_pid = drms_start_server (*verbose, *dolog)) < 0) {
@@ -142,7 +151,7 @@ int JSOCMAIN_Init(int argc,
 	 fprintf (stderr, "Couldn't connect to DRMS.\n");
 	 return 1;
       }    
-      drms_env->query_mem = cmdparams_get_int (&cmdparams, "DRMS_QUERY_MEM", NULL);
+      drms_env->query_mem = cmdparams_get_int (&cmdparams, kQUERYMEMARG, NULL);
     
       if (*dolog) {
 	 if (save_stdeo()) {
@@ -320,6 +329,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
 pid_t drms_start_server (int verbose, int dolog)  {
   char *dbhost, *dbuser, *dbpasswd, *dbname, *sessionns;
   int retention, query_mem, server_wait;
+  int archive;
   char drms_session[DRMS_MAXPATHLEN];
   char drms_host[DRMS_MAXPATHLEN];
   char drms_port[DRMS_MAXPATHLEN];
@@ -335,15 +345,22 @@ pid_t drms_start_server (int verbose, int dolog)  {
     dbpasswd = PASSWD;
   sessionns = cmdparams_get_str (&cmdparams, "JSOC_SESSIONNS", NULL);
 
+  archive = INT_MIN;
+  if (drms_cmdparams_exists(&cmdparams, kARCHIVEARG)) {
+     archive = drms_cmdparams_get_int(&cmdparams, kARCHIVEARG, NULL);
+  }
+
   retention = INT_MIN;
-  if (drms_cmdparams_exists(&cmdparams, "DRMS_RETENTION")) 
-     retention = drms_cmdparams_get_int(&cmdparams, "DRMS_RETENTION", NULL);
+  if (drms_cmdparams_exists(&cmdparams, kRETENTIONARG)) 
+     retention = drms_cmdparams_get_int(&cmdparams, kRETENTIONARG, NULL);
+
   query_mem = 512;
-  if (cmdparams_exists (&cmdparams, "DRMS_QUERY_MEM")) 
-    query_mem = cmdparams_get_int (&cmdparams,"DRMS_QUERY_MEM", NULL);
+  if (cmdparams_exists (&cmdparams, kQUERYMEMARG)) 
+    query_mem = cmdparams_get_int (&cmdparams, kQUERYMEMARG, NULL);
+
   server_wait = 0;
-  if (cmdparams_exists (&cmdparams, "DRMS_SERVER_WAIT")) 
-    server_wait = cmdparams_get_int (&cmdparams,"DRMS_SERVER_WAIT", NULL);
+  if (cmdparams_exists (&cmdparams, kSERVERWAITARG)) 
+    server_wait = cmdparams_get_int (&cmdparams, kSERVERWAITARG, NULL);
   
   int fd[2];
   pid_t	pid;
@@ -428,8 +445,6 @@ pid_t drms_start_server (int verbose, int dolog)  {
       argv[i++] = strdup ("-V");
     if (dolog) 
       argv[i++] = strdup ("-L");
-    if (cmdparams_exists(&cmdparams,"A")) 
-      argv[i++] = strdup ("-A");      
     argv[i] = malloc (strlen (dbhost)+DRMS_MAXNAMELEN);
     sprintf (argv[i++], "JSOC_DBHOST=%s", dbhost);
     argv[i] = malloc (strlen (dbname)+DRMS_MAXNAMELEN);
@@ -446,17 +461,21 @@ pid_t drms_start_server (int verbose, int dolog)  {
       argv[i] = malloc (strlen (sessionns)+DRMS_MAXNAMELEN);
       sprintf (argv[i++], "JSOC_SESSIONNS=%s", sessionns);
     }
+    if (archive == -1 || archive == 0 || archive == 1) {
+      argv[i] = malloc (DRMS_MAXNAMELEN*2);      
+      sprintf (argv[i++], "%s=%d", kARCHIVEARG, archive);
+    }
     if (retention > 0) {
       argv[i] = malloc (DRMS_MAXNAMELEN*2);      
-      sprintf (argv[i++], "DRMS_RETENTION=%d", retention);
+      sprintf (argv[i++], "%s=%d", kRETENTIONARG, retention);
     }
     if (query_mem != 512) {
       argv[i] = malloc (DRMS_MAXNAMELEN*2);
-      sprintf (argv[i++], "DRMS_QUERY_MEM=%d", query_mem);
+      sprintf (argv[i++], "%s=%d", kQUERYMEMARG, query_mem);
     }
     if (!server_wait) {
       argv[i] = malloc (DRMS_MAXNAMELEN*2);
-      sprintf (argv[i++], "DRMS_SERVER_WAIT=%d", server_wait);
+      sprintf (argv[i++], "%s=%d", kSERVERWAITARG, server_wait);
     }
     for (; i < num_args; i++) {
       argv[i] = NULL;

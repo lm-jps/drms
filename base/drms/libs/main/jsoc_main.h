@@ -35,6 +35,11 @@ parsing, and default-parameter initialization.
 #include "drms_dsdsapi.h"
 #include "drms_defs.h"
 
+#define kARCHIVEARG "DRMS_ARCHIVE"
+#define kRETENTIONARG "DRMS_RETENTION"
+#define kQUERYMEMARG "DRMS_QUERY_MEM"
+#define kSERVERWAITARG "DRMS_SERVER_WAIT"
+
 extern CmdParams_t cmdparams;
 /* Global DRMS Environment handle. */
 extern DRMS_Env_t *drms_env;

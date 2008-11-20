@@ -108,6 +108,11 @@ This overrides the value of series' archive flag.
 To specify an argument that affects properties of the DRMS session,
 use @c param=value, where @c param is one of the following.
 
+@arg @c DRMS_ARCHIVE Sets the archive status for all storage units created during the DRMS
+session started by <module>. <value> can be either -1 (don't archive data, and when a 
+storage unit's retention expires, delete all DRMS records whose data resides within this
+storage unit), 0 (don't archive, but do not delete any DRMS records), or 1 (archive data when 
+the storage unit's retention expires).
 \arg \c DRMS_RETENTION Sets (forces) the storage-unit retention time for the DRMS session
 started by <module>. This affects all storage units created during the session. <value> is 
 the number number of days that the storage units will remain on disk. CANNOT BE SPECIFIED 
@@ -225,12 +230,20 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   char *dbhost, *dbuser, *dbpasswd, *dbname, *sessionns;
   pthread_t sigthreadID = 0;
   int printrel = 0;
+  char reservebuf[128];
 
 #ifdef DEBUG
   xmem_config(1,1,1,1,1000000,1,0,0); 
 #endif
   /* Parse command line parameters. */
-  cmdparams_reserve(&cmdparams, "L,Q,V,ver,vn,vers,version,about,archive", "jsocmain");
+  snprintf(reservebuf, 
+           sizeof(reservebuf), 
+           "%s,%s,%s,%s", 
+           "L,Q,V,ver,vn,vers,version,about", 
+           kARCHIVEARG,
+           kRETENTIONARG,
+           kQUERYMEMARG);
+  cmdparams_reserve(&cmdparams, reservebuf, "jsocmain");
 
   status = cmdparams_parse (&cmdparams, argc, argv);
   if (status == CMDPARAMS_QUERYMODE) {
@@ -293,14 +306,21 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
     return 1;
   }
 
-  int archive = cmdparams_isflagset(&cmdparams, "archive");
+  int archive = INT_MIN;
+  if (drms_cmdparams_exists(&cmdparams, kARCHIVEARG)) {
+     archive = drms_cmdparams_get_int(&cmdparams, kARCHIVEARG, NULL);
+     if (archive != -1 && archive != 0 && archive != 1)
+     {
+        archive = INT_MIN;
+     }
+  }
   int retention = INT_MIN;
-  if (drms_cmdparams_exists(&cmdparams, "DRMS_RETENTION")) {
-    retention = drms_cmdparams_get_int(&cmdparams, "DRMS_RETENTION", NULL);
+  if (drms_cmdparams_exists(&cmdparams, kRETENTIONARG)) {
+    retention = drms_cmdparams_get_int(&cmdparams, kRETENTIONARG, NULL);
   }
   int query_mem = 512;
-  if (cmdparams_exists (&cmdparams, "DRMS_QUERY_MEM")) {
-    query_mem = cmdparams_get_int(&cmdparams, "DRMS_QUERY_MEM", NULL);
+  if (cmdparams_exists (&cmdparams, kQUERYMEMARG)) {
+    query_mem = cmdparams_get_int(&cmdparams, kQUERYMEMARG, NULL);
   }
 
   /* Initialize server's own DRMS environment and connect to 

@@ -409,6 +409,16 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
   DRMS_SumRequest_t *request, *reply;
   FILE *fp;
   char filename[DRMS_MAXPATHLEN];
+  int actualarchive = 0;
+
+  if (env->archive != INT_MIN)
+  {
+     actualarchive = env->archive;
+  }
+  else
+  {
+     actualarchive = su->seriesinfo->archive;
+  }
 
   /* Write text file with record numbers to storage unit directory. */
   if ( su->recnum )
@@ -420,7 +430,14 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
 	      filename);
       return 1;
     }
-    //    fprintf(fp, "#sessionid=%lld, sessionns=%s\n", env->session->sessionid, env->session->sessionns);
+
+    /* If archive is set to -1, then write flag text at the top of the file to 
+     * tell SUMS to delete the DRMS records within the storage unit. */
+    if (actualarchive == -1)
+    {
+       fprintf(fp, "DELETE_SLOTS_RECORDS\n");
+    }
+
     fprintf(fp,"series=%s\n", su->seriesinfo->seriesname);
     if (su->nfree<su->seriesinfo->unitsize)
     {
@@ -438,14 +455,10 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
   request->reqcnt = 1;
   request->dsname = su->seriesinfo->seriesname;
   request->group = su->seriesinfo->tapegroup;
-  if (env->archive) 
+  if (actualarchive == 1) 
     request->mode = ARCH + TOUCH;
-  else {
-    if (su->seriesinfo->archive)
-      request->mode = ARCH + TOUCH;
-    else
-      request->mode = TEMP + TOUCH;
-  }
+  else
+    request->mode = TEMP + TOUCH;
 
   /* If the user doesn't override on the cmd-line, start with the jsd retention.  Otherwise, 
    * start with the cmd-line value.  It doesn't matter if the value is positive or negative 
@@ -523,14 +536,17 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive)
 	  drms_commitunit(env, su);
 	  if (su->seriesinfo->retention > max_retention)
 	    max_retention = su->seriesinfo->retention;
-	  if (archive && su->seriesinfo->archive)
-	    *archive = 1;
+          if (archive && env->archive == INT_MIN)
+          {
+             if (su->seriesinfo->archive)
+               *archive = 1;
+          }
 	}
       }
     }
   }
 
-  if (archive && env->archive) 
+  if (archive && *archive == 0 && env->archive == 1) 
     *archive = 1;
 
   if (env->retention==INT_MIN)

@@ -214,6 +214,14 @@ static int parse_seriesinfo (char *desc, DRMS_Record_t *template) {
     len = getnextline (&start);
   }
 
+  if (template->seriesinfo->archive != -1 && 
+      template->seriesinfo->archive !=  0 && 
+      template->seriesinfo->archive !=  1)
+  {
+     fprintf(stderr, "WARNING: Invalid archive value '%d' - setting to 0.\n", template->seriesinfo->archive);
+     template->seriesinfo->archive = 0;
+  }
+
   //  /* Force series name to be all lower case. */
   //  strtolower(template->seriesinfo->seriesname);
 
