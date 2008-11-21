@@ -225,6 +225,12 @@ static int parse_seriesinfo (char *desc, DRMS_Record_t *template) {
   //  /* Force series name to be all lower case. */
   //  strtolower(template->seriesinfo->seriesname);
 
+  /* If version isn't specified, then assume the current version. This version will be used 
+   * in downstream parsing code to switch between code branches.
+   */
+  snprintf(template->seriesinfo->version, DRMS_MAXSERIESVERSION, "%s", drms_series_getvers());
+  
+
 #ifdef DEBUG 
   printf("Seriesname = '%s'\n",template->seriesinfo->seriesname);
   printf("Description = '%s'\n",template->seriesinfo->description);
@@ -2217,11 +2223,6 @@ void drms_jsd_printfromrec(DRMS_Record_t *rec) {
    char **extpkeys; 
 
    printf("#=====JSD Information=====\n");
-   if (strlen(rec->seriesinfo->version) > 0)
-   {
-      printf("%-*s\t%s\n",fwidth,"Version:",rec->seriesinfo->version);
-   }
-
    printf("\n#=====General Series Information=====\n");
    printf("%-*s\t%s\n",fwidth,"Seriesname:",rec->seriesinfo->seriesname);
    printf("%-*s\t\"%s\"\n",fwidth,"Author:",rec->seriesinfo->author);

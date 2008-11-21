@@ -17,6 +17,11 @@ hcontainer.h
 
 #include "drms_types.h"
 
+/* This is the current version. If a jsd (or a prototype record) used to create 
+ * a series does not specify a version, then the current version is assumed.
+ */
+#define kSERIESVERSION  "2.1"
+
 int get_namespace(const char *seriesname, char **namespace, char **shortname);
 
 /**
@@ -196,6 +201,11 @@ int drms_series_describe_data(DRMS_Record_t *series_template, int depth,
 			    DRMS_Simple_t *types, int rank, int *dims,
 			    DRMS_Storage_Protocol_t protocol);
 */
+
+static inline const char *drms_series_getvers()
+{
+   return kSERIESVERSION;
+}
 
 int drms_series_isvers(DRMS_SeriesInfo_t *si, DRMS_SeriesVersion_t *v);
 #endif
