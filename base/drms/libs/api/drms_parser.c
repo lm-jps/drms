@@ -194,7 +194,7 @@ static int parse_seriesinfo (char *desc, DRMS_Record_t *template) {
     if (prefixmatch (p, "Version"))
       TRY(getstring (&q, template->seriesinfo->version, DRMS_MAXSERIESVERSION) <= 0)
     else if (prefixmatch (p, "Description"))
-      TRY(getstring (&q, template->seriesinfo->description, DRMS_MAXCOMMENTLEN) <= 0)
+      TRY(getstring (&q, template->seriesinfo->description, DRMS_MAXCOMMENTLEN) < 0)
     else if (prefixmatch (p, "Owner"))
       TRY(getstring (&q, template->seriesinfo->owner, DRMS_MAXOWNERLEN) <= 0)
     else if (prefixmatch (p, "Author"))
@@ -349,7 +349,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
 	seg->axis[i] = atoi(axis);
       }
 
-    if (gettoken(&q,unit,sizeof(unit)) <= 0) goto failure;
+    if (gettoken(&q,unit,sizeof(unit)) < 0) goto failure;
     strcpy(seg->info->unit, unit);
     if (gettoken(&q,protocol,sizeof(protocol)) <= 0) goto failure;
     seg->info->protocol = drms_str2prot(protocol);
@@ -1397,7 +1397,7 @@ static int parse_keyword(char **in,
     if(gettoken(&q,scope,sizeof(scope)) <= 0)       goto failure;
     if(getvaltoken(&q,drms_str2type(type), defval,sizeof(defval)) < 0)  goto failure;
     if(gettoken(&q,format,sizeof(format)) <= 0)     goto failure;
-    if(gettoken(&q,unit,sizeof(unit)) <= 0)         goto failure;
+    if(gettoken(&q,unit,sizeof(unit)) < 0)         goto failure;
     if(gettoken(&q,description,sizeof(description)) < 0)   goto failure;
   }
 
