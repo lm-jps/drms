@@ -1412,7 +1412,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 
 	      if (foundOV)
 	      {
-		 rs = drms_open_dsdsrecords(env, oneSet, &stat);
+		 rs = drms_open_dsdsrecords(env, pbuf, &stat);
 		 if (stat)
 		   goto failure; 
 	      }
