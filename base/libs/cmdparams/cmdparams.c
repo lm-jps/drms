@@ -852,7 +852,9 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
 				     cmdparams_get_str (parms, defps->name, NULL))))
             fprintf (stderr, "array parsing returned error\n");
 	} 
-	else if (defps->type == ARG_FLOAT || defps->type == ARG_DOUBLE) 
+	else if (defps->type == ARG_FLOAT || 
+                 defps->type == ARG_DOUBLE ||
+                 defps->type == ARG_INT) 
 	{
 	   /*  Might want to check range of numeric (and time) type arguments here,
 	       once a syntax has been established  */
@@ -863,7 +865,7 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
                                         &minopen, &maxopen);
 	    if (status) 
             {
-               fprintf (stderr, "invalid range specified.\n");
+               fprintf (stderr, "invalid float/int module argument range specified.\n");
                return CMDPARAMS_FAILURE;
             }
             else
