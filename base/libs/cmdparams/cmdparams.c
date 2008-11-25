@@ -567,42 +567,199 @@ static int parse_numerated (char *klist, char ***names) {
 }
 
 /* works on both float and doubles */
-static int parse_range_float (char *range, double *min, double *max,
+static int parse_range_float (const char *rangein, double *min, double *max,
   int *minopen, int *maxopen) {
-/*
- *  Parse a numeric range identifier string according to the rule
- *    range = {'[' | '('}{number},{number}{']' | ')'}
- *    where the optional left (right) bracket or left (right) parenthesis
- *    specifies a closed or open interval for the minimum (maximum) (closed
- *    by default) and a missing (minimum) maximum number is interpreted as
- *    (-)dInfinity
- */
-  *minopen = *maxopen = 0;
-  if (range[0] == '[') {
-    range++;
-  } else if (range[0] == '(') {
-    *minopen = 1;
-    range++;
-  }
-  if (range[strlen(range)-1] == ']') {
-    range[strlen(range)-1] = '\0';
-  } else if (range[strlen(range)-1] == ')') {
-    *maxopen = 1;
-    range[strlen(range)-1] = '\0';
-  }
-/*  look for required comma separator and parse min and max vals separately  */
-			/* This function doesn't look fully implemented,
-			   but unused min/max are causing compiler warnings. */
-  if (min)
-  {
+   /*
+    *  Parse a numeric range identifier string according to the rule
+    *    range = {'[' | '('}{number},{number}{']' | ')'}
+    *    where the optional left (right) bracket or left (right) parenthesis
+    *    specifies a closed or open interval for the minimum (maximum) (closed
+    *    by default) and a missing (minimum) maximum number is interpreted as
+    *    (-)dInfinity
+    */
 
-  }
+   /* can't modify rangein - this is a pointer into the global, static 
+    * default argument array.
+    */
+   double minval = 0;
+   double maxval = 0;
+   int minisopen = 0;
+   int maxisopen = 0;
+   char buf[128];
+   int nchars;
+   char *pbuf = NULL;
+   int err = 0;
 
-  if (max)
-  {
+   char *range = strdup(rangein);
+   char *pc = range;
+   int st = 0; /* 0 - parsing optional left bracket 
+                * 1 - parsing min
+                * 2 - parsing max
+                * 3 - parsing optional right bracket
+                * 4 - all expected tokens parsed
+                */
 
-  }
-  return 0;
+   while (*pc)
+   {
+      if (*pc == ' ')
+      {
+         /* always skip spaces */
+         pc++;
+      }
+      else if (st == 0)
+      {
+         if (*pc == '[')
+         {
+            pc++; /* by default, already a closed interval */
+            *buf = '\0';
+            pbuf = buf;
+            nchars = 0;
+            st = 1;
+         }
+         else if (*pc == '(')
+         {
+            pc++;
+            minisopen = 1;
+            *buf = '\0';
+            pbuf = buf;
+            nchars = 0;
+            st = 1;
+         }
+         else 
+         {
+            /* assume that there is no bracket, so the min is closed */
+            *buf = '\0';
+            pbuf = buf;
+            nchars = 0;
+            st = 1;
+         }
+      }
+      else if (st == 1)
+      {
+         if (*pc != ',')
+         {
+            if (nchars < sizeof(buf) - 1)
+            {
+               *pbuf++ = *pc++;
+               nchars++;
+            }
+         }
+         else
+         {
+            pc++;
+            *pbuf = '\0';
+            if (strlen(buf) > 0)
+            {
+               sscanf(buf, "%lf", &minval);
+            }
+            else
+            {
+               /* no min value, so min is -infinity */
+               minval = D_NEG_INF;
+            }
+            *buf = '\0';
+            pbuf = buf;
+            nchars = 0;
+            st = 2;
+         }
+      }
+      else if (st == 2)
+      {
+         if (*pc != ')' && *pc != ']')
+         {
+            if (nchars < sizeof(buf) - 1)
+            {
+               *pbuf++ = *pc++;
+               nchars++;
+            }
+         }
+         else
+         {
+            *pbuf = '\0';
+            if (strlen(buf) > 0)
+            {
+               sscanf(buf, "%lf", &maxval);
+            }
+            else
+            {
+               maxval = D_INF;
+            }
+            *buf = '\0';
+            pbuf = buf;
+            nchars = 0;
+            st = 3;
+         }
+      }
+      else if (st == 3)
+      {
+         /* found either ')' or ']', so set maxisopen */
+         if (*pc == ')')
+         {
+            maxisopen = 1;
+         }
+
+         *pc++;
+         st = 4;
+      }
+      else if (st == 4)
+      {
+         /* if already found a right bracket, and now there is something
+          * other than a space, then this is an error */
+         err = 1;
+      }
+   }
+
+   if (st == 0 || st == 1)
+   {
+      err = 1;
+   }
+   else if (st == 2)
+   {
+      *pbuf = '\0';
+      if (strlen(buf) > 0)
+      {
+         sscanf(buf, "%lf", &maxval);
+      }
+      else
+      {
+         maxval = D_INF;
+      }
+   }
+   else if (st == 3)
+   {
+      /* never found a right bracket - assume closed interval */
+      maxisopen = 0;
+   }
+ 
+   /*  look for required comma separator and parse min and max vals separately  */
+   /* This function doesn't look fully implemented,
+      but unused min/max are causing compiler warnings. */
+   if (min)
+   {
+      *min = minval;
+   }
+
+   if (max)
+   {
+      *max = maxval;
+   }
+
+   if (minopen)
+   {
+      *minopen = minisopen;
+   }
+   
+   if (maxopen)
+   {
+      *maxopen = maxisopen;
+   }
+
+   if (range)
+   {
+      free(range);
+   }
+
+   return err;
 }
 				    /*  Parse command line and option files  */
 int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
@@ -703,9 +860,27 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
 	    double minvalid, maxvalid;
 	    int minopen, maxopen;
 	    status = parse_range_float (defps->range, &minvalid, &maxvalid,
-	        &minopen, &maxopen);
-	    if (status) fprintf (stderr, "range check returned error\n");
-   /*  check if isfinite (minvalid), minopen, etc. and compare as necessary  */
+                                        &minopen, &maxopen);
+	    if (status) 
+            {
+               fprintf (stderr, "invalid range specified.\n");
+               return CMDPARAMS_FAILURE;
+            }
+            else
+            {
+               double val = cmdparams_get_double(parms, defps->name, NULL);
+               if (minopen && !isinf(minvalid) && val <= minvalid ||
+                   !minopen && !isinf(minvalid) && val < minvalid ||
+                   maxopen && !isinf(maxvalid) && val >= maxvalid ||
+                   !maxopen && !isinf(maxvalid) && val > maxvalid)
+               {
+                  /* value lies outside range */
+                  fprintf (stderr, "invalid value '%f' for argument '%s' out of range.\n", 
+                           val, defps->name);
+                  return CMDPARAMS_FAILURE;
+               }
+            }
+            /*  check if isfinite (minvalid), minopen, etc. and compare as necessary  */
 	  }
 	}
       } else if (defps->type == ARG_VOID) {
