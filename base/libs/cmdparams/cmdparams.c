@@ -763,6 +763,18 @@ static int parse_range_float (const char *rangein, double *min, double *max,
 }
 				    /*  Parse command line and option files  */
 int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
+   /* defps is provided by the module. cmdparams shouldn't assume that this structure
+    * exists. Modules and cmdparams should be separate entities. Instead, the 
+    * cmdparams_parse() function should have defps as a parameter.
+    *
+    * Another thing that doesn't make sense: if defps defines the type of an argument, then 
+    * that argument should 'collapse' to that type - it shouldn't remain indeterminate (a string).
+    * But all arguments remain strings.  So if you define 'myvar' to be of type ARG_INT, 
+    * then on the cmd-line you provide myvar=3.9, cmdparams should at least issue a warning, 
+    * and then it should round that value to something sensible (eg, 4). When you request the
+    * int value for myvar, it should return 4. If you request the value as a double, cmdparams
+    * should return 4.0, not 3.9 as it currently does.
+    */
   ModuleArgs_t *defps = gModArgs;
   int status;
 

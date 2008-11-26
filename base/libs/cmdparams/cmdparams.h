@@ -71,7 +71,7 @@ typedef enum {
    ARG_NUMARGS
 } ModuleArgs_Type_t;
 
-/** @brief DRMS structure for holding parsed command-line arguments */
+/** @brief DRMS structure for holding parsed command-line-argument default values */
 struct ModuleArgs_struct {
   /** @brief Data type of argument. */
   ModuleArgs_Type_t type;
@@ -81,7 +81,7 @@ struct ModuleArgs_struct {
   char *value;
   /** @brief Free-form descriptive string. */
   char *description;
-  /** @brief For type==ARG_NUME, this is a list of comma-separated string tokens that name the enum symbols. */
+  /** @brief For type==ARG_NUME, this is a list of comma-separated string tokens that name the enum symbols. For type==ARG_INT, ARG_FLOAT, or ARG_DOUBLE, this contains a range of values. */
   char *range;
 };
 /** 
@@ -112,60 +112,125 @@ struct CmdParams_struct {
 typedef struct CmdParams_struct CmdParams_t;
 
 /**
-   Parse command line and module arguments struct and create hashed parms list.
-   This function, ordinarily called by the ::jsoc_main or
-   other driver program, but accessible from any program, parses the command
-   line (or other array of strings described by \a argc and \a argv!), included files
-   if any, and the global ::module_args struct to create a hash table of all
-   arguments available in the \a parms struct. Parsing obeys the following rules:
+   Parse the command line and the module's default arguments structure, creating 
+   and populating a hash table, indexed by argument name, that contains 
+   all the arguments specified.  All values in the hash table are strings, 
+   regardless of the declared type of the argument. Parsing proceeds as follows:
 
-   1. All tokens after the first in the command line (\a argv) are parsed for
-   include file references, flags, or parameter name value pairs.
-
-   2. Included files, described by tokens of the form \a @filename in either
-   the command line or an included file, are parsed according to the same
-   rules as the command line.
-
-   3. The declared ::module_args list is scanned, and all named parameters
-   not already assigned values are assigned their declared defaults, if any.
-
-   If any declared module argument cannot be assigned a value by the above
-   rules, processing of the argument list ceases and the function returns
-   the value -1. The exception is for arguments declared to be of type
-   ::ARG_FLAG, which are simply not set.
-
-   All values in the parms struct are strings, regardless of the declared
-   type of the argument. For arguments of type ::ARG_NUME, the value from
-   parsing will be string-compared with the set of valid strings in the
-   argument range, and then set to the character representation of the
-   numeric order of the (first) matching value in the range, counting from
-   0.
+   1. All tokens after the first in the command line (@a argv) are parsed for
+   flags, argument name-value pairs, file references (@filename in the table below - 
+   the file contains arguments, which are then parsed as well), or unnamed
+   values.
 
    Command-line tokens can take any of the following forms:
    <TABLE>
    <TR>
    <TD>\a --name</TD> 
-   <TD>(name cannot begin with a digit)</TD>
+   <TD>'name' is the multi-byte name of a flag. If this token is present on the command-line, 
+   the flag named 'name' is 'set'. ::cmdparams_isflagset(parms, "name") will return 1. 
+   name cannot begin with a digit</TD>
    </TR>
    <TR>
-   <TD>\a -chars</TD>
-   <TD>where chars is a set of one or more characters, all of which are
-   set as key names with the value "1"</TD>
+   <TD>\a --name value</TD> 
+   <TD>'name' is the name of an argument, and 'value' is the value of that argument. 
+   cmdparams_get_XXX() will convert the string value to the desired type and return that value.
+   'name' cannot begin with a digit.</TD>
+   </TR>
+   <TR>
+   <TD>\a -\<chars></TD>
+   <TD><chars> is a set of one or more characters. If such characters are present on 
+   the command-line, then the flags named by each of those characters are 'set'. </TD>
    </TR>
    <TR>
    <TD>\a name=[]value</TD>
-   <TD>white space following the \a = is optional</TD>
+   <TD>'name' is the name of an argument, and 'value' is the value of that argument. 
+   'name' cannot begin with a digit. White space following the \a = is optional</TD>
    </TR>
    <TR>
    <TD>\a \@filename</TD>
-   <TD>specifies name of file containing tokens to be parsed following same rules
-   as command line</TD>
+   <TD>'filename' specifies the name of a file containing tokens to be parsed in the same way the
+   cmd-line is parsed.</TD>
    </TR>
    <TR>
    <TD>\a value</TD>
-   <TD>assigned to successive unnamed argument $n</TD>
+   <TD>unnamed values are also stored in the hash table. They can be accessed by providing 
+   the argument number to the API functions (eg., if 'value' is the value of the nth
+   argument, then that value can be accessed by providing n as the argument number, as
+   in ::cmdparams_getarg(parms, n)).</TD>
    </TR>
    </TABLE>
+
+   2. The declared ::module_args structure provides a mechanism for declaring, in module code,
+   the arguments expected to appear on the cmd-line. The declaration includes the 
+   argument data type and its default value, among other attributes (see ::module_args),
+   although cmdparams uses these attributes inconsistently (different argument types
+   make use of different sets of these attributes).
+   Arguments provided on the cmd-line, but
+   not in ::module_args, should be ignored by the module code. After parsing the cmd-line, 
+   cmdparams then checks the ::module_args to ensure that all arguments specified in 
+   ::module_args were indeed provided on the cmd-line. Should an argument be missing, cmdparams
+   assigns the default value to the argument. If an argument is missing and no default 
+   value is provided in ::module_args, cmdparams issues a fatal error (with an exception for
+   the ARG_FLAG type - see table below). Arguments without default values are required to
+   be specified on the cmd-line.
+   NOTE: most of the type declarations are meaningless (eg., ARG_INT, ARG_DOUBLE) as cmdparams stores
+   arguments in their string form, and only converts to a numerical type when a 
+   cmdparams_get_XXX() function is called.  A few of the type declarations do have meaning:
+
+   <TABLE>
+   <TR>
+   <TD>@a ARG_FLAG</TD> 
+   <TD>Flags are not subject to the requirement that a default value be provided
+   in the ::module_args structure. This means that flags cannot be made to be
+   required arguments. It also means that specifying a default value for a flag
+   has no effect. To query if a flag is set, ::cmdparams_isflagset() can be used.</TD>
+   </TR>
+   <TR>
+   <TD>@a ARG_NUME</TD>
+   <TD>The range field of ::module_args specifies a comma-separated list of acceptable values 
+   for that argument. Each value in the list is associated with an integer (the enumeration value,
+   which starts at 0 for the first value in the list, and then increases by 1 for each
+   successive item in the list). If the range field includes "myval1, myval2, myval3", 
+   then myval1 is associated with 0, myval2 is associated with 1, and myval3 is associated with 3.
+   To obtain the value of an ARG_NUME argument, call ::cmdparams_get_int(). The value
+   returned is the enumeration value. Putting this all together, if the range field of 
+   the color argument contains "red,orange,yellow,green,blue,purple", and the cmd-line contains
+   color=green, ::cmdparams_get_int() returns 3, because red is associated with 0, orange is
+   associated with 1, etc. cmdparams will fail if the cmd-line specifies
+   a value for an ARG_NUME argument that is not in the list specified in the range field 
+   (eg, color=aqua will cause a failure).</TD>
+   </TR>
+   <TR>
+   <TD>@a ARG_FLOATS, @a ARG_DOUBLES, @a ARG_INTS</TD>
+   <TD>The cmd-line for an argument of this type contains a comma-separated list of values.
+   cmdparams will parse this list and store each value in the hash table under
+   the name <argname>_<n>_<value>, where <argname> is the name of the argument in 
+   ::module_args, <n> is the 0-based index into the list, and @a \<value> is the value 
+   from the list. The number of elements in the original list is stored in a 
+   new hash-table item keyed by the string <argname>_nvals. In addition, an entire 
+   array of values in their specified type is stored (if the 
+   type of argument is ARG_INTS, then the values are stored as ints - NOT as strings). To obtain
+   this array, ::cmdparams_get_intarr(), ::cmdparams_get_flaotarr(), or ::cmdparams_get_doublearr()
+   can be used.</TD>
+   </TR>
+   <TR>
+   <TD>@a ARG_FLOAT, @a ARG_DOUBLE, @a ARG_INT</TD>
+   <TD>The range field of ::module_args specifies a range of acceptable values. Should a cmd-line value 
+   for this argument be provided that is not within this range, 
+   cmdparams fails with an out-of-range error. The range is a string
+   with the following grammar (curlies denote optional elements, single quotes denote 
+   literals, '|' denotes alternation):<BR><BR>
+   { '(' | '[' } { <number1> } ',' { <number2> } { ')' | ']' } <BR><BR>
+   () denote open endpoints, [] denote closed endpoints (default is closed), <number1> and
+   <number2> are a real numbers, the lower and upper endpoints of the range. If <number1> is
+   omitted, then -infinity is assumed. If <number2> is omitted, then +infinity is assumed.</TD>
+   </TR>
+   </TABLE>
+   
+   If any declared module argument (in ::module_args) cannot be assigned a value 
+   during the above process, processing of the argument list ceases and the function returns
+   the value -1. ::ARG_FLAG arguments are exempt from this rule - it is not a requirement
+   that processing results in any flag to be set.
 
    If a parameter value (or name) has embedded white space, it must be quoted.
 
@@ -178,7 +243,7 @@ typedef struct CmdParams_struct CmdParams_t;
    could result in unpredictable
    values. The last token in the command line should be parsed last and take
    precedence. Thus, for example, an assignment following an \@filename declaration
-   will superseed the assignment in the corresponding file, and \a vice versa
+   will supersede the assignment in the corresponding file, and @a vice @a versa
    @bug Parsing of tokens in included files does not properly 
    deal with embedded white space in quoted strings.
 */
