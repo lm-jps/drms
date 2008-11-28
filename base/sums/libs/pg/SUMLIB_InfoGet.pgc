@@ -31,6 +31,8 @@ EXEC SQL BEGIN DECLARE SECTION;
     int safe_tape_fn;
     VARCHAR safe_tape_date[32];
     uint64_t ds_index;
+    int pa_status, pa_substatus;
+    VARCHAR effective_date[20];
 EXEC SQL END DECLARE SECTION;
 
     EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
@@ -67,6 +69,14 @@ EXEC SQL END DECLARE SECTION;
     setkey_int(result, "safe_tape_fn", safe_tape_fn);
     setkey_str(result, "safe_tape_date", safe_tape_date.arr);
     setkey_uint64(result, "SUNUM", ds_index);
+
+  //now get values in sum_partn_alloc
+ EXEC SQL SELECT status, archive_substatus, effective_date
+ INTO :pa_status, :pa_substatus, :effective_date
+ FROM SUM_PARTN_ALLOC WHERE DS_INDEX = :ds_index;
+    setkey_int(result, "pa_status", pa_status);
+    setkey_int(result, "pa_substatus", pa_substatus);
+    setkey_str(result, "effective_date", effective_date.arr);
     return(0);
 
 sqlerror:

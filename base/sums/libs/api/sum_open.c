@@ -772,6 +772,9 @@ KEY *respdo_1(KEY *params)
     strcpy(sinfo->safe_tape, GETKEY_str(params, "safe_tape"));
     sinfo->safe_tape_fn = getkey_int(params, "safe_tape_fn");
     strcpy(sinfo->safe_tape_date, GETKEY_str(params, "safe_tape_date"));
+    sinfo->pa_status = getkey_int(params, "pa_status");
+    sinfo->pa_substatus = getkey_int(params, "pa_substatus");
+    strcpy(sinfo->effective_date, GETKEY_str(params, "effective_date"));
     break;
   case PUTDO:
     break;
