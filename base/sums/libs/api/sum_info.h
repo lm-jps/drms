@@ -23,6 +23,9 @@ typedef struct SUM_info_struct
   char safe_tape[21];
   int safe_tape_fn;
   char safe_tape_date[32];
+  int pa_status;
+  int pa_substatus;
+  char effective_date[20];
 } SUM_info_t;
 
 #endif
