@@ -392,7 +392,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
           /* cparms can be empty */
           if (seg->info->protocol != DRMS_FITZ)
           {
-             if (gettoken(&q,cparms,sizeof(cparms)) < 0) goto failure;
+             if (getvaltoken(&q, DRMS_TYPE_STRING, cparms, sizeof(cparms)) < 0) goto failure;
           }
 
           snprintf(buf, sizeof(buf), "cparms_sg%03d", segnum);
@@ -2224,9 +2224,10 @@ void drms_jsd_printfromrec(DRMS_Record_t *rec) {
    DRMS_Segment_t *seg;
    int npkeys = 0;
    char **extpkeys; 
+   DRMS_Keyword_t *dbidxkw = NULL;
+   const char *dbidxkwname = NULL;
 
-   printf("#=====JSD Information=====\n");
-   printf("\n#=====General Series Information=====\n");
+   printf("#=====General Series Information=====\n");
    printf("%-*s\t%s\n",fwidth,"Seriesname:",rec->seriesinfo->seriesname);
    printf("%-*s\t\"%s\"\n",fwidth,"Author:",rec->seriesinfo->author);
    printf("%-*s\t%s\n",fwidth,"Owner:",rec->seriesinfo->owner);
@@ -2249,9 +2250,30 @@ void drms_jsd_printfromrec(DRMS_Record_t *rec) {
    }
 
    if (rec->seriesinfo->dbidx_num) {
-     printf("%-*s\t%s",fwidth,"DBIndex:", rec->seriesinfo->dbidx_keywords[0]->info->name);
-     for (int i = 1; i < rec->seriesinfo->dbidx_num; i++) {
-       printf(", %s", rec->seriesinfo->dbidx_keywords[i]->info->name);
+     for (int i = 0; i < rec->seriesinfo->dbidx_num; i++) {
+        dbidxkw = rec->seriesinfo->dbidx_keywords[i];
+
+        /* An db index may be the index keyword for a slotted keyword. In that case, 
+         * the jsd should contain the slotted keyword as a db index, not the 
+         * index keyword. */
+        if (drms_keyword_isindex(dbidxkw))
+        {
+           dbidxkwname = dbidxkw->info->name;
+           dbidxkw = drms_keyword_slotfromindex(dbidxkw);
+           if (!dbidxkw)
+           {
+              fprintf(stderr, "Invalid index keyword '%s'\n.", dbidxkwname);
+           }
+        }
+
+        if (i == 0)
+        {
+           printf("%-*s\t%s",fwidth,"DBIndex:", dbidxkw->info->name);
+        }
+        else
+        {
+           printf(", %s", dbidxkw->info->name);
+        }
      }
      printf("\n");
    }
