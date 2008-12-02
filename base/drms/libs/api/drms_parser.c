@@ -438,6 +438,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
           snprintf(cpkey->info->description, DRMS_MAXCOMMENTLEN, "%s", "");
           drms_keyword_unsetintprime(cpkey);
           drms_keyword_unsetextprime(cpkey);
+          drms_keyword_setimplicit(cpkey);
 
           if (cparmkeys)
           {
@@ -484,6 +485,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
           snprintf(sckey->info->description, DRMS_MAXCOMMENTLEN, "%s", "");
           drms_keyword_unsetintprime(sckey);
           drms_keyword_unsetextprime(sckey);
+          drms_keyword_setimplicit(sckey);
 
           /* Although this container was originally used for holding 
            * the comp params for FITS, it is now being used for
@@ -517,6 +519,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
           snprintf(sckey->info->description, DRMS_MAXCOMMENTLEN, "%s", "");
           drms_keyword_unsetintprime(sckey);
           drms_keyword_unsetextprime(sckey);
+          drms_keyword_setimplicit(sckey);
 
           /* Although this container was originally used for holding 
            * the comp params for FITS, it is now being used for
