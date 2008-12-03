@@ -12,6 +12,8 @@
 /* removed from doxygen module documentation - superceded by show_info */
 
 /**
+@defgroup show_keys show_keys - Examine a dataseries structure or contents
+
 Deprecated -- Prints keyword information and/or file path for given recordset.
 
 Use \ref show_info instead of show_keys. Show_keys is no longer maintained.

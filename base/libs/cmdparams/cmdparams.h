@@ -187,27 +187,35 @@ typedef struct CmdParams_struct CmdParams_t;
    </TR>
    <TR>
    <TD>@a ARG_NUME</TD>
-   <TD>The range field of ::module_args specifies a comma-separated list of acceptable values 
-   for that argument. Each value in the list is associated with an integer (the enumeration value,
+   <TD>The range field of ::module_args specifies a comma-separated list of acceptable enumeration
+   ids. Each id in the list is associated with an integer (the enumeration value,
    which starts at 0 for the first value in the list, and then increases by 1 for each
-   successive item in the list). If the range field includes "myval1, myval2, myval3", 
-   then myval1 is associated with 0, myval2 is associated with 1, and myval3 is associated with 3.
+   successive item in the list). If the range field includes "myid1, myid2, myid3", 
+   then myid1 is associated with 0, myid2 is associated with 1, and myid3 is associated with 3.
    To obtain the value of an ARG_NUME argument, call ::cmdparams_get_int(). The value
    returned is the enumeration value. Putting this all together, if the range field of 
    the color argument contains "red,orange,yellow,green,blue,purple", and the cmd-line contains
-   color=green, ::cmdparams_get_int() returns 3, because red is associated with 0, orange is
-   associated with 1, etc. cmdparams will fail if the cmd-line specifies
+   color=green, ::cmdparams_get_int() returns 3, because the id red is associated with the value 0, 
+   orange is associated with 1, etc. cmdparams will fail if the cmd-line specifies
    a value for an ARG_NUME argument that is not in the list specified in the range field 
-   (eg, color=aqua will cause a failure).</TD>
+   (eg, color=aqua will cause a failure). This argument type is
+   designed especially for use with driver programs that can provide menus of
+   options, such as CGI forms.</TD>
    </TR>
    <TR>
    <TD>@a ARG_FLOATS, @a ARG_DOUBLES, @a ARG_INTS</TD>
    <TD>The cmd-line for an argument of this type contains a comma-separated list of values.
    cmdparams will parse this list and store each value in the hash table under
-   the name <argname>_<n>_<value>, where <argname> is the name of the argument in 
-   ::module_args, <n> is the 0-based index into the list, and @a \<value> is the value 
-   from the list. The number of elements in the original list is stored in a 
-   new hash-table item keyed by the string <argname>_nvals. In addition, an entire 
+   the name <argname>_<n>_value, where <argname> is the name of the argument in 
+   ::module_args and <n> is the 0-based index into the list. 
+   The number of elements in the original list is stored in a 
+   new hash-table item keyed by the string <argname>_nvals. 
+   For example, if "lat=0.0,5.0,10.0" is provided on the cmd-line, and the following ::module_args element 
+   is present: {ARG_FLOATS, "lat", "", "", ""}, ::params_get_int (params, "lat_nvals") 
+   would return 3 and ::params_get_float (params, "lat_1_value") would return the value 5.0 . The number
+   of array values supplied at run time need not match the number in the 
+   speficied in the value field of the ::module_args element.
+   In addition, an entire 
    array of values in their specified type is stored (if the 
    type of argument is ARG_INTS, then the values are stored as ints - NOT as strings). To obtain
    this array, ::cmdparams_get_intarr(), ::cmdparams_get_flaotarr(), or ::cmdparams_get_doublearr()
