@@ -71,12 +71,19 @@ EXEC SQL END DECLARE SECTION;
     setkey_uint64(result, "SUNUM", ds_index);
 
   //now get values in sum_partn_alloc
+    EXEC SQL WHENEVER NOT FOUND GOTO noerror; 
  EXEC SQL SELECT status, archive_substatus, effective_date
  INTO :pa_status, :pa_substatus, :effective_date
  FROM SUM_PARTN_ALLOC WHERE DS_INDEX = :ds_index and STATUS != 8;
     setkey_int(result, "pa_status", pa_status);
     setkey_int(result, "pa_substatus", pa_substatus);
     setkey_str(result, "effective_date", effective_date.arr);
+    return(0);
+
+noerror:
+    setkey_int(result, "pa_status", -1);
+    setkey_int(result, "pa_substatus", -1);
+    setkey_str(result, "effective_date", "N/A");
     return(0);
 
 sqlerror:
