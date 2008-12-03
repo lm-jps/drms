@@ -238,9 +238,9 @@ include	$(SRCDIR)/Rules.mk
 
 # Libraries from src/util linked with all programs.
 ifneq ($(COMPILER), icc)
-  SYSLIBS = -lz -ldl -lpthread -lm
+  SYSLIBS = -lz -ldl -lpthread -lrt -lm
 else
-  SYSLIBS = -lz -ldl -lpthread
+  SYSLIBS = -lz -ldl -lpthread -lrt
 endif
 SRCLIBS = $(LIBTHREADUTIL) $(LIBRICECOMP) $(LIBCMDPARAMS) $(LIBDEFS) $(LIBDSTRUCT) $(LIBTIMEIO) $(LIBFITSRW) $(LIBERRLOG) $(LIBMISC)
 FSRCLIBS = $(LIBTHREADUTIL) $(LIBRICECOMP) $(LIBCMDPARAMSF) $(LIBDEFS) $(LIBDSTRUCT) $(LIBTIMEIO) $(LIBFITSRW) $(LIBERRLOG) $(LIBMISC)
