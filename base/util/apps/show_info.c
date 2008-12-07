@@ -19,7 +19,7 @@ show_info -j {ds=}<seriesname>
 show_info -l {ds=}<seriesname>
 show_info -c {ds=}<record_set>
 show_info -s {ds=}<seriesname>
-show_info [-aAiopPrRS] [-dkqt] {ds=}<record_set>|sunum=<sunum> [n=<count>] [key=<keylist>] [seg=<seglist>]
+show_info [-aAiopPrRSz] [-dkqt] {ds=}<record_set>|sunum=<sunum> [n=<count>] [key=<keylist>] [seg=<seglist>]
 show_info_sock {same options as above}
 \endcode
 
@@ -83,6 +83,7 @@ This group of arguments specifies the set of keywords, segments, links, or virtu
 \li \c  -r: recnum - show record number as first keyword
 \li \c  -R: retention - show the online expire date for the segment data
 \li \c  -S: SUNUM - show the sunum for the record
+\li \c  -z: SUNUM - show the storage unit size for the SU that contains the record's segments
 
 \par Flags controling how to display values:
 
@@ -217,6 +218,7 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "s", "0", "stats - show some statistics about the series"},
   {ARG_FLAG, "S", "0", "SUNUM - show the sunum for the record"},
   {ARG_FLAG, "t", "0", "types - show types and print formats for keyword values"},
+  {ARG_FLAG, "z", "0", "size - show size of storage unit containing record's segments"},
   {ARG_INT, "sunum", "-1", "SUNUM specified, find matching records"},
   {ARG_STRING, "QUERY_STRING", "Not Specified", "show_info called as cgi-bin program args here"},
   {ARG_END}
@@ -248,6 +250,7 @@ int nice_intro ()
 	"  -r: recnum - show record number as first keyword\n"
 	"  -R: retention - show the online expire date\n"
 	"  -S: sunum - show sunum number as first keyword (but after recnum)\n"
+	"  -z: size - show size of storage unit containing record's segments\n"
         " output appearance control flags are:\n"
 	"  -k: list keyword names and values, one per line\n"
 	"  -t: list keyword types and print formats as 2nd and 3rd lines in table mode\n"
@@ -536,6 +539,7 @@ int DoIt(void)
   int show_online;
   int show_recnum;
   int show_sunum;
+  int show_size;
   int keyword_list;
   int want_count;
   int want_path;
@@ -606,6 +610,7 @@ int DoIt(void)
   show_recnum =  cmdparams_get_int(&cmdparams, "r", NULL) != 0;
   show_retention = cmdparams_get_int (&cmdparams, "R", NULL) != 0;
   show_sunum =  cmdparams_get_int(&cmdparams, "S", NULL) != 0;
+  show_size =  cmdparams_get_int(&cmdparams, "z", NULL) != 0;
   show_types =  cmdparams_get_int(&cmdparams, "t", NULL) != 0;
 
   if(want_path_noret) want_path = 1;	/* also set this flag */
@@ -854,6 +859,8 @@ int DoIt(void)
           printf ("%sonline", (col++ ? "\t" : ""));
         if (show_retention)
           printf ("%sretain", (col++ ? "\t" : ""));
+        if (show_size)
+          printf ("%ssize", (col++ ? "\t" : ""));
         for (ikey=0 ; ikey<nkeys; ikey++)
           printf ("%s%s", (col++ ? "\t" : ""), keys[ikey]); 
         for (iseg = 0; iseg<nsegs; iseg++)
@@ -881,6 +888,8 @@ int DoIt(void)
             printf ("%sstring", (col++ ? "\t" : ""));
           if (show_retention)
             printf ("%sstring", (col++ ? "\t" : ""));
+          if (show_size)
+            printf ("%slonglong", (col++ ? "\t" : ""));
           for (ikey=0 ; ikey<nkeys; ikey++)
             {
             DRMS_Keyword_t *rec_key_ikey = drms_keyword_lookup (rec, keys[ikey], 1);
@@ -909,6 +918,8 @@ int DoIt(void)
             printf ("%s%%s", (col++ ? "\t" : ""));
           if (show_retention)
             printf ("%s%%s", (col++ ? "\t" : ""));
+          if (show_size)
+            printf ("%s%lld", (col++ ? "\t" : ""));
           for (ikey=0 ; ikey<nkeys; ikey++)
             {
             DRMS_Keyword_t *rec_key_ikey = drms_keyword_lookup (rec, keys[ikey], 1);
@@ -990,13 +1001,32 @@ int DoIt(void)
       else
         {
         int y,m,d;
-        sscanf(sinfo->effective_date, "%4d%2d%2d", &y,&m,&d);
-        sprintf(retain, "%4d.%02d.%02d",y,m,d);
+        if (strcmp("N", sinfo->online_status) == 0)
+          strcpy(retain,"-1");
+        else
+          {
+          sscanf(sinfo->effective_date, "%4d%2d%2d", &y,&m,&d);
+          sprintf(retain, "%4d.%02d.%02d",y,m,d);
+          }
         }
       if (keyword_list)
         printf("## retain=%s\n", retain);
       else
         printf("%s%s", (col++ ? "\t" : ""), retain);
+      }
+
+    if (show_size)
+      {
+      SUM_info_t *sinfo = drms_get_suinfo(rec->sunum);
+      char size[20];
+      if (!sinfo)
+        strcpy(size, "NA");
+      else
+        sprintf(size, "%.0f", sinfo->bytes);
+      if (keyword_list)
+        printf("## size=%s\n", size);
+      else
+        printf("%s%s", (col++ ? "\t" : ""), size);
       }
 
     /* now print keyword information */
@@ -1182,7 +1212,8 @@ int DoIt(void)
       printf("%d records found, no other information requested\n", nrecs);
       break;
       }
-    if (!keyword_list && (show_recnum || show_sunum || show_recordspec || show_online || show_retention || nkeys || nsegs || want_path))
+    if (!keyword_list && (show_recnum || show_sunum || show_recordspec ||
+                          show_online || show_retention || show_size || nkeys || nsegs || want_path))
       printf ("\n");
     }
 
