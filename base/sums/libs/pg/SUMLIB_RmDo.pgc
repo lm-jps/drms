@@ -168,6 +168,7 @@ EXEC SQL END DECLARE SECTION;
       sprintf(rectxt, "%s/Records.txt", wd);
       if(!(rxfp=fopen(rectxt, "r"))) {
         printk("**Err: DS_RmNow() can't open %s\n", rectxt);
+        //NOTE: get this error for DRMS log directories w/no Records.txt
       }
       else {
         while(fgets(line, 256, rxfp)) {   /* get Records.txt file lines */
