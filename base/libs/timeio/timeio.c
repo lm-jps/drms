@@ -121,27 +121,18 @@ static double ut_leap_time[] = {
  915148833.0,                                                /*  2006.01.01  */
 1009843234.0                                                 /*  2009.01.01  */
 /*
+ * IMPORTANT NOTE ---
+ *   When adding a new leap second add time be sure to make changes in  BOTH
+ *   this file and its near clone in /CM/src/timeio via your STAGING directory.
+ *   
+ *   The value to list is the time of the first second after the leap second.
+ *   So, before the addition is made, get the seconds of the time in the
+ *   comment via e.g. time_index or time_convert  then add 1 to it before
+ *   adding it to the table.
  *
- *  The following were predicted dates of UTC adjustments only, but the
- *    offset remains constant at 32 seconds, as adjustments ceased to be made
- *    and will likely never be made, UTC having been frozen to a fixed offset
- *    from TAI as of Jan. 1 1999.  However, the calculation of tai_adjustment
- *    only counts the number, it doesn't look at the actual value, so these
- *    were fully commented out on 21 July 2003.
- *
- 741484832.0,                                                    2000.07.01
- 788918432.0,                                                    2002.01.01
- 820454432.0,                                                    2003.01.01
- 851990432.0,                                                    2004.01.01
- 883612832.0,                                                    2005.01.01
- 899251232.0,                                                    2005.07.01
- 930787232.0,                                                    2006.07.01
- 962323232.0,                                                    2007.07.01
- 993945632.0,                                                    2008.07.01
-1025481632.0                                                     2009.07.01
 */
 /*
- *  ***  NOTE  Please notify Roger Chevalier at EOF
+ *  ***  NOTE  Please notify mdiops@mdisas.nascom.nasa.gov at EOF
  *       whenever any of these times are updated!   ***
  */
 };
