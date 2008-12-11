@@ -420,6 +420,7 @@ int SUM_alloc2();
 int SUM_poll();
 int SUM_wait();
 int SUM_Init();
+int SUM_delete_series();
 int NC_PaUpdate();
 SUMID_t SUMLIB_Open();
 SUMID_t sumrpcopen_1();
