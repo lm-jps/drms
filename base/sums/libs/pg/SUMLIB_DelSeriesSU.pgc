@@ -44,7 +44,7 @@ EXEC SQL END DECLARE SECTION;
     l_ds_index = index;
 
 	EXEC SQL UPDATE SUM_PARTN_ALLOC
-		SET STATUS = 2,
+		SET STATUS = 2, EFFECTIVE_DATE='0',
 		ARCHIVE_SUBSTATUS = 1024
 		WHERE ds_index = :l_ds_index;
     continue;
