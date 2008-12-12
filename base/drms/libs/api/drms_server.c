@@ -1132,17 +1132,23 @@ int drms_server_dropseries(DRMS_Env_t *env, int sockfd)
   series_lower = receive_string(sockfd);
   tn = receive_string(sockfd);
   strtolower(series_lower);
-  hcon_remove(&env->series_cache, series_lower);
   drms_server_dropseries_su(env, tn);
+  hcon_remove(&env->series_cache, series_lower);
   free(series_lower);
   free(tn);
   return 0;
 }
 
 int drms_server_dropseries_su(DRMS_Env_t *env, char *tn) {
-  int status = DRMS_SUCCESS;
-  DRMS_SumRequest_t *request, *reply;
+  int status = 0;
+  DRMS_SumRequest_t *request = NULL;
+  DRMS_SumRequest_t *reply = NULL;
   XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+  memset(request, 0, sizeof(DRMS_SumRequest_t));
+  uint64_t *sunums = NULL;
+  long long nsus = 127; /* leave one for the NULL terminator */
+  long isu;
+  int drmsstatus = DRMS_SUCCESS;;
 
   if (!env->sum_thread) {
     if((status = pthread_create(&env->sum_thread, NULL, &drms_sums_thread, 
@@ -1152,12 +1158,67 @@ int drms_server_dropseries_su(DRMS_Env_t *env, char *tn) {
     }
   }
 
-  tqueueAdd(env->sum_inbox, (long)pthread_self(), (char *)request);
-  tqueueDel(env->sum_outbox, (long)pthread_self(), (char **)&reply);
-  status = reply->opcode;
-  if (status) {
+  request->opcode = DRMS_SUMDELETESERIES;
+
+  /* Fetch the records */
+  DRMS_RecordSet_t *rs = drms_open_recordset(env, tn, &drmsstatus);
+  DRMS_Record_t *rec = NULL;
+
+  isu = 0;
+  if (rs && rs->n > 0)
+  {
+     /* what are the SUNUMs? */
+     sunums = malloc(sizeof(uint64_t) * nsus);
+
+     while ((rec = drms_recordset_fetchnext(env, rs, &drmsstatus)) != NULL && rec->sunum != -1)
+     {
+        if (isu > nsus)
+        {
+           nsus = (nsus + 1) * 2 - 1;
+           sunums = realloc(sunums, sizeof(uint64_t) * nsus);
+        }
+
+        sunums[isu] = rec->sunum;
+        isu++;
+     }
+
+     /* Time to null-terminate */
+     sunums[isu] = 0LL;
   }
-  free(reply);
+
+  if (rs)
+  {
+     drms_close_records(rs, DRMS_FREE_RECORD);
+     rs = NULL;
+  }
+
+  if (isu > 0)
+  {
+     /* Use the request's comment field to hold array of sunums since
+      * the sunum field has a fixed number of sunums. */
+     request->comment = (char *)sunums;
+ 
+     tqueueAdd(env->sum_inbox, (long)pthread_self(), (char *)request);
+     tqueueDel(env->sum_outbox, (long)pthread_self(), (char **)&reply);
+
+     if (reply->opcode) 
+     {
+        fprintf(stderr, "SUM_delete_series() returned with error code '%d'.\n", reply->opcode);
+        status = 1;
+     }
+  }
+
+  /* No need to deep-free reply since SUMS shouldn't have malloc'd any fields. */
+  if (reply)
+  {
+     free(reply);
+  }
+
+  /* But must deep-free comment, since master sums thread won't do that. */
+  if (sunums)
+  {
+     free(sunums);
+  }
   
   return status;
 }
@@ -1339,6 +1400,9 @@ void *drms_sums_thread(void *arg)
       }
       env->sum_tag = 0; // done processing
     }
+
+    /* Note: request is only shallow-freed. The is the requestor's responsiblity 
+     * to free any memory allocated for the dsname, comment, and sudir fields. */
     free(request);
   }
 
@@ -1491,6 +1555,18 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
       break;
     }
     break;
+  case DRMS_SUMDELETESERIES:
+    if (request->comment)
+    {
+       /* request->comment is actually a pointer to an array of sunums */
+       uint64_t *sunums = (uint64_t *)request->comment;
+       if ((reply->opcode = SUM_delete_series(sunums, printf)) != 0)
+       {
+          fprintf(stderr,"SUM thread: SUM_delete_series call failed with stat=%d.\n",
+                  reply->opcode);
+       }
+    }
+    break;
   default:
     fprintf(stderr,"SUM thread: Invalid command code (%d) in request.\n",
 	   request->opcode);
@@ -1499,10 +1575,6 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
   }
   return reply;
 }
-
-
-
-
 
 /****************** Server signal handler thread functions *******************/
 void *drms_signal_thread(void *arg)

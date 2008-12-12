@@ -1246,7 +1246,23 @@ int drms_slot_setstate(DRMS_Env_t *env, char *series, long long sunum,
   }    
 }
 
-
+int drms_dropseries(DRMS_Env_t *env, const char *series)
+{
+#ifndef DRMS_CLIENT
+   drms_server_dropseries_su(env, series);
+#else
+   XASSERT(env->session->db_direct==0);
+        
+   if (!env->session->db_direct)
+   {
+      /* This is a DRMS client - must remove deleted series from 
+         DRMS server cache. This will also call SUM_delete_series via
+         drms_server_dropseries_su() (which can be called by DRMS servers ONLY). */
+      drms_send_commandcode(env->session->sockfd, DRMS_DROPSERIES);
+      send_string(env->session->sockfd, series);
+   }
+#endif
+}
 
 /* Create a new series in th database using the given record as template 
    and insert the template in the series cache. */

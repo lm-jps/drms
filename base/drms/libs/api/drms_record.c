@@ -2724,7 +2724,7 @@ void drms_free_records(DRMS_RecordSet_t *rs)
      free(rs->ss_queries);
      rs->ss_queries = NULL;
   }
-  rs->ss_n = 0;
+
   if (rs->ss_types)
   {
      free(rs->ss_types);
@@ -2744,6 +2744,9 @@ void drms_free_records(DRMS_RecordSet_t *rs)
   {
      drms_free_cursor(&(rs->cursor));
   }
+  /* Must NOT set ss_n to 0 before calling drms_free_cursor(). */
+  rs->ss_n = 0;
+
   free(rs);
 }
 
@@ -6911,7 +6914,6 @@ void drms_free_cursor(DRMS_RecSetCursor_t **cursor)
 {
    int iname;
    char sqlquery[DRMS_MAXQUERYLEN];
-   DB_Text_Result_t *qres = NULL;
 
    if (cursor)
    {
@@ -6924,15 +6926,9 @@ void drms_free_cursor(DRMS_RecSetCursor_t **cursor)
                if ((*cursor)->names[iname])
                {
                   snprintf(sqlquery, sizeof(sqlquery), "CLOSE %s", (*cursor)->names[iname]);
-                  qres = drms_query_txt((*cursor)->env->session, sqlquery);
-                  if (!qres || qres->num_rows <= 0)
+                  if (drms_dms((*cursor)->env->session, NULL, sqlquery))
                   {
                      fprintf(stderr, "Failed to close cursor '%s'.\n",(*cursor)->names[iname]); 
-                  }
-
-                  if (qres)
-                  {
-                     db_free_text_result(qres);
                   }
 
                   free((*cursor)->names[iname]);

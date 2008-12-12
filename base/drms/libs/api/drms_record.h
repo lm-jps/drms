@@ -444,5 +444,34 @@ int drms_record_islocal(DRMS_Record_t *rec);
    @return The set of records retrieved by the query.
 */
 
+/**
+   @fn DRMS_Record_t *drms_create_recproto(DRMS_Record_t *recSource, int *status)
+   Create a stand-alone record prototype that is essentially a duplicate of @a recSource. 'Stand-alone'
+   means the returned record is not subject to DRMS caching and freeing. It also implies
+   that there is no @e connection between the prototype record and any database entities that the 
+   record represents. In particular, modification to the prototype record cannot cause any
+   changes to the underlying database entities. This is not true for non-stand-alone records - 
+   changes to keyword values of those types of records @e can cause changes to database column values.
+
+   The term @e prototype suggests that the returned record is a template. In fact, the returned
+   record is very much like a jsd file that has been parsed into DRMS structures, and it can be used to 
+   create a series. However, the prototype contains the series name of the series that @a recSource
+   belongs to. If the prototype is used directly as is to create a series, the series creation will
+   fail as the series named in the prototype already exists. To avoid this, the 
+   ::drms_create_series_fromprototype function can be used (one argument to this function is
+   the name of the new output series).
+
+   This function allocates DRMS structures and it is the callers responsibility to free this memory.
+   If the prototype is passed to ::drms_create_series_fromprototype, this function will free
+   the prototype. Alternatively, ::drms_destroy_recproto will free the prototype.
+
+   See ::drms_create_series_fromprototype for an example of how to create a series 'on-the-fly' using
+   this function.
+
+   @param recSource The existing DRMS record from which a stand-alone duplicate is to be created.
+   @param tatus Pointer to DRMS status (see drms_statuscodes.h) returned
+   by reference. 0 if successful, non-0 otherwise.
+   @return The record prototype that is a stand-alone duplicate of @a recSource
+*/
 
 #endif

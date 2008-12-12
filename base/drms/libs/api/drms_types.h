@@ -351,11 +351,21 @@ typedef struct DRMS_ThreadInfo_struct
 #define DRMS_SUMGET    1
 #define DRMS_SUMPUT    2
 #define DRMS_SUMCLOSE  3
+#define DRMS_SUMDELETESERIES 4
 #define DRMS_SUMABORT 99
 #define DRMS_MAX_REQCNT MAXSUMREQCNT
 
 /* Struct used for communication between service threads and
-   the SUMS communication thread. */
+ * the SUMS communication thread. 
+ *
+ * Note: When this structure is used as a request to SUMS, the 
+ * request is only shallow-freed from within the sums thread
+ * main loop. It is the requestor's responsiblity 
+ * to free any memory allocated for the dsname, comment, and sudir fields. 
+ * When used as a reply, it is the requestor's responsibility
+ * to free all memory associated with the reply, including
+ * the structure itself.
+ */
 typedef struct DRMS_SumRequest_struct
 {
   int opcode; /* Used for command code in inbox and status in the outbox. */

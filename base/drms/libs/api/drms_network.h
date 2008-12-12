@@ -97,6 +97,10 @@ long long *drms_alloc_recnum(DRMS_Env_t *env,  char *series,
 /** \brief Mark a storage unit slot as either ::DRMS_SLOT_FREE, ::DRMS_SLOT_FULL, or ::DRMS_SLOT_TEMP. */
 int drms_slot_setstate(DRMS_Env_t *env, char *series, long long sunum, 
 		       int slotnum, int state);
+
+/** @brief Delete the storage units associated with a series */
+int drms_dropseries(DRMS_Env_t *env, const char *series);
+
 /** \brief Create a series */
 int drms_create_series(DRMS_Record_t *rec, int perms);
 /** \brief Update an existing series */

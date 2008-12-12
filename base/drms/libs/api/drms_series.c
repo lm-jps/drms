@@ -529,6 +529,10 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
 #endif
   if (qres->num_rows==1)
   {
+    /* Tell SUMS to delete series' sunums - do this first, then continue to 
+     * remove table rows, even if SUMS fails. */
+    drms_dropseries(env, series);
+
     series_lower = strdup(series);
     /* series_lower is fully qualified, i.e., it contains namespace */
     strtolower(series_lower);
@@ -561,6 +565,10 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
 	    DRMS_MASTER_SERIES_TABLE,series);
     if (drms_dms(session,NULL,query))
       goto bailout;
+
+    /* Both DRMS servers and clients have a series_cache (one item per
+       each series in all of DRMS). So, always remove the deleted series
+       from this cache, whether or not this is a server. */
     hcon_remove(&env->series_cache,series_lower);
   }
   else if (qres->num_rows>1)
@@ -577,12 +585,6 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
   }
   db_free_binary_result(qres);
   
-
-  if (!env->session->db_direct)
-  {
-    drms_send_commandcode(env->session->sockfd, DRMS_DROPSERIES);
-    send_string(env->session->sockfd, series);
-  }
   free(series_lower);
   free(namespace);
   return 0;
