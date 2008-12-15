@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <soi_key.h>
+#include <printk.h>
 
 extern int write_log(char *fmt, ...);
 

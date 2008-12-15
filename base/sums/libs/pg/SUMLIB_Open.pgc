@@ -3,6 +3,7 @@
  * opening with the SUMS. Return 0 on error.
  */
 #include <SUM.h>
+#include <sum_rpc.h>
 #include <printk.h>
 
 
