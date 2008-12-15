@@ -10,7 +10,7 @@ return error if no '.' present
 */ 
 int get_namespace(const char *seriesname, char **namespace, char **shortname) {
   if (strchr(seriesname, '.')) {
-    char *p = seriesname;
+    char *p = (char *)seriesname;
     while (*p != '.') {
       p++;
     }

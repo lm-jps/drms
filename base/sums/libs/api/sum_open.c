@@ -15,6 +15,7 @@ extern int errno;
 SUMID_t sumrpcopen_1(KEY *argp, CLIENT *clnt, int (*history)(const char *fmt, ...));
 static void respd(struct svc_req *rqstp, SVCXPRT *transp);
 int getanymsg(int block);
+static int getmsgimmed ();
 static char *datestring(void);
 
 /* External prototypes */
