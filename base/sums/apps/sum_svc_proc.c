@@ -24,7 +24,7 @@ void logkey();
 */
 static char *datestring()
 {
-  char datestr[32];
+  static char datestr[32];
   struct timeval tvalr;
   struct tm *t_ptr;
 
