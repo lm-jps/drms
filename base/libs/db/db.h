@@ -5,6 +5,7 @@
 #include <pthread.h>
 #include <sys/uio.h>
 #include <netinet/in.h>
+#include <string.h>
 //#include "xmem.h"
 
 /* Define actual types used for different back-end databases. */
