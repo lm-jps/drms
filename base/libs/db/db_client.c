@@ -58,8 +58,8 @@ DB_Text_Result_t *db_recv_text_query(int sockfd, int comp)
 	/* Uncompress */
 	XASSERT( buffer = malloc(buflen) ); /* Allocate buffer for uncompressed data. */
 	*((int *)buffer) = htonl((int)buflen);
-	if (uncompress(buffer+sizeof(int), &buflen, zbuf, zlen) != Z_OK)
-	{
+	if (uncompress ((unsigned char*)buffer+sizeof(int), &buflen,
+	    (unsigned char *)zbuf, zlen) != Z_OK) {
 	  free(zbuf);
 	  free(buffer);
 	  fprintf(stderr,"db_recv_text_query: uncompress failed.\n");
