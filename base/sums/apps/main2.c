@@ -15,7 +15,7 @@ extern int errno;
 /*static char datestr[32];*/
 /*char *datestring();*/
 
- #define MAXSUMREQCNT 3
+#define MAXSUMREQ_CNT 3
 
 
 KEY *rlist;             /* The global keylist returned by unpackmsg() */
@@ -105,11 +105,11 @@ sum->reqcnt = 1;
 /*inum = 588650;			/* starting ds_index for get calls */
 inum = 131051;			/* starting ds_index for get calls */
 StartTimer(0);
-for(j=0; j < MAXSUMREQCNT; j++) {
+for(j=0; j < MAXSUMREQ_CNT; j++) {
   *dsixpt++ = inum++;
 }
   /**dsixpt = inum++;*/
-sum->reqcnt = MAXSUMREQCNT;
+sum->reqcnt = MAXSUMREQ_CNT;
   status = SUM_get(sum, printf); 
   switch(status) {
   case 0:			/* success. data in sum */
@@ -152,7 +152,7 @@ sum->reqcnt = MAXSUMREQCNT;
   }
 /*}*/
 ftmp = StopTimer(0);
-printf("\nTime sec for %d SUM_get() in one call = %f\n\n", MAXSUMREQCNT, ftmp);
+printf("\nTime sec for %d SUM_get() in one call = %f\n\n", MAXSUMREQ_CNT, ftmp);
 
 
 
