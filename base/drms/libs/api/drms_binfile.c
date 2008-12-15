@@ -47,8 +47,8 @@ int drms_binfile_read (char *filename, int nodata, DRMS_Array_t *rf) {
   TRY (fread (&rf->type, 4, 1, fp));
   TRY (fread (&rf->naxis, 4, 1, fp));
 #if __BYTE_ORDER == __BIG_ENDIAN
-  byteswap (4, 1, &rf->type);
-  byteswap (4, 1, &rf->naxis);
+  byteswap (4, 1, (void *)&rf->type);
+  byteswap (4, 1, (void *)&rf->naxis);
 #endif
   if (rf->naxis > DRMS_MAXRANK) {
     fprintf (stderr, "ERROR: Naxis (%d) in file exceeds DRMS_MAXRANK (%d)\n",
@@ -58,8 +58,8 @@ int drms_binfile_read (char *filename, int nodata, DRMS_Array_t *rf) {
   for (i = 0; i < rf->naxis; i++) TRY (fread (&rf->axis[i], 4, 1, fp));       
   TRY (fread (&rf->buflen, 8, 1, fp));       
 #if __BYTE_ORDER == __BIG_ENDIAN
-  byteswap (4, rf->naxis, rf->axis);
-  byteswap (8, 1, rf->buflen);
+  byteswap (4, rf->naxis, (void *)rf->axis);
+  byteswap (8, 1, (void *)&rf->buflen);
 #endif    
   if (nodata) {
     rf->data = NULL;
@@ -132,15 +132,15 @@ int drms_binfile_write (char *filename, DRMS_Array_t *rf) {
 
   TRY( fwrite (magic, 8, 1, fp));
 #if __BYTE_ORDER == __BIG_ENDIAN
-  byteswap (4, 1, &rf->type);
-  byteswap (4, 1, &rf->naxis);
+  byteswap (4, 1, (void *)&rf->type);
+  byteswap (4, 1, (void *)&rf->naxis);
   TRY (fwrite (&rf->type, 4, 1, fp));
   TRY (fwrite (&rf->naxis, 4, 1, fp));
-  byteswap (4, 1,&rf->type);
-  byteswap (4, 1,&rf->naxis);
-  byteswap (4, rf->naxis, rf->axis);
+  byteswap (4, 1, (void *)&rf->type);
+  byteswap (4, 1, (void *)&rf->naxis);
+  byteswap (4, rf->naxis,  (void *)rf->axis);
   for (i = 0; i < rf->naxis; i++) TRY (fwrite (&rf->axis[i], 4, 1, fp));           
-  byteswap (4, rf->naxis, rf->axis);
+  byteswap (4, rf->naxis, (void *)rf->axis);
 #else    
   TRY (fwrite (&rf->type, 4, 1, fp));
   TRY (fwrite (&rf->naxis, 4, 1, fp));
@@ -151,9 +151,9 @@ int drms_binfile_write (char *filename, DRMS_Array_t *rf) {
   for (i = 0; i < rf->naxis; i++) bufsize *= rf->axis[i];
   rf->buflen = bufsize;
 #if __BYTE_ORDER == __BIG_ENDIAN
-  byteswap (8, 1, &rf->buflen);
+  byteswap (8, 1, (void *)&rf->buflen);
   TRY (fwrite (&rf->buflen, 8, 1, fp));           
-  byteswap (8, 1, &rf->buflen);
+  byteswap (8, 1, (void *)&rf->buflen);
   drms_byteswap (rf->type, bufsize / drms_sizeof(rf->type), rf->data);
   fwrite (rf->data, bufsize, 1, fp);
   drms_byteswap (rf->type, bufsize / drms_sizeof(rf->type), rf->data);
@@ -193,8 +193,8 @@ int drms_zipfile_read (char *filename, int nodata, DRMS_Array_t *rf) {
   TRY (gzread (fp, &rf->type, 4));
   TRY( gzread (fp, &rf->naxis, 4));
 #if __BYTE_ORDER == __BIG_ENDIAN
-  byteswap (4, 1, &rf->type);
-  byteswap (4, 1, &rf->naxis);
+  byteswap (4, 1, (void *)&rf->type);
+  byteswap (4, 1,  (void *)&rf->naxis);
 #endif
   if (rf->naxis > DRMS_MAXRANK) {
     fprintf (stderr,"ERROR: Naxis (%d) in file exceeds DRMS_MAXRANK (%d)\n",
@@ -204,8 +204,8 @@ int drms_zipfile_read (char *filename, int nodata, DRMS_Array_t *rf) {
   for (i=0; i < rf->naxis; i++) TRY (gzread (fp, &rf->axis[i], 4));           
   TRY (gzread (fp, &rf->buflen, 8));       
 #if __BYTE_ORDER == __BIG_ENDIAN
-  byteswap (4, rf->naxis, rf->axis);
-  byteswap (8, 1, rf->buflen);
+  byteswap (4, rf->naxis,  (void *)rf->axis);
+  byteswap (8, 1, (void *)&rf->buflen);
 #endif    
   if (nodata) {
     rf->data = NULL;
@@ -285,35 +285,35 @@ int drms_zipfile_write (char *filename, DRMS_Array_t *rf) {
   }
   TRY(gzwrite (fp, magic, 8));
 #if __BYTE_ORDER == __BIG_ENDIAN
-  byteswap (4, 1, &rf->type);
-  byteswap (4, 1, &rf->naxis);
+  byteswap (4, 1, (void *)&rf->type);
+  byteswap (4, 1, (void *)&rf->naxis);
 #endif
   TRY(gzwrite (fp, &rf->type, 4));
   TRY(gzwrite (fp, &rf->naxis, 4));
 #if __BYTE_ORDER == __BIG_ENDIAN
-  byteswap (4, 1, &rf->type);
-  byteswap (4, 1, &rf->naxis);
+  byteswap (4, 1, (void *)&rf->type);
+  byteswap (4, 1, (void *)&rf->naxis);
 #endif
 
 #if __BYTE_ORDER == __BIG_ENDIAN
-  byteswap (4, rf->naxis, rf->axis);
+  byteswap (4, rf->naxis, (void *)rf->axis);
 #endif    
   for (i = 0; i < rf->naxis; i++) TRY (gzwrite (fp, &rf->axis[i], 4));           
 #if __BYTE_ORDER == __BIG_ENDIAN
-  byteswap (4, rf->naxis, rf->axis);
+  byteswap (4, rf->naxis, (void *)rf->axis);
 #endif    
 
   bufsize = drms_sizeof (rf->type);
   for (i = 0; i < rf->naxis; i++) bufsize *= rf->axis[i];
   rf->buflen = bufsize;
 #if __BYTE_ORDER == __BIG_ENDIAN
-  byteswap (8, 1, &rf->buflen);
+  byteswap (8, 1, (void *)&rf->buflen);
   drms_byteswap (rf->type, bufsize / drms_sizeof (rf->type), rf->data);
 #endif
   TRY (gzwrite (fp, &rf->buflen, 8));           
   if (gzwrite(fp, rf->data, bufsize) != bufsize) goto bailout;
 #if __BYTE_ORDER == __BIG_ENDIAN
-  byteswap (8, 1, &rf->buflen);
+  byteswap (8, 1, (void *)&rf->buflen);
   drms_byteswap (rf->type, bufsize / drms_sizeof (rf->type), rf->data);
 #endif
   gzclose (fp);
