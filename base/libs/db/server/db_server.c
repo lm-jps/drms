@@ -71,7 +71,7 @@ int db_tcp_listen(char *host, int len, short *port)
   }
 
   /* Get info about socket we just bound to. */
-  if (getsockname(sockfd, serverp, &size))
+  if (getsockname(sockfd, serverp, (socklen_t *)&size))
   {
     perror("getsockname call failed.");
     return -1;
@@ -133,8 +133,9 @@ int db_send_text_result(int sockfd, DB_Text_Result_t *result, int comp)
       {
 	zlen = buflen+buflen/100+24;
 	XASSERT( zbuf = malloc(zlen) );
-	if (compress(zbuf, &zlen, (result->buffer+sizeof(int)), 
-		     (buflen-sizeof(int))) != Z_OK)
+	if (compress ((unsigned char *)zbuf, &zlen,
+	    ((unsigned char *)result->buffer+sizeof(int)),
+	    (buflen-sizeof(int))) != Z_OK)
 	  return 1; /* FIXME: This is likely fatal: What to tell the client?!? */
 
 	tmp[2] = htonl(zlen);
