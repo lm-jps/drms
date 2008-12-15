@@ -59,7 +59,7 @@ int main(int argc, char *argv[])
 
 if(argc != 2) { 
   printf("Usage: sumget ds_index\n"); 
-  return;
+  return 0;
 }
 //printf("argv[1] = %u\n", atoi(argv[1]));
 

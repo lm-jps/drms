@@ -5,6 +5,7 @@
 #include <rpc/rpc.h>
 #include <sum_rpc.h>
 #include <soi_error.h>
+#include <printk.h>
 
 extern int errno;
 #define NUMTIMERS 10            /* number of seperate timers avail */

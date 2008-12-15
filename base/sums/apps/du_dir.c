@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <string.h>
 
 void fsize(char *);
 void dirwalk(char *, void (*fcn)(char *));
