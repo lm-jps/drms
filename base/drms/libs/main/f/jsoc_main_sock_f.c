@@ -10,7 +10,7 @@
 
 			 /* Global structure holding command line parameters */
 CmdParams_t cmdparams;
-ModuleArgs_t module_args[];
+extern ModuleArgs_t module_args[];
 	  /*  Declarations/Definitions of module name and default arguments  */
 
 							    /*  Module name  */
