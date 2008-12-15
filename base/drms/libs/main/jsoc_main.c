@@ -401,7 +401,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
 
   drms_env->dbpasswd = dbpasswd;
   drms_env->user = user;
-  drms_env->logfile_prefix = module_name;
+  drms_env->logfile_prefix = (char *)module_name;
   drms_env->dolog = dolog;
   drms_env->quiet = quiet;
 
