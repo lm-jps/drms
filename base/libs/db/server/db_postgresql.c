@@ -534,7 +534,7 @@ DB_Binary_Result_t *db_query_bin_array(DB_Handle_t  *dbin,
   }
 
   res = PQexecParams(db, pquery, n_args, paramTypes,
-		     paramValues, paramLengths, paramFormats, 1);
+      (const char * const *)paramValues, paramLengths, paramFormats, 1);
   free(paramBuf);
 
   if (PQresultStatus(res) != PGRES_TUPLES_OK)
@@ -791,8 +791,7 @@ int db_dms_array(DB_Handle_t  *dbin, int *row_count,
       }
 
       res = PQexecPrepared(db, stmtname, n_args,
-			   paramValues, paramLengths,
-			   paramFormats, 0);
+          (const char * const *)paramValues, paramLengths, paramFormats, 0);
     
       if (PQresultStatus(res) != PGRES_COMMAND_OK)
       {
@@ -837,7 +836,7 @@ int db_dms_array(DB_Handle_t  *dbin, int *row_count,
       goto failure;
     }
     res = PQexecParams(db,pquery, n_args, paramTypes,
-		       paramValues, paramLengths, paramFormats, 1);
+        (const char * const *)paramValues, paramLengths, paramFormats, 1);
     db_unlock(dbin);
     if (PQresultStatus(res) != PGRES_COMMAND_OK)
     {
