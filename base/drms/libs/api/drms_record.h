@@ -47,6 +47,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 					     int retrieverecs, 
 					     LinkedList_t **llistout,
                                              char **allversout,
+                                             int nrecslimit,
 					     int *status);
 
 DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname, 

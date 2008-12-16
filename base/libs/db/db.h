@@ -137,7 +137,7 @@ char *db_stringtype_maxlen(int maxlen);
 DB_Handle_t  *db_connect(const char *host, const char *user, 
 			 const char *passwd, const char *db_name,
 			 const int lock);
-DB_Handle_t *db_connect_toport (const char *host, const char *port,
+DB_Handle_t *db_connect_toport (const char *host, const unsigned short port,
     const char *user, const char *passwd, const char *db_name, const int lock);
 /* Disconnect from  database server. */
 void db_disconnect(DB_Handle_t *db);
