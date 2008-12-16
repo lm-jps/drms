@@ -302,7 +302,7 @@ struct DRMS_Env_struct
 
   char *dbpasswd;
   char *user;
-  char *logfile_prefix;
+  const char *logfile_prefix;
   int dolog;
   int quiet;
 

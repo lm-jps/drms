@@ -10,7 +10,8 @@
 
 			 /* Global structure holding command line parameters */
 CmdParams_t cmdparams;
-extern ModuleArgs_t module_args[];
+ModuleArgs_t *gModArgs = NULL;
+//ModuleArgs_t module_args[];
 	  /*  Declarations/Definitions of module name and default arguments  */
 
 							    /*  Module name  */
@@ -313,7 +314,7 @@ int main(int argc, char **argv)
    int nArgs = 0;
 
    JSOCMAIN_F_Initialize(&nArgs);
-   ret = JSOCMAIN_Main(argc, argv, module_name, CallDoIt);
+   ret = JSOCMAIN_Main(argc, argv, module_name, CallDoIt); /* defined in jsoc_main_sock.c */
    JSOCMAIN_F_Terminate(nArgs);
 
    _exit(ret);

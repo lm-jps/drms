@@ -803,7 +803,7 @@ int drms_sscanf_str(const char *str, const char *delim, DRMS_Type_Value_t *dst) 
       int len = strlen(str);
       char *actstr = malloc(len + 1);
       char *pactstr = actstr;
-      char *pstr = (char *)str;
+      const char *pstr = str;
       int quotetype = 0; /* 1 - single
                           * 2 - double
                           */

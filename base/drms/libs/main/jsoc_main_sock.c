@@ -26,7 +26,13 @@ CmdParams_t cmdparams;
 /* Global DRMS Environment handle. */
 DRMS_Env_t *drms_env;
 
+#ifndef FLIB
+/* For FORTRAN modules, gModArgs is defined in jsoc_main_sock_f.c from a common block
+ * containing the arguments.  jsoc_main_sock_f.c allocates memory for gModArgs, and 
+ * then deallocates the memory just before termination.
+ */
 ModuleArgs_t *gModArgs = module_args;
+#endif
 
 CmdParams_t *GetGlobalCmdParams() 
 {
