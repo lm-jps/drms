@@ -12,18 +12,28 @@ dcs spare (dcs2).
    run "ifdown eth3" as root.
 
 2. Log in the spare (dcs2) as root and run the command
-   "/etc/sysconfig/network/XXX-up" where XXX is either
-   AIA or HMI depending on which dcs system it is about
-   to replace.
+   "ifdown eth3".
 
-3. Open the front door of the NASA rack, unplug the red
-   ethernet cable labelled "dcsx XXX ..." where x is 0 
-   for XXX==AIA or 1 for XXX==HMI, and plug the loose 
-   ethernet cable labelled "dcs spare" into the same port 
-   vacated by the cable you've just unplugged.
+3. Open the front door of the NASA rack and examine the
+   three red ethernet cables.  Normally the dcs0 cable
+   should be on port 12 of switch x20b, the dcs1 cable
+   should be on port 3 of switch x20a, and the dcs2
+   cable should be on port 4 of switch x20a.  To fail-
+   over HMI, unplug the dcs1 cable and move the dcs2
+   cable into port 3, switch x20a.  To fail-over AIA,
+   unplug the dcs0 cable and move the dcs2 cable to
+   port 12, switch x20b.
+
+4. Run "/etc/sysconfig/network/XXX-up", where XXX is
+   either HMI or AIA, on dcs2.
  
-4. To restore the original dcs2 to itself do:
 
-   /etc/sysconfig/network/XXX-up/MYSELF-up
+To restore the original dcs2 to itself, run "ifdown eth3",
+move its red ethernet cable back to port 4, switch x20a,
+and run /etc/sysconfig/network/MYSELF-up. 
 
-   And don't forget to move the cable back to the dcs0 or dcs1.
+To put the origina HMI or AIA machine back online, and plug 
+its red ethernet cable back in its original port (port 3,
+switch x20a for HMI; port 12, switch x20b for AIA).  If
+the machine has not been rebooted since it went offline,
+run "ifup eth3".
