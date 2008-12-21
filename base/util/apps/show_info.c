@@ -483,6 +483,12 @@ SUM_info_t *drms_get_suinfo(long long sunum)
   return(my_sum->sinfo);
   }
 
+#define show_info_return(status)	\
+  {					\
+  if (my_sum)				\
+    SUM_close(my_sum,printkerr);	\
+  return(status);			\
+  }
 
 // these next 2 are needed for the QUERY_STRING reading
 static char x2c (char *what) {
@@ -618,21 +624,14 @@ int DoIt(void)
   /* At least seriesname or sunum must be specified */
   if (given_sunum >= 0)
     { /* use sunum to get seriesname instead of ds= or stand-along param */
-    char sunum_query[1000];
-    char sname[DRMS_MAXNAMELEN];
     char sunum_rs_query[DRMS_MAXQUERYLEN];
-    FILE *sums;
-    sprintf(sunum_query,
-      "echo 'select owning_series from sum_main where ds_index=%lld' |"
-      " psql -h hmidb -p 5434 jsoc_sums |"
-      " head -3 |"
-      " tail -1",
-      given_sunum);
-// fprintf(stderr,"%s\n",sunum_query);
-    sums = popen(sunum_query, "r");
-    fscanf(sums, "%s", sname);
-    fclose(sums);
-    sprintf(sunum_rs_query, "%s[? sunum=%lld ?]", sname, given_sunum);
+    SUM_info_t *sinfo = drms_get_suinfo(given_sunum);
+    if (!sinfo)
+      {
+      printf("### show_info: given sunum=%lld invalid, must quit\n",given_sunum);
+      show_info_return(1);
+      }
+    sprintf(sunum_rs_query, "%s[? sunum=%lld ?]", sinfo->owning_series, given_sunum);
     in = strdup(sunum_rs_query);
     }
   else if (strcmp(in, "Not Specified") == 0)
@@ -640,7 +639,7 @@ int DoIt(void)
     if (cmdparams_numargs(&cmdparams) < 1 || !(in=cmdparams_getarg (&cmdparams, 1)))
       {
       printf("### show_info: ds=<record_query> parameter is required, must quit\n");
-      return(1);
+      show_info_return(1);
       }
     }
 
@@ -663,14 +662,14 @@ int DoIt(void)
         fprintf(stderr,"### show_info: series %s not found.\n",seriesname);
 	if (seriesname)
 	  free (seriesname);
-        return (1);
+        show_info_return(1);
         }
       if (recordset->n < 1)
         {
         fprintf(stderr,"### show_info: non-drms series '%s' found but is empty.\n",seriesname);
 	if (seriesname)
 	  free (seriesname);
-        return (1);
+        show_info_return(1);
         }
       rec = recordset->records[0];
       is_drms_series = 0;
@@ -682,12 +681,12 @@ int DoIt(void)
     if (list_keys)
       { 
       list_series_info(rec);
-      return(0);
+      show_info_return(0);
       }
     else if (jsd_list) 
       {
       drms_jsd_print(drms_env, rec->seriesinfo->seriesname);
-      return(0);
+      show_info_return(0);
       }
     if (show_stats)
      {
@@ -717,7 +716,7 @@ int DoIt(void)
         printf("Last Recnum:  %lld", rs->records[0]->recnum);
         printf("\n");
         }
-      return(0);
+      show_info_return(0);
       }
      else printf("### Can not use '-s' flag for non-drms series. Sorry.\n");
      }
@@ -731,13 +730,13 @@ int DoIt(void)
     if (status)
       {
       fprintf(stderr,"### show_info: series %s not found.\n",in);
-      return (1);
+      show_info_return(1);
       }
     printf("%d", count);
     if (!quiet)
       printf(" records match the query");
     printf("\n");
-    return(0);
+    show_info_return(0);
     }
 
   /* NOW in mode to list per-record information.  Get recordset */
@@ -747,7 +746,7 @@ int DoIt(void)
   if (!inqry && !max_recs)
     {
     fprintf(stderr, "### show_info query must have n=recs or record query specified\n");
-    return(1);
+    show_info_return(1);
     }
 
   /* Open record_set(s) */
@@ -763,7 +762,7 @@ int DoIt(void)
   if (!recordset) 
     {
     fprintf(stderr,"### show_info: series %s not found.\n",in);
-    return (1);
+    show_info_return(1);
     }
 
 /* recordset now points to a struct with  count of records found ("n"), and a pointer to an
@@ -775,7 +774,7 @@ int DoIt(void)
     {
     if (!quiet)
       printf ("** No records in selected data set, query was %s **\n",in);
-    return (0);
+    show_info_return(0);
     }
 
   /* check for multiple sub-sets */
@@ -1218,13 +1217,9 @@ int DoIt(void)
     }
 
   /* Finished.  Clean up and exit. */
-  if (my_sum)
-    SUM_close(my_sum,printkerr);
-
   for (ikey=0; ikey<nkeys; ikey++) 
     free(keys[ikey]);
   drms_close_records(recordset, DRMS_FREE_RECORD);
   fflush(stdout);
-  return status;
+  show_info_return(status);
   }
-
