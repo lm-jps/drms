@@ -136,7 +136,9 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
      if (strcmp(mainquery.online_status.arr, "N")==0) { /* not on-line */
        if(mode & NORETRIEVE) strcpy(loc, "");	/* give back empty wd */
        else {
-
+	 //!!TEMP print out for debug
+         //printk("!!TEMP online_status=%s archive_status=%s XX\n",
+	 //	mainquery.online_status.arr, mainquery.archive_status.arr); 
          /* ck for not online & not archived! */
   	 if(strcmp(mainquery.archive_status.arr, "N")==0) {
            strcpy(loc, "");			/* give back empty wd */
