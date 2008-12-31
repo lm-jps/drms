@@ -7,6 +7,8 @@
  * Return -1 on error.
  * NOTE: add 10Sep2008 Set dsmdiflg arg if Owning_Series is ds_mdi.*
  * NOTE: add 02Oct2008 Set dsmdiflg arg if Owning_Series is hmi_ground.lev0
+ * NOTE: add 30Dec2008 Set dsmdiflg arg if Owning_Series is 
+ *   hmi_ground.raw_egse_hmifsfm or aia_ground.raw_egse_aiafsfm
 */
 
 #include <SUM.h>
@@ -45,6 +47,12 @@ EXEC SQL END DECLARE SECTION;
 	WHERE DS_INDEX = :ds_index;
 
       if(!strcmp(own_series.arr, "hmi_ground.lev0")) { 
+        *dsmdiflg = 1;
+      }
+      if(!strcmp(own_series.arr, "hmi_ground.raw_egse_hmifsfm")) { 
+        *dsmdiflg = 1;
+      }
+      if(!strcmp(own_series.arr, "aia_ground.raw_egse_aiafsfm")) { 
         *dsmdiflg = 1;
       }
       else {
