@@ -44,6 +44,7 @@ int get_cksum();
 int read_drive_to_wd();
 char *get_time();
 void write_time();
+int send_mail(char *fmt, ...);
 char logfile[MAX_STR];
 char md5file[64];
 char md5filter[128];
@@ -1294,6 +1295,7 @@ int position_tape_file_asf(int sim, int dnum, int fnum)
   else {
     if(system(cmd)) {
       write_log("***Dr%d:rd:error\n", drivenum);
+      send_mail("Dr%d:rd:error position", drivenum);
       drive_reset(dname);
       return(-1);
     }
@@ -1331,6 +1333,7 @@ int position_tape_file_fsf(int sim, int dnum, int fdelta)
   else {
     if(system(cmd)) {
       write_log("***Dr%d:rd:error\n", drivenum);
+      send_mail("Dr%d:rd:error position", drivenum);
       drive_reset(dname);
       return(-1);
     }
@@ -1674,6 +1677,7 @@ int read_drive_to_wd(int sim, char *wd, int drive, char *tapeid,
   else {
     if(status = system(rcmd)) {
       write_log("***Dr%d:rd:Error. exit status=%d\n", drivenum, WEXITSTATUS(status));
+      send_mail("Dr%d:rd:error", drivenum);
       return(-1);
     }
   }
@@ -1685,6 +1689,7 @@ int read_drive_to_wd(int sim, char *wd, int drive, char *tapeid,
     if(strcmp(md5sum, md5db)) {
       write_log("***Dr%d:rd:Error md5 compare:\n", drivenum);
       write_log(" exp=%s read=%s\n", md5db, md5sum);
+      send_mail("Dr%d:rd:error md5", drivenum);
       return(-1);
     }
   }
@@ -1702,6 +1707,20 @@ char *get_time()
   t_ptr = localtime((const time_t *)&tvalr.tv_sec);
   sprintf(datestr, "%s", asctime(t_ptr));
   return(datestr);
+}
+
+int send_mail(char *fmt, ...)
+{
+  va_list args;
+  char string[1024], cmd[1024];
+
+  va_start(args, fmt);
+  vsprintf(string, fmt, args);
+  /* !!TBD send to admin alias instead of jim */
+  sprintf(cmd, "echo \"%s\" | Mail -s \"drive_svc error\" jim@sun.stanford.edu", string);
+  system(cmd);
+  va_end(args);
+  return(0);
 }
 
 void write_time()
