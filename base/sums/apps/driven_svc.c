@@ -1011,6 +1011,8 @@ KEY *readdrvdo_1(KEY *params)
       free(tapeid);
       return(retlist); 
     }
+    sprintf(tmpname, "/bin/rm -f %s", rdlog);  //rm log after a good read
+    system(tmpname);
     //fix up any read for bad ds_mdi.* dataset ingest
     if(dsmdiflg) {
       if(kludge_dirs(file_dsix_off, wd)) {
@@ -1120,7 +1122,7 @@ KEY *writedrvdo_1(KEY *params)
   uint64_t tell;
   int dnum, sim, tape_closed, group, filenumwrt, tapenxtfn;
   char *tapeid;
-  char  gtarlog[80], md5sum[64], dname[64];
+  char  gtarlog[80], md5sum[64], dname[64], cmd[80];
 
   write_log("Called writedrvdo_1() in driven_svc\n");
   if(findkey(params, "DEBUGFLG")) {
@@ -1197,6 +1199,8 @@ KEY *writedrvdo_1(KEY *params)
       setkey_str(&retlist, "ERRSTR", errstr); 
       return(retlist);
     }
+    sprintf(cmd, "/bin/rm -f %s", gtarlog);	//rm log file if no err
+    system(cmd);
     setkey_int(&retlist, "TAPENXTFN", tapenxtfn);
     if(get_cksum(md5file, md5sum)) {
       write_log("***Error: can't get md5 cksum for drive %d.\n",dnum);
