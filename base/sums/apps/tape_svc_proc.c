@@ -1957,11 +1957,53 @@ KEY *tapetestdo_1(KEY *params) {
 KEY *onoffdo_1(KEY *params)
 {
   char *action;
+  int retry, istat;
 
   action = getkey_str(params, "action");
   write_log("%s: tapeonoff = %s\n", datestring(), action);
   if(!strcmp(action, "on")) tapeoffline = 0;
-  else if(!strcmp(action, "off")) tapeoffline = 1;
+  else if(!strcmp(action, "off")) {
+    if(!robotbusy) tapeoffline = 1;
+    else {
+      tapeoffline = 4;
+      write_log("Can't take offline while robot is busy\n");
+    }
+  }
+  else if(!strcmp(action, "inv")) {
+    if(!tapeoffline) {
+      write_log("Can't inventory tapes while tape_svc is still online\n");
+      tapeoffline = 2; 
+    }
+    else {
+      retry = 6;
+      while(retry) {
+#ifdef SUMDC
+        if((istat = tape_inventory(sim, 1)) == 0) {
+#else
+        if((istat = tape_inventory(sim, 0)) == 0) { /* no catalog here */
+#endif
+          write_log("***Error: Can't do tape inventory. Will retry...\n");
+          --retry;
+          if(retry == 0) {
+            write_log("***Fatal error: Can't do tape inventory\n");
+            (void) pmap_unset(TAPEPROG, TAPEVERS);
+            exit(1);
+          }
+          continue;
+        }
+        if(istat == -1) { /* didn't get full slot count. retry */
+          --retry;
+          if(retry == 0) {
+            write_log("***Fatal error: Can't do tape inventory\n");
+            (void) pmap_unset(TAPEPROG, TAPEVERS);
+            exit(1);
+          }
+        }
+        else { retry = 0; }
+      }
+      tapeoffline = 3; 
+    }
+  }
   rinfo = tapeoffline;
   send_ack();
   return((KEY *)1);

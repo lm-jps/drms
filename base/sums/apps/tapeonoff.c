@@ -2,8 +2,9 @@
  *
  * Takes the tape_svc on or off line. When the tape_svc is offline, it
  * will immediately return an error for all calls to it.
+ * Also allows you to do a tape inventory when the tape is offline.
  *
- * Usage: tapeonoff on|off|status
+ * Usage: tapeonoff on|off|status|inv
 */
 
 #include <SUM.h>
@@ -121,7 +122,7 @@ void get_cmd(int argc, char *argv[])
     }
   }
   if(argc != 1) {
-    printf("Usage: tapeonoff on|off|status\n");
+    printf("Usage: tapeonoff on|off|status|inv\n");
     exit(1);
   }
   else {
@@ -129,7 +130,8 @@ void get_cmd(int argc, char *argv[])
     if(!strcmp(action, "on")) return;
     if(!strcmp(action, "off")) return;
     if(!strcmp(action, "status")) return;
-    printf("Usage: tapeonoff on|off|status\n");
+    if(!strcmp(action, "inv")) return;
+    printf("Usage: tapeonoff on|off|status|inv\n");
     exit(1);
   }
 }
@@ -193,6 +195,18 @@ int main(int argc, char *argv[])
   case 1:
     write_log("Success tape_svc is offline\n");
     printf("Success tape_svc is offline\n");
+    break;
+  case 2:
+    write_log("Can't inventory while tape_svc is still online\n");
+    printf("Can't inventory while tape_svc is still online\n");
+    break;
+  case 3:
+    write_log("Tape inventory complete. You can turn tape back online\n");
+    printf("Tape inventory complete. You can turn tape back online\n");
+    break;
+  case 4:
+    write_log("Can't take offline while robot is busy\n");
+    printf("Can't take offline while robot is busy\n");
     break;
   case -1:
     write_log("**Error in ONOFF call to tape_svc\n");
