@@ -10,6 +10,7 @@ my($JSOC_DEV) = "jsoc_dev\@sun.stanford.edu";
 my($ROOTDIR) = "/tmp/jsoc";
 my($MAKELOG) = "make.log";
 my($ret);
+my($MAXERRLINES) = 8;
 
 $ENV{'CVSROOT'} = ':ext:sunroom.stanford.edu:/home/cvsuser/cvsroot';
 $ENV{'CVS_RSH'} = 'ssh';
@@ -39,10 +40,17 @@ else
 open FH, "cd $ROOTDIR/JSOC; \(tail -n 4 $MAKELOG | grep Error\)  |" || die "Can't open log file: $!\n";
 my @line = <FH>;
 my($oneline);
+my($prevline);
 my($errmsg) = "";
+my($nerrlines);
+my($date);
 
 close FH;
 if (scalar(@line)) {
+    $nerrlines = 0;
+    $date = `date`;
+    $errmsg = "${errmsg}JSOC Build Failed on ${date}:\n";
+    $nerrlines++;
     open FH, "$ROOTDIR/JSOC/$MAKELOG";
     while($oneline = <FH>)
     {
@@ -50,19 +58,36 @@ if (scalar(@line)) {
         if ($oneline =~ /:\s\S*\serror:\s/)
         {
             $errmsg = "${errmsg}${oneline}\n";
+            $nerrlines++;
             $oneline = <FH>;
             if ($oneline)
             {
                $errmsg = "${errmsg}${oneline}\n"; 
+               $nerrlines++;
             }
             $oneline = <FH>;
             if ($oneline)
             {
                $errmsg = "${errmsg}${oneline}\n"; 
+               $nerrlines++;
             }
         }
+        elsif ($oneline =~ /:\s+undefined reference to\s+/)
+        {
+            $errmsg = "${errmsg}${prevline}\n";
+            $errmsg = "${errmsg}${oneline}\n";
+            $nerrlines++;
+            $nerrlines++;
+        }
+
+        $prevline = $oneline;
     }
     close FH;
+
+    if ($nerrlines >= $MAXERRLINES)
+    {
+        $errmsg = "${errmsg}...\n";
+    }
 
     open FH, "| /usr/bin/Mail -s \"JSOC build problem\" $JSOC_DEV";
     print FH $errmsg;
