@@ -65,8 +65,8 @@ For normal recordset queries the "ds=" is optional.  In no "where clauses" (i.e.
 present in the recordset query the "n" parameter is required.  Since the "where clauses" are used to
 restrict the number or records retrieved, an empty clause (e.g. "[]") will match all records in the series.
 \li \c  ds=<record_set query> - string with default "Not Specified", see below for more information.
+\li \c  sunum=<sunum> - integer with default -1, overrides a "ds" specification.
 \li \c  n=<count> - Max number of records to show, +from first, -from last, see below.
-\li \c  sunum=<sunum> - integer with default -1
 
 \par Parameters and Flags controling selction of keywords and segments to examine:
 
@@ -107,6 +107,13 @@ Each query is a series name followed by an optional record-set specification (i.
 records in the series. This argument is required, and if no record-set
 filter is specified, then \a n=nrecords must be present.
 The "ds=" protion of the record_set argument is optional.
+
+\a sunum
+Instead of providing a normal record_set query an explicit storage unit id (sunum) may
+be provided.  In this case the provided sunum will be found in the SUMS tables and
+the parent series will be queried for the record owning the specified sunum.  The
+"Prime-Key" logic does not apply in this case (the "[! ... !]" form of a general
+query clause is used) so the matching record may not be the latest version. 
 
 \a count specifies the maximum number of records for which
 information is printed.  If \a count < 0, \ref show_info displays
