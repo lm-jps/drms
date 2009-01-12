@@ -631,7 +631,7 @@ int DoIt(void)
       printf("### show_info: given sunum=%lld invalid, must quit\n",given_sunum);
       show_info_return(1);
       }
-    sprintf(sunum_rs_query, "%s[? sunum=%lld ?]", sinfo->owning_series, given_sunum);
+    sprintf(sunum_rs_query, "%s[! sunum=%lld !]", sinfo->owning_series, given_sunum);
     in = strdup(sunum_rs_query);
     }
   else if (strcmp(in, "Not Specified") == 0)
