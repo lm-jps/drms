@@ -9,6 +9,8 @@
  * NOTE: add 02Oct2008 Set dsmdiflg arg if Owning_Series is hmi_ground.lev0
  * NOTE: add 30Dec2008 Set dsmdiflg arg if Owning_Series is 
  *   hmi_ground.raw_egse_hmifsfm or aia_ground.raw_egse_aiafsfm
+ * NOTE: add 12Jan2009 Set dsmdiflg arg if Owning_Series is 
+ *   hmi_ground.test_config_files
 */
 
 #include <SUM.h>
@@ -53,6 +55,9 @@ EXEC SQL END DECLARE SECTION;
         *dsmdiflg = 1;
       }
       if(!strcmp(own_series.arr, "aia_ground.raw_egse_aiafsfm")) { 
+        *dsmdiflg = 1;
+      }
+      if(!strcmp(own_series.arr, "hmi_ground.test_config_files")) { 
         *dsmdiflg = 1;
       }
       else {
