@@ -51,13 +51,13 @@ EXEC SQL END DECLARE SECTION;
       if(!strcmp(own_series.arr, "hmi_ground.lev0")) { 
         *dsmdiflg = 1;
       }
-      if(!strcmp(own_series.arr, "hmi_ground.raw_egse_hmifsfm")) { 
+      else if(!strcmp(own_series.arr, "hmi_ground.raw_egse_hmifsfm")) { 
         *dsmdiflg = 1;
       }
-      if(!strcmp(own_series.arr, "aia_ground.raw_egse_aiafsfm")) { 
+      else if(!strcmp(own_series.arr, "aia_ground.raw_egse_aiafsfm")) { 
         *dsmdiflg = 1;
       }
-      if(!strcmp(own_series.arr, "hmi_ground.test_config_files")) { 
+      else if(!strcmp(own_series.arr, "hmi_ground.test_config_files")) { 
         *dsmdiflg = 1;
       }
       else {
