@@ -1,0 +1,363 @@
+#!/usr/bin/perl -w 
+
+# This script performs the 
+
+
+# The cmd takes the following form:
+#   remotesums_master.pl <url> '=' <sunum> ',' <sunum...> '#' <url> '=' <sunum> ',' <sunum...> # ...
+#   Example:
+#     remotesums_master.pl http://jsoc.stanford.edu/cgi-bin/ajax/jsoc_fetch=1234567,1234568,1234569#http://jsoc.stanford.edu/cgi-bin/ajax/jsoc_fetch2=7654321,7654320
+
+# When calling this script from DRMS, print error messages to STDERR - STDOUT is redirected
+# to a pipe back to a parent process in DRMS.
+
+use CGI;
+
+# Global defines
+my($kMETHOD) = "url_quick";
+my($kPROTO) = "as-is";
+my($kOP) = "exp_su";
+my($kEXPSTATUS) = "exp_status";
+my($kGETAPP) = "wget";
+my($kGETAPPFLAG) = "-nv";
+my($kGETAPPOUT) = "/tmp/jsoc_export.$$";
+my($kGETAPPOFLAG) = "-O $kGETAPPOUT";
+my($kSIZECUTOFF) = 8388608; # *MB
+
+my($expURL);
+my($list);
+my(%sulists);
+my($sunum);
+my($arg);
+my($subrequest);
+my($resp);
+
+my(@urls);
+my(@lists);
+my($aurl);
+my($alist);
+my($escURL);
+
+my($cgiargs);
+my($cmd);
+my($line);
+
+
+# Get arguments
+if (scalar(@ARGV) != 1)
+{
+    print STDERR "A single argument, a list of SUNUMs, is expected.\n";
+    exit(1);
+}
+
+$arg = $ARGV[0];
+
+while (defined($subrequest = GetToken($arg, "\#")))
+{
+    if ($subrequest =~ /(.+)=(.+)/)
+    {
+        $expURL = $1;
+        $list = $2;
+
+        print STDERR "sunums for url $expURL: $list\n";
+
+        $sulists{$expURL} = $list;
+    }
+}
+
+# Evaluate the source site's export URL
+@urls = keys %sulists;
+@lists = values %sulists;
+
+my(@reqsunums);
+my(@reqseries);
+my(@reqfiles);
+my($status);
+my($method);
+my($requestid);
+my($count);
+my($size);
+my($gotstatus) = 0;
+my($gotmethod) = 0;
+my($gotrequestid) = 0;
+my($gotcount) = 0;
+my($gotsize) = 0;
+my($getpaths) = 0;
+my($totsize) = 0;
+my($totcnt) = 0;
+
+if (-e $kGETAPPOUT)
+{
+    unlink($kGETAPPOUT);
+}
+
+while (defined($aurl = shift(@urls)) && defined($alist = shift(@lists)))
+{
+    # Escape funny chars in the the su list so it can be used as a cgi argument
+    $escURL = CGI::escape($alist);
+    
+    $cgiargs = "op=$kOP&ds=$alist&method=$kMETHOD&format=txt&protocol=$kPROTO";
+    $cmd = "$kGETAPP $kGETAPPFLAG $kGETAPPOFLAG \"$aurl?$cgiargs\"";
+
+    # Download cgi url. This submits a request to jsoc_export_manage, which will
+    # then call jsoc_export_SU_as_is, which writes the index.html file to
+    # the output directory. 
+    # print STDERR "$cmd.\n";
+
+    `$cmd`;
+    
+    # Check status to ensure request was submitted properly.
+    if (defined(open(RESPFILE, "<$kGETAPPOUT")))
+    {
+        print STDERR "got response!\n";
+        while (defined($line = <RESPFILE>) && 
+               (!$gotstatus || !$gotmethod || !$gotrequestid || !$gotcount || !$gotsize || $getpaths))
+        {
+            print STDERR $line;
+            chomp($line);
+
+            if ($line =~ /status\s*=\s*(\d+)/i)
+            {
+                $status = $1;
+                $gotstatus = 1;
+                if ($status == 0)
+                {
+                    # need to read the entire file
+                    $getpaths = 1;
+                }
+            }
+            elsif ($line =~ /method\s*=\s*(\w+)/i)
+            {
+                # "url_quick" can be converted to "url" if data was offline
+                $method = $1;
+                $gotmethod = 1;
+            }
+            elsif ($line =~ /requestid\s*=\s*(.+)/i)
+            {
+                $requestid = $1;
+                $gotrequestid = 1;
+            }
+            elsif ($line =~ /count\s*=\s*(\w+)/i)
+            {
+                $count = $1;
+                $gotcount = 1;
+            }
+            elsif ($line =~ /size\s*=\s*(\w+)/i)
+            {
+                $size = $1;
+                $gotsize = 1;
+            }
+            elsif ($line =~ /selected data/i)
+            {
+                while ($line !~ /^\s*$/)
+                {
+                    $line = <RESPFILE>;
+                    chomp($line);
+                }
+
+                while (defined($line = <RESPFILE>))
+                {
+                    chomp($line);
+                    
+                    if ($line =~ /(\d+)\s+(\S+)\s+(\S+)\s*/)
+                    {
+                        push(@reqsunums, $1);
+                        push(@reqseries, $2);
+                        push(@reqfiles, $3);
+                    }
+                }
+            }
+            
+        } # while line in response file
+
+        print STDERR "status $gotstatus, method $gotmethod, reqid $gotrequestid, count $gotcount, size $gotsize\n";
+
+        if (!$gotstatus || !$gotmethod || !$gotrequestid || !$gotcount || !$gotsize)
+        {
+            # no status line - continue.
+            print STDERR "Improper response cgi response from export URL '$aurl$cgiargs'.\n";
+            close(RESPFILE);
+            unlink($kGETAPPOUT);
+            next;
+        }
+
+        close(RESPFILE);
+        unlink($kGETAPPOUT);
+
+        if ($status != 0)
+        {
+            if ($method eq "url")
+            {
+                # Creation of index.html happens asynchronously, so must poll
+                # by downloading a second cgi url.
+                sleep(2);
+
+                $gotstatus = 0;
+                $gotcount = 0;
+                $getpaths = 0;
+
+                $cgiargs = "op=$kEXPSTATUS&requestid=$requestid&format=txt";
+                $cmd = "$kGETAPP $kGETAPPOFLAG $aurl?$cgiargs";
+
+                while (1)
+                {
+                    `$cmd`;
+                    if (defined(open(RESPFILE, "<$kGETAPPOUT")))
+                    {
+                        chomp($line);
+                        while (defined($line = <RESPFILE>) && 
+                               (!$gotstatus || !$gotcount || !$gotsize || $getpaths))
+                        {
+                            if ($line =~ /status\s*(\d+)/i)
+                            {
+                                $status = $1;
+                                $gotstatus = 1;
+
+                                if ($status == 0)
+                                {
+                                    # need to read the entire file
+                                    $getpaths = 1;
+                                }
+                            }
+                            elsif ($line =~ /count\s*(\w+)/i)
+                            {
+                                $count = $1;
+                                $gotcount = 1;
+                            }
+                            elsif ($line =~ /size\s*=\s*(\w+)/i)
+                            {
+                                $size = $1;
+                                $gotsize = 1;
+                            }
+                            elsif ($line =~ /selected data/i)
+                            {
+                                while ($line !~ /^\s*$/)
+                                {
+                                    $line = <RESPFILE>;
+                                    chomp($line);
+                                }
+
+                                while (defined($line = <RESPFILE>))
+                                {
+                                    chomp($line);
+                                    
+                                    if ($line =~ /(\d+)\s+(\S+)\s+(\S+)\s*/)
+                                    {
+                                        push(@reqsunums, $1);
+                                        push(@reqseries, $2);
+                                        push(@reqfiles, $3);
+                                    }
+                                }
+                            }
+                        }
+
+                        if (!$gotstatus || !$gotcount || !$gotsize)
+                        {
+                            # no status line - break and fail.
+                            print STDERR "Improper response cgi response from export URL '$aurl$cgiargs'.\n";
+                            close(RESPFILE);
+                            unlink($kGETAPPOUT);
+                            last;
+                        }
+                        elsif ($status == 0)
+                        {
+                            # Export request has finished
+                            close(RESPFILE);
+                            unlink($kGETAPPOUT);
+                            last;
+                        }
+
+                        close(RESPFILE);
+                        unlink($kGETAPPOUT);
+                    }
+                    else
+                    {
+                        print STDERR "No response for '$cmd'.\n";
+                        last;
+                    }
+                } # while status != 0
+            }
+        }
+    }
+    else
+    {
+        # No response
+        print STDERR "No response for '$cmd'.\n";  
+    }
+
+    # The status is for a single reponse (which may contain multiple SUs)
+    if ($gotstatus == 0 || $status != 0)
+    {
+        # If we didn't find any SUs, skip to the next SU list.
+        next;
+    }
+
+    # At this point, the original request has been serviced, status == 0, and we have
+    # SUDIRS.
+    $totsize += $size;
+    $totcnt += $count;
+
+       
+} # while item in sulists
+
+# Now is the time to determine if the SUs should be retrieve synchronously
+# or asynchronously. For now use the file size to determine that.
+if ($totsize > $kSIZECUTOFF)
+{
+    # Request is too large to perform synchronously.
+    print "0\n";
+}
+else
+{
+    # request is small - perform synchronously. 
+    while ($totcnt-- > 0)
+    {
+        # The array @reqsunums contains the requested SUNUMs. The array @reqseries contains
+        # the requested series. The array @reqfiles contains paths to the SUNUMS in the 
+        # remote SUMS.
+        
+
+        
+        
+    }
+
+    # return the code that means "retry SUM_get()"
+    print "0\n";
+}
+
+
+exit;
+
+
+
+# It is possible that the local site has cached the remote SUs somewhere OFF the SUMS
+# system altogether, and that the SUs are now not found in SUMS because they have aged-
+# off.  There should be a site-specific check here for the presence of such 
+# archived data.
+
+
+# XXX - Check VSO to find the best place to find the data.  Perhaps this goes in DRMS.
+
+
+sub GetToken
+{
+    my($line) = \$_[0];
+    my($delim) = $_[1];
+    my($ret);
+
+    if (defined($$line))
+    {
+        if ($$line =~ /^$delim*([^$delim]+)$delim+([^$delim]+.*)/)
+        {
+            $ret = $1;
+            $$line = $2;
+        }
+        elsif ($$line =~ /^$delim*([^$delim]+)/)
+        {
+            $ret = $1;
+            $$line = undef;
+        }
+    }
+
+    return $ret;
+}
