@@ -421,7 +421,8 @@ int SUM_poll();
 int SUM_wait();
 int SUM_Init();
 int SUM_delete_series();
-int SUM_info();
+//int SUM_info();
+int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...));
 int NC_PaUpdate();
 SUMID_t SUMLIB_Open();
 SUMID_t sumrpcopen_1();
@@ -477,6 +478,7 @@ int SUMLIB_TapeFindGroup(int group, double bytes, TAPE *tape);
 int SUMLIB_PavailGet(double bytes, int pds_set, uint64_t uid, uint64_t sunum, KEY **results);
 int SUMLIB_PavailUpdate(char *name, double bytes);
 int SUMLIB_DelSeriesSU(KEY *params); 
+int SUMLIB_InfoGet(uint64_t sunum , KEY **results);
 
 
 void setpeuid(PEUID **list, uint64_t uid, int petid);
