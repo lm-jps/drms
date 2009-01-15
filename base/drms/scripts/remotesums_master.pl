@@ -147,9 +147,9 @@ while (defined($aurl = shift(@urls)) && defined($alist = shift(@lists)))
                 $size = $1;
                 $gotsize = 1;
             }
-            elsif ($line =~ /selected data/i)
+            elsif ($line =~ /\# data/i)
             {
-                while ($line !~ /^\s*$/)
+                while ($line =~ /^\s*$/)
                 {
                     $line = <RESPFILE>;
                     chomp($line);
@@ -309,13 +309,16 @@ if ($totsize > $kSIZECUTOFF)
 }
 else
 {
+    my($oneSU);
+
     # request is small - perform synchronously. 
     while ($totcnt-- > 0)
     {
         # The array @reqsunums contains the requested SUNUMs. The array @reqseries contains
         # the requested series. The array @reqfiles contains paths to the SUNUMS in the 
         # remote SUMS.
-        
+        $oneSU = shift(@reqfiles);
+        print STDERR "oneSU $oneSU\n";
 
         
         
