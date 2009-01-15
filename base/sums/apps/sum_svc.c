@@ -32,6 +32,7 @@
 #include <soi_error.h>
 #include <tape.h>
 #include <printk.h>
+#include <unistd.h>
 
 extern PART ptabx[]; 	/* defined in SUMLIB_PavailRequest.pgc */
 
@@ -279,7 +280,9 @@ int main(int argc, char *argv[])
 
 #ifndef SUMNOAO
 /* !!TEMP don't fork on lws or flap */
-if(strcmp(thishost, "lws") && strcmp(thishost, "flap")) {
+char hostn[80];
+gethostname(hostn, 80);		//also dont fork on d00
+if(strcmp(thishost, "lws") && strcmp(thishost, "flap") && strcmp(hostn, "d00.Stanford.EDU")) {
   if(strcmp(thishost, "dcs0") && strcmp(thishost, "dcs1") && strcmp(thishost, "dcs2") && strcmp(thishost, "dcs3")) {
     sprintf(pgport, SUMPGPORT);
     setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
@@ -381,7 +384,7 @@ if(strcmp(thishost, "lws") && strcmp(thishost, "flap")) {
   }
 
 #ifndef SUMNOAO
-if(strcmp(thishost, "lws") && strcmp(thishost, "flap")) { /* !!TEMP don't fork on lws or flap */
+if(strcmp(thishost, "lws") && strcmp(thishost, "flap") && strcmp(hostn, "d00.Stanford.EDU")) { 
   /* Create client handle used for calling the tape_svc */
   sleep(3);			/* give time to start */
   clnttape = clnt_create(thishost, TAPEPROG, TAPEVERS, "tcp");
