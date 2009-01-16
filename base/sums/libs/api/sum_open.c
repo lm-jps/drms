@@ -31,6 +31,49 @@ static SVCXPRT *transp[MAXSUMOPEN];
 static SUMID_t transpid[MAXSUMOPEN];
 static int numopened = 0;
 
+/* Returns 1 if ok to shutdown sums.
+ * Return 0 is someone still has an active SUM_open().
+ * Once called, sill prevent any user from doing a new SUM_open()
+ * unless query arg = 1.
+*/
+int SUM_shutdown(int query, int (*history)(const char *fmt, ...))
+{
+  KEY *klist;
+  char *server_name, *cptr, *username;
+  char *call_err;
+  int response;
+  enum clnt_stat status;
+
+  if (!(server_name = getenv("SUMSERVER")))
+  {
+    server_name = alloca(sizeof(SUMSERVER)+1);
+    strcpy(server_name, SUMSERVER);
+  }
+  cptr = index(server_name, '.');	/* must be short form */
+  if(cptr) *cptr = (char)NULL;
+  /* Create client handle used for calling the server */
+  cl = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
+  if(!cl) {                   /* server not there */
+    clnt_pcreateerror("Can't get client handle to sum_svc");
+    (*history)("sum_svc not there on %s\n", server_name);
+    return(1);			//it's not there, so say ok to shutdown
+  }
+  if(!(username = (char *)getenv("USER"))) username = "nouser";
+  klist = newkeylist();
+  setkey_str(&klist, "USER", username);
+  setkey_int(&klist, "QUERY", query);
+  status = clnt_call(cl, SHUTDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+			(xdrproc_t)xdr_uint32_t, (int *)&response, TIMEOUT);
+  /* NOTE: Must honor the timeout here as get the ans back in the ack
+  */
+  if(status != RPC_SUCCESS) {
+    call_err = clnt_sperror(cl, "Err clnt_call for SHUTDO");
+    (*history)("%s %s status=%d\n", datestring(), call_err, status);
+    return (1);
+  }
+  return(response);
+}
+
 /* This must be the first thing called by DRMS to open with the SUMS.
  * Any one client may open up to MAXSUMOPEN times (TBD check) 
  * (although it's most likely that a client only needs one open session 
@@ -105,7 +148,7 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
   sumptr->history_comment = NULL;
   sumptr->dsix_ptr = (uint64_t *)malloc(sizeof(uint64_t) * SUMARRAYSZ);
   sumptr->wd = (char **)calloc(SUMARRAYSZ, sizeof(char *));
-  setsumopened(&sumopened_hdr, sumid, sumptr); /* put in linked list of opens */
+  setsumopened(&sumopened_hdr, sumid, sumptr, username); //put in open list
   freekeylist(&klist);
   return(sumptr);
 }
