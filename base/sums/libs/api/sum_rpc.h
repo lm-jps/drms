@@ -135,9 +135,11 @@ bool_t xdr_Rkey(XDR *xdrs, Rkey *objp);
 #define DEBUGDO ((uint32_t)11)
 #define DELSERIESDO ((uint32_t)12)
 #define INFODO ((uint32_t)13)
+#define SHUTDO ((uint32_t)14)
 
 extern KEY *sumdo_1();
 extern KEY *opendo_1();
+extern KEY *shutdo_1();
 extern KEY *closedo_1();
 extern KEY *getdo_1();
 extern KEY *infodo_1();
@@ -332,6 +334,7 @@ struct sumopened {
   struct sumopened *next;
   SUMID_t uid;
   SUM_t *sum;
+  char user[16];
 };
 typedef struct sumopened SUMOPENED;
 
@@ -412,6 +415,7 @@ typedef struct peuid PEUID;
 
 
 SUM_t *SUM_open();
+int SUM_shutdown();
 int SUM_close();
 int SUM_get();
 int SUM_put();
@@ -426,7 +430,7 @@ int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...));
 int NC_PaUpdate();
 SUMID_t SUMLIB_Open();
 SUMID_t sumrpcopen_1();
-void setsumopened (SUMOPENED **list, SUMID_t uid, SUM_t *sum);
+void setsumopened (SUMOPENED **list, SUMID_t uid, SUM_t *sum, char *user);
 SUMOPENED *getsumopened (SUMOPENED *list, SUMID_t uid);
 void remsumopened (SUMOPENED **list, SUMID_t uid);
 SUMOFFCNT *setsumoffcnt (SUMOFFCNT **list, SUMID_t uid, int offcnt);
