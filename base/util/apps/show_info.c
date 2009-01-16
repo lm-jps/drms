@@ -631,14 +631,71 @@ int DoIt(void)
   /* At least seriesname or sunum must be specified */
   if (given_sunum >= 0)
     { /* use sunum to get seriesname instead of ds= or stand-along param */
-    char sunum_rs_query[DRMS_MAXQUERYLEN];
-    SUM_info_t *sinfo = drms_get_suinfo(given_sunum);
-    if (!sinfo)
-      {
-      printf("### show_info: given sunum=%lld invalid, must quit\n",given_sunum);
-      show_info_return(1);
-      }
-    sprintf(sunum_rs_query, "%s[! sunum=%lld !]", sinfo->owning_series, given_sunum);
+    char sunum_rs_query[DRMS_MAXQUERYLEN] = {0};
+    SUM_info_t *sinfo = NULL;
+
+    int natts = 1;
+    while (natts <= 2)
+    {
+       /* If the SUNUM belongs to a different SUMS, then this query will fail.
+        * Assuming, for now, that this SUNUM is valid, but belongs to a different
+        * SUMS, try again, after doing a remotesums call.
+        */
+       sinfo = drms_get_suinfo(given_sunum);
+
+       if (sinfo)
+       {
+          /* If natts == 1, then given_sunum was local, if natts == 2, then 
+           * given_sunum was remote. */
+          sprintf(sunum_rs_query, "%s[! sunum=%lld !]", sinfo->owning_series, given_sunum);
+          break;
+       }
+       else if (natts == 1)
+       {          
+          /* create a dummy SU - some fields we can't know about, just leave blank */
+          DRMS_StorageUnit_t su;
+          int suret = DRMS_SUCCESS;
+
+          su.sunum = given_sunum;
+          su.sudir[0] = '\0';
+          su.mode = DRMS_READONLY; 
+          su.nfree = 0;
+          su.state = NULL;
+          su.recnum = NULL;
+          su.refcount = 0;
+          su.seriesinfo = NULL;
+
+          /* remotesums call */
+          suret = drms_getsudir(drms_env, &su, 1);
+          if (suret == DRMS_REMOTESUMS_TRYLATER)
+          {
+             fprintf(stdout, "Master remote SUMS script is ingesting"
+                     " storage unit asynchronously.\nRetry query later.\n");
+             show_info_return(0);
+          }
+          else if (suret != DRMS_SUCCESS)
+          {
+             printf("### show_info: Error fetching SU, sunum=%lld, must quit\n",given_sunum);
+             show_info_return(1);
+          }
+       }
+       else
+       {
+          /* Didn't get remote SU because the SUNUM was invalid, or remotesums_master.pl 
+           * decided to ingest the SU asynchronously. In the latter case, a diagnostic
+           * message appears on stdout. 
+           */
+       }
+
+       natts++;
+    }
+
+    if (strlen(sunum_rs_query) == 0)
+    {
+       printf("### show_info: given sunum=%lld invalid, must quit\n",given_sunum);
+       show_info_return(1);
+    }
+
     in = strdup(sunum_rs_query);
     }
   else if (strcmp(in, "Not Specified") == 0)

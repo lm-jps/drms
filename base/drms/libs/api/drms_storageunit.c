@@ -3,6 +3,7 @@
 #include "drms.h"
 #include "drms_priv.h"
 #include "xmem.h"
+#include "util.h"
 
 #define SUMIN(a,b)  ((a) > (b) ? (b) : (a))
 #ifdef DRMS_DEFAULT_RETENTION
@@ -10,6 +11,17 @@
 #else
   #define STDRETENTION (-3)
 #endif
+
+#define kEXTREMOTESUMS "remotesums_master.pl"
+#define kSUNUMLISTSIZE 512
+
+struct SUList_struct
+{
+  char *str;
+  size_t size;
+};
+
+typedef struct SUList_struct SUList_t;
 
 /* Allocate a storage unit of the indicated size from SUMS and return
    its sunum and directory. */
@@ -237,7 +249,10 @@ int drms_su_newslots(DRMS_Env_t *env, int n, char *series,
 #ifndef DRMS_CLIENT
 int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 {  
+  int sustatus = DRMS_SUCCESS;
   DRMS_SumRequest_t *request, *reply;
+  int tryagain;
+  int natts;
   XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
   request->opcode = DRMS_SUMGET;
   request->reqcnt = 1;
@@ -266,7 +281,8 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
   else
   {
      request->tdays = env->retention;
-     if (request->tdays > 0 && !drms_series_cancreaterecord(env, su->seriesinfo->seriesname))
+     if (request->tdays > 0 && 
+         (!su->seriesinfo || !drms_series_cancreaterecord(env, su->seriesinfo->seriesname)))
      {
         request->tdays *= -1;
      }
@@ -280,20 +296,118 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
       return 1;
     }
   }
-  /* Submit request to sums server thread. */
-  tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
-  /* Wait for reply. FIXME: add timeout. */
-  tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
-  if (reply->opcode != 0)
+
+  tryagain = 1;
+  natts = 1;
+  while (tryagain && natts < 3)
   {
-    fprintf(stderr, "SUM GET failed with error code %d.\n",reply->opcode);
-    free(reply);
-    return 1;
+     tryagain = 0;
+
+     /* Submit request to sums server thread. */
+     tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
+     /* Wait for reply. FIXME: add timeout. */
+     tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
+
+     if (reply->opcode != 0)
+     {
+        fprintf(stderr, "SUM GET failed with error code %d.\n",reply->opcode);
+        free(reply);
+        return 1;
+     }
+     else
+     {
+        su->sudir[0] = '\0';
+
+        if (strlen(reply->sudir[0]) > 0)
+        {
+           snprintf(su->sudir, sizeof(su->sudir), "%s", reply->sudir[0]);
+           free(reply->sudir[0]);
+        }
+        else if (retrieve && natts < 2 && drms_su_isremotesu(request->sunum[0]))
+        {
+           /* This sudir is 
+            * POSSIBLY owned by a remote sums.  We invoke remote
+            * sums only if the retrieve flag is set.
+            *
+            * Since the retrieve flag was set, we assume that any empty string
+            * SUDIR denotes a SUNUM that belongs to a different SUMS (or
+            * it is an invalid SUNUM, in which case the storage unit is
+            * is invalid - for now, we punt on this possibility and assume
+            * that an empty dir denotes a remote SUNUM).
+            */
+
+           int infd[2];  /* child writes to this pipe */
+           char rbuf[128]; /* expecting ascii for 0 or 1 */
+
+           pipe(infd);
+
+           if(!fork())
+           {
+              char url[DRMS_MAXPATHLEN];
+              char *sunumlist = NULL;
+              size_t listsize;
+              char listbuf[128];
+
+              /* child - writes to pipe */
+              close(infd[0]); /* close fd to read end of pipe */
+              dup2(infd[1], 1);  /* redirect stdout to write end of pipe */
+              close(infd[1]); /* close fd to write end of pipe; okay since stdout now points to 
+                               * write end of pipe */
+
+              if (!drms_su_getexportURL(request->sunum[0], url, sizeof(url)))
+              {
+                 /* Call external program; doesn't return - must be in path */
+                 char cmd[PATH_MAX];
+                 sunumlist = (char *)malloc(kSUNUMLISTSIZE);
+                 memset(sunumlist, 0, kSUNUMLISTSIZE);
+
+                 listsize = kSUNUMLISTSIZE;
+                 snprintf(listbuf, sizeof(listbuf), "%lld", (long long)request->sunum[0]);
+                 sunumlist = base_strcatalloc(sunumlist, url, &listsize);
+                 sunumlist = base_strcatalloc(sunumlist, "=", &listsize);
+                 sunumlist = base_strcatalloc(sunumlist, listbuf, &listsize);
+                 snprintf(cmd, sizeof(cmd), "%s %s", kEXTREMOTESUMS, sunumlist);
+                                
+                 /* Careful with the $PATH env variable! The following call creates a new 
+                  * shell instance. If the path to remotesums_master.pl is not properly 
+                  * added to the $PATH variable via .cshrc or some other login script, 
+                  * then remotesums_master.pl will never be found. The parent will then 
+                  * unblock and fail to read an data from infd[0]. */
+                 execl("/bin/tcsh", "tcsh", "-c", cmd, (char *)0);
+              }
+           }
+           else
+           {
+              /* parent - reads from pipe */
+              close(infd[1]); /* close fd to write end of pipe */
+
+              /* Read results from external program - either 0 (don't try again) or 1 (try again) */
+              if (read(infd[0], rbuf, sizeof(rbuf)) > 0)
+              {
+                 /* Discard whatever else is being written to the pipe */
+                 while (read(infd[0], rbuf, sizeof(rbuf)) > 0);
+
+                 sscanf(rbuf, "%d", &tryagain);
+                 if (!tryagain)
+                 {
+                    sustatus = DRMS_REMOTESUMS_TRYLATER;
+                 }
+              }
+              else
+              {
+                 fprintf(stderr, "Master remote SUMS script did not run properly.\n");
+              }
+
+              close(infd[0]);
+           }
+        }
+     }
+
+     free(reply);
+     natts++;
   }
-  strncpy(su->sudir, reply->sudir[0], sizeof(su->sudir));
-  free(reply->sudir[0]);
-  free(reply);
-  return DRMS_SUCCESS;
+
+  return sustatus;
 }
 #endif
 
@@ -301,7 +415,14 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 #ifndef DRMS_CLIENT
 int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retrieve, int dontwait)
 {  
+  int sustatus = DRMS_SUCCESS;
   DRMS_SumRequest_t *request, *reply;
+  DRMS_StorageUnit_t **workingsus = NULL;
+  DRMS_StorageUnit_t **rsumssus = NULL;
+  LinkedList_t *retrysunums = NULL;
+  int workingn;
+  int tryagain;
+  int natts;
 
   if (!env->sum_thread) {
     int status;
@@ -316,88 +437,290 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
    * retention, must be owner of ALL series to which these storage units belong */
   int isowner = 1;
   int isu;
-  DRMS_StorageUnit_t *onesu;
+  int iSUMSsunum;
+  DRMS_StorageUnit_t *onesu = NULL;
 
   for (isu = 0; isu < n; isu++)
   {
      onesu = su[isu];
-     if (!drms_series_cancreaterecord(env, onesu->seriesinfo->seriesname))
+     if (!onesu->seriesinfo || !drms_series_cancreaterecord(env, onesu->seriesinfo->seriesname))
      {
         isowner = 0;
-        break;
      }
+
+     /* Set all returned sudirs to empty strings - used as a flag to know what has been processed. */
+     *(onesu->sudir) = '\0';
   }
 
   /* There is a maximum no. of SUs that can be requested from SUMS, MAXSUMREQCNT. So, loop. */
   int start = 0;
   int end = SUMIN(MAXSUMREQCNT, n); /* index of SU one past the last one to be processed */
 
-  while (start < n)
+  workingsus = su;
+  workingn = n;
+
+  tryagain = 1;
+  natts = 1;
+  while (tryagain && natts < 3)
   {
-     /* create SUMS request (apparently, SUMS frees this request) */
-     XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+     tryagain = 0;
 
-     request->opcode = DRMS_SUMGET;
-     request->reqcnt = end - start;
-
-     for (int i = start, iSUMSsunum = 0; i < end; i++, iSUMSsunum++) {
-        request->sunum[iSUMSsunum] = su[i]->sunum;
-     }
-     request->mode = NORETRIEVE + TOUCH;
-     if (retrieve) 
-       request->mode = RETRIEVE + TOUCH;
-
-     request->dontwait = dontwait;
-
-     /* If the user doesn't override on the cmd-line, use the standard retention (some small negative value).
-      * If the user specifies a negative value on the cmd-line, use that.  If the user specifies
-      * a positive value on the cmd-line and the user owns this series, use that value.  But if the
-      * user doesn't own this series multiply the positive value by -1.
-      */
-     if (env->retention==INT_MIN) 
-     {  
-        request->tdays = STDRETENTION;
-        if (request->tdays > 0)
-        {
-           /* Since STDRETENTION can be customized, don't allow the definition of a positive number */
-           request->tdays *= -1;
-        }
-     }
-     else
+     while (start < workingn)
      {
-        request->tdays = env->retention;
+        /* create SUMS request (apparently, SUMS frees this request) */
+        XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+
+        request->opcode = DRMS_SUMGET;
+        request->reqcnt = end - start;
+
+        for (isu = start, iSUMSsunum = 0; isu < end; isu++, iSUMSsunum++) {
+           request->sunum[iSUMSsunum] = workingsus[isu]->sunum;
+        }
+        request->mode = NORETRIEVE + TOUCH;
+        if (retrieve) 
+          request->mode = RETRIEVE + TOUCH;
+
+        request->dontwait = dontwait;
+
+        /* If the user doesn't override on the cmd-line, use the standard retention 
+         * (some small negative value).
+         * If the user specifies a negative value on the cmd-line, use that.  If the user specifies
+         * a positive value on the cmd-line and the user owns this series, use that value.  But if the
+         * user doesn't own this series multiply the positive value by -1.
+         */
+        if (env->retention==INT_MIN) 
+        {  
+           request->tdays = STDRETENTION;
+           if (request->tdays > 0)
+           {
+              /* Since STDRETENTION can be customized, don't allow the definition of a positive number */
+              request->tdays *= -1;
+           }
+        }
+        else
+        {
+           request->tdays = env->retention;
         
-        if (request->tdays > 0 && !isowner)
-        {
-           request->tdays *= -1;
+           if (request->tdays > 0 && !isowner)
+           {
+              request->tdays *= -1;
+           }
         }
-     }
 
-     /* Submit request to sums server thread. */
-     tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *) request);
+        /* Submit request to sums server thread. */
+        tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *) request);
   
-     /* Wait for reply. FIXME: add timeout. */
-     if (!dontwait) {
-        tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
-        if (reply->opcode != 0)
+        /* Wait for reply. FIXME: add timeout. */
+        if (!dontwait) 
         {
-           fprintf(stderr, "SUM GET failed with error code %d.\n",reply->opcode);
+           /* If and only if user wants to wait for the reply, then return back 
+            * to user all SUDIRs found. */
+           tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
+
+           if (reply->opcode != 0)
+           {
+              fprintf(stderr, "SUM GET failed with error code %d.\n",reply->opcode);
+              free(reply);
+              return 1;
+           }
+           else
+           {
+              retrysunums = list_llcreate(sizeof(uint64_t));
+
+              for (isu = start, iSUMSsunum = 0; isu < end; isu++, iSUMSsunum++) 
+              {
+                 if (strlen(reply->sudir[iSUMSsunum]) > 0)
+                 {
+                    /* For these SUNUMs, we have SUDIRs, so we can provide these 
+                     * back to the caller.  */
+                    strncpy(workingsus[isu]->sudir, 
+                            reply->sudir[iSUMSsunum], 
+                            DRMS_MAXPATHLEN);
+                 }
+                 else if (retrieve && natts < 2 && drms_su_isremotesu(workingsus[isu]->sunum))
+                 {
+                    /* Count the sudirs that are empty string.  Each of these is 
+                     * POSSIBLY owned by a remote sums.  We invoke remote
+                     * sums only if the retrieve flag is set.
+                     *
+                     * Since the retrieve flag was set, we assume that any empty string
+                     * SUDIR denotes a SUNUM that belongs to a different SUMS (or
+                     * it is an invalid SUNUM, in which case the storage unit is
+                     * is invalid - for now, we punt on this possibility and assume
+                     * that an empty dir denotes a remote SUNUM).
+                     */
+                    snprintf(workingsus[isu]->sudir, DRMS_MAXPATHLEN, "%s", "rs"); /* flag to indicate
+                                                                                    * remotesums
+                                                                                    * processing
+                                                                                    */
+                    list_llinserttail(retrysunums, &(workingsus[isu]->sunum));
+                 }
+
+                 free(reply->sudir[iSUMSsunum]);
+              }
+           }
+
            free(reply);
-           return 1;
+        } /* !dontwait*/
+
+        start = end;
+        end = SUMIN(MAXSUMREQCNT + start, workingn);
+     } /* while */
+
+     /* At this point, there may be some off-site SUNUMs - if so, run master script
+      * and then retry. */
+     if (natts < 2 && list_llgetnitems(retrysunums) > 0)
+     {
+        int infd[2];  /* child writes to this pipe */
+        char rbuf[128]; /* expecting ascii for 0 or 1 */
+
+        pipe(infd);
+
+        if(!fork())
+        {
+           /* child - writes to pipe */
+           close(infd[0]); /* close fd to read end of pipe */
+           dup2(infd[1], 1);  /* redirect stdout to write end of pipe */
+           close(infd[1]); /* close fd to write end of pipe; okay since stdout now points to 
+                            * write end of pipe */
+
+           /* iterate through each sunum */
+           ListNode_t *node = NULL;
+           long long rsunum;
+           HContainer_t *sulists = hcon_create(sizeof(SUList_t *), 128, NULL, NULL, NULL, NULL, 0);
+           char listbuf[128];
+           char url[DRMS_MAXPATHLEN];
+           char *sunumlist = NULL;
+           SUList_t **alist = NULL;
+           int first;
+           size_t listsize;
+           HIterator_t *hiter = NULL;
+           list_llreset(retrysunums);
+
+           while ((node = list_llnext(retrysunums)) != NULL)
+           {
+              rsunum = *((long long *)(node->data));
+              if (!drms_su_getexportURL(rsunum, url, sizeof(url)))
+              {
+                 /* see if a list for rsunum already exists. */
+                 if ((alist = hcon_lookup(sulists, url)) != NULL)
+                 {
+                    /* append rsunum to existing list */
+                    snprintf(listbuf, sizeof(listbuf), ",%lld", rsunum);
+                    (*alist)->str = base_strcatalloc((*alist)->str, listbuf, &((*alist)->size));
+                 }
+                 else
+                 {
+                    /* create a new list and add rsunum to it */
+                    SUList_t *newlist = (SUList_t *)hcon_allocslot(sulists, url);
+
+                    newlist->str = malloc(kSUNUMLISTSIZE);
+                    newlist->size = kSUNUMLISTSIZE;
+
+                    snprintf(listbuf, sizeof(listbuf), "%s=%lld", url, rsunum);
+                    (*alist)->str = base_strcatalloc((*alist)->str, listbuf, &((*alist)->size));
+                 }
+              }
+           }
+
+           if (!drms_su_getexportURL(request->sunum[0], url, sizeof(url)))
+           {
+              /* Call external program; doesn't return - must be in path */
+              char cmd[PATH_MAX];
+              sunumlist = (char *)malloc(kSUNUMLISTSIZE);
+
+              /* Make the lists of SUNUMs - one for each export URL */
+              listsize = kSUNUMLISTSIZE;
+              first = 1;
+              hiter = hiter_create(sulists);
+
+              while ((alist = hiter_getnext(hiter)) != NULL)
+              {
+                 if (!first)
+                 {
+                    sunumlist = base_strcatalloc(sunumlist, "#", &listsize);
+                 }
+                 else
+                 {
+                    first = 0;
+                 }
+
+                 sunumlist = base_strcatalloc(sunumlist, (*alist)->str, &listsize);
+              }
+
+              hiter_destroy(&hiter);
+           
+              snprintf(cmd, sizeof(cmd), "%s %s", kEXTREMOTESUMS, sunumlist);
+              execl("/bin/tcsh", "tcsh", "-c", cmd, (char *)0);
+           }
         }
-        for (int i = start, iSUMSsunum = 0; i < end; i++, iSUMSsunum++) {
-           strncpy(su[i]->sudir, reply->sudir[iSUMSsunum], sizeof(su[i]->sudir));
-           free(reply->sudir[iSUMSsunum]);
+        else
+        {
+           /* parent - reads from pipe */
+           close(infd[1]); /* close fd to write end of pipe */
+           dup2(infd[0], 0); /* redirect stdin to read end o fpipe */
+           close(infd[0]); /* close fd to read end of pipe; okay since stdin now points to 
+                            * read end of pipe */
+
+           /* Read results from external program - either 0 (don't try again) or 1 (try again) */
+           if (read(infd[0], rbuf, sizeof(rbuf)) > 0)
+           {
+              /* Discard whatever else is being written to the pipe */
+              while (read(infd[0], rbuf, sizeof(rbuf)) > 0);
+
+              sscanf(rbuf, "%d", &tryagain);
+              if (!tryagain)
+              {
+                 sustatus = DRMS_REMOTESUMS_TRYLATER;
+              }
+           }
+        }
+        
+        start = 0;
+        /* index of SU one past the last one to be processed */
+        end = SUMIN(MAXSUMREQCNT, list_llgetnitems(retrysunums)); 
+
+        rsumssus = (DRMS_StorageUnit_t **)malloc(sizeof(DRMS_StorageUnit_t *) * list_llgetnitems(retrysunums));
+        ListNode_t *node = NULL;
+
+        isu = 0;
+        while (node = list_llgethead(retrysunums))
+        {
+           onesu = (DRMS_StorageUnit_t *)malloc(sizeof(DRMS_StorageUnit_t));
+           onesu->sunum = *((uint64_t *)(node->data));
+           *(onesu->sudir) = '\0';
+           rsumssus[isu] = onesu;
+           isu++;
+           list_llremove(retrysunums, node);
+           list_llfreenode(&node);
         }
 
-        free(reply);
+        workingsus = rsumssus;
+        workingn = list_llgetnitems(retrysunums);
      }
+  } /* while - retry */
 
-     start = end;
-     end = SUMIN(MAXSUMREQCNT + start, n);
-  } /* while */
+  if (retrieve && list_llgetnitems(retrysunums) > 0)
+  {
+     /* Merge results of remotesums request with original su array */
+     for (isu = 0, iSUMSsunum = 0; isu < n; isu++, iSUMSsunum++)
+     {
+        if (strcmp(su[isu]->sudir, "rs") == 0)
+        {
+           /* This SUNUM was sent to remotesums. */
+           snprintf(su[isu]->sudir, DRMS_MAXPATHLEN, "%s", rsumssus[iSUMSsunum]->sudir);
+        }
+     }
+  }
 
-  return DRMS_SUCCESS;
+  if (rsumssus)
+  {
+     free(rsumssus);
+  }
+
+  list_llfree(&retrysunums);
+
+  return sustatus;
 }
 #endif
 
@@ -690,4 +1013,17 @@ DRMS_StorageUnit_t *drms_su_markslot(DRMS_Env_t *env, char *series,
   su->state[slotnum] = *state;
   *state = oldstate;
   return su;
+}
+
+int drms_su_isremotesu(long long sunum)
+{
+   /* XXX - for now, assume that if you're asking this question, then it is remote. */
+   return 1;
+}
+
+int drms_su_getexportURL(long long sunum, char *url, int size)
+{
+   /* XXX - for now, assume that the owner of the "remote" sunum is Stanford */
+   snprintf(url, size, "http://jsoc.stanford.edu/cgi-bin/ajax/jsoc_fetch");
+   return 0;
 }

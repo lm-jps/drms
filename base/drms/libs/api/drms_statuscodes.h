@@ -117,6 +117,7 @@
 #define DRMS_CHUNKS_NEWCHUNK         (-20001)
 #define DRMS_CHUNKS_LASTINCHUNK      (-20002)
 #define DRMS_CHUNKS_LASTINRS         (-20003)
+#define DRMS_REMOTESUMS_TRYLATER     (-20004)
 
 /* Warnings */
 #define DRMS_WARNING_BADBLANK         (10000)

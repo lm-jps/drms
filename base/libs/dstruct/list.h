@@ -38,6 +38,11 @@ static inline ListNode_t *list_llgethead(LinkedList_t *llist)
    return NULL;
 }
 
+static inline int list_llgetnitems(LinkedList_t *llist)
+{
+   return llist->nitems;
+}
+
 void list_llfree(LinkedList_t **llist);
 void list_llfreenode(ListNode_t **node);
 

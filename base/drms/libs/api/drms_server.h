@@ -62,6 +62,8 @@ int drms_server_dropseries(DRMS_Env_t *env, int sockfd);
 int drms_server_dropseries_su(DRMS_Env_t *env, char *tn);
 long long drms_server_gettmpguid(int *sockfd);
 
+int drms_server_getsudir(DRMS_Env_t *env, int sockfd);
+
 /** \brief Server function for command code ::DRMS_ALLOC_RECNUM. */
 int drms_server_alloc_recnum(DRMS_Env_t *env, int sockfd);
 /** \brief Add recnums of transient records to templist for future removal */

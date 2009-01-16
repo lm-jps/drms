@@ -76,6 +76,35 @@ size_t base_strlcat(char *dst, const char *src, size_t size)
    return start + strlen(src);
 }
 
+/* sizedst is the currently allocated size of dst */
+void *base_strcatalloc(char *dst, const char *src, size_t *sizedst)
+{
+   size_t srclen = strlen(src);
+   size_t dstlen = strlen(dst);
+   void *retstr = NULL;
+
+   if (srclen > *sizedst - dstlen - 1)
+   {
+      void *tmp = realloc(dst, *sizedst * 2);
+      if (tmp)
+      {
+         *sizedst *= 2;
+         retstr = tmp;
+      }
+   }
+   else
+   {
+      retstr = dst;
+   }
+
+   if (retstr)
+   {
+      base_strlcat(retstr, src, *sizedst);
+   }
+
+   return retstr;
+}
+
 int convert_int_field(char *field, int len)
 {
   char *buf;

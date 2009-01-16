@@ -39,4 +39,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retireve);
 int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retireve, int dontwait);
 void drms_delete_temporaries(DRMS_Env_t *env);
 
+int drms_su_isremotesu(long long sunum);
+int drms_su_getexportURL(long long sunum, char *url, int size);
+
 #endif

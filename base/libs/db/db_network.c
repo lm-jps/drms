@@ -15,6 +15,7 @@
 #include <alloca.h>
 #include "db.h"
 #include "xassert.h"
+#include "byteswap.h"
 
 /************** General functions. ************/
 
@@ -139,6 +140,23 @@ ssize_t Readn(int fd, void *ptr, size_t nbytes)
   return(n);
 }
 
+ssize_t Readn_ntoh(int fd, void *ptr, size_t size)
+{
+   ssize_t ret = Readn(fd, ptr, size);
+   
+   if (ret == size)
+   {
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+   byteswap(size, 1, ptr);
+#endif
+   }
+   else
+   {
+      ret = 0;
+   }
+
+   return ret;
+}
 
 /* Write "n" bytes to a descriptor. */
 ssize_t  writen(int fd, const void *vptr, size_t n)
@@ -175,8 +193,18 @@ Writen(int fd, const void *ptr, size_t nbytes)
   }
 }
 
+void Writen_ntoh(int fd, const void *ptr, size_t size)
+{
+   void *p = NULL;//malloc(size);
+   memcpy(&p, &ptr, size);
 
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+   byteswap(size, 1, &p);
+#endif
 
+   Writen(fd, &p, size);
+   //free(p);
+}
 
 /* Write "n" bytes to a descriptor using gathering write. */
 ssize_t  writevn(int fd, struct iovec *vector, int count, size_t n)

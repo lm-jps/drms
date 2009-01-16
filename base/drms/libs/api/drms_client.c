@@ -1080,6 +1080,54 @@ int drms_getunits(DRMS_Env_t *env, char *series,
   return stat;
 }
 
+int drms_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
+{
+   int status = DRMS_SUCCESS;
+
+#ifdef DRMS_CLIENT
+   XASSERT(env->session->db_direct==0);
+#endif
+  
+#ifndef DRMS_CLIENT
+   /* Send a query to SUMS for the storage unit directory. */
+   status = drms_su_getsudir(env, su, retrieve);
+#else
+   {
+      char *sudir;
+
+      drms_send_commandcode(env->session->sockfd, DRMS_GETSUDIR);
+      
+      /* Send SUNUM and retrieve */
+      /* The goal of this function is to write the storage unit directory into 
+       * the DRMS_StorageUnit_t passed into it. But we cannot pass the DRMS_StorageUnit_t *
+       * to drms_server since the latter is in a different process.
+       *
+       * So, just pass the essential bit of information - the SUNUM. In drms_server
+       * construct a DRMS_StorageUnit_t that contains this SUNUM, then 
+       * call drms_su_getsudir() with this  DRMS_StorageUnit_t.  drms_server
+       * will then pass the SUDIR back, and that will be stuffed into su.
+       */
+      //Writen_ntoh(env->session->sockfd, su, sizeof(DRMS_StorageUnit_t *));
+      Writelonglong(env->session->sockfd, su->sunum);
+      Writeint(env->session->sockfd, retrieve);
+
+      sudir = receive_string(env->session->sockfd);
+      status = Readint(env->session->sockfd);
+
+      if (status == DRMS_SUCCESS)
+      {
+         snprintf(su->sudir, DRMS_MAXPATHLEN, "%s", sudir);
+      }
+      else if (status == DRMS_REMOTESUMS_TRYLATER)
+      {
+         *(su->sudir) = '\0';
+      }
+   }
+#endif
+
+   return status;
+}
+
 /* Client version. */
 int drms_newslots(DRMS_Env_t *env, int n, char *series, long long *recnum,
 		  DRMS_RecLifetime_t lifetime, int *slotnum, 

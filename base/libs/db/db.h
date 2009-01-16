@@ -261,7 +261,9 @@ int db_tcp_listen(char *host, int len, short *port);
 void send_string(int fd, char *str);
 char *receive_string(int fd);
 void Writen(int fd, const void *ptr, size_t nbytes);
+void Writen_ntoh(int fd, const void *ptr, size_t size);
 ssize_t Readn(int fd, void *ptr, size_t nbytes);
+ssize_t Readn_ntoh(int fd, void *ptr, size_t size);
 void Write_dbtype(DB_Type_t type, char *val, int fd);
 void Writevn(int fd, struct iovec *vector, int count );
 
