@@ -15,7 +15,7 @@
 #include <SUM.h>
 #include <sum_rpc.h>
 
-void setsumopened(SUMOPENED **list, SUMID_t uid, SUM_t *sum)
+void setsumopened(SUMOPENED **list, SUMID_t uid, SUM_t *sum, char *user)
 {
   SUMOPENED *newone;
 
@@ -23,6 +23,7 @@ void setsumopened(SUMOPENED **list, SUMID_t uid, SUM_t *sum)
   newone->next = *list;
   newone->uid = uid;
   newone->sum = sum;
+  strcpy(newone->user, user);
   *list = newone;
 }
 
