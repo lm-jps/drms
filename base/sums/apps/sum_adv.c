@@ -1,20 +1,18 @@
 /* sum_adv.c
+ * Queries the sum_svc.
  * This returns an exit(1) if it is now safe to shutdown the sum_svc
  * via a sum_stop.
  * Returns an exit(0) if a user is still opened in SUMS and you
  * should wait for it to close before you shut down SUMS.
  * Normal call will turn off new SUM_open() calls in sum_svc.
- * Call with -q to not turn off new SUM_open().
+ * Call with -q to not turn off new SUM_open() or to reenable if 
+ * already turned off.
 */
 #include <SUM.h>
 #include <soi_key.h>
 #include <rpc/rpc.h>
 #include <sum_rpc.h>
 
-/* Before running this you must have the sum_svc running on d00 like so:
- * sum_svc hmidb &
- * The log file will be at /usr/local/logs/SUM/sum_svc_PID.log
-*/
 int main(int argc, char *argv[])
 {
   int shutmode, c;
@@ -24,7 +22,7 @@ int main(int argc, char *argv[])
     while((c = *++argv[0])) {
       switch(c) {
       case 'q':
-        queryonly=1;	//don't turn off new SUM_open() in sum_svc
+        queryonly=1;	//don't turn off/reenable new SUM_open() in sum_svc
         break;
       default:
         break;
