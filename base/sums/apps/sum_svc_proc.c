@@ -125,7 +125,7 @@ KEY *opendo_1(KEY *params)
 
 /* Called by the SUM API SUM_shutdown() making a clnt_call to sum_svc for the
  * SHUTDO procedure. First sets the NO_OPEN flag to prevent further 
- * SUM_open's by a user if QUERY = 0. 
+ * SUM_open's by a user if QUERY = 0. NOTE: QUERY =1 will clear NO_OPEN. 
  * Return 1 if no user is currently open and it is safe to shutdown.
  * Else returns 0 if you must wait for a user to SUM_close() before it is
  * safe to shutdown SUMS. Also prints to log all open user names.
@@ -142,6 +142,8 @@ KEY *shutdo_1(KEY *params)
   query = getkey_int(params, "QUERY");
   if(!query)
     NO_OPEN = 1;			/* no more SUM_open() allowed */
+  else
+    NO_OPEN = 0;
   if(walk == NULL) { 			/* nothing opened, ok to shutdown */
     if(NO_OPEN)
       write_log("SUM_shutdown() call with no opened SUM users. New opens not allowed\n");
