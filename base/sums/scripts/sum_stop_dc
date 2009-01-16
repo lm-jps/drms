@@ -29,6 +29,15 @@ if(($host ne $HOST0) && ($host ne $HOST1) && ($host ne $HOST2)) {
   }
 }
 
+@adv = `sum_adv`;
+$state = shift(@adv);
+chomp($state);
+if($state == 0) {
+  print "sum_svc has active users. Please try again later.\n";
+  print "All new SUM_open() have been forbidden\n";
+  exit(0);
+}
+
 $PID = getppid;
 $LOGFILE = "/tmp/sum_stop.$PID";
 $MLOGFILE = "/tmp/sum_stop_mail.$PID";
