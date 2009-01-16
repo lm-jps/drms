@@ -15,6 +15,7 @@ extern CLIENT *current_client, *clnttape;
 extern SVCXPRT *glb_transp;
 extern uint32_t rinfo;
 extern int debugflg;
+static int NO_OPEN = 0;
 
 void write_time();
 void logkey();
@@ -94,6 +95,8 @@ void send_ack()
 */
 KEY *opendo_1(KEY *params)
 {
+  char *user;
+
   if(findkey(params, "DEBUGFLG")) {
     debugflg = getkey_int(params, "DEBUGFLG");
     if(debugflg) {
@@ -101,16 +104,65 @@ KEY *opendo_1(KEY *params)
       keyiterate(logkey, params);
     }
   }
+  user = GETKEY_str(params, "USER");
+  if(NO_OPEN) {
+    write_time();
+    write_log("No SUM_open() for %s allowed during SUM shutdown\n", user);
+    rinfo = 0;				/* error back to caller */
+    send_ack();				/* ack original sum_svc caller */
+    return((KEY *)1);			/* nothing will be sent later */
+  }
   rinfo = SUMLIB_Open();		/* return a SUMID_t else 0 */
   if(rinfo) {
     write_time();
-    write_log("Successful SUMLIB_Open for user=%s uid=%d\n", 
-		GETKEY_str(params, "USER"), rinfo);
-    setsumopened(&sumopened_hdr, rinfo, NULL); /* put in list of opens */
+    write_log("Successful SUMLIB_Open for user=%s uid=%d\n", user, rinfo);
+    setsumopened(&sumopened_hdr, rinfo, NULL, user); /*put in list of opens*/
 
   }
   send_ack();				/* ack original sum_svc caller */
   return((KEY *)1);			/* nothing will be sent later */
+}
+
+/* Called by the SUM API SUM_shutdown() making a clnt_call to sum_svc for the
+ * SHUTDO procedure. First sets the NO_OPEN flag to prevent further 
+ * SUM_open's by a user if QUERY = 0. 
+ * Return 1 if no user is currently open and it is safe to shutdown.
+ * Else returns 0 if you must wait for a user to SUM_close() before it is
+ * safe to shutdown SUMS. Also prints to log all open user names.
+ * Here is a typical keylist:
+ * USER:           KEYTYP_STRING   production
+ * QUERY:	   KEYTYP_INT	   0
+ * 
+*/
+KEY *shutdo_1(KEY *params)
+{
+  SUMOPENED *walk = sumopened_hdr;
+  int query;
+
+  query = getkey_int(params, "QUERY");
+  if(!query)
+    NO_OPEN = 1;			/* no more SUM_open() allowed */
+  if(walk == NULL) { 			/* nothing opened, ok to shutdown */
+    if(NO_OPEN)
+      write_log("SUM_shutdown() call with no opened SUM users. New opens not allowed\n");
+    else
+      write_log("SUM_shutdown() call with no opened SUM users. New opens still allowed\n");
+    rinfo = 1;
+  }
+  else {
+    write_log("SUM_shutdown() call with opened users & uid:\n");
+    rinfo = 0;				/* tell user can't shutdown yet */
+    while(walk) {
+      write_log("  %s %lu\n", walk->user, walk->uid);
+      walk = walk->next;
+    } 
+    if(NO_OPEN)
+      write_log("New opens not allowed\n");
+    else
+      write_log("New opens still allowed\n");
+  }
+  send_ack();				/* ack original sum_svc caller */
+  return((KEY *)1);			/* nothing to be sent */
 }
 
 /* Called by the SUM API SUM_get() making a clnt_call to sum_svc for the
@@ -284,7 +336,7 @@ KEY *allocdo_1(KEY *params)
   if(!(status=SUMLIB_PavailGet(bytes, storeset, uid, sunum, &retlist))) {
     wd = GETKEY_str(retlist, "partn_name");
     write_log("Alloc bytes=%e wd=%s for user=%s sumid=%lu\n", bytes, wd,
-		getkey_str(retlist, "USER"), uid);
+		GETKEY_str(retlist, "USER"), uid);
     if(!(set_client_handle(RESPPROG, (uint32_t)uid))) { /*set up for response*/
       freekeylist(&retlist);
       rinfo = 1;  /* give err status back to original caller */
