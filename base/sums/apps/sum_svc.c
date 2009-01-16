@@ -173,9 +173,8 @@ void get_cmd(int argc, char *argv[])
 
   if(!(username = (char *)getenv("USER"))) username = "nouser";
   if(strcmp(username, "production")) {
-/*    printf("!!NOTE: You must be user production to run sum_svc!\n");
-/*    exit(1);
-*/
+    printf("!!NOTE: You must be user production to run sum_svc!\n");
+    exit(1);
   }
 
   while((--argc > 0) && ((*++argv)[0] == '-')) {
@@ -384,7 +383,7 @@ if(strcmp(thishost, "lws") && strcmp(thishost, "flap") && strcmp(hostn, "d00.Sta
   }
 
 #ifndef SUMNOAO
-if(strcmp(thishost, "lws") && strcmp(thishost, "flap") && strcmp(hostn, "d00.Stanford.EDU")) { 
+if(strcmp(thishost, "lws") && strcmp(thishost, "n00") && strcmp(hostn, "d00.Stanford.EDU")) { 
   /* Create client handle used for calling the tape_svc */
   sleep(3);			/* give time to start */
   clnttape = clnt_create(thishost, TAPEPROG, TAPEVERS, "tcp");
@@ -450,6 +449,12 @@ sumprog_1(rqstp, transp)
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_uint32_t;
 		local = (char *(*)()) opendo_1;
+		break;
+	case SHUTDO:
+		sprintf(procname, "SHUTDO");	//!!TEMP name tags
+		xdr_argument = xdr_Rkey;
+		xdr_result = xdr_uint32_t;
+		local = (char *(*)()) shutdo_1;
 		break;
 	case ALLOCDO:
 		sprintf(procname, "ALLOCDO");
