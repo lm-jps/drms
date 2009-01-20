@@ -9,12 +9,9 @@ CF_$(d)		:= -D$(DBNAME)
 SERVEREXE_$(d)	:= $(addprefix $(d)/, drms_server masterlists)
 SERVEREXE	:= $(SERVEREXE) $(SERVEREXE_$(d))
 
-MODEXE_$(d)	:= $(addprefix $(d)/, drms_query drms_log)
+MODEXE_$(d)	:= $(addprefix $(d)/, drms_query drms_log remotesums_ingest)
 MODEXE		:= $(MODEXE) $(MODEXE_$(d))
-
-MODEXE_$(d)	:= $(addprefix $(d)/, drms_log)
-MODEXE_SOCK_$(d):= $(MODEXE_SOCK_$(d):%=%_sock)
-MODEXE_SOCK	:= $(MODEXE_SOCK) $(MODEXE_SOCK_$(d))
+MODEXE_SOCK	:= $(MODEXE_SOCK) $(addprefix $(d)/, drms_log_sock)
 
 EXE_$(d)	:= $(SERVEREXE_$(d)) $(MODEXE_$(d)) 
 OBJ_$(d)	:= $(EXE_$(d):%=%.o) 

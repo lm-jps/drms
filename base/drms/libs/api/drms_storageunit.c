@@ -84,6 +84,77 @@ long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir,
 }
 #endif
 
+#ifndef DRMS_CLIENT
+int drms_su_alloc2(DRMS_Env_t *env, 
+                   uint64_t size, 
+                   long long sunum, 
+                   char **sudir, 
+                   int *status)
+{
+   int stat;
+   DRMS_SumRequest_t *request = NULL;
+   DRMS_SumRequest_t *reply = NULL;
+   XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+
+   request->opcode = DRMS_SUMALLOC2;
+   request->dontwait = 0;
+   request->reqcnt = 1;
+   request->bytes = size;
+   request->sunum[0] = sunum;
+   if (request->bytes <=0 )
+   {
+      fprintf(stderr,"Invalid storage unit size %lf\n",request->bytes);
+      return 0;
+   }
+
+   if (!env->sum_thread) 
+   {
+      if((stat = pthread_create(&env->sum_thread, NULL, &drms_sums_thread, 
+                                (void *) env))) 
+      {
+         fprintf(stderr,"Thread creation failed: %d\n", stat);          
+         return 1;
+      }
+   }
+
+   /* Submit request to sums server thread. */
+   tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
+
+   /* Wait for reply. FIXME: add timeout. */
+   tqueueDel(env->sum_outbox, (long) pthread_self(), (char **)&reply);
+
+   if (reply->opcode)
+   {
+      fprintf(stderr,"SUM ALLOC2 failed with error code %d.\n",reply->opcode);
+      stat = reply->opcode;
+      if (sudir)
+      {
+         *sudir = NULL;
+      }
+   }
+   else
+   {
+      stat = DRMS_SUCCESS;
+      if (sudir)
+      {
+         *sudir = reply->sudir[0];
+      }
+   }
+
+   if (status)
+   {
+      *status = stat;
+   }
+
+   if (reply)
+   {
+      free(reply);
+   }
+
+   return stat;
+}
+#endif /* DRMS_CLIENT */
+
 /* Get a new empty slot for a record from "series". If no storage units 
    from this series with empty slots are currently open, allocate a new 
    one from SUMS. When an appropriate storate unit is found, a new
@@ -1098,4 +1169,10 @@ int drms_su_getexportURL(long long sunum, char *url, int size)
    /* XXX - for now, assume that the owner of the "remote" sunum is Stanford */
    snprintf(url, size, "http://jsoc.stanford.edu/cgi-bin/ajax/jsoc_fetch");
    return 0;
+}
+
+const char *drms_su_getexportserver()
+{
+   /* XXX - for now, assume j0 */
+   return "j0.stanford.edu";
 }

@@ -1607,6 +1607,31 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        }
     }
     break;
+  case DRMS_SUMALLOC2:
+    /* Do not make this call available to "_sock" connect modules - it is 
+     * to be used by modules that ingest remote storage units and it
+     * does not affect any kind of DRMS/PSQL session. */
+    if (request->reqcnt!=1)
+    {
+       fprintf(stderr,"SUM thread: Invalid reqcnt (%d) in SUMALLOC request.\n",
+               request->reqcnt);
+       reply->opcode = DRMS_ERROR_SUMALLOC;
+       break;
+    }
+    sum->reqcnt = 1;
+    sum->bytes = request->bytes;
+
+    /* Make RPC call to the SUM server. */
+    if ((reply->opcode = SUM_alloc2(sum, request->sunum[0], printf)))
+    {
+       fprintf(stderr,"SUM thread: SUM_alloc2 RPC call failed with "
+               "error code %d\n", reply->opcode);
+       break;
+    }
+
+    reply->sudir[0] = strdup(sum->wd[0]);
+    free(sum->wd[0]); 
+    break;
   default:
     fprintf(stderr,"SUM thread: Invalid command code (%d) in request.\n",
 	   request->opcode);

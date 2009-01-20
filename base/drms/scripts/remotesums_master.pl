@@ -332,6 +332,7 @@ if ($totsize > $kSIZECUTOFF)
 else
 {
     my($oneSU);
+    my($oneseries);
 
     # request is small - perform synchronously. 
     while ($totcnt-- > 0)
@@ -340,22 +341,29 @@ else
         # the requested series. The array @reqfiles contains paths to the SUNUMS in the 
         # remote SUMS.
         $oneSU = shift(@reqfiles);
-        # print STDERR "oneSU $oneSU\n";
+        $oneseries = shift(@reqseries);
+        print STDERR "oneSU $oneSU, series $oneseries\n";
         
-        # Call remotesums_ingest program
-        #if (defined(open(INGEST, "$kRSINGEST @|")))
-        #{
-        #    
-        #}
-        #else
-        #{
-        #    print STDERR "Couldn't run remotesums_ingest.\n";
-        #    print "$RSERROR";
-        #}
+        
 
         
         
     }
+
+    # Call remotesums_ingest program - pass three parameters
+    #   1. comma-separated list of sunums
+    #   2. comma-separated list of supaths
+    #   3. comma-separated list of series (may be redundant)
+    #if (defined(open(INGEST, "$kRSINGEST sus=$listsu paths=$listsupaths series=$listseries|")))
+    #{
+    #    
+    #}
+    #else
+    #{
+    #    print STDERR "Couldn't run remotesums_ingest.\n";
+    #    print "$RSERROR";
+    #}
+
 
     # return the code that means "retry SUM_get()"
     # print "$kTRYAGAIN\n";
