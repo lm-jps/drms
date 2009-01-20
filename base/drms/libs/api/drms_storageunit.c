@@ -246,6 +246,7 @@ int drms_su_newslots(DRMS_Env_t *env, int n, char *series,
 #endif
 
 /* Get the actual storage unit directory from SUMS. */
+/* The su may NOT have seriesinfo (this function could be called with only an SUNUM known) */
 #ifndef DRMS_CLIENT
 int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 {  
@@ -362,7 +363,11 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
                  memset(sunumlist, 0, kSUNUMLISTSIZE);
 
                  listsize = kSUNUMLISTSIZE;
-                 snprintf(listbuf, sizeof(listbuf), "%lld", (long long)request->sunum[0]);
+                 snprintf(listbuf, 
+                          sizeof(listbuf), 
+                          "%s\\{%lld\\}",
+                          su->seriesinfo ? su->seriesinfo->seriesname : "unknown",
+                          (long long)request->sunum[0]);
                  sunumlist = base_strcatalloc(sunumlist, url, &listsize);
                  sunumlist = base_strcatalloc(sunumlist, "=", &listsize);
                  sunumlist = base_strcatalloc(sunumlist, listbuf, &listsize);
@@ -419,7 +424,8 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
   DRMS_SumRequest_t *request, *reply;
   DRMS_StorageUnit_t **workingsus = NULL;
   DRMS_StorageUnit_t **rsumssus = NULL;
-  LinkedList_t *retrysunums = NULL;
+  //LinkedList_t *retrysunums = NULL;
+  LinkedList_t *retrysus = NULL;
   int workingn;
   int tryagain;
   int natts;
@@ -525,7 +531,8 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
            }
            else
            {
-              retrysunums = list_llcreate(sizeof(uint64_t));
+              //retrysunums = list_llcreate(sizeof(uint64_t));
+              retrysus = list_llcreate(sizeof(DRMS_StorageUnit_t *));
 
               for (isu = start, iSUMSsunum = 0; isu < end; isu++, iSUMSsunum++) 
               {
@@ -553,7 +560,8 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                                                                                     * remotesums
                                                                                     * processing
                                                                                     */
-                    list_llinserttail(retrysunums, &(workingsus[isu]->sunum));
+                    //list_llinserttail(retrysunums, &(workingsus[isu]->sunum));
+                    list_llinserttail(retrysus, &(workingsus[isu]));
                  }
 
                  free(reply->sudir[iSUMSsunum]);
@@ -569,7 +577,8 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
 
      /* At this point, there may be some off-site SUNUMs - if so, run master script
       * and then retry. */
-     if (natts < 2 && list_llgetnitems(retrysunums) > 0)
+     //if (natts < 2 && list_llgetnitems(retrysunums) > 0)
+     if (natts < 2 && retrysus && list_llgetnitems(retrysus) > 0)
      {
         int infd[2];  /* child writes to this pipe */
         char rbuf[128]; /* expecting ascii for 0 or 1 */
@@ -586,73 +595,126 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
 
            /* iterate through each sunum */
            ListNode_t *node = NULL;
-           long long rsunum;
-           HContainer_t *sulists = hcon_create(sizeof(SUList_t *), 128, NULL, NULL, NULL, NULL, 0);
+           DRMS_StorageUnit_t *rsu = NULL;
+           //HContainer_t *sulists = hcon_create(sizeof(SUList_t *), 128, NULL, NULL, NULL, NULL, 0);
+           HContainer_t *sulists = hcon_create(sizeof(HContainer_t), 128, NULL, NULL, NULL, NULL, 0);
            char listbuf[128];
            char url[DRMS_MAXPATHLEN];
+           HContainer_t *acont = NULL;
+           SUList_t *alist = NULL;
+           SUList_t *newlist = NULL;
+           char cmd[PATH_MAX];
            char *sunumlist = NULL;
-           SUList_t **alist = NULL;
-           int first;
+           HIterator_t *hiturl = NULL;
+           HIterator_t *hitsers = NULL;
+           
+           int firsturl;
+           int firstsers;
            size_t listsize;
-           HIterator_t *hiter = NULL;
-           list_llreset(retrysunums);
+           list_llreset(retrysus);
 
-           while ((node = list_llnext(retrysunums)) != NULL)
+           while ((node = list_llnext(retrysus)) != NULL)
            {
-              rsunum = *((long long *)(node->data));
-              if (!drms_su_getexportURL(rsunum, url, sizeof(url)))
+              rsu = *((DRMS_StorageUnit_t **)(node->data));
+              char *sname = rsu->seriesinfo ? rsu->seriesinfo->seriesname : "unknown";
+              if (!drms_su_getexportURL(rsu->sunum, url, sizeof(url)))
               {
+                 /* Each exportURL contains one or more series, and each series contains
+                  * one or more SUNUMs. So sulists is a container of (expURLs, series container), and
+                  * series container is a container of (series, sulist) */
+
                  /* see if a list for rsunum already exists. */
-                 if ((alist = hcon_lookup(sulists, url)) != NULL)
+                 if ((acont = hcon_lookup(sulists, url)) != NULL)
                  {
-                    /* append rsunum to existing list */
-                    snprintf(listbuf, sizeof(listbuf), ",%lld", rsunum);
-                    (*alist)->str = base_strcatalloc((*alist)->str, listbuf, &((*alist)->size));
+                    /* Got the (url, series cont) container; look for series name. */
+                    if ((alist = hcon_lookup(acont, sname)) != NULL)
+                    {
+                       /* alist is the sname-specific sulist; append this sunum */
+                       snprintf(listbuf, sizeof(listbuf), ",%lld", rsu->sunum);
+                       alist->str = base_strcatalloc(alist->str, listbuf, &(alist->size));   
+                    }
+                    else
+                    {
+                       newlist = hcon_allocslot(acont, sname);
+                       newlist->str = malloc(kSUNUMLISTSIZE);
+                       newlist->size = kSUNUMLISTSIZE;
+
+                       snprintf(listbuf, sizeof(listbuf), "%s=%s\\{%lld", url, sname, rsu->sunum);
+                       newlist->str = base_strcatalloc(newlist->str, listbuf, &(newlist->size));
+                    }
                  }
                  else
                  {
+                    /* Create a new (series, sulist) container */
+                    HContainer_t *newcont = hcon_allocslot(sulists, url);
+                    hcon_init(newcont, sizeof(SUList_t), DRMS_MAXSERIESNAMELEN, NULL, NULL);
+
                     /* create a new list and add rsunum to it */
-                    SUList_t *newlist = (SUList_t *)hcon_allocslot(sulists, url);
+                    newlist = hcon_allocslot(newcont, sname);
 
                     newlist->str = malloc(kSUNUMLISTSIZE);
                     newlist->size = kSUNUMLISTSIZE;
 
-                    snprintf(listbuf, sizeof(listbuf), "%s=%lld", url, rsunum);
-                    (*alist)->str = base_strcatalloc((*alist)->str, listbuf, &((*alist)->size));
+                    snprintf(listbuf, sizeof(listbuf), "%s=%s\\{%lld", url, sname, rsu->sunum);
+                    newlist->str = base_strcatalloc(newlist->str, listbuf, &(newlist->size));
                  }
               }
            }
 
-           if (!drms_su_getexportURL(request->sunum[0], url, sizeof(url)))
+           /* Call external program; doesn't return - must be in path */
+           sunumlist = (char *)malloc(kSUNUMLISTSIZE);
+
+           /* Make the lists of SUNUMs - one for each export URL */
+           listsize = kSUNUMLISTSIZE;
+           firsturl = 1;
+           firstsers = 1;
+           hiturl = hiter_create(sulists);
+
+           if (hiturl)
            {
-              /* Call external program; doesn't return - must be in path */
-              char cmd[PATH_MAX];
-              sunumlist = (char *)malloc(kSUNUMLISTSIZE);
-
-              /* Make the lists of SUNUMs - one for each export URL */
-              listsize = kSUNUMLISTSIZE;
-              first = 1;
-              hiter = hiter_create(sulists);
-
-              while ((alist = hiter_getnext(hiter)) != NULL)
+              while ((acont = hiter_getnext(hiturl)) != NULL)
               {
-                 if (!first)
+                 if (!firsturl)
                  {
                     sunumlist = base_strcatalloc(sunumlist, "#", &listsize);
                  }
                  else
                  {
-                    first = 0;
+                    firsturl = 0;
                  }
 
-                 sunumlist = base_strcatalloc(sunumlist, (*alist)->str, &listsize);
+                 hitsers = hiter_create(acont);
+                 if (hitsers)
+                 {
+                    while ((alist = hiter_getnext(hitsers)) != NULL)
+                    {
+                       /* Must append the final '}' to all lists */
+                       alist->str = base_strcatalloc(alist->str, "\\}", &(alist->size));
+
+                       /* create a string that contains all sulists */
+                       if (!firstsers)
+                       {
+                          sunumlist = base_strcatalloc(sunumlist, "&", &listsize);
+                       }
+                       else
+                       {
+                          firstsers = 0;
+                       }
+
+                       sunumlist = base_strcatalloc(sunumlist, alist->str, &listsize);
+                    }
+
+                    hiter_destroy(&hitsers);
+                 }
               }
 
-              hiter_destroy(&hiter);
-           
-              snprintf(cmd, sizeof(cmd), "%s %s", kEXTREMOTESUMS, sunumlist);
-              execl("/bin/tcsh", "tcsh", "-c", cmd, (char *)0);
+              hiter_destroy(&hiturl);
            }
+
+           snprintf(cmd, sizeof(cmd), "%s %s", kEXTREMOTESUMS, sunumlist);
+           execl("/bin/tcsh", "tcsh", "-c", cmd, (char *)0);
+
+           /* Execution never gets here. */
         }
         else
         {
@@ -678,29 +740,35 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
         
         start = 0;
         /* index of SU one past the last one to be processed */
-        end = SUMIN(MAXSUMREQCNT, list_llgetnitems(retrysunums)); 
+        //end = SUMIN(MAXSUMREQCNT, list_llgetnitems(retrysunums)); 
+        end = SUMIN(MAXSUMREQCNT, list_llgetnitems(retrysus)); 
 
-        rsumssus = (DRMS_StorageUnit_t **)malloc(sizeof(DRMS_StorageUnit_t *) * list_llgetnitems(retrysunums));
+        //rsumssus = (DRMS_StorageUnit_t **)malloc(sizeof(DRMS_StorageUnit_t *) * list_llgetnitems(retrysunums));
+        rsumssus = (DRMS_StorageUnit_t **)malloc(sizeof(DRMS_StorageUnit_t *) * list_llgetnitems(retrysus));
         ListNode_t *node = NULL;
 
         isu = 0;
-        while (node = list_llgethead(retrysunums))
+        //while (node = list_llgethead(retrysunums))
+        while (node = list_llgethead(retrysus))
         {
            onesu = (DRMS_StorageUnit_t *)malloc(sizeof(DRMS_StorageUnit_t));
            onesu->sunum = *((uint64_t *)(node->data));
            *(onesu->sudir) = '\0';
            rsumssus[isu] = onesu;
            isu++;
-           list_llremove(retrysunums, node);
+           //list_llremove(retrysunums, node);
+           list_llremove(retrysus, node);
            list_llfreenode(&node);
         }
 
         workingsus = rsumssus;
-        workingn = list_llgetnitems(retrysunums);
+        //workingn = list_llgetnitems(retrysunums);
+        workingn = list_llgetnitems(retrysus);
      }
   } /* while - retry */
 
-  if (retrieve && list_llgetnitems(retrysunums) > 0)
+  //if (retrieve && list_llgetnitems(retrysunums) > 0)
+  if (retrieve && retrysus && list_llgetnitems(retrysus) > 0)
   {
      /* Merge results of remotesums request with original su array */
      for (isu = 0, iSUMSsunum = 0; isu < n; isu++, iSUMSsunum++)
@@ -718,7 +786,11 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
      free(rsumssus);
   }
 
-  list_llfree(&retrysunums);
+  //list_llfree(&retrysunums);
+  if (retrysus)
+  {
+     list_llfree(&retrysus);
+  }
 
   return sustatus;
 }
