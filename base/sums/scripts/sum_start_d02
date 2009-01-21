@@ -3,6 +3,7 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S  $0 "$@"'
 #/home/production/cvs/JSOC/base/sums/scripts/sum_start_d02
 #This is to start the sum_svc and related servers.
 #Call with -M will not send mail notification.
+#Call with -f to force a stop if needed.
 #
 $| = 1;                 #flush output as we go
 #$DB = "jim";		#the "real" db that production uses
@@ -11,7 +12,6 @@ $DB = "jsoc_sums";		#the "real" db that production uses
 $GREPPS = "388";	#grep for this in ps -ef
 #$GREPPS = "jim";
 $HOST = "d02.Stanford.EDU"; #where sum_svc runs
-#$HOST = "d02"; #where sum_svc runs
 
 $user = $ENV{'USER'};
 if($user ne "production") {
@@ -24,9 +24,27 @@ if($host ne $HOST) {
   print "This can only be run on $HOST.\n";
   exit;
 }
-
-if(@ARGV[0] eq "-M") { $mailflg = 0; shift(@ARGV); }
-else { $mailflg = 1; }
+$mailflg = 1;
+$forceflg = 0;
+$forcearg = "";
+$sumck = 1;
+while ($ARGV[0] =~ /^-/) {
+  $_ = shift;
+  if (/^-M(.*)/) {
+    $mailflg = 0;
+  }
+  elsif(/^-X(.*)/) {
+    $sumck = 0;
+  }
+  elsif(/^-f(.*)/) {
+    $forceflg = 1;
+    $forcearg = "-f";
+  }
+  else {
+    print "Illegal switch\n";
+    exit;
+  }
+}
 
 $PID = getppid;
 $LOGFILE = "/tmp/sum_start_d02.$PID";
@@ -122,6 +140,12 @@ while($_ = shift(@ps_prod)) {
       ($a, $psid, $c) = split(/\s+/, $_);
       $process = "sum_pe_svc";
     }
+    elsif(/ sumck/) {
+      if($sumck) {
+        ($a, $psid, $c) = split(/\s+/, $_);
+        $process = "sumck";
+      }
+    }
     else {
       next;
     }
@@ -131,9 +155,22 @@ while($_ = shift(@ps_prod)) {
     while(<STDIN>) {
       chop($_);
       if(($_ eq "Y") || ($_ eq "y")) { 
-	if($mailflg) { $cmd = "sum_stop_d02"; }
-  	else { $cmd = "sum_stop_d02 -M"; }
-
+	if($mailflg) { 
+          if($sumck) {
+            $cmd = "sum_stop_d02 $forcearg";
+          }
+          else {
+            $cmd = "sum_stop_d02 -X $forcearg";
+          }
+        }
+  	else { 
+          if($sumck) {
+            $cmd = "sum_stop_d02 -M $forcearg";
+          }
+          else {
+            $cmd = "sum_stop_d02 -M -X $forcearg";
+          }
+        }
         if(system($cmd)) {
           print "Error: failure on sum_stop_d02\n";
           exit;
@@ -245,6 +282,12 @@ while($_ = shift(@ps_prod)) {
         $cmd = "sum_svc $DB &";
         if(system($cmd)) {
           print "Error: failure on sum_svc $DB\n";
+        }
+        if($sumck) {
+          $cmd = "sumck &";
+          if(system($cmd)) {
+            print "Error: failure on sumck\n";
+          }
         }
         print "SUM d02 Start Complete\n";
         print LOG "SUM d02 Start Complete\n";
