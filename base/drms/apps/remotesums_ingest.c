@@ -24,6 +24,7 @@ enum RSINGEST_stat_enum
 {
    kRSING_success = 0,
    kRSING_sumallocfailure,
+   kRSING_sumcommitfailure,
    kRSING_failure
 };
 
@@ -95,30 +96,41 @@ int DoIt(void)
       }
 
       /* The "_sock" version of this module will not build (nor should it) */
-      if (!drms_su_alloc2(drms_env, 
-                          drms_su_size(drms_env, aseries) + 1000000, 
-                          sunum,
-                          &sudir, 
-                          NULL))
+      if (!drms_su_allocsu(drms_env, 
+                           drms_su_size(drms_env, aseries) + 1000000, 
+                           sunum,
+                           &sudir, 
+                           NULL))
       {
          server = drms_su_getexportserver();
 
          if (server && sudir)
          {
             /* Create scp cmd - user running this module must have
-             * started ssh-agent and added the private key to the
-             * agent's list of known keys. Also, the site providing
-             * the SUMS files must have put the user's corresponding 
-             * public key into its authorized_keys file.
+             * started ssh-agent and added their private key to the
+             * agent's list of known keys. I believe that ssh-agent
+             * is user-specific - you can't use an ssh-agent started
+             * by another user. Also, the site providing
+             * the SUMS files must have the user's corresponding 
+             * public key in its authorized_keys file. The user must 
+             * have also sourced the ssh-agent environment variables
+             * so that the local scp can find the user's private
+             * key.
              */
             snprintf(cmd, 
                      sizeof(cmd), 
-                     "source %s;scp -r '%s:%s/*' %s", 
+                     "tcsh -c \"source %s;scp -r '%s:%s/*' %s\"", 
                      agentfile,
                      server, 
                      apath, 
                      sudir);
-            // system(cmd); /* doesn't return until child terminates */
+            system(cmd); /* doesn't return until child terminates */
+
+            /* commit the newly allocated SU */
+            if (drms_su_commitsu(drms_env, aseries, sunum, sudir))
+            {
+               status = kRSING_sumcommitfailure;
+            }
          }
       }
       else
@@ -131,6 +143,17 @@ int DoIt(void)
          free(sudir);
          sudir = NULL;
       }
+   }
+
+   if (status == kRSING_success)
+   {
+      /* Tell DRMS that ingest was successful */
+      printf("1\n");
+   }
+   else
+   {
+      /* Tell DRMS that ingest was unsuccessful */
+      printf("-1\n"); 
    }
 
    return status;

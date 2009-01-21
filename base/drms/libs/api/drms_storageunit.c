@@ -1176,3 +1176,104 @@ const char *drms_su_getexportserver()
    /* XXX - for now, assume j0 */
    return "j0.stanford.edu";
 }
+
+#ifndef DRMS_CLIENT
+int drms_su_allocsu(DRMS_Env_t *env, 
+                    uint64_t size, 
+                    long long sunum, 
+                    char **sudir, 
+                    int *status)
+{
+   return drms_su_alloc2(env, size, sunum, sudir, status);
+}
+
+int drms_su_commitsu(DRMS_Env_t *env, 
+                     const char *seriesname, 
+                     long long sunum,
+                     const char *sudir)
+{
+  DRMS_SumRequest_t *request, *reply;
+  int actualarchive = 0;
+  DRMS_SeriesInfo_t *seriesinfo = NULL;
+  DRMS_Record_t *templaterec = NULL;
+  int drmsst = DRMS_SUCCESS;
+
+  templaterec = drms_template_record(env, seriesname, &drmsst);
+
+  if (templaterec)
+  {
+     seriesinfo = templaterec->seriesinfo;
+  }
+
+  if (seriesinfo)
+  {
+     if (env->archive != INT_MIN)
+     {
+        actualarchive = env->archive;
+     }
+     else
+     {
+        actualarchive = seriesinfo->archive;
+     }   
+
+     XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+     request->opcode = DRMS_SUMPUT;
+     request->dontwait = 0;
+     request->reqcnt = 1;
+     request->dsname = seriesinfo->seriesname;
+     request->group = seriesinfo->tapegroup;
+
+     if (actualarchive == 1) 
+     {
+        request->mode = ARCH + TOUCH;
+     }
+     else
+     {
+        request->mode = TEMP + TOUCH;
+     }
+
+     /* If the user doesn't override on the cmd-line, start with the jsd retention.  Otherwise, 
+      * start with the cmd-line value.  It doesn't matter if the value is positive or negative 
+      * since only the series owner can create a record in the first place.
+      */
+     if (env->retention == INT_MIN) 
+     {  
+        request->tdays = seriesinfo->retention;
+     }
+     else
+     {
+        request->tdays = env->retention; 
+     }
+
+     request->sunum[0] = sunum;
+     request->sudir[0] = sudir;
+     request->comment = NULL;
+
+     // must have sum_thread running already
+     XASSERT(env->sum_thread);
+
+     /* Submit request to sums server thread. */
+     tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
+
+     /* Wait for reply. FIXME: add timeout. */
+     tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
+
+     if (reply->opcode != 0) 
+     {
+        fprintf(stderr, "ERROR in drms_commitunit: SUM PUT failed with "
+                "error code %d.\n", reply->opcode);
+        free(reply);
+        drmsst = DRMS_ERROR_SUMPUT;
+     }
+
+     free(reply);
+  }
+  else
+  {
+     fprintf(stderr, "Unknown series '%s'.\n", seriesname);
+     drmsst = DRMS_ERROR_UNKNOWNSERIES;
+  }
+
+  return drmsst;
+}
+#endif // DRMS_CLIENT

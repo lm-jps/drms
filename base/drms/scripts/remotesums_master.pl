@@ -11,6 +11,14 @@
 # When calling this script from DRMS, print error messages to STDERR - STDOUT is redirected
 # to a pipe back to a parent process in DRMS.
 
+# The proper way to set up ssh-agent for use to obtain files from Stanford:
+#   First, create passphrased private (id_rsa)/public keys (id_rsa.pub) and place the 
+#   public key content in j0.stanford.edu's authorized_keys file. Then:
+#     ssh-agent -c > ~/.ssh-agent_rs
+#     source ~/.ssh-agent_rs
+#     ssh-add ~/.ssh/id_rsa (enter passphrase)
+#
+
 use CGI;
 
 # Global defines
@@ -27,6 +35,7 @@ my($kGETAPPOUT) = "/tmp/jsoc_export.$$";
 my($kGETAPPOFLAG) = "-O $kGETAPPOUT";
 my($kSIZECUTOFF) = 50331648; # 50MB
 my($kRSINGEST) = "remotesums_ingest";
+my($kAGENTFILE) = "$ENV{'HOME'}/.ssh-agent_rs";
 
 my($expURL);
 my($list);
@@ -331,45 +340,61 @@ if ($totsize > $kSIZECUTOFF)
 }
 else
 {
-    my($oneSU);
+    my($onesunum);
     my($oneseries);
+    my($first);
+    my($listsunums);
+    my($listpaths);
+    my($listseries);
+    my($inggood);
 
     # request is small - perform synchronously. 
+    $first = 1;
     while ($totcnt-- > 0)
     {
         # The array @reqsunums contains the requested SUNUMs. The array @reqseries contains
         # the requested series. The array @reqfiles contains paths to the SUNUMS in the 
         # remote SUMS.
-        $oneSU = shift(@reqfiles);
+        $onesunum = shift(@reqsunums);
+        $onepath = shift(@reqfiles);
         $oneseries = shift(@reqseries);
-        print STDERR "oneSU $oneSU, series $oneseries\n";
+        # print STDERR "oneSU $oneSU, series $oneseries\n";
         
-        
-
-        
-        
+        if (!$first)
+        {
+            $listsunums = ", $onesunum";
+            $listpaths = ", $onepath";
+            $listseries = ", $oneseries";
+        }
+        else
+        {
+            $listsunums = $onesunum;
+            $listpaths = $onepath;
+            $listseries = $oneseries;
+            $first = 0;
+        }
     }
 
-    # Call remotesums_ingest program - pass three parameters
+    # Call remotesums_ingest program - pass four parameters
     #   1. comma-separated list of sunums
     #   2. comma-separated list of supaths
     #   3. comma-separated list of series (may be redundant)
-    #if (defined(open(INGEST, "$kRSINGEST sus=$listsu paths=$listsupaths series=$listseries|")))
-    #{
-    #    
-    #}
-    #else
-    #{
-    #    print STDERR "Couldn't run remotesums_ingest.\n";
-    #    print "$RSERROR";
-    #}
+    #   4. path to ssh-agent configuration file
+    $cmd = "$kRSINGEST sunums=$listsunums paths=$listpaths series=$listseries agentfile=$kAGENTFILE";
+    print STDERR "$cmd\n";
+    #print "$kTRYLATER\n";
+    #exit;
 
-
-    # return the code that means "retry SUM_get()"
-    # print "$kTRYAGAIN\n";
-    print "$kTRYLATER\n";
+    # Run cmd - the ingest script is now responsible for writing the error code needed by DRMS
+    # to determine its next action (-1 error, 1 success - can't write 0 since the decision to 
+    # synchronously download has already been made).
+    if (system($cmd) != 0)
+    {
+        # cmd didn't run
+        print STDERR "Couldn't run remotesums_ingest.\n";
+        print "$kRSERROR\n";
+    }
 }
-
 
 exit;
 

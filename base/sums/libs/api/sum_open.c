@@ -261,8 +261,8 @@ int SUM_alloc2(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
   enum clnt_stat status;
 
   //!!TEMP until learn how to validate the given sunum
-  (*history)("!TEMP reject of SUM_alloc2() call until we can validate sunum\n");
-  return(1);
+  //(*history)("!TEMP reject of SUM_alloc2() call until we can validate sunum\n");
+  //return(1);
 
   if(sum->reqcnt != 1) {
     (*history)("Invalid reqcnt = %d for SUM_alloc2(). Can only alloc 1.\n",
