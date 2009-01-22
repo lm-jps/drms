@@ -835,7 +835,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
 
                  start = 0;
                  /* index of SU one past the last one to be processed */
-                 end = SUMIN(MAXSUMREQCNT, list_llgetnitems(retrysus)); 
+                 end = SUMIN(MAXSUMREQCNT, nretrySUNUMS); 
                  rsumssus = (DRMS_StorageUnit_t **)malloc(sizeof(DRMS_StorageUnit_t *) * nretrySUNUMS);
                  ListNode_t *node = NULL;
 
@@ -843,12 +843,17 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                  while (node = list_llgethead(retrysus))
                  {
                     onesu = (DRMS_StorageUnit_t *)malloc(sizeof(DRMS_StorageUnit_t));
-                    onesu->sunum = *((uint64_t *)(node->data));
+                    onesu->sunum = (*(DRMS_StorageUnit_t **)(node->data))->sunum;
                     *(onesu->sudir) = '\0';
                     rsumssus[isu] = onesu;
                     isu++;
                     list_llremove(retrysus, node);
                     list_llfreenode(&node);
+                 }
+
+                 if (retrysus)
+                 {
+                    list_llfree(&retrysus);
                  }
 
                  workingsus = rsumssus;
@@ -860,21 +865,30 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
      } /* code to set up parent/child and call remotesums_master.pl */
   } /* while - retry */
 
-  if (retrieve && retrysus && nretrySUNUMS > 0)
+  if (retrieve && rsumssus && nretrySUNUMS > 0)
   {
      /* Merge results of remotesums request with original su array */
-     for (isu = 0, iSUMSsunum = 0; isu < n; isu++, iSUMSsunum++)
+     for (isu = 0, iSUMSsunum = 0; isu < n; isu++)
      {
         if (strcmp(su[isu]->sudir, "rs") == 0)
         {
            /* This SUNUM was sent to remotesums. */
            snprintf(su[isu]->sudir, DRMS_MAXPATHLEN, "%s", rsumssus[iSUMSsunum]->sudir);
+           iSUMSsunum++;
         }
      }
   }
 
   if (rsumssus)
   {
+     for (isu = 0; isu < nretrySUNUMS; isu++)
+     {
+        if (rsumssus[isu])
+        {
+           free(rsumssus[isu]);
+        }
+     }
+
      free(rsumssus);
   }
 

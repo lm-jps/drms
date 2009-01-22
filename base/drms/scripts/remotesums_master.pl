@@ -33,7 +33,7 @@ my($kGETAPP) = "wget";
 my($kGETAPPFLAG) = "-nv";
 my($kGETAPPOUT) = "/tmp/jsoc_export.$$";
 my($kGETAPPOFLAG) = "-O $kGETAPPOUT";
-my($kSIZECUTOFF) = 50331648; # 50MB
+my($kSIZECUTOFF) = 134217728; # 128MB
 my($kRSINGEST) = "remotesums_ingest";
 my($kAGENTFILE) = "$ENV{'HOME'}/.ssh-agent_rs";
 
