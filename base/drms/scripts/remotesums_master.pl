@@ -58,6 +58,8 @@ my($cgiargs);
 my($cmd);
 my($line);
 
+# print STDERR "$ARGV[0]\n";
+
 # Get arguments
 if (scalar(@ARGV) != 1)
 {
@@ -100,6 +102,7 @@ my($gotsize) = 0;
 my($getpaths) = 0;
 my($totsize) = 0;
 my($totcnt) = 0;
+my($trylater) = 0;
 
 if (-e $kGETAPPOUT)
 {
@@ -127,6 +130,8 @@ while (defined($aurl = shift(@urls)) && defined($alist = shift(@lists)))
         
         $cgiargs = "op=$kOP&ds=$sunumlist&method=$kMETHOD&format=txt&protocol=$kPROTO";
         $cmd = "$kGETAPP $kGETAPPFLAG $kGETAPPOFLAG \"$aurl?$cgiargs\"";
+
+        # print STDERR "cmd: $cmd\n";
 
         # Download cgi url. This submits a request to jsoc_export_manage, which will
         # then call jsoc_export_SU_as_is, which writes the index.html file to
@@ -326,15 +331,18 @@ while (defined($aurl = shift(@urls)) && defined($alist = shift(@lists)))
     
 } # while item in sulists
 
-# Now is the time to determine if the SUs should be retrieve synchronously
-# or asynchronously. For now use the file size to determine that.
-if ($totsize > $kSIZECUTOFF)
+if ($totcnt > 0)
 {
-    # Request is too large to perform synchronously.
-    print "$kTRYLATER\n";
-}
-else
-{
+    # Now is the time to determine if the SUs should be retrieve synchronously
+    # or asynchronously. For now use the file size to determine that.
+    if ($totsize > $kSIZECUTOFF)
+    {
+        # Request is too large to perform synchronously.
+        # print STDERR "trying later, size is $totsize\n";
+        $trylater = 1;
+        print "$kTRYLATER\n";
+    }
+   
     my($onesunum);
     my($oneseries);
     my($first);
@@ -356,9 +364,9 @@ else
         
         if (!$first)
         {
-            $listsunums = ", $onesunum";
-            $listpaths = ", $onepath";
-            $listseries = ", $oneseries";
+            $listsunums = "$listsunums,$onesunum";
+            $listpaths = "$listpaths,$onepath";
+            $listseries = "$listseries,$oneseries";
         }
         else
         {
@@ -375,6 +383,10 @@ else
     #   3. comma-separated list of series (may be redundant)
     #   4. path to ssh-agent configuration file
     $cmd = "$kRSINGEST sunums=$listsunums paths=$listpaths series=$listseries agentfile=$kAGENTFILE";
+    if ($trylater)
+    {
+        $cmd = "$cmd &";
+    }
     # print STDERR "$cmd\n";
 
     # Run cmd - the ingest script is now responsible for writing the error code needed by DRMS
@@ -386,6 +398,11 @@ else
         print STDERR "Couldn't run remotesums_ingest.\n";
         print "$kRSERROR\n";
     }
+}
+else
+{
+    print STDERR "No requested storage units located on serving SUMS.\n";
+    print "$kRSERROR\n";
 }
 
 exit;

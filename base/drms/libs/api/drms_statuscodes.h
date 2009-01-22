@@ -111,6 +111,7 @@
 #define DRMS_ERROR_INVALIDCMDARGCONV      (-10065)
 #define DRMS_ERROR_RECORDSETSUBSET  (-10066)
 #define DRMS_ERROR_NOSEGMENT        (-10067)
+#define DRMS_ERROR_REMOTESUMSMASTER (-10068)
 
 /* not errors, but status codes */
 #define DRMS_CHUNKS_NOMORERECS       (-20000)

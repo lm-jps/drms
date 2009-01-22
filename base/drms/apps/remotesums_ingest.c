@@ -119,7 +119,7 @@ int DoIt(void)
              */
             snprintf(cmd, 
                      sizeof(cmd), 
-                     "tcsh -c \"source %s;scp -r '%s:%s/*' %s\"", 
+                     "tcsh -c \"source %s > /dev/null;scp -r '%s:%s/*' %s > /dev/null\"", 
                      agentfile,
                      server, 
                      apath, 

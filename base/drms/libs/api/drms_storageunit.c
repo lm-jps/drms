@@ -464,13 +464,21 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
               /* Read results from external program - either 0 (don't try again) or 1 (try again) */
               if (read(infd[0], rbuf, sizeof(rbuf)) > 0)
               {
+                 sscanf(rbuf, "%d", &tryagain);
+
                  /* Discard whatever else is being written to the pipe */
                  while (read(infd[0], rbuf, sizeof(rbuf)) > 0);
 
-                 sscanf(rbuf, "%d", &tryagain);
-                 if (!tryagain)
+                 if (tryagain == 0)
                  {
                     sustatus = DRMS_REMOTESUMS_TRYLATER;
+                 }
+                 else if (tryagain == -1)
+                 {
+                    /* error running remotesums_master.pl */
+                    sustatus = DRMS_ERROR_REMOTESUMSMASTER;
+                    tryagain = 0;
+                    fprintf(stderr, "Master remote SUMS script did not run properly.\n");
                  }
               }
               else
@@ -501,6 +509,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
   DRMS_StorageUnit_t **rsumssus = NULL;
   //LinkedList_t *retrysunums = NULL;
   LinkedList_t *retrysus = NULL;
+  int nretrySUNUMS = 0;
   int workingn;
   int tryagain;
   int natts;
@@ -546,6 +555,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
   {
      tryagain = 0;
 
+     /* Ask SUMS for ALL SUS in workingsus (in chunks of MAXSUMREQCNT) */
      while (start < workingn)
      {
         /* create SUMS request (apparently, SUMS frees this request) */
@@ -606,7 +616,6 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
            }
            else
            {
-              //retrysunums = list_llcreate(sizeof(uint64_t));
               retrysus = list_llcreate(sizeof(DRMS_StorageUnit_t *));
 
               for (isu = start, iSUMSsunum = 0; isu < end; isu++, iSUMSsunum++) 
@@ -635,7 +644,6 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                                                                                     * remotesums
                                                                                     * processing
                                                                                     */
-                    //list_llinserttail(retrysunums, &(workingsus[isu]->sunum));
                     list_llinserttail(retrysus, &(workingsus[isu]));
                  }
 
@@ -652,7 +660,6 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
 
      /* At this point, there may be some off-site SUNUMs - if so, run master script
       * and then retry. */
-     //if (natts < 2 && list_llgetnitems(retrysunums) > 0)
      if (natts < 2 && retrysus && list_llgetnitems(retrysus) > 0)
      {
         int infd[2];  /* child writes to this pipe */
@@ -671,7 +678,6 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
            /* iterate through each sunum */
            ListNode_t *node = NULL;
            DRMS_StorageUnit_t *rsu = NULL;
-           //HContainer_t *sulists = hcon_create(sizeof(SUList_t *), 128, NULL, NULL, NULL, NULL, 0);
            HContainer_t *sulists = hcon_create(sizeof(HContainer_t), 128, NULL, NULL, NULL, NULL, 0);
            char listbuf[128];
            char url[DRMS_MAXPATHLEN];
@@ -706,13 +712,14 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                     {
                        /* alist is the sname-specific sulist; append this sunum */
                        snprintf(listbuf, sizeof(listbuf), ",%lld", rsu->sunum);
-                       alist->str = base_strcatalloc(alist->str, listbuf, &(alist->size));   
+                       alist->str = base_strcatalloc(alist->str, listbuf, &(alist->size)); 
                     }
                     else
                     {
                        newlist = hcon_allocslot(acont, sname);
                        newlist->str = malloc(kSUNUMLISTSIZE);
                        newlist->size = kSUNUMLISTSIZE;
+                       memset(newlist->str, 0, kSUNUMLISTSIZE);
 
                        snprintf(listbuf, sizeof(listbuf), "%s=%s\\{%lld", url, sname, rsu->sunum);
                        newlist->str = base_strcatalloc(newlist->str, listbuf, &(newlist->size));
@@ -729,6 +736,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
 
                     newlist->str = malloc(kSUNUMLISTSIZE);
                     newlist->size = kSUNUMLISTSIZE;
+                    memset(newlist->str, 0, kSUNUMLISTSIZE);
 
                     snprintf(listbuf, sizeof(listbuf), "%s=%s\\{%lld", url, sname, rsu->sunum);
                     newlist->str = base_strcatalloc(newlist->str, listbuf, &(newlist->size));
@@ -738,6 +746,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
 
            /* Call external program; doesn't return - must be in path */
            sunumlist = (char *)malloc(kSUNUMLISTSIZE);
+           memset(sunumlist, 0, kSUNUMLISTSIZE);
 
            /* Make the lists of SUNUMs - one for each export URL */
            listsize = kSUNUMLISTSIZE;
@@ -787,6 +796,9 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
            }
 
            snprintf(cmd, sizeof(cmd), "%s %s", kEXTREMOTESUMS, sunumlist);
+
+           // fprintf(stderr, "cmd is %s\n", cmd);
+
            execl("/bin/tcsh", "tcsh", "-c", cmd, (char *)0);
 
            /* Execution never gets here. */
@@ -795,48 +807,60 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
         {
            /* parent - reads from pipe */
            close(infd[1]); /* close fd to write end of pipe */
-           dup2(infd[0], 0); /* redirect stdin to read end o fpipe */
-           close(infd[0]); /* close fd to read end of pipe; okay since stdin now points to 
-                            * read end of pipe */
 
            /* Read results from external program - either 0 (don't try again) or 1 (try again) */
            if (read(infd[0], rbuf, sizeof(rbuf)) > 0)
            {
+              sscanf(rbuf, "%d", &tryagain);
+
               /* Discard whatever else is being written to the pipe */
               while (read(infd[0], rbuf, sizeof(rbuf)) > 0);
 
-              sscanf(rbuf, "%d", &tryagain);
-              if (!tryagain)
+              if (tryagain == 0)
               {
                  sustatus = DRMS_REMOTESUMS_TRYLATER;
               }
+              else if (tryagain == -1)
+              {
+                 /* error running remotesums_master.pl */
+                 sustatus = DRMS_ERROR_REMOTESUMSMASTER;
+                 tryagain = 0;
+                 fprintf(stderr, "Master remote SUMS script did not run properly.\n");
+              }
+              else
+              {
+                 /* remotesums_master.pl worked - need to call SUM_get() one more time
+                  * with SUNUMS that failed originally */
+                 nretrySUNUMS = list_llgetnitems(retrysus);
+
+                 start = 0;
+                 /* index of SU one past the last one to be processed */
+                 end = SUMIN(MAXSUMREQCNT, list_llgetnitems(retrysus)); 
+                 rsumssus = (DRMS_StorageUnit_t **)malloc(sizeof(DRMS_StorageUnit_t *) * nretrySUNUMS);
+                 ListNode_t *node = NULL;
+
+                 isu = 0;
+                 while (node = list_llgethead(retrysus))
+                 {
+                    onesu = (DRMS_StorageUnit_t *)malloc(sizeof(DRMS_StorageUnit_t));
+                    onesu->sunum = *((uint64_t *)(node->data));
+                    *(onesu->sudir) = '\0';
+                    rsumssus[isu] = onesu;
+                    isu++;
+                    list_llremove(retrysus, node);
+                    list_llfreenode(&node);
+                 }
+
+                 workingsus = rsumssus;
+                 workingn = nretrySUNUMS;
+                 natts++;
+              }
            }
-        }
-        
-        start = 0;
-        /* index of SU one past the last one to be processed */
-        end = SUMIN(MAXSUMREQCNT, list_llgetnitems(retrysus)); 
-        rsumssus = (DRMS_StorageUnit_t **)malloc(sizeof(DRMS_StorageUnit_t *) * list_llgetnitems(retrysus));
-        ListNode_t *node = NULL;
-
-        isu = 0;
-        while (node = list_llgethead(retrysus))
-        {
-           onesu = (DRMS_StorageUnit_t *)malloc(sizeof(DRMS_StorageUnit_t));
-           onesu->sunum = *((uint64_t *)(node->data));
-           *(onesu->sudir) = '\0';
-           rsumssus[isu] = onesu;
-           isu++;
-           list_llremove(retrysus, node);
-           list_llfreenode(&node);
-        }
-
-        workingsus = rsumssus;
-        workingn = list_llgetnitems(retrysus);
-     }
+        } /* end parent*/
+     } /* code to set up parent/child and call remotesums_master.pl */
   } /* while - retry */
 
-  if (retrieve && retrysus && list_llgetnitems(retrysus) > 0)
+  if (retrieve && retrysus && nretrySUNUMS > 0)
   {
      /* Merge results of remotesums request with original su array */
      for (isu = 0, iSUMSsunum = 0; isu < n; isu++, iSUMSsunum++)
