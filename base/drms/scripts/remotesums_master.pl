@@ -58,8 +58,6 @@ my($cgiargs);
 my($cmd);
 my($line);
 
-print STDERR "$ARGV[0]\n";
-
 # Get arguments
 if (scalar(@ARGV) != 1)
 {
@@ -76,7 +74,7 @@ while (defined($subrequest = GetToken($arg, "\#")))
         $expURL = $1;
         $list = $2;
 
-        print STDERR "sunums for url $expURL: $list\n";
+        # print STDERR "sunums for url $expURL: $list\n";
 
         $sulists{$expURL} = $list;
     }
@@ -133,18 +131,15 @@ while (defined($aurl = shift(@urls)) && defined($alist = shift(@lists)))
         # Download cgi url. This submits a request to jsoc_export_manage, which will
         # then call jsoc_export_SU_as_is, which writes the index.html file to
         # the output directory. 
-        # print STDERR "$cmd.\n";
 
         `$cmd`;
         
         # Check status to ensure request was submitted properly.
         if (defined(open(RESPFILE, "<$kGETAPPOUT")))
         {
-            print STDERR "got response!\n";
             while (defined($line = <RESPFILE>) && 
                    (!$gotstatus || !$gotmethod || !$gotrequestid || !$gotcount || !$gotsize || $getpaths))
             {
-                print STDERR $line;
                 chomp($line);
 
                 if ($line =~ /status\s*=\s*(\d+)/i)
@@ -201,7 +196,7 @@ while (defined($aurl = shift(@urls)) && defined($alist = shift(@lists)))
                 
             } # while line in response file
 
-            print STDERR "status $gotstatus, method $gotmethod, reqid $gotrequestid, count $gotcount, size $gotsize\n";
+            # print STDERR "status $gotstatus, method $gotmethod, reqid $gotrequestid, count $gotcount, size $gotsize\n";
 
             if (!$gotstatus || !$gotmethod || !$gotrequestid || !$gotcount || !$gotsize)
             {
@@ -358,7 +353,6 @@ else
         $onesunum = shift(@reqsunums);
         $onepath = shift(@reqfiles);
         $oneseries = shift(@reqseries);
-        # print STDERR "oneSU $oneSU, series $oneseries\n";
         
         if (!$first)
         {
@@ -381,9 +375,7 @@ else
     #   3. comma-separated list of series (may be redundant)
     #   4. path to ssh-agent configuration file
     $cmd = "$kRSINGEST sunums=$listsunums paths=$listpaths series=$listseries agentfile=$kAGENTFILE";
-    print STDERR "$cmd\n";
-    #print "$kTRYLATER\n";
-    #exit;
+    # print STDERR "$cmd\n";
 
     # Run cmd - the ingest script is now responsible for writing the error code needed by DRMS
     # to determine its next action (-1 error, 1 success - can't write 0 since the decision to 

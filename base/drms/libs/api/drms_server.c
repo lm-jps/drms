@@ -685,6 +685,13 @@ void *drms_server_thread(void *arg)
       status = drms_server_getsudir(env, sockfd);
       drms_unlock_server(env);
       break;
+    case DRMS_GETSUDIRS:
+      if (env->verbose)
+        printf("thread %d: Executing DRMS_GETSUDIRS.\n",tnum);
+      drms_lock_server(env);
+      status = drms_server_getsudirs(env, sockfd);
+      drms_unlock_server(env);
+      break;
     case DRMS_NEWSERIES:
       if (env->verbose)
 	printf("thread %d: Executing DRMS_NEWSERIES.\n",tnum);
@@ -1017,6 +1024,68 @@ int drms_server_getsudir(DRMS_Env_t *env, int sockfd)
    
    send_string(sockfd, su.sudir);
    Writeint(sockfd, status);
+
+   if (status == DRMS_REMOTESUMS_TRYLATER)
+   {
+      return DRMS_SUCCESS;
+   }
+   else
+   {
+      return status;
+   }
+}
+
+int drms_server_getsudirs(DRMS_Env_t *env, int sockfd)
+{
+   DRMS_StorageUnit_t **su = NULL;
+   DRMS_StorageUnit_t *onesu = NULL;
+   int num;
+   int retrieve;
+   int dontwait;
+   int isu;
+   int status;
+   
+   num = Readint(sockfd);
+
+   su = malloc(sizeof(DRMS_StorageUnit_t *) * num);
+
+   for (isu = 0; isu < num; isu++)
+   {
+      su[isu] = (DRMS_StorageUnit_t *)malloc(sizeof(DRMS_StorageUnit_t));
+      onesu = su[isu];
+      onesu->sunum = Readlonglong(sockfd);
+      onesu->sudir[0] = '\0';
+      onesu->mode = DRMS_READONLY; 
+      onesu->nfree = 0;
+      onesu->state = NULL;
+      onesu->recnum = NULL;
+      onesu->refcount = 0;
+      onesu->seriesinfo = NULL;
+   }
+
+   retrieve = Readint(sockfd);
+   dontwait = Readint(sockfd);
+
+   status = drms_su_getsudirs(env, num, su, retrieve, dontwait);
+   
+   for (isu = 0; isu < num; isu++)
+   {
+      onesu = su[isu];
+      send_string(sockfd, onesu->sudir);
+   }
+
+   if (su)
+   {
+      for (isu = 0; isu < num; isu++)
+      {
+         if (su[isu])
+         {
+            free(su[isu]);
+         }
+      }
+
+      free(su);
+   }
 
    if (status == DRMS_REMOTESUMS_TRYLATER)
    {

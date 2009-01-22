@@ -325,40 +325,6 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
   DRMS_SumRequest_t *request, *reply;
   int tryagain;
   int natts;
-  XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
-  request->opcode = DRMS_SUMGET;
-  request->reqcnt = 1;
-  request->sunum[0] = su->sunum;
-  request->mode = NORETRIEVE + TOUCH;
-  if (retrieve) 
-    request->mode = RETRIEVE + TOUCH;
-
-  request->dontwait = 0;
-
-  /* If the user doesn't override on the cmd-line, use the standard retention (some small negative value).
-   * If the user specifies a negative value on the cmd-line, use that.  If the user specifies
-   * a positive value on the cmd-line and the user owns this series, use that value.  But if the
-   * user doesn't own this series multiply the positive value by -1.
-   */
-
-  if (env->retention==INT_MIN) 
-  {
-     request->tdays = STDRETENTION;
-     if (request->tdays > 0)
-     {
-        /* Since STDRETENTION can be customized, don't allow the definition of a positive number */
-        request->tdays *= -1;
-     }
-  }
-  else
-  {
-     request->tdays = env->retention;
-     if (request->tdays > 0 && 
-         (!su->seriesinfo || !drms_series_cancreaterecord(env, su->seriesinfo->seriesname)))
-     {
-        request->tdays *= -1;
-     }
-  }
 
   if (!env->sum_thread) {
     int status;
@@ -375,8 +341,46 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
   {
      tryagain = 0;
 
+     XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+     request->opcode = DRMS_SUMGET;
+     request->reqcnt = 1;
+     request->sunum[0] = su->sunum;
+     request->mode = NORETRIEVE + TOUCH;
+     if (retrieve) 
+       request->mode = RETRIEVE + TOUCH;
+
+     request->dontwait = 0;
+
+     /* If the user doesn't override on the cmd-line, use the standard retention (some small negative value).
+      * If the user specifies a negative value on the cmd-line, use that.  If the user specifies
+      * a positive value on the cmd-line and the user owns this series, use that value.  But if the
+      * user doesn't own this series multiply the positive value by -1.
+      */
+
+     if (env->retention==INT_MIN) 
+     {
+        request->tdays = STDRETENTION;
+        if (request->tdays > 0)
+        {
+           /* Since STDRETENTION can be customized, don't allow the definition of a positive number */
+           request->tdays *= -1;
+        }
+     }
+     else
+     {
+        request->tdays = env->retention;
+        if (request->tdays > 0 && 
+            (!su->seriesinfo || !drms_series_cancreaterecord(env, su->seriesinfo->seriesname)))
+        {
+           request->tdays *= -1;
+        }
+     }
+
      /* Submit request to sums server thread. */
      tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
+
+     /***** GAAAA! DON'T USE request AFTER THIS POINT - drms_sums_thread() frees it *****/
+
      /* Wait for reply. FIXME: add timeout. */
      tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
 
@@ -395,7 +399,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
            snprintf(su->sudir, sizeof(su->sudir), "%s", reply->sudir[0]);
            free(reply->sudir[0]);
         }
-        else if (retrieve && natts < 2 && drms_su_isremotesu(request->sunum[0]))
+        else if (retrieve && natts < 2 && drms_su_isremotesu(su->sunum))
         {
            /* This sudir is 
             * POSSIBLY owned by a remote sums.  We invoke remote
@@ -426,7 +430,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
               close(infd[1]); /* close fd to write end of pipe; okay since stdout now points to 
                                * write end of pipe */
 
-              if (!drms_su_getexportURL(request->sunum[0], url, sizeof(url)))
+              if (!drms_su_getexportURL(su->sunum, url, sizeof(url)))
               {
                  /* Call external program; doesn't return - must be in path */
                  char cmd[PATH_MAX];
@@ -438,7 +442,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
                           sizeof(listbuf), 
                           "%s\\{%lld\\}",
                           su->seriesinfo ? su->seriesinfo->seriesname : "unknown",
-                          (long long)request->sunum[0]);
+                          (long long)su->sunum);
                  sunumlist = base_strcatalloc(sunumlist, url, &listsize);
                  sunumlist = base_strcatalloc(sunumlist, "=", &listsize);
                  sunumlist = base_strcatalloc(sunumlist, listbuf, &listsize);
@@ -811,15 +815,11 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
         
         start = 0;
         /* index of SU one past the last one to be processed */
-        //end = SUMIN(MAXSUMREQCNT, list_llgetnitems(retrysunums)); 
         end = SUMIN(MAXSUMREQCNT, list_llgetnitems(retrysus)); 
-
-        //rsumssus = (DRMS_StorageUnit_t **)malloc(sizeof(DRMS_StorageUnit_t *) * list_llgetnitems(retrysunums));
         rsumssus = (DRMS_StorageUnit_t **)malloc(sizeof(DRMS_StorageUnit_t *) * list_llgetnitems(retrysus));
         ListNode_t *node = NULL;
 
         isu = 0;
-        //while (node = list_llgethead(retrysunums))
         while (node = list_llgethead(retrysus))
         {
            onesu = (DRMS_StorageUnit_t *)malloc(sizeof(DRMS_StorageUnit_t));
@@ -827,18 +827,15 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
            *(onesu->sudir) = '\0';
            rsumssus[isu] = onesu;
            isu++;
-           //list_llremove(retrysunums, node);
            list_llremove(retrysus, node);
            list_llfreenode(&node);
         }
 
         workingsus = rsumssus;
-        //workingn = list_llgetnitems(retrysunums);
         workingn = list_llgetnitems(retrysus);
      }
   } /* while - retry */
 
-  //if (retrieve && list_llgetnitems(retrysunums) > 0)
   if (retrieve && retrysus && list_llgetnitems(retrysus) > 0)
   {
      /* Merge results of remotesums request with original su array */
@@ -857,7 +854,6 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
      free(rsumssus);
   }
 
-  //list_llfree(&retrysunums);
   if (retrysus)
   {
      list_llfree(&retrysus);

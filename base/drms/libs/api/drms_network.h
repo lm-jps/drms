@@ -94,6 +94,8 @@ int drms_getunits(DRMS_Env_t *env,  char *series,
 
 int drms_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve);
 
+int drms_getsudirs(DRMS_Env_t *env, DRMS_StorageUnit_t **su, int num, int retrieve, int dontwait);
+
 /** \brief Request \c n recnum */
 long long *drms_alloc_recnum(DRMS_Env_t *env,  char *series, 
 			     DRMS_RecLifetime_t lifetime, int n);
@@ -207,4 +209,5 @@ int drms_series_canupdaterecord(DRMS_Env_t *env, const char *series);
 #define DRMS_GETTMPGUID            (21)
 #define DRMS_GETUNITS              (22)
 #define DRMS_GETSUDIR              (23)
+#define DRMS_GETSUDIRS             (24)
 #endif

@@ -1128,6 +1128,68 @@ int drms_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
    return status;
 }
 
+int drms_getsudirs(DRMS_Env_t *env, DRMS_StorageUnit_t **su, int num, int retrieve, int dontwait)
+{
+   int status = DRMS_SUCCESS;
+
+#ifdef DRMS_CLIENT
+   XASSERT(env->session->db_direct==0);
+#endif
+  
+#ifndef DRMS_CLIENT
+   /* Send a query to SUMS for the storage unit directory. */
+   status = drms_su_getsudirs(env, num, su, retrieve, dontwait);
+#else
+   {
+      char *sudir;
+      DRMS_StorageUnit_t *onesu = NULL;
+      int isu;
+
+      drms_send_commandcode(env->session->sockfd, DRMS_GETSUDIRS);
+      
+      /* Send SUNUM and retrieve */
+      /* The goal of this function is to write the storage unit directory into 
+       * the DRMS_StorageUnit_t passed into it. But we cannot pass the DRMS_StorageUnit_t *
+       * to drms_server since the latter is in a different process.
+       *
+       * So, just pass the essential bit of information - the SUNUM. In drms_server
+       * construct a DRMS_StorageUnit_t that contains this SUNUM, then 
+       * call drms_su_getsudir() with this  DRMS_StorageUnit_t.  drms_server
+       * will then pass the SUDIR back, and that will be stuffed into su.
+       */
+      Writeint(env->session->sockfd, num);
+      for (isu = 0; isu < num; isu++)
+      {
+         onesu = su[isu];
+         Writelonglong(env->session->sockfd, onesu->sunum);
+      }
+
+      Writeint(env->session->sockfd, retrieve);
+      Writeint(env->session->sockfd, dontwait);
+
+      status = Readint(env->session->sockfd);
+
+      for (isu = 0; isu < num; isu++)
+      {
+         onesu = su[isu];
+         sudir = receive_string(env->session->sockfd);
+
+         if (status == DRMS_SUCCESS)
+         {
+            snprintf(onesu->sudir, DRMS_MAXPATHLEN, "%s", sudir);
+         }
+         else if (status == DRMS_REMOTESUMS_TRYLATER)
+         {
+            *(onesu->sudir) = '\0';
+         }
+      }
+   }
+#endif
+
+   return status;
+}
+
+
 /* Client version. */
 int drms_newslots(DRMS_Env_t *env, int n, char *series, long long *recnum,
 		  DRMS_RecLifetime_t lifetime, int *slotnum, 
