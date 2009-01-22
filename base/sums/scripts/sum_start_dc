@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 #/home/production/cvs/JSOC/base/sums/scripts/sum_start
 #This is to start the sum_svc and related servers.
+#Call with -f to force a stop if needed.
 #
 $| = 1;                 #flush output as we go
 #$DB = "jsoc";		#the "real" db that production uses
@@ -26,6 +27,19 @@ if(($host ne $HOST0) && ($host ne $HOST1) && ($host ne $HOST2)) {
     print "But I'll allow $HOST3 for now\n";
   }
   else {
+    exit;
+  }
+}
+$forceflg = 0;
+$forcearg = "";
+while ($ARGV[0] =~ /^-/) {
+  $_ = shift;
+  if(/^-f(.*)/) {
+    $forceflg = 1;
+    $forcearg = "-f";
+  }
+  else {
+    print "Illegal switch\n";
     exit;
   }
 }
@@ -105,7 +119,7 @@ while($_ = shift(@ps_prod)) {
     while(<STDIN>) {
       chop($_);
       if(($_ eq "Y") || ($_ eq "y")) { 
-        $cmd = "sum_stop_dc";
+        $cmd = "sum_stop_dc $forcearg";
         if(system($cmd)) {
           print "Error: failure on sum_stop_dc\n";
           exit;
