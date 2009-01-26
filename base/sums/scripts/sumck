@@ -51,7 +51,7 @@ while(1) {
     $cmd = "echo \"No sum_svc\" | $mail $SENDMAILTO";
     system $cmd;
     #now restart the sum_svc and all related stuff 
-    $cmd = "echo 'y'; echo '.'; echo '.'; echo 'n' | sum_start_d02 -M";
+    $cmd = "echo 'y'; echo '.'; echo '.'; echo 'n' | sum_start_d02 -M -X";
     system $cmd;
     sleep(5);
   }
