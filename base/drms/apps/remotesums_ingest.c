@@ -17,8 +17,6 @@ scp -r 'j0:/SUM8/D2214195/D1829901/*' .
 #define kSUNUMS "sunums"
 #define kPATHS "paths"
 #define kSERIES "series"
-#define kAGENTFILE "agentfile"
-
 
 enum RSINGEST_stat_enum
 {
@@ -37,7 +35,6 @@ ModuleArgs_t module_args[] =
   {ARG_STRING, kSUNUMS, NULL, "comma-separated list of SUNUMs to ingest"},
   {ARG_STRING, kPATHS, NULL, "comma-separated list of paths to remote SUs to ingest"},
   {ARG_STRING, kSERIES, NULL, "comma-separated list of series owning the SUs"},
-  {ARG_STRING, kAGENTFILE, NULL, "ssh agent configuration file"},
   {ARG_END}
 };
 
@@ -59,13 +56,11 @@ int DoIt(void)
    char *lsunum = NULL;
    char *lpath = NULL;
    char *lseries = NULL;
-   char *agentfile = NULL;
    long long sunum;
 
    listsunums = cmdparams_get_str(&cmdparams, kSUNUMS, NULL);
    listpaths = cmdparams_get_str(&cmdparams, kPATHS, NULL);
    listseries = cmdparams_get_str(&cmdparams, kSERIES, NULL);
-   agentfile = cmdparams_get_str(&cmdparams, kAGENTFILE, NULL);
 
    /* loop through SUNUMs calling scp for each one */
    for (ansunum = strtok_r(listsunums, ",", &lsunum), 
@@ -108,19 +103,34 @@ int DoIt(void)
          {
             /* Create scp cmd - user running this module must have
              * started ssh-agent and added their private key to the
-             * agent's list of known keys. I believe that ssh-agent
+             * agent's list of known keys. ssh-agent
              * is user-specific - you can't use an ssh-agent started
              * by another user. Also, the site providing
              * the SUMS files must have the user's corresponding 
              * public key in its authorized_keys file. The user must 
              * have also sourced the ssh-agent environment variables
              * so that the local scp can find the user's private
-             * key.
+             * key. If remotesums_master.pl is used to launch
+             * this program, it will have ensured that ssh-agent
+             * is running.
+             *
+             * The plan is to identify a single "production" user per SUMS site -
+             * this user (eg. production_MPI) will have a user
+             * account at Stanford through which they can access
+             * j0.stanford.edu. Because ANY user can run a command
+             * that will execute the remotesums code, the remote site
+             * will need to funnel the scp cmd through a process
+             * run by this production user. In other
+             * words, because user Patrick cannot access j0, he must
+             * send his request to the production user, who can in turn
+             * pass on the request to j0.
+             * 
+             * XXX - For now, just do the scp cmd as whoever is running 
+             * this module.
              */
             snprintf(cmd, 
                      sizeof(cmd), 
-                     "tcsh -c \"source %s > /dev/null;scp -r '%s:%s/*' %s > /dev/null\"", 
-                     agentfile,
+                     "scp -r '%s:%s/*' %s > /dev/null", 
                      server, 
                      apath, 
                      sudir);

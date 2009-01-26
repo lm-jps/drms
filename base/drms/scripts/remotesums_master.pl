@@ -377,25 +377,91 @@ if ($totcnt > 0)
         }
     }
 
-    # Call remotesums_ingest program - pass four parameters
-    #   1. comma-separated list of sunums
-    #   2. comma-separated list of supaths
-    #   3. comma-separated list of series (may be redundant)
-    #   4. path to ssh-agent configuration file
-    $cmd = "$kRSINGEST sunums=$listsunums paths=$listpaths series=$listseries agentfile=$kAGENTFILE";
-    if ($trylater)
-    {
-        $cmd = "$cmd &";
-    }
-    # print STDERR "$cmd\n";
+    # setup the environment so that ssh will find the running ssh-agent program
+    my($agentfound) = 0;
 
-    # Run cmd - the ingest script is now responsible for writing the error code needed by DRMS
-    # to determine its next action (-1 error, 1 success - can't write 0 since the decision to 
-    # synchronously download has already been made).
-    if (system($cmd) != 0)
+    if (-e $kAGENTFILE)
     {
-        # cmd didn't run
-        print STDERR "Couldn't run remotesums_ingest.\n";
+        local %ENV = %ENV;
+
+        my($agentpid) = 0;
+        my($agentcmd);
+
+        open(SSHCONF, "<$kAGENTFILE");
+        while($line = <SSHCONF>)
+        {
+            chomp($line);
+
+            if ($line =~ /^setenv\s+(.+)\s+(.+);/)
+            {
+                # C shell
+                $ENV{$1} = $2;
+            }
+            elsif ($line =~ /^(.+)=(.+);\s+/)
+            {
+                # Bourne shell
+                $ENV{$1} = $2;
+            }
+        }
+
+        $agentpid = $ENV{'SSH_AGENT_PID'};
+        
+        if (defined($agentpid))
+        {
+            # $agentlink = readlink("/proc/$agentpid/exe");
+            #
+            # can't do what you'd like to do (read the link and see that it points to
+            # the ssh-agent process file) - only root can do that.
+            # Not sure why.  For other processes, you can read the links in /proc, and
+            # for links to ssh-agent outside of /proc, you can read the links.
+            # You can't even do if (-e "/proc/$agentpid/exe").
+            #
+            # You can look at /proc/$agentpid/cmdline though.
+            
+            $agentcmd = "/proc/$agentpid/cmdline";
+
+            if (-e $agentcmd)
+            {
+                $agentcmd = `cat $agentcmd`;
+                
+                if (defined($agentcmd))
+                {
+                    if ($agentcmd =~ /ssh-agent/)
+                    {
+                        $agentfound = 1;
+                    }
+                }
+            }
+        }
+    }
+    
+    if ($agentfound)
+    {
+        # Call remotesums_ingest program - pass four parameters
+        #   1. comma-separated list of sunums
+        #   2. comma-separated list of supaths
+        #   3. comma-separated list of series (may be redundant)
+        #   4. path to ssh-agent configuration file
+        $cmd = "$kRSINGEST sunums=$listsunums paths=$listpaths series=$listseries";
+        if ($trylater)
+        {
+            $cmd = "$cmd &";
+        }
+        # print STDERR "$cmd\n";
+
+        # Run cmd - the ingest script is now responsible for writing the error code needed by DRMS
+        # to determine its next action (-1 error, 1 success - can't write 0 since the decision to 
+        # synchronously download has already been made).
+        if (system($cmd) != 0)
+        {
+            # cmd didn't run
+            print STDERR "Couldn't run remotesums_ingest.\n";
+            print "$kRSERROR\n";
+        }
+    }
+    else
+    {
+        print STDERR "ssh-agent not running.\n";
         print "$kRSERROR\n";
     }
 }
