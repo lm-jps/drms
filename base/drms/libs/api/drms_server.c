@@ -1277,16 +1277,16 @@ int drms_server_dropseries_su(DRMS_Env_t *env, char *tn) {
   if (rs && rs->n > 0)
   {
      /* what are the SUNUMs? */
-     sunums = malloc(sizeof(uint64_t) * nsus + 2); /* add an extra for potential null terminator */
+     sunums = malloc(sizeof(uint64_t) * (nsus + 1)); /* add an extra for potential null terminator */
 
      while ((rec = drms_recordset_fetchnext(env, rs, &drmsstatus)) != NULL)
      {
         if (rec->sunum != -1)
         {
-           if (isu > nsus)
+           if (isu >= nsus)
            {
               nsus = (nsus + 1) * 2 - 1;
-              sunums = realloc(sunums, sizeof(uint64_t) * nsus + 2); /* add an extra for 
+              sunums = realloc(sunums, sizeof(uint64_t) * (nsus + 1)); /* add an extra for 
                                                                       * potential null terminator */
            }
        
