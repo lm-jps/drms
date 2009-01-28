@@ -17,10 +17,13 @@ scp -r 'j0:/SUM8/D2214195/D1829901/*' .
 #define kSUNUMS "sunums"
 #define kPATHS "paths"
 #define kSERIES "series"
+#define kSEP1 "://"
+#define kSEP2 ":"
 
 enum RSINGEST_stat_enum
 {
    kRSING_success = 0,
+   kRSING_badparma,
    kRSING_sumallocfailure,
    kRSING_sumcommitfailure,
    kRSING_failure
@@ -48,7 +51,10 @@ int DoIt(void)
    char query[DRMS_MAXQUERYLEN];
    int drmsst;
    DRMS_RecordSet_t *rs = NULL;
-   const char *server = NULL;
+   char serverstr[512];
+   char *server = NULL;
+   char *servermeth = NULL;
+   char *serverport = NULL;
    char *sudir = NULL;
    char *ansunum;
    char *apath;
@@ -97,9 +103,7 @@ int DoIt(void)
                            &sudir, 
                            NULL))
       {
-         server = drms_su_getexportserver();
-
-         if (server && sudir)
+         if (sudir && !drms_su_getexportserver(drms_env, serverstr, sizeof(serverstr)))
          {
             /* Create scp cmd - user running this module must have
              * started ssh-agent and added their private key to the
@@ -128,18 +132,50 @@ int DoIt(void)
              * XXX - For now, just do the scp cmd as whoever is running 
              * this module.
              */
-            snprintf(cmd, 
-                     sizeof(cmd), 
-                     "scp -r '%s:%s/*' %s > /dev/null", 
-                     server, 
-                     apath, 
-                     sudir);
-            system(cmd); /* doesn't return until child terminates */
 
-            /* commit the newly allocated SU */
-            if (drms_su_commitsu(drms_env, aseries, sunum, sudir))
+            /* parse serverstr -> scp://jsoc_export@j0.stanford.edu/:55000 */
+            char *tmp = strdup(serverstr);
+            status = kRSING_badparma;
+
+            server = strstr(tmp, kSEP1);
+            if (server)
             {
-               status = kRSING_sumcommitfailure;
+               *server = '\0';
+               servermeth = tmp;
+               server += 3;
+               serverport = strstr(server, kSEP2);
+
+               if (serverport)
+               {
+                  *serverport = '\0';
+                  serverport++;
+
+                  status = kRSING_success;
+               }
+            }
+
+            if (status == kRSING_success)
+            {
+               snprintf(cmd, 
+                        sizeof(cmd), 
+                        "%s -r -P %s '%s:%s/*' %s > /dev/null", 
+                        servermeth,
+                        serverport,
+                        server, 
+                        apath, 
+                        sudir);
+               system(cmd); /* doesn't return until child terminates */
+
+               if (tmp)
+               {
+                  free(tmp);
+               }
+
+               /* commit the newly allocated SU */
+               if (drms_su_commitsu(drms_env, aseries, sunum, sudir))
+               {
+                  status = kRSING_sumcommitfailure;
+               }
             }
          }
       }
@@ -153,7 +189,14 @@ int DoIt(void)
          free(sudir);
          sudir = NULL;
       }
-   }
+
+      if (status != kRSING_success)
+      {
+         /* We skip and continue with the next SU on error. */
+         fprintf(stderr, "Error '%d' transfering storage unit %lld; skipping.\n", (int)status, sunum);
+         status = kRSING_success;
+      }
+   } /* su loop */
 
    if (status == kRSING_success)
    {

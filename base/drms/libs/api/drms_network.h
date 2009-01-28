@@ -210,4 +210,6 @@ int drms_series_canupdaterecord(DRMS_Env_t *env, const char *series);
 #define DRMS_GETUNITS              (22)
 #define DRMS_GETSUDIR              (23)
 #define DRMS_GETSUDIRS             (24)
+#define DRMS_SITEINFO              (25)
+#define DRMS_LOCALSITEINFO         (26)
 #endif

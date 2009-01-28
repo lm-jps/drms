@@ -5,6 +5,15 @@
 #include "xmem.h"
 #include "util.h"
 
+#ifdef DRMS_CLIENT
+#define DEFS_CLIENT
+#endif
+#include "drmssite_info.h"
+
+#ifdef DEFS_CLIENT
+#undef DEFS_CLIENT
+#endif
+
 #define SUMIN(a,b)  ((a) > (b) ? (b) : (a))
 #ifdef DRMS_DEFAULT_RETENTION
   #define STDRETENTION DRMS_DEFAULT_RETENTION
@@ -430,7 +439,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
               close(infd[1]); /* close fd to write end of pipe; okay since stdout now points to 
                                * write end of pipe */
 
-              if (!drms_su_getexportURL(su->sunum, url, sizeof(url)))
+              if (!drms_su_getexportURL(env, su->sunum, url, sizeof(url)))
               {
                  /* Call external program; doesn't return - must be in path */
                  char cmd[PATH_MAX];
@@ -698,7 +707,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
            {
               rsu = *((DRMS_StorageUnit_t **)(node->data));
               char *sname = rsu->seriesinfo ? rsu->seriesinfo->seriesname : "unknown";
-              if (!drms_su_getexportURL(rsu->sunum, url, sizeof(url)))
+              if (!drms_su_getexportURL(env, rsu->sunum, url, sizeof(url)))
               {
                  /* Each exportURL contains one or more series, and each series contains
                   * one or more SUNUMs. So sulists is a container of (expURLs, series container), and
@@ -1194,21 +1203,68 @@ DRMS_StorageUnit_t *drms_su_markslot(DRMS_Env_t *env, char *series,
 
 int drms_su_isremotesu(long long sunum)
 {
-   /* XXX - for now, assume that if you're asking this question, then it is remote. */
-   return 1;
+   return !drmssite_sunum_is_local((unsigned long long)sunum);
 }
 
-int drms_su_getexportURL(long long sunum, char *url, int size)
+int drms_su_getexportURL(DRMS_Env_t *env, long long sunum, char *url, int size)
 {
-   /* XXX - for now, assume that the owner of the "remote" sunum is Stanford */
-   snprintf(url, size, "http://jsoc.stanford.edu/cgi-bin/ajax/jsoc_fetch");
-   return 0;
+   int ret = 0;
+   DRMSSiteInfo_t *info = NULL;
+
+#ifdef DRMS_CLIENT
+   /* drms_server will communicate with this client via the socket connection.
+    * drmssite_info_from_sunum() will call db_client_query_txt() three times,
+    * and drmssite_server_siteinfo() will respond by calling db_query_txt() three times.
+    */
+   drms_send_commandcode(env->session->sockfd, DRMS_SITEINFO);
+   ret = drmssite_client_info_from_sunum((unsigned long long)sunum, 
+                                         env->session->sockfd,
+                                         &info);
+#else
+   ret = drmssite_server_info_from_sunum((unsigned long long)sunum, 
+                                         env->session->db_handle,
+                                         &info);
+#endif
+   
+   if (!ret && info)
+   {
+      snprintf(url, size, "%s", info->request_URL);
+      drmssite_freeinfo(&info);
+   }
+   else
+   {
+      ret = 1;
+   }
+
+   return ret;
 }
 
-const char *drms_su_getexportserver()
+int drms_su_getexportserver(DRMS_Env_t *env, char *expserver, int size)
 {
-   /* XXX - for now, assume j0 */
-   return "j0.stanford.edu";
+   int ret = 0;
+   DRMSSiteInfo_t *info = NULL;
+
+#ifdef DRMS_CLIENT
+   drms_send_commandcode(env->session->sockfd, DRMS_LOCALSITEINFO);
+   ret = drmssite_client_getlocalinfo(env->session->sockfd, &info);
+#else
+   ret = drmssite_server_getlocalinfo(env->session->db_handle, &info);
+#endif
+
+
+   /* info->SUMS_URL: scp://jsoc_export@j0.stanford.edu/:55000 */
+
+   if (!ret && info)
+   {
+      snprintf(expserver, size, "%s", info->SUMS_URL);
+      drmssite_freeinfo(&info);
+   }
+   else
+   {
+      ret = 1;
+   }
+
+   return ret;
 }
 
 #ifndef DRMS_CLIENT

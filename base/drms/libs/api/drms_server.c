@@ -711,6 +711,16 @@ void *drms_server_thread(void *arg)
       drms_server_gettmpguid(&sockfd);
       drms_unlock_server(env);
       break;
+    case DRMS_SITEINFO:
+      drms_lock_server(env);
+      drmssite_server_siteinfo(sockfd, db_handle);
+      drms_unlock_server(env);
+      break;
+    case DRMS_LOCALSITEINFO:
+      drms_lock_server(env);
+      drmssite_server_localsiteinfo(sockfd, db_handle);
+      drms_unlock_server(env);
+      break;
     default:
       fprintf(stderr,"Error: Unknown command code '%d'\n",command);
     }
