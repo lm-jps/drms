@@ -125,6 +125,10 @@ ifneq ($(DRMS_DEFAULT_RETENTION),)
 	CUSTOMSW := $(CUSTOMSW) -DDRMS_DEFAULT_RETENTION=$(DRMS_DEFAULT_RETENTION)
 endif
 
+ifneq ($(CUSTOM_DEFINES),)
+CUSTOMSW := $(CUSTOMSW) -D"\"$(__LOCALIZED_DEFS__)\""
+endif
+
 ### Build flags for all targets
 #
 LL_ALL		= $(SYSLIBS)
