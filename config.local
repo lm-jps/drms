@@ -1,0 +1,32 @@
+# NetDRMS local site configuration info
+# edit the values in the second column of each line in this file to reflect
+#   the values appropriate to your site
+
+# the user name of the postgres administrative account; normally "postgres"
+#   if you have followed the PostgreSQL installation suggestions
+POSTGRES_ADMIN	postgres
+
+# the host name of the default database server you will be accessing; you
+#   should include the internet domain (e.g. host.subnet.net) if the server is
+#   not on your subnet; but if it is on your subnet it may be better not to
+DBSERVER_HOST	localhost
+
+# the name of the NetDRMS database; the SUMS database will be assumed to
+#   have the same name with "_sums" appended
+DRMS_DATABASE	mydb
+
+# a 15-bit numerical site identifier; values < 16384 (0x4000) are for
+#   publicly exporting sites, and must be registered to assure uniqueness
+DRMS_SITE_CODE	0x4000
+
+# a sample namespace appropriate to your site; this is only used for a
+#   couple of database initialization scripts and is not too important
+DRMS_SAMPLE_NAMESPACE	drms
+
+# the user name of the SUMS administrator account
+SUMS_MANAGER	production
+
+# the base directory for SUMS logs; should be (but is not yet) used by
+#    base/sums/apps/sum_svc.c, which uses the default value
+SUMS_LOG_BASEDIR	/usr/local/logs/SUM
+
