@@ -155,7 +155,7 @@ ln -s $SCRIPT include/localization.h
 echo "*** linking third-party libs and includes ***"
 set JSOC_MACHINE = `build/jsoc_machine.csh`
 ln -sfv $THIRD_PARTY_INCS lib_third_party/include
-if (!(-d lib)) mkdir lib
+if (!(-d lib_third_party/lib)) mkdir lib_third_party/lib
 ln -sfv $THIRD_PARTY_LIBS lib_third_party/lib/$JSOC_MACHINE
 
 
