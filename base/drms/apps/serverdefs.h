@@ -7,7 +7,7 @@
 #define __SERVERDEFS_H
 
 #ifdef __LOCALIZED_DEFS__
-  #include localization.h
+#include "localization.h"
 #else
 /* Stanford defs */
 /** \brief default dbhost */
