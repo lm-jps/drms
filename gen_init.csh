@@ -12,6 +12,7 @@ endif
 
 # parse the local config file
 
+set LOCAL_CONFIG_SET = `egrep "^LOCAL_CONFIG_SET" $LOCALINF | awk '{print $2}'`
 set POSTGRES_ADMIN = `egrep "^POSTGRES_ADMIN" $LOCALINF | awk '{print $2}'`
 set DBSERVER_HOST = `egrep "^DBSERVER_HOST" $LOCALINF | awk '{print $2}'`
 set DRMS_DATABASE = `egrep "^DRMS_DATABASE" $LOCALINF | awk '{print $2}'`
@@ -19,7 +20,17 @@ set DRMS_SITE_CODE = `egrep "^DRMS_SITE_CODE" $LOCALINF | awk '{print $2}'`
 set DRMS_SAMPLE_NAMESPACE = `egrep "^DRMS_SAMPLE_NAMESPACE" $LOCALINF | awk '{print $2}'`
 set SUMS_LOG_BASEDIR = `egrep "^SUMS_LOG_BASEDIR" $LOCALINF | awk '{print $2}'`
 set SUMS_MANAGER = `egrep "^SUMS_MANAGER" $LOCALINF | awk '{print $2}'`
-set DEBUG_INFO = `egrep "^DEBUG_INFO" $LOCALINF | awk '{print $2}'`
+set THIRD_PARTY_LIBS = `egrep "^THIRD_PARTY_LIBS" $LOCALINF | awk '{print $2}'`
+set THIRD_PARTY_INCS = `egrep "^THIRD_PARTY_INCS" $LOCALINF | awk '{print $2}'`
+
+# check that local config file has been edited appropriately
+if ($#LOCAL_CONFIG_SET == 1) then
+  if ($LOCAL_CONFIG_SET =~ "NO") then
+    echo "Error: local configuration file $LOCALINF must be edited"
+    echo "  After editing the file appropriately, rerun this script ($0)"
+    exit
+  endif
+endif
 
 if ($#POSTGRES_ADMIN != 1) then
   echo "Error: POSTGRES_ADMIN undefined in local configuration file $LOCALINF"
@@ -47,6 +58,14 @@ if ($#SUMS_LOG_BASEDIR != 1) then
 endif
 if ($#SUMS_MANAGER != 1) then
   echo "Error: SUMS_MANAGER undefined in local configuration file $LOCALINF"
+  exit
+endif
+if ($#THIRD_PARTY_LIBS != 1) then
+  echo "Error: THIRD_PARTY_LIBS undefined in local configuration file $LOCALINF"
+  exit
+endif
+if ($#THIRD_PARTY_INCS != 1) then
+  echo "Error: THIRD_PARTY_INCS undefined in local configuration file $LOCALINF"
   exit
 endif
 
@@ -116,7 +135,7 @@ else
 endif
 
 # generate file localization.h
-set SCRIPT = include/localization.h
+set SCRIPT = base/include/localization.h
 echo "*** generating $SCRIPT ***"
 cat /dev/null > $SCRIPT
 echo '#ifndef __LOCALIZATION_H' >> $SCRIPT
@@ -129,4 +148,14 @@ echo '#define USER			NULL' >> $SCRIPT
 echo '#define PASSWD			NULL' >> $SCRIPT
 echo '#define SUMLOG_BASEDIR		"'$SUMS_LOG_BASEDIR'"' >> $SCRIPT
 echo '#endif' >> $SCRIPT
+
+ln -s $SCRIPT include/localization.h
+
+# make third-party links
+echo "*** linking third-party libs and includes ***"
+set JSOC_MACHINE = `build/jsoc_machine.csh`
+ln -sfv $THIRD_PARTY_INCS lib_third_party/include
+if (!(-d lib)) mkdir lib
+ln -sfv $THIRD_PARTY_LIBS lib_third_party/lib/$JSOC_MACHINE
+
 

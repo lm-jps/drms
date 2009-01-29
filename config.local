@@ -2,6 +2,10 @@
 # edit the values in the second column of each line in this file to reflect
 #   the values appropriate to your site
 
+# a marker to indicate whether this file has been checked/edited. You MUST
+# either change its value to yes (or anything but NO) or comment it out.
+LOCAL_CONFIG_SET	NO
+
 # the user name of the postgres administrative account; normally "postgres"
 #   if you have followed the PostgreSQL installation suggestions
 POSTGRES_ADMIN	postgres
@@ -30,3 +34,9 @@ SUMS_MANAGER	production
 #    base/sums/apps/sum_svc.c, which uses the default value
 SUMS_LOG_BASEDIR	/usr/local/logs/SUM
 
+# the location of third-party libraries (especially cfitsio, which is required,
+#   also others that may be used for modules such as fftw, gsl, etc.)
+THIRD_PARTY_LIBS	/usr/local/lib
+
+# the location of third-party library include files (currently ignored)
+THIRD_PARTY_INCS	/usr/local/include
