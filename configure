@@ -221,7 +221,7 @@ if ($CHKLIBS == "no") then
 	    #ln -sfv /usr/local/include include
             #if (!(-d lib)) mkdir lib
 	    #ln -sfv /usr/local/lib lib/$JSOC_MACHINE
-	#endif
+	endif
 
 	set TPWARN = 0
 
