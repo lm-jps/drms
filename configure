@@ -355,5 +355,6 @@ endif
 
 # Call gen_init.csh to generate localized scripts and localization.h
 if (!(-e suflag.txt)) then
+    echo "CUSTOM_DEFINES = __LOCALIZED_DEFS__" >> custom.mk
     ./gen_init.csh
 endif
