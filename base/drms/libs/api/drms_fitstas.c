@@ -13,50 +13,40 @@ int drms_fitstas_create(const char *filename,
 {
    int status = DRMS_SUCCESS;
    CFITSIO_IMAGE_INFO info;
-   DRMS_Array_t *arr = NULL;
+   DRMS_Array_t arr;
+   memset(&arr, 0, sizeof(DRMS_Array_t));
 
    if (type != DRMS_TYPE_RAW)
    {
-      arr = drms_array_create(type, naxis, axis, NULL, &status);
+      arr.type = type;
+      arr.naxis = naxis;
+      memcpy(arr.axis, axis, sizeof(int) * naxis);
+      arr.bzero = bzero;
+      arr.bscale = bscale;
 
-      if (status == DRMS_SUCCESS)
+      /* If bzero == 0.0 and bscale == 1.0, then the TAS file has physical units 
+       * (data are NOT 'raw'). */
+      if (bzero == 0.0 && bscale == 1.0)
       {
-         arr->bzero = bzero;
-         arr->bscale = bscale;
-
-         /* If bzero == 0.0 and bscale == 1.0, then the TAS file has physical units 
-          * (data are NOT 'raw'). */
-         if (bzero == 0.0 && bscale == 1.0)
-         {
-            arr->israw = 0;
-         }
-         else
-         {
-            arr->israw = 1;
-         }
-
-         drms_array2missing(arr);
-
-         if (!drms_fitsrw_SetImageInfo(arr, &info))
-         {
-            if (cfitsio_write_file(filename, &info, arr->data, comp, NULL) != CFITSIO_SUCCESS)
-            {
-               fprintf(stderr, "Couldn't create FITS TAS file '%s'.\n", filename); 
-               status = DRMS_ERROR_CANTCREATETASFILE;
-            }
-         }
-         else
-         {
-            fprintf(stderr, "Couldn't create empty FITS TAS file array.\n"); 
-            status = DRMS_ERROR_CANTCREATETASFILE;
-         }
-
-         drms_free_array(arr);
+         arr.israw = 0;
       }
       else
       {
-         fprintf(stderr, "Couldn't create FITS TAS file array.\n"); 
-         status = DRMS_ERROR_ARRAYCREATEFAILED;
+         arr.israw = 1;
+      }
+
+      if (!drms_fitsrw_SetImageInfo(&arr, &info))
+      {
+         if (cfitsio_write_file(filename, &info, NULL, comp, NULL) != CFITSIO_SUCCESS)
+         {
+            fprintf(stderr, "Couldn't create FITS TAS file '%s'.\n", filename); 
+            status = DRMS_ERROR_CANTCREATETASFILE;
+         }
+      }
+      else
+      {
+         fprintf(stderr, "Couldn't set FITS TAS file image info.\n"); 
+         status = DRMS_ERROR_CANTCREATETASFILE;
       }
    }
    else

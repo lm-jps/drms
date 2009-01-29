@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include "fitsio.h"
 #include "cfitsio.h"
+#include "jsoc.h"
+#include "foundation.h"
 
 //****************************************************************************
 
@@ -25,6 +27,8 @@ const unsigned int kInfoPresent_EXTEND = 0x00000002;
 const unsigned int kInfoPresent_BLANK  = 0x00000004;
 const unsigned int kInfoPresent_BSCALE = 0x00000008;
 const unsigned int kInfoPresent_BZERO  = 0x00000010;
+
+#define kMISSPIXBLOCK 1310720 /* 10 MB of long long */
 
 /* Half-assed - just enough to get past a bug.  Should really check that the value
  * doesn't fall outside the range of the destination type.
@@ -1077,8 +1081,13 @@ int cfitsio_write_file(const char* fits_filename,
 
    int i = 0;
 
+   void *misspix = NULL;
+   long long pixleft;
+   long long pixtowrt;
+   long long pixptr;
+
    // image_info contain the image dimensions, can not be missing
-   if(image_info == NULL || image == NULL) return CFITSIO_ERROR_ARGS;
+   if(image_info == NULL) return CFITSIO_ERROR_ARGS;
    
    
    for (i = 0, npixels = 1; i < image_info->naxis; i++)
@@ -1237,12 +1246,104 @@ int cfitsio_write_file(const char* fits_filename,
                                         * modify the data. */
    
   
-   if(fits_write_img(fptr, data_type, 1, npixels, image, &status))
+   if (image)
    {
-      error_code = CFITSIO_ERROR_LIBRARY;
-      goto error_exit;
+      if(fits_write_img(fptr, data_type, 1, npixels, image, &status))
+      {
+         error_code = CFITSIO_ERROR_LIBRARY;
+         goto error_exit;
+      }
    }
-  
+   else
+   {
+      /* If you avoid writing an image, then fitsio fills in all unspecified values 
+       * with zeros, which is not what we want. Instead, we need to allocate 
+       * blocks of missing values and write them out one at a time (we don't
+       * want to allocate ALL values - this could be a huge amount of memory). 
+       * We need to write out npixels missing values. */
+
+      /* If no image, let fitsio create an "empty" image - ensure that the 
+       * correct blank value is used (use the one passed into this function). */
+      if (image_info->bitpix == FLOAT_IMG)
+      {
+         /* need to manually use NaN */
+         float *pix = 0;
+         int ipix;
+
+         misspix = malloc(kMISSPIXBLOCK * sizeof(float));
+         pix = misspix;
+
+         for (ipix = 0; ipix < kMISSPIXBLOCK; ipix++)
+         {
+            *pix++ = F_NAN;
+         }
+      }
+      else if (image_info->bitpix == DOUBLE_IMG)
+      {
+         /* need to manually use NaN */
+         double *pix = 0;
+         int ipix;
+
+         misspix = malloc(kMISSPIXBLOCK * sizeof(double));
+         pix = misspix;
+
+         for (ipix = 0; ipix < kMISSPIXBLOCK; ipix++)
+         {
+            *pix++ = D_NAN;
+         }
+      }
+      else if (image_info->bitpix == BYTE_IMG)
+      {
+         /* use the value of oblank */
+         misspix = malloc(kMISSPIXBLOCK * sizeof(char));
+         memset(misspix, (char)oblank, kMISSPIXBLOCK);
+      }
+      else if (image_info->bitpix == SHORT_IMG)
+      {
+         /* use the value of oblank */
+         misspix = malloc(kMISSPIXBLOCK * sizeof(short));
+         memset(misspix, (short)oblank, kMISSPIXBLOCK);
+      }
+      else if (image_info->bitpix == LONG_IMG)
+      {
+         /* use the value of oblank */
+         misspix = malloc(kMISSPIXBLOCK * sizeof(int));
+         memset(misspix, (int)oblank, kMISSPIXBLOCK);
+      }
+      else if (image_info->bitpix == LONGLONG_IMG)
+      {
+         /* use the value of oblank */
+         misspix = malloc(kMISSPIXBLOCK * sizeof(long long));
+         memset(misspix, (long long)oblank, kMISSPIXBLOCK);
+      }
+
+      pixleft = npixels;
+      pixtowrt = 0;
+      pixptr = 0;
+
+      while(pixleft > 0)
+      {
+         pixtowrt = pixleft > kMISSPIXBLOCK ? kMISSPIXBLOCK : pixleft;
+         if(fits_write_img(fptr, 
+                           data_type, 
+                           1 + pixptr, /* 1-based first pixel location in image on file */
+                           pixtowrt, 
+                           misspix, 
+                           &status))
+         {
+            error_code = CFITSIO_ERROR_LIBRARY;
+            goto error_exit;
+         }
+
+         pixleft -= pixtowrt;
+         pixptr += pixtowrt;
+      }
+
+      if (misspix)
+      {
+         free(misspix);
+      }
+   }
 	
    fits_close_file(fptr, &status);
 
