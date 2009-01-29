@@ -33,6 +33,7 @@
 #include <tape.h>
 #include <printk.h>
 #include <unistd.h>
+#include "serverdefs.h"
 
 extern PART ptabx[]; 	/* defined in SUMLIB_PavailRequest.pgc */
 
@@ -215,7 +216,7 @@ void setup()
   sprintf(thishost, "localhost");
 
   thispid = getpid();
-  sprintf(logname, "/usr/local/logs/SUM/sum_svc_%s.log", gettimetag());
+  sprintf(logname, "%s/sum_svc_%s.log", SUMLOG_BASEDIR, gettimetag());
   open_log(logname);
   printk_set(write_log, write_log);
   write_log("\n## %s sum_svc on %s for pid = %d ##\n", 
@@ -244,7 +245,7 @@ void setup()
   while(fgets(line, 128, fplog)) {       /* get ps lines */
     if(!(strstr(line, "perl"))) continue;
     sscanf(line, "%s %d", acmd, &tpid); /* get user name & process id */
-    sprintf(lfile, "/usr/local/logs/SUM/sum_restart_%d.touch", tpid);
+    sprintf(lfile, "%s/sum_restart_%d.touch", SUMLOG_BASEDIR, tpid);
     sprintf(acmd, "/bin/touch %s", lfile);
     write_log("%s\n", acmd);
     system(acmd);

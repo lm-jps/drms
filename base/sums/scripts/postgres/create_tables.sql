@@ -111,10 +111,4 @@ create sequence SUM_SEQ
   no cycle
   cache 50;
 
-create sequence SUM_DS_INDEX_SEQ
-  increment 1
-  start 1
-  no maxvalue
-  no cycle
-  cache 10;
 

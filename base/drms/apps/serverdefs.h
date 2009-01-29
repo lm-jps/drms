@@ -6,8 +6,8 @@
 #ifndef __SERVERDEFS_H
 #define __SERVERDEFS_H
 
-#ifdef _LOCALIZED_DEFS
-  #include localized_defs.h
+#ifdef __LOCALIZED_DEFS__
+  #include localization.h
 #else
 /* Stanford defs */
 /** \brief default dbhost */
@@ -20,6 +20,13 @@
 #define PASSWD NULL
 /** \brief default dbname */
 #define DBNAME "jsoc"
+
+#define POSTGRES_ADMIN "postgres"
+
+#define SUMS_MANAGER   "production"
+
+#define SUMLOG_BASEDIR "/usr/local/logs/SUM"
+
 
 #endif /* _LOCALIZED_DEFS */
 
