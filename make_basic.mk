@@ -126,7 +126,7 @@ ifneq ($(DRMS_DEFAULT_RETENTION),)
 endif
 
 ifneq ($(CUSTOM_DEFINES),)
-CUSTOMSW := $(CUSTOMSW) -D"\"$(__LOCALIZED_DEFS__)\""
+CUSTOMSW := $(CUSTOMSW) -D$(CUSTOM_DEFINES)
 endif
 
 ### Build flags for all targets
