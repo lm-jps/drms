@@ -355,7 +355,7 @@ endif
 
 # Site Localization
 if (!(-e suflag.txt)) then
-    if (!(-e config.local) then
+    if (!(-e config.local)) then
         echo "You must copy config.local.template to config.local, then edit config.local to contain localized values."
         echo "****IMPORTANT WARNING**** The edited config.local will contain important entries - keep it safe, especially during updates to new NetDRMS versions."
     else
