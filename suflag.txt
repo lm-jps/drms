@@ -1,1 +1,0 @@
-# This simply identifies that this CVS working directory contains Stanford-specific project configuration and make files.
