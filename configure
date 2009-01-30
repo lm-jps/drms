@@ -283,7 +283,7 @@ endif
 if (!(-e suflag.txt)) then
     if (!(-e config.local)) then
         echo "Error: config.local not found. If you have a saved version of this file from a previous installation, you should copy that into this directory and rerun configure. Otherwise, copy the file config.local.template to config.local and edit the config.local file to contain site-appropriate values."
-        echo ""
+        echo 
         echo "*** IMPORTANT *** The edited config.local will contain site-specific values that should not be modified during subsequent updates to NetDRMS. Keep a safe copy of it somewhere outside of the DRMS directory tree, for example in /usr/local. After each NetDRMS update, ensure this file is in place."
     else
         echo "CUSTOM_DEFINES = __LOCALIZED_DEFS__" >> custom.mk
@@ -297,6 +297,7 @@ set TPWARN = 0
 # Libraries required by all
 if ($JSOC_MACHINE == "linux_x86_64") then
     if (!(-e lib_third_party/lib/linux_x86_64/libcfitsio.a)) then
+        echo
 	echo "Can't find required library: lib_third_party/lib/linux_x86_64/libcfitsio.a"
 	set TPWARN = 1
     endif
@@ -304,6 +305,7 @@ endif
 
 if ($JSOC_MACHINE == "linux_ia32") then
     if (!(-e lib_third_party/lib/linux_ia32/libcfitsio.a)) then
+        echo
 	echo "Can't find required library: lib_third_party/lib/linux_ia32/libcfitsio.a"
 	set TPWARN = 1
     endif
@@ -311,6 +313,7 @@ endif
 
 if ($JSOC_MACHINE == "mac_osx") then
     if (!(-e lib_third_party/lib/mac_osx/libcfitsio.a)) then
+        echo
 	echo "Can't find required library: lib_third_party/lib/mac_osx/libcfitsio.a"
 	set TPWARN = 1
     endif
@@ -320,18 +323,22 @@ if (-e ../suflag.txt) then
     # Stanford users' required libs.
     if ($JSOC_MACHINE == "linux_x86_64") then
         if (!(-e lib_third_party/lib/linux_x86_64/libcfitsio_gcc.a)) then
+            echo
             echo "Can't find required library: lib_third_party/lib/linux_x86_64/libcfitsio_gcc.a"
             set TPWARN = 1
         endif
 	if (!(-e lib_third_party/lib/linux_x86_64/libfftw3f.a)) then
+            echo
 	    echo "Can't find required library: lib_third_party/lib/linux_x86_64/libfftw3f.a"
 	    set TPWARN = 1
 	endif
 	if (!(-e lib_third_party/lib/linux_x86_64/libgsl.a)) then
+            echo
 	    echo "Can't find required library: lib_third_party/lib/linux_x86_64/libgsl.a"
 	    set TPWARN = 1
 	endif
 	if (!(-e lib_third_party/lib/linux_x86_64/libgslcblas.a)) then
+            echo
 	    echo "Can't find required library: lib_third_party/lib/linux_x86_64/libgslcblas.a"
 	    set TPWARN = 1
 	endif
@@ -339,14 +346,17 @@ if (-e ../suflag.txt) then
 
     if ($JSOC_MACHINE == "linux_ia32") then
 	if (!(-e lib_third_party/lib/linux_ia32/libfftw3f.a)) then
+            echo
 	    echo "Can't find required library: lib_third_party/lib/linux_ia32/libfftw3f.a"
 	    set TPWARN = 1
 	endif
 	if (!(-e lib_third_party/lib/linux_ia32/libgsl.a)) then
+            echo
 	    echo "Can't find required library: lib_third_party/lib/linux_ia32/libgsl.a"
 	    set TPWARN = 1
 	endif
 	if (!(-e lib_third_party/lib/linux_ia32/libgslcblas.a)) then
+            echo
 	    echo "Can't find required library: lib_third_party/lib/linux_ia32/libgslcblas.a"
 	    set TPWARN = 1
 	endif
@@ -354,6 +364,7 @@ if (-e ../suflag.txt) then
 
     if ($JSOC_MACHINE == "mac_osx") then
 	if (!(-e lib_third_party/lib/mac_osx/libfftw3f.a)) then
+            echo
 	    echo "Can't find required library: lib_third_party/lib/mac_osx/libfftw3f.a"
 	    set TPWARN = 1
 	endif
