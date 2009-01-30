@@ -1390,17 +1390,12 @@ FCALLSCFUN1(LONGLONG, get_array_buflen, F_GET_ARRAY_BUFLEN, f_get_array_buflen, 
 // ##########################################################
 // START of getor functions for the DRMS_RecordSet_t structure
 
-#if EXPANDAPI
-/* XXX Check on this */
 //  Get number of records in record set
 int f_get_rs_num(char * rs_hdl) {
-//  DRMS_RecordSet_t  * rs = (DRMS_RecordSet_t  *)  _convert_handle(rs_hdl);
-  int rec_num=1;
-//  rec_num = rs->n;
-  return rec_num;
+   DRMS_RecordSet_t  * rs = (DRMS_RecordSet_t  *)  _convert_handle(rs_hdl);
+   return drms_recordset_getnrecs(rs);
 }
 FCALLSCFUN1(INT, f_get_rs_num, F_GET_RS_NUM, f_get_rs_num, STRING)
-#endif /* EXPANDAPI */
 
 //Gets a record from a record set
 char * f_get_rs_record(char * rs_hdl, int index) {
