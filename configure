@@ -353,8 +353,13 @@ if ($CHKLIBS == "yes") then
 
 endif 
 
-# Call gen_init.csh to generate localized scripts and localization.h
+# Site Localization
 if (!(-e suflag.txt)) then
-    echo "CUSTOM_DEFINES = __LOCALIZED_DEFS__" >> custom.mk
-    ./gen_init.csh
+    if (!(-e config.local) then
+        echo "You must copy config.local.template to config.local, then edit config.local to contain localized values."
+        echo "****IMPORTANT WARNING**** The edited config.local will contain important entries - keep it safe, especially during updates to new NetDRMS versions."
+    else
+        echo "CUSTOM_DEFINES = __LOCALIZED_DEFS__" >> custom.mk
+        ./gen_init.csh
+    endif
 endif
