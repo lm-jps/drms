@@ -295,22 +295,22 @@ set TPWARN = 0
 
 # Libraries required by all
 if ($JSOC_MACHINE == "linux_x86_64") then
-    if (!(-e lib/linux_x86_64/libcfitsio.a)) then
-	echo "Can't find required library: lib/linux_x86_64/libcfitsio.a"
+    if (!(-e lib_third_party/lib/linux_x86_64/libcfitsio.a)) then
+	echo "Can't find required library: lib_third_party/lib/linux_x86_64/libcfitsio.a"
 	set TPWARN = 1
     endif
 endif
 
 if ($JSOC_MACHINE == "linux_ia32") then
-    if (!(-e lib/linux_ia32/libcfitsio.a)) then
-	echo "Can't find required library: lib/linux_ia32/libcfitsio.a"
+    if (!(-e lib_third_party/lib/linux_ia32/libcfitsio.a)) then
+	echo "Can't find required library: lib_third_party/lib/linux_ia32/libcfitsio.a"
 	set TPWARN = 1
     endif
 endif
 
 if ($JSOC_MACHINE == "mac_osx") then
-    if (!(-e lib/mac_osx/libcfitsio.a)) then
-	echo "Can't find required library: lib/mac_osx/libcfitsio.a"
+    if (!(-e lib_third_party/lib/mac_osx/libcfitsio.a)) then
+	echo "Can't find required library: lib_third_party/lib/mac_osx/libcfitsio.a"
 	set TPWARN = 1
     endif
 endif
@@ -318,42 +318,42 @@ endif
 if (-e ../suflag.txt) then
     # Stanford users' required libs.
     if ($JSOC_MACHINE == "linux_x86_64") then
-        if (!(-e lib/linux_x86_64/libcfitsio_gcc.a)) then
-            echo "Can't find required library: lib/linux_x86_64/libcfitsio_gcc.a"
+        if (!(-e lib_third_party/lib/linux_x86_64/libcfitsio_gcc.a)) then
+            echo "Can't find required library: lib_third_party/lib/linux_x86_64/libcfitsio_gcc.a"
             set TPWARN = 1
         endif
-	if (!(-e lib/linux_x86_64/libfftw3f.a)) then
-	    echo "Can't find required library: lib/linux_x86_64/libfftw3f.a"
+	if (!(-e lib_third_party/lib/linux_x86_64/libfftw3f.a)) then
+	    echo "Can't find required library: lib_third_party/lib/linux_x86_64/libfftw3f.a"
 	    set TPWARN = 1
 	endif
-	if (!(-e lib/linux_x86_64/libgsl.a)) then
-	    echo "Can't find required library: lib/linux_x86_64/libgsl.a"
+	if (!(-e lib_third_party/lib/linux_x86_64/libgsl.a)) then
+	    echo "Can't find required library: lib_third_party/lib/linux_x86_64/libgsl.a"
 	    set TPWARN = 1
 	endif
-	if (!(-e lib/linux_x86_64/libgslcblas.a)) then
-	    echo "Can't find required library: lib/linux_x86_64/libgslcblas.a"
+	if (!(-e lib_third_party/lib/linux_x86_64/libgslcblas.a)) then
+	    echo "Can't find required library: lib_third_party/lib/linux_x86_64/libgslcblas.a"
 	    set TPWARN = 1
 	endif
     endif
 
     if ($JSOC_MACHINE == "linux_ia32") then
-	if (!(-e lib/linux_ia32/libfftw3f.a)) then
-	    echo "Can't find required library: lib/linux_ia32/libfftw3f.a"
+	if (!(-e lib_third_party/lib/linux_ia32/libfftw3f.a)) then
+	    echo "Can't find required library: lib_third_party/lib/linux_ia32/libfftw3f.a"
 	    set TPWARN = 1
 	endif
-	if (!(-e lib/linux_ia32/libgsl.a)) then
-	    echo "Can't find required library: lib/linux_ia32/libgsl.a"
+	if (!(-e lib_third_party/lib/linux_ia32/libgsl.a)) then
+	    echo "Can't find required library: lib_third_party/lib/linux_ia32/libgsl.a"
 	    set TPWARN = 1
 	endif
-	if (!(-e lib/linux_ia32/libgslcblas.a)) then
-	    echo "Can't find required library: lib/linux_ia32/libgslcblas.a"
+	if (!(-e lib_third_party/lib/linux_ia32/libgslcblas.a)) then
+	    echo "Can't find required library: lib_third_party/lib/linux_ia32/libgslcblas.a"
 	    set TPWARN = 1
 	endif
     endif
 
     if ($JSOC_MACHINE == "mac_osx") then
-	if (!(-e lib/mac_osx/libfftw3f.a)) then
-	    echo "Can't find required library: lib/mac_osx/libfftw3f.a"
+	if (!(-e lib_third_party/lib/mac_osx/libfftw3f.a)) then
+	    echo "Can't find required library: lib_third_party/lib/mac_osx/libfftw3f.a"
 	    set TPWARN = 1
 	endif
     endif
