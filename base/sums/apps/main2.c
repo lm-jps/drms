@@ -59,127 +59,33 @@ float StopTimer(int n)
 */
 int main(int argc, char *argv[])
 {
-  /*char touched[128];*/
+  int status;
+  char **srcptr;
+  char **destptr;
+  SUMEXP_t sumexp;
 
   if((sum = SUM_open(NULL, NULL, printf)) == 0) {
     printf("Failed on SUM_open()\n");
     exit(1);
   }
-  uid = sum->uid;
-  /*sum->debugflg = 1;			/* use debug mode for future calls */
-  /*sum->debugflg = 0;*/
-  sum->username = "production";		/* !!TEMP */
-  printf("Opened with sumid = %d\n", uid);
+  //uid = sum->uid;
+  sumexp.uid = sum->uid;
+  sumexp.host = "n02";
+  sumexp.src = (char **)calloc(SUMARRAYSZ, sizeof(char *));
+  sumexp.dest = (char **)calloc(SUMARRAYSZ, sizeof(char *));
+  srcptr = sumexp.src;
+  destptr = sumexp.dest;
+  *srcptr++ = "/home/jim/mark.alias";
+  *destptr++ = "/tmp/jim";
+  *srcptr++ = "/home/jim/.aliases";
+  *destptr++ = "/tmp/jim";
+  sumexp.reqcnt = 2;
 
-  sum->bytes = (double)120000000;	/* 120MB */
-  sum->reqcnt = 1;
-  if(status = SUM_alloc(sum, printf)) {	/* allocate a data segment */
-   printf("SUM_alloc() failed to alloc %g bytes. Error code = %d\n", 
-			sum->bytes, status);
-   SUM_close(sum, printf);
-   exit(1);
-  }
-  cptr = sum->wd;
-  dsixpt = sum->dsix_ptr;
-  alloc_index = *dsixpt;
-  strcpy(alloc_wd, *cptr);
-  printf("Allocated %g bytes at %s with dsindex=%ld\n", 
-			sum->bytes, *cptr, alloc_index);
-  /* put something in the alloc wd for this test */
-  //sprintf(cmd, "cp -rp /home/jim/cvs/PROTO/src/SUM %s", *cptr);
-  //printf("cmd is: %s\n", cmd);
-  //system(cmd);
-  sprintf(cmd, "touch %s/%s%d", *cptr, "touch", uid);
-  printf("cmd is: %s\n", cmd);
-  system(cmd);
-  /*sum->mode = RETRIEVE + TOUCH;*/
-  sum->mode = NORETRIEVE;
-  sum->tdays = 5;
-/*******************************************
-  sum->reqcnt = 3;
-  *dsixpt++ = 634590;
-  *dsixpt++ = 634591; 
-  *dsixpt++ = 634592; 
-*******************************************/
-sum->reqcnt = 1;
-/*inum = 588650;			/* starting ds_index for get calls */
-inum = 131051;			/* starting ds_index for get calls */
-StartTimer(0);
-for(j=0; j < MAXSUMREQ_CNT; j++) {
-  *dsixpt++ = inum++;
-}
-  /**dsixpt = inum++;*/
-sum->reqcnt = MAXSUMREQ_CNT;
-  status = SUM_get(sum, printf); 
-  switch(status) {
-  case 0:			/* success. data in sum */
-      cnt = sum->reqcnt;
-      cptr = sum->wd;
-      /*printf("The wd's found from the SUM_get() call are:\n");*/
-      for(i = 0; i < cnt; i++) {
-        printf("wd = %s\n", *cptr++);
-      }
-    break;
-  case 1:			/* error */
-    printf("Failed on SUM_get()\n");
-    break;
-  case RESULT_PEND:		/* result will be sent later */
-    printf("SUM_get() call RESULT_PEND...\n");
-    /* NOTE: the following is the same as doing a SUM_wait() */
-    while(1) {
-      if(!SUM_poll(sum)) break;
-    }
-    /* !!TEMP wait for second msg too!!!! */
-    /*printf("About to do second SUM_wait()\n");
-    /*SUM_wait(sum);
-    */
+  printf("Calling: SUM_export()\n");
+  status = SUM_export(&sumexp, printf);
 
-      if(sum->status) {
-        printf("***Error on SUM_get() call. tape_svc may have died or\n");
-        printf("check /usr/local/logs/SUM/ logs for possible tape errs\n\n");
-        break;
-      }
-      cnt = sum->reqcnt;
-      cptr = sum->wd;
-      printf("The wd's found from the SUM_get() call are:\n");
-      for(i = 0; i < cnt; i++) {
-        printf("wd = %s\n", *cptr++);
-      }
-    break;
-  default:
-    printf("Error: unknown status from SUM_get()\n");
-    break;
-  }
-/*}*/
-ftmp = StopTimer(0);
-printf("\nTime sec for %d SUM_get() in one call = %f\n\n", MAXSUMREQ_CNT, ftmp);
+  printf("status = %d\n", status);
 
-
-
-  /*sum->mode = ARCH;*/
-  sum->mode = TEMP;
-  sum->dsname = "testname";
-  sum->group = 100;
-  /*sum->group = 65;*/
-  /*sum->group = 101;*/
-  sum->reqcnt = 1;
-  dsixpt = sum->dsix_ptr;
-  *dsixpt = alloc_index;	/* ds_index of alloced data segment */
-  cptr = sum->wd;
-  *cptr = (char *)malloc(64);
-  strcpy(*cptr, alloc_wd);
-  sum->dsname = dsname;
-  sum->history_comment = hcomment;
-  /*sum->group = 99;*/
-  sum->storeset = 0;
-  sum->bytes = 120000000.0;
-//  if(SUM_put(sum, printf)) {  /* save the data segment for archiving */
-//    printf("Error: on SUM_put()\n");
-//  }
-//  else {
-//    printf("The put wd = %s\n", *sum->wd);
-//    printf("Marked for archive data unit ds_index=%ld\n", *dsixpt);
-//  }
   SUM_close(sum, printf);
 }
 
