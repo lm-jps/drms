@@ -26,6 +26,7 @@
 #define RPCMSG 2
 #define TIMEOUTMSG 3
 #define ERRMESS 4
+#define ERRMSG 4
 /* Define the storage sets used in sum->storeset */
 #define JSOC 0		/* NOTE: JSOC must be 0 */
 #define DSDS 1
@@ -306,6 +307,22 @@ extern KEY *sumpeack_1();
 #define PEPEQRESPDO ((uint32_t)1)
 extern KEY *pepeqdo_1();
 
+/* This is the sum_export_svc program registration */
+#define SUMEXPROG ((uint32_t)0x2000062c)
+#define SUMEXVERS ((uint32_t)1)
+#define SUMEXVERS2 ((uint32_t)2)
+#define SUMEXDO ((uint32_t)1)
+#define SUMEXACK ((uint32_t)2)
+extern KEY *sumexdo_1();
+extern KEY *sumexack_1();
+
+/* This is the SUM_export() registration for answers from sum_export_svc */
+#define REMSUMPROG ((uint32_t)0x2000062d)
+#define REMSUMVERS ((uint32_t)1)
+#define REMSUMRESPDO ((uint32_t)1)
+extern KEY *respdo_1();
+
+
 typedef struct SUM_struct
 {
   SUMID_t uid;
@@ -325,6 +342,15 @@ typedef struct SUM_struct
   uint64_t *dsix_ptr;    /* ptr to array of dsindex uint64_t */
   char **wd;		 /* ptr to array of char * */
 } SUM_t;
+
+typedef struct SUMEXP_struct
+{
+  SUMID_t uid;
+  int reqcnt;		/* # of entries in arrays below */
+  char *host;		/* hostname target of scp call */
+  char **src;		/* ptr to char * of source dirs */
+  char **dest;		/* ptr to char * of destination dirs */
+} SUMEXP_t;
 
 /* SUMID/SUM assignment table. One of these is put onto the sum_hdr pointer
  * each time a single client registers (opens) with sum_svc, and removed when 
@@ -425,6 +451,7 @@ int SUM_poll();
 int SUM_wait();
 int SUM_Init();
 int SUM_delete_series();
+int SUM_export();
 //int SUM_info();
 int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...));
 int NC_PaUpdate();
