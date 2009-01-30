@@ -33,7 +33,7 @@ static int numopened = 0;
 
 /* Returns 1 if ok to shutdown sums.
  * Return 0 is someone still has an active SUM_open().
- * Once called, sill prevent any user from doing a new SUM_open()
+ * Once called, will prevent any user from doing a new SUM_open()
  * unless query arg = 1.
 */
 int SUM_shutdown(int query, int (*history)(const char *fmt, ...))
