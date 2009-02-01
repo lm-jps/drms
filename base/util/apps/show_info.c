@@ -19,7 +19,7 @@ show_info -j {ds=}<seriesname>
 show_info -l {ds=}<seriesname>
 show_info -c {ds=}<record_set>
 show_info -s {ds=}<seriesname>
-show_info [-aAiopPrRSz] [-dkqt] {ds=}<record_set>|sunum=<sunum> [n=<count>] [key=<keylist>] [seg=<seglist>]
+show_info [-aAiLopPrRSz] [-dkqt] {ds=}<record_set>|sunum=<sunum> [n=<count>] [key=<keylist>] [seg=<seglist>]
 show_info_sock {same options as above}
 \endcode
 
@@ -76,6 +76,7 @@ This group of arguments specifies the set of keywords, segments, links, or virtu
 \li \c  seg=<seglist> - string with dedfauly "Not Specified", see below.
 \li \c  -a: Select all keywords and display their values for the chosen records
 \li \c  -A: Select all segments and display their filenames/paths/dimensions for the chosen records
+\li \c  -K: Select all links and display their targets for the chosen records
 \li \c  -i: print record query, for each record, will be before any keywwords or segment data
 \li \c  -o: list the record's online status 
 \li \c  -p: list the record's storage_unit path, waits for retrieval if offline
@@ -215,6 +216,7 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "j", "0", "list series info in jsd format"},
   {ARG_FLAG, "k", "0", "keyword list one per line"},
   {ARG_FLAG, "l", "0", "just list series keywords with descriptions"},
+  {ARG_FLAG, "K", "0", "Show info for all links"},
   {ARG_INT,  "n", "0", "number of records to show, +from first, -from last"},
   {ARG_FLAG, "o", "0", "list the record\'s storage_unit online status"},
   {ARG_FLAG, "p", "0", "list the record\'s storage_unit path"},
@@ -251,6 +253,7 @@ int nice_intro ()
 	"  -A: show information for all segments\n"
   	"  -d: Show dimensions of segment files with selected segs\n"
 	"  -i: query- show the record query that matches the current record\n"
+	"  -K: show information for all links\n"
 	"  -o: online - tell the online state\n"
 	"  -p: list the record's storage_unit path (retrieve if necessary)\n"
 	"  -P: list the record's storage_unit path (no retrieve)\n"
@@ -528,10 +531,13 @@ int DoIt(void)
   DRMS_RecordSet_t *recordset;
   DRMS_Record_t *rec;
   int first_rec, last_rec, nrecs, irec;
+// these next 3 chould be change to mallocs based on number requested.
   char *keys[1000];
   char *segs[1000];
+  char *links[1000];
   int ikey, nkeys = 0;
   int iseg, nsegs = 0;
+  int ilink, nlinks = 0;
   char *inqry;
 						/* Get command line arguments */
   char *in;
@@ -543,6 +549,7 @@ int DoIt(void)
   int list_keys;
   int show_all;
   int show_all_segs;
+  int show_all_links;
   int show_recordspec;
   int show_stats;
   int show_types;
@@ -615,6 +622,7 @@ int DoIt(void)
   jsd_list = cmdparams_get_int (&cmdparams, "j", NULL) != 0;
   keyword_list =  cmdparams_get_int(&cmdparams, "k", NULL) != 0;
   list_keys = cmdparams_get_int (&cmdparams, "l", NULL) != 0;
+  show_all_links = cmdparams_get_int (&cmdparams, "K", NULL) != 0;
   show_stats = cmdparams_get_int (&cmdparams, "s", NULL) != 0;
   show_online = cmdparams_get_int (&cmdparams, "o", NULL) != 0;
   want_path = cmdparams_get_int (&cmdparams, "p", NULL) != 0;
@@ -889,6 +897,18 @@ int DoIt(void)
     }
   free (seglist);
 
+  /* get list of links to print for each record */
+  /* no way to choose a subset of links at this time */
+  nlinks = 0;
+  if (show_all_links) 
+    { /* if wanted get list of all links */
+    DRMS_Link_t *link;
+    HIterator_t hit;
+    hiter_new (&hit, &recordset->records[0]->links);
+    while ((link = (DRMS_Link_t *)hiter_getnext (&hit)))
+      links[nlinks++] = strdup (link->info->name);
+    }
+
   /* stage records if the user has requested the path (regardless if the user has requested 
    * segment information -- -A or seg=XXX).
    */
@@ -934,6 +954,8 @@ int DoIt(void)
           }
         if (nsegs==0 && want_path)
           printf("%sSUDIR", (col++ ? "\t" : ""));
+        for (ilink=0 ; ilink<nlinks; ilink++)
+          printf ("%s%s", (col++ ? "\t" : ""), links[ilink]); 
         printf ("\n");
         /* now, if desired, print the type and format lines. */
         if (show_types)
@@ -967,6 +989,11 @@ int DoIt(void)
             }
           if (nsegs==0 && want_path)
             printf ("%sstring", (col++ ? "\t" : ""));
+          for (ilink=0 ; ilink<nlinks; ilink++)
+            {
+            DRMS_Link_t *rec_link = hcon_lookup_lower(&rec->links,links[ilink]);
+	    printf ("%s%s", (col++ ? "\t" : ""),  rec_link->info->type == DYNAMIC_LINK ? "dynamic" : "static");
+	    }
           printf ("\n");
 	  /* now print format */
           /* ASSUME all records have same structure - might not be true for mixed queries, fix later */
@@ -999,6 +1026,10 @@ int DoIt(void)
             }
           if (nsegs==0 && want_path)
             printf ("%s%%s", (col++ ? "\t" : ""));
+          for (ilink = 0; ilink<nlinks; ilink++)
+            {
+            printf ("%s%%s", (col++ ? "\t" : ""));
+            }
           printf ("\n");
 	  }
         }
@@ -1270,13 +1301,51 @@ int DoIt(void)
          if (keyword_list)
            printf("\n");
       }
+    /* now print link information */
+    for (ilink=0; ilink<nlinks; ilink++) 
+      {
+      DRMS_Link_t *rec_link = hcon_lookup_lower(&rec->links,links[ilink]);
+      DRMS_Record_t *linked_rec =  drms_link_follow(rec, links[ilink], &status);
+      if (linked_rec)
+	{
+	if (keyword_list)
+	  {
+	  printf("%s=", links[ilink]);
+	  if (rec_link->info->type == DYNAMIC_LINK)
+            {
+	    printf("\"");
+            drms_print_rec_query(linked_rec);
+	    printf("\"");
+            }
+	  else
+	    {
+	    printf("\"");
+            printf("%s[:#%lld]",linked_rec->seriesinfo->seriesname, linked_rec->recnum);
+	    printf("\"");
+	    }
+          printf("\n");
+	  }
+	else
+          {
+          if (col++)
+	    printf ("\t");
+	  if (rec_link->info->type == DYNAMIC_LINK)
+            drms_print_rec_query(linked_rec);
+          else
+            printf("%s[:#%lld]",linked_rec->seriesinfo->seriesname, linked_rec->recnum);
+          }
+	}
+      else
+        if (!keyword_list)
+	  printf ("%sInvalidLink", (col++ ? "\t" : ""));
+      }
     if (!keyword_list && !col)
       {
       printf("%d records found, no other information requested\n", nrecs);
       break;
       }
-    if (!keyword_list && (show_recnum || show_sunum || show_recordspec ||
-                          show_online || show_retention || show_size || nkeys || nsegs || want_path))
+    if (!keyword_list && (show_recnum || show_sunum || show_recordspec || show_online ||
+		show_retention || show_size || nkeys || nsegs || nlinks || want_path))
       printf ("\n");
     }
 
