@@ -369,7 +369,7 @@ static void list_series_info(DRMS_Record_t *rec)
     printf ("\t%-10s", key->info->name);
     if (key->info->islink)
         {
-        printf("\tlink through %s",seg->info->linkname);
+        printf("\tlink through %s",key->info->linkname);
         }
     else
         {
@@ -385,15 +385,15 @@ static void list_series_info(DRMS_Record_t *rec)
     hiter_new (&hit, &rec->segments);
     while ((seg = (DRMS_Segment_t *)hiter_getnext (&hit)))
         { /* segment name, units, protocol, dims, description */
-	char prot[DRMS_MAXNAMELEN];
-	int iaxis, naxis = seg->info->naxis;
-	strcpy(prot, drms_prot2str(seg->info->protocol));
 	if (seg->info->islink)
 	    {
 	    printf("\tlink through %s",seg->info->linkname);
 	    }
 	else
 	    {
+	    char prot[DRMS_MAXNAMELEN];
+	    int iaxis, naxis = seg->info->naxis;
+	    strcpy(prot, drms_prot2str(seg->info->protocol));
             printf ("\t%-10s", seg->info->name);
 	    printf ("\t%7s", seg->info->unit);
 	    printf ("\t%7s",prot);
