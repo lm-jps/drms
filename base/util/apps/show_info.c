@@ -293,9 +293,7 @@ DRMS_RecordSet_t *drms_find_rec_first(DRMS_Record_t *rec, int wantprime)
       strcat(query, "[#^]");
   else
     strcat(query, "[:#^]");
-// fprintf(stderr,"test 1 query is %s\n",query);
   rs = drms_open_records(rec->env, query, &status);
-// fprintf(stderr,"test 1 status is %d\n",status);
   return(rs);
   }
 
@@ -536,7 +534,7 @@ int DoIt(void)
   char *segs[1000];
   char *links[1000];
   int ikey, nkeys = 0;
-  int iseg, nsegs = 0;
+  int iseg, nsegs, linked_segs = 0;
   int ilink, nlinks = 0;
   char *inqry;
 						/* Get command line arguments */
@@ -893,9 +891,17 @@ int DoIt(void)
     { /* get specified segment list */
     char *thisseg;
     for (thisseg=strtok(seglist, ","); thisseg; thisseg=strtok(NULL,","))
+	{
 	segs[nsegs++] = strdup(thisseg);
+        }
     }
   free (seglist);
+  for (iseg = 0; iseg<nsegs; iseg++)
+    {
+    DRMS_Segment_t *seg = hcon_lookup_lower(&recordset->records[0]->segments, segs[iseg]);
+    if (seg->info->islink)
+      linked_segs++;
+    }
 
   /* get list of links to print for each record */
   /* no way to choose a subset of links at this time */
@@ -1168,8 +1174,9 @@ int DoIt(void)
            if (want_path)
              {
              int stat;
-             if(want_path_noret) stat=drms_record_directory (rec, path, 0);
-             else stat=drms_record_directory (rec, path, 1);
+             // use segs rec to get linked record's path
+             if(want_path_noret) stat=drms_record_directory (rec_seg_iseg->record, path, 0);
+             else stat=drms_record_directory (rec_seg_iseg->record, path, 1);
              if (stat) strcpy(path,"**_NO_sudir_**");
              }
            else
@@ -1250,7 +1257,13 @@ int DoIt(void)
                 sizeof(path), 
                 "Record does not contain any segments - no record directory.");
          }
-       else if (drms_record_isdsds(rec) || drms_record_islocal(rec))
+#ifdef REVEALBUG
+      else if (nsegs == linked_segs)
+         {
+         printf("All segments are links - no record directory.");
+         }
+#endif
+      else if (drms_record_isdsds(rec) || drms_record_islocal(rec))
          {
          /* Can get full path from segment filename.  But beware, there may be no
           * datafile for a DSDS record.  */
