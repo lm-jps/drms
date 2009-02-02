@@ -190,6 +190,7 @@ int main(int argc, char **argv)
 */
 KEY *getsumexport(KEY *params)
 {
+  uint port;
   int reqcnt;
   int status = 0;
   int xdirflg = 0;
@@ -210,7 +211,11 @@ KEY *getsumexport(KEY *params)
     sprintf(destext, "dest_%d", i);
     src = getkey_str(params, srcext);
     dest = getkey_str(params, destext);
-    sprintf(cmd, "scp %s:%s %s", host, src, dest);
+    port = getkey_uint(params, "port");
+    if(port == 0)
+      sprintf(cmd, "scp %s:%s %s", host, src, dest);
+    else
+      sprintf(cmd, "scp -P %d %s:%s %s", port, host, src, dest);
     printk("%s\n", cmd);
     if(system(cmd)) {
       printk("Error on: %s\n", cmd);
