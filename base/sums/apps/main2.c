@@ -80,11 +80,14 @@ int main(int argc, char *argv[])
   *srcptr++ = "/home/jim/.aliases";
   *destptr++ = "/tmp/jim";
   sumexp.reqcnt = 2;
+  sumexp.port = 0;	//0= don't use -P in scp
 
   printf("Calling: SUM_export()\n");
   status = SUM_export(&sumexp, printf);
 
   printf("status = %d\n", status);
+  free(sumexp.src); 
+  free(sumexp.dest);
 
   SUM_close(sum, printf);
 }
