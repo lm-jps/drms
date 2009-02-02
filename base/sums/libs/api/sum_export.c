@@ -76,6 +76,7 @@ int SUM_export(SUMEXP_t *sumexp, int (*history)(const char *fmt, ...))
     }
     setkey_str(&list, "host", sumexp->host);
     setkey_uint32(&list, "uid", sumexp->uid);
+    setkey_uint(&list, "port", sumexp->port);
 
     status = clnt_call(clntsumex,SUMEXDO, (xdrproc_t)xdr_Rkey, (char *)list,
                         (xdrproc_t)xdr_uint32_t, (char *)&sumexback, TIMEOUT);
