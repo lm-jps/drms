@@ -31,7 +31,7 @@ main (int argc, char **argv) {
   printf ("  start %ld\n", site_min);
   printf ("  minvalue %ld\n", site_min);
   printf ("  maxvalue %ld\n", site_max);
-  printf ("  nocycle\n");
+  printf ("  no cycle\n");
   printf ("  cache 10;\n");
   return 0;
 }
