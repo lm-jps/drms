@@ -15,6 +15,7 @@ FIOBJ_$(d)	:= $(addprefix $(d)/, drms_fortran.o)
 FIOBJ		:= $(FIOBJ) $(FIOBJ_$(d))
 
 # FDRMSMODOBJ is referenced in proj/example/apps/Rules.mk
+FDRMSMOD	:= $(d)/fdrms.mod
 FDRMSMOBJ_$(d)	:= $(addprefix $(d)/, fdrms.o)
 FDRMSMODOBJ	:= $(FDRMSMOBJ_$(d))
 
@@ -28,11 +29,12 @@ CLEAN		:= $(CLEAN) \
 		   $(FIOBJ_$(d):%=%.d) \
 		   $(FDRMSMOBJ_$(d)) \
 		   $(LIBDRMSCLIENT) \
+		   $(FDRMSMOD) \
 		   $(DEP_$(d)) 
 
-TGT_LIB 	:= $(TGT_LIB) $(LIBDRMSCLIENT)
+TGT_LIB 	:= $(TGT_LIB) $(LIBDRMSCLIENT) $(FDRMSMOD)
 
-S_$(d)		:= $(notdir $(LIBDRMSCLIENT))
+S_$(d)		:= $(notdir $(LIBDRMSCLIENT) $(FDRMSMOD))
 
 # Local rules
 $(COMMOBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
@@ -46,6 +48,9 @@ $(FDRMSMOBJ_$(d)):	FF_TGT := -module $(d)
 $(LIBDRMSCLIENT):	$(LIBDRMSCLIENT_OBJ)
 			$(ARCHIVE)
 			$(SLLIB)
+
+$(FDRMSMOD):		$(FDRMSMODOBJ)
+
 # Shortcuts
 .PHONY:	$(S_$(d))
 $(S_$(d)):	%:	$(d)/%
