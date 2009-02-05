@@ -46,6 +46,7 @@ while ($ARGV[0] =~ /^-/) {
 $mailflg = 0;	#!!force no mail for this call
 
 $PID = getppid;
+$MLOGFILE = "/tmp/sum_start_mail_n02.$PID";
 $LOGFILE = "/tmp/sum_start.$PID";
 open(LOG, ">$LOGFILE") || die "Can't open $LOGFILE: $!\n";
 open(MLOG, ">$MLOGFILE") || die "Can't open $MLOGFILE: $!\n";
