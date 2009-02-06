@@ -14,6 +14,8 @@ endif
 
 set LOCAL_CONFIG_SET = `egrep "^LOCAL_CONFIG_SET" $LOCALINF | awk '{print $2}'`
 set POSTGRES_ADMIN = `egrep "^POSTGRES_ADMIN" $LOCALINF | awk '{print $2}'`
+set POSTGRES_LIBS = `egrep "^POSTGRES_LIBS" $LOCALINF | awk '{print $2}'`
+set POSTGRES_INCS = `egrep "^POSTGRES_INCS" $LOCALINF | awk '{print $2}'`
 set DBSERVER_HOST = `egrep "^DBSERVER_HOST" $LOCALINF | awk '{print $2}'`
 set DRMS_DATABASE = `egrep "^DRMS_DATABASE" $LOCALINF | awk '{print $2}'`
 set DRMS_SITE_CODE = `egrep "^DRMS_SITE_CODE" $LOCALINF | awk '{print $2}'`
@@ -34,6 +36,14 @@ endif
 
 if ($#POSTGRES_ADMIN != 1) then
   echo "Error: POSTGRES_ADMIN undefined in local configuration file $LOCALINF"
+  exit
+endif
+if ($#POSTGRES_LIBS != 1) then
+  echo "Error: POSTGRES_LIBS undefined in local configuration file $LOCALINF"
+  exit
+endif
+if ($#POSTGRES_INCS != 1) then
+  echo "Error: POSTGRES_INCS undefined in local configuration file $LOCALINF"
   exit
 endif
 if ($#DBSERVER_HOST != 1) then
@@ -146,10 +156,14 @@ echo '#define DRMS_LOCAL_SITE_CODE	'$DRMS_SITE_CODE >> $SCRIPT
 echo '#define POSTGRES_ADMIN		"'$POSTGRES_ADMIN'"' >> $SCRIPT
 echo '#define USER			NULL' >> $SCRIPT
 echo '#define PASSWD			NULL' >> $SCRIPT
+echo '#define SUMS_MANAGER		"'$SUMS_MANAGER'"' >> $SCRIPT
 echo '#define SUMLOG_BASEDIR		"'$SUMS_LOG_BASEDIR'"' >> $SCRIPT
 echo '#endif' >> $SCRIPT
 
-ln -s $SCRIPT include/localization.h
+cd include
+ln -s ../$SCRIPT localization.h
+cd ..
+
 
 # make third-party links
 echo "*** linking third-party libs and includes ***"

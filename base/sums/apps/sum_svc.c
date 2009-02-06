@@ -173,8 +173,8 @@ void get_cmd(int argc, char *argv[])
   char *username;
 
   if(!(username = (char *)getenv("USER"))) username = "nouser";
-  if(strcmp(username, "production")) {
-    printf("!!NOTE: You must be user production to run sum_svc!\n");
+  if(strcmp(username, SUMS_MANAGER)) {
+    printf("!!NOTE: You must be user %s to run sum_svc!\n", SUMS_MANAGER);
     exit(1);
   }
 
@@ -278,7 +278,7 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-#ifndef SUMNOAO
+#ifndef __LOCALIZED_DEFS__
 /* !!TEMP don't fork on lws or flap */
 char hostn[80];
 gethostname(hostn, 80);		//also dont fork on d00
@@ -383,7 +383,7 @@ if(strcmp(thishost, "lws") && strcmp(thishost, "flap") && strcmp(hostn, "d00.Sta
     }
   }
 
-#ifndef SUMNOAO
+#ifndef __LOCALIZED_DEFS__
 if(strcmp(thishost, "lws") && strcmp(thishost, "n00") && strcmp(hostn, "d00.Stanford.EDU")) { 
   /* Create client handle used for calling the tape_svc */
   sleep(3);			/* give time to start */

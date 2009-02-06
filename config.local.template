@@ -6,28 +6,48 @@
 # either change its value to yes (or anything but NO) or comment it out.
 LOCAL_CONFIG_SET	NO
 
-# the user name of the postgres administrative account; normally "postgres"
-#   if you have followed the PostgreSQL installation suggestions
-POSTGRES_ADMIN	postgres
-
-# the host name of the default database server you will be accessing; you
-#   should include the internet domain (e.g. host.subnet.net) if the server is
-#   not on your subnet; but if it is on your subnet it may be better not to
-DBSERVER_HOST	localhost
+# the next three entries must almost certainly be changed to reflect your
+#   local configuration
 
 # the name of the NetDRMS database; the SUMS database will be assumed to
 #   have the same name with "_sums" appended
 DRMS_DATABASE	mydb
 
+# the host name of the default database server you will be accessing; you
+#   should include the internet domain (e.g. host.subnet.net) if the server is
+#   not on your subnet; but if it is on your subnet it may be better not to
+# the default value is only really appropriate if you are running in a
+#   single-user environment, such as a laptop; whether it is the default
+#   or a named host depends on how the postgres database named above and
+#   its dependent _sums have been configured in their pg_hba.conf files:
+#   localhost for METHOD "trust", a named host for METHOD "ident sameuser"
+DBSERVER_HOST	localhost
+
 # a 15-bit numerical site identifier; values < 16384 (0x4000) are for
 #   publicly exporting sites, and must be registered to assure uniqueness
+# the default value is for a private unregistered site, and may not provide
+#   access to publicly exporting sites
 DRMS_SITE_CODE	0x4000
 
-# a sample namespace appropriate to your site; this is only used for a
-#   couple of database initialization scripts and is not too important
-DRMS_SAMPLE_NAMESPACE	drms
+# the default values for the remaining entries may or may  not be appropriate
+#   for your site configuration, depending on how and where third-party
+#   software has been set up and installed
 
-# the user name of the SUMS administrator account
+# the user name of the postgres administrative account; normally "postgres"
+#   if you have followed the PostgreSQL installation suggestions
+POSTGRES_ADMIN	postgres
+
+# the include path for the PostgreSQL API; likely to be either
+#   /usr/include/pgsql or /usr/local/pgsql/include
+#   it should contain the subdirectories: informix, internal, and server
+POSTGRES_INCS	/usr/include/pgsql
+
+# the location of the PostgreSQL libs; likely to be either
+#   /usr/lib or /usr/lib64 or /usr/local/pgsql/lib
+POSTGRES_LIBS	/usr/include/pgsql
+
+# the user name of the SUMS administrator account - a special account is
+#   recommended for multi-user systems, but not required
 SUMS_MANAGER	production
 
 # the base directory for SUMS logs; should be (but is not yet) used by
@@ -36,7 +56,15 @@ SUMS_LOG_BASEDIR	/usr/local/logs/SUM
 
 # the location of third-party libraries (especially cfitsio, which is required,
 #   also others that may be used for modules such as fftw, gsl, etc.)
+# if different libraries are in different paths, it is recommended that links
+#   to all required ones be made in the single directory named here
 THIRD_PARTY_LIBS	/usr/local/lib
 
-# the location of third-party library include files (currently ignored)
+# the location of third-party library include files (currently ignored);
+#   see above for multiple locations
 THIRD_PARTY_INCS	/usr/local/include
+
+# a sample namespace appropriate to your site; this is only used for a
+#   couple of database initialization scripts and is not important for
+#   subsequent installations/updates
+DRMS_SAMPLE_NAMESPACE	drms

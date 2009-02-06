@@ -17,6 +17,7 @@ CLNTOBJ_$(d)	:= $(addprefix $(d)/, drmssite_info_client.o)
 OBJ_$(d)	:= $(COMMOBJ_$(d)) $(SERVOBJ_$(d)) $(CLNTOBJ_$(d))
 
 LIBDEFSCLNT_OBJ	:= $(COMMOBJ_$(d)) $(CLNTOBJ_$(d))
+LIBDEFSSERV_OBJ	:= $(COMMOBJ_$(d)) $(SERVOBJ_$(d))
 
 DEP_$(d)	:= $(OBJ_$(d):%=%.d)
 

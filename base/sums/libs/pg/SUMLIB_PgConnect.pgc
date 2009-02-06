@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <soi_error.h>
 #include <printk.h>
+#include <serverdefs.h>
 
 int DS_ConnectDB(char *dbname)
 {
@@ -18,13 +19,13 @@ EXEC SQL END DECLARE SECTION;
    
     //sprintf(pgport, SUMPGPORT); 
     //setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
-    if(!(dbuser = (char *)getenv("USER"))) dbuser = "production";
+    if(!(dbuser = (char *)getenv("USER"))) dbuser = SUMS_MANAGER;
 #ifdef SUMDC
     //if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = "dcs0";
     //new 31Oct2008 always use localhost for dcs
     dbhost = "localhost";
 #else
-    if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = "hmidb.stanford.edu";
+    if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = SERVER;
 #endif
     sprintf(target.arr, "%s@%s", dbname, dbhost);
     target.len = strlen(target.arr);
@@ -75,11 +76,11 @@ EXEC SQL END DECLARE SECTION;
 
     //sprintf(pgport, SUMPGPORT); 
     //setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
-    if(!(dbuser = (char *)getenv("USER"))) dbuser = "production";
+    if(!(dbuser = (char *)getenv("USER"))) dbuser = SUMS_MANAGER;
 #ifdef SUMDC
     if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = "dcs0";
 #else
-    if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = "hmidb.stanford.edu";
+    if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = SERVER;
 #endif
     sprintf(target.arr, "%s@%s", dbname, dbhost);
     target.len = strlen(target.arr);

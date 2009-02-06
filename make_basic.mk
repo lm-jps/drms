@@ -5,7 +5,6 @@ DBNAME = POSTGRESQL
 # This optional file has custom definitions created by the configure script
 -include $(SRCDIR)/custom.mk
 
-# USED BY NEITHER linux_x86_64 nor linux_ia32
 PGIPATH	= /usr/include/pgsql	
 
 COMPILER = icc
