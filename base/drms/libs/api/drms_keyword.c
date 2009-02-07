@@ -602,6 +602,21 @@ DRMS_Keyword_t *drms_keyword_lookup(DRMS_Record_t *rec, const char *key, int fol
   char *lb,*rb;
   char tmp[DRMS_MAXKEYNAMELEN+5]={0};
   int segnum;
+
+  /* Handle explicit link syntax, <linkname>:<keyname> */
+  char tmplink[DRMS_MAXLINKNAMELEN]={0};
+  char *colonchar;
+  int status;
+  colonchar = strchr(key, ':');
+  if (colonchar)
+  {
+    strncpy(tmplink, key, colonchar-key);
+    rec = drms_link_follow(rec, tmplink, &status);
+    key = colonchar+1;
+    if (!rec || !(*key) || status)
+      return(NULL);
+  }
+
   /* Handle array syntax for per-segment keywords. */
 
   strcpy(tmp,key);
