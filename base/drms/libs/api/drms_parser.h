@@ -14,6 +14,8 @@ void drms_jsd_printfromrec(DRMS_Record_t *rec);
 /**\brief Print jsd of an existing series */
 void drms_jsd_print(DRMS_Env_t *drms_env, const char *seriesname);
 
+/**\brief Same as drms_fprint_rec_query() print to string */
+void drms_sprint_rec_query(char *querystring, DRMS_Record_t *rec);
 /**\brief Same as drms_fprint_rec_query() print to stdout */
 void drms_print_rec_query(DRMS_Record_t *rec);
 /**\brief Print to \a fp a query that will return the given record */
