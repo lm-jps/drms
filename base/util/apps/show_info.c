@@ -524,7 +524,7 @@ static void CGI_unescape_url (char *url) {
 /* Module main function. */
 int DoIt(void)
   {
-  int firstrec=1;
+  int need_header_printed=1;
   int status = 0;
   DRMS_RecordSet_t *recordset;
   DRMS_Record_t *rec;
@@ -826,7 +826,7 @@ int DoIt(void)
     }
   else
     {
-    recordset = drms_open_records (drms_env, in, &status);
+    recordset = drms_open_recordset (drms_env, in, &status);
     }
 
   if (!recordset) 
@@ -837,6 +837,7 @@ int DoIt(void)
 
 /* recordset now points to a struct with  count of records found ("n"), and a pointer to an
  * array of record pointers ("records");
+ * it may be a chunked recordset (max_recs==0) or a limited size (max_recs!=0).
  */
 
   nrecs = recordset->n;
@@ -858,82 +859,94 @@ int DoIt(void)
   last_rec = nrecs - 1;
   first_rec = 0;
 
-  /* get list of keywords to print for each record */
-  nkeys = 0;
-  if (show_all) 
-    { /* if wanted get list of all keywords */
-    DRMS_Keyword_t *key;
-    HIterator_t hit;
-    hiter_new (&hit, &recordset->records[0]->keywords);
-    while ((key = (DRMS_Keyword_t *)hiter_getnext (&hit)))
-      keys[nkeys++] = strdup (key->info->name);
-    }
-  else if (show_keys)
-    { /* get specified list */
-    char *thiskey;
-    for (thiskey=strtok(keylist, ","); thiskey; thiskey=strtok(NULL,","))
-	keys[nkeys++] = strdup(thiskey);
-    }
-  free (keylist);
 
-  /* get list of segments to show for each record */
-// NEED to also check for {seglist} notation at end of each ss query 
-  nsegs = 0;
-  if (show_all_segs) 
-    { /* if wanted get list of all segments */
-    DRMS_Segment_t *seg;
-    HIterator_t hit;
-    hiter_new (&hit, &recordset->records[0]->segments);
-    while ((seg = (DRMS_Segment_t *)hiter_getnext (&hit)))
-      segs[nsegs++] = strdup (seg->info->name);
-    }
-  else if (show_segs) 
-    { /* get specified segment list */
-    char *thisseg;
-    for (thisseg=strtok(seglist, ","); thisseg; thisseg=strtok(NULL,","))
-	{
-	segs[nsegs++] = strdup(thisseg);
-        }
-    }
-  free (seglist);
-  for (iseg = 0; iseg<nsegs; iseg++)
-    {
-    DRMS_Segment_t *seg = hcon_lookup_lower(&recordset->records[0]->segments, segs[iseg]);
-    if (seg->info->islink)
-      linked_segs++;
-    }
-
-  /* get list of links to print for each record */
-  /* no way to choose a subset of links at this time */
-  nlinks = 0;
-  if (show_all_links) 
-    { /* if wanted get list of all links */
-    DRMS_Link_t *link;
-    HIterator_t hit;
-    hiter_new (&hit, &recordset->records[0]->links);
-    while ((link = (DRMS_Link_t *)hiter_getnext (&hit)))
-      links[nlinks++] = strdup (link->info->name);
-    }
-
-  /* stage records if the user has requested the path (regardless if the user has requested 
-   * segment information -- -A or seg=XXX).
-   */
-  if (want_path_noret)
-    /* -P - don't retrieve and don't wait for retrieval */
-    drms_stage_records(recordset, 0, 1); 
-  else if (want_path)
-    /* -p - retrieve and wait for retrieval */
-    drms_stage_records(recordset, 1, 0); 
-
-
-  /* loop over set of selected records */
+  /* MAIN loop over set of selected records */
   for (irec = first_rec; irec <= last_rec; irec++) 
     {
     int col;
-    rec = recordset->records[irec];  /* pointer to current record */
-    if (firstrec)  /* print header line if not quiet and in table mode */
+    if (max_recs == 0)
       {
-      firstrec=0;
+      rec = drms_recordset_fetchnext(drms_env, recordset, &status);
+      }
+    else
+      {
+      rec = recordset->records[irec];  /* pointer to current record */
+      status = DRMS_SUCCESS;
+      }
+    if (status == DRMS_CHUNKS_NEWCHUNK || irec == first_rec)
+      {
+      // If first record of a chunk, check for staging needed.
+     /* stage records if the user has requested the path (regardless if the user has requested 
+      * segment information -- -A or seg=XXX).
+      */
+     if (want_path_noret)
+       /* -P - don't retrieve and don't wait for retrieval */
+       drms_stage_records(recordset, 0, 1); 
+     else if (want_path)
+       /* -p - retrieve and wait for retrieval */
+       drms_stage_records(recordset, 1, 0); 
+      }
+
+    if (need_header_printed)  /* print header line if not quiet and in table mode */
+      {
+      // At this point the first record is in hand but nothing has been printed yet.
+      /* get list of keywords to print for each record */
+      nkeys = 0;
+      if (show_all) 
+        { /* if wanted get list of all keywords */
+        DRMS_Keyword_t *key;
+        HIterator_t hit;
+        hiter_new (&hit, &rec->keywords);
+        while ((key = (DRMS_Keyword_t *)hiter_getnext (&hit)))
+          keys[nkeys++] = strdup (key->info->name);
+        }
+      else if (show_keys)
+        { /* get specified list */
+        char *thiskey;
+        for (thiskey=strtok(keylist, ","); thiskey; thiskey=strtok(NULL,","))
+	    keys[nkeys++] = strdup(thiskey);
+        }
+      free (keylist);
+    
+      /* get list of segments to show for each record */
+      // NEED to also check for {seglist} notation at end of each ss query 
+      nsegs = 0;
+      if (show_all_segs) 
+        { /* if wanted get list of all segments */
+        DRMS_Segment_t *seg;
+        HIterator_t hit;
+        hiter_new (&hit, &rec->segments);
+        while ((seg = (DRMS_Segment_t *)hiter_getnext (&hit)))
+          segs[nsegs++] = strdup (seg->info->name);
+        }
+      else if (show_segs) 
+        { /* get specified segment list */
+        char *thisseg;
+        for (thisseg=strtok(seglist, ","); thisseg; thisseg=strtok(NULL,","))
+	    {
+	    segs[nsegs++] = strdup(thisseg);
+            }
+        }
+      free (seglist);
+      for (iseg = 0; iseg<nsegs; iseg++)
+        {
+        DRMS_Segment_t *seg = hcon_lookup_lower(&rec->segments, segs[iseg]);
+        if (seg->info->islink)
+          linked_segs++;
+        }
+    
+      /* get list of links to print for each record */
+      /* no way to choose a subset of links at this time */
+      nlinks = 0;
+      if (show_all_links) 
+        { /* if wanted get list of all links */
+        DRMS_Link_t *link;
+        HIterator_t hit;
+        hiter_new (&hit, &rec->links);
+        while ((link = (DRMS_Link_t *)hiter_getnext (&hit)))
+          links[nlinks++] = strdup (link->info->name);
+        }
+      need_header_printed=0;
       if (!quiet && !keyword_list) 
         {			/* print keyword and segment name header line */
         /* first print the name line */
