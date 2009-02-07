@@ -2322,22 +2322,21 @@ void drms_jsd_print(DRMS_Env_t *drms_env, const char *seriesname) {
 }
 
 /* print a query that will return the given record */
-void drms_print_rec_query(DRMS_Record_t *rec)
-  {
-  drms_fprint_rec_query(stdout, rec);
-  }
 
-void drms_fprint_rec_query(FILE *fp, DRMS_Record_t *rec)
+/* string version */
+void drms_sprint_rec_query(char *querystring, DRMS_Record_t *rec)
   {
   int iprime, nprime=0;
   char **external_pkeys, *pkey;
   DRMS_Keyword_t *rec_key;
+  if (!querystring)
+    return;
   if (!rec)
     {
-    fprintf(fp, "** No Record **");
+    sprintf(querystring, "** No Record **");
     return;
     }
-  fprintf(fp, "%s",rec->seriesinfo->seriesname);
+  sprintf(querystring, "%s",rec->seriesinfo->seriesname);
   external_pkeys =
         drms_series_createpkeyarray(rec->env, rec->seriesinfo->seriesname, &nprime, NULL);
   if (external_pkeys && nprime > 0)
@@ -2346,12 +2345,25 @@ void drms_fprint_rec_query(FILE *fp, DRMS_Record_t *rec)
       {
       pkey = external_pkeys[iprime];
       rec_key = drms_keyword_lookup (rec, pkey, 1);
-      fprintf(fp, "[");
-      drms_keyword_fprintval (fp, rec_key);
-      fprintf(fp, "]");
+      strcat(querystring, "[");
+      drms_keyword_snprintfval (rec_key, querystring+strlen(querystring), DRMS_MAXQUERYLEN);
+      strcat(querystring, "]");
       }
     }
   else
-    fprintf(fp, "[:#%lld]",rec->recnum);
-}
+    sprintf(querystring, "[:#%lld]",rec->recnum);
+  }
 
+/* FILE* version */
+void drms_fprint_rec_query(FILE *fp, DRMS_Record_t *rec)
+  {
+  char querystring[DRMS_MAXQUERYLEN];
+  drms_sprint_rec_query(querystring, rec);
+  fprintf(fp, "%s", querystring);
+  }
+
+/* stdout version */
+void drms_print_rec_query(DRMS_Record_t *rec)
+  {
+  drms_fprint_rec_query(stdout, rec);
+  }
