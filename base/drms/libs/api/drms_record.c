@@ -3191,6 +3191,7 @@ char *drms_query_string(DRMS_Env_t *env,
   char *series_lower;
   long long recsize, limit;
   char pidx_names[1024]; // comma separated pidx keyword names
+  char pidx_names_desc[1200]; // comma separated pidx keyword names with DESC
   char *p;
   int nrecs = 0;
 
@@ -3235,10 +3236,15 @@ char *drms_query_string(DRMS_Env_t *env,
   strtolower(series_lower);
 
   if (template->seriesinfo->pidx_num>0) {
+    char *pdesc = pidx_names_desc;
     p = pidx_names;
     p += sprintf(p, "%s.%s", series_lower, template->seriesinfo->pidx_keywords[0]->info->name);
     for (int i = 1; i < template->seriesinfo->pidx_num; i++) {
       p += sprintf(p, ", %s.%s", series_lower, template->seriesinfo->pidx_keywords[i]->info->name);
+    pdesc += sprintf(pdesc, "%s.%s DESC", series_lower, template->seriesinfo->pidx_keywords[0]->info->name);
+    }
+    for (int i = 1; i < template->seriesinfo->pidx_num; i++) {
+      pdesc += sprintf(pdesc, ", %s.%s DESC", series_lower, template->seriesinfo->pidx_keywords[i]->info->name);
     }
   }
 
@@ -3280,7 +3286,7 @@ char *drms_query_string(DRMS_Env_t *env,
      {
         if (template->seriesinfo->pidx_num > 0) 
         {
-           p += sprintf(p, " order by %s %s", pidx_names, nrecs > 0 ? "ASC" : "DESC");
+           p += sprintf(p, " order by %s", nrecs > 0 ? pidx_names : pidx_names_desc);
         }
 
         if (abs(nrecs) < limit)
