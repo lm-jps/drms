@@ -76,6 +76,7 @@ This group of arguments specifies the set of keywords, segments, links, or virtu
 \li \c  seg=<seglist> - string with dedfauly "Not Specified", see below.
 \li \c  -a: Select all keywords and display their values for the chosen records
 \li \c  -A: Select all segments and display their filenames/paths/dimensions for the chosen records
+\li \c  -x: archive - show archived flag for the storage unit. 
 \li \c  -K: Select all links and display their targets for the chosen records
 \li \c  -i: print record query, for each record, will be before any keywwords or segment data
 \li \c  -o: list the record's online status 
@@ -227,6 +228,7 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "s", "0", "stats - show some statistics about the series"},
   {ARG_FLAG, "S", "0", "SUNUM - show the sunum for the record"},
   {ARG_FLAG, "t", "0", "types - show types and print formats for keyword values"},
+  {ARG_FLAG, "x", "0", "archive - show archive status for storage unit"},
   {ARG_FLAG, "z", "0", "size - show size of storage unit containing record's segments"},
   {ARG_INT, "sunum", "-1", "SUNUM specified, find matching records"},
   {ARG_STRING, "QUERY_STRING", "Not Specified", "show_info called as cgi-bin program args here"},
@@ -260,6 +262,7 @@ int nice_intro ()
 	"  -r: recnum - show record number as first keyword\n"
 	"  -R: retention - show the online expire date\n"
 	"  -S: sunum - show sunum number as first keyword (but after recnum)\n"
+	"  -x: archive - show archive status for the record's storage unit\n"
 	"  -z: size - show size of storage unit containing record's segments\n"
         " output appearance control flags are:\n"
 	"  -k: list keyword names and values, one per line\n"
@@ -554,6 +557,7 @@ int DoIt(void)
   int max_recs;
   int quiet;
   int show_retention;
+  int show_archive;
   int show_online;
   int show_recnum;
   int show_sunum;
@@ -629,6 +633,7 @@ int DoIt(void)
   show_recnum =  cmdparams_get_int(&cmdparams, "r", NULL) != 0;
   show_retention = cmdparams_get_int (&cmdparams, "R", NULL) != 0;
   show_sunum =  cmdparams_get_int(&cmdparams, "S", NULL) != 0;
+  show_archive = cmdparams_get_int (&cmdparams, "x", NULL) != 0;
   show_size =  cmdparams_get_int(&cmdparams, "z", NULL) != 0;
   show_types =  cmdparams_get_int(&cmdparams, "t", NULL) != 0;
 
@@ -961,6 +966,8 @@ int DoIt(void)
           printf ("%sonline", (col++ ? "\t" : ""));
         if (show_retention)
           printf ("%sretain", (col++ ? "\t" : ""));
+        if (show_archive)
+          printf ("%sperm", (col++ ? "\t" : ""));
         if (show_size)
           printf ("%ssize", (col++ ? "\t" : ""));
         for (ikey=0 ; ikey<nkeys; ikey++)
@@ -991,6 +998,8 @@ int DoIt(void)
           if (show_online)
             printf ("%sstring", (col++ ? "\t" : ""));
           if (show_retention)
+            printf ("%sstring", (col++ ? "\t" : ""));
+          if (show_archive)
             printf ("%sstring", (col++ ? "\t" : ""));
           if (show_size)
             printf ("%slonglong", (col++ ? "\t" : ""));
@@ -1026,6 +1035,8 @@ int DoIt(void)
           if (show_online)
             printf ("%s%%s", (col++ ? "\t" : ""));
           if (show_retention)
+            printf ("%s%%s", (col++ ? "\t" : ""));
+          if (show_archive)
             printf ("%s%%s", (col++ ? "\t" : ""));
           if (show_size)
             printf ("%s%lld", (col++ ? "\t" : ""));
@@ -1126,6 +1137,20 @@ int DoIt(void)
         printf("## retain=%s\n", retain);
       else
         printf("%s%s", (col++ ? "\t" : ""), retain);
+      }
+
+    if (show_archive)
+      {
+      SUM_info_t *sinfo = drms_get_suinfo(rec->sunum);
+      char *msg;
+      if (!sinfo)
+        msg = "NA";
+      else
+        msg = sinfo->archive_status;
+      if (keyword_list)
+        printf("## perm=%s\n", msg);
+      else
+        printf("%s%s", (col++ ? "\t" : ""), msg);
       }
 
     if (show_size)
@@ -1371,7 +1396,7 @@ int DoIt(void)
       break;
       }
     if (!keyword_list && (show_recnum || show_sunum || show_recordspec || show_online ||
-		show_retention || show_size || nkeys || nsegs || nlinks || want_path))
+		show_retention || show_archive || show_size || nkeys || nsegs || nlinks || want_path))
       printf ("\n");
     }
 
