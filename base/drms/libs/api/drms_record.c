@@ -2618,6 +2618,17 @@ int drms_stage_records(DRMS_RecordSet_t *rs, int retrieve, int dontwait) {
   int cnt = 0;
   HContainer_t *scon = NULL;
 
+  /* if recordset is result of drms_open_recordset with a cursor simply remember
+     that stage_records has been called.  Actual staging will happen when each
+     chunk is fetched. */
+  if (rs->cursor)
+    {
+    rs->cursor->staging_needed = 1;
+    rs->cursor->retrieve = retrieve;
+    rs->cursor->dontwait = dontwait;
+    return(DRMS_SUCCESS);
+    }
+
   if (rs->n > 1)
   {
      for (iSet = 0; !bail && iSet < nSets; iSet++)
@@ -3241,8 +3252,8 @@ char *drms_query_string(DRMS_Env_t *env,
     p += sprintf(p, "%s.%s", series_lower, template->seriesinfo->pidx_keywords[0]->info->name);
     for (int i = 1; i < template->seriesinfo->pidx_num; i++) {
       p += sprintf(p, ", %s.%s", series_lower, template->seriesinfo->pidx_keywords[i]->info->name);
-    pdesc += sprintf(pdesc, "%s.%s DESC", series_lower, template->seriesinfo->pidx_keywords[0]->info->name);
     }
+    pdesc += sprintf(pdesc, "%s.%s DESC", series_lower, template->seriesinfo->pidx_keywords[0]->info->name);
     for (int i = 1; i < template->seriesinfo->pidx_num; i++) {
       pdesc += sprintf(pdesc, ", %s.%s DESC", series_lower, template->seriesinfo->pidx_keywords[i]->info->name);
     }
@@ -6511,6 +6522,18 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                free(seriesname);
                seriesname = NULL;
 
+               /* If staging was requested, stage this chunk */
+               if (rs->cursor->staging_needed)
+               {
+                  stat = drms_stage_records(fetchedrecs, rs->cursor->retrieve,  rs->cursor->dontwait);
+                  if (stat != DRMS_SUCCESS)
+                  {
+                     fprintf(stderr, "Cursor query '%s' record staging failure, status=%d", sqlquery, stat);
+                     break;
+                  }
+
+               }
+
                /* Put the records into rs */
                int nrecs_thisset;
                for (nrecs_thisset = 0; nrecs_thisset < fetchedrecs->n; nrecs_thisset++)
@@ -6666,6 +6689,8 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
          memset(rs->cursor->names, 0, sizeof(char *) * rs->ss_n);
          rs->cursor->allvers = (int *)malloc(sizeof(int) * rs->ss_n);
          memset(rs->cursor->allvers, 0, sizeof(int) * rs->ss_n);
+         /* Future staging request applies to entire record_set */
+         rs->cursor->staging_needed = rs->cursor->retrieve = rs->cursor->dontwait = 0;
 
 	 iset = 0;
          list_llreset(querylist);

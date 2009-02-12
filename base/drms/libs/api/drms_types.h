@@ -431,6 +431,12 @@ struct DRMS_RecSetCursor_struct
   int currentrec;
   /** \brief For each record-set query, 1 means there was a [! ... !] query */
   int *allvers;
+  /** \brief For each record-set 1 means drms_stage_records has been called. */
+  int staging_needed;
+  /** \brief For needed staging, use this retrieve. */
+  int retrieve;
+  /** \brief For needed staging, use this dontwait. */
+  int dontwait;
 };
 
 /** \brief DRMS cursor struct reference */
