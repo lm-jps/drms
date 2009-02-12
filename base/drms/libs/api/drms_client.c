@@ -2,7 +2,7 @@
 #include "drms_priv.h"
 //#include "xmem.h"
 #include "db.h"
-//#define DEBUG
+// #define DEBUG
 
 DRMS_Session_t *drms_connect(char *host, unsigned short port)
 {
@@ -986,6 +986,9 @@ int drms_getunits(DRMS_Env_t *env, char *series,
 
   DRMS_StorageUnit_t **su_nc; // not cached su's
   XASSERT(su_nc = malloc(n*sizeof(DRMS_StorageUnit_t *)));
+#ifdef DEBUG
+      printf("getunit: Called, n=%d, series=%s\n", n, series);
+#endif
 
   /* Get a template for series info. */
   if ((template = drms_template_record(env, series, &stat)) == NULL)

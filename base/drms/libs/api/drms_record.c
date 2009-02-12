@@ -3420,11 +3420,11 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
   {
      dsdsing = 1;
   }
-  
   /* Gotta special-case data ingested from DSDS - you can't populate an 
    * empty record template since the record data are all in memory and
    * don't reside in pqsl. THIS ASSUMES THAT THERE ARE NO PER-SEGMENT 
-   * KEYWORDS IN INGESTED DSDS DATA (THEY'RE SHOULDN'T BE) */
+   * KEYWORDS IN INGESTED DSDS DATA (THERE SHOULD NOT BE) */
+
   if (!jsd || dsdsing)
   {
      if ( (template = hcon_lookup_lower(&env->series_cache, seriesname)) == NULL )
@@ -3496,6 +3496,7 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
     template->seriesinfo->unitsize = db_binary_field_getint(qres, 0, 4);
     template->seriesinfo->archive = db_binary_field_getint(qres, 0, 5);
     template->seriesinfo->retention = db_binary_field_getint(qres, 0, 6);
+    template->seriesinfo->retention_perm = 0; // default
     template->seriesinfo->tapegroup = db_binary_field_getint(qres, 0, 7);
 
     /* Need the version early on, so go out of order. */
@@ -3511,6 +3512,13 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
       goto bailout;
     if ((stat=drms_template_keywords_int(template, !jsd)))
       goto bailout;
+
+    /* If any segments present, lookup pemission to set retention */
+    if (template->segments.num_total > 0)
+      template->seriesinfo->retention_perm = drms_series_cancreaterecord(env, template->seriesinfo->seriesname);
+#ifdef DEBUG
+      printf("retention_perm=%d\n",template->seriesinfo->retention_perm);
+#endif
 
     /* Set up primary index list. */
     if ( !db_binary_field_is_null(qres, 0, 8) )
@@ -4435,6 +4443,7 @@ void drms_fprint_record(FILE *keyfile, DRMS_Record_t *rec)
   fprintf(keyfile, "%-*s:\t%d\n",fwidth,"Unitsize",rec->seriesinfo->unitsize);
   fprintf(keyfile, "%-*s:\t%d\n",fwidth,"Archive",rec->seriesinfo->archive);
   fprintf(keyfile, "%-*s:\t%d\n",fwidth,"Retention",rec->seriesinfo->retention);
+  fprintf(keyfile, "%-*s:\t%d\n",fwidth,"Retention_perm",rec->seriesinfo->retention_perm);
   fprintf(keyfile, "%-*s:\t%d\n",fwidth,"Tapegroup",rec->seriesinfo->tapegroup);
 
   for (i=0; i<rec->seriesinfo->pidx_num; i++)
@@ -6525,6 +6534,10 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                /* If staging was requested, stage this chunk */
                if (rs->cursor->staging_needed)
                {
+               fetchedrecs->ss_starts = (int *)malloc(sizeof(int) * 1);
+               fetchedrecs->ss_starts[0] = 0;
+               fetchedrecs->ss_n = 1;
+// fprintf(stderr,"stage_records called\n");
                   stat = drms_stage_records(fetchedrecs, rs->cursor->retrieve,  rs->cursor->dontwait);
                   if (stat != DRMS_SUCCESS)
                   {

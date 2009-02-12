@@ -498,6 +498,7 @@ typedef struct DRMS_SeriesInfo_struct
   int unitsize;   /* How many records to a storage unit. */
   int archive;    /* Should this series be archived? */
   int retention;  /* Default retention time in seconds. */
+  int retention_perm; /* Do I have permission to change retention? */
   int tapegroup;  /* Tapegroup of the series. */
 
   /* Prime key information. */

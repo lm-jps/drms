@@ -378,8 +378,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
      else
      {
         request->tdays = env->retention;
-        if (request->tdays > 0 && 
-            (!su->seriesinfo || !drms_series_cancreaterecord(env, su->seriesinfo->seriesname)))
+        if (request->tdays > 0 && (!su->seriesinfo || !su->seriesinfo->retention_perm))
         {
            request->tdays *= -1;
         }
@@ -542,7 +541,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
   for (isu = 0; isu < n; isu++)
   {
      onesu = su[isu];
-     if (!onesu->seriesinfo || !drms_series_cancreaterecord(env, onesu->seriesinfo->seriesname))
+     if (!onesu->seriesinfo || !onesu->seriesinfo->retention_perm)
      {
         isowner = 0;
      }
