@@ -858,7 +858,9 @@ int DoIt(void)
    */
   if (want_path_noret)
     /* -P - don't retrieve and don't wait for retrieval */
-    drms_stage_records(recordset, 0, 1); 
+    // drms_stage_records(recordset, 0, 1); 
+    /* -P - don't retrieve but wait for SUMS to give dir info */
+    drms_stage_records(recordset, 0, 0); 
   else if (want_path)
     /* -p - retrieve and wait for retrieval */
     drms_stage_records(recordset, 1, 0); 
