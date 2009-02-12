@@ -853,6 +853,16 @@ int DoIt(void)
     show_info_return(0);
     }
 
+  /* stage records if the user has requested the path (regardless if the user has requested 
+   * segment information -- -A or seg=XXX).
+   */
+  if (want_path_noret)
+    /* -P - don't retrieve and don't wait for retrieval */
+    drms_stage_records(recordset, 0, 1); 
+  else if (want_path)
+    /* -p - retrieve and wait for retrieval */
+    drms_stage_records(recordset, 1, 0); 
+
   /* check for multiple sub-sets */
   n_sets = recordset->ss_n;
   i_set = 0;
@@ -877,19 +887,6 @@ int DoIt(void)
       {
       rec = recordset->records[irec];  /* pointer to current record */
       status = DRMS_SUCCESS;
-      }
-    if (status == DRMS_CHUNKS_NEWCHUNK || irec == first_rec)
-      {
-      // If first record of a chunk, check for staging needed.
-     /* stage records if the user has requested the path (regardless if the user has requested 
-      * segment information -- -A or seg=XXX).
-      */
-     if (want_path_noret)
-       /* -P - don't retrieve and don't wait for retrieval */
-       drms_stage_records(recordset, 0, 1); 
-     else if (want_path)
-       /* -p - retrieve and wait for retrieval */
-       drms_stage_records(recordset, 1, 0); 
       }
 
     if (need_header_printed)  /* print header line if not quiet and in table mode */
