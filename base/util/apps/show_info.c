@@ -856,13 +856,9 @@ int DoIt(void)
   /* stage records if the user has requested the path (regardless if the user has requested 
    * segment information -- -A or seg=XXX).
    */
-  if (want_path_noret)
-    /* -P - don't retrieve and don't wait for retrieval */
-    // drms_stage_records(recordset, 0, 1); 
-    /* -P - don't retrieve but wait for SUMS to give dir info */
+  if (want_path_noret) /* -P - don't retrieve but wait for SUMS to give dir info */
     drms_stage_records(recordset, 0, 0); 
-  else if (want_path)
-    /* -p - retrieve and wait for retrieval */
+  else if (want_path) /* -p - retrieve and wait for retrieval */
     drms_stage_records(recordset, 1, 0); 
 
   /* check for multiple sub-sets */
@@ -950,6 +946,7 @@ int DoIt(void)
         while ((link = (DRMS_Link_t *)hiter_getnext (&hit)))
           links[nlinks++] = strdup (link->info->name);
         }
+
       need_header_printed=0;
       if (!quiet && !keyword_list) 
         {			/* print keyword and segment name header line */
