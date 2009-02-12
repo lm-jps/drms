@@ -1,6 +1,6 @@
 #include "drms.h"
 
-#define DEBUG
+// #define DEBUG
 
 
 /* Assemble an array struct from its constituent parts. */
