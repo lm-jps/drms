@@ -250,9 +250,9 @@ for (iseries=0; iseries<nseries; iseries++)
       if (want_JSON)
 	{
         char *json_escape(char *desc);
-fprintf(stderr,"show_series desc=%s\n",description);
+// fprintf(stderr,"show_series desc=%s\n",description);
         char *desc_escaped = json_escape(description);
-fprintf(stderr,"show_series desc_escaped==%s\n",desc_escaped);
+// fprintf(stderr,"show_series desc_escaped==%s\n",desc_escaped);
 	printf("\"note\":\"%s\"}",desc_escaped);
 	free(desc_escaped);
 	}
