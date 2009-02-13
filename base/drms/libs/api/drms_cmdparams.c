@@ -5,6 +5,7 @@
 static char *blacklist[] =
 {
    "DRMS_RETENTION",
+   "DRMS_ARCHIVE",
    NULL
 };
 
