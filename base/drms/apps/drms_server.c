@@ -174,6 +174,7 @@ CmdParams_t cmdparams;
 
 ModuleArgs_t module_args[] = {
   {ARG_INT, "DRMS_RETENTION", "-1"}, /* -1 == use default set in series definition. */
+  {ARG_INT, "DRMS_ARCHIVE", "-9999"}, 
   {ARG_INT, "DRMS_QUERY_MEM", "512"}, 
   {ARG_INT, "DRMS_SERVER_WAIT", "1"},
   {}
@@ -271,7 +272,8 @@ int main (int argc, char *argv[]) {
 	 env->session->db_handle->dbhost,
 	 env->session->db_handle->dbuser);
 
-  env->archive     = cmdparams_exists(&cmdparams,"A");
+  env->archive	   = drms_cmdparams_get_int(&cmdparams, "DRMS_ARCHIVE", NULL);
+  if (env->archive < -1 ) env->archive = INT_MIN;
   env->retention   = drms_cmdparams_get_int(&cmdparams, "DRMS_RETENTION", NULL);
   env->query_mem   = cmdparams_get_int(&cmdparams, "DRMS_QUERY_MEM", NULL);
   env->server_wait = cmdparams_get_int(&cmdparams, "DRMS_SERVER_WAIT", NULL);
