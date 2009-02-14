@@ -131,11 +131,11 @@ drms_server_abort().
 drms_server spawns a server in a background process, prints the
 connection info to stdout and exits. 
 \par
-\c -A: Archive SUs opened for writing during this session.
-\par
 \c -L: Redirect stdout and stderr to SU log files.
 \par
 \c -n: Turn off Nagle's algorithm on TCP/IP sockets. 
+\par
+\c -s: Set noshare which turns off the serializable mode for the database.
 
 \par SESSION_ARGUMENTS:
 To specify an argument that affects properties of the DRMS session,
@@ -146,8 +146,11 @@ use @c param=value, where @c param is one of the following.
 \arg \c JSOC_DBUSER Specifies (overrides) the username used during database host connection. Default is ::USER.
 \arg \c JSOC_DBPASSWD Specifies (overrides) the password for the username. Default is ::PASSWD.
 \arg \c JSOC_SESSIONNS Specifies (overrides) the DRMS session namespace.
-\arg \c DRMS_RETENTION Sets (forces) the storage-unit retention time for the DRMS session
-started by <module>.
+\arg \c DRMS_RETENTION Sets (forces) the storage-unit retention time for all <modules> in the DRMS session.  The environment
+is not searched for this keyword.
+\arg \c DRMS_ARCHIVE Sets (forces) the storage-unit archive flag for all <module>s in the DRMS session.
+The default is to let the client module or JSD prevail.  Values are not given -> INT_MIN, or -1, 0, 1.  The environment
+is not searched for this keyword.
 \arg \c DRMS_QUERY_MEM Sets the memory maximum for a database query.
 \arg \c DRMS_SERVER_WAIT Non-zero value indicates waiting 2 seconds
 before exiting, otherwise don't wait.
