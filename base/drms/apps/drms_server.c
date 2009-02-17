@@ -443,15 +443,15 @@ int main (int argc, char *argv[]) {
 
 usage:
   fprintf (stderr, "Usage:    %s [-h]\n"
-      "          %s [-vsnf]\n"
+      "          %s [-fLnQsV] [DRMS_ARCHIVE={-1,0,1}] [JSOC_params - see man page]\n"
       "Options:  -h: Print this help message.\n"
-      "          -v: Verbose debug output.\n"
-      "          -L: Redirect stdout and stderr to SU log files.\n"
-      "          -A: Archive SUs opened for writing during this session.\n"
       "          -f: Run server in the foreground.\n"
+      "          -L: Redirect stdout and stderr to SU log files.\n"
+      "          -n: Turn off Nagle's algorithm on TCP/IP sockets.\n"
+      "          -Q: Run in quiet mode.\n"
       "          -s: Commit after every module exit and continue after errors.\n"
-      "          -n: Turn off Nagle's algorithm on TCP/IP sockets.\n", argv[0],
-      argv[0]);
+      "          -V: Verbose debug output.\n"
+      , argv[0], argv[0]);
   return 1;
 }
   
