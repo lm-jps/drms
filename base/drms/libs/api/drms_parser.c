@@ -2105,9 +2105,7 @@ int getkeyword(char **line)
 void drms_keyword_print_jsd(DRMS_Keyword_t *key) {
     printf("Keyword:%s",key->info->name);
     if (key->info->islink) {
-      printf(", link, %s, %s, %s", key->info->linkname, 
-	     key->info->target_key,
-	     key->info->description);
+      printf(", link, %s, %s", key->info->linkname, key->info->target_key);
     } else {
       printf(", %s", drms_type2str(key->info->type));
       int stat;
@@ -2130,15 +2128,12 @@ void drms_keyword_print_jsd(DRMS_Keyword_t *key) {
       else 
 	drms_keyword_printval(key);      
       if (key->info->unit[0] && key->info->unit[0] != ' ') {
-	printf(", \"%s\", \"%s\", \"%s\"", key->info->format,
-	       key->info->unit,
-	       key->info->description);
+	printf(", \"%s\", \"%s\"", key->info->format, key->info->unit);
       } else {
-	printf(", %s, none, \"%s\"", key->info->format,
-	       key->info->description);
+	printf(", %s, none", key->info->format);
       }
     }
-    printf("\n");
+    printf(", \"%s\"\n", key->info->description);
 }
 
 void drms_segment_print_jsd(DRMS_Segment_t *seg) {
