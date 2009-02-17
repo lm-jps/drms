@@ -2105,7 +2105,7 @@ int getkeyword(char **line)
 void drms_keyword_print_jsd(DRMS_Keyword_t *key) {
     printf("Keyword:%s",key->info->name);
     if (key->info->islink) {
-      printf(", link, %s, %s, %s\n", key->info->linkname, 
+      printf(", link, %s, %s, %s", key->info->linkname, 
 	     key->info->target_key,
 	     key->info->description);
     } else {
