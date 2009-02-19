@@ -520,6 +520,9 @@ static int _parse_date_time_inner (char *str,
 
     return 1;
   }
+  else if (field0cpy) {
+     free(field0cpy);
+  }
                 /*  First field is calendar date with optional day fraction  */
   dattim.julday = 0.0;
 
