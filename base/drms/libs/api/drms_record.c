@@ -1567,7 +1567,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                                                 DRMS_QUERY_COUNT, 
                                                 NULL, 
                                                 NULL,
-                                                0);
+                                                allvers[iSet] == 'y');
                  if (!countquery)
                    goto failure;
 
@@ -1618,7 +1618,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 						    DRMS_QUERY_ALL, 
                                                     NULL, 
 						    NULL,
-                                                    0);
+                                                    allvers[iSet] == 'y');
 		 list_llinserttail(llist, &selquery);
 	      }
 
