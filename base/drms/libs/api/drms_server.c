@@ -14,6 +14,15 @@
 #include "printk.h"
 #include "drms_fitsrw.h"
 
+#ifdef DRMS_CLIENT
+#define DEFS_CLIENT
+#endif
+#include "drmssite_info.h"
+
+#ifdef DEFS_CLIENT
+#undef DEFS_CLIENT
+#endif
+
 /******************* Main server thread(s) functions ************************/
 
 static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
