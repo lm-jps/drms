@@ -722,8 +722,8 @@ static int drms_sscanf_int(const char *str,
           ret = sscan_time_ext(tokenstr, &dst->time_val);
 
           maybebad = 
-            (time_is_invalid(dst->time_val) && 
-             strcasecmp (tokenstr, "nan") && strncasecmp (tokenstr, "JD_0", 4));
+            (time_is_invalid(dst->time_val) || 
+             strcasecmp (tokenstr, "nan") || strncasecmp (tokenstr, "JD_0", 4));
 
           if (maybebad) {
              if (!silent) 

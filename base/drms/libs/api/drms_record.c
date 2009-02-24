@@ -1,4 +1,5 @@
 //#define DEBUG
+
 #include <dirent.h>
 #include <dlfcn.h>
 #include <sys/stat.h>
@@ -4777,7 +4778,7 @@ long long drms_keylist_memsize(DRMS_Record_t *rec, char *keylist) {
       p++;
     }
 #if defined(__linux__) && __linux__
-    key = strndup(start, len);
+    key = (char *)strndup(start, len);
 #else
     key = malloc(len + 1);
     snprintf(key, len + 1, "%s", start);
@@ -5368,6 +5369,38 @@ int ParseRecSetDesc(const char *recsetsStr,
                        ilen++;
                     }
                  }
+// put catching of time_convert flag X here, also in parse_record_query in drms_names.c
+                 else if (*pc == '$' && *(pc+1) == '(')
+                 {
+                    /* A form of '$(xxxx)' is taken to be a DRMS preprocessing function
+                     * which is evaluated prior to submitting the query to psql.  The
+                     * result of the function must be a valid SQL operand or expression.
+                     * the only DRMS preprocessing function at the moment is to
+                     * convert an explicit time constant into an internal DRMS TIME
+                     * expressed as a double constant. */
+                     char *rparen = strchr(pc+2, ')');
+                     char temptime[100];
+                     if (!rparen || rparen - pc > 40) // leave room for microsecs
+                     {
+                        fprintf(stderr,"Time conversion error starting at %s\n",pc+2);
+		        state = kRSParseState_Error;
+                     }
+                     else
+                     {
+                        /* pick function here, if ever more than time conversion */
+                        TIME t; 
+                        int consumed;
+                        strncpy(temptime,pc+2,rparen-pc-2);
+                        consumed = sscan_time_ext(temptime, &t);
+                        if (time_is_invalid(t))
+                            fprintf(stderr,"Warning: invalid time from %s\n",temptime);
+#ifdef DEBUG
+fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, gives %f\n",temptime, consumed,t);
+#endif
+                        pc = rparen + 1;
+                        pcBuf += sprintf(pcBuf, "%16.6f", t);
+                     }
+                 }
 		 else if ((*pc == '?' && state == kRSParseState_DRMSFiltSQL) ||
                           (*pc == '!' && state == kRSParseState_DRMSFiltAllVersSQL))
 		 {
@@ -5379,7 +5412,7 @@ int ParseRecSetDesc(const char *recsetsStr,
 		 }
 		 else
 		 {
-		    /* whitespace okay in sql query 
+		    /* simply copy query as is, whitespace okay in sql query 
 		     *   see drms_names.c */
 		    *pcBuf++ = *pc++;
 		 }

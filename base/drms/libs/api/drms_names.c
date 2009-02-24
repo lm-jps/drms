@@ -271,6 +271,38 @@ static RecordQuery_t *parse_record_query(char **in)
              ilen++;
           }
        }
+       // put catching of time_convert flag X here too, see ParseRecSetDesc in drms_record.c
+       else if (*p == '$' && *(p+1) == '(')
+       {
+          /* A form of '$(xxxx)' is taken to be a DRMS preprocessing function
+           * which is evaluated prior to submitting the query to psql.  The
+           * result of the function must be a valid SQL operand or expression.
+           * the only DRMS preprocessing function at the moment is to
+           * convert an explicit time constant into an internal DRMS TIME
+           * expressed as a double constant. */
+           char *rparen = strchr(p+2, ')');
+           if (!rparen || rparen - p > 40) // leave room for microsecs
+           {
+              fprintf(stderr,"Time conversion error starting at %s\n",p+2);
+              goto error;
+           }
+           else
+           {
+              char temptime[100];
+              /* pick function here, if ever more than time conversion */
+              TIME t; 
+              int consumed;
+              strncpy(temptime,p+2,rparen-p-2);
+              consumed = sscan_time_ext(temptime, &t);
+              if (time_is_invalid(t))
+                  fprintf(stderr,"Warning in parse_record_query: invalid time from %s\n",temptime);
+#ifdef DEBUG
+fprintf(stderr,"XXXXX in parse_record_query, convert time %s uses %d chars, gives %f\n",temptime, consumed,t);
+#endif
+              p = rparen + 1;
+              out += sprintf(out, "%16.6f", t);
+           }
+       }
        else if (*p == endchar)
        {
           /* if char after '?'/'!' is r bracket, done */
@@ -695,6 +727,7 @@ static IndexRangeSet_t *parse_index_set(char **in)
   return NULL;
 }
 
+#ifdef OLDWAY_NEVER_USE
 
 /* Ideally, we woudln't have to parse the time string twice (here and in the 
  * subsetquent call to drms_sscanf(). But the way we represent times with
@@ -712,6 +745,16 @@ static IndexRangeSet_t *parse_index_set(char **in)
  * But it will think that the timezone of 2006.05.01 is not known.  But downstread,
  * timeio will somehow think that 2006.05.01 is UTC.
  */
+
+// This is nonsense.  We have since decided that ALL time strings default to UTC if the zone is not
+// specified. In any case, parse_date_time_inner which is called by parsetimestr always fills
+// in the dattim.zone, with "UTC" if not from the string itself.  Further it does not
+// do anything with the zone to adjust the values.  So all of this code can
+// be replaced - if it is still necessary - with a simple call to parse_date_time_inner
+// via a call to sscan_time_ext, then twiddle the value in zone
+
+// furthermore, the strings passed back 
+
 static char *AdjTimeZone(const char *timestr, DRMS_Keyword_t *keyword, int *len)
 {
   /* If we are parsing a time string, and the time-string has NO time-zone
@@ -738,6 +781,7 @@ static char *AdjTimeZone(const char *timestr, DRMS_Keyword_t *keyword, int *len)
          if (!zone)
          {
             /* Valid time, but no zone - append keyword's unit field. */
+// But this would be wrong.  default zone must be UTC in all cases, not just sometimes.
             ret = malloc(256);
 
             /* Either juliday must be not NULL or year/month/dofm must be present */
@@ -832,6 +876,7 @@ static char *AdjTimeZone(const char *timestr, DRMS_Keyword_t *keyword, int *len)
 
    return ret;
 }
+#endif
 
 static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 					char **in)
@@ -907,51 +952,26 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 
        if (!gotstart)
        {
-          char *valstr = NULL;
           int adv = -1;
-          int len;
-
           if (datatype == DRMS_TYPE_TIME)
-          {
-             valstr = AdjTimeZone(p, keyword, &len);
-             if (valstr == NULL)
              {
-                valstr = p;
+             adv = sscan_time_ext(p, NULL);
              }
-             else
-             {
-                adv = len;
-             }
-          }
-          else
-          {
-             valstr = p;
-          }
-
-	  if ((n = drms_sscanf2(valstr, ",]", 1, datatype, &vholder)) == 0 ||
-	      n == -1)
-	  {
+	  if ((n = drms_sscanf2(p, ",]", 1, datatype, &vholder)) == 0 || n == -1)
+	     {
 	     fprintf(stderr,"Syntax Error: Expected either time duraton " 
 		     "or start value of type %s in "
 		     "value range, found '%s'.\n",drms_type2str(datatype), p);
-             if (adv >= 0)
-             {
-                free(valstr);
-             }
 	     goto error;
-	  }
+	     }
           else if (adv > 0)
-          {
+             {
              p += adv;
-          }
+             }
           else
-          {
+             {
              p += n;
-          }
-          if (adv >= 0)
-          {
-             free(valstr);
-          }
+             }
 
           vr->start = vholder.value; /* if string, vr->start owns */
           memset(&(vholder.value), 0, sizeof(DRMS_Type_Value_t));
@@ -981,52 +1001,25 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 
 	      if (vr->type == START_END)
 		{
-                   char *valstr = NULL;
                    int adv = -1;
-                   int len;
-
                    if (datatype == DRMS_TYPE_TIME)
-                   {
-                      valstr = AdjTimeZone(p, keyword, &len);
-                      if (valstr == NULL)
                       {
-                         valstr = p;
+                      adv = sscan_time_ext(p, NULL);
                       }
-                      else
-                      {
-                         adv = len;
-                      }
-                   }
-                   else
-                   {
-                      valstr = p;
-                   }
-
-		  if ((n = drms_sscanf2(valstr, ",]", 0, datatype, &vholder)) == 0)    
+		  if ((n = drms_sscanf2(p, ",]", 0, datatype, &vholder)) == 0)    
 		    {
 		      fprintf(stderr,"Syntax Error: Expected end value of"
 			      " type %s in value range, found '%s'.\n",drms_type2str(datatype), p);
-                      if (adv >= 0)
-                      {
-                         free(valstr);
-                      }
-
 		      goto error;
 		    }
 		  else if (adv > 0)
-                  {
+                     {
                      p += adv;
-                  }
+                     }
                   else
-                  {
+                     {
                      p += n;
-                  }
-
-                  if (adv >= 0)
-                  {
-                     free(valstr);
-                  }
-
+                     }
                   vr->x = vholder.value;
                   memset(&(vholder.value), 0, sizeof(DRMS_Type_Value_t));
 		}
