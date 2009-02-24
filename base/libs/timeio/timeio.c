@@ -25,15 +25,13 @@
  *      The asymmetry of utc_adjustment() and tai_adjustment() is needed
  *	to properly render clock times within the difference between the
  *	two systems of a leap second.
- *    The strtok() function used extensively is not reliably consistent on
- *      different platforms; in particular it is known not to work on the
- *      NeXT.
  *    Unlike the old atodate functions, the date_time structure is not
  *      exported, so is unavailable for direct inspection or modification
  *      except through the sprint_time and sscan_time functions; this is
  *      a feature.
  *    Times with +/-signs in the hour or minute fields are subject to
  *	misinterpretation, due to confusion with time-zone designations
+ *    The internal dattim structure is not thread safe.
  *
  *  Possible Future Upgrades/Modification:
  *    Ignore leading and trailing blanks in time zone designations
@@ -171,96 +169,88 @@ static void _fracday_2_clock (double fdofm) {
   dattim.ut_flag = 0;
 }
 
-/* returns 1 if clock string is a valid time, 0 otherwise. */
-/* Ideally, there would be only one function that does this logic, 
- * but the previously existing one, _parse_clock(), sets
- * global variables, which the check for validity shouldn't do.
- * And it has returns throughout.  So make a new function.
- */
-static int clock_isvalid(const char *strin) {
-   int status;
-   char *token = NULL;
-   int hr;
-   int min;
-   double sec;
-   char str[1024];
-
-   snprintf(str, sizeof(str), "%s", strin);
-
-   token = strtok (str, ":");
-   if (token) {
-      /* hour */
-      status = (sscanf (token, "%d", &hr) == 1);
-      if (status) {
-         token = strtok (NULL, ":");
-         if (token) {
-            /* minute, which isn't necessary, but if it IS present
-             * it should be an int */
-            status = (sscanf (token, "%d", &min) == 1);
-            if (status) {
-               token = strtok (NULL, ":");
-               if (token) {
-                  /* second, which isn't necessary, but if it IS present
-                   * it should be a double */
-                  status = (sscanf (token, "%lf", &sec) == 1);
-               }
-            }
-         }
-      }
-   }
-   else {
-      status = 0;
-   }
-
-   return status;
-}
-
-static int _parse_clock (char *strin, int *consumed) {
-/*
- *  Read time elements from wall-clock string HH:MM:SS.SSS
- */
-  int status;
-  char *field0, *field1, *field2;
-  char str[1024];
-  char *endptr = NULL;
-
-  snprintf(str, sizeof(str), "%s", strin);
-
-  field0 = strtok (str, ":");
-  if (!field0) return 0;
-  status = sscanf (field0, "%d", &dattim.hour);
-  if (status != 1) return 0;
-  field1 = strtok (NULL, ":");
-  if (!field1) return 1;
-  dattim.minute = (int)strtol(field1, &endptr, 10);
-  status = (endptr != field1);
-  if (status != 1) return 0;
-  field2 = strtok (NULL, ":");
-  if (!field2) {
-     if (consumed)
-     {
-        *consumed = endptr - str;
-     }
-
-                         /*  Optional seconds field missing: default is 0.0  */
-    dattim.second = 0.0;
-    return (2);
-  }
-
-  dattim.second = strtod(field2, &endptr);
-  status = (endptr != field2);
-
-  if (status != 1) return 0;
-
-  if (consumed)
+static int _parse_clock_int (char *str, int *hour, int *minute, double *second, int *ut_flag, int *consumed)
   {
+  /*
+   *  Read time elements from wall-clock string HH:MM:SS.SSS
+   */
+  int status;
+  char *ptr, *endptr;
+  int retval;
+
+  if (!str || strlen(str)==0)
+     return 0;
+  ptr = str;
+  *hour = (int)strtol(str, &endptr, 10);
+  if (ptr == endptr)
+     return 0; // must have at least one digit
+  else
+     { // got hour
+     if (*endptr == 'h' || *endptr == 'H')
+        endptr++; // allow h or H to be included in consumed count
+     if (!*endptr || *endptr != ':')
+        { // do not have min field
+        *minute = 0.0;
+        *second = 0.0;
+        retval = 1;
+        }
+     else
+        { // proceed with minutes
+        ptr = endptr+1;
+        *minute = (int)strtol(ptr, &endptr, 10);
+        if (ptr == endptr)
+           return 0; // must have at least one digit
+        else
+           { // got minute
+              if (*endptr == 'm' || *endptr == 'M')
+              endptr++; // allow m or M to be included in consumed count
+           if (!*endptr || *endptr != ':')
+              { // do not have sec field
+              *second = 0.0;
+              retval = 2;
+              }
+           else
+              { // proceed with seconds
+              ptr = endptr+1;
+              *second = strtod(ptr, &endptr);
+              if (ptr == endptr)
+                 return 0; // must have at least one digit
+              else
+                 { // got seconds
+                 if (*endptr == 's' || *endptr == 'S')
+                    endptr++; // allow s or S to be included in consumed count
+                 retval = 3;
+                 }
+              }
+           }
+        }
+     }
+  if (consumed)
      *consumed = endptr - str;
+                              /*  Set a flag in case it is a UT leap second  */
+  *ut_flag = (*second >= 60.0);
+  return (retval);
+}
+
+static int _parse_clock (char *str, int *consumed)
+  {
+  return  _parse_clock_int (str, &dattim.hour, &dattim.minute, &dattim.second, &dattim.ut_flag, consumed);
   }
 
-                              /*  Set a flag in case it is a UT leap second  */
-  dattim.ut_flag = (dattim.second >= 60.0);
-  return (3);
-}
+/* returns 1 if clock string is a valid time, 0 otherwise. */
+static int clock_isvalid(const char *str)
+  {
+  int status;
+  int hr;
+  int min;
+  double sec;
+  int consumed;
+  int ut_flag;
+  status = _parse_clock_int (str, &hr, &min, &sec, &ut_flag, &consumed);
+  if (status)
+    status = 1;
+  return status;
+  }
 
 static int _parse_month_name (char *moname) {
   int month;
@@ -295,84 +285,71 @@ static int _parse_month_name (char *moname) {
   return (month);
 }
 
-static int _parse_date (char *strin, int *consumed) {
-/*
- *  Read date elements from calendar string YYYY.{MM|nam}.DD[.ddd]
- */
+static int _parse_date (char *strin, int *consumed)
+  {
+  /*
+   *  Read date elements from calendar string YYYY.{MM|nam}.DD[.ddd]
+   *  Return 3 if OK and no fractional day, 6 if OK with fractional date, else 0
+   */
   double fracday;
   int status, dfrac;
-  char *endptr;
-  char *field0, *field1, *field2, *field3;
+  char *ptr, *endptr;
+  int len;
+  int retval;
   char daystr[32];
 
-  char str[1024];
-  snprintf(str, sizeof(str), "%s", strin);
-
-  field0 = strtok (str, ".");
-  field1 = strtok (NULL, ".");
-  field2 = strtok (NULL, ".");
-  field3 = strtok (NULL, ".");
-  dattim.year = status = strtol (str, &endptr, 10);
-  if (strlen (endptr)) return _parse_error ();
-
-  if (consumed)
-  {
-     *consumed += endptr - str;
-  }
-
-  if (field1) {
-    dattim.month = status = strtol (field1, &endptr, 10);
-
-    if (strlen (endptr)) {
-      dattim.month = _parse_month_name (field1);
-      if (dattim.month == 0) return _parse_error ();
-
-      if (consumed)
-      {
-         *consumed += 1 + strlen(field1);  /* one for the '.' between field0 and field1.
-                                            * _parse_month_name() uses all chars, and
-                                            * fails if there isn't a valid month */
+  ptr = strin;
+  dattim.year = strtol (ptr, &endptr, 10);
+  len = endptr - ptr;
+  if (len != 2 && len != 4)
+    return _parse_error ();
+  if (*endptr == '.')
+    { // look for month
+    ptr = endptr +1;
+    dattim.month = strtol (ptr, &endptr, 10);
+    len = endptr - ptr;
+    if (len == 0)
+      { /* string month name */
+      dattim.month = _parse_month_name (ptr);
+      if (dattim.month == 0)
+        return _parse_error ();
       }
+    else if (len > 2)
+      return _parse_error ();
     }
-    else
-    {
-       /* numeric month */
-       if (consumed)
-       {
-          *consumed += 1 + endptr - field1;  /* one for the '.' between field0 and field1 */
-       }
+  else
+    dattim.month = 1;
+  if (*endptr == '.')
+    { // look for dofm
+    ptr = endptr +1;
+    dattim.dofm = status = strtol (ptr, &endptr, 10);
+    len = endptr - ptr;
+    if (len > 2)
+      return _parse_error ();
+    else if (len == 0)
+      dattim.dofm = 1;
     }
-  } else dattim.month = 1;
-  if (field2) {
-    dattim.dofm = status = strtol (field2, &endptr, 10);
-
-    if (field3)
-    {
-       if (strlen (endptr)) return _parse_error ();
-    }
-
-    if (consumed)
-    {
-       *consumed += 1 + endptr - field2;  /* one for the '.' between field1 and field2 */
-    }
-  } else dattim.dofm = 1;
-  if (field3) {
-     dfrac = (int)strtol(field3, &endptr, 10);
-     status = (endptr != field3);
-    if (status) {
-                                     /*  Day of month is in fractional form  */
+  else 
+    dattim.dofm = 1;
+  if (*endptr == '.')
+    { // look for day fraction
+    ptr = endptr +1;
+    dfrac = (int)strtol(ptr, &endptr, 10);
+    len = endptr - ptr;
+    if (len > 0)
+      { /*  Day of month is in fractional form  */
       sprintf (daystr, "%d.%d", dattim.dofm, dfrac);
       sscanf (daystr, "%lf", &fracday);
       _fracday_2_clock (fracday);
       status = 6;
+      }
+    else
+      return _parse_error ();
     }
-
-    if (consumed)
-    {
-       *consumed += endptr - field3;
-    }
-  }
-  else status = 3;
+  else
+    status = 3;
+  if (consumed)
+    *consumed = endptr - strin;
   return status;
 }
 
@@ -397,7 +374,8 @@ static int _parse_date_time_inner (char *str,
   char *endptr = NULL;
   char realzone[64];
   int field1consumed = 0;
-  char *field0cpy = NULL;
+  int field0consumed = 0;
+  char field0cpy[64] = {'\0'}; /* enough for JD */
 
   if (first) {
      *first = NULL;
@@ -420,237 +398,164 @@ static int _parse_date_time_inner (char *str,
   }
 
   length = strlen (str);
-  if (!length) return _parse_error ();
-  field0 = strtok (str, "_");
+  if (!length)
+      return _parse_error ();
+  field0 = str;
 
-  if ((strlen (field0)) == length) {
-     if (first && field0 && strlen(field0) > 0) {
-        *first = strdup(field0);
-     }
-
-     /* Only field0 exists. */
-     /*  No "_" separators: field (if valid) must be of type YYYY.MM.dd.ddd  */
-                                                         /*  Default is UTC  */
-    status = _parse_date (field0, consumed);
-    if (status == 3) {
-      dattim.hour = dattim.minute = 0;
-      dattim.second = 0.0;
-    } else if (status != 6) return _parse_error ();
-    strcpy (dattim.zone, "Z");
-    return 0;
-  }
-              /*  First field must either be calendar date or "MJD" or "JD"  */
-  field1 = strtok (NULL, "_");
-
-  field0cpy = strdup(field0);
+  /*  First field must either be calendar date or "MJD" or "JD"  */
+  strncpy(field0cpy, field0, sizeof(field0cpy)-1);
   strtoupper(field0cpy);
   
-  if (field0cpy && strstr (field0cpy, "JD")) {
-     free(field0cpy);
-
-     char *pc = field0;
-     while (*pc == ' ') pc++;
-     if (strcasecmp (pc, "MJD") && strcasecmp (pc, "JD"))
+  if (strstr(field0cpy, "JD"))
      {
+     char *pc = field0cpy;
+     while (*pc == ' ') pc++;
+     if (*pc == 'M') pc++;
+     if (strncmp (pc, "JD", 2))
         return _parse_error();
-     }
+     pc += 2;
+     if (*pc++ != '_')
+        return _parse_error();
+     field0consumed = pc - field0cpy;
 
     /* For JD times, the date is contained in field1, not field0 and 
      * there is no clock field.
      */
-    if (first && field1 && strlen(field1) > 0) {
+    field1 = field0 + field0consumed;
+
+    if (first && field1 && strlen(field1) > 0)
        *first = strdup(field1);
-    }
 
     dattim.julday = strtod(field1, &endptr);
-    status = (endptr != field1);
-
-    if (status != 1) return _parse_error ();
+    if (endptr == field1)
+       return _parse_error ();
 
     if (consumed)
-    {
-       /* one for the '.' between field0 and field1 */
-       *consumed += strlen(field0) + 1 + endptr - field1; 
-    }
+       *consumed = endptr - field0; 
 
-    field2 = strtok (NULL, "_");
+    if (*endptr == '_')
+      {
+      field2 = endptr + 1;
+      if (consumed)
+         *consumed += 1;
+      }
+    else
+      field2 = NULL;
 
-    if (field2) {
-
-       if (parse_zone(field2, realzone, sizeof(realzone)))
+    if (field2)
        {
+       if (parse_zone(field2, realzone, sizeof(realzone)))
+         {
           return _parse_error ();
-       }
+         }
 
        snprintf(dattim.zone, sizeof(dattim.zone), "%s", realzone);
 
       if (consumed)
-      {
-         /* figure out how many chars were actually used for the zone */
-         
-         /* all of field1 should have been used */
-         if (strlen(field1) != (endptr - field1))
-         {
-            return _parse_error ();
-         }
+         *consumed += strlen(realzone) ; 
 
-         *consumed += strlen(realzone) + 1; /* one for the '.' between field1 and field2 */
+      if (third && strlen(realzone) > 0)
+          {
+          *third = strdup(realzone);
+          }
+       }
+   else
+      strcpy (dattim.zone, "TDT"); /*  Default for Julian day notation is TDT  */
 
-         if (third && strlen(realzone) > 0) {
-            *third = strdup(realzone);
-         }
-      }
-      else
-      {
-         if (third && strlen(field2) > 0) {
-            *third = strdup(field2);
-         }
-      }
-    } else
-                                 /*  Default for Julian day notation is TDT  */
-      strcpy (dattim.zone, "TDT");
-    if (field0[0] == 'M')
+   if (field0cpy[0] == 'M')
               /*  Modified Julian date (starts at midnight) : add 2400000.5  */
       dattim.julday += 2400000.5;
 
     if (jdout)
-    {
        *jdout = 1;
-    }
-
     return 1;
   }
-  else if (field0cpy) {
-     free(field0cpy);
-  }
-                /*  First field is calendar date with optional day fraction  */
+
+/*  First field is calendar date with optional day fraction  */
   dattim.julday = 0.0;
 
-  if (first && field0 && strlen(field0) > 0) {
+  if (first && field0 && strlen(field0) > 0) 
      *first = strdup(field0);
-  }
 
-  if (!field1) return _parse_error ();
-
-  field2 = strtok (NULL, "_");
-
-  status = _parse_date (field0, consumed);
-
+  status = _parse_date (field0, &field0consumed);
   if (consumed)
-  {
-     /* Since there is a field0 and field1, we must use up field0 completely */
-     if (strlen(field0) != *consumed)
-     {
-        return _parse_error();
-     }
-  }
+    *consumed = field0consumed;
 
-  if (status == 3) {
-    /* NO factional day exists */
-    status = _parse_clock (field1, &field1consumed);
-    if (!status) {
-       /* Add support for  YYYY.MM.DD_TZ. */
-       /* field1 exists - may be a 'time zone' though if there is no field2 */
-       if (!field2) {
-          /* So, only two fields, and the second field was not a valid clock - 
-           * assume it is the 'time zone' (bad time zones are okay in timeio) */
-          earlytz = 1;
-          
-       }
-       else
-         return _parse_error ();
-    }
-    else
+  // now find field1, should be at end of field0 if present
+  if (*(field0 + field0consumed) == '_')
     {
-       if (second && field1 && strlen(field1) > 0) {
-          *second = strdup(field1);
-       }
+    field1 = field0 + field0consumed + 1;
+    if (consumed)
+       *consumed += 1;
     }
-  } else {
-     /* Fractional day exists - but field1 may contain time zone */
-     if (!field2 && !clock_isvalid(field1)) {
-        /* assume time zone*/
-        earlytz = 1;
+  else
+    {
+    field2 = field1 = NULL;
+    field1consumed = 0;
+    earlytz = 1;
+    }
+
+  if (field1)
+   {
+  if (status == 3)
+    {
+    /* normal date with no fraction in field0 so expect clock time in field 1 */
+    status = _parse_clock (field1, &field1consumed);
+    if (!status)
+       { // is not OK time
+       /* Add support for  YYYY.MM.DD_TZ. */
+       /* field1 exists - may be a 'time zone' */
+       /* So, only two fields, and the second field was not a valid clock - 
+        * assume it is the 'time zone' (bad time zones are okay in timeio) */
+       field1consumed = 0;
+       field2 = field1;
+       field1 = NULL;
+       earlytz = 1;
+       }
+    else
+       { // clock is fine
+       if (second && field1 && strlen(field1) > 0)
+          *second = strdup(field1);
+       if (field1 && (*(field1 + field1consumed) == '+' || *(field1 + field1consumed) == '-'))
+          {
+          /* could be the case that there is an offset to the clock, like 12:45:10+800. 
+           * the +800 is really a time zone from timeio's perspective */
+          field2 = field1 + field1consumed;
+          }
+       if (field1 && *(field1 + field1consumed) == '_')
+          { // then TZ may follow
+          if (consumed)
+             *consumed += 1; // for the '_'
+          field2 = field1 + field1consumed + 1;
+          }
+       else
+          { // should stop here
+          field2 = NULL;
+          }
+       }
      }
-  }
-
-  /* calcuate the number of chars consumed in field1 and field2 */
-  if (consumed)
-  {
-     char *off = NULL;
-     int offsetconsumed = 0;
-
-     if (field1)
+   else
      {
-        if (earlytz)
+    /* Fractional day exists - but field1 may contain time zone */
+    if (!clock_isvalid(field1))
         {
-           /* no field2, and field1 is a tz */
-           if (parse_zone(field1, realzone, sizeof(realzone)))
-           {
-              return _parse_error ();
-           }
-
-           *consumed += 1 + strlen(realzone); /* one for the '_' between field0 and field1 */
-
-           if (third && strlen(realzone) > 0) {
-              *third = strdup(realzone);
-           }
-        }
-        else
-        {
-           /* could be the case that there is an offset to the clock, like 12:45:10+800. 
-            * the +800 is really a time zone from timeio's perspective */
-           if ((off = strchr (field1, '+')) != NULL ||
-               (off = strchr (field1, '-')) != NULL)
-           {
-              strtol(off, &endptr, 10);
-              offsetconsumed = endptr - off;
-
-              /* This offset is a time zone */
-              if (third && offsetconsumed > 0) 
-              {
-                 char buf[128];
-                 strncpy(buf, off, offsetconsumed);
-                 *third = strdup(buf);
-              }
-           }
-
-           if (field2)
-           {
-              if (field1consumed + offsetconsumed != strlen(field1))
-              {
-                 /* not everything to the right of the +/- was usable*/
-                 return _parse_error ();
-              }
-
-              /* both a clock and a tz */
-              if (parse_zone(field2, realzone, sizeof(realzone)))
-              {
-                 return _parse_error ();
-              }
-
-              if (consumed)
-              {
-                 *consumed += 1 + strlen(field1) + 1 + strlen(realzone); /* one for the '_' 
-                                                                          * between field0 and field1
-                                                                          * and one for the '_'
-                                                                          * between field1 and field2 */
-              }
-              
-              if (third && strlen(realzone) > 0) {
-                 *third = strdup(realzone);
-              }
-           }
+        /* assume time zone*/
+        field1consumed = 0;
+        field2 = field1;
+        earlytz = 1;
         }
      }
-  }
+   }
+  /* add the number of chars consumed in field1 */
+  if (consumed)
+    *consumed += field1consumed;
+
+  /* now all that can be left is time zone in field2 */
 
   if (earlytz) {
      /* field1 is a time zone, and no field2 
       * Make field1 00:00 and field2 be the time zone */
-     field2 = field1;
-     tmpstr = strdup("00:00");
-     field1 = tmpstr;
+     // field2 = field1; done above
      dattim.hour = 0;
      dattim.minute = 0;
      dattim.second = 0.0;
@@ -658,51 +563,21 @@ static int _parse_date_time_inner (char *str,
        *second = NULL;
   }
 
-  if (field2) {
-     if (!consumed)
-     {
-        if (third && field2 && strlen(field2) > 0) {
-           *third = strdup(field2);
-        }
-     }
+  if (field2)
+    {
+    if (third && field2 && strlen(field2) > 0)
+        *third = strdup(field2);
 
-     if (parse_zone(field2, realzone, sizeof(realzone)))
-     {
+    if (parse_zone(field2, realzone, sizeof(realzone)))
+       {
         return _parse_error ();
-     }
-
-    snprintf(dattim.zone, sizeof(dattim.zone), "%s", realzone);
-
-    field2 = strtok (NULL, "_");
-  } else {
-     /* I guess that if field1 (which is a clock) contains '+/-' followed by a number
-      * then the '+/-' and the following number is a time zone (an offset in hours * 100 + minutes)
-      */
-			/*  BUG! optional signs in the clock (or date!) field
-			       are misinterpreted as timezone designations!  */
-    field2 = strchr (field1, '+');
-    if (field2) {
-       if (third && field2 && strlen(field2) > 0) {
-          *third = strdup(field2);
        }
-
-      strncpy (dattim.zone, field2, 7);
-      dattim.zone[7] = '\0';
-      field2 = strtok (NULL, "_");
-    } else {
-      field2 = strchr (field1, '-');
-      if (field2) {
-         if (third && field2 && strlen(field2) > 0) {
-            *third = strdup(field2);
-         }
-
-	strncpy (dattim.zone, field2, 7);
-	dattim.zone[7] = '\0';
-	field2 = strtok (NULL, "_");
-                             /*  Default for calendar-clock notation is UTC  */
-      } else strcpy (dattim.zone, "UTC");
+    snprintf(dattim.zone, sizeof(dattim.zone), "%s", realzone);
+    if (consumed)
+        *consumed += strlen(realzone);
     }
-  }
+ else
+   strcpy (dattim.zone, "UTC");
 
   if (tmpstr)
     free(tmpstr);
