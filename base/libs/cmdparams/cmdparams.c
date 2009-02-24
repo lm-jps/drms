@@ -1451,7 +1451,7 @@ TIME cmdparams_get_time (CmdParams_t *parms, char *name, int *status) {
   return value;
 }
 
-void cmdparams_get_argv(CmdParams_t *params, char ***argv, int *argc)
+void cmdparams_get_argv(CmdParams_t *params,  char *const **argv, int *argc)
 {
    if (argv)
    {

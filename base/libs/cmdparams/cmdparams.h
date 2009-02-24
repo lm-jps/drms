@@ -330,7 +330,7 @@ double cmdparams_get_time (CmdParams_t *parms, char *name, int *status);
 /* @} */
 
 /* get original cmd-line params */
-void cmdparams_get_argv(CmdParams_t *params, char ***argv, int *argc);
+void cmdparams_get_argv(CmdParams_t *params, char *const **argv, int *argc);
 
 void cmdparams_reserve(CmdParams_t *params, const char *reserved, const char *owner);
 
