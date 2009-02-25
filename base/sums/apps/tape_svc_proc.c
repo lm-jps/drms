@@ -55,6 +55,7 @@ TQ *q_wrt_need_front = NULL;	/* front of tape need write Q */
 TQ *q_wrt_need_rear = NULL;	/* rear of tape need write Q */
 SUMOFFCNT *offcnt_hdr = NULL;/* linked list of offline counts for a uid*/
 
+int nxtscan = 0;	//where to start next scan of drive_order[]
 int robotbusy = 0;
 int robotcmdseq = 0;
 int eeactive = 0;	/* only allow Qs to rd/wrt tape already in a drive */
@@ -264,7 +265,8 @@ int kick_next_entry_rd() {
     }
     if(e == MAX_DRIVES) {         /* all drives have a tape or offline */
       for(e=0; e < MAX_DRIVES; e++) {
-        d = drive_order[e];
+        d = drive_order[nxtscan++];
+        if(nxtscan >= MAX_DRIVES) nxtscan = 0;
         if((!drives[d].busy) && (!drives[d].offline)) break;
       }
     }
