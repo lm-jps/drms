@@ -278,15 +278,16 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
+  if(strcmp(thishost, "dcs0") && strcmp(thishost, "dcs1") && strcmp(thishost, "dcs2") && strcmp(thishost, "dcs3")) {
+    sprintf(pgport, SUMPGPORT);
+    setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
+  }
+
 #ifndef __LOCALIZED_DEFS__
 /* !!TEMP don't fork on lws or flap */
 char hostn[80];
 gethostname(hostn, 80);		//also dont fork on d00
 if(strcmp(thishost, "lws") && strcmp(thishost, "flap") && strcmp(hostn, "d00.Stanford.EDU")) {
-  if(strcmp(thishost, "dcs0") && strcmp(thishost, "dcs1") && strcmp(thishost, "dcs2") && strcmp(thishost, "dcs3")) {
-    sprintf(pgport, SUMPGPORT);
-    setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
-  }
   if((pid = fork()) < 0) {
     write_log("***Can't fork(). errno=%d\n", errno);
     exit(1);
