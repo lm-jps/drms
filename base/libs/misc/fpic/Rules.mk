@@ -6,7 +6,7 @@ d		:= $(dir)
 # Local variables
 LIBMISC_FPIC	:= $(d)/libmisc_fpic.a
 
-FPICOBJ_$(d)	:= $(addprefix $(d)/, byteswap.o fpu_exception.o timer.o util.o printk.o xmem.o ndim.o adler32.o tee.o)
+FPICOBJ_$(d)	:= $(addprefix $(d)/, byteswap.o timer.o util.o printk.o xmem.o ndim.o adler32.o tee.o)
 ifeq ($(shell uname),Linux)
   FPICOBJ_$(d) := $(FPICOBJ_$(d)) $(d)/backtrace.o
 endif
