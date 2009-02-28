@@ -110,6 +110,7 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "C", "0", "Force cloning of needed records to be DRMS_COPY_SEGMENT mode"},
   {ARG_FLAG, "m", "0", "allow multiple records to be updated"},
   {ARG_FLAG, "t", "0", "create any needed records as DRMS_TRANSIENT, default is DRMS_PERMANENT"},
+  {ARG_FLAG, "l", NULL, "keyword names on cmd-line specified in all lower case (and may not match the case of the keyword names stored in DRMS)"},
   {ARG_FLAG, "v", "0", "verbose flag"},
   {ARG_END}
 };
@@ -150,10 +151,12 @@ int DoIt(void)
   int status = 0;
   int multiple = 0;
   int create = 0;
+  int lckeys = 0;
   int nrecs, irec;
   int force_transient;
   int force_copyseg;
   char *keyname;
+  char *lckeyname = NULL;
   char prime_names[100][32];
   char **pkeys;
   char *query;
@@ -180,6 +183,7 @@ int DoIt(void)
 
    multiple = cmdparams_get_int(&cmdparams, "m", NULL) != 0;
    create = cmdparams_get_int(&cmdparams, "c", NULL) != 0;
+   lckeys = cmdparams_isflagset(&cmdparams, "l");
    if (multiple && create)
 	DIE("-c and -m not compatible");
   p = index(query,'[');
@@ -188,6 +192,12 @@ int DoIt(void)
   if (p && create)
 	DIE("can only create new record, record set not allowed");
   /* Now can test on create and multiple for program control */
+
+  if (verbose)
+  {
+     /* Print something to identify what series is being modified */
+     printf("set_keys() %s, query is %s.\n", create ? "creating record" : "updating record", query);
+  }
 
   if (create)
     {
@@ -210,12 +220,26 @@ int DoIt(void)
         keytype = key->info->type;
 	if (status)
 		DIE("series bad, prime key missing");
+
+        if (lckeys)
+           {
+           lckeyname = strdup(keyname);
+           strtolower(lckeyname);
+           keyname = lckeyname;
+           }
+
         if (!cmdparams_exists(&cmdparams, keyname))
 	  DIE("some prime key not specified on command line");
         key_anyval = cmdparams_get_type(&cmdparams, keyname, keytype, &status); 
 	status = drms_setkey(rec, keyname, keytype, &key_anyval); 
 	if (status)
 		DIE("keyval bad, cant set prime key val with keyname");
+
+        if (lckeys && lckeyname)
+           {
+           free(lckeyname);
+           lckeyname = NULL;
+           }
 	}
 
     /* now record exists with prime keys set. */
@@ -312,6 +336,13 @@ int DoIt(void)
       keyname = key->info->name;
       keytype = key->info->type;
 
+      if (lckeys)
+         {
+         lckeyname = strdup(keyname);
+         strtolower(lckeyname);
+         keyname = lckeyname;
+         }
+
       /* look to see if given on command line */
       if (cmdparams_exists(&cmdparams, keyname))
         {
@@ -332,6 +363,12 @@ int DoIt(void)
              DIE("keyval bad, cant set  key val with keyname");
           }
 	}
+
+      if (lckeys && lckeyname)
+         {
+         free(lckeyname);
+         lckeyname = NULL;
+         }
       }
     } /* foreach(rec) */
 
