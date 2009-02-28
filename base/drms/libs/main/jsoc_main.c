@@ -103,6 +103,8 @@ This overrides the value of series' archive flag.
 \c -Q: Run  jsoc_main  driver  in  quiet mode (no terminal output).
 <br>
 \c -n: A nop; the module cannot define a flag named @a n.
+<br>
+\c --jsocmodver: print the JSOC module version number, then quit
 
 \par SESSION_ARGUMENTS:
 To specify an argument that affects properties of the DRMS session,
@@ -239,7 +241,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   snprintf(reservebuf, 
            sizeof(reservebuf), 
            "%s,%s,%s,%s", 
-           "L,Q,V,ver,vn,vers,version,about", 
+           "L,Q,V,jsocmodver", 
            kARCHIVEARG,
            kRETENTIONARG,
            kQUERYMEMARG);
@@ -258,11 +260,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
     return 1;
   }
 
-  printrel = cmdparams_isflagset(&cmdparams, "ver") ||
-    cmdparams_isflagset(&cmdparams, "vn") ||
-    cmdparams_isflagset(&cmdparams, "vers") ||
-    cmdparams_isflagset(&cmdparams, "version") ||
-    cmdparams_isflagset(&cmdparams, "about");
+  printrel = cmdparams_isflagset(&cmdparams, "jsocmodver");
 
   if (printrel)
   {
