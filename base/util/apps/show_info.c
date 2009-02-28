@@ -85,6 +85,7 @@ This group of arguments specifies the set of keywords, segments, links, or virtu
 \li \c  -r: recnum - show record number as first keyword
 \li \c  -R: retention - show the online expire date for the segment data
 \li \c  -S: SUNUM - show the sunum for the record
+\li \c  -v: verbose - print extra, helpful information
 \li \c  -z: SUNUM - show the storage unit size for the SU that contains the record's segments
 
 \par Flags controling how to display values:
@@ -228,6 +229,7 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "s", "0", "stats - show some statistics about the series"},
   {ARG_FLAG, "S", "0", "SUNUM - show the sunum for the record"},
   {ARG_FLAG, "t", "0", "types - show types and print formats for keyword values"},
+  {ARG_FLAG, "v", NULL, "verbosity"},
   {ARG_FLAG, "x", "0", "archive - show archive status for storage unit"},
   {ARG_FLAG, "z", "0", "size - show size of storage unit containing record's segments"},
   {ARG_INT, "sunum", "-1", "SUNUM specified, find matching records"},
@@ -262,11 +264,13 @@ int nice_intro ()
 	"  -r: recnum - show record number as first keyword\n"
 	"  -R: retention - show the online expire date\n"
 	"  -S: sunum - show sunum number as first keyword (but after recnum)\n"
+        "  -v: verbose - print extra, useful information\n"
 	"  -x: archive - show archive status for the record's storage unit\n"
 	"  -z: size - show size of storage unit containing record's segments\n"
         " output appearance control flags are:\n"
 	"  -k: list keyword names and values, one per line\n"
 	"  -t: list keyword types and print formats as 2nd and 3rd lines in table mode\n"
+        "  -v: print extra, helpful information"
 	"  -q: quiet - skip header of chosen keywords\n"
 	"ds=<recordset query> as <series>{[record specifier]} - required\n"
 	"n=0 number of records in query to show, +n from start or -n from end\n"
@@ -554,6 +558,7 @@ int DoIt(void)
   int show_recordspec;
   int show_stats;
   int show_types;
+  int verbose;
   int max_recs;
   int quiet;
   int show_retention;
@@ -636,8 +641,26 @@ int DoIt(void)
   show_archive = cmdparams_get_int (&cmdparams, "x", NULL) != 0;
   show_size =  cmdparams_get_int(&cmdparams, "z", NULL) != 0;
   show_types =  cmdparams_get_int(&cmdparams, "t", NULL) != 0;
+  verbose = cmdparams_isflagset(&cmdparams, "v");
 
   if(want_path_noret) want_path = 1;	/* also set this flag */
+
+  if (verbose)
+     {
+        char *query = NULL;
+
+        if (strcmp(in, "Not Specified") == 0)
+           {
+              if (cmdparams_numargs(&cmdparams) < 1 || !(query = cmdparams_getarg (&cmdparams, 1)))
+                 {
+                    printf("### show_info: ds=<record_query> parameter is required, must quit\n");
+                    show_info_return(1);
+                 }
+           }
+
+     /* Print something to identify what series is being accessed */
+     printf("show_info() query is %s.\n", query);
+     }
 
   /* At least seriesname or sunum must be specified */
   if (given_sunum >= 0)
