@@ -54,6 +54,7 @@ Only one instance of each keyword name or segment name is allowed.
 \li \c -c: Create a new record
 \li \c -C: Clone an existing record
 \li \c -h: Print usage message and exit
+\li \c -l: Indicates that the keyword names in the key=value cmd-line arguments are all lower case
 \li \c -m: Modify the keywords of multiple records. The \c -m flag should be
 used with caution.  A typo could damage many records. Do not use
 \c -m unless you are sure the query will specify ONLY the records
