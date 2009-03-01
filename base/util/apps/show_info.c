@@ -702,23 +702,6 @@ int DoIt(void)
 
   if(want_path_noret) want_path = 1;	/* also set this flag */
 
-  if (verbose)
-     {
-        char *query = NULL;
-
-        if (strcmp(in, "Not Specified") == 0)
-           {
-              if (cmdparams_numargs(&cmdparams) < 1 || !(query = cmdparams_getarg (&cmdparams, 1)))
-                 {
-                    printf("### show_info: ds=<record_query> parameter is required, must quit\n");
-                    show_info_return(1);
-                 }
-           }
-
-     /* Print something to identify what series is being accessed */
-     printf("show_info() query is %s.\n", query);
-     }
-
   /* At least seriesname or sunum must be specified */
   if (given_sunum >= 0)
     { /* use sunum to get seriesname instead of ds= or stand-along param */
@@ -797,6 +780,12 @@ int DoIt(void)
       show_info_return(1);
       }
     }
+
+  if (verbose)
+     {
+     /* Print something to identify what series is being accessed */
+     printf("show_info() query is %s.\n", in);
+     }
 
   /*  if -j, -l or -s is set, just do the short function and exit */
   if (list_keys || jsd_list || show_stats) 
