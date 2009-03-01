@@ -477,59 +477,6 @@ int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status)
   return(0);
   }
 
-// get_session_info - get information from drms_Session table for this record
-/* Returns path of directory that contains any saved log information for the given record */
-/* If log is offline, returns message, if log was not saved or otherwise not found returns NULL */
-/* The returned char* should be freed after use. */
-
-int get_session_info(DRMS_Record_t *rec, char **runhost, char **runtime, char **jsoc_vers, char **logdir)
-  {
-  int status;
-  char query[DRMS_MAXQUERYLEN];
-  DB_Text_Result_t *qres;
-
-  sprintf(query, "select sunum, hostname, starttime, jsoc_version "
-                 " from %s.drms_session where sessionid=%lld", rec->sessionns, rec->sessionid);
-  if ((qres = drms_query_txt(drms_env->session, query)) && qres->num_rows>0)
-    {
-    if (qres->field[0][0][0] == '\0') // get sunum and logdir
-      *logdir = strdup("No log avaliable");
-    else
-      {
-      DRMS_StorageUnit_t *su;
-      int status, save_retention = drms_env->retention;
-      int retrieve = 0;
-      su = malloc(sizeof(DRMS_StorageUnit_t));
-      su->sunum = atoll(qres->field[0][0]);
-      drms_env->retention = DRMS_LOG_RETENTION;
-      status = drms_su_getsudir(drms_env, su, retrieve);
-      if (!status)
-        *logdir = strdup(su->sudir);
-      else
-        *logdir = strdup("Log offline");
-      free(su);
-      drms_env->retention = save_retention;
-      }
-    if (qres->field[0][1][0] == '\0') // get host
-      *runhost = strdup("No host");
-    else
-      *runhost = strdup(qres->field[0][1]);
-    if (qres->field[0][2][0] == '\0') // get start time
-      *runtime = strdup("No time");
-    else
-      *runtime = strdup(qres->field[0][2]);
-    if (qres->field[0][3][0] == '\0') // get jsoc_version
-      *jsoc_vers = strdup("No version");
-    else
-      *jsoc_vers = strdup(qres->field[0][3]);
-    status = 0;
-    }
-  else
-    status = 1;
-  if (qres) db_free_text_result(qres);
-  return status; 
-  }
-
 SUM_t *my_sum=NULL;
 
 SUM_info_t *drms_get_suinfo(long long sunum)
@@ -558,6 +505,54 @@ SUM_info_t *drms_get_suinfo(long long sunum)
   if (my_sum)				\
     SUM_close(my_sum,printkerr);	\
   return(status);			\
+  }
+
+// get_session_info - get information from drms_Session table for this record
+/* Returns path of directory that contains any saved log information for the given record */
+/* If log is offline, returns message, if log was not saved or otherwise not found returns NULL */
+/* The returned char* should be freed after use. */
+
+int get_session_info(DRMS_Record_t *rec, char **runhost, char **runtime, char **jsoc_vers, char **logdir)
+  {
+  int status;
+  char query[DRMS_MAXQUERYLEN];
+  DB_Text_Result_t *qres;
+
+  sprintf(query, "select sunum, hostname, starttime, jsoc_version "
+                 " from %s.drms_session where sessionid=%lld", rec->sessionns, rec->sessionid);
+  if ((qres = drms_query_txt(drms_env->session, query)) && qres->num_rows>0)
+    {
+    if (qres->field[0][0][0] == '\0') // get sunum and logdir
+      *logdir = strdup("No log avaliable");
+    else
+      {
+      long long sunum = atoll(qres->field[0][0]);
+      SUM_info_t *sinfo = drms_get_suinfo(sunum);
+      if (!sinfo)
+        *logdir = strdup("Log Lost"); 
+      else if (strcmp("N", sinfo->online_status) == 0)
+        *logdir = strdup("Log offline");
+      else
+        *logdir = strdup(sinfo->online_loc);
+      }
+    if (qres->field[0][1][0] == '\0') // get host
+      *runhost = strdup("No host");
+    else
+      *runhost = strdup(qres->field[0][1]);
+    if (qres->field[0][2][0] == '\0') // get start time
+      *runtime = strdup("No time");
+    else
+      *runtime = strdup(qres->field[0][2]);
+    if (qres->field[0][3][0] == '\0') // get jsoc_version
+      *jsoc_vers = strdup("No version");
+    else
+      *jsoc_vers = strdup(qres->field[0][3]);
+    status = 0;
+    }
+  else
+    status = 1;
+  if (qres) db_free_text_result(qres);
+  return status; 
   }
 
 // these next 2 are needed for the QUERY_STRING reading
