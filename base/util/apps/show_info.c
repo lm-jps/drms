@@ -79,6 +79,7 @@ This group of arguments specifies the set of keywords, segments, links, or virtu
 \li \c  -x: archive - show archived flag for the storage unit. 
 \li \c  -K: Select all links and display their targets for the chosen records
 \li \c  -i: print record query, for each record, will be before any keywwords or segment data
+\li \c  -I: print session information including host, runtime, jsoc_version, and logdir
 \li \c  -o: list the record's online status 
 \li \c  -p: list the record's storage_unit path, waits for retrieval if offline
 \li \c  -P: list the record\'s storage_unit path but no retrieve
@@ -215,6 +216,7 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "d", "0", "Show dimensions of segment files with selected segs"},
   {ARG_FLAG, "h", "0", "help - print usage info"},
   {ARG_FLAG, "i", "0", "print record query, for each record, will be before any keywwords or segment data"},
+  {ARG_FLAG, "I", "0", "print session information for record creation, host, runtime, jsoc_version, and logdir"},
   {ARG_FLAG, "j", "0", "list series info in jsd format"},
   {ARG_FLAG, "k", "0", "keyword list one per line"},
   {ARG_FLAG, "l", "0", "just list series keywords with descriptions"},
@@ -257,6 +259,7 @@ int nice_intro ()
 	"  -A: show information for all segments\n"
   	"  -d: Show dimensions of segment files with selected segs\n"
 	"  -i: query- show the record query that matches the current record\n"
+        "  -I: print session information for record creation, host, runtime, jsoc_version, and logdir\n"
 	"  -K: show information for all links\n"
 	"  -o: online - tell the online state\n"
 	"  -p: list the record's storage_unit path (retrieve if necessary)\n"
@@ -274,7 +277,6 @@ int nice_intro ()
 	"  -q: quiet - skip header of chosen keywords\n"
 	"ds=<recordset query> as <series>{[record specifier]} - required\n"
 	"n=0 number of records in query to show, +n from start or -n from end\n"
-	"  Note:  this does not reduce the number of records fetch, onlt the number shown.\n"
 	"key=<comma delimited keyword list>, for all use -a flag\n"
 	"seg=<comma delimited segment list>, for all use -A flag\n"
 	"The -p or -P flag will show the record directory by itself or as part of the\n"
@@ -288,7 +290,7 @@ int nice_intro ()
 /* find first record in series that owns the given record */
 DRMS_RecordSet_t *drms_find_rec_first(DRMS_Record_t *rec, int wantprime)
   {
-  int iprime, nprime;
+  int nprime;
   int status;
   DRMS_RecordSet_t *rs;
   char query[DRMS_MAXQUERYLEN];
@@ -475,6 +477,59 @@ int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status)
   return(0);
   }
 
+// get_session_info - get information from drms_Session table for this record
+/* Returns path of directory that contains any saved log information for the given record */
+/* If log is offline, returns message, if log was not saved or otherwise not found returns NULL */
+/* The returned char* should be freed after use. */
+
+int get_session_info(DRMS_Record_t *rec, char **runhost, char **runtime, char **jsoc_vers, char **logdir)
+  {
+  int status;
+  char query[DRMS_MAXQUERYLEN];
+  DB_Text_Result_t *qres;
+
+  sprintf(query, "select sunum, hostname, starttime, jsoc_version "
+                 " from %s.drms_session where sessionid=%lld", rec->sessionns, rec->sessionid);
+  if ((qres = drms_query_txt(drms_env->session, query)) && qres->num_rows>0)
+    {
+    if (qres->field[0][0][0] == '\0') // get sunum and logdir
+      *logdir = strdup("No log avaliable");
+    else
+      {
+      DRMS_StorageUnit_t *su;
+      int status, save_retention = drms_env->retention;
+      int retrieve = 0;
+      su = malloc(sizeof(DRMS_StorageUnit_t));
+      su->sunum = atoll(qres->field[0][0]);
+      drms_env->retention = DRMS_LOG_RETENTION;
+      status = drms_su_getsudir(drms_env, su, retrieve);
+      if (!status)
+        *logdir = strdup(su->sudir);
+      else
+        *logdir = strdup("Log offline");
+      free(su);
+      drms_env->retention = save_retention;
+      }
+    if (qres->field[0][1][0] == '\0') // get host
+      *runhost = strdup("No host");
+    else
+      *runhost = strdup(qres->field[0][1]);
+    if (qres->field[0][2][0] == '\0') // get start time
+      *runtime = strdup("No time");
+    else
+      *runtime = strdup(qres->field[0][2]);
+    if (qres->field[0][3][0] == '\0') // get jsoc_version
+      *jsoc_vers = strdup("No version");
+    else
+      *jsoc_vers = strdup(qres->field[0][3]);
+    status = 0;
+    }
+  else
+    status = 1;
+  if (qres) db_free_text_result(qres);
+  return status; 
+  }
+
 SUM_t *my_sum=NULL;
 
 SUM_info_t *drms_get_suinfo(long long sunum)
@@ -567,13 +622,14 @@ int DoIt(void)
   int show_recnum;
   int show_sunum;
   int show_size;
+  int show_session;
   int keyword_list;
   int want_count;
   int want_path;
   int want_path_noret;
   int want_dims;
-  int i_set, n_sets;
   long long given_sunum;
+  int i_set, n_sets;
 
   // Include this code segment to allow operating show_info as a cgi-bin program.
   // It will preceed any output to stdout with the content-type info for text.
@@ -626,6 +682,7 @@ int DoIt(void)
   want_count = cmdparams_get_int (&cmdparams, "c", NULL) != 0;
   want_dims = cmdparams_get_int (&cmdparams, "d", NULL) != 0;
   show_recordspec = cmdparams_get_int (&cmdparams, "i", NULL) != 0;
+  show_session = cmdparams_get_int (&cmdparams, "I", NULL) != 0;
   jsd_list = cmdparams_get_int (&cmdparams, "j", NULL) != 0;
   keyword_list =  cmdparams_get_int(&cmdparams, "k", NULL) != 0;
   list_keys = cmdparams_get_int (&cmdparams, "l", NULL) != 0;
@@ -841,20 +898,20 @@ int DoIt(void)
 
   /* check for poor usage of no query and no n=record_count */
   inqry = index(in, '[');
-  if (!inqry && !max_recs)
+  if (!inqry && max_recs == 0)
     {
     fprintf(stderr, "### show_info query must have n=recs or record query specified\n");
     show_info_return(1);
     }
 
   /* Open record_set(s) */
-  if (max_recs != 0)
-    {
-    recordset = drms_open_nrecords (drms_env, in, max_recs, &status);
-    }
-  else
+  if (max_recs == 0)
     {
     recordset = drms_open_recordset (drms_env, in, &status);
+    }
+  else // max_recs specified via "n=" parameter.
+    {
+    recordset = drms_open_nrecords (drms_env, in, max_recs, &status);
     }
 
   if (!recordset) 
@@ -986,9 +1043,11 @@ int DoIt(void)
         if (show_retention)
           printf ("%sretain", (col++ ? "\t" : ""));
         if (show_archive)
-          printf ("%sperm", (col++ ? "\t" : ""));
+          printf ("%sarchive", (col++ ? "\t" : ""));
         if (show_size)
           printf ("%ssize", (col++ ? "\t" : ""));
+        if (show_session)
+          printf ("%shost\truntime\tjsoc_version\tlogdirectory", (col++ ? "\t" : ""));
         for (ikey=0 ; ikey<nkeys; ikey++)
           printf ("%s%s", (col++ ? "\t" : ""), keys[ikey]); 
         for (iseg = 0; iseg<nsegs; iseg++)
@@ -1022,6 +1081,8 @@ int DoIt(void)
             printf ("%sstring", (col++ ? "\t" : ""));
           if (show_size)
             printf ("%slonglong", (col++ ? "\t" : ""));
+          if (show_session)
+            printf ("%sstring\tstring\tstring\tstring", (col++ ? "\t" : ""));
           for (ikey=0 ; ikey<nkeys; ikey++)
             {
             DRMS_Keyword_t *rec_key_ikey = drms_keyword_lookup (rec, keys[ikey], 1);
@@ -1058,7 +1119,9 @@ int DoIt(void)
           if (show_archive)
             printf ("%s%%s", (col++ ? "\t" : ""));
           if (show_size)
-            printf ("%s%lld", (col++ ? "\t" : ""));
+            printf ("%s%%lld", (col++ ? "\t" : ""));
+          if (show_session)
+            printf ("%s%%s\t%%s\t%%s\t%%s", (col++ ? "\t" : ""));
           for (ikey=0 ; ikey<nkeys; ikey++)
             {
             DRMS_Keyword_t *rec_key_ikey = drms_keyword_lookup (rec, keys[ikey], 1);
@@ -1165,9 +1228,14 @@ int DoIt(void)
       if (!sinfo)
         msg = "NA";
       else
-        msg = sinfo->archive_status;
+        {
+        if(sinfo->pa_status == DAAP && sinfo->pa_substatus == DAADP)
+          msg = "Pending";
+        else
+          msg = sinfo->archive_status;
+        }
       if (keyword_list)
-        printf("## perm=%s\n", msg);
+        printf("## archive=%s\n", msg);
       else
         printf("%s%s", (col++ ? "\t" : ""), msg);
       }
@@ -1184,6 +1252,30 @@ int DoIt(void)
         printf("## size=%s\n", size);
       else
         printf("%s%s", (col++ ? "\t" : ""), size);
+      }
+
+    if (show_session)
+      {  // show host, runtime, jsoc_version, and logdir
+      char *runhost, *runtime, *jsoc_vers, *logdir;
+      if (get_session_info(rec, &runhost, &runtime, &jsoc_vers, &logdir))
+        {
+        if (keyword_list)
+          printf("## host=ERROR\n## runtime=ERROR\njsoc_version=ERROR\nlogdir=ERROR\n");
+        else
+          printf("%sERROR\tERROR\tERROR\tERROR", (col++ ? "\t" : ""));
+        }
+      else
+        {
+        if (keyword_list)
+          printf("## host=%s\n## runtime=%s\n## jsoc_version=%s\n## logdir=%s\n",
+            runhost, runtime, jsoc_vers, logdir);
+        else
+          printf("%s%s\t%s\t%s\t%s", (col++ ? "\t" : ""), runhost, runtime, jsoc_vers, logdir);
+        free(runhost);
+        free(runtime);
+        free(jsoc_vers);
+        free(logdir);
+        }
       }
 
     /* now print keyword information */
