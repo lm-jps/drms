@@ -30,6 +30,7 @@ static CLIENT *cl;
 static SVCXPRT *transp[MAXSUMOPEN];
 static SUMID_t transpid[MAXSUMOPEN];
 static int numopened = 0;
+//KEY *infoparams;
 
 /* Returns 1 if ok to shutdown sums.
  * Return 0 is someone still has an active SUM_open().
@@ -351,6 +352,8 @@ int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
     msgstat = getanymsg(1);	/* get answer to ALLOCDO call */
     freekeylist(&klist);
     if(msgstat == ERRMESS) return(ERRMESS);
+    //printf("\nIn SUM_info() the keylist is:\n"); //!!TEMP
+    //keyiterate(printkey, infoparams);
     return(0);
   }
 }
@@ -798,6 +801,7 @@ KEY *respdo_1(KEY *params)
     } 
     break;
   case INFODO:
+    //add_keys(infoparams, &params);
     sinfo = sum->sinfo;
     sinfo->sunum = getkey_uint64(params, "SUNUM");
     strcpy(sinfo->online_loc, GETKEY_str(params, "online_loc"));
