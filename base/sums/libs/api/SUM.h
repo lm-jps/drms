@@ -22,6 +22,7 @@
 #define TAPEVIEWERNAME "t950view"
 #define SUM_STOP_NOT "/usr/local/logs/SUM/SUM_STOP_NOT"
 #endif
+#define LEV1VIEWERNAME "lev1view"
 #define SUMSERVER "d02.Stanford.EDU"
 
 #include <jsoc.h>
