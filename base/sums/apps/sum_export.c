@@ -213,9 +213,9 @@ KEY *getsumexport(KEY *params)
     dest = getkey_str(params, destext);
     port = getkey_uint(params, "port");
     if(port == 0)
-      sprintf(cmd, "scp %s:%s %s", host, src, dest);
+      sprintf(cmd, "scp -r %s:%s/* %s", host, src, dest);
     else
-      sprintf(cmd, "scp -P %d %s:%s %s", port, host, src, dest);
+      sprintf(cmd, "scp -r -P %d %s:%s/* %s", port, host, src, dest);
     printk("%s\n", cmd);
     if(system(cmd)) {
       printk("Error on: %s\n", cmd);
