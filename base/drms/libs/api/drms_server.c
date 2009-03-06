@@ -1546,8 +1546,16 @@ void *drms_sums_thread(void *arg)
   return NULL;
 }
 
+int SUMExptErr(const char *fmt, ...)
+{
+   char string[4096];
 
-
+   va_list ap;
+   va_start(ap, fmt);
+   vsnprintf(string, sizeof(string), fmt, ap);
+   va_end (ap);
+   return fprintf(stderr, "%s", string);
+}
 
 static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 						    SUM_t *sum,
@@ -1724,7 +1732,25 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
     reply->sudir[0] = strdup(sum->wd[0]);
     free(sum->wd[0]); 
     break;
-  default:
+  case DRMS_SUMEXPORT:
+    {
+       /* cast the comment field of the request - 
+        * it contains the SUMEXP_t struct */
+       SUMEXP_t *sumexpt = (SUMEXP_t *)request->comment;
+
+       /* fill in the uid */
+       sumexpt->uid = sum->uid;
+
+       /* Make RPC call to the SUM server. */
+       if ((reply->opcode = SUM_export(sumexpt, SUMExptErr)))
+       {
+          fprintf(stderr,"SUM thread: SUM_export RPC call failed with "
+                  "error code %d\n", reply->opcode);
+          break;
+       }
+    }
+    break;
+     default:
     fprintf(stderr,"SUM thread: Invalid command code (%d) in request.\n",
 	   request->opcode);
     reply->opcode = DRMS_ERROR_SUMBADOPCODE;

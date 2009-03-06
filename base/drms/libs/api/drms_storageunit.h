@@ -16,6 +16,10 @@ int drms_su_commitsu(DRMS_Env_t *env,
                      const char *sudir);
 int drms_su_isremotesu(long long sunum);
 int drms_su_getexportURL(DRMS_Env_t *env, long long sunum, char *url, int size);
-int drms_su_getexportserver(DRMS_Env_t *env, char *expserver, int size);
+int drms_su_getexportserver(DRMS_Env_t *env, 
+                            long long sunum, 
+                            char *expserver, 
+                            int size);
+int drms_su_sumexport(DRMS_Env_t *env, SUMEXP_t *);
 
 #endif

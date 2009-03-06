@@ -1238,18 +1238,27 @@ int drms_su_getexportURL(DRMS_Env_t *env, long long sunum, char *url, int size)
    return ret;
 }
 
-int drms_su_getexportserver(DRMS_Env_t *env, char *expserver, int size)
+/* Return the name of the export server that can serve 
+ * data files that compose the storage unit identified by 
+ * sunum. */
+int drms_su_getexportserver(DRMS_Env_t *env, 
+                            long long sunum, 
+                            char *expserver, 
+                            int size)
 {
    int ret = 0;
    DRMSSiteInfo_t *info = NULL;
 
 #ifdef DRMS_CLIENT
-   drms_send_commandcode(env->session->sockfd, DRMS_LOCALSITEINFO);
-   ret = drmssite_client_getlocalinfo(env->session->sockfd, &info);
+   drms_send_commandcode(env->session->sockfd, DRMS_SITEINFO);
+   ret = drmssite_client_info_from_sunum((unsigned long long)sunum,  
+                                         env->session->sockfd,
+                                         &info);
 #else
-   ret = drmssite_server_getlocalinfo(env->session->db_handle, &info);
+   ret = drmssite_server_info_from_sunum((unsigned long long)sunum,  
+                                         env->session->db_handle,
+                                         &info);
 #endif
-
 
    /* info->SUMS_URL: scp://jsoc_export@j0.stanford.edu/:55000 */
 
@@ -1351,7 +1360,6 @@ int drms_su_commitsu(DRMS_Env_t *env,
      {
         fprintf(stderr, "ERROR in drms_commitunit: SUM PUT failed with "
                 "error code %d.\n", reply->opcode);
-        free(reply);
         drmsst = DRMS_ERROR_SUMPUT;
      }
 
@@ -1364,5 +1372,54 @@ int drms_su_commitsu(DRMS_Env_t *env,
   }
 
   return drmsst;
+}
+
+int drms_su_sumexport(DRMS_Env_t *env, SUMEXP_t *sumexpt)
+{
+   int drmsst = DRMS_SUCCESS;
+
+   DRMS_SumRequest_t *request = NULL;
+   DRMS_SumRequest_t *reply = NULL;
+
+   XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+   memset(request, 0, sizeof(DRMS_SumRequest_t));
+
+   /* Only 2 fields matter - opcode and comment. The latter is used to hold 
+    * a pointer to the SUMEXP_t object. */
+   request->opcode = DRMS_SUMEXPORT;
+   request->comment = (char *)sumexpt;
+
+   if (!env->sum_thread) 
+   {
+      if((drmsst = pthread_create(&env->sum_thread, NULL, &drms_sums_thread, 
+                                (void *) env))) 
+      {
+         fprintf(stderr, "Thread creation failed: %d\n", drmsst);
+         return 1;
+      }
+   }
+
+   /* Submit request to sums server thread. */
+   tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
+
+   /* Wait for reply. FIXME: add timeout. */
+   tqueueDel(env->sum_outbox, (long) pthread_self(), (char **)&reply);
+
+   if (reply->opcode)
+   {
+      fprintf(stderr,"SUM_EXPORT failed with error code %d.\n", reply->opcode);
+      drmsst = reply->opcode;
+   }
+   else
+   {
+      drmsst = DRMS_SUCCESS;
+   }
+
+   if (reply)
+   {
+      free(reply);
+   }
+
+   return drmsst;
 }
 #endif // DRMS_CLIENT

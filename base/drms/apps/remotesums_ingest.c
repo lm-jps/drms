@@ -11,6 +11,7 @@
 scp -r 'j0:/SUM8/D2214195/D1829901/*' .
 */
 
+#include <dirent.h>
 #include "jsoc_main.h"
 #include "drms.h"
 
@@ -19,17 +20,39 @@ scp -r 'j0:/SUM8/D2214195/D1829901/*' .
 #define kSERIES "series"
 #define kSEP1 "://"
 #define kSEP2 ":"
+#define kHASHKEYLEN 64
+#define kMAXREQ 512
 
 enum RSINGEST_stat_enum
 {
    kRSING_success = 0,
    kRSING_badparma,
+   kRSING_tracker,
    kRSING_sumallocfailure,
    kRSING_sumcommitfailure,
+   kRSING_sumexportfailure,
    kRSING_failure
 };
 
 typedef enum RSINGEST_stat_enum RSINGEST_stat_t;
+
+struct RSING_FCopyTracker_struct
+{
+  char series[DRMS_MAXSERIESNAMELEN];
+  char sudir[DRMS_MAXPATHLEN];
+};
+
+typedef struct RSING_FCopyTracker_struct RSING_FCopyTracker_t;
+
+struct RSING_ExpTracker_struct
+{
+  SUMEXP_t sumexpt;
+  int maxreq;
+};
+
+typedef struct RSING_ExpTracker_struct RSING_ExpTracker_t;
+
+
 
 char *module_name = "rs_ingest";
 
@@ -41,13 +64,17 @@ ModuleArgs_t module_args[] =
   {ARG_END}
 };
 
+static int rsing_createhashkey(long long sunum, char *buf, int size)
+{
+   return (snprintf(buf, size, "%lld", sunum) > 0);
+}
+
 int DoIt(void)
 {
    RSINGEST_stat_t status = kRSING_success;
    char *listsunums = NULL;
    char *listpaths = NULL;
    char *listseries = NULL;
-   char cmd[DRMS_MAXPATHLEN];
    char query[DRMS_MAXQUERYLEN];
    int drmsst;
    DRMS_RecordSet_t *rs = NULL;
@@ -55,6 +82,7 @@ int DoIt(void)
    char *server = NULL;
    char *servermeth = NULL;
    char *serverport = NULL;
+   unsigned int port;
    char *sudir = NULL;
    char *ansunum;
    char *apath;
@@ -63,6 +91,19 @@ int DoIt(void)
    char *lpath = NULL;
    char *lseries = NULL;
    long long sunum;
+   HContainer_t *sutracker = NULL; /* Ensure that the storage unit really got copied */
+   HContainer_t *sumexptracker = NULL;
+   char hashkey[kHASHKEYLEN];
+   RSING_FCopyTracker_t fcopy;
+   RSING_FCopyTracker_t *pfcopy = NULL;
+   struct stat stBuf;
+   RSING_ExpTracker_t *pexp = NULL;
+   HIterator_t *hiter = NULL;
+   RSING_ExpTracker_t *pexptracker = NULL;
+   SUMEXP_t *psumexpt = NULL;
+   const char *phashkey = NULL;
+   struct dirent **fileList = NULL;
+   int atleastonefilecopied = 0;
 
    listsunums = cmdparams_get_str(&cmdparams, kSUNUMS, NULL);
    listpaths = cmdparams_get_str(&cmdparams, kPATHS, NULL);
@@ -90,10 +131,36 @@ int DoIt(void)
          continue;
       }
 
+      drms_close_records(rs, DRMS_FREE_RECORD);
+
       if (sscanf(ansunum, "%lld", &sunum) != 1)
       {
          fprintf(stderr, "Invalid sunum '%s'; skipping\n", ansunum);
          continue;
+      }
+
+      if (!sutracker)
+      {
+         sutracker = hcon_create(sizeof(RSING_FCopyTracker_t), kHASHKEYLEN, NULL, NULL, NULL, NULL, 0);
+      }
+
+      if (!sutracker)
+      {
+         fprintf(stderr, "Failed to create file-copy tracker.\n");
+         status = kRSING_tracker;
+         break;
+      }
+
+      if (!sumexptracker)
+      {
+         sumexptracker = hcon_create(sizeof(RSING_ExpTracker_t), kHASHKEYLEN, NULL, NULL, NULL, NULL, 0);
+      }
+
+      if (!sumexptracker)
+      {
+         fprintf(stderr, "Failed to create export-request tracker.\n");
+         status = kRSING_tracker;
+         break;
       }
 
       /* The "_sock" version of this module will not build (nor should it) */
@@ -103,8 +170,9 @@ int DoIt(void)
                            &sudir, 
                            NULL))
       {
-         if (sudir && !drms_su_getexportserver(drms_env, serverstr, sizeof(serverstr)))
+         if (sudir && !drms_su_getexportserver(drms_env, sunum, serverstr, sizeof(serverstr)))
          {
+            
             /* Create scp cmd - user running this module must have
              * started ssh-agent and added their private key to the
              * agent's list of known keys. ssh-agent
@@ -150,32 +218,69 @@ int DoIt(void)
                   *serverport = '\0';
                   serverport++;
 
+                  sscanf(serverport, "%u", &port);
+
                   status = kRSING_success;
                }
             }
 
             if (status == kRSING_success)
             {
-               snprintf(cmd, 
-                        sizeof(cmd), 
-                        "%s -r -P %s '%s:%s/*' %s > /dev/null", 
-                        servermeth,
-                        serverport,
-                        server, 
-                        apath, 
-                        sudir);
-               system(cmd); /* doesn't return until child terminates */
-
-               if (tmp)
+               if (rsing_createhashkey(sunum, hashkey, sizeof(hashkey)))
                {
-                  free(tmp);
+                  if (hcon_lookup(sutracker, hashkey))
+                  {
+                     fprintf(stderr, "Attempt to export a storage unit more than once; skipping\n");
+                     free(tmp);
+                     tmp = NULL;
+                     /* Don't do anything with the alloc'd su - it will get cleaned up eventually */
+
+                     continue;
+                  }
+
+                  snprintf(fcopy.series, DRMS_MAXSERIESNAMELEN, "%s", aseries);
+                  snprintf(fcopy.sudir, DRMS_MAXPATHLEN, "%s", sudir);
+                  hcon_insert(sutracker, hashkey, &fcopy);
                }
 
-               /* commit the newly allocated SU */
-               if (drms_su_commitsu(drms_env, aseries, sunum, sudir))
+               /* Sort requests - combine each server's requests into a single SUMEXP_t */
+               if ((pexp = (RSING_ExpTracker_t *)hcon_lookup(sumexptracker, server)) != NULL)
                {
-                  status = kRSING_sumcommitfailure;
+                  /* Use existing SUMEXP_t */
+                  if (pexp->sumexpt.reqcnt == pexp->maxreq)
+                  {
+                     /* time to allocate more space */
+                     pexp->sumexpt.src = 
+                       (char **)realloc(pexp->sumexpt.src, pexp->maxreq * 2 * sizeof(char *));
+                     pexp->sumexpt.dest = 
+                       (char **)realloc(pexp->sumexpt.dest, pexp->maxreq * 2 * sizeof(char *));
+                  }
                }
+               else
+               {
+                  /* Create new SUMEXP_t */
+                  pexp = (RSING_ExpTracker_t *)hcon_allocslot(sumexptracker, server);
+                  pexp->sumexpt.host = strdup(server); /* <user>@<server> */
+                  pexp->sumexpt.port = port;
+                  pexp->sumexpt.src = (char **)calloc(kMAXREQ, sizeof(char *));
+                  pexp->sumexpt.dest = (char **)calloc(kMAXREQ, sizeof(char *));
+                  pexp->sumexpt.reqcnt = 0;
+                  pexp->maxreq = kMAXREQ;
+               }
+
+               (pexp->sumexpt.src)[pexp->sumexpt.reqcnt] = strdup(apath);
+               (pexp->sumexpt.dest)[pexp->sumexpt.reqcnt] = strdup(sudir);
+               pexp->sumexpt.reqcnt++;                             
+            }
+            else
+            {
+               /* print warning; but will continue */
+               fprintf(stderr, "Invalid server string '%s'.\n", serverstr);
+            }
+            
+            if (tmp)
+            {
+               free(tmp);
             }
          }
       }
@@ -198,7 +303,87 @@ int DoIt(void)
       }
    } /* su loop */
 
-   if (status == kRSING_success)
+   /* Call SUM_export() for each SUMEXP_t */
+   hiter = hiter_create(sumexptracker);
+   while ((pexptracker = hiter_getnext(hiter)) != NULL)
+   {
+      psumexpt = &(pexptracker->sumexpt);
+
+      /* Will block for each request (one request per scp server) */
+      if (drms_su_sumexport(drms_env, psumexpt))
+      {
+         status = kRSING_sumexportfailure;
+         fprintf(stderr, "Error '%d' SUM_export().\n", (int)status);
+         /* but continue */
+         status = kRSING_success;
+      }
+
+      /* free */
+      if (psumexpt->host)
+      {
+         free(psumexpt->host);
+      }
+
+      while (psumexpt->reqcnt >= 0)
+      {
+         if (psumexpt->src && psumexpt->src[psumexpt->reqcnt])
+         {
+            free(psumexpt->src[psumexpt->reqcnt]);
+         }
+         if (psumexpt->dest && psumexpt->dest[psumexpt->reqcnt])
+         {
+            free(psumexpt->dest[psumexpt->reqcnt]);
+         }
+
+         psumexpt->reqcnt--;
+      }
+
+      if (psumexpt->src)
+      {
+         free(psumexpt->src);
+      }
+      if (psumexpt->dest)
+      {
+         free(psumexpt->dest);
+      }
+   }
+
+   hiter_destroy(&hiter);
+   hcon_destroy(&sumexptracker);
+
+   /* Test to see if copies succeeded - do a stat on each file */
+   hiter = hiter_create(sutracker);
+   while ((pfcopy = hiter_extgetnext(hiter, &phashkey)) != NULL)
+   {
+      /* If the file exists, then go ahead and call SUM_put() */
+      if (!stat(pfcopy->sudir, &stBuf) && 
+          S_ISDIR(stBuf.st_mode) && 
+          scandir(pfcopy->sudir, &fileList, NULL, NULL) > 2) /* don't count . and ..*/
+      {
+         /* File exists and it has a non-zero size - commit */
+         sscanf(phashkey, "%lld", &sunum);
+
+         if (drms_su_commitsu(drms_env, pfcopy->series, sunum, pfcopy->sudir))
+         {
+            /* print warning, but execution will continue */
+            fprintf(stderr, "Error committing SU '%s'.\n", phashkey);
+         }
+         else
+         {
+            atleastonefilecopied = 1;
+         }
+      }
+      else
+      {
+         fprintf(stderr, "Error copying to storage unit '%s'.\n", pfcopy->sudir);
+      }
+      
+   }
+
+   hiter_destroy(&hiter);
+   hcon_destroy(&sutracker);
+
+   if (status == kRSING_success && atleastonefilecopied)
    {
       /* Tell DRMS that ingest was successful */
       printf("1\n");
