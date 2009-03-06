@@ -11,6 +11,8 @@
 # When calling this script from DRMS, print error messages to STDERR - STDOUT is redirected
 # to a pipe back to a parent process in DRMS.
 
+# ssh-agent must be run, and the check for an instance of ssh-agent, must be done by
+# the production user that starts sum_export_svc &.
 # The proper way to set up ssh-agent for use to obtain files from Stanford:
 #   First, create passphrased private (id_rsa)/public keys (id_rsa.pub) and place the 
 #   public key content in j0.stanford.edu's authorized_keys file. Then:
@@ -35,7 +37,6 @@ my($kGETAPPOUT) = "/tmp/jsoc_export.$$";
 my($kGETAPPOFLAG) = "-O $kGETAPPOUT";
 my($kSIZECUTOFF) = 134217728; # 128MB
 my($kRSINGEST) = "remotesums_ingest";
-my($kAGENTFILE) = "$ENV{'HOME'}/.ssh-agent_rs";
 
 my($expURL);
 my($list);
@@ -377,91 +378,25 @@ if ($totcnt > 0)
         }
     }
 
-    # setup the environment so that ssh will find the running ssh-agent program
-    my($agentfound) = 0;
-
-    if (-e $kAGENTFILE)
+    # Call remotesums_ingest program - pass four parameters
+    #   1. comma-separated list of sunums
+    #   2. comma-separated list of supaths
+    #   3. comma-separated list of series (may be redundant)
+    #   4. path to ssh-agent configuration file
+    $cmd = "$kRSINGEST sunums=$listsunums paths=$listpaths series=$listseries";
+    if ($trylater)
     {
-        local %ENV = %ENV;
-
-        my($agentpid) = 0;
-        my($agentcmd);
-
-        open(SSHCONF, "<$kAGENTFILE");
-        while($line = <SSHCONF>)
-        {
-            chomp($line);
-
-            if ($line =~ /^setenv\s+(.+)\s+(.+);/)
-            {
-                # C shell
-                $ENV{$1} = $2;
-            }
-            elsif ($line =~ /^(.+)=(.+);\s+/)
-            {
-                # Bourne shell
-                $ENV{$1} = $2;
-            }
-        }
-
-        $agentpid = $ENV{'SSH_AGENT_PID'};
-        
-        if (defined($agentpid))
-        {
-            # $agentlink = readlink("/proc/$agentpid/exe");
-            #
-            # can't do what you'd like to do (read the link and see that it points to
-            # the ssh-agent process file) - only root can do that.
-            # Not sure why.  For other processes, you can read the links in /proc, and
-            # for links to ssh-agent outside of /proc, you can read the links.
-            # You can't even do if (-e "/proc/$agentpid/exe").
-            #
-            # You can look at /proc/$agentpid/cmdline though.
-            
-            $agentcmd = "/proc/$agentpid/cmdline";
-
-            if (-e $agentcmd)
-            {
-                $agentcmd = `cat $agentcmd`;
-                
-                if (defined($agentcmd))
-                {
-                    if ($agentcmd =~ /ssh-agent/)
-                    {
-                        $agentfound = 1;
-                    }
-                }
-            }
-        }
+        $cmd = "$cmd &";
     }
-    
-    if ($agentfound)
-    {
-        # Call remotesums_ingest program - pass four parameters
-        #   1. comma-separated list of sunums
-        #   2. comma-separated list of supaths
-        #   3. comma-separated list of series (may be redundant)
-        #   4. path to ssh-agent configuration file
-        $cmd = "$kRSINGEST sunums=$listsunums paths=$listpaths series=$listseries";
-        if ($trylater)
-        {
-            $cmd = "$cmd &";
-        }
-        # print STDERR "$cmd\n";
+    # print STDERR "$cmd\n";
 
-        # Run cmd - the ingest script is now responsible for writing the error code needed by DRMS
-        # to determine its next action (-1 error, 1 success - can't write 0 since the decision to 
-        # synchronously download has already been made).
-        if (system($cmd) != 0)
-        {
-            # cmd didn't run
-            print STDERR "Couldn't run remotesums_ingest.\n";
-            print "$kRSERROR\n";
-        }
-    }
-    else
+    # Run cmd - the ingest script is now responsible for writing the error code needed by DRMS
+    # to determine its next action (-1 error, 1 success - can't write 0 since the decision to 
+    # synchronously download has already been made).
+    if (system($cmd) != 0)
     {
-        print STDERR "ssh-agent not running.\n";
+        # cmd didn't run
+        print STDERR "Couldn't run remotesums_ingest.\n";
         print "$kRSERROR\n";
     }
 }
