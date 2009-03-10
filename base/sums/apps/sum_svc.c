@@ -273,6 +273,7 @@ int main(int argc, char *argv[])
 		write_log("***cannot create tcp service\n");
 		exit(1);
 	}
+        write_log("svctcp_create() port# = %u\n", transp->xp_port);
 	if (!svc_register(transp, SUMPROG, SUMVERS, sumprog_1, IPPROTO_TCP)) {
 		write_log("***unable to register (SUMPROG, SUMVERS, tcp)\n");
 		exit(1);
