@@ -526,9 +526,9 @@ KEY *delseriesdo_1(KEY *params)
 {
   if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
-  if(debugflg) {
-    write_log("!!Keylist in delseriesdo_1() is:\n");
-    keyiterate(logkey, params);
+  if(debugflg) {	//this can be very long. don't do for now
+    //write_log("!!Keylist in delseriesdo_1() is:\n");
+    //keyiterate(logkey, params);
   }
   }
   rinfo = 0;
