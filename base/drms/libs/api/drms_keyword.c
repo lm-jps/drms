@@ -1801,6 +1801,39 @@ double drms_keyword_getslotbase(DRMS_Keyword_t *slotkey, int *status)
    return ret;
 }
 
+double drms_keyword_getvalkeybase(DRMS_Keyword_t *valkey, int *status)
+{
+   double ret = DRMS_MISSING_DOUBLE;
+   int statint = DRMS_SUCCESS;
+
+   if (drms_keyword_isslotted(valkey))
+   {
+      return drms_keyword_getslotbase(valkey, status);
+   }
+   else
+   {
+      /* Any integer-type value keyword could have auxilliary keywords, like 
+       * _base, _step, etc. */
+      DRMS_Keyword_t *baseKey = drms_keyword_basefromvalkey(valkey);
+
+      if (baseKey)
+      {
+         ret = drms2double(baseKey->info->type, &baseKey->value, &statint);
+      }   
+      else
+      {
+         statint = DRMS_ERROR_UNKNOWNKEYWORD;
+      }
+
+      if (status)
+      {
+         *status = statint;
+      }
+      
+      return ret;
+   }
+}
+
 /* Gets the step value for a slotted keyword. */
 double drms_keyword_getslotstep(DRMS_Keyword_t *slotkey, DRMS_SlotKeyUnit_t *unit, int *status)
 {
@@ -1916,16 +1949,47 @@ double drms_keyword_getstep(DRMS_Keyword_t *key,
    return step;
 }
 
-static DRMS_Keyword_t *GetAncillaryKey(DRMS_Keyword_t *slot, const char *suffix)
+double drms_keyword_getvalkeystep(DRMS_Keyword_t *valkey, int *status)
+{
+   double ret = DRMS_MISSING_DOUBLE;
+   int statint = DRMS_SUCCESS;
+
+   if (drms_keyword_isslotted(valkey))
+   {
+      DRMS_SlotKeyUnit_t unit;
+      return drms_keyword_getslotstep(valkey, &unit, status);
+   }
+   else
+   {
+      /* Any integer-type value keyword could have auxilliary keywords, like 
+       * _base, _step, etc. */
+      DRMS_Keyword_t *stepKey = drms_keyword_stepfromvalkey(valkey);
+
+      if (stepKey)
+      {
+         ret = drms2double(stepKey->info->type, &stepKey->value, &statint);
+      }   
+      else
+      {
+         statint = DRMS_ERROR_UNKNOWNKEYWORD;
+      }
+
+      if (status)
+      {
+         *status = statint;
+      }
+      
+      return ret;
+   }
+}
+
+static DRMS_Keyword_t *GetAncillaryKey(DRMS_Keyword_t *valkey, const char *suffix)
 {
    DRMS_Keyword_t *ret = NULL;
    char buf[DRMS_MAXKEYNAMELEN];
 
-   if (drms_keyword_isslotted(slot))
-   {
-      snprintf(buf, sizeof(buf), "%s%s", slot->info->name, suffix);
-      ret = (DRMS_Keyword_t *)hcon_lookup_lower(&(slot->record->keywords), buf);
-   }
+   snprintf(buf, sizeof(buf), "%s%s", valkey->info->name, suffix);
+   ret = (DRMS_Keyword_t *)hcon_lookup_lower(&(valkey->record->keywords), buf);
 
    return ret;
 }
@@ -1935,19 +1999,70 @@ DRMS_Keyword_t *drms_keyword_indexfromslot(DRMS_Keyword_t *slot)
    return GetAncillaryKey(slot, kSlotAncKey_Index);
 }
 
+DRMS_Keyword_t *drms_keyword_indexfromvalkey(DRMS_Keyword_t *valkey)
+{
+   DRMS_Keyword_t *ret = NULL;
+
+   if (drms_keyword_isslotted(valkey))
+   {
+      ret = drms_keyword_indexfromslot(valkey);
+   }
+   else
+   {
+      /* Just look for an associated _index keyword */
+      ret = GetAncillaryKey(valkey, kSlotAncKey_Index);
+   }
+
+   return ret;
+}
+
 DRMS_Keyword_t *drms_keyword_epochfromslot(DRMS_Keyword_t *slot)
 {
    return GetAncillaryKey(slot, kSlotAncKey_Epoch);
 }
 
-DRMS_Keyword_t *drms_keyword_basefromslot(DRMS_Keyword_t *slot)
+/* If this is a slotted keyword, then the "base" keyword might be
+ * "_base" or it might be "_epoch". */
+DRMS_Keyword_t *drms_keyword_basefromslot(DRMS_Keyword_t *slotkey)
 {
-   return GetAncillaryKey(slot, kSlotAncKey_Base);
+   if (slotkey->info->recscope == kRecScopeType_TS_EQ || 
+       slotkey->info->recscope == kRecScopeType_TS_SLOT)
+   {
+      return GetAncillaryKey(slotkey, kSlotAncKey_Epoch);
+   }
+   else
+   {
+      return GetAncillaryKey(slotkey, kSlotAncKey_Base);
+   }
+}
+
+DRMS_Keyword_t *drms_keyword_basefromvalkey(DRMS_Keyword_t *valkey)
+{
+   if (drms_keyword_isslotted(valkey))
+   {
+      return drms_keyword_basefromslot(valkey);
+   }
+   else
+   {
+      return GetAncillaryKey(valkey, kSlotAncKey_Base);
+   }
 }
 
 DRMS_Keyword_t *drms_keyword_stepfromslot(DRMS_Keyword_t *slot)
 {
    return GetAncillaryKey(slot, kSlotAncKey_Step);
+}
+
+DRMS_Keyword_t *drms_keyword_stepfromvalkey(DRMS_Keyword_t *valkey)
+{
+   if (drms_keyword_isslotted(valkey))
+   {
+      return drms_keyword_stepfromslot(valkey);
+   }
+   else
+   {
+      return GetAncillaryKey(valkey, kSlotAncKey_Step);
+   }
 }
 
 DRMS_Keyword_t *drms_keyword_unitfromslot(DRMS_Keyword_t *slot)
@@ -2195,7 +2310,7 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 
          if (!toosmall && (fabs(exact - inexact) > 1.0e-11 * (fabs(exact) + fabs(inexact))))
          {
-            fprintf(stderr, "Invalid slotted-keyword duration '%f seconds' specified.  Should be a multiple of step size '%f seconds'.  Duration was rounded to nearest multiple.\n", valind, roundstep);
+            fprintf(stderr, "Invalid slotted-keyword duration '%f seconds' specified.  Should be a multiple of step size '%f seconds'.  Duration was rounded to nearest multiple.\n", valind, stepsecs);
          }
       }
    }

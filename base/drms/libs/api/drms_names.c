@@ -1333,35 +1333,119 @@ int sql_record_set(RecordSet_t *rs, char *seriesname, char *query)
 
 static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char **query)
 {
-  char *p=*query;
-
 #ifdef DEBUG
   printf("Enter sql_record_set_filter\n");
 #endif
+
+  /* If there is a [#^] or [#$] in the filter, AND it is not the first 
+   * record list, then a different query needs to be done.  If the 
+   * filter is [165]['twiggy'], then a where clause of "id = 165 AND 
+   * model = 'twiggy' suffices.  But if the filter is [165][#^], then
+   * the where clause should be 
+   * "model in (select min(model) from <seriesname> where id = 165)".
+   *
+   * So, instead of sequentially writing the query to *query, it is
+   * probably better to figure out what the entire where clause is, 
+   * and then concatenate it to query.
+   */
+
+  char whereclz[DRMS_MAXQUERYLEN] = {0};
+  char wherebuf[DRMS_MAXQUERYLEN];
+  char *bogus = NULL;
+
   do {
-    p += sprintf(p,"( ");
+     memset(wherebuf, sizeof(wherebuf), 0);
+     bogus = wherebuf;
+
+     /* opening parenthesis around single var=xxx */
+     snprintf(wherebuf, sizeof(wherebuf), "( ");
+     bogus +=2;
+
     switch(rs->type)
     {
     case RECORDQUERY:
-      sql_record_query(rs->record_query, &p);
+      sql_record_query(rs->record_query, &bogus);
       break;
     case RECORDLIST:
-      sql_record_list(rs->record_list, seriesname, &p);
+      sql_record_list(rs->record_list, seriesname, &bogus);
       break;
     default:    
       fprintf(stderr,"Wrong type (%d) in sql_record_set_filter.\n",
 	      rs->type);
       return 1;
     }
-    p += sprintf(p," )");
-    if (rs->next)
-      p += sprintf(p," AND ");
+
+    /* If rs->type == FIRST_VALUE or rs->type == LAST_VALUE, then 
+     * wherebuf is of the format (xxx=(select max(xxx) from series)), 
+     * and the existing whereclz must be embedded like this:
+     * (xxx=(select max(xxx) from series WHERE (whereclz)))
+     */
+    if (*whereclz && 
+        strlen(wherebuf) && 
+        rs->type == RECORDLIST && 
+        rs->record_list->type == PRIMEKEYSET && 
+        ((rs->record_list->primekey_rangeset->type == INDEX_RANGE &&        
+          (rs->record_list->primekey_rangeset->index_rangeset->type == FIRST_VALUE || 
+           rs->record_list->primekey_rangeset->index_rangeset->type == LAST_VALUE)) ||
+         (rs->record_list->primekey_rangeset->type == VALUE_RANGE &&
+          (rs->record_list->primekey_rangeset->value_rangeset->type == FIRST_VALUE || 
+           rs->record_list->primekey_rangeset->value_rangeset->type == LAST_VALUE)
+          )))
+    {
+       /* working backward, find first non-')', non-space */
+       char *pin = &(wherebuf[strlen(wherebuf) - 1]);
+       char savebuf[DRMS_MAXQUERYLEN] = {0};
+
+       while (*pin == ')' || *pin == ' ')
+       {
+          pin--;
+       }
+
+       pin++;
+       snprintf(savebuf, sizeof(savebuf), "%s", pin);
+       *pin = '\0';
+
+       base_strlcat(pin, " WHERE ( ", sizeof(wherebuf) - (pin - wherebuf));
+       
+       /* embed existing whereclz */
+       base_strlcat(pin, whereclz, sizeof(wherebuf) - (pin - wherebuf));
+       
+       base_strlcat(pin, " )", sizeof(wherebuf) - (pin - wherebuf));
+
+       /* now concatenate savebuf back onto wherebuf */
+       base_strlcat(wherebuf, savebuf, sizeof(wherebuf));
+
+       /* closing parenthesis */
+       base_strlcat(wherebuf, " )", sizeof(wherebuf));
+
+       /* put back into whereclz */
+       snprintf(whereclz, sizeof(whereclz), "%s", wherebuf);       
+    }
+    else
+    {
+       /* closing parenthesis around single var=xxx */
+       base_strlcat(wherebuf, " )", sizeof(wherebuf));
+
+       if (*whereclz)
+       {
+          /* simple AND of record lists */
+          base_strlcat(whereclz, " AND ", sizeof(whereclz));
+       }
+
+       base_strlcat(whereclz, wherebuf, sizeof(whereclz));
+    }
+
     rs = rs->next;
   } while (rs);
 #ifdef DEBUG
   printf("Added '%s'\nExit sql_record_set_filter\n",*query);
 #endif
-  *query=p;
+
+  /* whereclz contains final where clause - concatenate onto query */
+  /* DON'T know the size of query - ack - just strcat (very dangerous!!) */
+  sprintf(*query, whereclz);
+  *query += strlen(whereclz);
+
   return 0;
 }
 
@@ -1471,28 +1555,56 @@ static int sql_primekey_index_set(IndexRangeSet_t *rs, DRMS_Keyword_t *keyword,
 {
   char *p=*query;
   DRMS_Type_t datatype;
-  DRMS_Type_Value_t base, step, one;
-  DRMS_Keyword_t *step_key;
-  char tmp[1024];
+  DRMS_Type_Value_t base, step;
+  double dbase;
+  double dstep;
+  int drmsstat = DRMS_SUCCESS;
 
 #ifdef DEBUG
   printf("Enter sql_primekey_index_set\n");
 #endif
-  
+
+  /* If the original query involved a keyword with an associated index keyword
+   * (like a slotted keyword), then 'keyword' is the index keyword.*/
   datatype = keyword->info->type;
-  base = keyword->value;
-  sprintf(tmp,"%s_step",keyword->info->name);
-  if ((step_key = drms_keyword_lookup(keyword->record, tmp, 1)) == NULL)
+
+  /* Get optional base and step keyword values. If keyword is a slotted key, then 
+   * 'keyword' IS the associated index keyword (*_index), not the slotted keyword.
+   */
+  if (drms_keyword_isindex(keyword))
   {
-    /* No step given in series definition. Defaults to 1. */
-    one.double_val = 1.0;
-    memset(&(step.char_val), 0, sizeof(step));
-    drms_convert(datatype, &step, DRMS_TYPE_DOUBLE, &one);
+     /* Must get yyy_base and yyy_step from yyy_index */
+     DRMS_Keyword_t *valkey = drms_keyword_slotfromindex(keyword);
+     dbase = drms_keyword_getvalkeybase(valkey, &drmsstat);
+     dstep = drms_keyword_getvalkeystep(valkey, &drmsstat);
   }
   else
-    step = step_key->value;
+  {
+     /* Must get yyy_base and yyy_step from yyy - 'keyword' is the  */
+     dbase = drms_keyword_getvalkeybase(keyword, &drmsstat);
+     dstep = drms_keyword_getvalkeystep(keyword, &drmsstat);
+  }
+
+  if (drms_ismissing_double(dbase))
+  {
+     dbase = 0.0;
+  }
+
+  base.double_val = dbase;
+  drms_convert(datatype, &base, DRMS_TYPE_DOUBLE, &base);
+
+  if (drms_ismissing_double(dstep))
+  {
+     dstep = 1.0;
+  }
+
+  step.double_val = dstep;
+  drms_convert(datatype, &step, DRMS_TYPE_DOUBLE, &step);
+
   do {
     p += sprintf(p,"( ");
+    /* FIRST_VALUE/LAST_VALUE in index sets mean to find the record with the 
+     * keyword with smallest/largest value. */
     if (rs->type == FIRST_VALUE) {
       p += sprintf(p,"%s=(select min(%s) from %s)", keyword->info->name, keyword->info->name, seriesname);
     } else if (rs->type == LAST_VALUE) {
@@ -1587,11 +1699,22 @@ static int sql_primekey_value_set(ValueRangeSet_t *rs, DRMS_Keyword_t *keyword,
 				  char *seriesname, char **query)
 {
   char *p=*query;
+
 #ifdef DEBUG
   printf("Enter sql_primekey_value_set\n");
 #endif
+
+  /* If the original query involved a keyword with an associated index keyword
+   * (like a slotted keyword), then keyword is the index keyword.*/
   do {
     p += sprintf(p,"( ");
+
+    /* FIRST_VALUE/LAST_VALUE in value sets mean to find the record with the 
+     * associated INDEX keyword with smallest/largest value. But since 'keyword'
+     * is already the associated index keyword (if one exists), you cannot
+     * search for the record with smallest/largest value of the value keyword
+     * (the keyword associated with the index keyword). You are forced to search
+     * on the index keyword. */
     if (rs->type == FIRST_VALUE) {
       p += sprintf(p,"%s=(select min(%s) from %s)", keyword->info->name, keyword->info->name, seriesname);
     } else if (rs->type == LAST_VALUE) {

@@ -185,15 +185,20 @@ static inline void drms_keyword_unsetextprime(DRMS_Keyword_t *key)
    key->info->kwflags &= ~kKeywordFlag_ExternalPrime;
 }
 DRMS_SlotKeyUnit_t drms_keyword_getunit(DRMS_Keyword_t *key, int *status);
-TIME drms_keyword_getslotepoch(DRMS_Keyword_t *key, int *status);
-TIME drms_keyword_getepoch(DRMS_Keyword_t *key, int *status);
+TIME drms_keyword_getepoch(DRMS_Keyword_t *epochkey, int *status);
 double drms_keyword_getslotcarr0(void);
+/* get the epoch value from the epoch keyword associated with the TSEQ-slotted keyword */
+TIME drms_keyword_getslotepoch(DRMS_Keyword_t *slotkey, int *status);
+/* get the base value from the base keyword associated with the slotted keyword */
 double drms_keyword_getslotbase(DRMS_Keyword_t *slotkey, int *status);
+/* Generic - get the base value from the base keyword associated with the value keyword */
+double drms_keyword_getvalkeybase(DRMS_Keyword_t *valkey, int *status);
 double drms_keyword_getslotstep(DRMS_Keyword_t *slotkey, DRMS_SlotKeyUnit_t *unit, int *status);
 double drms_keyword_getstep(DRMS_Keyword_t *key, 
 			    DRMS_RecScopeType_t recscope, 
 			    DRMS_SlotKeyUnit_t *unit, 
 			    int *status);
+double drms_keyword_getvalkeystep(DRMS_Keyword_t *valkey, int *status);
 int drms_keyword_isprime(DRMS_Keyword_t *key);
 int drms_keyword_isvariable(DRMS_Keyword_t *key);
 int drms_keyword_isconstant(DRMS_Keyword_t *key);
@@ -203,9 +208,15 @@ int drms_keyword_isslotted(DRMS_Keyword_t *key);
 /* Utility */
 DRMS_RecScopeType_t drms_keyword_str2recscope(const char *str, int *status);
 DRMS_Keyword_t *drms_keyword_indexfromslot(DRMS_Keyword_t *slot);
+/* Generic - get the index keyword from the associated value keyword */
+DRMS_Keyword_t *drms_keyword_indexfromvalkey(DRMS_Keyword_t *valkey);
 DRMS_Keyword_t *drms_keyword_epochfromslot(DRMS_Keyword_t *slot);
 DRMS_Keyword_t *drms_keyword_basefromslot(DRMS_Keyword_t *slot);
+/* Generic - get the base keyword from the associated value keyword */
+DRMS_Keyword_t *drms_keyword_basefromvalkey(DRMS_Keyword_t *valkey);
 DRMS_Keyword_t *drms_keyword_stepfromslot(DRMS_Keyword_t *slot);
+/* Generic - get the step keyword from the associated value keyword */
+DRMS_Keyword_t *drms_keyword_stepfromvalkey(DRMS_Keyword_t *valkey);
 DRMS_Keyword_t *drms_keyword_unitfromslot(DRMS_Keyword_t *slot);
 DRMS_Keyword_t *drms_keyword_roundfromslot(DRMS_Keyword_t *slot);
 DRMS_Keyword_t *drms_keyword_slotfromindex(DRMS_Keyword_t *indx);

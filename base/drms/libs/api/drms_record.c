@@ -1513,6 +1513,12 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 #ifdef DEBUG  
 	      printf("seriesname = %s\n",seriesname);
 	      printf("query = %s\n",query);
+#else
+              if (env->verbose)
+              {
+                 printf("seriesname = %s\n",seriesname);
+                 printf("where clause = %s\n",query);
+              }
 #endif
 
 	      if (seglist)
@@ -3217,7 +3223,7 @@ char *drms_query_string(DRMS_Env_t *env,
 
   switch (qtype) {
   case DRMS_QUERY_COUNT:
-    field_list = strdup("count(*)");
+    field_list = strdup("count(recnum)");
     break;
   case DRMS_QUERY_FL:
     field_list = strdup(fl);
@@ -5008,6 +5014,14 @@ static int DSElem_SkipComment(char **c)
    }
 }
 
+/* ParseRecSetDesc() minimally parses record-set queries - it parses to the degree necessary
+ * to distinguish between different types of queries requiring different types of processing.
+ * The real parsing gets done in drms_names.c, but the problem is that the parsing in drms_names.c
+ * happens too late. For example, before drms_names.c is called, we must know whether 
+ * the query is a plain-flie query, a dsds rec-set query, or a drms rec-set query, so 
+ * ParseRecSetDesc() figures this out.  Ideally, the query would be parsed once, at the 
+ * location where ParseRecSetDesc() is first called - but too late for that.
+ */
 /* Caller owns sets. */
 int ParseRecSetDesc(const char *recsetsStr, 
                     char **allvers, 
@@ -5034,6 +5048,8 @@ int ParseRecSetDesc(const char *recsetsStr,
    char currAllVers = 'n';
    int countMultiRS = 0;
    char *endInput = rsstr + strlen(rsstr); /* points to null terminator */
+   int nfilter = 0;
+   int recnumrsseen = 0;
 
    *nsets = 0;
 
@@ -5238,6 +5254,25 @@ int ParseRecSetDesc(const char *recsetsStr,
 	      /* inside '[' and ']' */
 	      if (pc < endInput)
 	      {
+                 /* If a recnumrangeset has been seen already, then it makes
+                  * no sense to have a second filter. Also, if this is the second
+                  * or greater filter, it makes no sense to have a recnumrangeset.
+                  *
+                  * A recnumrangeset is a way to absolutely identify a set of records -
+                  * it makes no sense to specify such a set in a single filter, 
+                  * then specify some other filter to modify that set.
+                  */
+                 if ((*pc == ':' && nfilter > 0) || recnumrsseen)
+                 {
+                    state = kRSParseState_Error;
+                    fprintf(stderr, "Only one filter is allowed to contain a recnum list.\n");
+                    break;
+                 }
+                 else if (*pc == ':')
+                 {
+                    recnumrsseen = 1;
+                 }
+
                  /* just do one pass now */
                  /* check for SQL filt */
                  if (*pc == '?')
@@ -5346,6 +5381,9 @@ int ParseRecSetDesc(const char *recsetsStr,
 	      {
 		 currSettype = kRecordSetType_DRMS;
 	      }
+
+              nfilter++;
+
 	      break;
             case kRSParseState_DRMSFiltAllVersSQL:
               currAllVers = 'y';
@@ -6803,7 +6841,10 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
       }
       else
       {
-	 rs->cursor = NULL;
+         if (rs)
+         {
+            rs->cursor = NULL;
+         }
       }
 
       if (querylist)
