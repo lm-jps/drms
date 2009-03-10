@@ -396,7 +396,7 @@ int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
 
   stat = getmsgimmed();		//clean up pending response
 
-  //(void)pmap_unset(RESPPROG, sum->uid); /* unreg response server */
+  (void)pmap_unset(RESPPROG, sum->uid); /* unreg response server */
   remsumopened(&sumopened_hdr, sum->uid); /* rem from linked list */
   clnt_destroy(sum->cl);	/* destroy handle to sum_svc */
   for(i=0; i < MAXSUMOPEN; i++) {
