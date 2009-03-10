@@ -1342,7 +1342,7 @@ static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char 
    * filter is [165]['twiggy'], then a where clause of "id = 165 AND 
    * model = 'twiggy' suffices.  But if the filter is [165][#^], then
    * the where clause should be 
-   * "model in (select min(model) from <seriesname> where id = 165)".
+   * "id = 165 AND model = (select min(model) from <seriesname> where id = 165)".
    *
    * So, instead of sequentially writing the query to *query, it is
    * probably better to figure out what the entire where clause is, 
@@ -1378,7 +1378,7 @@ static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char 
     /* If rs->type == FIRST_VALUE or rs->type == LAST_VALUE, then 
      * wherebuf is of the format (xxx=(select max(xxx) from series)), 
      * and the existing whereclz must be embedded like this:
-     * (xxx=(select max(xxx) from series WHERE (whereclz)))
+     * yyy=max(yyy) AND (xxx=(select max(xxx) from series WHERE (whereclz)))
      */
     if (*whereclz && 
         strlen(wherebuf) && 
@@ -1419,7 +1419,8 @@ static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char 
        base_strlcat(wherebuf, " )", sizeof(wherebuf));
 
        /* put back into whereclz */
-       snprintf(whereclz, sizeof(whereclz), "%s", wherebuf);       
+       base_strlcat(whereclz, " AND ", sizeof(whereclz));
+       base_strlcat(whereclz, wherebuf, sizeof(whereclz));
     }
     else
     {
@@ -1573,10 +1574,13 @@ static int sql_primekey_index_set(IndexRangeSet_t *rs, DRMS_Keyword_t *keyword,
    */
   if (drms_keyword_isindex(keyword))
   {
-     /* Must get yyy_base and yyy_step from yyy_index */
-     DRMS_Keyword_t *valkey = drms_keyword_slotfromindex(keyword);
-     dbase = drms_keyword_getvalkeybase(valkey, &drmsstat);
-     dstep = drms_keyword_getvalkeystep(valkey, &drmsstat);
+     /* If 'keyword' is associated with a slotted keyword, then base and step
+      * have already been applied when deriving the values for 'keyword' - 
+      * a function has applied both values to the original, slotted keyword
+      * values.
+      */
+     dbase = 0;
+     dstep = 1;
   }
   else
   {
