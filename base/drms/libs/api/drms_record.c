@@ -6804,7 +6804,7 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
 	       snprintf(cursorname, sizeof(cursorname), "%s_CURSOR%lld", seriesname, guid++);
 	       snprintf(cursorquery, 
 			sizeof(cursorquery), 
-			"DECLARE %s SCROLL CURSOR FOR (%s)", 
+			"DECLARE %s NO SCROLL CURSOR FOR (%s) FOR READ ONLY", 
 			cursorname, 
 			cursorselect);
 

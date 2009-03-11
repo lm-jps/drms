@@ -994,7 +994,7 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
       if (vr->type != SINGLE_VALUE)
 	{
 	  /* Special handling of time intervals and durations. */
-	  if (datatype==DRMS_TYPE_TIME || datatype == DRMS_TYPE_FLOAT || datatype == DRMS_TYPE_DOUBLE)
+	  if (datatype==DRMS_TYPE_TIME)
 	    {
 	      double dval = 0.0;
 	      DRMS_Type_Value_t dvalval;
@@ -1002,10 +1002,8 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 	      if (vr->type == START_END)
 		{
                    int adv = -1;
-                   if (datatype == DRMS_TYPE_TIME)
-                      {
-                      adv = sscan_time_ext(p, NULL);
-                      }
+                   adv = sscan_time_ext(p, NULL);
+
 		  if ((n = drms_sscanf2(p, ",]", 0, datatype, &vholder)) == 0)    
 		    {
 		      fprintf(stderr,"Syntax Error: Expected end value of"
@@ -1025,6 +1023,7 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 		}
 	      else
 		{
+                   /* in other words, this is a duration */
 		   if (parse_duration(&p,&dval))
 		   {
 		      fprintf(stderr,"Syntax Error: Expected time or float duration "
@@ -1044,7 +1043,7 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 
 		  if (parse_duration(&p,&dval))    
 		    {
-		      fprintf(stderr,"Syntax Error: Expected skip (time or float duration)"
+		      fprintf(stderr,"Syntax Error: Expected skip (time duration)"
 			      " in value range, found '%s'.\n", p);
 		      goto error;
 		    }
@@ -1703,10 +1702,13 @@ static int sql_primekey_value_set(ValueRangeSet_t *rs, DRMS_Keyword_t *keyword,
 				  char *seriesname, char **query)
 {
   char *p=*query;
+  DRMS_Type_t datatype;
 
 #ifdef DEBUG
   printf("Enter sql_primekey_value_set\n");
 #endif
+
+  datatype = keyword->info->type;
 
   /* If the original query involved a keyword with an associated index keyword
    * (like a slotted keyword), then keyword is the index keyword.*/
@@ -1744,9 +1746,38 @@ static int sql_primekey_value_set(ValueRangeSet_t *rs, DRMS_Keyword_t *keyword,
 	p += drms_sprintfval(p, keyword->info->type,  &rs->x, 1);
 	p += sprintf(p," )");
       }
+
       if (rs->has_skip)
-	fprintf(stderr,"Skip!=1 not yet supported in value queries.\n");
-      //	p += sprintf(p,"AND (recnum-%d)%%%d=0 ",rs->start,rs->skip);
+      {
+         double dskip = drms2double(datatype, &rs->skip, NULL);
+
+         /* rs->type == START_END || rs->type == START_DURATION */
+         if (datatype == DRMS_TYPE_CHAR || datatype == DRMS_TYPE_SHORT ||
+             datatype == DRMS_TYPE_INT || datatype == DRMS_TYPE_LONGLONG)
+         {
+            long long llstart = drms2longlong(datatype, &rs->start, NULL);;
+            p += sprintf(p, " AND (cast((%s - %lld)", keyword->info->name, llstart);
+            p += sprintf(p, " as integer) %% ");
+            p += drms_sprintfval(p, datatype, &rs->skip, 1);
+            p += sprintf(p, ") = 0");
+         }
+         else
+         {
+            /* select records where <value> - rs->start is a multiple of rs->skip */
+            double dstart = drms2double(datatype, &rs->start, NULL);
+            double tolerance = 1.0e-11 * 2 * dstart;
+
+            p += sprintf(p, 
+                         " AND (abs(((%s - %g) / %g) - (round((%s - %g) / %g))) < %g)",
+                         keyword->info->name, 
+                         dstart,
+                         dskip,
+                         keyword->info->name, 
+                         dstart,
+                         dskip,
+                         tolerance);
+         }
+      }
     }
     p += sprintf(p," )");
     if (rs->next)
