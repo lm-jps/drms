@@ -65,6 +65,8 @@ typedef enum
 #define kDSElemParseDelim ",;\n"
 #define kOverviewFits     "overview.fits"
 
+#define kQUERYNFUDGE      (4);
+
 static int CopySeriesInfo(DRMS_Record_t *target, DRMS_Record_t *source);
 static int CopySegments(DRMS_Record_t *target, DRMS_Record_t *source);
 static int CopyLinks(DRMS_Record_t *target, DRMS_Record_t *source);
@@ -3210,6 +3212,10 @@ char *drms_query_string(DRMS_Env_t *env,
   long long recsize, limit;
   char pidx_names[1024]; // comma separated pidx keyword names
   char pidx_names_desc[1200]; // comma separated pidx keyword names with DESC
+  char pidx_names_n[1024]; // comma separated pidx keyword names in 'limited' table
+  char pidx_names_bare[1024]; // comma separated pidx keyword names in 'limited' table
+  char pidx_names_desc_bare[1024]; // comma separated pidx keyword names in 'limited' table
+  char limitedtable[1024]; // for DRMS_QUERY_N, innermost table that has 4 * n rows
   char *p;
   int nrecs = 0;
 
@@ -3255,15 +3261,71 @@ char *drms_query_string(DRMS_Env_t *env,
 
   if (template->seriesinfo->pidx_num>0) {
     char *pdesc = pidx_names_desc;
+    char *p_n = pidx_names_n;
+    char *p_bare = pidx_names_bare;
+    char *pdesc_bare = pidx_names_desc_bare;
+
     p = pidx_names;
+
     p += sprintf(p, "%s.%s", series_lower, template->seriesinfo->pidx_keywords[0]->info->name);
-    for (int i = 1; i < template->seriesinfo->pidx_num; i++) {
-      p += sprintf(p, ", %s.%s", series_lower, template->seriesinfo->pidx_keywords[i]->info->name);
-    }
+
     pdesc += sprintf(pdesc, "%s.%s DESC", series_lower, template->seriesinfo->pidx_keywords[0]->info->name);
-    for (int i = 1; i < template->seriesinfo->pidx_num; i++) {
+
+    /* limited case */
+    p_n += sprintf(p_n, 
+                   "limited.%s", 
+                   template->seriesinfo->pidx_keywords[0]->info->name);
+    
+    p_bare += sprintf(p_bare, 
+                      "%s", 
+                      template->seriesinfo->pidx_keywords[0]->info->name);
+
+    pdesc_bare += sprintf(pdesc_bare, 
+                          "%s DESC", 
+                          template->seriesinfo->pidx_keywords[0]->info->name);
+    
+    
+    for (int i = 1; i < template->seriesinfo->pidx_num; i++) 
+    {
+       p += sprintf(p, ", %s.%s", series_lower, template->seriesinfo->pidx_keywords[i]->info->name);
+
       pdesc += sprintf(pdesc, ", %s.%s DESC", series_lower, template->seriesinfo->pidx_keywords[i]->info->name);
+
+       p_n += sprintf(p_n, 
+                      ", limited.%s", 
+                      template->seriesinfo->pidx_keywords[i]->info->name);
+
+       p_bare += sprintf(p_bare, 
+                         ", %s", 
+                         template->seriesinfo->pidx_keywords[i]->info->name);
+
+       pdesc_bare += sprintf(pdesc_bare, 
+                            ", %s DESC", 
+                            template->seriesinfo->pidx_keywords[i]->info->name);
     }
+  }
+
+
+  if (qtype == DRMS_QUERY_N)
+  {
+     char *plimtab = limitedtable;
+     int fudge = kQUERYNFUDGE;
+
+     plimtab += snprintf(limitedtable, 
+                         sizeof(limitedtable),
+                         "select recnum,%s from %s where 1=1",
+                         pidx_names_bare,
+                         series_lower);
+     if (where && *where)
+     {
+        plimtab += sprintf(plimtab, " and %s", where);
+
+     }
+
+     plimtab += sprintf(plimtab, 
+                        " order by %s limit %d",
+                        nrecs > 0 ? pidx_names_bare : pidx_names_desc_bare,
+                        abs(nrecs) * fudge);
   }
 
   /* Do query to retrieve record meta-data. */
@@ -3279,24 +3341,79 @@ char *drms_query_string(DRMS_Env_t *env,
   if (filter && template->seriesinfo->pidx_num>0 && !allvers) { // query on the lastest version
     if (mixed) {
       // query on both prime and non-prime keys
-      p += sprintf(p, "select %s from %s, (select q2.max1 as max from  (select max(recnum) as max1, min(q1.max) as max2 from %s, (select %s, max(recnum) from %s where %s group by %s) as q1 where %s.%s = q1.%s", field_list, series_lower, series_lower, pidx_names, series_lower, where, pidx_names, series_lower, template->seriesinfo->pidx_keywords[0]->info->name, template->seriesinfo->pidx_keywords[0]->info->name);
-      for (int i = 1; i < template->seriesinfo->pidx_num; i++) {
-	p += sprintf(p, " and %s.%s = q1.%s", series_lower, template->seriesinfo->pidx_keywords[i]->info->name, template->seriesinfo->pidx_keywords[i]->info->name);
-      }
-      p += sprintf(p, " group by %s) as q2 where max1 = max2) as q3 where %s.recnum = q3.max", pidx_names, series_lower);
-    } else {
+       /* break into DRMS_QUERY_N vs. other types of queries - too hard to combine all into one
+        * sprintf() */
+       if (qtype != DRMS_QUERY_N)
+       {
+          p += sprintf(p, "select %s from %s, (select q2.max1 as max from  (select max(recnum) as max1, min(q1.max) as max2 from %s, (select %s, max(recnum) from %s where %s group by %s) as q1 where %s.%s = q1.%s", field_list, series_lower, series_lower, pidx_names, series_lower, where, pidx_names, series_lower, template->seriesinfo->pidx_keywords[0]->info->name, template->seriesinfo->pidx_keywords[0]->info->name);
+          for (int i = 1; i < template->seriesinfo->pidx_num; i++) {
+             p += sprintf(p, " and %s.%s = q1.%s", series_lower, template->seriesinfo->pidx_keywords[i]->info->name, template->seriesinfo->pidx_keywords[i]->info->name);
+          }
+          p += sprintf(p, " group by %s) as q2 where max1 = max2) as q3 where %s.recnum = q3.max", pidx_names, series_lower);
+       }
+       else
+       {
+          /* DRMS_QUERY_N */
+          p += sprintf(p, 
+                       "select %s from %s, (select q2.max1 as max from  (select max(recnum) as max1, min(q1.max) as max2 from %s, (select %s, max(recnum) from (%s) as limited group by %s) as q1 where %s.%s = q1.%s",
+                       field_list, 
+                       series_lower, 
+                       series_lower, 
+                       pidx_names_n, 
+                       limitedtable, 
+                       pidx_names_n, 
+                       series_lower, 
+                       template->seriesinfo->pidx_keywords[0]->info->name, 
+                       template->seriesinfo->pidx_keywords[0]->info->name);
+
+          for (int i = 1; i < template->seriesinfo->pidx_num; i++) 
+          {
+             p += sprintf(p, 
+                          " and %s.%s = q1.%s", 
+                          series_lower, 
+                          template->seriesinfo->pidx_keywords[i]->info->name, 
+                          template->seriesinfo->pidx_keywords[i]->info->name);
+          }
+
+          p += sprintf(p, 
+                       " group by %s) as q2 where max1 = max2) as q3 where %s.recnum = q3.max", 
+                       pidx_names, 
+                       series_lower);
+       }
+    } 
+    else 
+    {
       // query only on prime keys
-      p += sprintf(p, "select %s from %s where recnum in (select max(recnum) from %s where 1=1 ", field_list, series_lower, series_lower);
-      if (where && *where) {
-	p += sprintf(p, " and %s", where);
-      }
-      p += sprintf(p, " group by %s )", pidx_names);
+       /* break into DRMS_QUERY_N vs. other types of queries - too hard to combine all into one
+        * sprintf() */
+       if (qtype != DRMS_QUERY_N)
+       {
+          p += sprintf(p, "select %s from %s where recnum in (select max(recnum) from %s where 1=1 ", field_list, series_lower, series_lower);
+          if (where && *where) 
+          {
+             p += sprintf(p, " and %s", where);
+          }
+
+          p += sprintf(p, " group by %s )", pidx_names);
+       }
+       else
+       {
+          /* DRMS_QUERY_N */
+          p += sprintf(p, 
+                       "select %s from %s where recnum in (select max(recnum) from (%s) as limited group by %s)", 
+                       field_list, 
+                       series_lower, 
+                       limitedtable, 
+                       pidx_names_n);
+
+       }
     }
   } else { // query on all records including all versions
-    p += sprintf(p, "select %s from %s where 1 = 1", field_list, series_lower);
-    if (where && *where) {
-      p += sprintf(p, " and %s", where);
-    }
+     /* same for  DRMS_QUERY_N and other types of queries */
+     p += sprintf(p, "select %s from %s where 1 = 1", field_list, series_lower);
+     if (where && *where) {
+        p += sprintf(p, " and %s", where);
+     }    
   }
   if (qtype != DRMS_QUERY_COUNT) 
   {
@@ -3326,6 +3443,12 @@ char *drms_query_string(DRMS_Env_t *env,
   free(series_lower);
  bailout:
   free(field_list);
+
+  if (env->verbose)
+  {
+     printf("query (the big enchilada): %s\n", query);
+  }
+
   return query;
 }
 
