@@ -88,7 +88,7 @@ int JSOCMAIN_Init(int argc,
    snprintf(reservebuf, 
             sizeof(reservebuf), 
             "%s,%s,%s,%s,%s", 
-            "L,Q,V,ver,vn,vers,version,about", 
+            "L,Q,V,jsocmodver", 
             kARCHIVEARG,
             kRETENTIONARG,
             kQUERYMEMARG,
@@ -108,11 +108,7 @@ int JSOCMAIN_Init(int argc,
       return 1;
    }
 
-   printrel = cmdparams_isflagset(&cmdparams, "ver") ||
-     cmdparams_isflagset(&cmdparams, "vn") ||
-     cmdparams_isflagset(&cmdparams, "vers") ||
-     cmdparams_isflagset(&cmdparams, "version") ||
-     cmdparams_isflagset(&cmdparams, "about");
+   printrel = cmdparams_isflagset(&cmdparams, "jsocmodver");
    
    if (printrel)
    {
