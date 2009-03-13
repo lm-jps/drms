@@ -404,6 +404,19 @@ DB_Binary_Result_t *db_query_bin(DB_Handle_t  *dbin,  char *query_string)
       if ( db_res->column[i].type == DB_STRING || 
 	   db_res->column[i].type == DB_VARCHAR )
 	(db_res->column[i].size)++;
+
+      if (db_res->column[i].size == 0)
+      {
+         /* If you malloc(0), then free() the resulting pointer, you get a crash, 
+          * so make the size at least 1 (even though it won't be used).
+          * This is the simplest fix for something that should happen
+          * very often.
+          *
+          * size == 0 if the columns of data are all NULL, which can happen
+          * since we don't have the 'not null' modifier set on our table columns.
+          */
+         db_res->column[i].size = db_sizeof(db_res->column[i].type);
+      }
       
       XASSERT( db_res->column[i].data = malloc(db_res->num_rows * 
 					       db_res->column[i].size) );
