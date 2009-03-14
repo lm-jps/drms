@@ -944,6 +944,8 @@ int DoIt(void)
     if (max_recs == 0)
       {
       rec = drms_recordset_fetchnext(drms_env, recordset, &status);
+      if (status < 0)
+        status = 0;
       }
     else
       {
