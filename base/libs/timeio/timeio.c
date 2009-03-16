@@ -301,8 +301,12 @@ static int _parse_date (char *strin, int *consumed)
   ptr = strin;
   dattim.year = strtol (ptr, &endptr, 10);
   len = endptr - ptr;
-  if (len != 2 && len != 4)
-    return _parse_error ();
+
+  /* don't check for a parse error here - if there is some gibberish 
+   * after the year, like "2009gibberish ]", then the problem 
+   * will be detected elsewhere (like in drms_names.c where the only
+   * thing allowed after a timestring is a ']'. */
+
   if (*endptr == '.')
     { // look for month
     ptr = endptr +1;
@@ -314,8 +318,6 @@ static int _parse_date (char *strin, int *consumed)
       if (dattim.month == 0)
         return _parse_error ();
       }
-    else if (len > 2)
-      return _parse_error ();
     }
   else
     dattim.month = 1;
@@ -324,9 +326,7 @@ static int _parse_date (char *strin, int *consumed)
     ptr = endptr +1;
     dattim.dofm = status = strtol (ptr, &endptr, 10);
     len = endptr - ptr;
-    if (len > 2)
-      return _parse_error ();
-    else if (len == 0)
+    if (len == 0)
       dattim.dofm = 1;
     }
   else 
