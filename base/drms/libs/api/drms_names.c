@@ -553,7 +553,9 @@ PrimekeyRangeSet_t *parse_slottedkey_set(DRMS_Keyword_t *slotkey,
 
       /* If the range set is a value range set, then convert the values to 
        * index keyword values. */
-      if (ret->type == VALUE_RANGE)
+      if (ret->type == VALUE_RANGE && 
+          ret->value_rangeset->type != FIRST_VALUE &&
+          ret->value_rangeset->type != LAST_VALUE)
       {
 	 for (onerange = ret->value_rangeset; onerange != NULL; onerange = onerange->next)
 	 {

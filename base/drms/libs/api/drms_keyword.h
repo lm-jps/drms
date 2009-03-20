@@ -82,8 +82,13 @@ int drms_setkey(DRMS_Record_t *rec, const char *key, DRMS_Type_t type,
 int drms_setkey_p(DRMS_Record_t *rec, const char *key, DRMS_Value_t *value);
 DRMS_Value_t drms_getkey_p(DRMS_Record_t *rec, const char *key, int *status);
 
+int drms_keyword_inclass(DRMS_Keyword_t *key, DRMS_KeywordClass_t class);
+
+
 /* Copy functions. */
 int drms_copykey(DRMS_Record_t *target, DRMS_Record_t *source, const char *key);
+int drms_copykeyB(DRMS_Keyword_t *tgtkey, DRMS_Keyword_t *srckey);
+int drms_copykeys(DRMS_Record_t *target, DRMS_Record_t *source, DRMS_KeywordClass_t class);
 
 /******** Functions to handle mapping between internal/external keywords **********/
 

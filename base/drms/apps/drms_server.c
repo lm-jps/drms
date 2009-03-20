@@ -172,6 +172,10 @@ create_series describe_series delete_series modify_series show_info
 #include <sched.h>
 #endif
 
+#define kCENVFILE "cenvfile"
+#define kSHENVFILE "shenvfile"
+#define kNOTSPECIFIED "notspecified"
+
 /* Global structure holding command line parameters. */
 CmdParams_t cmdparams;
 
@@ -180,6 +184,8 @@ ModuleArgs_t module_args[] = {
   {ARG_INT, "DRMS_ARCHIVE", "-9999"}, 
   {ARG_INT, "DRMS_QUERY_MEM", "512"}, 
   {ARG_INT, "DRMS_SERVER_WAIT", "1"},
+  {ARG_STRING, kCENVFILE, kNOTSPECIFIED, "If set, write out to a file all C-shell commands that set the essential DRMS_* env variables."},
+  {ARG_STRING, kSHENVFILE, kNOTSPECIFIED, "If set, write out to a file all bash-shell command that set the essential DRMS_* env variables."},
   {}
 };
 
@@ -201,7 +207,35 @@ static void atexit_action (void) {
 #ifdef DEBUG
     xmem_leakreport ();
 #endif
+
+    sem_destroy(env->shutdownsem);
 }
+
+static void StopProcessing(int sig)
+{
+   /* acquire lock */
+   sem_wait(env->shutdownsem);
+
+   if (env->shutdown != kSHUTDOWN_INITIATED)
+   {
+      /* release lock - incorrect state (perhaps somebody other than the signal thread 
+       * sent the SIGUSR2 signal) */
+      sem_post(env->shutdownsem);
+      return;
+   }
+
+   fprintf(stderr,"Stopping main thread (received signal '%d').\n", sig);
+
+   /* main thread now behaving - kSDSTATE_MAIN_BEHAVING */
+   env->shutdown = kSHUTDOWN_MAINBEHAVING;
+   sem_post(env->shutdownsem);
+
+   /* stay out of trouble while process terminates */
+   while (1)
+   {
+      sched_yield();
+   }
+}  
 
 int main (int argc, char *argv[]) {
   int fg=0, noshare=0, verbose=0, nagleoff=0, dolog=0;
@@ -216,6 +250,10 @@ int main (int argc, char *argv[]) {
   pid_t pid=0;
   char *dbhost, *dbuser, *dbpasswd, *dbname, *sessionns;
   char drms_server[] = "drms_server";
+  char *cenvfileprefix = NULL; 
+  char *shenvfileprefix = NULL; 
+  char envfile[PATH_MAX];
+  FILE *fptr = NULL;
 
 #ifdef DEBUG
   xmem_config(1,1,1,1,1000000,1,0,0); 
@@ -233,6 +271,8 @@ int main (int argc, char *argv[]) {
   nagleoff = cmdparams_exists(&cmdparams,"n");
   dolog = cmdparams_exists(&cmdparams,"L");
   fg = cmdparams_exists(&cmdparams,"f");
+  cenvfileprefix = cmdparams_get_str(&cmdparams, kCENVFILE, NULL);
+  shenvfileprefix = cmdparams_get_str(&cmdparams, kSHENVFILE, NULL);
 
   /* Print command line parameters in verbose mode. */
   if (verbose)
@@ -340,6 +380,31 @@ int main (int argc, char *argv[]) {
     fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);          
     Exit(1);
   }
+
+  /* Set up a main-thread signal-handler. It handles SIGUSR2 signals, which are
+   * sent by the signal thread if that thread in turn is aborting the process.
+   * This is done so that the main thread doesn't continue to attempt SUMS and
+   * dbase access while those threads are being terminated.  
+   * The handler causes the main thread to stop doing whatever it is doing
+   * and go to sleep indefinitely. The signal thread will return the exit code
+   * from the process.
+   */
+  struct sigaction act;
+
+  act.sa_handler = StopProcessing;
+  sigfillset(&(act.sa_mask));
+  sigaction(SIGUSR2, &act, NULL);
+  env->main_thread = pthread_self();
+
+  /* create shutdown (unnamed POSIX) semaphore */
+  env->shutdownsem = malloc(sizeof(sem_t));
+
+  /* Initialize semaphore to 1 - "unlocked" */
+  sem_init(env->shutdownsem, 0, 1);
+
+  /* Initialize shutdown state to kSHUTDOWN_UNINITIATED - no shutdown requested */
+  env->shutdown = kSHUTDOWN_UNINITIATED;
+
   /* Spawn a thread that handles signals and controls server 
      abort or shutdown. */
   if( (status = pthread_create(&env->signal_thread, NULL, &drms_signal_thread, 
@@ -383,8 +448,67 @@ int main (int argc, char *argv[]) {
   //  if (verbose)
   printf ("Listening for incoming connections on port %hu.\n", port);
   fflush (stdout);
+
+  /* Now ready to accept connections - print out env stuff so that clients 
+   * (sock-connect modules) know which drms_server to connect to
+   */
+  if (strcmp(cenvfileprefix, kNOTSPECIFIED) != 0)
+  {
+     snprintf(envfile, sizeof(envfile), "%s.%lu", cenvfileprefix, pid);
+     fptr = fopen(envfile, "w");
+     if (fptr)
+     {
+        fprintf(fptr, 
+                "setenv DRMS_HOST %s;\n"
+                "setenv DRMS_PORT %hu;\n"
+                "setenv DRMS_PID %lu;\n"
+                "setenv DRMS_SESSIONID %lld;\n"
+                "setenv DRMS_SESSIONNS %s;\n"
+                "setenv DRMS_SUNUM %lld;\n"
+                "setenv DRMS_SUDIR %s;\n"
+                "setenv DRMSSESSION %s:%hu;\n",
+                env->session->hostname, 
+                env->session->port, 
+                (unsigned long)pid, 
+                env->session->sessionid,
+                env->session->sessionns,
+                env->session->sunum,
+                env->session->sudir,
+                env->session->hostname, 
+                env->session->port);
+        fclose(fptr);
+     }
+  }
+  else if (strcmp(shenvfileprefix, kNOTSPECIFIED) != 0)
+  {
+     snprintf(envfile, sizeof(envfile), "%s.%lu", shenvfileprefix, pid);
+     fptr = fopen(envfile, "w");
+     if (fptr)
+     {
+        fprintf(fptr, 
+                "DRMS_HOST=%s; export DRMS_HOST;\n"
+                "DRMS_PORT=%hu; export DRMS_PORT;\n"
+                "DRMS_PID=%lu; export DRMS_PID;\n"
+                "DRMS_SESSIONID=%lld; export DRMS_SESSIONID;\n"
+                "DRMS_SESSIONNS=%s; export DRMS_SESSIONNS;\n"
+                "DRMS_SUNUM=%lld; export DRMS_SUNUM;\n"
+                "DRMS_SUDIR=%s; export DRMS_SUDIR;\n"
+                "DRMSSESSION=%s:%hu; export DRMSSESSION;\n",
+                env->session->hostname, 
+                env->session->port, 
+                (unsigned long)pid, 
+                env->session->sessionid,
+                env->session->sessionns,
+                env->session->sunum,
+                env->session->sudir,
+                env->session->hostname, 
+                env->session->port);
+        fclose(fptr);
+     }
+  }
+
   for (;;) {
-						    /* accept new connection */
+     /* accept new connection */
     if ((clientsockfd = accept (sockfd, NULL, NULL)) < 0 ) {
       if (errno == EINTR) continue;
       else {
@@ -439,6 +563,7 @@ int main (int argc, char *argv[]) {
       close (clientsockfd);
     }
   }
+
   return 0;
 
 usage:

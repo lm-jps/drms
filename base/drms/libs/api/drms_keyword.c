@@ -1392,6 +1392,29 @@ int drms_keyword_getmappedextname(DRMS_Keyword_t *key,
    return success;
 }
 
+int drms_keyword_inclass(DRMS_Keyword_t *key, DRMS_KeywordClass_t class)
+{
+   int inclass = 0;
+
+   switch(class)
+   {
+      case kDRMS_KeyClass_All:
+        inclass = 1;
+        break;
+      case kDRMS_KeyClass_Explicit:
+        inclass = !(drms_keyword_getimplicit(key));
+        break;
+      case kDRMS_KeyClass_DRMSPrime:
+        inclass = drms_keyword_getextprime(key);
+        break;
+      case kDRMS_KeyClass_Persegment:
+        inclass = drms_keyword_getperseg(key);
+        break;
+   }
+
+   return inclass;
+}
+
 int drms_copykey(DRMS_Record_t *target, DRMS_Record_t *source, const char *key)
 {
    int status = DRMS_SUCCESS;
@@ -1405,6 +1428,54 @@ int drms_copykey(DRMS_Record_t *target, DRMS_Record_t *source, const char *key)
    }
 
    drms_value_free(&srcval);
+
+   return status;
+}
+
+int drms_copykeyB(DRMS_Keyword_t *tgtkey, DRMS_Keyword_t *srckey)
+{
+   int status = DRMS_SUCCESS;
+   DRMS_Value_t srcval; /* owns contained string */
+
+   srcval.type = srckey->info->type;
+   srcval.value = srckey->value;
+   
+   /* Must go through this function - may be setting a keyword that
+    * has an associated index keyword and this function will set
+    * the associated keyword appropriately. */
+   status = drms_setkey_p(tgtkey->record, srckey->info->name, &srcval);
+
+   return status;
+}
+
+int drms_copykeys(DRMS_Record_t *target, DRMS_Record_t *source, DRMS_KeywordClass_t class)
+{
+   HIterator_t *srchit = hiter_create(&source->keywords);
+   DRMS_Keyword_t *srckey = NULL;
+   DRMS_Keyword_t *tgtkey = NULL;
+   int status = DRMS_SUCCESS;
+
+   while ((srckey = (DRMS_Keyword_t *)hiter_getnext(srchit)) != NULL)
+   {
+      if (drms_keyword_inclass(srckey, class))
+      {
+         tgtkey = drms_keyword_lookup(target, srckey->info->name, 1);
+         if (tgtkey)
+         {
+            status = drms_copykeyB(tgtkey, srckey);
+         }
+         else
+         {
+            status = DRMS_ERROR_UNKNOWNKEYWORD;
+         }
+      }
+
+      if (status)
+      {
+         fprintf(stderr, "drms_copykeys() failed on keyword '%s'.\n", srckey->info->name);
+         break;
+      }
+   }
 
    return status;
 }
