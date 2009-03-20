@@ -714,6 +714,18 @@ enum DRMS_KeywordFlag_enum
 
 typedef enum DRMS_KeywordFlag_enum DRMS_KeywordFlag_t;
 
+
+/* Classes of keywords - each class is a certain combination of DRMS_KeywordFlag_t */
+enum DRMS_KeywordClass_enum
+{
+   kDRMS_KeyClass_All = 0,
+   kDRMS_KeyClass_Explicit,
+   kDRMS_KeyClass_DRMSPrime,
+   kDRMS_KeyClass_Persegment
+};
+
+typedef enum DRMS_KeywordClass_enum DRMS_KeywordClass_t;
+
 typedef struct  DRMS_KeywordInfo_struct
 {
   char name[DRMS_MAXKEYNAMELEN];         /* Keyword name. */

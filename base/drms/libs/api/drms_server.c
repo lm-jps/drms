@@ -1830,59 +1830,62 @@ void *drms_signal_thread(void *arg)
        * either, the signal thread will block, until it can acquire the locks, which 
        * will prevent the main thread from accessing either again. Don't try to shutdown
        * while main is accessing the database. */
-      drms_lock_server(env);
-      db_lock(env->session->db_handle);
-
-      /* acquire shutdown lock */
-      sem_wait(env->shutdownsem);
-
-      if (env->shutdown == kSHUTDOWN_UNINITIATED)
+      if (env->shutdownsem)
       {
-         /* There is no shutdown in progress - okay to start shutdown */
-         env->shutdown = kSHUTDOWN_INITIATED; /* Shutdown initiated */
-         fprintf(stderr, "Shutdown initiated.\n");
+         drms_lock_server(env);
+         db_lock(env->session->db_handle);
 
-         /* This will cause the SUMS thread to be killed, and the dbase to abort.  Then
-          * it will kill the dbase connection.  If we do this while the main thread is running
-          * it may try to keep on accessing the dbase or SUMS while this shut down is happening.
-          * The result could be the spewing of tons of error messages and crashes.
-          *
-          * Instead, send a message back to main thread - the handler there essentially  
-          * sleeps until termination. */
-         fprintf(stderr, "Shutdown signal sent to main thread.\n");
-         pthread_kill(env->main_thread, SIGUSR2);
+         /* acquire shutdown lock */
+         sem_wait(env->shutdownsem);
 
-         /* release shutdown lock */
-         sem_post(env->shutdownsem);
-
-         /* Can't call Exit(), which causes drms_server_abort() to be called, until 
-          * we know that the main thread is in the StopProcessing() function. Wait 
-          * until the shutdown state is kSHUTDOWN_MAINBEHAVING. */
-         while (1)
+         if (env->shutdown == kSHUTDOWN_UNINITIATED)
          {
-            sem_wait(env->shutdownsem);
-            if (env->shutdown == kSHUTDOWN_MAINBEHAVING)
-            {
-               /* main thread is now stuck in StopProcessing() - okay to call exit() */
-               sem_post(env->shutdownsem);
-               break;
-            }
+            /* There is no shutdown in progress - okay to start shutdown */
+            env->shutdown = kSHUTDOWN_INITIATED; /* Shutdown initiated */
+            fprintf(stderr, "Shutdown initiated.\n");
 
+            /* This will cause the SUMS thread to be killed, and the dbase to abort.  Then
+             * it will kill the dbase connection.  If we do this while the main thread is running
+             * it may try to keep on accessing the dbase or SUMS while this shut down is happening.
+             * The result could be the spewing of tons of error messages and crashes.
+             *
+             * Instead, send a message back to main thread - the handler there essentially  
+             * sleeps until termination. */
+            fprintf(stderr, "Shutdown signal sent to main thread.\n");
+            pthread_kill(env->main_thread, SIGUSR2);
+
+            /* release shutdown lock */
+            sem_post(env->shutdownsem);
+
+            /* Can't call Exit(), which causes drms_server_abort() to be called, until 
+             * we know that the main thread is in the StopProcessing() function. Wait 
+             * until the shutdown state is kSHUTDOWN_MAINBEHAVING. */
+            while (1)
+            {
+               sem_wait(env->shutdownsem);
+               if (env->shutdown == kSHUTDOWN_MAINBEHAVING)
+               {
+                  /* main thread is now stuck in StopProcessing() - okay to call exit() */
+                  sem_post(env->shutdownsem);
+                  break;
+               }
+
+               sem_post(env->shutdownsem);
+            }
+         
+            doexit = 1;
+         }
+         else
+         {
+            /* release - shutdown has already been initiated */
             sem_post(env->shutdownsem);
          }
-         
-         doexit = 1;
-      }
-      else
-      {
-         /* release - shutdown has already been initiated */
-         sem_post(env->shutdownsem);
-      }
 
-      /* The main thread is now behaving, but must release locks on environment and 
-       * the db, because drms_server_abort() will attempt to lock those.*/
-      db_unlock(env->session->db_handle);
-      drms_unlock_server(env);
+         /* The main thread is now behaving, but must release locks on environment and 
+          * the db, because drms_server_abort() will attempt to lock those.*/
+         db_unlock(env->session->db_handle);
+         drms_unlock_server(env);
+      }
 
       if (doexit)
       {
