@@ -11,6 +11,7 @@
 #include <fcntl.h>
 #include <sys/statvfs.h>
 #include <ctype.h>
+#include <dirent.h>
 #include "util.h"
 #include "xassert.h"
 #include "xmem.h"
@@ -498,4 +499,84 @@ int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size)
    *pcOut = '\0';
 
    return !error;
+}
+
+#define kMAXRECURSION 128
+int RemoveDir(const char *pathname, int maxrec)
+{
+   int status = 0;
+
+   char pbuf[PATH_MAX];
+   struct stat stBuf;
+
+   if (maxrec < kMAXRECURSION && maxrec >= 0)
+   {
+      if (!stat(pathname, &stBuf) && S_ISDIR(stBuf.st_mode))
+      {
+         /* Append '/' if necessary */
+         snprintf(pbuf, sizeof(pbuf), "%s", pathname);
+
+         if (pathname[strlen(pathname) - 1] != '/')
+         {
+            base_strlcat(pbuf, "/", sizeof(pbuf));
+         }
+
+         struct dirent **fileList = NULL;
+         int nFiles = -1;
+
+         /* delete all non-dir files */
+         if ((nFiles = scandir(pbuf, &fileList, NULL, NULL)) > 0 && 
+             fileList != NULL)
+         {
+            int fileIndex = 0;
+
+            while (fileIndex < nFiles)
+            {
+               struct dirent *entry = fileList[fileIndex];
+               if (entry != NULL)
+               {
+                  char *oneFile = entry->d_name;
+                  char dirEntry[PATH_MAX] = {0};
+                  snprintf(dirEntry, 
+                           sizeof(dirEntry), 
+                           "%s%s", 
+                           pbuf,
+                           oneFile);
+                  if (*dirEntry !=  '\0' && !stat(dirEntry, &stBuf) && status == 0)
+                  {
+                     if (S_ISREG(stBuf.st_mode) || S_ISLNK(stBuf.st_mode))
+                     {
+                        /* delete single file */
+                        status = unlink(dirEntry);
+                     }
+                     else if (S_ISDIR(stBuf.st_mode))
+                     {
+                        /* don't try to delete . or .. */
+                        if (strcmp(oneFile, ".") != 0 && strcmp(oneFile, "..") != 0)
+                        {
+                           maxrec--;
+                           if (maxrec >= 0)
+                           {
+                              status = RemoveDir(dirEntry, maxrec);
+                           }
+                        }
+                     }
+                  }
+
+                  free(entry);
+               }
+
+               fileIndex++;
+            }
+         }	
+
+         /* delete the directory */
+         if (status == 0)
+         {
+            status = rmdir(pathname);
+         }
+      }
+   }
+
+   return status;
 }

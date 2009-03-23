@@ -30,7 +30,7 @@ int IsValidFitsKeyName(const char *name);
 int GenerateFitsKeyName(const char *kwName, char *fitsName, int size);
 int IsValidDRMSKeyName(const char *drmsName);
 int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size);
-
+int RemoveDir(const char *pathname, int maxrec);
 
 #ifdef ICCCOMP
 #pragma warning (disable : 1572)

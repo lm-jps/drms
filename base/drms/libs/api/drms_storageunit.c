@@ -1161,9 +1161,8 @@ int drms_su_freeslot(DRMS_Env_t *env, char *series, long long sunum,
       /* We just freed a non-empty slot. Remove the associated directory. */
       CHECKSNPRINTF(snprintf(slotdir, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT,
 			     su->sudir,slotnum), DRMS_MAXPATHLEN);
-      // XXXXXXXXXXXXXXXXXXXxx
-  /* unlink, rmdir, rm won't work - */
-      unlink(slotdir); /* Ignore return code. */
+     
+      return (RemoveDir(slotdir, 64) == 0 ? 0 : 1);
     }
     return 0;
   }
