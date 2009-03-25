@@ -320,8 +320,50 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
    ::DRMS_BINZIP, ::DRMS_FITS, ::DRMS_FITZ, and DRMS_TAS). The array 
    dimensions must match those of the segment.
    If @a autoscale is non-zero, the function ::drms_segment_autoscale
-   is invoked before output. In any case, conversion to the data type and scaling
-   appropriate to the segment is performed.
+   is invoked before output.
+
+   @a seg and @a arr both contain bzero and bscale fields. If seg->bzero is not 0 or
+   seg->bscale is not 1, then the data file contains values in "scaled units" 
+   (the original values, which were in "physical units", have been scaled
+   and an offset has been applied). The meaning of arr->bzero 
+   and arr->bscale depends on whether arr->type is a floating-point type or 
+   not, and whether arr->israw is 1 or not. When arr->type is a floating-point 
+   data type, then the data values in arr->data are assumed to be in 
+   physical units and arr->israw is ignored. But
+   when arr->type is an integer data type, then arr->data may be in either
+   physical or scaled units. If arr->israw is 1, then the values in arr->data
+   are in scaled units,  
+   and if arr->israw is 0, then arr->data values are in physical units.
+
+   Depending on arr->type, arr->israw, and seg->type ::drms_segment_write will
+   scale (apply arr->bzero and arr->bscale), inverse scale (apply -arr->bzero / arr->bscale
+   and  1.0 / arr->bscale), or data-type convert the data values 
+   in arr->data before writing the values to disk. Scaling is the
+   process of converting from values in scaled units to
+   values in physical units. Inverse scaling is the opposite process:
+   converting from physical units to scaled units. Inverse scaling
+   simply scales floating-point values into integers such that 
+   applying arr->bzero and arr->bscale to these integers reconstructs
+   the original floating-point data values. Data-type conversion
+   converts from one data type to another. For example, if the conversion
+   is from an integer to a float, then an original value of 23.7 
+   would round to 24. Data-type conversion always happens when 
+   arr->type does not equal seg->type.
+
+   If the data values are in physical units (either floating-point data, or
+   arr->israw is 0) and seg->type is a floating-point type, then no scaling 
+   occurs. If the data values are in physical units and seg->type
+   is an integer type, then the caller can specify whether or not inverse
+   scaling should occur. If arr->bzero is 0 and arr->bscale is 1, then 
+   no inverse scaling will occur and the data file will contain values in physical
+   units. If arr->bzero is not 0 or arr->bscale is not 1, then
+   inverse scaling will occur.
+   
+   If the data values are in scaled units (arr->israw is 1 and arr->type
+   is an integer type) and seg->type is a floating-point type,
+   then scaling occurs and data values are stored in physical units.
+   If the data values are in scaled units and seg->type is an integer
+   type, then no scaling occurs.
 
    @param seg The segment whose file is to be written to the filesystem.
    @param arr The array containing the data that is to be written to the output file.

@@ -970,8 +970,6 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
      if (!drms_segment_checkscaling(arr, seg->bzero, seg->bscale))
      {
         fprintf(stderr, "The data file's bzero/bscale values (%f, %f) do not match those of the segment (%f, %f).\n", arr->bzero, arr->bscale, seg->bzero, seg->bscale);
-        statint = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
-        goto bailout;
      }
   }
 
@@ -1204,8 +1202,6 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
      if (!drms_segment_checkscaling(arr, seg->bzero, seg->bscale))
      {
         fprintf(stderr, "The FITS file's bzero/bscale values (%f, %f) do not match those of the segment (%f, %f).\n", arr->bzero, arr->bscale, seg->bzero, seg->bscale);
-        stat = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
-        goto bailout;
      }
   }
 
@@ -1606,8 +1602,6 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
             if (!drms_segment_checkscaling(out, seg->bzero, seg->bscale))
             {
                fprintf(stderr, "The output array's bzero/bscale values (%f, %f) do not match those of the TAS file (%f, %f).\n", out->bzero, out->bscale, seg->bzero, seg->bscale);
-               status = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
-               goto bailout;
             }
          }
 
@@ -1786,8 +1780,6 @@ int drms_segment_writeslice(DRMS_Segment_t *seg, DRMS_Array_t *arr, int *start, 
                 if (!drms_segment_checkscaling(out, seg->bzero, seg->bscale))
                 {
                    fprintf(stderr, "The output array's bzero/bscale values (%f, %f) do not match those of the FITS file (%f, %f).\n", out->bzero, out->bscale, seg->bzero, seg->bscale);
-                   status = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
-                   goto bailout;
                 }
              }
 
@@ -1805,8 +1797,6 @@ int drms_segment_writeslice(DRMS_Segment_t *seg, DRMS_Array_t *arr, int *start, 
                 if (!drms_segment_checkscaling(out, seg->bzero, seg->bscale))
                 {
                    fprintf(stderr, "The output array's bzero/bscale values (%f, %f) do not match those of the TAS file (%f, %f).\n", out->bzero, out->bscale, seg->bzero, seg->bscale);
-                   status = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
-                   goto bailout;
                 }
              }
 

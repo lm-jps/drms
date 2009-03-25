@@ -1199,18 +1199,18 @@ int cfitsio_write_file(const char* fits_filename,
    }
    if (image_info->bitfield & kInfoPresent_BZERO)
    {
-      float obzero = (float)image_info->bzero;
+      double obzero = image_info->bzero;
       if (image_info->bitpix == BYTE_IMG)
       {
-	 obzero = (float) (obzero -(128.0 * (float)image_info->bscale));
+	 obzero = (double) (obzero -(128.0 * image_info->bscale));
       }
      
-      fits_update_key(fptr, TFLOAT, "BZERO", &obzero, "", &status);
+      fits_update_key(fptr, TDOUBLE, "BZERO", &obzero, "", &status);
    }
    if (image_info->bitfield & kInfoPresent_BSCALE)
    {
-      float obscale = (float)image_info->bscale;
-      fits_update_key(fptr, TFLOAT, "BSCALE", &obscale, "", &status);
+      double obscale = image_info->bscale;
+      fits_update_key(fptr, TDOUBLE, "BSCALE", &obscale, "", &status);
    }
 
    if (image_info->bitpix == BYTE_IMG)
