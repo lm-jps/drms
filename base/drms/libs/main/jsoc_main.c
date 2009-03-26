@@ -191,6 +191,18 @@ static void atexit_action (void) {
 #endif
 }
 
+/* db_lock calls this function to determine what signals it should NOT 
+ * allow to interrupt code running inside the db lock. */
+static void drms_createsigmask(sigset_t *set, void *data)
+{
+   pthread_t threadid = *((pthread_t *)data);
+   if (set && threadid == pthread_self())
+   {
+      sigemptyset(set);
+      sigaddset(set, SIGUSR2);
+   }
+}
+
 static void StopProcessing(int sig)
 {
    /* acquire lock */
@@ -351,6 +363,12 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
     Exit(1);
   }
 
+  drms_env->main_thread = pthread_self();
+
+  /* Register sigblock function - whenever the dbase is accessed, certain signals
+   * (like SIGUSR2) shouldn't interrupt such actions. */
+  db_register_sigblock(&drms_createsigmask, &drms_env->main_thread);
+
   /* Set up a main-thread signal-handler. It handles SIGUSR2 signals, which are
    * sent by the signal thread if that thread in turn is aborting the process.
    * This is done so that the main thread doesn't continue to attempt SUMS and
@@ -364,7 +382,6 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   act.sa_handler = StopProcessing;
   sigfillset(&(act.sa_mask));
   sigaction(SIGUSR2, &act, NULL);
-  drms_env->main_thread = pthread_self();
 
   /* create shutdown (unnamed POSIX) semaphore */
   drms_env->shutdownsem = malloc(sizeof(sem_t));

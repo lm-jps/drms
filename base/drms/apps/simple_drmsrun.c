@@ -104,7 +104,9 @@ int main(int argc, char *argv[])
           * script must figure out if a failure happened or not, and
           * then return 0 (commit) or non-0 (abort) */
          snprintf(cmd, sizeof(cmd), "source %s; %s", envfile, script);
+         fprintf(stdout, "Running cmd '%s' on drms_server pid %llu.\n", cmd, (unsigned long long)pid);
          status = system(cmd);
+         
 
          if (status == -1)
          {

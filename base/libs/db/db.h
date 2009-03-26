@@ -52,6 +52,8 @@ extern char __db_error_message[4096];
 
 #define MAXARG 1024 /* Maximum # of args to db_dmsv and db_query_binv. */
 
+typedef void(*db_sigblock_fn)(sigset_t *set, void *data); 
+
 /* Generic column types. */
 typedef enum DB_Type_enum  { 
   DB_CHAR, DB_INT1, DB_INT2, DB_INT4, DB_INT8, 
@@ -326,7 +328,7 @@ long long db_client_sequence_getlast(int sockfd,  char *table);
 void db_lock(DB_Handle_t *h);
 void db_unlock(DB_Handle_t *h);
 
-
+void db_register_sigblock(db_sigblock_fn fn, void *data);
 
 
 /********** Inline functions ****************/

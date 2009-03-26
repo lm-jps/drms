@@ -542,7 +542,18 @@ void *drms_server_thread(void *arg)
     Exit(1);
   }
 
-  
+  /* block SIGUSR2, since only the main thread should respond to this signal */
+  sigset_t mask;
+
+  sigemptyset(&mask);
+  sigaddset(&mask, SIGUSR2);
+
+  if((status = pthread_sigmask(SIG_BLOCK, &mask, NULL)))
+  {
+     fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);
+     Exit(1);
+  }
+
   if ( getpeername(sockfd,  (struct sockaddr *)&client, &client_size) == -1 )
   {
     perror("accept call failed.");
@@ -1360,7 +1371,28 @@ void drms_lock_server(DRMS_Env_t *env)
   if ( env->drms_lock == NULL )
     return;
   else
-    pthread_mutex_lock( env->drms_lock );
+  {
+     /* Before locking, you must block signals that could interrupt
+      * the main thread and cause it to not return from the signal handler.
+      * If that were to happen, the lock would never be released, and you get deadlock 
+      * The only signal in that category is USR2.
+      */
+     if (env->main_thread == pthread_self())
+     {
+        sigset_t mask;
+        int status;
+     
+        sigemptyset(&mask);
+        sigaddset(&mask, SIGUSR2);
+     
+        if((status = pthread_sigmask(SIG_BLOCK, &mask, NULL)))
+        {
+           fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);
+        }
+     }
+
+     pthread_mutex_lock( env->drms_lock );
+  }
 }
 
 void drms_unlock_server(DRMS_Env_t *env)
@@ -1368,7 +1400,24 @@ void drms_unlock_server(DRMS_Env_t *env)
   if ( env->drms_lock == NULL )
     return;
   else
-    pthread_mutex_unlock( env->drms_lock );
+  {
+     pthread_mutex_unlock( env->drms_lock );
+
+     /* unblock signals that were blocked while the lock was held */
+     if (env->main_thread == pthread_self())
+     {
+        sigset_t mask;
+        int status;
+
+        sigemptyset(&mask);
+        sigaddset(&mask, SIGUSR2);
+
+        if((status = pthread_sigmask(SIG_UNBLOCK, &mask, NULL)))
+        {
+           fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);
+        }
+     }
+  }
 }
  
 long long drms_server_gettmpguid(int *sockfd)
@@ -1455,6 +1504,18 @@ void *drms_sums_thread(void *arg)
   {
     fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);
     Exit(1);
+  }
+
+  /* block SIGUSR2, since only the main thread should respond to this signal */
+  sigset_t mask;
+
+  sigemptyset(&mask);
+  sigaddset(&mask, SIGUSR2);
+
+  if((status = pthread_sigmask(SIG_BLOCK, &mask, NULL)))
+  {
+     fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);
+     Exit(1);
   }
 
 #ifdef DEBUG
@@ -1780,6 +1841,19 @@ void *drms_signal_thread(void *arg)
     fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);
     Exit(1);
   }
+
+  /* block SIGUSR2, since only the main thread should respond to this signal */
+  sigset_t mask;
+
+  sigemptyset(&mask);
+  sigaddset(&mask, SIGUSR2);
+
+  if((status = pthread_sigmask(SIG_BLOCK, &mask, NULL)))
+  {
+     fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);
+     Exit(1);
+  }
+
   for (;;)
   {
     if ((status = sigwait(&env->signal_mask, &signo)))
@@ -1826,6 +1900,7 @@ void *drms_signal_thread(void *arg)
     case SIGINT:
     case SIGTERM:
     case SIGQUIT:
+    case SIGUSR1:
       /* Attempt to lock both the environment and the db. If the main thread is using 
        * either, the signal thread will block, until it can acquire the locks, which 
        * will prevent the main thread from accessing either again. Don't try to shutdown
@@ -1885,20 +1960,39 @@ void *drms_signal_thread(void *arg)
           * the db, because drms_server_abort() will attempt to lock those.*/
          db_unlock(env->session->db_handle);
          drms_unlock_server(env);
-      }
 
-      if (doexit)
+         if (doexit)
+         {
+            if (SIGUSR1)
+            {
+               drms_server_commit(env, 1);
+               fflush(stdout);
+               _exit(0);
+            }
+            else
+            {
+
+               /* OK. Finally okay to call drms_server_abort().*/
+               /* Causes atexit() function to be executed */
+               Exit(1);
+            }
+         }
+      }
+      else
       {
-         /* OK. Finally okay to call drms_server_abort().*/
-         /* Causes atexit() function to be executed */
-         Exit(1);
+         if (SIGUSR1)
+         {
+            drms_server_commit(env, 1);
+            fflush(stdout);
+            _exit(0);
+         }
+         else
+         {
+            Exit(1);
+         }
       }
       
-      break; 
-    case SIGUSR1:
-      drms_server_commit(env, 1);
-      fflush(stdout);
-      _exit(0);
+      break;      
     }
   }
 }

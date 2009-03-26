@@ -16,6 +16,8 @@
 #include "xassert.h"
 #include "byteswap.h"
 #include "xmem.h"
+#include <signal.h>
+
 
 #ifdef ORACLE
 static const char *dbtype_string[] = {"char","integer","integer","integer",
@@ -33,6 +35,12 @@ static const char *dbtype_string[] = {"char","int2","int2","int4","int8",
 				      "unknown"};
 #endif
 const char  UNKNOWN_TYPE_STR[] = "unknown type";
+
+/* BE CAREFULL!!!! db_sigblock is global; if you're going to set this from 
+ * a multi-threaded environment, use a mutex or lock.
+ */
+db_sigblock_fn g_db_sigblock = NULL;
+void *g_db_sigblock_data = NULL;
 
 void db_set_error_message(char *err)
 {
@@ -788,7 +796,22 @@ void db_lock(DB_Handle_t *h)
   if ( h->db_lock == NULL )
     return;
   else
-    pthread_mutex_lock( h->db_lock );
+  {
+     if (g_db_sigblock)
+     {
+        sigset_t mask;
+        int status;
+
+        (*g_db_sigblock)(&mask, g_db_sigblock_data);
+
+        if((status = pthread_sigmask(SIG_BLOCK, &mask, NULL)))
+        {
+           fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);
+        }
+     }
+
+     pthread_mutex_lock( h->db_lock );
+  }
 }
 
 void db_unlock(DB_Handle_t *h)
@@ -796,9 +819,23 @@ void db_unlock(DB_Handle_t *h)
   if ( h->db_lock == NULL )
     return;
   else
-    pthread_mutex_unlock( h->db_lock );
+  {
+     pthread_mutex_unlock( h->db_lock );
+
+     if (g_db_sigblock)
+     {
+        sigset_t mask;
+        int status;
+     
+        (*g_db_sigblock)(&mask, g_db_sigblock_data);
+
+        if((status = pthread_sigmask(SIG_UNBLOCK, &mask, NULL)))
+        {
+           fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);
+        }
+     }
+  }
 }
- 
 
 DB_Text_Result_t *db_binary_to_text(DB_Binary_Result_t *binres)
 {
@@ -949,4 +986,15 @@ void db_byteswap(DB_Type_t dbtype, int n, char *val)
 #else
   return;
 #endif
+}
+
+/* Add the ability to register a function that specifies which signals cannot interrupt 
+ * db access activities */
+void db_register_sigblock(db_sigblock_fn fn, void *data)
+{
+   if (!g_db_sigblock)
+   {
+      g_db_sigblock = fn;
+      g_db_sigblock_data = data;
+   }
 }

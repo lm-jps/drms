@@ -4,6 +4,7 @@
 #include "db.h"
 // #define DEBUG
 
+
 DRMS_Session_t *drms_connect(char *host, unsigned short port)
 {
   struct sockaddr_in server;
@@ -140,6 +141,7 @@ DRMS_Session_t *drms_connect_direct(char *dbhost, char *dbuser,
     free(session);
     session = NULL;
   }
+  
   if (sessionns) {
     session->sessionns = sessionns;
   } else {
@@ -188,6 +190,7 @@ DRMS_Session_t *drms_connect_direct_toport (char *dbhost, char *dbport,
     free (session);
     session = NULL;
   }
+
   if (sessionns) session->sessionns = sessionns;
   else {
 				      /*  get the default session namespace  */
