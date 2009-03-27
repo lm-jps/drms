@@ -16,7 +16,7 @@ MODEXE_$(d)	:= $(addprefix $(d)/, drms_query drms_log remotesums_ingest)
 MODEXE		:= $(MODEXE) $(MODEXE_$(d))
 MODEXE_SOCK	:= $(MODEXE_SOCK) $(addprefix $(d)/, drms_log_sock)
 
-EXE_$(d)	:= $(SERVEREXE_$(d)) $(MODEXE_$(d) $(CEXE_$(d)) 
+EXE_$(d)	:= $(SERVEREXE_$(d)) $(MODEXE_$(d)) $(CEXE_$(d)) 
 OBJ_$(d)	:= $(EXE_$(d):%=%.o) 
 DEP_$(d)	:= $(EXE_$(d):%=%.o.d)
 CLEAN		:= $(CLEAN) \
@@ -25,7 +25,7 @@ CLEAN		:= $(CLEAN) \
 		   $(MODEXE_SOCK_$(d))\
 		   $(DEP_$(d))
 
-TGT_BIN	        := $(TGT_BIN) $(EXE_$(d)) $(MODEXE_SOCK_$(d) $(CEXE_$(d))
+TGT_BIN	        := $(TGT_BIN) $(EXE_$(d)) $(MODEXE_SOCK_$(d)) $(CEXE_$(d))
 
 S_$(d)		:= $(notdir $(EXE_$(d)) $(MODEXE_SOCK_$(d)) $(CEXE_$(d)))
 
