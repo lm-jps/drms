@@ -175,6 +175,7 @@ create_series describe_series delete_series modify_series show_info
 #define kCENVFILE "cenvfile"
 #define kSHENVFILE "shenvfile"
 #define kNOTSPECIFIED "notspecified"
+#define kSELFSTARTFLAG "b"
 
 /* Global structure holding command line parameters. */
 CmdParams_t cmdparams;
@@ -186,6 +187,7 @@ ModuleArgs_t module_args[] = {
   {ARG_INT, "DRMS_SERVER_WAIT", "1"},
   {ARG_STRING, kCENVFILE, kNOTSPECIFIED, "If set, write out to a file all C-shell commands that set the essential DRMS_* env variables."},
   {ARG_STRING, kSHENVFILE, kNOTSPECIFIED, "If set, write out to a file all bash-shell command that set the essential DRMS_* env variables."},
+  {ARG_FLAG, kSELFSTARTFLAG, NULL, "Indicates that drms_server was started by a socket module."},
   {}
 };
 
@@ -207,8 +209,6 @@ static void atexit_action (void) {
 #ifdef DEBUG
     xmem_leakreport ();
 #endif
-
-    sem_destroy(env->shutdownsem);
 }
 
 /* db_lock calls this function to determine what signals it should NOT 
@@ -223,12 +223,15 @@ static void drms_createsigmask(sigset_t *set, void *data)
    }
 }
 
+/* Right now, this doesn't do much, but Jim wants the ability to run code
+ * right before shutdown. */
 static void StopProcessing(int sig)
 {
    /* acquire lock */
    sem_wait(env->shutdownsem);
 
-   if (env->shutdown != kSHUTDOWN_INITIATED)
+   if (env->shutdown != kSHUTDOWN_COMMITINITIATED &&
+       env->shutdown != kSHUTDOWN_ABORTINITIATED)
    {
       /* release lock - incorrect state (perhaps somebody other than the signal thread 
        * sent the SIGUSR2 signal) */
@@ -236,17 +239,22 @@ static void StopProcessing(int sig)
       return;
    }
 
-   fprintf(stderr,"Stopping main thread (received signal '%d').\n", sig);
+   if (!env->selfstart || env->verbose || env->shutdown == kSHUTDOWN_ABORTINITIATED)
+   {
+      fprintf(stderr,"main thread ready for shutdown; waiting for existing server threads to complete.\n");
+   }
 
    /* main thread now behaving - kSDSTATE_MAIN_BEHAVING */
    env->shutdown = kSHUTDOWN_MAINBEHAVING;
    sem_post(env->shutdownsem);
 
-   /* stay out of trouble while process terminates */
-   while (1)
-   {
-      sched_yield();
-   }
+   /* Don't sit here and wait - the main thread might have locks; simply use the
+    * env->shutdown as a flag so that main doesn't try to start any more server or sums
+    * threads.*/
+
+   /* There will be a user-defined call here to allow the user to take any action 
+    * they desire - even calling exit() - before shutdown completes. */
+   return;
 }  
 
 int main (int argc, char *argv[]) {
@@ -266,6 +274,8 @@ int main (int argc, char *argv[]) {
   char *shenvfileprefix = NULL; 
   char envfile[PATH_MAX];
   FILE *fptr = NULL;
+  int abort = 1;
+  int selfstart = 0;
 
 #ifdef DEBUG
   xmem_config(1,1,1,1,1000000,1,0,0); 
@@ -285,6 +295,7 @@ int main (int argc, char *argv[]) {
   fg = cmdparams_exists(&cmdparams,"f");
   cenvfileprefix = cmdparams_get_str(&cmdparams, kCENVFILE, NULL);
   shenvfileprefix = cmdparams_get_str(&cmdparams, kSHENVFILE, NULL);
+  selfstart = cmdparams_isflagset(&cmdparams, kSELFSTARTFLAG);
 
   /* Print command line parameters in verbose mode. */
   if (verbose)
@@ -339,6 +350,7 @@ int main (int argc, char *argv[]) {
   env->logfile_prefix = "drms_server";
   env->dolog = dolog;
   env->quiet = 1;
+  env->selfstart = selfstart;
 
   /* Start listening on the socket for clients trying to connect. */
   sockfd = db_tcp_listen(hostname, sizeof(hostname), &port);
@@ -397,7 +409,7 @@ int main (int argc, char *argv[]) {
 
   /* Register sigblock function - whenever the dbase is accessed, certain signals
    * (like SIGUSR2) shouldn't interrupt such actions. */
-  db_register_sigblock(&drms_createsigmask, &env->main_thread);
+  // db_register_sigblock(&drms_createsigmask, &env->main_thread);
   
   /* Set up a main-thread signal-handler. It handles SIGUSR2 signals, which are
    * sent by the signal thread if that thread in turn is aborting the process.
@@ -471,7 +483,7 @@ int main (int argc, char *argv[]) {
    */
   if (strcmp(cenvfileprefix, kNOTSPECIFIED) != 0)
   {
-     snprintf(envfile, sizeof(envfile), "%s.%lu", cenvfileprefix, pid);
+     snprintf(envfile, sizeof(envfile), "%s.%llu", cenvfileprefix, (unsigned long long)pid);
      fptr = fopen(envfile, "w");
      if (fptr)
      {
@@ -498,7 +510,7 @@ int main (int argc, char *argv[]) {
   }
   else if (strcmp(shenvfileprefix, kNOTSPECIFIED) != 0)
   {
-     snprintf(envfile, sizeof(envfile), "%s.%lu", shenvfileprefix, pid);
+     snprintf(envfile, sizeof(envfile), "%s.%llu", shenvfileprefix, (unsigned long long)pid);
      fptr = fopen(envfile, "w");
      if (fptr)
      {
@@ -525,13 +537,82 @@ int main (int argc, char *argv[]) {
   }
 
   for (;;) {
+     /* on every iteration, see check for a shutdown - if not, continue, otherwise
+      * halt.
+      */
+     drms_lock_server(env);
+
+     if (env->shutdownsem)
+     {
+        if (env->shutdown == kSHUTDOWN_MAINBEHAVING ||
+            env->shutdown == kSHUTDOWN_COMMIT ||
+            env->shutdown == kSHUTDOWN_ABORT)
+        {
+           /* shutdown has already been started, and main thread already knows about it.
+            * Wait for server threads to finish. */
+           drms_unlock_server(env);
+
+           while (1)
+           {
+              drms_lock_server(env);
+              
+              /* check for server-thread completion */
+              if (env->clientcounter == 0)
+              {
+                 drms_unlock_server(env);
+                 break;
+              }
+              
+              drms_unlock_server(env);
+              sleep(1);
+           }
+
+           /* server threads have completed - call commit or abort as appropriate.
+            * env->shutdown might still be kSHUTDOWN_MAINBEHAVING
+            */
+           while (1)
+           {
+              drms_lock_server(env);
+              if (env->shutdown == kSHUTDOWN_ABORT)
+              {
+                 abort = 1;
+                 drms_unlock_server(env);
+                 break;
+              }
+              else if (env->shutdown == kSHUTDOWN_COMMIT)
+              {
+                 abort = 0;
+                 drms_unlock_server(env);
+                 break;
+              }
+              else if (env->shutdown != kSHUTDOWN_MAINBEHAVING)
+              {
+                 abort = 1;
+                 fprintf(stderr, "Invalid shutdown state '%d'.\n", env->shutdown);
+                 drms_unlock_server(env);
+                 break;
+              }
+
+              drms_unlock_server(env);
+              sleep(1);
+           }
+
+           /* time to quit out of for loop */
+           break;
+        }
+     }
+
+     drms_unlock_server(env);
+     
+
      /* accept new connection */
     if ((clientsockfd = accept (sockfd, NULL, NULL)) < 0 ) {
       if (errno == EINTR) continue;
       else {
 	perror ("accept call failed.");
 	close (sockfd);
-	Exit (1);
+	//Exit (1);
+        pthread_kill(env->signal_thread, SIGTERM);
       }      
     }
 
@@ -572,6 +653,9 @@ int main (int argc, char *argv[]) {
           (void *) tinfo))) {
 	fprintf (stderr, "Thread creation failed: %d\n", status);          
 	close (clientsockfd);
+        drms_lock_server (env);
+        --(env->clientcounter);
+        drms_unlock_server (env);
       }
     } else {
       fprintf (stderr, "pid %d: Connection from %s:%d denied. "
@@ -579,6 +663,25 @@ int main (int argc, char *argv[]) {
 	  inet_ntoa (client.sin_addr), ntohs (client.sin_port));  
       close (clientsockfd);
     }
+  }
+
+  /* we should get here ONLY if the signal_thread is terminating */
+  drms_lock_server(env);
+  pthread_join(env->signal_thread, NULL);
+  env->signal_thread = 0;
+  drms_unlock_server(env);
+  
+  if (abort)
+  {
+     /* calls exit(), which calls at_exit_action(), which calls drms_server_abort(). */
+     Exit(1);
+  }
+  else
+  {
+     drms_server_commit(env, 1);
+     fflush(stdout);
+     /* doesn't call at_exit_action() */
+     _exit(0);
   }
 
   return 0;

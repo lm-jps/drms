@@ -190,6 +190,10 @@ void drms_free_env (DRMS_Env_t *env, int final) {
   if (env->sum_outbox) {
     tqueueDelete (env->sum_outbox);
   }
+  if (env->shutdownsem)
+  {
+     sem_destroy(env->shutdownsem);
+  }
 #endif
   if (env->session) {
       free (env->session->sudir);

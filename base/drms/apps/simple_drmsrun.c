@@ -7,9 +7,14 @@
 
 #define kDRMSSERVERLOG "drmslog"
 #define kDRMSSERVERLOGDEF "/tmp/drmsserver_logs"
+#define kDRMSRUNLOG "drmsrunlog"
+#define kNOTSPECIFIED "notspecified"
+
 #define kDELSCRIPTFLAG "d"
+#define kVERBOSEFLAG "v"
 #define kDRMSERVERENV "/tmp/drms_server_env"
-#define kTIMEOUT 10
+#define kTIMEOUT "to"
+#define kTIMEOUTDEF "15"
 
 
 enum RUNstat_enum
@@ -29,7 +34,10 @@ ModuleArgs_t module_args[] = {
     * {ARG_STRING, kSCRIPT, NULL, "The script to run - contains socket-module cmds."}, 
     */
    {ARG_STRING, kDRMSSERVERLOG, kDRMSSERVERLOGDEF, "The path to the drms_server log files."},
+   {ARG_STRING, kDRMSRUNLOG, kNOTSPECIFIED, "The path to the drms_run log files."},
+   {ARG_DOUBLE, kTIMEOUT, kTIMEOUTDEF, "Time limit, in seconds, to find drms_server's environment file."},
    {ARG_FLAG, kDELSCRIPTFLAG, NULL, "Indicates that the script file should be deleted after use."},
+   {ARG_FLAG, kVERBOSEFLAG, NULL, "Print diagnostic messages."},
    {ARG_END}
 };
 
@@ -47,7 +55,10 @@ int main(int argc, char *argv[])
    char cmd[PATH_MAX];
    char *script = NULL;
    char *serverlog = NULL;
+   char *drmsrunlog = NULL;
+   double timeout = 15;
    int delscr = 0;
+   int verbose = 0;
    int abort = 0;
    float elapsed = 0;
    struct stat stbuf;
@@ -62,7 +73,10 @@ int main(int argc, char *argv[])
 
    script = cmdparams_getarg(&cmdparams, 1);
    serverlog = cmdparams_get_str(&cmdparams, kDRMSSERVERLOG, NULL);
+   drmsrunlog = cmdparams_get_str(&cmdparams, kDRMSRUNLOG, NULL);
+   timeout = cmdparams_get_double(&cmdparams, kTIMEOUT, NULL);
    delscr = cmdparams_isflagset(&cmdparams, kDELSCRIPTFLAG);
+   verbose = cmdparams_isflagset(&cmdparams, kVERBOSEFLAG);
 
    if ((pid = fork()) == -1)
    {
@@ -75,6 +89,28 @@ int main(int argc, char *argv[])
    else if (pid > 0)
    {
       /* parent - pid is child's (drms_server's) pid */
+      FILE *fptr = NULL;
+      FILE *actstdout = stdout;
+      FILE *actstderr = stderr;
+
+      if (strcmp(drmsrunlog, kNOTSPECIFIED) != 0)
+      {
+         char logfile[PATH_MAX];
+         snprintf(logfile, sizeof(logfile), "%s/drmsrun_%llu.log", drmsrunlog, (unsigned long long)pid);
+         fptr = fopen(logfile, "w");
+      }
+
+      if (fptr)
+      {
+         actstdout = fptr;
+         actstderr = fptr;
+      }
+
+      if (verbose)
+      {
+         fprintf(actstdout, "Loading environment for drms_server pid %llu.\n", (unsigned long long)pid);
+      }
+
       snprintf(envfile, sizeof(envfile), "%s.%llu", kDRMSERVERENV, (unsigned long long)pid);
       
       /* wait for server env file to appear */
@@ -83,15 +119,25 @@ int main(int argc, char *argv[])
       while (1)
       {
          elapsed = StopTimer(25);
-         if (elapsed > kTIMEOUT)
+         if (elapsed > timeout)
          {
             runstat = kSTAT_ENVTIMEOUT;
             abort = 1;
+            
+            fprintf(actstderr, 
+                    "Time out - couldn't find environment file for drms_server pid %llu.\n", 
+                    (unsigned long long)pid);
+
             break;
          }
 
          if (!stat(envfile, &stbuf) && S_ISREG(stbuf.st_mode))
          {
+            if (verbose)
+            {
+               fprintf(actstdout, "Found environment file for drms_server pid %llu.\n", (unsigned long long)pid);
+            }
+
             break;
          }
 
@@ -104,15 +150,18 @@ int main(int argc, char *argv[])
           * script must figure out if a failure happened or not, and
           * then return 0 (commit) or non-0 (abort) */
          snprintf(cmd, sizeof(cmd), "source %s; %s", envfile, script);
-         fprintf(stdout, "Running cmd '%s' on drms_server pid %llu.\n", cmd, (unsigned long long)pid);
-         status = system(cmd);
-         
+         if (verbose)
+         {
+            fprintf(actstdout, "Running cmd '%s' on drms_server pid %llu.\n", cmd, (unsigned long long)pid);
+         }
+
+         status = system(cmd);         
 
          if (status == -1)
          {
             runstat = kSTAT_SCRIPTFAILURE;
             abort = 1;
-            fprintf(stderr, "Could not execute '%s' properly; bailing.\n", script);
+            fprintf(actstderr, "Could not execute '%s' properly; bailing.\n", script);
          }
          else if (WIFEXITED(status) && WEXITSTATUS(status))
          {
@@ -124,6 +173,11 @@ int main(int argc, char *argv[])
          }
       }
      
+      if (verbose)
+      {
+         fprintf(actstdout, "About to kill drms_server pid %llu.\n", (unsigned long long)pid);
+      }
+
       if (abort)
       {
          kill(pid, SIGTERM);
@@ -137,7 +191,7 @@ int main(int argc, char *argv[])
 
       if (pidret != pid)
       {
-         fprintf(stderr, "pid of killed drms_server does not match pid in kill syscall.\n");
+         fprintf(actstderr, "pid of killed drms_server does not match pid in kill syscall.\n");
          runstat = kSTAT_KILLFAILED;
       }
       else if (WIFEXITED(status))
@@ -148,7 +202,7 @@ int main(int argc, char *argv[])
          if (WEXITSTATUS(status) != 0 && WEXITSTATUS(status) != 1)
          {
             /* drms_server did not return commit (1) or abort (0) */
-            fprintf(stderr, 
+            fprintf(actstderr, 
                     "drms_server failed to shut down properly, returned '%d'.\n", 
                     (int)WEXITSTATUS(status));
             runstat = kSTAT_DRMSSERVERFAILURE;

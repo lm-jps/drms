@@ -266,8 +266,11 @@ typedef struct DS_node_struct
 enum DRMS_Shutdown_State_enum
 {
    kSHUTDOWN_UNINITIATED = 0,
-   kSHUTDOWN_INITIATED = 1,
-   kSHUTDOWN_MAINBEHAVING = 2,
+   kSHUTDOWN_COMMITINITIATED = 1,
+   kSHUTDOWN_ABORTINITIATED = 2,
+   kSHUTDOWN_MAINBEHAVING = 3,
+   kSHUTDOWN_COMMIT = 4,
+   kSHUTDOWN_ABORT = 5
 };
 
 typedef enum DRMS_Shutdown_State_enum DRMS_Shutdown_State_t;
@@ -326,7 +329,8 @@ struct DRMS_Env_struct
   /* For shutting down */
   pthread_t main_thread;
   sem_t *shutdownsem; /* synchronization between signal thread and main thread during shutdown */
-  int shutdown; /* signifies that DRMS received a signal that is causing module termination */
+  DRMS_Shutdown_State_t shutdown; /* signifies that DRMS received a signal that is causing module termination */
+  int selfstart; /* if this is a drms_server environment, was drms_server self-started by a socket module */
 };
 
 /** \brief DRMS environment struct reference */

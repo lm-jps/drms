@@ -55,7 +55,9 @@ int drms_server_begin_transaction(DRMS_Env_t *env) {
      through this server should be treated as a single transaction. */
   if (db_start_transaction(env->session->db_handle)) {
     fprintf(stderr,"Couldn't start database transaction.\n");
-    Exit(1);
+    // Exit(1); - never call exit(), only the signal thread can do that.
+    // Instead, send a TERM signal to the signal thread.
+    pthread_kill(env->signal_thread, SIGTERM);
   }
 
   env->sum_inbox = tqueueInit (100);
@@ -101,7 +103,9 @@ int drms_server_open_session(DRMS_Env_t *env)
 					    env->session->db_handle->dbname,1)) == NULL)
   {
     fprintf(stderr,"Error: Couldn't establish stat_conn database connection.\n");
-    Exit(1);
+    // Exit(1); - never call exit(), only the signal thread can do that.
+    // Instead, send a TERM signal to the signal thread.
+    pthread_kill(env->signal_thread, SIGTERM);
   }
 
   /* Get sessionid etc. */
@@ -182,13 +186,21 @@ int drms_server_open_session(DRMS_Env_t *env)
       CHECKSNPRINTF(snprintf(filename_e,DRMS_MAXPATHLEN, "%s/%s.stderr.gz", env->session->sudir, env->logfile_prefix), DRMS_MAXPATHLEN);
       CHECKSNPRINTF(snprintf(filename_o,DRMS_MAXPATHLEN, "%s/%s.stdout.gz", env->session->sudir, env->logfile_prefix), DRMS_MAXPATHLEN);
       if ((env->tee_pid = tee_stdio (filename_o, 0644, filename_e, 0644)) < 0)
-	Exit(-1);
+      {
+        // Exit(-1); - never call exit(), only the signal thread can do that.
+        // Instead, send a TERM signal to the signal thread.
+        pthread_kill(env->signal_thread, SIGTERM);
+      }
     } else {
       /* Redirect output */
       CHECKSNPRINTF(snprintf(filename_e,DRMS_MAXPATHLEN, "%s/%s.stderr", env->session->sudir, env->logfile_prefix), DRMS_MAXPATHLEN);
       CHECKSNPRINTF(snprintf(filename_o,DRMS_MAXPATHLEN, "%s/%s.stdout", env->session->sudir, env->logfile_prefix), DRMS_MAXPATHLEN);
       if (redirect_stdio (filename_o, 0644, filename_e, 0644))
-	Exit(-1);
+      {
+         // Exit(-1); - never call exit(), only the signal thread can do that.
+         // Instead, send a TERM signal to the signal thread.
+         pthread_kill(env->signal_thread, SIGTERM);
+      }
     }
     printf("DRMS server connected to database '%s' on host '%s' as "
 	   "user '%s'.\n",env->session->db_handle->dbname, 
@@ -390,7 +402,7 @@ void drms_server_abort(DRMS_Env_t *env, int final)
       tqueueAdd(env->sum_inbox, (long)pthread_self(), (char *)request);
     }
 
-    pthread_detach(env->sum_thread);
+    pthread_join(env->sum_thread, NULL);
     env->sum_thread = 0;
   }
 
@@ -406,10 +418,11 @@ void drms_server_abort(DRMS_Env_t *env, int final)
   sleep(DRMS_ABORT_SLEEP);
 
   /* Free memory.*/
-  if (!final) {
+  if (final) {
     drms_free_env(env, 1);
   } else {
     //    fprintf(stderr, "skip freeing drms_free_env()");
+     drms_unlock_server(env);
   }
 
   /* Good night and good luck! */
@@ -496,7 +509,14 @@ void drms_server_commit(DRMS_Env_t *env, int final)
   }
 
   /* Free memory.*/
-  drms_free_env(env, final);  
+  if (final)
+  {
+     drms_free_env(env, 1);  
+  }
+  else
+  {
+     drms_unlock_server(env);
+  }
 
 #ifdef DEBUG
   printf("Exiting drms_server_commit()\n");
@@ -539,7 +559,11 @@ void *drms_server_thread(void *arg)
   if( (status = pthread_sigmask(SIG_BLOCK, &env->signal_mask, NULL)))
   {
     printf("pthread_sigmask call failed with status = %d\n", status);
-    Exit(1);
+
+    // Exit(1); - never call exit(), only the signal thread can do that.
+    // Instead, send a TERM signal to the signal thread.
+    pthread_kill(env->signal_thread, SIGTERM);
+    goto bail;
   }
 
   /* block SIGUSR2, since only the main thread should respond to this signal */
@@ -551,7 +575,11 @@ void *drms_server_thread(void *arg)
   if((status = pthread_sigmask(SIG_BLOCK, &mask, NULL)))
   {
      fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);
-     Exit(1);
+
+     // Exit(1); - never call exit(), only the signal thread can do that.
+     // Instead, send a TERM signal to the signal thread.
+     pthread_kill(env->signal_thread, SIGTERM);
+     goto bail;
   }
 
   if ( getpeername(sockfd,  (struct sockaddr *)&client, &client_size) == -1 )
@@ -847,10 +875,13 @@ void *drms_server_thread(void *arg)
       else if (status && disconnect)
 	fprintf(stderr,"thread %d: The client module disconnected and set "
 		"the abort flag.\nAborting.\n",tnum);
-      Exit(1);
+
+      // Exit(1); - never call exit(), only the signal thread can do that.
+      // Instead, send a TERM signal to the signal thread.
+      pthread_kill(env->signal_thread, SIGTERM);
+      goto bail;
     }
   }
-
 
   printf("thread %d: Exiting with disconnect = %d and status = %d.\n",
 	 tnum,disconnect,status);
@@ -1372,6 +1403,7 @@ void drms_lock_server(DRMS_Env_t *env)
     return;
   else
   {
+#if 0
      /* Before locking, you must block signals that could interrupt
       * the main thread and cause it to not return from the signal handler.
       * If that were to happen, the lock would never be released, and you get deadlock 
@@ -1390,6 +1422,7 @@ void drms_lock_server(DRMS_Env_t *env)
            fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);
         }
      }
+#endif
 
      pthread_mutex_lock( env->drms_lock );
   }
@@ -1403,6 +1436,7 @@ void drms_unlock_server(DRMS_Env_t *env)
   {
      pthread_mutex_unlock( env->drms_lock );
 
+#if 0
      /* unblock signals that were blocked while the lock was held */
      if (env->main_thread == pthread_self())
      {
@@ -1417,6 +1451,7 @@ void drms_unlock_server(DRMS_Env_t *env)
            fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);
         }
      }
+#endif
   }
 }
  
@@ -1901,23 +1936,25 @@ void *drms_signal_thread(void *arg)
     case SIGTERM:
     case SIGQUIT:
     case SIGUSR1:
-      /* Attempt to lock both the environment and the db. If the main thread is using 
-       * either, the signal thread will block, until it can acquire the locks, which 
-       * will prevent the main thread from accessing either again. Don't try to shutdown
-       * while main is accessing the database. */
+      /* No need to acquire lock to look at env->shutdownsem, which was either 
+       * created or not before the signal_thread existed. By the time
+       * execution gets here, shutdownsem is read-only */
       if (env->shutdownsem)
       {
-         drms_lock_server(env);
-         db_lock(env->session->db_handle);
-
          /* acquire shutdown lock */
          sem_wait(env->shutdownsem);
 
          if (env->shutdown == kSHUTDOWN_UNINITIATED)
          {
             /* There is no shutdown in progress - okay to start shutdown */
-            env->shutdown = kSHUTDOWN_INITIATED; /* Shutdown initiated */
-            fprintf(stderr, "Shutdown initiated.\n");
+            env->shutdown = (signo == SIGUSR1) ? 
+              kSHUTDOWN_COMMITINITIATED : 
+              kSHUTDOWN_ABORTINITIATED; /* Shutdown initiated */
+
+            if (!env->selfstart || env->verbose || signo == SIGTERM)
+            {
+               fprintf(stderr, "Shutdown initiated.\n");
+            }
 
             /* This will cause the SUMS thread to be killed, and the dbase to abort.  Then
              * it will kill the dbase connection.  If we do this while the main thread is running
@@ -1926,7 +1963,11 @@ void *drms_signal_thread(void *arg)
              *
              * Instead, send a message back to main thread - the handler there essentially  
              * sleeps until termination. */
-            fprintf(stderr, "Shutdown signal sent to main thread.\n");
+            if (!env->selfstart || env->verbose || signo == SIGTERM)
+            {
+               fprintf(stderr, "Shutdown signal sent to main thread.\n");
+            }
+
             pthread_kill(env->main_thread, SIGUSR2);
 
             /* release shutdown lock */
@@ -1940,7 +1981,7 @@ void *drms_signal_thread(void *arg)
                sem_wait(env->shutdownsem);
                if (env->shutdown == kSHUTDOWN_MAINBEHAVING)
                {
-                  /* main thread is now stuck in StopProcessing() - okay to call exit() */
+                  /* main thread will no longer spawn new server or sums threads */
                   sem_post(env->shutdownsem);
                   break;
                }
@@ -1956,40 +1997,40 @@ void *drms_signal_thread(void *arg)
             sem_post(env->shutdownsem);
          }
 
-         /* The main thread is now behaving, but must release locks on environment and 
-          * the db, because drms_server_abort() will attempt to lock those.*/
-         db_unlock(env->session->db_handle);
-         drms_unlock_server(env);
-
+         /* The main thread is behaving. */
          if (doexit)
          {
-            if (SIGUSR1)
+            drms_lock_server(env);
+            if (signo == SIGUSR1)
             {
-               drms_server_commit(env, 1);
-               fflush(stdout);
-               _exit(0);
+               env->shutdown = kSHUTDOWN_COMMIT;
             }
             else
             {
-
-               /* OK. Finally okay to call drms_server_abort().*/
-               /* Causes atexit() function to be executed */
-               Exit(1);
+               env->shutdown = kSHUTDOWN_ABORT;
             }
+
+            drms_unlock_server(env);
+
+            return NULL; /* kill the signal thread - no longer needed */
          }
       }
       else
       {
-         if (SIGUSR1)
+         drms_lock_server(env);
+         if (signo == SIGUSR1)
          {
-            drms_server_commit(env, 1);
-            fflush(stdout);
-            _exit(0);
+            env->shutdown = kSHUTDOWN_COMMIT;
          }
          else
          {
-            Exit(1);
+            env->shutdown = kSHUTDOWN_ABORT;
          }
+
+         drms_unlock_server(env);
+
+         return NULL; /* kill the signal thread - no longer needed */
+
       }
       
       break;      

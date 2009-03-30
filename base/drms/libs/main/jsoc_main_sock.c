@@ -438,11 +438,12 @@ pid_t drms_start_server (int verbose, int dolog)  {
       close(fd[1]);
     }
 
-    const int num_args = 14;
+    const int num_args = 15;
     char **argv = malloc(num_args*sizeof(char *));
     int i = 0;
     argv[i++] = strdup ("drms_server");
     argv[i++] = strdup ("-f");
+    argv[i++] = strdup ("-b");
     if (verbose) 
       argv[i++] = strdup ("-V");
     if (dolog) 
