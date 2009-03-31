@@ -113,6 +113,14 @@ int main(int argc, char *argv[])
 
       snprintf(envfile, sizeof(envfile), "%s.%llu", kDRMSERVERENV, (unsigned long long)pid);
       
+
+      if (verbose)
+      {
+         time_t now;
+         time(&now);
+         fprintf(actstdout, "Start looking for environment file at %s\n", ctime(&now));
+      }
+
       /* wait for server env file to appear */
       StartTimer(25);
 

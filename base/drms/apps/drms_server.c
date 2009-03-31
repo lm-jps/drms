@@ -276,6 +276,7 @@ int main (int argc, char *argv[]) {
   FILE *fptr = NULL;
   int abort = 1;
   int selfstart = 0;
+  time_t now;
 
 #ifdef DEBUG
   xmem_config(1,1,1,1,1000000,1,0,0); 
@@ -330,6 +331,10 @@ int main (int argc, char *argv[]) {
     fprintf(stderr,"Failure during server initialization.\n");
     return 1;
   }
+
+  time(&now);
+  fprintf(stdout, "Connected to dbase at %s", ctime(&now));
+
   db_handle = env->session->db_handle;
 
   printf("env->session->db_direct = %d\n",env->session->db_direct );
@@ -356,8 +361,6 @@ int main (int argc, char *argv[]) {
   sockfd = db_tcp_listen(hostname, sizeof(hostname), &port);
   printf("DRMS server listening on %s:%hu.\n",hostname,port);
   fflush(stdout);
-
-
 
   /* Fork off child process to do the real work and exit. This allows the 
      server to be started in a shell with out "&" */    
@@ -461,6 +464,9 @@ int main (int argc, char *argv[]) {
 
   strncpy(env->session->hostname, hostname, DRMS_MAXHOSTNAME);
   env->session->port = port;
+  
+  /* drms_server_begin_transaction() can be slow when the dbase is busy - 
+   * The sluggishness is caused by SUM_open() backing up. */
   drms_server_begin_transaction(env);
 
   /* Redirect output */
@@ -506,12 +512,15 @@ int main (int argc, char *argv[]) {
                 env->session->hostname, 
                 env->session->port);
         fclose(fptr);
+        time(&now);
+        fprintf(stdout, "wrote environment file at %s", ctime(&now));
      }
   }
   else if (strcmp(shenvfileprefix, kNOTSPECIFIED) != 0)
   {
      snprintf(envfile, sizeof(envfile), "%s.%llu", shenvfileprefix, (unsigned long long)pid);
      fptr = fopen(envfile, "w");
+
      if (fptr)
      {
         fprintf(fptr, 
@@ -533,6 +542,8 @@ int main (int argc, char *argv[]) {
                 env->session->hostname, 
                 env->session->port);
         fclose(fptr);
+        time(&now);
+        fprintf(stdout, "wrote environment file at %s", ctime(&now));
      }
   }
 
@@ -588,7 +599,7 @@ int main (int argc, char *argv[]) {
               else if (env->shutdown != kSHUTDOWN_MAINBEHAVING)
               {
                  abort = 1;
-                 fprintf(stderr, "Invalid shutdown state '%d'.\n", env->shutdown);
+                 fprintf(stderr, "Invalid shutdown state '%d'.\n", (int)env->shutdown);
                  drms_unlock_server(env);
                  break;
               }

@@ -53,6 +53,7 @@ int drms_server_begin_transaction(DRMS_Env_t *env) {
 
   /* Start a transaction where all database operations performed
      through this server should be treated as a single transaction. */
+
   if (db_start_transaction(env->session->db_handle)) {
     fprintf(stderr,"Couldn't start database transaction.\n");
     // Exit(1); - never call exit(), only the signal thread can do that.
@@ -65,10 +66,12 @@ int drms_server_begin_transaction(DRMS_Env_t *env) {
 
   /*  global lock  */
   XASSERT( env->drms_lock = malloc(sizeof(pthread_mutex_t)) );
-  pthread_mutex_init (env->drms_lock, NULL);    
+  pthread_mutex_init (env->drms_lock, NULL); 
 
   if (drms_cache_init(env)) goto bailout;
 
+  /* drms_server_open_session() can be slow when the dbase is busy - 
+   * this is caused by SUM_open() calls backing up. */ 
   if (drms_server_open_session(env)) return 1;
 
   return 0;
@@ -97,6 +100,7 @@ int drms_server_open_session(DRMS_Env_t *env)
   struct passwd *pwd = getpwuid(geteuid());
 
   /* Register the session in the database. */
+  // xxx not connecting to proper dbase port
   if ((env->session->stat_conn = db_connect(env->session->db_handle->dbhost,
 					    env->session->db_handle->dbuser,
 					    env->dbpasswd,
@@ -111,6 +115,7 @@ int drms_server_open_session(DRMS_Env_t *env)
   /* Get sessionid etc. */
   char *sn = malloc(sizeof(char)*strlen(env->session->sessionns)+16);
   sprintf(sn, "%s.drms_sessionid", env->session->sessionns);
+
   env->session->sessionid = db_sequence_getnext(env->session->stat_conn, sn);
   free(sn);
 
@@ -118,10 +123,12 @@ int drms_server_open_session(DRMS_Env_t *env)
 
   pid_t pid = getpid();
 
+  /* drms_server always creates a SU for the logfile */
   if (env->dolog || !strcmp(env->logfile_prefix, "drms_server")) {
-    /* Allocate a 1MB storage unit for log files. */
-    env->session->sunum = drms_su_alloc(env, 1<<20, &env->session->sudir, 
-					&status);
+     /* Allocate a 1MB storage unit for log files. */
+     /* drms_su_alloc() can be slow when the dbase is busy */
+     env->session->sunum = drms_su_alloc(env, 1<<20, &env->session->sudir, 
+                                         &status);
     if (status)
       {
 	fprintf(stderr,"Failed to allocate storage unit for log files: %d\n", 
@@ -1528,6 +1535,7 @@ void *drms_sums_thread(void *arg)
   long stop, empty;
   int connected = 0;
   char *ptmp;
+  TIMER_t *timer = NULL;
 
   env = (DRMS_Env_t *) arg;
 
@@ -1582,6 +1590,12 @@ void *drms_sums_thread(void *arg)
     if (!connected && request->opcode!=DRMS_SUMCLOSE)
     {
       /* Connect to SUMS. */
+       if (env->verbose)
+       {
+          timer = CreateTimer();
+       }
+
+       /* When the rate of SUM_open() calls gets large, SUM_open() starts to fall behind. */ 
       if ((sum = SUM_open(NULL, NULL, printkerr)) == NULL)
       {
 	fprintf(stderr,"drms_open: Failed to connect to SUMS.\n");
@@ -1592,8 +1606,16 @@ void *drms_sums_thread(void *arg)
 	   the client. */
 	tqueueAdd(env->sum_outbox, env->sum_tag, (char *) reply);
 	sleep(1);
-	Exit(1); /* Take down the DRMS server. */
+	//Exit(1); /* Take down the DRMS server. */
+        pthread_kill(env->signal_thread, SIGTERM);
       }
+
+      if (env->verbose && timer)
+      {
+         fprintf(stdout, "to call SUM_open: %f seconds.\n", GetElapsedTime(timer));
+         DestroyTimer(&timer);
+      }
+
       connected = 1;
 #ifdef DEBUG
       printf("drms_sums_thread connected to SUMS. SUMID = %llu\n",sum->uid);
@@ -1677,12 +1699,16 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
     sum->reqcnt = 1;
     sum->bytes = request->bytes;
     /* Make RPC call to the SUM server. */
+    /* PERFORMANCE BOTTLENECK */
+    /* drms_su_alloc() can be slow when the dbase is busy - this is due to 
+     * SUM_open() calls backing up. */
     if ((reply->opcode = SUM_alloc(sum, printf)))
     {
       fprintf(stderr,"SUM thread: SUM_alloc RPC call failed with "
 	      "error code %d\n",reply->opcode);
       break;
     }
+
     reply->sunum[0] = sum->dsix_ptr[0];
     reply->sudir[0] = strdup(sum->wd[0]);
     free(sum->wd[0]);

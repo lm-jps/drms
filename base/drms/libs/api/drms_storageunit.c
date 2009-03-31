@@ -63,10 +63,20 @@ long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir,
       return 1;
     }
   }
+
   /* Submit request to sums server thread. */
   tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
+
   /* Wait for reply. FIXME: add timeout. */
+  /* PERFORMANCE BOTTLENECK
+   * If there are many drms sessions happening, SUMS grinds to a halt right here.
+   * tqueueAdd causes the SUMS thread to call SUM_open(), but SUM_open() calls 
+   * back up when there are a lot of transactions. As a result, SUM_open() may not
+   * return for a while. After it returns it puts the result of the request into
+   * the queue with its own tqueueAdd. The following tqueueDel has been blocked
+   * the whole time waiting for the SUMS thread to call tqueueAdd. */ 
   tqueueDel(env->sum_outbox, (long) pthread_self(), (char **)&reply);
+
   if (reply->opcode)
   {
     fprintf(stderr,"SUM ALLOC failed with error code %d.\n",reply->opcode);
