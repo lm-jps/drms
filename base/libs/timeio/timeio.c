@@ -70,6 +70,7 @@ static struct date_time {
     int civil;
     int ut_flag;
     char zone[8];
+    int isISO;
 } dattim;
 
 const int kTIMEIO_MaxTimeEpochStr = 64;
@@ -253,31 +254,36 @@ static int clock_isvalid(const char *str)
   }
 
 static int _parse_month_name (char *moname) {
+  char *p, monthname[10];
   int month;
+  p = monthname;
+  while (*moname && isalpha(*moname) && p-monthname < 9)
+    *p++ = *moname++;
+  *p = '\0';
 
-  if (!strncasecmp (moname, "JAN", 3) || !strcasecmp (moname, "I"))
+  if (!strncasecmp (monthname, "JAN", 3) || !strcasecmp (monthname, "I"))
     month = 1;
-  else if (!strncasecmp (moname, "FEB", 3) || !strcasecmp (moname, "II"))
+  else if (!strncasecmp (monthname, "FEB", 3) || !strcasecmp (monthname, "II"))
     month = 2;
-  else if (!strncasecmp (moname, "MAR", 3) || !strcasecmp (moname, "III"))
+  else if (!strncasecmp (monthname, "MAR", 3) || !strcasecmp (monthname, "III"))
     month = 3;
-  else if (!strncasecmp (moname, "APR", 3) || !strcasecmp (moname, "IV"))
+  else if (!strncasecmp (monthname, "APR", 3) || !strcasecmp (monthname, "IV"))
     month = 4;
-  else if (!strncasecmp (moname, "MAY", 3) || !strcasecmp (moname, "V"))
+  else if (!strncasecmp (monthname, "MAY", 3) || !strcasecmp (monthname, "V"))
     month = 5;
-  else if (!strncasecmp (moname, "JUN", 3) || !strcasecmp (moname, "VI"))
+  else if (!strncasecmp (monthname, "JUN", 3) || !strcasecmp (monthname, "VI"))
     month = 6;
-  else if (!strncasecmp (moname, "JUL", 3) || !strcasecmp (moname, "VII"))
+  else if (!strncasecmp (monthname, "JUL", 3) || !strcasecmp (monthname, "VII"))
     month = 7;
-  else if (!strncasecmp (moname, "AUG", 3) || !strcasecmp (moname, "VIII"))
+  else if (!strncasecmp (monthname, "AUG", 3) || !strcasecmp (monthname, "VIII"))
     month = 8;
-  else if (!strncasecmp (moname, "SEP", 3) || !strcasecmp (moname, "IX"))
+  else if (!strncasecmp (monthname, "SEP", 3) || !strcasecmp (monthname, "IX"))
     month = 9;
-  else if (!strncasecmp (moname, "OCT", 3) || !strcasecmp (moname, "X"))
+  else if (!strncasecmp (monthname, "OCT", 3) || !strcasecmp (monthname, "X"))
     month = 10;
-  else if (!strncasecmp (moname, "NOV", 3) || !strcasecmp (moname, "XI"))
+  else if (!strncasecmp (monthname, "NOV", 3) || !strcasecmp (monthname, "XI"))
     month = 11;
-  else if (!strncasecmp (moname, "DEC", 3) || !strcasecmp (moname, "XII"))
+  else if (!strncasecmp (monthname, "DEC", 3) || !strcasecmp (monthname, "XII"))
     month = 12;
   else
                                                 /*  Unrecognized month name  */
@@ -285,10 +291,25 @@ static int _parse_month_name (char *moname) {
   return (month);
 }
 
+static int _parse_doy (int year, int doy)
+  {
+  int month;
+  if (year%4 == 0)
+    molen[2] = 29;
+  if ((year%100 == 0) && (year > 1600) && (year%400 != 0))
+    molen[2] = 28;
+  for (month = 1; month <= 12 && doy > molen[month]; month += 1)
+    doy -= molen[month];
+  dattim.month = month;
+  dattim.dofm = doy;
+  return (month < 13);
+  }
+
 static int _parse_date (char *strin, int *consumed)
   {
   /*
    *  Read date elements from calendar string YYYY.{MM|nam}.DD[.ddd]
+   *  Allow ISO 8601 forms YYYY(-MM{-DD}} or YYYYMMDD or YYYYdoy
    *  Return 3 if OK and no fractional day, 6 if OK with fractional date, else 0
    */
   double fracday;
@@ -298,56 +319,101 @@ static int _parse_date (char *strin, int *consumed)
   int retval;
   char daystr[32];
 
+  status = 3;  // assume ymd and no day fraction
+  dattim.isISO = 0;
   ptr = strin;
   dattim.year = strtol (ptr, &endptr, 10);
   len = endptr - ptr;
-
-  /* don't check for a parse error here - if there is some gibberish 
-   * after the year, like "2009gibberish ]", then the problem 
-   * will be detected elsewhere (like in drms_names.c where the only
-   * thing allowed after a timestring is a ']'. */
-
-  if (*endptr == '.')
-    { // look for month
-    ptr = endptr +1;
-    dattim.month = strtol (ptr, &endptr, 10);
-    len = endptr - ptr;
-    if (len == 0)
-      { /* string month name */
-      dattim.month = _parse_month_name (ptr);
-      if (dattim.month == 0)
-        return _parse_error ();
-      }
+  if (len == 8)
+    { // ISO concatenated form YYYYMMDD
+    if (*endptr == '.' || *endptr == '-')
+      return _parse_error ();
+    sscanf(ptr, "%4d%2d%2d", &dattim.year, &dattim.month, &dattim.dofm);
+    dattim.isISO = 1;
+    status = 8;
     }
-  else
-    dattim.month = 1;
-  if (*endptr == '.')
-    { // look for dofm
-    ptr = endptr +1;
-    dattim.dofm = status = strtol (ptr, &endptr, 10);
-    len = endptr - ptr;
-    if (len == 0)
-      dattim.dofm = 1;
+  else if (len == 7)
+    { // ISO concatenated form YYYYddd where ddd is doy
+    int doy;
+    sscanf(ptr, "%4d%3d", &dattim.year, &doy);
+    if (_parse_doy (dattim.year, doy) ==0)
+       return _parse_error ();
+    dattim.isISO = 1;
+    status = 8;
     }
-  else 
-    dattim.dofm = 1;
-  if (*endptr == '.')
-    { // look for day fraction
-    ptr = endptr +1;
-    dfrac = (int)strtol(ptr, &endptr, 10);
-    len = endptr - ptr;
-    if (len > 0)
-      { /*  Day of month is in fractional form  */
-      sprintf (daystr, "%d.%d", dattim.dofm, dfrac);
-      sscanf (daystr, "%lf", &fracday);
-      _fracday_2_clock (fracday);
-      status = 6;
+  else if (len > 5)
+      return _parse_error ();
+  if (status != 8)
+    {
+    if (*endptr == '.' || *endptr == '-')
+      { // second field, start with look for month
+      if (*endptr == '-')
+          dattim.isISO = 1;
+      ptr = endptr +1;
+      dattim.month = strtol (ptr, &endptr, 10);
+      len = endptr - ptr;
+      if (len == 0)
+          { /* string month name */
+          dattim.month = _parse_month_name (ptr);
+          if (dattim.month == 0)
+              return _parse_error ();
+          // Month name found, now find end of letter string.
+          while (*endptr && isalpha(*endptr))
+              endptr++;
+          }
+      else if (len == 3)
+          { // must be ordinal doy
+          int doy = dattim.month;
+          if (_parse_doy (dattim.year, doy) ==0)
+             return _parse_error ();
+          status = 8;
+          }
+      else if (dattim.month > 12)
+          return _parse_error ();
+      // Now look for third field
+      if (status != 8) // skip dofm if found doy already
+        {
+        if (*endptr == '.' || (dattim.isISO && *endptr == '-'))
+          { // look for dofm, have leading delim so exptect 1 or 2 digits
+            // unless month is Jan, then dofm may be interp as doy
+          ptr = endptr +1;
+          dattim.dofm = strtol (ptr, &endptr, 10);
+          len = endptr - ptr;
+          if (len == 0)
+              return _parse_error ();
+          if (dattim.dofm > 366 && dattim.month > 1)
+              return _parse_error ();
+          }
+        else
+          { // No dofm field
+          dattim.dofm = 1;
+          }
+        }
       }
     else
-      return _parse_error ();
+      { // Only first field present, default Jan 01.
+      dattim.month = 1;
+      dattim.dofm = 1;
+      }
     }
-  else
-    status = 3;
+  // Now look for day fraction
+  if (*endptr == '.')
+     { // look for day fraction, expect digits else error
+     ptr = endptr +1;
+     dfrac = (int)strtol(ptr, &endptr, 10);
+     len = endptr - ptr;
+     if (len > 0)
+         { /*  Day of month is in fractional form  */
+         sprintf (daystr, "%d.%d", dattim.dofm, dfrac);
+         sscanf (daystr, "%lf", &fracday);
+         _fracday_2_clock (fracday);
+         status = 6;
+         }
+      else
+        return _parse_error ();
+      }
+  if (status == 8)
+      status = 3;
   if (consumed)
     *consumed = endptr - strin;
   return status;
@@ -401,6 +467,7 @@ static int _parse_date_time_inner (char *str,
   if (!length)
       return _parse_error ();
   field0 = str;
+  dattim.isISO = 0;
 
   /*  First field must either be calendar date or "MJD" or "JD"  */
   strncpy(field0cpy, field0, sizeof(field0cpy)-1);
@@ -418,90 +485,92 @@ static int _parse_date_time_inner (char *str,
         return _parse_error();
      field0consumed = pc - field0cpy;
 
-    /* For JD times, the date is contained in field1, not field0 and 
-     * there is no clock field.
-     */
-    field1 = field0 + field0consumed;
+     /* For JD times, the date is contained in field1, not field0 and 
+      * there is no clock field.
+      */
+     field1 = field0 + field0consumed;
 
-    if (first && field1 && strlen(field1) > 0)
-       *first = strdup(field1);
+     if (first && field1 && strlen(field1) > 0)
+        *first = strdup(field1);
 
-    dattim.julday = strtod(field1, &endptr);
-    if (endptr == field1)
-       return _parse_error ();
+     dattim.julday = strtod(field1, &endptr);
+     if (endptr == field1)
+        return _parse_error ();
 
-    if (consumed)
-       *consumed = endptr - field0; 
+     if (consumed)
+        *consumed = endptr - field0; 
 
-    if (*endptr == '_')
-      {
-      field2 = endptr + 1;
-      if (consumed)
-         *consumed += 1;
-      }
-    else
-      field2 = NULL;
-
-    if (field2)
+     if (*endptr == '_')
        {
-       if (parse_zone(field2, realzone, sizeof(realzone)))
-         {
+       field2 = endptr + 1;
+       if (consumed)
+          *consumed += 1;
+       }
+     else
+       field2 = NULL;
+
+     if (field2)
+        {
+        if (parse_zone(field2, realzone, sizeof(realzone)))
+          {
           return _parse_error ();
-         }
+          }
 
-       snprintf(dattim.zone, sizeof(dattim.zone), "%s", realzone);
+        snprintf(dattim.zone, sizeof(dattim.zone), "%s", realzone);
 
-      if (consumed)
-         *consumed += strlen(realzone) ; 
+        if (consumed)
+          *consumed += strlen(realzone) ; 
 
-      if (third && strlen(realzone) > 0)
+        if (third && strlen(realzone) > 0)
           {
           *third = strdup(realzone);
           }
        }
-   else
-      strcpy (dattim.zone, "TDT"); /*  Default for Julian day notation is TDT  */
+     else
+       strcpy (dattim.zone, "TDT"); /*  Default for Julian day notation is TDT  */
 
-   if (field0cpy[0] == 'M')
+     if (field0cpy[0] == 'M')
               /*  Modified Julian date (starts at midnight) : add 2400000.5  */
-      dattim.julday += 2400000.5;
+       dattim.julday += 2400000.5;
 
-    if (jdout)
+     if (jdout)
        *jdout = 1;
-    return 1;
-  }
+     return 1;
+     }
 
 /*  First field is calendar date with optional day fraction  */
-  dattim.julday = 0.0;
+   dattim.julday = 0.0;
 
-  if (first && field0 && strlen(field0) > 0) 
+   if (first && field0 && strlen(field0) > 0) 
      *first = strdup(field0);
 
-  status = _parse_date (field0, &field0consumed);
-  if (consumed)
-    *consumed = field0consumed;
+   status = _parse_date (field0, &field0consumed);
+   if (consumed)
+     *consumed = field0consumed;
 
   // now find field1, should be at end of field0 if present
-  if (*(field0 + field0consumed) == '_')
-    {
-    field1 = field0 + field0consumed + 1;
-    if (consumed)
-       *consumed += 1;
-    }
-  else
-    {
-    field2 = field1 = NULL;
-    field1consumed = 0;
-    earlytz = 1;
-    }
+   field1 = field0 + field0consumed;
+   if (*field1 == '_' || (dattim.isISO && (*field1 == 'T' || *field1 == ' ')))
+     {
+     field1 += 1;
+     field2 = NULL;
+     if (consumed)
+        *consumed += 1;
+     }
+   else
+     {
+     field2 = field1 = NULL;
+     field1consumed = 0;
+     earlytz = status == 3;
+     }
 
   if (field1)
    {
-  if (status == 3)
-    {
-    /* normal date with no fraction in field0 so expect clock time in field 1 */
-    status = _parse_clock (field1, &field1consumed);
-    if (!status)
+   if (status == 3)
+     {
+     /* normal date with no fraction in field0 so expect clock time in field 1 */
+     status = _parse_clock (field1, &field1consumed);
+     if (!status)
        { // is not OK time
        /* Add support for  YYYY.MM.DD_TZ. */
        /* field1 exists - may be a 'time zone' */
@@ -512,7 +581,7 @@ static int _parse_date_time_inner (char *str,
        field1 = NULL;
        earlytz = 1;
        }
-    else
+     else
        { // clock is fine
        if (second && field1 && strlen(field1) > 0)
           *second = strdup(field1);
@@ -528,11 +597,11 @@ static int _parse_date_time_inner (char *str,
              *consumed += 1; // for the '_'
           field2 = field1 + field1consumed + 1;
           }
-       else
+        else
           { // should stop here
           field2 = NULL;
           }
-       }
+        }
      }
    else
      {
@@ -542,7 +611,7 @@ static int _parse_date_time_inner (char *str,
         /* assume time zone*/
         field1consumed = 0;
         field2 = field1;
-        earlytz = 1;
+        // earlytz = 1;
         }
      }
    }
