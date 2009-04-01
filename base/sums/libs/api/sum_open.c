@@ -64,7 +64,7 @@ int SUM_shutdown(int query, int (*history)(const char *fmt, ...))
   setkey_str(&klist, "USER", username);
   setkey_int(&klist, "QUERY", query);
   status = clnt_call(cl, SHUTDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
-			(xdrproc_t)xdr_uint32_t, (int *)&response, TIMEOUT);
+			(xdrproc_t)xdr_uint32_t, (char *)&response, TIMEOUT);
   /* NOTE: Must honor the timeout here as get the ans back in the ack
   */
   if(status != RPC_SUCCESS) {
