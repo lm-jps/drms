@@ -50,8 +50,12 @@ POSTGRES_LIBS	/usr/include/pgsql
 #   recommended for multi-user systems, but not required
 SUMS_MANAGER	production
 
-# the base directory for SUMS logs; should be (but is not yet) used by
-#    base/sums/apps/sum_svc.c, which uses the default value
+# the host name of the default SUMS server you will be using; this is the
+#   the machine that the SUMS storage units are mounted on, not necessarily
+#   the machine serving the Postgres SUMS database
+SUMS_SERVER_HOST	localhost
+
+# the base directory for SUMS logs; used by base/sums/apps/sum_svc.c
 SUMS_LOG_BASEDIR	/usr/local/logs/SUM
 
 # the location of third-party libraries (especially cfitsio, which is required,
