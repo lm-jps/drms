@@ -20,6 +20,7 @@ set DBSERVER_HOST = `egrep "^DBSERVER_HOST" $LOCALINF | awk '{print $2}'`
 set DRMS_DATABASE = `egrep "^DRMS_DATABASE" $LOCALINF | awk '{print $2}'`
 set DRMS_SITE_CODE = `egrep "^DRMS_SITE_CODE" $LOCALINF | awk '{print $2}'`
 set DRMS_SAMPLE_NAMESPACE = `egrep "^DRMS_SAMPLE_NAMESPACE" $LOCALINF | awk '{print $2}'`
+set SUMS_SERVER_HOST = `egrep "^SUMS_SERVER_HOST" $LOCALINF | awk '{print $2}'`
 set SUMS_LOG_BASEDIR = `egrep "^SUMS_LOG_BASEDIR" $LOCALINF | awk '{print $2}'`
 set SUMS_MANAGER = `egrep "^SUMS_MANAGER" $LOCALINF | awk '{print $2}'`
 set THIRD_PARTY_LIBS = `egrep "^THIRD_PARTY_LIBS" $LOCALINF | awk '{print $2}'`
@@ -60,6 +61,10 @@ if ($#DRMS_SITE_CODE != 1) then
 endif
 if ($#DRMS_SAMPLE_NAMESPACE != 1) then
   echo "Error: DRMS_SAMPLE_NAMESPACE undefined in local configuration file $LOCALINF"
+  exit
+endif
+if ($#SUMS_SERVER_HOST != 1) then
+  echo "Error: $SUMS_SERVER_HOST undefined in local configuration file $LOCALINF"
   exit
 endif
 if ($#SUMS_LOG_BASEDIR != 1) then
@@ -156,6 +161,7 @@ echo '#define DRMS_LOCAL_SITE_CODE	'$DRMS_SITE_CODE >> $SCRIPT
 echo '#define POSTGRES_ADMIN		"'$POSTGRES_ADMIN'"' >> $SCRIPT
 echo '#define USER			NULL' >> $SCRIPT
 echo '#define PASSWD			NULL' >> $SCRIPT
+echo '#define SUMSERVER			"'$SUMS_SERVER_HOST'"' >> $SCRIPT
 echo '#define SUMS_MANAGER		"'$SUMS_MANAGER'"' >> $SCRIPT
 echo '#define SUMLOG_BASEDIR		"'$SUMS_LOG_BASEDIR'"' >> $SCRIPT
 echo '#endif' >> $SCRIPT
