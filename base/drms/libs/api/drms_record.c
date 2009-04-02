@@ -4906,12 +4906,8 @@ long long drms_keylist_memsize(DRMS_Record_t *rec, char *keylist) {
       len++;
       p++;
     }
-#if defined(__linux__) && __linux__
-    key = (char *)strndup(start, len);
-#else
-    key = malloc(len + 1);
-    snprintf(key, len + 1, "%s", start);
-#endif
+    key = malloc (len + 1);
+    snprintf (key, len + 1, "%s", start);
     if (strcmp(key, "recnum") == 0) {
       size  += sizeof(DRMS_Keyword_t) +  DRMS_MAXKEYNAMELEN + 1;
       size += 20;
