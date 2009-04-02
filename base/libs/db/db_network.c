@@ -19,7 +19,7 @@
 
 /************** General functions. ************/
 
-void send_string(int fd, char *str)
+void send_string(int fd, const char *str)
 {
   int len;
   struct iovec vec[2];
@@ -147,7 +147,7 @@ ssize_t Readn_ntoh(int fd, void *ptr, size_t size)
    if (ret == size)
    {
 #if __BYTE_ORDER == __LITTLE_ENDIAN
-   byteswap(size, 1, ptr);
+   byteswap(size, 1, (char *)ptr);
 #endif
    }
    else
@@ -199,7 +199,7 @@ void Writen_ntoh(int fd, const void *ptr, size_t size)
    memcpy(&p, &ptr, size);
 
 #if __BYTE_ORDER == __LITTLE_ENDIAN
-   byteswap(size, 1, &p);
+   byteswap(size, 1, (char *)p);
 #endif
 
    Writen(fd, &p, size);
