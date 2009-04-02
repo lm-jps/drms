@@ -1316,7 +1316,7 @@ int drms_server_dropseries(DRMS_Env_t *env, int sockfd)
   return 0;
 }
 
-int drms_server_dropseries_su(DRMS_Env_t *env, char *tn) {
+int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn) {
   int status = 0;
   DRMS_SumRequest_t *request = NULL;
   DRMS_SumRequest_t *reply = NULL;

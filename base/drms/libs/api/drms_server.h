@@ -59,7 +59,7 @@ int drms_server_dropseries(DRMS_Env_t *env, int sockfd);
 \param tn Name of the db table that stores all SUs to be marked
 \return DRMS_SUCCESS if SUMS is able to mark all SUs listed in \a tn. Other
 */
-int drms_server_dropseries_su(DRMS_Env_t *env, char *tn);
+int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn);
 long long drms_server_gettmpguid(int *sockfd);
 
 int drms_server_getsudir(DRMS_Env_t *env, int sockfd);
