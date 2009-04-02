@@ -239,7 +239,7 @@ static int _parse_clock (char *str, int *consumed)
   }
 
 /* returns 1 if clock string is a valid time, 0 otherwise. */
-static int clock_isvalid(const char *str)
+static int clock_isvalid(char *str)
   {
   int status;
   int hr;

@@ -260,7 +260,7 @@ int db_setsocketbufsize(int sockfd, int sndbuf, int rcvbuf);
 long long htonll(long long val); /* 64 bit byteswapping. */
 long long ntohll(long long val); /* 64 bit byteswapping. */
 int db_tcp_listen(char *host, int len, short *port);
-void send_string(int fd, char *str);
+void send_string(int fd, const char *str);
 char *receive_string(int fd);
 void Writen(int fd, const void *ptr, size_t nbytes);
 void Writen_ntoh(int fd, const void *ptr, size_t size);
