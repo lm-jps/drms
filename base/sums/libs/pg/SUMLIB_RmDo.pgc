@@ -206,7 +206,7 @@ EXEC SQL END DECLARE SECTION;
               }
             }
             cptr = rindex(stmt, ',');
-            if(cptr) *cptr = NULL;
+            if(cptr) *cptr = '\0';
             sprintf(stmt, "%s);", stmt);
             printk("Records.txt statement is:\n%s\n", stmt);
             EXEC SQL CONNECT TO jsoc@hmidb.stanford.edu:5432;
