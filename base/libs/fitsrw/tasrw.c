@@ -304,7 +304,7 @@ int fitsrw_readslice(const char *filename,
 
    //Read raw data
    fits_set_bscale(fptr, 1.0, 0.0, &status);
-   fits_set_imgnull(fptr, NULL, &status);
+   fits_set_imgnull(fptr, 0, &status);
    if(status) goto error_exit;
 
    //Read stripe, slice, block
@@ -410,7 +410,7 @@ int fitsrw_writeslice(const char *filename, int *fpixel, int *lpixel, void *imag
 
    //Write raw data
    fits_set_bscale(fptr, 1.0, 0.0, &status);
-   fits_set_imgnull(fptr, NULL, &status);
+   fits_set_imgnull(fptr, 0, &status);
    if(status) goto error_exit;
 
    /* ffgsv requires long type, although this is dangerous 
