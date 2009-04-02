@@ -299,7 +299,7 @@ if (!(-e suflag.txt)) then
     echo 
     echo "*** IMPORTANT *** The edited config.local will contain site-specific"
     echo "    values that should not be modified during subsequent updates to"
-    echo "    NetDRMS. Keep a safe copy of it somewhere outside of the DRMS
+    echo "    NetDRMS. Keep a safe copy of it somewhere outside of the DRMS"
     echo "    directory tree, for example in /usr/local. After each NetDRMS"
     echo "    update, ensure this file is in place."
   else
