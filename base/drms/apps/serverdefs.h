@@ -1,6 +1,6 @@
 /**
 \file serverdefs.h
-\brief Define default values for dbhost, dbname, user, and password
+\brief Define default values for dbhost, dbname, user, password, etc.
 */
 
 #ifndef __SERVERDEFS_H
@@ -22,11 +22,9 @@
 #define DBNAME "jsoc"
 
 #define POSTGRES_ADMIN "postgres"
-
 #define SUMS_MANAGER   "production"
-
 #define SUMLOG_BASEDIR "/usr/local/logs/SUM"
-
+#define SUMSERVER "d02.Stanford.EDU"
 
 #endif /* _LOCALIZED_DEFS */
 
