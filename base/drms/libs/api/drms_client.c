@@ -2,7 +2,7 @@
 #include "drms_priv.h"
 //#include "xmem.h"
 #include "db.h"
-// #define DEBUG
+//#define DEBUG
 
 
 DRMS_Session_t *drms_connect(char *host, unsigned short port)
@@ -173,8 +173,9 @@ DRMS_Session_t *drms_connect_direct(char *dbhost, char *dbuser,
   return session;
 }
 
-DRMS_Session_t *drms_connect_direct_toport (char *dbhost, char *dbport,
-    char *dbuser, char *dbpasswd, char *dbname, char *sessionns) {
+DRMS_Session_t *drms_connect_direct_toport (char *dbhost,
+    unsigned short dbport, char *dbuser, char *dbpasswd, char *dbname,
+    char *sessionns) {
   DRMS_Session_t *session;
 
   XASSERT( session = malloc (sizeof (DRMS_Session_t)));
@@ -184,8 +185,8 @@ DRMS_Session_t *drms_connect_direct_toport (char *dbhost, char *dbport,
   session->port = -1;
   session->sockfd = -1;
 			       /*  Authenticate and connect to the database  */
-  if ((session->db_handle = db_connect_toport (dbhost, dbport, dbuser,dbpasswd,
-      dbname,1)) == NULL) {
+  if ((session->db_handle = db_connect_toport (dbhost, dbport, dbuser, 
+      dbpasswd, dbname, 1)) == NULL) {
     fprintf (stderr,"Couldn't connect to database.\n");
     free (session);
     session = NULL;
