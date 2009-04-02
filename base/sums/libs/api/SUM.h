@@ -23,6 +23,8 @@
 #define SUM_STOP_NOT "/usr/local/logs/SUM/SUM_STOP_NOT"
 #endif
 
+#define LEV1VIEWERNAME "lev1view"
+
 #include <serverdefs.h>
 #include <jsoc.h>
 #include <stdint.h>	/* need to repeat this for pro-c precompiler */
