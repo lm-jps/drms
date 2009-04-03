@@ -2,23 +2,25 @@
 
 # This script is called from the DRMS library when there is a request for an SU that
 # is not online and belongs to a remote site. It calls a cgi program jsoc_fetch
-# with op=exp_su to request, from the remote site, an SU. If the SU is online, 
+# with op=exp_su to request, from the remote site, an SU. If the SU is online,
 # jsoc_fetch will get the required information (sunums, series, and file paths)
 # from a SUM_info() call, and then generate a response file (a .txt file specified
 # by $kGETAPPOUT below). If the SU is offline, jsoc_fetch will then submit
 # a request to jsoc_export_manage (by adding a record to jsoc.export_new). Either
-# way, jsoc_fetch will generate the response file. remotesums_master.pl 
-# will then parse the response file to examine the status. If status == 0, 
-# jsoc_fetch handled the request synchronously and in the response file there 
+# way, jsoc_fetch will generate the response file. remotesums_master.pl
+# will then parse the response file to examine the status. If status == 0,
+# jsoc_fetch handled the request synchronously and in the response file there
 # will exist the desired sunums, series, and file paths. remotesums_master.pl will
-# then hand this information to remotesums_ingest to scp the files locally. If status != 0, 
-# then the request is being handled asynchronously (by jsoc_export_manage). In that 
+# then hand this information to remotesums_ingest to scp the files locally. If status != 0,
+# then the request is being handled asynchronously (by jsoc_export_manage). In that
 # case, remotesums_master.pl will then poll by sending a new jsoc_fetch request
 # with op=exp_status. This request will also result in a response file. remotesums_master.pl
-# will keep polling by sending these jsoc_fetch requests until status == 0 in the 
-# response. When that happens, sunums, series, and file paths will be available 
+# will keep polling by sending these jsoc_fetch requests until status == 0 in the
+# response. When that happens, sunums, series, and file paths will be available
 # in the response file, and again, those are sent to remotesums_ingest for scp
 # processing.
+
+
 
 # The cmd takes the following form:
 #   remotesums_master.pl <url> '=' <sunum> ',' <sunum...> '#' <url> '=' <sunum> ',' <sunum...> # ...
@@ -49,7 +51,8 @@ my($kPROTO) = "as-is";
 my($kOP) = "exp_su";
 my($kEXPSTATUS) = "exp_status";
 my($kGETAPP) = "wget";
-my($kGETAPPFLAG) = "-nv";
+#my($kGETAPPFLAG) = "-nv";
+my($kGETAPPFLAG) = "-q";
 my($kGETAPPOUT) = "/tmp/jsoc_export.$$";
 my($kGETAPPOFLAG) = "-O $kGETAPPOUT";
 my($kSIZECUTOFF) = 134217728; # 128MB
@@ -117,9 +120,11 @@ my($gotmethod) = 0;
 my($gotrequestid) = 0;
 my($gotcount) = 0;
 my($gotsize) = 0;
+my($gotdata) = 0;
 my($getpaths) = 0;
 my($totsize) = 0;
 my($totcnt) = 0;
+my($retry) = 0;
 my($trylater) = 0;
 
 if (-e $kGETAPPOUT)
@@ -171,6 +176,7 @@ while (defined($aurl = shift(@urls)) && defined($alist = shift(@lists)))
             {
                 chomp($line);
 
+
                 if ($line =~ /status\s*=\s*(\d+)/i)
                 {
                     $status = $1;
@@ -219,7 +225,8 @@ while (defined($aurl = shift(@urls)) && defined($alist = shift(@lists)))
                             push(@reqsunums, $1);
                             push(@reqseries, $2);
                             push(@reqfiles, $3);
-                        }
+                 
+       }
                     }
                 }
                 
@@ -227,7 +234,7 @@ while (defined($aurl = shift(@urls)) && defined($alist = shift(@lists)))
 
             # print STDERR "status $gotstatus, method $gotmethod, reqid $gotrequestid, count $gotcount, size $gotsize\n";
 
-            if (!$gotstatus || !$gotmethod || !$gotrequestid || !$gotcount || !$gotsize)
+            if (!$gotstatus || !$gotmethod || !$gotrequestid || (!$gotcount && !$status) || !$gotsize)
             {
                 # no status line - continue.
                 print STDERR "Improper cgi response from export URL '$aurl$cgiargs'.\n";
@@ -246,29 +253,30 @@ while (defined($aurl = shift(@urls)) && defined($alist = shift(@lists)))
                 # Again, the response will be written to $kGETAPPOUT. Keep polling
                 # in a loop, until the status line in the response is 0 (which
                 # indicates that the original request has been satisfied).
-                if ($method eq "url")
+                if ($method eq "url" || $method eq "url_quick")
                 {
                     # Creation of index.html happens asynchronously, so must poll
                     # by downloading a second cgi url.
                     sleep(2);
 
-                    $gotstatus = 0;
-                    $gotcount = 0;
-                    $getpaths = 0;
-
                     $cgiargs = "op=$kEXPSTATUS&requestid=$requestid&format=txt";
-                    $cmd = "$kGETAPP $kGETAPPOFLAG $aurl?$cgiargs";
+                    $cmd = "$kGETAPP $kGETAPPFLAG $kGETAPPOFLAG \"$aurl?$cgiargs\"";
 
                     while (1)
                     {
+	    		$retry = 0;
+	         	$gotstatus = 0;
+			$gotcount = 0;
                         `$cmd`;
+			sleep(3); 
+
                         if (defined(open(RESPFILE, "<$kGETAPPOUT")))
                         {
-                            chomp($line);
-                            while (defined($line = <RESPFILE>) && 
-                                   (!$gotstatus || !$gotcount || !$gotsize || $getpaths))
+                            while (defined($line = <RESPFILE>) && (!$gotstatus))
                             {
-                                if ($line =~ /status\s*(\d+)/i)
+                                chomp($line);
+		
+                                if ($line =~ /status\s*=\s*(\d+)/i)
                                 {
                                     $status = $1;
                                     $gotstatus = 1;
@@ -276,66 +284,106 @@ while (defined($aurl = shift(@urls)) && defined($alist = shift(@lists)))
                                     if ($status == 0)
                                     {
                                         # need to read the entire file
-                                        $getpaths = 1;
+					last;
                                     }
-                                }
-                                elsif ($line =~ /count\s*(\w+)/i)
-                                {
-                                    $count = $1;
-                                    $gotcount = 1;
-                                }
-                                elsif ($line =~ /size\s*=\s*(\w+)/i)
-                                {
-                                    $size = $1;
-                                    $gotsize = 1;
-                                }
-                                elsif ($line =~ /selected data/i)
-                                {
-                                    while ($line !~ /^\s*$/)
-                                    {
-                                        $line = <RESPFILE>;
-                                        chomp($line);
-                                    }
-
-                                    while (defined($line = <RESPFILE>))
-                                    {
-                                        chomp($line);
-                                        
-                                        if ($line =~ /(\d+)\s+(\S+)\s+(\S+)\s*/)
-                                        {
-                                            push(@reqsunums, $1);
-                                            push(@reqseries, $2);
-                                            push(@reqfiles, $3);
-                                        }
-                                    }
+				    elsif ($status == 4)
+				    {
+					# the request might not yet be in jsoc.export
+					$line = <RESPFILE>;
+					chomp($line);
+					if ($line =~ /Cant\s+locate\s+export\s+request/)
+					{
+					    # need to wait longer
+					    $retry = 1;
+					    last;
+					}
+					else
+					{
+					    # status == 4, but not because the request isn't visible, bail
+					    print STDERR "Error retrieving response: '$aurl$cgiargs'.\n";
+					    last;
+					}
+				    }
+				    else
+				    {
+					$retry = 1;
+				    }
                                 }
                             }
-
-                            if (!$gotstatus || !$gotcount || !$gotsize)
-                            {
-                                # no status line - break and fail.
-                                print STDERR "Improper cgi response from export URL '$aurl$cgiargs'.\n";
-                                close(RESPFILE);
-                                unlink($kGETAPPOUT);
-                                last;
-                            }
-                            elsif ($status == 0)
-                            {
-                                # Export request has finished
-                                close(RESPFILE);
-                                unlink($kGETAPPOUT);
-                                last;
-                            }
-
-                            close(RESPFILE);
-                            unlink($kGETAPPOUT);
+			    
+			    close(RESPFILE);
+			    
+			    if (!$retry)
+			    {
+				last;
+			    }
                         }
                         else
                         {
                             print STDERR "No response for '$cmd'.\n";
+			    $status = 4;
                             last;
                         }
-                    } # while status != 0
+                    } # while(1)
+		    
+		    if ($gotstatus && $status == 0)
+			    {
+			    	# Got a good response - parse the rest of the file
+				# must re-read it
+				$gotcount = 0;
+				$gotsize = 0;
+				$gotdata = 0;
+				
+				if (defined(open(RESPFILE, "<$kGETAPPOUT")))
+	                        {
+        	                    while (defined($line = <RESPFILE>) && (!$gotcount || !$gotsize || !$gotdata))
+                        	    {
+					if ($line =~ /count\s*=\s*(\w+)/i)
+                                	{
+	                                    $count = $1;
+        	                            $gotcount = 1;
+                	                }
+                        	        elsif ($line =~ /size\s*=\s*(\w+)/i)
+                                	{
+	                                    $size = $1;
+        	                            $gotsize = 1;
+                	                }
+                        	        elsif ($line =~ /data/i)
+                                	{
+	                                    while ($line =~ /^\s*$/)
+        	                            {
+                	                        $line = <RESPFILE>;
+                        	                chomp($line);
+	                                    }
+					    
+					    $gotdata = 1;
+
+					    while (defined($line = <RESPFILE>))
+                	                    {
+                        	                chomp($line);
+                                	        
+                                        	if ($line =~ /(\d+)\s+(\S+)\s+(\S+)\s*/)
+	                                        {						
+        	                                    push(@reqsunums, $1);
+                	                            push(@reqseries, $2);
+                        	                    push(@reqfiles, $3);
+                                	        }
+	                                    }
+        	                        }
+				    }
+				    
+				    close(RESPFILE);
+				    unlink($kGETAPPOUT);
+				}
+			    }
+
+                            if (!$gotstatus || $status != 0 || !$gotcount || !$gotsize || !$gotdata)
+                            {
+                                # no status line - break and fail.
+                                print STDERR "Improper cgi response from export URL '$aurl$cgiargs'.\n";
+				$status = 4;
+                                last;
+                            }
                 }
             }
         }
@@ -360,7 +408,7 @@ while (defined($aurl = shift(@urls)) && defined($alist = shift(@lists)))
     
 } # while item in sulists
 
-if ($totcnt > 0)
+if ($totcnt > 0 && $status == 0)
 {
     # Now is the time to determine if the SUs should be retrieve synchronously
     # or asynchronously. For now use the file size to determine that.
