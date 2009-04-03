@@ -1448,19 +1448,48 @@ int drms_copykeyB(DRMS_Keyword_t *tgtkey, DRMS_Keyword_t *srckey)
    return status;
 }
 
-int drms_copykeys(DRMS_Record_t *target, DRMS_Record_t *source, DRMS_KeywordClass_t class)
+int drms_copykeys(DRMS_Record_t *target, 
+                  DRMS_Record_t *source, 
+                  int usesrcset,
+                  DRMS_KeywordClass_t class)
 {
-   HIterator_t *srchit = hiter_create(&source->keywords);
+   HIterator_t *sethit = NULL;
    DRMS_Keyword_t *srckey = NULL;
    DRMS_Keyword_t *tgtkey = NULL;
+   DRMS_Keyword_t *setkey = NULL;
+   DRMS_Keyword_t *lookupkey = NULL;
+   DRMS_Record_t *lookuprec = NULL;
    int status = DRMS_SUCCESS;
 
-   while ((srckey = (DRMS_Keyword_t *)hiter_getnext(srchit)) != NULL)
+   if (usesrcset)
    {
-      if (drms_keyword_inclass(srckey, class))
+      sethit = hiter_create(&source->keywords);
+      lookuprec = target;
+   }
+   else
+   {
+      sethit = hiter_create(&target->keywords);
+      lookuprec = source;
+   }
+
+   while ((setkey = (DRMS_Keyword_t *)hiter_getnext(sethit)) != NULL)
+   {
+      if (drms_keyword_inclass(setkey, class))
       {
-         tgtkey = drms_keyword_lookup(target, srckey->info->name, 1);
-         if (tgtkey)
+         lookupkey = drms_keyword_lookup(lookuprec, setkey->info->name, 1);
+
+         if (usesrcset)
+         {
+            srckey = setkey;
+            tgtkey = lookupkey;
+         }
+         else
+         {
+            srckey = lookupkey;
+            tgtkey = setkey;
+         }
+
+         if (tgtkey && srckey)
          {
             status = drms_copykeyB(tgtkey, srckey);
          }
@@ -1475,6 +1504,11 @@ int drms_copykeys(DRMS_Record_t *target, DRMS_Record_t *source, DRMS_KeywordClas
          fprintf(stderr, "drms_copykeys() failed on keyword '%s'.\n", srckey->info->name);
          break;
       }
+   }
+
+   if (sethit)
+   {
+      hiter_destroy(&sethit);
    }
 
    return status;

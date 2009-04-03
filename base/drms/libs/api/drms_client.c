@@ -2,19 +2,54 @@
 #include "drms_priv.h"
 //#include "xmem.h"
 #include "db.h"
-//#define DEBUG
+// #define DEBUG
 
 
-DRMS_Session_t *drms_connect(char *host, unsigned short port)
+DRMS_Session_t *drms_connect(char *host)
 {
   struct sockaddr_in server;
   struct hostent *he;
   DRMS_Session_t *session;
   int denied;
+  char *port = NULL;
+  char *hostname = NULL;
+  char *pport = NULL;
+  unsigned short portnum;
+
+  if (host)
+  {
+     hostname = strdup(host);
+
+     /* extract port from host */
+     if ((pport = strchr(host, ':')) != NULL)
+     {
+        hostname[pport - host] = '\0';
+        port = strdup(pport + 1);
+     }
+     else
+     {
+        fprintf(stderr, "Port number missing from host.\n");
+        goto bailout1;
+     }
+
+     if (port)
+     {
+        sscanf(port, "%hu", &portnum);
+     }
+  }
 
   /* get the host info */
-  if ((he=gethostbyname(host)) == NULL) {  
+  if ((he=gethostbyname(hostname)) == NULL) {  
     herror("gethostbyname");
+    if (port)
+    {
+       free(port);
+    }
+    if (hostname)
+    {
+       free(hostname);
+    }
+
     return NULL;
   }
   
@@ -49,7 +84,7 @@ DRMS_Session_t *drms_connect(char *host, unsigned short port)
 
   memset(&server, 0, sizeof(server));  
   server.sin_family = AF_INET;     /* host byte order */
-  server.sin_port = htons(port); /* short, network byte order */
+  server.sin_port = htons(portnum); /* short, network byte order */
   server.sin_addr = *((struct in_addr *)he->h_addr);
 
   struct sockaddr *serverp = (struct sockaddr *)&server;
@@ -63,8 +98,8 @@ DRMS_Session_t *drms_connect(char *host, unsigned short port)
 #endif
     goto bailout;
   }
-  strncpy(session->hostname, host, DRMS_MAXHOSTNAME);
-  session->port = port;
+  strncpy(session->hostname, hostname, DRMS_MAXHOSTNAME);
+  session->port = portnum;
   /* Turn off Nagle's algorithm. */
   /*
   if (setsockopt(session->sockfd,  IPPROTO_TCP,    
@@ -93,6 +128,14 @@ DRMS_Session_t *drms_connect(char *host, unsigned short port)
   close(session->sockfd);
  bailout1:
   free(session);
+  if (port)
+  {
+     free(port);
+  }
+  if (hostname)
+  {
+     free(hostname);
+  }
   return NULL;
 }
 
@@ -172,57 +215,7 @@ DRMS_Session_t *drms_connect_direct(char *dbhost, char *dbuser,
   }
   return session;
 }
-
-DRMS_Session_t *drms_connect_direct_toport (char *dbhost,
-    unsigned short dbport, char *dbuser, char *dbpasswd, char *dbname,
-    char *sessionns) {
-  DRMS_Session_t *session;
-
-  XASSERT( session = malloc (sizeof (DRMS_Session_t)));
-  memset (session, 0, sizeof (DRMS_Session_t));
-  session->db_direct = 1;
-			       /*  Set client variables to some null values  */
-  session->port = -1;
-  session->sockfd = -1;
-			       /*  Authenticate and connect to the database  */
-  if ((session->db_handle = db_connect_toport (dbhost, dbport, dbuser, 
-      dbpasswd, dbname, 1)) == NULL) {
-    fprintf (stderr,"Couldn't connect to database.\n");
-    free (session);
-    session = NULL;
-  }
-
-  if (sessionns) session->sessionns = sessionns;
-  else {
-				      /*  get the default session namespace  */
-    DB_Text_Result_t *tresult;
-    char query[1024];
-				      /*  test existance of sessionns table  */
-    sprintf (query, "select c.relname from pg_class c, pg_namespace n where n.oid = c.relnamespace and n.nspname='admin' and c.relname='sessionns'");
-    tresult = db_query_txt (session->db_handle, query);
-    if (tresult->num_rows) {
-      db_free_text_result (tresult);    
-      sprintf (query, "select sessionns from admin.sessionns where username='%s'", session->db_handle->dbuser);
-      tresult = db_query_txt (session->db_handle, query);
-      if (tresult->num_rows)
-	session->sessionns = strdup (tresult->field[0][0]);
-      else goto bailout;
-    }
-    db_free_text_result(tresult);
-    return session;
-bailout:
-    fprintf (stderr, "Can't get default session namespace\n");
-    free (session);
-    session = NULL;
-    db_free_text_result (tresult);
-  }
-  return session;
-}
-
 #endif
-
-
-
 
 void drms_disconnect(DRMS_Env_t *env, int abort)
 {

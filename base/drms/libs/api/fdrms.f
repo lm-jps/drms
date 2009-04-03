@@ -156,7 +156,7 @@ CC      DRMS_CloneAction_t enum
             INTEGER N1,N2
           END FUNCTION f_drms_array2string
 
-          CHARACTER*256 FUNCTION f_drms_connect(A1,S1,A2,A3)
+          CHARACTER*256 FUNCTION f_drms_connect(A1)
             INTEGER*2 S1
             CHARACTER*256 A1,A2,A3
           END FUNCTION f_drms_connect

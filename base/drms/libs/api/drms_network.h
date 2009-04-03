@@ -21,13 +21,11 @@ int drms_send_commandcode(int sockfd, int command);
 /** \brief Send command code via socket. The form does not expect echo from the server */
 int drms_send_commandcode_noecho(int sockfd, int command);
 /** \brief Establish socket connection to server, receive from server session information*/
-DRMS_Session_t *drms_connect(char *host, unsigned short port);
+DRMS_Session_t *drms_connect(char *host);
 /** \brief Establish DB connection, initialize session information */
 DRMS_Session_t *drms_connect_direct(char *host, char *user, 
 				    char *passwd, char *dbname,
 				    char *sessionns);
-DRMS_Session_t *drms_connect_direct_toport (char *dbhost, unsigned short dbport,
-    char *dbuser, char *dbpasswd, char *dbname, char *sessionns);
 /** \brief Tell DB to commit transaction 
 \warning This function should not be used unless you know what you are doing.
 */

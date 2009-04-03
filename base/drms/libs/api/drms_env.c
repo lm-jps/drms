@@ -77,53 +77,24 @@ DRMS_Env_t *drms_open (char *host, char *user, char *password, char *dbname,
      /*  NB: the parameters dbname & sessionns are only used if DRMS_CLIENT
 							     is not defined  */
   DRMS_Env_t *env; 
-  char hostname[1024], *p;
-  unsigned short port;
-  char empty[]="";
 
   XASSERT( env = (DRMS_Env_t *)malloc(sizeof(DRMS_Env_t)) );
   memset(env, 0, sizeof(DRMS_Env_t));
 
-  /* Analyze host string. If it is of the form <hostname>:<portno>
-     then connect to a DRMS server. If it of the form <hostname>
-     the connect directly to a database server on that host
-     using the database name in dbname, which must be non-null. */
-  if (host != NULL) {
-    memset (hostname, 0, 1024);
-    strncpy (hostname, host, 1023);
-    p = hostname;
-    while (*p && *p != ':') ++p;
-  }
 #ifdef DRMS_CLIENT
 						 /*  Connect to DRMS server  */
-  if (host && *p== ':') {
-    *p = 0;
-    ++p;
-    port = (unsigned short) atoi (p);
-
-    if (user == NULL)
-      user = empty;
-    if( password == NULL)
-      password = empty;
-    if ((env->session = drms_connect (hostname, port)) == NULL)
-      goto bailout;
-  } else {
-    fprintf (stderr, "Port number missing from hostname.\n");
-    goto bailout;
+  if (host) {
+     if ((env->session = drms_connect (host)) == NULL)
+       goto bailout;
   }
+
   if (drms_cache_init (env)) goto bailout;
 #else
 					  /*  This is a server initializing  */
-  if (host && *p == ':') {
-    *p = 0;
-    ++p;
-    port = (unsigned short) atoi (p);
-    if ((env->session = drms_connect_direct_toport (hostname, port, user,
+  if (host) {
+    if ((env->session = drms_connect_direct (host, user,
 	password, dbname, sessionns)) == NULL) goto bailout;
-  } else
-    if ((env->session = drms_connect_direct (host, user, password, dbname,
-	sessionns)) == NULL) goto bailout;
-
+  }
     // sum_inbox sum_outbox, drms_lock, and caches (seg, series,
     // record)  will be initialized in
     // drms_server_begin_transaction().

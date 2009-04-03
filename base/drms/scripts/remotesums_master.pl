@@ -1,7 +1,24 @@
 #!/usr/bin/perl -w 
 
-# This script performs the 
-
+# This script is called from the DRMS library when there is a request for an SU that
+# is not online and belongs to a remote site. It calls a cgi program jsoc_fetch
+# with op=exp_su to request, from the remote site, an SU. If the SU is online, 
+# jsoc_fetch will get the required information (sunums, series, and file paths)
+# from a SUM_info() call, and then generate a response file (a .txt file specified
+# by $kGETAPPOUT below). If the SU is offline, jsoc_fetch will then submit
+# a request to jsoc_export_manage (by adding a record to jsoc.export_new). Either
+# way, jsoc_fetch will generate the response file. remotesums_master.pl 
+# will then parse the response file to examine the status. If status == 0, 
+# jsoc_fetch handled the request synchronously and in the response file there 
+# will exist the desired sunums, series, and file paths. remotesums_master.pl will
+# then hand this information to remotesums_ingest to scp the files locally. If status != 0, 
+# then the request is being handled asynchronously (by jsoc_export_manage). In that 
+# case, remotesums_master.pl will then poll by sending a new jsoc_fetch request
+# with op=exp_status. This request will also result in a response file. remotesums_master.pl
+# will keep polling by sending these jsoc_fetch requests until status == 0 in the 
+# response. When that happens, sunums, series, and file paths will be available 
+# in the response file, and again, those are sent to remotesums_ingest for scp
+# processing.
 
 # The cmd takes the following form:
 #   remotesums_master.pl <url> '=' <sunum> ',' <sunum...> '#' <url> '=' <sunum> ',' <sunum...> # ...
@@ -129,6 +146,10 @@ while (defined($aurl = shift(@urls)) && defined($alist = shift(@lists)))
         # Escape funny chars in the the su list so it can be used as a cgi argument
         $escURL = CGI::escape($sunumlist);
         
+        # This first url will cause jsoc_fetch to process a exp_su request. If the
+        # SU is online, jsoc_fetch will retrieve all the SU information (such as
+        # series name, size, etc.) directly from SUMS. All this information, plus
+        # requestID, etc. is written to the file specified by $kGETAPPOFLAG.
         $cgiargs = "op=$kOP&ds=$sunumlist&method=$kMETHOD&format=txt&protocol=$kPROTO";
         $cmd = "$kGETAPP $kGETAPPFLAG $kGETAPPOFLAG \"$aurl?$cgiargs\"";
 
@@ -141,6 +162,8 @@ while (defined($aurl = shift(@urls)) && defined($alist = shift(@lists)))
         `$cmd`;
         
         # Check status to ensure request was submitted properly.
+        # The $kGETAPPOFLAG file written by the previous jsoc_fetch instance is $kGETAPPOUT.
+        # Read the response (content of $kGETAPPOUT).
         if (defined(open(RESPFILE, "<$kGETAPPOUT")))
         {
             while (defined($line = <RESPFILE>) && 
@@ -207,7 +230,7 @@ while (defined($aurl = shift(@urls)) && defined($alist = shift(@lists)))
             if (!$gotstatus || !$gotmethod || !$gotrequestid || !$gotcount || !$gotsize)
             {
                 # no status line - continue.
-                print STDERR "Improper response cgi response from export URL '$aurl$cgiargs'.\n";
+                print STDERR "Improper cgi response from export URL '$aurl$cgiargs'.\n";
                 close(RESPFILE);
                 unlink($kGETAPPOUT);
                 next;
@@ -218,6 +241,11 @@ while (defined($aurl = shift(@urls)) && defined($alist = shift(@lists)))
 
             if ($status != 0)
             {
+                # The request was not satisfied synchronously, so now poll for reponse.
+                # To do that, submit a new jsoc_fetch request with the exp_status op.
+                # Again, the response will be written to $kGETAPPOUT. Keep polling
+                # in a loop, until the status line in the response is 0 (which
+                # indicates that the original request has been satisfied).
                 if ($method eq "url")
                 {
                     # Creation of index.html happens asynchronously, so must poll
@@ -286,7 +314,7 @@ while (defined($aurl = shift(@urls)) && defined($alist = shift(@lists)))
                             if (!$gotstatus || !$gotcount || !$gotsize)
                             {
                                 # no status line - break and fail.
-                                print STDERR "Improper response cgi response from export URL '$aurl$cgiargs'.\n";
+                                print STDERR "Improper cgi response from export URL '$aurl$cgiargs'.\n";
                                 close(RESPFILE);
                                 unlink($kGETAPPOUT);
                                 last;
