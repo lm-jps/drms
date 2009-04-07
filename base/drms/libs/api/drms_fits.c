@@ -1,6 +1,7 @@
 //#define DEBUG
-#ifdef LINUX
+#ifdef __linux__
 #define _GNU_SOURCE
+#include <sys/vfs.h>
 #endif /* LINUX */
 #include "drms.h"
 #include "drms_priv.h"
@@ -10,7 +11,6 @@
 #include <time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <sys/vfs.h>
 #include <libgen.h>
 #include <fcntl.h> 
 #include <unistd.h>
