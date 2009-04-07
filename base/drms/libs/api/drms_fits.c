@@ -10,6 +10,7 @@
 #include <time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/vfs.h>
 #include <libgen.h>
 #include <fcntl.h> 
 #include <unistd.h>
@@ -109,6 +110,7 @@ int drms_writefits(const char* file, int compress, int headlen, char *header,
   int fh;
   struct statfs stat;
   int oflags;
+  char buf[1024];
 #else
   FILE *fh;
 #endif
