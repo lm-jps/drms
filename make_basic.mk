@@ -64,6 +64,14 @@ ifeq ($(JSOC_MACHINE), linux_x86_64)
   F77 = ifort -mcmodel=medium
 endif
 
+#***********************************************************************************************#
+#
+# This section contains make variables that hold the paths to and names of third-party libraries.
+# Variables that end in 'H' contain the -I link flags that contain the include paths 
+# for the library headers, variables that end in 'L' contain the -L link flags that
+# contain the paths to the library binaries, and variables
+# that end in "LIBS" contain the full link cmd (the -L flag plus the -l flag)
+#
 # Path to 3rd-party library headers
 FMATHLIBSH = -I$(_JSOCROOT_)/lib_third_party/include
 CFITSIOH = -I$(_JSOCROOT_)/lib_third_party/include
@@ -103,7 +111,7 @@ ifeq ($(JSOC_MACHINE), mac_osx_ia32)
 endif
 
 # All 3rd-party math libraries - local rules can define a subset
-FMATHLIBS = $(FMATHLIBSL) -lfftw3f -lcfitsio
+FMATHLIBS = $(FMATHLIBSL) -lfftw3f 
 CFITSIOLIBS = $(CFITSIOL) -lcfitsio
 
 ifeq ($(COMPILER), gcc)
@@ -116,6 +124,8 @@ ifeq ($(COMPILER), gcc)
 endif
 
 GSLLIBS = $(GSLL) -lgsl -lgslcblas 
+#***********************************************************************************************#
+
 
 # Compilation define customizations (eg., for remote DRMS builds)
 CUSTOMSW =
@@ -295,18 +305,21 @@ $(MODEXE_SOCK):	LL_TGT := $(LL_TGT) $(CFITSIOLIBS)
 $(MODEXE_SOCK): %_sock: %.o $(MODLIBS_SOCK)
 			$(LINK)
 			$(SLBIN)
-
-$(FMODEXE):	LL_TGT := $(LL_TGT) $(CFITSIOLIBS)
-$(FMODEXE):     %_sock:	%.o $(FMODLIBS_SOCK)
+# FMODEXE contains all Fortran modules - the DoIt() function is defined inside a .f file.
+# These are socket-connect modules only. Assume they use third-party Fortran libraries
+# (although this may not be the case).
+$(FMODEXE):	LL_TGT := $(LL_TGT) $(CFITSIOLIBS) $(FMATHLIBS)
+$(FMODEXE):     %_sock:	%.o $(FMODLIBS_SOCK) 
 			$(FLINK)
 			$(SLBIN)
 
-$(MODEXE_USEF):	LL_TGT := $(LL_TGT) -lpq $(CFITSIOLIBS)
+# MODEXE_USEF contains all C direct-connect modules that use third-party Fortran libraries.
+$(MODEXE_USEF):	LL_TGT := $(LL_TGT) -lpq $(CFITSIOLIBS) $(FMATHLIBS)
 $(MODEXE_USEF):     %:	%.o $(MODLIBS)
 			$(FLINK)
 			$(SLBIN)
-
-$(MODEXE_USEF_SOCK):	LL_TGT := $(LL_TGT) $(CFITSIOLIBS)
+# MODEXE_USEF contains all C socket-connect modules that use third-party Fortran libraries.
+$(MODEXE_USEF_SOCK):	LL_TGT := $(LL_TGT) $(CFITSIOLIBS) $(FMATHLIBS)
 $(MODEXE_USEF_SOCK): %_sock: %.o $(MODLIBS_SOCK)
 			$(FLINK)
 			$(SLBIN)
