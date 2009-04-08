@@ -580,3 +580,47 @@ int RemoveDir(const char *pathname, int maxrec)
 
    return status;
 }
+
+size_t CopyFile(const char *src, const char *dst)
+{
+   struct stat stbuf;
+   FILE *fptrS = NULL;
+   FILE *fptrD = NULL;
+   char buf[2048];
+   size_t nbytes = 0;
+   size_t nbytesW = 0;
+   size_t nbytesTotal = 0;
+   
+
+   if (!stat(src, &stbuf) && (S_ISREG(stbuf.st_mode) || S_ISLNK(stbuf.st_mode)))
+   {
+      fptrS = fopen(src, "r");
+      fptrD = fopen(dst, "w");
+
+      if (fptrS && fptrD)
+      {
+         while ((nbytes = fread(buf, sizeof(char), sizeof(buf), fptrS)) > 0 && !ferror(fptrS) && !ferror(fptrD))
+         {
+            nbytesW = fwrite(buf, sizeof(char), nbytes, fptrD);
+            if (nbytesW != nbytes)
+            {
+               break;
+            }
+
+            nbytesTotal += nbytesW;
+         }
+      }
+
+      if (fptrS)
+      {
+         fclose(fptrS);
+      }
+
+      if (fptrD)
+      {
+         fclose(fptrD);
+      }
+   }
+
+   return nbytesTotal;
+}

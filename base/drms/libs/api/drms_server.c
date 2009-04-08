@@ -541,7 +541,7 @@ void *drms_server_thread(void *arg)
   struct sockaddr_in client;
   int noshare, tnum, sockfd;
   unsigned int client_size = sizeof(client);
-  int command,status,disconnect,clients=0;
+  int command,status,disconnect;
   DRMS_Env_t *env;
   DB_Handle_t *db_handle;
 
@@ -822,12 +822,16 @@ void *drms_server_thread(void *arg)
      new transaction, otherwise abort.
   */
 
+  /* server thread terminating, decrement server-thread count */
+   drms_lock_server(env);
+   --(env->clientcounter);
+    drms_unlock_server(env);
 
   if (noshare)
   {
     /* If in noshare mode, commit or rollback, and start a new transaction. */
     drms_lock_server(env);
-    clients = --(env->clientcounter);
+
     if (env->clientcounter==0)
       drms_server_session_status(env, "idle", env->clientcounter);
     else
@@ -864,7 +868,7 @@ void *drms_server_thread(void *arg)
     {
       /* Client disconnected with no error. */
       drms_lock_server(env);
-      --(env->clientcounter);
+
       if (env->clientcounter==0)
 	drms_server_session_status(env, "idle", env->clientcounter);
       else
@@ -886,13 +890,19 @@ void *drms_server_thread(void *arg)
       // Exit(1); - never call exit(), only the signal thread can do that.
       // Instead, send a TERM signal to the signal thread.
       pthread_kill(env->signal_thread, SIGTERM);
-      goto bail;
     }
   }
 
   printf("thread %d: Exiting with disconnect = %d and status = %d.\n",
 	 tnum,disconnect,status);
+
+  close(sockfd);
+  return NULL;
+
  bail:
+  drms_lock_server(env);
+  --(env->clientcounter);
+  drms_unlock_server(env);
   close(sockfd);
   return NULL;
 }
