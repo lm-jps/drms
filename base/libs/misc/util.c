@@ -1,6 +1,7 @@
 #if defined(__linux__) && __linux__
 #define _GNU_SOURCE
 #endif /* LINUX */
+#include "jsoc.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
