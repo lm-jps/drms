@@ -9,7 +9,7 @@ CF_$(d)		:= -D$(DBNAME)
 SERVEREXE_$(d)	:= $(addprefix $(d)/, drms_server masterlists)
 SERVEREXE	:= $(SERVEREXE) $(SERVEREXE_$(d))
 
-CEXE_$(d)	:= $(addprefix $(d)/, simple_drmsrun)
+CEXE_$(d)	:= $(addprefix $(d)/, drms_run)
 CEXE		:= $(CEXE) $(CEXE_$(d))
 
 MODEXE_$(d)	:= $(addprefix $(d)/, drms_query drms_log remotesums_ingest)
