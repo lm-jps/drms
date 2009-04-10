@@ -1,6 +1,8 @@
 /* dsds.c - interface to DSDS system. Composes, without any other files, libdsds.so.  
  * Dynamically links to libsoi.so, and JSOC dynamically links to libdsds.so. */
+#if defined(__linux__) && __linux__
 #define _GNU_SOURCE
+#endif
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>

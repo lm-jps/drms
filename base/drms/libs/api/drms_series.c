@@ -1,5 +1,7 @@
 //#define DEBUG
+#if defined(__linux__) && __linux__
 #define _GNU_SOURCE
+#endif
 #include "drms.h"
 #include "drms_priv.h"
 #include "xmem.h"

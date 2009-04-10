@@ -1,6 +1,8 @@
 //#define DEBUG
 
+#if defined(__linux__) && __linux__
 #define _GNU_SOURCE
+#endif
 #include <string.h>
 #define DRMS_TYPES_C
 #include "drms.h"
