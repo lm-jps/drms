@@ -57,7 +57,11 @@ BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main3 main4 main5 sumget tapeonoff 
 
 #BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main3 main4 main5 sumget tapeonoff driveonoff sum_rm impexp drive0_svc drive1_svc drive2_svc drive3_svc robot0_svc md5filter)
 
+#BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main4 sumget )
+
 #TGT_$(d)	:= $(BINTGT_$(d)) $(SUMSVC_$(d)) $(XSUMSVC_$(d)) $(TAPESVC_$(d)) $(TARC_$(d)) $(TARCINFO_$(d)) $(SUMEXSVC_$(d)) $(SUMEX_$(d))
+
+#TGT_$(d)	:= $(BINTGT_$(d)) $(SUMSVC_$(d)) $(XSUMSVC_$(d)) $(TARC_$(d)) $(TARCINFO_$(d))
 
 TGT_$(d)	:= $(BINTGT_$(d)) $(SUMSVC_$(d)) $(XSUMSVC_$(d)) $(TAPESVC_$(d)) $(TARC_$(d)) $(TARCINFO_$(d))
 

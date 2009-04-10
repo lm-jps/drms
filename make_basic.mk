@@ -8,11 +8,15 @@ DBNAME = POSTGRESQL
 PGIPATH	= /usr/include/pgsql	
 
 COMPILER = icc
+F77 = ifort
+
 ifeq ($(JSOC_MACHINE), mac_osx_ppc) 
 COMPILER = gcc
+F77 = f77
 endif
 ifeq ($(JSOC_MACHINE), mac_osx_ia32)
 COMPILER = gcc
+F77 = f77
 endif
 
 # Check for debug vs. release build - release is default.
@@ -48,12 +52,6 @@ endif
 
 _JSOCROOT_ = ..
 
-ifeq ($(JSOC_MACHINE), mac_osx) 
-F77 = f77
-else
-F77 = ifort
-endif
-
 # if fortran compiler
 D_GCC_FORT = 
 ifeq ($(F77), ifort)
@@ -61,7 +59,9 @@ ifeq ($(F77), ifort)
 endif
 
 ifeq ($(JSOC_MACHINE), linux_x86_64)
-  F77 = ifort -mcmodel=medium
+  ifeq ($(F77), ifort)
+    F77 = ifort -mcmodel=medium
+  endif
 endif
 
 #***********************************************************************************************#

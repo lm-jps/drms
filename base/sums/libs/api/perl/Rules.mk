@@ -16,7 +16,16 @@ DEP_$(d)	:= $(OBJ_$(d):%=%.d)
 
 CLEAN		:= $(CLEAN) $(SW_$(d):%.i=%.c) $(OBJ_$(d)) $(LIBSUMSAPI_PERL) $(DEP_$(d)) 
 
+TGT_LIB_$(d)	:= $(TGT_LIB)
 TGT_LIB		:= $(TGT_LIB) $(LIBSUMSAPI_PERL)
+
+ifeq ($(JSOC_MACHINE), mac_osx_ppc) 
+TGT_LIB 	:= TGT_LIB_$(d)
+endif
+
+ifeq ($(JSOC_MACHINE), mac_osx_ia32) 
+TGT_LIB 	:= TGT_LIB_$(d)
+endif
 
 S_$(d)		:= $(notdir $(LIBSUMSAPI_PERL) $(SW_$(d)))
 

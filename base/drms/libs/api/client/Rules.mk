@@ -33,6 +33,9 @@ CLEAN		:= $(CLEAN) \
 		   $(DEP_$(d)) 
 
 TGT_LIB 	:= $(TGT_LIB) $(LIBDRMSCLIENT) $(FDRMSMOD)
+# The following will turn off compilation of the fortran interface module.
+# If you uncomment this line, then you must comment out the above line.
+# TGT_LIB 	:= $(TGT_LIB) $(LIBDRMSCLIENT) 
 
 S_$(d)		:= $(notdir $(LIBDRMSCLIENT) $(FDRMSMOD))
 
