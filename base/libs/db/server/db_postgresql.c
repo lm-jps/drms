@@ -148,6 +148,7 @@ DB_Handle_t *db_connect(const char *host, const char *user,
   XASSERT( handle = malloc(sizeof(DB_Handle_t)) );
   
   strncpy(handle->dbhost,PQhost(db),1024);
+  snprintf(handle->dbport, sizeof(handle->dbport), "%s", PQport(db));
   strncpy(handle->dbname,PQdb(db),1024);
   strncpy(handle->dbuser,PQuser(db),1024);
   handle->db_connection = (void *) db;

@@ -70,6 +70,7 @@ typedef struct DB_Handle_struct
   int abort_now;            /* Abort flag (for multi-threaded operation). */
   unsigned int stmt_num;    /* Statement counter (for multi-threaded operation). */ 
   int isolation_level;      /* Transaction isolation level. */
+  char dbport[1024];  /* Port on host connected to */
 } DB_Handle_t;
 
 /* Transaction isolation level constants. */

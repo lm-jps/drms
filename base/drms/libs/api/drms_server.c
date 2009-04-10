@@ -101,7 +101,14 @@ int drms_server_open_session(DRMS_Env_t *env)
 
   /* Register the session in the database. */
   // xxx not connecting to proper dbase port
-  if ((env->session->stat_conn = db_connect(env->session->db_handle->dbhost,
+  char hostbuf[1024];
+  snprintf(hostbuf, 
+           sizeof(hostbuf), 
+           "%s:%s", 
+           env->session->db_handle->dbhost, 
+           env->session->db_handle->dbport);
+
+  if ((env->session->stat_conn = db_connect(hostbuf,
 					    env->session->db_handle->dbuser,
 					    env->dbpasswd,
 					    env->session->db_handle->dbname,1)) == NULL)
