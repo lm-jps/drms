@@ -272,39 +272,6 @@ CC          END FUNCTION f_drms_bulk_insert_array
             CHARACTER*256 A1
           END FUNCTION f_drms_update_series
 
-CC          INTEGER FUNCTION f_drms_compress(N1,N2,N3,AA1,N4,A1)
-CC            CHARACTER*1, ALLOCATABLE:: AA1(:)
-CC            INTEGER N1,N2,N3,N4
-CC            CHARACTER*256 A1
-CC          END FUNCTION f_drms_compress
-
-CC          INTEGER FUNCTION f_drms_uncompress(N1,N2,A1,N3,N4,AA1)
-CC            CHARACTER*1, ALLOCATABLE:: AA1(:)
-CC            INTEGER N1,N2,N3,N4
-CC            CHARACTER*256 A1
-CC          END FUNCTION f_drms_uncompress
-
-          INTEGER FUNCTION f_drms_writefits(A1,N1,N2,A2,A3)
-            INTEGER N1,N2
-            CHARACTER*256 A1,A2,A3
-          END FUNCTION f_drms_writefits
-
-          CHARACTER*256 FUNCTION f_drms_readfits(A1,N1,N2,AA1,N3)
-            CHARACTER*1, ALLOCATABLE:: AA1 (:)
-            INTEGER N1,N2,N3
-            CHARACTER*256 A1
-          END FUNCTION f_drms_readfits
-
-          CHARACTER*256 FUNCTION f_drms_readfits2(A1,N1,N2,A2,N3)
-            INTEGER N1,N2,N3
-            CHARACTER*256 A1,A2
-          END FUNCTION f_drms_readfits2
-
-          SUBROUTINE f_drms_print_fitsheader(N1,A1)
-            INTEGER N1
-            CHARACTER*256 A1
-          END SUBROUTINE f_drms_print_fitsheader
-
           SUBROUTINE f_drms_free_template_keyword_struct(A1)
             CHARACTER*256 A1
           END SUBROUTINE f_drms_free_template_keyword_struct

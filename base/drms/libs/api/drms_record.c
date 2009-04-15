@@ -2483,9 +2483,15 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
 		drms_segment_filename(seg_out, filename);
 		seg_out->axis[seg_out->info->naxis] = rec_out->seriesinfo->unitsize;
 		seg_out->blocksize[seg_out->info->naxis] = 1; 
-		drms_tasfile_create(filename, DRMS_COMP_RICE, seg_out->info->type, 
-				    seg_out->info->naxis+1, seg_out->axis, 
-				    seg_out->blocksize, NULL);
+
+                drms_fitstas_create(filename, 
+                                seg_out->cparms,
+                                seg_out->info->type, 
+				seg_out->info->naxis+1, 
+                                seg_out->axis,
+                                seg_out->bzero,
+                                seg_out->bscale);
+	
 		seg_out->axis[seg_out->info->naxis] = 0;
 		seg_out->blocksize[seg_out->info->naxis] = 0; 
 	      }

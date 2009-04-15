@@ -3,12 +3,9 @@
 #include <drms_types.h>
 #include "drms_record.h"
 #include "drms_names.h"
-#include "drms_fits.h"
 #include "drms_segment.h"
 #include <drms_array.h>
 #include <sum_rpc.h>
-#include <drms_compress.h>
-#include <drms_tasfile.h>
 #include <xassert.h>
 #include <drms_network.h>
 #include <drms_keyword.h>

@@ -30,7 +30,6 @@ parsing, and default-parameter initialization.
 #include "drms_parser.h"
 #include "drms_network.h"
 #include "drms_names.h"
-#include "drms_fits.h"
 #include "util.h"
 #include "drms_dsdsapi.h"
 #include "drms_defs.h"

@@ -891,16 +891,10 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
     case DRMS_FITZDEPRECATED:
     case DRMS_FITSDEPRECATED:
       {
-	int headlen;
-	char *header;
-
-	if ((arr=drms_readfits(filename, 1, &headlen, &header, NULL)) == NULL)
-	{
-	  fprintf(stderr,"Couldn't read segment from file '%s'.\n",
-		  filename);      
-	  goto bailout1;
-	}
-	free(header);
+        arr = NULL;
+        statint = DRMS_ERROR_NOTIMPLEMENTED;
+        fprintf(stderr,"Protocol DRMS_FITSDEPRECATED and DRMS_FITZDEPRECATED have been deprecated.\n");
+        goto bailout1;
       }
       break;
     case DRMS_TAS:
@@ -1130,26 +1124,12 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
         case DRMS_FITZDEPRECATED:
         case DRMS_FITSDEPRECATED:
           {
-             double abscale = fabs(bscale);
-             int headlen;
-             char *header;
-
-             if ((arr = drms_readfits (filename, 1, &headlen, &header, NULL)) == NULL)
-             {
-                fprintf (stderr, "Couldn't read segment from file '%s'.\n",
-                         filename);      
-                goto bailout1;
-             }
-             free(header);
-             /*  Check that values of BZERO, BSCALE in the file and in the DRMS
-                 database agree  */
-             if (fabs(arr->bzero - bzero) > 100 * DBL_EPSILON * abscale) {
-                fprintf(stderr,"BZERO and BSCALE in FITS file '%s' do not match those"
-                        " in DRMS database.\n",filename);      
-                goto bailout;
-             }
-             break;
+             arr = NULL;
+             stat = DRMS_ERROR_NOTIMPLEMENTED;
+             fprintf(stderr,"Protocols DRMS_FITSDEPRECATED and DRMS_FITZDEPRECATED have been deprecated.\n");
+             goto bailout1;
           }
+          break;
         default:
           if (status)
             *status = DRMS_ERROR_UNKNOWNPROTOCOL;
@@ -1619,12 +1599,14 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
       }
       break;
     case DRMS_FITZDEPRECATED:
-      if ((status = drms_writefits(filename, 1, 0, NULL, out)))
-	goto bailout;
+      status = DRMS_ERROR_NOTIMPLEMENTED;
+      fprintf(stderr,"Protocol DRMS_FITZDEPRECATED has been deprecated.\n");
+      goto bailout;
       break;
     case DRMS_FITSDEPRECATED:
-      if ((status = drms_writefits(filename, 0, 0, NULL, out)))
-	goto bailout;
+      status = DRMS_ERROR_NOTIMPLEMENTED;
+      fprintf(stderr,"Protocol DRMS_FITSDEPRECATED has been deprecated.\n");
+      goto bailout;
       break; 
     default:
       return DRMS_ERROR_UNKNOWNPROTOCOL;
@@ -1757,10 +1739,8 @@ int drms_segment_writeslice(DRMS_Segment_t *seg, DRMS_Array_t *arr, int *start, 
         case DRMS_MSI:
         case DRMS_FITZDEPRECATED:
         case DRMS_FITSDEPRECATED:
-          fprintf(stderr, 
-                  "Writing of data slices to protocol '%s' not supported.\n", 
-                  drms_prot2str(seg->info->protocol));
           status = DRMS_ERROR_NOTIMPLEMENTED;
+          fprintf(stderr,"Protocol DRMS_FITSDEPRECATED and DRMS_FITZDEPRECATED have been deprecated.\n");
           goto bailout;
           break; 
         case DRMS_FITZ:
