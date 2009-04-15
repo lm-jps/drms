@@ -1,0 +1,87 @@
+#!/usr/bin/perl
+# This is run periodically to see if sum_svc is still running.
+# If not it will restart it.
+# (There have been sum_svc 
+#
+$| = 1;                 # flush output as we go
+
+# $SENDMAILTO = "jim@sun.stanford.edu";	#!!TBD replace with a mail group
+
+if (!defined ($ENV{'DRMS'})) {
+  $BPATH = `which sum_svc`;
+  if ($BPATH !~ /\S+/) {
+    print "\nenvironment variable \$DRMS undefined and sum_svc not in path\n";
+    exit;
+  }
+  $BPATH = `dirname $BPATH`;
+  $BPATH = `dirname $BPATH`;
+  $DRMS = `dirname $BPATH`;
+  chomp ($DRMS);
+  $LOCALINF = "$DRMS/config.local";
+} else {
+  $LOCALINF = "$ENV{'DRMS'}/config.local";
+}
+open (CMD, "<$LOCALINF");
+while (defined ($line = <CMD>)) {
+  chomp ($line);
+  if ($line =~ /^DRMS_DATABASE\s+(.+)/) {
+    $DBDRMS = $1;
+    $DB = "$DBDRMS\_sums"
+  }
+  if ($line =~ /^SUMS_SERVER_HOST\s+(.+)/) {
+    $HOST = $1;
+    $HOST = lc ($HOST);
+  }
+  if ($line =~ /^SUMS_MANAGER\s+(.+)/) {
+    $SUMGR = $1;
+  }
+}
+close (CMD);
+
+$user = $ENV{'USER'};
+if ($user ne $SUMGR) {
+  print "You must be user production to run\n";
+  exit;
+}
+$GREPPS = `id -u`;
+chomp ($GREPPS);
+$host = `hostname`;
+chomp ($host);
+$host = lc ($host);
+if ($host ne $HOST) {
+  print "This can only be run on $HOST.\n";
+  exit;
+}
+
+($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+$sec2 = sprintf("%02d", $sec);
+$min2 = sprintf("%02d", $min);
+$hour2 = sprintf("%02d", $hour);
+$mday2 = sprintf("%02d", $mday);
+$mon2 = sprintf("%02d", $mon+1);
+$year2 = sprintf("%02d", $year);
+$date = (1900 + $year).".".$mon2.".$mday2"._.$hour2.":$min2".":$sec2";
+# print "sum_ck at $date\n\n";
+
+while (1) {
+  @ps_prod = `ps -ef | grep $GREPPS`;
+  $found = 0;
+  while($_ = shift(@ps_prod)) {
+    if (/^$GREPPS/) {	#do for all production processes
+      if (/sum_svc $DB/ || /sum_svc -o $DB/) {
+        $found = 1;
+      }
+    }
+  }
+  if ($found) {
+    sleep (300);
+  } else {
+#    $mail = "Mail -s \"sum_svc Not Found\"";
+#    $cmd = "echo \"No sum_svc\" | $mail $SENDMAILTO";
+#    system $cmd;
+# now restart the sum_svc and all related stuff 
+    $cmd = "echo 'y'; echo '.'; echo '.'; echo 'n' | sum_start -M -X";
+    system $cmd;
+    sleep (5);
+  }
+}
