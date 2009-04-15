@@ -96,13 +96,13 @@ print LOG "sum_stop at $date\n\n";
 print MLOG "sum_stop at $date\n";
 print MLOG "See $LOGFILE on $host for more details\n";
 
-if ($sumck) {			#first kill any sums_ck
+if ($sumck) {			#first kill any sum_ck
   @ps_prod = `ps -ef | grep $GREPPS`;
   while ($_ = shift(@ps_prod)) {
     if (/^$GREPPS/) {		#do for all production processes
       if (/sumck/) {
         ($a, $psid, $c) = split(/\s+/, $_);
-        $process = "sums_ck";
+        $process = "sum_ck";
         print "Killing $process with kill -9 $psid\n";
         print LOG "Killing $process with kill -9 $psid\n";
         `kill -9 $psid`; 

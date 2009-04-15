@@ -106,7 +106,7 @@ while ($_ = shift(@ps_prod)) {
     } elsif (/sumck/) {
       if ($sumck) {
         ($a, $psid, $c) = split(/\s+/, $_);
-        $process = "sums_ck";
+        $process = "sum_ck";
       }
     } else {
       next;
@@ -161,9 +161,9 @@ if (system($cmd)) {
   print "Error: failure on sum_svc $DB\n";
 }
 if ($sumck) {
-  $cmd = "sums_ck &";
+  $cmd = "sum_ck &";
   if (system($cmd)) {
-    print "Error: failure on sums_ck\n";
+    print "Error: failure on sum_ck\n";
   }
 }
 
