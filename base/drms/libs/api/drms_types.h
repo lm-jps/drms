@@ -720,11 +720,18 @@ typedef enum DRMS_KeywordFlag_enum DRMS_KeywordFlag_t;
 
 
 /* Classes of keywords - each class is a certain combination of DRMS_KeywordFlag_t */
+
+/** @brief DRMS Keyword Classes */
 enum DRMS_KeywordClass_enum
 {
+   /** @brief All DRMS keywords are members of this class.*/
    kDRMS_KeyClass_All = 0,
+   /** @brief DRMS keywords that have been explicitly defined in a .jsd are members of this class.
+       Keywords that are implicitly created (eg, index keywords) are not. */
    kDRMS_KeyClass_Explicit,
+   /** @brief DRMS keywords that compose the DRMS primary index are members of this class. */
    kDRMS_KeyClass_DRMSPrime,
+   /** @brief DRMS keywords whose persegment flag is set are members of this class. */
    kDRMS_KeyClass_Persegment
 };
 
@@ -1467,6 +1474,14 @@ static inline DRMS_Value_t drms_val_div(DRMS_Value_t *a, DRMS_Value_t *b)
 
    return ans;
 }
+
+/* Doxygen comments */
+
+/* lame doxygen - don't put @brief in here; it doesn't work (some kind of doxygen bug) */
+
+/** @typedef typedef enum DRMS_KeywordClass_enum DRMS_KeywordClass_t 
+    DRMS Keyword Classes Reference (see ::DRMS_KeywordClass_enum)
+*/
 
 #endif
 

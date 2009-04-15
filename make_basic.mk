@@ -276,8 +276,6 @@ MODLIBS_SOCK = $(LIBJSOC_MAIN_SOCK) $(LIBDRMSCLIENT) $(LIBDEFSCLIENT) $(LIBDBCLI
 # FMODLIBS: Libraries linked with DRMS Fortran modules
 FMODLIBS_SOCK = $(LIBJSOC_MAIN_SOCK_F) $(LIBINTHANDLESF) $(LIBDRMSCLIENT) $(LIBDEFSCLIENT) $(LIBDBCLIENT) $(FSRCLIBS)
 
-MATHLIBS =  $(LIBLSQR) $(LIBBLAS) $(LIBLAPACK)
-
 # Make rules that apply to all projects outside of the base DRMS/SUMS system
 -include $(SRCDIR)/proj/make_basic.mk
 
@@ -286,7 +284,7 @@ $(CEXE):	%:	%.o $(EXELIBS)
 		$(LINK)
 		$(SLBIN)
 
-$(FEXE):	%:	%.o $(MATHLIBS)
+$(FEXE):	%:	%.o $(FMATHLIBS)
 		$(FLINK)
 		$(SLBIN)
 
@@ -304,11 +302,11 @@ $(MODEXE_SOCK):	LL_TGT := $(LL_TGT) $(CFITSIOLIBS)
 $(MODEXE_SOCK): %_sock: %.o $(MODLIBS_SOCK)
 			$(LINK)
 			$(SLBIN)
-# FMODEXE contains all Fortran modules - the DoIt() function is defined inside a .f file.
+# FMODEXE_SOCK contains all Fortran modules - the DoIt() function is defined inside a .f file.
 # These are socket-connect modules only. Assume they use third-party Fortran libraries
 # (although this may not be the case).
-$(FMODEXE):	LL_TGT := $(LL_TGT) $(CFITSIOLIBS) $(FMATHLIBS)
-$(FMODEXE):     %_sock:	%.o $(FMODLIBS_SOCK) 
+$(FMODEXE_SOCK):	LL_TGT := $(LL_TGT) $(CFITSIOLIBS) $(FMATHLIBS)
+$(FMODEXE_SOCK):     %_sock:	%.o $(FMODLIBS_SOCK) 
 			$(FLINK)
 			$(SLBIN)
 

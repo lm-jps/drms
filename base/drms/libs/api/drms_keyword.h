@@ -248,4 +248,29 @@ int drms_keyword_mapexport(DRMS_Keyword_t *key,
 			   const char *clname, 
 			   const char *mapfile,
 			   CFITSIO_KEYWORD **fitskeys);
+
+/* doxygen documentation */
+
+/**
+   @fn int drms_copykeys(DRMS_Record_t *target, DRMS_Record_t *source, int usesrcset, DRMS_KeywordClass_t class)
+   Copies the values of a subset of the @a source keywords to the identically named keywords in the @a target
+   DRMS record. If the @a usesrcset flag is set to 1, then the subset to copy is derived from the 
+   keywords present in the @a source DRMS record. All keywords in the @a source record that are a member
+   of the @a class (see ::DRMS_KeywordClass_enum for a list of classes) specified are copied to the
+   @a target record. If the @a usesrcset flag is set to 0, then 
+   the keywords to copy are derived from the @a target record. It may be desireable to copy keyword values
+   from multiple source records to a single target record, in which case this function needs to
+   be called once for each source.
+
+   @param target The DRMS record that contains the keywords to be modified.
+   @param source The DRMS record that contains the keywords whose values are to be copied.
+   @param usesrcset A flag - if set to 1 then the names of the keywords to copy are derived
+   from the keywords in @a source.
+   @param class The category of keywords to be copied.
+   @return Upon successful completion, returns ::DRMS_SUCCESS. If an error occurs, the
+   function returns an appropriate DRMS error code as defined 
+   in ::drms_statuscodes.h. Typical errors are as follows. DRMS_ERROR_UNKNOWNKEYWORD is returned
+   if an attempt is made to write to a keyword that does not exist in the target record.
+*/
+
 #endif
