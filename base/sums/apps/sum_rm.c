@@ -57,6 +57,7 @@
 #include <soi_error.h>
 #include <printk.h>
 #include <sys/statvfs.h>
+#include "serverdefs.h"
 
 #define CFG_FILE "/home/production/cvs/JSOC/base/sums/apps/data/sum_rm.cfg"
 
@@ -283,7 +284,11 @@ void get_cfg()
   strcpy(xlogfile, "/tmp/sum_rm.log");
   strcpy(mailto, "sys2@solar2");
   strcpy(userrun, "production");
+#ifdef __LOCALIZED_DEFS__
+  sprintf (cfgfile, "%s/sum_rm.cfg", SUMLOG_BASEDIR);
+#else
   sprintf(cfgfile, "%s.%s", CFG_FILE, dbname);
+#endif
   if(!(cfgfp=fopen(cfgfile, "r"))) {
     write_log("Can't open config file %s. Using defaults...\n", cfgfile);
     return;
