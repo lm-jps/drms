@@ -1,5 +1,5 @@
-#include "drms_fitsrw.h"
 #include "drms.h"
+#include "drms_priv.h"
 #include "tasrw.h"
 
 const char kSIMPLE[] = "SIMPLE";

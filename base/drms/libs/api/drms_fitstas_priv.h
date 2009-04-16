@@ -1,5 +1,5 @@
-#ifndef _DRMS_FITSTAS_H
-#define _DRMS_FITSTAS_H
+#ifndef _DRMS_FITSTAS_PRIV_H
+#define _DRMS_FITSTAS_PRIV_H
 
 #include "drms.h"
 
@@ -28,4 +28,4 @@ int drms_fitstas_writeslice(DRMS_Segment_t *seg,
                             int slotnum,
                             DRMS_Array_t *arrayout);
 
-#endif /* _DRMS_FITSTAS_H */
+#endif /* _DRMS_FITSTAS_PRIV_H */

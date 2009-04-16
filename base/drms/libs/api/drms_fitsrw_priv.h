@@ -1,5 +1,8 @@
-#ifndef _DRMS_FITSRW_H
-#define _DRMS_FITSRW_H
+/**
+@file drms_fitsrw_priv.h
+*/
+#ifndef _DRMS_FITSRW_PRIV_H
+#define _DRMS_FITSRW_PRIV_H
 
 #include "drms_types.h"
 #include "cfitsio.h"
@@ -22,4 +25,4 @@ int drms_fitsrw_writeslice(DRMS_Segment_t *seg,
                            int *end,
                            DRMS_Array_t *arrayout);
 
-#endif /* _DRMS_FITSRW_H */
+#endif /* _DRMS_FITSRW_PRIV_H */

@@ -8,7 +8,6 @@
 #include "drms_priv.h"
 #include "xmem.h"
 #include "drms_dsdsapi.h"
-#include "drms_fitstas.h"
 
 #ifndef DEBUG
 #undef TIME

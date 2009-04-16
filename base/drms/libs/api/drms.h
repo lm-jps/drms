@@ -76,7 +76,6 @@ data model. This includes
 #include "drms_parser.h"
 #include "drms_names.h"
 #include "drms_array.h"
-#include "drms_fitsrw.h"
 #include "drms_cmdparams.h"
 
 

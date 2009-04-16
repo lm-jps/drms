@@ -1,5 +1,5 @@
-#include "drms_fitstas.h"
-#include "drms_fitsrw.h"
+#include "drms.h"
+#include "drms_priv.h"
 #include "cfitsio.h"
 #include "tasrw.h"
 

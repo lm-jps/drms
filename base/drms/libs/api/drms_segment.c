@@ -36,8 +36,7 @@
 #include "xmem.h"
 #include "drms_dsdsapi.h"
 #include "cfitsio.h"
-#include "drms_fitsrw.h"
-#include "drms_fitstas.h"
+
 
 /******** helper functions that don't get exported as part of API ********/
 static DRMS_Segment_t * __drms_segment_lookup(DRMS_Record_t *rec, 

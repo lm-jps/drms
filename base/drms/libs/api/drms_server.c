@@ -12,7 +12,7 @@
 #endif
 #include <dirent.h>
 #include "printk.h"
-#include "drms_fitsrw.h"
+
 
 #ifdef DRMS_CLIENT
 #define DEFS_CLIENT

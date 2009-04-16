@@ -11,6 +11,9 @@
 #undef EXTERNALCODE /* XXX - fix this */
 #ifndef EXTERNALCODE
 /* Internal functions */
+/* These should be cleaned up by DRMS, not by jsoc_main */
+int drms_keymap_init(void);
+void drms_keymap_term(void);
 
 /* Get external/internal keyword name. Modules/programs should use
  * drms_keyword keywords to convert between internal DRMS keywords

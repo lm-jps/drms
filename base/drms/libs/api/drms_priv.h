@@ -15,5 +15,7 @@
 #include "drms_network_priv.h"
 #include "drms_series_priv.h"
 #include "drms_env_priv.h"
+#include "drms_fitsrw_priv.h"
+#include "drms_fitstas_priv.h"
 
 #endif /* _DRMS_PRIV_H*/
