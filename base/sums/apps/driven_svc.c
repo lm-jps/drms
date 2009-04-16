@@ -25,8 +25,10 @@
 #include <stropts.h>
 #include <sys/mtio.h>
 #include <dirent.h>
+#include <openssl/md5.h>
 
 #define MAX_WAIT 20  /* max times to wait for rdy in get_tape_fnum_rdy() */
+#define BLOCK_SIZE GTARBLOCK*512
 #define CMDLENWRT 24576
 #define GTARLOGDIR "/var/logs/SUM/gtar"
 #define GTAR "/usr/local/bin/gtar"	/* gtar 1.16 on 29May2007 */
@@ -101,6 +103,7 @@ int drivenum;
 int efnum = 0;
 char *dbname;
 char *timetag;
+char md5str[33];
 char drvname[MAX_STR];
 char thishost[MAX_STR];
 char datestr[32];
@@ -1202,15 +1205,18 @@ KEY *writedrvdo_1(KEY *params)
     sprintf(cmd, "/bin/rm -f %s", gtarlog);	//rm log file if no err
     system(cmd);
     setkey_int(&retlist, "TAPENXTFN", tapenxtfn);
+/*******************old when used cmd pipe to write tape***************
     if(get_cksum(md5file, md5sum)) {
       write_log("***Error: can't get md5 cksum for drive %d.\n",dnum);
       setkey_str(&retlist, "md5cksum", "");
-      setkey_int(&retlist, "STATUS", 1);   /* give error back to caller */
+      setkey_int(&retlist, "STATUS", 1);   // give error back to caller
       sprintf(errstr,"Error on write to drive #%d", dnum);
       setkey_str(&retlist, "ERRSTR", errstr); 
       return(retlist);
     }
     setkey_str(&retlist, "md5cksum", md5sum);
+**************************end old*************************************/
+    setkey_str(&retlist, "md5cksum", md5str);
 #ifdef SUMT120
     if((tell = tell_blocks(sim, dnum)) == -1) { /* get current blk# */
       write_log("**Can't get current block# on drive %d. Proceed w/o it.\n",
@@ -1446,9 +1452,15 @@ uint64_t tell_blocks(int sim, int dnum)
 */
 int write_wd_to_drive(int sim, KEY *params, int drive, int fnum, char *logname)
 {
+  FILE *fptar;
+  MD5_CTX md5ctx;
+  size_t bytesread;
+  ssize_t byteswrite;
+  unsigned char md5val[16];
+  char buf[BLOCK_SIZE];
   char cmd[CMDLENWRT], dname[64], tmpname[64], wdroot[64], wdD[64];
   char *cptr, *wd;
-  int status, cnt, i, len, tapefilenum;
+  int status, cnt, i, len, tapefilenum, fd;
 
   sprintf(dname, "%s%d", SUMDR, drive);
   sprintf(md5file, "/usr/local/logs/SUM/md5/cksum%d", drive); 
@@ -1475,20 +1487,69 @@ int write_wd_to_drive(int sim, KEY *params, int drive, int fnum, char *logname)
     }
     sprintf(cmd, "%s -C %s %s", cmd, wdroot, wdD);
   }
-  /*sprintf(cmd, "%s 1>>%s 2>&1", cmd, logname);*/
+  sprintf(cmd, "%s 2>%s", cmd, logname);
+/**************************orig pipe******************************************
   sprintf(cmd, "%s 2>%s | %s %d %s 2>> %s | dd of=%s bs=%db 2>> %s", 
 	cmd, logname, md5filter, GTARBLOCK, md5file, logname, dname, GTARBLOCK, logname);
+**************************end orig pipe**************************************/
   write_time();
   write_log("*Dr%d:wt: %s\n", drive, cmd);
   if(sim) {                             /* simulation mode only */
     sleep(7);
   }
   else {
-    if(status = system(cmd)) { /* status applies only to last cmd in pipe */
+    /***********************orig pipe cmd execution**********************
+    if(status = system(cmd)) { // status applies only to last cmd in pipe
       write_log("***Dr%d:wt:Error. exit status=%d\n",drive,WEXITSTATUS(status));
       drive_reset(dname);
       return(-1);
     }
+    ***********************end orig pipe cmd execution******************/
+    if(!(fptar = popen(cmd, "r"))) {
+      write_log("***Dr%d:wt:Error. Can't popen() cmd\n", drive);
+      drive_reset(dname);
+      return(-1);
+    }
+    if((fd = open(dname, O_WRONLY)) == -1) {
+      pclose(fptar);
+      write_log("***Dr%d:wt:Error. Can't open(%s) cmd\n", drive, dname);
+      drive_reset(dname);
+      return(-1);
+    }
+    MD5_Init(&md5ctx);
+    errno = 0;
+    while(bytesread = fread(buf, 1, BLOCK_SIZE, fptar)) {
+      MD5_Update(&md5ctx, buf, bytesread);
+      while(bytesread > 0) {
+        if((byteswrite = write(fd, buf, bytesread)) == -1) {
+          pclose(fptar);
+          close(fd);
+          write_log("***Dr%d:wt:Error. Can't write(%s). errno=%d\n", 
+			drive, dname, errno);
+          drive_reset(dname);
+          return(-1);
+        }
+        bytesread -= byteswrite;
+      }
+    }
+    close(fd);
+    if(!feof(fptar)) {
+      pclose(fptar);
+      write_log("***Dr%d:wt:Error. Not at eof on popen cmd. errno=%d\n", 
+			drive, errno);
+      drive_reset(dname);
+      return(-1);
+    }
+    MD5_Final(md5val, &md5ctx);
+    if(status = pclose(fptar)) {	//exit status of cmd
+      write_log("***Dr%d:wt:Error. popen cmd status=%d. errno=%d\n", 
+			drive, status, errno);
+      drive_reset(dname);
+      return(-1);
+    }
+    md5str[32] = 0;
+    for(i=0; i < 16; i++)
+      sprintf(md5str+2*i, "%02x", md5val[i]);
   }
   if((tapefilenum = get_tape_fnum_rdy(sim, dname)) == -1) {
     write_log("***Error: can't get file # on drive %d\n", drive);
