@@ -55,7 +55,8 @@ SUMS_MANAGER	production
 #   the machine serving the Postgres SUMS database
 SUMS_SERVER_HOST	localhost
 
-# the base directory for SUMS logs; used by base/sums/apps/sum_svc.c
+# the base directory for SUMS logs and configuration files; used by
+# base/sums/apps/sum_svc.c and sum_rm.c
 SUMS_LOG_BASEDIR	/usr/local/logs/SUM
 
 # the location of third-party libraries (especially cfitsio, which is required,
