@@ -1,4 +1,4 @@
-/* drms_keywordmap.h */
+/* drms_keymap_priv.h */
 
 #ifndef _DRMS_KEYMAP_PRIV_H
 #define _DRMS_KEYMAP_PRIV_H
@@ -11,10 +11,6 @@
 #undef EXTERNALCODE /* XXX - fix this */
 #ifndef EXTERNALCODE
 /* Internal functions */
-
-/* Functions to create and free the global class DRMS keymaps */
-int drms_keymap_init(void);
-void drms_keymap_term(void);
 
 /* Get external/internal keyword name. Modules/programs should use
  * drms_keyword keywords to convert between internal DRMS keywords

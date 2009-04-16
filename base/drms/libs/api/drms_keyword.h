@@ -9,18 +9,6 @@
 #include "drms_types.h"
 #include "cfitsio.h"
 
-void drms_keyword_term();
-
-/******** Keyword functions ********/
-
-void drms_free_template_keyword_struct(DRMS_Keyword_t *key);
-void drms_free_keyword_struct(DRMS_Keyword_t *key);
-void drms_copy_keyword_struct(DRMS_Keyword_t *dst, DRMS_Keyword_t *src);
-
-/* Create stand-alone links that contain pointers to/from target only. */
-HContainer_t *drms_create_keyword_prototypes(DRMS_Record_t *target, 
-					     DRMS_Record_t *source, 
-					     int *status);
 
 void drms_keyword_print(DRMS_Keyword_t *key);
 
@@ -35,8 +23,6 @@ void drms_keyword_fprint(FILE *keyfile, DRMS_Keyword_t *key);
 void drms_keyword_printval(DRMS_Keyword_t *key);
 void drms_keyword_fprintval(FILE *keyfile, DRMS_Keyword_t *key);
 void drms_keyword_snprintfval(DRMS_Keyword_t *key, char *buf, int size);
-int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg);
-int  drms_template_keywords(DRMS_Record_t *template);
 DRMS_Keyword_t *drms_keyword_lookup(DRMS_Record_t *rec, const char *key, int followlink);
 DRMS_Type_t drms_keyword_type(DRMS_Keyword_t *key);
 HContainer_t *drms_keyword_createinfocon(DRMS_Env_t *drmsEnv, 
@@ -215,32 +201,20 @@ int drms_keyword_isslotted(DRMS_Keyword_t *key);
 
 /* Utility */
 DRMS_RecScopeType_t drms_keyword_str2recscope(const char *str, int *status);
-DRMS_Keyword_t *drms_keyword_indexfromslot(DRMS_Keyword_t *slot);
+
 /* Generic - get the index keyword from the associated value keyword */
 DRMS_Keyword_t *drms_keyword_indexfromvalkey(DRMS_Keyword_t *valkey);
-DRMS_Keyword_t *drms_keyword_epochfromslot(DRMS_Keyword_t *slot);
-DRMS_Keyword_t *drms_keyword_basefromslot(DRMS_Keyword_t *slot);
+
 /* Generic - get the base keyword from the associated value keyword */
 DRMS_Keyword_t *drms_keyword_basefromvalkey(DRMS_Keyword_t *valkey);
-DRMS_Keyword_t *drms_keyword_stepfromslot(DRMS_Keyword_t *slot);
+
 /* Generic - get the step keyword from the associated value keyword */
 DRMS_Keyword_t *drms_keyword_stepfromvalkey(DRMS_Keyword_t *valkey);
-DRMS_Keyword_t *drms_keyword_unitfromslot(DRMS_Keyword_t *slot);
-DRMS_Keyword_t *drms_keyword_roundfromslot(DRMS_Keyword_t *slot);
-DRMS_Keyword_t *drms_keyword_slotfromindex(DRMS_Keyword_t *indx);
+
 int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey, 
 				  DRMS_Value_t *valin,
 				  DRMS_Value_t *valout,
 				  DRMS_Value_t *startdur);
-
-static inline long long CalcSlot(double slotkeyval, 
-				 double base, 
-				 double stepsecs,
-                                 double roundstep)
-{
-   double slotvald = floor((slotkeyval - base + (roundstep / 2.0)) / stepsecs);
-   return slotvald;
-}
 
 /* Export */
 int drms_keyword_export(DRMS_Keyword_t *key, CFITSIO_KEYWORD **fitskeys);

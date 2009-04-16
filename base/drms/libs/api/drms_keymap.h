@@ -15,6 +15,10 @@
 
 /* Functions to create and free DRMS keymaps. */
 
+/* Functions to create and free the global class DRMS keymaps */
+int drms_keymap_init(void);
+void drms_keymap_term(void);
+
 /** 
 Allocate an empty ::DRMS_KeyMap_t and return a pointer to it if 
 memory was successfully allocated. It is the caller's responsiblity to free the returned

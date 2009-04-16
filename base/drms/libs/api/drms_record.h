@@ -42,26 +42,12 @@ typedef enum {DRMS_QUERY_COUNT, DRMS_QUERY_FL, DRMS_QUERY_ALL, DRMS_QUERY_N} DRM
    given in the argument "datasetname". The records are inserted into
    the record cache and marked read-only. */
 
-DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, 
-					     char *recordsetname, 
-					     int retrieverecs, 
-					     LinkedList_t **llistout,
-                                             char **allversout,
-                                             int nrecslimit,
-					     int *status);
-
 DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname, 
 				    int *status);
 DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env, 
                                      char *recordsetname, 
                                      int n,
                                      int *status);
-DRMS_RecordSet_t *drms_open_localrecords(DRMS_Env_t *env, 
-					 const char *dsRecSet, 
-					 int *status);
-DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, 
-					const char *dsRecSet, 
-					int *status);
 
 DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *recset,  
 				     DRMS_RecLifetime_t lifetime, 
@@ -70,11 +56,6 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *recset,
 DRMS_RecordSet_t *drms_create_records(DRMS_Env_t *env, int n, 
 				      char *seriesname, DRMS_RecLifetime_t lifetime,
 				      int *status);
-DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, 
-						   int n,  
-						   DRMS_Record_t *template, 
-						   DRMS_RecLifetime_t lifetime,
-						   int *status);
 
 DRMS_RecordSet_t *drms_create_recprotos(DRMS_RecordSet_t *recset, int *status);
 void drms_destroy_recprotos(DRMS_RecordSet_t **protos);
@@ -203,17 +184,11 @@ char *drms_query_string(DRMS_Env_t *env,
 /* Chunking record queries */
 int drms_recordset_setchunksize(unsigned int size);
 unsigned int drms_recordset_getchunksize();
-int drms_open_recordchunk(DRMS_Env_t *env,
-                          DRMS_RecordSet_t *rs, 
-			  DRMS_RecSetCursorSeek_t seektype, 
-			  long long chunkindex,  
-			  int *status);
-int drms_close_recordchunk(DRMS_RecordSet_t *rs);
+
 DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env, 
 				      const char *rsquery, 
 				      int *status);
 DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env, DRMS_RecordSet_t *rs, int *status);
-DRMS_Record_t *drms_recordset_fetchprevious(DRMS_Env_t *env, DRMS_RecordSet_t *rs, int *status);
 DRMS_Record_t *drms_recordset_fetchnextinset(DRMS_Env_t *env, DRMS_RecordSet_t *rs, int *setnum, int *status);
 void drms_free_cursor(DRMS_RecSetCursor_t **cursor);
 
@@ -222,6 +197,11 @@ int drms_record_isdsds(DRMS_Record_t *rec);
 int drms_record_islocal(DRMS_Record_t *rec);
 
 /* Doxygen function documentation */
+
+/**
+   @addtogroup record_api
+   @{
+*/
 
 /**
    @fn DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname, int *status)
@@ -473,6 +453,10 @@ int drms_record_islocal(DRMS_Record_t *rec);
    @param tatus Pointer to DRMS status (see drms_statuscodes.h) returned
    by reference. 0 if successful, non-0 otherwise.
    @return The record prototype that is a stand-alone duplicate of @a recSource
+*/
+
+/**
+  @}
 */
 
 #endif

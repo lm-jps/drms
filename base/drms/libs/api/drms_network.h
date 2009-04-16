@@ -7,33 +7,13 @@
 #include "drms_types.h"
 //#include "xmem.h"
 
-
-
-
-/* Client side functions. */
-#define drms_freeslot(env, series, sunum, slotnum) drms_slot_setstate((env), (series),(sunum),(slotnum),DRMS_SLOT_FREE)
-
-
-
-
-/** \brief Send command code via socket */
-int drms_send_commandcode(int sockfd, int command);
-/** \brief Send command code via socket. The form does not expect echo from the server */
-int drms_send_commandcode_noecho(int sockfd, int command);
 /** \brief Establish socket connection to server, receive from server session information*/
 DRMS_Session_t *drms_connect(char *host);
 /** \brief Establish DB connection, initialize session information */
 DRMS_Session_t *drms_connect_direct(char *host, char *user, 
 				    char *passwd, char *dbname,
 				    char *sessionns);
-/** \brief Tell DB to commit transaction 
-\warning This function should not be used unless you know what you are doing.
-*/
-int drms_commit(DRMS_Env_t *env);
-/** \brief Tell DB to rollback transaction
-\warning This function should not be used unless you know what you are doing.
-*/
-int drms_rollback(DRMS_Session_t *session);
+
 /** \brief Server disconnects from DB. Client disconnects from server*/
 void drms_disconnect(DRMS_Env_t *env, int abort);
 /** \brief Client sends ::DRMS_DISCONNECT command code without echo*/
@@ -67,49 +47,9 @@ int drms_bulk_insert_array(DRMS_Session_t *session,
 int drms_bulk_insertv(DRMS_Session_t *session, char *table, 
 		      int n_rows, int n_cols, ...);
 
-/* Sequence functions */
-/** \brief Get next n sequence values */
-long long *drms_sequence_getnext(DRMS_Session_t *session,  char *name, int n);
-/** \brief Get the current sequence value */
-long long drms_sequence_getcurrent(DRMS_Session_t *session,  char *name);
-/** \brief Get the last sequence value */
-long long drms_sequence_getlast(DRMS_Session_t *session,  char *table);
-/** \brief Create sequence */
-int drms_sequence_create(DRMS_Session_t *session,  char *name);
-/** \brief Drop sequence */
-int drms_sequence_drop(DRMS_Session_t *session,  char *name);
-/** \brief Create new slots */
-int drms_newslots(DRMS_Env_t *env,  int n, char *series, long long *recnum, 
-		  DRMS_RecLifetime_t lifetime, int *slotnum, 
-		  DRMS_StorageUnit_t **su,
-                  int createslotdirs);
-/** \brief Retrieve the storage unit specified by \a sunum */
-DRMS_StorageUnit_t *drms_getunit(DRMS_Env_t *env,  char *series, 
-				 long long sunum, int retrieve, int *status);
-/** \brief Retrieve the storage units specified by \a sunum */
-int drms_getunits(DRMS_Env_t *env,  char *series, 
-		  int n, long long *sunum, int retrieve, int dontwait);
-
 int drms_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve);
 
 int drms_getsudirs(DRMS_Env_t *env, DRMS_StorageUnit_t **su, int num, int retrieve, int dontwait);
-
-/** \brief Request \c n recnum */
-long long *drms_alloc_recnum(DRMS_Env_t *env,  char *series, 
-			     DRMS_RecLifetime_t lifetime, int n);
-/** \brief Mark a storage unit slot as either ::DRMS_SLOT_FREE, ::DRMS_SLOT_FULL, or ::DRMS_SLOT_TEMP. */
-int drms_slot_setstate(DRMS_Env_t *env, char *series, long long sunum, 
-		       int slotnum, int state);
-
-/** @brief Delete the storage units associated with a series */
-int drms_dropseries(DRMS_Env_t *env, const char *series);
-
-/** \brief Create a series */
-int drms_create_series(DRMS_Record_t *rec, int perms);
-/** \brief Update an existing series */
-int drms_update_series(DRMS_Record_t *rec, int perms);
-/** \brief Delete an existing series */
-int drms_delete_series(DRMS_Env_t *env, char *series, int cascade);
 
 /** \brief Create a new series on-the-fly, using a series record prototype. */
 int drms_create_series_fromprototype(DRMS_Record_t **prototype, 

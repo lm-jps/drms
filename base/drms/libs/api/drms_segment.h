@@ -430,12 +430,6 @@ int drms_mapexport_tofitsfile(DRMS_Array_t *arr,
                               const char *mapfile,
                               const char *fileout);
 
-CFITSIO_KEYWORD *drms_segment_mapkeys(DRMS_Segment_t *seg, 
-                                      const char *clname, 
-                                      const char *mapfile, 
-                                      int *status);
-void drms_segment_freekeys(CFITSIO_KEYWORD **fitskeys);
-
 /* accessor functions */
 static inline int drms_segment_getnaxis(DRMS_Segment_t *seg)
 {

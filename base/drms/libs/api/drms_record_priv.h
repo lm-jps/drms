@@ -220,5 +220,34 @@ xxx
 */
 void drms_free_template_record_struct(DRMS_Record_t *rec);
 
+DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, 
+					     char *recordsetname, 
+					     int retrieverecs, 
+					     LinkedList_t **llistout,
+                                             char **allversout,
+                                             int nrecslimit,
+					     int *status);
+
+DRMS_RecordSet_t *drms_open_localrecords(DRMS_Env_t *env, 
+					 const char *dsRecSet, 
+					 int *status);
+DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, 
+					const char *dsRecSet, 
+					int *status);
+
+DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, 
+						   int n,  
+						   DRMS_Record_t *template, 
+						   DRMS_RecLifetime_t lifetime,
+						   int *status);
+
+int drms_open_recordchunk(DRMS_Env_t *env,
+                          DRMS_RecordSet_t *rs, 
+			  DRMS_RecSetCursorSeek_t seektype, 
+			  long long chunkindex,  
+			  int *status);
+
+int drms_close_recordchunk(DRMS_RecordSet_t *rs);
+
 #endif /* EXTERNALCODE */
 #endif /* _DRMS_RECORD_PRIV_H */

@@ -7082,11 +7082,6 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env, DRMS_RecordSet_t *rs, i
    return ret;
 }
 
-DRMS_Record_t *drms_recordset_fetchprevious(DRMS_Env_t *env, DRMS_RecordSet_t *rs, int *status)
-{
-   return NULL;
-}
-
 /* If setnum != NULL, then the fetch is relative to the first record of the 
  * record subset specified by *setnum, otherwise, it is relative to the 
  * first record of all records in the set. */

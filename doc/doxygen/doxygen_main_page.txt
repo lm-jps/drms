@@ -145,12 +145,137 @@ blocks: http://www.stack.nl/~dimitri/doxygen/commands.html
     /**
     @defgroup core_api Core DRMS API functions
     @ingroup c_api
-    - ::drms_open_records
-    - ::drms_create_records
+    */
+
+    /**
+    @defgroup full_api All DRMS API functions
+    @ingroup c_api
+    */
+
+    /**
+    @defgroup full_api2 New All DRMS API functions
+    @ingroup c_api
+    - ::drms_abort
+    - ::drms_abort_now
+    - ::drms_bulk_insert_array
+    - ::drms_bulk_insert_arrayv
+    - ::drms_cmdparams_exists
+    - ::drms_cmdparams_get_str
+    - ::drms_cmdparams_get_int
+    - ::drms_clone_record
     - ::drms_clone_records
+    - ::drms_close
+    - ::drms_close_record
     - ::drms_close_records
+    - ::drms_connect
+    - ::drms_connect_direct
+    - ::drms_create_records
+    - ::drms_create_record
+    - ::drms_create_recprotos
+    - ::drms_create_recproto
+    - ::drms_destroy_recprotos
+    - ::drms_destroy_recproto
+    - ::drms_create_series_fromprototype
+    - ::drms_defs_register
+    - ::drms_defs_getval
+    - ::drms_defs_term
+    - ::drms_disconnect
+    - ::drms_disconnect_now
+    - ::drms_dms
+    - ::drms_dmsv
+    - ::drms_dms_array
+    - ::drms_fitsrw_term
+    - ::drms_free_env
+    - ::drms_getsudir
+    - ::drms_getsudirs
+    - ::drms_keymap_init
+    - ::drms_keymap_term
+    - ::drms_keymap_create
+    - ::drms_keymap_destroy
+    - ::drms_keymap_getfromclname
+    - ::drms_keymap_parsefile
+    - ::drms_keymap_parsetable
+    - ::drms_link_follow
+    - ::drms_link_followall
+    - ::drms_link_getpidx
+    - ::drms_setlink_static
+    - ::drms_setlink_dynamic
+    - ::drms_merge_record
+    - ::drms_open_nrecords
+    - ::drms_open_records
+    - ::drms_open
+    - ::drms_open_recordchunk
+    - ::drms_open_recordset
+    - ::drms_prot2str
+    - ::drms_prot2ext
+    - ::drms_query_bin
+    - ::drms_query_bin_array
+    - ::drms_query_binv
+    - ::drms_query_string
+    - ::drms_query_txt
+    - ::drms_record_directory
+    - ::drms_record_getquerytype
+    - ::drms_record_jsoc_version
+    - ::drms_record_memsize
+    - ::drms_record_numkeywords
+    - ::drms_record_numlinks
+    - ::drms_record_num_nonlink_segments
+    - ::drms_record_numsegments
+    - ::drms_recordset_acquireseriesname
+    - ::drms_recordset_fetchnext
+    - ::drms_recordset_fetchnextinset
+    - ::drms_free_cursor
+    - ::drms_recordset_getnrecs
+    - ::drms_recordset_getnumss
+    - ::drms_recordset_getqueryss
+    - ::drms_recordset_getrec
+    - ::drms_recordset_gettypess
+    - ::drms_recordset_getss
+    - ::drms_recordset_getssnrecs
+    - ::drms_recordset_setchunksize
+    - ::drms_recordset_getchunksize
+    - ::drms_recproto_setseriesinfo
+    - ::drms_record_size
     - ::drms_segment_read
     - ::drms_segment_write
     - ::drms_series_exists
+    - ::drms_series_cancreaterecord
+    - ::drms_series_candeleterecord
+    - ::drms_series_canupdaterecord
+    - ::drms_stage_records
+    - ::drms_su_size
+    - ::drms_str2prot
     */
+
+
 // @}
+
+/**
+@defgroup record_api DRMS API functions for working with records
+@ingroup full_api
+*/
+
+/**
+@defgroup segment_api DRMS API functions for working with segments
+@ingroup full_api
+*/
+
+/**
+@defgroup cmdparam_api DRMS API functions for working with DRMS command-line parameters
+@ingroup full_api
+*/
+
+/** 
+@defgorup binfile_api DRMS API function for working with binary files
+@ingroup full_api
+*/
+
+/**
+@defgroup defs_api DRMS API functions for working with definition-file strings 
+@ingroup full_api
+*/
+
+/**
+@defgroup env_api DRMS API functions for working with the connection to the database
+@ingroup full_api
+*/
