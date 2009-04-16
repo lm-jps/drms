@@ -29,6 +29,8 @@ dir	:= $(d)/util
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/export
 -include		$(SRCDIR)/$(dir)/Rules.mk
+dir	:= $(d)/globalhs
+-include		$(SRCDIR)/$(dir)/Rules.mk
 
 # Standard things
 d		:= $(dirstack_$(sp))

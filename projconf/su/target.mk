@@ -13,4 +13,4 @@ $(PROJOBJDIR):
 	+@[ -d $@/lev1_hmi/apps ] || mkdir -p $@/lev1_hmi/apps
 	+@[ -d $@/export/apps ] || mkdir -p $@/export/apps
 	+@[ -d $@/export/libs/util ] || mkdir -p $@/export/libs/util
-
+	+@[ -d $@/globalhs/apps/ ] || mkdir -p $@/globalhs/apps
