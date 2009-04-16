@@ -192,6 +192,8 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env, DRMS_RecordSet_t *rs, i
 DRMS_Record_t *drms_recordset_fetchnextinset(DRMS_Env_t *env, DRMS_RecordSet_t *rs, int *setnum, int *status);
 void drms_free_cursor(DRMS_RecSetCursor_t **cursor);
 
+int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status);
+
 /* DSDS */
 int drms_record_isdsds(DRMS_Record_t *rec);
 int drms_record_islocal(DRMS_Record_t *rec);

@@ -439,44 +439,6 @@ static void list_series_info(DRMS_Record_t *rec)
   return;
   }
 
-int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status)
-  {
-  int stat, filter, mixed;
-  char *query=NULL, *where=NULL, *seriesname=NULL;
-  int count = 0;
-  DB_Text_Result_t *tres;
-  int allvers = 0;
-
-  stat = drms_recordset_query(env, recordsetname, &where, &seriesname, &filter, &mixed, &allvers);
-      if (stat)
-        goto failure;
-
-  stat = 1;
-  query = drms_query_string(env, seriesname, where, filter, mixed, DRMS_QUERY_COUNT, NULL, NULL, allvers);
-      if (!query)
-        goto failure;
-
-  tres = drms_query_txt(env->session,  query);
-
-  if (tres && tres->num_rows == 1 && tres->num_cols == 1)
-    count = atoi(tres->field[0][0]);
-  else
-    goto failure;
-
-  free(seriesname);
-  free(query);
-  free(where);
-  *status = DRMS_SUCCESS;
-  return(count);
-
-  failure:
-  if (seriesname) free(seriesname);
-  if (query) free(query);
-  if (where) free(where);
-  *status = stat;
-  return(0);
-  }
-
 SUM_t *my_sum=NULL;
 
 SUM_info_t *drms_get_suinfo(long long sunum)
