@@ -79,7 +79,7 @@ This group of arguments specifies the set of keywords, segments, links, or virtu
 \li \c  -x: archive - show archived flag for the storage unit. 
 \li \c  -K: Select all links and display their targets for the chosen records
 \li \c  -i: print record query, for each record, will be before any keywwords or segment data
-\li \c  -I: print session information including host, runtime, jsoc_version, and logdir
+\li \c  -I: print session information including host, sessionid, runtime, jsoc_version, and logdir
 \li \c  -o: list the record's online status 
 \li \c  -p: list the record's storage_unit path, waits for retrieval if offline
 \li \c  -P: list the record\'s storage_unit path but no retrieve
@@ -216,7 +216,7 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "d", "0", "Show dimensions of segment files with selected segs"},
   {ARG_FLAG, "h", "0", "help - print usage info"},
   {ARG_FLAG, "i", "0", "print record query, for each record, will be before any keywwords or segment data"},
-  {ARG_FLAG, "I", "0", "print session information for record creation, host, runtime, jsoc_version, and logdir"},
+  {ARG_FLAG, "I", "0", "print session information for record creation, host, sessionid, runtime, jsoc_version, and logdir"},
   {ARG_FLAG, "j", "0", "list series info in jsd format"},
   {ARG_FLAG, "k", "0", "keyword list one per line"},
   {ARG_FLAG, "l", "0", "just list series keywords with descriptions"},
@@ -259,7 +259,7 @@ int nice_intro ()
 	"  -A: show information for all segments\n"
   	"  -d: Show dimensions of segment files with selected segs\n"
 	"  -i: query- show the record query that matches the current record\n"
-        "  -I: print session information for record creation, host, runtime, jsoc_version, and logdir\n"
+        "  -I: print session information for record creation, host, sessionid, runtime, jsoc_version, and logdir\n"
 	"  -K: show information for all links\n"
 	"  -o: online - tell the online state\n"
 	"  -p: list the record's storage_unit path (retrieve if necessary)\n"
@@ -995,7 +995,7 @@ int DoIt(void)
         if (show_size)
           printf ("%ssize", (col++ ? "\t" : ""));
         if (show_session)
-          printf ("%shost\truntime\tjsoc_version\tlogdirectory", (col++ ? "\t" : ""));
+          printf ("%shost\tsessionid\truntime\tjsoc_version\tlogdirectory", (col++ ? "\t" : ""));
         for (ikey=0 ; ikey<nkeys; ikey++)
           printf ("%s%s", (col++ ? "\t" : ""), keys[ikey]); 
         for (iseg = 0; iseg<nsegs; iseg++)
@@ -1030,7 +1030,7 @@ int DoIt(void)
           if (show_size)
             printf ("%slonglong", (col++ ? "\t" : ""));
           if (show_session)
-            printf ("%sstring\tstring\tstring\tstring", (col++ ? "\t" : ""));
+            printf ("%sstring\tlonglong\tstring\tstring\tstring", (col++ ? "\t" : ""));
           for (ikey=0 ; ikey<nkeys; ikey++)
             {
             DRMS_Keyword_t *rec_key_ikey = drms_keyword_lookup (rec, keys[ikey], 1);
@@ -1069,7 +1069,7 @@ int DoIt(void)
           if (show_size)
             printf ("%s%%lld", (col++ ? "\t" : ""));
           if (show_session)
-            printf ("%s%%s\t%%s\t%%s\t%%s", (col++ ? "\t" : ""));
+            printf ("%s%%s\t%%lld\t%%s\t%%s\t%%s", (col++ ? "\t" : ""));
           for (ikey=0 ; ikey<nkeys; ikey++)
             {
             DRMS_Keyword_t *rec_key_ikey = drms_keyword_lookup (rec, keys[ikey], 1);
@@ -1204,21 +1204,21 @@ int DoIt(void)
 
     if (show_session)
       {  // show host, runtime, jsoc_version, and logdir
-      char *runhost, *runtime, *jsoc_vers, *logdir;
+      char *runhost, *sessionid, *runtime, *jsoc_vers, *logdir;
       if (get_session_info(rec, &runhost, &runtime, &jsoc_vers, &logdir))
         {
         if (keyword_list)
-          printf("## host=ERROR\n## runtime=ERROR\njsoc_version=ERROR\nlogdir=ERROR\n");
+          printf("## host=ERROR\n## sessionid=ERROR\n## runtime=ERROR\njsoc_version=ERROR\nlogdir=ERROR\n");
         else
-          printf("%sERROR\tERROR\tERROR\tERROR", (col++ ? "\t" : ""));
+          printf("%sERROR\tERROR\tERROR\tERROR\tERROR", (col++ ? "\t" : ""));
         }
       else
         {
         if (keyword_list)
-          printf("## host=%s\n## runtime=%s\n## jsoc_version=%s\n## logdir=%s\n",
-            runhost, runtime, jsoc_vers, logdir);
+          printf("## host=%s\n## sessionid=%lld\n## runtime=%s\n## jsoc_version=%s\n## logdir=%s\n",
+            runhost, rec->sessionid, runtime, jsoc_vers, logdir);
         else
-          printf("%s%s\t%s\t%s\t%s", (col++ ? "\t" : ""), runhost, runtime, jsoc_vers, logdir);
+          printf("%s%s\t%lld\t%s\t%s\t%s", (col++ ? "\t" : ""), runhost, rec->sessionid, runtime, jsoc_vers, logdir);
         free(runhost);
         free(runtime);
         free(jsoc_vers);
