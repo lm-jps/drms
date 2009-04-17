@@ -5551,9 +5551,18 @@ int ParseRecSetDesc(const char *recsetsStr,
                      {
                         /* pick function here, if ever more than time conversion */
                         TIME t; 
+#ifdef DEBUG
                         int consumed;
+#endif
+
                         strncpy(temptime,pc+2,rparen-pc-2);
-                        consumed = sscan_time_ext(temptime, &t);
+
+#ifdef DEBUG
+                        consumed = 
+#endif
+                          sscan_time_ext(temptime, &t);
+
+
                         if (time_is_invalid(t))
                             fprintf(stderr,"Warning: invalid time from %s\n",temptime);
 #ifdef DEBUG
@@ -7272,4 +7281,66 @@ int drms_record_islocal(DRMS_Record_t *rec)
    }
 
    return islocal;
+}
+
+DRMS_Segment_t *drms_record_nextseg(DRMS_Record_t *rec, HIterator_t **last)
+{
+   DRMS_Segment_t *seg = NULL;
+   DRMS_Segment_t *segret = NULL;
+   HIterator_t *hit = NULL;
+
+   if (last)
+   {
+      if (*last)
+      {
+         /* This is not the first time this function was called for the record */
+         hit = *last;
+      }
+      else
+      {
+         *last = hiter_create(&(rec->segments));
+      }
+
+      seg = hiter_getnext(hit);
+
+      if (seg)
+      {
+         /* Because of the way links are handled, must call drms_segment_lookup() to 
+          * follow links */
+         segret = drms_segment_lookup(rec, seg->info->name);
+      }
+   }
+
+   return segret;
+}
+
+DRMS_Keyword_t *drms_record_nextkey(DRMS_Record_t *rec, HIterator_t **last)
+{
+   DRMS_Keyword_t *key = NULL;
+   DRMS_Keyword_t *keyret = NULL;
+   HIterator_t *hit = NULL;
+
+   if (last)
+   {
+      if (*last)
+      {
+         /* This is not the first time this function was called for the record */
+         hit = *last;
+      }
+      else
+      {
+         *last = hiter_create(&(rec->keywords));
+      }
+
+      key = hiter_getnext(hit);
+
+      if (key)
+      {
+         /* Because of the way links are handled, must call drms_keyword_lookup() to 
+          * follow links */
+         keyret = drms_keyword_lookup(rec, key->info->name, 1);
+      }
+   }
+
+   return keyret;
 }

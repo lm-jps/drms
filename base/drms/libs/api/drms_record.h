@@ -194,6 +194,9 @@ void drms_free_cursor(DRMS_RecSetCursor_t **cursor);
 
 int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status);
 
+DRMS_Segment_t *drms_record_nextseg(DRMS_Record_t *rec, HIterator_t **last);
+DRMS_Keyword_t *drms_record_nextkey(DRMS_Record_t *rec, HIterator_t **last);
+
 /* DSDS */
 int drms_record_isdsds(DRMS_Record_t *rec);
 int drms_record_islocal(DRMS_Record_t *rec);
@@ -455,6 +458,46 @@ int drms_record_islocal(DRMS_Record_t *rec);
    @param tatus Pointer to DRMS status (see drms_statuscodes.h) returned
    by reference. 0 if successful, non-0 otherwise.
    @return The record prototype that is a stand-alone duplicate of @a recSource
+*/
+
+/**
+   @fn DRMS_Segment_t *drms_record_nextseg(DRMS_Record_t *rec, HIterator_t **last)
+   The first time this function is called, it returns the record's first segment.
+   Each subsequent call yields the record's next segment. This continues until
+   there are no more segments, in which case, the function returns NULL.
+   It is the caller's 
+   responsiblity to assign NULL to an ::HIterator_t * variable, and then to provide
+   the address of the variable as the @a last parameter on the first
+   call to this function. On subsequent calls, the address of the same ::HIterator_t *
+   must be provided.  The user must free value of the ::HIterator_t * variable
+   after the last call to this function.
+
+   @param rec The record whose segments are to be retrieved
+   @param last The address of an ::HIterator_t * variable. This variable will
+   contain a pointer to an allocated ::HIterator_t structure after the first call
+   to this function.
+   @return Returns a pointer to the current ::DRMS_Segment_t, unless there are no
+   more segments, in which case the function returns NULL.
+*/
+
+/**
+   @fn DRMS_Keyword_t *drms_record_nextkey(DRMS_Record_t *rec, HIterator_t **last)
+   The first time this function is called, it returns the record's first keyword.
+   Each subsequent call yields the record's next keyword. This continues until
+   there are no more keywords, in which case, the function returns NULL.
+   It is the caller's 
+   responsiblity to assign NULL to an ::HIterator_t * variable, and then to provide
+   the address of the variable as the @a last parameter on the first
+   call to this function. On subsequent calls, the address of the same ::HIterator_t *
+   must be provided.  The user must free value of the ::HIterator_t * variable
+   after the last call to this function.
+
+   @param rec The record whose keywords are to be retrieved
+   @param last The address of an ::HIterator_t * variable. This variable will
+   contain a pointer to an allocated ::HIterator_t structure after the first call
+   to this function.
+   @return Returns a pointer to the current ::DRMS_Keyword_t, unless there are no
+   more keywords, in which case the function returns NULL.
 */
 
 /**
