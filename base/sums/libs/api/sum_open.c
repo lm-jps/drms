@@ -345,11 +345,12 @@ int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
     }
   }
   if(retstat) {			/* error on INFODO call */
-    (*history)("Error in SUM_info()\n");
+    if(retstat != SUM_SUNUM_NOT_LOCAL)
+      (*history)("Error in SUM_info()\n"); //be quite for show_info sake
     return(retstat);
   }
   else {
-    msgstat = getanymsg(1);	/* get answer to ALLOCDO call */
+    msgstat = getanymsg(1);	/* get answer to INFODO call */
     freekeylist(&klist);
     if(msgstat == ERRMESS) return(ERRMESS);
     //printf("\nIn SUM_info() the keylist is:\n"); //!!TEMP
