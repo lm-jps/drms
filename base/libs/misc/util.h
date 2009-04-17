@@ -9,6 +9,15 @@ typedef enum
    kInexact
 } FltCnvDisp_t;
 
+struct BASE_Cleanup_struct
+{
+  void *item;
+  void (*free)(void *);
+};
+
+typedef struct BASE_Cleanup_struct BASE_Cleanup_t;
+
+
 char *ns(const char *name);
 void strtolower(char *str);
 void strtoupper(char *str);
@@ -26,12 +35,18 @@ int copyfile(const char *inputfile, const char *outputfile);
 #define unlikely(a) __builtin_expect((a), 0)
 #define likely(a) __builtin_expect((a), 1)
 
-int IsValidFitsKeyName(const char *name);
-int GenerateFitsKeyName(const char *kwName, char *fitsName, int size);
-int IsValidDRMSKeyName(const char *drmsName);
+int FitsKeyNameValidation(const char *fitsName);
 int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size);
 int RemoveDir(const char *pathname, int maxrec);
 size_t CopyFile(const char *src, const char *dst);
+
+/* clean up */
+void base_cleanup_init();
+int base_cleanup_register(const char *key, BASE_Cleanup_t *cu);
+int base_cleanup_go(const char *explicit);
+void base_cleanup_term();
+
+void base_term();
 
 #ifdef ICCCOMP
 #pragma warning (disable : 1572)

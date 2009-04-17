@@ -237,6 +237,10 @@ int JSOCMAIN_Term(int dolog, int verbose, pid_t drms_server_pid, pid_t tee_pid, 
 	 This is not a problem since the server will already have shut itself 
 	 down cleanly.
       */
+
+      /* This will also cause global DRMS memory to be freed (like base_cleanup stuff) - 
+       * okay to do this since drms_free_env() knows what to do in a client environment. 
+       */
       if (abort_flag) drms_abort (drms_env);
       else drms_close (drms_env, DRMS_INSERT_RECORD);
    }
@@ -271,13 +275,6 @@ int JSOCMAIN_Term(int dolog, int verbose, pid_t drms_server_pid, pid_t tee_pid, 
    }
 
    cmdparams_freeall (&cmdparams);
-
-   /* Terminate other global things. */
-   drms_keymap_term();
-   drms_keyword_term();
-   drms_protocol_term();
-   drms_defs_term();
-   drms_time_term();
 
 #ifdef DEBUG_MEM
    xmem_leakreport ();

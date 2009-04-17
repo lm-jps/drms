@@ -176,6 +176,9 @@ void drms_free_env (DRMS_Env_t *env, int final) {
     }
     free (env);
   }
+
+  /* tell DRMS we're terminating */
+  drms_term();
 }
 
 			/*  estimate the size of a storage unit from series  */

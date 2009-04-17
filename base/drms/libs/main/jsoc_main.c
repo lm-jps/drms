@@ -541,14 +541,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   }
 #endif
 
-  drms_free_env(drms_env, 1);
-
-  /* Terminate other global things. */
-  drms_keymap_term();
-  drms_keyword_term();
-  drms_protocol_term();
-  drms_defs_term();
-  drms_time_term();
+  drms_free_env(drms_env, 1); 
 
   /* Free cmd-params (valgrind reports this - let's just clean up so it doesn't show up on 
    * valgrind's radar). */

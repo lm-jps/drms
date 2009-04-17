@@ -86,5 +86,13 @@ static inline void drms_make_hashkey(char *hashkey, const char *name,
   sprintf(hashkey, "%s_%020lld",name,num);
 }
 
-
+static inline void drms_term()
+{
+   base_term();
+   drms_keymap_term();
+   drms_keyword_term();
+   drms_protocol_term();
+   drms_defs_term();
+   drms_time_term();
+}
 #endif

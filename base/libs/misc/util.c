@@ -1,6 +1,6 @@
-#if defined(__linux__) && __linux__
-#define _GNU_SOURCE
-#endif /* LINUX */
+//#if defined(__linux__) && __linux__
+//#define _GNU_SOURCE
+//#endif /* LINUX */
 #include "jsoc.h"
 #include <string.h>
 #include <stdlib.h>
@@ -16,11 +16,30 @@
 #include "util.h"
 #include "xassert.h"
 #include "xmem.h"
+#include "hcontainer.h"
 
 #define ISUPPER(X) (X >= 0x41 && X <= 0x5A)
 #define ISLOWER(X) (X >= 0x61 && X <= 0x7A)
 #define ISDIGIT(X) (X >= 0x30 && X <= 0x39)
 #define DRMS_MAXNAMELEN 32
+
+char *kFITSRESERVED[] =
+{
+   "SIMPLE",
+   "EXTEND",
+   "BZERO",
+   "BSCALE",
+   "BLANK",
+   "BITPIX",
+   "NAXIS",
+   "COMMENT",
+   "HISTORY",
+   "END",
+   ""
+};
+
+HContainer_t *gCleanup = NULL;
+HContainer_t *gReservedFits = NULL;
 
 typedef enum
 {
@@ -53,7 +72,7 @@ void strtolower(char *str)
   int n,i;
   n= strlen(str);
   for (i=0;i<n;i++)
-    str[i] = tolower(str[i]);
+    str[i] = (char)tolower(str[i]);
 }
 
 void strtoupper(char *str)
@@ -61,7 +80,7 @@ void strtoupper(char *str)
   int n,i;
   n= strlen(str);
   for (i=0;i<n;i++)
-    str[i] = toupper(str[i]);
+    str[i] = (char)toupper(str[i]);
 }
 
 /* Always NULL-terminates dst */
@@ -216,7 +235,18 @@ int copyfile(const char *inputfile, const char *outputfile)
     return 0;
 }
 
-int IsValidFitsKeyName(const char *fitsName)
+static void FreeReservedFits(void *data)
+{
+   if (gReservedFits != (HContainer_t *)data)
+   {
+      fprintf(stderr, "Unexpected argument to FreeReservedFits(); bailing.\n");
+      return;
+   }
+
+   hcon_destroy(&gReservedFits);
+}
+
+int FitsKeyNameValidation(const char *fitsName)
 {
    int error = 0;
    KwCharState_t state = kKwCharNew;
@@ -230,36 +260,97 @@ int IsValidFitsKeyName(const char *fitsName)
    }
    else
    {
-      while (*pc != 0 && !error)
+      /* Disallow FITS reserved keywords - simple, extend, bzero, bscale, blank, bitpix, naxis, naxisN, comment, history, end */
+      if (!gReservedFits)
       {
-	 switch (state)
-	 {
-	    case kKwCharError:
-	      error = 1;
-	      break;
-	    case kKwCharNew:
-	      if (*pc == '-' ||
-		  *pc == '_' ||
-		  ISUPPER(*pc) ||
-		  ISDIGIT(*pc))
-	      {
-		 state = kKwCharNew;
-		 pc++;
-	      }
-	      else
-	      {
-		 state = kKwCharError;
-	      }
-	      break;
-	    default:
-	      state = kKwCharError;
-	 }
+         char bogusval = 'A';
+         int i = 0;
+
+         gReservedFits = hcon_create(1, 128, NULL, NULL, NULL, NULL, 0);
+         while (*(kFITSRESERVED[i]) != '\0')
+         {
+            hcon_insert(gReservedFits, kFITSRESERVED[i], &bogusval);
+            i++;
+         }
+
+         /* Register for clean up (also in the misc library) */
+         BASE_Cleanup_t cu;
+         cu.item = gReservedFits;
+         cu.free = FreeReservedFits;
+         base_cleanup_register("reservedfitskws", &cu);
+      }
+
+      if (gReservedFits)
+      {
+         char *tmp = strdup(fitsName);
+         char *pch = NULL;
+         char *endptr = NULL;
+         char *naxis = "NAXIS";
+         int len = strlen(naxis);
+         int theint;
+
+         strtoupper(tmp);
+
+         if (strncmp(tmp, naxis, len) == 0)
+         {
+            pch = tmp + len;
+
+            if (*pch)
+            {
+               theint = (int)strtol(pch, &endptr, 10);
+               if (endptr == pch + strlen(pch))
+               {
+                  /* the entire string after NAXIS was an integer */
+                  if (theint > 0 && theint <= 999)
+                  {
+                     /* fitsName is a something we can't export */
+                     error = 2;
+                  }
+               }
+            }
+         }
+
+         if (hcon_lookup(gReservedFits, tmp))
+         {
+            error = 2;
+         }
+
+         free(tmp);
+      }
+ 
+      if (!error)
+      {
+         while (*pc != 0 && !error)
+         {
+            switch (state)
+            {
+               case kKwCharError:
+                 error = 2;
+                 break;
+               case kKwCharNew:
+                 if (*pc == '-' ||
+                     *pc == '_' ||
+                     ISUPPER(*pc) ||
+                     ISDIGIT(*pc))
+                 {
+                    state = kKwCharNew;
+                    pc++;
+                 }
+                 else
+                 {
+                    state = kKwCharError;
+                 }
+                 break;
+               default:
+                 state = kKwCharError;
+            }
+         }
       }
    }
 
    if (*pc != 0) 
    {
-      error = 1;
+      error = 3;
    }
 
    if (nameC)
@@ -267,7 +358,7 @@ int IsValidFitsKeyName(const char *fitsName)
       free(nameC);
    }
 
-   return !error;
+   return error;
 }
 
 /* Phil's scheme for arbitrary fits names. */
@@ -290,7 +381,7 @@ int GenerateFitsKeyName(const char *drmsName, char *fitsName, int size)
 	 }
 	 else if (*pC >= 97 && *pC <= 122)
 	 {
-	    fitsName[nch] = toupper(*pC);
+	    fitsName[nch] = (char)toupper(*pC);
 	    nch++;
 	 }
 
@@ -624,4 +715,83 @@ size_t CopyFile(const char *src, const char *dst)
    }
 
    return nbytesTotal;
+}
+
+void base_cleanup_init()
+{
+   gCleanup = hcon_create(sizeof(BASE_Cleanup_t), 128, NULL, NULL, NULL, NULL, 0);
+}
+
+int base_cleanup_register(const char *key, BASE_Cleanup_t *cu)
+{
+   int error = 0;
+
+   if (!gCleanup)
+   {
+      base_cleanup_init();
+   }
+
+   if (gCleanup)
+   {
+      if (hcon_lookup(gCleanup, key))
+      {
+         /* already exists */
+         fprintf(stderr, "base_cleanup_register(): cannot register '%s' - already exists.\n", key);
+         error = 1;
+      }
+      else
+      {
+         hcon_insert(gCleanup, key, cu);
+      }
+   }
+
+   return error;
+}
+
+int base_cleanup_go(const char *explicit)
+{
+   int error = 0;
+   BASE_Cleanup_t *cu = NULL;
+
+   if (gCleanup)
+   {
+      if (explicit && *explicit)
+      {
+         cu = hcon_lookup(gCleanup, explicit);
+
+         if (cu)
+         {
+            (*(cu->free))(cu->item);
+         }
+         else
+         {
+            error = 1;
+         }
+      }
+      else
+      {
+         /* clean all up */
+         HIterator_t *hiter = hiter_create(gCleanup);
+
+         while ((cu = hiter_getnext(hiter)) != NULL)
+         {
+            (*(cu->free))(cu->item);
+         }
+      }
+   }
+
+   return error;
+}
+
+void base_cleanup_term()
+{
+   if (gCleanup)
+   {
+      hcon_destroy(&gCleanup);
+   }
+}
+
+void base_term()
+{
+   base_cleanup_go("reservedfitskws");
 }

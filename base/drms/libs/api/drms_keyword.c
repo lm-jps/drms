@@ -1296,6 +1296,7 @@ int drms_keyword_getmappedextname(DRMS_Keyword_t *key,
 {
    int success = 0;
    const char *potential = NULL;
+   int vstat = 0;
 
    /* 1 - Try KeyMap. */
    if (map != NULL)
@@ -1346,12 +1347,17 @@ int drms_keyword_getmappedextname(DRMS_Keyword_t *key,
 		  {
 		     memcpy(pot, pFitsName + 1, len - 2);
 		     pot[len - 2] = '\0';
+                     vstat = FitsKeyNameValidation(pot);
 
-		     if (IsValidFitsKeyName(pot))
+		     if (vstat == 0)
 		     {
 			strcpy(nameOut, pot);
 			success = 1;
 		     }
+                     else if (vstat == 2)
+                     {
+                        fprintf(stderr, "FITS keyword name '%s' is reserved.\n", pot);
+                     }
 
 		     free(pot);
 		  }
@@ -1365,11 +1371,16 @@ int drms_keyword_getmappedextname(DRMS_Keyword_t *key,
       /* 2 - Try DRMS name. */
       if (!success)
       {
-	 if (IsValidFitsKeyName(key->info->name))
+         vstat = FitsKeyNameValidation(key->info->name);
+	 if (vstat == 0)
 	 {
 	    strcpy(nameOut, key->info->name);
 	    success = 1;
 	 }
+         else if (vstat == 2)
+         {
+            fprintf(stderr, "FITS keyword name '%s' is reserved.\n", key->info->name);
+         }
       }
 
       /* 3 - Use default rule. */

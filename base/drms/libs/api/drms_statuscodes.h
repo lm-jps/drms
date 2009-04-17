@@ -112,6 +112,7 @@
 #define DRMS_ERROR_RECORDSETSUBSET  (-10066)
 #define DRMS_ERROR_NOSEGMENT        (-10067)
 #define DRMS_ERROR_REMOTESUMSMASTER (-10068)
+#define DRMS_ERROR_RESERVEDFITSKW   (-10069)
 
 /* not errors, but status codes */
 #define DRMS_CHUNKS_NOMORERECS       (-20000)
