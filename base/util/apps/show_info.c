@@ -1454,7 +1454,7 @@ int DoIt(void)
       printf("%d records found, no other information requested\n", nrecs);
       break;
       }
-    if (!keyword_list && (show_recnum || show_sunum || show_recordspec || show_online ||
+    if (!keyword_list && (show_recnum || show_sunum || show_recordspec || show_online || show_session ||
 		show_retention || show_archive || show_size || nkeys || nsegs || nlinks || want_path))
       printf ("\n");
     }
