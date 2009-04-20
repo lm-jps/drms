@@ -395,7 +395,8 @@ KEY *infodo_1(KEY *params)
   if(!(status=SUMLIB_InfoGet(sunum, &retlist))) {
     if(!(set_client_handle(RESPPROG, (uint32_t)uid))) { /*set up for response*/
       freekeylist(&retlist);
-      rinfo = 1;  /* give err status back to original caller */
+      /*rinfo = 1;  /* give err status back to original caller */
+      rinfo = SUM_RESPPROG_ERR;
       send_ack();
       return((KEY *)1);  /* error. nothing to be sent */
     }
@@ -404,7 +405,9 @@ KEY *infodo_1(KEY *params)
     setkey_int(&retlist, "STATUS", 0);   /* give success back to caller */
     return(retlist);		/* return the ans now */
   }
-  rinfo = status;		/* ret err code back to caller */
+  rinfo = status;		/* ret err code 1 back to caller */
+  if(!drmssite_sunum_is_local(sunum))
+    rinfo = SUM_SUNUM_NOT_LOCAL; // else this error code 
   send_ack();
   return((KEY *)1);		/* nothing will be sent later */
 }
