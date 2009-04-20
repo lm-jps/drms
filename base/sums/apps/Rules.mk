@@ -63,21 +63,25 @@ BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main3 main4 main5 sumget tapeonoff 
 
 #TGT_$(d)	:= $(BINTGT_$(d)) $(SUMSVC_$(d)) $(XSUMSVC_$(d)) $(TARC_$(d)) $(TARCINFO_$(d))
 
-TGT_$(d)	:= $(BINTGT_$(d)) $(SUMSVC_$(d)) $(XSUMSVC_$(d)) $(TAPESVC_$(d)) $(TARC_$(d)) $(TARCINFO_$(d))
+#TGT_$(d)	:= $(BINTGT_$(d)) $(SUMSVC_$(d)) $(XSUMSVC_$(d)) $(TAPESVC_$(d)) $(TARC_$(d)) $(TARCINFO_$(d))
+TGT_$(d)	:= $(BINTGT_$(d)) $(TAPESVC_$(d)) $(TARC_$(d)) $(TARCINFO_$(d))
 
-SUMS_BIN	:= $(SUMS_BIN) $(TGT_$(d))
+#SUMS_BIN	:= $(SUMS_BIN) $(TGT_$(d))
+SUMS_BIN	:= $(SUMS_BIN) $(TGT_$(d)) $(SUMSVC_$(d)) $(XSUMSVC_$(d))
 
-OBJ_$(d)	:= $(sum_svc_obj_$(d)) $(tape_svc_obj_$(d)) $(tapearc_obj_$(d)) $(TGT_$(d):%=%.o) 
+OBJ_$(d)	:= $(sum_svc_obj_$(d)) $(tape_svc_obj_$(d)) $(tapearc_obj_$(d)) $(TGT_$(d):%=%.o) $(SUMSVC_$(d):%=%.o) $(XSUMSVC_$(d):%=%.o)
 
 DEP_$(d)	:= $(OBJ_$(d):%=%.d)
 
-CLEAN		:= $(CLEAN) $(OBJ_$(d)) $(TGT_$(d)) $(DEP_$(d)) 
+CLEAN		:= $(CLEAN) $(OBJ_$(d)) $(TGT_$(d)) $(DEP_$(d)) $(SUMSVC_$(d)) $(XSUMSVC_$(d)) 
 
-S_$(d)		:= $(notdir $(TGT_$(d)))
+#S_$(d)		:= $(notdir $(TGT_$(d)))
+S_$(d)		:= $(notdir $(TGT_$(d)) $(SUMSVC_$(d)) $(XSUMSVC_$(d)))
 
 # Local rules
 $(OBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
 $(OBJ_$(d)):	CF_TGT := $(CF_TGT_$(d))
+$(OBJ_$(d)):	base/libs/defs/libdefsclient.a base/libs/db/client/libdbclient.a base/libs/misc/libmisc.a base/libs/dstruct/libdstruct.a
 
 # Special rules for building driveX_svc.o, X=0,1,2,3 from from driven_svc.c
 $(d)/drive0_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_0
@@ -106,8 +110,9 @@ $(d)/robot%_svc.o:	$(d)/robotn_svc.c
 $(filter-out $(d)/drive%_svc.o $(d)/robot%_svc.o, $(OBJ_$(d))):	%.o:	%.c
 			$(SUMSCOMP)
 
-$(XSUMSVC_$(d)):	$(sum_svc_obj_$(d))
-$(SUMSVC_$(d)):		$(sum_svc_obj_$(d))
+#$(XSUMSVC_$(d)):	$(sum_svc_obj_$(d)) 
+#$(SUMSVC_$(d)):	$(sum_svc_obj_$(d))
+
 $(TAPESVC_$(d)):	$(tape_svc_obj_$(d))
 $(TARC_$(d)):		$(tapearc_obj_$(d))
 $(TARCINFO_$(d)):	$(tapearc_obj_$(d))
@@ -122,8 +127,14 @@ ifeq ($(SUMSLINK), $(GCC_LINK))
 SUMSICCLIBS_$(d)	:= 
 endif
 
+
+$(SUMSVC_$(d)) $(XSUMSVC_$(d)):	LL_TGT :=  $(LIBSUM) $(LIBSUMSAPI) $(SUMSICCLIBS_$(d)) $(LL_TGT) $(LL_TGT_$(d))
+$(SUMSVC_$(d)) $(XSUMSVC_$(d)):	%:	%.o $(sum_svc_obj_$(d)) $(LIBSUM) $(LIBSUMSAPI) base/libs/defs/libdefsclient.a base/libs/db/client/libdbclient.a base/libs/misc/libmisc.a base/libs/dstruct/libdstruct.a
+			$(SUMSLINK)
+			$(SLBIN)
+
 $(TGT_$(d)):		LL_TGT :=  $(LIBSUM) $(LIBSUMSAPI) $(SUMSICCLIBS_$(d)) $(LL_TGT) $(LL_TGT_$(d))
-$(TGT_$(d)):	%:	%.o $(LIBSUM) $(LIBSUMSAPI) $(LIBMISC)
+$(TGT_$(d)):	%:	%.o $(LIBSUM) $(LIBSUMSAPI) base/libs/misc/libmisc.a base/libs/dstruct/libdstruct.a
 			$(SUMSLINK)
 			$(SLBIN)
 
