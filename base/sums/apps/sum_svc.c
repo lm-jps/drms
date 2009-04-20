@@ -206,7 +206,7 @@ void setup()
 {
   FILE *fplog;
   int tpid, i;
-  char *cptr;
+  //char *cptr;
   char lfile[MAX_STR], acmd[MAX_STR], line[MAX_STR];
 
   //when change name of dcs2 to dcs1 we found out you have to use localhost
@@ -261,10 +261,15 @@ int main(int argc, char *argv[])
   pid_t pid;
   char dsvcname[80];
   char *args[5], pgport[32];
+  char hostn[80];
+  char *cptr;
 
   get_cmd(argc, argv);
   printf("\nPlease wait for sum_svc and tape inventory to initialize...\n");
   setup();
+  gethostname(hostn, 80);
+  cptr = index(hostn, '.');     // must be short form
+  if(cptr) *cptr = (char)NULL;
 
         /* register for client API routines to talk to us */
 	(void) pmap_unset(SUMPROG, SUMVERS);
@@ -279,16 +284,14 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-  if(strcmp(thishost, "dcs0") && strcmp(thishost, "dcs1") && strcmp(thishost, "dcs2") && strcmp(thishost, "dcs3")) {
+  if(strcmp(hostn, "dcs0") && strcmp(hostn, "dcs1") && strcmp(hostn, "dcs2") && strcmp(hostn, "dcs3") && strcmp(hostn, "n02")) {  //!!TEMP n02 for testing
     sprintf(pgport, SUMPGPORT);
     setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
   }
 
 #ifndef __LOCALIZED_DEFS__
-/* !!TEMP don't fork on lws or flap */
-char hostn[80];
-gethostname(hostn, 80);		//also dont fork on d00
-if(strcmp(thishost, "lws") && strcmp(thishost, "flap") && strcmp(hostn, "d00.Stanford.EDU")) {
+/* !!TEMP don't fork on lws or flap, etc. which have test SUMS */
+if(strcmp(hostn, "lws") && strcmp(hostn, "flap") && strcmp(hostn, "d00") && strcmp(hostn, "n02")) {
   if((pid = fork()) < 0) {
     write_log("***Can't fork(). errno=%d\n", errno);
     exit(1);
@@ -386,7 +389,7 @@ if(strcmp(thishost, "lws") && strcmp(thishost, "flap") && strcmp(hostn, "d00.Sta
   }
 
 #ifndef __LOCALIZED_DEFS__
-if(strcmp(thishost, "lws") && strcmp(thishost, "n00") && strcmp(hostn, "d00.Stanford.EDU")) { 
+if(strcmp(hostn, "lws") && strcmp(hostn, "n00") && strcmp(hostn, "d00") && strcmp(hostn, "n02")) { 
   /* Create client handle used for calling the tape_svc */
   sleep(3);			/* give time to start */
   clnttape = clnt_create(thishost, TAPEPROG, TAPEVERS, "tcp");
