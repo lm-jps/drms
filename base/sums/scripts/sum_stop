@@ -136,9 +136,9 @@ while ($_ = shift(@ps_prod)) {
   }
 }
 
-print "Removing lock file /usr/local/logs/soc/NOTAPEARC\n";
-print LOG "Removing lock file /usr/local/logs/soc/NOTAPEARC\n";
-`/bin/rm -f /usr/local/logs/soc/NOTAPEARC`;
+# print "Removing lock file /usr/local/logs/soc/NOTAPEARC\n";
+# print LOG "Removing lock file /usr/local/logs/soc/NOTAPEARC\n";
+# `/bin/rm -f /usr/local/logs/soc/NOTAPEARC`;
 
 print "SUM Stop Complete\n";
 print LOG "SUM Stop Complete\n";
