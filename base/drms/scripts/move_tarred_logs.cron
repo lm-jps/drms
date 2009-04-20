@@ -1,0 +1,210 @@
+#!/usr/bin/expect
+# FILENAME              : move_slony_logs.cron
+#
+#This routine is run by the cron daemon on server to automatically 
+#transfer received files from hmidb2 (LOCAL(dirlist)) to j0 DATASERVER(dir), 
+# and also move them to a "log_archive" type directory (LOCAL(processed)).
+#
+#File types moved & SCP'd are : *r.gz 
+#
+#
+#Author: Jennifer Spencer
+#Date:   January 9, 2009
+#
+#Update: January 23, 2009
+#	Move files to j0:/scr21/jennifer/slony_logs/igor for high-speed SCP pickup
+#	Leave room for using the HPN-SCP protocols
+
+log_user 0
+###############################GLOBAL VARIABLES#############################
+set DATASERVER(server)	"j0";		#Network name of server.
+set DATASERVER(user)	"jennifer";	#User name on data server.
+set DATASERVER(prompt)  "$DATASERVER(user)@$DATASERVER(server):";
+set DATASERVER(handle)  0;			#Child process handle.
+#set DATASERVER(pass)    "passphrase";   #Not recommended! Insecure handling.
+set DATASERVER(dir)	"scr21/jennifer/slony_logs/igor";	#Dir to put subdirs.
+set CR "\r"
+
+set LOCAL(dirlist)	"igor";	#List of directories to search.
+set LOCAL(server)	"hmidb2";		#Name of server we run on.
+set LOCAL(user)		"postgres";			#Name of user on server.
+set LOCAL(home)		"/c/slony_logs";		#Root dir for tdp.cron.
+
+set DEBUG 0
+set CHECKONLY 0
+
+set lcLine [string toupper $argv];         #Make upper-case copy of line.
+set tmp [lsearch $lcLine "-DEBUG"]
+if {$tmp > -1} {
+puts "In debug mode."
+   log_user 1
+   set LOCAL(user)	"jennifer";
+   set LOCAL(server)	"j0";
+   set LOCAL(home)      "scr21/jennifer/slony_logs";       #Root dir for tdp.cron.
+   set DEBUG 1
+   set argv [lreplace $argv $tmp $tmp]
+}
+
+#set LOCAL(processed)    "$DATASERVER(prompt)/$DATASERVER(dir)"
+set LOCAL(processed)    "$LOCAL(home)/log_archive";	#Loc for processed files
+set LOCAL(prompt)	"\$LOCAL(user)@$LOCAL(server):";  #Response prompt
+set LOCAL(notify_list)  "jennifer@sun.stanford.edu"
+#########################################################################
+#Get the ssh agent 
+source /var/lib/pgsql/.ssh-agent.csh
+############################### SUB ROUTINES #############################
+#Output error messages.
+proc MailMsg { text } {
+   global LOCAL
+
+   set mailfile "/tmp/slony_auto.mail";       #Tmp file for mail message.
+
+   if [catch {open $mailfile "w"} hMail] {      #Open the tmp file.
+      puts "Couldn't open $mailfile file to send mail."
+      exit
+   }
+   puts $hMail "$text";                         #Write message to tmp file.
+   close $hMail;                                #Close tmp file.
+
+   #Send the mail.
+   catch {exec elm -s "Automated Import" $LOCAL(notify_list) < $mailfile}
+   catch {exec rm $mailfile};                   #Remove tmp file.
+
+   puts "MailMsg:  $text";                      #Echo message to screen.
+}
+
+
+proc GetTime { } {	#Uses access time to return current time as int.
+   global LOCAL 
+
+   #This pings access on this file so we can use it as a measuring stick.
+   catch { exec touch $LOCAL(processed) };	#modifies atime.
+
+   #Later we use this to say if a file has been idle more than 1 minute, 
+   #we want to initialize its import.
+   set LOCAL(cur_time) [expr [file atime $LOCAL(processed)] - 60]
+}
+
+proc LookforFiles { pcDIR } {
+   global LOCAL DATASERVER CR
+
+   #Get list of files in directory.
+   if { [ catch { set lclFiles [exec ls $LOCAL(home)/$pcDIR/ | sort -r]}]} {
+      puts "No new files to process in $LOCAL(home)/$pcDIR."
+      return 
+   }
+
+   set lclTmp ""
+
+   foreach file $lclFiles {
+      set file_lc [string tolower $file]
+      set tail [string range $file_lc [expr [string length $file_lc] - 4] end]
+      if {([string range $file_lc 0 5] == "slony_" && $tail == "r.gz") } {
+         lappend lclTmp $file
+      }
+   }
+
+   set lclFiles $lclTmp
+
+   if {[llength $lclFiles]==0} {			#No files to process.
+      puts "No new files to process in $LOCAL(home)/$pcDIR."
+      return 
+   }
+
+puts ">$lclFiles<"
+
+   foreach lcFile $lclFiles {	#Loop through list of files.
+
+      GetTime;			#Update current time timestamp.
+
+      if {[file mtime $LOCAL(home)/$pcDIR/$lcFile] < $LOCAL(cur_time)} {
+         puts "  File is mature."
+
+         #Get last element of path/filename (actual file name)
+         set lcFile [split $lcFile "/"]
+         set tmp [expr [llength $lcFile] - 1]
+         set lcFile [lindex $lcFile $tmp]
+   
+#	Commented out the SCP line - waiting for further instructions...
+       spawn scp $LOCAL(home)/$pcDIR/$lcFile $DATASERVER(prompt)/$DATASERVER(dir)/$lcFile
+#       spawn scp $LOCAL(home)/$pcDIR/$lcFile $DATASERVER(user)@$DATASERVER(server):$DATASERVER(dir)/$pcDIR/$lcFile
+#	spawn cp $LOCAL(home)/$pcDIR/$lcFile $DATASERVER(dir)/$pcDIR/$lcFile
+         set timeout 300
+   
+         for {set i 0} {$i < 2} {incr i} {		#loop if needed.
+            puts "Waiting for SCP to complete."
+	    expect {
+		timeout {puts "timed out"; exit}
+            }
+	    set i 4
+            #expect {
+	    #"Enter passphrase for key '/var/lib/pgsql/.ssh/id_rsa':" {
+            #   send "$DATASERVER(pass)$CR"
+            #} timeout {
+            #   MailMsg "Never finished SCPing $lcFile!"
+            #   exit
+            #} eof {
+            #   puts "Good exit."
+            #   set i 4
+	    #}
+            #}
+         }
+   
+         if {$i < 4} {
+#            MailMsg "Unexplained error in SCP for file $lcFile"
+	    MailMsg "Unexplained error in CP for file $lcFile"
+            exit
+         }
+   
+         catch {wait $spawn_id};		#Wait for SCP to finish.
+         catch {close $spawn_id};		#Close the process handle.
+
+         #We're done with the file.  Move it somewhere safe.
+         exec mv -f $LOCAL(home)/$pcDIR/$lcFile $LOCAL(processed)
+      } else {
+         puts " File is in transfer."
+      }
+   }
+}   
+   
+###############################      MAIN     #############################
+
+if {[llength $argv] > 0} {      #CODE TO SPECIFY ALTERNATE INPUT PATH.
+   set LOCAL(dirlist)   "[lindex $argv 0]";#User passed in a name.
+   set LOCAL(processed) "$LOCAL(home)/$LOCAL(dirlist)/log_archive";
+   set dir "$LOCAL(home)/$LOCAL(dirlist)"
+   if {![file exists $dir]} {  
+     if [catch {exec mkdir "$dir"}] {
+        puts "Error making directory $dir"
+        exit
+     }
+   }
+   if {![file exists $LOCAL(processed)]} {      #proc dir doesn't exist.  Make.
+     if [catch {exec mkdir $LOCAL(processed)}] {
+        puts "Error making directory $LOCAL(processed)"
+        exit
+     }
+   }
+}
+
+puts "Checking for new files."
+set pcProgram $argv0;			#Name of this program.
+set tmp [split $pcProgram "/"];		#Split filename by /s.
+set pcProgram [lindex $tmp [expr [llength $tmp] - 1]];	#True file name.
+
+if {$DEBUG} {
+   #Check if a sibling process is running.  If yes, abort.
+   if {[catch {set tmp [exec ps -aelf|grep $pcProgram|grep -v grep|wc -l]}]} {
+      set tmp 0
+   }
+   if {$tmp > 1} {
+      puts "Another instance of $pcProgram is running.  Aborting."
+      exit
+   }
+}
+
+foreach dir $LOCAL(dirlist) {
+   LookforFiles $dir
+}
+
+exit
