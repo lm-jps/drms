@@ -1,0 +1,255 @@
+#!/usr/bin/perl
+#
+#NOTE: DON'T CALL THIS BY HAND.
+#/home/production/cvs/JSOC/base/sums/scripts/sum_start_d02_auto
+#This is to start the sum_svc and related servers.
+#Only called by sumck.
+#Call with -M will not send mail notification.
+#
+$| = 1;                 #flush output as we go
+$ENV{'SUMSERVER'} = "d02";      #make sure we stay in this machine
+$DB = "jsoc_sums";	#the "real" db that production uses for sums
+#$DB = "jim";	#the "real" db that production uses for sums
+$DBDRMS = "jsoc_sums";	#the db use for drms (used by sum_pe_svc)
+$GREPPS = "388";	#grep for this in ps -ef
+#$GREPPS = "jim";
+$HOST = "d02.Stanford.EDU"; #where sum_svc runs
+
+$user = $ENV{'USER'};
+if($user ne "production") {
+  print "You must be user production to run\n";
+  exit;
+}
+$host = `hostname`;
+chomp($host);
+if($host ne $HOST) {
+  print "This can only be run on $HOST.\n";
+  exit;
+}
+$mailflg = 1;
+while ($ARGV[0] =~ /^-/) {
+  $_ = shift;
+  if (/^-M(.*)/) {
+    $mailflg = 0;
+  }
+  else {
+    print "Illegal switch\n";
+    exit;
+  }
+}
+
+$PID = getppid;
+$MLOGFILE = "/tmp/sum_start_mail_d02_auto.$PID";
+$LOGFILE = "/tmp/sum_start_d02_auto.$PID";
+open(LOG, ">$LOGFILE") || die "Can't open $LOGFILE: $!\n";
+open(MLOG, ">$MLOGFILE") || die "Can't open $MLOGFILE: $!\n";
+($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+$sec2 = sprintf("%02d", $sec);
+$min2 = sprintf("%02d", $min);
+$hour2 = sprintf("%02d", $hour);
+$mday2 = sprintf("%02d", $mday);
+$mon2 = sprintf("%02d", $mon+1);
+$year2 = sprintf("%02d", $year);
+$date = (1900 + $year).".".$mon2.".$mday2"._.$hour2.":$min2".":$sec2";
+print "sum_start_d02_auto at $date\n\n";
+print LOG "sum_start_d02_auto at $date\n\n";
+print MLOG "sum_start_d02_auto at $date\n";
+print MLOG "See $LOGFILE for more details\n";
+
+@ps_prod = `ps -ef | grep $GREPPS`;
+#print "The ps -ef for producttion is:\n@ps_prod\n";
+print LOG "The ps -ef for product is:\n@ps_prod\n";
+while($_ = shift(@ps_prod)) {
+  if(/^$GREPPS/) {	#do for all production processes
+    if(/sum_start_d02_auto/) {	#don't kill ourselves
+      next;
+    }
+    if(/sum_svc $DB/ || /sum_svc -o $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "sum_svc";
+    }
+    elsif(/tape_svc $DB/ || /tape_svc -o $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "tape_svc";
+    }
+    elsif(/drive0_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive0_svc";
+    }
+    elsif(/drive1_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive1_svc";
+    }
+    elsif(/drive2_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive2_svc";
+    }
+    elsif(/drive3_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive3_svc";
+    }
+    elsif(/drive4_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive4_svc";
+    }
+    elsif(/drive5_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive5_svc";
+    }
+    elsif(/drive6_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive6_svc";
+    }
+    elsif(/drive7_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive7_svc";
+    }
+    elsif(/drive8_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive8_svc";
+    }
+    elsif(/drive9_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive9_svc";
+    }
+    elsif(/drive10_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive10_svc";
+    }
+    elsif(/drive11_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive11_svc";
+    }
+    elsif(/robot0_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "robot0_svc";
+    }
+    elsif(/sum_rm $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "sum_rm";
+    }
+    elsif(/sum_pe_svc $DBDRMS/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "sum_pe_svc";
+    }
+    elsif(/ sumck/) {
+      if($sumck) {
+        ($a, $psid, $c) = split(/\s+/, $_);
+        $process = "sumck";
+      }
+    }
+    else {
+      next;
+    }
+    print "** NOTE: \"$process $DB\" still running\n";
+    print LOG "** NOTE: \"$process $DB\" still running\n";
+        if($mailflg) {
+          $cmd = "sum_stop_d02_auto";
+        }
+        else {
+          $cmd = "sum_stop_d02_auto -M";
+        }
+        if(system($cmd)) {
+          print "Error: failure on sum_stop_d02_auto\n";
+          exit;
+        }
+        #make sure nothing left running
+        @ps_prod = `ps -ef | grep $GREPPS`;
+        while($_ = shift(@ps_prod)) {
+          if(/^$GREPPS/) {	#do for all production processes
+            if(/sum_svc $DB/ || /sum_svc -o $DB/) {
+              print "Error: sum_svc $DB still running after sum_stop?\n";
+              exit;
+            }
+            elsif(/tape_svc $DB/ || /tape_svc -o $DB/) {
+              print "Error: tape_svc $DB still running after sum_stop?\n";
+              exit;
+            }
+            elsif(/drive0_svc $DB/) {
+              print "Error: drive0_svc $DB still running after sum_stop?\n";
+              exit;
+            }
+            elsif(/drive1_svc $DB/) {
+              print "Error: drive1_svc $DB still running after sum_stop?\n";
+              exit;
+            }
+            elsif(/drive2_svc $DB/) {
+              print "Error: drive2_svc $DB still running after sum_stop?\n";
+              exit;
+            }
+            elsif(/drive3_svc $DB/) {
+              print "Error: drive3_svc $DB still running after sum_stop?\n";
+              exit;
+            }
+            elsif(/drive4_svc $DB/) {
+              print "Error: drive4_svc $DB still running after sum_stop?\n";
+              exit;
+            }
+            elsif(/drive5_svc $DB/) {
+              print "Error: drive5_svc $DB still running after sum_stop?\n";
+              exit;
+            }
+            elsif(/drive6_svc $DB/) {
+              print "Error: drive6_svc $DB still running after sum_stop?\n";
+              exit;
+            }
+            elsif(/drive7_svc $DB/) {
+              print "Error: drive7_svc $DB still running after sum_stop?\n";
+              exit;
+            }
+            elsif(/drive8_svc $DB/) {
+              print "Error: drive8_svc $DB still running after sum_stop?\n";
+              exit;
+            }
+            elsif(/drive9_svc $DB/) {
+              print "Error: drive9_svc $DB still running after sum_stop?\n";
+              exit;
+            }
+            elsif(/drive10_svc $DB/) {
+              print "Error: drive10_svc $DB still running after sum_stop?\n";
+              exit;
+            }
+            elsif(/drive11_svc $DB/) {
+              print "Error: drive11_svc $DB still running after sum_stop?\n";
+              exit;
+            }
+            elsif(/robot0_svc $DB/) {
+              print "Error: robot0_svc $DB still running after sum_stop?\n";
+              exit;
+            }
+            elsif(/sum_rm $DB/) {
+              print "Error: sum_rm $DB still running after sum_stop?\n";
+              exit;
+            }
+            elsif(/sum_pe_svc $DBDRMS/) {
+              print "Error: sum_pe_svc $DBDRMS still running after sum_stop?\n";
+              exit;
+            }
+            else {
+              next;
+            }
+          }
+        }
+  }
+}
+        print "** Now starting: sum_svc $DB\n";
+        print LOG "** Now starting: sum_svc $DB\n";
+        $cmd = "sum_pe_svc $DBDRMS &";
+        if(system($cmd)) {
+          print "Error: failure on sum_pe_svc $DBDRMS\n";
+        }
+        $cmd = "sum_svc $DB &";
+        if(system($cmd)) {
+          print "Error: failure on sum_svc $DB\n";
+        }
+        print "SUM d02 auto Start Complete\n";
+        print LOG "SUM d02 auto Start Complete\n";
+        close(LOG);
+        close(MLOG);
+        $mail = "Mail -s \"SUM d02 auto Start Complete\"";
+        #$to = "sssc_crew\@solar2";
+        $to = "jim";
+        $cmd = "$mail $to < $MLOGFILE";
+        if($mailflg) { system $cmd; }
+        exit;
+
