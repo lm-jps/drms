@@ -3,7 +3,7 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S  $0 "$@"'
 #/home/production/cvs/JSOC/base/sums/scripts/sumck
 #This run periodically and sees if sum_svc is still running.
 #If not it will restart it.
-#(There have been sum_svc 
+#This is started by sum_start_d02
 #
 $| = 1;                 #flush output as we go
 $DB = "jsoc_sums";		#the "real" db that production uses
@@ -44,14 +44,14 @@ while(1) {
     }
   }
   if($found) {
-    sleep(300);
+    sleep(90);
   }
   else {
     $mail = "Mail -s \"sum_svc on d02 Not Found\"";
-    $cmd = "echo \"No sum_svc\" | $mail $SENDMAILTO";
+    $cmd = "echo \"No sum_svc. Will restart one...\" | $mail $SENDMAILTO";
     system $cmd;
     #now restart the sum_svc and all related stuff 
-    $cmd = "echo 'y'; echo '.'; echo '.'; echo 'n' | sum_start_d02 -M -X";
+    $cmd = "sum_start_d02_auto";
     system $cmd;
     sleep(5);
   }
