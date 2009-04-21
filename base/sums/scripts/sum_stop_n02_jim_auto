@@ -2,9 +2,9 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S  $0 "$@"'
     if 0;
 #
 #NOTE: DONT CALL THIS BY HAND. It is an auto script called
-#by sumck_n02_ji
+#by sumck_n02_jim
 #
-#/home/production/cvs/JSOC/base/sums/scripts/sum_stop_n02_jim
+#/home/production/cvs/JSOC/base/sums/scripts/sum_stop_n02_jim_auto
 #This is to stop the sum_svc and related servers on n02 for DB jim.
 #It is only called by sumck_n02_jim (via sum_start_n02_jim_auto) 
 #when it sees that sum_svc is
