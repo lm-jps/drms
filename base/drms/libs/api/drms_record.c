@@ -6743,12 +6743,13 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                fetchedrecs->ss_n = 1;
 // fprintf(stderr,"stage_records called\n");
                   stat = drms_stage_records(fetchedrecs, rs->cursor->retrieve,  rs->cursor->dontwait);
-                  if (stat != DRMS_SUCCESS)
+
+                  /* if  stat == DRMS_REMOTESUMS_TRYLATER, segment files might be available later. */
+                  if (stat != DRMS_SUCCESS && stat != DRMS_REMOTESUMS_TRYLATER)
                   {
-                     fprintf(stderr, "Cursor query '%s' record staging failure, status=%d", sqlquery, stat);
+                     fprintf(stderr, "Cursor query '%s' record staging failure, status=%d.\n", sqlquery, stat);
                      break;
                   }
-
                }
 
                /* Put the records into rs */
@@ -7002,10 +7003,14 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
 
 /* Returns next record in current chunk, unless no more records in current chunk.
  * In that case, open the next chunk and return the first record. */
-DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env, DRMS_RecordSet_t *rs, int *status)
+DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env, 
+                                        DRMS_RecordSet_t *rs, 
+                                        int *drmsstatus, 
+                                        DRMS_RecChunking_t *chunkstat)
 {
    DRMS_Record_t *ret = NULL;
    int stat = DRMS_SUCCESS;
+   DRMS_RecChunking_t cstat = kRecChunking_None;
    int neednewchunk = -1;
 
    if (rs && rs->cursor)
@@ -7019,7 +7024,7 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env, DRMS_RecordSet_t *rs, i
          {
             /* no chunks in memory, but last chunk in memory was the last chunk - 
              * user has fetched all records */
-            stat = DRMS_CHUNKS_NOMORERECS;
+            cstat = kRecChunking_NoMoreRecs;
          }
          else
          {
@@ -7034,7 +7039,7 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env, DRMS_RecordSet_t *rs, i
          if (rs->cursor->currentrec + rs->cursor->chunksize * rs->cursor->currentchunk == rs->n)
          {
             /* Last record in entire recordset was read last time */
-            stat = DRMS_CHUNKS_NOMORERECS;
+            cstat = kRecChunking_NoMoreRecs;
             drms_close_recordchunk(rs);
          }
          else if (rs->cursor->currentrec == rs->cursor->chunksize)
@@ -7043,11 +7048,13 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env, DRMS_RecordSet_t *rs, i
             neednewchunk = (int)kRSChunk_Next;
          }
       }
-      
+
       if (neednewchunk >= 0)
       {
          drms_open_recordchunk(env, rs, (DRMS_RecSetCursorSeek_t)neednewchunk, 0, &stat);
-         if (stat != DRMS_SUCCESS)
+         /* if stat == DRMS_REMOTESUMS_TRYLATER, record will be present, but segment files
+          * may not be online yet. */
+         if (stat != DRMS_SUCCESS && stat != DRMS_REMOTESUMS_TRYLATER)
          {
             fprintf(stderr, 
                     "Error retrieving record chunk '%d'.\n", 
@@ -7056,11 +7063,11 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env, DRMS_RecordSet_t *rs, i
          else
          {
             rs->cursor->currentrec++; /* currentrec in a new chunk is -1 */
-            stat = DRMS_CHUNKS_NEWCHUNK;
+            cstat = kRecChunking_NewChunk;
          }
       }
 
-      if ((stat == DRMS_SUCCESS || stat == DRMS_CHUNKS_NEWCHUNK) && rs->cursor->currentrec >= 0)
+      if (stat == DRMS_SUCCESS && rs->cursor->currentrec >= 0)
       {
 	 /* Now, get the next record */
 	 ret = rs->records[rs->cursor->currentchunk * rs->cursor->chunksize + 
@@ -7068,11 +7075,11 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env, DRMS_RecordSet_t *rs, i
          
          if (rs->cursor->currentchunk * rs->cursor->chunksize + rs->cursor->currentrec == rs->n - 1)
          {
-            stat = DRMS_CHUNKS_LASTINRS;  
+            cstat = kRecChunking_LastInRS;
          }
          else if (rs->cursor->currentrec == rs->cursor->chunksize - 1)
          {
-            stat = DRMS_CHUNKS_LASTINCHUNK;
+            cstat = kRecChunking_LastInChunk;
          }
       }
    }
@@ -7082,9 +7089,14 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env, DRMS_RecordSet_t *rs, i
       fprintf(stderr, "Error in drms_recordset_fetchnext(): empty recordset or non-chunked record set provided.\n");
    }
 
-   if (status)
+   if (drmsstatus)
    {
-      *status = stat;
+      *drmsstatus = stat;
+   }
+
+   if (chunkstat)
+   {
+      *chunkstat = cstat;
    }
 
    return ret;
@@ -7093,14 +7105,19 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env, DRMS_RecordSet_t *rs, i
 /* If setnum != NULL, then the fetch is relative to the first record of the 
  * record subset specified by *setnum, otherwise, it is relative to the 
  * first record of all records in the set. */
-DRMS_Record_t *drms_recordset_fetchnextinset(DRMS_Env_t *env, DRMS_RecordSet_t *rs, int *setnum, int *status)
+DRMS_Record_t *drms_recordset_fetchnextinset(DRMS_Env_t *env, 
+                                             DRMS_RecordSet_t *rs, 
+                                             int *setnum, 
+                                             int *status,
+                                             DRMS_RecChunking_t *chunkstat)
 {
    int stat = DRMS_SUCCESS;
+   DRMS_RecChunking_t cstat = kRecChunking_None;
    DRMS_Record_t *ret = NULL;
 
    if (!setnum)
    {
-      ret = drms_recordset_fetchnext(env, rs, &stat);
+      ret = drms_recordset_fetchnext(env, rs, &stat, &cstat);
    }
    else
    {
@@ -7135,7 +7152,7 @@ DRMS_Record_t *drms_recordset_fetchnextinset(DRMS_Env_t *env, DRMS_RecordSet_t *
       else
       {
 	 /* within the recordset subset, get the next one */
-	 ret = drms_recordset_fetchnext(env, rs, &stat);
+	 ret = drms_recordset_fetchnext(env, rs, &stat, &cstat);
 	 if (!stat)
 	 {
 	    (rs->ss_currentrecs[*setnum])++;
@@ -7152,6 +7169,11 @@ DRMS_Record_t *drms_recordset_fetchnextinset(DRMS_Env_t *env, DRMS_RecordSet_t *
    if (status)
    {
       *status = stat;
+   }
+
+   if (chunkstat)
+   {
+      *chunkstat = cstat;
    }
 
    return ret;

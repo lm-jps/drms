@@ -114,12 +114,14 @@
 #define DRMS_ERROR_REMOTESUMSMASTER (-10068)
 #define DRMS_ERROR_RESERVEDFITSKW   (-10069)
 
-/* not errors, but status codes */
-#define DRMS_CHUNKS_NOMORERECS       (-20000)
+/* record chunking - not errors, but status codes */
+
 #define DRMS_CHUNKS_NEWCHUNK         (-20001)
 #define DRMS_CHUNKS_LASTINCHUNK      (-20002)
 #define DRMS_CHUNKS_LASTINRS         (-20003)
-#define DRMS_REMOTESUMS_TRYLATER     (-20004)
+
+/* remote sums - not errors, but status codes*/
+#define DRMS_REMOTESUMS_TRYLATER     (-30000)
 
 /* Warnings */
 #define DRMS_WARNING_BADBLANK         (10000)

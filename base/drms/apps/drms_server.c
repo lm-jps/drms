@@ -172,6 +172,8 @@ create_series describe_series delete_series modify_series show_info
 #include <sched.h>
 #endif
 
+#include <poll.h>
+
 #define kCENVFILE "cenvfile"
 #define kSHENVFILE "shenvfile"
 #define kNOTSPECIFIED "notspecified"
@@ -277,6 +279,7 @@ int main (int argc, char *argv[]) {
   int abort = 1;
   int selfstart = 0;
   time_t now;
+  int infd[2];  /* child writes to this pipe, parent reads from it */
 
 #ifdef DEBUG
   xmem_config(1,1,1,1,1000000,1,0,0); 
@@ -366,6 +369,13 @@ int main (int argc, char *argv[]) {
      server to be started in a shell with out "&" */    
   if (fg == 0)
   {
+     /* create a pipe to which the child writes to signify that the dbase transaction 
+      * has successfully started */
+     char rbuf[128];
+     int childready = 0;
+
+     pipe(infd);
+
     if ((pid = fork()) == -1)
     {
       fprintf(stderr,"Fork system call failed, aborting\n");
@@ -373,11 +383,32 @@ int main (int argc, char *argv[]) {
     }
     else if (pid>0)
     {
-      /* If we get here then a child was successfully spawned.
-	 Exit from the parent process. */
-      return 0;
+       /* If we get here then a child was successfully spawned.
+          Exit from the parent process. */
+
+       close(infd[1]); /* close fd to write end of pipe (inside parent) */
+       
+       /* wait for child to successfully start a dbase transaction */
+       if (read(infd[0], rbuf, sizeof(rbuf)) > 0)
+       {
+          sscanf(rbuf, "%d", &childready);
+
+          if (childready)
+          {
+             return 0;
+          }
+          else
+          {
+             return 1;
+          }
+       }
+
+       return 1;
     }
+
+    close(infd[0]); /* close fd to read end of pipe (inside child) */
   }
+
   pid = getpid();
 
 
@@ -547,6 +578,14 @@ int main (int argc, char *argv[]) {
      }
   }
 
+  /* If forked and in child process, signal to parent that a dbase transaction started
+   * successfully. */
+  if (fg == 0)
+  {
+     /* parent will never get here if fg == 0 */
+     write(infd[1], "1", 1);
+  }
+
   for (;;) {
      /* on every iteration, see check for a shutdown - if not, continue, otherwise
       * halt.
@@ -615,66 +654,102 @@ int main (int argc, char *argv[]) {
 
      drms_unlock_server(env);
      
-
      /* accept new connection */
-    if ((clientsockfd = accept (sockfd, NULL, NULL)) < 0 ) {
-      if (errno == EINTR) continue;
-      else {
-	perror ("accept call failed.");
-	close (sockfd);
-	//Exit (1);
-        pthread_kill(env->signal_thread, SIGTERM);
-      }      
-    }
 
-		       /* Find out who just connected and print it on stdout */
-    client_size = sizeof (client);
-    if (getpeername (clientsockfd, (struct sockaddr *)&client, &client_size) == -1 ) {
-      perror ("getpeername call failed.");
-      continue;
-    }
+     /* Instead of calling accept(), a blocking call, directly, use poll() with a timeout 
+      * so that we don't block here.  Blocking here is bad since it prevents the
+      * shutdown detection code (in the for loop before the accept call) from 
+      * running, possibly leading to deadlock
+      */
+     struct pollfd fdinfo[1] = {{0}};
+     int res = 0;
 
-    if (drms_server_authenticate (clientsockfd, env, threadcounter) == 0) {
-      printf ("pid %d: Connection from %s:%d  accepted.\n", getpid(), 
-	  inet_ntoa (client.sin_addr), ntohs (client.sin_port));
-      threadcounter++;
-						/* Update status in database */
-      drms_lock_server (env);
-      env->clientcounter++;
-      drms_server_session_status (env, "running", env->clientcounter);
-      drms_unlock_server (env);
+     fdinfo[0].fd = sockfd;
+     fdinfo[0].events = POLLIN | POLLPRI;
 
-      XASSERT(tinfo = malloc (sizeof (DRMS_ThreadInfo_t)));
-      tinfo->env       = env;
-      tinfo->threadnum = threadcounter;
-      tinfo->sockfd    = clientsockfd;      
-      tinfo->noshare   = noshare;
-      /* Turn off Nagle's algorithm. Not recommended in general, but may
-	 improve performance in high-latency environments. */
-      if (nagleoff) {
-	nagleoff = 0;
-	if (setsockopt (clientsockfd,  IPPROTO_TCP, TCP_NODELAY,
-	    (char *)&nagleoff, sizeof (int)) < 0) {
-	  close (clientsockfd);
-	  continue;
-	}
-      }
- 			       /* Spawn a thread to deal with the connection */
-      if( (status = pthread_create (&thread, NULL, &drms_server_thread,
-          (void *) tinfo))) {
-	fprintf (stderr, "Thread creation failed: %d\n", status);          
-	close (clientsockfd);
-        drms_lock_server (env);
-        --(env->clientcounter);
-        drms_unlock_server (env);
-      }
-    } else {
-      fprintf (stderr, "pid %d: Connection from %s:%d denied. "
-          "Invalid username or password.\n", getpid(),
-	  inet_ntoa (client.sin_addr), ntohs (client.sin_port));  
-      close (clientsockfd);
-    }
-  }
+     res = poll(fdinfo, 1, 500);
+
+     if (res == -1)
+     {
+        /* error calling poll */
+        if (errno == EINTR) 
+        {
+           continue;
+        }
+        else 
+        {
+           perror ("poll call failed.");
+           close (sockfd);
+           pthread_kill(env->signal_thread, SIGTERM);
+        }      
+     }
+     else if (res == 0)
+     {
+        /* poll timed-out (no client tried to connect during while polling) */
+        continue;
+     }
+     else
+     {
+        /* some process wrote to the socket */
+        if ((clientsockfd = accept (sockfd, NULL, NULL)) < 0 ) {
+           if (errno == EINTR) continue;
+           else {
+              perror ("accept call failed.");
+              close (sockfd);
+              //Exit (1);
+              pthread_kill(env->signal_thread, SIGTERM);
+           }      
+        }
+
+        /* Find out who just connected and print it on stdout */
+        client_size = sizeof (client);
+        if (getpeername (clientsockfd, (struct sockaddr *)&client, &client_size) == -1 ) {
+           perror ("getpeername call failed.");
+           continue;
+        }
+
+        if (drms_server_authenticate (clientsockfd, env, threadcounter) == 0) {
+           printf ("pid %d: Connection from %s:%d  accepted.\n", getpid(), 
+                   inet_ntoa (client.sin_addr), ntohs (client.sin_port));
+           threadcounter++;
+           /* Update status in database */
+           drms_lock_server (env);
+           env->clientcounter++;
+           drms_server_session_status (env, "running", env->clientcounter);
+           drms_unlock_server (env);
+
+           XASSERT(tinfo = malloc (sizeof (DRMS_ThreadInfo_t)));
+           tinfo->env       = env;
+           tinfo->threadnum = threadcounter;
+           tinfo->sockfd    = clientsockfd;      
+           tinfo->noshare   = noshare;
+           /* Turn off Nagle's algorithm. Not recommended in general, but may
+              improve performance in high-latency environments. */
+           if (nagleoff) {
+              nagleoff = 0;
+              if (setsockopt (clientsockfd,  IPPROTO_TCP, TCP_NODELAY,
+                              (char *)&nagleoff, sizeof (int)) < 0) {
+                 close (clientsockfd);
+                 continue;
+              }
+           }
+           /* Spawn a thread to deal with the connection */
+           if( (status = pthread_create (&thread, NULL, &drms_server_thread,
+                                         (void *) tinfo))) {
+              fprintf (stderr, "Thread creation failed: %d\n", status);          
+              close (clientsockfd);
+              drms_lock_server (env);
+              --(env->clientcounter);
+              drms_unlock_server (env);
+           }
+        } else {
+           fprintf (stderr, "pid %d: Connection from %s:%d denied. "
+                    "Invalid username or password.\n", getpid(),
+                    inet_ntoa (client.sin_addr), ntohs (client.sin_port));  
+           close (clientsockfd);
+        }
+     }
+  } /* end for loop */
 
   /* we should get here ONLY if the signal_thread is terminating */
   drms_lock_server(env);

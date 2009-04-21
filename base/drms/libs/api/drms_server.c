@@ -1342,7 +1342,8 @@ int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn) {
   uint64_t *sunums = NULL;
   long long nsus = 127; /* leave one for the NULL terminator */
   long isu;
-  int drmsstatus = DRMS_SUCCESS;;
+  int drmsstatus = DRMS_SUCCESS;
+  DRMS_RecChunking_t cstat = kRecChunking_None;
 
   if (!env->sum_thread) {
     if((status = pthread_create(&env->sum_thread, NULL, &drms_sums_thread, 
@@ -1364,7 +1365,7 @@ int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn) {
      /* what are the SUNUMs? */
      sunums = malloc(sizeof(uint64_t) * (nsus + 1)); /* add an extra for potential null terminator */
 
-     while ((rec = drms_recordset_fetchnext(env, rs, &drmsstatus)) != NULL)
+     while ((rec = drms_recordset_fetchnext(env, rs, &drmsstatus, &cstat)) != NULL)
      {
         if (rec->sunum != -1)
         {

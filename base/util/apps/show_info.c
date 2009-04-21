@@ -545,6 +545,7 @@ int DoIt(void)
   {
   int need_header_printed=1;
   int status = 0;
+  DRMS_RecChunking_t cstat = kRecChunking_None;
   DRMS_RecordSet_t *recordset;
   DRMS_Record_t *rec;
   int first_rec, last_rec, nrecs, irec;
@@ -905,7 +906,24 @@ int DoIt(void)
     int col;
     if (max_recs == 0)
       {
-      rec = drms_recordset_fetchnext(drms_env, recordset, &status);
+      rec = drms_recordset_fetchnext(drms_env, recordset, &status, &cstat);
+      
+      if (want_path && status == DRMS_REMOTESUMS_TRYLATER)
+      {
+         /* The user wants segment files staged, but the files are being 
+          * staged asynchronously via remote sums (because the payload is 
+          * too large for synchronous download). */
+         fprintf(stdout, "One or more data files are being staged asynchronously - try again later.\n");
+
+         /* Ideally sum_export_svc() will keep track of "pending" su transfers, 
+          * but for now just bail. Once sum_export_svc() tracks these, 
+          * then calls to drms_recordset_fetchnext() that attempt to get
+          * pending sus will return some appropriate return code, and then
+          * show_info can handle that code properly.
+          */
+         show_info_return(0);
+      }
+
       if (status < 0)
         status = 0;
       }

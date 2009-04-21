@@ -484,9 +484,6 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
               {
                  sscanf(rbuf, "%d", &tryagain);
 
-                 /* Discard whatever else is being written to the pipe */
-                 while (read(infd[0], rbuf, sizeof(rbuf)) > 0);
-
                  if (tryagain == 0)
                  {
                     sustatus = DRMS_REMOTESUMS_TRYLATER;
@@ -830,9 +827,6 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
            if (read(infd[0], rbuf, sizeof(rbuf)) > 0)
            {
               sscanf(rbuf, "%d", &tryagain);
-
-              /* Discard whatever else is being written to the pipe */
-              while (read(infd[0], rbuf, sizeof(rbuf)) > 0);
 
               if (tryagain == 0)
               {

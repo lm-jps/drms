@@ -35,6 +35,18 @@ typedef enum {DRMS_FREE_RECORD, DRMS_INSERT_RECORD} DRMS_CloseAction_t;
 /** \brief DRMS query type */
 typedef enum {DRMS_QUERY_COUNT, DRMS_QUERY_FL, DRMS_QUERY_ALL, DRMS_QUERY_N} DRMS_QueryType_t;
 
+
+enum DRMS_RecChunking_enum
+{
+   kRecChunking_None = 0,
+   kRecChunking_NoMoreRecs,
+   kRecChunking_NewChunk,
+   kRecChunking_LastInChunk,
+   kRecChunking_LastInRS
+};
+
+typedef enum DRMS_RecChunking_enum DRMS_RecChunking_t;
+
 /************** User level record functions ************/
 
 /**** For record sets. ****/
@@ -188,8 +200,15 @@ unsigned int drms_recordset_getchunksize();
 DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env, 
 				      const char *rsquery, 
 				      int *status);
-DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env, DRMS_RecordSet_t *rs, int *status);
-DRMS_Record_t *drms_recordset_fetchnextinset(DRMS_Env_t *env, DRMS_RecordSet_t *rs, int *setnum, int *status);
+DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env, 
+                                        DRMS_RecordSet_t *rs, 
+                                        int *drmsstatus, 
+                                        DRMS_RecChunking_t *chunkstat);
+DRMS_Record_t *drms_recordset_fetchnextinset(DRMS_Env_t *env, 
+                                             DRMS_RecordSet_t *rs, 
+                                             int *setnum, 
+                                             int *status,
+                                             DRMS_RecChunking_t *chunkstat);
 void drms_free_cursor(DRMS_RecSetCursor_t **cursor);
 
 int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status);
