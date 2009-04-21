@@ -2,22 +2,22 @@ VPATH  = $(SRCDIR)
 STATIC = 
 DBNAME = POSTGRESQL
 
+# This optional file has custom definitions created by the configure script
+-include $(SRCDIR)/custom.mk
+
 PGIPATH	= /usr/include/pgsql	
 
 COMPILER = icc
 F77 = ifort
 
-# This optional file has custom definitions created by the configure script
--include $(SRCDIR)/custom.mk
-
-# ifeq ($(JSOC_MACHINE), mac_osx_ppc) 
-# COMPILER = gcc
-# F77 = f77
-# endif
-# ifeq ($(JSOC_MACHINE), mac_osx_ia32)
-# COMPILER = gcc
-# F77 = f77
-# endif
+ifeq ($(JSOC_MACHINE), mac_osx_ppc) 
+COMPILER = gcc
+F77 = f77
+endif
+ifeq ($(JSOC_MACHINE), mac_osx_ia32)
+COMPILER = gcc
+F77 = f77
+endif
 
 # Check for debug vs. release build - release is default.
 #   To do a debug build, either set the environment variable JSOC_DEBUG to 1, OR

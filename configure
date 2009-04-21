@@ -21,32 +21,57 @@ end
 
 if ($CHKLIBS == "no") then
     echo -n "Remove links for local project configuration..."
-    rm -f proj/configure proj/make_basic.mk proj/Rules.mk proj/target.mk
+    if (-d proj) then
+	cd proj
+	if (-e configure) then
+	    rm configure
+	endif
+	if (-e make_basic.mk) then
+	    rm make_basic.mk
+	endif
+	if (-e Rules.mk) then
+	    rm Rules.mk
+	endif
+	if (-e target.mk) then
+	    rm target.mk
+	endif
+	cd ..
+    endif
     echo "done"
 
     echo -n "Remove links to man pages..."
-    rm -rf man
+    if (-e man) then
+	rm -rf man
+    endif
     echo "done"
 
     echo -n "Removing links to headers..."
     if (-d base/include) then
-	find base/include -name "*.h" -exec rm {} \;
+	cd base/include
+	find . -name "*.h" -exec rm {} \;
+	cd ../..
     endif
 
     if (-d include) then
-	find include -name "*.h" -exec rm {} \;
+	cd include
+	find . -name "*.h" -exec rm {} \;
+	cd ..
     endif
     echo "done"
 
     echo -n "Removing links to scripts..."
     if (-d scripts) then
-	find scripts -name "*" -exec rm {} \;
+	cd scripts
+	find . -name "*" -exec rm {} \;
+	cd ..
     endif
     echo "done"
 
     echo -n "Removing links to jsds..."
     if (-d jsds) then
-	find jsds -name "*" -exec rm {} \;
+	cd jsds
+	find . -name "*" -exec rm {} \;
+	cd ..
     endif
     echo "done"
 
@@ -101,7 +126,9 @@ if ($CHKLIBS == "no") then
 	find .. -path '../include' -prune -o -name \*.h  \( \( -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \; \)
 	cd ../..
 
-	mkdir -p include
+	if (!(-d include)) then
+	    mkdir -p include
+	endif
 	cd include
 	if (-d ../base/include) then
 	    find ../base/include -name \*.h -exec ln -s {} . \;
@@ -111,7 +138,9 @@ if ($CHKLIBS == "no") then
 	echo
 	
 	echo "Setting links to scripts..."
-	mkdir -p scripts
+        if (!(-d scripts)) then
+	    mkdir scripts
+	endif
 	cd scripts
 
 	# Sums scripts
@@ -133,7 +162,9 @@ if ($CHKLIBS == "no") then
 	echo
 
 	echo "Setting links to jsds..."
-	if (!(-d jsds))  mkdir jsds
+	if (!(-d jsds)) then
+	    mkdir jsds
+	endif
 	cd jsds
 	find ../base \( -name \*.jsd -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o \( -name \*.jsd -exec echo "  " {} " ERROR - couldn't create link" \; \)
 	cd ..
@@ -141,13 +172,19 @@ if ($CHKLIBS == "no") then
 	echo
 	# Set links to third-party libraries
 	echo "Setting links to third-party libraries"
-	if (!(-d lib_third_party)) mkdir lib_third_party
+	if (!(-d lib_third_party)) then
+	    mkdir lib_third_party
+	endif
 	cd lib_third_party
 
 	if (-e ../suflag.txt) then
-            if (!(-d include)) mkdir include
+            if (!(-d include)) then
+                mkdir include
+            endif
 
-            if (!(-d lib)) mkdir lib
+            if (!(-d lib)) then
+                mkdir lib
+            endif
 
             # Don't make a link directly from include/lib to a directory, else
             # all includes files/libs must reside in one directory.
@@ -160,14 +197,18 @@ if ($CHKLIBS == "no") then
 
             cd lib
             # Standard locations for all of JSOC's libraries - x86_64
-            if (!(-d linux_x86_64)) mkdir linux_x86_64
+            if (!(-d linux_x86_64)) then
+                mkdir linux_x86_64
+            endif
 
             cd linux_x86_64
                 find /home/jsoc/lib/linux_x86_64/ -maxdepth 1 -name "*.a" -exec ln -sfv {} \;
             cd ..
 
             # Standard locations for all of JSOC's libraries - ia32
-            if (!(-d linux_ia32)) mkdir linux_ia32
+            if (!(-d linux_ia32)) then
+                mkdir linux_ia32
+            endif
 
             cd linux_ia32
                 find /home/jsoc/lib/linux_ia32/ -maxdepth 1 -name "*.a" -exec ln -sfv {} \;
@@ -272,30 +313,43 @@ endif
 set TPWARN = 0
 
 # Libraries required by all
-if (!(-e "lib_third_party/lib/$JSOC_MACHINE/libcfitsio.a")) then
-    echo
-    echo "Can't find required library: lib_third_party/lib/$JSOC_MACHINE/libcfitsio.a"
-    set TPWARN = 1
+if ($JSOC_MACHINE == "linux_x86_64") then
+    if (!(-e lib_third_party/lib/linux_x86_64/libcfitsio.a)) then
+        echo
+	echo "Can't find required library: lib_third_party/lib/linux_x86_64/libcfitsio.a"
+	set TPWARN = 1
+    endif
 endif
 
-# special required libraries for particular architectures
+if ($JSOC_MACHINE == "linux_ia32") then
+    if (!(-e lib_third_party/lib/linux_ia32/libcfitsio.a)) then
+        echo
+	echo "Can't find required library: lib_third_party/lib/linux_ia32/libcfitsio.a"
+	set TPWARN = 1
+    endif
+endif
+
+if ($JSOC_MACHINE == "mac_osx") then
+    if (!(-e lib_third_party/lib/mac_osx/libcfitsio.a)) then
+        echo
+	echo "Can't find required library: lib_third_party/lib/mac_osx/libcfitsio.a"
+	set TPWARN = 1
+    endif
+endif
 
 if (-e ../suflag.txt) then
-# Stanford users' required libs.
-
-    if (!(-e "lib_third_party/lib/$JSOC_MACHINE/libfftw3f.a")) then
-        echo
-        echo "Can't find required library: lib_third_party/lib/$JSOC_MACHINE/libfftw3f.a"
-        set TPWARN = 1
-    endif
-
-# special required libraries for particular architectures
+    # Stanford users' required libs.
     if ($JSOC_MACHINE == "linux_x86_64") then
         if (!(-e lib_third_party/lib/linux_x86_64/libcfitsio_gcc.a)) then
             echo
             echo "Can't find required library: lib_third_party/lib/linux_x86_64/libcfitsio_gcc.a"
             set TPWARN = 1
         endif
+	if (!(-e lib_third_party/lib/linux_x86_64/libfftw3f.a)) then
+            echo
+	    echo "Can't find required library: lib_third_party/lib/linux_x86_64/libfftw3f.a"
+	    set TPWARN = 1
+	endif
 	if (!(-e lib_third_party/lib/linux_x86_64/libgsl.a)) then
             echo
 	    echo "Can't find required library: lib_third_party/lib/linux_x86_64/libgsl.a"
@@ -309,6 +363,11 @@ if (-e ../suflag.txt) then
     endif
 
     if ($JSOC_MACHINE == "linux_ia32") then
+	if (!(-e lib_third_party/lib/linux_ia32/libfftw3f.a)) then
+            echo
+	    echo "Can't find required library: lib_third_party/lib/linux_ia32/libfftw3f.a"
+	    set TPWARN = 1
+	endif
 	if (!(-e lib_third_party/lib/linux_ia32/libgsl.a)) then
             echo
 	    echo "Can't find required library: lib_third_party/lib/linux_ia32/libgsl.a"
@@ -321,37 +380,15 @@ if (-e ../suflag.txt) then
 	endif
     endif
 
-    if ($JSOC_MACHINE == "mac_osx_ppc") then
-    endif
-
-    if ($JSOC_MACHINE == "mac_osx_ia32") then
+    if ($JSOC_MACHINE == "mac_osx") then
+	if (!(-e lib_third_party/lib/mac_osx/libfftw3f.a)) then
+            echo
+	    echo "Can't find required library: lib_third_party/lib/mac_osx/libfftw3f.a"
+	    set TPWARN = 1
+	endif
     endif
 endif
 
 if ($TPWARN) then
     echo "Did you update config.local to create links to installed third-party libraries?"
 endif
-
-foreach CCTST (icc gcc cc)
-  set CCC = `which $CCTST`
-  if ($status) continue
-  echo "COMPILER = $CCC" >> custom.mk
-  break
-end
-
-foreach CCTST (ifort gfortran g95)
-  set CCC = `which $CCTST`
-  if ($status) continue
-  echo "F77 = $CCC" >> custom.mk
-  break
-end
-
-if (-e config.local) then
-  set PGPTH = `grep "^POSTGRES_INCS" config.local | awk '{print $2}'`
-  echo "PGIPATH = $PGPTH" >> custom.mk
-endif
-
-# 2009/03/23 : jhourcle : fixing logic errors / simplifying code
-# 2009/04/08 : jhourcle : cleaning up compiler assignment logic
-# 2009/04/20 : rbogart : additional simplification
-
