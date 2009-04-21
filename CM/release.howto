@@ -24,21 +24,23 @@ should be of the form:
 release notes (see below).  Commit.
 
 6. From the machine used in step 2, create a tag for the new release.
-cd to $JSOCROOT.  Run "cvs tag -c Ver_<MAJ>-<MIN> ."  Replace <MAJ>
-with the major version number and <MIN> with the minor version number.
+  a. cd $JSOCROOT
+  b. cvs tag -c Ver_<MAJ>-<MIN> . (Replace <MAJ>
+with the major version number and <MIN> with the minor version number.)
+  c. cvs tag -d Ver_LATEST .
+  d. cvs tag -c Ver_LATEST .
 
 7. The NetDRMS release version number should also be incremented and
-tagged. Do "cvs checkout -r Ver_<MAJ>-<MIN> DRMS" followed by "cd
-$JSOCROOT; cvs tag -c NetDRMS_Ver_<MAJ>-<MIN>".
+tagged:
+  a. cd /tmp
+  b. cvs checkout -r Ver_<MAJ>-<MIN> CORE 
+  c. cvs checkout NETDRMSONLY (head version of netdrms-only files)
+  d. cd JSOC
+  e. cvs tag -c NetDRMS_Ver_<MAJ>-<MIN> .
+  f. cvs tag -d Ver_LATEST .
+  g. cvs tag -c Ver_LATEST .
 
-8. Update the "Ver_LATEST" tag.  This tag always points to the latest
-release.  "cvs tag -d Ver_LATEST .; cd $JSOCROOT; cvs rtag -r
-Ver_<MAJ>-<MIN> Ver_LATEST JSOC", where <MAJ> and <MIN> are the
-current release.  Alternatively, try "cvs tag -d Ver_LATEST .; cd
-tempdir; cvs checkout -r Ver_<MAJ>-<MIN> JSOC" followed by "cvs tag -c
-Ver_LATEST".
-
-9. Now you must build all release executables with the release jsoc
+8. Now you must build all release executables with the release jsoc
 version numbers in place ("V3R5" and "305" in this example). Ensure
 that the tag was successfully created and create actual release
 binaries (not just the binaries in your sandbox).  Login as the 'jsoc'
