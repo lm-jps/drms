@@ -6,11 +6,10 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S  $0 "$@"'
 #Call with -f to force a stop if needed.
 #
 $| = 1;                 #flush output as we go
-#$DB = "jim";		#the "real" db that production uses
+$ENV{'SUMSERVER'} = "d02";      #make sure we stay in this machine
 $DB = "jsoc_sums";		#the "real" db that production uses
-#$DB = "jsocdc";		#the "real" db that production uses
+$DBDRMS = "jsoc_sums";  #the db use for drms (used by sum_pe_svc)
 $GREPPS = "388";	#grep for this in ps -ef
-#$GREPPS = "jim";
 $HOST = "d02.Stanford.EDU"; #where sum_svc runs
 
 $user = $ENV{'USER'};
@@ -27,14 +26,10 @@ if($host ne $HOST) {
 $mailflg = 1;
 $forceflg = 0;
 $forcearg = "";
-$sumck = 1;
 while ($ARGV[0] =~ /^-/) {
   $_ = shift;
   if (/^-M(.*)/) {
     $mailflg = 0;
-  }
-  elsif(/^-X(.*)/) {
-    $sumck = 0;
   }
   elsif(/^-f(.*)/) {
     $forceflg = 1;
@@ -136,7 +131,7 @@ while($_ = shift(@ps_prod)) {
       ($a, $psid, $c) = split(/\s+/, $_);
       $process = "sum_rm";
     }
-    elsif(/sum_pe_svc $DB/) {
+    elsif(/sum_pe_svc $DBDRMS/) {
       ($a, $psid, $c) = split(/\s+/, $_);
       $process = "sum_pe_svc";
     }
@@ -151,25 +146,22 @@ while($_ = shift(@ps_prod)) {
     }
     print "** NOTE: \"$process $DB\" still running\n";
     print LOG "** NOTE: \"$process $DB\" still running\n";
-    print "Do you want me to do a sum_stop followed by a sum_start for you (y or n):\n";
-    while(<STDIN>) {
-      chop($_);
-      if(($_ eq "Y") || ($_ eq "y")) { 
-	if($mailflg) { 
-          if($sumck) {
-            $cmd = "sum_stop_d02 $forcearg";
-          }
-          else {
-            $cmd = "sum_stop_d02 -X $forcearg";
-          }
+      print "Do you want me to do a sum_stop_d02 followed by a sum_start_d02 (y or n):\n";
+      while(<STDIN>) {
+        chop($_);
+        if(($_ eq "Y") || ($_ eq "y")) { 
+          last;
         }
-  	else { 
-          if($sumck) {
-            $cmd = "sum_stop_d02 -M $forcearg";
-          }
-          else {
-            $cmd = "sum_stop_d02 -M -X $forcearg";
-          }
+        else { 
+          print "Aborting sum_start_d02\n";
+          exit;
+        }
+      }
+        if($mailflg) {
+          $cmd = "sum_stop_d02 $forcearg";
+        }
+        else {
+          $cmd = "sum_stop_d02 -M $forcearg";
         }
         if(system($cmd)) {
           print "Error: failure on sum_stop_d02\n";
@@ -243,8 +235,8 @@ while($_ = shift(@ps_prod)) {
               print "Error: sum_rm $DB still running after sum_stop?\n";
               exit;
             }
-            elsif(/sum_pe_svc $DB/) {
-              print "Error: sum_pe_svc $DB still running after sum_stop?\n";
+            elsif(/sum_pe_svc $DBDRMS/) {
+              print "Error: sum_pe_svc $DBDRMS still running after sum_stop?\n";
               exit;
             }
             else {
@@ -252,13 +244,6 @@ while($_ = shift(@ps_prod)) {
             }
           }
         }
-        last;
-      }
-      else { 
-        print "Aborting sum_start_d02\n";
-        exit;
-      }
-    }
   }
 }
     `/bin/rm -f /usr/local/logs/SUM/RESTART_AFTER_REBOOT`;
@@ -275,19 +260,17 @@ while($_ = shift(@ps_prod)) {
 
         print "** Now starting: sum_svc $DB\n";
         print LOG "** Now starting: sum_svc $DB\n";
-        $cmd = "sum_pe_svc $DB &";
+        $cmd = "sum_pe_svc $DBDRMS &";
         if(system($cmd)) {
-          print "Error: failure on sum_pe_svc $DB\n";
+          print "Error: failure on sum_pe_svc $DBDRMS\n";
         }
         $cmd = "sum_svc $DB &";
         if(system($cmd)) {
           print "Error: failure on sum_svc $DB\n";
         }
-        if($sumck) {
-          $cmd = "sumck &";
-          if(system($cmd)) {
-            print "Error: failure on sumck\n";
-          }
+        $cmd = "sumck &";
+        if(system($cmd)) {
+          print "Error: failure on sumck\n";
         }
         print "SUM d02 Start Complete\n";
         print LOG "SUM d02 Start Complete\n";
@@ -295,8 +278,8 @@ while($_ = shift(@ps_prod)) {
         close(MLOG);
         $mail = "Mail -s \"SUM d02 Start Complete\"";
         #$to = "sssc_crew\@solar2";
-        #$to = "jim";
-        $to = "jsoc_users";
+        $to = "jim";
+        #$to = "jsoc_users";
         $cmd = "$mail $to < $MLOGFILE";
         if($mailflg) { system $cmd; }
         exit;
