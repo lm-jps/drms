@@ -160,12 +160,13 @@ $cmd = "sum_svc $DB &";
 if (system($cmd)) {
   print "Error: failure on sum_svc $DB\n";
 }
-if ($sumck) {
-  $cmd = "sum_ck &";
-  if (system($cmd)) {
-    print "Error: failure on sum_ck\n";
-  }
-}
+
+#if ($sumck) {
+#  $cmd = "sum_ck &";
+#  if (system($cmd)) {
+#    print "Error: failure on sum_ck\n";
+#  }
+#}
 
 print "SUMS Start Complete\n";
 print LOG "SUMS Start Complete\n";
