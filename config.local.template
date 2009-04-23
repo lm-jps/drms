@@ -29,9 +29,9 @@ DBSERVER_HOST	localhost
 #   access to publicly exporting sites
 DRMS_SITE_CODE	0x4000
 
-# the default values for the remaining entries may or may  not be appropriate
-#   for your site configuration, depending on how and where third-party
-#   software has been set up and installed
+# the default values for the following five entries may or may  not be
+#   appropriate for your site configuration, depending on how and where
+#   third-party software has been set up and installed
 
 # the user name of the postgres administrative account; normally "postgres"
 #   if you have followed the PostgreSQL installation suggestions
@@ -45,19 +45,6 @@ POSTGRES_INCS	/usr/include/pgsql
 # the location of the PostgreSQL libs; likely to be either
 #   /usr/lib or /usr/lib64 or /usr/local/pgsql/lib
 POSTGRES_LIBS	/usr/include/pgsql
-
-# the user name of the SUMS administrator account - a special account is
-#   recommended for multi-user systems, but not required
-SUMS_MANAGER	production
-
-# the host name of the default SUMS server you will be using; this is the
-#   the machine that the SUMS storage units are mounted on, not necessarily
-#   the machine serving the Postgres SUMS database
-SUMS_SERVER_HOST	localhost
-
-# the base directory for SUMS logs and configuration files; used by
-# base/sums/apps/sum_svc.c and sum_rm.c
-SUMS_LOG_BASEDIR	/usr/local/logs/SUM
 
 # the location of third-party libraries (especially cfitsio, which is required,
 #   also others that may be used for modules such as fftw, gsl, etc.)
@@ -73,3 +60,22 @@ THIRD_PARTY_INCS	/usr/local/include
 #   couple of database initialization scripts and is not important for
 #   subsequent installations/updates
 DRMS_SAMPLE_NAMESPACE	drms
+
+# the following entries are specific to the SUMS configuration
+
+# the user name of the SUMS administrator account - a special account is
+#   recommended for multi-user systems, but not required
+SUMS_MANAGER	production
+
+# the host name of the default SUMS server you will be using; this is the
+#   the machine that the SUMS storage units are mounted on, not necessarily
+#   the machine serving the Postgres SUMS database
+SUMS_SERVER_HOST	localhost
+
+# the base directory for SUMS logs and configuration files; used by
+# base/sums/apps/sum_svc.c and sum_rm.c
+SUMS_LOG_BASEDIR	/usr/local/logs/SUM
+
+# whether a tape archive service is available for SUMS or not; set to a
+# non-zero value if it is
+SUMS_TAPE_AVAILABLE	0
