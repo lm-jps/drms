@@ -960,7 +960,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
       * When the template record is populated, these values are copied from
       * the keyword value to the seg->bzero and seg->bscale fields.
       */
-     if (!drms_segment_checkscaling(arr, seg->bzero, seg->bscale))
+     if (rec->env->verbose && !drms_segment_checkscaling(arr, seg->bzero, seg->bscale))
      {
         fprintf(stderr, "The data file's bzero/bscale values (%f, %f) do not match those of the segment (%f, %f).\n", arr->bzero, arr->bscale, seg->bzero, seg->bscale);
      }
