@@ -7320,7 +7320,7 @@ DRMS_Segment_t *drms_record_nextseg(DRMS_Record_t *rec, HIterator_t **last)
       }
       else
       {
-         *last = hiter_create(&(rec->segments));
+         hit = *last = hiter_create(&(rec->segments));
       }
 
       seg = hiter_getnext(hit);
@@ -7351,7 +7351,7 @@ DRMS_Keyword_t *drms_record_nextkey(DRMS_Record_t *rec, HIterator_t **last)
       }
       else
       {
-         *last = hiter_create(&(rec->keywords));
+         hit = *last = hiter_create(&(rec->keywords));
       }
 
       key = hiter_getnext(hit);
