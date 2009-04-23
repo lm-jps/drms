@@ -19,10 +19,10 @@ log_user 0
 ###############################GLOBAL VARIABLES#############################
 set DATASERVER(server)	"j0";		#Network name of server.
 set DATASERVER(user)	"jennifer";	#User name on data server.
-set DATASERVER(prompt)  "$DATASERVER(user)@$DATASERVER(server):";
+set DATASERVER(prompt)  "$DATASERVER(user)@$DATASERVER(server):"  ;
 set DATASERVER(handle)  0;			#Child process handle.
-#set DATASERVER(pass)    "passphrase";   #Not recommended! Insecure handling.
-set DATASERVER(dir)	"scr21/jennifer/slony_logs/igor";	#Dir to put subdirs.
+set DATASERVER(pass)    "hello";   #Not recommended! Insecure handling.
+set DATASERVER(dir)	"/scr21/jennifer/slony_logs/igor/";	#Dir to put subdirs.
 set CR "\r"
 
 set LOCAL(dirlist)	"igor";	#List of directories to search.
@@ -40,7 +40,7 @@ puts "In debug mode."
    log_user 1
    set LOCAL(user)	"jennifer";
    set LOCAL(server)	"j0";
-   set LOCAL(home)      "scr21/jennifer/slony_logs";       #Root dir for tdp.cron.
+   set LOCAL(home)      "/scr21/jennifer/slony_logs";       #Root dir for tdp.cron.
    set DEBUG 1
    set argv [lreplace $argv $tmp $tmp]
 }
@@ -53,9 +53,40 @@ set LOCAL(notify_list)  "jennifer@sun.stanford.edu"
 #Get the ssh agent 
 source /var/lib/pgsql/.ssh-agent.csh
 ############################### SUB ROUTINES #############################
+#Safe SCP:  sends stuff in expect without bombing.
+proc SafeSCP { pcServer pcLocalFile pcRemoteFile} {
+   global DATASERVER LOCAL CR
+	puts "Value of pcLocalFile inside SafeSCP is $pcLocalFile";
+
+   if {![file exists $pcLocalFile] || ![file size $pcLocalFile]} {
+      puts "File does not exist or is of size zero bytes"
+      return 1
+   }
+
+#   set mycmd "scp $pcLocalFile $DATASERVER(user)@$DATASERVER(server):$pcRemoteFile"  
+   spawn scp $pcLocalFile $DATASERVER(user)@$DATASERVER(server):$pcRemoteFile
+#   spawn $mycmd
+   puts $spawn_id;
+
+   set loop 1
+   while { $loop } {
+      expect {
+         "Enter passphrase for key '/var/lib/pgsql/.ssh/id_rsa':" {
+            send $DATASERVER(pass);
+	    puts "asked for passphrase";
+         } timeout {                    #Something went wrong.
+            puts "Never completed scp.";
+            return 1
+         } eof {                        #In case transfer ever goes away.
+            return 0
+         }
+      }
+   }
+}
+
 #Output error messages.
 proc MailMsg { text } {
-   global LOCAL
+   global LOCAL DATASERVER
 
    set mailfile "/tmp/slony_auto.mail";       #Tmp file for mail message.
 
@@ -126,43 +157,20 @@ puts ">$lclFiles<"
          set lcFile [lindex $lcFile $tmp]
    
 #	Commented out the SCP line - waiting for further instructions...
-       spawn scp $LOCAL(home)/$pcDIR/$lcFile $DATASERVER(prompt)/$DATASERVER(dir)/$lcFile
-#       spawn scp $LOCAL(home)/$pcDIR/$lcFile $DATASERVER(user)@$DATASERVER(server):$DATASERVER(dir)/$pcDIR/$lcFile
-#	spawn cp $LOCAL(home)/$pcDIR/$lcFile $DATASERVER(dir)/$pcDIR/$lcFile
-         set timeout 300
-   
-         for {set i 0} {$i < 2} {incr i} {		#loop if needed.
-            puts "Waiting for SCP to complete."
-	    expect {
-		timeout {puts "timed out"; exit}
-            }
-	    set i 4
-            #expect {
-	    #"Enter passphrase for key '/var/lib/pgsql/.ssh/id_rsa':" {
-            #   send "$DATASERVER(pass)$CR"
-            #} timeout {
-            #   MailMsg "Never finished SCPing $lcFile!"
-            #   exit
-            #} eof {
-            #   puts "Good exit."
-            #   set i 4
-	    #}
-            #}
-         }
-   
-         if {$i < 4} {
-#            MailMsg "Unexplained error in SCP for file $lcFile"
-	    MailMsg "Unexplained error in CP for file $lcFile"
-            exit
-         }
-   
-         catch {wait $spawn_id};		#Wait for SCP to finish.
-         catch {close $spawn_id};		#Close the process handle.
+#       spawn scp $LOCAL(home)/$pcDIR/$lcFile $DATASERVER(prompt)/$DATASERVER(dir)/$lcFile
+#       spawn scp $LOCAL(home)/$pcDIR/$lcFile $DATASERVER(user)@$DATASERVER(server):$DATASERVER(dir)/$lcFile
+
+      }
+      #Now use SafeSCP to copy these across...
+
+      if { [SafeSCP j0 $LOCAL(home)/$pcDIR/$lcFile $DATASERVER(dir)] } {
 
          #We're done with the file.  Move it somewhere safe.
+         puts "Moved $lcFile to $DATASERVER(server)/$DATASERVER(dir)"
          exec mv -f $LOCAL(home)/$pcDIR/$lcFile $LOCAL(processed)
+
       } else {
-         puts " File is in transfer."
+         puts " File will not transfer."
       }
    }
 }   
