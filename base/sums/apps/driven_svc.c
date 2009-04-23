@@ -742,8 +742,8 @@ int kludge_dirs(uint64_t file_dsix_off[], char *wd)
 {
   DIR *dfd;
   struct dirent *dp;
-  char name[128], d_name[256], newname[256], nameD[256], cmd[256];
-  char *savename[128];
+  char name[256], d_name[256], newname[256], nameD[256], cmd[256];
+  char *savename[256];
   uint64_t ix;
   int i, k, found;
   int j=0;
