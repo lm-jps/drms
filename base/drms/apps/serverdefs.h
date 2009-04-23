@@ -26,6 +26,8 @@
 #define SUMLOG_BASEDIR "/usr/local/logs/SUM"
 #define SUMSERVER "d02.Stanford.EDU"
 
+#define SUMS_TAPE_AVAILABLE (1)
+
 #endif /* _LOCALIZED_DEFS */
 
 #endif /* __SERVERDEFS_H */
