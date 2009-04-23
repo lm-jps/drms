@@ -1,3 +1,32 @@
+#!/bin/csh -f
+# script to generate NetDRMS initialization task script
+
+set LOCALINF = ./config.local
+if (!(-e $LOCALINF)) then
+  set WWW = http://jsoc.stanford.edu/netdrms
+  echo "Error: local configuration file $LOCALINF not found"
+  echo "You may create one from the template at:"
+  echo "	$WWW/setup.html"
+  exit
+endif
+
+# parse the local config file
+
+set LOCAL_CONFIG_SET = `egrep "^LOCAL_CONFIG_SET" $LOCALINF | awk '{print $2}'`
+set POSTGRES_ADMIN = `egrep "^POSTGRES_ADMIN" $LOCALINF | awk '{print $2}'`
+set POSTGRES_LIBS = `egrep "^POSTGRES_LIBS" $LOCALINF | awk '{print $2}'`
+set POSTGRES_INCS = `egrep "^POSTGRES_INCS" $LOCALINF | awk '{print $2}'`
+set DBSERVER_HOST = `egrep "^DBSERVER_HOST" $LOCALINF | awk '{print $2}'`
+set DRMS_DATABASE = `egrep "^DRMS_DATABASE" $LOCALINF | awk '{print $2}'`
+set DRMS_SITE_CODE = `egrep "^DRMS_SITE_CODE" $LOCALINF | awk '{print $2}'`
+set DRMS_SAMPLE_NAMESPACE = `egrep "^DRMS_SAMPLE_NAMESPACE" $LOCALINF | awk '{print $2}'`
+set SUMS_SERVER_HOST = `egrep "^SUMS_SERVER_HOST" $LOCALINF | awk '{print $2}'`
+set SUMS_LOG_BASEDIR = `egrep "^SUMS_LOG_BASEDIR" $LOCALINF | awk '{print $2}'`
+set SUMS_MANAGER = `egrep "^SUMS_MANAGER" $LOCALINF | awk '{print $2}'`
+set SUMS_TAPE_AVAILABLE = `egrep "^SUMS_TAPE_AVAILABLE" $LOCALINF | awk '{print $2}'`
+set THIRD_PARTY_LIBS = `egrep "^THIRD_PARTY_LIBS" $LOCALINF | awk '{print $2}'`
+set THIRD_PARTY_INCS = `egrep "^THIRD_PARTY_INCS" $LOCALINF | awk '{print $2}'`
+
 # check that local config file has been edited appropriately
 if ($#LOCAL_CONFIG_SET == 1) then
   if ($LOCAL_CONFIG_SET =~ "NO") then

@@ -23,6 +23,7 @@ set DRMS_SAMPLE_NAMESPACE = `egrep "^DRMS_SAMPLE_NAMESPACE" $LOCALINF | awk '{pr
 set SUMS_SERVER_HOST = `egrep "^SUMS_SERVER_HOST" $LOCALINF | awk '{print $2}'`
 set SUMS_LOG_BASEDIR = `egrep "^SUMS_LOG_BASEDIR" $LOCALINF | awk '{print $2}'`
 set SUMS_MANAGER = `egrep "^SUMS_MANAGER" $LOCALINF | awk '{print $2}'`
+set SUMS_TAPE_AVAILABLE = `egrep "^SUMS_TAPE_AVAILABLE" $LOCALINF | awk '{print $2}'`
 set THIRD_PARTY_LIBS = `egrep "^THIRD_PARTY_LIBS" $LOCALINF | awk '{print $2}'`
 set THIRD_PARTY_INCS = `egrep "^THIRD_PARTY_INCS" $LOCALINF | awk '{print $2}'`
 
@@ -73,6 +74,10 @@ if ($#SUMS_LOG_BASEDIR != 1) then
 endif
 if ($#SUMS_MANAGER != 1) then
   echo "Error: SUMS_MANAGER undefined in local configuration file $LOCALINF"
+  exit
+endif
+if ($#SUMS_TAPE_AVAILABLE != 1) then
+  echo "Error: SUMS_TAPE_AVAILABLE undefined in local configuration file $LOCALINF"
   exit
 endif
 if ($#THIRD_PARTY_LIBS != 1) then
@@ -149,6 +154,7 @@ else
   echo "  compile the seed_sums.c program and run it with $DRMS_SITE_CODE as the argument"
 endif
 
+@ SUMS_TAPE_AVAIL = $SUMS_TAPE_AVAILABLE
 # generate file localization.h
 set SCRIPT = base/include/localization.h
 echo "*** generating $SCRIPT ***"
@@ -164,6 +170,7 @@ echo '#define PASSWD			NULL' >> $SCRIPT
 echo '#define SUMSERVER			"'$SUMS_SERVER_HOST'"' >> $SCRIPT
 echo '#define SUMS_MANAGER		"'$SUMS_MANAGER'"' >> $SCRIPT
 echo '#define SUMLOG_BASEDIR		"'$SUMS_LOG_BASEDIR'"' >> $SCRIPT
+echo '#define SUMS_TAPE_AVAILABLE       '\($SUMS_TAPE_AVAIL\)'' >> $SCRIPT
 echo '#endif' >> $SCRIPT
 
 cd include
