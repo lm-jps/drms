@@ -23,6 +23,14 @@ if (-e $SUMRM_CONFIG) then
   exit
 endif
 
+cat /dev/null > $SUMRM_CONFIG
+if ($status) then
+  echo "Error: either the directory $SUMS_LOG_BASEDIR does not exist, or"
+  echo "  you do not have write permission in it; the directory should be"
+  echo "  created or made writeable, and this script run by user $SUMS_MANAGER"
+  exit
+endif
+
 echo "# configuration file for sum_rm program" >> $SUMRM_CONFIG
 echo "#" >> $SUMRM_CONFIG
 echo "# You may edit this file any time, it is read each time sum_rm is run," >> $SUMRM_CONFIG
