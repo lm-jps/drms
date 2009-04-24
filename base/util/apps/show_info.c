@@ -456,8 +456,12 @@ SUM_info_t *drms_get_suinfo(long long sunum)
     }
   if (status = SUM_info(my_sum, sunum, printkerr))
     {
-    printkerr("Fail on SUM_info, status=%d\n", status);
-    return(NULL);
+       if (status != SUM_SUNUM_NOT_LOCAL)
+       {
+          printkerr("Fail on SUM_info, status=%d\n", status);
+       }
+
+       return(NULL);
     }
   return(my_sum->sinfo);
   }
