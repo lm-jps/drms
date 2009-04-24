@@ -742,8 +742,8 @@ int kludge_dirs(uint64_t file_dsix_off[], char *wd)
 {
   DIR *dfd;
   struct dirent *dp;
-  char name[256], d_name[256], newname[256], nameD[256], cmd[256];
-  char *savename[256];
+  char name[512], d_name[512], newname[512], nameD[512], cmd[512];
+  char *savename[512];
   uint64_t ix;
   int i, k, found;
   int j=0;
@@ -803,8 +803,9 @@ int kludge_dirs(uint64_t file_dsix_off[], char *wd)
           }
         }
       }
+      closedir(dfd);	//new position
     }
-    closedir(dfd);
+    //closedir(dfd);	//old postition. moved up a line
     // now rm the original top level dir and anything left below it
     for(i=0; i < j; i++) {
       sprintf(cmd, "/bin/rm -rf %s/%s", wd, savename[i]);
