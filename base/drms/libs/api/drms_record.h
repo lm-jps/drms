@@ -489,7 +489,7 @@ int drms_record_islocal(DRMS_Record_t *rec);
    the address of the variable as the @a last parameter on the first
    call to this function. On subsequent calls, the address of the same ::HIterator_t *
    must be provided.  The user must free value of the ::HIterator_t * variable
-   after the last call to this function.
+   after the last call to this function by using the ::hiter_destroy function.
 
    @param rec The record whose segments are to be retrieved
    @param last The address of an ::HIterator_t * variable. This variable will
@@ -509,7 +509,7 @@ int drms_record_islocal(DRMS_Record_t *rec);
    the address of the variable as the @a last parameter on the first
    call to this function. On subsequent calls, the address of the same ::HIterator_t *
    must be provided.  The user must free value of the ::HIterator_t * variable
-   after the last call to this function.
+   after the last call to this function by using the ::hiter_destroy function.
 
    @param rec The record whose keywords are to be retrieved
    @param last The address of an ::HIterator_t * variable. This variable will
