@@ -45,7 +45,7 @@ if ($#SUMS_MANAGER != 1) then
   exit
 endif
 
-set SUMRM_CONFIG = $SUMS_LOG_BASEDIR/sum_rm.cf
+set SUMRM_CONFIG = $SUMS_LOG_BASEDIR/sum_rm.cfg
 if (-e $SUMRM_CONFIG) then
   echo "A sum_rm.cf configuration file already exists in $SUMS_LOG_BASEDIR"
   echo "  Edit it at any time to modify the configuration"
