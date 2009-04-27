@@ -2341,24 +2341,48 @@ int drms_segment_mapexport_tofile(DRMS_Segment_t *seg,
 				  const char *mapfile,
 				  const char *fileout)
 {
-   int stat = DRMS_SUCCESS;
+   int status = DRMS_SUCCESS;
 
-   CFITSIO_KEYWORD *fitskeys = drms_segment_mapkeys(seg, clname, mapfile, &stat);
+   CFITSIO_KEYWORD *fitskeys = drms_segment_mapkeys(seg, clname, mapfile, &status);
 
-   if (!stat)
+   if (!status)
    {
       switch (seg->info->protocol)
       {
 	 case DRMS_FITS:
 	   {
-	      DRMS_Array_t *arrout = drms_segment_read(seg, DRMS_TYPE_RAW, &stat);
+	      DRMS_Array_t *arrout = drms_segment_read(seg, DRMS_TYPE_RAW, &status);
 	      if (arrout)
 	      {
-                 stat = ExportFITS(arrout, fileout, seg->cparms, fitskeys);
+                 status = ExportFITS(arrout, fileout, seg->cparms, fitskeys);
 		 drms_free_array(arrout);
 	      }
 	   }
 	   break;
+         case DRMS_GENERIC:
+           {
+              /* Simply copy the file from the segment's data-file path
+               * to fileout, no keywords to worry about. */
+              char filename[DRMS_MAXPATHLEN]; 
+              struct stat stbuf;
+
+              drms_segment_filename(seg, filename);
+
+              if (!stat(filename, &stbuf))
+              {
+                 if (CopyFile(filename, fileout) != stbuf.st_size)
+                 {
+                    fprintf(stderr, "Unable to export file '%s' to '%s'.\n", filename, fileout);
+                    status = DRMS_ERROR_FILECOPY;
+                 }
+              }
+              else
+              {
+                 fprintf(stderr, "Invalid export file '%s'.\n", filename);
+                 status = DRMS_ERROR_INVALIDFILE;
+              }
+           }
+           break;
 	 default:
 	   fprintf(stderr, 
 		   "Data export does not support data segment protocol '%s'.\n", 
@@ -2368,7 +2392,7 @@ int drms_segment_mapexport_tofile(DRMS_Segment_t *seg,
 
    drms_segment_freekeys(&fitskeys);
 
-   return stat;
+   return status;
 }
 
 int drms_export_tofitsfile(DRMS_Array_t *arr,
