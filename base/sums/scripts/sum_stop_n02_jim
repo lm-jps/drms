@@ -148,9 +148,9 @@ while($_ = shift(@ps_prod)) {
     else {
       next;
     }
-    print "Killing $process with kill -9 $psid\n";
-    print LOG "Killing $process with kill -9 $psid\n";
-    `kill -9 $psid`;
+    print "Killing $process with kill -2 $psid\n";
+    print LOG "Killing $process with kill -INT $psid\n";
+    `kill -INT $psid`;
   }
 }
 #print "Removing lock file /usr/local/logs/soc/NOTAPEARC\n";
