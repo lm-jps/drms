@@ -275,7 +275,7 @@ void setup()
   //		getenv("JSOC_MACHINE"));
   sprintf(md5filter, "/usr/local/bin/md5filter");
   //write_log("md5filter=%s\n", md5filter); /* !!!TEMP */
-  if (signal(SIGINT, SIG_IGN) != SIG_IGN)
+  //if (signal(SIGINT, SIG_IGN) != SIG_IGN)
       signal(SIGINT, sighandler);
   if (signal(SIGTERM, SIG_IGN) != SIG_IGN)
       signal(SIGTERM, sighandler);

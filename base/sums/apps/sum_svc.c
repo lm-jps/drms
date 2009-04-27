@@ -138,6 +138,7 @@ int write_log(const char *fmt, ...)
 void sighandler(sig)
   int sig;
 {
+  printf("sig = %d\n", sig); //!!TEMP
   if(sig == SIGTERM) {
     write_log("*** %s sum_svc got SIGTERM. Exiting.\n", datestring());
     exit(1);
@@ -222,7 +223,7 @@ void setup()
   write_log("\n## %s sum_svc on %s for pid = %d ##\n", 
 		datestring(), thishost, thispid);
   write_log("Database to connect to is %s\n", dbname);
-  if (signal(SIGINT, SIG_IGN) != SIG_IGN)
+  //if (signal(SIGINT, SIG_IGN) != SIG_IGN)
       signal(SIGINT, sighandler);
   if (signal(SIGTERM, SIG_IGN) != SIG_IGN)
       signal(SIGTERM, sighandler);

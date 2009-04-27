@@ -204,7 +204,7 @@ void setup()
     if(order0 >= MAX_DRIVES) order0 = 0;
   }
 
-  if (signal(SIGINT, SIG_IGN) != SIG_IGN)
+  //if (signal(SIGINT, SIG_IGN) != SIG_IGN)
       signal(SIGINT, sighandler);
   if (signal(SIGTERM, SIG_IGN) != SIG_IGN)
       signal(SIGTERM, sighandler);

@@ -161,7 +161,7 @@ void setup()
   write_log("\n## %s %s on %s for pid = %d ##\n", 
 		datestring(), robotname, thishost, pid);
   /*write_log("Database to connect to is %s\n", dbname);*/
-  if (signal(SIGINT, SIG_IGN) != SIG_IGN)
+  //if (signal(SIGINT, SIG_IGN) != SIG_IGN)
       signal(SIGINT, sighandler);
   if (signal(SIGTERM, SIG_IGN) != SIG_IGN)
       signal(SIGTERM, sighandler);
