@@ -2349,7 +2349,19 @@ int drms_segment_mapexport_tofile(DRMS_Segment_t *seg,
    {
       switch (seg->info->protocol)
       {
-	 case DRMS_FITS:
+         case DRMS_BINARY:
+           /* intentional fall-through */
+         case DRMS_BINZIP:
+           /* intentional fall-through */
+         case DRMS_FITZ:
+           /* intentional fall-through */
+         case DRMS_FITS:
+           /* intentional fall-through */
+         case DRMS_TAS:
+           /* intentional fall-through */
+         case DRMS_DSDS:
+           /* intentional fall-through */
+         case DRMS_LOCAL:
 	   {
 	      DRMS_Array_t *arrout = drms_segment_read(seg, DRMS_TYPE_RAW, &status);
 	      if (arrout)
@@ -2465,39 +2477,38 @@ CFITSIO_KEYWORD *drms_segment_mapkeys(DRMS_Segment_t *seg,
                                       int *status)
 {
    CFITSIO_KEYWORD *fitskeys = NULL;
-   HContainer_t *keys = &(seg->record->keywords);
-   HIterator_t *hit = hiter_create(keys);
+   HIterator_t *last = NULL;
    int statint = DRMS_SUCCESS;
+   DRMS_Keyword_t *key = NULL;
+   const char *keyname = NULL;
+   char segnum[4];
+   DRMS_Record_t *recin = seg->record;
 
-   if (hit)
+   snprintf(segnum, sizeof(segnum), "%d", seg->info->segnum);
+
+   while ((key = drms_record_nextkey(recin, &last)) != NULL)
    {
-      DRMS_Keyword_t *key = NULL;
-      const char *keyname = NULL;
-      char segnum[4];
+      keyname = drms_keyword_getname(key);
 
-      snprintf(segnum, sizeof(segnum), "%d", seg->info->segnum);
-
-      while ((key = hiter_getnext(hit)) != NULL)
+      if (drms_keyword_getperseg(key))
       {
-	 keyname = drms_keyword_getname(key);
-
-	 if (drms_keyword_getperseg(key))
-	 {
-	    /* Ensure that this keyword is relevant to this segment. */
-	    if (!strstr(keyname, segnum))
-	    {
-	       continue;
-	    }
-	 }
-	    
-	 if (drms_keyword_mapexport(key, clname, mapfile, &fitskeys))
-	 {
-	    fprintf(stderr, "Couldn't export keyword '%s'.\n", keyname);
-	    statint = DRMS_ERROR_EXPORT;
-	 }
+         /* Ensure that this keyword is relevant to this segment. */
+         if (!strstr(keyname, segnum))
+         {
+            continue;
+         }
       }
+	    
+      if (drms_keyword_mapexport(key, clname, mapfile, &fitskeys))
+      {
+         fprintf(stderr, "Couldn't export keyword '%s'.\n", keyname);
+         statint = DRMS_ERROR_EXPORT;
+      }
+   }
 
-      hiter_destroy(&hit);
+   if (last)
+   {
+      hiter_destroy(&last);
    }
 
    if (status)
