@@ -196,9 +196,6 @@ void db_disconnect(DB_Handle_t  *dbin)
 /* Roll back and set the abort flag. */
 int db_abort(DB_Handle_t  *dbin)
 {
-  PGconn *db;  
-
-  db = (PGconn *) dbin->db_connection;
   db_lock(dbin);
   if (dbin->abort_now)
     goto failure;

@@ -715,7 +715,6 @@ int main (int argc, char *argv[]) {
            /* Update status in database */
            drms_lock_server (env);
            env->clientcounter++;
-           drms_server_session_status (env, "running", env->clientcounter);
            drms_unlock_server (env);
 
            XASSERT(tinfo = malloc (sizeof (DRMS_ThreadInfo_t)));

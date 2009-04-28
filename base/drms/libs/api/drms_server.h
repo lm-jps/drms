@@ -75,8 +75,6 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
 			      int log_retention, int archive_log);
 /** \brief Open DRMS session */
 int drms_server_open_session(DRMS_Env_t *env);
-/** \brief Update DRMS session information in the drms_session table */
-int drms_server_session_status(DRMS_Env_t *env, char *stat_str, int clients);
 /** \brief Abort DRMS */
 void drms_server_abort(DRMS_Env_t *env, int final);
 /** \brief Commit DRMS */

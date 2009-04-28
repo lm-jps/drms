@@ -252,26 +252,6 @@ int drms_server_open_session(DRMS_Env_t *env)
 
   return 0;
 }
-
-/* Update the record corresponding to the session associated with env
-   in the session table. */
-int drms_server_session_status(DRMS_Env_t *env, char *stat_str, int clients)
-{
-  /* Set sessionid and insert an entry in the session table */
-  char stmt[1024];
-  sprintf(stmt, "UPDATE %s."DRMS_SESSION_TABLE
-	  " SET status=?,clients=?,lastcontact=LOCALTIMESTAMP(0) WHERE "
-	  "sessionid=?", env->session->sessionns);
-  if (db_dmsv(env->session->stat_conn, NULL, stmt, -1, 
-              DB_STRING, stat_str, DB_INT4, clients, 
-	      DB_INT8, env->session->sessionid))
-  {
-    fprintf(stderr,"Error: Couldn't update session entry.\n");
-    return 1;
-  }
-  return 0;
-}
-
       
 /* Update record corresponding to the session associated with env
    from the session table and close the extra database connection. */
@@ -357,16 +337,7 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
     //    fprintf(stderr,"Error: Couldn't update session entry.\n");
     return 1;
   }
-  /*
-  sprintf(stmt, "DELETE FROM %s."DRMS_SESSION_TABLE 
-          " WHERE sessionid=?", env->session->sessionns);
-  if (db_dmsv(env->session->stat_conn, NULL, stmt, -1, 
-              DB_INT8, env->session->sessionid))
-  {
-    fprintf(stderr,"Error: Couldn't unregister session.\n");
-    return 1;
-  }
-  */
+
   return 0;
 }
 
@@ -839,10 +810,6 @@ void *drms_server_thread(void *arg)
     /* If in noshare mode, commit or rollback, and start a new transaction. */
     drms_lock_server(env);
 
-    if (env->clientcounter==0)
-      drms_server_session_status(env, "idle", env->clientcounter);
-    else
-      drms_server_session_status(env, "running", env->clientcounter);
     if (disconnect && !status)
     {
       if (env->verbose)
@@ -876,10 +843,6 @@ void *drms_server_thread(void *arg)
       /* Client disconnected with no error. */
       drms_lock_server(env);
 
-      if (env->clientcounter==0)
-	drms_server_session_status(env, "idle", env->clientcounter);
-      else
-	drms_server_session_status(env, "running", env->clientcounter);
       drms_unlock_server(env);
     }
     else
@@ -1589,17 +1552,6 @@ void *drms_sums_thread(void *arg)
   empty = 0;
   while ( !stop || (stop && !empty))
   {
-    /* Set status in session table */
-    if (connected)
-    {
-      char stmt[1024];
-      sprintf(stmt, "UPDATE %s."DRMS_SESSION_TABLE
-	      " SET sums_thread_status='waiting for work',"
-	      "lastcontact=LOCALTIMESTAMP(0) WHERE sessionid=?", env->session->sessionns);
-      if (db_dmsv(env->session->stat_conn, NULL, stmt,
-		  -1, DB_INT8, env->session->sessionid))
-	fprintf(stderr,"Warning in sums_thread: Couldn't update session entry.\n");
-    }
     /* Wait for the next SUMS request to arrive in the inbox. */
     env->sum_tag = 0;
     empty = tqueueDelAny(env->sum_inbox, &env->sum_tag,  &ptmp );
@@ -1766,14 +1718,6 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 
     if (reply->opcode == RESULT_PEND)
     {
-      /* Set status in session table */
-      char stmt[1024];
-      sprintf(stmt, "UPDATE %s." DRMS_SESSION_TABLE
-	      " SET sums_thread_status='waiting for SUMS to stage data',"
-	      "lastcontact=LOCALTIMESTAMP(0) WHERE sessionid=?", env->session->sessionns);
-      if (db_dmsv(env->session->stat_conn, NULL, stmt,
-		  -1, DB_INT8, env->session->sessionid))
-	fprintf(stderr,"Error in sums_thread: Couldn't update session entry.\n");
       /* FIXME: For now we just wait for SUMS. */
       reply->opcode = SUM_wait(sum);
       if (reply->opcode || sum->status)
