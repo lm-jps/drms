@@ -168,6 +168,7 @@ extern KEY *delseriesdo_1();
 #define ONOFFDO ((uint32_t)9)
 #define DRONOFFDO ((uint32_t)10)
 #define ROBOTONOFFDO ((uint32_t)11)
+#define JMTXTAPEDO ((uint32_t)12)
 
 extern KEY *readdo_1();
 extern KEY *writedo_1();
@@ -180,6 +181,7 @@ extern KEY *tapetestdo_1();
 extern KEY *onoffdo_1();
 extern KEY *dronoffdo_1();
 extern KEY *robotonoffdo_1();
+extern KEY *jmtxtapedo_1();
 
 /* This is the SUM client API code response handling registration */
 #define RESPPROG ((uint32_t)0x20000613)  /* 536872467 */
@@ -322,6 +324,11 @@ extern KEY *sumexack_1();
 #define REMSUMRESPDO ((uint32_t)1)
 extern KEY *respdo_1();
 
+/* This is the jmtx program registration */
+#define JMTXPROG ((uint32_t)0x2000062e) /* 536872494 */
+#define JMTXVERS ((uint32_t)1)
+#define JMTXDO ((uint32_t)1)
+extern KEY *jmtxdo_1();
 
 typedef struct SUM_struct
 {
