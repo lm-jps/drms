@@ -865,6 +865,40 @@ KEY *writedo_1(KEY *params) {
   }
 }
 
+/* This is called from jmtx doing a JMTXTAPEDO call to tape_svc.
+ * It has the params to do an mtx call under the auspices of SUMS
+ * so that SUMS knows what tapes were moved.
+ * The keylist looks like:
+ * mode:         KEYTYP_STRING   status | load | unload
+ * slotnum:      KEYTYP_INT      234
+ * drivenum:     KEYTYP_INT      0
+*/
+KEY *jmtxtapedo_1(KEY *params) {
+  static CLIENT *clresp;
+  int slotnum, drivenum;
+  char *mode;
+
+  if(findkey(params, "DEBUGFLG")) {
+    debugflg = getkey_int(params, "DEBUGFLG");
+    if(debugflg) {
+      write_log("writedo_1() call in tape_svc. keylist is:\n");
+      keyiterate(logkey, params);
+    }
+  }
+  mode = getkey_str(params, "mode");
+  slotnum = getkey_int(params, "slotnum");
+  drivenum = getkey_int(params, "drivenum");
+  if(!(clresp = set_client_handle(JMTXPROG, JMTXVERS))) { 
+    rinfo = NO_CLNTTCP_CREATE;  /* give err status back to original caller */
+    send_ack();
+    return((KEY *)1);  /* error. nothing to be sent */
+  }
+  rinfo = RESULT_PEND;    /* tell caller to wait later for results */
+  send_ack();
+  return((KEY *)1);
+
+}
+
 /* This is called from drive[0,1]_svc when a tape write completes.
  * The keylist looks like:
  * tape_closed:    KEYTYP_INT      -1
