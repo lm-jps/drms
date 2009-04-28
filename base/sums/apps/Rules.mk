@@ -51,9 +51,10 @@ TARC_$(d)	:= $(d)/tapearc
 TARCINFO_$(d)	:= $(d)/tapearcinfo
 SUMEXSVC_$(d)	:= $(d)/sum_export_svc
 SUMEX_$(d)	:= $(d)/sum_export
+JMTX_$(d)	:= $(d)/jmtx
 
 
-BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main3 main4 main5 sumget tapeonoff driveonoff sum_rm impexp drive0_svc drive1_svc drive2_svc drive3_svc drive4_svc drive5_svc drive6_svc drive7_svc drive8_svc drive9_svc drive10_svc drive11_svc robot0_svc md5filter sum_adv sum_export_svc sum_export)
+BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main3 main4 main5 sumget tapeonoff driveonoff sum_rm impexp drive0_svc drive1_svc drive2_svc drive3_svc drive4_svc drive5_svc drive6_svc drive7_svc drive8_svc drive9_svc drive10_svc drive11_svc robot0_svc md5filter sum_adv sum_export_svc sum_export jmtx)
 
 #BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main3 main4 main5 sumget tapeonoff driveonoff sum_rm impexp drive0_svc drive1_svc drive2_svc drive3_svc robot0_svc md5filter)
 
