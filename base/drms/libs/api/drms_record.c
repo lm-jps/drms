@@ -5412,7 +5412,7 @@ int ParseRecSetDesc(const char *recsetsStr,
                  else
                  {
                     /* Assume the filter value is a string or set of strings */
-                    while (*pc != ']')
+                    while (*pc != ']' && state != kRSParseState_Error)
                     {
                        DRMS_Type_Value_t val;
                        memset(&val, 0, sizeof(DRMS_Type_Value_t));
@@ -5437,7 +5437,7 @@ int ParseRecSetDesc(const char *recsetsStr,
                     /* skip any ws between last char and right bracket */
                     //DSElem_SkipWS(&pc);
 
-                    if (*pc == ']')
+                    if (*pc == ']' && state != kRSParseState_Error)
                     {
                        *pcBuf++ = *pc++;
                        if (DSElem_SkipWS(&pc))
