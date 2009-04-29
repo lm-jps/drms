@@ -111,6 +111,7 @@ bailout:
   return NULL;
 }
 
+#ifdef DRMS_CLIENT
 /* - If action=DRMS_INSERT_RECORD then insert all modified records 
       in the record cache into the database. If action=DRMS_FREE_RECORD
       then free all records without committing them.
@@ -136,7 +137,7 @@ void drms_abort (DRMS_Env_t *env) {
   drms_disconnect (env, 1);
   drms_free_env (env, 1);
 }
-#ifdef DRMS_CLIENT
+
 void drms_abort_now (DRMS_Env_t *env) {
   int status;
 

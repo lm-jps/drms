@@ -13,11 +13,12 @@ DRMS_Session_t *drms_connect(char *host);
 DRMS_Session_t *drms_connect_direct(char *host, char *user, 
 				    char *passwd, char *dbname,
 				    char *sessionns);
-
+#ifdef DRMS_CLIENT
 /** \brief Server disconnects from DB. Client disconnects from server*/
 void drms_disconnect(DRMS_Env_t *env, int abort);
 /** \brief Client sends ::DRMS_DISCONNECT command code without echo*/
 void drms_disconnect_now(DRMS_Env_t *env, int abort);
+#endif
 /** \brief Perform query and receive query results in DB_Binary_Result_t*/
 DB_Binary_Result_t *drms_query_bin(DRMS_Session_t *session, char *query);
 /** \brief Same as drms_query_bin() with query parameters in variable argument list, calls drms_query_bin_array()*/

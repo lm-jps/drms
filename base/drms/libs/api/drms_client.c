@@ -217,27 +217,22 @@ DRMS_Session_t *drms_connect_direct(char *dbhost, char *dbuser,
 }
 #endif
 
+/* Clean up shutdown -- arta 4/28/2009
+ * Server processes never exit this way - they call drms_server_abort, or 
+ * drms_server_commit so make this call client-only. Also, 
+ * remove drms_disconnect_now, which was a duplicate of drms_disconnect.
+ * So, drms_disconnect means to disconnect from the server (eg, drms_server app). 
+ * It won't affect the server, unless the client experienced an error while
+ * running. If it passes abort == 1, then this will cause the server
+ * (eg, drms_server) to termintae, but only after all other clients
+ * have disconnected. */
+#ifdef DRMS_CLIENT
 void drms_disconnect(DRMS_Env_t *env, int abort)
 {
-#ifndef DRMS_CLIENT
-  if (env->session->db_direct)
-  {
-    /* on abort: Give other server threads a chance to exit 
-       cleanly by leaving the db_handle structure intact. */
-    if (abort) 
-      db_abort(env->session->db_handle);
-    else
-      db_disconnect(env->session->db_handle);
-  }
-  else
-#endif
-  {
-    drms_send_commandcode(env->session->sockfd, DRMS_DISCONNECT);
-    Writeint(env->session->sockfd, abort);
-  }
+   drms_send_commandcode(env->session->sockfd, DRMS_DISCONNECT);
+   Writeint(env->session->sockfd, abort);
 }
 
-#ifdef DRMS_CLIENT
 void drms_disconnect_now(DRMS_Env_t *env, int abort)
 {
   drms_send_commandcode_noecho(env->session->sockfd, DRMS_DISCONNECT);

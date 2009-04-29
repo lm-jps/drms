@@ -141,7 +141,7 @@ DB_Handle_t  *db_connect(const char *host, const char *user,
 			 const char *passwd, const char *db_name,
 			 const int lock);
 /* Disconnect from  database server. */
-void db_disconnect(DB_Handle_t *db);
+void db_disconnect(DB_Handle_t **db);
 
 
 /* SQL data manipulation statement with fixed input and no output. */
@@ -230,7 +230,6 @@ int db_sequence_drop(DB_Handle_t *db, char *tablename);
 int db_commit(DB_Handle_t *db);
 int db_start_transaction(DB_Handle_t  *db);
 int db_rollback(DB_Handle_t  *db);
-int db_abort(DB_Handle_t  *dbin);
 /* Set transaction isolation level.   
    0 = read commited
    1 = serializable.

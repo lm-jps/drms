@@ -313,12 +313,12 @@ int main(int argc, char **argv) {
   }
   printf("Commiting...\n");
   db_commit(db_handle);
-  db_disconnect(db_handle);
+  db_disconnect(&db_handle);
   printf("Done.\n");
   return 0;
  failure:
   printf("Aborting...\n");
-  db_abort(db_handle);
+  db_disconnect(&db_handle);
   printf("Failed to create masterlists.\n");
   return 1;
  usage:

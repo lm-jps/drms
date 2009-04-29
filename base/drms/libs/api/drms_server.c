@@ -391,10 +391,10 @@ void drms_server_abort(DRMS_Env_t *env, int final)
     env->sum_thread = 0;
   }
 
-  db_disconnect(env->session->stat_conn);
+  db_disconnect(&env->session->stat_conn);
  
   /* Close DB connection and set abort flag... */
-  db_abort(env->session->db_handle);
+  db_disconnect(&env->session->db_handle);
 
   /* Wait for other threads to finish cleanly. */
   if (env->verbose) 
@@ -474,15 +474,13 @@ void drms_server_commit(DRMS_Env_t *env, int final)
     env->sum_thread = 0;
   }
 
-  db_disconnect(env->session->stat_conn);
+  db_disconnect(&env->session->stat_conn);
 
   /* Commit all changes to the DRMS database. */
   db_commit(env->session->db_handle);
 
-  /* Close DB connection and set abort flag in case any threads 
-     are still active... */
   if (final) {
-    db_abort(env->session->db_handle);
+    db_disconnect(&env->session->db_handle);
   }
 
   /* Give threads a small window to finish cleanly. */

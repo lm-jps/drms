@@ -541,6 +541,8 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   }
 #endif
 
+  /* Must disconnect db, because we didn't set the final flag in drms_server_end_transaction() */
+  db_disconnect(&drms_env->session->db_handle);
   drms_free_env(drms_env, 1); 
 
   /* Free cmd-params (valgrind reports this - let's just clean up so it doesn't show up on 

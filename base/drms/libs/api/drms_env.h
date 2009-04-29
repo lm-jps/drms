@@ -37,11 +37,9 @@ DRMS_Env_t *drms_open(char *host, char *user, char *password, char *dbname, char
 
 /* - If commit==1 then commit all modified records to the database.
    - Close database connection and free DRMS data structures. */
-
+#ifdef DRMS_CLIENT
 int drms_close(DRMS_Env_t *env, int action); 
 void drms_abort(DRMS_Env_t *env);
-
-#ifdef DRMS_CLIENT
 void drms_abort_now(DRMS_Env_t *env);
 #endif
 void drms_free_env(DRMS_Env_t *env, int final);

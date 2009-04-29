@@ -176,44 +176,25 @@ DB_Handle_t *db_connect(const char *host, const char *user,
   return handle;
 }
     
-void db_disconnect(DB_Handle_t  *dbin)
+void db_disconnect(DB_Handle_t **db)
 {
-  if (dbin)
+  if (db && *db)
   {
+    DB_Handle_t *dbin = *db;
     db_lock(dbin);
 
     PQfinish(dbin->db_connection);
     dbin->db_connection = NULL; /* make it easier to spot use after free. */
 
     /* Free thread related data. */
+    db_unlock(dbin);
+    pthread_mutex_destroy(dbin->db_lock);
     free(dbin->db_lock);
     dbin->db_lock = NULL; /* make it easier to spot use after free. */
-    free(dbin);    
+    free(dbin); 
+    *db = NULL;
   }
 }
-
-
-/* Roll back and set the abort flag. */
-int db_abort(DB_Handle_t  *dbin)
-{
-  db_lock(dbin);
-  if (dbin->abort_now)
-    goto failure;
-
-  /* Close connection to server. */
-  PQfinish(dbin->db_connection);
-  
-  dbin->abort_now = 1; /* All subsequent database operations must abort. */
-
-  db_unlock(dbin);
-  return 0;
-
- failure:
-  db_unlock(dbin);
-  return 1;
-}
-
-
 
 DB_Text_Result_t *db_query_txt(DB_Handle_t  *dbin,  char *query_string)
 {
