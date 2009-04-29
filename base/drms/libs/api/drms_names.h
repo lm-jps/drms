@@ -24,7 +24,7 @@ int drms_names_parseduration(char **in, double *duration);
    and {unit} is a single character that represents the unit by which 
    {num} should be interpreted. For example, "2h" should be interpreted
    as two hours, and given an input of "2h", this function will return a
-   120.0 (for 120 seconds). Supported values for {unit} are @a s (seconds),
+   7200.0 (for 7200 seconds). Supported values for {unit} are @a s (seconds),
    @a m (minutes), @a h (hours), @a d (days), or @a u (for slotted keywords
    only - unit defined by slotted-keyword unit). If {unit} is @a u, 
    then the unit by which {num} should interpreted is equivalent
