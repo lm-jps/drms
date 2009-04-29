@@ -6,7 +6,7 @@
 
 
 #define kDRMSSERVERLOG "drmslog"
-#define kDRMSSERVERLOGDEF "/tmp/drmsserver_logs"
+#define kDRMSSERVERLOGDEF "/tmp"
 #define kDRMSRUNLOG "drmsrunlog"
 #define kNOTSPECIFIED "notspecified"
 
