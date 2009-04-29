@@ -10,6 +10,11 @@
 int drms_names_parseduration(char **in, double *duration);
 
 /**
+   @addtogroup names_api
+   @{
+*/
+
+/**
    @fn int drms_names_parseduration(char **in, double *duration)
    Converts a time-duration string (like 1d, 10s, 22.5m) into a double-precision, 
    floating-point value. This output value is a time interval expressed as 
@@ -34,6 +39,10 @@ int drms_names_parseduration(char **in, double *duration);
    when {unit} is @a u, in which case the unit of the floating-point number
    is determined by the unit of the slotted keyword values) returned by reference.
    @return On error, returns 1, otherwise, returns 0.
+*/
+
+/**
+   @}
 */
 
 #endif

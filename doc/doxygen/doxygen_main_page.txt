@@ -197,3 +197,8 @@ blocks: http://www.stack.nl/~dimitri/doxygen/commands.html
 @defgroup link_api Functions for reading from links
 @ingroup full_api
 */
+
+/**
+@defgroup names_api Functions for working with record-query strings
+@ingroup full_api
+*/
