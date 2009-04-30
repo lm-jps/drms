@@ -50,6 +50,7 @@ DRMS_Session_t *drms_connect(char *host)
        free(hostname);
     }
 
+    fprintf(stderr, "Error calling gethostbyname().\n");
     return NULL;
   }
   
@@ -91,11 +92,9 @@ DRMS_Session_t *drms_connect(char *host)
   /* connect the socket to the server's address */
   if ( connect(session->sockfd, serverp, sizeof(struct sockaddr_in)) == -1 )
   {
-#ifdef DEBUG
     perror("connect");
     fprintf(stderr,"Failed to connect to server, please check that host name, "
 	    "port number and password are correct.\n");
-#endif
     goto bailout;
   }
   strncpy(session->hostname, hostname, DRMS_MAXHOSTNAME);
@@ -113,7 +112,10 @@ DRMS_Session_t *drms_connect(char *host)
      pastures of DRMS. */
   denied = Readint(session->sockfd);
   if (denied)
-    goto bailout;
+  {
+     fprintf(stderr, "drms_server didn't accept the attempt to connect with it.\n");
+     goto bailout;
+  }
   session->clientid = Readint(session->sockfd);
   session->sessionid = Readlonglong(session->sockfd);
   session->sessionns = receive_string(session->sockfd);
