@@ -412,8 +412,8 @@ KEY *robotdo_1(KEY *params)
         current_client = clnttape;            /* set for call to tape_svc */
         procnum = TAPERESPROBOTDO;            /* this proc number */
         return(retlist);
+        }
       }
-    }
     }
     write_log("***Rb:success\n\n");
   }
