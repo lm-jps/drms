@@ -875,29 +875,102 @@ KEY *writedo_1(KEY *params) {
 */
 KEY *jmtxtapedo_1(KEY *params) {
   static CLIENT *clresp;
-  int slotnum, drivenum;
-  char *mode;
+  int slotnum, drivenum, status;
+  uint64_t robotback;
+  char cmd[80], errstr[80];
+  char *call_err, *mode;
+  KEY *xlist;
 
   if(findkey(params, "DEBUGFLG")) {
     debugflg = getkey_int(params, "DEBUGFLG");
     if(debugflg) {
-      write_log("writedo_1() call in tape_svc. keylist is:\n");
+      write_log("jmtxtapedo_1() call in tape_svc. keylist is:\n");
       keyiterate(logkey, params);
     }
   }
   mode = getkey_str(params, "mode");
   slotnum = getkey_int(params, "slotnum");
   drivenum = getkey_int(params, "drivenum");
+  xlist = newkeylist();
   if(!(clresp = set_client_handle(JMTXPROG, JMTXVERS))) { 
     rinfo = NO_CLNTTCP_CREATE;  /* give err status back to original caller */
     send_ack();
     return((KEY *)1);  /* error. nothing to be sent */
   }
-  rinfo = RESULT_PEND;    /* tell caller to wait later for results */
+  setkey_fileptr(&params, "current_client", (FILE *)clresp);
+  current_client = clresp;   /* set for call to jmtx */
+  procnum = JMTXDO;          /* for this proc number */
+  setkey_uint32( &params, "procnum", procnum);
+  if(!strcmp(mode, "status")) {
+    add_keys(params, &xlist);
+    sprintf(cmd, "mtx -f %s status 1> /tmp/mtx/mtx_robot_%d.log 2>&1", 
+			libdevname, robotcmdseq);
+    if(system(cmd)) {
+      write_log("Error on: %s\n", cmd);
+      setkey_int(&xlist, "STATUS", 1);
+      sprintf(errstr, "Error on: %s", cmd);
+      setkey_str(&xlist, "ERRSTR", errstr);
+      setkey_fileptr(&xlist,  "current_client", (FILE *)current_client);
+      ++robotcmdseq;
+      return(xlist);
+    }
+    write_log("jmtx status in: /tmp/mtx/mtx_robot_%d.log\n", robotcmdseq);
+    sprintf(errstr, "jmtx Status in: /tmp/mtx/mtx_robot_%d.log\n",
+		robotcmdseq++);
+    setkey_fileptr(&xlist,  "current_client", (FILE *)current_client);
+    setkey_str(&xlist, "MSG", errstr);
+    setkey_int(&xlist, "STATUS", 0);
+    return(xlist);
+  }
+  if(drives[drivenum].busy) {
+    sprintf(errstr, "Error: drive# %d is currently busy\n", drivenum);
+    add_keys(params, &xlist);
+    setkey_fileptr(&xlist,  "current_client", (FILE *)current_client);
+    setkey_str(&xlist, "ERRSTR", errstr);
+    setkey_int(&xlist, "STATUS", 1);
+    return(xlist);
+  }
+
+  //call robot_svc to do load/unload of a drive
+  robotbusy = 1;
+  drives[drivenum].busy = 1;
+  rinfo = 0;
+  write_log("*Tp:DrBusy: drv=%d\n", drivenum);
+  add_keys(params, &xlist);
+  setkey_str(&xlist, "OP", "jmtx");
+  setkey_int(&xlist, "dnum", drivenum);
+  setkey_int(&xlist, "snum", slotnum);
+  sprintf(cmd, "mtx -f %s %s %d %d 1> /tmp/mtx/mtx_robot_%d.log 2>&1",
+                libdevname, mode, slotnum, drivenum, robotcmdseq++);
+  setkey_str(&xlist, "cmd1", cmd);
+  setkey_int(&xlist, "DEBUGFLG", 0);
+  setkey_fileptr(&xlist,  "current_client", (FILE *)current_client);
+  status = clnt_call(clntrobot0, ROBOTDO, (xdrproc_t)xdr_Rkey,(char *)xlist,
+                        (xdrproc_t)xdr_uint32_t, (char *)&robotback, TIMEOUT);
+  if(status != RPC_SUCCESS) {
+    if(status != RPC_TIMEDOUT) {  /* allow timeout */
+      call_err = clnt_sperror(clntrobot0, "Err clnt_call for ROBOTDO");
+      write_log("%s %s\n", datestring(), call_err);
+      robotbusy = 0;
+      drives[drivenum].busy = 0;
+      rinfo = 1;
+      write_log("*Tp:DrNotBusy: drv=%d\n", drivenum);
+    }
+  }
+  if(robotback == 1) {
+    write_log("**Error in ROBOTDO call in tape_svc_proc.c\n");
+    robotbusy = 0;
+    drives[drivenum].busy = 0;
+    rinfo = 1;
+    write_log("*Tp:DrNotBusy: drv=%d\n", drivenum);
+  }
+  if(!rinfo) {			//no err, tell caller RESULT_PEND
+    rinfo = RESULT_PEND;	//tell caller to wait later for results 
+  }
   send_ack();
   return((KEY *)1);
-
 }
+
 
 /* This is called from drive[0,1]_svc when a tape write completes.
  * The keylist looks like:
@@ -1298,7 +1371,8 @@ KEY *taperespreaddo_1(KEY *params) {
 */
 KEY *taperesprobotdo_1(KEY *params) {
   static KEY *retlist;
-  int s, d;
+  CLIENT *client;
+  int s, d, status;
   char scr[80];
   char *cptr, *cmd;
 
@@ -1332,6 +1406,40 @@ KEY *taperesprobotdo_1(KEY *params) {
     drives[d].busy = 0;
     write_log("*Tp:DrNotBusy: drv=%d\n", d);
     retlist = (KEY *)1;
+  }
+  else if(!strcmp(cptr, "jmtx")) {
+    status = getkey_int(params, "STATUS");
+    if(findkey(params, "cmd1")) {
+      cmd = GETKEY_str(params, "cmd1");
+      if(strstr(cmd, " load ")) {  /* cmd like: mtx -f /dev/sg7 load 14 1 */
+       sscanf(cmd, "%s %s %s %s %d %d", scr, scr, scr, scr, &s, &d); 
+       s--;			/* must use internal slot # */
+       if(status == 0) {
+         //write_log("jmtx load cmd1 s=%d d=%d\n", s, d);
+         drives[d].tapeid = slots[s].tapeid;
+         drives[d].slotnum = s;
+         slots[s].tapeid = NULL; 
+       }
+      }
+      if(strstr(cmd, " unload ")) { /* cmd like: mtx -f /dev/sg7 unload 15 0 */
+       sscanf(cmd, "%s %s %s %s %d %d", scr, scr, scr, scr, &s, &d); 
+       s--;			/* must use internal slot # */
+       if(status == 0) {
+         //write_log("jmtx unload cmd1 s=%d d=%d\n", s, d);
+         slots[s].tapeid = drives[d].tapeid; 
+         drives[d].tapeid = NULL;
+         drives[d].slotnum = -1;
+       }
+      }
+      drives[d].busy = 0;
+      retlist = newkeylist();
+      add_keys(params, &retlist);           /* NOTE:does not do fileptr */
+      current_client = (CLIENT *)getkey_fileptr(params, "current_client");
+      /* final destination */
+      setkey_fileptr(&retlist,  "current_client", (FILE *)current_client);
+      procnum = getkey_uint32(params, "procnum");
+      return(retlist);
+    }
   }
   else if(!strcmp(cptr, "clean")) {
     if(findkey(params, "cmd1")) {
