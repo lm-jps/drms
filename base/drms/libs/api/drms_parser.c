@@ -7,17 +7,14 @@
 /* Utility functions. */
 static int getstring(char **inn, char *out, int maxlen);
 static int getvalstring(char **inn, char *out, int maxlen);
-/*
-static int getdouble(char **in, double *val);
-static int getfloat(char **in, float *val); 
-*/
-static int getint(char **in, int *val);
+static int getdouble(char **in, double *val, int parserline);
+static int getint(char **in, int *val, int parserline);
 static inline int prefixmatch(char *token, const char *pattern);
-static int gettoken(char **in, char *copy, int maxlen);
-static int getvaltoken(char **in, DRMS_Type_t type, char *copy, int maxlen);
+static int gettoken(char **in, char *copy, int maxlen, int parserline);
+static int getvaltoken(char **in, DRMS_Type_t type, char *copy, int maxlen, int parserline);
 
 /* Main parsing functions. */
-int getkeyword(char **line);
+int getkeyword(char **line, int parserline);
 static int getnextline(char **start);
 static int parse_seriesinfo(char *desc, DRMS_Record_t *template);
 static int parse_segments(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys);
@@ -33,9 +30,23 @@ static int parse_dbindex(char *desc, DRMS_Record_t *template);
 
 /* This macro advances the character pointer argument past all 
    whitespace or until it points to end-of-string (0). */
-#define SKIPWS(p) {while(*p && ISBLANK(*p)) { if(*p=='\n') {lineno++;} ++p;}}
-#define ISBLANK(c) (c==' ' || c=='\t' || c=='\n' || c=='\r')
+//#define SKIPWS(p) {while(*p && ISBLANK(*p)) { if(*p=='\n') {lineno++;} ++p;}}
+/* Don't even THINK of advancing the lineno with SKIPWS - you really don't want to do this
+ * with a function like this, and if you need to skip lines, do it outside of SKIPWS. */
+#define SKIPWS(p) {while(*p && ISBLANK(*p)) { ++p; }}
+//#define ISBLANK(c) (c==' ' || c=='\t' || c=='\n' || c=='\r')
+#define ISBLANK(c) (c==' ' || c=='\t' || c=='\r')
 #define TRY(__code__) {if ((__code__)) return 1;}
+
+
+/* Add macros so that getkeyword, et al, use the correct __LINE__ 
+ * (otherwise, they use the line that getkeyword lives at */
+#define GETDOUBLE(p, v) getdouble(p, v, __LINE__)
+#define GETINT(p, v) getint(p, v, __LINE__)
+#define GETTOKEN(p, c, m) gettoken(p, c, m,  __LINE__)
+#define GETVALTOKEN(p, t, c, m) getvaltoken(p, t, c, m, __LINE__)
+#define GETKEYWORD(p) getkeyword(p, __LINE__)
+#define GOTOFAILURE { parserline = __LINE__; goto failure; }
 
 static int lineno;
 
@@ -143,6 +154,7 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
     goto bailout;
   }
 
+  lineno = 0;
   if (parse_dbindex(desc, template))
   {
     fprintf(stderr,"Failed to parse series info.\n");
@@ -183,35 +195,46 @@ static int parse_seriesinfo (char *desc, DRMS_Record_t *template) {
   start = desc;
   len = getnextline (&start);
   while (*start) {
-    p = start;
-    SKIPWS(p);
-    q = p;
-				/* Scan past keyword followed by ':'. */
-    if (getkeyword (&q)) return 1;
-	/* Branch on keyword and insert appropriate information into struct. */
-    if (prefixmatch (p, "Seriesname"))
-      TRY(getstring (&q, template->seriesinfo->seriesname, DRMS_MAXSERIESNAMELEN) <= 0)
-    if (prefixmatch (p, "Version"))
-      TRY(getstring (&q, template->seriesinfo->version, DRMS_MAXSERIESVERSION) <= 0)
-    else if (prefixmatch (p, "Description"))
-      TRY(getstring (&q, template->seriesinfo->description, DRMS_MAXCOMMENTLEN) < 0)
-    else if (prefixmatch (p, "Owner"))
-      TRY(getstring (&q, template->seriesinfo->owner, DRMS_MAXOWNERLEN) <= 0)
-    else if (prefixmatch (p, "Author"))
-      TRY(getstring (&q, template->seriesinfo->author, DRMS_MAXCOMMENTLEN) <= 0)
-    else if (prefixmatch (p, "Archive"))
-      TRY(getint (&q, &(template->seriesinfo->archive)))
-    else if (prefixmatch (p, "Unitsize"))
-    {
-       TRY(getint (&q, &(template->seriesinfo->unitsize)))
-    }
-    else if (prefixmatch (p, "Tapegroup"))
-      TRY(getint (&q, &(template->seriesinfo->tapegroup)))
-    else if (prefixmatch (p, "Retention"))
-      TRY(getint (&q, &(template->seriesinfo->retention)))
+     
+     p = start;
+     SKIPWS(p);
 
-    start += len + 1;
-    len = getnextline (&start);
+     if (*p == '\n')
+     {
+        p++;
+        start = p;
+        len = getnextline (&start);
+        continue;
+     }
+
+     q = p;
+
+     /* Scan past keyword followed by ':'. */
+     if (GETKEYWORD(&q)) return 1;
+     /* Branch on keyword and insert appropriate information into struct. */
+     if (prefixmatch (p, "Seriesname"))
+       TRY(getstring (&q, template->seriesinfo->seriesname, DRMS_MAXSERIESNAMELEN) <= 0)
+     if (prefixmatch (p, "Version"))
+       TRY(getstring (&q, template->seriesinfo->version, DRMS_MAXSERIESVERSION) <= 0)
+     else if (prefixmatch (p, "Description"))
+       TRY(getstring (&q, template->seriesinfo->description, DRMS_MAXCOMMENTLEN) < 0)
+     else if (prefixmatch (p, "Owner"))
+       TRY(getstring (&q, template->seriesinfo->owner, DRMS_MAXOWNERLEN) <= 0)
+     else if (prefixmatch (p, "Author"))
+       TRY(getstring (&q, template->seriesinfo->author, DRMS_MAXCOMMENTLEN) <= 0)
+     else if (prefixmatch (p, "Archive"))
+       TRY(GETINT(&q, &(template->seriesinfo->archive)))
+     else if (prefixmatch (p, "Unitsize"))
+     {
+        TRY(GETINT (&q, &(template->seriesinfo->unitsize)))
+     }
+     else if (prefixmatch (p, "Tapegroup"))
+       TRY(GETINT (&q, &(template->seriesinfo->tapegroup)))
+     else if (prefixmatch (p, "Retention"))
+       TRY(GETINT (&q, &(template->seriesinfo->retention)))
+     start += len + 1; /* len doesn't account for \n*/
+
+     len = getnextline (&start);
   }
 
   if (template->seriesinfo->archive != -1 && 
@@ -257,20 +280,30 @@ static int parse_segments (char *desc, DRMS_Record_t *template, HContainer_t *cp
   segnum = 0;
   while(*start)
   {
-    p = start;
-    SKIPWS(p);
-    q = p;
-    if (getkeyword(&q))
-      return 1;
+     p = start;
+     SKIPWS(p);
+
+     if (*p == '\n')
+     {
+        p++;
+        start = p;
+        len = getnextline (&start);
+        continue;
+     }
+
+     q = p;
+     if (GETKEYWORD(&q))
+       return 1;
     
-    if (prefixmatch(p,"Data:"))
-    {      
-      if (parse_segment(&q, template, segnum, cparmkeys))
-	return 1;
-      ++segnum;
-    }
-    start += len+1;
-    len = getnextline(&start);
+     if (prefixmatch(p,"Data:"))
+     {      
+        if (parse_segment(&q, template, segnum, cparmkeys))
+          return 1;
+        ++segnum;
+     }
+     start += len+1; /* len doesn't account for \n*/
+
+     len = getnextline(&start);
   }
   return 0;
 }
@@ -288,6 +321,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
   char bzero[64]; /* for TAS, default scale */
   char bscale[64]; /* for TAS, default scale */
   DRMS_Segment_t *seg;
+  int parserline = -1;
 
   /* This function contains code that is conditional on series version. */
   DRMS_SeriesVersion_t vers2_0 = {"2.0", ""};
@@ -299,7 +333,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
 
 
   /* Collect tokens */
-  if (gettoken(&q,name,sizeof(name)) <= 0) goto failure;
+  if (GETTOKEN(&q,name,sizeof(name)) <= 0) GOTOFAILURE;
   XASSERT((seg = hcon_allocslot_lower(&template->segments, name)));
   memset(seg,0,sizeof(DRMS_Segment_t));
   XASSERT(seg->info = malloc(sizeof(DRMS_SegmentInfo_t)));
@@ -310,26 +344,26 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
   /* Number */
   seg->info->segnum = segnum;
 
-  if (gettoken(&q,scope,sizeof(scope)) <= 0) goto failure;
+  if (GETTOKEN(&q,scope,sizeof(scope)) <= 0) GOTOFAILURE;
   if ( !strcasecmp(scope,"link") ) {
     /* Link segment */
     seg->info->islink = 1;
     seg->info->scope= DRMS_VARIABLE;
     seg->info->type = DRMS_TYPE_INT;
     seg->info->protocol = DRMS_GENERIC;
-    if(gettoken(&q,seg->info->linkname,sizeof(seg->info->linkname)) <= 0)     goto failure;
-    if(gettoken(&q,seg->info->target_seg,sizeof(seg->info->target_seg)) <= 0) goto failure;
+    if(GETTOKEN(&q,seg->info->linkname,sizeof(seg->info->linkname)) <= 0)     GOTOFAILURE;
+    if(GETTOKEN(&q,seg->info->target_seg,sizeof(seg->info->target_seg)) <= 0) GOTOFAILURE;
     /* Naxis */      
-    if (gettoken(&q,naxis,sizeof(naxis)) <= 0) goto failure;
+    if (GETTOKEN(&q,naxis,sizeof(naxis)) <= 0) GOTOFAILURE;
     seg->info->naxis = atoi(naxis);
     /* Axis */
     for (i=0; i<seg->info->naxis; i++)
       {
-	if (gettoken(&q,axis,sizeof(axis)) <= 0) goto failure;
+	if (GETTOKEN(&q,axis,sizeof(axis)) <= 0) GOTOFAILURE;
 	seg->axis[i] = atoi(axis);
       }
 
-    if (getstring(&q,seg->info->description,sizeof(seg->info->description))<0) goto failure;
+    if (getstring(&q,seg->info->description,sizeof(seg->info->description))<0) GOTOFAILURE;
   } else {
     /* Simple segment */
     seg->info->islink = 0;
@@ -340,24 +374,24 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
       seg->info->scope = DRMS_VARIABLE;
     else if (!strcmp(scope, "vardim"))
       seg->info->scope = DRMS_VARDIM;
-    else goto failure;
+    else GOTOFAILURE;
 
     /* Type */
-    if (gettoken(&q,type,sizeof(type)) <= 0) goto failure;
+    if (GETTOKEN(&q,type,sizeof(type)) <= 0) GOTOFAILURE;
     seg->info->type  = drms_str2type(type);
     /* Naxis */      
-    if (gettoken(&q,naxis,sizeof(naxis)) <= 0) goto failure;
+    if (GETTOKEN(&q,naxis,sizeof(naxis)) <= 0) GOTOFAILURE;
     seg->info->naxis = atoi(naxis);
     /* Axis */
     for (i=0; i<seg->info->naxis; i++)
       {
-	if (gettoken(&q,axis,sizeof(axis)) <= 0) goto failure;
+	if (GETTOKEN(&q,axis,sizeof(axis)) <= 0) GOTOFAILURE;
 	seg->axis[i] = atoi(axis);
       }
 
-    if (gettoken(&q,unit,sizeof(unit)) < 0) goto failure;
+    if (GETTOKEN(&q,unit,sizeof(unit)) < 0) GOTOFAILURE;
     strcpy(seg->info->unit, unit);
-    if (gettoken(&q,protocol,sizeof(protocol)) <= 0) goto failure;
+    if (GETTOKEN(&q,protocol,sizeof(protocol)) <= 0) GOTOFAILURE;
     seg->info->protocol = drms_str2prot(protocol);
 
     if (!drms_series_isvers(template->seriesinfo, &vers2_0))
@@ -368,7 +402,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
           /* Tile sizes */
           for (i=0; i<seg->info->naxis; i++)
           {
-             if (gettoken(&q,axis,sizeof(axis)) <= 0) goto failure;
+             if (GETTOKEN(&q,axis,sizeof(axis)) <= 0) GOTOFAILURE;
              seg->blocksize[i] = atoi(axis);
           }
        }
@@ -392,7 +426,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
           /* cparms can be empty */
           if (seg->info->protocol != DRMS_FITZ)
           {
-             if (getvaltoken(&q, DRMS_TYPE_STRING, cparms, sizeof(cparms)) < 0) goto failure;
+             if (GETVALTOKEN(&q, DRMS_TYPE_STRING, cparms, sizeof(cparms)) < 0) GOTOFAILURE;
           }
 
           snprintf(buf, sizeof(buf), "cparms_sg%03d", segnum);
@@ -429,7 +463,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
               * So, don't use sscanf here - do something special for strings. */
              chused = drms_sscanf_str(cparms, NULL, &cpkey->value);
              if (chused < 0)
-               goto failure;
+               GOTOFAILURE;
           }
 
           snprintf(cpkey->info->format, DRMS_MAXFORMATLEN, "%s", "%s");
@@ -458,8 +492,8 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
           DRMS_Value_t vholder;
 
           /* Must create bzero and bscale keywords for all TAS and FITS files. */
-          if (gettoken(&q, bzero, sizeof(bzero)) <= 0) goto failure;
-          if (gettoken(&q, bscale, sizeof(bscale)) <= 0) goto failure;
+          if (GETTOKEN(&q, bzero, sizeof(bzero)) <= 0) GOTOFAILURE;
+          if (GETTOKEN(&q, bscale, sizeof(bscale)) <= 0) GOTOFAILURE;
 
           char buf[DRMS_MAXKEYNAMELEN];
           snprintf(buf, sizeof(buf), "%s_bzero", name);
@@ -532,7 +566,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
        } /* TAS, FITS, or FITSZ */
     } /* 2.1 */
 
-    if (getstring(&q,seg->info->description,sizeof(seg->info->description))<0) goto failure;
+    if (getstring(&q,seg->info->description,sizeof(seg->info->description))<0) GOTOFAILURE;
   }
   p = ++q;
   *in = q; 
@@ -540,7 +574,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
   return 0;
  failure:
   fprintf(stderr,"%s, line %d: Invalid segment descriptor on line %d.\n",
-	  __FILE__, __LINE__,lineno);
+	  __FILE__, parserline, lineno);
   return 1;
 }
 
@@ -559,8 +593,17 @@ static int parse_links(char *desc, DRMS_Record_t *template)
   {
     p = start;
     SKIPWS(p);
+
+    if (*p == '\n')
+    {
+       p++;
+       start = p;
+       len = getnextline (&start);
+       continue;
+    }
+
     q = p;
-    if (getkeyword(&q))
+    if (GETKEYWORD(&q))
       return 1;
     
     if (prefixmatch(p,"Link:"))
@@ -568,7 +611,7 @@ static int parse_links(char *desc, DRMS_Record_t *template)
       if (parse_link(&q,template))
 	return 1;
     }
-    start += len+1;
+    start += len+1; /* len doesn't account for \n*/
     len = getnextline(&start);
   }
   return 0;
@@ -582,17 +625,17 @@ static int parse_link(char **in, DRMS_Record_t *template)
   char name[DRMS_MAXLINKNAMELEN]={0}, target[DRMS_MAXSERIESNAMELEN]={0}, type[DRMS_MAXNAMELEN]={0},
        description[DRMS_MAXCOMMENTLEN]={0};
   DRMS_Link_t *link;
-  
+  int parserline = -1;
 
   p = q = *in;
   SKIPWS(p);
   q = p;
 
   /* Collect tokens */
-  if (gettoken(&q,name,sizeof(name)) <= 0) goto failure;
-  if (gettoken(&q,target,sizeof(target)) <= 0) goto failure;
-  if (gettoken(&q,type,sizeof(type)) <= 0) goto failure;
-  if (getstring(&q,description,sizeof(description))<0) goto failure;
+  if (GETTOKEN(&q,name,sizeof(name)) <= 0) GOTOFAILURE;
+  if (GETTOKEN(&q,target,sizeof(target)) <= 0) GOTOFAILURE;
+  if (GETTOKEN(&q,type,sizeof(type)) <= 0) GOTOFAILURE;
+  if (getstring(&q,description,sizeof(description))<0) GOTOFAILURE;
   
   XASSERT((link = hcon_allocslot_lower(&template->links, name)));
   memset(link,0,sizeof(DRMS_Link_t));
@@ -608,7 +651,7 @@ static int parse_link(char **in, DRMS_Record_t *template)
     link->info->pidx_num = -1;
   }
   else
-    goto failure;
+    GOTOFAILURE;
   strncpy(link->info->description, description, DRMS_MAXCOMMENTLEN);
   link->isset = 0;
   link->recnum = -1; 
@@ -619,7 +662,7 @@ static int parse_link(char **in, DRMS_Record_t *template)
   return 0;
  failure:
   fprintf(stderr,"%s, line %d: Invalid Link descriptor on line %d.\n",
-	  __FILE__, __LINE__,lineno);
+	  __FILE__, parserline, lineno);
   return 1;
 }
 
@@ -662,8 +705,17 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys)
      {
 	p = start;
 	SKIPWS(p);
+
+        if (*p == '\n')
+        {
+           p++;
+           start = p;
+           len = getnextline (&start);
+           continue;
+        }
+
 	q = p;
-	if (getkeyword(&q))
+	if (GETKEYWORD(&q))
 	  return 1;
     
 	if (prefixmatch(p,"Keyword:"))
@@ -1377,6 +1429,7 @@ static int parse_keyword(char **in,
   int num_segments, per_segment, seg;
   DRMS_Keyword_t *key;
   int chused = 0;
+  int parserline = -1;
 
   p = q = *in;
   SKIPWS(p);
@@ -1384,30 +1437,30 @@ static int parse_keyword(char **in,
 
 
   /* Collect tokens */
-  if (gettoken(&q,name,sizeof(name)) <= 0) goto failure;
-  if (gettoken(&q,type,sizeof(type)) <= 0) goto failure;
+  if (GETTOKEN(&q,name,sizeof(name)) <= 0) GOTOFAILURE;
+  if (GETTOKEN(&q,type,sizeof(type)) <= 0) GOTOFAILURE;
   if ( !strcasecmp(type,"link") )
   {
     /* Link keyword. */
-    if(gettoken(&q,linkname,sizeof(linkname)) <= 0)     goto failure;
-    if(gettoken(&q,target_key,sizeof(target_key)) <= 0) goto failure;
-    if(gettoken(&q,description,sizeof(description)) < 0)       goto failure;
+    if(GETTOKEN(&q,linkname,sizeof(linkname)) <= 0)     GOTOFAILURE;
+    if(GETTOKEN(&q,target_key,sizeof(target_key)) <= 0) GOTOFAILURE;
+    if(GETTOKEN(&q,description,sizeof(description)) < 0)       GOTOFAILURE;
   }
   else if ( !strcasecmp(type,"index") )
   {
      /* Slotted-key index keyword */
-     if(gettoken(&q,format,sizeof(format)) <= 0)     goto failure;
-     if(gettoken(&q,description,sizeof(description)) < 0)   goto failure;
+     if(GETTOKEN(&q,format,sizeof(format)) <= 0)     GOTOFAILURE;
+     if(GETTOKEN(&q,description,sizeof(description)) < 0)   GOTOFAILURE;
   }
   else
   {
     /* Simple keyword. */
-    if(gettoken(&q,constant,sizeof(constant)) <= 0) goto failure;
-    if(gettoken(&q,scope,sizeof(scope)) <= 0)       goto failure;
-    if(getvaltoken(&q,drms_str2type(type), defval,sizeof(defval)) < 0)  goto failure;
-    if(gettoken(&q,format,sizeof(format)) <= 0)     goto failure;
-    if(gettoken(&q,unit,sizeof(unit)) < 0)         goto failure;
-    if(gettoken(&q,description,sizeof(description)) < 0)   goto failure;
+    if(GETTOKEN(&q,constant,sizeof(constant)) <= 0) GOTOFAILURE;
+    if(GETTOKEN(&q,scope,sizeof(scope)) <= 0)       GOTOFAILURE;
+    if(GETVALTOKEN(&q,drms_str2type(type), defval,sizeof(defval)) < 0)  GOTOFAILURE;
+    if(GETTOKEN(&q,format,sizeof(format)) <= 0)     GOTOFAILURE;
+    if(GETTOKEN(&q,unit,sizeof(unit)) < 0)         GOTOFAILURE;
+    if(GETTOKEN(&q,description,sizeof(description)) < 0)   GOTOFAILURE;
   }
 
 
@@ -1507,14 +1560,14 @@ static int parse_keyword(char **in,
     else if (!strcasecmp(scope,"record"))
       per_segment = 0;
     else
-      goto failure;
+      GOTOFAILURE;
 
     if (per_segment == 1 && num_segments < 1)
     {
        fprintf(stderr, 
 	       "'%s' declared per_segment, but no segments declared.\n",
 	       name);
-       goto failure;
+       GOTOFAILURE;
     }
 
     for (seg=0; seg<(per_segment==1?num_segments:1); seg++)
@@ -1567,7 +1620,7 @@ static int parse_keyword(char **in,
 
       if (chused < 0 || 
           (chused == 0 && key->info->type != DRMS_TYPE_STRING && key->info->type != DRMS_TYPE_TIME))
-	goto failure;
+	GOTOFAILURE;
 #ifdef DEBUG      
       printf("Default value = '%s' = ",defval);
       drms_printfval(key->info->type, &key->value);
@@ -1589,7 +1642,7 @@ static int parse_keyword(char **in,
       if (stat == DRMS_SUCCESS)
 	key->info->recscope = rscope;
       else
-	goto failure;
+	GOTOFAILURE;
       strcpy(key->info->description,description);
 
       drms_keyword_unsetintprime(key);
@@ -1607,7 +1660,7 @@ static int parse_keyword(char **in,
   return 0;
  failure:
   fprintf(stderr,"%s, line %d: Invalid keyword descriptor on line %d.\n",
-	  __FILE__, __LINE__,lineno);
+	  __FILE__, parserline, lineno);
   return 1;
 }
 
@@ -1627,8 +1680,17 @@ static int parse_primaryindex(char *desc, DRMS_Record_t *template)
   {
     p = start;
     SKIPWS(p);
+
+    if (*p == '\n')
+    {
+       p++;
+       start = p;
+       len = getnextline (&start);
+       continue;
+    }
+
     q = p;
-    if (getkeyword(&q))
+    if (GETKEYWORD(&q))
       return 1;
     
     if (prefixmatch(p,"Index:") || prefixmatch(p,"PrimeKeys:"))
@@ -1755,8 +1817,17 @@ static int parse_dbindex(char *desc, DRMS_Record_t *template)
   {
     p = start;
     SKIPWS(p);
+
+    if (*p == '\n')
+    {
+       p++;
+       start = p;
+       len = getnextline (&start);
+       continue;
+    }
+
     q = p;
-    if (getkeyword(&q))
+    if (GETKEYWORD(&q))
       return 1;
     
     if (prefixmatch(p,"DBIndex:"))
@@ -1841,7 +1912,7 @@ static int parse_dbindex(char *desc, DRMS_Record_t *template)
 
 
 /* Skip empty lines and lines where the first non-whitespace character 
-   is '#' */
+ * is '#'. Assumes we're at the beginning of a line. */
 static int getnextline(char **start)
 {
   char *p;
@@ -1852,10 +1923,18 @@ static int getnextline(char **start)
   SKIPWS(p);
   while(*p && *p=='#')
   {
-    while(*p && *p++ != '\n');
-    lineno++;
-    SKIPWS(p);
+    while(*p && *p != '\n')
+    {
+       p++;
+    }
+
+    if (*p == '\n')
+    {
+       p++;
+       lineno++;
+    }
   }
+
   *start = p;
 
   /* find the length of the line. */
@@ -1864,6 +1943,7 @@ static int getnextline(char **start)
     length++; 
     ++p; 
   } 
+
   lineno++;
   return length;
 }
@@ -1877,7 +1957,8 @@ static int getnextline(char **start)
    to the character immediately following the last character 
    copied from the input string. Return value is the number
    of characters copied or -1 if an error occured. */
-
+/* returns -1 if no string was found (an empty string is a 
+ * string, so -1 will not b returned) */
 static int getstring(char **inn, char *out, int maxlen) {
   char escape;
   int len;
@@ -1887,9 +1968,11 @@ static int getstring(char **inn, char *out, int maxlen) {
   /* Skip leading whitespace. */
   SKIPWS(in);
 
-  len = 0;
+  len = -1;
   if ( *in=='"' || *in=='\'' )
   {
+    len++;
+
     /* an escaped string */
     escape = *in;
     //    printf("escape = '%c'\n",escape);
@@ -1906,10 +1989,15 @@ static int getstring(char **inn, char *out, int maxlen) {
   else
   {
     /* an un-escaped string (cannot contain whitespace or comma) */    
-    while(*in && !ISBLANK(*in) && *in!=',' && len<maxlen-1)
+    while(*in && !ISBLANK(*in) && *in!=',' && *in != '\n' && len<maxlen-1)
     {
       *out++ = *in++;
       len++;
+    }
+
+    if (len >= 0)
+    {
+       len++;
     }
   }
   /* Terminate output string. */
@@ -1924,6 +2012,8 @@ static int getstring(char **inn, char *out, int maxlen) {
 /* same as above, but don't strip off quotes - you need these because there might be escape chars 
  * in the string (like tabs)
  */
+/* returns -1 if no string was found (an empty string is a 
+ * string, so -1 will not b returned) */
 static int getvalstring(char **inn, char *out, int maxlen)
 {
    char escape;
@@ -1934,9 +2024,11 @@ static int getvalstring(char **inn, char *out, int maxlen)
    /* Skip leading whitespace. */
    SKIPWS(in);
 
-   len = 0;
+   len = -1;
    if ( *in=='"' || *in=='\'' )
    {
+      len++;
+
       /* an escaped string - copy quotes to out */
       escape = *in;
       *out++ = *in++;
@@ -1967,14 +2059,19 @@ static int getvalstring(char **inn, char *out, int maxlen)
    return len;
 }
 
-static int getint(char **in, int *val)
+static int getint(char **in, int *val, int parserline)
 {
   char *endptr;
   
   *val = (int)strtol(*in,&endptr,0);
   if (*val==0 && endptr==*in )
   {
-    fprintf(stderr,"%s, line %d: The string '%s' on line %d of JSOC series descriptor is not an integer.\n",__FILE__, __LINE__,  *in, lineno);
+    fprintf(stderr,
+            "%s, line %d: The string '%s' on line %d of JSOC series descriptor is not an integer.\n",
+            __FILE__, 
+            parserline,
+            *in, 
+            lineno);
     return 1;
   }
   else
@@ -2003,14 +2100,19 @@ static int getfloat(char **in, float *val)
   }
 }
 
-static int getdouble(char **in, double *val)
+static int getdouble(char **in, double *val, int parserline)
 {
   char *endptr;
 
   *val = strtod(*in, &endptr);
   if (*val==0 && endptr==*in )
   {
-      fprintf(stderr, "%s, line %d: The string '%s' on line %d of JSOC series descriptor is not a double.\n",__FILE__, __LINE__, *in, lineno);
+      fprintf(stderr, 
+              "%s, line %d: The string '%s' on line %d of JSOC series descriptor is not a double.\n",
+              __FILE__, 
+              parserline, 
+              *in, 
+              lineno);
       return 1;
   }
   else
@@ -2022,7 +2124,20 @@ static int getdouble(char **in, double *val)
 */
 
 /* Get a string followed by comma (if the comma exists). */
-static int gettoken(char **in, char *copy, int maxlen) 
+/* If there is no token, return -1, else return the length of the token 
+ * (which might be zero for empty string).
+ *
+ *  string     token                 len returned
+ *  ------     --------              ------------
+ *   ","       no token               -1
+ *   "\n"      no token               -1
+ *   ""        token (empty string)   0
+ *   xxx       token                  strlen(xxx)
+ *   "xxx"     token                  strlen(xxx)
+ *
+ * If there is an error, returns -1.
+ */
+static int gettoken(char **in, char *copy, int maxlen, int parserline) 
 {
   int len;
   int ln = lineno;
@@ -2030,12 +2145,23 @@ static int gettoken(char **in, char *copy, int maxlen)
   if((len = getstring(in,copy,maxlen))<0)
     return -1;
 
-  if (**in != '\0' && ln == lineno)
+#if 0
+  if ((**in == '\n' || **in == ',') && len == 0)
+  {
+     return -1;
+  }
+#endif
+
+  if (**in != '\n' && **in != '\0' && ln == lineno)
   {
      if (**in != ',')
      {
-	fprintf(stderr,"%s, line %d: Expected comma (',') on line %d of JSOC series descriptor.\n", __FILE__, __LINE__, lineno);
-	return 0;
+	fprintf(stderr,
+                "%s, line %d: Expected comma (',') on line %d of JSOC series descriptor.\n", 
+                __FILE__, 
+                parserline, 
+                lineno);
+	return -1;
      }
 
      ++(*in);
@@ -2044,7 +2170,20 @@ static int gettoken(char **in, char *copy, int maxlen)
   return len;
 }
 
-static int getvaltoken(char **in, DRMS_Type_t type, char *copy, int maxlen)
+/* If there is no token, return -1, else return the length of the token 
+ * (which might be zero for empty string).
+ *
+ *  string     token                 len returned
+ *  ------     --------              ------------
+ *   ","       no token               -1
+ *   "\n"      no token               -1
+ *   ""        token (empty string)   0
+ *   xxx       token                  strlen(xxx)
+ *   "xxx"     token                  strlen(xxx)
+ *
+ * If there is an error, returns -1.
+ */
+static int getvaltoken(char **in, DRMS_Type_t type, char *copy, int maxlen, int parserline)
 {
    if (type == DRMS_TYPE_STRING)
    {
@@ -2054,12 +2193,23 @@ static int getvaltoken(char **in, DRMS_Type_t type, char *copy, int maxlen)
       if((len = getvalstring(in,copy,maxlen))<0)
         return -1;
 
-      if (**in != '\0' && ln == lineno)
+#if 0
+      if ((**in == '\n' || **in == ',') && len == 0)
+      {
+         return -1;
+      }
+#endif
+
+      if (**in != '\n' && **in != '\0' && ln == lineno)
       {
          if (**in != ',')
          {
-            fprintf(stderr,"%s, line %d: Expected comma (',') on line %d of JSOC series descriptor.\n", __FILE__, __LINE__, lineno);
-            return 0;
+            fprintf(stderr,
+                    "%s, line %d: Expected comma (',') on line %d of JSOC series descriptor.\n",
+                    __FILE__, 
+                    parserline, 
+                    lineno);
+            return -1;
          }
 
          ++(*in);
@@ -2069,7 +2219,7 @@ static int getvaltoken(char **in, DRMS_Type_t type, char *copy, int maxlen)
    }
    else
    {
-      return gettoken(in, copy, maxlen);
+      return GETTOKEN(in, copy, maxlen);
    }
 }
 
@@ -2083,7 +2233,7 @@ static inline int prefixmatch(char *token, const char *pattern)
    i.e. begins with a keyword followed by ':'. Advance
    the line pointer to the next character after ':' 
 */
-int getkeyword(char **line)
+int getkeyword(char **line, int parserline)
 {
   char *p;
 
@@ -2094,8 +2244,8 @@ int getkeyword(char **line)
   if (*p != ':')
   {
     fprintf(stderr,"%s, line %d: Syntax error in JSOC series descriptor. "
-	    "Expected ':' at line %d, column %d.\n",__FILE__, 
-	    __LINE__, (int)(p - *line),lineno); 
+	    "Expected ':' at line %d, column %d.\n", __FILE__, 
+	    parserline, (int)(p - *line), lineno); 
     return 1;
   }
   *line = p+1;
