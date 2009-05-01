@@ -92,11 +92,8 @@ EXEC SQL INCLUDE sqlca;
    bytes = getkey_double(params, "bytes");
    username = getkey_str(params, "username");
    mode = getkey_int(params, "mode");
-#ifdef SUMS_TAPE_AVAILABLE
-   apstatus = DAAP;
-#else
-   apstatus = DADP;
-#endif
+   if (SUMS_TAPE_AVAILABLE) apstatus = DAAP;
+   else apstatus = DADP; 
    if(mode & ARCH) {
      archsub = DAADP;
    }
