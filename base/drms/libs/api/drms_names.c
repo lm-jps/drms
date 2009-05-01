@@ -1163,7 +1163,7 @@ static int parse_duration(char **in, double *duration)
   char *end, *p = *in;
   double dval;
 
-  dval = (int)strtod(p,&end);
+  dval = strtod(p,&end);
   if ( (IsZero(dval) && end==p)  || 
        ((IsPosHugeVal(dval) || IsNegHugeVal(dval)) && errno==ERANGE))
   {
