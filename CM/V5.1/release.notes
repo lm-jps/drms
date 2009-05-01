@@ -1,4 +1,4 @@
-                       Release Notes JSOC V5.1         9Apr2009
+                       Release Notes JSOC V5.1         1May2009
                        -----------------------         ---------
 
 
@@ -105,12 +105,21 @@ jsoc_version, log directory.
 
 * Added a '-K' flag to show_info that shows a list of links
 
+* Exported drms_names_parseduration() so modules can parse time-duration strings, like
+12.8s and 14h.
+
+* New DRMS API functions - drms_record_nextkey() and drms_record_nextseg(). These
+functions allow the caller to iterate through a record's keywords and segments, and 
+they properly follow linked keywords and segments.
+
 BUG FIXES:
 * RemoteSUMS now works when Stanford storage units are offline (and on tape).
 
 * Several problems with make dependencies fixed.
 
-* Several fixes to make drms_server shut down cleanly.
+* Several fixes to make drms_server shut down cleanly. Fix cases where
+direct-connect modules were not calling PQfinish() to terminate 
+connection to DRMS database.
 
 * Fix host-and-port-number parsing so that drms_server uses the drms_session table
 in the correct database.
@@ -128,3 +137,14 @@ single-precision.
 
 * Memory leak in libtimeio.a removed.
 
+* The parsing of time-duration character strings used to result in truncated floating-point
+durations (eg., 12.8s became 12 seconds). This has been fixed so that 12.8s means 12.8 seconds.
+
+* Fix create_series jsd parser so that it properly tracks the line number in the .jsd 
+when reporting errors. It now also reports a more useful drms_parser.c line number when 
+an error occurs.
+
+* Fixed hang that occurred when a DRMS record-set query was missing the trailing ']'.
+
+* Fixed jsoc_export_as_fits, which was not exporting non-FITS segments and not 
+exporting linked segments.
