@@ -1,5 +1,5 @@
 /**
-   @addtogroup c_api
+   @addtogroup sum_api
    @{
 */
 
