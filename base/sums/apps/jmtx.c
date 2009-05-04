@@ -1,3 +1,12 @@
+/**
+\defgroup jmtx jmtx - Do an mtx command under SUMS
+@ingroup jmtx
+
+\brief This is a stand alone program that talks to tape_svc to execute
+mtx load, unload and status commands via SUMS, so that SUMS remains
+aware where all the tapes are.
+*/
+
 /*-----------------------------------------------------------------------------
  * /home/production/cvs/JSOC/base/sum/apps/jmtx.c
  *
