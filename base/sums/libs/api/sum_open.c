@@ -1,3 +1,28 @@
+/**
+   @addtogroup c_api
+   @{
+*/
+
+/**
+   @fn SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
+
+	A DRMS instance opens a session with SUMS. It gives the  server
+	name to connect to, defaults to SUMSERVER env else SUMSERVER define.
+	The db name has been depricated and has no effect. The db will be
+	the one that sum_svc was started with, e.g. sum_svc hmidb.
+	The history is a printf type logging function.
+	Returns a pointer to a SUM handle that is
+	used to identify this user for this session. 
+	Returns NULL on failure.
+	Currently the dsix_ptr[] and wd[] arrays are malloc'd to size
+	SUMARRAYSZ (64).
+*/
+
+/**
+  @}
+*/
+
+
 /* sum_open.c */
 /* Here are the API functions for SUMS.
  * This is linked in with each program that is going to call SUMS.
