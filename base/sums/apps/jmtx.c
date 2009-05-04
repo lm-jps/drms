@@ -5,6 +5,28 @@
 \brief This is a stand alone program that talks to tape_svc to execute
 mtx load, unload and status commands via SUMS, so that SUMS remains
 aware where all the tapes are.
+
+\par Synopsis:
+
+\code
+jmtx -f /dev/t950 status|load|unload [slot#] [drive#]
+\endcode
+
+\par NOTES:
+<pre>
+You must be user production to run.
+The "-f /dev/t950" is vestigial from the mtx command. The jmtx will 
+talk to its configured tape_svc which determines the device. It is left
+in to be symetric with the mtx command and to show the users intention.\n
+jmtx will still work with drives that have been taken offline via e.g.\n
+driveonoff off 10\n
+If you're going to work with some drive, it is usually best to take it 
+offline first, so that you and SUMS don't interleave your use of it.
+
+The jmtx commands show up in the tape_svc_XX.log files like so:\n
+*Rb:cmd: mtx -f /dev/t950 load 514 11 1> /tmp/mtx/mtx_robot_104.log 2>&1
+
+</pre>
 */
 
 /*-----------------------------------------------------------------------------
