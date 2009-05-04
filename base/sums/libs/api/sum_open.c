@@ -1,4 +1,7 @@
 /**
+For Full SUMS API see:\n
+http://sun.stanford.edu/web.hmi/development/SU_Development_Plan/SUM_API.html
+
    @addtogroup sum_api
    @{
 */
