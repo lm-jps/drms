@@ -32,6 +32,13 @@ Calls the SUMS API function SUM_shutdown(), which calls sum_svc and
 receives a 0 or 1 answer back. The sum_stop_d02 calls sum_adv in order to
 advise the caller if the SUMS can be safely taken down.
 </pre>
+\par WARNING:
+<pre>
+If you call sum_adv from the command line you will disable new SUM_open()
+calls. If you do this, call:\n
+sum_adv -q\n
+to re-enable.
+</pre>
 */
 
 /* sum_adv.c
