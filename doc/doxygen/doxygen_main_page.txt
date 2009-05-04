@@ -143,6 +143,11 @@ blocks: http://www.stack.nl/~dimitri/doxygen/commands.html
 ///@defgroup c_api Section 3. API Libraries
 // @{
     /**
+    @defgroup sum_api SUMS API functions
+    @ingroup c_api
+    */
+
+    /**
     @defgroup core_api Core DRMS API functions
     @ingroup c_api
     */
