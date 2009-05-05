@@ -185,7 +185,7 @@ KEY *shutdo_1(KEY *params)
 KEY *getdo_1(KEY *params)
 {
   //static struct timeval TIMEOUT = { 180, 0 }; 
-  static struct timeval TIMEOUT = { 4, 0 }; 
+  static struct timeval TIMEOUT = { 8, 0 }; 
   static CLIENT *clresp;
   uint32_t tapeback;
   uint64_t uid, sunum;
