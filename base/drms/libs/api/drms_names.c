@@ -1998,7 +1998,8 @@ int drms_recordset_query(DRMS_Env_t *env, const char *recordsetname,
                          int *allvers)
 {
   RecordSet_t *rs;
-  char *p = strdup(recordsetname);
+  char *rsn = strdup(recordsetname);
+  char *p = rsn;
   int ret = 0;
 
   *mixed = 0;
@@ -2025,9 +2026,9 @@ int drms_recordset_query(DRMS_Env_t *env, const char *recordsetname,
   else
     ret =  1;
 
-  if (p)
+  if (rsn)
   {
-     free(p);
+     free(rsn);
   }
 
   return ret;
