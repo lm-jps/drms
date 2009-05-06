@@ -1,4 +1,4 @@
-#!perl --
+#!/usr/bin/perl --
 
 # generate config scripts rather than follow the instructions
 # and have to look at all of variables to change around,
@@ -17,6 +17,7 @@
 use strict;
 use warnings;
 use Data::Dumper;
+use ExtUtils::MakeMaker;
 
 ####
 # before we go any further ...
@@ -72,7 +73,6 @@ my @fields = qw (
 	SUMS_GROUP
 	SUMS_USER
 	DRMS
-
 );
 
 
@@ -92,7 +92,6 @@ GetOptions(
 
 my $EOL = $verbose > 2 ? '' : "\n" ;
 
-use ExtUtils::MakeMaker;
 if ($noprompt) { $ENV{'PERL_MM_USE_DEFAULT'} = 1 };
 
 if ($verbose > 2) { print <<EOF; }
@@ -212,7 +211,19 @@ while ( @template_file ) {
 		$description = '';
 	}
 }
-		
+	
+
+# are there any config options in the template that were NOT in the hard coded list?
+# if so, we'll need to prompt for them, too.
+
+my %known_fields = map { $_ => undef } @fields;
+my @unknown_fields = grep { ! exists $known_fields{$_} } keys %template_defaults;
+
+if (@unknown_fields) {
+	warn "Unknown field in template : @unknown_fields $EOL" if $verbose;
+	push @fields, @unknown_fields;
+}
+
 
 #####
 
