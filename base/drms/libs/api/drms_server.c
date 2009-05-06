@@ -1428,6 +1428,9 @@ int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn) {
         fprintf(stderr, "SUMALLOC failed in drms_server_dropseries_su().\n");
         status = DRMS_ERROR_SUMALLOC;
      }
+
+     drms_free_array(array);
+     array = NULL;
   }
 
   /* No need to deep-free reply since SUMS shouldn't have malloc'd any fields. */
