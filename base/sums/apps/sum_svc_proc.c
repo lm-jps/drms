@@ -517,28 +517,29 @@ KEY *closedo_1(KEY *params)
 
 /* Called by delete_series doing a SUM_delete_series() call with all
  * the SUMS storage units (i.e. ds_index) that are associated with
- * the series about to be deleted.
+ * the series about to be deleted. The sunums are in the given file.
  * Typical keylist is:
  * DEBUGFLG:       KEYTYP_INT      1
  * USER:   	   KEYTYP_STRING   production
- * sunum_0:    KEYTYP_UINT64    574
- * sunum_1:    KEYTYP_UINT64    575
- * etc. with last one value = 0
+ * FILE:    	KEYTYP_STRING /SUM1/D99999/filename.sunums
 */
 KEY *delseriesdo_1(KEY *params)
 {
+  char *filename;
+
   if(findkey(params, "DEBUGFLG")) {
-  debugflg = getkey_int(params, "DEBUGFLG");
-  if(debugflg) {	//this can be very long. don't do for now
-    //write_log("!!Keylist in delseriesdo_1() is:\n");
-    //keyiterate(logkey, params);
-  }
+    debugflg = getkey_int(params, "DEBUGFLG");
+    if(debugflg) {
+      write_log("!!Keylist in delseriesdo_1() is:\n");
+      keyiterate(logkey, params);
+    }
   }
   rinfo = 0;
+  filename = getkey_str(params, "FILE");
   write_log("DELSERIESDO for user=%s\n", GETKEY_str(params, "USER"));
   send_ack();
   /* set DB sum_partn_alloc to DADP/DADPDELSU */
-  SUMLIB_DelSeriesSU(params);
+  SUMLIB_DelSeriesSU(filename);
   return((KEY *)1);	/* nothing will be sent later */
 }
 
