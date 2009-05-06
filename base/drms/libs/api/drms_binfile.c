@@ -33,6 +33,18 @@ int drms_binfile_read (char *filename, int nodata, DRMS_Array_t *rf) {
   char magic[9], *p, **sptr;
   long long bufsize;
 
+  if (!rf)
+  {
+     fprintf(stderr, "Bad pointer to array structure.\n");
+     return 1;
+  }
+
+  memset(rf, 0, sizeof(DRMS_Array_t));
+
+  /* bzero/bscale not currently supported, assume 0 and 1 */
+  rf->bzero = 0.0;
+  rf->bscale = 1.0;
+
   if ((fp = fopen (filename, "r")) == NULL) {
     fprintf (stderr, "ERROR: Couldn\'t open file \"%s\"\n", filename);
     return 1;
@@ -178,6 +190,18 @@ int drms_zipfile_read (char *filename, int nodata, DRMS_Array_t *rf) {
   char *p;
   char magic[9];
   size_t bufsize;
+
+  if (!rf)
+  {
+     fprintf(stderr, "Bad pointer to array structure.\n");
+     return 1;
+  }
+
+  memset(rf, 0, sizeof(DRMS_Array_t));
+
+  /* bzero/bscale not currently supported, assume 0 and 1 */
+  rf->bzero = 0.0;
+  rf->bscale = 1.0;
 
   if ((fp = gzopen (filename, "r")) == NULL) {
     fprintf (stderr, "ERROR: Couldn't open file \"%s\"\n", filename);

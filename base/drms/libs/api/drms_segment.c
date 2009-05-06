@@ -841,11 +841,6 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 		filename);      
 	goto bailout1;
       }
-
-      /* bzero and bscale are NOT stored in the binfile - set them from the segment */
-      arr->bzero = seg->bzero;
-      arr->bscale = seg->bscale;
-
       break;
     case DRMS_BINZIP:
       XASSERT(arr = malloc(sizeof(DRMS_Array_t)));
@@ -855,11 +850,6 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 		filename);      
 	goto bailout1;
       }
-
-      /* bzero and bscale are NOT stored in the binfile - set them from the segment */
-      arr->bzero = seg->bzero;
-      arr->bscale = seg->bscale;
-
       break;
     case DRMS_FITZ:
     case DRMS_FITS:
@@ -951,7 +941,9 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
   if (drms_series_isvers(seg->record->seriesinfo, &vers2_1) && 
       (seg->info->protocol == DRMS_TAS || 
        seg->info->protocol == DRMS_FITS ||
-       seg->info->protocol == DRMS_FITZ))
+       seg->info->protocol == DRMS_FITZ ||
+       seg->info->protocol == DRMS_BINARY ||
+       seg->info->protocol == DRMS_BINZIP))
   {
      /* The bzero/bscale values must be contained in record keywords - 
       * they must be allowed to vary across records (for FITS protocol) and segments.  
@@ -1092,11 +1084,6 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
                      filename);      
              goto bailout1;
           }
-
-          /* bzero and bscale are NOT stored in the binfile - set them from the segment */
-          arr->bzero = seg->bzero;
-          arr->bscale = seg->bscale;
-
           break;
         case DRMS_BINZIP:
           XASSERT(arr = malloc(sizeof(DRMS_Array_t)));
@@ -1106,11 +1093,6 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
                      filename);      
              goto bailout1;
           }
-
-          /* bzero and bscale are NOT stored in the binfile - set them from the segment */
-          arr->bzero = seg->bzero;
-          arr->bscale = seg->bscale;          
-
           break;
         case DRMS_GENERIC:
           *status = DRMS_ERROR_INVALIDACTION;
