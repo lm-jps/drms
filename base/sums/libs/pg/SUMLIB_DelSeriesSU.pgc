@@ -6,41 +6,43 @@
  * program will NOT try to rm records in the Records.txt file in a SU dir
  * if the series has been deleted and the record # could potentially be
  * reused.
- * Called with the list of sunum (i.e. ds_index) associated with the
- * deleted series.
- * Typical keylist is:
- * DEBUGFLG:       KEYTYP_INT      1
- * USER:           KEYTYP_STRING   production
- * sunum_0:    KEYTYP_UINT64    574
- * sunum_1:    KEYTYP_UINT64    575
- * etc. with last one value = 0
+ * Called with the filename that has the list of sunum (i.e. ds_index) 
+ * associated with the deleted series.
  */
 #include <SUM.h>
 #include <sum_rpc.h>
+#include <unistd.h>
 #include <printk.h>
 
-int SUMLIB_DelSeriesSU(KEY *params);
+int SUMLIB_DelSeriesSU(char *file);
 
-int SUMLIB_DelSeriesSU(KEY *params)
+int SUMLIB_DelSeriesSU(char *file)
 {
   EXEC SQL TYPE uint64_t IS unsigned long long;
 
 EXEC SQL BEGIN DECLARE SECTION;
   uint64_t        l_ds_index;
 EXEC SQL END DECLARE SECTION;
+  FILE *fp;
   uint64_t index;
-  char name[128];
+  char line[256];
   int i;
   int status = 0;
 
     EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
     EXEC SQL WHENEVER NOT FOUND GOTO sqlerror;
   printk("In SUMLIB_DelSeriesSU():\n");
-  for(i = 0; ; i++) {
-    sprintf(name, "sunum_%d", i);
-    index = getkey_uint64(params, name);
-    printk("%s = %ld\n", name, index); /* !!!TEMP */
-    if(index == 0) break;
+
+  if((fp=fopen(file, "r")) == NULL) {
+    printk("Error in SUMLIB_DelSeriesSU\n"); 
+    printk("Can't open the file %s\n", file);
+    return(1);
+  }
+
+  while(fgets(line, 256, fp)) {
+    if(line[0] == '#' || line[0] == '\n') continue;
+    sscanf(line, "%l", &index);
+    printk("%ld\n", index); /* !!!TEMP */
     l_ds_index = index;
 
 	EXEC SQL UPDATE SUM_PARTN_ALLOC
