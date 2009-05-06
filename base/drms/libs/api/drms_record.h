@@ -527,6 +527,37 @@ int drms_record_islocal(DRMS_Record_t *rec);
 */
 
 /**
+   @fn DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env, const char *recordsetname, const char *keylist, DRMS_Type_t type, int unique, int *status)
+   Returns a newly created ::DRMS_Array_t structure that represents a table of per-record keyword values.
+   @a recordsetname is a query that selects a set of rows from a DRMS dataseries, and @a keylist 
+   selects a subset of keywords from those rows. The result is a table that contains one column
+   for each item in @a keylist, and one row for each record that results from evaluation of 
+   @a recordsetname. The column data are stored in ::DRMS_Array_t:axis0 and the row data are stored in 
+   ::DRMS_Array_t:axis1. @a keylist contains a comma-separated list of DRMS keyword names and/or
+   'hidden' database column names (one of recnum, sunum, slotnum, sessionid, sessionns). Data will be
+   converted to the data type @a type. If @a unique is set, then resulting duplicate rows
+   (rows where all keyword values are duplicates of another row's keyword values) are discarded
+   before the ::DRMS_Array_t structure is created. It is the caller's responsibility to 
+   free, with ::drms_free_array, the memory allocated in the creation of the returned ::DRMS_Array_t
+   structure.
+   
+   @param env DRMS session information.
+   @param recordsetname A string that specifies a database query. It 
+   includes a series name and clauses to extract a subset of records from that series.
+   Please see http://jsoc.stanford.edu/jsocwiki/DrmsNames for more 
+   information about database queries.
+   @param keylist A comma-separated list of DRMS keyword names and/or
+   'hidden' database column names (one of recnum, sunum, slotnum, sessionid, sessionns).
+   @param type The DRMS data type (::DRMS_Type_t) to which the database is to be converted.
+   @param unique If set, then the array returned will contain no duplicate rows (each row will contain
+   a unique combination of keyword values).
+   @param status Pointer to DRMS status (see drms_statuscodes.h) returned
+   by reference. 0 if successful, non-0 otherwise.
+   @return The ::DRMS_Array_t that contains rows of the columns specified in @a keylist. The caller
+   must free this array with ::drms_free_array.
+*/
+
+/**
   @}
 */
 
