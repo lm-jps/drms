@@ -23,6 +23,8 @@
 #undef DEFS_CLIENT
 #endif
 
+#define kDELSERFILE "thefile.txt"
+
 /******************* Main server thread(s) functions ************************/
 
 static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
@@ -100,7 +102,6 @@ int drms_server_open_session(DRMS_Env_t *env)
   struct passwd *pwd = getpwuid(geteuid());
 
   /* Register the session in the database. */
-  // xxx not connecting to proper dbase port
   char hostbuf[1024];
   snprintf(hostbuf, 
            sizeof(hostbuf), 
@@ -1300,11 +1301,7 @@ int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn) {
   DRMS_SumRequest_t *reply = NULL;
   XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
   memset(request, 0, sizeof(DRMS_SumRequest_t));
-  uint64_t *sunums = NULL;
-  long long nsus = 127; /* leave one for the NULL terminator */
-  long isu;
   int drmsstatus = DRMS_SUCCESS;
-  DRMS_RecChunking_t cstat = kRecChunking_None;
 
   if (!env->sum_thread) {
     if((status = pthread_create(&env->sum_thread, NULL, &drms_sums_thread, 
@@ -1314,57 +1311,122 @@ int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn) {
     }
   }
 
-  request->opcode = DRMS_SUMDELETESERIES;
+  /* Fetch an array of unique SUNUMs - the prime-key logic gets applied first. */
+  DRMS_Array_t *array = drms_record_getvector(env, tn, "sunum", DRMS_TYPE_LONGLONG, 1, &drmsstatus);
 
-  /* Fetch the records */
-  DRMS_RecordSet_t *rs = drms_open_recordset(env, tn, &drmsstatus);
-  DRMS_Record_t *rec = NULL;
-
-  isu = 0;
-  if (rs && rs->n > 0)
+  /* 2 dimensions, one column, at least one row */
+  if (!drmsstatus && array && array->naxis == 2 && array->axis[0] == 1 && array->axis[1] > 0)
   {
-     /* what are the SUNUMs? */
-     sunums = malloc(sizeof(uint64_t) * (nsus + 1)); /* add an extra for potential null terminator */
+     /* Put the contained SUNUMs in an SUDIR */
+     /* Create a new SUDIR - fail if less than 1MB of space (this will never happen). */
+     char *sudir = NULL;
+     long long sunum = -1;
 
-     while ((rec = drms_recordset_fetchnext(env, rs, &drmsstatus, &cstat)) != NULL)
+     sunum = drms_su_alloc(env, 1048576, &sudir, &drmsstatus);
+
+     if (!drmsstatus && sunum >= 0 && sudir)
      {
-        if (rec->sunum != -1)
+        /* make a file that has nothing but SUNUMs */
+        char fbuf[PATH_MAX];
+        snprintf(fbuf, sizeof(fbuf), "%s/%s", sudir, kDELSERFILE);
+        FILE *fptr = fopen(fbuf, "w");
+
+        if (fptr)
         {
-           if (isu >= nsus)
+           /* Insert SUNUMs in the table now - iterate through DRMS_Array_t */
+           int irow;
+           long long *data = (long long *)array->data;
+           char obuf[64];
+
+           /* only one column*/
+           for (irow = 0; irow < array->axis[1]; irow++)
            {
-              nsus = (nsus + 1) * 2 - 1;
-              sunums = realloc(sunums, sizeof(uint64_t) * (nsus + 1)); /* add an extra for 
-                                                                      * potential null terminator */
+              snprintf(obuf, sizeof(obuf), "%lld\n", data[irow]);
+              fwrite(obuf, strlen(obuf), 1, fptr);
            }
-       
-           sunums[isu] = rec->sunum;
-           isu++;
-        }
-     }
+           
+           if (!fclose(fptr))
+           {
+              /* Now it is okay for SUMS to take over */
+              /* Use the request's comment field to hold array of sunums since
+               * the sunum field has a fixed number of sunums. */
 
-     /* Time to null-terminate */
-     sunums[isu] = 0LL;
-  }
+              /* Call SUM_put() to close the SU and have SUMS update its dbase tables */
+              DRMS_SumRequest_t *putreq = NULL;
+              DRMS_SumRequest_t *putrep = NULL;
 
-  if (rs)
-  {
-     drms_close_records(rs, DRMS_FREE_RECORD);
-     rs = NULL;
-  }
+              XASSERT(putreq = malloc(sizeof(DRMS_SumRequest_t)));
+              memset(putreq, 0, sizeof(DRMS_SumRequest_t));
+              putreq->opcode = DRMS_SUMPUT;
+              putreq->dontwait = 0;
+              putreq->reqcnt = 1;
+              putreq->dsname = "deleteseriestemp";
+              putreq->group = 0;
+              putreq->mode = TEMP + TOUCH;
+              putreq->tdays = 2;
+              putreq->sunum[0] = sunum;
+              putreq->sudir[0] = sudir;
+              putreq->comment = NULL;
 
-  if (isu > 0)
-  {
-     /* Use the request's comment field to hold array of sunums since
-      * the sunum field has a fixed number of sunums. */
-     request->comment = (char *)sunums;
+              /* must have sum_thread running already */
+              XASSERT(env->sum_thread);
+
+              /* Submit request to sums server thread. */
+              tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)putreq);
+
+              /* Wait for reply. FIXME: add timeout. */
+              tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&putrep);
+
+              if (putrep->opcode != 0) 
+              {
+                 fprintf(stderr, "ERROR in drms_server_dropseries_su(): SUM PUT failed with "
+                         "error code %d.\n", putrep->opcode);
+                 status = DRMS_ERROR_SUMPUT;
+              }
+
+              if (putrep)
+              {
+                 free(putrep);
+              }
+
+              if (!status)
+              {
+                 char sunumstr[64];
+
+                 snprintf(sunumstr, sizeof(sunumstr), "%lld", sunum);
+                 request->opcode = DRMS_SUMDELETESERIES;
+                 request->comment = fbuf; /* provide path to data file */
  
-     tqueueAdd(env->sum_inbox, (long)pthread_self(), (char *)request);
-     tqueueDel(env->sum_outbox, (long)pthread_self(), (char **)&reply);
+                 tqueueAdd(env->sum_inbox, (long)pthread_self(), (char *)request);
+                 tqueueDel(env->sum_outbox, (long)pthread_self(), (char **)&reply);
 
-     if (reply->opcode) 
+                 if (reply->opcode) 
+                 {
+                    fprintf(stderr, "SUM_delete_series() returned with error code '%d'.\n", reply->opcode);
+                    status = DRMS_ERROR_SUMDELETESERIES;
+                 }
+              }
+           }
+           else
+           {
+              /* couldn't close file */
+              fprintf(stderr, "Couldn't close file '%s'.\n", fbuf);
+              status = DRMS_ERROR_FILECREATE;
+           }
+        }
+        else
+        {
+           /* couldn't open file */
+           fprintf(stderr, "Couldn't open file '%s'.\n", fbuf);
+           status = DRMS_ERROR_FILECREATE;
+        }
+
+        free(sudir);
+     }
+     else
      {
-        fprintf(stderr, "SUM_delete_series() returned with error code '%d'.\n", reply->opcode);
-        status = 1;
+        fprintf(stderr, "SUMALLOC failed in drms_server_dropseries_su().\n");
+        status = DRMS_ERROR_SUMALLOC;
      }
   }
 
@@ -1372,12 +1434,6 @@ int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn) {
   if (reply)
   {
      free(reply);
-  }
-
-  /* But must deep-free comment, since master sums thread won't do that. */
-  if (sunums)
-  {
-     free(sunums);
   }
   
   return status;
@@ -1781,8 +1837,8 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
     if (request->comment)
     {
        /* request->comment is actually a pointer to an array of sunums */
-       uint64_t *sunums = (uint64_t *)request->comment;
-       if ((reply->opcode = SUM_delete_series(sunums, printf)) != 0)
+       char *fpath = request->comment;
+       if ((reply->opcode = SUM_delete_series(fpath, printf)) != 0)
        {
           fprintf(stderr,"SUM thread: SUM_delete_series call failed with stat=%d.\n",
                   reply->opcode);

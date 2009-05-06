@@ -157,7 +157,7 @@ typedef struct ValueRangeSet_struct
 RecordSet_t *parse_record_set(DRMS_Env_t *env, char **in);
 void free_record_set(RecordSet_t *rs);
 int sql_record_set(RecordSet_t *rs, char *seriesname, char *query);
-int drms_recordset_query(DRMS_Env_t *env, char *recordsetname, 
+int drms_recordset_query(DRMS_Env_t *env, const char *recordsetname, 
 			 char **query, char **seriesname, int *filter, int *mixed, int *allvers);
 int drms_names_parseduration(char **in, double *duration);
 int drms_names_parsedegreedelta(char **deltastr, DRMS_SlotKeyUnit_t *unit, double *delta);

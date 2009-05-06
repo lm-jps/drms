@@ -1993,12 +1993,14 @@ WHERE
 // only and those on both prime and non-prime index. As it would
 // involve the query statement, an approximation of the latter case is
 // the where clause in between ?'s.
-int drms_recordset_query(DRMS_Env_t *env, char *recordsetname, 
+int drms_recordset_query(DRMS_Env_t *env, const char *recordsetname, 
 			 char **query, char **seriesname, int *filter, int *mixed,
                          int *allvers)
 {
   RecordSet_t *rs;
-  char *p = recordsetname;
+  char *p = strdup(recordsetname);
+  int ret = 0;
+
   *mixed = 0;
 
   if ((rs = parse_record_set(env,&p)))
@@ -2018,8 +2020,15 @@ int drms_recordset_query(DRMS_Env_t *env, char *recordsetname,
 
     sql_record_set(rs,*seriesname, *query);
     free_record_set(rs);
-    return 0;
+    ret = 0;
   }
   else
-    return 1;
+    ret =  1;
+
+  if (p)
+  {
+     free(p);
+  }
+
+  return ret;
 }

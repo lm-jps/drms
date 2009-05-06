@@ -3209,7 +3209,7 @@ char *drms_query_string(DRMS_Env_t *env,
 			char *where, int filter, int mixed,
 			DRMS_QueryType_t qtype, 
                         void *data, /* specific to qtype */
-                        char *fl,
+                        const char *fl,
                         int allvers) {
   DRMS_Record_t *template;
   char *field_list, *query=0;
@@ -3223,6 +3223,7 @@ char *drms_query_string(DRMS_Env_t *env,
   char limitedtable[1024]; // for DRMS_QUERY_N, innermost table that has 4 * n rows
   char *p;
   int nrecs = 0;
+  int unique = 0;
 
   int status = 0;
 
@@ -3238,10 +3239,11 @@ char *drms_query_string(DRMS_Env_t *env,
     break;
   case DRMS_QUERY_FL:
     field_list = strdup(fl);
-    recsize = drms_keylist_memsize(template, fl);
+    recsize = drms_keylist_memsize(template, field_list);
     if (!recsize) {
       goto bailout;
     }
+    unique = *(int *)(data);
     break;
   case DRMS_QUERY_ALL:
     field_list = drms_field_list(template, NULL);
@@ -3443,6 +3445,26 @@ char *drms_query_string(DRMS_Env_t *env,
         }
         p += sprintf(p, " limit %lld", limit);
      }
+  }
+
+  if (qtype == DRMS_QUERY_FL && unique)
+  {
+     int qsize = strlen(query) + DRMS_MAXQUERYLEN;
+     char *modquery = NULL;
+     XASSERT((modquery = malloc(qsize)));
+     snprintf(modquery, 
+              qsize, 
+              "select %s from (%s) as subfoo group by %s order by %s", 
+              field_list, 
+              query, 
+              field_list,
+              field_list);
+     if (query)
+     {
+        free(query);
+     }
+
+     query = modquery;
   }
 
   free(series_lower);
@@ -4913,7 +4935,11 @@ long long drms_keylist_memsize(DRMS_Record_t *rec, char *keylist) {
     }
     key = malloc (len + 1);
     snprintf (key, len + 1, "%s", start);
-    if (strcmp(key, "recnum") == 0) {
+    if (strcmp(key, "recnum") == 0 || 
+        strcmp(key, "sunum") == 0 ||
+        strcmp(key, "slotnum") == 0 ||
+        strcmp(key, "sessionid") == 0 ||
+        strcmp(key, "sessionns") == 0) {
       size  += sizeof(DRMS_Keyword_t) +  DRMS_MAXKEYNAMELEN + 1;
       size += 20;
     } else {
@@ -7255,6 +7281,113 @@ int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status)
    *status = stat;
    return(0);
 }
+
+/* Columns are stored contiguously in DRMS_Arra_t::data */
+DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env, 
+                                    const char *recordsetname, 
+                                    const char *keylist, 
+                                    DRMS_Type_t type, 
+                                    int unique,
+                                    int *status)
+{
+   int stat, filter, mixed;
+   char *query=NULL, *where=NULL, *seriesname=NULL;
+   int count = 0;
+   int keys = 0;
+   DB_Binary_Result_t *bres=NULL;
+   DRMS_Array_t *vectors=NULL;
+   int allvers = 0;
+
+   stat = drms_recordset_query(env, recordsetname, &where, &seriesname, &filter, &mixed, &allvers);
+   if (stat)
+     goto failure;
+
+   query = drms_query_string(env, 
+                             seriesname, 
+                             where, 
+                             filter, 
+                             mixed, 
+                             DRMS_QUERY_FL, 
+                             &unique, 
+                             keylist, 
+                             allvers);
+   if (!query)
+     goto failure;
+
+   bres = drms_query_bin(env->session,  query);
+
+   if (bres)
+   {
+      int col, row;
+      int dims[2];
+      dims[0] = keys = bres->num_cols;
+      dims[1] = count = bres->num_rows;
+      vectors = drms_array_create(type, 2, dims, NULL, &stat);
+      if (stat) goto failure;
+      drms_array2missing(vectors);
+      for (col=0; col<keys; col++)
+      {
+         DB_Type_t db_type = bres->column[col].type;
+         for (row=0; row<count; row++)
+         {
+            int8_t *val = (int8_t *)(vectors->data) + (count * col + row) * drms_sizeof(type);
+            char *db_src = bres->column[col].data + row * bres->column[col].size;
+            if (!bres->column[col].is_null[row])
+              switch(type)
+              {
+                 case DRMS_TYPE_CHAR:
+                   *(char *)val = dbtype2char(db_type,db_src);
+                   break;
+                 case DRMS_TYPE_SHORT:
+                   *(short *)val = dbtype2short(db_type,db_src);
+                   break;
+                 case DRMS_TYPE_INT:
+                   *(int *)val = dbtype2longlong(db_type,db_src);
+                   break;
+                 case DRMS_TYPE_LONGLONG:
+                   *(long long *)val = dbtype2longlong(db_type,db_src);
+                   break;
+                 case DRMS_TYPE_FLOAT:
+                   *(float *)val = dbtype2float(db_type,db_src);
+                   break;
+                 case DRMS_TYPE_DOUBLE:
+                   *(double *)val = dbtype2double(db_type,db_src);
+                   break;
+                 case DRMS_TYPE_TIME:
+                   *(TIME *)val = dbtype2double(db_type,db_src);
+                   break;
+                 case DRMS_TYPE_STRING:
+                   if (db_type ==  DB_STRING || db_type ==  DB_VARCHAR)
+                     *(char **)val = strdup((char *)db_src);
+                   else
+                   {
+		      int len = db_binary_default_width(db_type);
+		      XASSERT(*(char **)val = (char *)malloc(len));
+		      dbtype2str(db_type, db_src, len, *(char **)val);
+                   }
+                   break;
+                 default:
+                   fprintf(stderr, "ERROR: Unhandled DRMS type %d\n",(int)type);
+                   XASSERT(0);
+                   goto failure;
+              } // switch
+         } // row 
+      } // col
+      if (seriesname) free(seriesname);
+      if (query) free(query);
+      if (where) free(where);
+      if (status) *status = DRMS_SUCCESS;
+      return(vectors);
+   } // bres
+
+ failure:
+   if (seriesname) free(seriesname);
+   if (query) free(query);
+   if (where) free(where);
+   if (status) *status = stat;
+   return(NULL);
+}
+
 
 
 int drms_record_isdsds(DRMS_Record_t *rec)

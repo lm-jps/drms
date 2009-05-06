@@ -190,7 +190,7 @@ char *drms_query_string(DRMS_Env_t *env,
 			char *where, int filter, int mixed,
 			DRMS_QueryType_t qtype, 
                         void *data, 
-                        char *fl,
+                        const char *fl,
                         int allvers);
 
 /* Chunking record queries */
@@ -212,6 +212,13 @@ DRMS_Record_t *drms_recordset_fetchnextinset(DRMS_Env_t *env,
 void drms_free_cursor(DRMS_RecSetCursor_t **cursor);
 
 int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status);
+
+DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env, 
+                                    const char *recordsetname, 
+                                    const char *keylist, 
+                                    DRMS_Type_t type, 
+                                    int unique,
+                                    int *status);
 
 DRMS_Segment_t *drms_record_nextseg(DRMS_Record_t *rec, HIterator_t **last);
 DRMS_Keyword_t *drms_record_nextkey(DRMS_Record_t *rec, HIterator_t **last);
