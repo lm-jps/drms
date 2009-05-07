@@ -598,7 +598,7 @@ int SUM_put(SUM_t *sum, int (*history)(const char *fmt, ...))
  * that are associated with the series about to be deleted.
  * Returns 1 on error, else 0.
 */
-int SUM_delete_series(char *filename, int (*history)(const char *fmt, ...))
+int SUM_delete_series(char *filename, char *seriesname, int (*history)(const char *fmt, ...))
 {
   KEY *klist;
   CLIENT *cl;
@@ -612,6 +612,7 @@ int SUM_delete_series(char *filename, int (*history)(const char *fmt, ...))
   setkey_str(&klist, "USER", username);
   setkey_int(&klist, "DEBUGFLG", 1);		/* !!!TEMP */
   setkey_str(&klist, "FILE", filename);
+  setkey_str(&klist, "SERIESNAME", seriesname);
   if (!(server_name = getenv("SUMSERVER"))) {
     server_name = (char *)alloca(sizeof(SUMSERVER)+1);
     strcpy(server_name, SUMSERVER);
