@@ -14,9 +14,9 @@
 #include <unistd.h>
 #include <printk.h>
 
-int SUMLIB_DelSeriesSU(char *file);
+int SUMLIB_DelSeriesSU(char *file, char *series);
 
-int SUMLIB_DelSeriesSU(char *file)
+int SUMLIB_DelSeriesSU(char *file, char *series)
 {
   EXEC SQL TYPE uint64_t IS unsigned long long;
 
@@ -28,10 +28,11 @@ EXEC SQL END DECLARE SECTION;
   char line[256];
   int i;
   int status = 0;
+  int efound = 0;
 
     EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
     EXEC SQL WHENEVER NOT FOUND GOTO sqlerror;
-  printk("In SUMLIB_DelSeriesSU():\n");
+  printk("In SUMLIB_DelSeriesSU(%s):\n", series);
 
   if((fp=fopen(file, "r")) == NULL) {
     printk("Error in SUMLIB_DelSeriesSU\n"); 
@@ -41,7 +42,7 @@ EXEC SQL END DECLARE SECTION;
 
   while(fgets(line, 256, fp)) {
     if(line[0] == '#' || line[0] == '\n') continue;
-    sscanf(line, "%l", &index);
+    sscanf(line, "%ld", &index);
     printk("%ld\n", index); /* !!!TEMP */
     l_ds_index = index;
 
@@ -52,10 +53,16 @@ EXEC SQL END DECLARE SECTION;
     continue;
 sqlerror:
 	status = 1;
-	printk("Error in SUMLIB_DelSeriesSU\n"); 
-	printk("% .70s \n", sqlca.sqlerrm.sqlerrmc); 
+        if(!efound) {
+          efound = 1;
+	  printk("Error in SUMLIB_DelSeriesSU\n"); 
+	  printk("% .70s \n", sqlca.sqlerrm.sqlerrmc); 
+          printk("The sunum is probably no longer in SUMS.\n");
+          printk("No further missing sunum will be reported.\n");
+        }
     continue;
   }
+  fclose(fp);
 
         EXEC SQL COMMIT WORK;
   return(status);
