@@ -53,7 +53,7 @@ int drms_slot_setstate(DRMS_Env_t *env, char *series, long long sunum,
 		       int slotnum, int state);
 
 /** @brief Delete the storage units associated with a series */
-int drms_dropseries(DRMS_Env_t *env, const char *series);
+int drms_dropseries(DRMS_Env_t *env, const char *series, DRMS_Array_t *vec);
 
 /** \brief Create a series */
 int drms_create_series(DRMS_Record_t *rec, int perms);

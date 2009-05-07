@@ -1353,10 +1353,10 @@ int drms_slot_setstate(DRMS_Env_t *env, char *series, long long sunum,
   }    
 }
 
-int drms_dropseries(DRMS_Env_t *env, const char *series)
+int drms_dropseries(DRMS_Env_t *env, const char *series, DRMS_Array_t *vec)
 {
 #ifndef DRMS_CLIENT
-   drms_server_dropseries_su(env, series);
+   return drms_server_dropseries_su(env, series, vec);
 #else
    XASSERT(env->session->db_direct==0);
         
@@ -1367,7 +1367,24 @@ int drms_dropseries(DRMS_Env_t *env, const char *series)
          drms_server_dropseries_su() (which can be called by DRMS servers ONLY). */
       drms_send_commandcode(env->session->sockfd, DRMS_DROPSERIES);
       send_string(env->session->sockfd, series);
+
+      /* If this is a sock-module, must pass the vector SUNUM by SUNUM 
+       * to drms_server. */
+      long long sunum = -1;
+      int irow = -1;
+      long long *data = (long long *)vec->data;
+
+      /* Write number of rows */
+      Writeint(env->session->sockfd, vec->axis[1]);
+
+      /* only one column*/
+      for (irow = 0; irow < vec->axis[1]; irow++)
+      {
+         Writelonglong(env->session->sockfd, data[irow]);
+      }
    }
+
+   return 0;
 #endif
 }
 

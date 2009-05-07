@@ -514,6 +514,8 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
   char query[1024], *series_lower, *namespace;
   DB_Binary_Result_t *qres;
   DRMS_Session_t *session;
+  int drmsstatus = DRMS_SUCCESS;
+  DRMS_Array_t *array = NULL;
 
   session = env->session;
   sprintf(query,"select seriesname from %s() where seriesname ~~* '%s'",
@@ -531,47 +533,66 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
 #endif
   if (qres->num_rows==1)
   {
-    /* Tell SUMS to delete series' sunums - do this first, then continue to 
-     * remove table rows, even if SUMS fails. */
-    drms_dropseries(env, series);
+   
+     /* Fetch an array of unique SUNUMs - the prime-key logic gets applied first. */
+     array = drms_record_getvector(env, 
+                                   series, 
+                                   "sunum", 
+                                   DRMS_TYPE_LONGLONG, 
+                                   1, 
+                                   &drmsstatus);
 
-    series_lower = strdup(series);
-    /* series_lower is fully qualified, i.e., it contains namespace */
-    strtolower(series_lower);
-    get_namespace(series, &namespace, NULL);
-    if (cascade) {
-      sprintf(query,"drop table %s",series_lower);
-      if (drms_dms(session,NULL,query))
-	goto bailout;
-      if (drms_sequence_drop(session, series_lower))
-	goto bailout;
-    }
-    sprintf(query, "set search_path to %s", namespace);
-    if (drms_dms(session,NULL,query)) {
-      fprintf(stderr, "Failed: %s\n", query);
-      goto bailout;
-    }
-    sprintf(query,"delete from %s where seriesname ~~* '%s'",
-	    DRMS_MASTER_LINK_TABLE,series);
-    if (drms_dms(session,NULL,query))
-      goto bailout;
-    sprintf(query,"delete from %s where seriesname ~~* '%s'",
-	    DRMS_MASTER_KEYWORD_TABLE, series);
-    if (drms_dms(session,NULL,query))
-      goto bailout;
-    sprintf(query,"delete from %s where seriesname ~~* '%s'",
-	    DRMS_MASTER_SEGMENT_TABLE, series);
-    if (drms_dms(session,NULL,query))
-      goto bailout;
-    sprintf(query,"delete from %s where seriesname ~~* '%s'",
-	    DRMS_MASTER_SERIES_TABLE,series);
-    if (drms_dms(session,NULL,query))
-      goto bailout;
+     if (!drmsstatus && array && array->naxis == 2 && array->axis[0] == 1 && array->axis[1] > 0)
+     {
+        series_lower = strdup(series);
+        /* series_lower is fully qualified, i.e., it contains namespace */
+        strtolower(series_lower);
+        get_namespace(series, &namespace, NULL);
+        if (cascade) {
+           sprintf(query,"drop table %s",series_lower);
+           if (drms_dms(session,NULL,query))
+             goto bailout;
+           if (drms_sequence_drop(session, series_lower))
+             goto bailout;
+        }
+        sprintf(query, "set search_path to %s", namespace);
+        if (drms_dms(session,NULL,query)) {
+           fprintf(stderr, "Failed: %s\n", query);
+           goto bailout;
+        }
+        sprintf(query,"delete from %s where seriesname ~~* '%s'",
+                DRMS_MASTER_LINK_TABLE,series);
+        if (drms_dms(session,NULL,query))
+          goto bailout;
+        sprintf(query,"delete from %s where seriesname ~~* '%s'",
+                DRMS_MASTER_KEYWORD_TABLE, series);
+        if (drms_dms(session,NULL,query))
+          goto bailout;
+        sprintf(query,"delete from %s where seriesname ~~* '%s'",
+                DRMS_MASTER_SEGMENT_TABLE, series);
+        if (drms_dms(session,NULL,query))
+          goto bailout;
+        sprintf(query,"delete from %s where seriesname ~~* '%s'",
+                DRMS_MASTER_SERIES_TABLE,series);
+        if (drms_dms(session,NULL,query))
+          goto bailout;
 
-    /* Both DRMS servers and clients have a series_cache (one item per
-       each series in all of DRMS). So, always remove the deleted series
-       from this cache, whether or not this is a server. */
-    hcon_remove(&env->series_cache,series_lower);
+        /* If the DRMS deletions occurred without a hitch, then delete the 
+         * SUMS files from SUMS. */
+        /* If this is a sock-module, must pass the vector SUNUM by SUNUM 
+         * to drms_server. */
+        drms_dropseries(env, series, array);
+
+        /* Both DRMS servers and clients have a series_cache (one item per
+           each series in all of DRMS). So, always remove the deleted series
+           from this cache, whether or not this is a server. */
+        hcon_remove(&env->series_cache,series_lower);
+     }
+     else
+     {
+        fprintf(stderr, "Couldn't create vector of sunum keywords.\n");
+        goto bailout;
+     }
   }
   else if (qres->num_rows>1)
   {
@@ -589,11 +610,19 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
   
   free(series_lower);
   free(namespace);
+  if (array)
+  {
+     drms_free_array(array);
+  }
   return 0;
  bailout:
   fprintf(stderr,"drms_delete_series(): failed to delete series %s\n", series); 
   free(series_lower);
   free(namespace);
+  if (array)
+  {
+     drms_free_array(array);
+  }
   return 1;
 }
 

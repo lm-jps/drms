@@ -1285,17 +1285,47 @@ int drms_server_dropseries(DRMS_Env_t *env, int sockfd)
 { 
   char *series_lower;
   char *tn;
+  DRMS_Array_t *vec = NULL;
+  int nrows = -1;
+  int irow = -1;
+  int dims[2];
+  int status = 0;
+  int8_t *val = NULL;
+
   series_lower = receive_string(sockfd);
   tn = receive_string(sockfd);
   strtolower(series_lower);
-  drms_server_dropseries_su(env, tn);
-  hcon_remove(&env->series_cache, series_lower);
+  nrows = Readint(sockfd);
+  dims[0] = 1;
+  dims[1] = nrows;
+
+  vec = drms_array_create(DRMS_TYPE_LONGLONG, 2, dims, NULL, &status);
+
+  if (!status)
+  {
+     val = (int8_t *)(vec->data);
+
+     for (irow = 0; irow < nrows; irow++)
+     {
+        *(long long *)val = Readlonglong(sockfd);
+        val += drms_sizeof(DRMS_TYPE_LONGLONG);
+     }
+
+     drms_server_dropseries_su(env, tn, vec);
+     hcon_remove(&env->series_cache, series_lower);
+  }
+
+  if (vec)
+  {
+     drms_free_array(vec);
+  }
+
   free(series_lower);
   free(tn);
-  return 0;
+  return status;
 }
 
-int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn) {
+int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn, DRMS_Array_t *array) {
   int status = 0;
   DRMS_SumRequest_t *request = NULL;
   DRMS_SumRequest_t *reply = NULL;
@@ -1311,11 +1341,12 @@ int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn) {
     }
   }
 
-  /* Fetch an array of unique SUNUMs - the prime-key logic gets applied first. */
-  DRMS_Array_t *array = drms_record_getvector(env, tn, "sunum", DRMS_TYPE_LONGLONG, 1, &drmsstatus);
-
   /* 2 dimensions, one column, at least one row */
-  if (!drmsstatus && array && array->naxis == 2 && array->axis[0] == 1 && array->axis[1] > 0)
+  if (array && 
+      array->naxis == 2 && 
+      array->axis[0] == 1 && 
+      array->axis[1] > 0 && 
+      array->type == DRMS_TYPE_LONGLONG)
   {
      /* Put the contained SUNUMs in an SUDIR */
      /* Create a new SUDIR - fail if less than 1MB of space (this will never happen). */
@@ -1375,7 +1406,7 @@ int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn) {
               tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)putreq);
 
               /* Wait for reply. FIXME: add timeout. */
-              tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&putrep);
+              tqueueDel(env->sum_outbox, (long) pthread_self(), (char **)&putrep);
 
               if (putrep->opcode != 0) 
               {
@@ -1392,17 +1423,22 @@ int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn) {
               if (!status)
               {
                  char sunumstr[64];
+                 char commentbuf[DRMS_MAXPATHLEN * 2];
 
                  snprintf(sunumstr, sizeof(sunumstr), "%lld", sunum);
                  request->opcode = DRMS_SUMDELETESERIES;
-                 request->comment = fbuf; /* provide path to data file */
+                 /* provide path to data file and series name to SUMS */
+                 snprintf(commentbuf, sizeof(commentbuf), "%s,%s", fbuf, tn);
+                 request->comment = commentbuf; 
  
                  tqueueAdd(env->sum_inbox, (long)pthread_self(), (char *)request);
                  tqueueDel(env->sum_outbox, (long)pthread_self(), (char **)&reply);
 
                  if (reply->opcode) 
                  {
-                    fprintf(stderr, "SUM_delete_series() returned with error code '%d'.\n", reply->opcode);
+                    fprintf(stderr, 
+                            "SUM_delete_series() returned with error code '%d'.\n", 
+                            reply->opcode);
                     status = DRMS_ERROR_SUMDELETESERIES;
                  }
               }
@@ -1428,9 +1464,11 @@ int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn) {
         fprintf(stderr, "SUMALLOC failed in drms_server_dropseries_su().\n");
         status = DRMS_ERROR_SUMALLOC;
      }
-
-     drms_free_array(array);
-     array = NULL;
+  }
+  else
+  {
+     status = DRMS_ERROR_INVALIDDATA;
+     fprintf(stderr, "Unexpected array passed to drms_server_dropseries_su().\n");
   }
 
   /* No need to deep-free reply since SUMS shouldn't have malloc'd any fields. */
@@ -1840,11 +1878,27 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
     if (request->comment)
     {
        /* request->comment is actually a pointer to an array of sunums */
-       char *fpath = request->comment;
-       if ((reply->opcode = SUM_delete_series(fpath, printf)) != 0)
+       char *comment = strdup(request->comment);
+       char *fpath = NULL;
+       char *series = NULL;
+       char *sep = NULL;
+
+       if (comment)
        {
-          fprintf(stderr,"SUM thread: SUM_delete_series call failed with stat=%d.\n",
-                  reply->opcode);
+          if ((sep = strchr(comment, ',')) != NULL)
+          {
+             *sep = '\0';
+             fpath = comment;
+             series = sep + 1;
+
+             if ((reply->opcode = SUM_delete_series(fpath, series, printf)) != 0)
+             {
+                fprintf(stderr,"SUM thread: SUM_delete_series call failed with stat=%d.\n",
+                        reply->opcode);
+             }
+          }
+
+          free(comment);
        }
     }
     break;
