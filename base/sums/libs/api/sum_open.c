@@ -594,32 +594,24 @@ int SUM_put(SUM_t *sum, int (*history)(const char *fmt, ...))
 }
 
 /* Called by the delete_series program before it deletes the series table.
- * Called with a pointer to an 0 terminated array of sunum for the SUMS 
- * directories  that are associated with the series about to be deleted.
+ * Called with a pointer to a full path name that contains the sunums
+ * that are associated with the series about to be deleted.
  * Returns 1 on error, else 0.
 */
-int SUM_delete_series(uint64_t *ids, int (*history)(const char *fmt, ...))
+int SUM_delete_series(char *filename, int (*history)(const char *fmt, ...))
 {
   KEY *klist;
   CLIENT *cl;
-  uint64_t sunum;
-  char sunumx[80];
   char *call_err;
   char *cptr, *server_name, *username;
-  int i;
   uint32_t retstat;
   enum clnt_stat status;
 
   klist = newkeylist();
   if(!(username = (char *)getenv("USER"))) username = "nouser";
   setkey_str(&klist, "USER", username);
-  for(i = 0; ; i++) {
-    sunum = ids[i];
-    sprintf(sunumx, "sunum_%d", i);
-    setkey_uint64(&klist, sunumx, sunum);
-    if(sunum == 0) { break; }
-  }
   setkey_int(&klist, "DEBUGFLG", 1);		/* !!!TEMP */
+  setkey_str(&klist, "FILE", filename);
   if (!(server_name = getenv("SUMSERVER"))) {
     server_name = (char *)alloca(sizeof(SUMSERVER)+1);
     strcpy(server_name, SUMSERVER);
