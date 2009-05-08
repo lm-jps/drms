@@ -1293,7 +1293,7 @@ int drms_server_dropseries(DRMS_Env_t *env, int sockfd)
   int8_t *val = NULL;
 
   series_lower = receive_string(sockfd);
-  tn = receive_string(sockfd);
+  tn = strdup(series_lower);
   strtolower(series_lower);
   nrows = Readint(sockfd);
   dims[0] = 1;
