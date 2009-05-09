@@ -5289,6 +5289,7 @@ int ParseRecSetDesc(const char *recsetsStr,
 	    case kRSParseState_DRMS:
 	      /* first char is not ws */
 	      /* not parsing a DRMS RS filter (yet) */
+              recnumrsseen = 0; // reset watch for multiple recnum filters
 	      if (pc < endInput)
 	      {
 		 if (*pc == ']')
@@ -5405,17 +5406,12 @@ int ParseRecSetDesc(const char *recsetsStr,
 	      if (pc < endInput)
 	      {
                  /* If a recnumrangeset has been seen already, then it makes
-                  * no sense to have a second filter. Also, if this is the second
-                  * or greater filter, it makes no sense to have a recnumrangeset.
-                  *
-                  * A recnumrangeset is a way to absolutely identify a set of records -
-                  * it makes no sense to specify such a set in a single filter, 
-                  * then specify some other filter to modify that set.
+                  * no sense to have a second filter. 
                   */
-                 if ((*pc == ':' && nfilter > 0) || recnumrsseen)
+                 if (*pc == ':' && recnumrsseen)
                  {
                     state = kRSParseState_Error;
-                    fprintf(stderr, "Only one filter is allowed to contain a recnum list.\n");
+                    fprintf(stderr, "Only one recnum list filter is allowed.\n");
                     break;
                  }
                  else if (*pc == ':')
