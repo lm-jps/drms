@@ -76,6 +76,15 @@ const double gNHugeVal = -HUGE_VAL;
 #define kARGSIZE     (128)
 #define kKEYSIZE     (128)
 
+static void ActValsFree(const void *data)
+{
+   if (data)
+   {
+      void *realdata = *((void **)data);
+      free(realdata);
+   }
+}
+
 /* Handle a few for now - if anybody wants more, add later */
 static int ResolveEscSequence(const char *str, char *resolved, int size)
 {
@@ -367,7 +376,7 @@ static int cmdparams_initactvals(CmdParams_t *params)
 {
    if (params && !params->actvals)
    {
-      params->actvals = hcon_create(sizeof(void *), kKEYSIZE, NULL, NULL, NULL, NULL, 0);
+      params->actvals = hcon_create(sizeof(void *), kKEYSIZE, ActValsFree, NULL, NULL, NULL, 0);
    }
 
    return (params->actvals == NULL);
@@ -450,7 +459,7 @@ static int parse_array (CmdParams_t *params, char *root, ModuleArgs_Type_t dtype
      /* there is no limit to the size of bytes that an individual argument value
       * can have - but since the arguments we're dealing with here are either
       * ints, floats, or doubles, 128 bytes should be sufficient. */
-     listvals = list_llcreate(kARGSIZE);
+     listvals = list_llcreate(kARGSIZE, NULL);
 
      tmplist = malloc (strlen (valist) + 1);
      strcpy (tmplist, valist);
@@ -843,7 +852,10 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
 	  int nval, nvals = parse_numerated (defps->range, &names);
 
 	  for (nval = 0; nval < nvals; nval++)
-	    if (!(strcmp (cfval, names[nval]))) break;
+          {
+             if (!(strcmp (cfval, names[nval]))) break;
+          }
+
 	  if (nval >= nvals) {
 	    fprintf (stderr,
 	        "Parameter \"%s\" is out of permissible range:\n  [%s]\n",
@@ -851,6 +863,22 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
 	    return CMDPARAMS_FAILURE;
 	  }
 	  sprintf (intrep, "%d", nval);
+
+          /* remove leak */
+          if (names)
+          {
+             for (nval = 0; nval < nvals; nval++)
+             {
+                if (names[nval])
+                {
+                   free(names[nval]);
+                   names[nval] = NULL;
+                }
+             }
+
+             free(names);
+          }
+
 				 /*  Evidently unnecessary, but a good idea  */
 	  cmdparams_remove (parms, defps->name);
 	  cmdparams_set (parms, defps->name, intrep);

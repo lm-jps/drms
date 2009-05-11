@@ -1,8 +1,6 @@
 /* dsds.c - interface to DSDS system. Composes, without any other files, libdsds.so.  
  * Dynamically links to libsoi.so, and JSOC dynamically links to libdsds.so. */
-#if defined(__linux__) && __linux__
-#define _GNU_SOURCE
-#endif
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -583,7 +581,7 @@ static KEY *CreateSOIKeylist(const char *progspec, LinkedList_t **wdlist, kDSDS_
                                        /* save this path to return with segment */
                                        if (wdlist && !*wdlist)
                                        {
-                                          *wdlist = list_llcreate(PATH_MAX);
+                                          *wdlist = list_llcreate(PATH_MAX, NULL);
                                        }
 
                                        if (*wdlist)
@@ -708,7 +706,7 @@ static KEY *CreateSOIKeylist(const char *progspec, LinkedList_t **wdlist, kDSDS_
                 * spec is the file dir containing fits fits. */
                if (wdlist && !*wdlist)
                {
-                  *wdlist = list_llcreate(PATH_MAX);
+                  *wdlist = list_llcreate(PATH_MAX, NULL);
                }
 
                if (*wdlist)

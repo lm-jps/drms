@@ -5,7 +5,7 @@ Queue_t *queue_create(unsigned int dsize)
    Queue_t *queue = malloc(sizeof(Queue_t));
    if (queue)
    {
-      LinkedList_t *list = list_llcreate(dsize);
+      LinkedList_t *list = list_llcreate(dsize, NULL);
       if (list)
       {
          queue->list = list;

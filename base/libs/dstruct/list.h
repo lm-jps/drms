@@ -10,16 +10,19 @@ struct ListNode_struct
 };
 typedef struct ListNode_struct ListNode_t;
 
+typedef void(* ListFreeFn_t)(void *);
+
 struct LinkedList_struct
 {
   unsigned int dsize;
+  ListFreeFn_t freefn;
   ListNode_t *first;
   ListNode_t *next; /* used for iterating */
   int nitems; /* number of nodes in list */
 };
 typedef struct LinkedList_struct LinkedList_t;
 
-LinkedList_t *list_llcreate(unsigned int datasize);
+LinkedList_t *list_llcreate(unsigned int datasize, ListFreeFn_t freefn);
 ListNode_t *list_llinserthead(LinkedList_t *llist, void *data);
 ListNode_t *list_llinserttail(LinkedList_t *llist, void *data);
 void list_llremove(LinkedList_t *llist, ListNode_t *item);

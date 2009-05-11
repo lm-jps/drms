@@ -1,13 +1,14 @@
 #include "list.h"
 #include "jsoc.h"
 
-LinkedList_t *list_llcreate(unsigned int datasize)
+LinkedList_t *list_llcreate(unsigned int datasize, ListFreeFn_t freefn)
 {
    LinkedList_t *list = calloc(1, sizeof(LinkedList_t));
    
    if (list)
    {
       list->dsize = datasize;
+      list->freefn = freefn;
       list->nitems = 0;
    }
 
@@ -206,6 +207,13 @@ void list_llfree(LinkedList_t **llist)
 	 /* need to free malloc'd mem */
 	 if (pElem->data)
 	 {
+            if ((*llist)->freefn)
+            {
+               /* deep free the node*/
+               (*((*llist)->freefn))(pElem->data);
+            }
+
+            /* free the mem allocated for the node's data */
 	    free(pElem->data);
 	 }
 	 free(pElem);

@@ -1269,6 +1269,15 @@ DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, const char *dsRecSet, i
    return rset;
 }
 
+static void QFree(void *data)
+{
+   char **realdata = (char **)data;
+   if (realdata)
+   {
+      free(*realdata);
+   }
+}
+
 /* recordsetname is a comma-separated list of recordsets.  
  * Must surround DSDS queries with '{' and '}'. 
  * 
@@ -1310,7 +1319,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 
   if (llistout)
   {
-     llist = list_llcreate(sizeof(char *));
+     llist = list_llcreate(sizeof(char *), QFree);
      *llistout = llist;
   }
 
@@ -3815,6 +3824,8 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
                 }
              }
 	  }
+
+          hiter_destroy(&hit);
        }
     }
 
@@ -5210,9 +5221,9 @@ int ParseRecSetDesc(const char *recsetsStr,
 	 switch (state)
 	 {
 	    case kRSParseState_Begin:
-	      intSets = list_llcreate(sizeof(char *));
-	      intSettypes = list_llcreate(sizeof(DRMS_RecordSetType_t));
-              intAllVers = list_llcreate(sizeof(char));
+	      intSets = list_llcreate(sizeof(char *), NULL);
+	      intSettypes = list_llcreate(sizeof(DRMS_RecordSetType_t), NULL);
+              intAllVers = list_llcreate(sizeof(char), NULL);
 	      if (!intSets || !intSettypes || !intAllVers)
 	      {
 		 state = kRSParseState_Error;
@@ -5909,9 +5920,9 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
 		 }
 		 else
 		 {
-		    multiRSQueries = list_llcreate(sizeof(char *));
-                    multiRSTypes = list_llcreate(sizeof(DRMS_RecordSetType_t));
-                    multiRSAllVers = list_llcreate(sizeof(char));
+		    multiRSQueries = list_llcreate(sizeof(char *), NULL);
+                    multiRSTypes = list_llcreate(sizeof(DRMS_RecordSetType_t), NULL);
+                    multiRSAllVers = list_llcreate(sizeof(char), NULL);
 
 		    /* buf has filename */
 		    *pcBuf = '\0';
@@ -7007,6 +7018,11 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
       {
 	 list_llfree(&querylist);	    
       }
+
+      if (allvers)
+      {
+         free(allvers);
+      }
    }
 
    if (stat != DRMS_SUCCESS)
@@ -7225,6 +7241,9 @@ void drms_free_cursor(DRMS_RecSetCursor_t **cursor)
                   (*cursor)->names[iname] = NULL;
                }
             }
+
+            free((*cursor)->names);
+            (*cursor)->names = NULL;
          }
 
          if ((*cursor)->allvers)

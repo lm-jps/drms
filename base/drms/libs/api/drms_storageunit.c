@@ -631,7 +631,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
            }
            else
            {
-              retrysus = list_llcreate(sizeof(DRMS_StorageUnit_t *));
+              retrysus = list_llcreate(sizeof(DRMS_StorageUnit_t *), NULL);
 
               for (isu = start, iSUMSsunum = 0; isu < end; isu++, iSUMSsunum++) 
               {
