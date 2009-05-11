@@ -702,6 +702,7 @@ KEY *readdo_1(KEY *params) {
     break;
   case 2:		    /* removed from q, error occured */
     setkey_int(&poff->list, "STATUS", 1); /* give error back to caller */
+    setkey_fileptr(&poff->list, "current_client", (FILE *)getkey_fileptr(params, "current_client"));
     current_client = clntsum;
     procnum = SUMRESPDO;
     return(poff->list);
@@ -902,6 +903,7 @@ KEY *jmtxtapedo_1(KEY *params) {
   procnum = JMTXDO;          /* for this proc number */
   setkey_uint32( &params, "procnum", procnum);
   if(!strcmp(mode, "status")) {
+    current_client_destroy = 1;
     add_keys(params, &xlist);
     sprintf(cmd, "mtx -f %s status 1> /tmp/mtx/mtx_robot_%d.log 2>&1", 
 			libdevname, robotcmdseq);
@@ -923,6 +925,7 @@ KEY *jmtxtapedo_1(KEY *params) {
     return(xlist);
   }
   if(drives[drivenum].busy) {
+    current_client_destroy = 1;
     sprintf(errstr, "Error: drive# %d is currently busy\n", drivenum);
     add_keys(params, &xlist);
     setkey_fileptr(&xlist,  "current_client", (FILE *)current_client);
@@ -945,10 +948,12 @@ KEY *jmtxtapedo_1(KEY *params) {
   setkey_str(&xlist, "cmd1", cmd);
   setkey_int(&xlist, "DEBUGFLG", 0);
   setkey_fileptr(&xlist,  "current_client", (FILE *)current_client);
+  //when the robot completes it calls taperesprobotdo_1()
   status = clnt_call(clntrobot0, ROBOTDO, (xdrproc_t)xdr_Rkey,(char *)xlist,
                         (xdrproc_t)xdr_uint32_t, (char *)&robotback, TIMEOUT);
   if(status != RPC_SUCCESS) {
     if(status != RPC_TIMEDOUT) {  /* allow timeout */
+      current_client_destroy = 1;
       call_err = clnt_sperror(clntrobot0, "Err clnt_call for ROBOTDO");
       write_log("%s %s\n", datestring(), call_err);
       robotbusy = 0;
@@ -958,6 +963,7 @@ KEY *jmtxtapedo_1(KEY *params) {
     }
   }
   if(robotback == 1) {
+    current_client_destroy = 1;
     write_log("**Error in ROBOTDO call in tape_svc_proc.c\n");
     robotbusy = 0;
     drives[drivenum].busy = 0;
@@ -1435,6 +1441,7 @@ KEY *taperesprobotdo_1(KEY *params) {
       retlist = newkeylist();
       add_keys(params, &retlist);           /* NOTE:does not do fileptr */
       current_client = (CLIENT *)getkey_fileptr(params, "current_client");
+      current_client_destroy = 1;
       /* final destination */
       setkey_fileptr(&retlist,  "current_client", (FILE *)current_client);
       procnum = getkey_uint32(params, "procnum");
@@ -1589,6 +1596,7 @@ KEY *taperesprobotdo_1_rd(KEY *params) {
       write_log("%s %s\n", datestring(), call_err);
       setkey_int(&retlist, "STATUS", 1);	/* give error back to caller */
       current_client = clntsum;
+      current_client_destroy = 1;
       procnum = SUMRESPDO;
       return(retlist);
     } else {
@@ -1599,6 +1607,7 @@ KEY *taperesprobotdo_1_rd(KEY *params) {
     write_log("**Error in readdo_1() in tape_svc_proc.c\n");
     setkey_int(&retlist, "STATUS", 1);	/* give error back to caller */
     current_client = clntsum;
+    current_client_destroy = 1;
     procnum = SUMRESPDO;
     return(retlist);
   }
@@ -1628,6 +1637,7 @@ KEY *taperesprobotdo_1_wt(KEY *params) {
   if(stat=getkey_int(params, "STATUS")) {	/* error in robot */
     write_log("**Error return from robot_svc for write op\n");
     current_client = client;
+    current_client_destroy = 1;
     procnum = getkey_uint32(params, "procnum");
     return(retlist);
   }
@@ -1678,6 +1688,7 @@ KEY *taperesprobotdo_1_wt(KEY *params) {
 		drives[dnum].tapeid);
     setkey_int(&retlist, "STATUS", 1);	/* give error back to caller */
     current_client = client;
+    current_client_destroy = 1;
     procnum = getkey_uint32(params, "procnum");
     return(retlist);
   }
@@ -1696,6 +1707,7 @@ KEY *taperesprobotdo_1_wt(KEY *params) {
       write_log("%s %s\n", datestring(), call_err);
       setkey_int(&retlist, "STATUS", 1);	/* give error back to caller */
       current_client = client;
+      current_client_destroy = 1;
       procnum = getkey_uint32(params, "procnum");
       return(retlist);
     } else {
@@ -1706,6 +1718,7 @@ KEY *taperesprobotdo_1_wt(KEY *params) {
     write_log("**Error in writedo_1() in tape_svc_proc.c\n");
     setkey_int(&retlist, "STATUS", 1);	/* give error back to caller */
     current_client = client;
+    current_client_destroy = 1;
     procnum = getkey_uint32(params, "procnum");
     return(retlist);
   }
