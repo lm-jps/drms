@@ -536,16 +536,22 @@ sumprog_1(rqstp, transp)
             write_log("\n###KEYLIST at return in sum_svc\n");
             keyiterate(logkey, (KEY *)result);
           }
-          clnt_stat=clnt_call(current_client, RESPDO, (xdrproc_t)xdr_result, 
-		result, (xdrproc_t)xdr_void, 0, TIMEOUT);
-          if(clnt_stat != 0) {
-            clnt_perrno(clnt_stat);		/* outputs to stderr */
-            write_log("***Error on clnt_call() back to RESPDO procedure\n");
-            write_log("***The original client caller has probably exited\n");
-            call_err = clnt_sperror(current_client, "Err");
-            write_log("%s\n", call_err);
+          if(current_client == 0) {
+            write_log("***Error on clnt_call() back to orig sum_svc caller\n");
+            write_log("   current_client was NULL\n");
           }
-          clnt_destroy(current_client);
+          else {
+            clnt_stat=clnt_call(current_client, RESPDO, (xdrproc_t)xdr_result, 
+  		result, (xdrproc_t)xdr_void, 0, TIMEOUT);
+            if(clnt_stat != 0) {
+              clnt_perrno(clnt_stat);		/* outputs to stderr */
+              write_log("***Error on clnt_call() back to RESPDO procedure\n");
+              write_log("***The original client caller has probably exited\n");
+              call_err = clnt_sperror(current_client, "Err");
+              write_log("%s\n", call_err);
+            }
+            clnt_destroy(current_client);
+          }
           freekeylist((KEY **)&result);
         }
       }
