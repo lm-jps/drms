@@ -522,10 +522,11 @@ KEY *closedo_1(KEY *params)
  * DEBUGFLG:       KEYTYP_INT      1
  * USER:   	   KEYTYP_STRING   production
  * FILE:    	KEYTYP_STRING /SUM1/D99999/filename.sunums
+ * SERIESNAME:  KEYTYP_STRING su_production.test
 */
 KEY *delseriesdo_1(KEY *params)
 {
-  char *filename;
+  char *filename, *seriesname;
 
   if(findkey(params, "DEBUGFLG")) {
     debugflg = getkey_int(params, "DEBUGFLG");
@@ -536,10 +537,11 @@ KEY *delseriesdo_1(KEY *params)
   }
   rinfo = 0;
   filename = getkey_str(params, "FILE");
+  seriesname = getkey_str(params, "SERIESNAME");
   write_log("DELSERIESDO for user=%s\n", GETKEY_str(params, "USER"));
   send_ack();
   /* set DB sum_partn_alloc to DADP/DADPDELSU */
-  SUMLIB_DelSeriesSU(filename);
+  SUMLIB_DelSeriesSU(filename, seriesname);
   return((KEY *)1);	/* nothing will be sent later */
 }
 
