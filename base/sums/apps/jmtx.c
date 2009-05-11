@@ -166,6 +166,9 @@ void get_cmd(int argc, char *argv[])
     usage();
   }
   strcpy(mode, argv[1]);
+  if(strcmp(mode, "load") && strcmp(mode, "unload")) {
+    usage();
+  }
   slotnum = atoi(argv[2]);
   drivenum = atoi(argv[3]);
 }
@@ -268,7 +271,7 @@ int main(int argc, char *argv[])
   }
   else {
       if(retstat != 0) {
-        printf("Error in return status = %s\n", retstat);
+        printf("Error in return status = %d\n", retstat);
         goaway();
       }
   }
