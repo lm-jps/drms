@@ -15,6 +15,7 @@ DRMS_Session_t *drms_connect(char *host)
   char *hostname = NULL;
   char *pport = NULL;
   unsigned short portnum;
+  char *sudirrecv = NULL;
 
   if (host)
   {
@@ -120,7 +121,27 @@ DRMS_Session_t *drms_connect(char *host)
   session->sessionid = Readlonglong(session->sockfd);
   session->sessionns = receive_string(session->sockfd);
   session->sunum = Readlonglong(session->sockfd);
-  session->sudir = receive_string(session->sockfd);
+
+  /* Big pain in the ass - this is the SUDIR of the log directory. We don't always 
+   * create such a directory, and the code checks for NULL session->sudir in many
+   * cases. But there is no way that the client (sock module) knows whether or
+   * not there is such an SUDIR in use by the server (drms_server), so we always
+   * have to send SOME string. The policy is: if drms_server has a log SUDIR, then
+   * send the path to that, otherwise, send the string "NOLOGSUDIR". Then in the 
+   * client code, drop NOLOGSUIDR and set session->sudir to NULL.
+   */
+  sudirrecv = receive_string(session->sockfd);
+
+  if (sudirrecv && strcasecmp(sudirrecv, kNOLOGSUDIR))
+  {
+     session->sudir = sudirrecv;
+  }
+  else
+  {
+     free(sudirrecv);
+     session->sudir = NULL;  
+  }
+
 #ifdef DEBUG
   printf("got sudir=%s\n",session->sudir);
 #endif

@@ -45,7 +45,7 @@ int drms_server_authenticate(int sockfd, DRMS_Env_t *env, int clientid)
   net_packstring(env->session->sessionns, t++, v);
   v += 2;
   net_packlonglong(env->session->sunum, &ltmp[1], v++);
-  net_packstring(env->session->sudir, t, v);
+  net_packstring(env->session->sudir ? env->session->sudir : kNOLOGSUDIR, t, v);
   Writevn(sockfd, vec, 8);
 
   return status;
@@ -132,7 +132,7 @@ int drms_server_open_session(DRMS_Env_t *env)
   pid_t pid = getpid();
 
   /* drms_server always creates a SU for the logfile */
-  if (env->dolog || !strcmp(env->logfile_prefix, "drms_server")) {
+  if (env->dolog) {
      /* Allocate a 1MB storage unit for log files. */
      /* drms_su_alloc() can be slow when the dbase is busy */
      env->session->sunum = drms_su_alloc(env, 1<<20, &env->session->sudir, 
@@ -150,25 +150,27 @@ int drms_server_open_session(DRMS_Env_t *env)
 	       env->session->sessionid,env->session->sunum,env->session->sudir);
       }
 #endif
-    if (!strcmp(env->logfile_prefix, "drms_server")) {
-      // this information is needed by modules that self-start a
-      // drms_server process
-      printf("DRMS server connected to database '%s' on host '%s' as "
-	     "user '%s'.\n",env->session->db_handle->dbname, 
-	     env->session->db_handle->dbhost,
-	     env->session->db_handle->dbuser);
-      printf("DRMS_HOST = %s\n"
-	     "DRMS_PORT = %hu\n"
-	     "DRMS_PID = %lu\n"
-	     "DRMS_SESSIONID = %lld\n"
-	     "DRMS_SESSIONNS = %s\n"
-	     "DRMS_SUNUM = %lld\n"
-	     "DRMS_SUDIR = %s\n",
-	     env->session->hostname, env->session->port, (unsigned long)pid, env->session->sessionid,
-	     env->session->sessionns,
-	     env->session->sunum,env->session->sudir);     
-      fflush(stdout);
-    }
+  }
+
+  if (!strcmp(env->logfile_prefix, "drms_server")) 
+  {
+     // this information is needed by modules that self-start a
+     // drms_server process
+     printf("DRMS server connected to database '%s' on host '%s' as "
+            "user '%s'.\n",env->session->db_handle->dbname, 
+            env->session->db_handle->dbhost,
+            env->session->db_handle->dbuser);
+     printf("DRMS_HOST = %s\n"
+            "DRMS_PORT = %hu\n"
+            "DRMS_PID = %lu\n"
+            "DRMS_SESSIONID = %lld\n"
+            "DRMS_SESSIONNS = %s\n"
+            "DRMS_SUNUM = %lld\n"
+            "DRMS_SUDIR = %s\n",
+            env->session->hostname, env->session->port, (unsigned long)pid, env->session->sessionid,
+            env->session->sessionns,
+            env->session->sunum,env->session->sudir);     
+     fflush(stdout);
   }
 
   if (save_stdeo()) {

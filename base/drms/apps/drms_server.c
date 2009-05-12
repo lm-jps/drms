@@ -178,6 +178,12 @@ create_series describe_series delete_series modify_series show_info
 #define kSHENVFILE "shenvfile"
 #define kNOTSPECIFIED "notspecified"
 #define kSELFSTARTFLAG "b"
+#define kHELPFLAG "h"
+#define kVERBOSEFLAG "V"
+#define kNOSHAREFLAG "s"
+#define kNAGLEOFFFLAG "n"
+#define kDOLOGFLAG "L"
+#define kFGFLAG "f"
 
 /* Global structure holding command line parameters. */
 CmdParams_t cmdparams;
@@ -190,8 +196,17 @@ ModuleArgs_t module_args[] = {
   {ARG_STRING, kCENVFILE, kNOTSPECIFIED, "If set, write out to a file all C-shell commands that set the essential DRMS_* env variables."},
   {ARG_STRING, kSHENVFILE, kNOTSPECIFIED, "If set, write out to a file all bash-shell command that set the essential DRMS_* env variables."},
   {ARG_FLAG, kSELFSTARTFLAG, NULL, "Indicates that drms_server was started by a socket module."},
+  {ARG_FLAG, kHELPFLAG, NULL, "Display a usage message, then exit."},
+  {ARG_FLAG, kVERBOSEFLAG, NULL, "Display diagostic messages while running."},
+  {ARG_FLAG, kNOSHAREFLAG, NULL, "?"},
+  {ARG_FLAG, kNAGLEOFFFLAG, NULL, "?"},
+  {ARG_FLAG, kDOLOGFLAG, NULL, "Generate a log saved into a SUMS directory."},
+  {ARG_FLAG, kFGFLAG, NULL, "Do not fork a child drms_server process."},
   {}
 };
+
+
+
 
 ModuleArgs_t *gModArgs = module_args;
 
@@ -284,6 +299,7 @@ int main (int argc, char *argv[]) {
 #ifdef DEBUG
   xmem_config(1,1,1,1,1000000,1,0,0); 
 #endif
+
   /* Parse command line parameters. */
   if (cmdparams_parse(&cmdparams, argc, argv)==-1)
   {
@@ -291,7 +307,9 @@ int main (int argc, char *argv[]) {
     return 1;
   }
   if (cmdparams_exists(&cmdparams,"h"))
-    goto usage;
+  {
+     goto usage;
+  }
   verbose = cmdparams_exists(&cmdparams,"V");
   noshare = cmdparams_exists(&cmdparams,"s");
   nagleoff = cmdparams_exists(&cmdparams,"n");
@@ -539,7 +557,7 @@ int main (int argc, char *argv[]) {
                 env->session->sessionid,
                 env->session->sessionns,
                 env->session->sunum,
-                env->session->sudir,
+                env->session->sudir ? env->session->sudir : "",
                 env->session->hostname, 
                 env->session->port);
         fclose(fptr);
@@ -569,7 +587,7 @@ int main (int argc, char *argv[]) {
                 env->session->sessionid,
                 env->session->sessionns,
                 env->session->sunum,
-                env->session->sudir,
+                env->session->sudir ? env->session->sudir : "",
                 env->session->hostname, 
                 env->session->port);
         fclose(fptr);

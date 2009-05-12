@@ -14,6 +14,7 @@
 #define kVERBOSEFLAGA "v"
 #define kVERBOSEFLAGB "V"
 #define kVERBOSEFLAGC "verbose"
+#define kDOLOGFLAG "L"
 #define kDRMSERVERENV "/tmp/drms_server_env"
 #define kTIMEOUT "to"
 #define kTIMEOUTDEF "15"
@@ -48,6 +49,7 @@ ModuleArgs_t module_args[] =
    {ARG_FLAG, kVERBOSEFLAGA, NULL, "Print diagnostic messages."},
    {ARG_FLAG, kVERBOSEFLAGB, NULL, "Print diagnostic messages."},
    {ARG_FLAG, kVERBOSEFLAGC, NULL, "Print diagnostic messages."},
+   {ARG_FLAG, kDOLOGFLAG, NULL, "Write drms_server output to a logfile in an SUDIR."},
    {ARG_END}
 };
 
@@ -69,6 +71,7 @@ int main(int argc, char *argv[])
    double timeout = 15;
    int delscr = 0;
    int verbose = 0;
+   int dolog = 0;
    int abort = 0;
    float elapsed = 0;
    struct stat stbuf;
@@ -99,6 +102,7 @@ int main(int argc, char *argv[])
    verbose = (cmdparams_isflagset(&cmdparams, kVERBOSEFLAGA) ||
               cmdparams_isflagset(&cmdparams, kVERBOSEFLAGB) ||
               cmdparams_isflagset(&cmdparams, kVERBOSEFLAGC));
+   dolog = cmdparams_isflagset(&cmdparams, kDOLOGFLAG);
 
    if ((pid = fork()) == -1)
    {
@@ -143,7 +147,7 @@ int main(int argc, char *argv[])
       {
          time_t now;
          time(&now);
-         fprintf(actstdout, "Start looking for environment file at %s\n", ctime(&now));
+         fprintf(actstdout, "Start looking for environment file %s at %s\n", envfile, ctime(&now));
       }
 
       /* wait for server env file to appear */
@@ -179,35 +183,39 @@ int main(int argc, char *argv[])
 
       if (runstat == kSTAT_COMMIT)
       {
-         /* Must read environment file to get the SU of the log directory */
-         efptr = fopen(envfile, "r");
          *sulogdir = '\0';
 
-         if (efptr)
+         if (dolog)
          {
-            char *psudir = NULL;
-            char line[LINE_MAX];
-            char *end = NULL;
+            /* Must read environment file to get the SU of the log directory */
+            efptr = fopen(envfile, "r");
 
-            while (fgets(line, LINE_MAX, efptr) != NULL)
+            if (efptr)
             {
-               if (strstr(line, "DRMS_SUDIR="))
+               char *psudir = NULL;
+               char line[LINE_MAX];
+               char *end = NULL;
+
+               while (fgets(line, LINE_MAX, efptr) != NULL)
                {
-                  if ((psudir = strchr(line, '/')) != NULL)
+                  if (strstr(line, "DRMS_SUDIR="))
                   {
-                     end = strchr(line, ';');
-                     if (end)
+                     if ((psudir = strchr(line, '/')) != NULL)
                      {
-                        *end = '\0';
+                        end = strchr(line, ';');
+                        if (end)
+                        {
+                           *end = '\0';
+                        }
+                        snprintf(sulogdir, sizeof(sulogdir), "%s", psudir);
                      }
-                     snprintf(sulogdir, sizeof(sulogdir), "%s", psudir);
+
+                     break;
                   }
-
-                  break;
                }
-            }
 
-            fclose(efptr);
+               fclose(efptr);
+            }
          }
 
          /* The server env file is available - source it and run script.
@@ -246,7 +254,7 @@ int main(int argc, char *argv[])
        * module called abort, drms_server may have already terminated, which
        * would cause the SUM_put() to have been called, which would make the
        * log SU unwritable. */
-      if (runstat == kSTAT_COMMIT && *sulogdir)
+      if (runstat == kSTAT_COMMIT && dolog && *sulogdir)
       {
          /* copy log file to log directory */
          char sulogfile[PATH_MAX];
@@ -338,13 +346,36 @@ int main(int argc, char *argv[])
       /* child */
       pid = getpid();
       char logfile[PATH_MAX];
-      char arg[128];
+      char tmp[128] = {0};
       int fd;
       const char *retention = NULL;
+      char **drmsargs = NULL;
+      int iarg = 0;
 
-      snprintf(logfile, sizeof(logfile), "%s/drmsserver_%llu.log", serverlog, (unsigned long long)pid);
-      snprintf(arg, sizeof(arg), "shenvfile=%s", kDRMSERVERENV);
-      
+      snprintf(logfile, 
+               sizeof(logfile), 
+               "%s/drmsserver_%llu.log", 
+               serverlog, 
+               (unsigned long long)pid);
+
+      drmsargs = (char **)calloc(128, sizeof(char *));
+
+      drmsargs[iarg++] = strdup("drms_server");
+      drmsargs[iarg++] = strdup("-f");
+
+      if (verbose)
+      {
+         drmsargs[iarg++] = strdup("-V");
+      }
+
+      if (dolog)
+      {
+         drmsargs[iarg++] = strdup("-L");
+      }
+
+      snprintf(tmp, sizeof(tmp), "shenvfile=%s", kDRMSERVERENV);
+      drmsargs[iarg++] = strdup(tmp);
+
       /* An operator cannot specify an SU retention for socket-connect modules that do 
        * not self-start a drms_server - retention can be specified for drms_server and 
        * other server apps only. To specify a retention time, the DRMS_RETENTION
@@ -367,15 +398,18 @@ int main(int argc, char *argv[])
       retention = cmdparams_get_str(&cmdparams, kRETENTION, NULL);
       if (strcmp(retention, kRETENTIONDEF) != 0)
       {
-         base_strlcat(arg, " DRMS_RETENTION=", sizeof(arg));
-         base_strlcat(arg, retention, sizeof(arg));
+         snprintf(tmp, sizeof(tmp), "DRMS_RETENTION=%s", retention);
+         drmsargs[iarg++] = strdup(tmp);
       }
 
       fd = open(logfile, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
       dup2(fd, 1);
       dup2(1, 2);
 
-      execlp("drms_server", "drms_server", "-f", arg, (char *)0);
+      /* If you use execlp, then the call would look something like 
+       * execlp("drms_server", "drms_server", "-f", arg, (char *)0);
+       */
+      execvp("drms_server", drmsargs);
 
       /* does not return */
    }

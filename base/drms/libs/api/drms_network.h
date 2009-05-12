@@ -7,6 +7,8 @@
 #include "drms_types.h"
 //#include "xmem.h"
 
+#define kNOLOGSUDIR "NOLOGSUDIR"
+
 /** \brief Establish socket connection to server, receive from server session information*/
 DRMS_Session_t *drms_connect(char *host);
 /** \brief Establish DB connection, initialize session information */
