@@ -125,6 +125,8 @@ void usage()
   printf("status commands via SUMS, so that it knows where all the tapes are.\n");
   printf("Usage: jmtx -f /dev/t950 status|load|unload [slot#] [drive#]\n");
   printf("NOTE: you must be user production to run.\n");
+  printf("NOTE: The -f arg is for symmetry with mtx only. You will connect\n");
+  printf("    to the sum_svc that you are configured to and get its drives.\n");
   exit(1);
 }
 
