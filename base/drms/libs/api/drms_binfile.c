@@ -4,24 +4,26 @@
 
 /*
  *  I/O of nearly raw binary files and gz compressed versions of same
- *  The (uncompressed) files habe a header with the following format:
+ *  The (uncompressed) files have a header with the following format:
  *
  *	field    |  size    | meaning
  *	-----------------------------------
  *	DRMS RAW |  8 bytes | Magic header
  *	type     |  int32   | Data type given as enum value of DRMS_Type_t type.
  *	naxis    |  int32   | number of dimensions
- *	axis0    |  int32   | length of first dimension
- *	axis1    |  int32   | length of second dimension
+ *	axis1    |  int32   | length of first dimension
+ *	axis2    |  int32   | length of second dimension
  *	...                   
  *	axisn    |  int32   | length of n'th dimension
- *	buflen   |  int64   | total length of data buffer	-removed-
+ *	bscale	 |  float64 | scaling parameter | only present if type is fixed-
+ *	bzero	 |  float64 | offset parameter  | point: CHAR, SHORT, INT, LONGLONG 
+ *	buflen   |  int64   | total length of data buffer
  *	data     |  buflen  | array data
  *
  *  For types other than DRMS_TYPE_STRING buflen should be
- *    sizeof (type) * axis0 * axis1 * ... *axisn bytes
+ *    sizeof (type) * axis1 * axis2 * ... *axisn bytes
  *  For DRMS_TYPE_STRING it is the total length of the 
- *    axis0*axis1*...*axisn zero-terminated strings stored consecutively
+ *    axis1*axis2*...*axisn zero-terminated strings stored consecutively
  *    in the file.
  */
 
@@ -33,15 +35,12 @@ int drms_binfile_read (char *filename, int nodata, DRMS_Array_t *rf) {
   char magic[9], *p, **sptr;
   long long bufsize;
 
-  if (!rf)
-  {
-     fprintf(stderr, "Bad pointer to array structure.\n");
-     return 1;
+  if (!rf) {
+    fprintf (stderr, "Bad pointer to array structure.\n");
+    return 1;
   }
-
-  memset(rf, 0, sizeof(DRMS_Array_t));
-
-  /* bzero/bscale not currently supported, assume 0 and 1 */
+  memset (rf, 0, sizeof(DRMS_Array_t));
+	      /*  default values of bzero and bscale for inapplicable types  */
   rf->bzero = 0.0;
   rf->bscale = 1.0;
 
@@ -68,9 +67,19 @@ int drms_binfile_read (char *filename, int nodata, DRMS_Array_t *rf) {
     goto bailout;
   }
   for (i = 0; i < rf->naxis; i++) TRY (fread (&rf->axis[i], 4, 1, fp));       
+  if (rf->type == DRMS_TYPE_CHAR || rf->type == DRMS_TYPE_SHORT ||
+      rf->type == DRMS_TYPE_INT || rf->type == DRMS_TYPE_LONGLONG) {
+    TRY (fread (&rf->bscale, 8, 1, fp));
+    TRY (fread (&rf->bzero, 8, 1, fp));
+  }
   TRY (fread (&rf->buflen, 8, 1, fp));       
 #if __BYTE_ORDER == __BIG_ENDIAN
   byteswap (4, rf->naxis, (void *)rf->axis);
+  if (rf->type == DRMS_TYPE_CHAR || rf->type == DRMS_TYPE_SHORT ||
+      rf->type == DRMS_TYPE_INT || rf->type == DRMS_TYPE_LONGLONG) {
+    byteswap (8, 1, (void *)&rf->bscale);
+    byteswap (8, 1, (void *)&rf->bzero);
+  }
   byteswap (8, 1, (void *)&rf->buflen);
 #endif    
   if (nodata) {
@@ -153,10 +162,24 @@ int drms_binfile_write (char *filename, DRMS_Array_t *rf) {
   byteswap (4, rf->naxis,  (void *)rf->axis);
   for (i = 0; i < rf->naxis; i++) TRY (fwrite (&rf->axis[i], 4, 1, fp));           
   byteswap (4, rf->naxis, (void *)rf->axis);
+  if (rf->type == DRMS_TYPE_CHAR || rf->type == DRMS_TYPE_SHORT ||
+      rf->type == DRMS_TYPE_INT || rf->type == DRMS_TYPE_LONGLONG) {
+    byteswap (8, 1, (void *)&rf->bscale);
+    byteswap (8, 1, (void *)&rf->bzero);
+    TRY (fwrite (&rf->bscale, 8, 1, fp));           
+    TRY (fwrite (&rf->bzero, 8, 1, fp));           
+    byteswap (8, 1, (void *)&rf->bscale);
+    byteswap (8, 1, (void *)&rf->bzero);
+  }
 #else    
   TRY (fwrite (&rf->type, 4, 1, fp));
   TRY (fwrite (&rf->naxis, 4, 1, fp));
   for (i = 0; i < rf->naxis; i++) TRY (fwrite (&rf->axis[i], 4, 1, fp));           
+  if (rf->type == DRMS_TYPE_CHAR || rf->type == DRMS_TYPE_SHORT ||
+      rf->type == DRMS_TYPE_INT || rf->type == DRMS_TYPE_LONGLONG) {
+    TRY (fwrite (&rf->bscale, 8, 1, fp));           
+    TRY (fwrite (&rf->bzero, 8, 1, fp));           
+  }
 #endif
 
   bufsize = drms_sizeof (rf->type);
@@ -166,6 +189,9 @@ int drms_binfile_write (char *filename, DRMS_Array_t *rf) {
   byteswap (8, 1, (void *)&rf->buflen);
   TRY (fwrite (&rf->buflen, 8, 1, fp));           
   byteswap (8, 1, (void *)&rf->buflen);
+  if (rf->type == DRMS_TYPE_CHAR || rf->type == DRMS_TYPE_SHORT ||
+      rf->type == DRMS_TYPE_INT || rf->type == DRMS_TYPE_LONGLONG) {
+  }
   drms_byteswap (rf->type, bufsize / drms_sizeof(rf->type), rf->data);
   fwrite (rf->data, bufsize, 1, fp);
   drms_byteswap (rf->type, bufsize / drms_sizeof(rf->type), rf->data);
@@ -198,8 +224,7 @@ int drms_zipfile_read (char *filename, int nodata, DRMS_Array_t *rf) {
   }
 
   memset(rf, 0, sizeof(DRMS_Array_t));
-
-  /* bzero/bscale not currently supported, assume 0 and 1 */
+	      /*  default values of bzero and bscale for inapplicable types  */
   rf->bzero = 0.0;
   rf->bscale = 1.0;
 
@@ -226,9 +251,19 @@ int drms_zipfile_read (char *filename, int nodata, DRMS_Array_t *rf) {
     goto bailout;
   }
   for (i=0; i < rf->naxis; i++) TRY (gzread (fp, &rf->axis[i], 4));           
+  if (rf->type == DRMS_TYPE_CHAR || rf->type == DRMS_TYPE_SHORT ||
+      rf->type == DRMS_TYPE_INT || rf->type == DRMS_TYPE_LONGLONG) {
+    TRY (gzread (fp, &rf->bscale, 8));       
+    TRY (gzread (fp, &rf->bzero, 8));       
+  }
   TRY (gzread (fp, &rf->buflen, 8));       
 #if __BYTE_ORDER == __BIG_ENDIAN
   byteswap (4, rf->naxis,  (void *)rf->axis);
+  if (rf->type == DRMS_TYPE_CHAR || rf->type == DRMS_TYPE_SHORT ||
+      rf->type == DRMS_TYPE_INT || rf->type == DRMS_TYPE_LONGLONG) {
+    byteswap (8, 1, (void *)&rf->bscale);
+    byteswap (8, 1, (void *)&rf->bzero);
+  }
   byteswap (8, 1, (void *)&rf->buflen);
 #endif    
   if (nodata) {
@@ -279,8 +314,6 @@ bailout:
   return 1;
 }
 
-
-
 int drms_zipfile_write (char *filename, DRMS_Array_t *rf) {
   gzFile *fp;
   int i;
@@ -326,6 +359,19 @@ int drms_zipfile_write (char *filename, DRMS_Array_t *rf) {
 #if __BYTE_ORDER == __BIG_ENDIAN
   byteswap (4, rf->naxis, (void *)rf->axis);
 #endif    
+  if (rf->type == DRMS_TYPE_CHAR || rf->type == DRMS_TYPE_SHORT ||
+      rf->type == DRMS_TYPE_INT || rf->type == DRMS_TYPE_LONGLONG) {
+#if __BYTE_ORDER == __BIG_ENDIAN
+    byteswap (8, 1, (void *)&rf->bscale);
+    byteswap (8, 1, (void *)&rf->bzero);
+#endif
+    TRY (gzwrite (fp, &rf->bscale, 8));           
+    TRY (gzwrite (fp, &rf->bzero, 8));           
+#if __BYTE_ORDER == __BIG_ENDIAN
+    byteswap (8, 1, (void *)&rf->bscale);
+    byteswap (8, 1, (void *)&rf->bzero);
+#endif
+  }
 
   bufsize = drms_sizeof (rf->type);
   for (i = 0; i < rf->naxis; i++) bufsize *= rf->axis[i];
