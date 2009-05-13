@@ -181,16 +181,21 @@ void db_disconnect(DB_Handle_t **db)
   if (db && *db)
   {
     DB_Handle_t *dbin = *db;
-    db_lock(dbin);
+    db_lock(dbin); /* If db_lock == NULL, then nop */
 
     PQfinish(dbin->db_connection);
     dbin->db_connection = NULL; /* make it easier to spot use after free. */
 
     /* Free thread related data. */
-    db_unlock(dbin);
-    pthread_mutex_destroy(dbin->db_lock);
-    free(dbin->db_lock);
-    dbin->db_lock = NULL; /* make it easier to spot use after free. */
+    db_unlock(dbin); /* If db_lock == NULL, then nop */
+
+    if (dbin->db_lock)
+    {
+       pthread_mutex_destroy(dbin->db_lock);
+       free(dbin->db_lock);
+       dbin->db_lock = NULL; /* make it easier to spot use after free. */
+    }
+
     free(dbin); 
     *db = NULL;
   }
