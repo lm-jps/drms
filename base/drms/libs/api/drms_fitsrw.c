@@ -385,6 +385,8 @@ void drms_fitsrw_freekeys(HContainer_t **keywords)
       }
 
       hiter_destroy(&hit);
+
+      hcon_destroy(keywords);
    }
 }
 
