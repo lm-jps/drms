@@ -382,3 +382,7 @@ const char *drms_keymap_classintname(const char *class, const char *extName)
    return ret;
 }
 
+const char *drms_keymap_getclname(DRMS_KeyMapClass_t clid)
+{
+   return KeyMapClassIDMap[clid];
+}

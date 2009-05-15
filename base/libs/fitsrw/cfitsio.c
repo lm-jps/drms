@@ -1768,3 +1768,132 @@ int cfitsio_gen_image(char* fits_filename, int width, int bitpix, char* center_v
 
 //****************************************************************************
 //****************************************************************************
+
+int fitsrw_read(const char *filename, 
+                CFITSIO_IMAGE_INFO** image_info,
+                void** image,
+                CFITSIO_KEYWORD** keylist)
+{
+   fitsfile *fptr = NULL;
+   long long npixels;
+   int bytepix;
+   int data_type;
+   void *pixels = NULL;
+   int status;
+   int error_code = 0;
+   char cfitsiostat[FLEN_STATUS];
+   int idim;
+   char *fnamedup = strdup(filename);
+
+   if (!image_info || *image_info)
+   {
+      fprintf(stderr, "Invalid image_info argument.\n");
+      error_code = CFITSIO_ERROR_ARGS;
+   }
+
+   if (!error_code)
+   {
+      *image_info = (CFITSIO_IMAGE_INFO *)malloc(sizeof(CFITSIO_IMAGE_INFO));
+
+      if(*image_info == NULL)
+      {
+         error_code = CFITSIO_ERROR_OUT_OF_MEMORY;
+      }
+   }
+
+   if (!error_code)
+   {
+      memset((void*)(*image_info), 0, sizeof(CFITSIO_IMAGE_INFO));
+
+      /* stupid cfitsio will fail if status is not 0 when the following call
+       * is made */
+      status = 0;
+      if (fits_open_image(&fptr, fnamedup, READONLY, &status)) 
+      {
+         error_code = CFITSIO_ERROR_FILE_DOESNT_EXIST;
+      }
+
+      if (!error_code)
+      {
+         error_code = cfitsio_read_keylist_and_image_info(fptr, keylist, image_info);
+      }
+
+      if (!error_code)
+      {
+         switch((*image_info)->bitpix)
+         {
+            case(BYTE_IMG):    data_type = TBYTE; break; /* When reading, data are 
+                                                            an unsigned char array */
+            case(SHORT_IMG):   data_type = TSHORT; break;
+            case(LONG_IMG):    data_type = TINT; break; 
+            case(LONGLONG_IMG):data_type = TLONGLONG; break;
+            case(FLOAT_IMG):   data_type = TFLOAT; break;
+            case(DOUBLE_IMG):  data_type = TDOUBLE; break;
+         }
+
+         bytepix = abs((*image_info)->bitpix) / 8;
+
+         npixels = 1;
+         for(idim = 0; idim < (*image_info)->naxis; idim++) 
+         {
+            npixels *= (*image_info)->naxes[idim];
+         }
+
+         pixels = calloc(npixels, bytepix);
+         if(!pixels)
+         {
+            error_code = CFITSIO_ERROR_OUT_OF_MEMORY;
+         }
+      }
+   }
+
+   if (!error_code)
+   {
+      /* Read raw data */
+      fits_set_bscale(fptr, 1.0, 0.0, &status);
+
+      if (!status)
+      {
+         fits_set_imgnull(fptr, 0, &status);
+      }
+
+      if (status)
+      {
+         error_code = CFITSIO_ERROR_LIBRARY;
+      }
+   }
+
+   if (!error_code)
+   {
+      if(fits_read_img(fptr, data_type, 1, npixels, NULL, pixels, NULL, &status))
+      {
+         error_code = CFITSIO_ERROR_LIBRARY; 
+      }     
+   }
+
+   if(fptr) 
+   {
+      fits_close_file(fptr, &status);
+   }
+   
+   if (status)
+   {
+      fits_get_errstatus(status, cfitsiostat);
+      fprintf(stderr, "In fitsrw_read(), cfitsio error '%s'.\n", cfitsiostat);
+      if(pixels) 
+      {
+         free(pixels);
+      }
+   }
+   else
+   {
+      *image = pixels;
+   }
+
+   if (fnamedup)
+   {
+      free(fnamedup);
+   }
+
+   return error_code;
+}

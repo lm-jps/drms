@@ -460,15 +460,15 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
 		   continue;
 		}
 	       
-	       /* generate a valid drms keyword (fits might not be valid) */
-	       if (!drms_keyword_getintname_ext(sKey->info->name, 
-						&fitsclass,
-						NULL, 
-						drmsKeyName, 
-						sizeof(drmsKeyName)))
-	       {
-		  *drmsKeyName = '\0';
-		  stat = DRMS_ERROR_INVALIDDATA;
+                /* generate a valid drms keyword (fits might not be valid) */
+                if (!drms_keyword_getmappedintname(sKey->info->name, 
+                                                   drms_keymap_getclname(fitsclass),
+                                                   NULL, 
+                                                   drmsKeyName, 
+                                                   sizeof(drmsKeyName)))
+                {
+                   *drmsKeyName = '\0';
+                   stat = DRMS_ERROR_INVALIDDATA;
 		  break;
 	       }
 
@@ -806,11 +806,11 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
 
 	 while (stat == DRMS_SUCCESS && kl && ((sKey = kl->elem) != NULL))
 	 {
-	    if (!drms_keyword_getintname_ext(sKey->info->name, 
-					     &fitsclass,
-					     NULL, 
-					     drmsKeyName, 
-					     sizeof(drmsKeyName)))
+	    if (!drms_keyword_getmappedintname(sKey->info->name, 
+                                               drms_keymap_getclname(fitsclass),
+                                               NULL, 
+                                               drmsKeyName, 
+                                               sizeof(drmsKeyName)))
 	    {
 	       *drmsKeyName = '\0';
 	       stat = DRMS_ERROR_INVALIDDATA;
@@ -937,11 +937,11 @@ static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env,
 	    nPkeys = 0;
 	    while(pkeyname != NULL)
 	    {
-	       if (!drms_keyword_getintname_ext(pkeyname, 
-						&fitsclass,
-						NULL, 
-						drmsKeyName, 
-						sizeof(drmsKeyName)))
+	       if (!drms_keyword_getmappedintname(pkeyname, 
+                                                  drms_keymap_getclname(fitsclass),
+                                                  NULL, 
+                                                  drmsKeyName, 
+                                                  sizeof(drmsKeyName)))
 	       {
 		  *drmsKeyName = '\0';
 		  stat = DRMS_ERROR_INVALIDDATA;

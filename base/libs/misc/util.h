@@ -37,6 +37,8 @@ int copyfile(const char *inputfile, const char *outputfile);
 
 int FitsKeyNameValidation(const char *fitsName);
 int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size);
+int GenerateFitsKeyName(const char *drmsName, char *fitsName, int size);
+int IsValidDRMSKeyName(const char *drmsName);
 int RemoveDir(const char *pathname, int maxrec);
 size_t CopyFile(const char *src, const char *dst);
 

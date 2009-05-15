@@ -131,6 +131,10 @@ int cfitsio_append_key(CFITSIO_KEYWORD** keylist,
 			char *comment,
 			void *value);
 
+int fitsrw_read(const char *filename, 
+                CFITSIO_IMAGE_INFO** image_info,
+                void** image,
+                CFITSIO_KEYWORD** keylist);
 
 //****************************************************************************
 // For internal use and low level testing...

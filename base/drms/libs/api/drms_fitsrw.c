@@ -282,6 +282,112 @@ void drms_fitsrw_term()
    fitsrw_closefptrs();
 }
 
+DRMS_Array_t *drms_fitsrw_read(const char *filename,
+                               int readraw,
+                               HContainer_t **keywords,
+                               int *status)
+{
+   int statusint = DRMS_SUCCESS;
+   CFITSIO_IMAGE_INFO *info = NULL;
+   void *image = NULL;
+   CFITSIO_KEYWORD* keylist = NULL;
+   CFITSIO_KEYWORD* fitskey = NULL;
+   int fitsrwstat = CFITSIO_SUCCESS;
+   DRMS_Array_t *arr = NULL;
+
+   /* fitsrw_read always reads 'RAW' - it does NOT apply bzero/bscale */
+   fitsrwstat = fitsrw_read(filename, &info, &image, &keylist);
+
+   if (fitsrwstat != CFITSIO_SUCCESS)
+   {
+      statusint = DRMS_ERROR_FITSRW;
+      fprintf(stderr, "FITSRW error '%d'.\n", fitsrwstat);
+   }
+   else
+   {
+      /* sets arr->israw = 1 */
+      if (drms_fitsrw_CreateDRMSArray(info, image, &arr))
+      {
+         statusint = DRMS_ERROR_ARRAYCREATEFAILED;
+      }
+      else
+      {
+         /* At this point, we have a RAW array - if readraw == 0, unscale. */
+         if (!readraw && (arr->bscale != 1.0 || arr->bzero != 0.0))
+         {
+            drms_array_convert_inplace(arr->type, arr->bzero, arr->bscale, arr);
+            arr->israw = 0;    
+         }
+
+         /* Must iterate through keylist and create DRMS keywords */
+         if (keywords)
+         {
+            if (!*keywords)
+            {
+               /* User is filling up a new container with detached (from rec) keywords. */
+               *keywords = hcon_create(sizeof(DRMS_Keyword_t), 
+                                       DRMS_MAXKEYNAMELEN, 
+                                       NULL, 
+                                       NULL,
+                                       NULL,
+                                       NULL,
+                                       0);
+            }
+
+            /* else User is filling up an existing container attached to a rec. */
+
+            fitskey = keylist;
+            while (fitskey != NULL)
+            {
+               /* For now, don't use map or class to map fits to drms keywords */
+               if (drms_keyword_mapimport(fitskey, NULL, NULL, *keywords))
+               {
+                  fprintf(stderr, "Error importing fits keyword '%s'; skipping.\n", fitskey->key_name);
+               }
+
+               fitskey = fitskey->next;
+            }
+         }
+
+         /* Don't free image - arr has stolen it. */
+         cfitsio_free_these(&info, NULL, &keylist);
+      }
+   }
+   
+   if (status)
+   {
+      *status = statusint;
+   }
+
+   return arr;
+}
+
+/* Only call this when keywords are headless (not attached to a record) */
+void drms_fitsrw_freekeys(HContainer_t **keywords)
+{
+   if (keywords)
+   {
+      DRMS_Keyword_t *key = NULL;
+      HIterator_t *hit = hiter_create(*keywords);
+
+      /* Must free key->info, key->value (if it is a string type) */
+      while ((key = hiter_getnext(hit)) != NULL)
+      {
+         if (!key->record && key->info)
+         {
+            if (key->info->type == DRMS_TYPE_STRING)
+            {
+               free((key->value).string_val);
+            }
+
+            free(key->info);
+         }
+      }
+
+      hiter_destroy(&hit);
+   }
+}
+
 /* Array may be converted in calling function, but not here */
 int drms_fitsrw_readslice(const char *filename, 
                           int naxis,

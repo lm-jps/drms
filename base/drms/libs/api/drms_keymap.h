@@ -20,6 +20,7 @@ DRMS_KeyMap_t *drms_keymap_create(void);
 void drms_keymap_destroy(DRMS_KeyMap_t **km);
 int drms_keymap_parsetable(DRMS_KeyMap_t *keymap, const char *text);
 int drms_keymap_parsefile(DRMS_KeyMap_t *keymap, FILE *fPtr);
+const char *drms_keymap_getclname(DRMS_KeyMapClass_t clid);
 
 /* End API */
 
