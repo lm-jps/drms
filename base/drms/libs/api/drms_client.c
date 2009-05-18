@@ -209,7 +209,7 @@ DRMS_Session_t *drms_connect_direct(char *dbhost, char *dbuser,
   }
   
   if (sessionns) {
-    session->sessionns = sessionns;
+     session->sessionns = strdup(sessionns);
   } else {
     // get the default session namespace
     DB_Text_Result_t *tresult;

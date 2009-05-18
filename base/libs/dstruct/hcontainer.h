@@ -75,6 +75,10 @@ static inline int hcon_size(HContainer_t *hc)
   return hc->num_total;
 }
 
+static inline int hcon_initialized(HContainer_t *hc)
+{
+   return (hc->buf != NULL);
+}
 
 /* Iterator object allows (forwards) looping over contents of
    HContainer. */

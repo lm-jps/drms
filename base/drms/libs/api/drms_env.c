@@ -151,29 +151,52 @@ void drms_abort_now (DRMS_Env_t *env) {
 #endif
 
 void drms_free_env (DRMS_Env_t *env, int final) {
+   /* Initialized by drms_server_begin_transaction() (in servers), 
+    * or drms_open() (in clients) */
   hcon_free (&env->record_cache);
   hcon_free (&env->series_cache);
   hcon_free (&env->storageunit_cache);
 #ifndef DRMS_CLIENT
+  /* Alloc'd by drms_server_begin_transaction() (server only) */
   free (env->drms_lock);
+  env->drms_lock = NULL;
+
+  /* Alloc'd by drms_server_begin_transaction() (server only) */
   if (env->sum_inbox) {
     tqueueDelete (env->sum_inbox);
+    env->sum_inbox = NULL;
   }
+  /* Alloc'd by drms_server_begin_transaction() (server only) */
   if (env->sum_outbox) {
     tqueueDelete (env->sum_outbox);
+    env->sum_outbox = NULL;
   }
   if (env->shutdownsem)
   {
      sem_destroy(env->shutdownsem);
+     env->shutdownsem = NULL;
   }
 #endif
   if (env->session) {
-      free (env->session->sudir);
+     /* Alloc'd by drms_server_open_session() (in servers), 
+      * or drms_open() (in clients). drms_server_open_session()
+      * is called by drms_server_begin_transaction(). */
+     free (env->session->sudir);
+     env->session->sudir = NULL;
   }
+
+  /* The environment transaction is no longer initialized. */
+  env->transinit = 0;
+
   if (final) {
     if (env->session) {
-      free (env->session->sessionns);  
-      free (env->session);
+       /* Alloc'd by drms_open() */
+       free (env->session->sessionns); 
+       env->session->sessionns = NULL; 
+
+       /* Alloc'd by drms_open() */
+       free (env->session);
+       env->session = NULL;
     }
     free (env);
   }

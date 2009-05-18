@@ -5452,6 +5452,9 @@ int ParseRecSetDesc(const char *recsetsStr,
                        int rlen = drms_sscanf_str(pc, "]", &val);
                        int ilen = 0;
 
+                       /* Don't need string - just strlen */
+                       drms_value_free(&val);
+
                        /* if ending ']' was found, then pc + rlen is ']', otherwise
                         * it is the next char after end quote */
                        while (ilen < rlen)
@@ -5555,6 +5558,9 @@ int ParseRecSetDesc(const char *recsetsStr,
                     memset(&val, 0, sizeof(DRMS_Type_Value_t));
                     int rlen = drms_sscanf_str(pc, NULL, &val);
                     int ilen = 0;
+
+                    /* Don't need string - just strlen */
+                    drms_value_free(&val);
 
                     /* if ending ']' was found, then pc + rlen is ']', otherwise
                      * it is the next char after end quote */

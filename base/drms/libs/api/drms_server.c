@@ -51,6 +51,9 @@ int drms_server_authenticate(int sockfd, DRMS_Env_t *env, int clientid)
   return status;
 }
 
+/* Assumes that drms_open() already called (but doesn't check for that). Also
+ * assumes that drms_server_end_transaction() was never called with the 'final'
+ * flag set. */
 int drms_server_begin_transaction(DRMS_Env_t *env) {
 
   /* Start a transaction where all database operations performed
@@ -63,18 +66,26 @@ int drms_server_begin_transaction(DRMS_Env_t *env) {
     pthread_kill(env->signal_thread, SIGTERM);
   }
 
-  env->sum_inbox = tqueueInit (100);
-  env->sum_outbox = tqueueInit (100);
+  /* It is possible that the user has previously called drms_server_end_transaction(),
+   * but not freed the environment. In this case, you don't want to re-allocate and
+   * re-initialize the env structure. */
+  if (!env->transinit)
+  {
+     env->sum_inbox = tqueueInit (100);
+     env->sum_outbox = tqueueInit (100);
 
-  /*  global lock  */
-  XASSERT( env->drms_lock = malloc(sizeof(pthread_mutex_t)) );
-  pthread_mutex_init (env->drms_lock, NULL); 
+     /*  global lock  */
+     XASSERT( env->drms_lock = malloc(sizeof(pthread_mutex_t)) );
+     pthread_mutex_init (env->drms_lock, NULL); 
 
-  if (drms_cache_init(env)) goto bailout;
+     if (drms_cache_init(env)) goto bailout;
 
-  /* drms_server_open_session() can be slow when the dbase is busy - 
-   * this is caused by SUM_open() calls backing up. */ 
-  if (drms_server_open_session(env)) return 1;
+     /* drms_server_open_session() can be slow when the dbase is busy - 
+      * this is caused by SUM_open() calls backing up. */ 
+     if (drms_server_open_session(env)) return 1;
+
+     env->transinit = 1;
+  }
 
   return 0;
  bailout:

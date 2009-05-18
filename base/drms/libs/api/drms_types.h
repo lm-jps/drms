@@ -331,6 +331,8 @@ struct DRMS_Env_struct
   sem_t *shutdownsem; /* synchronization between signal thread and main thread during shutdown */
   DRMS_Shutdown_State_t shutdown; /* signifies that DRMS received a signal that is causing module termination */
   int selfstart; /* if this is a drms_server environment, was drms_server self-started by a socket module */
+  int transinit; /* When upon success, drms_server_begin_transaction() sets this to 1; drms_free_env() 
+                  * sets this to 0. */
 };
 
 /** \brief DRMS environment struct reference */
