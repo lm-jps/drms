@@ -80,12 +80,12 @@ int drms_server_begin_transaction(DRMS_Env_t *env) {
 
      if (drms_cache_init(env)) goto bailout;
 
-     /* drms_server_open_session() can be slow when the dbase is busy - 
-      * this is caused by SUM_open() calls backing up. */ 
-     if (drms_server_open_session(env)) return 1;
-
      env->transinit = 1;
   }
+
+  /* drms_server_open_session() can be slow when the dbase is busy - 
+   * this is caused by SUM_open() calls backing up. */ 
+  if (drms_server_open_session(env)) return 1;
 
   return 0;
  bailout:

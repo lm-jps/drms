@@ -171,6 +171,10 @@ void drms_free_env (DRMS_Env_t *env, int final) {
     tqueueDelete (env->sum_outbox);
     env->sum_outbox = NULL;
   }
+
+  /* The environment transaction is no longer initialized. */
+  env->transinit = 0;
+
   if (env->shutdownsem)
   {
      sem_destroy(env->shutdownsem);
@@ -184,9 +188,6 @@ void drms_free_env (DRMS_Env_t *env, int final) {
      free (env->session->sudir);
      env->session->sudir = NULL;
   }
-
-  /* The environment transaction is no longer initialized. */
-  env->transinit = 0;
 
   if (final) {
     if (env->session) {
