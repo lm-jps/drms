@@ -1,7 +1,4 @@
 //#define DEBUG
-#if defined(__linux__) && __linux__
-#define _GNU_SOURCE
-#endif
 #include "drms.h"
 #include "drms_priv.h"
 #include "xmem.h"
@@ -542,7 +539,7 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
                                    1, 
                                    &drmsstatus);
 
-     if (!drmsstatus && array && array->naxis == 2 && array->axis[0] == 1 && array->axis[1] > 0)
+     if (!drmsstatus && array && array->naxis == 2 && array->axis[0] == 1)
      {
         series_lower = strdup(series);
         /* series_lower is fully qualified, i.e., it contains namespace */
@@ -577,11 +574,16 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
         if (drms_dms(session,NULL,query))
           goto bailout;
 
-        /* If the DRMS deletions occurred without a hitch, then delete the 
-         * SUMS files from SUMS. */
-        /* If this is a sock-module, must pass the vector SUNUM by SUNUM 
-         * to drms_server. */
-        drms_dropseries(env, series, array);
+        /* Can only potentially have SUMS SUNUMS to drop if there 
+         * is at least one record in the series. */
+        if (array->axis[1] > 0)
+        {
+           /* If the DRMS deletions occurred without a hitch, then delete the 
+            * SUMS files from SUMS. */
+           /* If this is a sock-module, must pass the vector SUNUM by SUNUM 
+            * to drms_server. */
+           drms_dropseries(env, series, array);
+        }
 
         /* Both DRMS servers and clients have a series_cache (one item per
            each series in all of DRMS). So, always remove the deleted series
