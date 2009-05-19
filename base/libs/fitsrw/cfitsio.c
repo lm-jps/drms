@@ -655,7 +655,16 @@ static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD**
       {
 	 strcpy(node->key_name, key_name);
 	 node->key_type=kFITSRW_Type_String;
-	 strcpy(node->key_value.vs,card); //save the whole card into value .vs
+
+         if(fits_parse_value(card, key_value, node->key_comment, &status)) 
+	 {
+	    error_code = CFITSIO_ERROR_LIBRARY;
+	    goto error_exit;
+	 }
+
+         // The actual comment (excluding the COMMENT key name) was placed 
+         // into node->key_comment - copy that into value.vs
+	 strcpy(node->key_value.vs, node->key_comment); 
       }					
       else //regular key=value
       {

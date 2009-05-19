@@ -2773,9 +2773,20 @@ int drms_keyword_mapimport(CFITSIO_KEYWORD *fitskey,
 
             if ((newkey = hcon_lookup(keys, namelower)) != NULL)
             {
-               if (newkey->record &&
-                   newkey->info &&
-                   newkey->info->type == drmskwtype)
+               if (strcmp(namelower, "comment") == 0 || strcmp(namelower, "history") == 0 )
+               {
+                  /* If this is a FITS comment or history keyword, then 
+                   * append to the existing string;separate from previous 
+                   * values with a newline character. */
+                  size_t size = strlen(newkey->value.string_val) + 1;
+                  newkey->value.string_val = base_strcatalloc(newkey->value.string_val, "\n", &size);
+                  newkey->value.string_val = base_strcatalloc(newkey->value.string_val, 
+                                                              drmskwval.string_val, 
+                                                              &size);
+               }
+               else if (newkey->record &&
+                        newkey->info &&
+                        newkey->info->type == drmskwtype)
                {
                   /* key already exists in container - assume the user is trying to 
                    * copy the key value into an existing DRMS_Record_t */
@@ -2783,7 +2794,7 @@ int drms_keyword_mapimport(CFITSIO_KEYWORD *fitskey,
                }
                else
                {
-                  fprintf(stderr, "Keyword '%s' already exists; skipping.\n", nameout);
+                  fprintf(stderr, "Keyword '%s' already exists; the DRMS value is the value of the first instance .\n", nameout);
                }
             }
             else if ((newkey = (DRMS_Keyword_t *)hcon_allocslot(keys, namelower)) != NULL)
