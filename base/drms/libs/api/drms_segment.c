@@ -2313,12 +2313,13 @@ static int ExportFITS(DRMS_Array_t *arrout,
    return stat;
 }
 
-int drms_segment_export_tofile(DRMS_Segment_t *seg, const char *fileout)
+int drms_segment_export_tofile(DRMS_Segment_t *seg, const char *cparms, const char *fileout)
 {
-   return drms_segment_mapexport_tofile(seg, NULL, NULL, fileout);
+   return drms_segment_mapexport_tofile(seg, cparms, NULL, NULL, fileout);
 }
 
 int drms_segment_mapexport_tofile(DRMS_Segment_t *seg, 
+                                  const char *cparms, 
 				  const char *clname, 
 				  const char *mapfile,
 				  const char *fileout)
@@ -2348,7 +2349,7 @@ int drms_segment_mapexport_tofile(DRMS_Segment_t *seg,
 	      DRMS_Array_t *arrout = drms_segment_read(seg, DRMS_TYPE_RAW, &status);
 	      if (arrout)
 	      {
-                 status = ExportFITS(arrout, fileout, seg->cparms, fitskeys);
+                 status = ExportFITS(arrout, fileout, cparms ? cparms : seg->cparms, fitskeys);
 		 drms_free_array(arrout);
 	      }
 	   }
