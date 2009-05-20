@@ -36,7 +36,7 @@ DRMS_StorageUnit_t *drms_su_markslot(DRMS_Env_t *env, char *series, long long su
 
 void drms_freeunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su);
 int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su);
-int drms_commit_all_units(DRMS_Env_t *env, int *archive);
+int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status);
 void drms_su_freeunit(DRMS_StorageUnit_t *su);
 int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retireve);
 int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retireve, int dontwait);

@@ -442,6 +442,7 @@ void drms_server_abort(DRMS_Env_t *env, int final)
 void drms_server_commit(DRMS_Env_t *env, int final)
 {
   int log_retention, archive_log;
+  int status = 0;
 
   if (env->verbose) 
     printf("DRMS is committing...stand by...\n");  
@@ -469,7 +470,7 @@ void drms_server_commit(DRMS_Env_t *env, int final)
      drms_fitsrw_term();
   }
 
-  log_retention = drms_commit_all_units(env, &archive_log);  
+  log_retention = drms_commit_all_units(env, &archive_log, &status);  
 
   /* Unregister session */
   if (env->verbose)
@@ -491,7 +492,14 @@ void drms_server_commit(DRMS_Env_t *env, int final)
   db_disconnect(&env->session->stat_conn);
 
   /* Commit all changes to the DRMS database. */
-  db_commit(env->session->db_handle);
+  if (status)
+  {
+     db_rollback(env->session->db_handle);
+  }
+  else
+  {
+     db_commit(env->session->db_handle);
+  }
 
   if (final) {
     db_disconnect(&env->session->db_handle);

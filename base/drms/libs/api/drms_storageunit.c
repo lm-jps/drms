@@ -1014,13 +1014,14 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
    (i.e. non-temporary) to SUMS. Return the largest retention 
    time of any unit committed. */
 #ifndef DRMS_CLIENT
-int drms_commit_all_units(DRMS_Env_t *env, int *archive)
+int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
 {
   int i, docommit;
   HContainer_t *scon; 
   HIterator_t hit_outer, hit_inner; 
   DRMS_StorageUnit_t *su;
   int max_retention=0;
+  int statint = 0;
 
   XASSERT(env->session->db_direct==1);
   hiter_new(&hit_outer, &env->storageunit_cache);  
@@ -1045,14 +1046,17 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive)
 	}
 	if (docommit)
 	{
-	  drms_commitunit(env, su);
-	  if (su->seriesinfo->retention > max_retention)
-	    max_retention = su->seriesinfo->retention;
-          if (archive && env->archive == INT_MIN)
-          {
-             if (su->seriesinfo->archive)
-               *archive = 1;
-          }
+           if ((statint = drms_commitunit(env, su)) != 0)
+           {
+              break;
+           }
+           if (su->seriesinfo->retention > max_retention)
+             max_retention = su->seriesinfo->retention;
+           if (archive && env->archive == INT_MIN)
+           {
+              if (su->seriesinfo->archive)
+                *archive = 1;
+           }
 	}
       }
     }
@@ -1060,6 +1064,11 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive)
 
   if (archive && *archive == 0 && env->archive == 1) 
     *archive = 1;
+
+  if (status)
+  {
+     *status = statint;
+  }
 
   if (env->retention==INT_MIN)
     return DRMS_LOG_RETENTION;
