@@ -22,6 +22,8 @@
 #define DRMS_MASTER_SEGMENT_TABLE "drms_segment"
 /** \brief DRMS session table */
 #define DRMS_SESSION_TABLE "drms_session"
+/** @brief Table of series that are currently being replicated */
+#define DRMS_REPLICATED_SERIES_TABLE "drms_replicated"
 
 /******************************* Functions **********************************/
 

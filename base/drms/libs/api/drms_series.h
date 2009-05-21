@@ -169,6 +169,8 @@ int drms_series_checksegcompat(DRMS_Env_t *drmsEnv,
 			       int nSegs,
 			       int *status);
 
+int drms_series_isreplicated(DRMS_Env_t *env, const char *series);
+
 /************** Class functions **************/
 /*
 DRMS_Record_t *drms_series_new(DRMS_Env_t *env, const char *seriesname);

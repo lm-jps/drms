@@ -508,114 +508,131 @@ int drms_insert_series(DRMS_Session_t *session, int update,
 
 int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
 {
-  char query[1024], *series_lower, *namespace;
+  char query[1024], *series_lower = NULL, *namespace = NULL;
   DB_Binary_Result_t *qres;
   DRMS_Session_t *session;
   int drmsstatus = DRMS_SUCCESS;
   DRMS_Array_t *array = NULL;
+  int repl = 0;
 
-  session = env->session;
-  sprintf(query,"select seriesname from %s() where seriesname ~~* '%s'",
-	  DRMS_MASTER_SERIES_TABLE, series);
-#ifdef DEBUG
-  printf("drms_delete_series: query = %s\n",query);
-#endif
-  if ((qres = drms_query_bin(session, query)) == NULL)
+  /* Don't delete the series if it is being slony-replicated (for now).
+   * Eventually, we may want to allow deletion of such series under certain
+   * circumstances. */
+  if ((repl = drms_series_isreplicated(env, series)) == 0)
   {
-    printf("Query failed. Statement was: %s\n", query);
-    return 1;
-  }
+     session = env->session;
+     sprintf(query,"select seriesname from %s() where seriesname ~~* '%s'",
+             DRMS_MASTER_SERIES_TABLE, series);
 #ifdef DEBUG
-  db_print_binary_result(qres);
+     printf("drms_delete_series: query = %s\n",query);
 #endif
-  if (qres->num_rows==1)
-  {
-   
-     /* Fetch an array of unique SUNUMs - the prime-key logic gets applied first. */
-     array = drms_record_getvector(env, 
-                                   series, 
-                                   "sunum", 
-                                   DRMS_TYPE_LONGLONG, 
-                                   1, 
-                                   &drmsstatus);
-
-     if (!drmsstatus && array && array->naxis == 2 && array->axis[0] == 1)
+     if ((qres = drms_query_bin(session, query)) == NULL)
      {
-        series_lower = strdup(series);
-        /* series_lower is fully qualified, i.e., it contains namespace */
-        strtolower(series_lower);
-        get_namespace(series, &namespace, NULL);
-        if (cascade) {
-           sprintf(query,"drop table %s",series_lower);
+        printf("Query failed. Statement was: %s\n", query);
+        return 1;
+     }
+#ifdef DEBUG
+     db_print_binary_result(qres);
+#endif
+     if (qres->num_rows==1)
+     {
+        /* Fetch an array of unique SUNUMs - the prime-key logic gets applied first. */
+        array = drms_record_getvector(env, 
+                                      series, 
+                                      "sunum", 
+                                      DRMS_TYPE_LONGLONG, 
+                                      1, 
+                                      &drmsstatus);
+
+        if (!drmsstatus && array && array->naxis == 2 && array->axis[0] == 1)
+        {
+           series_lower = strdup(series);
+           /* series_lower is fully qualified, i.e., it contains namespace */
+           strtolower(series_lower);
+           get_namespace(series, &namespace, NULL);
+           if (cascade) {
+              sprintf(query,"drop table %s",series_lower);
+              if (drms_dms(session,NULL,query))
+                goto bailout;
+              if (drms_sequence_drop(session, series_lower))
+                goto bailout;
+           }
+           sprintf(query, "set search_path to %s", namespace);
+           if (drms_dms(session,NULL,query)) {
+              fprintf(stderr, "Failed: %s\n", query);
+              goto bailout;
+           }
+           sprintf(query,"delete from %s where seriesname ~~* '%s'",
+                   DRMS_MASTER_LINK_TABLE,series);
            if (drms_dms(session,NULL,query))
              goto bailout;
-           if (drms_sequence_drop(session, series_lower))
+           sprintf(query,"delete from %s where seriesname ~~* '%s'",
+                   DRMS_MASTER_KEYWORD_TABLE, series);
+           if (drms_dms(session,NULL,query))
              goto bailout;
+           sprintf(query,"delete from %s where seriesname ~~* '%s'",
+                   DRMS_MASTER_SEGMENT_TABLE, series);
+           if (drms_dms(session,NULL,query))
+             goto bailout;
+           sprintf(query,"delete from %s where seriesname ~~* '%s'",
+                   DRMS_MASTER_SERIES_TABLE,series);
+           if (drms_dms(session,NULL,query))
+             goto bailout;
+
+           /* Can only potentially have SUMS SUNUMS to drop if there 
+            * is at least one record in the series. */
+           if (array->axis[1] > 0)
+           {
+              /* If the DRMS deletions occurred without a hitch, then delete the 
+               * SUMS files from SUMS. */
+              /* If this is a sock-module, must pass the vector SUNUM by SUNUM 
+               * to drms_server. */
+              drms_dropseries(env, series, array);
+           }
+
+           /* Both DRMS servers and clients have a series_cache (one item per
+              each series in all of DRMS). So, always remove the deleted series
+              from this cache, whether or not this is a server. */
+           hcon_remove(&env->series_cache,series_lower);
         }
-        sprintf(query, "set search_path to %s", namespace);
-        if (drms_dms(session,NULL,query)) {
-           fprintf(stderr, "Failed: %s\n", query);
+        else
+        {
+           fprintf(stderr, "Couldn't create vector of sunum keywords.\n");
            goto bailout;
         }
-        sprintf(query,"delete from %s where seriesname ~~* '%s'",
-                DRMS_MASTER_LINK_TABLE,series);
-        if (drms_dms(session,NULL,query))
-          goto bailout;
-        sprintf(query,"delete from %s where seriesname ~~* '%s'",
-                DRMS_MASTER_KEYWORD_TABLE, series);
-        if (drms_dms(session,NULL,query))
-          goto bailout;
-        sprintf(query,"delete from %s where seriesname ~~* '%s'",
-                DRMS_MASTER_SEGMENT_TABLE, series);
-        if (drms_dms(session,NULL,query))
-          goto bailout;
-        sprintf(query,"delete from %s where seriesname ~~* '%s'",
-                DRMS_MASTER_SERIES_TABLE,series);
-        if (drms_dms(session,NULL,query))
-          goto bailout;
-
-        /* Can only potentially have SUMS SUNUMS to drop if there 
-         * is at least one record in the series. */
-        if (array->axis[1] > 0)
-        {
-           /* If the DRMS deletions occurred without a hitch, then delete the 
-            * SUMS files from SUMS. */
-           /* If this is a sock-module, must pass the vector SUNUM by SUNUM 
-            * to drms_server. */
-           drms_dropseries(env, series, array);
-        }
-
-        /* Both DRMS servers and clients have a series_cache (one item per
-           each series in all of DRMS). So, always remove the deleted series
-           from this cache, whether or not this is a server. */
-        hcon_remove(&env->series_cache,series_lower);
      }
-     else
+     else if (qres->num_rows>1)
      {
-        fprintf(stderr, "Couldn't create vector of sunum keywords.\n");
-        goto bailout;
+        fprintf(stderr,"TOO MANY ROWS RETURNED IN DRMS_DELETE_SERIES\n"); 
+        /* This should never happen since seriesname is a unique index on 
+           the DRMS series table. */
+        return 1;
+     }
+     else {
+        /* The series doesn't exist. */
+        fprintf(stderr, "Series '%s' does not exist\n", series);
+        return DRMS_ERROR_UNKNOWNSERIES;
+     }
+     db_free_binary_result(qres);
+  
+     free(series_lower);
+     free(namespace);
+     if (array)
+     {
+        drms_free_array(array);
      }
   }
-  else if (qres->num_rows>1)
+  else if (repl == -1)
   {
-    fprintf(stderr,"TOO MANY ROWS RETURNED IN DRMS_DELETE_SERIES\n"); 
-    /* This should never happen since seriesname is a unique index on 
-       the DRMS series table. */
-    return 1;
+     /* There was a dbase query failure which killed the current dbase transaction; must quit 
+      * program. */
+     goto bailout;
   }
-  else {
-    /* The series doesn't exist. */
-    fprintf(stderr, "Series '%s' does not exist\n", series);
-    return DRMS_ERROR_UNKNOWNSERIES;
-  }
-  db_free_binary_result(qres);
-  
-  free(series_lower);
-  free(namespace);
-  if (array)
+  else
   {
-     drms_free_array(array);
+     fprintf(stderr, "Unable to delete series registered for replication.\n");
   }
+
   return 0;
  bailout:
   fprintf(stderr,"drms_delete_series(): failed to delete series %s\n", series); 
@@ -1255,4 +1272,82 @@ int drms_series_isvers(DRMS_SeriesInfo_t *si, DRMS_SeriesVersion_t *v)
    }
 
    return ok;
+}
+
+/* returns:
+ *   -1  The query failed - when this happens, this aborts the dbase transaction, 
+ *       so you need to fail and rollback the dbase.
+ *    0  Not replicated
+ *    1  Replicated
+ */
+int drms_series_isreplicated(DRMS_Env_t *env, const char *series)
+{
+   int ans = 0;
+   char query[1024];
+   DB_Binary_Result_t *qres = NULL;
+
+   /* First, check for presence of drms_replicated(). If you don't do this and 
+    * drms_replicated() doesn't exist and you try to use it, the entire transaction
+    * is hosed, and the error message you get from that isn't helpful. */
+   sprintf(query,
+           "select routine_name from information_schema.routines where routine_name like '%s'",
+           DRMS_REPLICATED_SERIES_TABLE);
+
+   
+   if ((qres = drms_query_bin(env->session, query)) == NULL)
+   {
+      printf("Query failed. Statement was: %s\n", query);
+      ans = -1;
+   }
+   else
+   {
+      if (qres->num_rows == 1)
+      {
+         /* drms_replicated() exists */
+         char *nspace = NULL;
+         char *relname = NULL;
+
+         db_free_binary_result(qres);
+
+         get_namespace(series, &nspace, &relname);
+
+         sprintf(query, 
+                 "select tab_id from %s() where tab_nspname ~~* '%s' and tab_relname ~~* '%s'",
+                 DRMS_REPLICATED_SERIES_TABLE, 
+                 nspace,
+                 relname);
+
+         if (nspace)
+         {
+            free(nspace);
+         }
+
+         if (relname)
+         {
+            free(relname);
+         }
+
+         if ((qres = drms_query_bin(env->session, query)) == NULL)
+         {
+            printf("Query failed. Statement was: %s\n", query);
+            ans = -1;
+         }
+         else
+         {
+            if (qres->num_rows == 1)
+            {
+               ans = 1;
+            }
+
+            db_free_binary_result(qres);
+         }       
+      }
+      else
+      {
+         /* drms_replicated() function doesn't exist - not safe to continue. */
+         ans = -1;
+      }
+   }
+
+   return ans;
 }
