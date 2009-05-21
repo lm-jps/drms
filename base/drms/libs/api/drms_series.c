@@ -514,6 +514,17 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
   int drmsstatus = DRMS_SUCCESS;
   DRMS_Array_t *array = NULL;
   int repl = 0;
+  int retstat = -1;
+
+  series_lower = strdup(series);
+  /* series_lower is fully qualified, i.e., it contains namespace */
+  strtolower(series_lower);
+
+  if (!drms_series_candeleterecord(env, series_lower))
+  {
+     fprintf(stderr, "Permission failure - cannot delete series '%s'.\n", series);
+     goto bailout;
+  }
 
   /* Don't delete the series if it is being slony-replicated (for now).
    * Eventually, we may want to allow deletion of such series under certain
@@ -529,7 +540,7 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
      if ((qres = drms_query_bin(session, query)) == NULL)
      {
         printf("Query failed. Statement was: %s\n", query);
-        return 1;
+        goto bailout;
      }
 #ifdef DEBUG
      db_print_binary_result(qres);
@@ -546,9 +557,6 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
 
         if (!drmsstatus && array && array->naxis == 2 && array->axis[0] == 1)
         {
-           series_lower = strdup(series);
-           /* series_lower is fully qualified, i.e., it contains namespace */
-           strtolower(series_lower);
            get_namespace(series, &namespace, NULL);
            if (cascade) {
               sprintf(query,"drop table %s",series_lower);
@@ -594,6 +602,8 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
               each series in all of DRMS). So, always remove the deleted series
               from this cache, whether or not this is a server. */
            hcon_remove(&env->series_cache,series_lower);
+
+           free(namespace);
         }
         else
         {
@@ -606,17 +616,16 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
         fprintf(stderr,"TOO MANY ROWS RETURNED IN DRMS_DELETE_SERIES\n"); 
         /* This should never happen since seriesname is a unique index on 
            the DRMS series table. */
-        return 1;
+        goto bailout;
      }
      else {
         /* The series doesn't exist. */
         fprintf(stderr, "Series '%s' does not exist\n", series);
-        return DRMS_ERROR_UNKNOWNSERIES;
+        retstat = DRMS_ERROR_UNKNOWNSERIES;
+        goto bailout;
      }
      db_free_binary_result(qres);
   
-     free(series_lower);
-     free(namespace);
      if (array)
      {
         drms_free_array(array);
@@ -633,16 +642,34 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
      fprintf(stderr, "Unable to delete series registered for replication.\n");
   }
 
+  free(series_lower);
+
   return 0;
  bailout:
-  fprintf(stderr,"drms_delete_series(): failed to delete series %s\n", series); 
-  free(series_lower);
-  free(namespace);
+  fprintf(stderr,"drms_delete_series(): failed to delete series %s\n", series);
+  if (series_lower)
+  {
+     free(series_lower);
+  }
+
+  if (namespace)
+  {
+     free(namespace);
+  }
+
   if (array)
   {
      drms_free_array(array);
   }
-  return 1;
+
+  if (retstat != -1)
+  {
+     return retstat;
+  }
+  else
+  {
+     return 1;
+  }
 }
 
 static int drms_series_keynamesort(const void *first, const void *second)
