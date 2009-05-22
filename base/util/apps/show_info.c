@@ -372,18 +372,21 @@ static void list_series_info(DRMS_Record_t *rec)
   printf("All Keywords for series %s:\n",rec->seriesinfo->seriesname);
   hiter_new (&hit, &rec->keywords);
   while ((key = (DRMS_Keyword_t *)hiter_getnext (&hit)))
-    {
-    printf ("\t%-10s", key->info->name);
-    if (key->info->islink)
+  {
+     if (!drms_keyword_getimplicit(key))
+     {
+        printf ("\t%-10s", key->info->name);
+        if (key->info->islink)
         {
-        printf("\tlink through %s",key->info->linkname);
+           printf("\tlink through %s",key->info->linkname);
         }
-    else
+        else
         {
-        printf ("\t(%s)", drms_type_names[key->info->type]);
+           printf ("\t(%s)", drms_type_names[key->info->type]);
         }
-    printf ("\t%s\n", key->info->description);
-    }
+        printf ("\t%s\n", key->info->description);
+     }
+  }
   
   /* show the segments */
   if (rec->segments.num_total)
@@ -948,7 +951,12 @@ int DoIt(void)
         HIterator_t hit;
         hiter_new (&hit, &rec->keywords);
         while ((key = (DRMS_Keyword_t *)hiter_getnext (&hit)))
-          keys[nkeys++] = strdup (key->info->name);
+        {
+           if (!drms_keyword_getimplicit(key))
+           {
+              keys[nkeys++] = strdup (key->info->name);
+           }
+        }
         }
       else if (show_keys)
         { /* get specified list */
