@@ -491,9 +491,17 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
        {
           DRMS_Value_t vholder;
 
-          /* Must create bzero and bscale keywords for all TAS and FITS files. */
-          if (GETTOKEN(&q, bzero, sizeof(bzero)) <= 0) GOTOFAILURE;
-          if (GETTOKEN(&q, bscale, sizeof(bscale)) <= 0) GOTOFAILURE;
+          if (seg->info->type != DRMS_TYPE_FLOAT && seg->info->type != DRMS_TYPE_DOUBLE)
+          {
+             /* Must create bzero and bscale keywords for all TAS and FITS files. */
+             if (GETTOKEN(&q, bzero, sizeof(bzero)) <= 0) GOTOFAILURE;
+             if (GETTOKEN(&q, bscale, sizeof(bscale)) <= 0) GOTOFAILURE;
+          }
+          else
+          {
+             snprintf(bzero, sizeof(bzero), "0.0");
+             snprintf(bscale, sizeof(bscale), "1.0");
+          }
 
           char buf[DRMS_MAXKEYNAMELEN];
           snprintf(buf, sizeof(buf), "%s_bzero", name);
@@ -2339,11 +2347,13 @@ void drms_segment_print_jsd(DRMS_Segment_t *seg) {
        printf(", \"%s\"", seg->cparms);
     }
 
-    if (seg->info->protocol == DRMS_TAS || 
-        seg->info->protocol == DRMS_FITS ||
-        seg->info->protocol == DRMS_FITZ ||
-        seg->info->protocol == DRMS_BINARY ||
-        seg->info->protocol == DRMS_BINZIP)
+    if ((seg->info->protocol == DRMS_TAS || 
+         seg->info->protocol == DRMS_FITS ||
+         seg->info->protocol == DRMS_FITZ ||
+         seg->info->protocol == DRMS_BINARY ||
+         seg->info->protocol == DRMS_BINZIP) &&
+        (seg->info->type != DRMS_TYPE_FLOAT &&
+         seg->info->type != DRMS_TYPE_DOUBLE))
     {
        printf(", %f", seg->bzero);
        printf(", %f", seg->bscale);

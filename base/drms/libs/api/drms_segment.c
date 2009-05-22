@@ -2421,12 +2421,15 @@ int drms_mapexport_tofitsfile(DRMS_Array_t *arr,
 
             while ((key = hiter_getnext(hit)) != NULL)
             {
-               keyname = drms_keyword_getname(key);
-
-               if (drms_keyword_mapexport(key, clname, mapfile, &fitskeys))
+               if (!drms_keyword_getimplicit(key))
                {
-                  fprintf(stderr, "Couldn't export keyword '%s'.\n", keyname);
-                  stat = DRMS_ERROR_EXPORT;
+                  keyname = drms_keyword_getname(key);
+
+                  if (drms_keyword_mapexport(key, clname, mapfile, &fitskeys))
+                  {
+                     fprintf(stderr, "Couldn't export keyword '%s'.\n", keyname);
+                     stat = DRMS_ERROR_EXPORT;
+                  }
                }
             }
 
@@ -2471,21 +2474,24 @@ CFITSIO_KEYWORD *drms_segment_mapkeys(DRMS_Segment_t *seg,
 
    while ((key = drms_record_nextkey(recin, &last)) != NULL)
    {
-      keyname = drms_keyword_getname(key);
+      if (!drms_keyword_getimplicit(key))
+      {
+         keyname = drms_keyword_getname(key);
 
-      if (drms_keyword_getperseg(key))
-      {
-         /* Ensure that this keyword is relevant to this segment. */
-         if (!strstr(keyname, segnum))
+         if (drms_keyword_getperseg(key))
          {
-            continue;
+            /* Ensure that this keyword is relevant to this segment. */
+            if (!strstr(keyname, segnum))
+            {
+               continue;
+            }
          }
-      }
 	    
-      if (drms_keyword_mapexport(key, clname, mapfile, &fitskeys))
-      {
-         fprintf(stderr, "Couldn't export keyword '%s'.\n", keyname);
-         statint = DRMS_ERROR_EXPORT;
+         if (drms_keyword_mapexport(key, clname, mapfile, &fitskeys))
+         {
+            fprintf(stderr, "Couldn't export keyword '%s'.\n", keyname);
+            statint = DRMS_ERROR_EXPORT;
+         }
       }
    }
 
