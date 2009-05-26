@@ -78,6 +78,8 @@ end_fetch:
 		pcursor[j].p_effdate, 
 		pcursor[j].p_ds_index, pcursor[j].p_archsub, &rmbytes)) {
         EXEC SQL ROLLBACK WORK;
+        printk("Error in DS_RmDo() call to DS_RmNow() ds_index=%lu\n",
+		pcursor[j].p_ds_index);
         return DS_DATA_QRY;
       }
       bytesdeleted += rmbytes;     /* add what we deleted so far */
@@ -162,8 +164,6 @@ EXEC SQL END DECLARE SECTION;
         printk("**Err: DS_SumMainDelete(%ld)\n", ds_index);
       }
     } 
-    //!!TBD handle archsub == DADPDELSU to not do any Records.txt processing
-    //!!!TBD read Records.txt file and see if rm DRMS records
     if(archsub != DADPDELSU) {
       sprintf(rectxt, "%s/Records.txt", wd);
       if(!(rxfp=fopen(rectxt, "r"))) {
@@ -209,10 +209,12 @@ EXEC SQL END DECLARE SECTION;
             if(cptr) *cptr = '\0';
             sprintf(stmt, "%s);", stmt);
             printk("Records.txt statement is:\n%s\n", stmt);
+            EXEC SQL WHENEVER SQLERROR GOTO sqljsocerror;
             EXEC SQL CONNECT TO jsoc@hmidb.stanford.edu:5432;
             EXEC SQL EXECUTE IMMEDIATE :stmt;
             EXEC SQL COMMIT;
             EXEC SQL DISCONNECT;
+            EXEC SQL WHENEVER SQLERROR GOTO sqlrmerror;
           }
         }
         fclose(rxfp);
@@ -229,5 +231,13 @@ sqlrmerror:
     printk("Error in DS_RmNow\n");
     printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
     EXEC SQL ROLLBACK WORK;
+    return DS_DATA_QRY;
+
+sqljsocerror:
+    printk("Error in DS_RmNow() for del from Records.txt\n");
+    printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
+    EXEC SQL DISCONNECT;
+    EXEC SQL ROLLBACK WORK;
+    fclose(rxfp);
     return DS_DATA_QRY;
 }
