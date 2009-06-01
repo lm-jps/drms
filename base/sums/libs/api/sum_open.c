@@ -82,10 +82,17 @@ int SUM_shutdown(int query, int (*history)(const char *fmt, ...))
   if(cptr) *cptr = (char)NULL;
   /* Create client handle used for calling the server */
   cl = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
-  if(!cl) {                   /* server not there */
+  if(!cl) {              //no SUMPROG in portmap or timeout (default 25sec?)
     clnt_pcreateerror("Can't get client handle to sum_svc");
-    (*history)("sum_svc not there on %s\n", server_name);
-    return(1);			//it's not there, so say ok to shutdown
+    (*history)("sum_svc timeout or not there on %s\n", server_name);
+    (*history)("Going to retry in 1 sec\n");
+    sleep(1);
+    cl = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
+    if(!cl) { 
+      clnt_pcreateerror("Can't get client handle to sum_svc");
+      (*history)("sum_svc timeout or not there on %s\n", server_name);
+      return(1);	//say ok to shutdown
+    }
   }
   if(!(username = (char *)getenv("USER"))) username = "nouser";
   klist = newkeylist();
@@ -140,10 +147,17 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
   if(cptr) *cptr = (char)NULL;
   /* Create client handle used for calling the server */
   cl = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
-  if(!cl) {                   /* server not there */
+  if(!cl) {              //no SUMPROG in portmap or timeout (default 25sec?)
     clnt_pcreateerror("Can't get client handle to sum_svc");
-    (*history)("sum_svc not there on %s\n", server_name);
-    return(NULL);
+    (*history)("sum_svc timeout or not there on %s\n", server_name);
+    (*history)("Going to retry in 1 sec\n");
+    sleep(1);
+    cl = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
+    if(!cl) { 
+      clnt_pcreateerror("Can't get client handle to sum_svc");
+      (*history)("sum_svc timeout or not there on %s\n", server_name);
+      return(NULL);
+    }
   }
   if (!db)
   {
@@ -621,10 +635,17 @@ int SUM_delete_series(char *filename, char *seriesname, int (*history)(const cha
   if(cptr) *cptr = (char)NULL;
   /* Create client handle used for calling the server */
   cl = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
-  if(!cl) {                   /* server not there */
+  if(!cl) {              //no SUMPROG in portmap or timeout (default 25sec?)
     clnt_pcreateerror("Can't get client handle to sum_svc");
-    (*history)("sum_svc not there on %s\n", server_name);
-    return(1);
+    (*history)("sum_svc timeout or not there on %s\n", server_name);
+    (*history)("Going to retry in 1 sec\n");
+    sleep(1);
+    cl = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
+    if(!cl) { 
+      clnt_pcreateerror("Can't get client handle to sum_svc");
+      (*history)("sum_svc timeout or not there on %s\n", server_name);
+      return(1);
+    }
   }
   status = clnt_call(cl, DELSERIESDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
 			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
