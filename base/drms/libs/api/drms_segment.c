@@ -1471,7 +1471,7 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
 	 {
 	    /* Need to change the compression parameter to something meaningful 
 	     * (although new users should just use the DRMS_FITS protocol )*/
-	    if (cfitsio_write_file(filename, &imginfo, out->data, seg->cparms, fitskeys))
+	    if (fitsrw_writeintfile(filename, &imginfo, out->data, seg->cparms, fitskeys))
 	      goto bailout;
 
             /* imginfo will contain the correct bzero/bscale.  This may be different 
@@ -1521,7 +1521,7 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
 
 	 if (!drms_fitsrw_SetImageInfo(out, &imginfo))
 	 {	    
-	    if (cfitsio_write_file(filename, &imginfo, out->data, seg->cparms, fitskeys))
+	    if (fitsrw_writeintfile(filename, &imginfo, out->data, seg->cparms, fitskeys))
 	      goto bailout;
             
             /* imginfo will contain the correct bzero/bscale.  This may be different 
@@ -2292,7 +2292,7 @@ static int ExportFITS(DRMS_Array_t *arrout,
          }
          else
          {
-            if (cfitsio_write_file(fileout, &imginfo, arrout->data, cparms, fitskeys))
+            if (fitsrw_write(fileout, &imginfo, arrout->data, cparms, fitskeys))
             {
                fprintf(stderr, "Can't write fits file '%s'.\n", fileout);
                stat = DRMS_ERROR_EXPORT;
@@ -2330,133 +2330,72 @@ int drms_segment_mapexport_tofile(DRMS_Segment_t *seg,
 
    if (!status)
    {
-      switch (seg->info->protocol)
-      {
-         case DRMS_BINARY:
-           /* intentional fall-through */
-         case DRMS_BINZIP:
-           /* intentional fall-through */
-         case DRMS_FITZ:
-           /* intentional fall-through */
-         case DRMS_FITS:
-           /* intentional fall-through */
-         case DRMS_TAS:
-           /* intentional fall-through */
-         case DRMS_DSDS:
-           /* intentional fall-through */
-         case DRMS_LOCAL:
-	   {
-	      DRMS_Array_t *arrout = drms_segment_read(seg, DRMS_TYPE_RAW, &status);
-	      if (arrout)
-	      {
-                 status = ExportFITS(arrout, fileout, cparms ? cparms : seg->cparms, fitskeys);
-		 drms_free_array(arrout);
-	      }
-	   }
-	   break;
-         case DRMS_GENERIC:
-           {
-              /* Simply copy the file from the segment's data-file path
-               * to fileout, no keywords to worry about. */
-              char filename[DRMS_MAXPATHLEN]; 
-              struct stat stbuf;
-
-              drms_segment_filename(seg, filename);
-
-              if (!stat(filename, &stbuf))
-              {
-                 if (CopyFile(filename, fileout) != stbuf.st_size)
-                 {
-                    fprintf(stderr, "Unable to export file '%s' to '%s'.\n", filename, fileout);
-                    status = DRMS_ERROR_FILECOPY;
-                 }
-              }
-              else
-              {
-                 fprintf(stderr, "Invalid export file '%s'.\n", filename);
-                 status = DRMS_ERROR_INVALIDFILE;
-              }
-           }
-           break;
-	 default:
-	   fprintf(stderr, 
-		   "Data export does not support data segment protocol '%s'.\n", 
-		   drms_prot2str(seg->info->protocol));
-      }
+      fprintf(stderr, "WARNING: Failure to export one or more DRMS keywords.\n");
+      status = DRMS_SUCCESS;
    }
 
+   switch (seg->info->protocol)
+   {
+      case DRMS_BINARY:
+        /* intentional fall-through */
+      case DRMS_BINZIP:
+        /* intentional fall-through */
+      case DRMS_FITZ:
+        /* intentional fall-through */
+      case DRMS_FITS:
+        /* intentional fall-through */
+      case DRMS_TAS:
+        /* intentional fall-through */
+      case DRMS_DSDS:
+        /* intentional fall-through */
+      case DRMS_LOCAL:
+        {
+           DRMS_Array_t *arrout = drms_segment_read(seg, DRMS_TYPE_RAW, &status);
+           if (arrout)
+           {
+              status = ExportFITS(arrout, fileout, cparms ? cparms : seg->cparms, fitskeys);
+              drms_free_array(arrout);
+           }
+        }
+        break;
+      case DRMS_GENERIC:
+        {
+           /* Simply copy the file from the segment's data-file path
+            * to fileout, no keywords to worry about. */
+           char filename[DRMS_MAXPATHLEN]; 
+           struct stat stbuf;
+
+           drms_segment_filename(seg, filename);
+
+           if (!stat(filename, &stbuf))
+           {
+              if (CopyFile(filename, fileout) != stbuf.st_size)
+              {
+                 fprintf(stderr, "Unable to export file '%s' to '%s'.\n", filename, fileout);
+                 status = DRMS_ERROR_FILECOPY;
+              }
+           }
+           else
+           {
+              fprintf(stderr, "Invalid export file '%s'.\n", filename);
+              status = DRMS_ERROR_INVALIDFILE;
+           }
+        }
+        break;
+      default:
+        fprintf(stderr, 
+                "Data export does not support data segment protocol '%s'.\n", 
+                drms_prot2str(seg->info->protocol));
+   }
+   
    drms_segment_freekeys(&fitskeys);
 
    return status;
 }
 
-int drms_export_tofitsfile(DRMS_Array_t *arr,
-                           HContainer_t *keys,
-                           const char *cparms,
-                           const char *fileout)
-{
-   return drms_mapexport_tofitsfile(arr, keys, cparms, NULL, NULL, fileout);
-}
-
-int drms_mapexport_tofitsfile(DRMS_Array_t *arr,
-                              HContainer_t *keys,
-                              const char *cparms,
-                              const char *clname, 
-                              const char *mapfile,
-                              const char *fileout)
-{
-   int stat = DRMS_SUCCESS;
-
-   if (arr && arr->data)
-   {
-      CFITSIO_KEYWORD *fitskeys = NULL;
-      if (keys)
-      {
-         HIterator_t *hit = hiter_create(keys);
-
-         if (hit)
-         {
-            DRMS_Keyword_t *key = NULL;
-            const char *keyname = NULL;
-
-            while ((key = hiter_getnext(hit)) != NULL)
-            {
-               if (!drms_keyword_getimplicit(key))
-               {
-                  keyname = drms_keyword_getname(key);
-
-                  if (drms_keyword_mapexport(key, clname, mapfile, &fitskeys))
-                  {
-                     fprintf(stderr, "Couldn't export keyword '%s'.\n", keyname);
-                     stat = DRMS_ERROR_EXPORT;
-                  }
-               }
-            }
-
-            hiter_destroy(&hit);
-         }
-      }
-
-      if (!stat)
-      {
-         stat = ExportFITS(arr, fileout, cparms, fitskeys);
-      }
-
-      if (fitskeys)
-      {
-         cfitsio_free_keys(&fitskeys);
-      }
-   }
-   else
-   {
-      fprintf(stderr, "Invalid data array.\n");
-      stat = DRMS_ERROR_INVALIDDATA;
-   }
-
-   return stat;
-}
-
-/* Map keys that are specific to a segment to fits keywords.  User must free. */
+/* Map keys that are specific to a segment to fits keywords.  User must free. 
+ * Follows keyword links and ensures that per-segment keywords are relevant
+ * to this seg's keywords. */
 CFITSIO_KEYWORD *drms_segment_mapkeys(DRMS_Segment_t *seg, 
                                       const char *clname, 
                                       const char *mapfile, 

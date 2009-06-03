@@ -6,6 +6,7 @@
 #include "cfitsio.h"
 #include "fitsio.h"
 #include "hcontainer.h"
+#include "list.h"
 
 // #define DEBUG
 
@@ -117,12 +118,16 @@ static fitsfile *fitsrw_getfptr(const char *filename, int writeable, int *status
          /* Must close some open files */
          int ifile = 0;
          HIterator_t *hit = hiter_create(gFFiles);
+         LinkedList_t *llist = list_llcreate(sizeof(char *), NULL);
+         const char *fhkey = NULL;
+         ListNode_t *node = NULL;
+         char *onefile = NULL;
 
          if (hit)
          {
             while (ifile < MAXFFILES / 2)
             {
-               pfptr = (fitsfile **)hiter_getnext(hit);
+               pfptr = (fitsfile **)hiter_extgetnext(hit, &fhkey);
 
                if (pfptr)
                {
@@ -135,7 +140,10 @@ static fitsfile *fitsrw_getfptr(const char *filename, int writeable, int *status
                      fits_close_file(*pfptr, &stat);
                   }
 
-                  hcon_remove(gFFiles, filehashkey);
+                  /* Save the filehashkey for each file being removed from the cache - 
+                   * must remove from gFFiles AFTER existing the loop that is iterating
+                   * over gFFiles. */
+                  list_llinserttail(llist, (void *)&fhkey);
 
                   if (stat)
                   {
@@ -153,6 +161,16 @@ static fitsfile *fitsrw_getfptr(const char *filename, int writeable, int *status
 
             hiter_destroy(&hit);
          }
+
+         /* free all the file pointers saved in gFFiles */
+         list_llreset(llist);
+         while ((node = list_llnext(llist)) != NULL)
+         {
+            onefile = *((char **)node->data);
+            hcon_remove(gFFiles, onefile);
+         }
+
+         list_llfree(&llist);
       }
 
       if (!stat)

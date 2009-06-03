@@ -25,16 +25,17 @@
 
 char *kFITSRESERVED[] =
 {
-   "SIMPLE",
-   "EXTEND",
-   "BZERO",
-   "BSCALE",
-   "BLANK",
-   "BITPIX",
-   "NAXIS",
-   "COMMENT",
-   "HISTORY",
-   "END",
+   "simple",
+   "extend",
+   "bzero",
+   "bscale",
+   "blank",
+   "bitpix",
+   "naxis",
+   "comment",
+   "history",
+   "end",
+   "primekeystring",
    ""
 };
 
@@ -269,7 +270,7 @@ int FitsKeyNameValidation(const char *fitsName)
          gReservedFits = hcon_create(1, 128, NULL, NULL, NULL, NULL, 0);
          while (*(kFITSRESERVED[i]) != '\0')
          {
-            hcon_insert(gReservedFits, kFITSRESERVED[i], &bogusval);
+            hcon_insert_lower(gReservedFits, kFITSRESERVED[i], &bogusval);
             i++;
          }
 
@@ -310,7 +311,7 @@ int FitsKeyNameValidation(const char *fitsName)
             }
          }
 
-         if (hcon_lookup(gReservedFits, tmp))
+         if (hcon_lookup_lower(gReservedFits, tmp))
          {
             error = 2;
          }

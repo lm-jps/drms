@@ -115,11 +115,11 @@ int cfitsio_read_file(char* fits_filename,
 		      void** image, 
 		      CFITSIO_KEYWORD** keylist);
 
-int cfitsio_write_file(const char* fits_filename,
-		       CFITSIO_IMAGE_INFO* info,
-		       void* image,
-		       const char* compspecs,
-		       CFITSIO_KEYWORD* keylist); //keylist == NULL if not needed
+int fitsrw_writeintfile(const char* fits_filename,
+                        CFITSIO_IMAGE_INFO* info,
+                        void* image,
+                        const char* compspecs,
+                        CFITSIO_KEYWORD* keylist); //keylist == NULL if not needed
 
 void cfitsio_free_these(CFITSIO_IMAGE_INFO** image_info,
 			void** image, 
@@ -135,6 +135,12 @@ int fitsrw_read(const char *filename,
                 CFITSIO_IMAGE_INFO** image_info,
                 void** image,
                 CFITSIO_KEYWORD** keylist);
+
+int fitsrw_write(const char* filein,
+                 CFITSIO_IMAGE_INFO* info,  
+                 void* image,
+                 const char* cparms,
+                 CFITSIO_KEYWORD* keylist);
 
 //****************************************************************************
 // For internal use and low level testing...

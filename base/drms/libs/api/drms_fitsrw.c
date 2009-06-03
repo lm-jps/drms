@@ -436,6 +436,85 @@ int drms_fitsrw_readslice(const char *filename,
    return status;
 }
 
+int drms_fitsrw_write(const char *filename,
+                      const char* cparms,
+                      HContainer_t *keywords,
+                      DRMS_Array_t *arr)
+{
+   int status = DRMS_SUCCESS;
+   CFITSIO_IMAGE_INFO imginfo;
+   void *image = NULL;
+   CFITSIO_KEYWORD* keylist = NULL;
+   HIterator_t *hit = NULL;
+   DRMS_Keyword_t *key = NULL;
+   const char *keyname = NULL;
+   int fitsrwstat;
+
+   if (arr && arr->data && keywords)
+   {
+      /* iterate through keywords and populate keylist */
+      hit = hiter_create(keywords);
+      if (hit)
+      {
+         while ((key = hiter_getnext(hit)) != NULL)
+         {
+            if (!drms_keyword_getimplicit(key))
+            {
+               /* will reject DRMS keywords that collide with FITS reserved 
+                * keywords, like SIMPLE */
+               if (drms_keyword_export(key, &keylist))
+               {
+                  keyname = drms_keyword_getname(key);
+                  fprintf(stderr, "Couldn't export keyword '%s'.\n", keyname);
+               }
+            }
+         }
+
+         hiter_destroy(&hit);
+      }
+
+      if (keylist)
+      {
+         cfitsio_free_keys(&keylist);
+      }
+
+      /* extract image array */
+      image = arr->data;
+
+      /* create image info */
+      if (!drms_fitsrw_SetImageInfo(arr, &imginfo))
+      {
+         if (arr->type == DRMS_TYPE_STRING ||
+             arr->type == DRMS_TYPE_TIME ||
+             arr->type == DRMS_TYPE_RAW)
+         {
+            fprintf(stderr, "Type '%s' not supported in FITS.\n", drms_type2str(arr->type));
+            status = DRMS_ERROR_FITSRW;
+         }
+         else
+         {
+            fitsrwstat = fitsrw_write(filename, &imginfo, image, cparms, keylist);
+            if (fitsrwstat != CFITSIO_SUCCESS)
+            {
+               status = DRMS_ERROR_FITSRW;
+               fprintf(stderr, "FITSRW error '%d'.\n", fitsrwstat);
+            }     
+         }
+      }
+      else
+      {
+         fprintf(stderr, "Data array being exported is invalid.\n");
+         status = DRMS_ERROR_FITSRW;
+      }
+   }
+   else
+   {
+      fprintf(stderr, "WARNING: no data to write to FITS.\n");
+   }
+   
+   return status;
+}
+
 /* Array may be converted in calling function, but not here */
 int drms_fitsrw_writeslice(DRMS_Segment_t *seg,
                            const char *filename, 
@@ -480,7 +559,7 @@ int drms_fitsrw_writeslice(DRMS_Segment_t *seg,
 
             if (!drms_fitsrw_SetImageInfo(arr, &info))
             {
-               if (cfitsio_write_file(filename, &info, arr->data, seg->cparms, NULL) != CFITSIO_SUCCESS)
+               if (fitsrw_writeintfile(filename, &info, arr->data, seg->cparms, NULL) != CFITSIO_SUCCESS)
                {
                   fprintf(stderr, "Couldn't create FITS file '%s'.\n", filename); 
                   status = DRMS_ERROR_CANTCREATETASFILE;

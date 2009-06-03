@@ -418,18 +418,6 @@ int drms_segment_mapexport_tofile(DRMS_Segment_t *seg,
 				  const char *clname, 
 				  const char *mapfile,
 				  const char *fileout);
-/* Map raw data and keywords to a FITS file */
-int drms_export_tofitsfile(DRMS_Array_t *arr,
-                           HContainer_t *keys,
-                           const char *cparms,
-                           const char *fileout);
-
-int drms_mapexport_tofitsfile(DRMS_Array_t *arr,
-                              HContainer_t *keys,
-                              const char *cparms,
-                              const char *clname, 
-                              const char *mapfile,
-                              const char *fileout);
 
 /* accessor functions */
 static inline int drms_segment_getnaxis(DRMS_Segment_t *seg)

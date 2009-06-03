@@ -1069,11 +1069,12 @@ void cfitsio_free_these(CFITSIO_IMAGE_INFO** image_info,
 
 //****************************************************************************
 
-int cfitsio_write_file(const char* fits_filename,
-		       CFITSIO_IMAGE_INFO* image_info,  
-		       void* image,
-		       const char* compspec,
-		       CFITSIO_KEYWORD* keylist) 
+/* Assumes file will live in SUMS - eg, if image is char, then it is signed data, etc. */
+int fitsrw_writeintfile(const char* fits_filename,
+                        CFITSIO_IMAGE_INFO* image_info,  
+                        void* image,
+                        const char* compspec,
+                        CFITSIO_KEYWORD* keylist) 
 {
 
    fitsfile *fptr=NULL; 
@@ -1905,4 +1906,223 @@ int fitsrw_read(const char *filename,
    }
 
    return error_code;
+}
+
+int fitsrw_write(const char* filein,
+                 CFITSIO_IMAGE_INFO* info,  
+                 void* image,
+                 const char* cparms,
+                 CFITSIO_KEYWORD* keylist)
+{
+   int err = CFITSIO_SUCCESS;
+   int idim;
+   long long npixels;
+   int datatype;
+   int imgtype;
+   char filename[PATH_MAX];
+   int cfiostat = 0; /* MUST start with no-error status, else CFITSIO will fail. */
+   fitsfile *fptr = NULL; 
+   CFITSIO_KEYWORD* kptr;
+   char card[FLEN_CARD];
+   
+   if (filein && info && image)
+   {
+      for (idim = 0, npixels = 1; idim < info->naxis; idim++)
+      {
+         npixels *= info->naxes[idim];     
+      }
+
+      switch (info->bitpix)
+      {
+         case(BYTE_IMG): 
+           {
+              datatype = TSBYTE; 
+              imgtype = SBYTE_IMG; 
+           }
+           break;
+         case(SHORT_IMG): 
+           {
+              datatype = TSHORT; 
+              imgtype = SHORT_IMG; 
+           }
+           break;
+         case(LONG_IMG): 
+           {
+              datatype = TINT; 
+              imgtype = LONG_IMG; 
+           }
+           break; 
+         case(LONGLONG_IMG): 
+           {
+              datatype = TLONGLONG; 
+              imgtype = LONGLONG_IMG; 
+           }
+           break;
+         case(FLOAT_IMG): 
+           {
+              datatype = TFLOAT; 
+              imgtype = FLOAT_IMG; 
+           }
+           break;
+         case(DOUBLE_IMG):
+           {
+              datatype = TDOUBLE; 
+              imgtype = DOUBLE_IMG; 
+           }
+           break;
+         default:
+           fprintf(stderr, "fitsrw_write(): Unsupported image data type.\n");
+           err = CFITSIO_ERROR_ARGS;
+      }
+
+      if (!err)
+      {
+         /* In the future, perhaps we override this method of specifying compression 
+          * with the CFITSIO API call that specifies it. */
+         if (cparms && *cparms)
+         {
+            snprintf(filename, sizeof(filename), "%s[%s]", filein, cparms);
+         }
+         else
+         {
+            snprintf(filename, sizeof(filename), "%s", filein);
+         }
+
+         remove(filein);
+         if (fits_create_file(&fptr, filename, &cfiostat)) // create new FITS file 
+         {
+            err = CFITSIO_ERROR_FILE_IO;
+         }
+      }
+
+      if (!err)
+      {
+         if(fits_create_img(fptr, imgtype, info->naxis, info->naxes, &cfiostat))
+         {
+            err = CFITSIO_ERROR_LIBRARY;
+         }
+      }
+
+      if (!err)
+      {
+         if (fits_is_compressed_image(fptr, &cfiostat))
+         {
+            if (datatype == TLONGLONG)
+            {
+               fprintf(stderr, "CFITSIO doesn't support compression of 64-bit data.\n");
+               err = CFITSIO_ERROR_ARGS;
+            }
+            else if (datatype == TFLOAT || datatype == TDOUBLE)
+            {
+               fprintf(stderr, "WARNING: CFITSIO compression of floating-point data is lossy.\n");
+            }
+         }
+         else if (cfiostat)
+         {
+            err = CFITSIO_ERROR_LIBRARY;
+         }
+      }
+
+      if (!err)
+      {
+         if (keylist)
+         {
+            /* Write out regular FITS keywords */
+            kptr = keylist;
+            while(kptr)
+            {
+               if (cfitsio_key_to_card(kptr, card) != CFITSIO_SUCCESS)
+               {
+                  err = CFITSIO_ERROR_ARGS;
+                  break;
+               }
+
+               if (fits_get_keyclass(card) > TYP_CMPRS_KEY)
+               {
+                  if(fits_write_record(fptr, card, &cfiostat))
+                  {
+                     err = CFITSIO_ERROR_LIBRARY;
+                     break;
+                  }
+               }
+		
+               kptr = kptr->next;
+            }
+         }
+      }
+
+      if (!err)
+      {
+         /* Write out special FITS keywords */
+         if (info->bitfield & kInfoPresent_BLANK)
+         {
+            long long oblank = (long long)info->blank;
+            fits_update_key(fptr, TLONGLONG, "BLANK", &oblank, "", &cfiostat);
+         }
+       
+         if (!cfiostat && (info->bitfield & kInfoPresent_BZERO))
+         {
+            double obzero = info->bzero;
+            fits_update_key(fptr, TDOUBLE, "BZERO", &obzero, "", &cfiostat);
+         }
+
+         if (!cfiostat && (info->bitfield & kInfoPresent_BSCALE))
+         {
+            double obscale = info->bscale;
+            fits_update_key(fptr, TDOUBLE, "BSCALE", &obscale, "", &cfiostat);
+         }
+
+         /* Must ensure that CFITSIO doesn't modify data - BZERO, BSCALE, and BLANK
+          * are written out above and without the following calls, CFITSIO may see
+          * those values and attempt to modify the data so that those values are
+          * relevant. But the data have already been converted so that the 
+          * special values are already relevant. */
+         if (!cfiostat)
+         {
+            fits_set_bscale(fptr, 1.0, 0.0, &cfiostat);
+         }
+
+         if (!cfiostat)
+         {
+            fits_set_imgnull(fptr, 0, &cfiostat);
+         }
+
+         if (cfiostat)
+         {
+            fprintf(stderr, "Trouble setting BZERO, BSCALE, or BLANK keywords.\n");
+            err = CFITSIO_ERROR_LIBRARY;
+         }
+      }
+
+      if (!err)
+      {
+         if(fits_write_img(fptr, datatype, 1, npixels, image, &cfiostat))
+         {
+            err = CFITSIO_ERROR_LIBRARY;
+         }
+      }
+   }
+   else
+   {
+      err = CFITSIO_ERROR_ARGS;
+   }
+
+   if (err && cfiostat)
+   {
+      char errmsg[FLEN_STATUS];
+      fits_get_errstatus(cfiostat, errmsg);
+      fprintf(stderr, "CFITSIO error '%s'.\n", errmsg);
+   }
+
+   if (fptr)
+   {
+      fits_close_file(fptr, &cfiostat);
+      if (cfiostat)
+      {
+         fprintf(stderr, "Trouble closing FITS file '%s'.\n", filename);
+         err = CFITSIO_ERROR_LIBRARY;
+      }
+   }
+   
+   return err;
 }

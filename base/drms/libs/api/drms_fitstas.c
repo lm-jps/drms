@@ -37,7 +37,7 @@ int drms_fitstas_create(const char *filename,
 
       if (!drms_fitsrw_SetImageInfo(&arr, &info))
       {
-         if (cfitsio_write_file(filename, &info, NULL, comp, NULL) != CFITSIO_SUCCESS)
+         if (fitsrw_writeintfile(filename, &info, NULL, comp, NULL) != CFITSIO_SUCCESS)
          {
             fprintf(stderr, "Couldn't create FITS TAS file '%s'.\n", filename); 
             status = DRMS_ERROR_CANTCREATETASFILE;
