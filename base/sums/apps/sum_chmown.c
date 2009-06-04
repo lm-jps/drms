@@ -47,7 +47,7 @@ void recursive_chmown(const char *dir, uid_t owner, gid_t group) {
 		die("recursive_chmown(): can't chown %s\n", pname);
 	    if (chmod(pname, 0755) < 0)
 		die("recursive_chmown(): can't chmod %s\n", pname);
-	    recursive_chmown(pname);
+	    recursive_chmown(pname, owner, group);
 	} else if (S_ISREG(fs.st_mode)) {
 	    if (chown(pname, owner, group) < 0)
 		die("recursive_chmown(): can't chown %s\n", pname);
