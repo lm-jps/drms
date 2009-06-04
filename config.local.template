@@ -67,6 +67,11 @@ DRMS_SAMPLE_NAMESPACE	drms
 #   recommended for multi-user systems, but not required
 SUMS_MANAGER	production
 
+# the group name for users permitted to add data to DRMS/SUMS; not
+#   currently used in code, but should match the group ownership of
+#   the SUMS root directories /SUM*
+SUMS_GROUP	drms
+
 # the host name of the default SUMS server you will be using; this is the
 #   the machine that the SUMS storage units are mounted on, not necessarily
 #   the machine serving the Postgres SUMS database
@@ -75,6 +80,11 @@ SUMS_SERVER_HOST	localhost
 # the base directory for SUMS logs and configuration files; used by
 # base/sums/apps/sum_svc.c and sum_rm.c
 SUMS_LOG_BASEDIR	/usr/local/logs/SUM
+
+# the directory in which the binary of sum_chmown, a root setuid program,
+#   is installed; must be mounted locally on the machine on which the
+#   SUMS partition are mounted; used by base/sums/apps/sum_svc_proc.c
+SUMS_BIN_BASEDIR	/usr/local/logs/SUM
 
 # whether a tape archive service is available for SUMS or not; set to a
 # non-zero value if it is
