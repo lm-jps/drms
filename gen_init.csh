@@ -23,6 +23,7 @@ set DRMS_SAMPLE_NAMESPACE = `egrep "^DRMS_SAMPLE_NAMESPACE" $LOCALINF | awk '{pr
 set SUMS_SERVER_HOST = `egrep "^SUMS_SERVER_HOST" $LOCALINF | awk '{print $2}'`
 set SUMS_LOG_BASEDIR = `egrep "^SUMS_LOG_BASEDIR" $LOCALINF | awk '{print $2}'`
 set SUMS_MANAGER = `egrep "^SUMS_MANAGER" $LOCALINF | awk '{print $2}'`
+set SUMS_GROUP = `egrep "^SUMS_GROUP" $LOCALINF | awk '{print $2}'`
 set SUMS_TAPE_AVAILABLE = `egrep "^SUMS_TAPE_AVAILABLE" $LOCALINF | awk '{print $2}'`
 set THIRD_PARTY_LIBS = `egrep "^THIRD_PARTY_LIBS" $LOCALINF | awk '{print $2}'`
 set THIRD_PARTY_INCS = `egrep "^THIRD_PARTY_INCS" $LOCALINF | awk '{print $2}'`
@@ -72,8 +73,16 @@ if ($#SUMS_LOG_BASEDIR != 1) then
   echo "Error: $SUMS_LOG_BASEDIR undefined in local configuration file $LOCALINF"
   exit
 endif
+if ($#SUMS_BIN_BASEDIR != 1) then
+  echo "Error: $SUMS_BIN_BASEDIR undefined in local configuration file $LOCALINF"
+  exit
+endif
 if ($#SUMS_MANAGER != 1) then
   echo "Error: SUMS_MANAGER undefined in local configuration file $LOCALINF"
+  exit
+endif
+if ($#SUMS_GROUP != 1) then
+  echo "Error: SUMS_GROUP undefined in local configuration file $LOCALINF"
   exit
 endif
 if ($#SUMS_TAPE_AVAILABLE != 1) then
@@ -169,7 +178,9 @@ echo '#define USER			NULL' >> $SCRIPT
 echo '#define PASSWD			NULL' >> $SCRIPT
 echo '#define SUMSERVER			"'$SUMS_SERVER_HOST'"' >> $SCRIPT
 echo '#define SUMS_MANAGER		"'$SUMS_MANAGER'"' >> $SCRIPT
+echo '#define SUMS_GROUP		"'$SUMS_GROUP'"' >> $SCRIPT
 echo '#define SUMLOG_BASEDIR		"'$SUMS_LOG_BASEDIR'"' >> $SCRIPT
+echo '#define SUMBIN_BASEDIR		"'$SUMS_BIN_BASEDIR'"' >> $SCRIPT
 echo '#define SUMS_TAPE_AVAILABLE       '\($SUMS_TAPE_AVAIL\)'' >> $SCRIPT
 echo '#endif' >> $SCRIPT
 
