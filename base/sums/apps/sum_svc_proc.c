@@ -10,6 +10,8 @@
 #include <soi_error.h>
 #include <sum_rpc.h>
 
+#include "serverdefs.h"
+
 extern int write_log(const char *fmt, ...);
 extern CLIENT *current_client, *clnttape;
 extern SVCXPRT *glb_transp;
@@ -467,7 +469,7 @@ KEY *putdo_1(KEY *params)
     cptr = GETKEY_str(params, "wd_0");
     //sprintf(sysstr, "sudo chmod -R go-w %s; sudo chown -Rf production %s", 
     //			cptr, cptr);
-    sprintf(sysstr, "/usr/local/bin/sum_chmown %s", cptr);
+    sprintf(sysstr, "%s/sum_chmown %s", SUMBIN_BASEDIR, cptr);
     write_log("%s\n", sysstr);
     if(system(sysstr)) {
         write_log("**Warning: Error on: %s\n", sysstr);
