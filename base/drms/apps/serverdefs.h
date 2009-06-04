@@ -21,10 +21,12 @@
 /** \brief default dbname */
 #define DBNAME "jsoc"
 
-#define POSTGRES_ADMIN "postgres"
-#define SUMS_MANAGER   "production"
-#define SUMLOG_BASEDIR "/usr/local/logs/SUM"
-#define SUMSERVER "d02.Stanford.EDU"
+#define POSTGRES_ADMIN	"postgres"
+#define SUMS_MANAGER	"production"
+#define SUMS_GROUP	"SOI"
+#define SUMLOG_BASEDIR	"/usr/local/logs/SUM"
+#define SUMBIN_BASEDIR	"/usr/local/bin"
+#define SUMSERVER	"d02.Stanford.EDU"
 
 #define SUMS_TAPE_AVAILABLE (1)
 
