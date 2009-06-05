@@ -22,6 +22,7 @@ set DRMS_SITE_CODE = `egrep "^DRMS_SITE_CODE" $LOCALINF | awk '{print $2}'`
 set DRMS_SAMPLE_NAMESPACE = `egrep "^DRMS_SAMPLE_NAMESPACE" $LOCALINF | awk '{print $2}'`
 set SUMS_SERVER_HOST = `egrep "^SUMS_SERVER_HOST" $LOCALINF | awk '{print $2}'`
 set SUMS_LOG_BASEDIR = `egrep "^SUMS_LOG_BASEDIR" $LOCALINF | awk '{print $2}'`
+set SUMS_BIN_BASEDIR = `egrep "^SUMS_BIN_BASEDIR" $LOCALINF | awk '{print $2}'`
 set SUMS_MANAGER = `egrep "^SUMS_MANAGER" $LOCALINF | awk '{print $2}'`
 set SUMS_GROUP = `egrep "^SUMS_GROUP" $LOCALINF | awk '{print $2}'`
 set SUMS_TAPE_AVAILABLE = `egrep "^SUMS_TAPE_AVAILABLE" $LOCALINF | awk '{print $2}'`
