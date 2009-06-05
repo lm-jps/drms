@@ -52,6 +52,7 @@ tie %Hofneed, "Tie::IxHash"; #lets you take out keys in input order
 #NOTE: must have our full path name here for any restart signaled by sum_svc
 $OURPATH = "/home/production/cvs/JSOC/base/sums/scripts/t950view"; #!!this program
 
+$TAPEHOST = "d02.Stanford.EDU";	#machine where tape_svc log file is
 $DEFAULTDB = "hmidbX";		#default DB
 $HOSTDB = "hmidb";		#host where DB runs
 $NOTAPEARC = "/usr/local/logs/soc/NOTAPEARC";
@@ -71,6 +72,12 @@ $EEcnt = 0;
 $current_page = 0;
 $ldate = &labeldate();
 $user = $ENV{'USER'};
+
+$host = $ENV{'HOST'};
+if($host ne $TAPEHOST) {
+  print "Error: This must be run on $TAPEHOST\n";
+  exit;
+}
 
 while ($ARGV[0] =~ /^-/) {
   $_ = shift;
@@ -1374,6 +1381,7 @@ sub log_update {
 #Display tapes in slots for the given page#
 sub Display_tape_in_slots {
   my ($dpage) = @_;
+  $row = 0; $column = 0; $rows_per_col = 40;	#new 5/8/09
   if($current_page != $dpage) {	#remove current buttons from display
     $f0x->destroy();
     $f0x = $f0->Frame(-borderwidth => 0) ->pack(-side => 'left');
