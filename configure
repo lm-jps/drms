@@ -1,5 +1,7 @@
 #! /bin/csh -f
 
+rm custom.mk
+
 # set up $JSOC_MACHINE
 set JSOC_MACHINE = `build/jsoc_machine.csh`
 echo "Machine type is $JSOC_MACHINE"
@@ -228,7 +230,7 @@ if ($CHKLIBS == "no") then
         # Set custom make file to tell the make system that the gcc cfitsio library is called
         # libcfitsio_gcc.a
         if (-e suflag.txt) then
-            echo "CFITSIOFNAME_GCC_X86_64 = cfitsio_gcc" > custom.mk
+            echo "CFITSIOFNAME_GCC_X86_64 = cfitsio_gcc" >> custom.mk
         endif
 
         # Make customizations - ensure changes here are synchronized to changes in make_basic.mk
@@ -392,3 +394,10 @@ endif
 if ($TPWARN) then
     echo "Did you update config.local to create links to installed third-party libraries?"
 endif
+
+# Customize compilers
+# echo "CUSTOM_COMPILER = gcc" >> custom.mk
+# echo "CUSTOM_FCOMPILER = gfortran" >> custom.mk
+
+# run perl script to do even more configuration
+moreconfigure.pl -fcustom.mk

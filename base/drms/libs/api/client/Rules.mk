@@ -46,7 +46,13 @@ $(OBJ_$(d)):		$(SRCDIR)/$(d)/Rules.mk
 $(OBJ_$(d)):		CF_TGT := $(CF_TGT) -D$(DBNAME) -DDRMS_CLIENT
 
 $(FDRMSMOBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
+
+
+ifeq ($(FCOMPILER), ifort)
 $(FDRMSMOBJ_$(d)):	FF_TGT := -module $(d)
+else
+$(FDRMSMOBJ_$(d)):	FF_TGT := -I $(d)
+endif
 
 $(LIBDRMSCLIENT):	$(LIBDRMSCLIENT_OBJ)
 			$(ARCHIVE)

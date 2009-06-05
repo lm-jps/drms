@@ -5,23 +5,44 @@ DBNAME = POSTGRESQL
 # This optional file has custom definitions created by the configure script
 -include $(SRCDIR)/custom.mk
 
-PGIPATH	= /usr/include/pgsql	
+PGIPATH	= /usr/include/pgsql
 
+_JSOCROOT_ = ..
+
+#***********************************************************************************************#
+#
+# COMPILER SELECTION
+#
 COMPILER = icc
-F77 = ifort
+FCOMPILER = ifort
 
-ifeq ($(JSOC_MACHINE), mac_osx_ppc) 
-COMPILER = gcc
-F77 = f77
-endif
-ifeq ($(JSOC_MACHINE), mac_osx_ia32)
-COMPILER = gcc
-F77 = f77
+ifneq ($(AUTOCOMPILER),)
+COMPILER = $(AUTOCOMPILER)
 endif
 
+ifneq ($(AUTOFCOMPILER),)
+FCOMPILER = $(AUTOFCOMPILER)
+endif
+
+# can set through custom.mk or through environment
+ifneq ($(CUSTOM_COMPILER),)
+COMPILER = $(CUSTOM_COMPILER)
+endif
+
+ifneq ($(CUSTOM_FCOMPILER),)
+FCOMPILER = $(CUSTOM_FCOMPILER)
+endif
+#***********************************************************************************************#
+
+
+#***********************************************************************************************#
+#
+# DEBUGGING
+#
 # Check for debug vs. release build - release is default.
 #   To do a debug build, either set the environment variable JSOC_DEBUG to 1, OR
 #   modify the following line so that DEBUG = 1.  The environment variable takes precedence.
+#
 DEBUG = 0
 
 ifdef JSOC_DEBUG
@@ -31,8 +52,15 @@ else
 DEBUG = 0
 endif
 endif
+#***********************************************************************************************#
 
+
+#***********************************************************************************************#
+#
+# WARNINGS
+#
 # No warnings are displayed, by default, for a release build.
+#
 WARN = 0
 
 # Builder can request warnings via environment variable (setenv JSOC_WARN 1).
@@ -49,22 +77,12 @@ endif
 ifeq ($(DEBUG), 1)
 WARN = 1
 endif
+#***********************************************************************************************#
 
-_JSOCROOT_ = ..
-
-# if fortran compiler
-D_GCC_FORT = 
-ifeq ($(F77), ifort)
-  D_GCC_FORT = -DINTEL_FORTRAN
-endif
-
-ifeq ($(JSOC_MACHINE), linux_x86_64)
-  ifeq ($(F77), ifort)
-    F77 = ifort -mcmodel=medium
-  endif
-endif
 
 #***********************************************************************************************#
+#
+# THIRD-PARTY LIBRARIES
 #
 # This section contains make variables that hold the paths to and names of third-party libraries.
 # Variables that end in 'H' contain the -I link flags that contain the include paths 
@@ -127,6 +145,10 @@ GSLLIBS = $(GSLL) -lgsl -lgslcblas
 #***********************************************************************************************#
 
 
+#***********************************************************************************************#
+#
+# CUSTOM BUILDS
+#
 # Compilation define customizations (eg., for remote DRMS builds)
 CUSTOMSW =
 ifneq ($(DRMS_DEFAULT_RETENTION),)
@@ -138,20 +160,14 @@ ifneq ($(CUSTOM_DEFINES),)
 CUSTOMSW := $(CUSTOMSW) -D$(CUSTOM_DEFINES)
 endif
 
-### Build flags for all targets
 #
-LL_ALL		= $(SYSLIBS)
+#***********************************************************************************************#
 
-GCC_LF_ALL	= $(STATIC) -g 
-ifeq ($(JSOC_MACHINE), linux_ia64)
-  ICC_LF_ALL	= $(STATIC)
-else
-  ICC_LF_ALL	= $(STATIC) -xW
-endif
 
-GCC_CF_GCCCOMP  = -DGCCCOMP $(D_GCC_FORT)
-ICC_CF_ICCCOMP  = -DICCCOMP $(D_GCC_FORT)
-
+#***********************************************************************************************#
+#
+# WARNINGS
+#
 # Disable several warnings/remarks when compiling with icc - icc's Wall is a bit picky, it 
 # complains about extern declarations in .c files.
 #   1418 (remark) - external function definition with no prior declaration
@@ -163,17 +179,45 @@ ifeq ($(WARN), 1)
 # Show warnings (always true for a debug build).
 ICC_WARN = -Winline -Wall -wd1418 -wd1419 -wd310 -wd279 -wd981 -Wno-comment
 GCC_WARN = -Winline -Wall -Wno-comment
-F77_WARN =
+FCOMPILER_WARN =
 else
 # Don't show warnings.
 ICC_WARN = -w0 -vec-report0 -Wno-comment
 GCC_WARN = -Wno-comment
-F77_WARN = -vec-report0
+ifeq ($(FCOMPILER), ifort)
+FCOMPILER_WARN = -vec-report0
+else
+FCOMPILER_WARN =
 endif
+endif
+#***********************************************************************************************#
+
+
+#***********************************************************************************************#
+#
+# GLOBAL LINK FLAGS
+#
+# Link flags for all targets
+#
+LL_ALL		= $(SYSLIBS)
+GCC_LF_ALL	= $(STATIC) 
+ICC_LF_ALL	= $(STATIC) 
+
+# Fortran global LINK flags
+F_LF_ALL	= -nofor_main -no-ipo
+#***********************************************************************************************#
+
+#***********************************************************************************************#
+#
+# GLOBAL COMPILE FLAGS
+#
+GCC_CF_GCCCOMP  = -DGCCCOMP 
+ICC_CF_ICCCOMP  = -DICCCOMP 
 
 # can't figure out how to get stupid make to do if/else if/else
 ifeq ($(DEBUG), 0)
   GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW)
+# -xW tells the icc compiler to optimize for Pentium 4
   ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE -xW $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW)
 
   ifeq ($(JSOC_MACHINE), linux_x86_64)
@@ -189,23 +233,43 @@ ifeq ($(DEBUG), 0)
   endif	
 
 else
-
+# -g tells the icc and gcc compilers to generate full debugging information
   GCC_CF_ALL = -I$(SRCDIR)/base/include -std=gnu99 -g $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW)
   ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE -g $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW)
-
 endif
-
-# Fortran global LINK flags
-F_LF_ALL	= -nofor_main -no-ipo
 
 # Fortran global COMPILE flags
-ifeq ($(DEBUG), 0)
-FF_ALL		= -xW -ftrapuv $(F77_WARN)
-else
-FF_ALL		= -ftrapuv $(F77_WARN)
+ifeq ($(JSOC_MACHINE), linux_x86_64)
+  ifeq ($(FCOMPILER), ifort)
+    F_CF_ALL := -mcmodel=medium
+  endif
 endif
 
-### Build tools
+# Other compiler-specific Fortran COMPILE flags
+ifeq ($(FCOMPILER), ifort)
+  ifeq ($(JSOC_MACHINE), linux_x86_64)
+    FCFLAGS_OPT	:= -xW
+  endif
+  FCLFAGS_INIT := -ftrapuv
+else
+  # must be gfortran
+  FCFLAGS_OPT	:= -g
+  FCLFAGS_INIT  := 
+endif
+
+ifeq ($(DEBUG), 0)
+# -xW optimizes ifort compilation for Pentium 4
+# -ftrapuv initializes stack local variables to an unusual value to aid error detection. 
+  F_CF_ALL	:= $(F_CF_ALL) $(FCFLAGS_OPT) $(FCLFAGS_INIT) $(FCOMPILER_WARN)
+else
+  F_CF_ALL	:= $(F_CF_ALL) $(FCLFAGS_INIT) $(FCOMPILER_WARN)
+endif
+#***********************************************************************************************#
+
+
+#***********************************************************************************************#
+#
+# BUILD TOOLS
 # 
 # The C compiler named here must output full (header) dependencies in $(@).d.
 # It may be necessary to create a script similar to ccd-gcc for your compiler.
@@ -236,12 +300,18 @@ else
   COMPLINK	= $(ICC_COMPLINK)
 endif
 
-FCOMP		= $(F77) $(FF_ALL) $(FF_TGT) -o $@ -c $<
-FLINK		= $(F77) $(F_LF_ALL) $(LF_TGT) -o $@ $^ $(LL_TGT) $(LL_ALL)
+FCOMP		= $(FCOMPILER) $(F_CF_ALL) $(FF_TGT) -o $@ -c $<
+FLINK		= $(FCOMPILER) $(F_LF_ALL) $(LF_TGT) -o $@ $^ $(LL_TGT) $(LL_ALL)
 
 SLBIN           = ln -sf ../../_$(JSOC_MACHINE)/$@ ../bin/$(JSOC_MACHINE)/
 SLLIB		= ln -sf ../../_$(JSOC_MACHINE)/$@ ../lib/$(JSOC_MACHINE)/
+#***********************************************************************************************#
 
+
+#***********************************************************************************************#
+#
+# LIBRARY COLLECTIONS
+#
 ALL_LIBS_FPIC = $(LIBDRMSCLIENT_FPIC) $(LIBDBCLIENT_FPIC) $(LIBCMDPARAMS_FPIC) $(LIBTHREADUTIL_FPIC) $(LIBRICECOMP_FPIC) $(LIBDEFS_FPIC) $(LIBMISC_FPIC) $(LIBDSTRUCT_FPIC) $(LIBTIMEIO_FPIC) $(LIBFITSRW_FPIC) 
 
 ### Standard parts
@@ -275,10 +345,22 @@ MODLIBS_SOCK = $(LIBJSOC_MAIN_SOCK) $(LIBDRMSCLIENT) $(LIBDEFSCLIENT) $(LIBDBCLI
 
 # FMODLIBS: Libraries linked with DRMS Fortran modules
 FMODLIBS_SOCK = $(LIBJSOC_MAIN_SOCK_F) $(LIBINTHANDLESF) $(LIBDRMSCLIENT) $(LIBDEFSCLIENT) $(LIBDBCLIENT) $(FSRCLIBS)
+#***********************************************************************************************#
 
+
+#***********************************************************************************************#
+#
+# PROJECT MAKE RULES
+#
 # Make rules that apply to all projects outside of the base DRMS/SUMS system
 -include $(SRCDIR)/proj/make_basic.mk
+#***********************************************************************************************#
 
+
+#***********************************************************************************************#
+#
+# MODULE TYPES
+#
 # Make rules that apply to all projects, inside and outside of the base DRMS/SUMS system
 $(CEXE):	%:	%.o $(EXELIBS)
 		$(LINK)
@@ -320,3 +402,4 @@ $(MODEXE_USEF_SOCK):	LL_TGT := $(LL_TGT) $(CFITSIOLIBS) $(FMATHLIBS)
 $(MODEXE_USEF_SOCK): %_sock: %.o $(MODLIBS_SOCK)
 			$(FLINK)
 			$(SLBIN)
+#***********************************************************************************************#

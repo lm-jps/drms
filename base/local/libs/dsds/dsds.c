@@ -6,6 +6,9 @@
 #include <string.h>
 #include <limits.h>
 #include <dlfcn.h>
+#ifdef GCCCOMP
+#define __USE_GNU
+#endif
 #include <search.h>
 #include "drms_dsdsapi.h"
 #include "drms_types.h"
