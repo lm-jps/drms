@@ -84,7 +84,7 @@ SUMS_LOG_BASEDIR	/usr/local/logs/SUM
 # the directory in which the binary of sum_chmown, a root setuid program,
 #   is installed; must be mounted locally on the machine on which the
 #   SUMS partition are mounted; used by base/sums/apps/sum_svc_proc.c
-SUMS_BIN_BASEDIR	/usr/local/logs/SUM
+SUMS_BIN_BASEDIR	/usr/local/bin
 
 # whether a tape archive service is available for SUMS or not; set to a
 # non-zero value if it is
