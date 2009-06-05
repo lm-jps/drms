@@ -37,9 +37,9 @@ $hasgfort = 0;
 if (defined($outfile))
 {
     # Try icc
-    $ans = `icc -V 2>&1`;
+    $ans = `icc -V 2>&1`;      
 
-    if ($ans =~ /Version\s+(\d+)\.(\d+)/)
+    if (defined($ans) && $ans =~ /Version\s+(\d+)\.(\d+)/)
     {
         $major = $1;
         $minor = $2;
@@ -54,7 +54,7 @@ if (defined($outfile))
     if (!$hasicc)
     {
         $ans = `gcc -v 2>&1`;
-        if ($ans =~ /gcc\s+version\s+(\d+)\.(\d+)/)
+        if (defined($ans) && $ans =~ /gcc\s+version\s+(\d+)\.(\d+)/)
         {
             $major = $1;
             $minor = $2;
@@ -68,7 +68,7 @@ if (defined($outfile))
 
     # Try ifort
     $ans = `ifort -V 2>&1`;
-    if ($ans =~ /Version\s+(\d+)\.(\d+)/)
+    if (defined($ans) && $ans =~ /Version\s+(\d+)\.(\d+)/)
     {
         $major = $1;
         $minor = $2;
@@ -83,7 +83,7 @@ if (defined($outfile))
     if (!$hasifort)
     {
         $ans = `gfortran -v 2>&1`;
-        if ($ans =~ /gcc\s+version\s+(\d+)\.(\d+)/)
+        if (defined($ans) && $ans =~ /gcc\s+version\s+(\d+)\.(\d+)/)
         {
             $major = $1;
             $minor = $2;
