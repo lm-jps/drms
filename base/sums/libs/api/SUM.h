@@ -24,6 +24,9 @@
 #endif
 
 #define LEV1VIEWERNAME "lev1view"
+#define TAPEHOST "d02"		//machine with tape_svc (& typically drives)
+#define SUMSVCHOST "j1"		//machine running sum_svc
+//#define SUMSVCHOST "d02"		//machine running sum_svc
 
 #include <serverdefs.h>
 #include <jsoc.h>
