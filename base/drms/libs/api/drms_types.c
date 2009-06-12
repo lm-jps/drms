@@ -1782,7 +1782,7 @@ float drms2float(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
       stat = DRMS_SUCCESS;
       result = DRMS_MISSING_FLOAT;            
     }
-    else if (!(value->double_val < FLT_MIN || 
+    else if (!(value->double_val < -FLT_MAX || 
 	       value->double_val > FLT_MAX))
     {
       result = (float) value->double_val;      
@@ -1798,7 +1798,7 @@ float drms2float(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
       stat = DRMS_SUCCESS;
       result = DRMS_MISSING_FLOAT;            
     }
-    else if (!(value->double_val < FLT_MIN || 
+    else if (!(value->double_val < -FLT_MAX || 
 	       value->double_val > FLT_MAX))
     {
       result = (float) value->double_val;      
