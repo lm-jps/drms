@@ -547,6 +547,7 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
 #endif
      if (qres->num_rows==1)
      {
+        if (cascade) {
         /* Fetch an array of unique SUNUMs - the prime-key logic gets applied first. */
         array = drms_record_getvector(env, 
                                       series, 
@@ -554,8 +555,8 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
                                       DRMS_TYPE_LONGLONG, 
                                       1, 
                                       &drmsstatus);
-
-        if (!drmsstatus && array && array->naxis == 2 && array->axis[0] == 1)
+        }
+        if ((!cascade) || (!drmsstatus && array && array->naxis == 2 && array->axis[0] == 1))
         {
            get_namespace(series, &namespace, NULL);
            if (cascade) {
@@ -589,22 +590,22 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
 
            /* Can only potentially have SUMS SUNUMS to drop if there 
             * is at least one record in the series. */
-           if (array->axis[1] > 0)
-           {
-              /* If the DRMS deletions occurred without a hitch, then delete the 
-               * SUMS files from SUMS. */
-              /* If this is a sock-module, must pass the vector SUNUM by SUNUM 
-               * to drms_server. */
-              drms_dropseries(env, series, array);
-           }
+           if (cascade) {
+	          if (array->axis[1] > 0) {
+                     /* If the DRMS deletions occurred without a hitch, then delete the 
+                      * SUMS files from SUMS. */
+                     /* If this is a sock-module, must pass the vector SUNUM by SUNUM 
+                      * to drms_server. */
+                     drms_dropseries(env, series, array);
+                  }
+              }
 
-           /* Both DRMS servers and clients have a series_cache (one item per
-              each series in all of DRMS). So, always remove the deleted series
-              from this cache, whether or not this is a server. */
-           hcon_remove(&env->series_cache,series_lower);
-
-           free(namespace);
-        }
+                  /* Both DRMS servers and clients have a series_cache (one item per
+                     each series in all of DRMS). So, always remove the deleted series
+                     from this cache, whether or not this is a server. */
+                  hcon_remove(&env->series_cache,series_lower);
+                  free(namespace);
+	   }
         else
         {
            fprintf(stderr, "Couldn't create vector of sunum keywords.\n");
