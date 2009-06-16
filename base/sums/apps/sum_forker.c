@@ -83,12 +83,16 @@ int main(int argc, char *argv[])
   int i;
   pid_t pid;
   char *args[5];
-  char dsvcname[80];
+  char dsvcname[80], pgport[32];
 
   get_cmd(argc, argv);                  /* check the calling sequence */
 
   //printf("!!TEMP sum_forker just exits for now\n");
   //exit(0); //!!!TEMP
+
+      sprintf(pgport, SUMPGPORT);
+      setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
+
 
   if((pid = fork()) < 0) {
     printf("***Can't fork(). errno=%d\n", errno);
