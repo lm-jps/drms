@@ -5,11 +5,16 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S  $0 "$@"'
 #If not it will restart it.
 #This is started by sum_start_d02
 #
+
+print "This script has been replaced by sumck_j1 running on j1\n";
+exit(0);
+
 $| = 1;                 #flush output as we go
 $DB = "jsoc_sums";		#the "real" db that production uses
 $GREPPS = "388";	#grep for this in ps -ef
 $HOST = "d02.Stanford.EDU"; #where sum_svc runs
-$SENDMAILTO = "jim";	#!!TBD replace with a mail group
+#$SENDMAILTO = "jim";	#!!TBD replace with a mail group
+$SENDMAILTO = "jsoc_users";
 
 $user = $ENV{'USER'};
 if($user ne "production") {
