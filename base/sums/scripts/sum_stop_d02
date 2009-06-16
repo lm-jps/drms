@@ -3,6 +3,12 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S  $0 "$@"'
 #/home/production/cvs/JSOC/base/sums/scripts/sum_stop_d02
 #This is to stop the sum_svc and related servers.
 #
+
+print "This script has been depricated. SUMS now runs on j1.\n";
+print "To stop SUMS run this on j1:\n";
+print "sum_stop_j1\n";
+exit(0);
+
 $| = 1;                 #flush output as we go
 $ENV{'SUMSERVER'} = "d02";      #make sure we stay in this machine
 $DB = "jsoc_sums";		#the "real" db that production uses
@@ -185,7 +191,8 @@ while($_ = shift(@ps_prod)) {
     }
     print "Killing $process with kill -2 $psid\n";
     print LOG "Killing $process with kill -INT $psid\n";
-    `kill -INT $psid`; 
+    #`kill -INT $psid`;
+    `kill -9 $psid`;
   }
 }
 
