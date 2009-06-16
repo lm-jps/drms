@@ -5,6 +5,12 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S  $0 "$@"'
 #Call with -M will not send mail notification.
 #Call with -f to force a stop if needed.
 #
+
+print "This script has been depricated. SUMS now runs on j1.\n";
+print "To start SUMS run this on j1:\n";
+print "sum_start_j1\n";
+exit(0);
+
 $| = 1;                 #flush output as we go
 $ENV{'SUMSERVER'} = "d02";      #make sure we stay in this machine
 $DB = "jsoc_sums";		#the "real" db that production uses
