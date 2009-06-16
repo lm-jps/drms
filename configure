@@ -400,4 +400,4 @@ endif
 # echo "CUSTOM_FCOMPILER = gfortran" >> custom.mk
 
 # run perl script to do even more configuration
-moreconfigure.pl -fcustom.mk
+./moreconfigure.pl -fcustom.mk
