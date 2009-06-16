@@ -247,8 +247,8 @@ while($_ = shift(@ps_prod)) {
         close(LOG);
         close(MLOG);
         $mail = "Mail -s \"SUM d02 auto Start Complete\"";
-        #$to = "sssc_crew\@solar2";
-        $to = "jim";
+        $to = "jsoc_users";
+        #$to = "jim";
         $cmd = "$mail $to < $MLOGFILE";
         if($mailflg) { system $cmd; }
         exit;

@@ -168,7 +168,7 @@ print LOG "SUM Stop_d02_auto Complete\n";
 close(LOG);
 close(MLOG);
 $mail = "Mail -s \"SUM Stop_d02_auto Complete\"";
-#$to = "sssc_crew\@solar2";
-$to = "jim";
+$to = "jsoc_users";
+#$to = "jim";
 $cmd = "$mail $to < $MLOGFILE";
 if($mailflg) { system $cmd; }
