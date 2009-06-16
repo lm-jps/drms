@@ -24,14 +24,14 @@ if(@ARGV[0] eq "-M") { $mailflg = 0; shift(@ARGV); }
 else { $mailflg = 1; }
 $mailflg = 0;   #force no mail call
 
-@adv = `sum_adv`;
-$state = shift(@adv);
-chomp($state);
-if($state == 0) {
-  print "sum_svc has active users. Please try again later.\n";
-  print "All new SUM_open() have been forbidden\n";
-  exit(0);
-}
+#@adv = `sum_adv`;
+#$state = shift(@adv);
+#chomp($state);
+#if($state == 0) {
+#  print "sum_svc has active users. Please try again later.\n";
+#  print "All new SUM_open() have been forbidden\n";
+#  exit(0);
+#}
 
 $PID = getppid;
 $LOGFILE = "/tmp/sum_stop.$PID";
