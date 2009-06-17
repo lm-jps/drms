@@ -41,6 +41,7 @@ extern int tapeoffline;
 extern int robotoffline;
 extern int driveonoffstatus;
 extern char libdevname[];
+extern char hostn[];
 extern SLOT slots[];
 extern DRIVE drives[];
 extern TQ *poff;
@@ -916,9 +917,10 @@ KEY *jmtxtapedo_1(KEY *params) {
       ++robotcmdseq;
       return(xlist);
     }
-    write_log("jmtx status in: /tmp/mtx/mtx_robot_%d.log\n", robotcmdseq);
-    sprintf(errstr, "jmtx Status in: /tmp/mtx/mtx_robot_%d.log\n",
-		robotcmdseq++);
+    write_log("jmtx status in: %s:/tmp/mtx/mtx_robot_%d.log\n", 
+		hostn, robotcmdseq);
+    sprintf(errstr, "jmtx Status in: %s:/tmp/mtx/mtx_robot_%d.log\n",
+		hostn, robotcmdseq++);
     setkey_fileptr(&xlist,  "current_client", (FILE *)current_client);
     setkey_str(&xlist, "MSG", errstr);
     setkey_int(&xlist, "STATUS", 0);
