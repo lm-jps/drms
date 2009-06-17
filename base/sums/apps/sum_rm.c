@@ -460,7 +460,7 @@ int main(int argc, char *argv[])
   get_cmd(argc, argv);
   setup();
   while(1) {
-    sleep(120);			/* this replaces the former svc_run */
+    sleep(60);			/* this replaces the former svc_run */
   }
 }
 
