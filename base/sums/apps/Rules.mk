@@ -34,6 +34,10 @@ endif
 ifeq ($(HOST),d02.Stanford.EDU)
 	ADD_TGT_$(d) := -DSUMT950
 endif
+#treat j1 like d02 (j1 now running sum_svc)
+ifeq ($(HOST),j1)
+	ADD_TGT_$(d) := -DSUMT950
+endif
 #ifeq ($(HOST),tenerife.tuc.noao.edu)
 #	ADD_TGT_$(d) := -DSUMNOAO -DSUMT120
 #endif
@@ -54,9 +58,10 @@ SUMEXSVC_$(d)	:= $(d)/sum_export_svc
 SUMEX_$(d)	:= $(d)/sum_export
 JMTX_$(d)	:= $(d)/jmtx
 CHMO_$(d)	:= $(d)/sum_chmown
+SUMFORKER_$(d)	:= $(d)/sum_forker
 
 
-BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main3 main4 main5 sumget tapeonoff driveonoff sum_rm impexp drive0_svc drive1_svc drive2_svc drive3_svc drive4_svc drive5_svc drive6_svc drive7_svc drive8_svc drive9_svc drive10_svc drive11_svc robot0_svc md5filter sum_adv sum_export_svc sum_export jmtx sum_chmown)
+BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main3 main4 main5 sumget tapeonoff driveonoff sum_rm impexp drive0_svc drive1_svc drive2_svc drive3_svc drive4_svc drive5_svc drive6_svc drive7_svc drive8_svc drive9_svc drive10_svc drive11_svc robot0_svc md5filter sum_adv sum_export_svc sum_export jmtx sum_chmown sum_forker)
 
 #BINTGT_$(d)	:= $(addprefix $(d)/, main main2 main3 main4 main5 sumget tapeonoff driveonoff sum_rm impexp drive0_svc drive1_svc drive2_svc drive3_svc robot0_svc md5filter)
 
