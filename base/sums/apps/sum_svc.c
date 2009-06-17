@@ -289,6 +289,91 @@ int main(int argc, char *argv[])
       setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
   }
 
+#ifndef __LOCALIZED_DEFS__
+//Only fork the tape stuff on the datacapture machines. The tape stuff for
+//the main SUMS is started by a call to ssh d02.stanford.edu sum_forker 
+//in sum_start_j1
+if(!strcmp(hostn, "dcs0") || !strcmp(hostn, "dcs1") || !strcmp(hostn, "dcs2") || !strcmp(hostn, "dcs3")) {
+  if((pid = fork()) < 0) {
+    write_log("***Can't fork(). errno=%d\n", errno);
+    exit(1);
+  }
+  else if(pid == 0) {                   /* this is the beloved child */
+    write_log("execvp of tape_svc\n");
+    args[0] = "tape_svc";
+    if(tapeoffline) { 		/* overrides any sim flg */
+      args[1] = "-o";
+      args[2] = dbname;
+      args[3] = timetag;
+      args[4] = NULL;
+    }
+    else if(sim) { 
+      args[1] = "-s";
+      args[2] = dbname;
+      args[3] = timetag;
+      args[4] = NULL;
+    }
+    else {
+      args[1] = dbname;
+      args[2] = timetag;
+      args[3] = NULL;
+    }
+    if(execvp(args[0], args) < 0) {
+      write_log("***Can't execvp() tape_svc. errno=%d\n", errno);
+      exit(1);
+    }
+  }
+  sleep(1);				/* let tape_svc start */
+  for(i=0; i < MAX_DRIVES; i++) { 	/* start all the driven_svc */
+    if((pid = fork()) < 0) {
+      write_log("***Can't fork(). errno=%d\n", errno);
+      exit(1);
+    }
+    else if(pid == 0) {                   /* this is the beloved child */
+      sprintf(dsvcname, "drive%d_svc", i);
+      write_log("execvp of %s\n", dsvcname);
+      args[0] = dsvcname;
+      if(tapeoffline) {                 /* overrides any sim flg */
+	 args[1] = "-o";
+	 args[2] = dbname;
+	 args[3] = timetag;
+	 args[4] = NULL;
+      }
+      else if(sim) {
+        args[1] = "-s";
+        args[2] = dbname;
+        args[3] = timetag;
+        args[4] = NULL;
+      }
+      else {
+        args[1] = dbname;
+        args[2] = timetag;
+        args[3] = NULL;
+      }
+      if(execvp(args[0], args) < 0) {
+        write_log("***Can't execvp() %s. errno=%d\n", dsvcname, errno);
+        exit(1);
+      }
+    }
+  }
+  if((pid = fork()) < 0) {
+    write_log("***Can't fork(). errno=%d\n", errno);
+    exit(1);
+  }
+  else if(pid == 0) {                   /* this is the beloved child */
+    write_log("execvp of robot0_svc\n");
+    args[0] = "robot0_svc";
+    args[1] = dbname;
+    args[2] = timetag;
+    args[3] = NULL;
+    if(execvp(args[0], args) < 0) {
+      write_log("***Can't execvp() robot0_svc. errno=%d\n", errno);
+      exit(1);
+    }
+  }
+}				/* !!end of TMP for lws only */
+#endif
+
   if((pid = fork()) < 0) {
     write_log("***Can't fork(). errno=%d\n", errno);
     exit(1);
@@ -311,7 +396,7 @@ if(strcmp(hostn, "lws") && strcmp(hostn, "n00") && strcmp(hostn, "d00") && strcm
   printf("\nsum_svc waiting for tape servers to start (approx 10sec)...\n");
   sleep(10);			/* give time to start */
   //if running on j1, then the tape_svc is on TAPEHOST, else the localhost
-  if(strcmp(hostn, "j1")) 
+  if(strcmp(hostn, SUMSVCHOST)) 
     clnttape = clnt_create(thishost, TAPEPROG, TAPEVERS, "tcp");
   else {
     clnttape = clnt_create(TAPEHOST, TAPEPROG, TAPEVERS, "tcp");
