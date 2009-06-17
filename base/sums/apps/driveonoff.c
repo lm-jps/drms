@@ -188,7 +188,11 @@ int main(int argc, char *argv[])
   get_cmd(argc, argv);
   setup();
   /* Create client handle used for calling the tape_svc */
-  clnttape = clnt_create(thishost, TAPEPROG, TAPEVERS, "tcp");
+  //if running on j1, then the tape_svc is on d02, else the localhost
+  if(strcmp(thishost, SUMSVCHOST))
+    clnttape = clnt_create(thishost, TAPEPROG, TAPEVERS, "tcp");
+  else
+    clnttape = clnt_create(TAPEHOST, TAPEPROG, TAPEVERS, "tcp");
   if(!clnttape) {       /* server not there */
     clnt_pcreateerror("Can't get client handle to tape_svc");
     write_log("tape_svc not there on %s\n", thishost);

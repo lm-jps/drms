@@ -106,6 +106,7 @@ char *timetag;
 char md5str[33];
 char drvname[MAX_STR];
 char thishost[MAX_STR];
+char hostn[MAX_STR];
 char datestr[32];
 
 int soi_errno = NO_ERROR;
@@ -209,10 +210,10 @@ void setup()
   int pid;
   char *cptr;
 
+  gethostname(hostn, 80);
+  cptr = index(hostn, '.');     // must be short form
+  if(cptr) *cptr = (char)NULL;
   //when change name of dcs2 to dcs1 we found out you have to use localhost
-  //gethostname(thishost, MAX_STR);
-  //cptr = index(thishost, '.');       /* must be short form */
-  //if(cptr) *cptr = (char)NULL;
   sprintf(thishost, "localhost");
 
   #ifdef DRIVE_0
@@ -332,7 +333,7 @@ int main(int argc, char *argv[])
       /* turn compression off */
       sprintf(compcmd, "sudo /usr/local/bin/mt -f %s defcompression 0", SUMDR1);
       write_log("%s\n", compcmd);
-      if(system(compcmd)) {
+     if(system(compcmd)) {
         write_log("***Error on: %s\n", compcmd);
         /*exit(1);*/
       }
@@ -579,7 +580,12 @@ int main(int argc, char *argv[])
     exit(1);
   }
   /* Create client handle used for calling the sum_svc */
-  clntsum = clnt_create(thishost, SUMPROG, SUMVERS, "tcp");
+  if(strcmp(hostn, TAPEHOST)) {	//if running on d02, use j1
+    clntsum = clnt_create(thishost, SUMPROG, SUMVERS, "tcp");
+  }
+  else {
+    clntsum = clnt_create(SUMSVCHOST, SUMPROG, SUMVERS, "tcp");
+  }
   if(!clntsum) {       /* server not there */
     clnt_pcreateerror("Can't get client handle to sum_svc");
     write_log("***sum_svc not there on %s\n", thishost);

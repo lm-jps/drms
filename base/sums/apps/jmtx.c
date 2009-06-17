@@ -225,7 +225,11 @@ void setup()
             exit(1);
     }
   /* Create client handle used for calling the tape_svc */
-  clnttape = clnt_create(thishost, TAPEPROG, TAPEVERS, "tcp");
+  //if running on j1, then the tape_svc is on d02, else the localhost
+  if(strcmp(thishost, SUMSVCHOST))
+    clnttape = clnt_create(thishost, TAPEPROG, TAPEVERS, "tcp");
+  else
+    clnttape = clnt_create(TAPEHOST, TAPEPROG, TAPEVERS, "tcp");
   if(!clnttape) {       /* server not there */
     clnt_pcreateerror("Can't get client handle to tape_svc in jmtx");
     printf("jmtx can't get tape_svc handle on %s\n", thishost);
