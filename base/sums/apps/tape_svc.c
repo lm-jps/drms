@@ -56,6 +56,7 @@ int current_client_destroy;
 char *dbname;
 char *timetag;
 char thishost[MAX_STR];
+char hostn[MAX_STR];
 char datestr[32];
 char libdevname[32];
 
@@ -170,10 +171,10 @@ void setup()
   char logname[MAX_STR], line[256];
 
   //when change name of dcs2 to dcs1 we found out you have to use localhost
-  //gethostname(thishost, MAX_STR);
-  //cptr = index(thishost, '.');       /* must be short form */
-  //if(cptr) *cptr = (char)NULL;
   sprintf(thishost, "localhost");
+  gethostname(hostn, MAX_STR);
+  cptr = index(hostn, '.');     // must be short form
+  if(cptr) *cptr = (char)NULL;
   cptr = datestring();
   pid = getppid();		/* pid of sum_svc */
   sprintf(logname, "/usr/local/logs/SUM/tape_svc_%s.log", timetag);
@@ -254,7 +255,12 @@ int main(int argc, char *argv[])
 	exit(1);
       }
   /* Create client handle used for calling the sum_svc */
-  clntsum = clnt_create(thishost, SUMPROG, SUMVERS, "tcp");
+  if(strcmp(hostn, TAPEHOST)) { //if running on d02, use j1
+    clntsum = clnt_create(thishost, SUMPROG, SUMVERS, "tcp");
+  }
+  else {
+    clntsum = clnt_create(SUMSVCHOST, SUMPROG, SUMVERS, "tcp");
+  }
   if(!clntsum) {       /* server not there */
     clnt_pcreateerror("Can't get client handle to sum_svc in tape_svc");
     write_log("***tape_svc can't get sum_svc on %s\n", thishost);
