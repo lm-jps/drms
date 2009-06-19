@@ -1,4 +1,4 @@
-eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S  $0 "$@"'
+eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
     if 0;
 #/home/production/cvs/JSOC/base/sums/scripts/sum_stop_j1
 #This is to stop the sum_svc and related servers on j1 for DB jsoc_sums.
@@ -51,18 +51,6 @@ print "  > ssh-agent | head -2 > /tmp/ssh-agent.env
 
 #`ssh d02.stanford.edu touch /tmp/sumstartXX`;  #!!TBD ck how this is used
 
-if($forceflg == 0) {
-  @adv = `sum_adv`;
-  $state = shift(@adv);
-  chomp($state);
-  if($state == 0) {
-    print "sum_svc has active users. Please try again later.\n";
-    print "All new SUM_open() have been forbidden\n";
-    print "Call with -f to force a stop\n";
-    exit(0);
-  }
-}
-
 $PID = getppid;
 $LOGFILE = "/tmp/sum_stop_j1.$PID";
 $MLOGFILE = "/tmp/sum_stop_mail_j1.$PID";
@@ -103,7 +91,7 @@ print MLOG "See $LOGFILE on $host for more details\n";
 
   @ps_prod = `ps -ef | grep $GREPPS`;
   while($_ = shift(@ps_prod)) {
-    if(/^$GREPPS/) {            #do for all production processes
+    if(/^$GREPPS/) {
       if(/sumck/) {
         ($a, $psid, $c) = split(/\s+/, $_);
         $process = "sumck";
@@ -125,6 +113,17 @@ while($_ = shift(@ps_prod)) {
     if(/sum_svc $DB/ || /sum_svc -o $DB/) {
       ($a, $psid, $c) = split(/\s+/, $_);
       $process = "sum_svc";
+      if($forceflg == 0) {	#first check for active users
+        @adv = `sum_adv`;
+        $state = shift(@adv);
+        chomp($state);
+        if($state == 0) {
+          print "sum_svc has active users. Please try again later.\n";
+          print "All new SUM_open() have been forbidden\n";
+          print "Call with -f to force a stop\n";
+          exit(0);
+        }
+      }
     }
     elsif(/sum_rm $DB/) {
       ($a, $psid, $c) = split(/\s+/, $_);
