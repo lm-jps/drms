@@ -26,7 +26,7 @@
 #define SUMS_GROUP	"SOI"
 #define SUMLOG_BASEDIR	"/usr/local/logs/SUM"
 #define SUMBIN_BASEDIR	"/usr/local/bin"
-#define SUMSERVER	"j1.Stanford.EDU"
+#define SUMSERVER	"j1"
 
 #define SUMS_TAPE_AVAILABLE (1)
 
