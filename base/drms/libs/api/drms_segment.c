@@ -676,6 +676,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
       fprintf(stderr,"ERROR in drms_segment_read: Cannot read segment for "
 	      "record with no storage unit slot.\nseries=%s, sunum=%lld\n",
 	      rec->seriesinfo->seriesname, rec->sunum);
+      statint = DRMS_ERROR_NOSTORAGEUNIT;
       goto bailout1;
     }
     rec->su->refcount++;
