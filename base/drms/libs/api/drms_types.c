@@ -1,8 +1,5 @@
 //#define DEBUG
 
-#if defined(__linux__) && __linux__
-#define _GNU_SOURCE
-#endif
 #include <string.h>
 #define DRMS_TYPES_C
 #include "drms.h"
@@ -718,21 +715,28 @@ static int drms_sscanf_int(const char *str,
 
        if (tokenstr)
        {
-	  int maybebad = 0;
-
           /*"ext"  returns the number of parsed chars */
           ret = sscan_time_ext(tokenstr, &dst->time_val);
-
-          maybebad = 
-            (time_is_invalid(dst->time_val) || 
-             strcasecmp (tokenstr, "nan") || strncasecmp (tokenstr, "JD_0", 4));
-
-          if (maybebad) {
-             if (!silent) 
-               fprintf (stderr, "Potentially invalid time string '%s'.\n", str);
-          }
-	  
 	  free(tokenstr);
+
+	  /* time_is_invalid doesn't really check for invalid time - it checks for the time
+	   * being equivalent to JD_0, which can happen if the time string is really equivalent
+	   * to JD_0, but it can happen also if the time string is gibberish. If a time string
+	   * has a legitimate time followed by gibberish, the parser will accept the time, but
+	   * it won't have consumed all the chars (but the parser will think the time is good
+	   * and not set the time value to JD_0). */
+
+	  /* So if time_is_invalid == true and NONE of the chars in the time string were consumed,
+	   * you definitely have a bad time string. But time_is_invalid could be true and 
+	   * some of the chars in the time string may not have been consumed if JD_0 is followed by 
+	   * other non-time chars (eg, JD_0gibberish). Distinguishing between the latter is
+	   * is up to the caller to do. */
+
+	  if (time_is_invalid(dst->time_val) && ret == 0)
+	  {
+	    fprintf (stderr, "Invalid time string '%s'.\n", str);
+	    return -1;
+	  }
        }
 
        return ret;
