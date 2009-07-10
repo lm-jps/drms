@@ -23,6 +23,7 @@
 #define ISDIGIT(X) (X >= 0x30 && X <= 0x39)
 #define DRMS_MAXNAMELEN 32
 
+/* keyword that can never be placed in a FITS file via DRMS */
 char *kFITSRESERVED[] =
 {
    "simple",
@@ -36,6 +37,7 @@ char *kFITSRESERVED[] =
    "history",
    "end",
    "primekeystring",
+   "date",
    ""
 };
 
@@ -326,7 +328,7 @@ int FitsKeyNameValidation(const char *fitsName)
             switch (state)
             {
                case kKwCharError:
-                 error = 2;
+                 error = 1;
                  break;
                case kKwCharNew:
                  if (*pc == '-' ||
@@ -349,7 +351,7 @@ int FitsKeyNameValidation(const char *fitsName)
       }
    }
 
-   if (*pc != 0) 
+   if (!error && *pc != 0) 
    {
       error = 3;
    }

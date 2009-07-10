@@ -2281,6 +2281,14 @@ static int ExportFITS(DRMS_Array_t *arrout,
       /* Need to manually add required keywords that don't exist in the record's 
        * DRMS keywords. */
       CFITSIO_IMAGE_INFO imginfo;
+
+      /* To deal with CFITSIO not handling signed bytes, must convert DRMS_TYPE_CHAR to 
+       * DRMS_TYPE_SHORT */
+      if (arrout->type == DRMS_TYPE_CHAR)
+      {
+	drms_array_convert_inplace(DRMS_TYPE_SHORT, 0, 1, arrout);
+	fprintf(stdout, "FITS doesn't support signed char, converting to signed short.\n");
+      }
       
       if (!drms_fitsrw_SetImageInfo(arrout, &imginfo))
       {
@@ -2329,7 +2337,7 @@ int drms_segment_mapexport_tofile(DRMS_Segment_t *seg,
 
    CFITSIO_KEYWORD *fitskeys = drms_segment_mapkeys(seg, clname, mapfile, &status);
 
-   if (!status)
+   if (status)
    {
       fprintf(stderr, "WARNING: Failure to export one or more DRMS keywords.\n");
       status = DRMS_SUCCESS;
@@ -2355,7 +2363,7 @@ int drms_segment_mapexport_tofile(DRMS_Segment_t *seg,
            if (arrout)
            {
               status = ExportFITS(arrout, fileout, cparms ? cparms : seg->cparms, fitskeys);
-              drms_free_array(arrout);
+              drms_free_array(arrout);	     
            }
         }
         break;
@@ -2414,7 +2422,12 @@ CFITSIO_KEYWORD *drms_segment_mapkeys(DRMS_Segment_t *seg,
 
    while ((key = drms_record_nextkey(recin, &last)) != NULL)
    {
-      if (!drms_keyword_getimplicit(key))
+      if (strcasecmp(key->info->name, "DATE") == 0)
+      {
+	/* Don't let the DATE keyword get exported */
+	fprintf(stderr, "DATE keyword interferes with DATE_imp keyword and will not be exported.\n");
+      }
+      else if (!drms_keyword_getimplicit(key))
       {
          keyname = drms_keyword_getname(key);
 
@@ -2432,6 +2445,27 @@ CFITSIO_KEYWORD *drms_segment_mapkeys(DRMS_Segment_t *seg,
             fprintf(stderr, "Couldn't export keyword '%s'.\n", keyname);
             statint = DRMS_ERROR_EXPORT;
          }
+      }
+      else if (strcmp(key->info->name, kDATEKEYNAME) == 0)
+      {
+	/* Write the implicit DATE keyword, but only if it has a value (if it is non-missing) */
+	const DRMS_Type_Value_t *val = drms_keyword_getvalue(key);
+	if (val && drms_keyword_gettype(key) == DRMS_TYPE_TIME)
+	{
+	  if (!drms_ismissing_time(val->time_val))
+	  {
+	    if (drms_keyword_export(key, &fitskeys))
+	    {
+	      fprintf(stderr, "Couldn't export keyword '%s'.\n", keyname);
+	      statint = DRMS_ERROR_EXPORT;
+	    }
+	  }
+	}
+	else
+	 {
+	   /* can't get here */
+	   fprintf(stderr, "Invalid DATE keyword.\n");
+	 }
       }
    }
 

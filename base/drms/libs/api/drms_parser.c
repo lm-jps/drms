@@ -4,8 +4,6 @@
 #include "ctype.h"
 #include "xmem.h"
 
-#define kDATEKEYNAME "DATE"
-
 /* Utility functions. */
 static int getstring(char **inn, char *out, int maxlen);
 static int getvalstring(char **inn, char *out, int maxlen);
@@ -1215,30 +1213,40 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys)
   }
 
   /* Add the hidden DATE keyword */
-  DRMS_Keyword_t *newkey = NULL;
-  XASSERT(newkey = hcon_allocslot_lower(&template->keywords, kDATEKEYNAME));
-  memset(newkey, 0, sizeof(DRMS_Keyword_t));
-  newkey->record = template;
-  XASSERT(newkey->info = malloc(sizeof(DRMS_KeywordInfo_t)));    
-  memset(newkey->info, 0, sizeof(DRMS_KeywordInfo_t));
-  strcpy(newkey->info->name, kDATEKEYNAME);
-  newkey->info->islink = 0;
-  newkey->info->type = DRMS_TYPE_TIME;
 
-  /* precision */
-  snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%s", "0");
+  /* Make sure that the user didn't already create it */
+  if (hcon_lookup_lower(&(template->keywords), kDATEKEYNAME) != NULL)
+  {
+    fprintf(stderr, "Cannot create reserved keyword '%s'.\n", kDATEKEYNAME);
+    return 1;
+  }
+  else
+  {
+    DRMS_Keyword_t *newkey = NULL;
+    XASSERT(newkey = hcon_allocslot_lower(&template->keywords, kDATEKEYNAME));
+    memset(newkey, 0, sizeof(DRMS_Keyword_t));
+    newkey->record = template;
+    XASSERT(newkey->info = malloc(sizeof(DRMS_KeywordInfo_t)));    
+    memset(newkey->info, 0, sizeof(DRMS_KeywordInfo_t));
+    strcpy(newkey->info->name, kDATEKEYNAME);
+    newkey->info->islink = 0;
+    newkey->info->type = DRMS_TYPE_TIME;
 
-  /* time zone - if we use the ISO indicator, then when a fits file gets exported, an ISO time string
-   * will be generated. */
-  snprintf(newkey->info->unit, DRMS_MAXUNITLEN, "%s", "ISO");
-  snprintf(newkey->info->description, DRMS_MAXCOMMENTLEN, "%s", "User-defined keyword that represents image creation date.");
+    /* precision */
+    snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%s", "0");
 
-  newkey->info->recscope = kRecScopeType_Variable;
-  drms_keyword_unsetperseg(newkey);
-  drms_keyword_unsetintprime(newkey);
-  drms_keyword_unsetextprime(newkey);
-  drms_keyword_setimplicit(newkey);    
-  newkey->value.time_val = DRMS_MISSING_TIME;
+    /* time zone - if we use the ISO indicator, then when a fits file gets exported, an ISO time string
+     * will be generated. */
+    snprintf(newkey->info->unit, DRMS_MAXUNITLEN, "%s", "ISO");
+    snprintf(newkey->info->description, DRMS_MAXCOMMENTLEN, "%s", "[DATE] User-defined keyword that represents image creation date.");
+
+    newkey->info->recscope = kRecScopeType_Variable;
+    drms_keyword_unsetperseg(newkey);
+    drms_keyword_unsetintprime(newkey);
+    drms_keyword_unsetextprime(newkey);
+    drms_keyword_setimplicit(newkey);    
+    newkey->value.time_val = DRMS_MISSING_TIME;
+  }
 
   return 0;
 }

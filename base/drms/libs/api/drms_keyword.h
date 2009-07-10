@@ -239,6 +239,9 @@ int drms_keyword_mapimport(CFITSIO_KEYWORD *fitskey,
 
 DRMS_Keyword_ExtType_t drms_keyword_getcast(DRMS_Keyword_t *key);
 
+void drms_keyword_setdate();
+TIME drms_keyword_getdate(DRMS_Record_t *rec);
+
 /* doxygen documentation */
 
 /**

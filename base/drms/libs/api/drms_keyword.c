@@ -1562,7 +1562,21 @@ int drms_keyword_getmappedextname(DRMS_Keyword_t *key,
 		     }
                      else if (vstat == 2)
                      {
-                        fprintf(stderr, "FITS keyword name '%s' is reserved.\n", pot);
+		        /* This keyword, despite being reserved, is okay if the original keyword
+			 * is of the form XXX_imp (because the XXX_imp keyword could not have
+			 * been created by the jsd-writer) */
+		        char nbuf[DRMS_MAXKEYNAMELEN];
+			snprintf(nbuf, sizeof(nbuf), "%s_imp", pot);
+			if (strcasecmp(key->info->name, nbuf) == 0)
+			{
+			  /* Original was implicit that matched the reserved keyword */
+			  strcpy(nameOut, pot);
+			  success = 1;
+			}
+			else
+			{
+			  fprintf(stderr, "FITS keyword name '%s' is reserved.\n", pot);
+			}
                      }
 
 		     free(pot);
@@ -1574,13 +1588,18 @@ int drms_keyword_getmappedextname(DRMS_Keyword_t *key,
 	 free(desc);
       }
    
-      /* 2 - Try DRMS name. */
+      /* 2 - Try DRMS name (must be upper case). */
       if (!success)
       {
-         vstat = FitsKeyNameValidation(key->info->name);
+	 char nbuf[DRMS_MAXKEYNAMELEN];
+         
+	 snprintf(nbuf, sizeof(nbuf), "%s", key->info->name);
+	 strtoupper(nbuf);
+
+	 vstat = FitsKeyNameValidation(nbuf);
 	 if (vstat == 0)
 	 {
-	    strcpy(nameOut, key->info->name);
+	    strcpy(nameOut, nbuf);
 	    success = 1;
 	 }
          else if (vstat == 2)
@@ -2903,4 +2922,31 @@ DRMS_Keyword_ExtType_t drms_keyword_getcast(DRMS_Keyword_t *key)
    }
 
    return type;
+}
+
+void drms_keyword_setdate(DRMS_Record_t *rec)
+{
+  /* Get current date */
+  TIME today = CURRENT_SYSTEM_TIME;
+
+  /* Set the DATE_imp keyword to this value */
+  if (drms_setkey_time(rec, kDATEKEYNAME, today))
+  {
+    fprintf(stderr, "Couldn't set DATE keyword.\n");
+  }
+}
+
+TIME drms_keyword_getdate(DRMS_Record_t *rec)
+{
+  int status = DRMS_SUCCESS;
+  TIME thedate = DRMS_MISSING_TIME;
+
+  thedate = drms_getkey_time(rec, kDATEKEYNAME, &status);
+
+  if (status)
+  {
+    fprintf(stderr, "Couldn't get DATE keyword.\n");
+  }
+
+  return thedate;
 }
