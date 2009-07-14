@@ -17,8 +17,8 @@
 #include <signal.h>
 #include <sum_rpc.h>
 #include <printk.h>
+#include "serverdefs.h"
 
-#define LOGDIR "/usr/local/logs/SUM"
 static void sumexprog_1(struct svc_req *rqstp, SVCXPRT *transp);
 void logkey(KEY *key);
 void logkeyk(KEY *key);
@@ -155,7 +155,7 @@ int setup () {
   }
   fclose(fplog);
 
-  sprintf(logname, "%s/sum_export_svc_%d.log", LOGDIR, pid);
+  sprintf(logname, "%s/sum_export_svc_%d.log", SUMLOG_BASEDIR, pid);
   if(open_log(logname)) return(1);
   printk_set(msg, msg);
   printf("Starting sum_export_svc logfile = %s\n\n", logname);
