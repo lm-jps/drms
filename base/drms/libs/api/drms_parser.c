@@ -2430,6 +2430,7 @@ void drms_jsd_printfromrec(DRMS_Record_t *rec) {
    printf("%-*s\t%d\n",fwidth,"Archive:",rec->seriesinfo->archive);
    printf("%-*s\t%d\n",fwidth,"Retention:",rec->seriesinfo->retention);
    printf("%-*s\t%d\n",fwidth,"Tapegroup:",rec->seriesinfo->tapegroup);
+   /*printf("%-*s\t%s\n",fwidth,"Version:",rec->seriesinfo->version);*/
 
    extpkeys = drms_series_createpkeyarray(rec->env, rec->seriesinfo->seriesname, &npkeys, NULL);
    if (extpkeys)
