@@ -104,11 +104,11 @@ if (defined($outfile))
     }
     elsif ($hasicc)
     {
-        print OUTFILE "AUTOCOMPILER = icc\n";
+        print OUTFILE "JSOC_AUTOCOMPILER = icc\n";
     }
     else
     {
-        print OUTFILE "AUTOCOMPILER = gcc\n";
+        print OUTFILE "JSOC_AUTOCOMPILER = gcc\n";
     }
 
     if (!$hasifort && !$hasgfort)
@@ -117,11 +117,11 @@ if (defined($outfile))
     }
     elsif ($hasifort)
     {
-        print OUTFILE "AUTOFCOMPILER = ifort\n";
+        print OUTFILE "JSOC_AUTOFCOMPILER = ifort\n";
     }
     else
     {
-        print OUTFILE "AUTOFCOMPILER = gfortran\n";
+        print OUTFILE "JSOC_AUTOFCOMPILER = gfortran\n";
     }
 
     close(OUTFILE);
