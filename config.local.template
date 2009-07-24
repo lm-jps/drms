@@ -29,7 +29,7 @@ DBSERVER_HOST	localhost
 #   access to publicly exporting sites
 DRMS_SITE_CODE	0x4000
 
-# the default values for the following five entries may or may  not be
+# the default values for the following five entries may or may not be
 #   appropriate for your site configuration, depending on how and where
 #   third-party software has been set up and installed
 
@@ -44,7 +44,7 @@ POSTGRES_INCS	/usr/include/pgsql
 
 # the location of the PostgreSQL libs; likely to be either
 #   /usr/lib or /usr/lib64 or /usr/local/pgsql/lib
-POSTGRES_LIBS	/usr/include/pgsql
+POSTGRES_LIBS	/usr/lib
 
 # the location of third-party libraries (especially cfitsio, which is required,
 #   also others that may be used for modules such as fftw, gsl, etc.)
@@ -60,6 +60,17 @@ THIRD_PARTY_INCS	/usr/local/include
 #   couple of database initialization scripts and is not important for
 #   subsequent installations/updates
 DRMS_SAMPLE_NAMESPACE	drms
+
+# the following entries are for slony processing of mirrored data archives
+
+# the postgres user name of the slony administrative account; normally "slony"
+SLONY_ADMIN	slony
+
+# the base directory for slony logs
+SLONY_LOG_BASEDIR	/usr/local/logs/slony
+
+# the user name(s) or email addresses for slony problem notifications
+SLONY_NOTIFY	production
 
 # the following entries are specific to the SUMS configuration
 
@@ -89,3 +100,4 @@ SUMS_BIN_BASEDIR	/usr/local/bin
 # whether a tape archive service is available for SUMS or not; set to a
 # non-zero value if it is
 SUMS_TAPE_AVAILABLE	0
+
