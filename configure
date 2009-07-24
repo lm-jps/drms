@@ -396,8 +396,8 @@ if ($TPWARN) then
 endif
 
 # Customize compilers
-# echo "CUSTOM_COMPILER = gcc" >> custom.mk
-# echo "CUSTOM_FCOMPILER = gfortran" >> custom.mk
+# echo "JSOC_COMPILER = gcc" >> custom.mk
+# echo "JSOC_FCOMPILER = gfortran" >> custom.mk
 
 # run perl script to do even more configuration
 ./moreconfigure.pl -fcustom.mk

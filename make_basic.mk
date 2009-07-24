@@ -16,21 +16,21 @@ _JSOCROOT_ = ..
 COMPILER = icc
 FCOMPILER = ifort
 
-ifneq ($(AUTOCOMPILER),)
-COMPILER = $(AUTOCOMPILER)
+ifneq ($(JSOC_AUTOCOMPILER),)
+COMPILER = $(JSOC_AUTOCOMPILER)
 endif
 
-ifneq ($(AUTOFCOMPILER),)
-FCOMPILER = $(AUTOFCOMPILER)
+ifneq ($(JSOC_AUTOFCOMPILER),)
+FCOMPILER = $(JSOC_AUTOFCOMPILER)
 endif
 
 # can set through custom.mk or through environment
-ifneq ($(CUSTOM_COMPILER),)
-COMPILER = $(CUSTOM_COMPILER)
+ifneq ($(JSOC_COMPILER),)
+COMPILER = $(JSOC_COMPILER)
 endif
 
-ifneq ($(CUSTOM_FCOMPILER),)
-FCOMPILER = $(CUSTOM_FCOMPILER)
+ifneq ($(JSOC_FCOMPILER),)
+FCOMPILER = $(JSOC_FCOMPILER)
 endif
 #***********************************************************************************************#
 
