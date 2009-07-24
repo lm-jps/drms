@@ -2346,6 +2346,11 @@ void drms_segment_print_jsd(DRMS_Segment_t *seg) {
 	printf(", %d", seg->axis[i]);
       }
     }
+    else
+    {
+      /* naxis == 0, still need to print "0" because this is a required field in .jsds */
+      printf(", %d", 0);
+    }
   } else {
     switch(seg->info->scope)
       {
@@ -2368,6 +2373,12 @@ void drms_segment_print_jsd(DRMS_Segment_t *seg) {
 	printf(", %d", seg->axis[i]);
       }
     }
+    else
+    {
+      /* naxis == 0, still need to print "0" because this is a required field in .jsds */
+      printf(", %d", 0);
+    }
+
     printf(", \"%s\", ", seg->info->unit);
 
     const char *protstr = drms_prot2str(seg->info->protocol);
