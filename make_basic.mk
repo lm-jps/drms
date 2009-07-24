@@ -2,12 +2,13 @@ VPATH  = $(SRCDIR)
 STATIC = 
 DBNAME = POSTGRESQL
 
-# This optional file has custom definitions created by the configure script
--include $(SRCDIR)/custom.mk
+_JSOCROOT_ = ..
 
 PGIPATH	= /usr/include/pgsql
+ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/$(JSOC_MACHINE)/
 
-_JSOCROOT_ = ..
+# This optional file has custom definitions created by the configure script
+-include $(SRCDIR)/custom.mk
 
 #***********************************************************************************************#
 #
@@ -101,7 +102,7 @@ ifeq ($(JSOC_MACHINE), linux_x86_64)
   FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
   CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
   GSLL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
-  ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
+#  ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
 endif
 ifeq ($(JSOC_MACHINE), linux_ia32) 
 #    FMATHLIBS = -lmkl_lapack -lmkl -L$(_JSOCROOT_)/lib_third_party/lib/linux-ia32/ -lfftw3f -lcfitsio
@@ -109,7 +110,7 @@ ifeq ($(JSOC_MACHINE), linux_ia32)
   FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
   CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
   GSLL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
-  ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
+#  ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
 endif
 ifeq ($(JSOC_MACHINE), mac_osx_ppc) 
 #    FMATHLIBS = -lmkl_lapack -lmkl -L$(_JSOCROOT_)/lib_third_party/lib/linux-ia32/ -lfftw3f -lcfitsio
@@ -117,7 +118,7 @@ ifeq ($(JSOC_MACHINE), mac_osx_ppc)
   FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ppc/
   CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ppc/
   GSLL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ppc/
-  ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ppc/
+#  ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ppc/
 endif
 ifeq ($(JSOC_MACHINE), mac_osx_ia32) 
 #    FMATHLIBS = -lmkl_lapack -lmkl -L$(_JSOCROOT_)/lib_third_party/lib/linux-ia32/ -lfftw3f -lcfitsio
@@ -125,12 +126,13 @@ ifeq ($(JSOC_MACHINE), mac_osx_ia32)
   FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ia32/
   CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ia32/
   GSLL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ia32/
-  ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ia32/
+#  ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ia32/
 endif
 
-# All 3rd-party math libraries - local rules can define a subset
+# All 3rd-party libraries - local rules can define a subset
 FMATHLIBS = $(FMATHLIBSL) -lfftw3f 
 CFITSIOLIBS = $(CFITSIOL) -lcfitsio
+ECPGLIBS = $(ECPGL) -lpq
 
 ifeq ($(COMPILER), gcc)
 	ifeq ($(JSOC_MACHINE), linux_x86_64) 
@@ -370,12 +372,12 @@ $(FEXE):	%:	%.o $(FMATHLIBS)
 		$(FLINK)
 		$(SLBIN)
 
-$(SERVEREXE):   LL_TGT := $(LL_TGT) -lpq $(CFITSIOLIBS)
+$(SERVEREXE):   LL_TGT := $(LL_TGT) $(ECPGLIBS) $(CFITSIOLIBS)
 $(SERVEREXE):	%:	%.o $(SERVERLIBS)
 			$(LINK)
 			$(SLBIN)
 
-$(MODEXE):      LL_TGT := $(LL_TGT) -lpq $(CFITSIOLIBS)
+$(MODEXE):      LL_TGT := $(LL_TGT) $(ECPGLIBS) $(CFITSIOLIBS)
 $(MODEXE):	%:	%.o $(MODLIBS)
 			$(LINK)
 			$(SLBIN)
@@ -393,7 +395,7 @@ $(FMODEXE_SOCK):     %_sock:	%.o $(FMODLIBS_SOCK)
 			$(SLBIN)
 
 # MODEXE_USEF contains all C direct-connect modules that use third-party Fortran libraries.
-$(MODEXE_USEF):	LL_TGT := $(LL_TGT) -lpq $(CFITSIOLIBS) $(FMATHLIBS)
+$(MODEXE_USEF):	LL_TGT := $(LL_TGT) $(ECPGLIBS) $(CFITSIOLIBS) $(FMATHLIBS)
 $(MODEXE_USEF):     %:	%.o $(MODLIBS)
 			$(FLINK)
 			$(SLBIN)
