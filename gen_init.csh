@@ -13,13 +13,16 @@ endif
 # parse the local config file
 
 set LOCAL_CONFIG_SET = `egrep "^LOCAL_CONFIG_SET" $LOCALINF | awk '{print $2}'`
-set POSTGRES_ADMIN = `egrep "^POSTGRES_ADMIN" $LOCALINF | awk '{print $2}'`
-set POSTGRES_LIBS = `egrep "^POSTGRES_LIBS" $LOCALINF | awk '{print $2}'`
-set POSTGRES_INCS = `egrep "^POSTGRES_INCS" $LOCALINF | awk '{print $2}'`
 set DBSERVER_HOST = `egrep "^DBSERVER_HOST" $LOCALINF | awk '{print $2}'`
 set DRMS_DATABASE = `egrep "^DRMS_DATABASE" $LOCALINF | awk '{print $2}'`
 set DRMS_SITE_CODE = `egrep "^DRMS_SITE_CODE" $LOCALINF | awk '{print $2}'`
 set DRMS_SAMPLE_NAMESPACE = `egrep "^DRMS_SAMPLE_NAMESPACE" $LOCALINF | awk '{print $2}'`
+set POSTGRES_ADMIN = `egrep "^POSTGRES_ADMIN" $LOCALINF | awk '{print $2}'`
+set POSTGRES_LIBS = `egrep "^POSTGRES_LIBS" $LOCALINF | awk '{print $2}'`
+set POSTGRES_INCS = `egrep "^POSTGRES_INCS" $LOCALINF | awk '{print $2}'`
+set SLONY_ADMIN = `egrep "^SLONY_ADMIN" $LOCALINF | awk '{print $2}'`
+set SLONY_LOG_BASEDIR = `egrep "^SLONY_LOG_BASEDIR" $LOCALINF | awk '{print $2}'`
+set SLONY_NOTIFY = `egrep "^SLONY_NOTIFY" $LOCALINF | awk '{print $2}'`
 set SUMS_SERVER_HOST = `egrep "^SUMS_SERVER_HOST" $LOCALINF | awk '{print $2}'`
 set SUMS_LOG_BASEDIR = `egrep "^SUMS_LOG_BASEDIR" $LOCALINF | awk '{print $2}'`
 set SUMS_BIN_BASEDIR = `egrep "^SUMS_BIN_BASEDIR" $LOCALINF | awk '{print $2}'`
@@ -38,18 +41,7 @@ if ($#LOCAL_CONFIG_SET == 1) then
   endif
 endif
 
-if ($#POSTGRES_ADMIN != 1) then
-  echo "Error: POSTGRES_ADMIN undefined in local configuration file $LOCALINF"
-  exit
-endif
-if ($#POSTGRES_LIBS != 1) then
-  echo "Error: POSTGRES_LIBS undefined in local configuration file $LOCALINF"
-  exit
-endif
-if ($#POSTGRES_INCS != 1) then
-  echo "Error: POSTGRES_INCS undefined in local configuration file $LOCALINF"
-  exit
-endif
+@ ADMIN_STATUS = 0
 if ($#DBSERVER_HOST != 1) then
   echo "Error: DBSERVER_HOST undefined in local configuration file $LOCALINF"
   exit
@@ -63,8 +55,32 @@ if ($#DRMS_SITE_CODE != 1) then
   exit
 endif
 if ($#DRMS_SAMPLE_NAMESPACE != 1) then
-  echo "Error: DRMS_SAMPLE_NAMESPACE undefined in local configuration file $LOCALINF"
+  echo "Warning: DRMS_SAMPLE_NAMESPACE undefined in local configuration file $LOCALINF"
+  @ ADMIN_STATUS = 1
+endif
+if ($#POSTGRES_ADMIN != 1) then
+  echo "Error: POSTGRES_ADMIN undefined in local configuration file $LOCALINF"
   exit
+endif
+if ($#POSTGRES_LIBS != 1) then
+  echo "Error: POSTGRES_LIBS undefined in local configuration file $LOCALINF"
+  exit
+endif
+if ($#POSTGRES_INCS != 1) then
+  echo "Error: POSTGRES_INCS undefined in local configuration file $LOCALINF"
+  exit
+endif
+if ($#SLONY_ADMIN != 1) then
+  echo "Warning: SLONY_ADMIN undefined in local configuration file $LOCALINF"
+  @ ADMIN_STATUS = 1
+endif
+if ($#SLONY_LOG_BASEDIR != 1) then
+  echo "Warning: $SLONY_LOG_BASEDIR undefined in local configuration file $LOCALINF"
+  @ ADMIN_STATUS = 1
+endif
+if ($#SLONY_NOTIFY != 1) then
+  echo "Warning: SLONY_NOTIFY undefined in local configuration file $LOCALINF"
+  @ ADMIN_STATUS = 1
 endif
 if ($#SUMS_SERVER_HOST != 1) then
   echo "Error: $SUMS_SERVER_HOST undefined in local configuration file $LOCALINF"
@@ -189,6 +205,10 @@ cd include
 ln -s ../$SCRIPT localization.h
 cd ..
 
+# modify targets as appropriate in custom.mk
+set CUST = custom.mk
+echo "PGIPATH = $POSTGRES_INCS" >> $CUST
+echo "ECPGL = -L$POSTGRES_LIBS" >> $CUST
 
 # make third-party links
 echo "*** linking third-party libs and includes ***"
@@ -196,3 +216,12 @@ set JSOC_MACHINE = `build/jsoc_machine.csh`
 ln -sfv $THIRD_PARTY_INCS lib_third_party/include
 if (!(-d lib_third_party/lib)) mkdir lib_third_party/lib
 ln -sfv $THIRD_PARTY_LIBS lib_third_party/lib/$JSOC_MACHINE
+
+if ($ADMIN_STATUS) then
+  echo
+  echo "Some configuration parameters were missing from the config.local file"
+  echo "  as described in warning messages above.  These are only needed for"
+  echo "  SUMS orSlony administration; they are not needed for an ordinary build."
+  echo "Check the file config.local.template for sample entries to put in your"
+  echo "  config.local file."
+endif
