@@ -4,10 +4,18 @@
 #include "ctype.h"
 #include "xmem.h"
 
+HContainer_t *gReservedKeyname = NULL;
+
+char *kKEYNAMERESERVED[] = 
+{
+   "_index",
+   ""
+};
+
 /* Utility functions. */
 static int getstring(char **inn, char *out, int maxlen);
 static int getvalstring(char **inn, char *out, int maxlen);
-static int getdouble(char **in, double *val, int parserline);
+/* static int getdouble(char **in, double *val, int parserline); */
 static int getint(char **in, int *val, int parserline);
 static inline int prefixmatch(char *token, const char *pattern);
 static int gettoken(char **in, char *copy, int maxlen, int parserline);
@@ -21,12 +29,13 @@ static int parse_segments(char *desc, DRMS_Record_t *template, HContainer_t *cpa
 static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContainer_t *cparmkeys);
 static int parse_keyword(char **in, 
 			 DRMS_Record_t *ds, 
-			 HContainer_t *slotted,
-			 HContainer_t *indexkws);
+			 HContainer_t *slotted);
 static int parse_links(char *desc, DRMS_Record_t *template);
 static int parse_link(char **in, DRMS_Record_t *template);
 static int parse_primaryindex(char *desc, DRMS_Record_t *template);
 static int parse_dbindex(char *desc, DRMS_Record_t *template);
+
+static int keywordname_isreserved(const char *name);
 
 /* This macro advances the character pointer argument past all 
    whitespace or until it points to end-of-string (0). */
@@ -665,16 +674,7 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys)
 				      NULL,
 				      0);
 
-  HContainer_t *indexkws = hcon_create(sizeof(DRMS_Keyword_t *),
-				      DRMS_MAXKEYNAMELEN,
-				      NULL,
-				      NULL,
-				      NULL,
-				      NULL,
-				      0);
-
-
-  if (!slotted || !indexkws)
+  if (!slotted)
   {
      fprintf(stderr, "Couldn't create container in drms_parse_description().\n");
      return 1;
@@ -704,91 +704,11 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys)
     
 	if (prefixmatch(p,"Keyword:"))
 	{
-	   if (parse_keyword(&q,template, slotted, indexkws))
+	   if (parse_keyword(&q,template, slotted))
 	     return 1;
 	}
 	start += len+1;
 	len = getnextline(&start);
-     }
-
-     if (indexkws->num_total > 0)
-     {
-	HIterator_t *hit_index = hiter_create(indexkws);
-
-	if (hit_index)
-	{
-	   DRMS_Keyword_t **pIndexKey = NULL;
-	   const char *indexKeyname = NULL;
-	   char *kname = NULL;
-	   char *underscore = NULL;
-	   DRMS_Keyword_t *existslotted = NULL;
-
-	   /* Ensure that if there is an index keyword, there is a corresponding
-	    * slotted keyword. */
-	   while ((pIndexKey = 
-		   (DRMS_Keyword_t **)hiter_extgetnext(hit_index, &indexKeyname)) != NULL)
-	   {
-	      if (drms_keyword_isindex(*pIndexKey))
-	      {
-		 kname = strdup(indexKeyname);
-		 underscore = strstr(kname, kSlotAncKey_Index);
-
-		 if (underscore)
-		 {
-		    *underscore = '\0';
-		    if ((existslotted = 
-			 (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), kname)) 
-			== NULL)
-		    {
-		       fprintf(stderr, 
-			       "Can't specify an index keyword (%s) without specifying "
-			       "the corresponding slotted keyword.\n",
-			       indexKeyname);
-		       hiter_destroy(&hit_index);
-		       hcon_destroy(&slotted);
-		       hcon_destroy(&indexkws);
-		       return 1;
-		    }
-
-		    if (!drms_keyword_isslotted(existslotted))
-		    {
-		       fprintf(stderr, 
-			       "Index keyword '%s' must be associated with a "
-			       "slotted keyword, but it is associated with a "
-			       "%s type of keyword.\n",
-			       kname,
-			       drms_keyword_getrecscopestr(existslotted, NULL));
-		       hiter_destroy(&hit_index);
-		       hcon_destroy(&slotted);
-		       hcon_destroy(&indexkws);
-		       return 1;
-		    }
-		 }
-		 else
-		 {
-		    fprintf(stderr, "Invalid index keyword name %s.\n", kname);
-		    hiter_destroy(&hit_index);
-		    hcon_destroy(&slotted);
-		    hcon_destroy(&indexkws);
-		    return 1;
-		 }
-
-		 if (kname)
-		 {
-		    free(kname);
-		 }
-	      }
-	   }
-
-	   hiter_destroy(&hit_index);
-	}
-	else
-	{
-	   fprintf(stderr, "Couldn't create iterator.\n");
-	   hcon_destroy(&slotted);
-	   hcon_destroy(&indexkws);
-	   return 1;
-	}
      }
 
      if (slotted->num_total > 0)
@@ -862,6 +782,9 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys)
 		 /* The corresponding index keyword DOES exist - don't allow this.
                   * Allowing the user to create it is not good, since they could
                   * create it improperly.
+                  *
+                  * There is now code in parse_keyword() to prevent _index keywords 
+                  * from being specified in a jsd.
                   */
                  fprintf(stderr, "Keywords with the suffix '_index' are reserved; cannot specify '%s' in a jsd file\n", existkey->info->name);
                  return 1;
@@ -1147,7 +1070,6 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys)
 	      {
 		 hiter_destroy(&hit);
 		 hcon_destroy(&slotted);
-		 hcon_destroy(&indexkws);
 		 return 1;
 	      }
 	   } /* while */
@@ -1158,13 +1080,11 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys)
 	{
 	   fprintf(stderr, "Couldn't create iterator.\n");
 	   hcon_destroy(&slotted);
-	   hcon_destroy(&indexkws);
 	   return 1;
 	}
      }
 
      hcon_destroy(&slotted);
-     hcon_destroy(&indexkws);
   } /* successful creation of slotted container */
 
   if (cparmkeys)
@@ -1439,8 +1359,7 @@ static int FormatChk(const char *format, DRMS_Type_t dtype)
 
 static int parse_keyword(char **in, 
 			 DRMS_Record_t *template, 
-			 HContainer_t *slotted,
-			 HContainer_t *indexkws)
+			 HContainer_t *slotted)
 {
   char *p,*q;
   char name[DRMS_MAXKEYNAMELEN]={0}, type[DRMS_MAXNAMELEN]={0}, linkname[DRMS_MAXLINKNAMELEN]={0}, defval[DRMS_DEFVAL_MAXLEN]={0};
@@ -1465,12 +1384,6 @@ static int parse_keyword(char **in,
     if(GETTOKEN(&q,linkname,sizeof(linkname)) <= 0)     GOTOFAILURE;
     if(GETTOKEN(&q,target_key,sizeof(target_key)) <= 0) GOTOFAILURE;
     if(GETTOKEN(&q,description,sizeof(description)) < 0)       GOTOFAILURE;
-  }
-  else if ( !strcasecmp(type,"index") )
-  {
-     /* Slotted-key index keyword */
-     if(GETTOKEN(&q,format,sizeof(format)) <= 0)     GOTOFAILURE;
-     if(GETTOKEN(&q,description,sizeof(description)) < 0)   GOTOFAILURE;
   }
   else
   {
@@ -1498,6 +1411,12 @@ static int parse_keyword(char **in,
   printf("description    = '%s'\n",description);
 #endif
 
+  if (keywordname_isreserved(name))
+  {
+     fprintf(stderr, "Keyword name '%s' is reserved and cannot be specified.\n", name);
+     GOTOFAILURE;
+  }
+
   /* Populate structure */
   if ( !strcasecmp(type,"link") )
   {
@@ -1523,53 +1442,11 @@ static int parse_keyword(char **in,
   }  
   else if (!strcasecmp(constant,"index"))
   {
-     /* Index keywords are prime, so they must not be per-segment */
-     strcpy(name1,name);
-     if ((key = hcon_lookup_lower(&template->keywords,name1))) {
-	// this is an earlier definition
-	free(key->info);
-     }
-     XASSERT(key = hcon_allocslot_lower(&template->keywords,name1));
-     memset(key,0,sizeof(DRMS_Keyword_t));
-     XASSERT(key->info = malloc(sizeof(DRMS_KeywordInfo_t)));
-     memset(key->info,0,sizeof(DRMS_KeywordInfo_t));
-     strncpy(key->info->name,name1,sizeof(key->info->name));
-     if (strlen(name1) >= sizeof(key->info->name))
-       fprintf(stderr,
-	       "WARNING keyword name %s truncated to %lld characters.\n", 
-	       name1, 
-	       (long long)sizeof(key->info->name)-1);
-     key->record = template;
-     drms_keyword_unsetperseg(key);
-     key->info->islink = 0;
-     key->info->linkname[0] = 0;
-     key->info->target_key[0] = 0;
-     key->info->type = kIndexKWType;
-     if (!FormatChk(format, key->info->type))
-     {
-        fprintf(stderr, 
-                "WARNING: The format specified '%s' is incompatible with the data type '%s' of keyword '%s'.\n",
-                format, 
-                drms_type2str(key->info->type),
-                key->info->name);
-     }
-     strcpy(key->info->format, format);
-     strcpy(key->info->unit, "none");
-     key->info->recscope = kRecScopeType_Index;
-     strcpy(key->info->description,description);
-
-     /* Index keywords must be DRMS-internal prime (but DRMS-external not prime) */
-     template->seriesinfo->pidx_keywords[(template->seriesinfo->pidx_num)++] =
-       key;
-
-     drms_keyword_setintprime(key);
-     drms_keyword_unsetextprime(key);
-
-     /* Index keywords must have a db index */
-     template->seriesinfo->dbidx_keywords[(template->seriesinfo->dbidx_num)++] =
-       key; 
-
-     hcon_insert(indexkws, key->info->name, &key);
+     /* Slotted-key index keyword */
+     /* Don't allow the creation of _index keywords since they can 
+      * be created only one way (so make them implicit) */
+     fprintf(stderr, "Specification of an index keyword in a jsd is not allowed.\n");
+     GOTOFAILURE;
   } /* index keyword */
   else
   {
@@ -1934,6 +1811,59 @@ static int parse_dbindex(char *desc, DRMS_Record_t *template)
   return 0; 
 }
 
+static void FreeReservedKeyname(void *data)
+{
+   if (gReservedKeyname != (HContainer_t *)data)
+   {
+      fprintf(stderr, "Unexpected argument to FreeReservedKeyname(); bailing.\n");
+      return;
+   }
+
+   hcon_destroy(&gReservedKeyname);
+}
+
+static int keywordname_isreserved(const char *name)
+{
+   int ans = 0;
+
+   if (!gReservedKeyname)
+   {
+      char bogusval = 'A';
+      int i = 0;
+
+      gReservedKeyname = hcon_create(1, 128, NULL, NULL, NULL, NULL, 0);
+      while (*(kKEYNAMERESERVED[i]) != '\0')
+      {
+         hcon_insert_lower(gReservedKeyname, kKEYNAMERESERVED[i], &bogusval);
+         i++;
+      }
+
+      /* Register for clean up */
+      BASE_Cleanup_t cu;
+      cu.item = gReservedKeyname;
+      cu.free = FreeReservedKeyname;
+      base_cleanup_register("reservedkeynames", &cu);
+   }
+
+   if (gReservedKeyname)
+   {
+      char *pch = NULL;
+      if ((pch = strchr(name, '_')) != NULL)
+      {
+         /* there might be a reserved suffix */
+         if (hcon_lookup_lower(gReservedKeyname, pch))
+         {
+            ans = 1;
+         }
+      }
+      else if (hcon_lookup_lower(gReservedKeyname, name))
+      {
+         ans = 1;
+      }
+   }
+
+   return ans;
+}
 
 /* Skip empty lines and lines where the first non-whitespace character 
  * is '#'. Assumes we're at the beginning of a line. */

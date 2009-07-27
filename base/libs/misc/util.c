@@ -765,6 +765,7 @@ int base_cleanup_go(const char *explicit)
          if (cu)
          {
             (*(cu->free))(cu->item);
+            hcon_remove(gCleanup, explicit);
          }
          else
          {
@@ -775,11 +776,16 @@ int base_cleanup_go(const char *explicit)
       {
          /* clean all up */
          HIterator_t *hiter = hiter_create(gCleanup);
+         const char *keyname = NULL;
 
-         while ((cu = hiter_getnext(hiter)) != NULL)
+         while ((cu = hiter_extgetnext(hiter, &keyname)) != NULL)
          {
             (*(cu->free))(cu->item);
+            /* I think I can do this - remove one while iterating */
+            hcon_remove(gCleanup, keyname);
          }
+
+         hiter_destroy(&hiter);
       }
    }
 
@@ -796,5 +802,6 @@ void base_cleanup_term()
 
 void base_term()
 {
-   base_cleanup_go("reservedfitskws");
+   base_cleanup_go(NULL);
+   base_cleanup_term();
 }
