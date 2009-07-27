@@ -252,19 +252,19 @@ ifeq ($(FCOMPILER), ifort)
   ifeq ($(JSOC_MACHINE), linux_x86_64)
     FCFLAGS_OPT	:= -xW
   endif
-  FCLFAGS_INIT := -ftrapuv
+  FCFLAGS_INIT := -ftrapuv
 else
   # must be gfortran
-  FCFLAGS_OPT	:= -g
-  FCLFAGS_INIT  := 
+  FCFLAGS_OPT	:= 
+  FCFLAGS_INIT  := 
 endif
 
 ifeq ($(DEBUG), 0)
 # -xW optimizes ifort compilation for Pentium 4
 # -ftrapuv initializes stack local variables to an unusual value to aid error detection. 
-  F_CF_ALL	:= $(F_CF_ALL) $(FCFLAGS_OPT) $(FCLFAGS_INIT) $(FCOMPILER_WARN)
+  F_CF_ALL	:= $(F_CF_ALL) $(FCFLAGS_OPT) $(FCOMPILER_WARN)
 else
-  F_CF_ALL	:= $(F_CF_ALL) $(FCLFAGS_INIT) $(FCOMPILER_WARN)
+  F_CF_ALL	:= $(F_CF_ALL) -g $(FCFLAGS_INIT) $(FCOMPILER_WARN)
 endif
 #***********************************************************************************************#
 
