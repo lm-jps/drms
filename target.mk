@@ -59,7 +59,6 @@ $(OBJDIR):
 	+@[ -d $@/base/util/apps ] || mkdir -p $@/base/util/apps
 	+@[ -d $@/proj/example/apps ] || mkdir -p $@/proj/example/apps
 	+@[ -d $@/proj/myproj/apps ] || mkdir -p $@/proj/myproj/apps
-	+@[ -d $@/proj/cookbook/apps ] || mkdir -p $@/proj/cookbook/apps
 	+@$(MAKETARGET)
 
 # These rules keep make from trying to use the match-anything rule below to
