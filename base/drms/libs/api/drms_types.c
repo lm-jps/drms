@@ -567,7 +567,7 @@ static int drms_sscanf_int(const char *str,
   float fval;
   double dval;
   int usemissing = 0;
-  int usemissinglen = sizeof(kDRMS_MISSING_VALUE);
+  int usemissinglen = strlen(kDRMS_MISSING_VALUE);
 
   if (!strncasecmp(kDRMS_MISSING_VALUE, str, usemissinglen))
   {
@@ -778,7 +778,7 @@ static int drms_sscanf_int(const char *str,
  * So, don't use sscanf here - do something special for strings. */
 int drms_sscanf_str(const char *str, const char *delim, DRMS_Type_Value_t *dst) {
    int usemissing = 0;
-   int usemissinglen = sizeof(kDRMS_MISSING_VALUE);
+   int usemissinglen = strlen(kDRMS_MISSING_VALUE);
 
    if (!strncasecmp(kDRMS_MISSING_VALUE, str, usemissinglen))
    {
