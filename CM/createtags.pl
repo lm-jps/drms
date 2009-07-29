@@ -125,12 +125,13 @@ if ($err == 0)
   else
   {
     # call cvs tag in batches
-    my($count) = 0;
-    my($nitems) = @filelist;
+    my($count);
+    my($nitems) = scalar(@filelist);
   
     while ($nitems > 0 && $err == 0)
     {
       $fileliststr = "";
+      $count = 0;
       while (defined($file = shift(@filelist)) && $count < kBatchSize)
       {
         $fileliststr = "$fileliststr $file";
@@ -162,7 +163,7 @@ if ($err == 0)
         last;
       }
 
-      $nitems = @filelist;
+      $nitems = scalar(@filelist);
     }
   }
   
@@ -203,12 +204,13 @@ if ($err == 0)
     else
     {
       # call cvs tag in batches
-      my($count) = 0;
-      my($nitems) = @filelist;
+      my($count);
+      my($nitems) = scalar(@filelist);
       
       while ($nitems > 0 && $err == 0)
       {
         $fileliststr = "";
+        $count = 0;
         while (defined($file = shift(@filelist)) && $count < kBatchSize)
         {
           $fileliststr = "$fileliststr $file";
@@ -240,7 +242,7 @@ if ($err == 0)
           last;
         }
 
-        $nitems = @filelist;
+        $nitems = scalar(@filelist);
       }
     }
 
@@ -282,12 +284,13 @@ if ($err == 0)
     else
     {
       # call cvs tag in batches
-      my($count) = 0;
-      my($nitems) = @filelist;
+      my($count);
+      my($nitems) = scalar(@filelist);
       
       while ($nitems > 0 && $err == 0)
       {
         $fileliststr = "";
+        $count = 0;
         while (defined($file = shift(@filelist)) && $count < kBatchSize)
         {
           $fileliststr = "$fileliststr $file";
@@ -319,7 +322,7 @@ if ($err == 0)
           last;
         }
 
-        $nitems = @filelist;
+        $nitems = scalar(@filelist);
       }
     }
 
@@ -463,10 +466,11 @@ sub SetTag
 
   if ($showtagcmd)
   {
-    print STDOUT "cmd\n";
+    print STDOUT "$cmd\n";
   }
   else
   {
+exit;
     if (open(TAGRESP, "$cmd |"))
     {
       while (defined($resp = <TAGRESP>))
