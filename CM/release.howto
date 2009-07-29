@@ -35,13 +35,16 @@ tagged:
   a. cd /tmp
   b. cvs checkout NETDRMSONLY (head version of netdrms-only files)
   c. cd JSOC
-  d. cvs tag -c Ver_5-1 .
-  e. cvs tag -d Ver_LATEST .
-  f. cvs tag -c Ver_LATEST .
+  d. cvs tag -c NetDRMS_Ver_<MAJ>-<MIN> .
+  e. cvs tag -d Ver_DRMSLATEST .
+  f. cvs tag -c Ver_DRMSLATEST .
   g. cd /tmp
   h. cvs checkout -r Ver_<MAJ>-<MIN> CORE 
   i. cd JSOC
-  j. cvs tag -c NetDRMS_Ver_<MAJ>-<MIN> .
+  j. cvs tag -c NetDRMS_Ver_<MAJ>-<MIN> . (minus excluded files)
+  k. cvs tag -d Ver_DRMSLATEST .
+  l. cvs tag -c Ver_DRMSLATEST . (minus excluded files)
+
 8. Now you must build all release executables with the release jsoc
 version numbers in place ("V3R5" and "305" in this example). Ensure
 that the tag was successfully created and create actual release
