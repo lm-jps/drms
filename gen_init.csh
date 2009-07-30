@@ -212,10 +212,10 @@ echo "ECPGL = -L$POSTGRES_LIBS" >> $CUST
 
 # make third-party links
 echo "*** linking third-party libs and includes ***"
-set JSOC_MACHINE = `build/jsoc_machine.csh`
 ln -sfv $THIRD_PARTY_INCS lib_third_party/include
 if (!(-d lib_third_party/lib)) mkdir lib_third_party/lib
-ln -sfv $THIRD_PARTY_LIBS lib_third_party/lib/$JSOC_MACHINE
+ln -sfv $THIRD_PARTY_LIBS/linux_x86_64 lib_third_party/lib/linux_x86_64
+ln -sfv $THIRD_PARTY_LIBS/linux_ia32 lib_third_party/lib/linux_ia32
 
 if ($ADMIN_STATUS) then
   echo
