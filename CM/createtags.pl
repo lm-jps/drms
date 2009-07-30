@@ -28,6 +28,7 @@ my($drmsmin);
 my($reltype);
 my($printonly);
 my($showtagcmd);
+my($verbose);
 my($dir);
 my($cmd);
 my($line);
@@ -71,26 +72,16 @@ while ($arg = shift(@ARGV))
   }
   elsif ($arg eq "-t")
   {
-    # print files that would otherwise be tagged
+    # print tag commands, but don't execute the commands
     $showtagcmd = 1;
+  }
+  elsif ($arg eq "-v")
+  {
+    $verbose = 1;
   }
 }
 
-if (!defined($root))
-{
-  $root = getcwd();
-}
-
 $err = 0;
-
-# exclusions are relevant to non-JSOC releases
-SetExclusions(\@exclspec, \%exclusions);
-
-#while (my($k, $v) = each %exclusions)
-#{
-#  print STDOUT "key $k, value $v\n";
-#}
-#exit;
 
 # obtain a list of ALL files
 $cmd = kAllFiles;
@@ -268,6 +259,17 @@ if ($err == 0)
   `cvs co CORE > /dev/null 2>&1`;
   chdir("$dir/JSOC");
 
+  # Exclusions will apply to the CORE files of the NetDRMS release only 
+  SetExclusions(\@exclspec, \%exclusions);
+
+  if ($verbose)
+  {
+    while (my($k, $v) = each %exclusions)
+    {
+      print STDOUT "key $k, value $v\n";
+    }
+  }
+
   $reltype = kRelTypeDRMS;
   $verstr = "NetDRMS_Ver_${drmsmaj}-${drmsmin}";
   @filelist = GenerateFileList($cmd, $reltype, \%exclusions, \$err);
@@ -379,8 +381,10 @@ sub SetExclusions
 
       chdir($cwd);
     }
-
-    $$exclout{"$file"} = "T";
+    else
+    {
+      $$exclout{"$file"} = "T";
+    }
   }
 }
 
@@ -415,6 +419,12 @@ sub GenerateFileList
     while (defined($line = <ALLFILES>)) 
     {
       chomp($line);
+
+      if ($line =~ /^\.\/(.+)/)
+      {
+        $line = $1;
+      }
+
       if ($reltype == kRelTypeJSOC || !ExcludeFile($line, $exclusions)) 
       {
         $file = $line;
