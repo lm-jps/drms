@@ -515,7 +515,6 @@ sub SetTag
   }
   else
   {
-exit;
     if (open(TAGRESP, "$cmd |"))
     {
       while (defined($resp = <TAGRESP>))
