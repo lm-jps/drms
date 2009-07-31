@@ -216,11 +216,19 @@ F_LF_ALL	= -nofor_main -no-ipo
 GCC_CF_GCCCOMP  = -DGCCCOMP 
 ICC_CF_ICCCOMP  = -DICCCOMP 
 
+CCFLAGS_OPT	:=
+
+ifeq ($(COMPILER), icc)
+  ifeq ($(JSOC_MACHINE), linux_x86_64)
+    CCFLAGS_OPT	:= -xW
+  endif
+endif
+
 # can't figure out how to get stupid make to do if/else if/else
 ifeq ($(DEBUG), 0)
   GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW)
 # -xW tells the icc compiler to optimize for Pentium 4
-  ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE -xW $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW)
+  ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE $(CCFLAGS_OPT) $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW)
 
   ifeq ($(JSOC_MACHINE), linux_x86_64)
     GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=opteron $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW)
