@@ -30,7 +30,7 @@ EXEC SQL END DECLARE SECTION;
     uint64_t p_ds_index;
     int p_archsub;
   } PALLOC_CURSOR;
-  PALLOC_CURSOR pcursor[800];
+  PALLOC_CURSOR pcursor[1600];
 
   printk("DS_RmDo\n");  
   bytesdeleted = 0.0;
@@ -40,7 +40,7 @@ EXEC SQL END DECLARE SECTION;
   EXEC SQL DECLARE palloc CURSOR FOR
 	SELECT WD, SUMID, BYTES, EFFECTIVE_DATE,
 	DS_INDEX, ARCHIVE_SUBSTATUS FROM SUM_PARTN_ALLOC
-	where STATUS=2 order by effective_date limit 800;
+	where STATUS=2 order by effective_date limit 1600;
 
   EXEC SQL OPEN palloc;
 
