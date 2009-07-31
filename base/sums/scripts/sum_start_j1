@@ -176,7 +176,7 @@ $cmd = "ssh d02.stanford.edu sum_forker $DB $date&";
           print "Error: failure on $cmd\n";
         }
 
-        $cmd = "sumck_j1 &";
+        $cmd = "/home/production/cvs/JSOC/base/sums/scripts/sumck_j1 &";
         if(system($cmd)) {
           print "Error: failure on sumck_j1\n";
         }
