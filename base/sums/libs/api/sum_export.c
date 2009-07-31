@@ -14,7 +14,7 @@
 extern int errno;
 static int RESPDO_called;
 void printkey();
-char *datestring();
+char *jdatestring();
 void sumexportprog_1(struct svc_req *rqstp, SVCXPRT *transp);
 int sumexport_wait();
 int sumexport_poll();
@@ -82,7 +82,7 @@ int SUM_export(SUMEXP_t *sumexp, int (*history)(const char *fmt, ...))
                         (xdrproc_t)xdr_uint32_t, (char *)&sumexback, TIMEOUT);
     if(status != RPC_SUCCESS) {
       call_err = clnt_sperror(clntsumex, "Err clnt_call for SUMEXDO");
-      (*history)("%s %s\n", datestring(), call_err);
+      (*history)("%s %s\n", jdatestring(), call_err);
       if(status != RPC_TIMEDOUT) {
         return(1);
       }
@@ -263,7 +263,7 @@ void sumexportprog_1(rqstp, transp)
 }
 
 /* Return ptr to "mmm dd hh:mm:ss". */
-char *datestring(void)
+char *jdatestring(void)
 {
   time_t t;
   char *str;
