@@ -768,14 +768,14 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys)
 		 strcpy(newkey->info->description, (*pSlotKey)->info->description);
 
 		 /* Make new key DRMS-prime */
-		 template->seriesinfo->pidx_keywords[(template->seriesinfo->pidx_num)++] =
-		   newkey; 
+                 /* Don't add to pidx_keywords here - do that in parse_primaryindex() so that 
+                  * order of prime keys matches the order of keys. */
                  drms_keyword_setintprime(newkey);
                  drms_keyword_unsetextprime(newkey);
 
                  /* Index keywords must have a db index */
-                 template->seriesinfo->dbidx_keywords[(template->seriesinfo->dbidx_num)++]
-                   = newkey;
+                 /* Don't add to dbidx_keywords here - do that in parse_dbindex() so that 
+                  * order of prime keys matches the order of keys. */
 	      }
 	      else
 	      {
@@ -1636,13 +1636,26 @@ static int parse_primaryindex(char *desc, DRMS_Record_t *template)
 	else if (drms_keyword_isslotted(key))
 	{
 #ifdef DEBUG
-	   printf("NOT adding primary key '%s' because it is slotted."
+	   printf("NOT adding key '%s' because it is slotted."
 		  "The corresopnding index key is prime instead.\n",
 		  name);
 
 	   /* But use the kw flags to track that this keyword was specified as prime in the jsd's 'index' */
 #endif
            drms_keyword_setextprime(key);
+
+           /* Must add corresponding index keyword to the list of prime keys */
+           DRMS_Keyword_t *idxkey = drms_keyword_indexfromslot(key);
+           if (idxkey)
+           {
+              template->seriesinfo->pidx_keywords[(template->seriesinfo->pidx_num)++] =
+                idxkey;
+           }
+           else
+           {
+              fprintf(stderr, "Slotted keyword '%s' has no corresponding index keyword.\n", name);
+              return 1;
+           }
 	}
 	else
 	{
@@ -1674,7 +1687,7 @@ static int parse_primaryindex(char *desc, DRMS_Record_t *template)
     len = getnextline(&start);
   }
 
-  /* Ensure all index keywords have slotted keys that have been declared prime. */
+  /* Ensure all slotted keys have been declared external prime. */
   DRMS_Keyword_t *pKey = NULL;
   const char *keyname = NULL;
   HIterator_t *hit = hiter_create(&(template->keywords));
@@ -1774,10 +1787,22 @@ static int parse_dbindex(char *desc, DRMS_Record_t *template)
         else if (drms_keyword_isslotted(key))
 	{
 #ifdef DEBUG
-	   printf("NOT adding index key '%s' because it is slotted."
-		  "The corresopnding index key will have an index instead.\n",
+	   printf("NOT adding key '%s' because it is slotted."
+		  "The corresopnding index key will have a dbindex instead.\n",
 		  name);
 #endif
+           /* Must add corresponding index keyword to the list of dbindex keys */
+           DRMS_Keyword_t *idxkey = drms_keyword_indexfromslot(key);
+           if (idxkey)
+           {
+              template->seriesinfo->dbidx_keywords[(template->seriesinfo->dbidx_num)++] =
+                idxkey;
+           }
+           else
+           {
+              fprintf(stderr, "Slotted keyword '%s' has no corresponding index keyword.\n", name);
+              return 1;
+           }
 	}
 	else
 	{
