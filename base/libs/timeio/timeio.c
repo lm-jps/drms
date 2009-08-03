@@ -161,11 +161,11 @@ static void _fracday_2_clock (double fdofm) {
 /*
  *  Get clock time from fraction of day
  */
-  dattim.dofm = fdofm;
+  dattim.dofm = (int)fdofm;
   dattim.second = 86400.0 * (fdofm - dattim.dofm);
-  dattim.hour = dattim.second / 3600.0;
+  dattim.hour = (int)(dattim.second / 3600.0);
   dattim.second -= 3600.0 * dattim.hour;
-  dattim.minute = dattim.second / 60.0;
+  dattim.minute = (int)(dattim.second / 60.0);
   dattim.second -= 60.0 * dattim.minute;
   dattim.ut_flag = 0;
 }
@@ -175,7 +175,6 @@ static int _parse_clock_int (char *str, int *hour, int *minute, double *second, 
   /*
    *  Read time elements from wall-clock string HH:MM:SS.SSS
    */
-  int status;
   char *ptr, *endptr;
   int retval;
 
@@ -316,7 +315,6 @@ static int _parse_date (char *strin, int *consumed)
   int status, dfrac;
   char *ptr, *endptr;
   int len;
-  int retval;
   char daystr[32];
 
   status = 3;  // assume ymd and no day fraction
@@ -583,20 +581,26 @@ static int _parse_date_time_inner (char *str,
        }
      else
        { // clock is fine
+          char nextchar = *(field1 + field1consumed);
        if (second && field1 && strlen(field1) > 0)
           *second = strdup(field1);
-       if (field1 && (*(field1 + field1consumed) == '+' || *(field1 + field1consumed) == '-'))
+       if (field1 && (nextchar == '+' || nextchar == '-'))
           {
           /* could be the case that there is an offset to the clock, like 12:45:10+800. 
            * the +800 is really a time zone from timeio's perspective */
           field2 = field1 + field1consumed;
           }
-       if (field1 && *(field1 + field1consumed) == '_')
+       else if (field1 && nextchar == '_')
           { // then TZ may follow
           if (consumed)
              *consumed += 1; // for the '_'
           field2 = field1 + field1consumed + 1;
           }
+       else if (field1 && (nextchar <= 'I' && nextchar >= 'A' || nextchar <= 'Z' && nextchar >= 'K'))
+       {
+          /* A-I and K-Z are permissible too */
+          field2 = field1 + field1consumed;
+       }
         else
           { // should stop here
           field2 = NULL;
@@ -741,7 +745,7 @@ static void date_from_epoch_time (TIME t) {
   if ((year%100 == 0) && (year > 1600) && (year%400 != 0))
     molen[2] = 28;
   month = 1;
-  day = t / SEC_DAY;
+  day = (int)(t / SEC_DAY);
   while (day >= molen[month]) {
     day -= molen[month];
     t -= SEC_DAY * molen[month];
@@ -749,12 +753,12 @@ static void date_from_epoch_time (TIME t) {
   }
   molen[2] = 28;
   dattim.month = month;
-  dattim.dofm = t / SEC_DAY;
+  dattim.dofm = (int)(t / SEC_DAY);
   t -= SEC_DAY * dattim.dofm;
   dattim.dofm++;
-  dattim.hour = t / 3600.0;
+  dattim.hour = (int)(t / 3600.0);
   t -= 3600.0 * dattim.hour;
-  dattim.minute = t / 60.0;
+  dattim.minute = (int)(t / 60.0);
   t -= 60.0 * dattim.minute;
   dattim.second = t;
 }
