@@ -3,11 +3,12 @@
 # Create the CVS tags that identify two sets of files: one set contains the full JSOC release head versions, 
 # the other set contains the NetDRMS release head versions. Excludes a list of 
 
-# createtags.pl root=<root> vers=<vers>
+# createtags.pl [-tv] vers=<vers> drmsvers=<drmsvers>
 # args
-#  root - The JSOC root of the CVS sandbox containing the JSOC release files
-#  vers - The release version number (<major>.<minor>)
-#  
+#  vers - The JSOC release version number (<major>.<minor>)
+#  drmsvers - The NetDRMS release version number (<major>.<minor>)
+#  -t - test; print cvs tag commands, but don't execute them
+#  -v - verbose; print diagnostic information
 
 use Cwd;
 use File::Path;
