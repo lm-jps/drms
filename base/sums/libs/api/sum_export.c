@@ -18,8 +18,12 @@ char *jdatestring();
 void sumexportprog_1(struct svc_req *rqstp, SVCXPRT *transp);
 int sumexport_wait();
 int sumexport_poll();
+extern void pmap_unset();
 KEY *alist;
 static struct timeval TIMEOUT = { 20, 0 };
+
+/* forward declaration */
+static int xgetanymsg(int block);
 
 int SUM_export(SUMEXP_t *sumexp, int (*history)(const char *fmt, ...))
 {

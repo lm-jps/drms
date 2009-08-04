@@ -8,8 +8,7 @@ dir	:= $(d)/c
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/f
 -include		$(SRCDIR)/$(dir)/Rules.mk
-dir	:= $(d)/idl
--include		$(SRCDIR)/$(dir)/Rules.mk
+
 
 # Standard things
 d		:= $(dirstack_$(sp))

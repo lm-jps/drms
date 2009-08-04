@@ -27,6 +27,7 @@ endif
 
 # Local rules
 $(FPICOBJ_$(d)):	CF_TGT := $(CF_$(d))
+$(FPICOBJ_$(d)):        ICC_WARNTOERR :=
 $(FPICOBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
 
 $(LIBSOIJSOC):		LF_TGT := -shared -Wl,$(WLOPTION)

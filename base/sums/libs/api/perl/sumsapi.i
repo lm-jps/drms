@@ -96,6 +96,7 @@
 %{ 
 /* Put header files here or function declarations like below */
 #include <rpc/rpc.h> 
+
 typedef unsigned int SUMID_t;
 
 typedef struct SUM_struct
@@ -122,6 +123,8 @@ extern int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...));
 extern int SUM_get(SUM_t *sum, int (*history)(const char *fmt, ...));
 extern int SUM_put(SUM_t *sum, int (*history)(const char *fmt, ...));
 extern int SUM_alloc(SUM_t *sum, int (*history)(const char *fmt, ...));
+extern int SUM_poll(SUM_t *sum);
+extern int SUM_wait(SUM_t *sum);
 
 %}
 
@@ -183,6 +186,3 @@ int SUMClose(SUM_t *sum) {
 }
 
 %}
-
-extern int SUM_poll(SUM_t *sum);
-extern int SUM_wait(SUM_t *sum);

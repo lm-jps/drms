@@ -22,6 +22,8 @@
 
 void logkey();
 KEY *getsumexport(KEY *params);
+int file2keylist(char *filename, KEY **list);
+
 struct timeval TIMEOUT = { 20, 0 };
 
 static KEY *retlist;            /* must be static for svc dispatch rte */

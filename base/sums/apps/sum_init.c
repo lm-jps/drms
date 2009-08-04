@@ -8,6 +8,9 @@
 #include <SUM.h>
 #include <sum_rpc.h>
 
+/* Must decl functions */
+int DS_PavailRequest2();
+
 int SUM_Init(char *dbname)
 {
 

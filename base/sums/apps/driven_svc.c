@@ -47,6 +47,11 @@ int read_drive_to_wd();
 char *get_time();
 void write_time();
 int send_mail(char *fmt, ...);
+int SUMLIB_Ds_Ix_File(uint64_t filedsix[], uint64_t filedsixoff[], int *dsmdiflg);
+int SUMLIB_Ds_Ix_Find(char *tapeid, int filenum, uint64_t filedsix[],
+			double filebytes[]);
+int SUMLIB_Get_MD5(char *tapeid, int filenum, char *md5ret);
+
 char logfile[MAX_STR];
 char md5file[64];
 char md5filter[128];

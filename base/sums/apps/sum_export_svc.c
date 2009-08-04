@@ -18,6 +18,7 @@
 #include <sum_rpc.h>
 #include <printk.h>
 #include "serverdefs.h"
+ #include <sys/wait.h>
 
 static void sumexprog_1(struct svc_req *rqstp, SVCXPRT *transp);
 void logkey(KEY *key);

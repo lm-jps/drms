@@ -19,6 +19,8 @@
 #include <sys/stat.h>
 #include <dirent.h>
 
+/* Must include decls */
+int SUM_drop_series(char *tablename);
 
 extern int errno;
 /*static void respd();*/

@@ -8,6 +8,7 @@
 #include <pwd.h>
 /*  #include <grp.h>  */
 #include <dirent.h>
+#include <string.h>
 
 #include "serverdefs.h"
 

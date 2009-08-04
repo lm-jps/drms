@@ -11,6 +11,7 @@
 #include <sum_rpc.h>
 
 #include "serverdefs.h"
+#include "drmssite_info.h"
 
 extern int write_log(const char *fmt, ...);
 extern CLIENT *current_client, *clnttape;

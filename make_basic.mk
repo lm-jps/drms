@@ -177,14 +177,17 @@ endif
 #   310 (remark) - old style function declaration (pre-ANSI)
 #   981 (remark) - operands are evaluted in unspecified order
 
+# list of warnings to turn into errors
+ICC_WARNTOERR = -we266
+
 ifeq ($(WARN), 1)
 # Show warnings (always true for a debug build).
-ICC_WARN = -Winline -Wall -wd1418 -wd1419 -wd310 -wd279 -wd981 -Wno-comment
+ICC_WARN = -Winline -Wall -wd1418 -wd1419 -wd310 -wd279 -wd981 -Wno-comment $(ICC_WARNTOERR)
 GCC_WARN = -Winline -Wall -Wno-comment
 FCOMPILER_WARN =
 else
 # Don't show warnings.
-ICC_WARN = -w0 -vec-report0 -Wno-comment
+ICC_WARN = -w0 -vec-report0 -Wno-comment $(ICC_WARNTOERR)
 GCC_WARN = -Wno-comment
 ifeq ($(FCOMPILER), ifort)
 FCOMPILER_WARN = -vec-report0
@@ -192,6 +195,7 @@ else
 FCOMPILER_WARN =
 endif
 endif
+
 #***********************************************************************************************#
 
 

@@ -2,6 +2,8 @@
 
 //#define DEBUG
 //#define FHASH
+#include "drms.h"
+
 #define EXPANDAPI 0          /* 0 - Exclude functions that are not part of the module API. */
                              /* 1 - Include functions that are not part of the module API. */
 #define USEINTERNALHANDLES 0 /* 0 - Use handle-scheme defined in jsoc_main_f.c. */
@@ -510,14 +512,14 @@ char * f_drms_connect(char *host) {
 }
 FCALLSCFUN1(STRING, f_drms_connect, F_DRMS_CONNECT, f_drms_connect, STRING)
 
-
+#ifdef DRMS_CLIENT
 void f_drms_disconnect(char * env_hdl, int abort) {
   DRMS_Env_t  * env = (DRMS_Env_t  *)  _convert_handle(env_hdl);
 
   return drms_disconnect(env, abort);
 }
 FCALLSCSUB2(f_drms_disconnect, F_DRMS_DISCONNECT, f_drms_disconnect, STRING, INT)
-
+#endif
 
 int f_drms_commit(char * env_hdl) {
   DRMS_Env_t  * env = (DRMS_Env_t  *)  _convert_handle(env_hdl);
