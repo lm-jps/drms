@@ -7,6 +7,7 @@
 # args
 #  vers - The JSOC release version number (<major>.<minor>)
 #  drmsvers - The NetDRMS release version number (<major>.<minor>)
+#  -p - print; print files to be tagged for each release
 #  -t - test; print cvs tag commands, but don't execute them
 #  -v - verbose; print diagnostic information
 
