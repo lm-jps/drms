@@ -96,3 +96,6 @@ BUG FIXES:
 * Removed several memory leaks.
 * Fixed several problems, including deadlocks and crashes, that could happen during module termination.
 * Hide all implicit DRMS keywords from users (via show_info -j, etc.).
+
+IMPORTANT NOTE:
+Third-party libraries must exist in platform-specific subdirectories (eg., /usr/local/lib/linux_x86_64/libcfitsio.a, /usr/local/lib/linux_ia32/libcfitsio.a)
