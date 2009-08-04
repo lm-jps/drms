@@ -159,7 +159,7 @@ if ($err == 0)
     {
       $fileliststr = "";
       $count = 0;
-      while (defined($file = shift(@filelist)) && $count < kBatchSize)
+      while ($count < kBatchSize && defined($file = shift(@filelist)))
       {
         $fileliststr = "$fileliststr $file";
         $count++;
@@ -238,7 +238,7 @@ if ($err == 0)
       {
         $fileliststr = "";
         $count = 0;
-        while (defined($file = shift(@filelist)) && $count < kBatchSize)
+        while ($count < kBatchSize && defined($file = shift(@filelist)))
         {
           $fileliststr = "$fileliststr $file";
           $count++;
@@ -329,7 +329,7 @@ if ($err == 0)
       {
         $fileliststr = "";
         $count = 0;
-        while (defined($file = shift(@filelist)) && $count < kBatchSize)
+        while ($count < kBatchSize && defined($file = shift(@filelist)))
         {
           $fileliststr = "$fileliststr $file";
           $count++;
