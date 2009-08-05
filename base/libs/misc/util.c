@@ -37,7 +37,6 @@ char *kFITSRESERVED[] =
    "history",
    "end",
    "primekeystring",
-   "date",
    ""
 };
 

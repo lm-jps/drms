@@ -4,8 +4,6 @@
 #ifndef __DRMS_PARSER_H
 #define __DRMS_PARSER_H
 
-#define kDATEKEYNAME "DATE_imp"
-
 /** \brief Parse jsd and fill in a record template */
 DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc);
 /** \brief Parse keywords in jsd and fill in a record template*/

@@ -2422,12 +2422,7 @@ CFITSIO_KEYWORD *drms_segment_mapkeys(DRMS_Segment_t *seg,
 
    while ((key = drms_record_nextkey(recin, &last)) != NULL)
    {
-      if (strcasecmp(key->info->name, "DATE") == 0)
-      {
-	/* Don't let the DATE keyword get exported */
-	fprintf(stderr, "DATE keyword interferes with DATE_imp keyword and will not be exported.\n");
-      }
-      else if (!drms_keyword_getimplicit(key))
+      if (!drms_keyword_getimplicit(key))
       {
          keyname = drms_keyword_getname(key);
 
@@ -2452,14 +2447,28 @@ CFITSIO_KEYWORD *drms_segment_mapkeys(DRMS_Segment_t *seg,
 	const DRMS_Type_Value_t *val = drms_keyword_getvalue(key);
 	if (val && drms_keyword_gettype(key) == DRMS_TYPE_TIME)
 	{
-	  if (!drms_ismissing_time(val->time_val))
-	  {
-	    if (drms_keyword_export(key, &fitskeys))
-	    {
-	      fprintf(stderr, "Couldn't export keyword '%s'.\n", keyname);
-	      statint = DRMS_ERROR_EXPORT;
-	    }
-	  }
+           /* unit (time zone) must be ISO - if not, don't export it */
+           char unitbuf[DRMS_MAXUNITLEN];
+           
+           snprintf(unitbuf, sizeof(unitbuf), "%s", key->info->unit);
+           strtoupper(unitbuf);
+
+           if (!drms_ismissing_time(val->time_val))
+           {
+              if (strcmp(unitbuf, "ISO") == 0)
+              {
+                 if (drms_keyword_export(key, &fitskeys))
+                 {
+                    fprintf(stderr, "Couldn't export keyword '%s'.\n", keyname);
+                    statint = DRMS_ERROR_EXPORT;
+                 }
+              }
+              else
+              {
+                 /* DATE keyword has wrong time format, skip */
+                 fprintf(stderr, "Invalid DATE keyword time format - must be ISO.\n");
+              }
+           }
 	}
 	else
 	 {

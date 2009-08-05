@@ -151,7 +151,7 @@ typedef struct DRMS_Value
    missing in the MDI/SDS system. */
 /* Truncate the fractional seconds during comparison because .jsds that have time keywords whose 
  * format fields are '0' will yield time strings that are integral */
-#define _DRMS_IS_T_MISSING(v) (isnan(v) || (v < DRMS_MISSING_TIME + 10.0e-5 && v > DRMS_MISSING_TIME - 10.0e-5))
+#define _DRMS_IS_T_MISSING(v) (isnan(v) || ((long long)v < (long long)DRMS_MISSING_TIME + 10.0e-5 && (long long)v > (long long)DRMS_MISSING_TIME - 10.0e-5))
 
 #define TSEQ_EPOCH_S MDI_EPOCH_S
 #define TSEQ_EPOCH_F MDI_EPOCH_F

@@ -1560,24 +1560,6 @@ int drms_keyword_getmappedextname(DRMS_Keyword_t *key,
 			strcpy(nameOut, pot);
 			success = 1;
 		     }
-                     else if (vstat == 2)
-                     {
-		        /* This keyword, despite being reserved, is okay if the original keyword
-			 * is of the form XXX_imp (because the XXX_imp keyword could not have
-			 * been created by the jsd-writer) */
-		        char nbuf[DRMS_MAXKEYNAMELEN];
-			snprintf(nbuf, sizeof(nbuf), "%s_imp", pot);
-			if (strcasecmp(key->info->name, nbuf) == 0)
-			{
-			  /* Original was implicit that matched the reserved keyword */
-			  strcpy(nameOut, pot);
-			  success = 1;
-			}
-			else
-			{
-			  fprintf(stderr, "FITS keyword name '%s' is reserved.\n", pot);
-			}
-                     }
 
 		     free(pot);
 		  }

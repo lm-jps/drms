@@ -10,6 +10,8 @@
 #include "cfitsio.h"
 #include "drms_fitsrw.h"
 
+#define kDATEKEYNAME "DATE"
+
 enum DRMS_Keyword_ExtType_enum
 {
    kDRMS_Keyword_ExtType_None = 0,
