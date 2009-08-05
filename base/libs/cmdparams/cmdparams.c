@@ -61,7 +61,7 @@ extern ModuleArgs_t *gModArgs;
 #define CP_MISSING_FLOAT    (F_NAN)  
 #define CP_MISSING_DOUBLE   (D_NAN)
 #define CP_MISSING_STRING   ("")
-#define CP_MISSING_TIME     (-211087684800.0) 
+#define CP_MISSING_TIME     (-211087684832.184)
 
 /*
  *  Parse a list of tokens extracted from a command line or a line in an

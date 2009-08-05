@@ -322,7 +322,12 @@ static int _parse_date (char *strin, int *consumed)
   ptr = strin;
   dattim.year = strtol (ptr, &endptr, 10);
   len = endptr - ptr;
-  if (len == 8)
+  if (len == 0)
+  {
+     return _parse_error ();
+  }
+  
+    if (len == 8)
     { // ISO concatenated form YYYYMMDD
     if (*endptr == '.' || *endptr == '-')
       return _parse_error ();
@@ -543,6 +548,10 @@ static int _parse_date_time_inner (char *str,
      *first = strdup(field0);
 
    status = _parse_date (field0, &field0consumed);
+   
+   if (status == -1)
+     return status;
+
    if (consumed)
      *consumed = field0consumed;
 
