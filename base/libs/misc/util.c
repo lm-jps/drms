@@ -40,8 +40,109 @@ char *kFITSRESERVED[] =
    ""
 };
 
+char *kKEYNAMERESERVED[] = 
+{
+   "_index",
+   "ALL",
+   "ANALYSE",
+   "ANALYZE",
+   "AND",
+   "ANY",
+   "ARRAY",
+   "AS",
+   "ASC",
+   "ASYMMETRIC",
+   "BOTH",
+   "CASE",
+   "CAST",
+   "CHECK",
+   "COLLATE",
+   "COLUMN",
+   "CONSTRAINT",
+   "CREATE",
+   "CURRENT_DATE",
+   "CURRENT_ROLE",
+   "CURRENT_TIME",
+   "CURRENT_TIMESTAMP",
+   "CURRENT_USER",
+   "DEFAULT",
+   "DEFERRABLE",
+   "DESC",
+   "DISTINCT",
+   "DO",
+   "ELSE",
+   "END",
+   "EXCEPT",
+   "FALSE",
+   "FOR",
+   "FOREIGN",
+   "FROM",
+   "GRANT",
+   "GROUP",
+   "HAVING",
+   "IN",
+   "INITIALLY",
+   "INTERSECT",
+   "INTO",
+   "LEADING",
+   "LIMIT",
+   "LOCALTIME",
+   "LOCALTIMESTAMP",
+   "NEW",
+   "NOT",
+   "NULL",
+   "OFF",
+   "OFFSET",
+   "OLD",
+   "ON",
+   "ONLY",
+   "OR",
+   "ORDER",
+   "PLACING",
+   "PRIMARY",
+   "REFERENCES",
+   "RETURNING",
+   "SELECT",
+   "SESSION_USER",
+   "SOME",
+   "SYMMETRIC",
+   "TABLE",
+   "THEN",
+   "TO",
+   "TRAILING",
+   "TRUE",
+   "UNION",
+   "UNIQUE",
+   "USER",
+   "USING",
+   "WHEN",
+   "WHERE",
+   "AUTHORIZATION",
+   "BETWEEN",
+   "BINARY",
+   "CROSS",
+   "FREEZE",
+   "FULL",
+   "ILIKE",
+   "INNER",
+   "IS",
+   "ISNULL",
+   "JOIN",
+   "LEFT",
+   "LIKE",
+   "NATURAL",
+   "NOTNULL",
+   "OUTER",
+   "OVERLAPS",
+   "RIGHT",
+   "SIMILAR",
+   "VERBOSE",
+   ""
+};
+
 HContainer_t *gCleanup = NULL;
 HContainer_t *gReservedFits = NULL;
+HContainer_t *gReservedDRMS = NULL;
 
 typedef enum
 {
@@ -248,7 +349,11 @@ static void FreeReservedFits(void *data)
    hcon_destroy(&gReservedFits);
 }
 
-int FitsKeyNameValidation(const char *fitsName)
+/* Returns 0 if fitsName is a valid FITS keyword identifier, and not a reserved FITS keyword name.
+ * Returns 1 if fitsName is invalid
+ * Returns 2 if fitsName is valid but reserved
+ */
+static int FitsKeyNameValidationStatus(const char *fitsName)
 {
    int error = 0;
    KwCharState_t state = kKwCharNew;
@@ -350,11 +455,6 @@ int FitsKeyNameValidation(const char *fitsName)
       }
    }
 
-   if (!error && *pc != 0) 
-   {
-      error = 3;
-   }
-
    if (nameC)
    {
       free(nameC);
@@ -398,17 +498,33 @@ int GenerateFitsKeyName(const char *drmsName, char *fitsName, int size)
    return 1;
 }
 
+static void FreeReservedDRMS(void *data)
+{
+   if (gReservedDRMS != (HContainer_t *)data)
+   {
+      fprintf(stderr, "Unexpected argument to FreeReservedDRMS(); bailing.\n");
+      return;
+   }
+
+   hcon_destroy(&gReservedDRMS);
+}
+
 /*
 <Keyword>
 	= 'Keyword:' <KeyName> ',' <TypeAndFields>
 <KeyName>
 	= <Name>
 <Name>
-	= [A-Za-z] { <NameEnd> }
+	= [A-Za-z_] { <NameEnd> }
 <NameEnd>
 	= [A-Za-z0-9_] { <NameEnd> }
 */
-int IsValidDRMSKeyName(const char *drmsName)
+
+/* Returns 0 if drmsName is a valid DRMS keyword identifier, and not a reserved DRMS keyword name.
+ * Returns 1 if drmsName is invalid
+ * Returns 2 if drmsName is valid but reserved
+ */
+static int DRMSKeyNameValidationStatus(const char *drmsName)
 {
    int error = 0;
    KwCharState_t state = kKwCharFirst;
@@ -421,7 +537,44 @@ int IsValidDRMSKeyName(const char *drmsName)
    }
    else
    {
-      while (*pc != 0 && state != kKwCharError)
+      /* Disallow PSQL reserved words */
+      if (!gReservedDRMS)
+      {
+         char bogusval = 'A';
+         int i = 0;
+
+         gReservedDRMS = hcon_create(1, 128, NULL, NULL, NULL, NULL, 0);
+         while (*(kKEYNAMERESERVED[i]) != '\0')
+         {
+            hcon_insert_lower(gReservedDRMS, kKEYNAMERESERVED[i], &bogusval);
+            i++;
+         }
+
+         /* Register for clean up (also in the misc library) */
+         BASE_Cleanup_t cu;
+         cu.item = gReservedDRMS;
+         cu.free = FreeReservedDRMS;
+         base_cleanup_register("reserveddrmskws", &cu);
+      }
+
+      if (gReservedDRMS)
+      {
+         char *pch = NULL;
+         if ((pch = strchr(nameC, '_')) != NULL)
+         {
+            /* there might be a reserved suffix */
+            if (hcon_lookup_lower(gReservedDRMS, pch))
+            {
+               error = 2;
+            }
+         }
+         else if (hcon_lookup_lower(gReservedDRMS, nameC))
+         {
+            error = 2;
+         }
+      }
+
+      while (*pc != 0 && !error)
       {
 	 switch (state)
 	 {
@@ -430,7 +583,8 @@ int IsValidDRMSKeyName(const char *drmsName)
 	      break;
 	    case kKwCharFirst:
 	      if (ISUPPER(*pc) ||
-		  ISLOWER(*pc))
+		  ISLOWER(*pc) ||
+                  *pc == '_')
 	      {
 		 state = kKwCharNew;
 		 pc++;
@@ -460,17 +614,12 @@ int IsValidDRMSKeyName(const char *drmsName)
       }
    }
 
-   if (*pc != 0)
-   {
-      error = 1;
-   }
-
    if (nameC)
    {
       free(nameC);
    }
 
-   return !error;
+   return error;
 }
 
 /* DRMS name = ( [A-Z] | '_' ) ( [A-Z] | '_' | [0-9] )* */
@@ -789,4 +938,14 @@ void base_term()
 {
    base_cleanup_go(NULL);
    base_cleanup_term();
+}
+
+int base_fitskeycheck(const char *fitsName)
+{
+   return FitsKeyNameValidationStatus(fitsName);
+}
+
+int base_drmskeycheck(const char *drmsName)
+{
+   return DRMSKeyNameValidationStatus(drmsName);
 }

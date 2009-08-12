@@ -35,10 +35,8 @@ int copyfile(const char *inputfile, const char *outputfile);
 #define unlikely(a) __builtin_expect((a), 0)
 #define likely(a) __builtin_expect((a), 1)
 
-int FitsKeyNameValidation(const char *fitsName);
 int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size);
 int GenerateFitsKeyName(const char *drmsName, char *fitsName, int size);
-int IsValidDRMSKeyName(const char *drmsName);
 int RemoveDir(const char *pathname, int maxrec);
 size_t CopyFile(const char *src, const char *dst);
 
@@ -47,8 +45,10 @@ void base_cleanup_init();
 int base_cleanup_register(const char *key, BASE_Cleanup_t *cu);
 int base_cleanup_go(const char *explicit);
 void base_cleanup_term();
-
 void base_term();
+
+int base_fitskeycheck(const char *fitsName);
+int base_drmskeycheck(const char *drmsName);
 
 #ifdef ICCCOMP
 #pragma warning (disable : 1572)

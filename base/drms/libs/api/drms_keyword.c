@@ -1406,7 +1406,7 @@ int drms_keyword_getintname(const char *keyname, char *nameOut, int size)
    *nameOut = '\0';
 
    /* 1 - Try FITS name. */
-   if (IsValidDRMSKeyName(keyname))
+   if (base_drmskeycheck(keyname) == 0)
    {
       strcpy(nameOut, keyname);
       success = 1;
@@ -1553,7 +1553,7 @@ int drms_keyword_getmappedextname(DRMS_Keyword_t *key,
                         *psep = '\0';
                      }
 
-                     vstat = FitsKeyNameValidation(pot);
+                     vstat = base_fitskeycheck(pot);
 
 		     if (vstat == 0)
 		     {
@@ -1578,7 +1578,7 @@ int drms_keyword_getmappedextname(DRMS_Keyword_t *key,
 	 snprintf(nbuf, sizeof(nbuf), "%s", key->info->name);
 	 strtoupper(nbuf);
 
-	 vstat = FitsKeyNameValidation(nbuf);
+	 vstat = base_fitskeycheck(nbuf);
 	 if (vstat == 0)
 	 {
 	    strcpy(nameOut, nbuf);

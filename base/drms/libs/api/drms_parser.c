@@ -4,14 +4,6 @@
 #include "ctype.h"
 #include "xmem.h"
 
-HContainer_t *gReservedKeyname = NULL;
-
-char *kKEYNAMERESERVED[] = 
-{
-   "_index",
-   ""
-};
-
 /* Utility functions. */
 static int getstring(char **inn, char *out, int maxlen);
 static int getvalstring(char **inn, char *out, int maxlen);
@@ -1800,58 +1792,9 @@ static int parse_dbindex(char *desc, DRMS_Record_t *template)
   return 0; 
 }
 
-static void FreeReservedKeyname(void *data)
-{
-   if (gReservedKeyname != (HContainer_t *)data)
-   {
-      fprintf(stderr, "Unexpected argument to FreeReservedKeyname(); bailing.\n");
-      return;
-   }
-
-   hcon_destroy(&gReservedKeyname);
-}
-
 static int keywordname_isreserved(const char *name)
 {
-   int ans = 0;
-
-   if (!gReservedKeyname)
-   {
-      char bogusval = 'A';
-      int i = 0;
-
-      gReservedKeyname = hcon_create(1, 128, NULL, NULL, NULL, NULL, 0);
-      while (*(kKEYNAMERESERVED[i]) != '\0')
-      {
-         hcon_insert_lower(gReservedKeyname, kKEYNAMERESERVED[i], &bogusval);
-         i++;
-      }
-
-      /* Register for clean up */
-      BASE_Cleanup_t cu;
-      cu.item = gReservedKeyname;
-      cu.free = FreeReservedKeyname;
-      base_cleanup_register("reservedkeynames", &cu);
-   }
-
-   if (gReservedKeyname)
-   {
-      char *pch = NULL;
-      if ((pch = strchr(name, '_')) != NULL)
-      {
-         /* there might be a reserved suffix */
-         if (hcon_lookup_lower(gReservedKeyname, pch))
-         {
-            ans = 1;
-         }
-      }
-      else if (hcon_lookup_lower(gReservedKeyname, name))
-      {
-         ans = 1;
-      }
-   }
-
-   return ans;
+   return (base_drmskeycheck(name) == 2);
 }
 
 /* Skip empty lines and lines where the first non-whitespace character 
