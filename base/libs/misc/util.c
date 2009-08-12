@@ -473,17 +473,16 @@ int IsValidDRMSKeyName(const char *drmsName)
    return !error;
 }
 
-/* XXX This has to change to Phil's default scheme */
+/* DRMS name = ( [A-Z] | '_' ) ( [A-Z] | '_' | [0-9] )* */
 int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size)
 {
    int error = 0;
    const char *pcIn = fitsName;
    char *pcOut = drmsName;
-   char trail[8] = {0};
+   int fitsinvalid = 0;
 
    KwCharState_t state = kKwCharFirst;
 
-   size--; /* Leave room for terminated null char. */
    while (*pcIn != 0 && pcOut < drmsName + size)
    {
       switch (state)
@@ -496,29 +495,12 @@ int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size)
 	   if (*pcIn == '-')
 	   {
 	      /* FITS keyword name starts with an hyphen */
-	      if (pcOut + 4 < drmsName + size)
+	      if (pcOut + 2 <= drmsName + size)
 	      { 
-		 *pcOut++ = 'm';
-		 *pcOut++ = 'h';
 		 *pcOut++ = '_';
 		 *pcOut++ = '_';
 		 state = kKwCharNew;
-	      }
-	      else
-	      {
-		 state = kKwCharError;
-	      }
-	   }
-	   else if (*pcIn == '_')
-	   {
-	      /* FITS keyword name starts with an underscore */
-	      if (pcOut + 4 < drmsName + size)
-	      { 
-		 *pcOut++ = 'm';
-		 *pcOut++ = 'n';
-		 *pcOut++ = '_';
-		 *pcOut++ = '_';
-		 state = kKwCharNew;
+                 fitsinvalid = 1;
 	      }
 	      else
 	      {
@@ -528,13 +510,12 @@ int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size)
 	   else if (*pcIn >= 0x30 && *pcIn <= 0x39)
 	   {
 	      /* FITS keyword name starts with a numeral */
-	      if (pcOut + 4 < drmsName + size)
+	      if (pcOut + 2 <= drmsName + size)
 	      { 
-		 *pcOut++ = 'm';
-		 *pcOut++ = 'n';
 		 *pcOut++ = '_';
 		 *pcOut++ = *pcIn;
 		 state = kKwCharNew;
+                 fitsinvalid = 1;
 	      }
 	      else
 	      {
@@ -543,25 +524,20 @@ int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size)
 	   }
 	   else
 	   {
-	      *pcOut++ = *pcIn;
-	      state = kKwCharNew;
+              *pcOut++ = *pcIn;
+              state = kKwCharNew;
 	   }
-	    
-	   break;
 
+	   break;
 	 case kKwCharNew:
 	   if (*pcIn == '-')
 	   {
-	      if (*trail == '\0')
-	      {
-		 strncat(trail, "_mh", sizeof(trail) - 1);
-	      }
-
-	      /* FITS keyword has an hyphen - need room for trailing "_mh" */
-	      if (pcOut + 4 < drmsName + size)
+	      if (pcOut + 2 <= drmsName + size)
 	      {
 		 *pcOut++ = '_';
+		 *pcOut++ = '_';
 		 state = kKwCharNew;
+                 fitsinvalid = 1;
 	      }
 	      else
 	      {
@@ -584,10 +560,20 @@ int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size)
 
    } /* while */
 
-   if (strlen(trail) > 0 && pcOut + strlen(trail) < drmsName + size)
+   if (fitsinvalid)
    {
-      strcpy(pcOut, trail);
-      pcOut += strlen(trail);
+      if (size - 1 < 9)
+      {
+         error = 1;
+         fprintf(stderr, "Insufficient string buffer size '%d'.\n", size);
+      }
+      else
+      {
+         while (pcOut - drmsName < 9)
+         {
+            *pcOut++ = '_';
+         }
+      }
    }
 
    *pcOut = '\0';
