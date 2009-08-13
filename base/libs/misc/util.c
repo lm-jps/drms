@@ -489,6 +489,30 @@ int GenerateFitsKeyName(const char *drmsName, char *fitsName, int size)
 
 	 pC++;
       }
+
+      /* Now check that the result, fitsName, is not a reserved FITS key name */
+      if (FitsKeyNameValidationStatus(fitsName) == 2)
+      {
+         /* but it could be reserved because of a suffix issue */
+         char *tmp = strdup(fitsName);
+         char *pch = NULL;
+
+         if (tmp && (pch = strchr(tmp, '_')) != NULL && hcon_lookup_lower(gReservedFits, pch))
+         {
+            *pch = '\0';
+            snprintf(fitsName, size, "_%s", tmp);
+         }
+         else
+         {
+            snprintf(fitsName, size, "_%s", drmsName);
+         }
+
+         if (tmp)
+         {
+            free(tmp);
+         }
+      }
+
    }
    else
    {
@@ -629,6 +653,7 @@ int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size)
    const char *pcIn = fitsName;
    char *pcOut = drmsName;
    int fitsinvalid = 0;
+   char *pch = NULL;
 
    KwCharState_t state = kKwCharFirst;
 
@@ -636,75 +661,75 @@ int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size)
    {
       switch (state)
       {
-	 case kKwCharError:
-	   error = 1;
-	   break;
+         case kKwCharError:
+           error = 1;
+           break;
 
-	 case kKwCharFirst:
-	   if (*pcIn == '-')
-	   {
-	      /* FITS keyword name starts with an hyphen */
-	      if (pcOut + 2 <= drmsName + size)
-	      { 
-		 *pcOut++ = '_';
-		 *pcOut++ = '_';
-		 state = kKwCharNew;
+         case kKwCharFirst:
+           if (*pcIn == '-')
+           {
+              /* FITS keyword name starts with an hyphen */
+              if (pcOut + 2 <= drmsName + size)
+              { 
+                 *pcOut++ = '_';
+                 *pcOut++ = '_';
+                 state = kKwCharNew;
                  fitsinvalid = 1;
-	      }
-	      else
-	      {
-		 state = kKwCharError;
-	      }
-	   }
-	   else if (*pcIn >= 0x30 && *pcIn <= 0x39)
-	   {
-	      /* FITS keyword name starts with a numeral */
-	      if (pcOut + 2 <= drmsName + size)
-	      { 
-		 *pcOut++ = '_';
-		 *pcOut++ = *pcIn;
-		 state = kKwCharNew;
+              }
+              else
+              {
+                 state = kKwCharError;
+              }
+           }
+           else if (*pcIn >= 0x30 && *pcIn <= 0x39)
+           {
+              /* FITS keyword name starts with a numeral */
+              if (pcOut + 2 <= drmsName + size)
+              { 
+                 *pcOut++ = '_';
+                 *pcOut++ = *pcIn;
+                 state = kKwCharNew;
                  fitsinvalid = 1;
-	      }
-	      else
-	      {
-		 state = kKwCharError;
-	      }
-	   }
-	   else
-	   {
+              }
+              else
+              {
+                 state = kKwCharError;
+              }
+           }
+           else
+           {
               *pcOut++ = *pcIn;
               state = kKwCharNew;
-	   }
+           }
 
-	   break;
-	 case kKwCharNew:
-	   if (*pcIn == '-')
-	   {
-	      if (pcOut + 2 <= drmsName + size)
-	      {
-		 *pcOut++ = '_';
-		 *pcOut++ = '_';
-		 state = kKwCharNew;
+           break;
+         case kKwCharNew:
+           if (*pcIn == '-')
+           {
+              if (pcOut + 2 <= drmsName + size)
+              {
+                 *pcOut++ = '_';
+                 *pcOut++ = '_';
+                 state = kKwCharNew;
                  fitsinvalid = 1;
-	      }
-	      else
-	      {
-		 state = kKwCharError;
-	      }
-	   }
-	   else
-	   {
-	      *pcOut++ = *pcIn;
-	      state = kKwCharNew;
-	   }
-	   break;
+              }
+              else
+              {
+                 state = kKwCharError;
+              }
+           }
+           else
+           {
+              *pcOut++ = *pcIn;
+              state = kKwCharNew;
+           }
+           break;
 	    
       } /* switch */
 
       if (state != kKwCharError)
       {
-	 pcIn++;
+         pcIn++;
       }
 
    } /* while */
@@ -726,6 +751,28 @@ int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size)
    }
 
    *pcOut = '\0';
+
+   /* if drmsName is a reserved DRMS keyword, then prepend with an underscore 
+    * because it must be valid otherwise */
+   if (!error && DRMSKeyNameValidationStatus(drmsName) == 2)
+   {
+      /* but it could be reserved because of a suffix issue */
+      char *tmp = strdup(drmsName);
+      if (tmp && (pch = strchr(tmp, '_')) != NULL && hcon_lookup_lower(gReservedDRMS, pch))
+      {
+         *pch = '\0';
+         snprintf(drmsName, size, "_%s", tmp);
+      }
+      else
+      {
+         snprintf(drmsName, size, "_%s", drmsName);
+      }
+
+      if (tmp)
+      {
+         free(tmp);
+      }
+   }
 
    return !error;
 }

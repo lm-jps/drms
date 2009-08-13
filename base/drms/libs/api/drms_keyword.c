@@ -2807,11 +2807,19 @@ int drms_keyword_mapimport(CFITSIO_KEYWORD *fitskey,
                snprintf(newkey->info->name, DRMS_MAXKEYNAMELEN, "%s", nameout);
                newkey->info->islink = 0;
                newkey->info->type = drmskwtype;
-               snprintf(newkey->info->description, 
-                        DRMS_MAXCOMMENTLEN, 
-                        "[%s:%s]", 
-                        fitskey->key_name,
-                        DRMS_Keyword_ExtType_Strings[cast]);
+
+               /* Only write out the [fitsname:cast] if export will be confused otherwise - 
+                * write it out if the fits keyword was of logical type (which is stored
+                * as a DRMS type of CHAR), or if the FITS name was not a legal DRMS name
+                */
+               if (cast == kDRMS_Keyword_ExtType_Logical || strcmp(nameout, fitskey->key_name) != 0)
+               {
+                  snprintf(newkey->info->description, 
+                           DRMS_MAXCOMMENTLEN, 
+                           "[%s:%s]", 
+                           fitskey->key_name,
+                           DRMS_Keyword_ExtType_Strings[cast]);
+               }
 
                /* guess a format, so the keywords will print with 
                 * functions like drms_keyword_printval() */
