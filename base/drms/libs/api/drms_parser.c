@@ -757,7 +757,7 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys)
 		 strcpy(newkey->info->format, kIndexKWFormat);
 		 strcpy(newkey->info->unit, "none");
 		 newkey->info->recscope = kRecScopeType_Index;
-		 strcpy(newkey->info->description, (*pSlotKey)->info->description);
+                 snprintf(newkey->info->description, DRMS_MAXCOMMENTLEN, "Index keyword associated with %s", slotKeyname);
 
 		 /* Make new key DRMS-prime */
                  /* Don't add to pidx_keywords here - do that in parse_primaryindex() so that 
