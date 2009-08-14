@@ -266,18 +266,19 @@ int drms_insert_series(DRMS_Session_t *session, int update,
        /* We want to store the default value as a text string, with canonical formatting.
         * The conversion used (in drms_record.c) when populating DRMS_Keyword_ts is:
         *   char -> none (first char in stored text string is used)
-        *   short -> atoi
-        *   int -> atoi
-        *   long long -> atoll
+        *   short -> strtol(..., NULL, 0)
+        *   int -> strtol(..., NULL, 0)
+        *   long long -> strtoll(..., NULL, 0)
         *   float -> atof
         *   double -> atof
         *   time -> sscan_time
         *   string -> none (copy_string)
         */
-       XASSERT((drms_sprintfval(defval, 
-                                key->info->type, 
-                                &key->value, 
-                                0) < DRMS_DEFVAL_MAXLEN));
+      XASSERT((drms_sprintfval_format(defval, 
+                                      key->info->type,
+                                      &key->value,
+                                      key->info->format, 	 
+                                      0) < DRMS_DEFVAL_MAXLEN));
     }
 
     /* The persegment column used to be either 0 or 1 and it said whether the keyword

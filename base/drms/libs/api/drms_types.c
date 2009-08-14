@@ -337,13 +337,13 @@ int drms_strval(DRMS_Type_t type, DRMS_Type_Value_t *val, char *str)
     val->char_val = str[0];
     break;
   case DRMS_TYPE_SHORT:
-    val->short_val = (short) atoi(str);
+    val->short_val = (short)strtol(str, NULL, 0);
     break;
   case DRMS_TYPE_INT:  
-    val->int_val = (int) atoi(str);
+    val->int_val = (int)strtol(str, NULL, 0);
     break;
   case DRMS_TYPE_LONGLONG:  
-    val->longlong_val = (long long) atoll(str);
+    val->longlong_val = strtoll(str, NULL, 0);
     break;
   case DRMS_TYPE_FLOAT:
     val->float_val = (float) atof(str);
@@ -551,7 +551,146 @@ int drms_fprintfval_raw(FILE *keyfile, DRMS_Type_t type, void *val)
   return 0;
 }
 
+/* converts string representations of integers to integer values - supports hexidecimal 
+ * and decimal strings */
+long long drms_types_strtoll(const char *str, DRMS_Type_t inttype, int *consumed, int *status)
+{
+   int ishex = 0;
+   int istat = 0;
+   long long ival = 0;
+   char *endptr = 0;
 
+   if (str)
+   {
+      if (inttype == DRMS_TYPE_LONGLONG)
+      {
+         ival = strtoll(str, &endptr, 0);
+
+         if (ival==0 && endptr==str)
+         {
+            istat = 1;
+         }
+         else
+         {
+            *consumed = endptr - str;
+         }
+      }
+      else
+      {
+         const char *pc = str;
+
+         /* ignore ws */
+         while (isspace(*pc))
+         {
+            ++pc;
+         }
+
+         /* ignore +/- for now */
+         if (*pc == '+' || *pc == '-')
+         {
+            ++pc;
+         }
+
+         if (strstr(pc, "0X") == pc || (strstr(pc, "0x") == pc))
+         {
+            ishex = 1;
+         }
+
+         if (ishex)
+         {
+            /* For the char, short, and int ranges, ival can never be negative */
+            ival = strtoll(str, &endptr, 16);
+            switch (inttype)
+            {
+               case DRMS_TYPE_CHAR:
+                 if ((ival==0 && endptr==str) || ival > UCHAR_MAX) 
+                 {
+                    istat = 1;
+                 }
+                 else
+                 {
+                    ival = (char)ival;
+                    *consumed = endptr - str;
+                 }
+                 break;
+               case DRMS_TYPE_SHORT:
+                 if ((ival==0 && endptr==str) || ival > USHRT_MAX) 
+                 {
+                    istat = 1;
+                 }
+                 else
+                 {
+                    ival = (short)ival;
+                    *consumed = endptr - str;
+                 }
+                 break;
+               case DRMS_TYPE_INT:
+                 if ((ival==0 && endptr==str) || ival > UINT_MAX) 
+                 {
+                    istat = 1;
+                 }
+                 else
+                 {
+                    ival = (int)ival;
+                    *consumed = endptr - str;
+                 }
+                 break;
+               default:
+                 fprintf(stderr, "ERROR: Unsupported DRMS integer type %d\n", (int)inttype);
+                 istat = 1;
+            }
+         }
+         else
+         {
+            /* not hex string */
+            ival = strtoll(str, &endptr, 10);
+            switch (inttype)
+            {
+               case DRMS_TYPE_CHAR:
+                 if ((ival==0 && endptr==str) || ival < SCHAR_MIN || ival > SCHAR_MAX) 
+                 {
+                    istat = 1;
+                 }
+                 else
+                 {
+                    *consumed = endptr - str;
+                 }
+                 break;
+               case DRMS_TYPE_SHORT:
+                 if ((ival==0 && endptr==str) || ival < SHRT_MIN || ival > SHRT_MAX) 
+                 {
+                    istat = 1;
+                 }
+                 else
+                 {
+                    *consumed = endptr - str;
+                 }
+                 break;
+               case DRMS_TYPE_INT:
+                 if ((ival==0 && endptr==str) || ival < INT_MIN || ival > INT_MAX) 
+                 {
+                    istat = 1;
+                 }
+                 else
+                 {
+                    *consumed = endptr - str;
+                 }
+                 break;
+               default:
+                 fprintf(stderr, "ERROR: Unsupported DRMS integer type %d\n", (int)inttype);
+                 istat = 1;
+            }
+         }
+      }
+   }
+
+   if (status)
+   {
+      *status = istat;
+   }
+
+   return ival;
+}
 
 /* scan for one instance of dsttype.  If dsttype is DRMS_STRING it is terminated by
  * the end of input string, a comma, or a right square bracket.
@@ -568,6 +707,7 @@ static int drms_sscanf_int(const char *str,
   double dval;
   int usemissing = 0;
   int usemissinglen = strlen(kDRMS_MISSING_VALUE);
+  int consumed = 0;
 
   if (!strncasecmp(kDRMS_MISSING_VALUE, str, usemissinglen))
   {
@@ -583,14 +723,23 @@ static int drms_sscanf_int(const char *str,
     }
     else
     {
-       ival = strtoll(str,&endptr,0);
-       if ((ival==0 && endptr==str) ||  ival < SCHAR_MIN || ival > SCHAR_MAX ) {
-	  if (!silent)
-	    fprintf (stderr, "Integer constant '%s' is not a signed char.\n", str);
+       ival = drms_types_strtoll(str, DRMS_TYPE_CHAR, &consumed, &status);
+
+       if (status)
+       {
+          if (!silent)
+          {
+             fprintf (stderr, "Integer constant '%s' is not a signed char.\n", str);
+          }
+
 	  return -1;
        }
-       else dst->char_val = (char) ival;
-       return (int)(endptr-str);
+       else 
+       {
+          dst->char_val = (char)ival;
+       }
+
+       return consumed;
     }
   case DRMS_TYPE_SHORT:
     if (usemissing)
@@ -600,13 +749,23 @@ static int drms_sscanf_int(const char *str,
     }
     else
     {
-       ival = strtoll(str,&endptr,10);
-       if ((ival==0 && endptr==str) ||  ival < SHRT_MIN || ival > SHRT_MAX ) {
-	  if (!silent)
-	    fprintf (stderr, "Integer constant '%s' is not a signed short.\n", str);
+       ival = drms_types_strtoll(str, DRMS_TYPE_SHORT, &consumed, &status);
+
+       if (status)
+       {
+          if (!silent)
+          {
+             fprintf (stderr, "Integer constant '%s' is not a signed short.\n", str);
+          }
+
 	  return -1;
-       } else dst->short_val = (short) ival;
-       return (int)(endptr-str);
+       }
+       else 
+       {
+          dst->short_val = (short)ival;
+       }
+
+       return consumed;
     }
   case DRMS_TYPE_INT:  
     if (usemissing)
@@ -616,13 +775,23 @@ static int drms_sscanf_int(const char *str,
     }
     else
     {
-       ival = strtoll(str,&endptr,10);
-       if ((ival==0 && endptr==str) ||  ival < INT_MIN || ival > INT_MAX ) {
-	  if (!silent)
-	    fprintf (stderr, "Integer constant '%s' is not a signed int.\n", str);
+       ival = drms_types_strtoll(str, DRMS_TYPE_INT, &consumed, &status);
+       
+       if (status)
+       {
+          if (!silent)
+          {
+             fprintf (stderr, "Integer constant '%s' is not a signed integer.\n", str);
+          }
+
 	  return -1;
-       } else dst->int_val = (int) ival;
-       return (int)(endptr-str);
+       }
+       else 
+       {
+          dst->int_val = (int)ival;
+       }
+
+       return consumed;
     }
   case DRMS_TYPE_LONGLONG:  
     if (usemissing)
@@ -632,13 +801,23 @@ static int drms_sscanf_int(const char *str,
     }
     else
     {
-       ival = strtoll(str,&endptr,10);
-       if ((ival==0 && endptr==str) ||  ival < LLONG_MIN || ival > LLONG_MAX ) {
-	  if (!silent)
-	    fprintf (stderr, "Integer constant '%s' is not a signed long int.\n", str);
+       ival = drms_types_strtoll(str, DRMS_TYPE_LONGLONG, &consumed, &status);
+
+       if (status)
+       {
+          if (!silent)
+          {
+             fprintf (stderr, "Integer constant '%s' is not a signed long long.\n", str);
+          }
+
 	  return -1;
-       } else dst->longlong_val =  ival;
-       return (int)(endptr-str);
+       }
+       else 
+       {
+          dst->longlong_val = ival;
+       }
+
+       return consumed;
     }
   case DRMS_TYPE_FLOAT:
     if (usemissing)
