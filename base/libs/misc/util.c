@@ -500,11 +500,11 @@ int GenerateFitsKeyName(const char *drmsName, char *fitsName, int size)
          if (tmp && (pch = strchr(tmp, '_')) != NULL && hcon_lookup_lower(gReservedFits, pch))
          {
             *pch = '\0';
-            snprintf(fitsName, size, "_%s", tmp);
+            snprintf(fitsName, 9, "_%s", tmp); /* FITS names can't have more than 8 chars */
          }
          else
          {
-            snprintf(fitsName, size, "_%s", drmsName);
+            snprintf(fitsName, 9, "_%s", tmp);
          }
 
          if (tmp)
@@ -734,22 +734,6 @@ int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size)
 
    } /* while */
 
-   if (fitsinvalid)
-   {
-      if (size - 1 < 9)
-      {
-         error = 1;
-         fprintf(stderr, "Insufficient string buffer size '%d'.\n", size);
-      }
-      else
-      {
-         while (pcOut - drmsName < 9)
-         {
-            *pcOut++ = '_';
-         }
-      }
-   }
-
    *pcOut = '\0';
 
    /* if drmsName is a reserved DRMS keyword, then prepend with an underscore 
@@ -765,8 +749,11 @@ int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size)
       }
       else
       {
-         snprintf(drmsName, size, "_%s", drmsName);
+         snprintf(drmsName, size, "_%s", tmp);
       }
+
+      fitsinvalid = 1;
+      pcOut = drmsName + strlen(drmsName); /* point to terminating null */
 
       if (tmp)
       {
@@ -774,6 +761,26 @@ int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size)
       }
    }
 
+
+   if (fitsinvalid)
+   {
+      if (size - 1 < 9)
+      {
+         error = 1;
+         fprintf(stderr, "Insufficient string buffer size '%d'.\n", size);
+      }
+      else
+      {
+         while (pcOut - drmsName < 9)
+         {
+            *pcOut++ = '_';
+         }
+
+         *pcOut = '\0';
+      }
+   }
+
+  
    return !error;
 }
 
