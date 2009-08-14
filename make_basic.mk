@@ -60,9 +60,9 @@ endif
 #
 # WARNINGS
 #
-# No warnings are displayed, by default, for a release build.
+# Warnings ARE displayed, by default, for a release build.
 #
-WARN = 0
+WARN = 1
 
 # Builder can request warnings via environment variable (setenv JSOC_WARN 1).
 #   The environment variable takes precedence.
@@ -74,10 +74,6 @@ WARN = 0
 endif
 endif
 
-# Warnings are always displayed for a debug build.
-ifeq ($(DEBUG), 1)
-WARN = 1
-endif
 #***********************************************************************************************#
 
 
@@ -170,11 +166,12 @@ endif
 #
 # WARNINGS
 #
-# Disable several warnings/remarks when compiling with icc - icc's Wall is a bit picky, it 
+# NO LONGER USED - Disable several warnings/remarks when compiling with icc - icc's Wall is a bit picky, it 
 # complains about extern declarations in .c files.
 #   1418 (remark) - external function definition with no prior declaration
 #   1419 (warning) - external declaration in primary source file
 #   310 (remark) - old style function declaration (pre-ANSI)
+#   279 ?
 #   981 (remark) - operands are evaluted in unspecified order
 
 # list of warnings to turn into errors
@@ -182,7 +179,7 @@ ICC_WARNTOERR = -we266
 
 ifeq ($(WARN), 1)
 # Show warnings (always true for a debug build).
-ICC_WARN = -Winline -Wall -wd1418 -wd1419 -wd310 -wd279 -wd981 -Wno-comment $(ICC_WARNTOERR)
+ICC_WARN = -Winline -Wall 
 GCC_WARN = -Winline -Wall -Wno-comment
 FCOMPILER_WARN =
 else
