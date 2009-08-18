@@ -23,6 +23,7 @@
 
 #define POSTGRES_ADMIN	"postgres"
 #define SUMS_MANAGER	"production"
+#define SUMS_MANAGER_UID "388"
 #define SUMS_GROUP	"SOI"
 #define SUMLOG_BASEDIR	"/usr/local/logs/SUM"
 #define SUMBIN_BASEDIR	"/usr/local/bin"
