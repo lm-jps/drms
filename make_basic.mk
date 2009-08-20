@@ -74,6 +74,13 @@ WARN = 0
 endif
 endif
 
+ICC_WARNMORE =
+ifdef JSOC_WARNICC
+ifeq ($(COMPILER), icc)
+ICC_WARNMORE = $(JSOC_WARNICC)
+endif
+endif
+
 #***********************************************************************************************#
 
 
@@ -179,7 +186,7 @@ ICC_WARNTOERR = -we266
 
 ifeq ($(WARN), 1)
 # Show warnings (always true for a debug build).
-ICC_WARN = -Winline -Wall 
+ICC_WARN = -Winline -Wall $(ICC_WARNMORE)
 GCC_WARN = -Winline -Wall -Wno-comment
 FCOMPILER_WARN =
 else
