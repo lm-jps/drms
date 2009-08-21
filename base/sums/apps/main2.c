@@ -71,6 +71,7 @@ int main(int argc, char *argv[])
   //uid = sum->uid;
   sumexp.uid = sum->uid;
   sumexp.host = "n02";
+  sumexp.cmd = "scp";
   sumexp.src = (char **)calloc(SUMARRAYSZ, sizeof(char *));
   sumexp.dest = (char **)calloc(SUMARRAYSZ, sizeof(char *));
   srcptr = sumexp.src;
