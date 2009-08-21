@@ -34,7 +34,7 @@ void db_write_statncnt(int sockfd, int status, int row_count)
 
 int db_tcp_listen(char *host, int len, short *port)
 {
-  int on;
+  int on = 1;
   struct sockaddr_in server;
   int sockfd, size = sizeof(struct sockaddr_in);
   
