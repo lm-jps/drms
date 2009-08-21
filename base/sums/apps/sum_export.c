@@ -198,7 +198,7 @@ KEY *getsumexport(KEY *params)
   int xdirflg = 0;
   int first_rec, last_rec, nrecs, irec, retrieve_flg, i;
   char srcext[128], destext[128], cmd[256], errmsg[128];
-  char *host, *src, *dest;
+  char *prog, *host, *src, *dest;
 
   /*printk("!!Keylist in sumpedo_1() is:\n");	/* !!!TEMP */
   /*keyiterate(logkey, params);*/
@@ -207,6 +207,7 @@ KEY *getsumexport(KEY *params)
   setkey_fileptr(&retlist, "current_client", getkey_fileptr(params, "current_client"));
   setkey_int(&retlist, "REQCODE", REMSUMRESPDO);
   reqcnt = getkey_int(params, "reqcnt");
+  prog = getkey_str(params, "cmd");
   host = getkey_str(params, "host");
   for(i=0; i < reqcnt; i++) {		//do all scp calls in sequence
     sprintf(srcext, "src_%d", i);
@@ -215,9 +216,9 @@ KEY *getsumexport(KEY *params)
     dest = getkey_str(params, destext);
     port = getkey_uint(params, "port");
     if(port == 0)
-      sprintf(cmd, "scp -r %s:%s/* %s", host, src, dest);
+      sprintf(cmd, "%s -r %s:%s/* %s", prog, host, src, dest);
     else
-      sprintf(cmd, "scp -r -P %d %s:%s/* %s", port, host, src, dest);
+      sprintf(cmd, "%s -r -P %d %s:%s/* %s", prog, port, host, src, dest);
     printk("%s\n", cmd);
     if(system(cmd)) {
       printk("Error on: %s\n", cmd);

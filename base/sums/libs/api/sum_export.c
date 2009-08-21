@@ -78,6 +78,7 @@ int SUM_export(SUMEXP_t *sumexp, int (*history)(const char *fmt, ...))
       sprintf(ext, "dest_%d", i);
       setkey_str(&list, ext, *dptr++);
     }
+    setkey_str(&list, "cmd", sumexp->cmd);
     setkey_str(&list, "host", sumexp->host);
     setkey_uint32(&list, "uid", sumexp->uid);
     setkey_uint(&list, "port", sumexp->port);

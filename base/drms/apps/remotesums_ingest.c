@@ -206,6 +206,7 @@ int DoIt(void)
             status = kRSING_badparma;
 
             server = strstr(tmp, kSEP1);
+            port = 0;
             if (server)
             {
                *server = '\0';
@@ -218,8 +219,13 @@ int DoIt(void)
                   *serverport = '\0';
                   serverport++;
 
-                  sscanf(serverport, "%u", &port);
-
+                  if (sscanf(serverport, "%u", &port) == 1)
+                  {
+                     status = kRSING_success;
+                  }
+               }
+               else
+               {
                   status = kRSING_success;
                }
             }
@@ -260,6 +266,7 @@ int DoIt(void)
                {
                   /* Create new SUMEXP_t */
                   pexp = (RSING_ExpTracker_t *)hcon_allocslot(sumexptracker, server);
+                  pexp->sumexpt.cmd = strdup(servermeth);
                   pexp->sumexpt.host = strdup(server); /* <user>@<server> */
                   pexp->sumexpt.port = port;
                   pexp->sumexpt.src = (char **)calloc(kMAXREQ, sizeof(char *));
