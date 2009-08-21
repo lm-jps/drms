@@ -355,6 +355,7 @@ typedef struct SUMEXP_struct
   SUMID_t uid;
   int reqcnt;		/* # of entries in arrays below */
   uint32_t port;	/* port #, -P, to use in scp command */
+  char *cmd;            /* copy cmd (eg, scp, hpn-scp) */
   char *host;		/* hostname target of scp call */
   char **src;		/* ptr to char * of source dirs */
   char **dest;		/* ptr to char * of destination dirs */
