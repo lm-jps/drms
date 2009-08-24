@@ -69,8 +69,15 @@ void recursive_chmown(const char *dir, uid_t owner, gid_t group) {
 int main(int argc, char *argv[]) {
     regex_t reg;
     struct stat fs;
+/***********************************************
     struct passwd *pwd = getpwnam (SUMS_MANAGER);
+    if(pwd == NULL)
+      die("Failure to getpwam(%s)\nSee sum_svc log msg **Warning:\n", 
+			SUMS_MANAGER);
     uid_t sumsowner = pwd->pw_uid;
+***********************************************/
+    uid_t sumsowner = atoi(SUMS_MANAGER_UID);  //hard code uid
+
 /*
     struct group *grp = getgrnam (SUMS_GROUP);
     gid_t sumsgroup = grp->gr_gid;
