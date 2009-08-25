@@ -120,7 +120,22 @@ int DoIt(void) {
     break;
   case ADD_KEYWORD:
     // assume the new keywords do not conflict with any existing
-    // ones. otherwise all hell will break loose.  
+    // ones. otherwise all hell will break loose. 
+
+    /* Here's how this works:
+     * 1. Template contains the content parsed from the "new" jsd - the one containing the new keywords.
+     * 2. Remove the old template record from series_cache, but don't delete any parts of the old template record.
+     *    This is achieved by temporarily setting the deep_free function to NULL, and calling drms_delete_series().
+     *    cascade == 0 in the call to ensure that the original series table is not dropped. The old entries in 
+     *    the drms_series, drms_keywords, etc. tables will also be deleted.
+     * 3. Restore the deep_free function.
+     * 4. Rename the old series table and sequence to *_tmp.
+     * 5. Create the series based on the new template. This will make appropriate entries in drms_series, drms_keywords, 
+     *    etc.
+     * 6. Drop the newly created sequence and replace it with the *_tmp sequence saved in in step 4.
+     * 7. Copy the series table data saved in step 4 to the newly created series table.
+     */
+ 
     template = drms_template_record(drms_env, series, &status);
     drms_link_getpidx(template); 
     // save the original column names

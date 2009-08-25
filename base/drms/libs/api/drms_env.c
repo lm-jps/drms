@@ -18,6 +18,7 @@ int drms_cache_init(DRMS_Env_t *env) {
   char query[DRMS_MAXQUERYLEN];
   DB_Text_Result_t *qres;
   char *p;
+  TIMER_t *tmr = NULL;
 
   /*  Storage Unit container  */
   hcon_init (&env->storageunit_cache, sizeof(HContainer_t), DRMS_MAXHASHKEYLEN,  
@@ -47,6 +48,13 @@ int drms_cache_init(DRMS_Env_t *env) {
   hcon_init (&env->series_cache, sizeof(DRMS_Record_t), DRMS_MAXHASHKEYLEN, 
 	    (void (*)(const void *)) drms_free_template_record_struct, 
 	    (void (*)(const void *, const void *)) drms_copy_record_struct);
+
+  if (env->verbose)
+  {
+     /* time creation of series cache */
+     tmr = CreateTimer();
+  }
+
   for (int i=0; i<qres->num_rows; i++) {
 #ifdef DEBUG  
     printf("Inserting '%s'...\n",qres->field[i][0]);
@@ -57,6 +65,13 @@ int drms_cache_init(DRMS_Env_t *env) {
     template->init = 0;
     //    strcpy(template->seriesinfo->seriesname, qres->field[i][0]);
   }
+
+  if (env->verbose)
+  {
+     fprintf(stdout, "series-cache creation seconds elapsed: %f\n", GetElapsedTime(tmr));
+     DestroyTimer(&tmr);
+  }
+
   db_free_text_result(qres);
 #ifdef DEBUG  
   hcon_map (&env->series_cache, drms_printhcon);
