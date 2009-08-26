@@ -181,6 +181,24 @@ else
 endif
 
 @ SUMS_TAPE_AVAIL = $SUMS_TAPE_AVAILABLE
+
+# find UID of SUMS_MANAGER
+cc -o getuid getuid.c
+if (-x ./getuid) then
+  @ SUMS_MANAGER_UID = `./getuid $SUMS_MANAGER`
+  rm getuid
+  if ($SUMS_MANAGER_UID < 0) then
+    echo "Error: no such user $SUMS_MANAGER"
+    echo "  Either create the account or modify $LOCALINF"
+    exit
+  endif
+else
+  echo "Error: unable to generate getuid program"
+  echo "  You must edit the file $SCRIPT to add the line"
+  echo '#define SUMS_MANAGER_UID'"        \(uid\)"
+  echo "  where uid is the uid of the $SUMS_MANAGER user"
+endif
+
 # generate file localization.h
 set SCRIPT = base/include/localization.h
 echo "*** generating $SCRIPT ***"
@@ -193,12 +211,13 @@ echo '#define DRMS_LOCAL_SITE_CODE	'$DRMS_SITE_CODE >> $SCRIPT
 echo '#define POSTGRES_ADMIN		"'$POSTGRES_ADMIN'"' >> $SCRIPT
 echo '#define USER			NULL' >> $SCRIPT
 echo '#define PASSWD			NULL' >> $SCRIPT
-echo '#define SUMSERVER			"'$SUMS_SERVER_HOST'"' >> $SCRIPT
+echo '#define SUMSERVER		"'$SUMS_SERVER_HOST'"' >> $SCRIPT
 echo '#define SUMS_MANAGER		"'$SUMS_MANAGER'"' >> $SCRIPT
+echo '#define SUMS_MANAGER_UID		"'$SUMS_MANAGER_UID'"' >> $SCRIPT
 echo '#define SUMS_GROUP		"'$SUMS_GROUP'"' >> $SCRIPT
 echo '#define SUMLOG_BASEDIR		"'$SUMS_LOG_BASEDIR'"' >> $SCRIPT
 echo '#define SUMBIN_BASEDIR		"'$SUMS_BIN_BASEDIR'"' >> $SCRIPT
-echo '#define SUMS_TAPE_AVAILABLE       '\($SUMS_TAPE_AVAIL\)'' >> $SCRIPT
+echo '#define SUMS_TAPE_AVAILABLE    '\($SUMS_TAPE_AVAIL\)'' >> $SCRIPT
 echo '#endif' >> $SCRIPT
 
 cd include
@@ -221,7 +240,7 @@ if ($ADMIN_STATUS) then
   echo
   echo "Some configuration parameters were missing from the config.local file"
   echo "  as described in warning messages above.  These are only needed for"
-  echo "  SUMS orSlony administration; they are not needed for an ordinary build."
+  echo "  SUMS or Slony administration; they are not needed for an ordinary build."
   echo "Check the file config.local.template for sample entries to put in your"
   echo "  config.local file."
 endif
