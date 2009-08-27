@@ -176,6 +176,8 @@ int DoIt(void) {
     // retain the spot in the series_cache. this is a hack to undo
     // hcon_remove()
     // Enclosed the hcon_remove() in an 'if (cascade)' stmt, so can remove this hack.
+    /* Adding to the series cache is superfluous because nobody is going to consult the cache later
+     * in this module - but it won't hurt either. */
     hcon_allocslot_lower(&drms_env->series_cache, series);
         drms_print_record(template);
 

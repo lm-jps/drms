@@ -516,8 +516,6 @@ int drms_insert_series(DRMS_Session_t *session, int update,
   return 1;
 }
 
-
-
 int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
 {
   char query[1024], *series_lower = NULL, *namespace = NULL;
@@ -527,6 +525,11 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
   DRMS_Array_t *array = NULL;
   int repl = 0;
   int retstat = -1;
+
+  if (!env->session->db_direct && !env->selfstart)
+  {
+     fprintf(stderr, "Can't delete series if using drms_server. Please use a direct-connect modules, or a self-starting socket-connect module.\n");
+  }
 
   series_lower = strdup(series);
   /* series_lower is fully qualified, i.e., it contains namespace */
@@ -612,11 +615,16 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
                   }
               }
 
-                  /* Both DRMS servers and clients have a series_cache (one item per
-                     each series in all of DRMS). So, always remove the deleted series
-                     from this cache, whether or not this is a server. */
-                  hcon_remove(&env->series_cache,series_lower);
-                  free(namespace);
+           /* Both DRMS servers and clients have a series_cache (one item per
+              each series in all of DRMS). So, always remove the deleted series
+              from this cache, whether or not this is a server. */
+
+           /* Since we are now caching series on-demand, this series may not be in the
+            * series_cache, but hcon_remove handles this fine. */
+
+           /* ARTXXX - bug, this needs to send the command mode DRMS_DROPSERIES somewhere */
+           hcon_remove(&env->series_cache,series_lower);
+           free(namespace);
 	   }
         else
         {

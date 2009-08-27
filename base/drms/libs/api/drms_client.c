@@ -16,6 +16,7 @@ DRMS_Session_t *drms_connect(char *host)
   char *pport = NULL;
   unsigned short portnum;
   char *sudirrecv = NULL;
+  struct sockaddr *serverp = NULL;
 
   if (host)
   {
@@ -89,7 +90,7 @@ DRMS_Session_t *drms_connect(char *host)
   server.sin_port = htons(portnum); /* short, network byte order */
   server.sin_addr = *((struct in_addr *)he->h_addr);
 
-  struct sockaddr *serverp = (struct sockaddr *)&server;
+  serverp = (struct sockaddr *)&server;
   /* connect the socket to the server's address */
   if ( connect(session->sockfd, serverp, sizeof(struct sockaddr_in)) == -1 )
   {
@@ -1000,6 +1001,8 @@ int drms_getunits(DRMS_Env_t *env, char *series,
 #endif
 
   DRMS_StorageUnit_t **su_nc; // not cached su's
+  int cnt;
+
   XASSERT(su_nc = malloc(n*sizeof(DRMS_StorageUnit_t *)));
 #ifdef DEBUG
       printf("getunit: Called, n=%d, series=%s\n", n, series);
@@ -1009,7 +1012,7 @@ int drms_getunits(DRMS_Env_t *env, char *series,
   if ((template = drms_template_record(env, series, &stat)) == NULL)
     goto bailout;
   
-  int cnt = 0;
+  cnt = 0;
   for (int i = 0; i < n; i++) {
     if ((su = drms_su_lookup(env, series, sunum[i], &scon)) == NULL) {
       if (!scon)
@@ -1420,7 +1423,10 @@ int drms_create_series(DRMS_Record_t *rec, int perms)
 
   series = rec->seriesinfo->seriesname;
   env = rec->env;
-  if (hcon_member_lower(&env->series_cache, series))
+  //if (hcon_member_lower(&env->series_cache, series))
+  /* Must use drms_template_record() in case series has not yet been cached in series_cache. This function 
+   * will cache it. */
+  if (drms_template_record(env, series, &status) != NULL)
   {
     fprintf(stderr,"drms_create_series(): "
 	    "ERROR: Cannot create series '%s' because it already exists.\n", series);
@@ -1454,7 +1460,11 @@ int drms_update_series(DRMS_Record_t *rec, int perms)
 
   series = rec->seriesinfo->seriesname;
   env = rec->env;
-  template = hcon_lookup_lower(&env->series_cache, series);
+
+  /* Must use drms_template_record() in case series has not yet been cached in series_cache. This function 
+   * will cache it. */
+  template = drms_template_record(env, series, &status);
+
   if (!template)
   {
     fprintf(stderr,"ERROR: Cannot update series '%s' because it does not "

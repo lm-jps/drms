@@ -727,7 +727,9 @@ static DRMS_Record_t *CacheRecordProto(DRMS_Env_t *env,
    int stat = DRMS_SUCCESS;
    DRMS_Record_t *cached = NULL;
 
-   if (hcon_member_lower(&(env->series_cache), seriesName))
+   /* seriesName might actually exist, but not be in the series_cache, because we now cache the series 
+    * on-demand. */
+   if (drms_template_record(env, seriesName, &stat) != NULL)
    {
       fprintf(stderr,"drms_open_dsdsrecords(): "
 	      "ERROR: Series '%s' already exists.\n", seriesName);
@@ -736,6 +738,7 @@ static DRMS_Record_t *CacheRecordProto(DRMS_Env_t *env,
    }
    else
    {
+      stat = DRMS_SUCCESS; /* ingore drms_template_record status, which might have been 'unknown series' */
       cached = (DRMS_Record_t *)hcon_allocslot_lower(&(env->series_cache), seriesName);
       drms_copy_record_struct(cached, proto);  
 
@@ -981,15 +984,18 @@ static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env,
 
 	 if (stat == DRMS_SUCCESS)
 	 {
-	    /* xxxx Get series name - this should be "su_tmp.<GUID>.  The GUID should
+	    /* Get series name - this should be "dsdsing.<GUID>.  The GUID should
 	     * be stored in libdrmsserver.a.  It should be a monotonically
 	     * increasing integer that lives for the life of libdrmsserver.a. 
-	     *
-	     * I believe this is the way to achieve this:
-	     * send_string
 	     */
 
 	    long long guid = -1;
+            const char *dsdsNsPrefix = NULL;
+
+            /* Use the same prefix used for dsds temporary series. These series do NOT live in PSQL. 
+             * There is simply an entry in the series_cache for each one of them, so they must
+             * be handled differently than regular series. */
+            dsdsNsPrefix = DSDS_GetNsPrefix();
 
 #ifdef DRMS_CLIENT
 	       drms_send_commandcode(env->session->sockfd, DRMS_GETTMPGUID);
@@ -999,7 +1005,7 @@ static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env,
 	       guid = drms_server_gettmpguid(NULL);
 #endif /* DRMS_CLIENT */
 
-	       snprintf(seriesName, sizeof(seriesName), "su_tmp.%lld", guid);
+	       snprintf(seriesName, sizeof(seriesName), "%s.%lld", dsdsNsPrefix, guid);
 
 	    /* Adjust seriesinfo */
 	    AdjustRecordProtoSeriesInfo(env, proto, seriesName, 32);
@@ -2285,6 +2291,8 @@ void drms_destroy_recproto(DRMS_Record_t **proto)
       DRMS_Record_t *prototype = *proto;
       char *series = prototype->seriesinfo->seriesname;
       DRMS_Env_t *env = prototype->env;
+
+      /* This is the definitive way to know if a series has been cached in series_cache. */
       DRMS_Record_t *rec = hcon_lookup_lower(&(env->series_cache), series);
       int deep = 1;
 
@@ -3560,7 +3568,7 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
                                                int *status)
 {
   int stat;
-  DB_Binary_Result_t *qres;
+  DB_Binary_Result_t *qres = NULL;
   DRMS_Record_t *template;
   char *p, *q, query[DRMS_MAXQUERYLEN], buf[DRMS_MAXPRIMIDX*DRMS_MAXKEYNAMELEN];
   DRMS_Keyword_t *kw;
@@ -3593,12 +3601,68 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
 
   if (!jsd || dsdsing)
   {
+     /* We no longer cache all series in series_cache at module startup. So, we MAY need to query 
+      * the dbase here if the series isn't in the cache. */
      if ( (template = hcon_lookup_lower(&env->series_cache, seriesname)) == NULL )
      {
-        if (status) {
-           *status = DRMS_ERROR_UNKNOWNSERIES;
+        /* check series directly */
+        char qry[DRMS_MAXQUERYLEN];
+        char *nspace = ns(seriesname);
+        int serr;
+        DB_Text_Result_t *tqres = NULL;
+
+        serr = 0;
+
+        if (nspace)
+        {
+           /* First check for a valid namespace. If you just do the query with an invalid namespace, 
+            * the current transaction will get aborted. */
+           snprintf(qry, sizeof(qry), "select name from admin.ns where name ILIKE '%s'", nspace);
+           tqres = drms_query_txt(env->session, qry);
+           if (tqres == NULL)
+           {
+              serr = 1;
+           }
+           else if (tqres->num_rows != 1)
+           {
+              serr = 1;
+              db_free_text_result(tqres);
+              tqres = NULL;
+           }
+           else
+           {
+              db_free_text_result(tqres);
+              tqres = NULL;
+
+              snprintf(qry, sizeof(qry), "select seriesname from %s.drms_series where seriesname ILIKE '%s'", nspace, seriesname);
+              free(nspace);
+
+              if ((tqres = drms_query_txt(env->session, qry)) != NULL && tqres->num_rows == 1)
+              {
+                 template = 
+                   (DRMS_Record_t *)hcon_allocslot_lower(&env->series_cache, tqres->field[0][0]);
+                 memset(template,0,sizeof(DRMS_Record_t));
+                 template->init = 0;
+              }
+              else
+              {
+                 serr = 1;
+              }
+
+              db_free_text_result(tqres);
+              tqres = NULL;
+           }
         }
-        return NULL;
+
+        if (serr)
+        {
+           if (status) 
+           {
+              *status = DRMS_ERROR_UNKNOWNSERIES;
+           }
+
+           return NULL;
+        }
      }
   }
   else
@@ -5453,7 +5517,8 @@ int ParseRecSetDesc(const char *recsetsStr,
                        int ilen = 0;
 
                        /* Don't need string - just strlen */
-                       drms_value_free(&val);
+                       DRMS_Value_t dummy = {DRMS_TYPE_STRING, val};
+                       drms_value_free(&dummy);
 
                        /* if ending ']' was found, then pc + rlen is ']', otherwise
                         * it is the next char after end quote */
@@ -5560,7 +5625,8 @@ int ParseRecSetDesc(const char *recsetsStr,
                     int ilen = 0;
 
                     /* Don't need string - just strlen */
-                    drms_value_free(&val);
+                    DRMS_Value_t dummy = {DRMS_TYPE_STRING, val};
+                    drms_value_free(&dummy);
 
                     /* if ending ']' was found, then pc + rlen is ']', otherwise
                      * it is the next char after end quote */

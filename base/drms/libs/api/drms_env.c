@@ -15,76 +15,27 @@ static void drms_printhcon (const void *ptr) {
 */
 
 int drms_cache_init(DRMS_Env_t *env) {
-  char query[DRMS_MAXQUERYLEN];
-  DB_Text_Result_t *qres;
-  char *p;
-  TIMER_t *tmr = NULL;
-
   /*  Storage Unit container  */
   hcon_init (&env->storageunit_cache, sizeof(HContainer_t), DRMS_MAXHASHKEYLEN,  
 	    (void (*)(const void *)) hcon_free, 
 	    (void (*)(const void *, const void *)) hcon_copy);
 
-  /*  Query the database to get all series names from the master list  */
-  sprintf(query, "select name from admin.ns");
-  if ( (qres = drms_query_txt(env->session, query)) == NULL) goto bailout;
-  p = query;
-  p += sprintf(p, "(select seriesname from %s.drms_series) ", qres->field[0][0]);
-  for (int i = 1; i < qres->num_rows; i++) {
-    p += sprintf(p, "union\n\t(select seriesname from %s.drms_series) ", qres->field[i][0]);
-  }
-  db_free_text_result(qres);
-  
-  if ( (qres = drms_query_txt(env->session, query)) == NULL) goto bailout;
-
-  /* Insert the series names in  container table with a null pointer.
-     The series schemas will be retrieved from the database on demand.
-     This way we only make as many queries as the number of series actually
-     referenced by the module (probably a few). */
-
+  /* No longer cache all the series names in the series_cache during module initialization. Do 
+   * this on-demand when drms_template_record() is called. */
 #ifdef DEBUG  
   printf("Building hashed container of series templates.\n");
 #endif
+
   hcon_init (&env->series_cache, sizeof(DRMS_Record_t), DRMS_MAXHASHKEYLEN, 
 	    (void (*)(const void *)) drms_free_template_record_struct, 
 	    (void (*)(const void *, const void *)) drms_copy_record_struct);
 
-  if (env->verbose)
-  {
-     /* time creation of series cache */
-     tmr = CreateTimer();
-  }
-
-  for (int i=0; i<qres->num_rows; i++) {
-#ifdef DEBUG  
-    printf("Inserting '%s'...\n",qres->field[i][0]);
-#endif
-    DRMS_Record_t *template = (DRMS_Record_t *)hcon_allocslot_lower(&env->series_cache, 
-						     qres->field[i][0]);
-    memset(template,0,sizeof(DRMS_Record_t));
-    template->init = 0;
-    //    strcpy(template->seriesinfo->seriesname, qres->field[i][0]);
-  }
-
-  if (env->verbose)
-  {
-     fprintf(stdout, "series-cache creation seconds elapsed: %f\n", GetElapsedTime(tmr));
-     DestroyTimer(&tmr);
-  }
-
-  db_free_text_result(qres);
-#ifdef DEBUG  
-  hcon_map (&env->series_cache, drms_printhcon);
-#endif
   /*  Initialize a container for the record cache  */
   hcon_init (&env->record_cache, sizeof(DRMS_Record_t), DRMS_MAXHASHKEYLEN, 
 	    (void (*)(const void *)) drms_free_record_struct, 
 	    (void (*)(const void *, const void *)) drms_copy_record_struct);
 
   return 0;
- bailout:
-  return 1;
-  
 }
 
 DRMS_Env_t *drms_open (char *host, char *user, char *password, char *dbname,

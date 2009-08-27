@@ -1291,10 +1291,13 @@ int drms_server_newseries(DRMS_Env_t *env, int sockfd)
   DRMS_Record_t *template;
 
   series = receive_string(sockfd);
+
+  /* even though we're typically caching series on-demand now, it is okay to cache this one now, 
+   * because in fact you probably will use this newly created series. */
   template = (DRMS_Record_t *)hcon_allocslot_lower(&env->series_cache, series);
+  memset(template,0,sizeof(DRMS_Record_t));
   template->init = 0;
-  XASSERT(template->seriesinfo = (DRMS_SeriesInfo_t *)malloc(sizeof(DRMS_SeriesInfo_t)) );
-  strcpy(template->seriesinfo->seriesname, series);
+  
   free(series);
   return 0;
 }
@@ -1333,6 +1336,9 @@ int drms_server_dropseries(DRMS_Env_t *env, int sockfd)
      }
 
      drms_server_dropseries_su(env, tn, vec);
+
+     /* Since we are now caching series on-demand, this series may not be in the
+      * series_cache, but hcon_remove handles this fine. */
      hcon_remove(&env->series_cache, series_lower);
   }
 

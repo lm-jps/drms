@@ -73,6 +73,7 @@ int JSOCMAIN_Init(int argc,
    int quiet;
    int printrel = 0;
    char reservebuf[128];
+   int selfstart = 0;
 
    if (cont)
    {
@@ -140,6 +141,9 @@ int JSOCMAIN_Init(int argc,
 		  "Couldn't connect to a DRMS server via drms_start_server.\n");
 	 return 1;
       }
+
+      /* set self-start flag so we know that this module isn't sharing drms_server with others */
+      selfstart = 1;
    }
    /* DRMS Prolog */
    if (cmdparams_exists (&cmdparams, "DRMSSESSION")) {
@@ -152,7 +156,9 @@ int JSOCMAIN_Init(int argc,
       if (drms_env == NULL) {
 	 fprintf (stderr, "Couldn't connect to DRMS.\n");
 	 return 1;
-      }    
+      }
+
+      drms_env->selfstart = selfstart;
       drms_env->query_mem = cmdparams_get_int (&cmdparams, kQUERYMEMARG, NULL);
     
       if (*dolog) {

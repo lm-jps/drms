@@ -19,5 +19,6 @@ series template record given in the argument \a template.
  */
 int drms_insert_series(DRMS_Session_t *session, int update, DRMS_Record_t *template, int perms);
 
+int drms_delete_series(DRMS_Env_t *env, char *series, int cascade);
 
 #endif
