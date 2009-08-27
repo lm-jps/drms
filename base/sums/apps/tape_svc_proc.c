@@ -1297,8 +1297,9 @@ KEY *taperespreaddo_1(KEY *params) {
   if(status) drives[dnum].filenum = -1; /* error, next read will rewind */
   sprintf(tmpname, "rootwd_%d", reqofflinenum);
   rwd = GETKEY_str(params, tmpname);
-  sprintf(tmpname, "sudo chmod -R go-w %s; sudo chown -Rf production %s", 
-			rwd, rwd);
+  //sprintf(tmpname, "sudo chmod -R go-w %s; sudo chown -Rf production %s", 
+  //			rwd, rwd);
+  sprintf(tmpname, "%s/sum_chmown %s", SUMBIN_BASEDIR, rwd);
   if(system(tmpname)) {
       write_log("**Warning: Error on: %s\n", tmpname);
   }
