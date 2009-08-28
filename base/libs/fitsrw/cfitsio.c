@@ -1310,21 +1310,42 @@ int fitsrw_writeintfile(const char* fits_filename,
       }
       else if (image_info->bitpix == SHORT_IMG)
       {
+         short *p = NULL;
+
          /* use the value of oblank */
          misspix = malloc(kMISSPIXBLOCK * sizeof(short));
-         memset(misspix, (short)oblank, kMISSPIXBLOCK);
+         p = (short *)misspix + (kMISSPIXBLOCK - 1);
+         while (p >= misspix)
+         {
+            *p = (short)oblank;
+            p--;
+         }
       }
       else if (image_info->bitpix == LONG_IMG)
       {
+         int *p = NULL;
+
          /* use the value of oblank */
          misspix = malloc(kMISSPIXBLOCK * sizeof(int));
-         memset(misspix, (int)oblank, kMISSPIXBLOCK);
+         p = (int *)misspix + (kMISSPIXBLOCK - 1);
+         while (p >= misspix)
+         {
+            *p = (int)oblank;
+            p--;
+         }
       }
       else if (image_info->bitpix == LONGLONG_IMG)
       {
+         long long *p = NULL;
+
          /* use the value of oblank */
          misspix = malloc(kMISSPIXBLOCK * sizeof(long long));
-         memset(misspix, (long long)oblank, kMISSPIXBLOCK);
+         p = (long long *)misspix + (kMISSPIXBLOCK - 1);
+         while (p >= misspix)
+         {
+            *p = (long long)oblank;
+            p--;
+         }
       }
 
       pixleft = npixels;
@@ -1354,7 +1375,18 @@ int fitsrw_writeintfile(const char* fits_filename,
          free(misspix);
       }
    }
-	
+
+   /* UUUUUUGLY HACK!
+    * There is a bug in CFITSIO where it doesn't properly update the TFORM1 keyword when 
+    * writing compressed images. For now, manually update it
+    */
+   if (fits_is_compressed_image(fptr, &status))
+   {
+      char buf[64];
+      snprintf(buf, sizeof(buf), "1PB(%d)", (int)fptr->Fptr->maxelem);
+      fits_update_key(fptr, TSTRING, "TFORM1", buf, "ugly hack awaiting official fix", &status);
+   }
+
    fits_close_file(fptr, &status);
 
    if(status == 0) return CFITSIO_SUCCESS;
@@ -2116,6 +2148,17 @@ int fitsrw_write(const char* filein,
 
    if (fptr)
    {
+      /* UUUUUUGLY HACK!
+       * There is a bug in CFITSIO where it doesn't properly update the TFORM1 keyword when 
+       * writing compressed images. For now, manually update it
+       */
+      if (fits_is_compressed_image(fptr, &cfiostat))
+      {
+         char buf[64];
+         snprintf(buf, sizeof(buf), "1PB(%d)", (int)fptr->Fptr->maxelem);
+         fits_update_key(fptr, TSTRING, "TFORM1", buf, "ugly hack awaiting official fix", &cfiostat);
+      }
+
       fits_close_file(fptr, &cfiostat);
       if (cfiostat)
       {

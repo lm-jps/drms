@@ -533,50 +533,42 @@ int drms_fitsrw_writeslice(DRMS_Segment_t *seg,
    if (stat(filename, &stbuf) == -1)
    {
       CFITSIO_IMAGE_INFO info;
-      DRMS_Array_t *arr = NULL;
+      DRMS_Array_t arr;
+      memset(&arr, 0, sizeof(DRMS_Array_t));
+
+      /* Write a "blank" file by calling fitsrw_writeintfile() with a NULL pointer for the image */
 
       if (seg->info->type != DRMS_TYPE_RAW)
       {
-         arr = drms_array_create(seg->info->type, seg->info->naxis, seg->axis, NULL, &status);
+         arr.type = seg->info->type;
+         arr.naxis = seg->info->naxis;
+         memcpy(arr.axis, seg->axis, sizeof(int) * seg->info->naxis);
+         arr.bzero = seg->bzero;
+         arr.bscale = seg->bscale;
 
-         if (status == DRMS_SUCCESS)
+         /* If bzero == 0.0 and bscale == 1.0, then the file has physical units 
+          * (data are NOT 'raw'). */
+         if (seg->bzero == 0.0 && seg->bscale == 1.0)
          {
-            arr->bzero = seg->bzero;
-            arr->bscale = seg->bscale;
-
-            /* If bzero == 0.0 and bscale == 1.0, then the file has physical units 
-             * (data are NOT 'raw'). */
-            if (seg->bzero == 0.0 && seg->bscale == 1.0)
-            {
-               arr->israw = 0;
-            }
-            else
-            {
-               arr->israw = 1;
-            }
-
-            drms_array2missing(arr);
-
-            if (!drms_fitsrw_SetImageInfo(arr, &info))
-            {
-               if (fitsrw_writeintfile(filename, &info, arr->data, seg->cparms, NULL) != CFITSIO_SUCCESS)
-               {
-                  fprintf(stderr, "Couldn't create FITS file '%s'.\n", filename); 
-                  status = DRMS_ERROR_CANTCREATETASFILE;
-               }
-            }
-            else
-            {
-               fprintf(stderr, "Couldn't create empty FITS file array.\n"); 
-               status = DRMS_ERROR_CANTCREATETASFILE;
-            }
-
-            drms_free_array(arr);
+            arr.israw = 0;
          }
          else
          {
-            fprintf(stderr, "Couldn't create FITS file array.\n"); 
-            status = DRMS_ERROR_ARRAYCREATEFAILED;
+            arr.israw = 1;
+         }
+
+         if (!drms_fitsrw_SetImageInfo(&arr, &info))
+         {
+            if (fitsrw_writeintfile(filename, &info, NULL, seg->cparms, NULL) != CFITSIO_SUCCESS)
+            {
+               fprintf(stderr, "Couldn't create FITS file '%s'.\n", filename); 
+               status = DRMS_ERROR_CANTCREATETASFILE;
+            }
+         }
+         else
+         {
+            fprintf(stderr, "Couldn't set FITS file image info.\n"); 
+            status = DRMS_ERROR_CANTCREATETASFILE;
          }
       }
       else
