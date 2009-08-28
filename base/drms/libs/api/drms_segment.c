@@ -1697,13 +1697,40 @@ int drms_segment_writeslice(DRMS_Segment_t *seg, DRMS_Array_t *arr, int *start, 
      }
      else
      {
+        const char *riceID = "compress rice";
+        int sizestr = 64;
+        char *tilestr = malloc(sizestr);
+        char strbuf[64];
+
+        memset(tilestr, 0, sizestr);
+
         /* Use the input array's axis dimensionality and lengths for the output file */
         seg->info->naxis = arr->naxis;
 
         for (i=0;i<arr->naxis;i++)
         {
            seg->axis[i] = arr->axis[i];
+
+           if (i == 0)
+           {
+              snprintf(strbuf, sizeof(strbuf), "%d", seg->axis[i]);
+              base_strcatalloc(tilestr, strbuf, &sizestr);
+           }
+           else
+           {
+              snprintf(strbuf, sizeof(strbuf), ",%d", seg->axis[i]);
+              base_strcatalloc(tilestr, strbuf, &sizestr);
+           }
         }
+
+        /* if the jsd specifies "compress Rice", then we should make the compression-tile size match 
+         * the array's dimensions (for efficiency). */
+        if (strcasestr(seg->cparms, riceID))
+        {
+           snprintf(seg->cparms, sizeof(seg->cparms), "%s %s", riceID, tilestr);
+        }
+
+        free(tilestr);
      }
 
      out = ScaleOutputArray(seg, arr, autoscale);
@@ -1763,13 +1790,13 @@ int drms_segment_writeslice(DRMS_Segment_t *seg, DRMS_Array_t *arr, int *start, 
              }
 
              if ((status = drms_fitstas_writeslice(seg, 
-                                                  filename, 
-                                                  seg->info->naxis, 
-                                                  seg->axis, 
-                                                  start, 
-                                                  end, 
-                                                  seg->record->slotnum, 
-                                                  out)) != DRMS_SUCCESS)
+                                                   filename, 
+                                                   seg->info->naxis, 
+                                                   seg->axis, 
+                                                   start, 
+                                                   end, 
+                                                   seg->record->slotnum, 
+                                                   out)) != DRMS_SUCCESS)
                goto bailout;
           }
           break;
