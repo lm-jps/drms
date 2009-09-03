@@ -4,6 +4,8 @@ DBNAME = POSTGRESQL
 
 _JSOCROOT_ = ..
 
+# XXX This PGIPATH var isn't correct - we don't put libpq inside the lib_third_party directory
+# at Stanford.
 PGIPATH	= /usr/include/pgsql
 ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/$(JSOC_MACHINE)/
 
@@ -186,8 +188,8 @@ ICC_WARNTOERR = -we266
 
 ifeq ($(WARN), 1)
 # Show warnings (always true for a debug build).
-ICC_WARN = -Winline -Wall $(ICC_WARNMORE)
-GCC_WARN = -Winline -Wall -Wno-comment
+ICC_WARN = -Wall $(ICC_WARNMORE)
+GCC_WARN = -Wall -Wno-comment
 FCOMPILER_WARN =
 else
 # Don't show warnings.
