@@ -188,8 +188,8 @@ ICC_WARNTOERR = -we266
 
 ifeq ($(WARN), 1)
 # Show warnings (always true for a debug build).
-ICC_WARN = -Wall $(ICC_WARNMORE)
-GCC_WARN = -Wall -Wno-comment
+ICC_WARN = $(ICC_WARNMORE)
+GCC_WARN = -Wno-comment
 FCOMPILER_WARN =
 else
 # Don't show warnings.
