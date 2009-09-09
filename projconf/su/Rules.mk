@@ -19,6 +19,10 @@ dir	:= $(d)/cookbook
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/lev0
 -include		$(SRCDIR)/$(dir)/Rules.mk
+dir	:= $(d)/lev1
+-include		$(SRCDIR)/$(dir)/Rules.mk
+dir	:= $(d)/jpe
+-include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/lev1_aia
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/lev1_hmi
