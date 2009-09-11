@@ -1678,6 +1678,7 @@ int drms_copykeys(DRMS_Record_t *target,
    DRMS_Keyword_t *lookupkey = NULL;
    DRMS_Record_t *lookuprec = NULL;
    int status = DRMS_SUCCESS;
+   int warned;
 
    if (usesrcset)
    {
@@ -1690,6 +1691,7 @@ int drms_copykeys(DRMS_Record_t *target,
       lookuprec = source;
    }
 
+   warned = 0;
    while ((setkey = (DRMS_Keyword_t *)hiter_getnext(sethit)) != NULL)
    {
       if (drms_keyword_inclass(setkey, class))
@@ -1711,15 +1713,24 @@ int drms_copykeys(DRMS_Record_t *target,
          {
             status = drms_copykeyB(tgtkey, srckey);
          }
-         else
+         else if (!warned)
          {
-            status = DRMS_ERROR_UNKNOWNKEYWORD;
+            /* Print a warning - there exist some keywords in tgtkey that don't exist in srckey */
+            fprintf(stderr, "Not all keywords in target record were set.\n");
+            warned = 1;
          }
       }
 
       if (status)
       {
-         fprintf(stderr, "drms_copykeys() failed on keyword '%s'.\n", srckey->info->name);
+         if (usesrcset)
+         {
+            fprintf(stderr, "drms_copykeys() failed on keyword '%s'.\n", srckey->info->name);
+         }
+         else
+         {
+            fprintf(stderr, "drms_copykeys() failed on keyword '%s'.\n", tgtkey->info->name);
+         }
          break;
       }
    }
