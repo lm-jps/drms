@@ -620,7 +620,125 @@ DRMS_Segment_t *drms_segment_lookupnum(DRMS_Record_t *rec, int segnum)
 
 /*************************** Segment Data functions **********************/
 
+FILE *drms_segment_fopen(DRMS_Segment_t *seg, const char *newfilename, int append, int *status)
+{
+   FILE *file = NULL;
+   DRMS_Record_t *rec = NULL;
+   int statint = DRMS_SUCCESS;
+   char filename[DRMS_MAXPATHLEN];
+   char path[DRMS_MAXPATHLEN];
 
+   if (seg)
+   {
+      rec = seg->record;
+
+      /* First, bring data file online (if it isn't online) */
+      if (rec->sunum != -1LL && rec->su == NULL)
+      {
+         /* The storage unit has not been requested from SUMS yet. Do it. */
+         if ((rec->su = drms_getunit(rec->env, 
+                                     rec->seriesinfo->seriesname, 
+                                     rec->sunum, 
+                                     1, 
+                                     &statint)) == NULL)
+         {
+            statint = DRMS_ERROR_NOSTORAGEUNIT;
+         }
+         else
+         {
+            rec->su->refcount++;
+         }
+      }
+
+      if (!statint)
+      {
+         /* If the file is being created (the storage unit is DRMS_READWRITE and the
+          * file doesn't already exist), then you need to set seg->filename. 
+          * drms_segment_filename() yields the default file name to create if 
+          * it doesn't exist already. Override that with newfilename if the 
+          * caller desires. */
+         struct stat stbuf;
+         char dir[DRMS_MAXPATHLEN];
+
+         drms_segment_filename(seg, path);
+         
+         if (rec->su->mode == DRMS_READWRITE && stat(path, &stbuf))
+         {
+            char *tmp = strdup(path);
+            char *pc = strrchr(tmp, '/');
+            *pc = '\0';
+            pc++;
+
+            if (newfilename)
+            {
+               snprintf(filename, sizeof(filename), "%s", newfilename);
+               snprintf(path, sizeof(path), "%s/%s", tmp, newfilename);
+            }
+            else
+            {
+               /* extract filename from path */
+               snprintf(filename, sizeof(filename), "%s", pc);
+            }
+
+            CHECKSNPRINTF(snprintf(seg->filename, DRMS_MAXSEGFILENAME, "%s", filename),
+                          DRMS_MAXSEGFILENAME);
+
+            free(tmp);
+         }
+
+         /* If the segment is part of a record that can be written to, then rec->su->mode == DRMS_READWRITE. 
+          * If the segment is part of a recrd that cannot be written to, then rec->su->mode == DRMS_READONLY. 
+          * So, no need to have a parameter that allows the caller to specify the mode. */
+         if (rec->su->mode == DRMS_READONLY)
+         {
+            file = fopen(path, "r");
+         }
+         else if (rec->su->mode == DRMS_READWRITE)
+         {
+            if (append)
+            {
+               file = fopen(path, "a+");
+            }
+            else
+            {
+               file = fopen(path, "w+");
+            }
+         }
+         else
+         {
+            statint = DRMS_ERROR_INVALIDSU;
+         }
+
+         if (!statint && !file)
+         {
+            statint = DRMS_ERROR_INVALIDFILE;
+         }
+      }
+   }
+
+   if (status)
+   {
+      *status = statint;
+   }
+
+   return file;
+}
+
+int drms_segment_fclose(FILE *fptr)
+{
+   int ret = 0;
+
+   if (fptr)
+   {
+      ret = fclose(fptr);
+      if (ret)
+      {
+         ret = DRMS_ERROR_IOERROR;
+      }
+   }
+
+   return ret;
+}
 
 /* Open an array data segment. 
 

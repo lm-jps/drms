@@ -137,6 +137,17 @@ void drms_segment_fprint(FILE *segfile, DRMS_Segment_t *seg);
    associated with @a seg in @a filename. The size of the buffer to which @a filename
    points must be at least DRMS_MAXPATHLEN+1 bytes long.
 
+   After creating a new series record, but before committing it to PostgreSQL, 
+   all segment's files get written into SUMS, typically with the ::drms_segment_write 
+   call or the ::drms_segment_write_from_file call. During this writing, 
+   the segment's file name is assigned. The name gets saved in the record's sg_XXX_file
+   column (where XXX refers to
+   the segment number) when the containing record gets committed into 
+   the database. When an existing series' records are opened, the name in the
+   sg_XXX_file column is then used to populate the segment's filename field, 
+   where it then becomes available when the ::drms_segment_filename function
+   is called.
+
    @param seg DRMS segment whose associated file's name will be returned.
    @param filename Buffer to hold the filename upon return.
 */
@@ -282,6 +293,27 @@ void drms_segment_getblocksize(DRMS_Segment_t *seg, int *blksz);
    @name Read and Write
 */
 /* @{ */
+
+/**
+   Opens the data file associated with the segment @a seg. A FILE * to the opened file is returned.
+   The caller must close the FILE * with ::drms_segment_fclose.
+
+   @param seg The segments whose file is to be opened.
+   @param newfilename If the storage unit referenced by the segment is a DRMS_READWRITE storage unit
+   and the caller intends to write a file that does not yet exist, @a newfilename will be the 
+   name of the new file. Otherwise, the new file will be given a default name formed from a 
+   combination of the segment name and the protocol type.
+   @param append If the storage unit referenced by the segment is a DRMS_READWRITE storage unit,
+   and @a append is set to 1, then when the segment's file is opened, the writing stream pointer is
+   positioned at the end of the file (the reading stream pointer is positioned at the beginning of the
+   file).
+   @param status DRMS status returned by reference. If the SUNUM referenced by the segment is not known to
+   SUMS, then a status of DRMS_ERROR_NOSTORAGEUNIT is returned. If the storage unit referenced by the
+   segment is invalid or contains unrecognized data, DRMS_ERROR_INVALIDSU is returned. If the file
+   referenced by the segment cannot be found or opened, DRMS_ERROR_INVALIDFILE is returned.
+ */
+FILE *drms_segment_fopen(DRMS_Segment_t *seg, const char *newfilename, int append, int *status);
+
 /** 
     Reads the data associated with @a seg into memory
     in a newly created ::DRMS_Array_t struct, converting the data to the requested
@@ -309,6 +341,17 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 */
 DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type, 
 				     int *start, int *end, int *status);
+
+/**
+   Close the segment file's file pointer. This function should be called on all file pointers
+   opened with ::drms_segment_fopen.
+
+   @param fptr The previously opened file pointer.
+   @return If the file pointer was successfully closed, then DRMS_SUCCESS is returned. Otherwise, 
+   DRMS_ERROR_IOERROR is returned.
+ */
+
+int drms_segment_fclose(FILE *fptr);
 
 /* Write the array argument to the file occupied by the
    segment argument. The array dimension and type must match the
