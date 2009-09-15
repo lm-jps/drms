@@ -562,7 +562,7 @@ void drms_segment_filename(DRMS_Segment_t *seg, char *filename)
 	   CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/%s.tas",
 				  seg->record->su->sudir, seg->info->name), DRMS_MAXPATHLEN);
 	 else
-	   CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT "/%s.%s",
+	   CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT "/%s%s",
 				  seg->record->su->sudir, seg->record->slotnum, seg->info->name,
 				  drms_prot2ext(seg->info->protocol)), DRMS_MAXPATHLEN);
       }

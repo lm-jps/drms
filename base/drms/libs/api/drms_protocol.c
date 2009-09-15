@@ -17,17 +17,17 @@ static char *prot_string[] = {
 };
 
 static char *prot_fileext[] = {
-   "generic",   
-   "bin",
-   "bin.gz",
-   "fits",
-   "fits",
-   "msi",
-   "tas",
-   "dsds",
-   "local",
-   "fitz",
-   "fits"
+   "",         /* '.generic' is not a valid file type - a generic protocol implies multiple possible file types */
+   ".bin",
+   ".bin.gz",
+   ".fits",
+   ".fits",
+   ".msi",
+   ".tas",
+   ".dsds",
+   ".local",
+   ".fitz",
+   ".fits"
 };
 
 static HContainer_t *gProtMap = NULL;
