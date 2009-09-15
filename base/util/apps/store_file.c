@@ -62,8 +62,8 @@ calling \ref store_dir will have access. \ref store_file then creates a record i
 the series \a series_name and copies the file specified by the full path \a file  into  the
 record's SUMS directory (for each record there is a single SUMS directory). 
 \ref store_file stores the filename part of \a file (ie., excludes the path) in the
-record's \a file keyword value so that \ref retrieve_file can locate the file
-within   the   SUMS  directory.
+record's \a file keyword value, so that the original filename is recoverable (the
+actual file name in SUMS may differ from the original file name).
 
 sel=\a sel_text and note=\a note_text allow the user to  link  additional
 information to the record to facilitate the subsequent search for file
