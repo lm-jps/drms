@@ -101,3 +101,29 @@ SUMS_BIN_BASEDIR	/usr/local/bin
 # non-zero value if it is
 SUMS_TAPE_AVAILABLE	0
 
+# SUMS Export - specify how to construct 4 arguments that represent the scp program, 
+# the user, the host, and the port to be used in an scp cmd-line. 
+# Use a printf format string, followed by any combination of the following
+# string variables: meth, user, host, domain, port. These string variables
+# are populated from the sums_url value in jsoc.drms_sites, which has 
+# the form: 
+#   <meth>://<user>@<host>.<domain>:<port>
+#
+# The meth variable is assigned the string <meth>, the user variable is assigned 
+# the string <user>, and so on.
+#
+# The 4 arguments will be used as follows to construct a command line:
+#   METH -P PORT USER@HOST:file destfile (if PORT is not 0)
+#   METH USER@HOST:file destfile (if PORT is 0)
+
+# METH argument - The scp program name (eg., scp-hpn)
+SUMEXP_METHFMT  "%s", meth
+
+# USER argument - The user account name on the HOST containing the source file
+SUMEXP_USERFMT  "%s", user
+
+# HOST argument - The host machine containing the source file
+SUMEXP_HOSTFMT  "%s.%s", host, domain
+
+# PORT argument - The port on the host machine to connect to
+SUMEXP_PORTFMT  "%s", port

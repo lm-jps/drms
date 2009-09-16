@@ -31,6 +31,10 @@ set SUMS_GROUP = `egrep "^SUMS_GROUP" $LOCALINF | awk '{print $2}'`
 set SUMS_TAPE_AVAILABLE = `egrep "^SUMS_TAPE_AVAILABLE" $LOCALINF | awk '{print $2}'`
 set THIRD_PARTY_LIBS = `egrep "^THIRD_PARTY_LIBS" $LOCALINF | awk '{print $2}'`
 set THIRD_PARTY_INCS = `egrep "^THIRD_PARTY_INCS" $LOCALINF | awk '{print $2}'`
+set SUMEXP_METHFMT = `perl -n -e 'if ($_ =~ /SUMEXP_METHFMT\s+(.+)/) { print $1; }' $LOCALINF`
+set SUMEXP_USERFMT = `perl -n -e 'if ($_ =~ /SUMEXP_USERFMT\s+(.+)/) { print $1; }' $LOCALINF`
+set SUMEXP_HOSTFMT = `perl -n -e 'if ($_ =~ /SUMEXP_HOSTFMT\s+(.+)/) { print $1; }' $LOCALINF`
+set SUMEXP_PORTFMT = `perl -n -e 'if ($_ =~ /SUMEXP_PORTFMT\s+(.+)/) { print $1; }' $LOCALINF`
 
 # check that local config file has been edited appropriately
 if ($#LOCAL_CONFIG_SET == 1) then
@@ -199,6 +203,18 @@ else
   echo "  where uid is the uid of the $SUMS_MANAGER user"
 endif
 
+# For JILA
+#set SUMEXP_METHFMT = '"/shared/bin/scp-hpn"'
+#set SUMEXP_USERFMT = '"%s", user'
+#set SUMEXP_HOSTFMT = '"%s-%s", host, port'
+#set SUMEXP_PORTFMT = '"0"'
+
+# Default
+#set SUMEXP_METHFMT = '"%s", meth'
+#set SUMEXP_USERFMT = '"%s", user'
+#set SUMEXP_HOSTFMT = '"%s.%s", host, domain'
+#set SUMEXP_PORTFMT = '"%s", port'
+
 # generate file localization.h
 set SCRIPT = base/include/localization.h
 echo "*** generating $SCRIPT ***"
@@ -218,6 +234,18 @@ echo '#define SUMS_GROUP		"'$SUMS_GROUP'"' >> $SCRIPT
 echo '#define SUMLOG_BASEDIR		"'$SUMS_LOG_BASEDIR'"' >> $SCRIPT
 echo '#define SUMBIN_BASEDIR		"'$SUMS_BIN_BASEDIR'"' >> $SCRIPT
 echo '#define SUMS_TAPE_AVAILABLE    '\($SUMS_TAPE_AVAIL\)'' >> $SCRIPT
+if ($#SUMEXP_METHFMT) then
+  echo '#define LOC_SUMEXP_METHFMT	'$SUMEXP_METHFMT >> $SCRIPT
+endif
+if ($#SUMEXP_USERFMT) then
+  echo '#define LOC_SUMEXP_USERFMT	'$SUMEXP_USERFMT  >> $SCRIPT
+endif
+if ($#SUMEXP_HOSTFMT) then
+  echo '#define LOC_SUMEXP_HOSTFMT	'$SUMEXP_HOSTFMT  >> $SCRIPT
+endif
+if ($#SUMEXP_PORTFMT) then
+  echo '#define LOC_SUMEXP_PORTFMT	'$SUMEXP_PORTFMT  >> $SCRIPT
+endif
 echo '#endif' >> $SCRIPT
 
 cd include
