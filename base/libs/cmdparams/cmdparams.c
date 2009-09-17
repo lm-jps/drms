@@ -469,6 +469,7 @@ static int parse_array (CmdParams_t *params, char *root, ModuleArgs_Type_t dtype
      /*
       *  name should contain a comma separated list of entities of the given type
       */
+     char valbuf[kARGSIZE];
      next = name;
      while (next) {
         nptr = next;
@@ -481,7 +482,12 @@ static int parse_array (CmdParams_t *params, char *root, ModuleArgs_Type_t dtype
         sprintf (key, "%s_%d_value", root, nvals);
         cmdparams_set (params, key, nptr);
 
-        list_llinserttail(listvals, nptr);
+        /* Be careful - inserttail is going to copy kARGSIZE bytes into a new list node,
+         * so you can't use nptr as the final argument to inserttail, since nptr
+         * might point to something less than kARGSIZE bytes.
+         */
+        snprintf(valbuf, sizeof(valbuf), "%s", nptr);
+        list_llinserttail(listvals, valbuf);
 
         nvals++;
      }
