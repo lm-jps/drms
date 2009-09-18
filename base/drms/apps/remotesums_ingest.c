@@ -19,7 +19,8 @@ scp -r 'j0:/SUM8/D2214195/D1829901/*' .
 #define kPATHS "paths"
 #define kSERIES "series"
 #define kSEP1 "://"
-#define kSEP2 ":"
+#define kSEP2 "@"
+#define kSEP3 ":"
 #define kHASHKEYLEN 64
 #define kMAXREQ 512
 
@@ -52,8 +53,6 @@ struct RSING_ExpTracker_struct
 
 typedef struct RSING_ExpTracker_struct RSING_ExpTracker_t;
 
-
-
 char *module_name = "rs_ingest";
 
 ModuleArgs_t module_args[] =
@@ -69,6 +68,139 @@ static int rsing_createhashkey(long long sunum, char *buf, int size)
    return (snprintf(buf, size, "%lld", sunum) > 0);
 }
 
+/* Maps the sums_url field of jsoc.drms_sites into the cmd, host, and port fields used by 
+ * sum_export_svc. Relies upon macros defined in localization.h */
+static RSINGEST_stat_t SumsURLMap(const char *instr, char **cmdout, char **hostout, unsigned int *portout)
+{
+   char *tmp = strdup(instr);
+   char *user = NULL;
+   char *meth = NULL;
+   char *host = NULL;
+   char *port = NULL;
+   char *domain = NULL;
+   char methmapped[1024];
+   char usermapped[1024];
+   char hostmapped[1024];
+   char portmapped[1024];
+   int size;
+
+   RSINGEST_stat_t status;
+   
+   status = kRSING_success;
+ 
+   if (tmp)
+   {
+      meth = tmp;
+      user = strstr(tmp, kSEP1);
+
+      if (user)
+      {
+         *user = '\0';
+         user += 3;
+         host = strstr(user, kSEP2);
+
+         if (host)
+         {
+            *host = '\0';
+            host++;
+            domain = strchr(host, '.');
+
+            if (domain)
+            {
+               *domain = '\0';
+               domain++;
+               port = strstr(domain, kSEP3);
+
+               /* port is optional, defaults to 22 */
+               if (port)
+               {
+                  *port = '\0';
+                  port++;
+               }
+            }
+            else
+            {
+               /* domain is optional */
+               port = strstr(host, kSEP3);
+
+               /* port is optional, defaults to 22 */
+               if (port)
+               {
+                  *port = '\0';
+                  port++;
+               }
+            }
+         }
+         else
+         {
+            status = kRSING_badparma;
+         }
+      }
+      else
+      {
+         status = kRSING_badparma;
+      }
+
+      /* Check for localization */
+#ifdef LOC_SUMEXP_METHFMT
+      snprintf(methmapped, sizeof(methmapped), LOC_SUMEXP_METHFMT);
+#else
+      snprintf(methmapped, sizeof(methmapped), "%s", meth);
+#endif
+
+#ifdef LOC_SUMEXP_USERFMT
+      snprintf(usermapped, sizeof(usermapped), LOC_SUMEXP_USERFMT);
+#else
+      snprintf(usermapped, sizeof(usermapped), "%s", user);
+#endif
+
+#ifdef LOC_SUMEXP_HOSTFMT
+      snprintf(hostmapped, sizeof(hostmapped), LOC_SUMEXP_HOSTFMT);
+#else
+      snprintf(hostmapped, sizeof(hostmapped), "%s.%s", host, domain);
+#endif
+
+      *portmapped = '\0';
+      if (!port)
+      {
+         port = "0";
+      }
+#ifdef LOC_SUMEXP_PORTFMT
+      snprintf(portmapped, sizeof(portmapped), LOC_SUMEXP_PORTFMT);
+#else
+      snprintf(portmapped, sizeof(portmapped), "%s", port);
+#endif
+
+      if (cmdout)
+      {
+         *cmdout = strdup(methmapped);
+      }
+
+      if (hostout)
+      {
+         size = strlen(usermapped) + strlen(hostmapped) + 128;
+         *hostout = malloc(size);
+         snprintf(*hostout, size, "%s@%s", usermapped, hostmapped);
+      }
+
+      if (portout)
+      {
+         if (sscanf(portmapped, "%u", portout) != 1)
+         {
+            status = kRSING_badparma;
+         }
+      }
+
+      free(tmp);
+   }
+   else
+   {
+      status = kRSING_badparma;
+   }
+
+   return status;
+}
+
 int DoIt(void)
 {
    RSINGEST_stat_t status = kRSING_success;
@@ -81,7 +213,6 @@ int DoIt(void)
    char serverstr[512];
    char *server = NULL;
    char *servermeth = NULL;
-   char *serverport = NULL;
    unsigned int port;
    char *sudir = NULL;
    char *ansunum;
@@ -202,33 +333,7 @@ int DoIt(void)
              */
 
             /* parse serverstr -> scp://jsoc_export@j0.stanford.edu/:55000 */
-            char *tmp = strdup(serverstr);
-            status = kRSING_badparma;
-
-            server = strstr(tmp, kSEP1);
-            port = 0;
-            if (server)
-            {
-               *server = '\0';
-               servermeth = tmp;
-               server += 3;
-               serverport = strstr(server, kSEP2);
-
-               if (serverport)
-               {
-                  *serverport = '\0';
-                  serverport++;
-
-                  if (sscanf(serverport, "%u", &port) == 1)
-                  {
-                     status = kRSING_success;
-                  }
-               }
-               else
-               {
-                  status = kRSING_success;
-               }
-            }
+            status = SumsURLMap(serverstr, &servermeth, &server, &port);
 
             if (status == kRSING_success)
             {
@@ -237,8 +342,19 @@ int DoIt(void)
                   if (hcon_lookup(sutracker, hashkey))
                   {
                      fprintf(stderr, "Attempt to export a storage unit more than once; skipping\n");
-                     free(tmp);
-                     tmp = NULL;
+                     
+                     if (servermeth)
+                     {
+                        free(servermeth);
+                        servermeth = NULL;
+                     }
+
+                     if (server)
+                     {
+                        free(server);
+                        server = NULL;
+                     }
+
                      /* Don't do anything with the alloc'd su - it will get cleaned up eventually */
 
                      continue;
@@ -266,8 +382,8 @@ int DoIt(void)
                {
                   /* Create new SUMEXP_t */
                   pexp = (RSING_ExpTracker_t *)hcon_allocslot(sumexptracker, server);
-                  pexp->sumexpt.cmd = strdup(servermeth);
-                  pexp->sumexpt.host = strdup(server); /* <user>@<server> */
+                  pexp->sumexpt.cmd = servermeth;
+                  pexp->sumexpt.host = server; /* <user>@<server> */
                   pexp->sumexpt.port = port;
                   pexp->sumexpt.src = (char **)calloc(kMAXREQ, sizeof(char *));
                   pexp->sumexpt.dest = (char **)calloc(kMAXREQ, sizeof(char *));
@@ -285,9 +401,14 @@ int DoIt(void)
                fprintf(stderr, "Invalid server string '%s'.\n", serverstr);
             }
             
-            if (tmp)
+            if (servermeth)
             {
-               free(tmp);
+               servermeth = NULL;
+            }
+
+            if (server)
+            {
+               server = NULL;
             }
          }
       }
