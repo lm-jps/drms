@@ -220,6 +220,7 @@ KEY *getdo_1(KEY *params)
   add_keys(params, &retlist);
   /* set up for response. sets current_client */
   if(!(clresp = set_client_handle(RESPPROG, (uint32_t)uid))) {
+    write_log("**Error: getdo_1() can't set_client_handle for response\n");
     freekeylist(&retlist);
     rinfo = 1;	/* give err status back to original caller */
     send_ack();	/* ack original sum_svc caller */
