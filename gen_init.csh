@@ -203,18 +203,6 @@ else
   echo "  where uid is the uid of the $SUMS_MANAGER user"
 endif
 
-# For JILA
-#set SUMEXP_METHFMT = '"/shared/bin/scp-hpn"'
-#set SUMEXP_USERFMT = '"%s", user'
-#set SUMEXP_HOSTFMT = '"%s-%s", host, port'
-#set SUMEXP_PORTFMT = '"0"'
-
-# Default
-#set SUMEXP_METHFMT = '"%s", meth'
-#set SUMEXP_USERFMT = '"%s", user'
-#set SUMEXP_HOSTFMT = '"%s.%s", host, domain'
-#set SUMEXP_PORTFMT = '"%s", port'
-
 # generate file localization.h
 set SCRIPT = base/include/localization.h
 echo "*** generating $SCRIPT ***"
@@ -234,18 +222,14 @@ echo '#define SUMS_GROUP		"'$SUMS_GROUP'"' >> $SCRIPT
 echo '#define SUMLOG_BASEDIR		"'$SUMS_LOG_BASEDIR'"' >> $SCRIPT
 echo '#define SUMBIN_BASEDIR		"'$SUMS_BIN_BASEDIR'"' >> $SCRIPT
 echo '#define SUMS_TAPE_AVAILABLE    '\($SUMS_TAPE_AVAIL\)'' >> $SCRIPT
-if ($#SUMEXP_METHFMT) then
+if ($#SUMEXP_METHFMT)
   echo '#define LOC_SUMEXP_METHFMT	'$SUMEXP_METHFMT >> $SCRIPT
-endif
-if ($#SUMEXP_USERFMT) then
-  echo '#define LOC_SUMEXP_USERFMT	'$SUMEXP_USERFMT  >> $SCRIPT
-endif
-if ($#SUMEXP_HOSTFMT) then
-  echo '#define LOC_SUMEXP_HOSTFMT	'$SUMEXP_HOSTFMT  >> $SCRIPT
-endif
-if ($#SUMEXP_PORTFMT) then
-  echo '#define LOC_SUMEXP_PORTFMT	'$SUMEXP_PORTFMT  >> $SCRIPT
-endif
+if ($#SUMEXP_USERFMT)
+  echo '#define LOC_SUMEXP_USERFMT	'$SUMEXP_USERFMT >> $SCRIPT
+if ($#SUMEXP_HOSTFMT)
+  echo '#define LOC_SUMEXP_HOSTFMT	'$SUMEXP_HOSTFMT >> $SCRIPT
+if ($#SUMEXP_PORTFMT)
+  echo '#define LOC_SUMEXP_PORTFMT	'$SUMEXP_PORTFMT >> $SCRIPT
 echo '#endif' >> $SCRIPT
 
 cd include
