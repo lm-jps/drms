@@ -143,7 +143,7 @@ int DoIt(void)
 	      XASSERT(su = malloc(sizeof(DRMS_StorageUnit_t)));
 	      su->sunum = atoll(qres->field[0][2]);
 	      drms_env->retention = DRMS_LOG_RETENTION;
-	      status = drms_su_getsudir(drms_env, su, retrieve);
+	      status = drms_getsudir(drms_env, su, retrieve);
 	      if (!status) 
 		printf("%s", su->sudir);
               else
