@@ -61,7 +61,14 @@ THIRD_PARTY_INCS	/usr/local/include
 #   subsequent installations/updates
 DRMS_SAMPLE_NAMESPACE	drms
 
-# the following entries are for slony processing of mirrored data archives
+# The remaining definitions only need to be reviewed and modified as
+#   appropriate if you will be doing a "make sums" as or in behalf of the
+#   SUMS_MANAGER; they do not affect the functioning of the libraries and
+#   applications  built by a regular user with plain "make"; nevertheless
+#   it is probably a good idea to keep them consistent for the site
+
+# The following entries are for slony processing of mirrored data archives;
+#   they are not currently used in the "make"
 
 # the postgres user name of the slony administrative account; normally "slony"
 SLONY_ADMIN	slony
@@ -72,7 +79,7 @@ SLONY_LOG_BASEDIR	/usr/local/logs/slony
 # the user name(s) or email addresses for slony problem notifications
 SLONY_NOTIFY	production
 
-# the following entries are specific to the SUMS configuration
+# The following entries are specific to the SUMS configuration
 
 # the user name of the SUMS administrator account - a special account is
 #   recommended for multi-user systems, but not required
@@ -89,7 +96,7 @@ SUMS_GROUP	drms
 SUMS_SERVER_HOST	localhost
 
 # the base directory for SUMS logs and configuration files; used by
-# base/sums/apps/sum_svc.c and sum_rm.c
+#   base/sums/apps/sum_svc.c and sum_rm.c
 SUMS_LOG_BASEDIR	/usr/local/logs/SUM
 
 # the directory in which the binary of sum_chmown, a root setuid program,
@@ -98,32 +105,46 @@ SUMS_LOG_BASEDIR	/usr/local/logs/SUM
 SUMS_BIN_BASEDIR	/usr/local/bin
 
 # whether a tape archive service is available for SUMS or not; set to a
-# non-zero value if it is
+#   non-zero value if it is
 SUMS_TAPE_AVAILABLE	0
 
-# SUMS Export - specify how to construct 4 arguments that represent the scp program, 
-# the user, the host, and the port to be used in an scp cmd-line. 
-# Use a printf format string, followed by any combination of the following
-# string variables: meth, user, host, domain, port. These string variables
-# are populated from the sums_url value in jsoc.drms_sites, which has 
-# the form: 
-#   <meth>://<user>@<host>.<domain>:<port>
+# SUMS Export - specify how to construct 4 arguments that represent the
+#   transfer program (e.g. scp), the user, the host, and the port to be used
+#   in a command line for fetching SUMS data from a server via sum_export_svc.
+#   Use a printf format string, followed by any combination of the following
+#   string variables: meth, user, host, domain, port. These string variables
+#   are populated from the SUMS_URL value in jsoc.drms_sites, which has the
+#   form:
+# 
+#     <meth>://<user>@<host>.<domain>:<port>
 #
-# The meth variable is assigned the string <meth>, the user variable is assigned 
-# the string <user>, and so on.
+# The meth variable is assigned the string <meth>, the user variable is
+#   assigned the string <user>, and so on.
 #
 # The 4 arguments will be used as follows to construct a command line:
-#   METH -P PORT USER@HOST:file destfile (if PORT is not 0)
-#   METH USER@HOST:file destfile (if PORT is 0)
+#     METH -P PORT USER@HOST:file destfile (if PORT is not 0)
+#     METH USER@HOST:file destfile (if PORT is 0)
+#
+# N.B. The default values, as provided in the commented-out definitions below,
+#   will result in a command of the form:
+#     METH -P PORT USER@HOST.DOMAIN:file destfile (if PORT is not 0)
+#     METH USER@HOST.DOMAIN:file destfile (if PORT is 0)
+#   It is only necessary to uncomment the definitions if you need to provide
+#   a different command, for example,
+#     METH USER@HOST-PORT:file destfile
+#   in which case you would have to define:
+#     SUMEXP_HOSTFMT	"%s-%s", host, port
+#   and
+#     SUMEXP_PORTFMT	"0"
 
-# METH argument - The scp program name (eg., scp-hpn)
-SUMEXP_METHFMT  "%s", meth
+# METH argument - The transfer program name (e.g. scp-hpn)
+#SUMEXP_METHFMT	"%s", meth
 
 # USER argument - The user account name on the HOST containing the source file
-SUMEXP_USERFMT  "%s", user
+#SUMEXP_USERFMT	"%s", user
 
 # HOST argument - The host machine containing the source file
-SUMEXP_HOSTFMT  "%s.%s", host, domain
+#SUMEXP_HOSTFMT	"%s.%s", host, domain
 
 # PORT argument - The port on the host machine to connect to
-SUMEXP_PORTFMT  "%s", port
+#SUMEXP_PORTFMT	"%s", port
