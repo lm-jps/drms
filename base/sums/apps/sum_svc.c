@@ -40,7 +40,7 @@ extern PART ptabx[]; 	/* defined in SUMLIB_PavailRequest.pgc */
 void logkey();
 extern int errno;
 static void sumprog_1();
-struct timeval TIMEOUT = { 60, 0 };
+struct timeval TIMEOUT = { 10, 0 };
 uint32_t rinfo;
 float ftmp;
 static struct timeval first[4], second[4];
