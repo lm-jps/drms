@@ -18,8 +18,6 @@ set DRMS_DATABASE = `egrep "^DRMS_DATABASE" $LOCALINF | awk '{print $2}'`
 set DRMS_SITE_CODE = `egrep "^DRMS_SITE_CODE" $LOCALINF | awk '{print $2}'`
 set DRMS_SAMPLE_NAMESPACE = `egrep "^DRMS_SAMPLE_NAMESPACE" $LOCALINF | awk '{print $2}'`
 set POSTGRES_ADMIN = `egrep "^POSTGRES_ADMIN" $LOCALINF | awk '{print $2}'`
-set POSTGRES_LIBS = `egrep "^POSTGRES_LIBS" $LOCALINF | awk '{print $2}'`
-set POSTGRES_INCS = `egrep "^POSTGRES_INCS" $LOCALINF | awk '{print $2}'`
 set SLONY_ADMIN = `egrep "^SLONY_ADMIN" $LOCALINF | awk '{print $2}'`
 set SLONY_LOG_BASEDIR = `egrep "^SLONY_LOG_BASEDIR" $LOCALINF | awk '{print $2}'`
 set SLONY_NOTIFY = `egrep "^SLONY_NOTIFY" $LOCALINF | awk '{print $2}'`
@@ -29,8 +27,6 @@ set SUMS_BIN_BASEDIR = `egrep "^SUMS_BIN_BASEDIR" $LOCALINF | awk '{print $2}'`
 set SUMS_MANAGER = `egrep "^SUMS_MANAGER" $LOCALINF | awk '{print $2}'`
 set SUMS_GROUP = `egrep "^SUMS_GROUP" $LOCALINF | awk '{print $2}'`
 set SUMS_TAPE_AVAILABLE = `egrep "^SUMS_TAPE_AVAILABLE" $LOCALINF | awk '{print $2}'`
-set THIRD_PARTY_LIBS = `egrep "^THIRD_PARTY_LIBS" $LOCALINF | awk '{print $2}'`
-set THIRD_PARTY_INCS = `egrep "^THIRD_PARTY_INCS" $LOCALINF | awk '{print $2}'`
 set SUMEXP_METHFMT = `perl -n -e 'if ($_ =~ /SUMEXP_METHFMT\s+(.+)/) { print $1; }' $LOCALINF`
 set SUMEXP_USERFMT = `perl -n -e 'if ($_ =~ /SUMEXP_USERFMT\s+(.+)/) { print $1; }' $LOCALINF`
 set SUMEXP_HOSTFMT = `perl -n -e 'if ($_ =~ /SUMEXP_HOSTFMT\s+(.+)/) { print $1; }' $LOCALINF`
@@ -64,14 +60,6 @@ if ($#DRMS_SAMPLE_NAMESPACE != 1) then
 endif
 if ($#POSTGRES_ADMIN != 1) then
   echo "Error: POSTGRES_ADMIN undefined in local configuration file $LOCALINF"
-  exit
-endif
-if ($#POSTGRES_LIBS != 1) then
-  echo "Error: POSTGRES_LIBS undefined in local configuration file $LOCALINF"
-  exit
-endif
-if ($#POSTGRES_INCS != 1) then
-  echo "Error: POSTGRES_INCS undefined in local configuration file $LOCALINF"
   exit
 endif
 if ($#SLONY_ADMIN != 1) then
@@ -108,14 +96,6 @@ if ($#SUMS_GROUP != 1) then
 endif
 if ($#SUMS_TAPE_AVAILABLE != 1) then
   echo "Error: SUMS_TAPE_AVAILABLE undefined in local configuration file $LOCALINF"
-  exit
-endif
-if ($#THIRD_PARTY_LIBS != 1) then
-  echo "Error: THIRD_PARTY_LIBS undefined in local configuration file $LOCALINF"
-  exit
-endif
-if ($#THIRD_PARTY_INCS != 1) then
-  echo "Error: THIRD_PARTY_INCS undefined in local configuration file $LOCALINF"
   exit
 endif
 
@@ -222,14 +202,18 @@ echo '#define SUMS_GROUP		"'$SUMS_GROUP'"' >> $SCRIPT
 echo '#define SUMLOG_BASEDIR		"'$SUMS_LOG_BASEDIR'"' >> $SCRIPT
 echo '#define SUMBIN_BASEDIR		"'$SUMS_BIN_BASEDIR'"' >> $SCRIPT
 echo '#define SUMS_TAPE_AVAILABLE    '\($SUMS_TAPE_AVAIL\)'' >> $SCRIPT
-if ($#SUMEXP_METHFMT)
+if ($#SUMEXP_METHFMT) then 
   echo '#define LOC_SUMEXP_METHFMT	'$SUMEXP_METHFMT >> $SCRIPT
-if ($#SUMEXP_USERFMT)
-  echo '#define LOC_SUMEXP_USERFMT	'$SUMEXP_USERFMT >> $SCRIPT
-if ($#SUMEXP_HOSTFMT)
-  echo '#define LOC_SUMEXP_HOSTFMT	'$SUMEXP_HOSTFMT >> $SCRIPT
-if ($#SUMEXP_PORTFMT)
-  echo '#define LOC_SUMEXP_PORTFMT	'$SUMEXP_PORTFMT >> $SCRIPT
+endif
+if ($#SUMEXP_USERFMT) then
+  echo '#define LOC_SUMEXP_USERFMT	'$SUMEXP_USERFMT  >> $SCRIPT
+endif
+if ($#SUMEXP_HOSTFMT) then
+  echo '#define LOC_SUMEXP_HOSTFMT	'$SUMEXP_HOSTFMT  >> $SCRIPT
+endif
+if ($#SUMEXP_PORTFMT) then
+  echo '#define LOC_SUMEXP_PORTFMT	'$SUMEXP_PORTFMT  >> $SCRIPT
+endif
 echo '#endif' >> $SCRIPT
 
 cd include
@@ -237,16 +221,8 @@ ln -s ../$SCRIPT localization.h
 cd ..
 
 # modify targets as appropriate in custom.mk
-set CUST = custom.mk
-echo "PGIPATH = $POSTGRES_INCS" >> $CUST
-echo "ECPGL = -L$POSTGRES_LIBS" >> $CUST
-
-# make third-party links
-echo "*** linking third-party libs and includes ***"
-ln -sfv $THIRD_PARTY_INCS lib_third_party/include
-if (!(-d lib_third_party/lib)) mkdir lib_third_party/lib
-ln -sfv $THIRD_PARTY_LIBS/linux_x86_64 lib_third_party/lib/linux_x86_64
-ln -sfv $THIRD_PARTY_LIBS/linux_ia32 lib_third_party/lib/linux_ia32
+# don't do anything here that will modify custom.mk. Another script
+# does that.
 
 if ($ADMIN_STATUS) then
   echo

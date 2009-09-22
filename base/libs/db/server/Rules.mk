@@ -29,9 +29,9 @@ S_$(d)			:= $(notdir $(LIBDB))
 
 # Local rules
 $(COMMOBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
-$(COMMOBJ_$(d)):	CF_TGT := -D$(DBNAME) -I$(PGIPATH)
+$(COMMOBJ_$(d)):	CF_TGT := -D$(DBNAME) $(PGH)
 $(OBJ_$(d)):		$(SRCDIR)/$(d)/Rules.mk
-$(OBJ_$(d)):		CF_TGT := -D$(DBNAME) -I$(PGIPATH)
+$(OBJ_$(d)):		CF_TGT := -D$(DBNAME) $(PGH)
 
 $(LIBDB):		$(LIBDB_OBJ)
 			$(ARCHIVE)

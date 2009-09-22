@@ -50,7 +50,7 @@ S_$(d)		:= $(notdir $(LIBSUM))
 #endif
 
 $(OBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk $(PG_$(d))
-$(OBJ_$(d)):	CF_TGT := -I$(PGIPATH) -O0 $(CF_TGT_$(d))
+$(OBJ_$(d)):	CF_TGT := $(PGH) -O0 $(CF_TGT_$(d))
 $(OBJ_$(d)):	%.o:	%.c
 		$(COMP)
 

@@ -11,6 +11,7 @@ set CLEAN = "no"
 set CHKLIBS = "no"
 set CCMD = "c"
 set LCMD = "l"
+set LOCALIZE = "L"
 
 foreach ARG ($argv)
     set FLAG = `echo $ARG | awk '{print substr($0, 2)}'`
@@ -74,12 +75,6 @@ if ($CHKLIBS == "no") then
 	cd jsds
 	find . -name "*" -exec rm {} \;
 	cd ..
-    endif
-    echo "done"
-
-    echo -n "Removing links to third-party libraries..."
-    if (-d lib_third_party) then
-	rm -rf lib_third_party
     endif
     echo "done"
 
@@ -172,65 +167,33 @@ if ($CHKLIBS == "no") then
 	cd ..
 	echo "done"
 	echo
-	# Set links to third-party libraries
-	echo "Setting links to third-party libraries"
-	if (!(-d lib_third_party)) then
-	    mkdir lib_third_party
-	endif
-	cd lib_third_party
+       
+        if (-e suflag.txt) then           
+            # Stanford third-party libraries
+            echo 'POSTGRES_LIB = pq' >> custom.mk
+            echo 'CFITSIO_LIB = cfitsio' >> custom.mk
 
-	if (-e ../suflag.txt) then
-            if (!(-d include)) then
-                mkdir include
-            endif
+            echo 'ifeq (\$(JSOC_MACHINE), linux_x86_64)\n' >> custom.mk
+            echo '  POSTGRES_INCS = /usr/include' >> custom.mk
+            echo '  POSTGRES_LIBS = /usr/lib64' >> custom.mk
+            echo '  CFITSIO_INCS = /home/jsoc/include' >> custom.mk
+            echo '  CFITSIO_LIBS = /home/jsoc/lib/linux-x86_64' >> custom.mk
+            echo 'endif' >> custom.mk
 
-            if (!(-d lib)) then
-                mkdir lib
-            endif
+            echo 'ifeq (\$(JSOC_MACHINE), linux_ia32)\n' >> custom.mk
+            echo '  POSTGRES_INCS = /usr/include' >> custom.mk
+            echo '  POSTGRES_LIBS = /usr/lib' >> custom.mk
+            echo '  CFITSIO_INCS = /home/jsoc/include' >> custom.mk
+            echo '  CFITSIO_LIBS = /home/jsoc/lib/linux-ia32' >> custom.mk
+            echo 'endif' >> custom.mk
 
-            # Don't make a link directly from include/lib to a directory, else
-            # all includes files/libs must reside in one directory.
-
-            cd include
-            # Standard location for all of JSOC's includes
-            find /home/jsoc/include -maxdepth 1 -name "*.h" -exec ln -sfv {} \;
-            find /home/jsoc/include -mindepth 1 -type d -exec ln -sfv {} \;
-            cd ..
-
-            cd lib
-            # Standard locations for all of JSOC's libraries - x86_64
-            if (!(-d linux_x86_64)) then
-                mkdir linux_x86_64
-            endif
-
-            cd linux_x86_64
-                find /home/jsoc/lib/linux_x86_64/ -maxdepth 1 -name "*.a" -exec ln -sfv {} \;
-            cd ..
-
-            # Standard locations for all of JSOC's libraries - ia32
-            if (!(-d linux_ia32)) then
-                mkdir linux_ia32
-            endif
-
-            cd linux_ia32
-                find /home/jsoc/lib/linux_ia32/ -maxdepth 1 -name "*.a" -exec ln -sfv {} \;
-            cd ..
-
-            cd ..
-	#else
-# Non-Stanford users: edit these lines to reflect the location of required
-#  3rd party libs: cfitsio.a
-	    #ln -sfv /usr/local/include include
-            #if (!(-d lib)) mkdir lib
-	    #ln -sfv /usr/local/lib lib/$JSOC_MACHINE
-	endif
-
-	cd ..
-        
-        # Set custom make file to tell the make system that the gcc cfitsio library is called
-        # libcfitsio_gcc.a
-        if (-e suflag.txt) then
-            echo "CFITSIOFNAME_GCC_X86_64 = cfitsio_gcc" >> custom.mk
+            # Set custom make file to tell the make system that the gcc cfitsio library is called
+            # libcfitsio_gcc.a
+            echo 'ifeq ($(COMPILER), gcc)' >> custom.mk
+            echo '  ifeq ($(JSOC_MACHINE), linux_x86_64)' >> custom.mk
+            echo '    CFITSIO_LIB = cfitsio_gcc' >> custom.mk
+            echo '  endif' >> custom.mk
+            echo 'endif' >> custom.mk
         endif
 
         # Make customizations - ensure changes here are synchronized to changes in make_basic.mk
@@ -259,35 +222,6 @@ endif
 # Enter required library names and versions here.
 if ($CHKLIBS == "yes") then
 
-  echo
-  echo "JSOC expects all third-party library header files to be located at"
-  echo "         $JSOCROOT/lib_third_party/include/"
-  echo "     and all third-party libraries to be located at
-  echo "         $JSOCROOT/lib_third_party/$JSOC_MACHINE/"
-  echo "     If you wish to build a target that uses one of the following"
-  echo "     third-party libraries, please install the required library version"
-  echo "     and create a link from from"
-  echo "         $JSOCROOT/lib_third_party/include/"
-  echo "     and $JSOCROOT/lib_third_party/$JSOC_MACHINE/"
-  echo "     to the installed library headers and binary files, respectively."
-  echo
-  echo "Example:"
-  echo "  cd $JSOCROOT/lib_third_party/"
-  echo "  ln -s /usr/local/include include"
-  echo "  cd $JSOCROOT/lib_third_party/$JSOC_MACHINE/"
-  echo "  ln -s /usr/local/lib/libfftw3f.a libfftw3f.a "
-  echo
-  echo "Library libfftw3f.a (v. 3.1.2) required for targets: universe, examples, helloworld, xinterp, demo_td08062007"
-  echo "Library libcfitsio.a (v. 3.03) required for targets: universe, examples, f_ingest_gong_mrv, f_dup_gong_mrv"
-
-#    echo "Library libcfitsio.a (v. 3.03) required for targets: examples, helloworld"
-#    echo "Library libmkl.so (v. 9.0) required for targets: examples, helloworld"
-#    if ($JSOC_MACHINE == "linux_x86_64") then 
-#	echo "Library libmkl_lapack64.so (v. 9.0) required for targets: examples, helloworld"
-#    else echo "Library libmkl_lapack32.so (v. 9.0) required for targets: examples, helloworld"
-#    endif
-
-
 endif 
 
 # Site Localization
@@ -307,92 +241,25 @@ if (!(-e suflag.txt)) then
   else
     echo "CUSTOM_DEFINES = __LOCALIZED_DEFS__" >> custom.mk
     ./gen_init.csh
+    ./customizemake.pl
   endif
-endif
+else if (-e config.local)
+    # config.local is optional at Stanford, but it won't necessarily contain the same information that 
+    # a NetDRMS config.local contains. The first section contains items that will override the
+    # the items in serverdefs.h. The second section contains items used to populate custom.mk, 
+    # which causes make systems variables to be defined that override the default make behavior
+    # (such as overriding the name of the directory to which binary data are written - linux_x86_64_n02
+    # instead of linux_x86_64, for example).
 
-# Check for required libraries (must happen after localization, which might
-# set links to such libraries
-set TPWARN = 0
+    # Override the defaults defined in serverdefs.h (don't use gen_init.csh as it does several things, 
+    # most of which are relevant only to non-SU NetDRMS sites). This script causes all 
+    # items included in config.local to override those defined in serverdefs.h, but not all
+    # items need be specified in config.local.
+    ./customizedefs.pl
+    echo "CUSTOM_DEFINES = __CUSTOMIZED_DEFS__" >> custom.mk
 
-# Libraries required by all
-if ($JSOC_MACHINE == "linux_x86_64") then
-    if (!(-e lib_third_party/lib/linux_x86_64/libcfitsio.a)) then
-        echo
-	echo "Can't find required library: lib_third_party/lib/linux_x86_64/libcfitsio.a"
-	set TPWARN = 1
-    endif
-endif
-
-if ($JSOC_MACHINE == "linux_ia32") then
-    if (!(-e lib_third_party/lib/linux_ia32/libcfitsio.a)) then
-        echo
-	echo "Can't find required library: lib_third_party/lib/linux_ia32/libcfitsio.a"
-	set TPWARN = 1
-    endif
-endif
-
-if ($JSOC_MACHINE == "mac_osx") then
-    if (!(-e lib_third_party/lib/mac_osx/libcfitsio.a)) then
-        echo
-	echo "Can't find required library: lib_third_party/lib/mac_osx/libcfitsio.a"
-	set TPWARN = 1
-    endif
-endif
-
-if (-e ../suflag.txt) then
-    # Stanford users' required libs.
-    if ($JSOC_MACHINE == "linux_x86_64") then
-        if (!(-e lib_third_party/lib/linux_x86_64/libcfitsio_gcc.a)) then
-            echo
-            echo "Can't find required library: lib_third_party/lib/linux_x86_64/libcfitsio_gcc.a"
-            set TPWARN = 1
-        endif
-	if (!(-e lib_third_party/lib/linux_x86_64/libfftw3f.a)) then
-            echo
-	    echo "Can't find required library: lib_third_party/lib/linux_x86_64/libfftw3f.a"
-	    set TPWARN = 1
-	endif
-	if (!(-e lib_third_party/lib/linux_x86_64/libgsl.a)) then
-            echo
-	    echo "Can't find required library: lib_third_party/lib/linux_x86_64/libgsl.a"
-	    set TPWARN = 1
-	endif
-	if (!(-e lib_third_party/lib/linux_x86_64/libgslcblas.a)) then
-            echo
-	    echo "Can't find required library: lib_third_party/lib/linux_x86_64/libgslcblas.a"
-	    set TPWARN = 1
-	endif
-    endif
-
-    if ($JSOC_MACHINE == "linux_ia32") then
-	if (!(-e lib_third_party/lib/linux_ia32/libfftw3f.a)) then
-            echo
-	    echo "Can't find required library: lib_third_party/lib/linux_ia32/libfftw3f.a"
-	    set TPWARN = 1
-	endif
-	if (!(-e lib_third_party/lib/linux_ia32/libgsl.a)) then
-            echo
-	    echo "Can't find required library: lib_third_party/lib/linux_ia32/libgsl.a"
-	    set TPWARN = 1
-	endif
-	if (!(-e lib_third_party/lib/linux_ia32/libgslcblas.a)) then
-            echo
-	    echo "Can't find required library: lib_third_party/lib/linux_ia32/libgslcblas.a"
-	    set TPWARN = 1
-	endif
-    endif
-
-    if ($JSOC_MACHINE == "mac_osx") then
-	if (!(-e lib_third_party/lib/mac_osx/libfftw3f.a)) then
-            echo
-	    echo "Can't find required library: lib_third_party/lib/mac_osx/libfftw3f.a"
-	    set TPWARN = 1
-	endif
-    endif
-endif
-
-if ($TPWARN) then
-    echo "Did you update config.local to create links to installed third-party libraries?"
+    # update custom.mk with data from config.local
+    ./customizemake.pl
 endif
 
 # Customize compilers

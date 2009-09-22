@@ -33,4 +33,10 @@
 
 #endif /* _LOCALIZED_DEFS */
 
+/* Override one or more defaults (but not all of them, unlike in the case of localization.h), 
+ * if user has requested this in config.local */
+#ifdef __CUSTOMIZED_DEFS__
+#include "customizeddefs.h"
+#endif /* __CUSTOMIZED_DEFS__ */
+
 #endif /* __SERVERDEFS_H */

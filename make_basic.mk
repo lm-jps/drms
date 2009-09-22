@@ -4,11 +4,6 @@ DBNAME = POSTGRESQL
 
 _JSOCROOT_ = ..
 
-# XXX This PGIPATH var isn't correct - we don't put libpq inside the lib_third_party directory
-# at Stanford.
-PGIPATH	= /usr/include/pgsql
-ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/$(JSOC_MACHINE)/
-
 # This optional file has custom definitions created by the configure script
 -include $(SRCDIR)/custom.mk
 
@@ -96,59 +91,19 @@ endif
 # contain the paths to the library binaries, and variables
 # that end in "LIBS" contain the full link cmd (the -L flag plus the -l flag)
 #
-# Path to 3rd-party library headers
-FMATHLIBSH = -I$(_JSOCROOT_)/lib_third_party/include
-CFITSIOH = -I$(_JSOCROOT_)/lib_third_party/include
-GSLH = -I$(_JSOCROOT_)/lib_third_party/include
 
-ifeq ($(JSOC_MACHINE), linux_x86_64) 
-#    FMATHLIBS = -lmkl_lapack -lmkl -L$(_JSOCROOT_)/lib_third_party/lib/linux-x86_64/ -lfftw3f -lcfitsio
-  # Path to 64-bit 3rd-party libraries
-  FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
-  CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
-  GSLL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
-#  ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_x86_64/
-endif
-ifeq ($(JSOC_MACHINE), linux_ia32) 
-#    FMATHLIBS = -lmkl_lapack -lmkl -L$(_JSOCROOT_)/lib_third_party/lib/linux-ia32/ -lfftw3f -lcfitsio
-  # Path to 32-bit 3rd-party libraries
-  FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
-  CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
-  GSLL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
-#  ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/linux_ia32/
-endif
-ifeq ($(JSOC_MACHINE), mac_osx_ppc) 
-#    FMATHLIBS = -lmkl_lapack -lmkl -L$(_JSOCROOT_)/lib_third_party/lib/linux-ia32/ -lfftw3f -lcfitsio
-  # Path to appropriate 3rd-party libraries
-  FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ppc/
-  CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ppc/
-  GSLL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ppc/
-#  ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ppc/
-endif
-ifeq ($(JSOC_MACHINE), mac_osx_ia32) 
-#    FMATHLIBS = -lmkl_lapack -lmkl -L$(_JSOCROOT_)/lib_third_party/lib/linux-ia32/ -lfftw3f -lcfitsio
-  # Path to appropriate 3rd-party libraries
-  FMATHLIBSL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ia32/
-  CFITSIOL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ia32/
-  GSLL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ia32/
-#  ECPGL = -L$(_JSOCROOT_)/lib_third_party/lib/mac_osx_ia32/
-endif
+# PostgreSQL 
+PGH = -I$(POSTGRES_INCS)
+PGL = -L$(POSTGRES_LIBS)
+PGLIBNAME = $(POSTGRES_LIB)
+PGLIBS = $(PGL) -l$(PGLIBNAME)
 
-# All 3rd-party libraries - local rules can define a subset
-FMATHLIBS = $(FMATHLIBSL) -lfftw3f 
-CFITSIOLIBS = $(CFITSIOL) -lcfitsio
-ECPGLIBS = $(ECPGL) -lpq
+# CFITSIO
+CFITSIOH = -I$(CFITSIO_INCS)
+CFITSIOL = -L$(CFITSIO_LIBS)
+CFITSIOLIBNAME = $(CFITSIO_LIB)
+CFITSIOLIBS =  $(CFITSIOL) -l$(CFITSIOLIBNAME)
 
-ifeq ($(COMPILER), gcc)
-	ifeq ($(JSOC_MACHINE), linux_x86_64) 
-		ifneq ($(CFITSIOFNAME_GCC_X86_64),)
-			FMATHLIBS = $(FMATHLIBSL) -lfftw3f -l$(CFITSIOFNAME_GCC_X86_64)
-			CFITSIOLIBS = $(CFITSIOL) -l$(CFITSIOFNAME_GCC_X86_64)
-		endif
-	endif
-endif
-
-GSLLIBS = $(GSLL) -lgsl -lgslcblas 
 #***********************************************************************************************#
 
 
@@ -386,16 +341,16 @@ $(CEXE):	%:	%.o $(EXELIBS)
 		$(LINK)
 		$(SLBIN)
 
-$(FEXE):	%:	%.o $(FMATHLIBS)
+$(FEXE):	%:	%.o 
 		$(FLINK)
 		$(SLBIN)
 
-$(SERVEREXE):   LL_TGT := $(LL_TGT) $(ECPGLIBS) $(CFITSIOLIBS)
+$(SERVEREXE):   LL_TGT := $(LL_TGT) $(PGLIBS) $(CFITSIOLIBS)
 $(SERVEREXE):	%:	%.o $(SERVERLIBS)
 			$(LINK)
 			$(SLBIN)
 
-$(MODEXE):      LL_TGT := $(LL_TGT) $(ECPGLIBS) $(CFITSIOLIBS)
+$(MODEXE):      LL_TGT := $(LL_TGT) $(PGLIBS) $(CFITSIOLIBS)
 $(MODEXE):	%:	%.o $(MODLIBS)
 			$(LINK)
 			$(SLBIN)
@@ -407,18 +362,18 @@ $(MODEXE_SOCK): %_sock: %.o $(MODLIBS_SOCK)
 # FMODEXE_SOCK contains all Fortran modules - the DoIt() function is defined inside a .f file.
 # These are socket-connect modules only. Assume they use third-party Fortran libraries
 # (although this may not be the case).
-$(FMODEXE_SOCK):	LL_TGT := $(LL_TGT) $(CFITSIOLIBS) $(FMATHLIBS)
+$(FMODEXE_SOCK):	LL_TGT := $(LL_TGT) $(CFITSIOLIBS) 
 $(FMODEXE_SOCK):     %_sock:	%.o $(FMODLIBS_SOCK) 
 			$(FLINK)
 			$(SLBIN)
 
 # MODEXE_USEF contains all C direct-connect modules that use third-party Fortran libraries.
-$(MODEXE_USEF):	LL_TGT := $(LL_TGT) $(ECPGLIBS) $(CFITSIOLIBS) $(FMATHLIBS)
+$(MODEXE_USEF):	LL_TGT := $(LL_TGT) $(PGLIBS) $(CFITSIOLIBS) 
 $(MODEXE_USEF):     %:	%.o $(MODLIBS)
 			$(FLINK)
 			$(SLBIN)
 # MODEXE_USEF contains all C socket-connect modules that use third-party Fortran libraries.
-$(MODEXE_USEF_SOCK):	LL_TGT := $(LL_TGT) $(CFITSIOLIBS) $(FMATHLIBS)
+$(MODEXE_USEF_SOCK):	LL_TGT := $(LL_TGT) $(CFITSIOLIBS) 
 $(MODEXE_USEF_SOCK): %_sock: %.o $(MODLIBS_SOCK)
 			$(FLINK)
 			$(SLBIN)
