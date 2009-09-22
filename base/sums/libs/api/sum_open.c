@@ -724,7 +724,8 @@ int getanymsg(int block)
   timeout.tv_sec=0;
   timeout.tv_usec=500000;
   //if(!ts) ts = getdtablesize();
-  if(!ts) ts = FD_SETSIZE;    /* cluster nodes have 16384 fd instead of 1024 */
+  //cluster nodes getdtablesize() is 16384, but select can only handle FD_SETSIZE
+  if(!ts) ts = FD_SETSIZE;
 
   while(wait) {
     readfds=svc_fdset;

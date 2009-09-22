@@ -146,6 +146,7 @@ int xgetanymsg(int block)
   struct timeval timeout;
   int wait, retcode = ERRMSG, srdy;
   //int ts=getdtablesize();   /* file descriptor table size */
+  //cluster nodes getdtablesize() is 16384, but select can only handle FD_SETSIZE
   int ts=FD_SETSIZE;	/* cluster nodes have 16384 fd instead of 1024 */
 
   wait = 1;
