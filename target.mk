@@ -10,7 +10,11 @@ ifndef JSOC_MACHINE
   export JSOC_MACHINE
 endif
 
-OBJDIR 		:= _$(JSOC_MACHINE)
+ifeq ($(MACH),)
+MACH = $(JSOC_MACHINE)
+endif
+
+OBJDIR 		:= _$(MACH)
 PROJOBJDIR	:= $(OBJDIR)/proj
 
 all:    $(PROJOBJDIR) $(OBJDIR)
@@ -26,8 +30,8 @@ MAKETARGET = $(MAKE) --no-print-directory -C $@ -f $(CURDIR)/Makefile \
 -include $(CURDIR)/proj/target.mk
 
 $(OBJDIR):
-	+@[ -d bin/$(JSOC_MACHINE) ] || mkdir -p bin/$(JSOC_MACHINE)
-	+@[ -d lib/$(JSOC_MACHINE) ] || mkdir -p lib/$(JSOC_MACHINE)
+	+@[ -d bin/$(MACH) ] || mkdir -p bin/$(MACH)
+	+@[ -d lib/$(MACH) ] || mkdir -p lib/$(MACH)
 	+@[ -d $@ ] || mkdir -p $@
 	+@[ -d $@/base/drms/apps ] || mkdir -p $@/base/drms/apps
 	+@[ -d $@/base/drms/libs/api/client ] || mkdir -p $@/base/drms/libs/api/client
@@ -84,5 +88,5 @@ Makefile : ;
 #
 .PHONY: clean
 clean:
-	rm -rf $(OBJDIR); rm -rf bin/$(JSOC_MACHINE); rm -rf lib/$(JSOC_MACHINE)
+	rm -rf $(OBJDIR); rm -rf bin/$(MACH); rm -rf lib/$(MACH)
 

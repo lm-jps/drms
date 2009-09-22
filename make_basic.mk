@@ -7,6 +7,9 @@ _JSOCROOT_ = ..
 # This optional file has custom definitions created by the configure script
 -include $(SRCDIR)/custom.mk
 
+# If MACH was set when the make command was issued (eg., make MACH='N02'), then
+# use its value for the output/obj directory and use the custom.mk variables
+# relevant to its value. Otherwise, use $(JSOC_MACHINE).
 ifeq ($(MACH),)
 MACH = $(JSOC_MACHINE)
 endif
@@ -292,8 +295,8 @@ endif
 FCOMP		= $(FCOMPILER) $(F_CF_ALL) $(FF_TGT) -o $@ -c $<
 FLINK		= $(FCOMPILER) $(F_LF_ALL) $(LF_TGT) -o $@ $^ $(LL_TGT) $(LL_ALL)
 
-SLBIN           = ln -sf ../../_$(JSOC_MACHINE)/$@ ../bin/$(JSOC_MACHINE)/
-SLLIB		= ln -sf ../../_$(JSOC_MACHINE)/$@ ../lib/$(JSOC_MACHINE)/
+SLBIN           = ln -sf ../../_$(MACH)/$@ ../bin/$(MACH)/
+SLLIB		= ln -sf ../../_$(MACH)/$@ ../lib/$(MACH)/
 #***********************************************************************************************#
 
 
