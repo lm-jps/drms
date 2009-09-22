@@ -145,7 +145,8 @@ int xgetanymsg(int block)
   fd_set readfds;
   struct timeval timeout;
   int wait, retcode = ERRMSG, srdy;
-  int ts=getdtablesize();   /* file descriptor table size */
+  //int ts=getdtablesize();   /* file descriptor table size */
+  int ts=FD_SETSIZE;	/* cluster nodes have 16384 fd instead of 1024 */
 
   wait = 1;
   timeout.tv_sec=0;

@@ -723,7 +723,9 @@ int getanymsg(int block)
   wait = 1;
   timeout.tv_sec=0;
   timeout.tv_usec=500000;
-  if(!ts) ts = getdtablesize();
+  //if(!ts) ts = getdtablesize();
+  if(!ts) ts = FD_SETSIZE;    /* cluster nodes have 16384 fd instead of 1024 */
+
   while(wait) {
     readfds=svc_fdset;
     srdy=select(ts,&readfds,(fd_set *)0,(fd_set *)0,&timeout); /* # ready */
@@ -765,7 +767,8 @@ int getmsgimmed()
   wait = 1;
   timeout.tv_sec=0;
   timeout.tv_usec=0;
-  if(!ts) ts = getdtablesize();
+  //if(!ts) ts = getdtablesize();
+  if(!ts) ts = FD_SETSIZE;    /* cluster nodes have 16384 fd instead of 1024 */
   while(wait) {
     readfds=svc_fdset;
     srdy=select(ts,&readfds,(fd_set *)0,(fd_set *)0,&timeout); /* # ready */
