@@ -130,11 +130,11 @@ if (open(CONFLOC, "<$tmp"))
          # identified by $JSOC_MACHINE
          if ($mach =~ /x86_64/i)
          {
-            print CUSTMK "ifeq (\$(JSOC_MACHINE), linux_x86_64)\n";
+            print CUSTMK 'ifeq ($(JSOC_MACHINE), linux_x86_64)' . "\n";
          }
          elsif ($mach =~ /ia32/i)
          {
-            print CUSTMK "ifeq (\$(JSOC_MACHINE), linux_ia32)\n";
+            print CUSTMK 'ifeq ($(JSOC_MACHINE), linux_ia32)' . "\n";
          }
 
          foreach $varname (keys(%map))

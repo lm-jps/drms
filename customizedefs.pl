@@ -8,7 +8,7 @@ use constant kDEFSSECTION => 1;
 use constant kMAKESECTION => 2;
 
 use constant kCONFIGFILE => "config.local";
-use constant kHEADER => "include/customizeddefs.h";
+use constant kHEADER => "base/include/customizeddefs.h";
 
 my($line);
 my($section);

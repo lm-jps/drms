@@ -114,25 +114,7 @@ if ($CHKLIBS == "no") then
 	    endif
 	endif
 	echo "done"
-
-	echo "Setting links to headers..."
-	if (!(-d base/include)) then
-	    mkdir -p base/include
-	endif
-	cd base/include
-	find .. -path '../include' -prune -o -name \*.h  \( \( -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \; \)
-	cd ../..
-
-	if (!(-d include)) then
-	    mkdir -p include
-	endif
-	cd include
-	if (-d ../base/include) then
-	    find ../base/include -name \*.h -exec ln -s {} . \;
-	endif
-	cd ..
-	echo "done"
-	echo
+        echo
 	
 	echo "Setting links to scripts..."
         if (!(-d scripts)) then
@@ -173,14 +155,14 @@ if ($CHKLIBS == "no") then
             echo 'POSTGRES_LIB = pq' >> custom.mk
             echo 'CFITSIO_LIB = cfitsio' >> custom.mk
 
-            echo 'ifeq (\$(JSOC_MACHINE), linux_x86_64)\n' >> custom.mk
+            echo 'ifeq ($(JSOC_MACHINE), linux_x86_64)' >> custom.mk
             echo '  POSTGRES_INCS = /usr/include' >> custom.mk
             echo '  POSTGRES_LIBS = /usr/lib64' >> custom.mk
             echo '  CFITSIO_INCS = /home/jsoc/include' >> custom.mk
             echo '  CFITSIO_LIBS = /home/jsoc/lib/linux-x86_64' >> custom.mk
             echo 'endif' >> custom.mk
 
-            echo 'ifeq (\$(JSOC_MACHINE), linux_ia32)\n' >> custom.mk
+            echo 'ifeq ($(JSOC_MACHINE), linux_ia32)' >> custom.mk
             echo '  POSTGRES_INCS = /usr/include' >> custom.mk
             echo '  POSTGRES_LIBS = /usr/lib' >> custom.mk
             echo '  CFITSIO_INCS = /home/jsoc/include' >> custom.mk
@@ -243,7 +225,7 @@ if (!(-e suflag.txt)) then
     ./gen_init.csh
     ./customizemake.pl
   endif
-else if (-e config.local)
+else if (-e config.local) then
     # config.local is optional at Stanford, but it won't necessarily contain the same information that 
     # a NetDRMS config.local contains. The first section contains items that will override the
     # the items in serverdefs.h. The second section contains items used to populate custom.mk, 
@@ -261,6 +243,25 @@ else if (-e config.local)
     # update custom.mk with data from config.local
     ./customizemake.pl
 endif
+
+echo "Setting links to headers..."
+if (!(-d base/include)) then
+    mkdir -p base/include
+endif
+cd base/include
+find .. -path '../include' -prune -o -name \*.h  \( \( -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \; \)
+cd ../..
+
+if (!(-d include)) then
+    mkdir -p include
+endif
+cd include
+if (-d ../base/include) then
+    find ../base/include -name \*.h -exec ln -s {} . \;
+endif
+cd ..
+echo "done"
+echo
 
 # Customize compilers
 # echo "JSOC_COMPILER = gcc" >> custom.mk
