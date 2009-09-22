@@ -101,60 +101,32 @@ void *DSDS_GetLibHandle(const char *libname, kDSDS_Stat_t *status)
 {
    kDSDS_Stat_t stat = kDSDS_Stat_Success;
    void *ret = NULL;
-   char ppath[PATH_MAX];
    char lpath[PATH_MAX];
-   char proclink[PATH_MAX];
-   char jsocroot[PATH_MAX];
-   pid_t pid;
-   const char *mach = getenv(kJSOC_MACHINE);
+   char *msg = NULL;
 
-   pid = getpid();
-   snprintf(proclink, sizeof(proclink), "/proc/%i/exe", pid);
-
-   if (-1 == readlink(proclink, ppath, sizeof(ppath)))
+#ifdef DRMS_LIBDIR
+   snprintf(lpath, 
+            sizeof(lpath), 
+            "%s/%s", 
+            DRMS_LIBDIR, 
+            libname);
+   dlerror();
+   ret = dlopen(lpath, RTLD_NOW);
+   if ((msg = dlerror()) != NULL)
    {
-      stat = kDSDS_Stat_CantReadProcLink;
-   }
-   else if (mach)
-   {
-      char *msg = NULL;
-      char *pC = NULL;
-
-      /* find the JSOC root from ppath */
-      snprintf(jsocroot, sizeof(jsocroot), "_%s", mach);
-      if ((pC = strstr(ppath, jsocroot)) != NULL)
+      /* library not found */
+      fprintf(stderr, "dlopen(%s) error: %s.\n", lpath, msg);
+      if (ret)
       {
-	 *pC = '\0';
+         dlclose(ret);
+         ret = NULL;
+      }
+      stat = kDSDS_Stat_CantOpenLibrary;
+   }
 
-	 snprintf(lpath, 
-		  sizeof(lpath), 
-		  "%slib/%s/%s", 
-		  ppath, 
-		  mach,
-		  libname);
-	 dlerror();
-	 ret = dlopen(lpath, RTLD_NOW);
-	 if ((msg = dlerror()) != NULL)
-	 {
-	    /* library not found */
-	    fprintf(stderr, "dlopen(%s) error: %s.\n", lpath, msg);
-	    if (ret)
-	    {
-	       dlclose(ret);
-	       ret = NULL;
-	    }
-	    stat = kDSDS_Stat_CantOpenLibrary;
-	 }
-      }
-      else
-      {
-	 stat = kDSDS_Stat_CantOpenLibrary;
-      }
-   }
-   else
-   {
-      stat = kDSDS_Stat_NoEnvironment;
-   }
+#else
+   #error Ensure the DRMS_LIBDIR is defined in make_basic.mk
+#endif
 
    if (status)
    {

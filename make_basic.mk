@@ -7,6 +7,10 @@ _JSOCROOT_ = ..
 # This optional file has custom definitions created by the configure script
 -include $(SRCDIR)/custom.mk
 
+ifeq ($(MACH),)
+MACH = $(JSOC_MACHINE)
+endif
+
 #***********************************************************************************************#
 #
 # COMPILER SELECTION
@@ -125,6 +129,16 @@ endif
 #
 #***********************************************************************************************#
 
+#***********************************************************************************************#
+#
+# Global flags
+#
+# All modules must be able to find libdsds.so. The define DRMS_LIBDIR specifies the path to 
+# all libraries.
+
+GLOBALSW = -DDRMS_LIBDIR="\"$(CURDIR)/../lib/$(MACH)\""
+#
+#***********************************************************************************************#
 
 #***********************************************************************************************#
 #
@@ -191,26 +205,26 @@ endif
 
 # can't figure out how to get stupid make to do if/else if/else
 ifeq ($(DEBUG), 0)
-  GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW)
+  GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW) $(GLOBALSW)
 # -xW tells the icc compiler to optimize for Pentium 4
-  ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE $(CCFLAGS_OPT) $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW)
+  ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE $(CCFLAGS_OPT) $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW) $(GLOBALSW)
 
   ifeq ($(JSOC_MACHINE), linux_x86_64)
-    GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=opteron $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW)
+    GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=opteron $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW) $(GLOBALSW)
   endif
 
   ifeq ($(JSOC_MACHINE), linux_ia64)
-    ICC_CF_ALL	= -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW)
+    ICC_CF_ALL	= -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW) $(GLOBALSW)
   endif
 
   ifeq ($(JSOC_MACHINE), linux_ia32)
-    GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=i686 $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW)
+    GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=i686 $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW) $(GLOBALSW)
   endif	
 
 else
 # -g tells the icc and gcc compilers to generate full debugging information
-  GCC_CF_ALL = -I$(SRCDIR)/base/include -std=gnu99 -g $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW)
-  ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE -g $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW)
+  GCC_CF_ALL = -I$(SRCDIR)/base/include -std=gnu99 -g $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW) $(GLOBALSW)
+  ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE -g $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW) $(GLOBALSW)
 endif
 
 # Fortran global COMPILE flags
