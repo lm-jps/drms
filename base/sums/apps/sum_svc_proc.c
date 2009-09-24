@@ -340,7 +340,7 @@ KEY *allocdo_1(KEY *params)
   bytes = getkey_double(params, "bytes");
   storeset = getkey_int(params, "storeset");
   if(!(status=SUMLIB_PavailGet(bytes, storeset, uid, sunum, &retlist))) {
-    wd = GETKEY_str(retlist, "partn_name");
+    wd = getkey_str(retlist, "partn_name");
     write_log("Alloc bytes=%e wd=%s for user=%s sumid=%lu\n", bytes, wd,
 		GETKEY_str(retlist, "USER"), uid);
     if(!(set_client_handle(RESPPROG, (uint32_t)uid))) { /*set up for response*/
@@ -357,6 +357,7 @@ KEY *allocdo_1(KEY *params)
     rinfo = 0;
     send_ack();
     setkey_int(&retlist, "STATUS", 0);   /* give success back to caller */
+    free(wd);
     return(retlist);		/* return the ans now */
   }
   rinfo = status;		/* ret err code back to caller */
