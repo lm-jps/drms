@@ -390,6 +390,7 @@ static int cmdparams_conv2type(const char *sdata,
    int status = CMDPARAMS_SUCCESS;
    char *endptr = NULL;
    int64_t intval;
+   int int32val;
    float fval;
    double dval;
 
@@ -402,10 +403,13 @@ static int cmdparams_conv2type(const char *sdata,
            intval = CP_MISSING_INT;
            status = CMDPARAMS_INVALID_CONVERSION;
         } 
-       
-        XASSERT(sizeof(intval) <= size);
-        memcpy(bufout, &intval, sizeof(intval));
-        
+        else
+        {
+           int32val = (int32_t)intval;
+           XASSERT(sizeof(int32val) <= size);
+           memcpy(bufout, &int32val, sizeof(int32val));
+        }
+
         break;
       case ARG_FLOAT:
         fval = strtof(sdata, &endptr);
@@ -415,9 +419,12 @@ static int cmdparams_conv2type(const char *sdata,
            status = CMDPARAMS_INVALID_CONVERSION;
            fval = CP_MISSING_FLOAT;
         } 
+        else
+        {
+           XASSERT(sizeof(fval) <= size);
+           memcpy(bufout, &fval, sizeof(fval));
+        }
 
-        XASSERT(sizeof(fval) <= size);
-        memcpy(bufout, &fval, sizeof(fval));
         break;
       case ARG_DOUBLE:
         dval = strtod(sdata, &endptr);
@@ -427,9 +434,12 @@ static int cmdparams_conv2type(const char *sdata,
            status = CMDPARAMS_INVALID_CONVERSION;
            dval = CP_MISSING_DOUBLE;
         } 
+        else
+        {
+           XASSERT(sizeof(dval) <= size);
+           memcpy(bufout, &dval, sizeof(dval));
+        }
 
-        XASSERT(sizeof(dval) <= size);
-        memcpy(bufout, &dval, sizeof(dval));
         break;
       default:
         fprintf(stderr, "Incomplete implementation - type '%d' not supported.\n", (int)dtype);
@@ -525,7 +535,7 @@ static int parse_array (CmdParams_t *params, char *root, ModuleArgs_Type_t dtype
         if ((status = cmdparams_conv2type(node->data, 
                                           dtype, 
                                           (char *)(actvals) + dsize * ival, 
-                                          kARGSIZE)) != CMDPARAMS_SUCCESS)
+                                          dsize)) != CMDPARAMS_SUCCESS)
         {
            break;
         }
