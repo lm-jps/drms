@@ -381,14 +381,16 @@ int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
   if(status != RPC_SUCCESS) {
     if(status != RPC_TIMEDOUT) {
       call_err = clnt_sperror(sum->cl, "Err clnt_call for INFODO");
-      (*history)("%s %d %s\n", datestring(), status, call_err);
+      if(history) 
+        (*history)("%s %d %s\n", datestring(), status, call_err);
       freekeylist(&klist);
       return (1);
     }
   }
   if(retstat) {			/* error on INFODO call */
     if(retstat != SUM_SUNUM_NOT_LOCAL)
-      (*history)("Error in SUM_info()\n"); //be quite for show_info sake
+      if(history) 
+        (*history)("Error in SUM_info()\n"); //be quite for show_info sake
     return(retstat);
   }
   else {
