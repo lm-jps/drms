@@ -49,7 +49,6 @@
 #include "xmem.h"
 #include "timeio.h"
 #include "util.h"
-#include "list.h"
 					       /* declared module parameters */
 extern ModuleArgs_t *gModArgs;
 
@@ -451,7 +450,7 @@ static int cmdparams_conv2type(const char *sdata,
 static int parse_array (CmdParams_t *params, char *root, ModuleArgs_Type_t dtype, char *valist) {
   int nvals = 0, status = 0;
   char *name, *next, *nptr, *tmplist;
-  static char key[CP_MAXNAMELEN], val[CP_MAXNAMELEN];
+  char key[CP_MAXNAMELEN], val[CP_MAXNAMELEN];
   void *actvals = NULL;
   LinkedList_t *listvals = NULL;
   ListNode_t *node = NULL;
@@ -489,7 +488,7 @@ static int parse_array (CmdParams_t *params, char *root, ModuleArgs_Type_t dtype
         }
         if (!strlen (nptr)) continue;
         /*  nptr now points to entity  */
-        sprintf (key, "%s_%d_value", root, nvals);
+        snprintf(key, sizeof(key), "%s_%d_value", root, nvals);
         cmdparams_set (params, key, nptr);
 
         /* Be careful - inserttail is going to copy kARGSIZE bytes into a new list node,
@@ -803,8 +802,8 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
   ModuleArgs_t *defps = gModArgs;
   int status;
 
-  parms->buflen = CMDPARAMS_INITBUFSZ;
-  XASSERT(parms->buffer = malloc (parms->buflen));
+  XASSERT(parms->buffer = list_llcreate(sizeof(char *), NULL));
+
   parms->head = 0;
   hash_init (&parms->hash, 503, 1, (int (*)(const void *, const void *))strcmp,
     hash_universal_hash);
@@ -960,7 +959,12 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
 void cmdparams_freeall (CmdParams_t *parms) {
   int i;
   hash_free (&parms->hash);
-  free (parms->buffer);
+
+  if (parms->buffer)
+  {
+     list_llfree(&(parms->buffer));
+  }
+  
   for (i=0; i<parms->num_args; i++)
     free(parms->args[i]);
   free (parms->args);
@@ -1078,30 +1082,12 @@ int cmdparams_parsefile (CmdParams_t *parms, char *filename, int depth) {
 #undef ISBLANK
 						/*  Add a new keyword  */
 void cmdparams_set (CmdParams_t *parms, const char *name, const char *value) {
-  int name_len, val_len, len;
-  char *nambuf, *valbuf;
 				/*  Insert name and value string in buffer  */
-  name_len = strlen (name);
-  val_len = strlen (value);
-  len = name_len + val_len + 2;
-  if (parms->buflen < parms->head+len) {
-			/* make buffer bigger, at least by a factor of 2. */
-    if (parms->buflen < len) parms->buflen += len;
-    else parms->buflen *= 2;
-    XASSERT(parms->buffer = realloc (parms->buffer, parms->buflen));
-  }
-  nambuf = &parms->buffer[parms->head];
-  memcpy (nambuf, name, name_len);
-  *(nambuf+name_len) = 0;
-  valbuf = nambuf+name_len + 1;
-  memcpy (valbuf, value, val_len);
-  *(valbuf+val_len) = 0;
-  parms->head += name_len+val_len + 2;
-					   /*  insert pointers in hash table */
-#ifdef DEBUG
-  printf ("inserting name = '%s', value = '%s'\n", nambuf, valbuf);
-#endif
-  hash_insert (&parms->hash, nambuf, valbuf);
+  char *hashname = strdup(name);
+  char *hashvalu = strdup(value);
+  list_llinserttail(parms->buffer, &hashname);
+  list_llinserttail(parms->buffer, &hashvalu);
+  hash_insert (&parms->hash, hashname, hashvalu);
 }
 				  /*  determine if a flag or keyword exists  */
 int cmdparams_exists (CmdParams_t *parms, char *name) {

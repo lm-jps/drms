@@ -313,6 +313,9 @@ int main(int argc, char **argv)
    int ret = 1;
    int nArgs = 0;
 
+   /* Initialize globals here */
+   memset(&cmdparams, 0, sizeof(CmdParams_t));
+
    JSOCMAIN_F_Initialize(&nArgs);
    ret = JSOCMAIN_Main(argc, argv, module_name, CallDoIt); /* defined in jsoc_main_sock.c */
    JSOCMAIN_F_Terminate(nArgs);

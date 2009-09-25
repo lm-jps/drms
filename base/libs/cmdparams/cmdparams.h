@@ -13,6 +13,7 @@ of parameters expected to be available to a module as a global variable.
 
 #include "hash_table.h"
 #include "hcontainer.h"
+#include "list.h"
 #include <stdlib.h>
 
 #ifdef FLIB
@@ -102,7 +103,8 @@ struct CmdParams_struct {
   Hash_Table_t hash;
   int buflen;
   int head;
-  char *buffer;
+  //  char *buffer;
+  LinkedList_t *buffer;
   HContainer_t *actvals;
   int argc; /* original argc passed to main() */
   char **argv; /* contains ALL cmd-line args - args doesn't have them all! */

@@ -304,6 +304,9 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   int printrel = 0;
   char reservebuf[128];
 
+   /* Initialize globals here */
+   memset(&cmdparams, 0, sizeof(CmdParams_t));
+
 #ifdef DEBUG
   xmem_config(1,1,1,1,1000000,1,0,0); 
 #endif
