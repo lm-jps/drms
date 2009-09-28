@@ -2,8 +2,6 @@ VPATH  = $(SRCDIR)
 STATIC = 
 DBNAME = POSTGRESQL
 
-_JSOCROOT_ = ..
-
 # This optional file has custom definitions created by the configure script
 -include $(SRCDIR)/custom.mk
 
