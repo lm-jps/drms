@@ -100,7 +100,7 @@ if (defined($outfile))
     # Error messages
     if (!$hasicc && !$hasgcc)
     {
-        print "Warning: Acceptable C compiler not found!\n";
+        print "Fatal error: Acceptable C compiler not found! You will be unable to build the DRMS library.\n";
     }
     elsif ($hasicc)
     {
@@ -113,7 +113,7 @@ if (defined($outfile))
 
     if (!$hasifort && !$hasgfort)
     {
-        print "Warning: Acceptable Fortran compiler not found!\n";
+        print "Warning: Acceptable Fortran compiler not found! Fortran interface will not be built, and you will be unable to build Fortran modules.\n";
     }
     elsif ($hasifort)
     {
