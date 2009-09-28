@@ -14,8 +14,14 @@ OBJ_$(d)	:= $(addprefix $(d)/, drms_client.o drms_env.o  drms_record.o drms_stor
 FIOBJ_$(d)	:= $(addprefix $(d)/, drms_fortran.o)
 FIOBJ		:= $(FIOBJ) $(FIOBJ_$(d))
 
-# FDRMSMODOBJ is referenced in proj/example/apps/Rules.mk
-FDRMSMOD	:= $(d)/fdrms.mod
+# FDRMSMODOBJ is referenced in proj/example/apps/Rules.mk; don't build it unless a fortran compiler
+# was found in moreconfigure.pl
+FDRMSMOD	=
+
+ifneq ($(JSOC_AUTOCOMPILER),)
+  FDRMSMOD	:= $(d)/fdrms.mod
+endif
+
 FDRMSMOBJ_$(d)	:= $(addprefix $(d)/, fdrms.o)
 FDRMSMODOBJ	:= $(FDRMSMOBJ_$(d))
 
@@ -58,7 +64,9 @@ $(LIBDRMSCLIENT):	$(LIBDRMSCLIENT_OBJ)
 			$(ARCHIVE)
 			$(SLLIB)
 
-$(FDRMSMOD):		$(FDRMSMODOBJ)
+ifneq ($(JSOC_AUTOCOMPILER),)
+  $(FDRMSMOD):		$(FDRMSMODOBJ)
+endif
 
 # Shortcuts
 .PHONY:	$(S_$(d))

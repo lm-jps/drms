@@ -100,7 +100,7 @@ if (defined($outfile))
     # Error messages
     if (!$hasicc && !$hasgcc)
     {
-        print "ERROR: Acceptable C compiler not found!\n";
+        print "Warning: Acceptable C compiler not found! icc will be assumed.\n";
     }
     elsif ($hasicc)
     {
@@ -113,7 +113,7 @@ if (defined($outfile))
 
     if (!$hasifort && !$hasgfort)
     {
-        print "ERROR: Acceptable Fortran compiler not found!\n";
+        print "Warning: Acceptable Fortran compiler not found! ifort will be assumed.\n";
     }
     elsif ($hasifort)
     {
