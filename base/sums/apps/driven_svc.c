@@ -1572,11 +1572,14 @@ int write_wd_to_drive(int sim, KEY *params, int drive, int fnum, char *logname)
     if(tapefilenum != (fnum + 1)) {
       write_log("***Dr%d:wt:Advisory: Tape file expected=%d, found=%d\n", 
 			drive, fnum+1, tapefilenum);
+      return(-1);	//new error ret 9/21/2009
+      /*******No longer needed. Going to be error if wrong next file # ****
       if(tapefilenum > MAX_TAPE_FN) {	//sanity ck. can get a strange# here
         write_log("***Dr%d:wt:Error: Tape file %d > max of %d\n", 
                         drive, tapefilenum, MAX_TAPE_FN);
         return(-1);
       }
+      ********************************************************************/
     }
   }
   write_log("***Dr%d:wt:success\n", drive); /*must be this form for t120 gui*/
