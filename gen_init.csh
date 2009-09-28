@@ -216,10 +216,6 @@ if ($#SUMEXP_PORTFMT) then
 endif
 echo '#endif' >> $SCRIPT
 
-cd include
-ln -s ../$SCRIPT localization.h
-cd ..
-
 # modify targets as appropriate in custom.mk
 # don't do anything here that will modify custom.mk. Another script
 # does that.
