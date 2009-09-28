@@ -18,7 +18,7 @@ FIOBJ		:= $(FIOBJ) $(FIOBJ_$(d))
 # was found in moreconfigure.pl
 FDRMSMOD	=
 
-ifneq ($(JSOC_AUTOCOMPILER),)
+ifneq ($(JSOC_AUTOFCOMPILER),)
   FDRMSMOD	:= $(d)/fdrms.mod
 endif
 
@@ -64,7 +64,7 @@ $(LIBDRMSCLIENT):	$(LIBDRMSCLIENT_OBJ)
 			$(ARCHIVE)
 			$(SLLIB)
 
-ifneq ($(JSOC_AUTOCOMPILER),)
+ifneq ($(JSOC_AUTOFCOMPILER),)
   $(FDRMSMOD):		$(FDRMSMODOBJ)
 endif
 
