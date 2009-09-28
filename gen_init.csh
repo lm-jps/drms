@@ -27,10 +27,10 @@ set SUMS_BIN_BASEDIR = `egrep "^SUMS_BIN_BASEDIR" $LOCALINF | awk '{print $2}'`
 set SUMS_MANAGER = `egrep "^SUMS_MANAGER" $LOCALINF | awk '{print $2}'`
 set SUMS_GROUP = `egrep "^SUMS_GROUP" $LOCALINF | awk '{print $2}'`
 set SUMS_TAPE_AVAILABLE = `egrep "^SUMS_TAPE_AVAILABLE" $LOCALINF | awk '{print $2}'`
-set SUMEXP_METHFMT = `perl -n -e 'if ($_ =~ /SUMEXP_METHFMT\s+(.+)/) { print $1; }' $LOCALINF`
-set SUMEXP_USERFMT = `perl -n -e 'if ($_ =~ /SUMEXP_USERFMT\s+(.+)/) { print $1; }' $LOCALINF`
-set SUMEXP_HOSTFMT = `perl -n -e 'if ($_ =~ /SUMEXP_HOSTFMT\s+(.+)/) { print $1; }' $LOCALINF`
-set SUMEXP_PORTFMT = `perl -n -e 'if ($_ =~ /SUMEXP_PORTFMT\s+(.+)/) { print $1; }' $LOCALINF`
+set SUMEXP_METHFMT = `perl -n -e 'if ($_ =~ /^SUMEXP_METHFMT\s+(.+)/) { print $1; }' $LOCALINF`
+set SUMEXP_USERFMT = `perl -n -e 'if ($_ =~ /^SUMEXP_USERFMT\s+(.+)/) { print $1; }' $LOCALINF`
+set SUMEXP_HOSTFMT = `perl -n -e 'if ($_ =~ /^SUMEXP_HOSTFMT\s+(.+)/) { print $1; }' $LOCALINF`
+set SUMEXP_PORTFMT = `perl -n -e 'if ($_ =~ /^SUMEXP_PORTFMT\s+(.+)/) { print $1; }' $LOCALINF`
 
 # check that local config file has been edited appropriately
 if ($#LOCAL_CONFIG_SET == 1) then
