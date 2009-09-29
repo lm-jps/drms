@@ -37,6 +37,7 @@ if($#ARGV != 0) {
   exit(1);
 }
 $infile = $ARGV[0];
+$outfile = "/tmp/find_dir_rm_list.tmp";
 if(-e $runtag) {         #this user already running
   print "Already found a $runtag\n";
   print "Only one instance of find_dir_main_rm allowed for a user\n";
@@ -44,6 +45,7 @@ if(-e $runtag) {         #this user already running
   exit(1);
 }
 open(IN, "<$infile") || die "Can't open $infile: $!\n";
+open(OUT, ">$outfile") || die "Can't open $outfile: $!\n";
 system "touch $runtag";
 
 while(<IN>) {
@@ -58,11 +60,14 @@ while(<IN>) {
     print "No dir: $dir_name\n";
     next;
   }
-  $cmd = "sudo /bin/rm -r -f $dir_name";
+  print OUT "$dir_name\n";
+}
+close(IN);
+close(OUT);
+
+  $cmd = "xargs sudo /bin/rm -rf < $outfile";
   print "$cmd\n";
   if(system "$cmd") {
     print "Err: $cmd\n";
   }
-}
-close(IN);
 system "/bin/rm $runtag";
