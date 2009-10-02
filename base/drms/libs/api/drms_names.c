@@ -956,24 +956,72 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
        {
           int adv = -1;
           if (datatype == DRMS_TYPE_TIME)
+          {
+             /* This will consume as much time string as possible. So, in this time string:
+              * 
+              * 2009.01.03_12:45:00-2009.01.04_00:55:00 
+              *
+              * -2009 will be considered the time zone string of the time string
+              * 2009.01.03_12:45:00-2009. This is wrong, so if we fail, then we need to 
+              * 'break' the string at the '-', and try again.
+              * 
+              */
+
+             adv = sscan_time_ext(p, &(vholder.value.time_val));
+
+             /* If this is a single-value time string, then p + adv should contain 
+              * spaces or ']'. If this is a start-end value, then p + adv
+              * should point to spaces or '-'. If this is a start-duration value, 
+              * then p + adv should point to spaces or '/'
+              */
+             while (*(p + adv) == ' ')
              {
-             adv = sscan_time_ext(p, NULL);
+                adv++;
              }
-	  if ((n = drms_sscanf2(p, ",]", 1, datatype, &vholder)) == 0 || n == -1)
-	     {
-	     fprintf(stderr,"Syntax Error: Expected either time duraton " 
-		     "or start value of type %s in "
-		     "value range, found '%s'.\n",drms_type2str(datatype), p);
-	     goto error;
-	     }
-          else if (adv > 0)
+
+             if (*(p + adv) != ']' && *(p + adv) != '-' && *(p + adv) != '/')
              {
-             p += adv;
+                /* possibly associated '-2009' with time string, as described above */
+                char *tmp = strdup(p);
+                char *dash = NULL;
+
+                if (tmp)
+                {
+                   dash = strchr(tmp, '-');
+                   if (dash)
+                   {
+                      *dash = '\0';
+                      adv = sscan_time_ext(tmp, &(vholder.value.time_val));
+                   }
+
+                   free(tmp);
+                }
              }
+
+             if (adv > 0)
+             {
+                p += adv;
+             }
+             else
+             {
+                fprintf(stderr,"Syntax Error: Expected either time duraton " 
+                        "or start value of type %s in "
+                        "value range, found '%s'.\n", drms_type2str(datatype), p);
+                goto error;
+             }
+          }
           else
+          {
+             if ((n = drms_sscanf2(p, ",]", 1, datatype, &vholder)) == 0 || n == -1)
              {
-             p += n;
+                fprintf(stderr,"Syntax Error: Expected either time duraton " 
+                        "or start value of type %s in "
+                        "value range, found '%s'.\n", drms_type2str(datatype), p);
+                goto error;
              }
+
+             p += n;
+          }
 
           vr->start = vholder.value; /* if string, vr->start owns */
           memset(&(vholder.value), 0, sizeof(DRMS_Type_Value_t));
@@ -995,6 +1043,12 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
       /* Get end or duration "x" */
       if (vr->type != SINGLE_VALUE)
 	{
+           /* ignore spaces */
+           while (*p == ' ')
+           {
+              ++p;
+           };
+
 	  /* Special handling of time intervals and durations. */
 	  if (datatype==DRMS_TYPE_TIME)
 	    {

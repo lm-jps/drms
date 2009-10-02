@@ -475,14 +475,13 @@ static int _parse_date_time_inner (char *str,
   /*  First field must either be calendar date or "MJD" or "JD"  */
   strncpy(field0cpy, field0, sizeof(field0cpy)-1);
   strtoupper(field0cpy);
+  char *pc = field0cpy;
+  while (*pc == ' ') pc++;
   
-  if (strstr(field0cpy, "JD"))
+  if (strncmp(pc , "MJD", 3) == 0 || strncmp(pc, "JD", 2) == 0)
      {
-     char *pc = field0cpy;
-     while (*pc == ' ') pc++;
      if (*pc == 'M') pc++;
-     if (strncmp (pc, "JD", 2))
-        return _parse_error();
+
      pc += 2;
      if (*pc++ != '_')
         return _parse_error();
@@ -1224,28 +1223,7 @@ int parse_zone(const char *zonestr, char *out, int size)
    char *zone = strdup(zonestr);
    strtoupper(zone);
 
-   if (strlen(zone) == 1)
-   {
-      /* single char abbreviation */
-      char abb = zone[0];
-      if (abb == 'A' || abb == 'B' || abb == 'C' || abb == 'D' || abb == 'E' ||
-          abb == 'F' || abb == 'G' || abb == 'H' || abb == 'I' || abb == 'K' ||
-          abb == 'L' || abb == 'M' || abb == 'N' || abb == 'O' || abb == 'P' ||
-          abb == 'Q' || abb == 'R' || abb == 'S' || abb == 'T' || abb == 'U' ||
-          abb == 'V' || abb == 'W' || abb == 'X' || abb == 'Y' || abb == 'Z')
-      {
-         if (size >= 2)
-         {
-            out[0] = abb;
-            out[1] = '\0';
-         }
-      }
-      else
-      {
-         err = 1;
-      }
-   }
-   else if (zone[0] == '+' || zone[1] == '-')
+   if (zone[0] == '+' || zone[0] == '-')
    {
       /* time zones or the format +XXX or -XXX */
       char *endptr = NULL;
@@ -1280,11 +1258,21 @@ int parse_zone(const char *zonestr, char *out, int size)
       {
          if (state == 0)
          {
+            char abb = zone[0];
             state = 'X';
 
-            if (*pc == 'A' || *pc == 'B' || *pc == 'C' || *pc == 'E' || *pc == 'G' || 
-                *pc == 'H' || *pc == 'J' || *pc == 'M' || *pc == 'N' || *pc == 'P' ||
-                *pc == 'S' || *pc == 'T' || *pc == 'U' || *pc == 'Y' || *pc == 'W')
+            if (abb == 'D' || abb == 'F' || abb == 'I' || abb == 'K' || abb == 'L' || 
+                abb == 'O' || abb == 'Q' || abb == 'R' || abb == 'V' || abb == 'X' || 
+                abb == 'Z')
+            {
+               /* These are valid time zones, and there are no valid time zones that could
+                * created by appending more chars - so we're done. */
+               state = 'Z';
+               *pout++ = *pc++;
+            }
+            else if (*pc == 'A' || *pc == 'B' || *pc == 'C' || *pc == 'E' || *pc == 'G' || 
+                     *pc == 'H' || *pc == 'J' || *pc == 'M' || *pc == 'N' || *pc == 'P' ||
+                     *pc == 'S' || *pc == 'T' || *pc == 'U' || *pc == 'Y' || *pc == 'W')
             {
                state = *pc;
                *pout++ = *pc++;
@@ -1292,45 +1280,35 @@ int parse_zone(const char *zonestr, char *out, int size)
          }
          else if (state == 'T')
          {
-            state = 'X';
+            state = 'Z';
 
             if (*pc)
             {
-               if (*pc == 'A')
+               if (*pc == 'A' && *(pc+1) == 'I')
                {
+                  /* TAI */
                   *pout++ = *pc++;
-                  if (*pc && *pc == 'I')
-                  {
-                     /* TAI */                        
-                     state = 'Z';
-                     *pout++ = *pc++;
-                  }
+                  *pout++ = *pc++;
                }
-               else if (*pc == 'D')
+               else if (*pc == 'D' && *(pc+1) == 'T')
                {
+                  /* TDT */
                   *pout++ = *pc++;
-                  if (*pc && *pc == 'T')
-                  {
-                     /* TDT */
-                     state = 'Z';
-                     *pout++ = *pc++;
-                  }
+                  *pout++ = *pc++;
                }
                else if (*pc == 'T')
                {
                   /* TT */
-                  state = 'Z';
                   *pout++ = *pc++;
                }
             }
          }
          else if (state == 'U')
          {
-            state = 'X';
+            state = 'Z';
             
             if (*pc && *pc == 'T')
             {
-               state = 'Z';
                *pout++ = *pc++;
 
                if (*pc && *pc == 'C')
@@ -1346,201 +1324,147 @@ int parse_zone(const char *zonestr, char *out, int size)
          }
          else if (state == 'A')
          {
-            state = 'X';
+            state = 'Z';
 
-            if (*pc && (*pc == 'S' || *pc == 'D'))
+            if (*pc && (*pc == 'S' || *pc == 'D') && *(pc+1) == 'T')
             {
+               /* ADT or AST */
                *pout++ = *pc++;
-               if (*pc && *pc == 'T')
-               {
-                  /* ADT or AST */
-                  state = 'Z';
-                  *pout++ = *pc++;
-               }
+               *pout++ = *pc++;
             }
          }
          else if (state == 'B')
          {
-            state = 'X';
+            state = 'Z';
 
-            if (*pc && (*pc == 'S' || *pc == 'D'))
+            if (*pc && (*pc == 'S' || *pc == 'D') && *(pc+1) == 'T')
             {
+               /* BDT or BST */
                *pout++ = *pc++;
-               if (*pc && *pc == 'T')
-               {
-                  /* BDT or BST */
-                  state = 'Z';
-                  *pout++ = *pc++;
-               }
+               *pout++ = *pc++;
             }
          }
          else if (state == 'C')
          {
-            state = 'X';
+            state = 'Z';
 
-            if (*pc && (*pc == 'D' || *pc == 'E' || *pc == 'S'))
+            if (*pc && (*pc == 'D' || *pc == 'E' || *pc == 'S') && *(pc+1) == 'T')
             {
+               /* CDT, CET, or CST */
                *pout++ = *pc++;
-               if (*pc && *pc == 'T')
-               {
-                  /* CDT, CET, or CST */
-                  state = 'Z';
-                  *pout++ = *pc++;
-               }
+               *pout++ = *pc++;
             }
          }
          else if (state == 'E')
          {
-            state = 'X';
+            state = 'Z';
 
-            if (*pc && (*pc == 'D' || *pc == 'E' || *pc == 'S'))
+            if (*pc && (*pc == 'D' || *pc == 'E' || *pc == 'S') && *(pc+1) == 'T')
             {
+               /* EDT, EET, or EST */
                *pout++ = *pc++;
-               if (*pc && *pc == 'T')
-               {
-                  /* EDT, EET, or EST */
-                  state = 'Z';
-                  *pout++ = *pc++;
-               }
+               *pout++ = *pc++;
             }
          }
          else if (state == 'G')
          {
-            state = 'X';
+            state = 'Z';
 
-            if (*pc && *pc == 'M')
+            if (*pc && *pc == 'M' && *(pc+1) == 'T')
             {
+               /* GMT */
                *pout++ = *pc++;
-               if (*pc && *pc == 'T')
-               {
-                  /* GMT */
-                  state = 'Z';
-                  *pout++ = *pc++;
-               }
+               *pout++ = *pc++;               
             }
          }
          else if (state == 'H')
          {
-            state = 'X';
+            state = 'Z';
 
-            if (*pc && (*pc == 'D' || *pc == 'S'))
+            if (*pc && (*pc == 'D' || *pc == 'S') && *(pc+1) == 'T')
             {
+               /* HDT or HST */
                *pout++ = *pc++;
-               if (*pc && *pc == 'T')
-               {
-                  /* HDT or HST */
-                  state = 'Z';
-                  *pout++ = *pc++;
-               }
+               *pout++ = *pc++;
             }
          }
          else if (state == 'J')
          {
-            state = 'X';
+            state = 'X'; /* Not a valid time on its own */
 
-            if (*pc && (*pc == 'D' || *pc == 'S'))
+            if (*pc && (*pc == 'D' || *pc == 'S') && *(pc+1) == 'T')
             {
+               /* JDT or JST */
+               state = 'Z';
                *pout++ = *pc++;
-               if (*pc && *pc == 'T')
-               {
-                  /* JDT or JST */
-                  state = 'Z';
-                  *pout++ = *pc++;
-               }
+               *pout++ = *pc++;
             }
          }
          else if (state == 'M')
          {
-            state = 'X';
+            state = 'Z';
 
-            if (*pc && (*pc == 'D' || *pc == 'S'))
+            if (*pc && (*pc == 'D' || *pc == 'S') && *(pc+1) == 'T')
             {
+               /* MDT or MST */
                *pout++ = *pc++;
-               if (*pc && *pc == 'T')
-               {
-                  /* MDT or MST */
-                  state = 'Z';
-                  *pout++ = *pc++;
-               }
+               *pout++ = *pc++;
             }
          }
          else if (state == 'N')
          {
-            state = 'X';
+            state = 'Z';
 
-            if (*pc && (*pc == 'Z'))
+            if (*pc && *pc == 'Z' && (*(pc+1) == 'D' || *(pc+1) == 'S') && *(pc+1) == 'T')
             {
+               /* NZDT or NZST */
                *pout++ = *pc++;
-               if (*pc && (*pc == 'D' || *pc == 'S'))
-               {
-                  *pout++ = *pc++;
-                  if (*pc && *pc == 'T')
-                  {
-                     /* NZDT or NZST */
-                     state = 'Z';
-                     *pout++ = *pc++;
-                  }
-               }
+               *pout++ = *pc++;
+               *pout++ = *pc++;
             }
          }
          else if (state == 'P')
          {
-            state = 'X';
+            state = 'Z';
 
-            if (*pc && (*pc == 'D' || *pc == 'S'))
+            if (*pc && (*pc == 'D' || *pc == 'S') && *(pc+1) == 'T')
             {
+               /* PDT or PST */
                *pout++ = *pc++;
-               if (*pc && *pc == 'T')
-               {
-                  /* PDT or PST */
-                  state = 'Z';
-                  *pout++ = *pc++;
-               }
+               *pout++ = *pc++;
             }
          }
          else if (state == 'S')
          {
-            state = 'X';
+            state = 'Z';
 
-            if (*pc && *pc == 'S')
+            if (*pc && *pc == 'S' && *(pc+1) == 'T')
             {
+               /* SST */
                *pout++ = *pc++;
-               if (*pc && *pc == 'T')
-               {
-                  /* SST */
-                  state = 'Z';
-                  *pout++ = *pc++;
-               }
+               *pout++ = *pc++;
             }
          }
          else if (state == 'Y')
          {
-            state = 'X';
+            state = 'Z';
 
-            if (*pc && (*pc == 'D' || *pc == 'S'))
+            if (*pc && (*pc == 'D' || *pc == 'S') && *(pc+1) == 'T')
             {
+               /* YDT or YST */
                *pout++ = *pc++;
-               if (*pc && *pc == 'T')
-               {
-                  /* YDT or YST */
-                  state = 'Z';
-                  *pout++ = *pc++;
-               }
+               *pout++ = *pc++;
             }
          }
          else if (state == 'W')
          {
-            state = 'X';
+            state = 'Z';
 
-            if (*pc && (*pc == 'E' || *pc == 'S'))
+            if (*pc && (*pc == 'E' || *pc == 'S') && *(pc+1) == 'T')
             {
+               /* WET or WST*/
                *pout++ = *pc++;
-               if (*pc && *pc == 'T')
-               {
-                  /* WET or WST*/
-                  state = 'Z';
-                  *pout++ = *pc++;
-               }
+               *pout++ = *pc++;
             }
          }
       }
