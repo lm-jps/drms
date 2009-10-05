@@ -47,7 +47,7 @@ endif
 CF_TGT_$(d) := $(CF_TGT_$(d)) $(ADD_TGT_$(d))
 
 #LL_TGT_$(d) := $(ECPGL) -lecpg -lpgtypes -lpq -lcrypto
-LL_TGT_$(d) := $(ECPGL) -lecpg
+LL_TGT_$(d) := $(PGL) -lecpg
 
 SUMSVC_$(d)	:= $(d)/sum_svc
 XSUMSVC_$(d)	:= $(d)/xsum_svc
@@ -136,7 +136,7 @@ SUMSICCLIBS_$(d)	:=
 endif
 
 
-$(SUMSVC_$(d)) $(XSUMSVC_$(d)):	LL_TGT :=  $(LIBSUM) $(LIBSUMSAPI) $(SUMSICCLIBS_$(d)) $(LL_TGT) $(LL_TGT_$(d))
+$(SUMSVC_$(d)) $(XSUMSVC_$(d)):	LL_TGT :=  $(LIBSUM) $(LIBSUMSAPI) $(SUMSICCLIBS_$(d)) $(LL_TGT) $(LL_TGT_$(d)) 
 $(SUMSVC_$(d)) $(XSUMSVC_$(d)):	%:	%.o $(sum_svc_obj_$(d)) $(LIBSUM) $(LIBSUMSAPI) base/libs/defs/libdefsclient.a base/libs/db/client/libdbclient.a base/libs/misc/libmisc.a base/libs/dstruct/libdstruct.a
 			$(SUMSLINK)
 			$(SLBIN)
