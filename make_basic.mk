@@ -183,10 +183,10 @@ endif
 #
 LL_ALL		= $(SYSLIBS)
 GCC_LF_ALL	= $(STATIC) 
-ICC_LF_ALL	= $(STATIC) 
+ICC_LF_ALL	= $(STATIC) -openmp -static-intel
 
 # Fortran global LINK flags
-F_LF_ALL	= -nofor_main -no-ipo
+F_LF_ALL	= -nofor_main  -openmp -static-intel
 #***********************************************************************************************#
 
 #***********************************************************************************************#
@@ -194,13 +194,13 @@ F_LF_ALL	= -nofor_main -no-ipo
 # GLOBAL COMPILE FLAGS
 #
 GCC_CF_GCCCOMP  = -DGCCCOMP 
-ICC_CF_ICCCOMP  = -DICCCOMP 
+ICC_CF_ICCCOMP  = -DICCCOMP -openmp
 
 CCFLAGS_OPT	:=
 
 ifeq ($(COMPILER), icc)
   ifeq ($(JSOC_MACHINE), linux_x86_64)
-    CCFLAGS_OPT	:= -xW
+    CCFLAGS_OPT	:=
   endif
 endif
 
@@ -231,14 +231,14 @@ endif
 # Fortran global COMPILE flags
 ifeq ($(JSOC_MACHINE), linux_x86_64)
   ifeq ($(FCOMPILER), ifort)
-    F_CF_ALL := -mcmodel=medium
+    F_CF_ALL := -openmp
   endif
 endif
 
 # Other compiler-specific Fortran COMPILE flags
 ifeq ($(FCOMPILER), ifort)
   ifeq ($(JSOC_MACHINE), linux_x86_64)
-    FCFLAGS_OPT	:= -xW
+    FCFLAGS_OPT	:=
   endif
   FCFLAGS_INIT := -ftrapuv
 else
