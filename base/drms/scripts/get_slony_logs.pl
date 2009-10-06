@@ -31,7 +31,7 @@ unless (flock(SLOCK, LOCK_EX|LOCK_NB)) {
 my $ssh_cmd="/opt/bin/ssh";                       ## path to fast ssh instance
 my $scp_cmd="/usr/bin/scp";                       ## path to fast scp instance
 my $ssh_rmt_port="55000";                         ## port to fast scp server in remote machine
-my $rmt_hostname="j0.stanford.edu";               ## remote machine name
+my $rmt_hostname="solarport.stanford.edu";               ## remote machine name
 my $user="igor";                                  ## user login in remote machine
 my $rmt_slony_dir="/scr21/jennifer/slony_logs";   ## directory in remote machine where slony logs get stage
 my $slony_logs="/home/slony/logs";                ## local slony cluster directory area
@@ -117,7 +117,9 @@ sub ingest_log {
 sub send_error {
   my ($cluster_name, $log_file, $error_msg) = @_;
 
-  `echo "$error_msg" | mail -s "ERROR:: Slony log cluster [$cluster_name] [$log_file]" $email_list`;
+  if (defined $email_list && $email_list !~ /^$/) {
+    `echo "$error_msg" | mail -s "ERROR:: Slony log cluster [$cluster_name] [$log_file]" $email_list`;
+  }
 }
 
 chdir $work_dir;
@@ -165,6 +167,8 @@ while (defined $slony_ingest) {
 
   $slony_ingest=undef;
 
+
+  ## next batch is measure in thousands ...
   my ($next_batch)=($cur_counter=~/^(\d+)\d\d\d$/?$1:0);
   
   ###################################
@@ -193,12 +197,13 @@ while (defined $slony_ingest) {
   
   my $ls_tar_name="slony*.tar*";
   my @tar_list = get_log_list($ls_tar_name);
-  
+
   for my $tar (@tar_list) {
     next unless ($tar=~/(slony_logs_(\d+)-(\d+).tar(\.gz)?)/); 
     #print $tar, "\n";
     #my ($tar_file, $counter1,$counter2)= ($tar=~/(slony_logs_(\d+)-(\d+).tar(\.gz)?)/);
     my ($tar_file, $counter1,$counter2)= ($1,$2,$3);
+
     if ($counter2 >= $cur_counter && $counter1 <= $cur_counter) {
       print "Counter1 [$counter1] and Counter2 [$counter2]\n";
       print "Tar file is $tar_file\n";
@@ -227,6 +232,7 @@ while (defined $slony_ingest) {
         if ($counter >= $cur_counter) {
           $slony_ingest=1;
           ingest_log($log);
+          $cur_counter = $counter + 1;
           save_current_counter($counter_file, $log);
         }
       }
