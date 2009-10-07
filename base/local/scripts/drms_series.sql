@@ -1,7 +1,7 @@
-CREATE OR REPLACE FUNCTION drms_series() RETURNS SETOF hmi_ground.drms_series AS $$
+CREATE OR REPLACE FUNCTION drms_series() RETURNS SETOF drmsseries AS $$
 DECLARE
   ns  RECORD;
-  rec RECORD;
+  rec drmsseries%ROWTYPE;
   next_row REFCURSOR;
 BEGIN
   FOR ns IN SELECT name || '.drms_series' as tn FROM admin.ns order by name LOOP
