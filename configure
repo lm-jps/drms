@@ -222,6 +222,7 @@ if ($CHKLIBS == "no") then
                 echo "    NetDRMS. Keep a safe copy of it somewhere outside of the DRMS"
                 echo "    directory tree, for example in /usr/local. After each NetDRMS"
                 echo "    update, ensure this file is in place."
+                exit 1;
             else
                 echo "CUSTOM_DEFINES = __LOCALIZED_DEFS__" >> custom.mk
                 ./gen_init.csh
