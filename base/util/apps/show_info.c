@@ -1,12 +1,6 @@
 /*
  *  show_info - Prints keyword information and/or file path for given recordset
  *
- *  new version of original show_keys expanded to have more than just keyword info.
- *
- *  Bugs:
- *	Fails (with a segmentation fault) if called with -p flag or with a
- *	  value for file and there are no data segments associated with the
- *	  requested series
  */
 
 /**
