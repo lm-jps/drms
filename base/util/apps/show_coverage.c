@@ -1,85 +1,130 @@
 #include "jsoc_main.h"
 #include "drms.h"
-// #include "printk.h"
 
 /*
-show_coverage
+ *
+ * show_coverage - Prints data completeness information for selected range of given series
+ *
+ */
 
-Show_coverage finds the record completeness map for a given series.
+/**
+\defgroup show_coverage show_coverage - Examine data completeness of series of certain types
+@ingroup drms_util
+
+\par Synopsis:
+show_coverage ds=<seriesname> [-h]
+show_coverage ds=<seriesname> [-iqv] [low=<starttime>] [high=<stoptime>] [block=<blocklength>] [key=<pkey>] [<other_primekey>=<value>...]
+show_coverage_sock {same options as above}
+\endcode
+
+\details
+
+\b Show_coverage finds the record completeness map for a given series over an interval of a single prime-key.
 Since it needs a way to know if any given record is expected the program
-only works for series with integer type or slotted prime key.
+only works for series with an integer or slotted prime key.
 It will fail to be helpful for series that do not expect each index value of
 a slotted series to be present (such as lev0 HK data for HMI and AIA.) 
-The table will only be evaluated running over a single prime key.  Otherrr
-prime keys can be used to select a subset of records by providing those keys
-and target values on the command line.  If a prime key other than the first
-prime key is to be used as the index for this program, that key can be specified
-in the "use=<prime>" command line argument.  For slotted keys the 'user' key
-should be given, not the one with '_index" appended, however it is actually
-the index that will be used by the program.
 
-Command line
-  ds={seriesname}
-  low=<first prime value to examine>
-  high=<last prime value to examine>
-     note: low and high should be index values if -v is set.
-  block=<blocking>
-     range of prime values to group for summary reports.  In prime units
-     unless -v, in which case in index units.
-  {key=<primekeyname>}
-  {<other_primekey=value>}...
-  -i  print index values vs prime key values in table
-  -q  omit header information
-  -v  verify the existance of all segments for records that are present
-      with non-all_missing status.
-  [coverage=<priormap>] - not yet implemented.
+The operation is to scan the series for all possible records between the \a low and \a high
+limits or the present first and last records if \a low or \a high are absent.  For each
+record found, the "quality" of the data will be assessed.  If a keyword named "QUALITY" is present
+its value will be tested and the record will be labeled "MISSING" if QUALITY is negative.  If
+no QUALITY keyword is found but a keyword named "DATAVALS" is present then DATAVALS will
+be tested and a record with DATAVALS == 0 will be labeled MISSING.  If the record is not
+labeled MISSING it will be labeled "OK".  If no record is present for a record slot in the
+range \a low to \a to high then that slot will be labeled unknown, or "UNK" for short.
 
-The program operates as follows:
+The record completeness summary is ordered by a single prime-key.  If no \a key parameter is present the first prime-key
+of integer or slotted type will be used.  If the series is structured with multiple prime-keys and
+the completeness of a subset specified by additional prime-keys is desired, then those prime keys
+and selected values may be provided as additional keyword=value pairs.
 
-1.  get prime key list and determine name and type of index to use.
-1.1 get any other prime keys to use to filter the results.
+\par Options:
 
-2.  Look for existing coverage map in "coverage" keyword specified file.
-== not implemented yet ==
+\par Flags:
 
-3.  Read existing file or create new empty list.
+\li \c -h: help - print usage information and exit
+\li \c -i: index - print interval start as index values for slotted ordering prime-key
+\li \c -q: quiet - do not print header overfiew information
+\li \v -v: verify - check existance of segment files for all OK records
 
-4.  Scan target series from low to high limits and categorize each record
-as OK, Missing, or unknown.
+\par Parameters:
 
-5.  Write report coverage map, as header and table
-first rows of header contain:
-series=<seriesname>
-key=<primekeyname> - user name, not slotted index name
-type=<slotted type, or variable type, e.g. int or short or longlong>
-step=<value of keyname_step>
-epoch=<epoch>
-low=<table first value
-high=table high value.
-end -- marke end of header
+\li \c block=<blocklength> - optional blocking interval for summary table instead of detailed table.
+\li \c ds=<seriesname> - required parameter specified the series to examine.
+\li \c high=<stoptime> - optional last value of ordering prime key to use, default to last record in series (as [$]).
+\li \c key=<pkey> - optional prime key name to use, default is first integer or slotted prime-key
+\li \c low=<starttime> - optional first value of ordering prime key to use, default to first record in series (as [^]).
+\li \c other_primekey=<value>... - optional additional primekey=value pairs to restrict survey based on multiple primekeys.
 
-next print coverage table, 3 words per line
-kind start length
-where kind is:
-    OK - data is present for this range
-    MISS - data is all known to be permanently missing for this range.
-    UNK - data is absent but status unknown
-    LOST - record is present and not marked MISSING but the segment is gone.
-           This check will only be made if the '-v' == verify/verbose flag is present
-           since it may take a very long time to determine for large series.
+\par JSOC flags:
+\ref jsoc_main
 
-start is in user units
-length is count of recordscontiguous 
+\par Usage:
 
-Ah, add blocking capability to count the number of good records
-in some interval of the prime key.  The interval would be specified
-in units of the prime key and would be for an interval STARTING on the 
-block separeted slot starting at low.  So for daily totals,
-set block=86400 and low=2009.09.15_00 for data from 2009.09.15_00 to
-2009.09.15_23:25:59.999
+The prime-key specified by \a pkey or the first integer or slotted primekey will be used to order the
+completeness survey and will be referred to as the "ordering prime-key".
+The ordering prime-key may be of type TIME or other floating slotted keywords, or of an integer type.  In the
+discussions here, the word "time" will be used to refer to the ordering keyword even if it is of some
+other type. 
 
-List terminates with line containing
-END <first missing time> 0
+If the \a -v flag (for verify) is present then each record labeled OK will be tested to verify
+that any storage-unit that has been assigned to that record still exists either online or on tape
+in SUMS.  If there once was a storage unit but no longer is (due to expirec retention time of a non-archived
+series) the record will be labeled "LOST". Note that this can be an expensive test to make on large series since it requires
+a call to SUMS for each OK record.  Please ues the \a -v flag only on the selected ranges of
+a series where needed.
+
+After all specified records have need examined a table of the resulting completeness information is
+printed.  There are two formats for this table.  The default format is a list of contiguous segments
+with the same record label, OK, MISS, UNK, or LOST.  For each contiguous segment one line of
+information will be printed containing the label, the start "time", and the count of records in
+the contiguous same-label interval.  The time printed will be the prime key value of the first
+record in the interval.
+
+If the \a block parameter is specified, the alternate table format will be used.  In the blocked case
+the records are grouped in intervals of length <blocklength> and a summary line is printed for each
+block.  The first block is aligned with the first record time (either first record in series or \a low).
+The summary printed includes the start time of the block, the number of records in the block labeled
+OK, MISS, UNK, or LOST (if \a -v is present).  If the ordering prime-key is of type TIME then the blocking interval,
+<blocklength> may have suffixes to
+specify time intervals such as s=seconds, d=day, h=hour, etc. as recognized by atoinc(3).
+
+If the \a -i flag is present, the start times in the printed table will be the index number rather
+than the slot label.  E.g. if the prime key used for the completeness survey is T_REC then instead
+of printing the time T_REC, the value of T_REC_index will be printed.
+
+A header will be printed before the completeness table.  If the \a -q (quiet) flag is present the
+header will not be printed.
+
+\par Examples:
+
+\b Example 1:
+To show the coverage in the first MDI Dynamice run:
+\code
+  show_coverage ds=mdi.fd_V_lev18 low=1996.05.23_22_TAI high=1996.07.24_04:17_TAI
+\endcode
+Shows a lot of little gaps in complete dynamics interval.
+
+\b Example 2:
+To show the summary of records in a range of data, such as the above MDI dynamics run:
+\code
+  show_coverage ds=mdi.fd_V_lev18 low=1996.05.23_22_TAI high=1996.07.24_04:17_TAI block=1000d
+\endcode
+Here block is set to a large number to gather all the information into a single line.
+Simple math then shows the data is actually 96.6% complete.
+
+\bug
+\b Limitation:
+Since DRMS is queried using \ref drms_record_getvector the QUALITY keyword must be an integer type
+to be used.  Only the single prime key value, either QUALITY or DATAVALS, and possibly sunum are
+used so all must be convertible to long long by PostgreSQL.
+
+\b Limitation:
+There is no provision for "where" clauses for optional other prime keys or other keys.
+
+\sa
+show_info
 
 */
 
@@ -127,7 +172,7 @@ void printprime(FILE *fp, TIME prime, DRMS_Type_t type, char *unit, char *format
 ModuleArgs_t module_args[] =
 { 
     {ARG_STRING, "ds", NOT_SPECIFIED,  "Input data series."},
-    {ARG_STRING, "coverage", NOT_SPECIFIED,  "Output coverage report."},
+    // {ARG_STRING, "coverage", NOT_SPECIFIED,  "Output coverage report. - not implemented"},
     {ARG_STRING, "block", NOT_SPECIFIED,  "interval for block summaries of the coverage."},
     {ARG_STRING, "low", NOT_SPECIFIED, "Low limit for coverage map."},
     {ARG_STRING, "high", NOT_SPECIFIED, "High limit for coverage map."},
@@ -135,6 +180,7 @@ ModuleArgs_t module_args[] =
     {ARG_FLAG, "v", "0", "Verify - verify that SU is available for records with data"},
     {ARG_FLAG, "i", "0", "Index - Print index values instead of prime slot values"},
     {ARG_FLAG, "q", "0", "Quiet - omit series header info"},
+    {ARG_FLAG, "h", "0", "Help - Print usage and exit"},
     {ARG_END}
 };
 
@@ -142,6 +188,30 @@ ModuleArgs_t module_args[] =
 
 
 char *module_name = "show_coverage";
+
+int nice_intro ()
+  {
+  int usage = cmdparams_get_int (&cmdparams, "h", NULL);
+  if (usage)
+    {
+    printf ("Usage:\nshow_coverage [-hiqv] "
+        "ds=<seriesname> {key=<pkey>} {low=<starttime>} <high=<stoptime>}\n"
+        "      {key=<prime-key>} {block=<blocklength>} {<other_primekey>=<pkeylist>}.\n"
+        "  -h: help - show this message then exit\n"
+        "  -i: list index values vs slot values\n"
+        "  -q: quiet, do not print header\n"
+        "  -v: verify - check with SUMS for expired data\n"
+        "ds=<seriesname> - required\n"
+        "key=<prime_key> - prime key to use if not the first available\n"
+        "block=<blocklength> - interval span for summary data\n"
+        "low=<starttime> - start of range for completeness survey, defaults to [^]\n"
+        "high=<stoptime> - end of range for completeness summary, defaults to [$]\n"
+        "<other_prime>=<value> - optional additional filters to limit the survey\n"
+        );
+    return(1);
+    }
+  return (0);
+  }
 
 /* Module main function. */
 int DoIt(void)
@@ -180,6 +250,8 @@ int DoIt(void)
   char *qualkey;
   int qualkind;
   int ikey;
+
+  if (nice_intro()) return(0);
 
   /* check for minimum inputs */
   // if (strcmp(ds, NOT_SPECIFIED) == 0 || strcmp(report, NOT_SPECIFIED) == 0)
@@ -370,7 +442,18 @@ int DoIt(void)
 	}
   blocked = strcmp(blockstr, NOT_SPECIFIED) != 0;
   if (blocked)
-	blocking = (TIME)atof(blockstr);
+        {
+        if (ptype == DRMS_TYPE_TIME)
+		{
+		char blocktemp[1024];
+		strncpy(blocktemp, blockstr, 1020);
+		if (isdigit(blocktemp[strlen(blocktemp)-1]))
+			strcat(blocktemp, "s");
+		blocking = (TIME)atoinc(blocktemp);
+		}
+	else
+		blocking = (TIME)atof(blockstr);
+        }
   else
 	blocking = 0.0;
   blockstep = round(blocking / step);
@@ -451,7 +534,7 @@ if (!quiet)
   fprintf(out, "step=%f\n", step); // print step as proper format
   fprintf(out, "low="); printprime(out, low, ptype, punit, pformat); fprintf(out, "\n");
   fprintf(out, "high="); printprime(out, high, ptype, punit, pformat); fprintf(out, "\n");
-  fprintf(out, "block=%.0f\n", blocking); // print block as proper format
+  fprintf(out, "block="); fprint_inc(out,blocking); fprintf(out, "\n"); // print block as proper format
   fprintf(out, "series_low="); printprime(out, series_low, ptype, punit, pformat); fprintf(out, "\n");
   fprintf(out, "series_high="); printprime(out, series_high, ptype, punit, pformat); fprintf(out, "\n");
   fprintf(out, "qualkey=%s\n", qualkey);
@@ -462,7 +545,7 @@ if (!quiet)
 	{
 	int iblock;
 	int nblocks = (nslots + blockstep - 1)/blockstep;
-	fprintf(out, "%*s      n_OK   n_MISS    n_UNK%s\n",
+	if (!quiet) fprintf(out, "%*s      n_OK   n_MISS    n_UNK%s\n",
 			(ptype == DRMS_TYPE_TIME ? 23 : 15 ),"primeval", (verify ? "  n_LOST" : ""));
 	for (iblock = 0; iblock < nblocks; iblock++)
 		{
