@@ -1,7 +1,7 @@
-CREATE OR REPLACE FUNCTION drms_keyword() RETURNS SETOF hmi_ground.drms_keyword AS $$
+CREATE OR REPLACE FUNCTION drms_keyword() RETURNS SETOF drmskw AS $$
 DECLARE
   ns  RECORD;
-  rec RECORD;
+  rec drmskw%ROWTYPE;
   next_row REFCURSOR;
 BEGIN
   FOR ns IN SELECT name || '.drms_keyword' as tn FROM admin.ns order by name LOOP
