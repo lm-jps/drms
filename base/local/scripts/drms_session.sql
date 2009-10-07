@@ -1,7 +1,7 @@
-CREATE OR REPLACE FUNCTION drms_session() RETURNS SETOF hmi_ground.drms_session AS $$
+CREATE OR REPLACE FUNCTION drms_session() RETURNS SETOF drmssession AS $$
 DECLARE
   ns  RECORD;
-  rec RECORD;
+  rec drmssession%ROWTYPE;
   next_row REFCURSOR;
 BEGIN
   FOR ns IN SELECT name as tn FROM admin.ns order by name LOOP
