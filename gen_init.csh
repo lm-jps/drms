@@ -99,59 +99,6 @@ if ($#SUMS_TAPE_AVAILABLE != 1) then
   exit
 endif
 
-# generate script drms_series.sql
-set SCRIPT = scripts/drms_series.sql
-echo "*** generating $SCRIPT ***"
-cat /dev/null > $SCRIPT
-echo "CREATE OR REPLACE FUNCTION drms_series() RETURNS SETOF $DRMS_SAMPLE_NAMESPACE.drms_series AS "'$$' >> $SCRIPT
-echo "DECLARE" >> $SCRIPT
-echo "  ns  RECORD;" >> $SCRIPT
-echo "  rec RECORD;" >> $SCRIPT
-echo "  next_row REFCURSOR;" >> $SCRIPT
-echo "BEGIN" >> $SCRIPT
-echo "  FOR ns IN SELECT name || '.drms_series' as tn FROM admin.ns order by name LOOP" >> $SCRIPT
-echo "     OPEN next_row FOR EXECUTE 'SELECT * FROM ' || ns.tn;" >> $SCRIPT
-echo "     LOOP" >> $SCRIPT
-echo "       FETCH next_row INTO rec;" >> $SCRIPT
-echo "       IF NOT FOUND THEN" >> $SCRIPT
-echo "          EXIT;" >> $SCRIPT
-echo "       END IF;" >> $SCRIPT
-echo "       RETURN NEXT rec;" >> $SCRIPT
-echo "     END LOOP;" >> $SCRIPT
-echo "     CLOSE next_row;" >> $SCRIPT
-echo "  END LOOP;" >> $SCRIPT
-echo "  RETURN;" >> $SCRIPT
-echo "END;" >> $SCRIPT
-echo '$$' >> $SCRIPT
-echo "LANGUAGE plpgsql;" >> $SCRIPT
-
-# generate script drms_session.sql
-set SCRIPT = scripts/drms_session.sql
-echo "*** generating $SCRIPT ***"
-cat /dev/null > $SCRIPT
-echo "CREATE OR REPLACE FUNCTION drms_session() RETURNS SETOF $DRMS_SAMPLE_NAMESPACE.drms_session AS "'$$' >> $SCRIPT
-echo "DECLARE" >> $SCRIPT
-echo "  ns  RECORD;" >> $SCRIPT
-echo "  rec RECORD;" >> $SCRIPT
-echo "  next_row REFCURSOR;" >> $SCRIPT
-echo "BEGIN" >> $SCRIPT
-echo "  FOR ns IN SELECT name as tn FROM admin.ns order by name LOOP" >> $SCRIPT
-echo "     OPEN next_row FOR EXECUTE 'SELECT * FROM ' || ns.tn || '.drms_session';" >> $SCRIPT
-echo "     LOOP" >> $SCRIPT
-echo "       FETCH next_row INTO rec;" >> $SCRIPT
-echo "       rec.username := rec.username || '(' || ns.tn || ')';" >> $SCRIPT
-echo "       IF NOT FOUND THEN" >> $SCRIPT
-echo "          EXIT;" >> $SCRIPT
-echo "       END IF;" >> $SCRIPT
-echo "       RETURN NEXT rec;" >> $SCRIPT
-echo "     END LOOP;" >> $SCRIPT
-echo "     CLOSE next_row;" >> $SCRIPT
-echo "  END LOOP;"  >> $SCRIPT
-echo "  RETURN;" >> $SCRIPT
-echo "END;" >> $SCRIPT
-echo '$$' >> $SCRIPT
-echo "LANGUAGE plpgsql;" >> $SCRIPT
-
 # generate script create_sumindex.sql
 set SCRIPT = scripts/create_sumindex.sql
 echo "*** generating $SCRIPT ***"
