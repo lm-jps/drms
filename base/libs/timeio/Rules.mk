@@ -10,7 +10,7 @@ dir	:= $(d)/fpic
 # Local variables
 LIBTIMEIO	:= $(d)/libtimeio.a
 
-OBJ_$(d)	:= $(addprefix $(d)/, timeio.o)
+OBJ_$(d)	:= $(addprefix $(d)/, timeio.o atoinc.o)
 
 LIBTIMEIO_OBJ	:= $(OBJ_$(d))
 

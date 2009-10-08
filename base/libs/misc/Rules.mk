@@ -10,7 +10,7 @@ dir	:= $(d)/fpic
 # Local variables
 LIBMISC		:= $(d)/libmisc.a
 
-OBJ_$(d)	:= $(addprefix $(d)/, byteswap.o timer.o util.o printk.o xmem.o ndim.o adler32.o tee.o)
+OBJ_$(d)	:= $(addprefix $(d)/, byteswap.o timer.o util.o printk.o xmem.o ndim.o adler32.o tee.o str_utils.o)
 ifeq ($(shell uname),Linux)
   OBJ_$(d) := $(OBJ_$(d)) $(d)/backtrace.o
 endif
