@@ -25,14 +25,6 @@ extern char *strlow(char *str);
 extern char *strup(char *str);
 extern int *Strcmp(char *s1, char *s2);
 extern int *Strncmp(char *s1, char *s2);
-						  /*  from libast.d/atoinc.c  */
-extern TIME atoinc (char *str);
-extern int fprint_inc (FILE *fp, TIME inc);
-extern int print_inc (TIME inc);
-extern char *sprint_inc (char *str, TIME inc);
-#ifdef NEVER
-extern char *getinc (TIME a, TIME b, double *dt);
-#endif
 
 #define SOI_STR_INCL
 #endif
@@ -43,10 +35,13 @@ extern char *getinc (TIME a, TIME b, double *dt);
  */
 
 /*
-$Id: soi_str.h,v 1.1 2007/10/16 22:48:16 arta Exp $
-$Source: /home/akoufos/Development/Testing/jsoc-4-repos-0914/JSOC-mirror/JSOC/base/sums/libs/api/Attic/soi_str.h,v $
+$Id: soi_str.h,v 1.1 2009/10/08 23:44:35 arta Exp $
+$Source: /home/akoufos/Development/Testing/jsoc-4-repos-0914/JSOC-mirror/JSOC/base/libs/misc/soi_str.h,v $
 $Author: arta $
  * $Log: soi_str.h,v $
+ * Revision 1.1  2009/10/08 23:44:35  arta
+ * more clean up regarding atoinc
+ *
  * Revision 1.1  2007/10/16 22:48:16  arta
  * Move JSOC/src/base to JSOC/base and JSOC/src/proj to JSOC/proj.  86 JSOC/src.
  *

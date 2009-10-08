@@ -1,5 +1,6 @@
 #include "jsoc_main.h"
 #include "drms.h"
+#include "atoinc.h"
 
 /*
  *
