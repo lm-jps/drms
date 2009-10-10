@@ -187,7 +187,6 @@ ModuleArgs_t module_args[] =
 
 #define DIE(msg) {fprintf(stderr,"%s\n",msg);exit(1);}
 
-
 char *module_name = "show_coverage";
 
 int nice_intro ()
@@ -283,9 +282,17 @@ int DoIt(void)
 		{
 		pkey = template->seriesinfo->pidx_keywords[ikey];
 		if (pkey->info->recscope > 1)
+			{
 			skey = drms_keyword_slotfromindex(pkey);
-		if (strcmp(skeyname, skey->info->name) == 0)
-			break;
+			if (strcmp(skeyname, skey->info->name) == 0)
+				break;
+			}
+		else
+			if (strcmp(skeyname, pkey->info->name) == 0)
+				{
+				skey = pkey;
+				break;
+				}
 		}
 	if (ikey == template->seriesinfo->pidx_num)
 		DIE("name in key command line arg is not a prime key of this series");
@@ -308,6 +315,7 @@ int DoIt(void)
   punit = strdup(skey->info->unit);
   pformat = strdup(skey->info->format);
   seriesname = strdup(template->seriesinfo->seriesname);
+
   // get optional other primekeys
   otherkeys[0] = '\0';
   for (ikey=0; ikey < npkeys; ikey++)
