@@ -47,7 +47,7 @@ and selected values may be provided as additional keyword=value pairs.
 \li \c -h: help - print usage information and exit
 \li \c -i: index - print interval start as index values for slotted ordering prime-key
 \li \c -q: quiet - do not print header overfiew information
-\li \v -v: verify - check existance of segment files for all OK records
+\li \v -o: online - check existance of segment files for all OK records
 
 \par Parameters:
 
@@ -69,11 +69,11 @@ The ordering prime-key may be of type TIME or other floating slotted keywords, o
 discussions here, the word "time" will be used to refer to the ordering keyword even if it is of some
 other type. 
 
-If the \a -v flag (for verify) is present then each record labeled OK will be tested to verify
+If the \a -o flag (for online) is present then each record labeled OK will be tested to verify
 that any storage-unit that has been assigned to that record still exists either online or on tape
 in SUMS.  If there once was a storage unit but no longer is (due to expirec retention time of a non-archived
 series) the record will be labeled "LOST". Note that this can be an expensive test to make on large series since it requires
-a call to SUMS for each OK record.  Please ues the \a -v flag only on the selected ranges of
+a call to SUMS for each OK record.  Please ues the \a -o flag only on the selected ranges of
 a series where needed.
 
 After all specified records have need examined a table of the resulting completeness information is
@@ -87,7 +87,7 @@ If the \a block parameter is specified, the alternate table format will be used.
 the records are grouped in intervals of length <blocklength> and a summary line is printed for each
 block.  The first block is aligned with the first record time (either first record in series or \a low).
 The summary printed includes the start time of the block, the number of records in the block labeled
-OK, MISS, UNK, or LOST (if \a -v is present).  If the ordering prime-key is of type TIME then the blocking interval,
+OK, MISS, UNK, or LOST (if \a -o is present).  If the ordering prime-key is of type TIME then the blocking interval,
 <blocklength> may have suffixes to
 specify time intervals such as s=seconds, d=day, h=hour, etc. as recognized by atoinc(3).
 
@@ -178,7 +178,7 @@ ModuleArgs_t module_args[] =
     {ARG_STRING, "low", NOT_SPECIFIED, "Low limit for coverage map."},
     {ARG_STRING, "high", NOT_SPECIFIED, "High limit for coverage map."},
     {ARG_STRING, "key", NOT_SPECIFIED, "Prime key name to use, default is first prime"},
-    {ARG_FLAG, "v", "0", "Verify - verify that SU is available for records with data"},
+    {ARG_FLAG, "o", "0", "Verify - verify that SU is available for records with data"},
     {ARG_FLAG, "i", "0", "Index - Print index values instead of prime slot values"},
     {ARG_FLAG, "q", "0", "Quiet - omit series header info"},
     {ARG_FLAG, "h", "0", "Help - Print usage and exit"},
@@ -200,7 +200,7 @@ int nice_intro ()
         "  -h: help - show this message then exit\n"
         "  -i: list index values vs slot values\n"
         "  -q: quiet, do not print header\n"
-        "  -v: verify - check with SUMS for expired data\n"
+        "  -o: online - check with SUMS for expired data\n"
         "ds=<seriesname> - required\n"
         "key=<prime_key> - prime key to use if not the first available\n"
         "block=<blocklength> - interval span for summary data\n"
@@ -242,7 +242,7 @@ int DoIt(void)
   char *lowstr = cmdparams_get_str (&cmdparams, "low", NULL);
   char *highstr = cmdparams_get_str (&cmdparams, "high", NULL);
   char *skeyname = cmdparams_get_str (&cmdparams, "key", NULL);
-  int verify = cmdparams_get_int (&cmdparams, "v", NULL) != 0;
+  int verify = cmdparams_get_int (&cmdparams, "o", NULL) != 0;
   int quiet = cmdparams_get_int (&cmdparams, "q", NULL) != 0;
   int useindex = cmdparams_get_int (&cmdparams, "i", NULL) != 0;
   char *map;
