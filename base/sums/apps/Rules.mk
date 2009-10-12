@@ -47,7 +47,8 @@ endif
 CF_TGT_$(d) := $(CF_TGT_$(d)) $(ADD_TGT_$(d))
 
 #LL_TGT_$(d) := $(ECPGL) -lecpg -lpgtypes -lpq -lcrypto
-LL_TGT_$(d) := $(PGL) -lecpg -lssl
+#LL_TGT_$(d) := $(PGL) -lecpg -lssl
+LL_TGT_$(d) := $(PGL) -lecpg
 
 SUMSVC_$(d)	:= $(d)/sum_svc
 XSUMSVC_$(d)	:= $(d)/xsum_svc
@@ -128,7 +129,7 @@ $(TARCINFO_$(d)):	$(tapearc_obj_$(d))
 # NOTE: tapearc.o depends on libsumspg.a, which in turn depends on padata.o.
 # Make doesn't seem to use else ifeq.
 ifeq ($(SUMSLINK), $(ICC_LINK))
-SUMSICCLIBS_$(d)	:= -lirc
+#SUMSICCLIBS_$(d)	:= -lirc
 endif
 
 ifeq ($(SUMSLINK), $(GCC_LINK))
