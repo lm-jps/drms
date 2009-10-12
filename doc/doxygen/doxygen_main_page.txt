@@ -139,6 +139,8 @@ blocks: http://www.stack.nl/~dimitri/doxygen/commands.html
 ///      @ingroup su_apps
 ///      @defgroup su_lev0 Level Zero 
 ///      @ingroup su_apps
+///      @defgroup su_util Utilities for MDI, HMI, etc. 
+///      @ingroup su_apps
 
 ///@defgroup c_api Section 3. API Libraries
 // @{
