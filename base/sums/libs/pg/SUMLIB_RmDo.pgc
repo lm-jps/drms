@@ -164,6 +164,8 @@ EXEC SQL END DECLARE SECTION;
         printk("**Err: DS_SumMainDelete(%ld)\n", ds_index);
       }
     } 
+#ifndef SUMDC
+    //Note: Records.txt file is not on the datacapture nodes
     if(archsub != DADPDELSU) {
       sprintf(rectxt, "%s/Records.txt", wd);
       if(!(rxfp=fopen(rectxt, "r"))) {
@@ -220,6 +222,7 @@ EXEC SQL END DECLARE SECTION;
         fclose(rxfp);
       }
     }
+#endif
     if(rmdirs(wd, rootdir)) {
       printk("Cannot rm %s\n", wd);
     }
