@@ -136,6 +136,10 @@ if (open(CONFLOC, "<$tmp"))
          {
             print CUSTMK 'ifeq ($(JSOC_MACHINE), linux_ia32)' . "\n";
          }
+         elsif ($mach =~ /ia64/i)
+         {
+            print CUSTMK 'ifeq ($(JSOC_MACHINE), linux_ia64)' . "\n";
+         }
 
          foreach $varname (keys(%map))
          {
@@ -177,7 +181,7 @@ sub SupportedPlat
 {
    my($plat) = $_[0];
 
-   if ($plat =~ /^x86_64$/i || $plat =~ /^ia32$/i)
+   if ($plat =~ /^x86_64$/i || $plat =~ /^ia32$/i || $plat =~ /^ia64$/i)
    {
       return 1;
    }

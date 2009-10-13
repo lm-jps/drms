@@ -1,6 +1,10 @@
 #!/usr/bin/perl -w 
 
 # Determine which compilers are installed; then set make variables to indicate that
+# Also, set DEFAULT values for Stanford-specific (if running at Stanford) make variables.
+# To override the DEFAULT Stanford values, create a config.local file.
+
+use Sys::Hostname;
 
 use constant ICCMAJOR => 9;
 use constant ICCMINOR => 0;
@@ -122,6 +126,57 @@ if (defined($outfile))
     else
     {
         print OUTFILE "JSOC_AUTOFCOMPILER = gfortran\n";
+    }
+
+    # Set DEFAULT values for Stanford-specific (if running at Stanford) make variables.
+    if (-e "suflag.txt") 
+    {
+       my($hostname);
+       my($machtype);
+       my($line);
+
+       if (open(SUFLAG, "<suflag.txt"))
+       {
+          # first figure out what type of Stanford machine this script is running on
+          $hostname = hostname();
+
+          if ($hostname =~ /j1/)
+          {
+             $machtype = "j1";
+          }
+          elsif ($hostname =~ /d02/)
+          {
+             $machtype = "d02";
+          }
+          elsif ($hostname =~ /hmidb/)
+          {
+             $machtype = "dbserver";
+          }
+          elsif ($hostname =~ /cl1n0/)
+          {
+             $machtype = "cluster";
+          }
+          elsif ($hostname =~ /dcs/)
+          {
+             $machtype = "dcs";
+          }
+
+          if (defined($machtype))
+          {
+             print OUTFILE "MACHTYPE = $machtype\n";
+          }
+
+          while (defined($line = <SUFLAG>))
+          {
+             chomp($line);
+             if ($line !~ /^#/ && $line =~ /\S+/)
+             {
+                print OUTFILE "$line\n";
+             }
+          }
+
+          close(SUFLAG);
+       }
     }
 
     close(OUTFILE);

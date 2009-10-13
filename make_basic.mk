@@ -196,19 +196,11 @@ F_LF_ALL	= -nofor_main  -openmp -static-intel
 GCC_CF_GCCCOMP  = -DGCCCOMP 
 ICC_CF_ICCCOMP  = -DICCCOMP -openmp
 
-CCFLAGS_OPT	:=
-
-ifeq ($(COMPILER), icc)
-  ifeq ($(JSOC_MACHINE), linux_x86_64)
-    CCFLAGS_OPT	:=
-  endif
-endif
-
 # can't figure out how to get stupid make to do if/else if/else
 ifeq ($(DEBUG), 0)
   GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW) $(GLOBALSW)
 # -xW tells the icc compiler to optimize for Pentium 4
-  ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE $(CCFLAGS_OPT) $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW) $(GLOBALSW)
+  ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW) $(GLOBALSW)
 
   ifeq ($(JSOC_MACHINE), linux_x86_64)
     GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=opteron $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW) $(GLOBALSW)
@@ -237,20 +229,16 @@ endif
 
 # Other compiler-specific Fortran COMPILE flags
 ifeq ($(FCOMPILER), ifort)
-  ifeq ($(JSOC_MACHINE), linux_x86_64)
-    FCFLAGS_OPT	:=
-  endif
   FCFLAGS_INIT := -ftrapuv
 else
   # must be gfortran
-  FCFLAGS_OPT	:= 
   FCFLAGS_INIT  := 
 endif
 
 ifeq ($(DEBUG), 0)
 # -xW optimizes ifort compilation for Pentium 4
 # -ftrapuv initializes stack local variables to an unusual value to aid error detection. 
-  F_CF_ALL	:= $(F_CF_ALL) $(FCFLAGS_OPT) $(FCOMPILER_WARN)
+  F_CF_ALL	:= $(F_CF_ALL) $(FCOMPILER_WARN)
 else
   F_CF_ALL	:= $(F_CF_ALL) -g $(FCFLAGS_INIT) $(FCOMPILER_WARN)
 endif

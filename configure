@@ -159,39 +159,10 @@ if ($CHKLIBS == "no") then
 	echo "done"
 	echo
        
-        if (-e suflag.txt) then           
-            # Stanford third-party libraries
-            echo 'POSTGRES_LIB = pq' >> custom.mk
-            echo 'CFITSIO_LIB = cfitsio' >> custom.mk
+        # run moreconfigure.pl - this script is written in perl because it is easier to do the compiler detection 
+        # in perl. It also reads suflag.txt (if it exists) to set the default Stanford values for certain make variables
 
-            echo 'ifeq ($(JSOC_MACHINE), linux_x86_64)' >> custom.mk
-            echo '  POSTGRES_INCS = /usr/include' >> custom.mk
-            echo '  POSTGRES_LIBS = /usr/lib64' >> custom.mk
-            echo '  CFITSIO_INCS = /home/jsoc/include' >> custom.mk
-            echo '  CFITSIO_LIBS = /home/jsoc/lib/linux-x86_64' >> custom.mk
-            echo 'endif' >> custom.mk
-
-            echo 'ifeq ($(JSOC_MACHINE), linux_ia32)' >> custom.mk
-            echo '  POSTGRES_INCS = /usr/include' >> custom.mk
-            echo '  POSTGRES_LIBS = /usr/lib' >> custom.mk
-            echo '  CFITSIO_INCS = /home/jsoc/include' >> custom.mk
-            echo '  CFITSIO_LIBS = /home/jsoc/lib/linux-ia32' >> custom.mk
-            echo 'endif' >> custom.mk
-
-            # Set custom make file to tell the make system that the gcc cfitsio library is called
-            # libcfitsio_gcc.a
-            echo 'ifeq ($(COMPILER), gcc)' >> custom.mk
-            echo '  ifeq ($(JSOC_MACHINE), linux_x86_64)' >> custom.mk
-            echo '    CFITSIO_LIB = cfitsio_gcc' >> custom.mk
-            echo '  endif' >> custom.mk
-            echo 'endif' >> custom.mk
-        endif
-
-        # Make customizations - ensure changes here are synchronized to changes in make_basic.mk
-        if (!(-e suflag.txt)) then
-            # put compilation customizations here
-            # echo "DRMS_DEFAULT_RETENTION = -10" >> custom.mk
-        endif
+        ./moreconfigure.pl -fcustom.mk
 
 	echo "done"
 	echo
@@ -261,12 +232,11 @@ if ($CHKLIBS == "no") then
         echo "done"
         echo
 
-        # Customize compilers
+        # Custom make variable values - these will override the values set in moreconfigure.pl
         # echo "JSOC_COMPILER = gcc" >> custom.mk
         # echo "JSOC_FCOMPILER = gfortran" >> custom.mk
+        # echo "DRMS_DEFAULT_RETENTION = -10" >> custom.mk
 
-        # run perl script to do even more configuration
-        ./moreconfigure.pl -fcustom.mk
     endif
 else
 # $CHKLIBS == "yes"
