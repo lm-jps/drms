@@ -9,6 +9,7 @@ $(PROJOBJDIR):
 	+@[ -d $@/dsdsmigr/apps ] || mkdir -p $@/dsdsmigr/apps
 	+@[ -d $@/util/apps ] || mkdir -p $@/util/apps
 	+@[ -d $@/lev0/apps ] || mkdir -p $@/lev0/apps
+	+@[ -d $@/lev1/apps ] || mkdir -p $@/lev1/apps
 	+@[ -d $@/jpe/apps ] || mkdir -p $@/jpe/apps
 	+@[ -d $@/lev1_aia/apps ] || mkdir -p $@/lev1_aia/apps
 	+@[ -d $@/lev1_hmi/apps ] || mkdir -p $@/lev1_hmi/apps
