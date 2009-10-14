@@ -2,6 +2,11 @@ VPATH  = $(SRCDIR)
 STATIC = 
 DBNAME = POSTGRESQL
 
+# Run a script to determine the machine on which make is being run. This
+# MAY return a machine type, if the host found falls into one of several
+# categories (like dbserver).
+MACHTYPE = $(shell $(SRCDIR)/getmachtype.pl)
+
 # This optional file has custom definitions created by the configure script
 -include $(SRCDIR)/custom.mk
 
