@@ -21,13 +21,13 @@ all:    $(PROJOBJDIR) $(OBJDIR)
 
 # Define the rules to build in the target subdirectories.
 #
-MAKETARGET = $(MAKE) --no-print-directory -C $@ -f $(CURDIR)/Makefile \
+MAKETARGET = $(MAKE) --no-print-directory -C $@ -f $(WORKINGDIR)/Makefile \
 		SRCDIR=$(WORKINGDIR) $(MAKECMDGOALS)
 
 .PHONY: $(PROJOBJDIR) $(OBJDIR) 
 
 # Create the project-specific directories too, if they exist.
--include $(CURDIR)/proj/target.mk
+-include $(WORKINGDIR)/proj/target.mk
 
 $(OBJDIR):
 	+@[ -d bin/$(MACH) ] || mkdir -p bin/$(MACH)
