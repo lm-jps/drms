@@ -1,5 +1,6 @@
 /* Called by SUM_Init() at sum_svc startup to clean up left over 
  * DARW and DARO entries in the sum_partn_alloc table.
+ * Also clears out the sum_open table. (new 21Oct2009)
 */
 #include <SUM.h>
 #include <sum_rpc.h>
@@ -23,6 +24,7 @@ EXEC SQL END DECLARE SECTION;
          l_status = DARO;
          EXEC SQL DELETE FROM SUM_PARTN_ALLOC
               WHERE STATUS = :l_status;
+         EXEC SQL DELETE FROM SUM_OPEN;
          EXEC SQL COMMIT WORK;
               return NO_ERROR;
 
