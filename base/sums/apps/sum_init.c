@@ -16,7 +16,7 @@ int SUM_Init(char *dbname)
 
   DS_ConnectDB(dbname); /* connect to DB for init */
   if(DS_PallocClean())  /* delete old DARW & DARO in sum_partn_alloc */
-    return(1);
+    return(1);		/* also deletes all entries in sum_open */
   if(DS_PavailRequest2())
     return(1);
 /************* OLD stuff now obsolete ****
