@@ -728,19 +728,19 @@ void *drms_server_thread(void *arg)
     case DRMS_ROLLBACK:
       if (env->verbose)
 	printf("thread %d: Executing DRMS_ROLLBACK.\n", tnum);
-      drms_lock_server(env);
+      pthread_mutex_lock(env->clientlock);
       status = db_rollback(db_handle);
       db_start_transaction(db_handle);
-      drms_unlock_server(env);
+      pthread_mutex_unlock(env->clientlock);
       Writeint(sockfd, status);
       break;
     case DRMS_COMMIT:
       if (env->verbose)
 	printf("thread %d: Executing DRMS_COMMIT.\n", tnum);
-      drms_lock_server(env);
+      pthread_mutex_lock(env->clientlock);
       status = db_commit(db_handle);
       db_start_transaction(db_handle);
-      drms_unlock_server(env);
+      pthread_mutex_unlock(env->clientlock);
       Writeint(sockfd, status);
       break;
     case DRMS_TXTQUERY:
@@ -806,21 +806,20 @@ void *drms_server_thread(void *arg)
     case  DRMS_NEWSLOTS:
       if (env->verbose)
 	printf("thread %d: Executing DRMS_NEWSLOTS.\n",tnum);
-      drms_lock_server(env);
+      pthread_mutex_lock(env->clientlock);
       status = drms_server_newslots(env, sockfd);
-      drms_unlock_server(env);
+      pthread_mutex_unlock(env->clientlock);
       break;
     case  DRMS_SLOT_SETSTATE:
       if (env->verbose)
 	printf("thread %d: Executing DRMS_SLOT_SETSTATE.\n",tnum);
-      drms_lock_server(env);
+      pthread_mutex_lock(env->clientlock);
       status = drms_server_slot_setstate(env, sockfd);
-      drms_unlock_server(env);
+      pthread_mutex_unlock(env->clientlock);
       break;
     case  DRMS_GETUNIT:
       if (env->verbose)
 	printf("thread %d: Executing DRMS_GETUNIT.\n",tnum);
-      /* XXX - Need a new lock to synchronize among server threads (possibly) */
       pthread_mutex_lock(env->clientlock);
       status = drms_server_getunit(env, sockfd);
       pthread_mutex_unlock(env->clientlock);
@@ -853,31 +852,31 @@ void *drms_server_thread(void *arg)
     case DRMS_NEWSERIES:
       if (env->verbose)
 	printf("thread %d: Executing DRMS_NEWSERIES.\n",tnum);
-      drms_lock_server(env);
+      pthread_mutex_lock(env->clientlock);
       status = drms_server_newseries(env, sockfd);
-      drms_unlock_server(env);
+      pthread_mutex_unlock(env->clientlock);
       break;
     case DRMS_DROPSERIES:
       if (env->verbose)
 	printf("thread %d: Executing DRMS_DROPSERIES.\n",tnum);
-      drms_lock_server(env);
+      pthread_mutex_lock(env->clientlock);
       status = drms_server_dropseries(env, sockfd);
-      drms_unlock_server(env);
+      pthread_mutex_unlock(env->clientlock);
       break;
     case DRMS_GETTMPGUID:
-      drms_lock_server(env);
+      pthread_mutex_lock(env->clientlock);
       drms_server_gettmpguid(&sockfd);
-      drms_unlock_server(env);
+      pthread_mutex_unlock(env->clientlock);
       break;
     case DRMS_SITEINFO:
-      drms_lock_server(env);
+      pthread_mutex_lock(env->clientlock);
       drmssite_server_siteinfo(sockfd, db_handle);
-      drms_unlock_server(env);
+      pthread_mutex_unlock(env->clientlock);
       break;
     case DRMS_LOCALSITEINFO:
-      drms_lock_server(env);
+      pthread_mutex_lock(env->clientlock);
       drmssite_server_localsiteinfo(sockfd, db_handle);
-      drms_unlock_server(env);
+      pthread_mutex_unlock(env->clientlock);
       break;
     default:
       fprintf(stderr,"Error: Unknown command code '%d'\n",command);
