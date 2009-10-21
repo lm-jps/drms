@@ -50,6 +50,7 @@ CLIENT *current_client, *clnttape;
 SVCXPRT *glb_transp;
 char *dbname;
 char thishost[MAX_STR];
+char usedhost[MAX_STR];
 char hostn[MAX_STR];
 char logname[MAX_STR];
 char datestr[32];
@@ -396,14 +397,17 @@ if(strcmp(hostn, "lws") && strcmp(hostn, "n00") && strcmp(hostn, "d00") && strcm
   printf("\nsum_svc waiting for tape servers to start (approx 10sec)...\n");
   sleep(10);			/* give time to start */
   //if running on j1, then the tape_svc is on TAPEHOST, else the localhost
-  if(strcmp(hostn, SUMSVCHOST)) 
+  if(strcmp(hostn, SUMSVCHOST)) { 
     clnttape = clnt_create(thishost, TAPEPROG, TAPEVERS, "tcp");
+    strcpy(usedhost, thishost);
+  }
   else {
     clnttape = clnt_create(TAPEHOST, TAPEPROG, TAPEVERS, "tcp");
+    strcpy(usedhost, TAPEHOST);
   }
   if(!clnttape) {       /* server not there */
     clnt_pcreateerror("Can't get client handle to tape_svc (xsum_svc)");
-    write_log("tape_svc not there on %s\n", thishost);
+    write_log("tape_svc not there on %s\n", usedhost);
     exit(1);
   }
 }
