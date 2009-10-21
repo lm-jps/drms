@@ -345,11 +345,14 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
   int tryagain;
   int natts;
 
+  drms_lock_server(env);
+
   if (!env->sum_thread) {
     int status;
     if((status = pthread_create(&env->sum_thread, NULL, &drms_sums_thread,
 				(void *) env))) {
       fprintf(stderr,"Thread creation failed: %d\n", status);
+      drms_unlock_server(env);
       return 1;
     }
   }
@@ -399,13 +402,17 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 
      /***** GAAAA! DON'T USE request AFTER THIS POINT - drms_sums_thread() frees it *****/
 
-     /* Wait for reply. FIXME: add timeout. */
+     /* Wait for reply. FIXME: add timeout. 
+      * This could take a long time if SUMS has to fetch from tape, so release env lock temporarily. */
+     drms_unlock_server(env);
      tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
+     drms_lock_server(env);
 
      if (reply->opcode != 0)
      {
         fprintf(stderr, "SUM GET failed with error code %d.\n",reply->opcode);
         free(reply);
+        drms_unlock_server(env);
         return 1;
      }
      else
@@ -510,6 +517,8 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
      natts++;
   }
 
+  drms_unlock_server(env);
+
   return sustatus;
 }
 #endif
@@ -529,11 +538,14 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
   int tryagain;
   int natts;
 
+  drms_lock_server(env);
+
   if (!env->sum_thread) {
     int status;
     if((status = pthread_create(&env->sum_thread, NULL, &drms_sums_thread,
 				(void *) env))) {
       fprintf(stderr,"Thread creation failed: %d\n", status);
+      drms_unlock_server(env);
       return 1;
     }
   }
@@ -621,12 +633,17 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
         {
            /* If and only if user wants to wait for the reply, then return back 
             * to user all SUDIRs found. */
+           /* Could take a while for SUMS to respond (it it has to fetch from tape), 
+            * so release env lock temporarily. */
+           drms_unlock_server(env);
            tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
-
+           drms_lock_server(env);
+     
            if (reply->opcode != 0)
            {
               fprintf(stderr, "SUM GET failed with error code %d.\n",reply->opcode);
               free(reply);
+              drms_unlock_server(env);
               return 1;
            }
            else
@@ -908,6 +925,8 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
   {
      list_llfree(&retrysus);
   }
+
+  drms_unlock_server(env);
 
   return sustatus;
 }

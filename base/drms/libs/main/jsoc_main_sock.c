@@ -50,15 +50,44 @@ static void atexit_action (void) {
       " will be aborted and the database rolled back.\n", mn);
 }
 
-static void sighandler(int signo)
+/* Function to register callback function that cleans up resources allocated from within 
+ * DoIt(). Returns 1 if successfully registered the callback function provided 
+ * in the list of arguments, 0 otherwise. */
+int RegisterDoItCleaner(DRMS_Env_t *env, pFn_Cleaner_t cb, void *data)
 {
-  fprintf(stderr,"Module received signal %d. Aborting.\n",signo);
+   int gotlock = 0;
+   static int registered = 0;
 
-  drms_abort_now(drms_env);
+   if (!registered)
+   {
+      gotlock = (drms_trylock_client(env) == 0);
 
-  // don't wait for self-start drms_server
-  exit(1);
-}  
+      if (gotlock)
+      {
+         env->cleanerdata.deepclean = cb;
+         env->cleanerdata.deepdata = data;
+         registered = 1;
+         drms_unlock_client(env);
+      }
+      else
+      {
+         fprintf(stderr, "Can't register doit cleaner function. Unable to obtain mutex.\n");
+      }
+   }
+   else
+   {
+      fprintf(stderr, "RegisterDoItCleaner() already successfully called - cannot re-register.\n");
+   }
+
+   return gotlock;
+}
+
+static int FreeCmdparams(void *data)
+{
+   cmdparams_freeall(&cmdparams);
+   memset(&cmdparams, 0, sizeof(CmdParams_t));
+   return 0;
+}
 
 int JSOCMAIN_Init(int argc, 
 		  char **argv, 
@@ -190,19 +219,43 @@ int JSOCMAIN_Init(int argc,
        */
       atexit (atexit_action);   
 #endif
-
-
-      struct sigaction act;
-      /* Set signal handler to clean up. */
-      act.sa_handler = sighandler;
-      sigfillset(&(act.sa_mask));
-      sigaction(SIGINT, &act, NULL);
-      sigaction(SIGTERM, &act, NULL);
-
    }
 
    /* Initialize global things. */
    drms_keymap_init(); /* If this slows down init too much, do on-demand init. */
+
+   /* Block signals INT, QUIT, TERM, and USR1. They will explicitly
+      handled by the signal thread created below. */
+#ifndef DEBUG
+   sigemptyset(&drms_env->signal_mask);
+   sigaddset(&drms_env->signal_mask, SIGINT);
+   sigaddset(&drms_env->signal_mask, SIGQUIT);
+   sigaddset(&drms_env->signal_mask, SIGTERM);
+   sigaddset(&drms_env->signal_mask, SIGUSR1);
+   sigaddset(&drms_env->signal_mask, SIGUSR2);
+
+   if( (status = pthread_sigmask(SIG_BLOCK, &drms_env->signal_mask, &drms_env->old_signal_mask)))
+   {
+      fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);          
+      exit(1);
+   }
+
+   drms_env->main_thread = pthread_self();
+
+   /* Free cmd-params (valgrind reports this - let's just clean up so it doesn't show up on 
+    * valgrind's radar). */
+   drms_client_registercleaner(drms_env, (pFn_Cleaner_t)FreeCmdparams, (void *)NULL);
+
+   /* Spawn a thread that handles signals and controls server 
+      abort or shutdown. */
+   if( (status = pthread_create(&drms_env->signal_thread, NULL, &drms_signal_thread, 
+                                (void *) drms_env)) )
+   {
+      fprintf(stderr,"Thread creation failed: %d\n", status);          
+      exit(1);
+   }
+
+#endif
 
    /* continue with calling module or otherwise interacting with DRMS. */
    if (cont)
@@ -324,7 +377,36 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
       abort_flag = (*CallDoIt)();
    }
 
-   JSOCMAIN_Term(dolog, verbose, drms_server_pid, tee_pid, abort_flag);
+   sem_t *sdsem = drms_client_getsdsem();
+
+   if (sdsem)
+   {
+      sem_wait(sdsem);
+   }
+
+   if (drms_client_getsd() != kSHUTDOWN_UNINITIATED)
+   {
+      /* signal thread is already shutting down, just wait for signal thread to finish 
+       * (which it won't do, because it is going to call exit, so this is an indefinite sleep). */
+      if (sdsem)
+      {
+         sem_post(sdsem);
+      }
+
+      pthread_join(drms_env->signal_thread, NULL);  
+   }
+   else
+   {
+      /* Tell signal thread not to accept shutdown requests, because main is shutting down. */
+      drms_client_setsd(kSHUTDOWN_BYMAIN);
+
+      if (sdsem)
+      {
+         sem_post(sdsem);
+      }
+
+      JSOCMAIN_Term(dolog, verbose, drms_server_pid, tee_pid, abort_flag);
+   }
 
    return(abort_flag);
 }
@@ -502,3 +584,4 @@ pid_t drms_start_server (int verbose, int dolog)  {
   return(0);
 
 }
+

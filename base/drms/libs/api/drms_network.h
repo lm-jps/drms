@@ -63,6 +63,18 @@ int drms_series_cancreaterecord(DRMS_Env_t *env, const char *series);
 int drms_series_candeleterecord(DRMS_Env_t *env, const char *series);
 int drms_series_canupdaterecord(DRMS_Env_t *env, const char *series);
 
+#ifdef DRMS_CLIENT
+void drms_lock_client(DRMS_Env_t *env);
+void drms_unlock_client(DRMS_Env_t *env);
+int drms_trylock_client(DRMS_Env_t *env);
+sem_t *drms_client_getsdsem(void);
+void drms_client_initsdsem(void);
+void drms_client_destroysdsem(void);
+DRMS_Shutdown_State_t drms_client_getsd(void);
+void drms_client_setsd(DRMS_Shutdown_State_t st);
+int drms_client_registercleaner(DRMS_Env_t *env, pFn_Cleaner_t cb, CleanerData_t *data);
+void *drms_signal_thread(void *arg);
+#endif
 /******************** DRMS client-server protocol stuff. ********************/
 
 /* Command codes: Once a client has connected and properly authenticated itself

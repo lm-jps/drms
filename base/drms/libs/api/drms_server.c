@@ -25,11 +25,56 @@
 
 #define kDELSERFILE "thefile.txt"
 
+sem_t *gShutdownsem = NULL; /* synchronization among signal thread, main thread, 
+                               sums thread, and server threads during shutdown */
+DRMS_Shutdown_State_t gShutdown; /* shudown state following receipt by DRMS of a signal that 
+                                 * causes module termination */
+
+pthread_mutex_t *gSUMSbusyMtx = NULL;
+int gSUMSbusy = 0;
+
 /******************* Main server thread(s) functions ************************/
 
 static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 						    SUM_t *sum,
 						    DRMS_SumRequest_t *request);
+
+sem_t *drms_server_getsdsem(void)
+{
+   return gShutdownsem;
+}
+
+void drms_server_initsdsem(void)
+{
+  /* create shutdown (unnamed POSIX) semaphore */
+  gShutdownsem = malloc(sizeof(sem_t));
+
+  /* Initialize semaphore to 1 - "unlocked" */
+  sem_init(gShutdownsem, 0, 1);
+  
+  /* Initialize shutdown state to kSHUTDOWN_UNINITIATED - no shutdown requested */
+  gShutdown = kSHUTDOWN_UNINITIATED;
+}
+
+void drms_server_destroysdsem(void)
+{
+   if (gShutdownsem)
+   {
+      sem_destroy(gShutdownsem);
+      free(gShutdownsem);
+      gShutdownsem = NULL;
+   }
+}
+
+DRMS_Shutdown_State_t drms_server_getsd(void)
+{
+   return gShutdown;
+}
+
+void drms_server_setsd(DRMS_Shutdown_State_t st)
+{
+   gShutdown = st;
+}
 
 int drms_server_authenticate(int sockfd, DRMS_Env_t *env, int clientid)
 {
@@ -54,7 +99,12 @@ int drms_server_authenticate(int sockfd, DRMS_Env_t *env, int clientid)
 /* Assumes that drms_open() already called (but doesn't check for that). Also
  * assumes that drms_server_end_transaction() was never called with the 'final'
  * flag set. */
+
+/* Only the main thread will access these parts of the env, so no need to 
+ * lock the env. */
 int drms_server_begin_transaction(DRMS_Env_t *env) {
+
+   int notfirst = 0;
 
   /* Start a transaction where all database operations performed
      through this server should be treated as a single transaction. */
@@ -65,27 +115,63 @@ int drms_server_begin_transaction(DRMS_Env_t *env) {
     // Instead, send a TERM signal to the signal thread.
     pthread_kill(env->signal_thread, SIGTERM);
   }
+  else
+  {
+     /* drms_lock_server is a noop if env->drms_lock == NULL */
+     drms_lock_server(env);
+     env->transrunning = 1;
+     drms_unlock_server(env);
+  }
 
   /* It is possible that the user has previously called drms_server_end_transaction(),
    * but not freed the environment. In this case, you don't want to re-allocate and
    * re-initialize the env structure. */
+  if (env->drms_lock)
+  {
+     notfirst = 1;
+     drms_lock_server(env);
+  }
+
   if (!env->transinit)
   {
      env->sum_inbox = tqueueInit (100);
      env->sum_outbox = tqueueInit (100);
 
-     /*  global lock  */
+     /* global locks */
+     /* to lock anything in env */
      XASSERT( env->drms_lock = malloc(sizeof(pthread_mutex_t)) );
      pthread_mutex_init (env->drms_lock, NULL); 
 
-     if (drms_cache_init(env)) goto bailout;
+     /* to serialize server threads (drms_server clients) access to drms_server's DRMS library */
+     XASSERT(env->clientlock = malloc(sizeof(pthread_mutex_t)) );
+     pthread_mutex_init(env->clientlock, NULL);
+
+     drms_lock_server(env);
+     if (drms_cache_init(env)) 
+     {
+        drms_unlock_server(env);
+        goto bailout;
+     }
 
      env->transinit = 1;
+     drms_unlock_server(env);
   }
 
   /* drms_server_open_session() can be slow when the dbase is busy - 
-   * this is caused by SUM_open() calls backing up. */ 
-  if (drms_server_open_session(env)) return 1;
+   * this is caused by SUM_open() calls backing up. */
+  if (!notfirst)
+  {
+     drms_lock_server(env); 
+  }
+
+  if (drms_server_open_session(env)) 
+  {
+     drms_unlock_server(env);
+     return 1;
+  }
+
+  env->sessionrunning = 1;
+  drms_unlock_server(env);
 
   return 0;
  bailout:
@@ -370,10 +456,18 @@ void drms_server_abort(DRMS_Env_t *env, int final)
     fprintf(stderr,"WARNING: DRMS is aborting...\n");  
 
   /* Roll back. */
-  db_rollback(env->session->db_handle);
+  if (env->transrunning)
+  {
+     db_rollback(env->session->db_handle);
+     env->transrunning = 0;
+  }
 
   /* Unregister */
-  drms_server_close_session(env, abortstring, env->clientcounter, 7, 0);
+  if (env->sessionrunning)
+  {
+     drms_server_close_session(env, abortstring, env->clientcounter, 7, 0);
+     env->sessionrunning = 0;
+  }
 
   // Either a sums thread or a server thread might be waiting on
   // either sum_inbox or sum_outbox. Need to put something into the
@@ -384,22 +478,29 @@ void drms_server_abort(DRMS_Env_t *env, int final)
   if (env->sum_thread) {
     // a server thread might be waiting for reply on sum_outbox, tell
     // it we are aborting.
-    if (env->sum_tag) {
+     DRMS_SumRequest_t *request;
+     XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+
+    if (env->sum_tag) 
+    {
       // has to be dynamically allocated since it's going to be freed.
+       /* This code simply tells the thread that made an unprocessed
+        * SUMS request that there was an error (abort is happening). */
       DRMS_SumRequest_t *reply;
       XASSERT(reply = malloc(sizeof(DRMS_SumRequest_t)));      
       reply->opcode = DRMS_ERROR_ABORT;
       tqueueAdd(env->sum_outbox, env->sum_tag, (char *)reply);
-    } else {
-      // a sums thread might be waiting for requests on sum_inbox, tell
-      // it we are aborting.
-      /* tell the sums thread to finish up. */
-      // looks like all requests are not dyanmically allocated.
-      DRMS_SumRequest_t *request;
-      XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
-      request->opcode = DRMS_SUMCLOSE;
-      tqueueAdd(env->sum_inbox, (long)pthread_self(), (char *)request);
+      request->opcode = DRMS_SUMABORT;
     }
+    else
+    {
+      request->opcode = DRMS_SUMCLOSE;
+    }
+    // a sums thread might be waiting for requests on sum_inbox, tell
+    // it we are aborting.
+    /* tell the sums thread to finish up. */
+    // looks like all requests are not dyanmically allocated.
+    tqueueAdd(env->sum_inbox, (long)pthread_self(), (char *)request);
 
     pthread_join(env->sum_thread, NULL);
     env->sum_thread = 0;
@@ -410,11 +511,17 @@ void drms_server_abort(DRMS_Env_t *env, int final)
   /* Close DB connection and set abort flag... */
   db_disconnect(&env->session->db_handle);
 
-  /* Wait for other threads to finish cleanly. */
-  if (env->verbose) 
-    fprintf(stderr, "WARNING: DRMS server aborting in %d seconds...\n", 
-	    DRMS_ABORT_SLEEP);
-  sleep(DRMS_ABORT_SLEEP);
+  /* No need to sleep here ("wait for other threads to finish cleanly") because 
+   * the main thread waits for all other threads to finish before returning. But
+   * waiting can be indicated with a cmd-line argument (which causes 
+   * env->server_wait to be set). */
+  if (env->server_wait)
+  {
+     if (env->verbose) 
+       fprintf(stderr, "WARNING: DRMS server aborting in %d seconds...\n", 
+               DRMS_ABORT_SLEEP);
+     sleep(DRMS_ABORT_SLEEP);
+  }
 
   /* Free memory.*/
   if (final) {
@@ -476,7 +583,11 @@ void drms_server_commit(DRMS_Env_t *env, int final)
   if (env->verbose)
     printf("Unregistering DRMS session.\n");
 
-  drms_server_close_session(env, "finished", 0, log_retention, archive_log);
+  if (env->sessionrunning)
+  {
+     drms_server_close_session(env, "finished", 0, log_retention, archive_log);
+     env->sessionrunning = 0;
+  }
 
   if (env->sum_thread) {
     /* Tell SUM thread to finish up. */
@@ -492,20 +603,25 @@ void drms_server_commit(DRMS_Env_t *env, int final)
   db_disconnect(&env->session->stat_conn);
 
   /* Commit all changes to the DRMS database. */
-  if (status)
-  {
-     db_rollback(env->session->db_handle);
-  }
-  else
-  {
-     db_commit(env->session->db_handle);
+  if (env->transrunning)
+  {    
+     if (status)
+     {
+        db_rollback(env->session->db_handle);
+     }
+     else
+     {
+        db_commit(env->session->db_handle);
+     }
+
+     env->transrunning = 0;
   }
 
   if (final) {
     db_disconnect(&env->session->db_handle);
   }
 
-  /* Give threads a small window to finish cleanly. */
+  /* Give threads a small window to finish cleanly - this gets set by a cmd-line arg. */
   if (env->server_wait) {
     if (env->verbose)
       fprintf(stderr, "WARNING: DRMS server stopping in approximately %d "
@@ -569,22 +685,6 @@ void *drms_server_thread(void *arg)
     // Instead, send a TERM signal to the signal thread.
     pthread_kill(env->signal_thread, SIGTERM);
     goto bail;
-  }
-
-  /* block SIGUSR2, since only the main thread should respond to this signal */
-  sigset_t mask;
-
-  sigemptyset(&mask);
-  sigaddset(&mask, SIGUSR2);
-
-  if((status = pthread_sigmask(SIG_BLOCK, &mask, NULL)))
-  {
-     fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);
-
-     // Exit(1); - never call exit(), only the signal thread can do that.
-     // Instead, send a TERM signal to the signal thread.
-     pthread_kill(env->signal_thread, SIGTERM);
-     goto bail;
   }
 
   if ( getpeername(sockfd,  (struct sockaddr *)&client, &client_size) == -1 )
@@ -720,30 +820,35 @@ void *drms_server_thread(void *arg)
     case  DRMS_GETUNIT:
       if (env->verbose)
 	printf("thread %d: Executing DRMS_GETUNIT.\n",tnum);
-      drms_lock_server(env);
+      /* XXX - Need a new lock to synchronize among server threads (possibly) */
+      pthread_mutex_lock(env->clientlock);
       status = drms_server_getunit(env, sockfd);
-      drms_unlock_server(env);
+      pthread_mutex_unlock(env->clientlock);
       break;
     case  DRMS_GETUNITS:
       if (env->verbose)
 	printf("thread %d: Executing DRMS_GETUNITS.\n",tnum);
-      drms_lock_server(env);
+      /* XXX - Need a new lock to synchronize among server threads (possibly) */
+      pthread_mutex_lock(env->clientlock);
       status = drms_server_getunits(env, sockfd);
-      drms_unlock_server(env);
+      pthread_mutex_unlock(env->clientlock);
       break;
     case DRMS_GETSUDIR:
       if (env->verbose)
 	printf("thread %d: Executing DRMS_GETSUDIR.\n",tnum);
-      drms_lock_server(env);
+      /* XXX Don't lock environment at this level - too high; but use a new lock
+       * to synchronize server threads */
+      pthread_mutex_lock(env->clientlock);
       status = drms_server_getsudir(env, sockfd);
-      drms_unlock_server(env);
+      pthread_mutex_unlock(env->clientlock);
       break;
     case DRMS_GETSUDIRS:
       if (env->verbose)
         printf("thread %d: Executing DRMS_GETSUDIRS.\n",tnum);
-      drms_lock_server(env);
+      /* XXX - Need a new lock to synchronize among server threads (possibly) */
+      pthread_mutex_lock(env->clientlock);
       status = drms_server_getsudirs(env, sockfd);
-      drms_unlock_server(env);
+      pthread_mutex_unlock(env->clientlock);
       break;
     case DRMS_NEWSERIES:
       if (env->verbose)
@@ -1513,27 +1618,6 @@ void drms_lock_server(DRMS_Env_t *env)
     return;
   else
   {
-#if 0
-     /* Before locking, you must block signals that could interrupt
-      * the main thread and cause it to not return from the signal handler.
-      * If that were to happen, the lock would never be released, and you get deadlock 
-      * The only signal in that category is USR2.
-      */
-     if (env->main_thread == pthread_self())
-     {
-        sigset_t mask;
-        int status;
-     
-        sigemptyset(&mask);
-        sigaddset(&mask, SIGUSR2);
-     
-        if((status = pthread_sigmask(SIG_BLOCK, &mask, NULL)))
-        {
-           fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);
-        }
-     }
-#endif
-
      pthread_mutex_lock( env->drms_lock );
   }
 }
@@ -1545,24 +1629,20 @@ void drms_unlock_server(DRMS_Env_t *env)
   else
   {
      pthread_mutex_unlock( env->drms_lock );
-
-#if 0
-     /* unblock signals that were blocked while the lock was held */
-     if (env->main_thread == pthread_self())
-     {
-        sigset_t mask;
-        int status;
-
-        sigemptyset(&mask);
-        sigaddset(&mask, SIGUSR2);
-
-        if((status = pthread_sigmask(SIG_UNBLOCK, &mask, NULL)))
-        {
-           fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);
-        }
-     }
-#endif
   }
+}
+
+/* 0 means success - lock was acquired */
+int drms_trylock_server(DRMS_Env_t *env)
+{
+   if (env->drms_lock == NULL)
+   {
+      return 0;
+   }
+   else
+   {
+      return pthread_mutex_trylock(env->drms_lock);
+   }
 }
  
 long long drms_server_gettmpguid(int *sockfd)
@@ -1652,22 +1732,16 @@ void *drms_sums_thread(void *arg)
     Exit(1);
   }
 
-  /* block SIGUSR2, since only the main thread should respond to this signal */
-  sigset_t mask;
-
-  sigemptyset(&mask);
-  sigaddset(&mask, SIGUSR2);
-
-  if((status = pthread_sigmask(SIG_BLOCK, &mask, NULL)))
-  {
-     fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);
-     Exit(1);
-  }
-
 #ifdef DEBUG
   printf("drms_sums_thread started.\n");
   fflush(stdout);
 #endif
+  
+  if (!gSUMSbusyMtx)
+  {
+     XASSERT(gSUMSbusyMtx = malloc(sizeof(pthread_mutex_t)));
+     pthread_mutex_init(gSUMSbusyMtx, NULL); 
+  }
 
   /* Main processing loop. */
   stop = 0;
@@ -1675,6 +1749,7 @@ void *drms_sums_thread(void *arg)
   while ( !stop || (stop && !empty))
   {
     /* Wait for the next SUMS request to arrive in the inbox. */
+     /* sum_tag is the thread id of the thread who made the original SUMS request */
     env->sum_tag = 0;
     empty = tqueueDelAny(env->sum_inbox, &env->sum_tag,  &ptmp );
     request = (DRMS_SumRequest_t *) ptmp;
@@ -1735,6 +1810,8 @@ void *drms_sums_thread(void *arg)
 	/* Put the reply in the outbox. */
 	tqueueAdd(env->sum_outbox, env->sum_tag, (char *) reply);
       } else {
+         /* If the calling thread waits for the reply, then it is the caller's responsibility 
+          * to clean up. Otherwise, clean up here. */
 	for (int i = 0; i < request->reqcnt; i++) {
 	  free(reply->sudir[i]);
 	}
@@ -1753,6 +1830,12 @@ void *drms_sums_thread(void *arg)
     /* Disconnect from SUMS. */
     SUM_close(sum,printf);
   }
+
+  if (gSUMSbusyMtx)
+  {
+     pthread_mutex_destroy(gSUMSbusyMtx); 
+  }
+
   return NULL;
 }
 
@@ -1773,6 +1856,8 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 {
   int i;
   DRMS_SumRequest_t *reply;
+  int shuttingdown = 0;
+  sem_t *sdsem = drms_server_getsdsem();
   
   XASSERT(reply = malloc(sizeof(DRMS_SumRequest_t)));
   switch(request->opcode)
@@ -1840,16 +1925,49 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 
     if (reply->opcode == RESULT_PEND)
     {
-      /* FIXME: For now we just wait for SUMS. */
-      reply->opcode = SUM_wait(sum);
-      if (reply->opcode || sum->status)
-      {
-	fprintf(stderr,"SUM thread: SUM_wait call failed with "
-		"error code = %d, sum->status = %d.\n",
-		reply->opcode,sum->status);
-	reply->opcode = DRMS_ERROR_SUMWAIT;
-	break;
-      }
+       /* This SUM_wait() call can take a while. If DRMS is shutting down, 
+        * then don't wait. Should be okay to get shut down sem since 
+        * the main and signal threads don't hold onto them for too long. */
+
+       if (sdsem)
+       {
+          sem_wait(sdsem);
+          shuttingdown = (drms_server_getsd() != kSHUTDOWN_UNINITIATED);
+          sem_post(sdsem);
+       }
+       
+       if (!shuttingdown)
+       {
+          if (gSUMSbusyMtx)
+          {
+             pthread_mutex_lock(gSUMSbusyMtx);
+             gSUMSbusy = 1;
+             pthread_mutex_unlock(gSUMSbusyMtx);
+          }
+
+          /* FIXME: For now we just wait for SUMS. */
+          reply->opcode = SUM_wait(sum);
+
+          if (gSUMSbusyMtx)
+          {
+             pthread_mutex_lock(gSUMSbusyMtx);
+             gSUMSbusy = 0;
+             pthread_mutex_unlock(gSUMSbusyMtx);
+          }
+
+          if (reply->opcode || sum->status)
+          {
+             fprintf(stderr,"SUM thread: SUM_wait call failed with "
+                     "error code = %d, sum->status = %d.\n",
+                     reply->opcode,sum->status);
+             reply->opcode = DRMS_ERROR_SUMWAIT;
+             break;
+          }
+       }
+       else
+       {
+          reply->opcode = 0;
+       }
     }
     else if (reply->opcode != 0)
     {
@@ -1859,11 +1977,18 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
     }
     for (i=0; i<request->reqcnt; i++)
     {
-      reply->sudir[i] = strdup(sum->wd[i]);
-      free(sum->wd[i]);
+       if (!shuttingdown)
+       {
+          reply->sudir[i] = strdup(sum->wd[i]);
+          free(sum->wd[i]);
 #ifdef DEBUG
-      printf("SUM thread: got sudir[%d] = %s = %s\n",i,reply->sudir[i],sum->wd[i]);
+          printf("SUM thread: got sudir[%d] = %s = %s\n",i,reply->sudir[i],sum->wd[i]);
 #endif
+       }
+       else
+       {
+          reply->sudir[i] = strdup("NA (shuttingdown)");
+       }
     }
     break;
 
@@ -1982,6 +2107,83 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 }
 
 /****************** Server signal handler thread functions *******************/
+int drms_server_registercleaner(DRMS_Env_t *env, pFn_Cleaner_t cb, CleanerData_t *data)
+{
+   int gotlock = 0;
+   static int registered = 0;
+
+   if (!registered)
+   {
+      gotlock = (drms_trylock_server(env) == 0);
+
+      if (gotlock)
+      {
+         env->cleaner = cb;
+         if (data)
+         {
+            env->cleanerdata = *data;
+         }
+         else
+         {
+            env->cleanerdata.data = NULL;
+            env->cleanerdata.deepclean = NULL;
+            env->cleanerdata.deepdata = NULL;
+         }
+
+         registered = 1;
+         drms_unlock_server(env);
+      }
+      else
+      {
+         fprintf(stderr, "Can't register doit cleaner function. Unable to obtain mutex.\n");
+      }
+   }
+   else
+   {
+      fprintf(stderr, "drms_server_registercleaner() already successfully called - cannot re-register.\n");
+   }
+
+   return gotlock;
+}
+
+static void HastaLaVistaBaby(DRMS_Env_t *env, int signo)
+{
+   if (gShutdownsem)
+   {
+      sem_wait(gShutdownsem);
+   }
+
+   if (signo == SIGUSR1)
+   {
+      gShutdown = kSHUTDOWN_COMMIT;
+   }
+   else
+   {
+      gShutdown = kSHUTDOWN_ABORT;
+   }
+
+   if (gShutdownsem)
+   {
+      sem_post(gShutdownsem);
+   }
+
+   /* Calls drms_server_commit() or drms_server_abort().
+    * Don't set last argment to final - still need environment below. */
+   /* This will cause the SUMS thread to return. */
+   /* If no transaction actually started, then noop. */
+   drms_server_end_transaction(env, signo != SIGUSR1, 0);
+
+   /* Don't wait for main thread to terminate, it may be in the middle of a long DoIt(). But 
+    * main can't start using env and the database and cmdparams after we clean them up. */
+
+   /* Must disconnect db, because we didn't set the final flag in drms_server_end_transaction() */
+   db_disconnect(&env->session->db_handle);
+   drms_free_env(env, 1); 
+
+   /* doesn't call at_exit_action() */
+   _exit(signo != SIGUSR1);
+}
+
 void *drms_signal_thread(void *arg)
 {
   int status, signo;
@@ -1994,25 +2196,13 @@ void *drms_signal_thread(void *arg)
 #endif
 
   /* Block signals. */
-  /* It is necessary to block a signal that the thread is going to wait for.  BUT,
-   * we also want to block the SIGUSR2 signal.  That signal is reserverd for the 
-   * main thread - no other thread should receive that signal. */
+  /* It is necessary to block a signal that the thread is going to wait for. Blocking
+   * will prevent the delivery of those signals that are blocked. However, sigwait
+   * will still return when a signal becomes pending. */
   if( (status = pthread_sigmask(SIG_BLOCK, &env->signal_mask, NULL)))
   {
     fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);
     Exit(1);
-  }
-
-  /* block SIGUSR2, since only the main thread should respond to this signal */
-  sigset_t mask;
-
-  sigemptyset(&mask);
-  sigaddset(&mask, SIGUSR2);
-
-  if((status = pthread_sigmask(SIG_BLOCK, &mask, NULL)))
-  {
-     fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);
-     Exit(1);
   }
 
   for (;;)
@@ -2048,6 +2238,14 @@ void *drms_signal_thread(void *arg)
 	printf("DRMS server received SIGUSR1...commiting data & stopping.\n");
       }
       break;
+       case SIGUSR2:
+         if (env->verbose) 
+         {
+            fprintf(stdout,"signal thread received SIGUSR2 (main shutting down)...exiting.\n");
+         }
+
+         pthread_exit(NULL);
+      break;
     default:
       fprintf(stderr,"WARNING: DRMS server received signal no. %d...exiting.\n", 
 	      signo);
@@ -2065,98 +2263,71 @@ void *drms_signal_thread(void *arg)
       /* No need to acquire lock to look at env->shutdownsem, which was either 
        * created or not before the signal_thread existed. By the time
        * execution gets here, shutdownsem is read-only */
-      if (env->shutdownsem)
+      if (gShutdownsem)
       {
          /* acquire shutdown lock */
-         sem_wait(env->shutdownsem);
+         sem_wait(gShutdownsem);
 
-         if (env->shutdown == kSHUTDOWN_UNINITIATED)
+         if (gShutdown == kSHUTDOWN_UNINITIATED)
          {
             /* There is no shutdown in progress - okay to start shutdown */
-            env->shutdown = (signo == SIGUSR1) ? 
+            gShutdown = (signo == SIGUSR1) ? 
               kSHUTDOWN_COMMITINITIATED : 
               kSHUTDOWN_ABORTINITIATED; /* Shutdown initiated */
 
-            if (!env->selfstart || env->verbose || signo == SIGTERM)
+            if (!env->selfstart || env->verbose || signo == SIGTERM || signo == SIGINT)
             {
                fprintf(stderr, "Shutdown initiated.\n");
-            }
-
-            /* This will cause the SUMS thread to be killed, and the dbase to abort.  Then
-             * it will kill the dbase connection.  If we do this while the main thread is running
-             * it may try to keep on accessing the dbase or SUMS while this shut down is happening.
-             * The result could be the spewing of tons of error messages and crashes.
-             *
-             * Instead, send a message back to main thread - the handler there essentially  
-             * sleeps until termination. */
-            if (!env->selfstart || env->verbose || signo == SIGTERM)
-            {
-               fprintf(stderr, "Shutdown signal sent to main thread.\n");
-            }
-
-            pthread_kill(env->main_thread, SIGUSR2);
-
-            /* release shutdown lock */
-            sem_post(env->shutdownsem);
-
-            /* Can't call Exit(), which causes drms_server_abort() to be called, until 
-             * we know that the main thread is in the StopProcessing() function. Wait 
-             * until the shutdown state is kSHUTDOWN_MAINBEHAVING. */
-            while (1)
-            {
-               sem_wait(env->shutdownsem);
-               if (env->shutdown == kSHUTDOWN_MAINBEHAVING)
+               if (gSUMSbusyMtx)
                {
-                  /* main thread will no longer spawn new server or sums threads */
-                  sem_post(env->shutdownsem);
-                  break;
+                  pthread_mutex_lock(gSUMSbusyMtx);
+
+                  if (gSUMSbusy)
+                  {
+                     fprintf(stderr, "SUMS is busy fetching from tape - please wait until operation completes.\n");
+                  }
+
+                  pthread_mutex_unlock(gSUMSbusyMtx);
+               }
+            }
+
+            /* Allow DoIt() function a chance to clean up. */
+            /* Call user-registered callback, if such a callback was registered, that cleans up 
+             * resources used in the DoIt() loop */
+            if (env->cleaner)
+            {
+               /* Clean up deep data first */
+               if (env->cleanerdata.deepclean)
+               {
+                  (*(env->cleanerdata.deepclean))(env->cleanerdata.deepdata);
                }
 
-               sem_post(env->shutdownsem);
+               (*(env->cleaner))(env->cleanerdata.data);
             }
-         
+
+            /* release shutdown lock */
+            sem_post(gShutdownsem);
+           
             doexit = 1;
          }
          else
          {
             /* release - shutdown has already been initiated */
-            sem_post(env->shutdownsem);
+            sem_post(gShutdownsem);
          }
 
-         /* The main thread is behaving. */
+         /* DoIt has been optionally cleaned up. */
+         /* This will cause the SUMS thread to be killed, and the dbase to abort.  */
          if (doexit)
          {
-            drms_lock_server(env);
-            if (signo == SIGUSR1)
-            {
-               env->shutdown = kSHUTDOWN_COMMIT;
-            }
-            else
-            {
-               env->shutdown = kSHUTDOWN_ABORT;
-            }
-
-            drms_unlock_server(env);
-
-            return NULL; /* kill the signal thread - no longer needed */
+            HastaLaVistaBaby(env, signo);
+            return NULL; /* kill the signal thread - only thread left */
          }
       }
       else
       {
-         drms_lock_server(env);
-         if (signo == SIGUSR1)
-         {
-            env->shutdown = kSHUTDOWN_COMMIT;
-         }
-         else
-         {
-            env->shutdown = kSHUTDOWN_ABORT;
-         }
-
-         drms_unlock_server(env);
-
-         return NULL; /* kill the signal thread - no longer needed */
-
+         HastaLaVistaBaby(env, signo);
+         return NULL; /* kill the signal thread - only thread left */
       }
       
       break;      

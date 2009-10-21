@@ -268,14 +268,25 @@ typedef struct DS_node_struct
 enum DRMS_Shutdown_State_enum
 {
    kSHUTDOWN_UNINITIATED = 0,
-   kSHUTDOWN_COMMITINITIATED = 1,
-   kSHUTDOWN_ABORTINITIATED = 2,
-   kSHUTDOWN_MAINBEHAVING = 3,
-   kSHUTDOWN_COMMIT = 4,
-   kSHUTDOWN_ABORT = 5
+   kSHUTDOWN_COMMITINITIATED = 1, /* DoIt() hasn't been notified that a shutdown is happening */
+   kSHUTDOWN_ABORTINITIATED = 2,  /* DoIt() hasn't been notified that a shutdown is happening */
+   kSHUTDOWN_COMMIT = 3,          /* DoIt() has been notified */
+   kSHUTDOWN_ABORT = 4,           /* DoIt() has been notified */
+   kSHUTDOWN_BYMAIN = 5           /* Main is shutting down (not signal thread) */
 };
 
 typedef enum DRMS_Shutdown_State_enum DRMS_Shutdown_State_t;
+
+typedef int (*pFn_Cleaner_t)(void *);
+
+struct CleanerData_struct
+{
+  void *data; /* Argument to the cleaner function */
+  pFn_Cleaner_t deepclean; /* Callback to deep clean */
+  void *deepdata; /* Argument to deepclean function */
+};
+
+typedef struct CleanerData_struct CleanerData_t;
 
 /** \brief DRMS environment struct */
 struct DRMS_Env_struct
@@ -314,7 +325,11 @@ struct DRMS_Env_struct
   int clientcounter;
   pid_t tee_pid;
 
-  pthread_mutex_t *drms_lock;
+  pthread_mutex_t *drms_lock; /* To synchronize the environment (which can be accessed/
+                               * modified by signal thread, sums thread, and main thread during shutdown) */
+  pthread_mutex_t *clientlock; /* To synchronize between server threads (one per client connected to 
+                                * drms_server). The policy is to allow only one client at a time 
+                                * inside drms_server's DRMS library. */
 
   /* SUM service thread. */
   pthread_t sum_thread;
@@ -330,11 +345,17 @@ struct DRMS_Env_struct
 
   /* For shutting down */
   pthread_t main_thread;
-  sem_t *shutdownsem; /* synchronization between signal thread and main thread during shutdown */
-  DRMS_Shutdown_State_t shutdown; /* signifies that DRMS received a signal that is causing module termination */
   int selfstart; /* if this is a drms_server environment, was drms_server self-started by a socket module */
-  int transinit; /* When upon success, drms_server_begin_transaction() sets this to 1; drms_free_env() 
-                  * sets this to 0. */
+  int transinit; /* First call to drms_server_begin_transaction() sets this to 1 after the env has been initialized
+                  * drms_free_env() sets this to 0 after the env has been destroyed. */
+  pFn_Cleaner_t cleaner; /* Before the signal thread terminates a drms server, this function called with 
+                          * cleanerdata.data as argument */
+  CleanerData_t cleanerdata; /* data field is argument to cleaner function; deepclean field is a second 
+                          * cleaner function that will be called with the deepdata field as the argument */
+  int transrunning; /* 1 if a transaction has been started by db_start_transaction() (set by 
+                     * drms_server_begin_transaction()); 0 otherwise (set by drms_server_end_transaction()) */
+  int sessionrunning; /* 1 if a DRMS session has been started by drms_server_open_session() (set by
+                       * drms_server_begin_transaction()); 0 otherwise (set by drms_server_end_transaction()) */
 };
 
 /** \brief DRMS environment struct reference */

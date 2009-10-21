@@ -228,6 +228,7 @@ static void atexit_action (void) {
 #endif
 }
 
+#if 0
 /* db_lock calls this function to determine what signals it should NOT 
  * allow to interrupt code running inside the db lock. */
 static void drms_createsigmask(sigset_t *set, void *data)
@@ -239,40 +240,67 @@ static void drms_createsigmask(sigset_t *set, void *data)
       sigaddset(set, SIGUSR2);
    }
 }
+#endif
 
-/* Right now, this doesn't do much, but Jim wants the ability to run code
- * right before shutdown. */
-static void StopProcessing(int sig)
+/* If shutdown has started, waits until main() notified */
+static DRMS_Shutdown_State_t GetShutdownState()
 {
-   /* acquire lock */
-   sem_wait(env->shutdownsem);
+   DRMS_Shutdown_State_t st = kSHUTDOWN_UNINITIATED;
+   sem_t *sdsem = drms_server_getsdsem();
 
-   if (env->shutdown != kSHUTDOWN_COMMITINITIATED &&
-       env->shutdown != kSHUTDOWN_ABORTINITIATED)
+   if (sdsem)
    {
-      /* release lock - incorrect state (perhaps somebody other than the signal thread 
-       * sent the SIGUSR2 signal) */
-      sem_post(env->shutdownsem);
-      return;
+      /* Wait until the signal thread is not messing with shutdown - if it is, then 
+       * main will block here until the signal thread terminates the process */
+      sem_wait(sdsem);
+
+      DRMS_Shutdown_State_t sdstate = drms_server_getsd();
+
+      if (sdstate == kSHUTDOWN_UNINITIATED)
+      {
+         sem_post(sdsem);
+      }
+      else if (sdstate == kSHUTDOWN_COMMIT || sdstate == kSHUTDOWN_ABORT || sdstate == kSHUTDOWN_BYMAIN)
+      {
+         /* signal-induced shutdown has already been started, and main() already knows about it, 
+          * or main thread is shutting down. */
+         st = sdstate;
+         sem_post(sdsem);
+      }
+      else
+      {
+         /* shutdown initiated by signal thread, but main() not notified yet */
+         sem_post(sdsem);
+
+         /* call commit or abort as appropriate.
+          * sdstate might indicate main() not notified yet. */
+         while (1)
+         {
+            sem_wait(sdsem);
+            sdstate = drms_server_getsd();
+
+            if (sdstate == kSHUTDOWN_ABORT || sdstate == kSHUTDOWN_COMMIT)
+            {
+               st = sdstate;
+               sem_post(sdsem);
+               break;
+            }
+
+            sem_post(sdsem);
+            sleep(1);
+         }
+      }
    }
 
-   if (!env->selfstart || env->verbose || env->shutdown == kSHUTDOWN_ABORTINITIATED)
-   {
-      fprintf(stderr,"main thread ready for shutdown; waiting for existing server threads to complete.\n");
-   }
+   return st;
+}
 
-   /* main thread now behaving - kSDSTATE_MAIN_BEHAVING */
-   env->shutdown = kSHUTDOWN_MAINBEHAVING;
-   sem_post(env->shutdownsem);
-
-   /* Don't sit here and wait - the main thread might have locks; simply use the
-    * env->shutdown as a flag so that main doesn't try to start any more server or sums
-    * threads.*/
-
-   /* There will be a user-defined call here to allow the user to take any action 
-    * they desire - even calling exit() - before shutdown completes. */
-   return;
-}  
+static int FreeCmdparams(void *data)
+{
+   cmdparams_freeall(&cmdparams);
+   memset(&cmdparams, 0, sizeof(CmdParams_t));
+   return 0;
+}
 
 int main (int argc, char *argv[]) {
   int fg=0, noshare=0, verbose=0, nagleoff=0, dolog=0;
@@ -291,10 +319,13 @@ int main (int argc, char *argv[]) {
   char *shenvfileprefix = NULL; 
   char envfile[PATH_MAX];
   FILE *fptr = NULL;
-  int abort = 1;
   int selfstart = 0;
   time_t now;
   int infd[2];  /* child writes to this pipe, parent reads from it */
+
+  DRMS_Shutdown_State_t sdstate;
+  int ans;
+
 
 #ifdef DEBUG
   xmem_config(1,1,1,1,1000000,1,0,0); 
@@ -450,6 +481,7 @@ int main (int argc, char *argv[]) {
   sigaddset(&env->signal_mask, SIGTERM);
   sigaddset(&env->signal_mask, SIGUSR1);
   sigaddset(&env->signal_mask, SIGPIPE);
+  sigaddset(&env->signal_mask, SIGUSR2); /* Signal from main to signal thread to tell it to go away. */
 
   if( (status = pthread_sigmask(SIG_BLOCK, &env->signal_mask, &env->old_signal_mask)))
   {
@@ -471,20 +503,10 @@ int main (int argc, char *argv[]) {
    * and go to sleep indefinitely. The signal thread will return the exit code
    * from the process.
    */
-  struct sigaction act;
 
-  act.sa_handler = StopProcessing;
-  sigfillset(&(act.sa_mask));
-  sigaction(SIGUSR2, &act, NULL);
-
-  /* create shutdown (unnamed POSIX) semaphore */
-  env->shutdownsem = malloc(sizeof(sem_t));
-
-  /* Initialize semaphore to 1 - "unlocked" */
-  sem_init(env->shutdownsem, 0, 1);
-
-  /* Initialize shutdown state to kSHUTDOWN_UNINITIATED - no shutdown requested */
-  env->shutdown = kSHUTDOWN_UNINITIATED;
+  /* Free cmd-params (valgrind reports this - let's just clean up so it doesn't show up on 
+   * valgrind's radar). */
+  drms_server_registercleaner(env, (pFn_Cleaner_t)FreeCmdparams, (void *)NULL);
 
   /* Spawn a thread that handles signals and controls server 
      abort or shutdown. */
@@ -604,22 +626,29 @@ int main (int argc, char *argv[]) {
      write(infd[1], "1", 1);
   }
 
+  ans = 0;
+
   for (;;) {
      /* on every iteration, see check for a shutdown - if not, continue, otherwise
       * halt.
       */
-     drms_lock_server(env);
-
-     if (env->shutdownsem)
+     sdstate = GetShutdownState();
+    
+     if (sdstate == kSHUTDOWN_COMMIT || sdstate == kSHUTDOWN_ABORT)
      {
-        if (env->shutdown == kSHUTDOWN_MAINBEHAVING ||
-            env->shutdown == kSHUTDOWN_COMMIT ||
-            env->shutdown == kSHUTDOWN_ABORT)
+        /* shutdown has already been started, and main() has been notified 
+         * Print a warning giving the user a chance to allow threads to complete. If they don't want to
+         * wait, then finish right away. Otherwise, wait until all server threads terminate. */
+        drms_lock_server(env);
+        if (env->clientcounter > 0)
         {
-           /* shutdown has already been started, and main thread already knows about it.
-            * Wait for server threads to finish. */
-           drms_unlock_server(env);
+           fprintf(stderr, "WARNING: One or more client threads are actively using drms_server.\nShutting down now will interrupt client processessing (the clients will not be notified).\nDo you want to wait for clients to complete processing before shutting down (Y/N)?\n");
+           ans = fgetc(stdin);
+        }
+        drms_unlock_server(env);
 
+        if ((char)ans == 'Y' || (char)ans == 'y')
+        {
            while (1)
            {
               drms_lock_server(env);
@@ -634,44 +663,17 @@ int main (int argc, char *argv[]) {
               drms_unlock_server(env);
               sleep(1);
            }
-
-           /* server threads have completed - call commit or abort as appropriate.
-            * env->shutdown might still be kSHUTDOWN_MAINBEHAVING
-            */
-           while (1)
-           {
-              drms_lock_server(env);
-              if (env->shutdown == kSHUTDOWN_ABORT)
-              {
-                 abort = 1;
-                 drms_unlock_server(env);
-                 break;
-              }
-              else if (env->shutdown == kSHUTDOWN_COMMIT)
-              {
-                 abort = 0;
-                 drms_unlock_server(env);
-                 break;
-              }
-              else if (env->shutdown != kSHUTDOWN_MAINBEHAVING)
-              {
-                 abort = 1;
-                 fprintf(stderr, "Invalid shutdown state '%d'.\n", (int)env->shutdown);
-                 drms_unlock_server(env);
-                 break;
-              }
-
-              drms_unlock_server(env);
-              sleep(1);
-           }
-
-           /* time to quit out of for loop */
-           break;
         }
+
+        /* time to quit out of for loop */
+        break;
+     }
+     else if (sdstate != kSHUTDOWN_UNINITIATED)
+     {
+        /* Shutdown in progress, but perhaps main() hasn't had a chance to clean up; give it that chance. */
+        continue;
      }
 
-     drms_unlock_server(env);
-     
      /* accept new connection */
 
      /* Instead of calling accept(), a blocking call, directly, use poll() with a timeout 
@@ -768,25 +770,11 @@ int main (int argc, char *argv[]) {
      }
   } /* end for loop */
 
-  /* we should get here ONLY if the signal_thread is terminating */
-  drms_lock_server(env);
+  /* Can only get here if signal thread initiated shutdown - just wait for signal thread
+   * to terminate (the signal thread actually terminates the process) */
   pthread_join(env->signal_thread, NULL);
-  env->signal_thread = 0;
-  drms_unlock_server(env);
-  
-  if (abort)
-  {
-     /* calls exit(), which calls at_exit_action(), which calls drms_server_abort(). */
-     Exit(1);
-  }
-  else
-  {
-     drms_server_commit(env, 1);
-     fflush(stdout);
-     /* doesn't call at_exit_action() */
-     _exit(0);
-  }
 
+  /* Can never get here*/
   return 0;
 
 usage:

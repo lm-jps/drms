@@ -193,99 +193,162 @@ static void atexit_action (void) {
 
 /* db_lock calls this function to determine what signals it should NOT 
  * allow to interrupt code running inside the db lock. */
-static void drms_createsigmask(sigset_t *set, void *data)
+void drms_createsigmask(sigset_t *set, void *data)
 {
    pthread_t threadid = *((pthread_t *)data);
    if (set && threadid == pthread_self())
    {
       sigemptyset(set);
-      sigaddset(set, SIGUSR2);
+      sigaddset(set, SIGUSR2); 
    }
 }
 
-/* With the latest iteration of shutdown, there is no reason to have this StopProcessing()
- * function. However, I'll leave it in, in case main wants to do something before
- * the shutdown happens.
- */
-static void StopProcessing(int sig)
+/* Function to register callback function that cleans up resources allocated from within 
+ * DoIt(). Returns 1 if successfully registered the callback function provided 
+ * in the list of arguments, 0 otherwise. */
+int RegisterDoItCleaner(DRMS_Env_t *env, pFn_Cleaner_t cb, void *data)
 {
-   /* acquire lock */
-   sem_wait(drms_env->shutdownsem);
+   int gotlock = 0;
+   static int registered = 0;
 
-   if (drms_env->shutdown != kSHUTDOWN_COMMITINITIATED &&
-       drms_env->shutdown != kSHUTDOWN_ABORTINITIATED)
+   if (!registered)
    {
-      /* release lock - incorrect state (perhaps somebody other than the signal thread 
-       * sent the SIGUSR2 signal) */
-      sem_post(drms_env->shutdownsem);
-      return;
+      gotlock = (drms_trylock_server(env) == 0);
+
+      if (gotlock)
+      {
+         env->cleanerdata.deepclean = cb;
+         env->cleanerdata.deepdata = data;
+         registered = 1;
+         drms_unlock_server(env);
+      }
+      else
+      {
+         fprintf(stderr, "Can't register doit cleaner function. Unable to obtain mutex.\n");
+      }
+   }
+   else
+   {
+      fprintf(stderr, "RegisterDoItCleaner() already successfully called - cannot re-register.\n");
    }
 
-   if (!drms_env->selfstart || 
-       drms_env->verbose || 
-       drms_env->shutdown == kSHUTDOWN_ABORTINITIATED)
-   {
-      fprintf(stderr,"main thread ready for shutdown; waiting for DoIt() to complete.\n");
-   }
+   return gotlock;
+}
 
-   /* main thread now behaving - kSDSTATE_MAIN_BEHAVING */
-   drms_env->shutdown = kSHUTDOWN_MAINBEHAVING;
-   sem_post(drms_env->shutdownsem);
 
-   /* Don't sit here and wait - the main thread might have locks; simply use the
-    * env->shutdown as a flag so that main doesn't try to start any more server or sums
-    * threads.*/
-
-   /* There will be a user-defined call here to allow the user to take any action 
-    * they desire - even calling exit() - before shutdown completes. */
-   return;
-}  
-
+/* If shutdown has started, waits until DoIt() notified */
 static DRMS_Shutdown_State_t GetShutdownState(DRMS_Env_t *env)
 {
    DRMS_Shutdown_State_t st = kSHUTDOWN_UNINITIATED;
+   sem_t *sdsem = drms_server_getsdsem();
 
-   drms_lock_server(env);
-
-   if (env->shutdownsem)
+   if (sdsem)
    {
-      if (env->shutdown == kSHUTDOWN_MAINBEHAVING ||
-          env->shutdown == kSHUTDOWN_COMMIT ||
-          env->shutdown == kSHUTDOWN_ABORT)
+      /* Wait until the signal thread is not messing with shutdown - if it is, then 
+       * main will block here until the signal thread terminates the process */
+      sem_wait(sdsem);
+
+      DRMS_Shutdown_State_t sdstate = drms_server_getsd();
+
+      if (sdstate == kSHUTDOWN_UNINITIATED)
       {
-         /* shutdown has already been started, and main thread already knows about it. */
-         drms_unlock_server(env);
+         sem_post(sdsem);
+      }
+      else if (sdstate == kSHUTDOWN_COMMIT || sdstate == kSHUTDOWN_ABORT || sdstate == kSHUTDOWN_BYMAIN)
+      {
+         /* signal-induced shutdown has already been started, and DoIt() already knows about it, 
+          * or main thread is shutting down. */
+         st = sdstate;
+         sem_post(sdsem);
+      }
+      else
+      {
+         /* shutdown initiated by signal thread, but DoIt() not notified yet */
+         sem_post(sdsem);
 
          /* call commit or abort as appropriate.
-          * env->shutdown might still be kSHUTDOWN_MAINBEHAVING */
+          * sdstate might indicate DoIt() not notified yet. */
          while (1)
          {
-            drms_lock_server(env);
-            if (env->shutdown == kSHUTDOWN_ABORT || env->shutdown == kSHUTDOWN_COMMIT)
+            sem_wait(sdsem);
+            sdstate = drms_server_getsd();
+
+            if (sdstate == kSHUTDOWN_ABORT || sdstate == kSHUTDOWN_COMMIT)
             {
-               st = env->shutdown;
-               drms_unlock_server(env);
-               return st;
-            }
-            else if (env->shutdown != kSHUTDOWN_MAINBEHAVING)
-            {
-               st = kSHUTDOWN_ABORT;
-               fprintf(stderr, "Invalid shutdown state '%d'.\n", (int)env->shutdown);
-               drms_unlock_server(env);
-               return st;
+               st = sdstate;
+               sem_post(sdsem);
+               break;
             }
 
-            drms_unlock_server(env);
+            sem_post(sdsem);
             sleep(1);
          }
       }
    }
 
-   drms_unlock_server(env);
-   
    return st;
 }
 
+static void FinalBits(DRMS_Env_t *env, int abort_flag)
+{
+   /* Acquire shutdown lock, to prevent the signal thread from trying to simultaneously shut down. */
+   /* If signal thread has the lock, then main waits here until the process dies. */
+   sem_t *sdsem = drms_server_getsdsem();
+
+   if (sdsem)
+   {
+      sem_wait(sdsem);
+   }
+
+   if (drms_server_getsd() != kSHUTDOWN_UNINITIATED)
+   {
+      /* signal thread is already shutting down, just wait for signal thread to finish 
+       * (which it won't do, because it is going to call exit, so this is an indefinite sleep). */
+      sem_post(sdsem);
+      pthread_join(env->signal_thread, NULL);  
+   }
+   else
+   {
+      /* Tell signal thread not to accept shutdown requests, because main is shutting down. */
+      drms_server_setsd(kSHUTDOWN_BYMAIN);
+
+      sem_post(sdsem);
+
+      /* Now, signal thread will not try and shut down. */
+
+      /* Calls drms_server_commit() or drms_server_abort().
+       * Don't set last argment to final - still need environment below. */
+      /* This will cause the SUMS thread to return. */
+      /* If no transaction actually started, then noop. */
+      drms_server_end_transaction(env, abort_flag, 0);
+
+#ifndef DEBUG
+      /* Clean up signal thread - the signal hasn't received a shutdown signal, so it is still
+       * running. Send USR2 to tell signal thread to end itself. */
+      pthread_kill(env->signal_thread, SIGUSR2);
+      pthread_join(env->signal_thread, NULL);
+#endif
+
+      /* Must disconnect db, because we didn't set the final flag in drms_server_end_transaction() */
+      db_disconnect(&env->session->db_handle);
+
+      /* Free cmd-params (valgrind reports this - let's just clean up so it doesn't show up on 
+       * valgrind's radar). */
+      cmdparams_freeall(&cmdparams);
+
+      drms_free_env(env, 1); 
+
+      /* doesn't call at_exit_action() */
+      _exit(abort_flag);
+   }
+}
+
+static int FreeCmdparams(void *data)
+{
+   cmdparams_freeall(&cmdparams);
+   memset(&cmdparams, 0, sizeof(CmdParams_t));
+   return 0;
+}
 
 /**
 @fn main(int argc, char **argv, const char *module_name, int (*CallDoIt)(void)
@@ -300,7 +363,6 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   char *user, unknown[]="unknown";
   DB_Handle_t *db_handle;
   char *dbhost, *dbuser, *dbpasswd, *dbname, *sessionns;
-  pthread_t sigthreadID = 0;
   int printrel = 0;
   char reservebuf[128];
 
@@ -417,6 +479,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   sigaddset(&drms_env->signal_mask, SIGQUIT);
   sigaddset(&drms_env->signal_mask, SIGTERM);
   sigaddset(&drms_env->signal_mask, SIGUSR1);
+  sigaddset(&drms_env->signal_mask, SIGUSR2);
 
   if( (status = pthread_sigmask(SIG_BLOCK, &drms_env->signal_mask, &drms_env->old_signal_mask)))
   {
@@ -428,30 +491,20 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
 
   /* Register sigblock function - whenever the dbase is accessed, certain signals
    * (like SIGUSR2) shouldn't interrupt such actions. */
+  /* This is no longer an issue - there is no signal handler any more. Instead, shutdown 
+   * is handled completely by the signal thread. If the signal thread attempts to 
+   * access the db, but the main thread has the db lock, the signal thread will 
+   * block until main relinquishes the lock. The signal-handler implementation required
+   * blocking of the SIGUSR2 signal because it was asynchronously called, which could
+   * cause interruption of a thread holding the db lock. Then the signal handler
+   * would try to obtain the db lock, resulting in deadlock.
+   */
   // db_register_sigblock(&drms_createsigmask, &drms_env->main_thread);
 
-  /* Set up a main-thread signal-handler. It handles SIGUSR2 signals, which are
-   * sent by the signal thread if that thread in turn is aborting the process.
-   * This is done so that the main thread doesn't continue to attempt SUMS and
-   * dbase access while those threads are being terminated.  
-   * The handler causes the main thread to stop doing whatever it is doing
-   * and go to sleep indefinitely. The signal thread will return the exit code
-   * from the process.
-   */
-  struct sigaction act;
 
-  act.sa_handler = StopProcessing;
-  sigfillset(&(act.sa_mask));
-  sigaction(SIGUSR2, &act, NULL);
-
-  /* create shutdown (unnamed POSIX) semaphore */
-  drms_env->shutdownsem = malloc(sizeof(sem_t));
-
-  /* Initialize semaphore to 1 - "unlocked" */
-  sem_init(drms_env->shutdownsem, 0, 1);
-
-  /* Initialize shutdown state to kSHUTDOWN_UNINITIATED - no shutdown requested */
-  drms_env->shutdown = kSHUTDOWN_UNINITIATED;
+   /* Free cmd-params (valgrind reports this - let's just clean up so it doesn't show up on 
+    * valgrind's radar). */
+  drms_server_registercleaner(drms_env, (pFn_Cleaner_t)FreeCmdparams, (void *)NULL);
 
   /* Spawn a thread that handles signals and controls server 
      abort or shutdown. */
@@ -461,8 +514,6 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
     fprintf(stderr,"Thread creation failed: %d\n", status);          
     Exit(1);
   }
-
-  sigthreadID = drms_env->signal_thread;
 
 #endif
   fflush(stdout);
@@ -481,12 +532,11 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   drms_env->dolog = dolog;
   drms_env->quiet = quiet;
 
-  DRMS_Shutdown_State_t shutdownreq;
   int abort_flag = 1;
 
   /* check for a shutdown before doing each bit of work below - these
    * are the only places where shutdown is allowed */
-  if ((shutdownreq = GetShutdownState(drms_env)) == kSHUTDOWN_UNINITIATED)
+  if (GetShutdownState(drms_env) == kSHUTDOWN_UNINITIATED)
   {
      if (verbose)
        printf("Setting isolation level to SERIALIZABLE.\n");
@@ -497,7 +547,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
         Exit(1);
      }
 
-     if ((shutdownreq = GetShutdownState(drms_env)) == kSHUTDOWN_UNINITIATED)
+     if (GetShutdownState(drms_env) == kSHUTDOWN_UNINITIATED)
      {
         char hostname[1024];
         if (gethostname(hostname, sizeof(hostname))) {
@@ -505,54 +555,19 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
         }
         strncpy(drms_env->session->hostname, hostname, DRMS_MAXHOSTNAME);
 
-        if ((shutdownreq = GetShutdownState(drms_env)) == kSHUTDOWN_UNINITIATED)
+        if (GetShutdownState(drms_env) == kSHUTDOWN_UNINITIATED)
         {
            drms_server_begin_transaction(drms_env);
            abort_flag = CallDoIt();
-
-           
-           shutdownreq = GetShutdownState(drms_env);
-
-           if (shutdownreq == kSHUTDOWN_ABORT)
-           {
-              /* user sent term signal while DoIt() running - override abort_flag */ 
-              abort_flag = 1;
-           }
-
-           /* Calls drms_server_commit() or drms_server_abort().
-            * Don't set last argment to final - still need environment below. */
-           drms_server_end_transaction(drms_env, abort_flag, 0);
         }
      }
   }
 
-#ifndef DEBUG
-  /* Clean up signal thread - the signal thread may or may not have terminated.
-   * If it has received a termination signal, then the thread will have terminated.
-   * But if it hasn't received such a signal, then it will not have terminated.
-   */
-  if (shutdownreq == kSHUTDOWN_COMMIT || shutdownreq == kSHUTDOWN_ABORT)
-  {
-     /* wait for signal thread to terminate */
-     drms_lock_server(drms_env);
-     pthread_join(drms_env->signal_thread, NULL);
-     drms_unlock_server(drms_env);
-  }
-  else
-  {
-     pthread_detach(sigthreadID);
-  }
-#endif
+  /* Doesn't return - closes SUMS and signal threads, cleans up environment, closes dbase connection, frees cmdparams */
+  /* If we get here, then prevent the signal thread from initiating a shutdown - main will do it instead. */
+  FinalBits(drms_env, abort_flag);
 
-  /* Must disconnect db, because we didn't set the final flag in drms_server_end_transaction() */
-  db_disconnect(&drms_env->session->db_handle);
-  drms_free_env(drms_env, 1); 
-
-  /* Free cmd-params (valgrind reports this - let's just clean up so it doesn't show up on 
-   * valgrind's radar). */
-  cmdparams_freeall(&cmdparams);
-
-  /* doesn't call at_exit_action() */
-  _exit(abort_flag);
+  /* execution doesn't get here */
+  return 0;
 }
-  
+

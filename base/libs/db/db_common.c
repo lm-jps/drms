@@ -37,10 +37,9 @@ static const char *dbtype_string[] = {"char","int2","int2","int4","int8",
 const char  UNKNOWN_TYPE_STR[] = "unknown type";
 
 /* BE CAREFULL!!!! db_sigblock is global; if you're going to set this from 
- * a multi-threaded environment, use a mutex or lock.
- */
-db_sigblock_fn g_db_sigblock = NULL;
-void *g_db_sigblock_data = NULL;
+ * a multi-threaded environment, use a mutex or lock. */
+static db_sigblock_fn g_db_sigblock = NULL;
+static void *g_db_sigblock_data = NULL;
 
 void db_set_error_message(char *err)
 {
@@ -992,6 +991,7 @@ void db_byteswap(DB_Type_t dbtype, int n, char *val)
  * db access activities */
 void db_register_sigblock(db_sigblock_fn fn, void *data)
 {
+   /* Currently, this can be called only once, since this is the only place it can be set */
    if (!g_db_sigblock)
    {
       g_db_sigblock = fn;

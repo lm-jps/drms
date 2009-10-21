@@ -48,6 +48,7 @@ DRMS_Env_t *drms_open (char *host, char *user, char *password, char *dbname,
   memset(env, 0, sizeof(DRMS_Env_t));
 
 #ifdef DRMS_CLIENT
+  drms_client_initsdsem();
 						 /*  Connect to DRMS server  */
   if (host) {
      if ((env->session = drms_connect (host)) == NULL)
@@ -55,7 +56,12 @@ DRMS_Env_t *drms_open (char *host, char *user, char *password, char *dbname,
   }
 
   if (drms_cache_init (env)) goto bailout;
+
+  /* In client, no drms_server_begin_transaction() to initialize drms_lock. */
+  XASSERT(env->drms_lock = malloc(sizeof(pthread_mutex_t)));
+  pthread_mutex_init(env->drms_lock, NULL); 
 #else
+  drms_server_initsdsem();
 					  /*  This is a server initializing  */
   if (host) {
     if ((env->session = drms_connect_direct (host, user,
@@ -94,9 +100,7 @@ int drms_close (DRMS_Env_t *env, int action) {
 }
 
 void drms_abort (DRMS_Env_t *env) {
-  int status;
-
-  if ((status = drms_closeall_records(env, DRMS_FREE_RECORD)))
+  if (drms_closeall_records(env, DRMS_FREE_RECORD))
     fprintf (stderr, "ERROR in drms_close: failed to close records in cache.\n");
 
 					   /*  Close connection to database  */
@@ -105,13 +109,16 @@ void drms_abort (DRMS_Env_t *env) {
 }
 
 void drms_abort_now (DRMS_Env_t *env) {
-  int status;
-
-  if ((status = drms_closeall_records(env, DRMS_FREE_RECORD)))
-    fprintf (stderr, "ERROR in drms_close: failed to close records in cache.\n");
-
+   drms_lock_client(env);
+   if (drms_closeall_records(env, DRMS_FREE_RECORD))
+   {
+     fprintf (stderr, "ERROR in drms_close: failed to close records in cache.\n");
+   }
 					   /*  Close connection to database  */
   drms_disconnect_now (env, 1);
+  drms_unlock_client(env);
+
+  /* XXX Need to hold the lock until env->drms_lock is set to NULL */
   drms_free_env (env, 1);
 }
 #endif
@@ -122,10 +129,17 @@ void drms_free_env (DRMS_Env_t *env, int final) {
   hcon_free (&env->record_cache);
   hcon_free (&env->series_cache);
   hcon_free (&env->storageunit_cache);
-#ifndef DRMS_CLIENT
-  /* Alloc'd by drms_server_begin_transaction() (server only) */
+
+  /* drms_lock in both server and client */
+  pthread_mutex_destroy(env->drms_lock);
   free (env->drms_lock);
   env->drms_lock = NULL;
+#ifndef DRMS_CLIENT
+  /* Alloc'd by drms_server_begin_transaction() (server only) */
+
+  pthread_mutex_destroy(env->clientlock);
+  free (env->clientlock);
+  env->clientlock = NULL;
 
   /* Alloc'd by drms_server_begin_transaction() (server only) */
   if (env->sum_inbox) {
@@ -141,11 +155,6 @@ void drms_free_env (DRMS_Env_t *env, int final) {
   /* The environment transaction is no longer initialized. */
   env->transinit = 0;
 
-  if (env->shutdownsem)
-  {
-     sem_destroy(env->shutdownsem);
-     env->shutdownsem = NULL;
-  }
 #endif
   if (env->session) {
      /* Alloc'd by drms_server_open_session() (in servers), 

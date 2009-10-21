@@ -33,6 +33,19 @@ extern char abortstring[1024];
 #define DRMS_ABORT_SLEEP (2)
 
 /******************************** Prototypes *************************/
+
+sem_t *drms_server_getsdsem(void);
+
+void drms_server_initsdsem(void);
+
+void drms_server_destroysdsem(void);
+
+DRMS_Shutdown_State_t drms_server_getsd(void);
+
+void drms_server_setsd(DRMS_Shutdown_State_t st);
+
+int drms_server_registercleaner(DRMS_Env_t *env, pFn_Cleaner_t cb, CleanerData_t *data);
+
 /**\brief drms server thread */
 void *drms_server_thread(void *arg);
 /**\brief drms sum thread */
@@ -85,6 +98,8 @@ int drms_server_slot_setstate(DRMS_Env_t *env, int sockfd);
 void drms_lock_server(DRMS_Env_t *env);
 /** \brief Unlock DRMS env */
 void drms_unlock_server(DRMS_Env_t *env);
+/** \brief Try to lock the DRMS env */
+int drms_trylock_server(DRMS_Env_t *env);
 /**
 Begin a new transaction. This function can only be called in direct-connect mode.
 @param env 

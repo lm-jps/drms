@@ -261,6 +261,8 @@ extern int DoIt (void);
 
 CmdParams_t *GetGlobalCmdParams(void);
 
+int RegisterDoItCleaner(DRMS_Env_t *env, pFn_Cleaner_t cb, void *data);
+
 int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt)(void));
 int JSOCMAIN_Init(int argc, 
 		  char **argv, 

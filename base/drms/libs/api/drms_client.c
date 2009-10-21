@@ -248,7 +248,7 @@ DRMS_Session_t *drms_connect_direct(char *dbhost, char *dbuser,
  * So, drms_disconnect means to disconnect from the server (eg, drms_server app). 
  * It won't affect the server, unless the client experienced an error while
  * running. If it passes abort == 1, then this will cause the server
- * (eg, drms_server) to termintae, but only after all other clients
+ * (eg, drms_server) to terminate, but only after all other clients
  * have disconnected. */
 #ifdef DRMS_CLIENT
 void drms_disconnect(DRMS_Env_t *env, int abort)
@@ -1594,3 +1594,276 @@ int drms_series_canupdaterecord(DRMS_Env_t *env, const char *series)
 {
    return drms_series_candosomething(env, series, "UPDATE");
 }
+
+#ifdef DRMS_CLIENT
+
+sem_t *gShutdownsem = NULL; /* synchronization among signal thread, main thread, 
+                               sums thread, and server threads during shutdown */
+DRMS_Shutdown_State_t gShutdown; /* shudown state following receipt by DRMS of a signal that 
+                                 * causes module termination */
+
+void drms_lock_client(DRMS_Env_t *env)
+{
+  if (env->drms_lock == NULL)
+  {
+     return;
+  }
+  else
+  {
+     pthread_mutex_lock(env->drms_lock);
+  }
+}
+
+void drms_unlock_client(DRMS_Env_t *env)
+{
+  if (env->drms_lock == NULL)
+  {
+     return;
+  }
+  else
+  {
+     pthread_mutex_unlock( env->drms_lock );
+  }
+}
+
+/* 0 means success - lock was acquired */
+int drms_trylock_client(DRMS_Env_t *env)
+{
+   if (env->drms_lock == NULL)
+   {
+      return 0;
+   }
+   else
+   {
+      return pthread_mutex_trylock(env->drms_lock);
+   }
+}
+
+sem_t *drms_client_getsdsem(void)
+{
+   return gShutdownsem;
+}
+
+void drms_client_initsdsem(void)
+{
+  /* create shutdown (unnamed POSIX) semaphore */
+  gShutdownsem = malloc(sizeof(sem_t));
+
+  /* Initialize semaphore to 1 - "unlocked" */
+  sem_init(gShutdownsem, 0, 1);
+  
+  /* Initialize shutdown state to kSHUTDOWN_UNINITIATED - no shutdown requested */
+  gShutdown = kSHUTDOWN_UNINITIATED;
+}
+
+void drms_client_destroysdsem(void)
+{
+   if (gShutdownsem)
+   {
+      sem_destroy(gShutdownsem);
+      free(gShutdownsem);
+      gShutdownsem = NULL;
+   }
+}
+
+DRMS_Shutdown_State_t drms_client_getsd(void)
+{
+   return gShutdown;
+}
+
+void drms_client_setsd(DRMS_Shutdown_State_t st)
+{
+   gShutdown = st;
+}
+
+int drms_client_registercleaner(DRMS_Env_t *env, pFn_Cleaner_t cb, CleanerData_t *data)
+{
+   int gotlock = 0;
+   static int registered = 0;
+
+   if (!registered)
+   {
+      gotlock = (drms_trylock_client(env) == 0);
+
+      if (gotlock)
+      {
+         env->cleaner = cb;
+         if (data)
+         {
+            env->cleanerdata = *data;
+         }
+         else
+         {
+            env->cleanerdata.data = NULL;
+            env->cleanerdata.deepclean = NULL;
+            env->cleanerdata.deepdata = NULL;
+         }
+
+         registered = 1;
+         drms_unlock_client(env);
+      }
+      else
+      {
+         fprintf(stderr, "Can't register doit cleaner function. Unable to obtain mutex.\n");
+      }
+   }
+   else
+   {
+      fprintf(stderr, "drms_client_registercleaner() already successfully called - cannot re-register.\n");
+   }
+
+   return gotlock;
+}
+
+static void ArrivederciBaby(DRMS_Env_t *env)
+{
+   if (gShutdownsem)
+   {
+      sem_wait(gShutdownsem);
+   }
+
+   gShutdown = kSHUTDOWN_ABORT;
+
+   if (gShutdownsem)
+   {
+      sem_post(gShutdownsem);
+   }
+
+   /* Does not shutdown drms_server */
+   /* Need to lock env so that main thread and signal thread don't contend for it. */
+   drms_abort_now(env);
+
+   /* don't wait for self-start drms_server */
+   exit(1);
+}
+
+/* Code for handling signals, some of which shut down the program */
+void *drms_signal_thread(void *arg)
+{
+  int status, signo;
+  DRMS_Env_t *env = (DRMS_Env_t *) arg;
+  int doexit = 0;
+
+#ifdef DEBUG
+  printf("drms_signal_thread started.\n");
+  fflush(stdout);
+#endif
+
+  /* Block signals. */
+  /* It is necessary to block a signal that the thread is going to wait for.  Blocking
+   * will prevent the delivery of those signals that are blocked. However, sigwait
+   * will still return when a signal becomes pending. */
+  if( (status = pthread_sigmask(SIG_BLOCK, &env->signal_mask, NULL)))
+  {
+    fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);
+    exit(1);
+  }
+
+  for (;;)
+  {
+    if ((status = sigwait(&env->signal_mask, &signo)))
+    {
+      if (status == EINTR)
+      {
+	fprintf(stderr, "sigwait error, errcode=%d.\n", status);
+	continue;
+      }
+      else
+      {
+	fprintf(stderr,"sigwait error, errcode=%d.\n", status);
+        signo = SIGTERM; /* Act like we got an abort signal. */
+      }
+    }
+
+    switch(signo)
+    {
+       case SIGINT:
+         fprintf(stderr,"WARNING: jsoc_main received SIGINT...exiting.\n");
+         break;
+       case SIGTERM:
+         fprintf(stderr,"WARNING: jsoc_main received SIGTERM...exiting.\n");
+         break;
+       case SIGQUIT:
+         fprintf(stderr,"WARNING: jsoc_main received SIGQUIT...exiting.\n");
+         break; 
+       case SIGUSR2:
+         if (env->verbose) 
+         {
+            fprintf(stdout,"signal thread received SIGUSR2 (main shutting down)...exiting.\n");
+         }
+         pthread_exit(NULL);
+         break;
+       default:
+         fprintf(stderr,"WARNING: DRMS server received signal no. %d...exiting.\n", 
+                 signo);
+
+         signo = SIGTERM; /* Act like we got an abort signal. */
+         break;
+    }
+
+    switch(signo)
+    {
+       case SIGINT:
+       case SIGTERM:
+       case SIGQUIT:
+         /* No need to acquire lock to look at env->shutdownsem, which was either 
+          * created or not before the signal_thread existed. By the time
+          * execution gets here, shutdownsem is read-only */
+         if (gShutdownsem)
+         {
+            /* acquire shutdown lock */
+            sem_wait(gShutdownsem);
+
+            if (gShutdown == kSHUTDOWN_UNINITIATED)
+            {
+               /* There is no shutdown in progress - okay to start shutdown */
+               gShutdown = kSHUTDOWN_ABORTINITIATED; /* Shutdown initiated */
+
+               fprintf(stderr, "Shutdown initiated.\n");
+
+               /* Allow DoIt() function a chance to clean up. */
+               /* Call user-registered callback, if such a callback was registered, that cleans up 
+                * resources used in the DoIt() loop */
+               if (env->cleaner)
+               {
+                  /* Clean up deep data first */
+                  if (env->cleanerdata.deepclean)
+                  {
+                     (*(env->cleanerdata.deepclean))(env->cleanerdata.deepdata);
+                  }
+
+                  (*(env->cleaner))(env->cleanerdata.data);
+               }
+
+               /* release shutdown lock */
+               sem_post(gShutdownsem);
+           
+               doexit = 1;
+            }
+            else
+            {
+               /* release - shutdown has already been initiated */
+               sem_post(gShutdownsem);
+            }
+
+            /* DoIt has been optionally cleaned up. */
+            /* This will cause the SUMS thread to be killed, and the dbase to abort.  */
+            if (doexit)
+            {
+               ArrivederciBaby(env);
+               return NULL; /* kill the signal thread - only thread left */
+            }
+         }
+         else
+         {
+            ArrivederciBaby(env);
+            return NULL; /* kill the signal thread - only thread left */
+         }
+      
+         break;      
+    }
+  }
+}
+
+
+#endif /* DRMS_CLIENT */
