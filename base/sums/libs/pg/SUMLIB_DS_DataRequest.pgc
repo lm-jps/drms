@@ -184,12 +184,14 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
     }
 
       /* add an entry for read-only assignment to db partn_alloc tbl */
-     if(NC_PaUpdate(mainquery.online_loc.arr,uid,mainquery.bytes,DARO,0,0,0,0,ds_index,1,0))
-      {
-        /* rollback already done */
-        printk("Error on NC_PaUpdate to add to r/o list\n");
-        return(DS_PALC_ERR);
-      }
+      // This was eliminated 22Oct2009. The DRMS has a default of touch 3
+      // and so nothing should go offline while a module is running.
+      //if(NC_PaUpdate(mainquery.online_loc.arr,uid,mainquery.bytes,DARO,0,0,0,0,ds_index,1,0))
+      //{
+      //  /* rollback already done */
+      //  printk("Error on NC_PaUpdate to add to r/o list\n");
+      //  return(DS_PALC_ERR);
+      // }
         sprintf(dsix_name, "online_status_%d", pos);
         setkey_str(results, dsix_name, mainquery.online_status.arr);
         sprintf(dsix_name, "archive_status_%d", pos);
