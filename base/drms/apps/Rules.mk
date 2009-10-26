@@ -12,7 +12,7 @@ SERVEREXE	:= $(SERVEREXE) $(SERVEREXE_$(d))
 CEXE_$(d)	:= $(addprefix $(d)/, drms_run)
 CEXE		:= $(CEXE) $(CEXE_$(d))
 
-MODEXE_$(d)	:= $(addprefix $(d)/, drms_query drms_log)
+MODEXE_$(d)	:= $(addprefix $(d)/, drms_query drms_log createtabstructure)
 MODEXE		:= $(MODEXE) $(MODEXE_$(d))
 MODEXE_SOCK_$(d)	:= $(addprefix $(d)/, drms_log_sock)
 MODEXE_SOCK	:= $(MODEXE_SOCK) $(MODEXE_SOCK_$(d))
