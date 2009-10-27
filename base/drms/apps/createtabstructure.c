@@ -538,8 +538,8 @@ static int CreateSQL(FILE *fptr, DRMS_Env_t *env,
       {
          char where[512];
 
-         snprintf(where, sizeof(where), "seriesname = '%s'", series);
-         err = CreateSQLInsertIntoTable(fptr, env, series, ns, DRMS_MASTER_SERIES_TABLE);
+         snprintf(where, sizeof(where), "seriesname = '%s'", seriesin);
+         err = CreateSQLInsertIntoTable(fptr, env, seriesin, ns, DRMS_MASTER_SERIES_TABLE);
          
          /* override archive, retention, and tapegroup if present */
          if (!err)
@@ -561,19 +561,19 @@ static int CreateSQL(FILE *fptr, DRMS_Env_t *env,
       /* Third, insert rows into drms_links */
       if (!err)
       {
-         err = CreateSQLInsertIntoTable(fptr, env, series, ns, DRMS_MASTER_LINK_TABLE);
+         err = CreateSQLInsertIntoTable(fptr, env, seriesin, ns, DRMS_MASTER_LINK_TABLE);
       }
 
       /* Fourth, insert rows into drms_keywords */
       if (!err)
       {
-         err = CreateSQLInsertIntoTable(fptr, env, series, ns, DRMS_MASTER_KEYWORD_TABLE);
+         err = CreateSQLInsertIntoTable(fptr, env, seriesin, ns, DRMS_MASTER_KEYWORD_TABLE);
       }
 
       /* Fifth, insert rows into drms_segments */
       if (!err)
       {
-         err = CreateSQLInsertIntoTable(fptr, env, series, ns, DRMS_MASTER_SEGMENT_TABLE);
+         err = CreateSQLInsertIntoTable(fptr, env, seriesin, ns, DRMS_MASTER_SEGMENT_TABLE);
       }
 
       free(ns);
