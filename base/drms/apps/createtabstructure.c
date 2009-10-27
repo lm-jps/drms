@@ -1,3 +1,50 @@
+/**
+@defgroup createtabstructure createtabstructure - Generate SQL that describes how to create the specified series in DRMS
+@ingroup su_admin
+
+@brief Generate SQL that describes how to create the specified series in DRMS
+@par Synopsis:
+
+@code
+createtabstructure in=@a series [archive=@a archive] [retention=@a days] [tapegroup=@a groupnum] [file=@a outputfile]
+@endcode
+
+Given an input DRMS series name, createtabstructure generates SQL statements that, when evaluated, reproduce the 
+input series. The statements modify the structure of several DRMS tables and create a new table to effect this. Specifically,
+they insert one series-specific row into the namespace's drms_series table, one row per series link into the drms_link 
+table, one row per series keyword into the drms_keyword table, and one row per segment into the drms_segment table.
+The statements then create the series table itself (eg., mdi.fd_M_96m_lev18) and the corresponding sequence
+(eg., mdi.fd_M_96m_lev18_seq). Now rows are added to the series table -
+the goal is to simply reproduce the minimal structure so that processes like remoteDRMS can then populate the
+series table. Additionally, no attempt is made to create the drms_series, drms_link, drms_keyword, or drms_segment
+tables. Those are assumed to exist. They can be created with the masterlists programs (which also makes the drms_session
+and drms_sessionid_seq tables).
+
+To use this module for remoteDRMS processing, first run masterlists at the remote, slony-log-receving site to 
+create the appropriate namespaces and drms_* tables and sequence. Then run createtabstructure at the slony-log-shipping
+site to create the SQL file that, when run on the slony-log-receiving site, populates the drms_* tables and creates the
+series table and sequence. Next, start ingesting slony logs at the remote site. These logs will populate the 
+series table.
+
+@param in The name of the DRMS series to reproduce (required).
+@param archive If specified, this will override the existing archive flag. Valid values are 1, 0, or -1 (optional).
+@param retention If specified, this will override the existing retention flag. This is the minimum number of days the the associated storage units are guaranteed to remain online (optional)l
+@param tapegroup. If specified, this will override the existing tapegroup ID. Relevant to NetDRMS sites that have tape systems (optional).
+@param file If specified, the SQL generated will be written to the file. Otherwise, the SQL will be printed to stdout.
+
+@par Return Value
+If execution proceeds with no errors, kCrtabErr_Success is returned. Otherwise, if the @a in argument is missing, then 
+kCrtabErr_MissingSeriesName is returned. If @a in is an invalid DRMS series, then kCrtabErr_UnknownSeries is returned.
+If a problem occurs while evaluating a database query, then kCrtabErr_DBQuery is returned. If an invalid argument is
+supplied, kCrtabErr_Argument is returned, and if a file IO error occurs, kCrtabErr_FileIO is returned. 
+
+@par GEN_FLAGS:
+@ref jsoc_main
+
+@sa
+create_series masterlists
+*/
+
 #include "jsoc_main.h"
 
 char *module_name = "createtabstructure";
