@@ -6,7 +6,7 @@
 @par Synopsis:
 
 @code
-createtabstructure in=@a series [archive=@a archive] [retention=@a days] [tapegroup=@a groupnum] [file=@a outputfile]
+createtabstructure in=<series> [archive=<archive>] [retention=<days>] [tapegroup=<groupnum>] [file=<outputfile>]
 @endcode
 
 Given an input DRMS series name, createtabstructure generates SQL statements that, when evaluated, reproduce the 
