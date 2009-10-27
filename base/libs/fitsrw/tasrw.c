@@ -516,17 +516,6 @@ int fitsrw_writeslice(const char *filename, int *fpixel, int *lpixel, void *imag
    fits_get_errstatus(status, cfitsiostat);
    fprintf(stderr, "cfitsio error '%s'.\n", cfitsiostat);
 
-   /* UUUUUUGLY HACK!
-    * There is a bug in CFITSIO where it doesn't properly update the TFORM1 keyword when 
-    * writing compressed images. For now, manually update it
-    */
-   if (fits_is_compressed_image(fptr, &status))
-   {
-      char buf[64];
-      snprintf(buf, sizeof(buf), "1PB(%d)", (int)fptr->Fptr->maxelem);
-      fits_update_key(fptr, TSTRING, "TFORM1", buf, "ugly hack awaiting official fix", &status);
-   }
-
    if(fptr) fits_close_file(fptr, &status);
 
    return error_code;

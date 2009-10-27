@@ -1376,17 +1376,6 @@ int fitsrw_writeintfile(const char* fits_filename,
       }
    }
 
-   /* UUUUUUGLY HACK!
-    * There is a bug in CFITSIO where it doesn't properly update the TFORM1 keyword when 
-    * writing compressed images. For now, manually update it
-    */
-   if (fits_is_compressed_image(fptr, &status))
-   {
-      char buf[64];
-      snprintf(buf, sizeof(buf), "1PB(%d)", (int)fptr->Fptr->maxelem);
-      fits_update_key(fptr, TSTRING, "TFORM1", buf, "ugly hack awaiting official fix", &status);
-   }
-
    fits_close_file(fptr, &status);
 
    if(status == 0) return CFITSIO_SUCCESS;
@@ -2148,17 +2137,6 @@ int fitsrw_write(const char* filein,
 
    if (fptr)
    {
-      /* UUUUUUGLY HACK!
-       * There is a bug in CFITSIO where it doesn't properly update the TFORM1 keyword when 
-       * writing compressed images. For now, manually update it
-       */
-      if (fits_is_compressed_image(fptr, &cfiostat))
-      {
-         char buf[64];
-         snprintf(buf, sizeof(buf), "1PB(%d)", (int)fptr->Fptr->maxelem);
-         fits_update_key(fptr, TSTRING, "TFORM1", buf, "ugly hack awaiting official fix", &cfiostat);
-      }
-
       fits_close_file(fptr, &cfiostat);
       if (cfiostat)
       {
