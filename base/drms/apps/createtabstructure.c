@@ -263,8 +263,9 @@ static CrtabError_t CreateSQLTable(FILE *fptr, const char *table, const char *co
 {
    CrtabError_t err = kCrtabErr_Success;
   
-   /* Creates primary key too */
-   fprintf(fptr, "CREATE TABLE %s (%s, primary key(recnum));\n", table, collist);
+   /* Don't create primary key - CreateSQLIndices will do that when it copies the ones from 
+    * the source table. */
+   fprintf(fptr, "CREATE TABLE %s (%s);\n", table, collist);
    
    return err;
 }
