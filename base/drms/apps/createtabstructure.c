@@ -28,9 +28,9 @@ series table.
 
 @param in The name of the DRMS series to reproduce (required).
 @param archive If specified, this will override the existing archive flag. Valid values are 1, 0, or -1 (optional).
-@param retention If specified, this will override the existing retention flag. This is the minimum number of days the the associated storage units are guaranteed to remain online (optional)l
+@param retention If specified, this will override the existing retention flag. This is the minimum number of days the the associated storage units are guaranteed to remain online (optional).
 @param tapegroup. If specified, this will override the existing tapegroup ID. Relevant to NetDRMS sites that have tape systems (optional).
-@param file If specified, the SQL generated will be written to the file. Otherwise, the SQL will be printed to stdout.
+@param file If specified, the SQL generated will be written to the file. Otherwise, the SQL will be printed to stdout (optional).
 
 @par Return Value
 If execution proceeds with no errors, kCrtabErr_Success is returned. Otherwise, if the @a in argument is missing, then 
