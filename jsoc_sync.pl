@@ -86,8 +86,30 @@ sub CallCVS
     my($checkoutcmd);
     my($date);
 
+    # The following command updates the files within the user's working directory and 
+    # subdirectories - it doesn't add new directories that exist in the repository
+    # but not in the user's working directory.
+    # Can't use the -d flag to the update command, because this will cause CVS to 
+    # update (download) files that belong to other modules. Otherwise, the -d
+    # flag will add the new directories that exist in the repository, but not in the
+    # user's working directory.
+    # $updatecmd = "cvs update -AP $rev \.";
+
+    # The following command WILL add new directories THAT EXIST ONLY IN THE CVS 
+    # MODULE OF INTEREST. But of course CVS can't do anything completely right.
+    # Whenever you have CVS modules, CVS will always print out spurious 
+    # "cvs checkout: move away <file>; it is in the way" warnings if you 
+    # call cvs checkout -AP JSOC, regardless if the above update command 
+    # was first issued or not or if performing a fresh checkout.
+    # Curiously, if you remove the -P flag, you won't see these problems.
+    # $checkoutcmd = "cvs checkout -AP $rev $cvsmod";
+
+    # But, there may be hope! If you run the checkout command first, without the
+    # -P flag, then run the update flag with the -P flag, the update command
+    # will remove the empty directories downloaded by the checkout command.
+    # So, give this a go:
+    $checkoutcmd = "cvs checkout -A $rev $cvsmod";
     $updatecmd = "cvs update -AP $rev \.";
-    $checkoutcmd = "cvs checkout -AP $rev $cvsmod";
 
     #Things that didn't really work:
     #$updatecmd = "(cd ..; $updatecmd | sed 's/^/STDOUT:/') 2>&1 |";
@@ -97,16 +119,16 @@ sub CallCVS
 
     open(CVSLOG, ">>$CVSLOG");
     print CVSLOG "$date\n";
-    print CVSLOG "Calling '$updatecmd'.\n";
-    close(CVSLOG);
-    $updatecmd = "($updatecmd) 1>>$CVSLOG 2>&1";
-    print "Calling '$updatecmd'.\n";
-    system($updatecmd);
-
-    open(CVSLOG, ">>$CVSLOG");
     print CVSLOG "Calling '$checkoutcmd'.\n";
     close(CVSLOG);
     $checkoutcmd = "(cd ..; $checkoutcmd) 1>>$CVSLOG 2>&1";
     print "Calling '$checkoutcmd'.\n";
     system($checkoutcmd);
+
+    open(CVSLOG, ">>$CVSLOG");
+    print CVSLOG "Calling '$updatecmd'.\n";
+    close(CVSLOG);
+    $updatecmd = "($updatecmd) 1>>$CVSLOG 2>&1";
+    print "Calling '$updatecmd'.\n";
+    system($updatecmd);
 }
