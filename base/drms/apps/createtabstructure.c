@@ -60,6 +60,7 @@ typedef enum
 } CrtabError_t;
 
 #define kSeriesin      "in"
+#define kSeriesout     "out"
 #define kArchive       "archive"
 #define kRetention     "retention"
 #define kTapegroup     "tapegroup"
@@ -68,13 +69,44 @@ typedef enum
 
 ModuleArgs_t module_args[] =
 {
-   {ARG_STRING, kSeriesin,  kNotSpec,   "Series for which to make SQL that generates structure."},
+   {ARG_STRING, kSeriesin,  kNotSpec,   "Input series used to make SQL that generates structure."},
+   {ARG_STRING, kSeriesout, kNotSpec,   "Output series for which output SQL will generate structure."},
    {ARG_STRING, kArchive,   kNotSpec,   "Series archive value override."},
    {ARG_STRING, kRetention, kNotSpec,   "Series retetnion value override."},
    {ARG_STRING, kTapegroup, kNotSpec,   "Series tapgegroup value override."},
    {ARG_STRING, kFile,      kNotSpec,   "Optional output file (output printed to stdout otherwise)."},
    {ARG_END}
 };
+
+/* returns pointer to character after replacement in str, or to str if orig not found */
+static char *replacestr(char *str, int size, const char *orig, const char *rep)
+{
+   char *buffer = NULL;
+   char *pc = NULL;
+   char *ret = str;
+
+   buffer = malloc(size);
+
+   if (buffer)
+   {
+      if ((pc = strstr(str, orig)))  
+      {
+         if (pc - str < size)
+         {
+            snprintf(buffer, pc - str + 1, "%s", str);
+         }
+
+         buffer[pc - str] = '\0';
+         snprintf(buffer + (pc - str), size - (pc - str), "%s%s", rep, pc + strlen(orig));
+         snprintf(str, size, "%s", buffer);
+         ret = pc + strlen(rep);
+      }
+   
+      free(buffer);
+   }
+
+   return ret;
+}
 
 static CrtabError_t GetTableOID(DRMS_Env_t *env, const char *ns, const char *table, char **oid)
 {
@@ -324,7 +356,13 @@ static CrtabError_t CreateSQLSequence(FILE *fptr, const char *table)
    return err;
 }
 
-static CrtabError_t CreateSQLIndices(FILE *fptr, DRMS_Env_t *env, const char *oid)
+static CrtabError_t CreateSQLIndices(FILE *fptr, 
+                                     DRMS_Env_t *env, 
+                                     const char *oid, 
+                                     const char *seriesin, 
+                                     const char *tablein,
+                                     const char* seriesout,
+                                     const char *tableout)
 {
    CrtabError_t err = kCrtabErr_Success;
    DRMS_Session_t *session = env->session;
@@ -349,10 +387,40 @@ static CrtabError_t CreateSQLIndices(FILE *fptr, DRMS_Env_t *env, const char *oi
       }
       else
       {
+         char *pc = NULL;
+         char *nextpc = NULL;
+
          for (irow = 0; irow < qres->num_rows; irow++)
          {
             /* The column pg_get_indexdef (col 2) has the query that creates the indices. */
             db_binary_field_getstr(qres, irow, 1, sizeof(createbuf), createbuf); 
+
+            /* We don't want to create the index that gets created when a primary key constraint is created - 
+             * look for the one that has (recnum) */
+            if (strstr(createbuf, "(recnum)"))
+            {
+               continue;
+            }
+
+            /* Substitute seriesout for seriesin, but only if they differ */
+            if (strcmp(seriesin, seriesout) != 0)
+            {
+               pc = createbuf;
+               while ((nextpc = replacestr(pc, sizeof(createbuf) + (pc - createbuf), seriesin, seriesout)) != pc)
+               {
+                  pc = nextpc;
+               }
+            }
+
+            if (strcmp(tablein, tableout) != 0)
+            {
+               pc = createbuf;
+               while ((nextpc = replacestr(pc, sizeof(createbuf) + (pc - createbuf), tablein, tableout)) != pc)
+               {
+                  pc = nextpc;
+               }
+            }
+
             fprintf(fptr, "%s;\n", createbuf);
          }
       }
@@ -406,6 +474,7 @@ static CrtabError_t CreateSQLGrantPerms(FILE *fptr, DRMS_Env_t *env, const char 
 static CrtabError_t CreateSQLInsertIntoTable(FILE *fptr, 
                                              DRMS_Env_t *env, 
                                              const char *series, 
+                                             const char *seriesout,
                                              const char *ns, 
                                              const char *table)
 {
@@ -441,8 +510,15 @@ static CrtabError_t CreateSQLInsertIntoTable(FILE *fptr,
          }
 
          db_binary_field_getstr(rows, irow, icol, sizeof(val), val);
+
          if (((rows->column)[icol]).type == DB_STRING)
          {
+            /* Substitute seriesout for series */
+            if (strcmp(val, series) == 0 && strcmp(series, seriesout) != 0)
+            {
+               snprintf(val, sizeof(val), "%s", seriesout);
+            }
+
             base_strcatalloc(list, "'", &strsize);
             base_strcatalloc(list, val, &strsize);
             base_strcatalloc(list, "'", &strsize);
@@ -481,7 +557,8 @@ static CrtabError_t CreateSQLUpdateTable(FILE *fptr,
                                          const char *table, 
                                          const char *colname, 
                                          const char *colvalue,
-                                         const char *where)
+                                         const char *where,
+                                         const char *whereout)
 {
    CrtabError_t err = kCrtabErr_Success;
    DRMS_Session_t *session = env->session;
@@ -509,7 +586,7 @@ static CrtabError_t CreateSQLUpdateTable(FILE *fptr,
       }
       else
       {
-         fprintf(fptr, "UPDATE %s SET %s = %s where %s;\n", table, colname, colvalue, where);         
+         fprintf(fptr, "UPDATE %s SET %s = %s where %s;\n", table, colname, colvalue, whereout);         
       }
 
       db_free_binary_result(qres);
@@ -520,6 +597,7 @@ static CrtabError_t CreateSQLUpdateTable(FILE *fptr,
 
 static int CreateSQL(FILE *fptr, DRMS_Env_t *env, 
                      const char *seriesin, 
+                     const char *seriesout,
                      const char *archive, 
                      const char *retention, 
                      const char *tapegroup)
@@ -530,14 +608,26 @@ static int CreateSQL(FILE *fptr, DRMS_Env_t *env,
    char *ns = NULL;
    char *table = NULL;
    char *collist = NULL;
+   char *seriesnew = NULL;
+   char *nsnew = NULL;
+   char *tablenew = NULL;
 
    series = strdup(seriesin);
    strtolower(series);
 
+   seriesnew = strdup(seriesout);
+   strtolower(seriesnew);
+
    get_namespace(series, &ns, &table);
+   get_namespace(seriesnew, &nsnew, &tablenew);
    if (!ns || !table)
    {
       fprintf(stderr, "Invalid argument 'seriesin' (%s).\n", seriesin);
+      err = kCrtabErr_Argument;
+   }
+   else if (!nsnew || !tablenew)
+   {
+      fprintf(stderr, "Invalid argument 'seriesout' (%s).\n", seriesout);
       err = kCrtabErr_Argument;
    }
    else
@@ -552,31 +642,37 @@ static int CreateSQL(FILE *fptr, DRMS_Env_t *env,
       if (!err)
       {
          /* set search path to namespace - needed for the remainder of the SQL */
-         fprintf(fptr, "SET search_path TO %s;\n", ns);
+         fprintf(fptr, "SET search_path TO %s;\n", nsnew);
       }
 
       /* First, create the series table and associated sequence table */
       if (!err)
       {
-         err = CreateSQLTable(fptr, table, collist);
+         err = CreateSQLTable(fptr, tablenew, collist);
+
+         /* Create the recnum prime key */
+         if (!err)
+         {
+            fprintf(fptr, "ALTER TABLE %s ADD CONSTRAINT %s_pkey PRIMARY KEY (recnum);\n", tablenew, tablenew);
+         }
 
          /* Create indices in the series table (the other tables will have been created by masterlists) */
          if (!err)
          {
-            err = CreateSQLIndices(fptr, env, oid);
+            err = CreateSQLIndices(fptr, env, oid, series, table, seriesnew, tablenew);
          }
 
          /* sequence table */
          if (!err)
          {
-            err = CreateSQLSequence(fptr, table);
+            err = CreateSQLSequence(fptr, tablenew);
          }
 
          /* Grant select to public and delete to sumsadmin */
          /* Grant select, insert, update, delete to owner of the namespace */
          if (!err)
          {
-            err = CreateSQLGrantPerms(fptr, env, series, ns);
+            err = CreateSQLGrantPerms(fptr, env, seriesnew, ns);
          }
       }
    
@@ -584,51 +680,61 @@ static int CreateSQL(FILE *fptr, DRMS_Env_t *env,
       if (!err)
       {
          char where[512];
+         char whereout[512];
 
          snprintf(where, sizeof(where), "seriesname = '%s'", seriesin);
-         err = CreateSQLInsertIntoTable(fptr, env, seriesin, ns, DRMS_MASTER_SERIES_TABLE);
+         snprintf(whereout, sizeof(whereout), "seriesname = '%s'", seriesout);
+         err = CreateSQLInsertIntoTable(fptr, env, seriesin, seriesout, ns, DRMS_MASTER_SERIES_TABLE);
          
          /* override archive, retention, and tapegroup if present */
          if (!err)
          {
-            err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "archive", archive, where);
+            err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "archive", archive, where, whereout);
          }
 
          if (!err)
          {
-            err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "retention", retention, where);
+            err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "retention", retention, where, whereout);
          }
 
          if (!err)
          {
-            err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "tapegroup", tapegroup, where);
+            err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "tapegroup", tapegroup, where, whereout);
          }
       }
 
       /* Third, insert rows into drms_links */
       if (!err)
       {
-         err = CreateSQLInsertIntoTable(fptr, env, seriesin, ns, DRMS_MASTER_LINK_TABLE);
+         err = CreateSQLInsertIntoTable(fptr, env, seriesin, seriesout, ns, DRMS_MASTER_LINK_TABLE);
       }
 
       /* Fourth, insert rows into drms_keywords */
       if (!err)
       {
-         err = CreateSQLInsertIntoTable(fptr, env, seriesin, ns, DRMS_MASTER_KEYWORD_TABLE);
+         err = CreateSQLInsertIntoTable(fptr, env, seriesin, seriesout, ns, DRMS_MASTER_KEYWORD_TABLE);
       }
 
       /* Fifth, insert rows into drms_segments */
       if (!err)
       {
-         err = CreateSQLInsertIntoTable(fptr, env, seriesin, ns, DRMS_MASTER_SEGMENT_TABLE);
+         err = CreateSQLInsertIntoTable(fptr, env, seriesin, seriesout, ns, DRMS_MASTER_SEGMENT_TABLE);
       }
 
       free(ns);
       free(table);
 
+      free(nsnew);
+      free(tablenew);
+
       if (series)
       {
          free(series);
+      }
+
+      if (seriesnew)
+      {
+         free(seriesnew);
       }
 
       if (oid)
@@ -652,6 +758,7 @@ int DoIt(void)
    CrtabError_t err = kCrtabErr_Success;
    int drmsstat = DRMS_SUCCESS;
    char *series = NULL;
+   char *seriesout = NULL;
    char *archive = NULL;
    char *retention = NULL;
    char *tapegroup = NULL;
@@ -659,6 +766,7 @@ int DoIt(void)
    FILE *fptr = NULL;
 
    series = cmdparams_get_str(&cmdparams, kSeriesin, NULL);
+   seriesout = cmdparams_get_str(&cmdparams, kSeriesout, NULL);
 
    /* these should all override the values in drms_series */
    archive = cmdparams_get_str(&cmdparams, kArchive, NULL);
@@ -707,7 +815,7 @@ int DoIt(void)
    {
       if (drms_series_exists(drms_env, series, &drmsstat))
       {
-         CreateSQL(fptr, drms_env, series, archive, retention, tapegroup);
+         CreateSQL(fptr, drms_env, series, seriesout, archive, retention, tapegroup);
       }
       else
       {
