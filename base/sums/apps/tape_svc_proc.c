@@ -633,36 +633,41 @@ KEY *readdo_1(KEY *params) {
   for(i=0; i < reqcnt; i++) {
     sprintf(tmpname, "online_status_%d", i);
     cptr = GETKEY_str(params, tmpname);
-    if(strcmp(cptr, "N") == 0) {        /* this su offline */
-      /*setkey_int(&params, "reqofflinenum", i); /* tell others which one */
-      sprintf(tmpname, "tapeid_%d", i);
-      tapeid = GETKEY_str(params, tmpname);
-      sprintf(tmpname, "tapefilenum_%d", i);
-      tapefilenum = getkey_int(params, tmpname);
-      sprintf(tmpname, "ds_index_%d", i);
-      dsix = getkey_uint64(params, tmpname);
-      j = offptr->uniqcnt;
-      if(j == 0) {
-        offptr->tapeids[0] = (char *)strdup(tapeid);
-        offptr->tapefns[0] = tapefilenum;
-	offptr->reqofflinenum[0] = i;
-        offptr->dsix[0] = dsix;
-        offptr->uniqcnt = 1;
-      }
-      else {			/* see if any dups */
-        for(k=0; k < j; k++) {
-          if(!strcmp(offptr->tapeids[k], tapeid)) {
-            if(offptr->tapefns[k] == tapefilenum) {
-              break;		/* it's a dup */
+    //proceed if this su is offline and archived
+    if(strcmp(cptr, "N") == 0) { 
+      sprintf(tmpname, "archive_status_%d", i);
+      cptr = GETKEY_str(params, tmpname);
+      if(strcmp(cptr, "Y") == 0) {
+        /*setkey_int(&params, "reqofflinenum", i); /* tell others which one */
+        sprintf(tmpname, "tapeid_%d", i);
+        tapeid = GETKEY_str(params, tmpname);
+        sprintf(tmpname, "tapefilenum_%d", i);
+        tapefilenum = getkey_int(params, tmpname);
+        sprintf(tmpname, "ds_index_%d", i);
+        dsix = getkey_uint64(params, tmpname);
+        j = offptr->uniqcnt;
+        if(j == 0) {
+          offptr->tapeids[0] = (char *)strdup(tapeid);
+          offptr->tapefns[0] = tapefilenum;
+          offptr->reqofflinenum[0] = i;
+          offptr->dsix[0] = dsix;
+          offptr->uniqcnt = 1;
+        }
+        else {			/* see if any dups */
+          for(k=0; k < j; k++) {
+            if(!strcmp(offptr->tapeids[k], tapeid)) {
+              if(offptr->tapefns[k] == tapefilenum) {
+                break;		/* it's a dup */
+              }
             }
           }
-        }
-        if(k == j) {
-          offptr->tapeids[j] = (char *)strdup(tapeid);
-          offptr->tapefns[j] = tapefilenum;
-          offptr->reqofflinenum[j] = i;
-          offptr->dsix[j] = dsix;
-          offptr->uniqcnt++;
+          if(k == j) {
+            offptr->tapeids[j] = (char *)strdup(tapeid);
+            offptr->tapefns[j] = tapefilenum;
+            offptr->reqofflinenum[j] = i;
+            offptr->dsix[j] = dsix;
+            offptr->uniqcnt++;
+          }
         }
       }
     }

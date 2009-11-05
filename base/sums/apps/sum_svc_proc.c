@@ -68,6 +68,25 @@ CLIENT *set_client_handle(uint32_t prognum, uint32_t versnum)
       write_log("**** Did someone remove us from the portmapper? ****\n");
       return(0);		/* error ret */
     }
+//get sending host IP and port#
+socklen_t len;
+struct sockaddr_storage addr;
+char ipstr[INET6_ADDRSTRLEN];
+int port;
+len = sizeof addr;
+getpeername(sock, (struct sockaddr*)&addr, &len);
+// deal with both IPv4 and IPv6:
+if (addr.ss_family == AF_INET) {
+    struct sockaddr_in *s = (struct sockaddr_in *)&addr;
+    port = ntohs(s->sin_port);
+    inet_ntop(AF_INET, &s->sin_addr, ipstr, sizeof ipstr);
+} else { // AF_INET6
+    struct sockaddr_in6 *s = (struct sockaddr_in6 *)&addr;
+    port = ntohs(s->sin6_port);
+    inet_ntop(AF_INET6, &s->sin6_addr, ipstr, sizeof ipstr);
+}
+write_log("Peer IP/port: %s/%d\n", ipstr, port);
+
     /* set glb vrbl for poss use by sum_svc if result != 0 */
     current_client = client;
     return(client);
@@ -241,23 +260,28 @@ KEY *getdo_1(KEY *params)
       for(i=0; i < reqcnt; i++) {
         sprintf(tmpname, "online_status_%d", i);
         cptr = GETKEY_str(retlist, tmpname);
-        if(strcmp(cptr, "N") == 0) {        /* this su offline */
-          offcnt++;
-          sprintf(tmpname, "bytes_%d", i);
-          bytes = getkey_double(retlist, tmpname);
-          storeset = JSOC;         /* always use JSOC set for now */
-          if((status=SUMLIB_PavailGet(bytes,storeset,uid,0,&retlist))) {
-            write_log("***Can't alloc storage for retrieve uid = %lu\n", uid);
-            freekeylist(&retlist);
-            rinfo = 1;  /* give err status back to original caller */
-            send_ack();	/* ack original sum_svc caller */
-            clnt_destroy(clresp);
-            return((KEY *)1);  /* error. nothing to be sent */
+        //proceed if this su is offline and archived
+        if(strcmp(cptr, "N") == 0) {
+          sprintf(tmpname, "archive_status_%d", i);
+          cptr = GETKEY_str(retlist, tmpname);
+          if(strcmp(cptr, "Y") == 0) {
+            offcnt++;
+            sprintf(tmpname, "bytes_%d", i);
+            bytes = getkey_double(retlist, tmpname);
+            storeset = JSOC;         /* always use JSOC set for now */
+            if((status=SUMLIB_PavailGet(bytes,storeset,uid,0,&retlist))) {
+              write_log("***Can't alloc storage for retrieve uid = %lu\n", uid);
+              freekeylist(&retlist);
+              rinfo = 1;  /* give err status back to original caller */
+              send_ack();	/* ack original sum_svc caller */
+              clnt_destroy(clresp);
+              return((KEY *)1);  /* error. nothing to be sent */
+            }
+            wd = GETKEY_str(retlist, "partn_name");
+            sprintf(tmpname, "rootwd_%d", i);
+            setkey_str(&retlist, tmpname, wd);
+            write_log("\nAlloc for retrieve wd = %s for sumid = %lu\n", wd, uid);
           }
-          wd = GETKEY_str(retlist, "partn_name");
-          sprintf(tmpname, "rootwd_%d", i);
-          setkey_str(&retlist, tmpname, wd);
-          write_log("\nAlloc for retrieve wd = %s for sumid = %lu\n", wd, uid);
         }
       }
       setkey_int(&retlist, "offcnt", offcnt);
@@ -479,6 +503,7 @@ KEY *putdo_1(KEY *params)
     }
     rinfo = 0;			/* status back to caller */
     send_ack();
+    free(wd);
     setkey_int(&retlist, "STATUS", 0);   /* give success back to caller */
     return(retlist);
   }
@@ -547,6 +572,7 @@ KEY *delseriesdo_1(KEY *params)
   send_ack();
   /* set DB sum_partn_alloc to DADP/DADPDELSU */
   SUMLIB_DelSeriesSU(filename, seriesname);
+  free(filename); free(seriesname);
   return((KEY *)1);	/* nothing will be sent later */
 }
 
