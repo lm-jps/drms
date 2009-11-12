@@ -282,6 +282,11 @@ int DoIt(void)
       err = CreateSQL(fptr, ns, nsgrp, dbusr);
    }
 
+   if (!err)
+   {
+      fflush(fptr);
+   }
+
    if (nsgrp)
    {
       free(nsgrp);
