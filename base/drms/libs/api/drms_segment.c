@@ -1826,12 +1826,12 @@ int drms_segment_writeslice(DRMS_Segment_t *seg, DRMS_Array_t *arr, int *start, 
         {
            if (i == 0)
            {
-              snprintf(strbuf, sizeof(strbuf), "%d", seg->axis[i]);
+              snprintf(strbuf, sizeof(strbuf), "%d", arr->axis[i]);
               base_strcatalloc(tilestr, strbuf, &sizestr);
            }
            else
            {
-              snprintf(strbuf, sizeof(strbuf), ",%d", seg->axis[i]);
+              snprintf(strbuf, sizeof(strbuf), ",%d", arr->axis[i]);
               base_strcatalloc(tilestr, strbuf, &sizestr);
            }
         }
