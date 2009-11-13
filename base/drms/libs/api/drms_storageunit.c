@@ -1,5 +1,6 @@
 //#define DEBUG
 
+#include <dirent.h>
 #include "drms.h"
 #include "drms_priv.h"
 #include "xmem.h"
@@ -32,6 +33,61 @@ struct SUList_struct
 
 typedef struct SUList_struct SUList_t;
 
+static int EmptyDir(const char *dir)
+{
+  struct stat stBuf;
+  struct dirent **fileList = NULL;
+  int nfiles = 0;
+  int notempty = 0;
+  
+  notempty = (!stat(dir, &stBuf) && S_ISDIR(stBuf.st_mode) && (nfiles = scandir(dir, &fileList, NULL, NULL)) > 0 && fileList);
+
+  if (notempty)
+  {
+     /* Don't count "." and ".." */
+     int ifile;
+     struct dirent *entry = NULL;
+     char subdir[PATH_MAX];
+
+     notempty = 0;
+     ifile = 0;
+
+     while (ifile < nfiles)
+     {
+        entry = fileList[ifile];
+
+        if (entry != NULL)
+        {
+           char *oneFile = entry->d_name;
+
+           if (strcmp(oneFile, ".") != 0 && strcmp(oneFile, "..") != 0)
+           {
+              snprintf(subdir, sizeof(subdir), "%s/%s", dir, oneFile);
+
+              if (!stat(subdir, &stBuf))
+              {
+                 if (S_ISDIR(stBuf.st_mode))
+                 {
+                    notempty = !EmptyDir(subdir);
+                 }
+                 else
+                 {
+                    notempty = 1;
+                    break;
+                 }
+              }
+           }           
+
+           free(entry);
+        }
+
+        ifile++;
+     }
+  }
+
+  return !notempty;
+}
+
 /* Allocate a storage unit of the indicated size from SUMS and return
    its sunum and directory. */
 #ifndef DRMS_CLIENT
@@ -49,7 +105,7 @@ long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir,
   request->opcode = DRMS_SUMALLOC;
   request->dontwait = 0;
   request->reqcnt = 1;
-  request->bytes = size;
+  request->bytes = (double)size;
   if (request->bytes <=0 )
   {
     fprintf(stderr,"Invalid storage unit size %lf\n",request->bytes);
@@ -118,7 +174,7 @@ int drms_su_alloc2(DRMS_Env_t *env,
    request->opcode = DRMS_SUMALLOC2;
    request->dontwait = 0;
    request->reqcnt = 1;
-   request->bytes = size;
+   request->bytes = (double)size;
    request->sunum[0] = sunum;
    if (request->bytes <=0 )
    {
@@ -933,6 +989,9 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
 #endif
 
 /* Tell SUMS to save this storage unit. */
+/* This su commit function writes the Records.txt file. This is used by SUMS when deleting DRMS records (when the archive flag is -1).
+ * drms_su_commitsu() does NOT write the Records.txt file, so it is not possible for SUMS to delete DRMS records of SUs committed 
+ * with this function. */
 #ifndef DRMS_CLIENT
 int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
 {
@@ -941,89 +1000,96 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
   FILE *fp;
   char filename[DRMS_MAXPATHLEN];
   int actualarchive = 0;
+  int docommit = 0;
 
-  if (env->archive != INT_MIN)
+  docommit = !EmptyDir(su->sudir);
+  if (docommit)
   {
-     actualarchive = env->archive;
+     if (env->archive != INT_MIN)
+     {
+        actualarchive = env->archive;
+     }
+     else
+     {
+        actualarchive = su->seriesinfo->archive;
+     }
+
+     /* Write text file with record numbers to storage unit directory. */
+     if ( su->recnum )
+     {
+        sprintf(filename,"%s/Records.txt",su->sudir);
+        if ((fp = fopen(filename,"w")) == NULL)
+        {
+           fprintf(stderr,"ERROR in drms_commitunit: Failed to open file '%s'\n",
+                   filename);
+           return 1;
+        }
+
+        /* If archive is set to -1, then write flag text at the top of the file to 
+         * tell SUMS to delete the DRMS records within the storage unit. */
+        if (actualarchive == -1)
+        {
+           fprintf(fp, "DELETE_SLOTS_RECORDS\n");
+        }
+
+        fprintf(fp,"series=%s\n", su->seriesinfo->seriesname);
+        if (su->nfree<su->seriesinfo->unitsize)
+        {
+           fprintf(fp,"slot\trecord number\n");
+           for (i=0; i<su->seriesinfo->unitsize; i++)
+             if (su->state!=DRMS_SLOT_FREE)
+               fprintf(fp,"%d\t%lld\n", i, su->recnum[i]);
+        }
+        fclose(fp);
+     }
+
+     XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+     request->opcode = DRMS_SUMPUT;
+     request->dontwait = 0;
+     request->reqcnt = 1;
+     request->dsname = su->seriesinfo->seriesname;
+     request->group = su->seriesinfo->tapegroup;
+     if (actualarchive == 1) 
+       request->mode = ARCH + TOUCH;
+     else
+       request->mode = TEMP + TOUCH;
+
+     /* If the user doesn't override on the cmd-line, start with the jsd retention.  Otherwise, 
+      * start with the cmd-line value.  It doesn't matter if the value is positive or negative 
+      * since only the series owner can create a record in the first place.
+      */
+     if (env->retention==INT_MIN) 
+     {  
+        request->tdays = su->seriesinfo->retention;
+     }
+     else
+     {
+        request->tdays = env->retention; 
+     }
+
+     request->sunum[0] = su->sunum;
+     request->sudir[0] = su->sudir;
+     request->comment = NULL;
+
+     // must have sum_thread running already
+     XASSERT(env->sum_thread);
+     /* Submit request to sums server thread. */
+     tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
+     /* Wait for reply. FIXME: add timeout. */
+     tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
+     if (reply->opcode != 0) 
+     {
+        fprintf(stderr, "ERROR in drms_commitunit: SUM PUT failed with "
+                "error code %d.\n",reply->opcode);
+        free(reply);
+        return 1;
+     }
+     free(reply);
+     /* Now the storage unit is owned by SUMS, mark it read-only. */
+     su->mode = DRMS_READONLY;
+
   }
-  else
-  {
-     actualarchive = su->seriesinfo->archive;
-  }
 
-  /* Write text file with record numbers to storage unit directory. */
-  if ( su->recnum )
-  {
-    sprintf(filename,"%s/Records.txt",su->sudir);
-    if ((fp = fopen(filename,"w")) == NULL)
-    {
-      fprintf(stderr,"ERROR in drms_commitunit: Failed to open file '%s'\n",
-	      filename);
-      return 1;
-    }
-
-    /* If archive is set to -1, then write flag text at the top of the file to 
-     * tell SUMS to delete the DRMS records within the storage unit. */
-    if (actualarchive == -1)
-    {
-       fprintf(fp, "DELETE_SLOTS_RECORDS\n");
-    }
-
-    fprintf(fp,"series=%s\n", su->seriesinfo->seriesname);
-    if (su->nfree<su->seriesinfo->unitsize)
-    {
-      fprintf(fp,"slot\trecord number\n");
-      for (i=0; i<su->seriesinfo->unitsize; i++)
-	if (su->state!=DRMS_SLOT_FREE)
-	  fprintf(fp,"%d\t%lld\n", i, su->recnum[i]);
-    }
-    fclose(fp);
-  }
-
-  XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
-  request->opcode = DRMS_SUMPUT;
-  request->dontwait = 0;
-  request->reqcnt = 1;
-  request->dsname = su->seriesinfo->seriesname;
-  request->group = su->seriesinfo->tapegroup;
-  if (actualarchive == 1) 
-    request->mode = ARCH + TOUCH;
-  else
-    request->mode = TEMP + TOUCH;
-
-  /* If the user doesn't override on the cmd-line, start with the jsd retention.  Otherwise, 
-   * start with the cmd-line value.  It doesn't matter if the value is positive or negative 
-   * since only the series owner can create a record in the first place.
-   */
-  if (env->retention==INT_MIN) 
-  {  
-     request->tdays = su->seriesinfo->retention;
-  }
-  else
-  {
-     request->tdays = env->retention; 
-  }
-
-  request->sunum[0] = su->sunum;
-  request->sudir[0] = su->sudir;
-  request->comment = NULL;
-
-  // must have sum_thread running already
-  XASSERT(env->sum_thread);
-  /* Submit request to sums server thread. */
-  tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
-  /* Wait for reply. FIXME: add timeout. */
-  tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
-  if (reply->opcode != 0) 
-  {
-    fprintf(stderr, "ERROR in drms_commitunit: SUM PUT failed with "
-	    "error code %d.\n",reply->opcode);
-    free(reply);
-    return 1;
-  }
-  free(reply);
-  /* Now the storage unit is owned by SUMS, mark it read-only. */
-  su->mode = DRMS_READONLY;
   return 0;
 }
 #endif
@@ -1228,7 +1294,7 @@ DRMS_StorageUnit_t *drms_su_markslot(DRMS_Env_t *env, char *series,
   else if (oldstate==DRMS_SLOT_FREE && *state!=DRMS_SLOT_FREE)
     su->nfree--;
   /* Swap old and new state. */
-  su->state[slotnum] = *state;
+  su->state[slotnum] = (char)(*state);
   *state = oldstate;
   return su;
 }
@@ -1318,6 +1384,8 @@ int drms_su_allocsu(DRMS_Env_t *env,
    return drms_su_alloc2(env, size, sunum, sudir, status);
 }
 
+/* drms_su_commitsu() does NOT write the Records.txt file, so it is not possible for SUMS to delete DRMS records of SUs committed 
+ * with this function. */
 int drms_su_commitsu(DRMS_Env_t *env, 
                      const char *seriesname, 
                      long long sunum,
@@ -1328,80 +1396,95 @@ int drms_su_commitsu(DRMS_Env_t *env,
   DRMS_SeriesInfo_t *seriesinfo = NULL;
   DRMS_Record_t *templaterec = NULL;
   int drmsst = DRMS_SUCCESS;
+  int docommit = 0;
 
-  templaterec = drms_template_record(env, seriesname, &drmsst);
-
-  if (templaterec)
+  /* Don't commit a unit if its directory is empty */
+  docommit = !EmptyDir(sudir);
+  if (docommit)
   {
-     seriesinfo = templaterec->seriesinfo;
-  }
+     templaterec = drms_template_record(env, seriesname, &drmsst);
 
-  if (seriesinfo)
-  {
-     if (env->archive != INT_MIN)
+     if (templaterec)
      {
-        actualarchive = env->archive;
+        seriesinfo = templaterec->seriesinfo;
+     }
+
+     if (seriesinfo)
+     {
+        char *tmp = NULL;
+
+        if (env->archive != INT_MIN)
+        {
+           actualarchive = env->archive;
+        }
+        else
+        {
+           actualarchive = seriesinfo->archive;
+        }   
+
+        XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+        request->opcode = DRMS_SUMPUT;
+        request->dontwait = 0;
+        request->reqcnt = 1;
+        request->dsname = seriesinfo->seriesname;
+        request->group = seriesinfo->tapegroup;
+
+        if (actualarchive == 1) 
+        {
+           request->mode = ARCH + TOUCH;
+        }
+        else
+        {
+           request->mode = TEMP + TOUCH;
+        }
+
+        /* If the user doesn't override on the cmd-line, start with the jsd retention.  Otherwise, 
+         * start with the cmd-line value.  It doesn't matter if the value is positive or negative 
+         * since only the series owner can create a record in the first place.
+         */
+        if (env->retention == INT_MIN) 
+        {  
+           request->tdays = seriesinfo->retention;
+        }
+        else
+        {
+           request->tdays = env->retention; 
+        }
+
+        tmp = strdup(sudir);
+
+        request->sunum[0] = sunum;
+        request->sudir[0] = tmp;
+        request->comment = NULL;
+
+        // must have sum_thread running already
+        XASSERT(env->sum_thread);
+
+        /* Submit request to sums server thread. */
+        tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
+
+        /* Wait for reply. FIXME: add timeout. */
+        tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
+
+        if (reply->opcode != 0) 
+        {
+           fprintf(stderr, "ERROR in drms_commitunit: SUM PUT failed with "
+                   "error code %d.\n", reply->opcode);
+           drmsst = DRMS_ERROR_SUMPUT;
+        }
+
+        if (tmp)
+        {
+           free(tmp);
+        }
+
+        free(reply);
      }
      else
      {
-        actualarchive = seriesinfo->archive;
-     }   
-
-     XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
-     request->opcode = DRMS_SUMPUT;
-     request->dontwait = 0;
-     request->reqcnt = 1;
-     request->dsname = seriesinfo->seriesname;
-     request->group = seriesinfo->tapegroup;
-
-     if (actualarchive == 1) 
-     {
-        request->mode = ARCH + TOUCH;
+        fprintf(stderr, "Unknown series '%s'.\n", seriesname);
+        drmsst = DRMS_ERROR_UNKNOWNSERIES;
      }
-     else
-     {
-        request->mode = TEMP + TOUCH;
-     }
-
-     /* If the user doesn't override on the cmd-line, start with the jsd retention.  Otherwise, 
-      * start with the cmd-line value.  It doesn't matter if the value is positive or negative 
-      * since only the series owner can create a record in the first place.
-      */
-     if (env->retention == INT_MIN) 
-     {  
-        request->tdays = seriesinfo->retention;
-     }
-     else
-     {
-        request->tdays = env->retention; 
-     }
-
-     request->sunum[0] = sunum;
-     request->sudir[0] = sudir;
-     request->comment = NULL;
-
-     // must have sum_thread running already
-     XASSERT(env->sum_thread);
-
-     /* Submit request to sums server thread. */
-     tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
-
-     /* Wait for reply. FIXME: add timeout. */
-     tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
-
-     if (reply->opcode != 0) 
-     {
-        fprintf(stderr, "ERROR in drms_commitunit: SUM PUT failed with "
-                "error code %d.\n", reply->opcode);
-        drmsst = DRMS_ERROR_SUMPUT;
-     }
-
-     free(reply);
-  }
-  else
-  {
-     fprintf(stderr, "Unknown series '%s'.\n", seriesname);
-     drmsst = DRMS_ERROR_UNKNOWNSERIES;
   }
 
   return drmsst;

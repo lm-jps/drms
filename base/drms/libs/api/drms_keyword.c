@@ -1678,7 +1678,6 @@ int drms_copykeys(DRMS_Record_t *target,
    DRMS_Keyword_t *lookupkey = NULL;
    DRMS_Record_t *lookuprec = NULL;
    int status = DRMS_SUCCESS;
-   int warned;
 
    if (usesrcset)
    {
@@ -1691,7 +1690,6 @@ int drms_copykeys(DRMS_Record_t *target,
       lookuprec = source;
    }
 
-   warned = 0;
    while ((setkey = (DRMS_Keyword_t *)hiter_getnext(sethit)) != NULL)
    {
       if (drms_keyword_inclass(setkey, class))
@@ -1712,12 +1710,6 @@ int drms_copykeys(DRMS_Record_t *target,
          if (tgtkey && srckey)
          {
             status = drms_copykeyB(tgtkey, srckey);
-         }
-         else if (!warned)
-         {
-            /* Print a warning - there exist some keywords in tgtkey that don't exist in srckey */
-            fprintf(stderr, "Not all keywords in target record were set.\n");
-            warned = 1;
          }
       }
 
@@ -2605,15 +2597,19 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
          {
             /* valind is actually a duration, in seconds. */
             exact = valind / roundstep;
+            inexact = (int)exact;
 
             if (valind < roundstep)
             {
                toosmall = 1;
                fprintf(stderr, "Invalid slotted-keyword duration '%f seconds' specified.  Should be at least the step size of '%f seconds'.  Duration was rounded up to step size.\n", valind, roundstep);
-               valind = roundstep; /* ensures that at least one slot is returned */
+               /* ensures that at least one slot is returned */
+               valout->value.longlong_val = CalcSlot(roundstep, 0.0, stepsecs, roundstep);
             }
-
-            valout->value.longlong_val = CalcSlot(valind, 0.0, stepsecs, roundstep);
+            else
+            {
+               valout->value.longlong_val = CalcSlot(inexact * roundstep, 0.0, stepsecs, roundstep);
+            }
          }
          else
            valout->value.longlong_val = CalcSlot(valind, base, stepsecs, roundstep);
@@ -2624,15 +2620,19 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
          {
             /* valind is actually a duration, in seconds. */  
             exact = valind / stepsecs;
+            inexact = (int)exact;
 
             if (valind < stepsecs)
             {
                toosmall = 1;
                fprintf(stderr, "Invalid slotted-keyword duration '%f seconds' specified.  Should be at least the step size of '%f seconds'.  Duration was rounded up to step size.\n", valind, stepsecs);
-               valind = stepsecs; /* ensures that at least one slot is returned */ 
+               /* ensures that at least one slot is returned */ 
+               valout->value.longlong_val = CalcSlot(stepsecs, 0.0, stepsecs, stepsecs);
             }
-
-            valout->value.longlong_val = CalcSlot(valind, 0.0, stepsecs, stepsecs);
+            else
+            {
+               valout->value.longlong_val = CalcSlot(inexact * stepsecs, 0.0, stepsecs, stepsecs);               
+            }
          }
          else
            valout->value.longlong_val = CalcSlot(valind, base, stepsecs, stepsecs);
@@ -2640,8 +2640,6 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
 
       if (startdur)
       {
-         inexact = (int)exact;
-
          if (!toosmall && (fabs(exact - inexact) > 1.0e-11 * (fabs(exact) + fabs(inexact))))
          {
             fprintf(stderr, "Invalid slotted-keyword duration '%f seconds' specified.  Should be a multiple of step size '%f seconds'.  Duration was rounded to nearest multiple.\n", valind, stepsecs);
