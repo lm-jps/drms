@@ -1,6 +1,6 @@
 #! /bin/csh -f
 
-rm custom.mk
+if (-e custom.mk) rm custom.mk
 
 # set up $JSOC_MACHINE
 set JSOC_MACHINE = `build/jsoc_machine.csh`
