@@ -499,7 +499,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
        memset(&vholder, 0, sizeof(DRMS_Value_t));
        drms_sscanf2(bzero, NULL, 0, DRMS_TYPE_DOUBLE, &vholder);
        sckey->value = vholder.value;
-       snprintf(sckey->info->format, DRMS_MAXFORMATLEN, "%s", "%f");
+       snprintf(sckey->info->format, DRMS_MAXFORMATLEN, "%s", "%g");
        snprintf(sckey->info->unit, DRMS_MAXUNITLEN, "%s", "none");
        sckey->info->recscope = kRecScopeType_Variable;
        snprintf(sckey->info->description, DRMS_MAXCOMMENTLEN, "%s", "");
@@ -533,7 +533,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
        memset(&vholder, 0, sizeof(DRMS_Value_t));
        drms_sscanf2(bscale, NULL, 0, DRMS_TYPE_DOUBLE, &vholder);
        sckey->value = vholder.value;
-       snprintf(sckey->info->format, DRMS_MAXFORMATLEN, "%s", "%f");
+       snprintf(sckey->info->format, DRMS_MAXFORMATLEN, "%s", "%g");
        snprintf(sckey->info->unit, DRMS_MAXUNITLEN, "%s", "none");
        sckey->info->recscope = kRecScopeType_Variable;
        snprintf(sckey->info->description, DRMS_MAXCOMMENTLEN, "%s", "");
