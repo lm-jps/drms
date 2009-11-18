@@ -4,7 +4,7 @@ dirstack_$(sp)	:= $(d)
 d		:= $(dir)
 
 # Subdirectories, in random order. Directory-specific rules are optional here.
-dir	:= $(d)/fpic
+dir	:= $(d)/test
 -include		$(SRCDIR)/$(dir)/Rules.mk
 
 # Local variables

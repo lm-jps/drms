@@ -37,12 +37,12 @@ int drms_cmdparams_exists(CmdParams_t *parms, const char *name)
    {
       if (sscanf(name + 1, "%d", &arg_num) == 1)
       {
-         exists = arg_num < parms->num_args;
+         exists = arg_num < parms->numunnamed;
       }
    } 
    else 
    {
-      exists = (hash_lookup(&parms->hash, name) != NULL);
+      exists = (hcon_lookup(parms->args, name) != NULL);
       if (!exists)
       {
          /* could be in environment - but don't allow "black-listed" variables */
@@ -60,6 +60,7 @@ const char *drms_cmdparams_get_str(CmdParams_t *parms, const char *name, int *st
 {
    const char *str = NULL;
    int arg_num;
+   CmdParams_Arg_t *arg = NULL;
    int statint = DRMS_SUCCESS;
 
    /* Always check for existence first - this will ensure that code will not look for 
@@ -75,7 +76,12 @@ const char *drms_cmdparams_get_str(CmdParams_t *parms, const char *name, int *st
       } 
       else 
       {
-         str = (const char *)(hash_lookup(&parms->hash, name));
+         arg = (CmdParams_Arg_t *)(hcon_lookup(parms->args, name));
+         
+         if (arg)
+         {
+            str = arg->strval;
+         }
 
          if (!str)
          {

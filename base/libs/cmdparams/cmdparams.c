@@ -75,12 +75,30 @@ const double gNHugeVal = -HUGE_VAL;
 #define kARGSIZE     (128)
 #define kKEYSIZE     (128)
 
-static void ActValsFree(const void *data)
+/* DEEP free arg, but don't actually free the arg structure. */
+static void FreeArg(const void *data)
 {
    if (data)
    {
-      void *realdata = *((void **)data);
-      free(realdata);
+      CmdParams_Arg_t *arg = (CmdParams_Arg_t *)data;
+
+      /* name */
+      if (arg->name)
+      {
+         free(arg->name);
+      }
+
+      /* strval */
+      if (arg->strval)
+      {
+         free(arg->strval);
+      }
+
+      /* actvals */
+      if (arg->actvals)
+      {
+         free(arg->actvals);
+      }
    }
 }
 
@@ -183,7 +201,7 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
 			/*  This and the next argument  "--name value"  */
 
         /* There may or may not be a value associated with a --<name> flag.
-         * If not, then the argument is a flag with a name that has one or 
+         * If not, then the argument is a flag with a name that has one or more
          * chars in it. */
         int valueexists = 0;
 
@@ -320,13 +338,11 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
       } else {
 	if (argv[arg][0] == '@') {	/* This is of the form "@filename" */
 	  if (cmdparams_parsefile (parms, argv[arg]+1, depth) < 0) return -1;
-	} else {		/*  An argument to pass on to the program  */
-          if (parms->num_args >= parms->max_args) {
-	    parms->max_args *= 2;
-	    parms->args = realloc (parms->args, parms->max_args*sizeof (char*));
-	  }
-	  parms->args[parms->num_args++] = strdup (argv[arg]);
-	  /* FIXME: Do your own buffer management, you lazy bum! */
+	} 
+        else 
+        {
+           /*  An unnamed argument */
+           cmdparams_set(parms, NULL, argv[arg]);
 	}
 	++arg;
       }
@@ -369,16 +385,6 @@ static char *strip_delimiters (char *s) {
     default:
       return s;
   }
-}
-
-static int cmdparams_initactvals(CmdParams_t *params)
-{
-   if (params && !params->actvals)
-   {
-      params->actvals = hcon_create(sizeof(void *), kKEYSIZE, ActValsFree, NULL, NULL, NULL, 0);
-   }
-
-   return (params->actvals == NULL);
 }
 
 static int cmdparams_conv2type(const char *sdata, 
@@ -447,7 +453,16 @@ static int cmdparams_conv2type(const char *sdata,
    return status;
 }
 
-static int parse_array (CmdParams_t *params, char *root, ModuleArgs_Type_t dtype, char *valist) {
+/* Prior to this function call, each array will have been saved as a comma-delimited string of 
+ * values, in an argument with the name of "root". This function then parses that comma-delimited 
+ * string into an array of actual, typed values, and places that resulting array into the arg's
+ * actvals array.  So far so good.
+ *
+ * But then, it does this thing I don't like where it creates one brand new argument for each
+ * item in the array. That seems wasteful - you can access the values via the array (described
+ * above).
+ */
+static int parse_array (CmdParams_t *params, const char *root, ModuleArgs_Type_t dtype, const char *valist) {
   int nvals = 0, status = 0;
   char *name, *next, *nptr, *tmplist;
   char key[CP_MAXNAMELEN], val[CP_MAXNAMELEN];
@@ -455,101 +470,121 @@ static int parse_array (CmdParams_t *params, char *root, ModuleArgs_Type_t dtype
   LinkedList_t *listvals = NULL;
   ListNode_t *node = NULL;
   int dsize = 0;
+  CmdParams_Arg_t *thisarg = NULL;
+  ModuleArgs_Type_t origdtype = dtype;
 
   /* Need to store the actual array of values, not just the char * representation, and 
    * and not a string parameter per value. */
-  if (!params->actvals)
+
+  /* there is no limit to the size of bytes that an individual argument value
+   * can have - but since the arguments we're dealing with here are either
+   * ints, floats, or doubles, 128 bytes should be sufficient. */
+  listvals = list_llcreate(kARGSIZE, NULL);
+
+  tmplist = malloc (strlen (valist) + 1);
+  strcpy (tmplist, valist);
+  str_compress (tmplist);			     /*  remove white space  */
+  name = strip_delimiters (tmplist);			  /*  (), [], or {}  */
+  if (!name) return -1;
+
+  switch (dtype)
   {
-     cmdparams_initactvals(params);
+     case ARG_INTS:
+       dtype = ARG_INT;
+       dsize = sizeof(int);
+       break;
+     case ARG_FLOATS:
+       dtype = ARG_FLOAT;
+       dsize = sizeof(float);
+       break;
+     case ARG_DOUBLES:
+       dtype = ARG_DOUBLE;
+       dsize = sizeof(double);
+       break;
+     default:
+       fprintf(stderr, "Unexpected type '%d'\n", (int)dtype);
   }
 
-  if (params->actvals)
-  {
-     /* there is no limit to the size of bytes that an individual argument value
-      * can have - but since the arguments we're dealing with here are either
-      * ints, floats, or doubles, 128 bytes should be sufficient. */
-     listvals = list_llcreate(kARGSIZE, NULL);
+  /* dtype has been converted from the array type to the type of a single element
+   * (eg, ARG_INTS to ARG_INT). */
+  /*
+   *  name should contain a comma separated list of entities of the given type
+   */
+  char valbuf[kARGSIZE];
+  next = name;
+  while (next) {
+     nptr = next;
+     if ((next = (char *)strchr (nptr, ',')) != NULL) {
+        *next = 0;
+        next++;
+     }
+     if (!strlen (nptr)) continue;
+     /*  nptr now points to entity  */
+     snprintf(key, sizeof(key), "%s_%d_value", root, nvals);
+     thisarg = cmdparams_set(params, key, nptr);
+     thisarg->type = dtype;
 
-     tmplist = malloc (strlen (valist) + 1);
-     strcpy (tmplist, valist);
-     str_compress (tmplist);			     /*  remove white space  */
-     name = strip_delimiters (tmplist);			  /*  (), [], or {}  */
-     if (!name) return -1;
-     /*
-      *  name should contain a comma separated list of entities of the given type
+     /* Be careful - inserttail is going to copy kARGSIZE bytes into a new list node,
+      * so you can't use nptr as the final argument to inserttail, since nptr
+      * might point to something less than kARGSIZE bytes.
       */
-     char valbuf[kARGSIZE];
-     next = name;
-     while (next) {
-        nptr = next;
-        if ((next = (char *)strchr (nptr, ',')) != NULL) {
-           *next = 0;
-           next++;
-        }
-        if (!strlen (nptr)) continue;
-        /*  nptr now points to entity  */
-        snprintf(key, sizeof(key), "%s_%d_value", root, nvals);
-        cmdparams_set (params, key, nptr);
+     snprintf(valbuf, sizeof(valbuf), "%s", nptr);
+     list_llinserttail(listvals, valbuf);
 
-        /* Be careful - inserttail is going to copy kARGSIZE bytes into a new list node,
-         * so you can't use nptr as the final argument to inserttail, since nptr
-         * might point to something less than kARGSIZE bytes.
-         */
-        snprintf(valbuf, sizeof(valbuf), "%s", nptr);
-        list_llinserttail(listvals, valbuf);
+     nvals++;
+  }
 
-        nvals++;
-     }
-     sprintf (key, "%s_nvals", root);
-     sprintf (val, "%d", nvals);
-     cmdparams_set (params, key, val);
-     free (tmplist);
+  actvals = malloc(dsize * nvals);
 
+  /* Create yet another argument to hold the number of items in the array. Make it have type ARG_INT. */
+  sprintf (key, "%s_nvals", root);
+  sprintf (val, "%d", nvals);
+  thisarg = cmdparams_set (params, key, val);
+  thisarg->type = ARG_INT;
+  free (tmplist);
 
-     switch(dtype)
+  int ival = 0;
+  list_llreset(listvals);
+  while ((node = list_llnext(listvals)) != NULL)
+  {
+     if ((status = cmdparams_conv2type(node->data, 
+                                       dtype, 
+                                       (char *)(actvals) + dsize * ival, 
+                                       dsize)) != CMDPARAMS_SUCCESS)
      {
-        case ARG_INTS:
-          actvals = malloc(sizeof(int) * nvals);
-          dtype = ARG_INT;
-          dsize = sizeof(int);
-          break;
-        case ARG_FLOATS:
-          actvals = malloc(sizeof(float) * nvals);
-          dtype = ARG_FLOAT;
-          dsize = sizeof(float);
-          break;
-        case ARG_DOUBLES:
-          actvals = malloc(sizeof(double) * nvals);
-          dtype = ARG_DOUBLE;
-          dsize = sizeof(double);
-          break;
-        default:
-          fprintf(stderr, "Unexpected type '%d'\n", (int)dtype);
+        break;
      }
 
-     int ival = 0;
-     list_llreset(listvals);
-     while ((node = list_llnext(listvals)) != NULL)
+     ival++;
+  }
+
+  if (!status)
+  {
+     thisarg = (CmdParams_Arg_t *)hcon_lookup(params->args, root); /* should find root, got parsed in cmdparams_parsetokens() */
+     if (thisarg)
      {
-        if ((status = cmdparams_conv2type(node->data, 
-                                          dtype, 
-                                          (char *)(actvals) + dsize * ival, 
-                                          dsize)) != CMDPARAMS_SUCCESS)
+        thisarg->type = origdtype;
+        if (!thisarg->actvals)
         {
-           break;
+           thisarg->actvals = actvals;
+           thisarg->nelems = ival;
         }
-        ival++;
+        else
+        {
+           fprintf(stderr, "Attempt to parse arg array '%s' more than once.\n", root);
+           status = CMDPARAMS_FAILURE;
+        }
      }
-
-     if (!status)
+     else
      {
-        hcon_insert(params->actvals, root, &actvals);
+        fprintf(stderr, "Cannot locate expected argument'%s'.\n", root);
+        status = CMDPARAMS_FAILURE;
      }
+  }
 
-     if (listvals)
-     {
-        list_llfree(&listvals);
-     }
+  if (listvals)
+  {
+     list_llfree(&listvals);
   }
 
   return status;
@@ -801,16 +836,21 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
     */
   ModuleArgs_t *defps = gModArgs;
   int status;
+  CmdParams_Arg_t *thisarg = NULL;
 
-  XASSERT(parms->buffer = list_llcreate(sizeof(char *), NULL));
+ /* Initialize parms->args container. */
+  parms->args = hcon_create(sizeof(CmdParams_Arg_t), kKEYSIZE, (void (*)(const void *))FreeArg, NULL, NULL, NULL, 0);
 
-  parms->head = 0;
-  hash_init (&parms->hash, 503, 1, (int (*)(const void *, const void *))strcmp,
-    hash_universal_hash);
-  parms->num_args = 1;
-  XASSERT(parms->args = malloc ((argc+1)*sizeof (char *)));
-  parms->max_args = argc+1;
-  parms->args[0] = strdup (argv[0]);
+  if (!parms->args)
+  {
+     cmdparams_freeall(parms);
+     return CMDPARAMS_OUTOFMEMORY;
+  }
+
+
+  /* Put program path into parms->args */
+  thisarg = cmdparams_set(parms, NULL, argv[0]);
+  thisarg->type = ARG_STRING;
 
   /* save original cmd-line */
   int iarg = 0;
@@ -824,16 +864,19 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
 
   parms->argc = iarg;
 
-       /*  Parse all command line tokens (including contents of @references) */
+  /*  Parse all command line tokens (including contents of @references) */
   if ((status = cmdparams_parsetokens (parms, argc-1, argv+1, 0)))
     return status;
   if (cmdparams_exists (parms, "H") &&
       cmdparams_get_int (parms, "H", NULL) != 0)
     return CMDPARAMS_QUERYMODE;
 					  /* Parse declared argument values. */
-  if (defps) {
-    while (defps->type != ARG_END) {
-      if (defps->name && strlen (defps->name)) {
+  if (defps) 
+  {
+    while (defps->type != ARG_END)
+    {
+      if (defps->name && strlen (defps->name)) 
+      {
          /* Don't allow modules to use reserved names */
          if (cmdparams_isreserved(parms, defps->name))
          {
@@ -842,28 +885,37 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
                     defps->name);
          }
 
-	if (defps->value == NULL || strlen (defps->value) == 0) {
-		/*  Flags do not need to be set or cleared in defaults list  */
+	if (defps->value == NULL || strlen (defps->value) == 0) 
+        {
+           /*  Flags do not need to be set or cleared in defaults list  */
 	  if (defps->type == ARG_FLAG) {
 	    defps++;
 	    continue;
 	  }
-			   /*  This parameter requires a value - no default  */
-	  if (!cmdparams_exists (parms, defps->name)) {
+
+          /*  This parameter requires a value - no default  */
+	  if (!cmdparams_exists (parms, defps->name)) 
+          {
 	    fprintf (stderr, "Mandatory parameter \"%s\" is missing.\n",
 		defps->name);
 	    return CMDPARAMS_NODEFAULT;
 	  }
-	} else if (!cmdparams_exists (parms, defps->name))	
-					    /*  Use specified default value  */
-	  cmdparams_set (parms, defps->name, defps->value);
-/*  Replace the value of an enumerated type with the string representation of
-				  its integer value in the enumeration list  */
-/*  may be unnecessary  */
-	if (defps->type == ARG_NUME) {
+	} 
+        else if (!cmdparams_exists (parms, defps->name))
+        {	
+           /*  Use specified default value if the argument value was not provided on the cmd-line */
+           thisarg = cmdparams_set (parms, defps->name, defps->value);
+           thisarg->type = defps->type;
+        }
+
+        /*  Replace the value of an enumerated type with the string representation of
+            its integer value in the enumeration list  */
+        /*  may be unnecessary  */
+	if (defps->type == ARG_NUME) 
+        {
 	  char **names;
 	  char intrep[8];
-	  char *cfval = cmdparams_get_str (parms, defps->name, &status);
+	  const char *cfval = cmdparams_get_str (parms, defps->name, &status);
 	  int nval, nvals = parse_numerated (defps->range, &names);
 
 	  for (nval = 0; nval < nvals; nval++)
@@ -895,16 +947,18 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
           }
 
 				 /*  Evidently unnecessary, but a good idea  */
-	  cmdparams_remove (parms, defps->name);
-	  cmdparams_set (parms, defps->name, intrep);
+	  cmdparams_remove(parms, defps->name);
+	  thisarg = cmdparams_set (parms, defps->name, intrep);
+          thisarg->type = ARG_NUME;
 	}
 
+        /* Still in default-value handler */
 	if (defps->type == ARG_FLOATS || 
 	    defps->type == ARG_DOUBLES || 
 	    defps->type == ARG_INTS) 
 	{
            if ((status = parse_array (parms, defps->name, defps->type, 
-				     cmdparams_get_str (parms, defps->name, NULL))))
+                                      cmdparams_get_str (parms, defps->name, NULL))))
             fprintf (stderr, "array parsing returned error\n");
 	} 
 	else if (defps->type == ARG_FLOAT || 
@@ -940,35 +994,35 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
             /*  check if isfinite (minvalid), minopen, etc. and compare as necessary  */
 	  }
 	}
-      } else if (defps->type == ARG_VOID) {
+      } 
+      else if (defps->type == ARG_VOID) 
+      {
         fprintf (stderr,
 	    "Warning: Parsing of unnamed parameters in arguments list unimplemented\n");
-      } else {
+      } 
+      else 
+      {
 					       /*  This should never happen  */
         fprintf (stderr,
 	    "Module Error: Unnamed parameters must be declared type VOID\n");
 	return CMDPARAMS_FAILURE;
       }
+
       defps++;
     }
 	/*  Might want to report unparsed members following end declaration  */
   }
-  return hash_size (&parms->hash);  
+
+  return hcon_size(parms->args);  
 }
 
 void cmdparams_freeall (CmdParams_t *parms) {
   int i;
-  hash_free (&parms->hash);
 
-  if (parms->buffer)
-  {
-     list_llfree(&(parms->buffer));
-  }
-  
-  for (i=0; i<parms->num_args; i++)
-    free(parms->args[i]);
-  free (parms->args);
+  /* args */
+  hcon_destroy(&(parms->args));
 
+  /* argv */
   for (i = 0; i < parms->argc; i++)
   {
      if (parms->argv[i])
@@ -978,7 +1032,8 @@ void cmdparams_freeall (CmdParams_t *parms) {
   }
   free(parms->argv);
 
-  hcon_destroy(&(parms->actvals));
+
+  /* reserved */
   hcon_destroy(&(parms->reserved));
 }
 
@@ -1081,27 +1136,86 @@ int cmdparams_parsefile (CmdParams_t *parms, char *filename, int depth) {
 #undef SKIPWS
 #undef ISBLANK
 						/*  Add a new keyword  */
-void cmdparams_set (CmdParams_t *parms, const char *name, const char *value) {
-				/*  Insert name and value string in buffer  */
-  char *hashname = strdup(name);
-  char *hashvalu = strdup(value);
-  list_llinserttail(parms->buffer, &hashname);
-  list_llinserttail(parms->buffer, &hashvalu);
-  hash_insert (&parms->hash, hashname, hashvalu);
+CmdParams_Arg_t *cmdparams_set(CmdParams_t *parms, const char *name, const char *value) 
+{
+   /*  Insert name and value string in buffer  */
+   CmdParams_Arg_t *ret = NULL;
+   CmdParams_Arg_t arg;
+
+   /* Make a new arg structure */
+   memset(&arg, 0, sizeof(arg));
+
+   /* The type will be filled in by the default value structure. */
+
+   arg.strval = strdup(value);
+   
+   if (name && strlen(name))
+   {
+      arg.name = strdup(name);
+
+      if ((ret = hcon_lookup(parms->args, arg.name)))
+      {
+         /* If the argument already exists, then go ahead and modify its value (the second
+          * cmdparams_set() call for a argument 'wins'). */
+         FreeArg((void *)ret);
+         *ret = arg;
+      }
+      else
+      {
+         hcon_insert(parms->args, name, &arg);
+         ret = (CmdParams_Arg_t *)hcon_lookup(parms->args, name);
+      }
+   }
+   else
+   {
+      /* If no name, then this is an unnamed arg; create a dummy name so it can be place into the parms->args container. */
+      char namebuf[512];
+      snprintf(namebuf, sizeof(namebuf), "%s_%03d", CMDPARAMS_MAGICSTR, parms->numunnamed);
+
+      if (hcon_lookup(parms->args, namebuf))
+      {
+         /* This shouldn't happen - unnamed args never collide with each other. */
+         fprintf(stderr, "Unexpected argument-name collision for '%s'.\n", namebuf);
+      }
+      else
+      {
+         hcon_insert(parms->args, namebuf, &arg);
+         ret = (CmdParams_Arg_t *)hcon_lookup(parms->args, namebuf);
+         ret->unnamednum = parms->numunnamed++;
+      }
+   }
+
+   /* Don't free arg.strval - it belongs to parms->args now. */
+
+   return ret;
 }
 				  /*  determine if a flag or keyword exists  */
 int cmdparams_exists (CmdParams_t *parms, char *name) {
-  char *value;
+  const char *value;
   value = cmdparams_get_str (parms, name, NULL);
   return (value != NULL);
 }
 					 /*  remove a named flag or keyword  */
 void cmdparams_remove (CmdParams_t *parms, char *name) {
-  hash_remove (&parms->hash, name);
+   hcon_remove(parms->args, name);
 }
 		  /*  simple printing function used as argument to hash_map  */
-static void print (char *name, char *value) {
-  printf ("%s = %s\n", name, value);
+static void Argprint(const void *data) 
+{
+   CmdParams_Arg_t *arg = (CmdParams_Arg_t *)data;
+
+   char *name = arg->name;
+   int unnamednum = arg->unnamednum;
+   char *value = arg->strval;
+
+   if (name)
+   {
+      printf("%s = %s\n", name, value);
+   }
+   else
+   {
+      printf("unnamed arg %d = %s\n", unnamednum, value);
+   }
 }
 
 static char *argtypename (int type) {
@@ -1188,44 +1302,68 @@ void cmdparams_usage (char *module) {
 }
 		 /*  print all command flags, keywords and argument strings  */
 void cmdparams_printall (CmdParams_t *parms) {
-  int i;
-					      /*  print all named arguments  */
-  printf ("****** Named command line keywords:    ******\n");
-  hash_map (&parms->hash, (void (*)(const void *, const void *))print);
-					    /*  print all unnamed arguments  */
-  printf ("****** Unnamed command line arguments: ******\n");
-  for (i=0; i<parms->num_args; i++)
-    printf("$%d = %s\n", i, parms->args[i]);
+   hcon_map(parms->args, Argprint);
 }
-	      /*  For the shy programmer: Return number of argument strings  */
+
+/* Return number of unnamed arguments  */
 int cmdparams_numargs (CmdParams_t *parms) {
-  return parms->num_args;
+  return parms->numunnamed;
 }
 			     /*  Return program arguments strings by number  */
-char *cmdparams_getarg (CmdParams_t *parms, int num) {
-  if (num < parms->num_args) return parms->args[num];
-  else return NULL;
+const char *cmdparams_getarg (CmdParams_t *parms, int num) {
+  char namebuf[512];
+  CmdParams_Arg_t *arg = NULL;
+
+  snprintf(namebuf, sizeof(namebuf), "%s_%03d", CMDPARAMS_MAGICSTR, num);
+
+  if (num < parms->numunnamed)
+  {
+     arg = (CmdParams_Arg_t *)hcon_lookup(parms->args, namebuf);
+  }
+  
+  if (arg)
+  {
+     return arg->strval;
+  }
+  else
+  {
+     return NULL;
+  }
 }
 		      /*  Get values of keywords converted to various types  */
-char *cmdparams_get_str (CmdParams_t *parms, char *name, int *status) {
-  char *value;
-  int arg_num;
+const char *cmdparams_get_str(CmdParams_t *parms, char *name, int *status) {
+   const char *value = NULL;
+   int arg_num;
+   CmdParams_Arg_t *arg = NULL;
 
-  value = NULL;
-  if (name[0] == '$') {
-    if (sscanf (name+1, "%d", &arg_num) == 1)
-      value = cmdparams_getarg (parms, arg_num);
-  } else {
-    value = (char *)hash_lookup (&parms->hash, name);
-    if (value == NULL)  {
-		      /*  No such value. Try to get it from the environment  */
-      value = getenv (name);
-      if (value!=NULL) cmdparams_set (parms, name, value);
-    }
+   value = NULL;
+
+   if (name[0] == '$') 
+   {
+      if (sscanf (name+1, "%d", &arg_num) == 1)
+      {
+         value = cmdparams_getarg(parms, arg_num);
+      }
+   }
+  else 
+  {
+     arg = (CmdParams_Arg_t *)hcon_lookup(parms->args, name);
+     if (arg == NULL)  
+     {
+        /*  No such value. Try to get it from the environment  */
+        value = getenv (name);
+        if (value!=NULL) cmdparams_set (parms, name, value);
+     }
+     else
+     {
+        value = arg->strval;
+     }
   }
-  if (status)
-    *status = (value) ? CMDPARAMS_SUCCESS : CMDPARAMS_UNKNOWN_PARAM;      
-  return value;
+  
+   if (status)
+     *status = (value) ? CMDPARAMS_SUCCESS : CMDPARAMS_UNKNOWN_PARAM;      
+  
+   return value;
 }
 
 int cmdparams_isflagset (CmdParams_t *parms, char *name) {
@@ -1247,7 +1385,8 @@ int cmdparams_isflagset (CmdParams_t *parms, char *name) {
 
 int8_t cmdparams_get_int8 (CmdParams_t *parms, char *name, int *status) {
   int stat;
-  char *str_value, *endptr;
+  const char *str_value;
+  char *endptr;
   int64_t val;
   int8_t value = CP_MISSING_CHAR;
 
@@ -1270,7 +1409,8 @@ int8_t cmdparams_get_int8 (CmdParams_t *parms, char *name, int *status) {
 
 int16_t cmdparams_get_int16 (CmdParams_t *parms, char *name, int *status) {
   int stat;
-  char *str_value, *endptr;
+  const char *str_value;
+  char *endptr;
   int64_t val;
   int16_t value = CP_MISSING_SHORT;
 
@@ -1298,27 +1438,43 @@ int cmdparams_get_int (CmdParams_t *parms, char *name, int *status) {
 int cmdparams_get_intarr(CmdParams_t *parms, char *name, int **arr, int *status)
 {
    int stat = CMDPARAMS_SUCCESS;
-   char buf[128];
-   int **arrint = NULL;
+   int *arrint = NULL;
+   CmdParams_Arg_t *arg = NULL;
+   int nelems = 0;
 
    if (arr)
    {
-      arrint = (int **)hcon_lookup(parms->actvals, name);
-      *arr = *arrint;
-   }
+      arg = (CmdParams_Arg_t *)hcon_lookup(parms->args, name);
 
+      if (arg)
+      {
+         arrint = (int *)arg->actvals;
+         *arr = arrint;
+      }
+      else
+      {
+         fprintf(stderr, "Unknown keyword name '%s'.\n", name);
+         stat = CMDPARAMS_UNKNOWN_PARAM;
+      }
+
+      if (!stat)
+      {
+         nelems = arg->nelems;
+      }
+   }
+   
    if (status)
    {
       *status = stat;
    }
 
-   snprintf(buf, sizeof(buf), "%s_nvals", name);
-   return cmdparams_get_int(parms, buf, status);
+   return nelems;
 }
 
 int32_t cmdparams_get_int32 (CmdParams_t *parms, char *name, int *status) {
   int stat;
-  char *str_value, *endptr;
+  const char *str_value;
+  char *endptr;
   int64_t val;
   int32_t value = CP_MISSING_INT;
 
@@ -1341,7 +1497,8 @@ int32_t cmdparams_get_int32 (CmdParams_t *parms, char *name, int *status) {
 
 int64_t cmdparams_get_int64 (CmdParams_t *parms, char *name, int *status) {
   int stat;
-  char *str_value, *endptr;
+  const char *str_value;
+  char *endptr;
   int64_t val;
   int64_t value = CP_MISSING_LONGLONG;
 
@@ -1366,7 +1523,8 @@ int64_t cmdparams_get_int64 (CmdParams_t *parms, char *name, int *status) {
 
 float cmdparams_get_float (CmdParams_t *parms, char *name, int *status) {
   int stat;
-  char *str_value, *endptr;
+  const char *str_value;
+  char *endptr;
   double val;
   float value = CP_MISSING_FLOAT;
   char *strvalNtsp = NULL;
@@ -1403,7 +1561,8 @@ float cmdparams_get_float (CmdParams_t *parms, char *name, int *status) {
 
 double cmdparams_get_double (CmdParams_t *parms, char *name, int *status) {
   int stat;
-  char *str_value, *endptr;
+  const char *str_value;
+  char *endptr;
   double val;
   double value = CP_MISSING_DOUBLE;
   char *strvalNtsp = NULL;
@@ -1442,38 +1601,55 @@ double cmdparams_get_double (CmdParams_t *parms, char *name, int *status) {
 int cmdparams_get_dblarr(CmdParams_t *parms, char *name, double **arr, int *status)
 {
    int stat = CMDPARAMS_SUCCESS;
-   char buf[128];
-   double **arrdbl = NULL;
+   double *arrint = NULL;
+   CmdParams_Arg_t *arg = NULL;
+   int nelems = 0;
 
    if (arr)
    {
-      arrdbl = (double **)hcon_lookup(parms->actvals, name);
-      *arr = *arrdbl;
-   }
+      arg = (CmdParams_Arg_t *)hcon_lookup(parms->args, name);
 
+      if (arg)
+      {
+         arrint = (double *)arg->actvals;
+         *arr = arrint;
+      }
+      else
+      {
+         fprintf(stderr, "Unknown keyword name '%s'.\n", name);
+         stat = CMDPARAMS_UNKNOWN_PARAM;
+      }
+
+      if (!stat)
+      {
+         nelems = arg->nelems;
+      }
+   }
+   
    if (status)
    {
       *status = stat;
    }
 
-   snprintf(buf, sizeof(buf), "%s_nvals", name);
-   return cmdparams_get_int(parms, buf, status);
+   return nelems;
 }
 
 TIME cmdparams_get_time (CmdParams_t *parms, char *name, int *status) {
   int stat;
-  char *str_value;
+  const char *str_value;
   TIME value = CP_MISSING_TIME;
 
   str_value = cmdparams_get_str (parms, name, &stat);
 
   if (!stat) {
-    value = sscan_time (str_value);
-    double mtime = CP_MISSING_TIME;
-    if (*(int64_t *)&value - *(int64_t *)&mtime == 0) {
-      value = CP_MISSING_TIME;
-      stat =  CMDPARAMS_INVALID_CONVERSION;
-    }
+     char *tmp = strdup(str_value);
+     value = sscan_time (tmp);
+     double mtime = CP_MISSING_TIME;
+     if (*(int64_t *)&value - *(int64_t *)&mtime == 0) {
+        value = CP_MISSING_TIME;
+        stat =  CMDPARAMS_INVALID_CONVERSION;
+     }
+     free(tmp);
   }
 
   if (status) *status = stat;
@@ -1590,7 +1766,7 @@ int cmdparams_isreserved(CmdParams_t *params, const char *key)
 
 			/*  Get values of keywords converted to various types,
 						 but without status options  */
-char *params_get_str (CmdParams_t *parms, char *name) {
+const char *params_get_str (CmdParams_t *parms, char *name) {
   return cmdparams_get_str (parms, name, NULL);
 }
 

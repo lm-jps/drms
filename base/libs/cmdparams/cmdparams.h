@@ -27,6 +27,9 @@ of parameters expected to be available to a module as a global variable.
 #define CMDPARAMS_INITBUFSZ (4096)
 #define CMDPARAMS_MAXLINE (1024)
 #define CMDPARAMS_MAXNEST (10)
+#define CMDPARAMS_MAXARGNAME (512)
+#define CMDPARAMS_MAGICSTR "CpUnNamEDaRg"
+
 			       /* Status codes returned by cmdparams_get_xxx */
 #define CMDPARAMS_SUCCESS		(0)
 #define CMDPARAMS_FAILURE		(-1)
@@ -91,24 +94,34 @@ struct ModuleArgs_struct {
 */
 typedef struct ModuleArgs_struct ModuleArgs_t; 
 
+/* Structure containing a single argument's information */
+/* If a whitespace delimited argument has appeared on the command line, then 
+ * a CmdParams_Arg_t structure is created for that argument. */
+struct CmdParams_Arg_struct
+{
+  char *name;             /* If unnamed, then name is NULL. Unnamed args are still hashed - the key is a magic string followed by the 
+                           * number of the unnamed argument. */
+  int unnamednum;         /* If unnamed, the 0-based number of the argument. */
+  ModuleArgs_Type_t type; /* The type of argument (eg., double, void, string, dataset, etc.). This gets set ONLY if 
+                           * something has specified an expected data type. Typically, this would be done 
+                           * by the code that handles default values.*/
+  char *strval;           /* This is the type-indeterminate value of the argument (stored as a string). */
+  void *actvals;          /* An array of values resolved into a 'data' type (a cache, so we don't resolve repeatedly). 
+                           * May have just one value. */
+  int nelems;             /* Number of elements in actvals. */
+  int8_t accessed;        /* 1 if calling code accessed the argument with a cmdparams_get...() call. */
+};
+
+typedef struct CmdParams_Arg_struct CmdParams_Arg_t;
+
 /** @brief Command-line parameter structure */
 struct CmdParams_struct {
-  /** @brief Number of <name>=<value> cmd-line argument pairs */
-  int num_args;
-  /** @brief Number of argument slots allocated */
-  int max_args;
-  /** @brief Array of <name>=<value> cmd-line argument pairs */
-  char **args;
-  /** @brief Hash table mapping <name> to <value> for each cmd-line argument */
-  Hash_Table_t hash;
-  int buflen;
-  int head;
-  //  char *buffer;
-  LinkedList_t *buffer;
-  HContainer_t *actvals;
-  int argc; /* original argc passed to main() */
-  char **argv; /* contains ALL cmd-line args - args doesn't have them all! */
-  HContainer_t *reserved;
+  HContainer_t *args;     /* A hash of CmdParams_Arg_t structures, one struct per arg. */
+  int argc;               /* original argc passed to main(). */
+  char **argv;            /* contains ALL cmd-line args unparsed (so the @filerefs are not resolved). */
+  int numunnamed;         /* Number of unnamed arguments in param structure. */
+  HContainer_t *reserved; /* A hash of reserved keyword names (names that the program may not use - specified by
+                           * the program itself). */
 };
 /** @brief CmdParams struct reference */
 typedef struct CmdParams_struct CmdParams_t;
@@ -260,10 +273,10 @@ typedef struct CmdParams_struct CmdParams_t;
 int cmdparams_parse (CmdParams_t *parms, int argc,  char *argv[]);
 
 int cmdparams_parsefile (CmdParams_t *parms, char *filename, int depth);
-void cmdparams_set (CmdParams_t *parms, const char *name, const char *value);
+CmdParams_Arg_t *cmdparams_set (CmdParams_t *parms, const char *name, const char *value);
 int cmdparams_exists (CmdParams_t *parms, char *name);
 void cmdparams_printall (CmdParams_t *parms);
-char *cmdparams_getarg (CmdParams_t *parms, int num);
+const char *cmdparams_getarg (CmdParams_t *parms, int num);
 void cmdparams_usage (char *name);
 int cmdparams_numargs (CmdParams_t *parms);
 
@@ -322,7 +335,7 @@ returns a NULL pointer.
 \a cmdparams_get_XXX) cannot find a hash table entry for the requested
 name, it will use the corresponding environment variable, if it exists.
 */
-char *cmdparams_get_str (CmdParams_t *parms, char *name, int *status);
+const char *cmdparams_get_str (CmdParams_t *parms, char *name, int *status);
 
 /** 
 Returns a double representing the internal time representation of a 
@@ -350,7 +363,7 @@ without the third argument for a status value.
 This function is completely analogous to the \a cmdparams_get_XXX version,
 except that no status is returned.
 */
-char *params_get_str (CmdParams_t *parms, char *name);
+const char *params_get_str (CmdParams_t *parms, char *name);
 int8_t params_get_int8 (CmdParams_t *parms, char *name);
 int16_t params_get_int16 (CmdParams_t *parms, char *name);
 int32_t params_get_int32 (CmdParams_t *parms, char *name);

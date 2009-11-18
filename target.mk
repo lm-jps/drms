@@ -41,7 +41,7 @@ $(OBJDIR):
 	+@[ -d $@/base/drms/libs/main/f ] || mkdir -p $@/base/drms/libs/main/f
 	+@[ -d $@/base/drms/libs/main/idl ] || mkdir -p $@/base/drms/libs/main/idl
 	+@[ -d $@/base/drms/libs/meta ] || mkdir -p $@/base/drms/libs/meta
-	+@[ -d $@/base/libs/cmdparams/fpic ] || mkdir -p $@/base/libs/cmdparams/fpic
+	+@[ -d $@/base/libs/cmdparams/test ] || mkdir -p $@/base/libs/cmdparams/test
 	+@[ -d $@/base/libs/db/client ] || mkdir -p $@/base/libs/db/client
 	+@[ -d $@/base/libs/db/client_fpic ] || mkdir -p $@/base/libs/db/client_fpic
 	+@[ -d $@/base/libs/db/server ] || mkdir -p $@/base/libs/db/server
