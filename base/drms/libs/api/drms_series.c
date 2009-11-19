@@ -535,6 +535,13 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
   /* series_lower is fully qualified, i.e., it contains namespace */
   strtolower(series_lower);
 
+  /*Check to see if the series exists first */
+  if (!drms_series_exists(env, series_lower, &drmsstatus))
+  {
+     fprintf(stderr, "The series '%s' does not exist.  Please enter a valid series name.\n", series);
+     goto bailout;
+  }
+
   if (!drms_series_candeleterecord(env, series_lower))
   {
      fprintf(stderr, "Permission failure - cannot delete series '%s'.\n", series);
