@@ -9,6 +9,8 @@ static char *blacklist[] =
    NULL
 };
 
+/* If an argument is on the black list, then we don't ever add the argument to 
+ * the cmdparams structure.  */
 static int OnBlackList(const char *argname)
 {
    int onlist = 0;
@@ -28,29 +30,18 @@ static int OnBlackList(const char *argname)
    return onlist;
 }
 
+/* Doesn't set the arg->accessed flag. */
 int drms_cmdparams_exists(CmdParams_t *parms, const char *name)
 {
    int exists = 0;
-   int arg_num;
 
-   if (name[0] == '$') 
+   /* Doesn't add new args to parms->args from the environment. */
+   exists = (cmdparams_getargstruct(parms, name) != NULL);
+
+   if (!exists && !OnBlackList(name) && cmdparams_exists(parms, name))
    {
-      if (sscanf(name + 1, "%d", &arg_num) == 1)
-      {
-         exists = arg_num < parms->numunnamed;
-      }
-   } 
-   else 
-   {
-      exists = (hcon_lookup(parms->args, name) != NULL);
-      if (!exists)
-      {
-         /* could be in environment - but don't allow "black-listed" variables */
-         if (!OnBlackList(name))
-         {
-            exists = (getenv (name) != NULL);
-         }
-      }
+      /* The arg was in the environment, so if user requests the arg, it will exist. */
+      exists = 1;
    }
 
    return exists;
@@ -59,42 +50,13 @@ int drms_cmdparams_exists(CmdParams_t *parms, const char *name)
 const char *drms_cmdparams_get_str(CmdParams_t *parms, const char *name, int *status)
 {
    const char *str = NULL;
-   int arg_num;
-   CmdParams_Arg_t *arg = NULL;
    int statint = DRMS_SUCCESS;
 
    /* Always check for existence first - this will ensure that code will not look for 
     * the black-listed variables in the environment */
    if (drms_cmdparams_exists(parms, name))
    {
-      if (name[0] == '$') 
-      {
-         if (sscanf(name + 1, "%d", &arg_num) == 1)
-         {
-            str = cmdparams_getarg(parms, arg_num);
-         }
-      } 
-      else 
-      {
-         arg = (CmdParams_Arg_t *)(hcon_lookup(parms->args, name));
-         
-         if (arg)
-         {
-            str = arg->strval;
-         }
-
-         if (!str)
-         {
-            /* MUST be in environment - it exists, but not found in hash table */           
-            str = getenv (name);
-            XASSERT(str != NULL);
-
-            if (str != NULL)
-            {
-               cmdparams_set(parms, name, str);
-            }
-         }
-      }
+      str = cmdparams_get_str(parms, name, &statint);
    }
    else
    {

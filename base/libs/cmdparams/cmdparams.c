@@ -75,6 +75,47 @@ const double gNHugeVal = -HUGE_VAL;
 #define kARGSIZE     (128)
 #define kKEYSIZE     (128)
 
+/* Name can be the actual name for a named arg, or for an unnamed arg, it can be the
+ * pseudo name under which the value is hashed (ie., CpUnNamEDaRg_XXX). Or, for unnamed
+ * args, the name can be $XXX, where XXX is the number of the arg. Or, unammed
+ * args can be identified by setting the num parameter to the the number of the arg.
+ * If both name and num are set, then name takes precedence.
+ */
+static CmdParams_Arg_t *GetCPArg(CmdParams_t *parms, const char *name, int *num)
+{
+   CmdParams_Arg_t *arg = NULL;
+   int arg_num = -1;
+
+   if (name[0] == '$' || (!name && num))
+   {
+      char namebuf[512];
+
+      if (name)
+      {
+         if (sscanf(name + 1, "%d", &arg_num) != 1)
+         {
+            arg_num = -1;
+         }
+      }
+      else
+      {
+         arg_num = *num;
+      }
+
+      if (arg_num >=0 && arg_num < parms->numunnamed)
+      {
+         snprintf(namebuf, sizeof(namebuf), "%s_%03d", CMDPARAMS_MAGICSTR, arg_num);
+         arg = (CmdParams_Arg_t *)hcon_lookup(parms->args, namebuf);
+      }
+   }
+   else 
+   {
+      arg = (CmdParams_Arg_t *)hcon_lookup(parms->args, name);
+   }
+  
+   return arg;
+}
+
 /* DEEP free arg, but don't actually free the arg structure. */
 static void FreeArg(const void *data)
 {
@@ -913,43 +954,52 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
         /*  may be unnecessary  */
 	if (defps->type == ARG_NUME) 
         {
-	  char **names;
-	  char intrep[8];
-	  const char *cfval = cmdparams_get_str (parms, defps->name, &status);
-	  int nval, nvals = parse_numerated (defps->range, &names);
+           char **names;
+           char intrep[8];
+           const char *cfval = NULL;
 
-	  for (nval = 0; nval < nvals; nval++)
-          {
-             if (!(strcmp (cfval, names[nval]))) break;
-          }
+           thisarg = GetCPArg(parms, defps->name, NULL);
+          
+           if (thisarg)
+           {
+              cfval = thisarg->strval;
 
-	  if (nval >= nvals) {
-	    fprintf (stderr,
-	        "Parameter \"%s\" is out of permissible range:\n  [%s]\n",
-		defps->name, defps->range);
-	    return CMDPARAMS_FAILURE;
-	  }
-	  sprintf (intrep, "%d", nval);
+              int nval, nvals = parse_numerated (defps->range, &names);
 
-          /* remove leak */
-          if (names)
-          {
-             for (nval = 0; nval < nvals; nval++)
-             {
-                if (names[nval])
-                {
-                   free(names[nval]);
-                   names[nval] = NULL;
-                }
-             }
+              for (nval = 0; nval < nvals; nval++)
+              {
+                 if (!(strcmp (cfval, names[nval]))) break;
+              }
 
-             free(names);
-          }
+              if (nval >= nvals) {
+                 fprintf (stderr,
+                          "Parameter \"%s\" is out of permissible range:\n  [%s]\n",
+                          defps->name, defps->range);
+                 return CMDPARAMS_FAILURE;
+              }
 
-				 /*  Evidently unnecessary, but a good idea  */
-	  cmdparams_remove(parms, defps->name);
-	  thisarg = cmdparams_set (parms, defps->name, intrep);
-          thisarg->type = ARG_NUME;
+              sprintf (intrep, "%d", nval);
+
+              /* remove leak */
+              if (names)
+              {
+                 for (nval = 0; nval < nvals; nval++)
+                 {
+                    if (names[nval])
+                    {
+                       free(names[nval]);
+                       names[nval] = NULL;
+                    }
+                 }
+
+                 free(names);
+              }
+
+              /* replace the enumeration key string (eg, "red") with the index value (eg, 3). */
+              cmdparams_remove(parms, defps->name);
+              thisarg = cmdparams_set (parms, defps->name, intrep);
+              thisarg->type = ARG_NUME;
+           }
 	}
 
         /* Still in default-value handler */
@@ -957,9 +1007,9 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
 	    defps->type == ARG_DOUBLES || 
 	    defps->type == ARG_INTS) 
 	{
-           if ((status = parse_array (parms, defps->name, defps->type, 
-                                      cmdparams_get_str (parms, defps->name, NULL))))
-            fprintf (stderr, "array parsing returned error\n");
+           thisarg = GetCPArg(parms, defps->name, NULL);
+           if ((status = parse_array (parms, defps->name, defps->type, thisarg->strval)))
+             fprintf (stderr, "array parsing returned error\n");
 	} 
 	else if (defps->type == ARG_FLOAT || 
                  defps->type == ARG_DOUBLE ||
@@ -980,6 +1030,9 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
             else
             {
                double val = cmdparams_get_double(parms, defps->name, NULL);
+               thisarg = GetCPArg(parms, defps->name, NULL);
+               thisarg->accessed = 0; /* cmdparams_get_double() sets the accessed flag */
+
                if (minopen && !isinf(minvalid) && val <= minvalid ||
                    !minopen && !isinf(minvalid) && val < minvalid ||
                    maxopen && !isinf(maxvalid) && val >= maxvalid ||
@@ -1191,9 +1244,24 @@ CmdParams_Arg_t *cmdparams_set(CmdParams_t *parms, const char *name, const char 
 }
 				  /*  determine if a flag or keyword exists  */
 int cmdparams_exists (CmdParams_t *parms, char *name) {
-  const char *value;
-  value = cmdparams_get_str (parms, name, NULL);
-  return (value != NULL);
+   int exists = 0;
+   CmdParams_Arg_t *arg = GetCPArg(parms, name, NULL);
+
+   if (!arg)
+   {
+      if (getenv(name) != NULL)
+      {
+         /* It exists in the environment, so when the user calls cmdparams_get...()
+          * it will exist.*/
+         exists = 1;
+      }
+   }
+   else
+   {
+      exists = 1;
+   }
+
+   return exists;
 }
 					 /*  remove a named flag or keyword  */
 void cmdparams_remove (CmdParams_t *parms, char *name) {
@@ -1323,6 +1391,7 @@ const char *cmdparams_getarg (CmdParams_t *parms, int num) {
   
   if (arg)
   {
+     arg->accessed = 1;
      return arg->strval;
   }
   else
@@ -1333,33 +1402,25 @@ const char *cmdparams_getarg (CmdParams_t *parms, int num) {
 		      /*  Get values of keywords converted to various types  */
 const char *cmdparams_get_str(CmdParams_t *parms, char *name, int *status) {
    const char *value = NULL;
-   int arg_num;
    CmdParams_Arg_t *arg = NULL;
 
-   value = NULL;
-
-   if (name[0] == '$') 
+   arg = GetCPArg(parms, name, NULL);
+   if (arg)
    {
-      if (sscanf (name+1, "%d", &arg_num) == 1)
+      value = arg->strval;
+      arg->accessed = 1;
+   }
+   else
+   {
+      /*  No such value. Try to get it from the environment  */
+      value = getenv(name);
+      if (value != NULL) 
       {
-         value = cmdparams_getarg(parms, arg_num);
+         arg = cmdparams_set(parms, name, value);
+         arg->accessed = 1;
       }
    }
-  else 
-  {
-     arg = (CmdParams_Arg_t *)hcon_lookup(parms->args, name);
-     if (arg == NULL)  
-     {
-        /*  No such value. Try to get it from the environment  */
-        value = getenv (name);
-        if (value!=NULL) cmdparams_set (parms, name, value);
-     }
-     else
-     {
-        value = arg->strval;
-     }
-  }
-  
+
    if (status)
      *status = (value) ? CMDPARAMS_SUCCESS : CMDPARAMS_UNKNOWN_PARAM;      
   
@@ -1367,22 +1428,30 @@ const char *cmdparams_get_str(CmdParams_t *parms, char *name, int *status) {
 }
 
 int cmdparams_isflagset (CmdParams_t *parms, char *name) {
-   if (strlen(name) > 1)
-   {
-      char *fbuf = strdup(name);
-      int ret = 0;
+   CmdParams_Arg_t *arg = NULL;
 
-      strtolower(fbuf);
-      ret = cmdparams_exists(parms, fbuf);
-      free(fbuf);
-      return ret;
+   arg = GetCPArg(parms, name, NULL);
+
+   if (arg)
+   {
+      arg->accessed = 1;
    }
 
-  if (cmdparams_exists (parms, name)) {
-    return cmdparams_get_int (parms, name, NULL);
-  } else return 0;
-}
+   if (strlen(name) > 1)
+   {
+      return (arg != NULL);
+   }
 
+   if (arg)
+   {
+      return cmdparams_get_int(parms, name, NULL);
+   }
+   else
+   {
+      return 0;
+   }
+}
+//xxxxx
 int8_t cmdparams_get_int8 (CmdParams_t *parms, char *name, int *status) {
   int stat;
   const char *str_value;
@@ -1448,8 +1517,16 @@ int cmdparams_get_intarr(CmdParams_t *parms, char *name, int **arr, int *status)
 
       if (arg)
       {
-         arrint = (int *)arg->actvals;
-         *arr = arrint;
+         if (arg->type != ARG_INTS)
+         {
+            fprintf(stderr, "Argument '%s' is not an array of integers.\n", name);
+            stat = CMDPARAMS_INVALID_CONVERSION;
+         }
+         else
+         {
+            arrint = (int *)arg->actvals;
+            *arr = arrint;
+         }
       }
       else
       {
@@ -1611,8 +1688,16 @@ int cmdparams_get_dblarr(CmdParams_t *parms, char *name, double **arr, int *stat
 
       if (arg)
       {
-         arrint = (double *)arg->actvals;
-         *arr = arrint;
+         if (arg->type != ARG_DOUBLES)
+         {
+            fprintf(stderr, "Argument '%s' is not an array of doubles.\n", name);
+            stat = CMDPARAMS_INVALID_CONVERSION;
+         }
+         else
+         {
+            arrint = (double *)arg->actvals;
+            *arr = arrint;
+         }
       }
       else
       {
@@ -1812,4 +1897,9 @@ double params_get_double (CmdParams_t *parms, char *name) {
 
 TIME params_get_time (CmdParams_t *parms, char *name) {
   return cmdparams_get_time (parms, name, NULL);
+}
+
+CmdParams_Arg_t *cmdparams_getargstruct(CmdParams_t* parms, const char *name)
+{
+   return GetCPArg(parms, name, NULL);
 }

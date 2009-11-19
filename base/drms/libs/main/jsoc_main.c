@@ -362,7 +362,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   int status;
   char *user, unknown[]="unknown";
   DB_Handle_t *db_handle;
-  char *dbhost, *dbuser, *dbpasswd, *dbname, *sessionns;
+  const char *dbhost, *dbuser, *dbpasswd, *dbname, *sessionns;
   int printrel = 0;
   char reservebuf[128];
 
