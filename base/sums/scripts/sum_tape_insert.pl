@@ -23,6 +23,10 @@ sub usage {
 if($#ARGV != 0) {
   &usage;
 }
+if(!($PGPORT = $ENV{'SUMPGPORT'})) {
+  print "You must have ENV SUMPGPORT set to the port number, e.g. 5430\n";
+  exit;
+}
 $IDTBL = $ARGV[0];
 print "Need hmi password to run: passwd =";
 ReadMode('noecho');
@@ -39,7 +43,7 @@ $password = "jimshoom";
 $hostdb = "hmidb";      #host where Postgres runs
 
 #First connect to database
-  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb", "$user", "$password");
+  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb;port=$PGPORT", "$user", "$password");
   if ( !defined $dbh ) {
     die "Cannot do \$dbh->connect: $DBI::errstr\n";
   }

@@ -52,6 +52,11 @@ if($user ne "production") {
   print "You must be user \'production\' to run sum_bad_permissions.pl\n";
   exit;
 }
+if(!($PGPORT = $ENV{'SUMPGPORT'})) {
+  print "You must have ENV SUMPGPORT set to the port number, e.g. 5430\n";
+  exit;
+}
+
 print "This is going to modify the SUMS DB tables.\n";
 print "Need hmi password to run: passwd =";
 ReadMode('noecho');
@@ -69,7 +74,7 @@ $hostdb = "hmidb";      #host where Postgres runs
 open(ID, $infile) || die "Can't open $infile: $!\n";
 
 #connect to database
-  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb", "$user", "$password");
+  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb;port=$PGPORT", "$user", "$password");
   if ( !defined $dbh ) {
     die "Cannot do \$dbh->connect: $DBI::errstr\n";
   }
