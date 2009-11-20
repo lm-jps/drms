@@ -104,9 +104,14 @@ if($playback && $interactive) {
 #$ENV{'ORACLE_SID'} = $DB;
 #$ENV{'TWO_TASK'} = $DB;
 #$user = "jim";
-if($DB eq "jsoc_sums") {
-  $ENV{'PGPORT'} = "5434";	#jsoc_sums db uses non-default PGPORT
+#if($DB eq "jsoc_sums") {
+#  $ENV{'PGPORT'} = "5434";	#jsoc_sums db uses non-default PGPORT
+#}
+if(!($PGPORT = $ENV{'SUMPGPORT'})) {
+  print "You must have ENV SUMPGPORT set to the port number, e.g. 5430\n";
+  exit;
 }
+
 $hostdb = $HOSTDB;      #host where Postgres runs
 $UID = $<;              #get real user id
 #$HOME = $ENV{'HOME'};
@@ -169,7 +174,7 @@ my(@pl3) = qw/-side left/;
 
 #First connect to database
   #$dbh = DBI->connect( '', "$login", "$passw", 'Oracle' );
-  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb", "$user", "$password");
+  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb;port=$PGPORT", "$user", "$password");
   if ( !defined $dbh ) {
     die "Cannot do \$dbh->connect: $DBI::errstr\n";
   }

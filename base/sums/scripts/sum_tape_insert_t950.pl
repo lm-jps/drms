@@ -11,7 +11,11 @@ use Term::ReadKey;
 #$DB = "jsoc";
 #$DB = "jim";
 $DB = "jsoc_sums";
-$PGPORT=5434;
+#$PGPORT=5434;
+if(!($PGPORT = $ENV{'SUMPGPORT'})) {
+  print "You must have ENV SUMPGPORT set to the port number, e.g. 5430\n";
+  exit;
+}
 
 #$IDTBL = "/home/ora10/SUM/tapeid.list"; # our initial set of tapes
 #$IDTBL = "/home/jim/cvs/JSOC/base/sums/script/tapeid.list"; #for t120

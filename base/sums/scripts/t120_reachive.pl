@@ -43,7 +43,12 @@ sub commify {
 $HOSTDB = "hmidb";      #host where DB runs
 $DB = "jsoc_sums";
 $lastfnum = 0;
-$PGPORT = 5434;
+#$PGPORT = 5434;
+if(!($PGPORT = $ENV{'SUMPGPORT'})) {
+  print "You must have ENV SUMPGPORT set to the port number, e.g. 5430\n";
+  exit;
+}
+
 while ($ARGV[0] =~ /^-/) {
   $_ = shift;
   if (/^-h(.*)/) {
