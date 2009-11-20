@@ -9,7 +9,8 @@ use Term::ReadKey;
 
 $RESPPROG = 0x20000613;
 $RESPDECIMALSTR = " 536872467";   #And notice leading space
-$SUMSERVER = "d00.Stanford.EDU";  #defined in SUM.h
+#$SUMSERVER = "d00.Stanford.EDU";  #defined in SUM.h
+$SUMSERVER = "j1";
 
 $| = 1;		#flush output as we go
 $UID = $<;	#real user id
