@@ -71,7 +71,11 @@ $HOSTDC = "dcs0";	# (Obsolete) default datacapture to send to
 $TLMDSHMI = "hmi.tlme"; #series of .tlm files to query
 $TLMDSAIA = "aia.tlme"; #series of .tlm files to query
 $DB = "jsoc_sums";
-$PGPORT = 5434;
+#$PGPORT = 5434;
+if(!($PGPORT = $ENV{'SUMPGPORT'})) {
+  print "You must have ENV SUMPGPORT set to the port number, e.g. 5430\n";
+  exit;
+}
 $PARC_ROOT = "/usr/local/logs/parc/";
 #$SSH_INFO = "/home/production/cvs/JSOC/base/sums/scripts/pgaginfo";
 $SSH_INFO = "/var/tmp/ssh-agent.env";
