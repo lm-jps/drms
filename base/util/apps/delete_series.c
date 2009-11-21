@@ -43,10 +43,19 @@ int DoIt(void) {
   int len;
   char *series;
   char yesno[20];
+  char *series_lower;
+  int drmsstatus = DRMS_SUCCESS;
 					    /* Parse command line parameters */
   if (cmdparams_numargs (&cmdparams) < 2) goto usage;
 							  /* Get series name */
   series  = cmdparams_getarg (&cmdparams, 1);
+  series_lower = strdup(series);
+
+  /*See if series exists before going through any other checks */
+  if (!drms_series_exists(drms_env, series_lower, &drmsstatus))
+  { printf("***** The series %s does not exist, and cannot be removed. *****\n Please try again with a valid series name\n", series);
+      return 1;
+  } 
 
   /* Remove existing series */
   printf("You are about to permanently erase all metadata for the series "
