@@ -8,14 +8,18 @@ d		:= $(dir)
 ADD_TGT_$(d) := -DSUMT120 -DSUMNOAO
 
 ifeq ($(HOST),dcs0.jsoc.Stanford.EDU)
-        ADD_TGT_$(d) := -DSUMDC
+        ADD_TGT_$(d) := -DSUMDC -DDCS0
 endif
 ifeq ($(HOST),dcs1.jsoc.Stanford.EDU)
-        ADD_TGT_$(d) := -DSUMDC
+        ADD_TGT_$(d) := -DSUMDC -DDCS1
 endif
 ifeq ($(HOST),dcs2.jsoc.Stanford.EDU)
-        ADD_TGT_$(d) := -DSUMDC
+        ADD_TGT_$(d) := -DSUMDC -DDCS2
 endif
+ifeq ($(HOST),dcs3.jsoc.Stanford.EDU)
+        ADD_TGT_$(d) := -DSUMDC -DDCS3
+endif
+
 ifeq ($(HOST),d00.Stanford.EDU)
         ADD_TGT_$(d) := -DSUMT120
 endif
@@ -50,7 +54,7 @@ S_$(d)		:= $(notdir $(LIBSUM))
 #endif
 
 $(OBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk $(PG_$(d))
-$(OBJ_$(d)):	CF_TGT := $(PGH) -O0 $(CF_TGT_$(d))
+$(OBJ_$(d)):	CF_TGT := -I$(PGIPATH) -O0 $(CF_TGT_$(d))
 $(OBJ_$(d)):	%.o:	%.c
 		$(COMP)
 
