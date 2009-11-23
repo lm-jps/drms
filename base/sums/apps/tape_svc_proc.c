@@ -626,6 +626,7 @@ KEY *readdo_1(KEY *params) {
   }
   user = getkey_str(params, "username");
   uid = getkey_uint64(params, "uid");
+  write_log("!!TEMP setsumoffcnt uid=%lu\n", uid); //!!TEMP
   offptr = setsumoffcnt(&offcnt_hdr, uid, 0);
   /* get tapeid for the offline storage units (su) */
   /* Only queue one request for any duplicate tapeid/tapefilenum */
@@ -672,7 +673,7 @@ KEY *readdo_1(KEY *params) {
       }
     }
   }
-  /*write_log("!!TEMP offptr->uniqcnt = %d\n", offptr->uniqcnt); /* !!TEMP */
+  write_log("!!TEMP offptr->uniqcnt = %d\n", offptr->uniqcnt); /* !!TEMP */
   for(j=0; j < offptr->uniqcnt; j++) {	/* now q all unique entries */
     /* put in the keylist for this entry which entry was offline */
     setkey_int(&params, "reqofflinenum", offptr->reqofflinenum[j]);
@@ -787,6 +788,7 @@ KEY *writedo_1(KEY *params) {
     rinfo = NO_CLNTTCP_CREATE;  /* give err status back to original caller */
     send_ack();
     ftmp = StopTimer(5);
+    free(user);
     return((KEY *)1);  /* error. nothing to be sent */
   }
   setkey_fileptr(&params, "current_client", (FILE *)clresp);
@@ -800,6 +802,7 @@ KEY *writedo_1(KEY *params) {
     rinfo = NO_TAPE_IN_GROUP;  /* give err status back to original caller */
     send_ack();
     ftmp = StopTimer(5);
+    free(user);
     return((KEY *)1);  /* error. nothing to be sent */
   }
 #ifdef SUMDC
@@ -809,6 +812,7 @@ KEY *writedo_1(KEY *params) {
       send_ack();
       ftmp = StopTimer(5);
       write_log("Tape %s not in T50", tapeinfo.tapeid);
+      free(user);
       return((KEY *)1);  /* error. nothing to be sent */
     }
   }
@@ -902,6 +906,7 @@ KEY *jmtxtapedo_1(KEY *params) {
   if(!(clresp = set_client_handle(JMTXPROG, JMTXVERS))) { 
     rinfo = NO_CLNTTCP_CREATE;  /* give err status back to original caller */
     send_ack();
+    free(mode);
     return((KEY *)1);  /* error. nothing to be sent */
   }
   setkey_fileptr(&params, "current_client", (FILE *)clresp);
@@ -920,6 +925,7 @@ KEY *jmtxtapedo_1(KEY *params) {
       setkey_str(&xlist, "ERRSTR", errstr);
       setkey_fileptr(&xlist,  "current_client", (FILE *)current_client);
       ++robotcmdseq;
+      free(mode);
       return(xlist);
     }
     write_log("jmtx status in: %s:/tmp/mtx/mtx_robot_%d.log\n", 
@@ -929,6 +935,7 @@ KEY *jmtxtapedo_1(KEY *params) {
     setkey_fileptr(&xlist,  "current_client", (FILE *)current_client);
     setkey_str(&xlist, "MSG", errstr);
     setkey_int(&xlist, "STATUS", 0);
+    free(mode);
     return(xlist);
   }
   if(drives[drivenum].busy) {
@@ -938,6 +945,7 @@ KEY *jmtxtapedo_1(KEY *params) {
     setkey_fileptr(&xlist,  "current_client", (FILE *)current_client);
     setkey_str(&xlist, "ERRSTR", errstr);
     setkey_int(&xlist, "STATUS", 1);
+    free(mode);
     return(xlist);
   }
 
@@ -981,6 +989,7 @@ KEY *jmtxtapedo_1(KEY *params) {
     rinfo = RESULT_PEND;	//tell caller to wait later for results 
   }
   send_ack();
+  free(mode);
   return((KEY *)1);
 }
 
@@ -1079,7 +1088,7 @@ KEY *taperespwritedo_1(KEY *params) {
   status = getkey_int(params, "STATUS");
   if(status) {			/* the write operation had an error */
     write_log("***Error: write of tape %s gave an error return\n", tapeid);
-    errstr = getkey_str(params, "ERRSTR");
+    errstr = GETKEY_str(params, "ERRSTR");
     write_log("***%s\n", errstr);
     if(status != TAPECLOSEDREJECT) {	/* tape not already closed */
       write_log("***Tape %s is being closed\n", tapeid);
@@ -1143,7 +1152,7 @@ KEY *taperespwritedo_1(KEY *params) {
         return(retlist);
       }
     }
-    md5cksum = getkey_str(retlist, "md5cksum");
+    md5cksum = GETKEY_str(retlist, "md5cksum");
     write_log("Tape write md5cksum = %s\n", md5cksum);
 /*#ifdef SUMDC*/
 /* NOTE: the tellblock wasn't accurate. So always use totalbytes */
@@ -1328,6 +1337,7 @@ KEY *taperespreaddo_1(KEY *params) {
   offptr = getsumoffcnt(offcnt_hdr, uid);
   offptr->offcnt++;
   if(offptr->uniqcnt == offptr->offcnt) { /* now can send completion msg back */
+    write_log("!!TEMP remsumoffcnt uid=%lu\n", uid); //!!TEMP
     remsumoffcnt(&offcnt_hdr, uid);
     if(DS_DataRequest_WD(retlist, &retlist)) { /* get all wd's */
       write_log("***Err: DS_DataRequest_WD() returned error.\n");
@@ -1836,10 +1846,10 @@ KEY *impexpdo_1(KEY *params)
   /*keyiterate(logkey, params);*/
   poff = NULL;
   rinfo = 0;
-  op = GETKEY_str(params, "OP");
+  op = getkey_str(params, "OP");
   if(!strcmp(op, "clean_start")) {	/* do drive cleaning */
-    cleanslot = atoi(getkey_str(params, "cleanslot"));
-    cleandrive = atoi(getkey_str(params, "cleandrive"));
+    cleanslot = atoi(GETKEY_str(params, "cleanslot"));
+    cleandrive = atoi(GETKEY_str(params, "cleandrive"));
     write_log("cleanslot=%d cleandrive=%d\n", cleanslot, cleandrive);
     xlist = newkeylist();
     robotbusy = 1;
@@ -1882,12 +1892,13 @@ KEY *impexpdo_1(KEY *params)
       write_log("*Tp:DrNotBusy: drv=%d\n", cleandrive);
     }
     freekeylist(&xlist);
+    free(op);
     send_ack();			/* ack original impexp caller */
     return((KEY *)1);		/* nothing will be sent later */
   }
   if(!strcmp(op, "clean_stop")) {	/* drive cleaning done */
-    cleandrive = atoi(getkey_str(params, "cleandrive"));
-    cleanslot = atoi(getkey_str(params, "cleanslot"));
+    cleandrive = atoi(GETKEY_str(params, "cleandrive"));
+    cleanslot = atoi(GETKEY_str(params, "cleanslot"));
     xlist = newkeylist();		/* now unload the cleaning tape*/
     robotbusy = 1;
     drives[cleandrive].busy = 1;
@@ -1918,6 +1929,7 @@ KEY *impexpdo_1(KEY *params)
       write_log("*Tp:DrNotBusy: drv=%d\n", cleandrive);
     }
     freekeylist(&xlist);
+    free(op);
     send_ack();			/* ack original impexp caller */
     return((KEY *)1);		/* nothing will be sent later */
   }
@@ -2022,6 +2034,7 @@ KEY *impexpdo_1(KEY *params)
                 p->uid, p->tapeid, p->username, p->ds_index);
       insert_tq_entry_wrt(p);
     }
+    free(op);
     return((KEY *)1);
   }
 
@@ -2029,8 +2042,10 @@ KEY *impexpdo_1(KEY *params)
       write_log("!!ERR impexpdo_1(): Illegal option=%s\n", op);
       rinfo = 1;
       send_ack();
+      free(op);
       return((KEY *)1);
   }
+  free(op);
   //this is the start option
   eeactive = 1;		/* tell Q code that imp/exp is underway */
   retlist = newkeylist();
@@ -2173,6 +2188,7 @@ KEY *onoffdo_1(KEY *params)
   }
   rinfo = tapeoffline;
   send_ack();
+  free(action);
   return((KEY *)1);
 }
 
@@ -2189,6 +2205,7 @@ KEY *robotonoffdo_1(KEY *params)
   else if(!strcmp(action, "off")) robotoffline = 1;
   rinfo = robotoffline;
   send_ack();
+  free(action);
   return((KEY *)1);
 }
 
@@ -2261,6 +2278,7 @@ KEY *dronoffdo_1(KEY *params)
   }
   rinfo = driveonoffstatus;
   send_ack();
+  free(action);
   return((KEY *)1);
 }
 
