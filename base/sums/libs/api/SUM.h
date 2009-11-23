@@ -1,10 +1,18 @@
 /* SUM.h */
 #ifndef SUM_INCL
+#define SUMPGPORT "5432"
+
 #if defined SUMDC
 #define SUM_VERSION_NUM    (1.0)
 //#define SUMSERVER "dcs0.Stanford.EDU"
 #define SUMDB "dcs0"
-#define SUMPGPORT "5432"
+
+#if defined DCS0
+#define SUMPGPORT "5430"
+#elif defined DCS1
+#define SUMPGPORT "5431"
+#endif
+
 #define TAPEVIEWERNAME "t50view"
 #define SUM_STOP_NOT "/usr/local/logs/SUM/SUM_STOP_NOT"
 #elif defined SUMT120
