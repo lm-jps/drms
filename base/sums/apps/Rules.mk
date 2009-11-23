@@ -17,16 +17,16 @@ CF_TGT_$(d)	:= -O0 -Wno-parentheses -fno-strict-aliasing
 ADD_TGT_$(d) := -DSUMT120 -DSUMNOAO
 
 ifeq ($(HOST),dcs0.jsoc.Stanford.EDU)
-	ADD_TGT_$(d) := -DSUMDC
+	ADD_TGT_$(d) := -DSUMDC -DDCS0
 endif
 ifeq ($(HOST),dcs1.jsoc.Stanford.EDU)
-	ADD_TGT_$(d) := -DSUMDC
+	ADD_TGT_$(d) := -DSUMDC -DDCS1
 endif
 ifeq ($(HOST),dcs2.jsoc.Stanford.EDU)
-	ADD_TGT_$(d) := -DSUMDC
+	ADD_TGT_$(d) := -DSUMDC -DDCS2
 endif
 ifeq ($(HOST),dcs3.jsoc.Stanford.EDU)
-	ADD_TGT_$(d) := -DSUMDC
+	ADD_TGT_$(d) := -DSUMDC -DDCS3
 endif
 ifeq ($(HOST),d00.Stanford.EDU)
 	ADD_TGT_$(d) := -DSUMT120
