@@ -10,7 +10,7 @@ EXEC SQL BEGIN DECLARE SECTION;
   varchar target[80];
   varchar user[80];
 EXEC SQL END DECLARE SECTION;
-  char *dbuser, *dbhost;
+  char *dbuser, *dbhost, *pgport;
   //char pgport[32];
 
 
@@ -27,7 +27,13 @@ EXEC SQL END DECLARE SECTION;
 #else
     if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = SERVER;
 #endif
-    sprintf(target.arr, "%s@%s", dbname, dbhost);
+
+  if (!(pgport = getenv("SUMPGPORT"))) {
+    sprintf(target.arr, "%s@%s:%s", dbname, dbhost, SUMPGPORT); //use compiled
+  }
+  else {
+    sprintf(target.arr, "%s@%s:%s", dbname, dbhost, pgport); //use env
+  }
     target.len = strlen(target.arr);
     sprintf(user.arr, "%s", dbuser);
     user.len = strlen(user.arr);
@@ -39,8 +45,8 @@ EXEC SQL END DECLARE SECTION;
     return NO_ERROR;
 	
 sqlerror1:
-	printk("Error in DS_ConnectDB host=%s db=%s user=%s\n", 
-		dbhost, dbname, dbuser); 
+	printk("Error in DS_ConnectDB target=%s user=%s\n", 
+		target.arr, dbuser); 
 	printk("% .80s \n", sqlca.sqlerrm.sqlerrmc); 
     EXEC SQL WHENEVER SQLERROR CONTINUE;
     EXEC SQL ROLLBACK WORK;
@@ -69,7 +75,7 @@ EXEC SQL BEGIN DECLARE SECTION;
   varchar target[80];
   varchar user[80];
 EXEC SQL END DECLARE SECTION;
-  char *dbuser, *dbhost;
+  char *dbuser, *dbhost, *pgport;
   //char pgport[32];
 
     EXEC SQL WHENEVER SQLERROR GOTO sqlerror3;
@@ -82,18 +88,25 @@ EXEC SQL END DECLARE SECTION;
 #else
     if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = SERVER;
 #endif
-    sprintf(target.arr, "%s@%s", dbname, dbhost);
+
+  if (!(pgport = getenv("SUMPGPORT"))) {
+    sprintf(target.arr, "%s@%s:%s", dbname, dbhost, SUMPGPORT); //use compiled
+  }
+  else {
+    sprintf(target.arr, "%s@%s:%s", dbname, dbhost, pgport); //use env
+  }
     target.len = strlen(target.arr);
     sprintf(user.arr, "%s", dbuser);
     user.len = strlen(user.arr);
 
+        //printk("Target = %s\n", target.arr); //!!!TEMP
     	EXEC SQL CONNECT TO :target USER :user;
     EXEC SQL COMMIT WORK;
     return NO_ERROR;
 	
 sqlerror3:
-	printk("Error in DS_ConnectDB_Q host=%s db=%s user=%s\n", 
-		dbhost, dbname, dbuser); 
+	printk("Error in DS_ConnectDB_Q target=%s user=%s\n", 
+		target.arr, dbuser); 
 	printk("% .80s \n", sqlca.sqlerrm.sqlerrmc); 
     EXEC SQL WHENEVER SQLERROR CONTINUE;
     EXEC SQL ROLLBACK WORK;
