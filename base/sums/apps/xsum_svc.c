@@ -284,9 +284,9 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-  if(strcmp(hostn, "dcs0") && strcmp(hostn, "dcs1") && strcmp(hostn, "dcs2") && strcmp(hostn, "dcs3") && strcmp(hostn, "n02")) {  //!!TEMP n02 for testing
+  if(strcmp(hostn, "n02")) {  //!!TEMP don't do on n02 - for testing
       sprintf(pgport, SUMPGPORT);
-      setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
+      setenv("SUMPGPORT", pgport, 1); //connect to 5430,5431, or 5434
   }
 
   if((pid = fork()) < 0) {
