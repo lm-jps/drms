@@ -258,11 +258,12 @@ void setup()
      exit(1); 
   }
   //don't set pgport on datacapture machines
-  if(strcmp(thishost, "dcs0") && strcmp(thishost, "dcs1") && strcmp(thishost, "dcs2")) {
-
-    sprintf(pgport, SUMPGPORT);
-    setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
-  }
+  //NEED to do this now (11/19/2009) after change dcs Pg port
+  //The port is now set by DS_ConnectDB() in SUMLIB_PgConnect.pgc
+  //if(strcmp(thishost, "dcs0") && strcmp(thishost, "dcs1") && strcmp(thishost, "dcs2")) {
+    //sprintf(pgport, SUMPGPORT);
+    ////setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
+  //}
 
   if (signal(SIGINT, SIG_IGN) != SIG_IGN)
       signal(SIGINT, sighandler);
