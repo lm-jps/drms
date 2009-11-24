@@ -18,6 +18,8 @@ dir	:= $(d)/inthandles
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/misc
 -include		$(SRCDIR)/$(dir)/Rules.mk
+dir	:= $(d)/qdecoder
+-include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/threads
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/timeio
