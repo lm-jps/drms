@@ -1,6 +1,5 @@
 /* SUM.h */
 #ifndef SUM_INCL
-#define SUMPGPORT "5432"
 
 #if defined SUMDC
 #define SUM_VERSION_NUM    (1.0)
@@ -11,6 +10,8 @@
 #define SUMPGPORT "5430"
 #elif defined DCS1
 #define SUMPGPORT "5431"
+#elif defined DCS2
+#define SUMPGPORT "5432"
 #endif
 
 #define TAPEVIEWERNAME "t50view"
