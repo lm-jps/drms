@@ -102,6 +102,8 @@ struct CmdParams_Arg_struct
   char *name;             /* If unnamed, then name is NULL. Unnamed args are still hashed - the key is a magic string followed by the 
                            * number of the unnamed argument. */
   int unnamednum;         /* If unnamed, the 0-based number of the argument. */
+  char *cmdlinestr;       /* IFF this argument was parsed out of a cmd-line or file on a cmd-line, then 
+                           * this contains the original argument from the argv vector. */
   ModuleArgs_Type_t type; /* The type of argument (eg., double, void, string, dataset, etc.). This gets set ONLY if 
                            * something has specified an expected data type. Typically, this would be done 
                            * by the code that handles default values.*/
@@ -281,7 +283,12 @@ CmdParams_Arg_t *cmdparams_set (CmdParams_t *parms, const char *name, const char
 int cmdparams_exists (CmdParams_t *parms, char *name);
 void cmdparams_printall (CmdParams_t *parms);
 const char *cmdparams_getarg (CmdParams_t *parms, int num);
-const char *cmdparams_getargument(CmdParams_t *parms, int num, const char **name, const char **value, int *accessed);
+const char *cmdparams_getargument(CmdParams_t *parms, 
+                                  int num, 
+                                  const char **name, 
+                                  const char **value, 
+                                  const char **cmdlinestr, 
+                                  int *accessed);
 void cmdparams_usage (char *name);
 int cmdparams_numargs (CmdParams_t *parms);
 

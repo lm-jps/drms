@@ -129,6 +129,12 @@ static void FreeArg(const void *data)
          free(arg->name);
       }
 
+      /* cmdlinestr */
+      if (arg->cmdlinestr)
+      {
+         free(arg->cmdlinestr);
+      }
+
       /* strval */
       if (arg->strval)
       {
@@ -230,11 +236,14 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
   int len, arg = 0;
   char *p, flagbuf[2]={0};
   char *escbuf = NULL;
-				  /* parse options given on the command line */
+  CmdParams_Arg_t *thisarg = NULL;
+  char *argsaved = NULL;
+
+  /* parse options given on the command line */
   arg = 0; 
   while (arg < argc) {
-     /* save the original cmd-line */
-
+     /* save argument since code below modified argv (which is not a good practice) */
+     argsaved = strdup(argv[arg]);
 
     if (argv[arg][0] == '-' && !isdigit (argv[arg][1])) {
       if (argv[arg][1] == '-') {
@@ -291,7 +300,8 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
 
 	if (valueexists)
         {
-           cmdparams_set (parms, argv[arg]+2, escbuf);
+           thisarg = cmdparams_set (parms, argv[arg]+2, escbuf);
+           thisarg->cmdlinestr = strdup(argsaved);
            arg += 2;
         }
 	else 
@@ -299,7 +309,8 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
            /* --X flags are case insensitive */
            char *fbuf = strdup(argv[arg] + 2);
            strtolower(fbuf);
-           cmdparams_set(parms, fbuf, "1"); 
+           thisarg = cmdparams_set(parms, fbuf, "1"); 
+           thisarg->cmdlinestr = strdup(argsaved);
            free(fbuf);
            arg++;
 	}
@@ -314,7 +325,8 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
 	p = argv[arg]+1; 
 	while (*p) {
 	  flagbuf[0] = *p++;
-	  cmdparams_set (parms, flagbuf, "1");	  
+	  thisarg = cmdparams_set (parms, flagbuf, "1");
+          thisarg->cmdlinestr = strdup(argsaved);
 	}
 	++arg;
       }
@@ -341,7 +353,8 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
                 return CMDPARAMS_FAILURE;
              }
 
-             cmdparams_set (parms, argv[arg], escbuf);
+             thisarg = cmdparams_set (parms, argv[arg], escbuf);
+             thisarg->cmdlinestr = strdup(argsaved);
              arg += 2;
 
              if (escbuf)
@@ -367,7 +380,8 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
               return CMDPARAMS_FAILURE;
            }
 
-           cmdparams_set (parms, argv[arg], escbuf);
+           thisarg = cmdparams_set (parms, argv[arg], escbuf);
+           thisarg->cmdlinestr = strdup(argsaved);
            ++arg;
 
            if (escbuf)
@@ -383,10 +397,17 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
         else 
         {
            /*  An unnamed argument */
-           cmdparams_set(parms, NULL, argv[arg]);
+           thisarg = cmdparams_set(parms, NULL, argv[arg]);
+           thisarg->cmdlinestr = strdup(argsaved);
 	}
 	++arg;
       }
+    }
+    
+    if (argsaved)
+    {
+       free(argsaved);
+       argsaved = NULL;
     }
   }
   return CMDPARAMS_SUCCESS;
@@ -893,6 +914,8 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
 
   /* Put program path into parms->args */
   thisarg = cmdparams_set(parms, NULL, argv[0]);
+  thisarg->cmdlinestr = strdup(argv[0]);
+  thisarg->accessed = 1; /* cmdparams_getargument() should say this has been accessed already. */
   thisarg->type = ARG_STRING;
 
   /* save original cmd-line */
@@ -1469,7 +1492,12 @@ const char *cmdparams_getarg (CmdParams_t *parms, int num) {
   }
 }
 
-const char *cmdparams_getargument(CmdParams_t *parms, int num, const char **name, const char **value, int *accessed)
+const char *cmdparams_getargument(CmdParams_t *parms, 
+                                  int num, 
+                                  const char **name, 
+                                  const char **value, 
+                                  const char **cmdlinestr, 
+                                  int *accessed)
 {
    const char *valuein = NULL;
    CmdParams_Arg_t *arg = NULL;
@@ -1482,6 +1510,11 @@ const char *cmdparams_getargument(CmdParams_t *parms, int num, const char **name
       if (value)
       {
          *value = NULL;
+      }
+
+      if (cmdlinestr)
+      {
+         *cmdlinestr = NULL;
       }
 
       if (accessed)
@@ -1502,6 +1535,11 @@ const char *cmdparams_getargument(CmdParams_t *parms, int num, const char **name
       if (value)
       {
          *value = arg->strval;
+      }
+
+      if (cmdlinestr)
+      {
+         *cmdlinestr = arg->cmdlinestr;
       }
 
       if (accessed)

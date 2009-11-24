@@ -70,8 +70,21 @@ int main(int argc, char **argv)
 
    if (!err)
    {
+      int iarg = 0;
+      const char *argname = NULL;
+      const char *argval = NULL;
+      
       /* Spit cmd-line args back out. */
+      fprintf(stdout, "Printing out entire CmdParams_t struct.\n");
       hcon_map(cmdparams.args, Argprint);
+      fprintf(stdout, "\n");
+
+      fprintf(stdout, "Using cmdparams_getargument() to print all arguments as strings.\n");
+      while (cmdparams_getargument(&cmdparams, iarg, &argname, &argval, NULL, NULL))
+      {
+         fprintf(stdout, "arg %d: %s='%s'\n", iarg, argname, argval);
+         iarg++;
+      }
    }
    
    cmdparams_freeall(&cmdparams);

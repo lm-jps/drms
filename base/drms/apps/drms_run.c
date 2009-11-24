@@ -65,9 +65,9 @@ int main(int argc, char *argv[])
    pid_t pidret = 0;
    char envfile[PATH_MAX];
    char cmd[PATH_MAX];
-   char *script = NULL;
-   char *serverlog = NULL;
-   char *drmsrunlog = NULL;
+   const char *script = NULL;
+   const char *serverlog = NULL;
+   const char *drmsrunlog = NULL;
    double timeout = 15;
    int delscr = 0;
    int verbose = 0;
@@ -77,6 +77,11 @@ int main(int argc, char *argv[])
    struct stat stbuf;
    int status = 0;
    RUNstat_enum_t runstat = kSTAT_COMMIT;
+   char *passargs = NULL;
+   size_t szpassargs = 0;
+   const char *argcmdlinestr = NULL;
+   int argacc = 0;
+   int iarg = 0;
 
    if ((status = cmdparams_parse(&cmdparams, argc, argv)) == -1)
    {
@@ -103,6 +108,21 @@ int main(int argc, char *argv[])
               cmdparams_isflagset(&cmdparams, kVERBOSEFLAGB) ||
               cmdparams_isflagset(&cmdparams, kVERBOSEFLAGC));
    dolog = cmdparams_isflagset(&cmdparams, kDOLOGFLAG);
+
+   /* Need to pass on any unused arguments to script - iterate through cmdparams */
+   szpassargs = 32;
+   passargs = malloc(sizeof(char) * szpassargs);
+
+   while (cmdparams_getargument(&cmdparams, iarg, NULL, NULL, &argcmdlinestr, &argacc))
+   {
+      if (!argacc && argcmdlinestr)
+      {
+         base_strcatalloc(passargs, argcmdlinestr, &szpassargs);
+         base_strcatalloc(passargs, " ", &szpassargs);
+      }
+
+      iarg++;
+   }
 
    if ((pid = fork()) == -1)
    {
@@ -221,7 +241,7 @@ int main(int argc, char *argv[])
          /* The server env file is available - source it and run script.
           * script must figure out if a failure happened or not, and
           * then return 0 (commit) or non-0 (abort) */
-         snprintf(cmd, sizeof(cmd), "source %s; %s", envfile, script);
+         snprintf(cmd, sizeof(cmd), "source %s; %s %s", envfile, script, passargs);
          if (verbose)
          {
             fprintf(actstdout, "Running cmd '%s' on drms_server pid %llu.\n", cmd, (unsigned long long)pid);
@@ -344,13 +364,17 @@ int main(int argc, char *argv[])
    else
    {
       /* child */
+      if (passargs)
+      {
+         free(passargs);
+      }
+
       pid = getpid();
       char logfile[PATH_MAX];
       char tmp[128] = {0};
       int fd;
       const char *retention = NULL;
       char **drmsargs = NULL;
-      int iarg = 0;
 
       snprintf(logfile, 
                sizeof(logfile), 
@@ -360,6 +384,7 @@ int main(int argc, char *argv[])
 
       drmsargs = (char **)calloc(128, sizeof(char *));
 
+      iarg = 0;
       drmsargs[iarg++] = strdup("drms_server");
       drmsargs[iarg++] = strdup("-f");
 
@@ -412,6 +437,11 @@ int main(int argc, char *argv[])
       execvp("drms_server", drmsargs);
 
       /* does not return */
+   }
+
+   if (passargs)
+   {
+      free(passargs);
    }
 
    return runstat;
