@@ -116,12 +116,16 @@ typedef struct CmdParams_Arg_struct CmdParams_Arg_t;
 
 /** @brief Command-line parameter structure */
 struct CmdParams_struct {
-  HContainer_t *args;     /* A hash of CmdParams_Arg_t structures, one struct per arg. */
-  int argc;               /* original argc passed to main(). */
-  char **argv;            /* contains ALL cmd-line args unparsed (so the @filerefs are not resolved). */
-  int numunnamed;         /* Number of unnamed arguments in param structure. */
-  HContainer_t *reserved; /* A hash of reserved keyword names (names that the program may not use - specified by
-                           * the program itself). */
+  HContainer_t *args;       /* A hash of CmdParams_Arg_t structures, one struct per arg. */
+  CmdParams_Arg_t **argarr; /* Array of pointers into the arg structs in the args container. 
+                             * argarr[i] points to the ith argument added to the args container. */
+  int szargs;               /* Current number of allocated slots in argarr. */
+  int argc;                 /* original argc passed to main(). */
+  char **argv;              /* contains ALL cmd-line args unparsed (so the @filerefs are not resolved). */
+  int numargs;              /* Total number of args (named or unnamed). */
+  int numunnamed;           /* Number of unnamed arguments in param structure. */
+  HContainer_t *reserved;   /* A hash of reserved keyword names (names that the program may not use - specified by
+                             * the program itself). */
 };
 /** @brief CmdParams struct reference */
 typedef struct CmdParams_struct CmdParams_t;

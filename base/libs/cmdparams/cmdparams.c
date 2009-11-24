@@ -888,6 +888,8 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
      return CMDPARAMS_OUTOFMEMORY;
   }
 
+  parms->szargs = 8;
+  parms->argarr = malloc(parms->szargs * sizeof(CmdParams_Arg_t *));
 
   /* Put program path into parms->args */
   thisarg = cmdparams_set(parms, NULL, argv[0]);
@@ -1075,6 +1077,10 @@ void cmdparams_freeall (CmdParams_t *parms) {
   /* args */
   hcon_destroy(&(parms->args));
 
+  /* argarr */
+  free(parms->argarr);
+  parms->argarr = NULL;
+
   /* argv */
   for (i = 0; i < parms->argc; i++)
   {
@@ -1084,7 +1090,19 @@ void cmdparams_freeall (CmdParams_t *parms) {
      }
   }
   free(parms->argv);
+  parms->argv = NULL;
 
+  /* argc */
+  parms->argc = 0;
+  
+  /* numargs */
+  parms->numargs = 0;
+
+  /* szargs */
+  parms->szargs = 0;
+
+  /* numunnamed */
+  parms->numunnamed = 0;
 
   /* reserved */
   hcon_destroy(&(parms->reserved));
@@ -1194,6 +1212,7 @@ CmdParams_Arg_t *cmdparams_set(CmdParams_t *parms, const char *name, const char 
    /*  Insert name and value string in buffer  */
    CmdParams_Arg_t *ret = NULL;
    CmdParams_Arg_t arg;
+   int setargarr = 0;
 
    /* Make a new arg structure */
    memset(&arg, 0, sizeof(arg));
@@ -1217,6 +1236,7 @@ CmdParams_Arg_t *cmdparams_set(CmdParams_t *parms, const char *name, const char 
       {
          hcon_insert(parms->args, name, &arg);
          ret = (CmdParams_Arg_t *)hcon_lookup(parms->args, name);
+         setargarr = 1;
       }
    }
    else
@@ -1234,8 +1254,24 @@ CmdParams_Arg_t *cmdparams_set(CmdParams_t *parms, const char *name, const char 
       {
          hcon_insert(parms->args, namebuf, &arg);
          ret = (CmdParams_Arg_t *)hcon_lookup(parms->args, namebuf);
+         setargarr = 1;
          ret->unnamednum = parms->numunnamed++;
       }
+   }
+
+   if (setargarr)
+   {
+      if (parms->numargs + 1 > parms->szargs)
+      {
+         /* expand argarr buffer */
+         int origsz = parms->szargs;
+
+         parms->szargs *= 2;
+         parms->argarr = realloc(parms->argarr, parms->szargs * sizeof(CmdParams_Arg_t *));
+         memset(&parms->argarr[origsz], 0, (parms->szargs - origsz) * sizeof(CmdParams_Arg_t *));
+      }
+
+      parms->argarr[parms->numargs++] = ret;
    }
 
    /* Don't free arg.strval - it belongs to parms->args now. */
@@ -1265,7 +1301,39 @@ int cmdparams_exists (CmdParams_t *parms, char *name) {
 }
 					 /*  remove a named flag or keyword  */
 void cmdparams_remove (CmdParams_t *parms, char *name) {
+   CmdParams_Arg_t *arg = NULL;
+   CmdParams_Arg_t **old = NULL;
+   CmdParams_Arg_t **newarr = NULL;
+   int iarg;
+  
+   arg = (CmdParams_Arg_t *)hcon_lookup(parms->args, name);
+   old = parms->argarr;
+   newarr = (CmdParams_Arg_t **)malloc(sizeof(CmdParams_Arg_t *) * parms->numargs);
+
+   /* Unfortunately, need to do a linear search, but there won't be that many args */
+   iarg = 0;
+   while (*old != arg && iarg < parms->numargs)
+   {
+      newarr[iarg++] = *old++;
+   }
+   
+   if (iarg == parms->numargs)
+   {
+      fprintf(stderr, "Internal error: missing argument in parms->argarr.\n");
+   }
+
+   /* iarg is the index of the arg being removed */
+   old++;
+   while (iarg < parms->numargs - 1)
+   {
+      newarr[iarg++] = *old++;
+   }
+
+   free(parms->argarr);
+   parms->argarr = newarr;
+
    hcon_remove(parms->args, name);
+   parms->numargs--;
 }
 		  /*  simple printing function used as argument to hash_map  */
 static void Argprint(const void *data) 
@@ -1377,7 +1445,8 @@ void cmdparams_printall (CmdParams_t *parms) {
 int cmdparams_numargs (CmdParams_t *parms) {
   return parms->numunnamed;
 }
-			     /*  Return program arguments strings by number  */
+
+/*  Return program UNNAMED arguments strings by number  */
 const char *cmdparams_getarg (CmdParams_t *parms, int num) {
   char namebuf[512];
   CmdParams_Arg_t *arg = NULL;
@@ -1399,6 +1468,41 @@ const char *cmdparams_getarg (CmdParams_t *parms, int num) {
      return NULL;
   }
 }
+
+const char *cmdparams_getargument(CmdParams_t *parms, int num, const char **name, const char **value, int *accessed)
+{
+   const char *valuein = NULL;
+   CmdParams_Arg_t *arg = NULL;
+
+   if (num < parms->numargs)
+   {
+      arg = parms->argarr[num];
+
+      if (name)
+      {
+         *name = arg->name; /* NULL if unnamed. */
+      }
+
+      if (value)
+      {
+         *value = arg->strval;
+      }
+
+      if (accessed)
+      {
+         *accessed = arg->accessed;
+      }
+   }
+
+   if (value)
+   {
+      *value = valuein;
+   }
+
+   return valuein;
+}
+
+
 		      /*  Get values of keywords converted to various types  */
 const char *cmdparams_get_str(CmdParams_t *parms, char *name, int *status) {
    const char *value = NULL;
