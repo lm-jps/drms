@@ -281,6 +281,7 @@ CmdParams_Arg_t *cmdparams_set (CmdParams_t *parms, const char *name, const char
 int cmdparams_exists (CmdParams_t *parms, char *name);
 void cmdparams_printall (CmdParams_t *parms);
 const char *cmdparams_getarg (CmdParams_t *parms, int num);
+const char *cmdparams_getargument(CmdParams_t *parms, int num, const char **name, const char **value, int *accessed);
 void cmdparams_usage (char *name);
 int cmdparams_numargs (CmdParams_t *parms);
 

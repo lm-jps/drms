@@ -998,8 +998,8 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
               }
 
               /* replace the enumeration key string (eg, "red") with the index value (eg, 3). */
-              cmdparams_remove(parms, defps->name);
-              thisarg = cmdparams_set (parms, defps->name, intrep);
+              free(thisarg->strval);
+              thisarg->strval = strdup(intrep);
               thisarg->type = ARG_NUME;
            }
 	}
@@ -1474,9 +1474,25 @@ const char *cmdparams_getargument(CmdParams_t *parms, int num, const char **name
    const char *valuein = NULL;
    CmdParams_Arg_t *arg = NULL;
 
+   if (name)
+      {
+         *name = NULL;
+      }
+
+      if (value)
+      {
+         *value = NULL;
+      }
+
+      if (accessed)
+      {
+         *accessed = 0;
+      }
+
    if (num < parms->numargs)
    {
       arg = parms->argarr[num];
+      valuein = arg->strval;
 
       if (name)
       {
@@ -1492,11 +1508,6 @@ const char *cmdparams_getargument(CmdParams_t *parms, int num, const char **name
       {
          *accessed = arg->accessed;
       }
-   }
-
-   if (value)
-   {
-      *value = valuein;
    }
 
    return valuein;
