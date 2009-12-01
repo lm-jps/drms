@@ -658,7 +658,6 @@ FILE *drms_segment_fopen(DRMS_Segment_t *seg, const char *newfilename, int appen
           * it doesn't exist already. Override that with newfilename if the 
           * caller desires. */
          struct stat stbuf;
-         char dir[DRMS_MAXPATHLEN];
 
          drms_segment_filename(seg, path);
          
@@ -767,8 +766,6 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
   
   rec = seg->record;
 
-
-
   if (seg->info->scope == DRMS_CONSTANT &&
       !seg->info->cseg_recnum) {
     fprintf(stderr, "ERROR in drms_segment_read: constant segment has not yet"
@@ -791,9 +788,12 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
     if ((rec->su = drms_getunit(rec->env, rec->seriesinfo->seriesname, 
 				rec->sunum, 1, &statint)) == NULL)
     {
-      fprintf(stderr,"ERROR in drms_segment_read: Cannot read segment for "
-	      "record with no storage unit slot.\nseries=%s, sunum=%lld\n",
-	      rec->seriesinfo->seriesname, rec->sunum);
+       /* A record may have an SUNUM, but the corresponding SU may no longer exist. The 
+        * series may have archive == 0 so that the SU got removed by sum_rm. Attempting to 
+        * read a data-segment file from a record whose SU has been deleted is an
+        * error, although the caller of drms_segment_read() won't typically be aware of this
+        * situation, unless they called SUM_info() before calling drms_segment_read(). 
+        * Return an error code that the call must deal with. */
       statint = DRMS_ERROR_NOSTORAGEUNIT;
       goto bailout1;
     }
@@ -945,6 +945,25 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
   } /* protocols DRMS_DSDS || DRMS_LOCAL */
   else
   {
+     /* For the remaining protocols, the code needs to open the file. Under some circumstances, the 
+      * file could be missing. There could be multiple data segments, but not all data segments
+      * have files in the storage unit directory (only some were written). This is not an error.
+      * Unfortunately, the current design doesn't distinguish this sitation from the error
+      * where the file is missing for some other reason (eg., DRMS crashes and fails to write
+      * a file). So, we have to assume that there is no error. But how do we tell the user
+      * that the file is missing since we have this requirement that the status cannot
+      * return status? If status is not zero, this means "error". So, if a file is missing, 
+      * we have to assume an error. Compromise: don't write an error message, but issue an
+      * error. */
+     struct stat stbuf;
+     
+     if (stat(filename, &stbuf))
+     {
+        /* file filename is missing */
+        statint = DRMS_ERROR_INVALIDFILE;
+        goto bailout1;
+     }
+
     switch(seg->info->protocol)
     {
     case DRMS_GENERIC:
@@ -990,8 +1009,9 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 	 }
 	 else
 	 {
+            /* filename exists, but for some reason, cfitsio failed to read it. */
 	    fprintf(stderr,"Couldn't read FITS file '%s'.\n", filename); 
-	    statint = 1;
+	    statint = DRMS_ERROR_FITSRW;
 	    goto bailout1;
 	 }
       }
@@ -1117,19 +1137,16 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 }
 
 
-
-
 /* The dimensionality of start, end, and seg must all match.
  *
  */
 DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type, 
 				     int *start, int *end, int *status)
 {
-  int stat=0,i;
+  int statint = 0, i;
   DRMS_Array_t *arr, *tmp;
   char filename[DRMS_MAXPATHLEN];
   DRMS_Record_t *rec;
-  double bzero, bscale;
   DRMS_SeriesVersion_t vers2_1 = {"2.1", ""};	
 
   CHECKNULL_STAT(seg,status);
@@ -1139,21 +1156,40 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
   {
     /* The storage unit has not been requested from SUMS yet. Do it. */
     if ((rec->su = drms_getunit(rec->env, rec->seriesinfo->seriesname, 
-				rec->sunum, 1, &stat)) == NULL)
+				rec->sunum, 1, &statint)) == NULL)
     {
-      fprintf(stderr,"ERROR in drms_segment_read: Cannot read for "
-	      "record with no storage unit slot.\n");
-      goto bailout1;
+       /* A record may have an SUNUM, but the corresponding SU may no longer exist. The 
+        * series may have archive == 0 so that the SU got removed by sum_rm. Attempting to 
+        * read a data-segment file from a record whose SU has been deleted is an
+        * error, although the caller of drms_segment_readslice() won't typically be aware of this
+        * situation, unless they called SUM_info() before calling drms_segment_readslice(). 
+        * Return an error code that the call must deal with. */
+       statint = DRMS_ERROR_NOSTORAGEUNIT;
+       goto bailout1;
     }
     rec->su->refcount++;
   }  
 
   drms_segment_filename(seg, filename);
-
-  /* XXX - assume bzero/bscale are 0.0/1.0 - no way of specifying 
-   * these for non-FITS protocol. */
-  bzero = 0.0;
-  bscale = 1.0;
+  
+  /* For all the protocols, the code needs to open the file. Under some circumstances, the 
+   * file could be missing. There could be multiple data segments, but not all data segments
+   * have files in the storage unit directory (only some were written). This is not an error.
+   * Unfortunately, the current design doesn't distinguish this sitation from the error
+   * where the file is missing for some other reason (eg., DRMS crashes and fails to write
+   * a file). So, we have to assume that there is no error. But how do we tell the user
+   * that the file is missing since we have this requirement that the status cannot
+   * return status? If status is not zero, this means "error". So, if a file is missing, 
+   * we have to assume an error. Compromise: don't write an error message, but issue an
+   * error. */
+  struct stat stbuf;
+     
+  if (stat(filename, &stbuf))
+  {
+     /* file filename is missing */
+     statint = DRMS_ERROR_INVALIDFILE;
+     goto bailout1;
+  }
 
   /* For FITS, FITSZ, and TAS (which are implemented at the lowest level with a FITS file), 
    * just read part of the file. cfitsio can read subsets of a file. 
@@ -1167,11 +1203,11 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
       * those are used to populate arr. They must match the values 
       * that originate in the record's _bzero/_bscale keywords. They cannot 
       * vary across records. */
-     if ((stat = drms_fitsrw_readslice(filename, 
-                                       seg->info->naxis,
-                                       start,
-                                       end,
-                                       &arr)) != DRMS_SUCCESS)
+     if ((statint = drms_fitsrw_readslice(filename, 
+                                          seg->info->naxis,
+                                          start,
+                                          end,
+                                          &arr)) != DRMS_SUCCESS)
      {
         fprintf(stderr,"Couldn't read slice from file '%s'.\n", filename);      
         goto bailout1;
@@ -1179,13 +1215,13 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
   }
   else if (seg->info->protocol == DRMS_TAS)
   {
-     if ((stat = drms_fitstas_readslice(filename, 
-                                        seg->info->naxis,
-                                        seg->axis,
-                                        start,
-                                        end,
-                                        seg->record->slotnum,
-                                        &arr)) != DRMS_SUCCESS)
+     if ((statint = drms_fitstas_readslice(filename, 
+                                           seg->info->naxis,
+                                           seg->axis,
+                                           start,
+                                           end,
+                                           seg->record->slotnum,
+                                           &arr)) != DRMS_SUCCESS)
      {
         fprintf(stderr,"Couldn't read slice from file '%s'.\n", filename);      
         goto bailout1;
@@ -1197,7 +1233,7 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
      {
         case DRMS_BINARY:
           XASSERT(arr = malloc(sizeof(DRMS_Array_t)));
-          if ((stat = drms_binfile_read(filename, 0, arr)))
+          if ((statint = drms_binfile_read(filename, 0, arr)))
           {
              fprintf(stderr,"Couldn't read segment from file '%s'.\n",
                      filename);      
@@ -1206,7 +1242,7 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
           break;
         case DRMS_BINZIP:
           XASSERT(arr = malloc(sizeof(DRMS_Array_t)));
-          if ((stat = drms_zipfile_read(filename, 0, arr)))
+          if ((statint = drms_zipfile_read(filename, 0, arr)))
           {
              fprintf(stderr,"Couldn't read segment from file '%s'.\n",
                      filename);      
@@ -1225,7 +1261,7 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
         case DRMS_FITSDEPRECATED:
           {
              arr = NULL;
-             stat = DRMS_ERROR_NOTIMPLEMENTED;
+             statint = DRMS_ERROR_NOTIMPLEMENTED;
              fprintf(stderr,"Protocols DRMS_FITSDEPRECATED and DRMS_FITZDEPRECATED have been deprecated.\n");
              goto bailout1;
           }
@@ -1248,20 +1284,20 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
   if (arr->type != seg->info->type) {
      fprintf (stderr, "Data types in file (%d) do not match those in segment " 
               "descriptor (%d).\n", (int)arr->type, (int)seg->info->type);
-     stat = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
+     statint = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
      goto bailout;
   }
   if (arr->naxis != seg->info->naxis) {
      fprintf (stderr, "Number of axis in file (%d) do not match those in "
               "segment descriptor (%d).\n", arr->naxis, seg->info->naxis);
-     stat = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
+     statint = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
      goto bailout;
   }
   for (i=0;i<arr->naxis;i++) {    
      if (arr->axis[i] > seg->axis[i]) {
         fprintf (stderr,"Dimension of axis %d in file (%d) is incompatible with those"
                  " in segment descriptor (%d).\n", i, arr->axis[i], seg->axis[i]);
-        stat = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
+        statint = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
         goto bailout;
      }
   }
@@ -1315,7 +1351,7 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
   drms_free_array(arr);
  bailout1:
   if (status)
-    *status = stat;
+    *status = statint;
   return NULL;
 }
 
@@ -1622,8 +1658,6 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
       break;
     case DRMS_FITS:
       {
-         char key[DRMS_MAXKEYNAMELEN];
-
 	 if (out->type == DRMS_TYPE_STRING)
 	 {
 	    fprintf(stderr, "Can't save string data into a fits file.\n");
