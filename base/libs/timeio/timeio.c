@@ -1192,7 +1192,6 @@ double zone_adjustment_inner (char *zone, int *valid) {
 	 strcasecmp(zone, "UT") &&
 	 strcasecmp(zone, "UTC") &&
 	 strcasecmp(zone, "ISO") &&
-	 strcasecmp(zone, "TAI") &&
 	 strcasecmp(zone, "JD") &&
 	 strcasecmp(zone, "MJD")) {
 	/* Invalid time zone */
@@ -1370,9 +1369,9 @@ int parse_zone(const char *zonestr, char *out, int size)
          {
             state = 'Z';
 
-            if (*pc && *pc == 'M' && *(pc+1) == 'T')
+            if (*pc && (*pc == 'M' && *(pc+1) == 'T' || *pc == 'P' && *(pc+1) == 'S'))
             {
-               /* GMT */
+               /* GMT or GPS */
                *pout++ = *pc++;
                *pout++ = *pc++;               
             }
