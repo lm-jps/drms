@@ -17,3 +17,4 @@ $(PROJOBJDIR):
 	+@[ -d $@/export/apps ] || mkdir -p $@/export/apps
 	+@[ -d $@/export/libs/util ] || mkdir -p $@/export/libs/util
 	+@[ -d $@/globalhs/apps/ ] || mkdir -p $@/globalhs/apps
+	+@[ -d $@/rings/apps/ ] || mkdir -p $@/rings/apps
