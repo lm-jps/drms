@@ -151,8 +151,13 @@ static CrnsError_t CreateSQL(FILE *fptr, const char *ns, const char *nsgrp, cons
    CrnsError_t err = kCrnsErr_Success;
 
    fprintf(fptr, "CREATE SCHEMA %s;\n", ns);
+   /* Do not insert into admin.sessionns (which lists the default namespace to use for each user). The
+    * ns and dbusr provided to this module implies that the ns is owned by the dbusr. It does not
+    * imply that the ns is the default namespace for the dbusr. You can run createns many times, one
+    * for each of several namespaces, providing the same dbusr for each ns. You don't want to keep
+    * updating the default namespace each time the module runs - in fact the default namespace
+    * for dbusr might not be any ns created by createns (saying what the default ns is is a manual step). */
    fprintf(fptr, "INSERT INTO admin.ns VALUES ('%s', '%s', '%s');\n", ns, nsgrp, dbusr);
-   fprintf(fptr, "INSERT INTO admin.sessionns VALUES ('%s', '%s');\n", dbusr, ns);
    fprintf(fptr, "GRANT create, usage ON SCHEMA %s TO %s;\n", ns, dbusr);
    fprintf(fptr, "GRANT usage ON SCHEMA %s TO public;\n", ns);
 
@@ -194,10 +199,11 @@ int DoIt(void)
 {
    CrnsError_t err = kCrnsErr_Success;
 
-   char *ns = NULL;
-   char *nsgrp = NULL;
-   char *dbusr = NULL;
-   char *file = NULL;
+   const char *ns = NULL;
+   const char *nsgrp = NULL;
+   const char *dbusr = NULL;
+   const char *file = NULL;
+   char *grp = NULL;
    FILE *fptr = NULL;
 
    char query[DRMS_MAXQUERYLEN];
@@ -237,9 +243,9 @@ int DoIt(void)
    if (!err)
    {
       nsgrp = cmdparams_get_str(&cmdparams, kNsGroup, NULL);
-      nsgrp = strdup(nsgrp);
-      strtolower(nsgrp);
-      if (strcmp(nsgrp, "user") != 0 && strcmp(nsgrp, "sys") != 0) 
+      grp = strdup(nsgrp);
+      strtolower(grp);
+      if (strcmp(grp, "user") != 0 && strcmp(grp, "sys") != 0) 
       {
          fprintf(stderr, "Namespace group ('%s') must be either user or sys.\n", nsgrp);
          err = kCrnsErr_Argument;
@@ -279,7 +285,7 @@ int DoIt(void)
    
    if (!err)
    {
-      err = CreateSQL(fptr, ns, nsgrp, dbusr);
+      err = CreateSQL(fptr, ns, grp, dbusr);
    }
 
    if (!err)
@@ -287,9 +293,9 @@ int DoIt(void)
       fflush(fptr);
    }
 
-   if (nsgrp)
+   if (grp)
    {
-      free(nsgrp);
+      free(grp);
    }
 
    return err;
