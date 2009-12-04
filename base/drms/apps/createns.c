@@ -218,25 +218,6 @@ int DoIt(void)
          fprintf(stderr, "Can't create DRMS master tables in namespace public.\n");
          err = kCrnsErr_Argument;
       }
-      else
-      {
-         /* Ensure the namespace does not already exist */
-         sprintf(query, "SELECT * FROM pg_namespace WHERE nspname = '%s'", ns);
-         if ((qres = drms_query_txt(drms_env->session, query)) != NULL) 
-         {
-            if (qres->num_rows > 0) 
-            {
-               fprintf(stderr, "Namespace %s already exists.\n", ns);
-               err = kCrnsErr_NsExists;
-            }
-
-            db_free_text_result(qres);
-         }
-         else
-         {
-            err = kCrnsErr_DBQuery;
-         }
-      }
    }
 
    /* Namespace group (required, but not used in DRMS) */
