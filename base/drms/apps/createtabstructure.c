@@ -712,6 +712,11 @@ static int CreateSQL(FILE *fptr, DRMS_Env_t *env,
          {
             err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "tapegroup", tapegroup, where, whereout);
          }
+
+         if (!err)
+         {
+            err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "owner", owner, where, whereout);
+         }
       }
 
       /* Third, insert rows into drms_links */
