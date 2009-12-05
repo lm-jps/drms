@@ -61,6 +61,7 @@ typedef enum
 
 #define kSeriesin      "in"
 #define kSeriesout     "out"
+#define kOwner         "owner"
 #define kArchive       "archive"
 #define kRetention     "retention"
 #define kTapegroup     "tapegroup"
@@ -71,6 +72,7 @@ ModuleArgs_t module_args[] =
 {
    {ARG_STRING, kSeriesin,  kNotSpec,   "Input series used to make SQL that generates structure."},
    {ARG_STRING, kSeriesout, kNotSpec,   "Output series for which output SQL will generate structure."},
+   {ARG_STRING, kOwner,     kNotSpec,   "Series owner (database role) override."},
    {ARG_STRING, kArchive,   kNotSpec,   "Series archive value override."},
    {ARG_STRING, kRetention, kNotSpec,   "Series retetnion value override."},
    {ARG_STRING, kTapegroup, kNotSpec,   "Series tapgegroup value override."},
@@ -431,7 +433,7 @@ static CrtabError_t CreateSQLIndices(FILE *fptr,
    return err;
 }
 
-static CrtabError_t CreateSQLGrantPerms(FILE *fptr, DRMS_Env_t *env, const char *series, const char *ns)
+static CrtabError_t CreateSQLGrantPerms(FILE *fptr, DRMS_Env_t *env, const char *series, const char *ns, const char *owner)
 {
    CrtabError_t err = kCrtabErr_Success;
    DRMS_Session_t *session = env->session;
@@ -442,30 +444,38 @@ static CrtabError_t CreateSQLGrantPerms(FILE *fptr, DRMS_Env_t *env, const char 
    fprintf(fptr, "GRANT SELECT ON %s_seq TO public;\n", series);
    fprintf(fptr, "GRANT DELETE ON %s TO sumsadmin;\n", series);
 
-   sprintf(grantbuf, "SELECT owner FROM admin.ns WHERE name = '%s'", ns);
-   if ((qres = drms_query_bin(session, grantbuf)) == NULL)
+   if (owner)
    {
-      fprintf(stderr, "Invalid database query: '%s'\n", grantbuf);
-      err = kCrtabErr_DBQuery;
+      fprintf(fptr, "GRANT select, insert, update, delete ON %s TO %s;\n", series, owner);
+      fprintf(fptr, "GRANT update ON %s_seq TO %s;\n", series, owner);
    }
    else
    {
-      if (qres->num_rows != 1)
+      sprintf(grantbuf, "SELECT owner FROM admin.ns WHERE name = '%s'", ns);
+      if ((qres = drms_query_bin(session, grantbuf)) == NULL)
       {
-         fprintf(stderr, "Unexpected database response to query '%s'\n", grantbuf);
+         fprintf(stderr, "Invalid database query: '%s'\n", grantbuf);
          err = kCrtabErr_DBQuery;
       }
       else
       {
-         char nsowner[512];
+         if (qres->num_rows != 1)
+         {
+            fprintf(stderr, "Unexpected database response to query '%s'\n", grantbuf);
+            err = kCrtabErr_DBQuery;
+         }
+         else
+         {
+            char nsowner[512];
 
-         db_binary_field_getstr(qres, 0, 0, sizeof(nsowner), nsowner);
+            db_binary_field_getstr(qres, 0, 0, sizeof(nsowner), nsowner);
 
-         fprintf(fptr, "GRANT select, insert, update, delete ON %s TO %s;\n", series, nsowner);
-         fprintf(fptr, "GRANT update ON %s_seq TO %s;\n", series, nsowner);
+            fprintf(fptr, "GRANT select, insert, update, delete ON %s TO %s;\n", series, nsowner);
+            fprintf(fptr, "GRANT update ON %s_seq TO %s;\n", series, nsowner);
+         }
+
+         db_free_binary_result(qres);
       }
-
-      db_free_binary_result(qres);
    }
 
    return err;
@@ -600,7 +610,8 @@ static int CreateSQL(FILE *fptr, DRMS_Env_t *env,
                      const char *seriesout,
                      const char *archive, 
                      const char *retention, 
-                     const char *tapegroup)
+                     const char *tapegroup,
+                     const char *owner)
 {
    CrtabError_t err = kCrtabErr_Success;
    char *series = NULL;
@@ -672,7 +683,7 @@ static int CreateSQL(FILE *fptr, DRMS_Env_t *env,
          /* Grant select, insert, update, delete to owner of the namespace */
          if (!err)
          {
-            err = CreateSQLGrantPerms(fptr, env, seriesnew, ns);
+            err = CreateSQLGrantPerms(fptr, env, seriesnew, ns, owner);
          }
       }
    
@@ -757,11 +768,12 @@ int DoIt(void)
 {
    CrtabError_t err = kCrtabErr_Success;
    int drmsstat = DRMS_SUCCESS;
-   char *series = NULL;
-   char *seriesout = NULL;
-   char *archive = NULL;
-   char *retention = NULL;
-   char *tapegroup = NULL;
+   const char *series = NULL;
+   const char *seriesout = NULL;
+   const char *archive = NULL;
+   const char *retention = NULL;
+   const char *tapegroup = NULL;
+   const char *owner = NULL;
    char *file = NULL;
    FILE *fptr = NULL;
 
@@ -785,6 +797,12 @@ int DoIt(void)
    if (strcmp(tapegroup, kNotSpec) == 0)
    {
       tapegroup = NULL;
+   }
+
+   owner = cmdparams_get_str(&cmdparams, kOwner, NULL);
+   if (strcmp(owner, kNotSpec) == 0)
+   {
+      owner = NULL;
    }
 
    file = cmdparams_get_str(&cmdparams, kFile, NULL);
@@ -815,7 +833,7 @@ int DoIt(void)
    {
       if (drms_series_exists(drms_env, series, &drmsstat))
       {
-         CreateSQL(fptr, drms_env, series, seriesout, archive, retention, tapegroup);
+         CreateSQL(fptr, drms_env, series, seriesout, archive, retention, tapegroup, owner);
       }
       else
       {
