@@ -715,7 +715,13 @@ static int CreateSQL(FILE *fptr, DRMS_Env_t *env,
 
          if (!err)
          {
-            err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "owner", owner, where, whereout);
+            char *buf = malloc(strlen(owner) + 2);
+            if (buf)
+            {
+               snprintf(buf, strlen(owner) + 2, "\'%s\'", owner);
+               err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "owner", buf, where, whereout);
+               free(buf);
+            }
          }
       }
 
