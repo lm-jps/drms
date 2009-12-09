@@ -1,0 +1,346 @@
+#!/bin/bash
+export SSH_AUTH_SOCK=/tmp/ssh-HgUgDH2809/agent.2809
+export SSH_AGENT_PID=2810
+
+logfile=../log/$0.log
+
+#--------------------------------------------------------------------
+# Setting up the log
+#--------------------------------------------------------------------
+echo > $logfile
+logwrite () {
+        echo `date +"%m-%d-%Y %H:%M:%S - "` "$1" >> $logfile
+        if [ ! $2 == "" ]
+        then
+        	echo `date +"%m-%d-%Y %H:%M:%S - "` >> $logfile
+        fi
+}
+
+logwrite "Starting $0" nl
+
+#--------------------------------------------------------------------
+# syntax check
+#--------------------------------------------------------------------
+if [ $# -eq 1 ]
+then
+	config_file=$1
+	logwrite "Using $config_file" nl
+else
+	error="ERROR: Usage: $0 <configuration file>"
+	echo $error
+	logwrite "$error"
+	exit
+fi
+
+#--------------------------------------------------------------------
+# Prepare trigger file
+#--------------------------------------------------------------------
+echo > temp.tgr
+logwrite "Created temp.tgr"
+
+exec < $config_file
+	while read line
+	do
+		# skips blank lines
+		if [ ${#line} -eq 0 ]
+			then
+				continue
+		fi
+
+                # spits the line into variables
+                set - $line
+		
+		# skips commented lines
+		if [ ${1:0:1} == "#" ]
+			then 
+				continue
+		fi
+		
+		# gets the node name and puts it in $node
+		if [ $1 == "node" ]
+			then
+				node=$2
+		fi
+
+		# gets the ip of the subscription manager server
+		if [ $1 == "webdb_ip" ]
+			then
+				webdb_ip=$2
+				continue
+		fi
+
+		# gets the directory of the target server
+		if [ $1 == "webdb_dir" ]
+			then
+				webdb_dir=$2
+				continue
+		fi
+
+		# gets the user of the target server
+		if [ $1 == "webdb_user" ]
+			then
+				webdb_user=$2
+				continue
+		fi
+
+		# gets the host for the local database connection
+		if [ $1 == "pg_host" ]
+			then
+				pg_host=$2
+				continue
+		fi
+
+		# gets the port for the local database connection
+		if [ $1 == "pg_port" ]
+			then
+				pg_port=$2
+				continue
+		fi
+
+		# gets the user for the local database connection
+		if [ $1 == "pg_user" ]
+			then
+				pg_user=$2
+				continue
+		fi
+
+		# gets the database name for the local database connection
+		if [ $1 == "pg_dbname" ]
+			then
+				pg_dbname=$2
+				continue
+		fi
+
+		# gets the schema name for the local database connection
+		if [ $1 == "pg_schema" ]
+			then
+				pg_schema=$2
+				continue
+		fi
+
+		# gets the amount of attempts script will check for status
+		if [ $1 == "attempts" ]
+			then
+				max=$2
+				continue
+		fi
+		
+		# gets the value for new_site
+		if [ $1 == "new_site" ]
+			then
+				new_site=$2
+		fi
+		
+		# gets the location of the ingestion directory to put a die file
+		if [ $1 == "ingestion_path" ]
+			then
+				ingestion_path=$2
+				continue
+		fi
+
+                # writes lines not filtered out to the temp.tgr file
+		logwrite "Adding line [$1 $2] to temp.tgr"
+                echo "$1 $2" >> temp.tgr
+        done
+
+#--------------------------------------------------------------------
+# Check to see if the schema and database exists on the subscribers database
+#--------------------------------------------------------------------
+#check=`psql -p $pg_port -h $pg_host -U $pg_user -c '\dt '$pg_schema'.*' $pg_dbname| grep drms_series`
+logwrite "Executing [psql -p $pg_port -U $pg_user $pg_dbname -c '\dt admin.*' | grep \" ns \"]"
+check=`psql -p $pg_port -U $pg_user $pg_dbname -c '\dt admin.*' | grep " ns "`
+
+if [ ! "$check" == "" ]
+then
+	logwrite "admin schema and table ns exist" 
+else
+	logwrite "ERROR: admin schema and table ns do NOT exist" 
+	logwrite "ABORTING"
+	logwrite "Removing temp.tgr"
+	rm -f temp.tgr
+	logwrite "Exiting $0"
+	exit
+fi
+
+#--------------------------------------------------------------------
+# Stopping ingestion script and copy trigger file to Manager
+#--------------------------------------------------------------------
+logwrite "Stopping the ingestion script"
+logwrite "get_slony_logs.$node.die in $ingestion_path" nl
+echo > $ingestion_path/get_slony_logs.$node.die
+logwrite "Renaming temp.tgr to $node.subscribe_series.tgr" nl
+triggerfile=$node.subscribe_series.tgr
+mv -f temp.tgr $triggerfile
+
+
+logwrite "Copying $triggerfile to $webdb_user@$webdb_ip:$webdb_dir" nl
+
+scp $triggerfile $webdb_user@$webdb_ip:$webdb_dir/.
+
+logwrite "Removing $triggerfile" nl
+
+rm -f $triggerfile
+
+
+#--------------------------------------------------------------------
+# Loop waiting for trigger file to continue
+#--------------------------------------------------------------------
+echo -n "Waiting to retrieve the sql file from the subscription manager"
+counter=0
+while [ 1 -eq 1 ]
+do	
+	if [ $counter -ge $max ] 
+	then
+		logwrite "ERROR: Did not find node1.subscribe_series.sqldone after 20 tries"			
+		logwrite "ERROR: Exiting $0 " nl
+		echo
+		echo "ERROR: Couldn't find the sql file required to continue!"
+		echo "ABORTING!"
+		exit
+	fi		
+
+	
+	check=`ssh $webdb_user@$webdb_ip 'ls '$webdb_dir' | grep '$node'.subscribe_series.sqldone'`
+	
+	if [ ! $check == "" ]
+	then
+		logwrite "Found node1.subscribe_series.sqldone, continuing"
+		echo
+		echo "Subscription manager finished creating the sql file, retrieving it."
+		break
+	else
+		counter=$(( $counter + 1 ))
+		logwrite "Did not find node1.subscribe_series.sqldone, sleeping for five seconds"
+		echo -n "."
+		sleep 5
+	fi
+
+done
+
+unset check
+# Checking trigger file for failure code
+check=`ssh $webdb_user@$webdb_ip 'cat '$webdb_dir/$node.subscribe_series.sqldone' | grep failure'`
+
+if [ ! $check == "" ]
+then
+	echo "ERROR: One or more of the schemas did not exist on the webdb"
+	echo "ERROR: ABORTING!"
+	logwrite "One or more of the schemas did not exist on the webdb"
+	logwrite "ABORTING!" nl
+	logwrite "Removing sqldone trigger file from webdb"
+	ssh $webdb_user@$webdb_ip 'rm -f '$webdb_dir/$node.subscribe_series.sqldone
+	logwrite "Starting the ingestion script"
+	logwrite "Removing ingestion.die in $ingestion_path" nl
+	rm -f $ingestion_path/get_slony_logs.$node.die
+	exit
+fi
+
+
+# Trigger file found, transferring sql file to local machine
+logwrite "Copying over sql files from $webdb_user@$webdb_ip"
+
+logwrite "Copying and removing $node.createns.sql file from $webdb_user@$webdb_ip"
+scp $webdb_user@$webdb_ip:$webdb_dir/$node.createns.sql .
+ssh $webdb_user@$webdb_ip 'rm -f '$webdb_dir'/'$node'.createns.sql'
+	
+logwrite "Copying and removing $node.subscribe_series.sql file from $webdb_user@$webdb_ip"
+scp $webdb_user@$webdb_ip:$webdb_dir/$node.subscribe_series.sql .
+ssh $webdb_user@$webdb_ip 'rm -f '$webdb_dir'/'$node'.subscribe_series.sql'
+
+#--------------------------------------------------------------------
+# Execute the SQL files, return a value 
+#--------------------------------------------------------------------
+# Execute $node.createns.sql
+echo "Applying SQL files to database"
+echo "Applying SQL file $node.createns.sql to database"
+logwrite "Executing [psql -p $pg_port -h $pg_host -U $pg_user -ef $node.createns.sql $pg_dbname > /dev/null]"
+psql -p $pg_port -h $pg_host -U $pg_user -ef $node.createns.sql $pg_dbname > /dev/null
+
+echo "Applying SQL file $node.subscribe_series.sql to database"
+logwrite "Executing [psql -p $pg_port -h $pg_host -U $pg_user -ef $node.subscribe_series.sql $pg_dbname > sqlcheck.tmp 2>&1]"
+psql -p $pg_port -h $pg_host -U $pg_user -ef $node.subscribe_series.sql $pg_dbname > sqlcheck.tmp 2>&1
+
+check=`cat sqlcheck.tmp | grep "ERROR:"`
+logwrite "Checking for errors with $node.subscribe_series.sql"
+logwrite "Found errors: [$check]" nl
+
+if [  ! "$check" == "" ] 
+then
+	logwrite "Failed to apply $node.subscribe_series.sql"
+	logwrite "Rolling back to previous state"
+	success=false
+else
+	logwrite "$node.subscribe_series.sql succeded, continuing"
+	success=true
+fi
+rm -f sqlcheck.tmp
+
+if [ $success == "true" ]
+then
+	# SQL applictaion was a success, appending [success true] to the cfg file on webdb
+	logwrite "SQL application successful, appending [success=true] to the cfg file on webdb"
+	ssh $webdb_user@$webdb_ip 'echo '"success true"' >> '$webdb_dir'/'$node'.subscribe_series.cfg'
+else
+	# SQL application was unsuccessful, appending [success false] to the cfg file on webdb
+	logwrite "SQL application unsuccessful, appending [success=false] to the cfg file on webdb"
+	echo "SQL application was unsuccessful: ABORTING!"
+	ssh $webdb_user@$webdb_ip 'echo '"success false"' >> '$webdb_dir'/'$node'.subscribe_series.cfg'
+fi
+
+ssh $webdb_user@$webdb_ip cp -f $webdb_dir/$node.subscribe_series.cfg $webdb_dir/$node.subscribe_series.sqlapplied
+
+
+#--------------------------------------------------------------------
+# Loop waiting for done file to continue
+#--------------------------------------------------------------------
+echo -n "Waiting for the subscription manager to finished updating the subscription parser"
+counter=0
+while [ 1 -eq 1 ]
+do	
+	if [ $counter -ge $max ] 
+	then
+		logwrite "ERROR: Did not find node1.subscribe_series.done after $max tries"
+		logwrite "ERROR: Exiting $0 " nl
+		echo "ERROR: The subscription manager has not reported it has finished updating the subscription parser after $max tries!"
+		echo "ABORTING!"
+		exit
+	fi		
+
+	check=`ssh $webdb_user@$webdb_ip 'ls '$webdb_dir' | grep '$node'.subscribe_series.done'`
+		
+	if [ ! $check == "" ]
+	then
+		logwrite "Found node1.subscribe_series.done, continuing"
+		echo
+		echo "Subscription manager has finished updating the parser"
+		break
+	else
+		counter=$(( $counter + 1 ))
+		logwrite "Did not find node1.subscribe_series.done, sleeping for five seconds"
+		echo -n "."
+		sleep 5
+	fi
+
+done
+
+#--------------------------------------------------------------------
+# Starting the ingestion script
+#--------------------------------------------------------------------
+logwrite "Starting the ingestion script"
+logwrite "Removing ingestion.die in $ingestion_path" nl
+rm -f $ingestion_path/get_slony_logs.$node.die
+
+logwrite "Creating new trigger file (from old cfg file) to signal sql has been applied" nl
+ssh $webdb_user@$webdb_ip rm -f $webdb_dir/$node.subscribe_series.done
+
+logwrite "$0 complete"
+echo
+
+if [ $success  == "true" ]
+then
+	echo "Subscription process completed successfully!"
+else
+	echo "Subscription process did not complete successfully!"
+fi
+
+
