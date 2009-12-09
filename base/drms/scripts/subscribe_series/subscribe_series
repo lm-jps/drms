@@ -21,16 +21,33 @@ logwrite "Starting $0" nl
 #--------------------------------------------------------------------
 # syntax check
 #--------------------------------------------------------------------
-if [ $# -eq 1 ]
+if [ $# -eq 2 ]
 then
 	config_file=$1
-	logwrite "Using $config_file" nl
+	logwrite "Using [$config_file] as log file" nl
+	rsFile=$2
+	logwrite "rsFile is  [$rsFile]" nl
 else
-	error="ERROR: Usage: $0 <configuration file>"
+	error="ERROR: Usage: $0 <configuration file> <ssh-agent_rs file>"
 	echo $error
 	logwrite "$error"
 	exit
 fi
+
+#--------------------------------------------------------------------
+# Set up ssh keys
+#--------------------------------------------------------------------
+exec < "$rsFile"
+while read line; do
+        set - $line
+        if [ "$1" == "setenv" ]; then
+                tag="$2"
+                shift
+                shift
+                echo "export ${tag}=$*  "
+                export ${tag}=$*
+        fi
+done
 
 #--------------------------------------------------------------------
 # Prepare trigger file
@@ -333,6 +350,18 @@ rm -f $ingestion_path/get_slony_logs.$node.die
 logwrite "Creating new trigger file (from old cfg file) to signal sql has been applied" nl
 ssh $webdb_user@$webdb_ip rm -f $webdb_dir/$node.subscribe_series.done
 
+#--------------------------------------------------------------------
+# Removing the sql files
+#--------------------------------------------------------------------
+logwrite "Removing the $node.createns.sql file"
+rm -f $node.createns.sql
+
+logwrite "Removing the $node.subscribe_series.sql file"
+rm -f $node.subscribe_series.sql
+
+#--------------------------------------------------------------------
+# Finish
+#--------------------------------------------------------------------
 logwrite "$0 complete"
 echo
 

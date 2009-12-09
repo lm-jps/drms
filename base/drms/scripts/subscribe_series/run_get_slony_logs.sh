@@ -1,8 +1,26 @@
-#source ~/.ssh-agent_rs
-export SSH_AUTH_SOCK=/tmp/ssh-HgUgDH2809/agent.2809;
-export SSH_AGENT_PID=2810;
-echo "SSH_AGENT_PID=[$SSH_AGENT_PID]"
+#!/bin/bash
+
+if [ $# -ne 1 ] ; then
+	echo "Usage: $0 <ssh-agent_rs file>"
+	echo "       specify path/filename for the ssh-agent_rs file"
+	exit
+else
+	rsFile="$1"
+fi
+
+exec < "$rsFile"
+while read line; do
+	set - $line
+	if [ "$1" == "setenv" ]; then
+		tag="$2"
+		shift
+		shift
+		echo "export ${tag}=$*	"
+		export ${tag}=$*
+	fi
+done
+
 date
 
-./get_slony_logs.pl jsoc mydb
+../get_slony_logs.pl jsoc mydb
 
