@@ -23,5 +23,6 @@ const void *hash_lookup(Hash_Table_t *h, const void *key);
 int hash_size(Hash_Table_t *h);
 void hash_stat(Hash_Table_t *h);
 void hash_map(Hash_Table_t *h, void (*f)(const void *, const void *));
-unsigned int hash_universal_hash(const void *v);
+void hash_map_data(Hash_Table_t *h, void (*f)(const void *, const void *, const void *data), const void *data);
+unsigned long long hash_universal_hash(const void *v);
 #endif

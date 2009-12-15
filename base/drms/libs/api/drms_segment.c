@@ -486,7 +486,7 @@ HContainer_t *drms_segment_createinfocon(DRMS_Env_t *drmsEnv,
 	       if (nameArr != NULL && valArr != NULL)
 	       {
 		    HIterator_t hit;
-		    hiter_new(&hit, &(template->segments));
+		    hiter_new_sort(&hit, &(template->segments), drms_segment_ranksort);
 		    DRMS_Segment_t *seg = NULL;
 
 		    int iSeg = 0;
@@ -609,14 +609,39 @@ DRMS_Segment_t *drms_segment_lookup (DRMS_Record_t *rec, const char *segname) {
   } else return seg;
 }
 
+/* Because elements of an hcontainer are unordered, we need to use the segnum field 
+ * to sort the elements. This is achieved by using the drms_segment_ranksort()
+ * comparator. Then we have to do a linear search for the element with the
+ * desired segnum. */
 DRMS_Segment_t *drms_segment_lookupnum(DRMS_Record_t *rec, int segnum)
 {
-  DRMS_Segment_t *seg = hcon_index2slot(&rec->segments, segnum, NULL);
-  // This is to properly handle link segment and constant segment.
-  return drms_segment_lookup(rec, seg->info->name);
+   HIterator_t hit;
+   DRMS_Segment_t *seg = NULL;
+
+   hiter_new_sort(&hit, &rec->segments, drms_segment_ranksort);
+   while ((seg = (DRMS_Segment_t *)hiter_getnext(&hit)) != NULL)
+   {
+      if (seg->info->segnum == segnum)
+      {
+         break;
+      }
+      else if (seg->info->segnum > segnum)
+      {
+         seg = NULL;
+         break;
+      }
+   }
+
+   if (seg)
+   {
+      /* found matching segment */
+
+      // This is to properly handle link segment and constant segment.
+      seg = drms_segment_lookup(rec, seg->info->name);
+   }
+
+   return seg;
 }
-
-
 
 /*************************** Segment Data functions **********************/
 

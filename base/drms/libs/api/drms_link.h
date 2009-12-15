@@ -21,6 +21,17 @@ int drms_setlink_static(DRMS_Record_t *rec, const char *linkname,
 int drms_setlink_dynamic(DRMS_Record_t *rec, const char *linkname, 
 			 DRMS_Type_t *types, DRMS_Type_Value_t *values);
 
+
+static inline int drms_link_ranksort(const void *he1, const void *he2)
+{
+   DRMS_Link_t *l1 = (DRMS_Link_t *)hcon_getval(*((HContainerElement_t **)he1));
+   DRMS_Link_t *l2 = (DRMS_Link_t *)hcon_getval(*((HContainerElement_t **)he2));
+   
+   XASSERT(l1 && l2);
+
+   return (l1->info->rank < l2->info->rank) ? -1 : (l1->info->rank > l2->info->rank ? 1 : 0);
+}
+
 /* doxygen documentation */
 
 /**

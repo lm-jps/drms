@@ -185,7 +185,7 @@ int drms_insert_series(DRMS_Session_t *session, int update,
   p += sprintf(p,", sessionns text");
 
   /* Link fields. */
-  hiter_new(&hit, &template->links); /* Iterator for link container. */
+  hiter_new_sort(&hit, &template->links, drms_link_ranksort); /* Iterator for link container. */
   while( (link = (DRMS_Link_t *)hiter_getnext(&hit)) )
   {
     if (link->info->type == STATIC_LINK)
@@ -219,7 +219,7 @@ int drms_insert_series(DRMS_Session_t *session, int update,
 
   }
   /* Keyword fields. */
-  hiter_new(&hit, &template->keywords); /* Iterator for keyword container. */
+  hiter_new_sort(&hit, &template->keywords, drms_keyword_ranksort); /* Iterator for keyword container. */
   while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )
   {
     if (!key->info->islink && !drms_keyword_isconstant(key))
@@ -310,7 +310,7 @@ int drms_insert_series(DRMS_Session_t *session, int update,
 
   }
   /* Segment fields. */
-  hiter_new(&hit, &template->segments); /* Iterator for segment container. */
+  hiter_new_sort(&hit, &template->segments, drms_segment_ranksort); /* Iterator for segment container. */
   segnum = 0;
   while( (seg = (DRMS_Segment_t *)hiter_getnext(&hit)) )
   {
@@ -1405,4 +1405,109 @@ int drms_series_isreplicated(DRMS_Env_t *env, const char *series)
    }
 
    return ans;
+}
+
+int GetTableOID(DRMS_Env_t *env, const char *ns, const char *table, char **oid)
+{
+   char query[DRMS_MAXQUERYLEN];
+   DB_Binary_Result_t *qres = NULL;
+   DRMS_Session_t *session = env->session;
+   int err = 0;
+
+   snprintf(query, sizeof(query), "SELECT c.oid, n.nspname, c.relname FROM pg_catalog.pg_class c LEFT JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE c.relname ~ '^(%s)$' AND n.nspname ~ '^(%s)$' ORDER BY 2, 3", table, ns);
+   
+   if (!oid)
+   {
+      fprintf(stderr, "Missing required argument 'oid'.\n");
+      err = 1;
+   }
+   else if ((qres = drms_query_bin(session, query)) == NULL)
+   {
+      fprintf(stderr, "Invalid database query: '%s'\n", query);
+      err = 1;
+   }
+   else
+   {
+      if (qres->num_rows != 1)
+      {
+         fprintf(stderr, "Unexpected database response to query '%s'\n", query);
+         err = 1;
+      }
+      else
+      {
+         /* row 1, column 1 */
+         char ioid[8];
+         *oid = malloc(sizeof(char) * 64);
+
+         /* qres will think OID is of type string, but it is not. It is a 32-bit big-endian number.
+          * So, must convert the four bytes into a 32-bit number (swapping bytes if the machine is 
+          * a little-endian machine) */
+         memcpy(ioid, qres->column->data, 4);
+
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+         db_byteswap(DB_INT4, 1, ioid);
+#endif
+
+         snprintf(*oid, 64, "%d", *((int *)ioid));
+         db_free_binary_result(qres);
+      }
+   }
+
+   return err;
+}
+
+int GetColumnNames(DRMS_Env_t *env, const char *oid, char **colnames)
+{
+   int err = 0;
+   char query[DRMS_MAXQUERYLEN];
+   DB_Binary_Result_t *qres = NULL;
+   DRMS_Session_t *session = env->session;
+
+   snprintf(query, sizeof(query), "SELECT a.attname, pg_catalog.format_type(a.atttypid, a.atttypmod), (SELECT substring(pg_catalog.pg_get_expr(d.adbin, d.adrelid) for 128) FROM pg_catalog.pg_attrdef d WHERE d.adrelid = a.attrelid AND d.adnum = a.attnum AND a.atthasdef) as defval, a.attnotnull FROM pg_catalog.pg_attribute a WHERE a.attrelid = '%s' AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum", oid);
+
+   if ((qres = drms_query_bin(session, query)) == NULL)
+   {
+      fprintf(stderr, "Invalid database query: '%s'\n", query);
+      err = 1;
+   }
+   else
+   {
+      if (qres->num_cols != 4)
+      {
+         fprintf(stderr, "Unexpected database response to query '%s'\n", query);
+         err = 1;
+      }
+      else
+      {
+         char *list = NULL;
+         int irow;
+         size_t strsize = DRMS_MAXQUERYLEN;
+         char colname[512];
+
+         if (colnames)
+         {
+            list = malloc(sizeof(char) * strsize);
+            memset(list, 0, sizeof(char) * strsize);
+
+            for (irow = 0; irow < qres->num_rows; irow++)
+            {
+               if (irow)
+               {
+                  base_strcatalloc(list, ",", &strsize);
+               }
+
+               /* row irow + 1, column 1 */
+               db_binary_field_getstr(qres, irow, 0, sizeof(colname), colname);
+               base_strcatalloc(list, colname, &strsize);
+            }
+
+            *colnames = list;
+            list = NULL;
+         }
+
+         db_free_binary_result(qres);
+      }
+   }
+   
+   return err;
 }

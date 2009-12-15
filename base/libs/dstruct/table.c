@@ -113,6 +113,13 @@ void table_map(Table_t *S, void (*f)(const void *key, const void *value))
     f(S->data[i].key, S->data[i].value);
 }
 
+void table_map_data(Table_t *S, void (*f)(const void *key, const void *value, const void *data), const void *data)
+{
+  int i;
+
+  for(i=0; i < S->size; i++) 
+    f(S->data[i].key, S->data[i].value, data);
+}
 
 int table_member(Table_t *S, const void *key)
 {

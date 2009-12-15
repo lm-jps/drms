@@ -123,6 +123,7 @@ static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env,
 					      int nRecs,
 					      char **pkeysout,
 					      int *status);
+
 static void RSFree(const void *val);
 /* end drms_open_records() helpers */
 
@@ -3573,6 +3574,8 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
   char *p, *q, query[DRMS_MAXQUERYLEN], buf[DRMS_MAXPRIMIDX*DRMS_MAXKEYNAMELEN];
   DRMS_Keyword_t *kw;
   int dsdsing = 0;
+  char *colnames = NULL;
+
   XASSERT(env);
   XASSERT(seriesname);
 
@@ -3735,12 +3738,48 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
 			      template->seriesinfo->version);
     }
 
+    char *ns = NULL;
+    char *table = NULL;
+    char *oid = NULL;
+    int err = 0;
+    char *serieslwr = strdup(template->seriesinfo->seriesname);
+
+    strtolower(serieslwr);
+    get_namespace(serieslwr, &ns, &table);
+
+    if (serieslwr)
+    {
+       free(serieslwr);
+    }
+
+    err = GetTableOID(env, ns, table, &oid);
+
+    if (ns)
+    {
+       free(ns);
+    }
+
+    if (table)
+    {
+       free(table);
+    }
+
+    if (!err)
+    {
+       err = GetColumnNames(env, oid, &colnames);
+    }
+
+    if (oid)
+    {
+       free(oid);
+    }
+
     /* Populate series info segments, keywords, and links part */
     if ((stat=drms_template_segments(template)))
       goto bailout;
-    if ((stat=drms_template_links(template)))
+    if ((stat=drms_template_links_int(template, colnames)))
       goto bailout;
-    if ((stat=drms_template_keywords_int(template, !jsd)))
+    if ((stat=drms_template_keywords_int(template, !jsd, colnames)))
       goto bailout;
 
     /* If any segments present, lookup pemission to set retention */
@@ -3895,11 +3934,22 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
 
     db_free_binary_result(qres);   
   }
+
+  if (colnames)
+  {
+     free(colnames);
+  }
+
   if (status)
     *status = DRMS_SUCCESS;
   return template;
 
  bailout:
+  if (colnames)
+  {
+     free(colnames);
+  }
+
   if (status)
     *status = stat;
   return NULL;
@@ -7540,7 +7590,11 @@ DRMS_Segment_t *drms_record_nextseg(DRMS_Record_t *rec, HIterator_t **last)
       }
       else
       {
-         hit = *last = hiter_create(&(rec->segments));
+         hit = *last = (HIterator_t *)malloc(sizeof(HIterator_t));
+         if (hit != NULL)
+         {
+            hiter_new_sort(hit, &(rec->segments), drms_segment_ranksort);
+         }
       }
 
       seg = hiter_getnext(hit);
@@ -7556,6 +7610,7 @@ DRMS_Segment_t *drms_record_nextseg(DRMS_Record_t *rec, HIterator_t **last)
    return segret;
 }
 
+/* Return keywords in rank order. */
 DRMS_Keyword_t *drms_record_nextkey(DRMS_Record_t *rec, HIterator_t **last)
 {
    DRMS_Keyword_t *key = NULL;
@@ -7571,7 +7626,11 @@ DRMS_Keyword_t *drms_record_nextkey(DRMS_Record_t *rec, HIterator_t **last)
       }
       else
       {
-         hit = *last = hiter_create(&(rec->keywords));
+         hit = *last = (HIterator_t *)malloc(sizeof(HIterator_t));
+         if (hit != NULL)
+         {
+            hiter_new_sort(hit, &(rec->keywords), drms_keyword_ranksort);
+         }
       }
 
       key = hiter_getnext(hit);

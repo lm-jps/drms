@@ -377,11 +377,13 @@ void drms_copy_keyword_struct(DRMS_Keyword_t *dst, DRMS_Keyword_t *src)
     dst->info = src->info;
   if (src->info->type == DRMS_TYPE_STRING)
   {
-    if (dst->info->type == DRMS_TYPE_STRING)
-      free(dst->value.string_val);
-    /* Copy main struct. */
-    memcpy(dst, src, sizeof(DRMS_Keyword_t));
-    dst->value.string_val = strdup(src->value.string_val);
+     /* Make sure you don't free something still being used!! */
+     if (dst->info->type == DRMS_TYPE_STRING && dst->value.string_val != src->value.string_val)
+       free(dst->value.string_val);
+
+     /* Copy main struct. */
+     memcpy(dst, src, sizeof(DRMS_Keyword_t));
+     dst->value.string_val = strdup(src->value.string_val);
   }
   else
   {
@@ -600,13 +602,16 @@ void drms_keyword_snprintfval(DRMS_Keyword_t *key, char *buf, int size)
       isconstant, persegment, description)
    tuples to initialize the array of keyword descriptors.
 */
-int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg)
+int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const char *cols)
 {
   DRMS_Env_t *env;
-  int i,num_segments, per_segment, seg, status;
+  int num_segments, per_segment, seg, status;
   char name0[DRMS_MAXKEYNAMELEN], name[DRMS_MAXKEYNAMELEN];
   char defval[DRMS_DEFVAL_MAXLEN], query[DRMS_MAXQUERYLEN];
   DRMS_Keyword_t *key;
+  int irow;
+  int rankindeterminate;
+  int constrank;
   DB_Binary_Result_t *qres;
 
   DRMS_SeriesVersion_t vers2_1 = {"2.1", ""};
@@ -617,28 +622,65 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg)
 	    (void (*)(const void *)) drms_free_keyword_struct, 
 	    (void (*)(const void *, const void *)) drms_copy_keyword_struct);
 
-  /* Get keyword definitions and add to template. */
-  char *namespace = ns(template->seriesinfo->seriesname);
-  sprintf(query, "select keywordname, islink, linkname, targetkeyw, type, "
-	  "defaultval, format, unit, isconstant, persegment, "
-	  "description from %s.%s where seriesname ~~* '%s'",
-	  namespace, DRMS_MASTER_KEYWORD_TABLE, template->seriesinfo->seriesname);
-  free(namespace);
-  if ((qres = drms_query_bin(env->session, query)) == NULL)
-    return 1;  /* non-existent ID or SQL error. */
-
-  if (qres->num_rows>0 && qres->num_cols != 11 )
-  {
-    status = DRMS_ERROR_BADFIELDCOUNT;
-    goto bailout;
-  }
-  
   num_segments = hcon_size(&template->segments);
-  for (i = 0; i<(int)qres->num_rows; i++)
-  {
+
+  /* Get the list of keywords from the 'record-series' (eg, su_arta.fd_M_96m_lev18). Then
+   * iterate through each of those keywords and find the corresponding record in the 
+   * <ns>.drms_keyword table.  */
+
+  int rank;
+  char *colnames = strdup(cols);
+  char *pch = NULL;
+  char *pdel = NULL;
+
+   /* loop through keywords in colnames */
+   pch = colnames;
+   char *namespace = ns(template->seriesinfo->seriesname);
+   rank = 0;
+
+   /* Fetch all keyword rows relevant to this series - must create a keyword struct for each */
+   sprintf(query, "select keywordname, islink, linkname, targetkeyw, type, "
+           "defaultval, format, unit, isconstant, persegment, "
+           "description from %s.%s where seriesname ~~* '%s'",
+           namespace, DRMS_MASTER_KEYWORD_TABLE, template->seriesinfo->seriesname);
+
+   if ((qres = drms_query_bin(env->session, query)) == NULL)
+   {
+      if (colnames)
+      {
+         free(colnames);
+      }
+
+      if (namespace)
+      {
+         free(namespace);
+      }
+      return DRMS_ERROR_QUERYFAILED;  /* non-existent ID or SQL error. */
+   }
+
+   if (qres->num_rows>0 && qres->num_cols != 11 )
+   {
+      if (colnames)
+      {
+         free(colnames);
+      }
+
+      if (namespace)
+      {
+         free(namespace);
+      }
+      status = DRMS_ERROR_BADFIELDCOUNT;
+      goto bailout;
+   }
+
+   rankindeterminate = 0;
+   constrank = 0;
+
+   for (irow = 0; irow < (int)qres->num_rows; irow++)
+   {
     if (expandperseg)
     {
-       per_segment = ((db_binary_field_getint(qres, i, 9) & kKeywordFlag_PerSegment) != 0);
+       per_segment = ((db_binary_field_getint(qres, irow, 9) & kKeywordFlag_PerSegment) != 0);
     }
     else
     {
@@ -648,7 +690,7 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg)
     for (seg=0; seg<(per_segment==1?num_segments:1); seg++)
     {
       /* Construct name, possibly by appending segment selector. */
-      db_binary_field_getstr(qres, i, 0, sizeof(name0), name0);
+      db_binary_field_getstr(qres, irow, 0, sizeof(name0), name0);
 
       /* key->info->per_segment overload: <= drms_keyword.c:1.44 will fail here if the the value in 
        * the persegment column of the drms_keyword table has been overloaded to contain 
@@ -657,7 +699,6 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg)
 	sprintf(name,"%s_%03d",name0,seg);
       else
 	strcpy(name,name0);
-
       
       /* Allocate space for new structure in hashed container. */
       key = hcon_allocslot_lower(&template->keywords, name);
@@ -669,27 +710,49 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg)
       /* Copy field values from query result. */
       strcpy(key->info->name, name);
 
-      
-      key->info->islink = db_binary_field_getint(qres, i, 1);
-      db_binary_field_getstr(qres, i, 10, sizeof(key->info->description),key->info->description);
+      key->info->islink = db_binary_field_getint(qres, irow, 1);
+      db_binary_field_getstr(qres, irow, 10, sizeof(key->info->description),key->info->description);
       if (!key->info->islink)
       {
 	key->info->linkname[0] = 0;
 	key->info->target_key[0] = 0;
-	db_binary_field_getstr(qres, i, 4, sizeof(name),name);
+	db_binary_field_getstr(qres, irow, 4, sizeof(name),name);
 	key->info->type         = drms_str2type(name);
-	db_binary_field_getstr(qres, i, 5, sizeof(defval), defval);
+	db_binary_field_getstr(qres, irow, 5, sizeof(defval), defval);
 	drms_strval(key->info->type, &key->value, defval);
-	db_binary_field_getstr(qres, i, 6, sizeof(key->info->format),  key->info->format);
-	db_binary_field_getstr(qres, i, 7, sizeof(key->info->unit), key->info->unit);
-	key->info->recscope = (DRMS_RecScopeType_t)db_binary_field_getint(qres, i, 8);
+	db_binary_field_getstr(qres, irow, 6, sizeof(key->info->format),  key->info->format);
+	db_binary_field_getstr(qres, irow, 7, sizeof(key->info->unit), key->info->unit);
+	key->info->recscope = (DRMS_RecScopeType_t)db_binary_field_getint(qres, irow, 8);
 
         /* The persegment column used to be either 0 or 1 and it said whether the keyword
          * was a segment-specific column or not.  But starting with series version 2.1, 
          * the persegment column was overloaded to hold all the keyword flags (including
          * per_seg).  So, the following code works on both < 2.1 series and >= 2.1 series.
          */
-        key->info->kwflags = db_binary_field_getint(qres, i, 9);
+
+        key->info->kwflags = db_binary_field_getint(qres, irow, 9);
+
+        /* Examine top 16 bits of kwflags.  If a keyword has 0x0000, then this is an old
+         * series in which the keyword rankings are not completely determined; set a 
+         * flag and handle below. */
+        rank = (key->info->kwflags & 0xFFFF0000) >> 16; /* 1-based rank */
+
+        if (rank == 0)
+        {
+           rankindeterminate = 1;
+           /* This is (or will be) a constant keyword. If this is actually a 
+            * variable keyword, then this value will be replaced below. We
+            * might end up with some holes in the rank, because
+            * there might be a variable keyword here that gets replaced
+            * with an appropriate rank below, but this doesn't matter
+            * as rank is relative, and this code is to support
+            * old series. */
+           key->info->rank = constrank++;
+        }
+        else
+        {
+           key->info->rank = rank - 1; /* 0-based rank in DRMS */
+        }
 
         /* For vers 2.1 and greater, the persegment column contains the intprime and extprime 
          * information.  But for older versions, you can figure this out by looking 
@@ -703,13 +766,26 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg)
       }
       else
       {
-	db_binary_field_getstr(qres, i, 2, sizeof(key->info->linkname),key->info->linkname);
-	db_binary_field_getstr(qres, i, 3, sizeof(key->info->target_key),key->info->target_key);
+	db_binary_field_getstr(qres, irow, 2, sizeof(key->info->linkname),key->info->linkname);
+	db_binary_field_getstr(qres, irow, 3, sizeof(key->info->target_key),key->info->target_key);
 	key->info->type = DRMS_TYPE_INT;
 	key->value.int_val = 0;
 	key->info->format[0] = 0;
 	key->info->unit[0] = 0;
 	key->info->recscope = kRecScopeType_Variable;
+        key->info->kwflags = db_binary_field_getint(qres, irow, 9);
+        rank = (key->info->kwflags & 0xFFFF0000) >> 16; /* 1-based rank */
+
+        if (rank == 0)
+        {
+           rankindeterminate = 1;
+           key->info->rank = constrank++;
+        }
+        else
+        {
+           key->info->rank = rank - 1; /* 0-based rank in DRMS */
+        }
+
         drms_keyword_unsetperseg(key);
         drms_keyword_unsetintprime(key);
         drms_keyword_unsetextprime(key);
@@ -778,17 +854,123 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg)
 #endif
     }
   }
+
+   /* If the ranking wasn't completely specified in the "persegment" column, 
+    * then this is an old series for which libdrms did not save the 
+    * order in the "persegment" column. Enact Plan B: use the order of the
+    * columns in the "record" table (eg., <ns>.series) to determine 
+    * the order of the variable keywords, and use the order of rows of the 
+    * constant keywords in the <ns>.drms_keywords as the order of the
+    * constant keywords. */
+   if (rankindeterminate)
+   {
+      rank = 0;
+      while (pch)
+      {
+         if ((pdel = strchr(pch, ',')) != NULL)
+         {
+            *pdel = '\0';
+         }
+
+         if (!strcmp(pch, "recnum") ||
+             !strcmp(pch, "sunum") ||
+             !strcmp(pch, "slotnum") ||
+             !strcmp(pch, "sessionid") ||
+             !strcmp(pch, "sessionns"))
+         {
+            pch = pdel ? pdel + 1 : NULL;
+            continue;
+            /* There may be some other columns, like sg_000_file, that aren't 
+             * in the drms_keywords table, but that is okay. If a column isn't
+             * found in the drms_keywords table, */
+         }
+
+         /* Use the order of the record table to determine the order of the variable keywords. */
+         if ((key = (DRMS_Keyword_t *)hcon_lookup_lower(&template->keywords, pch)) != NULL)
+         {
+            key->info->rank = rank + constrank; /* Put variable keywords at end. */
+            rank++;
+         }
+
+         pch = pdel ? pdel + 1 : NULL;
+      }      
+   }
+
+  if (colnames)
+  {
+     free(colnames);
+  }
+
+  if (namespace)
+  {
+     free(namespace);
+  }
+
   db_free_binary_result(qres);
   return DRMS_SUCCESS;
 
  bailout:
+  if (colnames)
+  {
+     free(colnames);
+  }
+
+  if (namespace)
+  {
+     free(namespace);
+  }
+
   db_free_binary_result(qres);
   return status;
 }
 
 int drms_template_keywords(DRMS_Record_t *template)
 {
-   return drms_template_keywords_int(template, 1);
+   int err = 0;
+   char *ns = NULL;
+   char *table = NULL;
+   char *oid = NULL;
+   char *serieslwr = strdup(template->seriesinfo->seriesname);
+   char *colnames = NULL;
+
+   strtolower(serieslwr);
+   get_namespace(serieslwr, &ns, &table);
+
+   if (serieslwr)
+   {
+      free(serieslwr);
+   }
+
+   err = GetTableOID(template->env, ns, table, &oid);
+
+   if (ns)
+   {
+      free(ns);
+   }
+
+   if (table)
+   {
+      free(table);
+   }
+
+   if (!err)
+   {
+      err = GetColumnNames(template->env, oid, &colnames);
+   }
+
+   if (oid)
+   {
+      free(oid);
+   }
+
+   err = drms_template_keywords_int(template, 1, colnames);
+
+   if (colnames)
+   {
+      free(colnames);
+   }
+
+   return err;
 }
 
 /* Wrapper for __drms_keyword_lookup without the recursion depth counter. */
@@ -901,7 +1083,7 @@ HContainer_t *drms_keyword_createinfocon(DRMS_Env_t *drmsEnv,
 	       if (nameArr != NULL && valArr != NULL)
 	       {
 		    HIterator_t hit;
-		    hiter_new(&hit, &(template->keywords));
+		    hiter_new_sort(&hit, &(template->keywords), drms_keyword_ranksort);
 		    DRMS_Keyword_t *kw = NULL;
 
 		    int iKW = 0;

@@ -17,13 +17,14 @@ static int getvaltoken(char **in, DRMS_Type_t type, char *copy, int maxlen, int 
 int getkeyword(char **line, int parserline);
 static int getnextline(char **start);
 static int parse_seriesinfo(char *desc, DRMS_Record_t *template);
-static int parse_segments(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys);
-static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContainer_t *cparmkeys);
+static int parse_segments(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys, int *keynum);
+static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContainer_t *cparmkeys, int *keynum);
 static int parse_keyword(char **in, 
 			 DRMS_Record_t *ds, 
-			 HContainer_t *slotted);
+			 HContainer_t *slotted,
+                         int *keynum);
 static int parse_links(char *desc, DRMS_Record_t *template);
-static int parse_link(char **in, DRMS_Record_t *template);
+static int parse_link(char **in, DRMS_Record_t *template, int linknum);
 static int parse_primaryindex(char *desc, DRMS_Record_t *template);
 static int parse_dbindex(char *desc, DRMS_Record_t *template);
 
@@ -66,6 +67,7 @@ static void FreeCparmKey(const void *v)
 DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
 {
   DRMS_Record_t *template;
+  int keynum = 0;
 
   XASSERT(template = calloc(1, sizeof(DRMS_Record_t)));
   XASSERT(template->seriesinfo = calloc(1, sizeof(DRMS_SeriesInfo_t)));
@@ -118,7 +120,7 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
   }
 
   lineno = 0;
-  if (parse_segments(desc, template, cparmkeys))
+  if (parse_segments(desc, template, cparmkeys, &keynum))
   {
     fprintf(stderr,"Failed to parse segment info.\n");
     goto bailout;
@@ -141,7 +143,7 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
   }
 
   lineno = 0;
-  if (parse_keywords(desc, template, cparmkeys))
+  if (parse_keywords(desc, template, cparmkeys, &keynum))
   {
     fprintf(stderr,"Failed to parse keywords info.\n");
     goto bailout; 
@@ -270,7 +272,7 @@ static int parse_seriesinfo (char *desc, DRMS_Record_t *template) {
 }
 
 
-static int parse_segments (char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys) {
+static int parse_segments (char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys, int *keynum) {
   int len, segnum;
   char *start, *p, *q;
 
@@ -298,7 +300,7 @@ static int parse_segments (char *desc, DRMS_Record_t *template, HContainer_t *cp
     
      if (prefixmatch(p,"Data:"))
      {      
-        if (parse_segment(&q, template, segnum, cparmkeys))
+        if (parse_segment(&q, template, segnum, cparmkeys, keynum))
           return 1;
         ++segnum;
      }
@@ -311,7 +313,7 @@ static int parse_segments (char *desc, DRMS_Record_t *template, HContainer_t *cp
 
 
 
-static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContainer_t *cparmkeys)
+static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContainer_t *cparmkeys, int *keynum)
 {
   int i;
   char *p,*q;
@@ -455,6 +457,10 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
        drms_keyword_unsetextprime(cpkey);
        drms_keyword_setimplicit(cpkey);
 
+       /* Set rank of aux keyword. */
+       cpkey->info->rank = (*keynum)++;
+       cpkey->info->kwflags |= (cpkey->info->rank + 1) << 16;
+
        if (cparmkeys)
        {
           hcon_insert(cparmkeys, buf, &cpkey);
@@ -507,6 +513,10 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
        drms_keyword_unsetextprime(sckey);
        drms_keyword_setimplicit(sckey);
 
+       /* Set rank of aux keyword. */
+       sckey->info->rank = (*keynum)++;
+       sckey->info->kwflags |= (sckey->info->rank + 1) << 16;
+
        /* Although this container was originally used for holding 
         * the comp params for FITS, it is now being used for
         * holding TAS bzero/bscale keywords too.
@@ -541,6 +551,10 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
        drms_keyword_unsetextprime(sckey);
        drms_keyword_setimplicit(sckey);
 
+       /* Set rank of aux keyword. */
+       sckey->info->rank = (*keynum)++;
+       sckey->info->kwflags |= (sckey->info->rank + 1) << 16;
+
        /* Although this container was originally used for holding 
         * the comp params for FITS, it is now being used for
         * holding TAS bzero/bscale keywords too.
@@ -569,11 +583,13 @@ static int parse_links(char *desc, DRMS_Record_t *template)
 {
   int len;
   char *start, *p, *q;
+  int linknum;
 
   /* Parse the description line by line, filling 
      out the template struct. */
   start = desc;
   len = getnextline(&start);
+  linknum = 0;
   while(*start)
   {
     p = start;
@@ -593,8 +609,9 @@ static int parse_links(char *desc, DRMS_Record_t *template)
     
     if (prefixmatch(p,"Link:"))
     {
-      if (parse_link(&q,template))
-	return 1;
+       if (parse_link(&q,template, linknum))
+         return 1;
+       linknum++;
     }
     start += len+1; /* len doesn't account for \n*/
     len = getnextline(&start);
@@ -604,7 +621,7 @@ static int parse_links(char *desc, DRMS_Record_t *template)
 
 
 
-static int parse_link(char **in, DRMS_Record_t *template)
+static int parse_link(char **in, DRMS_Record_t *template, int linknum)
 {
   char *p,*q;
   char name[DRMS_MAXLINKNAMELEN]={0}, target[DRMS_MAXSERIESNAMELEN]={0}, type[DRMS_MAXNAMELEN]={0},
@@ -637,6 +654,7 @@ static int parse_link(char **in, DRMS_Record_t *template)
   }
   else
     GOTOFAILURE;
+  link->info->rank = linknum;
   strncpy(link->info->description, description, DRMS_MAXCOMMENTLEN);
   link->isset = 0;
   link->recnum = -1; 
@@ -651,9 +669,7 @@ static int parse_link(char **in, DRMS_Record_t *template)
   return 1;
 }
 
-
-
-int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys)
+int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys, int *keynum)
 {
   int len;
   char *start, *p, *q;
@@ -696,7 +712,9 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys)
     
 	if (prefixmatch(p,"Keyword:"))
 	{
-	   if (parse_keyword(&q,template, slotted))
+           /* Let parse_keyword advance the keyword number since it may 
+            * expand per-segment keywords into multiple keywords. */
+	   if (parse_keyword(&q,template, slotted, keynum))
 	     return 1;
 	}
 	start += len+1;
@@ -764,6 +782,10 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys)
                   * order of prime keys matches the order of keys. */
                  drms_keyword_setintprime(newkey);
                  drms_keyword_unsetextprime(newkey);
+
+                 /* Set kw rank. */
+                 newkey->info->rank = (*keynum)++;
+                 newkey->info->kwflags |= (newkey->info->rank + 1) << 16;
 
                  /* Index keywords must have a db index */
                  /* Don't add to dbidx_keywords here - do that in parse_dbindex() so that 
@@ -1315,7 +1337,8 @@ static int FormatChk(const char *format, DRMS_Type_t dtype)
 
 static int parse_keyword(char **in, 
 			 DRMS_Record_t *template, 
-			 HContainer_t *slotted)
+			 HContainer_t *slotted,
+                         int *keynum)
 {
   char *p,*q;
   char name[DRMS_MAXKEYNAMELEN]={0}, type[DRMS_MAXNAMELEN]={0}, linkname[DRMS_MAXLINKNAMELEN]={0}, defval[DRMS_DEFVAL_MAXLEN]={0};
@@ -1393,6 +1416,11 @@ static int parse_keyword(char **in,
     drms_keyword_unsetperseg(key);
     drms_keyword_unsetintprime(key);
     drms_keyword_unsetextprime(key);
+    key->info->rank = (*keynum)++;
+
+    /* Also store rank in key->info->kwflags - if we do this, it will be saved into db. 
+     * When stored in the db, rank is 1-based, not 0-based. */
+    key->info->kwflags |= (key->info->rank + 1) << 16;
 
     strcpy(key->info->description,description);
   }  
@@ -1494,6 +1522,12 @@ static int parse_keyword(char **in,
       strcpy(key->info->format, format);
       strcpy(key->info->unit, unit);
       key->info->recscope = kRecScopeType_Variable;
+      key->info->rank = (*keynum)++;
+
+      /* Also store rank in key->info->kwflags - if we do this, it will be saved into db. 
+       * When stored in the db, rank is 1-based, not 0-based. */
+      key->info->kwflags |= (key->info->rank + 1) << 16;
+
       int stat;
       DRMS_RecScopeType_t rscope = drms_keyword_str2recscope(constant, &stat);
       if (stat == DRMS_SUCCESS)
@@ -2320,12 +2354,12 @@ void drms_jsd_printfromrec(DRMS_Record_t *rec) {
 
    printf("%-*s\t\"%s\"\n",fwidth,"Description:",rec->seriesinfo->description);
    printf("\n#=====Links=====\n");
-   hiter_new(&hit, &rec->links); 
+   hiter_new_sort(&hit, &rec->links, drms_link_ranksort); 
    while( (link = (DRMS_Link_t *)hiter_getnext(&hit)) )
      drms_link_print_jsd(link);
 
    printf("\n#=====Keywords=====\n");
-   hiter_new(&hit, &rec->keywords);
+   hiter_new_sort(&hit, &rec->keywords, drms_keyword_ranksort);
    while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )
    {
       if (!drms_keyword_getimplicit(key))
@@ -2335,7 +2369,7 @@ void drms_jsd_printfromrec(DRMS_Record_t *rec) {
    }
 
    printf("\n#=====Segments=====\n");
-   hiter_new(&hit, &rec->segments);
+   hiter_new_sort(&hit, &rec->segments, drms_segment_ranksort);
    while( (seg = (DRMS_Segment_t *)hiter_getnext(&hit)) )
      drms_segment_print_jsd(seg);
 }

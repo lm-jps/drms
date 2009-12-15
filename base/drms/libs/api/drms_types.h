@@ -796,6 +796,10 @@ typedef struct  DRMS_KeywordInfo_struct
                                    * the "persegment" column in the "drm_keyword"
                                    * table.
                                    */
+  int rank;                       /* The order in which this keyword was created
+                                   * during drms_insert_series(). 0 means it was
+                                   * the first keyword in its series. */
+
 } DRMS_KeywordInfo_t;
 
 /**
@@ -833,6 +837,9 @@ typedef struct DRMS_LinkInfo_struct
   int pidx_num;  /* Number of keywords in primary index of target series. */
   DRMS_Type_t pidx_type[DRMS_MAXPRIMIDX]; /* Type of primary index values. */
   char *pidx_name[DRMS_MAXPRIMIDX];
+  int rank;                       /* The order in which this link was created
+                                   * during drms_insert_series(). 0 means it was
+                                   * the first link in its series. */
 } DRMS_LinkInfo_t;
 
 /** \brief DRMS link struct */
@@ -1048,7 +1055,9 @@ struct DRMS_SegmentInfo_struct {
   /** \brief Segment name */
   char name[DRMS_MAXSEGNAMELEN];
   /** \brief Segment number in record */
-  int segnum;
+  int segnum;                     /* The order in which this segment was created
+                                   * during drms_insert_series(). 0 means it was
+                                   * the first segment in its series. */
   /** \brief  Description string */
   char description[DRMS_MAXCOMMENTLEN];
 		/************  Link segments  ***********/

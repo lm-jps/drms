@@ -5,14 +5,23 @@
 #include "xassert.h"
 #include "xmem.h"
 
-unsigned int hash_universal_hash(const void *v)
+unsigned long long hash_universal_hash(const void *v)
 {
-  char *c = (char *) v;
-  unsigned int sum = 0;
+   char *c = (char *) v;
+   unsigned long long sum = 0;
 
-  while ( *c ) 
-    sum += ((unsigned int) *c++) + 31*sum;
-  return sum;
+   while ( *c ) 
+   {
+      if (sum > ULLONG_MAX / 13)
+      {
+         /* handle overflow! */
+         sum /= 17;
+      }
+
+      sum += ((unsigned long long) *c++) + 13*sum;
+   }
+
+   return sum;
 }
 
 void hash_init(Hash_Table_t *h, const unsigned int hashprime, 
@@ -90,7 +99,7 @@ void hash_stat(Hash_Table_t *h)
   for(i=0; i<h->hashprime; i++) {
     len = table_len(&(h->list[i]));
     if ( len > 0)
-      printf("%4d: %4d\n",i,len);
+      printf("%4u: %4u\n",i,len);
   }
 }
 
@@ -104,6 +113,19 @@ void hash_map(Hash_Table_t *h, void (*f)(const void *, const void *))
     {
       //      printf("==== HASH bin no. %5d ====\n",i);
       table_map(&(h->list[i]),f);
+    }
+  }
+}
+
+void hash_map_data(Hash_Table_t *h, void (*f)(const void *, const void *, const void *data), const void *data)
+{
+  unsigned int i, len;  
+  for(i=0; i<h->hashprime; i++)
+  {
+    len = table_len(&(h->list[i]));
+    if ( len > 0 ) 
+    {
+       table_map_data(&(h->list[i]),f,data);
     }
   }
 }

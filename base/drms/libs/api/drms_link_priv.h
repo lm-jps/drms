@@ -16,5 +16,6 @@ HContainer_t *drms_create_link_prototypes(DRMS_Record_t *target,
 					  int *status);
 
 int drms_template_links(DRMS_Record_t *template);
+int drms_template_links_int(DRMS_Record_t *template, const char *cols);
 
 #endif

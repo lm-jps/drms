@@ -10,15 +10,14 @@
 /* Initial size in number of elements. */
 #define HCON_INITSIZE 2
 
-typedef struct HCBuf_struct {
-  int num_max; /* Number of items currently and max in the buffer. */
-  int firstfree;
-  int firstindex;
-  char *data;           /* buffer holding data items. */
-  char *keys;           /* buffer holding key values. */
-  char *freelist;       /* Bitmap of free slots in the buffer. */
-  struct HCBuf_struct *next; /* Next buffer. */
-} HCBuf_t;
+/** @brief HContainerElement struct */
+struct HContainerElement_struct
+{
+  char *key;
+  void *val;
+};
+
+typedef struct HContainerElement_struct HContainerElement_t;
 
 /** \brief HContainer struct */
 struct HContainer_struct {
@@ -28,28 +27,32 @@ struct HContainer_struct {
   Hash_Table_t hash;      /* Hash table pointing into buffer. */
   void (*deep_free)(const void *value);               /* Function for deep freeing items. */
   void (*deep_copy)(const void *dst, const void *src); /* Function for deep copy. */
-  HCBuf_t *buf;
 }; 
 
 /** \brief HContainer struct reference */
 typedef struct HContainer_struct HContainer_t;
 
 typedef struct HIterator_struct {
-  struct HContainer_struct *hc;
-  struct HCBuf_struct *cur_buf;
-  int cur_idx;
+  HContainer_t *hc;
+  int curr;                    /* index of current element in elems */
+  HContainerElement_t **elems; /* array of all hcontainer elements; assigned when 
+                                * iterator is created */
+  int nelems;                  /* number of elements in elems (number of used elem slots in array) */
+  int szelems;                 /* number of elem slots allocated in elems */
 } HIterator_t;
 
 void hcon_init(HContainer_t *hc, int datasize, int keysize,
 	       void (*deep_free)(const void *value),
 	       void (*deep_copy)(const void *dst, const void *src));
+void hcon_init_ext(HContainer_t *hc, unsigned int hashprime, int datasize, int keysize,
+                   void (*deep_free)(const void *value),
+                   void (*deep_copy)(const void *dst, const void *src));
 void *hcon_allocslot_lower(HContainer_t *hc, const char *key);
 void *hcon_allocslot(HContainer_t *hc, const char *key);
-void *hcon_index2slot(HContainer_t *hc, int index, HCBuf_t **outbuf);
 void *hcon_lookup_lower(HContainer_t *hc, const char *key);
 void *hcon_lookup(HContainer_t *hc, const char *key);
 void *hcon_lookup_ext(HContainer_t *hc, const char *keyin, const char **keyout);
-void *hcon_lookupindex(HContainer_t *hc, int index);
+void *hcon_getn(HContainer_t *hcon, unsigned int n);
 int hcon_member_lower(HContainer_t *hc, const char *key);
 int hcon_member(HContainer_t *hc, const char *key);
 void hcon_free(HContainer_t *hc);
@@ -63,6 +66,7 @@ void hcon_stat(HContainer_t *hc);
 
 
 void hiter_new(HIterator_t *hit, HContainer_t *hc);
+void hiter_new_sort(HIterator_t *hit, HContainer_t *hc, int (*comp)(const void *, const void *));
 void hiter_rewind(HIterator_t *hit);
 //void *hiter_getcurrent(HIterator_t *hit);
 //void *hiter_getnext(HIterator_t *hit);
@@ -75,78 +79,56 @@ static inline int hcon_size(HContainer_t *hc)
   return hc->num_total;
 }
 
-static inline int hcon_initialized(HContainer_t *hc)
-{
-   return (hc->buf != NULL);
-}
-
 /* Iterator object allows (forwards) looping over contents of
    HContainer. */
-
 static inline void *hiter_getcurrent(HIterator_t *hit)
 {
-  if (hit->cur_idx==-1 || hit->cur_buf==NULL)
-    return NULL;
-  else
-    return &hit->cur_buf->data[hit->cur_idx*hit->hc->datasize];
+   if (hit->curr == -1)
+     return NULL;
+   else
+     return (hit->elems[hit->curr])->val;
 }
 
+/* This just traverses all the buffers, looking for the next non-free slot. */
 static inline void *hiter_getnext(HIterator_t *hit)
 {
-  int idx;
-  HCBuf_t *buf;
-  
-  buf = hit->cur_buf;
-  idx = hit->cur_idx+1;
-  
-  while (buf)
-  {
-    while (idx<buf->num_max && buf->freelist[idx]==1)
-      idx++;
-    if (idx>=buf->num_max)
-    {
-      buf = buf->next;
-      idx = 0;
-    }
-    else
-    {
-      hit->cur_buf = buf;
-      hit->cur_idx = idx;
-      return &buf->data[idx*hit->hc->datasize];
-    }
-  }
-  return NULL;
+   void *value = NULL;
+
+   if (hit->curr + 1 < hit->hc->num_total)
+   {
+      hit->curr++;
+      value = (hit->elems[hit->curr])->val;
+   }
+
+   return value;
 }
 
 static inline void *hiter_extgetnext(HIterator_t *hit, const char **key)
 {
-  int idx;
-  HCBuf_t *buf;
-  
-  buf = hit->cur_buf;
-  idx = hit->cur_idx+1;
-  
-  while (buf)
-  {
-    while (idx<buf->num_max && buf->freelist[idx]==1)
-      idx++;
-    if (idx>=buf->num_max)
-    {
-      buf = buf->next;
-      idx = 0;
-    }
-    else
-    {
-      hit->cur_buf = buf;
-      hit->cur_idx = idx;
+   void *value = NULL;
+
+   if (hit->curr + 1 < hit->hc->num_total)
+   {
+      hit->curr++;
+      value = (hit->elems[hit->curr])->val;
       if (key)
       {
-	 *key = &(buf->keys[idx * hit->hc->keysize]);
+         *key = (hit->elems[hit->curr])->key;
       }
-      return &buf->data[idx*hit->hc->datasize];
-    }
-  }
-  return NULL;
+   }
+
+   return value;
+ 
+}
+
+static inline void *hcon_getval(HContainerElement_t *elem)
+{
+   if (elem)
+   {
+      return elem->val;
+   }
+
+   return NULL;
 }
 
 /* Wrappers to make it easy to create containers and iterate through them. */

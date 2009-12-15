@@ -196,4 +196,7 @@ static inline const char *drms_series_getvers()
 }
 
 int drms_series_isvers(DRMS_SeriesInfo_t *si, DRMS_SeriesVersion_t *v);
+
+int GetTableOID(DRMS_Env_t *env, const char *ns, const char *table, char **oid);
+int GetColumnNames(DRMS_Env_t *env, const char *oid, char **colnames);
 #endif

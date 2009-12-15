@@ -244,6 +244,16 @@ DRMS_Keyword_ExtType_t drms_keyword_getcast(DRMS_Keyword_t *key);
 void drms_keyword_setdate();
 TIME drms_keyword_getdate(DRMS_Record_t *rec);
 
+static inline int drms_keyword_ranksort(const void *he1, const void *he2)
+{
+   DRMS_Keyword_t *k1 = (DRMS_Keyword_t *)hcon_getval(*((HContainerElement_t **)he1));
+   DRMS_Keyword_t *k2 = (DRMS_Keyword_t *)hcon_getval(*((HContainerElement_t **)he2));
+   
+   XASSERT(k1 && k2);
+
+   return (k1->info->rank < k2->info->rank) ? -1 : (k1->info->rank > k2->info->rank ? 1 : 0);
+}
+
 /* doxygen documentation */
 
 /**

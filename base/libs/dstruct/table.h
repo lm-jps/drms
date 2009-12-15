@@ -21,6 +21,7 @@ void table_copy(Table_t *dst, Table_t *src);
 void table_insert(Table_t *S, const void *key, const void *value);
 int table_remove(Table_t *S, const void *key);
 void table_map(Table_t *S, void (*f)(const void *, const void *));
+void table_map_data(Table_t *S, void (*f)(const void *key, const void *value, const void *data), const void *data);
 int table_member(Table_t *S, const void *key);
 const void *table_lookup(Table_t *S, const void *key);
 int table_len(Table_t *S);

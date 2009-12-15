@@ -56,6 +56,7 @@ int DoIt(void) {
   struct stat file_stat;
   char *buf = 0;
   DRMS_Record_t *template;
+  int keynum;
 
   /* Parse command line parameters. */
   if (cmdparams_numargs (&cmdparams) < 2) goto usage;
@@ -146,7 +147,8 @@ int DoIt(void) {
       goto bailout;
     }
     // allocate for a record template
-    status = parse_keywords(buf, template, NULL);
+    keynum = 0;
+    status = parse_keywords(buf, template, NULL, &keynum);
     free(buf);
 
     // Delete current series metadata without dropping the series table and

@@ -467,6 +467,17 @@ static inline int drms_segment_getnaxis(DRMS_Segment_t *seg)
 {
    return seg->info->naxis;
 }
+
+static inline int drms_segment_ranksort(const void *he1, const void *he2)
+{
+   DRMS_Segment_t *s1 = (DRMS_Segment_t *)hcon_getval(*((HContainerElement_t **)he1));
+   DRMS_Segment_t *s2 = (DRMS_Segment_t *)hcon_getval(*((HContainerElement_t **)he2));
+   
+   XASSERT(s1 && s2);
+
+   return (s1->info->segnum < s2->info->segnum) ? -1 : (s1->info->segnum > s2->info->segnum ? 1 : 0);
+}
+
 #endif
 
 

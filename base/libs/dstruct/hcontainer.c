@@ -7,9 +7,11 @@
 #include "util.h"
 #include "xassert.h"
 #include "xmem.h"
+#include "timer.h"
 
 #define TABLESIZE (0) /* Initial number of slots allocated in each hash bin. */
-#define HASH_PRIME (23)  /* Number of hash bins. */
+#define HASH_PRIME (47)  /* Number of hash bins. */
+
 /*
   Initialize the container. 
 
@@ -25,8 +27,6 @@ void hcon_init(HContainer_t *hc, int datasize, int keysize,
 	       void (*deep_free)(const void *value),
 	       void (*deep_copy)(const void *dst, const void *src))
 {
-  HCBuf_t *buf;
-
   hc->num_total = 0;
   hc->datasize = datasize;
   hc->keysize = keysize;
@@ -34,18 +34,19 @@ void hcon_init(HContainer_t *hc, int datasize, int keysize,
   hc->deep_copy = deep_copy;
   hash_init(&hc->hash, HASH_PRIME, TABLESIZE,
 	    (int (*)(const void *, const void *))strcmp, hash_universal_hash);
+}
 
-  /* Allocate the first buffer structure. */
-  XASSERT( hc->buf = malloc(sizeof(HCBuf_t)) );
-  buf = hc->buf;
-  buf->num_max = HCON_INITSIZE;
-  XASSERT( buf->freelist = malloc(buf->num_max*sizeof(char)) );
-  XASSERT( buf->data = malloc(buf->num_max*datasize) );
-  XASSERT( buf->keys = malloc(buf->num_max*keysize) );
-  buf->firstfree = 0;
-  buf->firstindex = 0;
-  buf->next = NULL;
-  memset(buf->freelist, 1, buf->num_max*sizeof(char));
+void hcon_init_ext(HContainer_t *hc, unsigned int hashprime, int datasize, int keysize,
+                   void (*deep_free)(const void *value),
+                   void (*deep_copy)(const void *dst, const void *src))
+{
+  hc->num_total = 0;
+  hc->datasize = datasize;
+  hc->keysize = keysize;
+  hc->deep_free = deep_free;
+  hc->deep_copy = deep_copy;
+  hash_init(&hc->hash, hashprime, TABLESIZE,
+	    (int (*)(const void *, const void *))strcmp, hash_universal_hash);
 }
 
 void *hcon_allocslot_lower(HContainer_t *hc, const char *key)
@@ -62,92 +63,45 @@ void *hcon_allocslot_lower(HContainer_t *hc, const char *key)
   pointer to data slot of size "datasize". If an element indexed
   by key already exists this functions returns the same as hcon_lookup. 
 */
+
+/* Return the value field inside the hcontainer element. This field is necessarily a pointer
+ * (e.g., it may point to an int, or it may point to a char *). */
 void *hcon_allocslot(HContainer_t *hc, const char *key)
 {
-  unsigned long index;
-  void *slot;
-  char *keyslot;
-  HCBuf_t *buf, *oldbuf;
+  void *slot = NULL;
+  HContainerElement_t *elem = NULL; /* Pointer to allocated elem struct */
 
-  index = (unsigned long)hash_lookup(&hc->hash, key);
-  if (index == 0)
+  elem = (HContainerElement_t *)hash_lookup(&hc->hash, key);
+  
+  if (elem == NULL)
   {
-    /* This is an item with a not previously seen key. */
-    ++hc->num_total;
-    keyslot = NULL;
-    slot = NULL;
-    oldbuf = NULL;
-    buf = hc->buf;
-    while (slot == 0 && buf != NULL)
-    {
-      /* Look for a slot in the current buffer. */
-      if (buf->firstfree < buf->num_max)	
-      {	
-	index = buf->firstindex + buf->firstfree;
-	slot = &buf->data[hc->datasize*buf->firstfree];	
-	keyslot = &buf->keys[hc->keysize*buf->firstfree];
-	strncpy(keyslot,key,hc->keysize);
-	keyslot[hc->keysize-1] = 0;
-	buf->freelist[buf->firstfree] = 0;
-	/* Scan the freelist to find the next free slot. */
-	buf->firstfree++;
-	while (buf->firstfree<buf->num_max && buf->freelist[buf->firstfree]==0)
-	  buf->firstfree++;
-      }
-      oldbuf = buf;
-      buf = buf->next;
-    }
-    if (slot == 0 && buf==NULL)  /* No more free slots; add another buffer; */
-    {
-      XASSERT( buf = malloc(sizeof(HCBuf_t)) );
-      oldbuf->next = buf;
-      buf->num_max = 2*oldbuf->num_max;
-      buf->firstindex = oldbuf->firstindex + oldbuf->num_max;
-      XASSERT( buf->data = malloc(buf->num_max*hc->datasize) );
-      XASSERT( buf->keys = malloc(buf->num_max*hc->keysize) );
-      XASSERT( buf->freelist = malloc(buf->num_max) );
-      memset(buf->freelist, 1, buf->num_max);
-      buf->firstfree = 1;
-      buf->freelist[0] = 0;
-      buf->next = NULL;
-      slot = &buf->data[0];
-      keyslot = &buf->keys[0];
-      strncpy(keyslot,key,hc->keysize);
-      keyslot[hc->keysize-1] = 0;
-      index = buf->firstindex;
-    }
-    /* Insert the index in the hash table. */
-    hash_insert(&hc->hash, keyslot, (void *)(index+1));
+    /* This is an item with a previously unseen key. */
+     elem = malloc(sizeof(HContainerElement_t));
+
+     if (elem)
+     {
+        memset(elem, 0, sizeof(HContainerElement_t));
+        elem->key = strdup(key); /* ignore keysize - left over from previous implementation */
+        elem->val = malloc(hc->datasize);
+        memset(elem->val, 0, hc->datasize);
+
+        /* The pointers elem->key and elem are copied directly into the hash table.  
+         * Don't free key in hconfreemap, since it is equivalent to elem->key, and hconfreemap
+         * frees elem->key and elem->val (if key is freed, this will double free elem->key.
+         * hconfreemap also needs to free elem since it, as well as elem->key and elem->val
+         * all point to memory allocated in this function */
+
+        hash_insert(&hc->hash, elem->key, (void *)(elem));
+        ++hc->num_total;
+     }
   }
-  else
+
+  if (elem)
   {
-    index--;   /* Find slot corresponding to index. */
-    slot = hcon_index2slot(hc, index, NULL);
-  }	  
+     slot = elem->val;
+  }
+
   return slot;
-}
-
-/*
-  Convert index to slot pointer. 
-*/
-void *hcon_index2slot(HContainer_t *hc, int index, HCBuf_t **outbuf)
-{
-  HCBuf_t *buf;  
-
-  buf = hc->buf;
-  while(buf && index>=(buf->firstindex+buf->num_max))
-    buf = buf->next;  
-  if (buf==NULL)
-  {
-    if (outbuf)
-      *outbuf=NULL;
-    return NULL;
-  }
-  index -= buf->firstindex;
-  assert(buf->freelist[index] == 0);
-  if(outbuf)
-    *outbuf=buf;
-  return &buf->data[index*hc->datasize];
 }
 
 void *hcon_lookup_lower(HContainer_t *hc, const char *key)
@@ -160,41 +114,56 @@ void *hcon_lookup_lower(HContainer_t *hc, const char *key)
 }
 
 /*
-  Returns a pointer to the slot indexed by key.  If no element 
-  index by key is present then it return NULL.
- 
+  Returns the value field in the HContainerElement_t stored in the underlying hash table, unless
+  no such key exists in the hash table, in which case a NULL is returned. 
 */
 void *hcon_lookup(HContainer_t *hc, const char *key)
 {
-  unsigned long index;
-  index = (unsigned long)hash_lookup(&hc->hash, key);
-  if (index == 0)
+   HContainerElement_t *elem = NULL; /* Pointer to allocated elem struct */
+
+   elem = (HContainerElement_t *)hash_lookup(&hc->hash, key);
+   if (elem == NULL)
     return NULL;
   else
-    return hcon_index2slot(hc, index-1, NULL);  
+    return elem->val;
 }
 
 /* Same as hcon_lookup, except that it returns the key as well */
 void *hcon_lookup_ext(HContainer_t *hc, const char *keyin, const char **keyout)
 {
-  unsigned long index;
-  HCBuf_t *outbuf = NULL;
-  void *ret = NULL;
+   HContainerElement_t *elem = NULL; /* Pointer to allocated elem struct */
+   void *ret = NULL;
 
-  index = (unsigned long)hash_lookup(&hc->hash, keyin);
-  if (index == 0)
-    return NULL;
-  else
-  {
-     ret = hcon_index2slot(hc, index - 1, &outbuf);
-     *keyout = &((outbuf->keys)[(index - 1 - outbuf->firstindex) * hc->keysize]);
-     return ret;
-  }
+   elem = (HContainerElement_t *)hash_lookup(&hc->hash, keyin);
+   if (elem == NULL)
+     return NULL;
+   else
+   {
+      ret = elem->val;
+      *keyout = elem->key;
+      return ret;
+   }
 }
 
-void *hcon_lookupindex(HContainer_t *hc, int index)
+void *hcon_getn(HContainer_t *hcon, unsigned int n)
 {
-   return hcon_index2slot(hc, index, NULL);
+   HContainerElement_t *elem = NULL; /* Pointer to allocated elem struct */
+   HIterator_t *hit = hiter_create(hcon);
+
+   if (hit && n < hit->nelems)
+   {
+      elem = hit->elems[n];
+      hiter_destroy(&hit);
+   }
+   
+   if (elem)
+   {
+      return elem->val;
+   }
+   else
+   {
+      return NULL;
+   }
 }
 
 /*
@@ -206,49 +175,67 @@ int hcon_member_lower(HContainer_t *hc, const char *key)
    int exists = 0;
    char *tmp = strdup(key);
    strtolower(tmp);
-   exists = (hash_lookup(&hc->hash, tmp) != 0);
+   exists = (hash_lookup(&hc->hash, tmp) != NULL);
    free(tmp);
    return exists;
 }
 
 int hcon_member(HContainer_t *hc, const char *key)
 {
-  return (hash_lookup(&hc->hash, key) != 0);
+  return (hash_lookup(&hc->hash, key) != NULL);
 }
 
+static void hconfreemap(const void *key, const void *value, const void *data)
+{
+   HContainer_t *hcon = (HContainer_t *)data;
+   HContainerElement_t *elem = NULL;
 
-/*
-  Free container. If "deep_free" is not NULL it is called
-  with every slot as argument.
-*/
+   /* Don't free key - the memory it allocates (if any) wasn't allocated by 
+    * hcon code. */
+
+   if (value)
+   {
+      elem = (HContainerElement_t *)value;
+      XASSERT(elem && elem->val);
+
+      if (hcon->deep_free && elem->val)
+      {
+         (*hcon->deep_free)(elem->val);
+      }
+
+      /* Need to deep-free key and val */
+      if (elem->key)
+      {
+         free(elem->key);
+      }
+
+      if (elem->val)
+      {
+         free(elem->val);
+      }
+
+      /* Free the hcon elem itself. */
+      free((void *)value);
+   }
+}
+
+/* Free container. If "deep_free" is not NULL it is applied to every value in the container. */
 void hcon_free(HContainer_t *hc)
 {
-  int i;
-  HCBuf_t *buf, *buf0;
+  /* Apply a function that will free the keys and value (and also deep-free the values, if a deep-free
+   * function was provided). After this call, the hash table will contain garbage for keys and values. */
+  hash_map_data(&hc->hash, hconfreemap, hc);
 
+  hc->num_total = 0;
+  hc->datasize = 0;
+  hc->keysize = 0;
+  hc->deep_free = NULL;
+  hc->deep_copy = NULL;
+
+  /* Free hash table - this frees an array of key-value structures; the actual key and value fields
+   * are freed by hconfreemap. */
   hash_free(&hc->hash);  
-  buf = hc->buf;
-  while (buf)
-  {
-    if (hc->deep_free)
-    {
-      /* If a deep freeing function was provided, then apply it to 
-	 all the filled slots in the buffer. */
-      for (i=0; i<buf->num_max; i++)
-      {
-	if (!buf->freelist[i])
-	  (*hc->deep_free)(&buf->data[i*hc->datasize]);
-      }
-    }
-    free(buf->data);
-    free(buf->keys);
-    free(buf->freelist);
-    buf0 = buf;
-    buf = buf->next;
-    free(buf0);
-  }      
 }
-
 
 /*
   Remove the element indexed by key from the container. 
@@ -256,34 +243,45 @@ void hcon_free(HContainer_t *hc)
 */
 void hcon_remove(HContainer_t *hc, const char *key)
 {
-  unsigned long index;
-  HCBuf_t *buf;
-  void *slot;
+   HContainerElement_t *elem = NULL; /* Pointer to allocated elem struct */
 
-  index = (unsigned long)hash_lookup(&hc->hash, key);
-  if (index != 0)
-  {
-    index--;
-    slot = hcon_index2slot(hc, index, &buf); /* Get the adress and the buffer. */
+   elem = (HContainerElement_t *)hash_lookup(&hc->hash, key);
+   if (elem != NULL)
+   {
+      /* Must remove from hash first - elem->key is the value of the key in the hash, 
+       * so you can't delete it, then call hash_remove.  If you do, you won't delete
+       * the key-value pair from the hash table because you deleted the key so 
+       * the hash look up will fail. */
+      
+      /* Remove the key-value entries from the underlying hash table - does not free key or value. */
+      hash_remove(&hc->hash, key);
 
-    if (hc->deep_free)  /* Deep free the object if possible. */
-      (*hc->deep_free)(slot);
+      if (elem->key)
+      {
+         free(elem->key);
+         elem->key = NULL;
+      }
+
+      if (elem->val)
+      {
+         if (hc->deep_free)  /* Deep free the object if possible. */
+         {
+            (*hc->deep_free)(elem->val);
+         }
+
+         free(elem->val);
+         elem->val = NULL;
+      }
     
-    /* Update freelist and firstfree for the buffer. */
-    index -= buf->firstindex;
-    buf->freelist[index] = 1;
-    if (index < buf->firstfree)
-      buf->firstfree = index;
-    hash_remove(&hc->hash, key);
-    --hc->num_total;
-  }      
+      free(elem);
+     
+      --hc->num_total;
+   }      
 }
-
 
 void hcon_print(HContainer_t *hc)
 {
    const char *key;
-   char printbuf[2048];
    void *data = NULL;
 
    HIterator_t *hit = hiter_create(hc);
@@ -296,7 +294,6 @@ void hcon_print(HContainer_t *hc)
 void hcon_printf(FILE *fp, HContainer_t *hc)
 {
    const char *key;
-   char printbuf[2048];
    void *data = NULL;
 
    HIterator_t *hit = hiter_create(hc);
@@ -309,121 +306,57 @@ void hcon_printf(FILE *fp, HContainer_t *hc)
 /*
   Apply the function fmap to every element in the container. 
 */
-/* XXX - THIS MAY NOT WORK */
+static void hconmapmap(const void *key, const void *value, const void *data)
+{
+   void (*fmap)(const void *value) = (void (*)(const void *value))data;
+
+   if (value)
+   {
+      (*fmap)(((HContainerElement_t *)value)->val); /* Apply fmap to every value in the hcontainer element (which is value). */
+   }
+}
+
 void hcon_map(HContainer_t *hc, void (*fmap)(const void *value))
 {
-  int i;
-  HCBuf_t *buf;  
-
-  buf = hc->buf;
-  while(buf)
-  {
-    for (i=0; i<buf->num_max; i++)
-    {
-      if (buf->freelist[i]==0)
-	fmap((void *)&buf->data[hc->datasize*i]);
-    }
-    buf = buf->next;
-  }
+   hash_map_data(&hc->hash, hconmapmap, fmap);
 }
-
 
 /*
-  Do a deep copy of the entire container. If "deep_copy" is not NULL it is
-  called for every slot.
+  Do a deep copy of the entire container. If "deep_copy" is not NULL it is applied to every hcontainer-element value.
 */
-void hcon_copy(HContainer_t *dst, HContainer_t *src)
+static void hconcopymap(const void *key, const void *value, const void *data)
 {
-  int i;
-  HCBuf_t *oldbuf, *buf, *sbuf;  
+   HContainer_t *dst = (HContainer_t *)(data);
+   HContainerElement_t *elem = (HContainerElement_t *)value;
 
-
-  dst->num_total = src->num_total;
-  dst->datasize = src->datasize;
-  dst->keysize = src->keysize;
-  hash_copy(&dst->hash, &src->hash);
-  dst->deep_free = src->deep_free;
-  dst->deep_copy = src->deep_copy;
-
-  oldbuf = NULL;
-  /* Allocate the first buffer structure. */
-  XASSERT( dst->buf = malloc(sizeof(HCBuf_t)) );
-  buf = dst->buf;
-  sbuf = src->buf;
-  while(sbuf)
-  {
-    if (oldbuf)
-      oldbuf->next = buf;
-
-    buf->num_max = sbuf->num_max;
-    buf->firstfree = sbuf->firstfree;
-    buf->firstindex = sbuf->firstindex;
-
-    XASSERT( buf->freelist = malloc(buf->num_max*sizeof(char)) );
-    memcpy(buf->freelist, sbuf->freelist, buf->num_max*sizeof(char));
-
-    XASSERT( buf->keys = malloc(buf->num_max*src->keysize) );
-    memcpy(buf->keys, sbuf->keys, buf->num_max*src->keysize);    
-
-    XASSERT( buf->data = malloc(buf->num_max*src->datasize) );
-    if (!src->deep_copy) /* Deep copy contents if possible. */
-      memcpy(buf->data, sbuf->data, buf->num_max*src->datasize);
-    else
-      memset(buf->data, 0, buf->num_max*src->datasize);
-
-    for (i=0; i<buf->num_max; i++)
-    {
-      if (buf->freelist[i]==0)
-      {
-	if (src->deep_copy) /* Deep copy contents if possible. */
-	  (*src->deep_copy)(&buf->data[i*dst->datasize], 
-			    &sbuf->data[i*src->datasize]);
-	hash_insert(&dst->hash, &buf->keys[i*dst->keysize], 
-		    (void *)(buf->firstindex+((unsigned long)i+1)));
-      }
-    }
-
-    oldbuf = buf;
-    buf->next = NULL;
-    sbuf = sbuf->next;
-    if (sbuf)
-      XASSERT( buf = malloc(sizeof(HCBuf_t)) );
-  }
+   /* Can't use hash_copy() since in new implementation, the hash table stores pointers
+    * to hcontainer elements (not indices). Instead, just insert a copy of each item into
+    * the dst hcontainer. */
+ 
+   /* Should do deep copy, if deep_copy was provided. */
+   hcon_insert(dst, key, elem->val);
 }
 
+void hcon_copy(HContainer_t *dst, HContainer_t *src)
+{
+   hcon_init(dst, src->datasize, src->keysize, src->deep_free, src->deep_copy);
 
+   /* Apply a function that inserts into the dst hcontainer a key-value pair from the src hcontainer. This will
+    * deep-copy if src->deep_free != NULL. */
+   hash_map_data(&src->hash, hconcopymap, dst);
+}
 
 /*
   Print various statistics about the container.
 */
 void hcon_stat(HContainer_t *hc)
 {
-  int i, num=1, free, total_free=0, total_slots=0;
-  HCBuf_t *buf;
-
   printf("=========================================================================\n");
-  buf = hc->buf;
-  while(buf)
-  {
-    printf("Buffer %d: firstindex           = %7d\n",num,buf->firstindex);
-    printf("Buffer %d: firstfree            = %7d\n",num,buf->firstfree);
-    for (i=0, free=0; i<buf->num_max; i++)
-      free += buf->freelist[i];
-    printf("Buffer %d: number of slots      = %7d\n",num,buf->num_max);
-    printf("Buffer %d: number of free slots = %7d\n",num,free);
-    total_free += free;
-    total_slots += buf->num_max;
-    buf = buf->next;
-    num++;
-  }
   printf("Data size                  = %8d\n",hc->datasize);
   printf("Key size                   = %8d\n",hc->keysize);
   printf("Total number of items      = %8d\n",hc->num_total);
-  printf("Total number of free slots = %8d\n",total_free);
-  printf("Total number of slots      = %8d\n",total_slots);
   printf("=========================================================================\n");
 }
-
 
 /*
   Print the total number of elements in the container.
@@ -437,57 +370,49 @@ void hcon_stat(HContainer_t *hc)
 /* Iterator object allows (forwards) looping over contents of
    HContainer. */
 
+static void hconelemmap(const void *key, const void *value, const void *data)
+{
+   HIterator_t *hit = (HIterator_t *)(data);
+
+   /* May need to resize array. */
+   if (hit->nelems + 1 > hit->szelems)
+   {
+      /* expand argarr buffer */
+      int origsz = hit->szelems;
+
+      hit->szelems *= 2;
+      hit->elems = realloc(hit->elems, hit->szelems * sizeof(HContainerElement_t *));
+      memset(&hit->elems[origsz], 0, (hit->szelems - origsz) * sizeof(HContainerElement_t *));
+   }
+
+   hit->elems[hit->nelems++] = (HContainerElement_t *)value;
+}
+
 void hiter_new(HIterator_t *hit, HContainer_t *hc)
 {
   hit->hc = hc;
-  hit->cur_buf = hc->buf;
-  hit->cur_idx = -1;
+  hit->curr = -1;
+  hit->nelems = 0;
+  hit->szelems = 16;
+  hit->elems = (HContainerElement_t **)malloc(hit->szelems * sizeof(HContainerElement_t *));
+  memset(hit->elems, 0, hit->szelems * sizeof(HContainerElement_t *));
+
+  /* Need to assign the hcontainer elements to hit->elems. */
+  hash_map_data(&hit->hc->hash, hconelemmap, hit);
+}
+
+void hiter_new_sort(HIterator_t *hit, HContainer_t *hc, int (*comp)(const void *, const void *))
+{
+   hiter_new(hit, hc);
+
+   /* Now sort */
+   qsort(hit->elems, hit->nelems, sizeof(HContainerElement_t *), comp); 
 }
 
 void hiter_rewind(HIterator_t *hit)
 {
-  hit->cur_buf = hit->hc->buf;
-  hit->cur_idx = -1;
+  hit->curr = -1;
 }
-
-#ifdef BLAH
-void *hiter_getcurrent(HIterator_t *hit)
-{
-  if (hit->cur_idx==-1 || hit->cur_buf==NULL)
-    return NULL;
-  else
-    return &hit->cur_buf->data[hit->cur_idx*hit->hc->datasize];
-}
-
-
-void *hiter_getnext(HIterator_t *hit)
-{
-  int idx;
-  HCBuf_t *buf;
-  
-  buf = hit->cur_buf;
-  idx = hit->cur_idx+1;
-  
-  while (buf)
-  {
-    while (idx<buf->num_max && buf->freelist[idx]==1)
-      idx++;
-    if (idx>=buf->num_max)
-    {
-      buf = buf->next;
-      idx = 0;
-    }
-    else
-    {
-      hit->cur_buf = buf;
-      hit->cur_idx = idx;
-      return &buf->data[idx*hit->hc->datasize];
-    }
-  }
-  return NULL;
-}
-
-#endif
 
 HContainer_t *hcon_create(int datasize, 
 			  int keysize,
@@ -497,41 +422,41 @@ HContainer_t *hcon_create(int datasize,
 			  char **nameArr,
 			  int valArrSize)
 {
-     HContainer_t *cont = (HContainer_t *)malloc(sizeof(HContainer_t));
-     if (cont != NULL)
-     {
-	  hcon_init(cont, datasize, keysize, deep_free, deep_copy);
-	  int iArr = 0;
+   HContainer_t *cont = (HContainer_t *)malloc(sizeof(HContainer_t));
+   if (cont != NULL)
+   {
+      hcon_init(cont, datasize, keysize, deep_free, deep_copy);
+      int iArr = 0;
 	  
-	  while (valArr && nameArr && iArr < valArrSize)
-	  {
-	       void *slot = hcon_allocslot(cont, nameArr[iArr]);
-	       if (slot != NULL)
-	       {
-		    void *src = valArr[iArr];
-		    memcpy(slot, src, datasize);
+      while (valArr && nameArr && iArr < valArrSize)
+      {
+         void *slot = hcon_allocslot(cont, nameArr[iArr]);
+         if (slot != NULL)
+         {
+            void *src = valArr[iArr];
+            memcpy(slot, src, datasize);
 
-		    if (deep_copy != NULL)
-		    {
-		       (*deep_copy)(slot, src);
-		    }
-	       }
+            if (deep_copy != NULL)
+            {
+               (*deep_copy)(slot, src);
+            }
+         }
 
-	       iArr++;
-	  }
-     }
+         iArr++;
+      }
+   }
 
-     return cont;
+   return cont;
 }
 
 void hcon_destroy(HContainer_t **cont)
 {
-     if (*cont != NULL)
-     {
-	  hcon_free(*cont);
-	  free(*cont);
-	  *cont = NULL;
-     }
+   if (*cont != NULL)
+   {
+      hcon_free(*cont);
+      free(*cont);
+      *cont = NULL;
+   }
 }
 
 int hcon_insert_lower(HContainer_t *hcon, const char *key, const void *value)
@@ -586,9 +511,15 @@ HIterator_t *hiter_create(HContainer_t *cont)
 
 void hiter_destroy(HIterator_t **iter)
 {
-     if (*iter != NULL)
-     {
-	  free(*iter);
-	  *iter = NULL;
-     }
+   if (*iter != NULL)
+   {
+      /* Free elems array, but not the hcontainer elements the elems elements point to. */
+      if ((*iter)->elems)
+      {
+         free((*iter)->elems);
+      }
+
+      free(*iter);
+      *iter = NULL;
+   }
 }
