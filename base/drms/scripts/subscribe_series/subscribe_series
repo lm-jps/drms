@@ -1,8 +1,24 @@
 #!/bin/bash
-export SSH_AUTH_SOCK=/tmp/ssh-HgUgDH2809/agent.2809
-export SSH_AGENT_PID=2810
+#export SSH_AUTH_SOCK=/tmp/ssh-HgUgDH2809/agent.2809
+#export SSH_AGENT_PID=2810
 
 logfile=../log/$0.log
+
+#--------------------------------------------------------------------
+# syntax check
+#--------------------------------------------------------------------
+if [ $# -eq 3 ]
+then
+	config_file=$1
+	subscribe_file=$2
+	rsFile=$3
+else
+	error="ERROR: Usage: $0 <configuration file> <subscribe request file> <ssh-agent_rs file>"
+	echo $error
+	exit
+fi
+
+. $config_file
 
 #--------------------------------------------------------------------
 # Setting up the log
@@ -19,24 +35,9 @@ logwrite () {
 logwrite "Starting $0" nl
 
 #--------------------------------------------------------------------
-# syntax check
-#--------------------------------------------------------------------
-if [ $# -eq 2 ]
-then
-	config_file=$1
-	logwrite "Using [$config_file] as log file" nl
-	rsFile=$2
-	logwrite "rsFile is  [$rsFile]" nl
-else
-	error="ERROR: Usage: $0 <configuration file> <ssh-agent_rs file>"
-	echo $error
-	logwrite "$error"
-	exit
-fi
-
-#--------------------------------------------------------------------
 # Set up ssh keys
 #--------------------------------------------------------------------
+echo > set.sh
 exec < "$rsFile"
 while read line; do
         set - $line
@@ -44,121 +45,26 @@ while read line; do
                 tag="$2"
                 shift
                 shift
-                echo "export ${tag}=$*  "
+                echo "export ${tag}=$*  " >> set.sh
                 export ${tag}=$*
         fi
 done
+
+. set.sh
+
+rm -f set.sh
 
 #--------------------------------------------------------------------
 # Prepare trigger file
 #--------------------------------------------------------------------
 echo > temp.tgr
 logwrite "Created temp.tgr"
+echo "archive $archive" >> temp.tgr
+echo "retention $retention" >> temp.tgr
+echo "tapegroup $tapegroup" >> temp.tgr
+echo "node $node" >> temp.tgr
 
-exec < $config_file
-	while read line
-	do
-		# skips blank lines
-		if [ ${#line} -eq 0 ]
-			then
-				continue
-		fi
-
-                # spits the line into variables
-                set - $line
-		
-		# skips commented lines
-		if [ ${1:0:1} == "#" ]
-			then 
-				continue
-		fi
-		
-		# gets the node name and puts it in $node
-		if [ $1 == "node" ]
-			then
-				node=$2
-		fi
-
-		# gets the ip of the subscription manager server
-		if [ $1 == "webdb_ip" ]
-			then
-				webdb_ip=$2
-				continue
-		fi
-
-		# gets the directory of the target server
-		if [ $1 == "webdb_dir" ]
-			then
-				webdb_dir=$2
-				continue
-		fi
-
-		# gets the user of the target server
-		if [ $1 == "webdb_user" ]
-			then
-				webdb_user=$2
-				continue
-		fi
-
-		# gets the host for the local database connection
-		if [ $1 == "pg_host" ]
-			then
-				pg_host=$2
-				continue
-		fi
-
-		# gets the port for the local database connection
-		if [ $1 == "pg_port" ]
-			then
-				pg_port=$2
-				continue
-		fi
-
-		# gets the user for the local database connection
-		if [ $1 == "pg_user" ]
-			then
-				pg_user=$2
-				continue
-		fi
-
-		# gets the database name for the local database connection
-		if [ $1 == "pg_dbname" ]
-			then
-				pg_dbname=$2
-				continue
-		fi
-
-		# gets the schema name for the local database connection
-		if [ $1 == "pg_schema" ]
-			then
-				pg_schema=$2
-				continue
-		fi
-
-		# gets the amount of attempts script will check for status
-		if [ $1 == "attempts" ]
-			then
-				max=$2
-				continue
-		fi
-		
-		# gets the value for new_site
-		if [ $1 == "new_site" ]
-			then
-				new_site=$2
-		fi
-		
-		# gets the location of the ingestion directory to put a die file
-		if [ $1 == "ingestion_path" ]
-			then
-				ingestion_path=$2
-				continue
-		fi
-
-                # writes lines not filtered out to the temp.tgr file
-		logwrite "Adding line [$1 $2] to temp.tgr"
-                echo "$1 $2" >> temp.tgr
-        done
+cat $subscribe_file | grep -v "\#" >> temp.tgr
 
 #--------------------------------------------------------------------
 # Check to see if the schema and database exists on the subscribers database
@@ -185,8 +91,8 @@ fi
 logwrite "Stopping the ingestion script"
 logwrite "get_slony_logs.$node.die in $ingestion_path" nl
 echo > $ingestion_path/get_slony_logs.$node.die
-logwrite "Renaming temp.tgr to $node.subscribe_series.tgr" nl
 triggerfile=$node.subscribe_series.tgr
+logwrite "Renaming temp.tgr to $triggerfile" nl
 mv -f temp.tgr $triggerfile
 
 
@@ -206,7 +112,7 @@ echo -n "Waiting to retrieve the sql file from the subscription manager"
 counter=0
 while [ 1 -eq 1 ]
 do	
-	if [ $counter -ge $max ] 
+	if [ $counter -ge $attempts ] 
 	then
 		logwrite "ERROR: Did not find node1.subscribe_series.sqldone after 20 tries"			
 		logwrite "ERROR: Exiting $0 " nl
@@ -254,15 +160,17 @@ fi
 
 
 # Trigger file found, transferring sql file to local machine
-logwrite "Copying over sql files from $webdb_user@$webdb_ip"
+logwrite "Copying over sql tar file from $webdb_user@$webdb_ip"
 
-logwrite "Copying and removing $node.createns.sql file from $webdb_user@$webdb_ip"
-scp $webdb_user@$webdb_ip:$webdb_dir/$node.createns.sql .
-ssh $webdb_user@$webdb_ip 'rm -f '$webdb_dir'/'$node'.createns.sql'
-	
-logwrite "Copying and removing $node.subscribe_series.sql file from $webdb_user@$webdb_ip"
-scp $webdb_user@$webdb_ip:$webdb_dir/$node.subscribe_series.sql .
-ssh $webdb_user@$webdb_ip 'rm -f '$webdb_dir'/'$node'.subscribe_series.sql'
+logwrite "Copying and removing $node.sql.tar.gz file from $webdb_user@$webdb_ip"
+scp $webdb_user@$webdb_ip:$webdb_dir/$node.sql.tar.gz .
+ssh $webdb_user@$webdb_ip 'rm -f '$webdb_dir'/'$node'.sql.tar.gz'
+
+logwrite "Executing: tar -xzvf $node.sql.tar.gz"
+tar -xzvf $node.sql.tar.gz
+
+logwrite "Removing $node.sql.tar.gz" nl
+rm -f $node.sql.tar.gz
 
 #--------------------------------------------------------------------
 # Execute the SQL files, return a value 
@@ -314,11 +222,11 @@ echo -n "Waiting for the subscription manager to finished updating the subscript
 counter=0
 while [ 1 -eq 1 ]
 do	
-	if [ $counter -ge $max ] 
+	if [ $counter -ge $attempts ] 
 	then
-		logwrite "ERROR: Did not find node1.subscribe_series.done after $max tries"
+		logwrite "ERROR: Did not find node1.subscribe_series.done after $attempts tries"
 		logwrite "ERROR: Exiting $0 " nl
-		echo "ERROR: The subscription manager has not reported it has finished updating the subscription parser after $max tries!"
+		echo "ERROR: The subscription manager has not reported it has finished updating the subscription parser after $attempts tries!"
 		echo "ABORTING!"
 		exit
 	fi		
