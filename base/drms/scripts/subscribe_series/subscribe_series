@@ -98,7 +98,7 @@ mv -f temp.tgr $triggerfile
 
 logwrite "Copying $triggerfile to $webdb_user@$webdb_ip:$webdb_dir" nl
 
-scp $triggerfile $webdb_user@$webdb_ip:$webdb_dir/.
+scp -p $triggerfile $webdb_user@$webdb_ip:$webdb_dir/.
 
 logwrite "Removing $triggerfile" nl
 
