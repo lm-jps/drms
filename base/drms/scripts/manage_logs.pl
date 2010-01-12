@@ -1,8 +1,8 @@
 #!/usr/bin/perl -w
 
 # Usage:
-#    manage_logs.pl -s <conf file> -c <counter file name> -t <tar cmd> -l <log file>
-#    manage_logs.pl -s subscription_manager.cfg -c slony_counter.txt -t /bin/tar -l tmp.txt
+#    manage_logs.pl -s <conf file> -c <counter file name> [-t <tar cmd> -g <gzip cmd>] [-l <log file>]
+#    manage_logs.pl -s subscription_manager.cfg -c slony_counter.txt -t /bin/tar -z /bin/gzip -l tmp.txt
 
 # Runs on the slony server (at Stanford, this is webdb)
 
@@ -18,6 +18,7 @@ my($cnfPath);   # path to the subscription_manager configuration file
 my($cntrFile);  # name of the counter file
 my($dotar);     # if set, the tar up files
 my($tarbin);    # path to tar
+my($zipbin);    # path to zip
 my($logfile);   # file to log output to
 my($line);
 
@@ -37,13 +38,17 @@ while ($arg = shift(@ARGV))
       $dotar = 1;
       $tarbin = shift(@ARGV);
    }
+   elsif (($pos = index($arg, "-z", 0)) == 0)
+   {
+      $zipbin = shift(@ARGV);
+   }
    elsif (($pos = index($arg, "-l", 0)) == 0)
    {
       $logfile = shift(@ARGV);
    }
 }
 
-if (!defined($cnfPath) || !defined($cntrFile))
+if (!defined($cnfPath) || !defined($cntrFile) || (defined($tarbin) && !defined($zipbin)))
 {
    die "Invalid arguments.\n";
 }
@@ -151,55 +156,54 @@ while (defined($asite = shift(@subdirs)))
    my($sfileend);
    my(@totar);
 
-   if (defined($cntrVal))
+   #sql files
+   $isfile = 0;
+   foreach $item (@sqlfiles)
    {
-      #sql files
-      $isfile = 0;
-      foreach $item (@sqlfiles)
+      if ($item =~ /^slony\S*_log\S*_(\d+)\.sql/)
       {
-         if ($item =~ /^slony\S*_log\S*_(\d+)\.sql/)
+         $ccounter = $1;
+
+         if ((defined($lasttarred) && $ccounter <= $lasttarred) || 
+             (defined($cntrVal) && $ccounter <= $cntrVal))
          {
-            $ccounter = $1;
-#            print "current counter: $ccounter\n";
+            # Already tarred or ingested, okay to remove
+            $fullpath = "${asite}/${item}";
+            LogWrite($logfh, "Deleting sql file previously ingested: $fullpath.\n", 0);
+            unlink($fullpath);
+         }
+         elsif ($dotar)
+         {
+            # Need to tar these up
+            push(@totar, "${item}");
 
-            if ((defined($lasttarred) && $ccounter <= $lasttarred) || $ccounter <= $cntrVal)
+            # Keep track of the first and last counter value in the tar file
+            if ($isfile == 0)
             {
-               # Already tarred or ingested, okay to remove
-               $fullpath = "${asite}/${item}";
-               LogWrite($logfh, "Deleting sql file previously ingested: $fullpath.\n", 0);
-#               unlink($fullpath);
-
+               $sfilestart = $ccounter;
             }
-            elsif ($dotar)
-            {
-               # Need to tar these up
-               push(@totar, "${item}");
 
-               # Keep track of the first and last counter value in the tar file
-               if ($isfile == 0)
-               {
-                  $sfilestart = $ccounter;
-               }
-
-               $sfileend = $ccounter;
-               $isfile++;
-            }
+            $sfileend = $ccounter;
+            $isfile++;
          }
       }
+   }
 
-      # tar files
+   # tar files
+   if (defined($cntrVal))
+   {
       foreach $item (@tarfiles)
       {
          if ($item =~ /^slony\S*_logs\S*_\d+-(\d+)\.tar.*/)
          {
             $ccounter = $1;
-            #            print "current counter: $ccounter\n";
+
             if ($ccounter <= $cntrVal)
             {
                # Already ingested, okay to remove
                $fullpath = "${asite}/${item}";
                LogWrite($logfh, "Deleting tar file previously ingested: $fullpath.\n", 0);
-               #               unlink($fullpath);
+               unlink($fullpath);
             }
          }
       }
@@ -218,7 +222,7 @@ while (defined($asite = shift(@subdirs)))
       chdir($asite);
 
       # Grrr - tar won't create an empty archive
-      $fullpath = shift(@totar);
+      $fullpath = $totar[0];
 
       # Clean up anything that might have gotten left behind during previous incomplete runs
       if (-e ".tmp.tar")
@@ -236,7 +240,7 @@ while (defined($asite = shift(@subdirs)))
       # Chunk tar cmds so that we don't overrun the cmd-line with too many chars.
       $isfile = 1;
 
-      while (defined($fullpath = shift(@totar)))
+      foreach $fullpath (@totar[1..$#totar])
       {
          $sfilelist = "$sfilelist $fullpath";
          if ($isfile % kTarChunk == 0)
@@ -262,7 +266,7 @@ while (defined($asite = shift(@subdirs)))
          my($gzcmd);
          my($tarfilename) = sprintf("slony_logs_%d-%d.tar.gz", $sfilestart, $sfileend);
 
-         $gzcmd = "gzip --best .tmp.tar";
+         $gzcmd = "$zipbin --best .tmp.tar";
 
          LogWrite($logfh, "Gzipping '.tmp.tar' to '.tmp.tar.gz'\n", 0);
 
@@ -273,6 +277,13 @@ while (defined($asite = shift(@subdirs)))
          if (!move(".tmp.tar.gz", $tarfilename))
          {
             LogWrite($logfh, "Unable to move .tmp.tar.gz to $tarfilename.\n", 1);
+         }
+         
+         # Remove sql files just tarred.
+         while (defined($fullpath = shift(@totar)))
+         {
+             LogWrite($logfh, "Deleting tarred sql file: $fullpath.\n");
+             unlink($fullpath);
          }
       }
 
