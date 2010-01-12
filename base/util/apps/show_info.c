@@ -325,7 +325,8 @@ static void list_series_info(DRMS_Record_t *rec)
   DRMS_Keyword_t *key;
   DRMS_Segment_t *seg;
   DRMS_Link_t *link;
-  HIterator_t hit;
+  HIterator_t *last = NULL;
+
   /* show the prime index keywords */
   int npkeys = rec->seriesinfo->pidx_num;
   if (npkeys > 0)
@@ -364,8 +365,8 @@ static void list_series_info(DRMS_Record_t *rec)
 
   /* show all keywords */
   printf("All Keywords for series %s:\n",rec->seriesinfo->seriesname);
-  hiter_new (&hit, &rec->keywords);
-  while ((key = (DRMS_Keyword_t *)hiter_getnext (&hit)))
+
+  while ((key = drms_record_nextkey(rec, &last)))
   {
      if (!drms_keyword_getimplicit(key))
      {
@@ -386,8 +387,13 @@ static void list_series_info(DRMS_Record_t *rec)
   if (rec->segments.num_total)
     {
     printf("Segments for series %s:\n",rec->seriesinfo->seriesname);
-    hiter_new (&hit, &rec->segments);
-    while ((seg = (DRMS_Segment_t *)hiter_getnext (&hit)))
+
+    if (last)
+    {
+       hiter_destroy(&last);
+    }
+
+    while ((seg = drms_record_nextseg(rec, &last)))
         { /* segment name, units, protocol, dims, description */
 	if (seg->info->islink)
 	    {
@@ -421,8 +427,12 @@ static void list_series_info(DRMS_Record_t *rec)
   if (rec->links.num_total)
     {
     printf("Links for series %s:\n",rec->seriesinfo->seriesname);
-    hiter_new (&hit, &rec->links);
-    while ((link = (DRMS_Link_t *)hiter_getnext (&hit)))
+
+    if (last)
+    {
+       hiter_destroy(&last);
+    }
+    while ((link = drms_record_nextlink(rec, &last)))
         {
         printf ("\t%-10s", link->info->name);
         if (link->info->type == STATIC_LINK)
@@ -433,6 +443,12 @@ static void list_series_info(DRMS_Record_t *rec)
         printf ("\t%s\n", link->info->description);
         }
     }
+
+  if (last)
+  {
+     hiter_destroy(&last);
+  }
+
   return;
   }
 
@@ -942,15 +958,21 @@ int DoIt(void)
       if (show_all) 
         { /* if wanted get list of all keywords */
         DRMS_Keyword_t *key;
-        HIterator_t hit;
-        hiter_new (&hit, &rec->keywords);
-        while ((key = (DRMS_Keyword_t *)hiter_getnext (&hit)))
+        HIterator_t *last = NULL;
+
+        while ((key = drms_record_nextkey(rec, &last)))
         {
            if (!drms_keyword_getimplicit(key))
            {
               keys[nkeys++] = strdup (key->info->name);
            }
         }
+
+        if (last)
+        {
+           hiter_destroy(&last);
+        }
+
         }
       else if (show_keys)
         { /* get specified list */
@@ -966,10 +988,15 @@ int DoIt(void)
       if (show_all_segs) 
         { /* if wanted get list of all segments */
         DRMS_Segment_t *seg;
-        HIterator_t hit;
-        hiter_new (&hit, &rec->segments);
-        while ((seg = (DRMS_Segment_t *)hiter_getnext (&hit)))
+        HIterator_t *last = NULL;
+
+        while ((seg = drms_record_nextseg(rec, &last)))
           segs[nsegs++] = strdup (seg->info->name);
+
+        if (last)
+        {
+           hiter_destroy(&last);
+        }
         }
       else if (show_segs) 
         { /* get specified segment list */
@@ -993,10 +1020,16 @@ int DoIt(void)
       if (show_all_links) 
         { /* if wanted get list of all links */
         DRMS_Link_t *link;
-        HIterator_t hit;
-        hiter_new (&hit, &rec->links);
-        while ((link = (DRMS_Link_t *)hiter_getnext (&hit)))
+        HIterator_t *last = NULL;
+        
+        while ((link = drms_record_nextlink(rec, &last)))
           links[nlinks++] = strdup (link->info->name);
+
+        if (last)
+        {
+           hiter_destroy(&last);
+        }
+
         }
 
       need_header_printed=0;

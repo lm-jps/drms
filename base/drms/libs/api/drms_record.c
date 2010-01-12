@@ -7645,3 +7645,31 @@ DRMS_Keyword_t *drms_record_nextkey(DRMS_Record_t *rec, HIterator_t **last)
 
    return keyret;
 }
+
+/* Return keywords in rank order. */
+DRMS_Link_t *drms_record_nextlink(DRMS_Record_t *rec, HIterator_t **last)
+{
+   DRMS_Link_t *lnk = NULL;
+   HIterator_t *hit = NULL;
+
+   if (last)
+   {
+      if (*last)
+      {
+         /* This is not the first time this function was called for the record */
+         hit = *last;
+      }
+      else
+      {
+         hit = *last = (HIterator_t *)malloc(sizeof(HIterator_t));
+         if (hit != NULL)
+         {
+            hiter_new_sort(hit, &(rec->links), drms_link_ranksort);
+         }
+      }
+
+      lnk = hiter_getnext(hit);
+   }
+
+   return lnk;
+}
