@@ -8,6 +8,7 @@
 ##  2009/08/17  :: igor    : Fix ssh port number bug.
 ##  2009/12/21  :: kevin   : Added diecheck routine 
 ##  2009/12/22  :: kevin   : Read config variables from subscribe_series/etc
+##  2010/01/11  :: arta    : Add the Net::SCP put subroutine and use it to save counter file on server
 ##
 use lib qw(/home/slony/Scripts);
 
@@ -341,6 +342,12 @@ while (defined $slony_ingest) {
       }
     }
   }
+
+  # Art: Now push the counter file back to the server so that manage_logs.pl can use it
+  # If I understand things right, the first arg is the local file, and the second
+  # is the remote file.  And the remote file will be put into the
+  # remote-site dir (which is where we want it to go).
+  $vscp->put($counter_file, "slony_counter.txt") or die "error [$!] ", $vscp->{errstr};
 }
 
 close (SLOCK);
@@ -462,6 +469,16 @@ sub get {
   $self->scp($source,$local);
 }
 
+# Art: added for copying counter file back to server
+sub put {
+  my($self, $local, $remote) = @_;
+  $remote ||= basename($local);
+  $remote = $self->{'cwd'}. "/$remote" if $self->{'cwd'} && $remote !~ /^\//;
+  my $dest = $self->{'host'}. ":$remote";
+  $dest = $self->{'user'}. '@'. $dest if $self->{'user'};
+  warn "scp $local $dest\n" if $DEBUG;
+  $self->scp($local, $dest);
+}
 
 sub binary { 1; }
 
