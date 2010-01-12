@@ -347,7 +347,10 @@ while (defined $slony_ingest) {
   # If I understand things right, the first arg is the local file, and the second
   # is the remote file.  And the remote file will be put into the
   # remote-site dir (which is where we want it to go).
-  $vscp->put($counter_file, "slony_counter.txt") or die "error [$!] ", $vscp->{errstr};
+  if (-f $counter_file)
+  {
+     $vscp->put($counter_file, "slony_counter.txt") or die "error [$!] ", $vscp->{errstr};
+  }
 }
 
 close (SLOCK);
