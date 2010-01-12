@@ -9,6 +9,7 @@
 use IO::Dir;
 use FileHandle;
 use File::Copy;
+use Fcntl ':flock';
 
 use constant kTarChunk => 64;
 
@@ -21,6 +22,14 @@ my($tarbin);    # path to tar
 my($zipbin);    # path to zip
 my($logfile);   # file to log output to
 my($line);
+
+
+## only one version of this program running
+unless (flock(DATA, LOCK_EX|LOCK_NB)) 
+{
+   print "$0 is already running. Exiting.\n";
+   exit(1);
+}
 
 # Fetch cmd-line arguments.
 while ($arg = shift(@ARGV))
