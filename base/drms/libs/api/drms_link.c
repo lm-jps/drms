@@ -438,209 +438,87 @@ void drms_link_fprint(FILE *keyfile, DRMS_Link_t *link)
   fprintf(keyfile, "\t%-*s:\t%lld\n", fieldwidth, "Recnum", link->recnum);
 }
 
-int drms_template_links(DRMS_Record_t *template)
-{
-   int err = 0;
-   char *ns = NULL;
-   char *table = NULL;
-   char *oid = NULL;
-   char *serieslwr = strdup(template->seriesinfo->seriesname);
-   char *colnames = NULL;
-
-   strtolower(serieslwr);
-   get_namespace(serieslwr, &ns, &table);
-
-   if (serieslwr)
-   {
-      free(serieslwr);
-   }
-
-   err = GetTableOID(template->env, ns, table, &oid);
-
-   if (ns)
-   {
-      free(ns);
-   }
-
-   if (table)
-   {
-      free(table);
-   }
-
-   if (!err)
-   {
-      err = GetColumnNames(template->env, oid, &colnames);
-   }
-
-   if (oid)
-   {
-      free(oid);
-   }
-
-   err = drms_template_links_int(template, colnames);
-
-   if (colnames)
-   {
-      free(colnames);
-   }
-
-   return err;
-}
-
 /* 
    Build the link part of a dataset template by
    using the query result holding a list of 
    (linkname, target_seriesname, type, description)
    tuples to initialize the array of link descriptors.
 */
-int drms_template_links_int(DRMS_Record_t *template, const char *cols)
+int drms_template_links(DRMS_Record_t *template)
 {
-  int i,j, status = DRMS_NO_ERROR;
-  DRMS_Env_t *env;
-  char buf[DRMS_MAXLINKNAMELEN], query[DRMS_MAXQUERYLEN];
-  DRMS_Link_t *link;
-  DB_Binary_Result_t *qres;
+   int i,j, status = DRMS_NO_ERROR;
+   DRMS_Env_t *env;
+   char buf[DRMS_MAXLINKNAMELEN], query[DRMS_MAXQUERYLEN];
+   DRMS_Link_t *link;
+   DB_Binary_Result_t *qres;
 
-  env = template->env;
+
+   env = template->env;
   
-  /* Initialize container structures for links. */
-  hcon_init(&template->links, sizeof(DRMS_Link_t), DRMS_MAXHASHKEYLEN, 
-	    (void (*)(const void *)) drms_free_link_struct, 
-	    (void (*)(const void *, const void *)) drms_copy_link_struct);
+   /* Initialize container structures for links. */
+   hcon_init(&template->links, sizeof(DRMS_Link_t), DRMS_MAXHASHKEYLEN, 
+             (void (*)(const void *)) drms_free_link_struct, 
+             (void (*)(const void *, const void *)) drms_copy_link_struct);
   
-  /* Get link definitions from database and add to template. */
-  int rank;
-  char *colnames = strdup(cols);
-  char *pch = NULL;
-  char *pdel = NULL;
-  char *namespace = ns(template->seriesinfo->seriesname);
+   /* Get link definitions from database and add to template. */
+   char *namespace = ns(template->seriesinfo->seriesname);
+   sprintf(query, "select linkname, target_seriesname, type, description "
+           "from %s.%s where seriesname ~~* '%s' order by linkname", 
+           namespace, DRMS_MASTER_LINK_TABLE, template->seriesinfo->seriesname);
+   free(namespace);
+   if ((qres = drms_query_bin(env->session, query)) == NULL)
+   {
+      printf("Failed to retrieve link definitions for series %s.\n",
+             template->seriesinfo->seriesname);
+      return DRMS_ERROR_QUERYFAILED;
+   }
 
-  /* loop through keywords in colnames */
-  pch = colnames;
-  rank = 0;
-
-  while (pch)
-  {
-     if ((pdel = strchr(pch, ',')) != NULL)
-     {
-        *pdel = '\0';
-     }
-
-     if (!strcmp(pch, "recnum") ||
-         !strcmp(pch, "sunum") ||
-         !strcmp(pch, "slotnum") ||
-         !strcmp(pch, "sessionid") ||
-         !strcmp(pch, "sessionns"))
-     {
-        pch = pdel ? pdel + 1 : NULL;
-        continue;
-     }
-
-     sprintf(query, "select linkname, target_seriesname, type, description "
-             "from %s.%s where seriesname ~~* '%s' AND linkname ~~* '%s'", 
-             namespace, DRMS_MASTER_LINK_TABLE, template->seriesinfo->seriesname, pch);
-
-     if ((qres = drms_query_bin(env->session, query)) == NULL)
-     {
-        printf("Failed to retrieve link definitions for series %s.\n",
-               template->seriesinfo->seriesname);
-
-        if (colnames)
-        {
-           free(colnames);
-        }
-
-        if (namespace)
-        {
-           free(namespace);
-        }
-
-        return DRMS_ERROR_QUERYFAILED;
-     }
-
-     if (qres->num_rows>0 && qres->num_cols != 4 )
-     {
-        status = DRMS_ERROR_BADFIELDCOUNT;
-        goto bailout;
-     }
-
-     /* Ok, there should be at most one row, but there might not be any rows. */
-     if (qres->num_rows > 1)
-     {
-        status = DRMS_ERROR_BADQUERYRESULT;
-        goto bailout; /* free qres */
-     }
-     else if (qres->num_rows == 0)
-     {
-        /* skip, not a real keyword */
-        pch = pdel ? pdel + 1 : NULL;
-        continue;
-     }
-
-    /* Allocate space for new structure in hashed container. */
-    db_binary_field_getstr(qres, i, 0, sizeof(buf), buf);
-    link = hcon_allocslot_lower(&template->links, buf);
-    memset(link,0,sizeof(DRMS_Link_t));
-    XASSERT(link->info = malloc(sizeof(DRMS_LinkInfo_t)));
-    memset(link->info,0,sizeof(DRMS_LinkInfo_t));
-    /* Copy field values from query result. */
-    link->record = template;
-    strcpy(link->info->name, buf);
-    db_binary_field_getstr(qres, i, 1, sizeof(link->info->target_series), link->info->target_series);
-    db_binary_field_getstr(qres, i, 2, sizeof(buf), buf);
-    if (!strcmp(buf,"static"))
-      link->info->type = STATIC_LINK;
-    else if (!strcmp(buf,"dynamic"))
-      link->info->type = DYNAMIC_LINK;
-    else
-    {
-      fprintf(stderr,"ERROR: '%s' is not a valid link type.\n",buf);
+   if (qres->num_rows>0 && qres->num_cols != 4 )
+   {
+      status = DRMS_ERROR_BADFIELDCOUNT;
       goto bailout;
-    }
-    link->info->rank = rank;
-    db_binary_field_getstr(qres, i, 3, DRMS_MAXCOMMENTLEN, link->info->description);
+   }
+   for (i = 0; i<(int)qres->num_rows; i++)
+   {
+      /* Allocate space for new structure in hashed container. */
+      db_binary_field_getstr(qres, i, 0, sizeof(buf), buf);
+      link = hcon_allocslot_lower(&template->links, buf);
+      memset(link,0,sizeof(DRMS_Link_t));
+      XASSERT(link->info = malloc(sizeof(DRMS_LinkInfo_t)));
+      memset(link->info,0,sizeof(DRMS_LinkInfo_t));
+      /* Copy field values from query result. */
+      link->record = template;
+      strcpy(link->info->name, buf);
+      db_binary_field_getstr(qres, i, 1, sizeof(link->info->target_series), link->info->target_series);
+      db_binary_field_getstr(qres, i, 2, sizeof(buf), buf);
+      if (!strcmp(buf,"static"))
+        link->info->type = STATIC_LINK;
+      else if (!strcmp(buf,"dynamic"))
+        link->info->type = DYNAMIC_LINK;
+      else
+      {
+         fprintf(stderr,"ERROR: '%s' is not a valid link type.\n",buf);
+         goto bailout;
+      }	
+      db_binary_field_getstr(qres, i, 3, DRMS_MAXCOMMENTLEN, link->info->description);
 #ifdef DEBUG
-    printf("Link %d: name='%s', target_series='%s', type=%d, description=%s\n",
-	   i, link->name, link->target_series, link->type, link->info->description);
+      printf("Link %d: name='%s', target_series='%s', type=%d, description=%s\n",
+             i, link->name, link->target_series, link->type, link->info->description);
 #endif
-    link->info->pidx_num = -1; /* Mark as not-yet-initialized. */
-    for(j=0; j<DRMS_MAXPRIMIDX; j++)
-    {
-      memset(&link->pidx_value[j],0,sizeof(DRMS_Type_Value_t));
-    }     
-    link->isset = 0;
-    link->recnum = -1; 
-
-    rank++;
-    pch = pdel ? pdel + 1 : NULL;
-  }
-
-  if (colnames)
-  {
-     free(colnames);
-  }
-
-  if (namespace)
-  {
-     free(namespace);
-  }
-
-  db_free_binary_result(qres);
-  return DRMS_SUCCESS;
+      link->info->pidx_num = -1; /* Mark as not-yet-initialized. */
+      for(j=0; j<DRMS_MAXPRIMIDX; j++)
+      {
+         memset(&link->pidx_value[j],0,sizeof(DRMS_Type_Value_t));
+      }     
+      link->isset = 0;
+      link->recnum = -1; 
+   }
+   db_free_binary_result(qres);
+   return DRMS_SUCCESS;
 
  bailout:
-  if (colnames)
-  {
-     free(colnames);
-  }
-
-  if (namespace)
-  {
-     free(namespace);
-  }
-
-  db_free_binary_result(qres);
-  return status;
+   db_free_binary_result(qres);
+   return status;
 }
 
 

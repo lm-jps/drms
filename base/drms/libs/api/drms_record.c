@@ -3777,7 +3777,7 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
     /* Populate series info segments, keywords, and links part */
     if ((stat=drms_template_segments(template)))
       goto bailout;
-    if ((stat=drms_template_links_int(template, colnames)))
+    if ((stat=drms_template_links(template)))
       goto bailout;
     if ((stat=drms_template_keywords_int(template, !jsd, colnames)))
       goto bailout;
