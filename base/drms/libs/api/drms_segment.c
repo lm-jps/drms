@@ -2619,7 +2619,7 @@ CFITSIO_KEYWORD *drms_segment_mapkeys(DRMS_Segment_t *seg,
 
    snprintf(segnum, sizeof(segnum), "%d", seg->info->segnum);
 
-   while ((key = drms_record_nextkey(recin, &last)) != NULL)
+   while ((key = drms_record_nextkey(recin, &last, 1)) != NULL)
    {
       if (!drms_keyword_getimplicit(key))
       {

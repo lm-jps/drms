@@ -366,7 +366,7 @@ static void list_series_info(DRMS_Record_t *rec)
   /* show all keywords */
   printf("All Keywords for series %s:\n",rec->seriesinfo->seriesname);
 
-  while ((key = drms_record_nextkey(rec, &last)))
+  while ((key = drms_record_nextkey(rec, &last, 0)))
   {
      if (!drms_keyword_getimplicit(key))
      {
@@ -393,7 +393,7 @@ static void list_series_info(DRMS_Record_t *rec)
        hiter_destroy(&last);
     }
 
-    while ((seg = drms_record_nextseg(rec, &last)))
+    while ((seg = drms_record_nextseg(rec, &last, 0)))
         { /* segment name, units, protocol, dims, description */
 	if (seg->info->islink)
 	    {
@@ -960,7 +960,7 @@ int DoIt(void)
         DRMS_Keyword_t *key;
         HIterator_t *last = NULL;
 
-        while ((key = drms_record_nextkey(rec, &last)))
+        while ((key = drms_record_nextkey(rec, &last, 0)))
         {
            if (!drms_keyword_getimplicit(key))
            {
@@ -990,7 +990,7 @@ int DoIt(void)
         DRMS_Segment_t *seg;
         HIterator_t *last = NULL;
 
-        while ((seg = drms_record_nextseg(rec, &last)))
+        while ((seg = drms_record_nextseg(rec, &last, 0)))
           segs[nsegs++] = strdup (seg->info->name);
 
         if (last)

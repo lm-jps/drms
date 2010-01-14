@@ -7575,7 +7575,7 @@ int drms_record_islocal(DRMS_Record_t *rec)
    return islocal;
 }
 
-DRMS_Segment_t *drms_record_nextseg(DRMS_Record_t *rec, HIterator_t **last)
+DRMS_Segment_t *drms_record_nextseg(DRMS_Record_t *rec, HIterator_t **last, int followlink)
 {
    DRMS_Segment_t *seg = NULL;
    DRMS_Segment_t *segret = NULL;
@@ -7599,11 +7599,15 @@ DRMS_Segment_t *drms_record_nextseg(DRMS_Record_t *rec, HIterator_t **last)
 
       seg = hiter_getnext(hit);
 
-      if (seg)
+      if (seg && followlink)
       {
          /* Because of the way links are handled, must call drms_segment_lookup() to 
           * follow links */
          segret = drms_segment_lookup(rec, seg->info->name);
+      }
+      else
+      {
+         segret = seg;
       }
    }
 
@@ -7611,7 +7615,7 @@ DRMS_Segment_t *drms_record_nextseg(DRMS_Record_t *rec, HIterator_t **last)
 }
 
 /* Return keywords in rank order. */
-DRMS_Keyword_t *drms_record_nextkey(DRMS_Record_t *rec, HIterator_t **last)
+DRMS_Keyword_t *drms_record_nextkey(DRMS_Record_t *rec, HIterator_t **last, int followlink)
 {
    DRMS_Keyword_t *key = NULL;
    DRMS_Keyword_t *keyret = NULL;
@@ -7639,7 +7643,7 @@ DRMS_Keyword_t *drms_record_nextkey(DRMS_Record_t *rec, HIterator_t **last)
       {
          /* Because of the way links are handled, must call drms_keyword_lookup() to 
           * follow links */
-         keyret = drms_keyword_lookup(rec, key->info->name, 1);
+         keyret = drms_keyword_lookup(rec, key->info->name, followlink);
       }
    }
 
