@@ -1757,7 +1757,7 @@ int read_drive_to_wd(int sim, char *wd, int drive, char *tapeid,
   else {
     if(status = system(rcmd)) {
       write_log("***Dr%d:rd:Error. exit status=%d\n", drivenum, WEXITSTATUS(status));
-      send_mail("Dr%d:rd:error", drivenum);
+      send_mail("Dr%d:rd:error %s", drivenum, tapeid);
       return(-1);
     }
   }
@@ -1796,8 +1796,8 @@ int send_mail(char *fmt, ...)
 
   va_start(args, fmt);
   vsprintf(string, fmt, args);
-  /* !!TBD send to admin alias instead of jim */
-  sprintf(cmd, "echo \"%s\" | Mail -s \"drive_svc error\" jim@sun.stanford.edu", string);
+  /* !!TBD send to dcs_admin alias instead of jim */
+  sprintf(cmd, "echo \"%s\" | Mail -s \"drive_svc error\" dcs_admin@sun.stanford.edu", string);
   system(cmd);
   va_end(args);
   return(0);
