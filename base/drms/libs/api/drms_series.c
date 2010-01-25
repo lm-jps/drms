@@ -2,6 +2,7 @@
 #include "drms.h"
 #include "drms_priv.h"
 #include "xmem.h"
+#include "atoinc.h"
 
 /* 
 extract namespace from series name. 
@@ -256,10 +257,13 @@ int drms_insert_series(DRMS_Session_t *session, int update,
 
     if (key->info->type == DRMS_TYPE_TIME)
     {
+       TIME interval = atoinc(key->info->unit);
+       int internal = (interval > 0);
+
        XASSERT((drms_sprintfval_format(defval, key->info->type, 
 				       &key->value, 
 				       key->info->unit, 
-				       0) < DRMS_DEFVAL_MAXLEN));
+				       internal) < DRMS_DEFVAL_MAXLEN));
     }
     else
     {
@@ -297,7 +301,7 @@ int drms_insert_series(DRMS_Session_t *session, int update,
 		  DB_STRING, drms_type2str(key->info->type), DB_STRING, defval, 
 		  DB_STRING, key->info->format, DB_STRING, key->info->unit,
 		  DB_STRING, key->info->description,
-		  DB_INT4, key->info->islink,DB_INT4, key->info->recscope, 
+		  DB_INT4, key->info->islink,DB_INT4, drms_keyword_isconstant(key),
 		  DB_INT4, key->info->kwflags))
       goto failure;
 

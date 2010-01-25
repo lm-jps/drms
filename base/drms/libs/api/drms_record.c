@@ -2486,8 +2486,8 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
 	  }
 	  closedir(dp);
 	  /* Loop over segments and copy any TAS segments one by one. */
-	  hiter_new(&hit_in, &rec_in->segments);
-	  hiter_new(&hit_out, &rec_out->segments);
+	  hiter_new_sort(&hit_in, &rec_in->segments, drms_segment_ranksort);
+	  hiter_new_sort(&hit_out, &rec_out->segments, drms_segment_ranksort);
 	  while ((seg_in = (DRMS_Segment_t *)hiter_getnext(&hit_in)) && 
 		 (seg_out = (DRMS_Segment_t *)hiter_getnext(&hit_out)))
 	  {
@@ -4134,7 +4134,6 @@ int drms_populate_record(DRMS_Record_t *rec, long long recnum)
  */ 
 int drms_populate_records (DRMS_RecordSet_t *rs, DB_Binary_Result_t *qres) {
   int row, col, i;
-  HIterator_t hit;
   DRMS_Keyword_t *key;
   DRMS_Link_t *link;
   DRMS_Segment_t *seg;
@@ -4143,6 +4142,7 @@ int drms_populate_records (DRMS_RecordSet_t *rs, DB_Binary_Result_t *qres) {
   DB_Type_t column_type;
   int segnum;
   char *record_value;
+  HIterator_t *last = NULL;
 
   CHECKNULL(rs);
   CHECKNULL(qres);
@@ -4168,8 +4168,7 @@ int drms_populate_records (DRMS_RecordSet_t *rs, DB_Binary_Result_t *qres) {
 
     /* Populate Links. */
     if (hcon_size(&rec->links) > 0) {
-      hiter_new(&hit, &rec->links);
-      while ((link = (DRMS_Link_t *)hiter_getnext (&hit))) {
+       while ((link = drms_record_nextlink(rec, &last))) {
 	link->record = rec; /* parent link. */
 	if (link->info->type == STATIC_LINK)
 	  link->recnum = db_binary_field_getlonglong(qres, row, col++);
@@ -4187,12 +4186,17 @@ int drms_populate_records (DRMS_RecordSet_t *rs, DB_Binary_Result_t *qres) {
 	  }
 	}
       }
+
+       if (last)
+       {
+          hiter_destroy(&last);
+       }
     }
 
     /* Populate keywords. */
     if (hcon_size(&rec->keywords) > 0) {
-      hiter_new(&hit, &rec->keywords);
-      while ((key = (DRMS_Keyword_t *)hiter_getnext(&hit)) ) {
+
+       while ((key = drms_record_nextkey(rec, &last, 0)) ) {
 	key->record = rec; /* parent link. */
 	if (likely (!key->info->islink && !drms_keyword_isconstant(key))) {
 		/*  Copy value only if not null. Otherwise use default value
@@ -4206,6 +4210,10 @@ int drms_populate_records (DRMS_RecordSet_t *rs, DB_Binary_Result_t *qres) {
 	  col++;
 	}
       }
+       if (last)
+       {
+          hiter_destroy(&last);
+       }
     }
 
     /* Segment fields. */
@@ -4218,10 +4226,9 @@ int drms_populate_records (DRMS_RecordSet_t *rs, DB_Binary_Result_t *qres) {
       char kbuf[DRMS_MAXKEYNAMELEN];
       DRMS_Keyword_t *segkey = NULL;
 
-      hiter_new(&hit, &rec->segments); /* Iterator for segment container. */
-      segnum = 0;
-      while( (seg = (DRMS_Segment_t *)hiter_getnext(&hit)) )
+      while( (seg = drms_record_nextseg(rec, &last, 0)) )
       {
+         segnum = seg->info->segnum;
 	seg->record = rec; /* parent link. */
 	/* Segment file name stored as column "sg_XXX_file */
 	db_binary_field_getstr(qres, row, col++, DRMS_MAXSEGFILENAME, seg->filename);
@@ -4265,11 +4272,15 @@ int drms_populate_records (DRMS_RecordSet_t *rs, DB_Binary_Result_t *qres) {
               seg->bscale = segkey->value.double_val;
            }
         }
+      }
 
-	seg->info->segnum = segnum++;
+      if (last)
+      {
+         hiter_destroy(&last);
       }
     }
   }
+
   return 0;
 }
 
@@ -4285,11 +4296,11 @@ char *drms_field_list(DRMS_Record_t *rec, int *num_cols)
 {
   int i,len=0;
   char *buf, *p;
-  HIterator_t hit;
   DRMS_Link_t *link;
   DRMS_Keyword_t *key;
   int ncol=0, segnum;
   DRMS_Segment_t *seg;
+  HIterator_t *last = NULL;
 
   XASSERT(rec);
   /**** First get length of string buffer required. ****/
@@ -4301,9 +4312,9 @@ char *drms_field_list(DRMS_Record_t *rec, int *num_cols)
   len += strlen("sessionid")+2; 
   len += strlen("sessionns")+2;
   ncol += 5;
+
   /* Link fields. */
-  hiter_new(&hit, &rec->links); /* Iterator for link container. */
-  while( (link = (DRMS_Link_t *)hiter_getnext(&hit)) )
+  while( (link = drms_record_nextlink(rec, &last)) )
   {
     if (link->info->type == STATIC_LINK)
     {
@@ -4325,9 +4336,14 @@ char *drms_field_list(DRMS_Record_t *rec, int *num_cols)
       }
     }
   }
+
+  if (last)
+  {
+     hiter_destroy(&last);
+  }
+
   /* Keyword fields. */
-  hiter_new(&hit, &rec->keywords); /* Iterator for keyword container. */
-  while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )
+  while( (key = drms_record_nextkey(rec, &last, 0)) )
   {
     if (!key->info->islink && !drms_keyword_isconstant(key))
     {
@@ -4335,9 +4351,14 @@ char *drms_field_list(DRMS_Record_t *rec, int *num_cols)
       ++ncol;
     }
   }
+
+  if (last)
+  {
+     hiter_destroy(&last);
+  }
+
   /* Segment fields. */
-  hiter_new(&hit, &rec->segments); /* Iterator for segment container. */
-  while( (seg = (DRMS_Segment_t *)hiter_getnext(&hit)) )
+  while( (seg = drms_record_nextseg(rec, &last, 0)) )
   {
     /* Segment file name stored as column "sg_XXX_file */
     len += 13;
@@ -4349,6 +4370,12 @@ char *drms_field_list(DRMS_Record_t *rec, int *num_cols)
       ncol += seg->info->naxis;
     }
   }
+
+  if (last)
+  {
+     hiter_destroy(&last);
+  }
+
   /* Malloc string buffer. */
   XASSERT( buf = malloc(len+1) );
   //  printf("ncol = %d\n",ncol);
@@ -4361,9 +4388,9 @@ char *drms_field_list(DRMS_Record_t *rec, int *num_cols)
   p += sprintf(p,", %s","slotnum"); 
   p += sprintf(p,", %s","sessionid"); 
   p += sprintf(p,", %s","sessionns");
-  /* Link fields. */
-  hiter_new(&hit, &rec->links); /* Iterator for link container. */
-  while( (link = (DRMS_Link_t *)hiter_getnext(&hit)) )
+ 
+ /* Link fields. */  
+  while( (link = drms_record_nextlink(rec, &last)) )
   {
     if (link->info->type == STATIC_LINK)
       p += sprintf(p,", ln_%s",link->info->name);
@@ -4378,19 +4405,28 @@ char *drms_field_list(DRMS_Record_t *rec, int *num_cols)
 	p += sprintf(p,", ln_%s_%s",link->info->name, link->info->pidx_name[i]);
     }
   }
+
+  if (last)
+  {
+     hiter_destroy(&last);
+  }
+
   /* Keyword fields. */
-  hiter_new(&hit, &rec->keywords); /* Iterator for keyword container. */
-  while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )
+  while( (key = drms_record_nextkey(rec, &last, 0)) )
   {
     if (!key->info->islink && !drms_keyword_isconstant(key))
       p += sprintf(p,", %s",key->info->name);
   }
-  /* Segment fields. */
-  hiter_new(&hit, &rec->segments); /* Iterator for segment container. */
 
-  segnum = 0;
-  while( (seg = (DRMS_Segment_t *)hiter_getnext(&hit)) )
+  if (last)
   {
+     hiter_destroy(&last);
+  }
+
+  /* Segment fields. */
+  while( (seg = drms_record_nextseg(rec, &last, 0)) )
+  {
+     segnum = seg->info->segnum;
     p += sprintf(p, ", sg_%03d_file", segnum);
     if (seg->info->scope==DRMS_VARDIM)
     {
@@ -4398,8 +4434,11 @@ char *drms_field_list(DRMS_Record_t *rec, int *num_cols)
       for (i=0; i<seg->info->naxis; i++)	
 	p += sprintf(p,", sg_%03d_axis%03d",segnum,i);
     }
+  }
 
-    segnum++;
+  if (last)
+  {
+     hiter_destroy(&last);
   }
 
   buf[len] = 0; /* Hopefully we got the length right! */
@@ -4420,7 +4459,6 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
   DRMS_Env_t *env;
   int col,row,i,num_args, num_rows;
   char *query, *field_list, *seriesname, *p, *series_lower;
-  HIterator_t hit;
   DRMS_Keyword_t *key;
   DRMS_Link_t *link;
   DRMS_Record_t *rec;
@@ -4429,6 +4467,7 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
   char **argin;
   int status;
   int *sz;
+  HIterator_t *last = NULL;
 
   CHECKNULL(recset);
 
@@ -4476,8 +4515,7 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
   XASSERT(argin[col++] = malloc(num_rows*sizeof(char *)));
 
   /* Loop through Links. */
-  hiter_new(&hit, &rec->links);/* Iterator for link container. */
-  while( (link = (DRMS_Link_t *)hiter_getnext(&hit)) )
+  while( (link = drms_record_nextlink(rec, &last)) )
   {
     if (link->info->type == STATIC_LINK)
     {
@@ -4510,9 +4548,13 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
     }
   }
 
+  if (last)
+  {
+     hiter_destroy(&last);
+  }
+
   /* Loop through Keywords. */
-  hiter_new(&hit, &rec->keywords); /* Iterator for keyword container. */
-  while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )
+  while( (key = drms_record_nextkey(rec, &last, 0)) )
   {
     if (!key->info->islink && !drms_keyword_isconstant(key))
     {
@@ -4529,9 +4571,13 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
     }    
   }
 
+  if (last)
+  {
+     hiter_destroy(&last);
+  }
+
   /* Loop through Segment fields. */
-  hiter_new(&hit, &rec->segments);
-  while( (seg = (DRMS_Segment_t *)hiter_getnext(&hit)) )
+  while( (seg = drms_record_nextseg(rec, &last, 0)) )
   {
     /* segment names are stored as columns "sg_XXX_file */	
     intype[col] = drms2dbtype(DRMS_TYPE_STRING);
@@ -4548,6 +4594,11 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
 	col++;
       }
     }
+  }
+
+  if (last)
+  {
+     hiter_destroy(&last);
   }
 
   for (col=0; col<num_args; col++)
@@ -4571,8 +4622,7 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
     col++;
 
     /* Loop through Links. */
-    hiter_new(&hit, &rec->links);/* Iterator for link container. */
-    while( (link = (DRMS_Link_t *)hiter_getnext(&hit)) )
+    while( (link = drms_record_nextlink(rec, &last)) )
     {
       if (link->info->type == STATIC_LINK)
       {
@@ -4602,9 +4652,13 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
       }
     }
 
+    if (last)
+    {
+       hiter_destroy(&last);
+    }
+
     /* Loop through Keywords. */
-    hiter_new(&hit, &rec->keywords); /* Iterator for keyword container. */
-    while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )
+    while( (key = drms_record_nextkey(rec, &last, 0)) )
     {
       if (!key->info->islink && !drms_keyword_isconstant(key))
       {
@@ -4621,10 +4675,14 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
 	}
       }    
     }
+    
+    if (last)
+    {
+       hiter_destroy(&last);
+    }
 
     /* Loop through Segment fields. */
-    hiter_new(&hit, &rec->segments);
-    while( (seg = (DRMS_Segment_t *)hiter_getnext(&hit)) )
+    while( (seg = drms_record_nextseg(rec, &last, 0)) )
     {
       // This is a hack to get around the problem that
       // seg->filename is an array, not a pointer.  
@@ -4640,6 +4698,11 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
 	  col++;
 	}
       }
+    }
+
+    if (last)
+    {
+       hiter_destroy(&last);
     }
   }
 #ifdef DEBUG
@@ -4751,21 +4814,21 @@ void drms_fprint_record(FILE *keyfile, DRMS_Record_t *rec)
     fprintf(keyfile, "%-*s %d:\t%s\n",fwidth,"DB index",i,
 	   (rec->seriesinfo->dbidx_keywords[i])->info->name);
 
-  hiter_new(&hit, &rec->keywords);
+  hiter_new_sort(&hit, &rec->keywords, drms_keyword_ranksort);
   while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )
   {
     fprintf(keyfile, "%-*s '%s':\n",13,"Keyword",key->info->name);
     drms_keyword_fprint(keyfile, key);
   }
 
-  hiter_new(&hit, &rec->links); 
+  hiter_new_sort(&hit, &rec->links, drms_link_ranksort); 
   while( (link = (DRMS_Link_t *)hiter_getnext(&hit)) )
   {
     fprintf(keyfile, "%-*s '%s':\n",13,"Link",link->info->name);
     drms_link_fprint(keyfile, link);
   }
 
-  hiter_new(&hit, &rec->segments);
+  hiter_new_sort(&hit, &rec->segments, drms_segment_ranksort);
   while( (seg = (DRMS_Segment_t *)hiter_getnext(&hit)) )
   {
     fprintf(keyfile, "%-*s '%s':\n",fwidth,"Segment",seg->info->name);

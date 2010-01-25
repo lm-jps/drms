@@ -451,7 +451,7 @@ int drms_template_links(DRMS_Record_t *template)
    char buf[DRMS_MAXLINKNAMELEN], query[DRMS_MAXQUERYLEN];
    DRMS_Link_t *link;
    DB_Binary_Result_t *qres;
-
+   int rank;
 
    env = template->env;
   
@@ -478,6 +478,8 @@ int drms_template_links(DRMS_Record_t *template)
       status = DRMS_ERROR_BADFIELDCOUNT;
       goto bailout;
    }
+
+   rank = 0;
    for (i = 0; i<(int)qres->num_rows; i++)
    {
       /* Allocate space for new structure in hashed container. */
@@ -506,6 +508,12 @@ int drms_template_links(DRMS_Record_t *template)
              i, link->name, link->target_series, link->type, link->info->description);
 #endif
       link->info->pidx_num = -1; /* Mark as not-yet-initialized. */
+
+      /* For now, just rank according to alphanumeric ordering of the link name. There is no field in the 
+       * drms_link tables that can appropriately store the rank. However, we could use the "version" field
+       * in the drms_series table, since it isn't being used. But for now, just rank alphanumerially. */
+      link->info->rank = rank++;
+
       for(j=0; j<DRMS_MAXPRIMIDX; j++)
       {
          memset(&link->pidx_value[j],0,sizeof(DRMS_Type_Value_t));

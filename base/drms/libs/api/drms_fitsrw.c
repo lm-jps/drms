@@ -445,7 +445,7 @@ int drms_fitsrw_write(const char *filename,
    CFITSIO_IMAGE_INFO imginfo;
    void *image = NULL;
    CFITSIO_KEYWORD* keylist = NULL;
-   HIterator_t *hit = NULL;
+   HIterator_t hit;
    DRMS_Keyword_t *key = NULL;
    const char *keyname = NULL;
    int fitsrwstat;
@@ -453,24 +453,19 @@ int drms_fitsrw_write(const char *filename,
    if (arr && arr->data && keywords)
    {
       /* iterate through keywords and populate keylist */
-      hit = hiter_create(keywords);
-      if (hit)
+      hiter_new_sort(&hit, keywords, drms_keyword_ranksort); 
+      while ((key = hiter_getnext(&hit)) != NULL)
       {
-         while ((key = hiter_getnext(hit)) != NULL)
+         if (!drms_keyword_getimplicit(key))
          {
-            if (!drms_keyword_getimplicit(key))
+            /* will reject DRMS keywords that collide with FITS reserved 
+             * keywords, like SIMPLE */
+            if (drms_keyword_export(key, &keylist))
             {
-               /* will reject DRMS keywords that collide with FITS reserved 
-                * keywords, like SIMPLE */
-               if (drms_keyword_export(key, &keylist))
-               {
-                  keyname = drms_keyword_getname(key);
-                  fprintf(stderr, "Couldn't export keyword '%s'.\n", keyname);
-               }
+               keyname = drms_keyword_getname(key);
+               fprintf(stderr, "Couldn't export keyword '%s'.\n", keyname);
             }
          }
-
-         hiter_destroy(&hit);
       }
 
       if (keylist)

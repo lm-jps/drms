@@ -1479,7 +1479,6 @@ int parse_zone(const char *zonestr, char *out, int size)
       }
       else if (state == 'X')
       {
-         fprintf(stderr, "Invalid time zone string '%s'.\n", zonestr);
          err = 1;
       }
    }

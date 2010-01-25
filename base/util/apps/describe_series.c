@@ -170,17 +170,17 @@ void print_jsd(DRMS_Record_t *rec) {
 
   printf("%-*s\t%s\n",fwidth,"Description:",rec->seriesinfo->description);
   printf("\n#=====Links=====\n");
-  hiter_new(&hit, &rec->links); 
+  hiter_new_sort(&hit, &rec->links, drms_linke_ranksort); 
   while( (link = (DRMS_Link_t *)hiter_getnext(&hit)) )
     drms_link_print_jsd(link);
 
   printf("\n#=====Keywords=====\n");
-  hiter_new(&hit, &rec->keywords);
+  hiter_new_sort(&hit, &rec->keywords, drms_keyword_ranksort);
   while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )
     drms_keyword_print_jsd(key);
 
   printf("\n#=====Segments=====\n");
-  hiter_new(&hit, &rec->segments);
+  hiter_new_sort(&hit, &rec->segments, drms_segment_ranksort);
   while( (seg = (DRMS_Segment_t *)hiter_getnext(&hit)) )
     drms_segment_print_jsd(seg);
 }

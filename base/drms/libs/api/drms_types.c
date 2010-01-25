@@ -402,7 +402,7 @@ int drms_sprintfval_format(char *dst, DRMS_Type_t type, DRMS_Type_Value_t *val,
       {
 	/* From timerep.c: format should be a time zone or a standard time 
 	   like TAI/TDT/TT/UTC. */
-	sprint_time(dst, val->time_val, format, 0);
+	sprint_time(dst, val->time_val, format, 3);
 	return strlen(dst);
       } 
       break;

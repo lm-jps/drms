@@ -3,6 +3,7 @@
 #include "drms_priv.h"
 #include "ctype.h"
 #include "xmem.h"
+#include "atoinc.h"
 
 /* Utility functions. */
 static int getstring(char **inn, char *out, int maxlen);
@@ -1490,22 +1491,50 @@ static int parse_keyword(char **in,
       key->info->linkname[0] = 0;
       key->info->target_key[0] = 0;
       key->info->type = drms_str2type(type);
-      
-      /* Since we are parsing a value, this could be a string with escape characters or
-       * quotes. We want to preserve the quotes surrounding the string and pass those
-       * through to drms_sscanf2(). */
-      DRMS_Value_t vholder;
-      chused = drms_sscanf2(defval, NULL, 0, key->info->type, &vholder);
-      key->value = vholder.value;
-      memset(&(vholder.value), 0, sizeof(DRMS_Type_Value_t));
 
-      if (chused < 0 || 
-          (chused == 0 && key->info->type != DRMS_TYPE_STRING && key->info->type != DRMS_TYPE_TIME) ||
-	  (chused != strlen(defval) && key->info->type == DRMS_TYPE_TIME))
+      DRMS_Value_t vholder;
+      TIME interval = 0;
+      
+      /* If the key type is time, then this could be a time interval. */
+      if (key->info->type == DRMS_TYPE_TIME)
       {
-	fprintf(stderr, "Invalid time string '%s'.\n", defval);
-	GOTOFAILURE;
+         interval = atoinc(unit);
+         if (interval > 0)
+         {
+            /* defval should be a number */
+            chused = drms_sscanf2(defval, NULL, 0, DRMS_TYPE_DOUBLE, &vholder);
+
+            if (chused != strlen(defval))
+            {
+               fprintf(stderr, "Invalid interval value '%s'.\n", defval);
+               GOTOFAILURE;
+            }
+
+            key->value.time_val = vholder.value.double_val * interval;
+         }
       }
+
+      if (interval <= 0)
+      {
+         /* Since we are parsing a value, this could be a string with escape characters or
+          * quotes. We want to preserve the quotes surrounding the string and pass those
+          * through to drms_sscanf2(). */
+         chused = drms_sscanf2(defval, NULL, 0, key->info->type, &vholder);
+         key->value = vholder.value;
+         memset(&(vholder.value), 0, sizeof(DRMS_Type_Value_t));
+
+         if (chused < 0 || (chused == 0 && key->info->type != DRMS_TYPE_STRING && key->info->type != DRMS_TYPE_TIME))
+         {
+            fprintf(stderr, "Invalid default value '%s'.\n", defval);
+            GOTOFAILURE;
+         }
+         else if (chused != strlen(defval) && key->info->type == DRMS_TYPE_TIME)
+         {
+            fprintf(stderr, "Invalid time string '%s'.\n", defval);
+            GOTOFAILURE;
+         }
+      }
+
 #ifdef DEBUG      
       printf("Default value = '%s' = ",defval);
       drms_printfval(key->info->type, &key->value);

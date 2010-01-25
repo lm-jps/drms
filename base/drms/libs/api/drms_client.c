@@ -1501,31 +1501,23 @@ int drms_create_series_fromprototype(DRMS_Record_t **prototype,
 
       strcpy(proto->seriesinfo->seriesname, outSeriesName);
 
-      if (user)
-      {
-	 if (strlen(user) < DRMS_MAXCOMMENTLEN)
-	 {
-	    strcpy(proto->seriesinfo->author, user);
-	 }
-	 else
-	 {
-	    strcpy(proto->seriesinfo->author, "unknown");
-	 }
-
-	 if (strlen(user) < DRMS_MAXOWNERLEN)
-	 {
-	    strcpy(proto->seriesinfo->owner, user);
-	 }
-	 else
-	 {
-	    strcpy(proto->seriesinfo->owner, "unknown");
-	 }
-      }
-
       // Discard "Owner", fill it with the dbuser
-      if (proto->env->session->db_direct) 
+      if (proto->env->session->db_direct && 
+          proto->env->session->db_handle->dbuser && 
+          strlen(proto->env->session->db_handle->dbuser)) 
       {
 	 strcpy(proto->seriesinfo->owner, proto->env->session->db_handle->dbuser);
+      }
+      else if (!proto->seriesinfo->owner || strlen(proto->seriesinfo->owner) == 0)
+      {
+         if (user && strlen(user) < DRMS_MAXOWNERLEN)
+         {
+            strcpy(proto->seriesinfo->owner, user);
+         }
+         else
+         {
+            strcpy(proto->seriesinfo->owner, "unknown");
+         }
       }
 
       status = drms_create_series(proto, perms);

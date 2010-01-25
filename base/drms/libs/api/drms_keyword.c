@@ -4,6 +4,7 @@
 #include "xmem.h"
 #include "cfitsio.h"
 #include "drms_fitsrw.h"
+#include "atoinc.h"
 
 /* Slotted keywords - index keyword type (some kind of integer) */
 const DRMS_Type_t kIndexKWType = DRMS_TYPE_LONGLONG;
@@ -508,6 +509,31 @@ void drms_keyword_printval(DRMS_Keyword_t *key)
   drms_keyword_fprintval(stdout, key);
 }
 
+static void PrintTimeVal(DRMS_Keyword_t *key, char *outbuf, int size)
+{
+   char buf[1024];
+   char *endptr = NULL;
+   TIME interval = 0;
+
+   interval = atoinc(key->info->unit);
+   if (interval > 0)
+   {
+      /* This is a time interval. Must convert the value to the unit of the time interval. 
+       * format is a printf format, not the precision. */
+      snprintf(buf, sizeof(buf), key->info->format, key->value.time_val / interval);
+   }
+   else
+   {
+      /* key->info->format can be converted to an integer safely - it has been checked already */
+      int format = (int)strtod(key->info->format, &endptr);
+      sprint_time(buf, key->value.time_val, key->info->unit, format);
+   }
+
+   if (outbuf)
+   {
+      snprintf(outbuf, size, "%s", buf);
+   }
+}
 
 /* Print the fields of a keyword struct to a file. */
 void drms_keyword_fprintval(FILE *keyfile, DRMS_Keyword_t *key)
@@ -534,14 +560,9 @@ void drms_keyword_fprintval(FILE *keyfile, DRMS_Keyword_t *key)
     break;
   case DRMS_TYPE_TIME:
     {
-      char buf[1024];
-      char *endptr = NULL;
-
-      /* key->info->format can be converted to an integer safely - it has been checked already */
-      int format = (int)strtod(key->info->format, &endptr);
-
-      sprint_time(buf, key->value.time_val, key->info->unit, format);
-      fprintf(keyfile,"%s",buf);
+       char buf[1024];
+       PrintTimeVal(key, buf, sizeof(buf));
+       fprintf(keyfile, "%s", buf);
     }
     break;
   case DRMS_TYPE_STRING:
@@ -577,12 +598,7 @@ void drms_keyword_snprintfval(DRMS_Keyword_t *key, char *buf, int size)
       case DRMS_TYPE_TIME:
 	{
 	   char intbuf[1024];
-	   char *endptr = NULL;
-
-	   /* key->info->format can be converted to an integer safely - it has been checked already */
-	   int format = (int)strtod(key->info->format, &endptr);
-
-	   sprint_time(intbuf, key->value.time_val, key->info->unit, format);
+           PrintTimeVal(key, intbuf, sizeof(intbuf));
 	   snprintf(buf, size, "%s", intbuf);
 	}
 	break;
@@ -724,6 +740,19 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
 	db_binary_field_getstr(qres, irow, 7, sizeof(key->info->unit), key->info->unit);
 	key->info->recscope = (DRMS_RecScopeType_t)db_binary_field_getint(qres, irow, 8);
 
+       
+        if (key->info->type == DRMS_TYPE_TIME)
+        {
+           /* If unit is an interval unit (eg, day), then key->value is incorrect 
+            * (the assumption was that defval was a time string). This is only 
+            * true for time keywords that are being used as time intervals. */
+           TIME interval = atoinc(key->info->unit);
+           if (interval > 0)
+           {
+              key->value.double_val = atof(defval);
+           }
+        }
+
         /* The persegment column used to be either 0 or 1 and it said whether the keyword
          * was a segment-specific column or not.  But starting with series version 2.1, 
          * the persegment column was overloaded to hold all the keyword flags (including
@@ -815,29 +844,46 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
 	 int64_t val = strtod(format, &endptr);
          char tmpout[64];
 
-	 if (val != 0 || endptr != format)
-	 {
-	    /* a recognizable number */
-	    if (val >= INT8_MIN && val <= INT8_MAX)
-	    {
-	       formatn = val;
-	    }
-	 }
-	 else if (!parse_zone(format, tmpout, sizeof(tmpout)))
-	 {
-	    /* format is a zone */
-	    snprintf(unit, DRMS_MAXUNITLEN, "%s", format);
-	 }
+         TIME interval = 0;
+         interval = atoinc(unittmp);
 
-	 snprintf(format, DRMS_MAXFORMATLEN, "%d", formatn);
+         if (interval <= 0)
+         {
+            /* If unit is a recognizable time-interval unit, like "sec", then this time 
+             * keyword is actually a time-interval keyword. In this case, preserve the 
+             * format (to be used for formatting a double for output), and preserve 
+             * the unit (keep "sec"). Parsing code will need to interpret the numerical
+             * value according to this unit so that the actual value saved is in seconds
+             * (so if the unit is "day", and the numerical value is "1", then the value 
+             * saved should be 86400. Code that prints the jsd will have to do the reverse
+             * conversion. The stored value of 86400 will need to be converted to 
+             * 1. For now, getkey and setkey should just use seconds.
+             */
+            
+            if (val != 0 || endptr != format)
+            {
+               /* a recognizable number */
+               if (val >= INT8_MIN && val <= INT8_MAX)
+               {
+                  formatn = val;
+               }
+            }
+            else if (!parse_zone(format, tmpout, sizeof(tmpout)))
+            {
+               /* format is a zone */
+               snprintf(unit, DRMS_MAXUNITLEN, "%s", format);
+            }
 
-	 if (*unit == '\0' || 
-	     !strcasecmp(unit, "none") || 
-	     !strcasecmp(unit, "time") ||
-	     !strtok(unittmp, " \t\b"))
-	 {
-	    snprintf(unit, DRMS_MAXUNITLEN, "%s", "UTC");
-	 }
+            snprintf(format, DRMS_MAXFORMATLEN, "%d", formatn);
+
+            if (*unit == '\0' || 
+                !strcasecmp(unit, "none") || 
+                !strcasecmp(unit, "time") ||
+                !strtok(unittmp, " \t\b"))
+            {
+               snprintf(unit, DRMS_MAXUNITLEN, "%s", "UTC");
+            }
+         }
 
 	 if (unittmp)
 	 {
