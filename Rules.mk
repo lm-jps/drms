@@ -43,11 +43,17 @@ $(IIOBJ):	CF_TGT := $(CF_TGT) -DIDLLIB
 %.o:		%.f
 		$(FCOMP)
 
+%.o:		%.f90
+		$(FCOMP)
+
 # If a .f file is to be compiled more than one, the Rules.mk file that
 # contains the rules for that .f file exists in a subdirectory of the 
 # directory that contains the .f file.  As a result, the stem of the 
 # of the corresponding .o file is the child of the stem of the .f file.
 %.o:		../%.f
+		$(FCOMP)
+
+%.o:		../%.f90
 		$(FCOMP)
 
 %.o:		%.c
