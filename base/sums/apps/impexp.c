@@ -100,7 +100,7 @@ void setup()
 
   gethostname(thishost, MAX_STR);
   cptr = index(thishost, '.');       /* must be short form */
-  *cptr = (char)NULL;
+  if(cptr) *cptr = (char)NULL;
   pid = getpid();
   sprintf(logname, "/usr/local/logs/SUM/impexp_%d.log", pid);
   open_log(logname);
