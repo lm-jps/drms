@@ -273,32 +273,31 @@ static inline int drms_keyword_ranksort(const void *he1, const void *he2)
 
 /**
    @fn void drms_keyword_fprint(FILE *keyfile, DRMS_Keyword_t *key);
-   blah blah
-*/
+   Print the fields of a keyword structure to file 'keyfile'.  Prints with descriptive headers and calls drms_keyword_fprintval().
 
 /**
    @fn void drms_keyword_printval(DRMS_Keyword_t *key)
-   blah blah
+   Print the fields of a keyword structure to stdout. 
 */
 
 /**
    @fn void drms_keyword_fprintval(FILE *keyfile, DRMS_Keyword_t *key)
-   blah blah
+   Print the fields of a keyword structure to a file 'keyfile'.
 */
 
 /**
    @fn void drms_keyword_snprintfval(DRMS_Keyword_t *key, char *buf, int size)
-   blah blah
+   (Needs further documentation)
 */
 
 /**
    @fn DRMS_Keyword_t *drms_keyword_lookup(DRMS_Record_t *rec, const char *key, int followlink)
-   blah blah
+   Wrapper for __drms_keyword_lookup without the recursion depth counter.  Needs futher documentation.
 */
 
 /**
    @fn DRMS_Type_t drms_keyword_type(DRMS_Keyword_t *key)
-   blah blah
+   Returns a type structure (DRMS_Type_t) of given keyword to stdout.  Needs further documentation.
 */
 
 /**
@@ -313,73 +312,67 @@ static inline int drms_keyword_ranksort(const void *he1, const void *he2)
 
 /**
    @fn int drms_keyword_keysmatch(DRMS_Keyword_t *k1, DRMS_Keyword_t *k2)
-   blah blah
+   Takes two keywords *k1 & *k2, and compares them.  Returns an integer to stdout, true or false. 
 */
 
 
 /** 
     @fn char drms_getkey_char(DRMS_Record_t *rec, const char *key,int *status)
-    blah blah
+    Input a record structure, return keyword value as a character.  
 */
 
 /** 
     @fn short drms_getkey_short(DRMS_Record_t *rec, const char *key, int *status)
-    blah blah
+    Input a record structure, return keyword value as a short integer. 
 */
 
 /**
    @fn int drms_getkey_int(DRMS_Record_t *rec, const char *key, int *status)
-   blah blah
+   Input a record structure, return keyword value as an integer. 
 */
 
 /**
    @fn long long drms_getkey_longlong(DRMS_Record_t *rec, const char *key, int *status)
-   blah blah
+   Input a record structure, return keyword value as a longlong value. 
 */
 
 /**
    @fn float drms_getkey_float(DRMS_Record_t *rec, const char *key, int *status)
-   blah blah
+   Input a record structure, return keyword value as a single float.
 */
 
 /**
    @fn double drms_getkey_double(DRMS_Record_t *rec, const char *key, int *status)
-   blah blah
+   Input a record structure, return keyword value as a double. 
 */
 
 /**
    @fn char *drms_getkey_string(DRMS_Record_t *rec, const char *key, int *status)
-   blah blah
-*/
-
-/**
-   @fn char *drms_getkey_string(DRMS_Record_t *rec, const char *key, int *status)
-   blah blah
+   Input a record structure, return keyword value as a string.
 */
 
 /** 
     @fn TIME drms_getkey_time(DRMS_Record_t *rec, const char *key, int *status)
-    blah blah
-*/
+    Input a record structure, return keyword value in TIME format.
 
 /**
    @fn double drms_keyword_getdouble(DRMS_Keyword_t *keyword, int *status)
-   blah blah
+   Input a keyword structure, return a keyword value as a double.
 */
 
 /**
    @fn TIME drms_keyword_gettime(DRMS_Keyword_t *keyword, int *status)
-   blah blah
+   Input a keyword structure, return a keyword value as a TIME. 
 */
 
 /**
    @fn DRMS_Type_Value_t drms_getkey(DRMS_Record_t *rec, const char *key, DRMS_Type_t *type, int *status)
-   blah blah
+   Input a record structure, get back the type value of the specified key. 
 */
 
 /**
    @fn DRMS_Value_t drms_getkey_p(DRMS_Record_t *rec, const char *key, int *status)
-   blah blah
+   Input a record structure, returns a value structure 
 */
 
 /**
@@ -424,12 +417,12 @@ static inline int drms_keyword_ranksort(const void *he1, const void *he2)
 
 /**
    @fn int drms_setkey(DRMS_Record_t *rec, const char *key, DRMS_Type_t type, DRMS_Type_Value_t *value)
-   blah blah
+   Give a DRMS_Record_t input type & value, sets internal key to given value.
 */
 
 /**
    @fn int drms_setkey_p(DRMS_Record_t *rec, const char *key, DRMS_Value_t *value)
-   blah blah
+   A more generic version of drms_setkey() - it assumes the source type is equal to the target type.
 */
 
 /**
