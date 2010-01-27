@@ -1,7 +1,6 @@
 /**
 \defgroup modify_series modify_series - for a series, change the archive flag and/or add keywords as described in a .jsd file
 @ingroup drms_util
-
 \brief Modify a DRMS series structure.
 
 \par Synopsis:
@@ -46,8 +45,9 @@ int DoIt(void) {
   const int bufsz = 2048;
   action_t action = ADD_KEYWORD;
   int status = DRMS_NO_ERROR;
+  int drmsstatus = DRMS_SUCCESS;
   int archive;
-  char *series, *series_short, *namespace;
+  char *series, *series_short, *namespace, *series_lower;
   char stmt [DRMS_MAXQUERYLEN];
   //char stmt[2048];
   DB_Text_Result_t *qres = NULL;
@@ -61,6 +61,7 @@ int DoIt(void) {
   /* Parse command line parameters. */
   if (cmdparams_numargs (&cmdparams) < 2) goto usage;
 
+
   /* Get series name. */
   series = cmdparams_get_str(&cmdparams, "series", NULL);
   char *p = strchr(series, '.');  
@@ -70,11 +71,24 @@ int DoIt(void) {
   }
   namespace = ns(series);
   series_short  = strdup(p+1);
+  series_lower = strdup(series);
 
   archive = cmdparams_get_int(&cmdparams, "archive", &status);
   if (!status) {
     action = ARCHIVE;
   }
+
+  /*See if series exists before going through any other checks */
+  if (!drms_series_exists(drms_env, series_lower, &drmsstatus))
+  { printf("***** The series %s does not exist, and cannot be removed. *****\n Please try again with a valid series name\n", series);
+      return 1;
+  }
+  /*See if it's in replication before going any further */
+  if (drms_series_isreplicated(drms_env, series_lower))
+     { printf("***** The series %s is in replication and cannot be modified *****\nProgram exiting\n", series);
+       return 1;
+     }
+
 
   if (action == ADD_KEYWORD) {
     filename = cmdparams_getarg(&cmdparams, 1);
