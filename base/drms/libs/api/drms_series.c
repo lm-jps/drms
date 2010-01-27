@@ -301,7 +301,8 @@ int drms_insert_series(DRMS_Session_t *session, int update,
 		  DB_STRING, drms_type2str(key->info->type), DB_STRING, defval, 
 		  DB_STRING, key->info->format, DB_STRING, key->info->unit,
 		  DB_STRING, key->info->description,
-		  DB_INT4, key->info->islink,DB_INT4, drms_keyword_isconstant(key),
+		  DB_INT4, key->info->islink,DB_INT4, key->info->recscope, /* stored in the isconstant column of
+                                                                            * drms_keyword. */
 		  DB_INT4, key->info->kwflags))
       goto failure;
 
