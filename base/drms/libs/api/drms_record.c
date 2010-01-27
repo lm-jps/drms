@@ -7229,12 +7229,18 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
 DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env, 
                                         DRMS_RecordSet_t *rs, 
                                         int *drmsstatus, 
-                                        DRMS_RecChunking_t *chunkstat)
+                                        DRMS_RecChunking_t *chunkstat,
+                                        int *newchunk)
 {
    DRMS_Record_t *ret = NULL;
    int stat = DRMS_SUCCESS;
    DRMS_RecChunking_t cstat = kRecChunking_None;
    int neednewchunk = -1;
+   
+   if (newchunk)
+   {
+      *newchunk = 0;
+   }
 
    if (rs && rs->cursor)
    {
@@ -7286,7 +7292,10 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env,
          else
          {
             rs->cursor->currentrec++; /* currentrec in a new chunk is -1 */
-            cstat = kRecChunking_NewChunk;
+            if (newchunk)
+            {
+               *newchunk = 1;
+            }
          }
       }
 
@@ -7337,10 +7346,11 @@ DRMS_Record_t *drms_recordset_fetchnextinset(DRMS_Env_t *env,
    int stat = DRMS_SUCCESS;
    DRMS_RecChunking_t cstat = kRecChunking_None;
    DRMS_Record_t *ret = NULL;
+   int newchunk = 0;
 
    if (!setnum)
    {
-      ret = drms_recordset_fetchnext(env, rs, &stat, &cstat);
+      ret = drms_recordset_fetchnext(env, rs, &stat, &cstat, &newchunk);
    }
    else
    {
@@ -7375,7 +7385,7 @@ DRMS_Record_t *drms_recordset_fetchnextinset(DRMS_Env_t *env,
       else
       {
 	 /* within the recordset subset, get the next one */
-	 ret = drms_recordset_fetchnext(env, rs, &stat, &cstat);
+	 ret = drms_recordset_fetchnext(env, rs, &stat, &cstat, &newchunk);
 	 if (!stat)
 	 {
 	    (rs->ss_currentrecs[*setnum])++;

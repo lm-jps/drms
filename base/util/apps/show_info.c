@@ -916,6 +916,7 @@ int DoIt(void)
   last_rec = nrecs - 1;
   first_rec = 0;
 
+  int newchunk;
 
   /* MAIN loop over set of selected records */
   for (irec = first_rec; irec <= last_rec; irec++) 
@@ -923,7 +924,7 @@ int DoIt(void)
     int col;
     if (max_recs == 0)
       {
-      rec = drms_recordset_fetchnext(drms_env, recordset, &status, &cstat);
+         rec = drms_recordset_fetchnext(drms_env, recordset, &status, &cstat, &newchunk);
       
       if (want_path && status == DRMS_REMOTESUMS_TRYLATER)
       {

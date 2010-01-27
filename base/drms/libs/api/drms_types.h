@@ -788,7 +788,10 @@ typedef struct  DRMS_KeywordInfo_struct
 				   * the keyword is 'slotted'.  This means
 				   * that the value of the keyword is
 				   * placed into a slot (eg, rounded down)
-				   * before being placed into the database. */
+				   * before being placed into the database. 
+                                   * rescope is stored in the "isconstant"
+                                   * field of the drms_keyword table in the
+                                   * database. */
 
   int kwflags;                    /* See DRMS_KeywordFlag_enum for the definitions
                                    * of these flags.  These flags are stored as bits

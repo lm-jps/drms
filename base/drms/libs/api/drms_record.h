@@ -40,7 +40,6 @@ enum DRMS_RecChunking_enum
 {
    kRecChunking_None = 0,
    kRecChunking_NoMoreRecs,
-   kRecChunking_NewChunk,
    kRecChunking_LastInChunk,
    kRecChunking_LastInRS
 };
@@ -203,7 +202,8 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
 DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env, 
                                         DRMS_RecordSet_t *rs, 
                                         int *drmsstatus, 
-                                        DRMS_RecChunking_t *chunkstat);
+                                        DRMS_RecChunking_t *chunkstat,
+                                        int *newchunk);
 DRMS_Record_t *drms_recordset_fetchnextinset(DRMS_Env_t *env, 
                                              DRMS_RecordSet_t *rs, 
                                              int *setnum, 
