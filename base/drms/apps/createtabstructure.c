@@ -110,7 +110,7 @@ static char *replacestr(char *str, int size, const char *orig, const char *rep)
    return ret;
 }
 
-static CrtabError_t GetTableOID(DRMS_Env_t *env, const char *ns, const char *table, char **oid)
+static CrtabError_t CrtabGetTableOID(DRMS_Env_t *env, const char *ns, const char *table, char **oid)
 {
    char query[DRMS_MAXQUERYLEN];
    DB_Binary_Result_t *qres = NULL;
@@ -498,7 +498,7 @@ static CrtabError_t CreateSQLInsertIntoTable(FILE *fptr,
    char *colnames = NULL;
    DB_Binary_Result_t *rows = NULL;
 
-   err = GetTableOID(env, ns, table, &oid);
+   err = CrtabGetTableOID(env, ns, table, &oid);
 
    if (!err)
    {
@@ -643,7 +643,7 @@ static int CreateSQL(FILE *fptr, DRMS_Env_t *env,
    }
    else
    {
-      err = GetTableOID(env, ns, table, &oid);
+      err = CrtabGetTableOID(env, ns, table, &oid);
 
       if (!err)
       {
@@ -785,7 +785,7 @@ int DoIt(void)
    const char *retention = NULL;
    const char *tapegroup = NULL;
    const char *owner = NULL;
-   char *file = NULL;
+   const char *file = NULL;
    FILE *fptr = NULL;
 
    series = cmdparams_get_str(&cmdparams, kSeriesin, NULL);
