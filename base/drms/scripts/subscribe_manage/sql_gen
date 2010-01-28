@@ -237,7 +237,7 @@ fi
 # Tar up the sql files then remove them
 #-------------------------------------------------------------------------
 logwrite "Executing: tar -C $triggerdir/ -czvf $triggerdir/$node.sql.tar.gz $node.createns.sql $node.subscribe_series.sql" nl
-tar -C $triggerdir/ -czvf $node.sql.tar.gz $node.createns.sql $node.subscribe_series.sql
+tar -C "$triggerdir/" -czvf "$triggerdir/$node.sql.tar.gz" "$node.createns.sql" "$node.subscribe_series.sql"
 logwrite "Removing $node.createns.sql and $node.subscribe_series.sql"
 rm -f $triggerdir/$node.createns.sql $triggerdir/$node.subscribe_series.sql
 
