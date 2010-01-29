@@ -153,6 +153,9 @@ exec < $input_file
                 counter=$(( $counter + 1 ))
 		unset sub
 	done
+logwrite "Schema list is [${schema[@]}]"
+logwrite "Table list is [${table[@]}]"
+cp $input_file inputfilecheck.tmp #remove
 
 #-------------------------------------------------------------------------
 # Checks if there are any new subscriptions, if not, then skip createns, createtabstructure, and sdo_slony1_dump
@@ -220,9 +223,10 @@ else
 fi
 
 # Execute sdo_slony1_dump.sh
-logwrite "Executing: [./sdo_slony1_dump.sh $pg_dbname jsoc $pg_port $new_site_bool ${table[@]}]"
+logwrite "Executing: [ ./sdo_slony1_dump.sh $pg_dbname jsoc $pg_port $new_site_bool ${schema_table[@]} ]"
 #echo "sdo_slony1_dump.sh >>" #remove
-./sdo_slony1_dump.sh $pg_dbname jsoc $pg_port $new_site_bool ${table[@]} >> $triggerdir/$node.subscribe_series.sql 2> /dev/null
+./sdo_slony1_dump.sh $pg_dbname jsoc $pg_port $new_site_bool ${schema_table[@]} >> $triggerdir/$node.subscribe_series.sql 2> /dev/null
+#cp $triggerdir/$node.subscribe_series.sql $triggerdir/tempcheck.sql #debug
 #echo "<< sdo_slony1_dump.sh" #remove
 #echo ${table[@]} >> $triggerdir/$node.subscribe_series.sql
 
