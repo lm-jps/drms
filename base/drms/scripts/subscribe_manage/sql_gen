@@ -155,7 +155,7 @@ exec < $input_file
 	done
 logwrite "Schema list is [${schema[@]}]"
 logwrite "Table list is [${table[@]}]"
-cp $input_file inputfilecheck.tmp #remove
+#cp $input_file inputfilecheck.tmp #remove
 
 #-------------------------------------------------------------------------
 # Checks if there are any new subscriptions, if not, then skip createns, createtabstructure, and sdo_slony1_dump

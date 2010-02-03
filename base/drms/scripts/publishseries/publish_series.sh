@@ -35,7 +35,9 @@ logwrite "Starting $0" nl
 # Checking to see if the series to be published exists on the master
 #--------------------------------------------------------------------
 logwrite "Checking to see if the series to be published exists on the master" 
+logwrite "Executing: [psql -t -h $master_host -p $master_port -U $master_user -c \"select * from pg_tables where tablename = '$publish_table' and schemaname = '$publish_schema'\" $master_dbname]"
 check=`psql -t -h $master_host -p $master_port -U $master_user -c "select * from pg_tables where tablename = '$publish_table' and schemaname = '$publish_schema'" $master_dbname`
+logwrite "Result: [$check]"
 if [ -n "$check" ]
 then
 	logwrite "The series $publish_schema.$publish_table exists, continuing..." nl
@@ -71,6 +73,7 @@ if [ $check -eq "1" ]
 then
 	logwrite "Found only one replication set, continuing..." nl 
 else
+	logwrite "Another replication set was found. ABORTING!"
 	echo "Another replication set was found. ABORTING!"
 	exit
 fi
@@ -101,10 +104,13 @@ psql -h $slave_host -p $slave_port -U $slave_user -f $temp_dir/createns_$publish
 logwrite "Executing [psql -h $slave_host -p $slave_port -U $slave_user -f $temp_dir/createtabstruct_$publish_schema.$publish_table.sql $slave_dbname > $temp_dir/createtabstruct.log 2>&1]"
 psql -h $slave_host -p $slave_port -U $slave_user -f $temp_dir/createtabstruct_$publish_schema.$publish_table.sql $slave_dbname > $temp_dir/createtabstruct.log 2>&1
 check=`cat $temp_dir/createtabstruct.log | grep ERROR`
+#cp $temp_dir/createtabstruct.log $temp_dir/createtabstruct.debug #remove
 if [ -n "$check" ]
 then
         echo "ERROR: There was an error creating the tables on the slave. ABORTING"
         logwrite "ERROR: There was an error creating the tables on the slave. ABORTING"
+	logwrite "ERROR: [$check]" nl
+	#cp $temp_dir/createtabstruct_$publish_schema.$publish_table.sql $temp_dir/debug.error #remove
 	rm -f $temp_dir/createns.log $temp_dir/createtabstruct.log $temp_dir/createtabstruct_$publish_schema.$publish_table.sql $temp_dir/createns_$publish_schema.$publish_table.sql
         exit
 else
@@ -128,6 +134,7 @@ else
 	exit
 fi
 unset check
+#exit #remove
 
 #--------------------------------------------------------------------
 # Finds the next subscription ID needed
@@ -151,7 +158,11 @@ sed 's/<id>/'$subid'/g' $tempnewpubfn >> $newpubfn
 rm -f $tempnewpubfn
 chmod 777 $newpubfn
 $newpubfn > $temp_dir/subscribe.$publish_schema.$publish_table.log 2>&1
+logwrite "Executing: [cat $temp_dir/subscribe.$publish_schema.$publish_table.log | grep ERROR]"
 check=`cat $temp_dir/subscribe.$publish_schema.$publish_table.log | grep ERROR`
+#cp $temp_dir/subscribe.$publish_schema.$publish_table.log $temp_dir/subscribe.$publish_schema.$publish_table.log.debug #remove
+cp $newpubfn $newpubfn.debug  #remove
+logwrite "Result: [$check]"
 if [ -n "$check" ]
 then
         echo "ERROR: Subscription of the new set was not successful, aborting"
@@ -165,27 +176,38 @@ else
 fi
 unset check
 
-rm -f $temp_dir/subscribe.$publish_schema.$publish_table.log
-rm -f $newpubfn
+#rm -f $temp_dir/subscribe.$publish_schema.$publish_table.log
+#rm -f $newpubfn
+
+#--------------------------------------------------------------------
+# Create temporary merge script
+#--------------------------------------------------------------------
+mergefile=$temp_dir/merge.$publish_schema.$publish_table.sh
+echo > $mergefile
+cat $slony_config_file >> $mergefile
+cat merge.sh >> $mergefile
+chmod 777 $mergefile
 
 #--------------------------------------------------------------------
 # Preforms the merge set over and over till it returns successful
 #--------------------------------------------------------------------
 sleeptimer=30
 counter=0
-echo "counter is [$counter] and merge_timeout is [$merge_timeout]" #remove
+success=false
+#echo "counter is [$counter] and merge_timeout is [$merge_timeout]" #remove
 while [ "$counter" -le "$merge_timeout" ]
 do
 	echo "Attempting merge..."
-	./merge.sh > $temp_dir/merge.$publish_schema.$publish_table.log 2>&1
+	$mergefile > $temp_dir/merge.$publish_schema.$publish_table.log 2>&1
 	check=`cat $temp_dir/merge.$publish_schema.$publish_table.log | grep ERROR`
 
 	if [ -n "$check" ]
 	then
 		echo "Tables not yet synced, sleeping for $sleeptimer seconds..."
 	else
-	        logwrite "Merge was successful!" 
+	        logwrite "Merge was successful!" nl
 		echo "Publish was successful!"
+		success=true
 		break
 	fi
 	unset check
@@ -196,5 +218,12 @@ do
 	sleep $sleeptimer
 done
 
-rm -f $temp_dir/merge.$publish_schema.$publish_table.log
+if [ "$success" == "false" ]
+then
+	echo "Merge was unsuccessful after $merge_timeout of attempts"
+	logwrite "Merge was unsuccessful after $merge_timeout of attempts" nl
+fi
 
+logwrite "$0 finished"
+rm -f $temp_dir/merge.$publish_schema.$publish_table.log
+rm -f $mergefile
