@@ -134,9 +134,8 @@ static fitsfile *fitsrw_getfptr(const char *filename, int writeable, int *status
                   if (*pfptr)
                   {
                      /* remove fileptr into structure */
-                     snprintf(fileinfokey, sizeof(fileinfokey), "%p", (void *)*pfptr);
+                     snprintf(fileinfokey, sizeof(fileinfokey), "%p", (void *)*pfptr);                 
                      hcon_remove(gFFPtrInfo, fileinfokey);
-
                      fits_close_file(*pfptr, &stat);
                   }
 
@@ -393,6 +392,7 @@ int fitsrw_writeslice(const char *filename, int *fpixel, int *lpixel, void *imag
    long long firstpix;
    long long intermed;
    TASRW_FilePtrInfo_t fpinfo;
+   int dimlen = 0;
 
    status = 0; // first thing!
 
@@ -504,6 +504,16 @@ int fitsrw_writeslice(const char *filename, int *fpixel, int *lpixel, void *imag
          goto error_exit;
       }
    }
+
+   /* The NAXISn keyword of the last dimension might not match the 
+    * length of the last dimension in the fpinfo. The file may have
+    * been created with a dummy last dimension of 1 if the length of
+    * the last dimension was not know at file creation time. Update
+    * the NAXISn keyword, using the last pixel dimension length. */
+   char naxisname[64];
+   snprintf(naxisname, sizeof(naxisname), "NAXIS%d", fpinfo.naxis);
+   dimlen = lpixel[fpinfo.naxis - 1] + 1;
+   fits_update_key(fptr, TINT, naxisname, &dimlen, NULL, &status);
 
 #ifdef DEBUG
    fprintf(stdout, "Time to write subset: %f\n", StopTimer(26));

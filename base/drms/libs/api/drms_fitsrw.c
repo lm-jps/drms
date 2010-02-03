@@ -529,6 +529,9 @@ int drms_fitsrw_writeslice(DRMS_Segment_t *seg,
    {
       CFITSIO_IMAGE_INFO info;
       DRMS_Array_t arr;
+      int usearrout;
+      int idim;
+
       memset(&arr, 0, sizeof(DRMS_Array_t));
 
       /* Write a "blank" file by calling fitsrw_writeintfile() with a NULL pointer for the image */
@@ -550,6 +553,44 @@ int drms_fitsrw_writeslice(DRMS_Segment_t *seg,
          else
          {
             arr.israw = 1;
+         }
+
+         idim = 0;
+         usearrout = 0;
+
+         /* The jsd axis information is only valid if all but the last dimension are non-zero. If the jsd
+          * information is invalid, use the output array to obtain the first n - 1 dimensions. */
+         while (idim < arr.naxis - 1)
+         {
+            if (arr.axis[idim++] == 0)
+            {
+               usearrout = 1;
+               break;
+            }
+         }
+
+         if (usearrout)
+         {
+            idim = 0;
+            while (idim < arr.naxis - 1)
+            {
+               arr.axis[idim] = arrayout->axis[idim];
+               idim++;
+            }
+         }
+
+         if (arr.axis[arr.naxis - 1] == 0)
+         {
+            /* A last-dimension length of zero implies that the total number of slices in 
+             * the cube is unknown. Although this is typically the case for VARDIM segments,
+             * this scenario isn't restricted to VARDIM. And it may be known at JSD-creation
+             * time, for VARMDIM segments, was the last dimension length is. */
+
+            /* Write a file with a last dimension of 1. CFITSIO will automatically 
+             * increase the size of the last dimension before it closes the file, 
+             * IF the relevant NAXISn keyword is updated with the appropriate length
+             * before the file is closed. */
+            arr.axis[arr.naxis - 1] = 1;
          }
 
          if (!drms_fitsrw_SetImageInfo(&arr, &info))
