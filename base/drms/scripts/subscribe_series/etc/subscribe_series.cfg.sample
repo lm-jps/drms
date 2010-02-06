@@ -1,5 +1,9 @@
 # Subscribe series file name <Subscription_node_id>.subscribe_series.cfg
 
+# file paths
+kLocalLogDir=awriteablelocalpath
+kLocalWorkingDir=awriteablelocalpath
+
 # Required connection information for communicatoin between localhost and the subscription server
 # webdb_ip		# target IP address
 webdb_ip=solarport.stanford.edu
@@ -16,7 +20,7 @@ pg_user=slony
 # slony_cluster		# name of the webdb slony cluster
 slony_cluster=jsoc
 # pg_dbname		# name of the subscribers database
-pg_dbname=jsoc_test
+pg_dbname=jsoc
 # pg_schema		# name of the schema the data will live in
 pg_schema=public
 # archive		#
@@ -52,4 +56,4 @@ email_list='igor@noao.edu'
 
 
 #node			node name or id
-node=node12
+node=thenameofyournode

@@ -2,7 +2,74 @@
 #export SSH_AUTH_SOCK=/tmp/ssh-HgUgDH2809/agent.2809
 #export SSH_AGENT_PID=2810
 
-logfile=../log/$0.log
+function RM {
+
+  cmd="/bin/rm";
+  args="$@"
+
+  $cmd $@
+  if [ $? -ne 0 ]
+  then
+    logecho "error running command [$cmd $args]"
+    exit 1;
+  else
+    logwrite "successful rm command [$cmd $args]"
+  fi
+}
+
+## shell wrappers declaration - From Igor (slight mod by Art)
+function MV {
+
+  cmd="/bin/mv";
+  args="$@"
+
+  $cmd $@
+  if [ $? -ne 0 ]
+  then
+    logecho "error running command [$cmd $args]"
+    exit 1;
+  else
+    logwrite "successful mv command [$cmd $args]"
+  fi
+}
+
+function SCP {
+
+  cmd="scp";
+  args="$@"
+
+  $cmd $@
+  if [ $? -ne 0 ]
+  then
+    logecho "error running command [$cmd $args]"
+    exit 1;
+  else
+    logwrite "successful scp command [$cmd $args]"
+  fi
+}
+
+function SSH {
+
+  cmd="ssh";
+  args="$@"
+
+  $cmd $@
+  if [ $? -ne 0 ]
+  then
+    logecho "error running command [$cmd $args]"
+    exit 1;
+  else
+    logwrite "successful ssh command [$cmd $args]"
+  fi
+}
+
+## logs to log file and stdout!                                                               
+function logecho {
+  if [ ! -z "$logfile" ]
+  then
+    echo $1 | tee -a $logfile;
+  fi
+}
 
 #--------------------------------------------------------------------
 # syntax check
@@ -23,7 +90,45 @@ fi
 #--------------------------------------------------------------------
 # Setting up the log
 #--------------------------------------------------------------------
-echo > "$logfile"
+## checks if a preferred LOCAL_LOG_DIR has been specified in the $config_file                 
+if [ -z "$kLocalLogDir" ]
+then
+  logfile=../log/$0.log
+else
+  logfile="$kLocalLogDir/$0.log"
+fi
+
+if [ -z "$kMaxLog" ]
+then
+  maxlog=1048576
+else
+  maxlog="$kMaxLog"
+fi
+
+if [ ! -f "$logfile" ]
+then
+  touch "$logfile"
+  if [ $? -ne 0 ]
+  then
+    logecho "Couldn't touch log file [$logfile] ... exiting."
+    exit 1;
+  fi
+else
+  # log exists, truncate if getting too big
+  sz=`stat -c%s $logfile`
+  if [ $sz -ge $maxlog ]
+  then
+    : > "$logfile"
+    if [ $? -ne 0 ]
+      then
+        logecho "Couldn't truncate log file [$logfile] ... exiting."
+      exit 1;
+    fi
+  fi
+fi
+
+# If there is a second argument to logwrite, regardless of 
+# what that argument is, an empty date line will be written
 logwrite () {
         echo `date +"%m-%d-%Y %H:%M:%S - "` "$1" >> "$logfile"
         if [ ! $2 == "" ]
@@ -52,7 +157,7 @@ done
 
 . set.sh
 
-rm -f set.sh
+RM -f set.sh
 
 #--------------------------------------------------------------------
 # Prepare trigger file
@@ -69,7 +174,6 @@ cat "$subscribe_file" | grep -v "\#" >> temp.tgr
 #--------------------------------------------------------------------
 # Check to see if the schema and database exists on the subscribers database
 #--------------------------------------------------------------------
-#check=`psql -p $pg_port -h $pg_host -U $pg_user -c '\dt '$pg_schema'.*' $pg_dbname| grep drms_series`
 logwrite "Executing [psql -p $pg_port -U $pg_user $pg_dbname -c '\dt admin.*' | grep \" ns \"]"
 check=`psql -p "$pg_port" -U "$pg_user" "$pg_dbname" -c '\dt admin.*' | grep " ns "`
 
@@ -80,20 +184,20 @@ else
 	logwrite "ERROR: admin schema and table ns do NOT exist" 
 	logwrite "ABORTING"
 	logwrite "Removing temp.tgr"
-	rm -f temp.tgr
+	RM -f temp.tgr
 	logwrite "Exiting $0"
-	exit
+	exit 1
 fi
 
 #--------------------------------------------------------------------
 # Stopping ingestion script and copy trigger file to Manager
 #--------------------------------------------------------------------
-logwrite "Stopping the ingestion script"
-logwrite "get_slony_logs.$node.die in $ingestion_path" nl
+logwrite "Stopping the ingestion script (creating die file)"
+logwrite "Creating get_slony_logs.$node.die in $ingestion_path" nl
 echo > "$ingestion_path/get_slony_logs.$node.die"
 triggerfile="$node".subscribe_series.tgr
 logwrite "Renaming temp.tgr to $triggerfile" nl
-mv -f temp.tgr "$triggerfile"
+MV -f temp.tgr "$triggerfile"
 
 
 logwrite "Copying $triggerfile to $webdb_user@$webdb_ip:$webdb_dir" nl
@@ -105,90 +209,112 @@ logwrite "Copying $triggerfile to $webdb_user@$webdb_ip:$webdb_dir" nl
 # scp it, then chgrp/chmod it (this script should do the
 # chgrp/chmod).
 chmod g+w "$triggerfile"
-scp -p "$triggerfile" "$webdb_user@$webdb_ip:$webdb_dir/."
+SCP -p "$triggerfile" "$webdb_user@$webdb_ip:$webdb_dir/."
 
 logwrite "Removing $triggerfile" nl
 
-rm -f "$triggerfile"
+RM -f "$triggerfile"
 
 
 #--------------------------------------------------------------------
-# Loop waiting for trigger file to continue
+# Loop waiting for sqldone file to continue (meaning sql is ready to be applied)
 #--------------------------------------------------------------------
-echo -n "Waiting to retrieve the sql file from the subscription manager"
+logecho -n "Waiting to retrieve the sql file from the subscription manager"
 counter=0
 while [ 1 -eq 1 ]
 do	
 	if [ $counter -ge $attempts ] 
 	then
-		logwrite "ERROR: Did not find $node.subscribe_series.sqldone after 20 tries"			
-		logwrite "ERROR: Exiting $0 " nl
-		echo
-		echo "ERROR: Couldn't find the sql file required to continue!"
-		echo "ABORTING!"
+		logecho "ERROR: Did not find $node.subscribe_series.sqldone after 20 tries"
+		logecho "ERROR: Couldn't find the sql file required to continue!"
+		logecho "ABORTING - exiting $0"
 		exit
 	fi		
 
-	check=`ssh "$webdb_user@$webdb_ip" 'ls '"'$webdb_dir'"' | grep '"'$node"".subscribe_series.sqldone'"`
 
+        result=`SSH "$webdb_user@$webdb_ip" 'ls '"'$webdb_dir'"`;
+
+        ## error on SSH; couldn't find $webdb_dir                                                 
+        error=`echo $result | grep -i error`;
+        if [ ! -z "$error" ]
+            then
+            logecho "Couldn't find $webdb_dir directory ... exiting";
+            exit 1;
+        fi
+
+        check=`echo $result | grep "$node.subscribe_series.sqldone"`;
 	
-	if [ ! $check == "" ]
+	if [ ! -z "$check" ]
 	then
 		logwrite "Found $node.subscribe_series.sqldone, continuing"
-		echo
-		echo "Subscription manager finished creating the sql file, retrieving it."
+		logecho
+		logecho "Subscription manager finished creating the sql file, retrieving it."
 		break
 	else
 		counter=$(( $counter + 1 ))
 		logwrite "Did not find $node.subscribe_series.sqldone, sleeping for five seconds"
-		echo -n "."
+		logecho -n "."
 		sleep 5
 	fi
 
 done
 
 unset check
-# Checking trigger file for failure code
-check=`ssh "$webdb_user@$webdb_ip" 'cat '"'$webdb_dir/$node.subscribe_series.sqldone'"' | grep failure'`
+unset error
+unset result
 
-if [ ! $check == "" ]
+# Checking trigger file for failure code
+result=`SSH $webdb_user@$webdb_ip 'cat '"'$webdb_dir/$node.subscribe_series.sqldone'"`;
+
+## Check for error in remote ssh command; trigger file not found or failed SSH
+error=`echo $result | grep -i error`;
+if [ ! -z $error ] ;
 then
-	echo "ERROR: One or more of the schemas did not exist on the webdb"
-	echo "ERROR: ABORTING!"
-	logwrite "One or more of the schemas did not exist on the webdb"
-	logwrite "ABORTING!" nl
-	logwrite "Removing sqldone trigger file from webdb"
-        ssh "$webdb_user@$webdb_ip" 'rm -f '"'$webdb_dir/$node.subscribe_series.sqldone'"
-	logwrite "Starting the ingestion script"
-	logwrite "Removing ingestion.die in $ingestion_path" nl
-	rm -f "$ingestion_path/get_slony_logs.$node.die"
-	exit
+  logecho "Fail cat $webdb_dir/$node.subscribe_series.sqldone"
+  exit 1;
 fi
 
+check=`echo $result | grep failure`;
 
-# Trigger file found, transferring sql file to local machine
-logwrite "Copying over sql tar file from $webdb_user@$webdb_ip"
+if [ ! "$check" == "" ]
+then
+	logecho "ERROR: One or more of the schemas did not exist on the webdb"
+	logecho "ERROR: ABORTING!" nl
+	logwrite "Removing sqldone trigger file from webdb"
+        SSH "$webdb_user@$webdb_ip" 'rm -f '"'$webdb_dir/$node.subscribe_series.sqldone'"
+	logwrite "Restarting the ingestion script"
+	logwrite "Removing ingestion.die in $ingestion_path" nl
+	RM -f "$ingestion_path/get_slony_logs.$node.die"
+	exit 1;
+fi
 
+unset check
+unset error
+unset result
+
+# sqldone file found, transferring sql file to local machine
 logwrite "Copying and removing $node.sql.tar.gz file from $webdb_user@$webdb_ip"
-scp "$webdb_user@$webdb_ip:$webdb_dir/$node.sql.tar.gz" .
-ssh "$webdb_user@$webdb_ip" 'rm -f '"'$webdb_dir/$node.sql.tar.gz'"
+SCP "$webdb_user@$webdb_ip:$webdb_dir/$node.sql.tar.gz" .
+SSH "$webdb_user@$webdb_ip" 'rm -f '"'$webdb_dir/$node.sql.tar.gz'"
 
 logwrite "Executing: tar -xzvf $node.sql.tar.gz"
 tar -xzvf "$node.sql.tar.gz"
 
 logwrite "Removing $node.sql.tar.gz" nl
-rm -f "$node.sql.tar.gz"
+RM -f "$node.sql.tar.gz"
 
 #--------------------------------------------------------------------
 # Execute the SQL files, return a value 
 #--------------------------------------------------------------------
 # Execute $node.createns.sql
-echo "Applying SQL files to database"
-echo "Applying SQL file $node.createns.sql to database"
+logecho "Applying SQL file $node.createns.sql to database"
+
+# XXX - ART
+# Add check for slony cluster schema (eg, _jsoc), and don't proceed if it exists
 logwrite "Executing [psql -p $pg_port -h $pg_host -U $pg_user -ef $node.createns.sql $pg_dbname > /dev/null]"
 psql -p "$pg_port" -h "$pg_host" -U "$pg_user" -ef "$node.createns.sql" "$pg_dbname" > /dev/null
 
-echo "Applying SQL file $node.subscribe_series.sql to database"
+logecho "Applying SQL file $node.subscribe_series.sql to database"
 logwrite "Executing [psql -p $pg_port -h $pg_host -U $pg_user -ef $node.subscribe_series.sql $pg_dbname > sqlcheck.tmp 2>&1]"
 psql -p "$pg_port" -h "$pg_host" -U "$pg_user" -ef "$node.subscribe_series.sql" "$pg_dbname" > sqlcheck.tmp 2>&1
 
@@ -202,29 +328,29 @@ then
 	logwrite "Rolling back to previous state"
 	success=false
 else
-	logwrite "$node.subscribe_series.sql succeded, continuing"
+	logwrite "Application of $node.subscribe_series.sql succeded, continuing"
 	success=true
 fi
-rm -f sqlcheck.tmp
+RM -f sqlcheck.tmp
 
 if [ $success == "true" ]
 then
 	# SQL applictaion was a success, appending [success true] to the cfg file on webdb
 	logwrite "SQL application successful, appending [success=true] to the cfg file on webdb"
-	ssh "$webdb_user@$webdb_ip" 'echo '"success true"' >> '"'$webdb_dir/$node.subscribe_series.cfg'"
+	SSH "$webdb_user@$webdb_ip" 'echo '"success true"' >> '"'$webdb_dir/$node.subscribe_series.cfg'"
 else
 	# SQL application was unsuccessful, appending [success false] to the cfg file on webdb
 	logwrite "SQL application unsuccessful, appending [success=false] to the cfg file on webdb"
-	echo "SQL application was unsuccessful: ABORTING!"
-	ssh "$webdb_user@$webdb_ip" 'echo '"success false"' >> '"'$webdb_dir/$node.subscribe_series.cfg'"
+        logecho "Failure to apply SQL file '$node.subscribe_series.sql' from server: ABORTING!"
+	SSH "$webdb_user@$webdb_ip" 'echo '"success false"' >> '"'$webdb_dir/$node.subscribe_series.cfg'"
 fi
 
-ssh "$webdb_user@$webdb_ip" 'cp -f '"'$webdb_dir/$node.subscribe_series.cfg'"' '"'$webdb_dir/$node.subscribe_series.sqlapplied'"
+SSH "$webdb_user@$webdb_ip" 'cp -f '"'$webdb_dir/$node.subscribe_series.cfg'"' '"'$webdb_dir/$node.subscribe_series.sqlapplied'"
 
 #--------------------------------------------------------------------
-# Loop waiting for done file to continue
+# Loop waiting for done file to continue (which signifies that manager is done and has cleaned up)
 #--------------------------------------------------------------------
-echo -n "Waiting for the subscription manager to finish updating the subscription parser"
+logecho -n "Waiting for the subscription manager to finish updating the subscription parser, complete, and clean-up"
 counter=0
 while [ 1 -eq 1 ]
 do	
@@ -232,59 +358,73 @@ do
 	then
 		logwrite "ERROR: Did not find $node.subscribe_series.done after $attempts tries"
 		logwrite "ERROR: Exiting $0 " nl
-		echo "ERROR: The subscription manager has not reported it has finished updating the subscription parser after $attempts tries!"
-		echo "ABORTING!"
-		exit
+		logecho "ERROR: The subscription manager has not reported it has finished updating the subscription parser after $attempts tries!"
+		logecho "ABORTING!"
+		exit 1;
 	fi		
 
-        # XXX - ART : I think Joe's version of the following line may have had a bug, but not sure
-	check=`ssh "$webdb_user@$webdb_ip" 'ls '"'$webdb_dir'"' | grep '"'$node.subscribe_series.done'"`
+
+        result=`SSH "$webdb_user@$webdb_ip" 'ls '"'$webdb_dir'"`;
+
+        logwrite "result is $result"
+
+        ## Check for error in remote ssh command; Couldn't find $webdb_dir directory
+        error=`echo $result | grep -i error`;
+        if [ ! -z $error ] ;
+        then
+            logecho "Couldn't find $webdb_dir directory or broken SSH ... exiting"
+            exit 1;
+        fi
+
+	check=`echo $result | grep "$node.subscribe_series.done"`
 		
-	if [ ! $check == "" ]
+	if [ ! "$check" == "" ]
 	then
 		logwrite "Found $node.subscribe_series.done, continuing"
-		echo
-		echo "Subscription manager has finished updating the parser"
+		logecho
+		logecho "Subscription manager has finished updating the parser and cleaned-up."
 		break
 	else
 		counter=$(( $counter + 1 ))
 		logwrite "Did not find $node.subscribe_series.done, sleeping for five seconds"
-		echo -n "."
+		logecho -n "."
 		sleep 5
 	fi
 
 done
 
+unset check
+unset error
+unset result
+
 #--------------------------------------------------------------------
-# Starting the ingestion script
+# Starting the ingestion script (by removing the die file)
 #--------------------------------------------------------------------
 logwrite "Starting the ingestion script"
 logwrite "Removing ingestion.die in $ingestion_path" nl
-rm -f "$ingestion_path/get_slony_logs.$node.die"
+RM -f "$ingestion_path/get_slony_logs.$node.die"
 
-logwrite "Creating new trigger file (from old cfg file) to signal sql has been applied" nl
-ssh "$webdb_user@$webdb_ip" 'rm -f '"'$webdb_dir/$node.subscribe_series.done'"
+logwrite "Cleaning up the done file '$webdb_dir/$node.subscribe_series.done' (which the server cleanup file wrote)" nl
+SSH "$webdb_user@$webdb_ip" 'rm -f '"'$webdb_dir/$node.subscribe_series.done'"
 
 #--------------------------------------------------------------------
-# Removing the sql files
+# Removing the ingested sql files
 #--------------------------------------------------------------------
 logwrite "Removing the $node.createns.sql file"
-rm -f "$node.createns.sql"
+RM -f "$node.createns.sql"
 
 logwrite "Removing the $node.subscribe_series.sql file"
-rm -f "$node.subscribe_series.sql"
+RM -f "$node.subscribe_series.sql"
 
 #--------------------------------------------------------------------
 # Finish
 #--------------------------------------------------------------------
 logwrite "$0 complete"
-echo
+logecho
 
 if [ $success  == "true" ]
 then
-	echo "Subscription process completed successfully!"
+	logecho "Subscription process completed successfully!"
 else
-	echo "Subscription process did not complete successfully!"
+	logecho "Subscription process did not complete successfully!"
 fi
-
-
