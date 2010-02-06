@@ -278,7 +278,7 @@ static CrtabError_t GetRows(DRMS_Env_t *env,
    DB_Binary_Result_t *qres = NULL;
    DRMS_Session_t *session = env->session;
 
-   snprintf(query, sizeof(query), "SELECT %s FROM %s.%s WHERE seriesname = '%s'", colnames, ns, table, series);
+   snprintf(query, sizeof(query), "SELECT %s FROM %s.%s WHERE seriesname ILIKE '%s'", colnames, ns, table, series);
    
    if ((qres = drms_query_bin(session, query)) == NULL)
    {
@@ -693,8 +693,8 @@ static int CreateSQL(FILE *fptr, DRMS_Env_t *env,
          char where[512];
          char whereout[512];
 
-         snprintf(where, sizeof(where), "seriesname = '%s'", seriesin);
-         snprintf(whereout, sizeof(whereout), "seriesname = '%s'", seriesout);
+         snprintf(where, sizeof(where), "seriesname ILIKE '%s'", seriesin);
+         snprintf(whereout, sizeof(whereout), "seriesname ILIKE '%s'", seriesout);
          err = CreateSQLInsertIntoTable(fptr, env, seriesin, seriesout, ns, DRMS_MASTER_SERIES_TABLE);
          
          /* override archive, retention, and tapegroup if present */
