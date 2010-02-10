@@ -736,21 +736,22 @@ then
             then
                 if [ $docreatens -ne 0 ]
                 then
-                    logecho "Applying SQL file $node.createns.sql to database"
-                    logwrite "Executing [psql -p $pg_port -h $pg_host -U $pg_user -ef $node.createns.sql $pg_dbname]"
-                    psql -p "$pg_port" -h "$pg_host" -U "$pg_user" -ef "$node.createns.sql" "$pg_dbname" > sqlcheck.tmp 2>&1
+                    logecho "Applying SQL file $node.${nsnames[$ctr]}.createns.sql to database"
+                    logwrite "Executing [psql -p $pg_port -h $pg_host -U $pg_user -ef $node.${nsnames[$ctr]}.createns.sql $pg_dbname]"
+                    psql -p "$pg_port" -h "$pg_host" -U "$pg_user" -ef "$node.${nsnames[$ctr]}.createns.sql" "$pg_dbname" > sqlcheck.tmp 2>&1
                     result=`cat sqlcheck.tmp`
                     logwrite $result
 
                     # XXX - ART
                     # no check of results of application of createns.sql (must check the output!!!)
-                    logwrite "Removing the $node.createns.sql file"
-                    RM -f "$node.createns.sql"
+                    logwrite "Removing the $node.${nsnames[$ctr]}.createns.sql file"
                 else
-                    logwrite "Check for existing schema $nsname succeeded - no need to apply createns.sql"
+                    logwrite "Check for existing schema $nsname succeeded - no need to apply $node.${nsnames[$ctr]}.createns.sql"
                 fi
             fi
             
+            RM -f "$node.${nsnames[$ctr]}.createns.sql"
+
             ctr=$(( $ctr + 1 ))
         done
 

@@ -165,7 +165,6 @@ if [ "$subcheck" == "" ]
 then
 	logwrite "No new subscriptions, skipping createns, createtabstructure and sdo_slony1_dump" nl
 	logwrite "Creating dummy sql files"
-	echo > $triggerdir/$node.createns.sql
 	echo > $triggerdir/$node.subscribe_series.sql
 else
 
@@ -173,18 +172,19 @@ else
 # Execute createns for each schema
 #-------------------------------------------------------------------------
 counter=0
-echo > $triggerdir/$node.createns.sql
 while [ "$counter" -lt ${#schema[@]} ]
 do
 	nextcounter=$(( $counter + 1 ))
+        
+        # This will ensure that there are no duplicate schemas for which createns is called
 	check=`echo "${schema[@]:0:$counter}" | grep ${schema[$counter]}`
 	
 	if [ "$check" == "" ]
 	then
 		# If first time finding this schema, execute ./createns
-		logwrite "Executing [./createns ns=${schema[$counter]} nsgroup=user dbusr=$pg_user >> $triggerdir/$node.createns.sql]"
+		logwrite "Executing [./createns ns=${schema[$counter]} nsgroup=user dbusr=$pg_user >> $triggerdir/$node.${schema[$counter]}.createns.sql]"
 		#echo "Createns >>" #remove
-		./createns ns=${schema[$counter]} nsgroup=user dbusr=$pg_user >> $triggerdir/$node.createns.sql
+		./createns ns=${schema[$counter]} nsgroup=user dbusr=$pg_user > $triggerdir/$node.${schema[$counter]}.createns.sql
 		#echo "<<Createns" #remove
 		# echo ${schema[$counter]} >> $triggerdir/$node.createns.sql
 	fi
@@ -240,10 +240,21 @@ fi
 #-------------------------------------------------------------------------
 # Tar up the sql files then remove them
 #-------------------------------------------------------------------------
-logwrite "Executing: tar -C $triggerdir/ -czvf $triggerdir/$node.sql.tar.gz $node.createns.sql $node.subscribe_series.sql" nl
-tar -C "$triggerdir/" -czvf "$triggerdir/$node.sql.tar.gz" "$node.createns.sql" "$node.subscribe_series.sql"
-logwrite "Removing $node.createns.sql and $node.subscribe_series.sql"
-rm -f $triggerdir/$node.createns.sql $triggerdir/$node.subscribe_series.sql
+counter=0
+filelist="$node.subscribe_series.sql"
+while [ "$counter" -lt ${#schema[@]} ]
+do
+    filelist="$filelist $node.${schema[$counter]}.createns.sql"
+    counter=$(( $counter + 1 ))
+done
+
+logwrite "Executing: tar -C $triggerdir/ -czvf $triggerdir/$node.sql.tar.gz $filelist" nl
+
+# Don't put $filelist in dquotes! tar needs the file names separate
+tar -C "$triggerdir/" -czvf "$triggerdir/$node.sql.tar.gz" $filelist
+
+logwrite "Removing $node.*.createns.sql and $node.subscribe_series.sql"
+rm -f "$triggerdir/$node."*".createns.sql" "$triggerdir/$node.subscribe_series.sql"
 
 #-------------------------------------------------------------------------
 # Renaming the subupdate file to sqldone file in trigger directory for subscriber to find
