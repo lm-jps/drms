@@ -67,6 +67,16 @@ function SSH {
   fi
 }
 
+# If there is a second argument to logwrite, regardless of 
+# what that argument is, an empty date line will be written
+logwrite () {
+        echo `date +"%m-%d-%Y %H:%M:%S - "` "$1" >> "$logfile"
+        if [ ! $2 == "" ]
+        then
+        	echo `date +"%m-%d-%Y %H:%M:%S - "` >> "$logfile"
+        fi
+}
+
 ## logs to log file and stdout!                                                               
 function logecho {
   if [ ! -z "$logfile" ]
@@ -202,32 +212,137 @@ function ManagedDownload() {
     return $err
 }
 
-#--------------------------------------------------------------------
-# syntax check
-#--------------------------------------------------------------------
-if [ $# -eq 3 ]
-then
-	config_file="$1"
-	subscribe_file="$2"
-	rsFile="$3"
-else
-	error="ERROR: Usage: $0 <configuration file> <subscribe request file> <ssh-agent_rs file>"
-	echo $error
-	exit
-fi
+function CheckSchema () {
+    # Add check for slony cluster schema (eg, _jsoc), and don't proceed if it exists
+    # If entry in admin.ns exists, do not apply createns.sql. However, 
+    # we cannot assume that the drms_* tables and sequence exist. If any of these
+    # tables is missing, bail.
+    #   name - schema of series being subscribed to
+    #   owner - PG user that owns this series (should be slony)
 
-# XXX - ART
-# Make this relative to working dir
-statefile=ssstate.txt
+    nsname=$1
 
-# extract seriesname from the $subscribe_file file
-series=`awk '{print $1}' "$subscribe_file" | egrep '^[^#[:space:]]'`
+    adminnsexist=0
+    schemaexist=0
 
-. "$config_file"
+    # Check for schema existence
+    logwrite "Executing [psql -p $pg_port -h $pg_host -U $pg_user -t -c SELECT * FROM pg_catalog.pg_namespace WHERE nspname = '$nsname' $pg_dbname]"
+    psql -p "$pg_port" -h "$pg_host" -U "$pg_user" -t -c "SELECT * FROM pg_catalog.pg_namespace WHERE nspname = '$nsname'" "$pg_dbname" > sqlcheck.tmp 2>&1
+    result=`egrep '.' sqlcheck.tmp`
+    if [ ! -z "$result" ]
+    then
+        schemaexist=1
+    fi
+
+    # Check for admin.ns entry existence
+    logwrite "Executing [psql -p $pg_port -h $pg_host -U $pg_user -t -c SELECT * FROM admin.ns WHERE name = '$nsname' AND owner = '$pg_user' $pg_dbname]"
+    psql -p "$pg_port" -h "$pg_host" -U "$pg_user" -t -c "SELECT * FROM admin.ns WHERE name = '$nsname' AND owner = '$pg_user'" "$pg_dbname" > sqlcheck.tmp 2>&1
+    result=`egrep '.' sqlcheck.tmp`
+    if [ ! -z "$result" ]
+    then
+        adminnsexist=1
+    fi
+
+    logwrite "Table schema check: $schemaexist; schema adminns entry check: $adminnsexist."
+
+    # If one or the other exists, then we can't apply createns.sql AND the schema, admin.ns entry, drms_* tables must exist
+    check=good
+    docreatens=1
+    if [ $schemaexist -ne 0 -o $adminnsexist -ne 0 ]
+    then
+        docreatens=0
+        if [ $schemaexist -eq 0 -o $adminnsexist -eq 0 ]
+        then
+            check=failed
+            logecho "Missing schema or entry in the admin.ns table; failing."
+        else
+                # Search for tables
+            TableExists $nsname "drms_series" 0
+            result=$?
+
+            if [ ! $result ]
+            then
+                check=failed
+            fi
+
+            if [ ! $check == "failed" ]
+            then
+                TableExists $nsname "drms_keyword" 0
+                result=$?
+            fi
+            
+            if [ ! $result ]
+            then
+                check=failed
+            fi
+
+            if [ ! $check == "failed" ]
+            then
+                TableExists $nsname "drms_link" 0
+                result=$?
+            fi
+            
+            if [ ! $result ]
+            then
+                check=failed
+            fi
+
+            if [ ! $check == "failed" ]
+            then
+                TableExists $nsname "drms_segment" 0
+                result=$?
+            fi
+            
+            if [ ! $result ]
+            then
+                check=failed
+            fi
+
+            if [ ! $check == "failed" ]
+            then
+                TableExists $nsname "drms_session" 0
+                result=$?
+            fi
+            
+            if [ ! $result ]
+            then
+                check=failed
+            fi
+
+            if [ ! $check == "failed" ]
+            then
+                TableExists $nsname "drms_sessionid_seq" 1
+                result=$?
+            fi
+            
+            if [ ! $result ]
+            then
+                check=failed
+            fi
+
+            if [ $check == "failed" ]
+            then
+                logecho "Incomplete set of schema drms_* tables; failing."
+            fi
+        fi
+    fi
+
+    RM -f sqlcheck.tmp
+
+    if [ $check == "failed" ]
+    then
+        return 0
+    elif [ $docreatens -eq 0 ]; then
+        return 1
+    else
+        return 2
+    fi
+}
 
 #--------------------------------------------------------------------
 # Setting up the log
 #--------------------------------------------------------------------
+
 ## checks if a preferred LOCAL_LOG_DIR has been specified in the $config_file                 
 if [ -z "$kLocalLogDir" ]
 then
@@ -265,17 +380,87 @@ else
   fi
 fi
 
-# If there is a second argument to logwrite, regardless of 
-# what that argument is, an empty date line will be written
-logwrite () {
-        echo `date +"%m-%d-%Y %H:%M:%S - "` "$1" >> "$logfile"
-        if [ ! $2 == "" ]
-        then
-        	echo `date +"%m-%d-%Y %H:%M:%S - "` >> "$logfile"
-        fi
-}
+
 
 logwrite "Starting $0 from $scriptdir" nl
+
+#--------------------------------------------------------------------
+# syntax check
+#--------------------------------------------------------------------
+if [ $# -eq 3 ]
+then
+	config_file="$1"
+	subscribe_file="$2"
+	rsFile="$3"
+else
+	error="ERROR: Usage: $0 <configuration file> <subscribe request file> <ssh-agent_rs file>"
+	echo $error
+	exit
+fi
+
+# XXX - ART
+# Make this relative to working dir
+statefile=ssstate.txt
+
+# extract seriesname from the $subscribe_file file
+# XXX - ART
+# Create an array of series - the createns check must be on a per-series basis.
+# We only care about series being subscribed to (and not being dropped from subscription)
+subserieslst=`cat $subscribe_file | egrep '^[^#[:space:]]' | grep -vi unsubscribe | awk '{print $1}'`
+unsubserieslst=`cat $subscribe_file | egrep '^[^#[:space:]]' | grep -i unsubscribe | awk '{print $1}'`
+
+logwrite "Series being subscribed to:"
+
+ctr=0
+while [ 1 -eq 1 ]
+do
+    index=$(( $ctr + 1 ))
+    awkscr='{print $'"$index"'}'
+    str=`echo $subserieslst | awk "$awkscr"`
+    if [ -z "$str" ]
+    then
+        break
+    fi
+    subseries[$ctr]=$str
+    logwrite "$str"
+    ctr=$(( $ctr + 1 ))
+done
+
+logwrite "Series being dropped from subscription:"
+ctr=0
+while [ 1 -eq 1 ]
+do
+    index=$(( $ctr + 1 ))
+    awkscr='{print $'"$index"'}'
+    str=`echo $unsubserieslst | awk "$awkscr"`
+    if [ -z "$str" ]
+    then
+        break
+    fi
+    unsubseries[$ctr]=$str
+    logwrite "$str"
+    ctr=$(( $ctr + 1 ))
+done
+
+# extract action from subscribe_list.cfg (if at least one action is unsubscribe, then we need to 
+# force get_slony_logs.pl after the die file has been removed)
+
+if [ ${#unsubseries[@]} -gt 0 ]
+then
+    unsubscribe=1
+else
+    unsubscribe=0
+fi
+
+if [ -z "$kSQLIngestionProgram" ]
+then
+  ingestprog=get_slony_logs.pl
+else
+  ingestprog="kSQLIngestionProgram"
+fi
+
+. "$config_file"
+
 
 #--------------------------------------------------------------------
 # Set up ssh keys
@@ -498,143 +683,79 @@ if [ $state == "dlsql_comp" ]
 then
     if [ $success == "true" ]
     then
-     # Execute $node.createns.sql
-        logecho "Applying SQL file $node.createns.sql to database"
+        # Get all the namespace names
+        ctr=0
+        while [ $ctr -lt ${#subseries} ]
+        do
+            onename=`echo ${subseries[$ctr]%%.*}`
+            allnames="$allnames"$'\n'"$onename"
+            ctr=$(( $ctr + 1 ))
+        done
 
-     # Add check for slony cluster schema (eg, _jsoc), and don't proceed if it exists
-     # If entry in admin.ns exists, do not apply createns.sql. However, 
-     # we cannot assume that the drms_* tables and sequence exist. If any of these
-     # tables is missing, bail.
-     #   name - schema of series being subscribed to
-     #   owner - PG user that owns this series (should be slony)
+        # Find unique ones
+        nsnameslst=`echo "$allnames" | awk '!x[$0]++'`
 
-        adminnsexist=0
-        schemaexist=0
-
-        nsname=`echo ${series%%.*}`
-
-        logwrite "seriesname is $series"
-        logwrite "series namespace is $nsname"
-
-    # Check for schema existence
-        logwrite "Executing [psql -p $pg_port -h $pg_host -U $pg_user -t -c SELECT * FROM pg_catalog.pg_namespace WHERE nspname = '$nsname' $pg_dbname]"
-        psql -p "$pg_port" -h "$pg_host" -U "$pg_user" -t -c "SELECT * FROM pg_catalog.pg_namespace WHERE nspname = '$nsname'" "$pg_dbname" > sqlcheck.tmp 2>&1
-        result=`egrep '.' sqlcheck.tmp`
-        if [ ! -z "$result" ]
-        then
-            schemaexist=1
-        fi
-
-    # Check for admin.ns entry existence
-        logwrite "Executing [psql -p $pg_port -h $pg_host -U $pg_user -t -c SELECT * FROM admin.ns WHERE name = '$nsname' AND owner = '$pg_user' $pg_dbname]"
-        psql -p "$pg_port" -h "$pg_host" -U "$pg_user" -t -c "SELECT * FROM admin.ns WHERE name = '$nsname' AND owner = '$pg_user'" "$pg_dbname" > sqlcheck.tmp 2>&1
-        result=`egrep '.' sqlcheck.tmp`
-        if [ ! -z "$result" ]
-        then
-            adminnsexist=1
-        fi
-
-        logwrite "table schema check: $schemaexist; schema adminns entry check: $adminnsexist"
-
-    # If one or the other exists, then we can't apply createns.sql AND the schema, admin.ns entry, drms_* tables must exist
-        check=good
-        docreatens=1
-        if [ $schemaexist -ne 0 -o $adminnsexist -ne 0 ]
-        then
-            docreatens=0
-            if [ $schemaexist -eq 0 -o $adminnsexist -eq 0 ]
+        # Make an array of the unique ns names
+        logwrite "Namespaces of series being subscribed to:"
+        ctr=0
+        while [ 1 -eq 1 ]
+        do
+            index=$(( $ctr + 1 ))
+            awkscr='{print $'"$index"'}'
+            str=`echo $nsnameslst | awk "$awkscr"`
+            if [ -z "$str" ]
             then
+                break
+            fi
+            nsnames[$ctr]=$str
+            logwrite "$str"
+            ctr=$(( $ctr + 1 ))
+        done
+
+        logwrite "  (${#nsnames[@]} namespaces total)"
+        
+        ctr=0
+        while [ $ctr -lt ${#nsnames[@]} ]
+        do
+            check=good
+            logwrite "series namespace is ${nsnames[$ctr]}"
+            CheckSchema ${nsnames[$ctr]}
+            if [ $? -eq 0 ]
+            then
+                # Check failed
                 check=failed
-                logecho "Missing schema or entry in the admin.ns table; failing."
+            elif [ $? -eq 1 ]; then
+                # Check succeeded, don't apply createns
+                docreatens=0
             else
-        # Search for tables
-                TableExists $nsname "drms_series" 0
-                result=$?
+                # Check succeeded, apply createns
+                docreatens=1
+            fi
 
-                if [ ! $result ]
+            if [ ! $check == "failed" ]
+            then
+                if [ $docreatens -ne 0 ]
                 then
-                    check=failed
-                fi
+                    logecho "Applying SQL file $node.createns.sql to database"
+                    logwrite "Executing [psql -p $pg_port -h $pg_host -U $pg_user -ef $node.createns.sql $pg_dbname]"
+                    psql -p "$pg_port" -h "$pg_host" -U "$pg_user" -ef "$node.createns.sql" "$pg_dbname" > sqlcheck.tmp 2>&1
+                    result=`cat sqlcheck.tmp`
+                    logwrite $result
 
-                if [ ! $check == "failed" ]
-                then
-                    TableExists $nsname "drms_keyword" 0
-                    result=$?
-                fi
-                
-                if [ ! $result ]
-                then
-                    check=failed
-                fi
-
-                if [ ! $check == "failed" ]
-                then
-                    TableExists $nsname "drms_link" 0
-                    result=$?
-                fi
-                
-                if [ ! $result ]
-                then
-                    check=failed
-                fi
-
-                if [ ! $check == "failed" ]
-                then
-                    TableExists $nsname "drms_segment" 0
-                    result=$?
-                fi
-                
-                if [ ! $result ]
-                then
-                    check=failed
-                fi
-
-                if [ ! $check == "failed" ]
-                then
-                    TableExists $nsname "drms_session" 0
-                    result=$?
-                fi
-                
-                if [ ! $result ]
-                then
-                    check=failed
-                fi
-
-                if [ ! $check == "failed" ]
-                then
-                    TableExists $nsname "drms_sessionid_seq" 1
-                    result=$?
-                fi
-                
-                if [ ! $result ]
-                then
-                    check=failed
-                fi
-
-                if [ $check == "failed" ]
-                then
-                    logecho "Incomplete set of schema drms_* tables; failing."
+                    # XXX - ART
+                    # no check of results of application of createns.sql (must check the output!!!)
+                    logwrite "Removing the $node.createns.sql file"
+                    RM -f "$node.createns.sql"
+                else
+                    logwrite "Check for existing schema $nsname succeeded - no need to apply createns.sql"
                 fi
             fi
-        fi
+            
+            ctr=$(( $ctr + 1 ))
+        done
 
         if [ ! $check == "failed" ]
         then
-            if [ $docreatens -ne 0 ]
-            then
-                logwrite "Executing [psql -p $pg_port -h $pg_host -U $pg_user -ef $node.createns.sql $pg_dbname]"
-                psql -p "$pg_port" -h "$pg_host" -U "$pg_user" -ef "$node.createns.sql" "$pg_dbname" > sqlcheck.tmp 2>&1
-                result=`cat sqlcheck.tmp`
-                logwrite $result
-
-                # XXX - ART
-                # no check of results of application of createns.sql (must check the output!!!)
-                logwrite "Removing the $node.createns.sql file"
-                RM -f "$node.createns.sql"
-            else
-                logwrite "Check for existing schema $nsname succeeded - no need to apply createns.sql"
-            fi
-
             logecho "Applying SQL file $node.subscribe_series.sql to database"
             logwrite "Executing [psql -p $pg_port -h $pg_host -U $pg_user -ef $node.subscribe_series.sql $pg_dbname]"
             psql -p "$pg_port" -h "$pg_host" -U "$pg_user" -ef "$node.subscribe_series.sql" "$pg_dbname" > sqlcheck.tmp 2>&1
@@ -752,12 +873,46 @@ then
     logwrite "Starting the ingestion script"
     logwrite "Removing ingestion.die in $ingestion_path" nl
     RM -f "$ingestion_path/get_slony_logs.$node.die"
-
-    logwrite "Cleaning up the done file '$webdb_dir/$node.subscribe_series.done' (which the server cleanup file wrote)" nl
-    SSH "$webdb_user@$webdb_ip" 'rm -f '"'$webdb_dir/$node.subscribe_series.done'"
-
-    SetState "end"
+    if [ $? -ne 0 ]
+    then
+        logwrite "Unable to remove die file '$ingestion_path/get_slony_logs.$node.die'"
+        success=false
+    else
+        logwrite "Cleaning up the done file '$webdb_dir/$node.subscribe_series.done' (which the server cleanup file wrote)" nl
+        SSH "$webdb_user@$webdb_ip" 'rm -f '"'$webdb_dir/$node.subscribe_series.done'"
+        
+        if [ $? -eq 0 ]
+        then
+            SetState "rmdie_comp"
+        else
+            success=false
+        fi
+    fi
 fi
+
+#--------------------------------------------------------------------
+# Force ingestion script (if unsubscribing to a series)
+#   If any series is being removed from subscription, then
+#   get_slony_logs.pl must be run to force application
+#   of all logs that contain the series being removed. After
+#   this happens, then it is safe to remove the series
+#   (with the delete_series program run as user slony).
+#--------------------------------------------------------------------
+if [ $state == "rmdie_comp" ]
+then
+    if [ $unsubscribe -eq 1 ]
+    then
+        logwrite "At least one series was removed from subscription; run ingest program, then delete series removed from subscription."
+        "$ingestprog" "$slony_cluster" "$node"
+        if [ $? -ne 0 ]
+        then
+            logwrite "SQL-log-ingestion failure - unable to delete series $series."
+            success=false
+        fi
+    fi 
+fi
+
+
 
 #--------------------------------------------------------------------
 # Finish
@@ -767,7 +922,8 @@ logecho
 
 if [ $success  == "true" ]
 then
-	logecho "Subscription process completed successfully!"
+    SetState "end"
+    logecho "Subscription process completed successfully!"
 else
-	logecho "Subscription process did not complete successfully!"
+    logecho "Subscription process did not complete successfully!"
 fi
