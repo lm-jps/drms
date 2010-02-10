@@ -4,6 +4,7 @@
 kLocalLogDir=awriteablelocalpath
 kLocalWorkingDir=awriteablelocalpath
 kSQLIngestionProgram=pathtoget_slony_logs.pl
+kDeleteSeriesProgram=pathtodelete_series
 
 # Required connection information for communicatoin between localhost and the subscription server
 # webdb_ip		# target IP address

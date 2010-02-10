@@ -456,7 +456,14 @@ if [ -z "$kSQLIngestionProgram" ]
 then
   ingestprog=get_slony_logs.pl
 else
-  ingestprog="kSQLIngestionProgram"
+  ingestprog="$kSQLIngestionProgram"
+fi
+
+if [ -z "$kDeleteSeriesProgram" ]
+then
+  delseriesprog=delete_series
+else
+  delseriesprog="$kDeleteSeriesProgram"
 fi
 
 . "$config_file"
@@ -717,7 +724,6 @@ then
         ctr=0
         while [ $ctr -lt ${#nsnames[@]} ]
         do
-            check=good
             logwrite "series namespace is ${nsnames[$ctr]}"
             CheckSchema ${nsnames[$ctr]}
             result=$?
@@ -727,13 +733,16 @@ then
             if [ $result -eq 0 ]
             then
                 # Check failed
+                logwrite "CheckSchema detected corrupted schema ${nsnames[$ctr]}"
                 check=failed
             elif [ $result -eq 1 ]; then
                 # Check succeeded, don't apply createns
                 docreatens=0
+                check=good
             else
                 # Check succeeded, apply createns
                 docreatens=1
+                check=good
             fi
 
             if [ ! $check == "failed" ]
@@ -753,12 +762,17 @@ then
                     logwrite "Check for existing schema $nsname succeeded - no need to apply $node.${nsnames[$ctr]}.createns.sql"
                 fi
                 RM -f "$node.${nsnames[$ctr]}.createns.sql"
+            else
+                success=false
+                break;
             fi
 
             ctr=$(( $ctr + 1 ))
         done
 
-        if [ ! $check == "failed" ]
+        unset check
+
+        if [ $success == "true" ]
         then
             logecho "Applying SQL file $node.subscribe_series.sql to database"
             logwrite "Executing [psql -p $pg_port -h $pg_host -U $pg_user -ef $node.subscribe_series.sql $pg_dbname]"
@@ -781,8 +795,6 @@ then
                 RM -f "$node.subscribe_series.sql"
 	        success=true
             fi
-        else
-            success=false;
         fi
 
         RM -f sqlcheck.tmp
@@ -907,16 +919,39 @@ then
     if [ $unsubscribe -eq 1 ]
     then
         logwrite "At least one series was removed from subscription; run ingest program, then delete series removed from subscription."
-        "$ingestprog" "$slony_cluster" "$node"
+        logwrite "Running $ingestprog $config_file."
+        "$ingestprog" "$config_file"
         if [ $? -ne 0 ]
         then
             logwrite "SQL-log-ingestion failure - unable to delete series $series."
             success=false
+        else
+            SetState "forceing_comp"
+
+            # Delete all series in the unsubscribe list
+            ctr=0
+            while [ $ctr -lt ${#unsubseries[@]} ]
+            do
+                # Make sure to ask if the user want to delete the series, if not
+                # then they need to manually delete before re-subscribing
+                logwrite "Running $delseriesprog ${unsubseries[$ctr]} JSOC_DBUSER=slony."
+                echo "yes"$'\n'"yes"$'\n' | "$delseriesprog" "${unsubseries[$ctr]}" JSOC_DBUSER=slony
+                if [ $? -ne 0 ]
+                then
+                    logwrite "Failure to delete series ${unsubseries[$ctr]}."
+                    success=false
+                    # but continue with other series
+                fi
+                ctr=$(( $ctr + 1 ))
+            done
+
+            if [ $success == "true" ]
+            then
+                SetState "delseries_comp"
+            fi
         fi
     fi 
 fi
-
-
 
 #--------------------------------------------------------------------
 # Finish
