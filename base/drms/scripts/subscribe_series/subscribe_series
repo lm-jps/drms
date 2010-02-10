@@ -720,11 +720,15 @@ then
             check=good
             logwrite "series namespace is ${nsnames[$ctr]}"
             CheckSchema ${nsnames[$ctr]}
-            if [ $? -eq 0 ]
+            result=$?
+
+            logwrite "CheckSchema return value is $result."
+
+            if [ $result -eq 0 ]
             then
                 # Check failed
                 check=failed
-            elif [ $? -eq 1 ]; then
+            elif [ $result -eq 1 ]; then
                 # Check succeeded, don't apply createns
                 docreatens=0
             else
@@ -748,9 +752,8 @@ then
                 else
                     logwrite "Check for existing schema $nsname succeeded - no need to apply $node.${nsnames[$ctr]}.createns.sql"
                 fi
+                RM -f "$node.${nsnames[$ctr]}.createns.sql"
             fi
-            
-            RM -f "$node.${nsnames[$ctr]}.createns.sql"
 
             ctr=$(( $ctr + 1 ))
         done
