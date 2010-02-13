@@ -2710,6 +2710,9 @@ int drms_stage_records(DRMS_RecordSet_t *rs, int retrieve, int dontwait) {
                  {
                     rec = rs->records[(rs->ss_starts)[iSet] + iRec];
                     rec->su = drms_su_lookup(rec->env, series, rec->sunum, &scon);
+
+                    /* ART (2/11/2010) - Previously, the refcount was not incremented (I think this was a bug) */
+                    rec->su->refcount++;
                  }
               }
            }

@@ -559,12 +559,20 @@ void drms_segment_filename(DRMS_Segment_t *seg, char *filename)
 				  seg->record->su->sudir, seg->record->slotnum, seg->filename), DRMS_MAXPATHLEN);
       } else {
 	 if (seg->info->protocol == DRMS_TAS)
-	   CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/%s.tas",
-				  seg->record->su->sudir, seg->info->name), DRMS_MAXPATHLEN);
+         {
+            CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/%s.tas",
+                                   seg->record->su->sudir, seg->info->name), DRMS_MAXPATHLEN);
+            /* set default base name */
+            snprintf(seg->filename, sizeof(seg->filename), "%s.tas", seg->info->name);
+         }
 	 else
-	   CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT "/%s%s",
-				  seg->record->su->sudir, seg->record->slotnum, seg->info->name,
-				  drms_prot2ext(seg->info->protocol)), DRMS_MAXPATHLEN);
+         {
+            CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT "/%s%s",
+                                   seg->record->su->sudir, seg->record->slotnum, seg->info->name,
+                                   drms_prot2ext(seg->info->protocol)), DRMS_MAXPATHLEN);
+            /* set default base name */
+            snprintf(seg->filename, sizeof(seg->filename), "%s%s", seg->info->name, drms_prot2ext(seg->info->protocol));
+         }
       }
    }
    /* for DRMS_LOCAL, filename is already set */
