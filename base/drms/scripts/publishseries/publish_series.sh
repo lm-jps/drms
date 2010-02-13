@@ -189,41 +189,45 @@ cat merge.sh >> $mergefile
 chmod 777 $mergefile
 
 #--------------------------------------------------------------------
-# Preforms the merge set over and over till it returns successful
+# Checks the number of lag events, if zero, try to merge.
 #--------------------------------------------------------------------
-sleeptimer=30
+echo "Waiting until slony is synced to preform the merge. This may take a while."
+sleeptimer=1
 counter=0
-success=false
 #echo "counter is [$counter] and merge_timeout is [$merge_timeout]" #remove
 while [ "$counter" -le "$merge_timeout" ]
 do
-	echo "Attempting merge..."
-	$mergefile > $temp_dir/merge.$publish_schema.$publish_table.log 2>&1
-	check=`cat $temp_dir/merge.$publish_schema.$publish_table.log | grep ERROR`
+        # checking the number of lag events
+        check=`psql -h $master_host -p $master_port -t -U $master_user -c "select st_lag_num_events from _jsoc.sl_status" $master_dbname`
+        check=${check// /}
+        logwrite "lag events is [$check]"
+        if [ "$check" == "0" ]
+        then
+                echo "Lag events is zero, attempting merge..."
+                logwrite "Lag events is zero, attempting merge..."
 
-	if [ -n "$check" ]
-	then
-		echo "Tables not yet synced, sleeping for $sleeptimer seconds..."
-	else
-	        logwrite "Merge was successful!" nl
-		echo "Publish was successful!"
-		success=true
-		break
-	fi
-	unset check
-	rm -f $temp_dir/merge.$subscribe_schema.$subscribe_table.log
+                $mergefile > $temp_dir/merge.$publish_schema.$publish_table.log 2>&1
+                check2=`cat $temp_dir/merge.$publish_schema.$publish_table.log | grep ERROR`
+		logwrite "check after merge attempt is [$check2]"
 
-	#echo $counter
-	counter=$(($counter + 1))
-	sleep $sleeptimer
+                if [ -n "$check2" ]
+                then
+                        echo "Merge failed, if lag events is still 0, trying again."
+                else
+                        logwrite "Merge was successful!"
+                        echo "Publish was successful!"
+                        break
+                fi
+                unset check2
+                rm -f $temp_dir/merge.$subscribe_schema.$subscribe_table.log
+
+                #echo $counter
+                counter=$(($counter + 1))
+        fi
+        sleep $sleeptimer
 done
 
-if [ "$success" == "false" ]
-then
-	echo "Merge was unsuccessful after $merge_timeout of attempts"
-	logwrite "Merge was unsuccessful after $merge_timeout of attempts" nl
-fi
-
-logwrite "$0 finished"
 rm -f $temp_dir/merge.$publish_schema.$publish_table.log
 rm -f $mergefile
+
+logwrite "$0 finished"
