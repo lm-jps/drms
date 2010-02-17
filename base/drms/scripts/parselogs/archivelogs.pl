@@ -117,10 +117,15 @@ my($tar) = Archive::Tar->new;
 my($tarfile) = "$archivedir/slogs_$fcounter-$lcounter.tar.gz";
 my(@fullpaths);
 my($ifile);
+my($currwd);
 
 @fullpaths = map({"$logdir/$_"} @sorted);
 
-$tar->add_files(@fullpaths);
+$currwd = $ENV{'PWD'};
+chdir($logdir);
+$tar->add_files(@sorted);
+chdir($currwd);
+
 $tar->write($tarfile, COMPRESS_GZIP);
 
 # Validate tar
