@@ -69,7 +69,7 @@ while ($arg = shift(@ARGV))
 $lockfh = FileHandle->new(">$logdir/$parselock");
 
 my($natt) = 0;
-while ($natt < 10)
+while (1)
 {
    if (flock($lockfh, LOCK_EX|LOCK_NB)) 
    {
@@ -78,8 +78,16 @@ while ($natt < 10)
    }
    else
    {
-      print "parse_slony_logs is currently modifying files - waiting for completion.\n";
-      sleep 1;
+      if ($natt < 10)
+      {
+         print "parse_slony_logs is currently modifying files - waiting for completion.\n";
+         sleep 1;
+      }
+      else
+      {
+         print "couldn't obtain parse lock; bailing.\n";
+         exit(1);
+      }
    }
 
    $natt++;
@@ -131,8 +139,6 @@ if ($#filelist + 1 != $nfiles || $ftar != $fcounter || $ltar != $lcounter)
 else
 {
    print "Successfully created tar file '$tarfile'.\n";
-
-   exit(0);
 
    # Remove files from log dir
    foreach $ifile (@fullpaths)

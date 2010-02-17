@@ -1,4 +1,8 @@
 #!/bin/bash
+
+# Do not parse logs if archivelogs.pl is currently archiving them; so wrap this
+# function in a call to drms_flock.pl
+
 workDir=/usr/local/pgsql/log
 slon_logs_source_dir=/usr/local/pgsql/slon_logs
 prep_binary=/usr/local/pgsql/bin/prep_slon_logs
@@ -6,7 +10,6 @@ prep_cfg=/solarport/pgsql/slon_logs/etc/slon_parser.cfg
 prep_log=/usr/local/pgsql/log/prep_slon_logs.log
 logs2skip=2
 currDt=`date`
-
 
 pidfn=$(basename $0).pid
 pidfile="$workDir/$pidfn"
