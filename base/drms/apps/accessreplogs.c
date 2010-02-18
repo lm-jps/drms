@@ -15,8 +15,12 @@
  *   (cbegin < beg && cend > beg) || (cbegin > beg && cend < end) || (cbegin < end && cend > end)
  * where cbegin and cend are the names of the DRMS keywords in the log-file dataseries.
  *
- * Example:
- *  accessreplogs logs=su_arta.slonylogs path=/home/arta/slonydev/testarchive/archive action=str 
+ * Examples:
+ *  accessreplogs logs=su_arta.slonylogs path=/home/arta/slonydev/testarchive/archive action=str regexp="slogs_([0-9]+)-([0-9]+)[.]tar[.]gz"
+ *
+ *  accessreplogs logs=su_arta.slonylogs path=/home/arta/slonydev/testarchive/retrieved beg=93900 end=94000 action=ret
+ *
+ * To read the tar, make sure you use the "-z" flag (some implementations of tar require that, some do not).
  */
 
 /*
@@ -41,7 +45,7 @@ Keyword:obsdate, time, ts_eq, record, DRMS_MISSING_VALUE, 0, UTC, "Date embedded
 
 # Currently, the tar-file generation code runs at midnight each day. So, don't align the edge of 
 # a slot on midnight.
-Keyword:obsdate_epoch, time, constant, record, 1993.01.01_00:00:00_UTC, 0, UTC, "MDI epoch - center slots at midnight of each day (since )"
+Keyword:obsdate_epoch, time, constant, record, 1993.01.01_00:00:00_UTC, 0, UTC, "MDI epoch - center slots at midnight of each day"
 
 # Currently, the tar files are created once a day, so slots less than one-day wide should be safe (but 
 # slots one-day wide are not if the slot boundary is close to the time when the files are created). However, 
@@ -73,7 +77,8 @@ typedef enum
    kARLErr_Argument,
    kARLErr_LogFileSeries,
    kARLErr_FileIO,
-   kARLErr_InvalidLog
+   kARLErr_InvalidLog,
+   kARLErr_InvalidRange
 } ARLError_t;
 
 
@@ -199,6 +204,34 @@ static ARLError_t GetLogPaths(DRMS_RecordSet_t *rs, char ***paths)
    return err;
 }
 
+DRMS_RecordSet_t *RetrieveRecords(const char *logs, int64_t beg, int64_t end, ARLError_t *err)
+{
+   DRMS_RecordSet_t *rs = NULL;
+   int status = DRMS_SUCCESS;
+
+   char query[DRMS_MAXQUERYLEN];
+
+   snprintf(query, 
+            sizeof(query), 
+            "%s[? (%s <= %lld AND %s >= %lld) OR (%s > %lld AND %s < %lld) OR (%s <= %lld AND %s >= %lld) ?]", 
+            logs,
+            kCBegin, (long long)beg, kCEnd, (long long)beg, 
+            kCBegin, (long long)beg, kCEnd, (long long)end, 
+            kCBegin, (long long)end, kCEnd, (long long)end);
+
+   rs = drms_open_records(drms_env, query, &status);
+
+   if (status || !rs || rs->n == 0)
+   {
+      if (err)
+      {
+         *err = kARLErr_InvalidRange;
+      }
+   }
+
+   return rs;
+}
+
 ARLError_t IngestFile(const char *path, const char *basefile, DRMS_Record_t *orec, regex_t *regexp)
 {
    ARLError_t err = kARLErr_InvalidLog;
@@ -244,6 +277,16 @@ ARLError_t IngestFile(const char *path, const char *basefile, DRMS_Record_t *ore
          {
             fprintf(stdout, "Archiving '%s'.\n", dirEntry);
 
+            /* Ensure that the counter hasn't already been ingested */
+            RetrieveRecords(orec->seriesinfo->seriesname, bcounter, ecounter, &err);
+
+            if (err != kARLErr_InvalidRange)
+            {
+               fprintf(stderr, "The file to be ingested (%s) has content from files that has been previously ingested. The previous content will be hidden (must use [! !] query to recover).\n", dirEntry);
+            }
+
+            err = kARLErr_InvalidLog;
+
             /* Copy the file into SUMS */
             seg = drms_segment_lookupnum(orec, 0);
 
@@ -269,7 +312,7 @@ ARLError_t IngestFile(const char *path, const char *basefile, DRMS_Record_t *ore
          }
          else
          {
-            fprintf(stderr, "I'm not archiving '%s'; it doesn't look like a log file.\n", dirEntry);
+            fprintf(stderr, "Not archiving '%s'; it doesn't look like a log file.\n", dirEntry);
          }
       }
    }
@@ -315,18 +358,9 @@ int DoIt(void)
    /* branch on action */
    if (strcasecmp(action, kActionRetrieve) == 0)
    {
-      char query[DRMS_MAXQUERYLEN];
-
-      snprintf(query, 
-               sizeof(query), 
-               "%s[? WHERE (%s <= %lld && %s >= %lld) OR (%s >= %lld && %s <= %lld) OR (%s <= %lld && %s >= %lld)?]", 
-               logs,
-               kCBegin, (long long)beg, kCEnd, (long long)beg, 
-               kCBegin, (long long)beg, kCEnd, (long long)end, 
-               kCBegin, (long long)end, kCEnd, (long long)end);
-
-      rs = drms_open_records(drms_env, query, &status);
-      if (!status && rs && rs->n > 0)
+      rs = RetrieveRecords(logs, beg, end, &err);
+      
+      if (!err && rs && rs->n > 0)
       {
          if ((err = GetLogPaths(rs, &paths)) == kARLErr_Success)
          {
@@ -352,12 +386,25 @@ int DoIt(void)
                }
                else if (S_ISDIR(stBuf.st_mode))
                {
+                  char outpath[PATH_MAX];
+                  char *pbase = NULL;
+
                   /* copy all files to a directory */
                   for (irec = 0; irec < rs->n; irec++)
                   {
-                     if (copyfile(paths[irec], path) != 0)
+                     pbase = strrchr(paths[irec], '/');
+                     if (pbase)
                      {
-                        fprintf(stderr, "Error copying file from '%s' to '%s'.\n", paths[irec], path);
+                        snprintf(outpath, sizeof(outpath), "%s/%s", path, pbase + 1);
+                     }
+                     else
+                     {
+                        snprintf(outpath, sizeof(outpath), "%s/%s", path, paths[irec]);
+                     }
+
+                     if (copyfile(paths[irec], outpath) != 0)
+                     {
+                        fprintf(stderr, "Error copying file from '%s' to '%s'.\n", paths[irec], outpath);
                         err = kARLErr_FileIO;
                         break;
                      }
