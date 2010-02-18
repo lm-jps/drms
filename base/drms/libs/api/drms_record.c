@@ -2661,7 +2661,7 @@ int drms_stage_records(DRMS_RecordSet_t *rs, int retrieve, int dontwait) {
     return(DRMS_SUCCESS);
     }
 
-  if (rs->n > 1)
+  if (rs->n >= 1)
   {
      for (iSet = 0; !bail && iSet < nSets; iSet++)
      {
