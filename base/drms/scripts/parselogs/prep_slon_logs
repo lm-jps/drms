@@ -19,7 +19,8 @@
 
 
 use locale;
-use lib "../etc";
+use FindBin qw($Bin);
+use lib "$Bin/../";
 use toolbox;
 use File::Basename;
 
