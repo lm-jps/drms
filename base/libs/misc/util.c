@@ -283,6 +283,7 @@ int copyfile(const char *inputfile, const char *outputfile)
   int fin, fout;
   ssize_t nread;
   char *buffer = 0;
+  char *bufferorig = 0;
   int oflags;
 
 #ifdef _GNU_SOURCE
@@ -310,10 +311,12 @@ int copyfile(const char *inputfile, const char *outputfile)
     align = stat.f_bsize;
     fstatvfs(fout, &stat);
     align = align > stat.f_bsize ? align : stat.f_bsize;
-
-    XASSERT((buffer = malloc(BUFSIZE+align)));
-    buffer = buffer + (align - ((unsigned long)buffer % align));
   }
+
+  XASSERT((bufferorig = malloc(BUFSIZE+align)));
+  buffer = bufferorig;
+  buffer = buffer + (align - ((unsigned long)buffer % align));
+  
 #else
   XASSERT((buffer = malloc(BUFSIZE)));
 #endif
@@ -326,11 +329,22 @@ int copyfile(const char *inputfile, const char *outputfile)
       close(fin);
       close(fout);
       unlink(outputfile);
+
+      if (bufferorig)
+      {
+         free(bufferorig);
+      }
+
       return -3;
     }
   }
   close(fin);
   close(fout);
+
+  if (bufferorig)
+  {
+     free(bufferorig);
+  }
 
   if (nread == -1)
     return -4;
