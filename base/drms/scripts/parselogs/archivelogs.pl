@@ -8,22 +8,26 @@
 # contained with the tar files.
 
 # The format of the tar file names is:
-#    slogs_([0-9]+)-([0-9]+)_.tar.gz
+#    slogs_([0-9]+)-([0-9]+).tar.gz
 
 # Usage:
-#   archivelogs.pl -l <log dir> -a <archive dir> -f <log filename format> -x <lock file>
-#   archivelogs.pl -l /usr/local/pgsql/slon_logs/ -a /usr/local/pgsql/slon_logs/archive -f "slony\d+_log_\d+_(\d+)\.sql\.parsed" -x parselock.txt
+#   archivelogs.pl -l <log dir> -a <archive dir> -f <log filename format> -x <lock file> -m <mod path> -s <log series>
+#   archivelogs.pl -l /usr/local/pgsql/slon_logs/ -a /usr/local/pgsql/slon_logs/archive -f "slony\d+_log_\d+_(\d+)\.sql\.parsed" -x parselock.txt -m /b/devtest/arta/JSOC/bin/suse_x86_64 -s su_production.slonylogs
 
 use IO::Dir;
 use FileHandle;
 use Fcntl ':flock';
 use Archive::Tar;
+use File::Copy;
 
 
 my($arg);
 my($logdir);
 my($archivedir);
 my($format);
+my($cmd);
+my($modpath);
+my($logseries);
 
 my($lockfh);
 
@@ -54,6 +58,14 @@ while ($arg = shift(@ARGV))
    elsif ($arg eq "-x")
    {
       $parselock = shift(@ARGV);
+   }
+   elsif ($arg eq "-m")
+   {
+      $modpath = shift(@ARGV);
+   }
+   elsif ($arg eq "-s")
+   {
+      $logseries = shift(@ARGV);
    }
    else
    {
@@ -153,10 +165,58 @@ else
    }
 }
 
-# Remove lock
+# Remove parse lock
 print "Removing parse-lock file.\n";
 flock($lockfh, LOCK_UN);
 $lockfh->close;
+
+# Copy archived tar file into SUMS
+$cmd = "$modpath/accessreplogs logs=$logseries path=$archivedir action=str regexp=\"slogs_([0-9]+)-([0-9]+)[.]tar[.]gz\"";
+system($cmd);
+
+if ($? == -1)
+{
+   print STDERR "Failed to execute '$cmd'.\n";
+   exit(1);
+}
+elsif ($? & 127)
+{
+   print STDERR "Failed to copy archive files into SUMS.\n";
+   exit(1);
+}
+else
+{
+   # Remove original tar files (put them in a trash folder that gets cleaned up once in a while)
+   # For now, just keep originals until we're sure that this is working properly.
+   my($backup) = "$archivedir/trash";
+   if (!(-e $backup))
+   {
+      if (!mkdir($backup))
+      {
+         print STDERR "Could not create subdirectory 'trash'.\n";
+         exit(1);
+      }
+   }
+
+   tie(my(%tars), "IO::Dir", $archivedir);
+   my(@selfiles);
+   @lfiles = keys(%tars);
+   @selfiles = map({$_ =~ /slogs_[0-9]+-[0-9]+[.]tar[.]gz/ ? $_ : ()} @lfiles);
+   @fullpaths = map({"$archivedir/$_"} @selfiles);
+
+   foreach $ifile (@fullpaths)
+   {
+      if (!move($ifile, $backup))
+      {
+         print STDERR "Error moving file '$ifile' to '$backup'.\n";
+         untie(%tars);
+         exit(1);
+      }
+   }
+
+   untie(%tars);
+}
+
 
 exit(0);
 
