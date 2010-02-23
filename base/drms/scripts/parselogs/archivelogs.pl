@@ -172,6 +172,7 @@ $lockfh->close;
 
 # Copy archived tar file into SUMS
 $cmd = "$modpath/accessreplogs logs=$logseries path=$archivedir action=str regexp=\"slogs_([0-9]+)-([0-9]+)[.]tar[.]gz\"";
+print "running $cmd\n";
 system($cmd);
 
 if ($? == -1)

@@ -1805,16 +1805,20 @@ void *drms_sums_thread(void *arg)
     {
       /* Send the request to SUMS. */
       reply = drms_process_sums_request(env, sum, request);
-      if (!request->dontwait) {
-	/* Put the reply in the outbox. */
-	tqueueAdd(env->sum_outbox, env->sum_tag, (char *) reply);
-      } else {
-         /* If the calling thread waits for the reply, then it is the caller's responsibility 
-          * to clean up. Otherwise, clean up here. */
-	for (int i = 0; i < request->reqcnt; i++) {
-	  free(reply->sudir[i]);
-	}
-	free(reply);
+
+      if (reply)
+      {
+         if (!request->dontwait) {
+            /* Put the reply in the outbox. */
+            tqueueAdd(env->sum_outbox, env->sum_tag, (char *) reply);
+         } else {
+            /* If the calling thread waits for the reply, then it is the caller's responsibility 
+             * to clean up. Otherwise, clean up here. */
+            for (int i = 0; i < request->reqcnt; i++) {
+               free(reply->sudir[i]);
+            }
+            free(reply);
+         }
       }
       env->sum_tag = 0; // done processing
     }
@@ -1824,7 +1828,7 @@ void *drms_sums_thread(void *arg)
     free(request);
   }
 
-  if (connected)
+  if (connected && sum)
   {
     /* Disconnect from SUMS. */
     SUM_close(sum,printf);
@@ -1854,10 +1858,16 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 						    DRMS_SumRequest_t *request)
 {
   int i;
-  DRMS_SumRequest_t *reply;
+  DRMS_SumRequest_t *reply = NULL;
   int shuttingdown = 0;
   sem_t *sdsem = drms_server_getsdsem();
   
+  if (!sum)
+  {
+     fprintf(stderr , "Error in drms_process_sums_request(): No SUMS connection.\n");
+     return NULL;
+  }
+
   XASSERT(reply = malloc(sizeof(DRMS_SumRequest_t)));
   switch(request->opcode)
   {

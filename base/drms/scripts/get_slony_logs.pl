@@ -133,7 +133,7 @@ sub diecheck {
   my $diecheck = `ls $ingestion_path | grep get_slony_logs.$cluster_name.die`;
   if ( $diecheck ne "" ) {
     print "Die file found. Exiting.\n";
-	exit;
+	exit 0;
   }
 }
 
@@ -192,7 +192,7 @@ sub ingest_log {
     if ($_ =~ /slony1_log_2_0+(\d+)\.sql:\d+:\s+ERROR:(.*)/) {
       print "SQL out [$_]\n";
       send_error($cluster_name, $1, $2);
-      exit;
+      exit 1;
     }
   }
   close SQLOUT;
@@ -318,7 +318,7 @@ while (defined $slony_ingest) {
       my $list = `$tar_test`;
       if ($? != 0) {
         print "Error executing [$tar_test]\n";
-        exit
+        exit 1;
       }
   
   
@@ -329,7 +329,7 @@ while (defined $slony_ingest) {
       system($tar_exp);
       if ($? !=0) {
         print "failed to execute tar command [$tar_exp]: $!\n";
-        exit;
+        exit 1;
       }
       for my $log (@list) {
         my ($counter)= ($log=~/slony1_log_2_0+(\d+).sql/);
