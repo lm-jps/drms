@@ -107,7 +107,7 @@ DRMS_Array_t *drms_array_slice(int *start, int *end, DRMS_Array_t *src)
   {
     if (start[i]>end[i])
     {
-      fprintf(stderr,"ERROR in drms_array_slice: enc[%d]=%d > start[%d]=%d\n",
+      fprintf(stderr,"ERROR in drms_array_slice: end[%d]=%d > start[%d]=%d\n",
 	      i,end[i],i,start[i]);
       return NULL;
     }
