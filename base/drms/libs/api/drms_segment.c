@@ -1101,13 +1101,17 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
     statint = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
     goto bailout;
   }
-  for (i=0;i<arr->naxis;i++) {    
-    if (arr->axis[i] != seg->axis[i]) {
-      fprintf (stderr,"Dimension of axis %d in file (%d) do not match those"
-	  " in segment descriptor (%d).\n", i, arr->axis[i], seg->axis[i]);
-      statint = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
-      goto bailout;
-    }
+
+  if (seg->info->scope != DRMS_VARDIM)
+  {
+     for (i=0;i<arr->naxis;i++) {    
+        if (arr->axis[i] != seg->axis[i]) {
+           fprintf (stderr,"Dimension of axis %d in file (%d) do not match those"
+                    " in segment descriptor (%d).\n", i, arr->axis[i], seg->axis[i]);
+           statint = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
+           goto bailout;
+        }
+     }
   }
 
   /* Ensure that the record's bzero/bscale matches the FITS header's values */
@@ -1329,12 +1333,16 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
      statint = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
      goto bailout;
   }
-  for (i=0;i<arr->naxis;i++) {    
-     if (arr->axis[i] > seg->axis[i]) {
-        fprintf (stderr,"Dimension of axis %d in file (%d) is incompatible with those"
-                 " in segment descriptor (%d).\n", i, arr->axis[i], seg->axis[i]);
-        statint = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
-        goto bailout;
+
+  if (seg->info->scope != DRMS_VARDIM)
+  {
+     for (i=0;i<arr->naxis;i++) {    
+        if (arr->axis[i] > seg->axis[i]) {
+           fprintf (stderr,"Dimension of axis %d in file (%d) is incompatible with those"
+                    " in segment descriptor (%d).\n", i, arr->axis[i], seg->axis[i]);
+           statint = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
+           goto bailout;
+        }
      }
   }
 
