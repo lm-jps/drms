@@ -1029,7 +1029,7 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 	 void *image = NULL;
 
 	 /* Call Tim's function to read data */
-	 if (cfitsio_read_file(filename, &info, &image, NULL) == CFITSIO_SUCCESS)
+	 if (fitsrw_readintfile(rec->env->verbose, filename, &info, &image, NULL) == CFITSIO_SUCCESS)
 	 {
 	    if (drms_fitsrw_CreateDRMSArray(info, image, &arr))
 	    {
@@ -1067,7 +1067,8 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
           * those are used to populate arr. They must match the values 
           * that originate in the record's _bzero/_bscale keywords. They cannot 
           * vary across records. */
-         if ((statint = drms_fitstas_readslice(filename, 
+         if ((statint = drms_fitstas_readslice(seg->record->env,
+                                               filename, 
                                                seg->info->naxis,
                                                seg->axis,
                                                NULL,
@@ -1236,7 +1237,8 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
       * those are used to populate arr. They must match the values 
       * that originate in the record's _bzero/_bscale keywords. They cannot 
       * vary across records. */
-     if ((statint = drms_fitsrw_readslice(filename, 
+     if ((statint = drms_fitsrw_readslice(rec->env,
+                                          filename, 
                                           seg->info->naxis,
                                           start,
                                           end,
@@ -1248,7 +1250,8 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
   }
   else if (seg->info->protocol == DRMS_TAS)
   {
-     if ((statint = drms_fitstas_readslice(filename, 
+     if ((statint = drms_fitstas_readslice(rec->env,
+                                           filename, 
                                            seg->info->naxis,
                                            seg->axis,
                                            start,
@@ -1659,7 +1662,7 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
 	 {
 	    /* Need to change the compression parameter to something meaningful 
 	     * (although new users should just use the DRMS_FITS protocol )*/
-	    if (fitsrw_writeintfile(filename, &imginfo, out->data, seg->cparms, fitskeys))
+	    if (fitsrw_writeintfile(seg->record->env->verbose, filename, &imginfo, out->data, seg->cparms, fitskeys))
 	      goto bailout;
 
             /* imginfo will contain the correct bzero/bscale.  This may be different 
@@ -1707,7 +1710,7 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
 
 	 if (!drms_fitsrw_SetImageInfo(out, &imginfo))
 	 {	    
-	    if (fitsrw_writeintfile(filename, &imginfo, out->data, seg->cparms, fitskeys))
+	    if (fitsrw_writeintfile(seg->record->env->verbose, filename, &imginfo, out->data, seg->cparms, fitskeys))
 	      goto bailout;
             
             /* imginfo will contain the correct bzero/bscale.  This may be different 
@@ -1752,7 +1755,8 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
             }
          }
 
-         status = drms_fitstas_writeslice(seg, 
+         status = drms_fitstas_writeslice(seg->record->env,
+                                          seg, 
                                           filename, 
                                           seg->info->naxis, 
                                           seg->axis, 
@@ -1952,7 +1956,13 @@ int drms_segment_writeslice(DRMS_Segment_t *seg, DRMS_Array_t *arr, int *start, 
                 }
              }
 
-             if ((status = drms_fitsrw_writeslice(seg, filename, out->naxis, start, end, out)) != DRMS_SUCCESS)
+             if ((status = drms_fitsrw_writeslice(seg->record->env, 
+                                                  seg,
+                                                  filename, 
+                                                  out->naxis, 
+                                                  start, 
+                                                  end, 
+                                                  out)) != DRMS_SUCCESS)
                goto bailout;
           }
           break;  
@@ -1969,7 +1979,8 @@ int drms_segment_writeslice(DRMS_Segment_t *seg, DRMS_Array_t *arr, int *start, 
                 }
              }
 
-             if ((status = drms_fitstas_writeslice(seg, 
+             if ((status = drms_fitstas_writeslice(seg->record->env,
+                                                   seg, 
                                                    filename, 
                                                    seg->info->naxis, 
                                                    seg->axis, 
@@ -2476,7 +2487,8 @@ int drms_segment_segsmatch(const DRMS_Segment_t *s1, const DRMS_Segment_t *s2)
 }
 
 /* keys may be NULL, in which case no extra keywords are placed into the FITS file. */
-static int ExportFITS(DRMS_Array_t *arrout, 
+static int ExportFITS(DRMS_Env_t *env,
+                      DRMS_Array_t *arrout, 
                       const char *fileout, 
                       const char *cparms, 
                       CFITSIO_KEYWORD *fitskeys)
@@ -2508,7 +2520,7 @@ static int ExportFITS(DRMS_Array_t *arrout,
          }
          else
          {
-            if (fitsrw_write(fileout, &imginfo, arrout->data, cparms, fitskeys))
+            if (fitsrw_write(env->verbose, fileout, &imginfo, arrout->data, cparms, fitskeys))
             {
                fprintf(stderr, "Can't write fits file '%s'.\n", fileout);
                stat = DRMS_ERROR_EXPORT;
@@ -2569,7 +2581,7 @@ int drms_segment_mapexport_tofile(DRMS_Segment_t *seg,
            DRMS_Array_t *arrout = drms_segment_read(seg, DRMS_TYPE_RAW, &status);
            if (arrout)
            {
-              status = ExportFITS(arrout, fileout, cparms ? cparms : seg->cparms, fitskeys);
+              status = ExportFITS(seg->record->env, arrout, fileout, cparms ? cparms : seg->cparms, fitskeys);
               drms_free_array(arrout);	     
            }
         }

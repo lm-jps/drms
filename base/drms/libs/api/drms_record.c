@@ -2097,7 +2097,8 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
 	    printf("creating new tasfile '%s'\n",filename);
 #endif
 
-            drms_fitstas_create(filename, 
+            drms_fitstas_create(env,
+                                filename, 
                                 seg->cparms,
                                 seg->info->type, 
 				seg->info->naxis+1, 
@@ -2501,13 +2502,14 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
 		seg_out->axis[seg_out->info->naxis] = rec_out->seriesinfo->unitsize;
 		seg_out->blocksize[seg_out->info->naxis] = 1; 
 
-                drms_fitstas_create(filename, 
-                                seg_out->cparms,
-                                seg_out->info->type, 
-				seg_out->info->naxis+1, 
-                                seg_out->axis,
-                                seg_out->bzero,
-                                seg_out->bscale);
+                drms_fitstas_create(env,
+                                    filename, 
+                                    seg_out->cparms,
+                                    seg_out->info->type, 
+                                    seg_out->info->naxis+1, 
+                                    seg_out->axis,
+                                    seg_out->bzero,
+                                    seg_out->bscale);
 	
 		seg_out->axis[seg_out->info->naxis] = 0;
 		seg_out->blocksize[seg_out->info->naxis] = 0; 

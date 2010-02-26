@@ -574,7 +574,7 @@ void drms_server_commit(DRMS_Env_t *env, int final)
    * drms_fitsrw_term(), right before it terminates. */
   if (env->session->db_direct == 1)
   {
-     drms_fitsrw_term();
+     drms_fitsrw_term(env->verbose);
   }
 
   log_retention = drms_commit_all_units(env, &archive_log, &status);  

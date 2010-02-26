@@ -12,6 +12,6 @@ int drms_fitsrw_Type2Bitpix(DRMS_Type_t type, int *err);
 void drms_fitsrw_ShootBlanks(DRMS_Array_t *arr, long long blank);
 int drms_fitsrw_CreateDRMSArray(CFITSIO_IMAGE_INFO *info, void *data, DRMS_Array_t **arrout);
 int drms_fitsrw_SetImageInfo(DRMS_Array_t *arr, CFITSIO_IMAGE_INFO *info);
-void drms_fitsrw_term();
+void drms_fitsrw_term(int verbose);
 
 #endif /* _DRMS_FITSRW_PRIV_H */

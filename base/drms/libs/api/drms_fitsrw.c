@@ -277,12 +277,13 @@ int drms_fitsrw_SetImageInfo(DRMS_Array_t *arr, CFITSIO_IMAGE_INFO *info)
    return err;
 }
 
-void drms_fitsrw_term()
+void drms_fitsrw_term(int verbose)
 {
-   fitsrw_closefptrs();
+   fitsrw_closefptrs(verbose);
 }
 
-DRMS_Array_t *drms_fitsrw_read(const char *filename,
+DRMS_Array_t *drms_fitsrw_read(DRMS_Env_t *env,
+                               const char *filename,
                                int readraw,
                                HContainer_t **keywords,
                                int *status)
@@ -296,7 +297,7 @@ DRMS_Array_t *drms_fitsrw_read(const char *filename,
    DRMS_Array_t *arr = NULL;
 
    /* fitsrw_read always reads 'RAW' - it does NOT apply bzero/bscale */
-   fitsrwstat = fitsrw_read(filename, &info, &image, &keylist);
+   fitsrwstat = fitsrw_read(env->verbose, filename, &info, &image, &keylist);
 
    if (fitsrwstat != CFITSIO_SUCCESS)
    {
@@ -391,7 +392,8 @@ void drms_fitsrw_freekeys(HContainer_t **keywords)
 }
 
 /* Array may be converted in calling function, but not here */
-int drms_fitsrw_readslice(const char *filename, 
+int drms_fitsrw_readslice(DRMS_Env_t *env,
+                          const char *filename, 
                           int naxis,
                           int *start,
                           int *end,
@@ -407,7 +409,7 @@ int drms_fitsrw_readslice(const char *filename,
 
    /* This call really should take naxis as a parameter so that it knows how many values 
     * are in start and end. */
-   fitsrwstat = fitsrw_readslice(filename, start, end, &info, &image);
+   fitsrwstat = fitsrw_readslice(env->verbose, filename, start, end, &info, &image);
 
    if (fitsrwstat != CFITSIO_SUCCESS)
    {
@@ -436,7 +438,8 @@ int drms_fitsrw_readslice(const char *filename,
    return status;
 }
 
-int drms_fitsrw_write(const char *filename,
+int drms_fitsrw_write(DRMS_Env_t *env,
+                      const char *filename,
                       const char* cparms,
                       HContainer_t *keywords,
                       DRMS_Array_t *arr)
@@ -488,7 +491,7 @@ int drms_fitsrw_write(const char *filename,
          }
          else
          {
-            fitsrwstat = fitsrw_write(filename, &imginfo, image, cparms, keylist);
+            fitsrwstat = fitsrw_write(env->verbose, filename, &imginfo, image, cparms, keylist);
             if (fitsrwstat != CFITSIO_SUCCESS)
             {
                status = DRMS_ERROR_FITSRW;
@@ -511,7 +514,8 @@ int drms_fitsrw_write(const char *filename,
 }
 
 /* Array may be converted in calling function, but not here */
-int drms_fitsrw_writeslice(DRMS_Segment_t *seg,
+int drms_fitsrw_writeslice(DRMS_Env_t *env,
+                           DRMS_Segment_t *seg,
                            const char *filename, 
                            int naxis,
                            int *start,
@@ -595,7 +599,7 @@ int drms_fitsrw_writeslice(DRMS_Segment_t *seg,
 
          if (!drms_fitsrw_SetImageInfo(&arr, &info))
          {
-            if (fitsrw_writeintfile(filename, &info, NULL, seg->cparms, NULL) != CFITSIO_SUCCESS)
+            if (fitsrw_writeintfile(env->verbose, filename, &info, NULL, seg->cparms, NULL) != CFITSIO_SUCCESS)
             {
                fprintf(stderr, "Couldn't create FITS file '%s'.\n", filename); 
                status = DRMS_ERROR_CANTCREATETASFILE;
@@ -624,7 +628,8 @@ int drms_fitsrw_writeslice(DRMS_Segment_t *seg,
       {
          /* This call really should take naxis as a parameter so that it knows how many values 
           * are in start and end. */
-         fitsrwstat = fitsrw_writeslice(filename, 
+         fitsrwstat = fitsrw_writeslice(env->verbose,
+                                        filename, 
                                         start, 
                                         end,
                                         arrayout->data);

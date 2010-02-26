@@ -279,7 +279,7 @@ int JSOCMAIN_Term(int dolog, int verbose, pid_t drms_server_pid, pid_t tee_pid, 
     * list of open fitsfiles (see drms_server_commit() for more information). */
    if (!abort_flag)
    {
-      drms_fitsrw_term();
+      drms_fitsrw_term(drms_env->verbose);
    }
 
    /* DRMS Epilog:

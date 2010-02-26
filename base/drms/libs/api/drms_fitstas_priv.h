@@ -3,7 +3,8 @@
 
 #include "drms.h"
 
-int drms_fitstas_create(const char *filename, 
+int drms_fitstas_create(DRMS_Env_t *env,
+                        const char *filename, 
                         const char *comp,
                         DRMS_Type_t type, 
                         int naxis, 
@@ -11,7 +12,8 @@ int drms_fitstas_create(const char *filename,
                         double bzero,
                         double bscale);
 
-int drms_fitstas_readslice(const char *filename, 
+int drms_fitstas_readslice(DRMS_Env_t *env,
+                           const char *filename, 
                            int naxis,
                            int *axis,
                            int *lower,
@@ -19,7 +21,8 @@ int drms_fitstas_readslice(const char *filename,
                            int slotnum,
                            DRMS_Array_t **arr);
 
-int drms_fitstas_writeslice(DRMS_Segment_t *seg,
+int drms_fitstas_writeslice(DRMS_Env_t *env,
+                            DRMS_Segment_t *seg,
                             const char *filename, 
                             int naxis,
                             int *axis,

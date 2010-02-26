@@ -3,7 +3,8 @@
 #include "cfitsio.h"
 #include "tasrw.h"
 
-int drms_fitstas_create(const char *filename, 
+int drms_fitstas_create(DRMS_Env_t *env,
+                        const char *filename, 
                         const char *comp,
                         DRMS_Type_t type, 
                         int naxis, 
@@ -37,7 +38,7 @@ int drms_fitstas_create(const char *filename,
 
       if (!drms_fitsrw_SetImageInfo(&arr, &info))
       {
-         if (fitsrw_writeintfile(filename, &info, NULL, comp, NULL) != CFITSIO_SUCCESS)
+         if (fitsrw_writeintfile(env->verbose, filename, &info, NULL, comp, NULL) != CFITSIO_SUCCESS)
          {
             fprintf(stderr, "Couldn't create FITS TAS file '%s'.\n", filename); 
             status = DRMS_ERROR_CANTCREATETASFILE;
@@ -57,7 +58,8 @@ int drms_fitstas_create(const char *filename,
    return status;
 }
 
-int drms_fitstas_readslice(const char *filename, 
+int drms_fitstas_readslice(DRMS_Env_t *env,
+                           const char *filename, 
                            int naxis,
                            int *axis,
                            int *lower,
@@ -87,7 +89,7 @@ int drms_fitstas_readslice(const char *filename,
    start[naxis] = slotnum;
    end[naxis] =  slotnum;
 
-   status = drms_fitsrw_readslice(filename, naxis + 1, start, end, arr);
+   status = drms_fitsrw_readslice(env, filename, naxis + 1, start, end, arr);
 
    if (status == DRMS_SUCCESS)
    {
@@ -100,7 +102,8 @@ int drms_fitstas_readslice(const char *filename,
 }
 
 /* Array may be converted in calling function, but not here */
-int drms_fitstas_writeslice(DRMS_Segment_t *seg,
+int drms_fitstas_writeslice(DRMS_Env_t *env,
+                            DRMS_Segment_t *seg,
                             const char *filename, 
                             int naxis,
                             int *axis,
@@ -130,7 +133,7 @@ int drms_fitstas_writeslice(DRMS_Segment_t *seg,
    start[naxis] = slotnum;
    end[naxis] = slotnum;
 
-   status = drms_fitsrw_writeslice(seg, filename, naxis, start, end, arrayout);
+   status = drms_fitsrw_writeslice(env, seg, filename, naxis, start, end, arrayout);
 
    if (status == DRMS_SUCCESS)
    {

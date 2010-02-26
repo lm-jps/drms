@@ -100,6 +100,7 @@ typedef	struct cfitsio_image_info
       long long blank;       /* bit 2 */
       double bscale;         /* bit 3 */
       double bzero;          /* bit 4 */
+      char fhash[64]; /* key to fitsfile ptr stored in gFFPtrInfo */
 } CFITSIO_IMAGE_INFO;
 
 
@@ -110,12 +111,14 @@ int fitsrw_read_keylist_and_image_info(FITSRW_fhandle fhandle,
                                        CFITSIO_KEYWORD** keylistout, 
                                        CFITSIO_IMAGE_INFO** image_info);
 
-int cfitsio_read_file(char* fits_filename,
-		      CFITSIO_IMAGE_INFO** image_info,
-		      void** image, 
-		      CFITSIO_KEYWORD** keylist);
+int fitsrw_readintfile(int verbose,
+                       char* fits_filename,
+                       CFITSIO_IMAGE_INFO** image_info,
+                       void** image, 
+                       CFITSIO_KEYWORD** keylist);
 
-int fitsrw_writeintfile(const char* fits_filename,
+int fitsrw_writeintfile(int verbose,
+                        const char* fits_filename,
                         CFITSIO_IMAGE_INFO* info,
                         void* image,
                         const char* compspecs,
@@ -131,39 +134,28 @@ int cfitsio_append_key(CFITSIO_KEYWORD** keylist,
 			char *comment,
 			void *value);
 
-int fitsrw_read(const char *filename, 
+int fitsrw_read(int verbose,
+                const char *filename, 
                 CFITSIO_IMAGE_INFO** image_info,
                 void** image,
                 CFITSIO_KEYWORD** keylist);
 
-int fitsrw_write(const char* filein,
+int fitsrw_write(int verbose,
+                 const char* filein,
                  CFITSIO_IMAGE_INFO* info,  
                  void* image,
                  const char* cparms,
                  CFITSIO_KEYWORD* keylist);
 
-//****************************************************************************
-// For internal use and low level testing...
 
-int cfitsio_read_keys(char* filename, CFITSIO_KEYWORD** keylist);
-int cfitsio_print_keys(CFITSIO_KEYWORD* keylist);
 int cfitsio_free_keys(CFITSIO_KEYWORD** keylist);
-
-int cfitsio_extract_image_info_from_keylist(CFITSIO_KEYWORD* keylist,
-					    CFITSIO_IMAGE_INFO** info);
 
 int cfitsio_free_image_info(CFITSIO_IMAGE_INFO** image_info);
 
-int cfitsio_read_image(char* filename, void** image);
 int cfitsio_dump_image(void* image, CFITSIO_IMAGE_INFO* info, 
 		       long from_row, long to_row, long from_col, long to_col);
-int cfitsio_free_image(void** image);
-int cfitsio_get_image_info(CFITSIO_KEYWORD* keys, CFITSIO_IMAGE_INFO* info);
 
-void cfitsio_print_error(int status);
 int cfitsio_key_to_card(CFITSIO_KEYWORD* key, char* card);
-
-int cfitsio_gen_image(char* fits_filename, int width, int bitpix, char* center_value);
 
 //****************************************************************************
 
