@@ -454,6 +454,7 @@ static void list_series_info(DRMS_Record_t *rec)
 
 SUM_t *my_sum=NULL;
 
+
 SUM_info_t *drms_get_suinfo(long long sunum)
   {
   int status;
@@ -467,9 +468,11 @@ SUM_info_t *drms_get_suinfo(long long sunum)
       return(NULL);
       }
     }
-  if (status = SUM_info(my_sum, sunum, printkerr))
+  // if (status = SUM_info(my_sum, sunum, printkerr))
+  if (status = SUM_info(my_sum, sunum, NULL))
     {
-       if (status != SUM_SUNUM_NOT_LOCAL)
+       // if (status != SUM_SUNUM_NOT_LOCAL)
+     if (0 && status != SUM_SUNUM_NOT_LOCAL)
        {
           printkerr("Fail on SUM_info, status=%d\n", status);
        }
