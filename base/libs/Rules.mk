@@ -11,7 +11,7 @@ dir	:= $(d)/db
 dir	:= $(d)/defs
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/dstruct
--include
+-include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/interpolate
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/ricecomp
