@@ -47,6 +47,7 @@ $(OBJDIR):
 	+@[ -d $@/base/libs/db/server ] || mkdir -p $@/base/libs/db/server
 	+@[ -d $@/base/libs/defs/fpic ] || mkdir -p $@/base/libs/defs/fpic
 	+@[ -d $@/base/libs/dstruct/fpic ] || mkdir -p $@/base/libs/dstruct/fpic
+	+@[ -d $@/base/libs/interpolate ] || mkdir -p $@/base/libs/interpolate
 	+@[ -d $@/base/libs/inthandles ] || mkdir -p $@/base/libs/inthandles
 	+@[ -d $@/base/libs/qdecoder/md5 ] || mkdir -p $@/base/libs/qdecoder/md5
 	+@[ -d $@/base/libs/threads/fpic ] || mkdir -p $@/base/libs/threads/fpic
