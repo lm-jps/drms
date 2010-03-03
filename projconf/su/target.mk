@@ -13,8 +13,6 @@ $(PROJOBJDIR):
 	+@[ -d $@/jpe/apps ] || mkdir -p $@/jpe/apps
 	+@[ -d $@/lev1_aia/apps ] || mkdir -p $@/lev1_aia/apps
 	+@[ -d $@/lev1_hmi/apps ] || mkdir -p $@/lev1_hmi/apps
-	+@[ -d $@/export/apps ] || mkdir -p $@/export/apps
-	+@[ -d $@/export/libs/util ] || mkdir -p $@/export/libs/util
 	+@[ -d $@/globalhs/apps/ ] || mkdir -p $@/globalhs/apps
 	+@[ -d $@/globalhs/apps/src/ ] || mkdir -p $@/globalhs/apps/src
 	+@[ -d $@/rings/apps/ ] || mkdir -p $@/rings/apps

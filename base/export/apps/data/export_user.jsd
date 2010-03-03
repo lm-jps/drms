@@ -1,0 +1,19 @@
+#=====General Series Information=====
+Seriesname:      	jsoc.export_user
+Author:          	"Phil"
+Owner:           	phil
+Unitsize:        	1
+Archive:         	0
+Retention:       	0
+Tapegroup:       	0
+PrimeKeys:              Requestor
+DBindex:                Requestor,RequestorID
+Description:     	JSOC data export requestors
+
+#=====Keywords=====
+Keyword:RequestorID, longlong, variable, record, 0, %ld, NA, "ID of requestor"
+Keyword:Requestor, string, variable, record, " ", %s, NA, "Name of requestor"
+Keyword:Notify, string, variable, record, " ", %s, NA, "Notification address"
+Keyword:ShipTo, string, variable, record, " ", %s, NA, "Mailing address"
+Keyword:FirstTime, time, variable, record, DRMS_MISSING_VALUE, 0, UT, "Time of first request"
+Keyword:UpdateTime, time, variable, record, DRMS_MISSING_VALUE, 0, UT, "Time of most recent update"

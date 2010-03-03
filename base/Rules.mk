@@ -14,6 +14,8 @@ dir	:= $(d)/drms
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/example
 -include		$(SRCDIR)/$(dir)/Rules.mk
+dir	:= $(d)/export
+-include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/local
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/util
