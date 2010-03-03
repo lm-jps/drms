@@ -1899,7 +1899,7 @@ int drms_copykeys(DRMS_Record_t *target,
                   int usesrcset,
                   DRMS_KeywordClass_t class)
 {
-   HIterator_t *sethit = NULL;
+   HIterator_t sethit;
    DRMS_Keyword_t *srckey = NULL;
    DRMS_Keyword_t *tgtkey = NULL;
    DRMS_Keyword_t *setkey = NULL;
@@ -1909,16 +1909,16 @@ int drms_copykeys(DRMS_Record_t *target,
 
    if (usesrcset)
    {
-      sethit = hiter_create(&source->keywords);
+      hiter_new_sort(&sethit, &source->keywords, drms_keyword_ranksort);
       lookuprec = target;
    }
    else
    {
-      sethit = hiter_create(&target->keywords);
+      hiter_new_sort(&sethit, &target->keywords, drms_keyword_ranksort);
       lookuprec = source;
    }
 
-   while ((setkey = (DRMS_Keyword_t *)hiter_getnext(sethit)) != NULL)
+   while ((setkey = (DRMS_Keyword_t *)hiter_getnext(&sethit)) != NULL)
    {
       if (drms_keyword_inclass(setkey, class))
       {
@@ -1937,7 +1937,12 @@ int drms_copykeys(DRMS_Record_t *target,
 
          if (tgtkey && srckey)
          {
-            status = drms_copykeyB(tgtkey, srckey);
+            if (!drms_keyword_islinked(tgtkey))
+            {
+               /* You don't want to copy to a keyword if it is a linked keyword - the
+                * link itself will point to read-only record containing the desired value. */
+               status = drms_copykeyB(tgtkey, srckey);
+            }
          }
       }
 
@@ -1953,11 +1958,6 @@ int drms_copykeys(DRMS_Record_t *target,
          }
          break;
       }
-   }
-
-   if (sethit)
-   {
-      hiter_destroy(&sethit);
    }
 
    return status;
@@ -2106,6 +2106,11 @@ int drms_keyword_isindex(DRMS_Keyword_t *key)
 int drms_keyword_isslotted(DRMS_Keyword_t *key)
 {
    return (key->info->recscope >= kRecScopeSlotted_B);
+}
+
+int drms_keyword_islinked(DRMS_Keyword_t *key)
+{
+   return (key->info->islink != 0);
 }
 
 int drms_keyword_isprime(DRMS_Keyword_t *key)

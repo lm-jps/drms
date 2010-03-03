@@ -192,6 +192,7 @@ int drms_keyword_isvariable(DRMS_Keyword_t *key);
 int drms_keyword_isconstant(DRMS_Keyword_t *key);
 int drms_keyword_isindex(DRMS_Keyword_t *key);
 int drms_keyword_isslotted(DRMS_Keyword_t *key);
+int drms_keyword_islinked(DRMS_Keyword_t *key);
 
 DRMS_SlotKeyUnit_t drms_keyword_getunit(DRMS_Keyword_t *key, int *status);
 TIME drms_keyword_getepoch(DRMS_Keyword_t *epochkey, int *status);
