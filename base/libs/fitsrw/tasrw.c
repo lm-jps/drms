@@ -22,6 +22,30 @@ typedef CFITSIO_IMAGE_INFO TASRW_FilePtrInfo_t;
 HContainer_t *gFFiles = NULL;
 HContainer_t *gFFPtrInfo = NULL;
 
+static int IsWriteable(const char *fhash)
+{
+   char *pmode = strrchr(fhash, ':');
+   int writeable = -1;
+
+   if (!pmode)
+   {
+      fprintf(stderr, "Invalid file hash '%s'.\n", fhash);
+   }
+   else
+   {
+      if (*(pmode + 1) == 'r')
+      {
+         writeable = 0;
+      }
+      else if (*(pmode + 1) == 'w')
+      {
+         writeable = 1;
+      }
+   }
+
+   return writeable;
+}
+
 /* fitsfiles can be opened either READWRITE or READONLY. If a request for a READONLY pointer
  * is made, and the fitsfile has already been opened, then regardless of the fitsfile write mode
  * it is okay to return the opened pointer. But, if the request is for a READWRITE pointer
@@ -42,6 +66,7 @@ fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *
    int datachk;
    int hduchk;
    int newfile = 0;
+   char cfitsiostat[FLEN_STATUS];
 
    if (!gFFiles)
    {
@@ -206,12 +231,18 @@ fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *
                      /* remove fileptr into structure */
                      snprintf(fileinfokey, sizeof(fileinfokey), "%p", (void *)*pfptr);                 
                      hcon_remove(gFFPtrInfo, fileinfokey);
-                     fits_write_chksum(*pfptr, &stat);
 
-                     if (stat)
+                     if (IsWriteable(fhkey))
                      {
-                        fprintf(stderr, "Error calculating and writing checksum for fitsfile '%s'.\n", filename);
-                        stat = 0;
+                        fits_write_chksum(*pfptr, &stat);
+
+                        if (stat)
+                        {
+                           fits_get_errstatus(stat, cfitsiostat);
+                           fprintf(stderr, "Purging cache: error calculating and writing checksum for fitsfile '%s'.\n", fhkey);
+                           fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
+                           stat = 0;
+                        }
                      }
 
                      fits_close_file(*pfptr, &stat);
@@ -222,6 +253,12 @@ fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *
                         {
                            fprintf(stdout, "Closing fits file '%s'.\n", fhkey);
                         }
+                     }
+                     else
+                     {
+                        fits_get_errstatus(stat, cfitsiostat);
+                        fprintf(stderr, "Purging cache: error closing fitsfile '%s'.\n", fhkey);
+                        fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
                      }
                   }
 
@@ -652,6 +689,7 @@ int fitsrw_closefptr(int verbose, fitsfile *fptr)
    char fileinfokey[64];
    int stat = 0;
    TASRW_FilePtrInfo_t fpinfo;
+   char cfitsiostat[FLEN_STATUS];
 
    if (fptr)
    {
@@ -666,12 +704,17 @@ int fitsrw_closefptr(int verbose, fitsfile *fptr)
             snprintf(fileinfokey, sizeof(fileinfokey), "%p", (void *)fptr);
             hcon_remove(gFFPtrInfo, fileinfokey);
 
-            fits_write_chksum(fptr, &stat);
-
-            if (stat)
+            if (IsWriteable(fpinfo.fhash))
             {
-               fprintf(stderr, "Error calculating and writing checksum for fitsfile '%s'.\n", fpinfo.fhash);
-               stat = 0;
+               fits_write_chksum(fptr, &stat);
+
+               if (stat)
+               {
+                  fits_get_errstatus(stat, cfitsiostat);
+                  fprintf(stderr, "Closing fitsfile: error calculating and writing checksum for fitsfile '%s'.\n", fpinfo.fhash);
+                  fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
+                  stat = 0;
+               }
             }
 
             fits_close_file(fptr, &stat);
@@ -685,7 +728,9 @@ int fitsrw_closefptr(int verbose, fitsfile *fptr)
             }
             else
             {
-               fprintf(stderr, "Error closing fitsfile '%s'.\n",  fpinfo.fhash);
+               fits_get_errstatus(stat, cfitsiostat);
+               fprintf(stderr, "Closing fitsfile: error closing fitsfile '%s'.\n",  fpinfo.fhash);
+               fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
             }
             
             hcon_remove(gFFiles, fpinfo.fhash);
@@ -708,93 +753,104 @@ void fitsrw_closefptrs(int verbose)
 {
    if (gFFiles)
    {
-      HIterator_t *hit = hiter_create(gFFiles);
-      fitsfile **pfptr = NULL;
-      int stat = 0;
-      const char *filehashkey = NULL;
-      char fileinfokey[64];
-      int ifile;
-
-      if (hit)
+      if (hcon_size(gFFiles) > 0)
       {
-         LinkedList_t *llist = list_llcreate(sizeof(char *), NULL);
-         ListNode_t *node = NULL;
-         char *onefile = NULL;
+         HIterator_t *hit = hiter_create(gFFiles);
+         fitsfile **pfptr = NULL;
+         int stat = 0;
+         const char *filehashkey = NULL;
+         char fileinfokey[64];
+         int ifile;
+         char cfitsiostat[FLEN_STATUS];
 
-         if (verbose)
+         if (hit)
          {
-            fprintf(stdout, "fitsrw_closefptrs(): Attempting to close %d fitsfile pointers.\n", gFFiles->num_total);
-         }
+            LinkedList_t *llist = list_llcreate(sizeof(char *), NULL);
+            ListNode_t *node = NULL;
+            char *onefile = NULL;
 
-         ifile = 0;
-         while ((pfptr = (fitsfile **)hiter_extgetnext(hit, &filehashkey)) != NULL)
-         {
-            /* Don't call hcon_remove(gFFiles, filehashkey) here! Can't remove items from 
-             * a hash container if you're iterating through the container. */
-
-            /* Save the filehashkey for each file being removed from the cache - 
-             * must remove from gFFiles AFTER existing the loop that is iterating
-             * over gFFiles. */
-            list_llinserttail(llist, (void *)&filehashkey);               
-            ifile++;
-         }
-
-         hiter_destroy(&hit);
-
-         /* free all the file pointers saved in gFFiles */
-         list_llreset(llist);
-         while ((node = list_llnext(llist)) != NULL)
-         {
-            onefile = *((char **)node->data);
-            pfptr = (fitsfile **)hcon_lookup(gFFiles, onefile);
-
-            if (pfptr && *pfptr)
+            if (verbose)
             {
-               /* remove fileptr info structure */         
-               snprintf(fileinfokey, sizeof(fileinfokey), "%p", (void *)*pfptr);
-               hcon_remove(gFFPtrInfo, fileinfokey);
+               fprintf(stdout, "fitsrw_closefptrs(): Attempting to close %d fitsfile pointers.\n", gFFiles->num_total);
+            }
 
-               fits_write_chksum(*pfptr, &stat);
+            ifile = 0;
+            while ((pfptr = (fitsfile **)hiter_extgetnext(hit, &filehashkey)) != NULL)
+            {
+               /* Don't call hcon_remove(gFFiles, filehashkey) here! Can't remove items from 
+                * a hash container if you're iterating through the container. */
 
-               if (stat)
+               /* Save the filehashkey for each file being removed from the cache - 
+                * must remove from gFFiles AFTER existing the loop that is iterating
+                * over gFFiles. */
+               list_llinserttail(llist, (void *)&filehashkey);               
+               ifile++;
+            }
+
+            hiter_destroy(&hit);
+
+            /* free all the file pointers saved in gFFiles */
+            list_llreset(llist);
+            while ((node = list_llnext(llist)) != NULL)
+            {
+               onefile = *((char **)node->data);
+               pfptr = (fitsfile **)hcon_lookup(gFFiles, onefile);
+
+               if (pfptr && *pfptr)
                {
-                  fprintf(stderr, "Error calculating and writing checksum for fitsfile '%s'.\n", onefile);
-                  stat = 0;
-               }
+                  /* remove fileptr info structure */         
+                  snprintf(fileinfokey, sizeof(fileinfokey), "%p", (void *)*pfptr);
+                  hcon_remove(gFFPtrInfo, fileinfokey);
 
-               fits_close_file(*pfptr, &stat);
+                  if (IsWriteable(onefile))
+                  {
+                     fits_write_chksum(*pfptr, &stat);
 
-               if (verbose)
-               {
+                     if (stat)
+                     {
+                        fits_get_errstatus(stat, cfitsiostat);
+                        fprintf(stderr, "Closing all fitsfiles: error calculating and writing checksum for fitsfile '%s'.\n", onefile);
+                        fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
+                        stat = 0;
+                     }
+                  }
+
+                  fits_close_file(*pfptr, &stat);
+
                   if (stat == 0)
                   {
-                     fprintf(stdout, "Closing fits file '%s'.\n", onefile);
+                     if (verbose)
+                     {
+                        fprintf(stdout, "Closing fits file '%s'.\n", onefile);
+                     }
                   }
                   else
                   {
-                     fprintf(stdout, "Unable to close fits file '%s'.\n", onefile);
+                     fits_get_errstatus(stat, cfitsiostat);
+                     fprintf(stderr, "Closing all fitsfiles: error closing fitsfile '%s'.\n", onefile);
+                     fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
                   }
                }
-            }
-            else
-            {
-               stat = 1;
-               fprintf(stderr, "Unknown fitsfile '%s'.\n", onefile);
+               else
+               {
+                  stat = 1;
+                  fprintf(stderr, "Unknown fitsfile '%s'.\n", onefile);
+               }
+
+               if (stat)
+               {
+                  fprintf(stderr, "Error closing fitsfile '%s'.\n", onefile);
+               }
+
+               hcon_remove(gFFiles, onefile);
+               if (verbose)
+               {
+                  fprintf(stdout, "Number fitsfiles still open: %d\n", gFFiles->num_total);
+               }
             }
 
-            if (stat)
-            {
-               fprintf(stderr, "Error closing fitsfile '%s'.\n", onefile);
-            }
-
-            hcon_remove(gFFiles, onefile);
-            if (verbose)
-            {
-               fprintf(stdout, "Number fitsfiles still open: %d\n", gFFiles->num_total);
-            }
+            list_llfree(&llist);
          }
-
-         list_llfree(&llist);
       }
 
       hcon_destroy(&gFFPtrInfo);
