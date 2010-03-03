@@ -4,10 +4,7 @@
 #include <time.h>
 #include <string.h>
 #include <math.h>
-#include <mkl_blas.h>
-#include <mkl_service.h>
-#include <mkl_lapack.h>
-#include <mkl_vml_functions.h>
+#include <mkl.h>
 #include "tinterpolate.h"
 #include "drms_defs.h"
 
