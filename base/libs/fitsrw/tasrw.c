@@ -7,6 +7,7 @@
 #include "fitsio.h"
 #include "hcontainer.h"
 #include "list.h"
+#include "timer.h"
 
 // #define DEBUG
 
@@ -68,6 +69,11 @@ fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *
    int newfile = 0;
    char cfitsiostat[FLEN_STATUS];
 
+   if (verbose)
+   {
+      PushTimer();
+   }
+
    if (!gFFiles)
    {
       gFFiles = hcon_create(sizeof(fitsfile *), sizeof(filehashkey), NULL, NULL, NULL, NULL, 0);
@@ -125,6 +131,11 @@ fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *
                snprintf(fileinfokey, sizeof(fileinfokey), "%p", (void *)*pfptr);
                hcon_remove(gFFPtrInfo, fileinfokey);
 
+               if (verbose)
+               {
+                  PushTimer();
+               }
+
                fits_close_file(*pfptr, &stat);
 
                if (verbose)
@@ -135,8 +146,10 @@ fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *
                   }
                   else
                   {
-                     fprintf(stdout, "Unable to close fits file '%s'.\n", filehashkey);
+                     fprintf(stdout, "Unable to close fits file '%s'.\n", tmpfilehashkey);
                   }
+
+                  fprintf(stdout, "Time to close fitsfile '%s'= %f sec.\n", tmpfilehashkey, PopTimer());
                }
             }
                   
@@ -145,7 +158,12 @@ fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *
             pfptr = NULL;
          }
       }
-     
+
+      if (verbose)
+      {
+         PushTimer();
+      }
+
       if (fits_open_image(&fptr, filename, writeable ? READWRITE : READONLY, &stat)) 
       {
          if (writeable)
@@ -175,8 +193,18 @@ fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *
          }
       }
 
+      if (verbose)
+      {
+         fprintf(stdout, "Time to open fitsfile '%s' = %f sec.\n", filehashkey, PopTimer());
+      }
+
       if (!stat)
       {
+         if (verbose)
+         {
+            PushTimer();
+         }
+
          /* Check checksum, if it exists */
          if (fits_verify_chksum(fptr, &datachk, &hduchk, &stat))
          {
@@ -201,13 +229,13 @@ fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *
                }
             }
          }
+
+         if (verbose)
+         {
+            fprintf(stdout, "Time to verify checksum = %f sec.\n", PopTimer());
+         }
       }
       
-      if (!stat && verbose)
-      {
-         fprintf(stdout, "Opening fits file '%s'.\n", filename);
-      }
-
       if (!stat && gFFiles->num_total > MAXFFILES)
       {
          /* Must close some open files */
@@ -234,6 +262,11 @@ fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *
 
                      if (IsWriteable(fhkey))
                      {
+                        if (verbose)
+                        {
+                           PushTimer();
+                        }
+
                         fits_write_chksum(*pfptr, &stat);
 
                         if (stat)
@@ -243,6 +276,16 @@ fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *
                            fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
                            stat = 0;
                         }
+                        
+                        if (verbose)
+                        {
+                           fprintf(stdout, "Time to write checksum on fitsfile '%s' = %f sec.\n", fhkey, PopTimer());
+                        }
+                     }
+
+                     if (verbose)
+                     {
+                        PushTimer();
                      }
 
                      fits_close_file(*pfptr, &stat);
@@ -259,6 +302,11 @@ fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *
                         fits_get_errstatus(stat, cfitsiostat);
                         fprintf(stderr, "Purging cache: error closing fitsfile '%s'.\n", fhkey);
                         fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
+                     }
+                     
+                     if (verbose)
+                     {
+                        fprintf(stdout, "Time to close fitsfile '%s' = %f sec.\n", fhkey, PopTimer());
                      }
                   }
 
@@ -706,6 +754,11 @@ int fitsrw_closefptr(int verbose, fitsfile *fptr)
 
             if (IsWriteable(fpinfo.fhash))
             {
+               if (verbose)
+               {
+                  PushTimer();
+               }
+
                fits_write_chksum(fptr, &stat);
 
                if (stat)
@@ -715,6 +768,16 @@ int fitsrw_closefptr(int verbose, fitsfile *fptr)
                   fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
                   stat = 0;
                }
+
+               if (verbose)
+               {
+                  fprintf(stdout, "Time to write checksum on fitsfile '%s' = %f sec.\n", fpinfo.fhash, PopTimer());
+               }
+            }
+
+            if (verbose)
+            {
+               PushTimer();
             }
 
             fits_close_file(fptr, &stat);
@@ -729,8 +792,13 @@ int fitsrw_closefptr(int verbose, fitsfile *fptr)
             else
             {
                fits_get_errstatus(stat, cfitsiostat);
-               fprintf(stderr, "Closing fitsfile: error closing fitsfile '%s'.\n",  fpinfo.fhash);
+               fprintf(stderr, "Closing fitsfile: error closing fitsfile '%s'.\n", fpinfo.fhash);
                fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
+            }
+
+            if (verbose)
+            {
+               fprintf(stdout, "Time to close fitsfile '%s' = %f sec.\n", fpinfo.fhash, PopTimer());
             }
             
             hcon_remove(gFFiles, fpinfo.fhash);
@@ -804,6 +872,11 @@ void fitsrw_closefptrs(int verbose)
 
                   if (IsWriteable(onefile))
                   {
+                     if (verbose)
+                     {
+                        PushTimer();
+                     }
+
                      fits_write_chksum(*pfptr, &stat);
 
                      if (stat)
@@ -813,8 +886,18 @@ void fitsrw_closefptrs(int verbose)
                         fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
                         stat = 0;
                      }
+
+                     if (verbose)
+                     {
+                        fprintf(stdout, "Time to write checksum on fitsfile '%s' = %f sec.\n", onefile, PopTimer());
+                     }
                   }
 
+                  if (verbose)
+                  {
+                     PushTimer();
+                  }
+                  
                   fits_close_file(*pfptr, &stat);
 
                   if (stat == 0)
@@ -829,6 +912,11 @@ void fitsrw_closefptrs(int verbose)
                      fits_get_errstatus(stat, cfitsiostat);
                      fprintf(stderr, "Closing all fitsfiles: error closing fitsfile '%s'.\n", onefile);
                      fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
+                  }
+
+                  if (verbose)
+                  {
+                     fprintf(stdout, "Time to close fitsfile '%s' = %f sec.\n", onefile, PopTimer());
                   }
                }
                else
