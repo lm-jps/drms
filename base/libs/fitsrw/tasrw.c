@@ -16,7 +16,7 @@
 #endif
 
 /* Our current set up is 1024 maximum open files per process (/usr/include/linux/limits.h) */
-#define MAXFFILES 16
+#define MAXFFILES 300
 
 typedef CFITSIO_IMAGE_INFO TASRW_FilePtrInfo_t;
 
