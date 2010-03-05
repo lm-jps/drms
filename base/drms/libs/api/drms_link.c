@@ -197,7 +197,48 @@ int drms_setlink_dynamic(DRMS_Record_t *rec, const char *linkname,
     return DRMS_ERROR_INVALIDLINKTYPE;
 }
 
+int drms_link_set(const char *linkname, DRMS_Record_t *from, DRMS_Record_t *to, long long recnum)
+{
+   int status;
+   DRMS_Link_t *link = NULL;
 
+   if ((link = hcon_lookup_lower(&from->links, linkname)) == NULL)
+   {
+      status = DRMS_ERROR_UNKNOWNLINK;
+   }
+   else
+   {
+      if (link->info->type == DYNAMIC_LINK)
+      {
+         DRMS_Type_t pidxtypes[DRMS_MAXPRIMIDX]; 
+         DRMS_Type_Value_t pidxvalues[DRMS_MAXPRIMIDX] = {0}; 
+         int npidx = to->seriesinfo->pidx_num;
+         int ikey;
+         DRMS_Keyword_t *pkey = NULL;
+         
+         memset(pidxtypes, 0, sizeof(DRMS_Type_t) * DRMS_MAXPRIMIDX);
+
+         for (ikey = 0; ikey < npidx; ikey++)
+         {
+            pkey = to->seriesinfo->pidx_keywords[ikey];
+            pidxtypes[ikey] = pkey->info->type;
+            pidxvalues[ikey] = pkey->value;
+         }
+
+         status = drms_setlink_dynamic(from, linkname, pidxtypes, pidxvalues);
+      }
+      else if (link->info->type == STATIC_LINK && recnum >= 0)
+      {
+         status = drms_setlink_static(from, linkname, recnum);
+      }
+      else
+      {
+         status = DRMS_ERROR_INVALIDDATA;
+      }
+   }
+
+   return status;
+}
 
 /* Return the record pointed to by a named link in the given record. */
 DRMS_Record_t *drms_link_follow(DRMS_Record_t *rec, const char *linkname, 
