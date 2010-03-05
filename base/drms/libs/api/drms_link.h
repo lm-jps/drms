@@ -96,7 +96,9 @@ static inline int drms_link_ranksort(const void *he1, const void *he2)
    @param to The "target" record (this is a record from the linked series that will provide keywords or segments
    that will be visible from the source record)
    @param recnum This parameter is used only if the link being resolved is of type ::STATIC_LINK.
-   @return A DRMS error code (as defined in drms_statuscodes.h). Possible 
+   @return A DRMS error code (as defined in drms_statuscodes.h). Possible errors include DRMS_ERROR_UNKNOWNLINK
+   (if linkname is not a known link) and, more generally, DRMS_ERROR_INVALIDDATA (if a parameter's value
+   is not expected - for example, a negative recnum).
 
 */
 
