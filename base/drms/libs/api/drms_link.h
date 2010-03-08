@@ -20,7 +20,7 @@ int drms_setlink_static(DRMS_Record_t *rec, const char *linkname,
 			long long recnum);
 int drms_setlink_dynamic(DRMS_Record_t *rec, const char *linkname, 
 			 DRMS_Type_t *types, DRMS_Type_Value_t *values);
-int drms_link_set(const char *linkname, DRMS_Record_t *from, DRMS_Record_t *to);
+int drms_link_set(const char *linkname, DRMS_Record_t *baserec, DRMS_Record_t *supplementingrec);
 
 
 static inline int drms_link_ranksort(const void *he1, const void *he2)
@@ -81,21 +81,21 @@ static inline int drms_link_ranksort(const void *he1, const void *he2)
 */
 
 /**
-   @fn int drms_link_set(const char *linkname, DRMS_Record_t *from, DRMS_Record_t *to)
-   Wrapper function to facilitate the setting of links between the record of a series and the record
-   of a target series. In order for linked keywords and segments to be visible from a record from the 
+   @fn int int drms_link_set(const char *linkname, DRMS_Record_t *baserec, DRMS_Record_t *supplementingrec)
+   Wrapper function to facilitate the setting of links between the record of a base series and the record
+   of a series that will provide supplementary information. In order for linked keywords and segments 
+   to be visible from a record from the 
    series containing the link, the link must be resolved. This function establishes this connection
-   between a single record in the series containing the link, and a single record in the target series.
-   After this link has been established, code that has a handle to the @a source record has access
-   to keyword values and segments in the @a target record. There are two types of links - dynamic links
+   between a single record in the series containing the link, and a single record in the supplementary series.
+   After this link has been established, code that has a handle to the @a baserec record has access
+   to keyword values and segments in the @a supplementingrec record. There are two types of links - dynamic links
    (::DYNAMIC_LINK) and static links (::STATIC_LINK). This code will set either kind. The @a linkname parameter
    is used to locate a link structure, which then indicates which type the link is.
 
-   @param linkname Name of the link described by the series definition to resolve
-   @param from The @a source record (this is a record from the series that contains the link)
-   @param to The "target" record (this is a record from the linked series that will provide keywords or segments
-   that will be visible from the source record)
-   @param recnum This parameter is used only if the link being resolved is of type ::STATIC_LINK.
+   @param linkname Name of the link described by the series definition that will be resolved
+   @param baserec The base record from the series that contains the link to the supplementary series
+   @param supplementingrec The record from the linked series that will provide keywords or segments
+   that will be visible from the base record
    @return A DRMS error code (as defined in drms_statuscodes.h). Possible errors include DRMS_ERROR_UNKNOWNLINK
    (if linkname is not a known link) and, more generally, DRMS_ERROR_INVALIDDATA (if a parameter's value
    is not expected - for example, a negative recnum).

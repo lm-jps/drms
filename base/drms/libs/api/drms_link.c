@@ -197,12 +197,12 @@ int drms_setlink_dynamic(DRMS_Record_t *rec, const char *linkname,
     return DRMS_ERROR_INVALIDLINKTYPE;
 }
 
-int drms_link_set(const char *linkname, DRMS_Record_t *from, DRMS_Record_t *to)
+int drms_link_set(const char *linkname, DRMS_Record_t *baserec, DRMS_Record_t *supplementingrec)
 {
    int status;
    DRMS_Link_t *link = NULL;
 
-   if ((link = hcon_lookup_lower(&from->links, linkname)) == NULL)
+   if ((link = hcon_lookup_lower(&baserec->links, linkname)) == NULL)
    {
       status = DRMS_ERROR_UNKNOWNLINK;
    }
@@ -212,24 +212,35 @@ int drms_link_set(const char *linkname, DRMS_Record_t *from, DRMS_Record_t *to)
       {
          DRMS_Type_t pidxtypes[DRMS_MAXPRIMIDX]; 
          DRMS_Type_Value_t pidxvalues[DRMS_MAXPRIMIDX] = {0}; 
-         int npidx = to->seriesinfo->pidx_num;
+         int npidx = supplementingrec->seriesinfo->pidx_num;
          int ikey;
-         DRMS_Keyword_t *pkey = NULL;
+         DRMS_Keyword_t *pkey;
+         DRMS_Keyword_t *keyinstance ;
          
          memset(pidxtypes, 0, sizeof(DRMS_Type_t) * DRMS_MAXPRIMIDX);
 
          for (ikey = 0; ikey < npidx; ikey++)
          {
-            pkey = to->seriesinfo->pidx_keywords[ikey];
+            pkey = supplementingrec->seriesinfo->pidx_keywords[ikey];
             pidxtypes[ikey] = pkey->info->type;
-            pidxvalues[ikey] = pkey->value;
+
+            /* pkey is a template keyword, so its value is meaningless. You need to
+             * get the value from supplementingrec. */
+            keyinstance = drms_keyword_lookup(supplementingrec, pkey->info->name, 0);
+            
+            if (!keyinstance)
+            {
+               status = DRMS_ERROR_INVALIDKEYWORD;
+            }
+
+            pidxvalues[ikey] = keyinstance->value;
          }
 
-         status = drms_setlink_dynamic(from, linkname, pidxtypes, pidxvalues);
+         status = drms_setlink_dynamic(baserec, linkname, pidxtypes, pidxvalues);
       }
       else if (link->info->type == STATIC_LINK)
       {
-         status = drms_setlink_static(from, linkname, to->recnum);
+         status = drms_setlink_static(baserec, linkname, supplementingrec->recnum);
       }
       else
       {
