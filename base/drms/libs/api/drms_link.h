@@ -98,7 +98,7 @@ static inline int drms_link_ranksort(const void *he1, const void *he2)
    that will be visible from the base record
    @return A DRMS error code (as defined in drms_statuscodes.h). Possible errors include DRMS_ERROR_UNKNOWNLINK
    (if linkname is not a known link) and, more generally, DRMS_ERROR_INVALIDDATA (if a parameter's value
-   is not expected - for example, a negative recnum).
+   is not expected).
 
 */
 
