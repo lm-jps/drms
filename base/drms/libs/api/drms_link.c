@@ -197,7 +197,7 @@ int drms_setlink_dynamic(DRMS_Record_t *rec, const char *linkname,
     return DRMS_ERROR_INVALIDLINKTYPE;
 }
 
-int drms_link_set(const char *linkname, DRMS_Record_t *from, DRMS_Record_t *to, long long recnum)
+int drms_link_set(const char *linkname, DRMS_Record_t *from, DRMS_Record_t *to)
 {
    int status;
    DRMS_Link_t *link = NULL;
@@ -227,9 +227,9 @@ int drms_link_set(const char *linkname, DRMS_Record_t *from, DRMS_Record_t *to, 
 
          status = drms_setlink_dynamic(from, linkname, pidxtypes, pidxvalues);
       }
-      else if (link->info->type == STATIC_LINK && recnum >= 0)
+      else if (link->info->type == STATIC_LINK)
       {
-         status = drms_setlink_static(from, linkname, recnum);
+         status = drms_setlink_static(from, linkname, to->recnum);
       }
       else
       {

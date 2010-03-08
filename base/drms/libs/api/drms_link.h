@@ -20,7 +20,7 @@ int drms_setlink_static(DRMS_Record_t *rec, const char *linkname,
 			long long recnum);
 int drms_setlink_dynamic(DRMS_Record_t *rec, const char *linkname, 
 			 DRMS_Type_t *types, DRMS_Type_Value_t *values);
-int drms_link_set(const char *linkname, DRMS_Record_t *from, DRMS_Record_t *to, long long recnum);
+int drms_link_set(const char *linkname, DRMS_Record_t *from, DRMS_Record_t *to);
 
 
 static inline int drms_link_ranksort(const void *he1, const void *he2)
@@ -81,7 +81,7 @@ static inline int drms_link_ranksort(const void *he1, const void *he2)
 */
 
 /**
-   @fn int drms_link_set(const char *linkname, DRMS_Record_t *from, DRMS_Record_t *to, long long recnum)
+   @fn int drms_link_set(const char *linkname, DRMS_Record_t *from, DRMS_Record_t *to)
    Wrapper function to facilitate the setting of links between the record of a series and the record
    of a target series. In order for linked keywords and segments to be visible from a record from the 
    series containing the link, the link must be resolved. This function establishes this connection
