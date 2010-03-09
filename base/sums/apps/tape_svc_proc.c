@@ -627,10 +627,17 @@ KEY *readdo_1(KEY *params) {
   user = getkey_str(params, "username");
   uid = getkey_uint64(params, "uid");
   write_log("!!TEMP setsumoffcnt uid=%lu\n", uid); //!!TEMP
-  offptr = setsumoffcnt(&offcnt_hdr, uid, 0);
+  if(!(offptr = setsumoffcnt(&offcnt_hdr, uid, 0))) {
+    write_log("**Err: setsumoffcnt() in readdo_1() has malloc error for uid=%lu\n", uid);
+    rinfo = 1;  /* give err status back to original caller */
+    send_ack();
+    free(user);
+    return((KEY *)1);  /* error. nothing to be sent */
+  }
   /* get tapeid for the offline storage units (su) */
   /* Only queue one request for any duplicate tapeid/tapefilenum */
   reqcnt = getkey_int(params, "reqcnt"); /* #of su in this request */
+  //NOTE: the reqcnt was verified at the SUM_get() call
   for(i=0; i < reqcnt; i++) {
     sprintf(tmpname, "online_status_%d", i);
     cptr = GETKEY_str(params, tmpname);
