@@ -269,6 +269,7 @@ TQ *q_entry_make(KEY *list, SUMID_t uid, char *tapeid, int filenum,
   CLIENT *client;
   TQ *p = (TQ *)malloc(sizeof(TQ));
   if(p != NULL) {
+    //write_log("%lu malloc in q_entry_make\n", p); //!!TEMP
     p->next = NULL;
     p->uid = uid;
     p->ds_index = dsix;

@@ -494,6 +494,7 @@ tapeprog_1(rqstp, transp)
         }
         if(current_client_destroy) clnt_destroy(current_client);
         if(poff) {		/* free this q entry */
+          //write_log("%lu free at line 497\n", poff); //!!TEMP
           free(poff->tapeid);
           free(poff->username);
           freekeylist((KEY **)&poff->list);
@@ -573,6 +574,7 @@ tapeprog_1(rqstp, transp)
         if(errorcase == 0) break;	/* end while(p=q_wrt_front) */
       }
       if(poffrd) {		/* free this q entry */
+        //write_log("%lu free at line 577\n", poffrd); //!!TEMP
         free(poffrd->tapeid);
         free(poffrd->username);
         freekeylist((KEY **)&poffrd->list);
@@ -580,6 +582,7 @@ tapeprog_1(rqstp, transp)
         poffrd = NULL;
       }
       if(poffwt) {		/* free this q entry */
+        //write_log("%lu free at line 585\n", poffwt); //!!TEMP
         free(poffwt->tapeid);
         free(poffwt->username);
         freekeylist((KEY **)&poffwt->list);
