@@ -101,6 +101,7 @@ int main(int argc, char *argv[])
   else if(pid == 0) {                   /* this is the beloved child */
     printf("execvp of tape_svc\n");
     args[0] = "tape_svc";
+    //args[0] = "valgrind --leak-check=full tape_svc";
     if(tapeoffline) { 		/* overrides any sim flg */
       args[1] = "-o";
       args[2] = dbname;
