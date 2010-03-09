@@ -1052,7 +1052,7 @@ sub log_update {
       $b_drv0->configure(-background => 'green');
       if($playback) { last; }
     }
-    elsif(/^\*\*\*Dr0:rd:/) {
+    elsif(/\*\*Dr0:rd:/) {
       $tcmd0->insert('end', $_);
       $b_drv0->configure(-background=>'grey');
       if($playback) { last; }
@@ -1066,7 +1066,7 @@ sub log_update {
       $b_drv1->configure(-background => 'green');
       if($playback) { last; }
     }
-    elsif(/^\*\*\*Dr1:rd:/) {
+    elsif(/\*\*Dr1:rd:/) {
       $tcmd1->insert('end', $_);
       $b_drv1->configure(-background=>'grey');
       if($playback) { last; }
@@ -1080,7 +1080,7 @@ sub log_update {
       $b_drv2->configure(-background => 'green');
       if($playback) { last; }
     }
-    elsif(/^\*\*\*Dr2:rd:/) {
+    elsif(/\*\*Dr2:rd:/) {
       $tcmd2->insert('end', $_);
       $b_drv2->configure(-background=>'grey');
       if($playback) { last; }
@@ -1094,7 +1094,7 @@ sub log_update {
       $b_drv3->configure(-background => 'green');
       if($playback) { last; }
     }
-    elsif(/^\*\*\*Dr3:rd:/) {
+    elsif(/\*\*Dr3:rd:/) {
       $tcmd3->insert('end', $_);
       $b_drv3->configure(-background=>'grey');
       if($playback) { last; }
@@ -1108,7 +1108,7 @@ sub log_update {
       $b_drv4->configure(-background => 'green');
       if($playback) { last; }
     }
-    elsif(/^\*\*\*Dr4:rd:/) {
+    elsif(/\*\*Dr4:rd:/) {
       $tcmd4->insert('end', $_);
       $b_drv4->configure(-background=>'grey');
       if($playback) { last; }
@@ -1122,7 +1122,7 @@ sub log_update {
       $b_drv5->configure(-background => 'green');
       if($playback) { last; }
     }
-    elsif(/^\*\*\*Dr5:rd:/) {
+    elsif(/\*\*Dr5:rd:/) {
       $tcmd5->insert('end', $_);
       $b_drv5->configure(-background=>'grey');
       if($playback) { last; }
@@ -1136,7 +1136,7 @@ sub log_update {
       $b_drv6->configure(-background => 'green');
       if($playback) { last; }
     }
-    elsif(/^\*\*\*Dr6:rd:/) {
+    elsif(/\*\*Dr6:rd:/) {
       $tcmd6->insert('end', $_);
       $b_drv6->configure(-background=>'grey');
       if($playback) { last; }
@@ -1150,7 +1150,7 @@ sub log_update {
       $b_drv7->configure(-background => 'green');
       if($playback) { last; }
     }
-    elsif(/^\*\*\*Dr7:rd:/) {
+    elsif(/\*\*Dr7:rd:/) {
       $tcmd7->insert('end', $_);
       $b_drv7->configure(-background=>'grey');
       if($playback) { last; }
@@ -1164,7 +1164,7 @@ sub log_update {
       $b_drv8->configure(-background => 'green');
       if($playback) { last; }
     }
-    elsif(/^\*\*\*Dr8:rd:/) {
+    elsif(/\*\*Dr8:rd:/) {
       $tcmd8->insert('end', $_);
       $b_drv8->configure(-background=>'grey');
       if($playback) { last; }
@@ -1178,7 +1178,7 @@ sub log_update {
       $b_drv9->configure(-background => 'green');
       if($playback) { last; }
     }
-    elsif(/^\*\*\*Dr9:rd:/) {
+    elsif(/\*\*Dr9:rd:/) {
       $tcmd9->insert('end', $_);
       $b_drv9->configure(-background=>'grey');
       if($playback) { last; }
@@ -1192,7 +1192,7 @@ sub log_update {
       $b_drv10->configure(-background => 'green');
       if($playback) { last; }
     }
-    elsif(/^\*\*\*Dr10:rd:/) {
+    elsif(/\*\*Dr10:rd:/) {
       $tcmd10->insert('end', $_);
       $b_drv10->configure(-background=>'grey');
       if($playback) { last; }
@@ -1206,7 +1206,7 @@ sub log_update {
       $b_drv11->configure(-background => 'green');
       if($playback) { last; }
     }
-    elsif(/^\*\*\*Dr11:rd:/) {
+    elsif(/\*\*Dr11:rd:/) {
       $tcmd11->insert('end', $_);
       $b_drv11->configure(-background=>'grey');
       if($playback) { last; }
