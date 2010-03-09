@@ -1,7 +1,9 @@
 # This file identifies that this CVS working directory contains Stanford-specific project configuration and make files.
-# It also contains Stanford-specific DEFAULT configuration. To override this, use config.local.
+# It also contains Stanford-specific DEFAULT configuration, for both
+# the base and proj directories
+#To override this, use config.local.
 
-# Stanford third-party libraries
+# Stanford third-party libraries used by base
     POSTGRES_LIB = pq
     CFITSIO_LIB = cfitsio
 
@@ -24,6 +26,19 @@
       POSTGRES_LIBS = /usr/lib
       CFITSIO_INCS = /home/jsoc/include
       CFITSIO_LIBS = /home/jsoc/lib/linux-x86_64
+    endif
+
+# Stanford third-party libraries used by the project directories
+    FFTW3_LIB = fftw3
+
+    ifeq ($(JSOC_MACHINE), linux_ia32)
+      FFTW_INCS = /home/jsoc/include
+      FFTW_LIBS = /home/jsoc/lib/linux-ia32
+    endif
+
+    ifeq ($(JSOC_MACHINE), linux_x86_64)
+      FFTW_INCS = /home/jsoc/include
+      FFTW_LIBS = /home/jsoc/lib/linux-x86_64
     endif
 
 # Try to specialize for non-default machines

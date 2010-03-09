@@ -4,6 +4,7 @@ $(PROJOBJDIR):
 	+@[ -d $@/libs/dr ] || mkdir -p $@/libs/dr
 	+@[ -d $@/libs/dsputil ] || mkdir -p $@/libs/dsputil
 	+@[ -d $@/libs/gapfiller ] || mkdir -p $@/libs/gapfiller
+	+@[ -d $@/libs/interpolate ] || mkdir -p $@/libs/interpolate
 	+@[ -d $@/libs/json ] || mkdir -p $@/libs/json
 	+@[ -d $@/datacapture/apps ] || mkdir -p $@/datacapture/apps
 	+@[ -d $@/dsdsmigr/apps ] || mkdir -p $@/dsdsmigr/apps
