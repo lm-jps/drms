@@ -383,12 +383,39 @@ int DoIt(void)
         { // export of as-is records that need staging, get paths to export files with list in index.txt
         fprintf(fp, "jsoc_export_as_is_sock ds='%s' requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n", dataset, requestid, method, protocol, filenamefmt); 
         }
-      else if (strcmp(process, "hg_patch") == 0)
+      else if (strncmp(process, "hg_patch",8) == 0)
         {
         // Heliographic Patches tracked requested.  Delete the message below when implemented.
-        fprintf(stderr,"XX jsoc_export_manage FAIL NOT implemented yet, requestid=%s, process=%s, protocol=%s, method=%s\n",
-          requestid, process, protocol, method);
-        drms_setkey_int(export_log, "Status", 4);
+        char *hgparams, *p = index(process, ',');
+        if (p)
+          {
+          *p = '\0';
+          hgparams = strdup(p+1);
+          for (p=hgparams; *p; p++)
+            if (*p == ',') *p = ' ';
+          fprintf(fp, "/home/phil/cvs/JSOC/bin/linux_x86_64/hg_patch_sock %s in='%s' log=hg_patch.log %s\n", hgparams, dataset, dbids);
+          if (strncasecmp(protocol,"fits",4)==0)
+            { // export as full FITS files
+            char *cparms, *p = index(protocol, ',');
+            if (p)
+              {
+              *p = '\0';
+              cparms = p+1;
+              }
+            else
+              cparms = "**NONE**";
+            fprintf(fp, "jsoc_export_as_fits_sock reqid='%s' expversion=%s rsquery='@hg_patch.log' path=$REQDIR ffmt='%s' method='%s' protocol='%s' cparms='%s' %s\n",
+              requestid, PACKLIST_VER, filenamefmt, method, protocol, cparms,  dbids);
+            }
+          else
+            fprintf(fp, "jsoc_export_as_is_sock ds='@hg_patch.log' requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n", requestid, method, protocol, filenamefmt); 
+          }
+        else
+          {  // no hg_patch params present
+          fprintf(stderr,"XX jsoc_export_manage FAIL NOT implemented yet, requestid=%s, process=%s, protocol=%s, method=%s\n",
+            requestid, process, protocol, method);
+          drms_setkey_int(export_log, "Status", 4);
+          }
         }
       else if (strcmp(process, "su_export") == 0 && strcmp(protocol,"as-is")==0)
         { // Use special program for Storage Unit exports.
@@ -439,7 +466,8 @@ int DoIt(void)
       drms_close_record(export_rec, DRMS_INSERT_RECORD);
   
       // SU now contains both qsub script and drms_run script, ready to execute and lock the record.
-      sprintf(command,"qsub -q x.q,o.q,j.q -v %s "
+      //sprintf(command,"qsub -q x.q,o.q,j.q -v %s "
+      sprintf(command,"qsub -q j.q -v %s "
   	" -o /home/jsoc/exports/tmp/%s.runlog "
   	" -e /home/jsoc/exports/tmp/%s.runlog "
   	"  %s/%s.qsub ",
