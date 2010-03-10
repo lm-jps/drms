@@ -280,7 +280,7 @@ TIME timenow()
 
 SUM_t *my_sum=NULL;
 
-SUM_info_t *drms_get_suinfo(long long sunum)
+SUM_info_t *drms_get_suinfo(long long sunum, int * sums_status)
   {
   int status;
   if (my_sum && my_sum->sinfo->sunum == sunum)
@@ -290,9 +290,11 @@ SUM_info_t *drms_get_suinfo(long long sunum)
     if ((my_sum = SUM_open(NULL, NULL, printkerr)) == NULL)
       {
       printkerr("drms_open: Failed to connect to SUMS.\n");
+      *sums_status = 1;
       return(NULL);
       }
     }
+
   if (status = SUM_info(my_sum, sunum, printkerr))
     {
     printkerr("Fail on SUM_info, status=%d\n", status);
@@ -544,10 +546,12 @@ int DoIt(void)
   /*  op == exp_su - export Storage Units */
   if (strcmp(op, kOpExpSu) == 0)
     {
-    char *this_sunum, *sunumlist, *sunumlistptr;
+    char *this_sunum, *sunumlisttk, *sunumlistptr;
+    //char *this_sunum, *sunumlist, *sunumlistptr;
     long long sunum;
     int count;
     int status=0;
+    int sums_status = 0; //ISS
     int all_online;
 
     export_series = kExportSeriesNew;
@@ -555,14 +559,15 @@ int DoIt(void)
     size=0;
     all_online = 1;
     count = 0;
-    sunumlist = strdup(in);
+    char *sunumlistfree=strdup(sunumlist);
+    sunumlisttk = sunumlistfree;
 
     char onlinestat[128];
     int dirsize;
     char supath[DRMS_MAXPATHLEN];
     char yabuff[64];
 
-    while (this_sunum = strtok_r(sunumlist, ",", &sunumlistptr))
+    while (this_sunum = strtok_r(sunumlisttk, ",", &sunumlistptr))
       {
       SUM_info_t *sinfo;
       TIME expire;
@@ -572,8 +577,8 @@ int DoIt(void)
       snprintf(supath, sizeof(supath), "NA");
 
       sunum = atoll(this_sunum);
-      sunumlist = NULL;
-      sinfo = drms_get_suinfo(sunum);
+      sunumlisttk=NULL;
+      sinfo = drms_get_suinfo(sunum, &sums_status); //ISS
       if (!sinfo)
          {
          *onlinestat = 'I';
@@ -624,14 +629,28 @@ int DoIt(void)
          count += 1;
          }
       }
-
+    free(sunumlistfree);
     expsucount = count;
 
     if (count==0)
       JSONDIE("There are no files in this RecordSet");
 
     // Do quick export if possible
-    if (strcmp(method,"url_quick")==0 && strcmp(protocol,"as-is")==0  && all_online)
+    /* Even if a quick export is NOT possible, VSO wants to see json returned with the status
+     * for each sunum originally requested. Even if SUMS is down (in which case, sums_status == 1
+     * for each sunum) they want this json. Currently, the only time dodataobj == 1 is when VSO calls 
+     * jsoc_fetch. So eventually we might need to modify this a little. 
+     *
+     * If SUMS is down, and the jsoc_fetch request did NOT originate from VSO, no json is generated,
+     * and jsoc_fetch returns with an error, generating appropriate json.
+     */
+    if (sums_status == 1 && !dodataobj)
+    {
+       /* SUMS is down! Stop here - don't start a new export request (which will likely fail). */
+       JSONDIE("SUMS is down.");
+    }
+
+    if (strcmp(method,"url_quick")==0 && strcmp(protocol,"as-is")==0  && (all_online || dodataobj))
       {
       if (dojson)
         {
@@ -689,7 +708,10 @@ int DoIt(void)
         json_insert_pair_into_object(jroot, kArgProtocol, json_new_string(strval));
         free(strval);
         json_insert_pair_into_object(jroot, "wait", json_new_number("0"));
-        json_insert_pair_into_object(jroot, "status", json_new_number("0"));
+        //ISS -- added sums_status
+        char sums_status_str[256]; //ISS
+        sprintf(sums_status_str, "%d", sums_status); //ISS
+        json_insert_pair_into_object(jroot, "status", json_new_number(sums_status_str)); //ISS
         json_tree_to_string(jroot,&json);
         printf("Content-type: application/json\n\n");
         printf("%s\n",json);
@@ -715,19 +737,24 @@ int DoIt(void)
         }
       if (my_sum)
         SUM_close(my_sum,printkerr);
-      return(0);
+
+      if (!dodataobj || (sums_status == 1 || all_online))
+      {
+         /* If not a VSO request, we're done. If a VSO request, done if all online, or if SUMS is down. 
+          * Otherwise, continue below and start a new request for the items not online. */
+         return(0);
+      }
       }
 
     // Must do full export processing
 
     // Get RequestID
-    {
+   
     FILE *fp = popen("/home/phil/cvs/JSOC/bin/linux_ia32/GetJsocRequestID", "r");
     if (fscanf(fp, "%s", new_requestid) != 1)
       JSONDIE("Cant get new RequestID");
     pclose(fp);
     requestid = new_requestid;
-    }
 
     now = timenow();
 
@@ -771,6 +798,7 @@ check for requestor to be valid remote DRMS site
   /*  op == exp_request  */
   else if (strcmp(op,kOpExpRequest) == 0) 
     {
+    int sums_status = 0;  //ISS
     int status=0;
     int segcount = 0;
     int irec;
@@ -868,7 +896,7 @@ check for requestor to be valid remote DRMS site
       while (seg = drms_record_nextseg(rec, &segp, 1))
         {
         DRMS_Record_t *segrec = seg->record;
-        SUM_info_t *sinfo = drms_get_suinfo(segrec->sunum);
+        SUM_info_t *sinfo = drms_get_suinfo(segrec->sunum, &sums_status); //ISS
         if (!sinfo)
           JSONDIE2("Bad sunum in a record in RecordSet: ", dsquery);
   	if (strcmp(sinfo->online_status,"N") == 0)
