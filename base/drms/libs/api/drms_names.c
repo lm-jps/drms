@@ -1611,7 +1611,7 @@ static int sql_primekey_index_set(IndexRangeSet_t *rs, DRMS_Keyword_t *keyword,
 {
   char *p=*query;
   DRMS_Type_t datatype;
-  DRMS_Type_Value_t base, step;
+  DRMS_Type_Value_t base, step, tmpval;
   double dbase;
   double dstep;
   int drmsstat = DRMS_SUCCESS;
@@ -1649,16 +1649,18 @@ static int sql_primekey_index_set(IndexRangeSet_t *rs, DRMS_Keyword_t *keyword,
      dbase = 0.0;
   }
 
-  base.double_val = dbase;
-  drms_convert(datatype, &base, DRMS_TYPE_DOUBLE, &base);
+  base.string_val = NULL;
+  tmpval.double_val = dbase;
+  drms_convert(datatype, &base, DRMS_TYPE_DOUBLE, &tmpval);
 
   if (drms_ismissing_double(dstep))
   {
      dstep = 1.0;
   }
 
-  step.double_val = dstep;
-  drms_convert(datatype, &step, DRMS_TYPE_DOUBLE, &step);
+  step.string_val = NULL;
+  tmpval.double_val = dstep;
+  drms_convert(datatype, &step, DRMS_TYPE_DOUBLE, &tmpval);
 
   do {
     p += sprintf(p,"( ");
