@@ -1,5 +1,7 @@
 #!/usr/bin/perl -w 
 
+# In config.local, __DEFS__ section must precede __MAKE__ section 
+
 use constant kSTATUSOK => 0;
 use constant kSTATUSCONF => 1;
 
@@ -7,13 +9,19 @@ use constant kUNKSECTION => 0;
 use constant kDEFSSECTION => 1;
 use constant kMAKESECTION => 2;
 
-use constant kCONFIGFILE => "config.local";
 use constant kCUSTMK => "custom.mk";
+use constant kPROJTGTS => "projtgts.mk";
+use constant kPROJRULES => "projRules.mk";
 
 my($line);
 my($section);
 my($status);
 my($tmp);
+my($tmpa);
+my($tmpb);
+my($locopen);
+my($beginning);
+my($locdir);
 my($varname);
 my($mach);
 my($varvalu);
@@ -22,16 +30,23 @@ my(%machmaps) = ();
 
 $status = kSTATUSOK;
 $section = kUNKSECTION;
-$tmp = kCONFIGFILE;
+$tmp = $ARGV[0];
+$locdir = $ARGV[1];
+$tmpa = kPROJTGTS;
+$tmpb = kPROJRULES;
+
 if (open(CONFLOC, "<$tmp"))
 {
    $tmp = kCUSTMK;
-   if (!open(CUSTMK, ">>$tmp"))
+   if (!open(CUSTMK, ">>$locdir/$tmp"))
    {
       print STDERR "Can't open file '$tmp' for writing.\n"
    }
    else
    {
+      $locopen = 0;
+      $beginning = 1;
+
       while (defined($line = <CONFLOC>))
       {
          chomp($line);
@@ -58,6 +73,16 @@ if (open(CONFLOC, "<$tmp"))
          }
          elsif ($section == kMAKESECTION)
          {
+            if (!$locopen)
+            {
+               if (!open(PROJTGTS, ">$locdir/$tmpa") || !open(PROJRULES, ">$locdir/$tmpb"))
+               {
+                  print STDERR "Can't open file '$tmpa' or '$tmpb' for writing.\n"
+               }
+               
+               $locopen = 1;
+            }
+
             $mach = "";
 
             if ($line =~ /\s*(\S+)\s+(\S+)/)
@@ -91,6 +116,21 @@ if (open(CONFLOC, "<$tmp"))
                   print CUSTMK "$varname =  \n";
                }
             }
+            elsif ($line =~ /\s*projdir\s+(\S+)/i)
+            {
+               $varvalu = $1;
+
+               # Create the entries for the projtgts.mk file
+               if ($beginning)
+               {
+                  print PROJTGTS "\$(PROJOBJDIR):\n";
+                  $beginning = 0;
+               }
+
+               print PROJTGTS "+@[ -d $@/$varvalu ] || mkdir -p $@/$varvalu\n";
+               print PROJRULES "dir	:= \$(d)/$varvalu\n";
+               print PROJRULES "-include	\$(SRCDIR)/\$(dir)/Rules.mk\n";
+            }
             else
             {
                print STDERR "Invalid line '$line' in configuration file.\n";
@@ -117,6 +157,9 @@ if (open(CONFLOC, "<$tmp"))
             $status = kSTATUSCONF;
          }
       }
+
+      close(PROJTGTS);
+      close(PROJRULES);
 
       # Write out machine-specific key-value pairs
       my(%map);

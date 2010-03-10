@@ -1,7 +1,5 @@
 #! /bin/csh -f
 
-if (-e custom.mk) rm custom.mk
-
 # set up $JSOC_MACHINE
 set JSOC_MACHINE = `build/jsoc_machine.csh`
 echo "Machine type is $JSOC_MACHINE"
@@ -158,14 +156,6 @@ if ($CHKLIBS == "no") then
 	cd ..
 	echo "done"
 	echo
-       
-        # run moreconfigure.pl - this script is written in perl because it is easier to do the compiler detection 
-        # in perl. It also reads suflag.txt (if it exists) to set the default Stanford values for certain make variables
-
-        ./moreconfigure.pl -fcustom.mk
-
-	echo "done"
-	echo
 
 	# generate links for DSDS/SOI dynamic libraries - only do this if 
 	# user's environment has access to /home/soi/CM
@@ -179,7 +169,38 @@ if ($CHKLIBS == "no") then
 	    endif
 	endif
 
+	echo "done"
+	echo
+
         # Site Localization
+
+        # Path to the configuration file - at some point, make this an argument to the configure script
+        set conflocal = "config.local"
+        set LOCALIZATIONDIR = `perl -n -e 'if ($_ =~ /^LOCALIZATIONDIR\s+(.+)/) { print $1; }' $conflocal`
+
+        if ($LOCALIZATIONDIR == "") then
+            set LOCALIZATIONDIR = ${PWD}/localization
+        endif
+
+        # Eventually, dump all these generated files into a user-specified location.
+        # This script will need to read the config.local file to get the 
+        # localization directory. Otherwise, just use JSOC/localization as the default.
+        # We should put custom.mk in the localization directory too.
+        if (!(-d ${LOCALIZATIONDIR})) then
+            mkdir ${LOCALIZATIONDIR}
+            if ($? != 0) then
+                echo "Error creating localization directory."
+            endif
+        endif
+        
+        if (-e ${LOCALIZATIONDIR}/custom.mk) then
+            rm ${LOCALIZATIONDIR}/custom.mk
+        endif
+
+        # run moreconfigure.pl - this script is written in perl because it is easier to do the compiler detection 
+        # in perl. It also reads suflag.txt (if it exists) to set the default Stanford values for certain make variables
+        ./moreconfigure.pl -f${LOCALIZATIONDIR}/custom.mk
+
         if (!(-e suflag.txt)) then
             if (!(-e config.local)) then
                 echo "Error: config.local not found. If you have a saved version of this"
@@ -195,9 +216,9 @@ if ($CHKLIBS == "no") then
                 echo "    update, ensure this file is in place."
                 exit 1;
             else
-                echo "CUSTOM_DEFINES = __LOCALIZED_DEFS__" >> custom.mk
+                echo "CUSTOM_DEFINES = __LOCALIZED_DEFS__" >> ${LOCALIZATIONDIR}/custom.mk
                 ./gen_init.csh
-                ./customizemake.pl
+                ./customizemake.pl ./config.local ${LOCALIZATIONDIR}
             endif
         else if (-e config.local) then
             # config.local is optional at Stanford, but it won't necessarily contain the same information that 
@@ -212,10 +233,10 @@ if ($CHKLIBS == "no") then
             # items included in config.local to override those defined in serverdefs.h, but not all
             # items need be specified in config.local.
             ./customizedefs.pl
-            echo "CUSTOM_DEFINES = __CUSTOMIZED_DEFS__" >> custom.mk
+            echo "CUSTOM_DEFINES = __CUSTOMIZED_DEFS__" >> ${LOCALIZATIONDIR}/custom.mk
 
             # update custom.mk with data from config.local
-            ./customizemake.pl
+            ./customizemake.pl ./config.local ${LOCALIZATIONDIR}
         endif
 
         echo "Setting links to headers..."

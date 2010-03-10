@@ -27,6 +27,7 @@ MAKETARGET = $(MAKE) --no-print-directory -C $@ -f $(WORKINGDIR)/Makefile \
 .PHONY: $(PROJOBJDIR) $(OBJDIR) 
 
 # Create the project-specific directories too, if they exist.
+# This supplementary target.mk files is part of the cvs tree
 -include $(WORKINGDIR)/proj/target.mk
 
 $(OBJDIR):
