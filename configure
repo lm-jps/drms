@@ -175,8 +175,12 @@ if ($CHKLIBS == "no") then
         # Site Localization
 
         # Path to the configuration file - at some point, make this an argument to the configure script
+        set LOCALIZATIONDIR = ""
         set conflocal = "config.local"
-        set LOCALIZATIONDIR = `perl -n -e 'if ($_ =~ /^LOCALIZATIONDIR\s+(.+)/) { print $1; }' $conflocal`
+
+        if (-e $conflocal) then
+            set LOCALIZATIONDIR = `perl -n -e 'if ($_ =~ /^LOCALIZATIONDIR\s+(.+)/) { print $1; }' $conflocal`
+        endif
 
         if ($LOCALIZATIONDIR == "") then
             set LOCALIZATIONDIR = ${PWD}/localization
