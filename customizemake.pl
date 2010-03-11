@@ -93,7 +93,7 @@ if (open(CONFLOC, "<$tmp"))
                # Create the entries for the projtgts.mk file
                if ($beginning)
                {
-                  print PROJTGTS "\proj2:\n";
+                  print PROJTGTS "proj2:\n";
                   $beginning = 0;
                }
 
