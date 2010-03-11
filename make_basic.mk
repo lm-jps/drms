@@ -7,8 +7,8 @@ DBNAME = POSTGRESQL
 # categories (like dbserver).
 MACHTYPE = $(shell $(SRCDIR)/getmachtype.pl)
 
-# This optional file has custom definitions created by the configure script
--include $(SRCDIR)/custom.mk
+# This optional file has custom definitions created by the configure script.
+-include $(LOCALIZATIONDIR)/custom.mk
 
 # If MACH was set when the make command was issued (eg., make MACH='N02'), then
 # use its value for the output/obj directory and use the custom.mk variables
