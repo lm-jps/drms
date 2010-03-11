@@ -49,6 +49,8 @@
 
 #define kNotSpecified	"Not Specified"
 
+#define kNoAsyncReq     "NOASYNCREQUEST"
+
 int dojson, dotxt, dohtml, doxml;
 
 static char x2c (char *what) {
@@ -747,6 +749,13 @@ int DoIt(void)
       }
 
     // Must do full export processing
+    // But don't do this if the user has signalled that s/he doesn't want to ever
+    // initiate a new asynchronous request, which requires a new requestid
+    if (strcmp(requestid, kNoAsyncReq) == 0)
+    {
+       /* We're done! */
+       return 0;
+    }
 
     // Get RequestID
    
