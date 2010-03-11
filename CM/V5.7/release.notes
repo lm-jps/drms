@@ -117,6 +117,7 @@ Lib DRMS verifies, upon reading them, that files haven't become corrupted.
 + The JSOC build version was added to the level-0 series.
 + Use the sdo namespace, instead of sdo_ground, now that the bird is flying.
 + Add a DATE keyword (indicates time of processing) to all FDS-related series.
++ Initial submission of farside project.
 
 BUG FIXES:
 + Fix a bug that was causing partial file writes of a small number of FITS files open 
