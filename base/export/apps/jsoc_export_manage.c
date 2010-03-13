@@ -393,7 +393,9 @@ int DoIt(void)
           hgparams = strdup(p+1);
           for (p=hgparams; *p; p++)
             if (*p == ',') *p = ' ';
-          fprintf(fp, "/home/phil/cvs/JSOC/bin/linux_x86_64/hg_patch_sock %s in='%s' log=hg_patch.log %s\n", hgparams, dataset, dbids);
+          fprintf(fp, "/home/phil/cvs/JSOC/bin/linux_x86_64/hg_patch_sock %s in='%s' requestid='%s' log=hg_patch.log %s\n", hgparams, dataset, requestid,  dbids);
+          fprintf(fp, "  set RUNSTAT = $status\n");
+          fprintf(fp, "if ($RUNSTAT == 0) then\n");
           if (strncasecmp(protocol,"fits",4)==0)
             { // export as full FITS files
             char *cparms, *p = index(protocol, ',');
@@ -404,17 +406,24 @@ int DoIt(void)
               }
             else
               cparms = "**NONE**";
-            fprintf(fp, "jsoc_export_as_fits_sock reqid='%s' expversion=%s rsquery='@hg_patch.log' path=$REQDIR ffmt='%s' method='%s' protocol='%s' cparms='%s' %s\n",
+            fprintf(fp, "  jsoc_export_as_fits_sock reqid='%s' expversion=%s rsquery='@hg_patch.log' path=$REQDIR ffmt='%s' method='%s' protocol='%s' cparms='%s' %s\n",
               requestid, PACKLIST_VER, filenamefmt, method, protocol, cparms,  dbids);
             }
           else
-            fprintf(fp, "jsoc_export_as_is_sock ds='@hg_patch.log' requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n", requestid, method, protocol, filenamefmt); 
+            {
+            fprintf(fp, "  jsoc_export_as_is_sock ds='@hg_patch.log' requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n", requestid, method, protocol, filenamefmt); 
+            }
+          fprintf(fp, "  set RUNSTAT = $status\n");
+          fprintf(fp, "endif\n");
           }
         else
           {  // no hg_patch params present
           fprintf(stderr,"XX jsoc_export_manage FAIL NOT implemented yet, requestid=%s, process=%s, protocol=%s, method=%s\n",
             requestid, process, protocol, method);
           drms_setkey_int(export_log, "Status", 4);
+          drms_close_record(export_rec, DRMS_FREE_RECORD);
+          fclose(fp);
+          continue;
           }
         }
       else if (strcmp(process, "su_export") == 0 && strcmp(protocol,"as-is")==0)
@@ -427,6 +436,7 @@ int DoIt(void)
           requestid, process, protocol, method);
         drms_setkey_int(export_log, "Status", 4);
         drms_close_record(export_rec, DRMS_FREE_RECORD);
+        fclose(fp);
         continue;
         }
 
