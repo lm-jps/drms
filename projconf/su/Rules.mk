@@ -27,6 +27,8 @@ dir	:= $(d)/lev1_aia
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/lev1_hmi
 -include		$(SRCDIR)/$(dir)/Rules.mk
+dir     := $(d)/mag
+-include                $(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/myproj
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/util
