@@ -5,7 +5,7 @@
 // #define DEBUG
 
 
-DRMS_Session_t *drms_connect(char *host)
+DRMS_Session_t *drms_connect(const char *host)
 {
   struct sockaddr_in server;
   struct hostent *he;
@@ -186,9 +186,9 @@ int drms_send_commandcode_noecho (int sockfd, int command) {
 }  
 
 #ifndef DRMS_CLIENT
-DRMS_Session_t *drms_connect_direct(char *dbhost, char *dbuser, 
-				    char *dbpasswd, char *dbname,
-				    char *sessionns)
+DRMS_Session_t *drms_connect_direct(const char *dbhost, const char *dbuser, 
+				    const char *dbpasswd, const char *dbname,
+				    const char *sessionns)
 {
   DRMS_Session_t *session;
 

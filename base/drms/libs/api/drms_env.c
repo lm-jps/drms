@@ -38,8 +38,8 @@ int drms_cache_init(DRMS_Env_t *env) {
   return 0;
 }
 
-DRMS_Env_t *drms_open (char *host, char *user, char *password, char *dbname,
-    char *sessionns) {
+DRMS_Env_t *drms_open (const char *host, const char *user, const char *password, const char *dbname,
+    const char *sessionns) {
      /*  NB: the parameters dbname & sessionns are only used if DRMS_CLIENT
 							     is not defined  */
   DRMS_Env_t *env; 

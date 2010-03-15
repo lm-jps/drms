@@ -41,7 +41,7 @@ int DoIt(void)
   {
   int status = 0;
   int i = 1;
-  char *rsname;
+  const char *rsname = NULL;
   char query[DRMS_MAXQUERYLEN];
   int want_path = cmdparams_get_int (&cmdparams, "P", NULL) != 0;
   int retrieve = cmdparams_get_int (&cmdparams, "p", NULL) != 0;

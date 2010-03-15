@@ -10,11 +10,11 @@
 #define kNOLOGSUDIR "NOLOGSUDIR"
 
 /** \brief Establish socket connection to server, receive from server session information*/
-DRMS_Session_t *drms_connect(char *host);
+DRMS_Session_t *drms_connect(const char *host);
 /** \brief Establish DB connection, initialize session information */
-DRMS_Session_t *drms_connect_direct(char *host, char *user, 
-				    char *passwd, char *dbname,
-				    char *sessionns);
+DRMS_Session_t *drms_connect_direct(const char *host, const char *user, 
+				    const char *passwd, const char *dbname,
+				    const char *sessionns);
 #ifdef DRMS_CLIENT
 /** \brief Server disconnects from DB. Client disconnects from server*/
 void drms_disconnect(DRMS_Env_t *env, int abort);

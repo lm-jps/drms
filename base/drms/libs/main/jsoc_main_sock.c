@@ -177,10 +177,10 @@ int JSOCMAIN_Init(int argc,
    /* DRMS Prolog */
    if (cmdparams_exists (&cmdparams, "DRMSSESSION")) {
       char filename_e[1024], filename_o[1024];
-      char *drmssession = cmdparams_get_str (&cmdparams, "DRMSSESSION", NULL);
-      char *jsoc_dbuser = cmdparams_get_str (&cmdparams, "JSOC_DBUSER", NULL);
-      char *jsoc_dbpasswd = cmdparams_get_str (&cmdparams, "JSOC_DBPASSWD", NULL);
-      char *jsoc_dbname = cmdparams_get_str (&cmdparams, "JSOC_DBNAME", NULL);
+      const char *drmssession = cmdparams_get_str (&cmdparams, "DRMSSESSION", NULL);
+      const char *jsoc_dbuser = cmdparams_get_str (&cmdparams, "JSOC_DBUSER", NULL);
+      const char *jsoc_dbpasswd = cmdparams_get_str (&cmdparams, "JSOC_DBPASSWD", NULL);
+      const char *jsoc_dbname = cmdparams_get_str (&cmdparams, "JSOC_DBNAME", NULL);
       drms_env = drms_open (drmssession, jsoc_dbuser, jsoc_dbpasswd, jsoc_dbname, NULL);
       if (drms_env == NULL) {
 	 fprintf (stderr, "Couldn't connect to DRMS.\n");
@@ -414,7 +414,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
 	     /*  drms_start_server - mimics initial code in drms_run script  */
 
 pid_t drms_start_server (int verbose, int dolog)  {
-  char *dbhost, *dbuser, *dbpasswd, *dbname, *sessionns;
+  const char *dbhost, *dbuser, *dbpasswd, *dbname, *sessionns;
   int retention, query_mem, server_wait;
   int archive;
   char drms_session[DRMS_MAXPATHLEN];

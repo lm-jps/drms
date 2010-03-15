@@ -1293,7 +1293,7 @@ static void QFree(void *data)
  * of if the query yields just one, unique record for the prime-key value.
  */
 DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, 
-					     char *recordsetname, 
+					     const char *recordsetname, 
 					     int retrieverecs, 
 					     LinkedList_t **llistout,
                                              char **allversout,
@@ -1904,7 +1904,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
   return NULL;
 }
 
-DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname, 
+DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, const char *recordsetname, 
 				    int *status)
 {
    char *allvers = NULL;
@@ -1912,7 +1912,7 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname,
 }
 
 DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env, 
-                                     char *recordsetname, 
+                                     const char *recordsetname, 
                                      int n,
                                      int *status)
 {

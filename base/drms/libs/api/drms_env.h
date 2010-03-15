@@ -35,7 +35,7 @@
    - Retrieve series schemas and link tables.
    - Build series templates and hastable over seriesnames, 
    - Initialize record cache and hash table. */
-DRMS_Env_t *drms_open(char *host, char *user, char *password, char *dbname, char *sessionns);
+DRMS_Env_t *drms_open(const char *host, const char *user, const char *password, const char *dbname, const char *sessionns);
 			    
 
 /* - If commit==1 then commit all modified records to the database.

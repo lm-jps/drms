@@ -53,10 +53,10 @@ typedef enum DRMS_RecChunking_enum DRMS_RecChunking_t;
    given in the argument "datasetname". The records are inserted into
    the record cache and marked read-only. */
 
-DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, char *recordsetname, 
+DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, const char *recordsetname, 
 				    int *status);
 DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env, 
-                                     char *recordsetname, 
+                                     const char *recordsetname, 
                                      int n,
                                      int *status);
 
