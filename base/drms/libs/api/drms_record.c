@@ -2714,7 +2714,12 @@ int drms_stage_records(DRMS_RecordSet_t *rs, int retrieve, int dontwait) {
                     rec->su = drms_su_lookup(rec->env, series, rec->sunum, &scon);
 
                     /* ART (2/11/2010) - Previously, the refcount was not incremented (I think this was a bug) */
-                    rec->su->refcount++;
+                    if (rec->su)
+                    {
+                       /* Invalid SUNUMs will result in a NULL su. These SUNUMs could have been deleted, 
+                        * because the series was deleted, or because the SUs expired. */
+                       rec->su->refcount++;
+                    }
                  }
               }
            }
