@@ -2905,7 +2905,6 @@ int drms_keyword_mapexport(DRMS_Keyword_t *key,
       char nameout[16];
 
       DRMS_KeyMap_t *map = NULL;
-      DRMS_KeyMap_t intmap;
       FILE *fptr = NULL;
       
       if (mapfile)
@@ -2913,9 +2912,11 @@ int drms_keyword_mapexport(DRMS_Keyword_t *key,
 	 fptr = fopen(mapfile, "r");
          if (fptr)
          {
-            if (drms_keymap_parsefile(&intmap, fptr))
+            map = drms_keymap_create();
+
+            if (!drms_keymap_parsefile(map, fptr))
             {
-               map = &intmap;
+               drms_keymap_destroy(&map);
             }
 
             fclose(fptr);
@@ -2960,6 +2961,11 @@ int drms_keyword_mapexport(DRMS_Keyword_t *key,
 		 key->info->name);
 	 stat = DRMS_ERROR_INVALIDDATA;
       }
+
+      if (map)
+      {
+         drms_keymap_destroy(&map);
+      }
    }
 
    return stat;  
@@ -2982,7 +2988,6 @@ int drms_keyword_mapimport(CFITSIO_KEYWORD *fitskey,
       char nameout[DRMS_MAXKEYNAMELEN];
       char *namelower = NULL;
       DRMS_KeyMap_t *map = NULL;
-      DRMS_KeyMap_t intmap;
       FILE *fptr = NULL;
 
       if (mapfile)
@@ -2990,9 +2995,11 @@ int drms_keyword_mapimport(CFITSIO_KEYWORD *fitskey,
 	 fptr = fopen(mapfile, "r");
          if (fptr)
          {
-            if (drms_keymap_parsefile(&intmap, fptr))
+            map = drms_keymap_create();
+
+            if (!drms_keymap_parsefile(map, fptr))
             {
-               map = &intmap;
+               drms_keymap_destroy(&map);
             }
 
             fclose(fptr);
@@ -3119,6 +3126,11 @@ int drms_keyword_mapimport(CFITSIO_KEYWORD *fitskey,
 		 "Could not determine internal DRMS keyword name for FITS name '%s'.\n", 
 		 fitskey->key_name);
 	 stat = DRMS_ERROR_INVALIDDATA;
+      }
+
+      if (map)
+      {
+         drms_keymap_destroy(&map);
       }
    }
 
