@@ -337,7 +337,8 @@ while (defined($asite = shift(@subdirs)))
       }
 
       # Validate tar file
-      $res = Validatetar(".tmp.tar", $sfilestart, $sfileend);
+      LogWrite($logfh, "Validating tar '$asite/.tmp.tar'.\n", 0);
+      $res = Validatetar(".tmp.tar", $sfilestart, $sfileend, $#totar + 1);
 
       if ($res == 0)
       {
@@ -346,12 +347,12 @@ while (defined($asite = shift(@subdirs)))
 
          $gzcmd = "$zipbin --best .tmp.tar";
 
-         LogWrite($logfh, "Gzipping '.tmp.tar' to '.tmp.tar.gz'\n", 0);
+         LogWrite($logfh, "Gzipping '$asite/.tmp.tar' to '$asite/.tmp.tar.gz'\n", 0);
 
          $res = system($gzcmd);
          ($res == 0) || die("gzip cmd '$gzcmd' failed to run properly.\n"); 
          
-         LogWrite($logfh, "Moving '.tmp.tar.gz' to '$tarfilename'.\n", 0);
+         LogWrite($logfh, "Moving '$asite/.tmp.tar.gz' to '$asite/$tarfilename'.\n", 0);
          if (!move(".tmp.tar.gz", $tarfilename))
          {
             LogWrite($logfh, "Unable to move .tmp.tar.gz to $tarfilename.\n", 1);
@@ -360,7 +361,7 @@ while (defined($asite = shift(@subdirs)))
          # Remove sql files just tarred.
          while (defined($fullpath = shift(@totar)))
          {
-             LogWrite($logfh, "Deleting tarred sql file: $fullpath.\n");
+             LogWrite($logfh, "Deleting tarred sql file: $asite/$fullpath.\n", 0);
              unlink($fullpath);
          }
       }
@@ -413,7 +414,7 @@ sub RunTar
 
 sub Validatetar
 {
-   my($tarname, $sfilestart, $sfileend) = @_;
+   my($tarname, $sfilestart, $sfileend, $scount) = @_;
    my($res);
    my($error);
 
@@ -423,7 +424,7 @@ sub Validatetar
 
    if ($error != 0)
    {
-      LogWrite($logfh, "ERROR executing '$tarbin tf $tarname', error '$error'.\n");
+      LogWrite($logfh, "ERROR executing '$tarbin tf $tarname', error '$error'.\n", 1);
       return $error;
    } 
    else 
@@ -452,19 +453,19 @@ sub Validatetar
 
       if ($sfilestart != $tfilestart)
       {
-         LogWrite($logfh, "SQL logfile counter minimum ($tfilestart) does not match expected value ($sfilestart).\n");
+         LogWrite($logfh, "SQL logfile counter minimum ($tfilestart) does not match expected value ($sfilestart).\n", 1);
          return -1;
       }
 
       if ($sfileend != $tfileend)
       {
-         LogWrite($logfh, "SQL logfile counter maximum ($tfileend) does not match expected value ($sfileend).\n");
+         LogWrite($logfh, "SQL logfile counter maximum ($tfileend) does not match expected value ($sfileend).\n", 1);
          return -2;
       }
 
-      if ($tcount != ($sfileend - $sfilestart + 1))
+      if ($tcount != $scount)
       {
-         LogWrite($logfh, "Number of SQL logfiles in tar ($tcount) does not match the expected number ($sfileend - $sfilestart + 1).\n");
+         LogWrite($logfh, "Number of SQL logfiles in tar ($tcount) does not match the expected number ($scount).\n", 1);
          return -3;
       }
    }
