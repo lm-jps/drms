@@ -18,3 +18,4 @@ $(PROJOBJDIR):
 	+@[ -d $@/globalhs/apps/src/ ] || mkdir -p $@/globalhs/apps/src
 	+@[ -d $@/rings/apps/ ] || mkdir -p $@/rings/apps
 	+@[ -d $@/mag/apps/ ] || mkdir -p $@/mag/apps
+	+@[ -d $@/mag/pfss/apps ] || mkdir -p $@/mag/pfss/apps
