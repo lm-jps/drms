@@ -19,13 +19,12 @@ CmdParams_t cmdparams;
 int main(int argc, char *argv[])
 {
 
-  long long sunum = 0; //20451940;
-  int  retention  = 60;
-  char *sudir=(char *) NULL;
-  char *seriesname=(char *) NULL;
-  SUM_t *sum=NULL;
-  DRMS_SumRequest_t *request;
-  int status = 0;
+  long long sunum        =   0; //20451940;
+  int       retention    =   60;
+  char     *sudir        =   (char *) NULL;
+  char     *seriesname   =   (char *) NULL;
+  SUM_t    *sum          =   NULL;
+  int       status       =   0;
 
   if ((status = cmdparams_parse(&cmdparams, argc, argv)) < CMDPARAMS_SUCCESS)
   {
@@ -40,17 +39,6 @@ int main(int argc, char *argv[])
 
   fprintf(stdout,"sudir=%s\n",sudir);
   fprintf(stdout,"seriesname=%s\n",seriesname);
-  XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
-
-  request->opcode = DRMS_SUMPUT;   //Not required
-  request->dontwait = 0;           //Not required
-  request->reqcnt = 1;
-  request->dsname = seriesname;
-  request->group  = 0;
-  request->mode   = TEMP + TOUCH;
-  request->tdays  = retention;     //seriesinfo->retention;
-  request->sunum[0] = sunum;
-  request->sudir[0] = sudir;
 
   if ((sum = SUM_open(NULL, NULL, printkerr)) == NULL)
   {
@@ -59,42 +47,33 @@ int main(int argc, char *argv[])
     return -2;
   }
 
-  sum->dsname = request->dsname;
-  sum->group = request->group;
-  sum->mode = request->mode;
-  sum->tdays = request->tdays;
-  sum->reqcnt = request->reqcnt;
-  sum->history_comment = request->comment;
+  sum->dsname = seriesname;
+  sum->group =  0;
+  sum->mode =   TEMP + TOUCH;
+  sum->tdays =  retention;
+  sum->reqcnt = 1;
+  sum->history_comment = "";
 
-  sum->reqcnt = request->reqcnt;
   sum->dsix_ptr[0] = sunum;
   sum->wd[0] = sudir;
-fprintf(stderr,"Before SUM_put call\n");
+
   /* Make RPC call to the SUM server. */
-  if ((status = SUM_put(sum, printf)))
-  {
+  if ((status = SUM_put(sum, printf))) {
     fprintf(stderr,"ERROR: SUM_put RPC call failed with "
                "error code %d\n", status);
     return -3;
   } else {
-    fprintf(stdout,"DRMS_SUMPUT:%lld OK\n", sunum);
+    fprintf(stdout,"DRMS_SUMPUT:%d OK\n", sunum);
     fflush(stderr);
     fflush(stdout);
   }
 
-  if (seriesname)
-  {
+  if (seriesname) {
      free(seriesname);
   }
   
-  if (sudir)
-  {
+  if (sudir) {
      free(sudir);
-  }
-
-  if (request)
-  {
-     free(request);
   }
 
   SUM_close(sum,printf);
