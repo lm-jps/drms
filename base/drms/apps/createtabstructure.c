@@ -700,27 +700,39 @@ static int CreateSQL(FILE *fptr, DRMS_Env_t *env,
          /* override archive, retention, and tapegroup if present */
          if (!err)
          {
-            err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "archive", archive, where, whereout);
-         }
-
-         if (!err)
-         {
-            err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "retention", retention, where, whereout);
-         }
-
-         if (!err)
-         {
-            err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "tapegroup", tapegroup, where, whereout);
-         }
-
-         if (!err)
-         {
-            char *buf = malloc(strlen(owner) + 3);
-            if (buf)
+            if (archive)
             {
-               snprintf(buf, strlen(owner) + 3, "\'%s\'", owner);
-               err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "owner", buf, where, whereout);
-               free(buf);
+               err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "archive", archive, where, whereout);
+            }
+         }
+
+         if (!err)
+         {
+            if (retention)
+            {
+               err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "retention", retention, where, whereout);
+            }
+         }
+
+         if (!err)
+         {
+            if (tapegroup)
+            {
+               err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "tapegroup", tapegroup, where, whereout);
+            }
+         }
+
+         if (!err)
+         {
+            if (owner)
+            {
+               char *buf = malloc(strlen(owner) + 3);
+               if (buf)
+               {
+                  snprintf(buf, strlen(owner) + 3, "\'%s\'", owner);
+                  err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "owner", buf, where, whereout);
+                  free(buf);
+               }
             }
          }
       }
