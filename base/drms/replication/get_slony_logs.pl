@@ -72,11 +72,11 @@ while (<SETTINGS>) {
                 $scp_cmd=$line[1];
         } elsif ( $line[0] eq "ssh_cmd" ) {
                 $ssh_cmd=$line[1];
-        } elsif ( $line[0] eq "rmt_hostname" ) {
+        } elsif ( $line[0] eq "kRSServer" ) {
                 $rmt_hostname=$line[1];
-        } elsif ( $line[0] eq "ssh_rmt_port" ) {
+        } elsif ( $line[0] eq "kRSPort" ) {
                 $ssh_rmt_port=$line[1];
-        } elsif ( $line[0] eq "rmt_user" ) {
+        } elsif ( $line[0] eq "kRSUser" ) {
                 $user=$line[1];
         } elsif ( $line[0] eq "rmt_slony_dir" ) {
                 $rmt_slony_dir=$line[1];

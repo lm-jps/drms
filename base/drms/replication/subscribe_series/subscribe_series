@@ -139,7 +139,7 @@ function ManagedDownload() {
 
     # First, compare file sizes (cheap/easy way to see if the file has been completely downloaded,
     # I'm sure some kind of hash would be better).
-    srcsz=`SSH "$webdb_user@$webdb_ip" 'stat -c%s '"$src"`
+    srcsz=`SSH "$kRSUser@$kRSServer" 'stat -c%s '"$src"`
     if [ $? -ne 0 ]
     then
         # Some error calling ssh
@@ -172,13 +172,13 @@ function ManagedDownload() {
                
                 if [ $attempt -eq 1 ]
                 then
-                    `SCP "$webdb_user@$webdb_ip:$src $tgt"`
+                    `SCP "$kRSUser@$kRSServer:$src $tgt"`
                 else
-                    `SSH "$webdb_user@$webdb_ip" 'dd if='"$src"' of='"$srcbak"' ibs='"$tgtsz"' skip=1'`
+                    `SSH "$kRSUser@$kRSServer" 'dd if='"$src"' of='"$srcbak"' ibs='"$tgtsz"' skip=1'`
                     if [ $? -eq 0 ]
                     then
                         # Copy $srcbak locally
-                        `SCP "$webdb_user@$webdb_ip:$srcbak $tgtbak"`
+                        `SCP "$kRSUser@$kRSServer:$srcbak $tgtbak"`
                     fi
 
                     if [ $? -eq 0 ]
@@ -202,7 +202,7 @@ function ManagedDownload() {
 
     # Clean up remote and local backup files
     # The remote file may not exist, but the -f flag will suppress the error
-    `SSH "$webdb_user@$webdb_ip" 'rm -f '"$srcbak"`
+    `SSH "$kRSUser@$kRSServer" 'rm -f '"$srcbak"`
     if [ -f $tgtbak ]
     then
         logwrite "Cleaning up local backup (partial) file '$tgtbak'"
@@ -551,7 +551,7 @@ then
     MV -f temp.tgr "$triggerfile"
 
 
-    logwrite "Copying $triggerfile to $webdb_user@$webdb_ip:$webdb_dir" nl
+    logwrite "Copying $triggerfile to $kRSUser@$kRSServer:$kRSTriggerDir" nl
 
 # XXX - ART
 # What we want to do is to use file locking so that the server
@@ -560,7 +560,7 @@ then
 # scp it, then chgrp/chmod it (this script should do the
 # chgrp/chmod).
     chmod g+w "$triggerfile"
-    SCP -p "$triggerfile" "$webdb_user@$webdb_ip:$webdb_dir/."
+    SCP -p "$triggerfile" "$kRSUser@$kRSServer:$kRSTriggerDir/."
 
     logwrite "Removing $triggerfile" nl
 
@@ -586,13 +586,13 @@ then
 	    exit
 	fi		
 
-        result=`SSH "$webdb_user@$webdb_ip" 'ls '"'$webdb_dir'"`;
+        result=`SSH "$kRSUser@$kRSServer" 'ls '"'$kRSTriggerDir'"`;
 
-        ## error on SSH; couldn't find $webdb_dir                                                 
+        ## error on SSH; couldn't find $kRSTriggerDir                                                 
         error=`echo $result | grep -i error`;
         if [ ! -z "$error" ]
         then
-            logecho "Couldn't find $webdb_dir directory ... exiting";
+            logecho "Couldn't find $kRSTriggerDir directory ... exiting";
             exit 1;
         fi
 
@@ -619,13 +619,13 @@ then
     unset result
 
 # Checking trigger file for failure code
-    result=`SSH $webdb_user@$webdb_ip 'cat '"'$webdb_dir/$node.subscribe_series.sqldone'"`;
+    result=`SSH $kRSUser@$kRSServer 'cat '"'$kRSTriggerDir/$node.subscribe_series.sqldone'"`;
 
 ## Check for error in remote ssh command; trigger file not found or failed SSH
     error=`echo $result | grep -i error`;
     if [ ! -z $error ] ;
     then
-        logecho "Fail cat $webdb_dir/$node.subscribe_series.sqldone"
+        logecho "Fail cat $kRSTriggerDir/$node.subscribe_series.sqldone"
         exit 1;
     fi
 
@@ -636,7 +636,7 @@ then
 	logecho "ERROR: One or more of the schemas did not exist on the webdb"
 	logecho "ERROR: ABORTING!" nl
 	logwrite "Removing sqldone trigger file from webdb"
-        SSH "$webdb_user@$webdb_ip" 'rm -f '"'$webdb_dir/$node.subscribe_series.sqldone'"
+        SSH "$kRSUser@$kRSServer" 'rm -f '"'$kRSTriggerDir/$node.subscribe_series.sqldone'"
 	logwrite "Restarting the ingestion script"
 	logwrite "Removing ingestion.die in $ingestion_path" nl
 	RM -f "$ingestion_path/get_slony_logs.$node.die"
@@ -651,11 +651,11 @@ unset error
 unset result
 
 # sqldone file found, transferring sql file to local machine
-logwrite "Copying and removing $node.sql.tar.gz file from $webdb_user@$webdb_ip"
+logwrite "Copying and removing $node.sql.tar.gz file from $kRSUser@$kRSServer"
 
 success=true
 
-ManagedDownload "$webdb_dir/$node.sql.tar.gz" "./$node.sql.tar.gz"
+ManagedDownload "$kRSTriggerDir/$node.sql.tar.gz" "./$node.sql.tar.gz"
 if [ $? -eq 0 ]
 then
     SetState "dlsql_comp"
@@ -674,7 +674,7 @@ fi
 # If the user killed this script while downloading was happening
 # then the following line will not be executed, and 
 # downloading can resume from where it left off.
-SSH "$webdb_user@$webdb_ip" 'rm -f '"'$webdb_dir/$node.sql.tar.gz'"
+SSH "$kRSUser@$kRSServer" 'rm -f '"'$kRSTriggerDir/$node.sql.tar.gz'"
 if [ $? -ne 0 ]
 then
     # Fatal error - if the .sql file doesn't get cleaned up
@@ -812,15 +812,15 @@ if [ $success == "true" ]
 then
 	# SQL applictaion was a success, appending [success true] to the cfg file on webdb
 	logwrite "SQL application successful, appending [success=true] to the cfg file on webdb"
-	SSH "$webdb_user@$webdb_ip" 'echo '"success true"' >> '"'$webdb_dir/$node.subscribe_series.cfg'"
+	SSH "$kRSUser@$kRSServer" 'echo '"success true"' >> '"'$kRSTriggerDir/$node.subscribe_series.cfg'"
 else
 	# SQL application was unsuccessful, appending [success false] to the cfg file on webdb
 	logwrite "SQL application unsuccessful, appending [success=false] to the cfg file on webdb"
         logecho "Failure to apply SQL file '$node.subscribe_series.sql' from server: ABORTING!"
-	SSH "$webdb_user@$webdb_ip" 'echo '"success false"' >> '"'$webdb_dir/$node.subscribe_series.cfg'"
+	SSH "$kRSUser@$kRSServer" 'echo '"success false"' >> '"'$kRSTriggerDir/$node.subscribe_series.cfg'"
 fi
 
-SSH "$webdb_user@$webdb_ip" 'cp -f '"'$webdb_dir/$node.subscribe_series.cfg'"' '"'$webdb_dir/$node.subscribe_series.sqlapplied'"
+SSH "$kRSUser@$kRSServer" 'cp -f '"'$kRSTriggerDir/$node.subscribe_series.cfg'"' '"'$kRSTriggerDir/$node.subscribe_series.sqlapplied'"
 
 unset result
 unset check
@@ -844,15 +844,15 @@ then
 	    exit 1;
 	fi		
 
-        result=`SSH "$webdb_user@$webdb_ip" 'ls '"'$webdb_dir'"`;
+        result=`SSH "$kRSUser@$kRSServer" 'ls '"'$kRSTriggerDir'"`;
 
         logwrite "result is $result"
 
-        ## Check for error in remote ssh command; Couldn't find $webdb_dir directory
+        ## Check for error in remote ssh command; Couldn't find $kRSTriggerDir directory
         error=`echo $result | grep -i error`;
         if [ ! -z $error ] ;
         then
-            logecho "Couldn't find $webdb_dir directory or broken SSH ... exiting"
+            logecho "Couldn't find $kRSTriggerDir directory or broken SSH ... exiting"
             exit 1;
         fi
 
@@ -894,8 +894,8 @@ then
         logwrite "Unable to remove die file '$ingestion_path/get_slony_logs.$node.die'"
         success=false
     else
-        logwrite "Cleaning up the done file '$webdb_dir/$node.subscribe_series.done' (which the server cleanup file wrote)" nl
-        SSH "$webdb_user@$webdb_ip" 'rm -f '"'$webdb_dir/$node.subscribe_series.done'"
+        logwrite "Cleaning up the done file '$kRSTriggerDir/$node.subscribe_series.done' (which the server cleanup file wrote)" nl
+        SSH "$kRSUser@$kRSServer" 'rm -f '"'$kRSTriggerDir/$node.subscribe_series.done'"
         
         if [ $? -eq 0 ]
         then
