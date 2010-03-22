@@ -50,7 +50,7 @@ failure=0
 logwrite "Setting failure to 0"
 
 # Check to see if the schema "admin" and the table "admin.ns" exist
-# check=`psql -p $pg_port -h $pg_host -U $pg_user -c '\dt admin.*' $pg_dbname| grep admin.ns`	
+# check=`psql -p $SLAVEPORT -h $SLAVEHOST -U $REPUSER -c '\dt admin.*' $SLAVEDBNAME| grep admin.ns`	
 	
 #if [ "$check" == "" ]
 #then
@@ -85,8 +85,8 @@ exec < $input_file
 		echo
 		IFS="$oldIFS"
 		logwrite "pg_schema is [$pg_schema]"
-		logwrite "Executing [psql -p $pg_port -h $pg_host -U $pg_user -c '\dt '$pg_schema'.*' $pg_dbname| grep drms_series]"
-		check=`psql -p $pg_port -h $pg_host -U $pg_user -c '\dt '$pg_schema'.*' $pg_dbname| grep drms_series`	
+		logwrite "Executing [psql -p $SLAVEPORT -h $SLAVEHOST -U $REPUSER -c '\dt '$pg_schema'.*' $SLAVEDBNAME| grep drms_series]"
+		check=`psql -p $SLAVEPORT -h $SLAVEHOST -U $REPUSER -c '\dt '$pg_schema'.*' $SLAVEDBNAME| grep drms_series`	
 		logwrite "Result is [$check]" nl
 
 		if [ "$check" == "" ]
@@ -182,9 +182,9 @@ do
 	if [ "$check" == "" ]
 	then
 		# If first time finding this schema, execute ./createns
-		logwrite "Executing [./createns ns=${schema[$counter]} nsgroup=user dbusr=$pg_user >> $triggerdir/$node.${schema[$counter]}.createns.sql]"
+		logwrite "Executing [./createns ns=${schema[$counter]} nsgroup=user dbusr=$REPUSER >> $triggerdir/$node.${schema[$counter]}.createns.sql]"
 		#echo "Createns >>" #remove
-		./createns ns=${schema[$counter]} nsgroup=user dbusr=$pg_user > $triggerdir/$node.${schema[$counter]}.createns.sql
+		./createns ns=${schema[$counter]} nsgroup=user dbusr=$REPUSER > $triggerdir/$node.${schema[$counter]}.createns.sql
 		#echo "<<Createns" #remove
 		# echo ${schema[$counter]} >> $triggerdir/$node.createns.sql
 	fi
@@ -223,9 +223,9 @@ else
 fi
 
 # Execute sdo_slony1_dump.sh
-logwrite "Executing: [ ./sdo_slony1_dump.sh $pg_dbname jsoc $pg_port $new_site_bool ${schema_table[@]} ]"
+logwrite "Executing: [ ./sdo_slony1_dump.sh $SLAVEDBNAME jsoc $SLAVEPORT $new_site_bool ${schema_table[@]} ]"
 #echo "sdo_slony1_dump.sh >>" #remove
-./sdo_slony1_dump.sh $pg_dbname jsoc $pg_port $new_site_bool ${schema_table[@]} >> $triggerdir/$node.subscribe_series.sql 2> /dev/null
+./sdo_slony1_dump.sh $SLAVEDBNAME jsoc $SLAVEPORT $new_site_bool ${schema_table[@]} >> $triggerdir/$node.subscribe_series.sql 2> /dev/null
 #cp $triggerdir/$node.subscribe_series.sql $triggerdir/tempcheck.sql #debug
 #echo "<< sdo_slony1_dump.sh" #remove
 #echo ${table[@]} >> $triggerdir/$node.subscribe_series.sql
