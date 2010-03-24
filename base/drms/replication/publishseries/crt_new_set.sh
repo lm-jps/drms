@@ -26,6 +26,11 @@ node 2 admin conninfo = 'dbname=$SLAVEDBNAME host=$SLAVEHOST port=$SLAVEPORT use
 # ----
 # Node 2 subscribes set 1
 # ----
-EXECUTE SCRIPT ( SET ID = 1, FILENAME = '/usr/local/pgsql/slony_init/test.sql', EVENT NODE = 1);
 
+drop set (id = 2, origin=1);
+drop set (id = 3, origin=1);
+create set (id = 2, origin=1, comment='add extra tables');
+set add table ( set id=2, origin=1, id=18, fully qualified name = 'su_rsb.gong_rdvfitsc_dp');
+set add table ( set id=2, origin=1, id=19, fully qualified name = 'su_rsb.gong_rdvpspec_dp');
+set add table ( set id=2, origin=1, id=20, fully qualified name = 'su_rsb.gong_rdvtrack_dp');
 _EOF_
