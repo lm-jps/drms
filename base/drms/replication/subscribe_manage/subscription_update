@@ -1,12 +1,9 @@
 #!/bin/bash
 pidfile=$0.pid
-config_file=../etc/subscription_manager.cfg
-
-. $config_file
 
 #--------------------------------------------------------------------
 # Subscription Update
-# Syntax: ./subscription_update <node name> <new site (true/false)> <Config File>
+# Syntax: ./subscription_update <server configuration file> <node name> <new site (true/false)> <Config File>
 #--------------------------------------------------------------------
 
 #-------------------------------------------------------------------------
@@ -14,18 +11,22 @@ config_file=../etc/subscription_manager.cfg
 #-------------------------------------------------------------------------
 if [ $# -eq 6 ]
 then
-	node=$1
-	new_site=$2
-	archive=$3
-	retention=$4
-	tapegroup=$5
-	input_file=$6
+        config_file=$1
+	node=$2
+	new_site=$3
+	archive=$4
+	retention=$5
+	tapegroup=$6
+	input_file=$7
 	usertables=$tables_dir/$node.lst
 else
-        error="ERROR: Usage: $0 <node> <new subscription, true/false> <subscription information file>"
+        error="ERROR: Usage: $0 <server configuration file> <node> <new subscription, true/false> <subscription information file>"
         echo $error
 	exit
 fi
+
+. $config_file
+
 logfile=../log/$0.$node.log
 
 #--------------------------------------------------------------------
@@ -187,7 +188,7 @@ echo "$subscribers_dir/$node.new	$newtablefile" >> $parser_config
 #-------------------------------------------------------------------------
 # Execute the sql_gen script [./sql_gen $node $new_site $input_file]"
 #-------------------------------------------------------------------------
-logwrite "Executing the sql_gen script [./sql_gen $node $new_site $input_file]" nl
-./sql_gen $node $new_site $archive $retention $tapegroup $input_file &
+logwrite "Executing the sql_gen script [./sql_gen $config_file $node $new_site $input_file]" nl
+./sql_gen $config_file $node $new_site $archive $retention $tapegroup $input_file &
 logwrite "$0 finished"
 

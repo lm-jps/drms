@@ -1,23 +1,24 @@
 #!/bin/bash
 pidfile=$0.pid
-config_file=../etc/subscription_manager.cfg
-
-. $config_file
 
 #-------------------------------------------------------------------------
 # syntax check
 #-------------------------------------------------------------------------
 if [ $# -eq 4 ]
 then
-	node=$1
-	new_site=$2
-	success=$3
-	input_file=$4
+        config_file=$1
+	node=$2
+	new_site=$3
+	success=$4
+	input_file=$5
 else
-	error="ERROR: Usage: $0 <node> <new_site> <success of sql application, true/false> <subscription information file>"
+	error="ERROR: Usage: $0 <server configuration file> <node> <new_site> <success of sql application, true/false> <subscription information file>"
 	echo $error
 	exit
 fi
+
+. $config_file
+
 logfile=../log/$0.$node.log
 
 #--------------------------------------------------------------------
