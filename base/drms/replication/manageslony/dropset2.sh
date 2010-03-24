@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Environment variables are exported by slony.env
+# Environment variables are in the repserver.cfg file.
 
 # When we run publish_series.sh, we create a second replication
 # set that contains just the table that we want to add to the 
@@ -20,6 +20,17 @@
 # id 2 is the temporary one and it is the one we want to drop.  
 # The "origin" refers to which node is the master. Since we have no plans on changing 
 # master to hmidb2 ever, this should always be 1
+
+if [ $# -eq 1 ]
+then
+    # Must always be a config file
+    conf="$1"
+else
+    echo "ERROR: Usage: $0 <server configuration file>"
+    exit 1
+fi
+
+. "$conf"
 
 slonik <<_EOF_
 

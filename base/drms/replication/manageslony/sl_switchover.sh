@@ -1,8 +1,22 @@
 #!/bin/bash
 
-# Load the env, may want to pass location via params later.
-env_file="../etc/slony.env"
-. $env_file
+if [ $# -eq 1 ]
+then
+    # Must always be a config file
+    conf="$1"
+else
+    echo "ERROR: Usage: $0 <server configuration file>"
+    exit 1
+fi
+
+. "$conf"
+
+swfile=$kMSWorkDir/switchfile.cfg
+
+if [ -e $swfile]
+then
+    . "$swfile"
+fi
 
 # Set the origin and dest based on current origin and dest.
 if [[ "$SWITCHED" ]] && [[ "${SWITCHED}" == "1" ]]; then
@@ -61,9 +75,9 @@ echo 'switchover complete';
 _EOF_
 
 if [[ -z "$SWITCHED" ]]; then
-    echo "# SWITCHED stores whether or not the master and slave have been switched." >> $env_file
-    echo "# 0 for false, 1 for true." >> $env_file
-    echo "export SWITCHED=1" >> $env_file
+    echo "# SWITCHED stores whether or not the master and slave have been switched." >> $swfile
+    echo "# 0 for false, 1 for true." >> $swfile
+    echo "SWITCHED=1" >> $swfile
 elif [[ "${SWITCHED}" == "1" ]]; then
     switch="0"
     notswitch="1"
@@ -72,4 +86,4 @@ else
     notswitch="0"
 fi
 
-sed -i "s/SWITCHED=${notswitch}/SWITCHED=${switch}/g" $env_file
+sed -i "s/SWITCHED=${notswitch}/SWITCHED=${switch}/g" $swfile
