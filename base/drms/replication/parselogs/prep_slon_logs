@@ -26,6 +26,8 @@ use FindBin qw($Bin);
 use lib "$Bin/../";
 use toolbox;
 use File::Basename;
+use FileHandle;
+use Fcntl ':flock';
 
 #--|----------------------------------------------
 #--| Program Variables
@@ -45,7 +47,7 @@ my $prntLine = 0;
 #--|----------------------------------------------
 #--| Syntax Check
 #--|----------------------------------------------
-if ($#ARGV != 2) {
+if ($#ARGV != 3) {
 	prnt_syntax();
 	exit;
 }
@@ -53,7 +55,36 @@ else {
 	$srcFile = $ARGV[0];
 	$cfgFile = $ARGV[1];
 	$logFile = $ARGV[2];
+        $serverlockdir = $ARGV[3];
 	$srcFN = basename($srcFile);
+}
+
+# Acquire file lock
+my $plockfh = FileHandle->new(">$serverlockdir/serieslist.txt");
+
+my $natt = 0;
+while (1)
+{
+   if (flock($plockfh, LOCK_EX|LOCK_NB)) 
+   {
+      print "Created serieslist-lock file '$kServerLockDir/serieslist.txt'.\n";
+      last;
+   }
+   else
+   {
+      if ($natt < 10)
+      {
+         print "subscription_cleanup is currently modifying files - waiting for completion.\n";
+         sleep 1;
+      }
+      else
+      {
+         print "couldn't obtain serieslist lock after $natt tries; bailing.\n";
+         exit(1);
+      }
+   }
+
+   $natt++;
 }
 
 #--|----------------------------------------------
@@ -172,6 +203,9 @@ else {
 	}
 	close CFG;
 }
+
+flock($plockfh, LOCK_UN);
+$plockfh->close;
 
 #--|----------------------------------------------------------
 #--| ################## Subroutines ######################
