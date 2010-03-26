@@ -340,6 +340,22 @@ function CheckSchema () {
 }
 
 #--------------------------------------------------------------------
+# syntax check
+#--------------------------------------------------------------------
+if [ $# -eq 3 ]
+then
+	config_file="$1"
+	subscribe_file="$2"
+	rsFile="$3"
+else
+	error="ERROR: Usage: $0 <configuration file> <subscribe request file> <ssh-agent_rs file>"
+	echo $error
+	exit
+fi
+
+. "$config_file"
+
+#--------------------------------------------------------------------
 # Setting up the log
 #--------------------------------------------------------------------
 
@@ -380,23 +396,7 @@ else
   fi
 fi
 
-
-
 logwrite "Starting $0 from $scriptdir" nl
-
-#--------------------------------------------------------------------
-# syntax check
-#--------------------------------------------------------------------
-if [ $# -eq 3 ]
-then
-	config_file="$1"
-	subscribe_file="$2"
-	rsFile="$3"
-else
-	error="ERROR: Usage: $0 <configuration file> <subscribe request file> <ssh-agent_rs file>"
-	echo $error
-	exit
-fi
 
 # XXX - ART
 # Make this relative to working dir
@@ -465,8 +465,6 @@ then
 else
   delseriesprog="$kDeleteSeriesProgram"
 fi
-
-. "$config_file"
 
 
 #--------------------------------------------------------------------

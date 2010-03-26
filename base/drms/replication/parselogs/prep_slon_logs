@@ -17,6 +17,9 @@
 #--| Author:        |  Kevin Kempter
 #--------------------------------------------------------------
 
+# Race Conditions:
+#   with - subscription_manager
+#   resource of contention - the *.lst files
 
 use locale;
 use FindBin qw($Bin);
@@ -131,6 +134,8 @@ else {
 						if ($srcLine =~ /sequenceSetValue_offline/) {
 							$prntLine = 0;
 						}
+# RACE CONDITION - between this script and subscription_manage, who is writing the file in $line[1].
+                                                # $line[1] is the *.lst file
 						if (! open (TL, "$line[1]") ) {
 							print "Error opening file [$line[1]] - Aborting\n";
 							exit 1;

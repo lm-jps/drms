@@ -109,7 +109,12 @@ unless (flock(SLOCK, LOCK_EX|LOCK_NB)) {
     exit(1);
 }
 
-
+## Ensure the slony_logs dir specific in the config file is present
+unless (-d $slony_logs)
+{
+   print "slony_logs directory $slony_logs is not accessible; bailing.\n";
+   exit(1);
+}
 
 ## build PSQL command
 $PSQL=$PSQL." -U".$pg_user." ".$pg_dbname;
@@ -124,6 +129,15 @@ $ssh_rmt_port= (defined $ssh_rmt_port && $ssh_rmt_port=~/^\d+$/)
 my $rmt_dir="$rmt_slony_dir/$site_name";              ## directory in remote machine
 my $work_dir="$slony_logs/$site_name";                ## local working directory
 my $counter_file="$work_dir/slony_counter.txt";          ## path to file keeping the slony counter.
+
+unless (-d $work_dir)
+{
+   if (!mkdir($work_dir))
+   {
+      print "Unable to create dir $work_dir.\n";
+      exit(1);
+   }
+}
 
 #### exit if die file is found
 sub diecheck {
@@ -347,10 +361,10 @@ while (defined $slony_ingest) {
   # If I understand things right, the first arg is the local file, and the second
   # is the remote file.  And the remote file will be put into the
   # remote-site dir (which is where we want it to go).
-  if (-f $counter_file)
-  {
-     $vscp->put($counter_file, "slony_counter.txt") or die "error [$!] ", $vscp->{errstr};
-  }
+  #if (-f $counter_file)
+  #{
+  #   $vscp->put($counter_file, "slony_counter.txt") or die "error [$!] ", $vscp->{errstr};
+  #}
 }
 
 close (SLOCK);
