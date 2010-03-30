@@ -6,6 +6,7 @@
 
 //#define __CFITSIO_DEBUG__
 
+#include <limits.h>
 
 #ifdef  __FOR_LOW_LEVEL_TEST_PROGRAMS__
 #include <fitsio.h>
@@ -100,7 +101,7 @@ typedef	struct cfitsio_image_info
       long long blank;       /* bit 2 */
       double bscale;         /* bit 3 */
       double bzero;          /* bit 4 */
-      char fhash[64]; /* key to fitsfile ptr stored in gFFPtrInfo */
+      char fhash[PATH_MAX];  /* key to fitsfile ptr stored in gFFPtrInfo */
 } CFITSIO_IMAGE_INFO;
 
 
