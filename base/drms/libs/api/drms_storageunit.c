@@ -69,6 +69,14 @@ static int EmptyDir(const char *dir)
                  if (S_ISDIR(stBuf.st_mode))
                  {
                     notempty = !EmptyDir(subdir);
+
+                    /* ART - Do'h! Fix bug where the SUMS slots at the end of the file list was 
+                     * empty, but ones earlier in the list were not. The last one overrode all
+                     * earlier ones. */
+                    if (notempty)
+                    {
+                       break;
+                    }
                  }
                  else
                  {
