@@ -26,6 +26,8 @@ fi
 
 . "$conf"
 
+# Don't start the daemons if they are already running
+
 echo "Starting the slon daemons"
 
 if [ $specific == "master" -o $specific == "no" ]
@@ -35,5 +37,5 @@ fi
 
 if [ $specific == "slave" -o $specific == "no" ]
 then
-slon -p $kMSSlavePIDFile -s 120000 -a /usr/local/pgsql/slon_logs -t 300000 $CLUSTERNAME "dbname=$SLAVEDBNAME port=$SLAVEPORT host=$SLAVEHOST user=$REPUSER"  > $kMSLogDir/slon.node2.log 2>&1 &
+slon -p $kMSSlavePIDFile -s 120000 -a /usr/local/pgsql/slon_logs -t 300000 -x "$kMSOnSync" $CLUSTERNAME "dbname=$SLAVEDBNAME port=$SLAVEPORT host=$SLAVEHOST user=$REPUSER"  > $kMSLogDir/slon.node2.log 2>&1 &
 fi
