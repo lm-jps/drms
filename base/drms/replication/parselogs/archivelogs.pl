@@ -171,6 +171,7 @@ flock($lockfh, LOCK_UN);
 $lockfh->close;
 
 # Copy archived tar file into SUMS
+local $ENV{"LD_LIBRARY_PATH"} = "/usr/local/pgsql/lib";
 $cmd = "$modpath/accessreplogs logs=$logseries path=$archivedir action=str regexp=\"slogs_([0-9]+)-([0-9]+)[.]tar[.]gz\"";
 print "running $cmd\n";
 system($cmd);
@@ -182,7 +183,12 @@ if ($? == -1)
 }
 elsif ($? & 127)
 {
-   print STDERR "Failed to copy archive files into SUMS.\n";
+   print STDERR "Failed to copy archive files into SUMS - accessreplogs crashed.\n";
+   exit(1);
+}
+elsif ($? >> 8 != 0)
+{
+   print STDERR "Failed to copy archive files into SUMS - accessreplogs ran unsuccessfully.\n";
    exit(1);
 }
 else
