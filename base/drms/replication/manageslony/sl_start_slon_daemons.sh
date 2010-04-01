@@ -32,10 +32,10 @@ echo "Starting the slon daemons"
 
 if [ $specific == "master" -o $specific == "no" ]
 then
-slon -p $kMSMasterPIDFile -s 120000 -t 300000 $CLUSTERNAME "dbname=$MASTERDBNAME port=$MASTERPORT host=$MASTERHOST user=$REPUSER"  > $kMSLogDir/slon.node1.log 2>&1 &
+slon -p $kMSMasterPIDFile -s 60000 -t 300000 $CLUSTERNAME "dbname=$MASTERDBNAME port=$MASTERPORT host=$MASTERHOST user=$REPUSER"  > $kMSLogDir/slon.node1.log 2>&1 &
 fi
 
 if [ $specific == "slave" -o $specific == "no" ]
 then
-slon -p $kMSSlavePIDFile -s 120000 -a /usr/local/pgsql/slon_logs -t 300000 -x "$kMSOnSync" $CLUSTERNAME "dbname=$SLAVEDBNAME port=$SLAVEPORT host=$SLAVEHOST user=$REPUSER"  > $kMSLogDir/slon.node2.log 2>&1 &
+slon -p $kMSSlavePIDFile -s 60000 -a /usr/local/pgsql/slon_logs -t 300000 -x "$kMSOnSync" $CLUSTERNAME "dbname=$SLAVEDBNAME port=$SLAVEPORT host=$SLAVEHOST user=$REPUSER"  > $kMSLogDir/slon.node2.log 2>&1 &
 fi

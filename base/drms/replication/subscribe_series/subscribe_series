@@ -470,22 +470,39 @@ fi
 #--------------------------------------------------------------------
 # Set up ssh keys
 #--------------------------------------------------------------------
-echo > set.sh
-exec < "$rsFile"
-while read line; do
-        set - $line
-        if [ "$1" == "setenv" ]; then
-                tag="$2"
-                shift
-                shift
-                echo "export ${tag}=$*  " >> set.sh
-                export ${tag}="$*"
-        fi
-done
+# Look for "export" in the env file
+export_check=`cat $rsFile | grep "export" | wc -l`
+if [[ $export_check -gt "0" ]]
+then
+    ssh_bash=1
+fi
 
-. set.sh
+# Look for "setenv" in the env file
+setenv_check=`cat $rsFile | grep "setenv" | wc -l`
+if [[ $setenv_check -gt "0" ]]
+then
+    ssh_csh=1
+fi
 
-RM -f set.sh
+# Set the environment variables based on the type of file
+if [[ $ssh_bash -eq "1" && $ssh_csh -ne "1" ]]
+then
+    # It's a bash file
+    . $rsFile
+elif [[ $ssh_csh -eq "1" && $ssh_bash -ne "1" ]]
+then
+    # It's a cshell file
+    grep "setenv" $rsFile > $kLocalWorkingDir/temp_rsFile
+    sed 's/ /=/g' $kLocalWorkingDir/temp_rsFile > $kLocalWorkingDir/temp_rsFile2
+    sed 's/setenv=/export /g' $kLocalWorkingDir/temp_rsFile2 > $kLocalWorkingDir/temp_rsFile3
+    . $kLocalWorkingDir/temp_rsFile3
+    rm -f $kLocalWorkingDir/temp_rsFile $kLocalWorkingDir/temp_rsFile2 $kLocalWorkingDir/temp_rsFile3
+else
+    error="Couldn't determine if the file was either bash or cshell"
+    echo "$error"
+    logwrite "ERROR: $error"
+    exit
+fi
 
 #--------------------------------------------------------------------
 # Get state of previous subscribe_series run

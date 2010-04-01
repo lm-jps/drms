@@ -160,6 +160,7 @@ sed 's/<schema.table>/'$publish_schema.$publish_table'/g' subscribetemplate.sh >
 sed 's/<id>/'$subid'/g' $tempnewpubfn >> $newpubfn
 rm -f $tempnewpubfn
 chmod 777 $newpubfn
+logwrite "Executing [$newpubfn > $REP_PS_TMPDIR/subscribe.$publish_schema.$publish_table.log 2>&1]"
 $newpubfn > $REP_PS_TMPDIR/subscribe.$publish_schema.$publish_table.log 2>&1
 logwrite "Executing: [cat $REP_PS_TMPDIR/subscribe.$publish_schema.$publish_table.log | grep ERROR]"
 check=`cat $REP_PS_TMPDIR/subscribe.$publish_schema.$publish_table.log | grep ERROR`
@@ -201,7 +202,7 @@ echo "Waiting until slony is synced to preform the merge. This may take a while.
 sleeptimer=1
 counter=0
 #echo "counter is [$counter] and REP_PS_MERGETO is [$REP_PS_MERGETO]" #remove
-while [ "$counter" -le "$REP_PS_MERGETO" ]
+while [[ "$counter" -le "$REP_PS_MERGETO" ]]
 do
         # checking the number of lag events
         check=`psql -h $MASTERHOST -p $MASTERPORT -t -U $REPUSER -c "select st_lag_num_events from _jsoc.sl_status" $MASTERDBNAME`

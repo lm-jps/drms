@@ -2,7 +2,7 @@
 # ----------
 # slony1_dump.sh
 #
-# $Id: sdo_slony1_dump.sh,v 1.1 2010/03/19 00:37:47 arta Exp $
+# $Id: sdo_slony1_dump.sh,v 1.2 2010/04/01 23:55:43 arta Exp $
 #
 #	This script creates a special data only dump from a subscriber
 #	node. The stdout of this script, fed into psql for a database that
@@ -277,6 +277,6 @@ echo "commit;"
 # Emit the commit for the dump to stdout.
 # ----
 #echo "commit;"
-
+echo "-- dump complete"
 exit 0
 

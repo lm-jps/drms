@@ -9,7 +9,7 @@ pidfile=$0.pid
 #-------------------------------------------------------------------------
 # syntax check
 #-------------------------------------------------------------------------
-if [ $# -eq 6 ]
+if [ $# -eq 7 ]
 then
         config_file=$1
 	node=$2
@@ -18,7 +18,6 @@ then
 	retention=$5
 	tapegroup=$6
 	input_file=$7
-	usertables=$tables_dir/$node.lst
 else
         error="ERROR: Usage: $0 <server configuration file> <node> <new subscription, true/false> <subscription information file>"
         echo $error
@@ -26,6 +25,7 @@ else
 fi
 
 . $config_file
+usertables=$tables_dir/$node.lst
 
 logfile=../log/$0.$node.log
 
@@ -178,12 +178,13 @@ else
 fi
 
 #-------------------------------------------------------------------------
-# Adding the new entry to the slon log parser config file 
+# Adding the new entry to the slon log parser config file
+# This was added to the sql_gen script, right after sdo_slony1_dump.sh is started
 #-------------------------------------------------------------------------
-logwrite "Adding the new entry to $parser_config"
-logwrite "[$subscribers_dir/$node.new	$newtablefile]" nl
-	
-echo "$subscribers_dir/$node.new	$newtablefile" >> $parser_config
+#logwrite "Adding the new entry to $parser_config"
+#logwrite "[$subscribers_dir/$node.new	$newtablefile]" nl
+#	
+#echo "$subscribers_dir/$node.new	$newtablefile" >> $parser_config
 
 #-------------------------------------------------------------------------
 # Execute the sql_gen script [./sql_gen $node $new_site $input_file]"

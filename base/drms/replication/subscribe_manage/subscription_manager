@@ -254,6 +254,9 @@ do
 	logwrite "Executing ./subscription_cleanup $config_file $node $new_site $success $appliedfile &" 
 	logwrite "NOTE: Syntax: ./subscription_cleanup <server configuration file> <node> <new subscription, true/false> <successful sql applictation true/false> <the sqlgen file with subscription info> &" nl
 
+        # Must wrap this call to subscription_cleanup inside a drms_flock.pl call to prevent a race condition
+        # with prep_slon_logs.  The lockfile is serieslist.txt.
+
 	# Executing [./subscription_cleanup $config_file $node $new_site $success $appliedfile &]
 	./subscription_cleanup $config_file $node $new_site $success $appliedfile &
 

@@ -7,10 +7,15 @@ pidfile=$0.pid
 # Syntax: ./sql_gen <server configuration file> <node> <new subscription, true/false> <subscription information file>
 #--------------------------------------------------------------------
 
+#--------------------------------------------------------------------
+# 3-31-10 Fixed race condition, now updates the slony_parser.cfg file 
+# right after running slony1_dump in the background.
+#--------------------------------------------------------------------
+
 #-------------------------------------------------------------------------
 # syntax check
 #-------------------------------------------------------------------------
-if [ $# -eq 6 ]
+if [ $# -eq 7 ]
 then
         config_file=$1
 	node=$2
@@ -83,7 +88,7 @@ exec < $input_file
 		#echo "[$1] [$2] [$3]" #remove
 		pg_schema=$1
 		#echo "Schema is $pg_schema" #remove
-		echo
+		
 		IFS="$oldIFS"
 		logwrite "pg_schema is [$pg_schema]"
 		logwrite "Executing [psql -p $SLAVEPORT -h $SLAVEHOST -U $REPUSER -c '\dt '$pg_schema'.*' $SLAVEDBNAME| grep drms_series]"
@@ -207,10 +212,7 @@ do
 	then
 		# If first time finding this schema_table, execute ./createtabstruct
 		logwrite "Executing [./createtabstructure in=${schema_table[$counter]} out=${schema_table[$counter]} archive=$archive retention=$retention tapegroup=$tapegroup owner=slony >> $triggerdir/$node.subscribe_series.sql]"
-		#echo "Createtabstructure >>" #remove
 		./createtabstructure in=${schema_table[$counter]} out=${schema_table[$counter]} archive=$archive retention=$retention tapegroup=$tapegroup owner=slony >> $triggerdir/$node.subscribe_series.sql
-		#echo "<< Createtabstructure" #remove
-		#echo ${schema_table[$counter]} >> $triggerdir/$node.subscribe_series.sql
 	fi
 	counter=$(( $counter + 1 ))
 done
@@ -223,15 +225,62 @@ else
 	new_site_bool=0
 fi
 
+#-------------------------------------------------------------------------
 # Execute sdo_slony1_dump.sh
-logwrite "Executing: [ ./sdo_slony1_dump.sh $SLAVEDBNAME jsoc $SLAVEPORT $new_site_bool ${schema_table[@]} ]"
-#echo "sdo_slony1_dump.sh >>" #remove
-./sdo_slony1_dump.sh $SLAVEDBNAME jsoc $SLAVEPORT $new_site_bool ${schema_table[@]} >> $triggerdir/$node.subscribe_series.sql 2> /dev/null
-#cp $triggerdir/$node.subscribe_series.sql $triggerdir/tempcheck.sql #debug
-#echo "<< sdo_slony1_dump.sh" #remove
-#echo ${table[@]} >> $triggerdir/$node.subscribe_series.sql
+#-------------------------------------------------------------------------
+logwrite "Executing: [ ./sdo_slony1_dump.sh $SLAVEDBNAME jsoc $SLAVEPORT $new_site_bool ${schema_table[@]} >> $triggerdir/$node.subscribe_series.sql 2> $SMworkDir/slony1_dump.$node.log &"
+./sdo_slony1_dump.sh $SLAVEDBNAME jsoc $SLAVEPORT $new_site_bool ${schema_table[@]} >> $triggerdir/$node.subscribe_series.sql 2> $SMworkDir/slony1_dump.$node.log &
 
-echo "COMMIT;" >> $triggerdir/$node.subscribe_series.sql
+#-------------------------------------------------------------------------
+# Adding the new entry to the slon log parser config file
+#-------------------------------------------------------------------------
+newtablefile=$tables_dir/$node.new.lst
+echo "$subscribers_dir/$node.new        $newtablefile" >> $parser_config
+logwrite "Adding the new entry to $parser_config"
+logwrite "[$subscribers_dir/$node.new   $newtablefile]" nl
+
+#-------------------------------------------------------------------------
+# Checking the status of slony1 dump
+#-------------------------------------------------------------------------
+logwrite "Checking [$triggerdir/$node.subscribe_series.sql for the [-- dump complete] flag"
+unset check
+counter=0
+while [[ 1 == 1 ]]
+do
+        check=`tail -5 $triggerdir/$node.subscribe_series.sql | grep "\-\- dump complete"`
+        if [[ -n $check ]]
+        then
+                logwrite "Dump complete"
+		echo "COMMIT;" >> $triggerdir/$node.subscribe_series.sql
+                break
+        else
+                logwrite "Dump not yet complete."
+        fi
+
+        error_check=`grep -i "error" $SMworkDir/slony1_dump.$node.log`
+        if [[ -n $error_check ]]
+        then
+                logwrite "ERROR: There was an error found from sdo_slony1_dump.sh!"
+		logwrite "Review [$tempdir/slony1_dump.$node.log]"
+                logwrite "Error is [$error_check]"
+                logwrite "Exiting"
+		rm -f $node.subscribe_series.subupdate
+		exit
+        fi
+
+        if [[ $counter -lt $sl_dump_timeout ]]
+        then
+                counter=$(($counter+1))
+        else
+                logwrite "ERROR: Max number of tries reached, exiting"
+		rm -f $node.subscribe_series.subupdate
+                exit
+        fi
+	unset check error_check
+	sleep 1
+done
+
+rm -f $tempdir/slony1_dump.$node.log
 
 #-------------------------------------------------------------------------
 # End of check for new subscriptions
