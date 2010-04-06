@@ -670,7 +670,7 @@ static int CreateSQL(FILE *fptr, DRMS_Env_t *env,
          /* Create indices in the series table (the other tables will have been created by masterlists) */
          if (!err)
          {
-            err = CreateSQLIndices(fptr, env, oid, series, table, seriesnew, tablenew);
+            err = CreateSQLIndices(fptr, env, oid, ns, table, nsnew, tablenew);
          }
 
          /* sequence table */
