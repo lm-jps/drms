@@ -407,10 +407,10 @@ HContainer_t *drms_create_keyword_prototypes(DRMS_Record_t *target,
    if (target != NULL && target->keywords.num_total == 0 && source != NULL)
    {
       *status = DRMS_SUCCESS;
-      HIterator_t *hit = hiter_create(&(source->keywords));
-      XASSERT(hit);
+      HIterator_t hit;
+      hiter_new_sort(&hit, &(source->keywords), drms_keyword_ranksort);
       
-      while (hit && ((sKey = hiter_getnext(hit)) != NULL))
+      while ((sKey = hiter_getnext(&hit)) != NULL)
       {
 	 if (sKey->info && strlen(sKey->info->name) > 0)
 	 {
@@ -446,11 +446,6 @@ HContainer_t *drms_create_keyword_prototypes(DRMS_Record_t *target,
 	 {
 	    *status = DRMS_ERROR_INVALIDKEYWORD;
 	 }
-      }
-      
-      if (hit)
-      {
-	 hiter_destroy(&hit);
       }
       
       if (*status == DRMS_SUCCESS)

@@ -150,10 +150,10 @@ HContainer_t *drms_create_segment_prototypes(DRMS_Record_t *target,
    if (target != NULL && target->segments.num_total == 0 && source != NULL)
    {
       *status = DRMS_SUCCESS;
-      HIterator_t *hit = hiter_create(&(source->segments));
-      XASSERT(hit);
+      HIterator_t hit;
+      hiter_new_sort(&hit, &(source->segments), drms_segment_ranksort);
 
-      while (hit && ((sSeg = hiter_getnext(hit)) != NULL))
+      while ((sSeg = hiter_getnext(&hit)) != NULL)
       {
 	 if (sSeg->info && strlen(sSeg->info->name) > 0)
 	 {
@@ -188,11 +188,6 @@ HContainer_t *drms_create_segment_prototypes(DRMS_Record_t *target,
 	 {
 	    *status = DRMS_ERROR_INVALIDSEGMENT;
 	 }
-      }
-
-      if (hit)
-      {
-	 hiter_destroy(&hit);
       }
 
       if (*status == DRMS_SUCCESS)

@@ -82,10 +82,11 @@ HContainer_t *drms_create_link_prototypes(DRMS_Record_t *target,
    if (target != NULL && target->links.num_total == 0 && source != NULL)
    {
       *status = DRMS_SUCCESS;
-      HIterator_t *hit = hiter_create(&(source->links));
-      XASSERT(hit);
+      HIterator_t hit;
+
+      hiter_new_sort(&hit, &(source->links), drms_link_ranksort);
       
-      while (hit && ((sLink = hiter_getnext(hit)) != NULL))
+      while ((sLink = hiter_getnext(&hit)) != NULL)
       {
 	 if (sLink->info && strlen(sLink->info->name) > 0)
 	 {
@@ -132,11 +133,6 @@ HContainer_t *drms_create_link_prototypes(DRMS_Record_t *target,
 	 {
 	    *status = DRMS_ERROR_INVALIDLINK;
 	 }
-      }
-      
-      if (hit)
-      {
-	 hiter_destroy(&hit);
       }
       
       if (*status == DRMS_SUCCESS)

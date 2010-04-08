@@ -58,6 +58,9 @@ int DoIt(void) {
   DRMS_Record_t *template = NULL;
   DRMS_Record_t *recproto = NULL;
   int keynum;
+  HIterator_t hit;
+  DRMS_Keyword_t *key = NULL;
+  DRMS_Keyword_t *lastkey = NULL;
 
   /* Parse command line parameters. */
   if (cmdparams_numargs (&cmdparams) < 2) goto usage;
@@ -167,7 +170,15 @@ int DoIt(void) {
     char *field_list = drms_field_list(recproto, NULL);
    
     // allocate for a record template
-    keynum = 0;
+
+    /* Find rank of highest-ranked keyword */
+    hiter_new_sort(&hit, &recproto->keywords, drms_keyword_ranksort);
+    while ((key = hiter_getnext(&hit)) != NULL)
+    {
+       lastkey = key;
+    }
+
+    keynum = lastkey->info->rank + 1;
     status = parse_keywords(buf, recproto, NULL, &keynum);
     free(buf);
 

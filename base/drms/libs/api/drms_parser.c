@@ -394,9 +394,10 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
     seg->info->protocol = drms_str2prot(protocol);
 
     /* .jsd is version 2.0 or greater */
+    /* CFITSIO can't compress 64-bit data. */
     if ((seg->info->protocol == DRMS_FITS || 
          seg->info->protocol == DRMS_FITZ || 
-         seg->info->protocol == DRMS_TAS))
+         seg->info->protocol == DRMS_TAS) && seg->info->type != DRMS_TYPE_LONGLONG)
     {
        /* Create a cparms_sgXXX keyword for each segment.  It will save 
         * the compression-parameters string. */
