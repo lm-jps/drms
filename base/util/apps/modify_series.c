@@ -55,7 +55,8 @@ int DoIt(void) {
   FILE *fp;
   struct stat file_stat;
   char *buf = 0;
-  DRMS_Record_t *template;
+  DRMS_Record_t *template = NULL;
+  DRMS_Record_t *recproto = NULL;
   int keynum;
 
   /* Parse command line parameters. */
@@ -152,17 +153,22 @@ int DoIt(void) {
      */
  
     template = drms_template_record(drms_env, series, &status);
-    drms_link_getpidx(template); 
-    // save the original column names
-    char *field_list = drms_field_list(template, NULL);
+
     if (template == NULL) {
       printf("Series '%s' does not exist. drms_template_record returned "
 	     "status=%d\n",series,status);
       goto bailout;
     }
+
+    recproto = drms_create_recproto(template, &status);
+    drms_link_getpidx(recproto); 
+
+    // save the original column names
+    char *field_list = drms_field_list(recproto, NULL);
+   
     // allocate for a record template
     keynum = 0;
-    status = parse_keywords(buf, template, NULL, &keynum);
+    status = parse_keywords(buf, recproto, NULL, &keynum);
     free(buf);
 
     // Delete current series metadata without dropping the series table and
@@ -195,10 +201,10 @@ int DoIt(void) {
     /* Adding to the series cache is superfluous because nobody is going to consult the cache later
      * in this module - but it won't hurt either. */
     hcon_allocslot_lower(&drms_env->series_cache, series);
-        drms_print_record(template);
+    drms_print_record(recproto);
 
     // create a new series
-    if (drms_insert_series(drms_env->session, 0, template, 0)) {
+    if (drms_insert_series(drms_env->session, 0, recproto, 0)) {
       fprintf(stderr, "Failed to create new definitions\n");
       status = 1;
       goto bailout;
