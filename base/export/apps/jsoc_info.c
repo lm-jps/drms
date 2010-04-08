@@ -158,6 +158,7 @@ SUM_info_t *drms_get_suinfo(long long sunum)
       return(NULL);
       }
     }
+if (sunum < 0){fprintf(stderr,"SUM_info call with sunum < 0 about to be made, %lld\n",sunum); return(NULL);}
   if (status = SUM_info(my_sum, sunum, printkerr))
     {
     printkerr("Fail on SUM_info, status=%d\n", status);
@@ -248,7 +249,7 @@ DRMS_RecordSet_t *drms_find_rec_first(DRMS_Record_t *rec, int wantprime)
   if (wantprime && nprime > 0) 
     // only first prime key is used for now
      // for (iprime = 0; iprime < nprime; iprime++)
-      strcat(query, "[#^]");
+      strcat(query, "[^]");
   else
     strcat(query, "[:#^]");
 // fprintf(stderr,"test 1 query is %s\n",query);
@@ -269,7 +270,7 @@ DRMS_RecordSet_t *drms_find_rec_last(DRMS_Record_t *rec, int wantprime)
   if (wantprime && nprime > 0) 
     // only first prime key is used for now
      // for (iprime = 0; iprime < nprime; iprime++)
-      strcat(query, "[#$]");
+      strcat(query, "[$]");
   else
     strcat(query, "[:#$]");
   rs = drms_open_records(rec->env, query, &status);
@@ -542,7 +543,7 @@ void get_series_stats(DRMS_Record_t *rec, json_t *jroot)
 
   nprime = rec->seriesinfo->pidx_num;
   if (nprime > 0)
-    sprintf(query,"%s[#^]", rec->seriesinfo->seriesname);
+    sprintf(query,"%s[^]", rec->seriesinfo->seriesname);
   else
     sprintf(query,"%s[:#^]", rec->seriesinfo->seriesname);
   rs = drms_open_records(rec->env, query, &status);
@@ -574,7 +575,7 @@ if (status != JSON_OK) fprintf(stderr, "json_insert_pair_into_object, status=%d,
     drms_free_records(rs);
   
     if (nprime > 0)
-      sprintf(query,"%s[#$]", rec->seriesinfo->seriesname);
+      sprintf(query,"%s[$]", rec->seriesinfo->seriesname);
     else
       sprintf(query,"%s[:#$]", rec->seriesinfo->seriesname);
     rs = drms_open_records(rec->env, query, &status);
@@ -649,8 +650,8 @@ int DoIt(void)
     free(getstring);
     }
 
-  op = cmdparams_get_str (&cmdparams, "op", NULL);
-  in = cmdparams_get_str (&cmdparams, "ds", NULL);
+  op = (char *)cmdparams_get_str (&cmdparams, "op", NULL);
+  in = (char *)cmdparams_get_str (&cmdparams, "ds", NULL);
   keylist = strdup (cmdparams_get_str (&cmdparams, "key", NULL));
   seglist = strdup (cmdparams_get_str (&cmdparams, "seg", NULL));
   linklist = strdup (cmdparams_get_str (&cmdparams, "link", NULL));
@@ -1023,7 +1024,20 @@ int DoIt(void)
 	      val = json_new_string(sinfo->archive_status);
             }
 	  }
-        else if (strcmp(keys[ikey], "*dir_mtime*") == 0)
+        else if (strcmp(keys[ikey], "*recdir*") == 0)
+          { // get record directory
+          char path[DRMS_MAXPATHLEN];
+          if (!record_set_staged)
+	    {
+            drms_stage_records(recordset, 0, 0);
+            record_set_staged = 1;
+	    }
+          drms_record_directory (rec, path, 0);
+          jsonval = string_to_json(path);
+          val = json_new_string(jsonval);
+          free(jsonval);
+          }
+        else if (strcmp(keys[ikey], "*dirmtime*") == 0)
           { // get record dir last change date
 	  struct stat buf;
           char path[DRMS_MAXPATHLEN];
@@ -1179,14 +1193,22 @@ int DoIt(void)
         DRMS_Link_t *rec_link = hcon_lookup_lower (&rec->links, links[ilink]); 
         DRMS_Record_t *linked_rec = drms_link_follow(rec, links[ilink], &status);
         char linkquery[DRMS_MAXQUERYLEN];
-        if (rec_link->info->type == DYNAMIC_LINK)
-          drms_sprint_rec_query(linkquery, linked_rec);
+        if (linked_rec)
+          {
+          if (rec_link->info->type == DYNAMIC_LINK)
+            drms_sprint_rec_query(linkquery, linked_rec);
+          else
+            sprintf(linkquery, "%s[:#%lld]", linked_rec->seriesinfo->seriesname, linked_rec->recnum);
+          drms_close_record(linked_rec, DRMS_FREE_RECORD);
+  
+          json_t *thislinkval = linkvals[ilink]; 
+          json_insert_child(thislinkval, json_new_string(linkquery));
+          }
         else
-          sprintf(linkquery, "%s[:#%lld]", linked_rec->seriesinfo->seriesname, linked_rec->recnum);
-        drms_close_record(linked_rec, DRMS_FREE_RECORD);
-
-        json_t *thislinkval = linkvals[ilink]; 
-        json_insert_child(thislinkval, json_new_string(linkquery));
+          {
+          json_t *thislinkval = linkvals[ilink]; 
+          json_insert_child(thislinkval, json_new_string("Invalid_Link"));
+          }
         }
 
       /* finish record info for this record */
