@@ -58,12 +58,8 @@ exec < $input_file
 			continue
                 fi
 		set - $line
+                series[$counter]=$1
 		request[$counter]=$2
-		oldIFS="$IFS"
-		IFS="${IFS}."
-		set - $1
-		series[$counter]=$2
-		IFS="$oldIFS"
 
 		counter=$(( $counter + 1 ))
 			

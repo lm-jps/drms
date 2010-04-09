@@ -1,5 +1,8 @@
 #!/bin/bash
-currDt=`date +"%m-%d-%Y %H:%M:%S"`
+
+trap "echo 'caught a signal'; exit" HUP INT TERM
+
+# Need some code to prevent more than one instance from being run.
 
 #--------------------------------------------------------------------
 # Syntax check
@@ -13,7 +16,6 @@ then
 	if [[ -f $config_file ]]
 	then
 		. $config_file
-		. toolbox
 		echo "Starting $0"
 		echo "Using $config_file"
 	else
@@ -22,21 +24,23 @@ then
 	fi
 else
 	echo "ERROR: Usage: $0 <configuration file> <schema> <table>"
-	exit
+	exit 1;
 fi
+
 
 #--------------------------------------------------------------------
 # Find the table ID of the table to drop
 #--------------------------------------------------------------------
 check=`$kPsqlCmd -h $MASTERHOST -U $REPUSER -p $MASTERPORT -t -c "select tab_id from _$CLUSTERNAME.sl_table where tab_nspname='$schema' AND tab_relname='$table'" $MASTERDBNAME`
 tableID=${check// /}
+slavetableID=$tableID
 echo "Table ID is [$tableID]"
 
 # if nothing found error out
 if [[ "$tableID" == "" ]]
 then
 	echo "Could not find the published schema.table specified"
-	exit
+	exit 1;
 fi
 
 #--------------------------------------------------------------------
@@ -59,93 +63,95 @@ then
         echo "Table was droped from replication"
 else
         echo "ERROR: Table was not droped from replication"
-        exit
+        exit 1;
 fi
-#--------------------------------------------------------------------
-# Drop the table from the schema
-#--------------------------------------------------------------------
-echo -n "Dropping table $schema.$table on $SLAVEHOST.........."
-check=`$kPsqlCmd -h $SLAVEHOST -U $REPUSER -p $SLAVEPORT -t -c "drop table $schema.$table cascade" $SLAVEDBNAME`
-if [[ $? -eq "0" ]]
-then
-	echo "Success"
-	echo "Drop result is [$check]"
-else
-	echo "Failed!"
-	echo "Drop result is [$check]"
-	exit
-fi
-unset check
 
 #--------------------------------------------------------------------
-# Delete the entries in the drms tables referencing the series thats been unpublished
+# Call delete_series to delete the series from the schema
 #--------------------------------------------------------------------
-# Delete from drms_keyword
-echo -n "Delete from $schema.drms_keyword where seriesname='$schema.$table'.........."
-check=`$kPsqlCmd -h $SLAVEHOST -U $REPUSER -p $SLAVEPORT -t -c "delete from $schema.drms_keyword where seriesname='$schema.$table'" $SLAVEDBNAME 2>&1`
-if [[ $? -eq "0" ]]
-then
-	echo "Success"
-	echo "Drop result is [$check]"
-else
-	echo "Failed!"
-	echo "Drop result is [$check]"
-	exit
-fi
-unset check
+maxatt=120
+curratt=1
+while [ $curratt -le $maxatt ]; do
+    echo 'running $kPsqlCmd -h $SLAVEHOST -U $REPUSER -p $SLAVEPORT -t -c "select count(*) from _$CLUSTERNAME.sl_table where tab_id = $slavetableID" $SLAVEDBNAME'
+    ret=`$kPsqlCmd -h $SLAVEHOST -U $REPUSER -p $SLAVEPORT -t -c "select count(*) from _$CLUSTERNAME.sl_table where tab_id = $slavetableID" $SLAVEDBNAME`
+    set - $ret
+    slCheck=$1
+    echo "tables with id $slavetableID: $slCheck; Current attempt: $curratt"
 
-# Delete from drms_link
-echo -n "Delete from $schema.drms_link where seriesname='$schema.table'.........."
-check=`$kPsqlCmd -h $SLAVEHOST -U $REPUSER -p $SLAVEPORT -t -c "delete from $schema.drms_link where seriesname='$schema.$table'" $SLAVEDBNAME 2>&1`
-if [[ $? -eq "0" ]]
-then
-	echo "Success"
-	echo "Drop result is [$check]"
-else
-	echo "Failed!"
-	echo "Drop result is [$check]"
-	exit
-fi
-unset check
+    if [ $slCheck -lt 1 ]; then
+        echo "Executing [$kModDir/delete_series $schema.$table JSOC_DBHOST=$kModOnSlaveHost]"
+        $kModDir/delete_series $schema.$table JSOC_DBHOST=$kModOnSlaveHost
 
-# Delete from drms_segment
-echo -n "Delete from $schema.drms_segment where seriesname='$schema.table'.........."
-check=`$kPsqlCmd -h $SLAVEHOST -U $REPUSER -p $SLAVEPORT -t -c "delete from $schema.drms_segment where seriesname='$schema.$table'" $SLAVEDBNAME 2>&1`
-if [[ $? -eq "0" ]]
-then
-	echo "Success"
-	echo "Drop result is [$check]"
-else
-	echo "Failed!"
-	echo "Drop result is [$check]"
-	exit
-fi
-unset check
+        # Check status
+        if [ $? -ne 0 ]
+        then
+            echo "Error deleting series $schema.$table"
+            exit 1;
+        else
+            echo "Successfully deleted $schema.$table"
+        fi
+    fi
 
-echo "Finished dropping everything"
-echo "$0 Done"
+    sleep 1
+    curratt=$(($curratt + 1))
+done
 
+# Can't do the following because subscription_update might be
+# modifying the .lst files. But this shouldn't matter since, 
+# after the unpublish, there won't get any information in the
+# slony logs germane this this series anyway.
+# 
 #--------------------------------------------------------------------
 # Remove the schema.table from each of the .lst files in $tables_dir
 #--------------------------------------------------------------------
-echo "Removing $schema.$table from the subscribers list files"
-for x in `ls -1 $tables_dir`
-do
-	if [[ "${x: -4}" == ".lst" ]]
-	then
-		echo "Removing $schema.$table from $tables_dir/$x"
-		mv -f $tables_dir/$x $tables_dir/$x.bak
-		cat $tables_dir/$x.bak | grep -v "$schema.$table" > $tables_dir/$x
-		rm -f $tables_dir/$x.bak
-		echo "done"
-		echo
-	else
-		echo "Skipping [$x]"
-		echo
-		continue
-	fi
-done
+#echo "Removing $schema.$table from the subscribers list files"
+#for x in `ls -1 $tables_dir`
+#do
+#	if [[ "${x: -4}" == ".lst" ]]
+#	then
+#		echo "Removing $schema.$table from $tables_dir/$x"
+#		mv -f $tables_dir/$x $tables_dir/$x.bak
+#		cat $tables_dir/$x.bak | grep -v "$schema.$table" > $tables_dir/$x
+#		rm -f $tables_dir/$x.bak
+#		echo "done"
+#		echo
+#	else
+#		echo "Skipping [$x]"
+#		echo
+#		continue
+#	fi
+#done
 
-echo "Done"
+${kRepDir}/editlstfile.pl /usr/local/pgsql/slon_logs/parselock.txt  $tables_dir $schema $table
+if [ $? -ne 0 ]; then
+	echo
+	echo "--|---------------------------------------------------------------------"
+	echo "--| Error, editlstfile.pl failed. "
+	echo "--| Note that removing the table from SLONY replication succeeded!"
+	echo "--|---------------------------------------------------------------------"
+	echo
+	exit 1;
+else
+	echo "table removed from all .lst files"
+fi
+
+#--------------------------------------------------------------------
+# Must delete the series entries from the *.lst files. If a 
+# remote site wants to subscribe to a series that isn't in 
+# its *.lst file, but the series does exist at the remote site
+# then it is up to the remote site to do a proper unsubscribe
+# from the series (which deletes the series too) before
+# subscribing to the series again. A user can get in this state
+# in a few different ways - the series could have been 
+# unpublished, then re-published; the user could do an 
+# unsubscribe, but not delete the series. At any rate, if a user
+# is in this situation, s/he needs to delete the series
+# before subscribing to it, other wise the series content will
+# not be synchronized with the forthcoming logs.
+#--------------------------------------------------------------------
+
+echo "$0 Done"
 
 echo "Unsubscribe Complete"
+
+exit 0;

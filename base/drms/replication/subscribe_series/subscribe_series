@@ -342,15 +342,24 @@ function CheckSchema () {
 #--------------------------------------------------------------------
 # syntax check
 #--------------------------------------------------------------------
-if [ $# -eq 3 ]
+if [ $# -ge 3 ]
 then
 	config_file="$1"
 	subscribe_file="$2"
 	rsFile="$3"
 else
-	error="ERROR: Usage: $0 <configuration file> <subscribe request file> <ssh-agent_rs file>"
+	error="ERROR: Usage: $0 <configuration file> <subscribe request file> <ssh-agent_rs file> [-r]"
 	echo $error
-	exit
+	exit 1
+fi
+
+# -r means to resume from where you left off (if there was an error on the previous run, you
+# can attempt to correct the cause of the problem, then re-run from where you left off).
+if [ "$4" == "-r" ]
+then
+    wipestate=0
+else
+    wipestate=1
 fi
 
 . "$config_file"
@@ -398,9 +407,8 @@ fi
 
 logwrite "Starting $0 from $scriptdir" nl
 
-# XXX - ART
 # Make this relative to working dir
-statefile=ssstate.txt
+statefile=$kLocalWorkingDir/ssstate.txt
 
 # extract seriesname from the $subscribe_file file
 # XXX - ART
@@ -501,14 +509,20 @@ else
     error="Couldn't determine if the file was either bash or cshell"
     echo "$error"
     logwrite "ERROR: $error"
-    exit
+    exit 1
+fi
+
+if [ -z $SSH_AGENT_PID ]
+then
+    echo "Couldn't find ssh-agent.\n"
+    exit 1
 fi
 
 #--------------------------------------------------------------------
 # Get state of previous subscribe_series run
 #--------------------------------------------------------------------
 GetState
-if [ $state == "end" ]
+if [ $state == "end" -o $wipestate -eq 1 ]
 then
     # Prevous run completely successfully, set to start
     SetState "start"
@@ -598,7 +612,7 @@ then
 	    logecho "ERROR: Did not find $node.subscribe_series.sqldone after 20 tries"
 	    logecho "ERROR: Couldn't find the sql file required to continue!"
 	    logecho "ABORTING - exiting $0"
-	    exit
+	    exit 1
 	fi		
 
         result=`SSH "$kRSUser@$kRSServer" 'ls '"'$kRSTriggerDir'"`;

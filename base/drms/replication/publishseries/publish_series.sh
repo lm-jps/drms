@@ -1,5 +1,45 @@
 #!/bin/bash
 
+
+function restartslons {
+#--------------------------------------------------------------------
+# Stop slon daemons - sometimes slony gets blocked (it can't process
+# lag events for some reason - like unfixable error is occurring).
+# Stopping and restarting appears to fix a race condition that leads
+# to problems like this. When the slon daemons start up, they
+# work around the race condition.                
+#--------------------------------------------------------------------
+    if [ -f $kMSMasterPIDFile -o -f $kMSSlavePIDFile ]
+    then
+        # slon daemons are running
+        echo "stopping daemons"
+        "$kRepDir/manageslony/sl_stop_slon_daemons.sh" "$config_file"
+        wait
+        sleep 5
+
+        if [ -f $kMSMasterPIDFile -o -f $kMSSlavePIDFile ]
+        then
+            echo "slon daemons not successfully stopped"
+            exit 1
+        fi
+    fi
+
+    #--------------------------------------------------------------------
+    # Start up slony daemons.
+    #--------------------------------------------------------------------
+    echo "starting slon daemons"
+    "$kRepDir/manageslony/sl_start_slon_daemons.sh" "$config_file"
+    wait
+    sleep 5
+
+    if [ ! -f $kMSMasterPIDFile -o ! -f $kMSSlavePIDFile ]
+    then
+        echo "slon daemons not successfully started"
+        exit 1
+    fi
+}
+
+
 #--------------------------------------------------------------------
 # Publish Series: 
 # Syntax: ./publish_series.sh <config_file> <schema of series to publish> <table of series to publish>
@@ -63,22 +103,22 @@ else
 fi
 unset check
 
-#--------------------------------------------------------------------
-# Checking to see if there is a second replication set already
-#--------------------------------------------------------------------
-logwrite "Checking to see if there is a second replication set already" 
-check=`psql -h $MASTERHOST -p $MASTERPORT -t -U $REPUSER -c "select max(sub_set) from _$CLUSTERNAME.sl_subscribe" $MASTERDBNAME`
-check=${check// /}
-
-if [ $check -eq "1" ]
-then
-	logwrite "Found only one replication set, continuing..." nl 
-else
-	logwrite "Another replication set was found. ABORTING!"
-	echo "Another replication set was found. ABORTING!"
-	exit
-fi
-unset check
+##--------------------------------------------------------------------
+## Checking to see if there is a second replication set already
+##--------------------------------------------------------------------
+#logwrite "Checking to see if there is a second replication set already" 
+#check=`psql -h $MASTERHOST -p $MASTERPORT -t -U $REPUSER -c "select max(sub_set) from _$CLUSTERNAME.sl_subscribe" $MASTERDBNAME`
+#check=${check// /}
+#
+#if [ $check -eq "1" ]
+#then
+#	logwrite "Found only one replication set, continuing..." nl 
+#else
+#	logwrite "Another replication set was found. ABORTING!"
+#	echo "Another replication set was found. ABORTING!"
+#	exit
+#fi
+#unset check
 
 echo "All initial checks were successful. Continuing..."
 
@@ -86,21 +126,47 @@ echo "All initial checks were successful. Continuing..."
 # Runs createns
 #--------------------------------------------------------------------
 #pg_dump -n $publish_schema --schema-only --exclude-table="$publish_schema.*" -f $REP_PS_TMPDIR/createns_$publish_schema.$publish_table.sql $MASTERDBNAME
-logwrite "Executing: [./createns ns=$publish_schema nsgroup=user dbusr=$REPUSER >> $REP_PS_TMPDIR/createns_$publish_schema.$publish_table.sql]"
-./createns ns=$publish_schema nsgroup=user dbusr=$REPUSER >> $REP_PS_TMPDIR/createns_$publish_schema.$publish_table.sql
+nsCheckSQL="select count(*) from pg_namespace where nspname = '$publish_schema'"
+ret=`echo "$nsCheckSQL" | psql -t -h $SLAVEHOST -p $SLAVEPORT -U $REPUSER $SLAVEDBNAME`
+set - $ret
+nsCheck=$1
+
+if [ $nsCheck -lt 1 ]; then
+	logwrite "Executing: [./createns ns=$publish_schema nsgroup=user  dbusr=$REPUSER >> $REP_PS_TMPDIR/createns_$publish_schema.$publish_table.sql]"
+
+	$kModDir/createns ns=$publish_schema nsgroup=user dbusr=$REPUSER > $REP_PS_TMPDIR/createns_$publish_schema.$publish_table.sql
+else
+	echo "namespace already exists, skipping createns.."
+fi
 
 #--------------------------------------------------------------------
 # Runs createtabstruct
 #--------------------------------------------------------------------
 #pg_dump --schema-only -t "$publish_schema.$publish_table" -f $REP_PS_TMPDIR/createtabstruct_$publish_schema.$publish_table.sql $MASTERDBNAME
-logwrite "Executing: [./createtabstructure in=$publish_schema.$publish_table out=$publish_schema.$publish_table owner=slony >> $REP_PS_TMPDIR/createtabstruct_$publish_schema.$publish_table.sql]"
-./createtabstructure in=$publish_schema.$publish_table out=$publish_schema.$publish_table owner=slony >> $REP_PS_TMPDIR/createtabstruct_$publish_schema.$publish_table.sql
+
+tabCheckSQL="select count(*) from pg_tables where schemaname = '$publish_schema' and tablename = '$publish_table'"
+ret=`echo "$tabCheckSQL" | psql -t -h $SLAVEHOST -p $SLAVEPORT -U $REPUSER $SLAVEDBNAME`
+set - $ret
+tabCheck=$1
+
+if [ $tabCheck -lt 1 ]; then
+	logwrite "Executing: [./createtabstructure in=$publish_schema.$publish_table  out=$publish_schema.$publish_table owner=slony >> $REP_PS_TMPDIR/createtabstruct_$publish_schema.$publish_table.sql]"
+
+	$kModDir/createtabstructure in=$publish_schema.$publish_table out=$publish_schema.$publish_table owner=slony > $REP_PS_TMPDIR/createtabstruct_$publish_schema.$publish_table.sql
+else
+	echo "table [${publish_schema}.${publish_table}] already exists, aborting..."
+	exit 1;
+fi
 
 #--------------------------------------------------------------------
 # Execute sql files on $SLAVEHOST and check for errors
 #--------------------------------------------------------------------
-logwrite "Executing [psql -h $SLAVEHOST -p $SLAVEPORT -U $REPUSER -f $REP_PS_TMPDIR/createns_$publish_schema.$publish_table.sql $SLAVEDBNAME > $REP_PS_TMPDIR/createns.log 2>&1]"
-psql -h $SLAVEHOST -p $SLAVEPORT -U $REPUSER -f $REP_PS_TMPDIR/createns_$publish_schema.$publish_table.sql $SLAVEDBNAME > $REP_PS_TMPDIR/createns.log 2>&1
+if [ $nsCheck -lt 1 ]; then
+	logwrite "Executing [psql -h $SLAVEHOST -p $SLAVEPORT -U $REPUSER -f $REP_PS_TMPDIR/createns_$publish_schema.$publish_table.sql $SLAVEDBNAME > $REP_PS_TMPDIR/createns.log 2>&1]"
+	psql -h $SLAVEHOST -p $SLAVEPORT -U $REPUSER -f $REP_PS_TMPDIR/createns_$publish_schema.$publish_table.sql $SLAVEDBNAME > $REP_PS_TMPDIR/createns.log 2>&1
+else 
+	echo "skipping execution of psql for createns"
+fi
 
 logwrite "Executing [psql -h $SLAVEHOST -p $SLAVEPORT -U $REPUSER -f $REP_PS_TMPDIR/createtabstruct_$publish_schema.$publish_table.sql $SLAVEDBNAME > $REP_PS_TMPDIR/createtabstruct.log 2>&1]"
 psql -h $SLAVEHOST -p $SLAVEPORT -U $REPUSER -f $REP_PS_TMPDIR/createtabstruct_$publish_schema.$publish_table.sql $SLAVEDBNAME > $REP_PS_TMPDIR/createtabstruct.log 2>&1
@@ -112,7 +178,7 @@ then
         logwrite "ERROR: There was an error creating the tables on the slave. ABORTING"
 	logwrite "ERROR: [$check]" nl
 	#cp $REP_PS_TMPDIR/createtabstruct_$publish_schema.$publish_table.sql $REP_PS_TMPDIR/debug.error #remove
-	rm -f $REP_PS_TMPDIR/createns.log $REP_PS_TMPDIR/createtabstruct.log $REP_PS_TMPDIR/createtabstruct_$publish_schema.$publish_table.sql $REP_PS_TMPDIR/createns_$publish_schema.$publish_table.sql
+	# rm -f $REP_PS_TMPDIR/createns.log $REP_PS_TMPDIR/createtabstruct.log $REP_PS_TMPDIR/createtabstruct_$publish_schema.$publish_table.sql $REP_PS_TMPDIR/createns_$publish_schema.$publish_table.sql
         exit
 else
         logwrite "Createtabstruct output application on the slave was successful, continuing..." nl
@@ -147,6 +213,15 @@ subid=$(($subid + 1))
 logwrite "Using $subid as the next subscription id" 
 
 #--------------------------------------------------------------------
+# Finds the next replication set ID needed
+#--------------------------------------------------------------------
+repid=`psql -h $MASTERHOST -p $MASTERPORT -U $REPUSER -t -c "select max(set_id) from _$CLUSTERNAME.sl_set" $MASTERDBNAME`
+repid=${repid//" "/""}
+logwrite "Found latest subscribed replication set ID is $repid, adding one" 
+repid=$(($repid + 1))
+logwrite "Using $repid as the next replication set id" 
+
+#--------------------------------------------------------------------
 # Creates temporary script to create the new replication set
 #--------------------------------------------------------------------
 newpubfn=$REP_PS_TMPDIR/publish.$publish_schema.$publish_table
@@ -156,9 +231,10 @@ which bash >> $newpubfn
 # The next cmd used to be
 # cat $slony_config_file >> $newpubfn
 cat $config_file >> $newpubfn
-sed 's/<schema.table>/'$publish_schema.$publish_table'/g' subscribetemplate.sh >> $tempnewpubfn
-sed 's/<id>/'$subid'/g' $tempnewpubfn >> $newpubfn
-rm -f $tempnewpubfn
+sed 's/<schema.table>/'$publish_schema.$publish_table'/g' $kRepDir/publishseries/subscribetemplate.sh >> $tempnewpubfn
+sed 's/<repsetid>/'$repid'/g' $tempnewpubfn >> $tempnewpubfn.2
+sed 's/<id>/'$subid'/g' $tempnewpubfn.2 >> $newpubfn
+rm -f $tempnewpubfn $tempnewpubfn.2 
 chmod 777 $newpubfn
 logwrite "Executing [$newpubfn > $REP_PS_TMPDIR/subscribe.$publish_schema.$publish_table.log 2>&1]"
 $newpubfn > $REP_PS_TMPDIR/subscribe.$publish_schema.$publish_table.log 2>&1
@@ -180,61 +256,22 @@ else
 fi
 unset check
 
-#rm -f $REP_PS_TMPDIR/subscribe.$publish_schema.$publish_table.log
-#rm -f $newpubfn
-
 #--------------------------------------------------------------------
-# Create temporary merge script
+# Check for propagation of table to temp replication set
 #--------------------------------------------------------------------
-mergefile=$REP_PS_TMPDIR/merge.$publish_schema.$publish_table.sh
-echo > $mergefile
-# The next cmd used to be
-# cat $slony_config_file >> $mergefile
-cat $config_file >> $mergefile
 
-cat merge.sh >> $mergefile
-chmod 777 $mergefile
+tabchk=0
+echo "Checking for propagation of published table to slave temporary replication set $repid"
+while [ $tabchk -lt 1 ]
+do 
+    sqlret=`psql -h $SLAVEHOST -p $SLAVEPORT -U $REPUSER -t -c "select count(*) from _$CLUSTERNAME.sl_table where tab_id = $subid" $SLAVEDBNAME`
+    set - $sqlret
+    tabchk=$1
 
-#--------------------------------------------------------------------
-# Checks the number of lag events, if zero, try to merge.
-#--------------------------------------------------------------------
-echo "Waiting until slony is synced to preform the merge. This may take a while."
-sleeptimer=1
-counter=0
-#echo "counter is [$counter] and REP_PS_MERGETO is [$REP_PS_MERGETO]" #remove
-while [[ "$counter" -le "$REP_PS_MERGETO" ]]
-do
-        # checking the number of lag events
-        check=`psql -h $MASTERHOST -p $MASTERPORT -t -U $REPUSER -c "select st_lag_num_events from _jsoc.sl_status" $MASTERDBNAME`
-        check=${check// /}
-        logwrite "lag events is [$check]"
-        if [ "$check" == "0" ]
-        then
-                echo "Lag events is zero, attempting merge..."
-                logwrite "Lag events is zero, attempting merge..."
-
-                $mergefile > $REP_PS_TMPDIR/merge.$publish_schema.$publish_table.log 2>&1
-                check2=`cat $REP_PS_TMPDIR/merge.$publish_schema.$publish_table.log | grep ERROR`
-		logwrite "check after merge attempt is [$check2]"
-
-                if [ -n "$check2" ]
-                then
-                        echo "Merge failed, if lag events is still 0, trying again."
-                else
-                        logwrite "Merge was successful!"
-                        echo "Publish was successful!"
-                        break
-                fi
-                unset check2
-                rm -f $REP_PS_TMPDIR/merge.$subscribe_schema.$subscribe_table.log
-
-                #echo $counter
-                counter=$(($counter + 1))
-        fi
-        sleep $sleeptimer
+    echo -e "."
 done
 
-rm -f $REP_PS_TMPDIR/merge.$publish_schema.$publish_table.log
-rm -f $mergefile
+echo
+echo "$0 finished"
 
 logwrite "$0 finished"
