@@ -1582,6 +1582,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                   * functions will.  Instead, make an 
                   * empty recordset and rs->n empty records. */
 		 rs = (DRMS_RecordSet_t *)malloc(sizeof(DRMS_RecordSet_t));
+                 memset(rs, 0, sizeof(DRMS_RecordSet_t));
 
                  countquery = drms_query_string(env, 
                                                 seriesname, 
@@ -1600,6 +1601,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                  if (countquery)
                  {
                     free(countquery);
+                    countquery = NULL;
                  }
 
                  if (tres && tres->num_rows == 1 && tres->num_cols == 1)
