@@ -1492,13 +1492,17 @@ static int SetKeyInternal(DRMS_Record_t *rec, const char *key, DRMS_Value_t *val
    DRMS_Keyword_t *indexkw = NULL;
 
    if (rec ->readonly)
-     return DRMS_ERROR_RECORDREADONLY;
+   {
+      return DRMS_ERROR_RECORDREADONLY;
+   }
 
    keyword = drms_keyword_lookup(rec, key, 0);
    if (keyword != NULL )
    {
-      if (keyword->info->islink)
-	return DRMS_ERROR_KEYWORDREADONLY;
+      if (keyword->info->islink || drms_keyword_isconstant(keyword))
+      {
+         return DRMS_ERROR_KEYWORDREADONLY;
+      }
       else
       {
 	 int retstat = drms_convert(keyword->info->type, 
@@ -1534,7 +1538,9 @@ static int SetKeyInternal(DRMS_Record_t *rec, const char *key, DRMS_Value_t *val
       }
    }
    else
-     return DRMS_ERROR_UNKNOWNKEYWORD; 
+   {
+      return DRMS_ERROR_UNKNOWNKEYWORD; 
+   }
 }
 
 int drms_setkey(DRMS_Record_t *rec, const char *key, DRMS_Type_t type, 
@@ -1932,7 +1938,7 @@ int drms_copykeys(DRMS_Record_t *target,
 
          if (tgtkey && srckey)
          {
-            if (!drms_keyword_islinked(tgtkey))
+            if (!drms_keyword_islinked(tgtkey) && !drms_keyword_isconstant(tgtkey))
             {
                /* You don't want to copy to a keyword if it is a linked keyword - the
                 * link itself will point to read-only record containing the desired value. */
