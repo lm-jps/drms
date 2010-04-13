@@ -402,12 +402,16 @@ fi
 # Setting up the log
 #--------------------------------------------------------------------
 
-## checks if a preferred LOCAL_LOG_DIR has been specified in the $config_file                 
+## checks if a preferred LOCAL_LOG_DIR has been specified in the $config_file
+
+# use basename of script
+scrbase=`perl -e 'if ($ARGV[0] =~ /.*\/([^\/]+)/) { print $1; } else { print $ARGV[0]; }' $0`
+
 if [ -z "$kLocalLogDir" ]
 then
-  logfile=../log/$0.log
+  logfile=../log/$scrbase.log
 else
-  logfile="$kLocalLogDir/$0.log"
+  logfile="$kLocalLogDir/$scrbase.log"
 fi
 
 if [ -z "$kMaxLog" ]
@@ -464,7 +468,7 @@ do
         break
     fi
     subseries[$ctr]=$str
-    logwrite "$str"
+    logwrite "$str ($ctr)"
     ctr=$(( $ctr + 1 ))
 done
 
@@ -480,7 +484,7 @@ do
         break
     fi
     unsubseries[$ctr]=$str
-    logwrite "$str"
+    logwrite "$str ($ctr)"
     ctr=$(( $ctr + 1 ))
 done
 
@@ -507,7 +511,6 @@ then
 else
   delseriesprog="$kDeleteSeriesProgram"
 fi
-
 
 #--------------------------------------------------------------------
 # Set up ssh keys
@@ -574,15 +577,19 @@ then
     iseries=0
 
     # Check each series being subscribed to
-    seriesns=`perl -e 'if ($ARGV[0] =~ /(.+)\./) { print $1; }' ${subseries[$iseries]}`
-    seriestab=`perl -e 'if ($ARGV[0] =~ /\.(.+)/) { print $1; }' ${subseries[$iseries]}`
 
-    while
+    while [ $iseries -lt ${#subseries[@]} ]
     do
-        check=`psql -p "$pg_port" -U "$pg_user" "$pg_dbname" -c '\dt ${subseries[$iseries]}' | egrep "$seriesns[[:space:]]+\|[[:space:]]+$seriestab"`
+        seriesns=`perl -e 'if ($ARGV[0] =~ /(.+)\./) { print $1; }' ${subseries[$iseries]}`
+        seriestab=`perl -e 'if ($ARGV[0] =~ /\.(.+)/) { print $1; }' ${subseries[$iseries]}`
 
-        if [ ! -z $check ]
+        logwrite "Checking for existence of series ${subseries[$iseries]}."
+        logwrite "Executing [psql -p $pg_port -U $pg_user $pg_dbname -c '\dt ${subseries[$iseries]}' | egrep $seriesns[[:space:]]+\|[[:space:]]+$seriestab]"
+        check=`psql -p "$pg_port" -U "$pg_user" "$pg_dbname" -c "\dt ${subseries[$iseries]}" | egrep "${seriesns}[[:space:]]+\|[[:space:]]+${seriestab}"`
+        
+        if [ ! -z "$check" ]
         then
+            logwrite "series exists"
             # Series already exists. Ask user if they want to delete it.
             echo "Attempting to subscribe to series that already exists (${subseries[$iseries]})."
             echo "To continue, you will need to delete this series or move it out of the way."
@@ -591,6 +598,8 @@ then
             then
                 exit 1
             fi
+        else
+            logwrite "series does NOT exist"
         fi
         
         iseries=$(($iseries + 1))
@@ -796,7 +805,7 @@ then
     then
         # Get all the namespace names
         ctr=0
-        while [ $ctr -lt ${#subseries} ]
+        while [ $ctr -lt ${#subseries[@]} ]
         do
             onename=`echo ${subseries[$ctr]%%.*}`
             allnames="$allnames"$'\n'"$onename"
