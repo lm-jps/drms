@@ -2,10 +2,10 @@
 
 # Usage:
 #    manage_logs.pl -s <conf file> -c <counter file name> -p <parse lock file> -a <tar lock file> [-t <tar cmd> -z <gzip cmd>] [-l <log file>]
-#    manage_logs.pl -s subscription_manager.cfg -c slony_counter.txt -p /usr/local/pgsql/slon_logs/parselock.txt -t /bin/tar -z /bin/gzip -l tmp.txt
-#    manage_logs.pl -s /b/devtest/etc/subscription_manager.cfg -p /usr/local/pgsql/slon_logs/parselock.txt -t /bin/tar -z /bin/gzip -l /usr/local/pgsql/log/manage_logs.log
-#    manage_logs.pl -s /solarport/pgsql/slon_logs/site_logs_test/subscription_manager.cfg -p /usr/local/pgsql/slon_logs/parselock.txt -t /bin/tar -z /bin/gzip -l tmp.txt
-#     ~arta/JSOC/base/drms/scripts/manage_logs.pl -s /solarport/pgsql/slon_logs/site_logs_test/subscription_manager.cfg -p /usr/local/pgsql/slon_logs/parselock.txt -t /bin/tar -z /bin/gzip -l tmp.txt
+#    manage_logs.pl -s subscription_manager.cfg -c slony_counter.txt -p parselock.txt -t /bin/tar -z /bin/gzip -l tmp.txt
+#    manage_logs.pl -s /b/devtest/etc/subscription_manager.cfg -p parselock.txt -t /bin/tar -z /bin/gzip -l /usr/local/pgsql/log/manage_logs.log
+#    manage_logs.pl -s /solarport/pgsql/slon_logs/site_logs_test/subscription_manager.cfg -p parselock.txt -t /bin/tar -z /bin/gzip -l tmp.txt
+#     ~arta/JSOC/base/drms/scripts/manage_logs.pl -s /solarport/pgsql/slon_logs/site_logs_test/subscription_manager.cfg -p parselock.txt -t /bin/tar -z /bin/gzip -l tmp.txt
 
 # The lock file synchronizes access to site-specific logs. parse_slony_logs produces the
 # site-specific logs, and this script consumes them. To avoid a race condition, 
@@ -26,6 +26,7 @@ use constant kExp => 10;
 
 my($arg);
 my($siteDir);   # dir on server containing site-specific slony log files
+my($serverLockDir);
 my($cnfPath);   # path to the subscription_manager configuration file
 my($cntrFile);  # name of the counter file
 my($dotar);     # if set, the tar up files
@@ -87,34 +88,6 @@ if (!defined($cntrFile))
    $exp = kExp * 86400;
 }
 
-# Parse lock
-$plockfh = FileHandle->new(">$parselock");
-
-$natt = 0;
-while (1)
-{
-   if (flock($plockfh, LOCK_EX|LOCK_NB)) 
-   {
-      print "Created parse-lock file '$parselock'.\n";
-      last;
-   }
-   else
-   {
-      if ($natt < 10)
-      {
-         print "parse_slony_logs is currently modifying files - waiting for completion.\n";
-         sleep 1;
-      }
-      else
-      {
-         print "couldn't obtain parse lock; bailing.\n";
-         exit(1);
-      }
-   }
-
-   $natt++;
-}
-
 # Ingest the global configuration file.
 if (!(-f $cnfPath))
 {
@@ -137,9 +110,41 @@ while (defined($line = <CNFFILE>))
    {
       $siteDir = $1;
    }
+   elsif ($line =~ /^\s*kServerLockDir=(.+)/)
+   {
+      $serverLockDir = $1;
+   }
 }
 
 close(CNFFILE);
+
+# Parse lock
+$plockfh = FileHandle->new(">$serverLockDir/$parselock");
+
+$natt = 0;
+while (1)
+{
+   if (flock($plockfh, LOCK_EX|LOCK_NB)) 
+   {
+      print "Created parse-lock file '$serverLockDir/$parselock'.\n";
+      last;
+   }
+   else
+   {
+      if ($natt < 10)
+      {
+         print "parse_slony_logs is currently modifying files - waiting for completion.\n";
+         sleep 1;
+      }
+      else
+      {
+         print "couldn't obtain parse lock; bailing.\n";
+         exit(1);
+      }
+   }
+
+   $natt++;
+}
 
 # Open logfile
 if (defined($logfile))

@@ -22,12 +22,15 @@ use File::Copy;
 
 
 my($arg);
+my($cfg);
 my($logdir);
 my($archivedir);
 my($format);
 my($cmd);
 my($modpath);
 my($logseries);
+my($line);
+my($serverLockDir);
 
 my($lockfh);
 
@@ -43,7 +46,11 @@ unless (flock(DATA, LOCK_EX|LOCK_NB))
 
 while ($arg = shift(@ARGV))
 {
-   if ($arg eq "-l")
+   if ($arg eq "-c")
+   {
+      $cfg = shift(@ARGV);
+   }
+   elsif ($arg eq "-l")
    {
       $logdir = shift(@ARGV);
    }
@@ -74,18 +81,38 @@ while ($arg = shift(@ARGV))
    }
 }
 
+open(CNFFILE, "<$cfg") || die "Unable to read configuration file '$cfg'.\n";
+
+while (defined($line = <CNFFILE>))
+{
+   chomp($line);
+   
+   if ($line =~ /^\#/ || length($line) == 0)
+   {
+      next;
+   }
+
+   # Collect arguments of interest
+   if ($line =~ /^\s*kServerLockDir=(.+)/)
+   {
+      $serverLockDir = $1;
+   }
+}
+
+close(CNFFILE);
+
 # parse_slony_logs and this script must also share a lock so that this script
 # doesn't accidentally tar files that are currently being written.
 # Must open file handle with write intent to use LOCK_EX
 
-$lockfh = FileHandle->new(">$logdir/$parselock");
+$lockfh = FileHandle->new(">$serverLockDir/$parselock");
 
 my($natt) = 0;
 while (1)
 {
    if (flock($lockfh, LOCK_EX|LOCK_NB)) 
    {
-      print "Created parse-lock file '$logdir/$parselock'.\n";
+      print "Created parse-lock file '$serverLockDir/$parselock'.\n";
       last;
    }
    else

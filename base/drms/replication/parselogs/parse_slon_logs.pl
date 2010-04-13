@@ -80,6 +80,8 @@
 #    -> end_of_while_loop            
 #              
 
+use FindBin qw($Bin);
+use lib "$Bin/";
 use File::Basename;
 use Log;
 use Data::Dumper;
@@ -87,6 +89,11 @@ use Getopt::Long;
 use Fcntl ':flock';
 use Carp;
 use File::Copy;
+use FileHandle;
+
+my($lockfh);
+
+
 
 my ($repro,$begin,$end);
 my $opts = GetOptions ("help|h|H" => \&usage,
@@ -95,6 +102,7 @@ my $opts = GetOptions ("help|h|H" => \&usage,
                        "end=i"    => \$end);
 
 my $config_file=$ARGV[0] or die ("No config_file specified");
+my $parselock=$ARGV[1] or die ("No lock file specified");
 
 ###################################################################################################################
 
@@ -115,6 +123,40 @@ my %config = map {
         m/=/ and !( m/^#/)
 } (<SETTINGS>);
 close(SETTINGS);
+
+# This script must share a lock with managelogs.pl and archivelogs.pl because
+# they all modify the logs files, and if the reads and writes aren't synchonized
+# then there could be read/write race conditions.
+# Must open file handle with write intent to use LOCK_EX
+
+print "tring to get $config{'kServerLockDir'}/$parselock\n";
+
+$lockfh = FileHandle->new(">$config{'kServerLockDir'}/$parselock");
+
+my($natt) = 0;
+while (1)
+{
+   if (flock($lockfh, LOCK_EX|LOCK_NB)) 
+   {
+      print "Created parse-lock file $config{'kServerLockDir'}/$parselock.\n";
+      last;
+   }
+   else
+   {
+      if ($natt < 10)
+      {
+         print "manage_logs.pl or archivelogs.pl is currently modifying files - waiting for completion.\n";
+         sleep 1;
+      }
+      else
+      {
+         print "couldn't obtain parse lock; bailing.\n";
+         exit(1);
+      }
+   }
+
+   $natt++;
+}
 
 my @missing_config = grep { ! defined($config{$_}) } qw(
      kPSLlogsSourceDir
@@ -714,7 +756,7 @@ sub parseLog {
 sub usage {
   print <<EOF;
 
-Usage: parse_slon_logs.pl <config file> [-hH --help] [--repro --[beg|begin]=<number> --end=<number>]
+Usage: parse_slon_logs.pl <config file> <lock file> [-hH --help] [--repro --[beg|begin]=<number> --end=<number>]
 
 where 'beg' and 'end' are the beginning and end counters of the slony logs.
 EOF
