@@ -339,6 +339,40 @@ function CheckSchema () {
     fi
 }
 
+function DeleteSeries () {
+    series=$1;
+    goahead=0
+
+    # Prompt user before deleting
+    while [ 1 -eq 1 ]
+    do
+        echo -n "Would you like to delete series $series? (Y/N)"
+        read answer
+        
+        if [ $answer == "Y" -o $answer == "y" ]
+        then
+            goahead=1
+            break
+        elif [ $answer == "N" -o $answer == "n" ]
+        then
+            break
+        fi
+    done
+    
+    if [ $goahead -eq 1 ]
+    then
+        logwrite "Running $delseriesprog $series JSOC_DBUSER=slony."
+        echo "yes"$'\n'"yes"$'\n' | "$delseriesprog" "$series" JSOC_DBUSER=slony
+        if [ $? -ne 0 ]
+        then
+            logwrite "Failure to delete series $series."
+            return 1
+        fi
+    fi
+
+    return 0
+}
+
 #--------------------------------------------------------------------
 # syntax check
 #--------------------------------------------------------------------
@@ -527,20 +561,57 @@ then
     # Prevous run completely successfully, set to start
     SetState "start"
 fi
+
 #--------------------------------------------------------------------
-# Prepare trigger file
+# Check to see if the series being subscribed to exists already.
+# If so, the user cannot continue, unless they move the existing
+# tables out of the way. Give the user the option of deleting
+# the series and continuing.
 #--------------------------------------------------------------------
 
 if [ $state == "start" ]
 then
-    echo > temp.tgr
-    logwrite "Created temp.tgr"
-    echo "archive $archive" >> temp.tgr
-    echo "retention $retention" >> temp.tgr
-    echo "tapegroup $tapegroup" >> temp.tgr
-    echo "node $node" >> temp.tgr
+    iseries=0
 
-    cat "$subscribe_file" | grep -v "\#" >> temp.tgr
+    # Check each series being subscribed to
+    seriesns=`perl -e 'if ($ARGV[0] =~ /(.+)\./) { print $1; }' ${subseries[$iseries]}`
+    seriestab=`perl -e 'if ($ARGV[0] =~ /\.(.+)/) { print $1; }' ${subseries[$iseries]}`
+
+    while
+    do
+        check=`psql -p "$pg_port" -U "$pg_user" "$pg_dbname" -c '\dt ${subseries[$iseries]}' | egrep "$seriesns[[:space:]]+\|[[:space:]]+$seriestab"`
+
+        if [ ! -z $check ]
+        then
+            # Series already exists. Ask user if they want to delete it.
+            echo "Attempting to subscribe to series that already exists (${subseries[$iseries]})."
+            echo "To continue, you will need to delete this series or move it out of the way."
+            DeleteSeries ${subseries[$iseries]};
+            if [ $? -ne 0 ]
+            then
+                exit 1
+            fi
+        fi
+        
+        iseries=$(($iseries + 1))
+    done
+fi
+
+#--------------------------------------------------------------------
+# Prepare trigger file
+#--------------------------------------------------------------------
+tmptgr="$kLocalWorkingDir/temp.tgr"
+
+if [ $state == "start" ]
+then
+    echo > "$tmptgr"
+    logwrite "Created $tmptgr"
+    echo "archive $archive" >> "$tmptgr"
+    echo "retention $retention" >> "$tmptgr"
+    echo "tapegroup $tapegroup" >> "$tmptgr"
+    echo "node $node" >> "$tmptgr"
+
+    cat "$subscribe_file" | grep -v "\#" >> "$tmptgr"
     SetState "crtrigger_comp"
 fi
 
@@ -559,12 +630,16 @@ then
     else
 	logwrite "ERROR: admin schema and table ns do NOT exist" 
 	logwrite "ABORTING"
-	logwrite "Removing temp.tgr"
-	RM -f temp.tgr
+	logwrite "Removing $tmptgr"
+	RM -f "$tmptgr"
 	logwrite "Exiting $0"
 	exit 1
     fi
 fi
+
+
+
+
 
 #--------------------------------------------------------------------
 # Stopping ingestion script and copy trigger file to Manager
@@ -575,9 +650,9 @@ then
     logwrite "Stopping the ingestion script (creating die file)"
     logwrite "Creating get_slony_logs.$node.die in $ingestion_path" nl
     echo > "$ingestion_path/get_slony_logs.$node.die"
-    triggerfile="$node".subscribe_series.tgr
-    logwrite "Renaming temp.tgr to $triggerfile" nl
-    MV -f temp.tgr "$triggerfile"
+    triggerfile="$kLocalWorkingDir/$node.subscribe_series.tgr"
+    logwrite "Renaming $tmptgr to $triggerfile" nl
+    MV -f "$tmptgr" "$triggerfile"
 
 
     logwrite "Copying $triggerfile to $kRSUser@$kRSServer:$kRSTriggerDir" nl
@@ -963,14 +1038,15 @@ then
             do
                 # Make sure to ask if the user want to delete the series, if not
                 # then they need to manually delete before re-subscribing
-                logwrite "Running $delseriesprog ${unsubseries[$ctr]} JSOC_DBUSER=slony."
-                echo "yes"$'\n'"yes"$'\n' | "$delseriesprog" "${unsubseries[$ctr]}" JSOC_DBUSER=slony
+                echo "Before re-subscribing to this series, you will need to either delete it, or move it out of the way."
+                DeleteSeries ${unsubseries[$ctr]}
+
                 if [ $? -ne 0 ]
                 then
-                    logwrite "Failure to delete series ${unsubseries[$ctr]}."
                     success=false
                     # but continue with other series
                 fi
+
                 ctr=$(( $ctr + 1 ))
             done
 
