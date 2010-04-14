@@ -19,12 +19,49 @@ fi
 
 . $config_file
 
-logfile=../log/$0.$node.log
+scrbase=`perl -e 'if ($ARGV[0] =~ /.*\/([^\/]+)/) { print $1; } else { print $ARGV[0]; }' $0`
+
+if [ -z "$kSMlogDir" ]
+then
+  logfile=../log/$scrbase.log
+else
+  logfile="$kSMlogDir/$scrbase.log"
+fi
+
+if [ -z "$kMaxLog" ]
+then
+  maxlog=1048576
+else
+  maxlog="$kMaxLog"
+fi
+
+if [ ! -f "$logfile" ]
+then
+  touch "$logfile"
+  if [ $? -ne 0 ]
+  then
+    logecho "Couldn't touch log file [$logfile] ... exiting."
+    exit 1;
+  fi
+else
+  # log exists, truncate if getting too big
+  sz=`stat -c%s $logfile`
+  if [ $sz -ge $maxlog ]
+  then
+    : > "$logfile"
+    if [ $? -ne 0 ]
+      then
+        logecho "Couldn't truncate log file [$logfile] ... exiting."
+      exit 1;
+    fi
+  fi
+fi
+
 
 #--------------------------------------------------------------------
 # Setting up the log
 #--------------------------------------------------------------------
-echo > $logfile
+
 logwrite () {
         echo `date +"%m-%d-%Y %H:%M:%S - "` "$1" >> $logfile
         if [ ! $2 == "" ]

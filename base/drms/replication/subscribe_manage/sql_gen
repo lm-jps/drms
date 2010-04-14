@@ -32,12 +32,49 @@ fi
 
 . "$config_file"
 
-logfile=../log/$0.$node.log
+scrbase=`perl -e 'if ($ARGV[0] =~ /.*\/([^\/]+)/) { print $1; } else { print $ARGV[0]; }' $0`
+
+if [ -z "$kSMlogDir" ]
+then
+  logfile=../log/$scrbase.log
+else
+  logfile="$kSMlogDir/$scrbase.log"
+fi
+
+if [ -z "$kMaxLog" ]
+then
+  maxlog=1048576
+else
+  maxlog="$kMaxLog"
+fi
+
+if [ ! -f "$logfile" ]
+then
+  touch "$logfile"
+  if [ $? -ne 0 ]
+  then
+    logecho "Couldn't touch log file [$logfile] ... exiting."
+    exit 1;
+  fi
+else
+  # log exists, truncate if getting too big
+  sz=`stat -c%s $logfile`
+  if [ $sz -ge $maxlog ]
+  then
+    : > "$logfile"
+    if [ $? -ne 0 ]
+      then
+        logecho "Couldn't truncate log file [$logfile] ... exiting."
+      exit 1;
+    fi
+  fi
+fi
+
 
 #--------------------------------------------------------------------
 # Setting up the log
 #--------------------------------------------------------------------
-echo > $logfile
+
 logwrite () {
         echo `date +"%m-%d-%Y %H:%M:%S - "` "$1" >> $logfile
         if [ ! $2 == "" ]
@@ -188,9 +225,9 @@ do
 	if [ "$check" == "" ]
 	then
 		# If first time finding this schema, execute ./createns
-		logwrite "Executing [./createns ns=${schema[$counter]} nsgroup=user dbusr=$REPUSER >> $triggerdir/$node.${schema[$counter]}.createns.sql]"
+		logwrite "Executing [$kModDir/createns ns=${schema[$counter]} nsgroup=user dbusr=$REPUSER >> $triggerdir/$node.${schema[$counter]}.createns.sql]"
 		#echo "Createns >>" #remove
-		./createns ns=${schema[$counter]} nsgroup=user dbusr=$REPUSER > $triggerdir/$node.${schema[$counter]}.createns.sql
+		$kModDir/createns ns=${schema[$counter]} nsgroup=user dbusr=$REPUSER > $triggerdir/$node.${schema[$counter]}.createns.sql
 		#echo "<<Createns" #remove
 		# echo ${schema[$counter]} >> $triggerdir/$node.createns.sql
 	fi
@@ -211,8 +248,8 @@ do
 	if [ "$check" == "" ]
 	then
 		# If first time finding this schema_table, execute ./createtabstruct
-		logwrite "Executing [./createtabstructure in=${schema_table[$counter]} out=${schema_table[$counter]} archive=$archive retention=$retention tapegroup=$tapegroup owner=slony >> $triggerdir/$node.subscribe_series.sql]"
-		./createtabstructure in=${schema_table[$counter]} out=${schema_table[$counter]} archive=$archive retention=$retention tapegroup=$tapegroup owner=slony >> $triggerdir/$node.subscribe_series.sql
+		logwrite "Executing [$kModDir/createtabstructure in=${schema_table[$counter]} out=${schema_table[$counter]} archive=$archive retention=$retention tapegroup=$tapegroup owner=slony >> $triggerdir/$node.subscribe_series.sql]"
+		$kModDir/createtabstructure in=${schema_table[$counter]} out=${schema_table[$counter]} archive=$archive retention=$retention tapegroup=$tapegroup owner=slony >> $triggerdir/$node.subscribe_series.sql
 	fi
 	counter=$(( $counter + 1 ))
 done

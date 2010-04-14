@@ -1,13 +1,12 @@
 #!/bin/bash
 currDt=`date`
 pidfile=$0.pid
-logfile=../log/$0.log
 diefile=$0.die
 
 #--------------------------------------------------------------------
 # Setting up the log
 #--------------------------------------------------------------------
-echo > $logfile
+
 logwrite () {
         echo `date +"%m-%d-%Y %H:%M:%S - "` "$1" >> $logfile
         if [ ! $2 == "" ]
@@ -16,25 +15,58 @@ logwrite () {
         fi
 }
 
-logwrite "Starting $0" nl
-
 #--------------------------------------------------------------------
 # syntax check
 #--------------------------------------------------------------------
 if [ $# -eq 1 ]
 then
         config_file=$1
-        logwrite "Using $config_file" nl
 else
         error="ERROR: Usage: $0 <server configuration file>"
         echo $error
-        logwrite "$error"
         exit
 fi
 
 # dot the config file
 . $config_file
 
+scrbase=`perl -e 'if ($ARGV[0] =~ /.*\/([^\/]+)/) { print $1; } else { print $ARGV[0]; }' $0`
+
+if [ -z "$kSMlogDir" ]
+then
+  logfile=../log/$scrbase.log
+else
+  logfile="$kSMlogDir/$scrbase.log"
+fi
+
+if [ -z "$kMaxLog" ]
+then
+  maxlog=1048576
+else
+  maxlog="$kMaxLog"
+fi
+
+if [ ! -f "$logfile" ]
+then
+  touch "$logfile"
+  if [ $? -ne 0 ]
+  then
+    logecho "Couldn't touch log file [$logfile] ... exiting."
+    exit 1;
+  fi
+else
+  # log exists, truncate if getting too big
+  sz=`stat -c%s $logfile`
+  if [ $sz -ge $maxlog ]
+  then
+    : > "$logfile"
+    if [ $? -ne 0 ]
+      then
+        logecho "Couldn't truncate log file [$logfile] ... exiting."
+      exit 1;
+    fi
+  fi
+fi
 
 logwrite "Starting $0" nl
 
