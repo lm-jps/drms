@@ -339,6 +339,9 @@ function CheckSchema () {
     fi
 }
 
+# returns -1 if user doesn't want to delete the series
+# 0 if series deleted
+# 1 if series couldn't be deleted, but an attempt was made to delete it
 function DeleteSeries () {
     series=$1;
     goahead=0
@@ -367,10 +370,12 @@ function DeleteSeries () {
         then
             logwrite "Failure to delete series $series."
             return 1
+        else
+            return 0
         fi
     fi
 
-    return 0
+    return -1
 }
 
 #--------------------------------------------------------------------
@@ -1050,7 +1055,7 @@ then
                 echo "Before re-subscribing to this series, you will need to either delete it, or move it out of the way."
                 DeleteSeries ${unsubseries[$ctr]}
 
-                if [ $? -ne 0 ]
+                if [ $? -eq 1 ]
                 then
                     success=false
                     # but continue with other series
