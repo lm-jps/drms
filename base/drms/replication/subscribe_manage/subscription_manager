@@ -194,10 +194,10 @@ do
 	logwrite "Appending [new_site $new_site] to $triggerdir/$node.subscribe_series.tgr"
 	echo "new_site $new_site" >> $triggerdir/$node.subscribe_series.tgr
 		
-	logwrite "Executing [./subscription_update $config_file $node $new_site $archive $retention $tapegroup $subupdatefile]" 
+	logwrite "Executing [$kRepDir/subscribe_manage/subscription_update $config_file $node $new_site $archive $retention $tapegroup $subupdatefile]" 
 		
-	# Executing [./subscription_update $config_file $node $new_site $archive $retention $tapegroup $subupdatefile &]
-	./subscription_update $config_file $node $new_site $archive $retention $tapegroup $subupdatefile &
+	# Executing [$kRepDir/subscribe_manage/subscription_update $config_file $node $new_site $archive $retention $tapegroup $subupdatefile &]
+	$kRepDir/subscribe_manage/subscription_update $config_file $node $new_site $archive $retention $tapegroup $subupdatefile &
 		
 	# Renaming trigger file from $node.subscribe_series.tgr to $node.subscribe_series.cfg
 	logwrite "Move $triggerdir/${triggerfile[$counter]} $triggerdir/${triggerfile[$counter]/tgr/cfg}" nl
@@ -283,14 +283,14 @@ do
 			fi
 		done
 
-	logwrite "Executing ./subscription_cleanup $config_file $node $new_site $success $appliedfile &" 
-	logwrite "NOTE: Syntax: ./subscription_cleanup <server configuration file> <node> <new subscription, true/false> <successful sql applictation true/false> <the sqlgen file with subscription info> &" nl
+	logwrite "Executing $kRepDir/subscribe_manage/subscription_cleanup $config_file $node $new_site $success $appliedfile &" 
+	logwrite "NOTE: Syntax: $kRepDir/subscribe_manage/subscription_cleanup <server configuration file> <node> <new subscription, true/false> <successful sql applictation true/false> <the sqlgen file with subscription info> &" nl
 
         # Must wrap this call to subscription_cleanup inside a drms_flock.pl call to prevent a race condition
         # with prep_slon_logs.  The lockfile is serieslist.txt.
 
-	# Executing [./subscription_cleanup $config_file $node $new_site $success $appliedfile &]
-	./subscription_cleanup $config_file $node $new_site $success $appliedfile &
+	# Executing [$kRepDir/subscribe_manage/subscription_cleanup $config_file $node $new_site $success $appliedfile &]
+	$kRepDir/subscribe_manage/subscription_cleanup $config_file $node $new_site $success $appliedfile &
 
 	logwrite "Removing $triggerdir/${sqlappliedfile[$counter]}" nl
 	rm -f $triggerdir/${sqlappliedfile[$counter]}

@@ -219,9 +219,9 @@ fi
 #echo "$subscribers_dir/$node.new	$newtablefile" >> $parser_config
 
 #-------------------------------------------------------------------------
-# Execute the sql_gen script [./sql_gen $node $new_site $input_file]"
+# Execute the sql_gen script [$kRepDir/subscribe_manage/sql_gen $node $new_site $input_file]"
 #-------------------------------------------------------------------------
-logwrite "Executing the sql_gen script [./sql_gen $config_file $node $new_site $input_file]" nl
-./sql_gen $config_file $node $new_site $archive $retention $tapegroup $input_file &
+logwrite "Executing the sql_gen script [$kRepDir/subscribe_manage/sql_gen $config_file $node $new_site $input_file]" nl
+$kRepDir/subscribe_manage/sql_gen $config_file $node $new_site $archive $retention $tapegroup $input_file &
 logwrite "$0 finished"
 

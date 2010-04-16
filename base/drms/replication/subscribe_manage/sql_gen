@@ -265,8 +265,8 @@ fi
 #-------------------------------------------------------------------------
 # Execute sdo_slony1_dump.sh
 #-------------------------------------------------------------------------
-logwrite "Executing: [ ./sdo_slony1_dump.sh $SLAVEDBNAME jsoc $SLAVEPORT $new_site_bool ${schema_table[@]} >> $triggerdir/$node.subscribe_series.sql 2> $SMworkDir/slony1_dump.$node.log &"
-./sdo_slony1_dump.sh $SLAVEDBNAME jsoc $SLAVEPORT $new_site_bool ${schema_table[@]} >> $triggerdir/$node.subscribe_series.sql 2> $SMworkDir/slony1_dump.$node.log &
+logwrite "Executing: [ $kRepDir/subscribe_manage/sdo_slony1_dump.sh $SLAVEDBNAME jsoc $SLAVEPORT $new_site_bool ${schema_table[@]} >> $triggerdir/$node.subscribe_series.sql 2> $SMworkDir/slony1_dump.$node.log &"
+$kRepDir/subscribe_manage/sdo_slony1_dump.sh $SLAVEDBNAME jsoc $SLAVEPORT $new_site_bool ${schema_table[@]} >> $triggerdir/$node.subscribe_series.sql 2> $SMworkDir/slony1_dump.$node.log &
 
 #-------------------------------------------------------------------------
 # Adding the new entry to the slon log parser config file
