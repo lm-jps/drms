@@ -136,6 +136,16 @@ tie(my(%logs), "IO::Dir", $logdir);
 @lfiles = keys(%logs);
 @sorted = sort({($a =~ /^$format/)[0] <=> ($b =~ /^$format/)[0]} map({$_ =~ /^($format)/ ? $1 : ()} @lfiles));
 
+if ($#sorted < 0)
+{
+   # no log files to archive
+   print "No log file to archive, exiting.\n";
+   untie(%logs);
+   flock($lockfh, LOCK_UN);
+   $lockfh->close;
+   exit(0);
+}
+
 # Create tarfile
 my($fcounter) = -1;
 my($lcounter) = -1;
