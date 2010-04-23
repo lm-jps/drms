@@ -285,10 +285,16 @@ void setup()
     printf("tapearc can't get tape_svc handle on %s\n", thishost);
     exit(1);
   }
-  clntsum = clnt_create(thishost, SUMPROG, SUMVERS, "tcp");
+  /* Create client handle used for calling the sum_svc */
+  if(strcmp(thishost, TAPEHOST)) { //if running on d02, use j1
+    clntsum = clnt_create(thishost, SUMPROG, SUMVERS, "tcp");
+  }
+  else {
+    clntsum = clnt_create(SUMSVCHOST, SUMPROG, SUMVERS, "tcp");
+  }
   if(!clntsum) {       /* server not there */
     clnt_pcreateerror("Can't get client handle to sum_svc in tapearc");
-    printf("***tapearc can't get sum_svc on %s\n", thishost);
+    printf("***tapearc can't get sum_svc client handle\n");
     exit(1);
   }
 
@@ -414,102 +420,7 @@ int main(int argc, char *argv[])
      goaway();
   }
 
-  walker = aplist;	/* this list is in descending group_id order */
-
-//!!TEMP reform walker to be by group_id
-  while(walker) {
-    if(walker->group_id == 0) {
-      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
-    }
-    walker = walker->next;
-  }
-  walker = aplist;
-  while(walker) {
-    if(walker->group_id == 1) {
-      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
-    }
-    walker = walker->next;
-  }
-  walker = aplist;
-  while(walker) {
-    if(walker->group_id == 2) {
-      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
-    }
-    walker = walker->next;
-  }
-  walker = aplist;
-  while(walker) {
-    if(walker->group_id == 3) {
-      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
-    }
-    walker = walker->next;
-  }
-  walker = aplist;
-  while(walker) {
-    if(walker->group_id == 4) {
-      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
-    }
-    walker = walker->next;
-  }
-  walker = aplist;
-  while(walker) {
-    if(walker->group_id == 5) {
-      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
-    }
-    walker = walker->next;
-  }
-  walker = aplist;
-  while(walker) {
-    if(walker->group_id == 8) {
-      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
-    }
-    walker = walker->next;
-  }
-  walker = aplist;
-  while(walker) {
-    if(walker->group_id == 9) {
-      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
-    }
-    walker = walker->next;
-  }
-  walker = aplist;
-  while(walker) {
-    if(walker->group_id == 11) {
-      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
-    }
-    walker = walker->next;
-  }
-  walker = aplist;
-  while(walker) {
-    if(walker->group_id == 102) {
-      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
-    }
-    walker = walker->next;
-  }
-  walker = aplist;
-  while(walker) {
-    if(walker->group_id == 103) {
-      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
-    }
-    walker = walker->next;
-  }
-  walker = aplist;
-  while(walker) {
-    if(walker->group_id == 104) {
-      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
-    }
-    walker = walker->next;
-  }
-  walker = aplist;
-  while(walker) {
-    if(walker->group_id == 105) {
-      setpadata(&ap, walker->wd, walker->sumid, walker->bytes, walker->status, walker->archsub, walker->effective_date, walker->group_id, walker->safe_id, walker->ds_index);
-    }
-    walker = walker->next;
-  }
-  walker = ap;
-//!!END TEMP by group_id
-
+  walker = aplist;	/* this list is in decending group_id order */
   storeunitarch(ARCH_CHUNK); /* kick of first chunk of archives */
   if(call_tape_svc_cnt == 0) { /* wait until all finish */
     if(is_connected)
@@ -647,6 +558,8 @@ KEY *tapearcdo_1(KEY *params)
 			groupid, index);
   }
   --call_tape_svc_cnt;
+  printf("call_tape_svc_cnt = %d\n", call_tape_svc_cnt); //!!TEMP
+
   if(storeunitarch(1)) {	 /* send another chunk to tape_svc */
     if(call_tape_svc_cnt == 0) { /* wait until all finish */
       if(is_connected)
