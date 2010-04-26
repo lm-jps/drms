@@ -2841,19 +2841,19 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
          if (startdur)
          {
             /* valind is actually a duration, in seconds. */
-            exact = valind / roundstep;
+            exact = valind / stepsecs;
             inexact = (int)exact;
 
-            if (valind < roundstep)
+            if (valind < stepsecs)
             {
                toosmall = 1;
-               fprintf(stderr, "Invalid slotted-keyword duration '%f seconds' specified.  Should be at least the step size of '%f seconds'.  Duration was rounded up to step size.\n", valind, roundstep);
+               fprintf(stderr, "Invalid slotted-keyword duration '%f seconds' specified.  Should be at least the step size of '%f seconds'.  Duration was rounded up to step size.\n", valind, stepsecs);
                /* ensures that at least one slot is returned */
-               valout->value.longlong_val = CalcSlot(roundstep, 0.0, stepsecs, roundstep);
+               valout->value.longlong_val = CalcSlot(stepsecs, 0.0, stepsecs, roundstep);
             }
             else
             {
-               valout->value.longlong_val = CalcSlot(inexact * roundstep, 0.0, stepsecs, roundstep);
+               valout->value.longlong_val = CalcSlot(inexact * stepsecs, 0.0, stepsecs, roundstep);
             }
          }
          else
