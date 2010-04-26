@@ -194,6 +194,10 @@ extern KEY *respdo_1();
 /* This is the tapearc program registration */
 #define TAPEARCPROG ((uint32_t)0x20000614) /* 536872468 */
 #define TAPEARCVERS ((uint32_t)1)
+#define TAPEARCVERS0 ((uint32_t)2)
+#define TAPEARCVERS1 ((uint32_t)3)
+#define TAPEARCVERS2 ((uint32_t)4)
+#define TAPEARCVERS3 ((uint32_t)5)
 #define TAPEARCDO ((uint32_t)1)
 
 extern KEY *tapearcdo_1();
@@ -485,7 +489,7 @@ PADATA *getpadata(PADATA *list, char *wd, uint64_t sumid);
 PADATA *getpauid(PADATA *list, uint64_t uid);
 PADATA *getpawd(PADATA *list, char *wd);
 PADATA *getpanext(PADATA *list);
-PADATA *NC_PaRequest_AP ();
+PADATA *NC_PaRequest_AP (int groupset);
 PADATA *NC_PaRequest_AP_60d ();
 int DS_ConnectDB (char *dbname);
 int DS_DisConnectDB ();
