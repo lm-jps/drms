@@ -2441,7 +2441,11 @@ double drms_keyword_getstep(DRMS_Keyword_t *key,
 {
    double step = DRMS_MISSING_DOUBLE;
    int stat = DRMS_SUCCESS;
-   *unit = kSlotKeyUnit_Invalid;
+
+   if (unit)
+   {
+      *unit = kSlotKeyUnit_Invalid;
+   }
 
    if (drms_keyword_gettype(key) == DRMS_TYPE_STRING)
    {
@@ -2456,7 +2460,10 @@ double drms_keyword_getstep(DRMS_Keyword_t *key,
 	      if (durstr)
 	      {
 		 /* Always returns in units of seconds */
-		 if (drms_names_parseduration(&durstr, &step))
+                
+                 /* Can't use the 'u' notation for durations here. This durstr
+                  * must define a physical time unit. */
+		 if (drms_names_parseduration(&durstr, &step, 0))
 		 {
 		    fprintf(stderr,
 			    "Invalid step keyword value for '%s'.\n",
@@ -2464,7 +2471,11 @@ double drms_keyword_getstep(DRMS_Keyword_t *key,
 		    stat = DRMS_ERROR_INVALIDDATA;
 		 }
 
-		 *unit = kSlotKeyUnit_Seconds;
+                 if (unit)
+                 {
+                    *unit = kSlotKeyUnit_Seconds;
+                 }
+
 		 free(durstr);
 	      }
 	   }

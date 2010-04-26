@@ -7,7 +7,7 @@
 /* Not much to export in DRMS API */
 
 
-int drms_names_parseduration(char **in, double *duration);
+int drms_names_parseduration(char **in, double *duration, double width);
 
 /**
    @addtogroup names_api

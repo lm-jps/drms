@@ -20,7 +20,7 @@ static PrimekeyRangeSet_t *parse_slottedkey_set(DRMS_Keyword_t *slotkey,
 static IndexRangeSet_t *parse_index_set(char **in);
 static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword, char **in);
 static int is_duration(const char *in);
-static int parse_duration(char **in, double *duration);
+static int parse_duration(char **in, double *duration, double width);
 
 static int syntax_error;
 static int prime_keynum=0;
@@ -248,8 +248,6 @@ static RecordQuery_t *parse_record_query(char **in)
     XASSERT(query = malloc(sizeof(RecordQuery_t)));
     memset(query,0,sizeof(RecordQuery_t));
     out = query->where;
-    /* Remove leading whitespace. */
-    // SKIPWS(p);
     len = 0;
 
     /* Get SQL-where-clause-like string.  */
@@ -257,14 +255,23 @@ static RecordQuery_t *parse_record_query(char **in)
     {
        if (*p == '"' || *p == '\'')
        {
+          char endq = *p;
           /* skip quoted strings */
           DRMS_Type_Value_t val;
           memset(&val, 0, sizeof(DRMS_Type_Value_t));
+          /* drms_sscanf_str will end up pointing to one char after the quote, because
+           * the first character was a quote. If there is no end matching quote, 
+           * it will return -1. */
           int rlen = drms_sscanf_str(p, NULL, &val);
           int ilen = 0;
 
-          /* if ending ']' was found, then p + rlen is ']', otherwise
-           * it is the next char after end quote */
+          if (rlen == -1)
+          {
+             /* no end quote */
+             fprintf(stderr, "End quote '%c' missing./n", endq);
+             goto error;
+          }
+
           while (ilen < rlen)
           {
              *out++ = *p++;
@@ -309,6 +316,13 @@ fprintf(stderr,"XXXXX in parse_record_query, convert time %s uses %d chars, give
           if (*(p + 1) == ']')
           {
              break;
+          }
+          else
+          {
+             /* This ?/! is not inside a quoted string, so it MUST be followed by a ], 
+              * otherwise this is a syntax error. */
+             fprintf(stderr, "Expecting filter to end in '%c]', but '%c]' found;\n", endchar, *(p + 1));
+             goto error;
           }
        }
        else
@@ -935,9 +949,16 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 	   * (for time slotted key only). */
 	  double offset;
 	  double base;
-	  
+	  double step;
 
-	  if (!parse_duration(&p, &offset))
+          step = drms_keyword_getslotstep(keyword, NULL, &stat);
+
+          if (stat != DRMS_SUCCESS)
+          {
+             goto error;
+          }
+
+          if (!parse_duration(&p, &offset, step))
 	  {
 	     /* The start time is really relative to the epoch, 
 	      * so need to convert to DRMS time. */
@@ -1050,10 +1071,25 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
            };
 
 	  /* Special handling of time intervals and durations. */
-	  if (datatype==DRMS_TYPE_TIME)
-	    {
+           if (datatype==DRMS_TYPE_TIME)
+           {
 	      double dval = 0.0;
 	      DRMS_Type_Value_t dvalval;
+              double step;
+
+              if (drms_keyword_isslotted(keyword))
+              {
+                 step = drms_keyword_getslotstep(keyword, NULL, &stat);
+
+                 if (stat != DRMS_SUCCESS)
+                 {
+                    goto error;
+                 }
+              }
+              else
+              {
+                 step = 1.0;
+              }
 
 	      if (vr->type == START_END)
 		{
@@ -1078,9 +1114,9 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
                   memset(&(vholder.value), 0, sizeof(DRMS_Type_Value_t));
 		}
 	      else
-		{
-                   /* in other words, this is a duration */
-		   if (parse_duration(&p,&dval))
+              {
+                 /* in other words, this is a duration */
+                 if (parse_duration(&p,&dval,step))
 		   {
 		      fprintf(stderr,"Syntax Error: Expected time or float duration "
 			      " in value range, found '%s'.\n", p);
@@ -1097,7 +1133,7 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 		  ++p;
 		  vr->has_skip = 1;
 
-		  if (parse_duration(&p,&dval))    
+		  if (parse_duration(&p,&dval,step))    
 		    {
 		      fprintf(stderr,"Syntax Error: Expected skip (time duration)"
 			      " in value range, found '%s'.\n", p);
@@ -1110,37 +1146,87 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 		vr->has_skip = 0;
 	    }
 	  else
-	    { /* Non-time types. */
-	      if ((n = drms_sscanf2(p, ",]", 0, datatype, &vholder)) == 0)    
-		{
-		  fprintf(stderr,"Syntax Error: Expected end or duration value of"
-			  " type %s in value range, found '%s'.\n",drms_type2str(datatype), p);
-		  goto error;
-		}
-	      else
-              {
-                 vr->x = vholder.value;
-                 memset(&(vholder.value), 0, sizeof(DRMS_Type_Value_t));
-                 p+=n;
-              }
-	      /* Get skip */
-	      if (*p=='@')
-		{
-		  ++p;
-		  vr->has_skip = 1;
-		  if ((n = drms_sscanf2(p, ",]", 0, datatype, &vholder)) == 0)    
-		    {
-		      fprintf(stderr,"Syntax Error: Expected skip value of type %s in"
-			      " value range, found '%s'.\n",drms_type2str(datatype), p);
-		      goto error;
-		    }
-		  else
+          { /* Non-time types. */
+               double dval = 0.0;
+               DRMS_Type_Value_t dvalval;
+               double step = 1.0;
+
+               if (drms_keyword_isslotted(keyword))
+               {
+                  /* SLOT keywords might use the 'u' notation in a duration */
+                  step = drms_keyword_getslotstep(keyword, NULL, &stat);
+
+                  if (stat != DRMS_SUCCESS)
                   {
-                     vr->skip = vholder.value;
+                     goto error;
+                  }
+               }
+
+               if (vr->type == START_DURATION && 
+                   keyword->info->recscope == kRecScopeType_SLOT &&
+                   is_duration(p))
+               {
+                  /* It might be that all you need is the is_duration() check, but for now
+                   * the only known case of a non-time keyword having a duration
+                   * is for a SLOT slotted keyword. */
+                  if (parse_duration(&p, &dval, step))    
+                  {
+                     fprintf(stderr,"Syntax Error: Expected skip (time duration)"
+                             " in value range, found '%s'.\n", p);
+                     goto error;
+                  }
+
+		  dvalval.double_val = dval;
+		  drms_convert(datatype, &(vr->x), DRMS_TYPE_DOUBLE, &dvalval);             
+               }
+               else
+               {
+                  if ((n = drms_sscanf2(p, ",]", 0, datatype, &vholder)) == 0)    
+                  {
+                     fprintf(stderr,"Syntax Error: Expected end or duration value of"
+                             " type %s in value range, found '%s'.\n",drms_type2str(datatype), p);
+                     goto error;
+                  }
+                  else
+                  {
+                     vr->x = vholder.value;
                      memset(&(vholder.value), 0, sizeof(DRMS_Type_Value_t));
                      p+=n;
                   }
-		}
+               }
+	      /* Get skip */
+	      if (*p=='@')
+              {
+                 ++p;
+                 vr->has_skip = 1;
+
+                 /* Again, this could be a 'u' duration for SLOT slotted keywords. */
+                 if (keyword->info->recscope == kRecScopeType_SLOT && is_duration(p))
+                 {
+                    if (parse_duration(&p, &dval, step))    
+                    {
+                       fprintf(stderr,"Syntax Error: Expected skip (time duration)"
+                               " in value range, found '%s'.\n", p);
+                       goto error;
+                    }
+
+                    dvalval.double_val = dval;
+                    drms_convert(datatype, &(vr->skip), DRMS_TYPE_DOUBLE, &dvalval);
+                 }
+                 else 
+                 {
+                    if ((n = drms_sscanf2(p, ",]", 0, datatype, &vholder)) == 0)    
+                    {
+                       fprintf(stderr,"Syntax Error: Expected skip value of type %s in"
+                               " value range, found '%s'.\n",drms_type2str(datatype), p);
+                       goto error;
+                    }
+
+                    vr->skip = vholder.value;
+                    memset(&(vholder.value), 0, sizeof(DRMS_Type_Value_t));
+                    p+=n;
+                 }
+              }
 	      else
 		vr->has_skip = 0;
 	    }
@@ -1212,7 +1298,7 @@ static int is_duration(const char *in)
 }
 
 /* Parse time duration constant */
-static int parse_duration(char **in, double *duration)
+static int parse_duration(char **in, double *duration, double width)
 {
   char *end, *p = *in;
   double dval;
@@ -1243,9 +1329,9 @@ static int parse_duration(char **in, double *duration)
     *duration = 86400.0*dval;
     break;
   case 'u':
-    /* Means 'unit' - for SLOT type slotted keys, can have a query of the form
-     * [392.3/100u].  This just means [392.3 - 492.3). */
-    *duration = 1.0*dval;
+    /* Means the unit is a slot - for SLOT type slotted keys, can have a query of the form
+     * [392.3/100u]. If the slot width is 3.0, this just means [392.3 - 692.3). */
+    *duration = width*dval;
     break;
   default:
     fprintf(stderr,"Syntax Error: Time duration unit must be one of 's', "
@@ -1259,7 +1345,7 @@ static int parse_duration(char **in, double *duration)
   return 1;
 }
 
-int drms_names_parseduration(char **in, double *duration)
+int drms_names_parseduration(char **in, double *duration, double width)
 {
    char *tmp = strdup(*in);
    int ret = 1;
@@ -1267,7 +1353,7 @@ int drms_names_parseduration(char **in, double *duration)
    if (tmp)
    {
       char *tmp2 = tmp;
-      ret = parse_duration(&tmp2, duration);
+      ret = parse_duration(&tmp2, duration, width);
       free(tmp);
    }
 
@@ -1297,13 +1383,19 @@ int drms_names_parsedegreedelta(char **deltastr, DRMS_SlotKeyUnit_t *unit, doubl
    if (strncasecmp(unitstr, "d", 1) == 0)
    {
       *delta = dval;
-      *unit = kSlotKeyUnit_Degrees;
+      if (unit)
+      {
+         *unit = kSlotKeyUnit_Degrees;
+      }
       p++;
    }
    else if (strncasecmp(unitstr, "m", 1) == 0)
    {
       *delta = 60.0 * dval;
-      *unit = kSlotKeyUnit_Arcminutes;
+      if (unit)
+      {
+         *unit = kSlotKeyUnit_Arcminutes;
+      }
       p++;
    }
    else if (strncasecmp(unitstr, "s", 1) == 0)
@@ -1322,13 +1414,19 @@ int drms_names_parsedegreedelta(char **deltastr, DRMS_SlotKeyUnit_t *unit, doubl
    else if (strncasecmp(unitstr, "r", 1) == 0)
    {
       *delta =  ((M_PI) / 648000) * dval;
-      *unit = kSlotKeyUnit_Radians;
+      if (unit)
+      {
+         *unit = kSlotKeyUnit_Radians;
+      }
       p++;
    }
    else if (strncasecmp(unitstr, "ur", 2) == 0)
    {
       *delta =  ((M_PI) / 648000) * 1000000.0 * dval;
-      *unit = kSlotKeyUnit_MicroRadians;
+      if (unit)
+      {
+         *unit = kSlotKeyUnit_MicroRadians;
+      }
       p++;
       p++;
    }
