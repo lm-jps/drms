@@ -87,8 +87,8 @@ noerror:
     return(0);
 
 sqlerror:
-	printk("Error in SUMLIB_InfoGet\n"); 
-	printk("% .70s \n", sqlca.sqlerrm.sqlerrmc); 
+	printk("Error in SUMLIB_InfoGet sunum=%lu\n", ds_index); 
+	//printk("% .70s \n", sqlca.sqlerrm.sqlerrmc); 
     EXEC SQL WHENEVER SQLERROR CONTINUE;
     EXEC SQL ROLLBACK WORK;
     return(1);
