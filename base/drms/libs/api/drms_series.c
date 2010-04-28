@@ -521,6 +521,12 @@ int drms_insert_series(DRMS_Session_t *session, int update,
   return 1;
 }
 
+/* cascade - I think this means to delete the PostgreSQL record-table and sequence
+ * objects, and the SUs that the record table refers to. cascade == 0 when called 
+ * from modify_series, but cascade == 1 when called from delete_series. 
+ * modify_series copies the record-table and sequence to a new table and sequence
+ * for the series. These copied records still refer to original SUs (so you
+ * don't want to delete them). */
 int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
 {
   char query[1024], *series_lower = NULL, *namespace = NULL;

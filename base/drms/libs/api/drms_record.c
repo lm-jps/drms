@@ -2257,6 +2257,19 @@ DRMS_Record_t *drms_create_recproto(DRMS_Record_t *recSource, int *status)
 	 {
 	    fprintf(stderr,"Failed to copy keywords.\n");
 	 }
+
+         /* The series info must refer to The template */
+         for (int i = 0; i < recTarget->seriesinfo->pidx_num; i++) 
+         {
+            recTarget->seriesinfo->pidx_keywords[i] = 
+              drms_keyword_lookup(recTarget, recSource->seriesinfo->pidx_keywords[i]->info->name, 0);
+         }
+
+         for (int i = 0; i < recTarget->seriesinfo->dbidx_num; i++) 
+         {
+            recTarget->seriesinfo->dbidx_keywords[i] = 
+              drms_keyword_lookup(recTarget, recSource->seriesinfo->dbidx_keywords[i]->info->name, 0);
+         }
       }
       
       if (*status == DRMS_SUCCESS)
@@ -5186,6 +5199,7 @@ int CopySeriesInfo(DRMS_Record_t *target, DRMS_Record_t *source)
 {
    memcpy(target->seriesinfo, source->seriesinfo, sizeof(DRMS_SeriesInfo_t));
    memset(target->seriesinfo->pidx_keywords, 0, sizeof(DRMS_Keyword_t *) * DRMS_MAXPRIMIDX);
+   memset(target->seriesinfo->dbidx_keywords, 0, sizeof(DRMS_Keyword_t *) * DRMS_MAXPRIMIDX);
 
    return DRMS_SUCCESS;
 }
