@@ -1,6 +1,9 @@
 /*-----------------------------------------------------------------------------
  * /home/jim/cvs/JSOC/base/sum/tapearc.c
  *
+ * NOTE: this is just like tapearc0 except it still has the 60d call,
+ * which is really obsolete after launch.
+ *
  * This is a stand alone program that will archive all the SUMS archive pending 
  * storage units to the tape_svc supported drives . 
  * It gets all the archive pending working
@@ -317,6 +320,7 @@ int call_tape_svc(int groupid, double bytes, uint64_t index) {
 
     WRTSTATUS = 0;
     StartTimer(0); //!!TEMP for debug. time call is case timeout 
+    setkey_int(&alist, "tapearcvers", TAPEARCVERS);
     status = clnt_call(clnttape, WRITEDO, (xdrproc_t)xdr_Rkey, (char *)alist,
                     (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
 /*********************!!!TEMP**************
@@ -404,7 +408,8 @@ int main(int argc, char *argv[])
     aplist = NC_PaRequest_AP_60d();
   }
   else {
-    aplist = NC_PaRequest_AP();
+    //printf("You may really want to be using tapearc0\n");
+    aplist = NC_PaRequest_AP(3);	//call groupset 3 which is all
   }
   archive_pending = count_list(aplist);
   if (verbose || queryflg) {
