@@ -404,7 +404,7 @@ int main(int argc, char *argv[])
     aplist = NC_PaRequest_AP_60d();
   }
   else {
-    aplist = NC_PaRequest_AP();
+    aplist = NC_PaRequest_AP(3);	//all groupsets
   }
   archive_pending = count_list(aplist);
   if (verbose || queryflg) {
