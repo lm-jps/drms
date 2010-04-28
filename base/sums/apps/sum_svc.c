@@ -396,7 +396,7 @@ if(!strcmp(hostn, "dcs0") || !strcmp(hostn, "dcs1") || !strcmp(hostn, "dcs2") ||
 if(strcmp(hostn, "lws") && strcmp(hostn, "n00") && strcmp(hostn, "d00") && strcmp(hostn, "n02")) { 
   /* Create client handle used for calling the tape_svc */
   printf("\nsum_svc waiting for tape servers to start (approx 10sec)...\n");
-  sleep(10);			/* give time to start */
+  sleep(13);			/* give time to start */
   //if running on j1, then the tape_svc is on TAPEHOST, else the localhost
   if(strcmp(hostn, SUMSVCHOST)) { 
     clnttape = clnt_create(thishost, TAPEPROG, TAPEVERS, "tcp");
