@@ -773,6 +773,7 @@ KEY *writedo_1(KEY *params) {
   TAPE tapeinfo;
   TQ *p;
   int group_id, state, snum, dnum;
+  int tapearcvers;
   char *tapeid, *user;
   uint64_t sumid, dsix;
   double total_bytes;
@@ -791,7 +792,8 @@ KEY *writedo_1(KEY *params) {
   dsix = getkey_uint64(params, "ds_index_0");
   group_id = getkey_int(params, "group_id_0");
   total_bytes = getkey_double(params, "total_bytes");
-  if(!(clresp = set_client_handle(TAPEARCPROG, TAPEARCVERS))) { 
+  tapearcvers = getkey_int(params, "tapearcvers");
+  if(!(clresp = set_client_handle(TAPEARCPROG, tapearcvers))) { 
     rinfo = NO_CLNTTCP_CREATE;  /* give err status back to original caller */
     send_ack();
     ftmp = StopTimer(5);
@@ -2113,6 +2115,7 @@ KEY *impexpdo_1(KEY *params)
 KEY *tapetestdo_1(KEY *params) {
   static KEY *retlist;
   static CLIENT *clresp;
+  int tapearcvers;
 
   write_log("You've called tapetestdo_1() in tape_svc\n");
   if(findkey(params, "DEBUGFLG")) {
@@ -2122,9 +2125,10 @@ KEY *tapetestdo_1(KEY *params) {
       keyiterate(logkey, params);
     }
   }
+  tapearcvers = getkey_int(params, "tapearcvers");
   retlist = newkeylist();
   add_keys(params, &retlist);
-  if(!(clresp = set_client_handle(TAPEARCPROG, TAPEARCVERS))) {
+  if(!(clresp = set_client_handle(TAPEARCPROG, tapearcvers))) {
     rinfo = 1;  /* give err status back to original caller */
     send_ack();
     return((KEY *)1);  /* error. nothing to be sent */
