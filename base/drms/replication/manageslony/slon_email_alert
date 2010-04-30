@@ -1,0 +1,125 @@
+#!/bin/bash
+#SEALogDir=../log/
+#SEATempDir=../temp/
+#-------------------------------------------------------------------------
+# Syntax check
+#-------------------------------------------------------------------------
+if [[ $# -eq 2 ]]
+then
+	config_file=$1
+	input_string=$2
+
+        if [[ -f $config_file ]]
+        then
+                . $config_file
+
+        else
+                echo "ERROR: File $config_file does not exist, exiting"
+                exit
+        fi
+
+else
+        echo "ERROR: Usage: $0 <config file> <input string>"
+        exit
+fi
+
+#--------------------------------------------------------------------
+# Setting up the log
+#--------------------------------------------------------------------
+logfile=$SEALogDir/`basename $0.log`
+logwrite () {
+        echo `date +"%m-%d-%Y %H:%M:%S - "` "$1" >> $logfile
+        if [ ! $2 == "" ]
+        then
+                echo `date +"%m-%d-%Y %H:%M:%S - "` >> $logfile
+        fi
+}
+
+logwrite "Starting $0" 
+logwrite "Using $config_file"
+
+#--------------------------------------------------------------------
+# Function that executes a command, and echos the result to the log
+#--------------------------------------------------------------------
+run_command () {
+    logwrite "executing [$1]"
+    cmd=`$1 2>&1`
+    cmdResult=$?
+    if [[ $cmdResult -eq "0" ]]
+    then
+        logwrite "--Command [$1] successful with output [$cmd]" nl
+    else
+        logwrite "ERROR: Command [$1] failed with output [$cmd]"
+    fi
+}
+
+trap "echo 'caught a signal'; exit" HUP INT TERM
+
+
+#-------------------------------------------------------------------------
+# Email list import
+#-------------------------------------------------------------------------
+get_email_list () {
+	# read each line of the email list file
+	exec < $SEAEmailList
+	while read line
+	do
+	set - $line
+	if [[ "$1" == "#" ]]
+	then
+		continue
+	else
+		logwrite "Adding email [$1] to list of recipients"
+		echo "Cc: $1" >> $tempemailfile
+	fi
+
+done
+}
+
+
+#-------------------------------------------------------------------------
+# pg_stat_activity information fetch
+#-------------------------------------------------------------------------
+## this is a placeholder for future implementation.
+## the process will parse the input string and extract the slony 
+## transaction ID, then find the information in pg_stat_activity that 
+## it references. After that, it will write that information to the 
+## temporary mail file, which will be sent to the email list below.
+##
+##
+
+#-------------------------------------------------------------------------
+# Create temp email file
+#-------------------------------------------------------------------------
+# Create a temporary email with current date stamp so any other process doesn't overwrite it
+currDt=`date +"%m-%d-%Y.%H:%M:%S:%N"`
+tempemailfile=$SEATempDir/email_body.$currDt.txt
+
+logwrite "Forming temporary email file [$tempemailfile]"
+
+echo "Subject: ALERT: Slony replication waiting on old transaction" > $tempemailfile
+get_email_list
+echo "" >> $tempemailfile
+echo "Alert, the slon_log_monitor found the following in the slony log file" >> $tempemailfile
+echo "\"$input_string\"" >> $tempemailfile
+echo "" >> $tempemailfile
+
+logwrite "Finished forming temp email file"
+
+#-------------------------------------------------------------------------
+# send email
+#-------------------------------------------------------------------------
+logwrite "Sending email"
+$SEASendmailBin -t < $tempemailfile
+logwrite "Finished sending email"
+
+
+#-------------------------------------------------------------------------
+# cleanup
+#-------------------------------------------------------------------------
+run_command "rm -f $tempemailfile"
+
+
+logwrite "Finished $0"
+
+

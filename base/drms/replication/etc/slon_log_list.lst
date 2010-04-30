@@ -1,0 +1,25 @@
+############################################################
+# Requires four different parameters separated by a "|"
+#
+# search string | command to execute when search string is found | forward found string (true/false) | frequency
+############################################################
+# ---
+# Search string is the string that is searched for in the slony log
+# ---
+# command to exectute is the command that is executed when a search string is found
+# ---
+# forward found string is a boolean (true or false):
+# 	if set to true, it appends the found search string to the end of the specified command to execute
+# 	if set to false, it does not append anything to the command string
+# ---
+# frequency is the frequency in which this command is to be executed.
+#	if set to 0: executes every single time found
+#	if set to 1: only executes once per hour if found
+# 	if set to 2: only executes once per day if found
+#
+############################################################
+
+
+transactions earlier than XID | cd /usr/local/pgsql/scripts/bin/ && ./slon_email_alert ../etc/repserver.cfg | true      | 1
+Cannot write to archive file | cd /b/devtest/JSOC/base/drms/replication/manageslony/ && ./sl_restart_slon_daemons.sh | false | 0
+

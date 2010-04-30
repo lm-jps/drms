@@ -1,6 +1,6 @@
 #!/bin/bash
 
-trap "echo 'caught a signal'; exit" HUP INT TERM
+#trap "echo 'caught a signal'; exit" HUP INT TERM
 
 # Need some code to prevent more than one instance from being run.
 
@@ -89,6 +89,7 @@ while [ $curratt -le $maxatt ]; do
             exit 1;
         else
             echo "Successfully deleted $schema.$table"
+            break
         fi
     fi
 
@@ -122,7 +123,7 @@ done
 #	fi
 #done
 
-${kRepDir}/editlstfile.pl /usr/local/pgsql/slon_logs/parselock.txt  $tables_dir $schema $table
+${kRepDir}/editlstfile.pl ${kServerLockDir}/subscribelock.txt  $tables_dir $schema $table
 if [ $? -ne 0 ]; then
 	echo
 	echo "--|---------------------------------------------------------------------"
