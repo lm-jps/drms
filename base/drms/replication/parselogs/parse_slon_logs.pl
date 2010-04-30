@@ -17,6 +17,9 @@
 #                   |   changed shell calls to mkdir/mv/cp/rm/ls to use the perl equiv.
 #                   |   (mkdir / File::Copy (move, copy) / unlink / glob
 
+# Run this:
+#  parse_slon_logs.pl /b/devtest/JSOC/proj/replication/etc/repserver.dev.cfg parselock.txt subscribelock.txt
+
 
 ###################################
 #### pseudo code documentation ####
@@ -89,11 +92,13 @@ use Getopt::Long;
 use Fcntl ':flock';
 use Carp;
 use File::Copy;
+use File::Basename;
 use FileHandle;
+use IPC::Open3;
 
 my($lockfh);
-
-
+my($insubcrit);
+my($subscribelockpath);
 
 my ($repro,$begin,$end);
 my $opts = GetOptions ("help|h|H" => \&usage,
@@ -102,7 +107,8 @@ my $opts = GetOptions ("help|h|H" => \&usage,
                        "end=i"    => \$end);
 
 my $config_file=$ARGV[0] or die ("No config_file specified");
-my $parselock=$ARGV[1] or die ("No lock file specified");
+my $parselock=$ARGV[1] or die ("No parse lock file specified");
+my $subscribelock=$ARGV[2] or die ("No subscribe lock file specified");
 
 ###################################################################################################################
 
@@ -129,34 +135,6 @@ close(SETTINGS);
 # then there could be read/write race conditions.
 # Must open file handle with write intent to use LOCK_EX
 
-print "tring to get $config{'kServerLockDir'}/$parselock\n";
-
-$lockfh = FileHandle->new(">$config{'kServerLockDir'}/$parselock");
-
-my($natt) = 0;
-while (1)
-{
-   if (flock($lockfh, LOCK_EX|LOCK_NB)) 
-   {
-      print "Created parse-lock file $config{'kServerLockDir'}/$parselock.\n";
-      last;
-   }
-   else
-   {
-      if ($natt < 10)
-      {
-         print "manage_logs.pl or archivelogs.pl is currently modifying files - waiting for completion.\n";
-         sleep 1;
-      }
-      else
-      {
-         print "couldn't obtain parse lock; bailing.\n";
-         exit(1);
-      }
-   }
-
-   $natt++;
-}
 
 my @missing_config = grep { ! defined($config{$_}) } qw(
      kPSLlogsSourceDir
@@ -166,6 +144,7 @@ my @missing_config = grep { ! defined($config{$_}) } qw(
      kPSLparseCounter
      kPSLreproPath
      kPSLaccessRepro
+     kServerLockDir
 );
 if ( @missing_config ) {
         die "Missing values from the config file : @missing_config ";
@@ -190,44 +169,72 @@ my $complete = {
 logThreshold("info");
 map { logTarget($_,$config{'kPSLprepLog'}) } qw(notice info error emergency warning debug);
 
-map { debug "$_=$config{$_}\n"; } qw(
-     kPSLlogsSourceDir
-     kPSLprepCfg
-     kPSLprepLog
-     kPSLlogReady
-     kPSLparseCounter
-     kPSLreproPath
-     kPSLaccessRepro
-);
+debug "$_=$config{$_}\n" foreach ( sort keys %config );
 
 ## Normal operation (no reprocessing)
 unless ($repro) {
-
 	##
-	## WARNING : using basename($0) *is* better than $0 for the lock, but
-	## you risk someone making a copy of the script to test, and running it
-	## while the production copy is running -- I'd hard code the lock file.
-	##
+	## for normal processing use the passed in lock file name
+  info("locking $config{'kServerLockDir'}/$parselock");
 
-  thisLock(basename($0));  ## only one instance of this process running
-  ## normal processing
-  debug("load config " . $config{'kPSLprepCfg'});
+  # parselock facilitates coordination between this process and the processes
+  # instantiated via invocations of manage_logs.pl and archivelogs.pl.
+  # These three processes are accessing the original logs and parsed logs, and
+  # can attempt to do so simultaneously
+  thisLock("$config{'kServerLockDir'}/$parselock");  ## only one instance of this process running
 
-  ## load configuration in a hash structure
-  my ($cfgH, $nodeH) = loadConfig($config{'kPSLprepCfg'});
+  # parselock facilitates coordination between this process and the processes
+  # instantiated via invocations of sql_gen, subscription_cleanup, and sdo_slony1_dump.sh.
+  # These four processes access the nodes' .lst files and nodes' site-specific-
+  # log directories, and can do so simultaneously.
+  $subscribelockpath = "$config{'kServerLockDir'}/$subscribelock";
+  system("(set -o noclobber; echo $$ > $subscribelockpath) 2> /dev/null");
 
-  my $counter      = readCounter($config{'kPSLparseCounter'});
-  my $slon_counter = readSlonCounter($config{'kPSLlogReady'});
-  info ("Current counter [$counter]");
+  if ($? == 0)
+  {
+     $SIG{INT} = "ReleaseLock";
+     $SIG{TERM} = "ReleaseLock";
+     $SIG{HUP} = "ReleaseLock";
 
-  debug("b4 while loop [$counter] [$slon_counter]");
-  while ((my $srcFile = nextCounter(\$counter,$config{'kPSLlogsSourceDir'})) && ($counter <= $slon_counter) ) {
-    debug("counter is [$counter]");
+     $insubcrit = 1;
 
-    parseLog($cfgH,$nodeH,$srcFile);
-    $counter = saveCounter($config{'kPSLparseCounter'},$srcFile);
-    debug("moving $srcFile to $srcFile.parsed");
-    move( $srcFile, "$srcFile.parsed" );
+     ## normal processing
+     debug("load config " . $config{'kPSLprepCfg'});
+
+     ## load configuration in a hash structure
+     my ($cfgH, $nodeH) = loadConfig($config{'kPSLprepCfg'});
+
+     my $counter      = readCounter($config{'kPSLparseCounter'});
+     my $slon_counter = readSlonCounter($config{'kPSLlogReady'});
+     info ("Current counter [$counter]");
+
+     debug("b4 while loop [$counter] [$slon_counter]");
+     while ((my $srcFile = nextCounter(\$counter,$config{'kPSLlogsSourceDir'})) && ($counter <= $slon_counter) )
+     {
+        debug("counter is [$counter]");
+
+        parseLog($cfgH,$nodeH,$srcFile);
+        $counter = saveCounter($config{'kPSLparseCounter'},$srcFile);
+
+        debug("moving $srcFile to $srcFile.parsed");
+        move( $srcFile, "$srcFile.parsed" );
+     }
+
+     # release subscribelock.
+     # Need to remove this type of lock file, since the other scripts that
+     # access it assume the lock is held if the file exists.
+     unlink "$subscribelockpath";
+
+     $insubcrit = 0;
+
+     $SIG{INT} = 'DEFAULT';
+     $SIG{TERM} = 'DEFAULT';
+     $SIG{HUP} = 'DEFAULT';
+  }
+  else
+  {
+     print "Warning:: couldn't obtain parse lock; bailing.\n";
+     exit(1);
   }
 
 } else { ## user wants reprocessing ###
@@ -239,17 +246,10 @@ unless ($repro) {
 	##
   thisLock(basename($0)."repro");  ## only one instance of reprocessing running
 
-  debug("load config " . $config{'kPSLprepCfg'});
+  info("load config " . $config{'kPSLprepCfg'});
 
   ## load configuration in a hash structure
   my ($cfgH, $nodeH) = loadConfig($config{'kPSLprepCfg'});
-
-	##
-	## SUGGESTION : if you added these options to the earlier 'GetOptions' call,
-	## you wouldn't have to do the strange calling syntax:
-	## 
-	##     command (first options) -- (second options)
-	##
 
   unless (($begin =~ /\d+/) && ($end =~ /\d+/)) {
     die(usage());
@@ -257,37 +257,39 @@ unless ($repro) {
 
   $nodeH->{'suffix'}="repro";  ## This assumes a repro directory exists on the slony_logs/sites directories. If it doesn't exist it tries to create it and generate all the logs for that site in that location.
 
+  info ("reprocessing range [$begin] - [$end]");
   ## run access repro to download data.
   run( $config{'kPSLaccessRepro'}, 'logs=su_production.slonylogs', "path=$config{'kPSLreproPath'}", "beg=$begin", "end=$end", 'action=ret' );
 
+  ## should do this in another way. The access repro won't have todays data. For that we'll need to copy from the current slon logs directory
+
+  map { my $base = basename($_); copy($_,"$config{'kPSLreproPath'}/$base"); } glob ("$config{'kPSLlogsSourceDir'}/*.sql*");
+
 
   ## untar files
-  run( 'find', $config{'kPSLreproPath'}, qw( -name *.tar.gz -exec tar xfz {} -C ), $config{'kPSLreproPath'}, ';' );
-  
+  run( 'find ', $config{'kPSLreproPath'}, " -name \"*.tar.gz\" -exec tar zxf {} -C $config{'kPSLreproPath'} \\;" );
 
   ## check if in the sites directory exists any slony_logs tar file in the range specified in $begin - $end.  if so extract the tar files to the repro directory and let the sql logs be overwritten by the new ones.
-
   expandOldTars($nodeH, $begin, $end);
 
   ## change kPSLlogsSourceDir to temp location
   $config{'kPSLlogsSourceDir'} = $config{'kPSLreproPath'};
 
   ## make in memory counter
-  my $counter = $begin;
+  my $counter = $begin - 1;
   ##
+
   while ((my $srcFile = nextCounter(\$counter,$config{'kPSLlogsSourceDir'})) && ($counter <= $end)) {
     parseLog($cfgH,$nodeH,$srcFile);
     $counter = saveCounter(undef,$srcFile);
   }
 
   ## recreate tars for sites if needed.
-  recreateOldTars($nodeH);
+  my ($tar_begin, $tar_end) = recreateNewTars($nodeH, $begin, $end);
 
-  move( $_, $path ) foreach glob("$config{'kPSLreproPath'}/*.sql");
+  ## clean up main repro directory
 
-  ## clean up
-  unlink foreach glob("$config{'kPSLreproPath'}/slony1_log_2_*.sql*");
-  unlink foreach glob("$config{'kPSLreproPath'}/slogs_*tar.gz");
+  unlink glob("$config{'kPSLreproPath'}/*");
 
 }
 ### END OF MAIN ROUTINE ####
@@ -296,12 +298,35 @@ unless ($repro) {
 #--|----------------------------------------------------------
 #--| ################## Subroutines ######################
 #--|----------------------------------------------------------
+sub CallDie {
+   my $msg = shift;
+
+   # This should only be called by code in the subscribe critical region
+   if ($insubcrit)
+   {
+      if (-e "$subscribelockpath")
+      {
+         # Need to remove this type of lock file, since the other scripts that
+         # access it assume the lock is held if the file exists.
+         unlink "$subscribelockpath";
+      }
+   }
+
+   die $msg;
+}
+
+sub ReleaseLock
+{
+   unlink "$subscribelockpath";
+   exit(1);
+}
+
 sub  expandOldTars {
   my ($nodeH, $begin, $end) = @_;
 
-  for my $node (keys %{$nodeH}) {
+  for my $node (keys %{$nodeH->{nodes}}) {
     my $repro_path=undef;
-    my $path = $nodeH->{$node}->{'path'};
+    my $path = $nodeH->{nodes}->{$node}->{'path'};
 
     if (exists $nodeH->{'suffix'}) {
       $repro_path = sprintf("%s/%s",$path, $nodeH->{'suffix'});
@@ -310,36 +335,44 @@ sub  expandOldTars {
     }
 
     unless (-d $repro_path) {
+      info("Create $repro_path");
       mkdir $repro_path; ## don't want to add the -p option just in case the path falls in the wrong disk partition and fills it.
     }
-
     my @list = glob("$path/slony_logs_*.tar.gz");
     my @wlist= (); # work list
     ## go through the list of tar files finding those that are withing the repro range
     for my $tfile (@list) {
+#                    slony_logs_799371-800809.tar.gz
       if ($tfile =~ /slony_logs_(\d+)-(\d+).tar.gz/) {
         if ($begin <= $2 && $end >= $1) {
           ## extract tar into repro dir
-          run('tar', 'xfs', $tfile, '-C', $repro_path);
+
+          debug "in expandOldTars begin=$1 and end=$2 expand $tfile";
+          run('tar', 'zxf', $tfile, '-C', $repro_path);
+          debug "in expandOldTars after expanding $tfile";
+
           push @wlist, $tfile;
         }
       } 
     }
+
     ## keep tar list for clean up
     if ($#wlist>=0) {
-      $nodeH->{$node}->{'tar_repro'}=[@wlist];
+      #print Dumper [@wlist];
+      $nodeH->{nodes}->{$node}->{'tar_repro'}=[@wlist];
     }
 
   }
+
 }
 
 
-sub recreateOldTars {
-  my ($nodeH) = @_;
+sub recreateNewTars {
+  my ($nodeH, $begin, $end) = @_;
 
-  for my $node (keys %{$nodeH}) {
+  for my $node (keys %{$nodeH->{nodes}}) {
     my $repro_path=undef;
-    my $path = $nodeH->{$node}->{'path'};
+    my $path = $nodeH->{'nodes'}->{$node}->{'path'};
 
     if (exists $nodeH->{'suffix'}) {
       $repro_path = sprintf("%s/%s",$path, $nodeH->{'suffix'});
@@ -347,74 +380,281 @@ sub recreateOldTars {
       $repro_path = sprintf("%s/%s",$path, "repro");
     } 
 
-    my $wlist= []; # work list
     ## go through the list of tar files finding those that are withing the repro range
     ## $tfile is the tar file found
-    for my $tfile (@{$nodeH->{$node}->{'tar_repro'}}) {
-      my $tname = basename($tfile);
-      generateTar($repro_path,$tname);
-      move "$repro_path/$tname", "$path/$tname.tmp";
-      unlink "$path/$tname";
-      move "$path/$tname.tmp", "$path/$tname";
+#    print Dumper $nodeH;
+    ## find the lower and upper range in the tar files
+    my ($tar_begin, $tar_end)=(undef,undef);
+    @tarlist=();
+    for my $tfile (@{$nodeH->{'nodes'}->{$node}->{'tar_repro'}}) {
+      ## get the beggining and end counter range from the tar files. 
+       my ($_begin,$_end) =(undef,undef);
+       unless (($_begin,$_end) = ($tfile =~ /slony_logs_([0-9]+)\-([0-9]+).tar.gz/)) {
+         my $msg = "Could not find ranges in [$tfile]";
+         emergency($msg);
+         die($msg);
+       }
+
+       push @tarlist, $tfile;
+       $tar_begin = $_begin
+         if (!defined $tar_begin || $tar_begin > $_begin);
+
+       $tar_end = $_end
+         if (!defined $tar_end || $tar_end < $_end );
+
+       debug("working out ranges on [$tfile] [$tar_begin] [$tar_end]\n");
     }
+
+## Now match new tar ranges with reprocessing begin and end ranges
+    $tar_begin = $begin
+      if (!defined $tar_begin || $tar_begin > $begin);
+
+    my $tar_name = undef;
+    if (defined $tar_end) { ## means there is a tar file to be generated
+
+      info("working out final ranges on [$tar_begin] [$tar_end]\n");
+      ## generateTar generates an aggregate tar file
+      $tar_name = generateTar($repro_path,$tar_begin, $tar_end);
+    }
+    cleanUpNode($nodeH->{'nodes'}->{$node}, $path, $repro_path, $tar_name, $tar_begin, $tar_end);
+
+  }
+}
+
+sub cleanUpNode {
+  my ($node, $path, $repro_path, $tar_name, $tar_begin, $tar_end) = @_;
+
+
+  ## clean up whatever is left from the repro directory
+
+  ## The following code tests the new tar file if any.
+  ## Check if any existing tar file exists that is in the range of the new tar file
+  ## and deletes them. 
+  if (defined $tar_name) {
+    if ( -f "$repro_path/$tar_name") {
+      if (my ($bcounter,$ecounter) = ($tar_name =~ /slony_logs_(\d+)\-(\d+).tar.gz/)) {
+        my ($out,$err,$status) = run3("tar", "-ztf", "$repro_path/$tar_name");
+         if ($status != 0 || defined $err) {
+           die("command failed with status [$status] and error [$err]\n");
+         }
+  
+         my @sql=map { /.sql$/ } split("\n",$out);
+
+         my $tarred_counter = $ecounter - $bcounter;
+   
+         if ($#sql != $tarred_counter) {
+           die("Validation on tar file $tar_name failed. Number of files tarred doesn't match stated counter");
+         } else { 
+           info "First validation pass: tar file [$tar_name] sql number [$#sql] and tar stated number is [$tarred_counter]";
+         }
+
+        ## delete old tars
+        unlink foreach @{$node->{'tar_repro'}};
+  
+      }
+      info ("moving $repro_path/$tar_name to $path/$tar_name.tmp");
+      move "$repro_path/$tar_name", "$path/$tar_name.tmp";
+      info ("moving $path/$tar_name.tmp to $path/$tar_name");
+      move "$path/$tar_name.tmp", "$path/$tar_name";
+    }
+
+  }
+
+  info ("Moving rest of sql files");
+
+  moveLogsRest($path, $repro_path, $tar_begin, $tar_end);
+
+  unlink foreach glob("$repro_path/slony1_log_2_*.sql*");
+  unlink foreach glob("$repro_path/slogs_*tar.gz");
+}
+
+sub moveLogsRest {
+  my ($path, $repro_path, $tar_begin, $tar_end) = @_;
+
+  map {
+        my ($file, $counter);
+
+        if (($file, $counter) = ($_ =~ /(slony1_log_2_(\d+).sql)/)) {
+          ## move over the list of remaining sql files
+          ## move all those that are on the range but not tarred
+          ## to the site log directory
+          $counter*=1;
+          if ($tar_end < $counter) {
+            info ("move [$_] to [$path/$file]");
+            move ($_, "$path/$file");
+          }
+        }
+      } glob("$repro_path/*.sql");
+
+}
+
+sub moveLogsRest2 {
+  my ($nodeH, $begin, $end) = @_;
+
+  for my $node (keys %{$nodeH->{nodes}}) {
+    my $repro_path=undef;
+    my $path = $nodeH->{'nodes'}->{$node}->{'path'};
+
+    if (exists $nodeH->{'suffix'}) {
+      $repro_path = sprintf("%s/%s",$path, $nodeH->{'suffix'});
+    } else {
+      $repro_path = sprintf("%s/%s",$path, "repro");
+    }
+ 
+    map {
+           my ($file, $counter);
+
+           if (($file, $counter) = ($_ =~ /(slony1_log_2_(\d+).sql)/)) {
+           ## move over the list of remaining sql files
+           ## move all those that are on the range to the 
+           ## site log directory
+             $counter*=1;
+             if ($end < $counter) {
+               info ("move [$_] to [$path/$file]");
+               move ($_, "$path/$file");
+             }
+           }
+        } glob("$repro_path/*.sql");
+
+    ## clean up
+    unlink foreach glob("$repro_path/slony1_log_2_*.sql*");
+    unlink foreach glob("$repro_path/slogs_*tar.gz");
+
+
   }
 }
 
 sub generateTar {
-  my ($repro_path, $tname) = @_;
-  unless (($begin,$end) = ($tname =~ /slony_logs_(\d+)-(\d+).tar.gz/)) {
-    my $msg = "Could not find ranges in [$tname]";
-    emergency($msg);
-    die($msg);
-  }
+  my ($repro_path, $begin, $end) = @_;
 
   my $range_fn = sprintf("%s/%d-%d.lst",$repro_path,$begin,$end);
+
+  info("generateTar create list file is $range_fn");
   open RANGE, '>', $range_fn or die ("could not open file [$range_fn], [$!]");
 
   ## create list of slony_logs that should be in the tar file
   my @sql_list=();
   for my $log_counter ( $begin .. $end ) {
-    my $slony_log = sprintf("slony1_logs_2_%020d.sql", $log_counter);
-    printf RANGE $slony_log, "\n";
+    my $slony_log = sprintf("slony1_log_2_%020d.sql", $log_counter);
+    unless (-f "$repro_path/$slony_log" ) {
+      my $msg="Error [$repro_path/$slony_log] doesn't exists";
+      emergency($msg);
+      die $msg;
+    }
+    print RANGE $slony_log, "\n";
     push @sql_list, $slony_log;
   }
   close RANGE;
 
-  run('tar', '-T', $range_fn, 'cfz', $tname, '-C', $repro_path);
+  my $tname= sprintf("slony_logs_%d-%d.tar.gz",$begin, $end);
 
-  map { unlink $_ } @sql_list; 
+  run("tar zcf $repro_path/$tname -C $repro_path -T $range_fn");
+
+  info ("remove sql files from [$repro_path] directory");
+  map { unlink "$repro_path/$_" } @sql_list; 
+
+  info ("remove list file [$range_fn]");
+  unlink $range_fn;
+
+  return $tname;
 }
 
 sub thisLock {
-  my $myname=shift;
+  my $this_lock=shift;
 
-  open SLOCK, '>', "/tmp/$myname.lock" or die ("error opening file /tmp/$myname.lock [$!]\n");
+  debug "trying to get $this_lock\n";
 
-  ## only one version of this program running
-  unless (flock(SLOCK, LOCK_EX|LOCK_NB)) {
-    warning "$myname is already running. Exiting.\n";
-    exit(1);
+  open $lockfh, '>', "$this_lock" or die ("error opening file [$this_lock] [$!]\n");
+
+  my($natt) = 0;
+  while (1)
+  {
+    if (flock($lockfh, LOCK_EX|LOCK_NB)) 
+    {
+      debug "Created parse-lock file $this_lock.\n";
+      last;
+    }
+    else
+    {
+      if ($natt < 10)
+      {
+        print "Another process is currently modifying files - waiting for completion.\n";
+        sleep 1;
+      }
+      else
+      {
+        print "Warning:: couldn't obtain parse lock; bailing.\n";
+        exit(1);
+      }
+   }
+
+   $natt++;
   }
+
+  return $lockfh;
+}
+
+sub thisUnlock {
+   my $this_lock_fh=shift;
+
+   flock($this_lock_fh, LOCK_UN);
+   $this_lock_fh->close;
 }
 
 sub run {
   my @cmd = @_;
-  
-  unless ( open my $cmd, '-|', @cmd ) {
-    my $msg = "Cannot run command [@cmd] : $!";
+
+  my $cmd = join(" ", @cmd);  
+  debug ("run cmd=$cmd");
+  unless ( open my $fh_cmd, "| $cmd 2>&1" ) {
+    my $msg = "Cannot run command [$cmd] : $!";
     emergency($msg);
     croak($msg);
   }
-  
-  my $res = join '', <$cmd>;
-  close $cmd;
-  
-  if ($? != 0) {
-    my $msg="The command [@cmd] failed";
-    emergency($msg);
-    croak($msg);
+  my $res=""; 
+  while (<$fh_cmd>) { 
+    $res .= $_;
+    error $_;
   }
+  close $fh_cmd;
+  
   return $res;
+}
+
+sub run3 {
+  my @cmd = @_;
+
+  my $cmd = join(" ", @cmd);
+
+  info("run cmd=$cmd");
+  
+  my ($in, $out, $err)=(undef, FileHandle->new,FileHandle->new);
+
+  $out->autoflush(1);
+  $err->autoflush(1);
+
+  my $pid = open3($in, $out, $err, $cmd);
+
+  debug ("pid is $pid");
+  my $res_error=undef;
+  my $res="";
+  
+  while (<$out>) {
+    $res .= $_;
+  }
+
+  while (<$err>) {
+    $res_error .= $_;
+  }
+
+  waitpid($pid, 0);
+
+  my $child_exit_status = $? >> 8;
+
+  $out->close;
+  $err->close;
+ 
+  return ($res, $res_error, $child_exit_status);
 }
 
 
@@ -461,7 +701,7 @@ sub saveCounter {
   my ($counter)= ($log_file =~ m/slony1_log_2_0+(\d+).sql/ );
   
   if (defined $counter_file) {
-    open my $fhW, '>', $counter_file or die "Can't Open $counter_file:$!";
+    open my $fhW, '>', $counter_file or CallDie "Can't Open $counter_file:$!";
     print $fhW $counter;
     close $fhW;
   }
@@ -473,14 +713,14 @@ sub readSlonCounter {
   my $counter_file = shift;
 
   unless ( -f $counter_file ) {
-    die("Could not find counter file");
+    CallDie("Could not find counter file");
   }
 
   my $slon_counter=undef;
   my $retry = 0;
   while ($retry <=10) {
     local $/;
-    open my $fhR, '<', $counter_file or die "Can't Open $counter_file:$!";
+    open my $fhR, '<', $counter_file or CallDie "Can't Open $counter_file:$!";
     my $cur_counter=<$fhR>;
 
     close $fhR;
@@ -492,7 +732,7 @@ sub readSlonCounter {
     sleep 1;
   }
 
-  die("Could not read counter file");
+  CallDie("Could not read counter file");
 }
 
 ## readCounter takes its counter from the last .sql.parsed slon log file found in the slon log directory.
@@ -520,29 +760,30 @@ sub readCounter {
   unless ( defined($slon_dir_counter) && $slon_dir_counter > 0 ) {
     my $msg = "Could not find last counter for slon1_log_2_0*.sql.parsed or slony1_log_2_0*.sql logs in source directory [$source_dir]";
     emergency($msg);
-    die($msg);
+    CallDie($msg);
   }
 
   ## if the counter file doesn't exists create one.
   unless ( -f $internal_counter_file ) {
-    open my $fhR, '>', $internal_counter_file or die "Can't Open $internal_counter_file for write:$!";
+    open my $fhR, '>', $internal_counter_file or CallDie "Can't Open $internal_counter_file for write:$!";
     print $fhR $slon_dir_counter;
     close $fhR;
   }
 
-  open my $fhR, '<', $internal_counter_file or die "Can't Open $internal_counter_filei for read:$!";
+  open my $fhR, '<', $internal_counter_file or CallDie "Can't Open $internal_counter_filei for read:$!";
   my $internal_file_counter=<$fhR>;
   chomp $internal_file_counter;
   close $fhR;
 
-  if ($internal_file_counter != $slon_dir_counter) {
+  if ($internal_file_counter != $slon_dir_counter) { 
     notice("counter in file [$internal_file_counter] and in slon directory [$slon_dir_counter] differ!!");
     my $source_dir=$config{'kPSLlogsSourceDir'};
-    open my $fhR, '>', $internal_counter_file or die "Can't Open $internal_counter_file:$!";
+    open my $fhR, '>', $internal_counter_file or CallDie "Can't Open $internal_counter_file:$!";
     print $fhR $slon_dir_counter;
     close $fhR;
     return $slon_dir_counter;
   } else {
+    info("using counter [$internal_file_counter]");
     return $internal_file_counter;
   }
 
@@ -586,7 +827,7 @@ sub readCounter {
 sub loadConfig {
   my $cfg_file = shift;
 
-  open CFG, '<', $cfg_file or die ("Couldn't open $cfg_file [$!]");
+  open CFG, '<', $cfg_file or CallDie ("Couldn't open $cfg_file [$!]");
 
   my $cfgH = {};
   my $npath= {};
@@ -612,10 +853,10 @@ sub loadConfig {
     my @b = split('/',$a[0]);
     my $node = pop @b; ## get last element only
 
-    $npath->{$node} = { 'path'=>$a[0], 'tar_repro'=>[] };
+    $npath->{nodes}->{$node} = { 'path'=>$a[0], 'tar_repro'=>[] };
 
     ## opening node list file 
-    open LST, '<', $a[1] or die ("Couldn't open list file for $a[0] $a[1]: [$!]");
+    open LST, '<', $a[1] or CallDie ("Couldn't open list file for $a[0] $a[1]: [$!]");
     while (<LST>) {
       ##format of series list file is 
       ## namespace.series_name
@@ -625,7 +866,7 @@ sub loadConfig {
       chomp;
 
       ## Right now we don't consider namespace but we want to introduce it, 
-      ## while being backward compatible.
+      ## while begin backward compatible.
       
       #"name_space"."series_hello"
       #name_space.series_hello
@@ -668,6 +909,7 @@ sub loadConfig {
 
   close CFG;
   close LST;
+
   return ($cfgH, $npath);
 }
 
@@ -676,17 +918,20 @@ sub openSlonLogs {
 
   ## remove any parsed suffix
   $slon_name=~s/\.parsed$//;
-  for $node (keys %{$nodeH}) {
+
+  for $node (keys %{$nodeH->{nodes}}) {
     if (exists $nodeH->{'suffix'}) {
-      $nodeH->{$node}->{'filename'} = sprintf("%s/%s/%s",$nodeH->{$node}->{'path'}, $nodeH->{'suffix'}, $slon_name);
+      $nodeH->{nodes}->{$node}->{'filename'} = sprintf("%s/%s/%s",$nodeH->{nodes}->{$node}->{'path'}, $nodeH->{'suffix'}, $slon_name);
     } else {
-      $nodeH->{$node}->{'filename'} = sprintf("%s/%s",$nodeH->{$node}->{'path'}, $slon_name);
+      $nodeH->{nodes}->{$node}->{'filename'} = sprintf("%s/%s",$nodeH->{nodes}->{$node}->{'path'}, $slon_name);
     }
-    my $filename = $nodeH->{$node}->{'filename'} . ".tmp";
+    my $filename = $nodeH->{nodes}->{$node}->{'filename'} . ".tmp";
     my $fh = undef;
+
     debug ("open file [$filename] for node [$node]");
-    open $fh, '>', $filename or emergency("Can NOT open slonlog for node [$node], file [$filename]");
-    $nodeH->{$node}->{'FD'} = $fh;
+    #open $fh, '>', $filename or emergency("Can NOT open slonlog for node [$node], file [$filename]");
+    open $fh, '>', $filename or CallDie ("Can NOT open slonlog for node [$node], file [$filename]");
+    $nodeH->{nodes}->{$node}->{'FD'} = $fh;
   }
   
 }
@@ -694,11 +939,11 @@ sub openSlonLogs {
 sub closeSlonLogs {
   my ($nodeH) = @_;
 
-  for $node (keys %{$nodeH}) {
+  for $node (keys %{$nodeH->{nodes}}) {
     ## close and rename file from .tmp to final name
-    close $nodeH->{$node}->{'FD'} if defined $nodeH->{$node}->{'FD'};
-    rename $nodeH->{$node}->{'filename'}.".tmp", $nodeH->{$node}->{'filename'}
-      if defined $nodeH->{$node}->{'filename'};
+    close $nodeH->{nodes}->{$node}->{'FD'} if defined $nodeH->{nodes}->{$node}->{'FD'};
+    rename $nodeH->{nodes}->{$node}->{'filename'}.".tmp", $nodeH->{nodes}->{$node}->{'filename'}
+      if defined $nodeH->{nodes}->{$node}->{'filename'};
   }
   
 }
@@ -707,13 +952,13 @@ sub dumpSlonLog {
 
   if (defined $series) {
     for $node (@{$cfgH->{$series}}) {
-      my $fh=$nodeH->{$node}->{'FD'};
+      my $fh=$nodeH->{nodes}->{$node}->{'FD'};
       debug("dump line [$line] for node [$node]");
       print $fh $line if defined $fh
     }
   } else {
-    for $node (keys %{$nodeH}) {
-      my $fh=$nodeH->{$node}->{'FD'};
+    for $node (keys %{$nodeH->{nodes}}) {
+      my $fh=$nodeH->{nodes}->{$node}->{'FD'};
       debug("dump line [$line] for node [$node]");
       print $fh $line if defined $fh
     }
@@ -726,10 +971,12 @@ sub parseLog {
 
   my $srcFileBName = basename($srcFile);
 
+  debug("Parsing log [$srcFile]");
+
   openSlonLogs($nodeH, $srcFileBName);
 
-  open SRC, '<', $srcFile or die ("Could not open source file [$srcFile]\n");
-  info("Parsing log [$srcFile]");
+  open SRC, '<', $srcFile or CallDie ("Could not open source file [$srcFile]\n");
+
   while (<SRC>) {
  
     if ($_ =~ /select "_jsoc"\.archiveTracking_offline\('.*'\);/ ||
@@ -750,8 +997,108 @@ sub parseLog {
 
   close SRC;
   closeSlonLogs($nodeH);
+
 }
 
+sub serverLock {
+  my (%config) = @_;
+
+  my $port=$config{'SLAVEPORT'};
+  my $dbname=$config{'SLAVEDBNAME'};
+
+  my $lock_action='LOCK';
+  my $lock_id = "PARSER";
+  my $pid = $$;
+  my $process_name = basename($0);
+
+  my $count=0;
+  while ( $count < 120 ) {
+    my $sql = "start transaction; select ps_serverlock('$lock_action','$lock_id', $pid, '$process_name'); commit;"; 
+
+    my ($out, $err, $status) = run3("echo \"$sql\" | $config{'kPsqlCmd'} -p $port -q -At -d $dbname");
+    if ($status != 0 || defined $err) {
+      $count++;
+      sleep 1;
+    } elsif ($status == 0 && !defined $err) {
+      chomp $out;
+      return $out eq 'locked';
+    }
+  }
+}
+
+sub serverUnLock {
+  my (%config) = @_;
+  my $port=$config{'SLAVEPORT'};
+  my $dbname=$config{'SLAVEDBNAME'};
+  my $lock_action='UNLOCK';
+  my $lock_id = "PARSER";
+  my $pid = $$;
+  my $process_name = basename($0);
+
+  my $count=0;
+  while ( $count < 120 ) {
+    my $sql = "start transaction; select ps_serverlock('$lock_action','$lock_id', $pid, '$process_name'); commit;"; 
+
+    my ($out, $err, $status) = run3("echo \"$sql\" | $config{'kPsqlCmd'}  -p $port -q -At -d $dbname");
+    if ($status != 0 || defined $err) {
+      $count++;
+      sleep 1;
+    } elsif ($status == 0 && !defined $err) {
+      print "out=$out\n";
+      print "err=$err\n";
+      last;
+    }
+  }
+}
+
+sub checkOldLocks {
+  my (%config) = @_;
+  my $lock_id = "PARSER";
+  my $port=$config{'SLAVEPORT'};
+  my $dbname=$config{'SLAVEDBNAME'};
+
+  my $sql = "select process_pid, process_name from subscribe_lock where request_lock_id = '$lock_id' or lock_id = '$lock_id'";
+
+  my ($out, $err, $status) = run3("echo \"$sql\" | $config{'kPsqlCmd'}  -p $port -q -At -d $dbname");
+  if ($status != 0 || defined $err) {
+    print "OUT=$out\n";
+    print "ERROR=$err\n";
+  } elsif ($status == 0 && !defined $err) {
+#    print "out=$out\n";
+    @lines = map { [$1,$2] if /(\d+)\|(\S+)/ }split ("\n",$out);
+    print Dumper [@lines];
+    for $proc_arr (@lines) {
+      my ($pid, $proc_name) = @{$proc_arr};
+      unless (pidExists($pid, $proc_name))  {
+        my $del_sql="delete from subscribe_lock where request_lock_id = '$lock_id' and process_pid=$pid and process_name = '$proc_name'";
+        my ($out, $err, $status) = run3("echo \"$del_sql\" |  $config{'kPsqlCmd'}  -p $port -q -At -d $dbname");
+        if (defined $err) {
+          emergency("SQL [$del_sql] failed ... exiting");
+          exit 1;
+        }
+
+      }
+    ##TODO: check if one of the processes to delete is self
+    }
+    print "err=$err\n";
+  }
+}
+
+sub pidExists {
+  my ($pid, $proc_name) = @_;
+  my ($out, $err, $status) = run3("ps -p $pid -o comm=");
+  chomp $out;
+  if ($status == 1) {
+    info("Pid=$pid and proc = $proc_name does't exists: status=$status");
+    return 1==0;
+  } elsif ($status ==0 && $out eq $proc_name) {
+    info("out=[$out] Pid=$pid and proc = $proc_name exists: status=$status");
+    return 1==1;
+  } else {
+    error("Couldn't resolve output [$out] and err=[$err]; status = [$status]\n");
+    return 1==1;
+  }
+}
 
 sub usage {
   print <<EOF;
@@ -762,3 +1109,5 @@ where 'beg' and 'end' are the beginning and end counters of the slony logs.
 EOF
 exit;
 }
+
+
