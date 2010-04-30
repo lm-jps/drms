@@ -1,0 +1,32 @@
+#!/bin/bash
+
+#--------------------------------------------------------------------
+# Setting up the log
+#--------------------------------------------------------------------
+logfile=$logdir/`basename $0.log`
+logwrite () {
+        echo `date +"%m-%d-%Y %H:%M:%S - "` "$1" >> $logfile
+        if [ ! $2 == "" ]
+        then
+                echo `date +"%m-%d-%Y %H:%M:%S - "` >> $logfile
+        fi
+}
+
+#--------------------------------------------------------------------
+# Function that executes a command, and echos the result to the log
+#--------------------------------------------------------------------
+run_command () {
+    logwrite "executing [$1]"
+    cmd=`$1 2>&1`
+    cmdResult=$?
+    if [[ $cmdResult -eq "0" ]]
+    then
+        logwrite "Command [$1] successful with output [$cmd]"
+    else
+        logwrite "ERROR: Command [$1] failed with output [$cmd]"
+    fi
+}
+
+trap "echo 'caught a signal'; exit" HUP INT TERM
+
+
