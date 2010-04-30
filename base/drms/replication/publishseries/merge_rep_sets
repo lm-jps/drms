@@ -13,10 +13,10 @@ then
 		. $config_file
 		logdir=$MRSLogDir
 
-		if [[ -f toolbox ]]; then
-			. toolbox
+		if [[ -f "${kRepDir}/toolbox" ]]; then
+			. "${kRepDir}/toolbox"
 		else
-			echo "ERROR: toolbox file does not exist"
+			echo "ERROR: ${kRepDir}/toolbox does not exist"
 			exit
 		fi
 
