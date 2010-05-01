@@ -9,7 +9,7 @@ pidfile=$0.pid
 #-------------------------------------------------------------------------
 # syntax check
 #-------------------------------------------------------------------------
-if [ $# -eq 7 ]
+if [ $# -eq 8 ]
 then
         config_file=$1
 	node=$2
@@ -18,27 +18,31 @@ then
 	retention=$5
 	tapegroup=$6
 	input_file=$7
+        subscribelockpath=$8
 else
-        error="ERROR: Usage: $0 <server configuration file> <node> <new subscription, true/false> <subscription information file>"
+        error="ERROR: Usage: $0 <server configuration file> <node> <new subscription, true/false> <subscription information file> <subscription lock file path>"
         echo $error
 	exit
 fi
 
+## First thing!: source config file
 . $config_file
-usertables=$tables_dir/$node.lst
 
-scrbase=`perl -e 'if ($ARGV[0] =~ /.*\/([^\/]+)/) { print $1; } else { print $ARGV[0]; }' $0`
-
-if [ -z "$kSMlogDir" ]
+if [ -z "$kSMlogDir" ] 
 then
-  logfile=../log/$scrbase.log
-else
-  logfile="$kSMlogDir/$scrbase.log"
+  echo "There is not log directory [kSMlogDir] assigned in Config file!! Exiting ..."
+  exit 1;
+elif [ ! -d "$kSMlogDir" ]
+then
+  echo "Directory [kSMlogDir=$kSMlogDir] doesn't exists!! Exiting ..."
+  exit 1;
 fi
 
+logfile=$kSMlogDir/update.$node.log
+
 if [ -z "$kMaxLog" ]
-then
-  maxlog=1048576
+ then
+   maxlog=1048576
 else
   maxlog="$kMaxLog"
 fi
@@ -65,26 +69,79 @@ else
   fi
 fi
 
-#--------------------------------------------------------------------
-# Setting up the log
-#--------------------------------------------------------------------
+exec >> $logfile 2>&1
 
-logwrite () {
-        echo `date +"%m-%d-%Y %H:%M:%S - "` "$1" >> $logfile
-        if [ ! $2 == "" ]
-        then
-                echo `date +"%m-%d-%Y %H:%M:%S - "` >> $logfile
-        fi
-}
+## After setting the logfile variable source the subscriber functions
+## The ORDER things get sourced is IMPORTANT!!
+. $kRepDir/subscribe_manage/subscribe_functions
+
+usertables=$tables_dir/$node.lst
+
 
 logwrite "Starting $0 $1" nl
+
+## At this point I'd like to test if this is a subscription retry,
+## e.g. the client connection dropped and it retried again
+## or if it is a legit one, a first try.
+last_running_subupdate=`ls -1r ${input_file%.[0-9]*.[0-9]*}* | grep -v $input_file | tail -1`;
+
+## Note if last_running_subupdate is empty then this is NOT a retry
+if [ -n "$last_running_subupdate" ]
+then
+  ## we've got a retry
+  ##
+  grep_pid=`grep "#UPDATE PID:" $last_running_subupdate`; 
+  update_pid=${grep_pid#"#UPDATE PID:"};
+  program_name="";
+  ## check if pid is running
+  if [ -n $update_pid ]
+  then
+    program_name=`ps -p $update_pid -o comm=`;
+  fi
+
+  this_basename=`basename $0`;
+  if [ -n "$program_name" ] && [ "$program_name" == "$this_basename" ]
+  then
+    ## ok program is already running
+    logwrite "There is a [$this_basename] with pid [$update_pid] already running on node [$node] ... exiting"
+    ## exit
+    rm -f $input_file;
+    ## TODO inform the client this is the case.
+    exit 1;
+  else
+    ## no pid running
+    logwrite "Accepting request as previous instance of $this_basename died";
+    logwrite "cleaning old [$last_running_subupdate] file";
+    rm -f $last_running_subupdate;
+    ## do some cleaning?? and continue
+  fi
+
+  ## making sure I don't break anything down the line
+  unset last_running_subupdate
+  unset grep_pid
+  unset update_pid
+  unset program_name
+  unset this_basename
+
+fi
+
+## accept this request!
+echo "#UPDATE PID:$$" >> $input_file;
 
 #-------------------------------------------------------------------------
 # Reads the subscription request file into the arrays:
 # $series[] is the name of the series
 # $request[] is what type of request it is (subscribe or unsubscribe)
 #-------------------------------------------------------------------------
+# Note: the input_file is a copy of the trigger file the client originally sent but with the "tgr" extension replaced by subupdate. e.g. NSO.subscribe_series.subupdate
+## 
+## see that input file now contains the PID of the process dealing with it
+## i.e. #UPDATE PID:<pid>
+## basically we are allowing comment lines in the file
+##
 counter=0
+# $input_file is the subupdate file - a list of series and the action to take on that series
+# (subscribe/unsubscribe)
 exec < $input_file
         while read line
         do
@@ -93,7 +150,13 @@ exec < $input_file
                 then
 			continue
                 fi
+                # skips comment lines
+                if [ -z "${line%%#*}" ]
+                then
+			continue
+                fi
 		set - $line
+logwrite "series [$1] and request [$2]";
                 series[$counter]=$1
 		request[$counter]=$2
 
@@ -110,15 +173,20 @@ then
 	mkdir $subscribers_dir/$node.new
 	chmod a+rx $subscribers_dir/$node.new
 else
-	logwrite "Old site, copying directory $subscribers_dir/$node to $subscribers_dir/$node.new"
-	cp -far  $subscribers_dir/$node $subscribers_dir/$node.new
+	logwrite "Old site, making directory $subscribers_dir/$node.new"
+	mkdir $subscribers_dir/$node.new
+	chmod a+rx $subscribers_dir/$node.new
+## We don't need the copy anymore
+##	cp -far  $subscribers_dir/$node $subscribers_dir/$node.new
 fi
 newtablefile=$tables_dir/$node.new.lst
+logwrite "newtablefile is [$newtablefile]"
 echo > $newtablefile
 
 #-------------------------------------------------------------------------
 # Applies the subscription information to the usertables file
 #-------------------------------------------------------------------------
+newsubscription=0
 # If new_site is true, adds all subscriptions in the config file to the end of the new usertables file
 if [ $new_site == "true" ]
 then
@@ -129,7 +197,14 @@ then
 	do
 		logwrite "Adding [${series[$counter]} to $newtablefile"
 		echo "${series[$counter]}" >> $newtablefile
-		
+
+                # ART - this was missing
+                newsubscription=1
+                
+                # ART - this assumes that there are no unsubscribe requests
+                # in the client's trigger file, if the client is a new
+                # subscriber (should filter out these bad unsubscribe
+                # requests, or fail or something)
 		counter=$(( $counter + 1 ))
 	done
 	logwrite " "
@@ -139,9 +214,11 @@ then
 # Second, adds all subscriptions with the tag "subscribe" to the end of the file
 elif [ $new_site == "false" ]
 then
+    unsubhappening=0
 	logwrite "The Subscription request is from a current site"
 
 	# Removes subscriptions if $request[#] is "unsubscribe"
+        # usertables is the subscribing node's .lst file
 	exec < $usertables
         	while read line
         	do
@@ -154,20 +231,35 @@ then
                 	        continue
 			fi
 
+                        # skips comment lines
+                        if [ -z "${line%%#*}" ]
+                        then
+                          continue
+                        fi
 			# Loops through each entry in the $series array and $request array for each $line
 			while [ $counter -lt ${#series[*]} ]
 			do
 				linecompare="${series[$counter]}"
+logwrite "counter [$counter] [${#series[*]}] request counter [${request[$counter]}] and line [$line] and linecompare [$linecompare]"
 				if [[ "$line" == "$linecompare" && ${request[$counter]} == "unsubscribe" ]]
 				then
-					# Found match, setting $flag to 1 so line doesn't get rewritten to tablelist
-					flag=1
+				    # Found match, setting $flag to 1 so line doesn't get rewritten to tablelist
+                                    # flag == 1 means an unsubscribe request for an existing series
+                                    # (applicable only for existing sites)
+                                    # ART - flag can be unset in later iterations, which is okay for
+                                    # this double loop, but flag is used at the end of this script. 
+                                    # That location is testing for ANY unsubscribe, so we need a 
+                                    # new variable
+				    flag=1
+                                    unsubhappening=1
 				fi
 				
 				counter=$(( $counter + 1 ))
 			done
 
 			# if a match was not found, write the line to the new user tables file
+                        # if not requesting an unsubscribe to the current series in the .lst file
+                        # write the .lst file line to the newtablefile (node.lst.new)
 			if [ $flag -eq 0 ]
 			then
 				logwrite "Writing $line to $newtablefile"
@@ -187,17 +279,17 @@ then
 			logwrite "Checking to see if subscription request already exists"
 			logwrite "Executing [check=cat $newtablefile | grep ${series[$counter]}]"
 			check=`cat $newtablefile | grep "${series[$counter]}"`
-			logwrite "Check is [$check]"
 			if [ "$check" == "" ]
 			then
 				logwrite "Subscription does not already exist"
 				logwrite "Writing ${series[$counter]} to $newtablefile"
 				echo "${series[$counter]}" >> $newtablefile
+                                newsubscription=1
 			else 
 				logwrite "The subscription request [${series[$counter]}] already exists"
 				logwrite "Removing the subscription request [${series[$counter]}] from [$input_file]"
-				cat $input_file | grep -v "${series[$counter]}" > newinputfile
-				mv -f newinputfile $input_file
+				cat $input_file | grep -v "${series[$counter]}" > $SMworkDir/newinputfile
+				mv -f $SMworkDir/newinputfile $input_file
 			fi
 			unset check
 		fi	
@@ -217,11 +309,23 @@ fi
 #logwrite "[$subscribers_dir/$node.new	$newtablefile]" nl
 #	
 #echo "$subscribers_dir/$node.new	$newtablefile" >> $parser_config
+if [ $newsubscription -eq 1 ]
+then
+  #-------------------------------------------------------------------------
+  # Execute the sql_gen script [$kRepDir/subscribe_manage/sql_gen $node $new_site $input_file]"
+  #-------------------------------------------------------------------------
+  logwrite "Executing the sql_gen script [. $kRepDir/subscribe_manage/sql_gen $node $new_site $input_file]" nl
+  . $kRepDir/subscribe_manage/sql_gen $node $new_site $archive $retention $tapegroup $input_file
+# ART - the $new_site == "false" was missing, and replace flag with unsubhappening - 
+# flag wasn't the right variable to use
+elif [ $new_site == "false" -a $unsubhappening -eq 1 ]
+then
+    # There were no new subscriptions, and at least one unsubscribe, so we need to
+    # overwrite the old .lst file - the new one will be missing at least one series
+    mv -f  $newtablefile $usertables
+    rm -fr $subscribers_dir/$node.new
+fi
 
-#-------------------------------------------------------------------------
-# Execute the sql_gen script [$kRepDir/subscribe_manage/sql_gen $node $new_site $input_file]"
-#-------------------------------------------------------------------------
-logwrite "Executing the sql_gen script [$kRepDir/subscribe_manage/sql_gen $config_file $node $new_site $input_file]" nl
-$kRepDir/subscribe_manage/sql_gen $config_file $node $new_site $archive $retention $tapegroup $input_file &
+logwrite "Removing input file [$input_file]"
+rm -f "$input_file"
 logwrite "$0 finished"
-

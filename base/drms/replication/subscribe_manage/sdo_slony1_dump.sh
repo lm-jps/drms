@@ -2,7 +2,7 @@
 # ----------
 # slony1_dump.sh
 #
-# $Id: sdo_slony1_dump.sh,v 1.1 2010/04/16 21:22:04 arta Exp $
+# $Id: sdo_slony1_dump.sh,v 1.2 2010/05/01 23:00:52 arta Exp $
 #
 #	This script creates a special data only dump from a subscriber
 #	node. The stdout of this script, fed into psql for a database that
@@ -13,8 +13,8 @@
 # ----
 # Check for correct usage
 # ----
-if test $# -lt 5 ; then
-	echo "usage: $0 <subscriber-dbname> <clustername> <port> <new_subscriber> <tablist>" >&2
+if test $# -lt 6 ; then
+	echo "usage: $0 <subscriber-dbname> <clustername> <port> <new_subscriber> <output counter filename> <tablist>" >&2
 	echo "         new_subscriber = 1 for yes/true and 0 for no/false" >&2
 	echo "         tablist =  a list of tables separated by white space" >&2
 	exit 1
@@ -31,6 +31,8 @@ port="$1"
 shift
 new_subscriber="$1"
 shift
+output_filecounter="$1";
+shift;
 
 clname="\"_$cluster\""
 pgc="\"pg_catalog\""
@@ -226,8 +228,11 @@ fi
 
 (
 echo "start transaction;"
-echo "set transaction isolation level serializable;"
+echo "set transaction isolation level SERIALIZABLE;"
 
+echo "create temp table subscriber_slon_counter as select ac_num from $clname.sl_archive_counter;"
+
+echo "copy subscriber_slon_counter to '$output_filecounter';"
 
 if [ $new_subscriber -eq 1 ] ; then
 # ----
@@ -236,7 +241,7 @@ if [ $new_subscriber -eq 1 ] ; then
 # ----
 echo "select 'copy $clname.sl_sequence_offline from stdin;';"
 echo "select seq_id::text || '	' || seq_relname  || '	' || seq_nspname from $clname.sl_sequence;"
-printf "select '\\\\\\\\.';"
+	printf "select E'\\\\\\\\.';"
 
 for seq in $sequences ; do
 	eval seqname=\$seqname_$seq
@@ -252,6 +257,11 @@ echo "select 'insert into $clname.sl_archive_tracking values (' ||
 			from $clname.sl_archive_counter;";
 fi
 
+########################
+## Unlock the parser (was locked by sql_gen)
+########################
+rm -f "$subscribelockpath"
+
 # ----
 # Now dump all the user table data
 # ----
@@ -262,7 +272,7 @@ for tab in $tables ; do
  	fields=`psql -p $port -At -c "select $clname.copyfields($tab);" $dbname`
  	echo "select 'copy $tabname $fields from stdin;';"
 	echo "copy $tabname $fields to stdout;"
- 	printf "select '\\\\\\\\.';"
+ 	printf "select E'\\\\\\\\.';"
 done
 
 # ----
@@ -272,11 +282,8 @@ done
 echo "commit;"
 ) | psql -p $port -q -At -d $dbname
 
-
 # ----
 # Emit the commit for the dump to stdout.
 # ----
 #echo "commit;"
 echo "-- dump complete"
-exit 0
-

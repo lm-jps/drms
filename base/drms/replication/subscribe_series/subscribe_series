@@ -2,6 +2,9 @@
 #export SSH_AUTH_SOCK=/tmp/ssh-HgUgDH2809/agent.2809
 #export SSH_AGENT_PID=2810
 
+# Run as:
+#   /home/production/devtest/cvstree/base/drms/replication/subscribe_series/subscribe_series /home/production/devtest/cvstree/proj/replication/etc/repclient.shoom.cfg subscribe_list.cfg /home/production/.ssh-agent_rs
+
 function RM {
 
   cmd="/bin/rm";
@@ -453,70 +456,6 @@ logwrite "Starting $0 from $scriptdir" nl
 # Make this relative to working dir
 statefile=$kLocalWorkingDir/ssstate.txt
 
-# extract seriesname from the $subscribe_file file
-# XXX - ART
-# Create an array of series - the createns check must be on a per-series basis.
-# We only care about series being subscribed to (and not being dropped from subscription)
-subserieslst=`cat $subscribe_file | egrep '^[^#[:space:]]' | grep -vi unsubscribe | awk '{print $1}'`
-unsubserieslst=`cat $subscribe_file | egrep '^[^#[:space:]]' | grep -i unsubscribe | awk '{print $1}'`
-
-logwrite "Series being subscribed to:"
-
-ctr=0
-while [ 1 -eq 1 ]
-do
-    index=$(( $ctr + 1 ))
-    awkscr='{print $'"$index"'}'
-    str=`echo $subserieslst | awk "$awkscr"`
-    if [ -z "$str" ]
-    then
-        break
-    fi
-    subseries[$ctr]=$str
-    logwrite "$str ($ctr)"
-    ctr=$(( $ctr + 1 ))
-done
-
-logwrite "Series being dropped from subscription:"
-ctr=0
-while [ 1 -eq 1 ]
-do
-    index=$(( $ctr + 1 ))
-    awkscr='{print $'"$index"'}'
-    str=`echo $unsubserieslst | awk "$awkscr"`
-    if [ -z "$str" ]
-    then
-        break
-    fi
-    unsubseries[$ctr]=$str
-    logwrite "$str ($ctr)"
-    ctr=$(( $ctr + 1 ))
-done
-
-# extract action from subscribe_list.cfg (if at least one action is unsubscribe, then we need to 
-# force get_slony_logs.pl after the die file has been removed)
-
-if [ ${#unsubseries[@]} -gt 0 ]
-then
-    unsubscribe=1
-else
-    unsubscribe=0
-fi
-
-if [ -z "$kSQLIngestionProgram" ]
-then
-  ingestprog=get_slony_logs.pl
-else
-  ingestprog="$kSQLIngestionProgram"
-fi
-
-if [ -z "$kDeleteSeriesProgram" ]
-then
-  delseriesprog=delete_series
-else
-  delseriesprog="$kDeleteSeriesProgram"
-fi
-
 #--------------------------------------------------------------------
 # Set up ssh keys
 #--------------------------------------------------------------------
@@ -558,6 +497,89 @@ if [ -z $SSH_AGENT_PID ]
 then
     echo "Couldn't find ssh-agent.\n"
     exit 1
+fi
+
+if [ -z "$kSQLIngestionProgram" ]
+then
+  ingestprog=get_slony_logs.pl
+else
+  ingestprog="$kSQLIngestionProgram"
+fi
+
+if [ -z "$kDeleteSeriesProgram" ]
+then
+  delseriesprog=delete_series
+else
+  delseriesprog="$kDeleteSeriesProgram"
+fi
+
+# Check for a log reprocessing request
+reproreq=`cat $subscribe_file | egrep '^[^#[:space:]]' | grep -wi repro`
+
+if [ ! -z $reproreq ] 
+then
+    # Do a log-reprocessing request - call a perl script (easier for me)
+    SetState "repro"
+    "$kRepDir/subscribe_series/req.pl" "$subscribe_file" "$logfile" "$kLocalWorkingDir"
+    # clean up log file (in case it got really big for some reason when reqrepro.pl was called
+    if [ $? -ne 0 ] 
+    then
+        logecho "Couldn't process log-re-parsing request."
+        exit 1;
+    else
+        logwrite "Re-parsing request issued."
+        SetState "end"
+    fi
+else
+# extract seriesname from the $subscribe_file file
+# XXX - ART
+# Create an array of series - the createns check must be on a per-series basis.
+# We only care about series being subscribed to (and not being dropped from subscription)
+    subserieslst=`cat $subscribe_file | egrep '^[^#[:space:]]' | grep -wi subscribe | awk '{print $1}'`
+    unsubserieslst=`cat $subscribe_file | egrep '^[^#[:space:]]' | grep -i unsubscribe | awk '{print $1}'`
+
+    logwrite "Series being subscribed to:"
+
+    ctr=0
+    while [ 1 -eq 1 ]
+    do
+        index=$(( $ctr + 1 ))
+        awkscr='{print $'"$index"'}'
+        str=`echo $subserieslst | awk "$awkscr"`
+        if [ -z "$str" ]
+        then
+            break
+        fi
+        subseries[$ctr]=$str
+        logwrite "$str ($ctr)"
+        ctr=$(( $ctr + 1 ))
+    done
+
+    logwrite "Series being dropped from subscription:"
+    ctr=0
+    while [ 1 -eq 1 ]
+    do
+        index=$(( $ctr + 1 ))
+        awkscr='{print $'"$index"'}'
+        str=`echo $unsubserieslst | awk "$awkscr"`
+        if [ -z "$str" ]
+        then
+            break
+        fi
+        unsubseries[$ctr]=$str
+        logwrite "$str ($ctr)"
+        ctr=$(( $ctr + 1 ))
+    done
+
+# extract action from subscribe_list.cfg (if at least one action is unsubscribe, then we need to 
+# force get_slony_logs.pl after the die file has been removed)
+
+    if [ ${#unsubseries[@]} -gt 0 ]
+    then
+        unsubscribe=1
+    else
+        unsubscribe=0
+    fi
 fi
 
 #--------------------------------------------------------------------
@@ -652,9 +674,6 @@ then
 fi
 
 
-
-
-
 #--------------------------------------------------------------------
 # Stopping ingestion script and copy trigger file to Manager
 #--------------------------------------------------------------------
@@ -677,6 +696,10 @@ then
 # it. The client (this script) should lock the file, then 
 # scp it, then chgrp/chmod it (this script should do the
 # chgrp/chmod).
+#
+# Even easier - just add a "__EOF__" line to the end of the trigger
+# file - the server ignores the file, unless it sees this __EOF__
+# string
     chmod g+w "$triggerfile"
     SCP -p "$triggerfile" "$kRSUser@$kRSServer:$kRSTriggerDir/."
 

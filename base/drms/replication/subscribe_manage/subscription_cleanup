@@ -4,29 +4,28 @@ pidfile=$0.pid
 #-------------------------------------------------------------------------
 # syntax check
 #-------------------------------------------------------------------------
-if [ $# -eq 5 ]
+if [ $# -eq 6 ]
 then
         config_file=$1
 	node=$2
 	new_site=$3
 	success=$4
 	input_file=$5
+        subscribelockpath=$6
 else
-	error="ERROR: Usage: $0 <server configuration file> <node> <new_site> <success of sql application, true/false> <subscription information file>"
+	error="ERROR: [$#] [$@] Usage: $0 <server configuration file> <node> <new_site> <success of sql application, true/false> <subscription information file> <path to subscription path>"
 	echo $error
-	exit
+	exit 1
 fi
+
 
 . $config_file
+. $kRepDir/subscribe_manage/subscribe_functions
 
-scrbase=`perl -e 'if ($ARGV[0] =~ /.*\/([^\/]+)/) { print $1; } else { print $ARGV[0]; }' $0`
-
-if [ -z "$kSMlogDir" ]
-then
-  logfile=../log/$scrbase.log
-else
-  logfile="$kSMlogDir/$scrbase.log"
-fi
+#--------------------------------------------------------------------
+# Setting up the log
+#--------------------------------------------------------------------
+logfile=$kSMlogDir/cleanup.$node.log
 
 if [ -z "$kMaxLog" ]
 then
@@ -57,18 +56,7 @@ else
   fi
 fi
 
-
-#--------------------------------------------------------------------
-# Setting up the log
-#--------------------------------------------------------------------
-
-logwrite () {
-        echo `date +"%m-%d-%Y %H:%M:%S - "` "$1" >> $logfile
-        if [ ! $2 == "" ]
-        then
-                echo `date +"%m-%d-%Y %H:%M:%S - "` >> $logfile
-        fi
-}
+exec >> $logfile 2>&1;
 
 logwrite "Starting $0 $1" nl
 
@@ -98,64 +86,120 @@ exec < $input_file
 			
         done
 
+## lock parser
+if ( set -o noclobber; echo "$$" > "$subscribelockpath") 2> /dev/null;
+then
+    trap 'rm -f "$subscribelockpath"; exit 1' INT TERM HUP
+
+    # Critical region
 #-------------------------------------------------------------------------
 # If successful, remove old directory and list file and replace with the new ones
 # If unsuccessful, remove new directory and list file
 #-------------------------------------------------------------------------
 # removing $node.new.lst from $parser_config
-logwrite "Removing new entry from $parser_config" 
-cat $parser_config | grep -v "$node.new.lst" > $parser_config.new
-mv -f $parser_config.new $parser_config
+    logwrite "Removing new entry from $parser_config" 
+    cat $parser_config | grep -v "$node.new.lst" > $parser_config.new
+    mv -f $parser_config.new $parser_config
 
-if [ $success == "true" ]
-then
+    if [ $success == "true" ]
+    then
+
 	if [ $new_site == "true" ]
 	then
 		# Success on new site!
-		logwrite "Subscriber SQL was a success"
-		logwrite "Adding the new entry to $parser_config "
-		logwrite "[$subscribers_dir/$node   $tables_dir/$node.lst]" nl
-		echo "$subscribers_dir/$node        $tables_dir/$node.lst" >> $parser_config
-		logwrite "Moving subscriber directory"
-		mv -f $subscribers_dir/$node.new $subscribers_dir/$node
-		logwrite "Moving subscriber table list"
-		mv -f $tables_dir/$node.new.lst $tables_dir/$node.lst
+	    logwrite "Subscriber SQL was a success"
+	    logwrite "Adding the new entry to $parser_config "
+	    logwrite "[$subscribers_dir/$node   $tables_dir/$node.lst]" nl
+	    echo "$subscribers_dir/$node        $tables_dir/$node.lst" >> $parser_config
+	    logwrite "Moving subscriber directory"
+                ## remove any log files that might contain duplicates
+            if [ -f $SMworkDir/slon_counter.$node.txt ]
+            then
+                slon_counter=`cat $SMworkDir/slon_counter.$node.txt`;
+
+                slon_file=`printf "$subscribers_dir/$node.new/slony1_log_2_020%d.log" $slon_counter`;
+                while [ -f $slon_file ]
+                do
+                    rm -f $slon_file
+                    slon_counter=$(($slon_counter-1));
+                    slon_file=`printf "$subscribers_dir/$node.new/slony1_log_2_020%d.log" $slon_counter`;
+                done
+                rm -f $SMworkDir/slon_counter.$node.txt
+            else
+                logwrite "ERROR:: No $SMworkDir/slon_counter.$node.txt"
+            fi
+	    mv -f $subscribers_dir/$node.new $subscribers_dir/$node
+            
+	    logwrite "Moving subscriber table list"
+	    mv -f $tables_dir/$node.new.lst $tables_dir/$node.lst
 	else
 		# Success on old site!
-		logwrite "Subscriber SQL was a success"
-		logwrite "Removing old subscriber directory"
-		rm -rf $subscribers_dir/$node
-		logwrite "Moving new directory the old file directory" nl
-		mv -f $subscribers_dir/$node.new $subscribers_dir/$node
-		logwrite "Removing old subscriber table list"
-		rm -f $tables_dir/$node.lst
-		logwrite "Moving new subscriber table list to old one"
-		mv -f $tables_dir/$node.new.lst $tables_dir/$node.lst
+	    logwrite "Subscriber SQL was a success"
+	    logwrite "Moving new directory to the old file directory" nl
+                ## remove any log files that might contain duplicates
+            if [ -f $SMworkDir/slon_counter.$node.txt ]
+            then
+                slon_counter=`cat $SMworkDir/slon_counter.$node.txt`;
+
+                slon_file=`printf "$subscribers_dir/$node.new/slony1_log_2_020%d.log" $slon_counter`;
+                while [ -f $slon_file ]
+                do
+                    rm -f $slon_file
+                    slon_counter=$(($slon_counter-1));
+                    slon_file=`printf "$subscribers_dir/$node.new/slony1_log_2_020%d.log" $slon_counter`;
+                done
+                rm -f $SMworkDir/slon_counter.$node.txt
+            else
+                logwrite "ERROR:: No $SMworkDir/slon_counter.$node.txt"
+            fi
+	    cp -pr $subscribers_dir/$node.new/* $subscribers_dir/$node
+            rm -rf $subscribers_dir/$node.new
+	    logwrite "Removing old subscriber table list"
+	    rm -f $tables_dir/$node.lst
+	    logwrite "Moving new subscriber table list to old one"
+	    mv -f $tables_dir/$node.new.lst $tables_dir/$node.lst
 	fi
-else
+
+    else
 	if [ $new_site == "true" ]
 	then
 		# Failure on new site!
-		logwrite "Subscriber SQL was not a success"
-		logwrite "Remove new subscriber folder" nl
-		rm -rf $subscribers_dir/$node.new
-		logwrite "Removing new subscriber table list"
-		rm -f $tables_dir/$node.new.lst
+	    logwrite "Subscriber SQL was not a success"
+	    logwrite "Remove new subscriber folder" nl
+	    rm -rf $subscribers_dir/$node.new
+	    logwrite "Removing new subscriber table list"
+	    rm -f $tables_dir/$node.new.lst
 	else
 		# Failure on old site!
-		logwrite "Subscriber SQL was not a success"
-		logwrite "Remove new subscriber folder" nl
-		rm -rf $subscribers_dir/$node.new
-		logwrite "Removing new subscriber table list"
-		rm -f $tables_dir/$node.new.lst
+	    logwrite "Subscriber SQL was not a success"
+	    logwrite "Remove new subscriber folder" nl
+	    rm -rf $subscribers_dir/$node.new
+	    logwrite "Removing new subscriber table list"
+	    rm -f $tables_dir/$node.new.lst
 	fi
+    fi
+
+    # release subscribe lock
+    rm -f "$subscribelockpath"
+
+    if [ -e "$subscribelockpath" ] 
+    then
+        logwrite "ERROR: Unable to remove subscribe lock file $subscribelockpath"
+        exit 1
+    fi
+
+    trap - INT TERM HUP
+else
+    logwrite "Could not acquire the subscription lock [cleanup]"
+    logwrite "Exiting"
+    exit 1
 fi
 
 #-------------------------------------------------------------------------
 # If successful, remove old directory and replace with the new one
 #-------------------------------------------------------------------------
 logwrite "Renaming the $node.subscribe_series.cleanup file to $node.subscribe_series.done" 
-mv $node.subscribe_series.cleanup $triggerdir/$node.subscribe_series.done
+mv $input_file $triggerdir/$node.subscribe_series.done
 logwrite "Removing the $node.subscribe_series.cfg file" nl
 rm -f $triggerdir/$node.subscribe_series.cfg
 logwrite "Removing the $node.subscribe_series.sqldone file" nl
