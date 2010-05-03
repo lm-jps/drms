@@ -255,7 +255,7 @@ int DoIt(void)
 
   op = (char *)cmdparams_get_str (&cmdparams, "op", NULL);
 
-  /*  op == process  */
+  /*  op == process, this is export_manage cmd line, NOT for request being managed */
   if (strcmp(op,"process") == 0) 
     {
     int irec;
@@ -350,6 +350,7 @@ int DoIt(void)
       // in the script may clone as DRMS_TRANSIENT.
       // Remember all modules in this script mut be _sock modules.
 
+// XXXX needs to pass on DBHOST
       // First, prepare initial part of script, same for all processing.
       sprintf(runscript, "%s/%s.drmsrun", reqdir, requestid);
       fp = fopen(runscript, "w");
@@ -453,6 +454,7 @@ int DoIt(void)
         {
         fprintf(fp, "if ($RUNSTAT == 0) then\n");
         fprintf(fp, "  tar chf %s.tar *\n", requestid);
+// Sometime rm all files except logs and index files that have been tarred
         fprintf(fp, "  set RUNSTAT = $status\n");
         fprintf(fp, "endif\n");
         }

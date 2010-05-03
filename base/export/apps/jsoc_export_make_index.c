@@ -65,6 +65,7 @@ int main(int argc, char **argv)
   json_t *fileinfo;
   char *json, *final_json;
   int state = 0;
+  int method_ftp = 0;
 
   if (argc && strcmp(*argv, "-h") == 0)
     {
@@ -98,6 +99,11 @@ int main(int argc, char **argv)
 
   while (fgets(buf, 1000, index_txt))
     {
+    char *name, *val, *sustr;
+    char *namestr, *valstr;
+    char *sustatus = NULL;
+    char *susize = NULL;
+    char linkbuf[2048];
     char *p = buf + strlen(buf) - 1;
     char *c;
     if (p >= buf && *p == '\n')
@@ -105,12 +111,6 @@ int main(int argc, char **argv)
     p = buf;
     switch (state)
       {
-      char *name, *val, *sustr;
-      char *namestr, *valstr;
-      char *sustatus = NULL;
-      char *susize = NULL;
-      char linkbuf[2048];
-
       case 0: // Initial read expect standard header line
 	if (strncmp(buf, "# JSOC ",7) != 0)
 	  {
@@ -156,6 +156,9 @@ int main(int argc, char **argv)
 	// save dir for use in data section
 	if (strcmp(name, "dir") == 0)
 	  strncpy(dir, val, 1000);
+        // Check for method==ftp
+        if (strncmp(name, "method", 3) == 0)
+          method_ftp = 1;
 	// put name=value pair into index.json
 	namestr = string_to_json(name);
         valstr = string_to_json(val);
@@ -196,7 +199,10 @@ int main(int argc, char **argv)
 	free(valstr);
 	json_insert_child(recinfo, fileinfo);
 	// put name=value pair into index.html
-	fprintf(index_html, "<TR><TD>%s</TD><TD><A HREF=\"http://jsoc.stanford.edu/%s/%s\">%s</A></TD></TR>\n", name, dir, val, val);
+        if (method_ftp)
+	  fprintf(index_html, "<TR><TD>%s</TD><TD><A HREF=\"ftp://pail.stanford.edu/export%s/%s\">%s</A></TD></TR>\n", name, dir, val, val);
+        else
+	  fprintf(index_html, "<TR><TD>%s</TD><TD><A HREF=\"http://jsoc.stanford.edu/%s/%s\">%s</A></TD></TR>\n", name, dir, val, val);
 	break;
       case 3: // Data section for Storage Units contains triples of sunum, seriesname, path, online status, file size
         if (*p == '#' || !*p) // skip blank and comment lines
@@ -282,6 +288,7 @@ int main(int argc, char **argv)
                 name, /* owning series */
                 linkbuf, /* link or NA */
                 sustatus, /* SU status - Y, N, X, I */
+// probably in MB
                 susize /* SU size in bytes */ );
         break;
       default:

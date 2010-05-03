@@ -1,9 +1,11 @@
-#define DEBUG 1
+// #define DEBUG 1
 #define DEBUG 0
 
 /*
  *  jsoc_export_as_is - Generates index.XXX files for dataset export.
  *  Copied and changed from jsoc_info.c
+ *  This program is expected to be run in a drms_run script.
+ *  cwd is expected to be the export SU.
  *
 */
 #include "jsoc_main.h"
@@ -165,15 +167,13 @@ int DoIt(void)
   char buf[2*DRMS_MAXPATHLEN];
   char *cwd;
 
-  if (nice_intro ()) return (0);
-
-  in = cmdparams_get_str (&cmdparams, "ds", NULL);
-  requestid = cmdparams_get_str (&cmdparams, "requestid", NULL);
-  format = cmdparams_get_str (&cmdparams, "format", NULL);
-  filenamefmt = cmdparams_get_str (&cmdparams, "filenamefmt", NULL);
-  method = cmdparams_get_str (&cmdparams, "method", NULL);
-  protocol = cmdparams_get_str (&cmdparams, "protocol", NULL);
-  seglist = strdup (cmdparams_get_str (&cmdparams, "seg", NULL));
+  in = (char *)cmdparams_get_str (&cmdparams, "ds", NULL);
+  requestid = (char *)cmdparams_get_str (&cmdparams, "requestid", NULL);
+  format = (char *)cmdparams_get_str (&cmdparams, "format", NULL);
+  filenamefmt = (char *)cmdparams_get_str (&cmdparams, "filenamefmt", NULL);
+  method = (char *)cmdparams_get_str (&cmdparams, "method", NULL);
+  protocol = (char *)cmdparams_get_str (&cmdparams, "protocol", NULL);
+  seglist = (char *)strdup (cmdparams_get_str (&cmdparams, "seg", NULL));
   segs_listed = strcmp (seglist, "Not Specified");
 
   index_txt = fopen("index.txt", "w");
@@ -260,13 +260,37 @@ int DoIt(void)
       strncat(path, rec_seg_iseg->filename, DRMS_MAXPATHLEN);
 
       // Get segment file size
-      if (!stat(path, &filestat))
-        size += filestat.st_size;
+      if (stat(path, &filestat) == 0)
+        { 
+        if (S_ISDIR(filestat.st_mode))
+          { // Segment is directory, get size == for now == use system "du"
+          char cmd[DRMS_MAXPATHLEN+100];
+          FILE *du;
+          long long dirsize;
+          sprintf(cmd,"/usr/bin/du -s -b %s", path);
+          du = popen(cmd, "r");
+          if (du)
+            {
+            if (fscanf(du,"%lld",&dirsize) == 1)
+              size += dirsize;
+            pclose(du);
+            }
+          }
+        else
+          size += filestat.st_size;
+        }
 
       /* Make a symlink for each selected file */
 
       jsoc_export_make_filename(rec_seg_iseg, strcmp(filenamefmt,"Not Specified") ? filenamefmt : NULL, filename);
-      symlink(path,filename);
+      if (strcmp(method,"ftp")==0)
+        {
+        char tmp[DRMS_MAXPATHLEN];
+        sprintf(tmp,"/export%s", path);
+        symlink(tmp,filename);
+        }
+      else
+        symlink(path,filename);
 
       /* write a line for each record to each output file type wanted */
 
@@ -278,7 +302,7 @@ int DoIt(void)
 /* Finished.  Clean up and exit. */
 
    fprintf(index_txt, "count=%d\n",count);
-   fprintf(index_txt, "size=%d\n",size);
+   fprintf(index_txt, "size=%lld\n",size/(1024*1024));
    fprintf(index_txt, "status=0\n");
    cwd = getcwd(NULL, 0);
    fprintf(index_txt,"dir=%s\n", ((strncmp("/auto", cwd,5) == 0) ? cwd+5 : cwd));

@@ -10,9 +10,12 @@
 #include "json.h"
 #include "printk.h"
 #include "qDecoder.h"
-
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <time.h>
 
+#define MAX_EXPORT_SIZE 100000  // 100GB
 
 #define kExportSeries "jsoc.export"
 #define kExportSeriesNew "jsoc.export_new"
@@ -47,20 +50,13 @@
 #define kOpExpKinds	"exp_kinds"	// not used yet
 #define kOpExpHistory	"exp_history"	// not used yet
 
+#define kOptProtocolAsIs "as-is"	// Protocol option value for no change to fits files
+
 #define kNotSpecified	"Not Specified"
 
 #define kNoAsyncReq     "NOASYNCREQUEST"
 
 int dojson, dotxt, dohtml, doxml;
-
-static char x2c (char *what) {
-  register char digit;
-
-  digit = (what[0] >= 'A' ? ((what[0] & 0xdf) - 'A')+10 : (what[0] - '0'));
-  digit *= 16;
-  digit += (what[1] >= 'A' ? ((what[1] & 0xdf) - 'A')+10 : (what[1] - '0'));
-  return (digit);
-}
 
 ModuleArgs_t module_args[] =
 { 
@@ -73,7 +69,7 @@ ModuleArgs_t module_args[] =
   {ARG_STRING, kArgRequestor, kNotSpecified, "name of requestor"},
   {ARG_STRING, kArgNotify, kNotSpecified, "email address of requestor"},
   {ARG_STRING, kArgShipto, kNotSpecified, "mail address of requestor"},
-  {ARG_STRING, kArgProtocol, "as-is", "exported file protocol"},
+  {ARG_STRING, kArgProtocol, kOptProtocolAsIs, "exported file protocol"},
   {ARG_STRING, kArgFilenamefmt, "{seriesname}.{recnum:%d}.{segment}", "exported file filename format"},
   {ARG_STRING, kArgFormat, "json", "return content type"},
   {ARG_STRING, kArgFormatvar, kNotSpecified, "return json in object format"},
@@ -183,7 +179,7 @@ void drms_sprint_rec_query(char *text, DRMS_Record_t *rec)
 /* quick export of recordset - on entry it is known that all the records are online
  * so no directory file need be built.  The json structure will have 3 elements
  * added:
- *   size : size in bytes
+ *   size : size in megabytes
  *   rcount : number of records
  *   count : number of files
  *   data  : array of count objects containing
@@ -242,7 +238,7 @@ int quick_export_rs( json_t *jroot, DRMS_RecordSet_t *rs, int online,  long long
     json_insert_pair_into_object(jroot, "rcount", json_new_number(numval));
     sprintf(numval, "%d", count);
     json_insert_pair_into_object(jroot, "count", json_new_number(numval));
-    sprintf(numval, "%lld", size);
+    sprintf(numval, "%d", (int)size);
     json_insert_pair_into_object(jroot, "size", json_new_number(numval));
     json_insert_pair_into_object(jroot, "dir", json_new_string(""));
     json_insert_pair_into_object(jroot, "data", data);
@@ -364,7 +360,7 @@ int send_file(DRMS_Record_t *rec, int segno)
   strncat(path, sudir, DRMS_MAXPATHLEN);
   strncat(path, "/", DRMS_MAXPATHLEN);
   strncat(path, seg->filename, DRMS_MAXPATHLEN);
-fprintf(stderr,"path: %s\n",path);
+//fprintf(stderr,"path: %s\n",path);
   fp = fopen(path, "r");
   if (!fp)
     JSONDIE2("Can not open file for export: ",path);
@@ -652,7 +648,7 @@ int DoIt(void)
        JSONDIE("SUMS is down.");
     }
 
-    if (strcmp(method,"url_quick")==0 && strcmp(protocol,"as-is")==0  && (all_online || dodataobj))
+    if (strcmp(method,"url_quick")==0 && strcmp(protocol,kOptProtocolAsIs)==0  && (all_online || dodataobj))
       {
       if (dojson)
         {
@@ -698,7 +694,7 @@ int DoIt(void)
         
         sprintf(numval, "%d", count);
         json_insert_pair_into_object(jroot, "count", json_new_number(numval));
-        sprintf(numval, "%lld", size);
+        sprintf(numval, "%d", (int)(size));
         json_insert_pair_into_object(jroot, "size", json_new_number(numval));
         json_insert_pair_into_object(jroot, "dir", json_new_string(""));
         json_insert_pair_into_object(jroot, "data", data);
@@ -731,7 +727,7 @@ int DoIt(void)
         printf("protocol=%s\n", protocol);
         printf("wait=0\n");
         printf("count=%d\n", count);
-        printf("size=%lld\n", size);
+        printf("size=%d\n", (int)size);
         printf("dir=/\n");
         printf("# DATA\n");
         for (i=0; i<count; i++)
@@ -798,7 +794,7 @@ check for requestor to be valid remote DRMS site
     drms_setkey_string(export_log, "Format", format);
     drms_setkey_time(export_log, "ReqTime", now);
     drms_setkey_time(export_log, "EstTime", now+10); // Crude guess for now
-    drms_setkey_longlong(export_log, "Size", size);
+    drms_setkey_longlong(export_log, "Size", (int)size);
     drms_setkey_int(export_log, "Status", 2);
     drms_setkey_int(export_log, "Requestor", requestorid);
     drms_close_record(export_log, DRMS_INSERT_RECORD); 
@@ -891,14 +887,25 @@ check for requestor to be valid remote DRMS site
 
     rs = drms_open_records(drms_env, dsquery, &status);
     if (!rs)
-	JSONDIE2("Can not open RecordSet: ",dsquery);
+        {
+        int tmpstatus = status;
+        rcount = drms_count_records(drms_env, dsquery, &status);
+        if (status == 0)
+          {
+          char errmsg[100];
+          sprintf(errmsg,"%d is too many records in one request.",rcount);
+	  JSONDIE2("Can not open RecordSet ",errmsg);
+          }
+        status = tmpstatus;
+	JSONDIE2("Can not open RecordSet, bad query or too many records: ",dsquery);
+        }
     rcount = rs->n;
   
     // Do survey of recordset
     all_online = 1;
     for (irec=0; irec < rcount; irec++) 
       {
-      // Must check each segment since some may be linked and offline.
+      // Must check each segment since some may be linked and/or offline.
       DRMS_Record_t *rec = rs->records[irec];
       DRMS_Segment_t *seg;
       HIterator_t *segp = NULL;
@@ -914,26 +921,114 @@ check for requestor to be valid remote DRMS site
           {
           struct stat buf;
   	  char path[DRMS_MAXPATHLEN];
-  	  drms_record_directory(segrec, path, 0);
+	  drms_record_directory(segrec, path, 0);
           drms_segment_filename(seg, path);
           if (stat(path, &buf) != 0)
-  	    JSONDIE2("Bad path (stat failed) in a record in RecordSet: ", dsquery);
-          size += buf.st_size;
-          segcount += 1;
+            { // segment specified file is not present.
+              // it is an error if the record and QUALITY >=0 but no file matching
+              // the segment file name unless the filename is empty.
+            if (*(seg->filename))
+              {
+              DRMS_Keyword_t *quality = drms_keyword_lookup(segrec, "QUALITY",1);
+              if (quality && drms_getkey_int(segrec, "QUALITY", 0) >= 0)
+                { // there should be a file
+//fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path);
+  	        // JSONDIE2("Bad path (file missing) in a record in RecordSet: ", dsquery);
+                }
+              }
+            }
+          else // Stat succeeded, get size
+            {
+            if (S_ISDIR(buf.st_mode))
+              { // Segment is directory, get size == for now == use system "du"
+              char cmd[DRMS_MAXPATHLEN+100];
+              FILE *du;
+              long long dirsize=0;
+              sprintf(cmd,"/usr/bin/du -s -b %s", path);
+              du = popen(cmd, "r");
+              if (du)
+                {
+                if (fscanf(du,"%lld",&dirsize) == 1)
+                  {
+                  size += dirsize;
+                  segcount += 1;
+                  }
+                pclose(du);
+                }
+//fprintf(stderr,"dir size=%lld\n",dirsize);
+              }
+            else
+              {
+              size += buf.st_size;
+              segcount += 1;
+              }
+            }
           }
         }
       if (segp)
         free(segp); 
       }
+    if (size < 1024*1024) size = 1024*1024;
+    size /= 1024*1024;
     if (my_sum)
       SUM_close(my_sum,printkerr);
   
     // Exit if no records found
-    if ((strcmp(method,"url_quick")==0 && (strcmp(protocol,"as-is")==0) || strcmp(protocol,"su")==0) && segcount == 0)
+    if ((strcmp(method,"url_quick")==0 && (strcmp(protocol,kOptProtocolAsIs)==0) || strcmp(protocol,"su")==0) && segcount == 0)
       JSONDIE("There are no files in this RecordSet");
 
+    // Return status==3 if request is too large.
+    if (size > MAX_EXPORT_SIZE)
+      {
+      int count = drms_count_records(drms_env, dsquery, &status);
+      if (dojson)
+        {
+        char *json;
+        char *strval;
+        char numval[100];
+        json_t *jroot = json_new_object();
+        json_insert_pair_into_object(jroot, kArgRequestid, json_new_string("VOID"));
+        // free(strval);
+        strval = string_to_json((char *)method);
+        json_insert_pair_into_object(jroot, kArgMethod, json_new_string(strval));
+        free(strval);
+        strval = string_to_json((char *)protocol);
+        json_insert_pair_into_object(jroot, kArgProtocol, json_new_string(strval));
+        free(strval);
+        json_insert_pair_into_object(jroot, "wait", json_new_number("0"));
+        json_insert_pair_into_object(jroot, "status", json_new_number("3"));
+        sprintf(numval, "%d", count);
+        json_insert_pair_into_object(jroot, "count", json_new_number(numval));
+        sprintf(numval, "%d", (int)size);
+        json_insert_pair_into_object(jroot, "size", json_new_number(numval));
+        sprintf(numval,"Request exceeds max byte limit of %dMB", MAX_EXPORT_SIZE);
+        strval = string_to_json(numval);
+        json_insert_pair_into_object(jroot, "error", json_new_string(strval));
+        free(strval);
+        json_tree_to_string(jroot,&json);
+        if (fileupload)  // The returned json should be in the implied <body> tag for iframe requests.
+           printf("Content-type: text/html\n\n");
+        else
+          printf("Content-type: application/json\n\n");
+        printf("%s\n",json);
+        fflush(stdout);
+        free(json);
+        }  
+      else
+        {
+        printf("Content-type: text/plain\n\n");
+        printf("# JSOC Data Export Failure.\n");
+  	printf("status=3\n");
+        printf("size=%lld\n",size);
+        printf("count=%d\n",count);
+  	printf("requestid=VOID\n");
+  	printf("wait=0\n");
+  	}
+      return(0);
+      }
+
     // Do quick export if possible
-    if ((strcmp(method,"url_quick")==0 && (strcmp(protocol,"as-is")==0) || strcmp(protocol,"su")==0) && all_online)
+    if ((strcmp(method,"url_quick")==0 && (strcmp(protocol,kOptProtocolAsIs)==0) || strcmp(protocol,"su")==0) && all_online)
       {
       if (0 && segcount == 1) // If only one file then do immediate delivery of that file.
         {
@@ -979,23 +1074,23 @@ check for requestor to be valid remote DRMS site
       return(0);
       }
 
-    // Must do full export processing
+     // Must do full export processing
 
-    // Get RequestID
-    {
-    FILE *fp = popen("/home/phil/cvs/JSOC/bin/linux_ia32/GetJsocRequestID", "r");
-    if (fscanf(fp, "%s", new_requestid) != 1)
-      JSONDIE("Cant get new RequestID");
-    pclose(fp);
-    requestid = new_requestid;
-    }
+     // Get RequestID
+     {
+     FILE *fp = popen("/home/phil/cvs/JSOC/bin/linux_ia32/GetJsocRequestID", "r");
+     if (fscanf(fp, "%s", new_requestid) != 1)
+       JSONDIE("Cant get new RequestID");
+     pclose(fp);
+     }
+     requestid = new_requestid;
 
-    now = timenow();
+     now = timenow();
 
-    // Add Requestor info to jsoc.export_user series 
-    // Can not watch for new information since can not read this series.
-    //   start by looking up requestor 
-    if (strcmp(requestor, kNotSpecified) != 0)
+     // Add Requestor info to jsoc.export_user series 
+     // Can not watch for new information since can not read this series.
+     //   start by looking up requestor 
+     if (strcmp(requestor, kNotSpecified) != 0)
       {
       DRMS_Record_t *requestor_rec;
 #ifdef IN_MY_DREAMS
@@ -1030,29 +1125,30 @@ check for requestor to be valid remote DRMS site
         drms_close_records(requestor_rs, DRMS_FREE_RECORD);
         }
 #endif
-      }
-    else
-      requestorid = 0;
+       }
+     else
+       requestorid = 0;
 
-    // Create new record in export control series
-    // This will be copied into the cluster-side series on first use.
-    export_log = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
-    if (!export_log)
+     // Create new record in export control series
+     // This will be copied into the cluster-side series on first use.
+     export_log = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
+     if (!export_log)
       JSONDIE("Cant create new export control record");
-    drms_setkey_string(export_log, "RequestID", requestid);
-    drms_setkey_string(export_log, "DataSet", dsquery);
-    drms_setkey_string(export_log, "Processing", process);
-    drms_setkey_string(export_log, "Protocol", protocol);
-    drms_setkey_string(export_log, "FilenameFmt", filenamefmt);
-    drms_setkey_string(export_log, "Method", method);
-    drms_setkey_string(export_log, "Format", format);
-    drms_setkey_time(export_log, "ReqTime", now);
-    drms_setkey_time(export_log, "EstTime", now+10); // Crude guess for now
-    drms_setkey_longlong(export_log, "Size", size);
-    drms_setkey_int(export_log, "Status", 2);
-    drms_setkey_int(export_log, "Requestor", requestorid);
-    drms_close_record(export_log, DRMS_INSERT_RECORD);
-    } // End of kOpExpRequest setup
+     drms_setkey_string(export_log, "RequestID", requestid);
+     drms_setkey_string(export_log, "DataSet", dsquery);
+     drms_setkey_string(export_log, "Processing", process);
+     drms_setkey_string(export_log, "Protocol", protocol);
+     drms_setkey_string(export_log, "FilenameFmt", filenamefmt);
+     drms_setkey_string(export_log, "Method", method);
+     drms_setkey_string(export_log, "Format", format);
+     drms_setkey_time(export_log, "ReqTime", now);
+     drms_setkey_time(export_log, "EstTime", now+10); // Crude guess for now
+     drms_setkey_longlong(export_log, "Size", (int)size);
+     drms_setkey_int(export_log, "Status", 2);
+     drms_setkey_int(export_log, "Requestor", requestorid);
+     drms_close_record(export_log, DRMS_INSERT_RECORD);
+     } // End of kOpExpRequest setup
+    
   /*  op == exp_repeat  */
   else if (strcmp(op,kOpExpRepeat) == 0) 
     {
@@ -1151,7 +1247,7 @@ check for requestor to be valid remote DRMS site
   format     = drms_getkey_string(export_log, "Format", NULL);
   reqtime    = drms_getkey_time(export_log, "ReqTime", NULL);
   esttime    = drms_getkey_time(export_log, "EstTime", NULL); // Crude guess for now
-  size       = drms_getkey_int(export_log, "Size", NULL);
+  size       = drms_getkey_longlong(export_log, "Size", NULL);
   requestorid = drms_getkey_int(export_log, "Requestor", NULL);
 
   // Do special actions on status
@@ -1276,7 +1372,7 @@ check for requestor to be valid remote DRMS site
         json_insert_pair_into_object(jroot, "wait", json_new_number(numval));
         sprintf(numval, "%d", rcount);
         json_insert_pair_into_object(jroot, "rcount", json_new_number(numval));
-        sprintf(numval, "%lld", size);
+        sprintf(numval, "%d", (int)size);
         json_insert_pair_into_object(jroot, "size", json_new_number(numval));
         if (strcmp(op, kOpExpSu) == 0)
            json_insert_pair_into_object(jroot, "data", data);
