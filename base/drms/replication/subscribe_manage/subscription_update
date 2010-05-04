@@ -309,22 +309,28 @@ fi
 #logwrite "[$subscribers_dir/$node.new	$newtablefile]" nl
 #	
 #echo "$subscribers_dir/$node.new	$newtablefile" >> $parser_config
-if [ $newsubscription -eq 1 ]
-then
-  #-------------------------------------------------------------------------
-  # Execute the sql_gen script [$kRepDir/subscribe_manage/sql_gen $node $new_site $input_file]"
-  #-------------------------------------------------------------------------
-  logwrite "Executing the sql_gen script [. $kRepDir/subscribe_manage/sql_gen $node $new_site $input_file]" nl
-  . $kRepDir/subscribe_manage/sql_gen $node $new_site $archive $retention $tapegroup $input_file
+
 # ART - the $new_site == "false" was missing, and replace flag with unsubhappening - 
 # flag wasn't the right variable to use
-elif [ $new_site == "false" -a $unsubhappening -eq 1 ]
+
+# Always call sql_gen - even if the result will be an empty .sql file. The client
+# needs the .sql.done file that sql_gen writes. If we are not actually adding
+# any series to the subscription list, then just delete the $node.new directory.
+# It won't contain any logs that the client needs. 
+# When the parser restarts, the first log file (and subsequent ones) will not have
+# content for the series that was dropped.
+if [ $newsubscription -ne 1 -a $new_site == "false" -a $unsubhappening -eq 1 ]
 then
     # There were no new subscriptions, and at least one unsubscribe, so we need to
     # overwrite the old .lst file - the new one will be missing at least one series
-    mv -f  $newtablefile $usertables
     rm -fr $subscribers_dir/$node.new
 fi
+
+ #-------------------------------------------------------------------------
+  # Execute the sql_gen script [$kRepDir/subscribe_manage/sql_gen $node $new_site $input_file]"
+  #-------------------------------------------------------------------------
+logwrite "Executing the sql_gen script [. $kRepDir/subscribe_manage/sql_gen $node $new_site $input_file]" nl
+. $kRepDir/subscribe_manage/sql_gen $node $new_site $archive $retention $tapegroup $input_file
 
 logwrite "Removing input file [$input_file]"
 rm -f "$input_file"

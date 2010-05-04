@@ -150,7 +150,7 @@ then
                 done
                 rm -f $SMworkDir/slon_counter.$node.txt
             else
-                logwrite "ERROR:: No $SMworkDir/slon_counter.$node.txt"
+                logwrite "NOTE:: No $SMworkDir/slon_counter.$node.txt (only needed if adding series to subscription list)"
             fi
 	    cp -pr $subscribers_dir/$node.new/* $subscribers_dir/$node
             rm -rf $subscribers_dir/$node.new
