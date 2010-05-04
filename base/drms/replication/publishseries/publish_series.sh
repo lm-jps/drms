@@ -76,8 +76,8 @@ logwrite "Starting $0" nl
 # Checking to see if the series to be published exists on the master
 #--------------------------------------------------------------------
 logwrite "Checking to see if the series to be published exists on the master" 
-logwrite "Executing: [psql -t -h $MASTERHOST -p $MASTERPORT -U $REPUSER -c \"select * from pg_tables where tablename = '$publish_table' and schemaname = '$publish_schema'\" $MASTERDBNAME]"
-check=`psql -t -h $MASTERHOST -p $MASTERPORT -U $REPUSER -c "select * from pg_tables where tablename = '$publish_table' and schemaname = '$publish_schema'" $MASTERDBNAME`
+logwrite "Executing: [psql -t -h $MASTERHOST -p $MASTERPORT -U $REPUSER -c \"select * from pg_tables where tablename ilike '$publish_table' and schemaname ilike '$publish_schema'\" $MASTERDBNAME]"
+check=`psql -t -h $MASTERHOST -p $MASTERPORT -U $REPUSER -c "select * from pg_tables where tablename ilike '$publish_table' and schemaname ilike '$publish_schema'" $MASTERDBNAME`
 logwrite "Result: [$check]"
 if [ -n "$check" ]
 then
@@ -93,7 +93,7 @@ unset check
 # Checking to see if the series to be published has already been published
 #--------------------------------------------------------------------
 logwrite "Checking to see if the series to be published has already been published" 
-check=`psql -t -h $MASTERHOST -p $MASTERPORT -U $REPUSER -c "select * from _$CLUSTERNAME.sl_table where tab_relname = '$publish_table' and tab_nspname = '$publish_schema'" $MASTERDBNAME`
+check=`psql -t -h $MASTERHOST -p $MASTERPORT -U $REPUSER -c "select * from _$CLUSTERNAME.sl_table where tab_relname ilike '$publish_table' and tab_nspname ilike '$publish_schema'" $MASTERDBNAME`
 if [ -n "$check" ]
 then
 	echo "The series $publish_schema.$publish_table has already been published. ABORTING!"
@@ -191,7 +191,7 @@ rm -f $REP_PS_TMPDIR/createns.log $REP_PS_TMPDIR/createtabstruct.log $REP_PS_TMP
 # Checking to see if the series to be published exists on the slave
 #--------------------------------------------------------------------
 logwrite "Checking to see if the series to be published exists on the slave" 
-check=`psql -t -h $SLAVEHOST -p $SLAVEPORT -U $REPUSER -c "select * from pg_tables where tablename = '$publish_table' and schemaname = '$publish_schema'" $SLAVEDBNAME`
+check=`psql -t -h $SLAVEHOST -p $SLAVEPORT -U $REPUSER -c "select * from pg_tables where tablename ilike '$publish_table' and schemaname ilike '$publish_schema'" $SLAVEDBNAME`
 if [ -n "$check" ]
 then
 	logwrite "The series $publish_schema.$publish_table exists on the slave, continuing..." nl
@@ -226,12 +226,17 @@ logwrite "Using $repid as the next replication set id"
 #--------------------------------------------------------------------
 newpubfn=$REP_PS_TMPDIR/publish.$publish_schema.$publish_table
 tempnewpubfn=$REP_PS_TMPDIR/publish.$publish_schema.$publish_table.temp
+
+# create lower case versions of the schema and table strings
+publish_schema_lower=`echo $publish_schema | tr '[A-Z]' '[a-z]'`
+publish_table_lower=`echo $publish_table | tr '[A-Z]' '[a-z]'`
+
 echo -n "#!" > $newpubfn
 which bash >> $newpubfn
 # The next cmd used to be
 # cat $slony_config_file >> $newpubfn
 cat $config_file >> $newpubfn
-sed 's/<schema.table>/'$publish_schema.$publish_table'/g' $kRepDir/publishseries/subscribetemplate.sh >> $tempnewpubfn
+sed 's/<schema.table>/'$publish_schema_lower.$publish_table_lower'/g' $kRepDir/publishseries/subscribetemplate.sh >> $tempnewpubfn
 sed 's/<repsetid>/'$repid'/g' $tempnewpubfn >> $tempnewpubfn.2
 sed 's/<id>/'$subid'/g' $tempnewpubfn.2 >> $newpubfn
 rm -f $tempnewpubfn $tempnewpubfn.2 
@@ -268,7 +273,8 @@ do
     set - $sqlret
     tabchk=$1
 
-    echo -e "."
+    echo -n "."
+    sleep 1
 done
 
 echo
