@@ -142,6 +142,7 @@ build_action_que () {
 
 	logwrite "Searching for string matches in the temp log file, building action que if any are found"
 	echo > $SLMTempDir/slon_log_action_que.lst
+	echo ". $config_file" >> $SLMTempDir/slon_log_action_que.lst
 
 	# While loop that loops though each line in the list file, parses it, and preforms a search on the temporary log file
 	counter=0
