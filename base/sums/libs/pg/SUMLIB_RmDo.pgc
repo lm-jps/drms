@@ -214,7 +214,9 @@ EXEC SQL END DECLARE SECTION;
             sprintf(stmt, "%s);", stmt);
             printk("Records.txt statement is:\n%s\n", stmt);
             EXEC SQL WHENEVER SQLERROR GOTO sqljsocerror;
-            EXEC SQL CONNECT TO jsoc@hmidb.stanford.edu:5432;
+            //EXEC SQL CONNECT TO jsoc@hmidb.stanford.edu:5432;
+            //!!TBD pickup db name & port from variables
+            EXEC SQL CONNECT TO jsoc_sums@hmidb:5432;
             EXEC SQL EXECUTE IMMEDIATE :stmt;
             EXEC SQL COMMIT;
             EXEC SQL DISCONNECT;
