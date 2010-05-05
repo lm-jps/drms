@@ -216,7 +216,7 @@ EXEC SQL END DECLARE SECTION;
             EXEC SQL WHENEVER SQLERROR GOTO sqljsocerror;
             //EXEC SQL CONNECT TO jsoc@hmidb.stanford.edu:5432;
             //!!TBD pickup db name & port from variables
-            EXEC SQL CONNECT TO jsoc_sums@hmidb:5434;
+            EXEC SQL CONNECT TO jsoc@hmidb:5430;
             EXEC SQL EXECUTE IMMEDIATE :stmt;
             EXEC SQL COMMIT;
             EXEC SQL DISCONNECT;
