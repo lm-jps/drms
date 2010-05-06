@@ -10,6 +10,7 @@
 ##  2009/12/22  :: kevin   : Read config variables from subscribe_series/etc
 ##  2010/01/11  :: arta    : Add the Net::SCP put subroutine and use it to save counter file on server
 ##
+
 use lib qw(/home/slony/Scripts);
 
 
@@ -345,6 +346,14 @@ while (defined $slony_ingest) {
         print "failed to execute tar command [$tar_exp]: $!\n";
         exit 1;
       }
+
+      # files have been extract from tar file - delete
+      print "logs extracted from $tar_file - deleting archive.\n";
+      if (unlink($tar_file) != 1)
+      {
+         print "could not delete archive '$tar_file'.\n";
+      }
+
       for my $log (@list) {
         my ($counter)= ($log=~/slony1_log_2_0+(\d+).sql/);
         if ($counter >= $cur_counter) {
@@ -353,7 +362,24 @@ while (defined $slony_ingest) {
           $cur_counter = $counter + 1;
           save_current_counter($counter_file, $log);
         }
-      }
+        else
+        {
+# BUG fix
+#   It is possible that this script will download a tar ball of logs, but that only some of the logs
+#   in that tar ball are needed. This will happen if the script runs and downloads/ingest logs that
+#   are then later on tarred into a tar ball which is then downloaded by this script. Those logs previously
+#   ingested are not needed. This script will then not clean up those files, since clean-up happens in 
+#   the function that does the ingestion, but that function will not be called for the not-needed 
+#   logs.
+#
+#   This log file extracted from the tar will not be ingested - delete it
+           print "$log already ingested - skipping.\n";
+           if (unlink($log) != 1)
+           {
+              print "could not delete previously ingested log file '$log'.\n";
+           }
+        }
+     }
     }
   }
 
