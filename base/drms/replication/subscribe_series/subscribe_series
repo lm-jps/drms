@@ -451,6 +451,17 @@ else
   fi
 fi
 
+#--------------------------------------------------------------------
+# disallow simultaneous runs of this script
+#--------------------------------------------------------------------
+if ( set -o noclobber; echo "$$" > "$kLocalWorkingDir/clientsublock.txt") 2> /dev/null;
+then
+    trap 'rm -f "$kLocalWorkingDir/clientsublock.txt"; exit 1' INT TERM HUP
+else
+    logwrite "Could not acquire the subscription lock; exiting"
+    exit 1
+fi
+
 logwrite "Starting $0 from $scriptdir" nl
 
 # Make this relative to working dir
@@ -590,6 +601,15 @@ if [ $state == "end" -o $wipestate -eq 1 ]
 then
     # Prevous run completely successfully, set to start
     SetState "start"
+
+    # If the .sqldone file exists from a previous, aborted run, we need to
+    # delete it. Otherwise, this script will send the initial trigger file
+    # to the server, and see the old, aborted .sqldone file and attempt
+    # to download the .sql file, which won't be there.
+    # So, remove the .sqldone file. The ssh call will fail if it doesn't exist
+    # but that is okay - as long as the .sqldone file is removed if it exists.
+    logwrite "Removing sqldone trigger file from webdb"
+    SSH "$kRSUser@$kRSServer" 'rm -f '"'$kRSTriggerDir/$node.subscribe_series.sqldone'"
 fi
 
 #--------------------------------------------------------------------
@@ -1108,3 +1128,16 @@ then
 else
     logecho "Subscription process did not complete successfully!"
 fi
+
+
+#--------------------------------------------------------------------
+# Release lock
+#--------------------------------------------------------------------
+rm -f "$kLocalWorkingDir/clientsublock.txt"
+
+if [ -e "$kLocalWorkingDir/clientsublock.txt" ] 
+then
+    logwrite "ERROR: Unable to remove subscribe lock file $kLocalWorkingDir/clientsublock.txt"
+fi
+
+trap - INT TERM HUP

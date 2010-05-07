@@ -93,14 +93,17 @@ then
   grep_pid=`grep "#UPDATE PID:" $last_running_subupdate`; 
   update_pid=${grep_pid#"#UPDATE PID:"};
   program_name="";
+  this_basename=`basename $0`;
   ## check if pid is running
   if [ -n $update_pid ]
   then
-    program_name=`ps -p $update_pid -o comm=`;
+    #program_name=`ps -p $update_pid -o comm=`;
+    program_name=`ps -ef | grep $this_basename | grep -v "grep" | grep "$update_pid"`
+    logwrite "Checking to see if [$update_pid] is currently running, found [$program_name] as a result."
   fi
 
-  this_basename=`basename $0`;
-  if [ -n "$program_name" ] && [ "$program_name" == "$this_basename" ]
+  if [ -n "$program_name" ]
+  #if [ -n "$program_name" ] && [ "$program_name" == "$this_basename" ]
   then
     ## ok program is already running
     logwrite "There is a [$this_basename] with pid [$update_pid] already running on node [$node] ... exiting"
@@ -127,6 +130,91 @@ fi
 
 ## accept this request!
 echo "#UPDATE PID:$$" >> $input_file;
+
+############################
+# If we reached this point, we can assume that for this current <node>, sql_gen is not still running from
+# 	any previous run, and the subscruber ran subscribe_series either for the first time, or re-ran it
+# 	after a failed - halted run previously. 
+# 	So at this point, we will be running subscription_update and sqlgen either for the first time, or again.
+# 	If any files still exist from a possible previous run, we should remove them. As well as remove the
+#	<node>.new entry from slon_parser.cfg.
+############################
+
+# Removing old trigger files, directories, or list files we need to eventually recreate
+
+# Remove the node.new slony log directory
+ if [[ -d $subscribers_dir/$node.new ]]; then 
+ 	logwrite "Cleanup process: $subscribers_dir/$node.new exists, removing it"
+ 	rm -rf $subscribers_dir/$node.new
+ fi
+
+# Remove the node.new.lst list file
+ if [[ -f $tables_dir/$node.new.lst ]]; then 
+ 	logwrite "Cleanup process: $tables_dir/$node.new.lst exists, removing it"
+ 	rm -f $tables_dir/$node.new.lst
+ fi
+
+# Remove the node.sql.tar.gz tar file
+ if [[ -f $triggerdir/$node.sql.tar.gz ]]; then
+ 	logwrite "Cleanup process: $triggerdir/$node.sql.tar.gz exists, removing it"
+ 	rm -f $triggerdir/$node.sql.tar.gz
+ fi
+
+# Remove the node.subscribe_series.sqldone file
+ if [[ -f $triggerdir/$node.subscribe_series.sqldone ]]; then
+ 	logwrite "Cleanup process: $triggerdir/$node.subscribe_series.sqldone exists, removing it"
+ 	rm -f $triggerdir/$node.subscribe_series.sqldone
+ fi
+
+# Remove the node.subscribe_series.done file
+ if [[ -f $triggerdir/$node.subscribe_series.done ]]; then
+ 	logwrite "Cleanup process: $triggerdir/$node.subscribe_series.done exists, removing it"
+	rm -f $triggerdir/$node.subscribe_series.done
+ fi
+
+
+# Remove the node.new entry from the slon_parser.cfg file, if a lock can be established
+ logwrite "Done removing files for cleanup, attempting to get lock [$subscribelockpath] to edit the slon_parser.cfg file"
+ cleanup_counter=0
+ while [[ 1 == 1 ]]
+ do
+	if ( set -o noclobber; echo "$$" > "$subscribelockpath") 2> /dev/null;
+	then
+	    trap 'rm -f "$subscribelockpath"; exit 1' INT TERM HUP
+
+	    logwrite "Obtained lock"
+
+	    # Remove the node.new listing from the parser config file.
+	    cat $parser_config | grep -v "$node.new.lst" > $parser_config.new
+           mv -f $parser_config.new $parser_config
+
+	    rm -f $subscribelockpath
+ 	    if [ -e "$subscribelockpath" ]
+	    then
+       	 logwrite "ERROR: Unable to remove subscribe lock file $subscribelockpath"
+	        exit 1
+	    fi
+	
+	    trap - INT TERM HUP
+	    logwrite "Updating $parser_config complete, breaking from loop"
+	    break
+	else
+	    logwrite "Could not acquire the subscription lock [sql_gen]"
+	fi
+
+ 	if [[ $cleanup_counter -eq $cleanup_max_tries ]]; then
+		logwrite "ERROR: Reached the maximum number of attempts [$cleanup_max_tries] while attempting to get a lock on the lock file, exiting!"
+		exit 1
+	fi
+
+ cleanup_counter=$(( $cleanup_counter + 1 )) 
+ logwrite "Sleeping for 5 seconds"
+ sleep 5
+
+ done
+
+
+
 
 #-------------------------------------------------------------------------
 # Reads the subscription request file into the arrays:
