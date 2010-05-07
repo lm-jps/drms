@@ -49,6 +49,10 @@
      
   Later additions to this program may provide monitoring services to watch the status.
 
+  Command line args of JSOC_DBHOST and JSOC_DBMAINHOST are now used to direct queries to
+  one database server for export processing (JSOC_DBHOST) and another for access to science
+  data to be exported (JSOC_DBMAINHOST).
+
  *
  */
 #include "jsoc_main.h"
@@ -94,7 +98,7 @@ int nice_intro ()
 
 // generate qsub script
 void make_qsub_call(char *requestid, char *reqdir, int requestorid, const char *dbname, 
-               const char *dbuser, const char *dbids)
+               const char *dbuser, const char *dbids, const char *dbexporthost, const char *dbmainhost)
   {
   FILE *fp;
   char qsubscript[DRMS_MAXPATHLEN];
@@ -117,7 +121,7 @@ void make_qsub_call(char *requestid, char *reqdir, int requestorid, const char *
   fprintf(fp, "  set path = ($JSOCROOT_EXPORT/bin/$JSOC_MACHINE $JSOCROOT_EXPORT/scripts $path)\n");
   fprintf(fp,"endif\n");
 
-  fprintf(fp, "while (`show_info -q 'jsoc.export_new[%s]' key=Status %s` == 2)\n", requestid, dbids);
+  fprintf(fp, "while (`show_info JSOC_DBHOST=%s -q 'jsoc.export_new[%s]' key=Status %s` == 2)\n", dbexporthost, requestid, dbids);
   fprintf(fp, "  echo waiting for jsocdb commit >> /home/jsoc/exports/tmp/%s.runlog \n",requestid);
   fprintf(fp, "  sleep 1\nend \n");
   if (dbname)
@@ -128,17 +132,19 @@ void make_qsub_call(char *requestid, char *reqdir, int requestorid, const char *
   {
      fprintf(fp,   "setenv JSOC_DBUSER %s\n", dbuser);
   }
+  fprintf(fp,   "setenv JSOC_DBHOST %s\n", dbmainhost);
+  fprintf(fp,   "setenv JSOC_DBEXPORTHOST %s\n", dbexporthost);
   fprintf(fp, "drms_run %s/%s.drmsrun >>& /home/jsoc/exports/tmp/%s.runlog \n", reqdir, requestid, requestid);
   fprintf(fp, "set DRMS_ERROR=$status\n");
 fprintf(fp, "set NewRecnum=`cat /home/jsoc/exports/tmp/%s.recnum` \n", requestid);
-fprintf(fp, "while (`show_info -q -r 'jsoc.export[%s]' %s` < $NewRecnum)\n", requestid, dbids);
+fprintf(fp, "while (`show_info JSOC_DBHOST=%s -q -r 'jsoc.export[%s]' %s` < $NewRecnum)\n", dbexporthost, requestid, dbids);
 fprintf(fp, "  echo waiting for jsocdb drms_run commit >> /home/jsoc/exports/tmp/%s.runlog \n",requestid);
 fprintf(fp, "  sleep 1\nend \n");
   if (requestorid)
-     fprintf(fp, "set Notify=`show_info -q 'jsoc.export_user[? RequestorID=%d ?]' key=Notify %s` \n", requestorid, dbids);
-  fprintf(fp, "set REQDIR = `show_info -q -p 'jsoc.export[%s]' %s`\n", requestid, dbids);
+     fprintf(fp, "set Notify=`show_info JSOC_DBHOST=%s -q 'jsoc.export_user[? RequestorID=%d ?]' key=Notify %s` \n", dbexporthost, requestorid, dbids);
+  fprintf(fp, "set REQDIR = `show_info JSOC_DBHOST=%s -q -p 'jsoc.export[%s]' %s`\n", dbexporthost, requestid, dbids);
   fprintf(fp, "if ($DRMS_ERROR) then\n");
-  fprintf(fp, "  set_keys -C ds='jsoc.export[%s]' Status=4 %s\n", requestid, dbids);
+  fprintf(fp, "  set_keys -C JSOC_DBHOST=%s  ds='jsoc.export[%s]' Status=4 %s\n", dbexporthost, requestid, dbids);
   if (requestorid)
      {
      fprintf(fp, "  mail -n -s 'JSOC export FAILED - %s' $Notify <<!\n", requestid);
@@ -155,10 +161,10 @@ fprintf(fp, "  sleep 1\nend \n");
      fprintf(fp, "Results at http://jsoc.stanford.edu/$REQDIR\n");
      fprintf(fp, "!\n");
      }
-  fprintf(fp, "  rm -f /home/jsoc/exports/tmp/%s.recnum\n", requestid);
+  //fprintf(fp, "  rm -f /home/jsoc/exports/tmp/%s.recnum\n", requestid);
   /* The log after the call to drms_run gets lost because of the following line - should preserve this
    * somehow (but it can't go in the new inner REQDIR because that is read-only after drms_run returns. */
-  fprintf(fp, "  rm -f /home/jsoc/exports/tmp/%s.runlog\n", requestid);
+  //fprintf(fp, "  rm -f /home/jsoc/exports/tmp/%s.runlog\n", requestid);
   fprintf(fp, "endif\n");
   fclose(fp);
   chmod(qsubscript, 0555);
@@ -220,6 +226,8 @@ int DoIt(void)
   char *dashp;
 
   const char *dbname = NULL;
+  const char *dbexporthost = NULL;
+  const char *dbmainhost = NULL;
   const char *dbuser = NULL;
   const char *jsocroot = NULL;
   char dbids[128];
@@ -227,6 +235,19 @@ int DoIt(void)
   int pc = 0;
 
   if (nice_intro ()) return (0);
+
+  if ((dbmainhost = cmdparams_get_str(&cmdparams, "JSOC_DBMAINHOST", NULL)) == NULL)
+  {
+     dbmainhost = SERVER;
+  }
+
+  if ((dbexporthost = cmdparams_get_str(&cmdparams, "JSOC_DBHOST", NULL)) == NULL)
+  {
+     dbexporthost = SERVER;
+  }
+
+// TEST
+dbmainhost = dbexporthost;
 
   if ((dbname = cmdparams_get_str(&cmdparams, "JSOC_DBNAME", NULL)) == NULL)
   {
@@ -342,7 +363,7 @@ int DoIt(void)
       drms_record_directory(export_rec, reqdir, 1);
   
       // Insert qsub command to execute processing script into SU
-      make_qsub_call(requestid, reqdir, (notify ? requestorid : 0), dbname, dbuser, dbids);
+      make_qsub_call(requestid, reqdir, (notify ? requestorid : 0), dbname, dbuser, dbids, dbexporthost, dbmainhost);
   
       // Insert export processing drms_run script into export record SU
       // The script components must clone the export record with COPY_SEGMENTS in the first usage
@@ -357,9 +378,9 @@ int DoIt(void)
       fprintf(fp, "#! /bin/csh -f\n");
       fprintf(fp, "set echo\n");
       // force clone with copy segment. 
-      fprintf(fp, "set_keys_sock -C ds='jsoc.export[%s]' Status=1\n", requestid);
+      fprintf(fp, "set_keys_sock -C JSOC_DBHOST=%s ds='jsoc.export[%s]' Status=1\n", dbexporthost, requestid);
       // Get new SU for the export record
-      fprintf(fp, "set REQDIR = `show_info_sock -q -p 'jsoc.export[%s]'`\n", requestid);
+      fprintf(fp, "set REQDIR = `show_info_sock JSOC_DBHOST=%s -q -p 'jsoc.export[%s]'`\n", dbexporthost, requestid);
       // cd to SU in export record
       fprintf(fp, "cd $REQDIR\n");
       // save some diagnostic info
@@ -460,22 +481,24 @@ int DoIt(void)
         }
       // set status=done and mark this version of the export record permanent
       fprintf(fp, "if ($RUNSTAT == 0) then\n");
-      fprintf(fp, "  set_keys_sock ds='jsoc.export[%s]' Status=0\n", requestid);
+      fprintf(fp, "  set_keys_sock JSOC_DBHOST=%s ds='jsoc.export[%s]' Status=0\n", dbexporthost, requestid);
       // copy the drms_run log file
       fprintf(fp, "  cp /home/jsoc/exports/tmp/%s.runlog ./%s.runlog \n", requestid, requestid);
       // make drms_run completion lock file (always do this)
-      fprintf(fp, "  show_info_sock -q -r 'jsoc.export[%s]' > /home/jsoc/exports/tmp/%s.recnum \n", requestid, requestid);
+      fprintf(fp, "  show_info_sock JSOC_DBHOST=%s -q -r 'jsoc.export[%s]' > /home/jsoc/exports/tmp/%s.recnum \n", dbexporthost, requestid, requestid);
       fprintf(fp, "else\n");
       // make drms_run completion lock file (always do this) - drms_server died, so don't use sock version here
-      fprintf(fp, "  show_info -q -r 'jsoc.export[%s]' > /home/jsoc/exports/tmp/%s.recnum \n", requestid, requestid);
+      fprintf(fp, "  show_info JSOC_DBHOST=%s -q -r 'jsoc.export[%s]' > /home/jsoc/exports/tmp/%s.recnum \n", dbexporthost, requestid, requestid);
       fprintf(fp, "endif\n");
       fprintf(fp, "exit $RUNSTAT\n");
       fclose(fp);
       chmod(runscript, 0555);
   
       // close the current (first) version of the record in jsoc.export
+// fprintf(stderr,"export_manage closing new record for %s\n",requestid);
       drms_setkey_int(export_rec, "Status", 1);
       drms_close_record(export_rec, DRMS_INSERT_RECORD);
+// fprintf(stderr,"export_manage closed new record for %s, starting qsub\n",requestid);
   
       // SU now contains both qsub script and drms_run script, ready to execute and lock the record.
       //sprintf(command,"qsub -q x.q,o.q,j.q -v %s "
@@ -487,6 +510,7 @@ int DoIt(void)
   /*
   	"  >>& /home/jsoc/exports/tmp/%s.runlog",
   */
+// fprintf(stderr,"export_manage for %s, qsub=%s\n",requestid, command);
       if (system(command))
         DIE("Submission of qsub command failed");
   
