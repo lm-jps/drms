@@ -9,6 +9,7 @@
 #include "drms_types.h"
 #include "cfitsio.h"
 #include "drms_fitsrw.h"
+#include "drms.h"
 
 #define kDATEKEYNAME "DATE"
 

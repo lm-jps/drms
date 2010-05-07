@@ -5,7 +5,7 @@
 #define _DRMS_LINK_H
 
 #include "drms_types.h"
-
+#include "drms.h"
 
 /******** Link functions ********/
 

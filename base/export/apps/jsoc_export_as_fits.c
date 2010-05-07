@@ -191,6 +191,7 @@ typedef enum
 
 #define kNoCompression   "**NONE**"
 
+#define kMB              (1048576)
 
 /* If rsquery is provided as a cmd-line argument, then jsoc_export does not 
  * save the output data files to an export series.  Instead the caller
@@ -224,6 +225,17 @@ ModuleArgs_t module_args[] =
 };
 
 char gDefBuf[PATH_MAX] = {0};
+
+/* Convert number of bytes to number of MB. If number of bytes < 1MB, then return 1. */
+static long long ToMB(long long nbytes)
+{
+   if (nbytes <= kMB)
+   {
+      return 1;
+   }
+
+   return nbytes / kMB;
+}
 
 MymodError_t WritePListRecord(PLRecType_t rectype, FILE *pkfile, const char *f1, const char *f2)
 {
@@ -728,7 +740,7 @@ static int Mapexport(DRMS_Env_t *env,
    if (err == kMymodErr_Success)
    {
       drms_setkey_time(recout, drms_defs_getval("kExportKW_ExpTime"), CURRENT_SYSTEM_TIME);
-      drms_setkey_int(recout, drms_defs_getval("kExportKW_DataSize"), tsize);
+      drms_setkey_int(recout, drms_defs_getval("kExportKW_DataSize"), (int)ToMB(tsize));
    }
 
    if (rsout)
@@ -816,7 +828,8 @@ int DoIt(void)
 {
    MymodError_t err = kMymodErr_Success;
    int drmsstat = DRMS_SUCCESS;
-   long long tsize = 0;
+   long long tsize = 0; /* total size of export payload in bytes */
+   long long tsizeMB = 0; /* total size of export payload in Mbytes */
    int tcount = 0;
    TIME exptime = DRMS_MISSING_TIME;
    FILE *pklist = NULL;
@@ -1034,6 +1047,8 @@ int DoIt(void)
          }
       }
 
+      tsizeMB = ToMB(tsize);
+
       if (drmsstat != DRMS_SUCCESS)
       {
          md_error = GenErrMsg("DRMS error '%d'.\n", drmsstat);
@@ -1047,13 +1062,13 @@ int DoIt(void)
          /* Set packing list info not already set */
          strsize = 64;
          md_size = malloc(strsize);
-         snprintf(md_size, strsize, "%lld", tsize);
+         snprintf(md_size, strsize, "%lld", tsizeMB);
          md_count = malloc(strsize);
          snprintf(md_count, strsize, "%d", tcount);
          md_exptime = strdup(tstr);
       }
 
-      fprintf(stdout, "'%lld' bytes exported.\n", tsize); 
+      fprintf(stdout, "'%lld' bytes exported.\n", tsizeMB); 
    }
 
    /* open 'real' pack list */

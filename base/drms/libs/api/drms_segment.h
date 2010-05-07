@@ -9,6 +9,7 @@
 #define _DRMS_SEGMENT_H
 
 #include "drms_types.h"
+#include "drms.h"
 
 /********************************************************/
 /********                                        ********/
