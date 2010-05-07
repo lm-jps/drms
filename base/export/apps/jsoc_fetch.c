@@ -968,7 +968,7 @@ check for requestor to be valid remote DRMS site
       if (segp)
         free(segp); 
       }
-    if (size < 1024*1024) size = 1024*1024;
+    if (size > 0 && size < 1024*1024) size = 1024*1024;
     size /= 1024*1024;
     if (my_sum)
       SUM_close(my_sum,printkerr);

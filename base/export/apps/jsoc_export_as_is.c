@@ -299,10 +299,13 @@ int DoIt(void)
       } // segment loop
     } // record loop
 
+   if (size > 0 && size < 1024*1024) size = 1024*1024;
+   size /= 1024*1024;
+
 /* Finished.  Clean up and exit. */
 
    fprintf(index_txt, "count=%d\n",count);
-   fprintf(index_txt, "size=%lld\n",size/(1024*1024));
+   fprintf(index_txt, "size=%lld\n",size);
    fprintf(index_txt, "status=0\n");
    cwd = getcwd(NULL, 0);
    fprintf(index_txt,"dir=%s\n", ((strncmp("/auto", cwd,5) == 0) ? cwd+5 : cwd));
