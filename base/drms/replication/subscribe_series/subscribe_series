@@ -741,11 +741,16 @@ then
     do	
 	if [ $counter -ge $attempts ] 
 	then
-	    logecho "ERROR: Did not find $node.subscribe_series.sqldone after 20 tries"
+	    logecho "ERROR: Did not find $node.subscribe_series.sqldone after $attempts tries"
 	    logecho "ERROR: Couldn't find the sql file required to continue!"
 	    logecho "ABORTING - exiting $0"
+            logecho "*** It is possible that this timeout was not sufficiently long to accommodate"
+            logecho "*** a long-running table dump on the server, or a long-running file transfer"
+            logecho "*** to the client. You can try running the exact same subscribe_series command"
+            logecho "*** with the -r flag (retry) appended to continue processing from where you left off."
+            logecho "*** Please ensure that the subsription-request file remains unchanged."
 	    exit 1
-	fi		
+	fi
 
         result=`SSH "$kRSUser@$kRSServer" 'ls '"'$kRSTriggerDir'"`;
 
