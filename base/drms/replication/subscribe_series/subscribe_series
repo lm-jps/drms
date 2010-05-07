@@ -454,9 +454,11 @@ fi
 #--------------------------------------------------------------------
 # disallow simultaneous runs of this script
 #--------------------------------------------------------------------
+restartmsg="You can try running the exact same subscribe_series command with the -r flag (retry) appended to continue processing from where you left off. Please ensure that the subscription-request file remains unchanged."
+
 if ( set -o noclobber; echo "$$" > "$kLocalWorkingDir/clientsublock.txt") 2> /dev/null;
 then
-    trap 'rm -f "$kLocalWorkingDir/clientsublock.txt"; exit 1' INT TERM HUP
+    trap 'rm -f "$kLocalWorkingDir/clientsublock.txt"; echo "$restartmsg"; exit 1' INT TERM HUP
 else
     logwrite "Could not acquire the subscription lock; exiting"
     exit 1
@@ -748,7 +750,7 @@ then
             logecho "*** a long-running table dump on the server, or a long-running file transfer"
             logecho "*** to the client. You can try running the exact same subscribe_series command"
             logecho "*** with the -r flag (retry) appended to continue processing from where you left off."
-            logecho "*** Please ensure that the subsription-request file remains unchanged."
+            logecho "*** Please ensure that the subscription-request file remains unchanged."
 	    exit 1
 	fi
 
