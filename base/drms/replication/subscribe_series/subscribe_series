@@ -5,6 +5,19 @@
 # Run as:
 #   /home/production/devtest/cvstree/base/drms/replication/subscribe_series/subscribe_series /home/production/devtest/cvstree/proj/replication/etc/repclient.shoom.cfg subscribe_list.cfg /home/production/.ssh-agent_rs
 
+function SSexit {
+  exitstat="$1"
+
+  rm -f "$kLocalWorkingDir/clientsublock.txt"
+  
+  if [ -e "$kLocalWorkingDir/clientsublock.txt" ] 
+  then
+      logwrite "ERROR: Unable to remove subscribe lock file $kLocalWorkingDir/clientsublock.txt"
+  fi
+
+  exit $exitstat
+}
+
 function RM {
 
   cmd="/bin/rm";
@@ -140,12 +153,18 @@ function ManagedDownload() {
     srcbak="$src"'.ssbak'
     tgtbak="$tgt"'.ssbak'
 
+    if [ -f $tgt ]
+    then
+        RM -f $tgt
+    fi
+
     # First, compare file sizes (cheap/easy way to see if the file has been completely downloaded,
     # I'm sure some kind of hash would be better).
     srcsz=`SSH "$kRSUser@$kRSServer" 'stat -c%s '"$src"`
     if [ $? -ne 0 ]
     then
         # Some error calling ssh
+        logwrite "Error running stat in ManagedDownload()"
         err=1
     fi
 
@@ -167,6 +186,8 @@ function ManagedDownload() {
             else
                 tgtsz=`stat -c%s "$tgt"`
             fi
+
+            logwrite "source size $srcsz; target size $tgtsz"
 
             if [ $srcsz -gt $tgtsz ]
             then
@@ -195,11 +216,15 @@ function ManagedDownload() {
                 attempt=$(( $attempt + 1 ))
             elif [ $tgtsz -gt $srcsz ]; then
                 # Some fatal error
+                logwrite "Target file size is larger than source size - something screwy is going on"
                 err=1
+                break
             else
                 # The two files are the same size, so quit
                 break
             fi
+
+            sleep 1
         done
     fi
 
@@ -503,13 +528,13 @@ else
     error="Couldn't determine if the file was either bash or cshell"
     echo "$error"
     logwrite "ERROR: $error"
-    exit 1
+    SSexit 1
 fi
 
 if [ -z $SSH_AGENT_PID ]
 then
     echo "Couldn't find ssh-agent.\n"
-    exit 1
+    SSexit 1
 fi
 
 if [ -z "$kSQLIngestionProgram" ]
@@ -538,7 +563,7 @@ then
     if [ $? -ne 0 ] 
     then
         logecho "Couldn't process log-re-parsing request."
-        exit 1;
+        SSexit 1;
     else
         logwrite "Re-parsing request issued."
         SetState "end"
@@ -641,12 +666,10 @@ then
             logwrite "series exists"
             # Series already exists. Ask user if they want to delete it.
             echo "Attempting to subscribe to series that already exists (${subseries[$iseries]})."
-            echo "To continue, you will need to delete this series or move it out of the way."
-            DeleteSeries ${subseries[$iseries]};
-            if [ $? -ne 0 ]
-            then
-                exit 1
-            fi
+            echo "To continue, you must unsubscribe to ${subseries[$iseries]} first,"
+            echo "and delete ${subseries[$iseries]} or move it (the unsubscribe"
+            echo "process will provide the opportunity to delete it)."
+            SSexit 1
         else
             logwrite "series does NOT exist"
         fi
@@ -691,7 +714,7 @@ then
 	logwrite "Removing $tmptgr"
 	RM -f "$tmptgr"
 	logwrite "Exiting $0"
-	exit 1
+	SSexit 1
     fi
 fi
 
@@ -751,7 +774,7 @@ then
             logecho "*** to the client. You can try running the exact same subscribe_series command"
             logecho "*** with the -r flag (retry) appended to continue processing from where you left off."
             logecho "*** Please ensure that the subscription-request file remains unchanged."
-	    exit 1
+	    SSexit 1
 	fi
 
         result=`SSH "$kRSUser@$kRSServer" 'ls '"'$kRSTriggerDir'"`;
@@ -761,7 +784,7 @@ then
         if [ ! -z "$error" ]
         then
             logecho "Couldn't find $kRSTriggerDir directory ... exiting";
-            exit 1;
+            SSexit 1;
         fi
 
         check=`echo $result | grep "$node.subscribe_series.sqldone"`;
@@ -794,7 +817,7 @@ then
     if [ ! -z $error ] ;
     then
         logecho "Fail cat $kRSTriggerDir/$node.subscribe_series.sqldone"
-        exit 1;
+        SSexit 1;
     fi
 
     check=`echo $result | grep failure`;
@@ -808,7 +831,7 @@ then
 	logwrite "Restarting the ingestion script"
 	logwrite "Removing ingestion.die in $ingestion_path" nl
 	RM -f "$ingestion_path/get_slony_logs.$node.die"
-	exit 1;
+	SSexit 1;
     fi
 
     SetState "crsql_comp"
@@ -847,7 +870,7 @@ if [ $? -ne 0 ]
 then
     # Fatal error - if the .sql file doesn't get cleaned up
     # then this might confuse subsequent runs of this script
-    exit 1
+    SSexit 1
 fi
 
 #--------------------------------------------------------------------
@@ -1009,7 +1032,7 @@ then
 	    logwrite "ERROR: Exiting $0 " nl
 	    logecho "ERROR: The subscription manager has not reported it has finished updating the subscription parser after $attempts tries!"
 	    logecho "ABORTING!"
-	    exit 1;
+	    SSexit 1;
 	fi		
 
         result=`SSH "$kRSUser@$kRSServer" 'ls '"'$kRSTriggerDir'"`;
@@ -1021,7 +1044,7 @@ then
         if [ ! -z $error ] ;
         then
             logecho "Couldn't find $kRSTriggerDir directory or broken SSH ... exiting"
-            exit 1;
+            SSexit 1;
         fi
 
 	check=`echo $result | grep "$node.subscribe_series.done"`
