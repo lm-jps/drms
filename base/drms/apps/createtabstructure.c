@@ -204,7 +204,7 @@ static CrtabError_t GetColumnLists(DRMS_Env_t *env,
             {
                if (irow)
                {
-                  base_strcatalloc(list, ", ", &strsize);
+                  list = base_strcatalloc(list, ", ", &strsize);
                }
 
                /* row irow + 1, column 1 */
@@ -231,7 +231,7 @@ static CrtabError_t GetColumnLists(DRMS_Env_t *env,
                }
 
                snprintf(buf, sizeof(buf), "%s %s %s %s", colname, dtype, defval, notnull);
-               base_strcatalloc(list, buf, &strsize);
+               list = base_strcatalloc(list, buf, &strsize);
             }
 
             *collist = list;
@@ -247,12 +247,12 @@ static CrtabError_t GetColumnLists(DRMS_Env_t *env,
             {
                if (irow)
                {
-                  base_strcatalloc(list, ", ", &strsize);
+                  list = base_strcatalloc(list, ", ", &strsize);
                }
 
                /* row irow + 1, column 1 */
                db_binary_field_getstr(qres, irow, 0, sizeof(colname), colname);
-               base_strcatalloc(list, colname, &strsize);
+               list = base_strcatalloc(list, colname, &strsize);
             }
 
             *colnames = list;
@@ -306,33 +306,33 @@ static CrtabError_t GetRows(DRMS_Env_t *env,
 
             list = malloc(sizeof(char) * strside);
             memset(list, 0, sizeof(char) * strsize);
-            base_strcatalloc(list, "(", &strsize);
+            list = base_strcatalloc(list, "(", &strsize);
 
             for (irow = 0; irow < qres->num_rows; irow++)
             {
                if (irow)
                {
-                  base_strcatalloc(list, ", ", &strsize);
+                  list = base_strcatalloc(list, ", ", &strsize);
                }
 
                /* row irow + 1, column 1 */
                db_binary_field_getstr(qres, irow, 0, sizeof(colname), colname);
-               base_strcatalloc(list, colname, &strsize);
+               list = base_strcatalloc(list, colname, &strsize);
             }
 
-            base_strcatalloc(list, ") values (", &strsize);
+            list = base_strcatalloc(list, ") values (", &strsize);
 
             for (irow = 0; irow < qres->num_rows; irow++)
             {
                if (irow)
                {
-                  base_strcatalloc(list, ",", &strsize);
+                  list = base_strcatalloc(list, ",", &strsize);
                }
 
-               base_strcatalloc(list, "?", &strsize);               
+               list = base_strcatalloc(list, "?", &strsize);               
             }
 
-            base_strcatalloc(list, ")", &strsize);
+            list = base_strcatalloc(list, ")", &strsize);
 
             *rowinslist = list;
             list = NULL;
@@ -516,7 +516,7 @@ static CrtabError_t CreateSQLInsertIntoTable(FILE *fptr,
       {
          if (icol)
          {
-            base_strcatalloc(list, ", ", &strsize);
+            list = base_strcatalloc(list, ", ", &strsize);
          }
 
          db_binary_field_getstr(rows, irow, icol, sizeof(val), val);
@@ -529,13 +529,13 @@ static CrtabError_t CreateSQLInsertIntoTable(FILE *fptr,
                snprintf(val, sizeof(val), "%s", seriesout);
             }
 
-            base_strcatalloc(list, "'", &strsize);
-            base_strcatalloc(list, val, &strsize);
-            base_strcatalloc(list, "'", &strsize);
+            list = base_strcatalloc(list, "'", &strsize);
+            list = base_strcatalloc(list, val, &strsize);
+            list = base_strcatalloc(list, "'", &strsize);
          }
          else
          {
-            base_strcatalloc(list, val, &strsize);
+            list = base_strcatalloc(list, val, &strsize);
          }
       }
 
