@@ -60,12 +60,17 @@ int main(int argc, char **argv)
   FILE *index_txt, *index_html, *index_json;
   char buf[1000];
   char dir[1000];
+  char tarfile[1000]; *tarfile = '\0';
+  char requestid[1000]; *requestid = '\0';
   json_t *jroot;
   json_t *recinfo;
   json_t *fileinfo;
   char *json, *final_json;
   int state = 0;
   int method_ftp = 0;
+  int method_tar = 0;
+  tarfile[0] = '\0';
+  requestid[0] = '\0';
 
   if (argc && strcmp(*argv, "-h") == 0)
     {
@@ -121,11 +126,22 @@ int main(int argc, char **argv)
 	break;
       case 1:  // In header section, take name=val pairs.
 	if (strncmp(buf, "# DATA",6) == 0) // done with header ?
-	  {
+	  { 
           if (strncmp(buf, "# DATA SU", 9) == 0)
             state = 3;
           else
 	    state = 2;
+          if (method_tar)
+            {
+            sprintf(tarfile, "%s/%s.tar", dir, requestid);
+	    namestr = string_to_json("tarfile");
+            valstr = string_to_json(tarfile);
+	    json_insert_pair_into_object(jroot, namestr, json_new_string(valstr));
+	    free(namestr);
+	    free(valstr);
+	    // put name=value pair into index.html
+	    fprintf(index_html, "<TR><TD><B>tarfile</B></TD><TD>%s</TD></TR>\n", tarfile);
+            }
 	  fprintf(index_html, "</TABLE><P><H2><B>Selected Data</B></H2><P><TABLE>\n");
 	  break;
 	  }
@@ -153,12 +169,24 @@ int main(int argc, char **argv)
         // Convert names to lower case.
 	for (c=name; *c; c++)
            *c = tolower(*c);
+
+        // check for special actions on some keywords
 	// save dir for use in data section
 	if (strcmp(name, "dir") == 0)
 	  strncpy(dir, val, 1000);
+	// save requestid 
+	if (strcmp(name, "requestid") == 0)
+	  strncpy(requestid, val, 1000);
         // Check for method==ftp
-        if (strncmp(name, "method", 3) == 0)
-          method_ftp = 1;
+        if (strncmp(name, "method", 6) == 0)
+          {
+          char *dash = index(val, '-');
+          if (dash && strncmp(dash+1, "tar", 3) == 0)
+            method_tar = 1;
+          if (strncmp(val, "ftp", 3) == 0)
+            method_ftp = 1;
+          }
+
 	// put name=value pair into index.json
 	namestr = string_to_json(name);
         valstr = string_to_json(val);
@@ -199,10 +227,17 @@ int main(int argc, char **argv)
 	free(valstr);
 	json_insert_child(recinfo, fileinfo);
 	// put name=value pair into index.html
-        if (method_ftp)
-	  fprintf(index_html, "<TR><TD>%s</TD><TD><A HREF=\"ftp://pail.stanford.edu/export%s/%s\">%s</A></TD></TR>\n", name, dir, val, val);
+        if (method_tar)
+	  fprintf(index_html, "<TR><TD>%s</TD><TD>%s</TD></TR>\n", name, val);
         else
-	  fprintf(index_html, "<TR><TD>%s</TD><TD><A HREF=\"http://jsoc.stanford.edu/%s/%s\">%s</A></TD></TR>\n", name, dir, val, val);
+          {
+          if (method_ftp)
+	    fprintf(index_html, "<TR><TD>%s</TD><TD><A HREF=\"ftp://pail.stanford.edu/export%s/%s\">%s</A></TD></TR>\n",
+               name, dir, val, val);
+          else
+	    fprintf(index_html, "<TR><TD>%s</TD><TD><A HREF=\"http://jsoc.stanford.edu/%s/%s\">%s</A></TD></TR>\n",
+               name, dir, val, val);
+          }
 	break;
       case 3: // Data section for Storage Units contains triples of sunum, seriesname, path, online status, file size
         if (*p == '#' || !*p) // skip blank and comment lines

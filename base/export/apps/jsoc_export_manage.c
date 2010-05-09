@@ -486,9 +486,14 @@ dbmainhost = dbexporthost;
       if (dashp && strcmp(dashp, "-tar") == 0)
         {
         fprintf(fp, "if ($RUNSTAT == 0) then\n");
-        fprintf(fp, "  tar chf %s.tar *\n", requestid);
-// Sometime rm all files except logs and index files that have been tarred
+        fprintf(fp, "  cp %s.* index.* ..\n", requestid);
+        fprintf(fp, "  tar chf ../%s.tar ./\n", requestid);
         fprintf(fp, "  set RUNSTAT = $status\n");
+        fprintf(fp, "  if ($RUNSTAT == 0) then\n");
+        fprintf(fp, "    rm -rf *\n");
+        fprintf(fp, "    mv ../%s.* ../index.* .\n", requestid);
+        fprintf(fp, "    set RUNSTAT = $status\n");
+        fprintf(fp, "  endif\n");
         fprintf(fp, "endif\n");
         }
       // set status=done and mark this version of the export record permanent
