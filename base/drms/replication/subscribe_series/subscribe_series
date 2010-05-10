@@ -846,7 +846,7 @@ logwrite "Copying and removing $node.sql.tar.gz file from $kRSUser@$kRSServer"
 
 success=true
 
-ManagedDownload "$kRSTriggerDir/$node.sql.tar.gz" "./$node.sql.tar.gz"
+ManagedDownload "$kRSTriggerDir/$node.sql.tar.gz" "$kLocalWorkingDir/$node.sql.tar.gz"
 if [ $? -eq 0 ]
 then
     SetState "dlsql_comp"
