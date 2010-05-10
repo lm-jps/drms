@@ -144,9 +144,11 @@ void make_qsub_call(char *requestid, char *reqdir, int requestorid, const char *
   {
      fprintf(fp,   "setenv JSOC_DBUSER %s\n", dbuser);
   }
-  fprintf(fp,   "setenv JSOC_DBHOST %s\n", dbmainhost);
+// TEST
+//fprintf(fp,   "setenv JSOC_DBHOST %s\n", dbmainhost);
+  fprintf(fp,   "setenv JSOC_DBHOST %s\n", dbexporthost);
   fprintf(fp,   "setenv JSOC_DBEXPORTHOST %s\n", dbexporthost);
-  fprintf(fp, "drms_run %s/%s.drmsrun >>& /home/jsoc/exports/tmp/%s.runlog \n", reqdir, requestid, requestid);
+  fprintf(fp, "drms_run JSOC_DBHOST=%s %s/%s.drmsrun >>& /home/jsoc/exports/tmp/%s.runlog \n", dbexporthost, reqdir, requestid, requestid);
   fprintf(fp, "set DRMS_ERROR=$status\n");
 fprintf(fp, "set NewRecnum=`cat /home/jsoc/exports/tmp/%s.recnum` \n", requestid);
 fprintf(fp, "while (`show_info JSOC_DBHOST=%s -q -r 'jsoc.export[%s]' %s` < $NewRecnum)\n", dbexporthost, requestid, dbids);
@@ -259,7 +261,7 @@ int DoIt(void)
   }
 
 // TEST
-dbmainhost = dbexporthost;
+// dbmainhost = dbexporthost;
 
   if ((dbname = cmdparams_get_str(&cmdparams, "JSOC_DBNAME", NULL)) == NULL)
   {
@@ -381,7 +383,10 @@ dbmainhost = dbexporthost;
       // The script components must clone the export record with COPY_SEGMENTS in the first usage
       // and with SHARE_SEGMENTS in subsequent modules in the script.  All but the last module
       // in the script may clone as DRMS_TRANSIENT.
-      // Remember all modules in this script mut be _sock modules.
+      // Remember all modules in this script that deal with the export record must be _sock modules.
+      // But modules that need the main database for processing or extracting data should run as
+      // direct-connect modules.  They run with the export SU as current directory and must pass all
+      // results into that directory.
 
 // XXXX needs to pass on DBHOST
       // First, prepare initial part of script, same for all processing.
@@ -410,12 +415,15 @@ dbmainhost = dbexporthost;
           }
         else
           cparms = "**NONE**";
-        fprintf(fp, "jsoc_export_as_fits_sock reqid='%s' expversion=%s rsquery='%s' path=$REQDIR ffmt='%s' method='%s' protocol='%s' cparms='%s' %s\n",
-          requestid, PACKLIST_VER, dataset, filenamefmt, method, protocol, cparms,  dbids);
+        fprintf(fp, "jsoc_export_as_fits JSOC_DBHOST=%s reqid='%s' expversion=%s rsquery='%s' path=$REQDIR ffmt='%s' "
+          "method='%s' protocol='%s' cparms='%s' %s\n",
+          dbmainhost, requestid, PACKLIST_VER, dataset, filenamefmt, method, protocol, cparms,  dbids);
         }
       else if (strcmp(process, "no_op") == 0 || strcmp(process,"Not Specified")==0) 
         { // export of as-is records that need staging, get paths to export files with list in index.txt
-        fprintf(fp, "jsoc_export_as_is_sock ds='%s' requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n", dataset, requestid, method, protocol, filenamefmt); 
+        fprintf(fp, "jsoc_export_as_is JSOC_DBHOST=%s ds='%s' requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n",
+          dbmainhost, dataset, requestid, method, protocol, filenamefmt); 
+        fprintf(fp, "show_info JSOC_DBHOST=%s -ait ds='%s' > %s.keywords.txt\n", dbmainhost, dataset, requestid);
         }
       else if (strncmp(process, "hg_patch",8) == 0)
         {
@@ -427,7 +435,8 @@ dbmainhost = dbexporthost;
           hgparams = strdup(p+1);
           for (p=hgparams; *p; p++)
             if (*p == ',') *p = ' ';
-          fprintf(fp, "/home/phil/cvs/JSOC/bin/linux_x86_64/hg_patch_sock %s in='%s' requestid='%s' log=hg_patch.log %s\n", hgparams, dataset, requestid,  dbids);
+          fprintf(fp, "/home/phil/cvs/JSOC/bin/linux_x86_64/hg_patch JSOC_DBHOST=%s %s in='%s' requestid='%s' log=hg_patch.log %s\n",
+            dbmainhost, hgparams, dataset, requestid,  dbids);
           fprintf(fp, "  set RUNSTAT = $status\n");
           fprintf(fp, "if ($RUNSTAT == 0) then\n");
           if (strncasecmp(protocol,"fits",4)==0)
@@ -440,12 +449,15 @@ dbmainhost = dbexporthost;
               }
             else
               cparms = "**NONE**";
-            fprintf(fp, "  jsoc_export_as_fits_sock reqid='%s' expversion=%s rsquery='@hg_patch.log' path=$REQDIR ffmt='%s' method='%s' protocol='%s' cparms='%s' %s\n",
-              requestid, PACKLIST_VER, filenamefmt, method, protocol, cparms,  dbids);
+            fprintf(fp, "  jsoc_export_as_fits JSOC_DBHOST=%s reqid='%s' expversion=%s rsquery='@hg_patch.log' path=$REQDIR ffmt='%s' "
+              "method='%s' protocol='%s' cparms='%s' %s\n",
+              dbmainhost, requestid, PACKLIST_VER, filenamefmt, method, protocol, cparms,  dbids);
             }
           else
             {
-            fprintf(fp, "  jsoc_export_as_is_sock ds='@hg_patch.log' requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n", requestid, method, protocol, filenamefmt); 
+            fprintf(fp, "  jsoc_export_as_is JSOC_DBHOST=%s ds='@hg_patch.log' requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n",
+              dbmainhost, requestid, method, protocol, filenamefmt); 
+            fprintf(fp, "show_info JSOC_DBHOST=%s -aAit ds='@hg_patch.log' > %s.keywords.txt\n", dbmainhost, requestid);
             }
           fprintf(fp, "  set RUNSTAT = $status\n");
           fprintf(fp, "endif\n");

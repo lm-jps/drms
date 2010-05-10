@@ -18,6 +18,9 @@
 #include <ctype.h>
 #include <stdlib.h>
 
+#define kPROTOCOL_as_is 0
+#define kPROTOCOL_fits 1
+
 // #include "json.h"
 
 static char x2c (char *what) {
@@ -69,6 +72,7 @@ int main(int argc, char **argv)
   int state = 0;
   int method_ftp = 0;
   int method_tar = 0;
+  int protocol = kPROTOCOL_as_is;
   tarfile[0] = '\0';
   requestid[0] = '\0';
 
@@ -109,6 +113,7 @@ int main(int argc, char **argv)
     char *sustatus = NULL;
     char *susize = NULL;
     char linkbuf[2048];
+    char protocolbuf[1000];
     char *p = buf + strlen(buf) - 1;
     char *c;
     if (p >= buf && *p == '\n')
@@ -126,11 +131,23 @@ int main(int argc, char **argv)
 	break;
       case 1:  // In header section, take name=val pairs.
 	if (strncmp(buf, "# DATA",6) == 0) // done with header ?
-	  { 
+	  {  // Now at end of header section, write special information
           if (strncmp(buf, "# DATA SU", 9) == 0)
             state = 3;
           else
 	    state = 2;
+          // special line for keywords
+          if (protocol == kPROTOCOL_as_is)
+            sprintf(protocolbuf, "%s/%s.keywords.txt", dir, requestid);
+          else
+            sprintf(protocolbuf, "**IN FITS FILES**");
+	  namestr = string_to_json("keywords");
+          valstr = string_to_json(protocolbuf);
+	  json_insert_pair_into_object(jroot, namestr, json_new_string(valstr));
+	  free(namestr);
+	  free(valstr);
+	  fprintf(index_html, "<TR><TD><B>keywords</B></TD><TD>%s</TD></TR>\n", protocolbuf);
+          // special line for tarfiles
           if (method_tar)
             {
             sprintf(tarfile, "%s/%s.tar", dir, requestid);
@@ -178,6 +195,13 @@ int main(int argc, char **argv)
 	if (strcmp(name, "requestid") == 0)
 	  strncpy(requestid, val, 1000);
         // Check for method==ftp
+        if (strncmp(name, "protocol", 6) == 0)
+          {
+          if (strcmp(val, "as-is") == 0)
+            protocol = kPROTOCOL_as_is;
+          else if (strcmp(val, "fits") == 0)
+            protocol = kPROTOCOL_fits;
+          }
         if (strncmp(name, "method", 6) == 0)
           {
           char *dash = index(val, '-');
