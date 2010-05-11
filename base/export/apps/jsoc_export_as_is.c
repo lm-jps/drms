@@ -237,7 +237,10 @@ int DoIt(void)
 
     rec = recordset->records[irec];  /* pointer to current record */
     drms_sprint_rec_query(recquery,rec);
-    drms_record_directory (rec, recpath, 1);
+    if (drms_record_directory (rec, recpath, 1))
+      continue;
+    if (strlen(recpath) < 10)
+      continue;
 
     /* now get desired segments */
     for (iseg=0; iseg<nsegs; iseg++) 

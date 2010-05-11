@@ -384,11 +384,21 @@ int send_file(DRMS_Record_t *rec, int segno)
   }
 
 // function to check web-provided arguments that will end up on command line
-int illegalArg(char *arg)
+char *illegalArg(char *arg)
   {
+  int n_singles = 0;
+  char *p;
   if (index(arg, ';'))
-     return(1);
-  return(0);
+     return("';' not allowed");
+  for (p=arg; *p; p++)
+    if (*p == '\'')
+      {
+      n_singles++;
+      *p = '"';
+      }
+  if (n_singles & 1)
+    return("Unbalanced \"'\" not allowed.");
+  return(NULL);
   }
 
 static int SetWebArg(Q_ENTRY *req, const char *key)
@@ -399,8 +409,9 @@ static int SetWebArg(Q_ENTRY *req, const char *key)
       value = (char *)qEntryGetStr(req, key);
       if (value)
          {
-         if (illegalArg(value))
-            JSONDIE("Illegal text in arg");
+         char *arg_bad = illegalArg(value);
+         if (arg_bad)
+            JSONDIE2("Illegal text in arg: ",arg_bad);
          if (!cmdparams_set(&cmdparams, key, value))
 	    JSONDIE("CommandLine Error");
          }
@@ -432,10 +443,10 @@ int DoIt(void)
   const char *op;
   const char *in;
   const char *seglist;
-  const char *requestid;
+  const char *requestid = NULL;
   const char *process;
   const char *requestor;
-  long requestorid;
+  int requestorid;
   const char *notify;
   const char *format;
   const char *formatvar;
@@ -461,6 +472,7 @@ int DoIt(void)
   char status_query[1000];
   char *export_series; 
   int is_POST = 0;
+  FILE *requestid_log = NULL;
 
   if (nice_intro ()) return (0);
 
@@ -737,22 +749,23 @@ int DoIt(void)
         SUM_close(my_sum,printkerr);
 
       if (!dodataobj || (sums_status == 1 || all_online))
-      {
+        {
          /* If not a VSO request, we're done. If a VSO request, done if all online, or if SUMS is down. 
           * Otherwise, continue below and start a new request for the items not online. */
          return(0);
-      }
+        }
+      else if (strcmp(requestid, kNoAsyncReq) == 0) // user never wants full export of leftovers
+        return 0;
       }
 
     // Must do full export processing
     // But don't do this if the user has signalled that s/he doesn't want to ever
-    // initiate a new asynchronous request, which requires a new requestid
     if (strcmp(requestid, kNoAsyncReq) == 0)
-    {
-       /* We're done! */
-       return 0;
-    }
+      {
+      JSONDIE("User denies required full export");
+      }
 
+    // initiate a new asynchronous request, which requires a new requestid
     // Get RequestID
    
     FILE *fp = popen("/home/phil/cvs/JSOC/bin/linux_ia32/GetJsocRequestID", "r");
@@ -762,6 +775,21 @@ int DoIt(void)
     requestid = new_requestid;
 
     now = timenow();
+
+    // Log this export request
+    if (1)
+      {
+      char exportlogfile[1000];
+      char timebuf[50];
+      FILE *exportlog;
+      sprintf(exportlogfile, "/home/jsoc/exports/tmp/%s.reqlog", requestid);
+      exportlog = fopen(exportlogfile, "w");
+      sprint_ut(timebuf, now);
+      fprintf(exportlog,"New request started at %s\n", timebuf);
+      fprintf(exportlog,"REMOTE_ADDR=%s\nHTTP_REFERER=%s\nREQUEST_METHOD=%s\nQUERY_STRING=%s\n",
+         getenv("REMOTE_ADDR"), getenv("HTTP_REFERER"), getenv("REQUEST_METHOD"), getenv("QUERY_STRING"));
+      fclose(exportlog);
+      }
 
     // Add Requestor info to jsoc.export_user series 
     // Can not watch for new information since can not read this series.
@@ -909,6 +937,9 @@ check for requestor to be valid remote DRMS site
       DRMS_Record_t *rec = rs->records[irec];
       DRMS_Segment_t *seg;
       HIterator_t *segp = NULL;
+      // Disallow exporting jsoc.export* series
+      if (strncmp(rec->seriesinfo->seriesname, "jsoc.export", 11)== 0)
+        JSONDIE("Export of jsoc_export series not allowed.");
       while (seg = drms_record_nextseg(rec, &segp, 1))
         {
         DRMS_Record_t *segrec = seg->record;
@@ -1086,6 +1117,22 @@ check for requestor to be valid remote DRMS site
      requestid = new_requestid;
 
      now = timenow();
+
+    // Log this export request
+    if (1)
+      {
+      char exportlogfile[1000];
+      char timebuf[50];
+      FILE *exportlog;
+      sprintf(exportlogfile, "/home/jsoc/exports/tmp/%s.reqlog", requestid);
+      exportlog = fopen(exportlogfile, "w");
+      sprint_ut(timebuf, now);
+      fprintf(exportlog,"New request started at %s\n", timebuf);
+      fprintf(exportlog,"REMOTE_ADDR=%s\nHTTP_REFERER=%s\nREQUEST_METHOD=%s\nQUERY_STRING=%s\n",
+         getenv("REMOTE_ADDR"), getenv("HTTP_REFERER"), getenv("REQUEST_METHOD"), getenv("QUERY_STRING"));
+      fclose(exportlog);
+      }
+
 
      // Add Requestor info to jsoc.export_user series 
      // Can not watch for new information since can not read this series.

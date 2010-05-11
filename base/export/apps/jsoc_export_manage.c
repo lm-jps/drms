@@ -175,10 +175,10 @@ fprintf(fp, "  sleep 1\nend \n");
      fprintf(fp, "Results at http://jsoc.stanford.edu/$REQDIR\n");
      fprintf(fp, "!\n");
      }
-  //fprintf(fp, "  rm -f /home/jsoc/exports/tmp/%s.recnum\n", requestid);
+  fprintf(fp, "  mv /home/jsoc/exports/tmp/%s.recnum /home/jsoc/exports/tmp/done \n", requestid);
   /* The log after the call to drms_run gets lost because of the following line - should preserve this
    * somehow (but it can't go in the new inner REQDIR because that is read-only after drms_run returns. */
-  //fprintf(fp, "  rm -f /home/jsoc/exports/tmp/%s.runlog\n", requestid);
+  fprintf(fp, "  mv /home/jsoc/exports/tmp/%s.runlog /home/jsoc/exports/tmp/done \n", requestid);
   fprintf(fp, "endif\n");
   fclose(fp);
   chmod(qsubscript, 0555);
