@@ -843,19 +843,19 @@ unset result
 
 # sqldone file found, transferring sql file to local machine
 logwrite "Copying and removing $node.sql.tar.gz file from $kRSUser@$kRSServer"
-
+sqltarfile="$kLocalWorkingDir/$node.sql.tar.gz"
 success=true
 
-ManagedDownload "$kRSTriggerDir/$node.sql.tar.gz" "$kLocalWorkingDir/$node.sql.tar.gz"
+ManagedDownload "$kRSTriggerDir/$node.sql.tar.gz" "$sqltarfile"
 if [ $? -eq 0 ]
 then
     SetState "dlsql_comp"
 
-    logwrite "Executing: tar -xzvf $node.sql.tar.gz"
-    tar -xzvf "$node.sql.tar.gz"
+    logwrite "Executing: tar -xzvf $sqltarfile"
+    tar -xzvf "$sqltarfile"
 
-    logwrite "Removing $node.sql.tar.gz" nl
-    RM -f "$node.sql.tar.gz"
+    logwrite "Removing $sqltarfile" nl
+    RM -f "$sqltarfile"
 else
     # Major problem, must tell server to clean up
     success=false
