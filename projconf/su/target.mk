@@ -15,7 +15,10 @@ $(PROJOBJDIR):
 	+@[ -d $@/lev1_aia/apps ] || mkdir -p $@/lev1_aia/apps
 	+@[ -d $@/lev1_hmi/apps ] || mkdir -p $@/lev1_hmi/apps
 	+@[ -d $@/globalhs/apps/ ] || mkdir -p $@/globalhs/apps
+	+@[ -d $@/flatfield/apps ] || mkdir -p $@/flatfield/apps
+	+@[ -d $@/flatfield/libs/flatfieldlib ] || mkdir -p $@/flatfield/libs/flatfieldlib
 	+@[ -d $@/globalhs/apps/src/ ] || mkdir -p $@/globalhs/apps/src
 	+@[ -d $@/rings/apps/ ] || mkdir -p $@/rings/apps
 	+@[ -d $@/mag/apps/ ] || mkdir -p $@/mag/apps
 	+@[ -d $@/mag/pfss/apps ] || mkdir -p $@/mag/pfss/apps
+
