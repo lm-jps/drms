@@ -237,14 +237,14 @@ EXEC SQL END DECLARE SECTION;
 sqlrmerror:
     printk("Error in DS_RmNow\n");
     printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
-    EXEC SQL ROLLBACK WORK;
+    //EXEC SQL ROLLBACK WORK;
     return DS_DATA_QRY;
 
 sqljsocerror:
     printk("Error in DS_RmNow() for del from Records.txt\n");
     printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
     //EXEC SQL DISCONNECT;
-    EXEC SQL ROLLBACK WORK;
+    //EXEC SQL ROLLBACK WORK;
     fclose(rxfp);
     return DS_DATA_QRY;
 }
