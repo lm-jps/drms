@@ -7,7 +7,7 @@
 	<META NAME="AUTHOR" CONTENT="Carl Cimilluca">
 	<META NAME="CREATED" CONTENT="20100510;9375300">
 	<META NAME="CHANGEDBY" CONTENT="Carl Cimilluca">
-	<META NAME="CHANGED" CONTENT="20100512;12253000">
+	<META NAME="CHANGED" CONTENT="20100512;13530000">
 	<STYLE TYPE="text/css">
 	<!--
 		@page { size: 8.5in 11in; margin: 0.79in }
@@ -19,7 +19,7 @@
 <BODY LANG="en-US" DIR="LTR">
 <DIV TYPE=HEADER>
 	<P STYLE="margin-bottom: 0.2in">HK Level Zero Code Debug
-	Guide(version 3 on 5/12/2010)</P>
+	Guide(version 5 on 5/12/2010)</P>
 </DIV>
 <TABLE WIDTH=665 BORDER=1 BORDERCOLOR="#000000" CELLPADDING=4 CELLSPACING=0>
 	<COL WIDTH=57>
@@ -230,6 +230,10 @@
 				cronjob on production@j0.</FONT></FONT></P>
 			</TD>
 			<TD WIDTH=68>
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>Email
+				with subject.</B></FONT></FONT></P>
+				<P><BR>
+				</P>
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>JSOC:WARNING:Ingesting
 				MOC dayfiles: status:Possible error ingesting dayfile.</B></FONT></FONT></P>
 			</TD>
@@ -311,6 +315,12 @@
 				</P>
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>JSOC:WARNING:INGESTING
 				REALTIME DAYFILE FOR APID 129:Dayfile does not exist</B></FONT></FONT></P>
+				<P><BR>
+				</P>
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>(3)Email
+				with subject:</B></FONT></FONT></P>
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>SOC:WARNING:INGESTING
+				REALTIME DAYFILE FOR APID 129:Dayfile is not getting new packets</B></FONT></FONT></P>
 			</TD>
 			<TD WIDTH=114>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(1)j0
@@ -328,12 +338,22 @@
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(1)J0
 				server goes down because of crash or runs out of memory. </FONT></FONT>
 				</P>
-				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(2)Or
-				the j0 server loses nfs connection to /hmisdp-mon/log/packets
-				directory.</FONT></FONT></P>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(2)The
+				j0 server loses nfs connection to /hmisdp-mon/log/packets
+				directory</FONT></FONT></P>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">or
+				Lockheed is not feeding updates </FONT></FONT>
+				</P>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">to
+				dayfiles</FONT></FONT></P>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(3)See
+				item above(2). Or could be a short delay when moving to next day
+				at 5pmPDT.</FONT></FONT></P>
 			</TD>
 			<TD WIDTH=247>
-				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(1)Solution
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">Action
+				Problem Described(1):</FONT></FONT></P>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">Solution
 				 is to restart gdfrt.pl process with new LOG file marked with
 				time restarted process. Restart monitor_df_rtmon.pl process. </FONT></FONT>
 				</P>
@@ -377,12 +397,22 @@
 				sdo.lev0_asd_0004.</FONT></FONT></P>
 				<P STYLE="font-weight: medium"><BR>
 				</P>
-				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(2)Check
-				j0 can see /hmimon-sdp.</FONT></FONT></P>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">Action
+				Problem Described(2):</FONT></FONT></P>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">-Check
+				j0 can see directory /hmisdp-mon/log/packets.</FONT></FONT></P>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">-Contact
+				Rock on why Lockheed not updating data to dayfiles especially if
+				for 1 hour or more.</FONT></FONT></P>
 				<P STYLE="font-weight: medium"><BR>
 				</P>
-				<P STYLE="font-weight: medium"><BR>
-				</P>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">Action
+				Problem Described(3):</FONT></FONT></P>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">-Check
+				j0 can see directory /hmisdp-mon/log/packets.</FONT></FONT></P>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">-Contact
+				Rock on why Lockheed not updating data to dayfiles especially if
+				for 1 hour or more.</FONT></FONT></P>
 				<P STYLE="font-weight: medium"><BR>
 				</P>
 				<P STYLE="font-weight: medium"><BR>
@@ -452,10 +482,14 @@
 				</P>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(2)Path
 				setup to pickup or drop off dayfile was not correct.</FONT></FONT></P>
+				<P STYLE="font-weight: medium"><BR>
+				</P>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(3)No
-				dayfile on /hmi-sdp server.</FONT></FONT></P>
+				dayfile on /hmisdp-mon server.</FONT></FONT></P>
+				<P STYLE="font-weight: medium"><BR>
+				</P>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(4)J0
-				has no access to hmi-sdp server.</FONT></FONT></P>
+				has no access to hmisdp-mon server.</FONT></FONT></P>
 				<P STYLE="font-weight: medium"><BR>
 				</P>
 			</TD>
@@ -567,6 +601,8 @@
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(Step
 				1) Check with j0 see hmisdp-mon directory. Check if asd dayfile
 				there(apid is 0x81).</FONT></FONT></P>
+				<P><BR>
+				</P>
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(Step
 				2) Follow simular step as item #4</FONT></FONT></P>
 			</TD>
