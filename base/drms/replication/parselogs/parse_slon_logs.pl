@@ -880,13 +880,13 @@ sub loadConfig {
       if ($pstring=~m/"?(([^\."'\s]+)"?\.)?"?([^\."'\s]+)"?/) {
         unless (defined $2) {
           if (exists $complete->{$3}) {
-            (lc($namespace), lc($series)) = ($complete->{$3},$3);
+            ($namespace, $series) = ($complete->{$3},$3);
           } else {
             error("node [$node] doesn't have a valid namespace for series [$3]");
             next;
           }
         } else {
-          (lc($namespace), lc($series)) = ($2,$3);
+          ($namespace, $series) = ($2,$3);
 
         }
       } else {
@@ -894,7 +894,7 @@ sub loadConfig {
         next;
       }
 
-      my $key = sprintf(qq("%s"."%s"),$namespace,$series);
+      my $key = sprintf(qq("%s"."%s"),lc($namespace),lc($series));
       if ( exists $cfgH->{$key} ) {
         if (grep { m/$node/ } @{$cfgH->{$key}}) {
           error("Duplicate entry for [$key] in node [$node]");
