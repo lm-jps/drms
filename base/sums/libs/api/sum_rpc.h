@@ -501,6 +501,8 @@ int DS_PallocRequest();
 int DS_PallocClean();
 int DS_RmDo(double *bytesdel);
 int DS_RmNow(char *wd, uint64_t sumid, double bytes, char *effdate, uint64_t ds_index, int archsub, double *rmbytes);
+int DS_RmDoX(char *name, double bytesdel);
+int DS_RmNowX(char *wd, uint64_t sumid, double bytes, char *effdate, uint64_t ds_index, int archsub, double *rmbytes);
 int rmdirs(char *wd, char *root);
 int SUM_Main_Update (KEY *params);
 int SUMLIB_Close(KEY *params);
