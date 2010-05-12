@@ -147,7 +147,8 @@ exec < $input_file
 		set - $line
 		
 		sub=$2		
-		schema_table[$counter]=$1
+		#schema_table[$counter]=$1
+		schema_table[$counter]=`echo $1 | tr '[A-Z]' '[a-z]'`
 		oldIFS="$IFS"
 		IFS="${IFS}."
 		set - ${schema_table[$counter]}

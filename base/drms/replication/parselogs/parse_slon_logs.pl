@@ -880,13 +880,13 @@ sub loadConfig {
       if ($pstring=~m/"?(([^\."'\s]+)"?\.)?"?([^\."'\s]+)"?/) {
         unless (defined $2) {
           if (exists $complete->{$3}) {
-            ($namespace, $series) = ($complete->{$3},$3);
+            (lc($namespace), lc($series)) = ($complete->{$3},$3);
           } else {
             error("node [$node] doesn't have a valid namespace for series [$3]");
             next;
           }
         } else {
-          ($namespace, $series) = ($2,$3);
+          (lc($namespace), lc($series)) = ($2,$3);
 
         }
       } else {
@@ -979,19 +979,19 @@ sub parseLog {
 
   while (<SRC>) {
  
-    if ($_ =~ /select "_jsoc"\.archiveTracking_offline\('.*'\);/ ||
+    if ($_ =~ /select "_jsoc"\.archiveTracking_offline\('.*'\);/i ||
         $_ =~ /^--/ ||
-        $_ =~ /^start tran/ ||
-        $_ =~ /^commit/ ||
-        $_ =~ /^vacuum/ ) {
+        $_ =~ /^start tran/i ||
+        $_ =~ /^commit/i ||
+        $_ =~ /^vacuum/i ) {
       dumpSlonLog($cfgH, $nodeH, undef, $_);
       next;
     }
 
   #e.g.
   #insert into "lm_jps"."lev1_test4k10s"
-    if ($_ =~ /^insert\s+into\s+("\S+"\."\S+")/) {
-      dumpSlonLog($cfgH, $nodeH, $1, $_);
+    if ($_ =~ /^insert\s+into\s+("\S+"\."\S+")/i) {
+      dumpSlonLog($cfgH, $nodeH, lc($1), $_);
     }
   }
 
