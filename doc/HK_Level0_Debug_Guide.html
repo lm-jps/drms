@@ -7,7 +7,7 @@
 	<META NAME="AUTHOR" CONTENT="Carl Cimilluca">
 	<META NAME="CREATED" CONTENT="20100510;9375300">
 	<META NAME="CHANGEDBY" CONTENT="Carl Cimilluca">
-	<META NAME="CHANGED" CONTENT="20100511;16395000">
+	<META NAME="CHANGED" CONTENT="20100512;12253000">
 	<STYLE TYPE="text/css">
 	<!--
 		@page { size: 8.5in 11in; margin: 0.79in }
@@ -19,7 +19,7 @@
 <BODY LANG="en-US" DIR="LTR">
 <DIV TYPE=HEADER>
 	<P STYLE="margin-bottom: 0.2in">HK Level Zero Code Debug
-	Guide(version 2 on 5/11/2010)</P>
+	Guide(version 3 on 5/12/2010)</P>
 </DIV>
 <TABLE WIDTH=665 BORDER=1 BORDERCOLOR="#000000" CELLPADDING=4 CELLSPACING=0>
 	<COL WIDTH=57>
@@ -79,14 +79,20 @@
 			</TD>
 			<TD WIDTH=68>
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>Email
-				message with this subject.</B></FONT></FONT></P>
+				messages with this subject.</B></FONT></FONT></P>
 				<P> <FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>JSOC:
 				</B></FONT></FONT>
 				</P>
 				<P><BR>
 				</P>
-				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>WARNING:
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>(1)WARNING:
 				Ingesting MOC dayfiles: status:No files loaded today</B></FONT></FONT></P>
+				<P><BR>
+				</P>
+				<P><BR>
+				</P>
+				<P><BR>
+				</P>
 			</TD>
 			<TD WIDTH=114>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">JSOC:
@@ -210,6 +216,65 @@
 		<TR VALIGN=TOP>
 			<TD WIDTH=57>
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">2</FONT></FONT></P>
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(low-high)</FONT></FONT></P>
+			</TD>
+			<TD WIDTH=63>
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">-&gt;HK
+				Level 0 </FONT></FONT>
+				</P>
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">-&gt;MOC
+				Dayfile Save and decode keywords data for asd dayfile and save
+				keywords to asd HK by APID series(sdo.lev0_asd_0004) </FONT></FONT>
+				</P>
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">-&gt;dsdf.pl
+				cronjob on production@j0.</FONT></FONT></P>
+			</TD>
+			<TD WIDTH=68>
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>JSOC:WARNING:Ingesting
+				MOC dayfiles: status:Possible error ingesting dayfile.</B></FONT></FONT></P>
+			</TD>
+			<TD WIDTH=114>
+				<PRE STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">Warning Message:</FONT></FONT>
+<FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">--&gt;Received count of &lt;3&gt; hkt files and count of &lt;3&gt; xml files from directory &lt;/home3/carl/cvs/JSOC/proj/lev0/scripts/hk/pup_dir&gt;.</FONT></FONT>
+<FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">--&gt;When executing script &lt;/home/production/cvs/JSOC/proj/lev0/scripts/hk/dsdf.pl&gt; from cron job.</FONT></FONT>
+<FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">--&gt;Check if there is problem. The dayfiles to ingest into data series and delete from directory did not match the count of the dayfiles received.</FONT></FONT>
+<FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">--&gt;Possibly a problem ingesting dayfiles in series because of bad setting of SUMSERVER parameter or SUMS could be not available.</FONT></FONT>
+<FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">--&gt;Possibly not an issue which was caused by the dayfiles not being ingested on previous day(s) therefore the file count received today does not match files ingested.</FONT></FONT></PRE><P STYLE="font-weight: medium">
+				<BR>
+				</P>
+			</TD>
+			<TD WIDTH=66>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(1)This
+				usually occurs after getting email described in item #1. The next
+				day there are previous days files on the dropoff directory. So
+				the amount we pick up from Art's pickup directory(128) does not
+				equal the amount on the dropoff directory(128+128).</FONT></FONT></P>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(2)If
+				could not write to SUM/DRMS because it was down.</FONT></FONT></P>
+			</TD>
+			<TD WIDTH=247>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">Action
+				Problem Described(1): Probably not Problem.</FONT></FONT></P>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">Confirm
+				all 256 files were ingested by viewing log file(log-df-moc) and
+				view the dayfiles are there in the three dayfile series for that
+				day. Where three series are aia.hk_dayfile, hmi.hk_dayfile,
+				sdo.hk_dayfile.</FONT></FONT></P>
+				<P STYLE="font-weight: medium"><BR>
+				</P>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">Action
+				for Problem Described(2): Confirm when SUMS/DRMS is working. Then
+				follow similar procedure shown for item #1. The difference here
+				is that, you will sse dayfiles(64 dayfiles + 64 xml files) on the
+				dropoff directory. Since we had files but could not save, so kept
+				files there for manual work around.</FONT></FONT></P>
+				<P STYLE="font-weight: medium"><BR>
+				</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=57>
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">3</FONT></FONT></P>
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=1>(high)</FONT></FONT></P>
 			</TD>
 			<TD WIDTH=63>
@@ -228,12 +293,8 @@
 				<P> <FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">%
 				gdfrt.pl apid=129 pkt_size=128 &gt;
 				LOG-RT-APID0x081-2010.05.11.09_10:00:00</FONT></FONT></P>
-				<P><BR>
-				</P>
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">%
-				monitor_df_rtmon.pl apid=129     </FONT></FONT>
-				</P>
-				<P> 
+				monitor_df_rtmon.pl apid=129 </FONT></FONT>
 				</P>
 			</TD>
 			<TD WIDTH=68>
@@ -254,7 +315,7 @@
 			<TD WIDTH=114>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(1)j0
 				server down or crashed.</FONT></FONT></P>
-				<PRE STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><FONT FACE="Courier, monospace">(2)Email message in body :</FONT>Error Message:</FONT></FONT>
+				<PRE STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(2)Email message in body :Error Message:</FONT></FONT>
 <FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">--&gt;Dayfile &lt;/hmisdp-mon/log/packets/0x0081/20100204.0x0081&gt; is not probably there.</FONT></FONT>
 <FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">--&gt;This monitor script will continue running and resend another email notice if the data file is there and data starts flowing and stops again.</FONT></FONT>
 <FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">--&gt;To restart monitor enter command:  /home/production/cvs/JSOC/proj/lev0/scripts/hk/monitor_df_rtmon.pl apid=129</FONT></FONT>
@@ -282,8 +343,8 @@
 				into j0 as production user on terminal window. Execute:  </FONT></FONT>
 				</P>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">%
-				nohup gdfrt.pl apid=129 pkt_size=128 &gt;
-				LOG-RT-APID0x081-2010.05.11.09_10:00:00 &amp;</FONT></FONT></P>
+				gdfrt.pl apid=129 pkt_size=128 &gt;
+				LOG-RT-APID0x081-2010.05.11.09_10:00:00</FONT></FONT></P>
 				<P STYLE="font-weight: medium"><BR>
 				</P>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">This
@@ -295,7 +356,7 @@
 				on to j0 on another terminal window and execute: </FONT></FONT>
 				</P>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">%
-				monitor_df_rtmon.pl apid=129 &amp;</FONT></FONT></P>
+				monitor_df_rtmon.pl apid=129</FONT></FONT></P>
 				<P STYLE="font-weight: medium"><BR>
 				</P>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">This
@@ -334,7 +395,7 @@
 		</TR>
 		<TR VALIGN=TOP>
 			<TD WIDTH=57>
-				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">3</FONT></FONT></P>
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">4</FONT></FONT></P>
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=1>(low)</FONT></FONT></P>
 			</TD>
 			<TD WIDTH=63>
@@ -363,14 +424,18 @@
 				</P>
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>JSOC:WARNING:Ingesting
 				RTMON dayfiles: status:Possible error ingesting dayfile.</B></FONT></FONT></P>
+				<P><BR>
+				</P>
+				<P><BR>
+				</P>
 			</TD>
 			<TD WIDTH=114>
 				<PRE STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">Warning Message:</FONT></FONT>
-<FONT SIZE=2 STYLE="font-size: 9pt">--&gt;Received count of &lt;1&gt; hkt files and count of &lt;1&gt; xml files from directory &lt;/hmisdp-mon/log/packets&gt;.</FONT>
-<FONT SIZE=2 STYLE="font-size: 9pt">--&gt;When executing script &lt;/home/production/cvs/JSOC/proj/lev0/scripts/hk/dsdf.pl&gt; from cron job.</FONT>
-<FONT SIZE=2 STYLE="font-size: 9pt">--&gt;Check if there is problem. The dayfiles to ingest into data series and delete from directory did not match the count of the dayfiles received.</FONT>
-<FONT SIZE=2 STYLE="font-size: 9pt">--&gt;Possibly a problem ingesting dayfiles in series because of bad setting of SUMSERVER parameter or SUMS could be not available.</FONT>
-<FONT SIZE=2 STYLE="font-size: 9pt">--&gt;Possibly not an issue which was caused by the dayfiles not being ingested on previous day(s) therefore the file count received today does not match files ingested.</FONT></PRE><P STYLE="font-weight: medium">
+<FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">--&gt;Received count of &lt;1&gt; hkt files and count of &lt;1&gt; xml files from directory &lt;/hmisdp-mon/log/packets&gt;.</FONT></FONT>
+<FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">--&gt;When executing script &lt;/home/production/cvs/JSOC/proj/lev0/scripts/hk/dsdf.pl&gt; from cron job.</FONT></FONT>
+<FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">--&gt;Check if there is problem. The dayfiles to ingest into data series and delete from directory did not match the count of the dayfiles received.</FONT></FONT>
+<FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">--&gt;Possibly a problem ingesting dayfiles in series because of bad setting of SUMSERVER parameter or SUMS could be not available.</FONT></FONT>
+<FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">--&gt;Possibly not an issue which was caused by the dayfiles not being ingested on previous day(s) therefore the file count received today does not match files ingested.</FONT></FONT></PRE><P STYLE="font-weight: medium">
 				<BR>
 				</P>
 			</TD>
@@ -381,8 +446,8 @@
 				</P>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">Possible
 				problems:</FONT></FONT></P>
-				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(1)SUMS
-				down.</FONT></FONT></P>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(1)SUMS/DRMS
+				down so could not save files.</FONT></FONT></P>
 				<P STYLE="font-weight: medium"><BR>
 				</P>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(2)Path
@@ -395,8 +460,8 @@
 				</P>
 			</TD>
 			<TD WIDTH=247>
-				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(1)Verify
-				issue:</FONT></FONT></P>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(Step
+				1)Verify issue:</FONT></FONT></P>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">Check
 				if RT dayfile in sdo.hk_dayfile series where date is day of
 				problem and source=rtmon. Check log file at log-df-rtmon for
@@ -406,9 +471,9 @@
 				directory in ingest_dayfile.pl</FONT></FONT></P>
 				<P STYLE="font-weight: medium"><BR>
 				</P>
-				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(2)Manual
-				save RT dayfile that failed last night. Execute the manual
-				command to save asd rtmon dayfile to sdo.hk_dayfile.</FONT></FONT></P>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(Step
+				2)Manual save RT dayfile that failed last night. Execute the
+				manual command to save asd rtmon dayfile to sdo.hk_dayfile.</FONT></FONT></P>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">ssh
 				or login to j0 as production user. Since we are save only asd
 				files(apid in hex use 81) use command with apid=81. Set merged
@@ -448,8 +513,8 @@
 				files saved already)</FONT></FONT></P>
 				<P STYLE="font-weight: medium"><BR>
 				</P>
-				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(3)Fix
-				issue, if needed to, described in list issues in  Problem
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(Step
+				3)Fix issue, if needed to, described in list issues in  Problem
 				Description column. Verify tomorrow no warning email is send.
 				Verify log has no errors.</FONT></FONT></P>
 				<P STYLE="font-weight: medium"><BR>
@@ -460,28 +525,50 @@
 		</TR>
 		<TR VALIGN=TOP>
 			<TD WIDTH=57>
-				<P><BR>
-				</P>
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">5</FONT></FONT></P>
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=1>(low)</FONT></FONT></P>
 			</TD>
 			<TD WIDTH=63>
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">-&gt;HK
+				Level 0 </FONT></FONT>
+				</P>
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">-&gt;RTMON
+				Dayfile Save  of only ASD Dayfile</FONT></FONT></P>
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">-&gt;dsdf.pl
+				cronjob on production@j0.</FONT></FONT></P>
+				<P><BR>
+				</P>
 				<P><BR>
 				</P>
 			</TD>
 			<TD WIDTH=68>
-				<P><BR>
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>Email
+				message with this subject.</B></FONT></FONT></P>
+				<P STYLE="font-weight: medium"><BR>
 				</P>
+				<P> 
+				</P>
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>JSOC:WARNING:Ingesting
+				RTMON dayfiles: status:no file loaded today.</B></FONT></FONT></P>
 			</TD>
 			<TD WIDTH=114>
-				<P><BR>
-				</P>
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">Similar
+				to #1 except this is for RTMON day files.</FONT></FONT></P>
 			</TD>
 			<TD WIDTH=66>
-				<P><BR>
-				</P>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(1)Path
+				setup to pickup or drop off dayfile was not correct.</FONT></FONT></P>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(2)No
+				dayfile on /hmi-sdp server.</FONT></FONT></P>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(3)J0
+				has no access to hmi-sdp server therefore cannot reach dayfile.</FONT></FONT></P>
 			</TD>
 			<TD WIDTH=247>
-				<P><BR>
-				</P>
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(Step
+				1) Check with j0 see hmisdp-mon directory. Check if asd dayfile
+				there(apid is 0x81).</FONT></FONT></P>
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(Step
+				2) Follow simular step as item #4</FONT></FONT></P>
 			</TD>
 		</TR>
 	</TBODY>
