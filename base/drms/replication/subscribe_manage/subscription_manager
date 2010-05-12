@@ -183,7 +183,10 @@ do
 				continue
 			else
 				logwrite "Adding $1 $2 to $subupdatefile"
-				echo $1 $2 >> $subupdatefile
+				req_one=`echo $1 | tr '[A-Z]' '[a-z]'`
+				req_two=`echo $2 | tr '[A-Z]' '[a-z]'`
+				echo $req_one $req_two >> $subupdatefile
+				unset req_one req_two
 			fi
 		done
 
@@ -292,7 +295,10 @@ do
 				logwrite "New_site is $new_site"
 			else
 				logwrite "Adding $1 $2 to $appliedfile"
-				echo $1 $2 >> $appliedfile
+				req_one=`echo $1 | tr '[A-Z]' '[a-z]'`
+				req_two=`echo $2 | tr '[A-Z]' '[a-z]'`
+				echo $req_one $req_two >> $appliedfile
+				unset req_one req_two
 			fi
 		done
 
