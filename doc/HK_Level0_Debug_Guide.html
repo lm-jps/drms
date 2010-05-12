@@ -7,7 +7,7 @@
 	<META NAME="AUTHOR" CONTENT="Carl Cimilluca">
 	<META NAME="CREATED" CONTENT="20100510;9375300">
 	<META NAME="CHANGEDBY" CONTENT="Carl Cimilluca">
-	<META NAME="CHANGED" CONTENT="20100512;13530000">
+	<META NAME="CHANGED" CONTENT="20100512;14595000">
 	<STYLE TYPE="text/css">
 	<!--
 		@page { size: 8.5in 11in; margin: 0.79in }
@@ -19,7 +19,7 @@
 <BODY LANG="en-US" DIR="LTR">
 <DIV TYPE=HEADER>
 	<P STYLE="margin-bottom: 0.2in">HK Level Zero Code Debug
-	Guide(version 5 on 5/12/2010)</P>
+	Guide(version 6 on 5/12/2010)</P>
 </DIV>
 <TABLE WIDTH=665 BORDER=1 BORDERCOLOR="#000000" CELLPADDING=4 CELLSPACING=0>
 	<COL WIDTH=57>
@@ -168,8 +168,9 @@
 				checking log files(log-doAPID17, log-doAPID19, log-doAPID21,
 				log-doAPID38, log-doAPID40) can see if runs were successful.</FONT></FONT></P>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(a)
-				Keyword Data for APID 19(For Sebastien and Jesper)</FONT></FONT></P>
-				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">-&gt;Got
+				Keyword Data for APID 19 to hmi.temperature_summary series(For
+				Sebastien and Jesper)</FONT></FONT></P>
+				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">-&gt;Go
 				to directory to update manually script.</FONT></FONT></P>
 				<P STYLE="font-weight: medium"> <FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">%
 				cd  /home/production/cvs/JSOC/proj/lev0/scripts/hk</FONT></FONT></P>
@@ -204,13 +205,14 @@
 				getFilesFromDayfile_019v2.pl</FONT></FONT></P>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">b)APID
 				17,21,38,40 are less critical since these series are used by
-				Master Pointing series to gather data. Since the master pointing
-				series does not change HK lookup times often, this should not
-				have a problem until we update the master pointer series. To do
-				these updates. Repeat steps about described in 3a. By vi editing
-				files and then running. Remember v2 version in name of file is
-				for hand editing and v3 version should not be touched(used for
-				cronjobs).</FONT></FONT></P>
+				Master Pointing series to gather data. This data is used to up
+				hmi.leg_status, hmi/aia iss series data. Since the master
+				pointing series does not change HK lookup times often, this
+				should not have a problem until we update the master pointer
+				series. To do these updates. Repeat steps about described in 3a.
+				Edit these files and then run. Remember v2 version in name of
+				perl file is for hand editing and v3 version should not be
+				touched(used for cronjobs).</FONT></FONT></P>
 			</TD>
 		</TR>
 		<TR VALIGN=TOP>
@@ -286,19 +288,20 @@
 				Level 0 </FONT></FONT>
 				</P>
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">-&gt;Real
-				time Decode and save of keywords to asd series using RTMON
-				Dayfile </FONT></FONT>
+				time Decode and save of keywords to asd series using  Minute  of
+				data in RTMON Dayfile </FONT></FONT>
 				</P>
-				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">-&gt;On
-				</FONT></FONT><A HREF="mailto:production@n02"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><SPAN STYLE="background: transparent">production@j0</SPAN></FONT></FONT></A><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><SPAN STYLE="background: transparent">
-				at /home/production/cvs/JSOC/proj/lev0/scripts/hk.</SPAN></FONT></FONT></P>
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">-&gt;On
+				</FONT></FONT></FONT></FONT><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><SPAN STYLE="background: transparent"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><SPAN STYLE="text-decoration: none"><SPAN STYLE="background: transparent"><A HREF="mailto:production@n02">production@j0</A>
+				</SPAN></SPAN></FONT></FONT></SPAN></FONT></FONT><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><SPAN STYLE="text-decoration: none"><SPAN STYLE="background: transparent">at</SPAN></SPAN></FONT></FONT><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><SPAN STYLE="background: transparent"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><SPAN STYLE="background: transparent">
+				/home/production/cvs/JSOC/proj/lev0/scripts/hk.</SPAN></FONT></FONT></SPAN></FONT></FONT></P>
 				<P><BR>
 				</P>
 				<P> <FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">%
-				gdfrt.pl apid=129 pkt_size=128 &gt;
-				LOG-RT-APID0x081-2010.05.11.09_10:00:00</FONT></FONT></P>
+				nohup gdfrt.pl apid=129 pkt_size=128 &gt;
+				LOG-RT-APID0x081-2010.05.11.09_10:00:00 &amp;</FONT></FONT></P>
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">%
-				monitor_df_rtmon.pl apid=129 </FONT></FONT>
+				nohup monitor_df_rtmon.pl apid=129 &amp; </FONT></FONT>
 				</P>
 			</TD>
 			<TD WIDTH=68>
@@ -363,8 +366,8 @@
 				into j0 as production user on terminal window. Execute:  </FONT></FONT>
 				</P>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">%
-				gdfrt.pl apid=129 pkt_size=128 &gt;
-				LOG-RT-APID0x081-2010.05.11.09_10:00:00</FONT></FONT></P>
+				nohup gdfrt.pl apid=129 pkt_size=128 &gt;
+				LOG-RT-APID0x081-2010.05.11.09_10:00:00 &amp;</FONT></FONT></P>
 				<P STYLE="font-weight: medium"><BR>
 				</P>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">This
@@ -376,7 +379,7 @@
 				on to j0 on another terminal window and execute: </FONT></FONT>
 				</P>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">%
-				monitor_df_rtmon.pl apid=129</FONT></FONT></P>
+				nohup monitor_df_rtmon.pl apid=129 &amp;</FONT></FONT></P>
 				<P STYLE="font-weight: medium"><BR>
 				</P>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">This
@@ -402,8 +405,7 @@
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">-Check
 				j0 can see directory /hmisdp-mon/log/packets.</FONT></FONT></P>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">-Contact
-				Rock on why Lockheed not updating data to dayfiles especially if
-				for 1 hour or more.</FONT></FONT></P>
+				Rock on why Lockheed not updating data to dayfiles.</FONT></FONT></P>
 				<P STYLE="font-weight: medium"><BR>
 				</P>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">Action
@@ -411,16 +413,7 @@
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">-Check
 				j0 can see directory /hmisdp-mon/log/packets.</FONT></FONT></P>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">-Contact
-				Rock on why Lockheed not updating data to dayfiles especially if
-				for 1 hour or more.</FONT></FONT></P>
-				<P STYLE="font-weight: medium"><BR>
-				</P>
-				<P STYLE="font-weight: medium"><BR>
-				</P>
-				<P STYLE="font-weight: medium"><BR>
-				</P>
-				<P STYLE="font-weight: medium"><BR>
-				</P>
+				Rock on why Lockheed not updating data to dayfiles.</FONT></FONT></P>
 			</TD>
 		</TR>
 		<TR VALIGN=TOP>
