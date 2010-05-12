@@ -15,6 +15,12 @@ function SSexit {
       logwrite "ERROR: Unable to remove subscribe lock file $kLocalWorkingDir/clientsublock.txt"
   fi
 
+  # Remove get_slony_logs.pl die file
+  if [ -e "$ingestion_path/get_slony_logs.$node.die" ]
+  then
+      RM -f "$ingestion_path/get_slony_logs.$node.die"
+  fi
+
   exit $exitstat
 }
 

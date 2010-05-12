@@ -142,13 +142,14 @@ unless (-d $work_dir)
 
 #### exit if die file is found
 sub diecheck {
-  my ($cluster_name, $ingestion_path) = @_;	
+  my ($site_name, $ingestion_path) = @_;	
   
-  die_error ($cluster_name, "Config variable ingestion_path not set or doesn't exists") unless (defined $ingestion_path && -d $ingestion_path);
-  my $diecheck = `ls $ingestion_path | grep get_slony_logs.$cluster_name.die`;
-  if ( $diecheck ne "" ) {
-    print "Die file found. Exiting.\n";
-	exit 0;
+  die_error ($site_name, "Config variable ingestion_path not set or doesn't exists") unless (defined $ingestion_path && -d $ingestion_path);
+
+  if ( -f "$ingestion_path/get_slony_logs.$site_name.die" )
+  {
+     print "Die file found. Exiting.\n";
+     exit 0;
   }
 }
 
@@ -267,7 +268,7 @@ unless ( -f $counter_file ) {
 
 
 #### exit if die file is found
-diecheck($cluster_name, $ingestion_path);
+diecheck($site_name, $ingestion_path);
 
 my $slony_ingest=1;
 
