@@ -5,9 +5,10 @@
  * This program is started by sum_svc when it starts. It will check the .cfg
  * file to find out how much to remove from the /SUM storage.
  *
- * NOTE: There is only one SUM_Set_Num (formerly pds_set_num) from SUMS.
+ * NOTE: There is only one SUM_Set_Num (formerly pds_set_num) for SUMS.
  * All SUM partition are "local", i.e. on the NFS servers and the concept,
- * in DSDDS, of a storage partition associated with a host name is gone.
+ * in DSDS, of a storage partition associated with a host name is gone.
+ * Please don't try to resurrect the pds_set_num concept!!
  * 
  * sum_rm reads its configuration file, named like:
  * 	/home/jim/cvs/JSOC/base/sums/apps/data/sum_rm.cfg.<db>.
@@ -20,6 +21,8 @@
  *	#delete until this many Mb free on /SUM set 0.
  *	#NOTE: only one pds type set for SUMS.
  *	MAX_FREE_0=800000
+ *	#% of each disk partition to be kept free 
+ *	PART_PERCENT_FREE=5
  *	#log file (only opened at startup and pid gets appended to this name)
  *	LOG=/usr/local/logs/SUM/sum_rm.log
  *	#whom to bother when there's a notable problem
@@ -40,7 +43,7 @@
  * sum_rm deletes the delete pending dirs in the sum_partn_alloc table
  * that have expired. The deletion is from the oldest effective_date forward.
  * The deletion continues until no more del pend dirs are available or until
- * MAX_FREE_0 is achieved.
+ * PART_PERCENT_FREE is achieved for each disk partition.
  *
  * After sum_rm has deleted the given directories, it goes to
  * sleep for the n seconds given in the .cfg file. When it awakes, it starts
@@ -61,7 +64,7 @@
 
 #define CFG_FILE "/home/production/cvs/JSOC/base/sums/apps/data/sum_rm.cfg"
 
-double stat_storage();
+int stat_storage();
 void get_cfg();
 static char *datestring(void);
 
@@ -93,7 +96,10 @@ int norun_stop;		/* start running again when the hour first hits this */
 char xlogfile[256];	/* log file name */
 char mailto[256];	/* mail recipient(s) */
 char userrun[256];	/* user name who can run sum_rm */
-double max_free_set[MAXSUMSETS]; /* bytes to keep free for each SUM set */
+double max_free_set_need[MAX_PART];    // bytes to keep free for each SUM part
+double max_free_set_current[MAX_PART]; // bytes now free for each SUM part
+double max_free_set_percent[MAXSUMSETS];  // % to keep free for each % SUM set
+//NOTE: everything assume only one set SUM_Set_Num 0
 
 
 void open_log(char *filename)
@@ -176,21 +182,7 @@ void alrm_sig(int sig)
           write_log("Current user %s is not the configured user %s\n",
 		     username, userrun);
         } else {
-          availstore = stat_storage();	/* update sum_partn_avail */
-          printk("Avail=%e max_free_need=%e\n",availstore,max_free_set[0]);
-          while(1) {
-            if(availstore < max_free_set[0]) {
-              update = 1;
-              DS_RmDo(&bytesdeleted);
-              availstore += bytesdeleted;
-              printk("bytes deleted = %e availstore = %e\n", 
-			bytesdeleted, availstore);
-              /* ck if still enough del pend to proceed */
-              if(bytesdeleted < 300000000) { break; }
-            }
-            else { break; }
-          }
-          if(update) stat_storage();	/* update sum_partn_avail */
+          update = stat_storage();	/* update sum_partn_avail & rm */
         }
       }
     }
@@ -202,15 +194,18 @@ void alrm_sig(int sig)
 
 /* Do a df on each SUM partition and update the storage available in
  * the sum_partn_avail table.
+ * And update max_free_set_need and max_free_set_current for ea partition.
+ * And free up any storage needed for ea partition.
+ * Return 1 if any thing was deleted from any partition
 */
-double stat_storage()
+int stat_storage()
 {
   PART *pptr;
   int i, status;
-  double df_avail, df_total, df_reserve, total;
+  int updated = 0;
+  double df_avail, df_total, df_del, total;
   struct statvfs vfs;
 
-  total = 0.0;
   for(i=0; i<MAX_PART-1; i++) {
     pptr=(PART *)&ptab[i];
     if(pptr->name == NULL) break;
@@ -218,23 +213,31 @@ double stat_storage()
       printk("Error %d on statvfs() for %s\n",status,pptr->name);
     }
     else {
-      df_total = (double)vfs.f_blocks;/* #free blks total */
+      df_total = (double)vfs.f_blocks;/* # blks total in fs */
       df_total = df_total * (double)vfs.f_frsize; /* times block size */
       df_avail = (double)vfs.f_bavail;/* #free blks avail to non su */
       df_avail = df_avail * (double)vfs.f_bsize; /* times block size */
       /* keep reserve - subtract 1% of total size from what's avail */
-      df_reserve = 0.01 * df_total;
-      if(df_reserve > df_avail) df_avail = 0.0;
-      else df_avail = df_avail - df_reserve;
+      //df_reserve = 0.01 * df_total;
+      //if(df_reserve > df_avail) df_avail = 0.0;
+      //else df_avail = df_avail - df_reserve;
       if(SUMLIB_PavailUpdate(pptr->name, df_avail))
        printk("Err: SUMLIB_PavailUpdate(%s, %e, ...)\n",
                       pptr->name, df_avail);
       else
-        printk("%s Update free bytes to %e\n", pptr->name, df_avail);
-        total += df_avail;
+        //printk("%s Update free bytes to %e\n", pptr->name, df_avail);
+        //#of bytes need free for this partition. Remember only one SUM set [0]
+        max_free_set_need[i] = df_total * max_free_set_percent[0];
+        max_free_set_current[i] = df_avail;
+        if(max_free_set_current[i] < max_free_set_need[i]) { //del some stuff
+          updated = 1;
+          df_del = max_free_set_need[i] - max_free_set_current[i];
+          printk("%s Attempt to del %e bytes\n", pptr->name, df_del);
+          DS_RmDoX(pptr->name, df_del);
+        }
     }
   }
-  return(total);
+  return(updated);
 }
 
 /* Get the CFG_FILE configuration file and set the global variables. 
@@ -242,7 +245,9 @@ double stat_storage()
  *         #when done sleep for n seconds before re-running
  *         SLEEP=60
  *         #delete until this many Mb free on /SUM set 0, 1, etc.
- *         MAX_FREE_0=75000
+ *         #MAX_FREE_0=75000
+ *         #% of each disk partition to be kept free
+ *         PART_PERCENT_FREE=5
  *         #log file (only opened at startup and pid gets appended to this name)
  *         LOG=/usr/local/logs/SUM/sum_rm.log
  *         #whom to bother when there's a notable problem
@@ -277,8 +282,9 @@ void get_cfg()
   noopflg = 0;
   norun_start = norun_stop = 0;
   sleep_sec = 300;
-  for(i=0; i < MAXSUMSETS; i++) { /* set default free bytes */
-    max_free_set[i] = ((double)800000 * (double)1048576); /* 800Gb */
+  for(i=0; i < MAXSUMSETS; i++) { /* set default free bytes % */
+    //max_free_set[i] = ((double)800000 * (double)1048576); /* 800Gb */
+    max_free_set_percent[i] = 3.0/100.0;
   }
   num_sets_in_cfg = MAXSUMSETS;
   strcpy(xlogfile, "/tmp/sum_rm.log");
@@ -302,13 +308,14 @@ void get_cfg()
         sleep_sec=atoi(token);
       }
     }
-    else if(strstr(line, "MAX_FREE_")) {
+    else if(strstr(line, "PART_PERCENT_FREE")) {
       token=(char *)strtok(line, "=\n");
-      i=atoi(&line[9]);
+      //i=atoi(&line[18]);
       if(token=(char *)strtok(NULL, "\n")) {
         num=atoi(token);
-        max_free_set[i] = ((double)num * (double)1048576);
-        num_sets_in_cfg++;
+        //max_free_set_percent[i] = num;
+        //num_sets_in_cfg++;
+        max_free_set_percent[0] = (double)num/100.0; //only one SUMS set
       }
     }
     else if(strstr(line, "LOG=")) {
