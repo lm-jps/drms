@@ -7,7 +7,7 @@
 	<META NAME="AUTHOR" CONTENT="Carl Cimilluca">
 	<META NAME="CREATED" CONTENT="20100510;9375300">
 	<META NAME="CHANGEDBY" CONTENT="Carl Cimilluca">
-	<META NAME="CHANGED" CONTENT="20100512;14595000">
+	<META NAME="CHANGED" CONTENT="20100513;9491200">
 	<STYLE TYPE="text/css">
 	<!--
 		@page { size: 8.5in 11in; margin: 0.79in }
@@ -19,7 +19,7 @@
 <BODY LANG="en-US" DIR="LTR">
 <DIV TYPE=HEADER>
 	<P STYLE="margin-bottom: 0.2in">HK Level Zero Code Debug
-	Guide(version 6 on 5/12/2010)</P>
+	Guide(version 7 on 5/13/2010)</P>
 </DIV>
 <TABLE WIDTH=665 BORDER=1 BORDERCOLOR="#000000" CELLPADDING=4 CELLSPACING=0>
 	<COL WIDTH=57>
@@ -161,8 +161,11 @@
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><SPAN STYLE="font-weight: medium">(3)There
 				are processes that missed getting dayfiles and processing. These
 				needed-temporary-quickly-done processes run as cron jobs between
-				11-11:30PM PDT on </SPAN></FONT></FONT><A HREF="mailto:production@n02"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><SPAN STYLE="font-weight: medium">production@j0</SPAN></FONT></FONT></A><A HREF="mailto:production@n02"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><SPAN STYLE="font-weight: medium">.</SPAN></FONT></FONT></A><A HREF="mailto:production@n02"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><SPAN STYLE="font-weight: medium">
-				  </SPAN></FONT></FONT></A>
+				11-11:30PM PDT on <A HREF="mailto:production@j0">production@j0</A><A HREF="mailto:production@n02">.</A></SPAN></FONT></FONT></P>
+				<P><A HREF="mailto:production@n02"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><SPAN STYLE="text-decoration: none"><SPAN STYLE="font-weight: medium">(NOTE:This
+				script will be changed to using dsdf.pl once complete TRAC ticket
+				#280)</SPAN></SPAN></FONT></FONT></A></P>
+				<P><BR>
 				</P>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">By
 				checking log files(log-doAPID17, log-doAPID19, log-doAPID21,
@@ -233,7 +236,7 @@
 			</TD>
 			<TD WIDTH=68>
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>Email
-				with subject.</B></FONT></FONT></P>
+				with subject:</B></FONT></FONT></P>
 				<P><BR>
 				</P>
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>JSOC:WARNING:Ingesting
@@ -291,10 +294,10 @@
 				time Decode and save of keywords to asd series using  Minute  of
 				data in RTMON Dayfile </FONT></FONT>
 				</P>
-				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">-&gt;On
-				</FONT></FONT></FONT></FONT><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><SPAN STYLE="background: transparent"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><SPAN STYLE="text-decoration: none"><SPAN STYLE="background: transparent"><A HREF="mailto:production@n02">production@j0</A>
-				</SPAN></SPAN></FONT></FONT></SPAN></FONT></FONT><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><SPAN STYLE="text-decoration: none"><SPAN STYLE="background: transparent">at</SPAN></SPAN></FONT></FONT><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><SPAN STYLE="background: transparent"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><SPAN STYLE="background: transparent">
-				/home/production/cvs/JSOC/proj/lev0/scripts/hk.</SPAN></FONT></FONT></SPAN></FONT></FONT></P>
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">-&gt;On
+				</FONT></FONT><A HREF="mailto:production@n02"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><U><SPAN STYLE="background: transparent">production@j0</SPAN></U></FONT></FONT></A><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><SPAN STYLE="text-decoration: none"><SPAN STYLE="background: transparent">
+				</SPAN></SPAN></FONT></FONT><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><SPAN STYLE="text-decoration: none"><SPAN STYLE="background: transparent">at</SPAN></SPAN></FONT></FONT><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><SPAN STYLE="background: transparent">
+				/home/production/cvs/JSOC/proj/lev0/scripts/hk.</SPAN></FONT></FONT></P>
 				<P><BR>
 				</P>
 				<P> <FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">%
@@ -314,15 +317,13 @@
 				</P>
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>Email
 				with subject:</B></FONT></FONT></P>
-				<P><BR>
-				</P>
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>JSOC:WARNING:INGESTING
 				REALTIME DAYFILE FOR APID 129:Dayfile does not exist</B></FONT></FONT></P>
 				<P><BR>
 				</P>
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>(3)Email
 				with subject:</B></FONT></FONT></P>
-				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>SOC:WARNING:INGESTING
+				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>JSOC:WARNING:INGESTING
 				REALTIME DAYFILE FOR APID 129:Dayfile is not getting new packets</B></FONT></FONT></P>
 			</TD>
 			<TD WIDTH=114>
@@ -442,9 +443,7 @@
 			</TD>
 			<TD WIDTH=68>
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>Email
-				message with this subject.</B></FONT></FONT></P>
-				<P STYLE="font-weight: medium"><BR>
-				</P>
+				message with this subject:</B></FONT></FONT></P>
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>JSOC:WARNING:Ingesting
 				RTMON dayfiles: status:Possible error ingesting dayfile.</B></FONT></FONT></P>
 				<P><BR>
@@ -570,17 +569,15 @@
 			</TD>
 			<TD WIDTH=68>
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>Email
-				message with this subject.</B></FONT></FONT></P>
-				<P STYLE="font-weight: medium"><BR>
-				</P>
-				<P> 
-				</P>
+				message with this subject:</B></FONT></FONT></P>
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt"><B>JSOC:WARNING:Ingesting
 				RTMON dayfiles: status:no file loaded today.</B></FONT></FONT></P>
 			</TD>
 			<TD WIDTH=114>
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">Similar
-				to #1 except this is for RTMON day files.</FONT></FONT></P>
+				to item #1 except this is for RTMON or Real time day files. This
+				RTMON refers to  HK_SOURCE keyword setting in
+				&lt;aia|hmi|sdo&gt;.hk_dayfile series.</FONT></FONT></P>
 			</TD>
 			<TD WIDTH=66>
 				<P STYLE="font-weight: medium"><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(1)Path
@@ -597,7 +594,7 @@
 				<P><BR>
 				</P>
 				<P><FONT FACE="Courier, monospace"><FONT SIZE=2 STYLE="font-size: 9pt">(Step
-				2) Follow simular step as item #4</FONT></FONT></P>
+				2) Follow similar step as item #4</FONT></FONT></P>
 			</TD>
 		</TR>
 	</TBODY>
