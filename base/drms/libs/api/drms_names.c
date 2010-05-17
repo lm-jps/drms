@@ -905,6 +905,25 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
   int stat;
   DRMS_Value_t vholder;
 
+  double step;
+  int isslotted = 0;
+
+  isslotted = drms_keyword_isslotted(keyword);
+
+  if (isslotted)
+  {
+     step = drms_keyword_getslotstep(keyword, NULL, &stat);
+
+     if (stat != DRMS_SUCCESS)
+     {
+        goto error;
+     }
+  }
+  else
+  {
+     step = 1.0;
+  }
+
 #ifdef DEBUG
   printf("enter parse_value_set\n");
 #endif
@@ -949,14 +968,6 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 	   * (for time slotted key only). */
 	  double offset;
 	  double base;
-	  double step;
-
-          step = drms_keyword_getslotstep(keyword, NULL, &stat);
-
-          if (stat != DRMS_SUCCESS)
-          {
-             goto error;
-          }
 
           if (!parse_duration(&p, &offset, step))
 	  {
@@ -1075,21 +1086,7 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
            {
 	      double dval = 0.0;
 	      DRMS_Type_Value_t dvalval;
-              double step;
-
-              if (drms_keyword_isslotted(keyword))
-              {
-                 step = drms_keyword_getslotstep(keyword, NULL, &stat);
-
-                 if (stat != DRMS_SUCCESS)
-                 {
-                    goto error;
-                 }
-              }
-              else
-              {
-                 step = 1.0;
-              }
+             
 
 	      if (vr->type == START_END)
 		{
@@ -1139,8 +1136,29 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 			      " in value range, found '%s'.\n", p);
 		      goto error;
 		    }
-		  dvalval.double_val = dval;
-		  drms_convert(datatype, &(vr->skip), DRMS_TYPE_DOUBLE, &dvalval);
+
+                  /* If this is a slotted keyword, then we need to convert into  
+                   * "index space" - the skip value needs to be expressed in terms
+                   * of slots, not seconds. */
+                  if (isslotted)
+                  {
+                     double exact = dval / step;
+                     double rounded = round(dval / step);
+
+                     if (fabs(exact - rounded) > 1.0e-11 * (fabs(exact) + fabs(rounded)))
+                     {
+                        fprintf(stdout, "NOTE: the skip value '%f' is not a multiple of step size; rounding to nearest step-size multiple '%f'\n", dval, rounded * step);
+                     }
+
+                     dvalval.double_val = rounded;
+                     drms_convert(DRMS_TYPE_LONGLONG, &(vr->skip), DRMS_TYPE_DOUBLE, &dvalval);
+                  }
+                  else
+                  {
+                     /* Not slotted - just use original skip value, converted into the keyword's data type */
+                     dvalval.double_val = dval;
+                     drms_convert(datatype, &(vr->skip), DRMS_TYPE_DOUBLE, &dvalval);
+                  }
 		}
 	      else
 		vr->has_skip = 0;
@@ -1149,18 +1167,6 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
           { /* Non-time types. */
                double dval = 0.0;
                DRMS_Type_Value_t dvalval;
-               double step = 1.0;
-
-               if (drms_keyword_isslotted(keyword))
-               {
-                  /* SLOT keywords might use the 'u' notation in a duration */
-                  step = drms_keyword_getslotstep(keyword, NULL, &stat);
-
-                  if (stat != DRMS_SUCCESS)
-                  {
-                     goto error;
-                  }
-               }
 
                if (vr->type == START_DURATION && 
                    keyword->info->recscope == kRecScopeType_SLOT &&
@@ -1210,8 +1216,28 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
                        goto error;
                     }
 
-                    dvalval.double_val = dval;
-                    drms_convert(datatype, &(vr->skip), DRMS_TYPE_DOUBLE, &dvalval);
+                    /* If this is a slotted keyword, then we need to convert into  
+                     * "index space" - the skip value needs to be expressed in terms
+                     * of slots, not seconds. */
+                    if (isslotted)
+                    {
+                       double exact = dval / step;
+                       double rounded = round(dval / step);
+
+                       if (fabs(exact - rounded) > 1.0e-11 * (fabs(exact) + fabs(rounded)))
+                       {
+                          fprintf(stdout, "NOTE: the skip value '%f' is not a multiple of step size; rounding to nearest step-size multiple '%f'\n", dval, rounded * step);
+                       }
+
+                       dvalval.double_val = rounded;
+                       drms_convert(DRMS_TYPE_LONGLONG, &(vr->skip), DRMS_TYPE_DOUBLE, &dvalval);
+                    }
+                    else
+                    {
+                       /* Not slotted - just use original skip value, converted into the keyword's data type */
+                       dvalval.double_val = dval;
+                       drms_convert(datatype, &(vr->skip), DRMS_TYPE_DOUBLE, &dvalval);
+                    }
                  }
                  else 
                  {
