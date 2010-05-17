@@ -10,8 +10,8 @@
 if [[ $# -eq 3 ]]
 then
 	config_file=$1
-	schema=$2
-	table=$3
+	schema=`echo $2 | tr '[A-Z]' '[a-z]'`
+	table=`echo $3 | tr '[A-Z]' '[a-z]'`
 	
 	if [[ -f $config_file ]]
 	then
