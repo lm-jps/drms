@@ -2181,15 +2181,46 @@ int drms_recordset_query(DRMS_Env_t *env, const char *recordsetname,
   char *rsn = strdup(recordsetname);
   char *p = rsn;
   int ret = 0;
+  RecordSet_Filter_t *filt = NULL;
+  int pkeyqfound = 0;
+  int npkeyqfound = 0;
 
   *mixed = 0;
 
   if ((rs = parse_record_set(env,&p)))
   {
-    if (rs->recordset_spec &&
-	rs->recordset_spec->record_query) {
-      *mixed = 1;
-    }
+     /* Aha! This isn't the correct logic to detect a mixed case.
+      * You need to traverse all nodes in the list rs->recordset_spec,
+      * and if you see both a non-NULL record_list and a non-NULL record_query,
+      * then you have a mixed query.
+      * if (rs->recordset_spec && rs->recordset_spec->record_query) {
+      *   *mixed = 1;
+      * }
+      */
+
+     filt = rs->recordset_spec;
+
+     /* Traverse linked-list, looking for both record_list and record_query. */
+     while (filt != NULL)
+     {
+        if (filt->record_list)
+        {
+           pkeyqfound = 1;
+        }
+        else if (filt->record_query)
+        {
+           npkeyqfound = 1;
+        }
+
+        if (pkeyqfound && npkeyqfound)
+        {
+           *mixed = 1;
+           break;
+        }
+
+        filt = filt->next;
+     }
+
     XASSERT(*query = malloc(DRMS_MAXQUERYLEN));
     *seriesname = strdup(rs->seriesname);
     *filter = !recnum_filter;
