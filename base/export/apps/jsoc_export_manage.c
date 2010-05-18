@@ -150,10 +150,13 @@ void make_qsub_call(char *requestid, char *reqdir, int requestorid, const char *
   fprintf(fp,   "setenv JSOC_DBEXPORTHOST %s\n", dbexporthost);
   fprintf(fp, "drms_run JSOC_DBHOST=%s %s/%s.drmsrun >>& /home/jsoc/exports/tmp/%s.runlog \n", dbexporthost, reqdir, requestid, requestid);
   fprintf(fp, "set DRMS_ERROR=$status\n");
-fprintf(fp, "set NewRecnum=`cat /home/jsoc/exports/tmp/%s.recnum` \n", requestid);
-fprintf(fp, "while (`show_info JSOC_DBHOST=%s -q -r 'jsoc.export[%s]' %s` < $NewRecnum)\n", dbexporthost, requestid, dbids);
-fprintf(fp, "  echo waiting for jsocdb drms_run commit >> /home/jsoc/exports/tmp/%s.runlog \n",requestid);
-fprintf(fp, "  sleep 1\nend \n");
+  fprintf(fp, "set NewRecnum=`cat /home/jsoc/exports/tmp/%s.recnum` \n", requestid);
+  fprintf(fp, "set WAITCOUNT = 60\n");
+  fprintf(fp, "while (`show_info JSOC_DBHOST=%s -q -r 'jsoc.export[%s]' %s` < $NewRecnum)\n", dbexporthost, requestid, dbids);
+  fprintf(fp, "  echo waiting for jsocdb drms_run commit >> /home/jsoc/exports/tmp/%s.runlog \n",requestid);
+  fprintf(fp, "  @ WAITCOUNT = $WAITCOUNT - 1\n");
+  fprintf(fp, "  if ($WAITCOUNT <= 0) then\n    set DRMS_ERROR = -1\n    break\n  endif\n");
+  fprintf(fp, "  sleep 1\nend \n");
   if (requestorid)
      fprintf(fp, "set Notify=`show_info JSOC_DBHOST=%s -q 'jsoc.export_user[? RequestorID=%d ?]' key=Notify %s` \n", dbexporthost, requestorid, dbids);
   fprintf(fp, "set REQDIR = `show_info JSOC_DBHOST=%s -q -p 'jsoc.export[%s]' %s`\n", dbexporthost, requestid, dbids);
@@ -175,7 +178,8 @@ fprintf(fp, "  sleep 1\nend \n");
      fprintf(fp, "Results at http://jsoc.stanford.edu/$REQDIR\n");
      fprintf(fp, "!\n");
      }
-  fprintf(fp, "  mv /home/jsoc/exports/tmp/%s.recnum /home/jsoc/exports/tmp/done \n", requestid);
+  fprintf(fp, "  rm /home/jsoc/exports/tmp/%s.recnum\n", requestid);
+  fprintf(fp, "  mv /home/jsoc/exports/tmp/%s.reqlog /home/jsoc/exports/tmp/done \n", requestid);
   /* The log after the call to drms_run gets lost because of the following line - should preserve this
    * somehow (but it can't go in the new inner REQDIR because that is read-only after drms_run returns. */
   fprintf(fp, "  mv /home/jsoc/exports/tmp/%s.runlog /home/jsoc/exports/tmp/done \n", requestid);
@@ -388,7 +392,6 @@ int DoIt(void)
       // direct-connect modules.  They run with the export SU as current directory and must pass all
       // results into that directory.
 
-// XXXX needs to pass on DBHOST
       // First, prepare initial part of script, same for all processing.
       sprintf(runscript, "%s/%s.drmsrun", reqdir, requestid);
       fp = fopen(runscript, "w");
@@ -396,13 +399,18 @@ int DoIt(void)
       fprintf(fp, "set echo\n");
       // force clone with copy segment. 
       fprintf(fp, "set_keys_sock -C JSOC_DBHOST=%s ds='jsoc.export[%s]' Status=1\n", dbexporthost, requestid);
+      fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
       // Get new SU for the export record
       fprintf(fp, "set REQDIR = `show_info_sock JSOC_DBHOST=%s -q -p 'jsoc.export[%s]'`\n", dbexporthost, requestid);
+      fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
       // cd to SU in export record
       fprintf(fp, "cd $REQDIR\n");
+      fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
       // save some diagnostic info
-      fprintf(fp, "printenv > %s.env\n", requestid);
-      fprintf(fp, "echo $HOSTNAME\n");
+      //fprintf(fp, "printenv > %s.env\n", requestid);
+      fprintf(fp, "echo Node = $HOSTNAME\n");
+      fprintf(fp, "echo JSOC_DBHOST = %s, Processing DBHOST = %s\n", dbexporthost, dbmainhost);
+      fprintf(fp, "echo SUdir = $REQDIR\n");
 
       // Now generate specific processing related commands
       if (strcmp(process, "no_op") == 0 && strncasecmp(protocol,"fits",4)==0)
@@ -418,12 +426,15 @@ int DoIt(void)
         fprintf(fp, "jsoc_export_as_fits JSOC_DBHOST=%s reqid='%s' expversion=%s rsquery='%s' path=$REQDIR ffmt='%s' "
           "method='%s' protocol='%s' cparms='%s' %s\n",
           dbmainhost, requestid, PACKLIST_VER, dataset, filenamefmt, method, protocol, cparms,  dbids);
+        fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
         }
       else if (strcmp(process, "no_op") == 0 || strcmp(process,"Not Specified")==0) 
         { // export of as-is records that need staging, get paths to export files with list in index.txt
         fprintf(fp, "jsoc_export_as_is JSOC_DBHOST=%s ds='%s' requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n",
           dbmainhost, dataset, requestid, method, protocol, filenamefmt); 
+        fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
         fprintf(fp, "show_info JSOC_DBHOST=%s -ait ds='%s' > %s.keywords.txt\n", dbmainhost, dataset, requestid);
+        fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
         }
       else if (strncmp(process, "hg_patch",8) == 0)
         {
@@ -437,8 +448,7 @@ int DoIt(void)
             if (*p == ',') *p = ' ';
           fprintf(fp, "/home/phil/cvs/JSOC/bin/linux_x86_64/hg_patch JSOC_DBHOST=%s %s in='%s' requestid='%s' log=hg_patch.log %s\n",
             dbmainhost, hgparams, dataset, requestid,  dbids);
-          fprintf(fp, "  set RUNSTAT = $status\n");
-          fprintf(fp, "if ($RUNSTAT == 0) then\n");
+          fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
           if (strncasecmp(protocol,"fits",4)==0)
             { // export as full FITS files
             char *cparms, *p = index(protocol, ',');
@@ -452,15 +462,16 @@ int DoIt(void)
             fprintf(fp, "  jsoc_export_as_fits JSOC_DBHOST=%s reqid='%s' expversion=%s rsquery='@hg_patch.log' path=$REQDIR ffmt='%s' "
               "method='%s' protocol='%s' cparms='%s' %s\n",
               dbmainhost, requestid, PACKLIST_VER, filenamefmt, method, protocol, cparms,  dbids);
+            fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
             }
           else
             {
             fprintf(fp, "  jsoc_export_as_is JSOC_DBHOST=%s ds='@hg_patch.log' requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n",
               dbmainhost, requestid, method, protocol, filenamefmt); 
+            fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
             fprintf(fp, "show_info JSOC_DBHOST=%s -aAit ds='@hg_patch.log' > %s.keywords.txt\n", dbmainhost, requestid);
+            fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
             }
-          fprintf(fp, "  set RUNSTAT = $status\n");
-          fprintf(fp, "endif\n");
           }
         else
           {  // no hg_patch params present
@@ -475,6 +486,7 @@ int DoIt(void)
       else if (strcmp(process, "su_export") == 0 && strcmp(protocol,"as-is")==0)
         { // Use special program for Storage Unit exports.
         fprintf(fp, "jsoc_export_SU_as_is_sock ds='%s' requestid=%s\n", dataset, requestid); 
+        fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
         }
       else
         { // Unrecognized processing request
@@ -487,36 +499,37 @@ int DoIt(void)
         }
 
       // Finally, add tail of script used for all processing types.
-      fprintf(fp, "set RUNSTAT = $status\n");
       // convert index.txt list into index.json and index.html packing list files. 
-      fprintf(fp, "if ($RUNSTAT == 0) then\n");
-      fprintf(fp, "  jsoc_export_make_index\n");
-      fprintf(fp, "  set RUNSTAT = $status\n");
-      fprintf(fp, "endif\n");
+      fprintf(fp, "jsoc_export_make_index\n");
+      fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
       // create tar file if '-tar' suffix on method
       dashp = rindex(method, '-');
       if (dashp && strcmp(dashp, "-tar") == 0)
         {
-        fprintf(fp, "if ($RUNSTAT == 0) then\n");
-        fprintf(fp, "  cp %s.* index.* ..\n", requestid);
-        fprintf(fp, "  tar chf ../%s.tar ./\n", requestid);
-        fprintf(fp, "  set RUNSTAT = $status\n");
-        fprintf(fp, "  if ($RUNSTAT == 0) then\n");
-        fprintf(fp, "    rm -rf *\n");
-        fprintf(fp, "    mv ../%s.* ../index.* .\n", requestid);
-        fprintf(fp, "    set RUNSTAT = $status\n");
-        fprintf(fp, "  endif\n");
-        fprintf(fp, "endif\n");
+        fprintf(fp, "cp %s.* index.* ..\n", requestid);
+        fprintf(fp, "tar chf ../%s.tar ./\n", requestid);
+        fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
+        fprintf(fp, "rm -rf *\n");
+        fprintf(fp, "mv ../%s.* ../index.* .\n", requestid);
+        fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
         }
+
+      // DONE, Standard exit here only if no errors above
       // set status=done and mark this version of the export record permanent
-      fprintf(fp, "if ($RUNSTAT == 0) then\n");
-      fprintf(fp, "  set_keys_sock JSOC_DBHOST=%s ds='jsoc.export[%s]' Status=0\n", dbexporthost, requestid);
-      // copy the drms_run log file
-      fprintf(fp, "  cp /home/jsoc/exports/tmp/%s.runlog ./%s.runlog \n", requestid, requestid);
-      // make drms_run completion lock file (always do this)
-      fprintf(fp, "  show_info_sock JSOC_DBHOST=%s -q -r 'jsoc.export[%s]' > /home/jsoc/exports/tmp/%s.recnum \n", dbexporthost, requestid, requestid);
-      fprintf(fp, "else\n");
-      // make drms_run completion lock file (always do this) - drms_server died, so don't use sock version here
+      fprintf(fp, "set_keys_sock JSOC_DBHOST=%s ds='jsoc.export[%s]' Status=0\n", dbexporthost, requestid);
+                  // copy the drms_run log file
+      fprintf(fp, "cp /home/jsoc/exports/tmp/%s.runlog ./%s.runlog \n", requestid, requestid);
+
+      // DONE, Standard exit here if errors, falls through to here if OK
+      fprintf(fp, "EXITPLACE:\n");
+      fprintf(fp, "if ($RUNSTAT) then\n");
+      fprintf(fp, "  echo XXXXXXXXXXXXXXXXXXXXXXX ERROR EXIT XXXXXXXXXXXXXXXXXXXXXXXXXXX\nprintenv\n");
+      fprintf(fp, "endif\n");
+                  // make drms_run completion lock file (always do this)
+      fprintf(fp, "show_info_sock JSOC_DBHOST=%s -q -r 'jsoc.export[%s]' > /home/jsoc/exports/tmp/%s.recnum \n", dbexporthost, requestid, requestid);
+      fprintf(fp, "set RUNSTAT = $status\n");
+      fprintf(fp, "if ($RUNSTAT) then\n");
+                  // make drms_run completion lock file (always do this) - drms_server died, so don't use sock version here
       fprintf(fp, "  show_info JSOC_DBHOST=%s -q -r 'jsoc.export[%s]' > /home/jsoc/exports/tmp/%s.recnum \n", dbexporthost, requestid, requestid);
       fprintf(fp, "endif\n");
       fprintf(fp, "exit $RUNSTAT\n");
