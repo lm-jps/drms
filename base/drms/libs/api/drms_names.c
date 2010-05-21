@@ -244,6 +244,10 @@ static RecordQuery_t *parse_record_query(char **in)
 
   if (*p =='?' || *p == '!')
   {
+     /* keep pointers to the begin and end quotes */
+     char *bquote = NULL;
+     char *equote = NULL;
+
     p++;
     XASSERT(query = malloc(sizeof(RecordQuery_t)));
     memset(query,0,sizeof(RecordQuery_t));
@@ -258,6 +262,7 @@ static RecordQuery_t *parse_record_query(char **in)
           char endq = *p;
           /* skip quoted strings */
           DRMS_Type_Value_t val;
+          
           memset(&val, 0, sizeof(DRMS_Type_Value_t));
           /* drms_sscanf_str will end up pointing to one char after the quote, because
            * the first character was a quote. If there is no end matching quote, 
@@ -272,10 +277,21 @@ static RecordQuery_t *parse_record_query(char **in)
              goto error;
           }
 
+          bquote = out;
+          equote = bquote + rlen - 1;
+
           while (ilen < rlen)
           {
              *out++ = *p++;
              ilen++;
+          }
+
+          /* Change double-quotes to single quotes - this way drms record queries can 
+           * contain string literals in double quotes, which must be changed into 
+           * single quotes before they are passed to PG. */
+          if (*bquote == '"' && *equote == '"')
+          {
+             *bquote = *equote = '\'';
           }
        }
        // put catching of time_convert flag X here too, see ParseRecSetDesc in drms_record.c
@@ -2182,8 +2198,6 @@ int drms_recordset_query(DRMS_Env_t *env, const char *recordsetname,
   char *p = rsn;
   int ret = 0;
   RecordSet_Filter_t *filt = NULL;
-  int pkeyqfound = 0;
-  int npkeyqfound = 0;
 
   *mixed = 0;
 
@@ -2191,8 +2205,9 @@ int drms_recordset_query(DRMS_Env_t *env, const char *recordsetname,
   {
      /* Aha! This isn't the correct logic to detect a mixed case.
       * You need to traverse all nodes in the list rs->recordset_spec,
-      * and if you see both a non-NULL record_list and a non-NULL record_query,
-      * then you have a mixed query.
+      * and if you see a non-NULL record_query,
+      * then you have a mixed query (query involving both a prime key
+      * and a non-prime key).
       * if (rs->recordset_spec && rs->recordset_spec->record_query) {
       *   *mixed = 1;
       * }
@@ -2203,16 +2218,7 @@ int drms_recordset_query(DRMS_Env_t *env, const char *recordsetname,
      /* Traverse linked-list, looking for both record_list and record_query. */
      while (filt != NULL)
      {
-        if (filt->record_list)
-        {
-           pkeyqfound = 1;
-        }
-        else if (filt->record_query)
-        {
-           npkeyqfound = 1;
-        }
-
-        if (pkeyqfound && npkeyqfound)
+        if (filt->record_query)
         {
            *mixed = 1;
            break;
