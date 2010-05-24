@@ -212,12 +212,6 @@ else
    }
 }
 
-####### ART ###########
-
-exit;
-
-#######################
-
 # Remove parse lock
 print "Removing parse-lock file.\n";
 flock($lockfh, LOCK_UN);
