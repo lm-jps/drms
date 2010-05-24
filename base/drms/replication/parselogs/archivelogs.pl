@@ -17,9 +17,9 @@
 use IO::Dir;
 use FileHandle;
 use Fcntl ':flock';
-use Archive::Tar;
 use File::Copy;
 
+use constant kTarChunk => 64;
 
 my($arg);
 my($cfg);
@@ -27,8 +27,10 @@ my($logdir);
 my($archivedir);
 my($format);
 my($cmd);
-my($modpath);
+my($accessrepcmd);
 my($logseries);
+my($tarcmd);
+my($zipcmd);
 my($line);
 my($serverLockDir);
 
@@ -50,14 +52,6 @@ while ($arg = shift(@ARGV))
    {
       $cfg = shift(@ARGV);
    }
-   elsif ($arg eq "-l")
-   {
-      $logdir = shift(@ARGV);
-   }
-   elsif ($arg eq "-a")
-   {
-      $archivedir = shift(@ARGV);
-   }
    elsif ($arg eq "-f")
    {
       $format = shift(@ARGV);
@@ -66,13 +60,17 @@ while ($arg = shift(@ARGV))
    {
       $parselock = shift(@ARGV);
    }
-   elsif ($arg eq "-m")
-   {
-      $modpath = shift(@ARGV);
-   }
    elsif ($arg eq "-s")
    {
       $logseries = shift(@ARGV);
+   }
+   elsif ($arg eq "-t")
+   {
+      $tarcmd = shift(@ARGV);
+   }
+   elsif ($arg eq "-z")
+   {
+      $zipcmd = shift(@ARGV);
    }
    else
    {
@@ -96,6 +94,18 @@ while (defined($line = <CNFFILE>))
    if ($line =~ /^\s*kServerLockDir=(.+)/)
    {
       $serverLockDir = $1;
+   }
+   elsif ($line =~ /^\s*kPSLlogsSourceDir=(.+)/)
+   {
+      $logdir = $1;
+   }
+   elsif ($line =~ /^\s*kPSLarchiveDir=(.+)/)
+   {
+      $archivedir = $1;
+   }
+   elsif ($line =~ /^\s*kPSLaccessRepro=(.+)/)
+   {
+      $accessrepcmd = $1;
    }
 }
 
@@ -162,25 +172,25 @@ if ($sorted[$#sorted] =~ /^$format/)
 }
 
 print "Archiving logs files.\n";
-my($tar) = Archive::Tar->new;
 my($tarfile) = "$archivedir/slogs_$fcounter-$lcounter.tar.gz";
 my(@fullpaths);
 my($ifile);
 my($currwd);
+my(@filelist);
+my($ftar);
+my($ltar);
 
 @fullpaths = map({"$logdir/$_"} @sorted);
 
 $currwd = $ENV{'PWD'};
 chdir($logdir);
-$tar->add_files(@sorted);
+RunTar(0, $tarcmd, $zipcmd, "cfz", $archivedir, $tarfile, "", @sorted);
 chdir($currwd);
 
-$tar->write($tarfile, COMPRESS_GZIP);
-
 # Validate tar
-my(@filelist) = $tar->list_files();
-my($ftar) = ($filelist[0] =~ /$format/);
-my($ltar) = ($filelist[$#filelist] =~ /$format/);
+@filelist = RunTar(1, $tarcmd, $zipcmd, "tf", $archivedir, $tarfile, "", "");
+$ftar = ($filelist[0] =~ /$format/)[0];
+$ltar = ($filelist[$#filelist] =~ /$format/)[0];
 
 untie(%logs);
 
@@ -202,6 +212,12 @@ else
    }
 }
 
+####### ART ###########
+
+exit;
+
+#######################
+
 # Remove parse lock
 print "Removing parse-lock file.\n";
 flock($lockfh, LOCK_UN);
@@ -209,7 +225,7 @@ $lockfh->close;
 
 # Copy archived tar file into SUMS
 local $ENV{"LD_LIBRARY_PATH"} = "/usr/local/pgsql/lib";
-$cmd = "$modpath/accessreplogs logs=$logseries path=$archivedir action=str regexp=\"slogs_([0-9]+)-([0-9]+)[.]tar[.]gz\"";
+$cmd = "$accessrepcmd logs=$logseries path=$archivedir action=str regexp=\"slogs_([0-9]+)-([0-9]+)[.]tar[.]gz\"";
 print "running $cmd\n";
 system($cmd);
 
@@ -261,6 +277,116 @@ else
    untie(%tars);
 }
 
+sub RunTar
+{
+   my($capture, $tarbin, $zipbin, $op, $archivedir, $tarfile, $options, @list) = @_;
+   my($cmd);
+   my($res);
+   my($onefile);
+   my(@chunk);
+   my($ifile);
+   my(@res);
+   my($compress);
+   my($tmpfile);
+
+   $tmpfile = "$archivedir/.tmp.tar";
+
+   if ($op =~ /z/)
+   {
+      # remove compression for now
+      $op =~ s/z//g;
+      $file = $tmpfile;
+      $compress = 1;
+   }
+   else
+   {
+      $file = $tarfile;
+      $compress = 0;
+   }
+
+   if ($op =~ /c/ || $op =~ /r/)
+   {
+      $op =~ s/c/r/g;
+
+      # chunk it
+      @chunk = ();
+      $ifile = 1;
+
+      foreach $onefile (@list)
+      {
+         push(@chunk, $onefile);
+
+         if ($ifile % kTarChunk == 0)
+         {
+            # Execute tar cmd.
+            $cmd = "$tarbin $op $file $options @chunk";
+            print "Running tar '$cmd'\n";
+
+            if ($capture)
+            {
+               @res = `$cmd`;
+            }
+            else
+            {
+               $res[0] = system($cmd);
+               ($res[0] == 0) || die("tar cmd '$cmd' failed to run properly.\n");
+            }
+
+            @chunk = ();
+         }
+
+         $ifile++;
+      }
+
+      if ($#chunk >= 0)
+      {
+          # Execute tar cmd.
+         $cmd = "$tarbin $op $file $options @chunk";
+         print "Running tar '$cmd'\n";
+
+         if ($capture)
+         {
+            @res = `$cmd`;
+         }
+         else
+         {
+            $res[0] = system($cmd);
+            ($res[0] == 0) || die("tar cmd '$cmd' failed to run properly.\n");
+         }
+      }
+   }
+   else
+   {
+      $cmd = "$tarbin $op $file $options @list";
+      print "Running tar '$cmd'\n";
+
+      if ($capture)
+      {
+         @res = `$cmd`;
+      }
+      else
+      {
+         $res[0] = system($cmd);
+         ($res[0] == 0) || die("tar cmd '$cmd' failed to run properly.\n");
+      }
+   }
+
+   if ($compress)
+   {
+      # compress now
+      $gzcmd = "$zipbin --best $tmpfile";
+
+      $res[0] = system($gzcmd);
+      ($res[0] == 0) || die("gzip cmd '$gzcmd' failed to run properly.\n"); 
+
+      if (!move("$archivedir/.tmp.tar.gz", $tarfile))
+      {
+         print STDERR "Unable to move .tmp.tar.gz to $tarfile.\n";
+      }
+   }
+
+   return @res;
+}
 
 exit(0);
 
