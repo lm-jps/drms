@@ -246,6 +246,7 @@ ARLError_t IngestFile(const char *path, const char *basefile, DRMS_Record_t *ore
    int indx;
    char *filetmp = NULL;
    struct stat stBuf;
+   DRMS_RecordSet_t *rs = NULL;
 
    filetmp = strdup(basefile);
 
@@ -278,11 +279,16 @@ ARLError_t IngestFile(const char *path, const char *basefile, DRMS_Record_t *ore
             fprintf(stdout, "Archiving '%s'.\n", dirEntry);
 
             /* Ensure that the counter hasn't already been ingested */
-            RetrieveRecords(orec->seriesinfo->seriesname, bcounter, ecounter, &err);
+            rs = RetrieveRecords(orec->seriesinfo->seriesname, bcounter, ecounter, &err);
 
             if (err != kARLErr_InvalidRange)
             {
                fprintf(stderr, "The file to be ingested (%s) has content from files that has been previously ingested. The previous content will be hidden (must use [! !] query to recover).\n", dirEntry);
+            }
+
+            if (rs)
+            {
+               drms_close_records(rs, DRMS_FREE_RECORD);
             }
 
             err = kARLErr_InvalidLog;
