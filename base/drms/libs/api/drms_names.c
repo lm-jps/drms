@@ -273,7 +273,7 @@ static RecordQuery_t *parse_record_query(char **in)
           if (rlen == -1)
           {
              /* no end quote */
-             fprintf(stderr, "End quote '%c' missing./n", endq);
+             fprintf(stderr, "End quote '%c' missing.\n", endq);
              goto error;
           }
 
