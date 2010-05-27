@@ -39,6 +39,6 @@ sqlerror:
 	printk("Error in NC_PavailUpdate_WR\n");  
 	printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);  
     EXEC SQL WHENEVER SQLERROR CONTINUE;
-    EXEC SQL ROLLBACK WORK;
+    //EXEC SQL ROLLBACK WORK;
     return DS_PAVAIL_ERR;
 }
