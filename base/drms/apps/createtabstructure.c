@@ -524,7 +524,7 @@ static CrtabError_t CreateSQLInsertIntoTable(FILE *fptr,
          if (((rows->column)[icol]).type == DB_STRING)
          {
             /* Substitute seriesout for series */
-            if (strcmp(val, series) == 0 && strcmp(series, seriesout) != 0)
+            if (strcasecmp(val, series) == 0 && strcmp(val, seriesout) != 0)
             {
                snprintf(val, sizeof(val), "%s", seriesout);
             }
