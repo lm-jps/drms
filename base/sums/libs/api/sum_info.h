@@ -4,8 +4,9 @@
 //All the info is from sum_main db table for the sunum.
 //The char sizes are from the sum_main DB table schema +1 where
 //content may be full size.
-typedef struct SUM_info_struct
+struct SUM_info_struct
 {
+  struct SUM_info_struct *next;
   uint64_t sunum;		//aka ds_index
   char online_loc[81];
   char online_status[5];
@@ -26,7 +27,8 @@ typedef struct SUM_info_struct
   int pa_status;
   int pa_substatus;
   char effective_date[20];
-} SUM_info_t;
+};
+typedef struct SUM_info_struct SUM_info_t;
 
 #endif
 
