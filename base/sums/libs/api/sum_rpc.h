@@ -137,6 +137,7 @@ bool_t xdr_Rkey(XDR *xdrs, Rkey *objp);
 #define DELSERIESDO ((uint32_t)12)
 #define INFODO ((uint32_t)13)
 #define SHUTDO ((uint32_t)14)
+#define INFODOX ((uint32_t)15)
 
 extern KEY *sumdo_1();
 extern KEY *opendo_1();
@@ -144,6 +145,7 @@ extern KEY *shutdo_1();
 extern KEY *closedo_1();
 extern KEY *getdo_1();
 extern KEY *infodo_1();
+extern KEY *infodoX_1();
 extern KEY *sumrespdo_1();
 extern KEY *allocdo_1();
 extern KEY *putdo_1();
@@ -465,8 +467,10 @@ int SUM_wait();
 int SUM_Init();
 int SUM_delete_series();
 int SUM_export();
-//int SUM_info();
 int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...));
+int SUM_infoEx(SUM_t *sum, int (*history)(const char *fmt, ...));
+void SUM_infoEx_free(SUM_t *sum);
+
 int NC_PaUpdate();
 SUMID_t SUMLIB_Open();
 SUMID_t sumrpcopen_1();
