@@ -18,7 +18,11 @@
 #include <sum_rpc.h>
 #include <printk.h>
 
-#define LOGDIR "/usr/local/logs/SUM"
+#ifdef __LOCALIZED_DEFS__
+  #define LOGDIR SUMLOG_BASEDIR
+#else
+  #define LOGDIR "/usr/local/logs/SUM"
+#endif
 
 void logkey();
 KEY *getsumexport(KEY *params);
