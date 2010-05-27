@@ -5767,12 +5767,21 @@ int ParseRecSetDesc(const char *recsetsStr,
                     DRMS_Value_t dummy = {DRMS_TYPE_STRING, val};
                     drms_value_free(&dummy);
 
-                    /* if ending ']' was found, then pc + rlen is ']', otherwise
-                     * it is the next char after end quote */
-                    while (ilen < rlen)
+                    if (rlen == -1)
                     {
-                       *pcBuf++ = *pc++;
-                       ilen++;
+                       /* There was a problem with the quoted string (like a missing end quote). */
+                       fprintf(stderr, "Invalid quoted string '%s'.\n", pc);
+                       state = kRSParseState_Error;
+                    }
+                    else
+                    {
+                       /* if ending ']' was found, then pc + rlen is ']', otherwise
+                        * it is the next char after end quote */
+                       while (ilen < rlen)
+                       {
+                          *pcBuf++ = *pc++;
+                          ilen++;
+                       }
                     }
                  }
 // put catching of time_convert flag X here, also in parse_record_query in drms_names.c

@@ -1126,15 +1126,22 @@ int drms_sscanf_str(const char *str, const char *delim, DRMS_Type_Value_t *dst) 
 
       if (state != 4)
       {
+         if (actstr)
+         {
+            free(actstr);
+         }
+
          return -1;
       }
-
-      if (dst->string_val) free(dst->string_val);
-
-      if (actstr)
+      else
       {
-         dst->string_val = strdup(actstr);
-         free(actstr);
+         if (dst->string_val) free(dst->string_val);
+
+         if (actstr)
+         {
+            /* transfer ownership */
+            dst->string_val = actstr;
+         }
       }
 
       return pstr - str;
