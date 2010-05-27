@@ -1,10 +1,14 @@
+#/home/production/cvs/JSOC/base/sums/apps/data/sum_rm.cfg.jsoc_sums
 #configuration file for sum_rm program
 #
 #when done, sleep for n seconds before re-running
-SLEEP=900
+SLEEP=600
 #delete until this many Mb free on /SUM set 0.
 #NOTE: only one pds type set for SUMS.
-MAX_FREE_0=40000000
+#MAX_FREE_0=40000000
+#MAX_FREE_0=49900000
+#% of each disk partition to be kept free (int)
+PART_PERCENT_FREE=5
 #log file (only opened at startup and pid gets appended to this name)
 LOG=/usr/local/logs/SUM/sum_rm.log
 #whom to bother when there's a notable problem
