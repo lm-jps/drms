@@ -363,8 +363,6 @@ int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
   int msgstat;
   enum clnt_stat status;
 
-  if(sum->sinfo == NULL) 
-    sum->sinfo = (SUM_info_t *)malloc(sizeof(SUM_info_t));
   klist = newkeylist();
   setkey_uint64(&klist, "SUNUM", sunum); 
   setkey_str(&klist, "username", sum->username);
@@ -394,7 +392,9 @@ int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
     return(retstat);
   }
   else {
-    msgstat = getanymsg(1);	/* get answer to INFODO call */
+    if(sum->sinfo == NULL) 
+      sum->sinfo = (SUM_info_t *)malloc(sizeof(SUM_info_t));
+    msgstat = getanymsg(1);	//put answer to INFODO call in sum->sainfo/
     freekeylist(&klist);
     if(msgstat == ERRMESS) return(ERRMESS);
     //printf("\nIn SUM_info() the keylist is:\n"); //!!TEMP
@@ -403,6 +403,99 @@ int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
   }
 }
 
+/* Free the automatic malloc of the sinfo linked list done from a 
+ * SUM_infoEx() call.
+*/
+void SUM_infoEx_free(SUM_t *sum)
+{
+  SUM_info_t *sinfowalk, *next;
+
+  sinfowalk = sum->sinfo;
+  sum->sinfo = NULL;		//must do so no double free in SUM_close()
+  while(sinfowalk) {
+    next = sinfowalk->next;
+    free(sinfowalk);
+    sinfowalk = next;
+  }
+}
+
+/* Return information from sum_main for the given sunums in
+ * the array pointed to by sum->dsix_ptr. There can be up to 
+ * MAXSUMREQCNT entries given by sum->reqcnt.
+ * Return non-0 on error, else sum->sinfo has the SUM_info_t pointer
+ * to linked list of SUM_info_t sturctures (sum->reqcnt).
+*/
+int SUM_infoEx(SUM_t *sum, int (*history)(const char *fmt, ...))
+{
+  KEY *klist;
+  SUM_info_t *sinfowalk;
+  char *call_err;
+  char dsix_name[64];
+  uint32_t retstat;
+  uint64_t *dxlong;
+  int i,msgstat;
+  enum clnt_stat status;
+
+  if(sum->reqcnt > MAXSUMREQCNT) {
+    (*history)("Requent count of %d > max of %d\n", sum->reqcnt, MAXSUMREQCNT);
+    return(1);
+  }
+  klist = newkeylist();
+  setkey_str(&klist, "username", sum->username);
+  setkey_uint64(&klist, "uid", sum->uid);
+  setkey_int(&klist, "reqcnt", sum->reqcnt);
+  setkey_int(&klist, "DEBUGFLG", sum->debugflg);
+  setkey_int(&klist, "REQCODE", INFODOX);
+  dxlong = sum->dsix_ptr;
+  for(i = 0; i < sum->reqcnt; i++) {
+    sprintf(dsix_name, "dsix_%d", i);
+    setkey_uint64(&klist, dsix_name, *dxlong++);
+  }
+  status = clnt_call(sum->cl, INFODOX, (xdrproc_t)xdr_Rkey, (char *)klist, 
+			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
+
+  // NOTE: These rtes seem to return after the reply has been received despite
+  // the timeout value. If it did take longer than the timeout then the timeout
+  // error status is set but it should be ignored.
+  // 
+  if(status != RPC_SUCCESS) {
+    if(status != RPC_TIMEDOUT) {
+      call_err = clnt_sperror(sum->cl, "Err clnt_call for INFODOX");
+      if(history) 
+        (*history)("%s %d %s\n", datestring(), status, call_err);
+      freekeylist(&klist);
+      return (1);
+    }
+  }
+  if(retstat) {			// error on INFODOX call
+    if(retstat != SUM_SUNUM_NOT_LOCAL)
+      if(history) 
+        (*history)("Error in SUM_infoEx()\n"); //be quiet for show_info sake
+    return(retstat);
+  }
+  else {
+    if(sum->sinfo == NULL) {	//must malloc all sinfo structures
+      sum->sinfo = (SUM_info_t *)malloc(sizeof(SUM_info_t));
+      sinfowalk = sum->sinfo;
+      sinfowalk->next = NULL;
+      for(i = 1; i < sum->reqcnt; i++) {
+        sinfowalk->next = (SUM_info_t *)malloc(sizeof(SUM_info_t));
+        sinfowalk = sinfowalk->next;
+        sinfowalk->next = NULL;
+      }
+    }
+    else {
+      (*history)("\nAssumes user has malloc'd linked list of (SUM_info_t *)\n");
+      (*history)("Else set sum->sinfo = NULL before SUM_infoEx() call\n");
+    }
+    msgstat = getanymsg(1);	// get answer to INFODOX call
+    freekeylist(&klist);
+    if(msgstat == ERRMESS) return(ERRMESS);
+    //printf("\nIn SUM_info() the keylist is:\n"); //!!TEMP
+    //keyiterate(printkey, infoparams);
+    return(0);
+  }
+}
 
 /* Close this session with the SUMS. Return non 0 on error.
 */
@@ -814,7 +907,7 @@ KEY *respdo_1(KEY *params)
   uint64_t *dsixpt;
   uint64_t dsindex;
   int i, reqcnt, reqcode;
-  char name[80];
+  char name[128];
                                          
   sumopened = getsumopened(sumopened_hdr, getkey_uint64(params, "uid"));
   sum = (SUM_t *)sumopened->sum;
@@ -846,6 +939,60 @@ KEY *respdo_1(KEY *params)
       *cptr++ = wd;
       if(findkey(params, "ERRSTR")) {
         printf("%s\n", GETKEY_str(params, "ERRSTR"));
+      }
+    } 
+    break;
+  case INFODOX:
+    if(findkey(params, "ERRSTR")) {
+      printf("%s\n", GETKEY_str(params, "ERRSTR"));
+    }
+    sinfo = sum->sinfo;
+    for(i = 0; i < reqcnt; i++) {  //do linked list in sinfo
+      sprintf(name, "ds_index_%d", i);
+      sinfo->sunum = getkey_uint64(params, name);
+      sprintf(name, "online_loc_%d", i);
+      strcpy(sinfo->online_loc, GETKEY_str(params, name));
+      sprintf(name, "online_status_%d", i);
+      strcpy(sinfo->online_status, GETKEY_str(params, name));
+      sprintf(name, "archive_status_%d", i);
+      strcpy(sinfo->archive_status, GETKEY_str(params, name));
+      sprintf(name, "offsite_ack_%d", i);
+      strcpy(sinfo->offsite_ack, GETKEY_str(params, name));
+      sprintf(name, "history_comment_%d", i);
+      strcpy(sinfo->history_comment, GETKEY_str(params, name));
+      sprintf(name, "owning_series_%d", i);
+      strcpy(sinfo->owning_series, GETKEY_str(params, name));
+      sprintf(name, "storage_group_%d", i);
+      sinfo->storage_group = getkey_int(params, name);
+      sprintf(name, "bytes_%d", i);
+      sinfo->bytes = getkey_double(params, name);
+      sprintf(name, "creat_date_%d", i);
+      strcpy(sinfo->creat_date, GETKEY_str(params, name));
+      sprintf(name, "username_%d", i);
+      strcpy(sinfo->username, GETKEY_str(params, name));
+      sprintf(name, "arch_tape_%d", i);
+      strcpy(sinfo->arch_tape, GETKEY_str(params, name));
+      sprintf(name, "arch_tape_fn_%d", i);
+      sinfo->arch_tape_fn = getkey_int(params, name);
+      sprintf(name, "arch_tape_date_%d", i);
+      strcpy(sinfo->arch_tape_date, GETKEY_str(params, name));
+      sprintf(name, "safe_tape_%d", i);
+      strcpy(sinfo->safe_tape, GETKEY_str(params, name));
+      sprintf(name, "safe_tape_fn_%d", i);
+      sinfo->safe_tape_fn = getkey_int(params, name);
+      sprintf(name, "safe_tape_date_%d", i);
+      strcpy(sinfo->safe_tape_date, GETKEY_str(params, name));
+      sprintf(name, "pa_status_%d", i);
+      sinfo->pa_status = getkey_int(params, name);
+      sprintf(name, "pa_substatus_%d", i);
+      sinfo->pa_substatus = getkey_int(params, name);
+      sprintf(name, "effective_date_%d", i);
+      strcpy(sinfo->effective_date, GETKEY_str(params, name));
+      if(!(sinfo = sinfo->next)) { 
+        if(i+1 != reqcnt) {
+          printf("ALERT: #of info requests received differs from reqcnt\n");
+          break;	//don't agree w/reqcnt !ck this out
+        }
       }
     } 
     break;
