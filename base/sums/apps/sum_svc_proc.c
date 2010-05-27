@@ -19,6 +19,7 @@ extern SVCXPRT *glb_transp;
 extern uint32_t rinfo;
 extern int debugflg;
 static int NO_OPEN = 0;
+static char callername[MAX_STR];
 
 void write_time();
 void logkey();
@@ -85,7 +86,8 @@ if (addr.ss_family == AF_INET) {
     port = ntohs(s->sin6_port);
     inet_ntop(AF_INET6, &s->sin6_addr, ipstr, sizeof ipstr);
 }
-write_log("Peer IP/port: %s/%d\n", ipstr, port);
+write_log("Peer IP/port: %s/%d  Caller:%s\n", ipstr, port, callername);
+sprintf(callername, "<none>");	//eventually elim callername everywhere
 
     /* set glb vrbl for poss use by sum_svc if result != 0 */
     current_client = client;
@@ -217,6 +219,7 @@ KEY *getdo_1(KEY *params)
   char tmpname[80];
   double bytes;
 
+  sprintf(callername, "getdo_1");	//!!TEMP
   if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
   if(debugflg) {
@@ -341,6 +344,7 @@ KEY *allocdo_1(KEY *params)
   double bytes;
   char *wd;
 
+  sprintf(callername, "allocdo_1");	//!!TEMP
   if(findkey(params, "DEBUGFLG")) {
     debugflg = getkey_int(params, "DEBUGFLG");
     if(debugflg) {
@@ -403,6 +407,7 @@ KEY *infodo_1(KEY *params)
   uint64_t uid;
   uint64_t sunum = 0;
 
+  sprintf(callername, "infodo_1");	//!!TEMP
   if(findkey(params, "DEBUGFLG")) {
     debugflg = getkey_int(params, "DEBUGFLG");
     if(debugflg) {
@@ -441,6 +446,63 @@ KEY *infodo_1(KEY *params)
   return((KEY *)1);		/* nothing will be sent later */
 }
 
+/* Called when a client does a SUM_infoEx() call to get sum_main info. 
+ * A typical keylist is:
+ * dsix_1: KEYTYP_UINT64    285
+ * dsix_0: KEYTYP_UINT64    282
+ * username:       KEYTYP_STRING   production
+ * REQCODE:        KEYTYP_INT      4
+ * DEBUGFLG:       KEYTYP_INT      1
+ * reqcnt: KEYTYP_INT      2
+ * uid:    KEYTYP_UINT64    574
+*/
+KEY *infodoX_1(KEY *params)
+{
+  int status, reqcnt;
+  uint64_t uid;
+  uint64_t sunum = 0;
+  sprintf(callername, "infodoX_1");	//!!TEMP
+  if(findkey(params, "DEBUGFLG")) {
+    debugflg = getkey_int(params, "DEBUGFLG");
+    if(debugflg) {
+      write_log("!!Keylist in infodoX_1() is:\n");
+      keyiterate(logkey, params);
+    }
+  }
+  sunum = getkey_uint64(params, "dsix_0");
+  reqcnt = getkey_int(params, "reqcnt"); 
+  uid = getkey_uint64(params, "uid");
+  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
+    write_log("**Error: infodoX_1() called with unopened uid=%lu\n", uid);
+    rinfo = 1;	/* give err status back to original caller */
+    send_ack();	/* ack original sum_svc caller */
+    return((KEY *)1);	/* error. nothing to be sent */ 
+  }
+  write_log("SUM_infoEx() for user=%s 1st sunum=%lu cnt=%d\n",
+                GETKEY_str(params, "username"), sunum, reqcnt);
+  retlist = newkeylist();
+  add_keys(params, &retlist);		/* NOTE:does not do fileptr */
+  if(!(status=SUMLIB_InfoGetEx(params, &retlist))) {
+    if(!(set_client_handle(RESPPROG, (uint32_t)uid))) { /*set up for response*/
+      write_log("**Error: infodoX_1() can't set_client_handle for response\n");
+      freekeylist(&retlist);
+      /*rinfo = 1;  /* give err status back to original caller */
+      rinfo = SUM_RESPPROG_ERR;
+      send_ack();
+      return((KEY *)1);  /* error. nothing to be sent */
+    }
+    rinfo = 0;
+    send_ack();
+    setkey_int(&retlist, "STATUS", 0);   /* give success back to caller */
+    return(retlist);		/* return the ans now */
+  }
+  rinfo = status;		/* ret err code 1 back to caller */
+  //if(!drmssite_sunum_is_local(sunum))
+  //  rinfo = SUM_SUNUM_NOT_LOCAL; // else this error code 
+  send_ack();
+  return((KEY *)1);		/* nothing will be sent later */
+}
+
 /* Called when a client does a SUM_put() to catalog storage units.
  * Can only put a single SU at a time (reqcnt = 1). Typical call is:
  * wd_0:   KEYTYP_STRING   /SUM1/D1695
@@ -466,6 +528,7 @@ KEY *putdo_1(KEY *params)
   char *cptr, *wd;
   double dsize;
 
+  sprintf(callername, "putdo_1");	//!!TEMP
   if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
   if(debugflg) {
