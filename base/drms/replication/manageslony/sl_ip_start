@@ -1,0 +1,263 @@
+#!/bin/bash
+
+chkSleep=10
+maxTries=10
+
+# syntax sl_ip_chk <master_config_file> <config_file> <node_id> <eth_alias_device>
+if [ $# -ne 4 ]; then
+	echo "Syntax Error:"
+	echo "Usage:  $0 <master_config_file> <config_file> <current_node_id> <eth_alias_device>"
+	exit
+else
+        mainconfig="$1"
+	config_file="$2"
+	currNode="$3"
+	aliasDevice="$4"
+
+        if [[ -f "mainconfig" ]]; then   
+            . "$mainconfig"
+        else
+            echo "ERROR: config file $mainconfig does not exist"
+            exit 1
+        fi
+
+	if [[ -f $config_file ]]; then
+		. $config_file
+	else
+		echo "ERROR: $config_file does not exist"
+	fi
+
+	pidfn=$(basename $0).pid
+	pidfile="${logDir}/$pidfn"
+fi
+
+fnDate=`date +%H.%M`
+fName="vacuum_cron_15min.${fnDate}.log"
+currDt=`date`
+
+trap "echo 'caught a signal'; rm -f $pidfile; exit" HUP INT TERM
+
+if [ -f $pidfile ]
+then
+	pid=`cat $pidfile`
+	if ps -p $pid | grep -qv PID
+	then
+		exit
+	fi
+fi
+
+echo "writing pid [$$] to  [$pidfile]"
+echo $$ > $pidfile
+
+if [ -f "$IPupResetTrg" ]; then
+		/bin/rm -f $IPupRequest
+		/bin/rm -f $IPupSuccessTrg
+		/bin/rm -f $IPupFailedTrg
+		/bin/rm -f $IPupDieFile
+		/bin/rm -f $IPupResetTrg
+fi
+
+if [ -f "$IPupDieFile" ]; then
+	echo "dieFile Found, aborting"
+	exit
+fi
+
+#--------------------------------------------------------------------
+# Gets current IP address from config file based on $HOSTNAME
+#--------------------------------------------------------------------
+case $HOSTNAME in
+hmidb0)
+        currIP=$hmidb0IP
+        ;;
+
+hmidb1)
+        currIP=$hmidb1IP
+        ;;
+
+hmidb2)
+        currIP=$hmidb2IP
+        ;;
+
+*)
+        echo "ERROR: Could not determine what host I am on"
+        exit
+        ;;
+esac
+echo "Found that with current hostname being [$HOSTNAME], current IP is [$currIP]"
+
+
+	# check to see if were on the slave
+echo "$kPsqlCmd -p $MASTERPORT -h $currIP -U $REPUSER $MASTERDBNAME -t -c \"select sub_provider from _$CLUSTERNAME.sl_subscribe LIMIT 1\" 2>&1"
+check=`$kPsqlCmd -p $MASTERPORT -h $currIP -U $REPUSER $MASTERDBNAME -t -c "select sub_provider from _$CLUSTERNAME.sl_subscribe LIMIT 1" 2>&1`
+set - $check
+echo "Result is [$check]"
+
+if [[ "$check" == "psql: FATAL:  the database system is starting up" ]]
+then
+        echo "I am the warm standby"
+elif [[ "$1" == "$currNode" ]]
+then
+        echo "I am the master"
+	echo "I shouldn't be running"
+	exit
+elif [[ "$1" == "psql:" ]]
+then
+	echo "Database is down! Exiting"
+	echo "[$check]"
+	exit
+elif [[ "$1" != "$currNode" ]]
+then
+        echo "I am the slave"
+	echo "I shouldn't be running"
+        exit
+else
+        echo "[$check]"
+        exit
+fi
+
+
+while [ 1 -eq 1 ]; do
+
+	if [ -f "$IPupResetTrg" ]; then
+		/bin/rm -f $IPupRequest
+		/bin/rm -f $IPupSuccessTrg
+		/bin/rm -f $IPupFailedTrg
+		/bin/rm -f $IPupDieFile
+		/bin/rm -f $IPupResetTrg
+	fi
+
+
+	if [ -f "$IPupDieFile" ]; then
+		echo "dieFile Found, aborting"
+		exit
+	fi
+
+
+	if [ -f "$IPupRequest" ]; then
+		echo "Start IP Request trigger found, initiating start...."
+		echo "Writing dieFile to disable further checks"
+		> $IPupDieFile
+		chmod 777 $IPupDieFile
+		/bin/mv -f $IPupRequest $IPupRequest.working	
+
+	
+		#ret=`/sbin/ifconfig $aliasDevice | grep "inet addr:" | wc -l`
+		#set - $ret
+		devCount=0
+		#echo "initial devCount = [$devCount]"
+		try=0
+		
+		if [ $devCount -lt 1 ]; then
+			echo "Bringing device [$aliasDevice] up"
+			/sbin/ifconfig $aliasDevice $MASTERHOST netmask $aliasNetmask
+
+			sleep 1
+			ret=`/sbin/ifconfig $aliasDevice | grep "inet addr:" | wc -l`
+			set - $ret
+			devCount=$1
+			echo "devCount = [$devCount]"
+
+			while [ $devCount -lt 1 ]; do
+				ret=`/sbin/ifconfig $aliasDevice | grep "inet addr:" | wc -l`
+				set - $ret
+				devCount=$1
+				echo "devCount = [$devCount]"
+				
+				try=`expr $try + 1`
+				if [ $try -ge $maxTries ]; then
+					echo "Max tries reached, IP alias does not start"
+					echo "Max tries reached, IP alias does not start" > $IPupRequest.working 
+					echo "ip_status=failure" >> $IPupRequest.working
+					/bin/mv -f $IPupRequest.working $IPupFailedTrg
+					chmod 777 $IPupFailedTrg
+					echo "Aborting..."
+					exit
+				fi
+
+				if [ $devCount -lt 1 ]; then
+					sleep $chkSleep
+				fi
+
+				echo "trying again to bring device [$aliasDevice] up"
+				/sbin/ifconfig $aliasDevice $MASTERHOST netmask $aliasNetmask
+
+			done
+
+			if [ $devCount -gt 0 ]; then
+				echo "Success! ip is up"
+				echo "Success! ip is up" > $IPupRequest.working
+			fi
+		fi
+
+	        # bring up the rest of the IP alias's in the alias list
+	        exec < $IPAliasListTemp
+	        while read line
+	        do
+	                echo "[$line]"
+	                set - $line
+	
+	                if [[ ! -n $line ]]; then
+	                        echo "blank line"
+	                        continue
+	                fi
+	
+			aliasDevice=$1
+			deviceIP=$2
+			devicemask=$4
+	
+	                # for each line in the alias list file, attempt to bring the database online
+	                echo "Bringing [$aliasDevice] online with address [$deviceIP] and netmask [$devicemask]"
+	                echo "Executing: [/sbin/ifconfig $line]"
+	                /sbin/ifconfig $line
+	
+	                counter=0
+	                while [[ $counter -le $maxTries ]]; do
+	                	ret=`/sbin/ifconfig $aliasDevice | grep "inet addr:" | wc -l`
+	                        set - $ret
+	                        devCount=$1
+	                        echo "devcount [$devCount]"
+	
+	                        # if the device was found again, then attempt to bring it down.
+	                        if [[ $devCount -gt 0 ]]; then
+	                       		echo "device online, moving on to the next one"
+					break
+	
+	                        else
+	                        	# if no device was found, then bringing down was successful
+	                        	echo "device down, attempting again to bring online"
+	                		echo "Executing: [/sbin/ifconfig $line]"
+	                		/sbin/ifconfig $line 
+	                        fi
+	
+	                        if [[ $counter -eq $maxTries ]]; then
+	                        	# if the maximum number of tries is reached, go to the next alias device
+	                                echo "maximum number of attempts reached, could not bring it online"
+	                                echo "could not bring device $aliasDevice online" >> $IPupRequest.working
+	                        fi
+	
+	                        sleep 1
+	                        counter=$(($counter + 1 ))
+	
+	                done
+	
+	                ret=`/sbin/ifconfig $aliasDevice | grep "inet addr:" | wc -l`
+	                set - $ret
+	                devCount=$1
+	                echo "devcount is [$devCount]"
+	
+	                echo
+	
+	
+	
+	        done
+	
+		echo "ip_status=success" >> $IPupRequest.working
+		/bin/mv -f $IPupRequest.working $IPupSuccessTrg
+		chmod 777 $IPupSuccessTrg
+
+	else
+		sleep $sleepTime
+	fi
+
+
+done

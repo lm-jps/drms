@@ -1,0 +1,263 @@
+#!/bin/bash
+
+maxTries=10
+sleepTime=10
+
+# syntax sl_slon_stop <node_id>
+if [[ $# -ne 3 ]]; then
+		echo "Syntax Error:"
+		echo "Usage:	$0 <master_config_file> <current_node_id> <config file>"
+		exit
+else
+        mainconfig="$1"
+        currNode=$2
+        config_file=$3
+
+        if [[ -f "mainconfig" ]]; then   
+            . "$mainconfig"
+        else
+            echo "ERROR: config file $mainconfig does not exist"
+            exit 1
+        fi
+
+	if [[ -f $config_file ]]
+	then
+		. $config_file
+                if [[ -f $kRepDir/toolbox ]]; then
+                        . $kRepDir/toolbox
+                else
+                        echo "ERROR: toolbox file does not exist"
+                        exit
+                fi
+
+		echo "Starting $0"
+		echo "Using $config_file"
+		echo "Detailed log can be found at $logfile"
+	else
+		echo "ERROR: File $config_file does not exist, exiting"
+		exit
+	fi
+
+fi
+
+pidfn=$(basename $0).pid
+pidfile="${logDir}/$pidfn"
+
+if [[ -f "$slonStopReset" ]]; then
+		/bin/rm -f ${slonStopDie}
+		/bin/rm -f ${slonStopReset}
+		/bin/rm -f ${slonStopRequest}
+		/bin/rm -f ${slonStopSuccess}
+		/bin/rm -f ${slonStopSuccess}.*
+		/bin/rm -f ${slonStopFailed}
+		/bin/rm -f ${slonStopFailed}.*
+fi
+
+if [[ -f "$slonStopDie" ]]; then
+		exit;
+fi
+
+
+if [[ -f $pidfile ]]
+then
+		pid=`cat $pidfile`
+		if ps -p $pid | grep -qv PID
+		then
+				exit
+		fi
+fi
+
+logwrite "writing pid [$$] to	 [$pidfile]"
+echo $$ > $pidfile
+
+
+# see if the db's are up
+echo "Executing: [$kPsqlCmd -h $MASTERHOST -p $MASTERPORT -U $REPUSER	-l | grep $MASTERDBNAME | wc -l]"
+ret=`$kPsqlCmd -h $MASTERHOST -p $MASTERPORT -U $REPUSER	-l | grep $MASTERDBNAME | wc -l`
+if [[ "$ret" == "" ]]; then
+		logwrite "node 1 db is down, aborting"
+		exit
+else
+		set - $ret
+		ret=$1
+fi
+
+if [[ $ret -eq 0 ]]; then
+		logwrite "node 1 db is not up, aborting"
+		exit
+fi
+
+
+
+ret=`$kPsqlCmd -h $SLAVEHOST -p $SLAVEPORT	 -l -U $REPUSER	 | grep $SLAVEDBNAME | wc -l`
+if [[ "$ret" == "" ]]; then
+		logwrite "node 2 db is down, aborting"
+		exit
+else
+		set - $ret
+		ret=$1
+fi
+
+if [[ $ret -eq 0 ]]; then
+		logwrite "node 2 db is not up, aborting"
+		exit
+fi
+
+#--------------------------------------------------------------------
+# Gets current IP address from config file based on $HOSTNAME
+#--------------------------------------------------------------------
+case $HOSTNAME in
+hmidb0)
+        currIP=$hmidb0IP
+        ;;
+
+hmidb1)
+        currIP=$hmidb1IP
+        ;;
+
+hmidb2)
+        currIP=$hmidb2IP
+        ;;
+
+*)
+        logwrite "ERROR: Could not determine what host I am on"
+        exit
+        ;;
+esac
+logwrite "Found that with current hostname being [$HOSTNAME], current IP is [$currIP]"
+
+# check to see if were on the slave
+logwrite "Checking to see what node we are on"
+logwrite "$kPsqlCmd -p $MASTERPORT -h $currIP -U $REPUSER $MASTERDBNAME -t -c \"select sub_provider from _$CLUSTERNAME.sl_subscribe LIMIT 1\" 2>&1"
+check=`$kPsqlCmd -p $MASTERPORT -h $currIP -U $REPUSER $MASTERDBNAME -t -c "select sub_provider from _$CLUSTERNAME.sl_subscribe LIMIT 1" 2>&1`
+set - $check
+logwrite "Result is [$check]"
+
+if [[ "$check" == "psql: FATAL:  the database system is starting up" ]]
+then
+	logwrite "I am the warm standby"
+	exit
+elif [[ "$1" == "$currNode" ]]
+then
+	logwrite "I am the master"
+	exit
+elif [[ "$1" != "$currNode" ]]
+then
+	logwrite "I am the slave"
+else
+	logwrite "[$check]"
+	exit
+fi
+
+trap "echo 'caught a signal'; rm -f $pidfile; exit" HUP INT TERM
+
+
+while [[ 1 -eq 1 ]]
+do
+		if [[ -f $slonStopReset ]]
+		then
+			logwrite "Slon stop request was found"
+				/bin/rm -f ${slonStopReset}
+				/bin/rm -f ${slonStopDie}
+				/bin/rm -f ${slonStopRequest}
+				/bin/rm -f ${slonStopSuccess}
+				/bin/rm -f ${slonStopSuccess}.*
+				/bin/rm -f ${slonStopFailed}
+				/bin/rm -f ${slonStopFailed}.*
+		fi
+
+		if [[ -f $slonStopDie ]]
+		then
+				logwrite "Die file found, aborting..."
+				exit
+		fi
+		
+		if [[ -f $slonStopRequest ]]
+		then
+				logwrite "Trigger file found, stopping slon daemons..."
+				/bin/mv -f $trgDir/failover_slave_down.trg $trgDir/failover_slave_down.working
+				# touch the die files to keep the scripts from executing again
+				touch $slonStartDie
+				touch $slonStopDie
+				logwrite "Checking for pidfile [$kMSMasterPIDFile]"
+				if [[ -f "$kMSMasterPIDFile" ]]
+				then
+						logwrite "[$kMSMasterPIDFile] found, attempting to kill node 1 daemon."
+						# slon daemon is running, kill it!
+						success=0
+						$kRepDir/manageslony/sl_stop_slon_daemons.sh $kRepCFG master
+						return=$?
+						if [[ $return == '1' ]]
+						then
+						        logwrite "Stopping the master slon daemon failed. Script returned [$return]"
+							success=0
+						elif [[ $return == "0" ]]
+						then
+						        logwrite "Stopping the master slon daemon was successful. Script returned [$return]"
+							success=1
+						else
+						        logwrite "Stopping the master slon daemon failed. Script returned [$return]"
+							success=0
+						fi
+
+						if [[ $success -eq 1 ]]
+						then
+								logwrite "node1 daemon is down."
+								echo "node1 daemon is down." >> $trgDir/failover_slave_down.working
+						else
+								logwrite "node1 daemon wouldn't come down."
+								echo "node1 daemon wouldn't come down." >> $trgDir/failover_slave_down.working
+								echo "success_report failure" >> $trgDir/failover_slave_down.working
+								/bin/mv -f $trgDir/failover_slave_down.working $trgDir/failover_slave_down.done
+								exit
+						fi
+				else
+						logwrite "node1 daemon appears to already be down."
+
+				fi
+
+				logwrite "Checking for pidfile [$kMSSlavePIDFile]"
+				if [[ -f "$kMSSlavePIDFile" ]]
+				then
+						logwrite "[$kMSSlavePIDFile] found, attempting to kill node 2 daemon."
+						#slon daemon is running, kill it!
+						success=0
+						$kRepDir/manageslony/sl_stop_slon_daemons.sh $kRepCFG slave
+                                                return=$?
+                                                if [[ $return == '1' ]]
+                                                then
+                                                        logwrite "Stopping the slave slon daemon failed. Script returned [$return]"
+                                                        success=0
+                                                elif [[ $return == "0" ]]
+                                                then
+                                                        logwrite "Stopping the slave slon daemon was successful. Script returned [$return]"
+                                                        success=1
+                                                else
+                                                        logwrite "Stopping the slave slon daemon failed. Script returned [$return]"
+                                                        success=0
+                                                fi
+
+
+						if [[ $success -eq 1 ]]
+						then
+								logwrite "node2 daemon is down."
+								echo "node2 daemon is down." >> $trgDir/failover_slave_down.working
+						else
+								logwrite "node2 daemon wouldn't come down."
+								echo "node2 daemon wouldn't come down." >> $trgDir/failover_slave_down.working
+								echo "success_report failure" >> $trgDir/failover_slave_down.working
+								/bin/mv -f $trgDir/failover_slave_down.working $trgDir/failover_slave_down.done
+								exit
+						fi
+						
+						# if we got here, it looks like both daemons are down.
+						rm -f "${slonStopSuccess}.1" "${slonStopSuccess}.2"
+						echo "Both daemons are down" >> $trgDir/failover_slave_down.working
+						echo "success_report success" >> $trgDir/failover_slave_down.working
+						/bin/mv -f $trgDir/failover_slave_down.working $trgDir/failover_slave_down.done
+
+				fi
+		fi
+
+		sleep $sleepTime
+done
