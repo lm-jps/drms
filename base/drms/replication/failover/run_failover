@@ -9,7 +9,7 @@ then
         mainconfig=$1
 	config_file=$2
 
-        if [[ -f "mainconfig" ]]; then   
+        if [[ -f "$mainconfig" ]]; then   
             . "$mainconfig"
         else
             echo "ERROR: config file $mainconfig does not exist"
@@ -35,7 +35,7 @@ then
 		exit
 	fi
 else
-	echo "ERROR: Usage: $0 <configuration file>"
+	echo "ERROR: Usage: $0 <master configuration file> <configuration file>"
 	exit
 fi
 

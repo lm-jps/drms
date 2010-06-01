@@ -13,7 +13,7 @@ else
         currNode=$2
         config_file=$3
 
-        if [[ -f "mainconfig" ]]; then   
+        if [[ -f "$mainconfig" ]]; then   
             . "$mainconfig"
         else
             echo "ERROR: config file $mainconfig does not exist"

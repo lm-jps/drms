@@ -14,7 +14,7 @@ else
 	currNode="$3"
 	aliasDevice="$4"
 
-        if [[ -f "mainconfig" ]]; then   
+        if [[ -f "$mainconfig" ]]; then   
             . "$mainconfig"
         else
             echo "ERROR: config file $mainconfig does not exist"
