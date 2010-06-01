@@ -41,7 +41,7 @@ else
 fi
 
 pidfn=$(basename $0).pid
-pidfile="${logDir}/$pidfn"
+pidfile="${logdir}/$pidfn"
 
 if [[ -f "$slonStopReset" ]]; then
 		/bin/rm -f ${slonStopDie}
@@ -185,7 +185,7 @@ do
 						logwrite "[$kMSMasterPIDFile] found, attempting to kill node 1 daemon."
 						# slon daemon is running, kill it!
 						success=0
-						$kRepDir/manageslony/sl_stop_slon_daemons.sh $kRepCFG master
+						$kRepDir/manageslony/sl_stop_slon_daemons.sh $mainconfig master
 						return=$?
 						if [[ $return == '1' ]]
 						then
@@ -222,7 +222,7 @@ do
 						logwrite "[$kMSSlavePIDFile] found, attempting to kill node 2 daemon."
 						#slon daemon is running, kill it!
 						success=0
-						$kRepDir/manageslony/sl_stop_slon_daemons.sh $kRepCFG slave
+						$kRepDir/manageslony/sl_stop_slon_daemons.sh $mainconfig slave
                                                 return=$?
                                                 if [[ $return == '1' ]]
                                                 then

@@ -390,7 +390,7 @@ do
 		fi
 
 		run_command "rm -f $triggerdir/IPdown.done"  #debug remove comment out
-		run-command "rm -f $IPAliasListTemp"
+		run_command "rm -f $IPAliasListTemp"
 		run_command "mv -f $triggerfile.working $triggerfile.done"
 		        
 	fi

@@ -144,16 +144,16 @@ if [ -f "$kMSMasterPIDFile" ]; then
 		logwrite "slon daemon for node1 is already running"
 		flag=1		
 	else
-		logwrite "no slon daemon for node1 found, executing: $kRepDir/manageslony/sl_start_slon_daemons.sh $kRepCFG master"
+		logwrite "no slon daemon for node1 found, executing: $kRepDir/manageslony/sl_start_slon_daemons.sh $mainconfig master"
 		# old call
 		#$scriptsBinDir/sl_start_daemons 1 $config_file
-		$kRepDir/manageslony/sl_start_slon_daemons.sh $kRepCFG master 
+		$kRepDir/manageslony/sl_start_slon_daemons.sh $mainconfig master 
 	fi
 else
-	logwrite "no slon daemon for node1 found, executing: $kRepDir/manageslony/sl_start_slon_daemons.sh $kRepCFG master"
+	logwrite "no slon daemon for node1 found, executing: $kRepDir/manageslony/sl_start_slon_daemons.sh $mainconfig master"
 	# old call
 	#$scriptsBinDir/sl_start_daemons 1 $config_file
-	$kRepDir/manageslony/sl_start_slon_daemons.sh $kRepCFG master 
+	$kRepDir/manageslony/sl_start_slon_daemons.sh $mainconfig master 
 fi
 
 # check the daemon for node2
@@ -167,16 +167,16 @@ if [ -f "$kMSSlavePIDFile" ]; then
 		logwrite "slon daemon for node2 is already running"
 		flag=1		
 	else
-		logwrite "no slon daemon for node2 found, executing: $kRepDir/manageslony/sl_start_slon_daemons.sh $kRepCFG slave"
+		logwrite "no slon daemon for node2 found, executing: $kRepDir/manageslony/sl_start_slon_daemons.sh $mainconfig slave"
 		# old call
 		#$scriptsBinDir/sl_start_daemons 2 $config_file
-		$kRepDir/manageslony/sl_start_slon_daemons.sh $kRepCFG slave 
+		$kRepDir/manageslony/sl_start_slon_daemons.sh $mainconfig slave 
 	fi
 else
-	logwrite "no slon daemon for node2 found, executing: $kRepDir/manageslony/sl_start_slon_daemons.sh $kRepCFG slave"
+	logwrite "no slon daemon for node2 found, executing: $kRepDir/manageslony/sl_start_slon_daemons.sh $mainconfig slave"
 	# old call
 	#$scriptsBinDir/sl_start_daemons 2 $config_file
-	$kRepDir/manageslony/sl_start_slon_daemons.sh $kRepCFG slave 
+	$kRepDir/manageslony/sl_start_slon_daemons.sh $mainconfig slave 
 fi
 
 if [ $flag -eq "1" ]; then
