@@ -578,7 +578,7 @@ int DoIt(void)
   int ilink, nlinks = 0;
   char *inqry;
 						/* Get command line arguments */
-  char *in;
+  const char *in;
   char *keylist;
   char *seglist;
   int show_keys;
@@ -848,7 +848,7 @@ int DoIt(void)
   /* get count if -c flag set */
   if (want_count)
     {
-    int count = drms_count_records(drms_env, in, &status);
+    int count = drms_count_records(drms_env, (char *)in, &status);
     if (status)
       {
       fprintf(stderr,"### show_info: series %s not found.\n",in);
@@ -1095,7 +1095,10 @@ int DoIt(void)
           for (ikey=0 ; ikey<nkeys; ikey++)
             {
             DRMS_Keyword_t *rec_key_ikey = drms_keyword_lookup (rec, keys[ikey], 1);
-	    printf ("%s%s", (col++ ? "\t" : ""),  drms_type_names[rec_key_ikey->info->type]);
+            if (rec_key_ikey)
+	      printf ("%s%s", (col++ ? "\t" : ""),  drms_type_names[rec_key_ikey->info->type]);
+            else
+	      printf ("%s%s", (col++ ? "\t" : ""),  "TBD");
 	    }
           for (iseg = 0; iseg<nsegs; iseg++)
             {
@@ -1134,10 +1137,15 @@ int DoIt(void)
           for (ikey=0 ; ikey<nkeys; ikey++)
             {
             DRMS_Keyword_t *rec_key_ikey = drms_keyword_lookup (rec, keys[ikey], 1);
-	    if (rec_key_ikey->info->type == DRMS_TYPE_TIME)
-              printf ("%s%%s", (col++ ? "\t" : ""));
-	    else
-	      printf ("%s%s", (col++ ? "\t" : ""),  rec_key_ikey->info->format);
+            if (rec_key_ikey)
+              {
+	      if (rec_key_ikey->info->type == DRMS_TYPE_TIME)
+                printf ("%s%%s", (col++ ? "\t" : ""));
+	      else
+	        printf ("%s%s", (col++ ? "\t" : ""),  rec_key_ikey->info->format);
+              }
+            else
+	      printf ("%s%s", (col++ ? "\t" : ""),  "TBD");
 	    }
           for (iseg = 0; iseg<nsegs; iseg++)
             {
@@ -1302,6 +1310,7 @@ int DoIt(void)
 	    {
 	    printf("\"");
 	    drms_keyword_printval (rec_key_ikey);
+// change here for full precision XXXXXX
 	    printf("\"");
 	    }
           printf("\n");
@@ -1311,6 +1320,7 @@ int DoIt(void)
           if (col++)
 	    printf ("\t");
 	  drms_keyword_printval (rec_key_ikey);
+// change here for full precision XXXXXX
           }
 	}
       else
