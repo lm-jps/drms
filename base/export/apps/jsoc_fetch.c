@@ -544,6 +544,18 @@ int DoIt(void)
   dohtml = strcmp(format, "html") == 0;
   doxml = strcmp(format, "xml") == 0;
 
+// SPECIAL DEBUG LOG HERE
+{
+FILE *runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
+char now[100];
+const char *dbhost;
+dbhost = cmdparams_get_str(&cmdparams, "JSOC_DBHOST", NULL);
+sprint_ut(now,time(0) + UNIX_EPOCH);
+fprintf(runlog,"PID=%d\n   %s\n   op=%s\n   in=%s\n   RequestID=%s\n   DBHOST=%s\n   REMOTE_ADDR=%s\n",
+   getpid(), now, op, in, requestid, dbhost, getenv("REMOTE_ADDR"));
+fclose(runlog);
+}
+
   export_series = kExportSeries;
 
   long long sunums[DRMS_MAXQUERYLEN/8];  // should be enough!
@@ -569,6 +581,12 @@ int DoIt(void)
     size=0;
     all_online = 1;
     count = 0;
+
+    if (strcmp(sunumlist, kNotSpecified) == 0)
+      sunumlist = in;
+    if (strcmp(sunumlist, kNotSpecified) == 0)
+      JSONDIE("There are no SUs in sunum or ds params");
+
     char *sunumlistfree=strdup(sunumlist);
     sunumlisttk = sunumlistfree;
 
@@ -772,6 +790,7 @@ int DoIt(void)
     if (fscanf(fp, "%s", new_requestid) != 1)
       JSONDIE("Cant get new RequestID");
     pclose(fp);
+    strcat(new_requestid, "_SU");
     requestid = new_requestid;
 
     now = timenow();
@@ -783,9 +802,9 @@ int DoIt(void)
       char timebuf[50];
       FILE *exportlog;
       sprintf(exportlogfile, "/home/jsoc/exports/tmp/%s.reqlog", requestid);
-      exportlog = fopen(exportlogfile, "w");
+      exportlog = fopen(exportlogfile, "a");
       sprint_ut(timebuf, now);
-      fprintf(exportlog,"New request started at %s\n", timebuf);
+      fprintf(exportlog,"XXXX New SU request started at %s\n", timebuf);
       fprintf(exportlog,"REMOTE_ADDR=%s\nHTTP_REFERER=%s\nREQUEST_METHOD=%s\nQUERY_STRING=%s\n",
          getenv("REMOTE_ADDR"), getenv("HTTP_REFERER"), getenv("REQUEST_METHOD"), getenv("QUERY_STRING"));
       fclose(exportlog);
@@ -810,6 +829,13 @@ check for requestor to be valid remote DRMS site
 
     // Create new record in export control series
     // This will be copied into the cluster-side series on first use.
+
+    if ( !requestid || !*requestid || strcmp(requestid, "none") == 0)
+      JSONDIE("Must have valid requestID - internal error.");
+
+    if (strcmp(in, kNotSpecified) == 0 && strcmp(sunumlist, kNotSpecified) == 0)
+      JSONDIE("Must have valid Recordset or SU set");
+
     export_log = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
     if (!export_log)
       JSONDIE("Cant create new export control record");
@@ -1127,7 +1153,7 @@ check for requestor to be valid remote DRMS site
       sprintf(exportlogfile, "/home/jsoc/exports/tmp/%s.reqlog", requestid);
       exportlog = fopen(exportlogfile, "w");
       sprint_ut(timebuf, now);
-      fprintf(exportlog,"New request started at %s\n", timebuf);
+      fprintf(exportlog,"XXXX New export request started at %s\n", timebuf);
       fprintf(exportlog,"REMOTE_ADDR=%s\nHTTP_REFERER=%s\nREQUEST_METHOD=%s\nQUERY_STRING=%s\n",
          getenv("REMOTE_ADDR"), getenv("HTTP_REFERER"), getenv("REQUEST_METHOD"), getenv("QUERY_STRING"));
       fclose(exportlog);
@@ -1178,6 +1204,10 @@ check for requestor to be valid remote DRMS site
 
      // Create new record in export control series
      // This will be copied into the cluster-side series on first use.
+    if ( !requestid || !*requestid || strcmp(requestid, "none") == 0)
+      JSONDIE("Must have valid requestID - internal error.");
+    if (strcmp(in, "Not Specified") == 0)
+      JSONDIE("Must have Recordset specified");
      export_log = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
      if (!export_log)
       JSONDIE("Cant create new export control record");
@@ -1203,8 +1233,27 @@ check for requestor to be valid remote DRMS site
     char logpath[DRMS_MAXPATHLEN];
     now = timenow();
 
+
+
     if (strcmp(requestid, kNotSpecified) == 0)
       JSONDIE("RequestID must be provided");
+
+    // Log this re-export request
+    if (1)
+      {
+      char exportlogfile[1000];
+      char timebuf[50];
+      FILE *exportlog;
+      sprintf(exportlogfile, "/home/jsoc/exports/tmp/%s.reqlog", requestid);
+      exportlog = fopen(exportlogfile, "a");
+      sprint_ut(timebuf, now);
+      fprintf(exportlog,"XXX New repeat request started at %s\n", timebuf);
+      fprintf(exportlog,"REMOTE_ADDR=%s\nHTTP_REFERER=%s\nREQUEST_METHOD=%s\nQUERY_STRING=%s\n",
+         getenv("REMOTE_ADDR"), getenv("HTTP_REFERER"), getenv("REQUEST_METHOD"), getenv("QUERY_STRING"));
+      fclose(exportlog);
+      }
+
+JSONDIE("Re-Export requests temporarily disabled.");
 
     // First check status in jsoc.export 
     export_series = kExportSeries;
