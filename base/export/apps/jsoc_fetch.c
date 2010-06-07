@@ -544,15 +544,23 @@ int DoIt(void)
   dohtml = strcmp(format, "html") == 0;
   doxml = strcmp(format, "xml") == 0;
 
-// SPECIAL DEBUG LOG HERE
+// SPECIAL DEBUG LOG HERE XXXXXX
 {
 FILE *runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
 char now[100];
 const char *dbhost;
+int fileupload = strncmp(in, "*file*", 6) == 0;
 dbhost = cmdparams_get_str(&cmdparams, "JSOC_DBHOST", NULL);
 sprint_ut(now,time(0) + UNIX_EPOCH);
 fprintf(runlog,"PID=%d\n   %s\n   op=%s\n   in=%s\n   RequestID=%s\n   DBHOST=%s\n   REMOTE_ADDR=%s\n",
    getpid(), now, op, in, requestid, dbhost, getenv("REMOTE_ADDR"));
+if (fileupload)  // recordset passed as uploaded file
+{
+char *file = (char *)cmdparams_get_str (&cmdparams, kArgFile, NULL);
+int filesize = cmdparams_get_int (&cmdparams, kArgFile".length", NULL);
+char *filename = (char *)cmdparams_get_str (&cmdparams, kArgFile".filename", NULL);
+fprintf(runlog,"   UploadFile: size=%d, name=%s, contents=%s\n",filesize,filename,file);
+}
 fclose(runlog);
 }
 
@@ -879,7 +887,12 @@ check for requestor to be valid remote DRMS site
       filename = (char *)cmdparams_get_str (&cmdparams, kArgFile".filename", NULL);
       if (filesize >= DRMS_MAXQUERYLEN)
         { //  must use file for all processing
+        JSONDIE("Uploaded file limit 4096 chars for a bit longer, will fix later.");
 // XXXXXX need to deal with big files
+        }
+      else if (filesize == 0)
+        {
+        JSONDIE("Uploaded file is empty");
         }
       else // can treat as command line arg by changing newlines to commas
         {
