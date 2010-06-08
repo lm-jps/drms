@@ -54,9 +54,10 @@ ModuleArgs_t module_args[] = {
 char *module_name = "create_series";
 int DoIt(void) {
   int force, len, perms;
-  char *filename;
+  const char *filename;
   FILE *fp;
-  char *buf, *series, *permstr;
+  char *buf, *series;
+  const char *permstr;
   struct stat file_stat;
   DRMS_Record_t *template;
   char yesno[10];
@@ -124,7 +125,7 @@ int DoIt(void) {
     if (strcmp(yesno,"yes")) goto bailout;
 
     printf ("Removing existing series '%s'...\n", series);
-    status = drms_delete_series(drms_env, series, 1);
+    status = drms_delete_series(drms_env, series, 1, 0);
     if (status) {
       if (status != DRMS_ERROR_UNKNOWNSERIES) {
 	goto bailout;

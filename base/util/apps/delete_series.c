@@ -33,23 +33,29 @@ show_info create_series modify_series
 #include "drms.h"
 #include "jsoc_main.h"
 
+#define kKeepSums "k"
+
 /* Command line parameter values. */
 ModuleArgs_t module_args[] = { 
-  {ARG_END}
+   {ARG_FLAG, kKeepSums, NULL, "If set, then the SUMS files belonging to the series will not be removed.", NULL},
+   {ARG_END}
 };
 
 char *module_name = "delete_series";
 int DoIt(void) {
   int len;
-  char *series;
+  const char *series;
   char yesno[20];
   char *series_lower;
+  int keepsums = 0;
   int drmsstatus = DRMS_SUCCESS;
 					    /* Parse command line parameters */
   if (cmdparams_numargs (&cmdparams) < 2) goto usage;
 							  /* Get series name */
   series  = cmdparams_getarg (&cmdparams, 1);
   series_lower = strdup(series);
+  
+  keepsums = cmdparams_isflagset(&cmdparams, kKeepSums);
 
   /*See if series exists before going through any other checks */
   if (!drms_series_exists(drms_env, series_lower, &drmsstatus))
@@ -76,7 +82,7 @@ int DoIt(void) {
     if (!strcmp(yesno,"yes"))
     {
       printf("Removing existing series '%s'...\n",series);  
-      if (!drms_delete_series(drms_env, series, 1))
+      if (!drms_delete_series(drms_env, series, 1, keepsums))
 	return 0;
       else
 	printf("'%s': Failed to delete DRMS series.\n",series);

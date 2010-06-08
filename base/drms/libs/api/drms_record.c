@@ -4950,35 +4950,41 @@ int drms_record_directory (DRMS_Record_t *rec, char *dirname, int retrieve) {
 #endif
   }
 
-  /* It could be that the record contains only TAS files, in which case 
-   * there are no slot directories (but there are still slots - it is just
-   * that a slot maps to a slice in the TAS file, which lives at the level
-   * of the sudir). */
-  DRMS_Segment_t *seg = NULL;
-  int hasslotdirs = 0;
-  HIterator_t *seghit = hiter_create(&(rec->segments));
-  if (seghit)
+  /* There can be a record directory only if the record has a storage unit. */
+  if (rec->su)
   {
-     while((seg = (DRMS_Segment_t *)hiter_getnext(seghit)))
+     /* It could be that the record contains only TAS files, in which case 
+      * there are no slot directories (but there are still slots - it is just
+      * that a slot maps to a slice in the TAS file, which lives at the level
+      * of the sudir). */
+     DRMS_Segment_t *seg = NULL;
+     int hasslotdirs = 0;
+     HIterator_t *seghit = hiter_create(&(rec->segments));
+     if (seghit)
      {
-        if (seg->info->protocol != DRMS_TAS)
+        while((seg = (DRMS_Segment_t *)hiter_getnext(seghit)))
         {
-           hasslotdirs = 1;
+           if (seg->info->protocol != DRMS_TAS)
+           {
+              hasslotdirs = 1;
+              break;
+           }
         }
+        hiter_destroy(&seghit);
      }
-     hiter_destroy(&seghit);
+
+     if (hasslotdirs)
+     {
+        CHECKSNPRINTF(snprintf(dirname, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT, 
+                               rec->su->sudir, rec->slotnum), DRMS_MAXPATHLEN);
+     }
+     else
+     {
+        CHECKSNPRINTF(snprintf(dirname, DRMS_MAXPATHLEN, "%s", 
+                               rec->su->sudir), DRMS_MAXPATHLEN);  
+     }
   }
 
-  if (hasslotdirs)
-  {
-     CHECKSNPRINTF(snprintf(dirname, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT, 
-                            rec->su->sudir, rec->slotnum), DRMS_MAXPATHLEN);
-  }
-  else
-  {
-     CHECKSNPRINTF(snprintf(dirname, DRMS_MAXPATHLEN, "%s", 
-                            rec->su->sudir), DRMS_MAXPATHLEN);  
-  }
   return(DRMS_SUCCESS);
 }
 

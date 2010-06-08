@@ -283,7 +283,7 @@ int DoIt(void) {
         void (*pFn)(const void *);
         pFn = (drms_env->series_cache).deep_free; /* temp var to hold fn. */
         (drms_env->series_cache).deep_free = NULL;
-        if (drms_delete_series(drms_env, series, 0)) {
+        if (drms_delete_series(drms_env, series, 0, 1)) {
            fprintf(stderr, "Failed to remove previous definitions\n");
            status = 1;
            goto bailout;

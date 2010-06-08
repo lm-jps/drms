@@ -46,7 +46,7 @@ fi
 #--------------------------------------------------------------------
 # Run slon drop table
 #--------------------------------------------------------------------
-echo "Dropping table from the replication set"
+echo "Dropping table from the replication set: cluster=$CLUSTERNAME, masterdb=$MASTERDBNAME, masterhost=$MASTERHOST, masterport=$MASTERPORT, repuser=$REPUSER, slavedb=$SLAVEDBNAME, slavehost=$SLAVEHOST, slaveport=$SLAVEPORT"
 slonik <<_EOF_
 cluster name = $CLUSTERNAME ;
 node 1 admin conninfo = 'dbname=$MASTERDBNAME host=$MASTERHOST port=$MASTERPORT user=$REPUSER';
@@ -54,6 +54,8 @@ node 2 admin conninfo = 'dbname=$SLAVEDBNAME host=$SLAVEHOST port=$SLAVEPORT use
 
 SET DROP TABLE (ORIGIN = 1, ID = $tableID);
 _EOF_
+
+echo "slonik cmd complete"
 
 check=`$kPsqlCmd -h $MASTERHOST -U $REPUSER -p $MASTERPORT -t -c "select tab_id from _$CLUSTERNAME.sl_table where tab_nspname='$schema' AND tab_relname='$table'" $MASTERDBNAME`
 tableID=${check// /}

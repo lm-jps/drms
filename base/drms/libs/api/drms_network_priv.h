@@ -59,7 +59,5 @@ int drms_dropseries(DRMS_Env_t *env, const char *series, DRMS_Array_t *vec);
 int drms_create_series(DRMS_Record_t *rec, int perms);
 /** \brief Update an existing series */
 int drms_update_series(DRMS_Record_t *rec, int perms);
-/** \brief Delete an existing series */
-int drms_delete_series(DRMS_Env_t *env, char *series, int cascade);
 
 #endif

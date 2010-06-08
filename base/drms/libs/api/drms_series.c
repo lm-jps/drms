@@ -526,8 +526,10 @@ int drms_insert_series(DRMS_Session_t *session, int update,
  * from modify_series, but cascade == 1 when called from delete_series. 
  * modify_series copies the record-table and sequence to a new table and sequence
  * for the series. These copied records still refer to original SUs (so you
- * don't want to delete them). */
-int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
+ * don't want to delete them). 
+ * keepsums - If this is set, then the call to SUMS to delete the storage units
+ * belonging to the series is not made. */
+int drms_delete_series(DRMS_Env_t *env, const char *series, int cascade, int keepsums)
 {
   char query[1024], *series_lower = NULL, *namespace = NULL;
   DB_Binary_Result_t *qres;
@@ -580,7 +582,7 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
 #endif
      if (qres->num_rows==1)
      {
-        if (cascade) {
+        if (cascade && !keepsums) {
         /* Fetch an array of unique SUNUMs - the prime-key logic gets applied first. */
         array = drms_record_getvector(env, 
                                       series, 
@@ -589,41 +591,71 @@ int drms_delete_series(DRMS_Env_t *env, char *series, int cascade)
                                       1, 
                                       &drmsstatus);
         }
-        if ((!cascade) || (!drmsstatus && array && array->naxis == 2 && array->axis[0] == 1))
+        if ((!cascade) || keepsums || (!drmsstatus && array && array->naxis == 2 && array->axis[0] == 1))
         {
            get_namespace(series, &namespace, NULL);
            if (cascade) {
               sprintf(query,"drop table %s",series_lower);
+              if (env->verbose)
+              {
+                 fprintf(stdout, "drms_delete_seies(): %s\n", query);
+              }
+
               if (drms_dms(session,NULL,query))
                 goto bailout;
               if (drms_sequence_drop(session, series_lower))
                 goto bailout;
            }
            sprintf(query, "set search_path to %s", namespace);
+           if (env->verbose)
+           {
+              fprintf(stdout, "drms_delete_seies(): %s\n", query);
+           }
+
            if (drms_dms(session,NULL,query)) {
               fprintf(stderr, "Failed: %s\n", query);
               goto bailout;
            }
            sprintf(query,"delete from %s where seriesname ~~* '%s'",
                    DRMS_MASTER_LINK_TABLE,series);
+           if (env->verbose)
+           {
+              fprintf(stdout, "drms_delete_seies(): %s\n", query);
+           }
+
            if (drms_dms(session,NULL,query))
              goto bailout;
            sprintf(query,"delete from %s where seriesname ~~* '%s'",
                    DRMS_MASTER_KEYWORD_TABLE, series);
+           if (env->verbose)
+           {
+              fprintf(stdout, "drms_delete_seies(): %s\n", query);
+           }
+
            if (drms_dms(session,NULL,query))
              goto bailout;
            sprintf(query,"delete from %s where seriesname ~~* '%s'",
                    DRMS_MASTER_SEGMENT_TABLE, series);
+           if (env->verbose)
+           {
+              fprintf(stdout, "drms_delete_seies(): %s\n", query);
+           }
+
            if (drms_dms(session,NULL,query))
              goto bailout;
            sprintf(query,"delete from %s where seriesname ~~* '%s'",
                    DRMS_MASTER_SERIES_TABLE,series);
+           if (env->verbose)
+           {
+              fprintf(stdout, "drms_delete_seies(): %s\n", query);
+           }
+
            if (drms_dms(session,NULL,query))
              goto bailout;
 
            /* Can only potentially have SUMS SUNUMS to drop if there 
             * is at least one record in the series. */
-           if (cascade) {
+           if (cascade && !keepsums) {
 	          if (array->axis[1] > 0) {
                      /* If the DRMS deletions occurred without a hitch, then delete the 
                       * SUMS files from SUMS. */
