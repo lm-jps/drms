@@ -189,12 +189,7 @@ echo "#UPDATE PID:$$" >> $input_file;
            mv -f $parser_config.new $parser_config
 
 	    rm -f $subscribelockpath
- 	    if [ -e "$subscribelockpath" ]
-	    then
-       	 logwrite "ERROR: Unable to remove subscribe lock file $subscribelockpath"
-	        exit 1
-	    fi
-	
+
 	    trap - INT TERM HUP
 	    logwrite "Updating $parser_config complete, breaking from loop"
 	    break

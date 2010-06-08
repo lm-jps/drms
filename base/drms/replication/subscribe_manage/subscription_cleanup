@@ -190,12 +190,6 @@ cleanup_counter=$(( $cleanup_counter + 1 ))
 	    # release subscribe lock
 	    rm -f "$subscribelockpath"
 	
-	    if [ -e "$subscribelockpath" ] 
-	    then
-	        logwrite "ERROR: Unable to remove subscribe lock file $subscribelockpath"
-	        exit 1
-	    fi
-	
 	    trap - INT TERM HUP
 	else
 	    logwrite "Could not acquire the subscription lock [cleanup]"

@@ -250,12 +250,6 @@ then
     logwrite "Executing: [. $kRepDir/subscribe_manage/sdo_slony1_dump.sh $SLAVEDBNAME jsoc $SLAVEPORT $new_site_bool \"$SMworkDir/slon_counter.$node.txt\" ${schema_table[@]} >> $triggerdir/$node.subscribe_series.sql 2> $SMworkDir/slony1_dump.$node.log"
     . $kRepDir/subscribe_manage/sdo_slony1_dump.sh $SLAVEDBNAME jsoc $SLAVEPORT $new_site_bool "$SMworkDir/slon_counter.$node.txt" ${schema_table[@]} >> $triggerdir/$node.subscribe_series.sql 2> $SMworkDir/slony1_dump.$node.log
 
-    if [ -e "$subscribelockpath" ] 
-    then
-        logwrite "ERROR: Unable to remove subscribe lock file $subscribelockpath"
-        exit 1
-    fi
-
     trap - INT TERM HUP
 else
     logwrite "Could not acquire the subscription lock [sql_gen]"

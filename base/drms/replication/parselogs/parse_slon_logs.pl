@@ -304,12 +304,9 @@ sub CallDie {
    # This should only be called by code in the subscribe critical region
    if ($insubcrit)
    {
-      if (-e "$subscribelockpath")
-      {
-         # Need to remove this type of lock file, since the other scripts that
-         # access it assume the lock is held if the file exists.
-         unlink "$subscribelockpath";
-      }
+      # Need to remove this type of lock file, since the other scripts that
+      # access it assume the lock is held if the file exists.
+      unlink "$subscribelockpath";
    }
 
    die $msg;
