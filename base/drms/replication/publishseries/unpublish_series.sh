@@ -81,8 +81,8 @@ while [ $curratt -le $maxatt ]; do
     echo "tables with id $slavetableID: $slCheck; Current attempt: $curratt"
 
     if [ $slCheck -lt 1 ]; then
-        echo "Executing [$kModDir/delete_series $schema.$table JSOC_DBHOST=$kModOnSlaveHost]"
-        $kModDir/delete_series $schema.$table JSOC_DBHOST=$kModOnSlaveHost
+        echo "Executing [$kModDir/delete_series -k $schema.$table JSOC_DBHOST=$kModOnSlaveHost]"
+        $kModDir/delete_series -k $schema.$table JSOC_DBHOST=$kModOnSlaveHost
 
         # Check status
         if [ $? -ne 0 ]
