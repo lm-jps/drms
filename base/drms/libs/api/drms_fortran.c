@@ -2072,14 +2072,15 @@ int f_drms_insert_series(char * session_hdl, int update, char * template_hdl, in
 }
 FCALLSCFUN4(INT, f_drms_insert_series, F_DRMS_INSERT_SERIES, f_drms_insert_series, STRING, INT, STRING, INT)
 
-
+#if 0
+/* No need for module writers to call this */
 int f_drms_delete_series(char * env_hdl, char *series, int cascade) {
   DRMS_Env_t  * env = (DRMS_Env_t  *)  _convert_handle(env_hdl);
 
   return drms_delete_series(env, series, cascade);
 }
 FCALLSCFUN3(INT, f_drms_delete_series, F_DRMS_DELETE_SERIES, f_drms_delete_series, STRING, STRING, INT)
-
+#endif
 
 /* NEW INTERFACE f_drms_series_createpkeyarray */
 void f_drms_series_createpkeyarray(void * fpkw, char * env_hdl, const char *seriesName, int *nPKeys, int *status) {
