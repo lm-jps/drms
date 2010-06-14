@@ -296,7 +296,7 @@ DRMS_RecordSet_t *drms_find_rec_first(DRMS_Record_t *rec, int wantprime)
       strcat(query, "[#^]");
   else
     strcat(query, "[:#^]");
-  rs = drms_open_records(rec->env, query, &status);
+  rs = drms_open_nrecords(rec->env, query, 1, &status);
   return(rs);
   }
 
@@ -315,7 +315,7 @@ DRMS_RecordSet_t *drms_find_rec_last(DRMS_Record_t *rec, int wantprime)
       strcat(query, "[#$]");
   else
     strcat(query, "[:#$]");
-  rs = drms_open_records(rec->env, query, &status);
+  rs = drms_open_nrecords(rec->env, query, -1, &status);
   return(rs);
   }
 
