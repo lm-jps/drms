@@ -253,7 +253,7 @@ DRMS_RecordSet_t *drms_find_rec_first(DRMS_Record_t *rec, int wantprime)
   else
     strcat(query, "[:#^]");
 // fprintf(stderr,"test 1 query is %s\n",query);
-  rs = drms_open_records(rec->env, query, &status);
+  rs = drms_open_nrecords(rec->env, query, 1, &status);
 // fprintf(stderr,"test 1 status is %d\n",status);
   return(rs);
   }
@@ -273,7 +273,7 @@ DRMS_RecordSet_t *drms_find_rec_last(DRMS_Record_t *rec, int wantprime)
       strcat(query, "[$]");
   else
     strcat(query, "[:#$]");
-  rs = drms_open_records(rec->env, query, &status);
+  rs = drms_open_nrecords(rec->env, query, -1, &status);
   return(rs);
   }
 
@@ -546,7 +546,7 @@ void get_series_stats(DRMS_Record_t *rec, json_t *jroot)
     sprintf(query,"%s[^]", rec->seriesinfo->seriesname);
   else
     sprintf(query,"%s[:#^]", rec->seriesinfo->seriesname);
-  rs = drms_open_records(rec->env, query, &status);
+  rs = drms_open_nrecords(rec->env, query, 1, &status);
 
   if (!rs || rs->n < 1)
     {
@@ -578,7 +578,7 @@ if (status != JSON_OK) fprintf(stderr, "json_insert_pair_into_object, status=%d,
       sprintf(query,"%s[$]", rec->seriesinfo->seriesname);
     else
       sprintf(query,"%s[:#$]", rec->seriesinfo->seriesname);
-    rs = drms_open_records(rec->env, query, &status);
+    rs = drms_open_nrecords(rec->env, query, -1, &status);
     drms_sprint_rec_query(recquery,rs->records[0]);
     jsonquery = string_to_json(recquery);
     json_insert_pair_into_object(interval, "LastRecord", json_new_string(jsonquery));
