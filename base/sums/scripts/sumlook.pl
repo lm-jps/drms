@@ -58,6 +58,10 @@ if(!($PGPORT = $ENV{'SUMPGPORT'})) {
   print "You must have ENV SUMPGPORT set to the port number, e.g. 5430\n";
   exit;
 }
+$totalbytesap = 0;
+$totalbytes = 0;
+$totalavail = 0;
+$totalbyteso = 0;
 
 #First connect to database
   $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb;port=$PGPORT", "$user", "$password");
@@ -67,9 +71,9 @@ if(!($PGPORT = $ENV{'SUMPGPORT'})) {
 
   print "	Rounded down to nearest Megabyte\n";
   print "Query in progress, may take awhile...\n";
-  printf("Part %12s %12s %12s %12s\n", "Free", "DPnow", "DPother", "AP");
+  printf("Part %12s %12s %12s %12s\n", "Free", "DPnow", "DPlater", "AP");
   printf("----- %12s %12s %12s %12s\n", "--------", "--------", "--------", "--------");
-  #print "Part\tFree\t\tDPnow\t\tDPother\t\tAP\n";
+  #print "Part\tFree\t\tDPnow\t\tDPlater\t\tAP\n";
   #print "------\t\t------\t\t-----\t\t-------\t\t-----\n";
     $sql = "select partn_name, avail_bytes from sum_partn_avail";
     $sth = $dbh->prepare($sql);
@@ -90,7 +94,7 @@ if(!($PGPORT = $ENV{'SUMPGPORT'})) {
       push(@avail, $avail);
     }
     while($sum = shift(@sum)) {
-      $sql = "select sum(bytes) from sum_partn_alloc where status=2 and wd like '$sum%' and effective_date <= $effdate";
+      $sql = "select sum(bytes) from sum_partn_alloc where status=2 and wd like '$sum/%' and effective_date <= '$effdate'";
       $sth = $dbh->prepare($sql);
       if ( !defined $sth ) {
         print "Cannot prepare statement: $DBI::errstr\n";
@@ -103,8 +107,8 @@ if(!($PGPORT = $ENV{'SUMPGPORT'})) {
         $bytes = $bytes/1048576;
         push(@bytes, $bytes);
       }
-      #now get DPother 
-      $sql = "select sum(bytes) from sum_partn_alloc where status=2 and wd like '$sum%' and effective_date > $effdate";
+      #now get DPlater 
+      $sql = "select sum(bytes) from sum_partn_alloc where status=2 and wd like '$sum/%' and effective_date > '$effdate'";
       $sth = $dbh->prepare($sql);
       if ( !defined $sth ) {
         print "Cannot prepare statement: $DBI::errstr\n";
@@ -118,7 +122,7 @@ if(!($PGPORT = $ENV{'SUMPGPORT'})) {
         push(@byteso, $byteso);
       }
       #now get AP 
-      $sql = "select sum(bytes) from sum_partn_alloc where status=4 and wd like '$sum%'";
+      $sql = "select sum(bytes) from sum_partn_alloc where status=4 and archive_substatus=128 and wd like '$sum/%'";
       $sth = $dbh->prepare($sql);
       if ( !defined $sth ) {
         print "Cannot prepare statement: $DBI::errstr\n";
@@ -129,15 +133,23 @@ if(!($PGPORT = $ENV{'SUMPGPORT'})) {
       while ( @row = $sth->fetchrow() ) {
         $bytesap = shift(@row);
         $bytesap = $bytesap/1048576;
+        $totalbytesap += $bytesap;
         $bytes = shift(@bytes);
+        $totalbytes += $bytes;
         $avail = shift(@avail);
+        $totalavail += $avail;
         $byteso = shift(@byteso);
+        $totalbyteso += $byteso;
         #printf("$sum %12d %12d %12d %12d\n", $avail,$bytes,$byteso,$bytesap);
-        printf("$sum %12s %12s %12s %12s\n", commify(int($avail)), 
+        printf("$sum\t%12s %12s %12s %12s\n", commify(int($avail)), 
 		commify(int($bytes)), commify(int($byteso)), 
 		commify(int($bytesap)));
       }
     }
+    printf("------------------------------------------------------------\n");
+    printf("TOTAL:\t%12s %12s %12s %12s\n", commify(int($totalavail)),
+		commify(int($totalbytes)), commify(int($totalbyteso)),
+		commify(int($totalbytesap)));
 $dbh->disconnect();
 
 
