@@ -55,7 +55,7 @@ print "	Storage on /SUM partitions for db=$DB $ldate\n";
 $hostdb = $HOSTDB;      #host where Postgres runs
 $user = $ENV{'USER'};
 if(!($PGPORT = $ENV{'SUMPGPORT'})) {
-  print "You must have ENV SUMPGPORT set to the port number, e.g. 5430\n";
+  print "You must have ENV SUMPGPORT set to the port number, e.g. 5434\n";
   exit;
 }
 $totalbytesap = 0;
