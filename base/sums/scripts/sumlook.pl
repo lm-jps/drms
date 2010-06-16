@@ -9,8 +9,9 @@ use DBI;
 
 sub usage {
   print "Show storage distribution for each /SUM partition.\n";
-  print "Usage: sumlook.pl [-hdb_host] db_name (e.g. jsoc)\n";
+  print "Usage: sumlook.pl [-hdb_host] [-pPG_PORT] db_name (e.g. jsoc_sums)\n";
   print "       The default db_host is $HOSTDB\n";
+  print "       If no -p, uses the env SUMPGPORT\n";
   exit(1);
 }
 
@@ -38,10 +39,14 @@ sub commify {
 
 
 $HOSTDB = "hmidb";      #host where DB runs
+$PGPORT = 0;
 while ($ARGV[0] =~ /^-/) {
   $_ = shift;
   if (/^-h(.*)/) {
     $HOSTDB = $1;
+  }
+  if (/^-p(.*)/) {
+    $PGPORT = $1;
   }
 }
 
@@ -54,9 +59,11 @@ $ldate = &labeldate();
 print "	Storage on /SUM partitions for db=$DB $ldate\n";
 $hostdb = $HOSTDB;      #host where Postgres runs
 $user = $ENV{'USER'};
-if(!($PGPORT = $ENV{'SUMPGPORT'})) {
-  print "You must have ENV SUMPGPORT set to the port number, e.g. 5434\n";
-  exit;
+if(!$PGPORT) {
+  if(!($PGPORT = $ENV{'SUMPGPORT'})) {
+    print "You must give -p or have ENV SUMPGPORT set to the port number, e.g. 5434\n";
+    exit;
+  }
 }
 $totalbytesap = 0;
 $totalbytes = 0;
