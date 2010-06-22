@@ -63,6 +63,8 @@ print "      6 : hmi lev1 and above\n";
 print "      7 : aia lev1 and above\n";
 print "      8 : Stanford Helioseismology Archive\n";
 print "      9 : dsds. Migrated data from SOI/DSDS\n";
+print "     11 : sid_awe.awesome\n";
+print "     12 : su_timh.awesome\n";
 print "    102 : hmi.lev0_60d\n";
 print "    103 : aia.lev0_60d\n";
 print "    104 : hmi.tlm_60d\n";
@@ -110,8 +112,8 @@ $totalbyteso = 0;
 #      push(@avail, $avail);
 #    }
 #######################################################################
-    @groupids = (1,2,3,4,5,6,7,8,9,102,103,104,105);
-    while($group = shift(@groupids)) {
+    @groupids = (0,1,2,3,4,5,6,7,8,9,11,12,102,103,104,105,9999);
+    while(($group = shift(@groupids)) != 9999) {
       $sql = "select sum(bytes) from sum_partn_alloc where status=2 and group_id=$group and effective_date <= '$effdate'";
       #print "$sql\n"; #!!!TEMP
       $sth = $dbh->prepare($sql);
