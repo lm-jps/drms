@@ -934,7 +934,8 @@ check for requestor to be valid remote DRMS site
         if (cb)
           {
           char *cbin = index(in, '{');
-          strcpy(cb, "[]");
+          *cb = '\0';
+          strcat(dsquery, "[]");
           strcat(dsquery, cbin);
           }
         else
@@ -967,8 +968,13 @@ check for requestor to be valid remote DRMS site
 	JSONDIE2("Can not open RecordSet, bad query or too many records: ",dsquery);
         }
     rcount = rs->n;
+    drms_stage_records(rs, 0, 0);
   
     // Do survey of recordset
+// this section should be rewritten to first check in each recordset chunk to see if any
+// segments are linked, if not, then just use the sunums from stage reocrds.
+// when stage_records follows links, this will be quicker...
+// then only check each seg if needed.
     all_online = 1;
     for (irec=0; irec < rcount; irec++) 
       {
@@ -984,11 +990,15 @@ check for requestor to be valid remote DRMS site
         DRMS_Record_t *segrec = seg->record;
         SUM_info_t *sinfo = drms_get_suinfo(segrec->sunum, &sums_status); //ISS
         if (!sinfo)
-          JSONDIE2("Bad sunum in a record in RecordSet: ", dsquery);
-  	if (strcmp(sinfo->online_status,"N") == 0)
+          {
+          fprintf(stderr, "JSOC_FETCH Bad sunum %ld for recnum %ld in RecordSet: %s\n", segrec->sunum, rec->recnum, dsquery);
+          // no longer die here, leave it to the export process to deal with missing segments
+          all_online = 0;
+          }
+  	else if (strcmp(sinfo->online_status,"N") == 0)
           all_online = 0;
         else
-          {
+          { // found good sinfo info
           struct stat buf;
   	  char path[DRMS_MAXPATHLEN];
 	  drms_record_directory(segrec, path, 0);
@@ -1002,7 +1012,7 @@ check for requestor to be valid remote DRMS site
               DRMS_Keyword_t *quality = drms_keyword_lookup(segrec, "QUALITY",1);
               if (quality && drms_getkey_int(segrec, "QUALITY", 0) >= 0)
                 { // there should be a file
-//fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path);
+fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path);
   	        // JSONDIE2("Bad path (file missing) in a record in RecordSet: ", dsquery);
                 }
               }
