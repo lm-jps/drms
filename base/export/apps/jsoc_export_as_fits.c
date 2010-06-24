@@ -368,6 +368,8 @@ static int MapexportToDir(DRMS_Env_t *env,
    int iSet = 0;
    int nRecs = 0;
    unsigned long long tsize = 0;
+   int errorCount = 0;
+   int OkayCount = 0;
 
    /* Sigh - some day have to fix the query param to open_records */
    char *tmpq = NULL;
@@ -387,7 +389,7 @@ static int MapexportToDir(DRMS_Env_t *env,
       {
          nRecs = drms_recordset_getssnrecs(rsin, iSet, &stat);
 
-         for (iRec = 0; modstat == kMymodErr_Success && iRec < nRecs; iRec++)
+         for (iRec = 0; iRec < nRecs; iRec++)
          {
             recin = rsin->records[(rsin->ss_starts)[iSet] + iRec];
             tsize += MapexportRecordToDir(recin,
@@ -399,6 +401,10 @@ static int MapexportToDir(DRMS_Env_t *env,
                                           tcount, 
                                           cparms, 
                                           &modstat);
+            if (modstat == kMymodErr_Success)
+               OkayCount++;
+            else
+               errorCount++;
          }
       }
 	 
@@ -415,6 +421,13 @@ static int MapexportToDir(DRMS_Env_t *env,
    {
       fprintf(stderr, "Record-set query '%s' is not valid.\n", rsinquery);
       modstat = kMymodErr_BadRecSetQuery; 
+   }
+
+   if (errorCount > 0)
+   {
+      fprintf(stderr,"Export Failed for %d segments of %d attempted.\n", errorCount, errorCount + OkayCount);
+      if (OkayCount == 0)
+        modstat = kMymodErr_ExportFailed;
    }
 
    if (status)
