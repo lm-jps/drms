@@ -6,6 +6,7 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *seg,
                                    const char *filenamefmt, 
                                    char *filename)
 {
+   static int namesMade = 0;
    ExpUtlStat_t ret = kExpUtlStat_Success;
    char *fn = filename;
    char format[1024];
@@ -46,7 +47,12 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *seg,
          if (*keyname)
          {
             char valstr[128];
-            if (strcmp(keyname,"seriesname")==0)
+            if (strcmp(keyname, "#") == 0)
+            {
+               snprintf(valstr, sizeof(valstr), (layout ? layout : "%05d"), namesMade++);
+               val = valstr;
+            }
+            else if (strcmp(keyname,"seriesname")==0)
               val = seg->record->seriesinfo->seriesname;
             else if (strcmp(keyname,"recnum")==0)
             {
