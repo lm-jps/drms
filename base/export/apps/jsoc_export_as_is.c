@@ -14,6 +14,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "exputil.h"
 
 ModuleArgs_t module_args[] =
 { 
@@ -52,85 +53,6 @@ int nice_intro ()
     return(1);
     }
   return (0);
-  }
-
-// jsoc_export_make_filename - creates a filename from a template.  The filename
-// string should have enough room for a DRMS_MAX_PATHLEN string.
-// the default template is {seriesname}.{recnum:%ld}.{segment}.
-// The general form is {<word>:<format>}<text> repeated as needed where <text> will be
-// copied into the filename as is.  The form above can be repeated as desiered.
-// The :<format> section can be omitted.  In fact it is presently ignored except for
-// the special case of recnum.  This can be changed later to allow specification of
-// formats for any keyword.  Special "words" are:
-//   seriesname - copies in the seriesname
-//   recnum - allows format and copies in the current recnum
-//   segment - copies in the segment filename which is usually the <segment name>.<protocol>.
-//   <keyword> - copies in the value of the given keyword.
-// The seriesname and record information is looked up from the segment.
-
-jsoc_export_make_filename(DRMS_Segment_t *seg, const char *filenamefmt, char *filename)
-  {
-  char *fn = filename;
-  char format[1000];
-  char *fmt;
-  if (filenamefmt)
-    strcpy(format, filenamefmt);
-  else
-    strcpy(format, "{seriesname}.{recnum:%ld}.{segment}");
-  fmt = format;
-  *fn = '\0';
-  while (*fmt)
-    {
-    char *last;
-    if (*fmt == '{')
-      {
-      DRMS_Keyword_t *kw;
-      char *val;
-      char *p;
-      char *keyname;
-      char *layout;
-      last = index(fmt, '}');
-      if (!last)
-         return;
-      keyname = ++fmt;
-      layout = NULL;
-      *last = '\0';
-      for (p=keyname; p<last; p++)
-        {
-        if (*p == ':')
-          {
-          *p++ = '\0';
-          layout = p;
-          }
-        }
-      if (*keyname)
-        {
-        char valstr[100];
-        if (strcmp(keyname,"seriesname")==0)
-          val = seg->record->seriesinfo->seriesname;
-        else if (strcmp(keyname,"recnum")==0)
-          {
-          snprintf(valstr, 100, (layout ? layout : "%ld"), seg->record->recnum); 
-          val = valstr;
-          }
-        else if (strcmp(keyname,"segment")==0)
-          val = seg->filename;
-        else
-          val = drms_getkey_string(seg->record,keyname,NULL);
-        if (!val)
-          val = "ERROR";
-        for (p=val; *p; )
-          {
-          *fn++ = *p++;
-          }
-        *fn = '\0';
-        }
-      fmt = last+1;
-      }
-    else
-      *fn++ = *fmt++;
-    }
-  *fn = '\0';
   }
 
 #define DIE(msg) \
@@ -262,8 +184,7 @@ int DoIt(void)
       strncat(path, "/", DRMS_MAXPATHLEN);
       strncat(path, rec_seg_iseg->filename, DRMS_MAXPATHLEN);
 
-      // Get segment file size
-      if (stat(path, &filestat) == 0)
+      if (stat(path, &filestat) == 0) // only make links for existing files!
         { 
         if (S_ISDIR(filestat.st_mode))
           { // Segment is directory, get size == for now == use system "du"
@@ -281,24 +202,26 @@ int DoIt(void)
           }
         else
           size += filestat.st_size;
-        }
 
-      /* Make a symlink for each selected file */
+        /* Make a symlink for each selected file */
 
-      jsoc_export_make_filename(rec_seg_iseg, strcmp(filenamefmt,"Not Specified") ? filenamefmt : NULL, filename);
-      if (strcmp(method,"ftp")==0)
-        {
-        char tmp[DRMS_MAXPATHLEN];
-        sprintf(tmp,"/export%s", path);
-        symlink(tmp,filename);
+        exputl_mk_expfilename(rec_seg_iseg, strcmp(filenamefmt,"Not Specified") ? filenamefmt : NULL, filename);
+        if (strcmp(method,"ftp")==0)
+          {
+          char tmp[DRMS_MAXPATHLEN];
+          sprintf(tmp,"/export%s", path);
+          symlink(tmp,filename);
+          }
+        else
+          symlink(path,filename);
+
+        /* write a line for each record to each output file type wanted */
+
+        fprintf(index_data, "%s\t%s\n",query,filename);
+        count += 1;
         }
       else
-        symlink(path,filename);
-
-      /* write a line for each record to each output file type wanted */
-
-      fprintf(index_data, "%s\t%s\n",query,filename);
-      count += 1;
+        fprintf(index_data, "%s\tNoDataFile\n",query);
       } // segment loop
     } // record loop
 
