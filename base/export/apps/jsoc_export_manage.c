@@ -527,8 +527,8 @@ int DoIt(void)
       fprintf(fp, "endif\n");
                   // make drms_run completion lock file (always do this)
       fprintf(fp, "show_info_sock JSOC_DBHOST=%s -q -r 'jsoc.export[%s]' > /home/jsoc/exports/tmp/%s.recnum \n", dbexporthost, requestid, requestid);
-      fprintf(fp, "set RUNSTAT = $status\n");
-      fprintf(fp, "if ($RUNSTAT) then\n");
+      fprintf(fp, "set LOCKSTAT = $status\n");
+      fprintf(fp, "if ($LOCKSTAT) then\n");
                   // make drms_run completion lock file (always do this) - drms_server died, so don't use sock version here
       fprintf(fp, "  show_info JSOC_DBHOST=%s -q -r 'jsoc.export[%s]' > /home/jsoc/exports/tmp/%s.recnum \n", dbexporthost, requestid, requestid);
       fprintf(fp, "endif\n");
