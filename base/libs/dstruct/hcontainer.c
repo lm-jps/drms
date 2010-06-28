@@ -401,6 +401,14 @@ void hiter_new(HIterator_t *hit, HContainer_t *hc)
   hash_map_data(&hit->hc->hash, hconelemmap, hit);
 }
 
+void hiter_free(HIterator_t *hit)
+{
+   if (hit && hit->elems)
+   {
+      free(hit->elems);
+   }
+}
+
 void hiter_new_sort(HIterator_t *hit, HContainer_t *hc, int (*comp)(const void *, const void *))
 {
    hiter_new(hit, hc);

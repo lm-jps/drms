@@ -2763,6 +2763,93 @@ int drms_stage_records(DRMS_RecordSet_t *rs, int retrieve, int dontwait) {
   return status;
 }
 
+int drms_record_getinfo(DRMS_RecordSet_t *rs)
+{
+   int status = DRMS_SUCCESS;
+
+   DRMS_Record_t *rec = NULL;
+   int nSets = rs->ss_n;
+   int nRecs = 0;
+   int iSet;
+   int iRec;
+   int bail = 0;
+   int nReqs;
+   int firstslot;
+   long long sunums[MAXSUMREQCNT];
+   SUM_info_t **infostructs = NULL;
+
+   if (rs->cursor)
+   {
+      /* This is a chunked recordset - defer the SUM_infoEx() call until the chunk is opened. */
+      rs->cursor->infoneeded = 1;
+      return(DRMS_SUCCESS);
+   }
+
+  if (rs->n >= 1)
+  {
+     for (iSet = 0; !bail && iSet < nSets; iSet++)
+     {
+        nRecs = drms_recordset_getssnrecs(rs, iSet, &status);
+
+        if (status != DRMS_SUCCESS)
+        {
+           bail = 1;
+           break;
+        }
+
+        infostructs = (SUM_info_t **)malloc(sizeof(SUM_info_t *) * nRecs);
+
+        /* Collect up to MAXSUMREQCNT */
+        nReqs = 0;
+        firstslot = 0;
+        for (iRec = 0; iRec < nRecs; iRec++)
+        {
+           rec = rs->records[(rs->ss_starts)[iSet] + iRec];
+           sunums[nReqs] = rec->sunum;
+           nReqs++;
+
+           if (nReqs == MAXSUMREQCNT || iRec + 1 == nRecs)
+           {
+              /* Insert results an array of structs - will be inserted back into
+               * the record structs when all drms_getsuinfo() calls have completed. */
+              status = drms_getsuinfo(rec->env, sunums, nReqs, &infostructs[firstslot]);
+
+              if (status != DRMS_SUCCESS)
+              {
+                 fprintf(stderr, "drms_record_getinfo(): failure calling drms_getsuinfo(), error code %d.\n", status);
+                 bail = 1;
+                 break;
+              }
+
+              firstslot += nReqs;
+              nReqs = 0;
+           }
+        } /* iRec */
+
+        /* Place the returned SUM_info_t structs back into the record structs.
+         * The allocated SUM_info_t must be freed in drms_free_records(). */
+        if (!bail)
+        {
+           for (iRec = 0; iRec < nRecs; iRec++)
+           {
+              rec = rs->records[(rs->ss_starts)[iSet] + iRec];
+              rec->suinfo = infostructs[iRec];
+              rec->suinfo->next = NULL; /* just make sure */
+           }
+        }
+
+        if (infostructs)
+        {
+           free(infostructs);
+           infostructs = NULL;
+        }
+        
+     } /* iSet */
+  }
+
+  return status;
+}
+
 /* Call drms_free_record for each record in a record set. */
 void drms_free_records(DRMS_RecordSet_t *rs)
 {
@@ -3150,6 +3237,10 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
 	drms_link_getpidx(rs->records[i]);
 	/* Set new unique record number. */
 	rs->records[i]->recnum = recnum;
+
+        /* The suinfo field is allocated on-demand, and must be set to NULL so that there is 
+         * no attempt to free an unallocated suinfo pointer in drms_free_record(). */
+        rs->records[i]->suinfo = NULL;
       } else {
 	// the old record is going to be overridden
 	free(rs->records[i]->sessionns);
@@ -4044,6 +4135,13 @@ void drms_free_record_struct(DRMS_Record_t *rec)
     hcon_free(&rec->segments);
     hcon_free(&rec->keywords);
     free(rec->sessionns);
+
+    if (rec->suinfo)
+    {
+       free(rec->suinfo);
+       rec->suinfo = NULL;
+    }
+
     if (rec->env && !rec->env->session->db_direct && rec->su)
     {
       --rec->su->refcount;
@@ -4081,12 +4179,15 @@ void drms_copy_record_struct(DRMS_Record_t *dst, DRMS_Record_t *src)
   hiter_new(&hit, &dst->links);
   while( (link = (DRMS_Link_t *)hiter_getnext(&hit)) )
     link->record = dst;
+  hiter_free(&hit);
   hiter_new(&hit, &dst->keywords);
   while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )
     key->record = dst;
+  hiter_free(&hit);
   hiter_new(&hit, &dst->segments);
   while( (seg = (DRMS_Segment_t *)hiter_getnext(&hit)) )
     seg->record = dst;
+  hiter_free(&hit);
 
   /* FIXME: Should we copy su struct here? */
 }
@@ -5097,6 +5198,8 @@ long long drms_record_memsize( DRMS_Record_t *rec)
     if (link->info->type != STATIC_LINK)
       size += link->info->pidx_num*10;/* NOTE: Just a wild guess. */
   }
+
+  hiter_free(&hit);
   //  printf("link size = %lld\n",size);
 
   /* Loop through Keywords. */
@@ -5115,6 +5218,8 @@ long long drms_record_memsize( DRMS_Record_t *rec)
       }    
     }
   }
+
+  hiter_free(&hit);
   //printf("keyword size = %lld\n",size);
 
   /* Loop through Segment fields. */
@@ -6994,12 +7099,15 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                free(seriesname);
                seriesname = NULL;
 
-               /* If staging was requested, stage this chunk */
-               if (rs->cursor->staging_needed)
-               {
+               /* Needed by drms_stage_records() and drms_record_getinfo(), if they are called. 
+                * Doesn't hurt to set these if they are not called. */
                fetchedrecs->ss_starts = (int *)malloc(sizeof(int) * 1);
                fetchedrecs->ss_starts[0] = 0;
                fetchedrecs->ss_n = 1;
+                  
+               /* If staging was requested, stage this chunk */
+               if (rs->cursor->staging_needed)
+               {
 // fprintf(stderr,"stage_records called\n");
                   stat = drms_stage_records(fetchedrecs, rs->cursor->retrieve,  rs->cursor->dontwait);
 
@@ -7007,6 +7115,19 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                   if (stat != DRMS_SUCCESS && stat != DRMS_REMOTESUMS_TRYLATER)
                   {
                      fprintf(stderr, "Cursor query '%s' record staging failure, status=%d.\n", sqlquery, stat);
+                     break;
+                  }
+               }
+
+               /* There was a previous request for a SUM_infoEx() on all SUNUMs in the recset. This
+                * request got deferred until now - it should be processed on the newly openend chunk. */
+               if (rs->cursor->infoneeded)
+               {
+                  stat = drms_record_getinfo(fetchedrecs);
+
+                  if (stat != DRMS_SUCCESS)
+                  {
+                     fprintf(stderr, "Failure calling drms_record_getinfo(), status=%d.\n", stat);
                      break;
                   }
                }
@@ -7026,7 +7147,7 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                 * the drms_free_records() call will work as desired. */
                drms_close_records(fetchedrecs, DRMS_FREE_RECORD);
             }
-         } /* for */
+         } /* for iset */
 
          if (stat == DRMS_SUCCESS)
          {
@@ -7168,6 +7289,7 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
          memset(rs->cursor->allvers, 0, sizeof(int) * rs->ss_n);
          /* Future staging request applies to entire record_set */
          rs->cursor->staging_needed = rs->cursor->retrieve = rs->cursor->dontwait = 0;
+         rs->cursor->infoneeded = 0;
 
 	 iset = 0;
          list_llreset(querylist);

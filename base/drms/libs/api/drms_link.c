@@ -615,5 +615,6 @@ void drms_link_getpidx(DRMS_Record_t *rec)
       }	  
     }
   }
-  return;
+
+  hiter_free(&hit);
 }

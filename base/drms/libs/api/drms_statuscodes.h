@@ -119,6 +119,8 @@
 #define DRMS_ERROR_NOSTORAGEUNIT    (-10073)
 #define DRMS_ERROR_INVALIDSU        (-10074)
 
+#define DRMS_ERROR_SUMINFO          (-10075)
+
 /* remote sums - not errors, but status codes*/
 #define DRMS_REMOTESUMS_TRYLATER     (-30000)
 

@@ -996,6 +996,77 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
 }
 #endif
 
+#ifndef DRMS_CLIENT
+int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nReqs, SUM_info_t **info)
+{
+   int status = DRMS_SUCCESS;
+   DRMS_SumRequest_t *request = NULL;
+   DRMS_SumRequest_t *reply = NULL;
+   int isunum;
+
+   drms_lock_server(env);
+
+   if (!env->sum_thread) 
+   {
+
+      if((status = pthread_create(&env->sum_thread, NULL, &drms_sums_thread,
+                                  (void *) env)) != DRMS_SUCCESS) 
+      {
+         fprintf(stderr,"Thread creation failed: %d\n", status);
+         drms_unlock_server(env);
+         return 1;
+      }
+   }
+
+   XASSERT(request = (DRMS_SumRequest_t *)malloc(sizeof(DRMS_SumRequest_t)));
+
+   request->opcode = DRMS_SUMINFO;
+   request->reqcnt = nReqs;
+   request->dontwait = 0;
+
+   for (isunum = 0; isunum < nReqs; isunum++)
+   {
+      request->sunum[isunum] = (uint64_t)sunums[isunum];
+   }
+
+   /* Submit request to sums server thread. */
+   tqueueAdd(env->sum_inbox, (long)pthread_self(), (char *)request);  
+   tqueueDel(env->sum_outbox,  (long)pthread_self(), (char **)&reply);
+     
+   if (reply->opcode != 0)
+   {
+      fprintf(stderr, "SUMINFO failed with error code %d.\n", reply->opcode);
+      if (reply)
+      {
+         free(reply);
+      }
+      drms_unlock_server(env);
+      return 1;
+   }
+   else
+   {
+      /* reply->surdir now has pointers to the SUM_info_t structs */
+      for (isunum = 0; isunum < nReqs; isunum++)
+      {
+         info[isunum] = (SUM_info_t *)reply->sudir[isunum];
+      }
+   }
+
+   /* Caller's responsibility to clean up the reply since caller is waiting for the reply. */
+   if (reply)
+   {
+      free(reply);
+      reply = NULL;
+   }
+
+   /* request is shallow-freed by the SUMS thread, so don't free here. */
+
+   drms_unlock_server(env);
+   
+   return status;
+}
+#endif
+
 /* Tell SUMS to save this storage unit. */
 /* This su commit function writes the Records.txt file. This is used by SUMS when deleting DRMS records (when the archive flag is -1).
  * drms_su_commitsu() does NOT write the Records.txt file, so it is not possible for SUMS to delete DRMS records of SUs committed 
@@ -1153,7 +1224,11 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
 	}
       }
     }
+
+    hiter_free(&hit_inner);
   }
+
+  hiter_free(&hit_outer);
 
   if (archive && *archive == 0 && env->archive == 1) 
     *archive = 1;

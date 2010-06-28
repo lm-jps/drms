@@ -165,4 +165,5 @@ void *drms_signal_thread(void *arg);
 #define DRMS_GETSUDIRS             (24)
 #define DRMS_SITEINFO              (25)
 #define DRMS_LOCALSITEINFO         (26)
+#define DRMS_GETSUINFO             (27)
 #endif

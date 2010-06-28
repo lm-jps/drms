@@ -449,6 +449,7 @@ static char *strip_delimiters (char *s) {
   }
 }
 
+/* Warning: converts ints to 64-bit numbers only. Cast to 32-bit, 16-bit, or 8-bit if needed. */
 static int cmdparams_conv2type(const char *sdata, 
                                ModuleArgs_Type_t dtype, 
                                char *bufout, 
@@ -457,24 +458,23 @@ static int cmdparams_conv2type(const char *sdata,
    int status = CMDPARAMS_SUCCESS;
    char *endptr = NULL;
    int64_t intval;
-   int int32val;
    float fval;
    double dval;
 
    switch (dtype)
    {
       case ARG_INT:
-        intval = (int64_t)strtod(sdata, &endptr);
-        if ((intval == 0 && endptr == sdata) || (intval < INT32_MIN || intval > INT32_MAX)) 
+        /* 64-bit ints */
+        intval = (int64_t)strtoll(sdata, &endptr, 0);
+        if ((intval == 0 && endptr == sdata)) 
         {
            intval = CP_MISSING_INT;
            status = CMDPARAMS_INVALID_CONVERSION;
         } 
         else
         {
-           int32val = (int32_t)intval;
-           XASSERT(sizeof(int32val) <= size);
-           memcpy(bufout, &int32val, sizeof(int32val));
+           XASSERT(sizeof(intval) <= size);
+           memcpy(bufout, &intval, sizeof(intval));
         }
 
         break;
@@ -552,8 +552,9 @@ static int parse_array (CmdParams_t *params, const char *root, ModuleArgs_Type_t
   switch (dtype)
   {
      case ARG_INTS:
+       /* make this an array of 64-bit ints */
        dtype = ARG_INT;
-       dsize = sizeof(int);
+       dsize = sizeof(int64_t);
        break;
      case ARG_FLOATS:
        dtype = ARG_FLOAT;
@@ -1657,10 +1658,10 @@ int cmdparams_get_int (CmdParams_t *parms, char *name, int *status) {
   return cmdparams_get_int32 (parms, name, status);
 }
 
-int cmdparams_get_intarr(CmdParams_t *parms, char *name, int **arr, int *status)
+static int cmdparams_get_ints(CmdParams_t *parms, char *name, int64_t **arr, int *status)
 {
    int stat = CMDPARAMS_SUCCESS;
-   int *arrint = NULL;
+   int64_t *arrint = NULL;
    CmdParams_Arg_t *arg = NULL;
    int nelems = 0;
 
@@ -1677,7 +1678,7 @@ int cmdparams_get_intarr(CmdParams_t *parms, char *name, int **arr, int *status)
          }
          else
          {
-            arrint = (int *)arg->actvals;
+            arrint = arg->actvals;
             *arr = arrint;
          }
       }
@@ -1693,6 +1694,79 @@ int cmdparams_get_intarr(CmdParams_t *parms, char *name, int **arr, int *status)
       }
    }
    
+   if (status)
+   {
+      *status = stat;
+   }
+
+   return nelems;
+}
+
+/* int arrays are stored as 64-bit numbers, so if a 32-bit int is desired, a 32-bit array
+ * must be allocated (and freed by the caller). */
+int cmdparams_get_intarr(CmdParams_t *parms, char *name, int **arr, int *status)
+{
+   int stat = CMDPARAMS_SUCCESS;
+   int nelems = 0;
+   int64_t *arr64 = NULL;
+   int oneint64;
+   int oneint;
+   int iint;
+
+   if (arr)
+   {
+      nelems = cmdparams_get_ints(parms, name, &arr64, &stat);
+      if (stat == CMDPARAMS_SUCCESS)
+      {
+         /* arr64 is a pointer to the internal 64-bit array - don't free! */
+         *arr = (int *)malloc(nelems * sizeof(int));
+         
+         /* must copy each 64-bit number into a 32-bit one manually - I guess check for overflow. */
+         for (iint = 0; iint < nelems; iint++)
+         {
+            oneint64 = arr64[iint];
+
+            if (oneint64 <= INT32_MAX && oneint64 >= INT32_MIN)
+            {
+               oneint = (int)oneint64;
+               (*arr)[iint] = oneint;
+            }
+            else
+            {
+               stat = CMDPARAMS_INVALID_CONVERSION;
+               break;
+            }
+         }
+      }
+   }
+
+   if (status)
+   {
+      *status = stat;
+   }
+
+   return nelems;
+}
+
+/* To be consistent with cmdparams_get_intarr(), allocate the returned array. The caller
+ * must free the returned array in parameter arr. */
+int cmdparams_get_int64arr(CmdParams_t *parms, char *name, int64_t **arr, int *status)
+{
+   int stat = CMDPARAMS_SUCCESS;
+   int nelems = 0;
+   int64_t *arr64 = NULL;
+
+   if (arr)
+   {
+      nelems = cmdparams_get_ints(parms, name, &arr64, &stat);
+      if (stat == CMDPARAMS_SUCCESS)
+      {
+         /* arr64 is a pointer to the internal 64-bit array - don't free! */
+         *arr = (int64_t *)malloc(nelems * sizeof(int64_t));
+         memcpy(*arr, arr64, nelems * sizeof(int64_t));
+      }
+   }
+
    if (status)
    {
       *status = stat;

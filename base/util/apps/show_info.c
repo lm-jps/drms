@@ -228,7 +228,7 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "v", NULL, "verbosity"},
   {ARG_FLAG, "x", "0", "archive - show archive status for storage unit"},
   {ARG_FLAG, "z", "0", "size - show size of storage unit containing record's segments"},
-  {ARG_INT, "sunum", "-1", "SUNUM specified, find matching records"},
+  {ARG_INTS, "sunum", "-1", "A list of comma-separated SUNUMs, find matching records"},
   {ARG_STRING, "QUERY_STRING", "Not Specified", "show_info called as cgi-bin program args here"},
   {ARG_END}
 };
@@ -452,48 +452,32 @@ static void list_series_info(DRMS_Record_t *rec)
   return;
   }
 
-SUM_t *my_sum=NULL;
 
-
-SUM_info_t *drms_get_suinfo(long long sunum)
-  {
-  int status;
-  if (my_sum && my_sum->sinfo->sunum == sunum)
-    return(my_sum->sinfo);
-  if (!my_sum)
-    {
-    if ((my_sum = SUM_open(NULL, NULL, printkerr)) == NULL)
-      {
-      printkerr("drms_open: Failed to connect to SUMS.\n");
-      return(NULL);
-      }
-    }
-  // if (status = SUM_info(my_sum, sunum, printkerr))
-  if (status = SUM_info(my_sum, sunum, NULL))
-    {
-       // if (status != SUM_SUNUM_NOT_LOCAL)
-     if (0 && status != SUM_SUNUM_NOT_LOCAL)
-       {
-          printkerr("Fail on SUM_info, status=%d\n", status);
-       }
-
-       return(NULL);
-    }
-  return(my_sum->sinfo);
-  }
-
-#define show_info_return(status)	\
-  {					\
-  if (my_sum)				\
-    SUM_close(my_sum,printkerr);	\
-  return(status);			\
-  }
+#define show_info_return(status)      \
+{                                     \
+   if (suinfo)                        \
+   {                                  \
+      hcon_destroy(&suinfo);          \
+   }                                  \
+   if (given_sunum)                   \
+   {                                  \
+      free(given_sunum);              \
+      given_sunum = NULL;             \
+   }                                  \
+   if (sunum_rs_query)                \
+   {                                  \
+      free(sunum_rs_query);           \
+      sunum_rs_query = NULL;          \
+   }                                  \
+   return(status);                    \
+}                                     \
 
 // get_session_info - get information from drms_Session table for this record
 /* Returns path of directory that contains any saved log information for the given record */
 /* If log is offline, returns message, if log was not saved or otherwise not found returns NULL */
 /* The returned char* should be freed after use. */
 
+/* ART - can open a SUM. */
 int get_session_info(DRMS_Record_t *rec, char **runhost, char **runtime, char **jsoc_vers, char **logdir)
   {
   int status;
@@ -508,8 +492,7 @@ int get_session_info(DRMS_Record_t *rec, char **runhost, char **runtime, char **
       *logdir = strdup("No log avaliable");
     else
       {
-      long long sunum = atoll(qres->field[0][0]);
-      SUM_info_t *sinfo = drms_get_suinfo(sunum);
+      SUM_info_t *sinfo = rec->suinfo;
       if (!sinfo)
         *logdir = strdup("Log Lost"); 
       else if (strcmp("N", sinfo->online_status) == 0)
@@ -560,13 +543,250 @@ static void CGI_unescape_url (char *url) {
 }
 // end of web enabling functions
 
+static void ShowInfoFreeInfo(const void *value)
+{
+   SUM_info_t *tofree = *((SUM_info_t **)value);
+   if (tofree)
+   {
+      free(tofree);
+   }
+}
+
+static int GetSUMinfo(DRMS_Env_t *env, HContainer_t **info, int64_t *given_sunum, int nsunums)
+{
+   int status = DRMS_SUCCESS;
+
+   if (info && given_sunum && nsunums > 0)
+   {
+      int firstslot;
+      long long sunums[MAXSUMREQCNT];
+      SUM_info_t **infostructs = NULL;
+      int nReqs;
+      int iremote;
+      DRMS_StorageUnit_t *sus = NULL;
+      int iinfo;
+      int isunum;
+      LinkedList_t *remotesunums = NULL;
+
+      int natts;
+      /* Holds pointers to the SUM_info structs for the SUNUMS provided in given_sunum */
+      *info = hcon_create(sizeof(SUM_info_t *), 128, ShowInfoFreeInfo, NULL, NULL, NULL, 0);
+      infostructs = (SUM_info_t **)malloc(sizeof(SUM_info_t *) * nsunums);
+
+      natts = 1;
+      while (natts <= 2)
+      {
+         /* If the SUNUM belongs to a different SUMS, then this query will fail.
+          * Assuming, for now, that this SUNUM is valid, but belongs to a different
+          * SUMS, try again, after doing a remotesums call.
+          */
+
+         /* natt == 1 ==> haven't done a remotesums request for unknown (locally) SUNUMS. 
+          * natt == 2 ==> already did a remotesums request for unknown (locally) SUNUMS, 
+          *   now checking to see if the previously unknown SUNUMs have been ingested into
+          *   the local SUMS. */
+
+         /* Collect up to MAXSUMREQCNT */
+         nReqs = 0;
+         firstslot = 0;
+         for (isunum = 0; isunum < nsunums; isunum++)
+         {
+            sunums[nReqs] = given_sunum[isunum];
+            nReqs++;
+
+            if (nReqs == MAXSUMREQCNT || isunum + 1 == nsunums)
+            {
+               /* Insert results an array of structs - will be inserted back into
+                * the record structs when all drms_getsuinfo() calls have completed. */
+               status = drms_getsuinfo(env, sunums, nReqs, &infostructs[firstslot]);
+
+               if (status != DRMS_SUCCESS)
+               {
+                  fprintf(stderr, "drms_record_getinfo(): failure calling drms_getsuinfo(), error code %d.\n", status);
+                  break;
+               }
+               else
+               {
+                  /* Collect all SUNUMs that SUMS didn't know about, and assume that they are remote SUNUMs. */
+                  for (iinfo = 0, iremote = 0; iinfo < nReqs; iinfo++)
+                  {
+                     /* Jim says this check might be something else - he thinks the SUM_info_t * might 
+                      * not be NULL, and instead one of the fields will indicate an invalid SUNUM. */
+                     if (*(infostructs[firstslot + iinfo]->online_loc) == '\0')
+                     {
+                        if (!remotesunums)
+                        {
+                           remotesunums = list_llcreate(sizeof(long long), NULL);
+                        }
+
+                        list_llinserttail(remotesunums, &(sunums[nReqs]));
+                        iremote++;
+                     }
+                  }
+               }
+
+               firstslot += nReqs;
+               nReqs = 0;
+            }
+         } /* iRec */
+
+         if (status)
+         {
+            break;
+         }
+
+         if (iremote > 0)
+         {
+            if (natts == 1)
+            {
+               /* Try a remotesums call. */
+               int isu;
+               DRMS_StorageUnit_t *su = NULL;
+               ListNode_t *node = NULL;
+               int suret = DRMS_SUCCESS;
+
+               sus = malloc(sizeof(DRMS_StorageUnit_t) * iremote);
+
+               for (isu = 0; isu < iremote; isu++)
+               {
+                  su = &(sus[isu]);
+
+                  node = list_llnext(remotesunums);
+
+                  su->sunum = *((long long *)node->data);
+                  *(su->sudir) = '\0';
+                  su->mode = DRMS_READONLY; 
+                  su->nfree = 0;
+                  su->state = NULL;
+                  su->recnum = NULL;
+                  su->refcount = 0;
+                  su->seriesinfo = NULL;
+               }
+
+               suret = drms_getsudirs(env, &sus, iremote, 1, 0);
+
+               if (suret == DRMS_REMOTESUMS_TRYLATER)
+               {
+                  fprintf(stdout, "Master remote SUMS script is ingesting"
+                          " storage unit asynchronously.\nRetry query later.\n");
+                  status = suret;
+                  break;
+               }
+               else if (suret != DRMS_SUCCESS)
+               {
+                  printf("### show_info: Error calling drms_getsudirs(), must quit\n");
+                  status = suret;
+                  break;
+               }
+
+               /* We're going to redo the drms_getsuinfo() call, so free any SUM_info_t structs that 
+                * were previously returned. */
+               if (infostructs)
+               {
+                  for (iinfo = 0; iinfo < nsunums; iinfo++)
+                  {
+                     if (infostructs[iinfo])
+                     {
+                        free(infostructs[iinfo]);
+                        infostructs[iinfo] = NULL;
+                     }
+                  }
+               }
+
+               if (remotesunums)
+               {
+                  list_llfree(&remotesunums);
+               }
+            }
+            else
+            {
+               /* For at least one SUNUM, the remotesums call didn't not result in a known SUNUM - invalid
+                * SUNUM, bail. */
+               printf("### show_info: at least one SUNUM was invalid.\n");
+               status = DRMS_ERROR_INVALIDSU;
+               break;
+            }
+         }
+         else
+         {
+            break;
+         }
+
+         natts++;
+      } /* natts */
+
+      if (status == DRMS_SUCCESS)
+      {
+         if (*info)
+         {
+            char key[128];
+
+            /* Need to put SUM_info_t structs into info container. */
+            for (iinfo = 0; iinfo < nsunums; iinfo++)
+            {
+               snprintf(key, sizeof(key), "%llu", (unsigned long long)infostructs[iinfo]->sunum);
+               hcon_insert(*info, key, &(infostructs[iinfo]));
+            }
+         }
+      }
+      else
+      {
+         if (infostructs)
+         {
+            /* if success, then the SUM_info_t structs were put into the info container. */
+            for (iinfo = 0; iinfo < nsunums; iinfo++)
+            {
+               if (infostructs[iinfo])
+               {
+                  free(infostructs[iinfo]);
+               }
+            }
+         }
+
+         if (*info)
+         {
+            hcon_destroy(info);
+         }
+      }
+
+      if (infostructs)
+      {
+         free(infostructs);
+      }
+
+      if (remotesunums)
+      {
+         list_llfree(&remotesunums);
+      }
+
+      if (sus)
+      {
+         free(sus);
+      }
+   }
+
+   return status;
+}
+
+#if 0
+static int susort(const void *a, const void *b)
+{
+   SUM_info_t *first = (SUM_info_t *)hcon_getval(*((HContainerElement_t **)a));
+   SUM_info_t *second = (SUM_info_t *)hcon_getval(*((HContainerElement_t **)b));
+
+   XASSERT(first && second);
+
+   return strcasecmp(first->owning_series, second->owning_series);
+}
+#endif
+
 /* Module main function. */
 int DoIt(void)
   {
   int need_header_printed=1;
   int status = 0;
   DRMS_RecChunking_t cstat = kRecChunking_None;
-  DRMS_RecordSet_t *recordset;
+  DRMS_RecordSet_t *recordset = NULL;
   DRMS_Record_t *rec;
   int first_rec, last_rec, nrecs, irec;
 // these next 3 chould be change to mallocs based on number requested.
@@ -606,8 +826,13 @@ int DoIt(void)
   int want_path;
   int want_path_noret;
   int want_dims;
-  long long given_sunum;
+  int64_t *given_sunum = NULL; /* array of 64-bit sunums provided in the'sunum=...' argument. */
+  int nsunum; /* number of sunums provided in the 'sunum=...' argument. */
   int i_set, n_sets;
+  int requireSUMinfo;
+  char *sunum_rs_query = NULL;
+
+  HContainer_t *suinfo = NULL;
 
   // Include this code segment to allow operating show_info as a cgi-bin program.
   // It will preceed any output to stdout with the content-type info for text.
@@ -653,7 +878,13 @@ int DoIt(void)
   show_segs = strcmp (seglist, "Not Specified");
 
   max_recs =  cmdparams_get_int (&cmdparams, "n", NULL);
-  given_sunum = cmdparams_get_int64 (&cmdparams, "sunum", NULL);
+  nsunum = cmdparams_get_int64arr(&cmdparams, "sunum", &given_sunum, &status);
+
+  if (status != CMDPARAMS_SUCCESS)
+  {
+     fprintf(stderr, "Invalid argument 'sunum=%s'.\n", cmdparams_get_str(&cmdparams, "sunum", NULL));
+     return 1;
+  }
 
   show_all = cmdparams_get_int (&cmdparams, "a", NULL) != 0;
   show_all_segs = cmdparams_get_int (&cmdparams, "A", NULL) != 0;
@@ -680,78 +911,109 @@ int DoIt(void)
 
   if(want_path_noret) want_path = 1;	/* also set this flag */
 
+  requireSUMinfo = show_online || show_retention || show_archive || show_size || show_session;
+
   /* At least seriesname or sunum must be specified */
-  if (given_sunum >= 0)
-    { /* use sunum to get seriesname instead of ds= or stand-along param */
-    char sunum_rs_query[DRMS_MAXQUERYLEN] = {0};
-    SUM_info_t *sinfo = NULL;
+  if (given_sunum && given_sunum[0] >= 0)
+  { 
+     /* use sunum to get seriesname instead of ds= or stand-along param */
+     size_t querylen;
+     SUM_info_t *onesuinfo = NULL;
+     SUM_info_t *lastsuinfo = NULL;
+     SUM_info_t **ponesuinfo = NULL;
+     char intstr[256];
+     int firstone;
+     char key[128];
+     int isunum;
 
-    int natts = 1;
-    while (natts <= 2)
-    {
-       /* If the SUNUM belongs to a different SUMS, then this query will fail.
-        * Assuming, for now, that this SUNUM is valid, but belongs to a different
-        * SUMS, try again, after doing a remotesums call.
-        */
-       sinfo = drms_get_suinfo(given_sunum);
+     /* The whole point of this code block is to form a record-set query from the 
+      * list of sunums provided, and the owning series for those sunums. To get the
+      * owning series, we need to call SUM_infoEx(). And we need 
+      * a record-set query if we will be requesting DRMS info about the records 
+      * that those sunums identify. 
+      *
+      * Create a container to hold the results of the SUM_infoEx() call.
+      * If the user has specified 'show_archive', 'show_size', etc., then we'll
+      * need the SUM_info_t information later on.
+      *
+      * The record-set query created from the sunums and the owning-series strings
+      * will not necessarily result in records that are ordered by the original
+      * sunum order. 
+      */
+     if ((status = GetSUMinfo(drms_env, &suinfo, given_sunum, nsunum)) != DRMS_SUCCESS)
+     {
+        /* Either an error, or a pending asynchronous remotesums request. */
+        show_info_return(status);
+     }
 
-       if (sinfo)
-       {
-          /* If natts == 1, then given_sunum was local, if natts == 2, then 
-           * given_sunum was remote. */
-          sprintf(sunum_rs_query, "%s[! sunum=%lld !]", sinfo->owning_series, given_sunum);
-          break;
-       }
-       else if (natts == 1)
-       {          
-          /* create a dummy SU - some fields we can't know about, just leave blank */
-          DRMS_StorageUnit_t su;
-          int suret = DRMS_SUCCESS;
+     /* Make the sunum_rs_query string by iterating through the suinfo container, 
+      * and sorting the SUNUMs by owning series. */
+     querylen = sizeof(char) * DRMS_MAXQUERYLEN;
+     sunum_rs_query = malloc(querylen);
+     *sunum_rs_query = '\0';
 
-          su.sunum = given_sunum;
-          su.sudir[0] = '\0';
-          su.mode = DRMS_READONLY; 
-          su.nfree = 0;
-          su.state = NULL;
-          su.recnum = NULL;
-          su.refcount = 0;
-          su.seriesinfo = NULL;
+     for (isunum = 0; isunum < nsunum; isunum++)
+     {
+        snprintf(key, sizeof(key), "%lld", (unsigned long long)given_sunum[isunum]);
+        ponesuinfo = hcon_lookup(suinfo, key);
 
-          /* remotesums call */
-          suret = drms_getsudir(drms_env, &su, 1);
-          if (suret == DRMS_REMOTESUMS_TRYLATER)
-          {
-             fprintf(stdout, "Master remote SUMS script is ingesting"
-                     " storage unit asynchronously.\nRetry query later.\n");
-             show_info_return(0);
-          }
-          else if (suret != DRMS_SUCCESS)
-          {
-             printf("### show_info: Error fetching SU, sunum=%lld, must quit\n",given_sunum);
-             show_info_return(1);
-          }
-       }
-       else
-       {
-          /* Didn't get remote SU because the SUNUM was invalid, or remotesums_master.pl 
-           * decided to ingest the SU asynchronously. In the latter case, a diagnostic
-           * message appears on stdout. 
-           */
-       }
+        if (!ponesuinfo)
+        {
+           /* bad sunum - something went wrong. */
+           printf("### show_info: Unexpected sunum '%s'.\n", key);
+           break;
+        }
+        
+        onesuinfo = *ponesuinfo;
+        
+        if (!lastsuinfo || strcasecmp(onesuinfo->owning_series, lastsuinfo->owning_series) != 0)
+        {
+           /* Got a new series (so start a new subquery). */
+           if (lastsuinfo)
+           {
+              sunum_rs_query = base_strcatalloc(sunum_rs_query, " !],", &querylen);
+           }
 
-       natts++;
-    }
+           snprintf(intstr, sizeof(intstr), "%s[! sunum=", onesuinfo->owning_series);
+           sunum_rs_query = base_strcatalloc(sunum_rs_query, intstr, &querylen);
+           lastsuinfo = onesuinfo;
+           firstone = 1;
+        }
 
-    if (strlen(sunum_rs_query) == 0)
-    {
-       printf("### show_info: given sunum=%lld invalid, must quit\n",given_sunum);
-       show_info_return(1);
-    }
+        /* append an sunum */
+        if (!firstone)
+        {
+           sunum_rs_query = base_strcatalloc(sunum_rs_query, "OR sunum=", &querylen);
+        }
+        else
+        {
+           firstone = 0;
+        }
 
-    in = strdup(sunum_rs_query);
-    }
+        snprintf(intstr, sizeof(intstr), "%llu", (unsigned long long)onesuinfo->sunum);
+        sunum_rs_query = base_strcatalloc(sunum_rs_query, intstr, &querylen);
+     }
+
+     /* Need to end the current subquery. */
+     sunum_rs_query = base_strcatalloc(sunum_rs_query, " !]", &querylen);
+
+     if (strlen(sunum_rs_query) == 0)
+     {
+        printf("### show_info: given sunum=%s invalid, must quit\n", cmdparams_get_str(&cmdparams, "sunum", NULL));
+        free(sunum_rs_query);
+        sunum_rs_query = NULL;
+        show_info_return(1);
+     }
+
+     if (sunum_rs_query)
+     {
+        in = sunum_rs_query;
+        /* free sunum_rs_query before exiting. */
+     }
+  }
   else if (strcmp(in, "Not Specified") == 0)
     {
+       /* ds arg was not provided */
     if (cmdparams_numargs(&cmdparams) < 1 || !(in=cmdparams_getarg (&cmdparams, 1)))
       {
       printf("### show_info: ds=<record_query> parameter is required, must quit\n");
@@ -767,17 +1029,26 @@ int DoIt(void)
 
   /*  if -j, -l or -s is set, just do the short function and exit */
   if (list_keys || jsd_list || show_stats) 
-    {
+  {
+    /* There is no return from this block! */
     char *p, *seriesname;
     int is_drms_series = 1;
 
+    /* If the caller provided one or more sunums instead of a record-set query, use the 
+     * drms_record_getinfo() call to find the series names that go with the sunums
+     * so that the DRMS records can be opened. */
+
     /* Only want keyword info so get only the template record for drms series or first record for other data */
+
+    /* ART - This won't work if the input recordset query has multiple sub-recordset queries. */
     seriesname = strdup (in);
     if ((p = index(seriesname,'['))) *p = '\0';
     rec = drms_template_record (drms_env, seriesname, &status);
     if (status)
       {
-      /* either it is not a drms series or not any series.  Try for non-drms series before quitting */
+      /* either it is not a drms series (e.g., a dir name that can be interpreted as a DSDS dataset)
+       * or not any recognizable series.  Try for non-drms series before quitting (drms_open_records()
+       * handles a few different types of series specifiers. */
       recordset = drms_open_records (drms_env, in, &status);
       if (!recordset) 
         {
@@ -791,6 +1062,11 @@ int DoIt(void)
         fprintf(stderr,"### show_info: non-drms series '%s' found but is empty.\n",seriesname);
 	if (seriesname)
 	  free (seriesname);
+        if (recordset)
+        {
+           drms_close_records(recordset, DRMS_FREE_RECORD);
+           recordset = NULL;
+        }
         show_info_return(1);
         }
       rec = recordset->records[0];
@@ -801,49 +1077,69 @@ int DoIt(void)
       free (seriesname);
 
     if (list_keys)
-      { 
-      list_series_info(rec);
-      show_info_return(0);
-      }
-    else if (jsd_list) 
-      {
-      drms_jsd_print(drms_env, rec->seriesinfo->seriesname);
-      show_info_return(0);
-      }
-    if (show_stats)
-     {
-     if (is_drms_series)
-      {
-      DRMS_RecordSet_t *rs;
-
-      rs = drms_find_rec_first(rec, 1);
-      if (!rs || rs->n < 1)
-        printf("No records Present\n");
-      else
-        {
-        printf("First Record: ");
-        drms_print_rec_query(rs->records[0]);
-        if (rs->n > 1) printf(" is first of %d records matching first keyword", rs->n);
-        printf(", Recnum = %lld\n", rs->records[0]->recnum);
-        drms_free_records(rs);
-  
-        rs = drms_find_rec_last(rec, 1);
-        printf("Last Record:  ");
-        drms_print_rec_query(rs->records[0]);
-        if (rs->n > 1) printf(" is first of %d records matching first keyword", rs->n);
-        printf(", Recnum = %lld\n", rs->records[0]->recnum);
-        drms_free_records(rs);
-  
-        rs = drms_find_rec_last(rec, 0);
-        printf("Last Recnum:  %lld", rs->records[0]->recnum);
-        printf("\n");
-        }
-      show_info_return(0);
-      }
-     else printf("### Can not use '-s' flag for non-drms series. Sorry.\n");
-     }
-    fflush(stdout);
+    { 
+       list_series_info(rec);
+       if (recordset)
+       {
+          drms_close_records(recordset, DRMS_FREE_RECORD);
+          recordset = NULL;
+       }
+       show_info_return(0);
     }
+    else if (jsd_list) 
+    {
+       drms_jsd_print(drms_env, rec->seriesinfo->seriesname);
+       if (recordset)
+       {
+          drms_close_records(recordset, DRMS_FREE_RECORD);
+          recordset = NULL;
+       }
+       show_info_return(0);
+    }
+    if (show_stats)
+    {
+       if (is_drms_series)
+       {
+          DRMS_RecordSet_t *rs;
+
+          rs = drms_find_rec_first(rec, 1);
+          if (!rs || rs->n < 1)
+            printf("No records Present\n");
+          else
+          {
+             printf("First Record: ");
+             drms_print_rec_query(rs->records[0]);
+             if (rs->n > 1) printf(" is first of %d records matching first keyword", rs->n);
+             printf(", Recnum = %lld\n", rs->records[0]->recnum);
+             drms_free_records(rs);
+  
+             rs = drms_find_rec_last(rec, 1);
+             printf("Last Record:  ");
+             drms_print_rec_query(rs->records[0]);
+             if (rs->n > 1) printf(" is first of %d records matching first keyword", rs->n);
+             printf(", Recnum = %lld\n", rs->records[0]->recnum);
+             drms_free_records(rs);
+  
+             rs = drms_find_rec_last(rec, 0);
+             printf("Last Recnum:  %lld", rs->records[0]->recnum);
+             printf("\n");
+          }
+          show_info_return(0);
+       }
+       else 
+       {
+          printf("### Can not use '-s' flag for non-drms series. Sorry.\n");
+          if (recordset)
+          {
+             drms_close_records(recordset, DRMS_FREE_RECORD);
+             recordset = NULL;
+          }
+          show_info_return(1);
+       }
+    }
+    /* ART - This fflush is not reachable. */
+    fflush(stdout);
+  }
 
   /* get count if -c flag set */
   if (want_count)
@@ -874,7 +1170,13 @@ int DoIt(void)
   /* Open record_set(s) */
   if (max_recs == 0)
     {
-    recordset = drms_open_recordset (drms_env, in, &status);
+       /* Set chunk size to that of the SUM_infoEx() call. */
+       if (drms_recordset_setchunksize(MAXSUMREQCNT) != DRMS_SUCCESS)
+       {
+          show_info_return(99);
+       }
+
+       recordset = drms_open_recordset (drms_env, in, &status);
     }
   else // max_recs specified via "n=" parameter.
     {
@@ -897,16 +1199,50 @@ int DoIt(void)
     {
     if (!quiet)
       printf ("** No records in selected data set, query was %s **\n",in);
+    if (recordset)
+    {
+       drms_close_records(recordset, DRMS_FREE_RECORD);
+       recordset = NULL;
+    }
     show_info_return(0);
     }
 
   /* stage records if the user has requested the path (regardless if the user has requested 
    * segment information -- -A or seg=XXX).
+   *
+   * At this point, recordset is either a full record set, or a chunked one.  If max_recs == 0, 
+   * then it is a full record set, otherwise it is a chunked record set.
    */
-  if (want_path_noret) /* -P - don't retrieve but wait for SUMS to give dir info */
-    drms_stage_records(recordset, 0, 0); 
-  else if (want_path) /* -p - retrieve and wait for retrieval */
-    drms_stage_records(recordset, 1, 0); 
+
+  /* If we call drms_records_getinfo() on the recordset
+   * BEFORE the first call to drms_recordset_fetchnext(), then this sets a flag in the
+   * record-chunk cursor that causes drms_recordset_fetchnext() to automatically call SUM_infoEx()
+   * on the chunk. The results are stored in the record's suinfo field. If we call 
+   * drms_stage_records() on the recordset BEFORE
+   * the first call to drms_recordset_fetchnext(), then this sets a flag
+   * in the record-chunk cursor that causes drms_recordset_fetchnext() to automatically 
+   * stage the record chunk.*/
+
+  if (requireSUMinfo)
+  {
+     if ((!given_sunum || given_sunum[0] < 0))
+     {    
+        /* If the caller didn't provide a sunum list, but the caller requested items that requre SUM_info, 
+         * make the getinfo call now. */
+        drms_record_getinfo(recordset);
+     }  
+  }
+
+  if (want_path_noret)
+  {
+     /* -P - don't retrieve but wait for SUMS to give dir info */
+     drms_stage_records(recordset, 0, 0); 
+  }
+  else if (want_path) 
+  {
+     /* -p - retrieve and wait for retrieval */
+     drms_stage_records(recordset, 1, 0); 
+  }
 
   /* check for multiple sub-sets */
   n_sets = recordset->ss_n;
@@ -920,37 +1256,82 @@ int DoIt(void)
   first_rec = 0;
 
   int newchunk;
+  SUM_info_t **ponesuinfo = NULL;
 
   /* MAIN loop over set of selected records */
   for (irec = first_rec; irec <= last_rec; irec++) 
     {
     int col;
+
     if (max_recs == 0)
       {
+         char key[128];
+
          rec = drms_recordset_fetchnext(drms_env, recordset, &status, &cstat, &newchunk);
-      
-      if (want_path && status == DRMS_REMOTESUMS_TRYLATER)
-      {
-         /* The user wants segment files staged, but the files are being 
-          * staged asynchronously via remote sums (because the payload is 
-          * too large for synchronous download). */
-         fprintf(stdout, "One or more data files are being staged asynchronously - try again later.\n");
 
-         /* Ideally sum_export_svc() will keep track of "pending" su transfers, 
-          * but for now just bail. Once sum_export_svc() tracks these, 
-          * then calls to drms_recordset_fetchnext() that attempt to get
-          * pending sus will return some appropriate return code, and then
-          * show_info can handle that code properly.
-          */
-         show_info_return(0);
-      }
+         if (requireSUMinfo && (given_sunum && given_sunum[0] >= 0))
+         {
+            /* We already have the SUM_info_t structs in hand - we just need to set each record's
+             * suinfo field to point to the correct one. The suinfo container is keyed by sunum. */
+            snprintf(key, sizeof(key), "%lld", rec->sunum);
 
-      if (status < 0)
-        status = 0;
+            if ((ponesuinfo = (SUM_info_t **)hcon_lookup(suinfo, key)) != NULL)
+            {
+               /* Multiple records may share the same SUNUM - each record gets a copy 
+                * of the SUM_info_t. When suinfo is destroyed, the source SUM_info_t 
+                * is deleted. */
+               rec->suinfo = (SUM_info_t *)malloc(sizeof(SUM_info_t));
+               *(rec->suinfo) = **ponesuinfo;
+            }
+            else
+            {
+               /* unknown SUNUM */
+               fprintf(stderr, "Expected SUNUM '%s' not found.\n", key);
+               show_info_return(1);
+            }
+         }
+
+         if (want_path && status == DRMS_REMOTESUMS_TRYLATER)
+         {
+            /* The user wants segment files staged, but the files are being 
+             * staged asynchronously via remote sums (because the payload is 
+             * too large for synchronous download). */
+            fprintf(stdout, "One or more data files are being staged asynchronously - try again later.\n");
+
+            /* Ideally sum_export_svc() will keep track of "pending" su transfers, 
+             * but for now just bail. Once sum_export_svc() tracks these, 
+             * then calls to drms_recordset_fetchnext() that attempt to get
+             * pending sus will return some appropriate return code, and then
+             * show_info can handle that code properly.
+             */
+            show_info_return(0);
+         }
+
+         if (status < 0)
+           status = 0;
       }
     else
       {
+      char key[128];
+
       rec = recordset->records[irec];  /* pointer to current record */
+
+      if (requireSUMinfo && (given_sunum && given_sunum[0] >= 0))
+      {
+         snprintf(key, sizeof(key), "%lld", rec->sunum);
+
+         if ((ponesuinfo = (SUM_info_t **)hcon_lookup(suinfo, key)) != NULL)
+         {
+            /* records take ownership of the SUM_info_t - so need to remove from suinfo. */
+            rec->suinfo = *ponesuinfo;
+            hcon_remove(suinfo, key);
+         }
+         else
+         {
+            /* unknown SUNUM */
+         }
+      }
+
       status = DRMS_SUCCESS;
       }
 
@@ -1203,12 +1584,12 @@ int DoIt(void)
 
     if (show_online)
       {
-      SUM_info_t *sinfo = drms_get_suinfo(rec->sunum);
+       /* rec has the suinfo struct already */
       char *msg;
-      if (!sinfo)
+      if (*rec->suinfo->online_loc == '\0')
         msg = "NA";
       else
-        msg = sinfo->online_status;
+        msg = rec->suinfo->online_status;
       if (keyword_list)
         printf("## online=%s\n", msg);
       else
@@ -1217,18 +1598,18 @@ int DoIt(void)
 
     if (show_retention)
       {
-      SUM_info_t *sinfo = drms_get_suinfo(rec->sunum);
+       /* rec has the suinfo struct already */
       char retain[20];
-      if (!sinfo)
+      if (*rec->suinfo->online_loc == '\0')
         strcpy(retain, "NA");
       else
         {
         int y,m,d;
-        if (strcmp("N", sinfo->online_status) == 0)
+        if (strcmp("N", rec->suinfo->online_status) == 0)
           strcpy(retain,"-1");
         else
           {
-          sscanf(sinfo->effective_date, "%4d%2d%2d", &y,&m,&d);
+          sscanf(rec->suinfo->effective_date, "%4d%2d%2d", &y,&m,&d);
           sprintf(retain, "%4d.%02d.%02d",y,m,d);
           }
         }
@@ -1240,16 +1621,16 @@ int DoIt(void)
 
     if (show_archive)
       {
-      SUM_info_t *sinfo = drms_get_suinfo(rec->sunum);
+      /* rec has the suinfo struct already */
       char *msg;
-      if (!sinfo)
+      if (*rec->suinfo->online_loc == '\0')
         msg = "NA";
       else
         {
-        if(sinfo->pa_status == DAAP && sinfo->pa_substatus == DAADP)
+        if(rec->suinfo->pa_status == DAAP && rec->suinfo->pa_substatus == DAADP)
           msg = "Pending";
         else
-          msg = sinfo->archive_status;
+          msg = rec->suinfo->archive_status;
         }
       if (keyword_list)
         printf("## archive=%s\n", msg);
@@ -1259,12 +1640,12 @@ int DoIt(void)
 
     if (show_size)
       {
-      SUM_info_t *sinfo = drms_get_suinfo(rec->sunum);
+      /* rec has the suinfo struct already */
       char size[20];
-      if (!sinfo)
+      if (*rec->suinfo->online_loc == '\0')
         strcpy(size, "NA");
       else
-        sprintf(size, "%.0f", sinfo->bytes);
+        sprintf(size, "%.0f", rec->suinfo->bytes);
       if (keyword_list)
         printf("## size=%s\n", size);
       else
@@ -1528,7 +1909,7 @@ int DoIt(void)
     if (!keyword_list && (show_recnum || show_sunum || show_recordspec || show_online || show_session ||
 		show_retention || show_archive || show_size || nkeys || nsegs || nlinks || want_path))
       printf ("\n");
-    }
+    } /* rec loop */
 
   /* Finished.  Clean up and exit. */
   for (ikey=0; ikey<nkeys; ikey++) 

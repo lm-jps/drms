@@ -336,6 +336,7 @@ int cmdparams_get_dblarr(CmdParams_t *parms, char *name, double **arr, int *stat
 						/*  Generic integer version  */
 int cmdparams_get_int (CmdParams_t *parms, char *name, int *status);
 int cmdparams_get_intarr(CmdParams_t *parms, char *name, int **arr, int *status);
+int cmdparams_get_int64arr(CmdParams_t *parms, char *name, int64_t **arr, int *status);
 
 /**
 Returns a pointer to the associated string.

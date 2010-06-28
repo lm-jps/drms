@@ -86,6 +86,8 @@ int drms_close_records(DRMS_RecordSet_t *rs, int action);
 
 int drms_stage_records(DRMS_RecordSet_t *rs, int retrieve, int dontwait);
 
+int drms_record_getinfo(DRMS_RecordSet_t *rs);
+
 /**** For a single record. ****/
 DRMS_Record_t *drms_clone_record(DRMS_Record_t *record, 
 				 DRMS_RecLifetime_t lifetime, 

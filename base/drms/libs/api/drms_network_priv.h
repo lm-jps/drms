@@ -45,6 +45,8 @@ DRMS_StorageUnit_t *drms_getunit(DRMS_Env_t *env,  char *series,
 int drms_getunits(DRMS_Env_t *env,  char *series, 
 		  int n, long long *sunum, int retrieve, int dontwait);
 
+int drms_getsuinfo(DRMS_Env_t *env, long long *sunums, int nReqs, SUM_info_t **infostructs);
+
 /** \brief Request \c n recnum */
 long long *drms_alloc_recnum(DRMS_Env_t *env,  char *series, 
 			     DRMS_RecLifetime_t lifetime, int n);

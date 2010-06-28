@@ -67,6 +67,7 @@ void hcon_stat(HContainer_t *hc);
 
 void hiter_new(HIterator_t *hit, HContainer_t *hc);
 void hiter_new_sort(HIterator_t *hit, HContainer_t *hc, int (*comp)(const void *, const void *));
+void hiter_free(HIterator_t *hit);
 void hiter_rewind(HIterator_t *hit);
 //void *hiter_getcurrent(HIterator_t *hit);
 //void *hiter_getnext(HIterator_t *hit);

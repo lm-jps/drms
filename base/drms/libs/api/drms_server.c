@@ -878,6 +878,11 @@ void *drms_server_thread(void *arg)
       drmssite_server_localsiteinfo(sockfd, db_handle);
       pthread_mutex_unlock(env->clientlock);
       break;
+    case DRMS_GETSUINFO:
+      pthread_mutex_lock(env->clientlock);
+      drms_server_getsuinfo(env, sockfd);
+      pthread_mutex_unlock(env->clientlock);
+      break;
     default:
       fprintf(stderr,"Error: Unknown command code '%d'\n",command);
     }
@@ -1267,6 +1272,69 @@ int drms_server_getsudirs(DRMS_Env_t *env, int sockfd)
    {
       return status;
    }
+}
+
+/* This is the server's response to a client's over-a-socket request. */
+int drms_server_getsuinfo(DRMS_Env_t *env, int sockfd)
+{
+   int status = DRMS_SUCCESS;
+   int nReqs;
+   int isunum;
+   long long *sunums = NULL;
+   SUM_info_t **infostructs = NULL;
+   SUM_info_t *info = NULL;
+
+   nReqs = Readint(sockfd);
+
+   sunums = (long long *)malloc(sizeof(long long) * nReqs);
+   infostructs = (SUM_info_t **)malloc(sizeof(SUM_info_t *) * nReqs);
+
+   for (isunum = 0; isunum < nReqs; isunum++)
+   {
+      sunums[isunum] = Readlonglong(sockfd);
+   }
+
+   status = drms_su_getinfo(env, sunums, nReqs, infostructs);
+
+   Writeint(sockfd, status);
+
+   if (status == DRMS_SUCCESS)
+   {
+      /* Need to write back the results to the file descriptor. */
+      for (isunum = 0; isunum < nReqs; isunum++)
+      {
+         info = infostructs[isunum];
+
+         Writelonglong(sockfd, info->sunum);
+         send_string(sockfd, info->online_loc);
+         send_string(sockfd, info->online_status);
+         send_string(sockfd, info->archive_status);
+         send_string(sockfd, info->offsite_ack);
+         send_string(sockfd, info->history_comment);
+         send_string(sockfd, info->owning_series);
+         Writeint(sockfd, info->storage_group);
+         Write_dbtype(DB_DOUBLE, (void *)&(info->bytes), sockfd);
+         send_string(sockfd, info->creat_date);
+         send_string(sockfd, info->username);
+         send_string(sockfd, info->arch_tape);
+         Writeint(sockfd, info->arch_tape_fn);
+         send_string(sockfd, info->arch_tape_date);
+         send_string(sockfd, info->safe_tape);
+         Writeint(sockfd, info->safe_tape_fn);
+         send_string(sockfd, info->safe_tape_date);
+         Writeint(sockfd, info->pa_status);
+         Writeint(sockfd, info->pa_substatus);
+         send_string(sockfd, info->effective_date);
+      }
+   }
+
+   if (infostructs)
+   {
+      free(infostructs);
+      infostructs = NULL;
+   }
+
+   return status;
 }
 
 /* Server stub for drms_su_freeslot and drms_su_markstate. */
@@ -1815,7 +1883,12 @@ void *drms_sums_thread(void *arg)
             /* If the calling thread waits for the reply, then it is the caller's responsibility 
              * to clean up. Otherwise, clean up here. */
             for (int i = 0; i < request->reqcnt; i++) {
-               free(reply->sudir[i]);
+               if (reply->sudir[i])
+               {
+                  free(reply->sudir[i]);
+               }
+
+               /* The sunum array is statically defined - no need to free. */
             }
             free(reply);
          }
@@ -1851,6 +1924,15 @@ int SUMExptErr(const char *fmt, ...)
    vsnprintf(string, sizeof(string), fmt, ap);
    va_end (ap);
    return fprintf(stderr, "%s", string);
+}
+
+static void FreeInfo(const void *value)
+{
+   SUM_info_t *tofree = *((SUM_info_t **)value);
+   if (tofree)
+   {
+      free(tofree);
+   }
 }
 
 static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
@@ -2106,7 +2188,97 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        }
     }
     break;
-     default:
+  case DRMS_SUMINFO:
+    {
+       HContainer_t *map = NULL;
+       int isunum;
+       char key[128];
+       SUM_info_t *nulladdr = NULL;
+
+       if (request->reqcnt < 1 || request->reqcnt > MAXSUMREQCNT)
+       {
+          fprintf(stderr,"SUM thread: Invalid reqcnt (%d) in SUMINFO request.\n",
+                  request->reqcnt);
+          reply->opcode = DRMS_ERROR_SUMINFO;
+          break;
+       }
+
+       /* IMPORTANT! SUM_infoEx() will not support duplicate sunums. So, need to 
+        * remove duplicates, but map each SUNUM in the original request to 
+        * the SUNUM in the array of streamlined requests. */
+       map = hcon_create(sizeof(SUM_info_t *), 128, FreeInfo, NULL, NULL, NULL, 0);
+
+       for (i = 0, isunum = 0; i < request->reqcnt; i++)
+       {
+          snprintf(key, sizeof(key), "%llu", (unsigned long long)request->sunum[i]);
+          if (!hcon_member(map, key))
+          {
+             sum->dsix_ptr[isunum] = request->sunum[i];
+             hcon_insert(map, key, &nulladdr);
+             isunum++;
+          }
+       }
+
+       sum->reqcnt = isunum;
+       sum->sinfo = NULL;
+
+       /* Make RPC call to the SUM server. */
+       if ((reply->opcode = SUM_infoEx(sum, printf)))
+       {
+          fprintf(stderr,"SUM thread: SUM_infoEx RPC call failed with "
+                  "error code %d\n", reply->opcode);
+       }
+       else
+       {
+          /* Returns a linked-list of SUM_info_t structures in sum->sinfo. Each 
+           * node has been malloc'd by SUM_infoEx(). It is the caller's responsibility to 
+           * free the list. */
+          SUM_info_t *psinfo = sum->sinfo;
+          SUM_info_t **pinfo = NULL;
+
+          /* Use the sudir field to hold the resultant SUM_info_t structs */
+          for (i = 0; i < isunum; i++)
+          {
+             snprintf(key, sizeof(key), "%llu", (unsigned long long)(psinfo->sunum));
+             if ((pinfo = hcon_lookup(map, key)) != NULL)
+             {
+                *pinfo = psinfo;
+             }
+             else
+             {
+                fprintf(stderr, "Information returned for sunum '%s' unknown to DRMS.\n", key);
+                reply->opcode = 99;
+                break;
+             }
+
+             psinfo = psinfo->next;
+          }
+
+          for (i = 0; i < request->reqcnt; i++)
+          {
+             snprintf(key, sizeof(key), "%llu", (unsigned long long)(request->sunum[i]));
+             if ((pinfo = hcon_lookup(map, key)) != NULL)
+             {
+                reply->sudir[i] = (char *)malloc(sizeof(SUM_info_t));
+                *((SUM_info_t *)(reply->sudir[i])) = **pinfo;
+                ((SUM_info_t *)(reply->sudir[i]))->next = NULL;
+             }
+             else
+             {
+                fprintf(stderr, "Information returned for sunum '%s' unknown to DRMS.\n", key);
+                reply->opcode = 99;
+                break;
+             }
+          }
+
+          sum->sinfo = NULL; /* server main thread now owns the SUM_info_t structs. */
+       }
+
+       /* clean up - free up the SUM_info_t structs pointed to by map */
+       hcon_destroy(&map);
+    }
+    break;
+  default:
     fprintf(stderr,"SUM thread: Invalid command code (%d) in request.\n",
 	   request->opcode);
     reply->opcode = DRMS_ERROR_SUMBADOPCODE;

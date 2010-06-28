@@ -1101,6 +1101,127 @@ int drms_getunits(DRMS_Env_t *env, char *series,
   return stat;
 }
 
+int drms_getsuinfo(DRMS_Env_t *env, long long *sunums, int nReqs, SUM_info_t **infostructs)
+{
+   int status = DRMS_SUCCESS;
+
+#ifndef DRMS_CLIENT
+   /* Send a query to SUMS for the storage unit directory. */
+   status = drms_su_getinfo(env, sunums, nReqs, infostructs);
+#else
+   DB_Type_t type;
+
+   SUM_info_t *info = NULL;
+
+   int isunum;
+   long long onesunum;
+   long long sunum;
+   char *online_loc = NULL;
+   char *online_status = NULL;
+   char *archive_status = NULL;
+   char *offsite_ack = NULL;
+   char *history_comment= NULL;
+   char *owning_series = NULL;
+   int storage_group;
+   double *pbytes = NULL;
+   double bytes;
+   char *creat_date = NULL;
+   char *username = NULL;
+   char *arch_tape = NULL;
+   int arch_tape_fn;
+   char *arch_tape_date = NULL;
+   char *safe_tape = NULL;
+   int safe_tape_fn;
+   char *safe_tape_date = NULL;
+   int pa_status;
+   int pa_substatus;
+   char *effective_date = NULL;
+
+   drms_send_commandcode(env->session->sockfd, DRMS_GETSUINFO);
+
+   Writeint(env->session->sockfd, nReqs);
+   for (isunum = 0; isunum < nReqs; isunum++)
+   {
+      onesunum = sunums[isunum];
+      Writelonglong(env->session->sockfd, onesunum);
+   }
+
+   status = Readint(env->session->sockfd);
+
+   if (status == DRMS_SUCCESS)
+   {
+      for (isunum = 0; isunum < nReqs; isunum++)
+      {
+         /* Have to convert each field in the SUM_info_t structure from network to host byte order. */
+         sunum = Readlonglong(env->session->sockfd);
+         online_loc = receive_string(env->session->sockfd); /* must free mem */
+         online_status = receive_string(env->session->sockfd); /* must free mem */
+         archive_status = receive_string(env->session->sockfd); /* must free mem */
+         offsite_ack = receive_string(env->session->sockfd); /* must free mem */
+         history_comment = receive_string(env->session->sockfd); /* must free mem */
+         owning_series = receive_string(env->session->sockfd); /* must free mem */
+         storage_group = Readint(env->session->sockfd);
+         pbytes = (double *)Read_dbtype(&type, env->session->sockfd); /* must free mem */
+         bytes = *pbytes;
+         creat_date = receive_string(env->session->sockfd); /* must free mem */
+         username = receive_string(env->session->sockfd); /* must free mem */
+         arch_tape = receive_string(env->session->sockfd); /* must free mem */
+         arch_tape_fn = Readint(env->session->sockfd);
+         arch_tape_date = receive_string(env->session->sockfd); /* must free mem */
+         safe_tape = receive_string(env->session->sockfd); /* must free mem */
+         safe_tape_fn = Readint(env->session->sockfd);
+         safe_tape_date = receive_string(env->session->sockfd); /* must free mem */
+         pa_status = Readint(env->session->sockfd);
+         pa_substatus = Readint(env->session->sockfd);
+         effective_date = receive_string(env->session->sockfd); /* must free mem */
+
+         infostructs[isunum] = (SUM_info_t *)malloc(sizeof(SUM_info_t));
+         info = infostructs[isunum];
+
+         info->sunum = sunum;
+         snprintf(info->online_loc, sizeof(info->online_loc), "%s", online_loc);
+         snprintf(info->online_status, sizeof(info->online_status), "%s", online_status);
+         snprintf(info->archive_status, sizeof(info->archive_status), "%s", archive_status);
+         snprintf(info->offsite_ack, sizeof(info->offsite_ack), "%s", offsite_ack);
+         snprintf(info->history_comment, sizeof(info->history_comment), "%s", history_comment);
+         snprintf(info->owning_series, sizeof(info->owning_series), "%s", owning_series);
+         info->storage_group = storage_group;
+         info->bytes = bytes;
+         snprintf(info->creat_date, sizeof(info->creat_date), "%s", creat_date);
+         snprintf(info->username, sizeof(info->username), "%s", username);
+         snprintf(info->arch_tape, sizeof(info->arch_tape), "%s", arch_tape);
+         info->arch_tape_fn = arch_tape_fn;
+         snprintf(info->arch_tape_date, sizeof(info->arch_tape_date), "%s", arch_tape_date);
+         snprintf(info->safe_tape, sizeof(info->safe_tape), "%s", safe_tape);
+         info->safe_tape_fn = safe_tape_fn;      
+         snprintf(info->safe_tape_date, sizeof(info->safe_tape_date), "%s", safe_tape_date);
+         info->pa_status = pa_status;
+         info->pa_substatus = pa_substatus;
+         snprintf(info->effective_date, sizeof(info->effective_date), "%s", effective_date);
+
+         free(online_loc);
+         free(online_status);
+         free(archive_status);
+         free(offsite_ack);
+         free(history_comment);
+         free(owning_series);
+         free(pbytes);
+         free(creat_date);
+         free(username);
+         free(arch_tape);
+         free(arch_tape_date);
+         free(safe_tape);
+         free(safe_tape_date);
+         free(effective_date);
+
+         /* That was fun! */
+      }
+   }
+#endif
+
+   return status;
+}
+
 int drms_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 {
    int status = DRMS_SUCCESS;
@@ -1394,7 +1515,6 @@ int drms_dropseries(DRMS_Env_t *env, const char *series, DRMS_Array_t *vec)
 
       /* If this is a sock-module, must pass the vector SUNUM by SUNUM 
        * to drms_server. */
-      long long sunum = -1;
       int irow = -1;
       long long *data = (long long *)vec->data;
 

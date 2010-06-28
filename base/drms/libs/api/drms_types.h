@@ -383,6 +383,7 @@ typedef struct DRMS_ThreadInfo_struct
 #define DRMS_SUMDELETESERIES 4
 #define DRMS_SUMALLOC2  5
 #define DRMS_SUMEXPORT  6
+#define DRMS_SUMINFO    7
 #define DRMS_SUMABORT 99
 #define DRMS_MAX_REQCNT MAXSUMREQCNT
 
@@ -467,6 +468,8 @@ struct DRMS_RecSetCursor_struct
   int retrieve;
   /** \brief For needed staging, use this dontwait. */
   int dontwait;
+
+  int infoneeded;
 };
 
 /** \brief DRMS cursor struct reference */
@@ -571,6 +574,10 @@ struct DRMS_Record_struct
   HContainer_t keywords;        /* Container of named keywords. */
   HContainer_t links;           /* Container of named links. */
   HContainer_t segments;        /* Container of named data segments. */
+  SUM_info_t *suinfo; /* The structure returned by the SUM_infoEx() call. 
+                         Contains lots of storage-unit information. Can't
+                         combine with su since su gets filled in by the SUM_get() 
+                         call. */
 };
 
 /** DRMS record struct reference */
