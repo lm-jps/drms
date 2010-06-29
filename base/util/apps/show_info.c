@@ -558,14 +558,10 @@ static int GetSUMinfo(DRMS_Env_t *env, HContainer_t **info, int64_t *given_sunum
 
    if (info && given_sunum && nsunums > 0)
    {
-      int firstslot;
-      long long sunums[MAXSUMREQCNT];
       SUM_info_t **infostructs = NULL;
-      int nReqs;
       int iremote;
       DRMS_StorageUnit_t *sus = NULL;
       int iinfo;
-      int isunum;
       LinkedList_t *remotesunums = NULL;
 
       int natts;
@@ -585,50 +581,35 @@ static int GetSUMinfo(DRMS_Env_t *env, HContainer_t **info, int64_t *given_sunum
           * natt == 2 ==> already did a remotesums request for unknown (locally) SUNUMS, 
           *   now checking to see if the previously unknown SUNUMs have been ingested into
           *   the local SUMS. */
+           
+         /* Insert results an array of structs - will be inserted back into
+          * the record structs when all drms_getsuinfo() calls have completed. */
+         status = drms_getsuinfo(env, (long long *)given_sunum, nsunums, infostructs);
 
-         /* Collect up to MAXSUMREQCNT */
-         nReqs = 0;
-         firstslot = 0;
-         for (isunum = 0; isunum < nsunums; isunum++)
+         if (status != DRMS_SUCCESS)
          {
-            sunums[nReqs] = given_sunum[isunum];
-            nReqs++;
-
-            if (nReqs == MAXSUMREQCNT || isunum + 1 == nsunums)
+            fprintf(stderr, "drms_record_getinfo(): failure calling drms_getsuinfo(), error code %d.\n", status);
+            break;
+         }
+         else
+         {
+            /* Collect all SUNUMs that SUMS didn't know about, and assume that they are remote SUNUMs. */
+            for (iinfo = 0, iremote = 0; iinfo < nsunums; iinfo++)
             {
-               /* Insert results an array of structs - will be inserted back into
-                * the record structs when all drms_getsuinfo() calls have completed. */
-               status = drms_getsuinfo(env, sunums, nReqs, &infostructs[firstslot]);
-
-               if (status != DRMS_SUCCESS)
+               /* Jim says this check might be something else - he thinks the SUM_info_t * might 
+                * not be NULL, and instead one of the fields will indicate an invalid SUNUM. */
+               if (*(infostructs[iinfo]->online_loc) == '\0')
                {
-                  fprintf(stderr, "drms_record_getinfo(): failure calling drms_getsuinfo(), error code %d.\n", status);
-                  break;
-               }
-               else
-               {
-                  /* Collect all SUNUMs that SUMS didn't know about, and assume that they are remote SUNUMs. */
-                  for (iinfo = 0, iremote = 0; iinfo < nReqs; iinfo++)
+                  if (!remotesunums)
                   {
-                     /* Jim says this check might be something else - he thinks the SUM_info_t * might 
-                      * not be NULL, and instead one of the fields will indicate an invalid SUNUM. */
-                     if (*(infostructs[firstslot + iinfo]->online_loc) == '\0')
-                     {
-                        if (!remotesunums)
-                        {
-                           remotesunums = list_llcreate(sizeof(long long), NULL);
-                        }
-
-                        list_llinserttail(remotesunums, &(sunums[nReqs]));
-                        iremote++;
-                     }
+                     remotesunums = list_llcreate(sizeof(long long), NULL);
                   }
-               }
 
-               firstslot += nReqs;
-               nReqs = 0;
+                  list_llinserttail(remotesunums, &(infostructs[iinfo]->sunum));
+                  iremote++;
+               }
             }
-         } /* iRec */
+         }
 
          if (status)
          {
@@ -954,7 +935,7 @@ int DoIt(void)
 
      for (isunum = 0; isunum < nsunum; isunum++)
      {
-        snprintf(key, sizeof(key), "%lld", (unsigned long long)given_sunum[isunum]);
+        snprintf(key, sizeof(key), "%llu", (unsigned long long)given_sunum[isunum]);
         ponesuinfo = hcon_lookup(suinfo, key);
 
         if (!ponesuinfo)
@@ -1170,8 +1151,10 @@ int DoIt(void)
   /* Open record_set(s) */
   if (max_recs == 0)
     {
-       /* Set chunk size to that of the SUM_infoEx() call. */
-       if (drms_recordset_setchunksize(MAXSUMREQCNT) != DRMS_SUCCESS)
+       /* Set chunk size to something bigger than that of the SUM_infoEx() call. 
+        * Code in drms_storageunit.c will subchunk this into the chunk size used by
+        * SUM_infoEx(). */
+       if (drms_recordset_setchunksize(4 * MAXSUMREQCNT) != DRMS_SUCCESS)
        {
           show_info_return(99);
        }

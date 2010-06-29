@@ -997,12 +997,28 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
 #endif
 
 #ifndef DRMS_CLIENT
-int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nReqs, SUM_info_t **info)
+static void SUFreeInfo(const void *value)
+{
+   SUM_info_t *tofree = *((SUM_info_t **)value);
+   if (tofree)
+   {
+      free(tofree);
+   }
+}
+
+/* info contains nsunums SUM_info_t pointers */
+int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t **info)
 {
    int status = DRMS_SUCCESS;
    DRMS_SumRequest_t *request = NULL;
    DRMS_SumRequest_t *reply = NULL;
+   HContainer_t *map = NULL;
    int isunum;
+   int iinfo;
+   int nReqs;
+   char key[128];
+   SUM_info_t *nulladdr = NULL;
+   SUM_info_t **pinfo = NULL;
 
    drms_lock_server(env);
 
@@ -1018,46 +1034,105 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nReqs, SUM_info_t **
       }
    }
 
-   XASSERT(request = (DRMS_SumRequest_t *)malloc(sizeof(DRMS_SumRequest_t)));
+   /* There might be more than MAXSUMREQCNT sunums, and there might be duplicates. 
+    * Store unique values. */
+   map = hcon_create(sizeof(SUM_info_t *), 128, SUFreeInfo, NULL, NULL, NULL, 0);
 
-   request->opcode = DRMS_SUMINFO;
-   request->reqcnt = nReqs;
-   request->dontwait = 0;
-
-   for (isunum = 0; isunum < nReqs; isunum++)
+   for (nReqs = 0, isunum = 0; isunum < nsunums; isunum++)
    {
-      request->sunum[isunum] = (uint64_t)sunums[isunum];
-   }
+      if (nReqs == 0)
+      {
+         XASSERT(request = (DRMS_SumRequest_t *)malloc(sizeof(DRMS_SumRequest_t)));
+         request->opcode = DRMS_SUMINFO;
+         request->dontwait = 0;
+      }
 
-   /* Submit request to sums server thread. */
-   tqueueAdd(env->sum_inbox, (long)pthread_self(), (char *)request);  
-   tqueueDel(env->sum_outbox,  (long)pthread_self(), (char **)&reply);
+      snprintf(key, sizeof(key), "%llu", (unsigned long long)sunums[isunum]);
+      if (!hcon_member(map, key))
+      {
+         request->sunum[nReqs] = (uint64_t)sunums[isunum];
+         hcon_insert(map, key, &nulladdr);
+         nReqs++;
+      }
+
+      if (nReqs == MAXSUMREQCNT || (isunum + 1 == nsunums && nReqs > 0))
+      {
+         request->reqcnt = nReqs;
+
+         /* Submit request to sums server thread. */
+         tqueueAdd(env->sum_inbox, (long)pthread_self(), (char *)request);  
+         tqueueDel(env->sum_outbox,  (long)pthread_self(), (char **)&reply);
      
-   if (reply->opcode != 0)
-   {
-      fprintf(stderr, "SUMINFO failed with error code %d.\n", reply->opcode);
-      if (reply)
-      {
-         free(reply);
+         if (reply->opcode != 0)
+         {
+            fprintf(stderr, "SUMINFO failed with error code %d.\n", reply->opcode);
+
+            hcon_destroy(&map);
+
+            if (reply)
+            {
+               free(reply);
+            }
+
+            drms_unlock_server(env);
+            return 1;
+         }
+         else
+         {
+            SUM_info_t *retinfo = NULL;
+            
+            /* reply->surdir now has pointers to the SUM_info_t structs */
+            for (iinfo = 0; iinfo < nReqs; iinfo++)
+            {
+               retinfo = (SUM_info_t *)(reply->sudir[iinfo]);
+               snprintf(key, sizeof(key), "%llu", (unsigned long long)(retinfo->sunum));
+               if ((pinfo = hcon_lookup(map, key)) != NULL)
+               {
+                  *pinfo = retinfo;
+               }
+               else
+               {
+                  fprintf(stderr, "Information returned for an sunum ('%s') that is unknown to DRMS.\n", key);
+                  status = 99;
+                  break;
+               }
+            }
+         }
+
+         /* Caller's responsibility to clean up the reply since caller is waiting for the reply. */
+         if (reply)
+         {
+            free(reply);
+            reply = NULL;
+         }
+
+         nReqs = 0;
       }
-      drms_unlock_server(env);
-      return 1;
-   }
-   else
+   } /* loop over original sunums */
+
+   if (status == DRMS_SUCCESS)
    {
-      /* reply->surdir now has pointers to the SUM_info_t structs */
-      for (isunum = 0; isunum < nReqs; isunum++)
+      /* Copy all the SUM_info_t returned by SUMS into the info parameter (for return to caller). */
+      for (isunum = 0; isunum < nsunums; isunum++)
       {
-         info[isunum] = (SUM_info_t *)reply->sudir[isunum];
+         snprintf(key, sizeof(key), "%llu", (unsigned long long)(sunums[isunum]));
+         if ((pinfo = hcon_lookup(map, key)) != NULL)
+         {
+            info[isunum] = (SUM_info_t *)malloc(sizeof(SUM_info_t));
+            *(info[isunum]) = **pinfo;
+            (info[isunum])->next = NULL;
+         }
+         else
+         {
+            fprintf(stderr, "sunum '%s' unknown to SUMS.\n", key);
+            status = 99;
+            break;
+         }
       }
    }
 
-   /* Caller's responsibility to clean up the reply since caller is waiting for the reply. */
-   if (reply)
-   {
-      free(reply);
-      reply = NULL;
-   }
+   /* clean up - free up the SUM_info_t structs pointed to by map */
+   hcon_destroy(&map);
 
    /* request is shallow-freed by the SUMS thread, so don't free here. */
 

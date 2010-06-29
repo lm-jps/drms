@@ -1927,7 +1927,7 @@ DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env,
    int nrecs = 0;
    DRMS_Record_t *rec = NULL;
 
-   rs = drms_open_records_internal(env, recordsetname, 1, NULL, &allvers, n, &statint);
+   rs = drms_open_records_internal(env, recordsetname, 1, NULL, NULL, n, &statint);
 
    if (statint == DRMS_SUCCESS && n < 0)
    {
@@ -2773,9 +2773,7 @@ int drms_record_getinfo(DRMS_RecordSet_t *rs)
    int iSet;
    int iRec;
    int bail = 0;
-   int nReqs;
-   int firstslot;
-   long long sunums[MAXSUMREQCNT];
+   long long *sunums = NULL;
    SUM_info_t **infostructs = NULL;
 
    if (rs->cursor)
@@ -2798,33 +2796,29 @@ int drms_record_getinfo(DRMS_RecordSet_t *rs)
         }
 
         infostructs = (SUM_info_t **)malloc(sizeof(SUM_info_t *) * nRecs);
+        sunums = (long long *)malloc(sizeof(long long) * nRecs);
 
-        /* Collect up to MAXSUMREQCNT */
-        nReqs = 0;
-        firstslot = 0;
         for (iRec = 0; iRec < nRecs; iRec++)
         {
            rec = rs->records[(rs->ss_starts)[iSet] + iRec];
-           sunums[nReqs] = rec->sunum;
-           nReqs++;
-
-           if (nReqs == MAXSUMREQCNT || iRec + 1 == nRecs)
-           {
-              /* Insert results an array of structs - will be inserted back into
-               * the record structs when all drms_getsuinfo() calls have completed. */
-              status = drms_getsuinfo(rec->env, sunums, nReqs, &infostructs[firstslot]);
-
-              if (status != DRMS_SUCCESS)
-              {
-                 fprintf(stderr, "drms_record_getinfo(): failure calling drms_getsuinfo(), error code %d.\n", status);
-                 bail = 1;
-                 break;
-              }
-
-              firstslot += nReqs;
-              nReqs = 0;
-           }
+           sunums[iRec] = rec->sunum;
         } /* iRec */
+
+        /* Insert results an array of structs - will be inserted back into
+         * the record structs when all drms_getsuinfo() calls have completed. */
+        status = drms_getsuinfo(rec->env, sunums, nRecs, infostructs);
+
+        if (sunums)
+        {
+           free(sunums);
+           sunums = NULL;
+        }
+
+        if (status != DRMS_SUCCESS)
+        {
+           fprintf(stderr, "drms_record_getinfo(): failure calling drms_getsuinfo(), error code %d.\n", status);
+           bail = 1;
+        }
 
         /* Place the returned SUM_info_t structs back into the record structs.
          * The allocated SUM_info_t must be freed in drms_free_records(). */
@@ -2842,6 +2836,12 @@ int drms_record_getinfo(DRMS_RecordSet_t *rs)
         {
            free(infostructs);
            infostructs = NULL;
+        }
+
+        if (sunums)
+        {
+           free(sunums);
+           sunums = NULL;
         }
         
      } /* iSet */
