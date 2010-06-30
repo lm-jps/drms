@@ -63,7 +63,7 @@ ModuleArgs_t module_args[] =
   {ARG_STRING, kArgOp, kNotSpecified, "<Operation>"},
   {ARG_STRING, kArgDs, kNotSpecified, "<record_set query>"},
   {ARG_STRING, kArgSeg, kNotSpecified, "<record_set segment list>"},
-  {ARG_STRING, kArgSunum, kNotSpecified, "<sunum list for SU exports>"},
+  {ARG_INTS, kArgSunum, "-1", "<sunum list for SU exports>"},
   {ARG_STRING, kArgRequestid, kNotSpecified, "JSOC export request identifier"},
   {ARG_STRING, kArgProcess, kNotSpecified, "string containing program and arguments"},
   {ARG_STRING, kArgRequestor, kNotSpecified, "name of requestor"},
