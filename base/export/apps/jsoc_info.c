@@ -83,9 +83,9 @@ show_info
 static char x2c (char *what)
   {
   char digit;
-  digit = (what[0] >= 'A' ? ((what[0] & 0xdf) - 'A')+10 : (what[0] - '0'));
+  digit = (char)(what[0] >= 'A' ? ((what[0] & 0xdf) - 'A')+10 : (what[0] - '0'));
   digit *= 16;
-  digit += (what[1] >= 'A' ? ((what[1] & 0xdf) - 'A')+10 : (what[1] - '0'));
+  digit = (char)(digit + (what[1] >= 'A' ? ((what[1] & 0xdf) - 'A')+10 : (what[1] - '0')));
   return (digit);
   }
 
@@ -141,31 +141,6 @@ char *drms_record_getlogdir(DRMS_Record_t *rec)
     logpath = strdup("Log query failed");
   db_free_text_result(qres);
   return logpath;
-  }
-
-SUM_t *my_sum=NULL;
-
-SUM_info_t *drms_get_suinfo(long long sunum)
-  {
-  int status;
-  if (my_sum && my_sum->sinfo->sunum == sunum)
-    return(my_sum->sinfo);
-  if (!my_sum)
-    {
-    if ((my_sum = SUM_open(NULL, NULL, printkerr)) == NULL)
-      {
-      printkerr("drms_open: Failed to connect to SUMS.\n");
-      return(NULL);
-      }
-    }
-if (sunum < 0){fprintf(stderr,"SUM_info call with sunum < 0 about to be made, %lld\n",sunum); return(NULL);}
-  if (status = SUM_info(my_sum, sunum, printkerr))
-    {
-    printkerr("Fail on SUM_info, status=%d\n", status);
-    return(NULL);
-    }
-
-  return(my_sum->sinfo);
   }
 
 int drms_ismissing_keyval(DRMS_Keyword_t *key)
@@ -610,8 +585,6 @@ if (status != JSON_OK) fprintf(stderr, "json_insert_pair_into_object, status=%d,
   printf("%s\n",json);	\
   free(json); \
   fflush(stdout);	\
-  if (my_sum) \
-    SUM_close(my_sum,printkerr); \
   return(1);	\
   }
 
@@ -758,6 +731,7 @@ int DoIt(void)
     int irec, nrecs;
     int record_set_staged = 0;
     char *lbracket;
+    int requireSUMinfo;
     jroot = json_new_object();
     recinfo = json_new_array();
 
@@ -792,7 +766,18 @@ int DoIt(void)
       }
   
     /* get list of keywords to print for each record */
+    /* Depending on the set of keywords to print, we will know whether or not 
+     * we need to call SUM_infoEx(). Here's the list of keys that necessitate 
+     * a SUM_infoEx() call:
+     *  
+     *   *size*
+     *   *online*
+     *   *retain*
+     *   *archive* 
+     */
+    requireSUMinfo = 0;
     nkeys = 0;
+
     if (keys_listed) 
       { /* get specified list */
       char *thiskey;
@@ -825,6 +810,14 @@ int DoIt(void)
 	  }
   	else
 	  keys[nkeys++] = strdup(thiskey);
+
+        if (strcmp(thiskey, "*size*") == 0 || 
+            strcmp(thiskey, "*online*") == 0 || 
+            strcmp(thiskey, "*retain*") == 0 || 
+            strcmp(thiskey, "*archive*") == 0)
+        {
+           requireSUMinfo = 1;
+        }
 	}
       }
     free (keylist);
@@ -931,6 +924,12 @@ int DoIt(void)
       linkvals[ilink] = val;
       }
 
+    /* ART - need to find out if we will be needing SUM info. If so, call drms_record_getinfo(). */
+    if (requireSUMinfo)
+    {
+       drms_record_getinfo(recordset);
+    }
+
     /* loop over set of selected records */
     for (irec = 0; irec < nrecs; irec++) 
       {
@@ -975,7 +974,7 @@ int DoIt(void)
         else if (strcmp(keys[ikey],"*size*") == 0)
 	  {
           char size[40];
-	  SUM_info_t *sinfo = drms_get_suinfo(rec->sunum);
+	  SUM_info_t *sinfo = rec->suinfo;
           if (!sinfo)
 	    val = json_new_string("NA");
 	  else
@@ -986,7 +985,7 @@ int DoIt(void)
 	  }
         else if (strcmp(keys[ikey],"*online*") == 0)
 	  {
-	  SUM_info_t *sinfo = drms_get_suinfo(rec->sunum);
+	  SUM_info_t *sinfo = rec->suinfo;
           if (!sinfo)
 	    val = json_new_string("NA");
 	  else
@@ -994,7 +993,7 @@ int DoIt(void)
 	  }
         else if (strcmp(keys[ikey],"*retain*") == 0)
 	  {
-	  SUM_info_t *sinfo = drms_get_suinfo(rec->sunum);
+	  SUM_info_t *sinfo = rec->suinfo;
           if (!sinfo)
 	    val = json_new_string("NA");
 	  else
@@ -1013,7 +1012,7 @@ int DoIt(void)
 	  }
         else if (strcmp(keys[ikey],"*archive*") == 0)
 	  {
-	  SUM_info_t *sinfo = drms_get_suinfo(rec->sunum);
+	  SUM_info_t *sinfo = rec->suinfo;
           if (!sinfo)
 	    val = json_new_string("NA");
 	  else
@@ -1269,12 +1268,10 @@ int DoIt(void)
     printf("%s\n",final_json);
     free(final_json);
     fflush(stdout);
-    if (my_sum)
-      SUM_close(my_sum,printkerr);
+
     return(0);
     }
-  if (my_sum)
-    SUM_close(my_sum,printkerr);
+
   return(0);
   }
 

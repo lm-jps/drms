@@ -276,45 +276,19 @@ TIME timenow()
   return(now);
   }
 
-SUM_t *my_sum=NULL;
-
-SUM_info_t *drms_get_suinfo(long long sunum, int * sums_status)
-  {
-  int status;
-  if (my_sum && my_sum->sinfo->sunum == sunum)
-    return(my_sum->sinfo);
-  if (!my_sum)
-    {
-    if ((my_sum = SUM_open(NULL, NULL, printkerr)) == NULL)
-      {
-      printkerr("drms_open: Failed to connect to SUMS.\n");
-      *sums_status = 1;
-      return(NULL);
-      }
-    }
-
-  if (status = SUM_info(my_sum, sunum, printkerr))
-    {
-    printkerr("Fail on SUM_info, status=%d\n", status);
-    return(NULL);
-    }
-
-  return(my_sum->sinfo);
-  }
-
-#ifdef NEVER
-// use at end of any section that exits Doit after using SUM_info
-  if (my_sum)
-    SUM_close(my_sum,printkerr);
-#endif
-
-#define JSONDIE(msg) {die(dojson,msg,"","4");return(1);}
-#define JSONDIE2(msg,info) {die(dojson,msg,info,"4");return(1);}
-#define JSONDIE3(msg,info) {die(dojson,msg,info,"6");return(1);}
+/* Can't call these from sub-functions - can only be called from DoIt(). And 
+ * calling these from within sub-functions is probably not the desired behavior -
+ * I'm thinking that the calls from send_file and SetWebArg are mistakes. The
+ * return(1) will NOT cause the DoIt() program to return because the return(1)
+ * is called from the sub-function.
+ */
+#define JSONDIE(msg) {die(dojson,msg,"","4",&sunumarr,&infostructs);return(1);}
+#define JSONDIE2(msg,info) {die(dojson,msg,info,"4",&sunumarr,&infostructs);return(1);}
+#define JSONDIE3(msg,info) {die(dojson,msg,info,"6",&sunumarr,&infostructs);return(1);}
 
 int fileupload = 0;
 
-int die(int dojson, char *msg, char *info, char *stat)
+int die(int dojson, char *msg, char *info, char *stat, int64_t **psunumarr, SUM_info_t ***infostructs)
   {
   char *msgjson;
   char errval[10];
@@ -342,12 +316,23 @@ if (DEBUG) fprintf(stderr,"%s%s\n",msg,info);
     printf("status=%s\nerror=%s\n", stat, message);
     }
   fflush(stdout);
-  if (my_sum)
-    SUM_close(my_sum,printkerr);
+
+  if (psunumarr && *psunumarr)
+  {
+     free(*psunumarr);
+     *psunumarr = NULL;
+  }
+
+  if (infostructs && *infostructs)
+  {
+     free(*infostructs);
+     *infostructs = NULL;
+  }
+
   return(1);
   }
 
-int send_file(DRMS_Record_t *rec, int segno)
+static int send_file(DRMS_Record_t *rec, int segno, char *pathret, int size)
   {
   DRMS_Segment_t *seg = drms_segment_lookupnum(rec, 0);
   char path[DRMS_MAXPATHLEN];
@@ -360,10 +345,16 @@ int send_file(DRMS_Record_t *rec, int segno)
   strncat(path, sudir, DRMS_MAXPATHLEN);
   strncat(path, "/", DRMS_MAXPATHLEN);
   strncat(path, seg->filename, DRMS_MAXPATHLEN);
+
+  if (pathret)
+  {
+     snprintf(pathret, size, "%s", path);
+  }
+
 //fprintf(stderr,"path: %s\n",path);
   fp = fopen(path, "r");
   if (!fp)
-    JSONDIE2("Can not open file for export: ",path);
+    return 1;
   switch (seg->info->protocol)
     {
     case DRMS_FITS:
@@ -411,9 +402,24 @@ static int SetWebArg(Q_ENTRY *req, const char *key)
          {
          char *arg_bad = illegalArg(value);
          if (arg_bad)
-            JSONDIE2("Illegal text in arg: ",arg_bad);
+         {
+            /* ART - it appears that the original intent was to exit the DoIt()
+             * function here - but it is not possible to do that from a function
+             * called by DoIt(). But I've retained the original semantics of 
+             * returning back to DoIt() from here. */
+            die(dojson, "Illegal text in arg: ", arg_bad, "4", NULL, NULL);
+            return(1);
+         }
+
          if (!cmdparams_set(&cmdparams, key, value))
-	    JSONDIE("CommandLine Error");
+         {
+            /* ART - it appears that the original intent was to exit the DoIt()
+             * function here - but it is not possible to do that from a function
+             * called by DoIt(). But I've retained the original semantics of 
+             * returning back to DoIt() from here. */
+            die(dojson, "CommandLine Error", "", "4", NULL, NULL);
+            return(1);
+         }
          }
       }
    return(0);
@@ -455,7 +461,8 @@ int DoIt(void)
   const char *protocol;
   const char *filenamefmt;
   char *errorreply;
-  const char *sunumlist;
+  int64_t *sunumarr = NULL; /* array of 64-bit sunums provided in the'sunum=...' argument. */
+  int nsunums;
   long long size;
   int rcount = 0;
   TIME reqtime;
@@ -473,6 +480,8 @@ int DoIt(void)
   char *export_series; 
   int is_POST = 0;
   FILE *requestid_log = NULL;
+  char msgbuf[128];
+  SUM_info_t **infostructs = NULL;
 
   if (nice_intro ()) return (0);
 
@@ -525,7 +534,15 @@ int DoIt(void)
   op = cmdparams_get_str (&cmdparams, kArgOp, NULL);
   requestid = cmdparams_get_str (&cmdparams, kArgRequestid, NULL);
   in = cmdparams_get_str (&cmdparams, kArgDs, NULL);
-  sunumlist = cmdparams_get_str (&cmdparams, kArgSunum, NULL);
+  nsunums = cmdparams_get_int64arr(&cmdparams, kArgSunum, &sunumarr, &status);
+
+  if (status != CMDPARAMS_SUCCESS)
+  {
+     snprintf(msgbuf, sizeof(msgbuf), 
+              "Invalid argument '%s=%s'.\n", kArgSunum, cmdparams_get_str(&cmdparams, kArgSunum, NULL));
+     JSONDIE(msgbuf);
+  }
+
   seglist = cmdparams_get_str (&cmdparams, kArgSeg, NULL);
   process = cmdparams_get_str (&cmdparams, kArgProcess, NULL);
   format = cmdparams_get_str (&cmdparams, kArgFormat, NULL);
@@ -576,8 +593,6 @@ fclose(runlog);
   /*  op == exp_su - export Storage Units */
   if (strcmp(op, kOpExpSu) == 0)
     {
-    char *this_sunum, *sunumlisttk, *sunumlistptr;
-    //char *this_sunum, *sunumlist, *sunumlistptr;
     long long sunum;
     int count;
     int status=0;
@@ -590,20 +605,42 @@ fclose(runlog);
     all_online = 1;
     count = 0;
 
-    if (strcmp(sunumlist, kNotSpecified) == 0)
-      sunumlist = in;
-    if (strcmp(sunumlist, kNotSpecified) == 0)
-      JSONDIE("There are no SUs in sunum or ds params");
+    if (!sunumarr || sunumarr[0] < 0)
+    {
+       nsunums = cmdparams_get_int64arr(&cmdparams, kArgDs, &sunumarr, &status);
 
-    char *sunumlistfree=strdup(sunumlist);
-    sunumlisttk = sunumlistfree;
+       if (status != CMDPARAMS_SUCCESS)
+       {
+          snprintf(msgbuf, sizeof(msgbuf), 
+                   "Invalid argument '%s=%s'.\n", kArgDs, cmdparams_get_str(&cmdparams, kArgDs, NULL));
+          JSONDIE(msgbuf);
+       }
+    }
+
+    if (!sunumarr || sunumarr[0] < 0)
+    {
+       JSONDIE("There are no SUs in sunum or ds params");
+    }
+
+    /* Fetch SUNUM_info_ts for all sunums now. */
+    infostructs = (SUM_info_t **)malloc(sizeof(SUM_info_t *) * nsunums);
+    status = drms_getsuinfo(drms_env, (long long *)sunumarr, nsunums, infostructs);
+
+    if (status != DRMS_SUCCESS)
+    {
+       snprintf(msgbuf, sizeof(msgbuf), 
+                "drms_getsuinfo(): failure calling talking with SUMS, error code %d.\n", status);
+       printkerr(msgbuf);
+       sums_status = 1;
+    }
 
     char onlinestat[128];
     int dirsize;
     char supath[DRMS_MAXPATHLEN];
     char yabuff[64];
+    int isunum;
 
-    while (this_sunum = strtok_r(sunumlisttk, ",", &sunumlistptr))
+    for (isunum = 0; isunum < nsunums; isunum++)
       {
       SUM_info_t *sinfo;
       TIME expire;
@@ -612,10 +649,10 @@ fclose(runlog);
       memset(onlinestat, 0, sizeof(onlinestat));
       snprintf(supath, sizeof(supath), "NA");
 
-      sunum = atoll(this_sunum);
-      sunumlisttk=NULL;
-      sinfo = drms_get_suinfo(sunum, &sums_status); //ISS
-      if (!sinfo)
+      sunum = sunumarr[isunum];
+
+      sinfo = infostructs[isunum];
+      if (*(sinfo->online_loc) == '\0')
          {
          *onlinestat = 'I';
          sunums[count] = sunum;
@@ -627,8 +664,8 @@ fclose(runlog);
          }
       else
          {
-         size += sinfo->bytes;
-         dirsize = sinfo->bytes;
+         size += (long long)sinfo->bytes;
+         dirsize = (int)sinfo->bytes;
 
          if (strcmp(sinfo->online_status,"Y")==0)
             {
@@ -665,7 +702,7 @@ fclose(runlog);
          count += 1;
          }
       }
-    free(sunumlistfree);
+
     expsucount = count;
 
     if (count==0)
@@ -771,8 +808,6 @@ fclose(runlog);
         for (i=0; i<count; i++)
           printf("%lld\t%s\t%s\t%s\t%s\n",sunums[i],series[i],paths[i], sustatus[i], susize[i]);
         }
-      if (my_sum)
-        SUM_close(my_sum,printkerr);
 
       if (!dodataobj || (sums_status == 1 || all_online))
         {
@@ -841,7 +876,7 @@ check for requestor to be valid remote DRMS site
     if ( !requestid || !*requestid || strcmp(requestid, "none") == 0)
       JSONDIE("Must have valid requestID - internal error.");
 
-    if (strcmp(in, kNotSpecified) == 0 && strcmp(sunumlist, kNotSpecified) == 0)
+    if (strcmp(in, kNotSpecified) == 0 && (!sunumarr || sunumarr[0] < 0))
       JSONDIE("Must have valid Recordset or SU set");
 
     export_log = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
@@ -969,6 +1004,7 @@ check for requestor to be valid remote DRMS site
         }
     rcount = rs->n;
     drms_stage_records(rs, 0, 0);
+    drms_record_getinfo(rs);
   
     // Do survey of recordset
 // this section should be rewritten to first check in each recordset chunk to see if any
@@ -988,10 +1024,10 @@ check for requestor to be valid remote DRMS site
       while (seg = drms_record_nextseg(rec, &segp, 1))
         {
         DRMS_Record_t *segrec = seg->record;
-        SUM_info_t *sinfo = drms_get_suinfo(segrec->sunum, &sums_status); //ISS
+        SUM_info_t *sinfo = rec->suinfo;
         if (!sinfo)
           {
-          fprintf(stderr, "JSOC_FETCH Bad sunum %ld for recnum %ld in RecordSet: %s\n", segrec->sunum, rec->recnum, dsquery);
+          fprintf(stderr, "JSOC_FETCH Bad sunum %lld for recnum %lld in RecordSet: %s\n", segrec->sunum, rec->recnum, dsquery);
           // no longer die here, leave it to the export process to deal with missing segments
           all_online = 0;
           }
@@ -1050,8 +1086,6 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
       }
     if (size > 0 && size < 1024*1024) size = 1024*1024;
     size /= 1024*1024;
-    if (my_sum)
-      SUM_close(my_sum,printkerr);
   
     // Exit if no records found
     if ((strcmp(method,"url_quick")==0 && (strcmp(protocol,kOptProtocolAsIs)==0) || strcmp(protocol,"su")==0) && segcount == 0)
@@ -1112,7 +1146,16 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
       {
       if (0 && segcount == 1) // If only one file then do immediate delivery of that file.
         {
-        return(send_file(rs->records[0], 0));
+           char sfpath[DRMS_MAXPATHLEN];
+           int sfret = send_file(rs->records[0], 0, sfpath, sizeof(sfpath));
+           if (sfret == 1)
+           {
+              JSONDIE2("Can not open file for export: ",sfpath);
+           }
+           else
+           {
+              return(sfret);
+           }
         }
       else if (dojson)
         {
