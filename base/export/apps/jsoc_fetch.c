@@ -282,13 +282,13 @@ TIME timenow()
  * return(1) will NOT cause the DoIt() program to return because the return(1)
  * is called from the sub-function.
  */
-#define JSONDIE(msg) {die(dojson,msg,"","4",&sunumarr,&infostructs);return(1);}
-#define JSONDIE2(msg,info) {die(dojson,msg,info,"4",&sunumarr,&infostructs);return(1);}
-#define JSONDIE3(msg,info) {die(dojson,msg,info,"6",&sunumarr,&infostructs);return(1);}
+#define JSONDIE(msg) {die(dojson,msg,"","4",&sunumarr,&infostructs,&webarglist);return(1);}
+#define JSONDIE2(msg,info) {die(dojson,msg,info,"4",&sunumarr,&infostructs,&webarglist);return(1);}
+#define JSONDIE3(msg,info) {die(dojson,msg,info,"6",&sunumarr,&infostructs,&webarglist);return(1);}
 
 int fileupload = 0;
 
-int die(int dojson, char *msg, char *info, char *stat, int64_t **psunumarr, SUM_info_t ***infostructs)
+int die(int dojson, char *msg, char *info, char *stat, int64_t **psunumarr, SUM_info_t ***infostructs, char **webarglist)
   {
   char *msgjson;
   char errval[10];
@@ -327,6 +327,12 @@ if (DEBUG) fprintf(stderr,"%s%s\n",msg,info);
   {
      free(*infostructs);
      *infostructs = NULL;
+  }
+
+  if (webarglist && *webarglist)
+  {
+     free(*webarglist);
+     *webarglist = NULL;
   }
 
   return(1);
@@ -392,9 +398,10 @@ char *illegalArg(char *arg)
   return(NULL);
   }
 
-static int SetWebArg(Q_ENTRY *req, const char *key)
+static int SetWebArg(Q_ENTRY *req, const char *key, char **arglist, int *size)
    {
    char *value = NULL;
+   char buf[1024];
    if (req)
       {
       value = (char *)qEntryGetStr(req, key);
@@ -407,7 +414,7 @@ static int SetWebArg(Q_ENTRY *req, const char *key)
              * function here - but it is not possible to do that from a function
              * called by DoIt(). But I've retained the original semantics of 
              * returning back to DoIt() from here. */
-            die(dojson, "Illegal text in arg: ", arg_bad, "4", NULL, NULL);
+            die(dojson, "Illegal text in arg: ", arg_bad, "4", NULL, NULL, arglist);
             return(1);
          }
 
@@ -417,28 +424,33 @@ static int SetWebArg(Q_ENTRY *req, const char *key)
              * function here - but it is not possible to do that from a function
              * called by DoIt(). But I've retained the original semantics of 
              * returning back to DoIt() from here. */
-            die(dojson, "CommandLine Error", "", "4", NULL, NULL);
+            die(dojson, "CommandLine Error", "", "4", NULL, NULL, arglist);
             return(1);
          }
+
+         /* ART - keep a copy of the web arguments provided via HTTP POST so that we can 
+          * debug issues more easily. */
+         snprintf(buf, sizeof(buf), "%s=%s\n", key, value);
+         *arglist = base_strcatalloc(*arglist, buf, size);
          }
       }
    return(0);
    }
 
-static int SetWebFileArg(Q_ENTRY *req, const char *key)
+static int SetWebFileArg(Q_ENTRY *req, const char *key, char **arglist, int *size)
    {
    char *value = NULL;
    int len;
    char keyname[100], length[20];
-   SetWebArg(req, key);     // get contents of upload file
+   SetWebArg(req, key, arglist, size);     // get contents of upload file
    sprintf(keyname, "%s.length", key);
    len = qEntryGetInt(req, keyname);
    sprintf(length, "%d", len);
    cmdparams_set(&cmdparams, keyname, length);
    sprintf(keyname, "%s.filename", key);
-   SetWebArg(req, keyname);     // get name of upload file
+   SetWebArg(req, keyname, arglist, size);     // get name of upload file
    sprintf(keyname, "%s.contenttype", key);
-   SetWebArg(req, keyname);     // get name of upload file
+   SetWebArg(req, keyname, arglist, size);     // get name of upload file
    return(0);
    }
 
@@ -482,11 +494,15 @@ int DoIt(void)
   FILE *requestid_log = NULL;
   char msgbuf[128];
   SUM_info_t **infostructs = NULL;
+  char *webarglist = NULL;
+  size_t webarglistsz;
 
   if (nice_intro ()) return (0);
 
   web_query = strdup (cmdparams_get_str (&cmdparams, "QUERY_STRING", NULL));
   from_web = strcmp (web_query, kNotSpecified) != 0;
+
+  from_web = 1;
 
   if (from_web)
      {
@@ -503,29 +519,33 @@ int DoIt(void)
      rmeth = cmdparams_get_str(&cmdparams, "REQUEST_METHOD", NULL);
      is_POST = strcasecmp(rmeth, "post") == 0;
 
+     webarglistsz = 2048;
+     webarglist = (char *)malloc(webarglistsz);
+     *webarglist = '\0';
+
      req = qCgiRequestParseQueries(NULL, NULL);
      if (req)
         {
-        /* Accept only known key-value pairs - ignore the rest. */
-	SetWebArg(req, kArgOp);
-	SetWebArg(req, kArgRequestid);
-	SetWebArg(req, kArgDs);
-	SetWebArg(req, kArgSunum);
-	SetWebArg(req, kArgSeg);
-	SetWebArg(req, kArgProcess);
-	SetWebArg(req, kArgFormat);
-	SetWebArg(req, kArgFormatvar);
-	SetWebArg(req, kArgMethod);
-	SetWebArg(req, kArgProtocol);
-	SetWebArg(req, kArgFilenamefmt);
-	SetWebArg(req, kArgRequestor);
-	SetWebArg(req, kArgNotify);
-	SetWebArg(req, kArgShipto);
-	SetWebArg(req, kArgRequestorid);
-        if (strncmp(cmdparams_get_str (&cmdparams, kArgDs, NULL),"*file*", 6) == 0);
-	  SetWebFileArg(req, kArgFile);
+           /* Accept only known key-value pairs - ignore the rest. */
+           SetWebArg(req, kArgOp, &webarglist, &webarglistsz);
+           SetWebArg(req, kArgRequestid, &webarglist, &webarglistsz);
+           SetWebArg(req, kArgDs, &webarglist, &webarglistsz);
+           SetWebArg(req, kArgSunum, &webarglist, &webarglistsz);
+           SetWebArg(req, kArgSeg, &webarglist, &webarglistsz);
+           SetWebArg(req, kArgProcess, &webarglist, &webarglistsz);
+           SetWebArg(req, kArgFormat, &webarglist, &webarglistsz);
+           SetWebArg(req, kArgFormatvar, &webarglist, &webarglistsz);
+           SetWebArg(req, kArgMethod, &webarglist, &webarglistsz);
+           SetWebArg(req, kArgProtocol, &webarglist, &webarglistsz);
+           SetWebArg(req, kArgFilenamefmt, &webarglist, &webarglistsz);
+           SetWebArg(req, kArgRequestor, &webarglist, &webarglistsz);
+           SetWebArg(req, kArgNotify, &webarglist, &webarglistsz);
+           SetWebArg(req, kArgShipto, &webarglist, &webarglistsz);
+           SetWebArg(req, kArgRequestorid, &webarglist, &webarglistsz);
+           if (strncmp(cmdparams_get_str (&cmdparams, kArgDs, NULL),"*file*", 6) == 0);
+           SetWebFileArg(req, kArgFile, &webarglist, &webarglistsz);
 
-        qEntryFree(req); 
+           qEntryFree(req); 
         }
      }
   free(web_query);
@@ -564,21 +584,31 @@ int DoIt(void)
 // SPECIAL DEBUG LOG HERE XXXXXX
 {
 FILE *runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
-char now[100];
-const char *dbhost;
-int fileupload = strncmp(in, "*file*", 6) == 0;
-dbhost = cmdparams_get_str(&cmdparams, "JSOC_DBHOST", NULL);
-sprint_ut(now,time(0) + UNIX_EPOCH);
-fprintf(runlog,"PID=%d\n   %s\n   op=%s\n   in=%s\n   RequestID=%s\n   DBHOST=%s\n   REMOTE_ADDR=%s\n",
-   getpid(), now, op, in, requestid, dbhost, getenv("REMOTE_ADDR"));
-if (fileupload)  // recordset passed as uploaded file
-{
-char *file = (char *)cmdparams_get_str (&cmdparams, kArgFile, NULL);
-int filesize = cmdparams_get_int (&cmdparams, kArgFile".length", NULL);
-char *filename = (char *)cmdparams_get_str (&cmdparams, kArgFile".filename", NULL);
-fprintf(runlog,"   UploadFile: size=%d, name=%s, contents=%s\n",filesize,filename,file);
-}
-fclose(runlog);
+ if (runlog)
+ {
+    char now[100];
+    const char *dbhost;
+    int fileupload = strncmp(in, "*file*", 6) == 0;
+    dbhost = cmdparams_get_str(&cmdparams, "JSOC_DBHOST", NULL);
+    sprint_ut(now,time(0) + UNIX_EPOCH);
+    fprintf(runlog,"PID=%d\n   %s\n   op=%s\n   in=%s\n   RequestID=%s\n   DBHOST=%s\n   REMOTE_ADDR=%s\n",
+            getpid(), now, op, in, requestid, dbhost, getenv("REMOTE_ADDR"));
+    if (fileupload)  // recordset passed as uploaded file
+    {
+       char *file = (char *)cmdparams_get_str (&cmdparams, kArgFile, NULL);
+       int filesize = cmdparams_get_int (&cmdparams, kArgFile".length", NULL);
+       char *filename = (char *)cmdparams_get_str (&cmdparams, kArgFile".filename", NULL);
+       fprintf(runlog,"   UploadFile: size=%d, name=%s, contents=%s\n",filesize,filename,file);
+    }
+
+    /* Now print the web arguments (if jsoc_fetch was invoked via an HTTP POST verb). */
+    if (from_web)
+    {
+       fprintf(runlog, webarglist);
+    }
+
+    fclose(runlog);
+ }
 }
 
   export_series = kExportSeries;
