@@ -430,7 +430,7 @@ static int SetWebArg(Q_ENTRY *req, const char *key, char **arglist, int *size)
 
          /* ART - keep a copy of the web arguments provided via HTTP POST so that we can 
           * debug issues more easily. */
-         snprintf(buf, sizeof(buf), "%s=%s\n", key, value);
+         snprintf(buf, sizeof(buf), "%s='%s' ", key, value);
          *arglist = base_strcatalloc(*arglist, buf, size);
          }
       }
@@ -501,8 +501,6 @@ int DoIt(void)
 
   web_query = strdup (cmdparams_get_str (&cmdparams, "QUERY_STRING", NULL));
   from_web = strcmp (web_query, kNotSpecified) != 0;
-
-  from_web = 1;
 
   if (from_web)
      {
@@ -602,11 +600,39 @@ FILE *runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
     }
 
     /* Now print the web arguments (if jsoc_fetch was invoked via an HTTP POST verb). */
-    if (from_web)
+    if (from_web && strlen(webarglist) > 0)
     {
-       fprintf(runlog, webarglist);
+       int rlsize = strlen(webarglist) * 2;
+       char *rlbuf = malloc(rlsize);
+       memset(rlbuf, 0, rlsize);
+       char *pwa = webarglist;
+       char *prl = rlbuf;
+
+       /* Before printing the webarglist string, escape '%' chars - otherwise fprintf(), will
+        * think you want to replace things like "%lld" with a formated value - this happens
+        * even though there is not arg provided after webarglist. */
+       while (*pwa && (prl - rlbuf < rlsize - 1))
+       {
+          if (*pwa == '%')
+          {
+             *prl = '%';
+             prl++;
+          }
+
+          *prl = *pwa;
+          pwa++;
+          prl++;
+       }
+
+       *prl = '\0';
+
+       fprintf(runlog, "** HTTP POST arguments:\n");
+       fprintf(runlog, rlbuf);
+       fprintf(runlog, "\n");
+       free(rlbuf);
     }
 
+    fprintf(runlog, "**********************\n");
     fclose(runlog);
  }
 }
