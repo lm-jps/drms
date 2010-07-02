@@ -276,19 +276,92 @@ TIME timenow()
   return(now);
   }
 
+static void CleanUp(int64_t **psunumarr, SUM_info_t ***infostructs, char **webarglist,
+                    char **series, char **paths, char **sustatus, char **susize, int arrsize)
+{
+   int iarr;
+
+   if (psunumarr && *psunumarr)
+   {
+      free(*psunumarr);
+      *psunumarr = NULL;
+   }
+
+   if (infostructs && *infostructs)
+   {
+      free(*infostructs);
+      *infostructs = NULL;
+   }
+
+   if (webarglist && *webarglist)
+   {
+      free(*webarglist);
+      *webarglist = NULL;
+   }
+
+   if (series)
+   {
+      for (iarr = 0; iarr < arrsize; iarr++)
+      {
+         if (series[iarr])
+         {
+            free(series[iarr]);
+            series[iarr] = 0;
+         }
+      }
+   }
+
+   if (paths)
+   {
+      for (iarr = 0; iarr < arrsize; iarr++)
+      {
+         if (paths[iarr])
+         {
+            free(paths[iarr]);
+            paths[iarr] = 0;
+         }
+      }
+   }
+
+   if (sustatus)
+   {
+      for (iarr = 0; iarr < arrsize; iarr++)
+      {
+         if (sustatus[iarr])
+         {
+            free(sustatus[iarr]);
+            sustatus[iarr] = 0;
+         }
+      }
+   }
+
+   if (susize)
+   {
+      for (iarr = 0; iarr < arrsize; iarr++)
+      {
+         if (susize[iarr])
+         {
+            free(susize[iarr]);
+            susize[iarr] = 0;
+         }
+      }
+   }
+}
+
 /* Can't call these from sub-functions - can only be called from DoIt(). And 
  * calling these from within sub-functions is probably not the desired behavior -
  * I'm thinking that the calls from send_file and SetWebArg are mistakes. The
  * return(1) will NOT cause the DoIt() program to return because the return(1)
  * is called from the sub-function.
  */
-#define JSONDIE(msg) {die(dojson,msg,"","4",&sunumarr,&infostructs,&webarglist);return(1);}
-#define JSONDIE2(msg,info) {die(dojson,msg,info,"4",&sunumarr,&infostructs,&webarglist);return(1);}
-#define JSONDIE3(msg,info) {die(dojson,msg,info,"6",&sunumarr,&infostructs,&webarglist);return(1);}
+#define JSONDIE(msg) {die(dojson,msg,"","4",&sunumarr,&infostructs,&webarglist,series,paths,sustatus,susize,arrsize);return(1);}
+#define JSONDIE2(msg,info) {die(dojson,msg,info,"4",&sunumarr,&infostructs,&webarglist,series,paths,sustatus,susize,arrsize);return(1);}
+#define JSONDIE3(msg,info) {die(dojson,msg,info,"6",&sunumarr,&infostructs,&webarglist,series,paths,sustatus,susize,arrsize);return(1);}
 
 int fileupload = 0;
 
-int die(int dojson, char *msg, char *info, char *stat, int64_t **psunumarr, SUM_info_t ***infostructs, char **webarglist)
+int die(int dojson, char *msg, char *info, char *stat, int64_t **psunumarr, SUM_info_t ***infostructs, char **webarglist,
+        char **series, char **paths, char **sustatus, char **susize, int arrsize)
   {
   char *msgjson;
   char errval[10];
@@ -317,23 +390,7 @@ if (DEBUG) fprintf(stderr,"%s%s\n",msg,info);
     }
   fflush(stdout);
 
-  if (psunumarr && *psunumarr)
-  {
-     free(*psunumarr);
-     *psunumarr = NULL;
-  }
-
-  if (infostructs && *infostructs)
-  {
-     free(*infostructs);
-     *infostructs = NULL;
-  }
-
-  if (webarglist && *webarglist)
-  {
-     free(*webarglist);
-     *webarglist = NULL;
-  }
+  CleanUp(psunumarr, infostructs, webarglist, series, paths, sustatus, susize, arrsize);
 
   return(1);
   }
@@ -398,7 +455,7 @@ char *illegalArg(char *arg)
   return(NULL);
   }
 
-static int SetWebArg(Q_ENTRY *req, const char *key, char **arglist, int *size)
+static int SetWebArg(Q_ENTRY *req, const char *key, char **arglist, size_t *size)
    {
    char *value = NULL;
    char buf[1024];
@@ -414,7 +471,7 @@ static int SetWebArg(Q_ENTRY *req, const char *key, char **arglist, int *size)
              * function here - but it is not possible to do that from a function
              * called by DoIt(). But I've retained the original semantics of 
              * returning back to DoIt() from here. */
-            die(dojson, "Illegal text in arg: ", arg_bad, "4", NULL, NULL, arglist);
+            die(dojson, "Illegal text in arg: ", arg_bad, "4", NULL, NULL, arglist, NULL, NULL, NULL, NULL, 0);
             return(1);
          }
 
@@ -424,7 +481,7 @@ static int SetWebArg(Q_ENTRY *req, const char *key, char **arglist, int *size)
              * function here - but it is not possible to do that from a function
              * called by DoIt(). But I've retained the original semantics of 
              * returning back to DoIt() from here. */
-            die(dojson, "CommandLine Error", "", "4", NULL, NULL, arglist);
+            die(dojson, "CommandLine Error", "", "4", NULL, NULL, arglist, NULL, NULL, NULL, NULL, 0);
             return(1);
          }
 
@@ -437,7 +494,7 @@ static int SetWebArg(Q_ENTRY *req, const char *key, char **arglist, int *size)
    return(0);
    }
 
-static int SetWebFileArg(Q_ENTRY *req, const char *key, char **arglist, int *size)
+static int SetWebFileArg(Q_ENTRY *req, const char *key, char **arglist, size_t *size)
    {
    char *value = NULL;
    int len;
@@ -496,6 +553,12 @@ int DoIt(void)
   SUM_info_t **infostructs = NULL;
   char *webarglist = NULL;
   size_t webarglistsz;
+
+  char *paths[DRMS_MAXQUERYLEN/8] = {0};
+  char *series[DRMS_MAXQUERYLEN/8] = {0};
+  char *sustatus[DRMS_MAXQUERYLEN/8] = {0};
+  char *susize[DRMS_MAXQUERYLEN/8] = {0};
+  int arrsize = DRMS_MAXQUERYLEN/8;
 
   if (nice_intro ()) return (0);
 
@@ -640,10 +703,6 @@ FILE *runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
   export_series = kExportSeries;
 
   long long sunums[DRMS_MAXQUERYLEN/8];  // should be enough!
-  char *paths[DRMS_MAXQUERYLEN/8];
-  char *series[DRMS_MAXQUERYLEN/8];
-  char *sustatus[DRMS_MAXQUERYLEN/8];
-  char *susize[DRMS_MAXQUERYLEN/8];
   int expsucount;
 
   /*  op == exp_su - export Storage Units */
@@ -699,7 +758,7 @@ FILE *runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
     for (isunum = 0; isunum < nsunums; isunum++)
       {
       SUM_info_t *sinfo;
-      TIME expire;
+      TIME expire = 0;
 
       dirsize = 0;
       memset(onlinestat, 0, sizeof(onlinestat));
@@ -757,7 +816,10 @@ FILE *runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
 
          count += 1;
          }
-      }
+
+      free(sinfo);
+      sinfo = NULL;
+      } /* isunum */
 
     expsucount = count;
 
@@ -846,7 +908,10 @@ FILE *runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
         printf("%s\n",json);
         fflush(stdout);
         free(json);
-        }  
+
+        /* I think we can free jroot */
+        json_free_value(&jroot);
+        } /* dojson */  
       else
         {
         int i;
@@ -869,10 +934,14 @@ FILE *runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
         {
          /* If not a VSO request, we're done. If a VSO request, done if all online, or if SUMS is down. 
           * Otherwise, continue below and start a new request for the items not online. */
-         return(0);
+           CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize);
+           return(0);
         }
       else if (strcmp(requestid, kNoAsyncReq) == 0) // user never wants full export of leftovers
-        return 0;
+      {
+         CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize);
+         return 0;
+      }
       }
 
     // Must do full export processing
@@ -1194,6 +1263,8 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
   	printf("requestid=VOID\n");
   	printf("wait=0\n");
   	}
+
+      CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize);
       return(0);
       }
 
@@ -1210,6 +1281,7 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
            }
            else
            {
+              CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize);
               return(sfret);
            }
         }
@@ -1250,6 +1322,7 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
   	printf("wait=0\n");
         quick_export_rs(NULL, rs, 0, size); // add count, size, and array data of names and paths
   	}
+      CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize);
       return(0);
       }
 
@@ -1643,18 +1716,6 @@ JSONDIE("Re-Export requests temporarily disabled.");
       }
     }
 
-  if (strcmp(op, kOpExpSu) == 0)
-    {
-     /* free everything */
-     int i;
-     for (i = 0; i < expsucount; i++)
-       {
-        free(series[i]);
-        free(paths[i]);
-        free(sustatus[i]);
-        free(susize[i]);
-       }
-    }
-
+  CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize);
   return(0);
   }
