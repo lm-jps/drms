@@ -615,12 +615,27 @@ int DoIt(void)
   op = cmdparams_get_str (&cmdparams, kArgOp, NULL);
   requestid = cmdparams_get_str (&cmdparams, kArgRequestid, NULL);
   in = cmdparams_get_str (&cmdparams, kArgDs, NULL);
+
+  // HACK alert.  due to use of ARG_INTS which is not processed properly by SetWegArgs
+  // the following lines are added.  They can be removed after a new function to replace
+  // cmdparams_set as used in SetWebArgs
+   {
+   int cmdline_parse_array (CmdParams_t *params, const char *root, ModuleArgs_Type_t dtype, const char *valist);
+   CmdParams_Arg_t *thisarg = (CmdParams_Arg_t *)hcon_lookup(cmdparams.args, kArgSunum);
+   if ((status = cmdline_parse_array (&cmdparams, kArgSunum, ARG_INTS, thisarg->strval)))
+     {
+     snprintf(msgbuf, sizeof(msgbuf), 
+              "Invalid array argument , '%s=%s'.\n", kArgSunum, cmdparams_get_str(&cmdparams, kArgSunum, NULL));
+     JSONDIE(msgbuf);
+     }
+   }
+  // end hack
   nsunums = cmdparams_get_int64arr(&cmdparams, kArgSunum, &sunumarr, &status);
 
   if (status != CMDPARAMS_SUCCESS)
   {
      snprintf(msgbuf, sizeof(msgbuf), 
-              "Invalid argument '%s=%s'.\n", kArgSunum, cmdparams_get_str(&cmdparams, kArgSunum, NULL));
+              "Invalid argument on entry, '%s=%s'.\n", kArgSunum, cmdparams_get_str(&cmdparams, kArgSunum, NULL));
      JSONDIE(msgbuf);
   }
 
@@ -727,7 +742,7 @@ FILE *runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
        if (status != CMDPARAMS_SUCCESS)
        {
           snprintf(msgbuf, sizeof(msgbuf), 
-                   "Invalid argument '%s=%s'.\n", kArgDs, cmdparams_get_str(&cmdparams, kArgDs, NULL));
+                   "Invalid argument in exp_su, '%s=%s'.\n", kArgDs, cmdparams_get_str(&cmdparams, kArgDs, NULL));
           JSONDIE(msgbuf);
        }
     }
