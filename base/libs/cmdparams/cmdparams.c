@@ -653,6 +653,11 @@ static int parse_array (CmdParams_t *params, const char *root, ModuleArgs_Type_t
   return status;
 }
 
+int cmdline_parse_array (CmdParams_t *params, const char *root, ModuleArgs_Type_t dtype, const char *valist)
+{
+return parse_array(params, root, dtype, valist);
+}
+
 static int parse_numerated (char *klist, char ***names) {
 /*
  *  Parses an entry in the args list of type ARG_NUME and returns the number
