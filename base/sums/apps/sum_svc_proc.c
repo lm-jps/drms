@@ -69,6 +69,7 @@ CLIENT *set_client_handle(uint32_t prognum, uint32_t versnum)
       write_log("**** Did someone remove us from the portmapper? ****\n");
       return(0);		/* error ret */
     }
+/*********************************NOOP out 14Jun2010*****************
 //get sending host IP and port#
 socklen_t len;
 struct sockaddr_storage addr;
@@ -88,6 +89,7 @@ if (addr.ss_family == AF_INET) {
 }
 write_log("Peer IP/port: %s/%d  Caller:%s\n", ipstr, port, callername);
 sprintf(callername, "<none>");	//eventually elim callername everywhere
+*********************************NOOP out 14Jun2010*****************/
 
     /* set glb vrbl for poss use by sum_svc if result != 0 */
     current_client = client;
@@ -417,6 +419,8 @@ KEY *infodo_1(KEY *params)
   }
   sunum = getkey_uint64(params, "SUNUM");
   uid = getkey_uint64(params, "uid");
+  write_log("SUM_Info() for user=%s sunum=%lu\n", 
+		GETKEY_str(params, "username"), sunum);
   if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
     write_log("**Error: infodo_1() called with unopened uid=%lu\n", uid);
     rinfo = 1;	/* give err status back to original caller */
@@ -523,6 +527,7 @@ KEY *infodoX_1(KEY *params)
 KEY *putdo_1(KEY *params)
 {
   int status;
+  uint64_t sunum = 0;
   uint64_t uid;
   char sysstr[128];
   char *cptr, *wd;
@@ -537,6 +542,9 @@ KEY *putdo_1(KEY *params)
   }
   }
   uid = getkey_uint64(params, "uid");
+  sunum = getkey_uint64(params, "dsix_0");
+  write_log("SUM_put() for user=%s sunum=%lu\n", 
+		GETKEY_str(params, "username"), sunum);
   if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
     write_log("**Error: putdo_1() called with unopened uid=%lu\n", uid);
     rinfo = 1;	/* give err status back to original caller */
@@ -602,7 +610,7 @@ KEY *closedo_1(KEY *params)
   }
   remsumopened(&sumopened_hdr, (uint32_t)uid); /* rem from linked list */
   rinfo = SUMLIB_Close(params);
-  write_log("SUMLIB_Close for user=%s uid=%lu\n",
+  write_log("SUM_close for user=%s uid=%lu\n",
 		GETKEY_str(params, "USER"), getkey_uint64(params, "uid"));
   send_ack();
   return((KEY *)1);	/* nothing will be sent later */
