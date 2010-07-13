@@ -14,7 +14,7 @@
 
 \par Synopsis:
 show_coverage ds=<seriesname> [-h]
-show_coverage ds=<seriesname> [-iqv] [low=<starttime>] [high=<stoptime>] [block=<blocklength>] [key=<pkey>] [<other_primekey>=<value>...]
+show_coverage ds=<seriesname> [-iqv] [low=<starttime>] [high=<stoptime>] [block=<blocklength>] [key=<pkey>] [mask=<badbits>] [<other_primekey>=<value>...]
 show_coverage_sock {same options as above}
 \endcode
 
@@ -29,7 +29,9 @@ a slotted series to be present (such as lev0 HK data for HMI and AIA.)
 The operation is to scan the series for all possible records between the \a low and \a high
 limits or the present first and last records if \a low or \a high are absent.  For each
 record found, the "quality" of the data will be assessed.  If a keyword named "QUALITY" is present
-its value will be tested and the record will be labeled "MISSING" if QUALITY is negative.  If
+its value will be tested and the record will be labeled "MISSING" if QUALITY is negative.  If both
+a QUALITY keyword is present in the data and the "mask" argument is present, then that mask will
+be "anded" with QUALITY to determine records to be marked as MISSING.  If
 no QUALITY keyword is found but a keyword named "DATAVALS" is present then DATAVALS will
 be tested and a record with DATAVALS == 0 will be labeled MISSING.  If the record is not
 labeled MISSING it will be labeled "OK".  If no record is present for a record slot in the
@@ -56,6 +58,7 @@ and selected values may be provided as additional keyword=value pairs.
 \li \c high=<stoptime> - optional last value of ordering prime key to use, default to last record in series (as [$]).
 \li \c key=<pkey> - optional prime key name to use, default is first integer or slotted prime-key
 \li \c low=<starttime> - optional first value of ordering prime key to use, default to first record in series (as [^]).
+\li \c mask=<badbits> - optional usually Hex number with bits to test against QUALITY to label record as MISS.
 \li \c other_primekey=<value>... - optional additional primekey=value pairs to restrict survey based on multiple primekeys.
 
 \par JSOC flags:
@@ -178,6 +181,7 @@ ModuleArgs_t module_args[] =
     {ARG_STRING, "low", NOT_SPECIFIED, "Low limit for coverage map."},
     {ARG_STRING, "high", NOT_SPECIFIED, "High limit for coverage map."},
     {ARG_STRING, "key", NOT_SPECIFIED, "Prime key name to use, default is first prime"},
+    {ARG_INT, "mask", "0", "Mask to use for bits in QUALITY that will cause the record to be counted as MISS"},
     {ARG_FLAG, "o", "0", "Verify - verify that SU is available for records with data"},
     {ARG_FLAG, "i", "0", "Index - Print index values instead of prime slot values"},
     {ARG_FLAG, "q", "0", "Quiet - omit series header info"},
@@ -204,6 +208,7 @@ int nice_intro ()
         "ds=<seriesname> - required\n"
         "key=<prime_key> - prime key to use if not the first available\n"
         "block=<blocklength> - interval span for summary data\n"
+        "mask=<bad_bit_mask> - mask to be checked in QUALITY\n"
         "low=<starttime> - start of range for completeness survey, defaults to [^]\n"
         "high=<stoptime> - end of range for completeness summary, defaults to [$]\n"
         "<other_prime>=<value> - optional additional filters to limit the survey\n"
@@ -236,15 +241,16 @@ int DoIt(void)
   char in[DRMS_MAXQUERYLEN];
   char *inbracket;
   char otherkeys[20*DRMS_MAXQUERYLEN];
-  char *ds = cmdparams_get_str (&cmdparams, "ds", NULL);
-  char *report = cmdparams_get_str (&cmdparams, "coverage", NULL);
-  char *blockstr = cmdparams_get_str (&cmdparams, "block", NULL);
-  char *lowstr = cmdparams_get_str (&cmdparams, "low", NULL);
-  char *highstr = cmdparams_get_str (&cmdparams, "high", NULL);
-  char *skeyname = cmdparams_get_str (&cmdparams, "key", NULL);
+  const char *ds = cmdparams_get_str (&cmdparams, "ds", NULL);
+  const char *report = cmdparams_get_str (&cmdparams, "coverage", NULL);
+  const char *blockstr = cmdparams_get_str (&cmdparams, "block", NULL);
+  const char *lowstr = cmdparams_get_str (&cmdparams, "low", NULL);
+  const char *highstr = cmdparams_get_str (&cmdparams, "high", NULL);
+  const char *skeyname = cmdparams_get_str (&cmdparams, "key", NULL);
   int verify = cmdparams_get_int (&cmdparams, "o", NULL) != 0;
   int quiet = cmdparams_get_int (&cmdparams, "q", NULL) != 0;
   int useindex = cmdparams_get_int (&cmdparams, "i", NULL) != 0;
+  long long mask = cmdparams_get_int (&cmdparams, "mask", NULL);
   char *map;
   long long islot, jslot, nslots, blockstep;
   char *qualkey;
@@ -339,6 +345,11 @@ int DoIt(void)
 	{
 	qualkey = "QUALITY";
 	qualkind = 1;
+        if (mask != 0)
+          {
+          qualkind = 3;
+          // mask |= 0x80000000;
+          }
 	}
   else if (drms_keyword_lookup(template, "DATAVALS", 1))
 	{
@@ -399,7 +410,7 @@ int DoIt(void)
   else
 	{
 	if (ptype == DRMS_TYPE_TIME)
-		low = sscan_time(lowstr);
+		low = sscan_time((char *)lowstr);
 	else
 		low = (TIME)atof(lowstr);
 	}
@@ -424,7 +435,7 @@ int DoIt(void)
   else
 	{
 	if (ptype == DRMS_TYPE_TIME)
-		high = sscan_time(highstr);
+		high = sscan_time((char *)highstr);
 	else
 		high = atof(highstr);
 	}
@@ -511,7 +522,7 @@ int DoIt(void)
 		if (qualkind)
 			{
 			qualval = *((long long *)data->data + qualindex*nrecs + irec);
-			if ((qualkind == 1 && qualval < 0) || (qualkind == 2 && qualval == 0))
+			if ((qualkind == 1 && qualval < 0) || (qualkind == 2 && qualval == 0) || (qualkind == 3 && (qualval & mask)))
 			     val = DATA_MISS;
 			else if (verify)
 				{
@@ -547,6 +558,7 @@ if (!quiet)
   fprintf(out, "series_low="); printprime(out, series_low, ptype, punit, pformat); fprintf(out, "\n");
   fprintf(out, "series_high="); printprime(out, series_high, ptype, punit, pformat); fprintf(out, "\n");
   fprintf(out, "qualkey=%s\n", qualkey);
+  if (qualkind == 3) fprintf(out, "mask=%#08x\n", (int)mask);
   }
 // fprintf(out, "lowslot=%ld, highslot=%ld, serieslowslot=%ld serieshighslot=%ld\n",lowslot, highslot, serieslowslot, serieshighslot);
 
