@@ -22,4 +22,8 @@ $(PROJOBJDIR):
 	+@[ -d $@/rings/apps/ ] || mkdir -p $@/rings/apps
 	+@[ -d $@/mag/apps/ ] || mkdir -p $@/mag/apps
 	+@[ -d $@/mag/pfss/apps ] || mkdir -p $@/mag/pfss/apps
-
+	+@[ -d $@/mag/ambig/apps ] || mkdir -p $@/mag/ambig/apps
+	+@[ -d $@/mag/ident/apps ] || mkdir -p $@/mag/ident/apps
+	+@[ -d $@/mag/ident/libs/mex2c ] || mkdir -p $@/mag/ident/libs/mex2c
+	+@[ -d $@/mag/ident/libs/mexfunctions ] || mkdir -p $@/mag/ident/libs/mexfunctions
+	+@[ -d $@/mag/ident/libs/util ] || mkdir -p $@/mag/ident/libs/util
