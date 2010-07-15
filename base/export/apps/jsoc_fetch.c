@@ -13,6 +13,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <stdlib.h>
 #include <time.h>
 
 #define MAX_EXPORT_SIZE 100000  // 100GB
@@ -63,7 +64,7 @@ ModuleArgs_t module_args[] =
   {ARG_STRING, kArgOp, kNotSpecified, "<Operation>"},
   {ARG_STRING, kArgDs, kNotSpecified, "<record_set query>"},
   {ARG_STRING, kArgSeg, kNotSpecified, "<record_set segment list>"},
-  {ARG_INTS, kArgSunum, "-1", "<sunum list for SU exports>"},
+  {ARG_STRING, kArgSunum, kNotSpecified, "<sunum list for SU exports>"},
   {ARG_STRING, kArgRequestid, kNotSpecified, "JSOC export request identifier"},
   {ARG_STRING, kArgProcess, kNotSpecified, "string containing program and arguments"},
   {ARG_STRING, kArgRequestor, kNotSpecified, "name of requestor"},
@@ -616,29 +617,21 @@ int DoIt(void)
   requestid = cmdparams_get_str (&cmdparams, kArgRequestid, NULL);
   in = cmdparams_get_str (&cmdparams, kArgDs, NULL);
 
-  // HACK alert.  due to use of ARG_INTS which is not processed properly by SetWegArgs
-  // the following lines are added.  They can be removed after a new function to replace
-  // cmdparams_set as used in SetWebArgs
-   {
-   int cmdline_parse_array (CmdParams_t *params, const char *root, ModuleArgs_Type_t dtype, const char *valist);
-   CmdParams_Arg_t *thisarg = (CmdParams_Arg_t *)hcon_lookup(cmdparams.args, kArgSunum);
-   if ((status = cmdline_parse_array (&cmdparams, kArgSunum, ARG_INTS, thisarg->strval)))
-     {
-     snprintf(msgbuf, sizeof(msgbuf), 
-              "Invalid array argument , '%s=%s'.\n", kArgSunum, cmdparams_get_str(&cmdparams, kArgSunum, NULL));
-     JSONDIE(msgbuf);
-     }
-   }
-  // end hack
-  nsunums = cmdparams_get_int64arr(&cmdparams, kArgSunum, &sunumarr, &status);
-
-  if (status != CMDPARAMS_SUCCESS)
-  {
-     snprintf(msgbuf, sizeof(msgbuf), 
-              "Invalid argument on entry, '%s=%s'.\n", kArgSunum, cmdparams_get_str(&cmdparams, kArgSunum, NULL));
-     JSONDIE(msgbuf);
-  }
-
+  if (strcmp(kArgSunum, kNotSpecified) != 0)
+    { // unpack list of sunums
+    sunumarr = (int64_t *)malloc(1024*sizeof(int64_t));
+    nsunums = 0;
+    char *sulist = strdup(cmdparams_get_str(&cmdparams, kArgSunum, NULL));
+    char *p = sulist;
+    while (*p)
+      {
+      sunumarr[nsunums++] = strtoll(p, &p, 10);
+      if (*p == ',') p++;
+      if (nsunums >= 1024) JSONDIE("Too many sunums, max 1024 per call");
+      }
+    free(sulist);
+    }
+    
   seglist = cmdparams_get_str (&cmdparams, kArgSeg, NULL);
   process = cmdparams_get_str (&cmdparams, kArgProcess, NULL);
   format = cmdparams_get_str (&cmdparams, kArgFormat, NULL);
@@ -735,19 +728,7 @@ FILE *runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
     all_online = 1;
     count = 0;
 
-    if (!sunumarr || sunumarr[0] < 0)
-    {
-       nsunums = cmdparams_get_int64arr(&cmdparams, kArgDs, &sunumarr, &status);
-
-       if (status != CMDPARAMS_SUCCESS)
-       {
-          snprintf(msgbuf, sizeof(msgbuf), 
-                   "Invalid argument in exp_su, '%s=%s'.\n", kArgDs, cmdparams_get_str(&cmdparams, kArgDs, NULL));
-          JSONDIE(msgbuf);
-       }
-    }
-
-    if (!sunumarr || sunumarr[0] < 0)
+    if (!sunumarr || nsunums <= 0)
     {
        JSONDIE("There are no SUs in sunum or ds params");
     }
@@ -1016,7 +997,7 @@ check for requestor to be valid remote DRMS site
     if ( !requestid || !*requestid || strcmp(requestid, "none") == 0)
       JSONDIE("Must have valid requestID - internal error.");
 
-    if (strcmp(in, kNotSpecified) == 0 && (!sunumarr || sunumarr[0] < 0))
+    if (strcmp(in, kNotSpecified) == 0 && (!sunumarr || nsunums <= 0))
       JSONDIE("Must have valid Recordset or SU set");
 
     export_log = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
