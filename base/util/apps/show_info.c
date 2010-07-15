@@ -600,6 +600,8 @@ static int GetSUMinfo(DRMS_Env_t *env, HContainer_t **info, int64_t *given_sunum
                 * not be NULL, and instead one of the fields will indicate an invalid SUNUM. */
                if (*(infostructs[iinfo]->online_loc) == '\0')
                {
+                  printf("### show_info: SUNUM '%llu' unknown to local SUMS - initiating remotesums call.\n", (unsigned long long)infostructs[iinfo]->sunum);
+
                   if (!remotesunums)
                   {
                      remotesunums = list_llcreate(sizeof(long long), NULL);
