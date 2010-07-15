@@ -2239,10 +2239,14 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           /* Use the sudir field to hold the resultant SUM_info_t structs */
           for (i = 0; i < isunum; i++)
           {
-             snprintf(key, sizeof(key), "%llu", (unsigned long long)(psinfo->sunum));
+             /* NOTE - if an sunum is unknown, the returned SUM_info_t will have the sunum set 
+              * to -1.  So don't use the returned sunum. */
+             snprintf(key, sizeof(key), "%llu", (unsigned long long)(sum->dsix_ptr[i]));
              if ((pinfo = hcon_lookup(map, key)) != NULL)
              {
                 *pinfo = psinfo;
+                /* work around SUMS ditching the SUNUM for bad SUNUMs */
+                (*pinfo)->sunum = sum->dsix_ptr[i];
              }
              else
              {
@@ -2255,7 +2259,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           }
 
           for (i = 0; i < request->reqcnt; i++)
-          {
+          {            
              snprintf(key, sizeof(key), "%llu", (unsigned long long)(request->sunum[i]));
              if ((pinfo = hcon_lookup(map, key)) != NULL)
              {

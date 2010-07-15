@@ -1084,8 +1084,10 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
             /* reply->surdir now has pointers to the SUM_info_t structs */
             for (iinfo = 0; iinfo < nReqs; iinfo++)
             {
+               /* NOTE - if an sunum is unknown, the returned SUM_info_t will have the sunum set 
+                * to -1.  So don't use the returned sunum. */
                retinfo = (SUM_info_t *)(reply->sudir[iinfo]);
-               snprintf(key, sizeof(key), "%llu", (unsigned long long)(retinfo->sunum));
+               snprintf(key, sizeof(key), "%llu", (unsigned long long)(request->sunum[iinfo]));
                if ((pinfo = hcon_lookup(map, key)) != NULL)
                {
                   *pinfo = retinfo;

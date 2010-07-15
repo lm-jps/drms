@@ -560,7 +560,7 @@ static int GetSUMinfo(DRMS_Env_t *env, HContainer_t **info, int64_t *given_sunum
    {
       SUM_info_t **infostructs = NULL;
       int iremote;
-      DRMS_StorageUnit_t *sus = NULL;
+      DRMS_StorageUnit_t **sus = NULL;
       int iinfo;
       LinkedList_t *remotesunums = NULL;
 
@@ -626,11 +626,13 @@ static int GetSUMinfo(DRMS_Env_t *env, HContainer_t **info, int64_t *given_sunum
                ListNode_t *node = NULL;
                int suret = DRMS_SUCCESS;
 
-               sus = malloc(sizeof(DRMS_StorageUnit_t) * iremote);
+               sus = malloc(sizeof(DRMS_StorageUnit_t *) * iremote);
+               list_llreset(remotesunums);
 
                for (isu = 0; isu < iremote; isu++)
                {
-                  su = &(sus[isu]);
+                  sus[isu] = malloc(sizeof(DRMS_StorageUnit_t));
+                  su = sus[isu];
 
                   node = list_llnext(remotesunums);
 
@@ -644,7 +646,7 @@ static int GetSUMinfo(DRMS_Env_t *env, HContainer_t **info, int64_t *given_sunum
                   su->seriesinfo = NULL;
                }
 
-               suret = drms_getsudirs(env, &sus, iremote, 1, 0);
+               suret = drms_getsudirs(env, sus, iremote, 1, 0);
 
                if (suret == DRMS_REMOTESUMS_TRYLATER)
                {
@@ -677,6 +679,19 @@ static int GetSUMinfo(DRMS_Env_t *env, HContainer_t **info, int64_t *given_sunum
                if (remotesunums)
                {
                   list_llfree(&remotesunums);
+               }
+
+               if (sus)
+               {
+                  for (isu = 0; isu < iremote; isu++)
+                  {
+                     su = sus[isu];
+                     if (su)
+                     {
+                        free(su);
+                        su = NULL;
+                     }
+                  }
                }
             }
             else
