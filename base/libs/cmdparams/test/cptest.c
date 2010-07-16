@@ -5,7 +5,7 @@ ModuleArgs_t module_args[] = {
    {ARG_FLAG, "p", NULL, "Test flag.", NULL},   /* print details */
    {ARG_STRING, "strarg1", NULL, "Test string arg with no default", NULL},
    {ARG_STRING, "strarg2", "jicama", "Test string arg with default", NULL},
-   {ARG_INT, "intarg", NULL, "Test int arg with no default", NULL},
+   {ARG_INT, "intarg", NULL, "Test int arg with no default", "[7,10]"},
    {ARG_FLOAT, "fltarg", "23.7", "Test float arg with default", NULL},
    {ARG_DOUBLE, "dblarg", "67.237627", "", NULL},
    {ARG_INTS, "intsarg", "[1,2,6,2,6,7,3,78]", "Test int-array arg with default", NULL},

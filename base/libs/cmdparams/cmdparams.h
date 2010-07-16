@@ -128,6 +128,7 @@ struct CmdParams_struct {
   int numunnamed;           /* Number of unnamed arguments in param structure. */
   HContainer_t *reserved;   /* A hash of reserved keyword names (names that the program may not use - specified by
                              * the program itself). */
+  HContainer_t *defps;
 };
 /** @brief CmdParams struct reference */
 typedef struct CmdParams_struct CmdParams_t;
@@ -331,7 +332,7 @@ int16_t cmdparams_get_int16 (CmdParams_t *parms, char *name, int *status);
 int32_t cmdparams_get_int32 (CmdParams_t *parms, char *name, int *status);
 int64_t cmdparams_get_int64 (CmdParams_t *parms, char *name, int *status);
 float cmdparams_get_float (CmdParams_t *parms, char *name, int *status);
-double cmdparams_get_double (CmdParams_t *parms, char *name, int *status);
+double cmdparams_get_double (CmdParams_t *parms, const char *name, int *status);
 int cmdparams_get_dblarr(CmdParams_t *parms, char *name, double **arr, int *status);
 						/*  Generic integer version  */
 int cmdparams_get_int (CmdParams_t *parms, char *name, int *status);
@@ -348,7 +349,7 @@ returns a NULL pointer.
 \a cmdparams_get_XXX) cannot find a hash table entry for the requested
 name, it will use the corresponding environment variable, if it exists.
 */
-const char *cmdparams_get_str (CmdParams_t *parms, char *name, int *status);
+const char *cmdparams_get_str (CmdParams_t *parms, const char *name, int *status);
 
 /** 
 Returns a double representing the internal time representation of a 
