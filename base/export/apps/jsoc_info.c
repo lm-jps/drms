@@ -302,6 +302,8 @@ static void list_series_info(DRMS_Record_t *rec, json_t *jroot)
   json_t *indexarray, *primearray, *keyarray, *segarray, *linkarray;
   json_t *primeinfoarray;
   int npkeys;
+  char prevKeyName[DRMS_MAXNAMELEN] = "";
+  char baseKeyName[DRMS_MAXNAMELEN];
 
   /* add description from seriesinfo */
   notework = string_to_json(rec->seriesinfo->description);
@@ -383,21 +385,41 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
 
   while ((key = drms_record_nextkey(rec, &last, 0)))
     {
-    json_t *keyinfo = json_new_object();
+    json_t *keyinfo;
     json_t *keytype;
     json_t *defval, *recscope;
     char rawval[100], *jsonstr;
+    int persegment = key->info->kwflags & kKeywordFlag_PerSegment;
 if (DEBUG) fprintf(stderr,"   starting keyword %s\n",key->info->name);
-    json_insert_pair_into_object(keyinfo, "name", json_new_string(key->info->name));
+    if (persegment)
+      {
+      char *underscore;
+      strcpy(baseKeyName, key->info->name);
+      underscore = rindex(baseKeyName, '_');
+      if (underscore) *underscore = '\0';
+      if (strcmp(prevKeyName, baseKeyName) == 0)
+        continue;  // only report the first instance of persegment keywords.
+      strcpy(prevKeyName, baseKeyName);
+      }
+    keyinfo = json_new_object();
+    json_insert_pair_into_object(keyinfo, "name", json_new_string(persegment ? baseKeyName : key->info->name));
     if (key->info->islink)
 	keytype = json_new_string("link");
     else
 	keytype = json_new_string(drms_type_names[key->info->type]);
     json_insert_pair_into_object(keyinfo, "type", keytype);
     // scope                                                                                                                      
-    jsonstr = string_to_json((char *)drms_keyword_getrecscopestr(key, NULL));
-    recscope = json_new_string(jsonstr);
-    free(jsonstr);
+    persegment = key->info->kwflags & kKeywordFlag_PerSegment;
+    if (persegment)
+      {
+      recscope = json_new_string("segment");
+      }
+    else
+      {
+      jsonstr = string_to_json((char *)drms_keyword_getrecscopestr(key, NULL));
+      recscope = json_new_string(jsonstr);
+      free(jsonstr);
+      }
     json_insert_pair_into_object(keyinfo, "recscope", recscope);
     // default                                                                                                                    
     drms_keyword_snprintfval(key, rawval, sizeof(rawval));
