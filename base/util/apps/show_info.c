@@ -326,6 +326,8 @@ static void list_series_info(DRMS_Record_t *rec)
   DRMS_Segment_t *seg;
   DRMS_Link_t *link;
   HIterator_t *last = NULL;
+  char prevKeyName[DRMS_MAXNAMELEN] = "";
+  char baseKeyName[DRMS_MAXNAMELEN];
 
   /* show the prime index keywords */
   int npkeys = rec->seriesinfo->pidx_num;
@@ -368,9 +370,20 @@ static void list_series_info(DRMS_Record_t *rec)
 
   while ((key = drms_record_nextkey(rec, &last, 0)))
   {
-     if (!drms_keyword_getimplicit(key))
+  int persegment = key->info->kwflags & kKeywordFlag_PerSegment;
+  if (persegment)
+    {
+    char *underscore;
+    strcpy(baseKeyName, key->info->name);
+    underscore = rindex(baseKeyName, '_');
+    if (underscore) *underscore = '\0';
+    if (strcmp(prevKeyName, baseKeyName) == 0)
+      continue;  // only report the first instance of persegment keywords.
+    strcpy(prevKeyName, baseKeyName);
+    }
+  if (!drms_keyword_getimplicit(key))
      {
-        printf ("\t%-10s", key->info->name);
+        printf ("\t%-10s", (persegment ? baseKeyName : key->info->name));
         if (key->info->islink)
         {
            printf("\tlink through %s",key->info->linkname);
@@ -378,6 +391,8 @@ static void list_series_info(DRMS_Record_t *rec)
         else
         {
            printf ("\t(%s)", drms_type_names[key->info->type]);
+           if (persegment)
+              printf(", per-segment");
         }
         printf ("\t%s\n", key->info->description);
      }
