@@ -24,6 +24,7 @@
 					       * fitsio.h, otherwise all files
 					       * that include this file will 
 					       * be dependent on fitsio.h */
+#define CFITSIO_MAX_FORMAT                32
 
 #define CFITSIO_SUCCESS                   0
 #define CFITSIO_FAIL                     -1
@@ -81,6 +82,8 @@ typedef struct cfitsio_keyword
       char	key_name[CFITSIO_MAX_STR]; 
       char	key_type; // C: string, L: logical, I: integer, F: float, X: complex 
       CFITSIO_KEY_VALUE	key_value;
+      char      key_format[CFITSIO_MAX_FORMAT]; /* Used when writing to FITS file only, 
+                                                 * not used when reading from file. */
       char	key_comment[CFITSIO_MAX_STR];
       struct cfitsio_keyword*	next;
 
@@ -133,7 +136,8 @@ int cfitsio_append_key(CFITSIO_KEYWORD** keylist,
 			char *name, 
 			char type, 
 			char *comment,
-			void *value);
+                        void *value,
+                        const char *format);
 
 int fitsrw_read(int verbose,
                 const char *filename, 

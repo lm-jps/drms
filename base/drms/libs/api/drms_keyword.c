@@ -76,6 +76,7 @@ const int kMaxSlotUnitKey = 128;
 /* Per Tim, FITS doesn't support char, short, long long, or float keyword types. */
 static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key, 
                                   char *fitstype, 
+                                  char **format,
                                   void **fitsval)
 {
    int err = 0;
@@ -84,8 +85,10 @@ static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key,
    int status = DRMS_SUCCESS;
    DRMS_Keyword_ExtType_t casttype = drms_keyword_getcast(key);
 
-   if (valin && fitstype)
+   if (valin && fitstype && format)
    {
+      *format = strdup(key->info->format);
+
       if (casttype != kDRMS_Keyword_ExtType_None)
       {
          /* cast specified in key's description field */
@@ -99,7 +102,7 @@ static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key,
                  *fitstype = kFITSRW_Type_Integer;
                  break;
                case kDRMS_Keyword_ExtType_Float:
-                 res = malloc(sizeof(long long));
+                 res = malloc(sizeof(double));
                  *(double *)res = drms2double(key->info->type, valin, &status);
                  *fitstype = kFITSRW_Type_Float;
                  break;
@@ -208,12 +211,18 @@ static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key,
 static int FITSKeyValToDRMSKeyVal(CFITSIO_KEYWORD *fitskey, 
                                   DRMS_Type_t *type, 
                                   DRMS_Type_Value_t *value,
-                                  DRMS_Keyword_ExtType_t *casttype)
+                                  DRMS_Keyword_ExtType_t *casttype,
+                                  char **format)
 {
    int err = 0;
 
    if (fitskey && type &&value &&casttype)
    {
+      if (*(fitskey->key_format) != '\0')
+      {
+         *format = strdup(fitskey->key_format);
+      }
+
       switch (fitskey->key_type)
       {
          case kFITSRW_Type_String:
@@ -2940,14 +2949,16 @@ int drms_keyword_mapexport(DRMS_Keyword_t *key,
 	 int fitsrwRet = 0;
          char fitskwtype = '\0';
          void *fitskwval = NULL;
+         char *format = NULL;
 
-	 if (!DRMSKeyValToFITSKeyVal(key, &fitskwtype, &fitskwval))
+	 if (!DRMSKeyValToFITSKeyVal(key, &fitskwtype, &format, &fitskwval))
 	 {
 	    if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key(fitskeys, 
 								   nameout, 
 								   fitskwtype, 
 								   NULL,
-								   fitskwval)))
+								   fitskwval,
+                                                                   format)))
 	    {
 	       fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
 	       stat = DRMS_ERROR_FITSRW;
@@ -2964,6 +2975,11 @@ int drms_keyword_mapexport(DRMS_Keyword_t *key,
          if (fitskwval)
          {
             free(fitskwval);
+         }
+
+         if (format)
+         {
+            free(format);
          }
       }
       else
@@ -3024,11 +3040,12 @@ int drms_keyword_mapimport(CFITSIO_KEYWORD *fitskey,
          DRMS_Type_Value_t drmskwval;
          DRMS_Keyword_ExtType_t cast;
          DRMS_Keyword_t *newkey = NULL;
+         char *format = NULL;
 
          /* If drmskwtype is string, then it is an alloc'd string, and ownership
           * gets passed all the way to the DRMS_Keyword_t in the keys. Caller of
           * drms_keyword_mapimport() must free. */
-	 if (!FITSKeyValToDRMSKeyVal(fitskey, &drmskwtype, &drmskwval, &cast))
+	 if (!FITSKeyValToDRMSKeyVal(fitskey, &drmskwtype, &drmskwval, &cast, &format))
 	 {
             namelower = strdup(nameout);
             strtolower(namelower);
@@ -3053,6 +3070,10 @@ int drms_keyword_mapimport(CFITSIO_KEYWORD *fitskey,
                   /* key already exists in container - assume the user is trying to 
                    * copy the key value into an existing DRMS_Record_t */
                   memcpy(&(newkey->value), &drmskwval, sizeof(DRMS_Type_Value_t));
+                  if (format && *format != '\0')
+                  {
+                     snprintf(newkey->info->format, sizeof(newkey->info->format), "%s", format);
+                  }
                }
                else
                {
@@ -3082,35 +3103,42 @@ int drms_keyword_mapimport(CFITSIO_KEYWORD *fitskey,
                            DRMS_Keyword_ExtType_Strings[cast]);
                }
 
-               /* guess a format, so the keywords will print with 
-                * functions like drms_keyword_printval() */
-               switch (drmskwtype)
+               if (format && *format != '\0')
                {
-                  case DRMS_TYPE_CHAR:
-                    snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%hhd");
-                    break;
-                  case DRMS_TYPE_SHORT:
-                    snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%hd");
-                    break;
-                  case DRMS_TYPE_INT:
-                    snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%d");
-                    break;
-                  case DRMS_TYPE_LONGLONG:
-                    snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%lld");
-                    break;
-                  case DRMS_TYPE_FLOAT:
-                    snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%f");
-                    break;
-                  case DRMS_TYPE_DOUBLE:
-                    snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%lf");
-                    break;
-                  case DRMS_TYPE_STRING:
-                    snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%s");
-                    break;
-                  default:
-                    fprintf(stderr, "Unsupported keyword data type '%d'", (int)drmskwtype);
-                    stat = DRMS_ERROR_INVALIDDATA;
-                    break;
+                  snprintf(newkey->info->format, sizeof(newkey->info->format), "%s", format);
+               }
+               else
+               {
+                  /* guess a format, so the keywords will print with 
+                   * functions like drms_keyword_printval() */
+                  switch (drmskwtype)
+                  {
+                     case DRMS_TYPE_CHAR:
+                       snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%hhd");
+                       break;
+                     case DRMS_TYPE_SHORT:
+                       snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%hd");
+                       break;
+                     case DRMS_TYPE_INT:
+                       snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%d");
+                       break;
+                     case DRMS_TYPE_LONGLONG:
+                       snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%lld");
+                       break;
+                     case DRMS_TYPE_FLOAT:
+                       snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%f");
+                       break;
+                     case DRMS_TYPE_DOUBLE:
+                       snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%lf");
+                       break;
+                     case DRMS_TYPE_STRING:
+                       snprintf(newkey->info->format, DRMS_MAXFORMATLEN, "%%s");
+                       break;
+                     default:
+                       fprintf(stderr, "Unsupported keyword data type '%d'", (int)drmskwtype);
+                       stat = DRMS_ERROR_INVALIDDATA;
+                       break;
+                  }
                }
             }
             else
@@ -3122,6 +3150,11 @@ int drms_keyword_mapimport(CFITSIO_KEYWORD *fitskey,
             if (namelower)
             {
                free(namelower);
+            }
+
+            if (format)
+            {
+               free(format);
             }
 	 }
 	 else

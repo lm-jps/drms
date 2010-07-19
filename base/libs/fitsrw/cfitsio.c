@@ -175,7 +175,8 @@ int cfitsio_append_key(CFITSIO_KEYWORD** keylist,
 		       char *name, 
 		       char type, 
 		       char *comment,
-		       void * value)
+		       void * value,
+                       const char *format)
 {
    CFITSIO_KEYWORD *node, *last;
    int error_code = CFITSIO_SUCCESS;
@@ -231,6 +232,11 @@ int cfitsio_append_key(CFITSIO_KEYWORD** keylist,
 	 {
 	    snprintf(node->key_comment, FLEN_COMMENT, "%s", comment);
 	 }
+
+         if (format)
+         {
+            snprintf(node->key_format, CFITSIO_MAX_FORMAT, "%s", format);
+         }
       }
    }
    else
@@ -357,6 +363,8 @@ static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD**
 	 error_code = CFITSIO_ERROR_OUT_OF_MEMORY;
 	 goto error_exit;
       }
+
+      memset(node, 0, sizeof(CFITSIO_KEYWORD));
 
       if(keylist==NULL) //first item
       {
@@ -1164,6 +1172,7 @@ int fitsrw_writeintfile(int verbose,
 int cfitsio_key_to_card(CFITSIO_KEYWORD* kptr, char* card)
 {
    char temp[FLEN_CARD];
+   char buf[128];
 
    memset(card,0,sizeof(FLEN_CARD));
    if(!kptr) return CFITSIO_FAIL;
@@ -1228,18 +1237,42 @@ int cfitsio_key_to_card(CFITSIO_KEYWORD* kptr, char* card)
 	 break;
 	 
       case(kFITSRW_Type_Float):
-	 if(strlen(kptr->key_comment) >0)
-	 {
-	    sprintf(temp,"%-8s= %20G / %s", kptr->key_name, kptr->key_value.vf, kptr->key_comment);
-	 }
-	 else
-	 {
-	    sprintf(temp,"%-8s= %20G", kptr->key_name, kptr->key_value.vf);
-	 }
-	 break;
-	 
-	 //sprintf(temp,"%-8s= %20lf / %s", kptr->key_name, kptr->key_value.vf, kptr->key_comment); break;
+      {
+         int usedef = 1;
 
+         if (*kptr->key_format != '\0')
+         {
+            double tester = 0;
+            snprintf(buf, sizeof(buf), kptr->key_format, kptr->key_value.vf);
+            if (sscanf(buf, "%lf", &tester) == 1)
+            {
+               snprintf(temp, sizeof(temp), "%-8s= %s", kptr->key_name, buf);
+               usedef = 0;
+            }
+         }
+
+         /* Use default scheme %20.15e */
+         if (usedef)
+         {
+            snprintf(temp, sizeof(temp), "%-8s= %20.15e", kptr->key_name, kptr->key_value.vf);
+         }
+
+         if(strlen(kptr->key_comment) > 0)
+         {
+            char *pref = strdup(temp);
+
+            if (pref)
+            {
+               snprintf(temp, sizeof(temp), "%s / %s", pref, kptr->key_comment);
+               free(pref);
+            }
+            else
+            {
+               return CFITSIO_ERROR_OUT_OF_MEMORY;
+            }
+         }
+      }
+      break;
    }
 
    sprintf(card,"%-80s",temp); // append space to the end to 80 chars
