@@ -2913,7 +2913,7 @@ int drms_keyword_export(DRMS_Keyword_t *key, CFITSIO_KEYWORD **fitskeys)
    return drms_keyword_mapexport(key, NULL, NULL, fitskeys);
 }
 
-
+/* For linked series, key is the source keyword (not the target). */
 int drms_keyword_mapexport(DRMS_Keyword_t *key,
 			   const char *clname, 
 			   const char *mapfile,
@@ -2950,27 +2950,42 @@ int drms_keyword_mapexport(DRMS_Keyword_t *key,
          char fitskwtype = '\0';
          void *fitskwval = NULL;
          char *format = NULL;
+         DRMS_Keyword_t *keywval = NULL;
 
-	 if (!DRMSKeyValToFITSKeyVal(key, &fitskwtype, &format, &fitskwval))
-	 {
-	    if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key(fitskeys, 
-								   nameout, 
-								   fitskwtype, 
-								   NULL,
-								   fitskwval,
-                                                                   format)))
-	    {
-	       fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
-	       stat = DRMS_ERROR_FITSRW;
-	    }
-	 }
-	 else
-	 {
-	    fprintf(stderr, 
-		    "Could not convert DRMS keyword '%s' to FITS keyword.\n", 
-		    key->info->name);
-	    stat = DRMS_ERROR_INVALIDDATA;
-	 }
+         /* follow link if key is a linked keyword, otherwise, use key. */
+         keywval = drms_keyword_lookup(key->record, key->info->name, 1);
+
+         /* It may be the case that the linked record is not found - the dependency 
+          * could be broken if somebody deleted the target record, for example. */
+         if (keywval)
+         {
+            if (!DRMSKeyValToFITSKeyVal(keywval, &fitskwtype, &format, &fitskwval))
+            {
+               if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key(fitskeys, 
+                                                                      nameout, 
+                                                                      fitskwtype, 
+                                                                      NULL,
+                                                                      fitskwval,
+                                                                      format)))
+               {
+                  fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
+                  stat = DRMS_ERROR_FITSRW;
+               }
+            }
+            else
+            {
+               fprintf(stderr, 
+                       "Could not convert DRMS keyword '%s' to FITS keyword.\n", 
+                       key->info->name);
+               stat = DRMS_ERROR_INVALIDDATA;
+            }
+         }
+         else
+         {
+            /* linked keyword structure not found */
+            fprintf(stderr, "Broken link - unable to locate target for linked keyword '%s'.\n", key->info->name);
+            stat = DRMS_ERROR_BADLINK;
+         }
 
          if (fitskwval)
          {
