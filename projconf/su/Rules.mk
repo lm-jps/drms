@@ -39,7 +39,8 @@ dir	:= $(d)/globalhs
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir     := $(d)/rings
 -include                $(SRCDIR)/$(dir)/Rules.mk
-
+dir     := $(d)/limbfit
+-include                $(SRCDIR)/$(dir)/Rules.mk
 
 
 # Standard things

@@ -28,3 +28,4 @@ $(PROJOBJDIR):
 	+@[ -d $@/mag/ident/libs/mexfunctions ] || mkdir -p $@/mag/ident/libs/mexfunctions
 	+@[ -d $@/mag/ident/libs/util ] || mkdir -p $@/mag/ident/libs/util
 	+@[ -d $@/mag/patch/apps ] || mkdir -p $@/mag/patch/apps
+	+@[ -d $@/limbfit/apps ] || mkdir -p $@/limbfit/apps
