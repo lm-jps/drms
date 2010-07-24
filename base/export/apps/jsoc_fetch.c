@@ -516,7 +516,8 @@ int DoIt(void)
   {
 						/* Get command line arguments */
   const char *op;
-  const char *in;
+  const char *dsin;
+  char *dslog = NULL;
   const char *seglist;
   const char *requestid = NULL;
   const char *process;
@@ -614,7 +615,7 @@ int DoIt(void)
 
   op = cmdparams_get_str (&cmdparams, kArgOp, NULL);
   requestid = cmdparams_get_str (&cmdparams, kArgRequestid, NULL);
-  in = cmdparams_get_str (&cmdparams, kArgDs, NULL);
+  dsin = cmdparams_get_str (&cmdparams, kArgDs, NULL);
 
   // HACK alert.  due to use of ARG_INTS which is not processed properly by SetWegArgs
   // the following lines are added.  They can be removed after a new function to replace
@@ -659,11 +660,11 @@ FILE *runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
  {
     char now[100];
     const char *dbhost;
-    int fileupload = strncmp(in, "*file*", 6) == 0;
+    int fileupload = strncmp(dsin, "*file*", 6) == 0;
     dbhost = cmdparams_get_str(&cmdparams, "JSOC_DBHOST", NULL);
     sprint_ut(now,time(0) + UNIX_EPOCH);
     fprintf(runlog,"PID=%d\n   %s\n   op=%s\n   in=%s\n   RequestID=%s\n   DBHOST=%s\n   REMOTE_ADDR=%s\n",
-            getpid(), now, op, in, requestid, dbhost, getenv("REMOTE_ADDR"));
+            getpid(), now, op, dsin, requestid, dbhost, getenv("REMOTE_ADDR"));
     if (fileupload)  // recordset passed as uploaded file
     {
        char *file = (char *)cmdparams_get_str (&cmdparams, kArgFile, NULL);
@@ -732,12 +733,20 @@ FILE *runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
 
     if (!sunumarr || sunumarr[0] < 0)
     {
-       nsunums = cmdparams_get_int64arr(&cmdparams, kArgDs, &sunumarr, &status);
+       /* Use the ds field - should be an array of numbers. */
+       if (!cmdparams_set(&cmdparams, kArgSunum, dsin))
+       {
+          snprintf(msgbuf, sizeof(msgbuf), 
+                   "Invalid argument in exp_su, '%s=%s'.\n", kArgDs, dsin);
+          JSONDIE(msgbuf);
+       }
+
+       nsunums = cmdparams_get_int64arr(&cmdparams, kArgSunum, &sunumarr, &status);
 
        if (status != CMDPARAMS_SUCCESS)
        {
           snprintf(msgbuf, sizeof(msgbuf), 
-                   "Invalid argument in exp_su, '%s=%s'.\n", kArgDs, cmdparams_get_str(&cmdparams, kArgDs, NULL));
+                   "Invalid argument in exp_su, '%s=%s'.\n", kArgDs, dsin);
           JSONDIE(msgbuf);
        }
     }
@@ -1011,14 +1020,14 @@ check for requestor to be valid remote DRMS site
     if ( !requestid || !*requestid || strcmp(requestid, "none") == 0)
       JSONDIE("Must have valid requestID - internal error.");
 
-    if (strcmp(in, kNotSpecified) == 0 && (!sunumarr || sunumarr[0] < 0))
+    if (strcmp(dsin, kNotSpecified) == 0 && (!sunumarr || sunumarr[0] < 0))
       JSONDIE("Must have valid Recordset or SU set");
 
     export_log = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
     if (!export_log)
       JSONDIE("Cant create new export control record");
     drms_setkey_string(export_log, "RequestID", requestid);
-    drms_setkey_string(export_log, "DataSet", in);
+    drms_setkey_string(export_log, "DataSet", dsin);
     drms_setkey_string(export_log, "Processing", process);
     drms_setkey_string(export_log, "Protocol", protocol);
     drms_setkey_string(export_log, "FilenameFmt", filenamefmt);
@@ -1048,7 +1057,7 @@ check for requestor to be valid remote DRMS site
     export_series = kExportSeriesNew;
 
     size=0;
-    strncpy(dsquery,in,DRMS_MAXQUERYLEN);
+    strncpy(dsquery,dsin,DRMS_MAXQUERYLEN);
     fileupload = strncmp(dsquery, "*file*", 6) == 0;
     if (fileupload)  // recordset passed as uploaded file
       {
@@ -1103,7 +1112,7 @@ check for requestor to be valid remote DRMS site
         char *cb = index(dsquery, '{');
         if (cb)
           {
-          char *cbin = index(in, '{');
+          char *cbin = index(dsin, '{');
           *cb = '\0';
           strcat(dsquery, "[]");
           strcat(dsquery, cbin);
@@ -1411,7 +1420,7 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
      // This will be copied into the cluster-side series on first use.
     if ( !requestid || !*requestid || strcmp(requestid, "none") == 0)
       JSONDIE("Must have valid requestID - internal error.");
-    if (strcmp(in, "Not Specified") == 0)
+    if (strcmp(dsin, "Not Specified") == 0)
       JSONDIE("Must have Recordset specified");
      export_log = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
      if (!export_log)
@@ -1540,7 +1549,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
   export_log = exports->records[0];
 
   status     = drms_getkey_int(export_log, "Status", NULL);
-  in         = drms_getkey_string(export_log, "DataSet", NULL);
+  dslog      = drms_getkey_string(export_log, "DataSet", NULL); /* not used */
   process = drms_getkey_string(export_log, "Processing", NULL);
   protocol   = drms_getkey_string(export_log, "Protocol", NULL);
   filenamefmt = drms_getkey_string(export_log, "FilenameFmt", NULL);
