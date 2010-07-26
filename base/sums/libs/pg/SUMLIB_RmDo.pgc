@@ -109,12 +109,14 @@ EXEC SQL END DECLARE SECTION;
   FILE *rxfp;
   uint64_t eff_date, today_date;
   char rwd[80], rectxt[128], line[128], seriesname[128];
-  char *rootdir, *cptr, *cptr1, *token;
+  char *rootdir, *cptr, *cptr1, *token, *effd;
 
   EXEC SQL WHENEVER SQLERROR GOTO sqlrmerror;
   EXEC SQL WHENEVER NOT FOUND GOTO sqlrmerror; 
 
-    today_date = (uint64_t)atol(get_effdate(0));
+    effd = get_effdate(0);
+    today_date = (uint64_t)atol(effd);
+    free(effd);
     EXEC SQL SELECT count(*) INTO :l_count from SUM_PARTN_ALLOC
         where DS_INDEX = :l_ds_index and status = 8;
     /* !!!TBD lock the table before determine if it's DARO */
