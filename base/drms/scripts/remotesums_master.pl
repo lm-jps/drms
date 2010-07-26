@@ -155,7 +155,7 @@ while (defined($aurl = shift(@urls)) && defined($alist = shift(@lists)))
         # SU is online, jsoc_fetch will retrieve all the SU information (such as
         # series name, size, etc.) directly from SUMS. All this information, plus
         # requestID, etc. is written to the file specified by $kGETAPPOFLAG.
-        $cgiargs = "op=$kOP&ds=$sunumlist&method=$kMETHOD&format=txt&protocol=$kPROTO";
+        $cgiargs = "op=$kOP&sunum=$sunumlist&method=$kMETHOD&format=txt&protocol=$kPROTO";
         $cmd = "$kGETAPP $kGETAPPFLAG $kGETAPPOFLAG \"$aurl?$cgiargs\"";
 
         # print STDERR "cmd: $cmd\n";
@@ -226,7 +226,7 @@ while (defined($aurl = shift(@urls)) && defined($alist = shift(@lists)))
                             push(@reqseries, $2);
                             push(@reqfiles, $3);
                  
-       }
+                         }
                     }
                 }
                 
@@ -237,7 +237,7 @@ while (defined($aurl = shift(@urls)) && defined($alist = shift(@lists)))
             if (!$gotstatus || !$gotmethod || !$gotrequestid || (!$gotcount && !$status) || !$gotsize)
             {
                 # no status line - continue.
-                print STDERR "Improper cgi response from export URL '$aurl$cgiargs'.\n";
+                print STDERR "Improper cgi response from export URL '$aurl?$cgiargs'.\n";
                 close(RESPFILE);
                 unlink($kGETAPPOUT);
                 next;
