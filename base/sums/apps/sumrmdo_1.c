@@ -52,7 +52,7 @@ KEY *sumrmdo_1(KEY *params)
   double bytesreq[MAXSUMSETS];
   double bytespart[MAXSUMSETS];
   double bytestmp[MAXSUMSETS];
-  char *cptr, *call_err, *dbname;
+  char *cptr, *call_err, *dbname, *effstr;
   char line[80];
   char partn_name[MAX_STR], ext[MAX_STR], ext2[MAX_STR];
   char rootdir[MAX_STR], rootcmp[MAX_STR];
@@ -148,7 +148,9 @@ KEY *sumrmdo_1(KEY *params)
     need[i] = 0;
     if(pahdr_uid_start[i] == NULL) need[i] = 1;
   }
-  today_date = (uint64_t)atol(get_effdate(0));
+  effstr = get_effdate(0);
+  today_date = (uint64_t)atol(effstr);
+  free(effstr);
   for(i=0; i < num_sets; i++) {
     if(need[i]) break;
   }
