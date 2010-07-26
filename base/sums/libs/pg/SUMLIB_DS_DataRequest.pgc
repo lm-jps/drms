@@ -178,8 +178,8 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
 		and STATUS != :daro;
           EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
           EXEC SQL WHENEVER NOT FOUND GOTO end_fetch;
-	  free(eff_date);
         }
+        free(eff_date);
       } 
     }
 

@@ -52,10 +52,10 @@ EXEC SQL END DECLARE SECTION;
   }
   if(update) {
     sprintf(l_eff_date.arr, "%s", neweffdate);
-    free(neweffdate);
     l_eff_date.len = strlen(l_eff_date.arr);
     EXEC SQL UPDATE SUM_GROUP SET effective_date = :l_eff_date WHERE group_id = :l_gpid;
   }
+  free(neweffdate);
   EXEC SQL COMMIT WORK;
   return(0);
         
