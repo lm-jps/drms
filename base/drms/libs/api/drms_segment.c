@@ -528,8 +528,13 @@ void drms_segment_destroyinfocon(HContainer_t **info)
 
 /* Return absolute path to segment file in filename.
    filename must be able the hold at least DRMS_MAXPATHLEN bytes. */
+/* Must not assume that seg->record->su exists - if it doesn't
+ * exist, attempt to fetch the SU from SUMS. If it still doesn't exist
+ * then set the return filename to the empty string. */
 void drms_segment_filename(DRMS_Segment_t *seg, char *filename)
 {
+   int statint;
+
    if (seg->info->protocol == DRMS_DSDS)
    {
       /* For the DSDS protocol, filename is not used, except to signify that
@@ -545,28 +550,54 @@ void drms_segment_filename(DRMS_Segment_t *seg, char *filename)
    }
    else if (seg->info->protocol != DRMS_LOCAL)
    {
-      if (strlen(seg->filename)) {
-	 if (seg->info->protocol == DRMS_TAS)
-	   CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/%s",
-				  seg->record->su->sudir, seg->filename), DRMS_MAXPATHLEN);
-	 else
-	   CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT "/%s",
-				  seg->record->su->sudir, seg->record->slotnum, seg->filename), DRMS_MAXPATHLEN);
-      } else {
-	 if (seg->info->protocol == DRMS_TAS)
+      /* Make sure the segment's SU was fetched from SUMS (there may be no such SU too). */
+      DRMS_Record_t *rec = seg->record;
+
+      if (rec->sunum != -1LL && rec->su == NULL)
+      {
+         /* The storage unit has not been requested from SUMS yet. Do it. */
+         statint = DRMS_SUCCESS;
+         if ((rec->su = drms_getunit(rec->env, 
+                                     rec->seriesinfo->seriesname, 
+                                     rec->sunum, 
+                                     1, 
+                                     &statint)) == NULL)
          {
-            CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/%s.tas",
-                                   seg->record->su->sudir, seg->info->name), DRMS_MAXPATHLEN);
-            /* set default base name */
-            snprintf(seg->filename, sizeof(seg->filename), "%s.tas", seg->info->name);
+            statint = DRMS_ERROR_NOSTORAGEUNIT;
+            *(seg->filename) = '\0';
+            *filename = '\0';
          }
-	 else
+         else
          {
-            CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT "/%s%s",
-                                   seg->record->su->sudir, seg->record->slotnum, seg->info->name,
-                                   drms_prot2ext(seg->info->protocol)), DRMS_MAXPATHLEN);
-            /* set default base name */
-            snprintf(seg->filename, sizeof(seg->filename), "%s%s", seg->info->name, drms_prot2ext(seg->info->protocol));
+            rec->su->refcount++;
+         }
+      }
+
+      if (statint == DRMS_SUCCESS)
+      {
+         if (strlen(seg->filename)) {
+            if (seg->info->protocol == DRMS_TAS)
+              CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/%s",
+                                     rec->su->sudir, seg->filename), DRMS_MAXPATHLEN);
+            else
+              CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT "/%s",
+                                     rec->su->sudir, rec->slotnum, seg->filename), DRMS_MAXPATHLEN);
+         } else {
+            if (seg->info->protocol == DRMS_TAS)
+            {
+               CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/%s.tas",
+                                      rec->su->sudir, seg->info->name), DRMS_MAXPATHLEN);
+               /* set default base name */
+               snprintf(seg->filename, sizeof(seg->filename), "%s.tas", seg->info->name);
+            }
+            else
+            {
+               CHECKSNPRINTF(snprintf(filename, DRMS_MAXPATHLEN, "%s/" DRMS_SLOTDIR_FORMAT "/%s%s",
+                                      rec->su->sudir, rec->slotnum, seg->info->name,
+                                      drms_prot2ext(seg->info->protocol)), DRMS_MAXPATHLEN);
+               /* set default base name */
+               snprintf(seg->filename, sizeof(seg->filename), "%s%s", seg->info->name, drms_prot2ext(seg->info->protocol));
+            }
          }
       }
    }
@@ -2569,7 +2600,7 @@ int drms_segment_mapexport_tofile(DRMS_Segment_t *seg,
 
    drms_segment_filename(seg, filename); /* full, absolute path to segment file */
 
-   if (stat(filename, &stbuf))
+   if (*filename == '\0' || stat(filename, &stbuf))
    {
       /* file filename is missing */
       status = DRMS_ERROR_INVALIDFILE;

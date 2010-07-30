@@ -401,6 +401,8 @@ static int MapexportToDir(DRMS_Env_t *env,
 
    if (tmpq && (rsin = drms_open_records(env, tmpq, &stat)))
    {
+      /* stage records to reduce number of calls to SUMS. */
+      drms_stage_records(rsin, 1, 0);
       nSets = rsin->ss_n;
 
       for (iSet = 0; 
@@ -736,6 +738,8 @@ static int Mapexport(DRMS_Env_t *env,
 
       if (rsinquery && (rsin = drms_open_records(env, rsinquery, &stat)))
       {
+         /* stage records to reduce number of calls to SUMS. */
+         drms_stage_records(rsin, 1, 0);
 	 nSets = rsin->ss_n;
 
 	 for (iSet = 0; 
