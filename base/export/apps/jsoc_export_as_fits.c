@@ -162,7 +162,8 @@ typedef enum
    kMymodErr_CantOpenPackfile,
    kMymodErr_PackfileFailure,
    kMymodErr_UnsupportedPLRecType,
-   kMymodErr_DRMS
+   kMymodErr_DRMS,
+   kMymodErr_MissingSegFile
 } MymodError_t;
 
 typedef enum
@@ -281,6 +282,7 @@ static int MapexportRecordToDir(DRMS_Record_t *recin,
    HIterator_t *last = NULL;
    int iseg;
    int lastcparms;
+   int gotone;
 
    drms_record_directory(recin, dir, 1); /* This fetches the input data from SUMS. */
 
@@ -292,6 +294,8 @@ static int MapexportRecordToDir(DRMS_Record_t *recin,
 
    iseg = 0;
    lastcparms = 0;
+   gotone = 0;
+
    while ((segin = drms_record_nextseg(recin, &last, 1)) != NULL)
    {
       if (exputl_mk_expfilename(segin, ffmt, fmtname) == kExpUtlStat_Success)
@@ -314,14 +318,22 @@ static int MapexportRecordToDir(DRMS_Record_t *recin,
                                                classname, 
                                                mapfile, 
                                                fullfname);
-      if (drmsstat != DRMS_SUCCESS || stat(fullfname, &filestat))
+      if (drmsstat == DRMS_ERROR_INVALIDFILE)
       {
+         /* No input segment file. */
+         fprintf(stderr, "No input segment file for segment '%s'.\n", segin->info->name);
+      }
+      else if (drmsstat != DRMS_SUCCESS || stat(fullfname, &filestat))
+      {
+         /* There was an input segment file, but for some reason the export failed. */
          modstat = kMymodErr_ExportFailed;
          fprintf(stderr, "Failure exporting segment '%s'.\n", segin->info->name);
          break;
       }
-      else 
+      else
       {
+         gotone = 1;
+
          if (tcount)
          {
             ++*tcount;
@@ -332,6 +344,14 @@ static int MapexportRecordToDir(DRMS_Record_t *recin,
       }
 
       iseg++;
+   }
+
+   /* If NO file exported, this is an error. But if there is more than one segments, it is okay
+    * for some input segment files to be missing. */
+   if (!gotone)
+   {
+      modstat = kMymodErr_ExportFailed;
+      fprintf(stderr, "Failure exporting record number %lld.\n", recin->recnum);
    }
 
    if (last)
@@ -468,7 +488,12 @@ static MymodError_t CallExportToFile(DRMS_Segment_t *segout,
             drms_segment_filename(segout, fileout);
 
             status = drms_segment_mapexport_tofile(segin, cparms, clname, mapfile, fileout);
-            if (status != DRMS_SUCCESS)
+            if (status == DRMS_ERROR_INVALIDFILE)
+            {
+               /* No input file for segment - not necessarily an error. */
+               err = kMymodErr_MissingSegFile;
+            }
+            else if (status != DRMS_SUCCESS)
             {
                err = kMymodErr_ExportFailed;
                fprintf(stderr, "Failed to export segment '%s' to '%s'.\n", segin->info->name, fileout);
@@ -518,6 +543,7 @@ static int MapexportRecord(DRMS_Record_t *recout,
    char dir[DRMS_MAXPATHLEN];
    int iseg;
    int lastcparms;
+   int gotone;
 
    segout = drms_segment_lookupnum(recout, 0);
 
@@ -565,6 +591,8 @@ static int MapexportRecord(DRMS_Record_t *recout,
        * this is encapsulated in recin. */
       iseg = 0;
       lastcparms = 0;
+      gotone = 0;
+
       while ((segin = drms_record_nextseg(recin, &last, 1)) != NULL)
       {
 	 size = 0;
@@ -582,13 +610,22 @@ static int MapexportRecord(DRMS_Record_t *recout,
                                 &size, 
                                 fname, 
                                 !lastcparms ? cparms[iseg] : NULL);
-	 if (err != kMymodErr_Success)
+
+
+
+         if (err == kMymodErr_MissingSegFile)
+         {
+            /* No input file for this segment */
+         }
+         else if (err != kMymodErr_Success)
 	 {
 	    fprintf(stderr, "Failure exporting segment '%s'.\n", segin->info->name);
 	    break;
 	 }
 	 else
 	 {
+            gotone = 1;
+
             if (tcount)
             {
                ++*tcount;
@@ -602,6 +639,14 @@ static int MapexportRecord(DRMS_Record_t *recout,
 	 }
 
          iseg++;
+      }
+
+      /* If NO file exported, this is an error. But if there is more than one segments, it is okay
+       * for some input segment files to be missing. */
+      if (!gotone)
+      {
+         err = kMymodErr_ExportFailed;
+         fprintf(stderr, "Failure exporting record number %lld.\n", recin->recnum);
       }
 
       if (last)
@@ -868,7 +913,7 @@ int DoIt(void)
    char *md_method = NULL;
    char *md_protocol = NULL;
    char *md_count = NULL; /* number of files exported */
-   char *md_size = NULL; /* total bytes exported */
+   char *md_size = NULL; /* total Mbytes exported */
    char *md_exptime = NULL;
    char *md_dir = NULL; /* same as outpath, the /SUMX path that contains the exported files
                          * before they are downloaded by the user */
@@ -1081,7 +1126,7 @@ int DoIt(void)
          md_exptime = strdup(tstr);
       }
 
-      fprintf(stdout, "'%lld' bytes exported.\n", tsizeMB); 
+      fprintf(stdout, "%lld megabytes exported.\n", tsizeMB); 
    }
 
    /* open 'real' pack list */
