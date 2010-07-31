@@ -35,7 +35,7 @@ extract command line arguments passed via a web cgi-bin call of show_info and
 the results are returned as text.
 
 \b show_info_sock is the same as show_info but configured to run in a DRMS session via a socket connection
-to a \ref drms_server.
+to a drms_server session (see e.g. drms_run).
 
 \par Options:
 
@@ -65,7 +65,6 @@ restrict the number or records retrieved, an empty clause (e.g. "[]") will match
 \par Parameters and Flags controling selction of keywords and segments to examine:
 
 This group of arguments specifies the set of keywords, segments, links, or virtual keywords to display.
-(link display not yet implemented/tested).
 \li \c  key=<keylist> - string with default "Not Specified", see below.
 \li \c  seg=<seglist> - string with dedfauly "Not Specified", see below.
 \li \c  -a: Select all keywords and display their values for the chosen records
