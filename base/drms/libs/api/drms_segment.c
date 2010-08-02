@@ -553,10 +553,11 @@ void drms_segment_filename(DRMS_Segment_t *seg, char *filename)
       /* Make sure the segment's SU was fetched from SUMS (there may be no such SU too). */
       DRMS_Record_t *rec = seg->record;
 
+      statint = DRMS_SUCCESS;
+
       if (rec->sunum != -1LL && rec->su == NULL)
       {
          /* The storage unit has not been requested from SUMS yet. Do it. */
-         statint = DRMS_SUCCESS;
          if ((rec->su = drms_getunit(rec->env, 
                                      rec->seriesinfo->seriesname, 
                                      rec->sunum, 
