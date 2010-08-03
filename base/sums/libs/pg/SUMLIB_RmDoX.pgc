@@ -67,8 +67,6 @@ end_fetch:
     EXEC SQL CLOSE reqcursor;
     EXEC SQL WHENEVER NOT FOUND GOTO end_fetch2;
 
-printf("i=%d\n", i); //!!!TEMP
-
     for(j=0; j < i; j++) {
 #ifdef SUMDC
       /* only rm those with Offsite_Ack, and Safe_Tape */
@@ -82,15 +80,17 @@ printf("i=%d\n", i); //!!!TEMP
 
 #endif
 
-      if(DS_RmNow(pcursor[j].p_wd, pcursor[j].p_sumid, pcursor[j].p_bytes, 
+      if(DS_RmNowX(pcursor[j].p_wd, pcursor[j].p_sumid, pcursor[j].p_bytes, 
 		pcursor[j].p_effdate, 
 		pcursor[j].p_ds_index, pcursor[j].p_archsub, &rmbytes)) {
         //EXEC SQL ROLLBACK WORK;
-        printk("Error in DS_RmDoX() call to DS_RmNow() ds_index=%lu\n",
+        printk("Error in DS_RmDoX() call to DS_RmNowX() ds_index=%lu\n",
 		pcursor[j].p_ds_index);
-        return DS_DATA_QRY;
+        //return DS_DATA_QRY;
+        continue;
       }
       bytesdeleted += rmbytes;     /* add what we deleted so far */
+      if(bytesdeleted >= bytesdel) break; //don't delete any more
 end_fetch2:
       continue;
     }
@@ -107,7 +107,7 @@ sqlerror:
     return DS_DATA_QRY;
 }
 
-int DS_RmNow(char *wd, uint64_t sumid, double bytes, char *effdate,
+int DS_RmNowX(char *wd, uint64_t sumid, double bytes, char *effdate,
 		uint64_t ds_index, int archsub, double *rmbytes) {
 EXEC SQL BEGIN DECLARE SECTION;
   int l_count;
@@ -117,12 +117,14 @@ EXEC SQL END DECLARE SECTION;
   FILE *rxfp;
   uint64_t eff_date, today_date;
   char rwd[80], rectxt[128], line[128], seriesname[128];
-  char *rootdir, *cptr, *cptr1, *token;
+  char *rootdir, *cptr, *cptr1, *token, *effd;
 
   EXEC SQL WHENEVER SQLERROR GOTO sqlrmerror;
   EXEC SQL WHENEVER NOT FOUND GOTO sqlrmerror; 
 
-    today_date = (uint64_t)atol(get_effdate(0));
+    effd = get_effdate(0);
+    today_date = (uint64_t)atol(effd);
+    free(effd);
     EXEC SQL SELECT count(*) INTO :l_count from SUM_PARTN_ALLOC
         where DS_INDEX = :l_ds_index and status = 8;
     /* !!!TBD lock the table before determine if it's DARO */
@@ -179,7 +181,7 @@ EXEC SQL END DECLARE SECTION;
     if(archsub != DADPDELSU) {
       sprintf(rectxt, "%s/Records.txt", wd);
       if(!(rxfp=fopen(rectxt, "r"))) {
-        printk("**Err: DS_RmNow() can't open %s\n", rectxt);
+        printk("**Err: DS_RmNowX() can't open %s\n", rectxt);
         //NOTE: get this error for DRMS log directories w/no Records.txt
       }
       else {
@@ -197,7 +199,7 @@ EXEC SQL END DECLARE SECTION;
 					seriesname);
                 }
                 else {
-                  printk("DS_RmNow() bad Records.txt file\n");
+                  printk("DS_RmNowX() bad Records.txt file\n");
                   fclose(rxfp);
                   goto sqlrmerror;
                 }
@@ -211,7 +213,7 @@ EXEC SQL END DECLARE SECTION;
                   sprintf(stmt, "%s%s,", stmt, token);
                 }
                 else {
-                  printk("DS_RmNow() bad Records.txt wd=%s\n", wd);
+                  printk("DS_RmNowX() bad Records.txt wd=%s\n", wd);
                   fclose(rxfp);
                   goto sqlrmerror;
                 }
@@ -221,10 +223,11 @@ EXEC SQL END DECLARE SECTION;
             if(cptr) *cptr = '\0';
             sprintf(stmt, "%s);", stmt);
             printk("Records.txt statement is:\n%s\n", stmt);
-            EXEC SQL WHENEVER SQLERROR GOTO sqljsocerror;
+            EXEC SQL WHENEVER SQLERROR GOTO sqljsocerror0; //catch connect err
             //EXEC SQL CONNECT TO jsoc@hmidb.stanford.edu:5432;
             //!!TBD pickup db name & port from variables
             EXEC SQL CONNECT TO jsoc@hmidb:5432;
+            EXEC SQL WHENEVER SQLERROR GOTO sqljsocerror1;
             EXEC SQL EXECUTE IMMEDIATE :stmt;
             EXEC SQL COMMIT;
             EXEC SQL DISCONNECT;
@@ -243,15 +246,26 @@ EXEC SQL END DECLARE SECTION;
     return(0);
 
 sqlrmerror:
-    printk("Error in DS_RmNow\n");
+    printk("Error in DS_RmNowX\n");
     printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
     //EXEC SQL ROLLBACK WORK;
     return DS_DATA_QRY;
 
-sqljsocerror:
-    printk("Error in DS_RmNow() for del from Records.txt\n");
+sqljsocerror0:
+    printk("Error in DS_RmNowX() for del from Records.txt\n");
+    printk("Can't connect to jsoc@hmidb:5432\n");
     printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
+    //Assume error was in the connect so don't disconnect
     //EXEC SQL DISCONNECT;
+    //EXEC SQL ROLLBACK WORK;
+    fclose(rxfp);
+    return DS_DATA_QRY;
+
+sqljsocerror1:
+    printk("Error in DS_RmNowX() for del from Records.txt\n");
+    printk("Error was after the connect to jsoc@hmidb:5432\n");
+    printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
+    EXEC SQL DISCONNECT;
     //EXEC SQL ROLLBACK WORK;
     fclose(rxfp);
     return DS_DATA_QRY;
