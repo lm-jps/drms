@@ -14,10 +14,13 @@
 #include "drmssite_info.h"
 
 extern int write_log(const char *fmt, ...);
+extern void StartTimer(int n);
+extern float StopTimer(int n);
 extern CLIENT *current_client, *clnttape;
 extern SVCXPRT *glb_transp;
 extern uint32_t rinfo;
 extern int debugflg;
+extern float ftmp;
 static int NO_OPEN = 0;
 static char callername[MAX_STR];
 
@@ -508,30 +511,30 @@ KEY *infodoX_1(KEY *params)
 }
 
 /* Called when a client does a SUM_put() to catalog storage units.
- * Can only put a single SU at a time (reqcnt = 1). Typical call is:
+ * Can put multiple SU at a time. Typical call is:
  * wd_0:   KEYTYP_STRING   /SUM1/D1695
  * dsix_0: KEYTYP_UINT64    1695
+ * wd_1:   KEYTYP_STRING   /SUM0/D1696
+ * dsix_1: KEYTYP_UINT64    1696
  * REQCODE:        KEYTYP_INT      7
- * DEBUGFLG:       KEYTYP_INT      1
- * bytes:  KEYTYP_DOUBLE              1.200000e+08
+ * DEBUGFLG:       KEYTYP_INT      0
  * storage_set:    KEYTYP_INT      0
  * group:  KEYTYP_INT      65
  * username:       KEYTYP_STRING   production
  * history_comment: KEYTYP_STRING   this is a dummy history comment 
  * dsname: KEYTYP_STRING   hmi_lev1_fd_V
- * reqcnt: KEYTYP_INT      1
+ * reqcnt: KEYTYP_INT      2
  * tdays:  KEYTYP_INT      5
  * mode:   KEYTYP_INT      1
  * uid:    KEYTYP_UINT64    886
 */
 KEY *putdo_1(KEY *params)
 {
-  int status;
+  int status, i, reqcnt;
   uint64_t sunum = 0;
   uint64_t uid;
-  char sysstr[128];
+  char sysstr[128], tmpnam[80];
   char *cptr, *wd;
-  double dsize;
 
   sprintf(callername, "putdo_1");	//!!TEMP
   if(findkey(params, "DEBUGFLG")) {
@@ -542,40 +545,43 @@ KEY *putdo_1(KEY *params)
   }
   }
   uid = getkey_uint64(params, "uid");
+  reqcnt = getkey_int(params, "reqcnt");
   sunum = getkey_uint64(params, "dsix_0");
-  write_log("SUM_put() for user=%s sunum=%lu\n", 
-		GETKEY_str(params, "username"), sunum);
+  write_log("SUM_put() for user=%s 1st sunum=%lu reqcnt=%d\n", 
+		GETKEY_str(params, "username"), sunum, reqcnt);
   if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
     write_log("**Error: putdo_1() called with unopened uid=%lu\n", uid);
     rinfo = 1;	/* give err status back to original caller */
     send_ack();	/* ack original sum_svc caller */
     return((KEY *)1);	/* error. nothing to be sent */ 
   }
-  wd = getkey_str(params, "wd_0");
   retlist = newkeylist();
   add_keys(params, &retlist);
-  dsize = du_dir(wd);
-  setkey_double(&retlist, "bytes", dsize);
   if(!(status=SUM_Main_Update(retlist))) {
-    if(!(set_client_handle(RESPPROG, (uint32_t)uid))) { /*set up for response*/
+    if(!(set_client_handle(RESPPROG, (uint32_t)uid))) { //set up for response
       freekeylist(&retlist);
-      rinfo = 1;  /* give err status back to original caller */
+      rinfo = 1;  // give err status back to original caller/
       send_ack();
-      return((KEY *)1);  /* error. nothing to be sent */
+      return((KEY *)1);  // error. nothing to be sent
     }
-    /* change to owner production, no group write */
-    cptr = GETKEY_str(params, "wd_0");
-    //sprintf(sysstr, "sudo chmod -R go-w %s; sudo chown -Rf production %s", 
-    //			cptr, cptr);
-    sprintf(sysstr, "%s/sum_chmown %s", SUMBIN_BASEDIR, cptr);
-    write_log("%s\n", sysstr);
-    if(system(sysstr)) {
-        write_log("**Warning: Error on: %s\n", sysstr);
+    // change to owner production, no group write
+    for(i=0; i < reqcnt; i++) { //!!!TBD
+      sprintf(tmpnam, "wd_%d", i);
+      cptr = GETKEY_str(params, tmpnam);
+      //sprintf(sysstr, "sudo chmod -R go-w %s; sudo chown -Rf production %s", 
+      //			cptr, cptr);
+      sprintf(sysstr, "%s/sum_chmown %s", SUMBIN_BASEDIR, cptr);
+      //write_log("%s\n", sysstr);
+      StartTimer(3);		//!!TEMP
+      if(system(sysstr)) {
+          write_log("**Warning: Error on: %s\n", sysstr);
+      }
+      ftmp = StopTimer(3);
+      write_log("#END: sum_chmown() %fsec\n", ftmp);    //!!TEMP for test
     }
-    rinfo = 0;			/* status back to caller */
+    rinfo = 0;			// status back to caller
     send_ack();
-    free(wd);
-    setkey_int(&retlist, "STATUS", 0);   /* give success back to caller */
+    setkey_int(&retlist, "STATUS", 0);   // give success back to caller
     return(retlist);
   }
   rinfo = status;		/* error status back to caller */
