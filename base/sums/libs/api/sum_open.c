@@ -626,8 +626,10 @@ int SUM_get(SUM_t *sum, int (*history)(const char *fmt, ...))
   return(sum->status);
 }
 
+
 /* Puts storage units from allocated storage to the DB catalog.
  * Caller gives disposition of a previously allocated data segments. 
+ * Allows for a request count to put multiple segments.
  * Returns 0 on success.
 */
 int SUM_put(SUM_t *sum, int (*history)(const char *fmt, ...))
@@ -641,15 +643,11 @@ int SUM_put(SUM_t *sum, int (*history)(const char *fmt, ...))
   uint32_t retstat;
   enum clnt_stat status;
 
-  if(sum->reqcnt != 1) {
-    (*history)("Invalid reqcnt = %d for SUM_put(). Can only put 1.\n",
-		sum->reqcnt);
-    return(1);
-  }
   cptr = sum->wd;
   dsixpt = sum->dsix_ptr;
   if(sum->debugflg) {
-    (*history)("Going to PUT wd=%s, ix=%lu\n", *cptr, *dsixpt);
+    (*history)("Going to PUT reqcnt=%d with 1st wd=%s, ix=%lu\n", 
+			sum->reqcnt, *cptr, *dsixpt);
   }
   klist = newkeylist();
   setkey_uint64(&klist, "uid", sum->uid);
@@ -661,7 +659,7 @@ int SUM_put(SUM_t *sum, int (*history)(const char *fmt, ...))
   setkey_str(&klist, "username", sum->username);
   setkey_int(&klist, "group", sum->group);
   setkey_int(&klist, "storage_set", sum->storeset);
-  setkey_double(&klist, "bytes", sum->bytes);
+  //setkey_double(&klist, "bytes", sum->bytes);
   setkey_int(&klist, "DEBUGFLG", sum->debugflg);
   setkey_int(&klist, "REQCODE", PUTDO);
   for(i = 0; i < sum->reqcnt; i++) {
@@ -701,6 +699,7 @@ int SUM_put(SUM_t *sum, int (*history)(const char *fmt, ...))
   }
   return(sum->status);
 }
+
 
 /* Called by the delete_series program before it deletes the series table.
  * Called with a pointer to a full path name that contains the sunums
