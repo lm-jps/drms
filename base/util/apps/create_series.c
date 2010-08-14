@@ -33,6 +33,8 @@ initial debugging of the .jsd file it is probably an error to use the
 Ubiquitous flags present in every module.
 \ref jsoc_main
 
+\param name=seriesname optional parameter to override seriesname in JSD file
+
 \param jsdfile JSOC series definition file name
 
 \bug
@@ -57,7 +59,6 @@ int DoIt(void) {
   const char *filename;
   FILE *fp;
   char *buf, *series;
-  const char *permstr;
   struct stat file_stat;
   DRMS_Record_t *template;
   char yesno[10];
@@ -71,25 +72,6 @@ int DoIt(void) {
      the new series. */
   /* Default is a public read-only table. */
   perms = DB_PRIV_SELECT;
-  permstr = cmdparams_get_str(&cmdparams, "perm", NULL);     
-  if (permstr != NULL)
-  {    
-    if (index(permstr,'s'))
-      perms |= DB_PRIV_SELECT;
-    if (index(permstr,'i'))
-      perms |= DB_PRIV_INSERT;
-    if (index(permstr,'u'))
-      perms |= DB_PRIV_UPDATE;
-    if (index(permstr,'p'))
-      {
-      if (strcmp(permstr,"p"))
-        {
-        fprintf(stderr,"Conflicting permissions, 'p' implies none of 'siu'\n");
-        return(1);
-        }
-      perms = 0;
-      }
-  }
 
   filename = cmdparams_getarg(&cmdparams, 1);
 
