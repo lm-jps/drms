@@ -112,7 +112,16 @@ int DoIt(void) {
     printf("Failed to parse series description in file '%s'.\n",filename);
     return 1;
   }
-  series = template->seriesinfo->seriesname;
+//  if (series = strdup(cmdparams_get_str(&cmdparams, "name", NULL))) {
+  if (series = cmdparams_get_str(&cmdparams, "name", NULL)) {
+    strcpy(template->seriesinfo->seriesname, series);
+  } else {
+    if (!strncmp(template->seriesinfo->seriesname, "XXX", 3)) {
+      fprintf(stderr, "This JSD requires user supplied series name.\n");
+      goto usage;
+    }
+    series = template->seriesinfo->seriesname;
+  }
 
   if (force) {
     int status;
@@ -147,8 +156,7 @@ int DoIt(void) {
  bailout:
   return 1;
  usage:
-  printf ("Usage: %s [-f] [perm=[s|i|u]] file.jsd\n",
+  printf ("Usage: %s [-f] [perm=[s|i|u]] [name=seriesname] file.jsd\n",
       cmdparams_getarg (&cmdparams, 0));
   return 1;
 }
-    
