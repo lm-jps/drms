@@ -19,6 +19,8 @@
 
 static int n_off, n_total;	/* counts since dsds_svc started */
 static int c_off, c_total;	/* counts for last 100 ds */
+static char dsix_name[128];
+static char testname[256];
 
 int SUMLIB_InfoGetEx(KEY *params, KEY **results);
 
@@ -28,9 +30,6 @@ int SUMLIB_InfoGetEx(KEY *params, KEY **results)
 
 EXEC SQL BEGIN DECLARE SECTION;
   char stmt[8192];
-  VARCHAR l_eff_date[20];
-  VARCHAR eff_date_str[20];
-  char *eff_date;
   uint64_t uid;
   uint64_t ds_index;
   uint64_t ds_index_arr[MAXSUMREQCNT];
@@ -41,7 +40,6 @@ EXEC SQL BEGIN DECLARE SECTION;
     int pa_substatus;
     VARCHAR effective_date[20];
 
-  struct {
     VARCHAR online_loc[81];
     VARCHAR online_status[5];
     VARCHAR archive_status[5];
@@ -50,7 +48,6 @@ EXEC SQL BEGIN DECLARE SECTION;
     VARCHAR owning_series[81];
     int storage_group;
     double bytes;
-    uint64_t ds_index;
     uint64_t create_sumid;
     VARCHAR creat_date[32];
     VARCHAR username[11];
@@ -60,46 +57,15 @@ EXEC SQL BEGIN DECLARE SECTION;
     VARCHAR safe_tape[21];
     int safe_tape_fn;
     VARCHAR safe_tape_date[32];
-  } mainquery;
-
-  struct {
-    short online_loc_ind;
-    short online_status_ind;
-    short archive_status_ind;
-    short offsite_ack_ind;
-    short history_comment_ind;
-    short owning_series_ind;
-    short storage_group_ind;
-    short bytes_ind;
-    short ds_index_ind;
-    short create_sumid_ind;
-    short creat_date_ind;
-    short username_ind;
-    short arch_tape_ind;
-    short arch_tape_fn_ind;
-    short arch_tape_date_ind;
-    short safe_tape_ind;
-    short safe_tape_fn_ind;
-    short safe_tape_date_ind;
-  } mainind;
-
 EXEC SQL END DECLARE SECTION;
-
-char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, HISTORY_COMMENT, OWNING_SERIES, STORAGE_GROUP, BYTES, DS_INDEX, CREATE_SUMID, CREAT_DATE, USERNAME, ARCH_TAPE,ARCH_TAPE_FN, ARCH_TAPE_DATE, SAFE_TAPE, SAFE_TAPE_FN, SAFE_TAPE_DATE FROM SUM_MAIN WHERE DS_INDEX in (";
-
-   char loc[81];
-   char l_arch_tape[21];
-   char dsix_name[128];
-   int i, reqcnt,  offline, pos;
+   int i, reqcnt;
 
     uid = getkey_uint64(params, "uid");
     reqcnt = getkey_int(params, "reqcnt");
-    offline = 0;
-    sprintf(stmt, "%s", STMT);
   	 
-    /* Make the query statement. Remember that the wd returned may not be
-     * in the same order as requested here.
-     */
+     EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
+     EXEC SQL WHENEVER NOT FOUND GOTO noerror;
+    //Make the query statement.
     for(i=0; i < reqcnt ; i++) {
       sprintf(dsix_name, "dsix_%d", i);
       if(!findkey(params, dsix_name)) {
@@ -107,98 +73,79 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, HI
         return(DS_DATA_REQ);
       }
       ds_index = getkey_uint64(params, dsix_name);
-      ds_index_arr[i] = ds_index;         /* save in the proper position */
-      //sprintf(dsix_name, "wd_%d", i);
-      //setkey_str(results, dsix_name, ""); /* preset blank in case doen't exist*/
-      if(i == (reqcnt - 1))
-	sprintf(stmt, "%s%lu);", stmt, ds_index);
-      else
-	sprintf(stmt, "%s%lu,", stmt, ds_index);
-     }
-     //printk("%s\n", stmt); //!!!TEMP
 
-     EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
-     EXEC SQL PREPARE query FROM :stmt;
-     EXEC SQL DECLARE reqcursor CURSOR FOR query;
-     EXEC SQL OPEN reqcursor;
-  	 
-     EXEC SQL WHENEVER NOT FOUND GOTO end_fetch;
 
-     for(i=0; ; i++) {
-       EXEC SQL FETCH reqcursor INTO :mainquery :mainind;
+ EXEC SQL SELECT online_loc, online_status, archive_status, offsite_ack,
+ history_comment, owning_series, storage_group, bytes, create_sumid, creat_date, username,
+ coalesce(arch_tape,'N/A'), coalesce(arch_tape_fn,0),
+ coalesce(arch_tape_date,'1958-01-01 00:00:00'),
+ coalesce(safe_tape,'N/A'), coalesce(safe_tape_fn,0),
+ coalesce(safe_tape_date,'1958-01-01 00:00:00')
+ INTO :online_loc, :online_status, :archive_status, :offsite_ack,
+ :history_comment, :owning_series, :storage_group, :bytes, :create_sumid, :creat_date,
+ :username, :arch_tape, :arch_tape_fn, :arch_tape_date, :safe_tape,
+ :safe_tape_fn, :safe_tape_date
+ FROM SUM_MAIN WHERE DS_INDEX = :ds_index;
 
-       strcpy(loc, mainquery.online_loc.arr);
-       strcpy(l_arch_tape, mainquery.arch_tape.arr);
-       ds_index = mainquery.ds_index;
-       /* find the position of the ds_index in the orig array */
-       for(pos=0; pos < reqcnt; pos++) {
-         if(ds_index == ds_index_arr[pos]) break;
-       }
-
-        sprintf(dsix_name, "online_loc_%d", pos);
-    	setkey_str(results, dsix_name, loc);
-        sprintf(dsix_name, "online_status_%d", pos);
-        setkey_str(results, dsix_name, mainquery.online_status.arr);
-        sprintf(dsix_name, "archive_status_%d", pos);
-    	setkey_str(results, dsix_name, mainquery.archive_status.arr); 
-        sprintf(dsix_name, "offsite_ack_%d", pos);
-    	setkey_str(results, dsix_name, mainquery.offsite_ack.arr); 
-        sprintf(dsix_name, "history_comment_%d", pos);
-    	setkey_str(results, dsix_name, mainquery.history_comment.arr); 
-        sprintf(dsix_name, "owning_series_%d", pos);
-    	setkey_str(results, dsix_name, mainquery.owning_series.arr); 
-        sprintf(dsix_name, "storage_group_%d", pos);
-        setkey_int(results, dsix_name, mainquery.storage_group);
-        sprintf(dsix_name, "bytes_%d", pos);
- 	setkey_double(results, dsix_name, mainquery.bytes);
-        sprintf(dsix_name, "creat_date_%d", pos);
-    	setkey_str(results, dsix_name, mainquery.creat_date.arr); 
-        sprintf(dsix_name, "username_%d", pos);
-    	setkey_str(results, dsix_name, mainquery.username.arr); 
-        sprintf(dsix_name, "arch_tape_%d", pos);
-    	setkey_str(results, dsix_name, mainquery.arch_tape.arr); 
-        sprintf(dsix_name, "arch_tape_fn_%d", pos);
-        setkey_int(results, dsix_name, mainquery.arch_tape_fn);
-        sprintf(dsix_name, "arch_tape_date_%d", pos);
-    	setkey_str(results, dsix_name, mainquery.arch_tape_date.arr); 
-        sprintf(dsix_name, "safe_tape_%d", pos);
-    	setkey_str(results, dsix_name, mainquery.safe_tape.arr); 
-        sprintf(dsix_name, "safe_tape_fn_%d", pos);
-        setkey_int(results, dsix_name, mainquery.safe_tape_fn);
-        sprintf(dsix_name, "safe_tape_date_%d", pos);
-    	setkey_str(results, dsix_name, mainquery.safe_tape_date.arr); 
-        sprintf(dsix_name, "ds_index_%d", pos);
+        sprintf(dsix_name, "online_loc_%d", i);
+        sprintf(testname, "online_loc_%d", i);
+    	setkey_str(results, dsix_name, online_loc.arr);
+        sprintf(dsix_name, "online_status_%d", i);
+        setkey_str(results, dsix_name, online_status.arr);
+        sprintf(dsix_name, "archive_status_%d", i);
+    	setkey_str(results, dsix_name, archive_status.arr); 
+        sprintf(dsix_name, "offsite_ack_%d", i);
+    	setkey_str(results, dsix_name, offsite_ack.arr); 
+        sprintf(dsix_name, "history_comment_%d", i);
+    	setkey_str(results, dsix_name, history_comment.arr); 
+        sprintf(dsix_name, "owning_series_%d", i);
+    	setkey_str(results, dsix_name, owning_series.arr); 
+        sprintf(dsix_name, "storage_group_%d", i);
+        setkey_int(results, dsix_name, storage_group);
+        sprintf(dsix_name, "bytes_%d", i);
+ 	setkey_double(results, dsix_name, bytes);
+        sprintf(dsix_name, "creat_date_%d", i);
+    	setkey_str(results, dsix_name, creat_date.arr); 
+        sprintf(dsix_name, "username_%d", i);
+    	setkey_str(results, dsix_name, username.arr); 
+        sprintf(dsix_name, "arch_tape_%d", i);
+    	setkey_str(results, dsix_name, arch_tape.arr); 
+        sprintf(dsix_name, "arch_tape_fn_%d", i);
+        setkey_int(results, dsix_name, arch_tape_fn);
+        sprintf(dsix_name, "arch_tape_date_%d", i);
+    	setkey_str(results, dsix_name, arch_tape_date.arr); 
+        sprintf(dsix_name, "safe_tape_%d", i);
+    	setkey_str(results, dsix_name, safe_tape.arr); 
+        sprintf(dsix_name, "safe_tape_fn_%d", i);
+        setkey_int(results, dsix_name, safe_tape_fn);
+        sprintf(dsix_name, "safe_tape_date_%d", i);
+    	setkey_str(results, dsix_name, safe_tape_date.arr); 
+        sprintf(dsix_name, "ds_index_%d", i);
         setkey_uint64(results, dsix_name, ds_index);
 
       //now get values in sum_partn_alloc
-      //!!TBD use the same technique for the queries as done above
-        EXEC SQL WHENEVER NOT FOUND GOTO noerror;
      EXEC SQL SELECT status, archive_substatus, effective_date
      INTO :pa_status, :pa_substatus, :effective_date
      FROM SUM_PARTN_ALLOC WHERE DS_INDEX = :ds_index and STATUS != 8;
-        sprintf(dsix_name, "pa_status_%d", pos);
+        sprintf(dsix_name, "pa_status_%d", i);
         setkey_int(results, dsix_name, pa_status);
-        sprintf(dsix_name, "pa_substatus_%d", pos);
+        sprintf(dsix_name, "pa_substatus_%d", i);
         setkey_int(results, dsix_name, pa_substatus);
-        sprintf(dsix_name, "effective_date_%d", pos);
+        sprintf(dsix_name, "effective_date_%d", i);
         setkey_str(results, dsix_name, effective_date.arr);
         continue;
     noerror:
-        sprintf(dsix_name, "pa_status_%d", pos);
+        sprintf(dsix_name, "pa_status_%d", i);
         setkey_int(results, dsix_name, 0);
-        sprintf(dsix_name, "pa_substatus_%d", pos);
+        sprintf(dsix_name, "pa_substatus_%d", i);
         setkey_int(results, dsix_name, 0);
-        sprintf(dsix_name, "effective_date_%d", pos);
+        sprintf(dsix_name, "effective_date_%d", i);
         setkey_str(results, dsix_name, "N/A");
+        continue;
+sqlerror:
+        printk("sqlerror for i=%d ds_index = %u\n", i, ds_index);
     }
-        end_fetch:
         setkey_int(results, "reqcnt", reqcnt);
     	EXEC SQL COMMIT WORK;
 	return NO_ERROR;
-sqlerror:
-         printk("Error in SUMLIB_InfoGetEx\n");
-         printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
-         EXEC SQL WHENEVER SQLERROR CONTINUE;
-         EXEC SQL ROLLBACK WORK;
-         return DS_DATA_QRY;
 }
