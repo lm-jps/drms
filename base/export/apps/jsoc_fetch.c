@@ -530,6 +530,7 @@ int DoIt(void)
   const char *method;
   const char *protocol;
   const char *filenamefmt;
+  const char *dbhost;
   char *errorreply;
   int64_t *sunumarr = NULL; /* array of 64-bit sunums provided in the'sunum=...' argument. */
   int nsunums;
@@ -646,6 +647,7 @@ int DoIt(void)
   notify = cmdparams_get_str (&cmdparams, kArgNotify, NULL);
   shipto = cmdparams_get_str (&cmdparams, kArgShipto, NULL);
   requestorid = cmdparams_get_int (&cmdparams, kArgRequestorid, NULL);
+  dbhost = cmdparams_get_str(&cmdparams, "JSOC_DBHOST", NULL);
 
   dodataobj = strcmp(formatvar, "dataobj") == 0;
   dojson = strcmp(format, "json") == 0;
@@ -659,9 +661,7 @@ FILE *runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
  if (runlog)
  {
     char now[100];
-    const char *dbhost;
     int fileupload = strncmp(dsin, "*file*", 6) == 0;
-    dbhost = cmdparams_get_str(&cmdparams, "JSOC_DBHOST", NULL);
     sprint_ut(now,time(0) + UNIX_EPOCH);
     fprintf(runlog,"PID=%d\n   %s\n   op=%s\n   in=%s\n   RequestID=%s\n   DBHOST=%s\n   REMOTE_ADDR=%s\n",
             getpid(), now, op, dsin, requestid, dbhost, getenv("REMOTE_ADDR"));
@@ -1353,6 +1353,8 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
      if (fscanf(fp, "%s", new_requestid) != 1)
        JSONDIE("Cant get new RequestID");
      pclose(fp);
+     if (strcmp(dbhost, "hmidb") == 0)
+       strcat(new_requestid, "_IN");
      }
      requestid = new_requestid;
 
