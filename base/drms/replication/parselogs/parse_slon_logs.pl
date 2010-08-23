@@ -17,6 +17,8 @@
 #                   |   changed shell calls to mkdir/mv/cp/rm/ls to use the perl equiv.
 #                   |   (mkdir / File::Copy (move, copy) / unlink / glob
 
+#    20-Aug-2010    |   Test end of line in sql inserts for \);$ in parseLog subroutine
+
 # Run this:
 #  parse_slon_logs.pl /b/devtest/JSOC/proj/replication/etc/repserver.dev.cfg parselock.txt subscribelock.txt
 
@@ -962,6 +964,15 @@ sub dumpSlonLog {
   }
 }
 
+## test end of line in insert sql  - ISS 2010/Aug/20
+sub dumpErrorLog {
+  my ($cfgH, $series, $line) = @_;
+  if (defined $series) {
+    for my $node (@{$cfgH->{$series}}) {
+      error("bad log line [$line] for node [$node]");
+    }
+  }
+}
 
 sub parseLog {
   my ($cfgH, $nodeH, $srcFile) = @_;
@@ -987,8 +998,14 @@ sub parseLog {
 
   #e.g.
   #insert into "lm_jps"."lev1_test4k10s"
+    ## test end of line in insert sql  - ISS 2010/Aug/20
     if ($_ =~ /^insert\s+into\s+("\S+"\."\S+")/i) {
-      dumpSlonLog($cfgH, $nodeH, lc($1), $_);
+      my $series = $1;
+      if ($_ =~ /.*\);$/ ) {
+        dumpSlonLog($cfgH, $nodeH, $series, $_);
+      } else {
+        dumpErrorLog($cfgH, $series, $_);
+      }
     }
   }
 
