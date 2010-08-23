@@ -27,7 +27,7 @@ unsigned long long hash_universal_hash(const void *v)
 void hash_init(Hash_Table_t *h, const unsigned int hashprime, 
 	       const int initbinsize, 
 	       int (*not_equal)(const void *, const void *), 
-	       unsigned int (*hash)(const void *))
+	       unsigned long long (*hash)(const void *))
 {
   unsigned int i;
   

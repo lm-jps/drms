@@ -7,13 +7,13 @@
 typedef struct Hash_Table_struct {
   unsigned int hashprime;
   int (*not_equal)(const void *, const void *);
-  unsigned int (*hash)(const void *);
+  unsigned long long (*hash)(const void *);
   Table_t *list;
 } Hash_Table_t;
 
 void hash_init(Hash_Table_t *h, const unsigned int hashprime, const int initbinsize, 
 	       int (*not_equal)(const void *, const void *), 
-	       unsigned int (*hash)(const void *));
+	       unsigned long long (*hash)(const void *));
 void hash_free(Hash_Table_t *h);
 void hash_copy(Hash_Table_t *dst, Hash_Table_t *src);
 void hash_insert(Hash_Table_t *h, const void *key, const void *value );
