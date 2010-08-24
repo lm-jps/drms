@@ -23,7 +23,7 @@ if($host ne $HOST) {
   print "This can only be run on $HOST.\n";
   exit;
 }
-
+sleep(20);	#delay on startup
 ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
 $sec2 = sprintf("%02d", $sec);
 $min2 = sprintf("%02d", $min);
