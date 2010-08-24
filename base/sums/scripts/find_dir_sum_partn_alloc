@@ -64,6 +64,7 @@ while(<OUTLS>) {
   if(/^D/) {
     chop($_);
     $dir = "$SUM/$_";
+    if($dir eq '/SUM0/D000') { next; } #skip special dir for DB jim
     $origD = $_;
     $found = 0;
     @subdirs = `/bin/ls $dir`;
