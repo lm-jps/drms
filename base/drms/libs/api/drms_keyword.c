@@ -542,72 +542,100 @@ static void PrintTimeVal(DRMS_Keyword_t *key, char *outbuf, int size)
 /* Print the fields of a keyword struct to a file. */
 void drms_keyword_fprintval(FILE *keyfile, DRMS_Keyword_t *key)
 {
-  switch(key->info->type)
-  {
-  case DRMS_TYPE_CHAR:
-    fprintf(keyfile, key->info->format, key->value.char_val);
-    break;
-  case DRMS_TYPE_SHORT:
-    fprintf(keyfile, key->info->format, key->value.short_val);
-    break;
-  case DRMS_TYPE_INT:
-    fprintf(keyfile, key->info->format, key->value.int_val);
-    break;
-  case DRMS_TYPE_LONGLONG:
-    fprintf(keyfile, key->info->format, key->value.longlong_val);
-    break;
-  case DRMS_TYPE_FLOAT:
-    fprintf(keyfile, key->info->format, key->value.float_val);
-    break;
-  case DRMS_TYPE_DOUBLE:
-    fprintf(keyfile, key->info->format, key->value.double_val);
-    break;
-  case DRMS_TYPE_TIME:
-    {
-       char buf[1024];
-       PrintTimeVal(key, buf, sizeof(buf));
-       fprintf(keyfile, "%s", buf);
-    }
-    break;
-  case DRMS_TYPE_STRING:
-    fprintf(keyfile, key->info->format, key->value.string_val);
-    break;
-  default:
-    break;
-  }
+   const char *fmt = NULL;
+
+   if (key->info->format && *(key->info->format) != '\0')
+   {
+      fmt = key->info->format;
+   }
+
+   switch(key->info->type)
+   {
+      case DRMS_TYPE_CHAR:
+        fmt = (fmt != NULL) ? fmt : "%hhd";
+        fprintf(keyfile, fmt, key->value.char_val);
+        break;
+      case DRMS_TYPE_SHORT:
+        fmt = (fmt != NULL) ? fmt : "%hd";
+        fprintf(keyfile, fmt, key->value.short_val);
+        break;
+      case DRMS_TYPE_INT:
+        fmt = (fmt != NULL) ? fmt : "%d";
+        fprintf(keyfile, fmt, key->value.int_val);
+        break;
+      case DRMS_TYPE_LONGLONG:
+        fmt = (fmt != NULL) ? fmt : "%lld";
+        fprintf(keyfile, fmt, key->value.longlong_val);
+        break;
+      case DRMS_TYPE_FLOAT:
+        fmt = (fmt != NULL) ? fmt : "%f";
+        fprintf(keyfile, fmt, key->value.float_val);
+        break;
+      case DRMS_TYPE_DOUBLE:
+        fmt = (fmt != NULL) ? fmt : "%f";
+        fprintf(keyfile, fmt, key->value.double_val);
+        break;
+      case DRMS_TYPE_TIME:
+      {
+         char buf[1024];
+         PrintTimeVal(key, buf, sizeof(buf));
+         fprintf(keyfile, "%s", buf);
+      }
+      break;
+      case DRMS_TYPE_STRING:
+        fmt = (fmt != NULL) ? fmt : "%s";
+        fprintf(keyfile, fmt, key->value.string_val);
+        break;
+      default:
+        break;
+   }
 }
 
 void drms_keyword_snprintfval(DRMS_Keyword_t *key, char *buf, int size)
 {
+const char *fmt = NULL;
+
+   if (key->info->format && *(key->info->format) != '\0')
+   {
+      fmt = key->info->format;
+   }
+
    switch(key->info->type)
    {
       case DRMS_TYPE_CHAR:
-	snprintf(buf, size, key->info->format, key->value.char_val);
+        fmt = (fmt != NULL) ? fmt : "%hhd";
+	snprintf(buf, size, fmt, key->value.char_val);
 	break;
       case DRMS_TYPE_SHORT:
-	snprintf(buf, size, key->info->format, key->value.short_val);
+        fmt = (fmt != NULL) ? fmt : "%hd";
+	snprintf(buf, size, fmt, key->value.short_val);
 	break;
       case DRMS_TYPE_INT:
-	snprintf(buf, size, key->info->format, key->value.int_val);
+        fmt = (fmt != NULL) ? fmt : "%d";
+	snprintf(buf, size, fmt, key->value.int_val);
 	break;
       case DRMS_TYPE_LONGLONG:
-	snprintf(buf, size, key->info->format, key->value.longlong_val);
+        fmt = (fmt != NULL) ? fmt : "%lld";
+	snprintf(buf, size, fmt, key->value.longlong_val);
 	break;
       case DRMS_TYPE_FLOAT:
-	snprintf(buf, size, key->info->format, key->value.float_val);
+        fmt = (fmt != NULL) ? fmt : "%f";
+	snprintf(buf, size, fmt, key->value.float_val);
 	break;
       case DRMS_TYPE_DOUBLE:
-	snprintf(buf, size, key->info->format, key->value.double_val);
+        fmt = (fmt != NULL) ? fmt : "%f";
+	snprintf(buf, size, fmt, key->value.double_val);
 	break;
       case DRMS_TYPE_TIME:
-	{
-	   char intbuf[1024];
-           PrintTimeVal(key, intbuf, sizeof(intbuf));
-	   snprintf(buf, size, "%s", intbuf);
-	}
-	break;
+      {
+         char intbuf[1024];
+         PrintTimeVal(key, intbuf, sizeof(intbuf));
+         snprintf(buf, size, "%s", intbuf);
+      }
+      break;
       case DRMS_TYPE_STRING:
-	snprintf(buf, size, key->info->format, key->value.string_val);
+        fmt = (fmt != NULL) ? fmt : "%s";
+	snprintf(buf, size, fmt, key->value.string_val);
 	break;
       default:
 	break;

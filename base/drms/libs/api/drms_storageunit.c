@@ -5,6 +5,7 @@
 #include "drms_priv.h"
 #include "xmem.h"
 #include "util.h"
+#include "list.h"
 
 #ifdef DRMS_CLIENT
 #define DEFS_CLIENT
@@ -1055,6 +1056,8 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
          nReqs++;
       }
 
+      /* ART - Although SUMS will handle up to MAXSUMREQCNT SUNUMs, the keylist 
+       * code used by SUMS is inefficient - the optimal batch size is 64. */
       if (nReqs == MAXSUMREQCNT || (isunum + 1 == nsunums && nReqs > 0))
       {
          request->reqcnt = nReqs;
@@ -1193,7 +1196,7 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
         {
            fprintf(fp,"slot\trecord number\n");
            for (i=0; i<su->seriesinfo->unitsize; i++)
-             if (su->state!=DRMS_SLOT_FREE)
+             if (su->state[i] != DRMS_SLOT_FREE)
                fprintf(fp,"%d\t%lld\n", i, su->recnum[i]);
         }
         fclose(fp);
@@ -1248,6 +1251,176 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
 
   return 0;
 }
+
+static int CommitUnits(DRMS_Env_t *env, 
+                       LinkedList_t *ll, 
+                       const char *seriesName, 
+                       int seriesArch,
+                       int seriesUS,
+                       int seriesTG,
+                       int seriesRet)
+{
+   ListNode_t *node = NULL;
+   DRMS_StorageUnit_t *sunit = NULL;
+   DRMS_SumRequest_t *request = NULL;
+   DRMS_SumRequest_t *reply = NULL;
+   int actualarchive;
+   char filename[DRMS_MAXPATHLEN];
+   FILE *fp = NULL;
+   int nsus;
+   int statint;
+   int isu;
+   int islot;
+   DRMS_StorageUnit_t *punits[DRMS_MAX_REQCNT]; /* hold pointers to submitted SUs. */
+
+   statint = DRMS_SUCCESS;
+
+   if (ll->nitems > 0)
+   {
+      /* Use series archive flag, but override with cmd-line flag. */
+      if (env->archive != INT_MIN)
+      {
+         actualarchive = env->archive;
+      }
+      else
+      {
+         actualarchive = seriesArch;
+      }
+
+      XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+      actualarchive = 0;
+      nsus = 0;
+      list_llreset(ll);
+      while ((node = list_llnext(ll)) != NULL)
+      {
+         sunit = *((DRMS_StorageUnit_t **)(node->data));
+
+         if (!EmptyDir(sunit->sudir))
+         {
+            if (nsus == DRMS_MAX_REQCNT)
+            {
+               /* There was at least one additional SU to process, but there are more SUs
+                * to process than this function can handle. */
+               statint = DRMS_ERROR_INVALIDDATA;
+               break;
+            }
+
+            /* Write text file with record numbers to storage unit directory. */
+            if (sunit->recnum)
+            {
+               snprintf(filename, sizeof(filename), "%s/Records.txt", sunit->sudir);
+               if ((fp = fopen(filename,"w")) == NULL)
+               {
+                  fprintf(stderr, 
+                          "ERROR in drms_commitunits: Failed to open file '%s'\n",
+                          filename);
+                  statint = DRMS_ERROR_FILECREATE;
+                  break;
+               }
+
+               /* If archive is set to -1, then write flag text at the top of the file to 
+                * tell SUMS to delete the DRMS records within the storage unit. */
+               if (actualarchive == -1)
+               {
+                  fprintf(fp, "DELETE_SLOTS_RECORDS\n");
+               }
+
+               fprintf(fp, "series=%s\n", seriesName);
+               if (sunit->nfree < seriesUS)
+               {
+                  fprintf(fp,"slot\trecord number\n");
+                  for (islot = 0; islot < seriesUS; islot++)
+                  {
+                     if (sunit->state[islot] != DRMS_SLOT_FREE)
+                     {
+                        fprintf(fp,"%d\t%lld\n", islot, sunit->recnum[islot]);
+                     }
+                  }
+               }
+               fclose(fp);
+               fp = NULL;
+            }
+
+            request->sudir[nsus] = sunit->sudir;
+            request->sunum[nsus] = sunit->sunum;
+
+            /* Store a pointer to the storage unit - will need to modify the mode 
+             * later in the code. */
+            punits[nsus] = sunit;
+            nsus++;
+         }
+      } /* loop over storage units */
+
+      if (nsus == 0 || statint != DRMS_SUCCESS)
+      {
+         free(request);
+         request = NULL;
+      }
+      else
+      {
+         request->opcode = DRMS_SUMPUT;
+         request->dontwait = 0;
+         request->reqcnt = nsus;
+         request->dsname = seriesName;
+         request->group = seriesTG;
+         if (actualarchive == 1) 
+         {
+            request->mode = ARCH + TOUCH;
+         }
+         else
+         {
+            request->mode = TEMP + TOUCH;
+         }
+
+         /* If the user doesn't override on the cmd-line, start with the jsd retention.  Otherwise, 
+          * start with the cmd-line value.  It doesn't matter if the value is positive or negative 
+          * since only the series owner can create a record in the first place.
+          */
+         if (env->retention == INT_MIN) 
+         {  
+            request->tdays = seriesRet;
+         }
+         else
+         {
+            request->tdays = env->retention; 
+         }
+
+         request->comment = NULL;
+
+         // must have sum_thread running already
+         XASSERT(env->sum_thread);
+
+         /* Submit request to sums server thread. */
+         tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
+
+         /* Wait for reply. FIXME: add timeout. */
+         tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
+
+         if (reply->opcode != 0) 
+         {
+            fprintf(stderr, "ERROR in drms_commitunit: SUM PUT failed with "
+                    "error code %d.\n",reply->opcode);
+            statint = DRMS_ERROR_SUMPUT;
+         }
+         else
+         {
+            /* Now the SUs are owned by SUMS, mark them read-only. */
+            for (isu = 0; isu < nsus; isu++)
+            {
+               sunit = punits[isu];
+               sunit->mode = DRMS_READONLY;
+            }
+         }
+
+         free(reply);
+         /* No need to free request - sums thread does that. */
+      }
+   }
+
+   return statint;
+}
+
+
 #endif
 
 /* Loop though all open storage units and commits the 
@@ -1257,56 +1430,106 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
 #ifndef DRMS_CLIENT
 int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
 {
-  int i, docommit;
+  int i;
   HContainer_t *scon; 
   HIterator_t hit_outer, hit_inner; 
   DRMS_StorageUnit_t *su;
-  int max_retention=0;
   int statint = 0;
+  const char *seriesName = NULL;
+  DRMS_Record_t *recTemp = NULL;
+  int nsus;
+  LinkedList_t *sulist = NULL;
+  DRMS_SeriesInfo_t *si = NULL;
 
   XASSERT(env->session->db_direct==1);
   hiter_new(&hit_outer, &env->storageunit_cache);  
   if (archive)
     *archive = 0;
-  while( (scon = (HContainer_t *)hiter_getnext(&hit_outer)) )
+
+  nsus = 0;
+
+  while((scon = (HContainer_t *)hiter_extgetnext(&hit_outer, &seriesName)))
   {
+     /* If ANY series has its storage units archived, and the caller
+      * has not set the archive flag on the cmd-line, set the return 
+      * archive flag. This will cause the session log to be archived 
+      * as well. */
+     if (archive && *archive == 0 && env->archive == INT_MIN)
+     {
+        /* Get the archive value from the series info */
+        recTemp = drms_template_record(env, seriesName, &statint);
+
+        if (statint != DRMS_SUCCESS)
+        {
+           break;
+        }
+
+        if (recTemp->seriesinfo->archive)
+        {
+           *archive = 1;
+        }
+     }
+
+     si = NULL; /* fetch series info on each outer iteration */
+
+     /* loops over SUs within a single series */
     hiter_new(&hit_inner, scon);
-    while( (su = (DRMS_StorageUnit_t *)hiter_getnext(&hit_inner)) )   
+    while((su = (DRMS_StorageUnit_t *)hiter_getnext(&hit_inner)))
     {
+       if (!si)
+       {
+          si = su->seriesinfo;
+       }
+
       if ( su->mode == DRMS_READWRITE )	
       {
 	/* See if this unit has any non-temporary, full slots. */
-	docommit = 0;
 	for (i=0; i<(su->seriesinfo->unitsize - su->nfree); i++)
 	{
 	  if (su->state[i] == DRMS_SLOT_FULL)
 	  {
-	    docommit = 1;
+            if (!sulist)
+            {
+               /* Don't deep free SUs - that is done elsewhere. */
+               sulist = list_llcreate(sizeof(DRMS_StorageUnit_t *), NULL);
+            }
+
+            list_llinserttail(sulist, &su);
+            nsus++;
 	    break;
 	  }
 	}
-	if (docommit)
-	{
-           if ((statint = drms_commitunit(env, su)) != 0)
+
+        /* When SUMS batches, it uses keylist.c, which is inefficient. Empirically, 64
+         * is an optimal batch size. */
+        if (nsus == MAXSUMREQCNT)
+        {
+           statint = CommitUnits(env, sulist, seriesName, si->archive, si->unitsize, si->tapegroup, si->retention);
+           list_llfree(&sulist);
+           nsus = 0;
+
+           if (statint != DRMS_SUCCESS)
            {
               break;
            }
-           if (su->seriesinfo->retention > max_retention)
-             max_retention = su->seriesinfo->retention;
-           if (archive && env->archive == INT_MIN)
-           {
-              if (su->seriesinfo->archive)
-                *archive = 1;
-           }
-	}
+        }
       }
     }
 
     hiter_free(&hit_inner);
-  }
+
+    /* May be some SUs in sulist not yet committed (because there are fewer than 64. */
+    if (nsus > 0)
+    {
+       statint = CommitUnits(env, sulist, seriesName, si->archive, si->unitsize, si->tapegroup, si->retention);
+       list_llfree(&sulist);
+       nsus = 0;
+    }
+  } /* loop over series */
 
   hiter_free(&hit_outer);
 
+  /* If the caller set the archive flag on the cmd-line, then override what the series' jsds say. */
   if (archive && *archive == 0 && env->archive == 1) 
     *archive = 1;
 
@@ -1317,7 +1540,6 @@ int drms_commit_all_units(DRMS_Env_t *env, int *archive, int *status)
 
   if (env->retention==INT_MIN)
     return DRMS_LOG_RETENTION;
-    //    return max_retention;    
   else
     return env->retention;
 }
