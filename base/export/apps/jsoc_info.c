@@ -1266,6 +1266,7 @@ int DoIt(void)
         json_insert_pair_into_object(segobj, "bscales", segbscales[iseg]);
         json_insert_child(json_segments, segobj);
         }
+
       json_insert_pair_into_object(jroot, "segments", json_segments);
 
       for (ilink=0; ilink<nlinks; ilink++) 
@@ -1291,8 +1292,10 @@ int DoIt(void)
     free(final_json);
     fflush(stdout);
 
+    json_free_value(&jroot);
+
     return(0);
-    }
+    } /* rs_list */
 
   return(0);
   }
