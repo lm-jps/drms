@@ -63,7 +63,7 @@ EXEC SQL BEGIN DECLARE SECTION;
   int touch;
   char *effective_date;
 EXEC SQL END DECLARE SECTION;
-  char dsnamestr[128], tmpnam[80];
+  char dsnamestr[128], nametmp[80];
   int reqcnt, i, errflg;
   
 EXEC SQL INCLUDE sqlca;
@@ -74,19 +74,19 @@ EXEC SQL INCLUDE sqlca;
    errflg = 0;
 
   for(i=0; i < reqcnt; i++) {
-   sprintf(tmpnam, "wd_%d", i);
-   strcpy(wd, GETKEY_str(params, tmpnam));
+   sprintf(nametmp, "wd_%d", i);
+   strcpy(wd, GETKEY_str(params, nametmp));
    if(!strcmp(wd, "")) { 
-     sprintf(tmpnam, "status_%d", i);
-     setkey_int(&params, tmpnam, 1);
-     sprintf(tmpnam, "bytes_%d", i);
-     setkey_double(&params, tmpnam, 0.0);
+     sprintf(nametmp, "status_%d", i);
+     setkey_int(&params, nametmp, 1);
+     sprintf(nametmp, "bytes_%d", i);
+     setkey_double(&params, nametmp, 0.0);
      errflg = 1;
      continue;
    }
    bytes = du_dir(wd);
-   sprintf(tmpnam, "bytes_%d", i);
-   setkey_double(&params, tmpnam, bytes);
+   sprintf(nametmp, "bytes_%d", i);
+   setkey_double(&params, nametmp, bytes);
    if(!findkey(params, "history_comment")) { strcpy(history_comment, " "); }
    else {
      ccomment = GETKEY_str(params, "history_comment");
@@ -97,8 +97,8 @@ EXEC SQL INCLUDE sqlca;
      else { strcpy(history_comment, ccomment); }
    }
    ccomment = history_comment;
-   sprintf(tmpnam, "dsix_%d", i);
-   ds_index = getkey_uint64(params, tmpnam);
+   sprintf(nametmp, "dsix_%d", i);
+   ds_index = getkey_uint64(params, nametmp);
 
    strcpy(online_status.arr, "Y");
    online_status.len = strlen(online_status.arr);
@@ -179,8 +179,8 @@ EXEC SQL INCLUDE sqlca;
    }
    free(effective_date);
    free(username);
-   sprintf(tmpnam, "status_%d", i);
-   setkey_int(&params, tmpnam, 0);
+   sprintf(nametmp, "status_%d", i);
+   setkey_int(&params, nametmp, 0);
    continue;
 
 sqlerror:
