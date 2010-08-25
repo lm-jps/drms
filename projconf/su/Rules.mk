@@ -41,6 +41,10 @@ dir     := $(d)/rings
 -include                $(SRCDIR)/$(dir)/Rules.mk
 dir     := $(d)/limbfit
 -include                $(SRCDIR)/$(dir)/Rules.mk
+dir     := $(d)/farside
+-include                $(SRCDIR)/$(dir)/Rules.mk
+dir     := $(d)/timed
+-include                $(SRCDIR)/$(dir)/Rules.mk
 
 
 # Standard things
