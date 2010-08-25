@@ -76,12 +76,14 @@ static int EmptyDir(const char *dir)
                      * earlier ones. */
                     if (notempty)
                     {
+                       free(entry);
                        break;
                     }
                  }
                  else
                  {
                     notempty = 1;
+                    free(entry);
                     break;
                  }
               }
@@ -92,6 +94,8 @@ static int EmptyDir(const char *dir)
 
         ifile++;
      }
+
+     free(fileList);
   }
 
   return !notempty;
@@ -288,6 +292,7 @@ int drms_su_newslots(DRMS_Env_t *env, int n, char *series,
       break;
     }
   }
+  hiter_free(&hit);
 
   /* Start allocating slots (requesting new storage units from SUMS 
      as necessary. */

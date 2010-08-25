@@ -2112,6 +2112,8 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
 	    seg->blocksize[seg->info->naxis] = 0; 
 	  }
 	}
+
+        hiter_free(&hit);
       }
     }
     free(su);
@@ -4869,6 +4871,7 @@ long long drms_record_size(DRMS_Record_t *rec)
     size +=  drms_segment_size(seg,NULL);
     
   }
+  hiter_free(&hit);
   return size;
 }
 
