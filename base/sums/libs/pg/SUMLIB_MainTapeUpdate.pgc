@@ -86,8 +86,8 @@ EXEC SQL BEGIN DECLARE SECTION;
 EXEC SQL END DECLARE SECTION;
   
 int i, reqcnt, eflg, dosafe, permanent;
-char tmpname[80];
 char *tapeid;
+char nametmp[80];
 
   eflg = 0;
   reqcnt = getkey_int(params, "reqcnt");
@@ -105,8 +105,8 @@ char *tapeid;
   arch_tape_date.len = strlen(arch_tape_date.arr);
 
   for(i=0; i < reqcnt; i++) {
-    sprintf(tmpname, "ds_index_%d", i);
-    ds_index = getkey_uint64(params, tmpname);
+    sprintf(nametmp, "ds_index_%d", i);
+    ds_index = getkey_uint64(params, nametmp);
 
      EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
      EXEC SQL UPDATE SUM_MAIN
@@ -117,34 +117,34 @@ char *tapeid;
 	WHERE DS_INDEX = :ds_index;
 
     /* now delete AP/add DP sum_partn_alloc entries for reqcnt */
-    sprintf(tmpname, "wd_%d", i);
-    sprintf(l_wd.arr,"%s", GETKEY_str(params, tmpname));
+    sprintf(nametmp, "wd_%d", i);
+    sprintf(l_wd.arr,"%s", GETKEY_str(params, nametmp));
     l_wd.len = strlen(l_wd.arr);
-    sprintf(tmpname, "sumid_%d", i);
-    create_sumid = getkey_uint64(params, tmpname);
-    sprintf(tmpname, "status_%d", i);
-    apstatus = getkey_int(params, tmpname);
-    sprintf(tmpname, "archsub_%d", i);
-    archsub = getkey_int(params, tmpname);
-    sprintf(tmpname, "safe_id_%d", i);
-    safe_id = getkey_int(params, tmpname);
-    sprintf(tmpname, "group_id_%d", i);
-    groupid = getkey_int(params, tmpname);
+    sprintf(nametmp, "sumid_%d", i);
+    create_sumid = getkey_uint64(params, nametmp);
+    sprintf(nametmp, "status_%d", i);
+    apstatus = getkey_int(params, nametmp);
+    sprintf(nametmp, "archsub_%d", i);
+    archsub = getkey_int(params, nametmp);
+    sprintf(nametmp, "safe_id_%d", i);
+    safe_id = getkey_int(params, nametmp);
+    sprintf(nametmp, "group_id_%d", i);
+    groupid = getkey_int(params, nametmp);
     EXEC SQL DELETE FROM SUM_PARTN_ALLOC
            WHERE WD = :l_wd
            AND SUMID = :create_sumid
            AND STATUS = :apstatus;
 
-    sprintf(tmpname, "effective_date_%d", i);
-    sprintf(l_eff_date.arr,"%s", GETKEY_str(params, tmpname));
+    sprintf(nametmp, "effective_date_%d", i);
+    sprintf(l_eff_date.arr,"%s", GETKEY_str(params, nametmp));
     l_eff_date.len = strlen(l_eff_date.arr);
 
     dosafe = (apstatus==DASAP);
     permanent = (archsub==DAAPERM);
     apstatus = dosafe?DAAP:(permanent?DAPERM:DADP);
     storage_group = dosafe?safe_id:groupid;
-    sprintf(tmpname, "bytes_%d", i);
-    bytes = getkey_double(params, tmpname);
+    sprintf(nametmp, "bytes_%d", i);
+    bytes = getkey_double(params, nametmp);
 
     EXEC SQL INSERT INTO SUM_PARTN_ALLOC (WD, SUMID, STATUS, BYTES, 
 		EFFECTIVE_DATE, ARCHIVE_SUBSTATUS, GROUP_ID, SAFE_ID, DS_INDEX)
