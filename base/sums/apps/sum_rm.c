@@ -203,7 +203,7 @@ int stat_storage()
   PART *pptr;
   int i, status;
   int updated = 0;
-  double df_avail, df_total, df_del, total;
+  double df_avail, df_total, df_del, total, upercent;
   struct statvfs vfs;
 
   for(i=0; i<MAX_PART-1; i++) {
@@ -221,6 +221,11 @@ int stat_storage()
       //df_reserve = 0.01 * df_total;
       //if(df_reserve > df_avail) df_avail = 0.0;
       //else df_avail = df_avail - df_reserve;
+      upercent = df_avail/df_total;
+      if(upercent < 0.01) {             //turn off partition at 99%
+        printk("Turning off full partition %s\n", pptr->name);
+        SUMLIB_PavailOff(pptr->name); //no more allocation from this parti
+      }
       if(SUMLIB_PavailUpdate(pptr->name, df_avail))
        printk("Err: SUMLIB_PavailUpdate(%s, %e, ...)\n",
                       pptr->name, df_avail);
