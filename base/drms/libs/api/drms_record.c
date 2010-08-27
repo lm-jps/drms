@@ -1910,7 +1910,15 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, const char *recordsetname,
 				    int *status)
 {
    char *allvers = NULL;
-   return drms_open_records_internal(env, recordsetname, 1, NULL, &allvers, 0, status);
+   DRMS_RecordSet_t *ret = NULL;
+
+   ret = drms_open_records_internal(env, recordsetname, 1, NULL, &allvers, 0, status);
+   if (allvers)
+   {
+      free(allvers);
+   }
+
+   return ret;
 }
 
 DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env, 
@@ -3265,23 +3273,54 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
 #endif
   }
 
-  if (goodsegcont)
+  if (goodsegcont && rs->n > 0)
   {
+     const char **keynames = NULL;
+     int nsegs = 0;
+     int iseg;
+   
      for (i=0; i < rs->n; i++)
      {
-        /* Iterate through records, removing unrequested segments */     
-        hit = hiter_create(&(rs->records[i]->segments));
-        if (hit)
+        /* Iterate through records, removing unrequested segments */ 
+        nsegs = hcon_size(&(rs->records[i]->segments));
+
+        if (nsegs > 0)
         {
-           while (hiter_extgetnext(hit, &hkey) != NULL)
+           keynames = (const char **)malloc(sizeof(const char *) * nsegs);
+
+           if (keynames)
            {
-              if (!hcon_lookup(goodsegcont, hkey))
+              hit = hiter_create(&(rs->records[i]->segments));
+              if (hit)
               {
-                 hcon_remove(&(rs->records[i]->segments), hkey);
+                 iseg = 0;
+                 while (hiter_extgetnext(hit, &hkey) != NULL)
+                 {
+                    /* Put the names in a list - can't delete from a container while 
+                     * iterating through it. */
+                    if (!hcon_lookup(goodsegcont, hkey))
+                    {
+                       keynames[iseg] = hkey;
+                    }
+                    
+                    iseg++;
+                 }
+
+                 hiter_destroy(&hit);
               }
            }
-	   
-           hiter_destroy(&hit);
+        
+           for (iseg = 0; iseg < nsegs; iseg++)
+           {
+              hkey = keynames[iseg];
+              hcon_remove(&(rs->records[i]->segments), hkey);
+           }
+
+           if (keynames)
+           {
+              free(keynames);
+              keynames = NULL;
+           }
         }
      }
   }

@@ -2433,6 +2433,7 @@ void drms_sprint_rec_query(char *querystring, DRMS_Record_t *rec)
   int iprime, nprime=0;
   char **external_pkeys, *pkey;
   DRMS_Keyword_t *rec_key;
+  
   if (!querystring)
     return;
   if (!rec)
@@ -2456,6 +2457,17 @@ void drms_sprint_rec_query(char *querystring, DRMS_Record_t *rec)
     }
   else
     sprintf(querystring, "[:#%lld]",rec->recnum);
+
+  /* free external_pkeys */
+  for (iprime = 0; iprime < nprime; iprime++)
+  {
+     if (external_pkeys[iprime])
+     {
+        free(external_pkeys[iprime]);
+     }
+  }
+
+  free(external_pkeys);
   }
 
 /* FILE* version */

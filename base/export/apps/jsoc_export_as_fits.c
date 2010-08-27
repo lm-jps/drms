@@ -445,6 +445,16 @@ static int MapexportToDir(DRMS_Env_t *env,
       modstat = kMymodErr_BadRecSetQuery; 
    }
 
+   if (tmpq)
+   {
+      free(tmpq);
+   }
+
+   if (rsin)
+   {
+      drms_close_records(rsin, DRMS_FREE_RECORD);
+   }
+
    if (errorCount > 0)
    {
       fprintf(stderr,"Export Failed for %d segments of %d attempted.\n", errorCount, errorCount + OkayCount);

@@ -10,7 +10,7 @@ unsigned long long hash_universal_hash(const void *v)
    char *c = (char *) v;
    unsigned long long sum = 0;
 
-   while ( *c ) 
+   while ( c && *c ) 
    {
       if (sum > ULLONG_MAX / 13)
       {
