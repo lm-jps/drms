@@ -527,6 +527,7 @@ int SUMLIB_TapeFilenumber(char *tapeid);
 int SUMLIB_TapeFindGroup(int group, double bytes, TAPE *tape);
 int SUMLIB_PavailGet(double bytes, int pds_set, uint64_t uid, uint64_t sunum, KEY **results);
 int SUMLIB_PavailUpdate(char *name, double bytes);
+int SUMLIB_PavailOff(char *name);
 int SUMLIB_DelSeriesSU(char *file, char *series); 
 int SUMLIB_InfoGet(uint64_t sunum , KEY **results);
 
