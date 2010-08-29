@@ -7,9 +7,6 @@ DBNAME = POSTGRESQL
 # categories (like dbserver).
 MACHTYPE = $(shell $(SRCDIR)/getmachtype.pl)
 
-# This optional file has custom definitions created by the configure script.
--include $(LOCALIZATIONDIR)/custom.mk
-
 # If MACH was set when the make command was issued (eg., make MACH='N02'), then
 # use its value for the output/obj directory and use the custom.mk variables
 # relevant to its value. Otherwise, use $(JSOC_MACHINE).
@@ -24,14 +21,6 @@ endif
 COMPILER = icc
 FCOMPILER = ifort
 
-ifneq ($(JSOC_AUTOCOMPILER),)
-COMPILER = $(JSOC_AUTOCOMPILER)
-endif
-
-ifneq ($(JSOC_AUTOFCOMPILER),)
-FCOMPILER = $(JSOC_AUTOFCOMPILER)
-endif
-
 # can set through custom.mk or through environment
 ifneq ($(JSOC_COMPILER),)
 COMPILER = $(JSOC_COMPILER)
@@ -42,6 +31,12 @@ FCOMPILER = $(JSOC_FCOMPILER)
 endif
 #***********************************************************************************************#
 
+#***********************************************************************************************#
+# This optional file has custom definitions created by the configure script.
+# Do this after compiler selection since custom.mk might use $COMPILER or $FCOMPILER.
+# custom.mk might also set compiler (through moreconfigure.pl)
+-include $(LOCALIZATIONDIR)/custom.mk
+#***********************************************************************************************#
 
 #***********************************************************************************************#
 #

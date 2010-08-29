@@ -27,8 +27,13 @@ dir	:= $(d)/lev1_aia
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/lev1_hmi
 -include		$(SRCDIR)/$(dir)/Rules.mk
+
+# Flatfield has problems on ia32
+ifeq ($(JSOC_MACHINE), linux_x86_64)
 dir	:= $(d)/flatfield
 -include		$(SRCDIR)/$(dir)/Rules.mk
+endif
+
 dir     := $(d)/mag
 -include                $(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/myproj

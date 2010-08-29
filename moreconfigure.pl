@@ -106,11 +106,11 @@ if (defined($outfile))
     }
     elsif ($hasicc)
     {
-        print OUTFILE "JSOC_AUTOCOMPILER = icc\n";
+        print OUTFILE "COMPILER = icc\n";
     }
     else
     {
-        print OUTFILE "JSOC_AUTOCOMPILER = gcc\n";
+        print OUTFILE "COMPILER = gcc\n";
     }
 
     if (!$hasifort && !$hasgfort)
@@ -119,12 +119,17 @@ if (defined($outfile))
     }
     elsif ($hasifort)
     {
-        print OUTFILE "JSOC_AUTOFCOMPILER = ifort\n";
+        print OUTFILE "FCOMPILER = ifort\n";
     }
     else
     {
-        print OUTFILE "JSOC_AUTOFCOMPILER = gfortran\n";
+        print OUTFILE "FCOMPILER = gfortran\n";
     }
+
+    # Print out env var override logic - otherwise we lose this logic in make_basic.mk
+    # as the include of custom.mk comes after this logic in make_basic.mk
+    print OUTFILE "ifneq (\$(JSOC_COMPILER),)\n  COMPILER = \$(JSOC_COMPILER)\nendif\n";
+    print OUTFILE "ifneq (\$(JSOC_FCOMPILER),)\n  FCOMPILER = \$(JSOC_FCOMPILER)\nendif\n\n";
 
     # Set DEFAULT values for Stanford-specific (if running at Stanford) make variables.
     if (-e "suflag.txt") 
