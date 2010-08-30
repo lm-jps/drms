@@ -508,7 +508,7 @@ int DS_RmNow(char *wd, uint64_t sumid, double bytes, char *effdate, uint64_t ds_
 int DS_RmDoX(char *name, double bytesdel);
 int DS_RmNowX(char *wd, uint64_t sumid, double bytes, char *effdate, uint64_t ds_index, int archsub, double *rmbytes);
 int rmdirs(char *wd, char *root);
-int SUM_Main_Update (KEY *params);
+int SUM_Main_Update (KEY *params, KEY **results);
 int SUMLIB_Close(KEY *params);
 int SUMLIB_TapeState(char *tapeid);
 int SUM_StatOffline(uint64_t ds_index);
