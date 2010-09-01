@@ -469,7 +469,9 @@ int DoIt(void)
             fprintf(fp, "  jsoc_export_as_is JSOC_DBHOST=%s ds='@hg_patch.log' requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n",
               dbmainhost, requestid, method, protocol, filenamefmt); 
             fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
-            fprintf(fp, "show_info JSOC_DBHOST=%s -aAit ds='@hg_patch.log' > %s.keywords.txt\n", dbmainhost, requestid);
+            fprintf(fp, "set RECSMADE = `cat hg_patch.log | wc -l` \n");
+            fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
+            fprintf(fp, "show_info JSOC_DBHOST=%s n=$RECSMADE -aAit ds='@hg_patch.log' > %s.keywords.txt\n", dbmainhost, requestid);
             fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
             }
           }
