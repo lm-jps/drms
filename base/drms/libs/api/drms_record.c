@@ -3301,11 +3301,11 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
                     if (!hcon_lookup(goodsegcont, hkey))
                     {
                        keynames[iseg] = hkey;
+                       iseg++;
                     }
-                    
-                    iseg++;
                  }
 
+                 nsegs = iseg;
                  hiter_destroy(&hit);
               }
            }
