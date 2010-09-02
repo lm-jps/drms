@@ -6805,6 +6805,7 @@ int drms_recordset_getssnrecs(DRMS_RecordSet_t *set, unsigned int setnum, int *s
    int end = 0;
    int stat = DRMS_SUCCESS;
    int res = 0;
+   int notnegone = 0;
 
    if (setnum >= set->ss_n)
    {
@@ -6819,17 +6820,25 @@ int drms_recordset_getssnrecs(DRMS_RecordSet_t *set, unsigned int setnum, int *s
       }
       else
       {
+	 start = set->ss_starts[setnum];
+         notnegone = setnum + 1;
 
-	 start = set->ss_starts[setnum];      
+         /* Need to find the next ss_start whose value is not -1 (which signifies a sub-rs with no records). */
+         while (notnegone < set->ss_n && set->ss_starts[notnegone] == -1)
+         {
+            notnegone++;
+         }
 
-	 if (setnum == set->ss_n - 1)
+	 if (notnegone == set->ss_n)
 	 {
+            /* There was no ss_starts that was not -1; count records from setnum (an index) 
+             * to set->n - 1 (last index) */
 	    end = set->n - 1;
 	    res = end - start + 1;
 	 }
 	 else
 	 {
-	    end = set->ss_starts[setnum + 1];
+	    end = set->ss_starts[notnegone];
 	    res = end - start;
 	 }
       }
