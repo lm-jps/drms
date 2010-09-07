@@ -1278,6 +1278,8 @@ static int CommitUnits(DRMS_Env_t *env,
    int islot;
    DRMS_StorageUnit_t *punits[DRMS_MAX_REQCNT]; /* hold pointers to submitted SUs. */
 
+   actualarchive = 0;
+
    statint = DRMS_SUCCESS;
 
    if (ll->nitems > 0)
@@ -1293,7 +1295,6 @@ static int CommitUnits(DRMS_Env_t *env,
       }
 
       XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
-      actualarchive = 0;
       nsus = 0;
       list_llreset(ll);
       while ((node = list_llnext(ll)) != NULL)
