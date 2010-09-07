@@ -23,7 +23,6 @@ extern int debugflg;
 extern float ftmp;
 static int NO_OPEN = 0;
 static char callername[MAX_STR];
-static char nametmp[80];
 
 void write_time();
 void logkey();
@@ -146,8 +145,7 @@ KEY *opendo_1(KEY *params)
   if(rinfo) {
     write_time();
     write_log("Successful SUMLIB_Open for user=%s uid=%d\n", user, rinfo);
-    //Elim setsumopened/getsumopened after 30Aug2010 build
-    //setsumopened(&sumopened_hdr, rinfo, NULL, user); /*put in list of opens*/
+    setsumopened(&sumopened_hdr, rinfo, NULL, user); /*put in list of opens*/
 
   }
   send_ack();				/* ack original sum_svc caller */
@@ -223,6 +221,7 @@ KEY *getdo_1(KEY *params)
   enum clnt_stat status;
   int reqcnt, i, offline, storeset, offcnt;
   char *call_err, *cptr, *wd;
+  char tmpname[80];
   double bytes;
 
   sprintf(callername, "getdo_1");	//!!TEMP
@@ -239,12 +238,12 @@ KEY *getdo_1(KEY *params)
 		GETKEY_str(params, "username"), sunum, reqcnt);
   retlist=newkeylist();
   uid = getkey_uint64(params, "uid");
-//  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
-//    write_log("**Error: getdo_1() called with unopened uid=%lu\n", uid);
-//    rinfo = 1;	/* give err status back to original caller */
-//    send_ack();	/* ack original sum_svc caller */
-//    return((KEY *)1);	/* error. nothing to be sent */ 
-//  }
+  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
+    write_log("**Error: getdo_1() called with unopened uid=%lu\n", uid);
+    rinfo = 1;	/* give err status back to original caller */
+    send_ack();	/* ack original sum_svc caller */
+    return((KEY *)1);	/* error. nothing to be sent */ 
+  }
   add_keys(params, &retlist);
   /* set up for response. sets current_client */
   if(!(clresp = set_client_handle(RESPPROG, (uint32_t)uid))) {
@@ -267,16 +266,16 @@ KEY *getdo_1(KEY *params)
     if(offline = getkey_int(retlist, "offline")) {  
       offcnt = 0;
       for(i=0; i < reqcnt; i++) {
-        sprintf(nametmp, "online_status_%d", i);
-        cptr = GETKEY_str(retlist, nametmp);
+        sprintf(tmpname, "online_status_%d", i);
+        cptr = GETKEY_str(retlist, tmpname);
         //proceed if this su is offline and archived
         if(strcmp(cptr, "N") == 0) {
-          sprintf(nametmp, "archive_status_%d", i);
-          cptr = GETKEY_str(retlist, nametmp);
+          sprintf(tmpname, "archive_status_%d", i);
+          cptr = GETKEY_str(retlist, tmpname);
           if(strcmp(cptr, "Y") == 0) {
             offcnt++;
-            sprintf(nametmp, "bytes_%d", i);
-            bytes = getkey_double(retlist, nametmp);
+            sprintf(tmpname, "bytes_%d", i);
+            bytes = getkey_double(retlist, tmpname);
             storeset = JSOC;         /* always use JSOC set for now */
             if((status=SUMLIB_PavailGet(bytes,storeset,uid,0,&retlist))) {
               write_log("***Can't alloc storage for retrieve uid = %lu\n", uid);
@@ -287,8 +286,8 @@ KEY *getdo_1(KEY *params)
               return((KEY *)1);  /* error. nothing to be sent */
             }
             wd = GETKEY_str(retlist, "partn_name");
-            sprintf(nametmp, "rootwd_%d", i);
-            setkey_str(&retlist, nametmp, wd);
+            sprintf(tmpname, "rootwd_%d", i);
+            setkey_str(&retlist, tmpname, wd);
             write_log("\nAlloc for retrieve wd = %s for sumid = %lu\n", wd, uid);
           }
         }
@@ -307,7 +306,6 @@ KEY *getdo_1(KEY *params)
             send_ack();
             call_err = clnt_sperror(clnttape, "Error clnt_call for READDO");
             write_log("%s %d %s\n", datestring(), status, call_err);
-            freekeylist(&retlist);
             return((KEY *)1);
           } else {
             write_log("%s timeout ignored in getdo_1()\n", datestring());
@@ -316,7 +314,6 @@ KEY *getdo_1(KEY *params)
       if(tapeback == 1) {
         rinfo = 1;
         send_ack();
-        freekeylist(&retlist);
         write_log("**Error in READDO call to tape_svc in sum_svc_proc.c\n");
         return((KEY *)1);
       }
@@ -327,7 +324,6 @@ KEY *getdo_1(KEY *params)
       send_ack();       /* ack original sum_svc caller */
     }
     if(offline) {
-      freekeylist(&retlist);
       return((KEY *)1);	/* let tape_svc answer. dont destroy current_client */
     }
     setkey_int(&retlist, "STATUS", 0);   /* give success back to caller */
@@ -365,12 +361,12 @@ KEY *allocdo_1(KEY *params)
     sunum = getkey_uint64(params, "SUNUM");
   }
   uid = getkey_uint64(params, "uid");
-//  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
-//    write_log("**Error: allocdo_1() called with unopened uid=%lu\n", uid);
-//    rinfo = 1;	/* give err status back to original caller */
-//    send_ack();	/* ack original sum_svc caller */
-//    return((KEY *)1);	/* error. nothing to be sent */ 
-//  }
+  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
+    write_log("**Error: allocdo_1() called with unopened uid=%lu\n", uid);
+    rinfo = 1;	/* give err status back to original caller */
+    send_ack();	/* ack original sum_svc caller */
+    return((KEY *)1);	/* error. nothing to be sent */ 
+  }
   retlist = newkeylist();
   add_keys(params, &retlist);		/* NOTE:does not do fileptr */
   reqcnt = getkey_int(params, "reqcnt"); /* will always be 1 */
@@ -399,7 +395,6 @@ KEY *allocdo_1(KEY *params)
   }
   rinfo = status;		/* ret err code back to caller */
   send_ack();
-  freekeylist(&retlist);
   return((KEY *)1);		/* nothing will be sent later */
 }
 
@@ -429,12 +424,12 @@ KEY *infodo_1(KEY *params)
   uid = getkey_uint64(params, "uid");
   write_log("SUM_Info() for user=%s sunum=%lu\n", 
 		GETKEY_str(params, "username"), sunum);
-//  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
-//    write_log("**Error: infodo_1() called with unopened uid=%lu\n", uid);
-//    rinfo = 1;	/* give err status back to original caller */
-//    send_ack();	/* ack original sum_svc caller */
-//    return((KEY *)1);	/* error. nothing to be sent */ 
-//  }
+  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
+    write_log("**Error: infodo_1() called with unopened uid=%lu\n", uid);
+    rinfo = 1;	/* give err status back to original caller */
+    send_ack();	/* ack original sum_svc caller */
+    return((KEY *)1);	/* error. nothing to be sent */ 
+  }
   retlist = newkeylist();
   add_keys(params, &retlist);		/* NOTE:does not do fileptr */
 
@@ -452,7 +447,6 @@ KEY *infodo_1(KEY *params)
     return(retlist);		/* return the ans now */
   }
   rinfo = status;		/* ret err code 1 back to caller */
-  freekeylist(&retlist);
   if(!drmssite_sunum_is_local(sunum))
     rinfo = SUM_SUNUM_NOT_LOCAL; // else this error code 
   send_ack();
@@ -485,12 +479,12 @@ KEY *infodoX_1(KEY *params)
   sunum = getkey_uint64(params, "dsix_0");
   reqcnt = getkey_int(params, "reqcnt"); 
   uid = getkey_uint64(params, "uid");
-//  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
-//    write_log("**Error: infodoX_1() called with unopened uid=%lu\n", uid);
-//    rinfo = 1;	/* give err status back to original caller */
-//    send_ack();	/* ack original sum_svc caller */
-//    return((KEY *)1);	/* error. nothing to be sent */ 
-//  }
+  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
+    write_log("**Error: infodoX_1() called with unopened uid=%lu\n", uid);
+    rinfo = 1;	/* give err status back to original caller */
+    send_ack();	/* ack original sum_svc caller */
+    return((KEY *)1);	/* error. nothing to be sent */ 
+  }
   write_log("SUM_infoEx() for user=%s 1st sunum=%lu cnt=%d\n",
                 GETKEY_str(params, "username"), sunum, reqcnt);
   retlist = newkeylist();
@@ -513,7 +507,6 @@ KEY *infodoX_1(KEY *params)
   //if(!drmssite_sunum_is_local(sunum))
   //  rinfo = SUM_SUNUM_NOT_LOCAL; // else this error code 
   send_ack();
-  freekeylist(&retlist);
   return((KEY *)1);		/* nothing will be sent later */
 }
 
@@ -540,7 +533,7 @@ KEY *putdo_1(KEY *params)
   int status, i, reqcnt;
   uint64_t sunum = 0;
   uint64_t uid;
-  char sysstr[128];
+  char sysstr[128], tmpnam[80];
   char *cptr, *wd;
 
   sprintf(callername, "putdo_1");	//!!TEMP
@@ -556,15 +549,15 @@ KEY *putdo_1(KEY *params)
   sunum = getkey_uint64(params, "dsix_0");
   write_log("SUM_put() for user=%s 1st sunum=%lu reqcnt=%d\n", 
 		GETKEY_str(params, "username"), sunum, reqcnt);
-//  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
-//    write_log("**Error: putdo_1() called with unopened uid=%lu\n", uid);
-//    rinfo = 1;	/* give err status back to original caller */
-//    send_ack();	/* ack original sum_svc caller */
-//    return((KEY *)1);	/* error. nothing to be sent */ 
-//  }
+  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
+    write_log("**Error: putdo_1() called with unopened uid=%lu\n", uid);
+    rinfo = 1;	/* give err status back to original caller */
+    send_ack();	/* ack original sum_svc caller */
+    return((KEY *)1);	/* error. nothing to be sent */ 
+  }
   retlist = newkeylist();
   add_keys(params, &retlist);
-  if(!(status=SUM_Main_Update(params, &retlist))) {
+  if(!(status=SUM_Main_Update(retlist))) {
     if(!(set_client_handle(RESPPROG, (uint32_t)uid))) { //set up for response
       freekeylist(&retlist);
       rinfo = 1;  // give err status back to original caller/
@@ -573,8 +566,8 @@ KEY *putdo_1(KEY *params)
     }
     // change to owner production, no group write
     for(i=0; i < reqcnt; i++) { //!!!TBD
-      sprintf(nametmp, "wd_%d", i);
-      cptr = GETKEY_str(params, nametmp);
+      sprintf(tmpnam, "wd_%d", i);
+      cptr = GETKEY_str(params, tmpnam);
       //sprintf(sysstr, "sudo chmod -R go-w %s; sudo chown -Rf production %s", 
       //			cptr, cptr);
       sprintf(sysstr, "%s/sum_chmown %s", SUMBIN_BASEDIR, cptr);
@@ -615,12 +608,12 @@ KEY *closedo_1(KEY *params)
   }
   }
   uid = getkey_uint64(params, "uid");
-//  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
-//    write_log("**Error: closedo_1() called with unopened uid=%lu\n", uid);
-//    rinfo = 1;	/* give err status back to original caller */
-//    send_ack();	/* ack original sum_svc caller */
-//    return((KEY *)1);	/* error. nothing to be sent */ 
-//  }
+  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
+    write_log("**Error: closedo_1() called with unopened uid=%lu\n", uid);
+    rinfo = 1;	/* give err status back to original caller */
+    send_ack();	/* ack original sum_svc caller */
+    return((KEY *)1);	/* error. nothing to be sent */ 
+  }
   remsumopened(&sumopened_hdr, (uint32_t)uid); /* rem from linked list */
   rinfo = SUMLIB_Close(params);
   write_log("SUM_close for user=%s uid=%lu\n",

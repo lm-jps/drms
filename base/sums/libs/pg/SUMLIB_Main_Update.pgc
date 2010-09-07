@@ -36,7 +36,7 @@ int SUM_Main_Update(KEY *params);
  * bytes_0: KEYTYP_DOUBLE      1.200000e+08
  * bytes_1: KEYTYP_DOUBLE      1.200000e+08
  */
-int SUM_Main_Update(KEY *params, KEY **results) 
+int SUM_Main_Update(KEY *params) 
 {
   EXEC SQL TYPE uint64_t IS unsigned long long;
 
@@ -78,15 +78,15 @@ EXEC SQL INCLUDE sqlca;
    strcpy(wd, GETKEY_str(params, nametmp));
    if(!strcmp(wd, "")) { 
      sprintf(nametmp, "status_%d", i);
-     setkey_int(results, nametmp, 1);
+     setkey_int(&params, nametmp, 1);
      sprintf(nametmp, "bytes_%d", i);
-     setkey_double(results, nametmp, 0.0);
+     setkey_double(&params, nametmp, 0.0);
      errflg = 1;
      continue;
    }
    bytes = du_dir(wd);
    sprintf(nametmp, "bytes_%d", i);
-   setkey_double(results, nametmp, bytes);
+   setkey_double(&params, nametmp, bytes);
    if(!findkey(params, "history_comment")) { strcpy(history_comment, " "); }
    else {
      ccomment = GETKEY_str(params, "history_comment");
@@ -180,7 +180,7 @@ EXEC SQL INCLUDE sqlca;
    free(effective_date);
    free(username);
    sprintf(nametmp, "status_%d", i);
-   setkey_int(results, nametmp, 0);
+   setkey_int(&params, nametmp, 0);
    continue;
 
 sqlerror:
