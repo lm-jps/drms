@@ -503,7 +503,7 @@ int get_session_info(DRMS_Record_t *rec, char **runhost, char **runtime, char **
   if ((qres = drms_query_txt(drms_env->session, query)) && qres->num_rows>0)
     {
     if (qres->field[0][0][0] == '\0') // get sunum and logdir
-      *logdir = strdup("No log avaliable");
+      *logdir = strdup("No log available");
     else
       {
       SUM_info_t *sinfo = rec->suinfo;
