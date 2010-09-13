@@ -2690,16 +2690,16 @@ CFITSIO_KEYWORD *drms_segment_mapkeys(DRMS_Segment_t *seg,
    char segnum[4];
    DRMS_Record_t *recin = seg->record;
 
-   snprintf(segnum, sizeof(segnum), "%d", seg->info->segnum);
-
    while ((key = drms_record_nextkey(recin, &last, 0)) != NULL)
    {
+      keyname = drms_keyword_getname(key);
+
       if (!drms_keyword_getimplicit(key))
       {
-         keyname = drms_keyword_getname(key);
-
          if (drms_keyword_getperseg(key))
          {
+            snprintf(segnum, sizeof(segnum), "%03d", seg->info->segnum);
+
             /* Ensure that this keyword is relevant to this segment. */
             if (!strstr(keyname, segnum))
             {
