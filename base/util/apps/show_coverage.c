@@ -76,7 +76,7 @@ If the \a -o flag (for online) is present then each record labeled OK will be te
 that any storage-unit that has been assigned to that record still exists either online or on tape
 in SUMS.  If there once was a storage unit but no longer is (due to expirec retention time of a non-archived
 series) the record will be labeled "LOST". Note that this can be an expensive test to make on large series since it requires
-a call to SUMS for each OK record.  Please ues the \a -o flag only on the selected ranges of
+calls to SUMS and is noticably slower than without the -o flag.  Please ues the \a -o flag only on the selected ranges of
 a series where needed.
 
 After all specified records have need examined a table of the resulting completeness information is
@@ -127,6 +127,10 @@ used so all must be convertible to long long by PostgreSQL.
 \b Limitation:
 There is no provision for "where" clauses for optional other prime keys or other keys.
 
+\b Efficiency:
+Although records that are not OK need not be queried in SUMS for online status, they are and
+that information is ignored.  Some waste effort here, but for SDO should be very small.
+
 \sa
 show_info
 
@@ -138,23 +142,6 @@ show_info
 #define DATA_MISS ('\1')
 #define DATA_UNK ('\2')
 #define DATA_LOST ('\3')
-
-SUM_t *my_sum=NULL;
-
-SUM_info_t *drms_get_suinfo(long long sunum)
-  {
-  int status;
-  if (my_sum && my_sum->sinfo->sunum == sunum)
-    return(my_sum->sinfo);
-  if (!my_sum)
-    {
-    if ((my_sum = SUM_open(NULL, NULL, NULL)) == NULL)
-	    return(NULL);
-    }
-  if (status = SUM_info(my_sum, sunum, NULL))
-       return(NULL);
-  return(my_sum->sinfo);
-  }
 
 
 char primestr[100];
@@ -491,6 +478,7 @@ int DoIt(void)
 	char query[DRMS_MAXQUERYLEN];
 	char keylist[DRMS_MAXQUERYLEN];
 	int qualindex=0, verifyindex=0;
+        char *online = NULL;
 	jslot = islot + 1000000;
 	if (jslot >= nslots) jslot = nslots - 1;
 	sprintf(query, "%s[%s=#%lld-#%lld]%s", seriesname, pname, lowslot+islot, lowslot+jslot,otherkeys);
@@ -514,6 +502,29 @@ int DoIt(void)
 		DIE("getkey_vector failure");
 		}
 	nrecs = data->axis[1];
+        if (verify)
+          {
+          int irec;
+          long long *data_sunums = (long long *)data->data + verifyindex*nrecs;
+          SUM_info_t **infostructs = (SUM_info_t **)malloc(sizeof(SUM_info_t *) * nrecs);
+          int infostatus;
+          online = (char *)malloc(sizeof(char) * nrecs);
+          infostatus = drms_getsuinfo(drms_env, data_sunums, nrecs, infostructs);
+          if (infostatus)
+              {
+              fprintf(stderr,"drms_getsuinfo failed. Status=%d\n", infostatus);
+              return(infostatus);
+              }
+          for (irec=0; irec<nrecs; irec++)
+              {
+              SUM_info_t *sinfo = infostructs[irec];
+              int is_online =  (sinfo && sinfo->sunum > 0);
+              if (is_online) is_online = strcmp(sinfo->online_status,"Y") == 0;
+              online[irec] = is_online;
+              free(infostructs[irec]);
+              }
+          free(infostructs);
+          } // end of verify
 	for (irec = 0; irec < nrecs; irec++)
 		{
 		long long thisslot = *((long long *)data->data + irec);
@@ -524,23 +535,16 @@ int DoIt(void)
 			qualval = *((long long *)data->data + qualindex*nrecs + irec);
 			if ((qualkind == 1 && qualval < 0) || (qualkind == 2 && qualval == 0) || (qualkind == 3 && (qualval & mask)))
 			     val = DATA_MISS;
-			else if (verify)
-				{
-				SUM_info_t *suminfo;
-				sunum = *((long long *)data->data + verifyindex*nrecs + irec);
-				suminfo = drms_get_suinfo(sunum);
-				if (!suminfo)
-					val = DATA_LOST;
-				}
+			else if (verify && !online[irec])
+			        val = DATA_LOST;
 			}
 		map[thisslot - lowslot] = val;
 		}
 	islot = jslot + 1;
 	drms_free_array(data);
+        if (verify && online)
+          free(online);
 	}
-
-  if (my_sum)				\
-    SUM_close(my_sum,NULL);	\
 
   // now have low, high and series_low, series_high, epoch and step, and lowslot and highslot and serieshighslot and serieslowslot.
 
@@ -567,7 +571,7 @@ if (!quiet)
 	int iblock;
 	int nblocks = (nslots + blockstep - 1)/blockstep;
 	if (!quiet) fprintf(out, "%*s      n_OK   n_MISS    n_UNK%s\n",
-			(ptype == DRMS_TYPE_TIME ? 23 : 15 ),"primeval", (verify ? "  n_LOST" : ""));
+			(ptype == DRMS_TYPE_TIME ? 23 : 15 ),"primeval", (verify ? "   n_LOST" : ""));
 	for (iblock = 0; iblock < nblocks; iblock++)
 		{
 		char pval[DRMS_MAXQUERYLEN];
