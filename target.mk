@@ -67,6 +67,7 @@ $(OBJDIR):
 	+@[ -d $@/base/util/apps ] || mkdir -p $@/base/util/apps
 	+@[ -d $@/proj/example/apps ] || mkdir -p $@/proj/example/apps
 	+@[ -d $@/proj/myproj/apps ] || mkdir -p $@/proj/myproj/apps
+	+@[ -d $@/proj/lev1.5_hmi/apps ] || mkdir -p $@/proj/lev1.5_hmi/apps	
 	+@[ -d $@/proj/cookbook ] || mkdir -p $@/proj/cookbook
 	+@$(MAKETARGET)
 
