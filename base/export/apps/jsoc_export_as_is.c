@@ -20,6 +20,7 @@ ModuleArgs_t module_args[] =
 { 
   {ARG_STRING, "op", "Not Specified", "<Operation>"},
   {ARG_STRING, "ds", "Not Specified", "<record_set query>"},
+  {ARG_INT, "n", "0", "record_set count limit"},
   {ARG_STRING, "seg", "**ALL**", "<comma delimited segment list>"},
   {ARG_STRING, "requestid", "Not Specified", "RequestID string for export management"},
   {ARG_STRING, "method", "url", "Export method"},
@@ -43,6 +44,7 @@ int nice_intro ()
         "  details are:\n"
 	"op=<command> tell which ajax function to execute\n"
 	"ds=<recordset query> as <series>{[record specifier]} - required\n"
+	"n=<recordset count limit> optional\n"
 	"seg=<comma delimited segment list, default is **ALL**>\n"
         "requestid= RequestID string for export management\n"
         "method = Export method, default to url\n"
@@ -82,6 +84,7 @@ int DoIt(void)
   int ikey, nkeys = 0;
   int iseg, nsegs = 0;
   int count;
+  int RecordLimit = 0;
   int status=0;
   int irec, nrecs;
   long long size;
@@ -96,6 +99,7 @@ int DoIt(void)
   method = (char *)cmdparams_get_str (&cmdparams, "method", NULL);
   protocol = (char *)cmdparams_get_str (&cmdparams, "protocol", NULL);
   seglist = (char *)strdup (cmdparams_get_str (&cmdparams, "seg", NULL));
+  RecordLimit = cmdparams_get_int (&cmdparams, "n", NULL);
   segs_listed = strcmp (seglist, "Not Specified");
 
   index_txt = fopen("index.txt", "w");
@@ -107,7 +111,10 @@ int DoIt(void)
   fprintf(index_txt, "wait=0\n");
 
   /* Open record_set */
-  recordset = drms_open_records (drms_env, in, &status);
+  if (RecordLimit == 0)
+    recordset = drms_open_records (drms_env, in, &status);
+  else
+    recordset = drms_open_nrecords (drms_env, in, RecordLimit, &status);
   if (!recordset) 
     DIE(" jsoc_info: series not found.");
 

@@ -1,6 +1,10 @@
 // #define DEBUG 1
 #define DEBUG 0
 
+// TESTMODE=1 means look for status=12 in jsoc.export_new, used for testing jsoc_export_manage
+// #define TESTMODE 1
+#define TESTMODE 0
+
 /* 
  * ART - BUG
  * The actual size of export is never saved in the Size keyword of the jsoc.export series. jsoc_fetch
@@ -228,6 +232,7 @@ int DoIt(void)
   char *errorreply;
   char reqdir[DRMS_MAXPATHLEN];
   char command[DRMS_MAXPATHLEN];
+  int RecordLimit;
   long long size;
   TIME reqtime;
   TIME esttime;
@@ -298,7 +303,10 @@ int DoIt(void)
   if (strcmp(op,"process") == 0) 
     {
     int irec;
-    exports_new_orig = drms_open_records(drms_env, EXPORT_SERIES_NEW"[][? Status=2 ?]", &status);
+    if (TESTMODE)
+      exports_new_orig = drms_open_records(drms_env, EXPORT_SERIES_NEW"[][? Status=12 ?]", &status);
+    else
+      exports_new_orig = drms_open_records(drms_env, EXPORT_SERIES_NEW"[][? Status=2 ?]", &status);
     if (!exports_new_orig)
 	DIE("Can not open RecordSet");
     if (exports_new_orig->n < 1)  // No new exports to process.
@@ -379,7 +387,7 @@ int DoIt(void)
         }
   
       drms_record_directory(export_rec, reqdir, 1);
-  
+
       // Insert qsub command to execute processing script into SU
       make_qsub_call(requestid, reqdir, (notify ? requestorid : 0), dbname, dbuser, dbids, dbexporthost, dbmainhost);
   
@@ -413,6 +421,19 @@ int DoIt(void)
       fprintf(fp, "echo SUdir = $REQDIR\n");
 
       // Now generate specific processing related commands
+
+      // extract optional record count limit from process field.
+      if (process && strncmp(process,"n=",2)==0)
+        {
+        char *now_at = NULL;
+        RecordLimit = strtol(process+2, &now_at, 10);
+        if (now_at && *now_at == ',')
+        process = now_at+1;
+fprintf(stderr,"XX Dealing with process=n=xx, RecordLimit=%d, new process=%s\n",RecordLimit,process);
+        }
+      else
+        RecordLimit = 0;
+  
       if (strcmp(process, "no_op") == 0 && strncasecmp(protocol,"fits",4)==0)
         { // No processing but export as full FITS files
         char *cparms, *p = index(protocol, ',');
@@ -423,15 +444,15 @@ int DoIt(void)
           }
         else
           cparms = "**NONE**";
-        fprintf(fp, "jsoc_export_as_fits JSOC_DBHOST=%s reqid='%s' expversion=%s rsquery='%s' path=$REQDIR ffmt='%s' "
+        fprintf(fp, "jsoc_export_as_fits JSOC_DBHOST=%s reqid='%s' expversion=%s rsquery='%s' n=%d path=$REQDIR ffmt='%s' "
           "method='%s' protocol='%s' cparms='%s' %s\n",
-          dbmainhost, requestid, PACKLIST_VER, dataset, filenamefmt, method, protocol, cparms,  dbids);
+          dbmainhost, requestid, PACKLIST_VER, dataset, RecordLimit, filenamefmt, method, protocol, cparms,  dbids);
         fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
         }
       else if (strcmp(process, "no_op") == 0 || strcmp(process,"Not Specified")==0) 
         { // export of as-is records that need staging, get paths to export files with list in index.txt
-        fprintf(fp, "jsoc_export_as_is JSOC_DBHOST=%s ds='%s' requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n",
-          dbmainhost, dataset, requestid, method, protocol, filenamefmt); 
+        fprintf(fp, "jsoc_export_as_is JSOC_DBHOST=%s ds='%s' n=%d requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n",
+          dbmainhost, dataset, RecordLimit, requestid, method, protocol, filenamefmt); 
         fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
         fprintf(fp, "show_info JSOC_DBHOST=%s -ait ds='%s' > %s.keywords.txt\n", dbmainhost, dataset, requestid);
         fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
@@ -446,8 +467,8 @@ int DoIt(void)
           hgparams = strdup(p+1);
           for (p=hgparams; *p; p++)
             if (*p == ',') *p = ' ';
-          fprintf(fp, "/home/phil/cvs/JSOC/bin/linux_x86_64/hg_patch JSOC_DBHOST=%s %s in='%s' requestid='%s' log=hg_patch.log %s\n",
-            dbmainhost, hgparams, dataset, requestid,  dbids);
+          fprintf(fp, "/home/phil/cvs/JSOC/bin/linux_x86_64/hg_patch JSOC_DBHOST=%s %s in='%s' n=%d requestid='%s' log=hg_patch.log %s\n",
+            dbmainhost, hgparams, dataset, RecordLimit, requestid,  dbids);
           fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
           if (strncasecmp(protocol,"fits",4)==0)
             { // export as full FITS files

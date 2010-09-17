@@ -1,5 +1,9 @@
 #define DEBUG 0
 
+// TESTMODE = 1 means make jsoc.export_new with status=12 instead of 2
+// #define TESTMODE 1
+#define TESTMODE 0
+
 /*
  *  jsoc_fetch - cgi-bin program to recieve jsoc export and export status requests
  *
@@ -536,6 +540,7 @@ int DoIt(void)
   int nsunums;
   long long size;
   int rcount = 0;
+  int rcountlimit = 0;
   TIME reqtime;
   TIME esttime;
   TIME exptime;
@@ -654,6 +659,13 @@ int DoIt(void)
   dotxt = strcmp(format, "txt") == 0;
   dohtml = strcmp(format, "html") == 0;
   doxml = strcmp(format, "xml") == 0;
+
+  // Extract the record limit from the Process field, if present.
+  // Leave as part of process to forward into jsoc.export
+  if (strncmp(process, "n=", 2) == 0)
+    {
+    rcountlimit = atoi(process+2);
+    }
 
 // SPECIAL DEBUG LOG HERE XXXXXX
 {
@@ -1036,7 +1048,7 @@ check for requestor to be valid remote DRMS site
     drms_setkey_time(export_log, "ReqTime", now);
     drms_setkey_time(export_log, "EstTime", now+10); // Crude guess for now
     drms_setkey_longlong(export_log, "Size", (int)size);
-    drms_setkey_int(export_log, "Status", 2);
+    drms_setkey_int(export_log, "Status", (TESTMODE ? 12 : 2));
     drms_setkey_int(export_log, "Requestor", requestorid);
     drms_close_record(export_log, DRMS_INSERT_RECORD); 
     } // end of exp_su
@@ -1132,13 +1144,17 @@ check for requestor to be valid remote DRMS site
         *p = '\0';
       }
 
-    rs = drms_open_records(drms_env, dsquery, &status);
+    if (rcountlimit == 0)
+      rs = drms_open_records(drms_env, dsquery, &status);
+    else // rcountlimit specified via "n=" parameter in process field.
+      rs = drms_open_nrecords (drms_env, dsquery, rcountlimit, &status);
+
     if (!rs)
         {
         int tmpstatus = status;
         rcount = drms_count_records(drms_env, dsquery, &status);
         if (status == 0)
-          {
+          { // open_records failed but query is OK so probably too many records for memory limit.
           char errmsg[100];
           sprintf(errmsg,"%d is too many records in one request.",rcount);
 	  JSONDIE2("Can not open RecordSet ",errmsg);
@@ -1238,7 +1254,6 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
     // Return status==3 if request is too large.
     if (size > MAX_EXPORT_SIZE)
       {
-      int count = drms_count_records(drms_env, dsquery, &status);
       if (dojson)
         {
         char *json;
@@ -1255,7 +1270,7 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
         free(strval);
         json_insert_pair_into_object(jroot, "wait", json_new_number("0"));
         json_insert_pair_into_object(jroot, "status", json_new_number("3"));
-        sprintf(numval, "%d", count);
+        sprintf(numval, "%d", rcount);
         json_insert_pair_into_object(jroot, "count", json_new_number(numval));
         sprintf(numval, "%d", (int)size);
         json_insert_pair_into_object(jroot, "size", json_new_number(numval));
@@ -1278,7 +1293,7 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
         printf("# JSOC Data Export Failure.\n");
   	printf("status=3\n");
         printf("size=%lld\n",size);
-        printf("count=%d\n",count);
+        printf("count=%d\n",rcount);
   	printf("requestid=VOID\n");
   	printf("wait=0\n");
   	}
@@ -1437,7 +1452,7 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
      drms_setkey_time(export_log, "ReqTime", now);
      drms_setkey_time(export_log, "EstTime", now+10); // Crude guess for now
      drms_setkey_longlong(export_log, "Size", (int)size);
-     drms_setkey_int(export_log, "Status", 2);
+     drms_setkey_int(export_log, "Status", (TESTMODE ? 12 : 2));
      drms_setkey_int(export_log, "Requestor", requestorid);
      drms_close_record(export_log, DRMS_INSERT_RECORD);
      } // End of kOpExpRequest setup
@@ -1573,6 +1588,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
             errorreply = NULL;
             waittime = esttime - timenow();
             break;
+    case 12:
     case 2:
             errorreply = NULL;
             waittime = esttime - timenow();

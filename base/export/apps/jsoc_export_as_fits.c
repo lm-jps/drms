@@ -12,7 +12,7 @@
 @par Synopsis:
 @code
 stand-alone mode:
-jsoc_export_as_fits rsquery=<recset query> reqid=<export request id> expversion=<version> 
+jsoc_export_as_fits rsquery=<recset query> n=<limit> reqid=<export request id> expversion=<version> 
      method=<exp method> protocol=<output-file protocol> path=<output path&gt 
      { ffmt=<filename format> } { kmclass=<keymap class> } { kmfile=<keymap file> } 
      { cparms=<compression string list> }
@@ -115,6 +115,7 @@ in the output packing list.
 in the output packing list.
 @param method The method of export, such as url or url_quick. This string appears
 in the output packing list.
+@param n Record count limit.
 @param protocol The type of output file to produce. This must be FITS. This string appears
 in the output packing list.
 @param path The directory to which output files are to be written. If present, this string appears
@@ -178,6 +179,7 @@ typedef enum
 #define kArg_method      "method"
 #define kArg_protocol    "protocol"
 #define kArg_rsquery     "rsquery"
+#define kArg_n      	 "n"
 #define kArg_expSeries   "expseries"
 #define kArg_ffmt        "ffmt"
 #define kArg_path        "path"
@@ -222,6 +224,7 @@ ModuleArgs_t module_args[] =
      {ARG_STRING, kArg_clname, kNotSpecified, "Export key map class."},
      {ARG_STRING, kArg_kmfile, kNotSpecified, "Export key map file."},
      {ARG_STRING, kArg_cparms, kNotSpecified, "FITS-stanford compression string used to compress exported image."},
+     {ARG_INT, kArg_n, "0", "Record count limit."},
      {ARG_END}
 };
 
@@ -387,6 +390,7 @@ static int MapexportToDir(DRMS_Env_t *env,
    int nSets = 0;
    int iSet = 0;
    int nRecs = 0;
+   int RecordLimit = *tcount;
    unsigned long long tsize = 0;
    int errorCount = 0;
    int OkayCount = 0;
@@ -399,7 +403,11 @@ static int MapexportToDir(DRMS_Env_t *env,
       tmpq = strdup(rsinquery);
    }
 
-   if (tmpq && (rsin = drms_open_records(env, tmpq, &stat)))
+   if (tmpq && RecordLimit == 0)
+     rsin = drms_open_records(env, tmpq, &stat);
+   else if (tmpq)
+     rsin = drms_open_nrecords(env, tmpq, RecordLimit, &stat);
+   if (tmpq && rsin)
    {
       /* stage records to reduce number of calls to SUMS. */
       drms_stage_records(rsin, 1, 0);
@@ -920,6 +928,7 @@ int DoIt(void)
    const char *mapfile = NULL;
    const char *cparmsarg = NULL;
    const char **cparms = NULL;
+   int RecordLimit = 0;
 
    /* "packing list" header/metadata */
    char *md_version = NULL;
@@ -933,6 +942,8 @@ int DoIt(void)
                          * before they are downloaded by the user */
    char *md_status = NULL; 
    char *md_error = NULL;
+
+   RecordLimit = cmdparams_get_int(&cmdparams, kArg_n, &drmsstat);
 
    if (drms_defs_register(DEFS_MKPATH("/data/export.defs")))
    {
@@ -950,6 +961,7 @@ int DoIt(void)
       protocol = cmdparams_get_str(&cmdparams, kArg_protocol, &drmsstat);
 
       rsquery = cmdparams_get_str(&cmdparams, kArg_rsquery, &drmsstat);
+
 
       clname = cmdparams_get_str(&cmdparams, kArg_clname, &drmsstat);
       if (drmsstat != DRMS_SUCCESS || !strcmp(clname, kNotSpecified))
@@ -1089,6 +1101,7 @@ int DoIt(void)
          if (pklistTMP)
          {
             /* Call export code, filling in tsize, tcount, and exptime */
+            tcount = RecordLimit;
             tsize = MapexportToDir(drms_env, 
                                    rsquery, 
                                    ffmt, 
