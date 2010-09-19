@@ -454,7 +454,8 @@ fprintf(stderr,"XX Dealing with process=n=xx, RecordLimit=%d, new process=%s\n",
         fprintf(fp, "jsoc_export_as_is JSOC_DBHOST=%s ds='%s' n=%d requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n",
           dbmainhost, dataset, RecordLimit, requestid, method, protocol, filenamefmt); 
         fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
-        fprintf(fp, "show_info JSOC_DBHOST=%s -ait ds='%s' > %s.keywords.txt\n", dbmainhost, dataset, requestid);
+        fprintf(fp, "show_info JSOC_DBHOST=%s -ait ds='%s' n=%d > %s.keywords.txt\n",
+          dbmainhost, dataset, RecordLimit, requestid);
         fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
         }
       else if (strncmp(process, "hg_patch",8) == 0)
