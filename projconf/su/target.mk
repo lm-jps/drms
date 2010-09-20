@@ -9,6 +9,7 @@ $(PROJOBJDIR):
 	+@[ -d $@/libs/stats ] || mkdir -p $@/libs/stats
 	+@[ -d $@/datacapture/apps ] || mkdir -p $@/datacapture/apps
 	+@[ -d $@/dsdsmigr/apps ] || mkdir -p $@/dsdsmigr/apps
+	+@[ -d $@/maps_avgs/apps ] || mkdir -p $@/maps_avgs/apps
 	+@[ -d $@/util/apps ] || mkdir -p $@/util/apps
 	+@[ -d $@/lev0/apps ] || mkdir -p $@/lev0/apps
 	+@[ -d $@/lev1/apps ] || mkdir -p $@/lev1/apps

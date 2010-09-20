@@ -36,6 +36,8 @@ endif
 
 dir     := $(d)/mag
 -include                $(SRCDIR)/$(dir)/Rules.mk
+dir	:= $(d)/maps_avgs
+-include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/myproj
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/util
