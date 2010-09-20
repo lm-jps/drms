@@ -667,6 +667,7 @@ int DoIt(void)
     /* Only want keyword info so get only the template record for drms series or first record for other data */
     seriesname = strdup (in);
     if ((p = index(seriesname,'['))) *p = '\0';
+    if ((p = index(seriesname,'{'))) *p = '\0';
     rec = drms_template_record (drms_env, seriesname, &status);
     if (status)
       JSONDIE("series not found");
