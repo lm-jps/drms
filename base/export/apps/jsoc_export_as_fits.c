@@ -324,7 +324,6 @@ static int MapexportRecordToDir(DRMS_Record_t *recin,
       if (drmsstat == DRMS_ERROR_INVALIDFILE)
       {
          /* No input segment file. */
-         fprintf(stderr, "No input segment file for segment '%s'.\n", segin->info->name);
       }
       else if (drmsstat != DRMS_SUCCESS || stat(fullfname, &filestat))
       {
@@ -354,7 +353,6 @@ static int MapexportRecordToDir(DRMS_Record_t *recin,
    if (!gotone)
    {
       modstat = kMymodErr_ExportFailed;
-      fprintf(stderr, "Failure exporting record number %lld.\n", recin->recnum);
    }
 
    if (last)
@@ -393,56 +391,66 @@ static int MapexportToDir(DRMS_Env_t *env,
    int RecordLimit = *tcount;
    unsigned long long tsize = 0;
    int errorCount = 0;
-   int OkayCount = 0;
+   int okayCount = 0;
 
-   /* Sigh - some day have to fix the query param to open_records */
-   char *tmpq = NULL;
+   if (RecordLimit == 0)
+     rsin = drms_open_records(env, rsinquery, &stat);
+   else
+     rsin = drms_open_nrecords(env, rsinquery, RecordLimit, &stat);
 
-   if (rsinquery)
-   {
-      tmpq = strdup(rsinquery);
-   }
-
-   if (tmpq && RecordLimit == 0)
-     rsin = drms_open_records(env, tmpq, &stat);
-   else if (tmpq)
-     rsin = drms_open_nrecords(env, tmpq, RecordLimit, &stat);
-   if (tmpq && rsin)
+   if (rsin)
    {
       /* stage records to reduce number of calls to SUMS. */
       drms_stage_records(rsin, 1, 0);
       nSets = rsin->ss_n;
 
-      for (iSet = 0; 
-           stat == DRMS_SUCCESS && modstat == kMymodErr_Success && iSet < nSets; 
-           iSet++)
+      for (iSet = 0; iSet < nSets; iSet++)
       {
          nRecs = drms_recordset_getssnrecs(rsin, iSet, &stat);
 
-         for (iRec = 0; iRec < nRecs; iRec++)
+         if (stat != DRMS_SUCCESS)
          {
-            recin = rsin->records[(rsin->ss_starts)[iSet] + iRec];
-            tsize += MapexportRecordToDir(recin,
-                                          ffmt,
-                                          outpath,
-                                          pklist, 
-                                          classname, 
-                                          mapfile, 
-                                          tcount, 
-                                          cparms, 
-                                          &modstat);
-            if (modstat == kMymodErr_Success)
-               OkayCount++;
-            else
-               errorCount++;
+            fprintf(stderr, "Failure calling drms_recordset_getssnrecs(), skipping subset '%d'.\n", iSet);
+         }
+         else
+         {
+            for (iRec = 0; iRec < nRecs; iRec++)
+            {
+               recin = rsin->records[(rsin->ss_starts)[iSet] + iRec];
+               tsize += MapexportRecordToDir(recin,
+                                             ffmt,
+                                             outpath,
+                                             pklist, 
+                                             classname, 
+                                             mapfile, 
+                                             tcount, 
+                                             cparms, 
+                                             &modstat);
+               if (modstat == kMymodErr_Success)
+               {
+                  okayCount++;
+               }
+               else
+               {
+                  errorCount++;
+               }
+            }
          }
       }
-	 
-      if (stat != DRMS_SUCCESS || modstat != kMymodErr_Success)
+
+      modstat = kMymodErr_Success; /* Could have been set to BAD in loop above, but okayCount and errorCount
+                                    * account for fatal errors in the loop, not modstat. */
+
+      if (errorCount > 0)
       {
-         fprintf(stderr, "Export halted due to DRMS failure.\n");
+         fprintf(stderr,"Export failed for %d segments of %d attempted.\n", errorCount, errorCount + okayCount);
+         if (okayCount == 0)
+         {
+            modstat = kMymodErr_ExportFailed;
+         }
       }
-      else if (exptime)
+
+      if (exptime)
       {
          *exptime = CURRENT_SYSTEM_TIME;
       }
@@ -453,21 +461,9 @@ static int MapexportToDir(DRMS_Env_t *env,
       modstat = kMymodErr_BadRecSetQuery; 
    }
 
-   if (tmpq)
-   {
-      free(tmpq);
-   }
-
    if (rsin)
    {
       drms_close_records(rsin, DRMS_FREE_RECORD);
-   }
-
-   if (errorCount > 0)
-   {
-      fprintf(stderr,"Export Failed for %d segments of %d attempted.\n", errorCount, errorCount + OkayCount);
-      if (OkayCount == 0)
-        modstat = kMymodErr_ExportFailed;
    }
 
    if (status)
