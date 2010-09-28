@@ -544,7 +544,7 @@ int DoIt(void)
   TIME reqtime;
   TIME esttime;
   TIME exptime;
-  TIME now;
+  TIME now = timenow();
   double waittime;
   char *web_query;
   int from_web,status;
@@ -672,11 +672,11 @@ int DoIt(void)
 FILE *runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
  if (runlog)
  {
-    char now[100];
+    char nowtxt[100];
     int fileupload = strncmp(dsin, "*file*", 6) == 0;
-    sprint_ut(now,time(0) + UNIX_EPOCH);
+    sprint_ut(nowtxt, now);
     fprintf(runlog,"PID=%d\n   %s\n   op=%s\n   in=%s\n   RequestID=%s\n   DBHOST=%s\n   REMOTE_ADDR=%s\n",
-            getpid(), now, op, dsin, requestid, dbhost, getenv("REMOTE_ADDR"));
+            getpid(), nowtxt, op, dsin, requestid, dbhost, getenv("REMOTE_ADDR"));
     if (fileupload)  // recordset passed as uploaded file
     {
        char *file = (char *)cmdparams_get_str (&cmdparams, kArgFile, NULL);
@@ -991,8 +991,6 @@ FILE *runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
     pclose(fp);
     strcat(new_requestid, "_SU");
     requestid = new_requestid;
-
-    now = timenow();
 
     // Log this export request
     if (1)
@@ -1373,8 +1371,6 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
      }
      requestid = new_requestid;
 
-     now = timenow();
-
     // Log this export request
     if (1)
       {
@@ -1462,9 +1458,6 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
     {
     DRMS_RecordSet_t *RsClone;
     char logpath[DRMS_MAXPATHLEN];
-    now = timenow();
-
-
 
     if (strcmp(requestid, kNotSpecified) == 0)
       JSONDIE("RequestID must be provided");
@@ -1586,12 +1579,12 @@ JSONDIE("Re-Export requests temporarily disabled.");
             break;
     case 1:
             errorreply = NULL;
-            waittime = esttime - timenow();
+            waittime = esttime - now;
             break;
     case 12:
     case 2:
             errorreply = NULL;
-            waittime = esttime - timenow();
+            waittime = esttime - now;
             break;
     case 3:
             errorreply = "Request too large";
