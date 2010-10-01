@@ -279,20 +279,18 @@ if(!$goflg) {
 }
 else { $OKnogofile = 1; }
 
-#!!!OVerride the real test for now!!!
-#if($OKfile && $OKhkdayfile && $OKfdsorbit && $OKnogofile && $OKff && $OKmp && $OKtemp) {
-print "!!TEMP Override the real test in lev1_def_gui_called\n";
-if(1) {
+if($OKfile && $OKhkdayfile && $OKfdsorbit && $OKnogofile && $OKff && $OKmp && $OKtemp) {
   print "*OK to process definitive lev1 for $orddate\n";
   print "    Building command now (may take a minute)...\n";
   if($hmiaiaflg) {
-    $cmd = "show_info key=fsn '$DSINAIA\[? t_obs >= \$($fulldate) and  t_obs < \$($nextdate) ?]'";
+    $cmd = "show_info -q key=fsn '$DSINAIA\[? t_obs >= \$($fulldate) and  t_obs < \$($nextdate) ?]'";
   }
   else {
-    $cmd = "show_info key=fsn '$DSINHMI\[? t_obs >= \$($fulldate) and  t_obs < \$($nextdate) ?]'";
+    $cmd = "show_info -q key=fsn '$DSINHMI\[? t_obs >= \$($fulldate) and  t_obs < \$($nextdate) ?]'";
   }
   #print "$cmd\n";
-  @fsn = `$cmd`;
+  @fsn_presort = `$cmd`;
+  @fsn = sort @fsn_presort;
   shift(@fsn);
   $firstfsn = shift(@fsn);
   $lastfsn = pop(@fsn);
@@ -329,7 +327,8 @@ if(1) {
   sleep(2);		#give time for commits
   $cmd = "show_info -q key=fsn 'hmi.lev1[][$firstfsn-$lastfsn]'";
   print "$cmd\n";
-  @fsns = `$cmd`;
+  @fsns_presort = `$cmd`;
+  @fsns = sort @fsns_presort;
   $startflg = 1; $total = 0; $miss = 0;
   if(!@fsns) { $miss=2; $total="ALL"; $msg="All fsn missing\n"; }
   while($fsn=shift(@fsns)) { 
@@ -348,10 +347,9 @@ if(1) {
     else {
       $startflg = 0;
       if($fsn != $firstfsn) {
-        print "Missing first FSN = $firstfsn. Actual = $fsn\n";
-        $msg = "Missing first FSN = $firstfsn. Actual = $fsn\n";
+        print "Missing FSN: went from $firstfsn to $fsn\n";
+        $msg = "Missing FSN: went from $firstfsn to $fsn\n";
         $miss = 1;
-        $fsn = $firstfsn;
       }
     }
     $oldfsn = $fsn;
@@ -360,8 +358,8 @@ if(1) {
     if($oldfsn != $lastfsn) {	#miss fsn at end
       $gap = $lastfsn - $oldfsn;
       $total = $total + $gap;
-      print "Missing last FSN(s): Actual=$oldfsn Last=$lastfsn\n";
-      $msg = "Missing last FSN(s): Actual=$oldfsn Last=$lastfsn\n";
+      print "Missing FSN: went from $oldfsn to $lastfsn\n";
+      $msg = "Missing FSN: went from $oldfsn to $lastfsn\n";
       $miss = 1;
       #print "oldfsn = $oldfsn\n"; #!!TEMP
     }
