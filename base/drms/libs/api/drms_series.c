@@ -582,18 +582,89 @@ int drms_delete_series(DRMS_Env_t *env, const char *series, int cascade, int kee
 #endif
      if (qres->num_rows==1)
      {
-        if (cascade && !keepsums) {
-        /* Fetch an array of unique SUNUMs - the prime-key logic gets applied first. */
-        array = drms_record_getvector(env, 
-                                      series, 
-                                      "sunum", 
-                                      DRMS_TYPE_LONGLONG, 
-                                      1, 
-                                      &drmsstatus);
-        }
-        if ((!cascade) || keepsums || (!drmsstatus && array && array->naxis == 2 && array->axis[0] == 1))
+        DB_Binary_Result_t *suqres = NULL;
+
+        get_namespace(series, &namespace, NULL);
+
+        if (!keepsums)
         {
-           get_namespace(series, &namespace, NULL);
+           /* If we are planning on deleting SUs, but in fact there are 
+            * no SUs to delete because the series has no segments, then
+            * we are essentially keeping SUs (and not passing a vector
+            * of SUs to delete to SUMS). */
+           snprintf(query, sizeof(query), "SELECT segmentname FROM %s.%s where seriesname ILIKE '%s'", namespace, DRMS_MASTER_SEGMENT_TABLE, series);
+
+           if ((suqres = drms_query_bin(session, query)) == NULL)
+           {
+              fprintf(stderr, "Query failed. Statement was: %s\n", query);
+              free(namespace);
+              goto bailout;
+           }
+
+           if (suqres->num_rows == 0)
+           {
+              keepsums = 1;              
+           }
+
+           db_free_binary_result(suqres);
+           suqres = NULL;
+        }
+
+        if (cascade && !keepsums) 
+        {
+           int irow;
+           int nsunums;
+           long long val;
+           int axis[2];
+           long long *llarr = NULL;
+
+           /* Fetch an array of unique SUNUMs from the series table -
+              the prime-key logic is NOT applied. */
+           snprintf(query, sizeof(query), "SELECT DISTINCT sunum FROM %s ORDER BY sunum", series);
+
+           /* Even on a very large table (100 M records), this query should return within 
+            * a couple of minutes - if that isn't acceptable, then we can 
+            * limit the code to series with segments. */
+           if ((suqres = drms_query_bin(session, query)) == NULL)
+           {
+              fprintf(stderr, "Query failed. Statement was: %s\n", query);
+              goto bailout;
+           }
+
+           nsunums = 0;
+
+           if (suqres->num_rows > 0)
+           {
+              llarr = (long long *)malloc(sizeof(long long) * suqres->num_rows);
+
+              for (irow = 0; irow < suqres->num_rows; irow++)
+              {
+                 val = db_binary_field_getlonglong(suqres, irow, 0);
+                 if (val >= 0)
+                 {
+                    llarr[nsunums++] = val;
+                 }
+              }
+
+              /* Stuff into a DRMS_Array_t */
+              axis[0] = 1;
+              axis[1] = nsunums;
+              array = drms_array_create(DRMS_TYPE_LONGLONG, 2, axis, llarr, &drmsstatus);
+           }
+
+           if (nsunums == 0)
+           {
+              keepsums = 1;
+           }
+
+           db_free_binary_result(suqres);
+           suqres = NULL;
+        }
+
+        /* This if statement just checks to make sure that if we are deleting SUs, then
+         * we properly created the array of SUs that will be sent to SUMS for deletion. */
+        if (keepsums || (!drmsstatus && array && array->naxis == 2 && array->axis[0] == 1))
+        {
            if (cascade) {
               sprintf(query,"drop table %s",series_lower);
               if (env->verbose)
@@ -674,13 +745,15 @@ int drms_delete_series(DRMS_Env_t *env, const char *series, int cascade, int kee
 
            /* ARTXXX - bug, this needs to send the command mode DRMS_DROPSERIES somewhere */
            hcon_remove(&env->series_cache,series_lower);
-           free(namespace);
 	   }
         else
         {
            fprintf(stderr, "Couldn't create vector of sunum keywords.\n");
            goto bailout;
         }
+
+        free(namespace);
+        namespace = NULL;
      }
      else if (qres->num_rows>1)
      {

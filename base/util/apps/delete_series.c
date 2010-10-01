@@ -59,9 +59,14 @@ int DoIt(void) {
 
   /*See if series exists before going through any other checks */
   if (!drms_series_exists(drms_env, series_lower, &drmsstatus))
-  { printf("***** The series %s does not exist, and cannot be removed. *****\n Please try again with a valid series name\n", series);
-      return 1;
+  { 
+     printf("***** The series %s does not exist, and cannot be removed. *****\n Please try again with a valid series name\n", series);
+     free(series_lower);
+     return 1;
   } 
+
+  free(series_lower);
+  series_lower = NULL;
 
   /* Remove existing series */
   printf("You are about to permanently erase all metadata for the series "
