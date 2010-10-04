@@ -67,6 +67,9 @@ $HOSTDB = "hmidb";      #host where DB runs
 $PGPORT=5432;
 $| = 1;
 
+$PID = getppid;
+$alog = "/home/production/cvs/JSOC/proj/lev0/data/arg_lev1_empty_$PID.txt";
+
 @allowhost = ("cl1n001", "cl1n002", "cl1n003"); #hosts w/dcs[0,1] mounts
 @wavestr = ("131_OPEN", "131_THICK", "131_THIN", "1600", "1700", "171_THICK", "171_THIN", "193_OPEN", "193_THICK", "193_THIN", "211_OPEN", "211_THICK", "211_THIN", "304_OPEN", "304_THICK", "304_THIN", "335_OPEN", "335_THICK", "335_THIN", "4500", "94_OPEN", "94_THICK", "94_THIN");
 
@@ -121,6 +124,8 @@ chomp($sec);
 $fulldate = `time_convert s=$sec zone=UTC`;
 $nextsec = $sec + 86400;
 $nextdate = `time_convert s=$nextsec zone=UTC`;
+$prevsec = $sec - 86400;
+$prevdate = `time_convert s=$prevsec zone=UTC`;
 chomp($fulldate);
 chomp($nextdate);
 print "Run on $utcdate which is day of year $todayUTCdayofyr\n"; 
@@ -288,36 +293,17 @@ if($OKfile && $OKhkdayfile && $OKfdsorbit && $OKnogofile && $OKff && $OKmp && $O
   else {
     $cmd = "show_info -q key=fsn '$DSINHMI\[? t_obs >= \$($fulldate) and  t_obs < \$($nextdate) ?]'";
   }
-  #print "$cmd\n";
+  #print "$cmd\n"; #!!TEMP
   @fsn_presort = `$cmd`;
   @fsn = sort @fsn_presort;
-  shift(@fsn);
   $firstfsn = shift(@fsn);
   $lastfsn = pop(@fsn);
   chomp($firstfsn); chomp($lastfsn);
-  #$slog = "/tmp/levdef_$utcdate.log";
-  #$cmd1 = "$cmd 1> $slog 2>&1";
-  #print "$cmd1\n"; #!!TEMP
-  #system($cmd1);
-  #if(!open(LOGSTAT, $slog)) {
-  #  print "Can't open $slog: $!\n";
-  #  exit;
-  #}
-  #<LOGSTAT>;		#skip first line
-  #$_ = <LOGSTAT>;
-  #chomp();
-  #$firstfsn = $_;
-  #while(<LOGSTAT>) {
-  #  $lastfsn = $_;
-  #}
-  #close(LOGSTAT);
-  #chomp($lastfsn);
-  #print "first = $firstfsn  last = $lastfsn\n";  #!!TEMP
   if($hmiaiaflg) {  #!!!TEMP call mgrY
-    $cmd = "time build_lev1_mgrY mode=fsn instru=aia dsin=$DSINAIA dsout=$DSOUTAIA bfsn=$firstfsn efsn=$lastfsn logfile=/usr/local/logs/lev1/build_lev1_mgr_aia.$utcdate.log";
+    $cmd = "time build_lev1_mgr mode=fsn instru=aia dsin=$DSINAIA dsout=$DSOUTAIA bfsn=$firstfsn efsn=$lastfsn logfile=/usr/local/logs/lev1/build_lev1_mgr_aia.$utcdate.log";
   }
   else {
-    $cmd = "time build_lev1_mgrY mode=fsn instru=hmi dsin=$DSINHMI dsout=$DSOUTHMI bfsn=$firstfsn efsn=$lastfsn logfile=/usr/local/logs/lev1/build_lev1_mgr_hmi.$utcdate.log";
+    $cmd = "time build_lev1_mgr mode=fsn instru=hmi dsin=$DSINHMI dsout=$DSOUTHMI bfsn=$firstfsn efsn=$lastfsn logfile=/usr/local/logs/lev1/build_lev1_mgr_hmi.$utcdate.log";
   }
   print "$cmd\n";
   if($EXECUTE) {
@@ -325,18 +311,48 @@ if($OKfile && $OKhkdayfile && $OKfdsorbit && $OKnogofile && $OKff && $OKmp && $O
   }
   print "    Verifying command execution (may take a minute)...\n";
   sleep(2);		#give time for commits
+  #first get last_lev1_fsn of yesterday 
+  $yesterord = `time_convert time='$prevdate' o=ord`;
+  chomp($yesterord);
+  $sql = "select last_lev1_fsn from hmi.lev1_probe where ord_date='$yesterord'";
+  print "$sql\n";
+  $sth = $dbh->prepare($sql);
+  if ( !defined $sth ) {
+    print "Cannot prepare statement: $DBI::errstr\n";
+    $dbh->disconnect();
+    exit;
+  }
+  # Execute the statement at the database level
+  $sth->execute;
+  # Fetch the rows back from the SELECT statement
+  @row = $sth->fetchrow();
+  $prevfsn = shift(@row);
+  print "Last FSN of yesterday = $prevfsn\n";
+  if($prevfsn == 0) {		#no yesterday last fsn
+    $startfsn = $firstfsn;
+  } 
+  else {
+    $startfsn = $prevfsn + 1;
+  }
   $cmd = "show_info -q key=fsn 'hmi.lev1[][$firstfsn-$lastfsn]'";
   print "$cmd\n";
   @fsns_presort = `$cmd`;
   @fsns = sort @fsns_presort;
   $startflg = 1; $total = 0; $miss = 0;
-  if(!@fsns) { $miss=2; $total="ALL"; $msg="All fsn missing\n"; }
+  if(!@fsns) { 
+    $miss=2; $lastlev1seen=$prevfsn; $total="ALL"; $msg="All fsn missing\n";
+  }
+  if(!open(ARG, ">$alog")) {
+    print "Can't open $alog: $!\n";
+    exit(1);
+  }
   while($fsn=shift(@fsns)) { 
     chomp($fsn);
     if(!$startflg) {
       if($fsn != $oldfsn + 1) {
         if($fsn != $oldfsn) {     #can get dup fsn which are ok
           print "Missing FSN: went from $oldfsn to $fsn\n";
+          print ARG "Missing FSN: went from $oldfsn to $fsn\n";
           $msg = "Missing FSN: went from $oldfsn to $fsn\n";
           $gap = ($fsn - $oldfsn) - 1;
           $total = $total + $gap;
@@ -346,9 +362,13 @@ if($OKfile && $OKhkdayfile && $OKfdsorbit && $OKnogofile && $OKff && $OKmp && $O
     }
     else {
       $startflg = 0;
-      if($fsn != $firstfsn) {
-        print "Missing FSN: went from $firstfsn to $fsn\n";
-        $msg = "Missing FSN: went from $firstfsn to $fsn\n";
+      #if($fsn != $firstfsn) {
+      if($fsn != $startfsn) {
+        $xfsn = $startfsn - 1;
+        #print "Missing FSN: went from $firstfsn to $fsn\n";
+        print "Missing FSN: went from $xfsn to $fsn\n";
+        print ARG "Missing FSN: went from $xfsn to $fsn\n";
+        $msg = "Missing FSN: went from $xfsn to $fsn\n";
         $miss = 1;
       }
     }
@@ -358,30 +378,35 @@ if($OKfile && $OKhkdayfile && $OKfdsorbit && $OKnogofile && $OKff && $OKmp && $O
     if($oldfsn != $lastfsn) {	#miss fsn at end
       $gap = $lastfsn - $oldfsn;
       $total = $total + $gap;
-      print "Missing FSN: went from $oldfsn to $lastfsn\n";
-      $msg = "Missing FSN: went from $oldfsn to $lastfsn\n";
+      $nextdayfsn = $lastfsn+1; #start fsn of next ord date
+      print "Missing FSN: went from $oldfsn to $nextdayfsn\n";
+      print ARG "Missing FSN: went from $oldfsn to $nextdayfsn\n";
+      $msg = "Missing FSN: went from $oldfsn to $nextdayfsn\n";
       $miss = 1;
-      #print "oldfsn = $oldfsn\n"; #!!TEMP
+      print "oldfsn = $oldfsn\n"; #!!TEMP
     }
+    $lastlev1seen = $lastfsn;
   }
   if($miss) {
     print "Total missing FSN = $total\n";
+    print ARG "Total missing FSN = $total\n";
     $mail = "Mail -s \"Missing FSN from def lev1 for $orddate\"";
           #$to = "lev0_user";
           $to = "jim";    #!!TEMP
           $cmd = "echo \"$msg\" | $mail $to";
           system $cmd;
     if($miss == 1) {		#partial execution
-      $sql="update hmi.lev1_probe set executed_part=1,executed=0 where ord_date='$orddate'";
+      $sql="update hmi.lev1_probe set executed_part=1,executed=0,last_lev1_fsn=$lastlev1seen where ord_date='$orddate'";
     }
     else {
-      $sql="update hmi.lev1_probe set executed_part=0,executed=0 where ord_date='$orddate'";
+      $sql="update hmi.lev1_probe set executed_part=0,executed=0,last_lev1_fsn=$lastlev1seen where ord_date='$orddate'";
     }
   }
   else {	#set executed bit in hmi.lev1_probe db table
-    $sql="update hmi.lev1_probe set executed=1,executed_part=0 where ord_date='$orddate'";
+    $sql="update hmi.lev1_probe set executed=1,executed_part=0,last_lev1_fsn=$lastlev1seen where ord_date='$orddate'";
   }
     print "$sql\n";
+    print ARG "$sql\n";
     $sth = $dbh->prepare($sql);
     if ( !defined $sth ) {
       print "Cannot prepare statement: $DBI::errstr\n";
@@ -403,8 +428,13 @@ else {
         $cmd = "echo \"TEST for now\" | $mail $to"; #!!TBD give full msg
         system $cmd;
 }
+close(ARG);
+#now call build_lev1_empty to fill in empty records. !!TBD for aia
+$cmd = "build_lev1_empty instru=hmi dsout=hmi.lev1 argfile=$alog";
+print "$cmd\n";
+`$cmd`;
+
 print "**END: lev1_definitive.pl for $orddate\n";  #used by lev1_def_gui to know end
-#!!TBD ck for more commands in the queue (TBD)
 $dbh->disconnect();
 
 #Initialize $todayUTCdayofyr when first start
