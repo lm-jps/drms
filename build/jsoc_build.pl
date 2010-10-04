@@ -1,8 +1,10 @@
-#!/usr/bin/perl --
+#!/home/jsoc/bin/linux_x86_64/perl -w
 
 use strict;
 use warnings;
 use Data::Dumper;
+
+use constant kNContext => 5;
 
 my($TESTERR) = "no";
 my($JSOC_DEV) = "jsoc_dev\@sun.stanford.edu";
@@ -37,67 +39,108 @@ else
     `cd $ROOTDIR/JSOC; make universe -k >& $MAKELOG`;
 }
 
-open FH, "cd $ROOTDIR/JSOC; \(tail -n 4 $MAKELOG | grep Error\)  |" || die "Can't open log file: $!\n";
-my @line = <FH>;
-my($oneline);
-my($prevline);
+open(FH, "<$ROOTDIR/JSOC/$MAKELOG") || die "Can't open log file: $!\n";
+
+my(@lines) = <FH>;
+my($linenum);
+my($firstidx);
+my(@errslice);
 my($errmsg) = "";
-my($nerrlines);
 my($date);
+my($chomped);
 
-close FH;
-if (scalar(@line)) {
-    $nerrlines = 0;
-    $date = `date`;
-    $errmsg = "${errmsg}JSOC Build Failed on ${date}:\n";
-    $nerrlines++;
-    open FH, "$ROOTDIR/JSOC/$MAKELOG";
-    while($oneline = <FH>)
-    {
-        chomp($oneline);
-        if ($oneline =~ /:\s\S*\serror:\s/)
-        {
-            $errmsg = "${errmsg}${oneline}\n";
-            $nerrlines++;
-            $oneline = <FH>;
-            if ($oneline)
-            {
-               $errmsg = "${errmsg}${oneline}\n"; 
-               $nerrlines++;
-            }
-            $oneline = <FH>;
-            if ($oneline)
-            {
-               $errmsg = "${errmsg}${oneline}\n"; 
-               $nerrlines++;
-            }
-        }
-        elsif ($oneline =~ /:\s+undefined reference to\s+/)
-        {
-            $errmsg = "${errmsg}${prevline}\n";
-            $errmsg = "${errmsg}${oneline}\n";
-            $nerrlines++;
-            $nerrlines++;
-        }
+close(FH);
 
-        $prevline = $oneline;
-    }
-    close FH;
+if ($#lines >= 0) 
+{
+   # There was a build error.
+   # Go through each line, looking for recognized error strings
+   $linenum = 0;
+   $firstidx = 0;
+   foreach my $aline (@lines)
+   {
+      $chomped = $aline;
+      chomp($chomped);
+   
+      if (RecognizedError($chomped))
+      {
+         # Collect kNContext lines before error
+         if ($linenum - kNContext >= 0)
+         {
+            $firstidx = $linenum - kNContext;
+         }
 
-    if ($nerrlines >= $MAXERRLINES)
-    {
-        $errmsg = "${errmsg}...\n";
-    }
+         @errslice = @lines[$firstidx..$linenum];
 
-    open FH, "| /usr/bin/Mail -s \"JSOC build problem\" $JSOC_DEV";
-    print FH $errmsg;
-    close FH;
+         last;
+      }
 
-} else {
+      $linenum++;    
+   }
+
+   if ($#errslice >= 0)
+   {
+      # We have lines that may indicate an error - look at last few lines to be sure.
+      # make isn't consistent so the last line doesn't always have an error code - it
+      # may appear in earlier lines.
+      my($iline);
+      my($goterror);
+
+      $goterror = 0;
+      $iline = $#lines;
+      while ($iline >= 0 && $#lines - $iline < 4)
+      {
+         if ($lines[$iline] =~ /\*\*\*\s+\[.+\]\s+Error/i)
+         {
+            $goterror = 1;
+            last;
+         }
+         
+         $iline--;
+      }
+
+      if ($goterror)
+      {
+         $linenum = @errslice;
+         $date = `date`;
+         chomp($date);
+         $errmsg = "${errmsg}JSOC Build Failed on ${date}:\n";
+         $linenum++;
+         $errmsg = join('', $errmsg, @errslice);
+
+         if ($linenum >= $MAXERRLINES)
+         {
+            $errmsg = "${errmsg}...\n";
+         }
+      }
+   }
+
+   if (length($errmsg) > 0)
+   {
+      open FH, "| /usr/bin/Mail -s \"JSOC build problem\" $JSOC_DEV";
+      print FH $errmsg;
+      close FH;
+   }
+} 
+else 
+{
     my $cmd = "$ROOTDIR/JSOC/doc/doxygen/gendox.csh";
     `chmod +x $cmd`;
     `$cmd >& $ROOTDIR/JSOC/doxygen.log`;
     create_sl();
+}
+
+sub RecognizedError
+{
+   my($line) = $_[0];
+   my($rv) = 0;
+
+   if ($line =~ /:\s+undefined reference to\s+/ || $line =~ /:\s\S*\serror:\s/i || $line =~ /icc: error/ || $line =~ /:\serror:/)
+   {
+      $rv = 1;
+   }
+
+   return $rv;
 }
 
 sub create_sl {
