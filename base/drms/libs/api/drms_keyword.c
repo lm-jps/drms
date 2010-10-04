@@ -1547,6 +1547,14 @@ static int SetKeyInternal(DRMS_Record_t *rec, const char *key, DRMS_Value_t *val
 				    value->type, 
 				    &(value->value));
 
+         /* Catch conversion WARNINGS. drms_convert() can return
+         * non-zero statuses which are warnings, not errors.. */
+         /* retstat == DRMS_BADSTRING, DRMS_RANGE are really errors. */
+         if (retstat == DRMS_INEXACT)
+         {
+            retstat = DRMS_SUCCESS;
+         }
+
 	 if (!retstat && drms_keyword_isslotted(keyword))
 	 {
 	    /* Must also set index keyword */
@@ -1988,11 +1996,11 @@ int drms_copykeys(DRMS_Record_t *target,
       {
          if (usesrcset)
          {
-            fprintf(stderr, "drms_copykeys() failed on keyword '%s'.\n", srckey->info->name);
+            fprintf(stderr, "drms_copykeys() failed on keyword '%s' with status '%d'.\n", srckey->info->name, status);
          }
          else
          {
-            fprintf(stderr, "drms_copykeys() failed on keyword '%s'.\n", tgtkey->info->name);
+            fprintf(stderr, "drms_copykeys() failed on keyword '%s' with status '%d'.\n", tgtkey->info->name, status);
          }
          break;
       }
