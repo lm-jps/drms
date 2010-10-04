@@ -1,4 +1,4 @@
-eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
+eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -d -S $0 "$@"'
     if 0;
 #/home/production/cvs/JSOC/base/sums/scripts/sumlookgroup.pl
 #
@@ -16,7 +16,7 @@ sub usage {
 }
 
 #Return date in form for a label e.g. 1998.01.07_14:42:04
-#Also set effective_date in form 199801071442
+#Also set effective_date ($effdate) in form 199801071442
 sub labeldate {
   local($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst,$date,$sec2,$min2,$hour2,$mday2,$year2);
   ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
@@ -29,6 +29,24 @@ sub labeldate {
   $date = $year4.".".$mon2.".".$mday2._.$hour2.":".$min2.":".$sec2;
   $effdate = $year4.$mon2.$mday2.$hour2.$min2;
   return($date);
+}
+
+#Return an effective_date in form 199801071442
+#Arg has how many sec to add to current time to calculate eff date
+sub reteffdate {
+  my($xsec) = @_;
+  local($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst,$date,$sec2,$min2,$hour2,$mday2,$year2, $esec, $edate);
+  $esec = time + $xsec;
+  ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime($esec);
+  $sec2 = sprintf("%02d", $sec);
+  $min2 = sprintf("%02d", $min);
+  $hour2 = sprintf("%02d", $hour);
+  $mday2 = sprintf("%02d", $mday);
+  $mon2 = sprintf("%02d", $mon+1);
+  $year4 = sprintf("%04d", $year+1900);
+  $date = $year4.".".$mon2.".".$mday2._.$hour2.":".$min2.":".$sec2;
+  $edate = $year4.$mon2.$mday2.$hour2.$min2;
+  return($edate);
 }
 
 sub commify {
@@ -80,6 +98,10 @@ $totalbytesap = 0;
 $totalbytes = 0;
 $totalavail = 0;
 $totalbyteso = 0;
+$totalbytes100 = 0;
+
+      $addsec = 86400 * 100;	#sec in 100 days
+      $xeffdate = &reteffdate($addsec);
 
 #First connect to database
   $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb;port=$PGPORT", "$user", "$password");
@@ -88,9 +110,10 @@ $totalbyteso = 0;
   }
 
   print "	Rounded down to nearest Megabyte\n";
+  print "	NOTE: DP<=100d includes DPnow\n";
   print "Query in progress, may take awhile...\n";
-  printf("Group %12s %12s %12s %12s\n", "DPnow", "DPlater", "AP");
-  printf("----- %12s %12s %12s %12s\n", "--------", "--------", "--------");
+  printf("Group %12s %12s %12s %12s\n", "DPnow", "DP<=100d", "DPlater", "AP");
+  printf("----- %12s %12s %12s %12s\n", "--------", "--------", "--------", "--------");
 
 #######################################################################
 #    $sql = "select partn_name, avail_bytes from sum_partn_avail";
@@ -128,8 +151,24 @@ $totalbyteso = 0;
         $bytes = $bytes/1048576;
         push(@bytes, $bytes);
       }
+
+      #now get DP<=100d
+      $sql = "select sum(bytes) from sum_partn_alloc where status=2 and group_id=$group and effective_date <= '$xeffdate'";
+      #print "$sql\n"; #!!!TEMP
+      $sth = $dbh->prepare($sql);
+      if ( !defined $sth ) {
+        print "Cannot prepare statement: $DBI::errstr\n";
+        $dbh->disconnect();
+        exit; 
+      }
+      $sth->execute;
+      while ( @row = $sth->fetchrow() ) {
+        $bytes100 = shift(@row);
+        $bytes100 = $bytes100/1048576;
+        push(@bytes100, $bytes100);
+      }
       #now get DPlater 
-      $sql = "select sum(bytes) from sum_partn_alloc where status=2 and group_id=$group and effective_date > '$effdate'";
+      $sql = "select sum(bytes) from sum_partn_alloc where status=2 and group_id=$group and effective_date > '$xeffdate'";
       #print "$sql\n"; #!!!TEMP
       $sth = $dbh->prepare($sql);
       if ( !defined $sth ) {
@@ -161,18 +200,19 @@ $totalbyteso = 0;
         $totalbytes += $bytes;
         $avail = shift(@avail);
         $totalavail += $avail;
+        $bytes100 = shift(@bytes100);
+        $totalbytes100 += $bytes100;
         $byteso = shift(@byteso);
         $totalbyteso += $byteso;
         #printf("$sum %12d %12d %12d %12d\n", $avail,$bytes,$byteso,$bytesap);
-        printf("$group\t%12s %12s %12s\n", 
-		commify(int($bytes)), commify(int($byteso)), 
-		commify(int($bytesap)));
+        printf("$group\t%12s %12s %12s %12s\n", 
+		commify(int($bytes)), commify(int($bytes100)), 
+		commify(int($byteso)), commify(int($bytesap)));
       }
     }
     printf("------------------------------------------------------------\n");
-    printf("TOTAL:\t%12s %12s %12s\n", 
-		commify(int($totalbytes)), commify(int($totalbyteso)),
-		commify(int($totalbytesap)));
+    printf("TOTAL:\t%12s %12s %12s %12s\n", 
+		commify(int($totalbytes)), commify(int($totalbytes100)),
+		commify(int($totalbyteso)), commify(int($totalbytesap)));
 $dbh->disconnect();
-
 
