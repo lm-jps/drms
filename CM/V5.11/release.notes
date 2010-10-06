@@ -77,6 +77,7 @@ NEW FEATURES:
 - fresize.c - Now allows for user defined convolution kernel.
 - hmi_patch_module.c - added DATE and BLD_VERS.
 - Modify Slony-replication configuration so that the production version of code is used.
+- Ticket #306 - Add case statements in argtypename (returns the name associated with a cmdparams argument type enum value).
 
 DEFECTS FIXED:
 - The lowest-level DRMS keyword-setting function no longer returns an error if it receives a DRMS_INEXACT status code. This allows drms_copykeys() to convert from (for example) a double to a float without reporting an error (but there will be a loss of precision).
