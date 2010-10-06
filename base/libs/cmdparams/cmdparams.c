@@ -1415,6 +1415,10 @@ static char *argtypename (int type) {
       return "float";
     case (ARG_FLOATS):
       return "float array";
+    case (ARG_DOUBLE):
+      return "double";
+    case (ARG_DOUBLES):
+      return "double array";
     case (ARG_STRING):
       return "string";
     case (ARG_TIME):
