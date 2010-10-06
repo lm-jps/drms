@@ -208,6 +208,10 @@ DRMS_Session_t *drms_connect_direct(const char *dbhost, const char *dbuser,
     free(session);
     session = NULL;
   }
+  else if (0)
+  {
+     /* Print out some diagnostic information */
+  }
   
   if (sessionns) {
      session->sessionns = strdup(sessionns);
