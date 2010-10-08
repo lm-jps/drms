@@ -75,13 +75,13 @@ other type.
 If the \a -o flag (for online) is present then each record labeled OK will be tested to verify
 that any storage-unit that has been assigned to that record still exists either online or on tape
 in SUMS.  If there once was a storage unit but no longer is (due to expirec retention time of a non-archived
-series) the record will be labeled "LOST". Note that this can be an expensive test to make on large series since it requires
+series) the record will be labeled "GONE". Note that this can be an expensive test to make on large series since it requires
 calls to SUMS and is noticably slower than without the -o flag.  Please ues the \a -o flag only on the selected ranges of
 a series where needed.
 
 After all specified records have need examined a table of the resulting completeness information is
 printed.  There are two formats for this table.  The default format is a list of contiguous segments
-with the same record label, OK, MISS, UNK, or LOST.  For each contiguous segment one line of
+with the same record label, OK, MISS, UNK, or GONE.  For each contiguous segment one line of
 information will be printed containing the label, the start "time", and the count of records in
 the contiguous same-label interval.  The time printed will be the prime key value of the first
 record in the interval.
@@ -90,7 +90,7 @@ If the \a block parameter is specified, the alternate table format will be used.
 the records are grouped in intervals of length <blocklength> and a summary line is printed for each
 block.  The first block is aligned with the first record time (either first record in series or \a low).
 The summary printed includes the start time of the block, the number of records in the block labeled
-OK, MISS, UNK, or LOST (if \a -o is present).  If the ordering prime-key is of type TIME then the blocking interval,
+OK, MISS, UNK, or GONE (if \a -o is present).  If the ordering prime-key is of type TIME then the blocking interval,
 <blocklength> may have suffixes to
 specify time intervals such as s=seconds, d=day, h=hour, etc. as recognized by atoinc(3).
 
@@ -141,7 +141,7 @@ show_info
 #define DATA_OK ('\0')
 #define DATA_MISS ('\1')
 #define DATA_UNK ('\2')
-#define DATA_LOST ('\3')
+#define DATA_GONE ('\3')
 
 
 char primestr[100];
@@ -287,7 +287,7 @@ int DoIt(void)
 				break;
 				}
 		}
-	if (ikey == template->seriesinfo->pidx_num)
+	if (ikey == npkeys)
 		DIE("name in key command line arg is not a prime key of this series");
 	}
   else
@@ -304,9 +304,9 @@ int DoIt(void)
   // now skey contains DRMS_Keyword_t for users prime key, pkey contains DRMS_Keyword_t for index
   ptype = skey->info->type;
   pname = strdup(skey->info->name);
-  piname = strdup(pkey->info->name);
   punit = strdup(skey->info->unit);
   pformat = strdup(skey->info->format);
+  piname = strdup(pkey->info->name);
   seriesname = strdup(template->seriesinfo->seriesname);
 
   // get optional other primekeys
@@ -315,7 +315,7 @@ int DoIt(void)
 	{
 	DRMS_Keyword_t *tmppkey = template->seriesinfo->pidx_keywords[ikey];
 	if (tmppkey->info->recscope > 1)
-		tmppkey = drms_keyword_slotfromindex(pkey);
+		tmppkey = drms_keyword_slotfromindex(tmppkey);
 	if (cmdparams_exists(&cmdparams, tmppkey->info->name))
 		{
 		char tmp[DRMS_MAXQUERYLEN];
@@ -374,10 +374,21 @@ int DoIt(void)
 	epoch = (TIME)0.0;
 	step = (TIME)1.0;
 	}
+
   // Get series low info
-  sprintf(in, "%s[%s=^]", seriesname, pname);
-  // sprintf(in, "%s[%s=^]%s", seriesname, pname, otherkeys);
-  rs = drms_open_records (drms_env, in, &status); // first record
+  // do special action to skip false low records with prime key containing missing data values.
+
+  if (slotted)
+    {
+    sprintf(in, "%s[? %s_index>0 ?]", seriesname,pname);
+    rs = drms_open_nrecords (drms_env, in, 1, &status); // first record
+    }
+  else
+    {
+    sprintf(in, "%s[%s=^]", seriesname, pname);
+    // sprintf(in, "%s[%s=^]%s", seriesname, pname, otherkeys);
+    rs = drms_open_records (drms_env, in, &status); // first record
+    }
   if (status || !rs || rs->n == 0)
 	DIE("Series is empty");
   rec = rs->records[0];
@@ -402,9 +413,20 @@ int DoIt(void)
 		low = (TIME)atof(lowstr);
 	}
 
-  sprintf(in, "%s[%s=$]", seriesname, pname);
-  // sprintf(in, "%s[%s=$]%s", seriesname, pname, otherkeys);
-  rs = drms_open_records (drms_env, in, &status); // last record
+  // Now get high limit
+  // Do special action for seriesnames beginning "hmi.lev" or "aia.lev" to exclude
+  // erroneous monster FSNs which are > 0X1C000000.
+  if ((strncmp(seriesname,"hmi.lev",7) == 0 || strncmp(seriesname, "aia.lev", 7) == 0) && strcasecmp(pname, "fsn") == 0)
+    {
+    sprintf(in, "%s[? FSN < CAST(x'1c000000' AS int) ?]", seriesname);
+    rs = drms_open_nrecords (drms_env, in, -1, &status); // last record
+    }
+  else
+    {
+    // sprintf(in, "%s[%s=$]%s", seriesname, pname, otherkeys);
+    sprintf(in, "%s[%s=$]", seriesname, pname);
+    rs = drms_open_records (drms_env, in, &status); // last record
+    }
   rec = rs->records[0];
   if (ptype == DRMS_TYPE_TIME)
 	series_high = drms_getkey_time(rec, pname, &status);
@@ -468,6 +490,11 @@ int DoIt(void)
   // NOW get the record coverage info
   nslots = highslot - lowslot + 1;
   map = (char *)malloc(sizeof(char) * nslots);
+  if (!map)
+    {
+    fprintf(stderr,"lowslot=%lld, highslot=%lld nslots=%lld\n",lowslot,highslot,nslots);
+    DIE("malloc failed");
+    }
   for (islot=0; islot<nslots; islot++)
 	map[islot] = DATA_UNK;
   islot = 0;
@@ -536,7 +563,7 @@ int DoIt(void)
 			if ((qualkind == 1 && qualval < 0) || (qualkind == 2 && qualval == 0) || (qualkind == 3 && (qualval & mask)))
 			     val = DATA_MISS;
 			else if (verify && !online[irec])
-			        val = DATA_LOST;
+			        val = DATA_GONE;
 			}
 		map[thisslot - lowslot] = val;
 		}
@@ -571,12 +598,12 @@ if (!quiet)
 	int iblock;
 	int nblocks = (nslots + blockstep - 1)/blockstep;
 	if (!quiet) fprintf(out, "%*s      n_OK   n_MISS    n_UNK%s\n",
-			(ptype == DRMS_TYPE_TIME ? 23 : 15 ),"primeval", (verify ? "   n_LOST" : ""));
+			(ptype == DRMS_TYPE_TIME ? 23 : 15 ),"primeval", (verify ? "   n_GONE" : ""));
 	for (iblock = 0; iblock < nblocks; iblock++)
 		{
 		char pval[DRMS_MAXQUERYLEN];
-		int nOK, nMISS, nUNK, nLOST;
-		nOK = nMISS = nUNK = nLOST = 0;
+		int nOK, nMISS, nUNK, nGONE;
+		nOK = nMISS = nUNK = nGONE = 0;
 		if (useindex)
 			 sprintf(pval, "%lld", lowslot + iblock*blockstep);
 		else
@@ -587,12 +614,12 @@ if (!quiet)
 		  if (map[islot] == DATA_OK) nOK++;
 		  if (map[islot] == DATA_MISS) nMISS++;
 		  if (map[islot] == DATA_UNK) nUNK++;
-		  if (map[islot] == DATA_LOST) nLOST++;
+		  if (map[islot] == DATA_GONE) nGONE++;
 		  }
 		fprintf(out, "%*s  %8d %8d %8d",
 				(ptype == DRMS_TYPE_TIME ? 22 : 15 ), pval, nOK, nMISS, nUNK);
 		if (verify)
-			fprintf(out, " %8d\n", nLOST);
+			fprintf(out, " %8d\n", nGONE);
 		else
 			fprintf(out, "\n");
 		}
@@ -615,7 +642,7 @@ if (!quiet)
 		fprintf(out, "%4s %s %d\n",
 			(thisval == DATA_OK ? "OK" :
 			(thisval == DATA_MISS ? "MISS" :
-			(thisval == DATA_LOST ? "LOST" : "UNK"))),
+			(thisval == DATA_GONE ? "GONE" : "UNK"))),
 			pval, nsame );
 		}
 	}
