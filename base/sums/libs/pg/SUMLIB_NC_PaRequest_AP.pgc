@@ -2,7 +2,9 @@
  returns the archive pending list for the given groupset, where
  groupset 0 = groups 2, 3 (hmi.lev0, aia.lev0)
  groupset 1 = groups 4, 5 (hmi.tlm, aia.tlm)
- groupset 2 = groups 0,1,6,7,8,9,11,102,103,104,105 (everything else)
+ groupset 2 = groups 0,1,8,9,11,102,103,104,105 (everything else)
+ groupset 3 = groups 0,1,2,3,4,5,6,7,8,9,11,102,103,104,105 (everything else)
+ groupset 4 = groups 6,7 (hmi & aia lev1 and above)
  */
 #include <SUM.h>
 #include <sum_rpc.h>
@@ -13,6 +15,7 @@
 #define GS1 "4,5"
 #define GS2 "0,1,6,7,8,9,11,102,103,104,105"
 #define GS3 "0,1,2,3,4,5,6,7,8,9,11,102,103,104,105"
+#define GS4 "6,7"
 
 PADATA *NC_PaRequest_AP(int groupset);
 
@@ -63,6 +66,9 @@ EXEC SQL INCLUDE sqlca;
     break;
   case 3:
     sprintf(stmt, STMT, GS3);
+    break;
+  case 4:
+    sprintf(stmt, STMT, GS4);
     break;
   default:
     printk("Error in NC_PaRequest_AP Illegal groupset arg\n");
