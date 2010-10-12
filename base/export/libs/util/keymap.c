@@ -1,19 +1,18 @@
-/* drms_keymap.c 
+/* keymap.c 
  *
  * Functions to map an internal DRMS keyword to an external FITS keyword, 
  * and vice versa.
  *
- * Added documentating comments - Art Amezcua, 11/29/2007
+ * Added documenting comments - Art Amezcua, 11/29/2007
  *
  */
 
-#include "drms.h"
-#include "drms_priv.h"
+#include "keymap.h"
 #ifdef __APPLE__
   #include <sys/param.h>
 #endif /* __APPLE__ */
 
-
+#include "drms_types.h"
 
 /* The keymap data used to be defined in defkeymapclass.h, and 
  * included throught the #include directive, but this confused
@@ -56,8 +55,8 @@ static HContainer_t *gClassTables = NULL;
 
 /* Internal functions */
 static void KMFree(const void *val);
-static int drms_keymap_initcltables();
-static void drms_keymap_termcltables();
+static int exputl_keymap_initcltables();
+static void exputl_keymap_termcltables();
 
 /* KMFree() - This function frees all HContainer_t memory associated with a 
  * drms keymap. Used as the deep_free function in the call to hcon_create()
@@ -65,7 +64,7 @@ static void drms_keymap_termcltables();
  */
 static void KMFree(const void *val)
 {
-   DRMS_KeyMap_t *km = (DRMS_KeyMap_t *)val;
+   Exputl_KeyMap_t *km = (Exputl_KeyMap_t *)val;
    
    if (km)
    {
@@ -74,22 +73,22 @@ static void KMFree(const void *val)
    }
 }
 
-/* drms_keymap_initcltables() - JSOC defines several default keyword mappings. Each
+/* exputl_keymap_initcltables() - JSOC defines several default keyword mappings. Each
  * such default mapping is considered a mapping "class". For each mapping class
  * defined above, this function reads the mapping data and creates 
- * a DRMS_KeyMap_t structure. These DRMS_KeyMap_t structures are saved in a global
- * container - gClassTables. Once drms_keymap_initcltables() completes, programs
- * then have access to these classes with the drms_keymap_classidextname(), 
- * drms_keymap_classextname(), drms_keymap_classidintname(), and 
- * drms_keymap_classintname() functions.
+ * a Exputl_Keymap_t structure. These Exputl_Keymap_t structures are saved in a global
+ * container - gClassTables. Once exputl_keymap_initcltables() completes, programs
+ * then have access to these classes with the exputl_keymap_classidextname(), 
+ * exputl_keymap_classextname(), exputl_keymap_classidintname(), and 
+ * exputl_keymap_classintname() functions.
  */
-static int drms_keymap_initcltables()
+static int exputl_keymap_initcltables()
 {
    int ret = 0;
 
    if (!gClassTables)
    {
-      gClassTables = hcon_create(sizeof(DRMS_KeyMap_t), MAXCLKEY, KMFree, NULL, NULL, NULL, 0);
+      gClassTables = hcon_create(sizeof(Exputl_KeyMap_t), MAXCLKEY, KMFree, NULL, NULL, NULL, 0);
    }
 
    if (gClassTables)
@@ -98,11 +97,11 @@ static int drms_keymap_initcltables()
       int i = kKEYMAPCLASS_DEFAULT + 1;
       for (; ok && i < kKEYMAPCLASS_NUMTABLESPLUSONE; i++)
       {
-	 DRMS_KeyMap_t *km = drms_keymap_create();
+	 Exputl_KeyMap_t *km = exputl_keymap_create();
 	 if (km)
 	 {
 	    /* Parse keyword mapping table */
-	    ok = drms_keymap_parsetable(km, KeyMapClassTables[i]);
+	    ok = exputl_keymap_parsetable(km, KeyMapClassTables[i]);
 
 	    if (ok)
 	    {
@@ -112,7 +111,7 @@ static int drms_keymap_initcltables()
 	    else
 	    {
 	       /* deep-free since km never got copied into gClassTables */
-	       drms_keymap_destroy(&km);
+	       exputl_keymap_destroy(&km);
 	    }
 	 }
 	 else
@@ -132,25 +131,25 @@ static int drms_keymap_initcltables()
    return ret;
 }
 
-/* drms_keymap_termcltables() - Free all memory allocated by the drms_keymap_initcltables()
+/* exputl_keymap_termcltables() - Free all memory allocated by the exputl_keymap_initcltables()
  * function call.
  */
-static void drms_keymap_termcltables()
+static void exputl_keymap_termcltables()
 {
    if (gClassTables)
    {
       hcon_destroy(&gClassTables);
    }
 }
-/* drms_keymap_create() - Allocate an empty DRMS_KeyMap_t and return a pointer to it if 
+/* exputl_keymap_create() - Allocate an empty Exputl_Keymap_t and return a pointer to it if 
  * memory was successfully allocated. It is the caller's responsiblity to free the returned
- * DRMS_KeyMap_t by calling drms_keymap_destroy().
+ * Exputl_Keymap_t by calling exputl_keymap_destroy().
  */
-DRMS_KeyMap_t *drms_keymap_create()
+Exputl_KeyMap_t *exputl_keymap_create()
 {
-   DRMS_KeyMap_t *ret = NULL;
+   Exputl_KeyMap_t *ret = NULL;
 
-   DRMS_KeyMap_t *km = (DRMS_KeyMap_t *)malloc(sizeof(DRMS_KeyMap_t));
+   Exputl_KeyMap_t *km = (Exputl_KeyMap_t *)malloc(sizeof(Exputl_KeyMap_t));
    if (km)
    {
       hcon_init(&(km->int2ext), MAXMAPPINGKEY, DRMS_MAXKEYNAMELEN, NULL, NULL);
@@ -161,10 +160,10 @@ DRMS_KeyMap_t *drms_keymap_create()
    return ret;
 }
 
-/* drms_keymap_destroy() - Free all allocated memory associated with a DRMS_KeyMap_t. 
- * The DRMS_KeyMap_t pointer contained in km is set to NULL.
+/* exputl_keymap_destroy() - Free all allocated memory associated with a Exputl_Keymap_t. 
+ * The Exputl_Keymap_t pointer contained in km is set to NULL.
  */
-void drms_keymap_destroy(DRMS_KeyMap_t **km)
+void exputl_keymap_destroy(Exputl_KeyMap_t **km)
 {
    if (*km)
    {
@@ -175,14 +174,14 @@ void drms_keymap_destroy(DRMS_KeyMap_t **km)
    }
 }
 
-/* drms_keymap_parsetable() - Parse a buffer containing FITS-keyword-name-to-DRMS-keyword-name
+/* exputl_keymap_parsetable() - Parse a buffer containing FITS-keyword-name-to-DRMS-keyword-name
  * mappings. The buffer, <text>, can contain zero or more mappings, each of the form 
  * <fitsname>(<whitespace> | ',')<drmsname>. Each pair of mappings must be separated by
  * a newline character ('\n'). Comments or emtpy strings may appear between newline characters
  * as well. If <keymap> is not NULL, the resulting set of mappings is used to 
  * initialize <keymap>.
  */
-int drms_keymap_parsetable(DRMS_KeyMap_t *keymap, const char *text)
+int exputl_keymap_parsetable(Exputl_KeyMap_t *keymap, const char *text)
 {
    int success = 1;
 
@@ -254,13 +253,13 @@ int drms_keymap_parsetable(DRMS_KeyMap_t *keymap, const char *text)
 
    return success;
 }
-/* drms_keymap_parsefile() - Parse a file containing FITS-keyword-name-to-DRMS-keyword-name
+/* exputl_keymap_parsefile() - Parse a file containing FITS-keyword-name-to-DRMS-keyword-name
  * mappings. <fPtr> must contain a valid file pointer. If <keymap> is not NULL, the 
  * resulting set of mappings is used to initialize <keymap>. This function 
- * calls drms_keymap_parsetable() to parse the content of the file to which <fPtr>
+ * calls exputl_keymap_parsetable() to parse the content of the file to which <fPtr>
  * refers.
  */
-int drms_keymap_parsefile(DRMS_KeyMap_t *keymap, FILE *fPtr)
+int exputl_keymap_parsefile(Exputl_KeyMap_t *keymap, FILE *fPtr)
 {
    int success = 1;
 
@@ -285,8 +284,8 @@ int drms_keymap_parsefile(DRMS_KeyMap_t *keymap, FILE *fPtr)
 	 }
       }
 
-      /* send buffer to drms_keymap_parsetable() */
-      success = drms_keymap_parsetable(keymap, buf);
+      /* send buffer to exputl_keymap_parsetable() */
+      success = exputl_keymap_parsetable(keymap, buf);
       buf[0] = '\0';
       nRead = 0;
    }
@@ -294,95 +293,112 @@ int drms_keymap_parsefile(DRMS_KeyMap_t *keymap, FILE *fPtr)
    return success;
 }
 
-/* drms_keymap_init() - This function calls all keymap initialization functions().
+/* exputl_keymap_init() - This function calls all keymap initialization functions().
  * This function should be called during program initialization.
  */
-int drms_keymap_init()
+int exputl_keymap_init()
 {
-   return drms_keymap_initcltables();
+   BASE_Cleanup_t cu;
+   cu.item = NULL;
+   cu.free = exputl_keymap_term;
+   base_cleanup_register("keymapclasstables", &cu);
+
+   return exputl_keymap_initcltables();
 }
 
-/* drms_keymap_term() - This function calls all keymap termination functions().
+/* exputl_keymap_term() - This function calls all keymap termination functions().
  * This function should be called immediately prior to program termination..
  */
-void drms_keymap_term()
+void exputl_keymap_term(void *data)
 {
-   drms_keymap_termcltables();
+   exputl_keymap_termcltables();
 }
 
-const char *drms_keymap_extname(DRMS_KeyMap_t *keymap, const char *intName)
+const char *exputl_keymap_extname(Exputl_KeyMap_t *keymap, const char *intName)
 {
    return (const char*)hcon_lookup(&(keymap->int2ext), intName);
 }
 
-const char *drms_keymap_classidextname(DRMS_KeyMapClass_t classid, const char *intName)
+const char *exputl_keymap_classidextname(Exputl_KeyMapClass_t classid, const char *intName)
 {
    const char *ret = NULL;
 
-   /* First, get class string id */
-   const char *strid = KeyMapClassIDMap[classid];
-
-   /* Then, get external name from map. */
-   DRMS_KeyMap_t *km = hcon_lookup(gClassTables, strid);
-   if (km)
+   if (gClassTables || exputl_keymap_init())
    {
-      ret = (const char *)hcon_lookup(&(km->int2ext), intName);
+      /* First, get class string id */
+      const char *strid = KeyMapClassIDMap[classid];
+
+      /* Then, get external name from map. */
+      Exputl_KeyMap_t *km = hcon_lookup(gClassTables, strid);
+      if (km)
+      {
+         ret = (const char *)hcon_lookup(&(km->int2ext), intName);
+      }
    }
 
    return ret;
 }
 
-const char *drms_keymap_classextname(const char *class, const char *intName)
+const char *exputl_keymap_classextname(const char *class, const char *intName)
 {
    const char *ret = NULL;
 
-   /* Get external name from map. */
-   DRMS_KeyMap_t *km = hcon_lookup(gClassTables, class);
-   if (km)
+   if (gClassTables || exputl_keymap_init())
    {
-      ret = (const char *)hcon_lookup(&(km->int2ext), intName);
+      /* Get external name from map. */
+      Exputl_KeyMap_t *km = hcon_lookup(gClassTables, class);
+      if (km)
+      {
+         ret = (const char *)hcon_lookup(&(km->int2ext), intName);
+      }
    }
 
    return ret;
 }
 
-const char *drms_keymap_intname(DRMS_KeyMap_t *keymap, const char *extName)
+const char *exputl_keymap_intname(Exputl_KeyMap_t *keymap, const char *extName)
 {
    return (const char*)hcon_lookup(&(keymap->ext2int), extName);
 }
 
-const char *drms_keymap_classidintname(DRMS_KeyMapClass_t classid, const char *extName)
+const char *exputl_keymap_classidintname(Exputl_KeyMapClass_t classid, const char *extName)
 {
    const char *ret = NULL;
 
-   /* First, get class string id */
-   const char *strid = KeyMapClassIDMap[classid];
-
-   /* Then, get external name from map. */
-   DRMS_KeyMap_t *km = hcon_lookup(gClassTables, strid);
-   if (km)
+   if (gClassTables || exputl_keymap_init())
    {
-      ret = (const char *)hcon_lookup(&(km->ext2int), extName);
+      /* First, get class string id */
+      const char *strid = KeyMapClassIDMap[classid];
+
+      /* Then, get external name from map. */
+      Exputl_KeyMap_t *km = hcon_lookup(gClassTables, strid);
+      if (km)
+      {
+         ret = (const char *)hcon_lookup(&(km->ext2int), extName);
+      }
    }
 
    return ret;
 }
 
-const char *drms_keymap_classintname(const char *class, const char *extName)
+const char *exputl_keymap_classintname(const char *class, const char *extName)
 {
    const char *ret = NULL;
 
-   /* Get external name from map. */
-   DRMS_KeyMap_t *km = hcon_lookup(gClassTables, class);
-   if (km)
+   if (gClassTables || exputl_keymap_init())
    {
-      ret = (const char *)hcon_lookup(&(km->ext2int), extName);
+      /* Get external name from map. */
+      Exputl_KeyMap_t *km = hcon_lookup(gClassTables, class);
+      if (km)
+      {
+         ret = (const char *)hcon_lookup(&(km->ext2int), extName);
+      }
    }
 
    return ret;
 }
 
-const char *drms_keymap_getclname(DRMS_KeyMapClass_t clid)
+const char *exputl_keymap_getclname(Exputl_KeyMapClass_t clid)
 {
    return KeyMapClassIDMap[clid];
 }

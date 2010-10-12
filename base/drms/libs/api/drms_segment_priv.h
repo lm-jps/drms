@@ -69,11 +69,4 @@ void drms_free_template_segment_struct(DRMS_Segment_t *segment);
 void drms_copy_segment_struct(DRMS_Segment_t *dst, DRMS_Segment_t *src);
 /* @} */
 
-CFITSIO_KEYWORD *drms_segment_mapkeys(DRMS_Segment_t *seg, 
-                                      const char *clname, 
-                                      const char *mapfile, 
-                                      int *status);
-
-void drms_segment_freekeys(CFITSIO_KEYWORD **fitskeys);
-
 #endif /* _DRMS_SEGMENT_PRIV_H */

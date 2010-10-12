@@ -4,25 +4,25 @@ dirstack_$(sp)	:= $(d)
 d		:= $(dir)
 
 # Local variables
-LIBEXPUTL	:= $(d)/libexputl.a
+LIBEXPDRMS	:= $(d)/libexpdrms.a
 
-OBJ_$(d)	:= $(addprefix $(d)/, exputil.o keymap.o)
+OBJ_$(d)	:= $(addprefix $(d)/, fitsexport.o)
 
-LIBEXPUTL_OBJ	:= $(OBJ_$(d))
+LIBEXPDRMS_OBJ	:= $(OBJ_$(d))
 
 DEP_$(d)	:= $(OBJ_$(d):%=%.d)
 
-CLEAN		:= $(CLEAN) $(OBJ_$(d)) $(LIBEXPUTL) $(DEP_$(d))
+CLEAN		:= $(CLEAN) $(OBJ_$(d)) $(LIBEXPDRMS) $(DEP_$(d))
 
-TGT_LIB		:= $(TGT_LIB) $(LIBEXPUTL)
+TGT_LIB		:= $(TGT_LIB) $(LIBEXPDRMS)
 
-S_$(d)		:= $(notdir $(LIBEXPUTL))
+S_$(d)		:= $(notdir $(LIBEXPDRMS))
 
 
 # Local rules
 $(OBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
 
-$(LIBEXPUTL):	$(OBJ_$(d))
+$(LIBEXPDRMS):	$(OBJ_$(d))
 		$(ARCHIVE)
 		$(SLLIB)
 

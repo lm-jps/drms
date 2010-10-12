@@ -23,23 +23,6 @@
 #define ISDIGIT(X) (X >= 0x30 && X <= 0x39)
 #define DRMS_MAXNAMELEN 32
 
-/* keyword that can never be placed in a FITS file via DRMS */
-char *kFITSRESERVED[] =
-{
-   "simple",
-   "extend",
-   "bzero",
-   "bscale",
-   "blank",
-   "bitpix",
-   "naxis",
-   "comment",
-   "history",
-   "end",
-   "primekeystring",
-   ""
-};
-
 char *kKEYNAMERESERVED[] = 
 {
    "_index",
@@ -141,7 +124,6 @@ char *kKEYNAMERESERVED[] =
 };
 
 HContainer_t *gCleanup = NULL;
-HContainer_t *gReservedFits = NULL;
 HContainer_t *gReservedDRMS = NULL;
 
 typedef enum
@@ -350,190 +332,6 @@ int copyfile(const char *inputfile, const char *outputfile)
     return -4;
   else
     return 0;
-}
-
-static void FreeReservedFits(void *data)
-{
-   if (gReservedFits != (HContainer_t *)data)
-   {
-      fprintf(stderr, "Unexpected argument to FreeReservedFits(); bailing.\n");
-      return;
-   }
-
-   hcon_destroy(&gReservedFits);
-}
-
-/* Returns 0 if fitsName is a valid FITS keyword identifier, and not a reserved FITS keyword name.
- * Returns 1 if fitsName is invalid
- * Returns 2 if fitsName is valid but reserved
- */
-static int FitsKeyNameValidationStatus(const char *fitsName)
-{
-   int error = 0;
-   KwCharState_t state = kKwCharNew;
-   char *nameC = strdup(fitsName);
-   char *pc = nameC;
-
-   if (strlen(fitsName) > 8)
-   {
-      /* max size is 8 chars */
-      error = 1;
-   }
-   else
-   {
-      /* Disallow FITS reserved keywords - simple, extend, bzero, bscale, blank, bitpix, naxis, naxisN, comment, history, end */
-      if (!gReservedFits)
-      {
-         char bogusval = 'A';
-         int i = 0;
-
-         gReservedFits = hcon_create(1, 128, NULL, NULL, NULL, NULL, 0);
-         while (*(kFITSRESERVED[i]) != '\0')
-         {
-            hcon_insert_lower(gReservedFits, kFITSRESERVED[i], &bogusval);
-            i++;
-         }
-
-         /* Register for clean up (also in the misc library) */
-         BASE_Cleanup_t cu;
-         cu.item = gReservedFits;
-         cu.free = FreeReservedFits;
-         base_cleanup_register("reservedfitskws", &cu);
-      }
-
-      if (gReservedFits)
-      {
-         char *tmp = strdup(fitsName);
-         char *pch = NULL;
-         char *endptr = NULL;
-         char *naxis = "NAXIS";
-         int len = strlen(naxis);
-         int theint;
-
-         strtoupper(tmp);
-
-         if (strncmp(tmp, naxis, len) == 0)
-         {
-            pch = tmp + len;
-
-            if (*pch)
-            {
-               theint = (int)strtol(pch, &endptr, 10);
-               if (endptr == pch + strlen(pch))
-               {
-                  /* the entire string after NAXIS was an integer */
-                  if (theint > 0 && theint <= 999)
-                  {
-                     /* fitsName is a something we can't export */
-                     error = 2;
-                  }
-               }
-            }
-         }
-
-         if (hcon_lookup_lower(gReservedFits, tmp))
-         {
-            error = 2;
-         }
-
-         free(tmp);
-      }
- 
-      if (!error)
-      {
-         while (*pc != 0 && !error)
-         {
-            switch (state)
-            {
-               case kKwCharError:
-                 error = 1;
-                 break;
-               case kKwCharNew:
-                 if (*pc == '-' ||
-                     *pc == '_' ||
-                     ISUPPER(*pc) ||
-                     ISDIGIT(*pc))
-                 {
-                    state = kKwCharNew;
-                    pc++;
-                 }
-                 else
-                 {
-                    state = kKwCharError;
-                 }
-                 break;
-               default:
-                 state = kKwCharError;
-            }
-         }
-      }
-   }
-
-   if (nameC)
-   {
-      free(nameC);
-   }
-
-   return error;
-}
-
-/* Phil's scheme for arbitrary fits names. */
-/* XXX This has to change to Phil's default scheme */
-int GenerateFitsKeyName(const char *drmsName, char *fitsName, int size)
-{
-   const char *pC = drmsName;
-   int nch = 0;
-
-   memset(fitsName, 0, size);
-
-   if (size >= 9)
-   {
-      while (*pC && nch < 8)
-      {
-	 if (*pC >= 65 && *pC <= 90)
-	 {
-	    fitsName[nch] = *pC;
-	    nch++; 
-	 }
-	 else if (*pC >= 97 && *pC <= 122)
-	 {
-	    fitsName[nch] = (char)toupper(*pC);
-	    nch++;
-	 }
-
-	 pC++;
-      }
-
-      /* Now check that the result, fitsName, is not a reserved FITS key name */
-      if (FitsKeyNameValidationStatus(fitsName) == 2)
-      {
-         /* but it could be reserved because of a suffix issue */
-         char *tmp = strdup(fitsName);
-         char *pch = NULL;
-
-         if (tmp && (pch = strchr(tmp, '_')) != NULL && hcon_lookup_lower(gReservedFits, pch))
-         {
-            *pch = '\0';
-            snprintf(fitsName, 9, "_%s", tmp); /* FITS names can't have more than 8 chars */
-         }
-         else
-         {
-            snprintf(fitsName, 9, "_%s", tmp);
-         }
-
-         if (tmp)
-         {
-            free(tmp);
-         }
-      }
-
-   }
-   else
-   {
-      return 0;
-   }
-
-   return 1;
 }
 
 static void FreeReservedDRMS(void *data)
@@ -1006,11 +804,6 @@ void base_term()
 {
    base_cleanup_go(NULL);
    base_cleanup_term();
-}
-
-int base_fitskeycheck(const char *fitsName)
-{
-   return FitsKeyNameValidationStatus(fitsName);
 }
 
 int base_drmskeycheck(const char *drmsName)

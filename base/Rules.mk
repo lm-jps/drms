@@ -10,8 +10,6 @@ dir	:= $(d)/libs
 # Order es muy importante!  DRMS can depend on SUMS libs, util can depend on DRMS libs, etc.
 dir	:= $(d)/sums
 -include		$(SRCDIR)/$(dir)/Rules.mk
-dir	:= $(d)/drms
--include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/example
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/export
@@ -19,6 +17,11 @@ dir	:= $(d)/export
 dir	:= $(d)/local
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/util
+-include		$(SRCDIR)/$(dir)/Rules.mk
+
+# ALWAYS put the drms subdirectory last - the base/drms/libs/meta library 
+# needs global make variables defined in the base/export.
+dir	:= $(d)/drms
 -include		$(SRCDIR)/$(dir)/Rules.mk
 
 # Standard things

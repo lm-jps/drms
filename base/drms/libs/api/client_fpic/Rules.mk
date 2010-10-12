@@ -6,7 +6,7 @@ d		:= $(dir)
 # Local variables
 LIBDRMSCLIENT_FPIC	:= $(d)/libdrmsclient_fpic.a
 
-FPICOBJ_$(d)	:= $(addprefix $(d)/, drms_client.o drms_env.o drms_types.o drms_record.o drms_keyword.o drms_link.o drms_segment.o drms_protocol.o drms_binfile.o drms_series.o drms_parser.o drms_names.o drms_array.o drms_storageunit.o drms_keymap.o drms_dsdsapi.o drms_defs.o drms_fitsrw.o  drms_fitstas.o drms_cmdparams.o)
+FPICOBJ_$(d)	:= $(addprefix $(d)/, drms_client.o drms_env.o drms_types.o drms_record.o drms_keyword.o drms_link.o drms_segment.o drms_protocol.o drms_binfile.o drms_series.o drms_parser.o drms_names.o drms_array.o drms_storageunit.o drms_dsdsapi.o drms_defs.o drms_fitsrw.o  drms_fitstas.o drms_cmdparams.o)
 
 FPICOBJ		:= $(FPICOBJ) $(FPICOBJ_$(d))
 

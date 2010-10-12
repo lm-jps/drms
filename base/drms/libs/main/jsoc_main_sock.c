@@ -222,7 +222,6 @@ int JSOCMAIN_Init(int argc,
    }
 
    /* Initialize global things. */
-   drms_keymap_init(); /* If this slows down init too much, do on-demand init. */
 
    /* Block signals INT, QUIT, TERM, and USR1. They will explicitly
       handled by the signal thread created below. */

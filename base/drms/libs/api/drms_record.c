@@ -8,6 +8,8 @@
 #include "drms_priv.h"
 #include "xmem.h"
 #include "drms_dsdsapi.h"
+#include "keymap.h"
+#include "fitsexport.h"
 
 #ifndef DEBUG
 #undef TIME
@@ -92,7 +94,7 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
 					int nRecs,
 					char **pkeyarr,
 					int nPKeys,
-					DRMS_KeyMapClass_t fitsclass,
+					Exputl_KeyMapClass_t fitsclass,
 					DRMS_Record_t **proto,
 					DRMS_Segment_t **segout,
 					int *status);
@@ -115,7 +117,7 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
 						      DSDS_KeyList_t **klarr,
 						      DRMS_Segment_t *segarr,
 						      int pkeysSpecified,
-						      DRMS_KeyMapClass_t fitsclass,
+						      Exputl_KeyMapClass_t fitsclass,
 						      int *status);
 static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env, 
 					      DSDS_KeyList_t ***klarr,
@@ -394,7 +396,7 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
 					int nRecs,
 					char **pkeyarr,
 					int nPKeys,
-					DRMS_KeyMapClass_t fitsclass,
+					Exputl_KeyMapClass_t fitsclass,
 					DRMS_Record_t **proto,
 					DRMS_Segment_t **segout,
 					int *status)
@@ -462,11 +464,11 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
 		}
 	       
                 /* generate a valid drms keyword (fits might not be valid) */
-                if (!drms_keyword_getmappedintname(sKey->info->name, 
-                                                   drms_keymap_getclname(fitsclass),
-                                                   NULL, 
-                                                   drmsKeyName, 
-                                                   sizeof(drmsKeyName)))
+                if (!fitsexport_getmappedintkeyname(sKey->info->name, 
+                                                    exputl_keymap_getclname(fitsclass),
+                                                    NULL, 
+                                                    drmsKeyName, 
+                                                    sizeof(drmsKeyName)))
                 {
                    *drmsKeyName = '\0';
                    stat = DRMS_ERROR_INVALIDDATA;
@@ -768,7 +770,7 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
 						      DSDS_KeyList_t **klarr,
 						      DRMS_Segment_t *segarr,
 						      int setPrimeKey,
-						      DRMS_KeyMapClass_t fitsclass,
+						      Exputl_KeyMapClass_t fitsclass,
 						      int *status)
 {
    int stat = DRMS_SUCCESS;
@@ -810,11 +812,11 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
 
 	 while (stat == DRMS_SUCCESS && kl && ((sKey = kl->elem) != NULL))
 	 {
-	    if (!drms_keyword_getmappedintname(sKey->info->name, 
-                                               drms_keymap_getclname(fitsclass),
-                                               NULL, 
-                                               drmsKeyName, 
-                                               sizeof(drmsKeyName)))
+	    if (!fitsexport_getmappedintkeyname(sKey->info->name, 
+                                                exputl_keymap_getclname(fitsclass),
+                                                NULL, 
+                                                drmsKeyName, 
+                                                sizeof(drmsKeyName)))
 	    {
 	       *drmsKeyName = '\0';
 	       stat = DRMS_ERROR_INVALIDDATA;
@@ -930,7 +932,7 @@ static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env,
 	 DRMS_Record_t *cached = NULL;
 
 
-	 DRMS_KeyMapClass_t fitsclass = kKEYMAPCLASS_LOCAL;
+	 Exputl_KeyMapClass_t fitsclass = kKEYMAPCLASS_LOCAL;
 	 char drmsKeyName[DRMS_MAXKEYNAMELEN];
 	 char *pkeyarr[DRMS_MAXPRIMIDX] = {0};
 	 int setPrimeKey = 0;
@@ -941,11 +943,11 @@ static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env,
 	    nPkeys = 0;
 	    while(pkeyname != NULL)
 	    {
-	       if (!drms_keyword_getmappedintname(pkeyname, 
-                                                  drms_keymap_getclname(fitsclass),
-                                                  NULL, 
-                                                  drmsKeyName, 
-                                                  sizeof(drmsKeyName)))
+	       if (!fitsexport_getmappedintkeyname(pkeyname, 
+                                                   exputl_keymap_getclname(fitsclass),
+                                                   NULL, 
+                                                   drmsKeyName, 
+                                                   sizeof(drmsKeyName)))
 	       {
 		  *drmsKeyName = '\0';
 		  stat = DRMS_ERROR_INVALIDDATA;
