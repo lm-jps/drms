@@ -24,7 +24,7 @@ int defs_register(const char *filepath)
 {
    int stat = 1; /* default is error */
    char *key = NULL;
-   char *val = NULL;
+   char val[kMAXVALSIZE];
 
    if (filepath && *filepath)
    {
@@ -82,7 +82,7 @@ int defs_register(const char *filepath)
 
                         if (start)
                         {
-                           val = strdup(start);
+                           snprintf(val, sizeof(val), "%s", start);
                            if (val)
                            {
                               InitGDefs();
@@ -96,7 +96,6 @@ int defs_register(const char *filepath)
                               {
                                  hcon_insert(gDefs, key, val);
                               }
-                              free(val);
                            }
                         }
 

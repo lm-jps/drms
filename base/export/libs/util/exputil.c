@@ -59,7 +59,7 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *seg,
       char *last;
       if (*fmt == '{')
          {
-         char *val;
+         char *val = NULL;
          char *p;
          char *keyname;
          char *layout;
@@ -84,6 +84,9 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *seg,
          if (*keyname)
             {
             char valstr[128];
+            char *tmpstr = NULL;
+            char tmpstr2[128];
+
             if (strcmp(keyname, "#") == 0) // insert record count within current program run
                {
                snprintf(valstr, sizeof(valstr), (layout ? layout : "%05d"), namesMade++);
@@ -116,7 +119,13 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *seg,
                 snprintf(key->info->format, DRMS_MAXFORMATLEN, "%d", precision);
                 if (*layout == ',' && *(layout+1))
                   strncpy(key->info->unit,layout+1,DRMS_MAXUNITLEN);
-                val = drms_getkey_string(seg->record,keyname,NULL);
+
+                /* avoid leaks */
+                tmpstr = drms_getkey_string(seg->record,keyname,NULL);
+                snprintf(tmpstr2, sizeof(tmpstr2), "%s", tmpstr);
+                free(tmpstr);
+                val = tmpstr2;
+
                 strncpy(key->info->format, formatwas, DRMS_MAXFORMATLEN);
                 strncpy(key->info->unit, unitwas, DRMS_MAXUNITLEN);
                 if (Mod != ' ')
@@ -161,25 +170,48 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *seg,
                 char formatwas[DRMS_MAXFORMATLEN];
                 strncpy(formatwas, key->info->format, DRMS_MAXFORMATLEN);
                 strncpy(key->info->format,layout,DRMS_MAXFORMATLEN);
-                val = drms_getkey_string(seg->record,keyname,NULL);
+
+                /* avoid leaks */
+                tmpstr = drms_getkey_string(seg->record,keyname,NULL);
+                snprintf(tmpstr2, sizeof(tmpstr2), "%s", tmpstr);
+                free(tmpstr);
+                val = tmpstr2;
+
                 strncpy(key->info->format, formatwas, DRMS_MAXFORMATLEN);
                 // free(val);
+
+                /* Not sure why we bother setting val a couple of lines above - it gets
+                 * lost here. */
                 val = valstr;
                 }
               }
             else // No user provided layout string
-              val = drms_getkey_string(seg->record,keyname,NULL);
+            {
+               tmpstr = drms_getkey_string(seg->record,keyname,NULL);
+               snprintf(tmpstr2, sizeof(tmpstr2), "%s", tmpstr);
+               free(tmpstr);
+               val = tmpstr2;
+            }
+
+            /* At this point, val should have a valid string in it, and val might 
+             * actually be pointing to valstr which contains the valid string, but 
+             * it might not. */
             if (!val)
                {
                ret = kExpUtlStat_InvalidFmt;
                val = "ERROR";
                }
+#if 0
+            /* Why copy back to valstr when the valid string is in 
+             * val already? Plus this is causing memory corruption - you can't copy from val
+             * to valstr if both pointers point to the same address. */
             else
                {
                strncpy(valstr, val, 128);
                // free(val);
                val = valstr;
                }
+#endif
             for (p=val; *p; )
                {
                *fn++ = *p++;
@@ -187,6 +219,8 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *seg,
             *fn = '\0';
             }
          fmt = last+1;
+
+         val = NULL;
          }
       else
         *fn++ = *fmt++;
