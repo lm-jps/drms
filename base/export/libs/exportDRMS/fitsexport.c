@@ -4,21 +4,39 @@
 #include "util.h"
 
 /* keyword that can never be placed in a FITS file via DRMS */
+
+#undef A
+#define A(X,Y,Z) #X,
 char *kFITSRESERVED[] =
 {
-   "simple",
-   "extend",
-   "bzero",
-   "bscale",
-   "blank",
-   "bitpix",
-   "naxis",
-   "comment",
-   "history",
-   "end",
-   "primekeystring",
+   #include "reserved.h"
    ""
 };
+#undef A
+
+#define A(X,Y,Z) Y,
+enum FE_ReservedKeys_enum
+{
+   #include "reserved.h"
+   kRKW_NUMKEYWORDS
+};
+#undef A
+
+typedef enum FE_ReservedKeys_enum FE_ReservedKeys_t;
+typedef int (*pFn_ExportHandler)(void *key, void **fitskeys, void *nameout);
+
+/* Available keyword handlers */
+int DateHndlr(void *keyin, void **fitskeys, void *nameout);
+int CommHndlr(void *keyin, void **fitskeys, void *nameout);
+
+/* A reserved keyword with no export handler is one that is prohibited from being exported. */
+#define A(X,Y,Z) Z,
+pFn_ExportHandler ExportHandlers[] =
+{
+   #include "reserved.h"
+   NULL
+};
+#undef A
 
 HContainer_t *gReservedFits = NULL;
 
@@ -41,6 +59,163 @@ typedef enum
      kFeKwCharNew,
      kFeKwCharError
 } FeKwCharState_t;
+
+
+int DateHndlr(void *keyin, void **fitskeys, void *nameout)
+{
+   DRMS_Keyword_t *key = (DRMS_Keyword_t *)keyin;
+   int err = 0;
+
+   /* Write the implicit DATE keyword, but only if it has a value (if it is non-missing) */
+   const DRMS_Type_Value_t *val = drms_keyword_getvalue(key);
+   if (val && drms_keyword_gettype(key) == DRMS_TYPE_TIME)
+   {
+      /* unit (time zone) must be ISO - if not, don't export it */
+      char unitbuf[DRMS_MAXUNITLEN];
+      int fitsrwRet = 0;
+           
+      snprintf(unitbuf, sizeof(unitbuf), "%s", key->info->unit);
+      strtoupper(unitbuf);
+
+      /* If this is the DATE keyword, only export if the value isn't "missing". */
+      if (strcmp(kFITSRESERVED[kRKW_date], key->info->name) != 0 || !drms_ismissing_time(val->time_val))
+      {
+         if (strcmp(unitbuf, "ISO") == 0)
+         {
+            char tbuf[1024];
+            drms_keyword_snprintfval(key, tbuf, sizeof(tbuf));
+
+            /* The time string returned should end with the char 'Z' - remove it since 
+             * the FITS standard doesn't like it. */
+            if (tbuf[strlen(tbuf) - 1] == 'Z')
+            {
+               tbuf[strlen(tbuf) - 1] = '\0';
+            }
+
+            if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key((CFITSIO_KEYWORD**)fitskeys, 
+                                                                   (char *)nameout, 
+                                                                   kFITSRW_Type_String, 
+                                                                   NULL,
+                                                                   (void *)tbuf,
+                                                                   NULL)))
+            {
+               fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
+               err = 2;
+            }
+         }
+         else
+         {
+            /* DATE keyword has wrong time format, skip */
+            fprintf(stderr, "Invalid time format for keyword '%s' - must be ISO.\n", key->info->name);
+            err = 1;
+         }
+      }
+   }
+   else
+   {
+      fprintf(stderr, "Invalid data type for keyword '%s'.\n", key->info->name);
+      err = 1;
+   }  
+
+   return err;
+}
+
+/* Process a COMMENT or HISTORY FITS keyword. The source DRMS keyword may contain a multi-line string, 
+ * which must be split into new strings at newlines. And each resulting string must be at most 70 characters
+ * in length. */
+int CommHndlr(void *keyin, void **fitskeys, void *nameout)
+{
+   int err = 0;
+   char sbuf[128];
+   int rangeout = 0;
+   DRMS_Keyword_t *key = (DRMS_Keyword_t *)keyin;
+   const DRMS_Type_Value_t *val = drms_keyword_getvalue(key);
+
+   if (val && drms_keyword_gettype(key) == DRMS_TYPE_STRING)
+   {
+      char *tmp = strdup(val->string_val);
+
+      if (tmp)
+      {
+         char *pc = tmp;
+         char *pout = sbuf;
+         int nelem = 0;
+         int fitsrwRet = 0;
+
+         while (*pc)
+         {
+            if (*pc == '\n')
+            {
+               /* Split */
+               *pout = '\0';
+
+               if (*sbuf)
+               {
+                  if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key((CFITSIO_KEYWORD**)fitskeys, 
+                                                                         (char *)nameout, 
+                                                                         kFITSRW_Type_String, 
+                                                                         NULL,
+                                                                         (void *)sbuf,
+                                                                         NULL)))
+                  {
+                     fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
+                     err = 2;
+                  }
+               }
+
+               nelem = 0;
+               pout = sbuf;
+            }
+            else if (*pc >= 0x20 && *pc <= 0x7E || *pc >= 0xA0 && *pc <= 0xFF)
+            {
+               *pout = *pc;
+               pout++;
+               nelem++;
+            }
+            else
+            {
+               rangeout = 1;
+            }
+         
+            pc++;
+         }
+
+         /* sbuf might have text not yet converted into a COMMENT FITS key. */
+         if (nelem > 0)
+         {
+            *pout = '\0';
+            if (*sbuf)
+            {
+               if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key((CFITSIO_KEYWORD**)fitskeys, 
+                                                                      (char *)nameout, 
+                                                                      kFITSRW_Type_String, 
+                                                                      NULL,
+                                                                      (void *)sbuf,
+                                                                      NULL)))
+               {
+                  fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
+                  err = 2;
+               }
+            }
+
+            nelem = 0;
+         }
+
+         free(tmp);
+      }
+      else
+      {
+         err = 1;
+      }
+   }
+
+   if (rangeout)
+   {
+      fprintf(stderr, "At least one character encoding in DRMS keyword '%s' not a member of Latin-1.\n", key->info->name);
+   }
+
+   return err;
+}
 
 static void FreeReservedFits(void *data)
 {
@@ -74,13 +249,13 @@ static int FitsKeyNameValidationStatus(const char *fitsName)
       /* Disallow FITS reserved keywords - simple, extend, bzero, bscale, blank, bitpix, naxis, naxisN, comment, history, end */
       if (!gReservedFits)
       {
-         char bogusval = 'A';
          int i = 0;
 
-         gReservedFits = hcon_create(1, 128, NULL, NULL, NULL, NULL, 0);
+         gReservedFits = hcon_create(sizeof(int), 128, NULL, NULL, NULL, NULL, 0);
          while (*(kFITSRESERVED[i]) != '\0')
          {
-            hcon_insert_lower(gReservedFits, kFITSRESERVED[i], &bogusval);
+            /* Save the enum value for this reserved keyword. */
+            hcon_insert_lower(gReservedFits, kFITSRESERVED[i], &i);
             i++;
          }
 
@@ -102,6 +277,7 @@ static int FitsKeyNameValidationStatus(const char *fitsName)
 
          strtoupper(tmp);
 
+         /* Gotta special-case NAXIS since the entire family of keywords NAXISX are reserved. */
          if (strncmp(tmp, naxis, len) == 0)
          {
             pch = tmp + len;
@@ -296,6 +472,8 @@ static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key,
    {
       *format = strdup(key->info->format);
 
+      /* If the keyword being exported to FITS is a reserved keyword, then 
+       * drop into specialized code to handle that reserved keyword. */     
       if (casttype != kFE_Keyword_ExtType_None)
       {
          /* cast specified in key's description field */
@@ -314,13 +492,13 @@ static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key,
                  *fitstype = kFITSRW_Type_Float;
                  break;
                case kFE_Keyword_ExtType_String:
-                 {
-                    char tbuf[1024];
-                    drms_keyword_snprintfval(key, tbuf, sizeof(tbuf));
-                    res = (void *)strdup(tbuf);
-                    *fitstype = kFITSRW_Type_String;
-                 }
-                 break;
+               {
+                  char tbuf[1024];
+                  drms_keyword_snprintfval(key, tbuf, sizeof(tbuf));
+                  res = (void *)strdup(tbuf);
+                  *fitstype = kFITSRW_Type_String;
+               }
+               break;
                case kFE_Keyword_ExtType_Logical:
                  res = malloc(sizeof(long long));
 
@@ -383,13 +561,13 @@ static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key,
               *fitstype = 'F';
               break;
             case DRMS_TYPE_TIME:
-              {
-                 char tbuf[1024];
-                 drms_keyword_snprintfval(key, tbuf, sizeof(tbuf));
-                 res = (void *)strdup(tbuf);
-                 *fitstype = 'C';
-              }
-              break;
+            {
+               char tbuf[1024];
+               drms_keyword_snprintfval(key, tbuf, sizeof(tbuf));
+               res = (void *)strdup(tbuf);
+               *fitstype = 'C';
+            }
+            break;
             case DRMS_TYPE_STRING:
               res = (void *)strdup(valin->string_val);
               *fitstype = 'C';
@@ -399,7 +577,7 @@ static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key,
               err = 1;
               break;
          }
-      }
+      }  
    }
    else
    {
@@ -573,41 +751,6 @@ CFITSIO_KEYWORD *fitsexport_mapkeys(DRMS_Segment_t *seg,
             statint = DRMS_ERROR_EXPORT;
          }
       }
-      else if (strcmp(key->info->name, kDATEKEYNAME) == 0)
-      {
-	/* Write the implicit DATE keyword, but only if it has a value (if it is non-missing) */
-	const DRMS_Type_Value_t *val = drms_keyword_getvalue(key);
-	if (val && drms_keyword_gettype(key) == DRMS_TYPE_TIME)
-	{
-           /* unit (time zone) must be ISO - if not, don't export it */
-           char unitbuf[DRMS_MAXUNITLEN];
-           
-           snprintf(unitbuf, sizeof(unitbuf), "%s", key->info->unit);
-           strtoupper(unitbuf);
-
-           if (!drms_ismissing_time(val->time_val))
-           {
-              if (strcmp(unitbuf, "ISO") == 0)
-              {
-                 if (fitsexport_exportkey(key, &fitskeys))
-                 {
-                    fprintf(stderr, "Couldn't export keyword '%s'.\n", keyname);
-                    statint = DRMS_ERROR_EXPORT;
-                 }
-              }
-              else
-              {
-                 /* DATE keyword has wrong time format, skip */
-                 fprintf(stderr, "Invalid DATE keyword time format - must be ISO.\n");
-              }
-           }
-	}
-	else
-	 {
-	   /* can't get here */
-	   fprintf(stderr, "Invalid DATE keyword.\n");
-	 }
-      }
    }
 
    if (map)
@@ -653,6 +796,7 @@ int fitsexport_mapexportkey(DRMS_Keyword_t *key,
          void *fitskwval = NULL;
          char *format = NULL;
          DRMS_Keyword_t *keywval = NULL;
+         int rv = 0;
 
          /* follow link if key is a linked keyword, otherwise, use key. */
          keywval = drms_keyword_lookup(key->record, key->info->name, 1);
@@ -661,25 +805,52 @@ int fitsexport_mapexportkey(DRMS_Keyword_t *key,
           * could be broken if somebody deleted the target record, for example. */
          if (keywval)
          {
-            if (!DRMSKeyValToFITSKeyVal(keywval, &fitskwtype, &format, &fitskwval))
+            FE_ReservedKeys_t *ikey = NULL;
+
+            if (gReservedFits && 
+                (ikey = (FE_ReservedKeys_t *)hcon_lookup_lower(gReservedFits, keywval->info->name)))
             {
-               if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key(fitskeys, 
-                                                                      nameout, 
-                                                                      fitskwtype, 
-                                                                      NULL,
-                                                                      fitskwval,
-                                                                      format)))
+               if (ExportHandlers[*ikey])
                {
-                  fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
-                  stat = DRMS_ERROR_FITSRW;
+                  /* A handler exists for this reserved keyword - okay to export it. */
+                  rv = (*(ExportHandlers[*ikey]))(keywval, (void **)fitskeys, (void *)nameout);
+                  if (rv == 2)
+                  {
+                     stat = DRMS_ERROR_FITSRW;
+                  }
+                  else if (rv == 1)
+                  {
+                     stat = DRMS_ERROR_INVALIDDATA;
+                  }
+               }
+               else
+               {
+                  /* No handler - don't export, but continue with other keys. */
+                  fprintf(stderr, "Cannot export reserved keyword '%s'.\n", keywval->info->name);
                }
             }
             else
             {
-               fprintf(stderr, 
-                       "Could not convert DRMS keyword '%s' to FITS keyword.\n", 
-                       key->info->name);
-               stat = DRMS_ERROR_INVALIDDATA;
+               if ((rv = DRMSKeyValToFITSKeyVal(keywval, &fitskwtype, &format, &fitskwval)) == 0)
+               {
+                  if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key(fitskeys, 
+                                                                         nameout, 
+                                                                         fitskwtype, 
+                                                                         NULL,
+                                                                         fitskwval,
+                                                                         format)))
+                  {
+                     fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
+                     stat = DRMS_ERROR_FITSRW;
+                  }
+               }
+               else
+               {
+                  fprintf(stderr, 
+                          "Could not convert DRMS keyword '%s' to FITS keyword.\n", 
+                          key->info->name);
+                  stat = DRMS_ERROR_INVALIDDATA;
+               }
             }
          }
          else
@@ -733,8 +904,13 @@ int fitsexport_getmappedextkeyname(DRMS_Keyword_t *key,
       potential = exputl_keymap_extname(map, key->info->name);
       if (potential)
       {
-	 snprintf(nameOut, size, "%s", potential);
-	 success = 1;
+         vstat = fitsexport_fitskeycheck(potential);
+
+         if (vstat != 1)
+         {
+            snprintf(nameOut, size, "%s", potential);
+            success = 1;
+         }
       }
    }
 
@@ -744,8 +920,13 @@ int fitsexport_getmappedextkeyname(DRMS_Keyword_t *key,
       potential = exputl_keymap_classextname(class, key->info->name);
       if (potential)
       {
-	 snprintf(nameOut, size, "%s", potential);
-	 success = 1;
+         vstat = fitsexport_fitskeycheck(potential);
+
+         if (vstat != 1)
+         {
+            snprintf(nameOut, size, "%s", potential);
+            success = 1;
+         }
       }
    }
 
@@ -789,11 +970,11 @@ int fitsexport_getmappedextkeyname(DRMS_Keyword_t *key,
 
                      vstat = fitsexport_fitskeycheck(pot);
 
-		     if (vstat == 0)
-		     {
-			strcpy(nameOut, pot);
-			success = 1;
-		     }
+                     if (vstat != 1)
+                     {
+                        snprintf(nameOut, size, "%s", pot);
+                        success = 1;
+                     }
 
 		     free(pot);
 		  }
@@ -813,14 +994,11 @@ int fitsexport_getmappedextkeyname(DRMS_Keyword_t *key,
 	 strtoupper(nbuf);
 
 	 vstat = fitsexport_fitskeycheck(nbuf);
-	 if (vstat == 0)
-	 {
-	    strcpy(nameOut, nbuf);
-	    success = 1;
-	 }
-         else if (vstat == 2)
+
+         if (vstat != 1)
          {
-            fprintf(stderr, "FITS keyword name '%s' is reserved.\n", key->info->name);
+            snprintf(nameOut, size, "%s", nbuf);
+            success = 1;
          }
       }
 
@@ -832,13 +1010,26 @@ int fitsexport_getmappedextkeyname(DRMS_Keyword_t *key,
 	 {
 	    if (GenerateFitsKeyName(key->info->name, pot, size))
 	    {
-	       strcpy(nameOut, pot);
-	       success = 1;
+               vstat = fitsexport_fitskeycheck(pot);
+
+               if (vstat != 1)
+               {
+                  snprintf(nameOut, size, "%s", pot);
+                  success = 1;
+               }
 	    }
 
 	    free(pot);
 	 }
       }
+   }
+
+   if (success && vstat == 2)
+   {
+      /* Got a valid keyword name, but it is reserved and MAY require special processing. 
+       * Of course we disallow writing some reserved keywords altogether (Like NAXIS). 
+       * We don't know at this point if the reserved keyword can be exported - that decision
+       * will be made in DRMSKeyValToFITSKeyVal(). */
    }
 
    return success;
@@ -1113,6 +1304,9 @@ int fitsexport_mapimportkey(CFITSIO_KEYWORD *fitskey,
 
             if ((newkey = hcon_lookup(keys, namelower)) != NULL)
             {
+               /* Even though the newline char (0x0A) is NOT part of the Latin-1 character set, 
+                * and the DRMS database is of Latin-1 encoding, 
+                * PostgreSQL will allow you to insert a string with that character. */
                if (strcmp(namelower, "comment") == 0 || strcmp(namelower, "history") == 0 )
                {
                   /* If this is a FITS comment or history keyword, then 

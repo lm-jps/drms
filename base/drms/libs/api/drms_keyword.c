@@ -7,6 +7,8 @@
 #include "atoinc.h"
 #include "fitsexport.h"
 
+#define kDATEKEYNAME "DATE"
+
 /* Slotted keywords - index keyword type (some kind of integer) */
 const DRMS_Type_t kIndexKWType = DRMS_TYPE_LONGLONG;
 const char *kIndexKWFormat = "%lld";

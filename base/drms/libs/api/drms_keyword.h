@@ -12,8 +12,6 @@
 #include "drms_fitsrw.h"
 #include "drms.h"
 
-#define kDATEKEYNAME "DATE"
-
 void drms_keyword_print(DRMS_Keyword_t *key);
 void drms_keyword_fprint(FILE *keyfile, DRMS_Keyword_t *key);
 void drms_keyword_printval(DRMS_Keyword_t *key);
