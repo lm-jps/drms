@@ -1098,7 +1098,7 @@ int DoIt(void)
 	    // JSONDIE("Keyword not in series");
             jsonval = string_to_json("Invalid KeyLink");
             }
-          else if (drms_ismissing_keyval(rec_key_ikey))
+          else if (drms_ismissing_keyval(rec_key_ikey) && strcmp(keys[ikey],"QUALITY") != 0)
             jsonval = string_to_json("MISSING");
           else
             {
