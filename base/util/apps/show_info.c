@@ -1623,8 +1623,11 @@ int DoIt(void)
           strcpy(retain,"-1");
         else
           {
-          sscanf(rec->suinfo->effective_date, "%4d%2d%2d", &y,&m,&d);
-          sprintf(retain, "%4d.%02d.%02d",y,m,d);
+          int nscanned = sscanf(rec->suinfo->effective_date, "%4d%2d%2d", &y,&m,&d);
+          if (nscanned == 3) 
+            sprintf(retain, "%4d.%02d.%02d",y,m,d);
+          else
+            strcpy(retain, "NoRetValue ");
           }
         }
       if (keyword_list)
@@ -1741,6 +1744,7 @@ int DoIt(void)
              if(want_path_noret) stat=drms_record_directory (rec_seg_iseg->record, path, 0);
              else stat=drms_record_directory (rec_seg_iseg->record, path, 1);
              if (stat) strcpy(path,"**_NO_sudir_**");
+if(stat)fprintf(stderr,"### no record dir, stat=%d\n",stat);
              }
            else
              strcpy(path,"");
