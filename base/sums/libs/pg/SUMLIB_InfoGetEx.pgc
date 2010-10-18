@@ -124,8 +124,9 @@ EXEC SQL END DECLARE SECTION;
         setkey_uint64(results, dsix_name, ds_index);
 
       //now get values in sum_partn_alloc
-     EXEC SQL SELECT status, archive_substatus, effective_date
-     INTO :pa_status, :pa_substatus, :effective_date
+      //use DISTINCT in case dup entries
+     EXEC SQL SELECT DISTINCT ON (effective_date) effective_date,  status, archive_substatus
+     INTO :effective_date, :pa_status, :pa_substatus
      FROM SUM_PARTN_ALLOC WHERE DS_INDEX = :ds_index and STATUS != 8;
         sprintf(dsix_name, "pa_status_%d", i);
         setkey_int(results, dsix_name, pa_status);
