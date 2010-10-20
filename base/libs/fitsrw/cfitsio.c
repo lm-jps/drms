@@ -44,15 +44,7 @@ static int cfitsio_keyval2int(const CFITSIO_KEYWORD *kw, int *stat)
       switch(kw->key_type)
       {
          case kFITSRW_Type_String:
-           if (kw->key_value.vs)
-           {
-              err = (sscanf(kw->key_value.vs, "%d", &val) != 1);
-           }
-           else
-           {
-              /* No string to convert - default to 0. */
-              err = 0;
-           }
+           err = (sscanf(kw->key_value.vs, "%d", &val) != 1);
            break;
          case kFITSRW_Type_Logical:
            val = (int)(kw->key_value.vl);
@@ -89,14 +81,7 @@ static long long cfitsio_keyval2longlong(const CFITSIO_KEYWORD *kw, int *stat)
       switch(kw->key_type)
       {
          case kFITSRW_Type_String:
-           if (kw->key_value.vs)
-           {
-              err = (sscanf(kw->key_value.vs, "%lld", &val) != 1);
-           }
-           else
-           {
-              err = 0;
-           }
+           err = (sscanf(kw->key_value.vs, "%lld", &val) != 1);
            break;
          case kFITSRW_Type_Logical:
            val = (long long)(kw->key_value.vl);
@@ -133,14 +118,7 @@ static double cfitsio_keyval2double(const CFITSIO_KEYWORD *kw, int *stat)
       switch(kw->key_type)
       {
          case kFITSRW_Type_String:
-           if (kw->key_value.vs)
-           {
-              err = (sscanf(kw->key_value.vs, "%lf", &val) != 1);
-           }
-           else
-           {
-              err = 0;
-           }
+           err = (sscanf(kw->key_value.vs, "%lf", &val) != 1);
            break;
          case kFITSRW_Type_Logical:
            val = (double)(kw->key_value.vl);
@@ -167,64 +145,6 @@ static double cfitsio_keyval2double(const CFITSIO_KEYWORD *kw, int *stat)
    return val;
 }
 
-static int cfitsio_writekeys(fitsfile *fptr, CFITSIO_KEYWORD *keylist)
-{
-   char card[FLEN_CARD];
-   CFITSIO_KEYWORD* kptr = NULL;
-   int err = CFITSIO_SUCCESS;
-   int cfiostat = CFITSIO_SUCCESS;
-
-   if (keylist)
-   {
-      kptr = keylist;
-
-      while (kptr)
-      {
-         if (!strcmp(kptr->key_name,"HISTORY"))
-         {
-            if (kptr->key_value.vs)
-            {
-               fits_write_history(fptr, kptr->key_value.vs, &cfiostat);
-            }
-         }
-         else if (!strcmp(kptr->key_name,"COMMENT"))
-         {
-            if (kptr->key_value.vs)
-            {
-               fits_write_comment(fptr, kptr->key_value.vs, &cfiostat);
-            }
-         }
-         else
-         {
-            if (cfitsio_key_to_card(kptr, card) != CFITSIO_SUCCESS)
-            {
-               err = CFITSIO_ERROR_ARGS;
-               break;
-            }
-
-            if (fits_get_keyclass(card) > TYP_CMPRS_KEY)
-            {
-               if(fits_write_record(fptr, card, &cfiostat))
-               {
-                  err = CFITSIO_ERROR_LIBRARY;
-                  break;
-               }
-            }
-         }
-
-         if (cfiostat != CFITSIO_SUCCESS)
-         {
-            err = CFITSIO_ERROR_LIBRARY;
-            break;
-         }
-
-         kptr = kptr->next;
-      }
-   }
-
-   return err;
-}
-
 //****************************************************************************
 //*********************   Using CFITSIO_KEYWORD  *****************************
 //****************************************************************************
@@ -240,13 +160,6 @@ int cfitsio_free_keys(CFITSIO_KEYWORD** keylist)
       {
 	 del = kptr;
 	 kptr = kptr->next;
-
-         if (del->key_type == kFITSRW_Type_String && del->key_value.vs)
-         {
-            free(del->key_value.vs);
-            del->key_value.vs = NULL;
-         }
-
 	 free(del);
       }
 
@@ -272,7 +185,6 @@ int cfitsio_append_key(CFITSIO_KEYWORD** keylist,
    if (name && value)
    {
       node = (CFITSIO_KEYWORD *) malloc(sizeof(CFITSIO_KEYWORD));
-
       if (!node) return CFITSIO_ERROR_OUT_OF_MEMORY;
       else
       {
@@ -299,7 +211,7 @@ int cfitsio_append_key(CFITSIO_KEYWORD** keylist,
 	 {
 	    case( 'X'):
 	    case (kFITSRW_Type_String):
-               node->key_value.vs = strdup((char *)value);
+	       snprintf(node->key_value.vs, FLEN_VALUE, "%s", (char *)value);
 	       break;
 	    case (kFITSRW_Type_Logical):
 	       node->key_value.vl = *((int *)value);
@@ -446,7 +358,6 @@ static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD**
       }
 
       node = (CFITSIO_KEYWORD *) malloc(sizeof(CFITSIO_KEYWORD));
-
       if(node == NULL) 
       {
 	 error_code = CFITSIO_ERROR_OUT_OF_MEMORY;
@@ -482,7 +393,7 @@ static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD**
 
          // The actual comment (excluding the COMMENT key name) was placed 
          // into node->key_comment - copy that into value.vs
-	 node->key_value.vs = strdup(node->key_comment);
+	 strcpy(node->key_value.vs, node->key_comment); 
       }					
       else //regular key=value
       {
@@ -501,7 +412,7 @@ static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD**
 	 {
 	    case ('X'): //complex number is stored as string, for now.
 	    case (kFITSRW_Type_String): //Trip off ' ' around cstring? 
-               node->key_value.vs = strdup(key_value);
+	       strcpy(node->key_value.vs, key_value);
 	       break;
 	    case (kFITSRW_Type_Logical): if (key_value[0]=='0') node->key_value.vl = 0;
 	    else node->key_value.vl = 1;
@@ -515,7 +426,7 @@ static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD**
 
 	    case (' '): //type not found, set it to NULL string
 	       node->key_type = kFITSRW_Type_String;
-	       node->key_value.vs = strdup("");
+	       node->key_value.vs[0]='\0';
 	    default :
 	       DEBUGMSG((stderr,"Key of unknown type detected [%s][%c]?\n",
 			 key_value,node->key_type));
@@ -903,8 +814,10 @@ int fitsrw_writeintfile(int verbose,
 {
 
    fitsfile *fptr=NULL; 
+   CFITSIO_KEYWORD* kptr;
    int status=0, error_code = CFITSIO_FAIL;
    char filename[PATH_MAX];
+   char card[FLEN_CARD];
    int  data_type;
    int img_type;
    char cfitsiostat[FLEN_STATUS];
@@ -986,12 +899,32 @@ int fitsrw_writeintfile(int verbose,
       goto error_exit;
    }
    
-   // keylist is optional. It is available only for export 
-   error_code = cfitsio_writekeys(fptr, keylist);
-   if (error_code != CFITSIO_SUCCESS)
+   // keylist is optional. It is avaible only for export 
+   if (keylist)
    {
-      goto error_exit;
+      kptr = keylist;
+      while(kptr)
+      {
+
+	 if( cfitsio_key_to_card(kptr,card) != CFITSIO_SUCCESS)
+	 {
+	    error_code = CFITSIO_ERROR_ARGS;
+	    goto error_exit;
+	 }
+
+	 if(fits_get_keyclass(card) > TYP_CMPRS_KEY)
+	 {
+	   if(fits_write_record(fptr, card, &status))
+	   {
+	     error_code = CFITSIO_ERROR_LIBRARY;
+	     goto error_exit;
+	   }
+	 }
+		
+	 kptr = kptr->next;
+      }
    }
+
    
    /* override keylist special keywords (these may have come from 
     * the keylist to begin with - they should have been removed from
@@ -1245,56 +1178,63 @@ int cfitsio_key_to_card(CFITSIO_KEYWORD* kptr, char* card)
    if(!kptr) return CFITSIO_FAIL;
 
    //TH:  add check for upper case, length limits
+
+   if((!strcmp(kptr->key_name,"HISTORY")||(!strcmp(kptr->key_name,"COMMENT"))))
+   {
+      strcpy(card,kptr->key_value.vs);
+      return CFITSIO_SUCCESS;
+   }
+
    switch(kptr->key_type)
    {
       case(kFITSRW_Type_String):
       case('X'):
-        if(strlen(kptr->key_comment) >0)
-        {
-           snprintf(temp, 
-                    sizeof(temp), "%-8s= '%s' / %s",
-                    kptr->key_name, 
-                    kptr->key_value.vs, 
-                    kptr->key_comment);
-        }
-        else
-        {
-           snprintf(temp, 
-                    sizeof(temp), 
-                    "%-8s= '%s'",
-                    kptr->key_name, 
-                    kptr->key_value.vs);
-        }
-        break;
+	 if(strlen(kptr->key_comment) >0)
+	 {
+	    snprintf(temp, 
+                     sizeof(temp), "%-8s= '%s' / %s",
+                     kptr->key_name, 
+                     kptr->key_value.vs, 
+                     kptr->key_comment);
+	 }
+	 else
+	 {
+	    snprintf(temp, 
+                     sizeof(temp), 
+                     "%-8s= '%s'",
+                     kptr->key_name, 
+                     kptr->key_value.vs);
+	 }
+	 break;
 	  
       case(kFITSRW_Type_Logical):
-        if(strlen(kptr->key_comment) >0)
-        {
-           if(kptr->key_value.vl)
-             sprintf(temp,"%-8s=                    T / %s", kptr->key_name, kptr->key_comment);
-           else
-             sprintf(temp,"%-8s=                    F / %s", kptr->key_name, kptr->key_comment);
-        }
-        else
-        {
-           if(kptr->key_value.vl)
-             sprintf(temp,"%-8s=                    T", kptr->key_name);
-           else
-             sprintf(temp,"%-8s=                    F", kptr->key_name);
-        }
+	 if(strlen(kptr->key_comment) >0)
+	 {
+	    if(kptr->key_value.vl)
+	       sprintf(temp,"%-8s=                    T / %s", kptr->key_name, kptr->key_comment);
+	    else
+	       sprintf(temp,"%-8s=                    F / %s", kptr->key_name, kptr->key_comment);
+	 }
+	 else
+	 {
+	    if(kptr->key_value.vl)
+	       sprintf(temp,"%-8s=                    T", kptr->key_name);
+	    else
+	       sprintf(temp,"%-8s=                    F", kptr->key_name);
+	 }
 	    
-        break;
+	 break;
 	 
       case(kFITSRW_Type_Integer):
-        if(strlen(kptr->key_comment) >0)
-        {
-           sprintf(temp,"%-8s= %20lld / %s", kptr->key_name, kptr->key_value.vi, kptr->key_comment);
-        }
-        else
-        {
-           sprintf(temp,"%-8s= %20lld", kptr->key_name, kptr->key_value.vi);
-        }
-        break;
+	 if(strlen(kptr->key_comment) >0)
+	 {
+	    sprintf(temp,"%-8s= %20lld / %s", kptr->key_name, kptr->key_value.vi, kptr->key_comment);
+	 }
+	 else
+	 {
+	    sprintf(temp,"%-8s= %20lld", kptr->key_name, kptr->key_value.vi);
+	 }
+	 break;
 	 
       case(kFITSRW_Type_Float):
       {
@@ -1508,8 +1448,10 @@ int fitsrw_write(int verbose,
    int datatype;
    int imgtype;
    char filename[PATH_MAX];
-   fitsfile *fptr = NULL;
    int cfiostat = 0; /* MUST start with no-error status, else CFITSIO will fail. */
+   fitsfile *fptr = NULL; 
+   CFITSIO_KEYWORD* kptr;
+   char card[FLEN_CARD];
    
    if (filein && info && image)
    {
@@ -1614,8 +1556,30 @@ int fitsrw_write(int verbose,
 
       if (!err)
       {
-         /* Write out FITS keywords that were derived from DRMS keywords. */
-         err = cfitsio_writekeys(fptr, keylist);
+         if (keylist)
+         {
+            /* Write out regular FITS keywords */
+            kptr = keylist;
+            while(kptr)
+            {
+               if (cfitsio_key_to_card(kptr, card) != CFITSIO_SUCCESS)
+               {
+                  err = CFITSIO_ERROR_ARGS;
+                  break;
+               }
+
+               if (fits_get_keyclass(card) > TYP_CMPRS_KEY)
+               {
+                  if(fits_write_record(fptr, card, &cfiostat))
+                  {
+                     err = CFITSIO_ERROR_LIBRARY;
+                     break;
+                  }
+               }
+		
+               kptr = kptr->next;
+            }
+         }
       }
 
       if (!err)

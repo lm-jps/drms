@@ -6,10 +6,7 @@ d		:= $(dir)
 # Local variables
 LIBEXPUTL	:= $(d)/libexputl.a
 
-OBJ_$(d)	:= $(addprefix $(d)/, exputil.o keymap.o)
-
-LIBEXPUTL_OBJ	:= $(OBJ_$(d))
-
+OBJ_$(d)	:= $(addprefix $(d)/, exputil.o)
 DEP_$(d)	:= $(OBJ_$(d):%=%.d)
 
 CLEAN		:= $(CLEAN) $(OBJ_$(d)) $(LIBEXPUTL) $(DEP_$(d))

@@ -1223,6 +1223,27 @@ typedef struct DRMS_StorageUnit_struct {
 		   temporary records at the end of a session. */
 } DRMS_StorageUnit_t;
 
+/************ Exporting FITS files ***************/
+typedef enum DRMS_KeyMapClass_enum {
+   kKEYMAPCLASS_DEFAULT = 0,
+   kKEYMAPCLASS_DSDS = 1,
+   kKEYMAPCLASS_LOCAL = 2,
+   kKEYMAPCLASS_SSW = 3,
+   kKEYMAPCLASS_GNG = 4,
+   kKEYMAPCLASS_NUMTABLESPLUSONE
+   /* xxx etc*/
+} DRMS_KeyMapClass_t;
+
+/** \brief DRMS keymap struct */
+struct DRMS_KeyMap_struct {
+  HContainer_t int2ext;
+  HContainer_t ext2int;
+}; 
+
+/** \brief DRMS keymap struct reference */
+typedef struct DRMS_KeyMap_struct DRMS_KeyMap_t;
+
+
 /*********** Various utility functions ****************/
 DRMS_Type_t drms_str2type(const char *);
 

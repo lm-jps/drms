@@ -62,6 +62,7 @@ data model. This includes
 #include "drms_env.h"
 #include "drms_series.h"
 #include "drms_keyword.h"
+#include "drms_keymap.h"
 #include "drms_link.h"
 #include "drms_record.h"
 #include "drms_segment.h"
@@ -88,6 +89,7 @@ static inline void drms_make_hashkey(char *hashkey, const char *name,
 static inline void drms_term()
 {
    base_term();
+   drms_keymap_term();
    drms_keyword_term();
    drms_protocol_term();
    drms_defs_term();

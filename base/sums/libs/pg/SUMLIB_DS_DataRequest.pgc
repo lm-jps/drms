@@ -37,7 +37,6 @@ EXEC SQL BEGIN DECLARE SECTION;
   uint64_t uid;
   uint64_t ds_index;
   uint64_t ds_index_arr[MAXSUMREQCNT];
-  uint64_t ds_index_arr_pos[MAXSUMREQCNT];
   int  touch;
   int  daro = DARO;
   struct {
@@ -108,7 +107,6 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
       }
       ds_index = getkey_uint64(params, dsix_name);
       ds_index_arr[i] = ds_index;         /* save in the proper position */
-      ds_index_arr_pos[i] = 0;		  //keep track of any dups
       sprintf(dsix_name, "wd_%d", i);
       setkey_str(results, dsix_name, ""); /* preset blank in case doen't exist*/
       if(i == (reqcnt - 1))
@@ -135,10 +133,6 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
        for(pos=0; pos < reqcnt; pos++) {
          if(ds_index == ds_index_arr[pos]) break;
        }
-       if(ds_index_arr_pos[pos] == 0) { 
-         ds_index_arr_pos[pos] = 1;
-       }
-       else { continue; }	//skip a dup ds_index
      if (strcmp(mainquery.online_status.arr, "N")==0) { /* not on-line */
        if(mode & NORETRIEVE) strcpy(loc, "");	/* give back empty wd */
        else {
@@ -160,7 +154,7 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
       */
       if(touch) {
         /* get the original effective_date and see if ok to change */
-        EXEC SQL SELECT DISTINCT EFFECTIVE_DATE INTO :eff_date_str
+        EXEC SQL SELECT EFFECTIVE_DATE INTO :eff_date_str
         FROM SUM_PARTN_ALLOC where DS_INDEX = :ds_index 
 	and STATUS != :daro;
         if(tdays < 0) {		//if tdays neg, only make eff_date bigger

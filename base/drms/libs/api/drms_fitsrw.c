@@ -1,7 +1,6 @@
 #include "drms.h"
 #include "drms_priv.h"
 #include "tasrw.h"
-#include "fitsexport.h"
 
 const char kSIMPLE[] = "SIMPLE";
 const char kBITPIX[] = "BITPIX";
@@ -342,7 +341,7 @@ DRMS_Array_t *drms_fitsrw_read(DRMS_Env_t *env,
             while (fitskey != NULL)
             {
                /* For now, don't use map or class to map fits to drms keywords */
-               if (fitsexport_mapimportkey(fitskey, NULL, NULL, *keywords))
+               if (drms_keyword_mapimport(fitskey, NULL, NULL, *keywords))
                {
                   fprintf(stderr, "Error importing fits keyword '%s'; skipping.\n", fitskey->key_name);
                }
@@ -464,7 +463,7 @@ int drms_fitsrw_write(DRMS_Env_t *env,
          {
             /* will reject DRMS keywords that collide with FITS reserved 
              * keywords, like SIMPLE */
-            if (fitsexport_exportkey(key, &keylist))
+            if (drms_keyword_export(key, &keylist))
             {
                keyname = drms_keyword_getname(key);
                fprintf(stderr, "Couldn't export keyword '%s'.\n", keyname);

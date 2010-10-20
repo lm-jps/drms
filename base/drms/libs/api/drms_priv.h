@@ -5,6 +5,7 @@
  * external code (ie, modules).
  */
 
+#include "drms_keymap_priv.h"
 #include "drms_keyword_priv.h"
 #include "drms_record_priv.h"
 #include "drms_segment_priv.h"

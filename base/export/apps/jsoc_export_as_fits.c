@@ -2,7 +2,6 @@
 #include "drms_types.h"
 #include "drms_storageunit.h"
 #include "exputil.h"
-#include "fitsexport.h"
 
 /**
 @defgroup expfits jsoc_export_as_fits - Export internally stored data to a FITS file 
@@ -317,11 +316,11 @@ static int MapexportRecordToDir(DRMS_Record_t *recin,
          lastcparms = 1;
       }
 
-      drmsstat = fitsexport_mapexport_tofile(segin, 
-                                             !lastcparms ? cparms[iseg] : NULL, 
-                                             classname, 
-                                             mapfile, 
-                                             fullfname);
+      drmsstat = drms_segment_mapexport_tofile(segin, 
+                                               !lastcparms ? cparms[iseg] : NULL, 
+                                               classname, 
+                                               mapfile, 
+                                               fullfname);
       if (drmsstat == DRMS_ERROR_INVALIDFILE)
       {
          /* No input segment file. */
@@ -504,7 +503,7 @@ static MymodError_t CallExportToFile(DRMS_Segment_t *segout,
             CHECKSNPRINTF(snprintf(segout->filename, DRMS_MAXSEGFILENAME, "%s", basename), DRMS_MAXSEGFILENAME);
             drms_segment_filename(segout, fileout);
 
-            status = fitsexport_mapexport_tofile(segin, cparms, clname, mapfile, fileout);
+            status = drms_segment_mapexport_tofile(segin, cparms, clname, mapfile, fileout);
             if (status == DRMS_ERROR_INVALIDFILE)
             {
                /* No input file for segment - not necessarily an error. */

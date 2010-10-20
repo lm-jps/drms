@@ -68,12 +68,14 @@ extern const unsigned int kInfoPresent_BZERO;
 
 typedef union cfitsio_value
 {
-  char      *vs;
-  int       vl;		//logical 1: true 0: false
-  long long vi;
-  double    vf;
-  // complex number also stored as char string (vs)
+      char      vs[CFITSIO_MAX_STR];
+      int       vl;		//logical 1: true 0: false
+      long long vi;
+      double    vf;
+      // complex number also stored as char string (vs)
 } CFITSIO_KEY_VALUE;
+
+
 
 typedef struct cfitsio_keyword
 {

@@ -47,6 +47,7 @@ int base_cleanup_go(const char *explicit);
 void base_cleanup_term();
 void base_term();
 
+int base_fitskeycheck(const char *fitsName);
 int base_drmskeycheck(const char *drmsName);
 
 #ifdef ICCCOMP

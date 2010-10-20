@@ -72,9 +72,8 @@ EXEC SQL END DECLARE SECTION;
 
   //now get values in sum_partn_alloc
     EXEC SQL WHENEVER NOT FOUND GOTO noerror; 
-    //use DISTINCT in case dup entries
- EXEC SQL SELECT DISTINCT ON (effective_date) effective_date, status, archive_substatus
- INTO :effective_date, :pa_status, :pa_substatus
+ EXEC SQL SELECT status, archive_substatus, effective_date
+ INTO :pa_status, :pa_substatus, :effective_date
  FROM SUM_PARTN_ALLOC WHERE DS_INDEX = :ds_index and STATUS != 8;
     setkey_int(result, "pa_status", pa_status);
     setkey_int(result, "pa_substatus", pa_substatus);

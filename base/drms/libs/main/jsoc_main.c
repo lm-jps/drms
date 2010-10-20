@@ -465,7 +465,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   }
 
   /* Initialize global things. */
-
+  drms_keymap_init(); /* If this slows down init too much, do on-demand init. */
 
   /***************** Set up exit() and signal handling ********************/
 
