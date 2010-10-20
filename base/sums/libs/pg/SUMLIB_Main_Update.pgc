@@ -5,8 +5,6 @@
 #include <sum_rpc.h>
 #include <printk.h>
 
-int SUM_Main_Update(KEY *params); 
-
 /* Updates the sum_main db table when a sum_put() is called. Called from
  * putdo_1() in sum_svc_proc.c. Can be called for multiple SUs.
  * Returns 0 on success.
