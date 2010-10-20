@@ -1744,7 +1744,6 @@ int DoIt(void)
              if(want_path_noret) stat=drms_record_directory (rec_seg_iseg->record, path, 0);
              else stat=drms_record_directory (rec_seg_iseg->record, path, 1);
              if (stat) strcpy(path,"**_NO_sudir_**");
-if(stat)fprintf(stderr,"### no record dir, stat=%d\n",stat);
              }
            else
              strcpy(path,"");
@@ -1811,8 +1810,17 @@ if(stat)fprintf(stderr,"### no record dir, stat=%d\n",stat);
             printf("\n");
           }
         }
-      else if (!keyword_list)
-	printf ("%sInvalidSegName", (col++ ? "\t" : ""));
+      else
+        {
+        char *nosegmsg = "InvalidSegName";
+        DRMS_Segment_t *segment = hcon_lookup_lower(&rec->segments, segs[iseg]);
+        if (segment && segment->info->islink)
+            nosegmsg = "BadSegLink";
+        if (!keyword_list)
+	  printf ("%s%s", (col++ ? "\t" : ""), nosegmsg);
+        else
+          printf("%s=%s\n", segs[iseg], nosegmsg);
+        }
       }
     if (nsegs==0 && want_path)
       {
