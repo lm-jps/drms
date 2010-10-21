@@ -1125,88 +1125,104 @@ int DoIt(void)
         json_t *thissegcparms = segcparms[iseg];
         json_t *thissegbzero = segbzeros[iseg];
         json_t *thissegbscale = segbscales[iseg];
-        int iaxis, naxis = rec_seg_iseg->info->naxis;
-        char dims[100], dimval[20];
-
-        // Get paths into segvals
-        if (!record_set_staged)
-	  {
-          drms_stage_records(recordset, 0, 0);
-          record_set_staged = 1;
-	  }
-        drms_record_directory (rec_seg_iseg->record, path, 0);
-//        if (!*path)
-//          JSONDIE("Can not retrieve record path, SUMS may be offline");
-        if (!*path)
-        {
-           strcpy(path, "NoDataDirectory");
-        }
-        else
-        {
-           strncat(path, "/", DRMS_MAXPATHLEN);
-           strncat(path, rec_seg_iseg->filename, DRMS_MAXPATHLEN);
-        }
-
-        jsonpath = string_to_json(path);
-        json_insert_child(thissegval, json_new_string(jsonpath));
-        free(jsonpath);
-        online = strncmp(path, "/SUM",4) == 0;
-
-        // Get seg dimension info into segdims
-        dims[0] = '\0';
-        for (iaxis=0; iaxis<naxis; iaxis++)
+        if (rec_seg_iseg)
           {
-          if (iaxis)
-            strcat(dims, "x");
-          sprintf(dimval,"%d",rec_seg_iseg->axis[iaxis]);
-          strcat(dims, dimval);
+          int iaxis, naxis = rec_seg_iseg->info->naxis;
+          char dims[100], dimval[20];
+
+          // Get paths into segvals
+          if (!record_set_staged)
+	    {
+            drms_stage_records(recordset, 0, 0);
+            record_set_staged = 1;
+	    }
+          drms_record_directory (rec_seg_iseg->record, path, 0);
+  //        if (!*path)
+  //          JSONDIE("Can not retrieve record path, SUMS may be offline");
+          if (!*path)
+            {
+             strcpy(path, "NoDataDirectory");
+            }
+          else
+            {
+             strncat(path, "/", DRMS_MAXPATHLEN);
+             strncat(path, rec_seg_iseg->filename, DRMS_MAXPATHLEN);
+            }
+
+          jsonpath = string_to_json(path);
+          json_insert_child(thissegval, json_new_string(jsonpath));
+          free(jsonpath);
+          online = strncmp(path, "/SUM",4) == 0;
+
+          // Get seg dimension info into segdims
+          dims[0] = '\0';
+          for (iaxis=0; iaxis<naxis; iaxis++)
+            {
+            if (iaxis)
+              strcat(dims, "x");
+            sprintf(dimval,"%d",rec_seg_iseg->axis[iaxis]);
+            strcat(dims, dimval);
+            }
+          jsondims = string_to_json(dims);
+          json_insert_child(thissegdim, json_new_string(jsondims));
+          free(jsondims);
+
+          /* Print bzero and bscale values (use format of those implicit keywords, which is %g) IFF 
+           * the segment protocol implies these values (protocols fits, fitsz, tas, etc.) */
+          char keybuf[DRMS_MAXKEYNAMELEN];
+          DRMS_Keyword_t *anckey = NULL;
+          char *jsonkeyval = NULL;
+  
+          /* cparms */
+          if (strlen(rec_seg_iseg->cparms))
+            {
+             jsonkeyval = string_to_json(rec_seg_iseg->cparms);
+             json_insert_child(thissegcparms, json_new_string(jsonkeyval));
+             free(jsonkeyval);
+            }
+
+          /* bzero */
+          snprintf(keybuf, sizeof(keybuf), "%s_bzero", segs[iseg]);
+          anckey = drms_keyword_lookup(rec, keybuf, 1);
+  
+          if (anckey)
+            {
+             drms_keyword_snprintfval(anckey, keybuf, sizeof(keybuf));
+
+             /* always report keyword values as strings */
+             jsonkeyval = string_to_json(keybuf);
+             json_insert_child(thissegbzero, json_new_string(jsonkeyval));
+             free(jsonkeyval);
+            }
+  
+          /* bscale */
+          anckey = NULL;
+          snprintf(keybuf, sizeof(keybuf), "%s_bscale", segs[iseg]);
+          anckey = drms_keyword_lookup(rec, keybuf, 1);
+  
+          if (anckey)
+            {
+             drms_keyword_snprintfval(anckey, keybuf, sizeof(keybuf));
+  
+             /* always report keyword values as strings */
+             jsonkeyval = string_to_json(keybuf);
+             json_insert_child(thissegbscale, json_new_string(jsonkeyval));
+             free(jsonkeyval);
+            }
           }
-        jsondims = string_to_json(dims);
-        json_insert_child(thissegdim, json_new_string(jsondims));
-        free(jsondims);
-
-        /* Print bzero and bscale values (use format of those implicit keywords, which is %g) IFF 
-         * the segment protocol implies these values (protocols fits, fitsz, tas, etc.) */
-        char keybuf[DRMS_MAXKEYNAMELEN];
-        DRMS_Keyword_t *anckey = NULL;
-        char *jsonkeyval = NULL;
-
-        /* cparms */
-        if (strlen(rec_seg_iseg->cparms))
-        {
-           jsonkeyval = string_to_json(rec_seg_iseg->cparms);
-           json_insert_child(thissegcparms, json_new_string(jsonkeyval));
-           free(jsonkeyval);
-        }
-
-        /* bzero */
-        snprintf(keybuf, sizeof(keybuf), "%s_bzero", segs[iseg]);
-        anckey = drms_keyword_lookup(rec, keybuf, 1);
-
-        if (anckey)
-        {
-           drms_keyword_snprintfval(anckey, keybuf, sizeof(keybuf));
-
-           /* always report keyword values as strings */
-           jsonkeyval = string_to_json(keybuf);
-           json_insert_child(thissegbzero, json_new_string(jsonkeyval));
-           free(jsonkeyval);
-        }
-
-        /* bscale */
-        anckey = NULL;
-        snprintf(keybuf, sizeof(keybuf), "%s_bscale", segs[iseg]);
-        anckey = drms_keyword_lookup(rec, keybuf, 1);
-
-        if (anckey)
-        {
-           drms_keyword_snprintfval(anckey, keybuf, sizeof(keybuf));
-
-           /* always report keyword values as strings */
-           jsonkeyval = string_to_json(keybuf);
-           json_insert_child(thissegbscale, json_new_string(jsonkeyval));
-           free(jsonkeyval);
-        }
+        else
+          {
+          char *nosegmsg = "InvalidSegName";
+          DRMS_Segment_t *segment = hcon_lookup_lower(&rec->segments, segs[iseg]);
+          if (segment && segment->info->islink)
+            nosegmsg = "BadSegLink";
+          jsonpath = string_to_json(nosegmsg);
+          json_insert_child(thissegval, json_new_string(jsonpath));
+          free(jsonpath);
+          jsondims = string_to_json("NA");
+          json_insert_child(thissegdim, json_new_string(jsondims));
+          free(jsondims);
+          }
         }
 
       /* now show desired links */
