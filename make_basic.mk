@@ -183,7 +183,7 @@ endif
 #
 LL_ALL		= $(SYSLIBS)
 GCC_LF_ALL	= $(STATIC) 
-ICC_LF_ALL	= $(STATIC) -openmp -static-intel
+ICC_LF_ALL	= $(STATIC) -openmp -static-intel -Wl,-export-dynamic
 
 # Fortran global LINK flags
 F_LF_ALL	= -nofor_main  -openmp -static-intel
