@@ -122,12 +122,19 @@ $utcdate = &inittoday();	#set $todayUTCdayofyr 1-366 & ret date
 $sec = `time_convert ord=$orddate`;
 chomp($sec);
 $fulldate = `time_convert s=$sec zone=UTC`;
+$t_start_sec = $sec + 60;	#add a min to match TAI range in FF rec
+$fulldateFF = `time_convert s=$t_start_sec zone=UTC`;
 $nextsec = $sec + 86400;
 $nextdate = `time_convert s=$nextsec zone=UTC`;
 $prevsec = $sec - 86400;
 $prevdate = `time_convert s=$prevsec zone=UTC`;
 chomp($fulldate);
+chomp($fulldateFF);
+chomp($prevdate);
 chomp($nextdate);
+
+#print "fulldate=$fulldate, fulldateFF=$fulldateFF, prevdate=$prevdate, nextdate=$nextdate\n"; #!!TEMP
+
 print "Run on $utcdate which is day of year $todayUTCdayofyr\n"; 
 print "for lev1 on ordinal date = $orddate ($fulldate)\n\n";
 #connect to database
@@ -203,11 +210,13 @@ $OKff = 1;
 if(!$hmiaiaflg) {		#ck for hmi flat field
   #Now see if flat field has flatfield_version >= 1
   for($i=1; $i < 3; $i++) {
-    $query = sprintf("%s[? t_start <= \$(%s) and t_stop > \$(%s) and CAMERA=%d and flatfield_version=(select max(flatfield_version) from %s where t_start <= \$(%s) and t_stop > \$(%s) and CAMERA=%d) ?]", $DSFFNAMEHMI, $fulldate, $fulldate, $i, $DSFFNAMEHMI, $fulldate, $fulldate, $i);
+    $query = sprintf("%s[? t_start <= \$(%s) and t_stop > \$(%s) and CAMERA=%d and flatfield_version >= 1 ?]", $DSFFNAMEHMI, $fulldateFF, $fulldateFF, $i);
+#    $query = sprintf("%s[! t_start <= \$(%s) and t_stop > \$(%s) and CAMERA=%d and flatfield_version=(select max(flatfield_version) from %s where t_start <= \$(%s) and t_stop > \$(%s) and CAMERA=%d) \!]", $DSFFNAMEHMI, $fulldateFF, $fulldateFF, $i, $DSFFNAMEHMI, $fulldateFF, $fulldateFF, $i);
+
     #print "hmi query= $query\n"; #!!TEMP
     #print "Must put single quote around the above\n";
     $cmd = "show_info key=date,flatfield_version '$query'";
-    #print "$cmd\n";
+    print "$cmd\n";
     @result = `$cmd`;
     #print "Result of flatfield query for $orddate:\n";
     print "@result";
