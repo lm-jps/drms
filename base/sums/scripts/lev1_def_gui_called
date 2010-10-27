@@ -239,7 +239,7 @@ if(!$hmiaiaflg) {		#ck for hmi flat field
 }
 else {				#ck for aia flat field
   while($wave = shift(@wavestr)) {
-    $query = sprintf("%s[? t_start <= $sec and t_stop > $sec and WAVE_STR='%s' and flatfield_version=(select max(flatfield_version) from %s where t_start <= $sec and t_stop > $sec and WAVE_STR='%s') ?]", $DSFFNAMEAIA, $wave, $DSFFNAMEAIA, $wave);
+    $query = sprintf("%s[? t_start <= $sec and t_stop > $sec and WAVE_STR='%s' and flatfield_version >= 1 ?]", $DSFFNAMEAIA, $wave);
     #print "\naia query= $query\n";
     #print "Must put double quote around the above\n";
     $cmd = "show_info key=date,flatfield_version \"$query\"";
