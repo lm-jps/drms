@@ -15,6 +15,7 @@ endif
 set LOCAL_CONFIG_SET = `egrep "^LOCAL_CONFIG_SET" $LOCALINF | awk '{print $2}'`
 set DBSERVER_HOST = `egrep "^DBSERVER_HOST" $LOCALINF | awk '{print $2}'`
 set DRMS_DATABASE = `egrep "^DRMS_DATABASE" $LOCALINF | awk '{print $2}'`
+set DRMS_DBPORT = `egrep "^DRMS_DBPORT" $LOCALINF | awk '{print $2}'`
 set DRMS_SITE_CODE = `egrep "^DRMS_SITE_CODE" $LOCALINF | awk '{print $2}'`
 set DRMS_SAMPLE_NAMESPACE = `egrep "^DRMS_SAMPLE_NAMESPACE" $LOCALINF | awk '{print $2}'`
 set POSTGRES_ADMIN = `egrep "^POSTGRES_ADMIN" $LOCALINF | awk '{print $2}'`
@@ -22,6 +23,7 @@ set SLONY_ADMIN = `egrep "^SLONY_ADMIN" $LOCALINF | awk '{print $2}'`
 set SLONY_LOG_BASEDIR = `egrep "^SLONY_LOG_BASEDIR" $LOCALINF | awk '{print $2}'`
 set SLONY_NOTIFY = `egrep "^SLONY_NOTIFY" $LOCALINF | awk '{print $2}'`
 set SUMS_SERVER_HOST = `egrep "^SUMS_SERVER_HOST" $LOCALINF | awk '{print $2}'`
+set SUMS_DBPORT = `egrep "^SUMS_DBPORT" $LOCALINF | awk '{print $2}'`
 set SUMS_LOG_BASEDIR = `egrep "^SUMS_LOG_BASEDIR" $LOCALINF | awk '{print $2}'`
 set SUMS_BIN_BASEDIR = `egrep "^SUMS_BIN_BASEDIR" $LOCALINF | awk '{print $2}'`
 set SUMS_MANAGER = `egrep "^SUMS_MANAGER" $LOCALINF | awk '{print $2}'`
@@ -49,6 +51,11 @@ endif
 if ($#DRMS_DATABASE != 1) then
   echo "Error: DRMS_DATABASE undefined in local configuration file $LOCALINF"
   exit
+endif
+if ($#DRMS_DBPORT != 1) then
+  echo "Warning: DRMS_DBPORT undefined in local configuration file $LOCALINF"
+  set DRMS_DBPORT = 5432
+  echo "         using default value $DRMS_DBPORT"
 endif
 if ($#DRMS_SITE_CODE != 1) then
   echo "Error: DRMS_SITE_CODE undefined in local configuration file $LOCALINF"
@@ -98,6 +105,11 @@ if ($#SUMS_TAPE_AVAILABLE != 1) then
   echo "Error: SUMS_TAPE_AVAILABLE undefined in local configuration file $LOCALINF"
   exit
 endif
+if ($#SUMS_DBPORT != 1) then
+  echo "Warning: SUMS_DBPORT undefined in local configuration file $LOCALINF"
+  set SUMS_DBPORT = 5434
+  echo "         using default value $SUMS_DBPORT"
+endif
 
 # generate script create_sumindex.sql
 set SCRIPT = scripts/create_sumindex.sql
@@ -138,11 +150,13 @@ echo '#ifndef __LOCALIZATION_H' >> $SCRIPT
 echo '#define __LOCALIZATION_H' >> $SCRIPT
 echo '#define SERVER			"'$DBSERVER_HOST'"' >> $SCRIPT
 echo '#define DBNAME			"'$DRMS_DATABASE'"' >> $SCRIPT
+echo '#define DRMSPGPORT		"'$DRMS_DBPORT'"' >> $SCRIPT
 echo '#define DRMS_LOCAL_SITE_CODE	'$DRMS_SITE_CODE >> $SCRIPT
 echo '#define POSTGRES_ADMIN		"'$POSTGRES_ADMIN'"' >> $SCRIPT
 echo '#define USER			NULL' >> $SCRIPT
 echo '#define PASSWD			NULL' >> $SCRIPT
 echo '#define SUMSERVER		"'$SUMS_SERVER_HOST'"' >> $SCRIPT
+echo '#define SUMPGPORT		"'$SUMS_DBPORT'"' >> $SCRIPT
 echo '#define SUMS_MANAGER		"'$SUMS_MANAGER'"' >> $SCRIPT
 echo '#define SUMS_MANAGER_UID		"'$SUMS_MANAGER_UID'"' >> $SCRIPT
 echo '#define SUMS_GROUP		"'$SUMS_GROUP'"' >> $SCRIPT
