@@ -25,6 +25,10 @@ DRMS_DATABASE	mydb
 #   localhost for METHOD "trust", a named host for METHOD "ident sameuser"
 DBSERVER_HOST	localhost
 
+# the port number for the DRMS database server - default should be okay
+#   unless in use otherwise
+DRMS_DBPORT	5432
+
 # a 15-bit numerical site identifier; values < 16384 (0x4000) are for
 #   publicly exporting sites, and must be registered to assure uniqueness
 # the default value is for a private unregistered site, and may not provide
@@ -77,6 +81,10 @@ SUMS_GROUP	drms
 #   the machine that the SUMS storage units are mounted on, not necessarily
 #   the machine serving the Postgres SUMS database
 SUMS_SERVER_HOST	localhost
+
+# the port number for the DRMS database server - default should be okay
+#   unless in use otherwise
+SUMS_DBPORT	5434
 
 # the base directory for SUMS logs and configuration files; used by
 #   base/sums/apps/sum_svc.c and sum_rm.c
