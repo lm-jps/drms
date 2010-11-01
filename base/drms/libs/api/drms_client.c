@@ -1659,28 +1659,36 @@ int drms_create_series_fromprototype(DRMS_Record_t **prototype,
    return status;
 }
 
-
-static int drms_series_candosomething(DRMS_Env_t *env, const char *series, const char *perm)
+int drms_series_hastableprivs(DRMS_Env_t *env, const char *schema, const char *table, const char *priv)
 {
-   int result = 0;
    char query[DRMS_MAXQUERYLEN];
-   char *namespace = NULL;
-   char *sname = NULL;
+   int result = 0;
    DB_Text_Result_t *qres = NULL;
 
-   if (!get_namespace(series, &namespace, &sname))
-   {
-      sprintf(query, "select * from information_schema.table_privileges where table_schema = '%s' and table_name ~~* '%s' and privilege_type = '%s'", namespace, sname, perm);
+   sprintf(query, "select * from information_schema.table_privileges where table_schema = '%s' and table_name ~~* '%s' and privilege_type = '%s'", schema, table, priv);
 
-      if ((qres = drms_query_txt(env->session, query)) != NULL && qres->num_rows != 0) 
-      {
-         result = 1;
-      }
+   if ((qres = drms_query_txt(env->session, query)) != NULL && qres->num_rows != 0) 
+   {
+      result = 1;
    }
 
    if (qres)
    {
       db_free_text_result(qres);
+   }
+
+   return result;
+}
+
+static int drms_series_candosomething(DRMS_Env_t *env, const char *series, const char *perm)
+{
+   int result = 0;
+   char *namespace = NULL;
+   char *sname = NULL;
+
+   if (!get_namespace(series, &namespace, &sname))
+   {
+      result = drms_series_hastableprivs(env, namespace, sname, perm);
    }
 
    if (namespace)

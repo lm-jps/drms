@@ -1445,7 +1445,13 @@ int drms_series_isvers(DRMS_SeriesInfo_t *si, DRMS_SeriesVersion_t *v)
    return ok;
 }
 
+static int CanCallDrmsReplicated(DRMS_Env_t *env)
+{
+   return drms_series_hastableprivs(env, "_jsoc", "sl_table", "SELECT");
+}
+
 /* returns:
+ *   -2  Can't call drms_replicated(). This does NOT destroy the dbase transaction.
  *   -1  The query failed - when this happens, this aborts the dbase transaction, 
  *       so you need to fail and rollback the dbase.
  *    0  Not replicated
@@ -1478,40 +1484,49 @@ int drms_series_isreplicated(DRMS_Env_t *env, const char *series)
          char *nspace = NULL;
          char *relname = NULL;
 
-         db_free_binary_result(qres);
-
-         get_namespace(series, &nspace, &relname);
-
-         sprintf(query, 
-                 "select tab_id from %s() where tab_nspname ~~* '%s' and tab_relname ~~* '%s'",
-                 DRMS_REPLICATED_SERIES_TABLE, 
-                 nspace,
-                 relname);
-
-         if (nspace)
+         /* Before calling drms_repicated(), check to see if the user has permissions to do so. */
+         if (!CanCallDrmsReplicated(env))
          {
-            free(nspace);
-         }
-
-         if (relname)
-         {
-            free(relname);
-         }
-
-         if ((qres = drms_query_bin(env->session, query)) == NULL)
-         {
-            printf("Query failed. Statement was: %s\n", query);
-            ans = -1;
+            fprintf(stderr, "You do not have permission to call database function '%s'. Please have an administrator grant you permission before proceeding.\n", DRMS_REPLICATED_SERIES_TABLE);
+            ans = -2;
          }
          else
          {
-            if (qres->num_rows == 1)
+            db_free_binary_result(qres);
+
+            get_namespace(series, &nspace, &relname);
+
+            sprintf(query, 
+                    "select tab_id from %s() where tab_nspname ~~* '%s' and tab_relname ~~* '%s'",
+                    DRMS_REPLICATED_SERIES_TABLE, 
+                    nspace,
+                    relname);
+
+            if (nspace)
             {
-               ans = 1;
+               free(nspace);
             }
 
-            db_free_binary_result(qres);
-         }       
+            if (relname)
+            {
+               free(relname);
+            }
+
+            if ((qres = drms_query_bin(env->session, query)) == NULL)
+            {
+               printf("Query failed. Statement was: %s\n", query);
+               ans = -1;
+            }
+            else
+            {
+               if (qres->num_rows == 1)
+               {
+                  ans = 1;
+               }
+
+               db_free_binary_result(qres);
+            }
+         }    
       }
       else
       {
