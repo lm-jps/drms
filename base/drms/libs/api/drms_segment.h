@@ -438,7 +438,7 @@ int drms_segment_writeslice(DRMS_Segment_t *seg,
    the file owned by @seg.
    @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
 */
-int drms_segment_write_from_file(DRMS_Segment_t *seg, char *infile);
+int drms_segment_write_from_file(DRMS_Segment_t *seg, const char *infile);
 /* @} */
 
 

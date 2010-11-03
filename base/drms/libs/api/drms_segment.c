@@ -676,6 +676,8 @@ DRMS_Segment_t *drms_segment_lookupnum(DRMS_Record_t *rec, int segnum)
       seg = drms_segment_lookup(rec, seg->info->name);
    }
 
+   hiter_free(&hit);
+
    return seg;
 }
 
@@ -2055,7 +2057,7 @@ int drms_segment_writeslice(DRMS_Segment_t *seg, DRMS_Array_t *arr, int *start, 
   return status;
 }
 
-int drms_segment_write_from_file(DRMS_Segment_t *seg, char *infile) {
+int drms_segment_write_from_file(DRMS_Segment_t *seg, const char *infile) {
   char *filename;            /* filename without path */
   char outfile[DRMS_MAXPATHLEN];
   FILE *in, *out;            /* input and output file stream */

@@ -391,6 +391,13 @@ int cfitsio_free_image_info(CFITSIO_IMAGE_INFO** image_info)
 
 /* If can return both keylistout and image_info, and there are conflicting values, then
  * must remove conflicting values from keylistout. */
+
+/* The fptr passed in may have a CHDU that is not the primary HDU. This will be true 
+ * if the fptr was obtained by calling fits_open_image() on a compressed image. Compressed
+ * images will reside in the second HDU. */
+
+/* Assumes that the curr HDU is the one that contains the image (for uncompressed files, this is the primary 
+ * HDU, but for compressed files, this is the second HDU). */
 static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD** keylistout, CFITSIO_IMAGE_INFO** image_info)
 {
 
@@ -410,7 +417,6 @@ static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD**
    CFITSIO_KEYWORD *keylist = NULL;
 
    int currHDU = 0;
-   int val = 0;
 
    //-----------------------------  Keylist ------------------------------------------
    
@@ -418,6 +424,26 @@ static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD**
    {
       cfitsio_free_keys(keylistout);
       *keylistout = NULL;
+   }
+
+   /* If this is a compressed image the default HDU is the one containing the compressed image, which 
+    * doesn't have the actual keywords. The actual keywords reside in the primary HDU. */
+   if (fits_is_compressed_image(fptr, &status))
+   {
+      if (!status)
+      {
+         fits_get_hdu_num(fptr, &currHDU);
+         if (currHDU != 1)
+         {
+            fits_movabs_hdu(fptr, 1, NULL, &status);
+
+            if (status)
+            {
+               error_code = CFITSIO_ERROR_LIBRARY;
+               goto error_exit;
+            }
+         }
+      }
    }
 
    if(fits_get_hdrspace(fptr, &nkeys, NULL, &status))
@@ -483,7 +509,7 @@ static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD**
          // The actual comment (excluding the COMMENT key name) was placed 
          // into node->key_comment - copy that into value.vs
 	 node->key_value.vs = strdup(node->key_comment);
-      }					
+      }
       else //regular key=value
       {
       
@@ -532,6 +558,13 @@ static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD**
       goto error_exit;
    }
 
+
+   if (currHDU != 0)
+   {
+      /* Restore original CHDU. Must do this here before calling any other fits functions. */
+      fits_movabs_hdu(fptr, currHDU, NULL, &status);
+      currHDU = 0;
+   }
 
    //---------------------------  Image Info  -------------------------
 
@@ -608,6 +641,11 @@ static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD**
     * image.
     */
    
+   /* It looks like cfitsio doesn't know to look at the first HDU with an image in it. It just looks 
+    * at the current HDU and looks for the NAXIS keywords. With a compressed image, it will look at the
+    * wrong HDU (the primary one, which has no image). So, make sure you've changed the current HDU 
+    * back to what it was when execution first entered this function. */
+
    // Check if this HDU has image
    fits_get_img_dim(fptr, &((*image_info)->naxis), &status);
    if((*image_info)->naxis == 0)
@@ -621,32 +659,6 @@ static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD**
    fits_get_img_param(fptr, CFITSIO_MAX_DIM, &((*image_info)->bitpix), &((*image_info)->naxis), 
 		      &((*image_info)->naxes[0]), &status); 
 
-   /* If this is a compressed image the default HDU is the one containing the compressed image, which 
-    * doesn't have SIMPLE or EXTEND keywords. So, fetch them from the primary HDU. */
-   fits_get_hdu_num(fptr, &currHDU);
-   if (currHDU != 1)
-   {
-      /* current HDU was not primary HDU */
-      fits_movabs_hdu(fptr, 1, NULL, &status);
-
-      /* Now get SIMPLE and EXTEND keywords */
-      fits_read_key(fptr, TLOGICAL, "SIMPLE", &val, NULL, &status);
-      if (!status)
-      {
-	 (*image_info)->simple = val;
-	 (*image_info)->bitfield |= kInfoPresent_SIMPLE;
-      }
-
-      fits_read_key(fptr, TLOGICAL, "EXTEND", &val, NULL, &status);
-      if (!status)
-      {
-	 (*image_info)->extend = val;
-	 (*image_info)->bitfield |= kInfoPresent_EXTEND;
-      }
-
-      fits_movabs_hdu(fptr, currHDU, NULL, &status);
-   }
-
    for(i=(*image_info)->naxis;i<(int) CFITSIO_MAX_DIM ;i++) (*image_info)->naxes[i]=0;
 
    if (keylistout)
@@ -656,6 +668,12 @@ static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD**
    else
    {
       cfitsio_free_keys(&keylist);
+   }
+
+   if (currHDU != 0)
+   {
+      /* Restore original CHDU. */
+      fits_movabs_hdu(fptr, currHDU, NULL, &status);
    }
    
    return CFITSIO_SUCCESS;
@@ -669,6 +687,12 @@ error_exit:
    {
       free(*image_info);
       image_info = NULL;
+   }
+
+   if (currHDU != 0)
+   {
+      /* Restore original CHDU. */
+      fits_movabs_hdu(fptr, currHDU, NULL, &status);
    }
    
    return error_code;
