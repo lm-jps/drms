@@ -13,8 +13,8 @@
 @ingroup drms_util
 
 \par Synopsis:
-show_coverage ds=<seriesname> [-h]
-show_coverage ds=<seriesname> [-iqv] [low=<starttime>] [high=<stoptime>] [block=<blocklength>] [key=<pkey>] [mask=<badbits>] [<other_primekey>=<value>...]
+show_coverage {ds=}<seriesname> [-h]
+show_coverage {ds=}<seriesname> [-iqv] [low=<starttime>] [high=<stoptime>] [block=<blocklength>] [key=<pkey>] [mask=<badbits>] [ignore=<ignorebits>] [<other_primekey>=<value>...]
 show_coverage_sock {same options as above}
 \endcode
 
@@ -54,11 +54,12 @@ and selected values may be provided as additional keyword=value pairs.
 \par Parameters:
 
 \li \c block=<blocklength> - optional blocking interval for summary table instead of detailed table.
-\li \c ds=<seriesname> - required parameter specified the series to examine.
+\li \c {ds=}<seriesname> - required parameter specified the series to examine, the "ds=" is optional.
 \li \c high=<stoptime> - optional last value of ordering prime key to use, default to last record in series (as [$]).
 \li \c key=<pkey> - optional prime key name to use, default is first integer or slotted prime-key
 \li \c low=<starttime> - optional first value of ordering prime key to use, default to first record in series (as [^]).
 \li \c mask=<badbits> - optional usually Hex number with bits to test against QUALITY to label record as MISS.
+\li \c ignore=<ignore_bits> - optional usually Hex number with bits to exclude in tests against QUALITY to label record as MISS.
 \li \c other_primekey=<value>... - optional additional primekey=value pairs to restrict survey based on multiple primekeys.
 
 \par JSOC flags:
@@ -74,12 +75,16 @@ other type.
 
 If the \a -o flag (for online) is present then each record labeled OK will be tested to verify
 that any storage-unit that has been assigned to that record still exists either online or on tape
-in SUMS.  If there once was a storage unit but no longer is (due to expirec retention time of a non-archived
+in SUMS.  If there once was a storage unit but no longer is (due to expired retention time of a non-archived
 series) the record will be labeled "GONE". Note that this can be an expensive test to make on large series since it requires
 calls to SUMS and is noticably slower than without the -o flag.  Please ues the \a -o flag only on the selected ranges of
 a series where needed.
 
-After all specified records have need examined a table of the resulting completeness information is
+Records are identified as MISS if QUALITY is < 0 or if the mask parameter is provided, only if one or
+more bits set in mask are also set in QUALITY.  If ignore is provided, the if any bits in ignore are
+also present in QUALITY the record not used in the comparison with mask.
+
+After all specified records have been examined a table of the resulting completeness information is
 printed.  There are two formats for this table.  The default format is a list of contiguous segments
 with the same record label, OK, MISS, UNK, or GONE.  For each contiguous segment one line of
 information will be printed containing the label, the start "time", and the count of records in
@@ -169,6 +174,7 @@ ModuleArgs_t module_args[] =
     {ARG_STRING, "high", NOT_SPECIFIED, "High limit for coverage map."},
     {ARG_STRING, "key", NOT_SPECIFIED, "Prime key name to use, default is first prime"},
     {ARG_INT, "mask", "0", "Mask to use for bits in QUALITY that will cause the record to be counted as MISS"},
+    {ARG_INT, "ignore", "0", "Mask to use for bits to ignore in QUALITY tests with mask that will cause the record to be counted as MISS"},
     {ARG_FLAG, "o", "0", "Verify - verify that SU is available for records with data"},
     {ARG_FLAG, "i", "0", "Index - Print index values instead of prime slot values"},
     {ARG_FLAG, "q", "0", "Quiet - omit series header info"},
@@ -196,6 +202,7 @@ int nice_intro ()
         "key=<prime_key> - prime key to use if not the first available\n"
         "block=<blocklength> - interval span for summary data\n"
         "mask=<bad_bit_mask> - mask to be checked in QUALITY\n"
+        "ignore=<ignore_bit_mask> - mask to be checked ignored in QUALITY tests\n"
         "low=<starttime> - start of range for completeness survey, defaults to [^]\n"
         "high=<stoptime> - end of range for completeness summary, defaults to [$]\n"
         "<other_prime>=<value> - optional additional filters to limit the survey\n"
@@ -237,7 +244,8 @@ int DoIt(void)
   int verify = cmdparams_get_int (&cmdparams, "o", NULL) != 0;
   int quiet = cmdparams_get_int (&cmdparams, "q", NULL) != 0;
   int useindex = cmdparams_get_int (&cmdparams, "i", NULL) != 0;
-  long long mask = cmdparams_get_int (&cmdparams, "mask", NULL);
+  uint32_t mask = (uint32_t)cmdparams_get_int64 (&cmdparams, "mask", NULL);
+  uint32_t ignore = (uint32_t)cmdparams_get_int64 (&cmdparams, "ignore", NULL);
   char *map;
   long long islot, jslot, nslots, blockstep;
   char *qualkey;
@@ -247,10 +255,14 @@ int DoIt(void)
   if (nice_intro()) return(0);
 
   /* check for minimum inputs */
-  // if (strcmp(ds, NOT_SPECIFIED) == 0 || strcmp(report, NOT_SPECIFIED) == 0)
+
   if (strcmp(ds, NOT_SPECIFIED) == 0 )
-    // DIE("No files: at least ds and coverage must be specified");
-    DIE("No files: at least ds must be specified");
+    {
+    // ds arg was not provided, check for isolated arg
+    if (cmdparams_numargs(&cmdparams) < 1 || !(ds=cmdparams_getarg (&cmdparams, 1)))
+      DIE("### show_coverage: ds=<seriesname> parameter is required, must quit");
+    }
+
   // out = fopen .... report ...
   out = stdout;
 
@@ -335,7 +347,6 @@ int DoIt(void)
         if (mask != 0)
           {
           qualkind = 3;
-          // mask |= 0x80000000;
           }
 	}
   else if (drms_keyword_lookup(template, "DATAVALS", 1))
@@ -555,13 +566,16 @@ int DoIt(void)
 	for (irec = 0; irec < nrecs; irec++)
 		{
 		long long thisslot = *((long long *)data->data + irec);
-		long long qualval, sunum;
+		uint32_t qualval;
+		long long sunum;
 		char val = DATA_OK;
 		if (qualkind)
 			{
-			qualval = *((long long *)data->data + qualindex*nrecs + irec);
-			if ((qualkind == 1 && qualval < 0) || (qualkind == 2 && qualval == 0) || (qualkind == 3 && (qualval & mask)))
-			     val = DATA_MISS;
+			qualval = (uint32_t)(0xFFFFFFFF & *((long long *)data->data + qualindex*nrecs + irec));
+			if ((qualkind == 1 && (qualval & 0x80000000) ) ||
+                            (qualkind == 2 && qualval == 0) ||
+                            (qualkind == 3 && (qualval & ignore)==0 && (qualval & mask)!=0 ))
+			        val = DATA_MISS;
 			else if (verify && !online[irec])
 			        val = DATA_GONE;
 			}
@@ -589,7 +603,7 @@ if (!quiet)
   fprintf(out, "series_low="); printprime(out, series_low, ptype, punit, pformat); fprintf(out, "\n");
   fprintf(out, "series_high="); printprime(out, series_high, ptype, punit, pformat); fprintf(out, "\n");
   fprintf(out, "qualkey=%s\n", qualkey);
-  if (qualkind == 3) fprintf(out, "mask=%#08x\n", (int)mask);
+  if (qualkind == 3) fprintf(out, "mask=%#08x\nignore=%#08x\n", mask, ignore);
   }
 // fprintf(out, "lowslot=%ld, highslot=%ld, serieslowslot=%ld serieshighslot=%ld\n",lowslot, highslot, serieslowslot, serieshighslot);
 
