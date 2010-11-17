@@ -99,6 +99,8 @@ FE_Keyword_ExtType_t fitsexport_keyword_getcast(DRMS_Keyword_t *key);
 
 int fitsexport_fitskeycheck(const char *fitsName);
 
+int fitsexport_getextname(const char *strin, char **extname, char **cast);
+
 /**
    @fn int fitsexport_exportkey(DRMS_Keyword_t *key, CFITSIO_KEYWORD **fitskeys)
    blah blah

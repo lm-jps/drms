@@ -1692,6 +1692,11 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
          if (wkeys)
          {
             fitskeys = fitsexport_mapkeys(seg, NULL, NULL, &status);
+            if (status)
+            {
+               fprintf(stderr, "WARNING - failure to export one or more keywords.\n");
+               status = DRMS_SUCCESS;
+            }
          }
 
 	 CFITSIO_IMAGE_INFO imginfo;
@@ -1742,6 +1747,11 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
          if (wkeys)
          {
             fitskeys = fitsexport_mapkeys(seg, NULL, NULL, &status);
+            if (status)
+            {
+               fprintf(stderr, "WARNING - failure to export one or more keywords.\n");
+               status = DRMS_SUCCESS;
+            }
          }
 
 	 CFITSIO_IMAGE_INFO imginfo;

@@ -3,6 +3,9 @@
 #include "fitsexport.h"
 #include "util.h"
 
+#define kFERecnum "RECNUM"
+#define kFERecnumFormat "%lld"
+
 /* keyword that can never be placed in a FITS file via DRMS */
 
 #undef A
@@ -271,6 +274,8 @@ static void FreeForbiddenDrms(void *data)
 /* Returns 0 if fitsName is a valid FITS keyword identifier, and not a reserved FITS keyword name.
  * Returns 1 if fitsName is invalid
  * Returns 2 if fitsName is valid but reserved
+ * Returns 3 if fitsName is valid but something that the export code might explicitly create
+ *   (and therefore should not be used because otherwise results might be unpredictable).
  */
 static int FitsKeyNameValidationStatus(const char *fitsName)
 {
@@ -343,6 +348,16 @@ static int FitsKeyNameValidationStatus(const char *fitsName)
          }
 
          free(tmp);
+      }
+
+      /* Check to see if the keyword will conflict with an explicitly written (by export code) keyword */
+      if (!error)
+      {
+         /* For now, there is just one name in this camp, so don't use any fancy hcontainer. */
+         if (strcasecmp(fitsName, kFERecnum) == 0)
+         {
+            error = 3;
+         }
       }
  
       if (!error)
@@ -743,6 +758,7 @@ CFITSIO_KEYWORD *fitsexport_mapkeys(DRMS_Segment_t *seg,
    DRMS_Record_t *recin = seg->record;
    Exputl_KeyMap_t *map = NULL;
    FILE *fptr = NULL;
+   int fitsrwRet = 0;
 
    while ((key = drms_record_nextkey(recin, &last, 0)) != NULL)
    {
@@ -784,7 +800,7 @@ CFITSIO_KEYWORD *fitsexport_mapkeys(DRMS_Segment_t *seg,
                mapfile = NULL;
             }
          }
-	    
+
          if (fitsexport_mapexportkey(key, clname, map, &fitskeys))
          {
             fprintf(stderr, "Couldn't export keyword '%s'.\n", keyname);
@@ -792,6 +808,19 @@ CFITSIO_KEYWORD *fitsexport_mapkeys(DRMS_Segment_t *seg,
          }
       }
    }
+
+   /* Export recnum to facilitate the association between an exported FITS file and its record of origin. */
+   long long recnum = seg->record->recnum;
+   if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key(&fitskeys, 
+                                                          kFERecnum, 
+                                                          kFITSRW_Type_Integer, 
+                                                          NULL,
+                                                          (void *)&recnum,
+                                                          kFERecnumFormat)))
+   {
+      fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
+      statint = DRMS_ERROR_FITSRW;
+   }   
 
    if (map)
    {
@@ -1578,4 +1607,120 @@ FE_Keyword_ExtType_t fitsexport_keyword_getcast(DRMS_Keyword_t *key)
    }
 
    return type;
+}
+
+/* state
+ *   -1 - error
+ *    0 - begin (haven't parsed '[' yet)
+ *    1 - '['
+ *    2 - ':' (delimiter for cast)
+ *    3 - ']'
+ *
+ * return value
+ *    0 - success
+ *    1 - error
+ */
+int fitsexport_getextname(const char *strin, char **extname, char **cast)
+{
+   int rv;
+   const char *pch = NULL;
+   int state;
+   char buf[16]; /* max cfitsio keyname length is 8 */
+   char bufcast[16];
+   char *pbuf = NULL;
+   char *pbufcast = NULL;
+
+   pch = strin;
+   pbuf = buf;
+   pbufcast = bufcast;
+   rv = 0;
+   state = 0;
+
+   if (extname || cast)
+   {
+      while (*pch && state != -1 && state != 3)
+      {
+         switch(state)
+         {
+            case 0:
+              if (*pch == ' ')
+              {
+                 pch++;
+              }
+              else if (*pch == '[')
+              {
+                 state = 1;
+                 pch++;
+              }
+              else
+              {
+                 /* no external name and no cast */
+                 state = 3;
+                 break;
+              }
+              break;
+            case 1:
+              if (*pch == ':')
+              {
+                 state = 2;
+                 pch++;
+              }
+              else if (*pch == ']')
+              {
+                 state = 3;
+                 break;
+              }
+              else
+              {
+                 *pbuf = *pch;
+                 pch++;
+                 pbuf++;
+              }
+              break;
+            case 2:
+              if (*pch == ']')
+              {
+                 state = 3;
+                 break;
+              }
+              else
+              {
+                 *pbufcast = *pch;
+                 pch++;
+                 pbufcast++;
+              }
+              break;
+            default:
+              /* can't get here */
+              state = -1;
+              break;
+         }
+      }
+
+      if (state == 0)
+      {
+         /* Never found anything other than spaces - valid description. */
+         state = 3;
+      }
+
+      if (state != 3)
+      {
+         rv = 1;
+      }
+      else
+      {
+         *pbuf = '\0';
+         if (extname)
+         {
+            *extname = strdup(buf);
+         }
+         *pbufcast = '\0';
+         if (cast)
+         {
+            *cast = strdup(bufcast);
+         }
+      }   
+   } /* while */
+
+   return rv;
 }

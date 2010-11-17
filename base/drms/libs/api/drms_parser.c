@@ -4,6 +4,7 @@
 #include "ctype.h"
 #include "xmem.h"
 #include "atoinc.h"
+#include "fitsexport.h"
 
 /* Utility functions. */
 static int getstring(char **inn, char *out, int maxlen);
@@ -1350,6 +1351,8 @@ static int parse_keyword(char **in,
   DRMS_Keyword_t *key;
   int chused = 0;
   int parserline = -1;
+  char *extname = NULL;
+  int keychkrv;
 
   p = q = *in;
   SKIPWS(p);
@@ -1397,6 +1400,27 @@ static int parse_keyword(char **in,
      fprintf(stderr, "Keyword name '%s' is reserved and cannot be specified.\n", name);
      GOTOFAILURE;
   }
+
+  if (fitsexport_getextname(description, &extname, NULL))
+  {
+     fprintf(stderr, "Unparseable description field '%s'.\n", description);
+     GOTOFAILURE;
+  }
+
+  if (*extname != '\0')
+  {
+     keychkrv = fitsexport_fitskeycheck(extname);
+     if (keychkrv == 2)
+     {
+        fprintf(stderr, "WARNING: External keyword name '%s' is reserved and should not be used.\n", extname);
+     }
+     else if (keychkrv == 3)
+     {
+        fprintf(stderr, "WARNING: External keyword name '%s' will be implicitly generated upon export and should not be used.\n", extname);
+     }
+  }
+
+  free(extname);
 
   /* Populate structure */
   if ( !strcasecmp(type,"link") )
