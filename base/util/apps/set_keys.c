@@ -246,14 +246,14 @@ int DoIt(void)
     /* now record exists with prime keys set. */
     }
   else
-   {
-   DRMS_RecordSet_t *ors;
-   if (verbose)printf("Clone record for update\n");
-   ors = drms_open_records(drms_env, query, &status);
-   if (status)
+    {
+    DRMS_RecordSet_t *ors;
+    if (verbose)printf("Clone record for update\n");
+    ors = drms_open_records(drms_env, query, &status);
+    if (status)
 	DIE("cant open recordset query");
     nrecs = ors->n;
-   if (nrecs > 1 && !multiple)
+    if (nrecs > 1 && !multiple)
 	DIE("multiple records not expected");
     if (nrecs == 0)
 	{
@@ -286,7 +286,7 @@ int DoIt(void)
 	   
 	   if (seg->info->protocol == DRMS_GENERIC)
 	   {
-		char *segname, *filename;
+		const char *segname, *filename;
 		segname = seg->info->name;
 		filename = cmdparams_get_str(&cmdparams, segname, NULL);
 		if (filename && *filename)
@@ -308,14 +308,14 @@ int DoIt(void)
     char recordpath[DRMS_MAXPATHLEN];
     rec = rs->records[irec];
 
-    /* make sure record directory is staged and included in the new record */
-    drms_record_directory(rec, recordpath, 1);
+    /* make sure record directory is staged and included in the new record unless DRMS_SHARE_SEGMENTS clone mode */
+    drms_record_directory(rec, recordpath, is_new_seg||force_copyseg);
     /* insert new generic segment files found on command line */
     nsegments = hcon_size(&rec->segments);
     for (isegment=0; isegment<nsegments; isegment++)
     { 
 	 seg = drms_segment_lookupnum(rec, isegment);
-	 char *filename = NULL;
+	 const char *filename = NULL;
 	 char *segname = seg->info->name;
 	 filename = cmdparams_get_str(&cmdparams, segname, NULL);
 
