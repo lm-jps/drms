@@ -1,6 +1,21 @@
 #!/bin/bash
 
 
+function SafeExit {
+    exitstat="$1"
+
+    rm -f "$publockpath"
+    trap - INT TERM HUP
+    
+    if [ -e "$publockpath" ] 
+    then
+        logwrite "ERROR: Unable to remove publication lock file ${publockpath}."
+    fi
+
+    exit $exitstat
+}
+
+
 function restartslons {
 #--------------------------------------------------------------------
 # Stop slon daemons - sometimes slony gets blocked (it can't process
@@ -60,7 +75,7 @@ fi
 #--------------------------------------------------------------------
 # Setting up the log
 #--------------------------------------------------------------------
-logfile=$REP_PS_LOGDIR/$publish_schema.$publish_table.publish_series.log
+logfile=$REP_PS_LOGDIR/$publish_schema.$publish_table.publish_series.$$.log
 echo > $logfile
 logwrite () {
         echo `date +"%m-%d-%Y %H:%M:%S - "` "$1" >> $logfile
@@ -70,7 +85,34 @@ logwrite () {
         fi
 }
 
+function logecho {
+  if [ ! -z "$logfile" ]
+  then
+    echo `date +"%m-%d-%Y %H:%M:%S - "` "$1" | tee -a $logfile;
+  fi
+}
+
 logwrite "Starting $0" nl
+
+#--------------------------------------------------------------------
+# Lock this instance - only one instance allowed running at a time
+#--------------------------------------------------------------------
+publockpath="$kServerLockDir/$kPubLockFile"
+
+while [[ 1 == 1 ]]; do
+    if ( set -o noclobber; echo "$$" > "$publockpath") 2> /dev/null;
+    then
+        trap 'rm -f "$publockpath"; exit 1' INT TERM HUP  
+        break
+    else
+        logecho "Could not acquire the publication lock (another $0 instance is running)"
+        logecho "Sleeping for 1 minute; enter ctrl-c to give up"
+    fi
+
+    sleep 60
+done
+
+# Must have publication lock to continue
 
 #--------------------------------------------------------------------
 # Checking to see if the series to be published exists on the master
@@ -85,7 +127,7 @@ then
 else
 	logwrite "The series $publish_schema.$publish_table does not appear to exist. ABORTING!" nl
 	echo "The series $publish_schema.$publish_table does not appear to exist. ABORTING!"
-	exit
+	SafeExit 0
 fi
 unset check
 
@@ -97,7 +139,7 @@ check=`psql -t -h $MASTERHOST -p $MASTERPORT -U $REPUSER -c "select * from _$CLU
 if [ -n "$check" ]
 then
 	echo "The series $publish_schema.$publish_table has already been published. ABORTING!"
-	exit
+	SafeExit 0
 else
 	logwrite "The series $publish_schema.$publish_table has not yet been published, continuing..." nl
 fi
@@ -155,7 +197,7 @@ if [ $tabCheck -lt 1 ]; then
 	$kModDir/createtabstructure in=$publish_schema.$publish_table out=$publish_schema.$publish_table owner=slony > $REP_PS_TMPDIR/createtabstruct_$publish_schema.$publish_table.sql
 else
 	echo "table [${publish_schema}.${publish_table}] already exists, aborting..."
-	exit 1;
+	SafeExit 1;
 fi
 
 #--------------------------------------------------------------------
@@ -179,7 +221,7 @@ then
 	logwrite "ERROR: [$check]" nl
 	#cp $REP_PS_TMPDIR/createtabstruct_$publish_schema.$publish_table.sql $REP_PS_TMPDIR/debug.error #remove
 	# rm -f $REP_PS_TMPDIR/createns.log $REP_PS_TMPDIR/createtabstruct.log $REP_PS_TMPDIR/createtabstruct_$publish_schema.$publish_table.sql $REP_PS_TMPDIR/createns_$publish_schema.$publish_table.sql
-        exit
+        SafeExit 1
 else
         logwrite "Createtabstruct output application on the slave was successful, continuing..." nl
 fi
@@ -198,7 +240,7 @@ then
 else
 	logwrite "The series $publish_schema.$publish_table does not appear to exist on the slave. ABORTING!"nl
 	echo "The series $publish_schema.$publish_table does not appear to exist on the slave. ABORTING!"
-	exit
+	SafeExit 1
 fi
 unset check
 #exit #remove
@@ -255,7 +297,7 @@ then
 	logwrite "$check"
 	rm -f $REP_PS_TMPDIR/subscribe.$publish_schema.$publish_table.log
 	rm -f $newpubfn
-        exit
+        SafeExit 1
 else
         logwrite "Subscription of the new set was successful, continuing..." nl 
 fi
@@ -276,6 +318,11 @@ do
     echo -n "."
     sleep 1
 done
+
+
+# Must release publication lock (otherwise we'd never be able to run publish_series.sh again)
+rm -f "$publockpath"
+trap - INT TERM HUP
 
 echo
 echo "$0 finished"
