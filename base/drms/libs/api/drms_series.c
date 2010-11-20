@@ -74,7 +74,13 @@ int drms_insert_series(DRMS_Session_t *session, int update,
   DB_Text_Result_t *qres;
 
   XASSERT(createstmt = malloc(30000));
-  drms_link_getpidx(template); /* Make sure links have pidx's set. */
+
+  /* Make sure links have pidx's set. */
+  if (drms_link_getpidx(template) != DRMS_SUCCESS)
+  {
+     goto failure;
+  }
+
   si = template->seriesinfo;
   // extract namespace from series name. default to 'public'
   if (get_namespace(si->seriesname, &namespace, &series_lower)) {

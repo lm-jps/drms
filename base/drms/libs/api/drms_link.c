@@ -582,13 +582,15 @@ int drms_template_links(DRMS_Record_t *template)
 /* For each link in the record: Get the names and types for the 
    primary index keywords of the target series if it is a dynamic 
    link.*/
-void drms_link_getpidx(DRMS_Record_t *rec)
+int drms_link_getpidx(DRMS_Record_t *rec)
 {
   int i, status;
   DRMS_Keyword_t *key;
   DRMS_Record_t *template;
   DRMS_Link_t *link;
   HIterator_t hit;
+
+  status = DRMS_SUCCESS;
 
   hiter_new(&hit, &rec->links); /* Iterator for link container. */
   while( (link = (DRMS_Link_t *)hiter_getnext(&hit)) )
@@ -617,4 +619,6 @@ void drms_link_getpidx(DRMS_Record_t *rec)
   }
 
   hiter_free(&hit);
+
+  return status;
 }

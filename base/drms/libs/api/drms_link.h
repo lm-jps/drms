@@ -15,7 +15,7 @@ DRMS_RecordSet_t *drms_link_followall(DRMS_Record_t *rec, const char *linkname,
 				      int *status);
 void drms_link_print(DRMS_Link_t *link);
 void drms_link_fprint(FILE *linkfile, DRMS_Link_t *link);
-void drms_link_getpidx(DRMS_Record_t *rec);
+int drms_link_getpidx(DRMS_Record_t *rec);
 int drms_setlink_static(DRMS_Record_t *rec, const char *linkname, 
 			long long recnum);
 int drms_setlink_dynamic(DRMS_Record_t *rec, const char *linkname, 
@@ -64,7 +64,7 @@ static inline int drms_link_ranksort(const void *he1, const void *he2)
 */
 
 /** 
-    @fn void drms_link_getpidx(DRMS_Record_t *rec)
+    @fn int drms_link_getpidx(DRMS_Record_t *rec)
     For each link in the record: Get the names and types for
     the primary index keywords of the target series if it is a dynamic
     link.
