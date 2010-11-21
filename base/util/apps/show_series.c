@@ -143,6 +143,8 @@ char *web_query;
 int from_web;
 int want_JSON;
 int printinfo;
+char NameSpace[1024];
+int singleNameSpace = 0;
 char *index();
 
 if (nice_intro()) return(0);
@@ -155,7 +157,7 @@ printinfo = cmdparams_get_int(&cmdparams, "p", NULL);
 
 if (cmdparams_numargs(&cmdparams)==2)
   { /* series filter provided, treat as regular expression. */
-  filter = cmdparams_getarg(&cmdparams, 1);
+  filter = strdup(cmdparams_getarg(&cmdparams, 1));
   }
 else if (from_web && *web_query)
   {
@@ -169,6 +171,7 @@ else
 
 if (filter)
   {
+  int i;
   // check for NOT method of exclusion
   if (strncmp(filter, "NOT ", 4)==0)
     {
@@ -176,7 +179,21 @@ if (filter)
     filter += 4;
     }
   else
+    {
     filterNOT = 0;
+    for (i=1; filter[i]; i++) // do not test for '^.', would be empty namespace
+      if (filter[i] == '.' && filter[i-1] == '\\')
+         {
+         if (singleNameSpace)
+           {
+           singleNameSpace = 0;
+           break;
+           }
+         singleNameSpace = 1;
+         strncpy(NameSpace, filter, i-1);
+         NameSpace[i-1] = '\0';
+         }
+    }
   if (regcomp((regex_t *)seriesfilter, filter, (REG_EXTENDED | REG_ICASE | REG_NOSUB)))
     {
     status = SS_FORMATERROR;
@@ -184,11 +201,23 @@ if (filter)
     }
   }
   
+if (singleNameSpace) fprintf(stderr,"TEST of single name space found: %s\n",NameSpace);
+
 /* Query the database to get all series names from the master list. */
-if (printinfo || want_JSON)
-  sprintf(query, "select seriesname, primary_idx, description from %s() order by seriesname", DRMS_MASTER_SERIES_TABLE);
+if (singleNameSpace)
+  { // NameSpace contains desired namespace to search -- NEEDS TO BE "INCLUDED IN QUERY
+  if (printinfo || want_JSON)
+    sprintf(query, "select seriesname, primary_idx, description from %s() order by seriesname", DRMS_MASTER_SERIES_TABLE);
+  else
+    sprintf(query, "select seriesname from %s() order by seriesname", DRMS_MASTER_SERIES_TABLE);
+  }
 else
-  sprintf(query, "select seriesname from %s() order by seriesname", DRMS_MASTER_SERIES_TABLE);
+  {
+  if (printinfo || want_JSON)
+    sprintf(query, "select seriesname, primary_idx, description from %s() order by seriesname", DRMS_MASTER_SERIES_TABLE);
+  else
+    sprintf(query, "select seriesname from %s() order by seriesname", DRMS_MASTER_SERIES_TABLE);
+  }
 
 if ( (qres = drms_query_txt(drms_env->session, query)) == NULL)
   {
@@ -238,15 +267,17 @@ for (iseries=0; iseries<nseries; iseries++)
         printf("\"primekeys\":\""); 
       else
 	printf("      Prime Keys are: ");
-      for (p = strtok(primary_idx, " "); p; p = strtok(NULL, " "))
+      for (p = strtok(primary_idx, ", "); p; p = strtok(NULL, ", "))
         {
 	char *ind = strstr(p, "_index");
         if (ind)
           *ind = '\0';
+        if (npk++)
+          printf(", ");
         printf("%s",p);
         }
       if (want_JSON)
-	  printf("\",");
+        printf("\",");
       if (want_JSON)
 	{
         char *json_escape(char *desc);
@@ -284,9 +315,11 @@ return status;
 
 Failure:
 if (want_JSON)
-  printf("{\"status\":1,\"errmsg\":%s}\n", SS_ERRORS[status]);
+  printf("{\"status\":1,\"errmsg\":%s}\n", SS_ERRORS[status].errmsg);
 else
-  printf("show_keys error: %s\n",SS_ERRORS[status]);
+  printf("show_keys error: %s\n",SS_ERRORS[status].errmsg);
+
+return status;
 }
 
 
