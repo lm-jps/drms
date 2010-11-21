@@ -14,7 +14,7 @@
 
 \par Synopsis:
 show_coverage {ds=}<seriesname> [-h]
-show_coverage {ds=}<seriesname> [-iqv] [low=<starttime>] [high=<stoptime>] [block=<blocklength>] [key=<pkey>] [mask=<badbits>] [ignore=<ignorebits>] [<other_primekey>=<value>...]
+show_coverage {ds=}<seriesname> [-iqv] [low=<starttime>] [high=<stoptime>] [block=<blocklength>] [key=<pkey>] [mask=<badbits>] [ignore=<ignorebits>] [<other>=<value>...]
 show_coverage_sock {same options as above}
 \endcode
 
@@ -60,7 +60,7 @@ and selected values may be provided as additional keyword=value pairs.
 \li \c low=<starttime> - optional first value of ordering prime key to use, default to first record in series (as [^]).
 \li \c mask=<badbits> - optional usually Hex number with bits to test against QUALITY to label record as MISS.
 \li \c ignore=<ignore_bits> - optional usually Hex number with bits to exclude in tests against QUALITY to label record as MISS.
-\li \c other_primekey=<value>... - optional additional primekey=value pairs to restrict survey based on multiple primekeys.
+\li \c other=<value>... - optional additional query clauses to restrict the records used in the survey.
 
 \par JSOC flags:
 \ref jsoc_main
@@ -83,6 +83,10 @@ a series where needed.
 Records are identified as MISS if QUALITY is < 0 or if the mask parameter is provided, only if one or
 more bits set in mask are also set in QUALITY.  If ignore is provided, the if any bits in ignore are
 also present in QUALITY the record not used in the comparison with mask.
+
+The "other" argument may be used to add where clauses to the query for records.  The "other" clauses
+are not used for determining the first and last slots, but only for the existence information.
+As such, any records that are excluded by matching the "other" clauses will be counted in the UNK category.
 
 After all specified records have been examined a table of the resulting completeness information is
 printed.  There are two formats for this table.  The default format is a list of contiguous segments
@@ -129,9 +133,6 @@ Since DRMS is queried using \ref drms_record_getvector the QUALITY keyword must 
 to be used.  Only the single prime key value, either QUALITY or DATAVALS, and possibly sunum are
 used so all must be convertible to long long by PostgreSQL.
 
-\b Limitation:
-There is no provision for "where" clauses for optional other prime keys or other keys.
-
 \b Efficiency:
 Although records that are not OK need not be queried in SUMS for online status, they are and
 that information is ignored.  Some waste effort here, but for SDO should be very small.
@@ -173,6 +174,7 @@ ModuleArgs_t module_args[] =
     {ARG_STRING, "low", NOT_SPECIFIED, "Low limit for coverage map."},
     {ARG_STRING, "high", NOT_SPECIFIED, "High limit for coverage map."},
     {ARG_STRING, "key", NOT_SPECIFIED, "Prime key name to use, default is first prime"},
+    {ARG_STRING, "other", NOT_SPECIFIED, "additional clauses for queries"},
     {ARG_INT, "mask", "0", "Mask to use for bits in QUALITY that will cause the record to be counted as MISS"},
     {ARG_INT, "ignore", "0", "Mask to use for bits to ignore in QUALITY tests with mask that will cause the record to be counted as MISS"},
     {ARG_FLAG, "o", "0", "Verify - verify that SU is available for records with data"},
@@ -193,7 +195,7 @@ int nice_intro ()
     {
     printf ("Usage:\nshow_coverage [-hiqv] "
         "ds=<seriesname> {key=<pkey>} {low=<starttime>} <high=<stoptime>}\n"
-        "      {key=<prime-key>} {block=<blocklength>} {<other_primekey>=<pkeylist>}.\n"
+        "      {key=<prime-key>} {block=<blocklength>} {<other>=<pkeylist>}.\n"
         "  -h: help - show this message then exit\n"
         "  -i: list index values vs slot values\n"
         "  -q: quiet, do not print header\n"
@@ -205,7 +207,7 @@ int nice_intro ()
         "ignore=<ignore_bit_mask> - mask to be checked ignored in QUALITY tests\n"
         "low=<starttime> - start of range for completeness survey, defaults to [^]\n"
         "high=<stoptime> - end of range for completeness summary, defaults to [$]\n"
-        "<other_prime>=<value> - optional additional filters to limit the survey\n"
+        "<other>=<value> - optional additional filters to limit the survey\n"
         );
     return(1);
     }
@@ -234,13 +236,13 @@ int DoIt(void)
   TIME series_low, series_high, low, high;
   char in[DRMS_MAXQUERYLEN];
   char *inbracket;
-  char otherkeys[20*DRMS_MAXQUERYLEN];
   const char *ds = cmdparams_get_str (&cmdparams, "ds", NULL);
   const char *report = cmdparams_get_str (&cmdparams, "coverage", NULL);
   const char *blockstr = cmdparams_get_str (&cmdparams, "block", NULL);
   const char *lowstr = cmdparams_get_str (&cmdparams, "low", NULL);
   const char *highstr = cmdparams_get_str (&cmdparams, "high", NULL);
   const char *skeyname = cmdparams_get_str (&cmdparams, "key", NULL);
+  char *other = strdup((char *)cmdparams_get_str (&cmdparams, "other", NULL));
   int verify = cmdparams_get_int (&cmdparams, "o", NULL) != 0;
   int quiet = cmdparams_get_int (&cmdparams, "q", NULL) != 0;
   int useindex = cmdparams_get_int (&cmdparams, "i", NULL) != 0;
@@ -265,6 +267,10 @@ int DoIt(void)
 
   // out = fopen .... report ...
   out = stdout;
+
+  // get optional other query clauses
+  if (strcmp(other, NOT_SPECIFIED) == 0)
+    other[0] = '\0';
 
 
   /* get series info, low and high, and prime key type, etc. */
@@ -321,24 +327,6 @@ int DoIt(void)
   piname = strdup(pkey->info->name);
   seriesname = strdup(template->seriesinfo->seriesname);
 
-  // get optional other primekeys
-  otherkeys[0] = '\0';
-  for (ikey=0; ikey < npkeys; ikey++)
-	{
-	DRMS_Keyword_t *tmppkey = template->seriesinfo->pidx_keywords[ikey];
-	if (tmppkey->info->recscope > 1)
-		tmppkey = drms_keyword_slotfromindex(tmppkey);
-	if (cmdparams_exists(&cmdparams, tmppkey->info->name))
-		{
-		char tmp[DRMS_MAXQUERYLEN];
-		if (strcmp(tmppkey->info->name, pname) == 0)
-			DIE("Can not have main prime key listed explicitly");
-		sprintf(tmp, "[%s=%s]", tmppkey->info->name,
-				cmdparams_get_str(&cmdparams, tmppkey->info->name, NULL));
-		strcat(otherkeys, tmp);
-		}
-	}
-
   // get method to determine if all data in a record is missing
   if (drms_keyword_lookup(template, "QUALITY", 1))
 	{
@@ -391,13 +379,12 @@ int DoIt(void)
 
   if (slotted)
     {
-    sprintf(in, "%s[? %s_index>0 ?]", seriesname,pname);
+    sprintf(in, "%s[? %s_index>0 ?]", seriesname, pname);
     rs = drms_open_nrecords (drms_env, in, 1, &status); // first record
     }
   else
     {
     sprintf(in, "%s[%s=^]", seriesname, pname);
-    // sprintf(in, "%s[%s=^]%s", seriesname, pname, otherkeys);
     rs = drms_open_records (drms_env, in, &status); // first record
     }
   if (status || !rs || rs->n == 0)
@@ -434,7 +421,6 @@ int DoIt(void)
     }
   else
     {
-    // sprintf(in, "%s[%s=$]%s", seriesname, pname, otherkeys);
     sprintf(in, "%s[%s=$]", seriesname, pname);
     rs = drms_open_records (drms_env, in, &status); // last record
     }
@@ -519,7 +505,7 @@ int DoIt(void)
         char *online = NULL;
 	jslot = islot + 1000000;
 	if (jslot >= nslots) jslot = nslots - 1;
-	sprintf(query, "%s[%s=#%lld-#%lld]%s", seriesname, pname, lowslot+islot, lowslot+jslot,otherkeys);
+	sprintf(query, "%s[%s=#%lld-#%lld]%s", seriesname, pname, lowslot+islot, lowslot+jslot, other);
 	strcpy(keylist, piname);
 	if (qualkind)
 		{
@@ -604,6 +590,7 @@ if (!quiet)
   fprintf(out, "series_high="); printprime(out, series_high, ptype, punit, pformat); fprintf(out, "\n");
   fprintf(out, "qualkey=%s\n", qualkey);
   if (qualkind == 3) fprintf(out, "mask=%#08x\nignore=%#08x\n", mask, ignore);
+  if (*other) fprintf(out, "other=%s\n", other);
   }
 // fprintf(out, "lowslot=%ld, highslot=%ld, serieslowslot=%ld serieshighslot=%ld\n",lowslot, highslot, serieslowslot, serieshighslot);
 
