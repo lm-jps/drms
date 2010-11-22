@@ -201,7 +201,7 @@ if (filter)
     }
   }
   
-if (singleNameSpace) fprintf(stderr,"TEST of single name space found: %s\n",NameSpace);
+// if (singleNameSpace) fprintf(stderr,"TEST of single name space found: %s\n",NameSpace);
 
 /* Query the database to get all series names from the master list. */
 if (singleNameSpace)
