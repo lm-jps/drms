@@ -259,6 +259,12 @@ void setup()
   fclose(fplog);
 }
 
+//This is called at the sum_svc exit via exit() or by return from main()
+void sumbye(void) {
+  printf("sumbye() called by atexit() at %s\n", datestring());
+  write_log("sumbye() called by atexit() at %s\n", datestring());
+}
+
 /*********************************************************/
 int main(int argc, char *argv[])
 {
@@ -271,6 +277,9 @@ int main(int argc, char *argv[])
   get_cmd(argc, argv);
   printf("\nPlease wait for sum_svc and tape inventory to initialize...\n");
   setup();
+  if(atexit(sumbye)) {
+    printf("Can't register sumbye() function in atexit()\n");
+  }
 
         /* register for client API routines to talk to us */
 	(void) pmap_unset(SUMPROG, SUMVERS);
