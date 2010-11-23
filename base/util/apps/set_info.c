@@ -157,9 +157,9 @@ static int FitsImport(DRMS_Segment_t *seg, const char *file, HContainer_t **keys
    int drmsstat = DRMS_SUCCESS;
    DRMS_Array_t *data = NULL;
    HContainer_t *keysint = NULL;
-   HIterator_t *hit = NULL;
+   HIterator_t hit;
    const char *intstr = NULL;
-   char dummy = 'A';
+   DRMS_Keyword_t *akey = NULL;
 
    /* Read data - don't apply bzero and bzero in fits file (leave israw == true). If
     * the segment requires conversion of the output array, this will happen in 
@@ -186,19 +186,16 @@ static int FitsImport(DRMS_Segment_t *seg, const char *file, HContainer_t **keys
          keys[seg->info->segnum] = keysint;
 
          /* Iterate through keys and add unique values to keylist */
-         if (!hit)
+         hiter_new_sort(&hit, keysint, drms_keyword_ranksort);
+         while ((akey = hiter_extgetnext(&hit, &intstr)) != NULL)
          {
-            hit = hiter_create(keysint);
-            while (hiter_extgetnext(hit, &intstr))
+            if (!hcon_member(keylist, intstr))
             {
-               if (!hcon_member(keylist, intstr))
-               {
-                  hcon_insert(keylist, intstr, &dummy); /* 'A' is a dummy and not used */
-               }
+               hcon_insert(keylist, intstr, (const void *)&akey->info->rank); 
             }
-
-            hiter_destroy(&hit);
          }
+
+         hiter_free(&hit);
       }
    }
    else
@@ -215,6 +212,16 @@ static int FitsImport(DRMS_Segment_t *seg, const char *file, HContainer_t **keys
    return err;
 }
 
+static inline int KeySort(const void *he1, const void *he2)
+{
+   int *r1 = (int *)hcon_getval(*((HContainerElement_t **)he1));
+   int *r2 = (int *)hcon_getval(*((HContainerElement_t **)he2));
+   
+   XASSERT(r1 && r2);
+
+   return (*r1 < *r2) ? -1 : (*r1 > *r2 ? 1 : 0);
+}
+
 /* keylist is a list of all unique keys - it is not necessarily true that every segment file will 
  * have had all these keys. 
  * segfilekeys is an array of key containers - one for each segment file (indexed by segnum). */
@@ -222,7 +229,7 @@ static int WriteKeyValues(DRMS_Record_t *rec, int nsegments, HContainer_t *keyli
 {
    int conflict;
    int skipkey;
-   HIterator_t *keyhit = hiter_create(keylist);
+   HIterator_t keyhit;
    const char *kbuf = NULL;
    char persegkey[DRMS_MAXKEYNAMELEN];
    DRMS_Type_Value_t *val;
@@ -240,7 +247,8 @@ static int WriteKeyValues(DRMS_Record_t *rec, int nsegments, HContainer_t *keyli
    get_namespace(rec->seriesinfo->seriesname, &ns, NULL);
    if (ns)
    {
-      while (hiter_extgetnext(keyhit, &kbuf))
+      hiter_new_sort(&keyhit, keylist, KeySort);
+      while (hiter_extgetnext(&keyhit, &kbuf))
       {
          conflict = 0;
          skipkey = 0;
@@ -285,6 +293,7 @@ static int WriteKeyValues(DRMS_Record_t *rec, int nsegments, HContainer_t *keyli
                else
                {
                   /* At least one segment file had a keyword and one did not - conflict that cannot be resolved. */
+                  fprintf(stderr, "Keyword '%s' is not present in all segment files;  no value for this keyword will be written to this record.\n", kbuf);
                   skipkey = 1;
                   break;
                }
@@ -384,11 +393,7 @@ static int WriteKeyValues(DRMS_Record_t *rec, int nsegments, HContainer_t *keyli
       } /* loop over master keylist (the list of unique keys) */
 
       free(ns);
-   }
-
-   if (keyhit)
-   {
-      hiter_destroy(&keyhit);
+      hiter_free(&keyhit);
    }
 
    return err;
@@ -589,7 +594,7 @@ int DoIt(void)
 
   /* not really going to store anything in hash container - just using hash table to 
    * quickly find out if a key has been previously seen. */
-  HContainer_t *keylist = hcon_create(sizeof(char), sizeof(DRMS_MAXKEYNAMELEN), NULL, NULL, NULL, NULL, 0);
+  HContainer_t *keylist = hcon_create(sizeof(int), sizeof(DRMS_MAXKEYNAMELEN), NULL, NULL, NULL, NULL, 0);
   memset(keylist, 0, sizeof(HContainer_t *) * nsegments);
   for (irec = 0; irec<nrecs; irec++)
     {
@@ -643,6 +648,15 @@ int DoIt(void)
 
     /* Resolve keyword value conflicts - iterate over keylist */
     WriteKeyValues(rec, nsegments, keylist, segfilekeys);
+
+    /* Free segment files' keylists */
+    for (isegment = 0; isegment < nsegments; isegment++)
+    { 
+       if (segfilekeys[isegment])
+       {
+          hcon_destroy(&segfilekeys[isegment]);
+       }
+    }
     
     hiter_new(&key_hit, &rec->keywords);
     while( (key = (DRMS_Keyword_t *)hiter_getnext(&key_hit)) )
