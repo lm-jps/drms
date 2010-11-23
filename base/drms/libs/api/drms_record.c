@@ -2607,6 +2607,11 @@ int drms_close_records(DRMS_RecordSet_t *rs, int action)
       rec = rs->records[i];
       /* If this record was temporarily created by this session then
 	 free its storage unit slot. */
+      /* if (rec && !rec->readonly && rec->su) 
+       * Checking refcount isn't correct here. recount is used only by direct-connect modules, and 
+       * it is the refcount on the entire SU. We don't refcount slots, which is what we should be
+       * checking here (i.e., slotrefcount == 1).
+       */
       if (rec && !rec->readonly && rec->su && rec->su->refcount==1)
       {
 	if ((status = drms_freeslot(rec->env, rec->seriesinfo->seriesname, 

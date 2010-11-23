@@ -2084,6 +2084,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
     break;
 
   case DRMS_SUMPUT:
+  {
 #ifdef DEBUG
     printf("Processing SUMPUT request.\n");
 #endif
@@ -2100,6 +2101,31 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
     sum->tdays = request->tdays;
     sum->reqcnt = request->reqcnt;
     sum->history_comment = request->comment;
+
+#ifdef DEBUG2
+      #define LOGDIR  "/tmp22/production/"
+      #define LOGFILE "sumputlog.txt"
+      struct stat stBuf;
+      FILE *fptr = NULL;
+
+      if (stat(LOGDIR, &stBuf) == 0 && S_ISDIR(stBuf.st_mode))
+      {
+         fptr = fopen(LOGDIR"/"LOGFILE, "a");
+         if (fptr)
+         {
+            char tbuf[128];
+            struct tm *ltime = NULL;
+            time_t secs = time(NULL);
+
+            ltime = localtime(&secs);
+            strftime(tbuf, sizeof(tbuf), "%Y.%m.%d_%T", ltime);
+
+            fprintf(fptr, "SUM_put() call for SUNUMs for series %s at %s:\n", request->dsname, tbuf);
+         }
+      }
+#endif
+
+
     for (i=0; i<request->reqcnt; i++)
     {
       sum->dsix_ptr[i] = request->sunum[i];
@@ -2108,7 +2134,23 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
       printf("putting SU with sunum=%lld and sudir='%s' to SUMS.\n",
 	     request->sunum[i],request->sudir[i]);
 #endif
+
+#ifdef DEBUG2
+      if (fptr)
+      {
+         fprintf(fptr, "  %lld\n", (long long)request->sunum[i]);
+      }     
+#endif
+
     }
+
+#ifdef DEBUG2
+    if (fptr)
+    {
+       fclose(fptr);
+       fptr = NULL;
+    }
+#endif
     /* Make RPC call to the SUM server. */
     if ((reply->opcode = SUM_put(sum, printf)))
     {
@@ -2116,6 +2158,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 	      reply->opcode);
       break;
     }
+  }
     break;
   case DRMS_SUMDELETESERIES:
     if (request->comment)
