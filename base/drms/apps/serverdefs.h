@@ -21,6 +21,9 @@
 /** \brief default dbname */
 #define DBNAME "jsoc"
 
+/** \brief default port on SERVER */
+#define DRMSPGPORT      "5432"
+
 #define POSTGRES_ADMIN	"postgres"
 #define SUMS_MANAGER	"production"
 #define SUMS_MANAGER_UID "388"
