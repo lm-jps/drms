@@ -200,6 +200,9 @@ extern KEY *respdo_1();
 #define TAPEARCVERS1 ((uint32_t)3)
 #define TAPEARCVERS2 ((uint32_t)4)
 #define TAPEARCVERS3 ((uint32_t)5)
+#define TAPEARCVERS4 ((uint32_t)6)
+#define TAPEARCVERS5 ((uint32_t)7)
+#define TAPEARCVERS6 ((uint32_t)8)
 #define TAPEARCDO ((uint32_t)1)
 
 extern KEY *tapearcdo_1();
