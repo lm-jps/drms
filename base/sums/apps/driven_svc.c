@@ -1136,7 +1136,7 @@ KEY *writedrvdo_1(KEY *params)
   CLIENT *client;
   static KEY *retlist;
   uint64_t tell;
-  int dnum, sim, tape_closed, group, filenumwrt, tapenxtfn;
+  int dnum, sim, tape_closed, group, filenumwrt, tapenxtfn, rdyfn;
   char *tapeid;
   char  gtarlog[80], md5sum[64], dname[64], cmd[80];
 
@@ -1160,7 +1160,7 @@ KEY *writedrvdo_1(KEY *params)
   tape_closed = getkey_int(params, "tape_closed");
   rinfo = RESULT_PEND;
   send_ack();                   /* give ack to caller so doesn't wait */
-  if(get_tape_fnum_rdy(sim, dname) == -1) { //start w/rdy drive
+  if((rdyfn=get_tape_fnum_rdy(sim, dname)) == -1) { //start w/rdy drive
     write_log("***Error: can't get ready for write on drive %d\n", dnum);
     setkey_int(&retlist, "STATUS", 1); /* give error back to caller */
     sprintf(errstr, "Error on tape ready for read in drive #%d", dnum);
@@ -1200,7 +1200,7 @@ KEY *writedrvdo_1(KEY *params)
     }
     get_tape_fnum_rdy(sim, dname);	//make sure ready
   }
-/************************************************************
+  if(filenumwrt != rdyfn) {
     if(position_tape_eod(sim, dnum) == -1) {
       setkey_int(&retlist, "STATUS", 1);   // give error back to caller
       sprintf(errstr,"Error: Can't position to EOD tape %s in drive #%d", 
@@ -1208,7 +1208,7 @@ KEY *writedrvdo_1(KEY *params)
       setkey_str(&retlist, "ERRSTR", errstr); 
       return(retlist);
     }
-**************************************************************/
+  }
     sprintf(gtarlog, "%s/gtar_wt_%d_%s_%d.log", 
 			GTARLOGDIR, dnum, tapeid, filenumwrt);
     if((tapenxtfn =write_wd_to_drive(sim, params, dnum, filenumwrt, gtarlog)) == -1) {
