@@ -1083,6 +1083,7 @@ KEY *readdrvdo_1(KEY *params)
 /* Called by tape_svc doing: clnt_call(clntdrv[0,1], WRITEDRVDO, ...)
  * when it has  SUM storage unit(s) to write to tape.
  * The tape is in the drive and we will position it to eod and do the write.
+ * NOTE: New: Tape are dedicated to write and no eod required. 23Nov2010
  * The input keylist looks like:
  * cmd1:   KEYTYP_STRING   mtx -f /dev/sg7 load 15 0 1> /tmp/mtx_robot.log 2>&1
  * snum:   KEYTYP_INT      14
@@ -1199,13 +1200,15 @@ KEY *writedrvdo_1(KEY *params)
     }
     get_tape_fnum_rdy(sim, dname);	//make sure ready
   }
+/************************************************************
     if(position_tape_eod(sim, dnum) == -1) {
-      setkey_int(&retlist, "STATUS", 1);   /* give error back to caller */
+      setkey_int(&retlist, "STATUS", 1);   // give error back to caller
       sprintf(errstr,"Error: Can't position to EOD tape %s in drive #%d", 
 			tapeid, dnum);
       setkey_str(&retlist, "ERRSTR", errstr); 
       return(retlist);
     }
+**************************************************************/
     sprintf(gtarlog, "%s/gtar_wt_%d_%s_%d.log", 
 			GTARLOGDIR, dnum, tapeid, filenumwrt);
     if((tapenxtfn =write_wd_to_drive(sim, params, dnum, filenumwrt, gtarlog)) == -1) {
