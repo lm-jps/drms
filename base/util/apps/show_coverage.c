@@ -376,11 +376,12 @@ int DoIt(void)
 
   // Get series low info
   // do special action to skip false low records with prime key containing missing data values.
+  // Allow many MISSING time initial records
 
   if (slotted)
     {
     sprintf(in, "%s[? %s_index>0 ?]", seriesname, pname);
-    rs = drms_open_nrecords (drms_env, in, 1, &status); // first record
+    rs = drms_open_nrecords (drms_env, in, 1000, &status); // first record
     }
   else
     {
