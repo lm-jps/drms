@@ -149,6 +149,7 @@ pg_stat_get () {
 	rm -f $SEATempDir/transactions.tmp
 		
 	# execute the query that was built
+        echo "Executing query: [$query]" >> $tempemailfile
 	$kPsqlCmd -h $MASTERHOST -p $MASTERPORT -U $REPUSER -c "$query" $MASTERDBNAME >> $tempemailfile
 }
 
