@@ -239,6 +239,7 @@ SUMID_t sumrpcopen_1(KEY *argp, CLIENT *clnt, int (*history)(const char *fmt, ..
 
 /* Allocate the storage given in sum->bytes.
  * Return non-0 on error, else return wd of allocated storage in *sum->wd.
+ * NOTE: error 4 is Connection reset by peer, sum_svc probably gone.
 */
 int SUM_alloc(SUM_t *sum, int (*history)(const char *fmt, ...))
 {
@@ -277,7 +278,7 @@ int SUM_alloc(SUM_t *sum, int (*history)(const char *fmt, ...))
       call_err = clnt_sperror(sum->cl, "Err clnt_call for ALLOCDO");
       (*history)("%s %d %s\n", datestring(), status, call_err);
       freekeylist(&klist);
-      return (1);
+      return (4);
     }
   }
   if(retstat) {			/* error on ALLOCDO call */
@@ -294,6 +295,7 @@ int SUM_alloc(SUM_t *sum, int (*history)(const char *fmt, ...))
 
 /* Allocate the storage given in sum->bytes for the given sunum.
  * Return non-0 on error, else return wd of allocated storage in *sum->wd.
+ * NOTE: error 4 is Connection reset by peer, sum_svc probably gone.
 */
 int SUM_alloc2(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
 {
@@ -337,7 +339,7 @@ int SUM_alloc2(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
       call_err = clnt_sperror(sum->cl, "Err clnt_call for ALLOCDO");
       (*history)("%s %d %s\n", datestring(), status, call_err);
       freekeylist(&klist);
-      return (1);
+      return (4);
     }
   }
   if(retstat) {			/* error on ALLOCDO call */
@@ -354,6 +356,7 @@ int SUM_alloc2(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
 
 /* Return information from sum_main for the given sunum (ds_index).
  * Return non-0 on error, else sum->sinfo has the SUM_info_t pointer.
+ * NOTE: error 4 is Connection reset by peer, sum_svc probably gone.
 */
 int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
 {
@@ -382,7 +385,7 @@ int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
       if(history) 
         (*history)("%s %d %s\n", datestring(), status, call_err);
       freekeylist(&klist);
-      return (1);
+      return (4);
     }
   }
   if(retstat) {			/* error on INFODO call */
@@ -424,6 +427,7 @@ void SUM_infoEx_free(SUM_t *sum)
  * MAXSUMREQCNT entries given by sum->reqcnt.
  * Return non-0 on error, else sum->sinfo has the SUM_info_t pointer
  * to linked list of SUM_info_t sturctures (sum->reqcnt).
+ * NOTE: error 4 is Connection reset by peer, sum_svc probably gone.
 */
 int SUM_infoEx(SUM_t *sum, int (*history)(const char *fmt, ...))
 {
@@ -464,7 +468,7 @@ int SUM_infoEx(SUM_t *sum, int (*history)(const char *fmt, ...))
       if(history) 
         (*history)("%s %d %s\n", datestring(), status, call_err);
       freekeylist(&klist);
-      return (1);
+      return (4);
     }
   }
   if(retstat) {			// error on INFODOX call
@@ -498,6 +502,7 @@ int SUM_infoEx(SUM_t *sum, int (*history)(const char *fmt, ...))
 }
 
 /* Close this session with the SUMS. Return non 0 on error.
+ * NOTE: error 4 is Connection reset by peer, sum_svc probably gone.
 */
 int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
 {
@@ -549,12 +554,52 @@ int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
   if(sum->sinfo) free(sum->sinfo);
   free(sum);
   freekeylist(&klist);
-  if(errflg) return(1);
+  if(errflg) return(4);
   return(0);
 }
 
+/* See if sum_svc is still alive. Return 0 if ok, 1 on timeout,
+ * 4 on error (like unable to connect, i.e. the sum_svc is gone).
+*/
+int SUM_nop(SUM_t *sum, int (*history)(const char *fmt, ...))
+{
+  struct timeval NOPTIMEOUT = { 3, 0 };
+  KEY *klist;
+  char *call_err;
+  int ans;
+  enum clnt_stat status;
+  int i, stat;
+  int errflg = 0;
+
+  if(sum->debugflg) {
+    (*history)("SUM_nop() call: uid = %lu\n", sum->uid);
+  }
+  klist = newkeylist();
+  setkey_uint64(&klist, "uid", sum->uid); 
+  setkey_int(&klist, "DEBUGFLG", sum->debugflg);
+  setkey_int(&klist, "REQCODE", CLOSEDO);
+  setkey_str(&klist, "USER", sum->username);
+  status = clnt_call(sum->cl, NOPDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+			(xdrproc_t)xdr_void, (char *)&ans, NOPTIMEOUT);
+  ans = (int)ans;
+
+  /* NOTE: Must honor the timeout here as get the ans back in the ack
+  */
+  if(status != RPC_SUCCESS) {
+    call_err = clnt_sperror(sum->cl, "Err clnt_call for NOPDO");
+    (*history)("%s %s status=%d\n", datestring(), call_err, status);
+    if(status != RPC_TIMEDOUT) return (4);
+    else return (1);
+  }
+
+  stat = getmsgimmed();		//clean up pending response
+  freekeylist(&klist);
+  return(ans);
+}
+
 /* Get the wd of the storage units given in dsix_ptr of the given sum.
- * Return 0 on success w/data available, 1 on error, or RESULT_PEND
+ * Return 0 on success w/data available, 1 on error, 4 on connection reset
+ * by peer (sum_svc probably gone) or RESULT_PEND (32)
  * when data will be sent later and caller must do a sum_wait() or sum_poll() 
  * when he is ready for it.
 */
@@ -601,7 +646,7 @@ int SUM_get(SUM_t *sum, int (*history)(const char *fmt, ...))
       call_err = clnt_sperror(sum->cl, "Err clnt_call for GETDO");
       (*history)("%s %d %s\n", datestring(), status, call_err);
       freekeylist(&klist);
-      return (1);
+      return (4);
     } else {
       (*history)("%s Ignore timeout in SUM_get()\n", datestring());
     }
@@ -631,6 +676,7 @@ int SUM_get(SUM_t *sum, int (*history)(const char *fmt, ...))
  * Caller gives disposition of a previously allocated data segments. 
  * Allows for a request count to put multiple segments.
  * Returns 0 on success.
+ * NOTE: error 4 is Connection reset by peer, sum_svc probably gone.
 */
 int SUM_put(SUM_t *sum, int (*history)(const char *fmt, ...))
 {
@@ -680,7 +726,7 @@ int SUM_put(SUM_t *sum, int (*history)(const char *fmt, ...))
       call_err = clnt_sperror(sum->cl, "Err clnt_call for PUTDO");
       (*history)("%s %d %s\n", datestring(), status, call_err);
       freekeylist(&klist);
-      return (1);
+      return (4);
     }
   }
   freekeylist(&klist);
@@ -705,6 +751,7 @@ int SUM_put(SUM_t *sum, int (*history)(const char *fmt, ...))
  * Called with a pointer to a full path name that contains the sunums
  * that are associated with the series about to be deleted.
  * Returns 1 on error, else 0.
+ * NOTE: error 4 is Connection reset by peer, sum_svc probably gone.
 */
 int SUM_delete_series(char *filename, char *seriesname, int (*history)(const char *fmt, ...))
 {
@@ -753,7 +800,7 @@ int SUM_delete_series(char *filename, char *seriesname, int (*history)(const cha
       call_err = clnt_sperror(cl, "Err clnt_call for DELSERIESDO");
       (*history)("%s %d %s\n", datestring(), status, call_err);
       freekeylist(&klist);
-      return (1);
+      return (4);
     }
   }
   freekeylist(&klist);
