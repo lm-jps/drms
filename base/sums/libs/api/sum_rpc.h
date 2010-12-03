@@ -29,7 +29,7 @@
 #define ERRMSG 4
 /* Define the storage sets used in sum->storeset */
 #define JSOC 0		/* NOTE: JSOC must be 0 */
-#define DSDS 1
+#define LKHD 1		/* Lockheed pds_set_num for the AIA disks */
 
 /* Note: Do NOT change the following. They are in the database */
 #define DARW 1          /* data allocate assigned as read/write */
@@ -138,6 +138,7 @@ bool_t xdr_Rkey(XDR *xdrs, Rkey *objp);
 #define INFODO ((uint32_t)13)
 #define SHUTDO ((uint32_t)14)
 #define INFODOX ((uint32_t)15)
+#define NOPDO ((uint32_t)16)
 
 extern KEY *sumdo_1();
 extern KEY *opendo_1();
@@ -149,6 +150,7 @@ extern KEY *infodoX_1();
 extern KEY *sumrespdo_1();
 extern KEY *allocdo_1();
 extern KEY *putdo_1();
+extern KEY *nopdo_1();
 /**********************************
 extern KEY *apupdo_1();
 extern KEY *dpupdo_1();
@@ -203,6 +205,7 @@ extern KEY *respdo_1();
 #define TAPEARCVERS4 ((uint32_t)6)
 #define TAPEARCVERS5 ((uint32_t)7)
 #define TAPEARCVERS6 ((uint32_t)8)
+#define TAPEARCVERS7 ((uint32_t)9)
 #define TAPEARCDO ((uint32_t)1)
 
 extern KEY *tapearcdo_1();
@@ -339,6 +342,11 @@ extern KEY *respdo_1();
 #define JMTXDO ((uint32_t)1)
 extern KEY *jmtxdo_1();
 
+/* This is the sum_ping program registration */
+#define SUMPINGPROG ((uint32_t)0x2000062f) /* 536872495 */
+#define SUMPINGVERS ((uint32_t)1)
+#define SUMPINGDO ((uint32_t)1)
+
 typedef struct SUM_struct
 {
   SUMID_t uid;
@@ -473,6 +481,7 @@ int SUM_export();
 int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...));
 int SUM_infoEx(SUM_t *sum, int (*history)(const char *fmt, ...));
 void SUM_infoEx_free(SUM_t *sum);
+int SUM_nop();
 
 int NC_PaUpdate();
 SUMID_t SUMLIB_Open();
