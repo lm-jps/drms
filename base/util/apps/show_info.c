@@ -13,7 +13,7 @@ show_info -j {ds=}<seriesname>
 show_info -l {ds=}<seriesname>
 show_info -c {ds=}<record_set>
 show_info -s {ds=}<seriesname>
-show_info [-aAiLopPrRSz] [-dkqt] {ds=}<record_set>|sunum=<sunum> [n=<count>] [key=<keylist>] [seg=<seglist>]
+show_info [-aAiLopPrRSTz] [-dkqt] {ds=}<record_set>|sunum=<sunum> [n=<count>] [key=<keylist>] [seg=<seglist>]
 show_info_sock {same options as above}
 \endcode
 
@@ -79,6 +79,7 @@ This group of arguments specifies the set of keywords, segments, links, or virtu
 \li \c  -r: recnum - show record number as first keyword
 \li \c  -R: retention - show the online expire date for the segment data
 \li \c  -S: SUNUM - show the sunum for the record
+\li \c  -T: Tape - show the archive tape name for the record
 \li \c  -v: verbose - print extra, helpful information
 \li \c  -z: SUNUM - show the storage unit size for the SU that contains the record's segments
 
@@ -224,6 +225,7 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "s", "0", "stats - show some statistics about the series"},
   {ARG_FLAG, "S", "0", "SUNUM - show the sunum for the record"},
   {ARG_FLAG, "t", "0", "types - show types and print formats for keyword values"},
+  {ARG_FLAG, "T", "0", "tapeinfo - show archive tapename and file number, or NA if not archived"},
   {ARG_FLAG, "v", NULL, "verbosity"},
   {ARG_FLAG, "x", "0", "archive - show archive status for storage unit"},
   {ARG_FLAG, "z", "0", "size - show size of storage unit containing record's segments"},
@@ -260,6 +262,7 @@ int nice_intro ()
 	"  -r: recnum - show record number as first keyword\n"
 	"  -R: retention - show the online expire date\n"
 	"  -S: sunum - show sunum number as first keyword (but after recnum)\n"
+	"  -T: Tapename - show archive tapename and file number \n"
         "  -v: verbose - print extra, useful information\n"
 	"  -x: archive - show archive status for the record's storage unit\n"
 	"  -z: size - show size of storage unit containing record's segments\n"
@@ -831,6 +834,7 @@ int DoIt(void)
   int show_online;
   int show_recnum;
   int show_sunum;
+  int show_tapeinfo;
   int show_size;
   int show_session;
   int keyword_list;
@@ -916,6 +920,7 @@ int DoIt(void)
   show_recnum =  cmdparams_get_int(&cmdparams, "r", NULL) != 0;
   show_retention = cmdparams_get_int (&cmdparams, "R", NULL) != 0;
   show_sunum =  cmdparams_get_int(&cmdparams, "S", NULL) != 0;
+  show_tapeinfo =  cmdparams_get_int(&cmdparams, "T", NULL) != 0;
   show_archive = cmdparams_get_int (&cmdparams, "x", NULL) != 0;
   show_size =  cmdparams_get_int(&cmdparams, "z", NULL) != 0;
   show_types =  cmdparams_get_int(&cmdparams, "t", NULL) != 0;
@@ -923,7 +928,7 @@ int DoIt(void)
 
   if(want_path_noret) want_path = 1;	/* also set this flag */
 
-  requireSUMinfo = show_online || show_retention || show_archive || show_size || show_session;
+  requireSUMinfo = show_online || show_retention || show_archive || show_tapeinfo || show_size || show_session;
 
   /* At least seriesname or sunum must be specified */
   if (given_sunum && given_sunum[0] >= 0)
@@ -1448,6 +1453,11 @@ int DoIt(void)
           printf ("%sretain", (col++ ? "\t" : ""));
         if (show_archive)
           printf ("%sarchive", (col++ ? "\t" : ""));
+        if (show_tapeinfo)
+          {
+          printf ("%stapename", (col++ ? "\t" : ""));
+          printf ("%sfilenum", (col++ ? "\t" : ""));
+          }
         if (show_size)
           printf ("%ssize", (col++ ? "\t" : ""));
         if (show_session)
@@ -1483,6 +1493,11 @@ int DoIt(void)
             printf ("%sstring", (col++ ? "\t" : ""));
           if (show_archive)
             printf ("%sstring", (col++ ? "\t" : ""));
+          if (show_tapeinfo)
+            {
+            printf ("%sstring", (col++ ? "\t" : ""));
+            printf ("%sint", (col++ ? "\t" : ""));
+            }
           if (show_size)
             printf ("%slonglong", (col++ ? "\t" : ""));
           if (show_session)
@@ -1525,6 +1540,11 @@ int DoIt(void)
             printf ("%s%%s", (col++ ? "\t" : ""));
           if (show_archive)
             printf ("%s%%s", (col++ ? "\t" : ""));
+          if (show_tapeinfo)
+            {
+            printf ("%s%%s", (col++ ? "\t" : ""));
+            printf ("%s%%04d", (col++ ? "\t" : ""));
+            }
           if (show_size)
             printf ("%s%%lld", (col++ ? "\t" : ""));
           if (show_session)
@@ -1653,6 +1673,33 @@ int DoIt(void)
         printf("## archive=%s\n", msg);
       else
         printf("%s%s", (col++ ? "\t" : ""), msg);
+      }
+
+    if (show_tapeinfo)
+      {
+      /* rec has the suinfo struct already */
+      char *msg;
+      int fn;
+      if (*rec->suinfo->arch_tape == '\0')
+        {
+        msg = "NA";
+        fn = -9999;
+        }
+      else
+        {
+        msg = rec->suinfo->arch_tape;
+        fn = rec->suinfo->arch_tape_fn;
+        }
+      if (keyword_list)
+        {
+        printf("## tapename=%s\n", msg);
+        printf("## tapeinfo=%04d\n", fn);
+        }
+      else
+        {
+        printf("%s%s", (col++ ? "\t" : ""), msg);
+        printf("%s%04d", (col++ ? "\t" : ""), fn);
+        }
       }
 
     if (show_size)
@@ -1933,7 +1980,7 @@ int DoIt(void)
       break;
       }
     if (!keyword_list && (show_recnum || show_sunum || show_recordspec || show_online || show_session ||
-		show_retention || show_archive || show_size || nkeys || nsegs || nlinks || want_path))
+		show_retention || show_archive || show_tapeinfo || show_size || nkeys || nsegs || nlinks || want_path))
       printf ("\n");
     } /* rec loop */
 
