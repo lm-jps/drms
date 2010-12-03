@@ -671,6 +671,15 @@ int drms_delete_series(DRMS_Env_t *env, const char *series, int cascade, int kee
          * we properly created the array of SUs that will be sent to SUMS for deletion. */
         if (keepsums || (!drmsstatus && array && array->naxis == 2 && array->axis[0] == 1))
         {
+           if (cascade && !keepsums) {
+              if (array->axis[1] > 0) {
+                 /* Delete the SUMS files from SUMS. */
+                 /* If this is a sock-module, must pass the vector SUNUM by SUNUM 
+                  * to drms_server (drms_dropseries handles the sock-module case). */
+                 drms_dropseries(env, series, array);
+              }
+           }
+
            if (cascade) {
               sprintf(query,"drop table %s",series_lower);
               if (env->verbose)
@@ -730,18 +739,6 @@ int drms_delete_series(DRMS_Env_t *env, const char *series, int cascade, int kee
            if (drms_dms(session,NULL,query))
              goto bailout;
 
-           /* Can only potentially have SUMS SUNUMS to drop if there 
-            * is at least one record in the series. */
-           if (cascade && !keepsums) {
-	          if (array->axis[1] > 0) {
-                     /* If the DRMS deletions occurred without a hitch, then delete the 
-                      * SUMS files from SUMS. */
-                     /* If this is a sock-module, must pass the vector SUNUM by SUNUM 
-                      * to drms_server. */
-                     drms_dropseries(env, series, array);
-                  }
-              }
-
            /* Both DRMS servers and clients have a series_cache (one item per
               each series in all of DRMS). So, always remove the deleted series
               from this cache, whether or not this is a server. */
@@ -749,9 +746,8 @@ int drms_delete_series(DRMS_Env_t *env, const char *series, int cascade, int kee
            /* Since we are now caching series on-demand, this series may not be in the
             * series_cache, but hcon_remove handles this fine. */
 
-           /* ARTXXX - bug, this needs to send the command mode DRMS_DROPSERIES somewhere */
            hcon_remove(&env->series_cache,series_lower);
-	   }
+        }
         else
         {
            fprintf(stderr, "Couldn't create vector of sunum keywords.\n");
