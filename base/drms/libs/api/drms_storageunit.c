@@ -104,8 +104,7 @@ static int EmptyDir(const char *dir)
 /* Allocate a storage unit of the indicated size from SUMS and return
    its sunum and directory. */
 #ifndef DRMS_CLIENT
-long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir, 
-			int *status)
+long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir, int *tapegroup, int *status)
 {
   int stat;
   DRMS_SumRequest_t *request, *reply;
@@ -119,6 +118,16 @@ long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir,
   request->dontwait = 0;
   request->reqcnt = 1;
   request->bytes = (double)size;
+
+  if (tapegroup)
+  {
+     request->group = *tapegroup;
+  }
+  else
+  {
+     request->group = -1;
+  }
+
   if (request->bytes <=0 )
   {
     fprintf(stderr,"Invalid storage unit size %lf\n",request->bytes);
@@ -128,7 +137,7 @@ long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir,
   if (!env->sum_thread) {
     if((stat = pthread_create(&env->sum_thread, NULL, &drms_sums_thread, 
 			      (void *) env))) {
-      fprintf(stderr,"Thread creation failed: %d\n", stat);          
+      fprintf(stderr,"Thread creation failed: %d\n", stat);
       return 1;
     }
   }
@@ -177,6 +186,7 @@ int drms_su_alloc2(DRMS_Env_t *env,
                    uint64_t size, 
                    long long sunum, 
                    char **sudir, 
+                   int *tapegroup,
                    int *status)
 {
    int stat;
@@ -189,6 +199,16 @@ int drms_su_alloc2(DRMS_Env_t *env,
    request->reqcnt = 1;
    request->bytes = (double)size;
    request->sunum[0] = sunum;
+
+   if (tapegroup)
+   {
+      request->group = *tapegroup;
+   }
+   else
+   {
+      request->group = -1;
+   }
+
    if (request->bytes <=0 )
    {
       fprintf(stderr,"Invalid storage unit size %lf\n",request->bytes);
@@ -323,8 +343,11 @@ int drms_su_newslots(DRMS_Env_t *env, int n, char *series,
 	}
       }
 
-      sunum = drms_su_alloc(env, drms_su_size(env, series) + 1000000, 
-			    &sudir, &status);
+      sunum = drms_su_alloc(env, 
+                            drms_su_size(env, series) + 1000000, 
+			    &sudir,
+                            &(template->seriesinfo->tapegroup), 
+                            &status);
       if (status)
       {
 	if (sudir)
@@ -1767,9 +1790,10 @@ int drms_su_allocsu(DRMS_Env_t *env,
                     uint64_t size, 
                     long long sunum, 
                     char **sudir, 
+                    int *tapegroup, 
                     int *status)
 {
-   return drms_su_alloc2(env, size, sunum, sudir, status);
+   return drms_su_alloc2(env, size, sunum, sudir, tapegroup, status);
 }
 
 /* drms_su_commitsu() does NOT write the Records.txt file, so it is not possible for SUMS to delete DRMS records of SUs committed 

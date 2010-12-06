@@ -28,9 +28,10 @@ extern char abortstring[1024];
 
 #define WEEK_SECONDS (60*60*24*7)
 
-
-
 #define DRMS_ABORT_SLEEP (2)
+
+#define kExtTapegroupSlot          (10000)
+#define kExtTapegroupMaxStoreset   (1)
 
 /******************************** Prototypes *************************/
 

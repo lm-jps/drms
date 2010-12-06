@@ -16,11 +16,12 @@
 #define DRMS_SLOT_FULL 1
 #define DRMS_SLOT_TEMP 2
 
-long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **dir, int *status);
+long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **dir, int *tapegroup, int *status);
 int drms_su_alloc2(DRMS_Env_t *env, 
                    uint64_t size, 
                    long long sunum, 
                    char **sudir, 
+                   int *tapegroup,
                    int *status);
 int drms_su_newslots(DRMS_Env_t *env, int n, char *series, long long *recnum,
 		     DRMS_RecLifetime_t lifetime, int *slotnum, 

@@ -9,6 +9,7 @@ int drms_su_allocsu(DRMS_Env_t *env,
                     uint64_t size, 
                     long long sunum, 
                     char **sudir, 
+                    int *tapegroup,
                     int *status);
 int drms_su_commitsu(DRMS_Env_t *env, 
                      const char *seriesname, 

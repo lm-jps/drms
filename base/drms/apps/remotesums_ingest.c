@@ -235,6 +235,8 @@ int DoIt(void)
    const char *phashkey = NULL;
    struct dirent **fileList = NULL;
    int atleastonefilecopied = 0;
+   DRMS_Record_t *template = NULL;
+   int drmsstat = DRMS_SUCCESS;
 
    listsunums = cmdparams_get_str(&cmdparams, kSUNUMS, NULL);
    listpaths = cmdparams_get_str(&cmdparams, kPATHS, NULL);
@@ -295,10 +297,13 @@ int DoIt(void)
       }
 
       /* The "_sock" version of this module will not build (nor should it) */
+      template = drms_template_record(drms_env, aseries, &drmsstat);
+      XASSERT(template); /* This should succeed because there was a test on this series above. */
       if (!drms_su_allocsu(drms_env, 
                            drms_su_size(drms_env, aseries) + 1000000, 
                            sunum,
                            &sudir, 
+                           &template->seriesinfo->tapegroup,
                            NULL))
       {
          if (sudir && !drms_su_getexportserver(drms_env, sunum, serverstr, sizeof(serverstr)))
