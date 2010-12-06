@@ -676,7 +676,11 @@ int drms_delete_series(DRMS_Env_t *env, const char *series, int cascade, int kee
                  /* Delete the SUMS files from SUMS. */
                  /* If this is a sock-module, must pass the vector SUNUM by SUNUM 
                   * to drms_server (drms_dropseries handles the sock-module case). */
-                 drms_dropseries(env, series, array);
+                 if (drms_dropseries(env, series, array))
+                 {
+                    fprintf(stderr, "Unable to drop SUNUMS; failure calling SUMS.\n");
+                    goto bailout;
+                 }
               }
            }
 

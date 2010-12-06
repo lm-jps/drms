@@ -493,7 +493,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
      /* Submit request to sums server thread. */
      tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
 
-     /***** GAAAA! DON'T USE request AFTER THIS POINT - drms_sums_thread() frees it *****/
+     /***** DON'T USE request AFTER THIS POINT - drms_sums_thread() frees it *****/
 
      /* Wait for reply. FIXME: add timeout. 
       * This could take a long time if SUMS has to fetch from tape, so release env lock temporarily. */

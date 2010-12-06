@@ -36,7 +36,7 @@ int gSUMSbusy = 0;
 /******************* Main server thread(s) functions ************************/
 
 static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
-						    SUM_t *sum,
+						    SUM_t **sum,
 						    DRMS_SumRequest_t *request);
 
 sem_t *drms_server_getsdsem(void)
@@ -1870,8 +1870,11 @@ void *drms_sums_thread(void *arg)
     }
     else /* A regular request. */
     {
-      /* Send the request to SUMS. */
-      reply = drms_process_sums_request(env, sum, request);
+      /* Send the request to SUMS. sum_svc could die while processing is happening. 
+       * If that is the case drms_process_sums_request() will attempt to re-open 
+       * sum_svc with a SUM_open() call. If that happens, drms_process_sums_request()
+       * will return the */
+      reply = drms_process_sums_request(env, &sum, request);
 
       if (reply)
       {
@@ -1934,14 +1937,34 @@ static void FreeInfo(const void *value)
    }
 }
 
+static void GettingSleepier(int *sleepiness)
+{
+   *sleepiness *= 2;
+   if (*sleepiness > INT_MAX)
+   {
+      *sleepiness = INT_MAX;
+   }
+}
+
 static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
-						    SUM_t *sum,
+						    SUM_t **suminout,
 						    DRMS_SumRequest_t *request)
 {
   int i;
   DRMS_SumRequest_t *reply = NULL;
   int shuttingdown = 0;
   sem_t *sdsem = drms_server_getsdsem();
+  SUM_t *sum = NULL;
+  int tryagain;    /* SUMS crash - try the SUMS API call again. */
+  int nosums;      /* A SUM API call returned an error (not caused by a crash) - 
+                    * a SUMS retry wouldn't make sense. */
+  int sumscrashed; /* SUM_ping() says SUMS isn't there. */
+  int sleepiness;
+
+  if (suminout && *suminout)
+  {
+     sum = *suminout;
+  }
   
   if (!sum)
   {
@@ -1963,44 +1986,73 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
       reply->opcode = DRMS_ERROR_SUMALLOC;
       break;
     }
-    sum->reqcnt = 1;
-    sum->bytes = request->bytes;
 
-    if (request->group < 0)
-    {
-       /* this SU alloc has nothing to do with any series. */
-       sum->storeset = 0;
-    }
-    else
-    {
-       sum->storeset = request->group / kExtTapegroupSlot;
-    }
+    nosums = 0;
+    tryagain = 1;
+    sleepiness = 1;
 
-    if (sum->storeset > kExtTapegroupMaxStoreset)
+    while (tryagain)
     {
-       fprintf(stderr, "SUM thread: storeset '%d' out of range.\n", sum->storeset);
-       reply->opcode = DRMS_ERROR_SUMALLOC;
-       break;
-    }
+       tryagain = 0;
+       sumscrashed = 0;
 
-    /* Make RPC call to the SUM server. */
-    /* PERFORMANCE BOTTLENECK */
-    /* drms_su_alloc() can be slow when the dbase is busy - this is due to 
-     * SUM_open() calls backing up. */
-    if ((reply->opcode = SUM_alloc(sum, printf)))
+       if (!sum)
+       {
+          /* SUMS crashed - open a new SUMS. */
+          sum = SUM_open(NULL, NULL, printkerr);
+          if (!sum)
+          {
+             tryagain = 1;
+             sleep(sleepiness);
+             GettingSleepier(&sleepiness);
+             continue;
+          }
+          else
+          {
+             *suminout = sum;
+          }
+       }
+
+       sum->reqcnt = 1;
+       sum->bytes = request->bytes;
+
+       /* Make RPC call to the SUM server. */
+       /* PERFORMANCE BOTTLENECK */
+       /* drms_su_alloc() can be slow when the dbase is busy - this is due to 
+        * SUM_open() calls backing up. */
+       reply->opcode = SUM_alloc(sum, printf);
+
+       if (reply->opcode != 0)
+       {
+          sumscrashed = (reply->opcode == 4);
+          if (sumscrashed)
+          {
+             /* Not sure how to free sum - probably need to do this, especially since we're looping. */
+             sum = NULL;
+             tryagain = 1;
+             sleep(sleepiness);
+             GettingSleepier(&sleepiness);
+          }
+          else
+          {
+             fprintf(stderr,"SUM thread: SUM_alloc RPC call failed with "
+                     "error code %d\n",reply->opcode);
+             nosums = 1;
+             break; // from loop
+          }
+       }
+    } /* tryagain loop */
+
+    if (!nosums)
     {
-      fprintf(stderr,"SUM thread: SUM_alloc RPC call failed with "
-	      "error code %d\n",reply->opcode);
-      break;
-    }
-
-    reply->sunum[0] = sum->dsix_ptr[0];
-    reply->sudir[0] = strdup(sum->wd[0]);
-    free(sum->wd[0]);
+       reply->sunum[0] = sum->dsix_ptr[0];
+       reply->sudir[0] = strdup(sum->wd[0]);
+       free(sum->wd[0]);
 #ifdef DEBUG
-  printf("SUM_alloc returned sunum=%llu, sudir=%s.\n",reply->sunum[0],
-	 reply->sudir[0]);
+       printf("SUM_alloc returned sunum=%llu, sudir=%s.\n",reply->sunum[0],
+              reply->sudir[0]);
 #endif
+    }
     break;
 
   case DRMS_SUMGET:
@@ -2014,88 +2066,171 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
       reply->opcode = DRMS_ERROR_SUMGET;
       break;
     }
-    sum->reqcnt = request->reqcnt;
-    sum->mode = request->mode;
-    sum->tdays = request->tdays;
-    for (i=0; i<request->reqcnt; i++)
-      sum->dsix_ptr[i] = request->sunum[i];
-
+   
 #ifdef DEBUG
     printf("SUM thread: calling SUM_get\n");
 #endif
-   
-    /* Make RPC call to the SUM server. */
-    reply->opcode = SUM_get(sum, printf);
+
+    nosums = 0;
+    tryagain = 1;
+    sleepiness = 1;
+
+    while (tryagain)
+    {
+       tryagain = 0;
+       sumscrashed = 0;
+
+       if (!sum)
+       {
+          /* SUMS crashed - open a new SUMS. */
+          sum = SUM_open(NULL, NULL, printkerr);
+          if (!sum)
+          {
+             tryagain = 1;
+             sleep(sleepiness);
+             GettingSleepier(&sleepiness);
+             continue;
+          }
+          else
+          {
+             *suminout = sum;
+          }
+       }
+
+       sum->reqcnt = request->reqcnt;
+       sum->mode = request->mode;
+       sum->tdays = request->tdays;
+       for (i=0; i<request->reqcnt; i++)
+         sum->dsix_ptr[i] = request->sunum[i];
+
+       /* Make RPC call to the SUM server. */
+       reply->opcode = SUM_get(sum, printf);
 
 #ifdef DEBUG
-    printf("SUM thread: SUM_get returned %d\n",reply->opcode);
+       printf("SUM thread: SUM_get returned %d\n",reply->opcode);
 #endif
 
-    if (reply->opcode == RESULT_PEND)
-    {
-       /* This SUM_wait() call can take a while. If DRMS is shutting down, 
-        * then don't wait. Should be okay to get shut down sem since 
-        * the main and signal threads don't hold onto them for too long. */
+       if (reply->opcode == RESULT_PEND)
+       {
+          /* This SUM_wait() call can take a while. If DRMS is shutting down, 
+           * then don't wait. Should be okay to get shut down sem since 
+           * the main and signal threads don't hold onto them for too long. */
+          int pollrv = 0;
+          long long naptime = 1;
 
-       if (sdsem)
-       {
-          sem_wait(sdsem);
-          shuttingdown = (drms_server_getsd() != kSHUTDOWN_UNINITIATED);
-          sem_post(sdsem);
-       }
-       
-       if (!shuttingdown)
-       {
-          if (gSUMSbusyMtx)
+          /* WARNING - this is potentially an infinite loop. */
+          while (1)
           {
-             pthread_mutex_lock(gSUMSbusyMtx);
-             gSUMSbusy = 1;
-             pthread_mutex_unlock(gSUMSbusyMtx);
-          }
+             if (sdsem)
+             {
+                sem_wait(sdsem);
+                shuttingdown = (drms_server_getsd() != kSHUTDOWN_UNINITIATED);
+                sem_post(sdsem);
+             }
 
-          /* FIXME: For now we just wait for SUMS. */
-          reply->opcode = SUM_wait(sum);
+             if (shuttingdown)
+             {
+                reply->opcode = 0;
+                break; // from inner loop
+             }
 
-          if (gSUMSbusyMtx)
+             if (gSUMSbusyMtx)
+             {
+                pthread_mutex_lock(gSUMSbusyMtx);
+                gSUMSbusy = 1;
+                pthread_mutex_unlock(gSUMSbusyMtx);
+             }
+
+             /* if sum_svc is down, 
+              * then SUM_poll() will never return anything but TIMEOUTMSG. */
+             pollrv = SUM_poll(sum);
+
+             if (gSUMSbusyMtx)
+             {
+                pthread_mutex_lock(gSUMSbusyMtx);
+                gSUMSbusy = 0;
+                pthread_mutex_unlock(gSUMSbusyMtx);
+             }
+
+             if (pollrv == 0)
+             {
+                break; // from inner loop
+             }
+             else
+             {
+                /* Must check for SUMS running before calling SUM_poll(), since
+                 * SUMS could have crashed. */
+                sumscrashed = (SUM_nop(sum, printf) == 4);
+                if (sumscrashed)
+                {
+                   /* try again */
+                   sum = NULL;
+                   tryagain = 1;
+                   break; // from inner loop
+                }
+                else
+                {
+                   sleep(naptime);
+                   naptime *= 2;
+                   if (naptime > INT_MAX)
+                   {
+                      naptime = INT_MAX;
+                   }
+                }
+             }
+          } /* inner while */
+
+          if (!shuttingdown && !tryagain)
           {
-             pthread_mutex_lock(gSUMSbusyMtx);
-             gSUMSbusy = 0;
-             pthread_mutex_unlock(gSUMSbusyMtx);
-          }
+             reply->opcode = pollrv;
 
-          if (reply->opcode || sum->status)
-          {
-             fprintf(stderr,"SUM thread: SUM_wait call failed with "
-                     "error code = %d, sum->status = %d.\n",
-                     reply->opcode,sum->status);
-             reply->opcode = DRMS_ERROR_SUMWAIT;
-             break;
+             if (reply->opcode || sum->status)
+             {
+                fprintf(stderr,"SUM thread: SUM_wait call failed with "
+                        "error code = %d, sum->status = %d.\n",
+                        reply->opcode,sum->status);
+                reply->opcode = DRMS_ERROR_SUMWAIT;
+                nosums = 1; /* sums error - don't continue */
+                break; // from outer loop
+             }
           }
        }
-       else
+       else if (reply->opcode != 0)
        {
-          reply->opcode = 0;
+          sumscrashed = (reply->opcode == 4);
+          if (sumscrashed)
+          {
+             sum = NULL;
+             tryagain = 1;
+             sleep(sleepiness);
+             GettingSleepier(&sleepiness);
+          }
+          else
+          {
+             fprintf(stderr,"SUM thread: SUM_get RPC call failed with "
+                     "error code %d\n",reply->opcode);
+             nosums = 1; /* sums error - don't continue */
+             break; // from outer loop
+          }
        }
-    }
-    else if (reply->opcode != 0)
+    } /* tryagain loop */
+
+    if (!nosums)
     {
-      fprintf(stderr,"SUM thread: SUM_get RPC call failed with "
-	      "error code %d\n",reply->opcode);
-      break;
-    }
-    for (i=0; i<request->reqcnt; i++)
-    {
-       if (!shuttingdown)
+       for (i=0; i<request->reqcnt; i++)
        {
-          reply->sudir[i] = strdup(sum->wd[i]);
-          free(sum->wd[i]);
+          if (!shuttingdown)
+          {
+             reply->sudir[i] = strdup(sum->wd[i]);
+             free(sum->wd[i]);
 #ifdef DEBUG
-          printf("SUM thread: got sudir[%d] = %s = %s\n",i,reply->sudir[i],sum->wd[i]);
+             printf("SUM thread: got sudir[%d] = %s = %s\n",i,reply->sudir[i],sum->wd[i]);
 #endif
-       }
-       else
-       {
-          reply->sudir[i] = strdup("NA (shuttingdown)");
+          }
+          else
+          {
+             reply->sudir[i] = strdup("NA (shuttingdown)");
+          }
        }
     }
     break;
@@ -2112,12 +2247,6 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
       reply->opcode = DRMS_ERROR_SUMPUT;
       break;
     }
-    sum->dsname = request->dsname;
-    sum->group = request->group;
-    sum->mode = request->mode;
-    sum->tdays = request->tdays;
-    sum->reqcnt = request->reqcnt;
-    sum->history_comment = request->comment;
 
 #ifdef DEBUG2
       #define LOGDIR  "/tmp22/production/"
@@ -2142,24 +2271,76 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
       }
 #endif
 
+    tryagain = 1;
+    sleepiness = 1;
 
-    for (i=0; i<request->reqcnt; i++)
+    while (tryagain)
     {
-      sum->dsix_ptr[i] = request->sunum[i];
-      sum->wd[i] = request->sudir[i];
+       tryagain = 0;
+       sumscrashed = 0;
+
+       if (!sum)
+       {
+          /* SUMS crashed - open a new SUMS. */
+          sum = SUM_open(NULL, NULL, printkerr);
+          if (!sum)
+          {
+             tryagain = 1;
+             sleep(sleepiness);
+             GettingSleepier(&sleepiness);
+             continue;
+          }
+          else
+          {
+             *suminout = sum;
+          }
+       }
+
+       sum->dsname = request->dsname;
+       sum->group = request->group;
+       sum->mode = request->mode;
+       sum->tdays = request->tdays;
+       sum->reqcnt = request->reqcnt;
+       sum->history_comment = request->comment;
+
+       for (i=0; i<request->reqcnt; i++)
+       {
+          sum->dsix_ptr[i] = request->sunum[i];
+          sum->wd[i] = request->sudir[i];
 #ifdef DEBUG
-      printf("putting SU with sunum=%lld and sudir='%s' to SUMS.\n",
-	     request->sunum[i],request->sudir[i]);
+          printf("putting SU with sunum=%lld and sudir='%s' to SUMS.\n",
+                 request->sunum[i],request->sudir[i]);
 #endif
 
 #ifdef DEBUG2
-      if (fptr)
-      {
-         fprintf(fptr, "  %lld\n", (long long)request->sunum[i]);
-      }     
+          if (fptr)
+          {
+             fprintf(fptr, "  %lld\n", (long long)request->sunum[i]);
+          }     
 #endif
+       }
 
-    }
+       /* Make RPC call to the SUM server. */
+       reply->opcode = SUM_put(sum, printf);
+
+       if (reply->opcode != 0)
+       {
+          sumscrashed = (reply->opcode == 4);
+          if (sumscrashed)
+          {
+             sum = NULL;
+             tryagain = 1;
+             sleep(sleepiness);
+             GettingSleepier(&sleepiness);
+          }
+          else
+          {
+             fprintf(stderr,"SUM thread: SUM_put call failed with stat=%d.\n",
+                     reply->opcode);
+             break; // from loop
+          }
+       }
+    } /* while loop */
 
 #ifdef DEBUG2
     if (fptr)
@@ -2168,15 +2349,8 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        fptr = NULL;
     }
 #endif
-    /* Make RPC call to the SUM server. */
-    if ((reply->opcode = SUM_put(sum, printf)))
-    {
-      fprintf(stderr,"SUM thread: SUM_put call failed with stat=%d.\n",
-	      reply->opcode);
-      break;
-    }
   }
-    break;
+  break;
   case DRMS_SUMDELETESERIES:
     if (request->comment)
     {
@@ -2194,8 +2368,15 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
              fpath = comment;
              series = sep + 1;
 
-             if ((reply->opcode = SUM_delete_series(fpath, series, printf)) != 0)
+             reply->opcode = SUM_delete_series(fpath, series, printf);
+
+             if (reply->opcode != 0)
              {
+                /* Don't retry when this API fails - even if it is caused by a SUMS crash, 
+                 * just notify the caller that this failed. delete_series should do 
+                 * a better job handling this. Current, if this SUMS call fails, 
+                 * all the SUs not deleted will become orphaned, and if they have
+                 * long retention times, they will never be freed. */
                 fprintf(stderr,"SUM thread: SUM_delete_series call failed with stat=%d.\n",
                         reply->opcode);
              }
@@ -2216,36 +2397,63 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        reply->opcode = DRMS_ERROR_SUMALLOC;
        break;
     }
-    sum->reqcnt = 1;
-    sum->bytes = request->bytes;
 
-    if (request->group < 0)
+    nosums = 0;
+    tryagain = 1;
+    sleepiness = 1;
+
+    while (tryagain)
     {
-       /* this SU alloc has nothing to do with any series. */
-       sum->storeset = 0;
-    }
-    else
-    {
-       sum->storeset = request->group / kExtTapegroupSlot;
+       tryagain = 0;
+       sumscrashed = 0;
+
+       if (!sum)
+       {
+          /* SUMS crashed - open a new SUMS. */
+          sum = SUM_open(NULL, NULL, printkerr);
+          if (!sum)
+          {
+             tryagain = 1;
+             sleep(sleepiness);
+             GettingSleepier(&sleepiness);
+             continue;
+          }
+          else
+          {
+             *suminout = sum;
+          }
+       }
+
+       sum->reqcnt = 1;
+       sum->bytes = request->bytes;
+
+       /* Make RPC call to the SUM server. */
+       reply->opcode = SUM_alloc2(sum, request->sunum[0], printf);
+       if (reply->opcode != 0)
+       {
+          sumscrashed = (reply->opcode == 4);
+          if (sumscrashed)
+          {
+             sum = NULL;
+             tryagain = 1;
+             sleep(sleepiness);
+             GettingSleepier(&sleepiness);
+          }
+          else
+          {
+             fprintf(stderr,"SUM thread: SUM_alloc2 RPC call failed with "
+                     "error code %d\n", reply->opcode);
+             nosums = 1;
+             break; // from loop
+          }
+       }
     }
 
-    if (sum->storeset > kExtTapegroupMaxStoreset)
+    if (!nosums)
     {
-       fprintf(stderr, "SUM thread: storeset '%d' out of range.\n", sum->storeset);
-       reply->opcode = DRMS_ERROR_SUMALLOC;
-       break;
+       reply->sudir[0] = strdup(sum->wd[0]);
+       free(sum->wd[0]); 
     }
-
-    /* Make RPC call to the SUM server. */
-    if ((reply->opcode = SUM_alloc2(sum, request->sunum[0], printf)))
-    {
-       fprintf(stderr,"SUM thread: SUM_alloc2 RPC call failed with "
-               "error code %d\n", reply->opcode);
-       break;
-    }
-
-    reply->sudir[0] = strdup(sum->wd[0]);
-    free(sum->wd[0]); 
     break;
   case DRMS_SUMEXPORT:
     {
@@ -2263,6 +2471,9 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                   "error code %d\n", reply->opcode);
           break;
        }
+
+       /* Don't retry SUM_export() on failure. If this fails because SUMS is down, just
+        * tell the caller, and let them handle the problem, retrying if they like. */
     }
     break;
   case DRMS_SUMINFO:
@@ -2280,32 +2491,76 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           break;
        }
 
-       /* IMPORTANT! SUM_infoEx() will not support duplicate sunums. So, need to 
-        * remove duplicates, but map each SUNUM in the original request to 
-        * the SUNUM in the array of streamlined requests. */
-       map = hcon_create(sizeof(SUM_info_t *), 128, FreeInfo, NULL, NULL, NULL, 0);
+       nosums = 0;
+       tryagain = 1;
+       sleepiness = 1;
 
-       for (i = 0, isunum = 0; i < request->reqcnt; i++)
+       while (tryagain)
        {
-          snprintf(key, sizeof(key), "%llu", (unsigned long long)request->sunum[i]);
-          if (!hcon_member(map, key))
+          tryagain = 0;
+          sumscrashed = 0;
+
+          if (!sum)
           {
-             sum->dsix_ptr[isunum] = request->sunum[i];
-             hcon_insert(map, key, &nulladdr);
-             isunum++;
+             /* SUMS crashed - open a new SUMS. */
+             sum = SUM_open(NULL, NULL, printkerr);
+             if (!sum)
+             {
+                tryagain = 1;
+                sleep(sleepiness);
+                GettingSleepier(&sleepiness);
+                continue;
+             }
+             else
+             {
+                *suminout = sum;
+             }
           }
-       }
 
-       sum->reqcnt = isunum;
-       sum->sinfo = NULL;
+          /* IMPORTANT! SUM_infoEx() will not support duplicate sunums. So, need to 
+           * remove duplicates, but map each SUNUM in the original request to 
+           * the SUNUM in the array of streamlined requests. */
+          map = hcon_create(sizeof(SUM_info_t *), 128, FreeInfo, NULL, NULL, NULL, 0);
 
-       /* Make RPC call to the SUM server. */
-       if ((reply->opcode = SUM_infoEx(sum, printf)))
-       {
-          fprintf(stderr,"SUM thread: SUM_infoEx RPC call failed with "
-                  "error code %d\n", reply->opcode);
-       }
-       else
+          for (i = 0, isunum = 0; i < request->reqcnt; i++)
+          {
+             snprintf(key, sizeof(key), "%llu", (unsigned long long)request->sunum[i]);
+             if (!hcon_member(map, key))
+             {
+                sum->dsix_ptr[isunum] = request->sunum[i];
+                hcon_insert(map, key, &nulladdr);
+                isunum++;
+             }
+          }
+
+          sum->reqcnt = isunum;
+          sum->sinfo = NULL;
+
+          /* Make RPC call to the SUM server. */
+          reply->opcode = SUM_infoEx(sum, printf);
+      
+          if (reply->opcode != 0)
+          {
+             sumscrashed = (reply->opcode == 4);
+             if (sumscrashed)
+             {
+                sum = NULL;
+                tryagain = 1;
+                hcon_destroy(&map);
+                sleep(sleepiness);
+                GettingSleepier(&sleepiness); 
+             }
+             else
+             {
+                fprintf(stderr,"SUM thread: SUM_infoEx RPC call failed with "
+                        "error code %d\n", reply->opcode);
+                nosums = 1;
+                break; // from loop
+             }
+          }
+       } // while loop
+
+       if (!nosums)
        {
           /* Returns a linked-list of SUM_info_t structures in sum->sinfo. Each 
            * node has been malloc'd by SUM_infoEx(). It is the caller's responsibility to 
@@ -2329,14 +2584,14 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
              {
                 fprintf(stderr, "Information returned for sunum '%s' unknown to DRMS.\n", key);
                 reply->opcode = 99;
-                break;
+                break; // from loop
              }
 
              psinfo = psinfo->next;
           }
 
           for (i = 0; i < request->reqcnt; i++)
-          {            
+          {
              snprintf(key, sizeof(key), "%llu", (unsigned long long)(request->sunum[i]));
              if ((pinfo = hcon_lookup(map, key)) != NULL)
              {
@@ -2348,7 +2603,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
              {
                 fprintf(stderr, "Information returned for sunum '%s' unknown to DRMS.\n", key);
                 reply->opcode = 99;
-                break;
+                break; // from loop
              }
           }
 

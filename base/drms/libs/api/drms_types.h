@@ -29,6 +29,7 @@
 /** \brief Maximum byte length of unit string */
 #define DRMS_MAXUNITLEN        (32)
 #define DRMS_MAXQUERYLEN       (8192)
+#define DRMS_MAXBIGQUERYLEN    (16384)
 #define DRMS_MAXPATHLEN        (512)
 #define DRMS_MAXFORMATLEN      (20)
 /** \brief Maximum dimension of DRMS data */

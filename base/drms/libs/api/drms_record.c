@@ -7308,7 +7308,7 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
    DRMS_RecordSet_t *rs = NULL;
    static long long guid = 1;
    int stat = DRMS_SUCCESS;
-   char cursorquery[DRMS_MAXQUERYLEN];
+   char cursorquery[DRMS_MAXBIGQUERYLEN];
    char cursorname[DRMS_MAXCURSORNAMELEN];
    char *seriesname = NULL;
    char *pQuery = NULL;
@@ -7375,6 +7375,7 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
                   *dot = '_';
                }
 	       snprintf(cursorname, sizeof(cursorname), "%s_CURSOR%lld", seriesname, guid++);
+
 	       snprintf(cursorquery, 
 			sizeof(cursorquery), 
 			"DECLARE %s NO SCROLL CURSOR FOR (%s) FOR READ ONLY", 
