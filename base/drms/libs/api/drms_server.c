@@ -2016,6 +2016,24 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        sum->reqcnt = 1;
        sum->bytes = request->bytes;
 
+       if (request->group < 0)
+       {
+          /* this SU alloc has nothing to do with any series. */
+          sum->storeset = 0;
+       }
+       else
+       {
+          sum->storeset = request->group / kExtTapegroupSlot;
+       }
+ 	 
+       if (sum->storeset > kExtTapegroupMaxStoreset)
+       {
+          fprintf(stderr, "SUM thread: storeset '%d' out of range.\n", sum->storeset);
+          reply->opcode = DRMS_ERROR_SUMALLOC;
+          nosums = 1;
+          break;
+       }
+
        /* Make RPC call to the SUM server. */
        /* PERFORMANCE BOTTLENECK */
        /* drms_su_alloc() can be slow when the dbase is busy - this is due to 
@@ -2426,6 +2444,24 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 
        sum->reqcnt = 1;
        sum->bytes = request->bytes;
+
+       if (request->group < 0)
+       {
+          /* this SU alloc has nothing to do with any series. */
+          sum->storeset = 0;
+       }
+       else
+       {
+          sum->storeset = request->group / kExtTapegroupSlot;
+       }
+ 	 
+       if (sum->storeset > kExtTapegroupMaxStoreset)
+       {
+          fprintf(stderr, "SUM thread: storeset '%d' out of range.\n", sum->storeset);
+          reply->opcode = DRMS_ERROR_SUMALLOC;
+          nosums = 1;
+          break;
+       }
 
        /* Make RPC call to the SUM server. */
        reply->opcode = SUM_alloc2(sum, request->sunum[0], printf);
