@@ -24,6 +24,7 @@
 #endif
 
 #define kDELSERFILE "thefile.txt"
+#define kMaxSleep   (90)
 
 sem_t *gShutdownsem = NULL; /* synchronization among signal thread, main thread, 
                                sums thread, and server threads during shutdown */
@@ -1940,9 +1941,9 @@ static void FreeInfo(const void *value)
 static void GettingSleepier(int *sleepiness)
 {
    *sleepiness *= 2;
-   if (*sleepiness > INT_MAX)
+   if (*sleepiness > kMaxSleep)
    {
-      *sleepiness = INT_MAX;
+      *sleepiness = kMaxSleep;
    }
 }
 
