@@ -40,6 +40,15 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 						    SUM_t **sum,
 						    DRMS_SumRequest_t *request);
 
+static void GettingSleepier(int *sleepiness)
+{
+   *sleepiness *= 2;
+   if (*sleepiness > kMaxSleep)
+   {
+      *sleepiness = kMaxSleep;
+   }
+}
+
 sem_t *drms_server_getsdsem(void)
 {
    return gShutdownsem;
@@ -1786,6 +1795,8 @@ void *drms_sums_thread(void *arg)
   int connected = 0;
   char *ptmp;
   TIMER_t *timer = NULL;
+  int tryagain;
+  int sleepiness;
 
   env = (DRMS_Env_t *) arg;
 
@@ -1824,31 +1835,38 @@ void *drms_sums_thread(void *arg)
     if (!connected && request->opcode!=DRMS_SUMCLOSE)
     {
       /* Connect to SUMS. */
-       if (env->verbose)
+       tryagain = 1;
+       sleepiness = 1;
+
+       while (tryagain)
        {
-          timer = CreateTimer();
+          tryagain = 0;
+
+          if (!sum)
+          {
+             /* SUMS not there - try to connect. */
+             if (env->verbose)
+             {
+                timer = CreateTimer();
+             }
+
+             sum = SUM_open(NULL, NULL, printkerr);
+
+             if (env->verbose && timer)
+             {
+                fprintf(stdout, "to call SUM_open: %f seconds.\n", GetElapsedTime(timer));
+                DestroyTimer(&timer);
+             }
+
+             if (!sum)
+             {
+                fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
+                tryagain = 1;
+                sleep(sleepiness);
+                GettingSleepier(&sleepiness);
+             }
+          }
        }
-
-       /* When the rate of SUM_open() calls gets large, SUM_open() starts to fall behind. */ 
-      if ((sum = SUM_open(NULL, NULL, printkerr)) == NULL)
-      {
-	fprintf(stderr,"drms_open: Failed to connect to SUMS.\n");
-	fflush(stdout);
-	XASSERT(reply = malloc(sizeof(DRMS_SumRequest_t)));
-	reply->opcode = DRMS_ERROR_SUMOPEN;
-	/* Give the service thread a chance to deliver the bad news to
-	   the client. */
-	tqueueAdd(env->sum_outbox, env->sum_tag, (char *) reply);
-	sleep(1);
-	//Exit(1); /* Take down the DRMS server. */
-        pthread_kill(env->signal_thread, SIGTERM);
-      }
-
-      if (env->verbose && timer)
-      {
-         fprintf(stdout, "to call SUM_open: %f seconds.\n", GetElapsedTime(timer));
-         DestroyTimer(&timer);
-      }
 
       connected = 1;
 #ifdef DEBUG
@@ -1938,15 +1956,6 @@ static void FreeInfo(const void *value)
    }
 }
 
-static void GettingSleepier(int *sleepiness)
-{
-   *sleepiness *= 2;
-   if (*sleepiness > kMaxSleep)
-   {
-      *sleepiness = kMaxSleep;
-   }
-}
-
 static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 						    SUM_t **suminout,
 						    DRMS_SumRequest_t *request)
@@ -2003,6 +2012,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           sum = SUM_open(NULL, NULL, printkerr);
           if (!sum)
           {
+             fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
              tryagain = 1;
              sleep(sleepiness);
              GettingSleepier(&sleepiness);
@@ -2048,6 +2058,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           {
              /* Not sure how to free sum - probably need to do this, especially since we're looping. */
              sum = NULL;
+             fprintf(stderr, "SUMS no longer there; trying again in %d seconds.\n", sleepiness);
              tryagain = 1;
              sleep(sleepiness);
              GettingSleepier(&sleepiness);
@@ -2105,6 +2116,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           sum = SUM_open(NULL, NULL, printkerr);
           if (!sum)
           {
+             fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
              tryagain = 1;
              sleep(sleepiness);
              GettingSleepier(&sleepiness);
@@ -2135,7 +2147,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
            * then don't wait. Should be okay to get shut down sem since 
            * the main and signal threads don't hold onto them for too long. */
           int pollrv = 0;
-          long long naptime = 1;
+          int naptime = 1;
 
           /* WARNING - this is potentially an infinite loop. */
           while (1)
@@ -2184,17 +2196,17 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                 {
                    /* try again */
                    sum = NULL;
+                   fprintf(stderr, "SUMS no longer there; trying again in %d seconds.\n", sleepiness);
                    tryagain = 1;
+                   sleep(sleepiness);
+                   GettingSleepier(&sleepiness);
                    break; // from inner loop
                 }
                 else
                 {
+                   /* Need to poll again. */
                    sleep(naptime);
-                   naptime *= 2;
-                   if (naptime > INT_MAX)
-                   {
-                      naptime = INT_MAX;
-                   }
+                   GettingSleepier(&naptime);
                 }
              }
           } /* inner while */
@@ -2220,6 +2232,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           if (sumscrashed)
           {
              sum = NULL;
+             fprintf(stderr, "SUMS no longer there; trying again in %d seconds.\n", sleepiness);
              tryagain = 1;
              sleep(sleepiness);
              GettingSleepier(&sleepiness);
@@ -2304,6 +2317,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           sum = SUM_open(NULL, NULL, printkerr);
           if (!sum)
           {
+             fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
              tryagain = 1;
              sleep(sleepiness);
              GettingSleepier(&sleepiness);
@@ -2348,6 +2362,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           if (sumscrashed)
           {
              sum = NULL;
+             fprintf(stderr, "SUMS no longer there; trying again in %d seconds.\n", sleepiness);
              tryagain = 1;
              sleep(sleepiness);
              GettingSleepier(&sleepiness);
@@ -2432,6 +2447,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           sum = SUM_open(NULL, NULL, printkerr);
           if (!sum)
           {
+             fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
              tryagain = 1;
              sleep(sleepiness);
              GettingSleepier(&sleepiness);
@@ -2472,6 +2488,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           if (sumscrashed)
           {
              sum = NULL;
+             fprintf(stderr, "SUMS no longer there; trying again in %d seconds.\n", sleepiness);
              tryagain = 1;
              sleep(sleepiness);
              GettingSleepier(&sleepiness);
@@ -2543,6 +2560,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
              sum = SUM_open(NULL, NULL, printkerr);
              if (!sum)
              {
+                fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
                 tryagain = 1;
                 sleep(sleepiness);
                 GettingSleepier(&sleepiness);
@@ -2582,6 +2600,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
              if (sumscrashed)
              {
                 sum = NULL;
+                fprintf(stderr, "SUMS no longer there; trying again in %d seconds.\n", sleepiness);
                 tryagain = 1;
                 hcon_destroy(&map);
                 sleep(sleepiness);
