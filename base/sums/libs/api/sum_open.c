@@ -563,7 +563,7 @@ int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
 */
 int SUM_nop(SUM_t *sum, int (*history)(const char *fmt, ...))
 {
-  struct timeval NOPTIMEOUT = { 3, 0 };
+  struct timeval NOPTIMEOUT = { 5, 0 };
   KEY *klist;
   char *call_err;
   int ans;
