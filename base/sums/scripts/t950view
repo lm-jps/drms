@@ -192,7 +192,7 @@ for($i=0; $i < $MAX_DRIVES; $i++) {
 
 #First connect to database
   #$dbh = DBI->connect( '', "$login", "$passw", 'Oracle' );
-  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb;port=$PGPORT", "$user", "$password");
+  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb;port=$PGPORT", "$user", "$passwd");
   if ( !defined $dbh ) {
     die "Cannot do \$dbh->connect: $DBI::errstr\n";
   }
