@@ -139,6 +139,7 @@ bool_t xdr_Rkey(XDR *xdrs, Rkey *objp);
 #define SHUTDO ((uint32_t)14)
 #define INFODOX ((uint32_t)15)
 #define NOPDO ((uint32_t)16)
+#define TAPERECONNECTDO ((uint32_t)17)
 
 extern KEY *sumdo_1();
 extern KEY *opendo_1();
@@ -151,6 +152,7 @@ extern KEY *sumrespdo_1();
 extern KEY *allocdo_1();
 extern KEY *putdo_1();
 extern KEY *nopdo_1();
+extern KEY *tapereconnectdo_1();
 /**********************************
 extern KEY *apupdo_1();
 extern KEY *dpupdo_1();
