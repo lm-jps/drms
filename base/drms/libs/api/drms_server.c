@@ -1797,6 +1797,9 @@ void *drms_sums_thread(void *arg)
   TIMER_t *timer = NULL;
   int tryagain;
   int sleepiness;
+  int tryconnect;
+  int shuttingdown;
+  sem_t *sdsem = drms_server_getsdsem();
 
   env = (DRMS_Env_t *) arg;
 
@@ -1824,15 +1827,17 @@ void *drms_sums_thread(void *arg)
   /* Main processing loop. */
   stop = 0;
   empty = 0;
+  tryconnect = 1;
+
   while ( !stop || (stop && !empty))
   {
-    /* Wait for the next SUMS request to arrive in the inbox. */
+     /* Wait for the next SUMS request to arrive in the inbox. */
      /* sum_tag is the thread id of the thread who made the original SUMS request */
     env->sum_tag = 0;
     empty = tqueueDelAny(env->sum_inbox, &env->sum_tag,  &ptmp );
     request = (DRMS_SumRequest_t *) ptmp;
 
-    if (!connected && request->opcode!=DRMS_SUMCLOSE)
+    if (tryconnect && !connected && request->opcode!=DRMS_SUMCLOSE)
     {
       /* Connect to SUMS. */
        tryagain = 1;
@@ -1860,15 +1865,52 @@ void *drms_sums_thread(void *arg)
 
              if (!sum)
              {
-                fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
-                tryagain = 1;
-                sleep(sleepiness);
-                GettingSleepier(&sleepiness);
+                if (env->loopconn)
+                {
+                   fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
+                   tryagain = 1;
+                   sleep(sleepiness);
+                   GettingSleepier(&sleepiness);
+                }
+                else
+                {
+                   /* Default behavior - don't try again, just send message to clients to terminate, and let this 
+                    * thread terminate as well. */
+                   stop = 1; /* exit main loop, after queue is empty (otherwise, keep going until queue is empty). */
+                   tryconnect = 0; /* don't try connecting to SUMS again. */
+                   empty = tqueueCork(env->sum_inbox); /* Don't allow new sums requests. */
+
+                   fprintf(stderr,"Failed to connect to SUMS; terminating.\n");
+                   fflush(stdout);
+                  
+                   sleep(1);
+                   pthread_kill(env->signal_thread, SIGTERM); /* the signal thread will cause a DRMS_SUMCLOSE 
+                                                               * SUMS request to be issued, which will terminate
+                                                               * this thread. */
+                }
+             }
+             else
+             {
+                connected = 1;
              }
           }
-       }
 
-      connected = 1;
+          /* check for user interrupting module. */
+          if (sdsem)
+          {
+             sem_wait(sdsem);
+             shuttingdown = (drms_server_getsd() != kSHUTDOWN_UNINITIATED);
+             sem_post(sdsem);
+          }
+
+          if (shuttingdown)
+          {
+             tryagain = 0;
+             tryconnect = 0;
+          }
+
+       } /* loop SUM_open() */
+
 #ifdef DEBUG
       printf("drms_sums_thread connected to SUMS. SUMID = %llu\n",sum->uid);
       fflush(stdout);
@@ -1879,9 +1921,13 @@ void *drms_sums_thread(void *arg)
     if (request->opcode==DRMS_SUMCLOSE)
     {
       stop = 1;
-      empty = tqueueCork(env->sum_inbox); /* Do not accept any more requests, but keep
-				     processing all the requests already in
-				     the queue.*/
+      if (tryconnect)
+      {
+         /* tryconnect == 0 ==> the first SUM_open() failed, so we already corked the queue. */
+         empty = tqueueCork(env->sum_inbox); /* Do not accept any more requests, but keep
+                                                processing all the requests already in
+                                                the queue.*/
+      }
     }
     else if ( request->opcode==DRMS_SUMABORT )
     {
@@ -1889,38 +1935,47 @@ void *drms_sums_thread(void *arg)
     }
     else /* A regular request. */
     {
-      /* Send the request to SUMS. sum_svc could die while processing is happening. 
-       * If that is the case drms_process_sums_request() will attempt to re-open 
-       * sum_svc with a SUM_open() call. If that happens, drms_process_sums_request()
-       * will return the */
-      reply = drms_process_sums_request(env, &sum, request);
+       if (connected)
+       {
+          /* Send the request to SUMS. sum_svc could die while processing is happening. 
+           * If that is the case drms_process_sums_request() will attempt to re-open 
+           * sum_svc with a SUM_open() call. If that happens, drms_process_sums_request()
+           * will return the new SUM_t. */
+          reply = drms_process_sums_request(env, &sum, request);
+       }
+       else
+       {
+          /* Send a reply to the client saying that SUM_open() failed. */
+          XASSERT(reply = malloc(sizeof(DRMS_SumRequest_t)));
+          reply->opcode = DRMS_ERROR_SUMOPEN;
+       }
 
-      if (reply)
-      {
-         if (!request->dontwait) {
-            /* Put the reply in the outbox. */
-            tqueueAdd(env->sum_outbox, env->sum_tag, (char *) reply);
-         } else {
-            /* If the calling thread waits for the reply, then it is the caller's responsibility 
-             * to clean up. Otherwise, clean up here. */
-            for (int i = 0; i < request->reqcnt; i++) {
-               if (reply->sudir[i])
-               {
-                  free(reply->sudir[i]);
-               }
+       if (reply)
+       {
+          if (!request->dontwait) {
+             /* Put the reply in the outbox. */
+             tqueueAdd(env->sum_outbox, env->sum_tag, (char *) reply);
+          } else {
+             /* If the calling thread waits for the reply, then it is the caller's responsibility 
+              * to clean up. Otherwise, clean up here. */
+             for (int i = 0; i < request->reqcnt; i++) {
+                if (reply->sudir[i])
+                {
+                   free(reply->sudir[i]);
+                }
 
-               /* The sunum array is statically defined - no need to free. */
-            }
-            free(reply);
-         }
-      }
-      env->sum_tag = 0; // done processing
+                /* The sunum array is statically defined - no need to free. */
+             }
+             free(reply);
+          }
+       }
+       env->sum_tag = 0; // done processing
     }
 
     /* Note: request is only shallow-freed. The is the requestor's responsiblity 
      * to free any memory allocated for the dsname, comment, and sudir fields. */
     free(request);
-  }
+  } /* main loop on queue. */
 
   if (connected && sum)
   {

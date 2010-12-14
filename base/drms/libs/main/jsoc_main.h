@@ -36,6 +36,7 @@ parsing, and default-parameter initialization.
 #define kRETENTIONARG "DRMS_RETENTION"
 #define kQUERYMEMARG "DRMS_QUERY_MEM"
 #define kSERVERWAITARG "DRMS_SERVER_WAIT"
+#define kLoopConn "loopconn"
 
 extern CmdParams_t cmdparams;
 /* Global DRMS Environment handle. */

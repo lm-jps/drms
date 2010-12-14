@@ -357,6 +357,7 @@ struct DRMS_Env_struct
                      * drms_server_begin_transaction()); 0 otherwise (set by drms_server_end_transaction()) */
   int sessionrunning; /* 1 if a DRMS session has been started by drms_server_open_session() (set by
                        * drms_server_begin_transaction()); 0 otherwise (set by drms_server_end_transaction()) */
+  int loopconn;
 };
 
 /** \brief DRMS environment struct reference */

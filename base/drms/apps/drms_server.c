@@ -184,6 +184,7 @@ create_series describe_series delete_series modify_series show_info
 #define kNAGLEOFFFLAG "n"
 #define kDOLOGFLAG "L"
 #define kFGFLAG "f"
+#define kLoopConnFlag "loopconn"
 
 /* Global structure holding command line parameters. */
 CmdParams_t cmdparams;
@@ -202,6 +203,7 @@ ModuleArgs_t module_args[] = {
   {ARG_FLAG, kNAGLEOFFFLAG, NULL, "?"},
   {ARG_FLAG, kDOLOGFLAG, NULL, "Generate a log saved into a SUMS directory."},
   {ARG_FLAG, kFGFLAG, NULL, "Do not fork a child drms_server process."},
+  {ARG_FLAG, kLoopConnFlag, NULL, "Loop trying to connect to SUMS if SUMS isn't there."},
   {}
 };
 
@@ -408,6 +410,7 @@ int main (int argc, char *argv[]) {
   env->dolog = dolog;
   env->quiet = 1;
   env->selfstart = selfstart;
+  env->loopconn = cmdparams_isflagset(&cmdparams, kLoopConnFlag);
 
   /* Start listening on the socket for clients trying to connect. */
   sockfd = db_tcp_listen(hostname, sizeof(hostname), &port);

@@ -375,11 +375,12 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   /* Parse command line parameters. */
   snprintf(reservebuf, 
            sizeof(reservebuf), 
-           "%s,%s,%s,%s", 
+           "%s,%s,%s,%s,%s", 
            "L,Q,V,jsocmodver", 
            kARCHIVEARG,
            kRETENTIONARG,
-           kQUERYMEMARG);
+           kQUERYMEMARG,
+           kLoopConn);
   cmdparams_reserve(&cmdparams, reservebuf, "jsocmain");
 
   status = cmdparams_parse (&cmdparams, argc, argv);
@@ -456,6 +457,8 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
     query_mem = cmdparams_get_int(&cmdparams, kQUERYMEMARG, NULL);
   }
 
+  int loopconn = cmdparams_isflagset(&cmdparams, kLoopConn);
+
   /* Initialize server's own DRMS environment and connect to 
      DRMS database server. */
   if ((drms_env = drms_open(dbhost,dbuser,dbpasswd,dbname,sessionns)) == NULL)
@@ -531,6 +534,8 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   drms_env->logfile_prefix = module_name;
   drms_env->dolog = dolog;
   drms_env->quiet = quiet;
+
+  drms_env->loopconn = loopconn;
 
   int abort_flag = 1;
 
