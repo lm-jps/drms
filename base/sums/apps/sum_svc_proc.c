@@ -629,6 +629,32 @@ KEY *closedo_1(KEY *params)
   return((KEY *)1);	/* nothing will be sent later */
 }
 
+/* DRMS typically uses this to see if sum_svc is alive.
+ * If DRMS gets an ack back, it know that sum_svc is alive.
+ * Typical keylist is:
+ * REQCODE:        KEYTYP_INT      16
+ * DEBUGFLG:       KEYTYP_INT      1
+ * USER:   	   KEYTYP_STRING   production
+ * uid:    KEYTYP_UINT64    574
+*/
+KEY *nopdo_1(KEY *params)
+{
+  uint64_t uid;
+
+  if(findkey(params, "DEBUGFLG")) {
+  debugflg = getkey_int(params, "DEBUGFLG");
+  if(debugflg) {
+    write_log("!!Keylist in nopdo_1() is:\n");
+    keyiterate(logkey, params);
+  }
+  }
+  rinfo = 0;
+  write_log("SUM_nop for user=%s uid=%lu\n",
+		GETKEY_str(params, "USER"), getkey_uint64(params, "uid"));
+  send_ack();
+  return((KEY *)1);	/* nothing will be sent later */
+}
+
 /* Called by delete_series doing a SUM_delete_series() call with all
  * the SUMS storage units (i.e. ds_index) that are associated with
  * the series about to be deleted. The sunums are in the given file.
