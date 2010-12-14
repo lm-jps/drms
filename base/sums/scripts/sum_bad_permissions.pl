@@ -64,10 +64,10 @@ $passwd = ReadLine(0);
 chomp($passwd);
 ReadMode('normal');
 print "\n";
-if($passwd ne "hmi4sdo") {
-  print "Invalid passwd\n";
-  exit(1);
-}
+#if($passwd ne <passwd>) {
+#  print "Invalid passwd\n";
+#  exit(1);
+#}
 $user = "jim";
 $password = "jimshoom";
 $hostdb = "hmidb";      #host where Postgres runs
