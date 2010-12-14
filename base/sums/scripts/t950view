@@ -59,7 +59,6 @@ $NOTAPEARC = "/usr/local/logs/soc/NOTAPEARC";
 $IMGDIR = "/home/jsoc/gallery"; #dir with the .gif files
 $INLOG = 0;			#use default tape_svc log
 #$login = "dsowner";
-#$passw = "hmi4sdo";
 $pid0 = 0;
 
 $MAX_SLOTS_PAGE = 200;
@@ -171,11 +170,11 @@ if($interactive && !$restartmode) {
   chomp($passwd);
   ReadMode('normal');
   print "\n";
-  if($passwd ne "hmi4sdo") {
-    print "Invalid passwd\n";
-    print "!!TEMP Continue for now...\n";
-    #exit(1);
-  }
+#  if($passwd ne <password>) {
+#    print "Invalid passwd\n";
+#    print "!!TEMP Continue for now...\n";
+#    #exit(1);
+#  }
 }
 $ext = "$user"."_$ldate";
 $log = "/usr/local/logs/SUM/t950view_$ext.log";

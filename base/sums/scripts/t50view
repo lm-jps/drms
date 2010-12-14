@@ -154,10 +154,10 @@ if($interactive) {
     chomp($passwd);
     ReadMode('normal');
     print "\n";
-    if($passwd ne "hmi4sdo") {
-      print "Invalid passwd\n";
-      exit(1);
-    }
+#    if($passwd ne <passwd>) {
+#      print "Invalid passwd\n";
+#      exit(1);
+#    }
   }
 }
 $ext = "$user"."_$ldate";

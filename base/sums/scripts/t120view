@@ -55,7 +55,6 @@ $HOSTDB = "hmidb";		#host where DB runs
 $NOTAPEARC = "/usr/local/logs/soc/NOTAPEARC";
 $INLOG = 0;			#use default tape_svc log
 #$login = "dsowner";
-#$passw = "hmi4sdo";
 $pid0 = 0;
 
 $MAX_SLOTS = 120;
@@ -157,10 +156,10 @@ if($interactive && !$restartmode) {
   chomp($passwd);
   ReadMode('normal');
   print "\n";
-  if($passwd ne "hmi4sdo") {
-    print "Invalid passwd\n";
-    exit(1);
-  }
+#  if($passwd ne <passwd>) {
+#    print "Invalid passwd\n";
+#    exit(1);
+#  }
 }
 $ext = "$user"."_$ldate";
 $log = "/usr/local/logs/SUM/t120view_$ext.log";
