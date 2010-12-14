@@ -40,7 +40,7 @@ change dcs3.jsoc.Stanford.EDU to new full host name
 5.)
 
 Add to /home/production/.pgpass 
-foo:*:*:production:hmi4sdo
+foo:*:*:production:<password>
 where 'foo' is the new host name that you have.
 
 --------------------------END CHANGES--------------------------------------
