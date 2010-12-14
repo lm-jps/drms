@@ -385,13 +385,14 @@ if(!strcmp(hostn, "dcs0") || !strcmp(hostn, "dcs1") || !strcmp(hostn, "dcs2") ||
 }				/* !!end of TMP for lws only */
 #endif
 
+/*************NOW run on d02******************************************
   if((pid = fork()) < 0) {
     write_log("***Can't fork(). errno=%d\n", errno);
     exit(1);
   }
-  else if(pid == 0) {                   /* this is the beloved child */
+  else if(pid == 0) {                   // this is the beloved child 
     write_log("execvp of sum_rm\n");
-    args[0] = "sum_rm";			/* note: no -s to sum_rm */
+    args[0] = "sum_rm";			// note: no -s to sum_rm 
     args[1] = dbname;
     args[2] = timetag;
     args[3] = NULL;
@@ -400,6 +401,7 @@ if(!strcmp(hostn, "dcs0") || !strcmp(hostn, "dcs1") || !strcmp(hostn, "dcs2") ||
       exit(1);
     }
   }
+***********************************************************************/
 
 #ifndef __LOCALIZED_DEFS__
 if(strcmp(hostn, "lws") && strcmp(hostn, "n00") && strcmp(hostn, "d00") && strcmp(hostn, "n02")) { 
@@ -418,7 +420,7 @@ if(strcmp(hostn, "lws") && strcmp(hostn, "n00") && strcmp(hostn, "d00") && strcm
   if(!clnttape) {       /* server not there */
     clnt_pcreateerror("Can't get client handle to tape_svc (xsum_svc)");
     write_log("tape_svc not there on %s\n", usedhost);
-    exit(1);
+//    exit(1);
   }
 }
 #endif
@@ -531,6 +533,12 @@ sumprog_1(rqstp, transp)
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_uint32_t;
 		local = (char *(*)()) delseriesdo_1;
+		break;
+	case NOPDO:
+		sprintf(procname, "NOPDO");
+		xdr_argument = xdr_Rkey;
+		xdr_result = xdr_uint32_t;
+		local = (char *(*)()) nopdo_1;
 		break;
 	default:
                 write_log("**sumprog_1() dispatch default procedure %d,ignore\n", rqstp->rq_proc);
