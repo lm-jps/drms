@@ -102,6 +102,7 @@ sqlerror:
 int DS_RmNow(char *wd, uint64_t sumid, double bytes, char *effdate,
 		uint64_t ds_index, int archsub, double *rmbytes) {
 EXEC SQL BEGIN DECLARE SECTION;
+  varchar target[80];
   int l_count;
   uint64_t l_ds_index;
   char stmt[16384];
@@ -215,10 +216,11 @@ EXEC SQL END DECLARE SECTION;
             if(cptr) *cptr = '\0';
             sprintf(stmt, "%s);", stmt);
             printk("Records.txt statement is:\n%s\n", stmt);
+            sprintf(target.arr,  "%s@%s:%s", DBNAME, SERVER, DRMSPGPORT);
+            target.len = strlen(target.arr);
             EXEC SQL WHENEVER SQLERROR GOTO sqljsocerror;
-            //EXEC SQL CONNECT TO jsoc@hmidb.stanford.edu:5432;
-            //!!TBD pickup db name & port from variables
-            EXEC SQL CONNECT TO jsoc@hmidb:5432;
+            //Typically: EXEC SQL CONNECT TO jsoc@hmidb:5432;
+            EXEC SQL CONNECT TO :target;
             EXEC SQL EXECUTE IMMEDIATE :stmt;
             EXEC SQL COMMIT;
             EXEC SQL DISCONNECT;

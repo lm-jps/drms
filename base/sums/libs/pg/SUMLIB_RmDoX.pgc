@@ -110,6 +110,7 @@ sqlerror:
 int DS_RmNowX(char *wd, uint64_t sumid, double bytes, char *effdate,
 		uint64_t ds_index, int archsub, double *rmbytes) {
 EXEC SQL BEGIN DECLARE SECTION;
+  varchar target[80];
   int l_count;
   uint64_t l_ds_index;
   char stmt[16384];
@@ -223,10 +224,11 @@ EXEC SQL END DECLARE SECTION;
             if(cptr) *cptr = '\0';
             sprintf(stmt, "%s);", stmt);
             printk("Records.txt statement is:\n%s\n", stmt);
+            sprintf(target.arr,  "%s@%s:%s", DBNAME, SERVER, DRMSPGPORT);
+            target.len = strlen(target.arr);
             EXEC SQL WHENEVER SQLERROR GOTO sqljsocerror0; //catch connect err
-            //EXEC SQL CONNECT TO jsoc@hmidb.stanford.edu:5432;
-            //!!TBD pickup db name & port from variables
-            EXEC SQL CONNECT TO jsoc@hmidb:5432;
+            //Typically: EXEC SQL CONNECT TO jsoc@hmidb:5432;
+            EXEC SQL CONNECT TO :target;
             EXEC SQL WHENEVER SQLERROR GOTO sqljsocerror1;
             EXEC SQL EXECUTE IMMEDIATE :stmt;
             EXEC SQL COMMIT;
@@ -253,7 +255,8 @@ sqlrmerror:
 
 sqljsocerror0:
     printk("Error in DS_RmNowX() for del from Records.txt\n");
-    printk("Can't connect to jsoc@hmidb:5432\n");
+    //printk("Can't connect to jsoc@hmidb:5432\n");
+    printk("Can't connect to %s@%s:%s\n", DBNAME, SERVER, DRMSPGPORT);
     printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
     //Assume error was in the connect so don't disconnect
     //EXEC SQL DISCONNECT;
@@ -263,7 +266,8 @@ sqljsocerror0:
 
 sqljsocerror1:
     printk("Error in DS_RmNowX() for del from Records.txt\n");
-    printk("Error was after the connect to jsoc@hmidb:5432\n");
+    //printk("Error was after the connect to jsoc@hmidb:5432\n");
+    printk("Error was after the connect to %s@%s:%s\n", DBNAME, SERVER, DRMSPGPORT);
     printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
     EXEC SQL DISCONNECT;
     //EXEC SQL ROLLBACK WORK;
