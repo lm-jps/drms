@@ -1,6 +1,7 @@
 eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
     if 0;
 use DBI;
+#temp test script only
 
 $DB = "jsoc_sums";
 $PGPORT=5434;
@@ -10,6 +11,7 @@ $user = "production";
 #$password = "XX";
 $hostdb = "hmidb";      #host where Postgres runs
 $filename = "/home/production/.pgpass";
+#$filename = "/home/jim/.pgpass";
 open(FI, "$filename") or die "can't open $filename: $!";
 while(<FI>) {
   ($a,$b,$c,$d,$password) = split(/:/);
