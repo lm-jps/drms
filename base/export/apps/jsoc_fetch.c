@@ -830,7 +830,6 @@ FILE *runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
             if (strcmp(sinfo->archive_status, "N") == 0)
                {
                *onlinestat = 'X';
-               dirsize = 0;
                }
             else
                {
