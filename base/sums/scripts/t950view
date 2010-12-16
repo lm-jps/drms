@@ -164,12 +164,12 @@ if($interactive && !$restartmode) {
     print "You must be user production to run t950view in interactive mode\n";
     exit;
   }
-  print "Need password to run interactive mode: passwd =";
-  ReadMode('noecho');
-  $passwd = ReadLine(0);
-  chomp($passwd);
-  ReadMode('normal');
-  print "\n";
+#  print "Need password to run interactive mode: passwd =";
+#  ReadMode('noecho');
+#  $passwd = ReadLine(0);
+#  chomp($passwd);
+#  ReadMode('normal');
+#  print "\n";
 #  if($passwd ne <password>) {
 #    print "Invalid passwd\n";
 #    print "!!TEMP Continue for now...\n";
@@ -192,7 +192,7 @@ for($i=0; $i < $MAX_DRIVES; $i++) {
 
 #First connect to database
   #$dbh = DBI->connect( '', "$login", "$passw", 'Oracle' );
-  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb;port=$PGPORT", "$user", "$passwd");
+  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb;port=$PGPORT", "$user", "");
   if ( !defined $dbh ) {
     die "Cannot do \$dbh->connect: $DBI::errstr\n";
   }
