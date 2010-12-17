@@ -1,0 +1,141 @@
+  /home/production/cvs/JSOC/doc/whattodo_start_stop_lev1_0_sums.txt 16Dec2010 
+
+
+As user production. Do in this order:
+
+NOTE: Now the drms/sums restart feature is working, there is no need 
+to do the "Stop lev1" and "Start lev0" sections below.
+
+STOP:
+=====
+
+On cl1n003: Stop lev1 processing for AIA
+----------------------------------------
+> touch /usr/local/logs/lev1/build_mgr_stop_aia
+
+Wait until you see on the screen running build_lev1_mgr on cl1n003:
+
+Stop file /usr/local/logs/lev1/build_mgr_stop_aia seen.
+Wait until all children are done and exit...
+
+Of course, if you not local with the screen, use ps.
+
+(note: ignore any core dump)
+
+On cl1n002: Stop lev1 processing for HMI
+----------------------------------------
+> touch /usr/local/logs/lev1/build_mgr_stop_hmi
+
+Wait until you see on the screen running build_lev1_mgr on cl1n002:
+
+Stop file /usr/local/logs/lev1/build_mgr_stop_hmi seen.
+Wait until all children are done and exit...
+
+Of course, if you not local with the screen, use ps.
+
+(note: ignore any core dump)
+
+
+On cl1n001: Stop lev0 processing
+-------------------------------------
+
+> cd /home/production/cvs/JSOC/proj/lev0/apps
+> stop_lev0_HMI.pl
+
+This may take a few minutes while the processing of ingest_lev0 for
+VC02 and VC05 completes to a commit point. 
+Likewise for AIA VC01 and VC04:
+
+> stop_lev0_AIA.pl
+
+On d02: Stop any tapearc
+------------------------------------
+> cd /usr/local/logs/tapearc
+> touch TAPEARC_ABORT0
+> touch TAPEARC_ABORT1
+> touch TAPEARC_ABORT2
+> touch TAPEARC_ABORT3
+> touch TAPEARC_ABORT4
+> touch TAPEARC_ABORT7
+(Note: There are 6 drives for write. Meta-group 5 and 6 are depricated.
+Wait until you see the windows running tapearc0, tapearc1, etc. finish.
+If you don't have the windows us ps.
+This may take awhile.
+
+On j1: Stop SUMS
+-------------------------------------
+
+> cd /home/production/cvs/JSOC/base/sums/scripts
+> sum_stop_j1 -f		(note: may need the -f(orce) flag)
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+START:
+=====
+
+On j1: Start SUMS
+-------------------------------------
+
+> cd /home/production/cvs/JSOC/base/sums/scripts
+> sum_start_j1
+
+On d02: Restart t950view
+--------------------------
+This is optional if you want to view the tape activity.
+Restore the minimized t950view window and hit the Exit button (upper right),
+or use ps and kill.
+> /home/production/cvs/JSOC/base/sums/scripts/t950view -i jsoc_sums
+(password: hmi4sdo)
+
+
+On d02: Start tapearc0,1,2,3,4,7
+--------------------------------
+> cd /home/production/cvs/JSOC/base/sums/scripts
+(Now do in six different windows on d02)
+> tape_do0.pl
+> tape_do1.pl
+> tape_do2.pl
+> tape_do3.pl
+> tape_do4.pl
+> tape_do7.pl
+
+
+On cl1n001: Start lev0 processing (if needed)
+--------------------------------------------
+
+!!Make sure run Phil's script for watchlev0 in the background on cl1n001:
+/home/production/cvs/JSOC/base/sums/scripts/get_dcs_times.csh
+
+> cd /home/production/cvs/JSOC/proj/lev0/apps
+> doingestlev0_HMI.pl
+> doingestlev0_AIA.pl (in seperate window)
+
+On cl1n002: Start lev1 processing for HMI (if needed)
+-----------------------------------------------------
+
+> cd /home/production/cvs/JSOC/proj/lev0/apps 
+> build_lev1_mgr mode=recnum
+instru=hmi dsin=hmi.lev0a dsout=hmi.lev1c_nrt brec=0 erec=0
+
+On cl1n003: Start lev1 processing for AIA (if needed)
+-----------------------------------------------------
+
+> cd /home/production/cvs/JSOC/proj/lev0/apps 
+> build_lev1_mgr mode=recnum
+instru=aia dsin=aia.lev0 dsout=aia.lev1_nrt2 brec=0 erec=0
+
+===========================================================================
+For data capture machines see:
+
+> cd /home/production/cvs/JSOC/doc
+
+whattodo_dcs.txt
+(dsc0_just_rebooted.txt may be needed if you want to do Pg warmstart)
+
+If it's dcs1 that you need, then you have to transcribe a bit.
+Remember that dcs0 and dcs1 databases are in warm standby on dcs2.
+If you want to ignore the instructions for this for now, I'll take care 
+of it when I'm back. Just let me know that you did so.
+
+Info on log files and cron jobs is in logs_cron_etc_admin.txt
+

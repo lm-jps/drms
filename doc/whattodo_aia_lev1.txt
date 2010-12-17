@@ -1,0 +1,26 @@
+This is an example of what to do when someont asks to have the
+aia.lev1 processed from Dec 8 thru Dec 12.
+Do on cl1n001 as production.
+
+> showlev0fsnaia.pl 2010.12.08
+16833263  16890862  fsn_range=57600
+
+> showlev0fsnaia.pl 2010.12.12
+17061750  17119349  fsn_range=57600
+
+> build_lev1_mgr mode=fsn instru=aia dsin=aia.lev0 dsout=aia.lev1 quicklook=0 bfsn=16833263 efsn=17119349
+
+===============================================================================
+
+To stop the build_lev1_mgr, do on cl1n001 (remember if you do this
+on cl1n002 or cl1n003 will you stop the hmi.lev1_nrt or aia.lev1_nrt2):
+
+> touch /usr/local/logs/lev1/build_mgr_stop_aia
+
+===============================================================================
+
+NOTE: the nrt aia lev1 data is called aia.lev1_nrt2 for the new Dec 2010
+release of the lev1 jsd.
+
+
+
