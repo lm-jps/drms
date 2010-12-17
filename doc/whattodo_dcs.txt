@@ -34,7 +34,7 @@ NOTE: cron jobs use this /var/tmp/ssh-agent.env file
 
 4. Start the vncserver:
 
-> cd /home/production/cvs/JSOC/src/datacapture
+> cd /home/production/cvs/JSOC/proj/datacapture
 > vncserver -geometry 1280x1024
 
 You will require a password to access your desktops.
@@ -58,4 +58,12 @@ New 'X' desktop is dcs0.Stanford.EDU:1
 
 All you would normally do is hit "Start Instances for HMI" or AIA for
 what datacapture machine you are on.
+
+=============================================================================
+
+Stopping a dcs machine:
+-----------------------
+
+Hit the red "Exit" button on the VNC display of the socdc gui.
+If you are not local ps and kill socdc.
 
