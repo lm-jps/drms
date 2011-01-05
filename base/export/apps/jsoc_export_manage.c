@@ -83,11 +83,50 @@
 
 #define PACKLIST_VER "0.5"
 
+#define kArgTestmode    "t"
+
 #define DIE(msg) { fprintf(stderr,"XXXX jsoc_exports_manager failure: %s\nstatus=%d",msg,status); exit(1); }
+
+#define kHgPatchLog "hg_patch.log"
+
+enum Protocol_enum
+{
+   kProto_AsIs = 0,
+   kProto_FITS = 1
+};
+
+typedef enum Protocol_enum Protocol_t;
+
+const char *protos[] =
+{
+   "as-is",
+   "fits"
+};
+
+enum Processing_enum
+{
+   kProc_Unk = 0,
+   kProc_Noop = 1,
+   kProc_NotSpec = 2,
+   kProc_HgPatch = 3,
+   kProc_SuExport = 4
+};
+
+typedef enum Processing_enum Processing_t;
+
+const char *procs[] =
+{
+   "uknown",
+   "no_op",
+   "Not Specified",
+   "hg_patch",
+   "su_export"
+};
 
 ModuleArgs_t module_args[] =
 { 
   {ARG_STRING, "op", "process", "<Operation>"},
+  {ARG_FLAG, kArgTestmode, NULL, "if set, then operates on new requests with status 12 (not 2)"},
   {ARG_FLAG, "h", "0", "help - show usage"},
   {ARG_END}
 };
@@ -213,6 +252,243 @@ TIME timenow()
   return(now);
   }
 
+static void GenErrChkCmd(FILE *fptr)
+{
+   fprintf(fptr, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
+}
+
+/* returns 1 on error, 0 on success */
+static int GenHgPatchCmd(FILE *fptr, 
+                         const char *hgparms,
+                         const char *dbmainhost,
+                         const char *dataset,
+                         int RecordLimit,
+                         const char *requestid,
+                         const char *dbids)
+{
+   int rv = 0;
+   char *p = NULL;
+   char *hgparams = strdup(hgparms);
+
+   if (hgparams)
+   {
+      for (p=hgparams; *p; p++)
+        if (*p == ',') *p = ' ';
+
+      fprintf(fptr, "/home/phil/cvs/JSOC/bin/linux_x86_64/hg_patch JSOC_DBHOST=%s %s in='%s' n=%d requestid='%s' log=hg_patch.log %s\n",
+              dbmainhost, hgparams, dataset, RecordLimit, requestid,  dbids);
+      GenErrChkCmd(fptr);
+   }
+   else
+   {
+      fprintf(stderr, "XX jsoc_export_manage FAIL - out of memory.\n");
+      rv = 1;
+   }
+
+   return rv;
+}
+
+/* returns 1 on error, 0 on success */
+static int GenExpFitsCmd(FILE *fptr, 
+                         const char *proto,
+                         const char *dbmainhost,
+                         const char *requestid,
+                         const char *dataset,
+                         int RecordLimit,
+                         const char *filenamefmt,
+                         const char *method,
+                         const char *dbids,
+                         Processing_t proctype)
+{
+   char *protocol = strdup(proto);
+   int rv = 0;
+
+   if (protocol)
+   {
+      char *cparms, *p = index(protocol, ',');
+
+      /* The "Protocol" field of jsoc.export has been overloaded. It contains not only the export protocol 
+       * (i.e., FITS, as-is, JPEG, MOVIE), but for the FITS protocol, the comma-separated compression 
+       * parameters follow. */
+
+      if (p)
+      {
+         *p = '\0';
+         cparms = p+1;
+      }
+      else
+        cparms = "**NONE**";
+
+      if (proctype == kProc_HgPatch)
+      {
+         /* no "n=XX" */
+         fprintf(fptr, "jsoc_export_as_fits JSOC_DBHOST=%s reqid='%s' expversion=%s rsquery='%s' path=$REQDIR ffmt='%s' "
+                 "method='%s' protocol='%s' cparms='%s' %s\n",
+                 dbmainhost, requestid, PACKLIST_VER, dataset, filenamefmt, method, protos[kProto_FITS], cparms, dbids);
+      }
+      else
+      {
+         fprintf(fptr, "jsoc_export_as_fits JSOC_DBHOST=%s reqid='%s' expversion=%s rsquery='%s' n=%d path=$REQDIR ffmt='%s' "
+                 "method='%s' protocol='%s' cparms='%s' %s\n",
+                 dbmainhost, requestid, PACKLIST_VER, dataset, RecordLimit, filenamefmt, method, protos[kProto_FITS], cparms, dbids);
+      }
+
+      GenErrChkCmd(fptr);
+   }
+   else
+   {
+      fprintf(stderr, "XX jsoc_export_manage FAIL - out of memory.\n");
+      rv = 1;
+   }
+
+   return rv;
+}
+
+/* returns 1 on error, 0 on success */
+static int GenPreProcessCmd(FILE *fptr, 
+                            const char *protocol,
+                            const char *process,
+                            const char *dbmainhost,
+                            const char *dataset,
+                            int RecordLimit,
+                            const char *requestid,
+                            const char *method,
+                            const char *dbids,
+                            Processing_t *proctype,
+                            char **dsetout)
+{
+   int rv = 0;
+   char hgds[PATH_MAX];
+
+   if (strncmp(process, procs[kProc_HgPatch], strlen(procs[kProc_HgPatch])) == 0)
+   {
+      *proctype = kProc_HgPatch;
+
+      /* hg_patch compatible with all protocols (if not fits, then assume as-is). */
+
+      /* hg_patch requires additional arguments */
+      char *hgparms = NULL;
+
+      if ((hgparms = index(process, ',')) != 0)
+      {
+         hgparms++;
+
+         if (!(rv = (GenHgPatchCmd(fptr, hgparms, dbmainhost, dataset, RecordLimit, requestid, dbids) != 0)))
+         {
+            snprintf(hgds, sizeof(hgds), "@%s", kHgPatchLog);
+            if (dsetout)
+            {
+               *dsetout = strdup(hgds);
+            }
+         }
+      }
+      else
+      {
+         /* arguments missing */
+         fprintf(stderr,
+                 "XX jsoc_export_manage FAIL NOT implemented yet, requestid=%s, process=%s, protocol=%s, method=%s\n",
+                 requestid, process, protocol, method);
+         rv = 1;
+      }
+   }
+   else if (strncmp(process, procs[kProc_SuExport], strlen(procs[kProc_SuExport])) == 0)
+   {
+      *proctype = kProc_SuExport;
+      fprintf(fptr, "jsoc_export_SU_as_is_sock ds='%s' requestid=%s\n", dataset, requestid); 
+      GenErrChkCmd(fptr);
+      /* rv = 0 */
+   }
+   else if (strncmp(process, procs[kProc_Noop], strlen(procs[kProc_Noop])) == 0)
+   {
+      *proctype = kProc_Noop;
+      /* rv = 0 */
+   }
+   else if (strncmp(process, procs[kProc_NotSpec], strlen(procs[kProc_NotSpec])) == 0)
+   {
+      *proctype = kProc_NotSpec;
+      /* rv = 0 */
+   }
+   else
+   {
+      /* Unknown processing */
+      fprintf(stderr,
+              "XX jsoc_export_manage FAILURE; invalid processing request, requestid=%s, process=%s, protocol=%s, method=%s\n",
+              requestid, process, protocol, method);
+      rv = 1;
+   }
+
+   return rv;
+}
+
+static int GenProtoExpCmd(FILE *fptr, 
+                          const char *protocol,
+                          const char *process,
+                          const char *dbmainhost,
+                          const char *dataset,
+                          int RecordLimit,
+                          const char *requestid,
+                          const char *method,
+                          const char *filenamefmt,
+                          const char *dbids,
+                          Processing_t proctype)
+{
+   int rv = 0;
+
+   if (strncmp(protocol, protos[kProto_FITS], strlen(protos[kProto_FITS])))
+   {
+      rv = (GenExpFitsCmd(fptr, protocol, dbmainhost, requestid, dataset, RecordLimit, filenamefmt, method, dbids, proctype) != 0);
+   }
+   else if (strncmp(protocol, protos[kProto_AsIs], strlen(protos[kProto_AsIs])))
+   {
+      if (proctype == kProc_HgPatch)
+      {
+         /* No "n=XX" */
+         fprintf(fptr, "jsoc_export_as_is JSOC_DBHOST=%s ds='%s' requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n",
+                 dbmainhost, dataset, requestid, method, protos[kProto_AsIs], filenamefmt);
+      }
+      else
+      {
+         fprintf(fptr, "jsoc_export_as_is JSOC_DBHOST=%s ds='%s' n=%d requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n",
+                 dbmainhost, dataset, RecordLimit, requestid, method, protos[kProto_AsIs], filenamefmt);
+      }
+
+      GenErrChkCmd(fptr);
+
+      /* There is some processing-specific stuff too. */
+      if (proctype == kProc_HgPatch)
+      {
+         fprintf(fptr, "set RECSMADE = `cat hg_patch.log | wc -l` \n");
+         GenErrChkCmd(fptr);
+         fprintf(fptr, "show_info JSOC_DBHOST=%s n=$RECSMADE -aAit ds='@hg_patch.log' > %s.keywords.txt\n", 
+                 dbmainhost, requestid);
+         GenErrChkCmd(fptr);
+      }
+      else if (proctype == kProc_Noop || proctype == kProc_NotSpec)
+      {
+         fprintf(fptr, "show_info JSOC_DBHOST=%s -ait ds='%s' n=%d > %s.keywords.txt\n",
+                 dbmainhost, dataset, RecordLimit, requestid);
+         GenErrChkCmd(fptr);
+      }
+      else
+      {
+         /* error - can't use this type of processing with as-is */
+         fprintf(stderr,
+                 "XX jsoc_export_manage FAILURE; invalid protocol/processing type combination, requestid=%s, process=%s, protocol=%s, method=%s\n",
+                 requestid, process, protocol, method);
+      }
+   }
+   else
+   {
+      /* Unknown protocol */
+      fprintf(stderr,
+              "XX jsoc_export_manage FAILURE; invalid protocol, requestid=%s, process=%s, protocol=%s, method=%s\n",
+              requestid, process, protocol, method);
+      rv = 1;
+   }
+
+   return rv;
+}
+
 /* Module main function. */
 int DoIt(void)
   {
@@ -247,6 +523,7 @@ int DoIt(void)
   FILE *fp;
   char runscript[DRMS_MAXPATHLEN];
   char *dashp;
+  int testmode = 0;
 
   const char *dbname = NULL;
   const char *dbexporthost = NULL;
@@ -257,7 +534,13 @@ int DoIt(void)
   char jsocrootstr[128] = {0};
   int pc = 0;
 
+  int procerr;
+  Processing_t proctype;
+  char *dset = NULL;
+
   if (nice_intro ()) return (0);
+
+  testmode = (TESTMODE || cmdparams_isflagset(&cmdparams, kArgTestmode));
 
   if ((dbmainhost = cmdparams_get_str(&cmdparams, "JSOC_DBMAINHOST", NULL)) == NULL)
   {
@@ -303,7 +586,7 @@ int DoIt(void)
   if (strcmp(op,"process") == 0) 
     {
     int irec;
-    if (TESTMODE)
+    if (testmode)
       exports_new_orig = drms_open_records(drms_env, EXPORT_SERIES_NEW"[][? Status=12 ?]", &status);
     else
       exports_new_orig = drms_open_records(drms_env, EXPORT_SERIES_NEW"[][? Status=2 ?]", &status);
@@ -358,6 +641,7 @@ int DoIt(void)
 
       // Create new record in export control series, this one must be DRMS_PERMANENT
       // It will contain the scripts to do the export and set the status to processing
+      /* EXPORT_SERIES is jsoc.export. */
       export_rec = drms_create_record(drms_env, EXPORT_SERIES, DRMS_PERMANENT, &status);
       if (!export_rec)
         DIE("Cant create export control record");
@@ -423,6 +707,12 @@ int DoIt(void)
       // Now generate specific processing related commands
 
       // extract optional record count limit from process field.
+      /* 'process' contains the contents of the 'Processing' column in jsoc.export. Originally, it 
+       * used to contain strings like "no_op" or "hg_patch". But now it optionally starts with a 
+       * "n=XX" string that is used to limit the number of records returned (in a way completely 
+       * analogous to the n=XX parameter to show_info). So the "Processing" field got overloaded.
+       * The following block of code checks for the presence of a "n=XX" prefix and strips it off
+       * if it is present (setting RecordLimit in the process). */
       if (process && strncmp(process,"n=",2)==0)
         {
         char *now_at = NULL;
@@ -433,95 +723,93 @@ fprintf(stderr,"XX Dealing with process=n=xx, RecordLimit=%d, new process=%s\n",
         }
       else
         RecordLimit = 0;
-  
-      if (strcmp(process, "no_op") == 0 && strncasecmp(protocol,"fits",4)==0)
-        { // No processing but export as full FITS files
-        char *cparms, *p = index(protocol, ',');
-        if (p)
-          {
-          *p = '\0';
-          cparms = p+1;
-          }
-        else
-          cparms = "**NONE**";
-        fprintf(fp, "jsoc_export_as_fits JSOC_DBHOST=%s reqid='%s' expversion=%s rsquery='%s' n=%d path=$REQDIR ffmt='%s' "
-          "method='%s' protocol='%s' cparms='%s' %s\n",
-          dbmainhost, requestid, PACKLIST_VER, dataset, RecordLimit, filenamefmt, method, protocol, cparms,  dbids);
-        fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
-        }
-      else if (strcmp(process, "no_op") == 0 || strcmp(process,"Not Specified")==0) 
-        { // export of as-is records that need staging, get paths to export files with list in index.txt
-        fprintf(fp, "jsoc_export_as_is JSOC_DBHOST=%s ds='%s' n=%d requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n",
-          dbmainhost, dataset, RecordLimit, requestid, method, protocol, filenamefmt); 
-        fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
-        fprintf(fp, "show_info JSOC_DBHOST=%s -ait ds='%s' n=%d > %s.keywords.txt\n",
-          dbmainhost, dataset, RecordLimit, requestid);
-        fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
-        }
-      else if (strncmp(process, "hg_patch",8) == 0)
-        {
-        // Heliographic Patches tracked requested.  Delete the message below when implemented.
-        char *hgparams, *p = index(process, ',');
-        if (p)
-          {
-          *p = '\0';
-          hgparams = strdup(p+1);
-          for (p=hgparams; *p; p++)
-            if (*p == ',') *p = ' ';
-          fprintf(fp, "/home/phil/cvs/JSOC/bin/linux_x86_64/hg_patch JSOC_DBHOST=%s %s in='%s' n=%d requestid='%s' log=hg_patch.log %s\n",
-            dbmainhost, hgparams, dataset, RecordLimit, requestid,  dbids);
-          fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
-          if (strncasecmp(protocol,"fits",4)==0)
-            { // export as full FITS files
-            char *cparms, *p = index(protocol, ',');
-            if (p)
-              {
-              *p = '\0';
-              cparms = p+1;
-              }
-            else
-              cparms = "**NONE**";
-            fprintf(fp, "  jsoc_export_as_fits JSOC_DBHOST=%s reqid='%s' expversion=%s rsquery='@hg_patch.log' path=$REQDIR ffmt='%s' "
-              "method='%s' protocol='%s' cparms='%s' %s\n",
-              dbmainhost, requestid, PACKLIST_VER, filenamefmt, method, protocol, cparms,  dbids);
-            fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
-            }
-          else
-            {
-            fprintf(fp, "  jsoc_export_as_is JSOC_DBHOST=%s ds='@hg_patch.log' requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n",
-              dbmainhost, requestid, method, protocol, filenamefmt); 
-            fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
-            fprintf(fp, "set RECSMADE = `cat hg_patch.log | wc -l` \n");
-            fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
-            fprintf(fp, "show_info JSOC_DBHOST=%s n=$RECSMADE -aAit ds='@hg_patch.log' > %s.keywords.txt\n", dbmainhost, requestid);
-            fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
-            }
-          }
-        else
-          {  // no hg_patch params present
-          fprintf(stderr,"XX jsoc_export_manage FAIL NOT implemented yet, requestid=%s, process=%s, protocol=%s, method=%s\n",
-            requestid, process, protocol, method);
-          drms_setkey_int(export_log, "Status", 4);
-          drms_close_record(export_rec, DRMS_FREE_RECORD);
-          fclose(fp);
-          continue;
-          }
-        }
-      else if (strcmp(process, "su_export") == 0 && strcmp(protocol,"as-is")==0)
-        { // Use special program for Storage Unit exports.
-        fprintf(fp, "jsoc_export_SU_as_is_sock ds='%s' requestid=%s\n", dataset, requestid); 
-        fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
-        }
-      else
-        { // Unrecognized processing request
-        fprintf(stderr,"XX jsoc_export_manage FAIL Do not know what to do, requestid=%s, process=%s, protocol=%s, method=%s\n",
-          requestid, process, protocol, method);
-        drms_setkey_int(export_log, "Status", 4);
-        drms_close_record(export_rec, DRMS_FREE_RECORD);
-        fclose(fp);
-        continue;
-        }
 
+      /* PRE-PROCESSING */
+
+      /* First do the pre-processing of one dataseries into another (if requested). For example, the user may have 
+       * requested region extraction. The pre-processing will first make a series of extracted regions 
+       * (if it doesn't already exist). The export code will then export from the series of extracted regions, 
+       * not from the original full images. */
+      procerr = 0;
+      proctype = kProc_Unk;
+      dset = NULL;
+
+      procerr = GenPreProcessCmd(fp,
+                                 protocol,
+                                 process, 
+                                 dbmainhost, 
+                                 dataset, 
+                                 RecordLimit, 
+                                 requestid, 
+                                 method, 
+                                 dbids, 
+                                 &proctype, 
+                                 &dset);
+
+      if (procerr)
+      {
+         drms_setkey_int(export_log, "Status", 4);
+         drms_close_record(export_rec, DRMS_FREE_RECORD);
+         fclose(fp);
+         fp = NULL;
+         if (dataset)
+         {
+            free(dataset); /* this was malloc'd in this loop */
+         }
+
+         if (dset)
+         {
+            free(dset);
+            dset = NULL;
+         }
+         continue;
+      }
+      else
+      {
+         /* If dset was set, then this record-set query should be used in subsequent calls. 
+          * As of this writing, dset gets set only if the processing is hg_patch. */
+         if (dset)
+         {
+            if (dataset)
+            {
+               free(dataset); /* this was malloc'd in this loop */
+            }
+            dataset = dset;
+         }
+      }
+
+      /* PROTOCOL-SPECIFIC EXPORT */
+      procerr = GenProtoExpCmd(fp, 
+                               protocol,
+                               process, 
+                               dbmainhost, 
+                               dataset, 
+                               RecordLimit, 
+                               requestid, 
+                               method, 
+                               filenamefmt, 
+                               dbids, 
+                               proctype);
+
+      if (procerr)
+      {
+         drms_setkey_int(export_log, "Status", 4);
+         drms_close_record(export_rec, DRMS_FREE_RECORD);
+         fclose(fp);
+         fp = NULL;
+         if (dataset)
+         {
+            free(dataset); /* this was malloc'd in this loop */
+         }
+
+         if (dset)
+         {
+            free(dset);
+            dset = NULL;
+         }
+         continue;
+      }
+ 
       // Finally, add tail of script used for all processing types.
       // convert index.txt list into index.json and index.html packing list files. 
       fprintf(fp, "jsoc_export_make_index\n");
@@ -582,7 +870,7 @@ fprintf(stderr,"XX Dealing with process=n=xx, RecordLimit=%d, new process=%s\n",
       // Mark the record in jsoc.export_new as accepted for processing.
       drms_setkey_int(export_log, "Status", 1);
       printf("Request %s submitted\n",requestid);
-      } // end looping on new export requests
+      } // end looping on new export requests (looping over records in jsoc.export_new)
 
     drms_close_records(exports_new, DRMS_INSERT_RECORD);
     return(0);
