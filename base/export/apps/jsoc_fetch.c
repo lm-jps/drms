@@ -41,7 +41,7 @@
 #define kArgShipto	"shipto"
 #define kArgRequestorid	"requestorid"
 #define kArgFile	"file"
-
+#define kArgTestmode    "t"
 #define kOpSeriesList	"series_list"	// show_series
 #define kOpSeriesStruct	"series_struct"	// jsoc_info, series structure, ike show_info -l -s
 #define kOpRsSummary	"rs_summary"	// jsoc_info, recordset summary, like show_info -c
@@ -79,6 +79,7 @@ ModuleArgs_t module_args[] =
   {ARG_STRING, kArgFormatvar, kNotSpecified, "return json in object format"},
   {ARG_STRING, kArgMethod, "url", "return method"},
   {ARG_STRING, kArgFile, kNotSpecified, "uploaded file contents"},
+  {ARG_FLAG, kArgTestmode, NULL, "if set, then creates new requests with status 12 (not 2)"},
   {ARG_FLAG, "h", "0", "help - show usage"},
   {ARG_STRING, "QUERY_STRING", kNotSpecified, "AJAX query from the web"},
   {ARG_END}
@@ -535,6 +536,7 @@ int DoIt(void)
   const char *protocol;
   const char *filenamefmt;
   const char *dbhost;
+  int testmode = 0;
   char *errorreply;
   int64_t *sunumarr = NULL; /* array of 64-bit sunums provided in the'sunum=...' argument. */
   int nsunums;
@@ -612,6 +614,7 @@ int DoIt(void)
            SetWebArg(req, kArgRequestorid, &webarglist, &webarglistsz);
            if (strncmp(cmdparams_get_str (&cmdparams, kArgDs, NULL),"*file*", 6) == 0);
            SetWebFileArg(req, kArgFile, &webarglist, &webarglistsz);
+           SetWebArg(req, kArgTestmode, &webarglist, &webarglistsz);
 
            qEntryFree(req); 
         }
@@ -653,6 +656,7 @@ int DoIt(void)
   shipto = cmdparams_get_str (&cmdparams, kArgShipto, NULL);
   requestorid = cmdparams_get_int (&cmdparams, kArgRequestorid, NULL);
   dbhost = cmdparams_get_str(&cmdparams, "JSOC_DBHOST", NULL);
+  testmode = (TESTMODE || cmdparams_isflagset(&cmdparams, kArgTestmode));
 
   dodataobj = strcmp(formatvar, "dataobj") == 0;
   dojson = strcmp(format, "json") == 0;
@@ -1045,7 +1049,7 @@ check for requestor to be valid remote DRMS site
     drms_setkey_time(export_log, "ReqTime", now);
     drms_setkey_time(export_log, "EstTime", now+10); // Crude guess for now
     drms_setkey_longlong(export_log, "Size", (int)size);
-    drms_setkey_int(export_log, "Status", (TESTMODE ? 12 : 2));
+    drms_setkey_int(export_log, "Status", (testmode ? 12 : 2));
     drms_setkey_int(export_log, "Requestor", requestorid);
     drms_close_record(export_log, DRMS_INSERT_RECORD); 
     } // end of exp_su
@@ -1447,7 +1451,7 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
      drms_setkey_time(export_log, "ReqTime", now);
      drms_setkey_time(export_log, "EstTime", now+10); // Crude guess for now
      drms_setkey_longlong(export_log, "Size", (int)size);
-     drms_setkey_int(export_log, "Status", (TESTMODE ? 12 : 2));
+     drms_setkey_int(export_log, "Status", (testmode ? 12 : 2));
      drms_setkey_int(export_log, "Requestor", requestorid);
      drms_close_record(export_log, DRMS_INSERT_RECORD);
      } // End of kOpExpRequest setup
