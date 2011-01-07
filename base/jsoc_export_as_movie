@@ -1,0 +1,119 @@
+#! /bin/bash 
+# script shpould figure out what kind of data series it is and then use appropriate default scaling/ colortable. 
+# the output images are in the current directory. 
+# export mode:
+#jsoc_export_as_images ds=<record_set_query>  reqid=<export request id> expversion=<version> 
+#     method=<exp method> protocol=<output-file protocol> path=<output path> 
+#     { ffmt=<filename format> } { cparms=<compression string list> }
+# jsoc_exjsoc_export_as_images  ds  reqid expversion  export_ method  protocol  output_path ffmt cparms    
+#                                 1    2       3             4            5           6        7      8    
+#To run in the cshell just make sure that you put the series name in quotes.Either single or double will do.
+
+#make sure all arguments are there
+
+outpath=$6 
+cd $outpath
+ if  (( $# != 7 )) 
+ then
+    echo "$0 requires atleast 7 argument"
+    exit 2
+ fi
+
+#make sure data exists
+    in=$1
+    nRec=`show_info -cq ds=$in`
+ if (( nRec < 1 )) 
+ then
+      echo "No records exist"
+      exit 2
+ fi 
+  
+# chk to see if old index file exists; if so clobber it and all other mp4 or png files
+if [[ -e $outpath/index.txt ]]
+ then
+    rm -f $outpath/index.txt
+fi
+rm -rf *.png
+rm -rf *.mp4
+
+# Write into the new index.txt
+echo "# JSOC " >> index.txt
+echo "reqid=$2" >> index.txt
+echo "expversion=$3" >>index.txt  
+echo "method=$4" >>index.txt  
+echo "protocol=$5" >> index.txt  
+echo "protocol=$5" >> index.txt  
+echo "Output directory=$6" >>index.txt  
+echo "filefmt=$7" >>index.txt  
+echo "cparams=$8" >>$index.txt  
+
+
+ content=`show_info -q ds=$in n=1 key=CONTENT`
+ declare -i scale=8                 # default -could read in as a parameter
+ type=png                # default could also do jpg
+ declare -i size=4096/$scale   #could have different size images option?      
+ min_fl_sz=10000      #min file size
+ 
+
+#check for datatype(dopp,mag etc) and renderimage accordingly     
+   case "$content" in 
+  MAGNETOGRAM) 
+         render_image in=$in out=$outpath/ min=-800 max=800 -c pallette=/home/priya/Colormaps/Blue_grey_Red.lut outname=$content type=$type scale=$scale  -c      
+           ;;
+  CONTINUUM*)
+           render_image in=$in out=$outpath/  min=20000 max=75000 -c pallette=/home/priya/Colormaps/heat.sao outname=$content scale=$scale  type=$type -c
+             ;;
+  LINEDEPTH)
+          render_image in=$in out=$outpath/  -c pallette=/home/priya/Colormaps/bb.sao outname=$content scale=$scale  type=$type  -c
+            ;;
+  LINEWIDTH)
+         render_image in=$in out=$outpath/  -c pallette=/home/priya/Colormaps/bb.sao outname=$content scale=$scale type=$type -c
+             ;;     
+  DOPPLERGRAM)
+         render_image in=$in out=$outpath/ -c pallette=/home/priya/Colormaps/bb.sao outname=$content scale=$scale  type=$type  -c
+             ;;        
+    *) 
+       echo -e Out of case command
+       exit 2
+             ;;
+esac
+
+
+
+# link to a list of sequentially number image files to use by ffmpeg
+
+  i=0
+  while (( $i < $nRec ))
+  do 
+     I=`printf "%04d" $i`
+     filename=$I.$content'_'$size.$type
+       if [[ -e $filename ]]
+      then
+              ln -s $filename $I.$type
+              let i+=1
+        else
+             echo "no frame for $filename" 
+            let i+=1
+       fi 
+ done
+
+#make movie
+ffmpeg -qscale 5 -r 20 -b 9600 -i  %04d.$type   $content.mp4
+
+
+#write into index.txt
+echo "Movie name=$content.mp4" >>index.txt 
+echo "# DATA ">>index.txt
+ 
+ show_info -iq ds=$in > data1
+ ls  *.*.png > data2
+
+echo "movie of the following data">>mv1
+echo  $PWD/$content.mp4 >>mv2
+paste  mv1  mv2 >>index.txt 
+paste  data1  data2 >> index.txt
+
+
+rm mv1;rm mv2
+ #rm -f $outpath/data1 ; rm -f $outpath/images 
+ #rm -f $outpath/*.png
