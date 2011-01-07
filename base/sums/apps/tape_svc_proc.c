@@ -31,7 +31,18 @@ extern CLIENT *clntdrv2, *clntdrv3;
 extern CLIENT *clntdrv[];
 extern CLIENT *clntrobot0;
 extern SVCXPRT *glb_transp;
+#ifdef SUMDC
 extern int drive_order[];
+int nxtscanrd = 0;      //where to start next scan of drive_order[]
+int nxtscanwt = 0;      //where to start next scan of drive_order[]
+#else
+extern int drive_order_rd[];
+extern int drive_order_wt[];
+extern int nxtscanrd;
+extern int nxtscanwt;
+extern int max_drives_rd;
+extern int max_drives_wt;
+#endif
 extern uint64_t rinfo;
 extern uint32_t procnum;
 extern int debugflg;
@@ -56,14 +67,13 @@ TQ *q_wrt_need_front = NULL;	/* front of tape need write Q */
 TQ *q_wrt_need_rear = NULL;	/* rear of tape need write Q */
 SUMOFFCNT *offcnt_hdr = NULL;/* linked list of offline counts for a uid*/
 
-int nxtscanrd = 0;	//where to start next scan of drive_order[]
-int nxtscanwt = 0;	//where to start next scan of drive_order[]
 int robotbusy = 0;
 int robotcmdseq = 0;
 int eeactive = 0;	/* only allow Qs to rd/wrt tape already in a drive */
 int full_impexp_slotnum_internal[NUM_IMP_EXP_SLOTS];
 int empty_slotnum_internal[NUM_IMP_EXP_SLOTS];
 char dstring[32];
+char datestr[32];
 void write_time();
 int send_mail(char *fmt, ...);
 void logkey ();
@@ -93,11 +103,10 @@ float StopTimer(int n)
 }
 
 /*********************************************************/
-/* Return ptr to "mmm dd hh:mm:ss". Uses global datestr[].
+/* Return ptr to "day mmm dd hh:mm:ss". Uses global datestr[].
 */
-static char *datestring()
+char *datestring()
 {
-  char datestr[32];
   struct timeval tvalr;
   struct tm *t_ptr;
 
@@ -261,6 +270,7 @@ int kick_next_entry_rd() {
       continue;			/* see if there's more */
     }
     /* try to find a free drive, first w/no tape and then not busy */
+#ifdef SUMDC
     for(e=0; e < MAX_DRIVES; e++) {
       d = drive_order[e];
       if((!drives[d].tapeid) && (!drives[d].offline)) break;
@@ -274,13 +284,31 @@ int kick_next_entry_rd() {
     }
     if(e == MAX_DRIVES) {         /* all drives are busy */
       sback = 0;
+      break;                    /* break while(p) */
+    }
+#else
+    for(e=0; e < max_drives_rd; e++) {
+      d = drive_order_rd[e];
+      if((!drives[d].tapeid) && (!drives[d].offline)) break;
+    }
+    if(e == max_drives_rd) {         /* all drives have a tape or offline */
+      for(e=0; e < max_drives_rd; e++) {
+        d = drive_order_rd[nxtscanrd++];
+        if(nxtscanrd >= max_drives_rd) nxtscanrd = 0;
+        if((!drives[d].busy) && (!drives[d].offline)) break;
+      }
+    }
+    if(e == max_drives_rd) {         /* all drives are busy */
+      sback = 0;
       break;			/* break while(p) */
     }
+#endif
     /* d = drive# of a free drive */
     if(robotbusy) {             /* robot eventually calls taperesprobotdo_1 */
       sback = 0;
       break;			/* break while(p) */
     }
+    write_log("Dr%d found for Rd at index=%d\n", d, e); 
     robotbusy = 1;
     drives[d].busy = 1;
     write_log("*Tp:DrBusy: drv=%d\n", d);
@@ -408,7 +436,9 @@ int kick_next_entry_wt() {
         }
         setkey_int(&poff->list, "nxtwrtfn", nxtwrtfn);
         drives[d].busy = 1;       /* set drive busy */
+        drives[d].lock = 1;	  //lock until full tape is written
         write_log("*Tp:DrBusy: drv=%d\n", d);
+        write_log("*Tp:DrLock: drv=%d\n", d);
         /* call drive[0,1]_svc and tell our caller to wait for completion */
         /*write_log("Calling: clnt_call(clntdrv%d, WRITEDRVDO, ...) \n", d);*/
     StartTimer(1); //!!TEMP
@@ -421,14 +451,18 @@ int kick_next_entry_wt() {
           if(status != RPC_TIMEDOUT) {  /* allow timeout? */
             call_err = clnt_sperror(clntdrv[d], "Err clnt_call for WRITEDRVDO");
             drives[d].busy = 0;   /* free drive */
+            drives[d].lock = 0;
             write_log("*Tp:DrNotBusy: drv=%d\n", d);
+            write_log("*Tp:DrNotLock: drv=%d\n", d);
             write_log("%s %s\n", datestring(), call_err);
             return(2);
           }
         }
         if(driveback == 1) {
           drives[d].busy = 0;     /* free drive */
+          drives[d].lock = 0;
           write_log("*Tp:DrNotBusy: drv=%d\n", d);
+          write_log("*Tp:DrNotLock: drv=%d\n", d);
           write_log("**Error in kick_next_entry_wt() in tape_svc_proc.c\n");
           return(2);
         }
@@ -492,6 +526,7 @@ int kick_next_entry_wt() {
       continue;			/* see if there's more */
     }
     /* try to find a free drive, first w/no tape and then not busy */
+#ifdef SUMDC
     for(e=0; e < MAX_DRIVES; e++) {
       d = drive_order[e];
       if((!drives[d].tapeid) && (!drives[d].offline)) break;
@@ -500,9 +535,22 @@ int kick_next_entry_wt() {
       for(e=0; e < MAX_DRIVES; e++) {
         d = drive_order[nxtscanwt++];
         if(nxtscanwt >= MAX_DRIVES) nxtscanwt = 0;
-        if((!drives[d].busy) && (!drives[d].offline)) break;
+        if((!drives[d].busy) && (!drives[d].offline) && (!drives[d].lock)) break;
       }
     }
+#else
+    for(e=max_drives_rd; e < MAX_DRIVES; e++) {
+      d = drive_order_wt[e];
+      if((!drives[d].tapeid) && (!drives[d].offline)) break;
+    }
+    if(e == MAX_DRIVES) {         /* all drives have a tape or offline */
+      for(e=max_drives_rd; e < MAX_DRIVES; e++) {
+       d = drive_order_wt[nxtscanwt++];
+       if(nxtscanwt >= MAX_DRIVES) nxtscanwt = max_drives_rd;
+       if((!drives[d].busy) && (!drives[d].offline) && (!drives[d].lock)) break;
+      }
+    }
+#endif
     if(e == MAX_DRIVES) {         /* all drives are busy */
       sback = 0;
       break;                    /* break while(p) */
@@ -512,9 +560,12 @@ int kick_next_entry_wt() {
       sback = 0;
       break;                    /* break while(p) */
     }
+    write_log("Dr%d found for Wt at index=%d\n", d, e); 
     robotbusy = 1;
     drives[d].busy = 1;
+    drives[d].lock = 1;
     write_log("*Tp:DrBusy: drv=%d\n", d);
+    write_log("*Tp:DrLock: drv=%d\n", d);
     setkey_int(&p->list, "dnum", d);
     setkey_int(&p->list, "snum", snum);
     if(tapeid = drives[d].tapeid) {	/* must unload current tape */
@@ -543,7 +594,9 @@ int kick_next_entry_wt() {
         write_log("%s %s\n", datestring(), call_err);
         robotbusy = 0;
         drives[d].busy = 0;
+        drives[d].lock = 0;
         write_log("*Tp:DrNotBusy: drv=%d\n", d);
+        write_log("*Tp:DrNotLock: drv=%d\n", d);
         poff = delete_q_wrt(p);      /* remove from q */
         write_log("*Tp:WtQdel: dsix=%lu drv=%d\n", poff->ds_index, d);
         sback = 2;
@@ -554,7 +607,9 @@ int kick_next_entry_wt() {
       write_log("**Error in ROBOTDO call in tape_svc_proc.c\n");
       robotbusy = 0;
       drives[d].busy = 0;
+      drives[d].lock = 0;
       write_log("*Tp:DrNotBusy: drv=%d\n", d);
+      write_log("*Tp:DrNotLock: drv=%d\n", d);
       poff = delete_q_wrt(p);      /* remove from q */
       write_log("*Tp:WtQdel: dsix=%lu drv=%d\n", poff->ds_index, d);
       sback = 2;
@@ -1097,6 +1152,8 @@ KEY *taperespwritedo_1(KEY *params) {
   status = getkey_int(params, "STATUS");
   if(status) {			/* the write operation had an error */
     write_log("***Error: write of tape %s gave an error return\n", tapeid);
+    drives[dnum].lock = 0;	//unlock the drive now
+    write_log("*Tp:DrNotLock: drv=%d\n", dnum);
     errstr = GETKEY_str(params, "ERRSTR");
     write_log("***%s\n", errstr);
     if(status != TAPECLOSEDREJECT) {	/* tape not already closed */
@@ -1114,6 +1171,7 @@ KEY *taperespwritedo_1(KEY *params) {
         write_log("***Error: Can't make MD5 file for tape %s\n", tapeid);
         /* proceed. we will have to make an MD5 file offline (?) */
       }
+#endif
       /* put closed tape back in its slot now */
       xlist = newkeylist();
       robotbusy = 1;
@@ -1148,7 +1206,6 @@ KEY *taperespwritedo_1(KEY *params) {
         drives[dnum].busy = 0;
         write_log("*Tp:DrNotBusy: drv=%d\n", dnum);
       }
-#endif
     }
   }
   else {			/* write ok, update DB */
@@ -1157,6 +1214,7 @@ KEY *taperespwritedo_1(KEY *params) {
         send_mail("Error: Can't make active tapeid %s", tapeid);
         write_log("***Error: Can't make active tape %s. Tape is unusable.\n",
 			tapeid);
+        drives[dnum].lock = 0;
         setkey_int(&retlist, "STATUS", 1);
         return(retlist);
       }
@@ -1186,6 +1244,8 @@ KEY *taperespwritedo_1(KEY *params) {
     if(filenum_written < 0) {		/* neg means tape was closed */ 
       filenum_written = -filenum_written;
       tclosed = 1;
+      drives[dnum].lock = 0;		//unlock the drive for a new tape
+      write_log("*Tp:DrNotLock: drv=%d\n", dnum);
     }
     setkey_int(&retlist, "nxtwrtfn", filenum_written);
     /* update sum_main and sum_partn_alloc and sum_file db tables */
@@ -1194,15 +1254,16 @@ KEY *taperespwritedo_1(KEY *params) {
       write_log("***Error: sum_main update failed after write to %s\n",tapeid);
       setkey_int(&retlist, "STATUS", 1);
     }
-#ifdef SUMDC
     if(tclosed) {			/* tape was closed */
+#ifdef SUMDC
       /* for datacapture system - make .md5 file */
       if(SUMLIB_MD5info(tapeid)) {
         send_mail("Error: Can't make MD5 file for tape %s", tapeid);
         write_log("***Error: Can't make MD5 file for tape %s\n", tapeid);
         /* proceed. we will have to make an MD5 file offline (?) */
       }
-      /* for datacapture, put closed tape back in its slot now */
+#endif
+      /* put closed tape back in its slot now */
       xlist = newkeylist();
       robotbusy = 1;
       drives[dnum].busy = 1;
@@ -1238,7 +1299,6 @@ KEY *taperespwritedo_1(KEY *params) {
       }
       freekeylist(&xlist);
     }
-#endif
   }
   return(retlist);
 }

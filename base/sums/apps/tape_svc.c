@@ -22,7 +22,16 @@
 
 SLOT slots[MAX_SLOTS];
 DRIVE drives[MAX_DRIVES];
+#ifdef SUMDC
 int drive_order[MAX_DRIVES];
+#else
+int drive_order_rd[MAX_DRIVES];
+int drive_order_wt[MAX_DRIVES];
+int nxtscanrd;
+int nxtscanwt;
+int max_drives_rd = 0;
+int max_drives_wt = 0;
+#endif
 int Empty_Slot_Cnt;
 
 void logkey();
@@ -168,7 +177,7 @@ void setup()
   FILE *sgfp, *drfp;
   int pid, order0, neworder, i;
   char *cptr;
-  char logname[MAX_STR], line[256];
+  char logname[MAX_STR], line[256], rwchars[32];
 
   //when change name of dcs2 to dcs1 we found out you have to use localhost
   sprintf(thishost, "localhost");
@@ -183,6 +192,7 @@ void setup()
   write_log("\n## %s tape_svc on %s for pid = %d ##\n", 
 		datestring(), thishost, pid);
   write_log("Database to connect to is %s\n", dbname);
+#ifdef SUMDC
   sprintf(logname, "/usr/local/logs/SUM/drive_order.txt");
   if((drfp=fopen(logname, "r")) == NULL) {
     fprintf(stderr, "Can't open the file file %s\n", logname);
@@ -204,6 +214,42 @@ void setup()
     order0++;
     if(order0 >= MAX_DRIVES) order0 = 0;
   }
+#else
+  sprintf(logname, "/usr/local/logs/SUM/drive_order_rw.txt");
+  if((drfp=fopen(logname, "r")) == NULL) {
+    fprintf(stderr, "Can't open the file file %s\n", logname);
+    exit(1);
+  }
+  else {
+    i = 0;
+    //NOTE: All the rd must be assigned before any wt
+    while(fgets(line, 256, drfp)) {  //Must be exactly 12 (MAX_DRIVES) entries
+      if(!strncmp(line, "#", 1)) {   //ignore line starting with #
+        continue;
+      }
+      sscanf(line, "%d %s", &order0, rwchars);
+      write_log("rw = %s  drive# = %d\n", rwchars, order0);
+      if(!strcmp(rwchars, "rd")) {
+        drive_order_rd[i] = order0;
+        max_drives_rd++;
+      } 
+      else if(!strcmp(rwchars, "wt")) {
+        drive_order_wt[i] = order0;
+        max_drives_wt++;
+      }
+      else {
+        printf("%s is incorrect format\n", logname);
+        exit(1);
+      }
+      i++;
+    }
+    nxtscanrd = 0;
+    nxtscanwt = max_drives_rd;
+    write_log("max_drives_rd = %d, max_drives_wt = %d\n",
+		max_drives_rd, max_drives_wt);
+  }
+  fclose(drfp);
+#endif
 
   //if (signal(SIGINT, SIG_IGN) != SIG_IGN)
       signal(SIGINT, sighandler);
@@ -367,16 +413,17 @@ tapeprog_1(rqstp, transp)
 	struct svc_req *rqstp;
 	SVCXPRT *transp;
 {
-	union __svcargun {
-		Rkey tapedo_1_arg;
-	} argument;
 	char *result, *call_err;
+        int force = 0;
         enum clnt_stat clnt_stat;
-        TQ *p;
         SUMOFFCNT *offptr;
         SUMID_t uid;
         int kstatus, offcnt, errorcase;
-        int force = 0;
+        TQ *p;
+	union __svcargun {
+		Rkey tapedo_1_arg;
+	} argument;
+        uint32_t spare;
 
 	bool_t (*xdr_argument)(), (*xdr_result)();
 	char *(*local)();
