@@ -247,153 +247,162 @@ static int WriteKeyValues(DRMS_Record_t *rec, int nsegments, HContainer_t *keyli
    get_namespace(rec->seriesinfo->seriesname, &ns, NULL);
    if (ns)
    {
-      hiter_new_sort(&keyhit, keylist, KeySort);
-      while (hiter_extgetnext(&keyhit, &kbuf))
+      if (hcon_size(keylist) > 0)
       {
-         conflict = 0;
-         skipkey = 0;
-         val = NULL;
-         valtype = NULL;
-
-         /* Determine if there are any keyword conflicts. */
-         for (isegment = 0; isegment < nsegments; isegment++)
+         hiter_new_sort(&keyhit, keylist, KeySort);
+         while (hiter_extgetnext(&keyhit, &kbuf))
          {
-            segfilekeyhash = segfilekeys[isegment];
+            conflict = 0;
+            skipkey = 0;
+            val = NULL;
+            valtype = NULL;
 
-            if (segfilekeyhash)
+            /* Determine if there are any keyword conflicts. */
+            for (isegment = 0; isegment < nsegments; isegment++)
             {
-               /* It isn't necessarily true that all segments are being 'set'. */
-               segfilekey = (DRMS_Keyword_t *)hcon_lookup(segfilekeyhash, kbuf);
+               segfilekeyhash = segfilekeys[isegment];
 
-               if (segfilekey)
+               if (segfilekeyhash)
                {
-                  /* don't assume that all data files had this keyword */
-                  if (val)
+                  /* It isn't necessarily true that all segments are being 'set'. */
+                  segfilekey = (DRMS_Keyword_t *)hcon_lookup(segfilekeyhash, kbuf);
+
+                  if (segfilekey)
                   {
-                     if (*valtype != segfilekey->info->type)
+                     /* don't assume that all data files had this keyword */
+                     if (val)
                      {
-                        /* We have a conflict in data types (two keys with the same name, but different types).
-                         * Ignore the key and print a warning. */
-                        fprintf(stderr, "Conflicting data types for keyword '%s'; no value for this keyword will be written to this record.\n", segfilekey->info->name);
-                        skipkey = 1;
-                        break;
+                        if (*valtype != segfilekey->info->type)
+                        {
+                           /* We have a conflict in data types (two keys with the same name, but different types).
+                            * Ignore the key and print a warning. */
+                           fprintf(stderr, "Conflicting data types for keyword '%s'; no value for this keyword will be written to this record.\n", segfilekey->info->name);
+                           skipkey = 1;
+                           break;
+                        }
+                        else if (!drms_equal(*valtype, val, &segfilekey->value))
+                        {
+                           conflict = 1;
+                           break;
+                        }
                      }
-                     else if (!drms_equal(*valtype, val, &segfilekey->value))
+                     else
                      {
-                        conflict = 1;
-                        break;
+                        val = &segfilekey->value;
+                        valtype = &segfilekey->info->type;
                      }
                   }
                   else
                   {
-                     val = &segfilekey->value;
-                     valtype = &segfilekey->info->type;
+                     /* At least one segment file had a keyword and one did not - conflict that cannot be resolved. */
+                     fprintf(stderr, "Keyword '%s' is not present in all segment files;  no value for this keyword will be written to this record.\n", kbuf);
+                     skipkey = 1;
+                     break;
                   }
+               }
+            } /* loop segments */
+
+            /* Resolve conflicts and write keyword value. */
+            if (!skipkey)
+            {
+               /* Check to see if keyword in output series is per-segment or not (if the series
+                * has a per-segment keyword, then you must specify an index in the keyword name). */
+               snprintf(query, sizeof(query), "SELECT * FROM %s.drms_keyword WHERE keywordname ILIKE '%s' AND persegment & 1 = 1", ns, kbuf);
+
+               if ((qres = drms_query_txt(rec->env->session, query)) != NULL && qres->num_rows != 0) 
+               {
+                  persegexists = 1;
                }
                else
                {
-                  /* At least one segment file had a keyword and one did not - conflict that cannot be resolved. */
-                  fprintf(stderr, "Keyword '%s' is not present in all segment files;  no value for this keyword will be written to this record.\n", kbuf);
-                  skipkey = 1;
-                  break;
+                  persegexists = 0;
                }
-            }
-         } /* loop segments */
 
-         /* Resolve conflicts and write keyword value. */
-         if (!skipkey)
-         {
-            /* Check to see if keyword in output series is per-segment or not (if the series
-             * has a per-segment keyword, then you must specify an index in the keyword name). */
-            snprintf(query, sizeof(query), "SELECT * FROM %s.drms_keyword WHERE keywordname ILIKE '%s' AND persegment & 1 = 1", ns, kbuf);
-
-            if ((qres = drms_query_txt(rec->env->session, query)) != NULL && qres->num_rows != 0) 
-            {
-               persegexists = 1;
-            }
-            else
-            {
-               persegexists = 0;
-            }
-
-            if (qres)
-            {
-               db_free_text_result(qres);
-               qres = NULL;
-            }
-         
-            if (conflict || persegexists)
-            {
-               if (persegexists)
+               if (qres)
                {
-                  /* Write each segment's keyword value to the corresponding segment-specific DRMS keyword. */
-                  for (isegment = 0; isegment < nsegments; isegment++)
+                  db_free_text_result(qres);
+                  qres = NULL;
+               }
+         
+               if (conflict || persegexists)
+               {
+                  if (persegexists)
                   {
-                     segfilekeyhash = segfilekeys[isegment];
-
-                     if (segfilekeyhash)
+                     /* Write each segment's keyword value to the corresponding segment-specific DRMS keyword. */
+                     for (isegment = 0; isegment < nsegments; isegment++)
                      {
-                        segfilekey = hcon_lookup(segfilekeyhash, kbuf);
-                        snprintf(persegkey, sizeof(persegkey), "%s[%d]", kbuf, isegment);
+                        segfilekeyhash = segfilekeys[isegment];
 
-                        if (!drms_keyword_lookup(rec, persegkey, 0))
+                        if (segfilekeyhash)
                         {
-                           fprintf(stderr, "The output series '%s' does not contain keyword '%s', skipping and continuing.\n", rec->seriesinfo->seriesname, kbuf);
-                        }
-                        else
-                        {
-                           if ((skret = drms_setkey(rec, persegkey, segfilekey->info->type, &segfilekey->value)) == DRMS_ERROR_KEYWORDREADONLY)
+                           segfilekey = hcon_lookup(segfilekeyhash, kbuf);
+                           snprintf(persegkey, sizeof(persegkey), "%s[%d]", kbuf, isegment);
+
+                           if (!drms_keyword_lookup(rec, persegkey, 0))
                            {
-                              fprintf(stderr, "Unable to write value for read-only keyword '%s'.\n", kbuf);
-                           }
-                           else if (skret != DRMS_SUCCESS)
-                           {
-                              fprintf(stderr, "Error writing value for keyword '%s'; continuing.\n", kbuf);
+                              fprintf(stderr, "The output series '%s' does not contain keyword '%s', skipping and continuing.\n", rec->seriesinfo->seriesname, kbuf);
                            }
                            else
                            {
-                              err = 0;
+                              if ((skret = drms_setkey(rec, persegkey, segfilekey->info->type, &segfilekey->value)) == DRMS_ERROR_KEYWORDREADONLY)
+                              {
+                                 fprintf(stderr, "Unable to write value for read-only keyword '%s'.\n", kbuf);
+                              }
+                              else if (skret != DRMS_SUCCESS)
+                              {
+                                 fprintf(stderr, "Error writing value for keyword '%s'; continuing.\n", kbuf);
+                              }
+                              else
+                              {
+                                 err = 0;
+                              }
                            }
                         }
                      }
                   }
-               }
-               else
-               {
-                  fprintf(stderr, "Conflicting keyword values for keyword '%s' and no per-segment keyword exists; no value for this keyword will be written to this record.\n", kbuf);
-               }
-            }
-            else
-            {
-               /* Check for the existence of the keyword to be written - if the input file 
-                * contains a keyword that the output series does not contain, then simply 
-                * print a warning, but continue. */
-               if (!drms_keyword_lookup(rec, kbuf, 0))
-               {
-                  fprintf(stderr, "The output series '%s' does not contain keyword '%s', skipping and continuing.\n", rec->seriesinfo->seriesname, kbuf);
-               }
-               else
-               {
-                  /* Write to record the keyword value. */
-                  if ((skret = drms_setkey(rec, kbuf, *valtype, val)) == DRMS_ERROR_KEYWORDREADONLY)
+                  else
                   {
-                     fprintf(stderr, "Unable to write value for read-only keyword '%s'.\n", kbuf);
+                     fprintf(stderr, "Conflicting keyword values for keyword '%s' and no per-segment keyword exists; no value for this keyword will be written to this record.\n", kbuf);
                   }
-                  else if (skret != DRMS_SUCCESS)
+               }
+               else
+               {
+                  /* Check for the existence of the keyword to be written - if the input file 
+                   * contains a keyword that the output series does not contain, then simply 
+                   * print a warning, but continue. */
+                  if (!drms_keyword_lookup(rec, kbuf, 0))
                   {
-                     fprintf(stderr, "Error writing value for keyword '%s'; continuing.\n", kbuf);
+                     fprintf(stderr, "The output series '%s' does not contain keyword '%s', skipping and continuing.\n", rec->seriesinfo->seriesname, kbuf);
                   }
                   else
                   {
-                     err = 0;
+                     /* Write to record the keyword value. */
+                     if ((skret = drms_setkey(rec, kbuf, *valtype, val)) == DRMS_ERROR_KEYWORDREADONLY)
+                     {
+                        fprintf(stderr, "Unable to write value for read-only keyword '%s'.\n", kbuf);
+                     }
+                     else if (skret != DRMS_SUCCESS)
+                     {
+                        fprintf(stderr, "Error writing value for keyword '%s'; continuing.\n", kbuf);
+                     }
+                     else
+                     {
+                        err = 0;
+                     }
                   }
                }
             }
-         }
-      } /* loop over master keylist (the list of unique keys) */
+         } /* loop over master keylist (the list of unique keys) */
+
+         hiter_free(&keyhit);
+      } /* keylist not empty */
+      else
+      {
+         /* no keys to add at all */
+         err = 0;
+      }
 
       free(ns);
-      hiter_free(&keyhit);
    }
 
    return err;
@@ -423,7 +432,7 @@ int DoIt(void)
   DRMS_Segment_t *seg;
   HIterator_t key_hit;
   int nprime, iprime;
-  int nsegments, isegment;
+  int nsegments = 0, isegment;
   int is_new_seg = 0;
 
   if (nice_intro(0))
@@ -472,7 +481,10 @@ int DoIt(void)
        DIE("cant create records from in given series");
     }
     nrecs = 1;
-    rec = rs->records[0];
+    rec = rs->records[0];   
+
+    nsegments = hcon_size(&rec->segments);
+
     pkeys = drms_series_createpkeyarray(drms_env, 
 					rec->seriesinfo->seriesname,
 					&nprime, 
@@ -503,7 +515,14 @@ int DoIt(void)
            DIE("some prime key not specified on command line");
         }
         key_anyval = cmdparams_get_type(&cmdparams, keyname, keytype, &status); 
-	status = drms_setkey(rec, keyname, keytype, &key_anyval); 
+	status = drms_setkey(rec, keyname, keytype, &key_anyval);
+
+        if (keytype == DRMS_TYPE_STRING)
+        {
+           free(key_anyval.string_val);
+           key_anyval.string_val = NULL;
+        }
+
 	if (status)
         {
            if (query) { free(query); query = NULL; }
@@ -590,22 +609,29 @@ int DoIt(void)
    }
 
   /* at this point the records are ready for new keyword values and/or files */
-  HContainer_t **segfilekeys = malloc(sizeof(HContainer_t *) * nsegments);
+  /* not inside a loop here. */
+  HContainer_t **segfilekeys = NULL;
+  HContainer_t *keylist = NULL;
+  int noutsegs = 0;
 
-  /* not really going to store anything in hash container - just using hash table to 
-   * quickly find out if a key has been previously seen. */
-  HContainer_t *keylist = hcon_create(sizeof(int), sizeof(DRMS_MAXKEYNAMELEN), NULL, NULL, NULL, NULL, 0);
-  memset(keylist, 0, sizeof(HContainer_t *) * nsegments);
   for (irec = 0; irec<nrecs; irec++)
     {
     char recordpath[DRMS_MAXPATHLEN];
     rec = rs->records[irec];
+    noutsegs = hcon_size(&rec->segments);
 
+    if (noutsegs > 0)
+    {
+       segfilekeys = malloc(sizeof(HContainer_t *) * noutsegs);
+       memset(segfilekeys, 0, sizeof(HContainer_t *) * noutsegs);
+       keylist = hcon_create(sizeof(int), sizeof(DRMS_MAXKEYNAMELEN), NULL, NULL, NULL, NULL, 0);
+    }
+    
     /* make sure record directory is staged and included in the new record */
     drms_record_directory(rec, recordpath, 1);
+
     /* insert new generic segment files found on command line */
-    nsegments = hcon_size(&rec->segments);
-    for (isegment=0; isegment<nsegments; isegment++)
+    for (isegment=0; isegment<noutsegs; isegment++)
     { 
 	 seg = drms_segment_lookupnum(rec, isegment);
 	 const char *filename = NULL;
@@ -647,15 +673,28 @@ int DoIt(void)
     } /* foreach(seg) */
 
     /* Resolve keyword value conflicts - iterate over keylist */
-    WriteKeyValues(rec, nsegments, keylist, segfilekeys);
+    if (noutsegs > 0)
+    {
+       WriteKeyValues(rec, noutsegs, keylist, segfilekeys);
+    }
 
     /* Free segment files' keylists */
-    for (isegment = 0; isegment < nsegments; isegment++)
-    { 
-       if (segfilekeys[isegment])
-       {
-          hcon_destroy(&segfilekeys[isegment]);
+    if (segfilekeys)
+    {
+       for (isegment = 0; isegment < noutsegs; isegment++)
+       { 
+          if (segfilekeys[isegment])
+          {
+             hcon_destroy(&segfilekeys[isegment]);
+          }
        }
+
+       free(segfilekeys);
+    }
+    /* Free keylist of unique keys from all segments. */
+    if (keylist)
+    {
+       hcon_destroy(&keylist);
     }
     
     hiter_new(&key_hit, &rec->keywords);
@@ -691,6 +730,13 @@ int DoIt(void)
           { /* not prime, so update this value */
 	  key_anyval = cmdparams_get_type(&cmdparams, keyname, keytype, &status);
 	  status = drms_setkey(rec, keyname, keytype, &key_anyval);
+
+          if (keytype == DRMS_TYPE_STRING)
+          {
+             free(key_anyval.string_val);
+             key_anyval.string_val = NULL;
+          }
+
            if (status)
            {
               if (query) { free(query); query = NULL; }
