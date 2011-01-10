@@ -92,7 +92,10 @@
 enum Protocol_enum
 {
    kProto_AsIs = 0,
-   kProto_FITS = 1
+   kProto_FITS = 1,
+   kProto_MPEG = 2,
+   kProto_JPEG = 3,
+   kProto_PNG  = 4
 };
 
 typedef enum Protocol_enum Protocol_t;
@@ -100,7 +103,10 @@ typedef enum Protocol_enum Protocol_t;
 const char *protos[] =
 {
    "as-is",
-   "fits"
+   "fits",
+   "mpeg", 
+   "jpeg",
+   "png"
 };
 
 enum Processing_enum
@@ -360,7 +366,7 @@ static int GenPreProcessCmd(FILE *fptr,
    int rv = 0;
    char hgds[PATH_MAX];
 
-   if (strncmp(process, procs[kProc_HgPatch], strlen(procs[kProc_HgPatch])) == 0)
+   if (strncasecmp(process, procs[kProc_HgPatch], strlen(procs[kProc_HgPatch])) == 0)
    {
       *proctype = kProc_HgPatch;
 
@@ -391,19 +397,19 @@ static int GenPreProcessCmd(FILE *fptr,
          rv = 1;
       }
    }
-   else if (strncmp(process, procs[kProc_SuExport], strlen(procs[kProc_SuExport])) == 0)
+   else if (strncasecmp(process, procs[kProc_SuExport], strlen(procs[kProc_SuExport])) == 0)
    {
       *proctype = kProc_SuExport;
       fprintf(fptr, "jsoc_export_SU_as_is_sock ds='%s' requestid=%s\n", dataset, requestid); 
       GenErrChkCmd(fptr);
       /* rv = 0 */
    }
-   else if (strncmp(process, procs[kProc_Noop], strlen(procs[kProc_Noop])) == 0)
+   else if (strncasecmp(process, procs[kProc_Noop], strlen(procs[kProc_Noop])) == 0)
    {
       *proctype = kProc_Noop;
       /* rv = 0 */
    }
-   else if (strncmp(process, procs[kProc_NotSpec], strlen(procs[kProc_NotSpec])) == 0)
+   else if (strncasecmp(process, procs[kProc_NotSpec], strlen(procs[kProc_NotSpec])) == 0)
    {
       *proctype = kProc_NotSpec;
       /* rv = 0 */
@@ -434,11 +440,53 @@ static int GenProtoExpCmd(FILE *fptr,
 {
    int rv = 0;
 
-   if (strncmp(protocol, protos[kProto_FITS], strlen(protos[kProto_FITS])))
+   if (strncasecmp(protocol, protos[kProto_FITS], strlen(protos[kProto_FITS])) == 0)
    {
       rv = (GenExpFitsCmd(fptr, protocol, dbmainhost, requestid, dataset, RecordLimit, filenamefmt, method, dbids, proctype) != 0);
    }
-   else if (strncmp(protocol, protos[kProto_AsIs], strlen(protos[kProto_AsIs])))
+   else if (strncasecmp(protocol, protos[kProto_MPEG], strlen(protos[kProto_MPEG])) == 0)
+   {
+      /* No "n=XX" */
+      /* The arguments are all position-dependent. */
+      fprintf(fptr, 
+              "jsoc_export_as_movie '%s' '%s' '%s' '%s' '%s' $REQDIR '%s' '%s'\n",
+              dataset,
+              requestid,
+              PACKLIST_VER,
+              method,
+              protos[kProto_MPEG],
+              filenamefmt,
+              "cparms is not needed");
+   }
+   else if (strncasecmp(protocol, protos[kProto_JPEG], strlen(protos[kProto_JPEG])) == 0)
+   {
+      /* No "n=XX" */
+      /* The arguments are all position-dependent. */
+      fprintf(fptr, 
+              "jsoc_export_as_images '%s' '%s' '%s' '%s' '%s' $REQDIR '%s' '%s'\n",
+              dataset,
+              requestid,
+              PACKLIST_VER,
+              method,
+              protos[kProto_JPEG],
+              filenamefmt,
+              "cparms is not needed");
+   }
+   else if (strncasecmp(protocol, protos[kProto_PNG], strlen(protos[kProto_PNG])) == 0)
+   {
+      /* No "n=XX" */
+      /* The arguments are all position-dependent. */
+      fprintf(fptr, 
+              "jsoc_export_as_images '%s' '%s' '%s' '%s' '%s' $REQDIR '%s' '%s'\n",
+              dataset,
+              requestid,
+              PACKLIST_VER,
+              method,
+              protos[kProto_PNG],
+              filenamefmt,
+              "cparms is not needed");
+   }
+   else if (strncasecmp(protocol, protos[kProto_AsIs], strlen(protos[kProto_AsIs])) == 0)
    {
       if (proctype == kProc_HgPatch)
       {
