@@ -655,6 +655,51 @@ KEY *nopdo_1(KEY *params)
   return((KEY *)1);	/* nothing will be sent later */
 }
 
+/* This is called by the tape_svc_restart program to tell sum_svc
+ * to reconnect to a new tape_svc that has been started.
+ * Eventually the stop of the old tape_svc and the start of a new
+ * one can be done here with ssh calls to d02. But for now,
+ * we will require that the user stops and starts a tape_svc.
+ * How to do this will be detailed when tape_svc_restart is run.
+ * Typical keylist is:
+ * ACTION:         KEYTYP_STRING   close/reconnect
+ * USER:   	   KEYTYP_STRING   production
+ * HOST:   	   KEYTYP_STRING   d02
+*/
+KEY *tapereconnectdo_1(KEY *params)
+{
+  uint64_t uid;
+  char *cptr;
+  char *user;
+
+  rinfo = 0;
+  user = getkey_str(params, "USER");
+  write_log("Tape reconnect for user=%s action=%s\n", user, GETKEY_str(params, "ACTION"));
+  cptr = GETKEY_str(params, "ACTION");
+  if(!strcmp(cptr, "close")) {
+    write_log("sum_svc is closing on tape_svc about to be restarted\n");
+    clnttape = 0;
+  }
+  else if(!strcmp(cptr, "reconnect")) {
+    //connect to tape_svc
+    clnttape = clnt_create(TAPEHOST, TAPEPROG, TAPEVERS, "tcp");
+    if(!clnttape) {       /* server not there */
+      clnt_pcreateerror("Can't get client handle to tape_svc (from sum_svc)");
+      write_log("Cannot connect to new tape_svc on d02\n");
+      rinfo = 1;
+      //exit(1);
+    }
+    write_log("sum_svc has reconnected to restarted tape_svc\n");
+  }
+  else {  
+    write_log("Illegal action = %s sent to tapereconnectdo_1()\n", cptr);
+    rinfo = -1;
+  }
+  send_ack();
+  free(user);
+  return((KEY *)1);	/* nothing will be sent later */
+}
+
 /* Called by delete_series doing a SUM_delete_series() call with all
  * the SUMS storage units (i.e. ds_index) that are associated with
  * the series about to be deleted. The sunums are in the given file.
