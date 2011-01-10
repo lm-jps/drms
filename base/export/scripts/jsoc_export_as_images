@@ -1,0 +1,85 @@
+#! /bin/bash
+# script shpould figure out what kind of data series it is and then use appropriate default scaling/ colortable. 
+# for stand alone mode :use as jsoc_export_as_images seriesname
+#  for eg.  jsoc_export_as_images hmi.Ic_45s_nrt[2010.11.07_TAI/45s] 
+# the output images are in the current directory. 
+# export mode:
+#jsoc_export_as_images ds=<record_set_query>  reqid=<export request id> expversion=<version> 
+#     method=<exp method> protocol=<output-file protocol> path=<output path> 
+#     { ffmt=<filename format> } { cparms=<compression string list> }
+# jsoc_exjsoc_export_as_images  ds  reqid expversion  export_ method  protocol  output_path ffmt cparms    
+#                                1    2       3             4            5           6        7      8    
+
+#make sure all arguments are there
+
+outpath=$6 
+cd $outpath
+  if  (( $# != 7 ))
+  then                                                
+  echo "$0 requires 7 arguments"
+    exit 2
+  fi
+
+    in=$1
+    nRec=`show_info -cq ds=$in`
+  if (( $nRec < 1 ))
+ then 
+     echo "No records exist"
+      exit 2
+  fi   
+# chk to see if old index file exists; if so clobber it and all other png files if they exist
+if [[ -e index.txt ]]
+ then
+    rm -f index.txt
+fi
+rm -rf *.png
+
+# Write into the new index.txt
+
+
+echo "# JSOC " > index.txt
+echo "reqid=$2" >>index.txt
+echo "expversion=$3" >>index.txt  
+echo "method=$4" >>index.txt  
+echo "protocol=$5" >>index.txt  
+echo "Output directory=$6" >>/index.txt  
+echo "filefmt=$7" >>index.txt  
+echo "cparams=$8" >>index.txt  
+echo "# DATA ">>index.txt
+
+
+content=`show_info -q ds=$in n=1 key=CONTENT`
+declare -i scale=16                 # default -could read in as a parameter
+type=png                # default could also do jpg
+declare -i size=4096/$scale      
+
+case "$content" in 
+  MAGNETOGRAM) 
+         render_image in=$in out=$outpath min=-800 max=800 -c pallette=/home/priya/Colormaps/Blue_grey_Red.lut outname=$content scale=$scale type=$type outid=time -c 
+        
+             ;;
+  CONTINUUM*)
+           render_image in=$in out=$outpath  min=20000 max=75000 -c pallette=/home/priya/Colormaps/heat.sao outname=$content outid=time scale=$scale type=$type -c
+             ;;
+  LINEDEPTH)
+          render_image in=$in out=$outpath  -c pallette=/home/priya/Colormaps/bb.sao outname=$content scale=$scale outid=time type=$type   -c
+            ;;
+  LINEWIDTH)
+         render_image in=$in out=$outpath  -c pallette=/home/priya/Colormaps/bb.sao outname=$content scale=$scale type=$type outid=time -c
+             ;;     
+ DOPPLERGRAM)
+         render_image in=$in out=$outpath -c pallette=/home/priya/Colormaps/bb.sao outname=$content scale=$scale type=$type outid=time  -c
+             ;;
+        
+    *) 
+       echo -e Out of case command
+             ;;
+esac
+
+
+
+ show_info -iq ds=$in > data1
+ ls  *.png > data2
+ paste  data1   data2 >> index.txt
+
+ rm -f data1 ; rm -f data2
