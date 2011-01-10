@@ -579,12 +579,12 @@ KEY *putdo_1(KEY *params)
       //			cptr, cptr);
       sprintf(sysstr, "%s/sum_chmown %s", SUMBIN_BASEDIR, cptr);
       //write_log("%s\n", sysstr);
-      StartTimer(3);		//!!TEMP
+      //StartTimer(3);		//!!TEMP
       if(system(sysstr)) {
           write_log("**Warning: Error on: %s\n", sysstr);
       }
-      ftmp = StopTimer(3);
-      write_log("#END: sum_chmown() %fsec\n", ftmp);    //!!TEMP for test
+      //ftmp = StopTimer(3);
+      //write_log("#END: sum_chmown() %fsec\n", ftmp);    //!!TEMP for test
     }
     rinfo = 0;			// status back to caller
     send_ack();
