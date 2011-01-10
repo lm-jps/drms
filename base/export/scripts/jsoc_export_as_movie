@@ -109,7 +109,7 @@ echo "# DATA ">>index.txt
  ls  *.*.png > data2
 
 echo "movie of the following data">>mv1
-echo  $PWD/$content.mp4 >>mv2
+echo $content.mp4 >>mv2
 paste  mv1  mv2 >>index.txt 
 paste  data1  data2 >> index.txt
 
