@@ -13,9 +13,9 @@
 
 outpath=$6 
 cd $outpath
- if  (( $# != 7 )) 
+ if  (( $# != 8 )) 
  then
-    echo "$0 requires atleast 7 argument"
+    echo "$0 requires atleast 8 argument"
     exit 2
  fi
 
@@ -43,7 +43,7 @@ echo "expversion=$3" >>index.txt
 echo "method=$4" >>index.txt  
 echo "protocol=$5" >> index.txt  
 echo "protocol=$5" >> index.txt  
-echo "Output directory=$6" >>index.txt  
+echo "dir=$6" >>index.txt  
 echo "filefmt=$7" >>index.txt  
 echo "cparams=$8" >>$index.txt  
 

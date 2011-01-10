@@ -42,7 +42,7 @@ echo "reqid=$2" >>index.txt
 echo "expversion=$3" >>index.txt  
 echo "method=$4" >>index.txt  
 echo "protocol=$5" >>index.txt  
-echo "Output directory=$6" >>/index.txt  
+echo "dir=$6" >>index.txt  
 echo "filefmt=$7" >>index.txt  
 echo "cparams=$8" >>index.txt  
 echo "# DATA ">>index.txt
