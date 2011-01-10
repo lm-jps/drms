@@ -14,9 +14,9 @@
 
 outpath=$6 
 cd $outpath
-  if  (( $# != 7 ))
+  if  (( $# != 8 ))
   then                                                
-  echo "$0 requires 7 arguments"
+  echo "$0 requires 8 arguments"
     exit 2
   fi
 
