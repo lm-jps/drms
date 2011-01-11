@@ -48,7 +48,7 @@ echo "filefmt=$7" >>index.txt
 echo "cparams=$8" >>$index.txt  
 
 
- content=`show_info -q ds=$in n=1 key=CONTENT`
+ content=`show_info -q ds=$in n=1 key=CONTENT | awk -F'[ ]' '{print $1}' `
  declare -i scale=8                 # default -could read in as a parameter
  type=png                # default could also do jpg
  declare -i size=4096/$scale   #could have different size images option?      
