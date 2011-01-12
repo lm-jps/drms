@@ -9,6 +9,7 @@ $(PROJOBJDIR):
 	+@[ -d $@/libs/stats ] || mkdir -p $@/libs/stats
 	+@[ -d $@/datacapture/apps ] || mkdir -p $@/datacapture/apps
 	+@[ -d $@/dsdsmigr/apps ] || mkdir -p $@/dsdsmigr/apps
+	+@[ -d $@/dsdsmigr/libs ] || mkdir -p $@/dsdsmigr/libs
 	+@[ -d $@/maps_avgs/apps ] || mkdir -p $@/maps_avgs/apps
 	+@[ -d $@/util/apps ] || mkdir -p $@/util/apps
 	+@[ -d $@/lev0/apps ] || mkdir -p $@/lev0/apps
@@ -35,3 +36,4 @@ $(PROJOBJDIR):
 	+@[ -d $@/mag/ident/libs/util ] || mkdir -p $@/mag/ident/libs/util
 	+@[ -d $@/mag/patch/apps ] || mkdir -p $@/mag/patch/apps
 	+@[ -d $@/limbfit/apps ] || mkdir -p $@/limbfit/apps
+	+@[ -d $@/vfisv/apps ] || mkdir -p $@/vfisv/apps
