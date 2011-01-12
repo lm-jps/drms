@@ -37,3 +37,4 @@ $(PROJOBJDIR):
 	+@[ -d $@/mag/patch/apps ] || mkdir -p $@/mag/patch/apps
 	+@[ -d $@/limbfit/apps ] || mkdir -p $@/limbfit/apps
 	+@[ -d $@/vfisv/apps ] || mkdir -p $@/vfisv/apps
+	+@[ -d $@/workflow/apps ] || mkdir -p $@/workflow/apps
