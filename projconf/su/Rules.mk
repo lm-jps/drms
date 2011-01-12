@@ -54,6 +54,9 @@ dir     := $(d)/farside
 -include                $(SRCDIR)/$(dir)/Rules.mk
 dir     := $(d)/timed
 -include                $(SRCDIR)/$(dir)/Rules.mk
+dir     := $(d)/vfisv
+-include                $(SRCDIR)/$(dir)/Rules.mk
+
 
 
 # Standard things
