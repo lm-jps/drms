@@ -273,16 +273,17 @@ int drms_su_alloc2(DRMS_Env_t *env,
    slot number.
 */
 #ifndef DRMS_CLIENT
-int drms_su_newslots(DRMS_Env_t *env, int n, char *series, 
-		     long long *recnum, DRMS_RecLifetime_t lifetime,
-		     int *slotnum, DRMS_StorageUnit_t **su,
-                     int createslotdirs)
+static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series, 
+                                     long long *recnum, DRMS_RecLifetime_t lifetime,
+                                     int *slotnum, DRMS_StorageUnit_t **su,
+                                     int createslotdirs,
+                                     int gotosums)
 {
   int i, status, slot;
   HContainer_t *scon; 
   HIterator_t hit; 
   long long sunum;
-  char slotdir[DRMS_MAXPATHLEN+40], hashkey[DRMS_MAXHASHKEYLEN], *sudir;
+  char slotdir[DRMS_MAXPATHLEN+40], hashkey[DRMS_MAXHASHKEYLEN], *sudir = NULL;
   DRMS_Record_t *template=NULL;
 
 
@@ -331,6 +332,15 @@ int drms_su_newslots(DRMS_Env_t *env, int n, char *series,
     }
     if (slot == -1) /* Out of slots: It's time to allocate a new SU. */
     {
+       /* ART - if gotosums == 0, then we cannot talk to SUMS, and we cannot allocate
+        * the requested new slots, so we have to error out. */
+       if (gotosums == 0)
+       {
+          fprintf(stderr, "drms_su_newslots_internal() failure - no existing slots available, need to fetch a new one from SUMS, but SUMS access is disabled (gotosums == 0).\n");
+          status = DRMS_ERROR_NEEDSUMS;
+          goto bail;
+       }
+
       if (template==NULL) /* Only look up the template once... */
       {
 	if ((template = drms_template_record(env, series, &status)) == NULL)
@@ -356,6 +366,7 @@ int drms_su_newslots(DRMS_Env_t *env, int n, char *series,
       }	  
       sprintf(hashkey,DRMS_SUNUM_FORMAT, sunum);
       /* Insert new entry in hash table. */
+      /* This allocates a new DRMS_StorageUnit_t. */
       su[i] = hcon_allocslot(scon, hashkey);
 #ifdef DEBUG
       printf("Got su[i] = %p. Now has %d slots from '%s'\n",su[i], 
@@ -425,6 +436,25 @@ int drms_su_newslots(DRMS_Env_t *env, int n, char *series,
   status = DRMS_SUCCESS;
  bail:
   return status;
+}
+
+int drms_su_newslots(DRMS_Env_t *env, int n, char *series, 
+                     long long *recnum, DRMS_RecLifetime_t lifetime,
+                     int *slotnum, DRMS_StorageUnit_t **su,
+                     int createslotdirs)
+{
+   /* This call will result in a SUMS requests in some cases. */
+   return drms_su_newslots_internal(env, n, series, recnum, lifetime, slotnum, su, createslotdirs, 1);
+}
+
+int drms_su_newslots_nosums(DRMS_Env_t *env, int n, char *series, 
+                            long long *recnum, DRMS_RecLifetime_t lifetime,
+                            int *slotnum, DRMS_StorageUnit_t **su,
+                            int createslotdirs)
+{
+   /* Does not allow SUMS access (if SUMS access is required for successful completion, then an error
+    * code is returned). */
+   return drms_su_newslots_internal(env, n, series, recnum, lifetime, slotnum, su, createslotdirs, 0);
 }
 #endif
 

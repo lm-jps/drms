@@ -1028,6 +1028,7 @@ int drms_server_newslots(DRMS_Env_t *env, int sockfd)
   DRMS_StorageUnit_t **su;
   DRMS_RecLifetime_t lifetime;
   int createslotdirs;
+  int gotosums;
 
   status = DRMS_SUCCESS;
   series = receive_string(sockfd);  
@@ -1037,6 +1038,9 @@ int drms_server_newslots(DRMS_Env_t *env, int sockfd)
   {    
     lifetime = (DRMS_RecLifetime_t) Readint(sockfd); 
     createslotdirs = Readint(sockfd);
+
+    /* ART - Add gotosums flag */
+    gotosums = Readint(sockfd);
   
     XASSERT(su = malloc(n*sizeof(DRMS_StorageUnit_t *)));
     XASSERT(slotnum = malloc(n*sizeof(int)));
@@ -1049,7 +1053,15 @@ int drms_server_newslots(DRMS_Env_t *env, int sockfd)
             series, n, lifetime, createslotdirs);
 #endif
 
-    status = drms_su_newslots(env, n, series, recnum, lifetime, slotnum, su, createslotdirs);
+    if (gotosums)
+    {
+       status = drms_su_newslots(env, n, series, recnum, lifetime, slotnum, su, createslotdirs);
+    }
+    else
+    {
+       status = drms_su_newslots_nosums(env, n, series, recnum, lifetime, slotnum, su, createslotdirs);
+    }
+
     if (status==DRMS_SUCCESS)
     {
       int *tmp, *t;

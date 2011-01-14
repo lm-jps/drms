@@ -27,6 +27,10 @@ int drms_su_newslots(DRMS_Env_t *env, int n, char *series, long long *recnum,
 		     DRMS_RecLifetime_t lifetime, int *slotnum, 
 		     DRMS_StorageUnit_t **su,
                      int createslotdirs);
+int drms_su_newslots_nosums(DRMS_Env_t *env, int n, char *series, long long *recnum,
+                            DRMS_RecLifetime_t lifetime, int *slotnum, 
+                            DRMS_StorageUnit_t **su,
+                            int createslotdirs);
 int drms_su_freeslot(DRMS_Env_t *env, char *series, long long sunum,
 		     int slotnum);
 DRMS_StorageUnit_t *drms_su_lookup(DRMS_Env_t *env, char *series,

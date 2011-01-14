@@ -2351,9 +2351,14 @@ void drms_destroy_recproto(DRMS_Record_t **proto)
 
 
 /* Create n new records by calling drms_create_record n times.  */
-DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in, 
-				     DRMS_RecLifetime_t lifetime,  
-				     DRMS_CloneAction_t mode, int *status)
+
+/* ART - now that we have a flag to control whether we talk to sums, drms_record_directory calls
+ * may fail to retrieve a directory. Must check for NULL/empty directory strings. */
+static DRMS_RecordSet_t *drms_clone_records_internal(DRMS_RecordSet_t *rs_in, 
+                                                     DRMS_RecLifetime_t lifetime,  
+                                                     DRMS_CloneAction_t mode, 
+                                                     int gotosums,
+                                                     int *status)
 {
   int i, stat=0, first, last, n, n_total;
   DRMS_RecordSet_t *rs_out=NULL;
@@ -2370,6 +2375,7 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
   DRMS_Array_t *arr;
   int createslotdirs = 1;
   HIterator_t *seghit = NULL;
+  DRMS_Record_t *therec = NULL;
 
   CHECKNULL_STAT(rs_in,status);
   n_total = rs_in->n;
@@ -2436,12 +2442,46 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
       switch(mode)
       {
       case DRMS_SHARE_SEGMENTS:
+        /* look over records in the input record set in the current series. */
+        /* ARTA - PERFORMANCE ISSUE : If we're going to talk to SUMS, we could batch together
+         * all records and pass to SUMS a batch of SUNUMs (instead of passing a single SUNUM
+         * as is done now). */
 	for (i=0; i<n; i++) 
-	{   
-	   drms_record_directory(rs_in->records[first+i], dir_in, 1);
-	   if ( rs_in->records[first+i]->su )
+	{
+           therec = rs_in->records[first+i];
+           /* drms_record_directory is called simply to get the SU struct, not to obtain the SUdir. */
+           if (gotosums)
+           {
+              /* If there is no SU associated with this record, then the following will do nothing, 
+               * and it won't communicate with SUMS. */
+              drms_record_directory(therec, dir_in, 1);
+           }
+           else
+           {
+              /* The whole point of the code in this statement is to get a DRMS_StorageUnit_t struct. 
+               * We can do that with a drms_getunit() call instead of drms_record_directory(). */
+              if (therec->sunum != -1LL && therec->su == NULL) 
+              {
+                 /* drms_getunit_nosums() cannot return the sudir because that requires SUMS access. */
+                 if ((therec->su = drms_getunit_nosums(therec->env, therec->seriesinfo->seriesname,
+                                                       therec->sunum, &stat)) == NULL) 
+                 {
+                    if (stat) 
+                    {
+                       fprintf (stderr, "ERROR in drms_clone_records_internal: stat = %d\n", stat);
+                       goto failure;
+                    }
+                 }
+                 else
+                 {
+                    therec->su->refcount++;
+                 }
+              }
+           }
+
+	   if (therec->su)
 	   {
-	      rs_out->records[first+i]->su = rs_in->records[first+i]->su;
+	      rs_out->records[first+i]->su = therec->su;
 	      rs_out->records[first+i]->su->refcount++;
 	   }
 	}
@@ -2467,11 +2507,33 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
         }
       
 	/* Allocate new SU slots for copies of data segments. */
-	if ((stat = drms_newslots(env, n, series, recnum, lifetime, slotnum, 
-				  su, createslotdirs))) {
-	  stat = 1;
-	  goto failure;    
-	}
+        /* This call MAY end up calling SUM_alloc(), but it may not. If there are a sufficient number
+         * of slots available to accommodate the new records, then SUMS will not be called. If gotosums
+         * is 0, and there are not a sufficient number of slots, then drms_newslots() should return an 
+         * error. */
+
+        if (gotosums)
+        {
+           if ((stat = drms_newslots(env, n, series, recnum, lifetime, slotnum, su, createslotdirs))) 
+           {
+              stat = 1;
+              goto failure;    
+           }
+        }
+        else
+        {
+           if ((stat = drms_newslots_nosums(env, n, series, recnum, lifetime, slotnum, su, createslotdirs))) 
+           {
+              if (stat == DRMS_ERROR_NEEDSUMS)
+              {
+                 /* The caller prohibited SUMS access, but drms_newslots_nosums() required SUMS access
+                  * to create new slots (because there wasn't any room left in any SU for new slots). */
+                 fprintf(stderr, "Cannot obtain new slot dirs without making a SUMS request.\n");
+              }
+              stat = 1;
+              goto failure;    
+           }
+        }
       
 	/* Copy record directories and TAS data segments (slices)
 	   record-by-record. */
@@ -2486,8 +2548,29 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
 	  rec_out->sunum = su[i]->sunum;
 
 	  /* Copy record directory. */
-	  drms_record_directory(rec_in, dir_in, 1);
-	  drms_record_directory(rec_out, dir_out, 1);
+          if (gotosums)
+          {
+             drms_record_directory(rec_in, dir_in, 1);
+             drms_record_directory(rec_out, dir_out, 1);
+          }
+          else
+          {
+             if (drms_record_directory_nosums(rec_in, dir_in, sizeof(dir_in)) == DRMS_ERROR_NEEDSUMS ||
+                 drms_record_directory_nosums(rec_out, dir_out, sizeof(dir_out)) == DRMS_ERROR_NEEDSUMS)
+             {
+                fprintf(stderr, "Cannot obtain the input/output record directory without making a SUMS request.\n");
+                stat = 1;
+                goto failure;
+             }
+          }
+
+          if (*dir_in == '\0' || *dir_out == '\0')
+          {
+             fprintf(stderr, "Unable to obtain the input/output directory.\n");
+             stat = 1;
+             goto failure;
+          }
+
 	  DIR *dp;
 	  struct dirent *dirp;
 	  if ((dp = opendir(dir_in)) == NULL) {
@@ -2525,7 +2608,12 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
 	      {
 		/* This is the first record in a new storage unit. 
 		   Create an empty TAS file. */
-		drms_segment_filename(seg_out, filename);
+
+                 /* drms_segment_filename() will make a SUMS request if the SU struct 
+                  * hasn't been initialized. BUT we know that the SU struct has been
+                  * intialized because execution will not reach this block of code
+                  * otherwise (we successfully obtained the output SUdir already.) */
+                drms_segment_filename(seg_out, filename);
 		seg_out->axis[seg_out->info->naxis] = rec_out->seriesinfo->unitsize;
 		seg_out->blocksize[seg_out->info->naxis] = 1; 
 
@@ -2541,6 +2629,11 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
 		seg_out->axis[seg_out->info->naxis] = 0;
 		seg_out->blocksize[seg_out->info->naxis] = 0; 
 	      }
+
+              /* drms_segment_read() will make a SUMS request if the SU struct 
+               * hasn't been initialized. BUT we know that the SU struct has been
+               * intialized because execution will not reach this block of code
+               * otherwise (we successfully obtained the input SUdir already.) */
 	      if ((arr = drms_segment_read(seg_in,DRMS_TYPE_RAW,&stat))==NULL)
 	      {
 		fprintf(stderr,"ERROR at %s, line %d: failed to read "
@@ -2550,6 +2643,11 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
 		stat = 1;
 		goto failure;
 	      }
+
+              /* drms_segment_write() will make a SUMS request if the SU struct 
+               * hasn't been initialized. BUT we know that the SU struct has been
+               * intialized because execution will not reach this block of code
+               * otherwise (we successfully obtained the output SUdir already.) */
 	      if (drms_segment_write(seg_out, arr, 0))
 	      {
 		fprintf(stderr,"ERROR at %s, line %d: failed to write "
@@ -2565,6 +2663,7 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
 	}
 	free(su);
 	free(slotnum);
+        /* END DRMS_COPY_SEGMENTS*/
 	break;
       }
     }
@@ -2589,6 +2688,25 @@ DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in,
     *status = stat;
   return NULL;
 }
+
+DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *rs_in, 
+				     DRMS_RecLifetime_t lifetime,  
+				     DRMS_CloneAction_t mode, int *status)
+{
+   /* This call will result in a SUMS requests in some cases (if the mode is to share segments, for example). */
+   return drms_clone_records_internal(rs_in, lifetime, mode, 1, status);
+}
+
+DRMS_RecordSet_t *drms_clone_records_nosums(DRMS_RecordSet_t *rs_in, 
+                                            DRMS_RecLifetime_t lifetime,  
+                                            DRMS_CloneAction_t mode, 
+                                            int *status)
+{
+   /* Does not allow SUMS access (if SUMS access is required for successful completion, then an error
+    * code is returned). */
+   return drms_clone_records_internal(rs_in, lifetime, mode, 0, status);
+}
+
 
 /* Call drms_close_record for each record in a record set. */
 int drms_close_records(DRMS_RecordSet_t *rs, int action)
@@ -5048,6 +5166,8 @@ int drms_record_num_nonlink_segments(DRMS_Record_t *rec)
 	count++;
       }
     }
+
+    hiter_free(&hit);
   }
   return count;
 }
@@ -5138,7 +5258,81 @@ int drms_record_directory (DRMS_Record_t *rec, char *dirname, int retrieve) {
   return(DRMS_SUCCESS);
 }
 
+/* Will not make a SUMS request - if the rec does not have a pointer to the SUdir, then the dirout 
+ * returned will be the empty string. */
+int drms_record_directory_nosums(DRMS_Record_t *rec, char *dirout, int size)
+{
+   int rv = DRMS_SUCCESS;
 
+   if (dirout && size >= 1)
+   {
+      if (drms_record_numsegments(rec) <= 0)
+      {
+         *dirout = '\0';
+         rv = DRMS_ERROR_NOSEGMENT;
+      }
+      else if (drms_record_isdsds(rec))
+      {
+         /* Can't call drms_record_directory() on a record that contains a DRMS_DSDS segment. */
+         fprintf(stderr, "ERROR: Cannot call drms_record_directory_nosums() on a record that contains a DRMS_DSDS segment.\n");
+         *dirout = '\0';
+         rv = DRMS_ERROR_NODSDSSUPPORT;
+      }
+      else
+      {
+         /* There can be a record directory only if the record has a storage unit. */
+         if (rec->su && *rec->su->sudir != '\0')
+         {
+            /* It could be that the record contains only TAS files, in which case 
+             * there are no slot directories (but there are still slots - it is just
+             * that a slot maps to a slice in the TAS file, which lives at the level
+             * of the sudir). */
+            DRMS_Segment_t *seg = NULL;
+            int hasslotdirs = 0;
+            HIterator_t *seghit = hiter_create(&(rec->segments));
+
+            if (seghit)
+            {
+               while((seg = (DRMS_Segment_t *)hiter_getnext(seghit)))
+               {
+                  if (seg->info->protocol != DRMS_TAS)
+                  {
+                     hasslotdirs = 1;
+                     break;
+                  }
+               }
+               hiter_destroy(&seghit);
+            }
+
+            if (hasslotdirs)
+            {
+               CHECKSNPRINTF(snprintf(dirout, size, "%s/" DRMS_SLOTDIR_FORMAT, rec->su->sudir, rec->slotnum), size);
+            }
+            else
+            {
+               CHECKSNPRINTF(snprintf(dirout, size, "%s", rec->su->sudir), size);  
+            }
+         }
+         else
+         {
+            if (rec->sunum != -1LL && rec->su == NULL)
+            {
+               /* There was never a SUM_get() performed on this SU, so we can't answer the question 
+                * "what is the SUdir for this record?" */
+               rv = DRMS_ERROR_NEEDSUMS;
+            }
+
+            *dirout = '\0';
+         }
+      }
+   }
+   else
+   {
+      rv = DRMS_ERROR_INVALIDDATA;
+   }
+
+   return rv;
+}
 
 /* Ask DRMS to open a file in the storage unit slot directory associated with
    a data record. If mode="w" or mode="a" and the record has not been assigned 

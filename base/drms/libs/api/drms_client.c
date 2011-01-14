@@ -885,8 +885,9 @@ long long *drms_alloc_recnum(DRMS_Env_t *env,  char *series,
    The storage unit is retrieved by calling SUMS, if this has not
    already been done.
    Returns storage unit directory in su struct. */
-DRMS_StorageUnit_t *drms_getunit(DRMS_Env_t *env, char *series,
-				 long long sunum, int retrieve, int *status)
+DRMS_StorageUnit_t *drms_getunit_internal(DRMS_Env_t *env, char *series,
+                                          long long sunum, int retrieve, 
+                                          int gotosums, int *status)
 {
   HContainer_t *scon=NULL;
   int stat;
@@ -928,52 +929,59 @@ DRMS_StorageUnit_t *drms_getunit(DRMS_Env_t *env, char *series,
     if ((template = drms_template_record(env, series,&stat)) == NULL)
       goto bailout;
     su->seriesinfo = template->seriesinfo;
-      
+
+    if (gotosums)
+    {
+       /* Talk to SUMS ONLY if the caller of this function permits it. */
 #ifndef DRMS_CLIENT
-    /* Send a query to SUMS for the storage unit directory. */
-    stat = drms_su_getsudir(env, su, retrieve);
+       /* Send a query to SUMS for the storage unit directory. */
+
+       stat = drms_su_getsudir(env, su, retrieve);
 #ifdef DEBUG
-      printf("drms_getunit: Got sudir from SUMS = '%s'\n",su->sudir);
+       printf("drms_getunit: Got sudir from SUMS = '%s'\n",su->sudir);
 #endif
 #else
-    {
-      int len, retrieve_tmp;
-      long long sunum_tmp;
-      struct iovec vec[4];
+       {
+          int len, retrieve_tmp;
+          long long sunum_tmp;
+          struct iovec vec[4];
 
-      drms_send_commandcode(env->session->sockfd, DRMS_GETUNIT);
+          drms_send_commandcode(env->session->sockfd, DRMS_GETUNIT);
       
-      /* Send seriesname,  sunum, and retrieve flag */
-      vec[1].iov_len = strlen(series);
-      vec[1].iov_base = series;
-      len = htonl(vec[1].iov_len);
-      vec[0].iov_len = sizeof(len);
-      vec[0].iov_base = &len;
-      sunum_tmp = htonll(sunum);
-      vec[2].iov_len = sizeof(sunum_tmp);
-      vec[2].iov_base = &sunum_tmp;
-      retrieve_tmp = htonl(retrieve);
-      vec[3].iov_len = sizeof(retrieve_tmp);
-      vec[3].iov_base = &retrieve_tmp;
-      Writevn(env->session->sockfd, vec, 4);
+          /* Send seriesname,  sunum, and retrieve flag */
+          vec[1].iov_len = strlen(series);
+          vec[1].iov_base = series;
+          len = htonl(vec[1].iov_len);
+          vec[0].iov_len = sizeof(len);
+          vec[0].iov_base = &len;
+          sunum_tmp = htonll(sunum);
+          vec[2].iov_len = sizeof(sunum_tmp);
+          vec[2].iov_base = &sunum_tmp;
+          retrieve_tmp = htonl(retrieve);
+          vec[3].iov_len = sizeof(retrieve_tmp);
+          vec[3].iov_base = &retrieve_tmp;
+          Writevn(env->session->sockfd, vec, 4);
       
-      stat = Readint(env->session->sockfd);
-      if (stat == DRMS_SUCCESS)
-      {
-	sudir = receive_string(env->session->sockfd);
+          stat = Readint(env->session->sockfd);
+          if (stat == DRMS_SUCCESS)
+          {
+             sudir = receive_string(env->session->sockfd);
 #ifdef DEBUG
-	printf("drms_getunit: Got sudir from DRMS server = '%s', stat = %d\n",
-	       sudir,stat);
+             printf("drms_getunit: Got sudir from DRMS server = '%s', stat = %d\n",
+                    sudir,stat);
 #endif
-	strncpy(su->sudir, sudir, sizeof(su->sudir));
-	free(sudir);
-      }
-    }
+             strncpy(su->sudir, sudir, sizeof(su->sudir));
+             free(sudir);
+          }
+       }
 #endif
-    if (!strlen(su->sudir)) {
-      hcon_remove(scon, hashkey);
-      su = NULL;      
-    }
+
+       if (!strlen(su->sudir)) {
+          hcon_remove(scon, hashkey);
+          su = NULL;      
+       }
+    } /* if (gotosums) */
+   
     if (stat)
     {
       hcon_remove(scon, hashkey);
@@ -987,6 +995,20 @@ DRMS_StorageUnit_t *drms_getunit(DRMS_Env_t *env, char *series,
   if (status)
     *status = stat;
   return su;
+}
+
+DRMS_StorageUnit_t *drms_getunit(DRMS_Env_t *env, char *series,
+				 long long sunum, int retrieve, int *status)
+{
+   /* OK to talk to SUMS if needed. */
+   return drms_getunit_internal(env, series, sunum, retrieve, 1, status);
+}
+
+DRMS_StorageUnit_t *drms_getunit_nosums(DRMS_Env_t *env, char *series,
+                                        long long sunum, int *status)
+{
+   /* Will NOT talk to SUMS. */
+   return drms_getunit_internal(env, series, sunum, 0, 0, status);
 }
 
 int drms_getunits(DRMS_Env_t *env, char *series,
@@ -1337,10 +1359,11 @@ int drms_getsudirs(DRMS_Env_t *env, DRMS_StorageUnit_t **su, int num, int retrie
 
 
 /* Client version. */
-int drms_newslots(DRMS_Env_t *env, int n, char *series, long long *recnum,
-		  DRMS_RecLifetime_t lifetime, int *slotnum, 
-		  DRMS_StorageUnit_t **su,
-                  int createslotdirs)
+int drms_newslots_internal(DRMS_Env_t *env, int n, char *series, long long *recnum,
+                           DRMS_RecLifetime_t lifetime, int *slotnum, 
+                           DRMS_StorageUnit_t **su,
+                           int createslotdirs,
+                           int gotosums)
 {
   int status, i;
   long long sunum;
@@ -1355,14 +1378,23 @@ int drms_newslots(DRMS_Env_t *env, int n, char *series, long long *recnum,
 #ifndef DRMS_CLIENT
   if (env->session->db_direct)
   {
-    return drms_su_newslots(env, n, series, recnum, lifetime, slotnum, su, createslotdirs);
+     if (gotosums)
+     {
+        /* Allows SUMS access. */
+        return drms_su_newslots(env, n, series, recnum, lifetime, slotnum, su, createslotdirs);
+     }
+     else
+     {
+        /* Does not allow SUMS access. */
+        return drms_su_newslots_nosums(env, n, series, recnum, lifetime, slotnum, su, createslotdirs);
+     }
   }
   else
 #else
     XASSERT(env->session->db_direct==0);
 #endif
   {
-    int tmp[5], *t;
+    int tmp[6], *t;
     long long *ltmp, *lt;
     struct iovec *vec, *v;
 
@@ -1375,7 +1407,7 @@ int drms_newslots(DRMS_Env_t *env, int n, char *series, long long *recnum,
     }
 
     XASSERT(ltmp = malloc(n*sizeof(long long)));
-    XASSERT(vec = malloc((n+5)*sizeof(struct iovec)));
+    XASSERT(vec = malloc((n+6)*sizeof(struct iovec)));
 
     /* Send series, n, lifetime, createslotdirs flag, and the record numbers with a
        single writev system call. */
@@ -1384,10 +1416,14 @@ int drms_newslots(DRMS_Env_t *env, int n, char *series, long long *recnum,
     net_packint(n, t++, v++);
     net_packint((int)lifetime, t++, v++);
     net_packint(createslotdirs, t++, v++);
+
+    /* ART - Add gotosums flag */
+    net_packint(gotosums, t++, v++);
+
     lt = ltmp;
     for (i=0; i<n; i++)
       net_packlonglong(recnum[i], lt++, v++);
-    Writevn(env->session->sockfd, vec, n+5);
+    Writevn(env->session->sockfd, vec, n+6);
     free(vec);
     free(ltmp);
    
@@ -1454,6 +1490,23 @@ int drms_newslots(DRMS_Env_t *env, int n, char *series, long long *recnum,
   return status;
 }
 
+int drms_newslots(DRMS_Env_t *env, int n, char *series, long long *recnum,
+		  DRMS_RecLifetime_t lifetime, int *slotnum, 
+		  DRMS_StorageUnit_t **su,
+                  int createslotdirs)
+{
+   /* Allow SUMS access if necessary (it won't always be necessary). */
+   return drms_newslots_internal(env, n, series, recnum, lifetime, slotnum, su, createslotdirs, 1);
+}
+
+int drms_newslots_nosums(DRMS_Env_t *env, int n, char *series, long long *recnum,
+                         DRMS_RecLifetime_t lifetime, int *slotnum, 
+                         DRMS_StorageUnit_t **su,
+                         int createslotdirs)
+{
+   /* Does NOT allow SUMS access. Returns an error if SUMS access is required for successful completion. */
+   return drms_newslots_internal(env, n, series, recnum, lifetime, slotnum, su, createslotdirs, 1);
+}
 
 
 /* Mark a storage unit slot as either DRMS_SLOT_FREE, DRMS_SLOT_FULL, or

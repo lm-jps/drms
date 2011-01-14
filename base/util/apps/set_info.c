@@ -56,7 +56,7 @@ Only one instance of each keyword name or segment name is allowed.
 \par Flags:
 
 \li \c -c: Create a new record
-\li \c -C: Clone an existing record
+\li \c -C: Force-copy the storage unit of the original record to the cloned record
 \li \c -h: Print usage message and exit
 \li \c -l: Indicates that the keyword names in the key=value cmd-line arguments are all lower case
 \li \c -m: Modify the keywords of multiple records. The \c -m flag should be
@@ -408,6 +408,38 @@ static int WriteKeyValues(DRMS_Record_t *rec, int nsegments, HContainer_t *keyli
    return err;
 }
 
+static int IngestingAFile(DRMS_Record_t * rec)
+{
+   int rv = 0;
+   int nsegments;
+   int isegment;
+   DRMS_Segment_t *seg = NULL;
+
+   nsegments = hcon_size(&rec->segments);
+   for (isegment=0; isegment<nsegments; isegment++)
+   {
+      seg = drms_segment_lookupnum(rec, isegment);
+	   
+      if (seg->info->protocol == DRMS_GENERIC || seg->info->protocol == DRMS_FITS)
+      {
+         char *segname = NULL;
+         const char *filename = NULL;
+         segname = seg->info->name;
+         filename = cmdparams_get_str(&cmdparams, segname, NULL);
+         if (filename && *filename)
+         {
+            rv = 1;
+            break; /* Stop iterating if we found a segment file. */
+            /* We know that there is a valid segment name on the cmd-line, so we WILL need 
+             * to fetch the SU containing the segment at some point. If we don't reach 
+             * this spot, then we don't want to access SUMS, unless force_copyseg is set. */
+         }
+      }
+   }
+
+   return rv;
+}
+
 /* Module main function. */
 int DoIt(void)
 {
@@ -432,7 +464,7 @@ int DoIt(void)
   DRMS_Segment_t *seg;
   HIterator_t key_hit;
   int nprime, iprime;
-  int nsegments = 0, isegment;
+  int isegment;
   int is_new_seg = 0;
 
   if (nice_intro(0))
@@ -483,7 +515,8 @@ int DoIt(void)
     nrecs = 1;
     rec = rs->records[0];   
 
-    nsegments = hcon_size(&rec->segments);
+    /* find out if the caller is trying to ingest a file - if so, set is_new_seg --> 1 */
+    is_new_seg = IngestingAFile(rec);
 
     pkeys = drms_series_createpkeyarray(drms_env, 
 					rec->seriesinfo->seriesname,
@@ -580,33 +613,26 @@ int DoIt(void)
     /* if a segment is present matching the name of a keyword=filename then copy instead of share */
 
     /* find out if the caller is trying to ingest a file - if so, set is_new_seg --> 1 */
-    is_new_seg = 0;
-    nsegments = hcon_size(&rec->segments);
-    for (isegment=0; isegment<nsegments; isegment++)
-      {
-	   seg = drms_segment_lookupnum(rec, isegment);
-	   
-	   if (seg->info->protocol == DRMS_GENERIC || seg->info->protocol == DRMS_FITS)
-	   {
-                char *segname = NULL;
-                const char *filename = NULL;
-		segname = seg->info->name;
-		filename = cmdparams_get_str(&cmdparams, segname, NULL);
-		if (filename && *filename)
-		{
-		  is_new_seg = 1;
-		  break; /* Stop iterating if we found a segment file. */
-		}
-	   }
-      }
-   rs = drms_clone_records(ors, (force_transient ? DRMS_TRANSIENT : DRMS_PERMANENT),
-           ((is_new_seg||force_copyseg) ? DRMS_COPY_SEGMENTS : DRMS_SHARE_SEGMENTS), &status);
+    is_new_seg = IngestingAFile(rec);
+
+    if (is_new_seg || force_copyseg)
+    {
+       rs = drms_clone_records(ors, (force_transient ? DRMS_TRANSIENT : DRMS_PERMANENT), DRMS_COPY_SEGMENTS , &status);
+    }
+    else
+    {
+        rs = drms_clone_records_nosums(ors, (force_transient ? DRMS_TRANSIENT : DRMS_PERMANENT), DRMS_SHARE_SEGMENTS, &status);
+    }
+
+    /* free ors - not needed after this point. */
+    drms_close_records(ors, DRMS_FREE_RECORD);
+
    if (rs->n != nrecs || status)
    {
       if (query) { free(query); query = NULL; }
       DIE("failed to clone records from query");
    }
-   }
+   } /* end clone record */
 
   /* at this point the records are ready for new keyword values and/or files */
   /* not inside a loop here. */
@@ -627,8 +653,14 @@ int DoIt(void)
        keylist = hcon_create(sizeof(int), sizeof(DRMS_MAXKEYNAMELEN), NULL, NULL, NULL, NULL, 0);
     }
     
-    /* make sure record directory is staged and included in the new record */
-    drms_record_directory(rec, recordpath, 1);
+    /* make sure record directory is staged and included in the new record IF we are going to write
+     * to the record directory (if the user has supplied a filename on the cmd-line of a file to 
+     * be ingested, or if the user has specified the -C flag, which means to copy segments files
+     * when cloning the original record). */
+    if (is_new_seg || force_copyseg)
+    {
+       drms_record_directory(rec, recordpath, 1);
+    }
 
     /* insert new generic segment files found on command line */
     for (isegment=0; isegment<noutsegs; isegment++)

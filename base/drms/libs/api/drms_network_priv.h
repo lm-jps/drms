@@ -37,10 +37,15 @@ int drms_newslots(DRMS_Env_t *env,  int n, char *series, long long *recnum,
 		  DRMS_RecLifetime_t lifetime, int *slotnum, 
 		  DRMS_StorageUnit_t **su,
                   int createslotdirs);
-
+int drms_newslots_nosums(DRMS_Env_t *env, int n, char *series, long long *recnum,
+                         DRMS_RecLifetime_t lifetime, int *slotnum, 
+                         DRMS_StorageUnit_t **su,
+                         int createslotdirs);
 /** \brief Retrieve the storage unit specified by \a sunum */
 DRMS_StorageUnit_t *drms_getunit(DRMS_Env_t *env,  char *series, 
 				 long long sunum, int retrieve, int *status);
+DRMS_StorageUnit_t *drms_getunit_nosums(DRMS_Env_t *env,  char *series, 
+                                        long long sunum, int *status);
 /** \brief Retrieve the storage units specified by \a sunum */
 int drms_getunits(DRMS_Env_t *env,  char *series, 
 		  int n, long long *sunum, int retrieve, int dontwait);

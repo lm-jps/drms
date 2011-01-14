@@ -63,6 +63,9 @@ DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env,
 DRMS_RecordSet_t *drms_clone_records(DRMS_RecordSet_t *recset,  
 				     DRMS_RecLifetime_t lifetime, 
 				     DRMS_CloneAction_t mode, int *status);
+DRMS_RecordSet_t *drms_clone_records_nosums(DRMS_RecordSet_t *recset,  
+                                            DRMS_RecLifetime_t lifetime, 
+                                            DRMS_CloneAction_t mode, int *status);
 
 DRMS_RecordSet_t *drms_create_records(DRMS_Env_t *env, int n, 
 				      char *seriesname, DRMS_RecLifetime_t lifetime,
@@ -121,6 +124,7 @@ int drms_record_num_nonlink_segments(DRMS_Record_t *rec);
    so if the record is offline dirname will contain an ampty string.
 */
 int drms_record_directory(DRMS_Record_t *rec, char *dirname, int retrieve);
+int drms_record_directory_nosums(DRMS_Record_t *rec, char *dirout, int size);
 
 /**** Can modify seriesinfo only if the record is a record prototype  ****/
 int drms_recproto_setseriesinfo(DRMS_Record_t *rec,
