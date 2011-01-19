@@ -1,4 +1,9 @@
 __DEFS__
+# Directory, off of JSOC for now, that specifies where localization directory is
+# This doesn't need to be parsed by customizedefs.pl, since this perl script
+# will obtain the localization directory via a cmd-line argument. 
+LOCALIZATIONDIR "localization"
+
 # the host name of the default database server you will be accessing; you
 #   should include the internet domain (e.g. host.subnet.net) if the server is
 #   not on your subnet; but if it is on your subnet it may be better not to
@@ -55,6 +60,12 @@ SUMSERVER	"j1"
 # whether a tape archive service is available for SUMS or not; set to a
 #   non-zero value if it is
 SUMS_TAPE_AVAILABLE (1)
+
+# If AUTOSELCOMP is 1, then the configure script will automatically select
+# the 'best' compiler for use with the make system (choosing icc over gcc).
+# Set this to 0 to permit manual selection via the JSOC_COMPILER and JSOC_FCOMPILER
+# environment variables, or via editing of make_basic.mk
+AUTOSELCOMP 1
 
 # SUMS Export - specify how to construct 4 arguments that represent the
 #   transfer program (e.g. scp), the user, the host, and the port to be used
