@@ -99,6 +99,12 @@ SUMS_BIN_BASEDIR	/usr/local/bin
 #   non-zero value if it is
 SUMS_TAPE_AVAILABLE	0
 
+# If AUTOSELCOMP is 1, then the configure script will automatically select
+# the 'best' compiler for use with the make system (choosing icc over gcc).
+# Set this to 0 to permit manual selection via the JSOC_COMPILER and JSOC_FCOMPILER
+# environment variables, or via editing of make_basic.mk
+AUTOSELCOMP (1)
+
 # SUMS Export - specify how to construct 4 arguments that represent the
 #   transfer program (e.g. scp), the user, the host, and the port to be used
 #   in a command line for fetching SUMS data from a server via sum_export_svc.

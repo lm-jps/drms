@@ -29,6 +29,7 @@ set SUMS_BIN_BASEDIR = `egrep "^SUMS_BIN_BASEDIR" $LOCALINF | awk '{print $2}'`
 set SUMS_MANAGER = `egrep "^SUMS_MANAGER" $LOCALINF | awk '{print $2}'`
 set SUMS_GROUP = `egrep "^SUMS_GROUP" $LOCALINF | awk '{print $2}'`
 set SUMS_TAPE_AVAILABLE = `egrep "^SUMS_TAPE_AVAILABLE" $LOCALINF | awk '{print $2}'`
+set AUTOSELCOMP = `egrep "^AUTOSELCOMP" $LOCALINF | awk '{print $2}'`
 set SUMEXP_METHFMT = `perl -n -e 'if ($_ =~ /^SUMEXP_METHFMT\s+(.+)/) { print $1; }' $LOCALINF`
 set SUMEXP_USERFMT = `perl -n -e 'if ($_ =~ /^SUMEXP_USERFMT\s+(.+)/) { print $1; }' $LOCALINF`
 set SUMEXP_HOSTFMT = `perl -n -e 'if ($_ =~ /^SUMEXP_HOSTFMT\s+(.+)/) { print $1; }' $LOCALINF`
@@ -105,6 +106,10 @@ if ($#SUMS_TAPE_AVAILABLE != 1) then
   echo "Error: SUMS_TAPE_AVAILABLE undefined in local configuration file $LOCALINF"
   exit
 endif
+if ($#AUTOSELCOMP != 1) then
+  echo "Error: AUTOSELCOMP undefined in local configuration file $LOCALINF"
+  exit
+endif
 if ($#SUMS_DBPORT != 1) then
   echo "Warning: SUMS_DBPORT undefined in local configuration file $LOCALINF"
   set SUMS_DBPORT = 5434
@@ -163,6 +168,7 @@ echo '#define SUMS_GROUP		"'$SUMS_GROUP'"' >> $SCRIPT
 echo '#define SUMLOG_BASEDIR		"'$SUMS_LOG_BASEDIR'"' >> $SCRIPT
 echo '#define SUMBIN_BASEDIR		"'$SUMS_BIN_BASEDIR'"' >> $SCRIPT
 echo '#define SUMS_TAPE_AVAILABLE    '\($SUMS_TAPE_AVAIL\)'' >> $SCRIPT
+echo '#define AUTOSELCOMP               '$AUTOSELCOMP >> $SCRIPT
 if ($#SUMEXP_METHFMT) then 
   echo '#define LOC_SUMEXP_METHFMT	'$SUMEXP_METHFMT >> $SCRIPT
 endif
