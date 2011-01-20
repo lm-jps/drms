@@ -384,8 +384,26 @@ if(!strcmp(hostn, "dcs0") || !strcmp(hostn, "dcs1") || !strcmp(hostn, "dcs2") ||
   }
 }				/* !!end of TMP for lws only */
 #endif
+#ifdef __LOCALIZED_DEFS__
+  if((pid = fork()) < 0) {
+    write_log("***Can't fork(). errno=%d\n", errno);
+    exit(1);
+  }
+  else if(pid == 0) {                   // this is the beloved child 
+    write_log("execvp of sum_rm\n");
+    args[0] = "sum_rm";			// note: no -s to sum_rm 
+    args[1] = dbname;
+    args[2] = timetag;
+    args[3] = NULL;
+    if(execvp(args[0], args) < 0) {
+      write_log("***Can't execvp() sum_rm. errno=%d\n", errno);
+      exit(1);
+    }
+  }
+#endif
 
-/*************NOW run on d02******************************************
+#ifndef __LOCALIZED_DEFS__
+/*****************dont fork here. sum_rm now runs on d02*******************
   if((pid = fork()) < 0) {
     write_log("***Can't fork(). errno=%d\n", errno);
     exit(1);
@@ -402,8 +420,6 @@ if(!strcmp(hostn, "dcs0") || !strcmp(hostn, "dcs1") || !strcmp(hostn, "dcs2") ||
     }
   }
 ***********************************************************************/
-
-#ifndef __LOCALIZED_DEFS__
 if(strcmp(hostn, "lws") && strcmp(hostn, "n00") && strcmp(hostn, "d00") && strcmp(hostn, "n02")) { 
   /* Create client handle used for calling the tape_svc */
   printf("\nsum_svc waiting for tape servers to start (approx 10sec)...\n");
@@ -539,6 +555,12 @@ sumprog_1(rqstp, transp)
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_uint32_t;
 		local = (char *(*)()) nopdo_1;
+		break;
+	case TAPERECONNECTDO:
+		sprintf(procname, "TAPERESTARTDO");
+		xdr_argument = xdr_Rkey;
+		xdr_result = xdr_uint32_t;
+		local = (char *(*)()) tapereconnectdo_1;
 		break;
 	default:
                 write_log("**sumprog_1() dispatch default procedure %d,ignore\n", rqstp->rq_proc);
