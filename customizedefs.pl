@@ -84,11 +84,11 @@ if (open(CONFLOC, "<$tmp"))
             {
                if (length($val) > 0)
                {
-                  print HEADER "#define $defname $val\n";
+                  print HEADER "#ifdef $defname\n  #undef $defname\n#endif\n#define $defname $val\n";
                }
                else
                {
-                  print HEADER "#define $defname\n";
+                  print HEADER "#ifdef $defname\n  #undef $defname\n#endif#define $defname\n";
                }
             }
             else
