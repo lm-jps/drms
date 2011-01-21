@@ -141,7 +141,7 @@ int DoIt(void)
 	      if (!as_table)
 	        printf("logPath: ");
 	      XASSERT(su = malloc(sizeof(DRMS_StorageUnit_t)));
-	      su->sunum = atoll(qres->field[0][2]);
+	      su->sunum = atoll(qres->field[0][6]);
 	      drms_env->retention = DRMS_LOG_RETENTION;
 	      status = drms_getsudir(drms_env, su, retrieve);
 	      if (!status) 
