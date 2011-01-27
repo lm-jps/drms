@@ -1,0 +1,119 @@
+eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S  $0 "$@"'
+    if 0;
+#/home/production/cvs/JSOC/base/sums/scripts/sum_stop_d02_tape
+#This is called by sum_stop_j1 on j1 and is run on d02 to stop
+#the tape_svc and related processes on d02.
+#
+$| = 1;                 #flush output as we go
+$ENV{'SUMSERVER'} = "j1"; #make sure we stay with sums
+$DB = "jsoc_sums";	#the "real" db that production uses for sums
+#$DB = "jim";		#the "real" db that production uses for sums
+$DBDRMS = "jsoc_sums";	#the db sum_pe_rpc uses for drms
+$GREPPS = "388";
+#$GREPPS = "jim";
+$HOST = "d02.Stanford.EDU";	#where tape_svc and this script runs
+
+$user = $ENV{'USER'};
+if($user ne "production") {
+  print "You must be user production to run\n";
+  exit;
+}
+$host = `hostname`;
+chomp($host);
+if($host ne $HOST) {
+  print "This can only be run on $HOST.\n";
+  exit;
+}
+$PID = getppid;
+$LOGFILE = "/tmp/sum_stop_d02_tape.$PID";
+open(LOG, ">$LOGFILE") || die "Can't open $LOGFILE: $!\n";
+($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+$sec2 = sprintf("%02d", $sec);
+$min2 = sprintf("%02d", $min);
+$hour2 = sprintf("%02d", $hour);
+$mday2 = sprintf("%02d", $mday);
+$mon2 = sprintf("%02d", $mon+1);
+$year2 = sprintf("%02d", $year);
+$date = (1900 + $year).".".$mon2.".$mday2"._.$hour2.":$min2".":$sec2";
+print "\nsum_stop_d02_tape at $date\n\n";
+print LOG "sum_stop_d02_tape at $date\n\n";
+
+@ps_prod = `ps -ef | grep $GREPPS`;
+print "The ps -ef for producttion is:\n@ps_prod\n";
+print LOG "The ps -ef for product is:\n@ps_prod\n";
+while($_ = shift(@ps_prod)) {
+  if(/^$GREPPS/) {		#do for all production processes
+    if(/sum_stop_d02_tape/) {	#don't kill ourselves
+      next;
+    }
+    if(/tape_svc $DB/ || /tape_svc -o $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "tape_svc";
+    }
+    elsif(/drive0_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive0_svc";
+    }
+    elsif(/drive1_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive1_svc";
+    }
+    elsif(/drive2_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive2_svc";
+    }
+    elsif(/drive3_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive3_svc";
+    }
+    elsif(/drive4_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive4_svc";
+    }
+    elsif(/drive5_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive5_svc";
+    }
+    elsif(/drive6_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive6_svc";
+    }
+    elsif(/drive7_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive7_svc";
+    }
+    elsif(/drive8_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive8_svc";
+    }
+    elsif(/drive9_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive9_svc";
+    }
+    elsif(/drive10_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive10_svc";
+    }
+    elsif(/drive11_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "drive11_svc";
+    }
+    elsif(/robot0_svc $DB/) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "robot0_svc";
+    }
+    else {
+      next;
+    }
+    print "Killing $process with kill -2 $psid\n";
+    print LOG "Killing $process with kill -INT $psid\n";
+    `kill -INT $psid`;
+  }
+}
+#print "Removing lock file /usr/local/logs/soc/NOTAPEARC\n";
+#print LOG "Removing lock file /usr/local/logs/soc/NOTAPEARC\n";
+#`/bin/rm -f /usr/local/logs/soc/NOTAPEARC`;
+
+print "SUM Stop_d02_tape Complete\n";
+print LOG "SUM Stop_d02_tape Complete\n";
+close(LOG);
