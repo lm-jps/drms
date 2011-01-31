@@ -25,7 +25,6 @@ my($locdir);
 my($varname);
 my($mach);
 my($varvalu);
-my($projdir);
 my(%platmaps) = ();
 my(%machmaps) = ();
 
@@ -86,37 +85,7 @@ if (open(CONFLOC, "<$tmp"))
 
             $mach = "";
 
-            if ($line =~ /\s*PROJDIR\s+(\S+)/i)
-            {
-               $varvalu = $1;
-
-               # Create the entries for the projtgts.mk file
-               if ($beginning)
-               {
-                  print PROJTGTS "proj2:\n";
-                  $beginning = 0;
-               }
-
-               print PROJTGTS "\t+@[ -d \$(PROJOBJDIR)/$varvalu ] || mkdir -p \$(PROJOBJDIR)/$varvalu\n";
-
-               # Don't duplicate immediate subdirectories of proj
-               if ($varvalu =~ /^(\S+)\// || $varvalu =~ /^(\S+)/)
-               {
-                  $projdir = $1;
-               }
-               else
-               {
-                  print STDERR "Invalid PROJDIR entry '$varvalu'.\n"
-               }
-
-               if (defined($projdir) && !defined($projmap{$projdir}))
-               {
-                  print PROJRULES "dir	:= \$(d)/$projdir\n";
-                  print PROJRULES "-include	\$(SRCDIR)/\$(dir)/Rules.mk\n";
-                  $projmap{$projdir} = 1;
-               }
-            }
-            elsif ($line =~ /\s*(\S+)\s+(\S+)/)
+            if ($line =~ /\s*(\S+)\s+(\S+)/)
             {
                $varname = $1;
                $varvalu = $2;
