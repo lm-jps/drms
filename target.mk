@@ -27,8 +27,9 @@ MAKETARGET = $(MAKE) --no-print-directory -C $@ -f $(WORKINGDIR)/Makefile \
 .PHONY: $(PROJOBJDIR) $(OBJDIR) 
 
 # Create the project-specific directories too, if they exist.
-# This supplementary target.mk files is part of the cvs tree
--include $(WORKINGDIR)/proj/target.mk
+# This supplementary target.mk file is built by the configure script, using either 
+# configsdp.txt (for a JSOC-SDP checkout) or a custom configuration file as input.
+-include $(WORKINGDIR)/$(LOCALIZATIONDIR)/target.mk
 
 $(OBJDIR):
 	+@[ -d bin/$(MACH) ] || mkdir -p bin/$(MACH)
@@ -68,7 +69,6 @@ $(OBJDIR):
 	+@[ -d $@/base/util/apps ] || mkdir -p $@/base/util/apps
 	+@[ -d $@/proj/example/apps ] || mkdir -p $@/proj/example/apps
 	+@[ -d $@/proj/myproj/apps ] || mkdir -p $@/proj/myproj/apps
-	+@[ -d $@/proj/lev1.5_hmi/apps ] || mkdir -p $@/proj/lev1.5_hmi/apps	
 	+@[ -d $@/proj/cookbook ] || mkdir -p $@/proj/cookbook
 	+@$(MAKETARGET)
 

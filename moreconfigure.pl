@@ -176,16 +176,31 @@ if (defined($outdir) && defined($outfile))
     print OUTFILE "ifneq (\$(JSOC_FCOMPILER),)\n  FCOMPILER = \$(JSOC_FCOMPILER)\nendif\n\n";
 
     # Set DEFAULT values for Stanford-specific (if running at Stanford) make variables.
-    if (-e "suflag.txt") 
+    if (-e "configsdp.txt") 
     {
        my($line);
+       my($parse);
 
-       if (open(SUFLAG, "<suflag.txt"))
+       if (open(SUFLAG, "<configsdp.txt"))
        {
+
+          $parse = 0;
+
           while (defined($line = <SUFLAG>))
           {
              chomp($line);
-             if ($line !~ /^#/ && $line =~ /\S+/)
+             
+             if ($line =~ /^__LIBS__/)
+             {
+                $parse = 1;
+                next;
+             }
+             elsif ($parse && $line =~ /^__END__/)
+             {
+                last;
+             }
+
+             if ($parse && $line !~ /^#/ && $line =~ /\S+/)
              {
                 print OUTFILE "$line\n";
              }

@@ -4,7 +4,7 @@ WORKINGDIR	= $(PWD)
 # If the make command included LOCALIZATIONDIR='somedir', use that, otherwise
 # default to JSOC/localizationdir/custom.mk
 ifeq ($(LOCALIZATIONDIR),)
-  LOCALIZATIONDIR = $(WORKINGDIR)/localization
+  LOCALIZATIONDIR = localization
 endif
 
 ifeq (,$(filter _%,$(notdir $(CURDIR))))

@@ -17,7 +17,7 @@ all:		targets
 dir	:= base
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= proj
--include		$(SRCDIR)/$(dir)/Rules.mk
+-include		$(SRCDIR)/$(LOCALIZATIONDIR)/Rules.mk
 
 # Non-default targets
 idl:		$(LIBJSOC_MAIN_SOCK_I)

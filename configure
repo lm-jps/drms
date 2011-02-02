@@ -6,41 +6,22 @@ echo "Machine type is $JSOC_MACHINE"
 echo ""
 
 set CLEAN = "no"
-set CHKLIBS = "no"
-set CCMD = "c"
-set LCMD = "l"
+set PROJCONFIG = ""
+set CLEANCMD = "d"
+set CONFIGCMD = "c"
 set LOCALIZE = "L"
 
 set CUSTOMDEFSFILE = ""
 
 foreach ARG ($argv)
-    set FLAG = `echo $ARG | awk '{print substr($0, 2)}'`
-    if ($FLAG == $CCMD) then
+    set FLAG = `echo $ARG | awk '{print substr($0, 2, 1)}'`
+
+    if ($FLAG == $CLEANCMD) then
       set CLEAN = "yes"
-    else if ($FLAG == $LCMD) then
-      set CHKLIBS = "yes"
+    else if ($FLAG == $CONFIGCMD) then
+      set PROJCONFIG = `echo $ARG | awk '{print substr($0, 3)}'`
     endif
 end
-
-if ($CHKLIBS == "no") then
-    echo -n "Remove links for local project configuration..."
-    if (-d proj) then
-	cd proj
-	if (-e configure) then
-	    rm configure
-	endif
-	if (-e make_basic.mk) then
-	    rm make_basic.mk
-	endif
-	if (-e Rules.mk) then
-	    rm Rules.mk
-	endif
-	if (-e target.mk) then
-	    rm target.mk
-	endif
-	cd ..
-    endif
-    echo "done"
 
     echo -n "Remove links to man pages..."
     if (-e man) then
@@ -97,24 +78,6 @@ if ($CHKLIBS == "no") then
         if (!(-d include)) then
             mkdir -p include
         endif
-
-	echo -n "Setting links for local project configuration..."
-	if (-e suflag.txt) then
-	    cd proj
-	    ln -sf ../projconf/su/configure configure
-	    ln -sf ../projconf/su/make_basic.mk make_basic.mk
-	    ln -sf ../projconf/su/Rules.mk Rules.mk
-	    ln -sf ../projconf/su/target.mk target.mk
-	    cd ..
-	else
-	    cd proj
-	    ln -sf ../projconf/ex/configure configure
-	    ln -sf ../projconf/ex/make_basic.mk make_basic.mk
-	    ln -sf ../projconf/ex/Rules.mk Rules.mk
-	    ln -sf ../projconf/ex/target.mk target.mk
-	    cd ..
-	endif
-	echo "done"
 
 	echo "Setting links to man pages..."
 	if (-d /home/jsoc/man) then
@@ -206,7 +169,7 @@ if ($CHKLIBS == "no") then
             rm ${LOCALIZATIONDIR}/custom.mk
         endif
 
-        if (!(-e suflag.txt)) then
+        if (!(-e configsdp.txt)) then
             if (!(-e config.local)) then
                 echo "Error: config.local not found. If you have a saved version of this"
                 echo "       file from a previous installation, you should copy that into"
@@ -227,7 +190,7 @@ if ($CHKLIBS == "no") then
                 set CUSTOMDEFSFILE = "base/include/localization.h"
 
                 # run moreconfigure.pl - this script is written in perl because it is easier to do the compiler detection 
-                # in perl. It also reads suflag.txt (if it exists) to set the default Stanford values for certain make variables
+                # in perl. It also reads configdsp.txt (if it exists) to set the default Stanford values for certain make variables
                 ./moreconfigure.pl -d${LOCALIZATIONDIR} -fcustom.mk -c${CUSTOMDEFSFILE}
 
                 # must follow moreconfigure.pl, because moreconfigure.pl will possibly set the compiler make variables,
@@ -252,7 +215,7 @@ if ($CHKLIBS == "no") then
             set CUSTOMDEFSFILE = "base/include/customizeddefs.h"
 
             # run moreconfigure.pl - this script is written in perl because it is easier to do the compiler detection 
-            # in perl. It also reads suflag.txt (if it exists) to set the default Stanford values for certain make variables
+            # in perl. It also reads configsdp.txt (if it exists) to set the default Stanford values for certain make variables
             ./moreconfigure.pl -d${LOCALIZATIONDIR} -fcustom.mk -c${CUSTOMDEFSFILE}
 
             # update custom.mk with data from config.local
@@ -261,8 +224,25 @@ if ($CHKLIBS == "no") then
             ./customizemake.pl ./config.local ${LOCALIZATIONDIR}
         else
             # run moreconfigure.pl - this script is written in perl because it is easier to do the compiler detection 
-            # in perl. It also reads suflag.txt (if it exists) to set the default Stanford values for certain make variables
+            # in perl. It also reads configsdp.txt (if it exists) to set the default Stanford values for certain make variables
             ./moreconfigure.pl -d${LOCALIZATIONDIR} -fcustom.mk 
+        endif
+
+
+        if (${PROJCONFIG} == "") then
+            if (-e configsdp.txt) then
+                set PROJCONFIG = configsdp.txt
+            endif
+        endif
+
+        if (-e configsdp.txt) then
+            set PROJCONFIGEXE = "/home/jsoc/bin/linux_x86_64/perl5.12.2 configproj.pl"
+        else
+            set PROJCONFIGEXE = "perl"
+        endif
+
+        if (${PROJCONFIG} != "") then
+            ${PROJCONFIGEXE} -c${PROJCONFIG} -d${LOCALIZATIONDIR}
         endif
 
         echo "Setting links to headers..."
@@ -285,10 +265,5 @@ if ($CHKLIBS == "no") then
         # echo "DRMS_DEFAULT_RETENTION = -10" >> custom.mk
 
     endif
-else
-# $CHKLIBS == "yes"
-# Enter required library names and versions here.
 
-
-endif 
 

@@ -35,7 +35,7 @@ endif
 # This optional file has custom definitions created by the configure script.
 # Do this after compiler selection since custom.mk might use $COMPILER or $FCOMPILER.
 # custom.mk might also set compiler (through moreconfigure.pl)
--include $(LOCALIZATIONDIR)/custom.mk
+-include $(SRCDIR)/$(LOCALIZATIONDIR)/custom.mk
 #***********************************************************************************************#
 
 #***********************************************************************************************#
@@ -331,7 +331,7 @@ FMODLIBS_SOCK = $(LIBJSOC_MAIN_SOCK_F) $(LIBINTHANDLESF) $(LIBDRMSCLIENT) $(LIBD
 # PROJECT MAKE RULES
 #
 # Make rules that apply to all projects outside of the base DRMS/SUMS system
--include $(SRCDIR)/proj/make_basic.mk
+-include $(SRCDIR)/$(LOCALIZATIONDIR)/make_basic.mk
 #***********************************************************************************************#
 
 
