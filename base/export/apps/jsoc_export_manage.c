@@ -1,6 +1,8 @@
 // #define DEBUG 1
 #define DEBUG 0
 
+// insubstantial change to test make
+
 // TESTMODE=1 means look for status=12 in jsoc.export_new, used for testing jsoc_export_manage
 // #define TESTMODE 1
 #define TESTMODE 0
