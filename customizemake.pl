@@ -19,7 +19,6 @@ my($status);
 my($tmp);
 my($tmpa);
 my($tmpb);
-my($locopen);
 my($beginning);
 my($locdir);
 my($varname);
@@ -44,7 +43,6 @@ if (open(CONFLOC, "<$tmp"))
    }
    else
    {
-      $locopen = 0;
       $beginning = 1;
 
       while (defined($line = <CONFLOC>))
@@ -73,16 +71,6 @@ if (open(CONFLOC, "<$tmp"))
          }
          elsif ($section == kMAKESECTION)
          {
-            if (!$locopen)
-            {
-               if (!open(PROJTGTS, ">$locdir/$tmpa") || !open(PROJRULES, ">$locdir/$tmpb"))
-               {
-                  print STDERR "Can't open file '$tmpa' or '$tmpb' for writing.\n"
-               }
-               
-               $locopen = 1;
-            }
-
             $mach = "";
 
             if ($line =~ /\s*(\S+)\s+(\S+)/)
