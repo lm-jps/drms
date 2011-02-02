@@ -41,14 +41,22 @@
 #       export   - The current directory must be the parent directory of the CVS working directory root.
 #       update   - update the set of files with changes committed to the CVS repository since the initial
 #                  checkout. The current directory may be either the CVS working directory root, or its parent
-#                  directory.
+#                  directory. The -f flag is ignored during an update - the checkout type is read from the
+#                  configuration file. If the checkout type is sdp or net, then the file specification 
+#                  for that checkout type is obtained from this script (not from the state file), since the 
+#                  file specification for that checkout type may have changed since the original checkout.
+#                  For a custom checkout, the file specification is re-generated. If the caller
+#                  provides a -f <config file> argument, then the file specification for the proj directories
+#                  is derived from <config file>. Otherwise, the proj directories file specification
+#                  is obtained from the state file. Regardless, the file specification for the "core" 
+#                  directories is obtained from this script.
 #       tag      - tag the set of files in the CVS respository implied by the -f flag.
 #       untag    - remove the tag on the  set of files in the CVS respository implied by the -f flag.
 #       print    - print the set of files in the CVS repository implied by the -f flag.
 #  -f The type of file set to operate on, which includes:
 #       sdp (all files in the repository, aka the "full JSOC" source tree).
 #       net (the set of files that compose the NetDRMS release).
-#       custom <configuration file> (the set of files is specified by <configuration file>).
+#       <configuration file> (the set of files is specified by <configuration file>).
 #  -r For the checkout, export, and update operations, the revision of files to download. This is a
 #       CVS tag or file version number. For the tag and untag operations, the CVS tag to set or remove.
 
@@ -65,15 +73,16 @@ use Data::Dumper;
 
 use constant kMakeDiv => "__MAKE__";
 use constant kProjDiv => "__PROJ__";
+use constant kFspecDev => "__FSPEC__";
 use constant kEndDiv => "__END__";
 use constant kStUnk => 0;
 use constant kStMake => 1;
 use constant kStProj => 2;
 
-use constant kCoUnk => 0;
-use constant kCoNetDRMS => 1;
-use constant kCoSdp => 2;
-use constant kCoCustom => 3;
+use constant kCoUnk => "unk";
+use constant kCoNetDRMS => "net";
+use constant kCoSdp => "sdp";
+use constant kCoCustom => "custom";
 
 use constant kDlCheckout => "checkout";
 use constant kDlExport => "export";
@@ -106,6 +115,9 @@ my($curdir);
 my($xmldata); # reference to hash array
 my($dltype);
 my($version);
+my($stfile);
+my($stcotype);
+my($stfspec);
 
 # Don't allow more than one version of this file to run concurrently to avoid race conditions.
 unless (flock(DATA, LOCK_EX | LOCK_NB)) 
@@ -156,11 +168,11 @@ while ($arg = shift(@ARGV))
       # file set
       $arg = shift(@ARGV);
 
-      if ($arg eq "sdp")
+      if ($arg eq kCoSdp)
       {
          $cotype = kCoSdp;
       }
-      elsif ($arg eq "net")
+      elsif ($arg eq kCoNetDRMS)
       {
          $cotype = kCoNetDRMS;
       }
@@ -169,18 +181,8 @@ while ($arg = shift(@ARGV))
          # custom - argument must be a configuration file
          if (-f $arg)
          {
-            my($xml);
-            my($xmlobj) = new XML::Simple;
-
             $cotype = kCoCustom;
             $cfgfile = $arg;
-
-            # Read in the configuration file to obtain the set of project files that will reside
-            # in the custom checkout set.
-            if (!ReadCfg($cfgfile, \$xml) && defined($xml))
-            {
-               $xmldata = $xmlobj->XMLin($xml, ForceArray => 1);
-            }
          }
          else
          {
@@ -193,7 +195,72 @@ while ($arg = shift(@ARGV))
 
 if (!$err)
 {
-   if ($cotype != kCoSdp && $cotype != kCoNetDRMS && $cotype != kCoCustom)
+   if (defined($cfgfile))
+   {
+      # Custom checkout - if the user is performing an update, then use the file spec saved
+      # in the TYPEFILE (no need to re-read a config file).
+      my($xml);
+      my($xmlobj) = new XML::Simple;
+
+      # Read in the configuration file to obtain the set of project files that will reside
+      # in the custom checkout set.
+      if (!ReadCfg($cfgfile, \$xml) && defined($xml))
+      {
+         $xmldata = $xmlobj->XMLin($xml, ForceArray => 1);
+      }
+      else
+      {
+         print STDERR "Unable to read or parse configuration file $cfgfile.\n";
+         $err = 1;
+      }
+   }
+
+   if ($dltype eq kDlCheckout || $dltype eq kDlExport || $dltype eq kDlUpdate)
+   {
+      # Set the state file path.
+      my($rootdir) = File::Spec->catdir(kRootDir);
+      my($cdir) = File::Spec->catdir($ENV{'PWD'});
+
+      $stfile = kLocDir . kTypeFile;
+
+      if ($cdir !~ /$rootdir\s*$/)
+      {
+         # Assume that the current directory is the parent of the JSOC code tree.
+         $stfile = kRootDir . $stfile
+      }
+   }
+
+   if ($dltype eq kDlUpdate)
+   {
+      # If this is an update, obtain the checkout type from the statefile. The 
+      # state file will exist at this point only for kDlUpdate.
+      if (open(STFILE, "<$stfile"))
+      {
+         # Modify $cotype - should be determined by the first line of the state file.
+         my($line);
+
+         $line = <STFILE>;
+         chomp($line);
+         $stcotype = $line;
+         $cotype = $stcotype;
+         $line = <STFILE>;
+         chomp($line);
+         $stfspec = $line;
+
+         close(STFILE);
+      }
+      else
+      {
+         print STDERR "Unable to open state file '$stfile' for reading.\n";
+         $err = 1;
+      }
+   }
+
+   if ($err)
+   {
+      # Do nothing - this will essentially cause this script to exit.
+   }
+   elsif ($cotype ne kCoSdp && $cotype ne kCoNetDRMS && $cotype ne kCoCustom)
    {
       print STDERR "Invalid file set identifier '$cotype'.\n";
       $err = 1;
@@ -204,21 +271,16 @@ if (!$err)
       print STDERR "Invalid operation '$dltype'.\n";
       $err = 1;
    }
-   elsif ($cotype == kCoCustom && !defined($xmldata))
-   {
-      print STDERR "Unable to read or parse configuration file $cfgfile.\n";
-      $err = 1;
-   }
    else
    {
-      if (BuildFilespec($cotype, \$xmldata, \@core, \@netonly, \@sdponly, \@filespec))
+      if (BuildFilespec($cotype, $dltype, $stfspec, \$xmldata, \@core, \@netonly, \@sdponly, \@filespec))
       {
          print STDERR "Unable to build filespec.\n";
          $err = 1;
       }
       else
       {
-         my($pushup) = 0;
+         undef($curdir);
 
          if ($dltype eq kDlTag || $dltype eq kDlUntag || $dltype eq kDlPrint)
          {
@@ -228,8 +290,7 @@ if (!$err)
                # no need to check this call, because the chdir() cmd is being checked.
                mkpath(kTmpDir);
             }
-
-            undef($curdir);
+           
             $curdir = $ENV{'PWD'};
             $err = (chdir(kTmpDir) == 0);
             if ($err)
@@ -248,11 +309,8 @@ if (!$err)
             if ($cdir =~ /$rootdir\s*$/)
             {
                # The current directory is the CVS working directory.
+               $curdir = $ENV{'PWD'};
                $err = (chdir('..') == 0);
-               if (!$err)
-               {
-                  $pushup = 1;
-               }
             }
          }
 
@@ -266,61 +324,56 @@ if (!$err)
             }
          }
 
-         if ($pushup)
-         {
-            # cd back down to CVS working directory.
-            $err = (chdir(kRootDir) == 0);
-         }
-
-         if (defined($curdir))
-         {
-            # This implies that a successful chdir was done previously.
-            if (chdir($curdir) == 0)
-            {
-               print STDERR "Unable to cd to $curdir.\n";
-               $err = 1;
-            }
-         }
-
          if (!$err)
          {
-            if ($dltype eq kDlCheckout || $dltype eq kDlExport)
+            # Assumes that the cdir is the one containing kRootDir
+            if ($dltype eq kDlCheckout || $dltype eq kDlExport || $dltype eq kDlUpdate)
             {
                if (!(-d kRootDir . kLocDir))
                {
                   mkpath(kRootDir . kLocDir);
                }
 
-               # save check-out type
+               # save state file
                if (open(TYPEFILE, ">" . kRootDir . kLocDir . kTypeFile))
                {
-                  # Copy JUST the project directories requested. What is copied depends on what type of check-out is being
-                  # performed.
-                  if ($cotype == kCoNetDRMS)
+                  # save check-out type                 
+                  print TYPEFILE "$cotype\n";
+
+                  # print file spec used during checkout
+                  if (!$err)
                   {
-                     print TYPEFILE "net\n";
-                  } 
-                  elsif ($cotype == kCoSdp)
-                  {
-                     print TYPEFILE "sdp\n";
-                  } 
-                  elsif ($cotype == kCoCustom)
-                  {
-                     print TYPEFILE "custom\n";
-                  } 
-                  else
-                  {
-                     print STDERR "Unsupported checkout type $cotype.\n";
-                     $err = 1;
+                     my($fs) = join(' ', @filespec);
+                     print TYPEFILE "$fs\n";
                   }
 
                   # Now print list of files that compose the file set.
                   if (!$err)
                   {
-                     if (PrintFilenames(*TYPEFILE, kRootDir))
+                     if ($dltype eq kDlUpdate)
                      {
-                        print STDERR "Unable to print file set file names.\n";
-                        $err = 1;
+                        # Must print each tree in file specification, since
+                        # the tree rooted at kRootDir may not contain
+                        # files other than the files originally downloaded
+                        # from CVS (e.g., running make will create new 
+                        # files).
+                        foreach $subspec (@filespec)
+                        {
+                           if (PrintFilenames(*TYPEFILE, kRootDir . $subspec))
+                           {
+                              print STDERR "Unable to print file-set file names.\n";
+                              $err = 1;
+                              last;
+                           }
+                        }
+                     }
+                     else
+                     {
+                        if (PrintFilenames(*TYPEFILE, kRootDir))
+                        {
+                           print STDERR "Unable to print file-set file names.\n";
+                           $err = 1;
+                        }
                      }
                   }
 
@@ -333,11 +386,11 @@ if (!$err)
             }
             elsif ($dltype eq kDlTag || $dltype eq kDlUntag)
             {
-               # Can only use the tag/untag command to tag/untage releases, 
+               # Can only use the tag/untag command to tag/untag releases, 
                # which can only be done on either the sdp or netdrms checkouts types.
-               if ($cotype == kCoSdp || $cotype == kCoNetDRMS)
+               if ($cotype eq kCoSdp || $cotype eq kCoNetDRMS)
                {
-                  $curdir = $ENV{'PWD'};
+                  my($curdirin) = $ENV{'PWD'};
                   $err = (chdir(kTmpDir . kRootDir) == 0);
                   if ($err)
                   {
@@ -352,7 +405,7 @@ if (!$err)
                      }
                   }
 
-                  if (chdir($curdir) == 0)
+                  if (chdir($curdirin) == 0)
                   {
                      print STDERR "Unable to cd to $curdir.\n";
                      if (!$err)
@@ -374,6 +427,16 @@ if (!$err)
                   print STDERR "Unable to print file set file names.\n";
                   $err = 1;
                }
+            }
+         }
+
+         if (defined($curdir))
+         {
+            # This implies that a successful chdir was done previously.
+            if (chdir($curdir) == 0)
+            {
+               print STDERR "Unable to cd to $curdir.\n";
+               $err = 1;
             }
          }
 
@@ -478,42 +541,61 @@ sub ReadCfg
 sub BuildFilespec
 {
    my($cotype) = $_[0];
-   my($xmldata) = $_[1];
-   my($core) = $_[2];
-   my($netonly) = $_[3];
-   my($sdponly) = $_[4];
-   my($fsout) = $_[5];
+   my($dltype) = $_[1];
+   my($stfspec) = $_[2];
+   my($xmldata) = $_[3];
+   my($core) = $_[4];
+   my($netonly) = $_[5];
+   my($sdponly) = $_[6];
+   my($fsout) = $_[7];
 
    my($rv);
+   my($strproj) = kStrproj;
+   my($strname) = kStrname;
 
    $rv = 0;
-   if ($cotype == kCoNetDRMS)
-   {
-      push(@$fsout, @$core);
-      push(@$fsout, @$netonly);
-   }
-   elsif ($cotype == kCoSdp)
-   {
-      push(@$fsout, @core);
-      push(@$fsout, @sdponly);
-   }
-   elsif ($cotype == kCoCustom)
-   {
-      my($strproj) = kStrproj;
-      my($strname) = kStrname;
 
-      push(@$fsout, @core);
-
-      # Use $xmldata to populate @cstco;
-      foreach $proj (@{$xmldata->{$strproj}})
+   if ($cotype eq kCoCustom && $dltype eq kDlUpdate && (!defined($xmldata) || $#{$xmldata->{$strproj}} < 0))
+   {
+      # If this is an update of a custom checkout, and the user did not provide a config-file argument,
+      # then use the file spec stored in the existing typefile
+      if (defined($stfspec) && length($stfspec) > 0)
       {
-         push(@$fsout, $$proj->{$strname}->[0]);
+         @$fsout = qw($stfspec);
+      }
+      else
+      {
+         print STDERR "Invalid file specification in state file.\n";
+         $rv = 1;
       }
    }
    else
    {
-      print STDERR "Unsupported checkout type $cotype.\n";
-      $rv = 1;
+      if ($cotype eq kCoNetDRMS)
+      {
+         push(@$fsout, @$core);
+         push(@$fsout, @$netonly);
+      }
+      elsif ($cotype eq kCoSdp)
+      {
+         push(@$fsout, @$core);
+         push(@$fsout, @$sdponly);
+      }
+      elsif ($cotype eq kCoCustom)
+      {
+         push(@$fsout, @$core);
+
+         # Use $xmldata to populate @cstco;
+         foreach $proj (@{$xmldata->{$strproj}})
+         {
+            push(@$fsout, $$proj->{$strname}->[0]);
+         }
+      }
+      else
+      {
+         print STDERR "Unsupported checkout type $cotype.\n";
+         $rv = 1;
+      }
    }
 
    return $rv;
@@ -720,38 +802,47 @@ sub GetFileList
       $prefix = "";
    }
 
-   if (-f "$spec")
+   if (!(-e $spec))
    {
-      # $spec is a file - just push onto output list
-      push(@{$listout}, "$prefix$spec");
-   }
-   elsif (-d "$spec")
-   {
-      my(@alltreefiles);
-      my(@treefiles);
-      my($curdir);
-
-      # This is a directory, collect all files (excluding "." and "..") in the tree rooted at
-      # this directory.
-      $curdir = "$ENV{'PWD'}";
-      chdir($spec);
-      tie(my(%tree), "IO::Dir", ".");
-      @alltreefiles = keys(%tree);
-      @treefiles = map({$_ !~ /^\.$/ && $_ !~ /^\.\.$/ ? $_ : ()} @alltreefiles);
-
-
-      # Now recursively call GetFileList() for each item in @treefiles
-      foreach $childspec (@treefiles)
-      {
-         GetFileList($childspec, "$prefix$spec", $listout);
-      }
-
-      chdir($curdir);
+      print STDERR "File $spec does not exist in $ENV{'PWD'}.\n";
+      $rv = 1;
    }
    else
    {
-      print STDERR "File '$spec' is not a supported file type.\n";
-      $rv = 1;
+
+      if (-f "$spec")
+      {
+         # $spec is a file - just push onto output list
+         push(@{$listout}, "$prefix$spec");
+      }
+      elsif (-d "$spec")
+      {
+         my(@alltreefiles);
+         my(@treefiles);
+         my($curdir);
+
+         # This is a directory, collect all files (excluding "." and "..") in the tree rooted at
+         # this directory.
+         $curdir = "$ENV{'PWD'}";
+         chdir($spec);
+         tie(my(%tree), "IO::Dir", ".");
+         @alltreefiles = keys(%tree);
+         @treefiles = map({$_ !~ /^\.$/ && $_ !~ /^\.\.$/ ? $_ : ()} @alltreefiles);
+
+
+         # Now recursively call GetFileList() for each item in @treefiles
+         foreach $childspec (@treefiles)
+         {
+            GetFileList($childspec, "$prefix$spec", $listout);
+         }
+
+         chdir($curdir);
+      }
+      else
+      {
+         print STDERR "File '$spec' is not a supported file type.\n";
+         $rv = 1;
+      }
    }
 
    return $rv;
