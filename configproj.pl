@@ -338,9 +338,6 @@ sp 		:= $(sp).x
 dirstack_$(sp)	:= $(d)
 d		:= $(dir)
 
-# ALWAYS put libs subdirectory before other subdirectories.
-dir	:= $(d)/libs
--include		$(SRCDIR)/$(dir)/Rules.mk
 __ENDER__
 
 __DATASUFFIX__
