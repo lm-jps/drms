@@ -54,13 +54,16 @@ use Data::Dumper;
 
 use constant kMakeDiv => "__MAKE__";
 use constant kProjDiv => "__PROJ__";
+use constant kProjCfgDiv => "__PROJCFG__";
 use constant kEndDiv => "__END__";
 use constant kStUnk => 0;
 use constant kStMake => 1;
 use constant kStProj => 2;
+use constant kStProjCfg => 3;
 use constant kMakeFile => "make_basic.mk";
 use constant kTargetFile => "target.mk";
 use constant kRulesFile => "Rules.mk";
+use constant kProjCfgFile => "configure";
 use constant kMakeVarCOMPILER => "COMPILER";
 use constant kMakeVarFCOMPILER => "FCOMPILER";
 use constant kMakeVarJSOC_MACHINE => "JSOC_MACHINE";
@@ -86,6 +89,7 @@ my($key);
 my($val);
 my($mdiv);
 my($pdiv);
+my($pcdiv);
 my($ediv);
 my($xml);
 
@@ -109,14 +113,17 @@ if (defined($cfgfile) && -e $cfgfile)
    {
       my($makedone);
       my($projdone);
+      my($projcfgdone);
 
       $st = kStUnk;
       $mdiv = kMakeDiv;
       $pdiv = kProjDiv;
+      $pcdiv = kProjCfgDiv;
       $ediv = kEndDiv;
 
       $makedone = 0;
       $projdone = 0;
+      $projcfgdone = 0;
 
       while (defined($line = <CFGFILE>))
       {
@@ -162,6 +169,18 @@ if (defined($cfgfile) && -e $cfgfile)
             $xml = "";
             next;
          }
+         elsif ($line =~ /^$pcdiv/)
+         {
+            $st = kStProjCfg;
+            if (!open(PROJCFGFILE, ">${locdir}/" . kProjCfgFile))
+            {
+               print STDERR "Unable to open " . kProjCfgFile . " for writing.\n";
+               $err = 1;
+               last;
+            }
+
+            next;
+         }
          elsif ($line =~ /^$ediv/)
          {
             if ($st == kStMake)
@@ -172,10 +191,14 @@ if (defined($cfgfile) && -e $cfgfile)
             {
                $projdone = 1;
             }
+            elsif ($st == kStProjCfg)
+            {
+               $projcfgdone = 1;
+            }
 
             $st = kStUnk;
 
-            if ($makedone && $projdone)
+            if ($makedone && $projdone && $projcfgdone)
             {
                last;
             }
@@ -192,6 +215,11 @@ if (defined($cfgfile) && -e $cfgfile)
          {
             # suck out xml
             $xml = $xml . "$line\n";
+         }
+         elsif ($st == kStProjCfg)
+         {
+            # copy verbatim to configure
+            print PROJCFGFILE "$line\n";
          }
       } # loop over cfg file
 
@@ -316,15 +344,22 @@ if (defined($cfgfile) && -e $cfgfile)
             print RULESFILE "${filesuffix}\n";
          }
       }
-
+      
       close(TARGETFILE);
       close(RULESFILE);
+      close(PROJCFGFILE);
       close(MKFILE);
+
+      if (chmod(0744, "${locdir}/" . kProjCfgFile) != 1)
+      {
+         print STDERR "Unable to set file permissions for ${locdir}/" . kProjCfgFile . ".\n";
+         $err = 1;
+      }
    }
    else
    {
       print STDERR "Unable to open configuration file $cfgfile.\n";
-      exit(1);
+      $err = 1;
    }
 }
 

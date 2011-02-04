@@ -10,15 +10,11 @@ use constant kDEFSSECTION => 1;
 use constant kMAKESECTION => 2;
 
 use constant kCUSTMK => "custom.mk";
-use constant kPROJTGTS => "projtgts.mk";
-use constant kPROJRULES => "projRules.mk";
 
 my($line);
 my($section);
 my($status);
 my($tmp);
-my($tmpa);
-my($tmpb);
 my($beginning);
 my($locdir);
 my($varname);
@@ -31,8 +27,6 @@ $status = kSTATUSOK;
 $section = kUNKSECTION;
 $tmp = $ARGV[0];
 $locdir = $ARGV[1];
-$tmpa = kPROJTGTS;
-$tmpb = kPROJRULES;
 
 if (open(CONFLOC, "<$tmp"))
 {
@@ -130,9 +124,6 @@ if (open(CONFLOC, "<$tmp"))
             $status = kSTATUSCONF;
          }
       }
-
-      close(PROJTGTS);
-      close(PROJRULES);
 
       # Write out machine-specific key-value pairs
       my(%map);

@@ -88,33 +88,6 @@ end
 	echo "done"
         echo
 	
-	echo "Setting links to scripts..."
-        if (!(-d scripts)) then
-	    mkdir scripts
-	endif
-	cd scripts
-
-	# Sums scripts
-	find ../base/sums/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
-
-	# Util scripts
-	find ../base/util/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
-
-        # Export scripts
-	find ../base/export/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
-
-	# DRMS / IDL-interface scripts
-	find ../base/drms/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
-
-	# Project-specific scripts - these won't show up if you don't have the project source.
-	if (-x ../proj/configure) then
-	    ../proj/configure
-	endif
-
-	cd ..
-	echo "done"
-	echo
-
 	echo "Setting links to jsds..."
 	if (!(-d jsds)) then
 	    mkdir jsds
@@ -228,7 +201,6 @@ end
             ./moreconfigure.pl -d${LOCALIZATIONDIR} -fcustom.mk 
         endif
 
-
         if (${PROJCONFIG} == "") then
             if (-e configsdp.txt) then
                 set PROJCONFIG = configsdp.txt
@@ -238,12 +210,40 @@ end
         if (-e configsdp.txt) then
             set PROJCONFIGEXE = "/home/jsoc/bin/linux_x86_64/perl5.12.2 configproj.pl"
         else
-            set PROJCONFIGEXE = "perl"
+            set PROJCONFIGEXE = "configproj.pl"
         endif
 
         if (${PROJCONFIG} != "") then
+            echo "Running project configuration [${PROJCONFIGEXE} -c${PROJCONFIG} -d${LOCALIZATIONDIR}]."
             ${PROJCONFIGEXE} -c${PROJCONFIG} -d${LOCALIZATIONDIR}
         endif
+
+	echo "Setting links to scripts..."
+        if (!(-d scripts)) then
+	    mkdir scripts
+	endif
+	cd scripts
+
+	# Sums scripts
+	find ../base/sums/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
+
+	# Util scripts
+	find ../base/util/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
+
+        # Export scripts
+	find ../base/export/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
+
+	# DRMS / IDL-interface scripts
+	find ../base/drms/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
+
+	# Project-specific scripts - these won't show up if you don't have the project source.
+	if (-x ${LOCALIZATIONDIR}/configure) then
+	    ${LOCALIZATIONDIR}/configure
+	endif
+
+	cd ..
+	echo "done"
+	echo
 
         echo "Setting links to headers..."
 
