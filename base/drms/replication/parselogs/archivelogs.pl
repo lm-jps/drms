@@ -38,6 +38,9 @@ my($lockfh);
 
 my(@lfiles);
 my(@sorted);
+my(@cfgdata);
+my(%cfgraw);
+my(%cfg);
 
 # only one version of this program running
 unless (flock(DATA, LOCK_EX|LOCK_NB)) 
@@ -81,35 +84,44 @@ while ($arg = shift(@ARGV))
 
 open(CNFFILE, "<$cfg") || die "Unable to read configuration file '$cfg'.\n";
 
-while (defined($line = <CNFFILE>))
-{
-   chomp($line);
-   
-   if ($line =~ /^\#/ || length($line) == 0)
-   {
-      next;
-   }
+@cfgdata = <CNFFILE>;
 
-   # Collect arguments of interest
-   if ($line =~ /^\s*kServerLockDir=(.+)/)
-   {
-      $serverLockDir = $1;
-   }
-   elsif ($line =~ /^\s*kPSLlogsSourceDir=(.+)/)
-   {
-      $logdir = $1;
-   }
-   elsif ($line =~ /^\s*kPSLarchiveDir=(.+)/)
-   {
-      $archivedir = $1;
-   }
-   elsif ($line =~ /^\s*kPSLaccessRepro=(.+)/)
-   {
-      $accessrepcmd = $1;
-   }
-}
+# Make key-value pairs of all non-ccomment lines in configuration file.
+%cfgraw = map {
+   chomp;
+   my($key, $val) = m/^\s*(\w+)\s*=\s*(.*)/;
+   defined($key) && defined($val) ? ($key, $val) : ();
+} grep {/=/ and !/^#/} @cfgdata;
 
 close(CNFFILE);
+
+# Expand in-line variables in arguments
+%cfg = map {
+   my($val) = $cfgraw{$_};
+   my($var);
+   my($key);
+   my($sub);
+
+   while ($val =~ /(\${.+?})/)
+   {
+      $var = $1;
+      $key = ($var =~ /\${(.+)}/)[0];
+      $sub = $cfgraw{$key};
+
+      if (defined($var) && defined($sub))
+      {
+         $var = '\${' . $key . '}';
+         $val =~ s/$var/$sub/g;
+      }
+   }
+
+   ($_, $val);
+} keys(%cfgraw);
+
+$serverLockDir = $cfg{'kServerLockDir'};
+$logdir = $cfg{'kPSLlogsSourceDir'};
+$archivedir = $cfg{'kPSLarchiveDir'};
+$accessrepcmd = $cfg{'kPSLaccessRepro'};
 
 # parse_slony_logs and this script must also share a lock so that this script
 # doesn't accidentally tar files that are currently being written.
