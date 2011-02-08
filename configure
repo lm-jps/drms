@@ -23,6 +23,24 @@ foreach ARG ($argv)
     endif
 end
 
+# Backward compatibility - remove the links to the old make files in projconf
+if (-d proj) then	 
+    cd proj	 
+    if (-e configure) then	 
+        rm configure	 
+    endif	 
+    if (-e make_basic.mk) then	 
+        rm make_basic.mk	 
+    endif	 
+    if (-e Rules.mk) then	 
+        rm Rules.mk	 
+    endif	 
+    if (-e target.mk) then	 
+        rm target.mk	 
+    endif	 
+    cd ..	 
+endif
+
     echo -n "Remove links to man pages..."
     if (-e man) then
 	rm -rf man
