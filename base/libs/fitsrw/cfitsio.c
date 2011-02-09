@@ -883,6 +883,13 @@ void cfitsio_free_these(CFITSIO_IMAGE_INFO** image_info,
       {
 	 del = kptr;
 	 kptr = kptr->next;
+
+         if (del->key_type == kFITSRW_Type_String && del->key_value.vs)
+         {
+            free(del->key_value.vs);
+            del->key_value.vs = NULL;
+         }
+
 	 free(del);
       }
 

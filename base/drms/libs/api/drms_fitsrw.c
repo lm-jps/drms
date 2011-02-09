@@ -329,8 +329,8 @@ DRMS_Array_t *drms_fitsrw_read(DRMS_Env_t *env,
                /* User is filling up a new container with detached (from rec) keywords. */
                *keywords = hcon_create(sizeof(DRMS_Keyword_t), 
                                        DRMS_MAXKEYNAMELEN, 
+                                       (void (*)(const void *)) drms_free_template_keyword_struct,
                                        NULL, 
-                                       NULL,
                                        NULL,
                                        NULL,
                                        0);
