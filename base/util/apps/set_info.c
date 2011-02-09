@@ -677,12 +677,42 @@ int DoIt(void)
 	      /* check to see if generic segment(s) present */
 	      if (seg->info->protocol == DRMS_GENERIC)
 	      {
-                 /* For generic protocol, there are no keyword values to import. */
-		   if ((status = drms_segment_write_from_file(seg, filename)))
-                   {
-                      if (query) { free(query); query = NULL; }
-                      DIE("segment name matches cmdline arg but file copy failed.\n");
-                   }
+                 /* filename might contain a comma-separated list of files to import */
+                 char *afile = NULL;
+                 char *pch = NULL;
+                 char *tmp = strdup(filename);
+
+                 if (tmp)
+                 {
+                    afile = tmp;
+                    while ((pch = strchr(afile, ',')) != NULL)
+                    {             
+                       *pch = '\0';
+
+                       /* For generic protocol, there are no keyword values to import. */
+                       if ((status = drms_segment_write_from_file(seg, afile)))
+                       {
+                          if (query) { free(query); query = NULL; }
+                          free(tmp);
+                          tmp = NULL;
+                          DIE("segment name matches cmdline arg but file copy failed.\n");
+                       }
+
+                       afile = pch + 1;
+                    }
+
+                    /* handle last file in list */
+                    if ((status = drms_segment_write_from_file(seg, afile)))
+                    {
+                       if (query) { free(query); query = NULL; }
+                       free(tmp);
+                       tmp = NULL;
+                       DIE("segment name matches cmdline arg but file copy failed.\n");
+                    }
+
+                    free(tmp);
+                    tmp = NULL;
+                 }
 	      }
               else if (seg->info->protocol == DRMS_FITS)
               {
