@@ -47,7 +47,7 @@ extern TQ *q_need_front;
 extern SUMOFFCNT *offcnt_hdr;
 static void tapeprog_1();
 static struct timeval TIMEOUT = { 30, 0 };
-uint32_t rinfo;		/* info returned by XXXdo_1() calls */
+uint32_t rinfo, rinfox;	/* info returned by XXXdo_1() calls */
 uint32_t procnum;	/* remote procedure # to call for current_client call*/
 
 TQ *poff, *poffrd, *poffwt;
@@ -427,17 +427,19 @@ tapeprog_1(rqstp, transp)
 
 	bool_t (*xdr_argument)(), (*xdr_result)();
 	char *(*local)();
-
+        rinfox = 1;
 	switch (rqstp->rq_proc) {
 	case NULLPROC:
 		(void) svc_sendreply(transp, (xdrproc_t)xdr_void, (char *)NULL);
 		return;
 	case READDO:
+                if(tapeoffline) rinfox = SUM_TAPE_SVC_OFF; //special case 
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_Rkey;;
 		local = (char *(*)()) readdo_1;
 		break;
 	case WRITEDO:
+                if(tapeoffline) rinfox = SUM_TAPE_SVC_OFF; //special case 
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_Rkey;
 		local = (char *(*)()) writedo_1;
@@ -453,6 +455,7 @@ tapeprog_1(rqstp, transp)
 		local = (char *(*)()) taperespwritedo_1;
 		break;
         case TAPERESPROBOTDO:
+                force = 1;			/* always make this call */
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_Rkey;
 		local = (char *(*)()) taperesprobotdo_1;
@@ -467,6 +470,13 @@ tapeprog_1(rqstp, transp)
                 xdr_result = xdr_uint32_t;
 		local = (char *(*)()) impexpdo_1;
 		break;
+/*******************************!!TEMP*******************
+	case EXPCLOSEDO:
+		xdr_argument = xdr_Rkey;
+                xdr_result = xdr_uint32_t;
+		local = (char *(*)()) expclosedo_1;
+		break;
+**************************************************/
         case TAPETESTDO:
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_Rkey;
@@ -491,6 +501,7 @@ tapeprog_1(rqstp, transp)
 		local = (char *(*)()) dronoffdo_1;
 		break;
 	case JMTXTAPEDO:
+                force = 1;			/* always make this call */
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_Rkey;
 		local = (char *(*)()) jmtxtapedo_1;
@@ -511,7 +522,7 @@ tapeprog_1(rqstp, transp)
         poff = NULL;
         current_client_destroy = 0;
         if((tapeoffline) && (!force)) {		/* return err for all calls */
-          rinfo = 1;			/* give err to caller */
+          rinfo = rinfox;		/* give err to caller */
 	  send_ack();                   /* ack original sum_svc caller */
           result = (KEY *)1;		/* return immediately */
         }
@@ -529,17 +540,23 @@ tapeprog_1(rqstp, transp)
             write_log("\nKEYS in tape_svc response are:\n");
             keyiterate(logkey, (KEY *)result);
           }
-          clnt_stat=clnt_call(current_client, procnum, (xdrproc_t)xdr_result, 
+          if(current_client == 0) {
+            write_log("***Error on clnt_call() back to orig tape_svc caller\n");
+            write_log("   current_client was NULL\n");
+          }
+          else {
+            clnt_stat=clnt_call(current_client, procnum, (xdrproc_t)xdr_result, 
 			result, (xdrproc_t)xdr_void, 0, TIMEOUT);
-          if(clnt_stat != 0) {
-            clnt_perrno(clnt_stat);		/* outputs to stderr */
-            write_log("***Error in tape_svc on clnt_call() back to %ld procedure\n", procnum);
-            call_err = clnt_sperror(current_client, "Err");
-            write_log("%s %s\n", datestring(), call_err);
+            if(clnt_stat != 0) {
+              clnt_perrno(clnt_stat);		/* outputs to stderr */
+              write_log("***Error in tape_svc on clnt_call() back to %ld procedure\n", procnum);
+              call_err = clnt_sperror(current_client, "Err");
+              write_log("%s %s\n", datestring(), call_err);
+            }
+            if(current_client_destroy) clnt_destroy(current_client);
           }
           freekeylist((KEY **)&result);
         }
-        if(current_client_destroy) clnt_destroy(current_client);
         if(poff) {		/* free this q entry */
           //write_log("%lu free at line 497\n", poff); //!!TEMP
           free(poff->tapeid);
