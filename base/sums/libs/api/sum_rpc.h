@@ -175,6 +175,7 @@ extern KEY *delseriesdo_1();
 #define DRONOFFDO ((uint32_t)10)
 #define ROBOTONOFFDO ((uint32_t)11)
 #define JMTXTAPEDO ((uint32_t)12)
+#define EXPCLOSEDO ((uint32_t)13)
 
 extern KEY *readdo_1();
 extern KEY *writedo_1();
@@ -188,6 +189,7 @@ extern KEY *onoffdo_1();
 extern KEY *dronoffdo_1();
 extern KEY *robotonoffdo_1();
 extern KEY *jmtxtapedo_1();
+extern KEY *expclosedo_1();
 
 /* This is the SUM client API code response handling registration */
 #define RESPPROG ((uint32_t)0x20000613)  /* 536872467 */
@@ -419,10 +421,11 @@ struct tq {
   struct tq *next;
   KEY *list;
   SUMID_t uid;
+  uint32_t spare;
   uint64_t ds_index;
-  int filenum;
   char *tapeid;
   char *username;
+  int filenum;
 };
 typedef struct tq TQ;
 
@@ -555,6 +558,7 @@ void setpadata(PADATA **list, char *wd, uint64_t sumid, double bytes,
 int stat, int substat, char *eff_date,
 int group_id, int safe_id, uint64_t ds_index);
 int tape_inventory(int sim, int catalog);
+int robot_verify(char *action, int slot, int slotordrive);
 void uidpadata(PADATA *new, PADATA **start, PADATA **end);
 void remuidpadata(PADATA **start, PADATA **end, char *wd, uint64_t sumid);
 void rempadata(PADATA **list, char *wd, uint64_t sumid);
