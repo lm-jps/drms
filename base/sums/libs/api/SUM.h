@@ -63,6 +63,8 @@ typedef uint32_t SUMID_t;
 			    /* may be extended to general can't make handle */
 #define SUM_SUNUM_NOT_LOCAL 4 /* SUM_Info() got error on non local sunum */
 #define SUM_RESPPROG_ERR 5    /* set_client_handle() err to respond to caller*/
+#define SUM_TAPE_SVC_OFF 6 /* the tape_svc has been turned off line */
+//NOTE: RESULT_PEND 32 in sum_rpc.h
 
 #define SUM_INCL
 #endif
