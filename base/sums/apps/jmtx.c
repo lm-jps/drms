@@ -64,7 +64,7 @@ void sighandler(int sig);
 KEY *jmtxdo_1(KEY *params);
 static void jmtxprog_1(struct svc_req *rqstp, SVCXPRT *transp);
 
-static struct timeval TIMEOUT = { 3, 0 };
+static struct timeval TIMEOUT = { 30, 0 };
 uint32_t rinfo;         /* info returned by XXXdo_1() calls */
 CLIENT *current_client, *clnttape, *clntsum;
 SVCXPRT *glb_transp;
@@ -79,7 +79,7 @@ char thishost[MAX_STR];
 char devname[64];
 char mode[64];
 int drivenum;
-int slotnum;
+int slotnum, slot1, slot2;
 time_t now;
 int verbose = 0;
 int debugflg = 0;
@@ -121,9 +121,9 @@ int send_mail(char *fmt, ...)
 
 void usage()
 {
-  printf("This is a stand alone program that will execute mtx load, unload and \n");
+  printf("This is a stand alone program that will execute mtx load, unload, transfer and \n");
   printf("status commands via SUMS, so that it knows where all the tapes are.\n");
-  printf("Usage: jmtx -f /dev/t950 status|load|unload [slot#] [drive#]\n");
+  printf("Usage: jmtx -f /dev/t950 status|load|unload|transfer [slot#] [drive#]\n");
   printf("NOTE: you must be user production to run.\n");
   printf("NOTE: The -f arg is for symmetry with mtx only. You will connect\n");
   printf("    to the sum_svc that you are configured to and get its drives.\n");
@@ -168,11 +168,16 @@ void get_cmd(int argc, char *argv[])
     usage();
   }
   strcpy(mode, argv[1]);
-  if(strcmp(mode, "load") && strcmp(mode, "unload")) {
+  if(strcmp(mode, "load") && strcmp(mode, "unload") && strcmp(mode, "transfer")) {
     usage();
   }
-  slotnum = atoi(argv[2]);
-  drivenum = atoi(argv[3]);
+  if(!strcmp(mode, "transfer")) {
+    slot1 = atoi(argv[2]);
+    slot2 = atoi(argv[3]);
+  } else {
+    slotnum = atoi(argv[2]);
+    drivenum = atoi(argv[3]);
+  }
 }
 
 /* Release resources, disconnect from the db and exit with error */
@@ -241,7 +246,7 @@ void setup()
 int main(int argc, char *argv[])
 { 
   int status;
-  uint32_t retstat;
+  uint32_t retstat = 0;
   char *call_err;
 
   get_cmd(argc, argv);                  /* check the calling sequence */
@@ -257,8 +262,14 @@ int main(int argc, char *argv[])
   alist = newkeylist();
   setkey_str(&alist, "mode", mode);
   if(strcmp(mode, "status")) {		//not status cmd so send other params
-    setkey_int(&alist, "slotnum", slotnum);
-    setkey_int(&alist, "drivenum", drivenum);
+    if(strcmp(mode, "transfer")) {      //not transfer cmd
+      setkey_int(&alist, "slotnum", slotnum);
+      setkey_int(&alist, "drivenum", drivenum);
+    }
+    else {
+      setkey_int(&alist, "slot1", slot1);
+      setkey_int(&alist, "slot2", slot2);
+    }
   }
   //setkey_int(&alist, "DEBUGFLG", 1);	//!!TEMP
   status = clnt_call(clnttape, JMTXTAPEDO, (xdrproc_t)xdr_Rkey, (char *)alist,
@@ -271,14 +282,17 @@ int main(int argc, char *argv[])
       printf("%s\n", call_err);
       goaway();
     }
+    else {
+      printf("\nThe call to tape_svc has timed out. Still will accept a response...\n");
+    }
   }
   if(retstat == RESULT_PEND) {
       printf("Waiting for results from tape_svc...\n");
   }
   else {
       if(retstat != 0) {
-        printf("Error in return status = %d\n", retstat);
-        goaway();
+       printf("Error in return status = %d\n", retstat);
+       goaway();
       }
   }
   svc_run();		/* doesn't return. get answer */
