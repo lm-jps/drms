@@ -20,9 +20,11 @@
 
 
 #define MAX_WAIT 20  /* max times to wait for rdy drive in drive_ready() */
+#define VDUMP "/usr/local/logs/SUM/t950_status.verify"
 
 void write_time();
 void logkey();
+int rb_verify(char *action, int slot, int slotordrive);
 int drive_ready();
 extern int errno;
 #ifdef ROBOT_0
@@ -365,10 +367,10 @@ KEY *robotdo_1(KEY *params)
 {
   CLIENT *client;
   static KEY *retlist;
-  int sim, d, s, ret;
+  int sim, d, s, ret, s1, s2, rv;
   int loadcmd = 0;
   char *cmd;
-  char errstr[128], scr[80];
+  char errstr[128], scr[80], action[80];
 
   if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
@@ -393,8 +395,11 @@ KEY *robotdo_1(KEY *params)
     cmd = GETKEY_str(params, "cmd1");
     if(strstr(cmd, " load ")) {	/* cmd like: mtx -f /dev/sg12 load 14 1 */
       loadcmd = 1;
-      sscanf(cmd, "%s %s %s %s %d %d", scr, scr, scr, scr, &s, &d);
-      s--;                       /* must use internal slot # */
+    }
+    sscanf(cmd, "%s %s %s %s %d %d", scr, scr, scr, action, &s, &d);
+    s--;                       /* must use internal slot # */
+    if(strstr(cmd, " transfer ")) { //cmd like: mtx -f /dev/t950 transfer 14 15
+      d--;			//this is also a slot#
     }
     write_log("*Rb:cmd: %s\n", cmd);
     if(sim) {				/* simulation mode only */
@@ -403,26 +408,41 @@ KEY *robotdo_1(KEY *params)
     else {
       sleep(2);				/* !!!TEMP - test for robot ready*/
       if(system(cmd)) {
-	write_log("Err Retry: %s\n", cmd);
-	if(system(cmd)) {               /* try it again */
-        write_log("***Rb:failure\n\n");
-        setkey_int(&retlist, "STATUS", 1);   /* give err back to caller */
-        sprintf(errstr, "Error on: %s", cmd);
-        setkey_str(&retlist, "ERRSTR", errstr);
-        current_client = clnttape;            /* set for call to tape_svc */
-        procnum = TAPERESPROBOTDO;            /* this proc number */
-        return(retlist);
+        rv = rb_verify(action, s, d);
+        if(rv != 1) {			//error, retry
+          write_log("Err Retry: %s errno=%d\n", cmd, errno);
+	  if(system(cmd)) {               /* try it again */
+            rv = rb_verify(action, s, d);
+            if(rv != 1) {			//error
+              write_log("***Rb:failure\n\n");
+              setkey_int(&retlist, "STATUS", 1);   /* give err back to caller */
+              sprintf(errstr, "Error on: %s", cmd);
+              setkey_str(&retlist, "ERRSTR", errstr);
+              current_client = clnttape;        /* set for call to tape_svc */
+              procnum = TAPERESPROBOTDO;        /* this proc number */
+              return(retlist);
+            }
+          }
         }
       }
     }
-    write_log("***Rb:success\n\n");
+    if(strstr(cmd, " transfer ")) { //cmd like: mtx -f /dev/t950 transfer 14 15
+      sscanf(cmd, "%s %s %s %s %d %d", scr, scr, scr, scr, &s1, &s2);
+      write_log("***Rb:success transfer %d %d\n\n", s1, s2);
+    }
+    else {
+      write_log("***Rb:success\n\n");
+    }
   }
   if(findkey(params, "cmd2")) {
     cmd = GETKEY_str(params, "cmd2");
     if(strstr(cmd, " load ")) {	/* cmd like: mtx -f /dev/sg12 load 14 1 */
       loadcmd = 1;
-      sscanf(cmd, "%s %s %s %s %d %d", scr, scr, scr, scr, &s, &d);
-      s--;                       /* must use internal slot # */
+    }
+    sscanf(cmd, "%s %s %s %s %d %d", scr, scr, scr, action, &s, &d);
+    s--;                       /* must use internal slot # */
+    if(strstr(cmd, " transfer ")) { //cmd like: mtx -f /dev/t950 transfer 14 15
+      d--;                      //this is also a slot#
     }
     write_log("*Rb:cmd: %s\n", cmd);
     if(sim) {				/* simulation mode only */
@@ -431,17 +451,23 @@ KEY *robotdo_1(KEY *params)
     else {
       sleep(2);				/* !!!TEMP - test for robot ready*/
       if(system(cmd)) {
-	write_log("Err Retry: %s\n", cmd);
-	if(system(cmd)) {               /* try it again */
-        write_log("***Rb:failure\n\n");
-        setkey_int(&retlist, "STATUS", 1);   /* give err back to caller */
-        sprintf(errstr, "Error on: %s", cmd);
-        setkey_str(&retlist, "ERRSTR", errstr);
-        current_client = clnttape;            /* set for call to tape_svc */
-        procnum = TAPERESPROBOTDO;            /* this proc number */
-        return(retlist);
+        rv = rb_verify(action, s, d);
+        if(rv != 1) {                   //error, retry
+	  write_log("Err Retry: %s errno=%d\n", cmd, errno);
+	  if(system(cmd)) {               /* try it again */
+            rv = rb_verify(action, s, d);
+            if(rv != 1) {                       //error
+              write_log("***Rb:failure\n\n");
+              setkey_int(&retlist, "STATUS", 1);   /* give err back to caller */
+              sprintf(errstr, "Error on: %s", cmd);
+              setkey_str(&retlist, "ERRSTR", errstr);
+              current_client = clnttape;       /* set for call to tape_svc */
+              procnum = TAPERESPROBOTDO;            /* this proc number */
+              return(retlist);
+            }
+          }
+        }
       }
-    }
     }
     write_log("***Rb:success\n\n");
   }
@@ -583,3 +609,115 @@ void write_time()
   write_log("%s", datestr);
 }
 
+
+/* Verify that the given operation succesfully completed.
+ * For the given action, checks if the slot and slotordrive
+ * are full or empty accordingly. For example for the command,
+ * mtx -f /dev/t950 load 13 1
+ * will check that slot 13 is empty and slot 1 contains a tape.
+ * If the check is true, returns 1, if not true returns 0.
+ * If can't verify, returns -1.
+ * 
+ * The actions are load, unload, transfer. For load and unload the
+ * slotordrive is a drive#. Foe transfer, the slotordrive is a slot#.
+*/
+int rb_verify(char *action, int slot, int slotordrive)
+{
+  FILE *finv;
+  int s, sord, retry;
+  int drivenum, slotnum, i, j, k, tstate;
+  char *drive_tapes[MAX_DRIVES], *slot_tapes[MAX_SLOTS];
+  char *token, *cptr;
+  char cmd[MAXSTR], row[MAXSTR];
+
+  retry = 6;
+  while(retry) {
+    sprintf(cmd, "/usr/sbin/mtx -f %s status 1> %s 2>&1", LIBDEV, VDUMP);
+    if(system(cmd)) {
+      write_log("***Verify: failure. errno=%d\n", errno);
+      return(-1);
+    }
+    if (!(finv = fopen(VDUMP, "r"))) {
+      write_log("**Fatal error: can't open %s\n", VDUMP);
+      return(-1);
+    }
+    drivenum = slotnum = 0;  /* remember that externally slot#s start at 1 */
+    for(i=0; i < MAX_DRIVES; i++) { drive_tapes[i] = "NoTape"; }
+    while (fgets (row,MAXSTR,finv)) {
+      if(strstr(row, "Data Transfer Element")) {
+        if(strstr(row, ":Full")) {	/* Drive has tape */
+          token = (char *)strtok(row, "=");
+          token = (char *)strtok(NULL, "=");
+          if(!token) {			/* no bar code */
+            token = "NoTape";		/* treat as NoTape
+          } else {
+            token = token+1;		/* skip leading space */
+            cptr = index(token, ' ');	/* find trailing space */
+            *cptr = (char)NULL;		/* elim trailing stuff */
+          }
+          drive_tapes[drivenum] = (char *)strdup(token);
+        }
+        write_log("tapeid in drive %d = %s\n", 
+  			drivenum, drive_tapes[drivenum]);
+        drivenum++;
+      }
+      else if(strstr(row, "Storage Element")) {
+        if(strstr(row, ":Full")) {	/* slot has tape */
+          token = (char *)strtok(row, "=");
+          token = (char *)strtok(NULL, "=");
+          if(!token) {			/* no bar code */
+            token = "NoTape";		/* treat as no tape */
+          } else {
+            cptr = index(token, ' ');	/* find trailing space */
+            *cptr = (char)NULL;		/* elim trailing stuff */
+          }
+          slot_tapes[slotnum] = (char *)strdup(token);
+        }
+        else {				/* slot EMPTY */
+          slot_tapes[slotnum] = "NoTape";
+        }
+        write_log("tapeid in slot# %d = %s\n", 
+  		slotnum+1, slot_tapes[slotnum]);
+        slotnum++;
+      }
+    }
+    fclose(finv);
+    if(slotnum != MAX_SLOTS) {
+      write_log("Inv returned wrong # of slots. Retry.\n");
+      --retry;
+      if(retry == 0) {
+        write_log("***Fatal error: Can't do tape inventory\n");
+        return(-1);
+      }
+    }
+    else { retry = 0; }
+  }
+  //Now check if the given slot and slotordrive args are ok
+  if(!strcmp(action, "unload")) {	//drive emtpy and slot full
+    if(strcmp(drive_tapes[slotordrive], "NoTape")) { //drive has tape. NG
+      return(0);
+    }
+    if(!strcmp(slot_tapes[slot], "NoTape")) {	//slot has no tape. NG
+      return(0);
+    }
+    return(1);		//verifies ok
+  }
+  else if(!strcmp(action, "load")) {	//slot empty and drive full
+    if(!strcmp(drive_tapes[slotordrive], "NoTape")) { //drive has no tape. NG
+      return(0);
+    }
+    if(strcmp(slot_tapes[slot], "NoTape")) {   //slot has tape. NG
+      return(0);
+    }
+    return(1);          //verifies ok
+  }
+  else {			//it's a transfer. 1st slot empty, 2nd full
+    if(strcmp(slot_tapes[slot], "NoTape")) {   //slot has tape. NG
+      return(0);
+    }
+    if(!strcmp(slot_tapes[slotordrive], "NoTape")) { //slot has no tape. NG
+      return(0);
+    }
+    return(1);
+  }
+}

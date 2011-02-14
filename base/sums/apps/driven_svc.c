@@ -702,13 +702,17 @@ drive11prog_1(rqstp, transp)
           }
           clnt_stat=clnt_call(current_client, procnum, (xdrproc_t)xdr_result,
 		(char *)result, (xdrproc_t)xdr_void, 0, TIMEOUT);
-          if(clnt_stat != 0) {
-            clnt_perrno(clnt_stat);		/* outputs to stderr */
-            write_log("***Error on clnt_call() back to %d procedure (driven_svc)\n", procnum);
-            call_err = clnt_sperror(current_client, "Err");
-            write_log("%s\n", call_err);
+
+          if(clnt_stat != RPC_SUCCESS) {
+            if(clnt_stat != RPC_TIMEDOUT) {  /* allow timeout? */
+              clnt_perrno(clnt_stat);             /* outputs to stderr */
+              write_log("***Error on clnt_call() back to %d procedure (in driven_svc)\n", procnum);
+              call_err = clnt_sperror(current_client, "Err");
+              write_log("%s\n", call_err);
+            } else {
+              write_log("timeout occured in drive%d_svc call to tape_svc\n", drivenum);
+            }
           }
-          /*clnt_destroy(current_client);*/ 
           freekeylist((KEY **)&result);
         }
       }
