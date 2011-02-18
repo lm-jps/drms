@@ -14,7 +14,9 @@
 
 \par Synopsis:
 show_coverage {ds=}<seriesname> [-h]
-show_coverage {ds=}<seriesname> [-iqv] [low=<starttime>] [high=<stoptime>] [block=<blocklength>] [key=<pkey>] [mask=<badbits>] [ignore=<ignorebits>] [<other>=<value>...]
+
+show_coverage {ds=}<seriesname> [-iqostm] [low=<starttime>] [high=<stoptime>] [block=<blocklength>] [key=<pkey>] [mask=<badbits>] [ignore=<ignorebits>] [<other>=<value>...]
+
 show_coverage_sock {same options as above}
 \endcode
 
@@ -49,6 +51,9 @@ and selected values may be provided as additional keyword=value pairs.
 \li \c -h: help - print usage information and exit
 \li \c -i: index - print interval start as index values for slotted ordering prime-key
 \li \c -q: quiet - do not print header overfiew information
+\li \c -s: summary - print totals of each kind, OK, MISS, UNK, GONE
+\li \c -t: times - print start and end time of each segment of OK, MISS, UNK, and optionally GONE
+\li \c -m: no_miss - Treat all MISS determinations as UNK
 \li \v -o: online - check existance of segment files for all OK records
 
 \par Parameters:
@@ -82,7 +87,11 @@ a series where needed.
 
 Records are identified as MISS if QUALITY is < 0 or if the mask parameter is provided, only if one or
 more bits set in mask are also set in QUALITY.  If ignore is provided, the if any bits in ignore are
-also present in QUALITY the record not used in the comparison with mask.
+also present in QUALITY the record not used in the comparison with mask. A -m flag will result in the MISS
+category being added to the UNK category.  This is used to simplify finding which records might need to
+be recomputed.
+
+A summary will be printed if the -s flag is present.
 
 The "other" argument may be used to add where clauses to the query for records.  The "other" clauses
 are not used for determining the first and last slots, but only for the existence information.
@@ -93,7 +102,8 @@ printed.  There are two formats for this table.  The default format is a list of
 with the same record label, OK, MISS, UNK, or GONE.  For each contiguous segment one line of
 information will be printed containing the label, the start "time", and the count of records in
 the contiguous same-label interval.  The time printed will be the prime key value of the first
-record in the interval.
+record in the interval.  If the \a -t flag is present then the first and last time of each contiguous
+segment will be printed as well as the count.
 
 If the \a block parameter is specified, the alternate table format will be used.  In the blocked case
 the records are grouped in intervals of length <blocklength> and a summary line is printed for each
@@ -178,6 +188,9 @@ ModuleArgs_t module_args[] =
     {ARG_INT, "mask", "0", "Mask to use for bits in QUALITY that will cause the record to be counted as MISS"},
     {ARG_INT, "ignore", "0", "Mask to use for bits to ignore in QUALITY tests with mask that will cause the record to be counted as MISS"},
     {ARG_FLAG, "o", "0", "Verify - verify that SU is available for records with data"},
+    {ARG_FLAG, "m", "0", "no_miss -treat otherwise MISS records as UNK"},
+    {ARG_FLAG, "s", "0", "Summary - Print the total number of records in each category: OK, MISS, UNK, GONE"},
+    {ARG_FLAG, "t", "0", "times - Print the first and last time of each segment of OK, MISS, UNK, GONE"},
     {ARG_FLAG, "i", "0", "Index - Print index values instead of prime slot values"},
     {ARG_FLAG, "q", "0", "Quiet - omit series header info"},
     {ARG_FLAG, "h", "0", "Help - Print usage and exit"},
@@ -199,12 +212,15 @@ int nice_intro ()
         "  -h: help - show this message then exit\n"
         "  -i: list index values vs slot values\n"
         "  -q: quiet, do not print header\n"
+        "  -m: no_miss -treat otherwise MISS records as UNK\n"
+        "  -s: Summary - Print the total number of records in each category: OK, MISS, UNK, GONE\n"
+        "  -t: Summary - Print first and last time of each segment of OK, MISS, UNK, GONE\n"
         "  -o: online - check with SUMS for expired data\n"
         "ds=<seriesname> - required\n"
         "key=<prime_key> - prime key to use if not the first available\n"
         "block=<blocklength> - interval span for summary data\n"
         "mask=<bad_bit_mask> - mask to be checked in QUALITY\n"
-        "ignore=<ignore_bit_mask> - mask to be checked ignored in QUALITY tests\n"
+        "ignore=<ignore_bit_mask> - mask for bits to be ignored in QUALITY tests\n"
         "low=<starttime> - start of range for completeness survey, defaults to [^]\n"
         "high=<stoptime> - end of range for completeness summary, defaults to [$]\n"
         "<other>=<value> - optional additional filters to limit the survey\n"
@@ -245,11 +261,15 @@ int DoIt(void)
   char *other = strdup((char *)cmdparams_get_str (&cmdparams, "other", NULL));
   int verify = cmdparams_get_int (&cmdparams, "o", NULL) != 0;
   int quiet = cmdparams_get_int (&cmdparams, "q", NULL) != 0;
+  int want_summary = cmdparams_get_int (&cmdparams, "s", NULL) != 0;
+  int want_times = cmdparams_get_int (&cmdparams, "t", NULL) != 0;
+  int no_miss = cmdparams_get_int (&cmdparams, "m", NULL) != 0;
   int useindex = cmdparams_get_int (&cmdparams, "i", NULL) != 0;
   uint32_t mask = (uint32_t)cmdparams_get_int64 (&cmdparams, "mask", NULL);
   uint32_t ignore = (uint32_t)cmdparams_get_int64 (&cmdparams, "ignore", NULL);
   char *map;
   long long islot, jslot, nslots, blockstep;
+  int total_ok=0, total_miss=0, total_unk=0, total_gone=0;
   char *qualkey;
   int qualkind;
   int ikey;
@@ -556,15 +576,29 @@ int DoIt(void)
 		uint32_t qualval;
 		long long sunum;
 		char val = DATA_OK;
+                total_ok++;
 		if (qualkind)
 			{
 			qualval = (uint32_t)(0xFFFFFFFF & *((long long *)data->data + qualindex*nrecs + irec));
 			if ((qualkind == 1 && (qualval & 0x80000000) ) ||
                             (qualkind == 2 && qualval == 0) ||
                             (qualkind == 3 && (qualval & ignore)==0 && (qualval & mask)!=0 ))
-			        val = DATA_MISS;
+                                {
+                                total_ok--;
+                                if (no_miss)
+                                  val = DATA_UNK;
+                                else
+                                  {
+			          val = DATA_MISS;
+                                  total_miss++;
+                                  }
+                                }
 			else if (verify && !online[irec])
+                                {
 			        val = DATA_GONE;
+                                total_ok--;
+                                total_gone++;
+                                }
 			}
 		map[thisslot - lowslot] = val;
 		}
@@ -573,6 +607,7 @@ int DoIt(void)
         if (verify && online)
           free(online);
 	}
+  total_unk = nslots - total_ok - total_miss - total_gone;
 
   // now have low, high and series_low, series_high, epoch and step, and lowslot and highslot and serieshighslot and serieslowslot.
 
@@ -592,6 +627,13 @@ if (!quiet)
   fprintf(out, "qualkey=%s\n", qualkey);
   if (qualkind == 3) fprintf(out, "mask=%#08x\nignore=%#08x\n", mask, ignore);
   if (*other) fprintf(out, "other=%s\n", other);
+  }
+if (want_summary)
+  {
+  fprintf(out, "total_ok=%d\n", total_ok);
+  fprintf(out, "total_miss=%d\n", total_miss);
+  fprintf(out, "total_unk=%d\n", total_unk);
+  fprintf(out, "total_gone=%d\n", total_gone);
   }
 // fprintf(out, "lowslot=%ld, highslot=%ld, serieslowslot=%ld serieshighslot=%ld\n",lowslot, highslot, serieslowslot, serieshighslot);
 
@@ -632,20 +674,43 @@ if (!quiet)
 	while (islot < nslots)
 		{
 		char pval[DRMS_MAXQUERYLEN];
+		char endval[DRMS_MAXQUERYLEN];
 		int nsame = 1;
+		// get time of start of contiguous segment
 		if (useindex)
 			 sprintf(pval, "%lld", lowslot + islot);
 		else
 			 sprintf(pval, "%s",
 				 primevalstr(epoch + (lowslot + islot) * step, ptype, punit, pformat));
 		char thisval = map[islot], nval = 0;
+		// get length of contiguouse segment of current type
 		for (islot += 1; islot < nslots && map[islot] == thisval; islot++)
 		  nsame += 1;
-		fprintf(out, "%4s %s %d\n",
-			(thisval == DATA_OK ? "OK" :
-			(thisval == DATA_MISS ? "MISS" :
-			(thisval == DATA_GONE ? "GONE" : "UNK"))),
-			pval, nsame );
+		// finish and print
+                if (want_times)
+			{
+			// -t case, print start and end times of contiguous segment
+			// get time of end of contiguous segment
+			if (useindex)
+			 	sprintf(endval, "%lld", lowslot + islot - 1);
+			else
+			 	sprintf(endval, "%s",
+				   primevalstr(epoch + (lowslot + islot - 1) * step, ptype, punit, pformat));
+			fprintf(out, "%4s %s %s %d\n",
+				(thisval == DATA_OK ? "OK" :
+				(thisval == DATA_MISS ? "MISS" :
+				(thisval == DATA_GONE ? "GONE" : "UNK"))),
+				pval, endval, nsame );
+			}
+		else
+			{
+			// default case, print start time and length of contiguous segment
+			fprintf(out, "%4s %s %d\n",
+				(thisval == DATA_OK ? "OK" :
+				(thisval == DATA_MISS ? "MISS" :
+				(thisval == DATA_GONE ? "GONE" : "UNK"))),
+				pval, nsame );
+			}
 		}
 	}
   return(0);
