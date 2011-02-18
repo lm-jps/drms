@@ -63,6 +63,7 @@ int drms_series_hastableprivs(DRMS_Env_t *env, const char *schema, const char *t
 int drms_series_cancreaterecord(DRMS_Env_t *env, const char *series);
 int drms_series_candeleterecord(DRMS_Env_t *env, const char *series);
 int drms_series_canupdaterecord(DRMS_Env_t *env, const char *series);
+int drms_query_tabexists(DRMS_Session_t *session, const char *ns, const char *tab, int *status);
 
 #ifdef DRMS_CLIENT
 void drms_lock_client(DRMS_Env_t *env);

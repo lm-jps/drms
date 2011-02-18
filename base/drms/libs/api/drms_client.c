@@ -1772,6 +1772,42 @@ int drms_series_canupdaterecord(DRMS_Env_t *env, const char *series)
    return drms_series_candosomething(env, series, "UPDATE");
 }
 
+int drms_query_tabexists(DRMS_Session_t *session, const char *ns, const char *tab, int *status)
+{
+   int result = 0;
+   char query[DRMS_MAXQUERYLEN];
+   DB_Text_Result_t *qres = NULL;
+
+   if (status)
+   {
+      *status = DRMS_SUCCESS;
+   }
+
+   snprintf(query, sizeof(query), "SELECT * FROM pg_tables WHERE schemaname ILIKE '%s' AND tablename ILIKE '%s'", ns, tab);
+
+   if ((qres = drms_query_txt(session, query)) == NULL)
+   {
+      if (status)
+      {
+         *status = DRMS_ERROR_BADDBQUERY;
+      }
+
+      fprintf(stderr, "Bad database query '%s'\n", query);
+   }
+   else if (qres->num_rows > 0)
+   {
+      result = 1;
+   }
+
+   if (qres)
+   {
+      db_free_text_result(qres);
+      qres = NULL;
+   }
+
+   return result;
+}
+
 #ifdef DRMS_CLIENT
 
 sem_t *gShutdownsem = NULL; /* synchronization among signal thread, main thread, 
@@ -2041,6 +2077,5 @@ void *drms_signal_thread(void *arg)
     }
   }
 }
-
 
 #endif /* DRMS_CLIENT */

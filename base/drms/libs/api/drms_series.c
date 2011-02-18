@@ -1453,7 +1453,18 @@ int drms_series_isvers(DRMS_SeriesInfo_t *si, DRMS_SeriesVersion_t *v)
 
 static int CanCallDrmsReplicated(DRMS_Env_t *env)
 {
-   return drms_series_hastableprivs(env, "_jsoc", "sl_table", "SELECT");
+   int tabexists = 0;
+   int status = DRMS_SUCCESS;
+
+   tabexists = drms_query_tabexists(env->session, "_jsoc", "sl_table", &status);
+
+   if (status == DRMS_ERROR_BADDBQUERY)
+   {
+      fprintf(stderr, "Unable to check database for the existence of _jsoc.sl_table.\n");
+      return 0;
+   }
+
+   return (!tabexists || drms_series_hastableprivs(env, "_jsoc", "sl_table", "SELECT"));
 }
 
 /* returns:
