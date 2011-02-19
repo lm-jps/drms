@@ -137,6 +137,33 @@ To show the summary of records in a range of data, such as the above MDI dynamic
 Here block is set to a large number to gather all the information into a single line.
 Simple math then shows the data is actually 96.6% complete.
 
+\par Special Cases:
+
+Some specific code is included to handle HMI and AIA special cases.
+
+\b Bad FSN:
+Both HMI and AIA can produce erroneous large values for FSN (Frame Serial Number) due to
+hardware issues onboard.  To help in the case where the user does not specify a "high" limit
+for analysis, and where the first 7 characters in the seriesname are "hmi.lev" or "aia.lev" then
+the query for series high value will add the clause that FSN < 0X1C000000.  There are some
+cases with an erroneous FSN lower than this, but no easy test.
+
+\b FSN and times:
+Some series, e.g. hmi.cosmic_rays, have both T_OBS and FSN as prime keys but are not slotted
+on time.  For this case as well as the general case of lev0 and lev1 data or other series where
+a T_OBS keyword exists and is not the selected key for analysis, and the user wishes to limit
+the analysis based on time instead of the integer key (e.g. FSN) then "high" and "low" may be
+expressed as a time if and only if the time string contains at least one "_" char.
+If the seriesname starts "hmi.lev" or "aia.lev" then the appropriate lev0 series will be used
+to convert times to FSN.  Note that this will fail if the low time is after the end of the data
+or if the high time requested is before the beginning of the mission.
+
+b Example 3:
+To show the summary of records in a range of time where the prime key is FSN, such as hmi.lev0a:
+\code
+  show_coverage hmi.lev0a low=2010.05.01 high=2010.06.01 block=46080 key=FSN
+\endcode
+
 \bug
 \b Limitation:
 Since DRMS is queried using \ref drms_record_getvector the QUALITY keyword must be an integer type
@@ -422,6 +449,7 @@ int DoIt(void)
   else
 	serieslowslot = series_low;
   drms_close_records(rs, DRMS_FREE_RECORD);
+  // Now get low for range to be analysed
   if (strcmp(lowstr, NOT_SPECIFIED) == 0)
 		low = series_low;
   else
@@ -429,7 +457,56 @@ int DoIt(void)
 	if (ptype == DRMS_TYPE_TIME)
 		low = sscan_time((char *)lowstr);
 	else
-		low = (TIME)atof(lowstr);
+                {
+		// Even if the params should be slot numbers or integer keys, if the low=xxx param is
+		// a string with at least one '_' then treat as a time and convert to a slot number.
+                // use hmi.lev0a or aia.lev0 for this time to fsn mapping if series starts with e.g. hmi.lev
+                if (index(lowstr, '_'))
+			{
+			char fsn_seriesname[DRMS_MAXNAMELEN];
+			TIME tmplow = sscan_time((char *)lowstr);
+			if (strncmp(seriesname,"hmi.lev",7) == 0)
+				strcpy(fsn_seriesname, "hmi.lev0a");
+			else if (strncmp(seriesname, "aia.lev", 7) == 0)
+				strcpy(fsn_seriesname, "aia.lev0");
+			else
+				strcpy(fsn_seriesname, seriesname);
+			if (slotted) // simple conversion
+				{
+				low = sscan_time((char *)lowstr);
+				sprintf(in, "%s[? %s >= %f ?]", fsn_seriesname, pname, low);
+				rs = drms_open_nrecords (drms_env, in, 1, &status); // first record
+				if (status || !rs || rs->n == 0)
+					DIE("Series is empty");
+				rec = rs->records[0];
+				low = drms_getkey_time(rec, pname, &status);
+				drms_close_records(rs, DRMS_FREE_RECORD);
+				}
+			else
+				{
+				low = sscan_time((char *)lowstr);
+// fprintf(stderr,"doing low=timestring case for integer not slotted case\n");
+				DRMS_Type_t tobstype;
+                                drms_getkey(template, "T_OBS", &tobstype, &status);
+                                if (status)
+                                	DIE("low given as time, series is not slotted and does not contain T_OBS, giveup.");
+                                drms_getkey(template, "FSN", &tobstype, &status);
+                                if (status)
+                                	DIE("low given as time, series is not slotted and does not contain FSN, giveup.");
+				sprintf(in, "%s[? T_OBS >= %f ?]", fsn_seriesname, low);
+// fprintf(stderr,"query will be %s\n",in);
+				rs = drms_open_nrecords (drms_env, in, 1, &status); // first record
+				if (status || !rs || rs->n == 0)
+					DIE("Series is empty");
+				rec = rs->records[0];
+				low = drms_getkey_time(rec, "FSN", &status);
+// fprintf(stderr,"got %f\n",low);
+				drms_close_records(rs, DRMS_FREE_RECORD);
+				}
+			}
+		else
+			low = (TIME)atof(lowstr);
+                }
 	}
 
   // Now get high limit
@@ -457,6 +534,8 @@ int DoIt(void)
   else
 	serieshighslot = series_high;
   drms_close_records(rs, DRMS_FREE_RECORD);
+
+  // Now get requested high limit`
   if (strcmp(highstr, NOT_SPECIFIED) == 0)
 	high = series_high;
   else
@@ -464,7 +543,56 @@ int DoIt(void)
 	if (ptype == DRMS_TYPE_TIME)
 		high = sscan_time((char *)highstr);
 	else
-		high = atof(highstr);
+                {
+		// Even if the params should be slot numbers or integer keys, if the high=xxx param is
+		// a string with at least one '_' then treat as a time and convert to a slot number.
+                // use hmi.lev0a or aia.lev0 for this time to fsn mapping if series starts with e.g. hmi.lev
+                if (index(highstr, '_'))
+			{
+			char fsn_seriesname[DRMS_MAXNAMELEN];
+			TIME tmphigh = sscan_time((char *)highstr);
+			if (strncmp(seriesname,"hmi.lev",7) == 0)
+				strcpy(fsn_seriesname, "hmi.lev0a");
+			else if (strncmp(seriesname, "aia.lev", 7) == 0)
+				strcpy(fsn_seriesname, "aia.lev0");
+			else
+				strcpy(fsn_seriesname, seriesname);
+			if (slotted) // simple conversion
+				{
+				high = sscan_time((char *)highstr);
+				sprintf(in, "%s[? %s <= %f ?]", fsn_seriesname, pname, high);
+				rs = drms_open_nrecords (drms_env, in, 1, &status); // first record
+				if (status || !rs || rs->n == 0)
+					DIE("Series is empty");
+				rec = rs->records[0];
+				high = drms_getkey_time(rec, pname, &status);
+				drms_close_records(rs, DRMS_FREE_RECORD);
+				}
+			else
+				{
+				high = sscan_time((char *)highstr);
+// fprintf(stderr,"doing high=timestring case for integer not slotted case\n");
+				DRMS_Type_t tobstype;
+                                drms_getkey(template, "T_OBS", &tobstype, &status);
+                                if (status)
+                                	DIE("high given as time, series is not slotted and does not contain T_OBS, giveup.");
+                                drms_getkey(template, "FSN", &tobstype, &status);
+                                if (status)
+                                	DIE("high given as time, series is not slotted and does not contain FSN, giveup.");
+				sprintf(in, "%s[? T_OBS <= %f ?]", fsn_seriesname, high);
+// fprintf(stderr,"query will be %s\n",in);
+				rs = drms_open_nrecords (drms_env, in, 1, &status); // first record
+				if (status || !rs || rs->n == 0)
+					DIE("Series is empty");
+				rec = rs->records[0];
+				high = drms_getkey_time(rec, "FSN", &status);
+// fprintf(stderr,"got %f\n",high);
+				drms_close_records(rs, DRMS_FREE_RECORD);
+				}
+			}
+		else
+			high = (TIME)atof(highstr);
+                }
 	}
 
   // Now get lowslot and highslot using same code as drms library calls.
