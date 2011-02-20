@@ -151,6 +151,8 @@ __PROJ__
              <subdir>ident/libs/mexfunctions</subdir>
              <subdir>ident/libs/util</subdir>
              <subdir>patch/apps</subdir>
+             <subdir>nlfff/apps</subdir>
+             <subdir>d4vm/apps</subdir>
         </subdirs>
         <filters>
              <filter>
