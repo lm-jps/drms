@@ -470,13 +470,12 @@ tapeprog_1(rqstp, transp)
                 xdr_result = xdr_uint32_t;
 		local = (char *(*)()) impexpdo_1;
 		break;
-/*******************************!!TEMP*******************
 	case EXPCLOSEDO:
+                force = 1;			/* always make this call */
 		xdr_argument = xdr_Rkey;
                 xdr_result = xdr_uint32_t;
 		local = (char *(*)()) expclosedo_1;
 		break;
-**************************************************/
         case TAPETESTDO:
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_Rkey;
