@@ -957,7 +957,7 @@ KEY *jmtxtapedo_1(KEY *params) {
   int slotnum, drivenum, status, slot1, slot2;
   uint64_t robotback;
   char cmd[80], errstr[80];
-  char *call_err, *mode;
+  char *call_err, *mode, *tapeid;
   KEY *xlist;
 
   robotback = 0;
@@ -1011,15 +1011,29 @@ KEY *jmtxtapedo_1(KEY *params) {
     free(mode);
     return(xlist);
   }
-  if(!strcmp(mode, "transfer")) {	//call robot_svc for mtx transfer
+  if(!strcmp(mode, "transtape")) {	//call robot_svc for mtx transfer
+    tapeid = GETKEY_str(params, "tapeid");
+    if((slot1 = tapeinslot(tapeid)) == -1) {    /* tape must be in a slot */
+      write_log("!!!ERR jmtxtapedo_1(): tape %s must be in a slot\n", tapeid);
+      rinfo = 2;
+      send_ack();
+      return((KEY *)1);
+    }
+    slot1++;		//convert to external slot#
+    setkey_int(&params, "slot1", slot1); //must also put slot1 in keylist
+    slot2 = getkey_int(params, "slot2");
+    goto TRANSTAPETRANSFER;		//now it the same as a transfer cmd
+  }
+  else if(!strcmp(mode, "transfer")) {	//call robot_svc for mtx transfer
     slot1 = getkey_int(params, "slot1");
     slot2 = getkey_int(params, "slot2");
+TRANSTAPETRANSFER:
     robotbusy = 1;
     rinfo = 0;
     add_keys(params, &xlist);
     setkey_str(&xlist, "OP", "mtxtransfer");
-    sprintf(cmd, "mtx -f %s %s %d %d 1> /tmp/mtx/mtx_robot_%d.log 2>&1",
-                libdevname, mode, slot1, slot2, robotcmdseq++);
+    sprintf(cmd, "mtx -f %s transfer %d %d 1> /tmp/mtx/mtx_robot_%d.log 2>&1",
+                libdevname, slot1, slot2, robotcmdseq++);
     setkey_str(&xlist, "cmd1", cmd);
     setkey_int(&xlist, "DEBUGFLG", 0);
     setkey_fileptr(&xlist,  "current_client", (FILE *)current_client);
@@ -1554,6 +1568,9 @@ KEY *taperesprobotdo_1(KEY *params) {
   if(status) {				//robot error
     cptr = GETKEY_str(params, "ERRSTR");
     write_log("Robot %s\n", cptr);
+    write_log("***Fatal Robot error: tape_svc is going off-line\n");
+    send_mail("***Fatal Robot error: tape_svc is going off-line\n");
+    tapeoffline = 1;
   }
   if(findkey(params, "slot1")) {	//an mtx transfer cmd completion
     if(status == 0) {			//no robot error
@@ -2284,6 +2301,61 @@ KEY *impexpdo_1(KEY *params)
   }
   send_ack();		/* ack original impexp caller */
   return((KEY *)1);		/* nothing will be sent later */
+}
+
+/* Called when tui schedules the exportclosed program and it does a clnt_call to
+ * TAPEPROG, TAPEVERS for EXPCLOSEDO. This is done when tui gets a request
+ * to export closed tapes after the operator hits the 'Export closed tapes'
+ * button. There is one request here for every tapeid that the exportclosed
+ * program got from the tui. The keylist looks like:
+ *   setkey_str(&retlist, "OP", "start"); //or stop
+ * The exportclosed program calls robot_svc to transfer a tape from
+ * source slots to EE slots.
+*/
+KEY *expclosedo_1(KEY *params)
+{
+  KEY *xlist;
+  char cmd[80];
+  char *op;
+  int retry, istat;
+
+  op = getkey_str(params, "OP");
+  write_log("***EXPCLOSEDO called for %s\n", op);
+  //if(!strcmp(op, "stop load")) {	//end of exp cycle
+  if(!strcmp(op, "reinventory")) {
+    eeactive = 0;	/* enable the Q code again */
+    retry = 6;
+    while(retry) {
+    istat = tape_reinventory(sim, 1); /* and catalog too */
+      if(istat == 0) { 
+        write_log("***Error: Can't do tape inventory. Will retry...\n");
+        --retry;
+        if(retry == 0) {
+          write_log("***Inv: failure\n\n");
+          write_log("***Fatal error: Can't do tape inventory\n");
+          send_mail("***Fatal error: Can't do tape inventory\nAbort tape_svc\n");
+          (void) pmap_unset(TAPEPROG, TAPEVERS);
+          exit(1);
+        }
+        continue;
+      }
+      if(istat == -1) {   /* didn't get full slot count. retry */
+        --retry;
+        if(retry == 0) {
+          write_log("***Inv: failure\n\n");
+          write_log("***Fatal error: Can't do tape inventory\n");
+          send_mail("***Fatal error: Can't do tape inventory\nAbort tape_svc\n");
+          (void) pmap_unset(TAPEPROG, TAPEVERS);
+          exit(1);
+        }
+      }
+      else { retry = 0; }
+    }
+  }
+  rinfo = 0;
+  send_ack();
+  free(op);
+  return((KEY *)1);
 }
 
 /* Called when a program does a clnt_call to
