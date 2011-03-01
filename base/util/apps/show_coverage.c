@@ -346,11 +346,11 @@ int DoIt(void)
 		if (pkey->info->recscope > 1)
 			{
 			skey = drms_keyword_slotfromindex(pkey);
-			if (strcmp(skeyname, skey->info->name) == 0)
+			if (strcasecmp(skeyname, skey->info->name) == 0)
 				break;
 			}
 		else
-			if (strcmp(skeyname, pkey->info->name) == 0)
+			if (strcasecmp(skeyname, pkey->info->name) == 0)
 				{
 				skey = pkey;
 				break;
@@ -467,7 +467,7 @@ int DoIt(void)
                 // use hmi.lev0a or aia.lev0 for this time to fsn mapping if series starts with e.g. hmi.lev
                 char *tp, *index();
                 tp = index(lowstr,'.');
-                if (index(lowstr, '_') || index(lowstr,':' || (tp && index(tp+1,'.'))))
+                if (index(lowstr, '_') || index(lowstr,':') || (tp && index(tp+1,'.')))
 			{
 			char fsn_seriesname[DRMS_MAXNAMELEN];
 			TIME tmplow = sscan_time((char *)lowstr);
@@ -555,7 +555,7 @@ int DoIt(void)
                 // use hmi.lev0a or aia.lev0 for this time to fsn mapping if series starts with e.g. hmi.lev
                 char *tp, *index();
                 tp = index(highstr,'.');
-                if (index(highstr, '_') || index(highstr,':' || (tp && index(tp+1,'.'))))
+                if (index(highstr, '_') || index(highstr,':') || (tp && index(tp+1,'.')))
 			{
 			char fsn_seriesname[DRMS_MAXNAMELEN];
 			TIME tmphigh = sscan_time((char *)highstr);
