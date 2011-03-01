@@ -15,7 +15,7 @@
 \par Synopsis:
 show_coverage {ds=}<seriesname> [-h]
 
-show_coverage {ds=}<seriesname> [-iqostm] [low=<starttime>] [high=<stoptime>] [block=<blocklength>] [key=<pkey>] [mask=<badbits>] [ignore=<ignorebits>] [<other>=<value>...]
+show_coverage {ds=}<seriesname> [-iqostmv] [low=<starttime>] [high=<stoptime>] [block=<blocklength>] [key=<pkey>] [mask=<badbits>] [ignore=<ignorebits>] [<other>=<value>...]
 
 show_coverage_sock {same options as above}
 \endcode
@@ -54,7 +54,8 @@ and selected values may be provided as additional keyword=value pairs.
 \li \c -s: summary - print totals of each kind, OK, MISS, UNK, GONE
 \li \c -t: times - print start and end time of each segment of OK, MISS, UNK, and optionally GONE
 \li \c -m: no_miss - Treat all MISS determinations as UNK
-\li \v -o: online - check existance of segment files for all OK records
+\li \c -o: online - check existance of segment files for all OK records
+\li \c -v: verbose - print processing status
 
 \par Parameters:
 
@@ -220,6 +221,7 @@ ModuleArgs_t module_args[] =
     {ARG_FLAG, "t", "0", "times - Print the first and last time of each segment of OK, MISS, UNK, GONE"},
     {ARG_FLAG, "i", "0", "Index - Print index values instead of prime slot values"},
     {ARG_FLAG, "q", "0", "Quiet - omit series header info"},
+    {ARG_FLAG, "v", "0", "Verbose - Print processing status"},
     {ARG_FLAG, "h", "0", "Help - Print usage and exit"},
     {ARG_END}
 };
@@ -243,6 +245,7 @@ int nice_intro ()
         "  -s: Summary - Print the total number of records in each category: OK, MISS, UNK, GONE\n"
         "  -t: Summary - Print first and last time of each segment of OK, MISS, UNK, GONE\n"
         "  -o: online - check with SUMS for expired data\n"
+        "  -v: verbose - Print processing status\n"
         "ds=<seriesname> - required\n"
         "key=<prime_key> - prime key to use if not the first available\n"
         "block=<blocklength> - interval span for summary data\n"
@@ -288,6 +291,7 @@ int DoIt(void)
   char *other = strdup((char *)cmdparams_get_str (&cmdparams, "other", NULL));
   int verify = cmdparams_get_int (&cmdparams, "o", NULL) != 0;
   int quiet = cmdparams_get_int (&cmdparams, "q", NULL) != 0;
+  int verbose = cmdparams_get_int (&cmdparams, "v", NULL) != 0;
   int want_summary = cmdparams_get_int (&cmdparams, "s", NULL) != 0;
   int want_times = cmdparams_get_int (&cmdparams, "t", NULL) != 0;
   int no_miss = cmdparams_get_int (&cmdparams, "m", NULL) != 0;
@@ -459,15 +463,17 @@ int DoIt(void)
 	else
                 {
 		// Even if the params should be slot numbers or integer keys, if the low=xxx param is
-		// a string with at least one '_' then treat as a time and convert to a slot number.
+		// a string with at least one '_'  or ':' or 2 '.' then treat as a time and convert to a slot number.
                 // use hmi.lev0a or aia.lev0 for this time to fsn mapping if series starts with e.g. hmi.lev
-                if (index(lowstr, '_'))
+                char *tp, *index();
+                tp = index(lowstr,'.');
+                if (index(lowstr, '_') || index(lowstr,':' || (tp && index(tp+1,'.'))))
 			{
 			char fsn_seriesname[DRMS_MAXNAMELEN];
 			TIME tmplow = sscan_time((char *)lowstr);
-			if (strncmp(seriesname,"hmi.lev",7) == 0)
+			if (strncmp(seriesname,"hmi.",4) == 0)
 				strcpy(fsn_seriesname, "hmi.lev0a");
-			else if (strncmp(seriesname, "aia.lev", 7) == 0)
+			else if (strncmp(seriesname, "aia.", 4) == 0)
 				strcpy(fsn_seriesname, "aia.lev0");
 			else
 				strcpy(fsn_seriesname, seriesname);
@@ -547,21 +553,23 @@ int DoIt(void)
 		// Even if the params should be slot numbers or integer keys, if the high=xxx param is
 		// a string with at least one '_' then treat as a time and convert to a slot number.
                 // use hmi.lev0a or aia.lev0 for this time to fsn mapping if series starts with e.g. hmi.lev
-                if (index(highstr, '_'))
+                char *tp, *index();
+                tp = index(highstr,'.');
+                if (index(highstr, '_') || index(highstr,':' || (tp && index(tp+1,'.'))))
 			{
 			char fsn_seriesname[DRMS_MAXNAMELEN];
 			TIME tmphigh = sscan_time((char *)highstr);
-			if (strncmp(seriesname,"hmi.lev",7) == 0)
+			if (strncmp(seriesname,"hmi.",4) == 0)
 				strcpy(fsn_seriesname, "hmi.lev0a");
-			else if (strncmp(seriesname, "aia.lev", 7) == 0)
+			else if (strncmp(seriesname, "aia.", 4) == 0)
 				strcpy(fsn_seriesname, "aia.lev0");
 			else
 				strcpy(fsn_seriesname, seriesname);
 			if (slotted) // simple conversion
 				{
 				high = sscan_time((char *)highstr);
-				sprintf(in, "%s[? %s <= %f ?]", fsn_seriesname, pname, high);
-				rs = drms_open_nrecords (drms_env, in, 1, &status); // first record
+				sprintf(in, "%s[? %s > 0 AND %s <= %f ?]", fsn_seriesname, pname, pname, high);
+				rs = drms_open_nrecords (drms_env, in, -1, &status); // first record
 				if (status || !rs || rs->n == 0)
 					DIE("Series is empty");
 				rec = rs->records[0];
@@ -571,7 +579,7 @@ int DoIt(void)
 			else
 				{
 				high = sscan_time((char *)highstr);
-// fprintf(stderr,"doing high=timestring case for integer not slotted case\n");
+fprintf(stderr,"doing high=timestring case for integer not slotted case\n");
 				DRMS_Type_t tobstype;
                                 drms_getkey(template, "T_OBS", &tobstype, &status);
                                 if (status)
@@ -579,14 +587,15 @@ int DoIt(void)
                                 drms_getkey(template, "FSN", &tobstype, &status);
                                 if (status)
                                 	DIE("high given as time, series is not slotted and does not contain FSN, giveup.");
-				sprintf(in, "%s[? T_OBS <= %f ?]", fsn_seriesname, high);
-// fprintf(stderr,"query will be %s\n",in);
-				rs = drms_open_nrecords (drms_env, in, 1, &status); // first record
+				sprintf(in, "%s[? T_OBS > 0 AND T_OBS <= %f ?]", fsn_seriesname, high);
+
+fprintf(stderr,"query will be %s\n",in);
+				rs = drms_open_nrecords (drms_env, in, -1, &status); // first record
 				if (status || !rs || rs->n == 0)
 					DIE("Series is empty");
 				rec = rs->records[0];
 				high = drms_getkey_time(rec, "FSN", &status);
-// fprintf(stderr,"got %f\n",high);
+fprintf(stderr,"got %f\n",high);
 				drms_close_records(rs, DRMS_FREE_RECORD);
 				}
 			}
@@ -635,6 +644,11 @@ int DoIt(void)
 
   // NOW get the record coverage info
   nslots = highslot - lowslot + 1;
+  if (nslots <= 0)
+    {
+    fprintf(stderr,"Found lowslot=%lld, highslot=%lld\n", lowslot, highslot);
+    DIE("Error in low or high, found high < low");
+    }
   map = (char *)malloc(sizeof(char) * nslots);
   if (!map)
     {
@@ -668,6 +682,11 @@ int DoIt(void)
 		strcat(keylist, "sunum");
 		verifyindex = qualindex + 1;
 		}
+        if (verbose)
+          {
+          printf("# Starting query %s\n", query);
+          fflush(stdout);
+          }
 	data = drms_record_getvector(drms_env, query, keylist, DRMS_TYPE_LONGLONG, 0, &status);
 	if (!data || status)
 		{
