@@ -1,19 +1,24 @@
-#! /bin/bash
-# script shpould figure out what kind of data series it is and then use appropriate default scaling/ colortable. 
-# for stand alone mode :use as jsoc_export_as_images seriesname
-#  for eg.  jsoc_export_as_images hmi.Ic_45s_nrt[2010.11.07_TAI/45s] 
-# the output images are in the current directory. 
-# export mode:
-#jsoc_export_as_images ds=<record_set_query>  reqid=<export request id> expversion=<version> 
-#     method=<exp method> protocol=<output-file protocol> path=<output path> 
+#!/bin/bash
+export RGBDEF=/home/jsoc/cvs/Development/JSOC/proj/workflow/scripts/rgb.txt 
+#This script combines the AIA images part and hmi images part
+# script should figure out what kind of data series it is and then use appropriate default scaling/ colortable. 
+
+#jsoc_export_as_movie ds=<record_set_query>  reqid=<export request id> expversion=<version> method=<exp method> protocol=<output-file protocol> path=<output path> 
 #     { ffmt=<filename format> } { cparms=<compression string list> }
-# jsoc_exjsoc_export_as_images  ds  reqid expversion  export_ method  protocol  output_path ffmt cparms    
-#                                1    2       3             4            5           6        7      8    
+# jsoc_export_as_movie  ds  reqid expversion  export_ method  protocol  output_path ffmt cparms    
+#                        1    2       3             4            5           6        7      8    
+
+
 
 #make sure all arguments are there
 
 outpath=$6 
 cd $outpath
+#set env variables
+
+type=jpg    # default could also do jpg
+
+#make sure all arguments are there
   if  (( $# != 8 ))
   then                                                
   echo "$0 requires 8 arguments"
@@ -21,18 +26,41 @@ cd $outpath
   fi
 
     in=$1
-    nRec=`show_info -cq ds=$in`
+    hg=`echo $in | awk -F'[@]' /hg/'{print $2}'`
+ 
+ if [ $hg ]
+  then
+   nRec=`awk 'END{print NR}' $hg`
+   rm -rf *.$type ;rm -rf images;  rm -rf tmpImages/*.* ; rm -rf  *.mp4  
+   rm -rf data*
+ else    
+   nRec=`show_info -cq ds=$in`
+rm -rf index.txt ; rm -rf tmpImages/*.* ; rm -rf  *.mp4  ;rm -f images;
+    rm -rf *.$type;  rm -rf data* 
+  
+ fi
+ 
   if (( $nRec < 1 ))
  then 
      echo "No records exist"
       exit 2
   fi   
-# chk to see if old index file exists; if so clobber it and all other png files if they exist
-if [[ -e index.txt ]]
- then
-    rm -f index.txt
-fi
-rm -rf *.png
+
+#if 
+# [[ $type = [Jj][Pp][Gg] ]]
+#then
+#  outtype=`echo " '| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text #\"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95' " `
+#else
+#  outtype=$outpath    
+#fi 
+
+
+
+# chk to see if hg_patch -then need to append to existing index files else create new one after clobbering the old ones image files if they exist
+
+
+
+
 
 # Write into the new index.txt
 
@@ -47,39 +75,113 @@ echo "filefmt=$7" >>index.txt
 echo "cparams=$8" >>index.txt  
 echo "# DATA ">>index.txt
 
+#check to see if its an AIA or HMI data set.
+if [ $hg ]
+then
+  instr=`awk -F'[.]' 'NR==1{print substr($1, 1, 3)}' $hg `
+else
+   instr=`echo $in | awk -F'[.]' 'NR==1{print substr($1, 1, 3)}'`
+fi
+   
+if [[ $instr == [Hh][Mm][Ii] ]] 
+then    
+ {
+    #content=`show_info -q ds=$in n=1 key=CONTENT`
+    if [ $hg ]
+    then 
+        content=`echo $in | awk  -F'[.]' 'NR==1{print substr($2, 1, 2)}' $hg `
+        declare -i scale=1     # default -could read in as a parameter
+        c=u
+         
+     else
+        content=`echo $in | awk  -F'[.]' 'NR==1{print substr($2, 1, 2)}' `
+        declare -i scale=8  # default -could read in as a parameter
+        c=c
+     fi
+     
+       # hg=`echo $in | awk -F '[_]' '/hgpatch/{print $3}'`
+      # or use:  if [ !  "echo $in | awk -F '[_]' '/hgpatch/{print $3}' " ] 
 
-content=`show_info -q ds=$in n=1 key=CONTENT`
-declare -i scale=16                 # default -could read in as a parameter
-type=png                # default could also do jpg
-declare -i size=4096/$scale      
+
+       # default could also do jpg
+#declare -i size=4096/$scale      
+ min_fl_sz=10000      #min file size
 
 case "$content" in 
-  MAGNETOGRAM) 
-         render_image in=$in out=$outpath min=-800 max=800 -c pallette=/home/priya/Colormaps/Blue_grey_Red.lut outname=$content scale=$scale type=$type outid=time -c 
+  M_) 
+         render_image  in=$in  min=-1500 max=1500   pallette=/home/priya/Colormaps/grey.sao scaling=mag  outname=$content scale=$scale type=$type   out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$c} 
         
              ;;
-  CONTINUUM*)
-           render_image in=$in out=$outpath  min=20000 max=75000 -c pallette=/home/priya/Colormaps/heat.sao outname=$content outid=time scale=$scale type=$type -c
+  Ic)
+       seriesName=`echo $in | awk  -F'[.]' 'NR==1{print substr($2, 1, 13)}' $hg`
+           if [[ $seriesName = "Ic_noLimbDark" ]]
+           then 
+                  render_image in=$in   min=0.3	 max=1.4 scaling=minmaxgiven    pallette=/home/priya/Colormaps/heat.sao outname=$content  scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p}  -c  
+          else
+                  render_image in=$in  min=20000 max=75000    pallette=/home/priya/Colormaps/heat.sao outname=$content  scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$c}  
+          fi
              ;;
-  LINEDEPTH)
-          render_image in=$in out=$outpath  -c pallette=/home/priya/Colormaps/bb.sao outname=$content scale=$scale outid=time type=$type   -c
+  Ld)
+          render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$content scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$c}
             ;;
-  LINEWIDTH)
-         render_image in=$in out=$outpath  -c pallette=/home/priya/Colormaps/bb.sao outname=$content scale=$scale type=$type outid=time -c
+  Lw)
+         render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$content scale=$scale type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$c}   
              ;;     
- DOPPLERGRAM)
-         render_image in=$in out=$outpath -c pallette=/home/priya/Colormaps/bb.sao outname=$content scale=$scale type=$type outid=time  -c
+  V_)
+         render_image in=$in  pallette=/home/priya/Colormaps/bb.sao outname=$content scale=$scale type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$c} 
              ;;
         
-    *) 
+   *) 
        echo -e Out of case command
              ;;
 esac
 
+ }
+
+elif [[ $instr == [Aa][Ii][Aa] ]] 
+ then
+     { 
+        declare -i scale=16 
+
+        declare -i size=4096/$scale
+       for wvl in 171 211 94 335 4500 1600 131 1700 193 304
+          do 
+            in_new=$in[?WAVELNTH=$wvl?]
+            if [ $wvl == 171 ]
+               then 
+                 scaling=SQRT
+               else 
+                 scaling=LOG
+            fi 
+            render_image in=$in_new  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   pallette=/home/priya/Colormaps/AIA/aia_$wvl.lut outname=aia_$wvl  scale=$scale outid=time  type=$type scaling=$scaling  -w
+
+          done 
 
 
- show_info -iq ds=$in > data1
- ls  *.png > data2
- paste  data1   data2 >> index.txt
+}
 
- rm -f data1 ; rm -f data2
+else
+  echo "P=png/Mpeg cannot be made for this dataset"
+fi
+
+ls *.$type>images 
+#write into index.txt
+echo "# DATA ">>index.txt
+ 
+if [ $hg ]
+then
+ show_info -iq ds=$in n=1> data1
+else
+  show_info -iq ds=$in> data1
+fi
+ 
+paste  data1  images >> index.txt
+
+
+#rm -rf images
+
+
+ 
+ 
+ 
+ 
