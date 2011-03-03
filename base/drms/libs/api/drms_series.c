@@ -548,6 +548,7 @@ int drms_delete_series(DRMS_Env_t *env, const char *series, int cascade, int kee
   if (!env->session->db_direct && !env->selfstart)
   {
      fprintf(stderr, "Can't delete series if using drms_server. Please use a direct-connect modules, or a self-starting socket-connect module.\n");
+     goto bailout;
   }
 
   series_lower = strdup(series);
@@ -573,8 +574,8 @@ int drms_delete_series(DRMS_Env_t *env, const char *series, int cascade, int kee
   if ((repl = drms_series_isreplicated(env, series)) == 0)
   {
      session = env->session;
-     sprintf(query,"select seriesname from %s() where seriesname ~~* '%s'",
-             DRMS_MASTER_SERIES_TABLE, series);
+     sprintf(query,"select seriesname from %s() where lower(seriesname) = '%s'",
+             DRMS_MASTER_SERIES_TABLE, series_lower);
 #ifdef DEBUG
      printf("drms_delete_series: query = %s\n",query);
 #endif
@@ -598,7 +599,7 @@ int drms_delete_series(DRMS_Env_t *env, const char *series, int cascade, int kee
             * no SUs to delete because the series has no segments, then
             * we are essentially keeping SUs (and not passing a vector
             * of SUs to delete to SUMS). */
-           snprintf(query, sizeof(query), "SELECT segmentname FROM %s.%s where seriesname ILIKE '%s'", namespace, DRMS_MASTER_SEGMENT_TABLE, series);
+           snprintf(query, sizeof(query), "SELECT segmentname FROM %s.%s where lower(seriesname) = '%s'", namespace, DRMS_MASTER_SEGMENT_TABLE, series_lower);
 
            if ((suqres = drms_query_bin(session, query)) == NULL)
            {
@@ -688,7 +689,7 @@ int drms_delete_series(DRMS_Env_t *env, const char *series, int cascade, int kee
               sprintf(query,"drop table %s",series_lower);
               if (env->verbose)
               {
-                 fprintf(stdout, "drms_delete_seies(): %s\n", query);
+                 fprintf(stdout, "drms_delete_series(): %s\n", query);
               }
 
               if (drms_dms(session,NULL,query))
@@ -699,45 +700,45 @@ int drms_delete_series(DRMS_Env_t *env, const char *series, int cascade, int kee
            sprintf(query, "set search_path to %s", namespace);
            if (env->verbose)
            {
-              fprintf(stdout, "drms_delete_seies(): %s\n", query);
+              fprintf(stdout, "drms_delete_series(): %s\n", query);
            }
 
            if (drms_dms(session,NULL,query)) {
               fprintf(stderr, "Failed: %s\n", query);
               goto bailout;
            }
-           sprintf(query,"delete from %s where seriesname ~~* '%s'",
-                   DRMS_MASTER_LINK_TABLE,series);
+           sprintf(query,"delete from %s where lower(seriesname) = '%s'",
+                   DRMS_MASTER_LINK_TABLE,series_lower);
            if (env->verbose)
            {
-              fprintf(stdout, "drms_delete_seies(): %s\n", query);
+              fprintf(stdout, "drms_delete_series(): %s\n", query);
            }
 
            if (drms_dms(session,NULL,query))
              goto bailout;
-           sprintf(query,"delete from %s where seriesname ~~* '%s'",
-                   DRMS_MASTER_KEYWORD_TABLE, series);
+           sprintf(query,"delete from %s where lower(seriesname) = '%s'",
+                   DRMS_MASTER_KEYWORD_TABLE, series_lower);
            if (env->verbose)
            {
-              fprintf(stdout, "drms_delete_seies(): %s\n", query);
+              fprintf(stdout, "drms_delete_series(): %s\n", query);
            }
 
            if (drms_dms(session,NULL,query))
              goto bailout;
-           sprintf(query,"delete from %s where seriesname ~~* '%s'",
-                   DRMS_MASTER_SEGMENT_TABLE, series);
+           sprintf(query,"delete from %s where lower(seriesname) = '%s'",
+                   DRMS_MASTER_SEGMENT_TABLE, series_lower);
            if (env->verbose)
            {
-              fprintf(stdout, "drms_delete_seies(): %s\n", query);
+              fprintf(stdout, "drms_delete_series(): %s\n", query);
            }
 
            if (drms_dms(session,NULL,query))
              goto bailout;
-           sprintf(query,"delete from %s where seriesname ~~* '%s'",
-                   DRMS_MASTER_SERIES_TABLE,series);
+           sprintf(query,"delete from %s where lower(seriesname) = '%s'",
+                   DRMS_MASTER_SERIES_TABLE,series_lower);
            if (env->verbose)
            {
-              fprintf(stdout, "drms_delete_seies(): %s\n", query);
+              fprintf(stdout, "drms_delete_series(): %s\n", query);
            }
 
            if (drms_dms(session,NULL,query))

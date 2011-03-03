@@ -24,6 +24,7 @@
 #endif
 
 #define kDELSERFILE "thefile.txt"
+#define kDelSerChunk 10000
 #define kMaxSleep   (90)
 
 sem_t *gShutdownsem = NULL; /* synchronization among signal thread, main thread, 
@@ -1547,10 +1548,6 @@ int drms_server_dropseries(DRMS_Env_t *env, int sockfd)
 
 int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn, DRMS_Array_t *array) {
   int status = 0;
-  DRMS_SumRequest_t *request = NULL;
-  DRMS_SumRequest_t *reply = NULL;
-  XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
-  memset(request, 0, sizeof(DRMS_SumRequest_t));
   int drmsstatus = DRMS_SUCCESS;
 
   if (!env->sum_thread) {
@@ -1572,129 +1569,144 @@ int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn, DRMS_Array_t *arr
      /* Create a new SUDIR - fail if less than 1MB of space (this will never happen). */
      char *sudir = NULL;
      long long sunum = -1;
+     int lastrow = 0;
+     int irow = 0;
 
-     sunum = drms_su_alloc(env, 1048576, &sudir, NULL, &drmsstatus);
-
-     if (!drmsstatus && sunum >= 0 && sudir)
+     while (irow < array->axis[1])
      {
-        /* make a file that has nothing but SUNUMs */
-        char fbuf[PATH_MAX];
-        snprintf(fbuf, sizeof(fbuf), "%s/%s", sudir, kDELSERFILE);
-        FILE *fptr = fopen(fbuf, "w");
+        /* chunk loop */
+        sunum = drms_su_alloc(env, 1048576, &sudir, NULL, &drmsstatus);
 
-        if (fptr)
+        if (!drmsstatus && sunum >= 0 && sudir)
         {
-           /* Insert SUNUMs in the table now - iterate through DRMS_Array_t */
-           int irow;
-           long long *data = (long long *)array->data;
-           char obuf[64];
+           /* make a file that has nothing but SUNUMs */
+           char fbuf[PATH_MAX];
+           snprintf(fbuf, sizeof(fbuf), "%s/%s", sudir, kDELSERFILE);
+           FILE *fptr = fopen(fbuf, "w");
 
-           /* only one column*/
-           for (irow = 0; irow < array->axis[1]; irow++)
+           if (fptr)
            {
-              snprintf(obuf, sizeof(obuf), "%lld\n", data[irow]);
-              fwrite(obuf, strlen(obuf), 1, fptr);
-           }
+              /* Insert SUNUMs in the table now - iterate through DRMS_Array_t */
+              long long *data = (long long *)array->data;
+              char obuf[64];
+
+              lastrow += kDelSerChunk < array->axis[1] - lastrow ? kDelSerChunk : array->axis[1] - lastrow;
            
-           if (!fclose(fptr))
-           {
-              /* Now it is okay for SUMS to take over */
-              /* Use the request's comment field to hold array of sunums since
-               * the sunum field has a fixed number of sunums. */
-
-              /* Call SUM_put() to close the SU and have SUMS update its dbase tables */
-              DRMS_SumRequest_t *putreq = NULL;
-              DRMS_SumRequest_t *putrep = NULL;
-
-              XASSERT(putreq = malloc(sizeof(DRMS_SumRequest_t)));
-              memset(putreq, 0, sizeof(DRMS_SumRequest_t));
-              putreq->opcode = DRMS_SUMPUT;
-              putreq->dontwait = 0;
-              putreq->reqcnt = 1;
-              putreq->dsname = "deleteseriestemp";
-              putreq->group = 0;
-              putreq->mode = TEMP + TOUCH;
-              putreq->tdays = 2;
-              putreq->sunum[0] = sunum;
-              putreq->sudir[0] = sudir;
-              putreq->comment = NULL;
-
-              /* must have sum_thread running already */
-              XASSERT(env->sum_thread);
-
-              /* Submit request to sums server thread. */
-              tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)putreq);
-
-              /* Wait for reply. FIXME: add timeout. */
-              tqueueDel(env->sum_outbox, (long) pthread_self(), (char **)&putrep);
-
-              if (putrep->opcode != 0) 
+              /* only one column*/
+              for (; irow < lastrow; irow++)
               {
-                 fprintf(stderr, "ERROR in drms_server_dropseries_su(): SUM PUT failed with "
-                         "error code %d.\n", putrep->opcode);
-                 status = DRMS_ERROR_SUMPUT;
+                 snprintf(obuf, sizeof(obuf), "%lld\n", data[irow]);
+                 fwrite(obuf, strlen(obuf), 1, fptr);
               }
-
-              if (putrep)
+           
+              if (!fclose(fptr))
               {
-                 free(putrep);
-              }
+                 /* Now it is okay for SUMS to take over */
+                 /* Use the request's comment field to hold array of sunums since
+                  * the sunum field has a fixed number of sunums. */
 
-              if (!status)
-              {
-                 char sunumstr[64];
-                 char commentbuf[DRMS_MAXPATHLEN * 2];
+                 /* Call SUM_put() to close the SU and have SUMS update its dbase tables */
+                 DRMS_SumRequest_t *putreq = NULL;
+                 DRMS_SumRequest_t *putrep = NULL;
 
-                 snprintf(sunumstr, sizeof(sunumstr), "%lld", sunum);
-                 request->opcode = DRMS_SUMDELETESERIES;
-                 /* provide path to data file and series name to SUMS */
-                 snprintf(commentbuf, sizeof(commentbuf), "%s,%s", fbuf, tn);
-                 request->comment = commentbuf; 
- 
-                 tqueueAdd(env->sum_inbox, (long)pthread_self(), (char *)request);
-                 tqueueDel(env->sum_outbox, (long)pthread_self(), (char **)&reply);
+                 XASSERT(putreq = malloc(sizeof(DRMS_SumRequest_t)));
+                 memset(putreq, 0, sizeof(DRMS_SumRequest_t));
+                 putreq->opcode = DRMS_SUMPUT;
+                 putreq->dontwait = 0;
+                 putreq->reqcnt = 1;
+                 putreq->dsname = "deleteseriestemp";
+                 putreq->group = 0;
+                 putreq->mode = TEMP + TOUCH;
+                 putreq->tdays = 2;
+                 putreq->sunum[0] = sunum;
+                 putreq->sudir[0] = sudir;
+                 putreq->comment = NULL;
 
-                 if (reply->opcode) 
+                 /* must have sum_thread running already */
+                 XASSERT(env->sum_thread);
+
+                 /* Submit request to sums server thread. */
+                 tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)putreq);
+
+                 /* Wait for reply. FIXME: add timeout. */
+                 tqueueDel(env->sum_outbox, (long) pthread_self(), (char **)&putrep);
+
+                 if (putrep->opcode != 0) 
                  {
-                    fprintf(stderr, 
-                            "SUM_delete_series() returned with error code '%d'.\n", 
-                            reply->opcode);
-                    status = DRMS_ERROR_SUMDELETESERIES;
+                    fprintf(stderr, "ERROR in drms_server_dropseries_su(): SUM PUT failed with "
+                            "error code %d.\n", putrep->opcode);
+                    status = DRMS_ERROR_SUMPUT;
                  }
+
+                 if (putrep)
+                 {
+                    free(putrep);
+                 }
+
+                 if (!status)
+                 {
+                    char sunumstr[64];
+                    char commentbuf[DRMS_MAXPATHLEN * 2];
+                    DRMS_SumRequest_t *request = NULL;
+                    DRMS_SumRequest_t *reply = NULL;
+
+                    XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+                    memset(request, 0, sizeof(DRMS_SumRequest_t));
+
+                    snprintf(sunumstr, sizeof(sunumstr), "%lld", sunum);
+                    request->opcode = DRMS_SUMDELETESERIES;
+                    /* provide path to data file and series name to SUMS */
+                    snprintf(commentbuf, sizeof(commentbuf), "%s,%s", fbuf, tn);
+                    request->comment = commentbuf; 
+ 
+                    tqueueAdd(env->sum_inbox, (long)pthread_self(), (char *)request);
+                    tqueueDel(env->sum_outbox, (long)pthread_self(), (char **)&reply);
+
+                    /* SUMS thread has freed request. */
+
+                    if (reply->opcode) 
+                    {
+                       fprintf(stderr, 
+                               "SUM_delete_series() returned with error code '%d'.\n", 
+                               reply->opcode);
+                       status = DRMS_ERROR_SUMDELETESERIES;
+                    }
+
+                    /* No need to deep-free reply since SUMS shouldn't have malloc'd any fields. */
+                    if (reply)
+                    {
+                       free(reply);
+                    }
+                 }
+              }
+              else
+              {
+                 /* couldn't close file */
+                 fprintf(stderr, "Couldn't close file '%s'.\n", fbuf);
+                 status = DRMS_ERROR_FILECREATE;
               }
            }
            else
            {
-              /* couldn't close file */
-              fprintf(stderr, "Couldn't close file '%s'.\n", fbuf);
+              /* couldn't open file */
+              fprintf(stderr, "Couldn't open file '%s'.\n", fbuf);
               status = DRMS_ERROR_FILECREATE;
            }
+
+           free(sudir);
         }
         else
         {
-           /* couldn't open file */
-           fprintf(stderr, "Couldn't open file '%s'.\n", fbuf);
-           status = DRMS_ERROR_FILECREATE;
+           fprintf(stderr, "SUMALLOC failed in drms_server_dropseries_su().\n");
+           status = DRMS_ERROR_SUMALLOC;
         }
 
-        free(sudir);
-     }
-     else
-     {
-        fprintf(stderr, "SUMALLOC failed in drms_server_dropseries_su().\n");
-        status = DRMS_ERROR_SUMALLOC;
-     }
+     } /* end chunk loop */
   }
   else
   {
      status = DRMS_ERROR_INVALIDDATA;
      fprintf(stderr, "Unexpected array passed to drms_server_dropseries_su().\n");
-  }
-
-  /* No need to deep-free reply since SUMS shouldn't have malloc'd any fields. */
-  if (reply)
-  {
-     free(reply);
   }
   
   return status;
@@ -2469,17 +2481,54 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
              fpath = comment;
              series = sep + 1;
 
-             reply->opcode = SUM_delete_series(fpath, series, printf);
+             nosums = 0;
+             tryagain = 1;
+             sleepiness = 1;
 
-             if (reply->opcode != 0)
+             while (tryagain)
              {
-                /* Don't retry when this API fails - even if it is caused by a SUMS crash, 
-                 * just notify the caller that this failed. delete_series should do 
-                 * a better job handling this. Current, if this SUMS call fails, 
-                 * all the SUs not deleted will become orphaned, and if they have
-                 * long retention times, they will never be freed. */
-                fprintf(stderr,"SUM thread: SUM_delete_series call failed with stat=%d.\n",
-                        reply->opcode);
+                tryagain = 0;
+                sumscrashed = 0;
+
+                if (!sum)
+                {
+                   /* SUMS crashed - open a new SUMS. */
+                   sum = SUM_open(NULL, NULL, printkerr);
+                   if (!sum)
+                   {
+                      fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
+                      tryagain = 1;
+                      sleep(sleepiness);
+                      GettingSleepier(&sleepiness);
+                      continue;
+                   }
+                   else
+                   {
+                      *suminout = sum;
+                   }
+                }
+
+                reply->opcode = SUM_delete_series(fpath, series, printf);
+
+                if (reply->opcode != 0)
+                {
+                   sumscrashed = (reply->opcode == 4);
+                   if (sumscrashed)
+                   {
+                      sum = NULL;
+                      fprintf(stderr, "SUMS no longer there; trying again in %d seconds.\n", sleepiness);
+                      tryagain = 1;
+                      sleep(sleepiness);
+                      GettingSleepier(&sleepiness);
+                   }
+                   else
+                   {
+                      fprintf(stderr,"SUM thread: SUM_delete_series call failed with stat=%d.\n",
+                              reply->opcode);
+                      nosums = 1;
+                      break;
+                   }
+                }
              }
           }
 
