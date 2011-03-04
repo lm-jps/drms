@@ -1642,12 +1642,12 @@ int GetColumnNames(DRMS_Env_t *env, const char *oid, char **colnames)
             {
                if (irow)
                {
-                  base_strcatalloc(list, ",", &strsize);
+                  list = base_strcatalloc(list, ",", &strsize);
                }
 
                /* row irow + 1, column 1 */
                db_binary_field_getstr(qres, irow, 0, sizeof(colname), colname);
-               base_strcatalloc(list, colname, &strsize);
+               list = base_strcatalloc(list, colname, &strsize);
             }
 
             *colnames = list;
