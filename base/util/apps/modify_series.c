@@ -381,12 +381,12 @@ int DoIt(void) {
 
                  if (irow != 0)
                  {
-                    base_strcatalloc(indexst, ",", &bufsize);
+                    indexst = base_strcatalloc(indexst, ",", &bufsize);
                  }
 
-                 base_strcatalloc(indexst, namespace, &bufsize);
-                 base_strcatalloc(indexst, ".", &bufsize);
-                 base_strcatalloc(indexst, indexname, &bufsize);
+                 indexst = base_strcatalloc(indexst, namespace, &bufsize);
+                 indexst = base_strcatalloc(indexst, ".", &bufsize);
+                 indexst = base_strcatalloc(indexst, indexname, &bufsize);
               }
            }
 
@@ -460,16 +460,16 @@ int DoIt(void) {
         char *stmt2 = malloc(DRMS_MAXQUERYLEN);
         bufsize = DRMS_MAXQUERYLEN;
         memset (stmt2, 0, bufsize);
-        base_strcatalloc(stmt2, "insert into ", &bufsize);
-        base_strcatalloc(stmt2, series, &bufsize);
-        base_strcatalloc(stmt2, " (", &bufsize);
-        base_strcatalloc(stmt2, field_list, &bufsize);
-        base_strcatalloc(stmt2, ") ", &bufsize);
-        base_strcatalloc(stmt2, "select ", &bufsize);
-        base_strcatalloc(stmt2, field_list, &bufsize);
-        base_strcatalloc(stmt2, " from ", &bufsize);
-        base_strcatalloc(stmt2, series, &bufsize);
-        base_strcatalloc(stmt2, "_tmp", &bufsize);
+        stmt2 = base_strcatalloc(stmt2, "insert into ", &bufsize);
+        stmt2 = base_strcatalloc(stmt2, series, &bufsize);
+        stmt2 = base_strcatalloc(stmt2, " (", &bufsize);
+        stmt2 = base_strcatalloc(stmt2, field_list, &bufsize);
+        stmt2 = base_strcatalloc(stmt2, ") ", &bufsize);
+        stmt2 = base_strcatalloc(stmt2, "select ", &bufsize);
+        stmt2 = base_strcatalloc(stmt2, field_list, &bufsize);
+        stmt2 = base_strcatalloc(stmt2, " from ", &bufsize);
+        stmt2 = base_strcatalloc(stmt2, series, &bufsize);
+        stmt2 = base_strcatalloc(stmt2, "_tmp", &bufsize);
 
         if(drms_dms(drms_env->session, NULL, stmt2)) {
            fprintf(stderr, "Failed: %s\n", stmt2);
