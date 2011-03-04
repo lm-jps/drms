@@ -3861,6 +3861,16 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
   XASSERT(env);
   XASSERT(seriesname);
 
+  char *lcseries = strdup(seriesname);
+
+  if (!lcseries)
+  {
+     stat = DRMS_ERROR_OUTOFMEMORY;
+     goto bailout;
+  }
+
+  strtolower(lcseries);
+
  /* This function has parts that are conditional on the series version being 
   * greater than or equal to version 2.0. */
   DRMS_SeriesVersion_t vers2_0 = {"2.0", ""};
@@ -3919,7 +3929,11 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
               db_free_text_result(tqres);
               tqres = NULL;
 
-              snprintf(qry, sizeof(qry), "select seriesname from %s.drms_series where seriesname ILIKE '%s'", nspace, seriesname);
+              /* There is no template->seriesinfo->seriesname at this point - must use lc of seriesname 
+               * passed into this function. */
+
+
+              snprintf(qry, sizeof(qry), "select seriesname from %s.drms_series where lower(seriesname) = '%s'", nspace, lcseries);
               free(nspace);
 
               if ((tqres = drms_query_txt(env->session, qry)) != NULL && tqres->num_rows == 1)
@@ -3946,6 +3960,7 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
               *status = DRMS_ERROR_UNKNOWNSERIES;
            }
 
+           free(lcseries);
            return NULL;
         }
      }
@@ -3976,10 +3991,15 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
     XASSERT(template->seriesinfo = calloc(1, sizeof(DRMS_SeriesInfo_t)));
     /* Populate series info part */
     char *namespace = ns(seriesname);
+
+    /* There is no template->seriesinfo->seriesname at this point - must use lc of seriesname 
+     * passed into this function. */
+
+
     sprintf(query, "select seriesname, description, author, owner, "
 	    "unitsize, archive, retention, tapegroup, primary_idx, dbidx, version "
-	    "from %s.%s where seriesname ~~* '%s'", 
-	    namespace, DRMS_MASTER_SERIES_TABLE, seriesname);
+	    "from %s.%s where lower(seriesname) = '%s'", 
+	    namespace, DRMS_MASTER_SERIES_TABLE, lcseries);
     free(namespace);
 #ifdef DEBUG
     printf("query string '%s'\n",query);
@@ -4224,12 +4244,18 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
 
   if (status)
     *status = DRMS_SUCCESS;
+  free(lcseries);
   return template;
 
  bailout:
   if (colnames)
   {
      free(colnames);
+  }
+
+  if (lcseries)
+  {
+     free(lcseries);
   }
 
   if (status)
@@ -7502,19 +7528,17 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
    DRMS_RecordSet_t *rs = NULL;
    static long long guid = 1;
    int stat = DRMS_SUCCESS;
-   char cursorquery[DRMS_MAXBIGQUERYLEN];
+   char *cursorquery = NULL;
    char cursorname[DRMS_MAXCURSORNAMELEN];
    char *seriesname = NULL;
    char *pQuery = NULL;
-   char cursorselect[DRMS_MAXQUERYLEN];
+   char *cursorselect = NULL;
    char *pLimit = NULL;
    int iset;
+   int querylen;
 
    if (rsquery)
    {
-      /* XXX This needs to make use of a cursor so that reading records can be chunked. 
-       * For now, call drms_open_records() - in other words, all records are fetched . */
-
       /* querylist has, for each queryset, the SQL query to select all records
        * in that set (a queryset is a set of recordsets - they are comma-separated) */
       LinkedList_t *querylist;
@@ -7551,42 +7575,66 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
 	 {
             pQuery = *((char **)ln->data);
 
-            /* pQuery has a limit statement in it - remove that else FETCH could 
-             * operate on a subset of the total number of records. */
-            snprintf(cursorselect, sizeof(cursorselect), "%s", pQuery);
-            if ((pLimit = strstr(cursorselect, "limit")) != NULL)
+            seriesname = drms_recordset_acquireseriesname(rs->ss_queries[iset]);
+
+            if (seriesname)
             {
-               *pLimit = '\0';
-            }
-
-	    seriesname = drms_recordset_acquireseriesname(rs->ss_queries[iset]);
-
-	    if (seriesname)
-	    {
                char *dot = strchr(seriesname, '.');
                if (dot)
                {
                   *dot = '_';
                }
-	       snprintf(cursorname, sizeof(cursorname), "%s_CURSOR%lld", seriesname, guid++);
+               snprintf(cursorname, sizeof(cursorname), "%s_CURSOR%lld", seriesname, guid++);
 
-	       snprintf(cursorquery, 
-			sizeof(cursorquery), 
-			"DECLARE %s NO SCROLL CURSOR FOR (%s) FOR READ ONLY", 
-			cursorname, 
-			cursorselect);
+               /* pQuery has a limit statement in it - remove that else FETCH could 
+                * operate on a subset of the total number of records. */
+               cursorselect = strdup(pQuery);
 
-               /* Now, create cursor in psql */
-               if (drms_dms(env->session, NULL, cursorquery))
+               if (!cursorselect)
                {
-                  stat = DRMS_ERROR_QUERYFAILED;
+                  stat = DRMS_ERROR_OUTOFMEMORY;
                }
                else
                {
-                  rs->cursor->names[iset] = strdup(cursorname);
+                  if ((pLimit = strstr(cursorselect, "limit")) != NULL)
+                  {
+                     *pLimit = '\0';
+                  }
+
+                  querylen = sizeof(char) * (strlen(cursorname) + strlen(cursorselect) + 128);
+                  cursorquery = malloc(querylen);
+
+                  if (!cursorquery)
+                  {
+                     stat = DRMS_ERROR_OUTOFMEMORY;
+                  }
+                  else
+                  {
+                     snprintf(cursorquery, 
+                              querylen, 
+                              "DECLARE %s NO SCROLL CURSOR FOR (%s) FOR READ ONLY", 
+                              cursorname, 
+                              cursorselect);
+
+                     /* Now, create cursor in psql */
+                     if (drms_dms(env->session, NULL, cursorquery))
+                     {
+                        stat = DRMS_ERROR_QUERYFAILED;
+                     }
+                     else
+                     {
+                        rs->cursor->names[iset] = strdup(cursorname);
+                     }
+
+                     free(cursorquery);
+                     cursorquery = NULL;
+                  }
+
+                  free(cursorselect);
+                  cursorselect = NULL;
                }
 
-	       free(seriesname);
+               free(seriesname);
 
                if (stat != DRMS_SUCCESS)
                {
@@ -7595,8 +7643,8 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
 
                XASSERT(allvers[iset] != '\0');
                rs->cursor->allvers[iset] = (allvers[iset] == 'y');
-	    }
-
+            }
+            
             iset++;
 	 } /* while */
 
