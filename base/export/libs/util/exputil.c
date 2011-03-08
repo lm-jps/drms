@@ -187,9 +187,9 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *seg,
               }
             else // No user provided layout string
             {
-               tmpstr = drms_getkey_string(seg->record,keyname,NULL);
-               snprintf(tmpstr2, sizeof(tmpstr2), "%s", tmpstr);
-               free(tmpstr);
+               DRMS_Keyword_t *key = drms_keyword_lookup(seg->record, keyname, 1);
+
+               drms_keyword_snprintfval(key, tmpstr2, sizeof(tmpstr2));
                val = tmpstr2;
             }
 
