@@ -56,7 +56,8 @@ typedef enum
    kCrtabErr_DBQuery,
    kCrtabErr_Argument,
    kCrtabErr_FileIO,
-   kCrtabErr_UnknownSeries
+   kCrtabErr_UnknownSeries,
+   kCrtabErr_OutOfMemory
 } CrtabError_t;
 
 #define kSeriesin      "in"
@@ -277,18 +278,29 @@ static CrtabError_t GetRows(DRMS_Env_t *env,
    char query[DRMS_MAXQUERYLEN];
    DB_Binary_Result_t *qres = NULL;
    DRMS_Session_t *session = env->session;
+   char *lcseries = strdup(series);
 
-   snprintf(query, sizeof(query), "SELECT %s FROM %s.%s WHERE seriesname ILIKE '%s'", colnames, ns, table, series);
-   
-   if ((qres = drms_query_bin(session, query)) == NULL)
+   if (lcseries)
    {
-      fprintf(stderr, "Invalid database query: '%s'\n", query);
-      err = kCrtabErr_DBQuery;
+      strtolower(lcseries);
+      snprintf(query, sizeof(query), "SELECT %s FROM %s.%s WHERE lower(seriesname) = '%s'", colnames, ns, table, lcseries);
+   
+      if ((qres = drms_query_bin(session, query)) == NULL)
+      {
+         fprintf(stderr, "Invalid database query: '%s'\n", query);
+         err = kCrtabErr_DBQuery;
+      }
+      else
+      {
+         /* series table might be emtpy */
+         *res = qres;
+      }
+
+      free(lcseries);
    }
    else
    {
-      /* series table might be emtpy */
-      *res = qres;
+      err = kCrtabErr_OutOfMemory;
    }
 
    return err;
@@ -693,47 +705,70 @@ static int CreateSQL(FILE *fptr, DRMS_Env_t *env,
          char where[512];
          char whereout[512];
 
-         snprintf(where, sizeof(where), "seriesname ILIKE '%s'", seriesin);
-         snprintf(whereout, sizeof(whereout), "seriesname ILIKE '%s'", seriesout);
-         err = CreateSQLInsertIntoTable(fptr, env, seriesin, seriesout, ns, DRMS_MASTER_SERIES_TABLE);
+         char *lcseriesin = strdup(seriesin);
+         char *lcseriesout = strdup(seriesout);
+
+         if (lcseriesin && lcseriesout)
+         {
+            strtolower(lcseriesin);
+            strtolower(lcseriesout);
+
+            snprintf(where, sizeof(where), "lower(seriesname) = '%s'", lcseriesin);
+            snprintf(whereout, sizeof(whereout), "lower(seriesname) = '%s'", lcseriesout);
+            err = CreateSQLInsertIntoTable(fptr, env, seriesin, seriesout, ns, DRMS_MASTER_SERIES_TABLE);
          
-         /* override archive, retention, and tapegroup if present */
-         if (!err)
-         {
-            if (archive)
+            /* override archive, retention, and tapegroup if present */
+            if (!err)
             {
-               err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "archive", archive, where, whereout);
-            }
-         }
-
-         if (!err)
-         {
-            if (retention)
-            {
-               err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "retention", retention, where, whereout);
-            }
-         }
-
-         if (!err)
-         {
-            if (tapegroup)
-            {
-               err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "tapegroup", tapegroup, where, whereout);
-            }
-         }
-
-         if (!err)
-         {
-            if (owner)
-            {
-               char *buf = malloc(strlen(owner) + 3);
-               if (buf)
+               if (archive)
                {
-                  snprintf(buf, strlen(owner) + 3, "\'%s\'", owner);
-                  err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "owner", buf, where, whereout);
-                  free(buf);
+                  err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "archive", archive, where, whereout);
                }
             }
+
+            if (!err)
+            {
+               if (retention)
+               {
+                  err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "retention", retention, where, whereout);
+               }
+            }
+
+            if (!err)
+            {
+               if (tapegroup)
+               {
+                  err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "tapegroup", tapegroup, where, whereout);
+               }
+            }
+
+            if (!err)
+            {
+               if (owner)
+               {
+                  char *buf = malloc(strlen(owner) + 3);
+                  if (buf)
+                  {
+                     snprintf(buf, strlen(owner) + 3, "\'%s\'", owner);
+                     err = CreateSQLUpdateTable(fptr, env, ns, DRMS_MASTER_SERIES_TABLE, "owner", buf, where, whereout);
+                     free(buf);
+                  }
+               }
+            }
+
+            if (lcseriesin)
+            {
+               free(lcseriesin);
+            }
+
+            if (lcseriesout)
+            {
+               free(lcseriesout);
+            }
+         }
+         else
+         {
+            err = kCrtabErr_OutOfMemory;
          }
       }
 

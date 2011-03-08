@@ -411,13 +411,29 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
    /* loop through keywords in colnames */
    pch = colnames;
    char *namespace = ns(template->seriesinfo->seriesname);
+   char *lcseries = strdup(template->seriesinfo->seriesname);
    rank = 0;
+
+   if (!lcseries)
+   {
+      status = DRMS_ERROR_OUTOFMEMORY;
+      goto bailout;
+   }
+
+   strtolower(lcseries);
 
    /* Fetch all keyword rows relevant to this series - must create a keyword struct for each */
    sprintf(query, "select keywordname, islink, linkname, targetkeyw, type, "
            "defaultval, format, unit, isconstant, persegment, "
-           "description from %s.%s where seriesname ~~* '%s'",
-           namespace, DRMS_MASTER_KEYWORD_TABLE, template->seriesinfo->seriesname);
+           "description from %s.%s where lower(seriesname) = '%s'",
+           namespace, DRMS_MASTER_KEYWORD_TABLE, lcseries);
+
+   if (env->verbose)
+   {
+      fprintf(stdout, "Template Keyword Query: %s\n", query);
+   }
+
+   free(lcseries);
 
    if ((qres = drms_query_bin(env->session, query)) == NULL)
    {
