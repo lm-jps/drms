@@ -305,9 +305,18 @@ static int WriteKeyValues(DRMS_Record_t *rec, int nsegments, HContainer_t *keyli
             /* Resolve conflicts and write keyword value. */
             if (!skipkey)
             {
+               char *lckeyname = strdup(kbuf);
+
+               strtolower(lckeyname);
                /* Check to see if keyword in output series is per-segment or not (if the series
                 * has a per-segment keyword, then you must specify an index in the keyword name). */
-               snprintf(query, sizeof(query), "SELECT * FROM %s.drms_keyword WHERE keywordname ILIKE '%s' AND persegment & 1 = 1", ns, kbuf);
+               snprintf(query, sizeof(query), "SELECT * FROM %s.drms_keyword WHERE lower(keywordname) = '%s' AND persegment & 1 = 1", ns, lckeyname);
+               free(lckeyname);
+
+               if (rec->env->verbose)
+               {
+                  fprintf(stdout , "Per-segment Keyword-Check Query: %s\n", query);
+               }
 
                if ((qres = drms_query_txt(rec->env->session, query)) != NULL && qres->num_rows != 0) 
                {

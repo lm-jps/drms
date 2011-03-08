@@ -510,9 +510,20 @@ int drms_template_links(DRMS_Record_t *template)
   
    /* Get link definitions from database and add to template. */
    char *namespace = ns(template->seriesinfo->seriesname);
+   char *lcseries = strdup(template->seriesinfo->seriesname);
+
+   if (!lcseries)
+   {
+      status = DRMS_ERROR_OUTOFMEMORY;
+      goto bailout;
+   }
+
+   strtolower(lcseries);
+
    sprintf(query, "select linkname, target_seriesname, type, description "
-           "from %s.%s where seriesname ~~* '%s' order by linkname", 
-           namespace, DRMS_MASTER_LINK_TABLE, template->seriesinfo->seriesname);
+           "from %s.%s where lower(seriesname) = '%s' order by linkname", 
+           namespace, DRMS_MASTER_LINK_TABLE, lcseries);
+   free(lcseries);
    free(namespace);
    if ((qres = drms_query_bin(env->session, query)) == NULL)
    {

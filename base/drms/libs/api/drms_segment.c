@@ -93,10 +93,34 @@ int drms_segment_set_const(DRMS_Segment_t *seg) {
   // write back to drms_segment table
   char stmt[DRMS_MAXQUERYLEN];
   char *namespace = ns(rec->seriesinfo->seriesname);
+  char *lcseries = strdup(rec->seriesinfo->seriesname);
+
+  if (!lcseries)
+  {
+     free(namespace);
+     return DRMS_ERROR_OUTOFMEMORY;
+  }
+
+  char *lcsegname = strdup(seg->info->name);
+
+  if (!lcsegname)
+  {
+     free(lcseries);
+     free(namespace);
+     return DRMS_ERROR_OUTOFMEMORY;
+  }
+
+  strtolower(lcseries);
+  strtolower(lcsegname);
+
   sprintf(stmt, "UPDATE %s." DRMS_MASTER_SEGMENT_TABLE
-	  " SET cseg_recnum = %lld WHERE seriesname = '%s' and segmentname = '%s'", 
-	  namespace, rec->recnum, rec->seriesinfo->seriesname, seg->info->name);
+	  " SET cseg_recnum = %lld WHERE lower(seriesname) = '%s' AND lower(segmentname) = '%s'", 
+	  namespace, rec->recnum, lcseries, lcsegname);
+
+  free(lcsegname);
+  free(lcseries);
   free(namespace);
+
   if(drms_dms(rec->env->session, NULL, stmt)) {
     fprintf(stderr, "Failed to update drms_segment table for constant segment\n");
     return DRMS_ERROR_QUERYFAILED;
@@ -218,6 +242,15 @@ int drms_template_segments(DRMS_Record_t *template)
   char buf[1024], query[DRMS_MAXQUERYLEN], *p, *q;
   DRMS_Segment_t *seg;
   DB_Binary_Result_t *qres;
+  char *lcseries = strdup(template->seriesinfo->seriesname);
+
+  if (!lcseries)
+  {
+     status = DRMS_ERROR_OUTOFMEMORY;
+     goto bailout;
+  }
+
+  strtolower(lcseries);
 
   env = template->env;
 
@@ -231,9 +264,16 @@ int drms_template_segments(DRMS_Record_t *template)
   sprintf(query, "select segmentname, segnum, scope, type, "
 	  "naxis, axis, unit, protocol, description, "
 	  "islink, linkname, targetseg, cseg_recnum from %s.%s where "
-	  "seriesname ~~* '%s' order by segnum", 
-	  namespace, DRMS_MASTER_SEGMENT_TABLE, template->seriesinfo->seriesname);
+	  "lower(seriesname) = '%s' order by segnum", 
+	  namespace, DRMS_MASTER_SEGMENT_TABLE, lcseries);
+  free(lcseries);
   free(namespace);
+
+  if (env->verbose)
+  {
+     fprintf(stdout, "Template Segment Query: %s\n", query);
+  }
+
   if ((qres = drms_query_bin(env->session, query)) == NULL)
     return DRMS_ERROR_QUERYFAILED; /* SQL error. */
 
@@ -1946,12 +1986,12 @@ int drms_segment_writeslice(DRMS_Segment_t *seg, DRMS_Array_t *arr, int *start, 
            if (i == 0)
            {
               snprintf(strbuf, sizeof(strbuf), "%d", arr->axis[i]);
-              base_strcatalloc(tilestr, strbuf, &sizestr);
+              tilestr = base_strcatalloc(tilestr, strbuf, &sizestr);
            }
            else
            {
               snprintf(strbuf, sizeof(strbuf), ",%d", arr->axis[i]);
-              base_strcatalloc(tilestr, strbuf, &sizestr);
+              tilestr = base_strcatalloc(tilestr, strbuf, &sizestr);
            }
         }
 
