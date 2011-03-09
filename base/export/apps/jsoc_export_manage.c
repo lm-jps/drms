@@ -282,8 +282,10 @@ static int GenHgPatchCmd(FILE *fptr,
    {
       for (p=hgparams; *p; p++)
         if (*p == ',') *p = ' ';
-
-      fprintf(fptr, "/home/phil/cvs/JSOC/bin/linux_x86_64/hg_patch JSOC_DBHOST=%s %s in='%s' n=%d requestid='%s' log=hg_patch.log %s\n",
+      
+      /* Phil says it is okay to remove the hard-coding of his home dir */
+      //      fprintf(fptr, "/home/phil/cvs/JSOC/bin/linux_x86_64/hg_patch JSOC_DBHOST=%s %s in='%s' n=%d requestid='%s' log=hg_patch.log %s\n",
+      fprintf(fptr, "hg_patch JSOC_DBHOST=%s %s in='%s' n=%d requestid='%s' log=hg_patch.log %s\n",
               dbmainhost, hgparams, dataset, RecordLimit, requestid,  dbids);
       GenErrChkCmd(fptr);
    }
