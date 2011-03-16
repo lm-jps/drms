@@ -1,5 +1,7 @@
 #!/bin/bash
-export RGBDEF=/home/jsoc/cvs/Development/JSOC/proj/workflow/scripts/rgb.txt 
+export RGBDEF=/home/jsoc/cvs/Development/JSOC/proj/workflow/scripts/rgb.txt
+export JSOC_DBHOST=hmidb
+
 #This script combines the AIA images part and hmi images part
 # script should figure out what kind of data series it is and then use appropriate default scaling/ colortable. 
 
