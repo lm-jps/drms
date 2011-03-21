@@ -559,7 +559,8 @@ int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
 }
 
 /* See if sum_svc is still alive. Return 0 if ok, 1 on timeout,
- * 4 on error (like unable to connect, i.e. the sum_svc is gone).
+ * 4 on error (like unable to connect, i.e. the sum_svc is gone),
+ * 5 tape_svc is gone (new 03Mar2011).
 */
 int SUM_nop(SUM_t *sum, int (*history)(const char *fmt, ...))
 {
@@ -582,6 +583,9 @@ int SUM_nop(SUM_t *sum, int (*history)(const char *fmt, ...))
   status = clnt_call(sum->cl, NOPDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
 			(xdrproc_t)xdr_void, (char *)&ans, NOPTIMEOUT);
   ans = (int)ans;
+  if(ans == 5) { //tape_svc is gone
+    return(ans);
+  }
 
   /* NOTE: Must honor the timeout here as get the ans back in the ack
   */
