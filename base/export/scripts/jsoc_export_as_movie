@@ -27,11 +27,12 @@ type=jpg    # default could also do jpg
   fi
 
     in=$1
-    hg=`echo $in | awk -F'[@]' /hg/'{print $2}'`
- 
- if [ $hg ]
+    hglog=`echo $in | awk -F'[@]' /hg_patch.log/'{print $2}'`
+    hg=`echo $in | grep hg` 
+      
+ if [ $hglog ]
   then
-   nRec=`awk 'END{print NR}' $hg`
+   nRec=`awk 'END{print NR}' $hglog`
    rm -rf *.$type ;rm -rf images;  rm -rf tmpImages/*.* ; rm -rf  *.mp4  
    rm -rf data*
  else    
@@ -73,9 +74,10 @@ echo "cparams=$8" >>index.txt
 echo "# DATA ">>index.txt
 
 #check to see if its an AIA or HMI data set.
-if [ $hg ]
+if [ $hglog ]
 then
-  instr=`awk -F'[.]' 'NR==1{print substr($1, 1, 3)}' $hg `
+  instr=`awk -F'[.]' 'NR==1{print substr($1, 1, 3)}' $hglog `
+  
 else
    instr=`echo $in | awk -F'[.]' 'NR==1{print substr($1, 1, 3)}'`
 fi
@@ -84,19 +86,22 @@ if [[ $instr == [Hh][Mm][Ii] ]]
 then    
  {
     #content=`show_info -q ds=$in n=1 key=CONTENT`
-    if [ $hg ]
+    if [ $hglog ]
     then 
-        content=`echo $in | awk  -F'[.]' 'NR==1{print substr($2, 1, 2)}' $hg `
-        declare -i scale=1     # default -could read in as a parameter
-        p=u
-         
+        content=`echo $in | awk  -F'[.]' 'NR==1{print substr($2, 1, 2)}' $hglog`
      else
         content=`echo $in | awk  -F'[.]' 'NR==1{print substr($2, 1, 2)}' `
-        declare -i scale=8  # default -could read in as a parameter
-        c=c
-
      fi
      
+     if [ $hg ]
+      then 
+        declare -i scale=1     # default -could read in as a parameter
+        p=u
+      else
+      declare -i scale=8  # default -could read in as a parameter
+        p=c  
+      fi     
+      
        # hg=`echo $in | awk -F '[_]' '/hgpatch/{print $3}'`
       # or use:  if [ !  "echo $in | awk -F '[_]' '/hgpatch/{print $3}' " ] 
 
@@ -111,22 +116,23 @@ case "$content" in
         
              ;;
   Ic)
-       seriesName=`echo $in | awk  -F'[.]' 'NR==1{print substr($2, 1, 13)}' $hg`
+       seriesName=`echo $in | awk  -F'[.]' 'NR==1{print substr($2, 1, 13)}' $hglog `
+     #  seriesName=`echo $in | awk  -F'[.]' 'NR==1{print substr($2, 1, 13)}' `
            if [[ $seriesName = "Ic_noLimbDark" ]]
            then 
-                  render_image in=$in   min=0.3	 max=1.25 scaling=minmaxgiven    pallette=/home/priya/Colormaps/heat.sao outname=$content  scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  Ic_noLD:{ID}\" | pnmtojpeg -quality=95'   -{$p} 
+                  render_image in=$in   min=0.3	 max=1.4 scaling=minmaxgiven    pallette=/home/priya/Colormaps/heat.sao outname=$content  scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p}  
           else
-                  render_image in=$in  min=20000 max=75000    pallette=/home/priya/Colormaps/heat.sao outname=$content  scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  Ic:{ID}\" | pnmtojpeg -quality=95'  -{$p} 
+                  render_image in=$in  min=25000 max=75000    pallette=/home/priya/Colormaps/heat.sao outname=$content  scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}
           fi
              ;;
   Ld)
-          render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$content scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  Ld:{ID}\" | pnmtojpeg -quality=95'  -{$p}  -c
+          render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$content scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  -c
             ;;
   Lw)
-         render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$content scale=$scale type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  Lw:{ID}\" | pnmtojpeg -quality=95'  -{$p} -c
+         render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$content scale=$scale type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p} -c
              ;;     
   V_)
-         render_image in=$in  pallette=/home/priya/Colormaps/bb.sao outname=$content scale=$scale type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  V:{ID}\" | pnmtojpeg -quality=95'   -{$p} -c
+         render_image in=$in  pallette=/home/priya/Colormaps/bb.sao outname=$content scale=$scale type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p} -c
              ;;
         
    *) 
@@ -151,7 +157,7 @@ elif [[ $instr == [Aa][Ii][Aa] ]]
                else 
                  scaling=LOG
             fi 
-            render_image in=$in_new  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  $wvl:{ID}\" | pnmtojpeg -quality=95'  pallette=/home/priya/Colormaps/AIA/aia_$wvl.lut outname=aia_$wvl  scale=$scale outid=time  type=$type scaling=$scaling -w
+            render_image in=$in_new  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  pallette=/home/priya/Colormaps/AIA/aia_$wvl.lut outname=aia_$wvl  scale=$scale outid=time  type=$type scaling=$scaling -w
 
           done 
 
