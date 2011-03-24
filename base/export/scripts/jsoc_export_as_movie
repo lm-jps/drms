@@ -112,7 +112,7 @@ then
 
 case "$content" in 
   M_) 
-         render_image  in=$in  min=-1500 max=1500  pallette=/home/priya/Colormaps/grey.sao scaling=mag  outname=$content scale=$scale type=$type   out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  -c 
+         render_image  in=$in  min=-1500 max=1500  pallette=/home/priya/Colormaps/grey.sao scaling=mag  outname=Mag scale=$scale type=$type   out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  -c 
         
              ;;
   Ic)
@@ -132,7 +132,7 @@ case "$content" in
          render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$content scale=$scale type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p} -c
              ;;     
   V_)
-         render_image in=$in  pallette=/home/priya/Colormaps/bb.sao outname=$content scale=$scale type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p} -c
+         render_image in=$in  pallette=/home/priya/Colormaps/bb.sao outname=V scale=$scale type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p} -c
              ;;
         
    *) 
@@ -207,7 +207,7 @@ cd ../
 echo "Movie name=$content.mp4" >>index.txt 
 echo "# DATA ">>index.txt
  
-if [ $hg ]
+if [ $hglog ]
 then
  show_info -iq ds=$in n=1> data1
 else
