@@ -218,7 +218,7 @@ else
 fi
 
 echo "movie of the following data">>mv1
-echo $content.mp4 >>mv2
+echo $seriesName.mp4 >>mv2
 paste  mv1  mv2 >>index.txt 
 paste  data1  images >> index.txt
 
