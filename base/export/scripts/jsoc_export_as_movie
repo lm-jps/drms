@@ -110,29 +110,32 @@ then
 #declare -i size=4096/$scale      
  min_fl_sz=10000      #min file size
 
+ seriesName=`echo $in | awk  -F'[.]' 'NR==1{print substr($2, 1, 13)}' $hglog `
 case "$content" in 
+ 
+
   M_) 
-         render_image  in=$in  min=-1500 max=1500  pallette=/home/priya/Colormaps/grey.sao scaling=mag  outname=Mag scale=$scale type=$type   out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  -c 
+         render_image  in=$in  min=-1500 max=1500  pallette=/home/priya/Colormaps/grey.sao scaling=mag  outname=$seriesName scale=$scale type=$type   out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  -c 
         
              ;;
   Ic)
-       seriesName=`echo $in | awk  -F'[.]' 'NR==1{print substr($2, 1, 13)}' $hglog `
+      # seriesName=`echo $in | awk  -F'[.]' 'NR==1{print substr($2, 1, 13)}' $hglog `
      #  seriesName=`echo $in | awk  -F'[.]' 'NR==1{print substr($2, 1, 13)}' `
            if [[ $seriesName = "Ic_noLimbDark" ]]
            then 
-                  render_image in=$in   min=0.3	 max=1.4 scaling=minmaxgiven    pallette=/home/priya/Colormaps/heat.sao outname=$content  scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p}  
+                  render_image in=$in   min=0.3	 max=1.4 scaling=minmaxgiven    pallette=/home/priya/Colormaps/heat.sao outname=$seriesName  scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p}  
           else
-                  render_image in=$in  min=25000 max=75000    pallette=/home/priya/Colormaps/heat.sao outname=$content  scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}
+                  render_image in=$in  min=25000 max=75000    pallette=/home/priya/Colormaps/heat.sao outname=$seriesName  scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}
           fi
              ;;
   Ld)
-          render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$content scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  -c
+          render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  -c
             ;;
   Lw)
-         render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$content scale=$scale type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p} -c
+         render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p} -c
              ;;     
   V_)
-         render_image in=$in  pallette=/home/priya/Colormaps/bb.sao outname=V scale=$scale type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p} -c
+         render_image in=$in  pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p} -c
              ;;
         
    *) 
@@ -198,7 +201,7 @@ mkdir tmpImages
 
 #make movie
 cd tmpImages
-ffmpeg -qscale 5 -r 20 -b 9600 -i  %04d.$type   ../$content.mp4
+ffmpeg -qscale 5 -r 20 -b 9600 -i  %04d.$type   ../$seriesName.mp4
 
 
 cd ../
