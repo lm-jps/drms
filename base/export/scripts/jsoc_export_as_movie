@@ -207,7 +207,7 @@ ffmpeg -qscale 5 -r 20 -b 9600 -i  %04d.$type   ../$seriesName.mp4
 cd ../
 
 #write into index.txt
-echo "Movie name=$content.mp4" >>index.txt 
+echo "Movie name=$seriesName.mp4" >>index.txt 
 echo "# DATA ">>index.txt
  
 if [ $hglog ]
