@@ -143,19 +143,34 @@ esac
 elif [[ $instr == [Aa][Ii][Aa] ]] 
  then
      { 
-        declare -i scale=16 
-
-        declare -i size=4096/$scale
+     if [ $hg ]
+        then 
+          declare -i scale=1     # default -could read in as a parameter
+        p=u
+         else
+           declare -i scale=16  # default -could read in as a parameter
+        p=c  
+      fi     
+      
+       type=$type                # default could also do jpg
+     
+    seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
        for wvl in 171 211 94 335 4500 1600 131 1700 193 304
           do 
-            in_new=$in[?WAVELNTH=$wvl?]
+             if [ $hglog ]
+                then
+                  in_new=$seriesName[][][$reqid][?WAVELNTH=$wvl?]
+                else
+                  in_new=$in[?WAVELNTH=$wvl?]
+            fi
+
             if [ $wvl == 171 ]
                then 
                  scaling=SQRT
                else 
                  scaling=LOG
             fi 
-            render_image in=$in_new  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   pallette=/home/priya/Colormaps/AIA/aia_$wvl.lut outname=aia_$wvl  scale=$scale outid=time  type=$type scaling=$scaling  -w
+            render_image in=$in_new  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   pallette=/home/priya/Colormaps/AIA/aia_$wvl.lut outname=aia_$wvl  scale=$scale outid=time  type=$type scaling=$scaling  -w -{$p}
 
           done 
 
