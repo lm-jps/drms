@@ -62,7 +62,7 @@ type=jpg    # default could also do jpg
 
 # Write into the new index.txt
 
-
+reqid=$2
 echo "# JSOC " > index.txt
 echo "reqid=$2" >>index.txt
 echo "expversion=$3" >>index.txt  
@@ -76,7 +76,8 @@ echo "# DATA ">>index.txt
 #check to see if its an AIA or HMI data set.
 
   instr=`echo $in | awk -F'[.]' 'NR==1{print substr($1, 1, 3)}' $hglog `
-   
+  seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
+    
 if [[ $instr == [Hh][Mm][Ii] ]] 
 then    
  {
@@ -137,19 +138,36 @@ esac
 elif [[ $instr == [Aa][Ii][Aa] ]] 
  then
      { 
-        declare -i scale=16 
+      if [ $hg ]
+        then 
+          declare -i scale=1     # default -could read in as a parameter
+        p=u
+         else
+           declare -i scale=16  # default -could read in as a parameter
+        p=c  
+      fi     
+      
+
+     
         type=$type                # default could also do jpg
-        declare -i size=4096/$scale
+     
+    seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
        for wvl in 171 211 94 335 4500 1600 131 1700 193 304
           do 
-            in_new=$in[?WAVELNTH=$wvl?]
+            if [ $hglog ]
+                then
+                  in_new=$seriesName[][][$reqid][?WAVELNTH=$wvl?]
+                else
+                  in_new=$in[?WAVELNTH=$wvl?]
+            fi
+   
             if [ $wvl == 171 ]
                then 
                  scaling=SQRT
                else 
                  scaling=LOG
             fi 
-            render_image in=$in_new  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  pallette=/home/priya/Colormaps/AIA/aia_$wvl.lut outname=aia_$wvl  scale=$scale outid=time  type=$type scaling=$scaling -w
+            render_image in=$in_new  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  pallette=/home/priya/Colormaps/AIA/aia_$wvl.lut outname=aia_$wvl  scale=$scale outid=time  type=$type scaling=$scaling -w  -{$p}
 
           done 
 
@@ -214,7 +232,7 @@ paste  data1  images >> index.txt
 rm mv1;rm mv2
 rm -rf tmpImages/*.*
 rmdir tmpImages
-#rm images
+rm images
 
 # rm -f $outpath/data1 ; rm -f $outpath/images 
 # rm -f $outpath/*.png
