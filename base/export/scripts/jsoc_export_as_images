@@ -67,7 +67,7 @@ rm -rf index.txt ; rm -rf tmpImages/*.* ; rm -rf  *.mp4  ;rm -f images;
 
 # Write into the new index.txt
 
-
+reqid=$2
 echo "# JSOC " > index.txt
 echo "reqid=$2" >>index.txt
 echo "expversion=$3" >>index.txt  
@@ -79,19 +79,15 @@ echo "cparams=$8" >>index.txt
 echo "# DATA ">>index.txt
 
 #check to see if its an AIA or HMI data set.
-   if [ $hglog ]
-then
-  instr=`awk -F'[.]' 'NR==1{print substr($1, 1, 3)}' $hglog `
   
-else
-   instr=`echo $in | awk -F'[.]' 'NR==1{print substr($1, 1, 3)}'`
-fi
-
+ instr=`echo $in | awk -F'[.]' 'NR==1{print substr($1, 1, 3)}' $hglog `
+  seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
    
 if [[ $instr == [Hh][Mm][Ii] ]] 
 then    
  {
     content=`echo $in | awk  -F'[.]' 'NR==1{print substr($2, 1, 2)}' $hglog`
+
     if [ $hg ]
     then 
         declare -i scale=1     # default -could read in as a parameter
@@ -108,7 +104,8 @@ then
        # default could also do jpg
 #declare -i size=4096/$scale      
  min_fl_sz=10000      #min file size
-seriesName=`echo $in | awk  -F'[.]' 'NR==1{print substr($2, 1, 13)}' $hglog`
+
+ seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
 
 case "$content" in 
   M_) 
@@ -153,8 +150,10 @@ elif [[ $instr == [Aa][Ii][Aa] ]]
       fi     
       
        type=$type                # default could also do jpg
+
      
     seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
+
        for wvl in 171 211 94 335 4500 1600 131 1700 193 304
           do 
              if [ $hglog ]
