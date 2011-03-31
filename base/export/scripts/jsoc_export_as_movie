@@ -1,12 +1,9 @@
 #!/bin/bash
 export RGBDEF=/home/jsoc/cvs/Development/JSOC/proj/workflow/scripts/rgb.txt 
 export JSOC_DBHOST=hmidb
-#This script combines the AIA images part and hmi images part
-# script should figure out what kind of data series it is and then use appropriate default scaling/ colortable. 
 
-#jsoc_export_as_movie ds=<record_set_query>  reqid=<export request id> expversion=<version> method=<exp method> protocol=<output-file protocol> path=<output path> 
-#     { ffmt=<filename format> } { cparms=<compression string list> }
-# jsoc_export_as_movie  ds  reqid expversion  export_ method  protocol  output_path ffmt cparms    
+
+#use as jsoc_export_as_movie  ds  reqid expversion  export_ method  protocol  output_path ffmt cparms    
 #                        1    2       3             4            5           6        7      8    
 
 
@@ -16,6 +13,7 @@ export JSOC_DBHOST=hmidb
 outpath=$6 
 cd $outpath
 #set env variables
+tkey=T_REC
 
 type=jpg    # default could also do jpg
 
@@ -84,7 +82,14 @@ then
     #content=`show_info -q ds=$in n=1 key=CONTENT`
   
       content=`echo $in | awk  -F'[.]' 'NR==1{print substr($2, 1, 2)}' $hglog`
-     
+         tkey=T_REC
+           junk=`show_info key=T_REC $in`
+           if [ $? ]
+              then 
+               tkey=T_OBS
+           fi
+              
+
      if [ $hg ]
       then 
         declare -i scale=1     # default -could read in as a parameter
@@ -104,8 +109,7 @@ then
 
  seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
 case "$content" in 
- 
-
+       
   M_) 
          render_image  in=$in  min=-1500 max=1500  pallette=/home/priya/Colormaps/grey.sao scaling=mag  outname=$seriesName scale=$scale type=$type   out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  -c 
         
@@ -152,13 +156,19 @@ elif [[ $instr == [Aa][Ii][Aa] ]]
         type=$type                # default could also do jpg
      
     seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
+     min=100
+       wvl_arr=(94 131 171 193 211 304 335 1600 1700 4500)
+             max_val=(100 2000 2000 10000 10000 10000 1000 1000 2500 10000)
+              for i in  0 1 2 3 4 5 6 7 8 9; do wvl=${wvl_arr[$i]}; let max_$wvl=${max_val[$i]}; done
+              
+
        for wvl in 171 211 94 335 4500 1600 131 1700 193 304
           do 
             if [ $hglog ]
                 then
-                  in_new=$seriesName[][][$reqid][?WAVELNTH=$wvl?]
+                  in_new=$seriesName[RequestID=$reqid][WAVELNTH=$wvl]
                 else
-                  in_new=$in[?WAVELNTH=$wvl?]
+                  in_new=$in[WAVELNTH=$wvl]
             fi
    
             if [ $wvl == 171 ]
@@ -167,7 +177,17 @@ elif [[ $instr == [Aa][Ii][Aa] ]]
                else 
                  scaling=LOG
             fi 
-            render_image in=$in_new  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  pallette=/home/priya/Colormaps/AIA/aia_$wvl.lut outname=aia_$wvl  scale=$scale outid=time  type=$type scaling=$scaling -w  -{$p}
+    
+ 
+           tkey=T_REC
+           junk=`show_info key=T_REC $in_new`
+           if [ $? ]
+              then 
+               tkey=T_OBS
+           fi
+           
+                         
+                render_image in=$in_new  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/AIA  M:{ID}\" | pnmtojpeg -quality=95'  pallette=/home/priya/Colormaps/AIA/aia_$wvl.lut tkey=$tkey  outname=aia_$wvl  min=$min max=$[max_$wvl]  scale=$scale outid=time  type=$type scaling=$scaling -w  -{$p}
 
           done 
 
@@ -229,10 +249,10 @@ echo $seriesName.mp4 >>mv2
 paste  mv1  mv2 >>index.txt 
 paste  data1  images >> index.txt
 
-rm mv1;rm mv2
-rm -rf tmpImages/*.*
-rmdir tmpImages
-rm images
+#rm mv1;rm mv2
+#rm -rf tmpImages/*.*
+#rmdir tmpImages
+#rm images
 
 # rm -f $outpath/data1 ; rm -f $outpath/images 
 # rm -f $outpath/*.png

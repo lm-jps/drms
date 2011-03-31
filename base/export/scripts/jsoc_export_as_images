@@ -87,7 +87,13 @@ if [[ $instr == [Hh][Mm][Ii] ]]
 then    
  {
     content=`echo $in | awk  -F'[.]' 'NR==1{print substr($2, 1, 2)}' $hglog`
-
+  tkey=T_REC
+           junk=`show_info key=T_REC $in`
+           if [ $? ]
+              then 
+               tkey=T_OBS
+           fi
+             
     if [ $hg ]
     then 
         declare -i scale=1     # default -could read in as a parameter
@@ -153,12 +159,16 @@ elif [[ $instr == [Aa][Ii][Aa] ]]
 
      
     seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
-
+        min=100
+       wvl_arr=(94 131 171 193 211 304 335 1600 1700 4500)
+             max_val=(100 2000 2000 10000 10000 10000 1000 1000 2500 10000)
+              for i in  0 1 2 3 4 5 6 7 8 9; do wvl=${wvl_arr[$i]}; let max_$wvl=${max_val[$i]}; done
+              
        for wvl in 171 211 94 335 4500 1600 131 1700 193 304
           do 
              if [ $hglog ]
                 then
-                  in_new=$seriesName[][][$reqid][?WAVELNTH=$wvl?]
+		 in_new=$seriesName[][][$reqid][?WAVELNTH=$wvl?]
                 else
                   in_new=$in[?WAVELNTH=$wvl?]
             fi
@@ -169,6 +179,16 @@ elif [[ $instr == [Aa][Ii][Aa] ]]
                else 
                  scaling=LOG
             fi 
+
+          tkey=T_REC
+           junk=`show_info key=T_REC $in`
+           if [ $? ]
+              then 
+               tkey=T_OBS
+           fi
+             
+
+
             render_image in=$in_new  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   pallette=/home/priya/Colormaps/AIA/aia_$wvl.lut outname=aia_$wvl  scale=$scale outid=time  type=$type scaling=$scaling  -w -{$p}
 
           done 
