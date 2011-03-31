@@ -166,9 +166,9 @@ elif [[ $instr == [Aa][Ii][Aa] ]]
           do 
             if [ $hglog ]
                 then
-                  in_new=$seriesName[RequestID=$reqid][WAVELNTH=$wvl]
+                  in_new=$seriesName[RequestID=$reqid][?WAVELNTH=$wvl?]
                 else
-                  in_new=$in[WAVELNTH=$wvl]
+                  in_new=$in[?WAVELNTH=$wvl?]
             fi
    
             if [ $wvl == 171 ]
