@@ -249,10 +249,10 @@ echo $seriesName.mp4 >>mv2
 paste  mv1  mv2 >>index.txt 
 paste  data1  images >> index.txt
 
-#rm mv1;rm mv2
-#rm -rf tmpImages/*.*
-#rmdir tmpImages
-#rm images
+rm mv1;rm mv2
+rm -rf tmpImages/*.*
+rmdir tmpImages
+rm images
 
 # rm -f $outpath/data1 ; rm -f $outpath/images 
 # rm -f $outpath/*.png
