@@ -115,25 +115,25 @@ then
 
 case "$content" in 
   M_) 
-         render_image  in=$in  min=-1500 max=1500   pallette=/home/priya/Colormaps/grey.sao scaling=mag  outname=$seriesNamescale=$scale type=$type   out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p} -c 
+         render_image  in=$in  min=-1500 max=1500   pallette=/home/priya/Colormaps/grey.sao scaling=mag  outname=$seriesNamescale=$scale type=$type  tkey=$tkey  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p} -c 
         
              ;;
   Ic)
            if [[ $seriesName = "Ic_noLimbDark" ]]
            then 
-                  render_image in=$in   min=0.3	 max=1.4 scaling=minmaxgiven    pallette=/home/priya/Colormaps/heat.sao outname=$seriesName scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p}    
+                  render_image in=$in   min=0.3	 max=1.4 scaling=minmaxgiven    pallette=/home/priya/Colormaps/heat.sao outname=$seriesName scale=$scale tkey=$tkey  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p}    
           else
-                  render_image in=$in  min=20000 max=75000    pallette=/home/priya/Colormaps/heat.sao outname=$seriesName scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  
+                  render_image in=$in  min=20000 max=75000 tkey=$tkey    pallette=/home/priya/Colormaps/heat.sao outname=$seriesName scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  
           fi
              ;;
   Ld)
-          render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  -c
+          render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$seriesName tkey=$tkey scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  -c
             ;;
   Lw)
-         render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  -c
+         render_image in=$in   pallette=/home/priya/Colormaps/bb.sao tkey=$tkey outname=$seriesName scale=$scale type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  -c
              ;;     
   V_)
-         render_image in=$in  pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p}  -c
+         render_image in=$in  pallette=/home/priya/Colormaps/bb.sao outname=$seriesName tkey=$tkey  scale=$scale type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p}  -c
              ;;
         
    *) 
@@ -168,9 +168,9 @@ elif [[ $instr == [Aa][Ii][Aa] ]]
           do 
              if [ $hglog ]
                 then
-		 in_new=$seriesName[][][$reqid][?WAVELNTH=$wvl?]
+		 in_new=$seriesName[][][RequestID=$reqid][WAVELNTH=$wvl]
                 else
-                  in_new=$in[?WAVELNTH=$wvl?]
+                  in_new=$in[WAVELNTH=$wvl]
             fi
 
             if [ $wvl == 171 ]
@@ -181,7 +181,7 @@ elif [[ $instr == [Aa][Ii][Aa] ]]
             fi 
 
           tkey=T_REC
-           junk=`show_info key=T_REC $in`
+           junk=`show_info key=T_REC $in_new`
            if [ $? ]
               then 
                tkey=T_OBS
@@ -189,7 +189,7 @@ elif [[ $instr == [Aa][Ii][Aa] ]]
              
 
 
-            render_image in=$in_new  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   pallette=/home/priya/Colormaps/AIA/aia_$wvl.lut outname=aia_$wvl  scale=$scale outid=time  type=$type scaling=$scaling  -w -{$p}
+            render_image in=$in_new  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   pallette=/home/priya/Colormaps/AIA/aia_$wvl.lut outname=aia_$wvl  scale=$scale outid=time  tkey=$tkey    type=$type scaling=$scaling  -w -{$p}
 
           done 
 
