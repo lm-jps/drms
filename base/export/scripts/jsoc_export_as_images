@@ -168,9 +168,9 @@ elif [[ $instr == [Aa][Ii][Aa] ]]
           do 
              if [ $hglog ]
                 then
-		 in_new=$seriesName[][][RequestID=$reqid][WAVELNTH=$wvl]
+		 in_new=$seriesName[][][RequestID=$reqid][?WAVELNTH=$wvl?]
                 else
-                  in_new=$in[WAVELNTH=$wvl]
+                  in_new=$in[?WAVELNTH=$wvl?]
             fi
 
             if [ $wvl == 171 ]
@@ -189,7 +189,7 @@ elif [[ $instr == [Aa][Ii][Aa] ]]
              
 
 
-            render_image in=$in_new  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   pallette=/home/priya/Colormaps/AIA/aia_$wvl.lut outname=aia_$wvl  scale=$scale outid=time  tkey=$tkey    type=$type scaling=$scaling  -w -{$p}
+            render_image in=$in_new  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   pallette=/home/priya/Colormaps/AIA/aia_$wvl.lut outname=aia_$wvl  scale=$scale outid=time min=$min max=$[max_$wvl]  tkey=$tkey    type=$type scaling=$scaling  -w -{$p}
 
           done 
 
