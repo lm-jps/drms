@@ -9,6 +9,7 @@
  *       -d = debug mode
  *       -s = simulation mode (robot and tape cmds are simulated)
  *
+ *
  * It is normally run as user production on the host that has the SUM storage
  * local to it (and probably the tape archive unit). It handles requests for
  * all users (normally just DRMS) calling the SUM API:
@@ -40,16 +41,17 @@ extern PART ptabx[]; 	/* defined in SUMLIB_PavailRequest.pgc */
 void logkey();
 extern int errno;
 static void sumprog_1();
-struct timeval TIMEOUT = { 60, 0 };
+struct timeval TIMEOUT = { 10, 0 };
 uint32_t rinfo;
 float ftmp;
 static struct timeval first[4], second[4];
 
 FILE *logfp;
-CLIENT *current_client, *clnttape;
+CLIENT *current_client, *clnttape, *clnttape_old;
 SVCXPRT *glb_transp;
 char *dbname;
 char thishost[MAX_STR];
+char usedhost[MAX_STR];
 char hostn[MAX_STR];
 char logname[MAX_STR];
 char datestr[32];
@@ -258,6 +260,13 @@ void setup()
   fclose(fplog);
 }
 
+//This is called at the sum_svc exit via exit() or by return from main()
+void sumbye(void) {
+  printf("sumbye() called by atexit() at %s\n", datestring());
+  write_log("sumbye() called by atexit() at %s\n", datestring());
+}
+
+
 /*********************************************************/
 int main(int argc, char *argv[])
 {
@@ -270,6 +279,9 @@ int main(int argc, char *argv[])
   get_cmd(argc, argv);
   printf("\nPlease wait for sum_svc and tape inventory to initialize...\n");
   setup();
+  if(atexit(sumbye)) {
+    printf("Can't register sumbye() function in atexit()\n");
+  }
 
         /* register for client API routines to talk to us */
 	(void) pmap_unset(SUMPROG, SUMVERS);
@@ -284,18 +296,105 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-  if(strcmp(hostn, "n02")) {  //!!TEMP don't do on n02 - for testing
+  if(strcmp(hostn, "n02")) {  //!!TEMP for not n02
       sprintf(pgport, SUMPGPORT);
       setenv("SUMPGPORT", pgport, 1); //connect to 5430,5431, or 5434
+      write_log("sum_svc sets SUMPGPORT env to %s\n", pgport);
   }
 
+#ifndef __LOCALIZED_DEFS__
+//Only fork the tape stuff on the datacapture machines. The tape stuff for
+//the main SUMS is started by a call to ssh d02.stanford.edu sum_forker 
+//in sum_start_j1
+if(!strcmp(hostn, "dcs0") || !strcmp(hostn, "dcs1") || !strcmp(hostn, "dcs2") || !strcmp(hostn, "dcs3")) {
   if((pid = fork()) < 0) {
     write_log("***Can't fork(). errno=%d\n", errno);
     exit(1);
   }
   else if(pid == 0) {                   /* this is the beloved child */
+    write_log("execvp of tape_svc\n");
+    args[0] = "tape_svc";
+    if(tapeoffline) { 		/* overrides any sim flg */
+      args[1] = "-o";
+      args[2] = dbname;
+      args[3] = timetag;
+      args[4] = NULL;
+    }
+    else if(sim) { 
+      args[1] = "-s";
+      args[2] = dbname;
+      args[3] = timetag;
+      args[4] = NULL;
+    }
+    else {
+      args[1] = dbname;
+      args[2] = timetag;
+      args[3] = NULL;
+    }
+    if(execvp(args[0], args) < 0) {
+      write_log("***Can't execvp() tape_svc. errno=%d\n", errno);
+      exit(1);
+    }
+  }
+  sleep(1);				/* let tape_svc start */
+  for(i=0; i < MAX_DRIVES; i++) { 	/* start all the driven_svc */
+    if((pid = fork()) < 0) {
+      write_log("***Can't fork(). errno=%d\n", errno);
+      exit(1);
+    }
+    else if(pid == 0) {                   /* this is the beloved child */
+      sprintf(dsvcname, "drive%d_svc", i);
+      write_log("execvp of %s\n", dsvcname);
+      args[0] = dsvcname;
+      if(tapeoffline) {                 /* overrides any sim flg */
+	 args[1] = "-o";
+	 args[2] = dbname;
+	 args[3] = timetag;
+	 args[4] = NULL;
+      }
+      else if(sim) {
+        args[1] = "-s";
+        args[2] = dbname;
+        args[3] = timetag;
+        args[4] = NULL;
+      }
+      else {
+        args[1] = dbname;
+        args[2] = timetag;
+        args[3] = NULL;
+      }
+      if(execvp(args[0], args) < 0) {
+        write_log("***Can't execvp() %s. errno=%d\n", dsvcname, errno);
+        exit(1);
+      }
+    }
+  }
+  if((pid = fork()) < 0) {
+    write_log("***Can't fork(). errno=%d\n", errno);
+    exit(1);
+  }
+  else if(pid == 0) {                   /* this is the beloved child */
+    write_log("execvp of robot0_svc\n");
+    args[0] = "robot0_svc";
+    args[1] = dbname;
+    args[2] = timetag;
+    args[3] = NULL;
+    if(execvp(args[0], args) < 0) {
+      write_log("***Can't execvp() robot0_svc. errno=%d\n", errno);
+      exit(1);
+    }
+  }
+}				/* !!end of TMP for lws only */
+#endif
+
+/******************************NO sum_rm for xsum_svc***************************
+  if((pid = fork()) < 0) {
+    write_log("***Can't fork(). errno=%d\n", errno);
+    exit(1);
+  }
+  else if(pid == 0) {                   //this is the beloved child
     write_log("execvp of sum_rm\n");
-    args[0] = "sum_rm";			/* note: no -s to sum_rm */
+    args[0] = "sum_rm";			//note: no -s to sum_rm
     args[1] = dbname;
     args[2] = timetag;
     args[3] = NULL;
@@ -304,22 +403,26 @@ int main(int argc, char *argv[])
       exit(1);
     }
   }
+******************************NO sum_rm for xsum_svc***************************/
 
 #ifndef __LOCALIZED_DEFS__
 if(strcmp(hostn, "lws") && strcmp(hostn, "n00") && strcmp(hostn, "d00") && strcmp(hostn, "n02")) { 
   /* Create client handle used for calling the tape_svc */
   printf("\nsum_svc waiting for tape servers to start (approx 10sec)...\n");
-  sleep(10);			/* give time to start */
+  sleep(13);			/* give time to start */
   //if running on j1, then the tape_svc is on TAPEHOST, else the localhost
-  if(strcmp(hostn, SUMSVCHOST)) 
+  if(strcmp(hostn, SUMSVCHOST)) { 
     clnttape = clnt_create(thishost, TAPEPROG, TAPEVERS, "tcp");
+    strcpy(usedhost, thishost);
+  }
   else {
     clnttape = clnt_create(TAPEHOST, TAPEPROG, TAPEVERS, "tcp");
+    strcpy(usedhost, TAPEHOST);
   }
   if(!clnttape) {       /* server not there */
     clnt_pcreateerror("Can't get client handle to tape_svc (xsum_svc)");
-    write_log("tape_svc not there on %s\n", thishost);
-    exit(1);
+    write_log("tape_svc not there on %s\n", usedhost);
+//    exit(1);
   }
 }
 #endif
@@ -351,8 +454,9 @@ sumprog_1(rqstp, transp)
 {
   char procname[128];
   char newlogname[MAX_STR];
+  uint64_t ck_client;     //used to ck high bits of current_client
 
-	//StartTimer(1);
+	StartTimer(1);
 	union __svcargun {
 		Rkey sumdo_1_arg;
 	} argument;
@@ -397,6 +501,12 @@ sumprog_1(rqstp, transp)
 		xdr_result = xdr_Rkey;
 		local = (char *(*)()) infodo_1;
 		break;
+        case INFODOX:
+                sprintf(procname, "INFODOX");
+                xdr_argument = xdr_Rkey;
+                xdr_result = xdr_Rkey;
+                local = (char *(*)()) infodoX_1;
+                break;
 	case GETDO:
 		sprintf(procname, "GETDO");
 		xdr_argument = xdr_Rkey;
@@ -427,6 +537,12 @@ sumprog_1(rqstp, transp)
 		xdr_result = xdr_uint32_t;
 		local = (char *(*)()) delseriesdo_1;
 		break;
+        case NOPDO:
+                sprintf(procname, "NOPDO");
+                xdr_argument = xdr_Rkey;
+                xdr_result = xdr_uint32_t;
+                local = (char *(*)()) nopdo_1;
+                break;
 	default:
                 write_log("**sumprog_1() dispatch default procedure %d,ignore\n", rqstp->rq_proc);
 		svcerr_noproc(transp);
@@ -463,16 +579,24 @@ sumprog_1(rqstp, transp)
             write_log("   current_client was NULL\n");
           }
           else {
-            clnt_stat=clnt_call(current_client, RESPDO, (xdrproc_t)xdr_result, 
-  		result, (xdrproc_t)xdr_void, 0, TIMEOUT);
-            if(clnt_stat != 0) {
-              clnt_perrno(clnt_stat);		/* outputs to stderr */
-              write_log("***Error on clnt_call() back to RESPDO procedure\n");
-              write_log("***The original client caller has probably exited\n");
-              call_err = clnt_sperror(current_client, "Err");
-              write_log("%s\n", call_err);
+            ck_client = ((uint64_t)current_client & 0xfc00000000000000) >> 58;
+            if(!((ck_client == 0) || (ck_client == 0x3f))) {
+              write_log("***Error invalid current_client\n");
+              //May need more info to discover the caller.
+              //See email from Keh-Cheng 25Feb2011 13:44 Re:Cannot access..
             }
-            clnt_destroy(current_client);
+            else {
+              clnt_stat=clnt_call(current_client, RESPDO, (xdrproc_t)xdr_result, 
+  		result, (xdrproc_t)xdr_void, 0, TIMEOUT);
+              if(clnt_stat != 0) {
+                clnt_perrno(clnt_stat);		/* outputs to stderr */
+                write_log("***Error on clnt_call() back to RESPDO procedure\n");
+                write_log("***The original client caller has probably exited\n");
+                call_err = clnt_sperror(current_client, "Err");
+                write_log("%s\n", call_err);
+              }
+              clnt_destroy(current_client);
+            }
           }
           freekeylist((KEY **)&result);
         }
@@ -483,8 +607,8 @@ sumprog_1(rqstp, transp)
 	write_log("**unable to free arguments\n");
 	/*exit(1);*/
       }
-      //ftmp = StopTimer(1);
-      //write_log("#END: %s %fsec\n", procname, ftmp);	//!!TEMP for test
+      ftmp = StopTimer(1);
+      write_log("#END: %s %fsec\n", procname, ftmp);	//!!TEMP for test
 
       if(newlog) {      //got signal to make a new log file
         newlog = 0;
