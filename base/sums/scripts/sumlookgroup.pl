@@ -1,4 +1,4 @@
-eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -d -S $0 "$@"'
+eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
     if 0;
 #/home/production/cvs/JSOC/base/sums/scripts/sumlookgroup.pl
 #
@@ -9,7 +9,8 @@ use DBI;
 
 sub usage {
   print "Show storage distribution for each SUM group.\n";
-  print "Usage: sumlookgroup.pl [-hdb_host] db_name (e.g. jsoc_sums)\n";
+  print "Usage: sumlookgroup.pl [-f] [-hdb_host] db_name (e.g. jsoc_sums)\n";
+  print "       -f = fast mode. Ignore that data read from tape is always in group 0\n";
   print "       The default db_host is $HOSTDB\n";
   print "\nYou must have ENV SUMPGPORT set to the port number, e.g. 5434\n";
   exit(1);
@@ -57,10 +58,14 @@ sub commify {
 
 
 $HOSTDB = "hmidb";      #host where DB runs
+$FAST = 0;
 while ($ARGV[0] =~ /^-/) {
   $_ = shift;
   if (/^-h(.*)/) {
     $HOSTDB = $1;
+  }
+  if (/^-f(.*)/) {
+    $FAST = 1;
   }
 }
 
@@ -77,16 +82,22 @@ print "      2 : hmi_ground, hmi.lev0\n";
 print "      3 : aia_ground, aia.lev0\n";
 print "      4 : hmi_ground, hmi.tlm\n";
 print "      5 : aia_ground, aia.tlm\n";
-print "      6 : hmi lev1 and above\n";
-print "      7 : aia lev1 and above\n";
+print "      6 : hmi above lev1\n";
+print "      7 : aia above lev1\n";
 print "      8 : Stanford Helioseismology Archive\n";
 print "      9 : dsds. Migrated data from SOI/DSDS\n";
+print "     10 : hmi.lev1\n";
 print "     11 : sid_awe.awesome\n";
 print "     12 : su_timh.awesome\n";
 print "    102 : hmi.lev0_60d\n";
 print "    103 : aia.lev0_60d\n";
 print "    104 : hmi.tlm_60d\n";
-print "    105 : aia.tlm_60d\n\n";
+print "    105 : aia.tlm_60d\n";
+print "    310 : hmi.rdVtrack_fd05, hmi.rdVtrack_fd15, hmi.rdVtrack_fd30\n";
+print "    311 : hmi.rdvpspec_fd05, hmi.rdVpspec_fd15, hmi.rdVpspec_fd30\n";
+print "    400 : reserved for expansion of a group to an additional drive\n";
+print "    401 : reserved for expansion of a group to an additional drive\n";
+print "  10000 : aia.lev1\n\n";
 
 $hostdb = $HOSTDB;      #host where Postgres runs
 $user = $ENV{'USER'};
@@ -104,7 +115,7 @@ $totalbytes100 = 0;
       $xeffdate = &reteffdate($addsec);
 
 #First connect to database
-  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb;port=$PGPORT", "$user", "$password");
+  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb;port=$PGPORT", "$user", "");
   if ( !defined $dbh ) {
     die "Cannot do \$dbh->connect: $DBI::errstr\n";
   }
@@ -135,9 +146,14 @@ $totalbytes100 = 0;
 #      push(@avail, $avail);
 #    }
 #######################################################################
-    @groupids = (0,1,2,3,4,5,6,7,8,9,11,12,102,103,104,105,9999);
-    while(($group = shift(@groupids)) != 9999) {
-      $sql = "select sum(bytes) from sum_partn_alloc where status=2 and group_id=$group and effective_date <= '$effdate'";
+    @groupids = (0,1,2,3,4,5,6,7,8,9,10,11,12,102,103,104,105,310,311,400,401,10000,-1);
+    while(($group = shift(@groupids)) != -1) {
+      if($FAST) {
+        $sql = "select sum(bytes) from sum_partn_alloc where status=2 and group_id=$group and effective_date <= '$effdate'";
+      } 
+      else {  #there can be data from tape that is always in group=0
+        $sql = "select sum(bytes) from sum_main where storage_group=$group and ds_index in (select ds_index from sum_partn_alloc where status=2 and effective_date <= '$effdate')";
+      }
       #print "$sql\n"; #!!!TEMP
       $sth = $dbh->prepare($sql);
       if ( !defined $sth ) {
@@ -153,7 +169,12 @@ $totalbytes100 = 0;
       }
 
       #now get DP<=100d
-      $sql = "select sum(bytes) from sum_partn_alloc where status=2 and group_id=$group and effective_date <= '$xeffdate'";
+      if($FAST) {
+        $sql = "select sum(bytes) from sum_partn_alloc where status=2 and group_id=$group and effective_date <= '$xeffdate'";
+      }
+      else {
+        $sql = "select sum(bytes) from sum_main where storage_group=$group and ds_index in (select ds_index from sum_partn_alloc where status=2 and effective_date <= '$xeffdate')";
+      }
       #print "$sql\n"; #!!!TEMP
       $sth = $dbh->prepare($sql);
       if ( !defined $sth ) {
@@ -168,7 +189,12 @@ $totalbytes100 = 0;
         push(@bytes100, $bytes100);
       }
       #now get DPlater 
-      $sql = "select sum(bytes) from sum_partn_alloc where status=2 and group_id=$group and effective_date > '$xeffdate'";
+      if($FAST) {
+        $sql = "select sum(bytes) from sum_partn_alloc where status=2 and group_id=$group and effective_date > '$xeffdate'";
+      }
+      else {
+        $sql = "select sum(bytes) from sum_main where storage_group=$group and ds_index in (select ds_index from sum_partn_alloc where status=2 and effective_date > '$xeffdate')";
+      }
       #print "$sql\n"; #!!!TEMP
       $sth = $dbh->prepare($sql);
       if ( !defined $sth ) {
@@ -214,5 +240,28 @@ $totalbytes100 = 0;
     printf("TOTAL:\t%12s %12s %12s %12s\n", 
 		commify(int($totalbytes)), commify(int($totalbytes100)),
 		commify(int($totalbyteso)), commify(int($totalbytesap)));
+
+    $totalstor = $totalbytes+$totalbytes100+$totalbyteso+$totalbytesap;
+
+    #Get all storage that is read back from tape  
+    $sql = "select sum(bytes) from sum_partn_alloc where group_id=0 and wd like '/%/D%/D%'";
+    #print "$sql\n"; #!!!TEMP
+    $sth = $dbh->prepare($sql);
+    if ( !defined $sth ) {
+      print "Cannot prepare statement: $DBI::errstr\n";
+      $dbh->disconnect();
+      exit; 
+    }
+    $sth->execute;
+    while ( @row = $sth->fetchrow() ) {
+      $bytest = shift(@row);
+      $bytest = $bytest/1048576;
+    }
+
+    $p = sprintf("%02.1f", 100.0 * ($bytest/$totalstor));
+    #print "bytest=$bytest totalstor=$totalstor\n";
+    print "\nTotal bytes online that have been read back from tape:\n";
+    printf "%12s = $p percent of total storage of %12s\n", commify(int($bytest)), commify(int($totalstor));
+
 $dbh->disconnect();
 

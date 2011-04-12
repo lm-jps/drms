@@ -102,12 +102,44 @@ while($_ = shift(@ps_prod)) {
       ($a, $psid, $c) = split(/\s+/, $_);
       $process = "robot0_svc";
     }
+    elsif(/tapearc0 /) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "tapearc0";
+    }
+    elsif(/tapearc1 /) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "tapearc1";
+    }
+    elsif(/tapearc2 /) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "tapearc2";
+    }
+    elsif(/tapearc3 /) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "tapearc3";
+    }
+    elsif(/tapearc4 /) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "tapearc4";
+    }
+    elsif(/tapearc5 /) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "tapearc5";
+    }
+    elsif(/tapearc6 /) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "tapearc6";
+    }
+    elsif(/tapearc7 /) {
+      ($a, $psid, $c) = split(/\s+/, $_);
+      $process = "tapearc7";
+    }
     else {
       next;
     }
-    print "Killing $process with kill -2 $psid\n";
-    print LOG "Killing $process with kill -INT $psid\n";
-    `kill -INT $psid`;
+    print "Killing $process with kill -9 $psid\n";
+    print LOG "Killing $process with kill -9 $psid\n";
+    `kill -9 $psid`;
   }
 }
 #print "Removing lock file /usr/local/logs/soc/NOTAPEARC\n";

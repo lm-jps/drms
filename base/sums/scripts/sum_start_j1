@@ -171,7 +171,7 @@ while($_ = shift(@ps_prod)) {
         }
 
 #$cmd = "ssh d02.stanford.edu /home/production/cvs/JSOC/base/sums/scripts/sum_fork_head.pl jim 2009&";
-$cmd = "ssh d02.stanford.edu sum_forker $DB $date&";
+$cmd = "ssh d02.stanford.edu sum_forker  $DB $date&";
         if(system($cmd)) {
           print "Error: failure on $cmd\n";
         }

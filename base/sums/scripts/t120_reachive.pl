@@ -82,7 +82,7 @@ if($user ne "production") {
 }
 
 #First connect to database
-  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb;port=$PGPORT", "$user", "$password");
+  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb;port=$PGPORT", "$user", "");
   if ( !defined $dbh ) {
     die "Cannot do \$dbh->connect: $DBI::errstr\n";
   }

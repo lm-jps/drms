@@ -21,9 +21,17 @@ sub labeldate {
   return($date);
 }
 
+$| = 1;
 $abortfile = "/usr/local/logs/tapearc/TAPEARC_ABORT3";
 $DB = "jsoc_sums";
 $ENV{'PGPORT'} = "5434";        #jsoc_sums db uses non-default PGPORT
+
+  $host = `hostname -s`;
+  chomp($host);
+  if($host ne "d02") {
+    print "Error: This must be run on d02\n";
+    exit;
+  }
 
   if ( -e $abortfile ) {	# if file exist
    print "Found $abortfile\nImmediate abort of tape_do.pl\n";
@@ -35,13 +43,14 @@ while(1) {			#keep it running for now
   $label = &labeldate;
   $logfile = "/usr/local/logs/tapearc/tape_do_3_".$label;
   $cmd = "/home/production/cvs/JSOC/bin/linux_ia64/tapearc3 -v jsoc_sums";
-  $sleeptime = 60;
+  #$sleeptime = 3600;
+  $sleeptime = 120;
   print "$cmd\n";
   if(system "$cmd 1> $logfile 2>&1") {
     print "Error on: $cmd\n";
     print "See log: $logfile\n";
     print "Error is typically - no archive pending entries\n";
-    $sleeptime = 300;           #sleep longer
+    #$sleeptime = 300;           #sleep longer
     #exit(1);
   }
   if ( -e $abortfile ) {	# if file exist

@@ -58,9 +58,12 @@ $HOSTDB = "hmidb";		#host where DB runs
 $NOTAPEARC = "/usr/local/logs/soc/NOTAPEARC";
 $IMGDIR = "/home/jsoc/gallery"; #dir with the .gif files
 $INLOG = 0;			#use default tape_svc log
+$LOPENED = 0;			#log file not opened yet
 #$login = "dsowner";
 $pid0 = 0;
 
+$FIRST_EXP_SLOT = 2211;
+$LAST_EXP_SLOT = 2250;
 $MAX_SLOTS_PAGE = 200;
 $MAX_SLOTS = 2200;
 $NUM_IMP_EXP_SLOTS = 50;
@@ -200,10 +203,10 @@ for($i=0; $i < $MAX_DRIVES; $i++) {
 system "touch $runtag";		#offically started running now
 
 ####!!!TEMP for testing
-&get_exp_tapes; #!!!TEMP
+#&get_exp_tapes; #!!!TEMP
 #print "exptapes = @exptape\n";
-$expnum = $#exptape+1;
-print "num of exptape = $expnum\n";
+#$expnum = $#exptape+1;
+#print "num of exptape = $expnum\n";
 $date = &get_effdate;
 print "effdate = $date\n";
 
@@ -250,6 +253,13 @@ print "effdate = $date\n";
         -command => \&Clean_sub,
         );
   $b1->pack(-side=> 'left', -padx => 10);
+  $b2text = "Export\nclosed tapes";
+  $b2 = $tframe->Button(
+        -text => $b2text,
+        -background => 'lightyellow',
+        -command =>  \&Exptlm_sub, 
+        );
+  $b2->pack(-side=> 'left', -pady => 0, -padx => 20);
   $b = $tframe->Button(
         -text => 'Exit',
         -background => 'red',
@@ -602,7 +612,7 @@ sub log_update {
   my $new_file = "/usr/local/logs/SUM/sum_restart_$$.touch";
   if((-e $new_file) && !$playback) {    #sum_svc tells us to restart
     `/bin/rm -f $new_file`;
-    my $lopened = 0;
+    $LOPENED = 0;
     system "/bin/rm $runtag";
     print "$OURPATH is exiting and restarting...\n";
     if($interactive) {
@@ -613,14 +623,16 @@ sub log_update {
     }
     system($cmd);
   }
-  if(!$lopened) {       #ignore this part if already opened
+  if(!$LOPENED) {       #ignore this part if already opened
     if(!open(LOGL, $tapelog)) {
       print "Can't open $tapelog: $!\n";
       system "/bin/rm $runtag";
       exit;
     }
-    $lopened = 1;
+    $LOPENED = 1;
+    $pass1 = 1;		#must know it's the firest time through the log
   }
+  $lastflg = 0;
   seek(LOGL, 0, 1);
   while(<LOGL>) {
     if(/^\*Tp:RdQsort:/) {      #rd Q may have been reordered
@@ -882,43 +894,66 @@ sub log_update {
           $Hofslotused{$snum} = 0;
         }
       }
-      if($rbdnum == 0) {
-        $b_drv0->configure(-background => 'yellow');
+      elsif($com eq "transfer") {
+        $fromslot = $snum; $toslot = $rbdnum;
       }
-      elsif($rbdnum == 1) {
-        $b_drv1->configure(-background => 'yellow');
-      }
-      elsif($rbdnum == 2) {
-        $b_drv2->configure(-background => 'yellow');
-      }
-      elsif($rbdnum == 3) {
-        $b_drv3->configure(-background => 'yellow');
-      }
-      elsif($rbdnum == 4) {
-        $b_drv4->configure(-background => 'yellow');
-      }
-      elsif($rbdnum == 5) {
-        $b_drv5->configure(-background => 'yellow');
-      }
-      elsif($rbdnum == 6) {
-        $b_drv6->configure(-background => 'yellow');
-      }
-      elsif($rbdnum == 7) {
-        $b_drv7->configure(-background => 'yellow');
-      }
-      elsif($rbdnum == 8) {
-        $b_drv8->configure(-background => 'yellow');
-      }
-      elsif($rbdnum == 9) {
-        $b_drv9->configure(-background => 'yellow');
-      }
-      elsif($rbdnum == 10) {
-        $b_drv10->configure(-background => 'yellow');
-      }
-      elsif($rbdnum == 11) {
-        $b_drv11->configure(-background => 'yellow');
+      if($com ne "transfer") {		#don't light drive if transfer cmd
+        if($rbdnum == 0) {
+          $b_drv0->configure(-background => 'yellow');
+        }
+        elsif($rbdnum == 1) {
+          $b_drv1->configure(-background => 'yellow');
+        }
+        elsif($rbdnum == 2) {
+          $b_drv2->configure(-background => 'yellow');
+        }
+        elsif($rbdnum == 3) {
+          $b_drv3->configure(-background => 'yellow');
+        }
+        elsif($rbdnum == 4) {
+          $b_drv4->configure(-background => 'yellow');
+        }
+        elsif($rbdnum == 5) {
+          $b_drv5->configure(-background => 'yellow');
+        }
+        elsif($rbdnum == 6) {
+          $b_drv6->configure(-background => 'yellow');
+        }
+        elsif($rbdnum == 7) {
+          $b_drv7->configure(-background => 'yellow');
+        }
+        elsif($rbdnum == 8) {
+          $b_drv8->configure(-background => 'yellow');
+        }
+        elsif($rbdnum == 9) {
+          $b_drv9->configure(-background => 'yellow');
+        }
+        elsif($rbdnum == 10) {
+          $b_drv10->configure(-background => 'yellow');
+        }
+        elsif($rbdnum == 11) {
+          $b_drv11->configure(-background => 'yellow');
+        }
       }
       if($playback) { last; }
+    }
+    elsif(/^\*\*\*Rb:success transfer/) {	#good transfer slot to slot
+      $trobot0->insert('end', $_);
+      $x = "\$slotbt$fromslot->configure(-background=>'grey',-text=>'-------------')";
+      eval($x);
+      if($toslot > $MAX_SLOTS) {	#it's an EE slot 
+       delete($Hofreplace{$slottapes[$fromslot-1]}); #not eligible for replace
+       #$tapeid = $slottapes[$toslot-1];
+       #$thistape is the tapeid from the last transtape command
+       $x = "\$slotbtx$i->configure(-text => \$thistape, -background=>'grey')";
+       eval($x);
+       push(@expfromslot, $fromslot);
+      }
+      else {
+        $Hofreplace{$slottapes[$fromslot-1]} = 1;    #eligible for replace
+      }
+      $slottapes[$toslot-1] = $slottapes[$fromslot-1];
+      $slottapes[$fromslot-1] = "-------------";
     }
     elsif(/^\*\*\*Rb:/) {
       $trobot0->insert('end', $_);
@@ -1029,6 +1064,7 @@ sub log_update {
         eval($x);
       }
       #always go away to give time to see the display change
+      $lastflg = 1;
       last;
       #if($playback) { last; }
     }
@@ -1378,7 +1414,22 @@ sub log_update {
       $b_drv11->configure(-background=>'grey');
       if($playback) { last; }
     }
+    elsif(/^\*\*\*EXPCLOSEDO called for jmtx/) {
+      chomp;
+      $pos = rindex($_, ' ');
+      $i = substr($_, $pos+1);
+      $thistape = substr($_, $pos-8, 8);
+      $x = "\$slotbtx$i->configure(-background=>'yellow', -text=>\$thistape)";
+      eval($x);
+    }
+    elsif(/^\*\*\*EXPCLOSEDO called for stop unload/) { #unload is done
+      if(!$pass1) { &ExpClosed_Open_Door; }
+    }
+    elsif(/^\*\*\*EXPCLOSEDO called for reinventory/) { #load is done
+      if(!$pass1) { &ExpClosed_ReInv; }
+    }
   }
+  if(!$lastflg) { $pass1 = 0; }
 }
 
 #######################################################################
@@ -1814,6 +1865,7 @@ sub ImpExp_sub_unload {
     #If so, delete the NOTAPEARC file and give a msg no imp/exp now.
     #if no tapearc running, continue. rm NOTAPEARC when done.
     `/bin/touch $NOTAPEARC`;
+#!!!TBD: fix this for the multi tapearc[0-7]??
     @arctest = `ps -ef | grep "tapearc -v jsocdc"`;
     if($#arctest > 1) {         #don't count our sh and grep
       `/bin/rm $NOTAPEARC`;
@@ -1865,6 +1917,63 @@ sub ImpExp_sub_unload {
         $ImpExpf->Label(-text => "Fatal Error: Can't fork", -font => 'arial 12 bold')->pack(@pl);
         print "!!Fatal Error: Can't fork: $!\n";
       }
+}
+
+#Called when see in the tape_svc log file:
+#***EXPCLOSEDO called for stop
+#This will instruct the user what to do next and to hit the 
+#ExpClosed Done button when finished.
+sub ExpClosed_Open_Door {
+  if(Exists($Expfc)) {
+    $Expfc->destroy();
+  }
+  $Expfc = $mw->Toplevel();
+  $Expfc->geometry("590x480");
+  $Expfc->title("Export Closed Ops");
+  $Expfc->Button(
+        -text => 'Close',
+        -background => 'grey',
+        -command => sub {$Expfc->destroy();},
+        )->pack();
+  #reset the command sub on the Imp/Exp button on the main page to come here
+  #$b0->configure(-text => $b0text, -background => 'yellow',
+  #		-command =>  \&Imp_Exp_Open_Door,); 
+  $Expfc->Label(-text => "NOTE: Closed tapes have been unloaded.", 
+		-font => 'arial 12 bold')->pack(@pl);
+  $Expfc->Label(-text => "Now complete each step in the order given:", 
+		-font => 'arial 12 bold')->pack(@pl);
+  $Expfc->Label(-text => "Go to the t950 console and hit 'Import/Export'", 
+		-font => 'arial 12 bold')->pack(@pl);
+  $Expfc->Label(-text => "Hit the bottom 'Export/Exchange' button", 
+		-font => 'arial 12 bold')->pack(@pl);
+  $Expfc->Label(-text=>"The door will open - \nremove the terapack in the door and insert one with blank tapes.", 
+		-font => 'arial 12 bold')->pack(@pl);
+  $Expfc->Label(-text=>"When these tapes are in the EE slots, hit 'Continue'",
+		-font => 'arial 12 bold')->pack(@pl);
+  $msg = "Continue until no more terapacks come out the door";
+  $Expfc->Label(-text => $msg, 
+		-font => 'arial 12 bold')->pack(@pl);
+  $msg = "When all terapacks are done, hit the 'ExpClosed Done' button below";
+  $Expfc->Label(-text => $msg, 
+		-font => 'arial 12 bold')->pack(@pl);
+  $msg = "(NOTE: when hit below, there will be a delay for \nthe move of all tapes, and a new inventory)\n";
+  $Expfc->Label(-text => $msg, 
+		-font => 'arial 12 bold')->pack(@pl);
+  $Expfc->Button(
+        -text => 'ExpClosed Done',
+        -background => 'red',
+        -command => \&ExpClosed_Done,
+        )->pack();
+}
+
+sub ExpClosed_Done {
+  if(Exists($Expfc)) {
+    $Expfc->destroy();
+  }
+  @txorder = @expfromslot;
+  $xxcnt = $#expfromslot + 1;
+  &ExpHMItlm_load_sub(1);
+  return;
 }
 
 #Called from log_update() when Rb:doorcomplete occurs.
@@ -2135,6 +2244,176 @@ sub Mt_stat {
   close(LOGSTAT);
 }
 
+#Called from the major gui button "Export closed tapes".
+sub Exptlm_sub {
+  if(Exists($exptlmf)) {
+    $exptlmf->destroy();
+  }
+  $exptlmf = $mw->Toplevel();
+  $exptlmf->geometry("310x480");
+  $exptlmf->title("export closed tapes");
+  if(!$interactive) {
+    $msg = "\nSorry, you are not the interactive user. You cannot do Export.";
+    $exptlmf->Label(-text => $msg, -font => 'arial 12 bold')->pack(@pl);
+    return;
+  }
+  @expfromslot = ();
+  #hmi.lev0 is group 2
+  $sqlcmd = "select tapeid,last_write from sum_tape where group_id=2 and closed=2 order by last_write";		#get oldest first
+  $sth = $dbh->prepare($sqlcmd);
+  if ( !defined $sth ) {
+    print "Cannot prepare statement: $DBI::errstr\n";
+    system "/bin/rm $runtag";
+    exit;
+  }
+  $sth->execute;
+  $hlev0cnt = 0; @hlev0unloads= (); @xtemp = ();
+  $qlog = "/tmp/t950view.$user.2.log";
+  if(!open(QLOG, ">$qlog")) {
+    print "Can't open $qlog: $!\n";
+    system "/bin/rm $runtag";
+    exit;
+  }
+  print "View query result for group 2 in: $qlog\n";
+  print QLOG "sqlcmd is: $sqlcmd\n"; #!!TEMP
+  while(@hlev0query = $sth->fetchrow()) { #get row from the DB
+    @xtemp = @hlev0query;
+    $hlev0tape = shift(@hlev0query);
+    if(grep(/$hlev0tape/, @slottapes)) {
+      #print "hlev0tape = $hlev0tape\n";
+      push(@hlev0unloads, $hlev0tape);
+      print QLOG "@xtemp\n";
+      $hlev0cnt++;
+    }
+  }
+  close(QLOG);
+  #aia.lev0 is group 3
+  $sqlcmd = "select tapeid,last_write from sum_tape where group_id=3 and closed=2 order by last_write";
+  $sth = $dbh->prepare($sqlcmd);
+  if ( !defined $sth ) {
+    print "Cannot prepare statement: $DBI::errstr\n";
+    system "/bin/rm $runtag";
+    exit;
+  }
+  $sth->execute;
+  $alev0cnt = 0; @alev0unloads= (); @xtemp = ();
+  $qlog = "/tmp/t950view.$user.3.log";
+  if(!open(QLOG, ">$qlog")) {
+    print "Can't open $qlog: $!\n";
+    system "/bin/rm $runtag";
+    exit;
+  }
+  print "View query result for group 3 in: $qlog\n";
+  print QLOG "sqlcmd is: $sqlcmd\n"; #!!TEMP
+  while(@alev0query = $sth->fetchrow()) { #get row from the DB
+    @xtemp = @alev0query;
+    $alev0tape = shift(@alev0query);
+    if(grep(/$alev0tape/, @slottapes)) {
+      push(@alev0unloads, $alev0tape);
+      print QLOG "@xtemp\n";
+      $alev0cnt++;
+    }
+  }
+  close(QLOG);
+  #hmi.tlm is group 4
+  $sqlcmd = "select tapeid,last_write from sum_tape where group_id=4 and closed=2 order by last_write";
+  $sth = $dbh->prepare($sqlcmd);
+  if ( !defined $sth ) {
+    print "Cannot prepare statement: $DBI::errstr\n";
+    system "/bin/rm $runtag";
+    exit;
+  }
+  $sth->execute;
+  $hmicnt = 0; @hmiunloads= (); @xtemp = ();
+  $qlog = "/tmp/t950view.$user.4.log";
+  if(!open(QLOG, ">$qlog")) {
+    print "Can't open $qlog: $!\n";
+    system "/bin/rm $runtag";
+    exit;
+  }
+  print "View query result for group 4 in: $qlog\n";
+  print QLOG "sqlcmd is: $sqlcmd\n"; #!!TEMP
+  while(@hmiquery = $sth->fetchrow()) { #get row from the DB
+    @xtemp = @hmiquery;
+    $hmitape = shift(@hmiquery);
+    if(grep(/$hmitape/, @slottapes)) {
+      #print "$hmitape for grp 4 in slottapes\n"; #!!!TEMP
+      push(@hmiunloads, $hmitape);
+      print QLOG "@xtemp\n";
+      $hmicnt++;
+    }
+  }
+  close(QLOG);
+  #aia.tlm is group 5
+  $sqlcmd = "select tapeid,last_write from sum_tape where group_id=5 and closed=2 order by last_write";
+  $sth = $dbh->prepare($sqlcmd);
+  if ( !defined $sth ) {
+    print "Cannot prepare statement: $DBI::errstr\n";
+    system "/bin/rm $runtag";
+    exit;
+  }
+  $sth->execute;
+  $aiacnt = 0; @aiaunloads= (); @xtemp = ();
+  $qlog = "/tmp/t950view.$user.5.log";
+  if(!open(QLOG, ">$qlog")) {
+    print "Can't open $qlog: $!\n";
+    system "/bin/rm $runtag";
+    exit;
+  }
+  print "View query result for group 5 in: $qlog\n";
+  print QLOG "sqlcmd is: $sqlcmd\n"; #!!TEMP
+  while(@aiaquery = $sth->fetchrow()) { #get row from the DB
+    @xtemp = @aiaquery;
+    $aiatape = shift(@aiaquery);
+    if(grep(/$aiatape/, @slottapes)) {
+      #print "$aiatape\n";
+      push(@aiaunloads, $aiatape);
+      print QLOG "@xtemp\n";
+      $aiacnt++;
+    }
+  }
+  close(QLOG);
+      $txt = "\nNumber of closed tapes\n\nHMI tlm: $hmicnt";
+      $exptlmf->Label(-text => "$txt", -font => 'arial 16')->pack();
+      $exptlmf->Button(
+          -text => 'Export HMI tlm',
+          -background => 'lightyellow',
+          -command => [\&ExpHMItlm_sub, 4],	#hmi.tlm is group 4
+          )->pack(-pady => 0);
+      $txt = "\nAIA tlm: $aiacnt";
+      $exptlmf->Label(-text => "$txt", -font => 'arial 16')->pack();
+      $exptlmf->Button(
+          -text => 'Export AIA tlm',
+          -background => 'lightyellow',
+          -command => [\&ExpHMItlm_sub, 5],	#aia.tlm is group 5
+          )->pack(-pady => 0);
+      $txt = "\nHMI lev0: $hlev0cnt";
+      $exptlmf->Label(-text => "$txt", -font => 'arial 16')->pack();
+      $exptlmf->Button(
+          -text => 'Export HMI lev0',
+          -background => 'lightyellow',
+          -command => [\&ExpHMItlm_sub, 2],	#hmi.lev0 is group 2
+          )->pack(-pady => 0);
+      $txt = "\nAIA lev0: $alev0cnt";
+      $exptlmf->Label(-text => "$txt", -font => 'arial 16')->pack();
+      $exptlmf->Button(
+          -text => 'Export AIA lev0',
+          -background => 'lightyellow',
+          -command => [\&ExpHMItlm_sub, 3],	#aia.lev0 is group 3
+          )->pack(-pady => 0);
+      $exptlmf->Button(
+          -text => 'Redisplay-in case you retarted t950view',
+          -background => 'lightgrey',
+          -command => [\&ExpHMItlm_sub, -1],	#use last group #
+          )->pack(-pady => 20);
+      $exptlmf->Button(
+          -text => 'Close',
+          -background => 'grey',
+          -command => sub {$exptlmf->destroy();},
+          )->pack(-pady => 20);
+      return; 
+}
+
 sub Exit_sub {
   $dbh->disconnect();
   if($pid0) {			#kill off our child
@@ -2279,4 +2558,198 @@ sub commify {
     return scalar reverse $text;
 }
 
+#Called by the ExpClosed_Done() routine after the operator hits the
+#'ExpClosed Done' button.
+#@txorder containts the target slot #s.
+sub ExpHMItlm_load_sub {
+  my ($unload_load) = @_;
+  if(Exists($ExpHtlmf)) {
+    $ExpHtlmf->destroy();
+  }
+  $ExpHtlmg = $mw->Toplevel();
+  #$ExpHtlmg->geometry("590x800");
+  $ExpHtlmg->geometry("580x300+500+40");
+  $ExpHtlmg->title("Export import new tapes");
+  $ExpHtlmg->Button(
+        -text => 'Close',
+        -background => 'grey',
+        -command => sub {$ExpHtlmg->destroy();},
+        )->pack();
+    $ExpHtlmg->Label(-text=> "Load of New Tapes In Progress (I will notify you when done)", 
+		 -background=>'orange', -font => 'arial 12 bold')->pack(@pl);
+    $ExpHtlmg->Label(-text=> "NOTE: EE slots will show old tape#s until next inventory", 
+		 -font => 'arial 12 bold')->pack(@pl);
+#    $ExpHtlmg->Label(-text => "Export Slot#s:", 
+#		 -font => 'arial 12 bold')->pack(@pl);
+    @loadids = ();
+#    $E0 = $ExpHtlmg->Frame(-borderwidth => 0) ->pack(-side => 'left');
+#    $E0->Label(-text => "Tapes to reload:", 
+#		-font => 'arial 12 bold')->pack(@pl);
+    #do in groups of 10 to max of 40
+    #if($xxcnt > 30) { $xxcnt = 30; }
+    if($xxcnt > 40) { $xxcnt = 40; }
+    $d = int($xxcnt/10);
+    $nneed = $d * 10;
+    #$nneed = 9; #!!!TEMP for test
+    for($i=0; $i < $nneed; $i++) {
+      $tpid = shift(@txorder);
+      push(@loadids, $tpid);
+      #delete($Hofreplace{$tpid});	#remove this tape from the hash !!TBD
+      #$E0->Label(-text => $tpid, 
+      #	-background=>'orange', -font => 'arial 12 bold')->pack(@pl);
+    }
+#    $ff00 = $ExpHtlmg->Frame(-borderwidth => 3, -relief=>'groove')
+#  		->pack(-side => 'left');
+#    &show_notape_in_slots_exp;		#show blank tape slots
+
+      if($pid0 = fork) {
+        #This is the parent. The child's pid is in $pid0
+        print LOG "          \n";	#!!don't lose first few chars on line??
+        print LOG "fork exportclosed start processing pid=$pid0.\n";
+      } elsif (defined $pid0) {     # $pid0 is zero here if defined.
+          exec "exportclosed load @loadids";
+      }  else {
+        #fork error
+        $ExpHtlmg->Label(-text => "Fatal Error: Can't fork", -font => 'arial 12 bold')->pack(@pl);
+        print "!!Fatal Error: Can't fork: $!\n";
+      }
+}
+
+#All the new tapes have been loaded into the t950 slots.
+#Re-inventory (done by expclosedo_1() in tape_svc) and go to normal operations.
+sub ExpClosed_ReInv {
+  if(Exists($ExpHtlmg)) {
+    $ExpHtlmg->destroy();
+  }
+  sleep(5);
+  $current_page = -1;	#force redraw
+  //&show_tape_in_slots(0);  	#display where tapes are
+  &Display_tape_in_slots(0);
+}
+
+#Called from Exptlm_sub which makes an array of the closed tapes
+#for each group that can be exported.
+#The arg is the group# for unload of closed tapes into the EE slots. 
+sub ExpHMItlm_sub {
+  my ($grpn) = @_;
+  $bypass = 0;
+  SWITCH: {
+    if($grpn == -1) {
+      $grpn = $grpnsave;
+      $bypass = 1;
+    }
+    if($grpn == 2) {
+      $xxcnt = $hlev0cnt;
+      @txorder = @hlev0unloads;
+      last SWITCH;
+    }
+    if($grpn == 3) {
+      $xxcnt = $alev0cnt;
+      @txorder = @alev0unloads;
+      last SWITCH;
+    }
+    if($grpn == 4) {		#hmi.tlm
+      $xxcnt = $hmicnt;
+      @txorder = @hmiunloads;
+      last SWITCH;
+    }
+    if($grpn == 5) {
+      $xxcnt = $aiacnt;		#aia.tlm
+      @txorder = @aiaunloads;
+      last SWITCH;
+    }
+  }
+  $grpnsave = $grpn;
+  if(Exists($ExpHtlmf)) {
+    $ExpHtlmf->destroy();
+  }
+  if(Exists($exptlmf)) {
+    $exptlmf->destroy();
+  }
+  $ExpHtlmf = $mw->Toplevel();
+  $ExpHtlmf->geometry("590x820");
+  $ExpHtlmf->title("Export closed tapes/import new tapes");
+  $ExpHtlmf->Button(
+        -text => 'Close',
+        -background => 'grey',
+        -command => sub {$ExpHtlmf->destroy();},
+        )->pack();
+    $ExpHtlmf->Label(-text=> "Unload of Closed Tapes In Progress (I will notify you when done)", 
+		 -background=>'orange', -font => 'arial 12 bold')->pack(@pl);
+    $ExpHtlmf->Label(-text => "Export Slot#s:", 
+		 -font => 'arial 12 bold')->pack(@pl);
+    @unloadids = ();
+    $E0 = $ExpHtlmf->Frame(-borderwidth => 0) ->pack(-side => 'left');
+    $E0->Label(-text => "Tapes to unload:", 
+		-font => 'arial 12 bold')->pack(@pl);
+    #do in groups of 10 to max of 40
+    #if($xxcnt > 30) { $xxcnt = 30; }
+    if($xxcnt > 40) { $xxcnt = 40; }
+    $d = int($xxcnt/10);
+    $nneed = $d * 10;
+    #$nneed = 9; #!!!TEMP for test !!
+    for($i=0; $i < $nneed; $i++) {
+      $tpid = shift(@txorder);
+      push(@unloadids, $tpid);
+      delete($Hofreplace{$tpid});	#remove this tape from the hash
+      $E0->Label(-text => $tpid, 
+	-background=>'orange', -font => 'arial 12 bold')->pack(@pl);
+    }
+    $ff00 = $ExpHtlmf->Frame(-borderwidth => 3, -relief=>'groove')
+  		->pack(-side => 'left');
+    &show_notape_in_slots_exp;		#show blank tape slots
+
+    if(!$bypass) {
+      if($pid0 = fork) {
+        #This is the parent. The child's pid is in $pid0
+        print LOG "          \n";	#!!don't lose first few chars on line??
+        print LOG "fork exportclosed start processing pid=$pid0.\n";
+      } elsif (defined $pid0) {     # $pid0 is zero here if defined.
+          exec "exportclosed unload @unloadids";
+      }  else {
+        #fork error
+        $ExpHtlmf->Label(-text => "Fatal Error: Can't fork", -font => 'arial 12 bold')->pack(@pl);
+        print "!!Fatal Error: Can't fork: $!\n";
+      }
+    }
+}
+
+sub show_notape_in_slots_exp {
+  my $row = 0; $column = 0; $rows_per_col = 20;
+  foreach $i ($FIRST_EXP_SLOT .. $LAST_EXP_SLOT) {
+    $tapeid = "-------------";
+    $y = "\$slotbtx$i";
+    $x = "\$slotbtx$i = \$ff00->Button(
+        -text => \$tapeid,
+        -background => 'grey',
+        -relief => 'sunken',
+        -command => \[\\&Tape_info, \$tapeid\],
+        )";
+     eval($x);
+     $txt = "      ".$i;
+     my $l = $ff00->Label(-text => $txt, -anchor => 'w', -justify => 'left'); 
+    Tk::grid( $l, -row => $row, -column => $column, 
+		-sticky => 'nw', -pady => 0);
+    Tk::grid( eval($y), -row => $row, -column => ($column + 1),
+		-sticky => 'w', -pady => 0);
+    $ff00->gridRowconfigure($row++,-weight => 0);
+    $f0x->gridColumnconfigure($column,-weight => 1, -minsize => 10);
+    $f0x->gridColumnconfigure($column+1,-weight => 8, -minsize => 10);
+    if($row == $rows_per_col) { $row = 0; $column += 2; }
+  }
+  #put in tapeid's:
+  foreach $i ($FIRST_EXP_SLOT .. $LAST_EXP_SLOT) {
+    $tapeid = $slottapes[$i-1];
+    if($tapeid eq "-------------") {
+      $tapeidinfo = $emptyslottapes[$i-1];
+    }
+    else {
+      $tapeidinfo = $tapeid;
+    }
+    $y = "\$slotbtx$i";
+    $x = "\$slotbtx$i->configure(-text => \$tapeid,
+                -command => \[\\&Tape_info, \$tapeidinfo\])";
+     eval($x);
+  }
+}
 

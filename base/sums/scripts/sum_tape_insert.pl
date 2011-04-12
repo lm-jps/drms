@@ -28,22 +28,22 @@ if(!($PGPORT = $ENV{'SUMPGPORT'})) {
   exit;
 }
 $IDTBL = $ARGV[0];
-print "Need hmi password to run: passwd =";
-ReadMode('noecho');
-$passwd = ReadLine(0);
-chomp($passwd);
-ReadMode('normal');
-print "\n";
-if($passwd ne "hmi4sdo") {
-  print "Invalid passwd\n";
-  exit(1);
-}
+#print "Need hmi password to run: passwd =";
+#ReadMode('noecho');
+#$passwd = ReadLine(0);
+#chomp($passwd);
+#ReadMode('normal');
+#print "\n";
+#if($passwd ne "hmi4sdo") {
+#  print "Invalid passwd\n";
+#  exit(1);
+#}
 $user = "jim";
-$password = "jimshoom";
+#$password = "jimshoom";
 $hostdb = "hmidb";      #host where Postgres runs
 
 #First connect to database
-  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb;port=$PGPORT", "$user", "$password");
+  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb;port=$PGPORT", "$user", "");
   if ( !defined $dbh ) {
     die "Cannot do \$dbh->connect: $DBI::errstr\n";
   }

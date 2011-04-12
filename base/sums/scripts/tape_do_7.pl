@@ -22,7 +22,7 @@ sub labeldate {
 }
 
 $| = 1;
-$abortfile = "/usr/local/logs/tapearc/TAPEARC_ABORT0";
+$abortfile = "/usr/local/logs/tapearc/TAPEARC_ABORT7";
 $DB = "jsoc_sums";
 $ENV{'PGPORT'} = "5434";        #jsoc_sums db uses non-default PGPORT
 
@@ -41,8 +41,8 @@ $ENV{'PGPORT'} = "5434";        #jsoc_sums db uses non-default PGPORT
 
 while(1) {			#keep it running for now
   $label = &labeldate;
-  $logfile = "/usr/local/logs/tapearc/tape_do_0_".$label;
-  $cmd = "/home/production/cvs/JSOC/bin/linux_ia64/tapearc0 -v jsoc_sums";
+  $logfile = "/usr/local/logs/tapearc/tape_do_7_".$label;
+  $cmd = "/home/production/cvs/JSOC/bin/linux_ia64/tapearc7 -v jsoc_sums";
   #$sleeptime = 3600;
   $sleeptime = 120;
   print "$cmd\n";
@@ -50,7 +50,7 @@ while(1) {			#keep it running for now
     print "Error on: $cmd\n";
     print "See log: $logfile\n";
     print "Error is typically - no archive pending entries\n";
-    #$sleeptime = 300;		#sleep longer
+    #$sleeptime = 300;           #sleep longer
     #exit(1);
   }
   if ( -e $abortfile ) {	# if file exist
@@ -58,6 +58,7 @@ while(1) {			#keep it running for now
    print "Found: $abortfile\n";
    last;
   }
+  #sleep(3600);
   sleep($sleeptime);
   if ( -e $abortfile ) {	# if file exist
    `/bin/rm -f $abortfile`;

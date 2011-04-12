@@ -1,4 +1,4 @@
-eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
+eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -d -S $0 "$@"'
     if 0;
 #
 #/home/jim/cvs/PROTO/script/SUM/t50view
