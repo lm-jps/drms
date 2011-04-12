@@ -16,6 +16,7 @@ shifting is done (as for group 6, see tapearc5.c) */
 #define GS5 "6,7"  /* use 2nd tape drive for write */
 #define GS6 "6,7"  /* use 3rd tape drive for write */
 #define GS7 "310,311"
+#define GS8 "10"
 
 PADATA *NC_PaRequest_AP(int groupset);
 
@@ -41,7 +42,9 @@ EXEC SQL END DECLARE SECTION;
 PADATA *ap = NULL;
 
 //!!NOTE: don't make limit over 500
-char STMT[] = "SELECT WD, SUMID, STATUS, BYTES, EFFECTIVE_DATE, ARCHIVE_SUBSTATUS, GROUP_ID, SAFE_ID, DS_INDEX FROM SUM_PARTN_ALLOC WHERE (STATUS = 4 OR STATUS = 32) and GROUP_ID IN (%s) order by GROUP_ID limit 500";
+//char STMT[] = "SELECT WD, SUMID, STATUS, BYTES, EFFECTIVE_DATE, ARCHIVE_SUBSTATUS, GROUP_ID, SAFE_ID, DS_INDEX FROM SUM_PARTN_ALLOC WHERE (STATUS = 4 OR STATUS = 32) and GROUP_ID IN (%s) order by GROUP_ID limit 400";
+
+char STMT[] = "SELECT WD, SUMID, STATUS, BYTES, EFFECTIVE_DATE, ARCHIVE_SUBSTATUS, GROUP_ID, SAFE_ID, DS_INDEX FROM SUM_PARTN_ALLOC WHERE (STATUS = 4 OR STATUS = 32) and GROUP_ID IN (%s) order by GROUP_ID,DS_INDEX limit 600";
 
 //char STMT[] = "SELECT WD, SUMID, STATUS, BYTES, EFFECTIVE_DATE, ARCHIVE_SUBSTATUS, GROUP_ID, SAFE_ID, DS_INDEX FROM SUM_PARTN_ALLOC WHERE (STATUS = 4 OR STATUS = 32) and GROUP_ID IN (%s) order by GROUP_ID limit 3400";
 
@@ -81,6 +84,9 @@ EXEC SQL INCLUDE sqlca;
     break;
   case 7:
     sprintf(stmt, STMT, GS7);
+    break;
+  case 8:
+    sprintf(stmt, STMT, GS8);
     break;
   default:
     printk("Error in NC_PaRequest_AP Illegal groupset arg\n");
