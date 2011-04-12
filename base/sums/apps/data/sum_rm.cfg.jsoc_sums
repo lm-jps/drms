@@ -2,7 +2,8 @@
 #configuration file for sum_rm program
 #
 #when done, sleep for n seconds before re-running
-SLEEP=600
+#SLEEP=300
+SLEEP=30
 #delete until this many Mb free on /SUM set 0.
 #NOTE: only one pds type set for SUMS.
 #MAX_FREE_0=40000000

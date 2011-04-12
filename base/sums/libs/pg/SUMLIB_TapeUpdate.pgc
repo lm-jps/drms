@@ -68,15 +68,20 @@ EXEC SQL END DECLARE SECTION;
 		WHERE TAPEID = :l_tapeid;
         EXEC SQL COMMIT WORK;
 
-    if(l_availblocks < TAR_FILE_SZ_BLKS) {  /* close tape if no more space */
+    //close tape if no more space or file number reached 1200 (this is a 
+    //temporary fix to the problem of a tape not unlocking 12/17/2010
+    //if((l_availblocks < TAR_FILE_SZ_BLKS) || (filen >= 1200)) {  
+    if((l_availblocks < TAR_FILE_SZ_BLKS)) {  
+      //if(filen >= 1200) printk("File number %d >= 1200\n", filen);
       if(SUMLIB_TapeClose(tapeid)) {
         printk("Error in SUMLIB_TapeUpdate\n");
         return(0);
       }
-#ifdef SUMDC
+//Now ret a neg filen for both systems 12/15/2010
+//#ifdef SUMDC
       /* return neg filen to indicate that tape was closed */
       filen = -filen;
-#endif
+//#endif
     }
     return(filen);
 

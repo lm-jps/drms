@@ -111,6 +111,7 @@ typedef struct {
   uint64_t sumid;	/* identifies who is using the drive */
   int busy;
   int lock;
+  int to;		/* timeout set by alrm_sig, cleared when wt a tape */
   int tapemode;		/* TAPE_NOT_LOADED, TAPE_RD_INIT, TAPE_RD_CONT */
   int slotnum;		/* slot# where the cartridge in the drive belongs */
   int filenum;		/* file # starting at 0 (rewound) */
