@@ -5,6 +5,7 @@
 */
 #include <SUM.h>
 #include <sys/time.h>
+#include <sys/errno.h>
 #include <rpc/rpc.h>
 #include <soi_key.h>
 #include <soi_error.h>
@@ -13,10 +14,11 @@
 #include "serverdefs.h"
 #include "drmssite_info.h"
 
+extern int errno;
 extern int write_log(const char *fmt, ...);
 extern void StartTimer(int n);
 extern float StopTimer(int n);
-extern CLIENT *current_client, *clnttape;
+extern CLIENT *current_client, *clnttape, *clnttape_old;
 extern SVCXPRT *glb_transp;
 extern uint32_t rinfo;
 extern int debugflg;
@@ -298,7 +300,16 @@ KEY *getdo_1(KEY *params)
       if(debugflg) {
         write_log("Calling tape_svc to bring data unit online\n");
       }
+      //check if sum_svc was disconnected from tape_svc. see tapereconnectdo_1()
+      if(clnttape == 0) {
+        rinfo = 1;
+        send_ack();
+        freekeylist(&retlist);
+        write_log("**Error in READDO to tape_svc. sum_svc has been disconnected\n");
+        return((KEY *)1);
+      }
       rinfo = RESULT_PEND;  /* now tell caller to wait for results */
+      tapeback = 0;
       status = clnt_call(clnttape,READDO, (xdrproc_t)xdr_Rkey, (char *)retlist, 
 			(xdrproc_t)xdr_uint32_t, (char *)&tapeback, TIMEOUT);
       if(status != RPC_SUCCESS) {
@@ -581,7 +592,7 @@ KEY *putdo_1(KEY *params)
       //write_log("%s\n", sysstr);
       //StartTimer(3);		//!!TEMP
       if(system(sysstr)) {
-          write_log("**Warning: Error on: %s\n", sysstr);
+          write_log("**Warning: Error on: %s. errno=%d\n", sysstr,errno);
       }
       //ftmp = StopTimer(3);
       //write_log("#END: sum_chmown() %fsec\n", ftmp);    //!!TEMP for test
@@ -636,21 +647,62 @@ KEY *closedo_1(KEY *params)
  * DEBUGFLG:       KEYTYP_INT      1
  * USER:   	   KEYTYP_STRING   production
  * uid:    KEYTYP_UINT64    574
+ *
+ *Returns 0 in rinfo if both sum_svc and tape_svc are ok.
+ *1 = tape_svc call timeout
+ *5 = tape_svc not there
 */
 KEY *nopdo_1(KEY *params)
 {
+  struct timeval NOPTIMEOUT = { 8, 0 };
   uint64_t uid;
+  KEY *klist;
+  char *call_err;
+  char *usr;
+  int ans;
+  enum clnt_stat status;
 
+  usr = getkey_str(params, "USER");
   if(findkey(params, "DEBUGFLG")) {
-  debugflg = getkey_int(params, "DEBUGFLG");
-  if(debugflg) {
-    write_log("!!Keylist in nopdo_1() is:\n");
-    keyiterate(logkey, params);
-  }
+    debugflg = getkey_int(params, "DEBUGFLG");
+    if(debugflg) {
+      write_log("!!Keylist in nopdo_1() is:\n");
+      keyiterate(logkey, params);
+    }
   }
   rinfo = 0;
+/********************************************************************
+  //ck if a sum_svc to tape_svc reconnect call was made (done by
+  //tape_svc_restart to start a new tape_svc). If so then return
+  //an error 5 for no original tape_svc that was connnected to this sum_svc.
+  //This will cause drms to make an extra sum_get() after a tape_svc restart,
+  //but this an unlikely occurence and the price to get resynced.
+  if(!clnttape_old) {
+    rinfo = 5;
+    clnttape_old = clnttape;
+  }
+  else {
+***************************************************************/
+/***************************************************************
+    rinfo = 1;
+    uid = getkey_uint64(params, "uid");
+    klist = newkeylist();
+    setkey_uint64(&klist, "uid", uid);
+    setkey_str(&klist, "USER", GETKEY_str(params, "USER") );
+    status = clnt_call(clnttape, TAPENOPDO, (xdrproc_t)xdr_Rkey, (char *)klist,
+                        (xdrproc_t)xdr_void, (char *)&ans, NOPTIMEOUT);
+    rinfo = (int)ans;
+
+    // NOTE: Must honor the timeout here as get the ans back in the ack
+    if(status != RPC_SUCCESS) {
+        rinfo = 5;
+        call_err = clnt_sperror(clnttape, "Err clnt_call for TAPENOPDO");
+        write_log("%s %s status=%d\n", datestring(), call_err, status);
+    }
+  //}
+****************************************************************/
   write_log("SUM_nop for user=%s uid=%lu\n",
-		GETKEY_str(params, "USER"), getkey_uint64(params, "uid"));
+		GETKEY_str(params, "USER"), uid);
   send_ack();
   return((KEY *)1);	/* nothing will be sent later */
 }
@@ -678,10 +730,12 @@ KEY *tapereconnectdo_1(KEY *params)
   cptr = GETKEY_str(params, "ACTION");
   if(!strcmp(cptr, "close")) {
     write_log("sum_svc is closing on tape_svc about to be restarted\n");
+    if(clnttape) clnt_destroy(clnttape);
     clnttape = 0;
   }
   else if(!strcmp(cptr, "reconnect")) {
     //connect to tape_svc
+    clnttape_old = NULL;	//let nopdo_1() know that the old handle is NG
     clnttape = clnt_create(TAPEHOST, TAPEPROG, TAPEVERS, "tcp");
     if(!clnttape) {       /* server not there */
       clnt_pcreateerror("Can't get client handle to tape_svc (from sum_svc)");

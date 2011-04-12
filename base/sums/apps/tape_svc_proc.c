@@ -80,7 +80,7 @@ void logkey ();
 char *find_tape_from_group();
 KEY *taperesprobotdo_1_rd(KEY *params);
 KEY *taperesprobotdo_1_wt(KEY *params);
-static struct timeval TIMEOUT = { 30, 0 };
+static struct timeval TIMEOUT = { 120, 0 };
 
 static struct timeval first[5], second[5];
 float ftmp;
@@ -272,6 +272,7 @@ int kick_next_entry_rd() {
     }
     /* try to find a free drive, first w/no tape and then not busy */
 #ifdef SUMDC
+    //!!NOTE: the DCS does not have assigned wt drives.
     for(e=0; e < MAX_DRIVES; e++) {
       d = drive_order[e];
       if((!drives[d].tapeid) && (!drives[d].offline)) break;
@@ -347,6 +348,7 @@ int kick_next_entry_rd() {
         sback = 2;
         break;			/* break while(p) */
       } else {
+        //NOTE: still expect a call to taperesprobotdo_1()
         write_log("%s timeout occured for ROBOTDO in kick_next_entry_rd() \n", 
 		datestring());
       }
@@ -468,6 +470,7 @@ int kick_next_entry_wt() {
           write_log("**Error in kick_next_entry_wt() in tape_svc_proc.c\n");
           return(2);
         }
+        drives[d].to = 0;	//reset time out
         sback = 1;
         p = poff->next;
         continue;
@@ -1568,9 +1571,10 @@ KEY *taperesprobotdo_1(KEY *params) {
   if(status) {				//robot error
     cptr = GETKEY_str(params, "ERRSTR");
     write_log("Robot %s\n", cptr);
-    write_log("***Fatal Robot error: tape_svc is going off-line\n");
-    send_mail("***Fatal Robot error: tape_svc is going off-line\n");
-    tapeoffline = 1;
+    write_log("***Fatal Robot error: going to try to proceed...\n");
+    //write_log("***Fatal Robot error: tape_svc is going off-line\n");
+    send_mail("***Fatal Robot error: going to try to proceed...\n");
+    //tapeoffline = 1;
   }
   if(findkey(params, "slot1")) {	//an mtx transfer cmd completion
     if(status == 0) {			//no robot error
@@ -1935,6 +1939,7 @@ KEY *taperesprobotdo_1_wt(KEY *params) {
     procnum = getkey_uint32(params, "procnum");
     return(retlist);
   }
+  drives[d].to = 0;		//reset time out
   return((KEY *)1);		/* driven_svc will send answer later */
 }
 
@@ -2322,7 +2327,10 @@ KEY *expclosedo_1(KEY *params)
   op = getkey_str(params, "OP");
   write_log("***EXPCLOSEDO called for %s\n", op);
   //if(!strcmp(op, "stop load")) {	//end of exp cycle
-  if(!strcmp(op, "reinventory")) {
+  if(!strcmp(op, "unload")) {		//start of cycle to unload old tapes
+    eeactive = 1;		//disable the Q code. !!TBD (ck how reset).
+  }
+  else if(!strcmp(op, "reinventory")) {
     eeactive = 0;	/* enable the Q code again */
     retry = 6;
     while(retry) {
@@ -2473,6 +2481,20 @@ KEY *robotonoffdo_1(KEY *params)
   return((KEY *)1);
 }
 
+/* Called from sum_svc nopdo_1() to see if tape_svc is still alive.
+ * Keylist:
+ * USER:           KEYTYP_STRING   production
+ * uid:    KEYTYP_UINT64    574
+*/
+KEY *tapenopdo_1(KEY *params)
+{
+  rinfo = 0;
+  write_log("TAPENOPDO for user=%s uid=%lu\n",
+                GETKEY_str(params, "USER"), getkey_uint64(params, "uid"));
+  send_ack();
+  return((KEY *)1);     /* nothing will be sent later */
+}
+
 /* Called from the driveonoff utility program to turn a tape drive on/off.
 */
 KEY *dronoffdo_1(KEY *params)
@@ -2502,6 +2524,7 @@ KEY *dronoffdo_1(KEY *params)
   else if(!strcmp(action, "off")) {
     driveonoffstatus = 1;
     drives[drivenum].offline = 1;
+    drives[drivenum].lock = 0;
     if(tapeid = drives[drivenum].tapeid) { /* unload the current tape */
       xlist = newkeylist();
       robotbusy = 1;

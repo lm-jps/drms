@@ -14,6 +14,7 @@
 #include <soi_key.h>
 #include <sys/time.h>
 #include <sys/errno.h>
+#include <sys/stat.h>
 #include <rpc/rpc.h>
 #include <rpc/pmap_clnt.h>
 #include <sum_rpc.h>
@@ -26,6 +27,7 @@ char *get_eff_date(int plusdays);
 #define TAR_FILE_SZ 500000000	/* try to make a tar file this size bytes */
 #define ARCH_CHUNK 30		/* this many archive calls to tape_svc */
 #define NOTAPEARC "/usr/local/logs/soc/NOTAPEARC" /* touched by t50view */
+#define MYNAME "tapearc1"
 
 extern void printkey (KEY *key);
 void usage();
@@ -38,7 +40,8 @@ void sighandler(int sig);
 KEY *tapearcdo_1(KEY *params);
 static void tapearcprog_1(struct svc_req *rqstp, SVCXPRT *transp);
 
-static struct timeval TIMEOUT = { 3, 0 };
+//static struct timeval TIMEOUT = { 10, 0 };
+static struct timeval TIMEOUT = { 120, 0 };
 static int WRTSTATUS;
 uint32_t rinfo;         /* info returned by XXXdo_1() calls */
 int call_tape_svc_cnt;
@@ -250,7 +253,7 @@ void setup()
   if(cptr) *cptr = (char)NULL;
   //!!temp for test
   //sprintf(thishost, "localhost");
-/***************************************
+/******************************
   n = find_tapearc();
   if(n > 1) {
      printf("%s: Only one tapearc %s allowed at a time. I see %d\n",
@@ -259,7 +262,7 @@ void setup()
 //	       thishost, dbname,n);
      exit(1); 
   }
-***************************************/
+******************************/
   //don't set pgport on datacapture machines
   //NEED to do this now (11/19/2009) after change dcs Pg port
   //The port is now set by the DS_ConnectDB() call in SUMLIB_PgConnect.pgc
@@ -372,6 +375,14 @@ int call_tape_svc(int groupid, double bytes, uint64_t index) {
         printf("NO_CLNTTCP_CREATE error on ret from clnt_call(clntape,WRITEDO)\n");
         printf("Check tape_svc log for any error messages\n");
         printf("I'm aborting now...\n");
+        if(is_connected)
+        if(DS_DisConnectDB())
+          fprintf(stderr, "DS_DisconnectDB() error\n");
+        exit(1);
+      }
+      else if(retstat == SUM_TAPE_SVC_OFF) {
+        printf("SUM_TAPE_SVC_OFF error on ret from clnt_call(clntape,WRITEDO)\n");
+        printf("The tape_svc has been set off line. I'm aborting\n");
         if(is_connected)
         if(DS_DisConnectDB())
           fprintf(stderr, "DS_DisconnectDB() error\n");
@@ -588,6 +599,7 @@ KEY *tapearcdo_1(KEY *params)
 */
 int storeunitarch(int docnt)
 {
+  struct stat stbuf;
   int i, chunkcnt, wd_max_call_cnt;
   uint32_t sback;
   uint64_t first_index;
@@ -629,57 +641,71 @@ int storeunitarch(int docnt)
     /* or the wds total TAR_FILE_SZ of storage */
     curr_group_sz += walker->bytes;
     if(curr_group_sz >= TAR_FILE_SZ) {		/* already big enough */
-      total_bytes = curr_group_sz;
-      sprintf(name, "wd_%d", i);
-      setkey_str(&alist, name, walker->wd);
-      sprintf(name, "effective_date_%d", i);
-      setkey_str(&alist, name, walker->effective_date);
-      sprintf(name, "sumid_%d", i);
-      setkey_uint64(&alist, name, walker->sumid);
-      sprintf(name, "bytes_%d", i);
-      setkey_double(&alist, name, walker->bytes);
-      sprintf(name, "status_%d", i);
-      setkey_int(&alist, name, walker->status);
-      sprintf(name, "archsub_%d", i);
-      setkey_int(&alist, name, walker->archsub);
-      sprintf(name, "group_id_%d", i);
-      setkey_int(&alist, name, walker->group_id);
-      sprintf(name, "safe_id_%d", i);
-      setkey_int(&alist, name, walker->safe_id);
-      sprintf(name, "ds_index_%d", i);
-      setkey_uint64(&alist, name, walker->ds_index);
-      sprintf(name, "username_%d", i);
-      setkey_str(&alist, name, username);
-      setkey_int(&alist, "DEBUGFLG", debugflg);
-      chunkcnt++;
-      i++;
+      if(stat(walker->wd, &stbuf)) {		//don't archive bad dir
+        send_mail("%s: Don't archive bad dir: %s \n", MYNAME, walker->wd);
+        printf("%s: Don't archive bad dir: %s \n", MYNAME, walker->wd);
+        curr_group_sz -= walker->bytes;
+      }
+      else {
+        total_bytes = curr_group_sz;
+        sprintf(name, "wd_%d", i);
+        setkey_str(&alist, name, walker->wd);
+        sprintf(name, "effective_date_%d", i);
+        setkey_str(&alist, name, walker->effective_date);
+        sprintf(name, "sumid_%d", i);
+        setkey_uint64(&alist, name, walker->sumid);
+        sprintf(name, "bytes_%d", i);
+        setkey_double(&alist, name, walker->bytes);
+        sprintf(name, "status_%d", i);
+        setkey_int(&alist, name, walker->status);
+        sprintf(name, "archsub_%d", i);
+        setkey_int(&alist, name, walker->archsub);
+        sprintf(name, "group_id_%d", i);
+        setkey_int(&alist, name, walker->group_id);
+        sprintf(name, "safe_id_%d", i);
+        setkey_int(&alist, name, walker->safe_id);
+        sprintf(name, "ds_index_%d", i);
+        setkey_uint64(&alist, name, walker->ds_index);
+        sprintf(name, "username_%d", i);
+        setkey_str(&alist, name, username);
+        setkey_int(&alist, "DEBUGFLG", debugflg);
+        chunkcnt++;
+        i++;
+      }
       walker=walker->next;
     }
     else if((walker->group_id == curr_group_id) && (curr_group_sz < TAR_FILE_SZ) && (wd_max_call_cnt < MAXSUMREQCNT)) {
-      total_bytes = curr_group_sz;
-      wd_max_call_cnt++;
-      sprintf(name, "wd_%d", i);
-      setkey_str(&alist, name, walker->wd);
-      sprintf(name, "effective_date_%d", i);
-      setkey_str(&alist, name, walker->effective_date);
-      sprintf(name, "sumid_%d", i);
-      setkey_uint64(&alist, name, walker->sumid);
-      sprintf(name, "bytes_%d", i);
-      setkey_double(&alist, name, walker->bytes);
-      sprintf(name, "status_%d", i);
-      setkey_int(&alist, name, walker->status);
-      sprintf(name, "archsub_%d", i);
-      setkey_int(&alist, name, walker->archsub);
-      sprintf(name, "group_id_%d", i);
-      setkey_int(&alist, name, walker->group_id);
-      sprintf(name, "safe_id_%d", i);
-      setkey_int(&alist, name, walker->safe_id);
-      sprintf(name, "ds_index_%d", i);
-      setkey_uint64(&alist, name, walker->ds_index);
-      sprintf(name, "username_%d", i);
-      setkey_str(&alist, name, username);
-      setkey_int(&alist, "DEBUGFLG", debugflg);
-      i++;
+      if(stat(walker->wd, &stbuf)) {		//don't archive bad dir
+        send_mail("%s: Don't archive bad dir: %s \n", MYNAME, walker->wd);
+        printf("%s: Don't archive bad dir: %s \n", MYNAME, walker->wd);
+        curr_group_sz -= walker->bytes;
+      }
+      else {
+        total_bytes = curr_group_sz;
+        wd_max_call_cnt++;
+        sprintf(name, "wd_%d", i);
+        setkey_str(&alist, name, walker->wd);
+        sprintf(name, "effective_date_%d", i);
+        setkey_str(&alist, name, walker->effective_date);
+        sprintf(name, "sumid_%d", i);
+        setkey_uint64(&alist, name, walker->sumid);
+        sprintf(name, "bytes_%d", i);
+        setkey_double(&alist, name, walker->bytes);
+        sprintf(name, "status_%d", i);
+        setkey_int(&alist, name, walker->status);
+        sprintf(name, "archsub_%d", i);
+        setkey_int(&alist, name, walker->archsub);
+        sprintf(name, "group_id_%d", i);
+        setkey_int(&alist, name, walker->group_id);
+        sprintf(name, "safe_id_%d", i);
+        setkey_int(&alist, name, walker->safe_id);
+        sprintf(name, "ds_index_%d", i);
+        setkey_uint64(&alist, name, walker->ds_index);
+        sprintf(name, "username_%d", i);
+        setkey_str(&alist, name, username);
+        setkey_int(&alist, "DEBUGFLG", debugflg);
+        i++;
+      }
       walker=walker->next;
       continue;
     }

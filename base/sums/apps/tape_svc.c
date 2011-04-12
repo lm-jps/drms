@@ -62,6 +62,7 @@ int tapeoffline = 0;
 int robotoffline = 0;
 int driveonoffstatus = 0;
 int current_client_destroy;
+int alrm_sec;			//secs to next alarm signal
 char *dbname;
 char *timetag;
 char thishost[MAX_STR];
@@ -136,8 +137,33 @@ void sighandler(sig)
 			datestring(), sig);
   if (signal(SIGINT, SIG_IGN) != SIG_IGN)
       signal(SIGINT, sighandler);
-  if (signal(SIGALRM, SIG_IGN) != SIG_IGN)
-      signal(SIGALRM, sighandler);
+}
+
+/* Called when get a SIGALRM every alrm_sec seconds.
+ * Unlock any idle write drive.
+*/
+void alrm_sig(int sig)
+{
+  int d, e;
+
+  //write_log("Called alrm_sig()\n");
+  signal(SIGALRM, &alrm_sig);   //setup for alarm signal
+  for(e=max_drives_rd; e < MAX_DRIVES; e++) {
+    d = drive_order_wt[e];
+    if(drives[d].offline || drives[d].busy) continue;
+    if(!drives[d].to) {		//drive active
+      drives[d].to = 1;
+    }
+    else {			//drive has timed out
+      if(drives[d].to == 1) {
+        write_log("Unlock drive %d on timeout\n", d);
+        drives[d].lock = 0;
+        drives[d].to = -1;
+      }
+    }
+  }
+
+  alarm(alrm_sec);		//start again
 }
 
 /*********************************************************/
@@ -250,13 +276,13 @@ void setup()
   }
   fclose(drfp);
 #endif
-
+  alrm_sec = 90;
   //if (signal(SIGINT, SIG_IGN) != SIG_IGN)
       signal(SIGINT, sighandler);
   if (signal(SIGTERM, SIG_IGN) != SIG_IGN)
       signal(SIGTERM, sighandler);
-  if (signal(SIGALRM, SIG_IGN) != SIG_IGN)
-      signal(SIGALRM, sighandler);
+  signal(SIGALRM, &alrm_sig);
+  alarm(alrm_sec);			//set up first alarm
 
   sprintf(libdevname, "%s", LIBDEV);
 /*  if(!(sgfp=fopen(LIBDEVFILE, "r"))) {
@@ -505,6 +531,12 @@ tapeprog_1(rqstp, transp)
 		xdr_result = xdr_Rkey;
 		local = (char *(*)()) jmtxtapedo_1;
 		break;
+	case TAPENOPDO:
+                force = 1;			/* always make this call */
+		xdr_argument = xdr_Rkey;
+                xdr_result = xdr_uint32_t;
+		local = (char *(*)()) tapenopdo_1;
+		break;
 	default:
                 write_log("**tapeprog_1() dispatch default procedure %d,ignore\n", rqstp->rq_proc);
 		svcerr_noproc(transp);
@@ -573,7 +605,7 @@ tapeprog_1(rqstp, transp)
       if((p = q_rd_front) != NULL) {	/* try to kick off next entry */
         kstatus = kick_next_entry_rd(); /* sets poff if entry removed */
         poffrd = poff;
-        write_time(); 
+        //write_time(); 
 	//write_log("kick_next_entry_rd() call from tapeprog_1() returned %d\n",
 	//		kstatus);	/* !!TEMP */
         switch(kstatus) {
@@ -605,7 +637,7 @@ tapeprog_1(rqstp, transp)
         errorcase = 0;
         kstatus = kick_next_entry_wt(); /* sets poff if entry removed */
         poffwt = poff;
-        write_time(); 
+        //write_time(); 
 	//write_log("kick_next_entry_wt() call from tapeprog_1() returned %d\n",
 	//		kstatus);
         switch(kstatus) {

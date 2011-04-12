@@ -46,7 +46,7 @@ float ftmp;
 static struct timeval first[4], second[4];
 
 FILE *logfp;
-CLIENT *current_client, *clnttape;
+CLIENT *current_client, *clnttape, *clnttape_old;
 SVCXPRT *glb_transp;
 char *dbname;
 char thishost[MAX_STR];
@@ -438,6 +438,7 @@ if(strcmp(hostn, "lws") && strcmp(hostn, "n00") && strcmp(hostn, "d00") && strcm
     write_log("tape_svc not there on %s\n", usedhost);
 //    exit(1);
   }
+  clnttape_old = clnttape;	//used by tapereconnectdo_1()
 }
 #endif
 
@@ -468,6 +469,7 @@ sumprog_1(rqstp, transp)
 {
   char procname[128];
   char newlogname[MAX_STR];
+  uint64_t ck_client;     //used to ck high bits of current_client
 
 	//StartTimer(1);
 	union __svcargun {
@@ -598,16 +600,24 @@ sumprog_1(rqstp, transp)
             write_log("   current_client was NULL\n");
           }
           else {
-            clnt_stat=clnt_call(current_client, RESPDO, (xdrproc_t)xdr_result, 
-  		result, (xdrproc_t)xdr_void, 0, TIMEOUT);
-            if(clnt_stat != 0) {
-              clnt_perrno(clnt_stat);		/* outputs to stderr */
-              write_log("***Error on clnt_call() back to RESPDO procedure\n");
-              write_log("***The original client caller has probably exited\n");
-              call_err = clnt_sperror(current_client, "Err");
-              write_log("%s\n", call_err);
+            ck_client = ((uint64_t)current_client & 0xfc00000000000000) >> 58;
+            if(!((ck_client == 0) || (ck_client == 0x3f))) {
+              write_log("***Error invalid current_client\n");
+              //May need more info to discover the caller.
+              //See email from Keh-Cheng 25Feb2011 13:44 Re:Cannot access..
             }
-            clnt_destroy(current_client);
+            else {
+              clnt_stat=clnt_call(current_client, RESPDO, (xdrproc_t)xdr_result, 
+  		result, (xdrproc_t)xdr_void, 0, TIMEOUT);
+              if(clnt_stat != 0) {
+                clnt_perrno(clnt_stat);		/* outputs to stderr */
+                write_log("***Error on clnt_call() back to RESPDO procedure\n");
+                write_log("***The original client caller has probably exited\n");
+                call_err = clnt_sperror(current_client, "Err");
+                write_log("%s\n", call_err);
+              }
+              clnt_destroy(current_client); 
+            }
           }
           freekeylist((KEY **)&result);
         }

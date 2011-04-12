@@ -1,7 +1,8 @@
 /*-----------------------------------------------------------------------------
- * /home/jim/cvs/JSOC/base/sum/tapearc0.c
+ * /home/jim/cvs/JSOC/base/sum/tapearc8.c
  *
- * Like tapearc.c but calls NC_PaRequest_AP() for groupset 0
+ * Like tapearc.c but calls NC_PaRequest_AP() for groupset 8 (Supergroup 8)
+ * NOTE: Supergroup 8 has only hmi.lev1 (group 10) in it.
  *
  * This is a stand alone program that will archive all the SUMS archive pending 
  * storage units to the tape_svc supported drives . 
@@ -27,7 +28,7 @@ char *get_eff_date(int plusdays);
 #define TAR_FILE_SZ 500000000	/* try to make a tar file this size bytes */
 #define ARCH_CHUNK 30		/* this many archive calls to tape_svc */
 #define NOTAPEARC "/usr/local/logs/soc/NOTAPEARC" /* touched by t50view */
-#define MYNAME "tapearc0"
+#define MYNAME "tapearc8"
 
 extern void printkey (KEY *key);
 void usage();
@@ -197,7 +198,7 @@ void get_cmd(int argc, char *argv[])
         break;
       case '6':
         //test60d=1;   //no test 60day mode
-        fprintf(stderr, "No test 60day mode for tapearc0\n");
+        fprintf(stderr, "No test 60day mode for tapearc8\n");
         exit(1);
         break;
       default:
@@ -277,14 +278,14 @@ void setup()
       signal(SIGTERM, sighandler);
 
     /* register for tape_svc to be able to talk to us */
-    (void) pmap_unset(TAPEARCPROG, TAPEARCVERS0);
+    (void) pmap_unset(TAPEARCPROG, TAPEARCVERS8);
     transp = svctcp_create(RPC_ANYSOCK, 0, 0);
     if (transp == NULL) {
             printf("***cannot create tcp service\n");
             exit(1);
     }
-    if (!svc_register(transp, TAPEARCPROG, TAPEARCVERS0, tapearcprog_1, IPPROTO_TCP)) {
-            printf("***unable to register (TAPEARCPROG, TAPEARCVERS0, tcp)\n");
+    if (!svc_register(transp, TAPEARCPROG, TAPEARCVERS8, tapearcprog_1, IPPROTO_TCP)) {
+            printf("***unable to register (TAPEARCPROG, TAPEARCVERS8, tcp)\n");
             exit(1);
     }
   /* Create client handle used for calling the tape_svc */
@@ -326,7 +327,7 @@ int call_tape_svc(int groupid, double bytes, uint64_t index) {
 
     WRTSTATUS = 0;
     StartTimer(0); //!!TEMP for debug. time call is case timeout 
-    setkey_int(&alist, "tapearcvers", TAPEARCVERS0);
+    setkey_int(&alist, "tapearcvers", TAPEARCVERS8);
     status = clnt_call(clnttape, WRITEDO, (xdrproc_t)xdr_Rkey, (char *)alist,
                     (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
 /*********************!!!TEMP**************
@@ -422,7 +423,7 @@ int main(int argc, char *argv[])
     aplist = NC_PaRequest_AP_60d();
   }
   else {
-    aplist = NC_PaRequest_AP(0);	//use groupset 0
+    aplist = NC_PaRequest_AP(8);	//use groupset 8
   }
   archive_pending = count_list(aplist);
   if (verbose || queryflg) {

@@ -232,9 +232,7 @@ int tape_inventory(int sim, int catalog)
   return(1);
 }
 
-/*!!!NOTE: This may not be used!!! Replaced by robot_verify() below */
-/* Called from tape_svc_proc.c taperesprobotdo_1() when the robot_svc
- * indicates an error has occured. Re-inventory all the drives and slots
+/* Called from tape_svc_proc.c  to re-inventory all the drives and slots
  * to find out what's really where.
  * Return 0 on error. Return -1 if don't see the full slot count.
  *
@@ -264,7 +262,7 @@ int tape_reinventory(int sim, int catalog)
   }
   else {
     if(system(cmd)) {
-       /* write_log("***Inv: failure\n\n");/* Can't do this here. caller does*/
+      write_log("ReInv Fail on: %s\n", cmd);
       return(0);
     }
   }
@@ -282,7 +280,7 @@ int tape_reinventory(int sim, int catalog)
       if(drivenum == MAX_DRIVES) {
         write_log("**Warning: there are more drives then MAX_DRIVES (%d)\n",
 			MAX_DRIVES);
-        /*return(0);*/
+        return(0);
       }
       if(strstr(row, ":Full")) {	/* Drive has tape */
         token = (char *)strtok(row, "=");
@@ -294,30 +292,16 @@ int tape_reinventory(int sim, int catalog)
           cptr = index(token, ' ');	/* find trailing space */
           *cptr = (char)NULL;		/* elim trailing stuff */
         }
-        if(drives[drivenum].tapeid) {
-        if(!strcmp(drives[drivenum].tapeid, token)) { //same as before inv
-          drivenum++;
-          continue;
-        }
-        else {                  //inv has changed the tape info in drive
-          //NOTE: there s/b nothing that requires a re-inventory that would
-          //put a new tape in a drive
-          write_log("**Error: re-inventory detects new tape %s in drive %d\n", 
-			token, drivenum);
-          send_mail("**Error: re-inventory detects new tape %s in drive %d\n",
-			token, drivenum);
-          drive_full[i++] = drivenum;	/* this drive needs a free slot */
-          //drives[drivenum].tapeid = (char *)strdup(token);
-          //drives[drivenum].sumid = 0;
-          //drives[drivenum].busy = 0;
-          //drives[drivenum].tapemode = 0;
-          //drives[drivenum].filenum = 0;
-          //drives[drivenum].blocknum = 0;
-          //drives[drivenum].slotnum = 0; /* filled in w/free slot# below */
-          //write_log("tapeid in drive %d = %s\n", 
-	  //		drivenum, drives[drivenum].tapeid);
-        }
-        }
+        drive_full[i++] = drivenum;	/* this drive needs a free slot */
+        drives[drivenum].tapeid = (char *)strdup(token);
+        //drives[drivenum].sumid = 0;
+        //drives[drivenum].busy = 0;
+        //drives[drivenum].tapemode = 0;
+        drives[drivenum].filenum = 0;	//force reposition
+        //drives[drivenum].blocknum = 0;
+        //drives[drivenum].slotnum = 0; /* filled in w/free slot# below */
+        write_log("tapeid in drive %d = %s\n", 
+			drivenum, drives[drivenum].tapeid);
         if(catalog) { 
 	  if((tstate=SUMLIB_TapeCatalog(drives[drivenum].tapeid)) == 0) {
             write_log("***ERROR: Can't catalog new tapeid = %s\n", 
@@ -331,18 +315,6 @@ int tape_reinventory(int sim, int catalog)
         }
       }
       else {				/* EMPTY */
-        if(drives[drivenum].tapeid) {
-        if(!strcmp(drives[drivenum].tapeid, token)) { //same as before inv
-          drivenum++;
-          continue;
-        }
-        else {
-          //NOTE: there s/b nothing that requires a re-inventory that would
-          //take a tape out of a drive
-          write_log("**Error: re-inventory detects tape removed from drive %d\n", 
-			drivenum);
-          send_mail("**Error: re-inventory detects tape removed from drive %d\n", 
-			drivenum);
           drives[drivenum].tapeid = NULL;
           drives[drivenum].sumid = 0;
           drives[drivenum].busy = 0;
@@ -352,8 +324,6 @@ int tape_reinventory(int sim, int catalog)
           drives[drivenum].slotnum = -1;
           write_log("tapeid in drive %d = %s\n", 
 			drivenum, drives[drivenum].tapeid);
-        }
-        }
       }
       drivenum++;
     }
