@@ -95,7 +95,7 @@ static void drive10prog_1();
 #ifdef DRIVE_11
 static void drive11prog_1();
 #endif
-static struct timeval TIMEOUT = { 30, 0 };
+static struct timeval TIMEOUT = { 60, 0 };
 uint32_t rinfo;		/* info returned by XXXdo_1() calls */
 uint32_t procnum;	/* remote procedure # to call for current_client call*/
 
@@ -700,19 +700,25 @@ drive11prog_1(rqstp, transp)
             write_log("\nKEYS in drive[0,1]_svc response to tape_svc are:\n");
             keyiterate(logkey, (KEY *)result);
           }
-          clnt_stat=clnt_call(current_client, procnum, (xdrproc_t)xdr_result,
+          if(current_client == 0) {  //1a
+            write_log("***Error on clnt_call() back to orig sum_svc caller\n");
+            write_log("   current_client was NULL\n");
+          }                          //1a
+          else {                     //1b
+            clnt_stat=clnt_call(current_client, procnum, (xdrproc_t)xdr_result,
 		(char *)result, (xdrproc_t)xdr_void, 0, TIMEOUT);
 
-          if(clnt_stat != RPC_SUCCESS) {
-            if(clnt_stat != RPC_TIMEDOUT) {  /* allow timeout? */
-              clnt_perrno(clnt_stat);             /* outputs to stderr */
-              write_log("***Error on clnt_call() back to %d procedure (in driven_svc)\n", procnum);
-              call_err = clnt_sperror(current_client, "Err");
-              write_log("%s\n", call_err);
-            } else {
-              write_log("timeout occured in drive%d_svc call to tape_svc\n", drivenum);
+            if(clnt_stat != RPC_SUCCESS) {
+              if(clnt_stat != RPC_TIMEDOUT) {  /* allow timeout? */
+                clnt_perrno(clnt_stat);             /* outputs to stderr */
+                write_log("***Error on clnt_call() back to %d procedure (in driven_svc)\n", procnum);
+                call_err = clnt_sperror(current_client, "Err");
+                write_log("%s\n", call_err);
+              } else {
+                write_log("timeout occured in drive%d_svc call to tape_svc\n", drivenum);
+              }
             }
-          }
+          }    //1b
           freekeylist((KEY **)&result);
         }
       }

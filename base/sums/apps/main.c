@@ -101,7 +101,7 @@ int main(int argc, char *argv[])
     exit(1);
   }
   ftmp = StopTimer(0);
-  /*printf("Time sec for SUM_open() = %f\n", ftmp);*/
+  printf("Time sec for SUM_open() = %f\n", ftmp);
   uid = sum1->uid;
   printf("Opened sum1 with sumid = %d\n", uid);
   /*sum1->mode = RETRIEVE + TOUCH;*/
@@ -115,7 +115,7 @@ int main(int argc, char *argv[])
   StartTimer(1);
   status = SUM_get(sum1, printf); 
   ftmp = StopTimer(1);
-  /*printf("Time sec for SUM_get() w/o TOUCH = %f\n", ftmp);*/
+  printf("Time sec for SUM_get() w/o TOUCH = %f\n", ftmp);
   /*printf("Time sec for SUM_get() = %f\n", ftmp);*/
   switch(status) {
   case 0:			/* success. data in sum1 */
@@ -154,7 +154,7 @@ int main(int argc, char *argv[])
   StartTimer(2);
   status = SUM_get(sum2, printf); 
   ftmp = StopTimer(2);
-  /*printf("Time sec for SUM_get() = %f\n\n", ftmp);*/
+  printf("Time sec for SUM_get() = %f\n\n", ftmp);
   switch(status) {
   case 0:			/* success. data in sum2 */
     break;

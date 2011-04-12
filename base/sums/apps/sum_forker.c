@@ -83,7 +83,7 @@ int main(int argc, char *argv[])
   int i;
   pid_t pid;
   char *args[8];
-  char dsvcname[80], pgport[32];
+  char dsvcname[80], pgport[32], cmd[128];
 
   get_cmd(argc, argv);                  /* check the calling sequence */
 
@@ -92,6 +92,14 @@ int main(int argc, char *argv[])
 
       sprintf(pgport, SUMPGPORT);
       setenv("PGPORT", pgport, 1); //need to connect to new jsoc_sums db
+  //The sum_stop_d02_tape should already have been called by sum_stop_j1
+  //or sum_stop_j1_auto. Make sure old stuff is stopped.
+  //sprintf(cmd, "/home/production/cvs/JSOC/base/sums/scripts/sum_stop_d02_tape");
+  //printf("%s\n", cmd);
+  //if(system(cmd)) {
+  //  printf("Error on system(%s)\n", cmd);
+  //  exit(1);
+  //}
 
 
   if((pid = fork()) < 0) {

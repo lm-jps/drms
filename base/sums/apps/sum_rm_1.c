@@ -207,7 +207,8 @@ int stat_storage()
   struct statvfs vfs;
 
   //for(i=0; i<MAX_PART-1; i++) {
-  for(i=11; i<MAX_PART-1; i++) { //for sum_rm_1 do remaining partitions
+  //for(i=11; i<MAX_PART-1; i++) { //for sum_rm_1 do remaining partitions
+  for(i=7; i<15; i++) { //for sum_rm_1 do next 8 partitions
     pptr=(PART *)&ptab[i];
     if(pptr->name == NULL) break;
     if(status = statvfs(pptr->name, &vfs)) {
@@ -293,7 +294,7 @@ void get_cfg()
     max_free_set_percent[i] = 3.0/100.0;
   }
   num_sets_in_cfg = MAXSUMSETS;
-  strcpy(xlogfile, "/tmp/sum_rm.log");
+  strcpy(xlogfile, "/tmp/sum_rm_1.log");
   strcpy(mailto, "sys2@solar2");
   strcpy(userrun, "production");
 #ifdef __LOCALIZED_DEFS__
@@ -416,7 +417,7 @@ void setup()
   if(!(username = (char *)getenv("USER"))) username = "nouser";
   get_cfg();			/* get config info */
   pid = getppid();		/* pid of sum_svc */
-  sprintf(logname, "%s.%s", xlogfile, timetag);
+  sprintf(logname, "%s_1.%s", xlogfile, timetag);
   open_log(logname);
   printk_set(write_log, write_log);
   write_log("\n\n## %s for %s  pid = %d ##\n",

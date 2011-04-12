@@ -407,22 +407,20 @@ KEY *robotdo_1(KEY *params)
     } 
     else {
       sleep(2);				/* !!!TEMP - test for robot ready*/
-      if(system(cmd)) {
+      system(cmd);			//going to verify if success
+      rv = rb_verify(action, s, d);
+      if(rv != 1) {			//error, retry
+        write_log("Err Retry: Can't verify: %s\n", cmd);
+        system(cmd);			//try it again */
         rv = rb_verify(action, s, d);
-        if(rv != 1) {			//error, retry
-          write_log("Err Retry: %s errno=%d\n", cmd, errno);
-	  if(system(cmd)) {               /* try it again */
-            rv = rb_verify(action, s, d);
-            if(rv != 1) {			//error
-              write_log("***Rb:failure\n\n");
-              setkey_int(&retlist, "STATUS", 1);   /* give err back to caller */
-              sprintf(errstr, "Error on: %s", cmd);
-              setkey_str(&retlist, "ERRSTR", errstr);
-              current_client = clnttape;        /* set for call to tape_svc */
-              procnum = TAPERESPROBOTDO;        /* this proc number */
-              return(retlist);
-            }
-          }
+        if(rv != 1) {			//error
+          write_log("***Rb:failure\n\n");
+          setkey_int(&retlist, "STATUS", 1);   /* give err back to caller */
+          sprintf(errstr, "Error on: %s", cmd);
+          setkey_str(&retlist, "ERRSTR", errstr);
+          current_client = clnttape;        /* set for call to tape_svc */
+          procnum = TAPERESPROBOTDO;        /* this proc number */
+          return(retlist);
         }
       }
     }
@@ -450,22 +448,20 @@ KEY *robotdo_1(KEY *params)
     } 
     else {
       sleep(2);				/* !!!TEMP - test for robot ready*/
-      if(system(cmd)) {
+      system(cmd);
+      rv = rb_verify(action, s, d);
+      if(rv != 1) {			//error, retry
+        write_log("Err Retry: Can't verify: %s\n", cmd);
+        system(cmd);			//try again
         rv = rb_verify(action, s, d);
-        if(rv != 1) {                   //error, retry
-	  write_log("Err Retry: %s errno=%d\n", cmd, errno);
-	  if(system(cmd)) {               /* try it again */
-            rv = rb_verify(action, s, d);
-            if(rv != 1) {                       //error
-              write_log("***Rb:failure\n\n");
-              setkey_int(&retlist, "STATUS", 1);   /* give err back to caller */
-              sprintf(errstr, "Error on: %s", cmd);
-              setkey_str(&retlist, "ERRSTR", errstr);
-              current_client = clnttape;       /* set for call to tape_svc */
-              procnum = TAPERESPROBOTDO;            /* this proc number */
-              return(retlist);
-            }
-          }
+        if(rv != 1) {                       //error
+          write_log("***Rb:failure\n\n");
+          setkey_int(&retlist, "STATUS", 1);   /* give err back to caller */
+          sprintf(errstr, "Error on: %s", cmd);
+          setkey_str(&retlist, "ERRSTR", errstr);
+          current_client = clnttape;       /* set for call to tape_svc */
+          procnum = TAPERESPROBOTDO;            /* this proc number */
+          return(retlist);
         }
       }
     }
@@ -653,12 +649,18 @@ int rb_verify(char *action, int slot, int slotordrive)
           } else {
             token = token+1;		/* skip leading space */
             cptr = index(token, ' ');	/* find trailing space */
-            *cptr = (char)NULL;		/* elim trailing stuff */
+            if(cptr) {
+              *cptr = (char)NULL;	/* elim trailing stuff */
+            }
+            else  {			//Bad. this is with no Volume Tag =
+              write_log("Bad mtx line: %s\n", row); 
+              token = "NoTape";		//treat as NoTape. May not work??
+            }
           }
           drive_tapes[drivenum] = (char *)strdup(token);
         }
-        write_log("tapeid in drive %d = %s\n", 
-  			drivenum, drive_tapes[drivenum]);
+        //write_log("tapeid in drive %d = %s\n", 
+  	//		drivenum, drive_tapes[drivenum]);
         drivenum++;
       }
       else if(strstr(row, "Storage Element")) {
@@ -669,15 +671,21 @@ int rb_verify(char *action, int slot, int slotordrive)
             token = "NoTape";		/* treat as no tape */
           } else {
             cptr = index(token, ' ');	/* find trailing space */
-            *cptr = (char)NULL;		/* elim trailing stuff */
+            if(cptr) {
+              *cptr = (char)NULL;	/* elim trailing stuff */
+            }
+            else  {			//Bad. this is with no Volume Tag =
+              write_log("Bad mtx line: %s\n", row); 
+              token = "NoTape";		//treat as NoTape. May not work??
+            }
           }
           slot_tapes[slotnum] = (char *)strdup(token);
         }
         else {				/* slot EMPTY */
           slot_tapes[slotnum] = "NoTape";
         }
-        write_log("tapeid in slot# %d = %s\n", 
-  		slotnum+1, slot_tapes[slotnum]);
+        //write_log("tapeid in slot# %d = %s\n", 
+        //	slotnum+1, slot_tapes[slotnum]);
         slotnum++;
       }
     }

@@ -39,6 +39,9 @@ The jmtx commands show up in the tape_svc_XX.log files like so:\n
  *   status
  *   load
  *   unload
+ *   transfer
+ *   transtape (special command that takes a tape# and finds its slot and then
+ *              does a transfer command)
 */
 
 #include <SUM.h>
@@ -75,6 +78,7 @@ static int WRTSTATUS;
 
 int soi_errno = NO_ERROR;
 char *username;
+char *tapeid;
 char thishost[MAX_STR];
 char devname[64];
 char mode[64];
@@ -123,7 +127,11 @@ void usage()
 {
   printf("This is a stand alone program that will execute mtx load, unload, transfer and \n");
   printf("status commands via SUMS, so that it knows where all the tapes are.\n");
-  printf("Usage: jmtx -f /dev/t950 status|load|unload|transfer [slot#] [drive#]\n");
+  printf("Usage: jmtx -f /dev/t950 status\n");
+  printf("Usage: jmtx -f /dev/t950 load|unload [slot#] [drive#]\n");
+  printf("Usage: jmtx -f /dev/t950 transfer [source_slot#] [dest_slot#]\n");
+  printf("Usage: jmtx -f /dev/t950 transtape [tape#] [dest_slot#]\n");
+  printf("  where the program finds the slot# for the given tape# and does transfer\n");
   printf("NOTE: you must be user production to run.\n");
   printf("NOTE: The -f arg is for symmetry with mtx only. You will connect\n");
   printf("    to the sum_svc that you are configured to and get its drives.\n");
@@ -168,13 +176,18 @@ void get_cmd(int argc, char *argv[])
     usage();
   }
   strcpy(mode, argv[1]);
-  if(strcmp(mode, "load") && strcmp(mode, "unload") && strcmp(mode, "transfer")) {
+  if(strcmp(mode, "load") && strcmp(mode, "unload") && strcmp(mode, "transfer") && strcmp(mode, "transtape")) {
     usage();
   }
   if(!strcmp(mode, "transfer")) {
     slot1 = atoi(argv[2]);
     slot2 = atoi(argv[3]);
-  } else {
+  } 
+  else if(!strcmp(mode, "transtape")) {
+    tapeid = argv[2];
+    slot2 = atoi(argv[3]);
+  }
+  else {
     slotnum = atoi(argv[2]);
     drivenum = atoi(argv[3]);
   }
@@ -261,15 +274,18 @@ int main(int argc, char *argv[])
 
   alist = newkeylist();
   setkey_str(&alist, "mode", mode);
-  if(strcmp(mode, "status")) {		//not status cmd so send other params
-    if(strcmp(mode, "transfer")) {      //not transfer cmd
-      setkey_int(&alist, "slotnum", slotnum);
-      setkey_int(&alist, "drivenum", drivenum);
-    }
-    else {
+
+  if(!(strcmp(mode, "transtape"))) {
+    setkey_str(&alist, "tapeid", tapeid);
+    setkey_int(&alist, "slot2", slot2);
+  }
+  else if(!(strcmp(mode, "transfer"))) {
       setkey_int(&alist, "slot1", slot1);
       setkey_int(&alist, "slot2", slot2);
-    }
+  }
+  else if(strcmp(mode, "status")) {          //not status cmd 
+      setkey_int(&alist, "slotnum", slotnum);
+      setkey_int(&alist, "drivenum", drivenum);
   }
   //setkey_int(&alist, "DEBUGFLG", 1);	//!!TEMP
   status = clnt_call(clnttape, JMTXTAPEDO, (xdrproc_t)xdr_Rkey, (char *)alist,
@@ -287,11 +303,12 @@ int main(int argc, char *argv[])
     }
   }
   if(retstat == RESULT_PEND) {
-      printf("Waiting for results from tape_svc...\n");
+      printf("jmtx waiting for results from tape_svc...\n");
   }
   else {
       if(retstat != 0) {
        printf("Error in return status = %d\n", retstat);
+       if(retstat == 2) printf("Error: tape not in a slot\n");
        goaway();
       }
   }
