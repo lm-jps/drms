@@ -10,7 +10,8 @@ $DB = "jsoc_sums";	#the "real" db that production uses
 #$DB = "jim";		#the "real" db that production uses
 $GREPPS = "388";	#grep for this in ps -ef
 $HOST = "j1";		#where sum_svc runs
-$SENDMAILTO = "jim";	#!!TBD replace with a mail group
+#$SENDMAILTO = "jim";	#!!TBD replace with a mail group
+$SENDMAILTO = "jsoc_users";
 
 $user = $ENV{'USER'};
 if($user ne "production") {
