@@ -117,6 +117,8 @@ $pos2 = index($orddate, '_');
 if($pos1==-1 || $pos2==-1) {
   &usage;
 }
+$ordpart = substr($orddate, 0, $pos2);
+$ordtai = $ordpart."_TAI";
 $yr = substr($orddate, 0, $pos1);
 	$yrday = substr($orddate, $pos1+1, ($pos2-$pos1)-1);
 	$zone = substr($orddate, $pos2+1);
@@ -127,9 +129,13 @@ $yr = substr($orddate, 0, $pos1);
 	$sec = `time_convert ord=$orddate`;
 	chomp($sec);
 	$fulldate = `time_convert s=$sec zone=UTC`;
-	$t_start_sec = $sec - 60;	#subtract a min to match TAI range in FF rec
-	$fulldateFF = `time_convert s=$t_start_sec zone=UTC`;
-	$nextsec = $sec + (86400 - 60); #don't go into next TAI day
+        #Mods 08Mar2011
+	#$t_start_sec = $sec - 60;  #subtract a min to match TAI range in FF rec
+	$t_start_sec = $sec;
+	#$fulldateFF = `time_convert s=$t_start_sec zone=UTC`;
+        $fulldateFF = `time_convert time=$ordtai o=cal`;   #hmi FF in TAI start/stop
+	#$nextsec = $sec + (86400 - 60); #don't go into next TAI day
+	$nextsec = $sec + (86400);
 	$nextdate = `time_convert s=$nextsec zone=UTC`;
 	$prevsec = $sec - 86400;
 	$prevdate = `time_convert s=$prevsec zone=UTC`;
@@ -138,7 +144,7 @@ $yr = substr($orddate, 0, $pos1);
 	chomp($prevdate);
 	chomp($nextdate);
 
-	#print "fulldate=$fulldate, fulldateFF=$fulldateFF, prevdate=$prevdate, nextdate=$nextdate\n"; #!!TEMP
+	print "fulldate=$fulldate, fulldateFF=$fulldateFF, prevdate=$prevdate, nextdate=$nextdate\n"; #!!TEMP
 
 	print "cvs/JSOC/base/sums/scripts/lev1_def_gui_called_PZT_FSN:\n";
 	print "Run on $utcdate which is day of year $todayUTCdayofyr\n"; 
@@ -316,10 +322,12 @@ if($OKfile && $OKhkdayfile && $OKfdsorbit && $OKnogofile && $OKff && $OKmp && $O
   print "*OK to process definitive lev1 for $orddate\n";
   print "    Building command now (may take a minute)...\n";
   if($hmiaiaflg) {
-    $cmd = "show_info -q key=fsn '$DSINAIA\[? t_obs >= \$($fulldateFF) and  t_obs < \$($nextdate) ?]'";
+    #$cmd = "show_info -q key=fsn '$DSINAIA\[? t_obs >= \$($fulldateFF) and  t_obs < \$($nextdate) ?]'";
+    $cmd = "show_info -q key=fsn '$DSINAIA\[? t_obs >= \$($fulldate) and  t_obs < \$($nextdate) ?]'";
   }
   else {
-    $cmd = "show_info -q key=fsn '$DSINHMI\[? t_obs >= \$($fulldateFF) and  t_obs < \$($nextdate) ?]'";
+    #$cmd = "show_info -q key=fsn '$DSINHMI\[? t_obs >= \$($fulldateFF) and  t_obs < \$($nextdate) ?]'";
+    $cmd = "show_info -q key=fsn '$DSINHMI\[? t_obs >= \$($fulldate) and  t_obs < \$($nextdate) ?]'";
   }
   #print "$cmd\n"; #!!TEMP
   @fsn_presort = `$cmd`;
@@ -330,8 +338,8 @@ if($OKfile && $OKhkdayfile && $OKfdsorbit && $OKnogofile && $OKff && $OKmp && $O
 
   #back up 96 fsn for the way cosmic rays are made by module_flatfield_daily
   #See mail: "Re: patching cosmic ray records" Richard Wachter 11/18/10 12:08
-  $firstfsn = $firstfsn - 96;	#new 19Nov2010
-  $lastfsn = $lastfsn - 96;	#new 19Nov2010
+  $firstfsncosmic = $firstfsn - 96;	#new 19Nov2010. Change vrbl 2/28/2011
+  $lastfsncosmic = $lastfsn - 96;	#new 19Nov2010. Change vrbl 2/28/2011
 
   if($hmiaiaflg) { 
     $cmd = "time build_lev1_mgr mode=fsn instru=aia dsin=$DSINAIA dsout=$DSOUTAIA bfsn=$firstfsn efsn=$lastfsn numqsub=8 logfile=/usr/local/logs/lev1/build_lev1_mgr_aia.$utcdate.log";
@@ -557,12 +565,13 @@ else {
   `$cmd`;
 
 #make sure have the pzt flat
-#!!!TBD check with Rock and Richard about where to do this
-#if(!$hmiaiaflg) {		#only for hmi
-#  $cmd = "cd /home/production/cvs/JSOC/proj/lev0/apps/pztflat; echo \"pzt_flatfield, $pztdate\" | /usr/local/bin/idl";
-#  print "ssh n02 $cmd\n";
-#  `ssh n02 $cmd`;
-#}
+if(!$hmiaiaflg) {		#only for hmi
+  $cmd = "cd /home/production/cvs/JSOC/proj/lev0/apps/pztflat; echo \"pzt_flatfield, $pztdate\" | /usr/local/bin/idl 1> /scr21/production/qsub/flat/pzt.$PID.log 2>&1";
+  #print "ssh n02 $cmd\n";
+  #`ssh n02 $cmd`;
+  print "$cmd\n";
+  `$cmd`;
+}
 
 #Now make the cosmic_rays/rotation flat for the day
 #!!TBD: use fsns instead of $orddate  NO! YES!
@@ -580,7 +589,7 @@ if(!$hmiaiaflg) {		#only for hmi
   #$statlog = "$LOGDIR/module_flat_48_PZT_$gdate.log";
   #$cmd = "module_flatfield_daily_qsub_48_PZT.pl hmi.lev1 $mdate 1> $statlog 2>&1"; #full day
   $statlog = "$LOGDIR/module_flat_cron_48_PZT_FSN_$gdate.log";
-  $cmd = "module_flatfield_daily_cron_48_PZT_FSN.pl $instru $orddate $firstfsn $lastfsn 1> $statlog 2>&1";
+  $cmd = "module_flatfield_daily_cron_48_PZT_FSN.pl $instru $orddate $firstfsncosmic $lastfsncosmic 1> $statlog 2>&1";
   print "$cmd\n";
   if($EXECUTE) {
     @ffrun = `$cmd`;

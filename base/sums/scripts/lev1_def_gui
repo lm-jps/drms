@@ -583,7 +583,7 @@ sub Sub_info() {
     $findwin->destroy();
   }
   $findwin = $mw->Toplevel();
-  $findwin->geometry("600x500+600+600");
+  $findwin->geometry("600x500+600+800");
   $findwin->title("Execution window");
   $fx = $findwin->Button(
         -text => 'Close',

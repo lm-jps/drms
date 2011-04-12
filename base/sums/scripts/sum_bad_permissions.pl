@@ -58,23 +58,23 @@ if(!($PGPORT = $ENV{'SUMPGPORT'})) {
 }
 
 print "This is going to modify the SUMS DB tables.\n";
-print "Need hmi password to run: passwd =";
-ReadMode('noecho');
-$passwd = ReadLine(0);
-chomp($passwd);
-ReadMode('normal');
-print "\n";
+#print "Need hmi password to run: passwd =";
+#ReadMode('noecho');
+#$passwd = ReadLine(0);
+#chomp($passwd);
+#ReadMode('normal');
+#print "\n";
 #if($passwd ne <passwd>) {
 #  print "Invalid passwd\n";
 #  exit(1);
 #}
 $user = "jim";
-$password = "jimshoom";
+#$password = "jimshoom";
 $hostdb = "hmidb";      #host where Postgres runs
 open(ID, $infile) || die "Can't open $infile: $!\n";
 
 #connect to database
-  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb;port=$PGPORT", "$user", "$password");
+  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb;port=$PGPORT", "$user", "");
   if ( !defined $dbh ) {
     die "Cannot do \$dbh->connect: $DBI::errstr\n";
   }

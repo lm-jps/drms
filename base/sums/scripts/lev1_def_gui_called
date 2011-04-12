@@ -73,6 +73,7 @@ $alog = "/home/production/cvs/JSOC/proj/lev0/data/arg_lev1_empty_$PID.txt";
 @allowhost = ("cl1n001", "cl1n002", "cl1n003"); #hosts w/dcs[0,1] mounts
 @wavestr = ("131_OPEN", "131_THICK", "131_THIN", "1600", "1700", "171_THICK", "171_THIN", "193_OPEN", "193_THICK", "193_THIN", "211_OPEN", "211_THICK", "211_THIN", "304_OPEN", "304_THICK", "304_THIN", "335_OPEN", "335_THICK", "335_THIN", "4500", "94_OPEN", "94_THICK", "94_THIN");
 
+sub numerically { $a <=> $b; }	#do numerical sort
 
 sub usage {
   print "Determine if the lev1 definitive can be made for a given ordinal date.\n";
@@ -113,72 +114,73 @@ if($pos1==-1 || $pos2==-1) {
   &usage;
 }
 $yr = substr($orddate, 0, $pos1);
-$yrday = substr($orddate, $pos1+1, ($pos2-$pos1)-1);
-$zone = substr($orddate, $pos2+1);
-if($zone ne "UTC") { &usage; }
-$user = $ENV{'USER'};
+	$yrday = substr($orddate, $pos1+1, ($pos2-$pos1)-1);
+	$zone = substr($orddate, $pos2+1);
+	if($zone ne "UTC") { &usage; }
+	$user = $ENV{'USER'};
 
-$utcdate = &inittoday();	#set $todayUTCdayofyr 1-366 & ret date
-$sec = `time_convert ord=$orddate`;
-chomp($sec);
-$fulldate = `time_convert s=$sec zone=UTC`;
-$t_start_sec = $sec + 60;	#add a min to match TAI range in FF rec
-$fulldateFF = `time_convert s=$t_start_sec zone=UTC`;
-$nextsec = $sec + 86400;
-$nextdate = `time_convert s=$nextsec zone=UTC`;
-$prevsec = $sec - 86400;
-$prevdate = `time_convert s=$prevsec zone=UTC`;
-chomp($fulldate);
-chomp($fulldateFF);
-chomp($prevdate);
-chomp($nextdate);
+	$utcdate = &inittoday();	#set $todayUTCdayofyr 1-366 & ret date
+	$sec = `time_convert ord=$orddate`;
+	chomp($sec);
+	$fulldate = `time_convert s=$sec zone=UTC`;
+	$t_start_sec = $sec - 60;	#subtract a min to match TAI range in FF rec
+	$fulldateFF = `time_convert s=$t_start_sec zone=UTC`;
+	$nextsec = $sec + (86400 - 60); #don't go into next TAI day
+	$nextdate = `time_convert s=$nextsec zone=UTC`;
+	$prevsec = $sec - 86400;
+	$prevdate = `time_convert s=$prevsec zone=UTC`;
+	chomp($fulldate);
+	chomp($fulldateFF);
+	chomp($prevdate);
+	chomp($nextdate);
 
-#print "fulldate=$fulldate, fulldateFF=$fulldateFF, prevdate=$prevdate, nextdate=$nextdate\n"; #!!TEMP
+	#print "fulldate=$fulldate, fulldateFF=$fulldateFF, prevdate=$prevdate, nextdate=$nextdate\n"; #!!TEMP
 
-print "Run on $utcdate which is day of year $todayUTCdayofyr\n"; 
-print "for lev1 on ordinal date = $orddate ($fulldate)\n\n";
-#connect to database
-  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$HOSTDB;port=$PGPORT", "$user", "$password");
-  if ( !defined $dbh ) {
-    die "Cannot do \$dbh->connect: $DBI::errstr\n";
-  }
+	print "cvs/JSOC/base/sums/scripts/lev1_def_gui_called:\n";
+	print "Run on $utcdate which is day of year $todayUTCdayofyr\n"; 
+	print "for lev1 on ordinal date = $orddate ($fulldate)\n\n";
+	#connect to database
+	  $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$HOSTDB;port=$PGPORT", "$user", "$password");
+	  if ( !defined $dbh ) {
+	    die "Cannot do \$dbh->connect: $DBI::errstr\n";
+	  }
 
-$sql = "select * from hmi.lev1_probe where ord_date = '$orddate'";
-print "$sql\n";
-$sth = $dbh->prepare($sql);
-  if ( !defined $sth ) {
-    print "Cannot prepare statement: $DBI::errstr\n";
-    $dbh->disconnect();
-    exit;
-  }
-    # Execute the statement at the database level
-    $sth->execute;
-    # Fetch the rows back from the SELECT statement
-    while(@row = $sth->fetchrow()) {
-      print "@row\n";
-      $recn = shift(@row);
-      $sunum = shift(@row);
-      $slotnum = shift(@row);
-      $sessionid = shift(@row);
-      $sessionns = shift(@row);
-      $bld_vers = shift(@row);
-      $orddate = shift(@row);
-      $cdate = shift(@row);
-      $rexmit = shift(@row);
-      $asd = shift(@row);
-      $fds = shift(@row);
-      $ff = shift(@row);
-      $mp = shift(@row);
-      $temp = shift(@row);
-      $goflg = shift(@row);
-    }
-    if(defined $sth) {
-      $sth->finish;
-    }
-
-if($rexmit) {
-  $OKfile = 1;
-  print "*OK for lev1: $xmitfile exists\n";
+	$sql = "select * from hmi.lev1_probe where ord_date = '$orddate'";
+	print "$sql\n";
+	$sth = $dbh->prepare($sql);
+	  if ( !defined $sth ) {
+	    print "Cannot prepare statement: $DBI::errstr\n";
+	    $dbh->disconnect();
+	    exit;
+	  }
+	    # Execute the statement at the database level
+	    $sth->execute;
+	    # Fetch the rows back from the SELECT statement
+	    while(@row = $sth->fetchrow()) {
+	      print "@row\n";
+	      $recn = shift(@row);
+	      $sunum = shift(@row);
+	      $slotnum = shift(@row);
+	      $sessionid = shift(@row);
+	      $sessionns = shift(@row);
+	      $bld_vers = shift(@row);
+	      $orddate = shift(@row);
+	      $cdate = shift(@row);
+	      $rexmit = shift(@row);
+	      $asd = shift(@row);
+	      $fds = shift(@row);
+	      $ff = shift(@row);
+	      $mp = shift(@row);
+	      $temp = shift(@row);
+	      $goflg = shift(@row);
+	    }
+	    if(defined $sth) {
+	      $sth->finish;
+	    }
+        $xmitfile = "$XmitFlgDirHMI/xday/Xmit_All.$yrday"; #!!TBD for AIA
+	if($rexmit) {
+	  $OKfile = 1;
+	  print "*OK for lev1: $xmitfile exists\n";
 }
 else {
   $OKfile = 0;
@@ -206,12 +208,12 @@ else {
 }
 
 #!!!TBD fix this to use hmi.lev1_probe table (or aia.lev1_probe table)
+#!!Maybe not, want this dynamic here.
 $OKff = 1;
 if(!$hmiaiaflg) {		#ck for hmi flat field
-  #Now see if flat field has flatfield_version >= 1
+  #Now see if flat field has flatfield_version >= 1 (version ck obsolete)
   for($i=1; $i < 3; $i++) {
-    $query = sprintf("%s[? t_start <= \$(%s) and t_stop > \$(%s) and CAMERA=%d and flatfield_version >= 1 ?]", $DSFFNAMEHMI, $fulldateFF, $fulldateFF, $i);
-#    $query = sprintf("%s[! t_start <= \$(%s) and t_stop > \$(%s) and CAMERA=%d and flatfield_version=(select max(flatfield_version) from %s where t_start <= \$(%s) and t_stop > \$(%s) and CAMERA=%d) \!]", $DSFFNAMEHMI, $fulldateFF, $fulldateFF, $i, $DSFFNAMEHMI, $fulldateFF, $fulldateFF, $i);
+    $query = sprintf("%s[? t_start <= \$(%s) and t_stop > \$(%s) and CAMERA=%d ?]", $DSFFNAMEHMI, $fulldateFF, $fulldateFF, $i);
 
     #print "hmi query= $query\n"; #!!TEMP
     #print "Must put single quote around the above\n";
@@ -224,7 +226,7 @@ if(!$hmiaiaflg) {		#ck for hmi flat field
     if($x =~ /date\tflatfield_version/) {
       $x = shift(@result);	#looks like 2010-07-01T17:28:23Z   1
       ($a, $ffver) = split(/\s+/, $x);
-      if($ffver >= 1) { 
+      if($ffver >= 0) { 	#NOTE: now >= 0 is ok, just find one
         print "*OK flatfield found for CAMERA=$i\n";
       } else {
         print "**NG flatfield_version not >= 1  for CAMERA=$i\n";
@@ -239,7 +241,7 @@ if(!$hmiaiaflg) {		#ck for hmi flat field
 }
 else {				#ck for aia flat field
   while($wave = shift(@wavestr)) {
-    $query = sprintf("%s[? t_start <= $sec and t_stop > $sec and WAVE_STR='%s' and flatfield_version >= 1 ?]", $DSFFNAMEAIA, $wave);
+    $query = sprintf("%s[? t_start <= $sec and t_stop > $sec and WAVE_STR='%s' ?]", $DSFFNAMEAIA, $wave);
     #print "\naia query= $query\n";
     #print "Must put double quote around the above\n";
     $cmd = "show_info key=date,flatfield_version \"$query\"";
@@ -250,7 +252,7 @@ else {				#ck for aia flat field
     if($x =~ /date\tflatfield_version/) {
       $x = shift(@result);	#looks like 2010-07-01T17:28:23Z   1
       ($a, $ffver) = split(/\s+/, $x);
-      if($ffver >= 1) { 
+      if($ffver >= 0) { 	#just find a flatfield_version
         print "*OK flatfield found for WAVE_STR=$wave\n";
       } else {
         print "**NG flatfield_version not >= 1  for WAVE_STR=$wave\n";
@@ -297,22 +299,23 @@ if($OKfile && $OKhkdayfile && $OKfdsorbit && $OKnogofile && $OKff && $OKmp && $O
   print "*OK to process definitive lev1 for $orddate\n";
   print "    Building command now (may take a minute)...\n";
   if($hmiaiaflg) {
-    $cmd = "show_info -q key=fsn '$DSINAIA\[? t_obs >= \$($fulldate) and  t_obs < \$($nextdate) ?]'";
+    $cmd = "show_info -q key=fsn '$DSINAIA\[? t_obs >= \$($fulldateFF) and  t_obs < \$($nextdate) ?]'";
   }
   else {
-    $cmd = "show_info -q key=fsn '$DSINHMI\[? t_obs >= \$($fulldate) and  t_obs < \$($nextdate) ?]'";
+    $cmd = "show_info -q key=fsn '$DSINHMI\[? t_obs >= \$($fulldateFF) and  t_obs < \$($nextdate) ?]'";
   }
   #print "$cmd\n"; #!!TEMP
   @fsn_presort = `$cmd`;
-  @fsn = sort @fsn_presort;
+  @fsn = sort numerically @fsn_presort;
   $firstfsn = shift(@fsn);
   $lastfsn = pop(@fsn);
   chomp($firstfsn); chomp($lastfsn);
   if($hmiaiaflg) {  #!!!TEMP call mgrY
     $cmd = "time build_lev1_mgr mode=fsn instru=aia dsin=$DSINAIA dsout=$DSOUTAIA bfsn=$firstfsn efsn=$lastfsn logfile=/usr/local/logs/lev1/build_lev1_mgr_aia.$utcdate.log";
   }
-  else {
-    $cmd = "time build_lev1_mgr mode=fsn instru=hmi dsin=$DSINHMI dsout=$DSOUTHMI bfsn=$firstfsn efsn=$lastfsn logfile=/usr/local/logs/lev1/build_lev1_mgr_hmi.$utcdate.log";
+  else { 
+    #!!TEMP increase numqsub from default 16 to 32
+    $cmd = "time build_lev1_mgr mode=fsn instru=hmi dsin=$DSINHMI dsout=$DSOUTHMI bfsn=$firstfsn efsn=$lastfsn numqsub=32 logfile=/usr/local/logs/lev1/build_lev1_mgr_hmi.$utcdate.log";
   }
   print "$cmd\n";
   if($EXECUTE) {
@@ -346,7 +349,7 @@ if($OKfile && $OKhkdayfile && $OKfdsorbit && $OKnogofile && $OKff && $OKmp && $O
   $cmd = "show_info -q key=fsn 'hmi.lev1[][$firstfsn-$lastfsn]'";
   print "$cmd\n";
   @fsns_presort = `$cmd`;
-  @fsns = sort @fsns_presort;
+  @fsns = sort numerically @fsns_presort;
   $startflg = 1; $total = 0; $miss = 0;
   if(!@fsns) { 
     $miss=2; $lastlev1seen=$prevfsn; $total="ALL"; $msg="All fsn missing\n";
@@ -371,7 +374,6 @@ if($OKfile && $OKhkdayfile && $OKfdsorbit && $OKnogofile && $OKff && $OKmp && $O
     }
     else {
       $startflg = 0;
-      #if($fsn != $firstfsn) {
       if($fsn != $startfsn) {
         $xfsn = $startfsn - 1;
         #print "Missing FSN: went from $firstfsn to $fsn\n";
@@ -427,6 +429,29 @@ if($OKfile && $OKhkdayfile && $OKfdsorbit && $OKnogofile && $OKff && $OKmp && $O
     if(defined $sth) {
       $sth->finish;
     }
+    close(ARG);
+    #now call build_lev1_empty to fill in empty records. !!TBD for aia
+    $cmd = "build_lev1_empty instru=hmi dsout=hmi.lev1 argfile=$alog";
+    print "$cmd\n";
+    if($EXECUTE) {
+      `$cmd`;
+    }
+#No longer done. The hmi.cosmic_rays and Rot FF are build after the script exits
+#    #Now queue up the higher level processing with Phil's workflow:
+#    $pos = index($prevdate, '_');
+#    $wantlow = substr($prevdate, 0, $pos+1);
+#    $wantlow = "$wantlow"."23:54_TAI";
+#    $pos = index($fulldate, '_');
+#    $wanthigh = substr($fulldate, 0, $pos+1);
+#    $wanthigh = "$wanthigh"."23:54_TAI";
+#    #print "wantlow = $wantlow  wanthigh = $wanthigh\n";
+#    $ENV{'WORKFLOW_ROOT'} = "/home/phil/workflow";
+#    $ENV{'WORKFLOW_DATA'} = "/home/phil/workflow";
+#    $cmd = "/home/phil/workflow/maketicket.csh gate=hmi.LOS wantlow=$wantlow wanthigh=$wanthigh action=5";
+#    print "$cmd\n";
+#    if($EXECUTE) {
+#      #`$cmd`;
+#    }
 }
 else {
   print "**NG can't process definitive lev1 for $orddate\n";
@@ -437,11 +462,6 @@ else {
         $cmd = "echo \"TEST for now\" | $mail $to"; #!!TBD give full msg
         system $cmd;
 }
-close(ARG);
-#now call build_lev1_empty to fill in empty records. !!TBD for aia
-$cmd = "build_lev1_empty instru=hmi dsout=hmi.lev1 argfile=$alog";
-print "$cmd\n";
-`$cmd`;
 
 print "**END: lev1_definitive.pl for $orddate\n";  #used by lev1_def_gui to know end
 $dbh->disconnect();
