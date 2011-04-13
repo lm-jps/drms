@@ -153,6 +153,7 @@ __PROJ__
              <subdir>patch/apps</subdir>
              <subdir>nlfff/apps</subdir>
              <subdir>d4vm/apps</subdir>
+             <subdir>remapmags/apps</subdir>
         </subdirs>
         <filters>
              <filter>
