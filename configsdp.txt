@@ -154,6 +154,7 @@ __PROJ__
              <subdir>nlfff/apps</subdir>
              <subdir>d4vm/apps</subdir>
              <subdir>remapmags/apps</subdir>
+             <subdir>synop/apps</subdir>
         </subdirs>
         <filters>
              <filter>
