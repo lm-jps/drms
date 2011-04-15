@@ -741,6 +741,7 @@ int DoIt(void)
       fp = fopen(runscript, "w");
       fprintf(fp, "#! /bin/csh -f\n");
       fprintf(fp, "set echo\n");
+      fprintf(fp, "set histchars\n");
       // force clone with copy segment. 
       fprintf(fp, "set_keys_sock -C JSOC_DBHOST=%s ds='jsoc.export[%s]' Status=1\n", dbexporthost, requestid);
       fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
