@@ -561,6 +561,9 @@ void rempeuid(PEUID **list, uint64_t uid);
 void setpadata(PADATA **list, char *wd, uint64_t sumid, double bytes,
 int stat, int substat, char *eff_date,
 int group_id, int safe_id, uint64_t ds_index);
+void setpadatar(PADATA **list, char *wd, uint64_t sumid, double bytes,
+int stat, int substat, char *eff_date,
+int group_id, int safe_id, uint64_t ds_index);
 int tape_inventory(int sim, int catalog);
 int robot_verify(char *action, int slot, int slotordrive);
 void uidpadata(PADATA *new, PADATA **start, PADATA **end);
