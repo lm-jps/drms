@@ -108,7 +108,7 @@ DB_Handle_t *db_connect(const char *host, const char *user,
 
      if (isdigit(hostname[0]))
        p += sprintf(p,"hostaddr = %s ",hostname);
-     else if (strcmp(host,"localhost"))
+     else
        p += sprintf(p,"host = %s ",hostname); 
 
      if (port) 
