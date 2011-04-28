@@ -30,8 +30,8 @@ __PROJ__
              <subdir>dsputil</subdir>
              <subdir>gapfiller</subdir>
              <subdir>interpolate</subdir>
-             <subdir>json</subdir>
              <subdir>stats</subdir>
+             <subdir>egsehmicomp</subdir>
        </subdirs>
    </proj>
    <proj>
@@ -126,6 +126,7 @@ __PROJ__
         <subdirs>
             <subdir>libs/flatfieldlib</subdir>
             <subdir>apps</subdir>
+            <subdir>off_flat_IDL</subdir>
         </subdirs>
         <filters>
              <filter>
