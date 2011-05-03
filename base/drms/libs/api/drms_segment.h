@@ -419,6 +419,18 @@ int drms_segment_write(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale);
 
 int drms_segment_writewithkeys(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autoscale);
 
+/**
+   
+   @param seg The segment that refers to a file which contains an image to
+   which a slice of data will be written.
+   @param arr The array that contains a slice of data to be written.
+   @param start A vector of index values in the segment-file's image space that
+   identifies a pixel 
+
+The index value, in all dimensions, that starts the slice.
+   @param end The index value, in all dimensions, that ends the slice.
+   @return The created DRMS array struct.
+ */
 int drms_segment_writeslice(DRMS_Segment_t *seg, 
                             DRMS_Array_t *arr, 
                             int *start, 
