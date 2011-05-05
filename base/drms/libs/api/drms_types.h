@@ -472,6 +472,8 @@ struct DRMS_RecSetCursor_struct
   int dontwait;
 
   int infoneeded;
+  /** \brief The SUM_info_t *, keyed by sunum, needed when opening record chunks. */
+  HContainer_t *suinfo;
 };
 
 /** \brief DRMS cursor struct reference */
@@ -1224,6 +1226,13 @@ typedef struct DRMS_StorageUnit_struct {
 		   storage unit. Only used on the server side to delete 
 		   temporary records at the end of a session. */
 } DRMS_StorageUnit_t;
+
+
+typedef struct DRMS_SuAndSeries_struct
+{
+  long long sunum;
+  char *series;
+} DRMS_SuAndSeries_t;
 
 /*********** Various utility functions ****************/
 DRMS_Type_t drms_str2type(const char *);

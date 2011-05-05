@@ -812,6 +812,7 @@ int DoIt(void)
   int iseg, nsegs, linked_segs = 0;
   int ilink, nlinks = 0;
   char *inqry;
+  const char *atfile = NULL;
 						/* Get command line arguments */
   const char *in;
   char *keylist;
@@ -1178,9 +1179,9 @@ int DoIt(void)
 
   /* check for poor usage of no query and no n=record_count */
   inqry = index(in, '[');
-  if (!inqry && max_recs == 0)
+  if (!inqry && max_recs == 0 && !atfile)
     {
-    fprintf(stderr, "### show_info query must have n=recs or record query specified\n");
+    fprintf(stderr, "### show_info - the query must contain a record-filter, or the n=num_records or @file argument must be present.\n");
     show_info_return(1);
     }
 
@@ -1252,15 +1253,28 @@ int DoIt(void)
      }  
   }
 
+  /* At this point, we may or may not have a container of SUM_info_t's available - if we're going to stage 
+   * records by first sorting on tapeid, filenumber, then we should use that array of SUM_info_t structs, 
+   * instead of calling SUMS yet again for those structs. 
+   *
+   * drms_sortandstage_records() will not actually fetch SUs if the record-set was created
+   * with the drms_open_recordset() call. The fetching will happen during the drms_recordset_fetchnext()
+   * call [this function will call drms_sortandstage_records() on a completely new set of records -
+   * one for each record in the current chunk - that will become owned by the record-set.]. In this case
+   * the record-set has NULL pointers for each record in the set. We should pass the container of 
+   * SUM_info_t's to drms_sortandstage_records(). drms_sortandstage_records() should use this
+   * container if the records in the record-set do not already have an SUM_info_t attached.
+   */
+
   if (want_path_noret)
   {
      /* -P - don't retrieve but wait for SUMS to give dir info */
-     drms_stage_records(recordset, 0, 0); 
+     drms_sortandstage_records(recordset, 0, 0, &suinfo); 
   }
   else if (want_path) 
   {
      /* -p - retrieve and wait for retrieval */
-     drms_stage_records(recordset, 1, 0); 
+     drms_sortandstage_records(recordset, 1, 0, &suinfo); 
   }
 
   /* check for multiple sub-sets */
@@ -1288,25 +1302,33 @@ int DoIt(void)
 
          rec = drms_recordset_fetchnext(drms_env, recordset, &status, &cstat, &newchunk);
 
-         if (requireSUMinfo && (given_sunum && given_sunum[0] >= 0))
+         if (rec->suinfo == NULL)
          {
-            /* We already have the SUM_info_t structs in hand - we just need to set each record's
-             * suinfo field to point to the correct one. The suinfo container is keyed by sunum. */
-            snprintf(key, sizeof(key), "%lld", rec->sunum);
+            /* We may have an SUM_info_t struct for this record from a previous call
+             * to drms_getsuinfo() - use it here. If drms_recordset_fetchnext() was 
+             * called on a record-set that was already staged, then rec->suinfo should
+             * not be NULL, because drms_recordset_fetchnext() will have called 
+             * drms_sortandstage_records(). */
+            if (requireSUMinfo && (given_sunum && given_sunum[0] >= 0))
+            {
+               /* We already have the SUM_info_t structs in hand - we just need to set each record's
+                * suinfo field to point to the correct one. The suinfo container is keyed by sunum. */
+               snprintf(key, sizeof(key), "%lld", rec->sunum);
 
-            if ((ponesuinfo = (SUM_info_t **)hcon_lookup(suinfo, key)) != NULL)
-            {
-               /* Multiple records may share the same SUNUM - each record gets a copy 
-                * of the SUM_info_t. When suinfo is destroyed, the source SUM_info_t 
-                * is deleted. */
-               rec->suinfo = (SUM_info_t *)malloc(sizeof(SUM_info_t));
-               *(rec->suinfo) = **ponesuinfo;
-            }
-            else
-            {
-               /* unknown SUNUM */
-               fprintf(stderr, "Expected SUNUM '%s' not found.\n", key);
-               show_info_return(1);
+               if ((ponesuinfo = (SUM_info_t **)hcon_lookup(suinfo, key)) != NULL)
+               {
+                  /* Multiple records may share the same SUNUM - each record gets a copy 
+                   * of the SUM_info_t. When suinfo is destroyed, the source SUM_info_t 
+                   * is deleted. */
+                  rec->suinfo = (SUM_info_t *)malloc(sizeof(SUM_info_t));
+                  *(rec->suinfo) = **ponesuinfo;
+               }
+               else
+               {
+                  /* unknown SUNUM */
+                  fprintf(stderr, "Expected SUNUM '%s' not found.\n", key);
+                  show_info_return(1);
+               }
             }
          }
 

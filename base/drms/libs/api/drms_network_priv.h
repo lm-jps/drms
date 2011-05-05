@@ -49,6 +49,11 @@ DRMS_StorageUnit_t *drms_getunit_nosums(DRMS_Env_t *env,  char *series,
 /** \brief Retrieve the storage units specified by \a sunum */
 int drms_getunits(DRMS_Env_t *env,  char *series, 
 		  int n, long long *sunum, int retrieve, int dontwait);
+int drms_getunits_ex(DRMS_Env_t *env, 
+                     int num, 
+                     DRMS_SuAndSeries_t *suandseries, 
+                     int retrieve,
+                     int dontwait);
 
 int drms_getsuinfo(DRMS_Env_t *env, long long *sunums, int nReqs, SUM_info_t **infostructs);
 

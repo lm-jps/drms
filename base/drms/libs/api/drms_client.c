@@ -1011,10 +1011,13 @@ DRMS_StorageUnit_t *drms_getunit_nosums(DRMS_Env_t *env, char *series,
    return drms_getunit_internal(env, series, sunum, 0, 0, status);
 }
 
-int drms_getunits(DRMS_Env_t *env, char *series,
-		  int n, long long *sunum, 
-		  int retrieve,
-		  int dontwait)
+/* series can be NULL, in which case the resulting storage units seriesinfo fields 
+ * will also be NULL. */
+int drms_getunits_internal(DRMS_Env_t *env, 
+                           int n, 
+                           DRMS_SuAndSeries_t *suandseries,
+                           int retrieve,
+                           int dontwait)
 {
   HContainer_t *scon=NULL;
   int stat = DRMS_SUCCESS;
@@ -1033,30 +1036,30 @@ int drms_getunits(DRMS_Env_t *env, char *series,
 #ifdef DEBUG
       printf("getunit: Called, n=%d, series=%s\n", n, series);
 #endif
-
   /* Get a template for series info. */
-  if ((template = drms_template_record(env, series, &stat)) == NULL)
-    goto bailout;
-  
+
   cnt = 0;
   for (int i = 0; i < n; i++) {
-    if ((su = drms_su_lookup(env, series, sunum[i], &scon)) == NULL) {
+     if ((template = drms_template_record(env, suandseries[i].series, &stat)) == NULL)
+       goto bailout;
+
+    if ((su = drms_su_lookup(env, suandseries[i].series, suandseries[i].sunum, &scon)) == NULL) {
       if (!scon)
 	{
-	  scon = hcon_allocslot(&env->storageunit_cache,series);    
+	  scon = hcon_allocslot(&env->storageunit_cache, suandseries[i].series);    
 	  hcon_init(scon, sizeof(DRMS_StorageUnit_t), DRMS_MAXHASHKEYLEN, 
 		    (void (*)(const void *)) drms_su_freeunit, NULL);
 	}
       /* Get a slot in the cache to insert a new entry in. */
-      sprintf(hashkey,DRMS_SUNUM_FORMAT, sunum[i]);
+      sprintf(hashkey,DRMS_SUNUM_FORMAT, suandseries[i].sunum);
       su = hcon_allocslot(scon,hashkey);
 #ifdef DEBUG
       printf("getunit: Got su = %p. Now has %d slots from '%s'\n",su, 
-	     hcon_size(scon), series);
+	     hcon_size(scon), suandseries[i].series);
 #endif
 
       /* Populate the fields in the struct. */
-      su->sunum = sunum[i];
+      su->sunum = suandseries[i].sunum;
       su->sudir[0] = '\0';
       su->mode = DRMS_READONLY; /* All storage units previously archived 
 				   by SUMS are read-only. */
@@ -1065,7 +1068,6 @@ int drms_getunits(DRMS_Env_t *env, char *series,
       su->recnum = NULL;
       su->refcount = 0;
       su->seriesinfo = template->seriesinfo;
-
       su_nc[cnt] = su;
       cnt++;
     } 
@@ -1115,7 +1117,7 @@ int drms_getunits(DRMS_Env_t *env, char *series,
 #endif
   for (int i = 0; i < cnt; i++) {
     if (stat || !strlen(su_nc[i]->sudir)) {
-      drms_su_lookup(env, series, su_nc[i]->sunum, &scon);
+      drms_su_lookup(env, su_nc[i]->seriesinfo->seriesname, su_nc[i]->sunum, &scon);
       sprintf(hashkey,DRMS_SUNUM_FORMAT, su_nc[i]->sunum);
       hcon_remove(scon, hashkey);
     }
@@ -1125,6 +1127,45 @@ int drms_getunits(DRMS_Env_t *env, char *series,
   free(su_nc);
 
   return stat;
+}
+
+int drms_getunits(DRMS_Env_t *env, 
+                  char *series,
+		  int n, 
+                  long long *sunum, 
+		  int retrieve,
+		  int dontwait)
+{
+   DRMS_SuAndSeries_t *arr = malloc(n * sizeof(DRMS_SuAndSeries_t));
+   int isu;
+   char *dup = strdup(series);
+   int ret = 0;
+
+   if (arr && dup)
+   {
+      for (isu = 0; isu < n; isu++)
+      {
+         arr[isu].sunum = sunum[isu];
+         arr[isu].series = dup;
+      }
+
+      ret = drms_getunits_internal(env, n, arr, retrieve, dontwait);
+
+      free(dup);
+      free(arr);
+   }
+
+   return ret;
+}
+
+/* Can specify SUNUMs from more than one series. */
+int drms_getunits_ex(DRMS_Env_t *env, 
+                     int num, 
+                     DRMS_SuAndSeries_t *suandseries, 
+                     int retrieve,
+                     int dontwait)
+{
+   return drms_getunits_internal(env, num, suandseries, retrieve, dontwait);
 }
 
 int drms_getsuinfo(DRMS_Env_t *env, long long *sunums, int nReqs, SUM_info_t **infostructs)

@@ -2782,7 +2782,98 @@ int drms_close_records(DRMS_RecordSet_t *rs, int action)
   return status;
 }
 
-int drms_stage_records(DRMS_RecordSet_t *rs, int retrieve, int dontwait) {
+static void FreeSumsInfo(const void *value)
+{
+   SUM_info_t *tofree = *((SUM_info_t **)value);
+   if (tofree)
+   {
+      free(tofree);
+   }
+}
+
+static int SumsInfoSort(const void *he1, const void *he2)
+{
+   SUM_info_t **pi1 = (SUM_info_t **)hcon_getval(*((HContainerElement_t **)he1));
+   SUM_info_t **pi2 = (SUM_info_t **)hcon_getval(*((HContainerElement_t **)he2));
+   
+   XASSERT(pi1 && pi2);
+
+   /* Some SUs might be online already. Those SUs should sort before the offline
+    * ones, in increasing SUNUM order. Then sort the offline SUs by
+    * by tapeid (SUM_info_t::arch_tape), then by filenum (SUM_info_t::arch_tape_fn). */
+   SUM_info_t *i1 = *pi1;
+   SUM_info_t *i2 = *pi2;
+   int cval;
+
+   /* if the online_loc is empty, then the SUNUM was invalid (eg., data aged off and not archived). */
+   int i1invalid = (*i1->online_loc == '\0');
+   int i2invalid = (*i2->online_loc == '\0');
+   int i1offline = (!i1invalid && 
+                    strcasecmp(i1->archive_status, "Y") == 0 && 
+                    strcasecmp(i1->online_status, "N") == 0 &&
+                    *i1->arch_tape != '\0' && 
+                    strcasecmp(i1->arch_tape, "N/A") != 0);
+   int i2offline = (!i2invalid && 
+                    strcasecmp(i2->archive_status, "Y") == 0 && 
+                    strcasecmp(i2->online_status, "N") == 0 &&
+                    *i2->arch_tape != '\0' &&
+                    strcasecmp(i2->arch_tape, "N/A") != 0);
+
+   /* Sort in this order: an invalid or online SU sorts before an offline SU. If both SUs are invalid or online, sort
+    * by SUNUM. If both are offline, sort by tapeid/filenum. */
+
+   if (i1offline && i2offline)
+   {
+      /* both SUs are offline */
+      cval = strcmp(i1->arch_tape, i2->arch_tape);
+
+      if (cval != 0)
+      {
+         return cval;
+      }
+      else
+      {
+         /* tapeids are the same, sort by filenum */
+         return (i1->arch_tape_fn < i2->arch_tape_fn) ? -1 : (i1->arch_tape_fn > i2->arch_tape_fn ? 1 : 0);
+      }
+   }
+   else if (i2offline)
+   {
+      /* i1 invalid/online, i2 offline */
+      return -1;
+   }
+   else if (i1offline)
+   {
+      /* i1 offline, i2 invalid/online */
+      return 1;
+   }
+   else
+   {
+      /* both invalid/online - sort by sunum */
+      return (i1->sunum < i2->sunum) ? -1 : 1; /* can't be the same - these are different SUs. */
+   }
+}
+
+static void SuInfoCopyMap(const void *key, const void *value, const void *data)
+{
+   HContainer_t *dst = (HContainer_t *)(data);
+   HContainerElement_t *elem = (HContainerElement_t *)value;
+   SUM_info_t *src = NULL;
+   SUM_info_t *dup = NULL;
+
+   /* Duplicate source SUM_info_t (elem->val). */
+   if (elem->val && *((SUM_info_t **)elem->val))
+   {
+      src = *((SUM_info_t **)elem->val);
+      dup = malloc(sizeof(SUM_info_t));
+      *dup = *src;
+      hcon_insert(dst, key, &dup);
+   }
+}
+
+/* Does not take ownership of suinfo, copies it. */
+static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int dontwait, HContainer_t **suinfo) 
+{
 
   if (!rs) {
     return DRMS_SUCCESS;
@@ -2791,30 +2882,84 @@ int drms_stage_records(DRMS_RecordSet_t *rs, int retrieve, int dontwait) {
   int status = 0;
 
   DRMS_Record_t *rec = NULL;
-  char *series = NULL;
   int nSets = rs->ss_n;
   int nRecs = 0;
   int iSet;
   int iRec;
   int bail = 0;
 
-  long long *sunum;
-  int cnt = 0;
+  DRMS_SuAndSeries_t *sunum = NULL;
+  int cnt;
   HContainer_t *scon = NULL;
+
+  int sortalso = 0;
+  SUM_info_t **ponesuinfo = NULL;
+  char key[128];
+  HContainer_t *suinfoauth = NULL;
+  long long *sunumreqinfo = NULL;
+  char **seriesreqinfo = NULL;
+  int cntreqinfo;
+  SUM_info_t **infostructs = NULL;
+  int iinfo;
+  DRMS_Env_t *env = NULL;
+  SUM_info_t *dup = NULL;
+
+  SUM_info_t *dummy = NULL;
+
+  sortalso = (suinfo != NULL);
 
   /* if recordset is result of drms_open_recordset with a cursor simply remember
      that stage_records has been called.  Actual staging will happen when each
-     chunk is fetched. */
+     chunk is fetched. drms_record_fetchnext() will call this function again, 
+     but with a new, clean recordset. Then it will copy this recordset back
+     over the original recordset.
+  */
   if (rs->cursor)
-    {
-    rs->cursor->staging_needed = 1;
-    rs->cursor->retrieve = retrieve;
-    rs->cursor->dontwait = dontwait;
-    return(DRMS_SUCCESS);
-    }
+  {
+     rs->cursor->staging_needed = sortalso ? 2: 1; // 2 signifies "sort also"
+     rs->cursor->retrieve = retrieve;
+     rs->cursor->dontwait = dontwait;
+     if (sortalso)
+     {
+        /* Save the SUM_info_t data for later use in drms_open_recordchunk(). Copy
+         * the suinfo passed in because drms_close_records() will free the one in 
+         * rs->cursor->suinfo. */
+        if (*suinfo && hcon_size(*suinfo) > 0)
+        {
+           if (!rs->cursor->suinfo)
+           {
+              rs->cursor->suinfo = hcon_create(sizeof(SUM_info_t *), 128, FreeSumsInfo, NULL, NULL, NULL, 0);
+           }
+
+           /* Can't use hcon_copy() because the result would be the sharing of SUM_info_t between
+            * the original and the copy. But we can use a new copy function that allocates 
+            * new SUM_info_ts. */
+           hash_map_data(&((*suinfo)->hash), SuInfoCopyMap, rs->cursor->suinfo);
+        }
+     }
+     return(DRMS_SUCCESS);
+  }
 
   if (rs->n >= 1)
   {
+     env = rs->records[0]->env;
+     dummy = (SUM_info_t *)NULL;
+
+     /* Collect list of SUs to stage. */
+     if (!sortalso)
+     {
+        sunum = (DRMS_SuAndSeries_t *)malloc(rs->n * sizeof(DRMS_SuAndSeries_t));
+        XASSERT(sunum);
+        cnt = 0;
+     }
+
+     /* Collect list of SUs to get SUM_info_t for. */
+     sunumreqinfo = (long long *)malloc(rs->n * sizeof(long long));
+     XASSERT(sunumreqinfo);
+     seriesreqinfo = (char **)malloc(rs->n * sizeof(char *));
+     XASSERT(seriesreqinfo);
+     cntreqinfo = 0;
+
      for (iSet = 0; !bail && iSet < nSets; iSet++)
      {
         nRecs = drms_recordset_getssnrecs(rs, iSet, &status);
@@ -2825,69 +2970,246 @@ int drms_stage_records(DRMS_RecordSet_t *rs, int retrieve, int dontwait) {
            break;
         }
 
-        XASSERT(sunum = malloc(nRecs*sizeof(long long)));
-        cnt = 0;
-
         for (iRec = 0; iRec < nRecs; iRec++)
         {
            rec = rs->records[(rs->ss_starts)[iSet] + iRec];
 
-           if (iRec == 0)
-           {
-              series = rec->seriesinfo->seriesname;
-           }
-           else if (strcmp(series, rec->seriesinfo->seriesname)) 
-           {
-              fprintf(stderr, "Records do not come from the same series: %s %s\n", series, rec->seriesinfo->seriesname);
-              bail = 1;
-              break;
-           }
-
+           /* Include only SUs that are not already online. */
            if (rec->sunum != -1LL && rec->su == NULL) 
            {
-              sunum[cnt] = rec->sunum;
-              cnt++;
+              if (!suinfoauth)
+              {
+                 /* Need to ensure that for every SUNUM, we have a SUM_info_t which 
+                  * contains the tapeid/filenum of that SUNUM. Create a new container 
+                  * of SUM_info_ts, keyed by SUNUM. This will be used below to 
+                  * fill in the DRMS_Record_t::suinfo field for each record. */
+
+                 /* Since two or more records may refer to the same SUM_info_t, we will
+                  * need to dupe each SUM_info_t into the DRMS_Record_t::suinfo field, 
+                  * then delete the originals in suinfoauth - use FreeSumsInfo() to do the freeing. */
+                 suinfoauth = (HContainer_t *)hcon_create(sizeof(SUM_info_t *), 128, FreeSumsInfo, NULL, NULL, NULL, 0);
+              }
+
+              snprintf(key, sizeof(key), "%lld", rec->sunum);
+
+              if (sortalso)
+              {
+                 /* Populate DRMS_Record_t::suinfo */
+                 if (!hcon_member(suinfoauth, key))
+                 {
+                    if (!rec->suinfo)
+                    {
+                       if (*suinfo && (ponesuinfo = (SUM_info_t **)hcon_lookup(*suinfo, key)))
+                       {
+                          /* The SU info was passed in to this function. */
+                          dup = (SUM_info_t *)malloc(sizeof(SUM_info_t));
+                          *dup = **ponesuinfo;
+                          
+                          /* Manually copy series name - rec->seriesinfo->seriesname 
+                           * is more definitive than what was provided in suinfo. */
+                          snprintf(dup->owning_series, 
+                                   sizeof(dup->owning_series), 
+                                   "%s",
+                                   rec->seriesinfo->seriesname);
+                          hcon_insert(suinfoauth, key, &dup);
+                       }
+                       else
+                       {
+                          /* There is no SU info available - add to list of SUNUMs that
+                           * will be sent to SUM_InfoEx(). The results of SUM_InfoEx() 
+                           * will be pushed back into the suinfoauth container. This container 
+                           * will then be used to populate the DRMS_Record_t::suinfo fields. */
+                          sunumreqinfo[cntreqinfo] = rec->sunum;
+                          seriesreqinfo[cntreqinfo] = rec->seriesinfo->seriesname;
+                          cntreqinfo++;
+                       
+                          /* Insert dummy into suinfoauth so that we don't request the same
+                           * sunum from SUM_InfoEx() more than once. When this SUM_info_t
+                           * gets freed by FreeSumsInfo(), there will be a call to free(NULL)
+                           * which generally is a nop. */
+                          hcon_insert(suinfoauth, key, &dummy);
+                       }
+                    }
+                    else
+                    {
+                       /* Put the existing SUM_info_t into suinfoauth. We want all info in this 
+                        * one container, then we sort the container. */
+                       dup = (SUM_info_t *)malloc(sizeof(SUM_info_t));
+                       *dup = *rec->suinfo;
+
+                       /* Manually copy series name - rec->seriesinfo->seriesname 
+                        * is more definitive than what was provided in suinfo. */
+                       snprintf(dup->owning_series, 
+                                sizeof(dup->owning_series), 
+                                "%s",
+                                rec->seriesinfo->seriesname);
+                       hcon_insert(suinfoauth, key, &dup);
+                    }
+                 }
+              }
+              else
+              {
+                 if (!hcon_member(suinfoauth, key))
+                 {
+                    sunum[cnt].sunum = rec->sunum;
+                    sunum[cnt].series = rec->seriesinfo->seriesname;
+                    cnt++;
+
+                    /* Re-purpose suinfoauth to track whether an SUNUM has been seen or not. */
+                    hcon_insert(suinfoauth, key, &dummy);
+                 }
+              }
            }
         } /* iRec */
+     } /* iSet */
 
-        if (!bail && cnt) 
+     if (!bail && hcon_size(suinfoauth) > 0)
+     {
+        if (sortalso)
         {
-           status = drms_getunits(rec->env, series, cnt, sunum, retrieve, dontwait);
-           if (!status) 
+           if (cntreqinfo > 0)
            {
-              if (!dontwait) 
-              {
-                 // matching to each record is done by lookup the SU cache
-                 for (iRec = 0; iRec < nRecs; iRec++) 
-                 {
-                    rec = rs->records[(rs->ss_starts)[iSet] + iRec];
-                    rec->su = drms_su_lookup(rec->env, series, rec->sunum, &scon);
+              /* Call SUM_InfoEx(). */
+              infostructs = (SUM_info_t **)malloc(sizeof(SUM_info_t *) * cntreqinfo);
+              memset(infostructs, 0, sizeof(SUM_info_t *) * cntreqinfo);
+              status = drms_getsuinfo(rs->records[0]->env, sunumreqinfo, cntreqinfo, infostructs);
 
-                    /* ART (2/11/2010) - Previously, the refcount was not incremented (I think this was a bug) */
-                    if (rec->su)
+              if (status != DRMS_SUCCESS)
+              {
+                 fprintf(stderr, "drms_stage_records_internal(): failure calling drms_getsuinfo(), error code %d.\n", status);
+                 bail = 1;
+              }
+              else
+              {
+                 /* Populate suinfoauth with the results. suinfoauth will own all infostructs. */
+                 for (iinfo = 0 ; iinfo < cntreqinfo; iinfo++)
+                 {
+                    snprintf(key, sizeof(key), "%llu", (unsigned long long)infostructs[iinfo]->sunum);
+
+                    /* If SUM_infoEx() encounters an invalid SUNUM, or if it cannot retrieve an SU
+                     * from tape because retrieve == 0, then the online_loc field of the returned 
+                     * SUM_info_t will be the empty string. Substitute in the series name provided 
+                     * by the record that was used to original obtain the SUNUM from. */
+                    snprintf(infostructs[iinfo]->owning_series, 
+                             sizeof(infostructs[iinfo]->owning_series), 
+                             "%s",
+                             seriesreqinfo[iinfo]);
+
+                    /* There was a dummy inserted into suinfoauth earlier - remove that. */
+                    hcon_remove(suinfoauth, key);
+                    hcon_insert(suinfoauth, key, &(infostructs[iinfo]));
+                 }
+              }
+           }
+
+           /* Time to sort by tapeid/filenum. All sort criteria are in the 
+            * SUM_info_ts in suinfoauth. */
+           HIterator_t hit;
+           hiter_new_sort(&hit, suinfoauth, SumsInfoSort);
+           cnt = 0;
+           sunum = malloc(hcon_size(suinfoauth) * sizeof(DRMS_SuAndSeries_t));
+           XASSERT(sunum);
+
+           if (env->verbose)
+           {
+              fprintf(stdout, "Sorted (by tapeid/filename) SUNUMs (sunum, tapeid, filenum):\n");
+           }
+
+           while ((ponesuinfo = hiter_getnext(&hit)) != NULL)
+           {
+              if (env->verbose)
+              {
+                 fprintf(stdout, 
+                         "%llu\t%s\t%d\n", 
+                         (unsigned long long)(*ponesuinfo)->sunum, 
+                         (*ponesuinfo)->arch_tape, 
+                         (*ponesuinfo)->arch_tape_fn);
+              }
+
+              sunum[cnt].sunum = (*ponesuinfo)->sunum;
+              sunum[cnt].series = (*ponesuinfo)->owning_series;
+              cnt++;
+           }
+        }
+        
+        /* Provide NULL as second argument. The SUNUMs in the list of SUs to 
+         * fetch do not necessarily belong to the same series. By setting 
+         * this argument to NULL, all series su caches are searched before 
+         * SUM_get() is called. */
+        if (!bail)
+        {
+           status = drms_getunits_ex(rec->env, cnt, sunum, retrieve, dontwait);
+        }
+
+        if (!status) 
+        {
+           if (!dontwait) 
+           {
+              // matching to each record is done by lookup the SU cache
+              for (iRec = 0; iRec < nRecs; iRec++) 
+              {
+                 rec = rs->records[iRec];
+                 rec->su = drms_su_lookup(rec->env, rec->seriesinfo->seriesname, rec->sunum, &scon);
+
+                 /* ART (2/11/2010) - Previously, the refcount was not incremented (I think this was a bug) */
+                 if (rec->su)
+                 {
+                    /* Invalid SUNUMs will result in a NULL su. These SUNUMs could have been deleted, 
+                     * because the series was deleted, or because the SUs expired. */
+                    rec->su->refcount++;
+                 
+                    /* rec->su could be NULL: if the original SUNUM was invalid (for example, the SU it
+                     * refers to could have aged off, and archive could be zero), then drms_getunits() 
+                     * will ensure that there is no SU in the SU cache for that SUNUM. */
+
+                    /* Copy SUM_info_t to rec->suinfo, but only if we have a valid SUM_info_t, which
+                     * is true only if rec->su != NULL (drms_getunits() will remove the SU from
+                     * the SU cache if the SUNUM was invalid, causing DRMS_StorageUnit_t::sudir to
+                     * be the empty string). */
+                    if (sortalso && !rec->suinfo)
                     {
-                       /* Invalid SUNUMs will result in a NULL su. These SUNUMs could have been deleted, 
-                        * because the series was deleted, or because the SUs expired. */
-                       rec->su->refcount++;
+                       /* If the caller wants to sort by tapeid/filenum, then the SUM_info_t structs 
+                        * obtained in the sorting process should be saved back into the 
+                        * DRMS_Record_t::suinfo field. */
+                       snprintf(key, sizeof(key), "%llu", (unsigned long long)rec->sunum);
+                       if ((ponesuinfo = (SUM_info_t **)hcon_lookup(suinfoauth, key)) != NULL)
+                       {
+                          /* Multiple records may share the same SUNUM - each record gets a copy 
+                           * of the SUM_info_t. When suinfo is destroyed, the source SUM_info_t 
+                           * is deleted. */
+                          rec->suinfo = (SUM_info_t *)malloc(sizeof(SUM_info_t));
+                          *(rec->suinfo) = **ponesuinfo;
+                       }
+                       else
+                       {
+                          fprintf(stderr, "Missing DRMS storage unit during initialization.\n");
+                          status = DRMS_ERROR_UNKNOWNSU;
+                          break;
+                       }
                     }
                  }
               }
            }
         }
+     }
 
-        if (sunum)
-        {
-           free(sunum);
-           sunum = NULL;
-        }
-        
-        series = NULL;
-        nRecs = 0;
-     } /* iSet */
-  }
+     if (infostructs)
+     {
+        free(infostructs);
+        infostructs = NULL;
+     }
 
-  if (bail)
-  {
+     if (suinfoauth)
+     {
+        hcon_destroy(&suinfoauth);
+     }
+
+     if (sunumreqinfo)
+     {
+        free(sunumreqinfo);
+        sunumreqinfo = NULL;
+     }
+
      if (sunum)
      {
         free(sunum);
@@ -2898,6 +3220,35 @@ int drms_stage_records(DRMS_RecordSet_t *rs, int retrieve, int dontwait) {
   return status;
 }
 
+int drms_stage_records(DRMS_RecordSet_t *rs, int retrieve, int dontwait) 
+{
+   return drms_stage_records_internal(rs, retrieve, dontwait, NULL);
+}
+
+int drms_sortandstage_records(DRMS_RecordSet_t *rs, int retrieve, int dontwait, HContainer_t **suinfo) 
+{
+   /* Sort records by tapeid, filenumber first. */
+
+   /* To sort records for staging, calls to SUM_InfoEx() must be made. The records in the 
+    * record array in rs may already have SUM_info_t present (the module calling 
+    * drms_sortandstage_records() could have explicitly called SUM_InfoEx() or
+    * drms_sortandstage_records() could have been called previously). In addition,
+    * the SUM_info_t structs could be available, but not yet copied into the 
+    * suinfo field of the DRMS_Record_t structs. The suinfo-container parameter 
+    * can be used to pass these SUM_info_t structs to this function. */
+   
+   /* If the SUM_info_t information is present in the records' suinfo fields, 
+    * then use those structs for sorting the records. If the SUM_info_t information
+    * is not present, or the records are not present (for example, if the record-set
+    * was created by calling drms_open_recordset()), then use the information in the 
+    * suinfo parameter. If there is no SUM_info_t struct for a record, then 
+    * call SUM_InfoEx() to obtain that information. */
+
+   return drms_stage_records_internal(rs, retrieve, dontwait, suinfo);   
+}
+
+/* ART - This should be modified to call drms_getsuinfo() only on records that do 
+ * not already have a non-NULL suinfo field. */
 int drms_record_getinfo(DRMS_RecordSet_t *rs)
 {
    int status = DRMS_SUCCESS;
@@ -2962,6 +3313,13 @@ int drms_record_getinfo(DRMS_RecordSet_t *rs)
            for (iRec = 0; iRec < nRecs; iRec++)
            {
               rec = rs->records[(rs->ss_starts)[iSet] + iRec];
+
+              if (rec->suinfo)
+              {
+                 /* Must free existing SUM_info_t - drms_getsuinfo() was called more than once. */
+                 free(rec->suinfo);
+              }
+
               rec->suinfo = infostructs[iRec];
               rec->suinfo->next = NULL; /* just make sure */
            }
@@ -7386,8 +7744,23 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                /* If staging was requested, stage this chunk */
                if (rs->cursor->staging_needed)
                {
-// fprintf(stderr,"stage_records called\n");
-                  stat = drms_stage_records(fetchedrecs, rs->cursor->retrieve,  rs->cursor->dontwait);
+                  if (rs->cursor->staging_needed == 1)
+                  {
+                     /* Stage, but don't sort records by tapeid/filenum first. */
+                     stat = drms_stage_records(fetchedrecs, rs->cursor->retrieve,  rs->cursor->dontwait);
+                  }
+                  else if (rs->cursor->staging_needed == 2)
+                  {
+                     /* Stage, but first sort records by tapeid/filenum. */
+                     /* There will be no rec in fetchedrecs that has a non-NULL suinfo field; these
+                      * records were just retrieved. The original records in rs will also not have 
+                      * any SUM_info_t data since these records were never retrieved. */
+                     stat = drms_sortandstage_records(fetchedrecs, rs->cursor->retrieve,  rs->cursor->dontwait, &rs->cursor->suinfo);
+                  }
+                  else
+                  {
+                     /* Unknown value for staging_needed. */
+                  }
 
                   /* if  stat == DRMS_REMOTESUMS_TRYLATER, segment files might be available later. */
                   if (stat != DRMS_SUCCESS && stat != DRMS_REMOTESUMS_TRYLATER)
@@ -7399,6 +7772,9 @@ int drms_open_recordchunk(DRMS_Env_t *env,
 
                /* There was a previous request for a SUM_infoEx() on all SUNUMs in the recset. This
                 * request got deferred until now - it should be processed on the newly openend chunk. */
+               /* OK to fetch info if the info was already fetched in drms_sortandstage_records() - 
+                * drms_sortandstage_records() will actually change some of the info values (like 
+                * online_status). */
                if (rs->cursor->infoneeded)
                {
                   stat = drms_record_getinfo(fetchedrecs);
@@ -7566,6 +7942,7 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
          /* Future staging request applies to entire record_set */
          rs->cursor->staging_needed = rs->cursor->retrieve = rs->cursor->dontwait = 0;
          rs->cursor->infoneeded = 0;
+         rs->cursor->suinfo = NULL;
 
 	 iset = 0;
          list_llreset(querylist);
@@ -7909,6 +8286,11 @@ void drms_free_cursor(DRMS_RecSetCursor_t **cursor)
          {
             free((*cursor)->allvers);
             (*cursor)->allvers = NULL;
+         }
+
+         if ((*cursor)->suinfo)
+         {
+            hcon_destroy(&((*cursor)->suinfo));
          }
 
          free(*cursor);

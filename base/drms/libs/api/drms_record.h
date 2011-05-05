@@ -88,7 +88,7 @@ void drms_destroy_recproto(DRMS_Record_t **proto);
 int drms_close_records(DRMS_RecordSet_t *rs, int action);
 
 int drms_stage_records(DRMS_RecordSet_t *rs, int retrieve, int dontwait);
-
+int drms_sortandstage_records(DRMS_RecordSet_t *rs, int retrieve, int dontwait, HContainer_t **suinfo);
 int drms_record_getinfo(DRMS_RecordSet_t *rs);
 
 /**** For a single record. ****/
