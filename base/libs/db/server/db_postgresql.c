@@ -1194,3 +1194,18 @@ int db_sequence_drop(DB_Handle_t *db,  char *tablename)
   sprintf(query, "DROP SEQUENCE %s_seq",tablename);
   return db_dms(db,NULL,query);
 }
+
+/* returns 1 if successful, 0 if not */
+int db_cancel(DB_Handle_t *db, char *effbuf, int size)
+{
+   PGcancel *readonly = PQgetCancel((PGconn *)db);
+   int rv = 0;
+
+   if (readonly)
+   {
+      rv = PQcancel(readonly, effbuf, size);
+      PQfreeCancel(readonly);
+   }
+
+   return rv;
+}

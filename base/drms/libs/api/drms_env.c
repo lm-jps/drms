@@ -126,10 +126,15 @@ void drms_abort_now (DRMS_Env_t *env) {
 void drms_free_env (DRMS_Env_t *env, int final) {
    /* Initialized by drms_server_begin_transaction() (in servers), 
     * or drms_open() (in clients) */
-  hcon_free (&env->record_cache);
-  hcon_free (&env->series_cache);
-  hcon_free (&env->storageunit_cache);
-
+#ifndef DRMS_CLIENT
+   drms_lock_server(env);
+#endif
+   hcon_free (&env->record_cache);
+   hcon_free (&env->series_cache);
+   hcon_free (&env->storageunit_cache);
+#ifndef DRMS_CLIENT
+   drms_unlock_server(env);
+#endif
   /* drms_lock in both server and client */
   pthread_mutex_destroy(env->drms_lock);
   free (env->drms_lock);

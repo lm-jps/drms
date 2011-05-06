@@ -1148,23 +1148,29 @@ int drms_server_getunits(DRMS_Env_t *env, int sockfd)
   int status;
   int n;
 
-  char *series;
   int retrieve, dontwait;
   DRMS_StorageUnit_t *su;
+  DRMS_SuAndSeries_t *suandseries = NULL;
+  int icnt;
 
-  series = receive_string(sockfd);
   n = Readint(sockfd);
 
-  long long *sunum;
-  XASSERT(sunum = malloc(n*sizeof(long long)));
-  for (int i = 0; i < n; i++) {
-    sunum[i] = Readlonglong(sockfd);
+  suandseries = (DRMS_SuAndSeries_t *)malloc(sizeof(DRMS_SuAndSeries_t) * n);
+
+  for (icnt = 0; icnt < n; icnt++)
+  {
+     suandseries[icnt].series = receive_string(sockfd); // allocs
+  }
+
+  for (icnt = 0; icnt < n; icnt++)
+  {
+    suandseries[icnt].sunum = Readlonglong(sockfd);
   }
 
   retrieve = Readint(sockfd);
   dontwait = Readint(sockfd);
 
-  status = drms_getunits(env, series, n, sunum, retrieve, dontwait);
+  status = drms_getunits_ex(env, n, suandseries, retrieve, dontwait);
   Writeint(sockfd,status);
   if (status==DRMS_SUCCESS)  {
     if (!dontwait) {
@@ -1175,7 +1181,7 @@ int drms_server_getunits(DRMS_Env_t *env, int sockfd)
       XASSERT(vec = malloc(2*n*sizeof(struct iovec)));
       for (int i = 0; i < n; i++) {
 	HContainer_t *scon = NULL;
-	su = drms_su_lookup(env, series, sunum[i], &scon);
+	su = drms_su_lookup(env, suandseries[i].series, suandseries[i].sunum, &scon);
 	if (su) {
 	  vec[2*i+1].iov_len = strlen(su->sudir);
 	  vec[2*i+1].iov_base = su->sudir;
@@ -1196,8 +1202,16 @@ int drms_server_getunits(DRMS_Env_t *env, int sockfd)
     }
   }
 
-  free(series);
-  free(sunum);
+  for (icnt = 0; icnt < n; icnt++)
+  {
+     if (suandseries[icnt].series)
+     {
+        free(suandseries[icnt].series);
+     }
+  }
+
+  free(suandseries);
+
   return status;
 }
 
@@ -2049,6 +2063,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                     * a SUMS retry wouldn't make sense. */
   int sumscrashed; /* SUM_ping() says SUMS isn't there. */
   int sleepiness;
+  int sumnoop;
 
   if (suminout && *suminout)
   {
@@ -2254,6 +2269,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
              /* if sum_svc is down, 
               * then SUM_poll() will never return anything but TIMEOUTMSG. */
              pollrv = SUM_poll(sum);
+             fprintf(stderr, "SUM_poll() returned %d.\n", pollrv);
 
              if (gSUMSbusyMtx)
              {
@@ -2264,18 +2280,42 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 
              if (pollrv == 0)
              {
+                /* There could be an error: sum->status is examined below and if it is not 0, then
+                 * this means there was some fatal error. The module should bail. */
                 break; // from inner loop
              }
              else
              {
-                /* Must check for SUMS running before calling SUM_poll(), since
-                 * SUMS could have crashed. */
-                sumscrashed = (SUM_nop(sum, printf) == 4);
-                if (sumscrashed)
+                /* One of four things is true:
+                 *   1. The tape drive is still working on the tape fetch request (the tape could be on a shelf somewhere even). 
+                 *   2. sum_svc has died. 
+                 *   3. tape_svc has died. 
+                 *   4. driveX_svc has died.
+                 * Call SUM_nop() to differentiate these options. It returns:
+                 *   4 - sum_svc crashed or restarted. 
+                 *   5 - tape_svc crashed or restarted. 
+                 *   6 - driveX_svc crashed or restarted. 
+                 *
+                 * If sum_svc has crashed or restarted, then SUM_open() needs to be called again. Otherwise, if
+                 * tape_svc or driveX_svc has crashed or restarted, then SUM_get() needs to be called again. */
+                sumnoop = SUM_nop(sum, printf);
+                fprintf(stderr, "SUM_nop() returned %d.\n", sumnoop);
+                sumscrashed = (sumnoop == 4);
+                if (sumnoop >= 4)
                 {
-                   /* try again */
-                   sum = NULL;
-                   fprintf(stderr, "SUMS no longer there; trying again in %d seconds.\n", sleepiness);
+                   /* try again...but figure out to which loop starting position to return. */
+                   if (sumscrashed)
+                   {
+                      /* Must go back to SUM_open(). */
+                      sum = NULL;
+                      fprintf(stderr, "sum_svc no longer there; trying SUM_open() then SUM_get() again in %d seconds.\n", sleepiness);
+                   }
+                   else
+                   {
+                      fprintf(stderr, "Either tape_svc or driveX_svc died; trying SUM_get() again in %d seconds.\n", sleepiness);
+                   }
+
+                   /* Must go back to SUM_get(). */
                    tryagain = 1;
                    sleep(sleepiness);
                    GettingSleepier(&sleepiness);
@@ -2283,7 +2323,8 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                 }
                 else
                 {
-                   /* Need to poll again. */
+                   /* Must go back to SUM_poll(). */
+                   fprintf(stderr, "Tape fetch has not completed, waiting for %d seconds.\n", naptime);
                    sleep(naptime);
                    GettingSleepier(&naptime);
                 }
@@ -2307,11 +2348,20 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        }
        else if (reply->opcode != 0)
        {
-          sumscrashed = (reply->opcode == 4);
-          if (sumscrashed)
+          sumnoop = SUM_nop(sum, printf);
+          sumscrashed = (sumnoop == 4);
+          if (sumnoop >= 4)
           {
-             sum = NULL;
-             fprintf(stderr, "SUMS no longer there; trying again in %d seconds.\n", sleepiness);
+             if (sumscrashed)
+             {
+                sum = NULL;
+                fprintf(stderr, "sum_svc no longer there; trying SUM_open() then SUM_get() again in %d seconds.\n", sleepiness);
+             }
+             else
+             {
+                fprintf(stderr, "Either tape_svc or driveX_svc died; trying SUM_get() again in %d seconds.\n", sleepiness);
+             }
+
              tryagain = 1;
              sleep(sleepiness);
              GettingSleepier(&sleepiness);
@@ -2324,7 +2374,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
              break; // from outer loop
           }
        }
-    } /* tryagain loop */
+    } /* tryagain (outer) loop */
 
     if (!nosums)
     {
@@ -2837,6 +2887,8 @@ int drms_server_registercleaner(DRMS_Env_t *env, pFn_Cleaner_t cb, CleanerData_t
 
 static void HastaLaVistaBaby(DRMS_Env_t *env, int signo)
 {
+   char errbuf[256];
+
    if (gShutdownsem)
    {
       sem_wait(gShutdownsem);
@@ -2856,17 +2908,47 @@ static void HastaLaVistaBaby(DRMS_Env_t *env, int signo)
       sem_post(gShutdownsem);
    }
 
+   drms_lock_server(env);
+   /* Send a cancel request to the db - this will result in an attempt to cancel 
+    * the currently db. This is only useful if there is currently a long-running
+    * query (executed by the main thread). */
+   if (!env->selfstart)
+   {
+      /* don't show this error message if this is executing in a drms_server 
+       * context that was started by a socket module. */
+      fprintf(stdout, "Attempting to cancel current db command.\n");
+   }
+
+   if (!db_cancel(env->session->db_handle, errbuf, sizeof(errbuf)))
+   {
+      if (!env->selfstart)
+      {
+         fprintf(stderr, "Unsuccessful attempt to cancel current db command: %s\n", errbuf);
+      }
+   }
+
+   drms_unlock_server(env);
+
+   /* must cancel current command in both db connections. */
+
    /* Calls drms_server_commit() or drms_server_abort().
     * Don't set last argment to final - still need environment below. */
    /* This will cause the SUMS thread to return. */
    /* If no transaction actually started, then noop. */
+
+   /* don't lock server lock - drms_server_end_transaction() locks/unlocks it. */
    drms_server_end_transaction(env, signo != SIGUSR1, 0);
 
    /* Don't wait for main thread to terminate, it may be in the middle of a long DoIt(). But 
     * main can't start using env and the database and cmdparams after we clean them up. */
 
    /* Must disconnect db, because we didn't set the final flag in drms_server_end_transaction() */
+
+   drms_lock_server(env);
    db_disconnect(&env->session->db_handle);
+   drms_unlock_server(env);
+
+   /* must lock inside drms_free_env() since it destroys the lock. */
    drms_free_env(env, 1); 
 
    /* doesn't call at_exit_action() */

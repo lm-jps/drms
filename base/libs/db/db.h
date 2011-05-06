@@ -230,6 +230,8 @@ int db_sequence_drop(DB_Handle_t *db, char *tablename);
 int db_commit(DB_Handle_t *db);
 int db_start_transaction(DB_Handle_t  *db);
 int db_rollback(DB_Handle_t  *db);
+int db_cancel(DB_Handle_t *db, char *effbuf, int size);
+
 /* Set transaction isolation level.   
    0 = read commited
    1 = serializable.

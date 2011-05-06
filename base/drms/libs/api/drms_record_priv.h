@@ -170,14 +170,14 @@ void drms_destroy_jsdtemplate_record(DRMS_Record_t **rec);
 /**
 xxx
 */
-int drms_populate_record(DRMS_Record_t *record, long long recnum);
+int drms_populate_record(DRMS_Env_t *env, DRMS_Record_t *record, long long recnum);
 /* Populate multiple records with the meta-data values returned 
    from a database query. */
 
 /**
 xxx
 */
-int drms_populate_records( DRMS_RecordSet_t *rs, DB_Binary_Result_t *qres);
+int drms_populate_records(DRMS_Env_t *env, DRMS_RecordSet_t *rs, DB_Binary_Result_t *qres);
 /* Allocate a new record structure and assign it the record number
    recnum and insert it in the record cache. */
 

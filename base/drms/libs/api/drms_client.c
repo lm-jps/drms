@@ -1032,6 +1032,10 @@ int drms_getunits_internal(DRMS_Env_t *env,
   DRMS_StorageUnit_t **su_nc; // not cached su's
   int cnt;
 
+#ifdef DRMS_CLIENT
+  char **tosend = (char **)malloc(n * sizeof(char *));
+#endif
+
   XASSERT(su_nc = malloc(n*sizeof(DRMS_StorageUnit_t *)));
 #ifdef DEBUG
       printf("getunit: Called, n=%d, series=%s\n", n, series);
@@ -1069,6 +1073,13 @@ int drms_getunits_internal(DRMS_Env_t *env,
       su->refcount = 0;
       su->seriesinfo = template->seriesinfo;
       su_nc[cnt] = su;
+
+#ifdef DRMS_CLIENT
+      /* need to send series names to drms_server - but only the ones for sunums that were not
+       * already cached. */
+      tosend[cnt] = suandseries[i].series;
+#endif
+
       cnt++;
     } 
   }
@@ -1079,16 +1090,25 @@ int drms_getunits_internal(DRMS_Env_t *env,
     stat = drms_su_getsudirs(env, cnt, su_nc, retrieve, dontwait);
   }
 #else
+  int icnt;
   if (cnt) {
     long long *sunum_tmp;
     struct iovec *vec;
 
     drms_send_commandcode(env->session->sockfd, DRMS_GETUNITS);
 
-    /* Send seriesname, n, sunum, and retrieve flag */
-    send_string(env->session->sockfd, series);
+    /* Send cnt, series names, sunums, retrieve, and dontwait to drms_server */
+    
+    /* pass n first */
     Writeint(env->session->sockfd, cnt);
 
+    /* pass n seriesnames next */
+    for (icnt = 0; icnt < cnt; icnt++)
+    {
+       send_string(env->session->sockfd, tosend[icnt]);
+    }
+
+    /* pass n sunums */
     XASSERT(vec = malloc(cnt*sizeof(struct iovec)));      
     XASSERT(sunum_tmp = malloc(cnt*sizeof(long long)));
     for (int i = 0; i < cnt; i++) {
@@ -1100,7 +1120,10 @@ int drms_getunits_internal(DRMS_Env_t *env,
     free(sunum_tmp);
     free(vec);
 
+    /* retrieve */
     Writeint(env->session->sockfd, retrieve);
+
+    /* dontwait */
     Writeint(env->session->sockfd, dontwait);
       
     stat = Readint(env->session->sockfd);

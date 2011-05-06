@@ -1908,6 +1908,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
   return NULL;
 }
 
+
 DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, const char *recordsetname, 
 				    int *status)
 {
@@ -3574,7 +3575,7 @@ DRMS_Record_t *drms_retrieve_record(DRMS_Env_t *env, const char *seriesname,
 #endif
 
     /* Fill result into dataset structure. */
-    if ((stat = drms_populate_record(rec, recnum)))
+    if ((stat = drms_populate_record(env, rec, recnum)))
     {
       if (status)
 	*status = stat;      
@@ -3747,7 +3748,7 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
     printf("Time to allocate record structures = %f\n",PopTimer());
     printf("\nMemory used before populate= %Zu\n\n",xmem_recenthighwater());
 #endif
-    TIME(if ((stat = drms_populate_records(rs, qres)))
+    TIME(if ((stat = drms_populate_records(env, rs, qres)))
     {
       goto bailout; /* Query result was inconsistent with series template. */
     } );
@@ -4745,17 +4746,15 @@ void drms_copy_record_struct(DRMS_Record_t *dst, DRMS_Record_t *src)
 
 /* Populate the keyword, link, and data descriptors in the
    record structure with the result from a database query. */ 
-int drms_populate_record(DRMS_Record_t *rec, long long recnum)
+int drms_populate_record(DRMS_Env_t *env, DRMS_Record_t *rec, long long recnum)
 {
   int stat;
   char *query, *field_list, *seriesname;
-  DRMS_Env_t *env;
   DB_Binary_Result_t *qres;
   DRMS_RecordSet_t rs;
   char *series_lower;
 
   CHECKNULL(rec);
-  env = rec->env;
   seriesname = rec->seriesinfo->seriesname;
   field_list = drms_field_list(rec, NULL);
   series_lower = strdup(seriesname);
@@ -4787,7 +4786,7 @@ int drms_populate_record(DRMS_Record_t *rec, long long recnum)
   rs.ss_currentrecs = NULL;
   rs.cursor = NULL;
 
-  stat = drms_populate_records(&rs,qres);
+  stat = drms_populate_records(env, &rs,qres);
   db_free_binary_result(qres);      
   free(query);
   free(field_list);
@@ -4808,13 +4807,12 @@ int drms_populate_record(DRMS_Record_t *rec, long long recnum)
  *  Populate the keyword, link, and data descriptors in the
  *  record structure with the result from a database query
  */ 
-int drms_populate_records (DRMS_RecordSet_t *rs, DB_Binary_Result_t *qres) {
+int drms_populate_records (DRMS_Env_t *env, DRMS_RecordSet_t *rs, DB_Binary_Result_t *qres) {
   int row, col, i;
   DRMS_Keyword_t *key;
   DRMS_Link_t *link;
   DRMS_Segment_t *seg;
   DRMS_Record_t *rec;
-  //  DRMS_Env_t *env;
   DB_Type_t column_type;
   int segnum;
   char *record_value;
@@ -4826,6 +4824,12 @@ int drms_populate_records (DRMS_RecordSet_t *rs, DB_Binary_Result_t *qres) {
   if (rs->n != qres->num_rows)
     return DRMS_ERROR_BADQUERYRESULT;
 
+  /* Believe it or not, every use of a record SHOULD occur only after obtaining 
+   * the server lock. This is because records are cached in the record cache, which 
+   * is a structure that lives in the DRMS_Env_t struct. */
+#ifndef DRMS_CLIENT
+  drms_lock_server(env);
+#endif
   for (row=0; row<qres->num_rows; row++) {
     rec = rs->records[row];
     col = 0;
@@ -4956,6 +4960,10 @@ int drms_populate_records (DRMS_RecordSet_t *rs, DB_Binary_Result_t *qres) {
       }
     }
   }
+
+#ifndef DRMS_CLIENT
+  drms_unlock_server(env);
+#endif
 
   return 0;
 }
@@ -8156,10 +8164,21 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env,
          }
       }
    }
+   else if (rs)
+   {
+      /* This is a non-cursored recordset. Just return the next record. */
+      XASSERT(rs->ss_currentrecs); /* This should not be NULL - drms_open_records_internal() should have 
+                                    * malloc'd it. */
+      if (rs->ss_currentrecs)
+      {
+         ret = rs->records[*rs->ss_currentrecs];
+         (*rs->ss_currentrecs)++;
+      }
+   }
    else
    {
       stat = DRMS_ERROR_INVALIDDATA;
-      fprintf(stderr, "Error in drms_recordset_fetchnext(): empty recordset or non-chunked record set provided.\n");
+      fprintf(stderr, "Error in drms_recordset_fetchnext(): empty recordset set provided.\n");
    }
 
    if (drmsstatus)

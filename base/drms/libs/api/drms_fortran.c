@@ -1724,6 +1724,7 @@ void f_drms_copy_record_struct(char * dst_hdl, char * src_hdl) {
 FCALLSCSUB2(f_drms_copy_record_struct, F_DRMS_COPY_RECORD_STRUCT, f_drms_copy_record_struct, STRING, STRING)
 
 
+#ifdef NEVERWILLNEEDTHIS
 int f_drms_populate_record(char * rec_hdl, long long recnum) {
   DRMS_Record_t  * rec = (DRMS_Record_t  *)  _convert_handle(rec_hdl);
 
@@ -1739,7 +1740,7 @@ int f_drms_populate_records(char * rs_hdl, char * qres_hdl) {
   return drms_populate_records(rs, qres);
 }
 FCALLSCFUN2(INT, f_drms_populate_records, F_DRMS_POPULATE_RECORDS, f_drms_populate_records, STRING, STRING)
-
+#endif
 
 char * f_drms_field_list(char * rec_hdl, int *num_cols) {
   DRMS_Record_t  * rec = (DRMS_Record_t  *)  _convert_handle(rec_hdl);
