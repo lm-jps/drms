@@ -257,6 +257,7 @@ int SUM_alloc(SUM_t *sum, int (*history)(const char *fmt, ...))
   klist = newkeylist();
   setkey_double(&klist, "bytes", sum->bytes);
   setkey_int(&klist, "storeset", sum->storeset);
+  setkey_int(&klist, "group", sum->group);
   setkey_int(&klist, "reqcnt", sum->reqcnt);
   setkey_uint64(&klist, "uid", sum->uid); 
   setkey_int(&klist, "DEBUGFLG", sum->debugflg);
@@ -317,6 +318,7 @@ int SUM_alloc2(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
   klist = newkeylist();
   setkey_double(&klist, "bytes", sum->bytes);
   setkey_int(&klist, "storeset", sum->storeset);
+  setkey_int(&klist, "group", sum->group);
   setkey_int(&klist, "reqcnt", sum->reqcnt);
   setkey_uint64(&klist, "uid", sum->uid); 
   setkey_uint64(&klist, "SUNUM", sunum); //unique to the SUM_alloc2() call
