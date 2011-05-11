@@ -350,6 +350,7 @@ KEY *getdo_1(KEY *params)
  * USER:   	   KEYTYP_STRING   production
  * REQCODE:        KEYTYP_INT      6
  * DEBUGFLG:       KEYTYP_INT      1
+ * group:          KEYTYP_INT      10000
  * SUNUM:	   KEYTYP_UINT64   6260386 (unique to SUM_alloc2() call)
  * uid:    KEYTYP_UINT64    574
  * reqcnt: KEYTYP_INT      1
@@ -358,7 +359,7 @@ KEY *getdo_1(KEY *params)
 */
 KEY *allocdo_1(KEY *params)
 {
-  int storeset, status, reqcnt;
+  int storeset, status, reqcnt, group;
   uint64_t uid;
   uint64_t sunum = 0;
   double bytes;
@@ -375,6 +376,13 @@ KEY *allocdo_1(KEY *params)
   if(findkey(params, "SUNUM")) {	//this is a SUM_alloc2() call
     sunum = getkey_uint64(params, "SUNUM");
   }
+  if(!findkey(params, "group")) {	//use storeset 0 if no group
+    storeset = 0;
+  }
+  else {				//query sum_arch_group db table
+    group = getkey_int(params, "group");
+    status = SUMLIB_SumsetGet(group, &storeset); //default storeset is 0
+  }
   uid = getkey_uint64(params, "uid");
 //  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
 //    write_log("**Error: allocdo_1() called with unopened uid=%lu\n", uid);
@@ -386,7 +394,7 @@ KEY *allocdo_1(KEY *params)
   add_keys(params, &retlist);		/* NOTE:does not do fileptr */
   reqcnt = getkey_int(params, "reqcnt"); /* will always be 1 */
   bytes = getkey_double(params, "bytes");
-  storeset = getkey_int(params, "storeset");
+  //storeset = getkey_int(params, "storeset"); //obsolete
   if(!(status=SUMLIB_PavailGet(bytes, storeset, uid, sunum, &retlist))) {
     wd = getkey_str(retlist, "partn_name");
     write_log("Alloc bytes=%e wd=%s for user=%s sumid=%lu\n", bytes, wd,

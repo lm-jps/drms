@@ -20,6 +20,8 @@ extern PADATA *pahdr_rw;
 
 int SUMLIB_PavailGet(double bytes, int pds_set, uint64_t uid, uint64_t sunum, KEY **results);
 
+int SUMLIB_SumsetGet(int group, int *sumset);
+
 int SUMLIB_PavailGet(double bytes, int pds_set, uint64_t uid, uint64_t sunum, KEY **results) 
 {
   EXEC SQL TYPE uint64_t IS unsigned long long;
@@ -119,4 +121,32 @@ sqlerror:
 	printk("Error in SUMLIB_PavailGet\n");  
 	printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);  
     return DS_PAVAIL_ERR;
+}
+
+/* Get the sum_set number for the given group number from the db
+ * table sum_arch_group. If none found, sets sumset to 0.
+ * Return 1 on success.
+*/
+int SUMLIB_SumsetGet(int group, int *sumset)
+{
+EXEC SQL BEGIN DECLARE SECTION;
+  int     l_sumset;
+  int     l_group;
+EXEC SQL END DECLARE SECTION;
+
+  *sumset = 0;		//default is 0
+  l_group = group;
+
+    EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
+    EXEC SQL WHENEVER NOT FOUND GOTO sqlerror;
+
+  EXEC SQL SELECT sum_set INTO :l_sumset from SUM_ARCH_GROUP where group_id = :l_group;
+
+  *sumset = l_sumset;
+  return(1);
+
+sqlerror:
+        printk("Error in SUMLIB_SumsetGet\n");
+        printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
+    return 0;
 }
