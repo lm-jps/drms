@@ -115,7 +115,7 @@ then
 
 case "$content" in 
   M_) 
-         render_image  in=$in  min=-1500 max=1500   pallette=/home/priya/Colormaps/grey.sao scaling=mag  outname=$seriesNamescale=$scale type=$type  tkey=$tkey  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p} -c 
+         render_image  in=$in  min=-1500 max=1500   pallette=/home/priya/Colormaps/grey.sao scaling=mag  outname=$seriesName  scale=$scale type=$type  tkey=$tkey  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p} -c 
         
              ;;
   Ic)
