@@ -1269,7 +1269,7 @@ int DoIt(void)
   if (want_path_noret)
   {
      /* -P - don't retrieve but wait for SUMS to give dir info */
-     drms_sortandstage_records(recordset, 0, 0, &suinfo); 
+     drms_stage_records(recordset, 0, 0); 
   }
   else if (want_path) 
   {
