@@ -105,6 +105,32 @@ void setpadata(PADATA **list, char *wd, uint64_t sumid, double bytes, int stat, 
   *list = newone;
 }
 
+/* Like setpadata() but that makes the list in reverse order of call (last
+ * PADATA *newone is at top of linked list). This makes it in the "normal"
+ * order so that the last PADATA *newone added is at the end of the linked list.
+ * This is used by tapearcX so that the sunums in a tape file end up in
+ * ascending sunum order.  NOTE: first call must have list = NULL.
+*/
+void setpadatar(PADATA **list, char *wd, uint64_t sumid, double bytes, int stat, int substat, char *eff_date, int group_id, int safe_id, uint64_t ds_index)
+{
+  PADATA *newone;
+  PADATA *walk;
+
+  if(getpadata(*list, wd, sumid)) return;
+  newone = makepadata(wd, sumid, bytes, stat, substat, eff_date, group_id, safe_id, ds_index);
+  if(*list == NULL) {
+    *list = newone;
+    newone->next = NULL;
+  }
+  else {
+    walk = *list;
+    while(walk->next) {
+      walk = walk->next;
+    }
+    walk->next = newone;
+  }
+}
+
 
 /* Add a duplicate of the given PADATA packet to the linked list in 
  * ascending sumid order. (Must make a dup as the packet may already be
