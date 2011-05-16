@@ -130,6 +130,8 @@ char nametmp[80];
     safe_id = getkey_int(params, nametmp);
     sprintf(nametmp, "group_id_%d", i);
     groupid = getkey_int(params, nametmp);
+ //printk("In SUMLIB_MainTapeUpdate() delete from SUM_PARTN_ALLOC:\n");
+ //printk("l_wd=%s, create_sumid=%lu, apstatus=%d\n", l_wd.arr,create_sumid,apstatus );
     EXEC SQL DELETE FROM SUM_PARTN_ALLOC
            WHERE WD = :l_wd
            AND SUMID = :create_sumid
