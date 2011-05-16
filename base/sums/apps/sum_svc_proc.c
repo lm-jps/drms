@@ -359,7 +359,8 @@ KEY *getdo_1(KEY *params)
 */
 KEY *allocdo_1(KEY *params)
 {
-  int storeset, status, reqcnt, group;
+  int status, reqcnt, group;
+  int storeset = 0;
   uint64_t uid;
   uint64_t sunum = 0;
   double bytes;
@@ -376,6 +377,7 @@ KEY *allocdo_1(KEY *params)
   if(findkey(params, "SUNUM")) {	//this is a SUM_alloc2() call
     sunum = getkey_uint64(params, "SUNUM");
   }
+#ifndef __LOCALIZATION_H
   if(!findkey(params, "group")) {	//use storeset 0 if no group
     storeset = 0;
   }
@@ -383,6 +385,7 @@ KEY *allocdo_1(KEY *params)
     group = getkey_int(params, "group");
     status = SUMLIB_SumsetGet(group, &storeset); //default storeset is 0
   }
+#endif
   uid = getkey_uint64(params, "uid");
 //  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
 //    write_log("**Error: allocdo_1() called with unopened uid=%lu\n", uid);
