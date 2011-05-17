@@ -16,6 +16,8 @@
 #include <unistd.h>
 #include "exputil.h"
 
+#define kMaxSegs 1000
+
 ModuleArgs_t module_args[] =
 { 
   {ARG_STRING, "op", "Not Specified", "<Operation>"},
@@ -65,6 +67,56 @@ int nice_intro ()
   return(1);	\
   }
 
+static int GetSegList(const char *seglistin, DRMS_Record_t *rec, char **segs, int size)
+{
+   int nsegs = 0; 
+   char *thisseg = NULL;
+   char *restrict seglist = strdup(seglistin);
+
+   if (seglist)
+   {
+      thisseg=strtok(seglist, ",");
+
+      if (strcmp(thisseg,"**NONE**")==0)
+      {
+         nsegs = 0;
+      }
+      else if (strcmp(thisseg, "**ALL**")==0)
+      {
+         DRMS_Segment_t *seg;
+         HIterator_t *hit = NULL;
+
+         while ((seg = drms_record_nextseg(rec, &hit, 1)) != NULL)
+         {
+            if (nsegs >= size)
+            {
+               fprintf(stderr, "Segment list truncated - too many segments.\n");
+               break;
+            }
+
+            segs[nsegs++] = strdup(seg->info->name);
+         }
+
+         hiter_destroy(&hit);
+      }
+      else
+      {
+         for (; thisseg; thisseg=strtok(NULL,","))
+         {
+            if (nsegs >= size)
+            {
+               fprintf(stderr, "Segment list truncated - too many segments.\n");
+               break;
+            }
+
+            segs[nsegs++] = strdup(thisseg);
+         }
+      }
+   }
+   
+   return nsegs;
+}
+
 /* Module main function. */
 int DoIt(void)
   {
@@ -75,13 +127,11 @@ int DoIt(void)
   char *format;
   char *filenamefmt;
   char *seglist;
-  int  keys_listed, segs_listed;
+  int segs_listed;
 
   DRMS_RecordSet_t *recordset;
   DRMS_Record_t *rec;
-  char *keys[1000];
-  char *segs[1000];
-  int ikey, nkeys = 0;
+  char *segs[kMaxSegs];
   int iseg, nsegs = 0;
   int count;
   int RecordLimit = 0;
@@ -112,7 +162,7 @@ int DoIt(void)
 
   /* Open record_set */
   if (RecordLimit == 0)
-    recordset = drms_open_records (drms_env, in, &status);
+    recordset = drms_open_recordset(drms_env, in, &status);
   else
     recordset = drms_open_nrecords (drms_env, in, RecordLimit, &status);
   if (!recordset) 
@@ -130,32 +180,6 @@ int DoIt(void)
 
   index_data = fopen("index.data", "w+");
 
-  /* get list of segments to show for each record */
-  nsegs = 0;
-  if (segs_listed) 
-    { /* get specified segment list */
-    char *thisseg;
-    for (thisseg=strtok(seglist, ","); thisseg; thisseg=strtok(NULL,","))
-	{
-	if (strcmp(thisseg,"**NONE**")==0)
-	  {
-	  nsegs = 0;
-	  break;
-	  }
-	if (strcmp(thisseg, "**ALL**")==0)
-	  {
-        DRMS_Segment_t *seg;
-        HIterator_t hit;
-        hiter_new (&hit, &recordset->records[0]->segments);
-        while ((seg = (DRMS_Segment_t *)hiter_getnext (&hit)))
-          segs[nsegs++] = strdup (seg->info->name);
-	  }
-	else
-	  segs[nsegs++] = strdup(thisseg);
-	}
-    }
-  free (seglist);
-
   /* loop over set of selected records */
   count = 0;
   size = 0;
@@ -164,7 +188,20 @@ int DoIt(void)
     char recquery[DRMS_MAXQUERYLEN];
     char recpath[DRMS_MAXPATHLEN];
 
-    rec = recordset->records[irec];  /* pointer to current record */
+    rec = drms_recordset_fetchnext(drms_env, recordset, &status, NULL, NULL); /* pointer to current record */
+
+    if (!rec)
+    {
+       /* Exit rec loop - last record was fetched last time. */
+       break;
+    }
+
+    if (irec == 0 && segs_listed)
+    {
+       /* get list of segments to show for each record */
+       nsegs = GetSegList(seglist, rec, segs, kMaxSegs);
+    }
+
     drms_sprint_rec_query(recquery,rec);
     if (drms_record_directory (rec, recpath, 1))
       continue;
@@ -231,6 +268,12 @@ int DoIt(void)
         fprintf(index_data, "%s\tNoDataFile\n",query);
       } // segment loop
     } // record loop
+
+  if (seglist)
+  {
+     free(seglist);
+     seglist = NULL;
+  }
 
    if (size > 0 && size < 1024*1024) size = 1024*1024;
    size /= 1024*1024;

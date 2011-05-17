@@ -8171,8 +8171,22 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env,
                                     * malloc'd it. */
       if (rs->ss_currentrecs)
       {
-         ret = rs->records[*rs->ss_currentrecs];
-         (*rs->ss_currentrecs)++;
+         /* If ss_currentrecs[0] is -1, this means that this is the first time drms_recordset_fetchnext()
+          * has been called. When called on a non-cursored record-set, only ss_currentrecs[0] is used - it
+          * contains the index of the NEXT record in the record-set, regardless how many sub-sets the 
+          * recordset contains. */
+         if (*rs->ss_currentrecs == -1)
+         {
+            *rs->ss_currentrecs = 0;
+         }
+
+         if (*rs->ss_currentrecs < rs->n)
+         {
+            ret = rs->records[*rs->ss_currentrecs];
+            (*rs->ss_currentrecs)++;
+         }
+         
+         /* If last record was read last time, ret will contain NULL. */
       }
    }
    else
