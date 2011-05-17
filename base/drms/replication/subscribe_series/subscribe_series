@@ -841,42 +841,47 @@ then
     fi
 
     SetState "crsql_comp"
+
+    unset check
+    unset error
+    unset result
 fi
 
-unset check
-unset error
-unset result
-
-# sqldone file found, transferring sql file to local machine
-logwrite "Copying and removing $node.sql.tar.gz file from $kRSUser@$kRSServer"
-sqltarfile="$kLocalWorkingDir/$node.sql.tar.gz"
-success=true
-
-ManagedDownload "$kRSTriggerDir/$node.sql.tar.gz" "$sqltarfile"
-if [ $? -eq 0 ]
+if [ $state == "crsql_comp" ]
 then
-    SetState "dlsql_comp"
+    # sqldone file found, transferring sql file to local machine
+    logwrite "Copying and removing $node.sql.tar.gz file from $kRSUser@$kRSServer"
+    sqltarfile="$kLocalWorkingDir/$node.sql.tar.gz"
+    success=true
 
-    logwrite "Executing: tar -xzvf $sqltarfile"
-    tar -xzvf "$sqltarfile"
+    ManagedDownload "$kRSTriggerDir/$node.sql.tar.gz" "$sqltarfile"
+    if [ $? -eq 0 ]
+    then
+        SetState "dlsql_comp"
 
-    logwrite "Removing $sqltarfile" nl
-    RM -f "$sqltarfile"
-else
+        logwrite "Executing: tar -xzvf $sqltarfile"
+        tar -xzvf "$sqltarfile"
+
+        logwrite "Removing $sqltarfile" nl
+        RM -f "$sqltarfile"
+    else
     # Major problem, must tell server to clean up
-    success=false
-fi
+        success=false
+    fi
 
-# We did all we could to download the sql file, so remove it.
-# If the user killed this script while downloading was happening
-# then the following line will not be executed, and 
-# downloading can resume from where it left off.
-SSH "$kRSUser@$kRSServer" 'rm -f '"'$kRSTriggerDir/$node.sql.tar.gz'"
-if [ $? -ne 0 ]
-then
+    # We did all we could to download the sql file, so remove it.
+    # If the user killed this script while downloading was happening
+    # then the following line will not be executed, and 
+    # downloading can resume from where it left off.
+    SSH "$kRSUser@$kRSServer" 'rm -f '"'$kRSTriggerDir/$node.sql.tar.gz'"
+    if [ $? -ne 0 ]
+    then
     # Fatal error - if the .sql file doesn't get cleaned up
     # then this might confuse subsequent runs of this script
-    SSexit 1
+        SSexit 1
+    fi
+else
+    success=true
 fi
 
 #--------------------------------------------------------------------
