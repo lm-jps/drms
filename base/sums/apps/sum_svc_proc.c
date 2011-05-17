@@ -377,7 +377,16 @@ KEY *allocdo_1(KEY *params)
   if(findkey(params, "SUNUM")) {	//this is a SUM_alloc2() call
     sunum = getkey_uint64(params, "SUNUM");
   }
-#ifndef __LOCALIZATION_H
+#ifdef SUMS_MULTIPLE_PARTNSETS
+  /* This def is defined in serverdefs.h (all Stanford-specific settings are in this header). 
+   * It is NOT part of the localization files/codes/scripts (i.e., config.local knows nothing
+   * about it). Therefore, no localization site will be able to take advantage of this
+   * multiple-sums-sets. If in the future a remote sites wants this feature, we will need 
+   * to modify config.local (add SUMS_MULTIPLE_PARTNSETS), gen_init.csh, create_sums_tables.sql
+   * (the block of code requires a new sums db table) and possibly other files/code/scripts. 
+   *
+   * ART 2011-5-17
+   */
   if(!findkey(params, "group")) {	//use storeset 0 if no group
     storeset = 0;
   }
