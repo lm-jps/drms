@@ -2120,7 +2120,11 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 
        sum->reqcnt = 1;
        sum->bytes = request->bytes;
+       sum->group = request->group;
 
+       /* An older version of SUMS used the storeset field to determine which partition set to 
+        * use. But later versions of SUMS use sum->group to map to a partition set (there is a
+        * SUMS table that maps group to set). */
        if (request->group < 0)
        {
           /* this SU alloc has nothing to do with any series. */
@@ -2627,7 +2631,11 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 
        sum->reqcnt = 1;
        sum->bytes = request->bytes;
+       sum->group = request->group;
 
+       /* An older version of SUMS used the storeset field to determine which partition set to 
+        * use. But later versions of SUMS use sum->group to map to a partition set (there is a
+        * SUMS table that maps group to set). */
        if (request->group < 0)
        {
           /* this SU alloc has nothing to do with any series. */
