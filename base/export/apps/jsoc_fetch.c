@@ -1146,7 +1146,7 @@ check for requestor to be valid remote DRMS site
       }
 
     if (rcountlimit == 0)
-      rs = drms_open_records(drms_env, dsquery, &status);
+      rs = drms_open_recordset(drms_env, dsquery, &status);
     else // rcountlimit specified via "n=" parameter in process field.
       rs = drms_open_nrecords (drms_env, dsquery, rcountlimit, &status);
 
@@ -1176,7 +1176,14 @@ check for requestor to be valid remote DRMS site
     for (irec=0; irec < rcount; irec++) 
       {
       // Must check each segment since some may be linked and/or offline.
-      DRMS_Record_t *rec = rs->records[irec];
+      DRMS_Record_t *rec = drms_recordset_fetchnext(drms_env, rs, &status, NULL, NULL);
+
+      if (!rec)
+      {
+         /* Exit rec loop - last record was fetched last time. */
+         break;
+      }
+
       DRMS_Segment_t *seg;
       HIterator_t *segp = NULL;
       // Disallow exporting jsoc.export* series

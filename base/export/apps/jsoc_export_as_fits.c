@@ -395,7 +395,7 @@ static int MapexportToDir(DRMS_Env_t *env,
    int okayCount = 0;
 
    if (RecordLimit == 0)
-     rsin = drms_open_records(env, rsinquery, &stat);
+     rsin = drms_open_recordset(env, rsinquery, &stat);
    else
      rsin = drms_open_nrecords(env, rsinquery, RecordLimit, &stat);
 
@@ -417,7 +417,14 @@ static int MapexportToDir(DRMS_Env_t *env,
          {
             for (iRec = 0; iRec < nRecs; iRec++)
             {
-               recin = rsin->records[(rsin->ss_starts)[iSet] + iRec];
+               recin = drms_recordset_fetchnext(env, rsin, &stat, NULL, NULL);
+
+               if (!recin)
+               {
+                  /* Exit rec loop - last record was fetched last time. */
+                  break;
+               }
+
                tsize += MapexportRecordToDir(recin,
                                              ffmt,
                                              outpath,
@@ -751,7 +758,7 @@ static int Mapexport(DRMS_Env_t *env,
          free(kval);
       }
 
-      if (rsinquery && (rsin = drms_open_records(env, rsinquery, &stat)))
+      if (rsinquery && (rsin = drms_open_recordset(env, rsinquery, &stat)))
       {
          /* stage records to reduce number of calls to SUMS. */
          drms_stage_records(rsin, 1, 0);
@@ -770,7 +777,14 @@ static int Mapexport(DRMS_Env_t *env,
                  stat == DRMS_SUCCESS && err == kMymodErr_Success &&iRec < nRecs; 
                  iRec++)
 	    {
-	       recin = rsin->records[(rsin->ss_starts)[iSet] + iRec];
+	       recin = drms_recordset_fetchnext(env, rsin, &stat, NULL, NULL);
+
+               if (!recin)
+               {
+                  /* Exit rec loop - last record was fetched last time. */
+                  break;
+               }
+               
 	       tsize += MapexportRecord(recout, 
                                         recin,
                                         classname, 
