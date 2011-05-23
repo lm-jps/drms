@@ -132,7 +132,8 @@ int db_send_text_result(int sockfd, DB_Text_Result_t *result, int comp)
       if (comp)
       {
 	zlen = buflen+buflen/100+24;
-	XASSERT( zbuf = malloc(zlen) );
+        zbuf = malloc(zlen);
+        XASSERT(zbuf);
 	if (compress ((unsigned char *)zbuf, &zlen,
 	    ((unsigned char *)result->buffer+sizeof(int)),
 	    (buflen-sizeof(int))) != Z_OK)
@@ -182,8 +183,10 @@ int db_send_binary_result(int sockfd, DB_Binary_Result_t *result, int comp)
 
   if (result) 
   {
-    XASSERT(vec = malloc((3+7*result->num_cols)*sizeof(struct iovec)));
-    XASSERT(tmp = malloc((3+7*result->num_cols)*sizeof(int)));
+    vec = malloc((3+7*result->num_cols)*sizeof(struct iovec));
+    XASSERT(vec);
+    tmp = malloc((3+7*result->num_cols)*sizeof(int));
+    XASSERT(tmp);
 	
     /* Byteswap arrays and test . */
     for (i=0; i<result->num_cols; i++)
@@ -277,7 +280,8 @@ int db_server_query_bin(int sockfd, DB_Handle_t *db_handle)
   {
     /* Get query string from client. */
     len = ntohl(tmp);
-    XASSERT( query = malloc(len+1) );
+    query = malloc(len+1);
+    XASSERT(query);
     Readn(sockfd, query, len); 
     query[len] = '\0';
 
@@ -325,7 +329,8 @@ int db_server_query_bin_array(int sockfd, DB_Handle_t *db_handle)
   {
     /* Get query string from client. */
     len = ntohl(tmp);
-    XASSERT( query = malloc(len+1) );
+    query = malloc(len+1);
+    XASSERT(query);
     Readn(sockfd, query, len); 
     query[len] = '\0';
 
@@ -423,7 +428,8 @@ int db_server_dms(int sockfd, DB_Handle_t *db_handle)
   {
     /* Get query string from client. */
     len = ntohl(tmp);
-    XASSERT( query = malloc(len+1) );
+    query = malloc(len+1);
+    XASSERT(query);
     Readn(sockfd, query, len); 
     query[len] = '\0';
     
@@ -454,16 +460,20 @@ int db_server_dms_array(int sockfd, DB_Handle_t *db_handle)
 #endif
     /* Get query string from client. */
     len = ntohl(tmp);
-    XASSERT( query = malloc(len+1) );
+    query = malloc(len+1);
+    XASSERT(query);
     Readn(sockfd, query, len); 
     query[len] = '\0';
 
     /* Receive the argument data in temporary buffers. */
     n_rows = Readint(sockfd);
     n_args = Readint(sockfd);
-    XASSERT( intype = malloc(n_args*sizeof(int)) );
-    XASSERT( argin = malloc(n_args*sizeof(void *)) );
-    XASSERT( buffer = malloc(n_args*sizeof(char *)) );
+    intype = malloc(n_args*sizeof(int));
+    XASSERT(intype);
+    argin = malloc(n_args*sizeof(void *));
+    XASSERT(argin);
+    buffer = malloc(n_args*sizeof(char *));
+    XASSERT(buffer);
     for (i=0; i<n_args; i++)
       intype[i] = (DB_Type_t) Readint(sockfd);
 
@@ -472,8 +482,10 @@ int db_server_dms_array(int sockfd, DB_Handle_t *db_handle)
       if ( intype[i] == DB_STRING || intype[i] == DB_VARCHAR )
       {
 	len = Readint(sockfd);
-	XASSERT( buffer[i] = malloc(len) );
-	XASSERT( argin[i] = malloc(n_rows*sizeof(void *)) );
+        buffer[i] = malloc(len);
+        XASSERT(buffer[i]);
+        argin[i] = malloc(n_rows*sizeof(void *));
+        XASSERT(argin[i]);
 
 	Readn(sockfd, buffer[i], len);
 	p = buffer[i];
@@ -489,7 +501,8 @@ int db_server_dms_array(int sockfd, DB_Handle_t *db_handle)
       {
 	buffer[i] = NULL;
 	len = n_rows*db_sizeof(intype[i]);
-	XASSERT( argin[i] = malloc(len) );
+        argin[i] = malloc(len);
+        XASSERT(argin[i]);
 	Readn(sockfd, argin[i], len);
 	db_ntoh(intype[i], n_rows, argin[i]);
       }
@@ -543,16 +556,20 @@ int db_server_bulk_insert_array(int sockfd, DB_Handle_t *db_handle)
 #endif
     /* Get query string from client. */
     len = ntohl(tmp);
-    XASSERT( table = malloc(len+1) );
+    table = malloc(len+1);
+    XASSERT(table);
     Readn(sockfd, table, len); 
     table[len] = '\0';
 
     /* Receive the argument data in temporary buffers. */
     n_rows = Readint(sockfd);
     n_args = Readint(sockfd);
-    XASSERT( intype = malloc(n_args*sizeof(int)) );
-    XASSERT( argin = malloc(n_args*sizeof(void *)) );
-    XASSERT( buffer = malloc(n_args*sizeof(char *)) );
+    intype = malloc(n_args*sizeof(int));
+    XASSERT(intype);
+    argin = malloc(n_args*sizeof(void *));
+    XASSERT(argin);
+    buffer = malloc(n_args*sizeof(char *));
+    XASSERT(buffer);
     for (i=0; i<n_args; i++)
       intype[i] = (DB_Type_t) Readint(sockfd);
 
@@ -561,8 +578,10 @@ int db_server_bulk_insert_array(int sockfd, DB_Handle_t *db_handle)
       if ( intype[i] == DB_STRING || intype[i] == DB_VARCHAR )
       {
 	len = Readint(sockfd);
-	XASSERT( buffer[i] = malloc(len) );
-	XASSERT( argin[i] = malloc(n_rows*sizeof(void *)) );
+        buffer[i] = malloc(len);
+        XASSERT(buffer[i]);
+        argin[i] = malloc(n_rows*sizeof(void *));
+        XASSERT(argin[i]);
 
 	Readn(sockfd, buffer[i], len);
 	p = buffer[i];
@@ -578,7 +597,8 @@ int db_server_bulk_insert_array(int sockfd, DB_Handle_t *db_handle)
       {
 	buffer[i] = NULL;
 	len = n_rows*db_sizeof(intype[i]);
-	XASSERT( argin[i] = malloc(len) );
+        argin[i] = malloc(len);
+        XASSERT(argin[i]);
 	Readn(sockfd, argin[i], len);
 	db_ntoh(intype[i], n_rows, argin[i]);
       }

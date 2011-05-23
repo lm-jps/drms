@@ -73,7 +73,8 @@ int drms_insert_series(DRMS_Session_t *session, int update,
   char *createstmt=0, *series_lower=0, *namespace=0;
   DB_Text_Result_t *qres;
 
-  XASSERT(createstmt = malloc(30000));
+  createstmt = malloc(30000);
+  XASSERT(createstmt);
 
   /* Make sure links have pidx's set. */
   if (drms_link_getpidx(template) != DRMS_SUCCESS)
@@ -135,7 +136,8 @@ int drms_insert_series(DRMS_Session_t *session, int update,
 
   if (si->pidx_num==0)
   {
-    XASSERT(pidx_buf = malloc(2));
+    pidx_buf = malloc(2);
+    XASSERT(pidx_buf);
     *pidx_buf = 0;
   }
   else
@@ -143,7 +145,8 @@ int drms_insert_series(DRMS_Session_t *session, int update,
     len = 0;
     for (i=0; i<si->pidx_num; i++)
       len += strlen((si->pidx_keywords[i])->info->name) + 3;
-    XASSERT((pidx_buf = malloc(len+1)));
+    pidx_buf = malloc(len+1);
+    XASSERT(pidx_buf);
     memset(pidx_buf,0,len+1);
     p = pidx_buf;
     p += sprintf(p,"%s",(si->pidx_keywords[0])->info->name);
@@ -153,7 +156,8 @@ int drms_insert_series(DRMS_Session_t *session, int update,
 
   if (si->dbidx_num <= 0)
   {
-    XASSERT(dbidx_buf = malloc(2));
+    dbidx_buf = malloc(2);
+    XASSERT(dbidx_buf);
     *dbidx_buf = 0;
   }
   else
@@ -161,7 +165,8 @@ int drms_insert_series(DRMS_Session_t *session, int update,
     len = 0;
     for (i=0; i<si->dbidx_num; i++)
       len += strlen((si->dbidx_keywords[i])->info->name) + 3;
-    XASSERT((dbidx_buf = malloc(len+1)));
+    dbidx_buf = malloc(len+1);
+    XASSERT(dbidx_buf);
     memset(dbidx_buf,0,len+1);
     p = dbidx_buf;
     p += sprintf(p,"%s",(si->dbidx_keywords[0])->info->name);
@@ -261,15 +266,18 @@ int drms_insert_series(DRMS_Session_t *session, int update,
 #endif
     }
 
+    int pret = 0;
+
     if (key->info->type == DRMS_TYPE_TIME)
     {
        TIME interval = atoinc(key->info->unit);
        int internal = (interval > 0);
 
-       XASSERT((drms_sprintfval_format(defval, key->info->type, 
-				       &key->value, 
-				       key->info->unit, 
-				       internal) < DRMS_DEFVAL_MAXLEN));
+       pret = drms_sprintfval_format(defval, key->info->type, 
+                                     &key->value, 
+                                     key->info->unit, 
+                                     internal);
+       XASSERT(pret < DRMS_DEFVAL_MAXLEN);
     }
     else
     {
@@ -284,11 +292,12 @@ int drms_insert_series(DRMS_Session_t *session, int update,
         *   time -> sscan_time
         *   string -> none (copy_string)
         */
-      XASSERT((drms_sprintfval_format(defval, 
-                                      key->info->type,
-                                      &key->value,
-                                      key->info->format, 	 
-                                      0) < DRMS_DEFVAL_MAXLEN));
+       pret = drms_sprintfval_format(defval, 
+                                     key->info->type,
+                                     &key->value,
+                                     key->info->format, 	 
+                                     0);
+       XASSERT(pret < DRMS_DEFVAL_MAXLEN);
     }
 
     /* The persegment column used to be either 0 or 1 and it said whether the keyword
@@ -347,7 +356,8 @@ int drms_insert_series(DRMS_Session_t *session, int update,
     }
     else
     {
-      XASSERT(axisstr = malloc(2*seg->info->naxis*20+1));
+      axisstr = malloc(2*seg->info->naxis*20+1);
+      XASSERT(axisstr);
       axisstr[0] = 0;
       q = axisstr;
       if (seg->info->naxis>0)

@@ -56,7 +56,8 @@ DRMS_Session_t *drms_connect(const char *host)
     return NULL;
   }
   
-  XASSERT( session = malloc(sizeof(DRMS_Session_t)) );
+  session = malloc(sizeof(DRMS_Session_t));
+  XASSERT(session);
   session->db_direct = 0;
 
   /* set up the transport end point */
@@ -192,7 +193,8 @@ DRMS_Session_t *drms_connect_direct(const char *dbhost, const char *dbuser,
 {
   DRMS_Session_t *session;
 
-  XASSERT( session = malloc(sizeof(DRMS_Session_t)) );
+  session = malloc(sizeof(DRMS_Session_t));
+  XASSERT(session);
   memset(session, 0, sizeof(DRMS_Session_t));
   session->db_direct = 1;
 
@@ -865,7 +867,8 @@ long long *drms_alloc_recnum(DRMS_Env_t *env,  char *series,
     status = Readint(sockfd);
     if (status==0)
     {
-      XASSERT(seqnums = malloc(n*sizeof(long long)));
+      seqnums = malloc(n*sizeof(long long));
+      XASSERT(seqnums);
       for (i=0; i<n; i++)
 	seqnums[i] = (long long)Readlonglong(sockfd);
       return seqnums;
@@ -1036,7 +1039,8 @@ int drms_getunits_internal(DRMS_Env_t *env,
   char **tosend = (char **)malloc(n * sizeof(char *));
 #endif
 
-  XASSERT(su_nc = malloc(n*sizeof(DRMS_StorageUnit_t *)));
+  su_nc = malloc(n*sizeof(DRMS_StorageUnit_t *));
+  XASSERT(su_nc);
 #ifdef DEBUG
       printf("getunit: Called, n=%d, series=%s\n", n, series);
 #endif
@@ -1109,8 +1113,10 @@ int drms_getunits_internal(DRMS_Env_t *env,
     }
 
     /* pass n sunums */
-    XASSERT(vec = malloc(cnt*sizeof(struct iovec)));      
-    XASSERT(sunum_tmp = malloc(cnt*sizeof(long long)));
+    vec = malloc(cnt*sizeof(struct iovec)); 
+    XASSERT(vec);     
+    sunum_tmp = malloc(cnt*sizeof(long long));
+    XASSERT(sunum_tmp);
     for (int i = 0; i < cnt; i++) {
       sunum_tmp[i] = htonll(su_nc[i]->sunum);
       vec[i].iov_len = sizeof(sunum_tmp[i]);
@@ -1470,8 +1476,10 @@ int drms_newslots_internal(DRMS_Env_t *env, int n, char *series, long long *recn
       return 0;
     }
 
-    XASSERT(ltmp = malloc(n*sizeof(long long)));
-    XASSERT(vec = malloc((n+6)*sizeof(struct iovec)));
+    ltmp = malloc(n*sizeof(long long));
+    XASSERT(ltmp);
+    vec = malloc((n+6)*sizeof(struct iovec));
+    XASSERT(vec);
 
     /* Send series, n, lifetime, createslotdirs flag, and the record numbers with a
        single writev system call. */

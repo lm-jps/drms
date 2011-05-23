@@ -14,7 +14,8 @@ void table_init(int maxsize, Table_t *S,
   S->not_equal = not_equal;
   if (maxsize>0)
   {
-    XASSERT((S->data = (Entry_t *) malloc((size_t) maxsize * sizeof(Entry_t))));
+    S->data = (Entry_t *) malloc((size_t) maxsize * sizeof(Entry_t));
+    XASSERT(S->data);
   }
   else
     S->data = NULL;
@@ -55,7 +56,8 @@ void table_insert(Table_t *S, const void *key, const void *value)
   {
     /* Out of space. Double table size. */
     tmp = S->data;
-    XASSERT((S->data = malloc(2*(S->maxsize+1)*sizeof(Entry_t))));
+    S->data = malloc(2*(S->maxsize+1)*sizeof(Entry_t));
+    XASSERT(S->data);
     if (tmp)
     {
       memcpy(S->data, tmp, S->maxsize*sizeof(Entry_t));

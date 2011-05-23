@@ -105,7 +105,8 @@ int DoIt(void) {
 	printf("Can't stat file %s\n", filename);
 	return 1;
       }  
-    XASSERT((buf = (char *)malloc( file_stat.st_size+1 )));
+    buf = (char *)malloc( file_stat.st_size+1 );
+    XASSERT(buf);
     fp = fopen(filename,"r");
     fread(buf,file_stat.st_size,1,fp);
     buf[file_stat.st_size] = 0;
@@ -250,7 +251,8 @@ int DoIt(void) {
            }
 
            // Now insert the keyword from newkws to recproto
-           XASSERT(keytempl = hcon_allocslot_lower(&recproto->keywords, kw->info->name));
+           keytempl = hcon_allocslot_lower(&recproto->keywords, kw->info->name);
+           XASSERT(keytempl);
            memset(keytempl, 0, sizeof(DRMS_Keyword_t));
            drms_copy_keyword_struct(keytempl, kw);
 

@@ -150,9 +150,11 @@ HContainer_t *drms_create_keyword_prototypes(DRMS_Record_t *target,
       {
 	 if (sKey->info && strlen(sKey->info->name) > 0)
 	 {
-	    XASSERT(tKey = hcon_allocslot_lower(&(target->keywords), sKey->info->name));
+            tKey = hcon_allocslot_lower(&(target->keywords), sKey->info->name);
+            XASSERT(tKey);
 	    memset(tKey, 0, sizeof(DRMS_Keyword_t));
-	    XASSERT(tKey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
+            tKey->info = malloc(sizeof(DRMS_KeywordInfo_t));
+            XASSERT(tKey->info);
 	    memset(tKey->info, 0, sizeof(DRMS_KeywordInfo_t));
 	    
 	    if (tKey && tKey->info)
@@ -496,7 +498,8 @@ int drms_template_keywords_int(DRMS_Record_t *template, int expandperseg, const 
       memset(key,0,sizeof(DRMS_Keyword_t));      
       /* Set parent pointer. */
       key->record = template;
-      XASSERT(key->info = malloc(sizeof(DRMS_KeywordInfo_t)));
+      key->info = malloc(sizeof(DRMS_KeywordInfo_t));
+      XASSERT(key->info);
       memset(key->info,0,sizeof(DRMS_KeywordInfo_t));
       /* Copy field values from query result. */
       strcpy(key->info->name, name);
@@ -1139,7 +1142,8 @@ char *drms_keyword_getstring(DRMS_Keyword_t *keyword, int *status)
 
   if (keyword->info->type == DRMS_TYPE_TIME)
   {
-     XASSERT(result = malloc(32));
+     result = malloc(32);
+     XASSERT(result);
      memset(result, 0, 32);
      drms_keyword_snprintfval(keyword, result, 32);
   }

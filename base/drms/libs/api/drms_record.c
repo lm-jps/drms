@@ -338,10 +338,11 @@ static void AddLocalPrimekey(DRMS_Record_t *template, int *status)
    snprintf(drmsKeyName, sizeof(drmsKeyName), kLocalPrimekey);
 
    /* insert into template */
-   XASSERT(tKey = 
-	   hcon_allocslot_lower(&(template->keywords), drmsKeyName));
+   tKey = hcon_allocslot_lower(&(template->keywords), drmsKeyName);
+   XASSERT(tKey);
    memset(tKey, 0, sizeof(DRMS_Keyword_t));
-   XASSERT(tKey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
+   tKey->info = malloc(sizeof(DRMS_KeywordInfo_t));
+   XASSERT(tKey->info);
    memset(tKey->info, 0, sizeof(DRMS_KeywordInfo_t));
 	    
    if (tKey && tKey->info)
@@ -409,8 +410,10 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
 	   
    if (stat == DRMS_SUCCESS)
    {
-      XASSERT(template = calloc(1, sizeof(DRMS_Record_t)));
-      XASSERT(template->seriesinfo = calloc(1, sizeof(DRMS_SeriesInfo_t)));
+      template = calloc(1, sizeof(DRMS_Record_t));
+      XASSERT(template);
+      template->seriesinfo = calloc(1, sizeof(DRMS_SeriesInfo_t));
+      XASSERT(template->seriesinfo);
    }
 
    if (template && template->seriesinfo)
@@ -478,10 +481,11 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
 	       if (!(tKey = hcon_lookup_lower(&(template->keywords), drmsKeyName)))
 	       {
 		  /* insert into template */
-		  XASSERT(tKey = 
-			  hcon_allocslot_lower(&(template->keywords), drmsKeyName));
+                  tKey = hcon_allocslot_lower(&(template->keywords), drmsKeyName);
+                  XASSERT(tKey);
 		  memset(tKey, 0, sizeof(DRMS_Keyword_t));
-		  XASSERT(tKey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
+                  tKey->info = malloc(sizeof(DRMS_KeywordInfo_t));
+                  XASSERT(tKey->info);
 		  memset(tKey->info, 0, sizeof(DRMS_KeywordInfo_t));
 	    
 		  if (tKey && tKey->info)
@@ -662,9 +666,11 @@ static void AllocRecordProtoSeg(DRMS_Record_t *template, DRMS_Segment_t *seg, in
    {
       DRMS_Segment_t *tSeg = NULL;
 
-      XASSERT(tSeg = hcon_allocslot_lower(&(template->segments), seg->info->name));
+      tSeg = hcon_allocslot_lower(&(template->segments), seg->info->name);
+      XASSERT(tSeg);
       memset(tSeg, 0, sizeof(DRMS_Segment_t));
-      XASSERT(tSeg->info = malloc(sizeof(DRMS_SegmentInfo_t)));
+      tSeg->info = malloc(sizeof(DRMS_SegmentInfo_t));
+      XASSERT(tSeg->info);
       memset(tSeg->info, 0, sizeof(DRMS_SegmentInfo_t));
 
       if (tSeg && tSeg->info)
@@ -2024,8 +2030,10 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
   }
 
   /* Allocate the outer record set structure. */
-  XASSERT( rs = malloc(sizeof(DRMS_RecordSet_t)) );
-  XASSERT( rs->records = malloc(n*sizeof(DRMS_Record_t *)) );
+  rs = malloc(sizeof(DRMS_RecordSet_t));
+  XASSERT(rs);
+  rs->records = malloc(n*sizeof(DRMS_Record_t *));
+  XASSERT(rs->records);
   memset(rs->records, 0, sizeof(DRMS_Record_t *) * n);
   rs->n = n;
   rs->ss_n = 0;
@@ -2063,8 +2071,10 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
      a storage unit slot for each record to hold them. */
   if ( drms_record_numsegments(rs->records[0]) )
   {
-    XASSERT(su = malloc(n*sizeof(DRMS_StorageUnit_t *)));
-    XASSERT(slotnum = malloc(n*sizeof(int)));
+    su = malloc(n*sizeof(DRMS_StorageUnit_t *));
+    XASSERT(su);
+    slotnum = malloc(n*sizeof(int));
+    XASSERT(slotnum);
     
     /* If all segments are TAS segments, then there is no need to create 
      * slot dirs as all data will go into the SU */
@@ -2166,8 +2176,10 @@ DRMS_RecordSet_t *drms_create_recprotos(DRMS_RecordSet_t *recset, int *status)
 
    int nRecs = recset->n;
 
-   XASSERT(detached = malloc(sizeof(DRMS_RecordSet_t)) );
-   XASSERT(detached->records = malloc(nRecs * sizeof(DRMS_Record_t *)));
+   detached = malloc(sizeof(DRMS_RecordSet_t));
+   XASSERT(detached);
+   detached->records = malloc(nRecs * sizeof(DRMS_Record_t *));
+   XASSERT(detached->records);
 
    if (detached && detached->records)
    {
@@ -2214,8 +2226,10 @@ DRMS_Record_t *drms_create_recproto(DRMS_Record_t *recSource, int *status)
    DRMS_Record_t *detached = NULL;
    DRMS_Record_t *recTarget = NULL;
 
-   XASSERT(recTarget = calloc(1, sizeof(DRMS_Record_t)));
-   XASSERT(recTarget->seriesinfo = calloc(1, sizeof(DRMS_SeriesInfo_t)));
+   recTarget = calloc(1, sizeof(DRMS_Record_t));
+   XASSERT(recTarget);
+   recTarget->seriesinfo = calloc(1, sizeof(DRMS_SeriesInfo_t));
+   XASSERT(recTarget->seriesinfo);
 
    if (recTarget && recTarget->seriesinfo)
    {
@@ -2391,8 +2405,10 @@ static DRMS_RecordSet_t *drms_clone_records_internal(DRMS_RecordSet_t *rs_in,
   env = rs_in->records[0]->env;
   
   /* Allocate the outer record set structure. */
-  XASSERT( rs_out = malloc(sizeof(DRMS_RecordSet_t)) );
-  XASSERT( rs_out->records = malloc(n_total*sizeof(DRMS_Record_t *)) );
+  rs_out = malloc(sizeof(DRMS_RecordSet_t));
+  XASSERT(rs_out);
+  rs_out->records = malloc(n_total*sizeof(DRMS_Record_t *));
+  XASSERT(rs_out->records);
   rs_out->n = n_total;
   rs_out->ss_n = 0;
   rs_out->ss_queries = NULL;
@@ -2488,8 +2504,10 @@ static DRMS_RecordSet_t *drms_clone_records_internal(DRMS_RecordSet_t *rs_in,
 	}
 	break;
       case DRMS_COPY_SEGMENTS:
-	XASSERT(su = malloc(n*sizeof(DRMS_StorageUnit_t *)));
-	XASSERT(slotnum = malloc(n*sizeof(int)));
+        su = malloc(n*sizeof(DRMS_StorageUnit_t *));
+        XASSERT(su);
+        slotnum = malloc(n*sizeof(int));
+        XASSERT(slotnum);
 
         /* If all segments are TAS segments, then there is no need to create 
          * slot dirs as all data will go into the SU */
@@ -3698,7 +3716,8 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
 
   /* Filter query result and initialize record data structures 
      from template. */  
-  XASSERT(rs = malloc(sizeof(DRMS_RecordSet_t)));
+  rs = malloc(sizeof(DRMS_RecordSet_t));
+  XASSERT(rs);
   if (qres->num_rows<1)
   {
     rs->n = 0;
@@ -3711,7 +3730,8 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
     PushTimer();
 #endif
     rs->n = qres->num_rows;
-    XASSERT(rs->records=malloc(rs->n*sizeof(DRMS_Record_t*)));
+    rs->records=malloc(rs->n*sizeof(DRMS_Record_t*));
+    XASSERT(rs->records);
     for (i=0; i<rs->n; i++)
     {
 #ifdef DEBUG
@@ -3995,7 +4015,8 @@ char *drms_query_string(DRMS_Env_t *env,
   }
 
   /* Do query to retrieve record meta-data. */
-  XASSERT( (query = malloc(strlen(field_list)+DRMS_MAXQUERYLEN)) );
+  query = malloc(strlen(field_list)+DRMS_MAXQUERYLEN);
+  XASSERT(query);
   p = query;
 
 
@@ -4110,7 +4131,8 @@ char *drms_query_string(DRMS_Env_t *env,
   {
      int qsize = strlen(query) + DRMS_MAXQUERYLEN;
      char *modquery = NULL;
-     XASSERT((modquery = malloc(qsize)));
+     modquery = malloc(qsize);
+     XASSERT(modquery);
      snprintf(modquery, 
               qsize, 
               "select %s from (%s) as subfoo group by %s order by %s", 
@@ -4347,7 +4369,8 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
     template->sessionid = 0;
     template->sessionns = NULL;
     template->su = NULL;
-    XASSERT(template->seriesinfo = calloc(1, sizeof(DRMS_SeriesInfo_t)));
+    template->seriesinfo = calloc(1, sizeof(DRMS_SeriesInfo_t));
+    XASSERT(template->seriesinfo);
     /* Populate series info part */
     char *namespace = ns(seriesname);
 
@@ -4761,7 +4784,8 @@ int drms_populate_record(DRMS_Env_t *env, DRMS_Record_t *rec, long long recnum)
   strtolower(series_lower);
 
   /* Do query. */
-  XASSERT( (query = malloc(strlen(field_list)+10*DRMS_MAXSERIESNAMELEN)) );
+  query = malloc(strlen(field_list)+10*DRMS_MAXSERIESNAMELEN);
+  XASSERT(query);
   sprintf(query, "select %s from %s where recnum=%lld", 
 	  field_list, series_lower, recnum);
 
@@ -4776,7 +4800,8 @@ int drms_populate_record(DRMS_Env_t *env, DRMS_Record_t *rec, long long recnum)
     stat = DRMS_ERROR_BADQUERYRESULT;
     goto bailout2;
   }
-  XASSERT(rs.records=malloc(sizeof(DRMS_Record_t*)));
+  rs.records=malloc(sizeof(DRMS_Record_t*));
+  XASSERT(rs.records);
   rs.n = 1;
   rs.records[0] = rec;
   rs.ss_n = 0;
@@ -5061,7 +5086,8 @@ char *drms_field_list(DRMS_Record_t *rec, int *num_cols)
   }
 
   /* Malloc string buffer. */
-  XASSERT( buf = malloc(len+1) );
+  buf = malloc(len+1);
+  XASSERT(buf);
   //  printf("ncol = %d\n",ncol);
   /**** Finally construct string by copying names of segments, links,
 	and keywords into the string buffer. ****/
@@ -5170,33 +5196,43 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
 
 
   /* Construct SQL string. */
-  XASSERT( (query = malloc(strlen(field_list)+10*DRMS_MAXSERIESNAMELEN)) );
+  query = malloc(strlen(field_list)+10*DRMS_MAXSERIESNAMELEN);
+  XASSERT(query);
   p = query;
   p += sprintf(p, "%s (%s)",  series_lower, field_list);
 #ifdef DEBUG
   printf("Table and column specifier for bulk insert = '%s'\n",query);
 #endif
 
-  XASSERT(argin = malloc(num_args*sizeof(void *)));
-  XASSERT(sz = malloc(num_args*sizeof(int)));
-  XASSERT(intype = malloc(num_args*sizeof(DB_Type_t)));
+  argin = malloc(num_args*sizeof(void *));
+  XASSERT(argin);
+  sz = malloc(num_args*sizeof(int));
+  XASSERT(sz);
+  intype = malloc(num_args*sizeof(DB_Type_t));
+  XASSERT(intype);
     
   /* Get type and size information for record attributes. */
   col = 0;
   intype[col] = drms2dbtype(DRMS_TYPE_LONGLONG); /* recnum */
-  XASSERT(argin[col] = malloc(num_rows*db_sizeof(intype[col])));
+  argin[col] = malloc(num_rows*db_sizeof(intype[col]));
+  XASSERT(argin[col]);
   col++;
   intype[col] = drms2dbtype(DRMS_TYPE_LONGLONG); /* sunum */
-  XASSERT(argin[col] = malloc(num_rows*db_sizeof(intype[col])));
+  argin[col] = malloc(num_rows*db_sizeof(intype[col]));
+  XASSERT(argin[col]);
   col++;
   intype[col] = drms2dbtype(DRMS_TYPE_INT);  /* slotnum */
-  XASSERT(argin[col] = malloc(num_rows*db_sizeof(intype[col])));
+  argin[col] = malloc(num_rows*db_sizeof(intype[col]));
+  XASSERT(argin[col]);
   col++;
   intype[col] = drms2dbtype(DRMS_TYPE_LONGLONG); /* sessionid */
-  XASSERT(argin[col] = malloc(num_rows*db_sizeof(intype[col])));
+  argin[col] = malloc(num_rows*db_sizeof(intype[col]));
+  XASSERT(argin[col]);
   col++;
   intype[col] = drms2dbtype(DRMS_TYPE_STRING);   /* sessionns */
-  XASSERT(argin[col++] = malloc(num_rows*sizeof(char *)));
+  argin[col] = malloc(num_rows*sizeof(char *));
+  XASSERT(argin[col]);
+  col++;
 
   /* Loop through Links. */
   while( (link = drms_record_nextlink(rec, &last)) )
@@ -5204,14 +5240,16 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
     if (link->info->type == STATIC_LINK)
     {
       intype[col]  = drms2dbtype(DRMS_TYPE_LONGLONG);
-      XASSERT(argin[col] = malloc(num_rows*db_sizeof(intype[col])));
+      argin[col] = malloc(num_rows*db_sizeof(intype[col]));
+      XASSERT(argin[col]);
       col++;
     }
     else /* Oh crap! A dynamic link... */
     {
       if (link->info->pidx_num) {
 	intype[col] = drms2dbtype(DRMS_TYPE_INT);
-	XASSERT(argin[col] = malloc(num_rows*db_sizeof(intype[col])));
+        argin[col] = malloc(num_rows*db_sizeof(intype[col]));
+        XASSERT(argin[col]);
 	col++;
       }
       /* There is a field for each keyword in the primary index
@@ -5221,11 +5259,14 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
 	intype[col] = drms2dbtype(link->info->pidx_type[i]);
 	if (link->info->pidx_type[i] == DRMS_TYPE_STRING )
 	{
-	  XASSERT(argin[col++] = malloc(num_rows*sizeof(char *)));
+          argin[col] = malloc(num_rows*sizeof(char *));
+          XASSERT(argin[col]);
+          col++;
 	}
 	else
 	{
-	  XASSERT(argin[col] = malloc(num_rows*db_sizeof(intype[col])));
+          argin[col] = malloc(num_rows*db_sizeof(intype[col]));
+          XASSERT(argin[col]);
 	  col++;
 	}
       }
@@ -5245,11 +5286,14 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
       intype[col] = drms2dbtype(key->info->type);
       if ( key->info->type == DRMS_TYPE_STRING )
       {
-	XASSERT(argin[col++] = malloc(num_rows*sizeof(char *)));
+        argin[col] = malloc(num_rows*sizeof(char *));
+        XASSERT(argin[col]);
+        col++;
       }
       else
       {
-	XASSERT(argin[col] = malloc(num_rows*db_sizeof(intype[col])));
+        argin[col] = malloc(num_rows*db_sizeof(intype[col]));
+        XASSERT(argin[col]);
 	col++;
       }
     }    
@@ -5265,7 +5309,9 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
   {
     /* segment names are stored as columns "sg_XXX_file */	
     intype[col] = drms2dbtype(DRMS_TYPE_STRING);
-    XASSERT(argin[col++] = malloc(num_rows*sizeof(char *)));
+    argin[col] = malloc(num_rows*sizeof(char *));
+    XASSERT(argin[col]);
+    col++;
 
     if (seg->info->scope==DRMS_VARDIM)
     {
@@ -5274,7 +5320,8 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
       for (i=0; i<seg->info->naxis; i++)
       {
 	intype[col] = drms2dbtype(DRMS_TYPE_INT);
-	XASSERT(argin[col] = malloc(num_rows*db_sizeof(intype[col])));
+        argin[col] = malloc(num_rows*db_sizeof(intype[col]));
+        XASSERT(argin[col]);
 	col++;
       }
     }
@@ -7364,7 +7411,8 @@ char *drms_record_jsoc_version(DRMS_Env_t *env, DRMS_Record_t *rec) {
   DB_Text_Result_t *qres;
   if ((qres = drms_query_txt(env->session, query)) && qres->num_rows>0) {
     if (qres->field[0][0][0]) {
-      XASSERT(jsocversion = malloc(strlen(qres->field[0][0])+1));
+      jsocversion = malloc(strlen(qres->field[0][0])+1);
+      XASSERT(jsocversion);
       strcpy(jsocversion, qres->field[0][0]);
     }
   }
@@ -8451,7 +8499,8 @@ DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
                    else
                    {
 		      int len = db_binary_default_width(db_type);
-		      XASSERT(*(char **)val = (char *)malloc(len));
+                      *(char **)val = (char *)malloc(len);
+                      XASSERT(*(char **)val);
 		      dbtype2str(db_type, db_src, len, *(char **)val);
                    }
                    break;

@@ -142,7 +142,8 @@ int db_sort_binary_result(DB_Binary_Result_t *res, int num_cols, int *cols)
   __sort_res = res;
   __num_sort_cols = num_cols;
   num_rows = res->num_rows;
-  XASSERT( (p = malloc(num_rows*sizeof(int))));
+  p = malloc(num_rows*sizeof(int));
+  XASSERT(p);
   for (i=0; i<num_rows; i++)
     p[i] = i;
 
@@ -175,7 +176,8 @@ static void db_permute(DB_Binary_Result_t *res, int n, int *p)
   /* Permute rows according to indices in p. */
   for (i=0;i<res->num_cols; i++)
   {
-    XASSERT(buf = malloc(res->column[i].size*n));
+    buf = malloc(res->column[i].size*n);
+    XASSERT(buf);
     for (j=0; j<n; j++)
       memcpy(buf + j*res->column[i].size, 
 	     res->column[i].data + p[j]*res->column[i].size, 
@@ -210,7 +212,8 @@ int db_maxbygroup(DB_Binary_Result_t *res, int maxcol, int num_cols, int *cols)
     return 0;
 
   /* Select max(maxcolumn),* group by cols[*] */
-  XASSERT( (p = malloc(res->num_rows*sizeof(int))));
+  p = malloc(res->num_rows*sizeof(int));
+  XASSERT(p);
   n = 0;
   max = 0; 
   i = 1;

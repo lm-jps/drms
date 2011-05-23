@@ -182,9 +182,11 @@ HContainer_t *drms_create_segment_prototypes(DRMS_Record_t *target,
       {
 	 if (sSeg->info && strlen(sSeg->info->name) > 0)
 	 {
-	    XASSERT(tSeg = hcon_allocslot_lower(&(target->segments), sSeg->info->name));
+            tSeg = hcon_allocslot_lower(&(target->segments), sSeg->info->name);
+            XASSERT(tSeg);
 	    memset(tSeg, 0, sizeof(DRMS_Segment_t));
-	    XASSERT(tSeg->info = malloc(sizeof(DRMS_SegmentInfo_t)));
+            tSeg->info = malloc(sizeof(DRMS_SegmentInfo_t));
+            XASSERT(tSeg->info);
 	    memset(tSeg->info, 0, sizeof(DRMS_SegmentInfo_t));
 
 	    if (tSeg && tSeg->info)
@@ -293,7 +295,8 @@ int drms_template_segments(DRMS_Record_t *template)
     db_binary_field_getstr(qres, i, 0, 1024, buf);    
     seg = hcon_allocslot_lower(&template->segments, buf);
     memset(seg,0,sizeof(DRMS_Segment_t));
-    XASSERT(seg->info = malloc(sizeof( DRMS_SegmentInfo_t)));
+    seg->info = malloc(sizeof( DRMS_SegmentInfo_t));
+    XASSERT(seg->info);
     memset(seg->info,0,sizeof(DRMS_SegmentInfo_t));
     seg->record = template;
     strcpy(seg->info->name, buf);
@@ -1075,7 +1078,8 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
       goto bailout1;
       break;
     case DRMS_BINARY:
-      XASSERT(arr = malloc(sizeof(DRMS_Array_t)));
+      arr = malloc(sizeof(DRMS_Array_t));
+      XASSERT(arr);
       if ((statint = drms_binfile_read(filename, 0, arr)))
       {
 	fprintf(stderr,"Couldn't read segment from file '%s'.\n",
@@ -1084,7 +1088,8 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
       }
       break;
     case DRMS_BINZIP:
-      XASSERT(arr = malloc(sizeof(DRMS_Array_t)));
+      arr = malloc(sizeof(DRMS_Array_t));
+      XASSERT(arr);
       if ((statint = drms_zipfile_read(filename, 0, arr)))
       {
 	fprintf(stderr,"Couldn't read segment from file '%s'.\n",
@@ -1342,7 +1347,8 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
      switch(seg->info->protocol)
      {
         case DRMS_BINARY:
-          XASSERT(arr = malloc(sizeof(DRMS_Array_t)));
+          arr = malloc(sizeof(DRMS_Array_t));
+          XASSERT(arr);
           if ((statint = drms_binfile_read(filename, 0, arr)))
           {
              fprintf(stderr,"Couldn't read segment from file '%s'.\n",
@@ -1351,7 +1357,8 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
           }
           break;
         case DRMS_BINZIP:
-          XASSERT(arr = malloc(sizeof(DRMS_Array_t)));
+          arr = malloc(sizeof(DRMS_Array_t));
+          XASSERT(arr);
           if ((statint = drms_zipfile_read(filename, 0, arr)))
           {
              fprintf(stderr,"Couldn't read segment from file '%s'.\n",

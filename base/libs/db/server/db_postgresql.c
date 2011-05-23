@@ -145,7 +145,8 @@ DB_Handle_t *db_connect(const char *host, const char *user,
   }
 
   /* Initialize DB handle struct. */
-  XASSERT( handle = malloc(sizeof(DB_Handle_t)) );
+  handle = malloc(sizeof(DB_Handle_t));
+  XASSERT(handle);
   
   strncpy(handle->dbhost,PQhost(db),1024);
   snprintf(handle->dbport, sizeof(handle->dbport), "%s", PQport(db));
@@ -157,7 +158,8 @@ DB_Handle_t *db_connect(const char *host, const char *user,
   handle->isolation_level = DB_TRANS_READCOMMIT;
   if (lock)
   {
-    XASSERT( handle->db_lock = malloc(sizeof(pthread_mutex_t)) );
+    handle->db_lock = malloc(sizeof(pthread_mutex_t));
+    XASSERT(handle->db_lock);
     pthread_mutex_init(handle->db_lock, NULL);
   }
   else
@@ -231,7 +233,8 @@ DB_Text_Result_t *db_query_txt(DB_Handle_t  *dbin,  char *query_string)
   }
 
   // query succeeded, process any data returned by it
-  XASSERT( result = (DB_Text_Result_t *)malloc(sizeof(DB_Text_Result_t)) );
+  result = (DB_Text_Result_t *)malloc(sizeof(DB_Text_Result_t));
+  XASSERT(result);
   memset(result,0,sizeof(DB_Text_Result_t));
   result->num_rows = PQntuples(res);
   result->num_cols = PQnfields(res);
@@ -239,8 +242,10 @@ DB_Text_Result_t *db_query_txt(DB_Handle_t  *dbin,  char *query_string)
   if (result->num_rows>0)  // there are rows
   {
     colname_length = 0;
-    XASSERT( result->column_name = (char **)malloc(result->num_cols*sizeof(char *)) );
-    XASSERT( result->column_width = (int *)malloc(result->num_cols*sizeof(int)) );
+    result->column_name = (char **)malloc(result->num_cols*sizeof(char *));
+    XASSERT(result->column_name);
+    result->column_width = (int *)malloc(result->num_cols*sizeof(int));
+    XASSERT(result->column_width);
 
     buffer_length = 0;
     for(i = 0; i < result->num_cols; i++)
@@ -257,7 +262,8 @@ DB_Text_Result_t *db_query_txt(DB_Handle_t  *dbin,  char *query_string)
     }    
 
     buflen = (3+result->num_cols)*sizeof(int) + colname_length + buffer_length;
-    XASSERT( result->buffer = malloc( buflen ) );
+    result->buffer = malloc( buflen );
+    XASSERT(result->buffer);
 
     p = result->buffer;
     
@@ -288,9 +294,8 @@ DB_Text_Result_t *db_query_txt(DB_Handle_t  *dbin,  char *query_string)
     
 
     /* Set up data structure for the actual contents. */
-    XASSERT( result->field =  (char ***) 
-	     malloc(result->num_rows*sizeof(char **) +
-		    result->num_rows*result->num_cols*sizeof(char *)) );
+    result->field =  (char ***) malloc(result->num_rows*sizeof(char **) + result->num_rows*result->num_cols*sizeof(char *));
+    XASSERT(result->field);
     for (i=0; i<result->num_rows; i++)
       result->field[i] = (char **) &result->field[result->num_rows + 
 						  i*result->num_cols];
@@ -347,27 +352,30 @@ DB_Binary_Result_t *db_query_bin(DB_Handle_t  *dbin,  char *query_string)
   }
 
   // query succeeded, process any data returned by it
-  XASSERT( db_res = (DB_Binary_Result_t *)malloc(sizeof(DB_Binary_Result_t)) );
+  db_res = (DB_Binary_Result_t *)malloc(sizeof(DB_Binary_Result_t));
+  XASSERT(db_res);
   memset(db_res,0,sizeof(DB_Binary_Result_t));
   db_res->num_rows = PQntuples(res);
   db_res->num_cols = PQnfields(res);
 
   if (db_res->num_cols>0)  // there are rows
   {
-    XASSERT( db_res->column = (DB_Column_t *)malloc(db_res->num_cols * 
-						    sizeof(DB_Column_t)) ); 
+    db_res->column = (DB_Column_t *)malloc(db_res->num_cols * sizeof(DB_Column_t)); 
+    XASSERT(db_res->column);
     //    printf("num_rows=%d, num_cols=%d\n",db_res->num_rows,db_res->num_cols);
     for (i=0; i<db_res->num_cols; i++)
     {
       //      printf("Column %d:\n",i);
       colname_length = strlen(PQfname(res,i))+1;
-      XASSERT( db_res->column[i].column_name = malloc(colname_length) );
+      db_res->column[i].column_name = malloc(colname_length);
+      XASSERT(db_res->column[i].column_name);
       strcpy(db_res->column[i].column_name,PQfname(res,i)); 
       //printf("name = %s (%s)\n",db_res->column[i].column_name,PQfname(res,i));
       db_res->column[i].type = pgsql2db_type(PQftype(res,i));
       //printf("type = %d (%d)\n",db_res->column[i].type,PQftype(res,i));
       db_res->column[i].num_rows = db_res->num_rows;
-      XASSERT( db_res->column[i].is_null =  malloc(db_res->num_rows*sizeof(int)) );
+      db_res->column[i].is_null =  malloc(db_res->num_rows*sizeof(int));
+      XASSERT(db_res->column[i].is_null);
       db_res->column[i].size = 0;
       
       /* Get the maximum (over all rows) value length */
@@ -397,8 +405,8 @@ DB_Binary_Result_t *db_query_bin(DB_Handle_t  *dbin,  char *query_string)
          db_res->column[i].size = db_sizeof(db_res->column[i].type);
       }
       
-      XASSERT( db_res->column[i].data = malloc(db_res->num_rows * 
-					       db_res->column[i].size) );
+      db_res->column[i].data = malloc(db_res->num_rows * db_res->column[i].size);
+      XASSERT(db_res->column[i].data);
 
       /* set entire column to NULLS, then fill in non-0 parts. This will
        * take care of string values too - their PQgetlength() length will
@@ -455,7 +463,8 @@ DB_Binary_Result_t *db_query_bin_array(DB_Handle_t  *dbin,
     return NULL;
   db = dbin->db_connection;
 
-  XASSERT( pquery = malloc(6*strlen(query)) ); 
+  pquery = malloc(6*strlen(query));
+  XASSERT(pquery);
 
    /* Lock database connection if in multi-threaded mode. */
   db_lock(dbin);
@@ -513,7 +522,8 @@ DB_Binary_Result_t *db_query_bin_array(DB_Handle_t  *dbin,
 #ifdef DEBUG
   printf("n_args = %d, buflen = %d\n",n_args,buflen);
 #endif
-  XASSERT( paramBuf = malloc(buflen) );  
+  paramBuf = malloc(buflen);
+  XASSERT(paramBuf);
   p = paramBuf;
   for(i=0; i<n_args; i++)
   {
@@ -537,27 +547,30 @@ DB_Binary_Result_t *db_query_bin_array(DB_Handle_t  *dbin,
   }
 
   // query succeeded, process any data returned by it
-  XASSERT( db_res = (DB_Binary_Result_t *)malloc(sizeof(DB_Binary_Result_t)) );
+  db_res = (DB_Binary_Result_t *)malloc(sizeof(DB_Binary_Result_t));
+  XASSERT(db_res);
   memset(db_res,0,sizeof(DB_Binary_Result_t));
   db_res->num_rows = PQntuples(res);
   db_res->num_cols = PQnfields(res);
 
   if (db_res->num_cols>0)  // there are rows
   {
-    XASSERT( db_res->column = (DB_Column_t *)malloc(db_res->num_cols * 
-						    sizeof(DB_Column_t)) ); 
+     db_res->column = (DB_Column_t *)malloc(db_res->num_cols * sizeof(DB_Column_t));
+    XASSERT(db_res->column);
     //    printf("num_rows=%d, num_cols=%d\n",db_res->num_rows,db_res->num_cols);
     for (i=0; i<db_res->num_cols; i++)
     {
       //      printf("Column %d:\n",i);
       colname_length = strlen(PQfname(res,i))+1;
-      XASSERT( db_res->column[i].column_name = malloc(colname_length) );
+      db_res->column[i].column_name = malloc(colname_length);
+      XASSERT(db_res->column[i].column_name);
       strcpy(db_res->column[i].column_name,PQfname(res,i)); 
       //printf("name = %s (%s)\n",db_res->column[i].column_name,PQfname(res,i));
       db_res->column[i].type = pgsql2db_type(PQftype(res,i));
       //printf("type = %d (%d)\n",db_res->column[i].type,PQftype(res,i));
       db_res->column[i].num_rows = db_res->num_rows;
-      XASSERT( db_res->column[i].is_null =  malloc(db_res->num_rows*sizeof(int)) );
+      db_res->column[i].is_null =  malloc(db_res->num_rows*sizeof(int));
+      XASSERT(db_res->column[i].is_null);
       db_res->column[i].size = 0;
       for (j=0; j<db_res->num_rows; j++)
       {
@@ -572,8 +585,8 @@ DB_Binary_Result_t *db_query_bin_array(DB_Handle_t  *dbin,
 	   db_res->column[i].type == DB_VARCHAR )
 	(db_res->column[i].size)++;
       
-      XASSERT( db_res->column[i].data = malloc(db_res->num_rows * 
-					       db_res->column[i].size) );
+      db_res->column[i].data = malloc(db_res->num_rows * db_res->column[i].size);
+      XASSERT(db_res->column[i].data);
 #ifdef DEBUG
       printf("sizeof column %d = %d\n",i,db_res->column[i].size);
 #endif      
@@ -686,7 +699,8 @@ int db_dms_array(DB_Handle_t  *dbin, int *row_count,
 
 
   db = dbin->db_connection;
-  XASSERT( pquery = malloc(6*strlen(query)) ); 
+  pquery = malloc(6*strlen(query)); 
+  XASSERT(pquery);
 
   /* Replace wildcards '?' with '$1', '$2', '$3' etc. */
   op = pquery;
@@ -897,13 +911,15 @@ int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows,
   for(i=0; i<n_args; i++)
     db_byteswap(intype[i],n_rows,argin[i]);
 #endif
-  XASSERT(query = malloc(strlen(table)+1000));
+  query = malloc(strlen(table)+1000);
+  XASSERT(query);
   bufsize = 19 + 2*n_rows + 4*n_rows*n_args + 2;
   for (j=0; j<n_args; j++)
   {
     if (intype[j] == DB_STRING || intype[j] == DB_VARCHAR )
     {
-      XASSERT(paramLengths[j] = malloc(n_rows*sizeof(int)));
+      paramLengths[j] = malloc(n_rows*sizeof(int));
+      XASSERT(paramLengths[j]);
       for (i=0; i<n_rows; i++)
       {
 	paramLengths[j][i] = strlen(((char **) argin[j])[i]);
@@ -917,7 +933,8 @@ int db_bulk_insert_array(DB_Handle_t  *dbin, char *table, int n_rows,
       bufsize += n_rows*db_sizeof(intype[j]);
   }
 
-  XASSERT(buf = malloc(bufsize));
+  buf = malloc(bufsize);
+  XASSERT(buf);
   p = buf;
   memcpy(p, header, 19);
   p += 19;
@@ -1107,8 +1124,10 @@ long long *db_sequence_getnext_n(DB_Handle_t *db,  char *tablename, int n)
 
   XASSERT(n>0);
   len = strlen(tablename)+16;
-  XASSERT(query = malloc(len*n+10));
-  XASSERT(val = malloc(sizeof(long long)*n));
+  query = malloc(len*n+10);
+  XASSERT(query);
+  val = malloc(sizeof(long long)*n);
+  XASSERT(val);
   
   count = 0;
   while (count < n)

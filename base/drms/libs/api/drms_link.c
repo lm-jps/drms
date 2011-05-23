@@ -90,9 +90,11 @@ HContainer_t *drms_create_link_prototypes(DRMS_Record_t *target,
       {
 	 if (sLink->info && strlen(sLink->info->name) > 0)
 	 {
-	    XASSERT(tLink = hcon_allocslot_lower(&(target->links), sLink->info->name));
+            tLink = hcon_allocslot_lower(&(target->links), sLink->info->name);
+            XASSERT(tLink);
 	    memset(tLink, 0, sizeof(DRMS_Link_t));
-	    XASSERT(tLink->info = malloc(sizeof(DRMS_LinkInfo_t)));
+            tLink->info = malloc(sizeof(DRMS_LinkInfo_t));
+            XASSERT(tLink->info);
 	    memset(tLink->info, 0, sizeof(DRMS_LinkInfo_t));
 	    
 	    if (tLink && tLink->info)
@@ -291,7 +293,8 @@ DRMS_RecordSet_t *drms_link_followall(DRMS_Record_t *rec, const char *linkname,
   int i;
   long long *recnums;
 
-  XASSERT(result = malloc(sizeof(DRMS_RecordSet_t)));
+  result = malloc(sizeof(DRMS_RecordSet_t));
+  XASSERT(result);
   if ( (link = hcon_lookup_lower(&rec->links,linkname)) == NULL )
   {
     stat = DRMS_ERROR_UNKNOWNLINK;
@@ -316,7 +319,8 @@ DRMS_RecordSet_t *drms_link_followall(DRMS_Record_t *rec, const char *linkname,
     stat = DRMS_ERROR_BADLINK;
     goto bailout;
   }
-  XASSERT(result->records = malloc(result->n*sizeof(DRMS_Record_t *)));
+  result->records = malloc(result->n*sizeof(DRMS_Record_t *));
+  XASSERT(result->records);
   for (i=0; i<result->n; i++)
   {
     result->records[i] = drms_retrieve_record(rec->env, link->info->target_series,
@@ -391,7 +395,8 @@ static int drms_link_resolveall(DRMS_Link_t *link, int *n, long long **recnums)
   if (link->info->type == STATIC_LINK )
   {
     *n = 1;
-    XASSERT(*recnums = malloc(*n*sizeof(long long)));
+    *recnums = malloc(*n*sizeof(long long));
+    XASSERT(*recnums);
     (*recnums)[0] = link->recnum;
     return 0;
   }
@@ -437,7 +442,8 @@ static int drms_link_resolveall(DRMS_Link_t *link, int *n, long long **recnums)
 
     /* Find the candidate with the highest record number. */
     *n = qres->num_rows;
-    XASSERT(*recnums = malloc(*n*sizeof(long long)));
+    *recnums = malloc(*n*sizeof(long long));
+    XASSERT(*recnums);
     for(i=0; i<(int)qres->num_rows; i++)
     {
       (*recnums)[i] = db_binary_field_getlonglong(qres,i,0);
@@ -545,7 +551,8 @@ int drms_template_links(DRMS_Record_t *template)
       db_binary_field_getstr(qres, i, 0, sizeof(buf), buf);
       link = hcon_allocslot_lower(&template->links, buf);
       memset(link,0,sizeof(DRMS_Link_t));
-      XASSERT(link->info = malloc(sizeof(DRMS_LinkInfo_t)));
+      link->info = malloc(sizeof(DRMS_LinkInfo_t));
+      XASSERT(link->info);
       memset(link->info,0,sizeof(DRMS_LinkInfo_t));
       /* Copy field values from query result. */
       link->record = template;

@@ -10,7 +10,8 @@ DRMS_Array_t *drms_array_create(DRMS_Type_t type, int naxis,
   int i, stat=0;
   DRMS_Array_t *arr;
 
-  XASSERT(arr = malloc(sizeof(DRMS_Array_t)));
+  arr = malloc(sizeof(DRMS_Array_t));
+  XASSERT(arr);
   memset(arr,0,sizeof(DRMS_Array_t));
   if (naxis <= DRMS_MAXRANK)
   {
@@ -33,7 +34,10 @@ DRMS_Array_t *drms_array_create(DRMS_Type_t type, int naxis,
   if (data)
     arr->data = data;
   else
-    XASSERT(arr->data = malloc(drms_array_size(arr)));
+  {
+     arr->data = malloc(drms_array_size(arr));
+     XASSERT(arr->data);
+  }
 
   /* Set offset multiplier. */
   arr->dope[0] = drms_sizeof(arr->type);
@@ -2706,14 +2710,16 @@ int drms_array2string(int n, DRMS_Type_t src_type, double bzero, double bscale,
   
   result = NULL;
   stat = DRMS_SUCCESS;
-  XASSERT(dst = malloc(n*sizeof(char *)));  
+  dst = malloc(n*sizeof(char *));
+  XASSERT(dst);  
   switch(src_type)
   {
   case DRMS_TYPE_CHAR:       
     { char *ssrc = (char *) src;
       for (i=0; i<n; i++, ssrc++, dst++)
       {
-	XASSERT(*dst = malloc(DRMS_ARRAY2STRING_LEN));
+         *dst = malloc(DRMS_ARRAY2STRING_LEN);
+        XASSERT(*dst);
 	if (*ssrc==DRMS_MISSING_CHAR)
 	  **dst=0;
 	else
@@ -2725,7 +2731,8 @@ int drms_array2string(int n, DRMS_Type_t src_type, double bzero, double bscale,
     { short *ssrc = (short *) src;
       for (i=0; i<n; i++, ssrc++, dst++)
       {
-	XASSERT(*dst = malloc(DRMS_ARRAY2STRING_LEN));
+        *dst = malloc(DRMS_ARRAY2STRING_LEN);
+        XASSERT(*dst);
 	if (*ssrc==DRMS_MISSING_SHORT)
 	  **dst=0;
 	else
@@ -2737,7 +2744,8 @@ int drms_array2string(int n, DRMS_Type_t src_type, double bzero, double bscale,
     { int *ssrc = (int *) src;
       for (i=0; i<n; i++, ssrc++, dst++)
       {
-	XASSERT(*dst = malloc(DRMS_ARRAY2STRING_LEN));
+        *dst = malloc(DRMS_ARRAY2STRING_LEN);
+        XASSERT(*dst);
 	if (*ssrc==DRMS_MISSING_INT)
 	  **dst=0;
 	else
@@ -2749,7 +2757,8 @@ int drms_array2string(int n, DRMS_Type_t src_type, double bzero, double bscale,
     { long long *ssrc = (long long *) src;
       for (i=0; i<n; i++, ssrc++, dst++)
       {
-	XASSERT(*dst = malloc(DRMS_ARRAY2STRING_LEN));
+        *dst = malloc(DRMS_ARRAY2STRING_LEN);
+        XASSERT(*dst);
 	if (*ssrc==DRMS_MISSING_LONGLONG)
 	  **dst=0;
 	else
@@ -2761,7 +2770,8 @@ int drms_array2string(int n, DRMS_Type_t src_type, double bzero, double bscale,
     { float *ssrc = (float *) src;
       for (i=0; i<n; i++, ssrc++, dst++)
       {
-	XASSERT(*dst = malloc(DRMS_ARRAY2STRING_LEN));
+        *dst = malloc(DRMS_ARRAY2STRING_LEN);
+        XASSERT(*dst);
 	if (isnan(*ssrc))
 	  **dst=0;
 	else
@@ -2773,7 +2783,8 @@ int drms_array2string(int n, DRMS_Type_t src_type, double bzero, double bscale,
     { double *ssrc = (double *) src;
       for (i=0; i<n; i++, ssrc++, dst++)
       {
-	XASSERT(*dst = malloc(DRMS_ARRAY2STRING_LEN));
+        *dst = malloc(DRMS_ARRAY2STRING_LEN);
+        XASSERT(*dst);
 	if (isnan(*ssrc))
 	  **dst=0;
 	else
@@ -2785,7 +2796,8 @@ int drms_array2string(int n, DRMS_Type_t src_type, double bzero, double bscale,
     { double *ssrc = (double *) src;
       for (i=0; i<n; i++, ssrc++, dst++)
       {
-	XASSERT(*dst = malloc(DRMS_ARRAY2STRING_LEN));
+        *dst = malloc(DRMS_ARRAY2STRING_LEN);
+        XASSERT(*dst);
 	if (*ssrc==DRMS_MISSING_TIME)
 	  **dst=0;
 	else

@@ -90,10 +90,12 @@ int drms_binfile_read (char *filename, int nodata, DRMS_Array_t *rf) {
 						 /*  Calculate size of data  */
   bufsize = drms_sizeof (rf->type);
   for (i = 0; i < rf->naxis; i++) bufsize *= rf->axis[i];
-  XASSERT (rf->data = malloc (bufsize));
+  rf->data = malloc (bufsize);
+  XASSERT (rf->data);
 
   if (rf->type == DRMS_TYPE_STRING) {
-    XASSERT ((rf->strbuf = malloc (rf->buflen)));
+    rf->strbuf = malloc (rf->buflen);
+    XASSERT (rf->strbuf);
     if (!fread (rf->strbuf, rf->buflen, 1, fp)) {
       free (rf->data);
       free (rf->strbuf);
@@ -274,10 +276,12 @@ int drms_zipfile_read (char *filename, int nodata, DRMS_Array_t *rf) {
 						 /*  Calculate size of data  */
   bufsize = drms_sizeof (rf->type);
   for (i = 0;i < rf->naxis; i++) bufsize *= rf->axis[i];
-  XASSERT (rf->data = malloc (bufsize));
+  rf->data = malloc (bufsize);
+  XASSERT (rf->data);
 
   if (rf->type == DRMS_TYPE_STRING) {
-    XASSERT ((rf->strbuf = malloc (rf->buflen)));
+    rf->strbuf = malloc (rf->buflen);
+    XASSERT (rf->strbuf);
     if (gzread (fp, rf->strbuf, rf->buflen) < rf->buflen) {
       free (rf->data);
       free (rf->strbuf);

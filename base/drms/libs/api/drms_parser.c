@@ -71,8 +71,10 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
   DRMS_Record_t *template;
   int keynum = 0;
 
-  XASSERT(template = calloc(1, sizeof(DRMS_Record_t)));
-  XASSERT(template->seriesinfo = calloc(1, sizeof(DRMS_SeriesInfo_t)));
+  template = calloc(1, sizeof(DRMS_Record_t));
+  XASSERT(template);
+  template->seriesinfo = calloc(1, sizeof(DRMS_SeriesInfo_t));
+  XASSERT(template->seriesinfo);
   template->env = env;
   template->init = 1;
   template->recnum = 0;
@@ -334,9 +336,11 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
 
   /* Collect tokens */
   if (GETTOKEN(&q,name,sizeof(name)) <= 0) GOTOFAILURE;
-  XASSERT((seg = hcon_allocslot_lower(&template->segments, name)));
+  seg = hcon_allocslot_lower(&template->segments, name);
+  XASSERT(seg);
   memset(seg,0,sizeof(DRMS_Segment_t));
-  XASSERT(seg->info = malloc(sizeof(DRMS_SegmentInfo_t)));
+  seg->info = malloc(sizeof(DRMS_SegmentInfo_t));
+  XASSERT(seg->info);
   memset(seg->info,0,sizeof(DRMS_SegmentInfo_t));
   seg->record = template;
   /* Name */
@@ -421,7 +425,8 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
        XASSERT(cpkey);
        int chused = 0;
 
-       XASSERT(cpkey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
+       cpkey->info = malloc(sizeof(DRMS_KeywordInfo_t));
+       XASSERT(cpkey->info);
        memset(cpkey->info, 0, sizeof(DRMS_KeywordInfo_t));
        snprintf(cpkey->info->name, DRMS_MAXKEYNAMELEN, "%s", buf);
        cpkey->record = template;
@@ -496,7 +501,8 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
        DRMS_Keyword_t *sckey = calloc(1, sizeof(DRMS_Keyword_t));
        XASSERT(sckey);
 
-       XASSERT(sckey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
+       sckey->info = malloc(sizeof(DRMS_KeywordInfo_t));
+       XASSERT(sckey->info);
        memset(sckey->info, 0, sizeof(DRMS_KeywordInfo_t));
        snprintf(sckey->info->name, DRMS_MAXKEYNAMELEN, "%s", buf);
        sckey->record = template;
@@ -534,7 +540,8 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
        sckey = calloc(1, sizeof(DRMS_Keyword_t));
        XASSERT(sckey);
 
-       XASSERT(sckey->info = malloc(sizeof(DRMS_KeywordInfo_t)));
+       sckey->info = malloc(sizeof(DRMS_KeywordInfo_t));
+       XASSERT(sckey->info);
        memset(sckey->info, 0, sizeof(DRMS_KeywordInfo_t));
        snprintf(sckey->info->name, DRMS_MAXKEYNAMELEN, "%s", buf);
        sckey->record = template;
@@ -642,9 +649,11 @@ static int parse_link(char **in, DRMS_Record_t *template, int linknum)
   if (GETTOKEN(&q,type,sizeof(type)) <= 0) GOTOFAILURE;
   if (getstring(&q,description,sizeof(description))<0) GOTOFAILURE;
   
-  XASSERT((link = hcon_allocslot_lower(&template->links, name)));
+  link = hcon_allocslot_lower(&template->links, name);
+  XASSERT(link);
   memset(link,0,sizeof(DRMS_Link_t));
-  XASSERT(link->info = malloc(sizeof(DRMS_LinkInfo_t)));
+  link->info = malloc(sizeof(DRMS_LinkInfo_t));
+  XASSERT(link->info);
   memset(link->info,0,sizeof(DRMS_LinkInfo_t)); /* ISS */
   link->record = template;
   strcpy(link->info->name, name);
@@ -763,9 +772,11 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
 		  * the group. */
 
 		 /* hcon_allocslot puts the new key in template->keywords */
-		 XASSERT(newkey = hcon_allocslot_lower(&(template->keywords), keyname));
+                 newkey = hcon_allocslot_lower(&(template->keywords), keyname);
+                 XASSERT(newkey);
 		 memset(newkey,0,sizeof(DRMS_Keyword_t));
-		 XASSERT(newkey->info = malloc(sizeof(DRMS_KeywordInfo_t)));    
+                 newkey->info = malloc(sizeof(DRMS_KeywordInfo_t));
+                 XASSERT(newkey->info);    
 		 memset(newkey->info,0,sizeof(DRMS_KeywordInfo_t));
 		 strcpy(newkey->info->name, keyname);
 		 newkey->record = template;
@@ -1116,7 +1127,8 @@ int parse_keywords(char *desc, DRMS_Record_t *template, HContainer_t *cparmkeys,
 	while ((pcpkeyin = (DRMS_Keyword_t **)hiter_getnext(hiter)) != NULL)
 	{
 	   cpkeyin = *pcpkeyin;
-	   XASSERT(cpkey = hcon_allocslot_lower(&template->keywords, cpkeyin->info->name));
+           cpkey = hcon_allocslot_lower(&template->keywords, cpkeyin->info->name);
+           XASSERT(cpkey);
 	   memset(cpkey, 0, sizeof(DRMS_Keyword_t));
 	   drms_copy_keyword_struct(cpkey, cpkeyin);
 	}
@@ -1425,9 +1437,11 @@ static int parse_keyword(char **in,
   /* Populate structure */
   if ( !strcasecmp(type,"link") )
   {
-    XASSERT(key = hcon_allocslot_lower(&template->keywords,name));
+    key = hcon_allocslot_lower(&template->keywords,name);
+    XASSERT(key);
     memset(key,0,sizeof(DRMS_Keyword_t));
-    XASSERT(key->info = malloc(sizeof(DRMS_KeywordInfo_t)));    
+    key->info = malloc(sizeof(DRMS_KeywordInfo_t)); 
+    XASSERT(key->info);   
     memset(key->info,0,sizeof(DRMS_KeywordInfo_t));
     strcpy(key->info->name,name);
     key->record = template;
@@ -1491,9 +1505,11 @@ static int parse_keyword(char **in,
 	// this is an earlier definition
 	free(key->info);
       }
-      XASSERT(key = hcon_allocslot_lower(&template->keywords,name1));
+      key = hcon_allocslot_lower(&template->keywords,name1);
+      XASSERT(key);
       memset(key,0,sizeof(DRMS_Keyword_t));
-      XASSERT(key->info = malloc(sizeof(DRMS_KeywordInfo_t)));
+      key->info = malloc(sizeof(DRMS_KeywordInfo_t));
+      XASSERT(key->info);
       memset(key->info, 0, sizeof(DRMS_KeywordInfo_t));
       strncpy(key->info->name,name1,sizeof(key->info->name));
       if (strlen(name1) >= sizeof(key->info->name))

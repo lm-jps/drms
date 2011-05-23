@@ -44,7 +44,8 @@ DRMS_Env_t *drms_open (const char *host, const char *user, const char *password,
 							     is not defined  */
   DRMS_Env_t *env; 
 
-  XASSERT( env = (DRMS_Env_t *)malloc(sizeof(DRMS_Env_t)) );
+  env = (DRMS_Env_t *)malloc(sizeof(DRMS_Env_t));
+  XASSERT(env);
   memset(env, 0, sizeof(DRMS_Env_t));
 
 #ifdef DRMS_CLIENT
@@ -58,7 +59,8 @@ DRMS_Env_t *drms_open (const char *host, const char *user, const char *password,
   if (drms_cache_init (env)) goto bailout;
 
   /* In client, no drms_server_begin_transaction() to initialize drms_lock. */
-  XASSERT(env->drms_lock = malloc(sizeof(pthread_mutex_t)));
+  env->drms_lock = malloc(sizeof(pthread_mutex_t));
+  XASSERT(env->drms_lock);
   pthread_mutex_init(env->drms_lock, NULL); 
 #else
   drms_server_initsdsem();

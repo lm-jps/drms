@@ -3,7 +3,8 @@ int status = DRMS_SUCCESS;
 int error = 0;
 int compat = 0;
 HContainer_t *matchSegNames = NULL;
-XASSERT((matchSegNames = (HContainer_t *)malloc(sizeof(HContainer_t))) != NULL);
+matchSegNames = (HContainer_t *)malloc(sizeof(HContainer_t));
+XASSERT(matchSegNames != NULL);
 compat = drms_series_checkrecordcompat(drms_env,
                                        series,
                                        prototype,

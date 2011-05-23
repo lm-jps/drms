@@ -34,7 +34,8 @@ void hash_init(Hash_Table_t *h, const unsigned int hashprime,
   h->hashprime = hashprime;
   h->hash = hash;
   h->not_equal = not_equal;
-  XASSERT(h->list = (Table_t *) malloc(hashprime*sizeof(Table_t)));
+  h->list = (Table_t *) malloc(hashprime*sizeof(Table_t));
+  XASSERT(h->list);
   for(i=0; i<hashprime; i++)  
     table_init(initbinsize,&(h->list[i]),not_equal);
 }
@@ -48,7 +49,8 @@ void hash_copy(Hash_Table_t *dst, Hash_Table_t *src)
   dst->hashprime = src->hashprime;
   dst->not_equal = src->not_equal;
   dst->hash = src->hash;
-  XASSERT(dst->list = (Table_t *) malloc(dst->hashprime*sizeof(Table_t)));
+  dst->list = (Table_t *) malloc(dst->hashprime*sizeof(Table_t));
+  XASSERT(dst->list);
   for(i=0; i<dst->hashprime; i++) 
     table_copy(&(dst->list[i]), &(src->list[i]));    
 }

@@ -29,7 +29,8 @@ DB_Text_Result_t *db_recv_text_query(int sockfd, int comp)
 
   if (nrows<=0)
   {
-    XASSERT(result = malloc(sizeof(DB_Text_Result_t)));
+    result = malloc(sizeof(DB_Text_Result_t));
+    XASSERT(result);
     memset(result, 0, sizeof(DB_Text_Result_t));
     result->num_rows = 0;
     result->num_cols = ncols;
@@ -52,11 +53,13 @@ DB_Text_Result_t *db_recv_text_query(int sockfd, int comp)
 	Readn(sockfd, &tmp, sizeof(int)); /* Size of uncompressed message. */
 	buflen = (unsigned long) ntohl(tmp);
 	/*      printf("Received buflen = %lu\n",buflen); */
-	XASSERT( zbuf = malloc(zlen) ); /* Allocate buffer for compressed data. */
+        zbuf = malloc(zlen); /* Allocate buffer for compressed data. */
+        XASSERT(zbuf);
 	Readn(sockfd, zbuf, zlen);      /* receive compressed message */
 	
 	/* Uncompress */
-	XASSERT( buffer = malloc(buflen) ); /* Allocate buffer for uncompressed data. */
+        buffer = malloc(buflen); /* Allocate buffer for uncompressed data. */
+	XASSERT(buffer);
 	*((int *)buffer) = htonl((int)buflen);
 	if (uncompress ((unsigned char*)buffer+sizeof(int), &buflen,
 	    (unsigned char *)zbuf, zlen) != Z_OK) {
@@ -87,7 +90,8 @@ DB_Text_Result_t *db_recv_text_query(int sockfd, int comp)
       buflen = ntohl(tmp);
       if (buflen>0)
       {
-	XASSERT( buffer = malloc(buflen) );
+        buffer = malloc(buflen);
+        XASSERT(buffer);
 	*((int *)buffer) = htonl(buflen);
 	/* receive bulk of message */
 	Readn(sockfd, buffer+sizeof(int), buflen-sizeof(int));
@@ -108,7 +112,8 @@ DB_Text_Result_t *db_unpack_text(char *buf)
   int buflen;
   unsigned int i,j;
 
-  XASSERT( result = malloc(sizeof(DB_Text_Result_t)) );  
+  result = malloc(sizeof(DB_Text_Result_t));
+  XASSERT(result);
   result->buffer = buf;
 
   /* First decode the integer fields at the beginning of the packet. */
@@ -121,7 +126,8 @@ DB_Text_Result_t *db_unpack_text(char *buf)
   p += sizeof(int);
 
   /* Unpack column widths. */
-  XASSERT( result->column_width = (int *)malloc(result->num_cols*sizeof(int)) );
+  result->column_width = (int *)malloc(result->num_cols*sizeof(int));
+  XASSERT(result->column_width);
   for (i=0; i<result->num_cols; i++)
   {
     result->column_width[i] = ntohl(*((int *) p));
@@ -129,7 +135,8 @@ DB_Text_Result_t *db_unpack_text(char *buf)
   }
 
   /* Unpack column names. */
-  XASSERT( result->column_name = (char **)malloc(result->num_cols*sizeof(char *)) );
+  result->column_name = (char **)malloc(result->num_cols*sizeof(char *));
+  XASSERT(result->column_name);
   result->column_name[0] = p;
   for (i=1; i<result->num_cols; i++)
   {
@@ -139,8 +146,8 @@ DB_Text_Result_t *db_unpack_text(char *buf)
   while(*p++);
 
   /* Set up data structure for the actual contents. */
-  XASSERT( result->field =  (char ***) malloc(result->num_rows*sizeof(char **) +
-	       result->num_rows*result->num_cols*sizeof(char *)) );
+  result->field =  (char ***) malloc(result->num_rows*sizeof(char **) + result->num_rows*result->num_cols*sizeof(char *));
+  XASSERT(result->field);
   for (i=0; i<result->num_rows; i++)
     result->field[i] = (char **) &result->field[result->num_rows + 
 						i*result->num_cols];
@@ -162,7 +169,8 @@ DB_Binary_Result_t *db_recv_binary_query(int sockfd, int comp)
   DB_Column_t *col;
   DB_Binary_Result_t *result;
 
-  XASSERT( result = malloc(sizeof(DB_Binary_Result_t)) );
+  result = malloc(sizeof(DB_Binary_Result_t));
+  XASSERT(result);
   nrows = Readint(sockfd);
   //    size+=4;
   if (nrows == -1)
@@ -171,7 +179,8 @@ DB_Binary_Result_t *db_recv_binary_query(int sockfd, int comp)
     result->num_rows = (unsigned int) nrows;
   result->num_cols = (unsigned int) Readint(sockfd);
   //    size+=4;
-  XASSERT( result->column = malloc(result->num_cols*sizeof(DB_Column_t)) );
+  result->column = malloc(result->num_cols*sizeof(DB_Column_t));
+  XASSERT(result->column);
   for (i=0; i<result->num_cols; i++)
   {
     col = &result->column[i];
@@ -186,14 +195,16 @@ DB_Binary_Result_t *db_recv_binary_query(int sockfd, int comp)
     col->size = Readint(sockfd);
     //size+=4;
     /* Column data. */
-    XASSERT( col->data = malloc(result->num_rows*col->size) );
+    col->data = malloc(result->num_rows*col->size);
+    XASSERT(col->data);
     Readn(sockfd, col->data, result->num_rows*col->size);
     //size += result->num_rows*col->size;
     db_ntoh(col->type, result->num_rows, col->data);
     /* Anynull - if FALSE then the null indicator array is not sent. */
     anynull = Readint(sockfd);
     /* Null indicator array. */
-    XASSERT( col->is_null = malloc(result->num_rows*sizeof(short)) );
+    col->is_null = malloc(result->num_rows*sizeof(short));
+    XASSERT(col->is_null);
     if (anynull)
     {
       Readn(sockfd, col->is_null, result->num_rows*sizeof(short));
@@ -260,8 +271,10 @@ DB_Binary_Result_t *db_client_query_bin_array(int sockfd, char *query,
   int i,vc,tc;  
   int *tmp;
   struct iovec *vec;
-  XASSERT(vec = malloc((4+3*n_args)*sizeof(struct iovec)));
-  XASSERT(tmp = malloc((4+3*n_args)*sizeof(int)));
+  vec = malloc((4+3*n_args)*sizeof(struct iovec));
+  XASSERT(vec);
+  tmp = malloc((4+3*n_args)*sizeof(int));
+  XASSERT(tmp);
   
   /* Send query string and argiments to server. */
   /* pack query string. */
@@ -354,8 +367,10 @@ int db_client_dms_array(int sockfd,  int *row_count, char *query,
   struct iovec *vec;
 
   tc = 0; vc = 0;
-  XASSERT( len = malloc(n_rows*sizeof(int)) );
-  XASSERT(vec = malloc((4+n_args*3)*sizeof(struct iovec)));
+  len = malloc(n_rows*sizeof(int));
+  XASSERT(len);
+  vec = malloc((4+n_args*3)*sizeof(struct iovec));
+  XASSERT(vec);
   vec[1].iov_len = strlen(query);
   vec[1].iov_base = query;
   tmp[tc] = ntohl(vec[1].iov_len);
@@ -402,7 +417,8 @@ int db_client_dms_array(int sockfd,  int *row_count, char *query,
       ++tc; ++vc;
 
       /* Collect strings in a buffer to send them as a single packet. */
-      XASSERT( buffer[i] = malloc(sum) );
+      buffer[i] = malloc(sum);
+      XASSERT(buffer[i]);
       p = buffer[i];
       for (j=0; j<n_rows; j++)	
       {
@@ -457,8 +473,10 @@ int db_client_bulk_insert_array(int sockfd, char *table,
   struct iovec *vec;
 
   tc = 0; vc = 0;
-  XASSERT( len = malloc(n_rows*sizeof(int)) );
-  XASSERT(vec = malloc((4+n_args*3)*sizeof(struct iovec)));
+  len = malloc(n_rows*sizeof(int));
+  XASSERT(len);
+  vec = malloc((4+n_args*3)*sizeof(struct iovec));
+  XASSERT(vec);
   vec[1].iov_len = strlen(table);
   vec[1].iov_base = table;
   tmp[tc] = ntohl(vec[1].iov_len);
@@ -505,7 +523,8 @@ int db_client_bulk_insert_array(int sockfd, char *table,
       ++tc; ++vc;
 
       /* Collect strings in a buffer to send them as a single packet. */
-      XASSERT( buffer[i] = malloc(sum) );
+      buffer[i] = malloc(sum);
+      XASSERT(buffer[i]);
       p = buffer[i];
       for (j=0; j<n_rows; j++)	
       {
@@ -584,7 +603,8 @@ long long *db_client_sequence_getnext_n(int sockfd,  char *table, int n)
   status = Readint(sockfd);
   if (status==0)
   {
-    XASSERT(seqnums = malloc(n*sizeof(long long)));
+    seqnums = malloc(n*sizeof(long long));
+    XASSERT(seqnums);
     for (i=0; i<n; i++)
       seqnums[i] = (long long)Readlonglong(sockfd);
     return seqnums;

@@ -53,7 +53,8 @@ int main()
 	for (i0=0; i0<N4; i0++)
 	  x[i3][i2][i1][i0] = i0 + 10*i1 + 100*i2 + 1000*i3;
   printf("time spent generating data = %f\n",StopTimer(1));
-  XASSERT(y = malloc(N*sizeof(int)));
+  y = malloc(N*sizeof(int));
+  XASSERT(y);
   memset(y, 0, N*sizeof(int));
   StartTimer(1);
   ndim_unpack(sizeof(int), 4, dims, start, end, 

@@ -962,7 +962,8 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
 
   /* save original cmd-line */
   int iarg = 0;
-  XASSERT(parms->argv = malloc(sizeof(char *) * argc));
+  parms->argv = malloc(sizeof(char *) * argc);
+  XASSERT(parms->argv);
   memset(parms->argv, 0, sizeof(char *) * argc);
   while (iarg < argc)
   {
@@ -1153,9 +1154,11 @@ int cmdparams_parsefile (CmdParams_t *parms, char *filename, int depth) {
     return -1;
   } else {
     if ((fp = fopen (filename, "r"))) {
-      XASSERT((linebuf = malloc (2*CMDPARAMS_MAXLINE)));
+      linebuf = malloc (2*CMDPARAMS_MAXLINE);
+      XASSERT(linebuf);
       memset (linebuf, 0,2*CMDPARAMS_MAXLINE);
-      XASSERT((argv = malloc (2*CMDPARAMS_MAXLINE*sizeof (char *))));
+      argv = malloc (2*CMDPARAMS_MAXLINE*sizeof (char *));
+      XASSERT(argv);
       while ((p = fgets(linebuf, CMDPARAMS_MAXLINE, fp))) {
 	if (linebuf[0] != '#' && linebuf[0] != 0 && linebuf[0] != '\n') {
 	  argc = 0;

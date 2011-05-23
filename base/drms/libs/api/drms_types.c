@@ -103,7 +103,8 @@ int drms_copy_db2drms(DRMS_Type_t drms_type, DRMS_Type_Value_t *drms_dst,
     else
     {
       len = db_binary_default_width(db_type);
-      XASSERT(drms_dst->string_val = malloc(len));      
+      drms_dst->string_val = malloc(len);
+      XASSERT(drms_dst->string_val);  
       dbtype2str(db_type,db_src,len,drms_dst->string_val);    
     }
     break;
@@ -2269,7 +2270,8 @@ char *drms2string(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
   }
   else
   {
-    XASSERT(result = malloc(30));
+    result = malloc(30);
+    XASSERT(result);
     memset(result,0,30);
     switch(type)
     {

@@ -740,7 +740,8 @@ int main (int argc, char *argv[]) {
            env->clientcounter++;
            drms_unlock_server (env);
 
-           XASSERT(tinfo = malloc (sizeof (DRMS_ThreadInfo_t)));
+           tinfo = malloc (sizeof (DRMS_ThreadInfo_t));
+           XASSERT(tinfo);
            tinfo->env       = env;
            tinfo->threadnum = threadcounter;
            tinfo->sockfd    = clientsockfd;      

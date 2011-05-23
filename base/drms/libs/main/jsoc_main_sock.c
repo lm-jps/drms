@@ -470,8 +470,10 @@ pid_t drms_start_server (int verbose, int dolog)  {
 
     const int bufsz = 1024;
     char *server_info = 0, *line = 0;
-    XASSERT(server_info = malloc(bufsz));
-    XASSERT(line = malloc(bufsz));
+    server_info = malloc(bufsz);
+    XASSERT(server_info);
+    line = malloc(bufsz);
+    XASSERT(line);
     server_info[0] = '\0';
     int  n;    
     fd_set readfd;

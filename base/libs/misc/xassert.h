@@ -34,7 +34,7 @@
                               exit(1);		\
                             } } while(0)
 #else
-#define assert_or_hang(val) val
+#define assert_or_hang(val)
 #endif
 
 #define XASSERT(code) assert_or_hang((code))

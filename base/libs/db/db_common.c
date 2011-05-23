@@ -86,7 +86,8 @@ static void print_separator(int width);
 char *db_stringtype_maxlen(int maxlen)
 {
   char *str;
-  XASSERT( str = malloc(20));
+  str = malloc(20);
+  XASSERT(str);
   sprintf(str,"varchar(%d)",maxlen);
   return str;
 }
@@ -553,7 +554,8 @@ char *search_replace(const char *string, const char *search,
   len = strlen(string);
   ls = strlen(search);
   lr = strlen(replace);
-  XASSERT( outq = malloc((lr/ls+1)*len) );
+  outq = malloc((lr/ls+1)*len);
+  XASSERT(outq);
   output = outq;
   prev = (char *)string;
   while( (prev < string+len) && (next = strstr(prev, search)))
@@ -849,11 +851,14 @@ DB_Text_Result_t *db_binary_to_text(DB_Binary_Result_t *binres)
     return NULL; 
 
   /* Set up datastructure. */
-  XASSERT( result = (DB_Text_Result_t *)malloc(sizeof(DB_Text_Result_t)) );
+  result = (DB_Text_Result_t *)malloc(sizeof(DB_Text_Result_t));
+  XASSERT(result);
   result->num_rows = binres->num_rows;
   result->num_cols = binres->num_cols;
-  XASSERT( result->column_name = (char **)malloc(result->num_cols*sizeof(char *)) );
-  XASSERT( result->column_width = (int *)malloc(result->num_cols*sizeof(int)) );
+  result->column_name = (char **)malloc(result->num_cols*sizeof(char *));
+  XASSERT(result->column_name);
+  result->column_width = (int *)malloc(result->num_cols*sizeof(int));
+  XASSERT(result->column_width);
   total_width = 0;
   colname_length = 0;
   
@@ -897,7 +902,8 @@ DB_Text_Result_t *db_binary_to_text(DB_Binary_Result_t *binres)
 #ifdef DEBUG
   printf("buflen = %d\n",buflen);
 #endif
-  XASSERT( result->buffer = malloc(buflen) );
+  result->buffer = malloc(buflen);
+  XASSERT(result->buffer);
   p = result->buffer;
   
   /* Pack size info into the buffer. */
@@ -928,9 +934,8 @@ DB_Text_Result_t *db_binary_to_text(DB_Binary_Result_t *binres)
   }
   
   /* Set up data structure for the actual contents. */
-  XASSERT( result->field =  (char ***) 
-	   malloc(result->num_rows*sizeof(char **) +
-		  result->num_rows*result->num_cols*sizeof(char *)) );
+  result->field =  (char ***) malloc(result->num_rows*sizeof(char **) + result->num_rows*result->num_cols*sizeof(char *));
+  XASSERT(result->field);
   for (i=0; i<result->num_rows; i++)
     result->field[i] = (char **) &result->field[result->num_rows + 
 						i*result->num_cols];

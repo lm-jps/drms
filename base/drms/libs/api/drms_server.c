@@ -150,11 +150,13 @@ int drms_server_begin_transaction(DRMS_Env_t *env) {
 
      /* global locks */
      /* to lock anything in env */
-     XASSERT( env->drms_lock = malloc(sizeof(pthread_mutex_t)) );
+     env->drms_lock = malloc(sizeof(pthread_mutex_t));
+     XASSERT(env->drms_lock);
      pthread_mutex_init (env->drms_lock, NULL); 
 
      /* to serialize server threads (drms_server clients) access to drms_server's DRMS library */
-     XASSERT(env->clientlock = malloc(sizeof(pthread_mutex_t)) );
+     env->clientlock = malloc(sizeof(pthread_mutex_t));
+     XASSERT(env->clientlock);
      pthread_mutex_init(env->clientlock, NULL);
 
      drms_lock_server(env);
@@ -415,7 +417,8 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
 
     /* Commit log storage unit to SUMS. */
     memset(&su,0,sizeof(su));
-    XASSERT(su.seriesinfo = malloc(sizeof(DRMS_SeriesInfo_t)));
+    su.seriesinfo = malloc(sizeof(DRMS_SeriesInfo_t));
+    XASSERT(su.seriesinfo);
     strcpy(su.seriesinfo->seriesname,DRMS_LOG_DSNAME);
     su.seriesinfo->tapegroup = DRMS_LOG_TAPEGROUP;
     su.seriesinfo->archive = archive_log;
@@ -489,7 +492,8 @@ void drms_server_abort(DRMS_Env_t *env, int final)
     // a server thread might be waiting for reply on sum_outbox, tell
     // it we are aborting.
      DRMS_SumRequest_t *request;
-     XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+     request = malloc(sizeof(DRMS_SumRequest_t));
+     XASSERT(request);
 
     if (env->sum_tag) 
     {
@@ -497,7 +501,8 @@ void drms_server_abort(DRMS_Env_t *env, int final)
        /* This code simply tells the thread that made an unprocessed
         * SUMS request that there was an error (abort is happening). */
       DRMS_SumRequest_t *reply;
-      XASSERT(reply = malloc(sizeof(DRMS_SumRequest_t)));      
+      reply = malloc(sizeof(DRMS_SumRequest_t));
+      XASSERT(reply);     
       reply->opcode = DRMS_ERROR_ABORT;
       tqueueAdd(env->sum_outbox, env->sum_tag, (char *)reply);
       request->opcode = DRMS_SUMABORT;
@@ -602,7 +607,8 @@ void drms_server_commit(DRMS_Env_t *env, int final)
   if (env->sum_thread) {
     /* Tell SUM thread to finish up. */
     DRMS_SumRequest_t *request;
-    XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+    request = malloc(sizeof(DRMS_SumRequest_t));
+    XASSERT(request);
     request->opcode = DRMS_SUMCLOSE;
     tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
     /* Wait for SUM service thread to finish. */
@@ -1043,9 +1049,12 @@ int drms_server_newslots(DRMS_Env_t *env, int sockfd)
     /* ART - Add gotosums flag */
     gotosums = Readint(sockfd);
   
-    XASSERT(su = malloc(n*sizeof(DRMS_StorageUnit_t *)));
-    XASSERT(slotnum = malloc(n*sizeof(int)));
-    XASSERT(recnum = malloc(n*sizeof(long long)));
+    su = malloc(n*sizeof(DRMS_StorageUnit_t *));
+    XASSERT(su);
+    slotnum = malloc(n*sizeof(int));
+    XASSERT(slotnum);
+    recnum = malloc(n*sizeof(long long));
+    XASSERT(recnum);
     for (i=0; i<n; i++)
       recnum[i] = Readlonglong(sockfd);  
       
@@ -1069,10 +1078,12 @@ int drms_server_newslots(DRMS_Env_t *env, int sockfd)
       long long *ltmp, *lt;
       struct iovec *vec, *v;
       
-
-      XASSERT(tmp = malloc((2*n+1)*sizeof(int)));
-      XASSERT(ltmp = malloc((n+1)*sizeof(long long)));
-      XASSERT(vec = malloc((4*n+1)*sizeof(struct iovec)));
+      tmp = malloc((2*n+1)*sizeof(int));
+      XASSERT(tmp);
+      ltmp = malloc((n+1)*sizeof(long long));
+      XASSERT(ltmp);
+      vec = malloc((4*n+1)*sizeof(struct iovec));
+      XASSERT(vec);
       t=tmp; v=vec; lt=ltmp;
       net_packint(status, t++, v++);
       for (i=0; i<n; i++)
@@ -1177,8 +1188,10 @@ int drms_server_getunits(DRMS_Env_t *env, int sockfd)
       int *len;
       struct iovec *vec;
 
-      XASSERT(len = malloc(n*sizeof(int)));
-      XASSERT(vec = malloc(2*n*sizeof(struct iovec)));
+      len = malloc(n*sizeof(int));
+      XASSERT(len);
+      vec = malloc(2*n*sizeof(struct iovec));
+      XASSERT(vec);
       for (int i = 0; i < n; i++) {
 	HContainer_t *scon = NULL;
 	su = drms_su_lookup(env, suandseries[i].series, suandseries[i].sunum, &scon);
@@ -1426,11 +1439,13 @@ void drms_server_transient_records(DRMS_Env_t *env, char *series, int n, long lo
 
   if (!env->templist)
     {
-      XASSERT(env->templist = ds = malloc(sizeof(DS_node_t)));
+      env->templist = ds = malloc(sizeof(DS_node_t));
+      XASSERT(env->templist);
       ds->series = strdup(series);
       ds->nmax = 512;
       ds->n = 0;
-      XASSERT(ds->recnums = malloc(ds->nmax*sizeof(long long)));
+      ds->recnums = malloc(ds->nmax*sizeof(long long));
+      XASSERT(ds->recnums);
       ds->next = NULL;
     }
   else
@@ -1444,12 +1459,14 @@ void drms_server_transient_records(DRMS_Env_t *env, char *series, int n, long lo
 	    {
 	      if (!ds->next)
 		{
-		  XASSERT(ds->next = malloc(sizeof(DS_node_t)));
+                  ds->next = malloc(sizeof(DS_node_t));
+                  XASSERT(ds->next);
 		  ds = ds->next;
 		  ds->series = strdup(series);
 		  ds->nmax = 512;
 		  ds->n = 0;
-		  XASSERT(ds->recnums = malloc(ds->nmax*sizeof(long long)));
+                  ds->recnums = malloc(ds->nmax*sizeof(long long));
+                  XASSERT(ds->recnums);
 		  ds->next = NULL;
 		  break;
 		}
@@ -1460,8 +1477,8 @@ void drms_server_transient_records(DRMS_Env_t *env, char *series, int n, long lo
   if ( ds->n+n >= ds->nmax )
     {
       ds->nmax *= 2;
-      XASSERT(ds->recnums = realloc(ds->recnums, 
-				    ds->nmax*sizeof(long long)));
+      ds->recnums = realloc(ds->recnums, ds->nmax*sizeof(long long));
+      XASSERT(ds->recnums);
     }
   for (int i=0; i<n; i++)
     ds->recnums[(ds->n)++] = recnums[i];
@@ -1623,7 +1640,8 @@ int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn, DRMS_Array_t *arr
                  DRMS_SumRequest_t *putreq = NULL;
                  DRMS_SumRequest_t *putrep = NULL;
 
-                 XASSERT(putreq = malloc(sizeof(DRMS_SumRequest_t)));
+                 putreq = malloc(sizeof(DRMS_SumRequest_t));
+                 XASSERT(putreq);
                  memset(putreq, 0, sizeof(DRMS_SumRequest_t));
                  putreq->opcode = DRMS_SUMPUT;
                  putreq->dontwait = 0;
@@ -1664,7 +1682,8 @@ int drms_server_dropseries_su(DRMS_Env_t *env, const char *tn, DRMS_Array_t *arr
                     DRMS_SumRequest_t *request = NULL;
                     DRMS_SumRequest_t *reply = NULL;
 
-                    XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+                    request = malloc(sizeof(DRMS_SumRequest_t));
+                    XASSERT(request);
                     memset(request, 0, sizeof(DRMS_SumRequest_t));
 
                     snprintf(sunumstr, sizeof(sunumstr), "%lld", sunum);
@@ -1787,7 +1806,8 @@ void drms_delete_temporaries(DRMS_Env_t *env)
   {
     if (ds->n>0)
     {
-      XASSERT(command = malloc(strlen(ds->series) + 40 + 21*ds->n));
+      command = malloc(strlen(ds->series) + 40 + 21*ds->n);
+      XASSERT(command);
       p = command;
       p += sprintf(p, "delete from %s where recnum in (",ds->series);
       for (i=0; i<ds->n-1; i++)
@@ -1858,7 +1878,8 @@ void *drms_sums_thread(void *arg)
   
   if (!gSUMSbusyMtx)
   {
-     XASSERT(gSUMSbusyMtx = malloc(sizeof(pthread_mutex_t)));
+     gSUMSbusyMtx = malloc(sizeof(pthread_mutex_t));
+     XASSERT(gSUMSbusyMtx);
      pthread_mutex_init(gSUMSbusyMtx, NULL); 
   }
 
@@ -1984,7 +2005,8 @@ void *drms_sums_thread(void *arg)
        else
        {
           /* Send a reply to the client saying that SUM_open() failed. */
-          XASSERT(reply = malloc(sizeof(DRMS_SumRequest_t)));
+          reply = malloc(sizeof(DRMS_SumRequest_t));
+          XASSERT(reply);
           reply->opcode = DRMS_ERROR_SUMOPEN;
        }
 
@@ -2076,7 +2098,8 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
      return NULL;
   }
 
-  XASSERT(reply = malloc(sizeof(DRMS_SumRequest_t)));
+  reply = malloc(sizeof(DRMS_SumRequest_t));
+  XASSERT(reply);
   switch(request->opcode)
   {
   case DRMS_SUMALLOC:

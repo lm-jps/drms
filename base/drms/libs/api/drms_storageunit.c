@@ -108,7 +108,8 @@ long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir, int *tapeg
 {
   int stat;
   DRMS_SumRequest_t *request, *reply;
-  XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+  request = malloc(sizeof(DRMS_SumRequest_t));
+  XASSERT(request);
   long long sunum;
 
   //  printf("************** HERE I AM *******************\n");
@@ -192,7 +193,8 @@ int drms_su_alloc2(DRMS_Env_t *env,
    int stat;
    DRMS_SumRequest_t *request = NULL;
    DRMS_SumRequest_t *reply = NULL;
-   XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+   request = malloc(sizeof(DRMS_SumRequest_t));
+   XASSERT(request);
 
    request->opcode = DRMS_SUMALLOC2;
    request->dontwait = 0;
@@ -380,9 +382,11 @@ static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series,
       su[i]->mode = DRMS_READWRITE;
       su[i]->seriesinfo = template->seriesinfo;
       su[i]->nfree = su[i]->seriesinfo->unitsize;
-      XASSERT(su[i]->state = malloc(su[i]->nfree));
+      su[i]->state = malloc(su[i]->nfree);
+      XASSERT(su[i]->state);
       memset(su[i]->state, DRMS_SLOT_FREE, su[i]->nfree);
-      XASSERT(su[i]->recnum = malloc(su[i]->nfree*sizeof(long long)));
+      su[i]->recnum = malloc(su[i]->nfree*sizeof(long long));
+      XASSERT(su[i]->recnum);
       memset(su[i]->recnum, 0, su[i]->nfree*sizeof(long long));
       su[i]->refcount = 0;
       /* This is a fresh storage unit. Assign slot 0 to the caller. */
@@ -486,7 +490,8 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
   {
      tryagain = 0;
 
-     XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+     request = malloc(sizeof(DRMS_SumRequest_t));
+     XASSERT(request);
      request->opcode = DRMS_SUMGET;
      request->reqcnt = 1;
      request->sunum[0] = su->sunum;
@@ -709,7 +714,8 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
      while (start < workingn)
      {
         /* create SUMS request (apparently, SUMS frees this request) */
-        XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+        request = malloc(sizeof(DRMS_SumRequest_t));
+        XASSERT(request);
 
         request->opcode = DRMS_SUMGET;
         request->reqcnt = end - start;
@@ -1101,7 +1107,8 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
    {
       if (nReqs == 0)
       {
-         XASSERT(request = (DRMS_SumRequest_t *)malloc(sizeof(DRMS_SumRequest_t)));
+         request = (DRMS_SumRequest_t *)malloc(sizeof(DRMS_SumRequest_t));
+         XASSERT(request);
          request->opcode = DRMS_SUMINFO;
          request->dontwait = 0;
       }
@@ -1260,7 +1267,8 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
         fclose(fp);
      }
 
-     XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+     request = malloc(sizeof(DRMS_SumRequest_t));
+     XASSERT(request);
      request->opcode = DRMS_SUMPUT;
      request->dontwait = 0;
      request->reqcnt = 1;
@@ -1347,7 +1355,8 @@ static int CommitUnits(DRMS_Env_t *env,
          actualarchive = seriesArch;
       }
 
-      XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+      request = malloc(sizeof(DRMS_SumRequest_t));
+      XASSERT(request);
       nsus = 0;
       list_llreset(ll);
       while ((node = list_llnext(ll)) != NULL)
@@ -1864,7 +1873,8 @@ int drms_su_commitsu(DRMS_Env_t *env,
            actualarchive = seriesinfo->archive;
         }   
 
-        XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+        request = malloc(sizeof(DRMS_SumRequest_t));
+        XASSERT(request);
         request->opcode = DRMS_SUMPUT;
         request->dontwait = 0;
         request->reqcnt = 1;
@@ -1939,7 +1949,8 @@ int drms_su_sumexport(DRMS_Env_t *env, SUMEXP_t *sumexpt)
    DRMS_SumRequest_t *request = NULL;
    DRMS_SumRequest_t *reply = NULL;
 
-   XASSERT(request = malloc(sizeof(DRMS_SumRequest_t)));
+   request = malloc(sizeof(DRMS_SumRequest_t));
+   XASSERT(request);
    memset(request, 0, sizeof(DRMS_SumRequest_t));
 
    /* Only 2 fields matter - opcode and comment. The latter is used to hold 

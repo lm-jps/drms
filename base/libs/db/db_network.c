@@ -94,7 +94,8 @@ char *receive_string(int fd)
   len = Readint(fd);
   if (len<0)
     return NULL;
-  XASSERT( str = malloc(len+1) );
+  str = malloc(len+1);
+  XASSERT(str);
   Readn(fd, str, len);
   str[len] = '\0';
   return str;
@@ -337,7 +338,8 @@ void *Read_dbtype(DB_Type_t *type, int fd)
   else
   {
     size = db_sizeof(*type);
-    XASSERT(value = malloc(size));
+    value = malloc(size);
+    XASSERT(value);
     Readn(fd, value, size);
     db_byteswap(*type, 1, value);        
   }

@@ -44,7 +44,8 @@ RecordSet_t *parse_record_set(DRMS_Env_t *env, char **in)
   syntax_error = 0;  /* So far so good... */
   recnum_filter = 0;
 
-  XASSERT(rs = malloc(sizeof(RecordSet_t)));
+  rs = malloc(sizeof(RecordSet_t));
+  XASSERT(rs);
   memset(rs,0,sizeof(RecordSet_t));
   /* Remove leading whitespace. */
   SKIPWS(p);
@@ -172,13 +173,15 @@ static RecordSet_Filter_t *parse_record_set_filter(DRMS_Record_t *template,
     }
     if (rsp)
     {
-      XASSERT(rsp->next = malloc(sizeof(RecordSet_Filter_t)));
+      rsp->next = malloc(sizeof(RecordSet_Filter_t));
+      XASSERT(rsp->next);
       rsp = rsp->next;
       memset(rsp,0,sizeof(RecordSet_Filter_t));
     }
     else
     {
-      XASSERT(rsp = malloc(sizeof(RecordSet_Filter_t)));
+      rsp = malloc(sizeof(RecordSet_Filter_t));
+      XASSERT(rsp);
       head = rsp;
       memset(rsp,0,sizeof(RecordSet_Filter_t));
     }
@@ -249,7 +252,8 @@ static RecordQuery_t *parse_record_query(char **in)
      char *equote = NULL;
 
     p++;
-    XASSERT(query = malloc(sizeof(RecordQuery_t)));
+    query = malloc(sizeof(RecordQuery_t));
+    XASSERT(query);
     memset(query,0,sizeof(RecordQuery_t));
     out = query->where;
     len = 0;
@@ -391,7 +395,8 @@ static RecordList_t *parse_record_list(DRMS_Record_t *template, char **in) {
   printf ("enter parse_record_list\n");
 #endif
 
-  XASSERT(rl = malloc(sizeof(RecordList_t)));
+  rl = malloc(sizeof(RecordList_t));
+  XASSERT(rl);
   if (*p==':') {
     recnum_filter = 1; 
     ++p;
@@ -540,7 +545,8 @@ static PrimekeyRangeSet_t *parse_primekey_set(DRMS_Keyword_t *keyword,
   printf("enter parse_primekey_set\n");
 #endif
 
-  XASSERT(pks = malloc(sizeof( PrimekeyRangeSet_t)));
+  pks = malloc(sizeof( PrimekeyRangeSet_t));
+  XASSERT(pks);
   pks->keyword = keyword;
   if (*p=='#')
   {    
@@ -642,12 +648,14 @@ static IndexRangeSet_t *parse_index_set(char **in)
   do {
     if (ir)
     {
-      XASSERT(ir->next = malloc(sizeof( IndexRangeSet_t)));
+      ir->next = malloc(sizeof( IndexRangeSet_t));
+      XASSERT(ir->next);
       ir = ir->next;
       memset(ir,0,sizeof( IndexRangeSet_t));
     }
     else {
-      XASSERT(ir = malloc(sizeof( IndexRangeSet_t)));
+      ir = malloc(sizeof( IndexRangeSet_t));
+      XASSERT(ir);
       head = ir;
       memset(ir,0,sizeof( IndexRangeSet_t));
     }
@@ -948,12 +956,14 @@ static ValueRangeSet_t *parse_value_set(DRMS_Keyword_t *keyword,
 
     if (vr)
     {
-      XASSERT(vr->next = malloc(sizeof( ValueRangeSet_t)));
+      vr->next = malloc(sizeof( ValueRangeSet_t));
+      XASSERT(vr->next);
       vr = vr->next;
       memset(vr,0,sizeof( ValueRangeSet_t));
     }
     else {
-      XASSERT(vr = malloc(sizeof( ValueRangeSet_t)));
+      vr = malloc(sizeof( ValueRangeSet_t));
+      XASSERT(vr);
       head = vr;
       memset(vr,0,sizeof( ValueRangeSet_t));
     }
@@ -2227,7 +2237,8 @@ int drms_recordset_query(DRMS_Env_t *env, const char *recordsetname,
         filt = filt->next;
      }
 
-    XASSERT(*query = malloc(DRMS_MAXQUERYLEN));
+    *query = malloc(DRMS_MAXQUERYLEN);
+    XASSERT(*query);
     *seriesname = strdup(rs->seriesname);
     *filter = !recnum_filter;
 

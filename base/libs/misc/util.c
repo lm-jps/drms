@@ -295,12 +295,14 @@ int copyfile(const char *inputfile, const char *outputfile)
     align = align > stat.f_bsize ? align : stat.f_bsize;
   }
 
-  XASSERT((bufferorig = malloc(BUFSIZE+align)));
+  bufferorig = malloc(BUFSIZE+align);
+  XASSERT(bufferorig);
   buffer = bufferorig;
   buffer = buffer + (align - ((unsigned long)buffer % align));
   
 #else
-  XASSERT((buffer = malloc(BUFSIZE)));
+  buffer = malloc(BUFSIZE);
+  XASSERT(buffer);
 #endif
 
 

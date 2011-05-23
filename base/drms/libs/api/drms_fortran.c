@@ -230,7 +230,8 @@ void convert_C2F_string_array(Fort_Alloc_t *f_alloc, char ** c_arr, int no_of_ro
   char *alloc_arr = (char *) NULL;
   int i;
   // convert the C char two dimensional array  to a Fortran 1 dimensional one
-  XASSERT(alloc_arr = malloc(no_of_rows*row_len));
+  alloc_arr = malloc(no_of_rows*row_len);
+  XASSERT(alloc_arr);
 
   for (i=0; i< no_of_rows; i++) {
     strncpy(alloc_arr + row_len*i, c_arr[i], row_len);
@@ -256,10 +257,12 @@ void convert_F2C_string_array(Fort_Alloc_t *f_alloc, char *** c_arr, int no_of_r
   alloc_arr = f_alloc->m_pBase;
 
   // convert the C char two dimensional array  to a Fortran 1 dimensional one
-  XASSERT(_c_arr = malloc(no_of_rows*sizeof(char *)));
+  _c_arr = malloc(no_of_rows*sizeof(char *));
+  XASSERT(_c_arr);
 
   for (i=0; i< no_of_rows; i++) {
-    XASSERT(_c_arr[i] = malloc(row_len*sizeof(char)));
+    _c_arr[i] = malloc(row_len*sizeof(char));
+    XASSERT(_c_arr[i]);
     strncpy(_c_arr[i], alloc_arr + row_len*i , row_len);
   }
 
@@ -472,7 +475,8 @@ int f_drms_array2string(int n, DRMS_Type_t src_type, double bzero, double bscale
   stat = drms_array2string(n, src_type, bzero, bscale, src, _dst);
 
   // convert the C char two dimensional array  to a Fortran 1 dimensional one
-  XASSERT(alloc_dst = malloc(a2s_len*n));
+  alloc_dst = malloc(a2s_len*n);
+  XASSERT(alloc_dst);
 
   if (stat != DRMS_ERROR_INVALIDTYPE) {
     for (i=0; i<n; i++) {
