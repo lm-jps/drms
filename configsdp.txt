@@ -32,6 +32,7 @@ __PROJ__
              <subdir>interpolate</subdir>
              <subdir>stats</subdir>
              <subdir>egsehmicomp</subdir>
+             <subdir>imrotate</subdir>
        </subdirs>
    </proj>
    <proj>
@@ -119,6 +120,12 @@ __PROJ__
         <subdirs>
              <subdir>libs/lev15</subdir>
              <subdir>apps</subdir>
+        </subdirs>
+   </proj>
+   <proj>
+        <name>lev1.5_aia</name>
+        <subdirs>
+            <subdir>apps</subdir>
         </subdirs>
    </proj>
    <proj>
