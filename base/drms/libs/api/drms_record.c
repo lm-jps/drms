@@ -1548,6 +1548,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 
 	      if (seglist)
 	      {
+                 char aseg[DRMS_MAXSEGNAMELEN];
 		 goodsegcont = hcon_create(DRMS_MAXSEGNAMELEN, 
 					   DRMS_MAXSEGNAMELEN,
 					   NULL,
@@ -1561,7 +1562,8 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 		 do
 		 {
 		    /* ans is a segment name */
-		    hcon_insert_lower(goodsegcont, ans, ans);
+                    snprintf(aseg, sizeof(aseg), "%s", ans);
+		    hcon_insert_lower(goodsegcont, aseg, aseg);
 		 }
 		 while ((ans = strtok_r(NULL, " ,;:{}", &lasts)) != NULL);
 

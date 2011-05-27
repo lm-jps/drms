@@ -158,7 +158,7 @@ int DateHndlr(void *keyin, void **fitskeys, void *nameout)
 int CommHndlr(void *keyin, void **fitskeys, void *nameout)
 {
    int err = 0;
-   char sbuf[128];
+   char *sbuf = NULL;
    int rangeout = 0;
    DRMS_Keyword_t *key = (DRMS_Keyword_t *)keyin;
    const DRMS_Type_Value_t *val = drms_keyword_getvalue(key);
@@ -170,9 +170,14 @@ int CommHndlr(void *keyin, void **fitskeys, void *nameout)
       if (tmp)
       {
          char *pc = tmp;
-         char *pout = sbuf;
+         char *pout = NULL;
          int nelem = 0;
          int fitsrwRet = 0;
+
+         sbuf = malloc(sizeof(char) * strlen(tmp) + 1);
+         pout = sbuf;
+
+         fprintf(stderr, "recnum is %llu; addr is %x; strlen %d\n", key->record->recnum, tmp, strlen(tmp));
 
          while (*pc)
          {
@@ -206,6 +211,7 @@ int CommHndlr(void *keyin, void **fitskeys, void *nameout)
             }
             else
             {
+               fprintf(stderr, "Bad char '%x' at offset %d in comment '%s'.\n", *pc, pc - tmp, tmp);
                rangeout = 1;
             }
          
@@ -231,6 +237,12 @@ int CommHndlr(void *keyin, void **fitskeys, void *nameout)
             }
 
             nelem = 0;
+         }
+
+         if (sbuf)
+         {
+            free(sbuf);
+            sbuf = NULL;
          }
 
          free(tmp);
