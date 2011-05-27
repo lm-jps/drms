@@ -177,8 +177,6 @@ int CommHndlr(void *keyin, void **fitskeys, void *nameout)
          sbuf = malloc(sizeof(char) * strlen(tmp) + 1);
          pout = sbuf;
 
-         fprintf(stderr, "recnum is %llu; addr is %x; strlen %d\n", key->record->recnum, tmp, strlen(tmp));
-
          while (*pc)
          {
             if (*pc == '\n')
@@ -211,7 +209,7 @@ int CommHndlr(void *keyin, void **fitskeys, void *nameout)
             }
             else
             {
-               fprintf(stderr, "Bad char '%x' at offset %d in comment '%s'.\n", *pc, pc - tmp, tmp);
+               fprintf(stderr, "Bad char '%x' at offset %d in comment '%s'.\n", *pc, (int)(pc - tmp), tmp);
                rangeout = 1;
             }
          
