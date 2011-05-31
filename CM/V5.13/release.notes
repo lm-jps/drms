@@ -1,0 +1,197 @@
+                       Release Notes JSOC V5.13        24MAY2011
+                       ------------------------        ---------
+
+
+A release is a set of files, each having a specific version.  And a release typcially
+has a version number because over time you have newer and newer releases of the 
+same product.  For example, a hypothetical 1.3 release may contain fileA#1.8, 
+fileB#1.2, fileC#2.2 and a 1.4 release may contain fileA#2.5, fileB#2.1, fileC#2.9. 
+JSOC releases are similarly versioned and contain a set of such files.  JSOC release
+code is guaranteed to compile on cluster nodes (eg., n00, n02).  The resulting binaries
+have been minimally tested.  At the time of the creation of the release, the
+release versions of each file will be the most recent.  But as time passes, newer versions 
+of some files will be made, and there is no guarantee that these changes will
+not destabilize JSOC (ie., they may cause JSOC to no longer compile or execute
+properly).  
+
+There are several ways to use this release.  If you wish to simply use pre-built
+binaries, you can simply use the production binaries, which are located at 
+/home/production/cvs/JSOC.  Every time a release is created, the binaries in
+this location get updated.  Only the production user can update these binaries.
+So, you could run /home/production/cvs/JSOC/bin/linux_x86_64/show_keys, for example.
+If instead you want to work with stable source files, then you must have a sandbox,
+which is a local copy (in your home directory) of the files in the cvs depot.  
+You would probably want to work with a sandbox if you plan on making eventual 
+changes to the depot files.  Changes you make to your sandbox files are not visible 
+to other users until you "commit" those changes back to the cvs depot.  Please see
+"If You Don't Have a Sandbox" below for more information on how to create a sandbox.  
+There is also a "working" release which resides in in /home/jsoc/cvs/JSOC.  New 
+files may be placed here and existing files may be edited for common use before the 
+next official release.  Each time a release gets created, the source and binaries of 
+the working release get updated.  WARNING: the files you see here may not be stable 
+since by the time you see them, another user may have edited them. Only the production 
+release is guaranteed to be stable and unchanged between releases.
+
+Obtaining the Release
+---------------------
+To update your working directory to this release, or to check-out this release anew, 
+please visit http://jsoc.stanford.edu/jsocwiki/CvsInit. Please keep in mind that
+users may have modified files since the release was created, so use of the 
+scripts documented in the web page may result in a working directory whose
+content is not identical to the release.  If updating, you can supply 
+the flag "-R" to the jsoc_update.pl and jsoc_sync.pl scripts to download the
+latest release.  This will ensure that your working directory has the exact, latest
+release versions of the files (eg., jsoc_sync.csh -R). If checking-out, 
+you can supply the argument "-r Ver_LATEST" to the "cvs checkout" command
+to achieve the analogous result, but for a fresh checkout.  WARNING: if you use 
+the "-R" or "-r" flags, please use only jsoc_update.pl or jsoc_sync.pl to update 
+your sources thereafter.  Use of "-R" or "-r Ver_LATEST" will result in a cvs
+"sticky flag" being set.  jsoc_update.pl and jsoc_sync.pl clear this sticky flag.
+
+Additional Info
+---------------
+If you are unfamiliar with the use of cvs see the file:
+JSOC/CM/working_with_sandbox.txt.
+
+There's a linux4 cvs gui at xim:/usr/bin/lincvs
+Also on our jsoc web page:
+
+http://jsoc.stanford.edu/cvs/JSOC/
+
+Use the Apache cvs gui to see the diffs. For example, go to
+http://jsoc.stanford.edu/cvs/JSOC/base/drms/
+and click on the name in the File column and then click on
+"diffs to previous #" to see the diffs.
+
+Changes since previous release (V5.12 - Dec 15, 2010)
+--------------------------------------------------------
+
+NEW FEATURES:
+- The NetDRMS checkout is now configurable. Users can specify which
+Stanford-project directories they'd like to check-out, in addition to
+the base files previously associated with the NetDRMS set of files. A
+set of new check-out scripts exists that allows users to check-out or
+update custom NetDRMS file sets.
+- The configure script used to automatically configure the make system
+to choose icc over gcc as the compiler. Now there exists a parameter
+in the config.local file that allows users to override this behavior -
+users can force the make system to use the desired compiler.
+- The aia-lev-1.5-generation code now exists in the CVS tree.
+- remapmags, d4vm, and nlfff now exist in the CVS tree.
+- Support for localization of DRMSPGPORT and SUMPGPORT is now in
+place.
+- Added the NDEBUG compile flag to release builds.
+- New export scripts are accessible via the export web page:
+jsoc_export_as_images and jsoc_export_as_movie.
+- drms_sortandstage_records() has been added - it will sort all SUs by
+tape number, then by file number on each tape. This is a performance
+improvement that affects a single module run. SUMS will eventually do
+this sorting so that it will maximize efficiency across multiple
+module runs.
+- The export programs now use drms_open_recordset() instead of
+drms_open_records(). The latter imposes a limit on the number of
+records that may be opened at one time, but the former has no limit.
+- SUM_delete_series() is now called on chunks of 10000 SUs at a time
+instead of being called on all SUs. The latter scheme can result in
+SUMS being tied up for a long time if there is an attempt to delete a
+large series.
+- The mapping of tape group to partition set is now maintained in a
+sums table. DRMS now passes the tape group during the SUM_alloc() and
+SUM_alloc2() calls so that sums can perform this mapping.
+- jsoc_export_manage was reorganized so that the export-processing
+code and the protocol-specific code operate orthogonally.
+- Added a test-mode argument to jsoc_fetch to simplify the testing of
+jsoc_fetch via the export web page.
+- localhost is now an allowed database host in DRMS modules.
+- SUMS now writes a full tape's worth of data at a time (instead of
+writing smaller amounts which would allow tape-swapping in between the
+writing of these smaller chunks).
+- New SUMS API function SUMLIB_SumsetGet() - maps the group number
+input to the partition-set number.
+- The SUMS database host, port and name are now configurable in the
+config.local file.
+- Added a new utility module - set_info. It works like set_keys,
+except that it can ingest multiple files into a generic segment, and
+it can ingest FITS files into a FITS-protocol segment.
+- The EGSE compression library has been ported into the JSOC cvs
+tree. All code that previous linked against an old, saved binary
+library now link against the ported version of this library.
+- Move ephemeris functions into a library, libdsdsmigr.a.
+- The mag team has added new modules.
+- A new CVS/build scheme was implemented - it facilitates better
+control over the set of files that compose each "check-out" (e.g., the
+JSOC check-out versus the NetDRMS check-out). The previous method,
+using CVS "modules", has been problematic since inception. Now, the
+user specifies a set of files (a "file-spec") and this list is used to
+download only those files. This allows a user to check-out the NetDRMS
+base set of files plus any desired sub-set of Stanford project files.
+- The NetDRMS check-out scripts were modified to use the new CVS/build
+scheme.
+- Modified exportmanage.pl (a script that runs jsoc_export_manage) to
+facilitate live testing of the export system. Also, checked this
+script into CVS (it was not previously under revision control).
+- Derived an efficient SQL query used to generate reports on SUMS
+usage. The scripts that evaluate this query do so by directly
+accessing SUMS tables.
+- Modified a few common queries to improve database performance.
+- Add first provider script called by monitoring code. This script
+ensures that essential production files are present. If a file is
+missing, an email gets sent out.
+- Workflow code/scripts added. These implement a system to manage
+pipelines. The scripts automatically check for missing dependencies
+and, much like 'make', they trigger generation of dependencies if they
+are missing. Several pipelines (e.g., lev1) now use this system.
+
+
+DEFECTS FIXED:
+- Undefine localization defines (macros) before defining them - gcc
+was complaining about redefinition.
+- Fix typo in the make system -nofor-main flag used by ifort.
+- Changes to db query strings to take advantage of better-performing
+indices.
+- drms_log was trying to obtain the sunum from the wrong column in a
+db query - fixed.
+- delete_series no longer assumes that the schema _jsoc exists (it
+performs a check to look for slony-replication of the series table
+being deleted).
+- Fixed crash in ingest_from_fits -j. The code assumed the existence
+of a keyword that was not guaranteed to exist.
+- Fixed buffer overflow in drms_open_recordset() - a static buffer was
+too small to hold what can be a very large query (if a series has lots
+of keywords).
+- Fixed bug in subscribe_series (slony-replication-service client
+script). The "resume" feature was not resuming in the correct location
+if there was a failure during the application of the downloaded sql
+file.
+- In jsoc_export_manage, the code that creates the drms_run script was
+modified to first disable history substitution. Before the fix, the
+export-data web page was not properly handing [! !] queries.
+- modify_series crash fixed - was re-using a freed buffer.
+- A hard-coded -g compile flag was removed from the flatfield code.
+- Make all flatfield modules build by default (when you type 'make',
+all flatfield modules will now get built).
+- module_flatfield will now call drms_stage_records() in a way that
+will cause a retrieve from tape.
+- XASSERT() was modified so that no code is generated in release
+builds (which is the default build). Improper uses of assert() and
+XASSERT() were fixed - the arguments to these macros no longer perform
+any vital functions (since no code is generated in release code, this
+must be the case).
+- HMI_IQUV_averaging and HMI_observables are now built as part of the
+default make.
+- The broken dependency between the observables modules and the
+interpolation library has been fixed.
+- A memory leak was fixed in some mag modules.
+- There was some hg_patch work done.
+- A memory leak was removed from hmi_libdark.
+- The render_image crop flag was fixed, sqrt and log scaling added.
+
+
+EXISTING DEFECTS:
+- Please see http://jsoc.stanford.edu/trac/report/1 for a list and
+description of most known bugs.
+- The DRMS code that recovers from SUMS failures when the tape system
+goes down is not yet working properly. SUMS needs to be modified to
+provide the correct error code to DRMS - until then, if the tape
+services crashes or is terminated, then DRMS modules can hang
+indefinitely.
