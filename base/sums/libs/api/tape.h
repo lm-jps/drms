@@ -26,7 +26,7 @@
 #define UNLOADCMD "/usr/sbin/mtx -f /dev/t50 unload"
 #define POSITIONDUMP "/tmp/t50_position_dump.out"
 #elif SUMT950
-#define MAX_SLOTS 2250
+#define MAX_SLOTS 2240
 #define NUM_IMP_EXP_SLOTS 50  /* assumes these slots are the highest slot#s */
 #define MAX_SLOTS_LIVE (MAX_SLOTS - NUM_IMP_EXP_SLOTS)
 #define MAX_DRIVES 12
