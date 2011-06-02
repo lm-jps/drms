@@ -5,67 +5,47 @@ built.  Allow users time to submit changes they want in the new
 release.  This includes changes made by the CM that have not been
 committed.  
 
-2. From a cluster-node (eg., n00), perform a clean sync to
-head as a non-Production user (cvs checkout -r HEAD JSOC).  The -r rev
-option is sticky, which means that if you used -r Ver_3-2 on a
-previous checkout, that "cvs checkout JSOC" will check out Ver_3-2.
-Use "-r HEAD" to force the use of the head revision. 
-
-3.Update $JSOCROOT/base/jsoc_version.h to the latest release version
+2. Update $JSOCROOT/base/jsoc_version.h to the latest release version
 and build again (make clean, make universe).  The version macros
 should be of the form:
 
 #define jsoc_version "V3R5"
 #define jsoc_vers_num (305)
 
-4. From the machine used in step 2, commit $JSOCROOT/base/jsoc_version.h.
+cvs commit $JSOCROOT/base/jsoc_version.h.
 
-5. Add a new file, JSOC/CM/V<MAJ>.<MIN>/release.notes. This has the
+3. Add a new file, JSOC/CM/V<MAJ>.<MIN>/release.notes. This has the
 release notes (see below).  Commit.
 
-6. From the machine used in step 2, create a tag for the new release.
-  a. cd $JSOCROOT
-  b. cvs tag -c Ver_<MAJ>-<MIN> . (Replace <MAJ>
-with the major version number and <MIN> with the minor version number.)
-  c. cvs tag -d Ver_LATEST .
-  d. cvs tag -c Ver_LATEST .
+4. Create a tag for the new release.
+  a. Create the full-JSOC-release tags
+       i. /home/jsoc/dlsource.pl -o tag -f sdp -t Ver_<MAJ>-<MIN>
+      ii. /home/jsoc/dlsource.pl -o untag -f sdp -t Ver_LATEST
+     iii. /home/jsoc/dlsource.pl -o tag -f sdp -t Ver_LATEST
+  b. Create the NetDRMS-release tags
+       i. /home/jsoc/dlsource.pl -o tag -f net -t NetDRMS_Ver_<MAJ>-<MIN>
+      ii. /home/jsoc/dlsource.pl -o untag -f net -t Ver_DRMSLATEST
+     iii. /home/jsoc/dlsource.pl -o tag -f net -t Ver_DRMSLATEST
 
-7. The NetDRMS release version number should also be incremented and
-tagged:
-  a. cd /tmp
-  b. cvs checkout NETDRMSONLY (head version of netdrms-only files)
-  c. cd JSOC
-  d. cvs tag -c NetDRMS_Ver_<MAJ>-<MIN> .
-  e. cvs tag -d Ver_DRMSLATEST .
-  f. cvs tag -c Ver_DRMSLATEST .
-  g. cd /tmp
-  h. cvs checkout -r Ver_<MAJ>-<MIN> CORE 
-  i. cd JSOC
-  j. cvs tag -c NetDRMS_Ver_<MAJ>-<MIN> . (minus excluded files)
-  k. cvs tag -d Ver_DRMSLATEST .
-  l. cvs tag -c Ver_DRMSLATEST . (minus excluded files)
-
-8. Now you must build all release executables with the release jsoc
+5. Now you must build all production release executables with the release jsoc
 version numbers in place ("V3R5" and "305" in this example). Ensure
 that the tag was successfully created and create actual release
 binaries (not just the binaries in your sandbox).  Login as the 'jsoc'
-user, cd to /home/jsoc/cvs, and do "cvs checkout -r Ver_<MAJ>-<MIN>
-JSOC" and build on all machines supported.  
+user, cd to /home/jsoc/cvs, and run "/home/jsoc/dlsource.pl -o checkout 
+-f sdp -r Ver_<MAJ>-<MIN>" and build on all machines supported. Do the same in 
+/home/jsoc/cvs/Development/. 
 
-9. Once again, edit $JSOCROOT/base/jsoc_version.h.  The
-version macros should be of the form:
+6. Edit $JSOCROOT/base/jsoc_version.h, but not the version of this file
+in a production directory.The version macros should be of the form:
 
 #define jsoc_version "V3R5X"
 #define jsoc_vers_num (-305)
 
 The "X" and "-" denote that binaries were created from non-release code.
 
-10. From the machine used in step 9, commit
-$JSOCROOT/base/jsoc_version.h.  You might have to run "cvs
-update -A base/jsoc_version.h" to clear the sticky flag created
-when you first sync'd in step 2 (if you used the "-r" flag).
+commit $JSOCROOT/base/jsoc_version.h.
 
-11. Send instructions for using the new release to users.
+7. Send instructions for using the new release to users.
 
 ================================================================================
 Example New Release Instructions
