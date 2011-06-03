@@ -62,10 +62,11 @@ $LOPENED = 0;			#log file not opened yet
 #$login = "dsowner";
 $pid0 = 0;
 
-$FIRST_EXP_SLOT = 2211;
-$LAST_EXP_SLOT = 2250;
+$FIRST_EXP_SLOT = 2201;
+$LAST_EXP_SLOT = 2240;
 $MAX_SLOTS_PAGE = 200;
-$MAX_SLOTS = 2200;
+#$MAX_SLOTS = 2200;
+$MAX_SLOTS = 2190;
 $NUM_IMP_EXP_SLOTS = 50;
 $MAX_Q_ENTIRES = 5;
 $MAX_PAGE_NUM = 10;
