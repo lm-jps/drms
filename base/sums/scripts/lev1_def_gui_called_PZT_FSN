@@ -346,7 +346,7 @@ if($OKfile && $OKhkdayfile && $OKfdsorbit && $OKnogofile && $OKff && $OKmp && $O
   }
   else { 
     #!!TEMP increase numqsub from default 16 to 32
-    $cmd = "time build_lev1_mgr mode=fsn instru=hmi dsin=$DSINHMI dsout=$DSOUTHMI bfsn=$firstfsn efsn=$lastfsn numqsub=32 logfile=/usr/local/logs/lev1/build_lev1_mgr_hmi.$utcdate.log";
+    $cmd = "time build_lev1_mgr mode=fsn instru=hmi dsin=$DSINHMI dsout=$DSOUTHMI bfsn=$firstfsn efsn=$lastfsn numqsub=4 logfile=/usr/local/logs/lev1/build_lev1_mgr_hmi.$utcdate.log";
   }
   print "$cmd\n";
   if($EXECUTE) {
@@ -565,13 +565,16 @@ else {
   `$cmd`;
 
 #make sure have the pzt flat
-if(!$hmiaiaflg) {		#only for hmi
-  $cmd = "cd /home/production/cvs/JSOC/proj/lev0/apps/pztflat; echo \"pzt_flatfield, $pztdate\" | /usr/local/bin/idl 1> /scr21/production/qsub/flat/pzt.$PID.log 2>&1";
-  #print "ssh n02 $cmd\n";
-  #`ssh n02 $cmd`;
-  print "$cmd\n";
-  `$cmd`;
-}
+#This is now done in /home/production/cvs/JSOC/proj/lev0/scripts/pzt_flat_cron.pl
+#which is called in /home/production/cvs/JSOC/proj/lev0/scripts/lev0a2deflev1_
+#FULL_PZT_FSN_cron.pl
+#if(!$hmiaiaflg) {		#only for hmi
+#  $cmd = "cd /home/production/cvs/JSOC/proj/lev0/apps/pztflat; echo \"pzt_flatfield, $pztdate\" | /usr/local/bin/idl 1> /scr21/production/qsub/flat/pzt.$PID.log 2>&1";
+#  #print "ssh n02 $cmd\n";
+#  #`ssh n02 $cmd`;
+#  print "$cmd\n";
+#  `$cmd`;
+#}
 
 #Now make the cosmic_rays/rotation flat for the day
 #!!TBD: use fsns instead of $orddate  NO! YES!

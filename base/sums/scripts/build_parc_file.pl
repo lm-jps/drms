@@ -85,6 +85,7 @@ $PGPORT = 5434;		#always run on pipeline backend SUMS
 $PARC_ROOT = "/usr/local/logs/parc/";
 #$SSH_INFO = "/home/production/cvs/JSOC/base/sums/scripts/pgaginfo";
 $SSH_INFO = "/var/tmp/ssh-agent.env";
+$ENV{'PATH'} = "/usr/local/bin:$ENV{'PATH'}"; #/usr/bin/ssh not clean
 $hrsprev = 24;
 while ($ARGV[0] =~ /^-/) {
   $_ = shift;
