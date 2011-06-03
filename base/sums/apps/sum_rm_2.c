@@ -211,7 +211,11 @@ int stat_storage()
   for(i=15; i<MAX_PART-1; i++) { //for sum_rm_2 do remaining partitions
     pptr=(PART *)&ptab[i];
     if(pptr->name == NULL) break;
-    if(!strcmp(pptr->name, "/SUM100")) continue; //!!TEMP skip SUM100
+    //skip the special partitions for permanent aia.lev1 (save DB time)
+    if(!strcmp(pptr->name, "/SUM100")) continue;
+    if(!strcmp(pptr->name, "/SUM101")) continue;
+    if(!strcmp(pptr->name, "/SUM102")) continue;
+    if(!strcmp(pptr->name, "/SUM103")) continue;
     if(status = statvfs(pptr->name, &vfs)) {
       printk("Error %d on statvfs() for %s\n",status,pptr->name);
     }
