@@ -8,6 +8,7 @@ use POSIX ":sys_wait_h";
 
 $MAXFORKS = 4;		#max tapearcX forks (i.e. limit of drives to write)
 $CURRFORKS = 0;
+$nochild = 0;
 
 sub usage {
   print "Do pending archive by group by dataset by sunum.\n";
@@ -65,7 +66,9 @@ sub REAPCHILD {
     $pid = waitpid(-1, WNOHANG);		#any pid, don't block
     if($pid == -1) {
       #ignore no child
+      $nochild = 1;
     } elsif (WIFEXITED($?)) {
+      $nochild = 0;
       print "Process $pid exited\n";
       $CURRFORKS--;
       if($newcmd = shift(@pendcmds)) {
@@ -76,7 +79,7 @@ sub REAPCHILD {
           }
       }
       else {
-        if($CURRFORKS == 0) {
+        if($CURRFORKS <= 0) {
           print "All tapearcX done. Exiting.\n";
           exit(0);
         }
@@ -149,6 +152,7 @@ if($x > 1) {
 }
 $hostdb = $HOSTDB;      #host where Postgres runs
 $user = $ENV{'USER'};
+$ENV{'SUMPGPORT'} = 5434;
 if(!($PGPORT = $ENV{'SUMPGPORT'})) {
   print "You must have ENV SUMPGPORT set to the port number, e.g. 5434\n";
   exit;
@@ -345,5 +349,9 @@ if($filename) {
 }
 while(1) { 
   sleep 10; 
+  if($nochild) {        #sometime last child is not reaped. so check this
+    print "tape_do_archive.pl No child left. Exit\n";
+    exit(0);
+  }
 }
 
