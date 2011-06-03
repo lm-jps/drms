@@ -2,7 +2,7 @@
  * This program is started by tui when the interactive user hits an
  * export button on the "export closed tapes" page. 
  * It's args are the tape ids to move from
- * their current slots to the Export slots (currently 2241-2250).
+ * their current slots to the Export slots (currently 2201-2240).
  * This program send these tape ids to tape_svc, gets an ack and then
  * exits. The tui will detect the tapes being unloaded via the 
  * tape_svc log file entries. 
@@ -23,7 +23,7 @@ void logkey();
 extern int errno;
 static struct timeval TIMEOUT = { 600, 0 }; //allow for mtx transfer cmd
 
-#define FIRST_EXP_SLOT 2211
+#define FIRST_EXP_SLOT 2201
 
 FILE *logfp;
 CLIENT *current_client, *clnttape;
