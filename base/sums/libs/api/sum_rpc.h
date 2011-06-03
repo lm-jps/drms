@@ -119,6 +119,21 @@ typedef struct Rkey Rkey;
 bool_t xdr_Rkey(XDR *xdrs, Rkey *objp);
 
 /* This is the sum_svc program registration. Client API sends here */
+//First define the prog numbers of the seperate sum functions
+#define SUMALLOC ((uint32_t)0x20000600) /* 536872448 */
+#define SUMALLOCV ((uint32_t)1)
+#define SUMGET ((uint32_t)0x20000601) /* 536872449 */
+#define SUMGETV ((uint32_t)1)
+#define SUMPUT ((uint32_t)0x20000602) /* 536872450 */
+#define SUMPUTV ((uint32_t)1)
+#define SUMINFO ((uint32_t)0x20000603) /* 536872451 */
+#define SUMINFOV ((uint32_t)1)
+#define SUMDELSER ((uint32_t)0x20000604) /* 536872452 */
+#define SUMDELSERV ((uint32_t)1)
+#define SUMINFO1 ((uint32_t)0x20000605) /* 536872453 */
+#define SUMINFO2 ((uint32_t)0x20000606) /* 536872454 */
+#define SUMPUT1 ((uint32_t)0x20000607) /* 536872455 */
+#define SUMPUT2 ((uint32_t)0x20000608) /* 536872456 */
 #define SUMPROG ((uint32_t)0x20000611) /* 536872465 */
 #define SUMVERS ((uint32_t)1)
 #define SUMDO ((uint32_t)1)
@@ -357,7 +372,16 @@ extern KEY *jmtxdo_1();
 typedef struct SUM_struct
 {
   SUMID_t uid;
-  CLIENT *cl;            /* client handle for calling sum_rpc_svc */
+  CLIENT *cl;            /* client handle for calling sum_svc */
+  CLIENT *clalloc;       /* client handle for calling sum_svc allocate */
+  CLIENT *clget;         /* client handle for calling sum_svc get */
+  CLIENT *clput;         /* client handle for calling sum_svc put */
+  CLIENT *clput1;        /* client handle for calling sum_svc put */
+  CLIENT *clput2;        /* client handle for calling sum_svc put */
+  CLIENT *clinfo;        /* client handle for calling sum_svc info */
+  CLIENT *clinfo1;       /* client handle for calling sum_svc info */
+  CLIENT *clinfo2;       /* client handle for calling sum_svc info */
+  CLIENT *cldelser;      /* client handle for calling sum_svc del series */
   SUM_info_t *sinfo;	 /* info from sum_main for SUM_info() call */
   int debugflg;		 /* verbose debug mode if set */
   int mode;              /* bit map of various modes */
