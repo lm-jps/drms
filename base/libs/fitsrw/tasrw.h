@@ -13,6 +13,7 @@ int fitsrw_readslice(int verbose,
 int fitsrw_writeslice(int verbose, const char *filename, int *fpixel, int *lpixel, void *image);
 
 fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *status);
+fitsfile *fitsrw_getfptr_nochksum(int verbose, const char *filename, int writeable, int *status);
 
 int fitsrw_closefptr(int verbose, fitsfile *fptr);
 

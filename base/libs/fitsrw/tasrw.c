@@ -57,7 +57,7 @@ static int IsWriteable(const char *fhash)
  * The hash key to the gFFiles is <filename> ':' ('r' | 'w') where r implies readonly and w implies
  * readwrite.
  */
-fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *status)
+fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeable, int verchksum, int *status)
 {
    fitsfile *fptr = NULL;
    fitsfile **pfptr = NULL;
@@ -207,26 +207,29 @@ fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *
          }
 
          /* Check checksum, if it exists */
-         if (fits_verify_chksum(fptr, &datachk, &hduchk, &stat))
+         if (verchksum)
          {
-            stat = 1;
-
-            if (status)
-            {
-               *status = CFITSIO_ERROR_LIBRARY;
-            }
-         }
-         else
-         {
-            if (datachk == -1 || hduchk == -1)
+            if (fits_verify_chksum(fptr, &datachk, &hduchk, &stat))
             {
                stat = 1;
 
-               /* Both checksums were present, and at least one of them failed. */
-               fprintf(stderr, "Failed to verify data and/or HDU checksum (file corrupted).\n");
                if (status)
                {
-                  *status = CFITSIO_ERROR_FILE_IO;
+                  *status = CFITSIO_ERROR_LIBRARY;
+               }
+            }
+            else
+            {
+               if (datachk == -1 || hduchk == -1)
+               {
+                  stat = 1;
+
+                  /* Both checksums were present, and at least one of them failed. */
+                  fprintf(stderr, "Failed to verify data and/or HDU checksum (file corrupted).\n");
+                  if (status)
+                  {
+                     *status = CFITSIO_ERROR_FILE_IO;
+                  }
                }
             }
          }
@@ -393,6 +396,16 @@ fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *
    return fptr;
 }
 
+fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *status)
+{
+   return fitsrw_getfptr_internal(verbose, filename, writeable, 1, status);
+}
+
+fitsfile *fitsrw_getfptr_nochksum(int verbose, const char *filename, int writeable, int *status)
+{
+   return fitsrw_getfptr_internal(verbose, filename, writeable, 0, status);
+}
+
 static int fitsrw_getfpinfo(fitsfile *fptr, TASRW_FilePtrInfo_t *info)
 {
    int err = 1;
@@ -460,12 +473,13 @@ int fitsrw_readslice(int verbose,
 
    status = 0; // first thing!
 
-   fptr = fitsrw_getfptr(verbose, filename, 0, &status);
+   fptr = fitsrw_getfptr_nochksum(verbose, filename, 0, &status);
 
    if (!fptr)
    {
       goto error_exit;
    }
+
 
    /* Fetch img parameter info - should have been cached when the file was originally opened */
    if (fitsrw_getfpinfo(fptr, &fpinfo))
