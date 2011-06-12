@@ -1217,7 +1217,7 @@ int db_sequence_drop(DB_Handle_t *db,  char *tablename)
 /* returns 1 if successful, 0 if not */
 int db_cancel(DB_Handle_t *db, char *effbuf, int size)
 {
-   PGcancel *readonly = PQgetCancel((PGconn *)db);
+   PGcancel *readonly = PQgetCancel((PGconn *)db->db_connection);
    int rv = 0;
 
    if (readonly)
