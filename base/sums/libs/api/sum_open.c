@@ -54,11 +54,20 @@ extern void printkey (KEY *key);
 static struct timeval TIMEOUT = { 3600, 0 };
 static int RESPDO_called;
 static SUMOPENED *sumopened_hdr = NULL;/* linked list of opens for this client*/
-static CLIENT *cl;
+static CLIENT *cl, *clalloc, *clget, *clput, *clinfo, *clinfo1, *clinfo2, *cldelser;
+static CLIENT *clput1, *clput2, *clget1, *clget2, *clalloc1, *clalloc2;
+static CLIENT *clopen, *clopen1, *clopen2;
 static SVCXPRT *transp[MAXSUMOPEN];
 static SUMID_t transpid[MAXSUMOPEN];
 static int numopened = 0;
+static int numsinfosvc = NUMSINFOSVC;
 //KEY *infoparams;
+
+int rr_random(int min, int max)
+{
+  return rand() % (max - min + 1) + min;
+}
+
 
 /* Returns 1 if ok to shutdown sums.
  * Return 0 is someone still has an active SUM_open().
@@ -120,10 +129,14 @@ int SUM_shutdown(int query, int (*history)(const char *fmt, ...))
 */
 SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
 {
+  CLIENT *clopx;
   KEY *klist;
   SUM_t *sumptr;
   SUMID_t sumid;
+  struct timeval tval;
+  unsigned int stime;
   char *server_name, *cptr, *username;
+  int i, rr;
 
   if(numopened >= MAXSUMOPEN) {
     (*history)("Exceeded max=%d SUM_open() for a client\n", MAXSUMOPEN);
@@ -145,6 +158,9 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
   }
   cptr = index(server_name, '.');	/* must be short form */
   if(cptr) *cptr = (char)NULL;
+  gettimeofday(&tval, NULL);
+  stime = (unsigned int)tval.tv_usec;
+  srand(stime);				//seed rr_random()
   /* Create client handle used for calling the server */
   cl = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
   if(!cl) {              //no SUMPROG in portmap or timeout (default 25sec?)
@@ -159,6 +175,214 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
       return(NULL);
     }
   }
+  clopen = clnt_create(server_name, SUMOPEN, SUMOPENV, "tcp");
+  if(!clopen) {              //no SUMOPEN in portmap or timeout (default 25sec?)
+    clnt_pcreateerror("Can't get client handle for OPEN to sum_svc");
+    (*history)("sum_svc OPEN timeout or not there on %s\n", server_name);
+    (*history)("Going to retry in 1 sec\n");
+    sleep(1);
+    clopen = clnt_create(server_name, SUMOPEN, SUMOPENV, "tcp");
+    if(!clopen) { 
+      clnt_pcreateerror("Can't get client handle for OPEN to sum_svc");
+      (*history)("sum_svc OPEN timeout or not there on %s\n", server_name);
+      return(NULL);
+    }
+  }
+  clopen1 = clnt_create(server_name, SUMOPEN1, SUMOPENV, "tcp");
+  if(!clopen1) {              //no SUMOPEN1 in portmap or timeout (default 25sec?)
+    clnt_pcreateerror("Can't get client handle for OPEN1 to sum_svc");
+    (*history)("sum_svc OPEN1 timeout or not there on %s\n", server_name);
+    (*history)("Going to retry in 1 sec\n");
+    sleep(1);
+    clopen1 = clnt_create(server_name, SUMOPEN1, SUMOPENV, "tcp");
+    if(!clopen1) { 
+      clnt_pcreateerror("Can't get client handle for OPEN1 to sum_svc");
+      (*history)("sum_svc OPEN1 timeout or not there on %s\n", server_name);
+      return(NULL);
+    }
+  }
+  clopen2 = clnt_create(server_name, SUMOPEN2, SUMOPENV, "tcp");
+  if(!clopen2) {              //no SUMOPEN2 in portmap or timeout (default 25sec?)
+    clnt_pcreateerror("Can't get client handle for OPEN2 to sum_svc");
+    (*history)("sum_svc OPEN2 timeout or not there on %s\n", server_name);
+    (*history)("Going to retry in 1 sec\n");
+    sleep(1);
+    clopen2 = clnt_create(server_name, SUMOPEN2, SUMOPENV, "tcp");
+    if(!clopen2) { 
+      clnt_pcreateerror("Can't get client handle for OPEN2 to sum_svc");
+      (*history)("sum_svc OPEN2 timeout or not there on %s\n", server_name);
+      return(NULL);
+    }
+  }
+  // Create client handles for calling individual sum_svc processes
+  clalloc = clnt_create(server_name, SUMALLOC, SUMALLOCV, "tcp");
+  if(!clalloc) {
+    for(i=0; i < 4; i++) {		//keep on trying
+      clnt_pcreateerror("Can't get client handle to sum_svc SUMALLOC. Retry..");
+      //fprintf(stderr, "Retry in 1 sec. i = %d\n", i);
+      (*history)("Going to retry in 1 sec. i=%d\n", i);
+      sleep(1);
+      clalloc = clnt_create(server_name, SUMALLOC, SUMALLOCV, "tcp");
+      if(clalloc) { break; }
+    }
+    if(!clalloc) {
+      clnt_pcreateerror("Can't get retry client handle to sum_svc SUMALLOC");
+      (*history)("sum_svc error on handle to SUMALLOC on %s\n", server_name);
+      return(NULL);
+    }
+  }
+  clalloc1 = clnt_create(server_name, SUMALLOC1, SUMALLOCV, "tcp");
+  if(!clalloc1) {
+    for(i=0; i < 4; i++) {		//keep on trying
+      clnt_pcreateerror("Can't get client handle to sum_svc SUMALLOC1. Retry..");
+      (*history)("Going to retry in 1 sec. i=%d\n", i);
+      sleep(1);
+      clalloc1 = clnt_create(server_name, SUMALLOC1, SUMALLOCV, "tcp");
+      if(clalloc1) { break; }
+    }
+    if(!clalloc1) {
+      clnt_pcreateerror("Can't get retry client handle to sum_svc SUMALLOC1");
+      (*history)("sum_svc error on handle to SUMALLOC1 on %s\n", server_name);
+      return(NULL);
+    }
+  }
+  clalloc2 = clnt_create(server_name, SUMALLOC2, SUMALLOCV, "tcp");
+  if(!clalloc2) {
+    for(i=0; i < 4; i++) {		//keep on trying
+      clnt_pcreateerror("Can't get client handle to sum_svc SUMALLOC2. Retry..");
+      (*history)("Going to retry in 1 sec. i=%d\n", i);
+      sleep(1);
+      clalloc1 = clnt_create(server_name, SUMALLOC2, SUMALLOCV, "tcp");
+      if(clalloc2) { break; }
+    }
+    if(!clalloc2) {
+      clnt_pcreateerror("Can't get retry client handle to sum_svc SUMALLOC1");
+      (*history)("sum_svc error on handle to SUMALLOC1 on %s\n", server_name);
+      return(NULL);
+    }
+  }
+  clget = clnt_create(server_name, SUMGET, SUMGETV, "tcp");
+  if(!clget) {
+    clnt_pcreateerror("Can't get client handle to sum_svc SUMGET");
+    (*history)("sum_svc error on handle to SUMGET on %s\n", server_name);
+    sleep(1);
+    clget = clnt_create(server_name, SUMGET, SUMGETV, "tcp");
+    if(!clget) { 
+      clnt_pcreateerror("Can't get client handle to sum_svc SUMGET");
+      (*history)("sum_svc error on handle to SUMGET on %s\n", server_name);
+      return(NULL);
+    }
+  }
+  clget1 = clnt_create(server_name, SUMGET1, SUMGETV, "tcp");
+  if(!clget1) {
+    clnt_pcreateerror("Can't get client handle to sum_svc SUMGET1");
+    (*history)("sum_svc error on handle to SUMGET1 on %s\n", server_name);
+    sleep(1);
+    clget1 = clnt_create(server_name, SUMGET1, SUMGETV, "tcp");
+    if(!clget1) { 
+      clnt_pcreateerror("Can't get client handle to sum_svc SUMGET1");
+      (*history)("sum_svc error on handle to SUMGET1 on %s\n", server_name);
+      return(NULL);
+    }
+  }
+  clget2 = clnt_create(server_name, SUMGET2, SUMGETV, "tcp");
+  if(!clget2) {
+    clnt_pcreateerror("Can't get client handle to sum_svc SUMGET2");
+    (*history)("sum_svc error on handle to SUMGET2 on %s\n", server_name);
+    sleep(1);
+    clget2 = clnt_create(server_name, SUMGET2, SUMGETV, "tcp");
+    if(!clget2) { 
+      clnt_pcreateerror("Can't get client handle to sum_svc SUMGET2");
+      (*history)("sum_svc error on handle to SUMGET2 on %s\n", server_name);
+      return(NULL);
+    }
+  }
+  clput = clnt_create(server_name, SUMPUT, SUMPUTV, "tcp");
+  if(!clput) {
+    clnt_pcreateerror("Can't get client handle to sum_svc SUMPUT");
+    (*history)("sum_svc error on handle to SUMPUT on %s\n", server_name);
+    sleep(1);
+    clput = clnt_create(server_name, SUMPUT, SUMPUTV, "tcp");
+    if(!clput) { 
+      clnt_pcreateerror("Can't get client handle to sum_svc SUMPUT");
+      (*history)("sum_svc error on handle to SUMPUT on %s\n", server_name);
+      return(NULL);
+    }
+  }
+  clput1 = clnt_create(server_name, SUMPUT1, SUMPUTV, "tcp");
+  if(!clput1) {
+    clnt_pcreateerror("Can't get client handle to sum_svc SUMPUT1");
+    (*history)("sum_svc error on handle to SUMPUT1 on %s\n", server_name);
+    sleep(1);
+    clput1 = clnt_create(server_name, SUMPUT1, SUMPUTV, "tcp");
+    if(!clput1) { 
+      clnt_pcreateerror("Can't get client handle to sum_svc SUMPUT1");
+      (*history)("sum_svc error on handle to SUMPUT1 on %s\n", server_name);
+      return(NULL);
+    }
+  }
+  clput2 = clnt_create(server_name, SUMPUT2, SUMPUTV, "tcp");
+  if(!clput2) {
+    clnt_pcreateerror("Can't get client handle to sum_svc SUMPUT2");
+    (*history)("sum_svc error on handle to SUMPUT2 on %s\n", server_name);
+    sleep(1);
+    clput2 = clnt_create(server_name, SUMPUT2, SUMPUTV, "tcp");
+    if(!clput2) { 
+      clnt_pcreateerror("Can't get client handle to sum_svc SUMPUT2");
+      (*history)("sum_svc error on handle to SUMPUT2 on %s\n", server_name);
+      return(NULL);
+    }
+  }
+  clinfo = clnt_create(server_name, SUMINFO, SUMINFOV, "tcp");
+  if(!clinfo) {
+    clnt_pcreateerror("Can't get client handle to sum_svc SUMINFO");
+    (*history)("sum_svc error on handle to SUMINFO on %s\n", server_name);
+    sleep(1);
+    clinfo = clnt_create(server_name, SUMINFO, SUMINFOV, "tcp");
+    if(!clinfo) { 
+      clnt_pcreateerror("Can't get client handle to sum_svc SUMINFO");
+      (*history)("sum_svc error on handle to SUMINFO on %s\n", server_name);
+      return(NULL);
+    }
+  }
+  clinfo1 = clnt_create(server_name, SUMINFO1, SUMINFOV, "tcp");
+  if(!clinfo1) {
+    clnt_pcreateerror("Can't get client handle to sum_svc SUMINFO1");
+    (*history)("sum_svc error on handle to SUMINFO1 on %s\n", server_name);
+    sleep(1);
+    clinfo1 = clnt_create(server_name, SUMINFO1, SUMINFOV, "tcp");
+    if(!clinfo1) { 
+      clnt_pcreateerror("Can't get client handle to sum_svc SUMINFO1");
+      (*history)("sum_svc error on handle to SUMINFO1 on %s\n", server_name);
+      return(NULL);
+    }
+  }
+  clinfo2 = clnt_create(server_name, SUMINFO2, SUMINFOV, "tcp");
+  if(!clinfo2) {
+    clnt_pcreateerror("Can't get client handle to sum_svc SUMINFO2");
+    (*history)("sum_svc error on handle to SUMINFO2 on %s\n", server_name);
+    sleep(1);
+    clinfo2 = clnt_create(server_name, SUMINFO2, SUMINFOV, "tcp");
+    if(!clinfo2) { 
+      clnt_pcreateerror("Can't get client handle to sum_svc SUMINFO2");
+      (*history)("sum_svc error on handle to SUMINFO2 on %s\n", server_name);
+      return(NULL);
+    }
+  }
+  cldelser = clnt_create(server_name, SUMDELSER, SUMDELSERV, "tcp");
+  if(!cldelser) {
+    clnt_pcreateerror("Can't get client handle to sum_svc SUMDELSER");
+    (*history)("sum_svc error on handle to SUMDELSER on %s\n", server_name);
+    sleep(1);
+    cldelser = clnt_create(server_name, SUMDELSER, SUMDELSERV, "tcp");
+    if(!cldelser) { 
+      clnt_pcreateerror("Can't get client handle to sum_svc SUMDELSER");
+      (*history)("sum_svc error on handle to SUMDELSER on %s\n", server_name);
+      return(NULL);
+    }
+  }
+
+
   if (!db)
   {
     if (!(db = getenv("SUMDB")))
@@ -172,7 +396,19 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
   setkey_str(&klist, "db_name", db);
   setkey_str(&klist, "USER", username);
   /* get a unique id from sum_svc for this open */
-  if((sumid = sumrpcopen_1(klist, cl, history)) == 0) {
+  rr = rr_random(0, 2);         //!!TBD make the high a def in sum_rpc.h
+  switch(rr) {
+  case 0:
+    clopx = clopen;
+    break;
+  case 1:
+    clopx = clopen1;
+    break;
+  case 2:
+    clopx = clopen2;
+    break;
+  }
+  if((sumid = sumrpcopen_1(klist, clopx, history)) == 0) {
     (*history)("Failed to get SUMID from sum_svc\n");
     clnt_destroy(cl);
     freekeylist(&klist);
@@ -182,6 +418,22 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
   sumptr = (SUM_t *)malloc(sizeof(SUM_t));
   sumptr->sinfo = NULL;
   sumptr->cl = cl;
+  sumptr->clopen = clopen;
+  sumptr->clopen1 = clopen1;
+  sumptr->clopen2 = clopen2;
+  sumptr->clalloc = clalloc;
+  sumptr->clalloc1 = clalloc1;
+  sumptr->clalloc2 = clalloc2;
+  sumptr->clget = clget;
+  sumptr->clget1 = clget1;
+  sumptr->clget2 = clget2;
+  sumptr->clput = clput;
+  sumptr->clput1 = clput1;
+  sumptr->clput2 = clput2;
+  sumptr->clinfo = clinfo;
+  sumptr->clinfo1 = clinfo1;
+  sumptr->clinfo2 = clinfo2;
+  sumptr->cldelser = cldelser;
   sumptr->uid = sumid;
   sumptr->username = username;
   sumptr->tdays = 0;
@@ -243,6 +495,7 @@ SUMID_t sumrpcopen_1(KEY *argp, CLIENT *clnt, int (*history)(const char *fmt, ..
 */
 int SUM_alloc(SUM_t *sum, int (*history)(const char *fmt, ...))
 {
+  int rr;
   KEY *klist;
   char *call_err;
   uint32_t retstat;
@@ -267,8 +520,23 @@ int SUM_alloc(SUM_t *sum, int (*history)(const char *fmt, ...))
     (*history)("In SUM_alloc() the keylist is:\n");
     keyiterate(printkey, klist);
   }
-  status = clnt_call(sum->cl, ALLOCDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
-			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
+//  status = clnt_call(sum->clalloc, ALLOCDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+//			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
+  rr = rr_random(0, 2);         //!!TBD make the high a def in sum_rpc.h
+  switch(rr) {
+  case 0:
+    status = clnt_call(sum->clalloc, ALLOCDO, (xdrproc_t)xdr_Rkey, (char *)klist,
+                        (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
+    break;
+  case 1:
+    status = clnt_call(sum->clalloc1, ALLOCDO, (xdrproc_t)xdr_Rkey, (char *)klist,
+                        (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
+    break;
+  case 2:
+    status = clnt_call(sum->clalloc2, ALLOCDO, (xdrproc_t)xdr_Rkey, (char *)klist,
+                        (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
+    break;
+  }
 
   /* NOTE: These rtes seem to return after the reply has been received despite
    * the timeout value. If it did take longer than the timeout then the timeout
@@ -276,7 +544,7 @@ int SUM_alloc(SUM_t *sum, int (*history)(const char *fmt, ...))
   */
   if(status != RPC_SUCCESS) {
     if(status != RPC_TIMEDOUT) {
-      call_err = clnt_sperror(sum->cl, "Err clnt_call for ALLOCDO");
+      call_err = clnt_sperror(sum->clalloc, "Err clnt_call for ALLOCDO");
       (*history)("%s %d %s\n", datestring(), status, call_err);
       freekeylist(&klist);
       return (4);
@@ -329,7 +597,7 @@ int SUM_alloc2(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
     (*history)("In SUM_alloc2() the keylist is:\n");
     keyiterate(printkey, klist);
   }
-  status = clnt_call(sum->cl, ALLOCDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+  status = clnt_call(sum->clalloc, ALLOCDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
 			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
 
   /* NOTE: These rtes seem to return after the reply has been received despite
@@ -338,7 +606,7 @@ int SUM_alloc2(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
   */
   if(status != RPC_SUCCESS) {
     if(status != RPC_TIMEDOUT) {
-      call_err = clnt_sperror(sum->cl, "Err clnt_call for ALLOCDO");
+      call_err = clnt_sperror(sum->clalloc, "Err clnt_call for ALLOCDO");
       (*history)("%s %d %s\n", datestring(), status, call_err);
       freekeylist(&klist);
       return (4);
@@ -374,7 +642,7 @@ int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
   setkey_uint64(&klist, "uid", sum->uid);
   setkey_int(&klist, "DEBUGFLG", sum->debugflg);
   setkey_int(&klist, "REQCODE", INFODO);
-  status = clnt_call(sum->cl, INFODO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+  status = clnt_call(sum->clinfo, INFODO, (xdrproc_t)xdr_Rkey, (char *)klist, 
 			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
 
   /* NOTE: These rtes seem to return after the reply has been received despite
@@ -383,7 +651,7 @@ int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...))
   */
   if(status != RPC_SUCCESS) {
     if(status != RPC_TIMEDOUT) {
-      call_err = clnt_sperror(sum->cl, "Err clnt_call for INFODO");
+      call_err = clnt_sperror(sum->clinfo, "Err clnt_call for INFODO");
       if(history) 
         (*history)("%s %d %s\n", datestring(), status, call_err);
       freekeylist(&klist);
@@ -433,6 +701,7 @@ void SUM_infoEx_free(SUM_t *sum)
 */
 int SUM_infoEx(SUM_t *sum, int (*history)(const char *fmt, ...))
 {
+  int rr;
   KEY *klist;
   SUM_info_t *sinfowalk;
   char *call_err;
@@ -457,8 +726,21 @@ int SUM_infoEx(SUM_t *sum, int (*history)(const char *fmt, ...))
     sprintf(dsix_name, "dsix_%d", i);
     setkey_uint64(&klist, dsix_name, *dxlong++);
   }
-  status = clnt_call(sum->cl, INFODOX, (xdrproc_t)xdr_Rkey, (char *)klist, 
+  rr = rr_random(0, 2);		//TBD use param for high
+  switch(rr) {
+  case 0: 
+    status = clnt_call(sum->clinfo, INFODOX, (xdrproc_t)xdr_Rkey, (char *)klist, 
 			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
+    break;
+  case 1:
+    status = clnt_call(sum->clinfo1, INFODOX, (xdrproc_t)xdr_Rkey, (char *)klist, 
+			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
+    break;
+  case 2:
+    status = clnt_call(sum->clinfo2, INFODOX, (xdrproc_t)xdr_Rkey, (char *)klist, 
+			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
+    break;
+  }
 
   // NOTE: These rtes seem to return after the reply has been received despite
   // the timeout value. If it did take longer than the timeout then the timeout
@@ -466,7 +748,7 @@ int SUM_infoEx(SUM_t *sum, int (*history)(const char *fmt, ...))
   // 
   if(status != RPC_SUCCESS) {
     if(status != RPC_TIMEDOUT) {
-      call_err = clnt_sperror(sum->cl, "Err clnt_call for INFODOX");
+      call_err = clnt_sperror(sum->clinfo, "Err clnt_call for INFODOX");
       if(history) 
         (*history)("%s %d %s\n", datestring(), status, call_err);
       freekeylist(&klist);
@@ -524,7 +806,8 @@ int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
   setkey_int(&klist, "REQCODE", CLOSEDO);
   setkey_str(&klist, "USER", sum->username);
   bzero((char *)&res, sizeof(res));
-  status = clnt_call(sum->cl, CLOSEDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+  //Use the Sopen process
+  status = clnt_call(sum->clopen, CLOSEDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
 			(xdrproc_t)xdr_void, &res, TIMEOUT);
 
 /* NOTE: These rtes seem to return after the reply has been received despite
@@ -544,6 +827,22 @@ int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
   (void)pmap_unset(RESPPROG, sum->uid); /* unreg response server */
   remsumopened(&sumopened_hdr, sum->uid); /* rem from linked list */
   clnt_destroy(sum->cl);	/* destroy handle to sum_svc */
+  clnt_destroy(sum->clopen);
+  clnt_destroy(sum->clopen1);
+  clnt_destroy(sum->clopen2);
+  clnt_destroy(sum->clalloc);
+  clnt_destroy(sum->clalloc1);
+  clnt_destroy(sum->clalloc2);
+  clnt_destroy(sum->clget);
+  clnt_destroy(sum->clget1);
+  clnt_destroy(sum->clget2);
+  clnt_destroy(sum->clput);
+  clnt_destroy(sum->clput1);
+  clnt_destroy(sum->clput2);
+  clnt_destroy(sum->clinfo);
+  clnt_destroy(sum->clinfo1);
+  clnt_destroy(sum->clinfo2);
+  clnt_destroy(sum->cldelser);
   for(i=0; i < MAXSUMOPEN; i++) {
     if(transpid[i] == sum->uid) {
       svc_destroy(transp[i]);
@@ -566,7 +865,8 @@ int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
 */
 int SUM_nop(SUM_t *sum, int (*history)(const char *fmt, ...))
 {
-  struct timeval NOPTIMEOUT = { 5, 0 };
+  //struct timeval NOPTIMEOUT = { 5, 0 };
+  struct timeval NOPTIMEOUT = { 10, 0 };
   KEY *klist;
   char *call_err;
   int ans;
@@ -611,6 +911,7 @@ int SUM_nop(SUM_t *sum, int (*history)(const char *fmt, ...))
 */
 int SUM_get(SUM_t *sum, int (*history)(const char *fmt, ...))
 {
+  int rr;
   KEY *klist;
   char *call_err;
   char **cptr;
@@ -640,8 +941,23 @@ int SUM_get(SUM_t *sum, int (*history)(const char *fmt, ...))
     sprintf(dsix_name, "dsix_%d", i);
     setkey_uint64(&klist, dsix_name, *dxlong++);
   }
-  status = clnt_call(sum->cl, GETDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
-			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
+//  status = clnt_call(sum->clget, GETDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+//			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
+  rr = rr_random(0, 2);		//!!TBD use param for high
+  switch(rr) {
+  case 0:
+    status = clnt_call(sum->clget, GETDO, (xdrproc_t)xdr_Rkey, (char *)klist,
+                        (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
+    break;
+  case 1:
+    status = clnt_call(sum->clget1, GETDO, (xdrproc_t)xdr_Rkey, (char *)klist,
+                        (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
+    break;
+  case 2:
+    status = clnt_call(sum->clget2, GETDO, (xdrproc_t)xdr_Rkey, (char *)klist,
+                        (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
+    break;
+  }
 
   /* NOTE: These rtes seem to return after the reply has been received despite
    * the timeout value. If it did take longer than the timeout then the timeout
@@ -649,7 +965,7 @@ int SUM_get(SUM_t *sum, int (*history)(const char *fmt, ...))
   */
   if(status != RPC_SUCCESS) {
     if(status != RPC_TIMEDOUT) {
-      call_err = clnt_sperror(sum->cl, "Err clnt_call for GETDO");
+      call_err = clnt_sperror(sum->clget, "Err clnt_call for GETDO");
       (*history)("%s %d %s\n", datestring(), status, call_err);
       freekeylist(&klist);
       return (4);
@@ -686,6 +1002,7 @@ int SUM_get(SUM_t *sum, int (*history)(const char *fmt, ...))
 */
 int SUM_put(SUM_t *sum, int (*history)(const char *fmt, ...))
 {
+  int rr;
   KEY *klist;
   char dsix_name[64];
   char *call_err;
@@ -720,8 +1037,23 @@ int SUM_put(SUM_t *sum, int (*history)(const char *fmt, ...))
     sprintf(dsix_name, "wd_%d", i);
     setkey_str(&klist, dsix_name, *cptr++);
   }
-  status = clnt_call(sum->cl, PUTDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+//  status = clnt_call(sum->clput, PUTDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+//			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
+  rr = rr_random(0, 2);		//!!TBD make the high a def in sum_rpc.h
+  switch(rr) {
+  case 0: 
+    status = clnt_call(sum->clput, PUTDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
 			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
+    break;
+  case 1:
+    status = clnt_call(sum->clput1, PUTDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
+    break;
+  case 2:
+    status = clnt_call(sum->clput2, PUTDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
+    break;
+  }
 
   /* NOTE: These rtes seem to return after the reply has been received despite
    * the timeout value. If it did take longer than the timeout then the timeout
@@ -729,7 +1061,7 @@ int SUM_put(SUM_t *sum, int (*history)(const char *fmt, ...))
   */
   if(status != RPC_SUCCESS) {
     if(status != RPC_TIMEDOUT) {
-      call_err = clnt_sperror(sum->cl, "Err clnt_call for PUTDO");
+      call_err = clnt_sperror(sum->clput, "Err clnt_call for PUTDO");
       (*history)("%s %d %s\n", datestring(), status, call_err);
       freekeylist(&klist);
       return (4);
@@ -794,7 +1126,7 @@ int SUM_delete_series(char *filename, char *seriesname, int (*history)(const cha
       return(1);
     }
   }
-  status = clnt_call(cl, DELSERIESDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+  status = clnt_call(cldelser, DELSERIESDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
 			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
 
   /* NOTE: These rtes seem to return after the reply has been received despite
@@ -803,14 +1135,14 @@ int SUM_delete_series(char *filename, char *seriesname, int (*history)(const cha
   */
   if(status != RPC_SUCCESS) {
     if(status != RPC_TIMEDOUT) {
-      call_err = clnt_sperror(cl, "Err clnt_call for DELSERIESDO");
+      call_err = clnt_sperror(cldelser, "Err clnt_call for DELSERIESDO");
       (*history)("%s %d %s\n", datestring(), status, call_err);
       freekeylist(&klist);
       return (4);
     }
   }
   freekeylist(&klist);
-  clnt_destroy(cl);		/* destroy handle to sum_svc */
+  clnt_destroy(cldelser);		/* destroy handle to sum_svc !!TBD check */
   if(retstat == 1) return(1);           /* error occured */
   return(0);
 }
