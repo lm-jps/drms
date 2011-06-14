@@ -314,7 +314,7 @@ while($_ = shift(@ps_prod)) {
         if(system($cmd)) {
           print "Error: failure on sum_svc $DB\n";
         }
-        sleep(4);				#wait for log file to open
+        sleep(2);				#let sum_svc start
         $cmd = "Sdelser $DB $sumlog &";
         if(system($cmd)) {
           print "Error: failure on Sdelser $DB\n";
