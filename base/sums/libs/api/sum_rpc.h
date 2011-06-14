@@ -120,6 +120,7 @@ bool_t xdr_Rkey(XDR *xdrs, Rkey *objp);
 
 /* This is the sum_svc program registration. Client API sends here */
 //First define the prog numbers of the seperate sum functions
+#define NUMSINFOSVC 3	//# of Sinfo servers 
 #define SUMALLOC ((uint32_t)0x20000600) /* 536872448 */
 #define SUMALLOCV ((uint32_t)1)
 #define SUMGET ((uint32_t)0x20000601) /* 536872449 */
@@ -134,6 +135,14 @@ bool_t xdr_Rkey(XDR *xdrs, Rkey *objp);
 #define SUMINFO2 ((uint32_t)0x20000606) /* 536872454 */
 #define SUMPUT1 ((uint32_t)0x20000607) /* 536872455 */
 #define SUMPUT2 ((uint32_t)0x20000608) /* 536872456 */
+#define SUMGET1 ((uint32_t)0x20000609) /* 536872457 */
+#define SUMGET2 ((uint32_t)0x2000060a) /* 536872458 */
+#define SUMALLOC1 ((uint32_t)0x2000060b) /* 536872459 */
+#define SUMALLOC2 ((uint32_t)0x2000060c) /* 536872460 */
+#define SUMOPEN ((uint32_t)0x2000060d) /* 536872461 */
+#define SUMOPENV ((uint32_t)1)
+#define SUMOPEN1 ((uint32_t)0x2000060e) /* 536872462 */
+#define SUMOPEN2 ((uint32_t)0x2000060f) /* 536872463 */
 #define SUMPROG ((uint32_t)0x20000611) /* 536872465 */
 #define SUMVERS ((uint32_t)1)
 #define SUMDO ((uint32_t)1)
@@ -373,8 +382,15 @@ typedef struct SUM_struct
 {
   SUMID_t uid;
   CLIENT *cl;            /* client handle for calling sum_svc */
+  CLIENT *clopen;           /* client handle for calling sum_svc open */
+  CLIENT *clopen1;          /* client handle for calling sum_svc open */
+  CLIENT *clopen2;          /* client handle for calling sum_svc open */
   CLIENT *clalloc;       /* client handle for calling sum_svc allocate */
+  CLIENT *clalloc1;       /* client handle for calling sum_svc allocate */
+  CLIENT *clalloc2;       /* client handle for calling sum_svc allocate */
   CLIENT *clget;         /* client handle for calling sum_svc get */
+  CLIENT *clget1;        /* client handle for calling sum_svc get */
+  CLIENT *clget2;        /* client handle for calling sum_svc get */
   CLIENT *clput;         /* client handle for calling sum_svc put */
   CLIENT *clput1;        /* client handle for calling sum_svc put */
   CLIENT *clput2;        /* client handle for calling sum_svc put */
