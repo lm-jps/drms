@@ -2505,3 +2505,69 @@ TIME drms_keyword_getdate(DRMS_Record_t *rec)
 
   return thedate;
 }
+
+static DRMS_Keyword_t *TemplateKeyFollowLink(DRMS_Keyword_t *srckey, int depth, int *statret)
+{
+   int status = DRMS_SUCCESS;
+   DRMS_Link_t *link = NULL;
+   DRMS_Record_t *linktempl = NULL;
+   DRMS_Keyword_t *tgtkey = NULL;
+
+   /* Fetch link struct. */
+   link = (DRMS_Link_t *)hcon_lookup_lower(&srckey->record->links, srckey->info->linkname);
+   if (link)
+   {
+      linktempl = drms_template_record(srckey->record->env, link->info->target_series, &status);
+
+      if (linktempl)
+      {
+         tgtkey = (DRMS_Keyword_t *)hcon_lookup_lower(&linktempl->keywords, srckey->info->target_key);
+
+         if (tgtkey)
+         {
+            if (tgtkey->info->islink)
+            {
+               if (depth < DRMS_MAXLINKDEPTH)
+               {
+                  tgtkey = TemplateKeyFollowLink(tgtkey, depth + 1, statret);
+               }
+               else
+               {
+                  fprintf(stderr, 
+                          "WARNING: Max link depth exceeded for keyword '%s' in series '%s'.\n", 
+                          srckey->info->name, 
+                          link->info->target_series);  
+               }
+            }
+         }
+         else
+         {
+            if (statret)
+            {
+               *statret = DRMS_ERROR_UNKNOWNKEYWORD;
+            }
+         }
+      }
+      else
+      {
+         if (statret)
+         {
+            *statret = DRMS_ERROR_UNKNOWNSERIES;
+         }
+      }
+   }
+   else
+   {
+      if (statret)
+      {
+         *statret = DRMS_ERROR_UNKNOWNLINK;
+      }
+   }
+
+   return tgtkey;
+}
+
+DRMS_Keyword_t *drms_template_keyword_followlink(DRMS_Keyword_t *srckey, int *statret)
+{
+   return TemplateKeyFollowLink(srckey, 0, statret);
+}

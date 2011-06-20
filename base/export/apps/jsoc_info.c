@@ -383,6 +383,8 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
   /* show all keywords */
   keyarray = json_new_array();
 
+  /* We don't want to follow the link just yet - we need a combination of source and target 
+   * keyword information below. For now, just get the source keyword info. */
   while ((key = drms_record_nextkey(rec, &last, 0)))
     {
     json_t *keyinfo;
@@ -390,7 +392,8 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
     json_t *defval, *recscope;
     char rawval[100], *jsonstr;
     int persegment = key->info->kwflags & kKeywordFlag_PerSegment;
-if (DEBUG) fprintf(stderr,"   starting keyword %s\n",key->info->name);
+    if (DEBUG) fprintf(stderr,"   starting keyword %s\n",key->info->name);
+    /* If a keyword is a linked keyword, then it cannot be a per-segment keyword also. */
     if (persegment)
       {
       char *underscore;
@@ -404,12 +407,25 @@ if (DEBUG) fprintf(stderr,"   starting keyword %s\n",key->info->name);
     keyinfo = json_new_object();
     json_insert_pair_into_object(keyinfo, "name", json_new_string(persegment ? baseKeyName : key->info->name));
     if (key->info->islink)
-	keytype = json_new_string("link");
+    {
+       /* Display the target keyword data type. Must follow link now. */
+       int lnkstat = DRMS_SUCCESS;
+       DRMS_Keyword_t *linkedkw = drms_template_keyword_followlink(key, &lnkstat);
+
+       if (lnkstat == DRMS_SUCCESS && linkedkw)
+       {
+          keytype = json_new_string(drms_type_names[linkedkw->info->type]);
+       }
+       else
+       {
+          keytype = json_new_string("link");
+       }
+    }
     else
 	keytype = json_new_string(drms_type_names[key->info->type]);
     json_insert_pair_into_object(keyinfo, "type", keytype);
     // scope                                                                                                                      
-    persegment = key->info->kwflags & kKeywordFlag_PerSegment;
+    // redundant - persegment = key->info->kwflags & kKeywordFlag_PerSegment;
     if (persegment)
       {
       recscope = json_new_string("segment");
