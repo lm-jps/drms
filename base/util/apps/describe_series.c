@@ -267,7 +267,7 @@ int DoIt(void) {
   if (rec_cnt) {
     sprintf(query, "select pg_total_relation_size('%s')", series);
     if ((qres = drms_query_txt(drms_env->session, query)) && qres->num_rows>0)    {
-      double tsize = atoi(qres->field[0][0]);
+      double tsize = atoll(qres->field[0][0]);
       printf("Average bytes per record on disk: %.2f\n", tsize/rec_cnt);
     }
     db_free_text_result(qres);
