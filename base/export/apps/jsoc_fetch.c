@@ -18,6 +18,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <time.h>
+#include <sys/file.h>
 
 #define MAX_EXPORT_SIZE 100000  // 100GB
 
@@ -199,7 +200,6 @@ int quick_export_rs( json_t *jroot, DRMS_RecordSet_t *rs, int online,  long long
   char numval[200];
   char query[DRMS_MAXQUERYLEN];
   char record[DRMS_MAXQUERYLEN];
-  char recpath[DRMS_MAXPATHLEN];
   char segpath[DRMS_MAXPATHLEN];
   int i;
   int count = 0;
@@ -369,7 +369,6 @@ int die(int dojson, char *msg, char *info, char *stat, int64_t **psunumarr, SUM_
         char **series, char **paths, char **sustatus, char **susize, int arrsize)
   {
   char *msgjson;
-  char errval[10];
   char *json;
   char message[10000];
   json_t *jroot = json_new_object();
@@ -501,7 +500,6 @@ static int SetWebArg(Q_ENTRY *req, const char *key, char **arglist, size_t *size
 
 static int SetWebFileArg(Q_ENTRY *req, const char *key, char **arglist, size_t *size)
    {
-   char *value = NULL;
    int len;
    char keyname[100], length[20];
    SetWebArg(req, key, arglist, size);     // get contents of upload file
@@ -515,6 +513,28 @@ static int SetWebFileArg(Q_ENTRY *req, const char *key, char **arglist, size_t *
    SetWebArg(req, keyname, arglist, size);     // get name of upload file
    return(0);
    }
+
+/* Returns 1 on success. */
+static int AcquireLock(int fd)
+{
+   int ret = -1;
+   int natt = 0;
+
+   while ((ret = flock(fd, LOCK_EX | LOCK_NB)) != 0 && natt < 10)
+   {
+      // printf("couldn't get lock, trying again.\n");
+      sleep(1);
+      natt++;
+   }
+
+   return (ret == 0);
+}
+
+static void ReleaseLock(int fd)
+{
+   flock(fd, LOCK_UN);
+}
+
 
 /* Module main function. */
 int DoIt(void)
@@ -535,7 +555,7 @@ int DoIt(void)
   const char *method;
   const char *protocol;
   const char *filenamefmt;
-  const char *dbhost;
+  char dbhost[DRMS_MAXHOSTNAME];
   int testmode = 0;
   char *errorreply;
   int64_t *sunumarr = NULL; /* array of 64-bit sunums provided in the'sunum=...' argument. */
@@ -545,7 +565,6 @@ int DoIt(void)
   int rcountlimit = 0;
   TIME reqtime;
   TIME esttime;
-  TIME exptime;
   TIME now = timenow();
   double waittime;
   char *web_query;
@@ -557,7 +576,6 @@ int DoIt(void)
   char status_query[1000];
   char *export_series; 
   int is_POST = 0;
-  FILE *requestid_log = NULL;
   char msgbuf[128];
   SUM_info_t **infostructs = NULL;
   char *webarglist = NULL;
@@ -655,7 +673,17 @@ int DoIt(void)
   notify = cmdparams_get_str (&cmdparams, kArgNotify, NULL);
   shipto = cmdparams_get_str (&cmdparams, kArgShipto, NULL);
   requestorid = cmdparams_get_int (&cmdparams, kArgRequestorid, NULL);
-  dbhost = cmdparams_get_str(&cmdparams, "JSOC_DBHOST", NULL);
+
+  if (strlen(drms_env->session->db_handle->dbhost) > 0)
+  {
+     snprintf(dbhost, sizeof(dbhost), drms_env->session->db_handle->dbhost);
+  }
+  else
+  {
+     *dbhost = '\0';
+  }
+
+
   testmode = (TESTMODE || cmdparams_isflagset(&cmdparams, kArgTestmode));
 
   dodataobj = strcmp(formatvar, "dataobj") == 0;
@@ -673,7 +701,25 @@ int DoIt(void)
 
 // SPECIAL DEBUG LOG HERE XXXXXX
 {
-FILE *runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
+   /* Before opening the log file, acquire a lock. Not only will this allow multiple jsoc_fetchs to 
+    * write to the same log, but it will facilitate synchronization with code that manages compression
+    * and clean-up of the log. */
+   
+   FILE *runlog = NULL;
+   int lockfd;
+   int gotlock;
+
+   gotlock = 0;
+   lockfd = open("/home/jsoc/exports/tmp/lock.txt", O_RDONLY | O_CREAT);
+   if (lockfd >= 0)
+   {
+      if (AcquireLock(lockfd))
+      {
+         gotlock = 1;
+         runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
+      }
+   }
+
  if (runlog)
  {
     char nowtxt[100];
@@ -700,7 +746,7 @@ FILE *runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
 
        /* Before printing the webarglist string, escape '%' chars - otherwise fprintf(), will
         * think you want to replace things like "%lld" with a formated value - this happens
-        * even though there is not arg provided after webarglist. */
+        * even though there is no arg provided after webarglist. */
        while (*pwa && (prl - rlbuf < rlsize - 1))
        {
           if (*pwa == '%')
@@ -723,7 +769,19 @@ FILE *runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
     }
 
     fprintf(runlog, "**********************\n");
+
     fclose(runlog);
+ }
+ else
+ {
+    fprintf(stderr, "Unable to acquire lock file; skipping debug logging (but continuing).\n");
+ }
+
+ if (gotlock)
+ {
+    ReleaseLock(lockfd);
+    close(lockfd);
+    gotlock = 0;
  }
 }
 
@@ -1057,7 +1115,6 @@ check for requestor to be valid remote DRMS site
   /*  op == exp_request  */
   else if (strcmp(op,kOpExpRequest) == 0) 
     {
-    int sums_status = 0;  //ISS
     int status=0;
     int segcount = 0;
     int irec;
@@ -1376,7 +1433,7 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
      if (fscanf(fp, "%s", new_requestid) != 1)
        JSONDIE("Cant get new RequestID");
      pclose(fp);
-     if (strcmp(dbhost, "hmidb") == 0)
+     if (strstr(dbhost, "hmidb"))
        strcat(new_requestid, "_IN");
      }
      requestid = new_requestid;
@@ -1618,7 +1675,6 @@ JSONDIE("Re-Export requests temporarily disabled.");
     char *json;
     char *strval;
     char numval[100];
-    json_t *jsonval;
     json_t *jroot=NULL;
 
     if (status == 0)
