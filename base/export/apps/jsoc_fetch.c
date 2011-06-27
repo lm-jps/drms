@@ -20,6 +20,9 @@
 #include <time.h>
 #include <sys/file.h>
 
+#define kLockFile "/home/jsoc/exports/tmp/lock.txt"
+#define kLogFile "/home/jsoc/exports/tmp/fetchlog.txt"
+
 #define MAX_EXPORT_SIZE 100000  // 100GB
 
 #define kExportSeries "jsoc.export"
@@ -710,13 +713,13 @@ int DoIt(void)
    int gotlock;
 
    gotlock = 0;
-   lockfd = open("/home/jsoc/exports/tmp/lock.txt", O_RDONLY | O_CREAT);
+   lockfd = open(kLockFile, O_RDONLY | O_CREAT, S_IRWXU | S_IRWXG);
    if (lockfd >= 0)
    {
       if (AcquireLock(lockfd))
       {
          gotlock = 1;
-         runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
+         runlog = fopen(kLogFile, "a");
       }
       else
       {
@@ -775,6 +778,7 @@ int DoIt(void)
     fprintf(runlog, "**********************\n");
 
     fclose(runlog);
+    chmod(kLogFile, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
  }
  else
  {
@@ -784,8 +788,13 @@ int DoIt(void)
  if (gotlock)
  {
     ReleaseLock(lockfd);
-    close(lockfd);
     gotlock = 0;
+ }
+
+ if (lockfd >= 0)
+ {
+    close(lockfd);
+    chmod(kLockFile, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
  }
 }
 
