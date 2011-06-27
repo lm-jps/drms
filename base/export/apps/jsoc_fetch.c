@@ -718,6 +718,10 @@ int DoIt(void)
          gotlock = 1;
          runlog = fopen("/home/jsoc/exports/tmp/fetchlog.txt", "a");
       }
+      else
+      {
+         fprintf(stderr, "Unable to acquire lock file; skipping debug logging (but continuing).\n");
+      }
    }
 
  if (runlog)
@@ -774,7 +778,7 @@ int DoIt(void)
  }
  else
  {
-    fprintf(stderr, "Unable to acquire lock file; skipping debug logging (but continuing).\n");
+    fprintf(stderr, "Unable to open log file; skipping debug logging (but continuing).\n");
  }
 
  if (gotlock)
