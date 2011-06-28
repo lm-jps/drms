@@ -2296,7 +2296,11 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
              /* if sum_svc is down, 
               * then SUM_poll() will never return anything but TIMEOUTMSG. */
              pollrv = SUM_poll(sum);
-             fprintf(stderr, "SUM_poll() returned %d.\n", pollrv);
+             
+             if (env->verbose)
+             {
+                fprintf(stdout, "SUM_poll() returned %d.\n", pollrv);
+             }
 
              if (gSUMSbusyMtx)
              {
@@ -2326,7 +2330,12 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                  * If sum_svc has crashed or restarted, then SUM_open() needs to be called again. Otherwise, if
                  * tape_svc or driveX_svc has crashed or restarted, then SUM_get() needs to be called again. */
                 sumnoop = SUM_nop(sum, printf);
-                fprintf(stderr, "SUM_nop() returned %d.\n", sumnoop);
+                
+                if (env->verbose)
+                {
+                   fprintf(stdout, "SUM_nop() returned %d.\n", sumnoop);
+                }
+
                 sumscrashed = (sumnoop == 4);
                 if (sumnoop >= 4)
                 {
@@ -2351,7 +2360,10 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                 else
                 {
                    /* Must go back to SUM_poll(). */
-                   fprintf(stderr, "Tape fetch has not completed, waiting for %d seconds.\n", naptime);
+                   if (env->verbose)
+                   {
+                      fprintf(stdout, "Tape fetch has not completed, waiting for %d seconds.\n", naptime);
+                   }
                    sleep(naptime);
                    GettingSleepier(&naptime);
                 }
