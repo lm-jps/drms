@@ -681,6 +681,7 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
    if (*filename == '\0' || stat(filename, &stbuf))
    {
       /* file filename is missing */
+      snprintf(seg->filename, sizeof(seg->filename), "%s", filename); /* so caller has access to file name */
       status = DRMS_ERROR_INVALIDFILE;
    }
    else

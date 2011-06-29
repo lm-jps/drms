@@ -234,12 +234,12 @@ char gDefBuf[PATH_MAX] = {0};
 /* Convert number of bytes to number of MB. If number of bytes < 1MB, then return 1. */
 static long long ToMB(long long nbytes)
 {
-   if (nbytes <= kMB)
+   if (nbytes <= kMB && nbytes > 0)
    {
       return 1;
    }
 
-   return nbytes / kMB;
+   return (long long)((nbytes + 0.5 * kMB) / kMB);
 }
 
 MymodError_t WritePListRecord(PLRecType_t rectype, FILE *pkfile, const char *f1, const char *f2)
@@ -325,6 +325,7 @@ static int MapexportRecordToDir(DRMS_Record_t *recin,
       if (drmsstat == DRMS_ERROR_INVALIDFILE)
       {
          /* No input segment file. */
+         fprintf(stderr, "Requested input file %s is missing or invalid.\n", segin->filename);
       }
       else if (drmsstat != DRMS_SUCCESS || stat(fullfname, &filestat))
       {
@@ -452,10 +453,6 @@ static int MapexportToDir(DRMS_Env_t *env,
       if (errorCount > 0)
       {
          fprintf(stderr,"Export failed for %d segments of %d attempted.\n", errorCount, errorCount + okayCount);
-         if (okayCount == 0)
-         {
-            modstat = kMymodErr_ExportFailed;
-         }
       }
 
       if (exptime)
@@ -1172,20 +1169,20 @@ int DoIt(void)
    {
       snprintf(pklistpath, sizeof(pklistpath), "%s/%s", md_dir, pklistfname);
       pklist = fopen(pklistpath, "w+");
-   }
 
-   if (pklist)
-   {
-      if (fseek(pklistTMP, 0, SEEK_SET))
+      if (pklist)
       {
-         md_error = GenErrMsg("Failure accessing packing-list file '%s'.\n", pklistfnameTMP);
+         if (fseek(pklistTMP, 0, SEEK_SET))
+         {
+            md_error = GenErrMsg("Failure accessing packing-list file '%s'.\n", pklistfnameTMP);
+            err = kMymodErr_PackfileFailure;
+         }
+      }
+      else
+      {
+         md_error = GenErrMsg("Failure opening packing-list file '%s'.\n", pklistfname);
          err = kMymodErr_PackfileFailure;
       }
-   }
-   else
-   {
-      md_error = GenErrMsg("Failure opening packing-list file '%s'.\n", pklistfname);
-      err = kMymodErr_PackfileFailure;
    }
 
    /* For now, there is just success/failure in the packing-list file */
@@ -1219,7 +1216,14 @@ int DoIt(void)
          /* Copy the content from the temporary pklist into the real pklist */
          fprintf(pklist, "# DATA \n");
          fflush(pklist);
-         err = AppendContent(pklist, pklistTMP);
+         if (tsizeMB > 0)
+         {
+            err = AppendContent(pklist, pklistTMP);
+         }
+         else
+         {
+            WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_Warning"), "No FITS files were exported. The requested FITS files no longer exist.");  
+         }
       }
 
       if (err != kMymodErr_Success)

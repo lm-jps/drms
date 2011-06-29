@@ -23,6 +23,7 @@ kMD_ExpTime = exptime
 kMD_Dir = dir
 kMD_Status = status
 kMD_Error = error
+kMD_Warning = warning
 
 # Packing-list file name
 kPackListFileName = index.txt
