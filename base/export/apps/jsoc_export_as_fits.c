@@ -286,7 +286,7 @@ static int MapexportRecordToDir(DRMS_Record_t *recin,
    HIterator_t *last = NULL;
    int iseg;
    int lastcparms;
-   int gotone;
+   int count;
 
    drms_record_directory(recin, dir, 1); /* This fetches the input data from SUMS. */
 
@@ -298,7 +298,7 @@ static int MapexportRecordToDir(DRMS_Record_t *recin,
 
    iseg = 0;
    lastcparms = 0;
-   gotone = 0;
+   count = 0;
 
    while ((segin = drms_record_nextseg(recin, &last, 1)) != NULL)
    {
@@ -336,13 +336,7 @@ static int MapexportRecordToDir(DRMS_Record_t *recin,
       }
       else
       {
-         gotone = 1;
-
-         if (tcount)
-         {
-            ++*tcount;
-         }
-
+         count++;
          tsize += filestat.st_size;
          WritePListRecord(kPL_content, pklist, query, fmtname);
       }
@@ -352,9 +346,14 @@ static int MapexportRecordToDir(DRMS_Record_t *recin,
 
    /* If NO file exported, this is an error. But if there is more than one segments, it is okay
     * for some input segment files to be missing. */
-   if (!gotone)
+   if (count == 0)
    {
       modstat = kMymodErr_ExportFailed;
+   }
+
+   if (tcount)
+   {
+      *tcount = count;
    }
 
    if (last)
@@ -394,7 +393,10 @@ static int MapexportToDir(DRMS_Env_t *env,
    unsigned long long tsize = 0;
    int errorCount = 0;
    int okayCount = 0;
+   int count;
+   int itcount;
 
+   itcount = 0;
    if (RecordLimit == 0)
      rsin = drms_open_recordset(env, rsinquery, &stat);
    else
@@ -426,18 +428,20 @@ static int MapexportToDir(DRMS_Env_t *env,
                   break;
                }
 
+               count = 0;
                tsize += MapexportRecordToDir(recin,
                                              ffmt,
                                              outpath,
                                              pklist, 
                                              classname, 
                                              mapfile, 
-                                             tcount, 
+                                             &count, 
                                              cparms, 
                                              &modstat);
                if (modstat == kMymodErr_Success)
                {
                   okayCount++;
+                  itcount += count;
                }
                else
                {
@@ -458,6 +462,10 @@ static int MapexportToDir(DRMS_Env_t *env,
       if (exptime)
       {
          *exptime = CURRENT_SYSTEM_TIME;
+      }
+      if (tcount)
+      {
+         *tcount = itcount;
       }
    }
    else
