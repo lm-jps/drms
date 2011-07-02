@@ -1,4 +1,5 @@
 #include <sys/wait.h>
+#include <pthread.h>
 #include "jsoc.h"
 #include "cmdparams.h"
 #include "timer.h"
@@ -122,14 +123,19 @@ drms_run drmslog=/tmp/arta drmsrunlog=/tmp/arta -L poke_missing.csh ds=mdi.fd_V_
 
 enum RUNstat_enum
 {
+   kSTAT_SIGTHREAD = -7,
+   kSTAT_SIGMASK = -6,
+   kSTAT_MUTEX = -5,
+   kSTAT_DRMSSERVERWONTSTART = -4,
+   kSTAT_TERMINATE = -3,           /* drms_runs has received a SIGINT signal */
    kSTAT_ARGERROR = -2,
    kSTAT_HELP = -1,
-   kSTAT_COMMIT = 0,           /* drms_server committed upon exiting */
-   kSTAT_ABORT = 1,            /* drms_server aborted upon exiting (there was an error) */
-   kSTAT_SCRIPTFAILURE =   2,  /* failed to run script with DRMS commands */
-   kSTAT_KILLFAILED = 3,       /* failed to send kill signal to drms_server */
-   kSTAT_DRMSSERVERFAILURE = 4,/* drms_server failed to shut down properly */
-   kSTAT_ENVTIMEOUT = 5        /* couldn't find drms_server env file (perhaps not written) */
+   kSTAT_COMMIT = 0,               /* drms_server committed upon exiting */
+   kSTAT_ABORT = 1,                /* drms_server aborted upon exiting (there was an error) */
+   kSTAT_SCRIPTFAILURE =   2,      /* failed to run script with DRMS commands */
+   kSTAT_KILLFAILED = 3,           /* failed to send kill signal to drms_server */
+   kSTAT_DRMSSERVERFAILURE = 4,    /* drms_server failed to shut down properly */
+   kSTAT_ENVTIMEOUT = 5            /* couldn't find drms_server env file (perhaps not written) */
 };
 
 typedef enum RUNstat_enum RUNstat_enum_t;
@@ -156,6 +162,88 @@ ModuleArgs_t *gModArgs = module_args;
 /* Global structure holding command line parameters. */
 CmdParams_t cmdparams;
 
+static int gTerminate = 0;
+static pthread_mutex_t gSiglock;
+static pthread_t gSigthreadid;
+
+static int TerminationTime()
+{
+   int rv = 0;
+
+   pthread_mutex_lock(&gSiglock);
+   rv = (gTerminate == 1);
+   pthread_mutex_unlock(&gSiglock);
+
+   return rv;
+}
+
+static void SetTerminate(int val)
+{
+   pthread_mutex_lock(&gSiglock);
+   gTerminate = val;
+   pthread_mutex_unlock(&gSiglock);
+}
+
+/* Must have a SIGINT signal handler since we will regularly ctrl-c drms_run. This handle needs to
+ * set a flag so that clean-up code runs. In particular, we need to ensure that drms_server is terminated.
+ * If the drms_run script, which is executed with a system() call, is being executed when
+ * drms_run receives a SIGINT, then ctrl-c will be ignored by drms_run (the system() call
+ * blocks SIGINT). The SIGINT signal will be passed to the drms_run script. 
+ * The drms_run script itself will pass the SIGINT to whatever child is currently running, 
+ * then it will terminate itself, returning a SIGINT from the system() call that launched it. Accordingly,
+ * drms_run must check the return value from system() and if the drms_run
+ * script terminated because it received a SIGINT signal, drms_run must clean-up and abort.
+ */
+void *sigthread(void *arg)
+{
+   int status;
+   int signo;
+   sigset_t *sigmask = (sigset_t *)arg;
+
+   /* must block SIGINT before actually waiting for it */
+   if((status = pthread_sigmask(SIG_BLOCK, sigmask, NULL)))
+   {
+      fprintf(stderr, "pthread_sigmask call failed with status = %d\n", status);
+      fprintf(stderr, "Unable to initialize signal thread.\n");
+      return NULL;
+   }
+
+   while (1)
+   {
+      if ((status = sigwait(sigmask, &signo)) != 0)
+      {
+         if (status != EINTR)
+         {
+            fprintf(stderr,"sigwait error, errcode=%d.\n",status);
+            break;
+         }
+      }
+
+      if (signo == SIGUSR1)
+      {
+         break;
+      }
+      else if (signo == SIGINT)
+      {
+         /* Set flag denoting termination, and kill signal thread. */
+         SetTerminate(1);
+         break;
+      }
+   }
+
+   /* fprintf(stderr,"signal thread terminating.\n"); */
+   return NULL;
+}
+
+static void DRMSrunExit(int status)
+{
+   pthread_kill(gSigthreadid, SIGUSR1); /* may fail if signal thread has already terminated, but that is
+                                         * OK. */
+   pthread_join(gSigthreadid, NULL);
+   pthread_mutex_destroy(&gSiglock);
+   exit(status);
+}
+
 /* takes a single parameter - a script to run */
 int main(int argc, char *argv[])
 {
@@ -181,20 +269,53 @@ int main(int argc, char *argv[])
    int argacc = 0;
    int iarg = 0;
 
+   /* set up ctrl-c signal handler */
+   sigset_t sigmask;
+   sigemptyset(&sigmask);
+   sigaddset(&sigmask, SIGINT);
+   sigaddset(&sigmask, SIGUSR1);
+
+   /* intialize signal lock */
+   if ((status = pthread_mutex_init(&gSiglock, NULL)) != 0)
+   {
+      fprintf(stderr, "pthread_mutex_init call failed with status = %d\n", status);
+      exit(kSTAT_MUTEX);
+   }
+
+   /* block the SIGINT signal */
+   if ((status = pthread_sigmask(SIG_BLOCK, &sigmask, NULL)) != 0)
+   {
+      fprintf(stderr, "pthread_sigmask call failed with status = %d\n", status);
+      pthread_mutex_destroy(&gSiglock);
+      exit(kSTAT_SIGMASK);
+   }
+
+   /* create the signal thread */
+   if((status = pthread_create(&gSigthreadid, NULL, &sigthread, (void *)&sigmask)) != 0)
+   {
+      fprintf(stderr,"Signal-thread creation failed: %d\n", status);          
+      DRMSrunExit(kSTAT_SIGTHREAD);
+   }
+
    if ((status = cmdparams_parse(&cmdparams, argc, argv)) == -1)
    {
       fprintf(stderr,"Error: Command line parsing failed. Aborting.\n");
-      return kSTAT_ARGERROR;
+      DRMSrunExit(kSTAT_ARGERROR);
    }
    else if (status == CMDPARAMS_QUERYMODE)
    {
        cmdparams_usage(argv[0]);
-       return kSTAT_HELP;
+       DRMSrunExit(kSTAT_HELP);
    }
    else if (status == CMDPARAMS_NODEFAULT)
    {
       fprintf(stderr, "For usage, type %s [-H|--help]\n", argv[0]);
-      return kSTAT_ARGERROR;
+      DRMSrunExit(kSTAT_ARGERROR);
+   }
+
+   if (TerminationTime())
+   {
+      DRMSrunExit(kSTAT_TERMINATE);
    }
 
    script = cmdparams_getarg(&cmdparams, 1);
@@ -222,13 +343,17 @@ int main(int argc, char *argv[])
       iarg++;
    }
 
+   if (TerminationTime())
+   {
+      DRMSrunExit(kSTAT_TERMINATE);
+   }
+
    if ((pid = fork()) == -1)
    {
       /* parent - couldn't start child process */
       pid = getpid();
-
       fprintf(stderr, "Failed to start drms_server.\n");
-      
+      runstat = kSTAT_DRMSSERVERWONTSTART;
    }
    else if (pid > 0)
    {
@@ -260,7 +385,6 @@ int main(int argc, char *argv[])
 
       snprintf(envfile, sizeof(envfile), "%s.%llu", kDRMSERVERENV, (unsigned long long)pid);
       
-
       if (verbose)
       {
          time_t now;
@@ -297,6 +421,12 @@ int main(int argc, char *argv[])
          }
 
          sleep(1);
+      }
+
+      if (TerminationTime())
+      {
+         runstat = kSTAT_TERMINATE;
+         abort = 1;
       }
 
       if (runstat == kSTAT_COMMIT)
@@ -345,21 +475,42 @@ int main(int argc, char *argv[])
             fprintf(actstdout, "Running cmd '%s' on drms_server pid %llu.\n", cmd, (unsigned long long)pid);
          }
 
-         status = system(cmd);         
-
-         if (status == -1)
+         if (TerminationTime())
          {
-            runstat = kSTAT_SCRIPTFAILURE;
+            runstat = kSTAT_TERMINATE;
             abort = 1;
-            fprintf(actstderr, "Could not execute '%s' properly; bailing.\n", script);
          }
-         else if (WIFEXITED(status) && WEXITSTATUS(status))
+         else
          {
-            /* socket modules will return non-zero (doesn't have to be 1) to indicate 
-             * abort should happen */
-            /* Script requests abort - abort */
-            runstat = kSTAT_ABORT;
-            abort = 1;
+            status = system(cmd);      
+
+            if (status == -1)
+            {
+               runstat = kSTAT_SCRIPTFAILURE;
+               abort = 1;
+               fprintf(actstderr, "Could not execute '%s' properly; bailing.\n", script);
+            }
+            else if (WIFEXITED(status) && WEXITSTATUS(status))
+            {
+               /* I don't know if this is the right way to read this return value - the man pages 
+                * about this are horrible. */
+               if ((WEXITSTATUS(status) & 0x7F) == SIGINT)
+               {
+                  /* If drms_run received a SIGINT signal during the system() call, then the system() call
+                   * that launched the drms_run script will return a SIGINT. */
+                  SetTerminate(1);
+                  runstat = kSTAT_TERMINATE;
+                  abort = 1;
+               }
+               else
+               {
+                  /* socket modules will return non-zero (doesn't have to be 1) to indicate 
+                   * abort should happen */
+                  /* Script requests abort - abort */
+                  runstat = kSTAT_ABORT;
+                  abort = 1;
+               }
+            }
          }
       }
      
@@ -458,6 +609,8 @@ int main(int argc, char *argv[])
       {
          unlink(script);
       }
+
+      DRMSrunExit(runstat);
    }
    else
    {
@@ -542,5 +695,5 @@ int main(int argc, char *argv[])
       free(passargs);
    }
 
-   return runstat;
+   DRMSrunExit(runstat);
 }
