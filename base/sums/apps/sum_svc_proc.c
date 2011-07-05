@@ -21,7 +21,10 @@ extern float StopTimer(int n);
 extern CLIENT *current_client, *clnttape, *clnttape_old;
 extern SVCXPRT *glb_transp;
 extern uint32_t rinfo;
+extern uint32_t sumprog;
+extern uint32_t sumvers;
 extern int debugflg;
+extern int rrid;
 extern float ftmp;
 static int NO_OPEN = 0;
 static char callername[MAX_STR];
@@ -147,7 +150,7 @@ KEY *opendo_1(KEY *params)
   rinfo = SUMLIB_Open();		/* return a SUMID_t else 0 */
   if(rinfo) {
     write_time();
-    write_log("Successful SUMLIB_Open for user=%s uid=%d\n", user, rinfo);
+    write_log("Successful SUMLIB_Open id=%d for user=%s uid=%d\n",rrid,user,rinfo);
     //Elim setsumopened/getsumopened after 30Aug2010 build
     //setsumopened(&sumopened_hdr, rinfo, NULL, user); /*put in list of opens*/
 
@@ -218,7 +221,9 @@ KEY *shutdo_1(KEY *params)
 KEY *getdo_1(KEY *params)
 {
   //static struct timeval TIMEOUT = { 180, 0 }; 
-  static struct timeval TIMEOUT = { 8, 0 }; 
+  //static struct timeval TIMEOUT = { 8, 0 }; 
+  //must be >40 used for tape_svc response to sum_svc
+  static struct timeval TIMEOUT = { 50, 0 }; 
   static CLIENT *clresp;
   uint32_t tapeback;
   uint64_t uid, sunum;
@@ -237,8 +242,8 @@ KEY *getdo_1(KEY *params)
   }
   reqcnt = getkey_int(params, "reqcnt");
   sunum = getkey_uint64(params, "dsix_0");
-  write_log("SUM_get() for user=%s sunum=%lu cnt=%d\n", 
-		GETKEY_str(params, "username"), sunum, reqcnt);
+  write_log("SUM_get() id=%d for user=%s sunum=%lu cnt=%d\n", 
+		rrid, GETKEY_str(params, "username"), sunum, reqcnt);
   retlist=newkeylist();
   uid = getkey_uint64(params, "uid");
 //  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
@@ -302,7 +307,7 @@ KEY *getdo_1(KEY *params)
       }
       //check if sum_svc was disconnected from tape_svc. see tapereconnectdo_1()
       if(clnttape == 0) {
-        rinfo = 1;
+        rinfo = 2;		//tell drms tape unit was taken offline
         send_ack();
         freekeylist(&retlist);
         write_log("**Error in READDO to tape_svc. sum_svc has been disconnected\n");
@@ -310,11 +315,15 @@ KEY *getdo_1(KEY *params)
       }
       rinfo = RESULT_PEND;  /* now tell caller to wait for results */
       tapeback = 0;
+      //tell tape_svc which sums process to respond to
+      setkey_uint32(&retlist, "SPROG", sumprog);
+      setkey_uint32(&retlist, "SVERS", sumvers);
       status = clnt_call(clnttape,READDO, (xdrproc_t)xdr_Rkey, (char *)retlist, 
 			(xdrproc_t)xdr_uint32_t, (char *)&tapeback, TIMEOUT);
       if(status != RPC_SUCCESS) {
           if(status != RPC_TIMEDOUT) {
-            rinfo = 1;
+            //rinfo = 1;
+            rinfo = 5;		//tell drms that tape_svc is dead
             send_ack();
             call_err = clnt_sperror(clnttape, "Error clnt_call for READDO");
             write_log("%s %d %s\n", datestring(), status, call_err);
@@ -409,7 +418,7 @@ KEY *allocdo_1(KEY *params)
   //storeset = getkey_int(params, "storeset"); //obsolete
   if(!(status=SUMLIB_PavailGet(bytes, storeset, uid, sunum, &retlist))) {
     wd = getkey_str(retlist, "partn_name");
-    write_log("Alloc bytes=%e wd=%s for user=%s sumid=%lu\n", bytes, wd,
+    write_log("Alloc bytes=%e id=%d wd=%s for user=%s sumid=%lu\n", bytes, rrid, wd,
 		GETKEY_str(retlist, "USER"), uid);
     if(!(set_client_handle(RESPPROG, (uint32_t)uid))) { /*set up for response*/
       freekeylist(&retlist);
@@ -522,8 +531,8 @@ KEY *infodoX_1(KEY *params)
 //    send_ack();	/* ack original sum_svc caller */
 //    return((KEY *)1);	/* error. nothing to be sent */ 
 //  }
-  write_log("SUM_infoEx() for user=%s 1st sunum=%lu cnt=%d\n",
-                GETKEY_str(params, "username"), sunum, reqcnt);
+  write_log("SUM_infoEx() id=%d for user=%s 1st sunum=%lu cnt=%d\n",
+                rrid, GETKEY_str(params, "username"), sunum, reqcnt);
   retlist = newkeylist();
   add_keys(params, &retlist);		/* NOTE:does not do fileptr */
   if(!(status=SUMLIB_InfoGetEx(params, &retlist))) {
@@ -585,8 +594,8 @@ KEY *putdo_1(KEY *params)
   uid = getkey_uint64(params, "uid");
   reqcnt = getkey_int(params, "reqcnt");
   sunum = getkey_uint64(params, "dsix_0");
-  write_log("SUM_put() for user=%s 1st sunum=%lu reqcnt=%d\n", 
-		GETKEY_str(params, "username"), sunum, reqcnt);
+  write_log("SUM_put() id=%d for user=%s 1st sunum=%lu reqcnt=%d\n", 
+		rrid, GETKEY_str(params, "username"), sunum, reqcnt);
 //  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
 //    write_log("**Error: putdo_1() called with unopened uid=%lu\n", uid);
 //    rinfo = 1;	/* give err status back to original caller */
@@ -674,7 +683,8 @@ KEY *closedo_1(KEY *params)
 */
 KEY *nopdo_1(KEY *params)
 {
-  struct timeval NOPTIMEOUT = { 8, 0 };
+  //struct timeval NOPTIMEOUT = { 8, 0 };
+  struct timeval NOPTIMEOUT = { 15, 0 };
   uint64_t uid;
   KEY *klist;
   char *call_err;
@@ -709,6 +719,9 @@ KEY *nopdo_1(KEY *params)
     klist = newkeylist();
     setkey_uint64(&klist, "uid", uid);
     setkey_str(&klist, "USER", GETKEY_str(params, "USER") );
+    //tell tape_svc which sums process to respond to
+    setkey_uint32(&klist, "SPROG", sumprog);
+    setkey_uint32(&klist, "SVERS", sumvers);
     status = clnt_call(clnttape, TAPENOPDO, (xdrproc_t)xdr_Rkey, (char *)klist,
                         (xdrproc_t)xdr_void, (char *)&ans, NOPTIMEOUT);
     rinfo = (int)ans;
