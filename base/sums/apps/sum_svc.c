@@ -42,6 +42,8 @@ extern int errno;
 static void sumprog_1();
 struct timeval TIMEOUT = { 10, 0 };
 uint32_t rinfo;
+uint32_t sumprog, sumvers;
+int rrid;
 float ftmp;
 static struct timeval first[4], second[4];
 
@@ -53,6 +55,7 @@ char thishost[MAX_STR];
 char usedhost[MAX_STR];
 char hostn[MAX_STR];
 char logname[MAX_STR];
+char newlogname[MAX_STR];
 char datestr[32];
 char timetag[32];
 int thispid;
@@ -83,7 +86,7 @@ float StopTimer(int n)
 /*********************************************************/
 void open_log(char *filename)
 {
-  if((logfp=fopen(filename, "w")) == NULL) {
+  if((logfp=fopen(filename, "a")) == NULL) {
     fprintf(stderr, "Can't open the log file %s\n", filename);
   }
 }
@@ -164,8 +167,14 @@ void sighandler(sig)
 void usr1_sig(int sig)
 {
   write_log("%s usr1_sig received\n", datestring());
-  newlog = 1;                   /* tell main loop to start new log */
+  //newlog = 1;                   /* tell main loop to start new log */
   logcnt++;                     /* count # used in log file name */
+  write_log("%s Closing the current log file. Goodby.\n", datestring());
+  fclose(logfp);
+  sprintf(newlogname, "%s_%d", logname, logcnt);
+  open_log(newlogname);
+  write_log("\n## %s reopen log sum_svc on %s for pid = %d ##\n",
+             datestring(), thishost, thispid);
   signal(SIGUSR1, &usr1_sig);   /* handle a signal 16 sent by cron job */
 }
 
@@ -198,10 +207,13 @@ void get_cmd(int argc, char *argv[])
       }
     }
   }
-  if(argc != 1)
-    dbname = "hmidbX";
-  else
-    dbname = argv[0];
+  if(argc != 2) {
+    printf("!!ERROR: program needs 2 args: dbname and logfilename. e.g:\n");
+    printf("sum_svc jsoc_sums sum_svc_2011.06.06.140140.log\n");
+    exit(1);
+  }
+  dbname = argv[0];
+  sprintf(logname, "%s/%s", SUMLOG_BASEDIR, argv[1]);
 }
 
 /*********************************************************/
@@ -220,9 +232,11 @@ void setup()
   gethostname(hostn, 80);
   cptr = index(hostn, '.');     // must be short form
   if(cptr) *cptr = (char)NULL;
-
+  //how to call this sum process back
+  sumprog = SUMPROG;
+  sumvers = SUMVERS;
   thispid = getpid();
-  sprintf(logname, "%s/sum_svc_%s.log", SUMLOG_BASEDIR, gettimetag());
+  //sprintf(logname, "%s/sum_svc_%s.log", SUMLOG_BASEDIR, gettimetag());
   open_log(logname);
   printk_set(write_log, write_log);
   write_log("\n## %s sum_svc on %s (%s) for pid = %d ##\n", 
@@ -468,7 +482,6 @@ sumprog_1(rqstp, transp)
 	SVCXPRT *transp;
 {
   char procname[128];
-  char newlogname[MAX_STR];
   uint64_t ck_client;     //used to ck high bits of current_client
 
 	//StartTimer(1);
@@ -607,14 +620,20 @@ sumprog_1(rqstp, transp)
               //See email from Keh-Cheng 25Feb2011 13:44 Re:Cannot access..
             }
             else {
-              clnt_stat=clnt_call(current_client, RESPDO, (xdrproc_t)xdr_result, 
+              clnt_stat=clnt_call(current_client, RESPDO,(xdrproc_t)xdr_result, 
   		result, (xdrproc_t)xdr_void, 0, TIMEOUT);
-              if(clnt_stat != 0) {
-                clnt_perrno(clnt_stat);		/* outputs to stderr */
-                write_log("***Error on clnt_call() back to RESPDO procedure\n");
-                write_log("***The original client caller has probably exited\n");
-                call_err = clnt_sperror(current_client, "Err");
-                write_log("%s\n", call_err);
+              if(clnt_stat != RPC_SUCCESS) {
+                if(clnt_stat != RPC_TIMEDOUT) {
+                  clnt_perrno(clnt_stat);         // outputs to stderr 
+                  write_log("***Error on clnt_call() back to RESPDO procedure\n");
+                  write_log("***The original client caller has probably exited\n");
+                  call_err = clnt_sperror(current_client, "Err");
+                  write_log("%s\n", call_err);
+
+                }
+                else {
+                  write_log("Timeout ignored on RESPDO back to current_client\n");
+                }
               }
               clnt_destroy(current_client); 
             }
@@ -631,6 +650,7 @@ sumprog_1(rqstp, transp)
       //ftmp = StopTimer(1);
       //write_log("#END: %s %fsec\n", procname, ftmp);	//!!TEMP for test
 
+/**********************************************************************
       if(newlog) {      //got signal to make a new log file
         newlog = 0;
         write_log("%s Closing the current log file. Goodby.\n", datestring());
@@ -640,6 +660,7 @@ sumprog_1(rqstp, transp)
         write_log("\n## %s reopen log sum_svc on %s for pid = %d ##\n",
                 datestring(), thishost, thispid);
       }
+**********************************************************************/
 
       return;
 }
