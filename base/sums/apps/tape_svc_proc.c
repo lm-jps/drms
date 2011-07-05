@@ -45,6 +45,8 @@ extern int max_drives_wt;
 #endif
 extern uint64_t rinfo;
 extern uint32_t procnum;
+extern uint32_t sumprog;
+extern uint32_t sumvers;
 extern int debugflg;
 extern int current_client_destroy;
 extern int sim;
@@ -53,6 +55,7 @@ extern int robotoffline;
 extern int driveonoffstatus;
 extern char libdevname[];
 extern char hostn[];
+extern char sumhost[];
 extern SLOT slots[];
 extern DRIVE drives[];
 extern TQ *poff;
@@ -777,6 +780,26 @@ KEY *readdo_1(KEY *params) {
   case 2:		    /* removed from q, error occured */
     setkey_int(&poff->list, "STATUS", 1); /* give error back to caller */
     setkey_fileptr(&poff->list, "current_client", (FILE *)getkey_fileptr(params, "current_client"));
+    sumprog = getkey_uint32(poff->list, "SPROG");
+    //sumvers = getkey_uint32(poff->list, "SVERS");
+    //set client handle for the sums process
+  switch(sumprog) {
+  case SUMGET:
+    clntsum = clnt_create(sumhost, SUMGET, SUMGETV, "tcp");
+    break;
+  case SUMGET1:
+    clntsum = clnt_create(sumhost, SUMGET1, SUMGETV, "tcp");
+    break;
+  case SUMGET2:
+    clntsum = clnt_create(sumhost, SUMGET2, SUMGETV, "tcp");
+    break;
+  case SUMPROG:
+    clntsum = clnt_create(sumhost, SUMPROG, SUMVERS, "tcp");
+    break;
+  default:
+    write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
+    break;
+  }
     current_client = clntsum;
     procnum = SUMRESPDO;
     return(poff->list);
@@ -1478,6 +1501,26 @@ KEY *taperespreaddo_1(KEY *params) {
   client = (CLIENT *)getkey_fileptr(params, "current_client");
   /* final destination */
   setkey_fileptr(&retlist,  "current_client", (FILE *)client);
+  sumprog = getkey_uint32(params, "SPROG");
+  //sumvers = getkey_uint32(params, "SVERS");
+  //set client handle for the sums process
+  switch(sumprog) {
+  case SUMGET:
+    clntsum = clnt_create(sumhost, SUMGET, SUMGETV, "tcp");
+    break;
+  case SUMGET1:
+    clntsum = clnt_create(sumhost, SUMGET1, SUMGETV, "tcp");
+    break;
+  case SUMGET2:
+    clntsum = clnt_create(sumhost, SUMGET2, SUMGETV, "tcp");
+    break;
+  case SUMPROG:
+    clntsum = clnt_create(sumhost, SUMPROG, SUMVERS, "tcp");
+    break;
+  default:
+    write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
+    break;
+  }
   current_client = clntsum;
   procnum = SUMRESPDO;
   send_ack();
@@ -1747,6 +1790,26 @@ KEY *taperesprobotdo_1_rd(KEY *params) {
   setkey_fileptr(&retlist,  "current_client", (FILE *)client);
   if(stat=getkey_int(params, "STATUS")) {	/* error in robot */
     write_log("**Error return from robot_svc for read op.\n");
+    sumprog = getkey_uint32(params, "SPROG");
+    //sumvers = getkey_uint32(params, "SVERS");
+    //set client handle for the sums process
+  switch(sumprog) {
+  case SUMGET:
+    clntsum = clnt_create(sumhost, SUMGET, SUMGETV, "tcp");
+    break;
+  case SUMGET1:
+    clntsum = clnt_create(sumhost, SUMGET1, SUMGETV, "tcp");
+    break;
+  case SUMGET2:
+    clntsum = clnt_create(sumhost, SUMGET2, SUMGETV, "tcp");
+    break;
+  case SUMPROG:
+    clntsum = clnt_create(sumhost, SUMPROG, SUMVERS, "tcp");
+    break;
+  default:
+    write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
+    break;
+  }
     current_client = clntsum;
     procnum = SUMRESPDO;
     current_client_destroy = 1;
@@ -1810,6 +1873,26 @@ KEY *taperesprobotdo_1_rd(KEY *params) {
       call_err = clnt_sperror(clntdrv[dnum], "Err clnt_call for READDRVDO");
       write_log("%s %s\n", datestring(), call_err);
       setkey_int(&retlist, "STATUS", 1);	/* give error back to caller */
+      sumprog = getkey_uint32(params, "SPROG");
+      //sumvers = getkey_uint32(params, "SVERS");
+      //set client handle for the sums process
+  switch(sumprog) {
+  case SUMGET:
+    clntsum = clnt_create(sumhost, SUMGET, SUMGETV, "tcp");
+    break;
+  case SUMGET1:
+    clntsum = clnt_create(sumhost, SUMGET1, SUMGETV, "tcp");
+    break;
+  case SUMGET2:
+    clntsum = clnt_create(sumhost, SUMGET2, SUMGETV, "tcp");
+    break;
+  case SUMPROG:
+    clntsum = clnt_create(sumhost, SUMPROG, SUMVERS, "tcp");
+    break;
+  default:
+    write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
+    break;
+  }
       current_client = clntsum;
       current_client_destroy = 1;
       procnum = SUMRESPDO;
@@ -1821,6 +1904,26 @@ KEY *taperesprobotdo_1_rd(KEY *params) {
   if(driveback == 1) {
     write_log("**Error in readdo_1() in tape_svc_proc.c\n");
     setkey_int(&retlist, "STATUS", 1);	/* give error back to caller */
+    sumprog = getkey_uint32(params, "SPROG");
+    //sumvers = getkey_uint32(params, "SVERS");
+    //set client handle for the sums process
+  switch(sumprog) {
+  case SUMGET:
+    clntsum = clnt_create(sumhost, SUMGET, SUMGETV, "tcp");
+    break;
+  case SUMGET1:
+    clntsum = clnt_create(sumhost, SUMGET1, SUMGETV, "tcp");
+    break;
+  case SUMGET2:
+    clntsum = clnt_create(sumhost, SUMGET2, SUMGETV, "tcp");
+    break;
+  case SUMPROG:
+    clntsum = clnt_create(sumhost, SUMPROG, SUMVERS, "tcp");
+    break;
+  default:
+    write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
+    break;
+  }
     current_client = clntsum;
     current_client_destroy = 1;
     procnum = SUMRESPDO;
@@ -1854,6 +1957,26 @@ KEY *taperesprobotdo_1_wt(KEY *params) {
     //current_client = client;
     current_client_destroy = 1;
     //procnum = getkey_uint32(params, "procnum");
+    sumprog = getkey_uint32(params, "SPROG");
+    //sumvers = getkey_uint32(params, "SVERS");
+    //set client handle for the sums process
+  switch(sumprog) {
+  case SUMGET:
+    clntsum = clnt_create(sumhost, SUMGET, SUMGETV, "tcp");
+    break;
+  case SUMGET1:
+    clntsum = clnt_create(sumhost, SUMGET1, SUMGETV, "tcp");
+    break;
+  case SUMGET2:
+    clntsum = clnt_create(sumhost, SUMGET2, SUMGETV, "tcp");
+    break;
+  case SUMPROG:
+    clntsum = clnt_create(sumhost, SUMPROG, SUMVERS, "tcp");
+    break;
+  default:
+    write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
+    break;
+  }
     current_client = clntsum;
     procnum = SUMRESPDO;
     return(retlist);
