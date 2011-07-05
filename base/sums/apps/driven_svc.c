@@ -100,7 +100,7 @@ uint32_t rinfo;		/* info returned by XXXdo_1() calls */
 uint32_t procnum;	/* remote procedure # to call for current_client call*/
 
 FILE *logfp;
-CLIENT *current_client, *clnttape, *clntsum;
+CLIENT *current_client, *clnttape;
 SVCXPRT *glb_transp;
 int debugflg = 0;
 int tapeoffline = 0;
@@ -582,18 +582,6 @@ int main(int argc, char *argv[])
   if(!clnttape) {       /* server not there */
     clnt_pcreateerror("Can't get client handle to tape_svc");
     write_log("tape_svc not there on %s\n", thishost);
-    exit(1);
-  }
-  /* Create client handle used for calling the sum_svc */
-  if(strcmp(hostn, TAPEHOST)) {	//if running on d02, use j1
-    clntsum = clnt_create(thishost, SUMPROG, SUMVERS, "tcp");
-  }
-  else {
-    clntsum = clnt_create(SUMSVCHOST, SUMPROG, SUMVERS, "tcp");
-  }
-  if(!clntsum) {       /* server not there */
-    clnt_pcreateerror("Can't get client handle to sum_svc");
-    write_log("***sum_svc not there on %s\n", thishost);
     exit(1);
   }
 
