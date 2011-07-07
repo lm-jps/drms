@@ -162,7 +162,10 @@ int DoIt(void)
 
   /* Open record_set */
   if (RecordLimit == 0)
-    recordset = drms_open_recordset(drms_env, in, &status);
+    //    recordset = drms_open_recordset(drms_env, in, &status);
+    // temporarily reverting to drms_open_records until I can fix the problem with
+    // not passing a segment-list to drms_open_recordset().
+    recordset = drms_open_records(drms_env, in, &status);
   else
     recordset = drms_open_nrecords (drms_env, in, RecordLimit, &status);
   if (!recordset) 

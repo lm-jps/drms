@@ -1294,7 +1294,10 @@ check for requestor to be valid remote DRMS site
       }
 
     if (rcountlimit == 0)
-      rs = drms_open_recordset(drms_env, dsquery, &status);
+      //      rs = drms_open_recordset(drms_env, dsquery, &status);
+      rs = drms_open_records(drms_env, dsquery, &status);
+      // temporarily reverting to drms_open_records until I can fix the problem with
+      // not passing a segment-list to drms_open_recordset().
     else // rcountlimit specified via "n=" parameter in process field.
       rs = drms_open_nrecords (drms_env, dsquery, rcountlimit, &status);
 

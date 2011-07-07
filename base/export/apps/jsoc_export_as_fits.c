@@ -398,7 +398,10 @@ static int MapexportToDir(DRMS_Env_t *env,
 
    itcount = 0;
    if (RecordLimit == 0)
-     rsin = drms_open_recordset(env, rsinquery, &stat);
+     //     rsin = drms_open_recordset(env, rsinquery, &stat);
+     // temporarily reverting to drms_open_records until I can fix the problem with
+     // not passing a segment-list ot drms_open_recordset().
+     rsin = drms_open_records(env, rsinquery, &stat);
    else
      rsin = drms_open_nrecords(env, rsinquery, RecordLimit, &stat);
 
@@ -763,7 +766,10 @@ static int Mapexport(DRMS_Env_t *env,
          free(kval);
       }
 
-      if (rsinquery && (rsin = drms_open_recordset(env, rsinquery, &stat)))
+      //      if (rsinquery && (rsin = drms_open_recordset(env, rsinquery, &stat)))
+      // temporarily reverting to drms_open_records until I can fix the problem with
+      // not passing a segment-list ot drms_open_recordset().
+      if (rsinquery && (rsin = drms_open_records(env, rsinquery, &stat)))
       {
          /* stage records to reduce number of calls to SUMS. */
          drms_stage_records(rsin, 1, 0);
