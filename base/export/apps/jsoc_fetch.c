@@ -57,6 +57,7 @@
 #define kOpExpSu	"exp_su"	// jsoc_fetch, export SUs  from list of sunums
 #define kOpExpKinds	"exp_kinds"	// not used yet
 #define kOpExpHistory	"exp_history"	// not used yet
+#define kUserHandle	"userhandle"    // user provided unique session handle
 
 #define kOptProtocolAsIs "as-is"	// Protocol option value for no change to fits files
 
@@ -83,9 +84,12 @@ ModuleArgs_t module_args[] =
   {ARG_STRING, kArgFormatvar, kNotSpecified, "return json in object format"},
   {ARG_STRING, kArgMethod, "url", "return method"},
   {ARG_STRING, kArgFile, kNotSpecified, "uploaded file contents"},
+  {ARG_STRING, kUserHandle, kNotSpecified, "User specified unique session ID"},
   {ARG_FLAG, kArgTestmode, NULL, "if set, then creates new requests with status 12 (not 2)"},
   {ARG_FLAG, "h", "0", "help - show usage"},
   {ARG_STRING, "QUERY_STRING", kNotSpecified, "AJAX query from the web"},
+  {ARG_STRING, "REMOTE_ADDR", "0.0.0.0", "Remote IP address"},
+  {ARG_STRING, "SERVER_NAME", "ServerName", "JSOC Server Name"},
   {ARG_END}
 };
 
@@ -110,6 +114,7 @@ int nice_intro ()
 	"filenamefmt=exported file filename format\n"
 	"format=return content type\n"
 	"method=return method\n"
+        "userhandle=unique session id\n"
 	"h=help - show usage\n"
 	"QUERY_STRING=AJAX query from the web"
 	);
@@ -152,6 +157,16 @@ char *string_to_json(char *in)
   char *new;
   new = json_escape(in);
   return(new);
+  }
+
+manage_userhandle(int register_handle, const char *handle)
+  {
+  if (register_handle)
+    { // add handle and PID to current processing table
+    }
+  else if (handle && *handle)
+    { // remove handle from current processing table
+    }
   }
 
 void drms_sprint_rec_query(char *text, DRMS_Record_t *rec)
@@ -285,7 +300,7 @@ TIME timenow()
   }
 
 static void CleanUp(int64_t **psunumarr, SUM_info_t ***infostructs, char **webarglist,
-                    char **series, char **paths, char **sustatus, char **susize, int arrsize)
+                    char **series, char **paths, char **sustatus, char **susize, int arrsize, const char *userhandle)
 {
    int iarr;
 
@@ -354,6 +369,8 @@ static void CleanUp(int64_t **psunumarr, SUM_info_t ***infostructs, char **webar
          }
       }
    }
+   if (userhandle && *userhandle)
+     manage_userhandle(0, userhandle);
 }
 
 /* Can't call these from sub-functions - can only be called from DoIt(). And 
@@ -361,15 +378,16 @@ static void CleanUp(int64_t **psunumarr, SUM_info_t ***infostructs, char **webar
  * I'm thinking that the calls from send_file and SetWebArg are mistakes. The
  * return(1) will NOT cause the DoIt() program to return because the return(1)
  * is called from the sub-function.
+ * PHS - but the return value of sub-functions should be checked!
  */
-#define JSONDIE(msg) {die(dojson,msg,"","4",&sunumarr,&infostructs,&webarglist,series,paths,sustatus,susize,arrsize);return(1);}
-#define JSONDIE2(msg,info) {die(dojson,msg,info,"4",&sunumarr,&infostructs,&webarglist,series,paths,sustatus,susize,arrsize);return(1);}
-#define JSONDIE3(msg,info) {die(dojson,msg,info,"6",&sunumarr,&infostructs,&webarglist,series,paths,sustatus,susize,arrsize);return(1);}
+#define JSONDIE(msg) {die(dojson,msg,"","4",&sunumarr,&infostructs,&webarglist,series,paths,sustatus,susize,arrsize,userhandle);return(1);}
+#define JSONDIE2(msg,info) {die(dojson,msg,info,"4",&sunumarr,&infostructs,&webarglist,series,paths,sustatus,susize,arrsize,userhandle);return(1);}
+#define JSONDIE3(msg,info) {die(dojson,msg,info,"6",&sunumarr,&infostructs,&webarglist,series,paths,sustatus,susize,arrsize,userhandle);return(1);}
 
 int fileupload = 0;
 
 int die(int dojson, char *msg, char *info, char *stat, int64_t **psunumarr, SUM_info_t ***infostructs, char **webarglist,
-        char **series, char **paths, char **sustatus, char **susize, int arrsize)
+        char **series, char **paths, char **sustatus, char **susize, int arrsize, const char *userhandle)
   {
   char *msgjson;
   char *json;
@@ -397,7 +415,7 @@ if (DEBUG) fprintf(stderr,"%s%s\n",msg,info);
     }
   fflush(stdout);
 
-  CleanUp(psunumarr, infostructs, webarglist, series, paths, sustatus, susize, arrsize);
+  CleanUp(psunumarr, infostructs, webarglist, series, paths, sustatus, susize, arrsize, userhandle);
 
   return(1);
   }
@@ -478,7 +496,7 @@ static int SetWebArg(Q_ENTRY *req, const char *key, char **arglist, size_t *size
              * function here - but it is not possible to do that from a function
              * called by DoIt(). But I've retained the original semantics of 
              * returning back to DoIt() from here. */
-            die(dojson, "Illegal text in arg: ", arg_bad, "4", NULL, NULL, arglist, NULL, NULL, NULL, NULL, 0);
+            die(dojson, "Illegal text in arg: ", arg_bad, "4", NULL, NULL, arglist, NULL, NULL, NULL, NULL, 0, NULL);
             return(1);
          }
 
@@ -488,7 +506,7 @@ static int SetWebArg(Q_ENTRY *req, const char *key, char **arglist, size_t *size
              * function here - but it is not possible to do that from a function
              * called by DoIt(). But I've retained the original semantics of 
              * returning back to DoIt() from here. */
-            die(dojson, "CommandLine Error", "", "4", NULL, NULL, arglist, NULL, NULL, NULL, NULL, 0);
+            die(dojson, "CommandLine Error", "", "4", NULL, NULL, arglist, NULL, NULL, NULL, NULL, 0, NULL);
             return(1);
          }
 
@@ -538,6 +556,51 @@ static void ReleaseLock(int fd)
    flock(fd, LOCK_UN);
 }
 
+json_insert_runtime(json_t *jroot, double StartTime)
+  {
+  char runtime[100];
+  double EndTime;
+  struct timeval thistv;
+  gettimeofday(&thistv, NULL);
+  EndTime = thistv.tv_sec + thistv.tv_usec/1000000.0;
+  sprintf(runtime,"%0.3f",EndTime - StartTime);
+  json_insert_pair_into_object(jroot, "runtime", json_new_number(runtime));
+  }
+
+#define LOGFILE "/home/jsoc/exports/fetch_log"
+
+// report_summary - record  this call of the program.
+report_summary(const char *host, double StartTime, const char *remote_IP, const char *op, const char *ds, int n, int status)
+  {
+  FILE *log;
+  int sleeps;
+  double EndTime;
+  struct timeval thistv;
+  gettimeofday(&thistv, NULL);
+  EndTime = thistv.tv_sec + thistv.tv_usec/1000000.0;
+  log = fopen(LOGFILE,"a");
+  for(sleeps=0; lockf(fileno(log),F_TLOCK,0); sleeps++)
+    {
+    if (sleeps >= 5)
+      {
+      fprintf(stderr,"Lock stuck on %s, no report made.\n", LOGFILE);
+      fclose(log);
+      return;
+      }
+    sleep(1);
+    }
+  fprintf(log, "host='%s'\t",host);
+  fprintf(log, "lag=%0.3f\t",EndTime - StartTime);
+  fprintf(log, "IP='%s'\t",remote_IP);
+  fprintf(log, "op='%s'\t",op);
+  fprintf(log, "ds='%s'\t",ds);
+  fprintf(log, "n=%d\t",n);
+  fprintf(log, "status=%d\n",status);
+  fflush(log);
+  lockf(fileno(log),F_ULOCK,0);
+  fclose(log);
+  }
+
 
 /* Module main function. */
 int DoIt(void)
@@ -558,6 +621,9 @@ int DoIt(void)
   const char *method;
   const char *protocol;
   const char *filenamefmt;
+  const char *userhandle;
+  const char *Server;
+  const char *Remote_Address;
   char dbhost[DRMS_MAXHOSTNAME];
   int testmode = 0;
   char *errorreply;
@@ -583,6 +649,8 @@ int DoIt(void)
   SUM_info_t **infostructs = NULL;
   char *webarglist = NULL;
   size_t webarglistsz;
+  struct timeval thistv;
+  double StartTime;
 
   char *paths[DRMS_MAXQUERYLEN/8] = {0};
   char *series[DRMS_MAXQUERYLEN/8] = {0};
@@ -592,6 +660,8 @@ int DoIt(void)
 
   if (nice_intro ()) return (0);
 
+  gettimeofday(&thistv, NULL);
+  StartTime = thistv.tv_sec + thistv.tv_usec/1000000.0;
   web_query = strdup (cmdparams_get_str (&cmdparams, "QUERY_STRING", NULL));
   from_web = strcmp (web_query, kNotSpecified) != 0;
 
@@ -633,6 +703,7 @@ int DoIt(void)
            SetWebArg(req, kArgNotify, &webarglist, &webarglistsz);
            SetWebArg(req, kArgShipto, &webarglist, &webarglistsz);
            SetWebArg(req, kArgRequestorid, &webarglist, &webarglistsz);
+           SetWebArg(req, kUserHandle, &webarglist, &webarglistsz);
            if (strncmp(cmdparams_get_str (&cmdparams, kArgDs, NULL),"*file*", 6) == 0);
            SetWebFileArg(req, kArgFile, &webarglist, &webarglistsz);
            SetWebArg(req, kArgTestmode, &webarglist, &webarglistsz);
@@ -646,8 +717,10 @@ int DoIt(void)
   op = cmdparams_get_str (&cmdparams, kArgOp, NULL);
   requestid = cmdparams_get_str (&cmdparams, kArgRequestid, NULL);
   dsin = cmdparams_get_str (&cmdparams, kArgDs, NULL);
+  userhandle = cmdparams_get_str (&cmdparams, kUserHandle, NULL);
+  Remote_Address = cmdparams_get_str(&cmdparams, "REMOTE_ADDR", NULL);
+  Server = cmdparams_get_str(&cmdparams, "SERVER_NAME", NULL);
 
-  // HACK alert.  due to use of ARG_INTS which is not processed properly by SetWegArgs
   // the following lines are added.  They can be removed after a new function to replace
   // cmdparams_set as used in SetWebArgs
 
@@ -686,6 +759,10 @@ int DoIt(void)
      *dbhost = '\0';
   }
 
+  if (strcmp(userhandle, kNotSpecified) != 0)
+    manage_userhandle(1, userhandle);
+  else
+    userhandle = "";
 
   testmode = (TESTMODE || cmdparams_isflagset(&cmdparams, kArgTestmode));
 
@@ -1035,18 +1112,19 @@ int DoIt(void)
           printf("%lld\t%s\t%s\t%s\t%s\n",sunums[i],series[i],paths[i], sustatus[i], susize[i]);
         }
 
+      report_summary(Server, StartTime, Remote_Address, op, dsin, 0, 0);
       if (!dodataobj || (sums_status == 1 || all_online))
         {
          /* If not a VSO request, we're done. If a VSO request, done if all online, or if SUMS is down. 
           * Otherwise, continue below and start a new request for the items not online. */
-           CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize);
+           CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize, userhandle);
            return(0);
         }
       else if (strcmp(requestid, kNoAsyncReq) == 0) // user never wants full export of leftovers
-      {
-         CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize);
+         {
+         CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize, userhandle);
          return 0;
-      }
+         }
       }
 
     // Must do full export processing
@@ -1376,7 +1454,7 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
   	printf("wait=0\n");
   	}
 
-      CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize);
+      CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize, userhandle);
       return(0);
       }
 
@@ -1393,7 +1471,7 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
            }
            else
            {
-              CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize);
+              CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize, userhandle);
               return(sfret);
            }
         }
@@ -1434,7 +1512,7 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
   	printf("wait=0\n");
         quick_export_rs(NULL, rs, 0, size); // add count, size, and array data of names and paths
   	}
-      CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize);
+      CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize, userhandle);
       return(0);
       }
 
@@ -1825,6 +1903,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
       }
     }
 
-  CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize);
+  report_summary(Server, StartTime, Remote_Address, op, dsin, rcountlimit, status);
+  CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize, userhandle);
   return(0);
   }

@@ -179,11 +179,14 @@ ModuleArgs_t module_args[] =
   {ARG_STRING, "key", "Not Specified", "<comma delimited keyword list>, keywords or special values: **ALL**, **NONE**, *recnum*, *sunum*, *size*, *online*, *retain*, *archive*, *logdir*, *dir_mtime*  "},
   {ARG_STRING, "link", "Not Specified", "<comma delimited linkname list>, links or special values: **ALL**, **NONE**"},
   {ARG_STRING, "seg", "Not Specified", "<comma delimited segment list>, segnames or special values: **ALL**, **NONE** "},
+  {ARG_STRING, "userhandle", "Not Specified", "Unique request identifier to allow possible user kill of this program."},
   {ARG_INT, "n", "0", "RecordSet Limit"},
   {ARG_FLAG, "h", "0", "help - show usage"},
   {ARG_FLAG, "R", "0", "Show record query"},
   {ARG_FLAG, "z", "0", "emit JSON output"},
   {ARG_STRING, "QUERY_STRING", "Not Specified", "AJAX query from the web"},
+  {ARG_STRING, "REMOTE_ADDR", "0.0.0.0", "Remote IP address"},
+  {ARG_STRING, "SERVER_NAME", "ServerName", "JSOC Server Name"},
   {ARG_END}
 };
 
@@ -205,6 +208,7 @@ int nice_intro ()
         "n=<rslimit> set optional record count limit, <0 from end, >0 from head\n"
 	"key=<comma delimited keyword list>, keywords or special values: **ALL**, **NONE**, *recnum*, *sunum*, *size*, *online*, *retain*, *archive*, *logdir*, *dir_mtime* \n"
 	"seg=<comma delimited segment list>, segnames or special values: **ALL**, **NONE** \n"
+        "userhandle=<userhandle> unique id to allow user to kill this program by passing userhandle to jsoc_userkill.\n"
 	"QUERY_STRING=<cgi-bin params>, parameter string as delivered from cgi-bin call.\n"
 	);
     return(1);
@@ -610,6 +614,70 @@ if (status != JSON_OK) fprintf(stderr, "json_insert_pair_into_object, status=%d,
   return;
   }
 
+# define MANAGE_HANDLES "/home/phil/jsoc/bin/linux_x86_64/jsoc_manage_cgibin_handles"
+
+manage_userhandle(int register_handle, const char *handle)
+  {
+  char cmd[1024];
+  if (register_handle) // add handle and PID to current processing table
+    {
+    long PID = getpid();
+    sprintf(cmd,"%s -a handle=%s pid=%ld", MANAGE_HANDLES, handle, PID);
+    system(cmd);
+    }
+  else if (handle && *handle) // remove handle from current processing table
+    {
+    sprintf(cmd,"%s -d handle=%s", MANAGE_HANDLES, handle);
+    system(cmd);
+    }
+  }
+
+
+json_insert_runtime(json_t *jroot, double StartTime)
+  {
+  char runtime[100];
+  double EndTime;
+  struct timeval thistv;
+  gettimeofday(&thistv, NULL);
+  EndTime = thistv.tv_sec + thistv.tv_usec/1000000.0;
+  sprintf(runtime,"%0.3f",EndTime - StartTime);
+  json_insert_pair_into_object(jroot, "runtime", json_new_number(runtime));
+  }
+
+#define LOGFILE "/home/jsoc/exports/fetch_log"
+
+// report_summary - record  this call of the program.
+report_summary(const char *host, double StartTime, const char *remote_IP, const char *op, const char *ds, int n, int status)
+  {
+  FILE *log;
+  int sleeps;
+  double EndTime;
+  struct timeval thistv;
+  gettimeofday(&thistv, NULL);
+  EndTime = thistv.tv_sec + thistv.tv_usec/1000000.0;
+  log = fopen(LOGFILE,"a");
+  for(sleeps=0; lockf(fileno(log),F_TLOCK,0); sleeps++)
+    {
+    if (sleeps >= 5)
+      {
+      fprintf(stderr,"Lock stuck on %s, no report made.\n", LOGFILE);
+      fclose(log);
+      return;
+      }
+    sleep(1);
+    }
+  fprintf(log, "host='%s'\t",host);
+  fprintf(log, "lag=%0.3f\t",EndTime - StartTime);
+  fprintf(log, "IP='%s'\t",remote_IP);
+  fprintf(log, "op='%s'\t",op);
+  fprintf(log, "ds='%s'\t",ds);
+  fprintf(log, "n=%d\t",n);
+  fprintf(log, "status=%d\n",status);
+  fflush(log);
+  lockf(fileno(log),F_ULOCK,0);
+  fclose(log);
+  }
+
 #define JSONDIE(msg) \
   {	\
   char *msgjson;	\
@@ -623,23 +691,31 @@ if (status != JSON_OK) fprintf(stderr, "json_insert_pair_into_object, status=%d,
   printf("%s\n",json);	\
   free(json); \
   fflush(stdout);	\
+  manage_userhandle(0, userhandle); \
   return(1);	\
   }
 
 /* Module main function. */
 int DoIt(void)
   {
-  char *op;
-  char *in;
+  const char *op;
+  const char *in;
   char *keylist;
   char *seglist;
   char *linklist;
   char *web_query;
+  const char *Remote_Address;
+  const char *Server;
+  const char *userhandle = "Not Defined";
   int from_web, keys_listed, segs_listed, links_listed;
   int max_recs = 0;
+  struct timeval thistv;
+  double StartTime;
 
   if (nice_intro ()) return (0);
 
+  gettimeofday(&thistv, NULL);
+  StartTime = thistv.tv_sec + thistv.tv_usec/1000000.0;
   web_query = strdup (cmdparams_get_str (&cmdparams, "QUERY_STRING", NULL));
   from_web = strcmp (web_query, "Not Specified") != 0;
 
@@ -661,8 +737,8 @@ int DoIt(void)
     free(getstring);
     }
 
-  op = (char *)cmdparams_get_str (&cmdparams, "op", NULL);
-  in = (char *)cmdparams_get_str (&cmdparams, "ds", NULL);
+  op = cmdparams_get_str (&cmdparams, "op", NULL);
+  in = cmdparams_get_str (&cmdparams, "ds", NULL);
   keylist = strdup (cmdparams_get_str (&cmdparams, "key", NULL));
   seglist = strdup (cmdparams_get_str (&cmdparams, "seg", NULL));
   linklist = strdup (cmdparams_get_str (&cmdparams, "link", NULL));
@@ -670,6 +746,15 @@ int DoIt(void)
   keys_listed = strcmp (keylist, "Not Specified");
   segs_listed = strcmp (seglist, "Not Specified");
   links_listed = strcmp (linklist, "Not Specified");
+  userhandle = cmdparams_get_str (&cmdparams, "userhandle", NULL);
+  Remote_Address = cmdparams_get_str(&cmdparams, "REMOTE_ADDR", NULL);
+  Server = cmdparams_get_str(&cmdparams, "SERVER_NAME", NULL);
+
+  // allow possible user kill
+  if (strcmp(userhandle, "Not Specified") != 0)
+    manage_userhandle(1, userhandle);
+  else
+    userhandle = "";
 
   /*  op == series_struct  */
   if (strcmp(op,"series_struct") == 0) 
@@ -690,6 +775,7 @@ int DoIt(void)
     jroot = json_new_object();
     list_series_info(rec, jroot);
     get_series_stats(rec, jroot);
+    json_insert_runtime(jroot, StartTime);
     json_insert_pair_into_object(jroot, "status", json_new_number("0"));
     json_tree_to_string(jroot,&json);
     final_json = json_format_string(json);
@@ -700,6 +786,8 @@ int DoIt(void)
     free(final_json);
     fflush(stdout);
     free(seriesname);
+    manage_userhandle(0, userhandle);
+    // report_summary(Server, StartTime, Remote_Address, op, in, max_recs, 0);
     return(0);
     }
 
@@ -722,7 +810,7 @@ int DoIt(void)
       drms_close_records(recordset, DRMS_FREE_RECORD);
       }
     else
-      count = drms_count_records(drms_env, in, &status);
+      count = drms_count_records(drms_env, (char *)in, &status);
     if (bracket)
 	*bracket = '{';
     if (status)
@@ -730,6 +818,7 @@ int DoIt(void)
     /* send the output json back to client */
     sprintf(val, "%d", count);
     json_insert_pair_into_object(jroot, "count", json_new_number(val));
+    json_insert_runtime(jroot, StartTime);
     json_insert_pair_into_object(jroot, "status", json_new_number("0"));
     json_tree_to_string(jroot,&json);
     final_json = json_format_string(json);
@@ -739,6 +828,8 @@ int DoIt(void)
     printf("%s\n",final_json);
     free(final_json);
     fflush(stdout);
+    manage_userhandle(0, userhandle);
+    report_summary(Server, StartTime, Remote_Address, op, in, max_recs, 0);
     return(0);
     }
 
@@ -795,12 +886,14 @@ int DoIt(void)
     if (nrecs == 0)
       {
       json_insert_pair_into_object(jroot, "count", json_new_number("0"));
+      json_insert_runtime(jroot, StartTime);
       json_insert_pair_into_object(jroot, "status", json_new_number("0"));
       json_tree_to_string(jroot,&json);
       printf("Content-type: application/json\n\n");
       printf("%s\n",json);
       free(json);
       fflush(stdout);
+      manage_userhandle(0, userhandle);
       return(0);
       }
   
@@ -1314,6 +1407,7 @@ int DoIt(void)
 
       sprintf(count, "%d", nrecs);
       json_insert_pair_into_object(jroot, "count", json_new_number(count));
+      json_insert_runtime(jroot, StartTime);
       json_insert_pair_into_object(jroot, "status", json_new_number("0"));
     
     drms_close_records(recordset, DRMS_FREE_RECORD);
@@ -1327,9 +1421,12 @@ int DoIt(void)
 
     json_free_value(&jroot);
 
+    manage_userhandle(0, userhandle);
+    report_summary(Server, StartTime, Remote_Address, op, in, max_recs, 0);
     return(0);
     } /* rs_list */
 
+  manage_userhandle(0, userhandle);
   return(0);
   }
 
