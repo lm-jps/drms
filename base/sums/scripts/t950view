@@ -2099,7 +2099,7 @@ sub get_exp_tapes{
     if($group_table[2] lt $date) {	#this has expired
       $grp = $group_table[0];
       #print "group=$grp, retain=$group_table[1], eff=$group_table[2]\n";#!!TEMP
-      $sqlcmd = "select tapeid from sum_tape where group_id=$grp";
+      $sqlcmd = "select tapeid from sum_tape where group_id=$grp order by last_write";
       #print "sqlcmd is: $sqlcmd\n\n"; #!!TEMP
       $sth2 = $dbh->prepare($sqlcmd);
       if ( !defined $sth2 ) {
