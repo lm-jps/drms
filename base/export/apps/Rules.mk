@@ -13,7 +13,7 @@ MODEXE_$(d)	:= $(addprefix $(d)/, jsoc_export_as_fits jsoc_export_as_is jsoc_exp
 MODEXE_ONLY_$(d)	:= $(addprefix $(d)/, jsoc_info)
 
 MODEXE		:= $(MODEXE) $(MODEXE_$(d)) $(MODEXE_ONLY_$(d))
-CEXE_$(d)       := $(addprefix $(d)/, GetJsocRequestID GetWebRequestID jsoc_export_make_index jsoc_manage_cgibin_handles)
+CEXE_$(d)       := $(addprefix $(d)/, GetJsocRequestID jsoc_WebRequestID jsoc_export_make_index jsoc_manage_cgibin_handles)
 CEXE            := $(CEXE) $(CEXE_$(d))
 
 
