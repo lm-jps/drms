@@ -51,7 +51,7 @@ LL_TGT_$(d) := $(PGL) -lecpg -lssl
 
 
 SUMSVC_$(d)	:= $(d)/sum_svc
-XSUMSVC_$(d)	:= $(d)/xsum_svc
+#XSUMSVC_$(d)	:= $(d)/xsum_svc
 TAPESVC_$(d)	:= $(d)/tape_svc
 TARC_$(d)	:= $(d)/tapearc
 TARCINFO_$(d)	:= $(d)/tapearcinfo
