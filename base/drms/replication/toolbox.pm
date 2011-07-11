@@ -110,4 +110,76 @@ sub crtDir {
 	}
 	return $retStatus;
 }
+
+# This function takes a configuration file and a reference to a hash as input, and returns 
+# a hash array (in the referenced hash) of configuration key/value pairs.
+sub GetCfg
+{
+   my($conf) = $_[0];
+   my($hashref) = $_[1];
+   my(@cfgdata);
+   my(%cfgraw);
+   my(%cfg);
+   my($rv);
+
+   $rv = 0;
+
+   if (open(CNFFILE, "<$conf"))
+   {
+      @cfgdata = <CNFFILE>;
+
+      # Make key-value pairs of all non-ccomment lines in configuration file.
+      %cfgraw = map {
+         chomp;
+         my($key, $val) = m/^\s*(\w+)\s*=\s*(.*)/;
+         defined($key) && defined($val) ? ($key, $val) : ();
+      } grep {/=/ and !/^#/} @cfgdata;
+
+      close(CNFFILE);
+
+      # Expand in-line variables in arguments
+      %cfg = map {
+         my($val) = $cfgraw{$_};
+         my($var);
+         my($key);
+         my($sub);
+
+         while ($val =~ /(\${.+?})/)
+         {
+            $var = $1;
+            $key = ($var =~ /\${(.+)}/)[0];
+            $sub = $cfgraw{$key};
+
+            if (defined($var) && defined($sub))
+            {
+               $var = '\${' . $key . '}';
+               $val =~ s/$var/$sub/g;
+            }
+         }
+
+         ($_, $val);
+      } keys(%cfgraw);
+   }
+   else
+   {
+      print STDERR "Unable to open configuration file '$conf'.\n";
+      $rv = 1;
+   }
+
+   if ($rv == 0)
+   {
+      # everything is AOK - copy %cfg to referenced hash array
+      my($hkey);
+      my($hval);
+
+      foreach $hkey (keys(%cfg))
+      {
+         $hval = $cfg{$hkey};
+         $hashref->{$hkey} = $hval;
+      }
+   }
+   
+   return $rv;
+}
+
 1;
