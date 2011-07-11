@@ -614,7 +614,7 @@ if (status != JSON_OK) fprintf(stderr, "json_insert_pair_into_object, status=%d,
   return;
   }
 
-# define MANAGE_HANDLES "/home/phil/jsoc/bin/linux_x86_64/jsoc_manage_cgibin_handles"
+# define MANAGE_HANDLES "/home/jsoc/cvs/Development/JSOC/bin/linux_x86_64/jsoc_manage_cgibin_handles"
 
 manage_userhandle(int register_handle, const char *handle)
   {
@@ -706,7 +706,7 @@ int DoIt(void)
   char *web_query;
   const char *Remote_Address;
   const char *Server;
-  const char *userhandle = "Not Defined";
+  const char *userhandle;
   int from_web, keys_listed, segs_listed, links_listed;
   int max_recs = 0;
   struct timeval thistv;
@@ -754,7 +754,7 @@ int DoIt(void)
   if (strcmp(userhandle, "Not Specified") != 0)
     manage_userhandle(1, userhandle);
   else
-    userhandle = "";
+    userhandle = "NoHandle";
 
   /*  op == series_struct  */
   if (strcmp(op,"series_struct") == 0) 
@@ -828,8 +828,8 @@ int DoIt(void)
     printf("%s\n",final_json);
     free(final_json);
     fflush(stdout);
-    manage_userhandle(0, userhandle);
     report_summary(Server, StartTime, Remote_Address, op, in, max_recs, 0);
+    manage_userhandle(0, userhandle);
     return(0);
     }
 
@@ -1424,8 +1424,8 @@ int DoIt(void)
 
     json_free_value(&jroot);
 
-    manage_userhandle(0, userhandle);
     report_summary(Server, StartTime, Remote_Address, op, in, max_recs, 0);
+    manage_userhandle(0, userhandle);
     return(0);
     } /* rs_list */
 

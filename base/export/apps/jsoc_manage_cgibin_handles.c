@@ -16,6 +16,9 @@
  *  handle must be unique, up to 99 chars.
  *  pid may be up to 99 chars.
  *  the master file can be specified via "file" parameter, defaults to HANDLE_FILE
+ *
+ *  NOTE this is not a cgi-bin program.  It returns status=0 for OK, 1 for failure.
+ *
  */
 
 #define HANDLE_FILE "/home/jsoc/exports/Web_request_handles"
@@ -194,6 +197,7 @@ if (op_lookup)
   char *pid = jsoc_lookup_proc_handle(filename, handle);
   if (pid)
     printf("%s\n", pid);
+  fflush(stdout);
   return(0);
   }
 
