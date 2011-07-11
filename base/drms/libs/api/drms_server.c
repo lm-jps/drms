@@ -2955,12 +2955,6 @@ static void HastaLaVistaBaby(DRMS_Env_t *env, int signo)
    /* Send a cancel request to the db - this will result in an attempt to cancel 
     * the currently db. This is only useful if there is currently a long-running
     * query (executed by the main thread). */
-   if (!env->selfstart)
-   {
-      /* don't show this error message if this is executing in a drms_server 
-       * context that was started by a socket module. */
-      fprintf(stdout, "Attempting to cancel current db command.\n");
-   }
 
    if (!db_cancel(env->session->db_handle, errbuf, sizeof(errbuf)))
    {
