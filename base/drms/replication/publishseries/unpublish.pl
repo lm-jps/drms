@@ -140,11 +140,14 @@ if ($rv == kSuccess)
 
        if ($rv == kSuccess)
        {
-          # Delete the DRMS part of the series being unpublished from the Slony slave.
-          # DO NOT DELETE THE SUMS STORAGE UNITS!!
+          # Ensure that the unpublication has successfully propagated from the master
+          # to the slave, then delete the data series from the slave.
           # Connect to the slave db, don't use the master!
           my($slavedbh);
+          my($id);
 
+          # Delete the DRMS part of the series being unpublished from the Slony slave.
+          # DO NOT DELETE THE SUMS STORAGE UNITS!!
           $dsn = "dbi:Pg:dbname=$cfg{'SLAVEDBNAME'};host=$cfg{'SLAVEHOST'};port=$cfg{'SLAVEPORT'}";
 
           $slavedbh = DBI->connect($dsn, $cfg{'REPUSER'}, ''); # password should be provided by .pgpass
@@ -154,9 +157,36 @@ if ($rv == kSuccess)
           {
              print("success!\n");
 
-             if (DeleteSeries(\$slavedbh, $schema, $table, 1) != 0)
+             # Wait until slony replication has propagated to the slave.
+             while (1)
              {
-                $rv = kDelSeriesFailed;
+                print("Checking for propagation of un-publication to slave db...");
+                $id = GetRepTableID(\$slavedbh, $cfg{'CLUSTERNAME'}, $schema, $table);
+                if ($id == -1)
+                {
+                   print("un-publication successfully propagated!\n");
+                   last;
+                }
+                elsif ($id == -2)
+                {
+                   $rv = kInvalidSQL;
+                   last;
+                }
+                else
+                {
+                   # Table un-publication has not been propagated to slave yet.
+                   print("not yet.\n");
+                }
+
+                sleep(1);
+             }
+
+             if ($rv == kSuccess)
+             {
+                if (DeleteSeries(\$slavedbh, $schema, $table, 1) != 0)
+                {
+                   $rv = kDelSeriesFailed;
+                }
              }
 
              $slavedbh->disconnect();
