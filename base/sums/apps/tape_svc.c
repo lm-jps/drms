@@ -58,6 +58,7 @@ FILE *logfp;
 CLIENT *current_client, *clntsum, *clntdrv0;
 CLIENT *clntrobot0;
 CLIENT *clntdrv[MAX_DRIVES];
+CLIENT *clntsums[4];		//!!TBD parameterize to make general
 SVCXPRT *glb_transp;
 int debugflg = 0;
 int sim = 0;
@@ -205,6 +206,39 @@ void get_cmd(int argc, char *argv[])
 }
 
 /*********************************************************/
+void setoffline()
+{
+  FILE *drfp;
+  int order0;
+  char logname[MAX_STR], line[256];
+
+  sprintf(logname, "/usr/local/logs/SUM/drive_offline.txt");
+  if((drfp=fopen(logname, "r")) == NULL) {
+    fprintf(stderr, "Can't open the file %s. Proceed anyway.\n", logname);
+  }
+  else {
+    while(fgets(line, 256, drfp)) {  //set offline the given drives
+      if(!strncmp(line, "#", 1)) {   //ignore line starting with #
+        continue;
+      }
+      sscanf(line, "%d", &order0);
+      if(order0 >= MAX_DRIVES) {
+        write_log("Error drivenum >= MAX_DRIVES (%d)\n", MAX_DRIVES);
+        write_log("Can't take drive %d offline.\n", order0);
+        fclose(drfp);
+        return;
+      }
+      sprintf(line, "take drive %d offline", order0);
+      printf("%s\n", line);
+      write_log("%s\n", line);
+      drives[order0].offline = 1;
+      drives[order0].lock = 0;
+    }
+  }
+  fclose(drfp);
+}
+
+
 void setup()
 {
   FILE *sgfp, *drfp;
@@ -283,6 +317,7 @@ void setup()
 		max_drives_rd, max_drives_wt);
   }
   fclose(drfp);
+
   /* get heap values. only for non-datacapture machine */
   /* assumes format is from ia64 machine (d02) */
   sprintf(logname, "/proc/%d/maps", pid);
@@ -384,6 +419,36 @@ int main(int argc, char *argv[])
     write_log("***tape_svc can't get robote0_svc on %s\n", thishost);
     exit(1);
   }
+  //create handles for calling back sum process for tape operations
+  //NOTE: NOT parameterized for now. !!!TBD
+    clntsum = clnt_create(sumhost, SUMGET, SUMGETV, "tcp");
+    if(!clntsum) {
+      clnt_pcreateerror("Can't get client handle to SUMGET in tape_svc");
+      write_log("***tape_svc can't get handle to SUMGET on %s\n", sumhost);
+      exit(1);
+    }
+    clntsums[0] = clntsum;
+    clntsum = clnt_create(sumhost, SUMGET1, SUMGETV, "tcp");
+    if(!clntsum) {
+      clnt_pcreateerror("Can't get client handle to SUMGET1 in tape_svc");
+      write_log("***tape_svc can't get handle to SUMGET1 on %s\n", sumhost);
+      exit(1);
+    }
+    clntsums[1] = clntsum;
+    clntsum = clnt_create(sumhost, SUMGET2, SUMGETV, "tcp");
+    if(!clntsum) {
+      clnt_pcreateerror("Can't get client handle to SUMGET2 in tape_svc");
+      write_log("***tape_svc can't get handle to SUMGET2 on %s\n", sumhost);
+      exit(1);
+    }
+    clntsums[2] = clntsum;
+    clntsum = clnt_create(sumhost, SUMPROG, SUMVERS, "tcp");
+    if(!clntsum) {
+      clnt_pcreateerror("Can't get client handle to SUMPROG in tape_svc");
+      write_log("***tape_svc can't get handle to SUMPROG on %s\n", sumhost);
+      exit(1);
+    }
+    clntsums[3] = clntsum;
   /* No robot1 for now... */
   /*clntrobot1 = clnt_create(thishost, ROBOT1PROG, ROBOT1VERS, "tcp");
   /*if(!clntrobot1) {       /* program not there */
@@ -446,6 +511,7 @@ int main(int argc, char *argv[])
       printf("!!!NOTE: tape unload disabled\n");
     }
   }
+  setoffline();		//check text file for any drives to be offline
   /* Enter svc_run() which calls svc_getreqset when msg comes in.
    * svc_getreqset calls tapeprog_1() to process the msg.
    * NOTE: svc_run() never returns.
@@ -657,16 +723,16 @@ tapeprog_1(rqstp, transp)
             //set client handle for the sums process
             switch(sumprog) {
             case SUMGET:
-              clntsum = clnt_create(sumhost, SUMGET, SUMGETV, "tcp");
+              clntsum = clntsums[0];
               break;
             case SUMGET1:
-              clntsum = clnt_create(sumhost, SUMGET1, SUMGETV, "tcp");
+              clntsum = clntsums[1];
               break;
             case SUMGET2:
-              clntsum = clnt_create(sumhost, SUMGET2, SUMGETV, "tcp");
+              clntsum = clntsums[2];
               break;
             case SUMPROG:
-              clntsum = clnt_create(sumhost, SUMPROG, SUMVERS, "tcp");
+              clntsum = clntsums[3];
               break;
             default:
               write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
@@ -710,16 +776,16 @@ tapeprog_1(rqstp, transp)
               //set client handle for the sums process
               switch(sumprog) {
               case SUMGET:
-                clntsum = clnt_create(sumhost, SUMGET, SUMGETV, "tcp");
+                clntsum = clntsums[0];
                 break;
               case SUMGET1:
-                clntsum = clnt_create(sumhost, SUMGET1, SUMGETV, "tcp");
+                clntsum = clntsums[1];
                 break;
               case SUMGET2:
-                clntsum = clnt_create(sumhost, SUMGET2, SUMGETV, "tcp");
+                clntsum = clntsums[2];
                 break;
               case SUMPROG:
-                clntsum = clnt_create(sumhost, SUMPROG, SUMVERS, "tcp");
+                clntsum = clntsums[3];
                 break;
               default:
                 write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
