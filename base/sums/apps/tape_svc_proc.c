@@ -29,6 +29,7 @@ extern TQ *delete_q_wrt_need_front();
 extern CLIENT *current_client, *clntsum, *clntdrv0, *clntdrv1;
 extern CLIENT *clntdrv2, *clntdrv3;
 extern CLIENT *clntdrv[];
+extern CLIENT *clntsums[];
 extern CLIENT *clntrobot0;
 extern SVCXPRT *glb_transp;
 #ifdef SUMDC
@@ -43,7 +44,8 @@ extern int nxtscanwt;
 extern int max_drives_rd;
 extern int max_drives_wt;
 #endif
-extern uint64_t rinfo;
+//extern uint64_t rinfo;
+extern uint32_t rinfo;
 extern uint32_t procnum;
 extern uint32_t sumprog;
 extern uint32_t sumvers;
@@ -785,16 +787,16 @@ KEY *readdo_1(KEY *params) {
     //set client handle for the sums process
   switch(sumprog) {
   case SUMGET:
-    clntsum = clnt_create(sumhost, SUMGET, SUMGETV, "tcp");
+    clntsum = clntsums[0];
     break;
   case SUMGET1:
-    clntsum = clnt_create(sumhost, SUMGET1, SUMGETV, "tcp");
+    clntsum = clntsums[1];
     break;
   case SUMGET2:
-    clntsum = clnt_create(sumhost, SUMGET2, SUMGETV, "tcp");
+    clntsum = clntsums[2];
     break;
   case SUMPROG:
-    clntsum = clnt_create(sumhost, SUMPROG, SUMVERS, "tcp");
+    clntsum = clntsums[3];
     break;
   default:
     write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
@@ -1506,16 +1508,16 @@ KEY *taperespreaddo_1(KEY *params) {
   //set client handle for the sums process
   switch(sumprog) {
   case SUMGET:
-    clntsum = clnt_create(sumhost, SUMGET, SUMGETV, "tcp");
+    clntsum = clntsums[0];
     break;
   case SUMGET1:
-    clntsum = clnt_create(sumhost, SUMGET1, SUMGETV, "tcp");
+    clntsum = clntsums[1];
     break;
   case SUMGET2:
-    clntsum = clnt_create(sumhost, SUMGET2, SUMGETV, "tcp");
+    clntsum = clntsums[2];
     break;
   case SUMPROG:
-    clntsum = clnt_create(sumhost, SUMPROG, SUMVERS, "tcp");
+    clntsum = clntsums[3];
     break;
   default:
     write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
@@ -1795,16 +1797,16 @@ KEY *taperesprobotdo_1_rd(KEY *params) {
     //set client handle for the sums process
   switch(sumprog) {
   case SUMGET:
-    clntsum = clnt_create(sumhost, SUMGET, SUMGETV, "tcp");
+    clntsum = clntsums[0];
     break;
   case SUMGET1:
-    clntsum = clnt_create(sumhost, SUMGET1, SUMGETV, "tcp");
+    clntsum = clntsums[1];
     break;
   case SUMGET2:
-    clntsum = clnt_create(sumhost, SUMGET2, SUMGETV, "tcp");
+    clntsum = clntsums[2];
     break;
   case SUMPROG:
-    clntsum = clnt_create(sumhost, SUMPROG, SUMVERS, "tcp");
+    clntsum = clntsums[3];
     break;
   default:
     write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
@@ -1878,16 +1880,16 @@ KEY *taperesprobotdo_1_rd(KEY *params) {
       //set client handle for the sums process
   switch(sumprog) {
   case SUMGET:
-    clntsum = clnt_create(sumhost, SUMGET, SUMGETV, "tcp");
+    clntsum = clntsums[0];
     break;
   case SUMGET1:
-    clntsum = clnt_create(sumhost, SUMGET1, SUMGETV, "tcp");
+    clntsum = clntsums[1];
     break;
   case SUMGET2:
-    clntsum = clnt_create(sumhost, SUMGET2, SUMGETV, "tcp");
+    clntsum = clntsums[2];
     break;
   case SUMPROG:
-    clntsum = clnt_create(sumhost, SUMPROG, SUMVERS, "tcp");
+    clntsum = clntsums[3];
     break;
   default:
     write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
@@ -1909,16 +1911,16 @@ KEY *taperesprobotdo_1_rd(KEY *params) {
     //set client handle for the sums process
   switch(sumprog) {
   case SUMGET:
-    clntsum = clnt_create(sumhost, SUMGET, SUMGETV, "tcp");
+    clntsum = clntsums[0];
     break;
   case SUMGET1:
-    clntsum = clnt_create(sumhost, SUMGET1, SUMGETV, "tcp");
+    clntsum = clntsums[1];
     break;
   case SUMGET2:
-    clntsum = clnt_create(sumhost, SUMGET2, SUMGETV, "tcp");
+    clntsum = clntsums[2];
     break;
   case SUMPROG:
-    clntsum = clnt_create(sumhost, SUMPROG, SUMVERS, "tcp");
+    clntsum = clntsums[3];
     break;
   default:
     write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
@@ -1962,16 +1964,16 @@ KEY *taperesprobotdo_1_wt(KEY *params) {
     //set client handle for the sums process
   switch(sumprog) {
   case SUMGET:
-    clntsum = clnt_create(sumhost, SUMGET, SUMGETV, "tcp");
+    clntsum = clntsums[0];
     break;
   case SUMGET1:
-    clntsum = clnt_create(sumhost, SUMGET1, SUMGETV, "tcp");
+    clntsum = clntsums[1];
     break;
   case SUMGET2:
-    clntsum = clnt_create(sumhost, SUMGET2, SUMGETV, "tcp");
+    clntsum = clntsums[2];
     break;
   case SUMPROG:
-    clntsum = clnt_create(sumhost, SUMPROG, SUMVERS, "tcp");
+    clntsum = clntsums[3];
     break;
   default:
     write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
