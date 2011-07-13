@@ -50,38 +50,6 @@ static void atexit_action (void) {
       " will be aborted and the database rolled back.\n", mn);
 }
 
-/* Function to register callback function that cleans up resources allocated from within 
- * DoIt(). Returns 1 if successfully registered the callback function provided 
- * in the list of arguments, 0 otherwise. */
-int RegisterDoItCleaner(DRMS_Env_t *env, pFn_Cleaner_t cb, void *data)
-{
-   int gotlock = 0;
-   static int registered = 0;
-
-   if (!registered)
-   {
-      gotlock = (drms_trylock_client(env) == 0);
-
-      if (gotlock)
-      {
-         env->cleanerdata.deepclean = cb;
-         env->cleanerdata.deepdata = data;
-         registered = 1;
-         drms_unlock_client(env);
-      }
-      else
-      {
-         fprintf(stderr, "Can't register doit cleaner function. Unable to obtain mutex.\n");
-      }
-   }
-   else
-   {
-      fprintf(stderr, "RegisterDoItCleaner() already successfully called - cannot re-register.\n");
-   }
-
-   return gotlock;
-}
-
 static int FreeCmdparams(void *data)
 {
    cmdparams_freeall(&cmdparams);
@@ -244,7 +212,9 @@ int JSOCMAIN_Init(int argc,
 
    /* Free cmd-params (valgrind reports this - let's just clean up so it doesn't show up on 
     * valgrind's radar). */
-   drms_client_registercleaner(drms_env, (pFn_Cleaner_t)FreeCmdparams, (void *)NULL);
+   CleanerData_t cleaner = {(pFn_Cleaner_t)FreeCmdparams, (void *)NULL};
+  
+   drms_client_registercleaner(drms_env, &cleaner);
 
    /* Spawn a thread that handles signals and controls server 
       abort or shutdown. */

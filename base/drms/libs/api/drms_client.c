@@ -1961,43 +1961,43 @@ void drms_client_setsd(DRMS_Shutdown_State_t st)
    gShutdown = st;
 }
 
-int drms_client_registercleaner(DRMS_Env_t *env, pFn_Cleaner_t cb, CleanerData_t *data)
+int drms_client_registercleaner(DRMS_Env_t *env, CleanerData_t *data)
 {
    int gotlock = 0;
-   static int registered = 0;
+   int ok = 1;
 
-   if (!registered)
+   gotlock = (drms_trylock_client(env) == 0);
+
+   if (gotlock)
    {
-      gotlock = (drms_trylock_client(env) == 0);
-
-      if (gotlock)
+      if (env->cleaners == NULL)
       {
-         env->cleaner = cb;
-         if (data)
+         /* No cleaner nodes yet - create list and add first one. */
+         env->cleaners = list_llcreate(sizeof(CleanerData_t), NULL);
+         if (!env->cleaners)
          {
-            env->cleanerdata = *data;
+            fprintf(stderr, "Can't register cleaner.\n");
+            ok = 0;
          }
-         else
-         {
-            env->cleanerdata.data = NULL;
-            env->cleanerdata.deepclean = NULL;
-            env->cleanerdata.deepdata = NULL;
-         }
+      }
 
-         registered = 1;
-         drms_unlock_client(env);
-      }
-      else
+      if (ok)
       {
-         fprintf(stderr, "Can't register doit cleaner function. Unable to obtain mutex.\n");
+         if (!list_llinserttail(env->cleaners, data))
+         {
+            fprintf(stderr, "Can't register cleaner.\n");
+            ok = 0;
+         }
       }
+
+      drms_unlock_client(env);
    }
    else
    {
-      fprintf(stderr, "drms_client_registercleaner() already successfully called - cannot re-register.\n");
+      fprintf(stderr, "Can't register doit cleaner function. Unable to obtain mutex.\n");
    }
-
-   return gotlock;
+  
+   return ok;
 }
 
 static void ArrivederciBaby(DRMS_Env_t *env)
@@ -2109,15 +2109,19 @@ void *drms_signal_thread(void *arg)
                /* Allow DoIt() function a chance to clean up. */
                /* Call user-registered callback, if such a callback was registered, that cleans up 
                 * resources used in the DoIt() loop */
-               if (env->cleaner)
+               if (env->cleaners)
                {
-                  /* Clean up deep data first */
-                  if (env->cleanerdata.deepclean)
-                  {
-                     (*(env->cleanerdata.deepclean))(env->cleanerdata.deepdata);
-                  }
+                  ListNode_t *lnode = NULL;
+                  CleanerData_t *acleaner = NULL;
 
-                  (*(env->cleaner))(env->cleanerdata.data);
+                  list_llreset(env->cleaners);
+                  while ((lnode = list_llnext(env->cleaners)) != NULL)
+                  {
+                     acleaner = lnode->data;
+                     (*(acleaner->cb))(acleaner->data);
+                     list_llremove(env->cleaners, lnode);
+                     list_llfreenode(&lnode);
+                  }
                }
 
                /* release shutdown lock */

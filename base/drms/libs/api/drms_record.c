@@ -8052,6 +8052,11 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
                               cursorselect);
 
                      /* Now, create cursor in psql */
+                     if (env->verbose)
+                     {
+                        fprintf(stdout, "Cursor declaration ==> %s\n", cursorquery);
+                     }
+
                      if (drms_dms(env->session, NULL, cursorquery))
                      {
                         stat = DRMS_ERROR_QUERYFAILED;

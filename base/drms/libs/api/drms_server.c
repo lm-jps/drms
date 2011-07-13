@@ -2269,10 +2269,20 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
            * the main and signal threads don't hold onto them for too long. */
           int pollrv = 0;
           int naptime = 1;
+          int nloop = 10;
+          int maxloop = 7200; /* 2 hours (very roughly) */
 
           /* WARNING - this is potentially an infinite loop. */
           while (1)
           {
+             if (maxloop <= 0)
+             {
+                /* tape read didn't complete */
+                fprintf(stderr, "Tape read has not completed; try again later.\n");
+                nosums = 1;
+                break;
+             }
+
              if (sdsem)
              {
                 sem_wait(sdsem);
@@ -2295,7 +2305,25 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 
              /* if sum_svc is down, 
               * then SUM_poll() will never return anything but TIMEOUTMSG. */
-             pollrv = SUM_poll(sum);
+             if (nloop <= 0)
+             {
+                pollrv = SUM_poll(sum);
+                nloop = 10;
+             }
+             else
+             {
+                if (gSUMSbusyMtx)
+                {
+                   pthread_mutex_lock(gSUMSbusyMtx);
+                   gSUMSbusy = 0;
+                   pthread_mutex_unlock(gSUMSbusyMtx);
+                }
+
+                nloop--;
+                maxloop--;
+                sleep(1);
+                continue;
+             }
              
              if (env->verbose)
              {
@@ -2365,10 +2393,11 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                       fprintf(stdout, "Tape fetch has not completed, waiting for %d seconds.\n", naptime);
                    }
                    sleep(naptime);
-                   GettingSleepier(&naptime);
+
+                   /* don't increase the length of the nap - we want to keep polling at a regular, quick interval. */
                 }
              }
-          } /* inner while */
+          } /* inner while (loop on polling) */
 
           if (!shuttingdown && !tryagain)
           {
@@ -2889,43 +2918,43 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 }
 
 /****************** Server signal handler thread functions *******************/
-int drms_server_registercleaner(DRMS_Env_t *env, pFn_Cleaner_t cb, CleanerData_t *data)
+int drms_server_registercleaner(DRMS_Env_t *env, CleanerData_t *data)
 {
    int gotlock = 0;
-   static int registered = 0;
+   int ok = 1;
 
-   if (!registered)
+   gotlock = (drms_trylock_server(env) == 0);
+
+   if (gotlock)
    {
-      gotlock = (drms_trylock_server(env) == 0);
-
-      if (gotlock)
+      if (env->cleaners == NULL)
       {
-         env->cleaner = cb;
-         if (data)
+         /* No cleaner nodes yet - create list and add first one. */
+         env->cleaners = list_llcreate(sizeof(CleanerData_t), NULL);
+         if (!env->cleaners)
          {
-            env->cleanerdata = *data;
+            fprintf(stderr, "Can't register cleaner.\n");
+            ok = 0;
          }
-         else
-         {
-            env->cleanerdata.data = NULL;
-            env->cleanerdata.deepclean = NULL;
-            env->cleanerdata.deepdata = NULL;
-         }
+      }
 
-         registered = 1;
-         drms_unlock_server(env);
-      }
-      else
+      if (ok)
       {
-         fprintf(stderr, "Can't register doit cleaner function. Unable to obtain mutex.\n");
+         if (!list_llinserttail(env->cleaners, data))
+         {
+            fprintf(stderr, "Can't register cleaner.\n");
+            ok = 0;
+         }
       }
+
+      drms_unlock_server(env);
    }
    else
    {
-      fprintf(stderr, "drms_server_registercleaner() already successfully called - cannot re-register.\n");
+      fprintf(stderr, "Can't register doit cleaner function. Unable to obtain mutex.\n");
    }
-
-   return gotlock;
+  
+   return ok;
 }
 
 static void HastaLaVistaBaby(DRMS_Env_t *env, int signo)
@@ -3102,15 +3131,19 @@ void *drms_signal_thread(void *arg)
             /* Allow DoIt() function a chance to clean up. */
             /* Call user-registered callback, if such a callback was registered, that cleans up 
              * resources used in the DoIt() loop */
-            if (env->cleaner)
+            if (env->cleaners)
             {
-               /* Clean up deep data first */
-               if (env->cleanerdata.deepclean)
-               {
-                  (*(env->cleanerdata.deepclean))(env->cleanerdata.deepdata);
-               }
+               ListNode_t *lnode = NULL;
+               CleanerData_t *acleaner = NULL;
 
-               (*(env->cleaner))(env->cleanerdata.data);
+               list_llreset(env->cleaners);
+               while ((lnode = list_llnext(env->cleaners)) != NULL)
+               {
+                  acleaner = lnode->data;
+                  (*(acleaner->cb))(acleaner->data);
+                  list_llremove(env->cleaners, lnode);
+                  list_llfreenode(&lnode);
+               }
             }
 
             /* release shutdown lock */

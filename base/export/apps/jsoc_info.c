@@ -695,6 +695,13 @@ report_summary(const char *host, double StartTime, const char *remote_IP, const 
   return(1);	\
   }
 
+/* callback that fires when the signal thread catches the SIGINT signal. */
+int OnSIGINT(void *data)
+{
+   printf("Content-Type: application/json\n\n{'status':-1}\n");
+   return 0;
+}
+
 /* Module main function. */
 int DoIt(void)
   {
@@ -711,8 +718,15 @@ int DoIt(void)
   int max_recs = 0;
   struct timeval thistv;
   double StartTime;
+  CleanerData_t cleaner;
 
   if (nice_intro ()) return (0);
+
+  /* Register function that will be called when this DRMS module catches the SIGINT signal. */
+  /* This will print an error message to stderr if it fails. */
+  cleaner.cb = (pFn_Cleaner_t)&OnSIGINT;
+  cleaner.data = NULL;
+  drms_server_registercleaner(drms_env, &cleaner);
 
   gettimeofday(&thistv, NULL);
   StartTime = thistv.tv_sec + thistv.tv_usec/1000000.0;

@@ -74,7 +74,7 @@ void drms_client_initsdsem(void);
 void drms_client_destroysdsem(void);
 DRMS_Shutdown_State_t drms_client_getsd(void);
 void drms_client_setsd(DRMS_Shutdown_State_t st);
-int drms_client_registercleaner(DRMS_Env_t *env, pFn_Cleaner_t cb, CleanerData_t *data);
+int drms_client_registercleaner(DRMS_Env_t *env, CleanerData_t *data);
 void *drms_signal_thread(void *arg);
 #endif
 /******************** DRMS client-server protocol stuff. ********************/

@@ -45,7 +45,7 @@ DRMS_Shutdown_State_t drms_server_getsd(void);
 
 void drms_server_setsd(DRMS_Shutdown_State_t st);
 
-int drms_server_registercleaner(DRMS_Env_t *env, pFn_Cleaner_t cb, CleanerData_t *data);
+int drms_server_registercleaner(DRMS_Env_t *env, CleanerData_t *data);
 
 /**\brief drms server thread */
 void *drms_server_thread(void *arg);

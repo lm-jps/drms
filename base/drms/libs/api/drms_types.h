@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include "db.h"
 #include "hcontainer.h"
+#include "list.h"
 #include "util.h"
 #include "tagfifo.h"
 #include "SUM.h"
@@ -282,9 +283,8 @@ typedef int (*pFn_Cleaner_t)(void *);
 
 struct CleanerData_struct
 {
-  void *data; /* Argument to the cleaner function */
-  pFn_Cleaner_t deepclean; /* Callback to deep clean */
-  void *deepdata; /* Argument to deepclean function */
+  pFn_Cleaner_t cb; /* Callback to be invoked at shutdown. */
+  void *data; /* Argument to callback function */
 };
 
 typedef struct CleanerData_struct CleanerData_t;
@@ -349,10 +349,10 @@ struct DRMS_Env_struct
   int selfstart; /* if this is a drms_server environment, was drms_server self-started by a socket module */
   int transinit; /* First call to drms_server_begin_transaction() sets this to 1 after the env has been initialized
                   * drms_free_env() sets this to 0 after the env has been destroyed. */
-  pFn_Cleaner_t cleaner; /* Before the signal thread terminates a drms server, this function called with 
-                          * cleanerdata.data as argument */
-  CleanerData_t cleanerdata; /* data field is argument to cleaner function; deepclean field is a second 
-                          * cleaner function that will be called with the deepdata field as the argument */
+  LinkedList_t *cleaners; /* A list of CleanerData_ts. Each node will invoke one function that
+                           * takes one data struct as an argument. These functions will be 
+                           * called when the signal thread is about to terminate the DRMS 
+                           * module. */
   int transrunning; /* 1 if a transaction has been started by db_start_transaction() (set by 
                      * drms_server_begin_transaction()); 0 otherwise (set by drms_server_end_transaction()) */
   int sessionrunning; /* 1 if a DRMS session has been started by drms_server_open_session() (set by

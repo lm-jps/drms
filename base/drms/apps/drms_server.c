@@ -509,7 +509,9 @@ int main (int argc, char *argv[]) {
 
   /* Free cmd-params (valgrind reports this - let's just clean up so it doesn't show up on 
    * valgrind's radar). */
-  drms_server_registercleaner(env, (pFn_Cleaner_t)FreeCmdparams, (void *)NULL);
+  CleanerData_t cleaner = {(pFn_Cleaner_t)FreeCmdparams, (void *)NULL};
+  
+  drms_server_registercleaner(env, &cleaner);
 
   /* Spawn a thread that handles signals and controls server 
      abort or shutdown. */

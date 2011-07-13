@@ -171,6 +171,11 @@ void drms_free_env (DRMS_Env_t *env, int final) {
      env->session->sudir = NULL;
   }
 
+  if (env->cleaners)
+  {
+     list_llfree(&env->cleaners);
+  }
+
   if (final) {
     if (env->session) {
        /* Alloc'd by drms_open() */
