@@ -1482,14 +1482,15 @@ KEY *taperespreaddo_1(KEY *params) {
   tapefilenum = getkey_int(params, tmpname);
   drives[dnum].filenum = tapefilenum;  /* file# just read */
   if(status) drives[dnum].filenum = -1; /* error, next read will rewind */
-  sprintf(tmpname, "rootwd_%d", reqofflinenum);
-  rwd = GETKEY_str(params, tmpname);
-  //sprintf(tmpname, "sudo chmod -R go-w %s; sudo chown -Rf production %s", 
-  //			rwd, rwd);
-  sprintf(tmpname, "%s/sum_chmown %s", SUMBIN_BASEDIR, rwd);
-  if(system(tmpname)) {
-      write_log("**Warning: Error on: %s\n", tmpname);
-  }
+//  sprintf(tmpname, "rootwd_%d", reqofflinenum);
+//  rwd = GETKEY_str(params, tmpname);
+//  //sprintf(tmpname, "sudo chmod -R go-w %s; sudo chown -Rf production %s", 
+//  //			rwd, rwd);
+    //Don't need chmown now. The sticky bit was removed in getdo_1()
+//  sprintf(tmpname, "%s/sum_chmown %s", SUMBIN_BASEDIR, rwd);
+//  if(system(tmpname)) {
+//      write_log("**Warning: Error on: %s\n", tmpname);
+//  }
   sprintf(tmpname, "tapeid_%d", reqofflinenum);
   tapeid = GETKEY_str(params, tmpname);
   if(SUMLIB_EffDateUpdate(tapeid, 0)) { /* update sum_group effective_date */
