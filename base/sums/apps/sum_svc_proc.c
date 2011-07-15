@@ -230,6 +230,7 @@ KEY *getdo_1(KEY *params)
   enum clnt_stat status;
   int reqcnt, i, offline, storeset, offcnt;
   char *call_err, *cptr, *wd;
+  char scmd[96];
   double bytes;
 
   sprintf(callername, "getdo_1");	//!!TEMP
@@ -294,6 +295,11 @@ KEY *getdo_1(KEY *params)
               return((KEY *)1);  /* error. nothing to be sent */
             }
             wd = GETKEY_str(retlist, "partn_name");
+            //elim sticky bit so don't need to do sum_chmown() after read
+            sprintf(scmd, "chmod g-s %s", wd);
+            if(system(scmd)) {
+                write_log("**Warning: Error on: %s. errno=%d\n", scmd,errno);
+            }
             sprintf(nametmp, "rootwd_%d", i);
             setkey_str(&retlist, nametmp, wd);
             write_log("\nAlloc for retrieve wd = %s for sumid = %lu\n", wd, uid);
