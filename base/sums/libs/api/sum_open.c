@@ -1113,6 +1113,7 @@ int SUM_delete_series(char *filename, char *seriesname, int (*history)(const cha
   cptr = (char *)index(server_name, '.');	/* must be short form */
   if(cptr) *cptr = (char)NULL;
   /* Create client handle used for calling the server */
+/************Handle created in SUM_open()******************************************
   cl = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
   if(!cl) {              //no SUMPROG in portmap or timeout (default 25sec?)
     clnt_pcreateerror("Can't get client handle to sum_svc");
@@ -1126,6 +1127,7 @@ int SUM_delete_series(char *filename, char *seriesname, int (*history)(const cha
       return(1);
     }
   }
+***********************************************************************************/
   status = clnt_call(cldelser, DELSERIESDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
 			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
 
@@ -1142,7 +1144,7 @@ int SUM_delete_series(char *filename, char *seriesname, int (*history)(const cha
     }
   }
   freekeylist(&klist);
-  clnt_destroy(cldelser);		/* destroy handle to sum_svc !!TBD check */
+  //clnt_destroy(cldelser);		/* destroy handle to sum_svc !!TBD check */
   if(retstat == 1) return(1);           /* error occured */
   return(0);
 }
