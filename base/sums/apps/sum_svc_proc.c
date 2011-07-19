@@ -26,6 +26,7 @@ extern uint32_t sumvers;
 extern int debugflg;
 extern int rrid;
 extern float ftmp;
+extern char logname[];
 static int NO_OPEN = 0;
 static char callername[MAX_STR];
 static char nametmp[80];
@@ -623,7 +624,9 @@ KEY *putdo_1(KEY *params)
       cptr = GETKEY_str(params, nametmp);
       //sprintf(sysstr, "sudo chmod -R go-w %s; sudo chown -Rf production %s", 
       //			cptr, cptr);
-      sprintf(sysstr, "%s/sum_chmown %s", SUMBIN_BASEDIR, cptr);
+      sprintf(nametmp, "%s.chmown",  logname);
+      sprintf(sysstr, "%s/sum_chmown %s 1>> %s 2>&1", 
+			SUMBIN_BASEDIR, cptr, nametmp);
       //write_log("%s\n", sysstr);
       //StartTimer(3);		//!!TEMP
       if(system(sysstr)) {
