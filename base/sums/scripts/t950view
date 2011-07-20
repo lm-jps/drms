@@ -1816,8 +1816,6 @@ sub ImpExp_sub {
     $ImpExpf->Label(-text => $msg, -font => 'arial 12 bold')->pack(@pl);
     return;
   }
-  #Old LRU method no longer used. Now use group_table effective_date.
-  #@torder = keys %Hofreplace;  #tapeid in LRU order
   @needorder =  keys %Hofneed; #needed tapeid in order requested
   $numneed = $#needorder+1;
   if($numneed == 0) {
@@ -2079,12 +2077,12 @@ sub Bulk_Load_Done {
   `/bin/rm -f $NOTAPEARC`;          #allow tapearc to run again
 }
 
-#Get tapes that are past the effective_date for their group, as defined in the
-#sum_group table in ascending effective_date order.
+#Get closed tapes from sum_tape in ascending effective_date order for
+#groups 2,3,4 and 5 (hmi/aia.lev0, hmi/aia.tlm).
 #Return the tapeid's in @exptape.
 sub get_exp_tapes{
   @exptape = ();
-  $sqlcmd = "select * from sum_group order by effective_date";
+  $sqlcmd = "select tapeid,group_id,last_write from sum_tape where (group_id=2 or group_id=3 or group_id=4 or group_id=5) and closed=2 and last_write > '2010-06-01 01:50:29'  order by last_write";
   #print "sqlcmd is: $sqlcmd\n\n"; #!!TEMP
   $sth = $dbh->prepare($sqlcmd);
   if ( !defined $sth ) {
@@ -2094,31 +2092,14 @@ sub get_exp_tapes{
   }
   # Execute the statement at the database level
   $sth->execute;
-  $date = &get_effdate;
-  while(@group_table = $sth->fetchrow()) { #get row from the DB
-    if($group_table[2] lt $date) {	#this has expired
-      $grp = $group_table[0];
-      #print "group=$grp, retain=$group_table[1], eff=$group_table[2]\n";#!!TEMP
-      $sqlcmd = "select tapeid from sum_tape where group_id=$grp order by last_write";
-      #print "sqlcmd is: $sqlcmd\n\n"; #!!TEMP
-      $sth2 = $dbh->prepare($sqlcmd);
-      if ( !defined $sth2 ) {
-        print "Cannot prepare statement: $DBI::errstr\n";
-        system "/bin/rm $runtag";
-        exit;
-      }
-      # Execute the statement at the database level
-      $sth2->execute;
-      while(@efftape = $sth2->fetchrow()) { #get row from the DB
-        #print "efftape = @efftape[0]\n"; #!!TEMP
-        if(grep(/@efftape[0]/, @slottapes)) {
-          push(@exptape, @efftape[0]);
-        }
-        else {
-          if((index($d0tape, @efftape[0]) != -1) || (index($d1tape,  @efftape[0]) != -1) ||  (index($d2tape,  @efftape[0]) != -1) ||  (index($d3tape,  @efftape[0]) != -1) ||  (index($d4tape,  @efftape[0]) != -1) ||  (index($d5tape,  @efftape[0]) != -1) ||  (index($d6tape,  @efftape[0]) != -1) ||  (index($d7tape,  @efftape[0]) != -1) ||  (index($d8tape,  @efftape[0]) != -1) ||  (index($d9tape,  @efftape[0]) != -1) ||  (index($d10tape,  @efftape[0]) != -1) ||  (index($d11tape,  @efftape[0]) != -1)) {
-            push(@exptape, @efftape[0]);
-          }
-        }
+  while(@efftape = $sth->fetchrow()) { #get row from the DB
+    #print "efftape = @efftape[0]\n"; #!!TEMP
+    if(grep(/@efftape[0]/, @slottapes)) {
+      push(@exptape, @efftape[0]);
+    }
+    else {
+      if((index($d0tape, @efftape[0]) != -1) || (index($d1tape,  @efftape[0]) != -1) ||  (index($d2tape,  @efftape[0]) != -1) ||  (index($d3tape,  @efftape[0]) != -1) ||  (index($d4tape,  @efftape[0]) != -1) ||  (index($d5tape,  @efftape[0]) != -1) ||  (index($d6tape,  @efftape[0]) != -1) ||  (index($d7tape,  @efftape[0]) != -1) ||  (index($d8tape,  @efftape[0]) != -1) ||  (index($d9tape,  @efftape[0]) != -1) ||  (index($d10tape,  @efftape[0]) != -1) ||  (index($d11tape,  @efftape[0]) != -1)) {
+        push(@exptape, @efftape[0]);
       }
     }
   }
