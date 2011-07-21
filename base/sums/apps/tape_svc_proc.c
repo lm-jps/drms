@@ -1223,12 +1223,13 @@ KEY *taperespwritedo_1(KEY *params) {
   write_log("*Tp:DrNotBusy: drv=%d\n", dnum);
   drives[dnum].filenum = -1; /* reset for any read that may be next*/
   tapeid = drives[dnum].tapeid;
-  if(SUMLIB_EffDateUpdate(tapeid, 1)) { /* update sum_group effective_date */
-    write_log("**Error on update of sum_group effective_date for tapeid %s\n",
-		tapeid);
-    send_mail("Error on SUMLIB_EffDateUpdate(%s, 1)", tapeid);
-    /* continue anyway */
-  }
+  /* sum_group table is obsolete 7/21/2011 */
+//  if(SUMLIB_EffDateUpdate(tapeid, 1)) { /* update sum_group effective_date */
+//    write_log("**Error on update of sum_group effective_date for tapeid %s\n",
+//		tapeid);
+//    send_mail("Error on SUMLIB_EffDateUpdate(%s, 1)", tapeid);
+//    /* continue anyway */
+//  }
   retlist = newkeylist();
   add_keys(params, &retlist);
   /* s/b tapearc */
@@ -1493,12 +1494,13 @@ KEY *taperespreaddo_1(KEY *params) {
 //  }
   sprintf(tmpname, "tapeid_%d", reqofflinenum);
   tapeid = GETKEY_str(params, tmpname);
-  if(SUMLIB_EffDateUpdate(tapeid, 0)) { /* update sum_group effective_date */
-    write_log("**Error on update of sum_group effective_date for tapeid %s\n",
-		tapeid);
-    send_mail("Error on SUMLIB_EffDateUpdate(%s, 0)", tapeid);
-    /* continue anyway */
-  }
+  /* sum_group table is obsolete 7/21/2011 */
+//  if(SUMLIB_EffDateUpdate(tapeid, 0)) { /* update sum_group effective_date */
+//    write_log("**Error on update of sum_group effective_date for tapeid %s\n",
+//		tapeid);
+//    send_mail("Error on SUMLIB_EffDateUpdate(%s, 0)", tapeid);
+//    /* continue anyway */
+//  }
   retlist = newkeylist();
   add_keys(params, &retlist);
   client = (CLIENT *)getkey_fileptr(params, "current_client");
