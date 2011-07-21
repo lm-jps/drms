@@ -158,8 +158,8 @@ print LOG "The ps -ef for product is:\n@ps_prod\n";
         close(LOG);
         close(MLOG);
         $mail = "Mail -s \"SUM multi j1 auto Start Complete\"";
-        #$to = "sssc_crew\@solar2";
-        $to = "jim";
+        $to = "sssc_crew\@solar2";
+        #$to = "jim";
         $cmd = "$mail $to < $MLOGFILE";
         if($mailflg) { system $cmd; }
         exit;
