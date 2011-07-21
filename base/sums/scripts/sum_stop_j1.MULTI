@@ -200,7 +200,8 @@ while($_ = shift(@ps_prod)) {
       `kill -9 $psid`;
     }
     else {
-      `kill -2 $psid`;
+      //`kill -2 $psid`;
+      `kill -9 $psid`;
     }
   }
 }
