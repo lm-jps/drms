@@ -14,7 +14,8 @@ while (1)
   set AIAmt = `stat -L -c '%Y' /dds/soc2pipe/aia` 
   set ONTIME
   foreach VC (VC01 VC02 VC04 VC05)
-    set PSLINE = `ps -ef | grep ingest_lev0 | grep "^388"| grep $VC`
+    #set PSLINE = `ps -ef | grep ingest_lev0 | grep "^388"| grep $VC`
+    set PSLINE = `ps -ef | grep ingest_lev0 | grep "^jsocprod"| grep $VC`
     if ($#PSLINE > 5) then
       set ONTIME = ( $ONTIME $PSLINE[5] )
     else
