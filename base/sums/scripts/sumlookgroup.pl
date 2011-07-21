@@ -89,6 +89,8 @@ print "      9 : dsds. Migrated data from SOI/DSDS\n";
 print "     10 : hmi.lev1\n";
 print "     11 : sid_awe.awesome\n";
 print "     12 : su_timh.awesome\n";
+print "     30 : mdi.fd_Ic_bin,mdi.fd_V,mdi.hr_I0,mdi.fd_I0\n";
+print "    100 : aia.lev1\n";
 print "    102 : hmi.lev0_60d\n";
 print "    103 : aia.lev0_60d\n";
 print "    104 : hmi.tlm_60d\n";
@@ -97,7 +99,7 @@ print "    310 : hmi.rdVtrack_fd05, hmi.rdVtrack_fd15, hmi.rdVtrack_fd30\n";
 print "    311 : hmi.rdvpspec_fd05, hmi.rdVpspec_fd15, hmi.rdVpspec_fd30\n";
 print "    400 : reserved for expansion of a group to an additional drive\n";
 print "    401 : reserved for expansion of a group to an additional drive\n";
-print "  10000 : aia.lev1 (will eventually become group 100)\n\n";
+print "  10000 : aia.lev1 (has been changed to group 100)\n\n";
 
 $hostdb = $HOSTDB;      #host where Postgres runs
 $user = $ENV{'USER'};
@@ -148,7 +150,7 @@ $totalbytes100 = 0;
 #      push(@avail, $avail);
 #    }
 #######################################################################
-    @groupids = (0,1,2,3,4,5,6,7,8,9,10,11,12,102,103,104,105,310,311,400,401,10000,-1);
+    @groupids = (0,1,2,3,4,5,6,7,8,9,10,11,12,30,100,102,103,104,105,310,311,400,401,10000,-1);
     while(($group = shift(@groupids)) != -1) {
       if(!$FULL || $group==400 || $group==401) { #no Full mode for 400s
         $sql = "select sum(bytes) from sum_partn_alloc where (status=4 and archive_substatus=32 or status=2) and group_id=$group and effective_date <= '$effdate'";
@@ -258,7 +260,9 @@ $totalbytes100 = 0;
         #printf("$sum %12d %12d %12d %12d\n", $avail,$bytes,$byteso,$bytesap);
         $BYTES = $bytes;
         $BYTES30 = $bytes30 - $bytes;
+        if($BYTES30 < 0) { $BYTES30=0; }
         $BYTES100 = $bytes100 - $bytes30;
+        if($BYTES100 < 0) { $BYTES100=0; }
         $TOTALBYTES30 = $totalbytes30 - $totalbytes;
         $TOTALBYTES100 = $totalbytes100 - $totalbytes30;
         printf("$group\t%12s %12s %12s %12s %12s\n", 
@@ -297,3 +301,15 @@ $totalbytes100 = 0;
 
 $dbh->disconnect();
 
+@df = `/bin/df /SUM*`;
+$f = shift(@df);		#skip title line
+$total = 0;
+while( $f = shift(@df)) {
+($a, $b, $c, $avail) = split(/\s+/, $f);
+$total += $avail;
+}
+$tmb = $total/1024;
+
+printf "\nTotal free Mbytes not counted above %12s\n", commify(int($tmb));
+$grand = $totalstor + $tmb;
+printf "Grand total SUM storage %12s\n", commify(int($grand));

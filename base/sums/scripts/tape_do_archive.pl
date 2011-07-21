@@ -12,7 +12,8 @@ $nochild = 0;
 
 sub usage {
   print "Do pending archive by group by dataset by sunum.\n";
-  print "Usage: tape_do_archive.pl db_name (e.g. jsoc_sums)\n";
+  print "Usage: tape_do_archive.pl -x db_name (e.g. jsoc_sums)\n";
+  print "       -x = execute, else just show what would do\n";
   print "       The default db_host is $HOSTDB\n";
   print "\nYou must have ENV SUMPGPORT set to the port number, e.g. 5434\n";
   exit(1);
@@ -96,6 +97,7 @@ sub forkarc {
   print "$fcmd\n";
   if($CURRFORKS >= $MAXFORKS) { return 0; } #can't fork any more
   $CURRFORKS++;
+  if($execute) {
     if($fpid = fork) {
       #This is the parent. The child's pid is in $fpid
       print stdout "child pid is $fpid. CURRFORKS = $CURRFORKS\n";
@@ -109,6 +111,10 @@ sub forkarc {
       print "!!! Can't fork: $!\n";
       return 0;
     }
+  }
+  else {
+    print "Skip: $fcmd\n";
+  }
 }
 
   $host = `hostname -s`;
@@ -131,6 +137,9 @@ while ($ARGV[0] =~ /^-/) {
   }
   if (/^-f(.*)/) {
     $FAST = 1;
+  }
+  if (/^-x(.*)/) {
+    $execute = 1;
   }
 }
 
@@ -181,9 +190,18 @@ if(!($PGPORT = $ENV{'SUMPGPORT'})) {
     $mfilename = "$ARCHFILEDIR/manifest.group$group";
     if( -e $mfilename) {	#already exists
       print "Manifest file $mfilename still exists.\n";
-      print "Processing for group $group may still be active. Skip...\n"; 
-      #$CURRFORKS++;	#count as active fork - No, not under our control
-      next;
+      @ps = `ps -ef | grep tapearcX`;
+      $name = "manifest.group$group";
+      $x = grep(/$name/, @ps);
+      if($x) {
+        print "Processing for group $group still active. Skip...\n"; 
+        next;
+      }
+      else {
+        print "Going to recreate $mfilename if necessary\n";
+        $cmd = "/bin/rm $mfilename";
+        `$cmd`;
+      }
     } 
     #determine if time to archive is past cadence
     if($waitdays == 0) { next; }	#no archive for this group
@@ -350,6 +368,14 @@ if($filename) {
 while(1) { 
   sleep 10; 
   if($nochild) {        #sometime last child is not reaped. so check this
+      if($newcmd = shift(@pendcmds)) {
+          print "REAPCHILD CURRFORKS=$CURRFORKS has newcmd = $newcmd\n";
+          if(!(&forkarc($newcmd))) {
+            print "Fork Error!! There s/b an open drive for write.\n";
+            exit(1);
+          }
+          next;
+      }
     print "tape_do_archive.pl No child left. Exit\n";
     exit(0);
   }

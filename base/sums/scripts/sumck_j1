@@ -42,6 +42,7 @@ while(1) {
     if(/^$GREPPS/) {	#do for all production processes
       if(/sum_svc $DB/ || /sum_svc -o $DB/) {
         $found = 1;
+        break;
       }
     }
   }
