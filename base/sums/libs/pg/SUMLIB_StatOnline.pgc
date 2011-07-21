@@ -82,3 +82,35 @@ sqlerror:
     EXEC SQL ROLLBACK WORK;
     return DS_DATA_UPD;
 }
+
+/* Return the effective_date in the sum_partn_alloc table.
+*/
+int SUM_GetEffDate(uint64_t ds_index, char *effarray);
+
+int SUM_GetEffDate(uint64_t ds_index, char *effarray)
+{
+  EXEC SQL TYPE uint64_t IS unsigned long long;
+
+EXEC SQL BEGIN DECLARE SECTION;
+  uint64_t l_ds_index;
+  VARCHAR eff_date_str[20];
+  int  daro = DARO;
+EXEC SQL END DECLARE SECTION;
+
+    l_ds_index = ds_index;
+    EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
+    EXEC SQL WHENEVER NOT FOUND GOTO sqlerror; 
+
+    EXEC SQL SELECT DISTINCT EFFECTIVE_DATE INTO :eff_date_str
+        FROM SUM_PARTN_ALLOC where DS_INDEX = :l_ds_index
+        and STATUS != :daro;
+    sprintf(effarray, eff_date_str.arr);
+    return(0);
+
+sqlerror:
+	printk("Error in SUM_IncEffDate\n"); 
+	printk("% .70s \n", sqlca.sqlerrm.sqlerrmc); 
+    EXEC SQL WHENEVER SQLERROR CONTINUE;
+    EXEC SQL ROLLBACK WORK;
+    return(1);
+}
