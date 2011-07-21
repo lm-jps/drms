@@ -182,5 +182,7 @@ int main(int argc, char *argv[])
       exit(1);
     }
   }
+  //Now see if sum_rm_[0,1,2] need to be started. !!!TBD!!!
+
   //printf("End of sum_forker to start tape services\n");
 }
