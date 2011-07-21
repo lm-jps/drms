@@ -92,7 +92,7 @@ int i, setnum, pnum;
 extern int part_index[];	/* defined in SUMLIB_PavailGet.pgc */
 extern int part_index_init[];	/* defined in SUMLIB_PavailGet.pgc */
 
-    printk("DS_PavailRequest2 \n");  
+    //printk("DS_PavailRequest2 \n");  
 
     EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
 
