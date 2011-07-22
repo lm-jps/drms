@@ -54,6 +54,7 @@ print "  > ssh-agent | head -2 > /var/tmp/ssh-agent.env
 $PID = getppid;
 $MLOGFILE = "/tmp/sum_start_mail_j1_multi.$PID";
 $LOGFILE = "/tmp/sum_start_j1_multi.$PID";
+$SSLOG = "/usr/local/logs/SUM/sum_start_stop.log";
 open(LOG, ">$LOGFILE") || die "Can't open $LOGFILE: $!\n";
 open(MLOG, ">$MLOGFILE") || die "Can't open $MLOGFILE: $!\n";
 ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
@@ -302,6 +303,19 @@ while($_ = shift(@ps_prod)) {
         `ssh d02.stanford.edu touch /usr/local/logs/SUM/RESTART_AFTER_REBOOT`;
       }
       last;
+    }
+    #record start up info
+    if(!open(SLOG, ">>$SSLOG")) { 
+      print "Can't open for append: $SSLOG\n";
+    }
+    else {
+      print SLOG "START: MANUAL: $date\n";
+      $sql = "select max(ds_index) from sum_main";
+      $pcmd = "echo \"$sql\" | psql -q -h hmidb -p 5434 jsoc_sums";
+      @maxi = `$pcmd`;
+      $maxindex = @maxi[2];
+      print SLOG "START: MANUAL: $maxindex\n";
+      close(SLOG);
     }
 
         print "** Now starting: sum_svc $DB\n";

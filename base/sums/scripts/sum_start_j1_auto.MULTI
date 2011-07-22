@@ -59,6 +59,21 @@ print LOG "sum_start_j1_auto.MULTI at $date\n\n";
 print MLOG "sum_start_j1_auto.MULTI at $date\n";
 print MLOG "See $LOGFILE for more details\n";
 
+    #record start up info
+    $SSLOG = "/usr/local/logs/SUM/sum_start_stop.log";
+    if(!open(SLOG, ">>$SSLOG")) {
+      print "Can't open for append: $SSLOG\n";
+    }
+    else {
+      print SLOG "START: AUTO: $date\n";
+      $sql = "select max(ds_index) from sum_main";
+      $pcmd = "echo \"$sql\" | psql -q -h hmidb -p 5434 jsoc_sums";
+      @maxi = `$pcmd`;
+      $maxindex = @maxi[2];
+      print SLOG "START: AUTO: $maxindex\n";
+      close(SLOG);
+    }
+
 @ps_prod = `ps -ef | grep $GREPPS`;
 #print "The ps -ef for producttion is:\n@ps_prod\n";
 print LOG "The ps -ef for product is:\n@ps_prod\n";

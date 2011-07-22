@@ -181,6 +181,22 @@ print "SUM multi Stop_j1_auto Complete\n";
 print LOG "SUM multi Stop_j1_auto Complete\n";
 close(LOG);
 close(MLOG);
+
+#Log is start/stop file
+$SSLOG = "/usr/local/logs/SUM/sum_start_stop.log";
+if(!open(MLOG, ">>$SSLOG")) {           #record stop info
+  print "Can't open for append: $SSLOG\n";
+}
+else {
+  print MLOG "STOP: AUTO: $date\n";
+  $sql = "select max(ds_index) from sum_main";
+  $pcmd = "echo \"$sql\" | psql -q -h hmidb -p 5434 jsoc_sums";
+  @maxi = `$pcmd`;
+  $maxindex = @maxi[2];
+  print MLOG "STOP: AUTO: $maxindex\n";
+  close(MLOG);
+}
+
 $mail = "Mail -s \"SUM multi Stop_j1_auto Complete\"";
 #$to = "sssc_crew\@solar2";
 $to = "jim";
