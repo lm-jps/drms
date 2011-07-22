@@ -146,7 +146,7 @@ EXEC SQL END DECLARE SECTION;
   return(1);
 
 sqlerror:
-        printk("Error in SUMLIB_SumsetGet\n");
+        printk("Error in SUMLIB_SumsetGet for group %d\n", group);
         printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
     return 0;
 }
