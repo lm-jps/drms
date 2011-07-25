@@ -148,6 +148,7 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
                   else
                   {
                      fprintf(stdout, "Unable to close fits file '%s'.\n", tmpfilehashkey);
+                     perror("fitsrw_getfptr_internal() system error");
                   }
 
                   fprintf(stdout, "Time to close fitsfile '%s'= %f sec.\n", tmpfilehashkey, PopTimer());
@@ -306,6 +307,7 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
                         fits_get_errstatus(stat, cfitsiostat);
                         fprintf(stderr, "Purging cache: error closing fitsfile '%s'.\n", fhkey);
                         fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
+                        perror("fitsrw_getfptr_internal() system error");
                      }
                      
                      if (verbose)
@@ -809,6 +811,7 @@ int fitsrw_closefptr(int verbose, fitsfile *fptr)
                fits_get_errstatus(stat, cfitsiostat);
                fprintf(stderr, "Closing fitsfile: error closing fitsfile '%s'.\n", fpinfo.fhash);
                fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
+               perror("fitsrw_closefptr() system error");
             }
 
             if (verbose)
@@ -927,6 +930,7 @@ void fitsrw_closefptrs(int verbose)
                      fits_get_errstatus(stat, cfitsiostat);
                      fprintf(stderr, "Closing all fitsfiles: error closing fitsfile '%s'.\n", onefile);
                      fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
+                     perror("fitsrw_closefptrs() system error");
                   }
 
                   if (verbose)
