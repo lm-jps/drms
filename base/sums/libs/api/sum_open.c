@@ -252,12 +252,12 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
       clnt_pcreateerror("Can't get client handle to sum_svc SUMALLOC2. Retry..");
       (*history)("Going to retry in 1 sec. i=%d\n", i);
       sleep(1);
-      clalloc1 = clnt_create(server_name, SUMALLOC2, SUMALLOCV, "tcp");
+      clalloc2 = clnt_create(server_name, SUMALLOC2, SUMALLOCV, "tcp");
       if(clalloc2) { break; }
     }
     if(!clalloc2) {
-      clnt_pcreateerror("Can't get retry client handle to sum_svc SUMALLOC1");
-      (*history)("sum_svc error on handle to SUMALLOC1 on %s\n", server_name);
+      clnt_pcreateerror("Can't get retry client handle to sum_svc SUMALLOC2");
+      (*history)("sum_svc error on handle to SUMALLOC2 on %s\n", server_name);
       return(NULL);
     }
   }
