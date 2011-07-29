@@ -32,9 +32,9 @@
 #define SUMBIN_BASEDIR	"/usr/local/bin"
 #define SUMSERVER	"j1"
 /* Number of sum process sets to spawn. # = (NUMSUM*5)+2 */
-#define NUMSUM		3
-/* Don't exceed this maximum NUMSUM (and don't change this max!) */
-#define MAXNUMSUM	8
+#define SUM_NUMSUM		3
+/* Don't exceed this maximum SUM_NUMSUM (and don't change this max!) */
+#define SUM_MAXNUMSUM	8
 
 #define SUMS_TAPE_AVAILABLE (1)
 
