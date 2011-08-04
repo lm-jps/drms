@@ -1527,7 +1527,7 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
      if (fscanf(fp, "%s", new_requestid) != 1)
        JSONDIE("Cant get new RequestID");
      pclose(fp);
-     if (strstr(dbhost, "hmidb"))
+     if (strcmp(dbhost, "hmidb") == 0)
        strcat(new_requestid, "_IN");
      }
      requestid = new_requestid;
