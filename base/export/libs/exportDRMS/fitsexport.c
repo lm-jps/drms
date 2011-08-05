@@ -664,6 +664,7 @@ int fitsexport_export_tofile(DRMS_Segment_t *seg, const char *cparms, const char
    return fitsexport_mapexport_tofile(seg, cparms, NULL, NULL, fileout);
 }
 
+/* Input seg must be the source segment, not the target segment, if the input seg is a linked segment. */
 int fitsexport_mapexport_tofile(DRMS_Segment_t *seg, 
                                 const char *cparms, 
                                 const char *clname, 
@@ -675,78 +676,119 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
    CFITSIO_KEYWORD *fitskeys = NULL;
    char filename[DRMS_MAXPATHLEN]; 
    struct stat stbuf;
+   DRMS_Segment_t *tgtseg = NULL;
 
-   drms_segment_filename(seg, filename); /* full, absolute path to segment file */
-
-   if (*filename == '\0' || stat(filename, &stbuf))
+   if (seg->info->islink)
    {
-      /* file filename is missing */
-      snprintf(seg->filename, sizeof(seg->filename), "%s", filename); /* so caller has access to file name */
-      status = DRMS_ERROR_INVALIDFILE;
+      if ((tgtseg = drms_segment_lookup(seg->record, seg->info->name)) == NULL)
+      {
+         fprintf(stderr, "Unable to locate target segment %s.\n", seg->info->name);
+         status = DRMS_ERROR_INVALIDFILE;
+      }
+      else
+      {
+         drms_segment_filename(tgtseg, filename);
+      }
    }
    else
    {
-      fitskeys = fitsexport_mapkeys(seg, clname, mapfile, &status);
+      drms_segment_filename(seg, filename); /* full, absolute path to segment file */
+   }
 
-      switch (seg->info->protocol)
+   if (status == DRMS_SUCCESS)
+   {
+      if (*filename == '\0' || stat(filename, &stbuf))
       {
-         case DRMS_BINARY:
-           /* intentional fall-through */
-         case DRMS_BINZIP:
-           /* intentional fall-through */
-         case DRMS_FITZ:
-           /* intentional fall-through */
-         case DRMS_FITS:
-           /* intentional fall-through */
-         case DRMS_TAS:
-           /* intentional fall-through */
-         case DRMS_DSDS:
-           /* intentional fall-through */
-         case DRMS_LOCAL:
-         {
-            /* If the segment file is compressed, and will be exported in compressed
-             * format, don't uncompress it (which is what drms_segment_read() will do). 
-             * Instead, use the cfitsio routines to read the image into memory, as is - 
-             * so compressed image data will remain compressed in memory. Then 
-             * combine the header and image into a new FITS file and write it to 
-             * the fileout. Steps:
-             *   1. Use CopyFile() to copy the input segment file to fileout. 
-             *   2. Call fits_open_image() to open the file for writing. This does not
-             *      read the image into memory.
-             *   3. Call cfitsio_key_to_card()/fits_write_record() to write keywords.
-             *   4. Call fits_write_img().
-             * It is probably best to use some modified version of fitsrw_write() that
-             * simply replaces keywords - it deletes all existing keywords and 
-             * takes a keylist of keys to add to the image.
-             * 
-             * Try to use the libfitsrw routines which automatically cache open 
-             * fitsfile pointers and calculate checksums, etc. */
-            DRMS_Array_t *arrout = drms_segment_read(seg, DRMS_TYPE_RAW, &status);
-            if (arrout)
-            {
-               status = ExportFITS(seg->record->env, arrout, fileout, cparms ? cparms : seg->cparms, fitskeys);
-               drms_free_array(arrout);	     
-            }
-         }
-         break;
-         case DRMS_GENERIC:
-         {
-            /* Simply copy the file from the segment's data-file path
-             * to fileout, no keywords to worry about. */
-            if (CopyFile(filename, fileout) != stbuf.st_size)
-            {
-               fprintf(stderr, "Unable to export file '%s' to '%s'.\n", filename, fileout);
-               status = DRMS_ERROR_FILECOPY;
-            }
-         }
-         break;
-         default:
-           fprintf(stderr, 
-                   "Data export does not support data segment protocol '%s'.\n", 
-                   drms_prot2str(seg->info->protocol));
+         /* file filename is missing */
+         snprintf(seg->filename, sizeof(seg->filename), "%s", filename); /* so caller has access to file name */
+         status = DRMS_ERROR_INVALIDFILE;
       }
+      else
+      {
+         int swval;
+
+         /* Must be source segment if the segment is a linked segment. */
+         fitskeys = fitsexport_mapkeys(seg, clname, mapfile, &status);
+
+         if (tgtseg)
+         {
+            swval = tgtseg->info->protocol;
+         }
+         else
+         {
+            swval = seg->info->protocol;
+         }
+
+         switch (swval)
+         {
+            case DRMS_BINARY:
+              /* intentional fall-through */
+            case DRMS_BINZIP:
+              /* intentional fall-through */
+            case DRMS_FITZ:
+              /* intentional fall-through */
+            case DRMS_FITS:
+              /* intentional fall-through */
+            case DRMS_TAS:
+              /* intentional fall-through */
+            case DRMS_DSDS:
+              /* intentional fall-through */
+            case DRMS_LOCAL:
+              {
+                 /* If the segment file is compressed, and will be exported in compressed
+                  * format, don't uncompress it (which is what drms_segment_read() will do). 
+                  * Instead, use the cfitsio routines to read the image into memory, as is - 
+                  * so compressed image data will remain compressed in memory. Then 
+                  * combine the header and image into a new FITS file and write it to 
+                  * the fileout. Steps:
+                  *   1. Use CopyFile() to copy the input segment file to fileout. 
+                  *   2. Call fits_open_image() to open the file for writing. This does not
+                  *      read the image into memory.
+                  *   3. Call cfitsio_key_to_card()/fits_write_record() to write keywords.
+                  *   4. Call fits_write_img().
+                  * It is probably best to use some modified version of fitsrw_write() that
+                  * simply replaces keywords - it deletes all existing keywords and 
+                  * takes a keylist of keys to add to the image.
+                  * 
+                  * Try to use the libfitsrw routines which automatically cache open 
+                  * fitsfile pointers and calculate checksums, etc. */
+                 DRMS_Array_t *arrout = NULL;
+
+                 if (seg->info->islink)
+                 {
+                    arrout = drms_segment_read(tgtseg, DRMS_TYPE_RAW, &status);
+                 }
+                 else
+                 {
+                    arrout = drms_segment_read(seg, DRMS_TYPE_RAW, &status);
+                 }
+
+                 if (arrout)
+                 {
+                    status = ExportFITS(seg->record->env, arrout, fileout, cparms ? cparms : (seg->info->islink ? tgtseg->cparms : seg->cparms), fitskeys);
+                    drms_free_array(arrout);	     
+                 }
+              }
+              break;
+            case DRMS_GENERIC:
+              {
+                 /* Simply copy the file from the segment's data-file path
+                  * to fileout, no keywords to worry about. */
+                 if (CopyFile(filename, fileout) != stbuf.st_size)
+                 {
+                    fprintf(stderr, "Unable to export file '%s' to '%s'.\n", filename, fileout);
+                    status = DRMS_ERROR_FILECOPY;
+                 }
+              }
+              break;
+            default:
+              fprintf(stderr, 
+                      "Data export does not support data segment protocol '%s'.\n", 
+                      drms_prot2str(seg->info->protocol));
+         }
    
-      cfitsio_free_keys(&fitskeys);
+         cfitsio_free_keys(&fitskeys);
+      }
    }
 
    return status;
@@ -755,6 +797,8 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
 /* Map keys that are specific to a segment to fits keywords.  User must free. 
  * Follows keyword links and ensures that per-segment keywords are relevant
  * to this seg's keywords. */
+
+/* Input seg must be the src seg, not the target seg, if the input seg is a linked segment. */
 CFITSIO_KEYWORD *fitsexport_mapkeys(DRMS_Segment_t *seg, 
                                     const char *clname, 
                                     const char *mapfile, 

@@ -277,6 +277,7 @@ static int MapexportRecordToDir(DRMS_Record_t *recin,
    int drmsstat = DRMS_SUCCESS;
    MymodError_t modstat = kMymodErr_Success;
    DRMS_Segment_t *segin = NULL;
+   DRMS_Segment_t *tgtseg = NULL; /* If segin is a linked segment, then tgtset is the segment in the target series. */
    unsigned long long tsize = 0;
    char dir[DRMS_MAXPATHLEN];
    char fmtname[DRMS_MAXPATHLEN];
@@ -300,9 +301,23 @@ static int MapexportRecordToDir(DRMS_Record_t *recin,
    lastcparms = 0;
    count = 0;
 
-   while ((segin = drms_record_nextseg(recin, &last, 1)) != NULL)
+   while ((segin = drms_record_nextseg(recin, &last, 0)) != NULL)
    {
-      if (exputl_mk_expfilename(segin, ffmt, fmtname) == kExpUtlStat_Success)
+      if (segin->info->islink)
+      {
+         if ((tgtseg = drms_segment_lookup(recin, segin->info->name)) == NULL)
+         {
+            fprintf(stderr, "Unable to locate target segment %s.\n", segin->info->name);
+            iseg++;
+            continue;
+         }
+      }
+      else
+      {
+         tgtseg = segin;
+      }
+
+      if (exputl_mk_expfilename(segin, tgtseg, ffmt, fmtname) == kExpUtlStat_Success)
       {
          snprintf(fullfname, sizeof(fullfname), "%s/%s", outpath, fmtname);
       }
@@ -317,6 +332,7 @@ static int MapexportRecordToDir(DRMS_Record_t *recin,
          lastcparms = 1;
       }
 
+      /* Must pass source segment if the segment is a linked segment. */
       drmsstat = fitsexport_mapexport_tofile(segin, 
                                              !lastcparms ? cparms[iseg] : NULL, 
                                              classname, 
@@ -344,7 +360,7 @@ static int MapexportRecordToDir(DRMS_Record_t *recin,
       iseg++;
    }
 
-   /* If NO file exported, this is an error. But if there is more than one segments, it is okay
+   /* If NO file exported, this is an error. But if there is more than one segment, it is okay
     * for some input segment files to be missing. */
    if (count == 0)
    {
@@ -492,6 +508,7 @@ static int MapexportToDir(DRMS_Env_t *env,
 
 static MymodError_t CallExportToFile(DRMS_Segment_t *segout, 
                                      DRMS_Segment_t *segin, 
+                                     DRMS_Segment_t *tgtseg, 
                                      const char *clname,
                                      const char *mapfile,
                                      const char *ffmt,
@@ -509,12 +526,20 @@ static MymodError_t CallExportToFile(DRMS_Segment_t *segout,
 
    if (segout)
    {
-      drms_segment_filename(segin, filein); /* input seg file name */
+      if (segin->info->islink)
+      {
+         drms_segment_filename(tgtseg, filein);
+      }
+      else
+      {
+         drms_segment_filename(segin, filein); /* input seg file name */
+      }
+
       if (!stat(filein, &filestat))
       {
 	 size = filestat.st_size;
 
-         if (exputl_mk_expfilename(segin, ffmt, basename) == kExpUtlStat_Success)
+         if (exputl_mk_expfilename(segin, tgtseg, ffmt, basename) == kExpUtlStat_Success)
          {
             CHECKSNPRINTF(snprintf(segout->filename, DRMS_MAXSEGFILENAME, "%s", basename), DRMS_MAXSEGFILENAME);
             drms_segment_filename(segout, fileout);
@@ -570,6 +595,7 @@ static int MapexportRecord(DRMS_Record_t *recout,
    HIterator_t *last = NULL;
    DRMS_Segment_t *segout = NULL;
    DRMS_Segment_t *segin = NULL;
+   DRMS_Segment_t *tgtseg = NULL;
    unsigned long long size = 0;
    unsigned long long tsize = 0;
    char dir[DRMS_MAXPATHLEN];
@@ -625,25 +651,38 @@ static int MapexportRecord(DRMS_Record_t *recout,
       lastcparms = 0;
       gotone = 0;
 
-      while ((segin = drms_record_nextseg(recin, &last, 1)) != NULL)
+      while ((segin = drms_record_nextseg(recin, &last, 0)) != NULL)
       {
-	 size = 0;
+         if (segin->info->islink)
+         {
+            if ((tgtseg = drms_segment_lookup(recin, segin->info->name)) == NULL)
+            {
+               fprintf(stderr, "Unable to locate target segment %s.\n", segin->info->name);
+               iseg++;
+               continue;
+            }
+         }
+         else
+         {
+            tgtseg = segin;
+         }
+
+         size = 0;
 
          if (!cparms || !cparms[iseg])
          {
             lastcparms = 1;
          }
 
-	 err = CallExportToFile(segout, 
+         err = CallExportToFile(segout, 
                                 segin, 
+                                tgtseg, 
                                 classname, 
                                 mapfile, 
                                 ffmt, 
                                 &size, 
                                 fname, 
                                 !lastcparms ? cparms[iseg] : NULL);
-
-
 
          if (err == kMymodErr_MissingSegFile)
          {

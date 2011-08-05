@@ -9,7 +9,8 @@ typedef enum
    kExpUtlStat_InvalidFmt
 } ExpUtlStat_t;
 
-ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *seg, 
+ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
+                                   DRMS_Segment_t *tgtseg,
                                    const char *filenamefmt, 
                                    char *filename);
 

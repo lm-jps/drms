@@ -39,7 +39,13 @@
  *
  */
 
-ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *seg, 
+/* For series with linked records, always use the source record for keyword names, segment names, etc., 
+ * and use the target record for keyword values, etc. To achieve this, 'rec' is the source-series record, 
+ * and 'segname' is the name of the segment in the sourc series. Obtain the target record by 
+ * "following links" when using functions to look-up keywords, for example. */
+ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
+                                   DRMS_Segment_t *tgtseg, /* If the segment is a linked segment, then tgtseg is the 
+                                                            * segment in the target series. */
                                    const char *filenamefmt, 
                                    char *filename)
 {
@@ -52,6 +58,7 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *seg,
      snprintf(format, sizeof(format), "%s", filenamefmt);
    else
      snprintf(format, sizeof(format), "{seriesname}.{recnum:%%lld}.{segment}");
+
    fmt = format;
    *fn = '\0';
    while (*fmt)
@@ -93,19 +100,30 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *seg,
                val = valstr;
                }
             else if (strcmp(keyname,"seriesname")==0)
-               val = seg->record->seriesinfo->seriesname;
+               val = srcseg->record->seriesinfo->seriesname;
             else if (strcmp(keyname,"recnum")==0)
                {
                snprintf(valstr, sizeof(valstr), (layout ? layout : "%lld"), 
-                        seg->record->recnum); 
+                        srcseg->record->recnum); 
                val = valstr;
                }
             else if (strcmp(keyname,"segment")==0)
-               val = seg->filename;
+            {
+               if (srcseg->info->islink)
+               {
+                  val = tgtseg->filename;
+               }
+               else
+               {
+                  val = srcseg->filename;
+               }
+            }
             // At this point the keyname is a normal keyword name.
             else if (layout) // use user provided format to print keyword.  User must be careful.
               {
-              DRMS_Keyword_t *key = drms_keyword_lookup(seg->record,keyname,1);
+                 /* drms_keyword_lookup will properly follow a link to the target series to
+                  * obtain the target key and keyword value. */
+              DRMS_Keyword_t *key = drms_keyword_lookup(srcseg->record,keyname,1);
               if (key->info->type == DRMS_TYPE_TIME)
                 { // do special time formats here 
                 char formatwas[DRMS_MAXFORMATLEN], unitwas[DRMS_MAXUNITLEN];
@@ -121,7 +139,15 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *seg,
                   strncpy(key->info->unit,layout+1,DRMS_MAXUNITLEN);
 
                 /* avoid leaks */
-                tmpstr = drms_getkey_string(seg->record,keyname,NULL);
+                if (srcseg->info->islink)
+                {
+                   tmpstr = drms_getkey_string(tgtseg->record, keyname, NULL);
+                }
+                else
+                {
+                   tmpstr = drms_getkey_string(srcseg->record, keyname, NULL);
+                }
+
                 snprintf(tmpstr2, sizeof(tmpstr2), "%s", tmpstr);
                 free(tmpstr);
                 val = tmpstr2;
@@ -167,12 +193,21 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *seg,
                 }
               else
                 {
+                   /* non-time keyword types */
                 char formatwas[DRMS_MAXFORMATLEN];
                 strncpy(formatwas, key->info->format, DRMS_MAXFORMATLEN);
                 strncpy(key->info->format,layout,DRMS_MAXFORMATLEN);
 
                 /* avoid leaks */
-                tmpstr = drms_getkey_string(seg->record,keyname,NULL);
+                if (srcseg->info->islink)
+                {
+                   tmpstr = drms_getkey_string(tgtseg->record,keyname,NULL);
+                }
+                else
+                {
+                   tmpstr = drms_getkey_string(srcseg->record,keyname,NULL);
+                }
+
                 snprintf(tmpstr2, sizeof(tmpstr2), "%s", tmpstr);
                 free(tmpstr);
                 val = tmpstr2;
@@ -187,7 +222,8 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *seg,
               }
             else // No user provided layout string
             {
-               DRMS_Keyword_t *key = drms_keyword_lookup(seg->record, keyname, 1);
+               /* drms_keyword_lookup will properly follow the keyword to the target series. */
+               DRMS_Keyword_t *key = drms_keyword_lookup(srcseg->record, keyname, 1);
 
                drms_keyword_snprintfval(key, tmpstr2, sizeof(tmpstr2));
                val = tmpstr2;
