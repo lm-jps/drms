@@ -31,8 +31,9 @@
 #define SUMLOG_BASEDIR	"/usr/local/logs/SUM"
 #define SUMBIN_BASEDIR	"/usr/local/bin"
 #define SUMSERVER	"j1"
-/* Number of sum process sets to spawn. # = (NUMSUM*5)+2 */
+/* Number of sum process sets to spawn (for non 1). # = (NUMSUM*5)+2 */
 #define SUM_NUMSUM		3
+
 /* Don't exceed this maximum SUM_NUMSUM (and don't change this max!) */
 #define SUM_MAXNUMSUM	8
 
