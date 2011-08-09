@@ -227,16 +227,15 @@ int DoIt(void)
          DIE("jsoc_export_as_is: attempt to lookup unidentified segment");
       }
 
+      // Get record query with segment name appended
+      strncpy(query, recquery, DRMS_MAXQUERYLEN);
+      strncat(query, "{", DRMS_MAXQUERYLEN);
+      strncat(query, segs[iseg], DRMS_MAXQUERYLEN);
+      strncat(query, "}", DRMS_MAXQUERYLEN);
+
       if (*rec_seg_iseg->filename != '\0')
       {
          // If there is no segment file, go on to the next segment (or record if this was the last segment) 
-        
-         // Get record query with segment name appended
-         strncpy(query, recquery, DRMS_MAXQUERYLEN);
-         strncat(query, "{", DRMS_MAXQUERYLEN);
-         strncat(query, segs[iseg], DRMS_MAXQUERYLEN);
-         strncat(query, "}", DRMS_MAXQUERYLEN);
-
          // Get paths to segment files
          strncpy(path, recpath, DRMS_MAXPATHLEN);
          strncat(path, "/", DRMS_MAXPATHLEN);
