@@ -212,6 +212,8 @@ int DoIt(void)
       continue;
 
     /* now get desired segments */
+    int segmissing; /* If the segment file does not exist, then this is 1, otherwise it is 0. */
+    DRMS_Segment_t *tgtseg = NULL; /* target seg, if the source seg is a linked seg. */
     for (iseg=0; iseg<nsegs; iseg++) 
       {
       DRMS_Segment_t *rec_seg_iseg = drms_segment_lookup (rec, segs[iseg]); 
@@ -220,18 +222,34 @@ int DoIt(void)
       char filename[DRMS_MAXPATHLEN];
       struct stat filestat;
 
-      // Get record query with segment name appended
-      strncpy(query, recquery, DRMS_MAXQUERYLEN);
-      strncat(query, "{", DRMS_MAXQUERYLEN);
-      strncat(query, segs[iseg], DRMS_MAXQUERYLEN);
-      strncat(query, "}", DRMS_MAXQUERYLEN);
+      if (!rec_seg_iseg)
+      {
+         DIE("jsoc_export_as_is: attempt to lookup unidentified segment");
+      }
 
-      // Get paths to segment files
-      strncpy(path, recpath, DRMS_MAXPATHLEN);
-      strncat(path, "/", DRMS_MAXPATHLEN);
-      strncat(path, rec_seg_iseg->filename, DRMS_MAXPATHLEN);
+      if (*rec_seg_iseg->filename != '\0')
+      {
+         // If there is no segment file, go on to the next segment (or record if this was the last segment) 
+        
+         // Get record query with segment name appended
+         strncpy(query, recquery, DRMS_MAXQUERYLEN);
+         strncat(query, "{", DRMS_MAXQUERYLEN);
+         strncat(query, segs[iseg], DRMS_MAXQUERYLEN);
+         strncat(query, "}", DRMS_MAXQUERYLEN);
 
-      if (stat(path, &filestat) == 0) // only make links for existing files!
+         // Get paths to segment files
+         strncpy(path, recpath, DRMS_MAXPATHLEN);
+         strncat(path, "/", DRMS_MAXPATHLEN);
+         strncat(path, rec_seg_iseg->filename, DRMS_MAXPATHLEN);
+
+         segmissing = 0;
+      }
+      else
+      {
+         segmissing = 1;
+      }
+
+      if (segmissing == 0 && stat(path, &filestat) == 0) // only make links for existing files!
         { 
         if (S_ISDIR(filestat.st_mode))
           { // Segment is directory, get size == for now == use system "du"
@@ -251,8 +269,15 @@ int DoIt(void)
           size += filestat.st_size;
 
         /* Make a symlink for each selected file */
+        if (rec_seg_iseg->info->islink)
+        {
+           if ((tgtseg = drms_segment_lookup(rec, rec_seg_iseg->info->name)) == NULL)
+           {
+              DIE("Unable to locate target segment.\n");
+           }
+        }
 
-        exputl_mk_expfilename(rec_seg_iseg, strcmp(filenamefmt,"Not Specified") ? filenamefmt : NULL, filename);
+        exputl_mk_expfilename(rec_seg_iseg, tgtseg, strcmp(filenamefmt,"Not Specified") ? filenamefmt : NULL, filename);
         if (strcmp(method,"ftp")==0)
           {
           char tmp[DRMS_MAXPATHLEN];
