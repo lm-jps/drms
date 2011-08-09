@@ -8,7 +8,9 @@ SUMSCOMP		= $(COMP)
 SUMSLINK		= $(LINK)
 
 # Local variables
-sum_svc_obj_$(d)	:= $(addprefix $(d)/, sum_svc_proc.o sum_init.o du_dir.o)
+sum_svc_comm_obj_$(d)	:= $(addprefix $(d)/, sum_init.o du_dir.o)
+sum_svc_obj_$(d)	:= $(addprefix $(d)/, sum_svc_proc.o)
+xsum_svc_obj_$(d)	:= $(addprefix $(d)/, xsum_svc_proc.o)
 tape_svc_obj_$(d)	:= $(addprefix $(d)/, tape_svc_proc.o tapeutil.o tape_inventory.o)
 tapearc_obj_$(d)	:= $(addprefix $(d)/, padata.o)
 
@@ -44,6 +46,7 @@ LL_TGT_$(d) := $(PGL) -lecpg -lssl
 MULTI_SUMS_C_$(d) := $(wildcard $(SRCDIR)/$(d)/Salloc*.c) $(wildcard $(SRCDIR)/$(d)/Sdelser*.c) $(wildcard $(SRCDIR)/$(d)/Sinfo*.c) $(wildcard $(SRCDIR)/$(d)/Sput*.c) $(wildcard $(SRCDIR)/$(d)/Sget*.c) $(wildcard $(SRCDIR)/$(d)/Sopen*.c)
 MULTI_SUMS_$(d) := $(addprefix $(d)/, sum_svc $(notdir $(patsubst %.c,%,$(MULTI_SUMS_C_$(d)))))
 
+XSUMSVC_$(d)	:= $(d)/xsum_svc
 TAPESVC_$(d)	:= $(d)/tape_svc
 TARCINFO_$(d)	:= $(d)/tapearcinfo
 
@@ -52,15 +55,15 @@ BINTGT_$(d)     := $(addprefix $(d)/, main main2 main3 main4 main5 sumget tapeon
 TGT_$(d)        := $(BINTGT_$(d)) 
 
 # SUMS_BIN contains a list of applications that get built when 'make sums' is invoked
-SUMS_BIN	:= $(SUMS_BIN) $(TGT_$(d)) $(TAPESVC_$(d)) $(TARCINFO_$(d)) $(MULTI_SUMS_$(d))
+SUMS_BIN	:= $(SUMS_BIN) $(TGT_$(d)) $(XSUMSVC_$(d)) $(TAPESVC_$(d)) $(TARCINFO_$(d)) $(MULTI_SUMS_$(d))
 
-OBJ_$(d)	:= $(sum_svc_obj_$(d)) $(tape_svc_obj_$(d)) $(tapearc_obj_$(d)) $(TGT_$(d):%=%.o) $(TAPESVC_$(d):%=%.o) $(TARCINFO_$(d):%:%.o) $(MULTI_SUMS_$(d):%=%.o)
+OBJ_$(d)	:= $(sum_svc_comm_obj_$(d)) $(sum_svc_obj_$(d)) $(xsum_svc_obj_$(d)) $(tape_svc_obj_$(d)) $(tapearc_obj_$(d)) $(TGT_$(d):%=%.o) $(XSUMSVC_$(d):%=%.o) $(TAPESVC_$(d):%=%.o) $(TARCINFO_$(d):%:%.o) $(MULTI_SUMS_$(d):%=%.o)
 
 DEP_$(d)	:= $(OBJ_$(d):%=%.d)
 
-CLEAN		:= $(CLEAN) $(OBJ_$(d)) $(TGT_$(d)) $(TAPESVC_$(d)) $(TARCINFO_$(d)) $(DEP_$(d)) $(MULTI_SUMS_$(d))
+CLEAN		:= $(CLEAN) $(OBJ_$(d)) $(TGT_$(d)) $(XSUMSVC_$(d)) $(TAPESVC_$(d)) $(TARCINFO_$(d)) $(DEP_$(d)) $(MULTI_SUMS_$(d))
 
-S_$(d)		:= $(notdir $(TGT_$(d)) $(TAPESVC_$(d)) $(TARCINFO_$(d)) $(MULTI_SUMS_$(d)))
+S_$(d)		:= $(notdir $(TGT_$(d)) $(XSUMSVC_$(d)) $(TAPESVC_$(d)) $(TARCINFO_$(d)) $(MULTI_SUMS_$(d)))
 
 # Local rules
 $(OBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
@@ -90,8 +93,8 @@ $(d)/robot3_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DROBOT_3
 $(d)/robot%_svc.o:	$(d)/robotn_svc.c
 			$(SUMSCOMP)
 
-$(filter-out $(d)/drive%_svc.o $(d)/robot%_svc.o, $(OBJ_$(d))):	%.o:	%.c
-			$(SUMSCOMP)
+#$(filter-out $(d)/drive%_svc.o $(d)/robot%_svc.o, $(OBJ_$(d))):	%.o:	%.c
+#			$(SUMSCOMP)
 
 # NOTE: tapearc.o depends on libsumspg.a, which in turn depends on padata.o.
 # Make doesn't seem to use else ifeq.
@@ -117,13 +120,18 @@ $(TARCINFO_$(d)):   %:	%.o $(tapearc_obj_$(d)) $(LIBSUM) $(LIBSUMSAPI) $(SUMSICC
 			$(SUMSLINK)
 			$(SLBIN)
 
+$(XSUMSVC_$(d)):	LL_TGT :=  $(LL_TGT) $(LL_TGT_$(d))
+$(XSUMSVC_$(d)):   %:	%.o $(xsum_svc_obj_$(d)) $(sum_svc_comm_obj_$(d)) $(LIBSUM) $(LIBSUMSAPI) $(SUMSICCLIBS_$(d)) $(LIBDEFSSERVER) $(LIBDB) $(LIBMISC) $(LIBDSTRUCT)
+			$(SUMSLINK)
+			$(SLBIN)
+
 $(TGT_$(d)):		LL_TGT :=  $(LL_TGT) $(LL_TGT_$(d))
 $(TGT_$(d)):	%:	%.o $(LIBSUM) $(LIBSUMSAPI) $(SUMSICCLIBS_$(d)) $(LIBMISC) $(LIBDSTRUCT)
 			$(SUMSLINK)
 			$(SLBIN)
 
 $(MULTI_SUMS_$(d)):	LL_TGT := $(LL_TGT) $(LL_TGT_$(d))
-$(MULTI_SUMS_$(d)):	%:	%.o $(sum_svc_obj_$(d)) $(LIBSUM) $(LIBSUMSAPI) $(SUMSICCLIBS_$(d)) $(LIBDEFSSERVER) $(LIBDB) $(LIBMISC) $(LIBDSTRUCT) 
+$(MULTI_SUMS_$(d)):	%:	%.o $(sum_svc_obj_$(d)) $(sum_svc_comm_obj_$(d)) $(LIBSUM) $(LIBSUMSAPI) $(SUMSICCLIBS_$(d)) $(LIBDEFSSERVER) $(LIBDB) $(LIBMISC) $(LIBDSTRUCT) 
 	                        $(SUMSLINK)
 				$(SLBIN)
 
