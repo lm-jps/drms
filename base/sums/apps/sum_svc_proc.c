@@ -30,6 +30,7 @@ extern char logname[];
 static int NO_OPEN = 0;
 static char callername[MAX_STR];
 static char nametmp[80];
+static int numSUM;
 
 void write_time();
 void logkey();
@@ -155,6 +156,42 @@ KEY *opendo_1(KEY *params)
     //Elim setsumopened/getsumopened after 30Aug2010 build
     //setsumopened(&sumopened_hdr, rinfo, NULL, user); /*put in list of opens*/
 
+  }
+  send_ack();				/* ack original sum_svc caller */
+  return((KEY *)1);			/* nothing will be sent later */
+}
+
+/* Called by the SUM API SUM_open() making a clnt_call to sum_svc for the
+ * CONFIGDO procedure. Returns the number of sum servers in the ack back to the 
+ * caller, or 0 if error. Called:
+ * db_name:        KEYTYP_STRING   hmidbX
+ * USER:           KEYTYP_STRING   production
+ *NOTE: the db_name is not used yet.
+*/
+KEY *configdo_1(KEY *params)
+{
+  char *user;
+
+  if(findkey(params, "DEBUGFLG")) {
+    debugflg = getkey_int(params, "DEBUGFLG");
+    if(debugflg) {
+      write_log("!!Keylist in configdo_1() is:\n");
+      keyiterate(logkey, params);
+    }
+  }
+  user = GETKEY_str(params, "USER");
+  if(NO_OPEN) {
+    write_time();
+    write_log("No SUM_open() for %s allowed during SUM shutdown\n", user);
+    rinfo = 0;				/* error back to caller */
+    send_ack();				/* ack original sum_svc caller */
+    return((KEY *)1);			/* nothing will be sent later */
+  } 
+  numSUM = SUM_NUMSUM;          //in base/drms/apps/serverdefs.h;
+  rinfo = (uint32_t)numSUM;
+  if(rinfo) {
+    write_time();
+    write_log("Successful CONFIGDO id=%d for user=%s numSUM=%d\n",rrid,user,rinfo);
   }
   send_ack();				/* ack original sum_svc caller */
   return((KEY *)1);			/* nothing will be sent later */
@@ -428,6 +465,7 @@ KEY *allocdo_1(KEY *params)
     write_log("Alloc bytes=%e id=%d wd=%s for user=%s sumid=%lu\n", bytes, rrid, wd,
 		GETKEY_str(retlist, "USER"), uid);
     if(!(set_client_handle(RESPPROG, (uint32_t)uid))) { /*set up for response*/
+      write_log("Alloc Error Can't set client handle id=%d user=%s sumid=%lu\n", rrid, GETKEY_str(retlist, "USER"), uid);
       freekeylist(&retlist);
       rinfo = 1;  /* give err status back to original caller */
       send_ack();
@@ -723,6 +761,7 @@ KEY *nopdo_1(KEY *params)
   else {
 ***************************************************************/
 /***************************************************************
+//!!NOTE: if call tape_svc do we need to set up current_client here and pass it along
     rinfo = 1;
     uid = getkey_uint64(params, "uid");
     klist = newkeylist();
