@@ -102,37 +102,11 @@ while($_ = shift(@ps_prod)) {
       ($a, $psid, $c) = split(/\s+/, $_);
       $process = "robot0_svc";
     }
-    elsif(/tapearc0 /) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "tapearc0";
-    }
-    elsif(/tapearc1 /) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "tapearc1";
-    }
-    elsif(/tapearc2 /) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "tapearc2";
-    }
-    elsif(/tapearc3 /) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "tapearc3";
-    }
-    elsif(/tapearc4 /) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "tapearc4";
-    }
-    elsif(/tapearc5 /) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "tapearc5";
-    }
-    elsif(/tapearc6 /) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "tapearc6";
-    }
-    elsif(/tapearc7 /) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "tapearc7";
+    elsif(/tapearcX /) {
+      if(/manifest/) {
+        ($a, $psid, $c) = split(/\s+/, $_);
+        $process = "tapearcX";
+      }
     }
     else {
       next;
