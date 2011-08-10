@@ -5,6 +5,7 @@
 */
 #include <SUM.h>
 #include <sys/time.h>
+#include <sys/errno.h>
 #include <rpc/rpc.h>
 #include <soi_key.h>
 #include <soi_error.h>
@@ -13,16 +14,22 @@
 #include "serverdefs.h"
 #include "drmssite_info.h"
 
+extern int errno;
 extern int write_log(const char *fmt, ...);
 extern void StartTimer(int n);
 extern float StopTimer(int n);
-extern CLIENT *current_client, *clnttape;
+extern CLIENT *current_client, *clnttape, *clnttape_old;
 extern SVCXPRT *glb_transp;
 extern uint32_t rinfo;
+extern uint32_t sumprog;
+extern uint32_t sumvers;
 extern int debugflg;
+extern int rrid;
 extern float ftmp;
 static int NO_OPEN = 0;
 static char callername[MAX_STR];
+static char nametmp[80];
+static int numSUM; 
 
 void write_time();
 void logkey();
@@ -144,9 +151,45 @@ KEY *opendo_1(KEY *params)
   rinfo = SUMLIB_Open();		/* return a SUMID_t else 0 */
   if(rinfo) {
     write_time();
-    write_log("Successful SUMLIB_Open for user=%s uid=%d\n", user, rinfo);
-    setsumopened(&sumopened_hdr, rinfo, NULL, user); /*put in list of opens*/
+    write_log("Successful SUMLIB_Open id=%d for user=%s uid=%d\n",rrid,user,rinfo);
+    //Elim setsumopened/getsumopened after 30Aug2010 build
+    //setsumopened(&sumopened_hdr, rinfo, NULL, user); /*put in list of opens*/
+  }
+  send_ack();				/* ack original sum_svc caller */
+  return((KEY *)1);			/* nothing will be sent later */
+}
 
+/* Called by the SUM API SUM_open() making a clnt_call to sum_svc for the
+ * CONFIGDO procedure. Returns the number of sum servers in the ack back to the 
+ * caller, or 0 if error. Called:
+ * db_name:        KEYTYP_STRING   hmidbX
+ * USER:           KEYTYP_STRING   production
+ *NOTE: the db_name is not used yet.
+*/
+KEY *configdo_1(KEY *params)
+{
+  char *user;
+
+  if(findkey(params, "DEBUGFLG")) {
+    debugflg = getkey_int(params, "DEBUGFLG");
+    if(debugflg) {
+      write_log("!!Keylist in configdo_1() is:\n");
+      keyiterate(logkey, params);
+    }
+  }
+  user = GETKEY_str(params, "USER");
+  if(NO_OPEN) {
+    write_time();
+    write_log("No SUM_open() for %s allowed during SUM shutdown\n", user);
+    rinfo = 0;				/* error back to caller */
+    send_ack();				/* ack original sum_svc caller */
+    return((KEY *)1);			/* nothing will be sent later */
+  } 
+  numSUM = SUM_NUMSUM;          //in base/drms/apps/serverdefs.h;
+  rinfo = (uint32_t)numSUM;
+  if(rinfo) {
+    write_time();
+    write_log("Successful CONFIGDO id=%d for user=%s numSUM=%d\n",rrid,user,rinfo);
   }
   send_ack();				/* ack original sum_svc caller */
   return((KEY *)1);			/* nothing will be sent later */
@@ -214,14 +257,15 @@ KEY *shutdo_1(KEY *params)
 KEY *getdo_1(KEY *params)
 {
   //static struct timeval TIMEOUT = { 180, 0 }; 
-  static struct timeval TIMEOUT = { 8, 0 }; 
+  //static struct timeval TIMEOUT = { 8, 0 }; 
+  //must be >40 used for tape_svc response to sum_svc
+  static struct timeval TIMEOUT = { 50, 0 }; 
   static CLIENT *clresp;
   uint32_t tapeback;
   uint64_t uid, sunum;
   enum clnt_stat status;
   int reqcnt, i, offline, storeset, offcnt;
   char *call_err, *cptr, *wd;
-  char tmpname[80];
   double bytes;
 
   sprintf(callername, "getdo_1");	//!!TEMP
@@ -234,16 +278,16 @@ KEY *getdo_1(KEY *params)
   }
   reqcnt = getkey_int(params, "reqcnt");
   sunum = getkey_uint64(params, "dsix_0");
-  write_log("SUM_get() for user=%s sunum=%lu cnt=%d\n", 
-		GETKEY_str(params, "username"), sunum, reqcnt);
+  write_log("SUM_get() id=%d for user=%s sunum=%lu cnt=%d\n", 
+		rrid, GETKEY_str(params, "username"), sunum, reqcnt);
   retlist=newkeylist();
   uid = getkey_uint64(params, "uid");
-  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
-    write_log("**Error: getdo_1() called with unopened uid=%lu\n", uid);
-    rinfo = 1;	/* give err status back to original caller */
-    send_ack();	/* ack original sum_svc caller */
-    return((KEY *)1);	/* error. nothing to be sent */ 
-  }
+//  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
+//    write_log("**Error: getdo_1() called with unopened uid=%lu\n", uid);
+//    rinfo = 1;	/* give err status back to original caller */
+//    send_ack();	/* ack original sum_svc caller */
+//    return((KEY *)1);	/* error. nothing to be sent */ 
+//  }
   add_keys(params, &retlist);
   /* set up for response. sets current_client */
   if(!(clresp = set_client_handle(RESPPROG, (uint32_t)uid))) {
@@ -266,16 +310,16 @@ KEY *getdo_1(KEY *params)
     if(offline = getkey_int(retlist, "offline")) {  
       offcnt = 0;
       for(i=0; i < reqcnt; i++) {
-        sprintf(tmpname, "online_status_%d", i);
-        cptr = GETKEY_str(retlist, tmpname);
+        sprintf(nametmp, "online_status_%d", i);
+        cptr = GETKEY_str(retlist, nametmp);
         //proceed if this su is offline and archived
         if(strcmp(cptr, "N") == 0) {
-          sprintf(tmpname, "archive_status_%d", i);
-          cptr = GETKEY_str(retlist, tmpname);
+          sprintf(nametmp, "archive_status_%d", i);
+          cptr = GETKEY_str(retlist, nametmp);
           if(strcmp(cptr, "Y") == 0) {
             offcnt++;
-            sprintf(tmpname, "bytes_%d", i);
-            bytes = getkey_double(retlist, tmpname);
+            sprintf(nametmp, "bytes_%d", i);
+            bytes = getkey_double(retlist, nametmp);
             storeset = JSOC;         /* always use JSOC set for now */
             if((status=SUMLIB_PavailGet(bytes,storeset,uid,0,&retlist))) {
               write_log("***Can't alloc storage for retrieve uid = %lu\n", uid);
@@ -286,8 +330,8 @@ KEY *getdo_1(KEY *params)
               return((KEY *)1);  /* error. nothing to be sent */
             }
             wd = GETKEY_str(retlist, "partn_name");
-            sprintf(tmpname, "rootwd_%d", i);
-            setkey_str(&retlist, tmpname, wd);
+            sprintf(nametmp, "rootwd_%d", i);
+            setkey_str(&retlist, nametmp, wd);
             write_log("\nAlloc for retrieve wd = %s for sumid = %lu\n", wd, uid);
           }
         }
@@ -297,15 +341,29 @@ KEY *getdo_1(KEY *params)
       if(debugflg) {
         write_log("Calling tape_svc to bring data unit online\n");
       }
+      //check if sum_svc was disconnected from tape_svc. see tapereconnectdo_1()
+      if(clnttape == 0) {
+        rinfo = 2;		//tell drms tape unit was taken offline
+        send_ack();
+        freekeylist(&retlist);
+        write_log("**Error in READDO to tape_svc. sum_svc has been disconnected\n");
+        return((KEY *)1);
+      }
       rinfo = RESULT_PEND;  /* now tell caller to wait for results */
+      tapeback = 0;
+      //tell tape_svc which sums process to respond to
+      setkey_uint32(&retlist, "SPROG", sumprog);
+      setkey_uint32(&retlist, "SVERS", sumvers);
       status = clnt_call(clnttape,READDO, (xdrproc_t)xdr_Rkey, (char *)retlist, 
 			(xdrproc_t)xdr_uint32_t, (char *)&tapeback, TIMEOUT);
       if(status != RPC_SUCCESS) {
           if(status != RPC_TIMEDOUT) {
-            rinfo = 1;
+            //rinfo = 1;
+            rinfo = 5;		//tell drms that tape_svc is dead
             send_ack();
             call_err = clnt_sperror(clnttape, "Error clnt_call for READDO");
             write_log("%s %d %s\n", datestring(), status, call_err);
+            freekeylist(&retlist);
             return((KEY *)1);
           } else {
             write_log("%s timeout ignored in getdo_1()\n", datestring());
@@ -314,6 +372,7 @@ KEY *getdo_1(KEY *params)
       if(tapeback == 1) {
         rinfo = 1;
         send_ack();
+        freekeylist(&retlist);
         write_log("**Error in READDO call to tape_svc in sum_svc_proc.c\n");
         return((KEY *)1);
       }
@@ -324,6 +383,7 @@ KEY *getdo_1(KEY *params)
       send_ack();       /* ack original sum_svc caller */
     }
     if(offline) {
+      freekeylist(&retlist);
       return((KEY *)1);	/* let tape_svc answer. dont destroy current_client */
     }
     setkey_int(&retlist, "STATUS", 0);   /* give success back to caller */
@@ -335,6 +395,7 @@ KEY *getdo_1(KEY *params)
  * USER:   	   KEYTYP_STRING   production
  * REQCODE:        KEYTYP_INT      6
  * DEBUGFLG:       KEYTYP_INT      1
+ * group:          KEYTYP_INT      10000
  * SUNUM:	   KEYTYP_UINT64   6260386 (unique to SUM_alloc2() call)
  * uid:    KEYTYP_UINT64    574
  * reqcnt: KEYTYP_INT      1
@@ -343,7 +404,8 @@ KEY *getdo_1(KEY *params)
 */
 KEY *allocdo_1(KEY *params)
 {
-  int storeset, status, reqcnt;
+  int status, reqcnt, group;
+  int storeset = 0;
   uint64_t uid;
   uint64_t sunum = 0;
   double bytes;
@@ -360,23 +422,42 @@ KEY *allocdo_1(KEY *params)
   if(findkey(params, "SUNUM")) {	//this is a SUM_alloc2() call
     sunum = getkey_uint64(params, "SUNUM");
   }
-  uid = getkey_uint64(params, "uid");
-  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
-    write_log("**Error: allocdo_1() called with unopened uid=%lu\n", uid);
-    rinfo = 1;	/* give err status back to original caller */
-    send_ack();	/* ack original sum_svc caller */
-    return((KEY *)1);	/* error. nothing to be sent */ 
+#ifdef SUMS_MULTIPLE_PARTNSETS
+  /* This def is defined in serverdefs.h (all Stanford-specific settings are in this header). 
+   * It is NOT part of the localization files/codes/scripts (i.e., config.local knows nothing
+   * about it). Therefore, no localization site will be able to take advantage of this
+   * multiple-sums-sets. If in the future a remote sites wants this feature, we will need 
+   * to modify config.local (add SUMS_MULTIPLE_PARTNSETS), gen_init.csh, create_sums_tables.sql
+   * (the block of code requires a new sums db table) and possibly other files/code/scripts. 
+   *
+   * ART 2011-5-17
+   */
+  if(!findkey(params, "group")) {	//use storeset 0 if no group
+    storeset = 0;
   }
+  else {				//query sum_arch_group db table
+    group = getkey_int(params, "group");
+    status = SUMLIB_SumsetGet(group, &storeset); //default storeset is 0
+  }
+#endif
+  uid = getkey_uint64(params, "uid");
+//  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
+//    write_log("**Error: allocdo_1() called with unopened uid=%lu\n", uid);
+//    rinfo = 1;	/* give err status back to original caller */
+//    send_ack();	/* ack original sum_svc caller */
+//    return((KEY *)1);	/* error. nothing to be sent */ 
+//  }
   retlist = newkeylist();
   add_keys(params, &retlist);		/* NOTE:does not do fileptr */
   reqcnt = getkey_int(params, "reqcnt"); /* will always be 1 */
   bytes = getkey_double(params, "bytes");
-  storeset = getkey_int(params, "storeset");
+  //storeset = getkey_int(params, "storeset"); //obsolete
   if(!(status=SUMLIB_PavailGet(bytes, storeset, uid, sunum, &retlist))) {
     wd = getkey_str(retlist, "partn_name");
-    write_log("Alloc bytes=%e wd=%s for user=%s sumid=%lu\n", bytes, wd,
+    write_log("Alloc bytes=%e id=%d wd=%s for user=%s sumid=%lu\n", bytes, rrid, wd,
 		GETKEY_str(retlist, "USER"), uid);
     if(!(set_client_handle(RESPPROG, (uint32_t)uid))) { /*set up for response*/
+      write_log("Alloc Error Can't set client handle id=%d user=%s sumid=%lu\n", rrid, GETKEY_str(retlist, "USER"), uid);
       freekeylist(&retlist);
       rinfo = 1;  /* give err status back to original caller */
       send_ack();
@@ -393,8 +474,10 @@ KEY *allocdo_1(KEY *params)
     free(wd);
     return(retlist);		/* return the ans now */
   }
+  write_log("Alloc Error id=%d user=%s sumid=%lu\n", rrid, GETKEY_str(retlist, "USER"), uid);
   rinfo = status;		/* ret err code back to caller */
   send_ack();
+  freekeylist(&retlist);
   return((KEY *)1);		/* nothing will be sent later */
 }
 
@@ -424,12 +507,12 @@ KEY *infodo_1(KEY *params)
   uid = getkey_uint64(params, "uid");
   write_log("SUM_Info() for user=%s sunum=%lu\n", 
 		GETKEY_str(params, "username"), sunum);
-  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
-    write_log("**Error: infodo_1() called with unopened uid=%lu\n", uid);
-    rinfo = 1;	/* give err status back to original caller */
-    send_ack();	/* ack original sum_svc caller */
-    return((KEY *)1);	/* error. nothing to be sent */ 
-  }
+//  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
+//    write_log("**Error: infodo_1() called with unopened uid=%lu\n", uid);
+//    rinfo = 1;	/* give err status back to original caller */
+//    send_ack();	/* ack original sum_svc caller */
+//    return((KEY *)1);	/* error. nothing to be sent */ 
+//  }
   retlist = newkeylist();
   add_keys(params, &retlist);		/* NOTE:does not do fileptr */
 
@@ -447,6 +530,7 @@ KEY *infodo_1(KEY *params)
     return(retlist);		/* return the ans now */
   }
   rinfo = status;		/* ret err code 1 back to caller */
+  freekeylist(&retlist);
   if(!drmssite_sunum_is_local(sunum))
     rinfo = SUM_SUNUM_NOT_LOCAL; // else this error code 
   send_ack();
@@ -479,14 +563,14 @@ KEY *infodoX_1(KEY *params)
   sunum = getkey_uint64(params, "dsix_0");
   reqcnt = getkey_int(params, "reqcnt"); 
   uid = getkey_uint64(params, "uid");
-  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
-    write_log("**Error: infodoX_1() called with unopened uid=%lu\n", uid);
-    rinfo = 1;	/* give err status back to original caller */
-    send_ack();	/* ack original sum_svc caller */
-    return((KEY *)1);	/* error. nothing to be sent */ 
-  }
-  write_log("SUM_infoEx() for user=%s 1st sunum=%lu cnt=%d\n",
-                GETKEY_str(params, "username"), sunum, reqcnt);
+//  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
+//    write_log("**Error: infodoX_1() called with unopened uid=%lu\n", uid);
+//    rinfo = 1;	/* give err status back to original caller */
+//    send_ack();	/* ack original sum_svc caller */
+//    return((KEY *)1);	/* error. nothing to be sent */ 
+//  }
+  write_log("SUM_infoEx() id=%d for user=%s 1st sunum=%lu cnt=%d\n",
+                rrid, GETKEY_str(params, "username"), sunum, reqcnt);
   retlist = newkeylist();
   add_keys(params, &retlist);		/* NOTE:does not do fileptr */
   if(!(status=SUMLIB_InfoGetEx(params, &retlist))) {
@@ -507,6 +591,7 @@ KEY *infodoX_1(KEY *params)
   //if(!drmssite_sunum_is_local(sunum))
   //  rinfo = SUM_SUNUM_NOT_LOCAL; // else this error code 
   send_ack();
+  freekeylist(&retlist);
   return((KEY *)1);		/* nothing will be sent later */
 }
 
@@ -533,7 +618,7 @@ KEY *putdo_1(KEY *params)
   int status, i, reqcnt;
   uint64_t sunum = 0;
   uint64_t uid;
-  char sysstr[128], tmpnam[80];
+  char sysstr[128];
   char *cptr, *wd;
 
   sprintf(callername, "putdo_1");	//!!TEMP
@@ -547,17 +632,17 @@ KEY *putdo_1(KEY *params)
   uid = getkey_uint64(params, "uid");
   reqcnt = getkey_int(params, "reqcnt");
   sunum = getkey_uint64(params, "dsix_0");
-  write_log("SUM_put() for user=%s 1st sunum=%lu reqcnt=%d\n", 
-		GETKEY_str(params, "username"), sunum, reqcnt);
-  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
-    write_log("**Error: putdo_1() called with unopened uid=%lu\n", uid);
-    rinfo = 1;	/* give err status back to original caller */
-    send_ack();	/* ack original sum_svc caller */
-    return((KEY *)1);	/* error. nothing to be sent */ 
-  }
+  write_log("SUM_put() id=%d for user=%s 1st sunum=%lu reqcnt=%d\n", 
+		rrid, GETKEY_str(params, "username"), sunum, reqcnt);
+//  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
+//    write_log("**Error: putdo_1() called with unopened uid=%lu\n", uid);
+//    rinfo = 1;	/* give err status back to original caller */
+//    send_ack();	/* ack original sum_svc caller */
+//    return((KEY *)1);	/* error. nothing to be sent */ 
+//  }
   retlist = newkeylist();
   add_keys(params, &retlist);
-  if(!(status=SUM_Main_Update(retlist))) {
+  if(!(status=SUM_Main_Update(params, &retlist))) {
     if(!(set_client_handle(RESPPROG, (uint32_t)uid))) { //set up for response
       freekeylist(&retlist);
       rinfo = 1;  // give err status back to original caller/
@@ -566,18 +651,18 @@ KEY *putdo_1(KEY *params)
     }
     // change to owner production, no group write
     for(i=0; i < reqcnt; i++) { //!!!TBD
-      sprintf(tmpnam, "wd_%d", i);
-      cptr = GETKEY_str(params, tmpnam);
+      sprintf(nametmp, "wd_%d", i);
+      cptr = GETKEY_str(params, nametmp);
       //sprintf(sysstr, "sudo chmod -R go-w %s; sudo chown -Rf production %s", 
       //			cptr, cptr);
       sprintf(sysstr, "%s/sum_chmown %s", SUMBIN_BASEDIR, cptr);
       //write_log("%s\n", sysstr);
-      StartTimer(3);		//!!TEMP
+      //StartTimer(3);		//!!TEMP
       if(system(sysstr)) {
-          write_log("**Warning: Error on: %s\n", sysstr);
+          write_log("**Warning: Error on: %s. errno=%d\n", sysstr,errno);
       }
-      ftmp = StopTimer(3);
-      write_log("#END: sum_chmown() %fsec\n", ftmp);    //!!TEMP for test
+      //ftmp = StopTimer(3);
+      //write_log("#END: sum_chmown() %fsec\n", ftmp);    //!!TEMP for test
     }
     rinfo = 0;			// status back to caller
     send_ack();
@@ -608,17 +693,135 @@ KEY *closedo_1(KEY *params)
   }
   }
   uid = getkey_uint64(params, "uid");
-  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
-    write_log("**Error: closedo_1() called with unopened uid=%lu\n", uid);
-    rinfo = 1;	/* give err status back to original caller */
-    send_ack();	/* ack original sum_svc caller */
-    return((KEY *)1);	/* error. nothing to be sent */ 
-  }
+//  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
+//    write_log("**Error: closedo_1() called with unopened uid=%lu\n", uid);
+//    rinfo = 1;	/* give err status back to original caller */
+//    send_ack();	/* ack original sum_svc caller */
+//    return((KEY *)1);	/* error. nothing to be sent */ 
+//  }
   remsumopened(&sumopened_hdr, (uint32_t)uid); /* rem from linked list */
   rinfo = SUMLIB_Close(params);
   write_log("SUM_close for user=%s uid=%lu\n",
 		GETKEY_str(params, "USER"), getkey_uint64(params, "uid"));
   send_ack();
+  return((KEY *)1);	/* nothing will be sent later */
+}
+
+/* DRMS typically uses this to see if sum_svc is alive.
+ * If DRMS gets an ack back, it know that sum_svc is alive.
+ * Typical keylist is:
+ * REQCODE:        KEYTYP_INT      16
+ * DEBUGFLG:       KEYTYP_INT      1
+ * USER:   	   KEYTYP_STRING   production
+ * uid:    KEYTYP_UINT64    574
+ *
+ *Returns 0 in rinfo if both sum_svc and tape_svc are ok.
+ *1 = tape_svc call timeout
+ *5 = tape_svc not there
+*/
+KEY *nopdo_1(KEY *params)
+{
+  //struct timeval NOPTIMEOUT = { 8, 0 };
+  struct timeval NOPTIMEOUT = { 15, 0 };
+  uint64_t uid;
+  KEY *klist;
+  char *call_err;
+  char *usr;
+  int ans;
+  enum clnt_stat status;
+
+  usr = getkey_str(params, "USER");
+  if(findkey(params, "DEBUGFLG")) {
+    debugflg = getkey_int(params, "DEBUGFLG");
+    if(debugflg) {
+      write_log("!!Keylist in nopdo_1() is:\n");
+      keyiterate(logkey, params);
+    }
+  }
+  rinfo = 0;
+/********************************************************************
+  //ck if a sum_svc to tape_svc reconnect call was made (done by
+  //tape_svc_restart to start a new tape_svc). If so then return
+  //an error 5 for no original tape_svc that was connnected to this sum_svc.
+  //This will cause drms to make an extra sum_get() after a tape_svc restart,
+  //but this an unlikely occurence and the price to get resynced.
+  if(!clnttape_old) {
+    rinfo = 5;
+    clnttape_old = clnttape;
+  }
+  else {
+***************************************************************/
+/***************************************************************
+    rinfo = 1;
+    uid = getkey_uint64(params, "uid");
+    klist = newkeylist();
+    setkey_uint64(&klist, "uid", uid);
+    setkey_str(&klist, "USER", GETKEY_str(params, "USER") );
+    //tell tape_svc which sums process to respond to
+    setkey_uint32(&klist, "SPROG", sumprog);
+    setkey_uint32(&klist, "SVERS", sumvers);
+    status = clnt_call(clnttape, TAPENOPDO, (xdrproc_t)xdr_Rkey, (char *)klist,
+                        (xdrproc_t)xdr_void, (char *)&ans, NOPTIMEOUT);
+    rinfo = (int)ans;
+
+    // NOTE: Must honor the timeout here as get the ans back in the ack
+    if(status != RPC_SUCCESS) {
+        rinfo = 5;
+        call_err = clnt_sperror(clnttape, "Err clnt_call for TAPENOPDO");
+        write_log("%s %s status=%d\n", datestring(), call_err, status);
+    }
+  //}
+****************************************************************/
+  write_log("SUM_nop for user=%s uid=%lu\n",
+		GETKEY_str(params, "USER"), uid);
+  send_ack();
+  return((KEY *)1);	/* nothing will be sent later */
+}
+
+/* This is called by the tape_svc_restart program to tell sum_svc
+ * to reconnect to a new tape_svc that has been started.
+ * Eventually the stop of the old tape_svc and the start of a new
+ * one can be done here with ssh calls to d02. But for now,
+ * we will require that the user stops and starts a tape_svc.
+ * How to do this will be detailed when tape_svc_restart is run.
+ * Typical keylist is:
+ * ACTION:         KEYTYP_STRING   close/reconnect
+ * USER:   	   KEYTYP_STRING   production
+ * HOST:   	   KEYTYP_STRING   d02
+*/
+KEY *tapereconnectdo_1(KEY *params)
+{
+  uint64_t uid;
+  char *cptr;
+  char *user;
+
+  rinfo = 0;
+  user = getkey_str(params, "USER");
+  write_log("Tape reconnect for user=%s action=%s\n", user, GETKEY_str(params, "ACTION"));
+  cptr = GETKEY_str(params, "ACTION");
+  if(!strcmp(cptr, "close")) {
+    write_log("sum_svc is closing on tape_svc about to be restarted\n");
+    if(clnttape) clnt_destroy(clnttape);
+    clnttape = 0;
+  }
+  else if(!strcmp(cptr, "reconnect")) {
+    //connect to tape_svc
+    clnttape_old = NULL;	//let nopdo_1() know that the old handle is NG
+    clnttape = clnt_create(TAPEHOST, TAPEPROG, TAPEVERS, "tcp");
+    if(!clnttape) {       /* server not there */
+      clnt_pcreateerror("Can't get client handle to tape_svc (from sum_svc)");
+      write_log("Cannot connect to new tape_svc on d02\n");
+      rinfo = 1;
+      //exit(1);
+    }
+    write_log("sum_svc has reconnected to restarted tape_svc\n");
+  }
+  else {  
+    write_log("Illegal action = %s sent to tapereconnectdo_1()\n", cptr);
+    rinfo = -1;
+  }
+  send_ack();
+  free(user);
   return((KEY *)1);	/* nothing will be sent later */
 }
 
