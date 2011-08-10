@@ -131,7 +131,7 @@ $(TGT_$(d)):	%:	%.o $(LIBSUM) $(LIBSUMSAPI) $(SUMSICCLIBS_$(d)) $(LIBMISC) $(LIB
 			$(SLBIN)
 
 $(MULTI_SUMS_$(d)):	LL_TGT := $(LL_TGT) $(LL_TGT_$(d))
-$(MULTI_SUMS_$(d)):	%:	%.o $(sum_svc_obj_$(d)) $(sum_svc_comm_obj_$(d)) $(LIBSUM) $(LIBSUMSAPI) $(SUMSICCLIBS_$(d)) $(LIBDEFSSERVER) $(LIBDB) $(LIBMISC) $(LIBDSTRUCT) 
+$(MULTI_SUMS_$(d)):	%:	$(sum_svc_obj_$(d)) %.o $(sum_svc_comm_obj_$(d)) $(LIBSUM) $(LIBSUMSAPI) $(SUMSICCLIBS_$(d)) $(LIBDEFSSERVER) $(LIBDB) $(LIBMISC) $(LIBDSTRUCT) 
 	                        $(SUMSLINK)
 				$(SLBIN)
 
