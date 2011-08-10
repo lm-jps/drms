@@ -137,7 +137,8 @@ end_fetch:
         setnum = -1;
         for(i=0; i < pnum ; i++) {
           if(ptabx[i].pds_set_num != setnum) {
-            setnum++;
+            //setnum++;         //N.G. assumes no missing pds_set_num
+            setnum = ptabx[i].pds_set_num;
             part_index[setnum] = i;
             part_index_init[setnum] = i;
           }
