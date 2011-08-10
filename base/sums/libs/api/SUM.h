@@ -35,6 +35,7 @@
 #define LEV1VIEWERNAME "lev1view"
 #define TAPEHOST "d02"		//JSOC pipeline machine with tape_svc
 #define SUMSVCHOST "j1"		//JSOC pipeline machine running sum_svc
+//#define MAXNUMSUM 8	        //NOTE: NUMSUM defined in serverdefs.h
 
 #include <serverdefs.h>
 #include <jsoc.h>

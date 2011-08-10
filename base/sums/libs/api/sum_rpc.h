@@ -120,29 +120,54 @@ bool_t xdr_Rkey(XDR *xdrs, Rkey *objp);
 
 /* This is the sum_svc program registration. Client API sends here */
 //First define the prog numbers of the seperate sum functions
-#define NUMSINFOSVC 3	//# of Sinfo servers 
-#define SUMALLOC ((uint32_t)0x20000600) /* 536872448 */
+#define SUMALLOC ((uint32_t)0x200005e7) /* 536872423 */
 #define SUMALLOCV ((uint32_t)1)
-#define SUMGET ((uint32_t)0x20000601) /* 536872449 */
+#define SUMGET ((uint32_t)0x200005e8) /* 536872424 */
 #define SUMGETV ((uint32_t)1)
-#define SUMPUT ((uint32_t)0x20000602) /* 536872450 */
+#define SUMPUT ((uint32_t)0x200005e9) /* 536872425 */
 #define SUMPUTV ((uint32_t)1)
-#define SUMINFO ((uint32_t)0x20000603) /* 536872451 */
+#define SUMINFO ((uint32_t)0x200005ea) /* 536872426 */
 #define SUMINFOV ((uint32_t)1)
-#define SUMDELSER ((uint32_t)0x20000604) /* 536872452 */
+#define SUMDELSER ((uint32_t)0x200005eb) /* 536872427 */
 #define SUMDELSERV ((uint32_t)1)
-#define SUMINFO1 ((uint32_t)0x20000605) /* 536872453 */
-#define SUMINFO2 ((uint32_t)0x20000606) /* 536872454 */
-#define SUMPUT1 ((uint32_t)0x20000607) /* 536872455 */
-#define SUMPUT2 ((uint32_t)0x20000608) /* 536872456 */
-#define SUMGET1 ((uint32_t)0x20000609) /* 536872457 */
-#define SUMGET2 ((uint32_t)0x2000060a) /* 536872458 */
-#define SUMALLOC1 ((uint32_t)0x2000060b) /* 536872459 */
-#define SUMALLOC2 ((uint32_t)0x2000060c) /* 536872460 */
-#define SUMOPEN ((uint32_t)0x2000060d) /* 536872461 */
+#define SUMINFO1 ((uint32_t)0x200005ec) /* 536872428 */
+#define SUMINFO2 ((uint32_t)0x200005ed) /* 536872429 */
+#define SUMPUT1 ((uint32_t)0x200005ee) /* 536872430 */
+#define SUMPUT2 ((uint32_t)0x200005ef) /* 536872431 */
+#define SUMGET1 ((uint32_t)0x200005f0) /* 536872432 */
+#define SUMGET2 ((uint32_t)0x200005f1) /* 536872433 */
+#define SUMALLOC1 ((uint32_t)0x200005f2) /* 536872434 */
+#define SUMALLOC2 ((uint32_t)0x200005f3) /* 536872435 */
+#define SUMOPEN ((uint32_t)0x200005f4) /* 536872436 */
 #define SUMOPENV ((uint32_t)1)
-#define SUMOPEN1 ((uint32_t)0x2000060e) /* 536872462 */
-#define SUMOPEN2 ((uint32_t)0x2000060f) /* 536872463 */
+#define SUMOPEN1 ((uint32_t)0x200005f5) /* 536872437 */
+#define SUMOPEN2 ((uint32_t)0x200005f6) /* 536872438 */
+#define SUMOPEN3 ((uint32_t)0x200005f7) /* 536872439 */
+#define SUMOPEN4 ((uint32_t)0x200005f8) /* 536872440 */
+#define SUMOPEN5 ((uint32_t)0x200005f9) /* 536872441 */
+#define SUMOPEN6 ((uint32_t)0x200005fa) /* 536872442 */
+#define SUMOPEN7 ((uint32_t)0x200005fb) /* 536872443 */
+#define SUMALLOC3 ((uint32_t)0x200005fc) /* 536872444 */
+#define SUMALLOC4 ((uint32_t)0x200005fd) /* 536872445 */
+#define SUMALLOC5 ((uint32_t)0x200005fe) /* 536872446 */
+#define SUMALLOC6 ((uint32_t)0x200005ff) /* 536872447 */
+#define SUMALLOC7 ((uint32_t)0x20000600) /* 536872448 */
+#define SUMGET3 ((uint32_t)0x20000601) /* 536872449 */
+#define SUMGET4 ((uint32_t)0x20000602) /* 536872450 */
+#define SUMGET5 ((uint32_t)0x20000603) /* 536872451 */
+#define SUMGET6 ((uint32_t)0x20000604) /* 536872452 */
+#define SUMGET7 ((uint32_t)0x20000605) /* 536872453 */
+#define SUMPUT3 ((uint32_t)0x20000606) /* 536872454 */
+#define SUMPUT4 ((uint32_t)0x20000607) /* 536872455 */
+#define SUMPUT5 ((uint32_t)0x20000608) /* 536872456 */
+#define SUMPUT6 ((uint32_t)0x20000609) /* 536872457 */
+#define SUMPUT7 ((uint32_t)0x2000060a) /* 536872458 */
+#define SUMINFO3 ((uint32_t)0x2000060b) /* 536872459 */
+#define SUMINFO4 ((uint32_t)0x2000060c) /* 536872460 */
+#define SUMINFO5 ((uint32_t)0x2000060d) /* 536872461 */
+#define SUMINFO6 ((uint32_t)0x2000060e) /* 536872462 */
+#define SUMINFO7 ((uint32_t)0x2000060f) /* 536872463 */
+
 #define SUMPROG ((uint32_t)0x20000611) /* 536872465 */
 #define SUMVERS ((uint32_t)1)
 #define SUMDO ((uint32_t)1)
@@ -164,6 +189,7 @@ bool_t xdr_Rkey(XDR *xdrs, Rkey *objp);
 #define INFODOX ((uint32_t)15)
 #define NOPDO ((uint32_t)16)
 #define TAPERECONNECTDO ((uint32_t)17)
+#define CONFIGDO ((uint32_t)18)
 
 extern KEY *sumdo_1();
 extern KEY *opendo_1();
@@ -183,6 +209,7 @@ extern KEY *dpupdo_1();
 extern KEY *sumrmdo_1();
 ***********************************/
 extern KEY *delseriesdo_1();
+extern KEY *configdo_1();
 
 /* This is the tape_svc program registration */
 #define TAPEPROG ((uint32_t)0x20000612)  /* 536872466 */
@@ -378,6 +405,7 @@ extern KEY *jmtxdo_1();
 #define SUMPINGVERS ((uint32_t)1)
 #define SUMPINGDO ((uint32_t)1)
 
+//NOTE: Must be client handles for MAXNUMSUM (defined in SUM.h) servers
 typedef struct SUM_struct
 {
   SUMID_t uid;
@@ -385,18 +413,43 @@ typedef struct SUM_struct
   CLIENT *clopen;           /* client handle for calling sum_svc open */
   CLIENT *clopen1;          /* client handle for calling sum_svc open */
   CLIENT *clopen2;          /* client handle for calling sum_svc open */
+  CLIENT *clopen3;          /* client handle for calling sum_svc open */
+  CLIENT *clopen4;          /* client handle for calling sum_svc open */
+  CLIENT *clopen5;          /* client handle for calling sum_svc open */
+  CLIENT *clopen6;          /* client handle for calling sum_svc open */
+  CLIENT *clopen7;          /* client handle for calling sum_svc open */
   CLIENT *clalloc;       /* client handle for calling sum_svc allocate */
   CLIENT *clalloc1;       /* client handle for calling sum_svc allocate */
   CLIENT *clalloc2;       /* client handle for calling sum_svc allocate */
+  CLIENT *clalloc3;       /* client handle for calling sum_svc allocate */
+  CLIENT *clalloc4;       /* client handle for calling sum_svc allocate */
+  CLIENT *clalloc5;       /* client handle for calling sum_svc allocate */
+  CLIENT *clalloc6;       /* client handle for calling sum_svc allocate */
+  CLIENT *clalloc7;       /* client handle for calling sum_svc allocate */
   CLIENT *clget;         /* client handle for calling sum_svc get */
   CLIENT *clget1;        /* client handle for calling sum_svc get */
   CLIENT *clget2;        /* client handle for calling sum_svc get */
+  CLIENT *clget3;        /* client handle for calling sum_svc get */
+  CLIENT *clget4;        /* client handle for calling sum_svc get */
+  CLIENT *clget5;        /* client handle for calling sum_svc get */
+  CLIENT *clget6;        /* client handle for calling sum_svc get */
+  CLIENT *clget7;        /* client handle for calling sum_svc get */
   CLIENT *clput;         /* client handle for calling sum_svc put */
   CLIENT *clput1;        /* client handle for calling sum_svc put */
   CLIENT *clput2;        /* client handle for calling sum_svc put */
+  CLIENT *clput3;        /* client handle for calling sum_svc put */
+  CLIENT *clput4;        /* client handle for calling sum_svc put */
+  CLIENT *clput5;        /* client handle for calling sum_svc put */
+  CLIENT *clput6;        /* client handle for calling sum_svc put */
+  CLIENT *clput7;        /* client handle for calling sum_svc put */
   CLIENT *clinfo;        /* client handle for calling sum_svc info */
   CLIENT *clinfo1;       /* client handle for calling sum_svc info */
   CLIENT *clinfo2;       /* client handle for calling sum_svc info */
+  CLIENT *clinfo3;       /* client handle for calling sum_svc info */
+  CLIENT *clinfo4;       /* client handle for calling sum_svc info */
+  CLIENT *clinfo5;       /* client handle for calling sum_svc info */
+  CLIENT *clinfo6;       /* client handle for calling sum_svc info */
+  CLIENT *clinfo7;       /* client handle for calling sum_svc info */
   CLIENT *cldelser;      /* client handle for calling sum_svc del series */
   SUM_info_t *sinfo;	 /* info from sum_main for SUM_info() call */
   int debugflg;		 /* verbose debug mode if set */
@@ -405,6 +458,7 @@ typedef struct SUM_struct
   int group;             /* group # for the given dataseries */
   int storeset;          /* assign storage from JSOC, DSDS, etc. Default JSOC */
   int status;		 /* return status on calls. 1 = error, 0 = success */
+  int numSUM;		 /* returned from CONFIGDO call in SUM_open() */
   double bytes;
   char *dsname;          /* dataseries name */
   char *username;	 /* user's login name */
