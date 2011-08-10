@@ -129,15 +129,15 @@ void sighandler(sig)
 {
   printf("sig = %d\n", sig); //!!TEMP
   if(sig == SIGTERM) {
-    write_log("*** %s sum_svc got SIGTERM. Exiting.\n", datestring());
+    write_log("*** %s Sput got SIGTERM. Exiting.\n", datestring());
     exit(1);
   }
   if(sig == SIGINT) {
-    write_log("*** %s sum_svc got SIGINT. Exiting.\n", datestring());
+    write_log("*** %s Sput got SIGINT. Exiting.\n", datestring());
     DS_DisConnectDB();
     exit(1);
   }
-  write_log("*** %s sum_svc got an illegal signal %d, ignoring...\n",
+  write_log("*** %s Sput got an illegal signal %d, ignoring...\n",
 			datestring(), sig);
   if (signal(SIGINT, SIG_IGN) != SIG_IGN)
       signal(SIGINT, sighandler);
@@ -224,9 +224,9 @@ void setup()
   //sprintf(logname, "%s/sum_svc_%s.log", SUMLOG_BASEDIR, gettimetag());
   open_log(logname);
   printk_set(write_log, write_log);
-  write_log("\n## %s sum_svc on %s (%s) for pid = %d ##\n", 
+  write_log("\n## %s Sput on %s (%s) for pid = %d ##\n", 
 		datestring(), thishost, hostn, thispid);
-  write_log("Database to connect to is %s\n", dbname);
+  //write_log("Database to connect to is %s\n", dbname);
   //if (signal(SIGINT, SIG_IGN) != SIG_IGN)
       signal(SIGINT, sighandler);
   if (signal(SIGTERM, SIG_IGN) != SIG_IGN)
