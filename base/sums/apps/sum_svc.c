@@ -43,7 +43,7 @@ static void sumprog_1();
 struct timeval TIMEOUT = { 10, 0 };
 uint32_t rinfo;
 uint32_t sumprog, sumvers;
-int rrid;
+int rrid = 0;
 float ftmp;
 static struct timeval first[4], second[4];
 
@@ -241,7 +241,7 @@ void setup()
   printk_set(write_log, write_log);
   write_log("\n## %s sum_svc on %s (%s) for pid = %d ##\n", 
 		datestring(), thishost, hostn, thispid);
-  write_log("Database to connect to is %s\n", dbname);
+  //write_log("Database to connect to is %s\n", dbname);
   //if (signal(SIGINT, SIG_IGN) != SIG_IGN)
       signal(SIGINT, sighandler);
   if (signal(SIGTERM, SIG_IGN) != SIG_IGN)
@@ -308,7 +308,7 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-  if(strcmp(hostn, "n02")) {  //!!TEMP for not n02
+  if(strcmp(hostn, "n02") && strcmp(hostn, "xim")) { //!!TEMP for not n02 & xim
       sprintf(pgport, SUMPGPORT);
       setenv("SUMPGPORT", pgport, 1); //connect to 5430,5431, or 5434
       write_log("sum_svc sets SUMPGPORT env to %s\n", pgport);
@@ -434,7 +434,7 @@ if(!strcmp(hostn, "dcs0") || !strcmp(hostn, "dcs1") || !strcmp(hostn, "dcs2") ||
     }
   }
 ***********************************************************************/
-if(strcmp(hostn, "lws") && strcmp(hostn, "n00") && strcmp(hostn, "d00") && strcmp(hostn, "n02")) { 
+if(strcmp(hostn, "xim") && strcmp(hostn, "n02")) { 
   /* Create client handle used for calling the tape_svc */
   printf("\nsum_svc waiting for tape servers to start (approx 10sec)...\n");
   sleep(13);			/* give time to start */
@@ -511,6 +511,12 @@ sumprog_1(rqstp, transp)
 		xdr_result = xdr_uint32_t;
 		local = (char *(*)()) opendo_1;
 		break;
+        case CONFIGDO:
+                sprintf(procname, "CONFIGDO");  //!!TEMP name tags
+                xdr_argument = xdr_Rkey;
+                xdr_result = xdr_uint32_t;
+                local = (char *(*)()) configdo_1;
+                break;
 	case SHUTDO:
 		sprintf(procname, "SHUTDO");	//!!TEMP name tags
 		xdr_argument = xdr_Rkey;
