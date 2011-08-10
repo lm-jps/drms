@@ -113,6 +113,8 @@ $totalavail = 0;
 $totalbyteso = 0;
 $totalbytes30 = 0;
 $totalbytes100 = 0;
+$grandA = 0;
+$grandT = 0;
 
       $addsec = 86400 * 100;	#sec in 100 days
       $xeffdate = &reteffdate($addsec);
@@ -127,8 +129,8 @@ $totalbytes100 = 0;
 
   print "Query in progress, may take awhile...\n";
   print "	Rounded down to nearest Megabyte\n\n";
-  printf("Group %12s %12s %12s %12s %12s\n", "DPnow", "DP1-30d", "DP31-100d", "DPlater", "AP(MB)");
-  printf("----- %12s %12s %12s %12s %12s\n", "--------", "--------", "--------", "--------", "--------");
+  printf("Group %12s %12s %12s %12s %12s %15s %12s\n", "DPnow", "DP1-30d", "DP31-100d", "DPlater", "AP", "ArchAll", "TapeClosed");
+  printf("----- %12s %12s %12s %12s %12s %15s %12s\n", "--------", "--------", "--------", "--------", "----------", "------------", "--------");
 
 #######################################################################
 #    $sql = "select partn_name, avail_bytes from sum_partn_avail";
@@ -233,6 +235,33 @@ $totalbytes100 = 0;
         $byteso = $byteso/1048576;
         push(@byteso, $byteso);
       }
+      #now get total archived MB
+      $sql = "select sum(bytes) from sum_main where storage_group=$group and archive_status='Y'";
+      $sth = $dbh->prepare($sql);
+      if ( !defined $sth ) {
+        print "Cannot prepare statement: $DBI::errstr\n";
+        $dbh->disconnect();
+        exit; 
+      }
+      $sth->execute;
+      while ( @row = $sth->fetchrow() ) {
+        $totalA = shift(@row);
+        $totalA = $totalA/1048576;
+      }
+      $grandA += $totalA;
+      #now get total number of tapes
+      $sql = "select count(*) from sum_tape where group_id=$group and closed=2";
+      $sth = $dbh->prepare($sql);
+      if ( !defined $sth ) {
+        print "Cannot prepare statement: $DBI::errstr\n";
+        $dbh->disconnect();
+        exit; 
+      }
+      $sth->execute;
+      while ( @row = $sth->fetchrow() ) {
+        $totalT = shift(@row);
+      }
+      $grandT += $totalT;
       #now get AP 
       $sql = "select sum(bytes) from sum_partn_alloc where status=4 and archive_substatus=128 and group_id=$group";
       #print "$sql\n"; #!!!TEMP
@@ -265,16 +294,18 @@ $totalbytes100 = 0;
         if($BYTES100 < 0) { $BYTES100=0; }
         $TOTALBYTES30 = $totalbytes30 - $totalbytes;
         $TOTALBYTES100 = $totalbytes100 - $totalbytes30;
-        printf("$group\t%12s %12s %12s %12s %12s\n", 
+        printf("$group\t%12s %12s %12s %12s %12s %15s %8s\n", 
 		commify(int($BYTES)), commify(int($BYTES30)), 
 		commify(int($BYTES100)), 
-		commify(int($byteso)), commify(int($bytesap)));
+		commify(int($byteso)), commify(int($bytesap)),
+		commify(int($totalA)), $totalT);
       }
     }
-    printf("------------------------------------------------------------------------\n");
-    printf("TOTAL:\t%12s %12s %12s %12s %12s\n", 
+    printf("---------------------------------------------------------------------------------------------------\n");
+    printf("TOTAL:\t%12s %12s %12s %12s %12s %15s %8s\n", 
 		commify(int($totalbytes)), commify(int($TOTALBYTES30)), commify(int($TOTALBYTES100)),
-		commify(int($totalbyteso)), commify(int($totalbytesap)));
+		commify(int($totalbyteso)), commify(int($totalbytesap)), 
+		commify(int($grandA)), $grandT);
 
     #$totalstor = $totalbytes+$totalbytes100+$totalbyteso+$totalbytesap;
     $totalstor = $totalbytes+$TOTALBYTES30+$TOTALBYTES100+$totalbyteso;
