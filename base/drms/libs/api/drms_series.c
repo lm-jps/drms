@@ -4,6 +4,135 @@
 #include "xmem.h"
 #include "atoinc.h"
 
+#define kTableOfCountsNS   "public"
+#define kTableOfCountsTab  "recordcounts"
+#define kTableOfCountsColSeries "seriesname"
+#define kTableOfCountsColNRecs "nrecords"
+#define kShadowSuffix "_shadow"
+#define kShadowColNRecs "nrecords"
+#define kShadowColRecnum "recnum"
+
+static int TocExists(DRMS_Env_t *env, int *status)
+{
+   int istat = DRMS_SUCCESS;
+   int tabexists = 0;
+
+   tabexists = drms_query_tabexists(env->session, kTableOfCountsNS, kTableOfCountsTab, &istat);
+
+   if (status)
+   {
+      *status = istat;
+   }
+
+   return tabexists;
+}
+
+static int ShadowExists(DRMS_Env_t *env, const char *series, int *status)
+{
+   int istat = DRMS_SUCCESS;
+   int tabexists = 0;
+   char *namespace = NULL;
+   char *table = NULL;
+   char shadowtable[DRMS_MAXSERIESNAMELEN];
+
+   if (!get_namespace(series, &namespace, &table))
+   {
+      snprintf(shadowtable, sizeof(shadowtable), "%s%s", table, kShadowSuffix);
+      tabexists = drms_query_tabexists(env->session, namespace, shadowtable, &istat);
+
+      free(namespace);
+      free(table);
+   }
+   else
+   {
+      istat = DRMS_ERROR_OUTOFMEMORY;
+   }
+
+   if (status)
+   {
+      *status = istat;
+   }
+
+   return tabexists;
+}
+
+/* Determine if 'series' is present in ns.tab */
+static int IsSeriesPresent(DRMS_Env_t *env, const char *ns, const char *tab, const char *series, int *status)
+{
+   char *query = NULL;
+   size_t stsz = 8192;
+   int istat = DRMS_SUCCESS;
+   int ans = -1;
+   DB_Text_Result_t *tres = NULL;
+   char *lcseries = strdup(series);
+
+   if (lcseries)
+   {
+      strtolower(lcseries);
+
+      query = malloc(stsz);
+      if (query)
+      {
+         *query = '\0';
+
+         query = base_strcatalloc(query, "SELECT seriesname from ", &stsz);
+         query = base_strcatalloc(query, ns, &stsz);
+         query = base_strcatalloc(query, ".", &stsz);
+         query = base_strcatalloc(query, tab, &stsz);
+         query = base_strcatalloc(query, " WHERE lower(seriesname) = '", &stsz);
+         query = base_strcatalloc(query, lcseries, &stsz);
+         query = base_strcatalloc(query, "'", &stsz);
+
+         tres = drms_query_txt(env->session, query);
+      
+         if (tres)
+         {
+            if (tres->num_rows == 1)
+            {
+               ans = 1;
+            }
+            else if (tres->num_rows == 0)
+            {
+               ans = 0;
+            }
+            else
+            {
+               istat = DRMS_ERROR_BADDBQUERY;
+            }
+
+            db_free_text_result(tres);
+            tres = NULL;
+         }
+         else
+         {
+            fprintf(stderr, "Failed: %s\n", query);
+            istat = DRMS_ERROR_BADDBQUERY;
+         }
+
+         free(query);
+         query = NULL;
+      }
+      else
+      {
+         istat = DRMS_ERROR_OUTOFMEMORY;
+      }
+
+      free(lcseries);
+      lcseries = NULL;
+   }
+   else
+   {
+      istat = DRMS_ERROR_OUTOFMEMORY;
+   }
+   
+   if (status)
+   {
+      *status = istat;
+   }
+
+   return ans;
+}
+
 /* 
 extract namespace from series name. 
 return error if no '.' present
@@ -1669,4 +1798,68 @@ int GetColumnNames(DRMS_Env_t *env, const char *oid, char **colnames)
    }
    
    return err;
+}
+
+int drms_series_summaryexists(DRMS_Env_t *env, const char *series, int *status)
+{
+   int istat = DRMS_SUCCESS;
+   int tocexists = -1;
+   int shadowexists = -1;
+   int summexists = -1;
+
+   tocexists = TocExists(env, &istat);
+
+   if (istat == DRMS_SUCCESS)
+   {
+      if (tocexists)
+      {
+         int present = IsSeriesPresent(env, kTableOfCountsNS, kTableOfCountsTab, series, &istat);
+         
+         if (istat == DRMS_SUCCESS)
+         {
+            summexists = present ? 1 : 0;
+         }
+      }
+      else
+      {
+         summexists = 0;
+      }
+   }
+
+   if (istat == DRMS_SUCCESS)
+   {
+      if (!summexists)
+      {
+         shadowexists = ShadowExists(env, series, &istat);
+
+         if (istat == DRMS_SUCCESS)
+         {
+            summexists = shadowexists ? 1 : 0;
+         }
+         else
+         {
+            summexists = -1; /* since we don't know if it really exists. */
+         }
+      }
+   }
+
+   if (status)
+   {
+      *status = istat;
+   }
+
+   return summexists;
+}
+
+int drms_series_canupdatesummaries(DRMS_Env_t *env, const char *series, int *status)
+{
+   /* This is just a stub that is going into a version of our code tree that cannot 
+    * create/update the summary tables. The idea is to get all users to update to this
+    * version of lib DRMS that contains this function so that when I later add 
+    * code that CAN make the TOC and shadow tables, that we don't accidentally get 
+    * users with older code attempting to add records to series that have associated 
+    * summary tables (The old code does not update the summary tables, and if we were
+    * to allow the old code to add records to a series table that has associated summary tables
+    * then the series table would get out of sync with the summary tables). */
+   return 0;
 }

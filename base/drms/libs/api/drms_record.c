@@ -2023,6 +2023,44 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
 
   CHECKNULL_STAT(env,status);
   CHECKNULL_STAT(template,status);
+  
+  int summaryexists = -1;
+  int canupdatesummaries = -1;
+
+  summaryexists = drms_series_summaryexists(env, template->seriesinfo->seriesname, &stat);
+
+  if (stat == DRMS_SUCCESS)
+  {
+     if (summaryexists)
+     {
+        /* No need to check on the ability to update the summary tables if the summary tables 
+         * do not exist. */
+        canupdatesummaries = drms_series_canupdatesummaries(env, template->seriesinfo->seriesname, &stat);
+     }
+  }
+
+  if (stat == DRMS_SUCCESS)
+  {
+     if (summaryexists && !canupdatesummaries)
+     {
+        fprintf(stderr, "You must update your DRMS libraries before you can add records to series '%s'.\n", template->seriesinfo->seriesname);
+        if (status)
+        {
+           *status = DRMS_ERROR_CANTCREATERECORD;
+        }
+
+        return NULL;
+     }
+  }
+  else
+  {
+     if (status)
+     {
+        *status = stat;
+     }
+
+     return NULL;
+  }
 
   if (n<1)
   {
