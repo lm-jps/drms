@@ -55,7 +55,7 @@ EXEC SQL INCLUDE sqlca;
 			AND PDS_SET_NUM = :l_pnum; 
 
 	EXEC SQL OPEN availget;
-
+  if(pds_set < 0) return DATA_NOT_FOUND;
   for(fnum=0; ;fnum++ ) {
 	EXEC SQL FETCH availget INTO :l_name, :total_bytes;
         pnames[fnum] = (char *)malloc(32);
