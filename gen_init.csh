@@ -174,8 +174,8 @@ echo '#define __LOCALIZATION_H' >> $SCRIPT
 echo '#define SERVER			"'$DBSERVER_HOST'"' >> $SCRIPT
 echo '#define DBNAME			"'$DRMS_DATABASE'"' >> $SCRIPT
 echo '#define DRMSPGPORT		"'$DRMS_DBPORT'"' >> $SCRIPT
-echo '#define SUM_NUMSUM		$SUM_NUMSUM' >> $SCRIPT
-echo '#define SUM_MAXNUMSUM		$SUM_MAXNUMSUM' >> $SCRIPT
+echo '#define SUM_NUMSUM		'$SUM_NUMSUM >> $SCRIPT
+echo '#define SUM_MAXNUMSUM		'$SUM_MAXNUMSUM >> $SCRIPT
 echo '#define DRMS_LOCAL_SITE_CODE	'$DRMS_SITE_CODE >> $SCRIPT
 echo '#define POSTGRES_ADMIN		"'$POSTGRES_ADMIN'"' >> $SCRIPT
 echo '#define USER			NULL' >> $SCRIPT
@@ -188,7 +188,7 @@ echo '#define SUMS_GROUP		"'$SUMS_GROUP'"' >> $SCRIPT
 echo '#define SUMLOG_BASEDIR		"'$SUMS_LOG_BASEDIR'"' >> $SCRIPT
 echo '#define SUMBIN_BASEDIR		"'$SUMS_BIN_BASEDIR'"' >> $SCRIPT
 echo '#define SUMS_TAPE_AVAILABLE    '\($SUMS_TAPE_AVAIL\)'' >> $SCRIPT
-echo '#define SUMS_MULTIPLE_PARTNSETS		$SUMS_MULTIPLE_PARTNSETS' >> $SCRIPT
+echo '#define SUMS_MULTIPLE_PARTNSETS		'$SUMS_MULTIPLE_PARTNSETS >> $SCRIPT
 
 echo '#define AUTOSELCOMP               '$AUTOSELCOMP >> $SCRIPT
 if ($#SUMEXP_METHFMT) then 
