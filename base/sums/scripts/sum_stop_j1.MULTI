@@ -166,6 +166,17 @@ if(!$localization) {
   #Now kill the tape_svc, etc on n02
   `ssh d02.stanford.edu /home/production/cvs/JSOC/base/sums/scripts/sum_stop_d02_tape`;
 }
+else {
+    $name = "sum_rm $db";
+    @line = grep(/$name/, @ps_prod);
+    if(@line) {
+      $x = shift(@line);
+      ($a, $psid, $c) = split(/\s+/, $x);
+      print "Killing $p with kill -9 $psid\n";
+      print LOG "Killing sum_rm with kill -9 $psid\n";
+      `kill -9 $psid`;
+    }
+}
 
 #print "Removing lock file /usr/local/logs/soc/NOTAPEARC\n";
 #print LOG "Removing lock file /usr/local/logs/soc/NOTAPEARC\n";

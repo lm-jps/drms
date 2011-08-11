@@ -262,6 +262,15 @@ CKEND:
           print "Error: failure on $cmd\n";
         }
   }
+  else {
+        $cmd = "sum_rm $DB $dtag";	#start sum_rm for NetDRMS
+        print "$cmd\n";
+        if(system($cmd)) {
+          print "Error: failure to spawn sum_rm\n";
+          print "Abort sum_start_j1.MULTI\n";
+          exit;
+        }
+  }
 
         #$cmd = "/home/production/cvs/JSOC/base/sums/scripts/sumck_j1M &";
         $cmd = "sumck_j1M &";
