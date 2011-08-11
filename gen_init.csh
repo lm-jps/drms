@@ -24,11 +24,14 @@ set SLONY_LOG_BASEDIR = `egrep "^SLONY_LOG_BASEDIR" $LOCALINF | awk '{print $2}'
 set SLONY_NOTIFY = `egrep "^SLONY_NOTIFY" $LOCALINF | awk '{print $2}'`
 set SUMS_SERVER_HOST = `egrep "^SUMS_SERVER_HOST" $LOCALINF | awk '{print $2}'`
 set SUMS_DBPORT = `egrep "^SUMS_DBPORT" $LOCALINF | awk '{print $2}'`
+set SUM_NUMSUM = `egrep "^SUMS_NUMSUM" $LOCALINF | awk '{print $2}'`
+set SUM_MAXNUMSUM = `egrep "^SUMS_MAXNUMSUM" $LOCALINF | awk '{print $2}'`
 set SUMS_LOG_BASEDIR = `egrep "^SUMS_LOG_BASEDIR" $LOCALINF | awk '{print $2}'`
 set SUMS_BIN_BASEDIR = `egrep "^SUMS_BIN_BASEDIR" $LOCALINF | awk '{print $2}'`
 set SUMS_MANAGER = `egrep "^SUMS_MANAGER" $LOCALINF | awk '{print $2}'`
 set SUMS_GROUP = `egrep "^SUMS_GROUP" $LOCALINF | awk '{print $2}'`
 set SUMS_TAPE_AVAILABLE = `egrep "^SUMS_TAPE_AVAILABLE" $LOCALINF | awk '{print $2}'`
+set SUMS_MULTIPLE_PARTNSETS = `egrep "^SUMS_MULTIPLE_PARTNSETS" $LOCALINF | awk '{print $2}'`
 set AUTOSELCOMP = `egrep "^AUTOSELCOMP" $LOCALINF | awk '{print $2}'`
 set SUMEXP_METHFMT = `perl -n -e 'if ($_ =~ /^SUMEXP_METHFMT\s+(.+)/) { print $1; }' $LOCALINF`
 set SUMEXP_USERFMT = `perl -n -e 'if ($_ =~ /^SUMEXP_USERFMT\s+(.+)/) { print $1; }' $LOCALINF`
@@ -57,6 +60,16 @@ if ($#DRMS_DBPORT != 1) then
   echo "Warning: DRMS_DBPORT undefined in local configuration file $LOCALINF"
   set DRMS_DBPORT = 5432
   echo "         using default value $DRMS_DBPORT"
+endif
+if ($#SUM_NUMSUM != 1) then
+  echo "Warning: SUM_NUMSUM undefined in local configuration file $LOCALINF"
+  set SUM_NUMSUM = 3
+  echo "         using default value $SUM_NUMSUM"
+endif
+if ($#SUM_MAXNUMSUM != 1) then
+  echo "Warning: SUM_MAXNUMSUM undefined in local configuration file $LOCALINF"
+  set SUM_MAXNUMSUM = 8
+  echo "         using default value $SUM_MAXNUMSUM"
 endif
 if ($#DRMS_SITE_CODE != 1) then
   echo "Error: DRMS_SITE_CODE undefined in local configuration file $LOCALINF"
@@ -105,6 +118,11 @@ endif
 if ($#SUMS_TAPE_AVAILABLE != 1) then
   echo "Error: SUMS_TAPE_AVAILABLE undefined in local configuration file $LOCALINF"
   exit
+endif
+if ($#SUMS_MULTIPLE_PARTNSETS != 1) then
+  echo "Warning: SUMS_MULTIPLE_PARTNSETS undefined in local configuration file $LOCALINF"
+  set SUMS_MULTIPLE_PARTNSETS = 3
+  echo "         using default value $SUMS_MULTIPLE_PARTNSETS"
 endif
 if ($#AUTOSELCOMP != 1) then
   echo "Error: AUTOSELCOMP undefined in local configuration file $LOCALINF"
@@ -156,6 +174,8 @@ echo '#define __LOCALIZATION_H' >> $SCRIPT
 echo '#define SERVER			"'$DBSERVER_HOST'"' >> $SCRIPT
 echo '#define DBNAME			"'$DRMS_DATABASE'"' >> $SCRIPT
 echo '#define DRMSPGPORT		"'$DRMS_DBPORT'"' >> $SCRIPT
+echo '#define SUM_NUMSUM		"'$SUM_NUMSUM'"' >> $SCRIPT
+echo '#define SUM_MAXNUMSUM		"'$SUM_MAXNUMSUM'"' >> $SCRIPT
 echo '#define DRMS_LOCAL_SITE_CODE	'$DRMS_SITE_CODE >> $SCRIPT
 echo '#define POSTGRES_ADMIN		"'$POSTGRES_ADMIN'"' >> $SCRIPT
 echo '#define USER			NULL' >> $SCRIPT
@@ -168,6 +188,8 @@ echo '#define SUMS_GROUP		"'$SUMS_GROUP'"' >> $SCRIPT
 echo '#define SUMLOG_BASEDIR		"'$SUMS_LOG_BASEDIR'"' >> $SCRIPT
 echo '#define SUMBIN_BASEDIR		"'$SUMS_BIN_BASEDIR'"' >> $SCRIPT
 echo '#define SUMS_TAPE_AVAILABLE    '\($SUMS_TAPE_AVAIL\)'' >> $SCRIPT
+echo '#define SUMS_MULTIPLE_PARTNSETS		"'$SUMS_MULTIPLE_PARTNSETS'"' >> $SCRIPT
+
 echo '#define AUTOSELCOMP               '$AUTOSELCOMP >> $SCRIPT
 if ($#SUMEXP_METHFMT) then 
   echo '#define LOC_SUMEXP_METHFMT	'$SUMEXP_METHFMT >> $SCRIPT

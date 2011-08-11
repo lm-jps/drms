@@ -86,6 +86,13 @@ SUMS_SERVER_HOST	localhost
 #   unless in use otherwise
 SUMS_DBPORT	5434
 
+# the number of sum_svc processes, per sum service (e.g., SUM_get, SUM_alloc) to start, 
+# by default, when multi-SUMS starts up.
+SUM_NUMSUM    3
+
+# the maximum number of sum_svc processes, per sums service.
+SUM_MAXNUMSUM 8
+
 # the base directory for SUMS logs and configuration files; used by
 #   base/sums/apps/sum_svc.c and sum_rm.c
 SUMS_LOG_BASEDIR	/usr/local/logs/SUM
@@ -98,6 +105,9 @@ SUMS_BIN_BASEDIR	/usr/local/bin
 # whether a tape archive service is available for SUMS or not; set to a
 #   non-zero value if it is
 SUMS_TAPE_AVAILABLE	0
+
+# whether or not there exist multiple SUMS partition sets
+SUMS_MULTIPLE_PARTNSETS      0
 
 # If AUTOSELCOMP is 1, then the configure script will automatically select
 # the 'best' compiler for use with the make system (choosing icc over gcc).
