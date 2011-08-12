@@ -99,6 +99,7 @@ $DB = $dbname."_sums";
 $PID = getppid;
 $LOGFILE = "/tmp/sum_stop_j1_multi.$PID";
 $MLOGFILE = "/tmp/sum_stop_mail_j1_multi.$PID";
+$SSLOG = "/usr/local/logs/SUM/sum_start_stop.log";
 open(LOG, ">$LOGFILE") || die "Can't open $LOGFILE: $!\n";
 open(MLOG, ">$MLOGFILE") || die "Can't open $MLOGFILE: $!\n";
 ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
@@ -186,6 +187,20 @@ print "SUM Stop j1 MULTI Complete\n";
 print LOG "SUM Sto j1 MULTI Complete\n";
 close(LOG);
 close(MLOG);
+
+if(!open(MLOG, ">>$SSLOG")) {           #record stop info
+  print "Can't open for append: $SSLOG\n";
+}
+else {
+  print MLOG "STOP: MANUAL: $date\n";
+  $sql = "select max(ds_index) from sum_main";
+  $pcmd = "echo \"$sql\" | psql -q -h hmidb -p 5434 jsoc_sums";
+  @maxi = `$pcmd`;
+  $maxindex = @maxi[2];
+  print MLOG "STOP: MANUAL: $maxindex\n";
+  close(MLOG);
+}
+
 $mail = "Mail -s \"SUM Stop j1 MULTI Complete\"";
 #$to = "jsoc_users";
 $to = "jim";

@@ -6,6 +6,7 @@
 #This is started by sum_start_j1.MULTI.
 #
 $| = 1;                 #flush output as we go
+$SSLOG = "/usr/local/logs/SUM/sum_start_stop.log";
 $wd = `pwd`;
 chomp($wd);
 $ldir = "$wd/../../include/localization.h";
@@ -121,6 +122,18 @@ while(1) {
     @line = grep(/$name/, @ps_prod);
     if(!@line) {  #this process is missing. restart it
       print "sumck_j1M sees missing process: $name\n";
+      if(!open(SLOG, ">>$SSLOG")) {
+        print "Can't open for append: $SSLOG\n";
+      }
+      else {
+        print SLOG "START: AUTO $p: $date\n";
+        $sql = "select max(ds_index) from sum_main";
+        $pcmd = "echo \"$sql\" | psql -q -h hmidb -p 5434 jsoc_sums";
+        @maxi = `$pcmd`;
+        $maxindex = @maxi[2];
+        print SLOG "START: AUTO: $maxindex\n";
+        close(SLOG);
+      }
       @log = `ls -alt $SUMLOG/sum_svc_* | head`;
       $logline = shift(@log);
       ($a,$b,$c,$d,$e,$f,$g,$h,$log) = split(/\s+/, $logline);

@@ -108,6 +108,7 @@ print "SUMS db is $DB\n";
 $PID = getppid;
 $MLOGFILE = "/tmp/sum_start_mail_j1_multi.$PID";
 $LOGFILE = "/tmp/sum_start_j1_multi.$PID";
+$SSLOG = "/usr/local/logs/SUM/sum_start_stop.log";
 open(LOG, ">$LOGFILE") || die "Can't open $LOGFILE: $!\n";
 open(MLOG, ">$MLOGFILE") || die "Can't open $MLOGFILE: $!\n";
 ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
@@ -235,6 +236,18 @@ CKEND:
     @spawn = (sum_svc, Sdelser, Sinfo, Sinfo1, Sinfo2, Sinfo3, Sinfo4, Sinfo5, Sinfo6, Sinfo7, Sput, Sput1, Sput2, Sput3, Sput4, Sput5, Sput6, Sput7, Sget, Sget1, Sget2, Sget3, Sget4, Sget5, Sget6, Sget7, Salloc, Salloc1, Salloc2, Salloc3, Salloc4, Salloc5, Salloc6, Salloc7, Sopen, Sopen1, Sopen2, Sopen3, Sopen4, Sopen5, Sopen6, Sopen7);
   }
 
+    `ssh d02.stanford.edu /bin/rm -f /usr/local/logs/SUM/RESTART_AFTER_REBOOT`;
+    print "Is this sum_start following a d02 reboot?\n";
+    print "If you answer 'y' all the T950 tapes in drives will be unloaded\n";
+    print "Starting after a reboot? (y or n): ";
+    while(<STDIN>) {
+      chop($_);
+      if(($_ eq "Y") || ($_ eq "y")) {
+        `ssh d02.stanford.edu touch /usr/local/logs/SUM/RESTART_AFTER_REBOOT`;
+      }
+      last;
+    }
+
   if(!$localization) {
     #always start sum_pe_svc
     $cmd = "sum_pe_svc $DB &";
@@ -267,8 +280,6 @@ CKEND:
         print "$cmd\n";
         if(system($cmd)) {
           print "Error: failure to spawn sum_rm\n";
-          print "Abort sum_start_j1.MULTI\n";
-          exit;
         }
   }
 
@@ -281,6 +292,20 @@ CKEND:
         print LOG "SUM j1 MULTI Start Complete\n";
         close(LOG);
         close(MLOG);
+
+    #record start up info
+    if(!open(SLOG, ">>$SSLOG")) {
+      print "Can't open for append: $SSLOG\n";
+    }
+    else {
+      print SLOG "START: MANUAL: $date\n";
+      $sql = "select max(ds_index) from sum_main";
+      $pcmd = "echo \"$sql\" | psql -q -h hmidb -p 5434 jsoc_sums";
+      @maxi = `$pcmd`;
+      $maxindex = @maxi[2];
+      print SLOG "START: MANUAL: $maxindex\n";
+      close(SLOG);
+    }
         $mail = "mail -s \"SUM j1 MULTI Start Complete\"";
         #$to = "jsoc_users";
         $to = "jim";
