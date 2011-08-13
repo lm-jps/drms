@@ -1492,6 +1492,12 @@ KEY *taperespreaddo_1(KEY *params) {
 //  if(system(tmpname)) {
 //      write_log("**Warning: Error on: %s\n", tmpname);
 //  }
+  //but need to take the group write off at the top dir NEW:8/13/2011
+  sprintf(tmpname, "chmod g-w %s", rwd);
+  if(system(tmpname)) {
+      write_log("**Warning: Error on: %s\n", tmpname);
+  }
+  
   sprintf(tmpname, "tapeid_%d", reqofflinenum);
   tapeid = GETKEY_str(params, tmpname);
   /* sum_group table is obsolete 7/21/2011 */
