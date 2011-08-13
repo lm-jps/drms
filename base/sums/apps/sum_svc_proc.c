@@ -669,6 +669,10 @@ KEY *putdo_1(KEY *params)
       //StartTimer(3);		//!!TEMP
       if(system(sysstr)) {
           write_log("**Warning: Error on: %s. errno=%d\n", sysstr,errno);
+          rinfo = 1;			/* error back to caller */
+          send_ack();
+          freekeylist(&retlist);
+          return((KEY *)1);		/* nothing but status back */
       }
       //ftmp = StopTimer(3);
       //write_log("#END: sum_chmown() %fsec\n", ftmp);    //!!TEMP for test
