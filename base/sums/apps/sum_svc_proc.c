@@ -649,33 +649,34 @@ KEY *putdo_1(KEY *params)
 //  }
   retlist = newkeylist();
   add_keys(params, &retlist);
+  //First change to owner production, no group write. This must succeed 
+  //all or nothing as far as the caller is concerned.
+    for(i=0; i < reqcnt; i++) { //!!!TBD
+      sprintf(nametmp, "wd_%d", i);
+      cptr = GETKEY_str(params, nametmp);
+      sprintf(nametmp, "%s.chmown",  logname);
+      sprintf(sysstr, "%s/sum_chmown %s 1>> %s 2>&1",
+                        SUMBIN_BASEDIR, cptr, nametmp);
+      //write_log("%s\n", sysstr);
+      //StartTimer(3);          //!!TEMP
+      if(system(sysstr)) {
+          write_log("**Warning: Error on: %s. errno=%d\n", sysstr,errno);
+          rinfo = 1;                    /* error back to caller */
+          send_ack();
+          freekeylist(&retlist);
+          return((KEY *)1);             /* nothing but status back */
+      }
+      //ftmp = StopTimer(3);
+      //write_log("#END: sum_chmown() %fsec\n", ftmp);    //!!TEMP for test
+    }
+ 
+  //now insert in the sums tables 
   if(!(status=SUM_Main_Update(params, &retlist))) {
     if(!(set_client_handle(RESPPROG, (uint32_t)uid))) { //set up for response
       freekeylist(&retlist);
       rinfo = 1;  // give err status back to original caller/
       send_ack();
       return((KEY *)1);  // error. nothing to be sent
-    }
-    // change to owner production, no group write
-    for(i=0; i < reqcnt; i++) { //!!!TBD
-      sprintf(nametmp, "wd_%d", i);
-      cptr = GETKEY_str(params, nametmp);
-      //sprintf(sysstr, "sudo chmod -R go-w %s; sudo chown -Rf production %s", 
-      //			cptr, cptr);
-      sprintf(nametmp, "%s.chmown",  logname);
-      sprintf(sysstr, "%s/sum_chmown %s 1>> %s 2>&1", 
-			SUMBIN_BASEDIR, cptr, nametmp);
-      //write_log("%s\n", sysstr);
-      //StartTimer(3);		//!!TEMP
-      if(system(sysstr)) {
-          write_log("**Warning: Error on: %s. errno=%d\n", sysstr,errno);
-          rinfo = 1;			/* error back to caller */
-          send_ack();
-          freekeylist(&retlist);
-          return((KEY *)1);		/* nothing but status back */
-      }
-      //ftmp = StopTimer(3);
-      //write_log("#END: sum_chmown() %fsec\n", ftmp);    //!!TEMP for test
     }
     rinfo = 0;			// status back to caller
     send_ack();
