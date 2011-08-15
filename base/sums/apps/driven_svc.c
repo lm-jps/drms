@@ -1054,6 +1054,8 @@ KEY *readdrvdo_1(KEY *params)
           return(retlist);
         }
         delday = (char *)get_effdate(touch);  /* delete in touch days */
+        write_log("Tape rd of sunum=%lu has touch days = %d\n",
+			ds_index, touch);	//!!TEMP added 8/11/2011
         /* put on delete pending list in sum_partn_alloc table */
         if(NC_PaUpdate(newdir, uid, bytes, DADP, 0, delday,
 		 0, 0, ds_index, 1, 1)) {  /* call w/commit */
