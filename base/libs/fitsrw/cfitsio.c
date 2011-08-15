@@ -28,6 +28,7 @@ const unsigned int kInfoPresent_EXTEND = 0x00000002;
 const unsigned int kInfoPresent_BLANK  = 0x00000004;
 const unsigned int kInfoPresent_BSCALE = 0x00000008;
 const unsigned int kInfoPresent_BZERO  = 0x00000010;
+const unsigned int kInfoPresent_Dirt   = 0x00000020;
 
 #define kMISSPIXBLOCK 1310720 /* 10 MB of long long */
 
@@ -1190,9 +1191,32 @@ int fitsrw_writeintfile(int verbose,
 
    if (fptr)
    {
-      if ((status = fitsrw_closefptr(verbose, fptr)) != 0)
+      /* set the fpinfo struct with the values from image_info (but do not overwrite the fhash field) */
+      CFITSIO_IMAGE_INFO fpinfo;
+      CFITSIO_IMAGE_INFO fpinfonew;
+
+      if (fitsrw_getfpinfo_ext(fptr, &fpinfo))
       {
-         error_code = CFITSIO_ERROR_FILE_IO;         
+         fprintf(stderr, "Invalid fitsfile pointer '%p'.\n", fptr);
+         error_code = CFITSIO_ERROR_FILE_IO;
+      }
+      else
+      {
+         fpinfonew = *image_info;
+         snprintf(fpinfonew.fhash, sizeof(fpinfonew.fhash), "%s", fpinfo.fhash);
+
+         if (fitsrw_setfpinfo_ext(fptr, &fpinfonew))
+         {
+            fprintf(stderr, "Unable to update file pointer information.\n");
+            error_code = CFITSIO_ERROR_FILE_IO;
+         }
+         else
+         {
+            if ((status = fitsrw_closefptr(verbose, fptr)) != 0)
+            {
+               error_code = CFITSIO_ERROR_FILE_IO;         
+            }
+         }
       }
    }
 
@@ -1690,11 +1714,36 @@ int fitsrw_write(int verbose,
 
    if (fptr)
    {
-      if (fitsrw_closefptr(verbose, fptr))
+      /* set the fpinfo struct with the values from image_info (but do not overwrite the fhash field) */
+      CFITSIO_IMAGE_INFO fpinfo;
+      CFITSIO_IMAGE_INFO fpinfonew;
+
+      if (fitsrw_getfpinfo_ext(fptr, &fpinfo))
       {
+         fprintf(stderr, "Invalid fitsfile pointer '%p'.\n", fptr);
          err = CFITSIO_ERROR_FILE_IO;
+      }
+      else
+      {
+         fpinfonew = *info;
+         snprintf(fpinfonew.fhash, sizeof(fpinfonew.fhash), "%s", fpinfo.fhash);
+
+         if (fitsrw_setfpinfo_ext(fptr, &fpinfonew))
+         {
+            fprintf(stderr, "Unable to update file pointer information.\n");
+            err = CFITSIO_ERROR_FILE_IO;
+         }
+         else
+         {
+            if (fitsrw_closefptr(verbose, fptr))
+            {
+               err = CFITSIO_ERROR_FILE_IO;
+            }
+         }
       }
    }
    
    return err;
 }
+
+

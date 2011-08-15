@@ -62,6 +62,7 @@ extern const unsigned int kInfoPresent_EXTEND;
 extern const unsigned int kInfoPresent_BLANK;
 extern const unsigned int kInfoPresent_BSCALE;
 extern const unsigned int kInfoPresent_BZERO;
+extern const unsigned int kInfoPresent_Dirt;
 #endif
 
 //****************************************************************************
@@ -102,6 +103,9 @@ typedef	struct cfitsio_image_info
       long long blank;       /* bit 2 */
       double bscale;         /* bit 3 */
       double bzero;          /* bit 4 */
+                             /* bit 5 - this bit is the dirty bit; if set then this means that the value of 
+                              *   naxes[naxis - 1] has changed since the fits file was created; if the value has 
+                              *   changed, then the NAXISn keyword must be updated when the fits file is closed. */
       char fhash[PATH_MAX];  /* key to fitsfile ptr stored in gFFPtrInfo */
 } CFITSIO_IMAGE_INFO;
 

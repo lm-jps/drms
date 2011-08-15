@@ -605,6 +605,16 @@ int drms_fitsrw_writeslice(DRMS_Env_t *env,
                fprintf(stderr, "Couldn't create FITS file '%s'.\n", filename); 
                status = DRMS_ERROR_CANTCREATETASFILE;
             }
+
+            /* At this point, the first n-1 dimension lengths are set in stone. These lengths originated
+             * from either the output array or the jsd. The nth length is not set and could increase 
+             * as slices are written. As we write slices, we need to check the nth dimension of the 
+             * slice being written. If the slice's largest value of this dimension is greater than 
+             * the existing value stored in memory (there is a TASRW_FilePtrInfo_t that 
+             * holds the lenghts of all dimensions), then we need to increase the value stored in memory
+             * to this largest value. When the file gets closed, we then need to update the nth NAXIS keyword
+             * in the FITS file. To do this we need a dirty flag in the TASRW_FilePtrInfo_t struct. We set the
+             * dirty flag if we have ever increased the value of the nth length in TASRW_FilePtrInfo_t. */
          }
          else
          {

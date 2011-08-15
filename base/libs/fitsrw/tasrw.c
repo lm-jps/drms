@@ -48,6 +48,52 @@ static int IsWriteable(const char *fhash)
    return writeable;
 }
 
+static int fitsrw_getfpinfo(fitsfile *fptr, TASRW_FilePtrInfo_t *info)
+{
+   int err = 1;
+   TASRW_FilePtrInfo_t *pfpinfo = NULL;
+   char fileinfokey[64];
+
+   if (fptr && info)
+   {
+      snprintf(fileinfokey, sizeof(fileinfokey), "%p", (void *)fptr);
+      err = ((pfpinfo = (TASRW_FilePtrInfo_t *)hcon_lookup(gFFPtrInfo, fileinfokey)) == NULL);
+   }
+
+   if (!err)
+   {
+      if (pfpinfo)
+      {
+         *info = *pfpinfo;
+      }
+   }
+
+   return err;
+}
+
+static int fitsrw_setfpinfo(fitsfile *fptr, TASRW_FilePtrInfo_t *info)
+{
+   int err = 1;
+   TASRW_FilePtrInfo_t *pfpinfo = NULL;
+   char fileinfokey[64];
+
+   if (fptr && info)
+   {
+      snprintf(fileinfokey, sizeof(fileinfokey), "%p", (void *)fptr);
+      err = ((pfpinfo = (TASRW_FilePtrInfo_t *)hcon_lookup(gFFPtrInfo, fileinfokey)) == NULL);
+   }
+
+   if (!err)
+   {
+      if (pfpinfo)
+      {
+         *pfpinfo = *info;
+      }
+   }
+
+   return err;
+}
+
 /* fitsfiles can be opened either READWRITE or READONLY. If a request for a READONLY pointer
  * is made, and the fitsfile has already been opened, then regardless of the fitsfile write mode
  * it is okay to return the opened pointer. But, if the request is for a READWRITE pointer
@@ -137,6 +183,7 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
                   PushTimer();
                }
 
+               /* we are closing a read-only file here. */
                fits_close_file(*pfptr, &stat);
 
                if (verbose)
@@ -250,6 +297,7 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
          const char *fhkey = NULL;
          ListNode_t *node = NULL;
          char *onefile = NULL;
+         TASRW_FilePtrInfo_t finfo;
 
          if (hit)
          {
@@ -262,11 +310,39 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
                   if (*pfptr)
                   {
                      /* remove fileptr into structure */
-                     snprintf(fileinfokey, sizeof(fileinfokey), "%p", (void *)*pfptr);                 
+                     snprintf(fileinfokey, sizeof(fileinfokey), "%p", (void *)*pfptr);
+
+                     /* Before removing the file info, get the dirty flag value and the value of NAXISn. */
+                     stat = fitsrw_getfpinfo(*pfptr, &finfo);
+
+                     if (stat)
+                     {
+                        fprintf(stderr, "Missing file info for fits file '%s'.\n", fhkey);
+                        if (status)
+                        {
+                           *status = CFITSIO_ERROR_CANT_GET_FILEINFO;
+                        }
+                        break;
+                     }
+
                      hcon_remove(gFFPtrInfo, fileinfokey);
 
                      if (IsWriteable(fhkey))
                      {
+                        if (finfo.bitfield & kInfoPresent_Dirt)
+                        {
+                           /* If this is a writable fits file AND the dirty flag is set (which means that
+                            * since the file was first created, the NAXISn length has changed due to 
+                            * slice writing), then update the NAXISn keyword value before closing the 
+                            * fits file. */
+                           char naxisname[64];
+                           int dimlen;
+
+                           snprintf(naxisname, sizeof(naxisname), "NAXIS%d", finfo.naxis);
+                           dimlen = (int)finfo.naxes[finfo.naxis - 1];
+                           fits_update_key(*pfptr, TINT, naxisname, &dimlen, NULL, &stat);
+                        }
+
                         if (verbose)
                         {
                            PushTimer();
@@ -299,7 +375,7 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
                      {
                         if (verbose)
                         {
-                           fprintf(stdout, "Closing fits file '%s'.\n", fhkey);
+                           fprintf(stderr, "Closing fits file '%s'.\n", fhkey);
                         }
                      }
                      else
@@ -406,29 +482,6 @@ fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *
 fitsfile *fitsrw_getfptr_nochksum(int verbose, const char *filename, int writeable, int *status)
 {
    return fitsrw_getfptr_internal(verbose, filename, writeable, 0, status);
-}
-
-static int fitsrw_getfpinfo(fitsfile *fptr, TASRW_FilePtrInfo_t *info)
-{
-   int err = 1;
-   TASRW_FilePtrInfo_t *pfpinfo = NULL;
-   char fileinfokey[64];
-
-   if (fptr && info)
-   {
-      snprintf(fileinfokey, sizeof(fileinfokey), "%p", (void *)fptr);
-      err = ((pfpinfo = (TASRW_FilePtrInfo_t *)hcon_lookup(gFFPtrInfo, fileinfokey)) == NULL);
-   }
-
-   if (!err)
-   {
-      if (pfpinfo)
-      {
-         *info = *pfpinfo;
-      }
-   }
-
-   return err;
 }
 
 int fitsrw_readslice(int verbose,
@@ -609,6 +662,12 @@ int fitsrw_writeslice(int verbose, const char *filename, int *fpixel, int *lpixe
 
    status = 0; // first thing!
 
+   /* ART - If the file to write doesn't exist, this call will create a new empty file. This is probably 
+    * bad since an empty file has no fpinfo (other than the fhash value), which means uses of 
+    * fpinfo below will fail. 
+    *
+    * There should be a test here. If the file does not already exist, then we need to use the fpixel/lpixel
+    * information to initialize the fpinfo. */
    fptr = fitsrw_getfptr(verbose, filename, 1, &status);
 
    if (!fptr)
@@ -718,15 +777,29 @@ int fitsrw_writeslice(int verbose, const char *filename, int *fpixel, int *lpixe
       }
    }
 
+#if 0
    /* The NAXISn keyword of the last dimension might not match the 
     * length of the last dimension in the fpinfo. The file may have
     * been created with a dummy last dimension of 1 if the length of
     * the last dimension was not know at file creation time. Update
     * the NAXISn keyword, using the last pixel dimension length. */
+
    char naxisname[64];
    snprintf(naxisname, sizeof(naxisname), "NAXIS%d", fpinfo.naxis);
    dimlen = lpixel[fpinfo.naxis - 1] + 1;
    fits_update_key(fptr, TINT, naxisname, &dimlen, NULL, &status);
+#endif
+
+   /* Must update the file pointer info's naxis value with dimlen if dimlen is greater than 
+    * fpinfo.naxis */
+   dimlen = lpixel[fpinfo.naxis - 1] + 1;
+   if (dimlen > fpinfo.naxes[fpinfo.naxis - 1])
+   {
+      TASRW_FilePtrInfo_t newinfo = fpinfo;
+      newinfo.naxes[fpinfo.naxis - 1] = dimlen;
+      newinfo.bitfield |= kInfoPresent_Dirt; /* set the dirty bit */
+      fitsrw_setfpinfo(fptr, &newinfo);
+   }
 
 #ifdef DEBUG
    fprintf(stdout, "Time to write subset: %f\n", StopTimer(26));
@@ -758,6 +831,7 @@ int fitsrw_closefptr(int verbose, fitsfile *fptr)
 
    if (fptr)
    {
+      /* Before removing the file info, get the dirty flag value and the value of NAXISn. */
       if (fitsrw_getfpinfo(fptr, &fpinfo))
       {
          fprintf(stderr, "Invalid fitsfile pointer '%p'.\n", fptr);
@@ -771,6 +845,20 @@ int fitsrw_closefptr(int verbose, fitsfile *fptr)
 
             if (IsWriteable(fpinfo.fhash))
             {
+               if (fpinfo.bitfield & kInfoPresent_Dirt)
+               {
+                  /* If this is a writable fits file AND the dirty flag is set (which means that
+                   * since the file was first created, the NAXISn length has changed due to 
+                   * slice writing), then update the NAXISn keyword value before closing the 
+                   * fits file. */
+                  char naxisname[64];
+                  int dimlen;
+
+                  snprintf(naxisname, sizeof(naxisname), "NAXIS%d", fpinfo.naxis);
+                  dimlen = (int)fpinfo.naxes[fpinfo.naxis - 1];
+                  fits_update_key(fptr, TINT, naxisname, &dimlen, NULL, &stat);
+               }
+
                if (verbose)
                {
                   PushTimer();
@@ -795,7 +883,7 @@ int fitsrw_closefptr(int verbose, fitsfile *fptr)
             if (verbose)
             {
                PushTimer();
-            }
+            }        
 
             fits_close_file(fptr, &stat);
 
@@ -848,6 +936,7 @@ void fitsrw_closefptrs(int verbose)
          char fileinfokey[64];
          int ifile;
          char cfitsiostat[FLEN_STATUS];
+         TASRW_FilePtrInfo_t fpinfo;
 
          if (hit)
          {
@@ -886,10 +975,34 @@ void fitsrw_closefptrs(int verbose)
                {
                   /* remove fileptr info structure */         
                   snprintf(fileinfokey, sizeof(fileinfokey), "%p", (void *)*pfptr);
+
+                  /* Before removing the file info, get the dirty flag value and the value of NAXISn. */
+                  stat = fitsrw_getfpinfo(*pfptr, &fpinfo);
+
+                  if (stat)
+                  {
+                     fprintf(stderr, "Missing file info for fits file '%s'.\n", onefile);
+                     break;
+                  }
+
                   hcon_remove(gFFPtrInfo, fileinfokey);
 
                   if (IsWriteable(onefile))
                   {
+                     if (fpinfo.bitfield & kInfoPresent_Dirt)
+                     {
+                        /* If this is a writable fits file AND the dirty flag is set (which means that
+                         * since the file was first created, the NAXISn length has changed due to 
+                         * slice writing), then update the NAXISn keyword value before closing the 
+                         * fits file. */
+                        char naxisname[64];
+                        int dimlen;
+
+                        snprintf(naxisname, sizeof(naxisname), "NAXIS%d", fpinfo.naxis);
+                        dimlen = (int)fpinfo.naxes[fpinfo.naxis - 1];
+                        fits_update_key(*pfptr, TINT, naxisname, &dimlen, NULL, &stat);
+                     }
+
                      if (verbose)
                      {
                         PushTimer();
@@ -963,4 +1076,14 @@ void fitsrw_closefptrs(int verbose)
       hcon_destroy(&gFFPtrInfo);
       hcon_destroy(&gFFiles);
    }
+}
+
+int fitsrw_getfpinfo_ext(fitsfile *fptr, CFITSIO_IMAGE_INFO *info)
+{
+   return fitsrw_getfpinfo(fptr, (TASRW_FilePtrInfo_t *)info);
+}
+
+int fitsrw_setfpinfo_ext(fitsfile *fptr, CFITSIO_IMAGE_INFO *info)
+{
+   return fitsrw_setfpinfo(fptr, (TASRW_FilePtrInfo_t *)info);
 }

@@ -16,8 +16,9 @@ fitsfile *fitsrw_getfptr(int verbose, const char *filename, int writeable, int *
 fitsfile *fitsrw_getfptr_nochksum(int verbose, const char *filename, int writeable, int *status);
 
 int fitsrw_closefptr(int verbose, fitsfile *fptr);
-
 void fitsrw_closefptrs(int verbose);
+int fitsrw_getfpinfo_ext(fitsfile *fptr, CFITSIO_IMAGE_INFO *info);
+int fitsrw_setfpinfo_ext(fitsfile *fptr, CFITSIO_IMAGE_INFO *info);
 
 #endif /* _TASRW_H */
 
