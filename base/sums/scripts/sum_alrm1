@@ -1,0 +1,281 @@
+#!/usr/bin/perl
+#/home/production/cvs/JSOC/base/sums/scripts/sum_alrm1 dbname (e.g. jsoc_sums)
+#Send a USR1 alarm to sum_svc that is running for the current user
+#and the given dbname. 
+#This is normally run as a cron job by production just after midnight.
+#
+$| = 1;                 #flush output as we go
+if($#ARGV != 0) {
+  print "Usage: $0 dbname\n";
+  exit(1);
+}
+$dbname = $ARGV[0];
+$user = $ENV{'USER'};
+$mach = $ENV{'MACHINE'};
+if($user ne "production") {
+  print "You must be user production to run\n";
+  exit;
+}
+$host = `hostname`;
+if(!($host =~ /j1/)) {
+  print "This can only be run on j1 which has the sum_svc.\n";
+  exit;
+}
+@ps_sum = `ps -ef | grep 'sum_svc ' | grep $dbname`;
+$search = "sum_svc $dbname";
+while($_ = shift(@ps_sum)) {
+  if($_ =~ /$search/) { 
+    s/^\s+//g;			#elim leading whitespace
+    ($a, $pid, $rest) = split(/\s+/, $_);
+    last;
+  }
+}
+$cmd = "kill -USR1 $pid";
+if(system($cmd)) {
+  print "Failed: $cmd\n";
+  print "search string was: $search\n";
+  print "\$a = $a  \$pid = $pid\n";
+}
+sleep(2);  	#let sum_svc open the new log file
+#Explicitly get each of the other sums processes
+@ps_sum = `ps -ef | grep Sdelser | grep $dbname`;
+$search = "Sdelser $dbname";
+while($_ = shift(@ps_sum)) {
+  if($_ =~ /$search/) { 
+    s/^\s+//g;			#elim leading whitespace
+    ($a, $pid, $rest) = split(/\s+/, $_);
+    last;
+  }
+}
+$cmd = "kill -USR1 $pid";
+if(system($cmd)) {
+  print "Failed: $cmd\n";
+  print "search string was: $search\n";
+  print "\$a = $a  \$pid = $pid\n";
+}
+@ps_sum = `ps -ef | grep 'Sinfo ' | grep $dbname`;
+$search = "Sinfo $dbname";
+while($_ = shift(@ps_sum)) {
+  if($_ =~ /$search/) { 
+    s/^\s+//g;			#elim leading whitespace
+    ($a, $pid, $rest) = split(/\s+/, $_);
+    last;
+  }
+}
+$cmd = "kill -USR1 $pid";
+if(system($cmd)) {
+  print "Failed: $cmd\n";
+  print "search string was: $search\n";
+  print "\$a = $a  \$pid = $pid\n";
+}
+@ps_sum = `ps -ef | grep 'Sinfo1 ' | grep $dbname`;
+$search = "Sinfo1 $dbname";
+while($_ = shift(@ps_sum)) {
+  if($_ =~ /$search/) { 
+    s/^\s+//g;			#elim leading whitespace
+    ($a, $pid, $rest) = split(/\s+/, $_);
+    last;
+  }
+}
+$cmd = "kill -USR1 $pid";
+if(system($cmd)) {
+  print "Failed: $cmd\n";
+  print "search string was: $search\n";
+  print "\$a = $a  \$pid = $pid\n";
+}
+@ps_sum = `ps -ef | grep 'Sinfo2 ' | grep $dbname`;
+$search = "Sinfo2 $dbname";
+while($_ = shift(@ps_sum)) {
+  if($_ =~ /$search/) { 
+    s/^\s+//g;			#elim leading whitespace
+    ($a, $pid, $rest) = split(/\s+/, $_);
+    last;
+  }
+}
+$cmd = "kill -USR1 $pid";
+if(system($cmd)) {
+  print "Failed: $cmd\n";
+  print "search string was: $search\n";
+  print "\$a = $a  \$pid = $pid\n";
+}
+@ps_sum = `ps -ef | grep 'Sput ' | grep $dbname`;
+$search = "Sput $dbname";
+while($_ = shift(@ps_sum)) {
+  if($_ =~ /$search/) { 
+    s/^\s+//g;			#elim leading whitespace
+    ($a, $pid, $rest) = split(/\s+/, $_);
+    last;
+  }
+}
+$cmd = "kill -USR1 $pid";
+if(system($cmd)) {
+  print "Failed: $cmd\n";
+  print "search string was: $search\n";
+  print "\$a = $a  \$pid = $pid\n";
+}
+@ps_sum = `ps -ef | grep 'Sput1 ' | grep $dbname`;
+$search = "Sput1 $dbname";
+while($_ = shift(@ps_sum)) {
+  if($_ =~ /$search/) { 
+    s/^\s+//g;			#elim leading whitespace
+    ($a, $pid, $rest) = split(/\s+/, $_);
+    last;
+  }
+}
+$cmd = "kill -USR1 $pid";
+if(system($cmd)) {
+  print "Failed: $cmd\n";
+  print "search string was: $search\n";
+  print "\$a = $a  \$pid = $pid\n";
+}
+@ps_sum = `ps -ef | grep 'Sput2 ' | grep $dbname`;
+$search = "Sput2 $dbname";
+while($_ = shift(@ps_sum)) {
+  if($_ =~ /$search/) { 
+    s/^\s+//g;			#elim leading whitespace
+    ($a, $pid, $rest) = split(/\s+/, $_);
+    last;
+  }
+}
+$cmd = "kill -USR1 $pid";
+if(system($cmd)) {
+  print "Failed: $cmd\n";
+  print "search string was: $search\n";
+  print "\$a = $a  \$pid = $pid\n";
+}
+@ps_sum = `ps -ef | grep 'Sget ' | grep $dbname`;
+$search = "Sget $dbname";
+while($_ = shift(@ps_sum)) {
+  if($_ =~ /$search/) { 
+    s/^\s+//g;			#elim leading whitespace
+    ($a, $pid, $rest) = split(/\s+/, $_);
+    last;
+  }
+}
+$cmd = "kill -USR1 $pid";
+if(system($cmd)) {
+  print "Failed: $cmd\n";
+  print "search string was: $search\n";
+  print "\$a = $a  \$pid = $pid\n";
+}
+@ps_sum = `ps -ef | grep 'Sget1 ' | grep $dbname`;
+$search = "Sget1 $dbname";
+while($_ = shift(@ps_sum)) {
+  if($_ =~ /$search/) { 
+    s/^\s+//g;			#elim leading whitespace
+    ($a, $pid, $rest) = split(/\s+/, $_);
+    last;
+  }
+}
+$cmd = "kill -USR1 $pid";
+if(system($cmd)) {
+  print "Failed: $cmd\n";
+  print "search string was: $search\n";
+  print "\$a = $a  \$pid = $pid\n";
+}
+@ps_sum = `ps -ef | grep 'Sget2 ' | grep $dbname`;
+$search = "Sget2 $dbname";
+while($_ = shift(@ps_sum)) {
+  if($_ =~ /$search/) { 
+    s/^\s+//g;			#elim leading whitespace
+    ($a, $pid, $rest) = split(/\s+/, $_);
+    last;
+  }
+}
+$cmd = "kill -USR1 $pid";
+if(system($cmd)) {
+  print "Failed: $cmd\n";
+  print "search string was: $search\n";
+  print "\$a = $a  \$pid = $pid\n";
+}
+@ps_sum = `ps -ef | grep 'Salloc ' | grep $dbname`;
+$search = "Salloc $dbname";
+while($_ = shift(@ps_sum)) {
+  if($_ =~ /$search/) { 
+    s/^\s+//g;			#elim leading whitespace
+    ($a, $pid, $rest) = split(/\s+/, $_);
+    last;
+  }
+}
+$cmd = "kill -USR1 $pid";
+if(system($cmd)) {
+  print "Failed: $cmd\n";
+  print "search string was: $search\n";
+  print "\$a = $a  \$pid = $pid\n";
+}
+@ps_sum = `ps -ef | grep 'Salloc1 ' | grep $dbname`;
+$search = "Salloc1 $dbname";
+while($_ = shift(@ps_sum)) {
+  if($_ =~ /$search/) { 
+    s/^\s+//g;			#elim leading whitespace
+    ($a, $pid, $rest) = split(/\s+/, $_);
+    last;
+  }
+}
+$cmd = "kill -USR1 $pid";
+if(system($cmd)) {
+  print "Failed: $cmd\n";
+  print "search string was: $search\n";
+  print "\$a = $a  \$pid = $pid\n";
+}
+@ps_sum = `ps -ef | grep 'Salloc2 ' | grep $dbname`;
+$search = "Salloc2 $dbname";
+while($_ = shift(@ps_sum)) {
+  if($_ =~ /$search/) { 
+    s/^\s+//g;			#elim leading whitespace
+    ($a, $pid, $rest) = split(/\s+/, $_);
+    last;
+  }
+}
+$cmd = "kill -USR1 $pid";
+if(system($cmd)) {
+  print "Failed: $cmd\n";
+  print "search string was: $search\n";
+  print "\$a = $a  \$pid = $pid\n";
+}
+@ps_sum = `ps -ef | grep 'Sopen ' | grep $dbname`;
+$search = "Sopen $dbname";
+while($_ = shift(@ps_sum)) {
+  if($_ =~ /$search/) { 
+    s/^\s+//g;			#elim leading whitespace
+    ($a, $pid, $rest) = split(/\s+/, $_);
+    last;
+  }
+}
+$cmd = "kill -USR1 $pid";
+if(system($cmd)) {
+  print "Failed: $cmd\n";
+  print "search string was: $search\n";
+  print "\$a = $a  \$pid = $pid\n";
+}
+@ps_sum = `ps -ef | grep 'Sopen1 ' | grep $dbname`;
+$search = "Sopen1 $dbname";
+while($_ = shift(@ps_sum)) {
+  if($_ =~ /$search/) { 
+    s/^\s+//g;			#elim leading whitespace
+    ($a, $pid, $rest) = split(/\s+/, $_);
+    last;
+  }
+}
+$cmd = "kill -USR1 $pid";
+if(system($cmd)) {
+  print "Failed: $cmd\n";
+  print "search string was: $search\n";
+  print "\$a = $a  \$pid = $pid\n";
+}
+@ps_sum = `ps -ef | grep 'Sopen2 ' | grep $dbname`;
+$search = "Sopen2 $dbname";
+while($_ = shift(@ps_sum)) {
+  if($_ =~ /$search/) { 
+    s/^\s+//g;			#elim leading whitespace
+    ($a, $pid, $rest) = split(/\s+/, $_);
+    last;
+  }
+}
+$cmd = "kill -USR1 $pid";
+if(system($cmd)) {
+  print "Failed: $cmd\n";
+  print "search string was: $search\n";
+  print "\$a = $a  \$pid = $pid\n";
+}
+
