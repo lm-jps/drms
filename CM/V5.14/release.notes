@@ -1,0 +1,161 @@
+                       Release Notes JSOC V5.14        15AUG2011
+                       ------------------------        ---------
+
+
+A release is a set of files, each having a specific version.  And a release typcially
+has a version number because over time you have newer and newer releases of the 
+same product.  For example, a hypothetical 1.3 release may contain fileA#1.8, 
+fileB#1.2, fileC#2.2 and a 1.4 release may contain fileA#2.5, fileB#2.1, fileC#2.9. 
+JSOC releases are similarly versioned and contain a set of such files.  JSOC release
+code is guaranteed to compile on cluster nodes (eg., n00, n02).  At the
+time of the creation of the release, the release versions of each file
+will be the most recent.  But as time passes, newer versions of some
+files will be made, and there is no guarantee that these changes will
+not destabilize JSOC (ie., they may cause JSOC to no longer compile or execute
+properly).  
+
+There are several ways to use this release.  If you wish to simply use pre-built
+binaries, you can simply use the production binaries, which are located at 
+/home/jsoc/cvs/Development/JSOC (The release binaries are actually in
+/home/jsoc/cvs/JSOC, but as our production code changes emore quickly
+than releases are generated, we put critical fixes in the
+"Development" tree. To be sure you use code that has been built with
+these critical fixes, you'll need to use the "Development" tree. As
+time passes our production code will stabilize. When that happens, you should use
+/home/jsoc/cvs/JSOC. But for now, you should use the "Development"
+tree.). Every time a release is created, the binaries in
+this location get updated.  Only the jsoc user can update these binaries.
+You could run /home/production/cvs/JSOC/Development/bin/linux_x86_64/show_keys, 
+for example.
+
+If instead you want to work with stable source files, then you must have a sandbox,
+which is a local copy (in your home directory) of the files in the cvs depot.  
+You would probably want to work with a sandbox if you plan on making eventual 
+changes to the depot files.  Changes you make to your sandbox files are not visible 
+to other users until you "commit" those changes back to the cvs depot.  Please see
+"If You Don't Have a Sandbox" below for more information on how to create a sandbox.  
+
+Obtaining the Release
+---------------------
+To update your working directory to this release, or to check-out this release anew, 
+please visit http://jsoc.stanford.edu/jsocwiki/CvsInit. Please keep in mind that
+users may have modified files since the release was created, so use of the 
+scripts documented in the web page may result in a working directory whose
+content is not identical to the release.  
+
+Additional Info
+---------------
+Use the Apache cvs gui to see the diffs between file revisions. For
+example, go to http://jsoc.stanford.edu/cvs/JSOC/base/drms/
+and click on the name in the File column and then click on
+"diffs to previous #" to see the diffs.
+
+Changes since previous release (V5.13 - Jun 2, 2011)
+--------------------------------------------------------
+
+NEW FEATURES:
+- Multi-SUMS: To better balance work load, the SUMS server program,
+sum_svc, has been replicated. The result is a set of server 
+programs instead of just one. Each one handles one specific SUMS API
+function call (e.g., SUM_get()). For configuration purposes, there are
+two new defines, SUM_NUMSUM and SUM_MAXNUMSUMS, that allow DRMS sites
+to specify the number of SUMS processes to be used for handling each
+type of SUMS API function call, and to specify the maxmimum number of
+SUMS processes per function. These defines have been fully localized.
+- The drms_run program now handles the SIGINT and SIGUSR1 signals
+properly so that the drms_run script and drms_server get terminated
+properly when the drms_run program traps one of these signals.
+- drms_server_registercleaner() and drms_client_registercleaner() have
+been modified so that they can perform more than a single action when
+the application traps a SIGINT.
+- libDRMS prevents module code from adding new records to a series if
+there is a summary (aka "shadow") table associated with that
+series. This change is in preparation for a future, larger change
+whereby queries will take advantage of summary tables to optimize db
+queries. 
+- unpublish_series.sh was ported to a perl script (unpublish.pl) that
+can be run in the background. unpublish_series.sh cannot be run in the
+background.  Due to periodic long run times, this script needs to
+be run in the background.
+- User lookdata and exportdata requests can now be aborted. Issuing a
+ctrl-C on the command-line will also abort module runs. But these
+aborts are only partial for now. Neither has the SUMS part of this process
+been implemented, nor has the abort from the export page been
+fully implemented.
+- The log file, fetchlog.txt, written to by jsoc_fetch is now
+automatically managed. It is now tarred and compressed at regular
+intervals.
+- There is a new program that gathers web response-time data. This is
+used to update a field in the jsoc status page.
+- perror() is now called whenever there is a fits_close_file()
+error. This will facilitate the analysis of future problems with
+writing fits files.
+- The verification of checksums no longer occurs when slices of data are
+being read from fits files. Originally, a checksum was being
+calculated on every slice read, which meant N verifications for every
+file read by slices.
+- There have been some changes to lookdata and exportdata to
+temporarily block requests for record-counts of large record-sets.
+- Three SUMS files were added to the source code. These files are
+needed for running multiple sum_rm. They will not likely be used by
+remote sites, but are available should the need arise.
+- dlsource.pl, the script used for checking-out/updating code from the
+Stanford CVS source-code repository, has a new flag, -R, to be used to
+specify the CVS tag for files from project directories. This flag is
+relevant to NetDRMS check-outs only. This allows users to specify a
+set of "base" files with one CVS tag, and a set of "proj" files with a
+different CVS tag.
+
+
+DEFECTS FIXED:
+- Whe writing to a sliced image (fits file), the last dimension's
+length keyword (NAXISn) was not always being updated properly. This
+has been fixed.
+- jsoc_info, when providing information about linked keywords, now
+uses the linked keyword's data type instead of the source keyword's.
+- Several diagnostic stdout messages were removed from libDRMS. These
+messages were interfering with modules and scripts that use stdout to
+evalutate the results of other module runs.
+- A problem with the export of linked segments was fixed. The code that
+creates filenames was mixing up the source and target records in
+various places. It needed to use the source record for the segment and
+keyword names, but use the target record for segment file paths and
+keyword values.
+- The export code reverted back to using drms_open_records() instead
+of using drms_open_recordset(). The latter does not yet have the
+ability to operate on segment lists - even if you specify a segment
+list, drms_open_recordset() ignores this request and operates on all
+segments. 
+- jsoc_export_as_fits now accurately reports the number of exported
+files.
+- The misnomer warning message, "Couldn't open packing-list file...",
+that used to display when attempting to export a record-set that
+contained no online data has been removed. Instead, the packing list
+contains text to that effect.
+- jsoc_export_as_is now checks for empty segment filenames before
+attempting to make links to the underlying files. Before this fix,
+this was causing grief for tar when the latter tried to remove the
+links to original SUMS files. Empty segment filenames were resulting
+in links to SUMS SU directories, and tar was attempting to remove
+read-only files.
+- The use of the suffix "_IN" for exports from the internal export
+page was restored. Prior to this fix, and after a bug was introduced,
+"_IN" was being used for both internal and external exports. 
+- jsoc_fetch and code that maintains log files now properly
+synchronize their access to the fetchlog.txt log.
+- SUMS now pays attention to the result of sum_chmown() calls.
+- Several production pipeline processes have been converted to use the
+new jsocprod linux user and some use the jsocprod db user. Ultimately,
+they will all use these user accounts.
+- Removed level-0 dependency on jpleph (ephemeris calculating code
+from JPL), which was no longer needed.
+
+
+EXISTING DEFECTS:
+- Please see http://jsoc.stanford.edu/trac/report/1 for a list and
+description of most known bugs.
+- The DRMS code that recovers from SUMS failures when the tape system
+goes down is not yet working properly. SUMS needs to be modified to
+provide the correct error code to DRMS - until then, if the tape
+services crashes or is terminated, then DRMS modules can hang
+indefinitely.
