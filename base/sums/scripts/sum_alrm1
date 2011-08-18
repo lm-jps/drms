@@ -12,8 +12,13 @@ if($#ARGV != 0) {
 $DBIN = $ARGV[0];
 $wd = `pwd`;
 chomp($wd);
-$ldir = "$wd/../../include/localization.h";
-$sdir = "$wd/../../include/serverdefs.h";
+$exedir = $0;
+$pos = rindex($exedir, '/');
+if($pos == -1) { $xdir = $wd; }
+else  { $xdir = substr($exedir, 0, $pos) };
+
+$ldir = "$xdir/../../include/localization.h";
+$sdir = "$xdir/../../include/serverdefs.h";
 
 if(-e $ldir) {
   $xdir = $ldir;
@@ -53,7 +58,7 @@ if(($pos = index($host, '.')) != -1) {
   $host = substr($host, 0, $pos);
 }
 if($host ne $sumserver) {
-  print "This can only be run on $host.\n";
+  print "This can only be run on $sumserver.\n";
   exit;
 }
 @def = grep(/^#define SUMS_MANAGER/, @servdefs);
