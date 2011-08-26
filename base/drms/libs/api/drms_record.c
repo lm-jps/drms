@@ -4508,10 +4508,17 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
 
     /* If any segments present, lookup pemission to set retention */
     if (template->segments.num_total > 0)
-      template->seriesinfo->retention_perm = drms_series_cancreaterecord(env, template->seriesinfo->seriesname);
+    {
+      template->seriesinfo->retention_perm = drms_series_isdbowner(env, template->seriesinfo->seriesname, &stat);
+
+      if (stat)
+      {
+         goto bailout;
+      }
 #ifdef DEBUG
       printf("retention_perm=%d\n",template->seriesinfo->retention_perm);
 #endif
+    }
 
     /* Set up primary index list. */
     if ( !db_binary_field_is_null(qres, 0, 8) )

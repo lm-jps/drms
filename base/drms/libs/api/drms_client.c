@@ -1880,6 +1880,67 @@ int drms_query_tabexists(DRMS_Session_t *session, const char *ns, const char *ta
    return result;
 }
 
+/*
+  SELECT pg_catalog.pg_get_userbyid(T1.relowner) AS owner 
+     FROM pg_catalog.pg_class AS T1, (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = 'su_arta') AS T2 
+     WHERE T1.relnamespace = T2.oid AND T1.relname = 'fd_m_96m_lev18'
+*/
+int drms_series_isdbowner(DRMS_Env_t *env, const char *series, int *status)
+{
+   int isowner = 0;
+   char *nspace = NULL;
+   char *relname = NULL;
+   int istat = DRMS_SUCCESS;
+   DB_Text_Result_t *qres = NULL;
+
+   if (!get_namespace(series, &nspace, &relname))
+   {
+      char query[1024];
+      strtolower(nspace);
+      strtolower(relname);
+
+      snprintf(query, sizeof(query), "SELECT pg_catalog.pg_get_userbyid(T1.relowner) AS owner FROM pg_catalog.pg_class AS T1, (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = '%s') AS T2 WHERE T1.relnamespace = T2.oid AND T1.relname = '%s'", nspace, relname);
+
+      if ((qres = drms_query_txt(env->session, query)) != NULL)
+      {
+         if (qres->num_cols == 1 && qres->num_rows == 1)
+         {
+            if (strcmp(qres->field[0][0], env->session->db_handle->dbuser) == 0)
+            {
+               isowner = 1;
+            }
+         }
+         else
+         {
+            fprintf(stderr, "Unexpected database response to query '%s'.\n", query);
+            istat = DRMS_ERROR_BADDBQUERY;
+         }
+
+         db_free_text_result(qres);
+         qres = NULL;
+      }
+      else
+      {
+         fprintf(stderr, "Invalid query '%s'.\n", query);
+         istat = DRMS_ERROR_BADDBQUERY;
+      }
+
+      free(nspace);
+      free(relname);
+   }
+   else
+   {
+      istat = DRMS_ERROR_OUTOFMEMORY;
+   }
+
+   if (status)
+   {
+      *status = istat;
+   }
+
+   return isowner;
+}
+
 #ifdef DRMS_CLIENT
 
 sem_t *gShutdownsem = NULL; /* synchronization among signal thread, main thread, 
