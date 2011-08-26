@@ -506,22 +506,29 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
       * a positive value on the cmd-line and the user owns this series, use that value.  But if the
       * user doesn't own this series multiply the positive value by -1.
       */
-
-     if (env->retention==INT_MIN) 
+     request->tdays = STDRETENTION;
+     if (request->tdays > 0)
      {
-        request->tdays = STDRETENTION;
-        if (request->tdays > 0)
-        {
-           /* Since STDRETENTION can be customized, don't allow the definition of a positive number */
-           request->tdays *= -1;
-        }
+        /* Since STDRETENTION can be customized, don't allow the definition of a positive number */
+        request->tdays *= -1;
      }
-     else
+
+     if (env->retention != INT_MIN) 
      {
-        request->tdays = env->retention;
-        if (request->tdays > 0 && (!su->seriesinfo || !su->seriesinfo->retention_perm))
+        if (!su->seriesinfo || !su->seriesinfo->retention_perm)
         {
-           request->tdays *= -1;
+           if (env->retention > 0)
+           {
+              request->tdays = -1 * env->retention;
+           }
+           else if (env->retention < 0)
+           {
+              request->tdays = env->retention;
+           }
+        }
+        else
+        {
+           request->tdays = env->retention;
         }
      }
 
@@ -735,22 +742,29 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
          * a positive value on the cmd-line and the user owns this series, use that value.  But if the
          * user doesn't own this series multiply the positive value by -1.
          */
-        if (env->retention==INT_MIN) 
-        {  
-           request->tdays = STDRETENTION;
-           if (request->tdays > 0)
-           {
-              /* Since STDRETENTION can be customized, don't allow the definition of a positive number */
-              request->tdays *= -1;
-           }
-        }
-        else
+        request->tdays = STDRETENTION;
+        if (request->tdays > 0)
         {
-           request->tdays = env->retention;
-        
-           if (request->tdays > 0 && !isowner)
+           /* Since STDRETENTION can be customized, don't allow the definition of a positive number */
+           request->tdays *= -1;
+        }
+     
+        if (env->retention != INT_MIN) 
+        {
+           if (!isowner)
            {
-              request->tdays *= -1;
+              if (env->retention > 0)
+              {
+                 request->tdays = -1 * env->retention;
+              }
+              else if (env->retention < 0)
+              {
+                 request->tdays = env->retention;
+              }
+           }
+           else
+           {
+              request->tdays = env->retention;
            }
         }
 
