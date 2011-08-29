@@ -186,7 +186,7 @@ GCC_LF_ALL	= $(STATIC)
 ICC_LF_ALL	= $(STATIC) -openmp -static-intel -Wl,-export-dynamic
 
 # Fortran global LINK flags
-F_LF_ALL	= -nofor-main  -openmp -static-intel
+F_LF_ALL	= -nofor-main  -openmp -static-intel -Wl,-export-dynamic
 #***********************************************************************************************#
 
 #***********************************************************************************************#
