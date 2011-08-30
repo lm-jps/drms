@@ -202,7 +202,7 @@ else {
 }
 
 $mail = "Mail -s \"SUM Stop j1 MULTI Complete\"";
-#$to = "jsoc_users";
-$to = "jim";
+$to = "jsoc_users";
+#$to = "jim";
 $cmd = "$mail $to < $MLOGFILE";
 if($mailflg) { system $cmd; }
