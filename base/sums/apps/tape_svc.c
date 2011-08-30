@@ -1,4 +1,4 @@
-/* tape_svc.c
+/* xtape_svc.c
  *
  * This is spawned during the sum_svc startup.
  * sum_svc makes calls for tape reads and tapearc makes calles for writes 
@@ -17,6 +17,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "serverdefs.h"
 
 #define REBOOT "/usr/local/logs/SUM/RESTART_AFTER_REBOOT"
 
@@ -58,7 +59,7 @@ FILE *logfp;
 CLIENT *current_client, *clntsum, *clntdrv0;
 CLIENT *clntrobot0;
 CLIENT *clntdrv[MAX_DRIVES];
-CLIENT *clntsums[4];		//!!TBD parameterize to make general
+CLIENT *clntsums[SUM_MAXNUMSUM+1];
 SVCXPRT *glb_transp;
 int debugflg = 0;
 int sim = 0;
@@ -77,6 +78,7 @@ char libdevname[32];
 char heaplow[32];
 char heaphigh[32];
 char heapcln[32];
+static int numSUM;
 
 int soi_errno = NO_ERROR;
 
@@ -246,6 +248,7 @@ void setup()
   char *cptr, *token;
   char logname[MAX_STR], line[256], rwchars[32];
 
+  numSUM = SUM_NUMSUM;          //in base/drms/apps/serverdefs.h;
   //when change name of dcs2 to dcs1 we found out you have to use localhost
   sprintf(thishost, "localhost");
   gethostname(hostn, MAX_STR);
@@ -354,7 +357,7 @@ void setup()
 /*		LIBDEVFILE, LIBDEV);
 /*  }
 /*  else {
-/*    while(fgets(line, 256, sgfp)) {     /* last /dev in file will be it */
+/*    while(fgets(line, 256, sgfp)) {     // last /dev in file will be it
 /*      if(line[0] == '#' || line[0] == '\n') continue;
 /*      if(strstr(line, "/dev/")) {
 /*        if((cptr=index(line, '\n')) != NULL) 
@@ -419,36 +422,88 @@ int main(int argc, char *argv[])
     write_log("***tape_svc can't get robote0_svc on %s\n", thishost);
     exit(1);
   }
+
   //create handles for calling back sum process for tape operations
-  //NOTE: NOT parameterized for now. !!!TBD
-    clntsum = clnt_create(sumhost, SUMGET, SUMGETV, "tcp");
-    if(!clntsum) {
-      clnt_pcreateerror("Can't get client handle to SUMGET in tape_svc");
-      write_log("***tape_svc can't get handle to SUMGET on %s\n", sumhost);
-      exit(1);
-    }
-    clntsums[0] = clntsum;
-    clntsum = clnt_create(sumhost, SUMGET1, SUMGETV, "tcp");
-    if(!clntsum) {
-      clnt_pcreateerror("Can't get client handle to SUMGET1 in tape_svc");
-      write_log("***tape_svc can't get handle to SUMGET1 on %s\n", sumhost);
-      exit(1);
-    }
-    clntsums[1] = clntsum;
-    clntsum = clnt_create(sumhost, SUMGET2, SUMGETV, "tcp");
-    if(!clntsum) {
-      clnt_pcreateerror("Can't get client handle to SUMGET2 in tape_svc");
-      write_log("***tape_svc can't get handle to SUMGET2 on %s\n", sumhost);
-      exit(1);
-    }
-    clntsums[2] = clntsum;
+    //always have SUMPROG
     clntsum = clnt_create(sumhost, SUMPROG, SUMVERS, "tcp");
     if(!clntsum) {
       clnt_pcreateerror("Can't get client handle to SUMPROG in tape_svc");
       write_log("***tape_svc can't get handle to SUMPROG on %s\n", sumhost);
       exit(1);
     }
+    clntsums[0] = clntsum;
+
+  if(numSUM >= 2) {
+    clntsum = clnt_create(sumhost, SUMGET, SUMGETV, "tcp");
+    if(!clntsum) {
+      clnt_pcreateerror("Can't get client handle to SUMGET in tape_svc");
+      write_log("***tape_svc can't get handle to SUMGET on %s\n", sumhost);
+      exit(1);
+    }
+    clntsums[1] = clntsum;
+    clntsum = clnt_create(sumhost, SUMGET1, SUMGETV, "tcp");
+    if(!clntsum) {
+      clnt_pcreateerror("Can't get client handle to SUMGET1 in tape_svc");
+      write_log("***tape_svc can't get handle to SUMGET1 on %s\n", sumhost);
+      exit(1);
+    }
+    clntsums[2] = clntsum;
+  }
+  if(numSUM >= 3) {
+    clntsum = clnt_create(sumhost, SUMGET2, SUMGETV, "tcp");
+    if(!clntsum) {
+      clnt_pcreateerror("Can't get client handle to SUMGET2 in tape_svc");
+      write_log("***tape_svc can't get handle to SUMGET2 on %s\n", sumhost);
+      exit(1);
+    }
     clntsums[3] = clntsum;
+  }
+  if(numSUM >= 4) {
+    clntsum = clnt_create(sumhost, SUMGET3, SUMGETV, "tcp");
+    if(!clntsum) {
+      clnt_pcreateerror("Can't get client handle to SUMGET3 in tape_svc");
+      write_log("***tape_svc can't get handle to SUMGET3 on %s\n", sumhost);
+      exit(1);
+    }
+    clntsums[4] = clntsum;
+  }
+  if(numSUM >= 5) {
+    clntsum = clnt_create(sumhost, SUMGET4, SUMGETV, "tcp");
+    if(!clntsum) {
+      clnt_pcreateerror("Can't get client handle to SUMGET4 in tape_svc");
+      write_log("***tape_svc can't get handle to SUMGET4 on %s\n", sumhost);
+      exit(1);
+    }
+    clntsums[5] = clntsum;
+  }
+  if(numSUM >= 6) {
+    clntsum = clnt_create(sumhost, SUMGET5, SUMGETV, "tcp");
+    if(!clntsum) {
+      clnt_pcreateerror("Can't get client handle to SUMGET5 in tape_svc");
+      write_log("***tape_svc can't get handle to SUMGET5 on %s\n", sumhost);
+      exit(1);
+    }
+    clntsums[6] = clntsum;
+  }
+  if(numSUM >= 7) {
+    clntsum = clnt_create(sumhost, SUMGET6, SUMGETV, "tcp");
+    if(!clntsum) {
+      clnt_pcreateerror("Can't get client handle to SUMGET6 in tape_svc");
+      write_log("***tape_svc can't get handle to SUMGET6 on %s\n", sumhost);
+      exit(1);
+    }
+    clntsums[7] = clntsum;
+  }
+  if(numSUM >= 8) {
+    clntsum = clnt_create(sumhost, SUMGET7, SUMGETV, "tcp");
+    if(!clntsum) {
+      clnt_pcreateerror("Can't get client handle to SUMGET7 in tape_svc");
+      write_log("***tape_svc can't get handle to SUMGET7 on %s\n", sumhost);
+      exit(1);
+    }
+    clntsums[8] = clntsum;
+  }
+
   /* No robot1 for now... */
   /*clntrobot1 = clnt_create(thishost, ROBOT1PROG, ROBOT1VERS, "tcp");
   /*if(!clntrobot1) {       /* program not there */
@@ -524,7 +579,7 @@ int main(int argc, char *argv[])
 /* This is the dispatch routine that's called when the client does a
  * clnt_call() to TAPEPROG, TAPEVERS
 */
-static void
+static void 
 tapeprog_1(rqstp, transp)
 	struct svc_req *rqstp;
 	SVCXPRT *transp;
@@ -722,17 +777,32 @@ tapeprog_1(rqstp, transp)
             //sumvers = getkey_uint32(poff->list, "SVERS");
             //set client handle for the sums process
             switch(sumprog) {
-            case SUMGET:
+            case SUMPROG:
               clntsum = clntsums[0];
               break;
-            case SUMGET1:
+            case SUMGET:
               clntsum = clntsums[1];
               break;
-            case SUMGET2:
+            case SUMGET1:
               clntsum = clntsums[2];
               break;
-            case SUMPROG:
+            case SUMGET2:
               clntsum = clntsums[3];
+              break;
+            case SUMGET3:
+              clntsum = clntsums[4];
+              break;
+            case SUMGET4:
+              clntsum = clntsums[5];
+              break;
+            case SUMGET5:
+              clntsum = clntsums[6];
+              break;
+            case SUMGET6:
+              clntsum = clntsums[7];
+              break;
+            case SUMGET7:
+              clntsum = clntsums[8];
               break;
             default:
               write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
@@ -775,17 +845,32 @@ tapeprog_1(rqstp, transp)
               //sumvers = getkey_uint32(poff->list, "SVERS");
               //set client handle for the sums process
               switch(sumprog) {
-              case SUMGET:
+              case SUMPROG:
                 clntsum = clntsums[0];
                 break;
-              case SUMGET1:
+              case SUMGET:
                 clntsum = clntsums[1];
                 break;
-              case SUMGET2:
+              case SUMGET1:
                 clntsum = clntsums[2];
                 break;
-              case SUMPROG:
+              case SUMGET2:
                 clntsum = clntsums[3];
+                break;
+              case SUMGET3:
+                clntsum = clntsums[4];
+                break;
+              case SUMGET4:
+                clntsum = clntsums[5];
+                break;
+              case SUMGET5:
+                clntsum = clntsums[6];
+                break;
+              case SUMGET6:
+                clntsum = clntsums[7];
+                break;
+              case SUMGET7:
+                clntsum = clntsums[8];
                 break;
               default:
                 write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
