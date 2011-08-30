@@ -307,8 +307,8 @@ CKEND:
       close(SLOG);
     }
         $mail = "mail -s \"SUM j1 MULTI Start Complete\"";
-        #$to = "jsoc_users";
-        $to = "jim";
+        $to = "jsoc_users";
+        #$to = "jim";
         $cmd = "$mail $to < $MLOGFILE";
         if($mailflg) { system $cmd; }
         exit;
