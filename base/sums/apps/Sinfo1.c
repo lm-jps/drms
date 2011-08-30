@@ -166,7 +166,7 @@ void usr1_sig(int sig)
 void get_cmd(int argc, char *argv[])
 {
   int c;
-  char *username;
+  char *username, *cptr, *cptr2;
 
   if(!(username = (char *)getenv("USER"))) username = "nouser";
   if(strcmp(username, SUMS_MANAGER)) {
@@ -197,7 +197,29 @@ void get_cmd(int argc, char *argv[])
     exit(1);
   }
   dbname = argv[0];
+  //the input log name looks like: sum_svc_2011.08.09.162411.log
+  //If this is a restart it looks like: sum_svc_2011.08.09.162411.log_R
+  //or sum_svc_2011.08.09.162411.log_6_R if 6 days of log files exist
   sprintf(logname, "%s/%s", SUMLOG_BASEDIR, argv[1]);
+  if(cptr = strstr(logname, "_R")) {
+    if(cptr2 = strstr(logname, "log_R")) {
+      *(cptr2+3) = (char)NULL;
+      logcnt = 0;
+      open_log(logname);
+    }
+    else if(cptr2 = strstr(logname, "log_")) {
+      *cptr= (char)NULL;        //elim trailing _R
+      open_log(logname);
+      *(cptr2+3) = (char)NULL;
+      cptr2 = cptr2 + 4;        //point to number
+      sscanf(cptr2, "%d", &logcnt);
+    }
+    else {
+      printf("!!ERROR: called with NG log file name: %s\n", logname);
+      exit(1);
+    }
+  }
+  else { open_log(logname); }
 }
 
 /*********************************************************/
@@ -222,7 +244,7 @@ void setup()
 
   thispid = getpid();
   //sprintf(logname, "%s/sum_svc_%s.log", SUMLOG_BASEDIR, gettimetag());
-  open_log(logname);
+  //open_log(logname);	//now called in get_cmd()
   printk_set(write_log, write_log);
   write_log("\n## %s Sinfo1 on %s (%s) for pid = %d ##\n", 
 		datestring(), thishost, hostn, thispid);
