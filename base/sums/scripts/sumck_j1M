@@ -139,12 +139,13 @@ while(1) {
       ($a,$b,$c,$d,$e,$f,$g,$h,$log) = split(/\s+/, $logline);
       $pos = rindex($log, '/');
       $logfile = substr($log, $pos+1);
+      $logfile = $logfile."_R";  #tell the sums process it's a restart
       $cmd = "$name $logfile &";
       if(system($cmd)) {
         print "Error: failure on $cmd\n";
       }
       $mail = "Mail -s \"$name on $HOST Not Found\"";
-      $SENDMAILTO = "jim\@sun.stanford.edu,jima2344\@gmail.com";
+      $SENDMAILTO = "jsoc_users, jima2344\@gmail.com";
       $cmd = "echo \"No $name on $ENV{'HOST'}. Will restart one...\" | $mail $SENDMAILTO";
       system $cmd;
     }
