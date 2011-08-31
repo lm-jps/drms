@@ -17,7 +17,7 @@
 
 /* Our current set up is 1024 maximum open files per process (/usr/include/linux/limits.h);
  * The maximum number of fitsfiles allowed to be open per CFITSIO lib is 300. */
-#define MAXFFILES 256
+#define MAXFFILES 300
 
 typedef CFITSIO_IMAGE_INFO TASRW_FilePtrInfo_t;
 
