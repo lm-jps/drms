@@ -6255,9 +6255,16 @@ int ParseRecSetDesc(const char *recsetsStr,
    int nfilter = 0;
    int recnumrsseen = 0;
 
+   /* Test for an empty string. */
+   int empty = 0;
+   char *ptest = NULL;
+
+   ptest = rsstr;
+   empty = (DSElem_SkipWS(&ptest) == 0);
+
    *nsets = 0;
 
-   if (rsstr)
+   if (rsstr && !empty)
    {
       while (pc && pc <= endInput && state != kRSParseState_Error)
       {
