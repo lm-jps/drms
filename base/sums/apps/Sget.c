@@ -406,6 +406,7 @@ if(!strcmp(hostn, "dcs0") || !strcmp(hostn, "dcs1") || !strcmp(hostn, "dcs2") ||
 }				/* !!end of TMP for lws only */
 #endif
 #ifdef __LOCALIZED_DEFS__
+/*************** only start sum_rm from sum_svc  *************************
   if((pid = fork()) < 0) {
     write_log("***Can't fork(). errno=%d\n", errno);
     exit(1);
@@ -421,6 +422,7 @@ if(!strcmp(hostn, "dcs0") || !strcmp(hostn, "dcs1") || !strcmp(hostn, "dcs2") ||
       exit(1);
     }
   }
+************************************************************************/
 #endif
 
 #ifndef __LOCALIZED_DEFS__
