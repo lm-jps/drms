@@ -1,4 +1,4 @@
-/* tape_svc.c
+/* xtape_svc.c
  *
  * This is spawned during the sum_svc startup.
  * sum_svc makes calls for tape reads and tapearc makes calles for writes 
@@ -17,6 +17,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "serverdefs.h"
 
 #define REBOOT "/usr/local/logs/SUM/RESTART_AFTER_REBOOT"
 
@@ -46,15 +47,19 @@ extern TQ *q_wrt_front;
 extern TQ *q_need_front;
 extern SUMOFFCNT *offcnt_hdr;
 static void tapeprog_1();
-static struct timeval TIMEOUT = { 30, 0 };
+//static struct timeval TIMEOUT = { 30, 0 };
+//must be <50 sec used for sum_svc msg to tape_svc
+static struct timeval TIMEOUT = { 40, 0 };
 uint32_t rinfo, rinfox;	/* info returned by XXXdo_1() calls */
 uint32_t procnum;	/* remote procedure # to call for current_client call*/
+uint32_t sumprog, sumvers;
 
 TQ *poff, *poffrd, *poffwt;
 FILE *logfp;
 CLIENT *current_client, *clntsum, *clntdrv0;
 CLIENT *clntrobot0;
 CLIENT *clntdrv[MAX_DRIVES];
+CLIENT *clntsums[SUM_MAXNUMSUM+1];
 SVCXPRT *glb_transp;
 int debugflg = 0;
 int sim = 0;
@@ -66,12 +71,14 @@ int alrm_sec;			//secs to next alarm signal
 char *dbname;
 char *timetag;
 char thishost[MAX_STR];
+char sumhost[MAX_STR];
 char hostn[MAX_STR];
 char datestr[32];
 char libdevname[32];
 char heaplow[32];
 char heaphigh[32];
 char heapcln[32];
+static int numSUM;
 
 int soi_errno = NO_ERROR;
 
@@ -201,6 +208,39 @@ void get_cmd(int argc, char *argv[])
 }
 
 /*********************************************************/
+void setoffline()
+{
+  FILE *drfp;
+  int order0;
+  char logname[MAX_STR], line[256];
+
+  sprintf(logname, "/usr/local/logs/SUM/drive_offline.txt");
+  if((drfp=fopen(logname, "r")) == NULL) {
+    fprintf(stderr, "Can't open the file %s. Proceed anyway.\n", logname);
+  }
+  else {
+    while(fgets(line, 256, drfp)) {  //set offline the given drives
+      if(!strncmp(line, "#", 1)) {   //ignore line starting with #
+        continue;
+      }
+      sscanf(line, "%d", &order0);
+      if(order0 >= MAX_DRIVES) {
+        write_log("Error drivenum >= MAX_DRIVES (%d)\n", MAX_DRIVES);
+        write_log("Can't take drive %d offline.\n", order0);
+        fclose(drfp);
+        return;
+      }
+      sprintf(line, "take drive %d offline", order0);
+      printf("%s\n", line);
+      write_log("%s\n", line);
+      drives[order0].offline = 1;
+      drives[order0].lock = 0;
+    }
+  }
+  fclose(drfp);
+}
+
+
 void setup()
 {
   FILE *sgfp, *drfp;
@@ -208,6 +248,7 @@ void setup()
   char *cptr, *token;
   char logname[MAX_STR], line[256], rwchars[32];
 
+  numSUM = SUM_NUMSUM;          //in base/drms/apps/serverdefs.h;
   //when change name of dcs2 to dcs1 we found out you have to use localhost
   sprintf(thishost, "localhost");
   gethostname(hostn, MAX_STR);
@@ -279,7 +320,9 @@ void setup()
 		max_drives_rd, max_drives_wt);
   }
   fclose(drfp);
+
   /* get heap values. only for non-datacapture machine */
+  /* assumes format is from ia64 machine (d02) */
   sprintf(logname, "/proc/%d/maps", pid);
   if((drfp=fopen(logname, "r")) == NULL) {
     fprintf(stderr, "Can't open the file %s\n", logname);
@@ -289,8 +332,13 @@ void setup()
       if(!strstr(line, "[heap")) continue;
       token = (char *)strtok(line, "-");
       strcpy(heaplow, token);
-      token = (char *)strtok(NULL, " ");
+      //Note: this heaphigh changes w/time. So don't want to rd file all the time
+      //token = (char *)strtok(NULL, " ");
+      //strcpy(heaphigh, token);
+      fgets(line, 256, drfp); //assumes the next line gives max possible heap
+      token = (char *)strtok(line, "-");
       strcpy(heaphigh, token);
+      break;
     }
     fclose(drfp);
   }
@@ -309,7 +357,7 @@ void setup()
 /*		LIBDEVFILE, LIBDEV);
 /*  }
 /*  else {
-/*    while(fgets(line, 256, sgfp)) {     /* last /dev in file will be it */
+/*    while(fgets(line, 256, sgfp)) {     // last /dev in file will be it
 /*      if(line[0] == '#' || line[0] == '\n') continue;
 /*      if(strstr(line, "/dev/")) {
 /*        if((cptr=index(line, '\n')) != NULL) 
@@ -345,17 +393,12 @@ int main(int argc, char *argv[])
 	write_log("***unable to register (TAPEPROG, TAPEVERS, tcp)\n");
 	exit(1);
       }
-  /* Create client handle used for calling the sum_svc */
+  /* set host name with the sum_svc */
   if(strcmp(hostn, TAPEHOST)) { //if running on d02, use j1
-    clntsum = clnt_create(thishost, SUMPROG, SUMVERS, "tcp");
+    sprintf(sumhost, TAPEHOST);
   }
   else {
-    clntsum = clnt_create(SUMSVCHOST, SUMPROG, SUMVERS, "tcp");
-  }
-  if(!clntsum) {       /* server not there */
-    clnt_pcreateerror("Can't get client handle to sum_svc in tape_svc");
-    write_log("***tape_svc can't get sum_svc on %s\n", thishost);
-    exit(1);
+    sprintf(sumhost, SUMSVCHOST);
   }
   sleep(3); /* driven_svc & robotn_svc forked by sum_svc, let it start */
   for(i=0; i < MAX_DRIVES; i++) {
@@ -379,6 +422,88 @@ int main(int argc, char *argv[])
     write_log("***tape_svc can't get robote0_svc on %s\n", thishost);
     exit(1);
   }
+
+  //create handles for calling back sum process for tape operations
+    //always have SUMPROG
+    clntsum = clnt_create(sumhost, SUMPROG, SUMVERS, "tcp");
+    if(!clntsum) {
+      clnt_pcreateerror("Can't get client handle to SUMPROG in tape_svc");
+      write_log("***tape_svc can't get handle to SUMPROG on %s\n", sumhost);
+      exit(1);
+    }
+    clntsums[0] = clntsum;
+
+  if(numSUM >= 2) {
+    clntsum = clnt_create(sumhost, SUMGET, SUMGETV, "tcp");
+    if(!clntsum) {
+      clnt_pcreateerror("Can't get client handle to SUMGET in tape_svc");
+      write_log("***tape_svc can't get handle to SUMGET on %s\n", sumhost);
+      exit(1);
+    }
+    clntsums[1] = clntsum;
+    clntsum = clnt_create(sumhost, SUMGET1, SUMGETV, "tcp");
+    if(!clntsum) {
+      clnt_pcreateerror("Can't get client handle to SUMGET1 in tape_svc");
+      write_log("***tape_svc can't get handle to SUMGET1 on %s\n", sumhost);
+      exit(1);
+    }
+    clntsums[2] = clntsum;
+  }
+  if(numSUM >= 3) {
+    clntsum = clnt_create(sumhost, SUMGET2, SUMGETV, "tcp");
+    if(!clntsum) {
+      clnt_pcreateerror("Can't get client handle to SUMGET2 in tape_svc");
+      write_log("***tape_svc can't get handle to SUMGET2 on %s\n", sumhost);
+      exit(1);
+    }
+    clntsums[3] = clntsum;
+  }
+  if(numSUM >= 4) {
+    clntsum = clnt_create(sumhost, SUMGET3, SUMGETV, "tcp");
+    if(!clntsum) {
+      clnt_pcreateerror("Can't get client handle to SUMGET3 in tape_svc");
+      write_log("***tape_svc can't get handle to SUMGET3 on %s\n", sumhost);
+      exit(1);
+    }
+    clntsums[4] = clntsum;
+  }
+  if(numSUM >= 5) {
+    clntsum = clnt_create(sumhost, SUMGET4, SUMGETV, "tcp");
+    if(!clntsum) {
+      clnt_pcreateerror("Can't get client handle to SUMGET4 in tape_svc");
+      write_log("***tape_svc can't get handle to SUMGET4 on %s\n", sumhost);
+      exit(1);
+    }
+    clntsums[5] = clntsum;
+  }
+  if(numSUM >= 6) {
+    clntsum = clnt_create(sumhost, SUMGET5, SUMGETV, "tcp");
+    if(!clntsum) {
+      clnt_pcreateerror("Can't get client handle to SUMGET5 in tape_svc");
+      write_log("***tape_svc can't get handle to SUMGET5 on %s\n", sumhost);
+      exit(1);
+    }
+    clntsums[6] = clntsum;
+  }
+  if(numSUM >= 7) {
+    clntsum = clnt_create(sumhost, SUMGET6, SUMGETV, "tcp");
+    if(!clntsum) {
+      clnt_pcreateerror("Can't get client handle to SUMGET6 in tape_svc");
+      write_log("***tape_svc can't get handle to SUMGET6 on %s\n", sumhost);
+      exit(1);
+    }
+    clntsums[7] = clntsum;
+  }
+  if(numSUM >= 8) {
+    clntsum = clnt_create(sumhost, SUMGET7, SUMGETV, "tcp");
+    if(!clntsum) {
+      clnt_pcreateerror("Can't get client handle to SUMGET7 in tape_svc");
+      write_log("***tape_svc can't get handle to SUMGET7 on %s\n", sumhost);
+      exit(1);
+    }
+    clntsums[8] = clntsum;
+  }
+
   /* No robot1 for now... */
   /*clntrobot1 = clnt_create(thishost, ROBOT1PROG, ROBOT1VERS, "tcp");
   /*if(!clntrobot1) {       /* program not there */
@@ -441,6 +566,7 @@ int main(int argc, char *argv[])
       printf("!!!NOTE: tape unload disabled\n");
     }
   }
+  setoffline();		//check text file for any drives to be offline
   /* Enter svc_run() which calls svc_getreqset when msg comes in.
    * svc_getreqset calls tapeprog_1() to process the msg.
    * NOTE: svc_run() never returns.
@@ -453,7 +579,7 @@ int main(int argc, char *argv[])
 /* This is the dispatch routine that's called when the client does a
  * clnt_call() to TAPEPROG, TAPEVERS
 */
-static void
+static void 
 tapeprog_1(rqstp, transp)
 	struct svc_req *rqstp;
 	SVCXPRT *transp;
@@ -580,7 +706,6 @@ tapeprog_1(rqstp, transp)
 	  /* call the function. sets current_client, procnum & rinfo */
           result = (*local)(&argument, rqstp);
         }
-
       if(result) {				/* send the result now */
         if(result == (char *)1) {
           /* no client handle. do nothing, just return */
@@ -648,6 +773,41 @@ tapeprog_1(rqstp, transp)
           offcnt = getkey_int(poff->list, "offcnt");
           if(offcnt == offptr->offcnt) { /* now can send completion msg back */
             remsumoffcnt(&offcnt_hdr, uid);
+            sumprog = getkey_uint32(poff->list, "SPROG");
+            //sumvers = getkey_uint32(poff->list, "SVERS");
+            //set client handle for the sums process
+            switch(sumprog) {
+            case SUMPROG:
+              clntsum = clntsums[0];
+              break;
+            case SUMGET:
+              clntsum = clntsums[1];
+              break;
+            case SUMGET1:
+              clntsum = clntsums[2];
+              break;
+            case SUMGET2:
+              clntsum = clntsums[3];
+              break;
+            case SUMGET3:
+              clntsum = clntsums[4];
+              break;
+            case SUMGET4:
+              clntsum = clntsums[5];
+              break;
+            case SUMGET5:
+              clntsum = clntsums[6];
+              break;
+            case SUMGET6:
+              clntsum = clntsums[7];
+              break;
+            case SUMGET7:
+              clntsum = clntsums[8];
+              break;
+            default:
+              write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
+              break;
+            }
             clnt_stat=clnt_call(clntsum, SUMRESPDO, (xdrproc_t)xdr_result, 
 			   (char *)poff->list, (xdrproc_t)xdr_void, 0, TIMEOUT);
             if(clnt_stat != 0) {
@@ -681,6 +841,41 @@ tapeprog_1(rqstp, transp)
             offcnt = getkey_int(poff->list, "offcnt");
             if(offcnt == offptr->offcnt) { /* now can send completion msg back */
               remsumoffcnt(&offcnt_hdr, uid);
+              sumprog = getkey_uint32(poff->list, "SPROG");
+              //sumvers = getkey_uint32(poff->list, "SVERS");
+              //set client handle for the sums process
+              switch(sumprog) {
+              case SUMPROG:
+                clntsum = clntsums[0];
+                break;
+              case SUMGET:
+                clntsum = clntsums[1];
+                break;
+              case SUMGET1:
+                clntsum = clntsums[2];
+                break;
+              case SUMGET2:
+                clntsum = clntsums[3];
+                break;
+              case SUMGET3:
+                clntsum = clntsums[4];
+                break;
+              case SUMGET4:
+                clntsum = clntsums[5];
+                break;
+              case SUMGET5:
+                clntsum = clntsums[6];
+                break;
+              case SUMGET6:
+                clntsum = clntsums[7];
+                break;
+              case SUMGET7:
+                clntsum = clntsums[8];
+                break;
+              default:
+                write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
+                break;
+              }
               clnt_stat=clnt_call(clntsum, SUMRESPDO, (xdrproc_t)xdr_result, 
   			(char *)poff->list, (xdrproc_t)xdr_void, 0, TIMEOUT);
               if(clnt_stat != 0) {
