@@ -7,10 +7,13 @@
 #
 $| = 1;                 #flush output as we go
 $SSLOG = "/usr/local/logs/SUM/sum_start_stop.log";
-$wd = `pwd`;
-chomp($wd);
-$ldir = "$wd/../../include/localization.h";
-$sdir = "$wd/../../include/serverdefs.h";
+
+$wdpath = `which $0`;
+chomp($wdpath);
+$pos = rindex($wdpath, "/");
+$wd = substr($wdpath, 0, $pos);
+$ldir = "$wd/../include/localization.h";
+$sdir = "$wd/../include/serverdefs.h";
 
 if(-e $ldir) {
   $xdir = $ldir;
