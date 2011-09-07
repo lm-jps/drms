@@ -10,15 +10,15 @@ if($#ARGV != 0) {
   exit(1);
 }
 $DBIN = $ARGV[0];
-$wd = `pwd`;
-chomp($wd);
-$exedir = $0;
-$pos = rindex($exedir, '/');
-if($pos == -1) { $xdir = $wd; }
-else  { $xdir = substr($exedir, 0, $pos) };
+$wdpath = `which $0`;
+chomp($wdpath);
+$pos = rindex($wdpath, "/");
+$xdir = substr($wdpath, 0, $pos);
 
-$ldir = "$xdir/../../include/localization.h";
-$sdir = "$xdir/../../include/serverdefs.h";
+$ldir = "$xdir/../include/localization.h";
+$sdir = "$xdir/../include/serverdefs.h";
+#$ldir = "$xdir/../../include/localization.h";
+#$sdir = "$xdir/../../include/serverdefs.h";
 
 if(-e $ldir) {
   $xdir = $ldir;
