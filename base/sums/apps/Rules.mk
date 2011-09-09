@@ -10,7 +10,8 @@ SUMSLINK		= $(LINK)
 # Local variables
 sum_svc_comm_obj_$(d)	:= $(addprefix $(d)/, sum_init.o du_dir.o)
 sum_svc_obj_$(d)	:= $(addprefix $(d)/, sum_svc_proc.o)
-xsum_svc_obj_$(d)	:= $(addprefix $(d)/, xsum_svc_proc.o)
+# xsum_svc_obj_$(d)	:= $(addprefix $(d)/, xsum_svc_proc.o)
+xsum_svc_obj_$(d)	:= 
 tape_svc_obj_$(d)	:= $(addprefix $(d)/, tape_svc_proc.o tapeutil.o tape_inventory.o)
 tapearc_obj_$(d)	:= $(addprefix $(d)/, padata.o)
 
@@ -46,7 +47,8 @@ LL_TGT_$(d) := $(PGL) -lecpg -lssl
 MULTI_SUMS_C_$(d) := $(wildcard $(SRCDIR)/$(d)/Salloc*.c) $(wildcard $(SRCDIR)/$(d)/Sdelser*.c) $(wildcard $(SRCDIR)/$(d)/Sinfo*.c) $(wildcard $(SRCDIR)/$(d)/Sput*.c) $(wildcard $(SRCDIR)/$(d)/Sget*.c) $(wildcard $(SRCDIR)/$(d)/Sopen*.c)
 MULTI_SUMS_$(d) := $(addprefix $(d)/, sum_svc $(notdir $(patsubst %.c,%,$(MULTI_SUMS_C_$(d)))))
 
-XSUMSVC_$(d)	:= $(d)/xsum_svc
+# XSUMSVC_$(d)	:= $(d)/xsum_svc
+XSUMSVC_$(d)	:= 
 TAPESVC_$(d)	:= $(d)/tape_svc
 TARCINFO_$(d)	:= $(d)/tapearcinfo
 
