@@ -15,7 +15,7 @@
 \par Synopsis:
 show_coverage {ds=}<seriesname> [-h]
 
-show_coverage {ds=}<seriesname> [-iqostmv] [low=<starttime>] [high=<stoptime>] [block=<blocklength>] [key=<pkey>] [mask=<badbits>] [ignore=<ignorebits>] [<other>=<value>...]
+show_coverage {ds=}<seriesname> [-igqostmv] [low=<starttime>] [high=<stoptime>] [block=<blocklength>] [key=<pkey>] [mask=<badbits>] [ignore=<ignorebits>] [<other>=<value>...]
 
 show_coverage_sock {same options as above}
 \endcode
@@ -48,6 +48,7 @@ and selected values may be provided as additional keyword=value pairs.
 
 \par Flags:
 
+\li \c -g: no_gone - treat all GONE determinations as UNK
 \li \c -h: help - print usage information and exit
 \li \c -i: index - print interval start as index values for slotted ordering prime-key
 \li \c -q: quiet - do not print header overfiew information
@@ -84,7 +85,8 @@ that any storage-unit that has been assigned to that record still exists either 
 in SUMS.  If there once was a storage unit but no longer is (due to expired retention time of a non-archived
 series) the record will be labeled "GONE". Note that this can be an expensive test to make on large series since it requires
 calls to SUMS and is noticably slower than without the -o flag.  Please ues the \a -o flag only on the selected ranges of
-a series where needed.
+a series where needed.  If the -g flag is set, -o will be forced to be set and any records with storage_units not online
+will be labeled as UNK.
 
 Records are identified as MISS if QUALITY is < 0 or if the mask parameter is provided, only if one or
 more bits set in mask are also set in QUALITY.  If ignore is provided, the if any bits in ignore are
@@ -124,7 +126,7 @@ header will not be printed.
 \par Examples:
 
 \b Example 1:
-To show the coverage in the first MDI Dynamice run:
+To show the coverage in the first MDI Dynamics run:
 \code
   show_coverage ds=mdi.fd_V_lev18 low=1996.05.23_22_TAI high=1996.07.24_04:17_TAI
 \endcode
@@ -217,6 +219,7 @@ ModuleArgs_t module_args[] =
     {ARG_INT, "ignore", "0", "Mask to use for bits to ignore in QUALITY tests with mask that will cause the record to be counted as MISS"},
     {ARG_FLAG, "o", "0", "Verify - verify that SU is available for records with data"},
     {ARG_FLAG, "m", "0", "no_miss -treat otherwise MISS records as UNK"},
+    {ARG_FLAG, "g", "0", "no_gone -treat otherwise GONE records as UNK and treat otherwise UNK as MISS"},
     {ARG_FLAG, "s", "0", "Summary - Print the total number of records in each category: OK, MISS, UNK, GONE"},
     {ARG_FLAG, "t", "0", "times - Print the first and last time of each segment of OK, MISS, UNK, GONE"},
     {ARG_FLAG, "i", "0", "Index - Print index values instead of prime slot values"},
@@ -241,6 +244,7 @@ int nice_intro ()
         "  -h: help - show this message then exit\n"
         "  -i: list index values vs slot values\n"
         "  -q: quiet, do not print header\n"
+        "  -g: no_gone -treat otherwise GONE records as UNK and otherwise UNK records as MISS\n"
         "  -m: no_miss -treat otherwise MISS records as UNK\n"
         "  -s: Summary - Print the total number of records in each category: OK, MISS, UNK, GONE\n"
         "  -t: Summary - Print first and last time of each segment of OK, MISS, UNK, GONE\n"
@@ -295,6 +299,7 @@ int DoIt(void)
   int want_summary = cmdparams_get_int (&cmdparams, "s", NULL) != 0;
   int want_times = cmdparams_get_int (&cmdparams, "t", NULL) != 0;
   int no_miss = cmdparams_get_int (&cmdparams, "m", NULL) != 0;
+  int no_gone = cmdparams_get_int (&cmdparams, "g", NULL) != 0;
   int useindex = cmdparams_get_int (&cmdparams, "i", NULL) != 0;
   uint32_t mask = (uint32_t)cmdparams_get_int64 (&cmdparams, "mask", NULL);
   uint32_t ignore = (uint32_t)cmdparams_get_int64 (&cmdparams, "ignore", NULL);
@@ -469,7 +474,7 @@ int DoIt(void)
                 tp = index(lowstr,'.');
                 if (index(lowstr, '_') || index(lowstr,':') || (tp && index(tp+1,'.')))
 			{
-			char fsn_seriesname[DRMS_MAXNAMELEN];
+			char fsn_seriesname[DRMS_MAXSERIESNAMELEN];
 			TIME tmplow = sscan_time((char *)lowstr);
 			if (strncmp(seriesname,"hmi.",4) == 0)
 				strcpy(fsn_seriesname, "hmi.lev0a");
@@ -557,7 +562,7 @@ int DoIt(void)
                 tp = index(highstr,'.');
                 if (index(highstr, '_') || index(highstr,':') || (tp && index(tp+1,'.')))
 			{
-			char fsn_seriesname[DRMS_MAXNAMELEN];
+			char fsn_seriesname[DRMS_MAXSERIESNAMELEN];
 			TIME tmphigh = sscan_time((char *)highstr);
 			if (strncmp(seriesname,"hmi.",4) == 0)
 				strcpy(fsn_seriesname, "hmi.lev0a");
@@ -656,7 +661,7 @@ fprintf(stderr,"got %f\n",high);
     DIE("malloc failed");
     }
   for (islot=0; islot<nslots; islot++)
-	map[islot] = DATA_UNK;
+	map[islot] = (no_gone ? DATA_MISS : DATA_UNK);
   islot = 0;
   while (islot < nslots)
 	{
@@ -742,7 +747,7 @@ fprintf(stderr,"got %f\n",high);
                                 }
 			else if (verify && !online[irec])
                                 {
-			        val = DATA_GONE;
+			        val = (no_gone ? DATA_UNK : DATA_GONE);
                                 total_ok--;
                                 total_gone++;
                                 }
