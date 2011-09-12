@@ -1,6 +1,6 @@
 VPATH  = $(SRCDIR)
 STATIC = 
-DBNAME = POSTGRESQL
+DBMS = POSTGRESQL
 
 # Run a script to determine the machine on which make is being run. This
 # MAY return a machine type, if the host found falls into one of several

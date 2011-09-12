@@ -18,7 +18,7 @@ S_$(d)		:= $(notdir $(LIBDRMSCLIENT_FPIC))
 
 # Local rules
 $(FPICOBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
-$(FPICOBJ_$(d)):	CF_TGT := $(CF_TGT) -D$(DBNAME) -DDRMS_CLIENT $(CFITSIOH)
+$(FPICOBJ_$(d)):	CF_TGT := $(CF_TGT) -D$(DBMS) -DDRMS_CLIENT $(CFITSIOH)
 
 $(LIBDRMSCLIENT_FPIC):	$(FPICOBJ_$(d))
 			$(ARCHIVE)

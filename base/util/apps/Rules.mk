@@ -4,7 +4,7 @@ dirstack_$(sp)	:= $(d)
 d		:= $(dir)
 
 # Local variables
-CF_$(d)		:= -D$(DBNAME)
+CF_$(d)		:= -D$(DBMS)
 
 MODEXE_$(d)	:= $(addprefix $(d)/, create_series describe_series delete_series modify_series retrieve_dir retrieve_file set_keys set_info show_info show_keys show_series store_dir store_file plot_keys show_coverage)
 

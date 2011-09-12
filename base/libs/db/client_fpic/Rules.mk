@@ -21,7 +21,7 @@ S_$(d)			:= $(notdir $(LIBDBCLIENT_FPIC))
 
 # Local rules
 $(FPICOBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
-$(FPICOBJ_$(d)):	CF_TGT := -D$(DBNAME) $(PGH)
+$(FPICOBJ_$(d)):	CF_TGT := -D$(DBMS) $(PGH)
 
 $(LIBDBCLIENT_FPIC):	$(FPICOBJ_$(d))
 			$(ARCHIVE)

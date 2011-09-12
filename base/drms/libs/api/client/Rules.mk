@@ -47,9 +47,9 @@ S_$(d)		:= $(notdir $(LIBDRMSCLIENT) $(FDRMSMOD))
 
 # Local rules
 $(COMMOBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
-$(COMMOBJ_$(d)):	CF_TGT := $(CF_TGT) -D$(DBNAME) $(CFITSIOH)
+$(COMMOBJ_$(d)):	CF_TGT := $(CF_TGT) -D$(DBMS) $(CFITSIOH)
 $(OBJ_$(d)):		$(SRCDIR)/$(d)/Rules.mk
-$(OBJ_$(d)):		CF_TGT := $(CF_TGT) -D$(DBNAME) -DDRMS_CLIENT
+$(OBJ_$(d)):		CF_TGT := $(CF_TGT) -D$(DBMS) -DDRMS_CLIENT
 
 $(FDRMSMOBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
 

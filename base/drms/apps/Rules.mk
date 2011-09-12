@@ -4,7 +4,7 @@ dirstack_$(sp)	:= $(d)
 d		:= $(dir)
 
 # Local variables
-CF_$(d)		:= -D$(DBNAME)
+CF_$(d)		:= -D$(DBMS)
 
 SERVEREXE_$(d)	:= $(addprefix $(d)/, drms_server masterlists vso_sum_alloc vso_sum_put vso_sum_getdo)
 SERVEREXE	:= $(SERVEREXE) $(SERVEREXE_$(d))
