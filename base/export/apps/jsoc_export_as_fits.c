@@ -264,15 +264,15 @@ MymodError_t WritePListRecord(PLRecType_t rectype, FILE *pkfile, const char *f1,
 
 /* Assumes tcount is zero on the first call.  This function adds 
  * the number of files exported to tcount on each call. */
-static int MapexportRecordToDir(DRMS_Record_t *recin,
-                                const char *ffmt,
-                                const char *outpath,
-                                FILE *pklist,
-                                const char *classname, 
-                                const char *mapfile,
-                                int *tcount, 
-                                const char **cparms,
-                                MymodError_t *status)
+static unsigned long long MapexportRecordToDir(DRMS_Record_t *recin,
+                                               const char *ffmt,
+                                               const char *outpath,
+                                               FILE *pklist,
+                                               const char *classname, 
+                                               const char *mapfile,
+                                               int *tcount, 
+                                               const char **cparms,
+                                               MymodError_t *status)
 {
    int drmsstat = DRMS_SUCCESS;
    MymodError_t modstat = kMymodErr_Success;
@@ -385,17 +385,17 @@ static int MapexportRecordToDir(DRMS_Record_t *recin,
    return tsize;
 }
 
-static int MapexportToDir(DRMS_Env_t *env, 
-                          const char *rsinquery, 
-                          const char *ffmt,
-                          const char *outpath, 
-                          FILE *pklist, 
-                          const char *classname, 
-                          const char *mapfile,
-                          int *tcount,
-                          TIME *exptime,
-                          const char **cparms, 
-                          MymodError_t *status)
+static unsigned long long MapexportToDir(DRMS_Env_t *env, 
+                                         const char *rsinquery, 
+                                         const char *ffmt,
+                                         const char *outpath, 
+                                         FILE *pklist, 
+                                         const char *classname, 
+                                         const char *mapfile,
+                                         int *tcount,
+                                         TIME *exptime,
+                                         const char **cparms, 
+                                         MymodError_t *status)
 {
    int stat = DRMS_SUCCESS;
    MymodError_t modstat = kMymodErr_Success;
