@@ -15,7 +15,9 @@
 #include <rpc/rpc.h>
 #include <sum_rpc.h>
 #include <soi_error.h>
-#include <tape.h>
+#if defined(SUMS_TAPE_AVAILABLE) && SUMS_TAPE_AVAILABLE
+  #include <tape.h>
+#endif
 #include <printk.h>
 
 void logkey();
