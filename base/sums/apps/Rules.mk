@@ -49,9 +49,10 @@ MULTI_SUMS_$(d) := $(addprefix $(d)/, sum_svc $(notdir $(patsubst %.c,%,$(MULTI_
 
 # XSUMSVC_$(d)	:= $(d)/xsum_svc
 XSUMSVC_$(d)	:= 
+ifneq ($(SUMS_TAPE_AVAILABLE), 0)
 TAPESVC_$(d)	:= $(d)/tape_svc
 TARCINFO_$(d)	:= $(d)/tapearcinfo
-
+endif
 BINTGT_$(d)     := $(addprefix $(d)/, main main2 main3 main4 main5 sumget tapeonoff driveonoff sum_rm sum_rm_0 sum_rm_1 sum_rm_2 impexp exportclosed drive0_svc drive1_svc drive2_svc drive3_svc drive4_svc drive5_svc drive6_svc drive7_svc drive8_svc drive9_svc drive10_svc drive11_svc robot0_svc md5filter sum_adv sum_export_svc sum_export jmtx sum_chmown sum_forker tape_svc_restart)
 
 TGT_$(d)        := $(BINTGT_$(d)) 
