@@ -6,7 +6,8 @@
 typedef enum 
 {
    kExpUtlStat_Success,
-   kExpUtlStat_InvalidFmt
+   kExpUtlStat_InvalidFmt,
+   kExpUtlStat_UnknownKey
 } ExpUtlStat_t;
 
 ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,

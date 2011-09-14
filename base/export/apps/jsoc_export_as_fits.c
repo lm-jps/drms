@@ -288,6 +288,7 @@ static unsigned long long MapexportRecordToDir(DRMS_Record_t *recin,
    int iseg;
    int lastcparms;
    int count;
+   ExpUtlStat_t expfn = kExpUtlStat_Success;
 
    drms_record_directory(recin, dir, 1); /* This fetches the input data from SUMS. */
 
@@ -317,12 +318,21 @@ static unsigned long long MapexportRecordToDir(DRMS_Record_t *recin,
          tgtseg = segin;
       }
 
-      if (exputl_mk_expfilename(segin, tgtseg, ffmt, fmtname) == kExpUtlStat_Success)
+      if ((expfn = exputl_mk_expfilename(segin, tgtseg, ffmt, fmtname)) == kExpUtlStat_Success)
       {
          snprintf(fullfname, sizeof(fullfname), "%s/%s", outpath, fmtname);
       }
       else
       {
+         if (expfn == kExpUtlStat_InvalidFmt)
+         {
+            fprintf(stderr, "Invalid file-name format template '%s'.\n", ffmt);
+         }
+         else if (expfn == kExpUtlStat_UnknownKey)
+         {
+            fprintf(stderr, "One or more keywords in the file-name format template '%s' do not exist in series '%s'.\n", ffmt, recin->seriesinfo->seriesname);
+         }
+
          modstat = kMymodErr_BadFilenameFmt;
          break;
       }
@@ -537,9 +547,10 @@ static MymodError_t CallExportToFile(DRMS_Segment_t *segout,
 
       if (!stat(filein, &filestat))
       {
+         ExpUtlStat_t expfn = kExpUtlStat_Success;
 	 size = filestat.st_size;
 
-         if (exputl_mk_expfilename(segin, tgtseg, ffmt, basename) == kExpUtlStat_Success)
+         if ((expfn = exputl_mk_expfilename(segin, tgtseg, ffmt, basename)) == kExpUtlStat_Success)
          {
             CHECKSNPRINTF(snprintf(segout->filename, DRMS_MAXSEGFILENAME, "%s", basename), DRMS_MAXSEGFILENAME);
             drms_segment_filename(segout, fileout);
@@ -558,6 +569,15 @@ static MymodError_t CallExportToFile(DRMS_Segment_t *segout,
          }
          else
          {
+            if (expfn == kExpUtlStat_InvalidFmt)
+            {
+               fprintf(stderr, "Invalid file-name format template '%s'.\n", ffmt);
+            }
+            else if (expfn == kExpUtlStat_UnknownKey)
+            {
+               fprintf(stderr, "One or more keywords in the file-name format template '%s' do not exist in series '%s'.\n", ffmt, segin->record->seriesinfo->seriesname);
+            }
+
             err = kMymodErr_BadFilenameFmt;
          }
       }
