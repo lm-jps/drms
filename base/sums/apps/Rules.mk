@@ -53,9 +53,19 @@ ifneq ($(SUMS_TAPE_AVAILABLE), 0)
 TAPESVC_$(d)	:= $(d)/tape_svc
 TARCINFO_$(d)	:= $(d)/tapearcinfo
 endif
-BINTGT_$(d)     := $(addprefix $(d)/, main main2 main3 main4 main5 sumget tapeonoff driveonoff sum_rm sum_rm_0 sum_rm_1 sum_rm_2 impexp exportclosed drive0_svc drive1_svc drive2_svc drive3_svc drive4_svc drive5_svc drive6_svc drive7_svc drive8_svc drive9_svc drive10_svc drive11_svc robot0_svc md5filter sum_adv sum_export_svc sum_export jmtx sum_chmown sum_forker tape_svc_restart)
+BINTGT_$(d)     := $(addprefix $(d)/, sumget sum_rm sum_rm_0 sum_rm_1 sum_rm_2 impexp exportclosed md5filter sum_adv sum_export_svc sum_export jmtx sum_chmown)
 
-TGT_$(d)        := $(BINTGT_$(d)) 
+# debug apps
+ifneq ($(SUMS_TAPE_AVAILABLE), 0)
+BINTGT_2_$(d)	:= $(addprefix $(d)/, main main2 main3 main4 main5)
+endif
+
+# other tape apps
+ifneq ($(SUMS_TAPE_AVAILABLE), 0)
+BINTGT_3_$(d)	:= $(addprefix $(d)/, tapeonoff driveonoff drive0_svc drive1_svc drive2_svc drive3_svc drive4_svc drive5_svc drive6_svc drive7_svc drive8_svc drive9_svc drive10_svc drive11_svc robot0_svc sum_forker tape_svc_restart)
+endif
+
+TGT_$(d)        := $(BINTGT_$(d)) $(BINTGT_2_$(d)) $(BINTGT_3_$(d))
 
 # SUMS_BIN contains a list of applications that get built when 'make sums' is invoked
 SUMS_BIN	:= $(SUMS_BIN) $(TGT_$(d)) $(XSUMSVC_$(d)) $(TAPESVC_$(d)) $(TARCINFO_$(d)) $(MULTI_SUMS_$(d))
@@ -73,6 +83,7 @@ $(OBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
 $(OBJ_$(d)):	CF_TGT := $(CF_TGT_$(d))
 
 # Special rules for building driveX_svc.o, X=0,1,2,3 from from driven_svc.c
+ifneq ($(SUMS_TAPE_AVAILABLE), 0)
 $(d)/drive0_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_0
 $(d)/drive1_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_1
 $(d)/drive2_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_2
@@ -87,14 +98,17 @@ $(d)/drive10_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_10
 $(d)/drive11_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DDRIVE_11
 $(d)/drive%_svc.o:	$(d)/driven_svc.c
 			$(SUMSCOMP)
+endif
 
 # Special rules for building robotX_svc.o, X=0,1,2,3 from from driven_svc.c
+ifneq ($(SUMS_TAPE_AVAILABLE), 0)
 $(d)/robot0_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DROBOT_0
 $(d)/robot1_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DROBOT_1
 $(d)/robot2_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DROBOT_2
 $(d)/robot3_svc.o:	CF_TGT := $(CF_TGT_$(d)) -DROBOT_3
 $(d)/robot%_svc.o:	$(d)/robotn_svc.c
 			$(SUMSCOMP)
+endif
 
 #$(filter-out $(d)/drive%_svc.o $(d)/robot%_svc.o, $(OBJ_$(d))):	%.o:	%.c
 #			$(SUMSCOMP)
