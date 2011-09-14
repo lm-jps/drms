@@ -41,6 +41,8 @@
 
 #define SUMS_MULTIPLE_PARTNSETS (1)
 
+#define SUMS_DEBUG 1
+
 #endif /* _LOCALIZED_DEFS */
 
 /* Override one or more defaults (but not all of them, unlike in the case of localization.h), 
