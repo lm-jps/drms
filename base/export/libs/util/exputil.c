@@ -124,13 +124,7 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
                  /* drms_keyword_lookup will properly follow a link to the target series to
                   * obtain the target key and keyword value. */
               DRMS_Keyword_t *key = drms_keyword_lookup(srcseg->record,keyname,1);
-
-              if (!key)
-              {
-                  ret = kExpUtlStat_UnknownKey;
-                  val = "ERROR";
-              }
-              else if (key->info->type == DRMS_TYPE_TIME)
+              if (key->info->type == DRMS_TYPE_TIME)
                 { // do special time formats here 
                 char formatwas[DRMS_MAXFORMATLEN], unitwas[DRMS_MAXUNITLEN];
                 int precision = 0;
@@ -231,16 +225,8 @@ ExpUtlStat_t exputl_mk_expfilename(DRMS_Segment_t *srcseg,
                /* drms_keyword_lookup will properly follow the keyword to the target series. */
                DRMS_Keyword_t *key = drms_keyword_lookup(srcseg->record, keyname, 1);
 
-               if (key)
-               {
-                  drms_keyword_snprintfval(key, tmpstr2, sizeof(tmpstr2));
-                  val = tmpstr2;
-               }
-               else
-               {
-                  ret = kExpUtlStat_UnknownKey;
-                  val = "ERROR";
-               }
+               drms_keyword_snprintfval(key, tmpstr2, sizeof(tmpstr2));
+               val = tmpstr2;
             }
 
             /* At this point, val should have a valid string in it, and val might 

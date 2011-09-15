@@ -786,32 +786,17 @@ KEY *readdo_1(KEY *params) {
     //sumvers = getkey_uint32(poff->list, "SVERS");
     //set client handle for the sums process
   switch(sumprog) {
-  case SUMPROG:
+  case SUMGET:
     clntsum = clntsums[0];
     break;
-  case SUMGET:
+  case SUMGET1:
     clntsum = clntsums[1];
     break;
-  case SUMGET1:
+  case SUMGET2:
     clntsum = clntsums[2];
     break;
-  case SUMGET2:
+  case SUMPROG:
     clntsum = clntsums[3];
-    break;
-  case SUMGET3:
-    clntsum = clntsums[4];
-    break;
-  case SUMGET4:
-    clntsum = clntsums[5];
-    break;
-  case SUMGET5:
-    clntsum = clntsums[6];
-    break;
-  case SUMGET6:
-    clntsum = clntsums[7];
-    break;
-  case SUMGET7:
-    clntsum = clntsums[8];
     break;
   default:
     write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
@@ -1498,8 +1483,8 @@ KEY *taperespreaddo_1(KEY *params) {
   tapefilenum = getkey_int(params, tmpname);
   drives[dnum].filenum = tapefilenum;  /* file# just read */
   if(status) drives[dnum].filenum = -1; /* error, next read will rewind */
-  sprintf(tmpname, "rootwd_%d", reqofflinenum);
-  rwd = GETKEY_str(params, tmpname);
+//  sprintf(tmpname, "rootwd_%d", reqofflinenum);
+//  rwd = GETKEY_str(params, tmpname);
 //  //sprintf(tmpname, "sudo chmod -R go-w %s; sudo chown -Rf production %s", 
 //  //			rwd, rwd);
     //Don't need chmown now. The sticky bit was removed in getdo_1()
@@ -1531,32 +1516,17 @@ KEY *taperespreaddo_1(KEY *params) {
   //sumvers = getkey_uint32(params, "SVERS");
   //set client handle for the sums process
   switch(sumprog) {
-  case SUMPROG:
+  case SUMGET:
     clntsum = clntsums[0];
     break;
-  case SUMGET:
+  case SUMGET1:
     clntsum = clntsums[1];
     break;
-  case SUMGET1:
+  case SUMGET2:
     clntsum = clntsums[2];
     break;
-  case SUMGET2:
+  case SUMPROG:
     clntsum = clntsums[3];
-    break;
-  case SUMGET3:
-    clntsum = clntsums[4];
-    break;
-  case SUMGET4:
-    clntsum = clntsums[5];
-    break;
-  case SUMGET5:
-    clntsum = clntsums[6];
-    break;
-  case SUMGET6:
-    clntsum = clntsums[7];
-    break;
-  case SUMGET7:
-    clntsum = clntsums[8];
     break;
   default:
     write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
@@ -1835,32 +1805,17 @@ KEY *taperesprobotdo_1_rd(KEY *params) {
     //sumvers = getkey_uint32(params, "SVERS");
     //set client handle for the sums process
   switch(sumprog) {
-  case SUMPROG:
+  case SUMGET:
     clntsum = clntsums[0];
     break;
-  case SUMGET:
+  case SUMGET1:
     clntsum = clntsums[1];
     break;
-  case SUMGET1:
+  case SUMGET2:
     clntsum = clntsums[2];
     break;
-  case SUMGET2:
+  case SUMPROG:
     clntsum = clntsums[3];
-    break;
-  case SUMGET3:
-    clntsum = clntsums[4];
-    break;
-  case SUMGET4:
-    clntsum = clntsums[5];
-    break;
-  case SUMGET5:
-    clntsum = clntsums[6];
-    break;
-  case SUMGET6:
-    clntsum = clntsums[7];
-    break;
-  case SUMGET7:
-    clntsum = clntsums[8];
     break;
   default:
     write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
@@ -1933,32 +1888,17 @@ KEY *taperesprobotdo_1_rd(KEY *params) {
       //sumvers = getkey_uint32(params, "SVERS");
       //set client handle for the sums process
   switch(sumprog) {
-  case SUMPROG:
+  case SUMGET:
     clntsum = clntsums[0];
     break;
-  case SUMGET:
+  case SUMGET1:
     clntsum = clntsums[1];
     break;
-  case SUMGET1:
+  case SUMGET2:
     clntsum = clntsums[2];
     break;
-  case SUMGET2:
+  case SUMPROG:
     clntsum = clntsums[3];
-    break;
-  case SUMGET3:
-    clntsum = clntsums[4];
-    break;
-  case SUMGET4:
-    clntsum = clntsums[5];
-    break;
-  case SUMGET5:
-    clntsum = clntsums[6];
-    break;
-  case SUMGET6:
-    clntsum = clntsums[7];
-    break;
-  case SUMGET7:
-    clntsum = clntsums[8];
     break;
   default:
     write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
@@ -1979,32 +1919,17 @@ KEY *taperesprobotdo_1_rd(KEY *params) {
     //sumvers = getkey_uint32(params, "SVERS");
     //set client handle for the sums process
   switch(sumprog) {
-  case SUMPROG:
+  case SUMGET:
     clntsum = clntsums[0];
     break;
-  case SUMGET:
+  case SUMGET1:
     clntsum = clntsums[1];
     break;
-  case SUMGET1:
+  case SUMGET2:
     clntsum = clntsums[2];
     break;
-  case SUMGET2:
+  case SUMPROG:
     clntsum = clntsums[3];
-    break;
-  case SUMGET3:
-    clntsum = clntsums[4];
-    break;
-  case SUMGET4:
-    clntsum = clntsums[5];
-    break;
-  case SUMGET5:
-    clntsum = clntsums[6];
-    break;
-  case SUMGET6:
-    clntsum = clntsums[7];
-    break;
-  case SUMGET7:
-    clntsum = clntsums[8];
     break;
   default:
     write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
@@ -2047,32 +1972,17 @@ KEY *taperesprobotdo_1_wt(KEY *params) {
     //sumvers = getkey_uint32(params, "SVERS");
     //set client handle for the sums process
   switch(sumprog) {
-  case SUMPROG:
-    clntsum = clntsums[3];
-    break;
   case SUMGET:
-    clntsum = clntsums[1];
+    clntsum = clntsums[0];
     break;
   case SUMGET1:
-    clntsum = clntsums[2];
+    clntsum = clntsums[1];
     break;
   case SUMGET2:
+    clntsum = clntsums[2];
+    break;
+  case SUMPROG:
     clntsum = clntsums[3];
-    break;
-  case SUMGET3:
-    clntsum = clntsums[4];
-    break;
-  case SUMGET4:
-    clntsum = clntsums[5];
-    break;
-  case SUMGET5:
-    clntsum = clntsums[6];
-    break;
-  case SUMGET6:
-    clntsum = clntsums[7];
-    break;
-  case SUMGET7:
-    clntsum = clntsums[8];
     break;
   default:
     write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");

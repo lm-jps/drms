@@ -30,9 +30,7 @@
 #include <signal.h>
 #include <sum_rpc.h>
 #include <soi_error.h>
-#if defined(SUMS_TAPE_AVAILABLE) && SUMS_TAPE_AVAILABLE
-  #include <tape.h>
-#endif
+#include <tape.h>
 #include <printk.h>
 #include <unistd.h>
 #include "serverdefs.h"
@@ -168,7 +166,7 @@ void sighandler(sig)
 */
 void usr1_sig(int sig)
 {
-  write_log("%s usr1_sig received by sum_svc\n", datestring());
+  write_log("%s usr1_sig received\n", datestring());
   //newlog = 1;                   /* tell main loop to start new log */
   logcnt++;                     /* count # used in log file name */
   write_log("%s Closing the current log file. Goodby.\n", datestring());
@@ -184,7 +182,7 @@ void usr1_sig(int sig)
 void get_cmd(int argc, char *argv[])
 {
   int c;
-  char *username, *cptr, *cptr2;
+  char *username;
 
   if(!(username = (char *)getenv("USER"))) username = "nouser";
   if(strcmp(username, SUMS_MANAGER)) {
@@ -215,29 +213,7 @@ void get_cmd(int argc, char *argv[])
     exit(1);
   }
   dbname = argv[0];
-  //the input log name looks like: sum_svc_2011.08.09.162411.log
-  //If this is a restart it looks like: sum_svc_2011.08.09.162411.log_R
-  //or sum_svc_2011.08.09.162411.log_6_R if 6 days of log files exist
   sprintf(logname, "%s/%s", SUMLOG_BASEDIR, argv[1]);
-  if(cptr = strstr(logname, "_R")) {
-    if(cptr2 = strstr(logname, "log_R")) {
-      *(cptr2+3) = (char)NULL;
-      logcnt = 0;
-      open_log(logname);
-    }
-    else if(cptr2 = strstr(logname, "log_")) {
-      *cptr= (char)NULL;	//elim trailing _R
-      open_log(logname);
-      *(cptr2+3) = (char)NULL;
-      cptr2 = cptr2 + 4;	//point to number
-      sscanf(cptr2, "%d", &logcnt);
-    }
-    else {
-      printf("!!ERROR: called with NG log file name: %s\n", logname);
-      exit(1);
-    }
-  }
-  else { open_log(logname); }
 }
 
 /*********************************************************/
@@ -261,7 +237,7 @@ void setup()
   sumvers = SUMVERS;
   thispid = getpid();
   //sprintf(logname, "%s/sum_svc_%s.log", SUMLOG_BASEDIR, gettimetag());
-  //open_log(logname);   //now done in  get_cmd()
+  open_log(logname);
   printk_set(write_log, write_log);
   write_log("\n## %s sum_svc on %s (%s) for pid = %d ##\n", 
 		datestring(), thishost, hostn, thispid);

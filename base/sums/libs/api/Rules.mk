@@ -4,13 +4,12 @@ dirstack_$(sp)	:= $(d)
 d		:= $(dir)
 
 # Subdirectories, in random order. Directory-specific rules are optional here.
-# Remove Perl SWIG from build.
-#ifneq ($(JSOC_MACHINE), mac_osx_ppc)
-#	ifneq ($(JSOC_MACHINE), mac_osx_ia32) 
-#		dir	:= $(d)/perl
-#		-include		$(SRCDIR)/$(dir)/Rules.mk
-#	endif
-#endif
+ifneq ($(JSOC_MACHINE), mac_osx_ppc)
+	ifneq ($(JSOC_MACHINE), mac_osx_ia32) 
+		dir	:= $(d)/perl
+		-include		$(SRCDIR)/$(dir)/Rules.mk
+	endif
+endif
 
 # Local variables
 LIBSUMSAPI	:= $(d)/libsumsapi.a 

@@ -1,9 +1,7 @@
 /* SUMLIB_MD5info.pgc
  */
 #include <SUM.h>
-#if defined(SUMS_TAPE_AVAILABLE) && SUMS_TAPE_AVAILABLE
-  #include <tape.h>
-#endif
+#include <tape.h>
 #include <sum_rpc.h>
 #include <printk.h>
 

@@ -1,6 +1,6 @@
 VPATH  = $(SRCDIR)
 STATIC = 
-DBMS = POSTGRESQL
+DBNAME = POSTGRESQL
 
 # Run a script to determine the machine on which make is being run. This
 # MAY return a machine type, if the host found falls into one of several
@@ -186,7 +186,7 @@ GCC_LF_ALL	= $(STATIC)
 ICC_LF_ALL	= $(STATIC) -openmp -static-intel -Wl,-export-dynamic
 
 # Fortran global LINK flags
-F_LF_ALL	= -nofor-main  -openmp -static-intel -Wl,-export-dynamic
+F_LF_ALL	= -nofor-main  -openmp -static-intel
 #***********************************************************************************************#
 
 #***********************************************************************************************#

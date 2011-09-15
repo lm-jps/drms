@@ -33,15 +33,10 @@ while ($ARGV[0] =~ /^-/) {
 #  > ssh-add
 #  (The production password)\n";
 
-#$wd = `pwd`;
-$wdpath = `which $0`;
-chomp($wdpath);
-$pos = rindex($wdpath, "/");
-$wd = substr($wdpath, 0, $pos);
-#$ldir = "$wd/../../include/localization.h";
-#$sdir = "$wd/../../include/serverdefs.h";
-$ldir = "$wd/../include/localization.h";
-$sdir = "$wd/../include/serverdefs.h";
+$wd = `pwd`;
+chomp($wd);
+$ldir = "$wd/../../include/localization.h";
+$sdir = "$wd/../../include/serverdefs.h";
 
 if(-e $ldir) {
   $xdir = $ldir;
@@ -312,8 +307,8 @@ CKEND:
       close(SLOG);
     }
         $mail = "mail -s \"SUM j1 MULTI Start Complete\"";
-        $to = "jsoc_users";
-        #$to = "jim";
+        #$to = "jsoc_users";
+        $to = "jim";
         $cmd = "$mail $to < $MLOGFILE";
         if($mailflg) { system $cmd; }
         exit;

@@ -27,9 +27,9 @@ S_$(d)			:= $(notdir $(LIBDBCLIENT))
 
 # Local rules
 $(COMMOBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
-$(COMMOBJ_$(d)):	CF_TGT := -D$(DBMS) $(PGH)
+$(COMMOBJ_$(d)):	CF_TGT := -D$(DBNAME) $(PGH)
 $(OBJ_$(d)):		$(SRCDIR)/$(d)/Rules.mk
-$(OBJ_$(d)):		CF_TGT := -D$(DBMS) $(PGH)
+$(OBJ_$(d)):		CF_TGT := -D$(DBNAME) $(PGH)
 
 $(LIBDBCLIENT):		$(LIBDBCLIENT_OBJ)
 			$(ARCHIVE)

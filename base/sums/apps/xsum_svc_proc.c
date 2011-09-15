@@ -1,4 +1,4 @@
-/* xsum_svc_proc.c: Server side procedures
+/* sum_svc_proc.c: Server side procedures
  *
  * These are the function that are called by sum_svc when it gets a 
  * message from a client. 
@@ -8,7 +8,6 @@
 #include <sys/errno.h>
 #include <rpc/rpc.h>
 #include <soi_key.h>
-#include <keyU.h>
 #include <soi_error.h>
 #include <sum_rpc.h>
 
@@ -27,11 +26,10 @@ extern uint32_t sumvers;
 extern int debugflg;
 extern int rrid;
 extern float ftmp;
-extern char logname[];
 static int NO_OPEN = 0;
 static char callername[MAX_STR];
 static char nametmp[80];
-static int numSUM;
+static int numSUM; 
 
 void write_time();
 void logkey();
@@ -156,7 +154,6 @@ KEY *opendo_1(KEY *params)
     write_log("Successful SUMLIB_Open id=%d for user=%s uid=%d\n",rrid,user,rinfo);
     //Elim setsumopened/getsumopened after 30Aug2010 build
     //setsumopened(&sumopened_hdr, rinfo, NULL, user); /*put in list of opens*/
-
   }
   send_ack();				/* ack original sum_svc caller */
   return((KEY *)1);			/* nothing will be sent later */
@@ -269,7 +266,6 @@ KEY *getdo_1(KEY *params)
   enum clnt_stat status;
   int reqcnt, i, offline, storeset, offcnt;
   char *call_err, *cptr, *wd;
-  char scmd[96];
   double bytes;
 
   sprintf(callername, "getdo_1");	//!!TEMP
@@ -334,11 +330,6 @@ KEY *getdo_1(KEY *params)
               return((KEY *)1);  /* error. nothing to be sent */
             }
             wd = GETKEY_str(retlist, "partn_name");
-            //elim sticky bit so don't need to do sum_chmown() after read
-            sprintf(scmd, "chmod g-s %s", wd);
-            if(system(scmd)) {
-                write_log("**Warning: Error on: %s. errno=%d\n", scmd,errno);
-            }
             sprintf(nametmp, "rootwd_%d", i);
             setkey_str(&retlist, nametmp, wd);
             write_log("\nAlloc for retrieve wd = %s for sumid = %lu\n", wd, uid);
@@ -483,6 +474,7 @@ KEY *allocdo_1(KEY *params)
     free(wd);
     return(retlist);		/* return the ans now */
   }
+  write_log("Alloc Error id=%d user=%s sumid=%lu\n", rrid, GETKEY_str(retlist, "USER"), uid);
   rinfo = status;		/* ret err code back to caller */
   send_ack();
   freekeylist(&retlist);
@@ -603,68 +595,6 @@ KEY *infodoX_1(KEY *params)
   return((KEY *)1);		/* nothing will be sent later */
 }
 
-/* Called when a client does a SUM_infoEx() call to get sum_main info. 
- * !!This is the version that uses the UTHASH library!!
- * A typical keylist is:
- * dsix_1: KEYTYP_UINT64    285
- * dsix_0: KEYTYP_UINT64    282
- * username:       KEYTYP_STRING   production
- * REQCODE:        KEYTYP_INT      4
- * DEBUGFLG:       KEYTYP_INT      1
- * reqcnt: KEYTYP_INT      2
- * uid:    KEYTYP_UINT64    574
-*/
-KEY *infodoX_1_U(KEY *params)
-{
-  KEYU *retlistU;
-  int status, reqcnt;
-  uint64_t uid;
-  uint64_t sunum = 0;
-  sprintf(callername, "infodoX_1_U");	//!!TEMP
-  if(findkey(params, "DEBUGFLG")) {
-    debugflg = getkey_int(params, "DEBUGFLG");
-    if(debugflg) {
-      write_log("!!Keylist in infodoX_1_U() is:\n");
-      keyiterate(logkey, params);
-    }
-  }
-  //Convert the KEY list input to a UTHASH list
-  retlistU = newkeylistU();
-  add_key2keyU(params, &retlistU);
-
-  sunum = getkey_uint64U(retlistU, "dsix_0");
-  reqcnt = getkey_intU(retlistU, "reqcnt"); 
-  uid = getkey_uint64U(retlistU, "uid");
-  write_log("SUM_infoEx() id=%d for user=%s 1st sunum=%lu cnt=%d\n",
-                rrid, GETKEY_strU(retlistU, "username"), sunum, reqcnt);
-
-  if(!(status=SUMLIB_InfoGetEx_U(retlistU, &retlistU))) {
-    if(!(set_client_handle(RESPPROG, (uint32_t)uid))) { /*set up for response*/
-      write_log("**Error: infodoX_1_U() can't set_client_handle for response\n");
-      freekeylistU(&retlistU);
-      /*rinfo = 1;  /* give err status back to original caller */
-      rinfo = SUM_RESPPROG_ERR;
-      send_ack();
-      return((KEY *)1);  /* error. nothing to be sent */
-    }
-    rinfo = 0;
-    send_ack();
-    setkey_intU(&retlistU, "STATUS", 0);   /* give success back to caller */
-    //now convert the UTHASH back to our normal keylist
-    retlist = newkeylist();
-    add_keyU2key(retlistU, &retlist);
-    freekeylistU(&retlistU);
-    return(retlist);		/* return the ans now */
-  }
-  rinfo = status;		/* ret err code 1 back to caller */
-  //if(!drmssite_sunum_is_local(sunum))
-  //  rinfo = SUM_SUNUM_NOT_LOCAL; // else this error code 
-  send_ack();
-  freekeylistU(&retlistU);
-  return((KEY *)1);		/* nothing will be sent later */
-}
-
-
 /* Called when a client does a SUM_put() to catalog storage units.
  * Can put multiple SU at a time. Typical call is:
  * wd_0:   KEYTYP_STRING   /SUM1/D1695
@@ -712,34 +642,27 @@ KEY *putdo_1(KEY *params)
 //  }
   retlist = newkeylist();
   add_keys(params, &retlist);
-  //First change to owner production, no group write. This must succeed 
-  //all or nothing as far as the caller is concerned.
-    for(i=0; i < reqcnt; i++) { //!!!TBD
-      sprintf(nametmp, "wd_%d", i);
-      cptr = GETKEY_str(params, nametmp);
-      sprintf(nametmp, "%s.chmown",  logname);
-      sprintf(sysstr, "%s/sum_chmown %s 1>> %s 2>&1",
-                        SUMBIN_BASEDIR, cptr, nametmp);
-      //write_log("%s\n", sysstr);
-      //StartTimer(3);          //!!TEMP
-      if(system(sysstr)) {
-          write_log("**Warning: Error on: %s. errno=%d\n", sysstr,errno);
-          rinfo = 1;                    /* error back to caller */
-          send_ack();
-          freekeylist(&retlist);
-          return((KEY *)1);             /* nothing but status back */
-      }
-      //ftmp = StopTimer(3);
-      //write_log("#END: sum_chmown() %fsec\n", ftmp);    //!!TEMP for test
-    }
- 
-  //now insert in the sums tables 
   if(!(status=SUM_Main_Update(params, &retlist))) {
     if(!(set_client_handle(RESPPROG, (uint32_t)uid))) { //set up for response
       freekeylist(&retlist);
       rinfo = 1;  // give err status back to original caller/
       send_ack();
       return((KEY *)1);  // error. nothing to be sent
+    }
+    // change to owner production, no group write
+    for(i=0; i < reqcnt; i++) { //!!!TBD
+      sprintf(nametmp, "wd_%d", i);
+      cptr = GETKEY_str(params, nametmp);
+      //sprintf(sysstr, "sudo chmod -R go-w %s; sudo chown -Rf production %s", 
+      //			cptr, cptr);
+      sprintf(sysstr, "%s/sum_chmown %s", SUMBIN_BASEDIR, cptr);
+      //write_log("%s\n", sysstr);
+      //StartTimer(3);		//!!TEMP
+      if(system(sysstr)) {
+          write_log("**Warning: Error on: %s. errno=%d\n", sysstr,errno);
+      }
+      //ftmp = StopTimer(3);
+      //write_log("#END: sum_chmown() %fsec\n", ftmp);    //!!TEMP for test
     }
     rinfo = 0;			// status back to caller
     send_ack();
@@ -829,7 +752,6 @@ KEY *nopdo_1(KEY *params)
   else {
 ***************************************************************/
 /***************************************************************
-//!!NOTE: if call tape_svc do we need to set up current_client here and pass it along
     rinfo = 1;
     uid = getkey_uint64(params, "uid");
     klist = newkeylist();

@@ -1571,14 +1571,7 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
         requestorid = requestor_rec->recnum;
         drms_setkey_int(requestor_rec, "RequestorID", requestorid);
         drms_setkey_string(requestor_rec, "Requestor", requestor);
-        if (strncasecmp(notify,"solarmail",9) == 0)
-          {
-          char tmp_notify[1024];
-          sprintf(tmp_notify, "%s@spd.aas.org", requestor);
-          drms_setkey_string(requestor_rec, "Notify", tmp_notify);
-          }
-        else
-          drms_setkey_string(requestor_rec, "Notify", notify);
+        drms_setkey_string(requestor_rec, "Notify", notify);
         drms_setkey_string(requestor_rec, "ShipTo", shipto);
         drms_setkey_time(requestor_rec, "FirstTime", now);
         drms_setkey_time(requestor_rec, "UpdateTime", now);

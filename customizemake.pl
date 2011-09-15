@@ -59,18 +59,12 @@ if (open(CONFLOC, "<$tmp"))
             next;
          }
 
-         if ($section == kDEFSSECTION || $section == kMAKESECTION)
+         if ($section == kDEFSSECTION)
          {
-            # Put all config.local key-value pairs in custom.mk too. Some of these will be 
-            # used by the make system. There is an unaddressed problem: The config.local
-            # for NetDRMS has key names that do not match the key names for an SDP
-            # checkout. The SDP names match the names of the defines used in the source code,
-            # but NetDRMS do not match anything. gen_init.csh maps these names to the 
-            # names used by the source code.
-            #
-            # Currently, the only key-value pair needed by the make system is SUMS_TAPE_AVAILABLE, 
-            # which in fact IS named identically in all three places (SDP config.local, NetDRMS
-            # config.local, and in the source code).
+            # Do nothing - customizedefs.pl handles this section
+         }
+         elsif ($section == kMAKESECTION)
+         {
             $mach = "";
 
             if ($line =~ /\s*(\S+)\s+(\S+)/)

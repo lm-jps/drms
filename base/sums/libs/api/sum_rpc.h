@@ -8,9 +8,7 @@
 #include <SUM.h>
 #include <rpc/rpc.h>
 #include <soi_key.h>
-#if defined(SUMS_TAPE_AVAILABLE) && SUMS_TAPE_AVAILABLE
-  #include <tape.h>
-#endif
+#include <tape.h>
 #include <sum_info.h>
 
 /* !!TBD fix up these defs */
@@ -200,7 +198,6 @@ extern KEY *closedo_1();
 extern KEY *getdo_1();
 extern KEY *infodo_1();
 extern KEY *infodoX_1();
-extern KEY *infodoX_1_U();
 extern KEY *sumrespdo_1();
 extern KEY *allocdo_1();
 extern KEY *putdo_1();
@@ -642,9 +639,7 @@ int SUM_StatOnline(uint64_t ds_index, char *newwd);
 int DS_DataRequest_WD(KEY *params, KEY **results);
 int SUMLIB_TapeUpdate(char *tapeid, int tapenxtfn, uint64_t tellblock, double totalbytes);
 int SUMLIB_TapeFilenumber(char *tapeid);
-#if defined(SUMS_TAPE_AVAILABLE) && SUMS_TAPE_AVAILABLE
 int SUMLIB_TapeFindGroup(int group, double bytes, TAPE *tape);
-#endif
 int SUMLIB_PavailGet(double bytes, int pds_set, uint64_t uid, uint64_t sunum, KEY **results);
 int SUMLIB_PavailUpdate(char *name, double bytes);
 int SUMLIB_PavailOff(char *name);

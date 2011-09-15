@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-#/home/production/cvs/JSOC/scripts/sum_alrm1 dbname (e.g. jsoc_sums)
+#/home/production/cvs/JSOC/base/sums/scripts/sum_alrm1 dbname (e.g. jsoc_sums)
 #Send a USR1 alarm to sum_svc that is running for the current user
 #and the given dbname.
 #This is normally run as a cron job by production just after midnight.
@@ -10,15 +10,10 @@ if($#ARGV != 0) {
   exit(1);
 }
 $DBIN = $ARGV[0];
-$wdpath = `which $0`;
-chomp($wdpath);
-$pos = rindex($wdpath, "/");
-$xdir = substr($wdpath, 0, $pos);
-
-$ldir = "$xdir/../include/localization.h";
-$sdir = "$xdir/../include/serverdefs.h";
-#$ldir = "$xdir/../../include/localization.h";
-#$sdir = "$xdir/../../include/serverdefs.h";
+$wd = `pwd`;
+chomp($wd);
+$ldir = "$wd/../../include/localization.h";
+$sdir = "$wd/../../include/serverdefs.h";
 
 if(-e $ldir) {
   $xdir = $ldir;
@@ -58,7 +53,7 @@ if(($pos = index($host, '.')) != -1) {
   $host = substr($host, 0, $pos);
 }
 if($host ne $sumserver) {
-  print "This can only be run on $sumserver.\n";
+  print "This can only be run on $host.\n";
   exit;
 }
 @def = grep(/^#define SUMS_MANAGER/, @servdefs);

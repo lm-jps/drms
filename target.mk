@@ -64,6 +64,7 @@ $(OBJDIR):
 	+@[ -d $@/base/local/libs/soi ] || mkdir -p $@/base/local/libs/soi
 	+@[ -d $@/base/sums/apps ] || mkdir -p $@/base/sums/apps
 	+@[ -d $@/base/sums/libs/api ] || mkdir -p $@/base/sums/libs/api
+	+@[ -d $@/base/sums/libs/api/perl ] || mkdir -p $@/base/sums/libs/api/perl
 	+@[ -d $@/base/sums/libs/pg ] || mkdir -p $@/base/sums/libs/pg
 	+@[ -d $@/base/util/apps ] || mkdir -p $@/base/util/apps
 	+@[ -d $@/proj/example/apps ] || mkdir -p $@/proj/example/apps

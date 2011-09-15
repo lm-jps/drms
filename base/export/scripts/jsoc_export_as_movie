@@ -115,9 +115,9 @@ case "$content" in
         
              ;;
   Ic)
-           if [[ $seriesName = *Ic_noLimbDark* ]]
+           if [[ $seriesName = "Ic_noLimbDark" ]]
            then 
-                  render_image in=$in   min=0.3	 max=1.4  scaling=minmaxgiven    pallette=/home/priya/Colormaps/heat.sao tkey=$tkey outname=$seriesName  scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p}  
+                  render_image in=$in   min=0.3	 max=1.4 scaling=minmaxgiven    pallette=/home/priya/Colormaps/heat.sao tkey=$tkey outname=$seriesName  scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p}  
           else
                   render_image in=$in  min=25000 max=75000    pallette=/home/priya/Colormaps/heat.sao outname=$seriesName  scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}
           fi
