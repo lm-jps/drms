@@ -112,7 +112,8 @@ do
   # $request[] is what type of request it is (subscribe or unsubscribe)
   #-------------------------------------------------------------------------
   # Find trigger files for sql_gen
-  logwrite "checking $triggerdir"
+  # ART - too much logging (loops every 10 seconds)
+  # logwrite "checking $triggerdir"
   ls -1 $triggerdir | grep .subscribe_series.tgr > temp.txt
 
   counter=0
