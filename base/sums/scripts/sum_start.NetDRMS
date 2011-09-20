@@ -1,33 +1,40 @@
-#!/usr/bin/perl
+#!/usr/bin/perl -w
 #sum_start.NetDRMS
 #This is to start the sum_svc and multiple related servers on a remote site.
 #Call with -M will not send mail notification (N/A on NetDRMS).
 #Call with -f to force a stop if needed (vestigial). 
 #
+
+use FindBin qw($RealBin);
+# use 5.010_000; # See ExtractVal() - if you don't want to upgrade to 5.10, uncomment lines in this routine.
+
 $| = 1;                 #flush output as we go
 $mailflg = 1;
 $forceflg = 0;
 $forcearg = "";
-while ($ARGV[0] =~ /^-/) {
-  $_ = shift;
-  if (/^-M(.*)/) {
-    $mailflg = 0;
-  }
-  elsif(/^-f(.*)/) {
-    $forceflg = 1;
-    $forcearg = "-f";
-  }
-  else {
-    print "Illegal switch\n";
-    exit;
-  }
+
+if ($#ARGV >= 0)
+{
+   while ($ARGV[0] =~ /^-/) {
+      $_ = shift;
+      if (/^-M(.*)/) {
+         $mailflg = 0;
+      }
+      elsif(/^-f(.*)/) {
+         $forceflg = 1;
+         $forcearg = "-f";
+      }
+      else {
+         print "Illegal switch\n";
+         exit;
+      }
+   }
 }
-$wdpath = `which $0`;
-chomp($wdpath);
-$pos = rindex($wdpath, "/");
-$wd = substr($wdpath, 0, $pos);
-$ldir = "$wd/../include/localization.h";
-$sdir = "$wd/../include/serverdefs.h";
+
+$wdpath = $RealBin;
+
+$ldir = "$wdpath/../../../include/localization.h";
+$sdir = "$wdpath/../../drms/apps/serverdefs.h";
 
 if(-e $ldir) {
   $xdir = $ldir;
@@ -37,31 +44,30 @@ else {
   $xdir = $sdir;
   $localization = 0;
 }
+
 @servdefs = `cat $xdir`;
+
 @def = grep(/^#define SUM_NUMSUM/, @servdefs);
-($a,$b,$numsum) = split(/\s+/, shift(@def));
-if(!$numsum) {
+$numsum = ExtractVal($def[0]);
+if(!defined($numsum) || !$numsum) {
   print "ERROR: Can't get SUM_NUMSUM from $xdir\n";
   exit(1);
 }
-
 print "Number of SUM process sets to spawn = $numsum\n";
+
 @def = grep(/^#define SUM_MAXNUMSUM/, @servdefs);
-($a,$b,$maxnumsum) = split(/\s+/, shift(@def));
+$maxnumsum = ExtractVal($def[0]);
 print "Max number of SUM process can spawn = $maxnumsum\n";
 
-if($numsum == 0 || $numsum > $maxnumsum) {
+if($numsum == 0 || !defined($maxnumsum) || $numsum > $maxnumsum) {
   print "**ERROR: in $xdir def for SUM_NUMSUM\n";
   print "Number must be between 1 and $maxnumsum\n";
   exit;
 }
 
 @def = grep(/^#define SUMSERVER/, @servdefs);
-($a,$b,$sumserver) = split(/\s+/, shift(@def));
-if(($pos = index($sumserver, '.')) != -1) {
-  $sumserver = substr($sumserver, 0, $pos);
-}
-$sumserver = substr($sumserver, 1, -1); #get rid of quotes (")
+$sumserver = ExtractVal($def[0]);
+
 $host = `hostname`;
 chomp($host);
 if(($pos = index($host, '.')) != -1) {
@@ -74,9 +80,9 @@ if($host ne $sumserver) {
 
 $ENV{'SUMSERVER'} = $sumserver;      #make sure we stay in this machine
 print "SUMSERVER is $sumserver\n";
+
 @def = grep(/^#define SUMS_MANAGER/, @servdefs);
-($a,$b,$sumsmanager) = split(/\s+/, shift(@def));
-$sumsmanager = substr($sumsmanager, 1, -1); #get rid of quotes (")
+$sumsmanager = ExtractVal($def[0]);
 print "SUMS_MANAGER is $sumsmanager\n";
 $user = $ENV{'USER'};
 if($user ne $sumsmanager) {
@@ -84,14 +90,12 @@ if($user ne $sumsmanager) {
   exit;
 }
 @def = grep(/^#define SUMS_MANAGER_UID/, @servdefs);
-($a,$b,$sumsmanageruid) = split(/\s+/, shift(@def));
-$sumsmanageruid = substr($sumsmanageruid, 1, -1); #get rid of quotes (")
+$sumsmanageruid = ExtractVal($def[0]);
 print "SUMS_MANAGER_UID is $sumsmanageruid\n";
 $GREPPS = $sumsmanageruid;
 
 @def = grep(/^#define DBNAME/, @servdefs);
-($a,$b,$dbname) = split(/\s+/, shift(@def));
-$dbname = substr($dbname, 1, -1); #get rid of quotes (")
+$dbname = ExtractVal($def[0]);
 $DB = $dbname."_sums";
 print "SUMS db is $DB\n";
 
@@ -104,7 +108,7 @@ $min2 = sprintf("%02d", $min);
 $hour2 = sprintf("%02d", $hour);
 $mday2 = sprintf("%02d", $mday);
 $mon2 = sprintf("%02d", $mon+1);
-$year2 = sprintf("%02d", $year);
+# $year2 = sprintf("%02d", $year);
 $date = (1900 + $year).".".$mon2.".$mday2"._.$hour2.":$min2".":$sec2";
 $dtag = (1900 + $year).".".$mon2.".$mday2".".$hour2"."$min2"."$sec2"; #for log name
 $sumlog = "sum_svc_$dtag.log";
@@ -233,6 +237,7 @@ CKEND:
     }
   }
 
+
 #For tape_svc only
 #        $cmd = "ssh d02.stanford.edu sum_forker  $DB $date&";
 #        if(system($cmd)) {
@@ -254,3 +259,26 @@ CKEND:
 #        if($mailflg) { system $cmd; }
         exit;
 
+sub ExtractVal
+{
+   my($line) = $_[0];
+
+   # requires Perl version 5.10
+   #my($val) = ($line =~ /^#define\s+\S+\s+(?|\"([^\s\."]+)(\..*)?\"|([^\s\.]+)(\..*)?)\s*/)[0];
+
+   # alternate that will work on Perl version 5.8
+   #my($val);
+   #if ($line =~ /^#define\s+\S+\s+\"([^\s\."]+)(\..*)?\"/)
+   #{
+   #   $val = $1;
+   #}
+   #elsif ($line =~ /^#define\s+\S+\s+([^\s\.]+)(\..*)?\s*/)
+   #{
+   #   $val = $1;
+   #}
+
+   # Igor's regex
+   my($val) = ($line =~ /^#define\s+\S+\s+"?([^"\s\.]+)(\.(.*))?/);
+
+   return $val;
+}
