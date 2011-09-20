@@ -71,8 +71,8 @@ exec >> $logfile 2>&1
 . $kRepDir/subscribe_manage/subscribe_functions
 
 currDt=`date`
-pidfile=$0.pid
-diefile=$0.die
+pidfile=$SMworkDir/$0.pid
+diefile=$SMworkDir/$0.die
 
 logwrite "Starting $0"
 
