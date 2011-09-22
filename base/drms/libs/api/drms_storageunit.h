@@ -21,6 +21,5 @@ int drms_su_getexportserver(DRMS_Env_t *env,
                             long long sunum, 
                             char *expserver, 
                             int size);
-int drms_su_sumexport(DRMS_Env_t *env, SUMEXP_t *);
 
 #endif

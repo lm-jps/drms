@@ -53,7 +53,7 @@ data model. This includes
 
 /* SUMS includes */
 #include "SUM.h"
-#include "sum_rpc.h"
+//#include "sum_rpc.h"
 
 
 /* DRMS includes. */
