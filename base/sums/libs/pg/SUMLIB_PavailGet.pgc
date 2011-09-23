@@ -148,5 +148,6 @@ EXEC SQL END DECLARE SECTION;
 sqlerror:
         printk("Error in SUMLIB_SumsetGet for group %d\n", group);
         printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
+    *sumset = 0;
     return 0;
 }
