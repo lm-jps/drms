@@ -36,6 +36,7 @@ my $slony_logs="";                ## local slony cluster directory area
 my $PSQL=""; 		             ## psqahy$mi_it'';                   ## list of people to email in case some problem occurs.
 my @line=();
 my $email_list="";
+my $pg_host="";
 my $pg_user="";
 my $pg_dbname="";
 my $ingestion_path="";
@@ -89,6 +90,8 @@ while (<SETTINGS>) {
                 $cluster_name=$line[1];
         } elsif ( $line[0] eq "node" ) {
                 $site_name=$line[1];
+        } elsif ( $line[0] eq "pg_host" ) {
+                $pg_host=$line[1];
         } elsif ( $line[0] eq "pg_user" ) {
                 $pg_user=$line[1];
         } elsif ( $line[0] eq "pg_dbname" ) {
