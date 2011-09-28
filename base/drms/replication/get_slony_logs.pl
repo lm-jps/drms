@@ -118,7 +118,7 @@ unless (-d $slony_logs)
 }
 
 ## build PSQL command
-$PSQL=$PSQL." -U".$pg_user." ".$pg_dbname;
+$PSQL=$PSQL." -h".$pg_host." -U".$pg_user." ".$pg_dbname;
 print "PSQL = [$PSQL]\n";
 
 $Net::SSH::ssh=$ssh_cmd;
