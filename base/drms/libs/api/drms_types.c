@@ -31,6 +31,29 @@ static TimeEpochStrings_t gSEpochS[] =
    {(DRMS_TimeEpoch_t)-99, ""}
 };
 
+/* This is the way that strtoll checks for a hex string. */
+static int IsHexString(const char *str)
+{
+   int ishex = 0;
+   char *s = strdup(str);
+
+   /* First, skip whitespace. */
+   while (isspace(*s))
+   {
+      ++s;
+   }
+   
+   /* Then look for a '0' followed by a 'X' or 'x'. */
+   if (s[0] == '0' && toupper(s[1]) == 'X')
+   {
+      ishex = 1;
+   }
+
+   free(s);
+
+   return ishex;
+}
+
 DB_Type_t drms2dbtype(DRMS_Type_t type)
 {
   switch(type)
@@ -1433,16 +1456,19 @@ char drms2char(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     }
     break;
   case DRMS_TYPE_STRING: 
-    val = (long long)strtod(value->string_val,&endptr);
-    if (val==0 && endptr==value->string_val )	
+    val = (long long)strtoll(value->string_val, &endptr, 0);
+    if (val==0 && endptr==value->string_val)	
     {
       stat = DRMS_BADSTRING;
       result = DRMS_MISSING_CHAR;
     }
-    else if ( val < SCHAR_MIN || val > SCHAR_MAX)
+    else if ((IsHexString(value->string_val) && 
+              ((val & 0xFFFFFFFFFFFFFF00) != 0) && 
+              ((val & 0xFFFFFFFFFFFFFF00) != 0xFFFFFFFFFFFFFF00)) ||
+             (!IsHexString(value->string_val) && (val < SCHAR_MIN || val > SCHAR_MAX)))
     {
-      stat = DRMS_RANGE;
-      result = DRMS_MISSING_CHAR;
+       stat = DRMS_RANGE;
+       result = DRMS_MISSING_CHAR;
     }
     else {
       stat = DRMS_SUCCESS;
@@ -1553,15 +1579,18 @@ short drms2short(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     }
     break;
   case DRMS_TYPE_STRING: 
-    val = strtod(value->string_val,&endptr);
-    if (val==0 && endptr==value->string_val )	
+    val = strtoll(value->string_val, &endptr, 0);
+    if (val==0 && endptr==value->string_val)
     {
       stat = DRMS_BADSTRING;
       result = DRMS_MISSING_SHORT;
     }
-    else if ( val < SHRT_MIN || val > SHRT_MAX)
+    else if ((IsHexString(value->string_val) && 
+              ((val & 0xFFFFFFFFFFFF0000) != 0) && 
+              ((val & 0xFFFFFFFFFFFF0000) != 0xFFFFFFFFFFFF0000)) ||
+             (!IsHexString(value->string_val) && (val < SHRT_MIN || val > SHRT_MAX)))
     {
-      stat = DRMS_RANGE;
+       stat = DRMS_RANGE;
       result = DRMS_MISSING_SHORT;
     }
     else {
@@ -1673,16 +1702,19 @@ int drms2int(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     }
     break;
   case DRMS_TYPE_STRING: 
-    val = strtod(value->string_val,&endptr);
+    val = strtoll(value->string_val, &endptr, 0);
     if (val==0 && endptr==value->string_val )	
     {
       stat = DRMS_BADSTRING;
       result = DRMS_MISSING_INT;
     }
-    else if ( val < INT_MIN || val > INT_MAX)
+    else if ((IsHexString(value->string_val) && 
+              ((val & 0xFFFFFFFF00000000) != 0) && 
+              ((val & 0xFFFFFFFF00000000) != 0xFFFFFFFF00000000)) ||
+             (!IsHexString(value->string_val) && (val < INT_MIN || val > INT_MAX)))
     {
-      stat = DRMS_RANGE;
-      result = DRMS_MISSING_INT;
+       stat = DRMS_RANGE;
+       result = DRMS_MISSING_INT;
     }
     else {
       stat = DRMS_SUCCESS;
@@ -1798,8 +1830,8 @@ long long drms2longlong(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     }
     break;
   case DRMS_TYPE_STRING: 
-    val = strtod(value->string_val,&endptr);
-    if (val==0 && endptr==value->string_val )	
+    val = strtoll(value->string_val, &endptr, 0);
+    if (val==0 && endptr==value->string_val)
     {
       stat = DRMS_BADSTRING;
       result = DRMS_MISSING_LONGLONG;
