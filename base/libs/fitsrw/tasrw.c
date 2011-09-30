@@ -110,16 +110,12 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
    char filehashkey[PATH_MAX + 2];
    char tmpfilehashkey[PATH_MAX + 2];
    char fileinfokey[64];
-   int stat = 0;
+   int stat = CFITSIO_SUCCESS;
+   int fiostat = 0;
    int datachk;
    int hduchk;
    int newfile = 0;
    char cfitsiostat[FLEN_STATUS];
-
-   if (verbose)
-   {
-      PushTimer();
-   }
 
    if (!gFFiles)
    {
@@ -180,29 +176,30 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
 
                if (verbose)
                {
+                  fprintf(stdout, "Closing fits file '%s'.\n", filename);
                   PushTimer();
                }
 
                /* we are closing a read-only file here. */
-               fits_close_file(*pfptr, &stat);
+               fits_close_file(*pfptr, &fiostat);
+
+               if (fiostat != 0)
+               {
+                  fprintf(stdout, "Unable to close fits file '%s'.\n", filename);
+                  perror("fitsrw_getfptr_internal() system error");
+                  stat = CFITSIO_ERROR_FILE_IO;
+               }
 
                if (verbose)
                {
-                  if (stat == 0)
-                  {
-                     fprintf(stdout, "Closing fits file '%s'.\n", tmpfilehashkey);
-                  }
-                  else
-                  {
-                     fprintf(stdout, "Unable to close fits file '%s'.\n", tmpfilehashkey);
-                     perror("fitsrw_getfptr_internal() system error");
-                  }
-
-                  fprintf(stdout, "Time to close fitsfile '%s'= %f sec.\n", tmpfilehashkey, PopTimer());
+                  fprintf(stdout, "Time to close fitsfile '%s'= %f sec.\n", filename, PopTimer());
                }
             }
-                  
-            hcon_remove(gFFiles, tmpfilehashkey);
+
+            if (!stat)
+            {
+               hcon_remove(gFFiles, tmpfilehashkey);
+            }
             
             pfptr = NULL;
          }
@@ -213,31 +210,27 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
          PushTimer();
       }
 
-      if (fits_open_image(&fptr, filename, writeable ? READWRITE : READONLY, &stat)) 
+      if (!stat)
       {
-         if (writeable)
+         if (fits_open_image(&fptr, filename, writeable ? READWRITE : READONLY, &fiostat)) 
          {
-            stat = 0;
-
-            /* create new file, but only if writing */
-            newfile = 1;
-            if (fits_create_file(&fptr, filename, &stat)) 
+            /* Couldn't open file - doesn't exist. */
+            if (writeable)
             {
-               stat = 1;
+               /* OK - this is a new file, so just create it. */
+               fiostat = 0;
 
-               if (status)
+               /* create new file, but only if writing */
+               newfile = 1;
+               if (fits_create_file(&fptr, filename, &fiostat)) 
                {
-                  *status = CFITSIO_ERROR_FILE_IO;
+                  /* Couldn't create new file. */
+                  stat = CFITSIO_ERROR_FILE_IO;
                }
             }
-         }
-         else
-         {
-            stat = 1;
-
-            if (status)
+            else
             {
-               *status = CFITSIO_ERROR_FILE_DOESNT_EXIST;
+               stat = CFITSIO_ERROR_FILE_DOESNT_EXIST;
             }
          }
       }
@@ -257,27 +250,18 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
          /* Check checksum, if it exists */
          if (verchksum)
          {
-            if (fits_verify_chksum(fptr, &datachk, &hduchk, &stat))
+            if (fits_verify_chksum(fptr, &datachk, &hduchk, &fiostat))
             {
-               stat = 1;
-
-               if (status)
-               {
-                  *status = CFITSIO_ERROR_LIBRARY;
-               }
+               fprintf(stderr, "Unable to verify fits-file checksum.\n");
+               stat = CFITSIO_ERROR_LIBRARY;
             }
             else
             {
                if (datachk == -1 || hduchk == -1)
                {
-                  stat = 1;
-
                   /* Both checksums were present, and at least one of them failed. */
                   fprintf(stderr, "Failed to verify data and/or HDU checksum (file corrupted).\n");
-                  if (status)
-                  {
-                     *status = CFITSIO_ERROR_FILE_IO;
-                  }
+                  stat = CFITSIO_ERROR_FILE_IO;
                }
             }
          }
@@ -288,7 +272,7 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
          }
       }
       
-      if (!stat && gFFiles->num_total > MAXFFILES)
+      if (!stat && gFFiles->num_total >= MAXFFILES - 1)
       {
          /* Must close some open files */
          int ifile = 0;
@@ -318,10 +302,7 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
                      if (stat)
                      {
                         fprintf(stderr, "Missing file info for fits file '%s'.\n", fhkey);
-                        if (status)
-                        {
-                           *status = CFITSIO_ERROR_CANT_GET_FILEINFO;
-                        }
+                        stat = CFITSIO_ERROR_CANT_GET_FILEINFO;
                         break;
                      }
 
@@ -340,7 +321,14 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
 
                            snprintf(naxisname, sizeof(naxisname), "NAXIS%d", finfo.naxis);
                            dimlen = (int)finfo.naxes[finfo.naxis - 1];
-                           fits_update_key(*pfptr, TINT, naxisname, &dimlen, NULL, &stat);
+                           fits_update_key(*pfptr, TINT, naxisname, &dimlen, NULL, &fiostat);
+
+                           if (fiostat)
+                           {
+                              fprintf(stderr, "Unable to update %s keyword.\n", naxisname);
+                              stat = CFITSIO_ERROR_LIBRARY;
+                              break;
+                           }
                         }
 
                         if (verbose)
@@ -348,14 +336,15 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
                            PushTimer();
                         }
 
-                        fits_write_chksum(*pfptr, &stat);
+                        fits_write_chksum(*pfptr, &fiostat);
 
-                        if (stat)
+                        if (fiostat)
                         {
-                           fits_get_errstatus(stat, cfitsiostat);
+                           fits_get_errstatus(fiostat, cfitsiostat);
                            fprintf(stderr, "Purging cache: error calculating and writing checksum for fitsfile '%s'.\n", fhkey);
                            fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
                            stat = 0;
+                           fiostat = 0;
                         }
                         
                         if (verbose)
@@ -369,9 +358,9 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
                         PushTimer();
                      }
 
-                     fits_close_file(*pfptr, &stat);
+                     fits_close_file(*pfptr, &fiostat);
 
-                     if (stat == 0)
+                     if (fiostat == 0)
                      {
                         if (verbose)
                         {
@@ -380,10 +369,12 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
                      }
                      else
                      {
-                        fits_get_errstatus(stat, cfitsiostat);
+                        fits_get_errstatus(fiostat, cfitsiostat);
                         fprintf(stderr, "Purging cache: error closing fitsfile '%s'.\n", fhkey);
                         fprintf(stderr, "CFITSIO error '%s'\n", cfitsiostat);
                         perror("fitsrw_getfptr_internal() system error");
+                        stat = CFITSIO_ERROR_FILE_IO;
+                        break;
                      }
                      
                      if (verbose)
@@ -393,14 +384,9 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
                   }
 
                   /* Save the filehashkey for each file being removed from the cache - 
-                   * must remove from gFFiles AFTER existing the loop that is iterating
+                   * must remove from gFFiles AFTER exiting the loop that is iterating
                    * over gFFiles. */
                   list_llinserttail(llist, (void *)&fhkey);
-
-                  if (stat)
-                  {
-                     fprintf(stderr, "Error closing fitsfile '%s'.\n", filename);
-                  }
 
                   ifile++;
                }
@@ -408,7 +394,7 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
                {
                   break;
                }
-            }
+            } /* loop over files being purged */
 
             hiter_destroy(&hit);
          }
@@ -426,9 +412,11 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
 
       if (!stat)
       {
-         /* Read essential keyword information and cache that for later use */
+         /* We just opened a new fits-file. Cache it. */
+
          CFITSIO_IMAGE_INFO *imginfo = NULL;
 
+         /* Read essential keyword information and cache that for later use */
          if (newfile)
          {
             imginfo = (CFITSIO_IMAGE_INFO *)malloc(sizeof(CFITSIO_IMAGE_INFO));
@@ -438,12 +426,8 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
          {
             if (fitsrw_read_keylist_and_image_info((FITSRW_fhandle)fptr, NULL, &imginfo) != CFITSIO_SUCCESS)
             {
-               stat = 1;
-
-               if (status)
-               {
-                  *status = CFITSIO_ERROR_CANT_GET_FILEINFO;
-               }
+               fprintf(stderr, "Unable to get file information for %s.\n", filehashkey);
+               stat = CFITSIO_ERROR_CANT_GET_FILEINFO;
             }
          }
 
@@ -463,12 +447,21 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
             cfitsio_free_these(&imginfo, NULL, NULL);
          }
 
-         hcon_insert(gFFiles, filehashkey, &fptr);
+         if (!stat)
+         {
+            hcon_insert(gFFiles, filehashkey, &fptr);
+         }
+
          if (verbose)
          {
             fprintf(stdout, "Number fitsfiles opened: %d\n", gFFiles->num_total);
          }
       }
+   }
+
+   if (status)
+   {
+      *status = stat;
    }
 
    return fptr;
