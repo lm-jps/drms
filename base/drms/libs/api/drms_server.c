@@ -899,6 +899,11 @@ void *drms_server_thread(void *arg)
       drms_server_getsuinfo(env, sockfd);
       pthread_mutex_unlock(env->clientlock);
       break;
+    case DRMS_GETDBUSER:
+      pthread_mutex_lock(env->clientlock);
+      drms_server_getdbuser(env, sockfd);
+      pthread_mutex_unlock(env->clientlock);
+      break;
     default:
       fprintf(stderr,"Error: Unknown command code '%d'\n",command);
     }
@@ -1384,6 +1389,12 @@ int drms_server_getsuinfo(DRMS_Env_t *env, int sockfd)
    }
 
    return status;
+}
+
+int drms_server_getdbuser(DRMS_Env_t *env, int sockfd)
+{
+   send_string(sockfd, env->session->db_handle->dbuser);
+   return DRMS_SUCCESS;
 }
 
 /* Server stub for drms_su_freeslot and drms_su_markstate. */

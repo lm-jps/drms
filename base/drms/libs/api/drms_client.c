@@ -1905,10 +1905,24 @@ int drms_series_isdbowner(DRMS_Env_t *env, const char *series, int *status)
       {
          if (qres->num_cols == 1 && qres->num_rows == 1)
          {
-            if (strcmp(qres->field[0][0], env->session->db_handle->dbuser) == 0)
+            char *dbuser = NULL;
+
+#ifndef DRMS_CLIENT
+            dbuser = env->session->db_handle->dbuser;
+#else
+            drms_send_commandcode(env->session->sockfd, DRMS_GETDBUSER);
+            dbuser = receive_string(env->session->sockfd);
+#endif
+            if (strcmp(qres->field[0][0], dbuser) == 0)
             {
                isowner = 1;
             }
+
+#ifdef DRMS_CLIENT
+            free(dbuser);
+            dbuser = NULL;
+#endif
+
          }
          else
          {
