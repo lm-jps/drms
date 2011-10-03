@@ -245,7 +245,8 @@ int drms_server_open_session(DRMS_Env_t *env)
   if (env->dolog) {
      /* Allocate a 1MB storage unit for log files. */
      /* drms_su_alloc() can be slow when the dbase is busy */
-     env->session->sunum = drms_su_alloc(env, 1<<20, &env->session->sudir, NULL, &status);
+     int tg = 1; /* Use tapegroup 1 - SUMS maps this number to a sums partition set. */
+     env->session->sunum = drms_su_alloc(env, 1<<20, &env->session->sudir, &tg, &status);
     if (status)
       {
 	fprintf(stderr,"Failed to allocate storage unit for log files: %d\n", 
