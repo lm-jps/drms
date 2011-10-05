@@ -1447,10 +1447,12 @@ int drms_copykey(DRMS_Record_t *target, DRMS_Record_t *source, const char *key)
    int status = DRMS_SUCCESS;
    DRMS_Value_t srcval; /* owns contained string */
 
+   /* follows links */
    srcval = drms_getkey_p(source, key, &status);
    
    if (status == DRMS_SUCCESS)
    {
+      /* does not follow links */
       status = drms_setkey_p(target, key, &srcval);
    }
 
@@ -1461,18 +1463,7 @@ int drms_copykey(DRMS_Record_t *target, DRMS_Record_t *source, const char *key)
 
 int drms_copykeyB(DRMS_Keyword_t *tgtkey, DRMS_Keyword_t *srckey)
 {
-   int status = DRMS_SUCCESS;
-   DRMS_Value_t srcval; /* owns contained string */
-
-   srcval.type = srckey->info->type;
-   srcval.value = srckey->value;
-   
-   /* Must go through this function - may be setting a keyword that
-    * has an associated index keyword and this function will set
-    * the associated keyword appropriately. */
-   status = drms_setkey_p(tgtkey->record, srckey->info->name, &srcval);
-
-   return status;
+   return drms_copykey(tgtkey->record, srckey->record, srckey->info->name);
 }
 
 int drms_copykeys(DRMS_Record_t *target, 
