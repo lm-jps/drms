@@ -1,7 +1,27 @@
 #ifndef _DEFS_H
 #define _DEFS_H
 
-int defs_register(const char *filepath);
+#include "hcontainer.h"
+
+#ifdef DRMSSTRING
+#undef DRMSSTRING
+#endif
+
+#ifdef REGISTERSTRINGSPREFIX
+#undef REGISTERSTRINGSPREFIX
+#endif
+
+#ifdef REGISTERSTRINGSSUFFIX
+#undef REGISTERSTRINGSSUFFIX
+#endif
+
+extern HContainer_t *gDefs;
+extern void InitGDefs();
+
+#define DRMSSTRING(X, Y) hcon_insert(gDefs, #X, #Y);
+#define REGISTERSTRINGSPREFIX static void defs_init() { InitGDefs();
+#define REGISTERSTRINGSSUFFIX }
+
 void defs_term();
 const char *defs_getval(const char *key);
 

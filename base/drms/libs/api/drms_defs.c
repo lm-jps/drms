@@ -1,10 +1,6 @@
 #include "drms_defs.h"
 #include "defs.h"
 
-int drms_defs_register(const char *filepath)
-{
-   return defs_register(filepath);
-}
 
 void drms_defs_term()
 {
