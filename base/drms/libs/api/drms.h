@@ -82,7 +82,18 @@ data model. This includes
 static inline void drms_make_hashkey(char *hashkey, const char *name, 
 				     long long num)
 {
-  sprintf(hashkey, "%s_%020lld",name,num);
+   /* AAAHH, HAAA! Must make the name lowercase since all hash keys should be lowercase in drms. */
+   char *tmp = strdup(name);
+   strtolower(tmp);
+   if (tmp)
+   {
+      sprintf(hashkey, "%s_%020lld", tmp, num);
+      free(tmp);
+   }
+   else
+   {
+      fprintf(stderr, "drms_make_hashkey() - out of memory.\n");
+   }
 }
 
 static inline void drms_term()

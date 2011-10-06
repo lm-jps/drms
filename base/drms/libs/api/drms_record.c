@@ -3122,7 +3122,7 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
         } /* iRec */
      } /* iSet */
 
-     if (!bail && hcon_size(suinfoauth) > 0)
+     if (!bail && suinfoauth && hcon_size(suinfoauth) > 0)
      {
         if (sortalso)
         {
@@ -3587,7 +3587,14 @@ void drms_free_record(DRMS_Record_t *rec)
      drms_make_hashkey(hashkey, rec->seriesinfo->seriesname, rec->recnum);
      /* NOTICE: refcount on rec->su will be decremented when hcon_remove calls
 	drms_free_record_struct via its deep_free callback. */
-     hcon_remove(&rec->env->record_cache, hashkey); 
+
+     /* Caller removed a reference to the record. Decrement reference counter. */
+     --rec->refcount;
+
+     if (rec->refcount == 0)
+     {
+        hcon_remove(&rec->env->record_cache, hashkey); 
+     }
    }
 }
 
@@ -3670,6 +3677,10 @@ DRMS_Record_t *drms_retrieve_record(DRMS_Env_t *env, const char *seriesname,
 #ifdef DEBUG
     printf("Found dataset in cache.\n");    
 #endif
+
+    /* The record was in the record cache already. Increment reference counter. */
+    ++rec->refcount;
+
     if (status)
       *status = DRMS_SUCCESS;
     return rec;
@@ -3784,8 +3795,15 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
       {
 	/* Allocate a slot in the hash indexed record cache. */
 	rs->records[i] = hcon_allocslot(&env->record_cache, hashkey);
+
 	/* Populate the slot with values from the template. */
 	drms_copy_record_struct(rs->records[i], template);
+
+       /* Set refcount to initial value of 1. */
+        if (rs->records[i])
+        {
+           rs->records[i]->refcount = 1;
+        }
 
 	/* Set pidx in links */
 	drms_link_getpidx(rs->records[i]);
@@ -3797,6 +3815,13 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
         rs->records[i]->suinfo = NULL;
       } else {
 	// the old record is going to be overridden
+
+         /* The record was in the record cache already. Increment reference counter. */
+         if (rs->records[i])
+         {
+            ++rs->records[i]->refcount;
+         }
+
 	free(rs->records[i]->sessionns);
       }
       rs->records[i]->readonly = 1;
@@ -4224,9 +4249,16 @@ DRMS_Record_t *drms_alloc_record2(DRMS_Record_t *template,
 
   /* Allocate a slot in the hash indexed record cache. */
   rec = (DRMS_Record_t *)hcon_allocslot(&env->record_cache, hashkey);
+
   rec->su = NULL;
   /* Populate the slot with values from the template. */
   drms_copy_record_struct(rec, template);
+
+  /* Set refcount to initial value of 1. */
+  if (rec)
+  {
+     rec->refcount = 1;
+  }
   
   /* Set pidx in links */
   drms_link_getpidx(rec);
@@ -4323,7 +4355,7 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
      {
         /* check series directly */
         char qry[DRMS_MAXQUERYLEN];
-        char *nspace = ns(seriesname);
+        char *nspace = ns(lcseries);
         int serr;
         DB_Text_Result_t *tqres = NULL;
 
@@ -4333,7 +4365,7 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
         {
            /* First check for a valid namespace. If you just do the query with an invalid namespace, 
             * the current transaction will get aborted. */
-           snprintf(qry, sizeof(qry), "select name from admin.ns where name ILIKE '%s'", nspace);
+           snprintf(qry, sizeof(qry), "select name from admin.ns where name = '%s'", nspace); /* name is lc */
            tqres = drms_query_txt(env->session, qry);
            if (tqres == NULL)
            {

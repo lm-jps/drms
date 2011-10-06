@@ -582,6 +582,8 @@ struct DRMS_Record_struct
                          Contains lots of storage-unit information. Can't
                          combine with su since su gets filled in by the SUM_get() 
                          call. */
+  int refcount; /* Track all references to the record struct in the 
+                       * record_cache. */
 };
 
 /** DRMS record struct reference */
