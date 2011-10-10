@@ -123,6 +123,11 @@
 #define DRMS_ERROR_SUMINFO          (-10075)
 #define DRMS_ERROR_NEEDSUMS         (-10076)
 
+#define DRMS_ERROR_CANTCREATESHADOW (-10077)
+
+#define DRMS_ERROR_UNKNOWNSHADOW    (-10078)
+#define DRMS_ERROR_SEGMENTWRITE     (-10079)
+
 /* remote sums - not errors, but status codes*/
 #define DRMS_REMOTESUMS_TRYLATER     (-30000)
 
