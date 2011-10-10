@@ -24,6 +24,7 @@
 #define MAX_STR 256		/* max size of a char[] */
 #define MAXSTRING 4096
 #define SUMARRAYSZ MAXSUMREQCNT	/* num of entries in SUM_t * arrays malloced */
+#define MAXSUNUMARRAY 65536     /* max sunums in struct Sunumarray */
 #define RESPWAIT 30             /* secs to wait for completion response */
 #define RPCMSG 2
 #define TIMEOUTMSG 3
@@ -120,6 +121,32 @@ struct Rkey {
 typedef struct Rkey Rkey;
 bool_t xdr_Rkey(XDR *xdrs, Rkey *objp);
 
+//This is used by the SUMS API SUM_infoArray() to send info to sums
+struct Sunumarray {
+  int reqcnt;
+  int mode;
+  int tdays;
+  int reqcode;
+  uint64_t uid;
+  char *username;
+  char *machinetype;
+  uint64_t *sunums;
+};
+typedef struct Sunumarray Sunumarray;
+bool_t xdr_Sunumarray(XDR *xdrs, Sunumarray *objp);
+
+//This is used by the SUMS API SUM_infoArray() to receive info from sums
+struct Sinfoarray {
+  int reqcnt;
+  int reqcode;
+  uint64_t uid;
+  SUM_info_t *sinfo;	//defined in sum_info.h
+};
+typedef struct Sinfoarray Sinfoarray;
+bool_t xdr_Sinfoarray(XDR *xdrs, Sinfoarray *objp);
+bool_t xdr_sum_info_t(XDR *xdrs, SUM_info_t *objp);
+
+
 /* This is the sum_svc program registration. Client API sends here */
 //First define the prog numbers of the seperate sum functions
 #define SUMALLOC ((uint32_t)0x200005e7) /* 536872423 */
@@ -192,6 +219,7 @@ bool_t xdr_Rkey(XDR *xdrs, Rkey *objp);
 #define NOPDO ((uint32_t)16)
 #define TAPERECONNECTDO ((uint32_t)17)
 #define CONFIGDO ((uint32_t)18)
+#define INFODOARRAY ((uint32_t)19)
 
 extern KEY *sumdo_1();
 extern KEY *opendo_1();
@@ -201,6 +229,7 @@ extern KEY *getdo_1();
 extern KEY *infodo_1();
 extern KEY *infodoX_1();
 extern KEY *infodoX_1_U();
+extern Sunumarray *infodoArray_1();
 extern KEY *sumrespdo_1();
 extern KEY *allocdo_1();
 extern KEY *putdo_1();
@@ -251,6 +280,7 @@ extern KEY *tapenopdo_1();
 #define RESPPROG ((uint32_t)0x20000613)  /* 536872467 */
 #define RESPVERS ((uint32_t)1)
 #define RESPDO ((uint32_t)1)
+#define RESPDOARRAY ((uint32_t)2)
 #define RESULT_PEND 32		/* returned by clnt_call GETDO request 
 				   when storage unit is off line */
 extern KEY *respdo_1();
