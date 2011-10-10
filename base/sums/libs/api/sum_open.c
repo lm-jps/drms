@@ -43,6 +43,8 @@ extern int errno;
 /* Static prototypes. */
 SUMID_t sumrpcopen_1(KEY *argp, CLIENT *clnt, int (*history)(const char *fmt, ...));
 static void respd(struct svc_req *rqstp, SVCXPRT *transp);
+static KEY *respdoarray_1(KEY *params);
+
 int getanymsg(int block);
 static int getmsgimmed ();
 static char *datestring(void);
@@ -1339,6 +1341,125 @@ int SUM_infoEx(SUM_t *sum, int (*history)(const char *fmt, ...))
   }
 }
 
+/* Free the automatic malloc of the sinfo linked list done from a 
+ * SUM_infoArray() call.
+*/
+void SUM_infoArray_free(SUM_t *sum)
+{
+  if(sum->sinfo) free(sum->sinfo);
+  sum->sinfo = NULL;            //must do so no double free in SUM_close()
+}
+
+/* Return information from sum_main for the given sunums in
+ * the input uint64_t dxarray. There can be up to 
+ * MAXSUNUMARRAY entries given by reqcnt. The uid and username are picked up
+ * from the *sum. 
+ * The sum->sinfo will malloc (and free at close) 
+ * the memory needed for the reqcnt answers returned by sum_svc.
+ * The user can optionally free the memory by calling SUM_infoArray_free().
+ * Return non-0 on error, else sum->sinfo has the SUM_info_t pointer
+ * to linked list of SUM_info_t sturctures for the reqcnt.
+ * NOTE: error 4 is Connection reset by peer, sum_svc probably gone.
+*/
+int SUM_infoArray(SUM_t *sum, uint64_t *dxarray, int reqcnt, int (*history)(const char *fmt, ...))
+{
+  int rr;
+  Sunumarray suarray;
+  SUM_info_t *sinfowalk;
+  char *call_err, *jsoc_machine;
+  uint32_t retstat;
+  int i,msgstat;
+  enum clnt_stat status;
+
+  if(reqcnt > MAXSUNUMARRAY) {
+    (*history)("Requent count of %d > max of %d\n", reqcnt, MAXSUNUMARRAY);
+    return(1);
+  }
+  suarray.reqcnt = reqcnt;
+  suarray.mode = sum->mode;
+  suarray.tdays = sum->tdays;
+  suarray.reqcode = INFODOARRAY;
+  suarray.uid = sum->uid;
+  suarray.username = sum->username;
+  if(!(jsoc_machine = (char *)getenv("JSOC_MACHINE"))) {
+    (*history)("No JSOC_MACHINE in SUM_infoArray(). Not a JSOC environment\n");
+    return(1);			//error. not a JSOC environment
+  }
+  suarray.machinetype = jsoc_machine;
+  suarray.sunums = dxarray;
+
+  rr = rr_random(0, numSUM-1);
+  switch(rr) {
+  case 0: 
+    clinfo = sum->clinfo;
+    break;
+  case 1:
+    clinfo = sum->clinfo1;
+    break;
+  case 2:
+    clinfo = sum->clinfo2;
+    break;
+  case 3:
+    clinfo = sum->clinfo3;
+    break;
+  case 4:
+    clinfo = sum->clinfo4;
+    break;
+  case 5:
+    clinfo = sum->clinfo5;
+    break;
+  case 6:
+    clinfo = sum->clinfo6;
+    break;
+  case 7:
+    clinfo = sum->clinfo7;
+    break;
+  }
+  clprev = clinfo;
+  status = clnt_call(clinfo, INFODOARRAY, (xdrproc_t)xdr_Sunumarray, (char *)&suarray, 
+			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
+
+  // NOTE: These rtes seem to return after the reply has been received despite
+  // the timeout value. If it did take longer than the timeout then the timeout
+  // error status is set but it should be ignored.
+  // 
+  if(status != RPC_SUCCESS) {
+    if(status != RPC_TIMEDOUT) {
+      call_err = clnt_sperror(clinfo, "Err clnt_call for INFODOX");
+      if(history) 
+        (*history)("%s %d %s\n", datestring(), status, call_err);
+      //freekeylist(&klist);
+      return (4);
+    }
+  }
+  if(retstat) {			// error on INFODOARRAY call
+    if(retstat != SUM_SUNUM_NOT_LOCAL)
+      if(history) 
+        (*history)("Error in SUM_infoArray()\n"); //be quiet for show_info sake
+    return(retstat);
+  }
+  else {
+    //must contiguous malloc all sinfo structures 0 filled
+    //The answer sent back from sum_svc will be read into this mem
+    //!!Memory now allocated in respdoarray_1() when the sum_svc answers
+    //sum->sinfo = (SUM_info_t *)calloc(reqcnt, sizeof(SUM_info_t));
+    //The links will be made when the binary file is read
+    //sinfowalk = sum->sinfo;
+    //sinfowalk->next = NULL;
+    //for(i = 1; i < reqcnt; i++) {
+    //  sinfowalk->next = sinfowalk + sizeof(SUM_info_t);
+    //  sinfowalk = sinfowalk->next;
+    //  sinfowalk->next = NULL;
+    //}
+    msgstat = getanymsg(1);	// get answer to SUM_infoArray call
+    //freekeylist(&klist);
+    if(msgstat == ERRMESS) return(ERRMESS);
+    //printf("\nIn SUM_info() the keylist is:\n"); //!!TEMP
+    //keyiterate(printkey, infoparams);
+    return(0);
+  }
+}
+
 /* Close this session with the SUMS. Return non 0 on error.
  * NOTE: error 4 is Connection reset by peer, sum_svc probably gone.
 */
@@ -1873,6 +1994,106 @@ int getmsgimmed()
   return(retcode);
 }
 
+/* Function called on receipt of a sum_svc response message for
+ * a RESPDOARRAY.  Called from respd().
+*/
+KEY *respdoarray_1(KEY *params)
+{
+  SUM_t *sum;
+  SUM_info_t *sinfod, *sinf;
+  SUMOPENED *sumopened;
+  FILE *rfp;
+  int reqcnt, i, filemode;
+  char *file;
+  char name[128], str1[128], str2[128], line[128];
+
+  sumopened = getsumopened(sumopened_hdr, getkey_uint64(params, "uid"));
+  sum = (SUM_t *)sumopened->sum;
+  if(sum == NULL) {
+    printf("**Response from sum_svc does not have an opened SUM_t *sum\n");
+    printf("**Don't know what this will do to the caller, but this is a logic bug\n");
+    return((KEY *)NULL);
+  }
+  reqcnt = getkey_int(params, "reqcnt");
+  file = getkey_str(params, "FILE");
+  filemode = getkey_int(params, "filemode");
+  if((rfp=fopen(file, "r")) == NULL) { 
+    printf("**Can't open %s from sum_svc ret from SUM_infoArray() call\n", file);
+    return((KEY *)NULL);
+  }
+  sum->sinfo = (SUM_info_t *)calloc(reqcnt, sizeof(SUM_info_t));
+  sinfod = sum->sinfo;
+  if(filemode == 0)
+    fread(sinfod, sizeof(SUM_info_t), reqcnt, rfp);
+  sinfod->next = NULL;
+  sinf = sinfod;
+  //must now make the links for the current memory
+  for(i = 1; i < reqcnt; i++) {
+    sinf++;
+    sinfod->next = sinf;
+    sinfod = sinf;
+    sinfod->next = NULL;
+  }
+  if(filemode == 1) {
+  sinfod = sum->sinfo;
+  for(i = 0; i < reqcnt; i++) {  //do linked list in sinfo
+    fgets(line, 128, rfp);
+    if(!strcmp(line, "\n")) { 
+      fgets(line, 128, rfp);
+    }
+    sscanf(line, "%s %lu", name, &sinfod->sunum);
+    fgets(line, 128, rfp);
+    sscanf(line, "%s %s", name, sinfod->online_loc);
+    if(!strcmp(name, "pa_status=")) {	//the sunum was not found in the db
+      strcpy(sinfod->online_loc, "");
+      goto SKIPENTRY;
+    }
+    fgets(line, 128, rfp);
+    sscanf(line, "%s %s", name, sinfod->online_status);
+    fgets(line, 128, rfp);
+    sscanf(line, "%s %s", name, sinfod->archive_status);
+    fgets(line, 128, rfp);
+    sscanf(line, "%s %s", name, sinfod->offsite_ack);
+    fgets(line, 128, rfp);
+    sscanf(line, "%s %80[^;]", name, sinfod->history_comment); //allow sp in line
+    fgets(line, 128, rfp);
+    sscanf(line, "%s %s", name, sinfod->owning_series);
+    fgets(line, 128, rfp);
+    sscanf(line, "%s %d", name, &sinfod->storage_group);
+    fgets(line, 128, rfp);
+    sscanf(line, "%s %lf", name, &sinfod->bytes);
+    fgets(line, 128, rfp);
+    sscanf(line, "%s %s %s", name, str1, str2); //date strin always the same
+    sprintf(sinfod->creat_date, "%s %s", str1, str2);
+    fgets(line, 128, rfp);
+    sscanf(line, "%s %s", name, sinfod->username);
+    fgets(line, 128, rfp);
+    sscanf(line, "%s %s", name, sinfod->arch_tape);
+    fgets(line, 128, rfp);
+    sscanf(line, "%s %d", name, &sinfod->arch_tape_fn);
+    fgets(line, 128, rfp);
+    sscanf(line, "%s %s %s", name, str1, str2);
+    sprintf(sinfod->arch_tape_date, "%s %s", str1, str2);
+    fgets(line, 128, rfp);
+    sscanf(line, "%s %s", name, sinfod->safe_tape);
+    fgets(line, 128, rfp);
+    sscanf(line, "%s %d", name, &sinfod->safe_tape_fn);
+    fgets(line, 128, rfp);
+    sscanf(line, "%s %s %s", name, str1, str2);
+    sprintf(sinfod->safe_tape_date, "%s %s", str1, str2);
+    fgets(line, 128, rfp);
+    sscanf(line, "%s %d", name, &sinfod->pa_status);
+  SKIPENTRY:
+    fgets(line, 128, rfp);
+    sscanf(line, "%s %d", name, &sinfod->pa_substatus);
+    fgets(line, 128, rfp);
+    sscanf(line, "%s %s", name, sinfod->effective_date);
+    sinfod = sinfod->next; //sinfod->next set up from the malloc
+  } 
+  }
+  return((KEY *)NULL);
+}
+
 /* Function called on receipt of a sum_svc response message.
  * Called from respd().
 */
@@ -2033,6 +2254,12 @@ static void respd(rqstp, transp)
     xdr_argument = xdr_Rkey;
     xdr_result = xdr_void;
     local = (char *(*)()) respdo_1;
+    RESPDO_called = 1;
+    break;
+  case RESPDOARRAY:
+    xdr_argument = xdr_Rkey;
+    xdr_result = xdr_void;
+    local = (char *(*)()) respdoarray_1;
     RESPDO_called = 1;
     break;
   default:
