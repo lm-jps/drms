@@ -120,4 +120,115 @@ xdr_Rkey(xdrs, objp)
   return(TRUE);
 }
 
+bool_t
+xdr_Sunumarray(xdrs, objp)
+	XDR *xdrs;
+	Sunumarray *objp;
+{
+  if(!xdr_int(xdrs, &objp->reqcnt))
+    return(FALSE);
+  if(!xdr_int(xdrs, &objp->mode))
+    return(FALSE);
+  if(!xdr_int(xdrs, &objp->tdays))
+    return(FALSE);
+  if(!xdr_int(xdrs, &objp->reqcode))
+    return(FALSE);
+  if(!xdr_uint64_t(xdrs, &objp->uid))
+    return(FALSE);
+  if (!xdr_string(xdrs, &objp->username, MAX_STR))
+    return(FALSE);
+  if (!xdr_string(xdrs, &objp->machinetype, MAX_STR))
+    return(FALSE);
+  //Force XDR to alloc mem while decoding
+  if(xdrs->x_op == XDR_DECODE && (objp->sunums != NULL)) {
+    //free(objp->sunums);
+    objp->sunums = NULL;
+  }
+  if(!xdr_array(xdrs, &objp->sunums, &objp->reqcnt, MAXSUNUMARRAY, sizeof(uint64_t), (xdrproc_t) xdr_uint64_t)) 
+    return(FALSE);
+  return(TRUE);
+}
 
+bool_t
+xdr_Sinfoarray(xdrs, objp)
+	XDR *xdrs;
+	Sinfoarray *objp;
+{
+  if(!xdr_int(xdrs, &objp->reqcnt))
+    return(FALSE);
+  if(!xdr_int(xdrs, &objp->reqcode))
+    return(FALSE);
+  if(!xdr_uint64_t(xdrs, &objp->uid))
+    return(FALSE);
+  //Force XDR to alloc mem while decoding
+  if(xdrs->x_op == XDR_DECODE && (objp->sinfo != NULL)) {
+    //free(objp->sinfo);
+    objp->sinfo = NULL;
+  }
+  if(!xdr_array(xdrs, &objp->sinfo, &objp->reqcnt, MAXSUNUMARRAY, sizeof(SUM_info_t), (xdrproc_t) xdr_sum_info_t)) 
+    return(FALSE);
+  return(TRUE);
+}
+
+bool_t
+xdr_sum_info_t(xdrs, objp)
+	XDR *xdrs;
+        SUM_info_t *objp;
+{
+  if(!xdr_pointer(xdrs, &(objp->next), sizeof(SUM_info_t), xdr_sum_info_t))
+    return (FALSE);
+  
+  if(!xdr_uint64_t(xdrs, &objp->sunum))
+    return(FALSE);		
+  //if (!xdr_string(xdrs, &objp->online_loc, 81))
+  if (!xdr_opaque(xdrs, objp->online_loc, 81))
+    return (FALSE);
+  //if (!xdr_string(xdrs, &objp->online_status, 5))
+  if (!xdr_opaque(xdrs, objp->online_status, 5))
+    return (FALSE);
+  //if (!xdr_string(xdrs, &objp->archive_status, 5))
+  if (!xdr_opaque(xdrs, objp->archive_status, 5))
+    return (FALSE);
+  //if (!xdr_string(xdrs, &objp->offsite_ack, 5))
+  if (!xdr_opaque(xdrs, objp->offsite_ack, 5))
+    return (FALSE);
+  //if (!xdr_string(xdrs, &objp->history_comment, 81))
+  if (!xdr_opaque(xdrs, objp->history_comment, 81))
+    return (FALSE);
+  //if (!xdr_string(xdrs, &objp->owning_series, 81))
+  if (!xdr_opaque(xdrs, objp->owning_series, 81))
+    return (FALSE);
+  if(!xdr_int(xdrs, &objp->storage_group))
+    return(FALSE);
+  if(!xdr_double(xdrs, &objp->bytes))
+    return(FALSE);
+  //if (!xdr_string(xdrs, &objp->creat_date, 32))
+  if (!xdr_opaque(xdrs, objp->creat_date, 32))
+    return (FALSE);
+  //if (!xdr_string(xdrs, &objp->username, 11))
+  if (!xdr_opaque(xdrs, objp->username, 11))
+    return (FALSE);
+  //if (!xdr_string(xdrs, &objp->arch_tape, 21))
+  if (!xdr_opaque(xdrs, objp->arch_tape, 21))
+    return (FALSE);
+  if(!xdr_int(xdrs, &objp->arch_tape_fn))
+    return(FALSE);
+  //if (!xdr_string(xdrs, &objp->arch_tape_date, 32))
+  if (!xdr_opaque(xdrs, objp->arch_tape_date, 32))
+    return (FALSE);
+  //if (!xdr_string(xdrs, &objp->safe_tape, 21))
+  if (!xdr_opaque(xdrs, objp->safe_tape, 21))
+    return (FALSE);
+  if(!xdr_int(xdrs, &objp->safe_tape_fn))
+    return(FALSE);
+  //if (!xdr_string(xdrs, &objp->safe_tape_date, 32))
+  if (!xdr_opaque(xdrs, objp->safe_tape_date, 32))
+    return (FALSE);
+  if(!xdr_int(xdrs, &objp->pa_status))
+    return(FALSE);
+  if(!xdr_int(xdrs, &objp->pa_substatus))
+    return(FALSE);
+  //if (!xdr_string(xdrs, &objp->effective_date, 20))
+  if (!xdr_opaque(xdrs, objp->effective_date, 20))
+    return (FALSE);
+}
