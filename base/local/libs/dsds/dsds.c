@@ -994,7 +994,7 @@ static void MakeDRMSSeriesName(void *hSOI,
 
    char drmsLev[DRMS_MAXSERIESNAMELEN];
    char key[kDSDS_MaxKeyName];
-   char *dsdsNsPrefix = NULL;
+   const char *dsdsNsPrefix = NULL;
 
    pSOIFn_getkey_str_t pFn_getkey_str = 
      (pSOIFn_getkey_str_t)GetSOIFPtr(hSOI, kSOI_GETKEY_STR);
@@ -1299,24 +1299,20 @@ static void FillDRMSSeg(void *hSOI,
 	     * So, adjust for this now.  */
 	    
 	    /* SOI will convert to either float or double */ 	 
-	    if (segout->info->type == DRMS_TYPE_CHAR || 	 
-		segout->info->type == DRMS_TYPE_SHORT ||
-		segout->info->type == DRMS_TYPE_INT ||
-		segout->info->type == DRMS_TYPE_LONGLONG ||
-		segout->info->type == DRMS_TYPE_FLOAT)
-	    { 	 
-	       segout->info->type = DRMS_TYPE_FLOAT; 	 
-	    } 	 
-	    else 	 
-	    { 	 
-	       segout->info->type = DRMS_TYPE_DOUBLE; 	 
+	    if (segout->info->type == DRMS_TYPE_INT || segout->info->type == DRMS_TYPE_LONGLONG)
+	    {
+	       segout->info->type = DRMS_TYPE_DOUBLE;
+	    }
+	    else if (segout->info->type == DRMS_TYPE_CHAR || segout->info->type == DRMS_TYPE_SHORT)
+	    {
+	       segout->info->type = DRMS_TYPE_FLOAT;
 	    }
 
             if (filename && *filename)
             {
                snprintf(segout->filename, DRMS_MAXPATHLEN, "%s", filename);
             }
- 
+
 	    status = kDSDS_Stat_Success;
 	 }
 	 else
@@ -1480,7 +1476,7 @@ long long DSDS_open_records(const char *dsspec,
    char datafile[PATH_MAX];
    char datapath[PATH_MAX];
 
-   *drmsSeries = NULL;
+   *drmsSeries = '\0';
    *keys = NULL;
    *segs = NULL;
 

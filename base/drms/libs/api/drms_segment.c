@@ -913,6 +913,9 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 
   if (seg->info->protocol == DRMS_DSDS || seg->info->protocol == DRMS_LOCAL)
   {
+     /* For both of these protocols, the fits file was read with DSDS code. Be careful - 
+      * DSDS code does some unexpected things when reading fits files, like converting 
+      * all integer data to floating-point data. */
      char *dsdsParams;
      int ds;
      int rn;
@@ -1018,6 +1021,39 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
 
 	      (*pFn_DSDS_free_array)(&arr);
 	      arr = copy;
+
+              /* drms_open_records() makes a temporary series to contain all DSDS data
+               * ingested during a module session. It makes a single segment whose 
+               * data type is determined by the bitpix value of the header of the first fits file
+               * in the set of fits files being accessed. To do this, it calls VDS_select_hdr() 
+               * which does NOT convert integer data types to a floating-point data type.
+               * But the later call to drms_segment_read(), which calls sds_read_fits(), will
+               * convert all integer image data to either a double (if the actual type is 
+               * int or long long) or a float (if the actual type is char or short), provided there
+               * are bzero/bscale keywords in the fits-file header. To cope with this 
+               * discrepancy, DSDS_open_records(), which is called by drms_open_records(), 
+               * creates a DRMS segment with the appropriate floating-point data type. 
+               * All is good, so long as sds_read_fits() converts all integer
+               * images to floating-point images. But we found a bug in DSDS. If bzero/bscale
+               * values are missing, which implies a bzero of 0 and a bscale of 1, then 
+               * sds_read_fits() will NOT convert the image data. If the data array
+               * were left untouched at this point, arr->type would be an integer type, but
+               * seg->info->type would be a floating-point type, and a mismatch error, detected
+               * near the end of drms_segment_read(), would be encountered.
+               *
+               * To work around this DSDS issue, at this point we convert the integer data to a 
+               * floating-point data type. DSDS is always supposed to convert integer image
+               * data to floating-point data, so explicitly doing that here will patch
+               * the bug in DSDS. 
+               */
+              if (copy->type == DRMS_TYPE_INT || copy->type == DRMS_TYPE_LONGLONG)
+              {
+                 drms_array_convert_inplace(DRMS_TYPE_DOUBLE, arr->bzero, arr->bscale, arr);
+              }
+              else if (copy->type == DRMS_TYPE_CHAR || copy->type == DRMS_TYPE_SHORT)
+              {
+                 drms_array_convert_inplace(DRMS_TYPE_FLOAT, arr->bzero, arr->bscale, arr);
+              }
 	   }
 	   else
 	   {
@@ -1732,6 +1768,7 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
 	 if (out->type == DRMS_TYPE_STRING)
 	 {
 	    fprintf(stderr, "Can't save string data into a fits file.\n");
+            status = DRMS_ERROR_INVALIDTYPE;
 	    goto bailout;
 	 }
 
@@ -1752,8 +1789,11 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
 	 {
 	    /* Need to change the compression parameter to something meaningful 
 	     * (although new users should just use the DRMS_FITS protocol )*/
-	    if (fitsrw_writeintfile(seg->record->env->verbose, filename, &imginfo, out->data, seg->cparms, fitskeys))
-	      goto bailout;
+	    if (fitsrw_writeintfile(seg->record->env->verbose, filename, &imginfo, out->data, seg->cparms, fitskeys) != CFITSIO_SUCCESS)
+            {
+               status = DRMS_ERROR_FITSRW;
+               goto bailout;
+            }
 
             /* imginfo will contain the correct bzero/bscale.  This may be different 
              * that what lives in seg->bzero/bscale - those values can be overriden. 
@@ -1773,6 +1813,7 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
 	 }
 	 else
 	 {
+            status = DRMS_ERROR_SEGMENTWRITE;
 	    goto bailout;
 	 }
 
@@ -1787,6 +1828,7 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
 	 if (out->type == DRMS_TYPE_STRING)
 	 {
 	    fprintf(stderr, "Can't save string data into a fits file.\n");
+            status = DRMS_ERROR_INVALIDTYPE;
 	    goto bailout;
 	 }
 
@@ -1805,8 +1847,11 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
 
 	 if (!drms_fitsrw_SetImageInfo(out, &imginfo))
 	 {	    
-	    if (fitsrw_writeintfile(seg->record->env->verbose, filename, &imginfo, out->data, seg->cparms, fitskeys))
-	      goto bailout;
+	    if (fitsrw_writeintfile(seg->record->env->verbose, filename, &imginfo, out->data, seg->cparms, fitskeys) != CFITSIO_SUCCESS)
+            {
+               status = DRMS_ERROR_FITSRW;
+               goto bailout;
+            }
             
             /* imginfo will contain the correct bzero/bscale.  This may be different 
              * that what lives in seg->bzero/bscale - those values can be overriden. 
@@ -1825,6 +1870,7 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
 	 }
 	 else
 	 {
+            status = DRMS_ERROR_SEGMENTWRITE;
 	    goto bailout;
 	 }
 
@@ -1885,6 +1931,7 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
       !seg->info->cseg_recnum) {
     if (seg->record->lifetime == DRMS_TRANSIENT) {
       fprintf(stderr, "Error: cannot set constant segment in a transient record\n");
+      status = DRMS_ERROR_SEGMENTWRITE;
       goto bailout;
     }
     return drms_segment_set_const(seg);
