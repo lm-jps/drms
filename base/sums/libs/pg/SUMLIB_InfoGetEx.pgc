@@ -26,7 +26,7 @@ static char testname[256];
 extern char jsoc_machine[];
 
 int SUMLIB_InfoGetEx(KEY *params, KEY **results);
-int SUMLIB_InfoGetEx_U(KEYU *params, KEYU **results);
+//int SUMLIB_InfoGetEx_U(KEYU *params, KEYU **results);
 int SUMLIB_InfoGetArray(Sunumarray *params, SUM_info_t **results, int *mode);
 int compare_sta(const void *a, const void *b);
 
