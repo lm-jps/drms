@@ -1,8 +1,8 @@
 #ifndef __SUM_INFO_H
 #define __SUM_INFO_H
 
-//All the info is from sum_main db table for the sunum.
-//The char sizes are from the sum_main DB table schema +1 where
+//All the info is from sum_main & sum_partn_alloc db table for the sunum.
+//The char sizes are from the DB table schema +1 where
 //content may be full size.
 struct SUM_info_struct
 {
