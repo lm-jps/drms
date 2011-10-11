@@ -27,6 +27,7 @@ extern int debugflg;
 extern int rrid;
 extern float ftmp;
 extern char logname[];
+extern char jsoc_machine[];
 static int NO_OPEN = 0;
 static char callername[MAX_STR];
 static char nametmp[80];
@@ -542,6 +543,60 @@ KEY *infodo_1(KEY *params)
     rinfo = SUM_SUNUM_NOT_LOCAL; // else this error code 
   send_ack();
   return((KEY *)1);		/* nothing will be sent later */
+}
+
+/* Called when a client does a SUM_infoArray() call to get sum_main info. 
+ * This uses a Sunumarray arg structure instead of the usual keylist.
+*/
+KEY *infodoArray_1(Sunumarray *params)
+{
+  int reqcnt, i, status, filemode;
+  double bytes = 10000000.0;
+  char *partname, *effective_date;
+  char filename[128];
+  //char *filename = "/home/production/junk/infoarray.ans"; //!!TEMP
+
+  reqcnt = params->reqcnt;
+  retlist = newkeylist();
+  write_log("SUM_infoArray() id=%d for user=%s uid=%lu 1st sunum=%lu cnt=%d\n", 
+	rrid, params->username, params->uid, *params->sunums, reqcnt);
+  if((status=SUMLIB_PavailGet(bytes,0,params->uid,0,&retlist))) {
+    write_log("Can't alloc storage for %s in infodoArray_1()\n", params->username);
+    freekeylist(&retlist);
+    rinfo = status;		/* ret err code back to caller */
+    send_ack();
+    return((KEY *)1);	/* nothing will be sent later */
+  } 
+  partname = getkey_str(retlist, "partn_name");
+  sprintf(filename, "%s/infoarray.ans", partname);
+  effective_date = (char *)get_effdate(0);
+
+  //make the alloc dir del pending
+  NC_PaUpdate(partname, params->uid, bytes, DADP, DAAEDDP, effective_date, 
+		0, 0, getkey_uint64(retlist, "ds_index"), 1, 0);
+  free(partname);
+  free(effective_date);
+  freekeylist(&retlist);
+  if(!(status=SUMLIB_InfoGetArray(params, filename, &filemode))) {
+    if(!(set_client_handle(RESPPROG, (uint32_t)params->uid))) { /*set up for response*/
+      write_log("**Error: infodoArray_1() can't set_client_handle for response\n");
+      rinfo = SUM_RESPPROG_ERR;
+      send_ack();
+      return((KEY *)1);  /* error. nothing to be sent */
+    }
+    rinfo = 0;
+    send_ack();
+    retlist = newkeylist();
+    setkey_int(&retlist, "STATUS", 0);   /* give success back to caller */
+    setkey_str(&retlist, "FILE", filename);
+    setkey_int(&retlist, "filemode", filemode);
+    setkey_uint64(&retlist, "uid", params->uid);
+    setkey_int(&retlist, "reqcnt", reqcnt);
+    return(retlist);		/* return the ans now */
+  }
+  rinfo = status;		/* ret err code 1 back to caller */
+  send_ack();
+  return((KEY *)1);	/* nothing will be sent later */
 }
 
 /* Called when a client does a SUM_infoEx() call to get sum_main info. 
