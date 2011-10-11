@@ -25,12 +25,15 @@ extern PART ptabx[]; 	/* defined in SUMLIB_PavailRequest.pgc */
 
 void logkey();
 extern int errno;
+extern Sinfoarray sarray;
 static void sumprog_1();
+static void sumprog_1_array();
 struct timeval TIMEOUT = { 10, 0 };
 uint32_t rinfo;
 uint32_t sumprog, sumvers;
 int rrid = 1;
 float ftmp;
+char jsoc_machine[MAX_STR];
 static struct timeval first[4], second[4];
 
 FILE *logfp;
@@ -229,7 +232,7 @@ void setup()
 {
   FILE *fplog;
   int tpid, i;
-  char *cptr;
+  char *cptr, *machine;
   char lfile[MAX_STR], acmd[MAX_STR], line[MAX_STR];
 
   //when change name of dcs2 to dcs1 we found out you have to use localhost
@@ -245,6 +248,13 @@ void setup()
   sumvers = SUMINFOV;
 
   thispid = getpid();
+  if(!(machine = (char *)getenv("JSOC_MACHINE"))) {
+    sprintf(jsoc_machine, "NOTGIVEN");
+    write_log("!!WARNING: No JSOC_MACHINE in env\n");
+    write_log("SUMLIB_InfoGetArray() calls will fail\n");
+  }
+  else
+    sprintf(jsoc_machine, "%s", machine);
   //sprintf(logname, "%s/sum_svc_%s.log", SUMLOG_BASEDIR, gettimetag());
   //open_log(logname);	//now called in get_cmd()
   printk_set(write_log, write_log);
@@ -515,6 +525,11 @@ sumprog_1(rqstp, transp)
 	bool_t (*xdr_argument)(), (*xdr_result)();
 	char *(*local)();
 
+        if(rqstp->rq_proc == INFODOARRAY) {
+          sumprog_1_array(rqstp, transp);
+          return;
+        }
+
 	switch (rqstp->rq_proc) {
 	case NULLPROC:
 		(void) svc_sendreply(transp, (xdrproc_t)xdr_void, (char *)NULL);
@@ -679,3 +694,102 @@ sumprog_1(rqstp, transp)
 
       return;
 }
+
+/* Like sumprog_1() but for an Sunumarray decode instead of a keylist.
+*/
+static void
+sumprog_1_array(rqstp, transp)
+	struct svc_req *rqstp;
+	SVCXPRT *transp;
+{
+  char procname[128];
+  uint64_t ck_client;     //used to ck high bits of current_client
+
+	//StartTimer(1);
+	union __svcargun {
+		Sunumarray sumdo_1_arg;
+	} argument;
+	char *result, *call_err;
+        enum clnt_stat clnt_stat;
+
+	bool_t (*xdr_argument)(), (*xdr_result)();
+	char *(*local)();
+
+	switch (rqstp->rq_proc) {
+	case INFODOARRAY:
+                sprintf(procname, "INFODOARRAY");
+                xdr_argument = xdr_Sunumarray;
+                xdr_result = xdr_Rkey;
+                local = (char *(*)()) infodoArray_1;
+                break;
+	default:
+                write_log("**sumprog_1_array() dispatch default procedure %d,ignore\n", rqstp->rq_proc);
+		svcerr_noproc(transp);
+		return;
+	}
+	bzero((char *)&argument, sizeof(argument));
+	if (!svc_getargs(transp, (xdrproc_t)xdr_argument, (char *)&argument)) {
+                write_log("***Error on svc_getargs()\n");
+		svcerr_decode(transp);
+                /*return;*/
+                /* NEW: 23May2002 don't return. Can result in caller getting: */
+                /* Dsds_svc returned error code 5600 */
+                /* NEW: 10Jun2002 try this: */
+                svc_sendreply(transp, (xdrproc_t)xdr_void, (char *)NULL);
+                return;
+
+	}
+        glb_transp = transp;		     /* needed by function */
+        result = (*local)(&argument, rqstp); /* call the function */
+					     /* sets current_client & rinfo*/
+					     /* ack sent back in the function*/
+
+      if(result) {			/* send the result now */
+        if(result == (char *)1) {
+          /* no client handle. do nothing, just return */
+        }
+        else {
+          if(debugflg) {
+          }
+          if(current_client == 0) {
+            write_log("***Error on clnt_call() back to orig sum_svc caller\n");
+            write_log("   current_client was NULL\n");
+          }
+          else {
+            ck_client = ((uint64_t)current_client & 0xfc00000000000000) >> 58;
+            if(!((ck_client == 0) || (ck_client == 0x3f))) {
+              write_log("***Error invalid current_client\n");
+              //May need more info to discover the caller.
+              //See email from Keh-Cheng 25Feb2011 13:44 Re:Cannot access..
+            }
+            else {
+              clnt_stat=clnt_call(current_client, RESPDOARRAY,(xdrproc_t)xdr_result, result, (xdrproc_t)xdr_void, 0, TIMEOUT);
+              if(clnt_stat != RPC_SUCCESS) {
+                if(clnt_stat != RPC_TIMEDOUT) {
+                  clnt_perrno(clnt_stat);         // outputs to stderr 
+                  write_log("***Error on clnt_call() back to RESPDO procedure\n");
+                  write_log("***The original client caller has probably exited\n");
+                  call_err = clnt_sperror(current_client, "Err");
+                  write_log("%s\n", call_err);
+
+                }
+                else {
+                  write_log("Timeout ignored on RESPDO back to current_client\n");
+                }
+              }
+              clnt_destroy(current_client); 
+            }
+          }
+        }
+      }
+      else {
+      }
+      if (!svc_freeargs(transp, (xdrproc_t)xdr_argument, (char *)&argument)) {
+	write_log("**unable to free arguments\n");
+	/*exit(1);*/
+      }
+      //ftmp = StopTimer(1);
+      //write_log("#END: %s %fsec\n", procname, ftmp);	//!!TEMP for test
+      return;
+}
+
