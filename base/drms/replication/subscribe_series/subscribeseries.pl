@@ -132,7 +132,7 @@ if ($rv == kSuccess)
                   $ns = ($series =~ /^(\S+)\.\S+/)[0];
 
                   # Need to collect prime key names for each series
-                  $stmnt = "SELECT dbidx FROM $ns.drms_series WHERE lower(seriesname) = '$series'";
+                  $stmnt = "SELECT primary_idx FROM $ns.drms_series WHERE lower(seriesname) = '$series'";
 
                   LogPrint($outstm, "executing db statement ==> $stmnt\n", 0);
 
@@ -155,7 +155,7 @@ if ($rv == kSuccess)
                   }
 
                   $stmnt = "INSERT INTO sunum_queue (recnum,sunum,series_name) SELECT recnum, sunum, '$series' FROM $series WHERE recnum IN (SELECT max(recnum) FROM $series GROUP BY $pkeylist)";
-                  ExecStatement(\$dbh, $stmnt, 0, "Unable to insert $seriesname data rows into sunum_queue.\n", $outstm, $errstm);
+                  ExecStatement(\$dbh, $stmnt, 1, "Unable to insert $seriesname data rows into sunum_queue.\n", $outstm, $errstm);
                }
 
                $dbh->disconnect();

@@ -5,7 +5,10 @@ package toolbox;
 #  writin' perl routines go quick & easy
 #
 
+use Fcntl ':flock';
 require 'timelocal.pl';
+
+my(%fpaths);
 
 #--|----------------------------------------------
 #--| toolbox.pm
@@ -180,6 +183,70 @@ sub GetCfg
    }
    
    return $rv;
+}
+
+sub AcquireLock
+{
+   my($path) =$_[0];
+   my($lckfh) = $_[1];
+   my($gotlock);
+   my($natt);
+
+   if (-e $path)
+   {
+      $$lckfh = FileHandle->new("<$path");
+      $fpaths{fileno($$lckfh)} = $path;
+   }
+   else
+   {
+      $$lckfh = FileHandle->new(">$path");
+   }
+   $gotlock = 0;
+
+   $natt = 0;
+   while (1)
+   {
+      if (flock($$lckfh, LOCK_EX|LOCK_NB)) 
+      {
+         $gotlock = 1;
+         last;
+      }
+      else
+      {
+         if ($natt < 10)
+         {
+            print "Lock '$path' in use - trying again in 1 second.\n";
+            sleep 1;
+         }
+         else
+         {
+            print "Couldn't acquire lock after $natt attempts; bailing.\n";
+         }
+      }
+
+      $natt++;
+   }
+
+   return $gotlock;
+}
+
+sub ReleaseLock
+{
+   my($lckfh) = $_[0];
+   my($lckfn);
+   my($lckfpath);
+
+   $lckfn = fileno($$lckfh);
+   $lckfpath = $fpaths{$lckfn};
+
+   flock($$lckfh, LOCK_UN);
+   $$lckfh->close;
+
+   if (defined($lckfpath))
+   {
+      chmod(0664, $lckfpath);
+      delete($fpaths{$lckfn});
+   }
 }
 
 1;

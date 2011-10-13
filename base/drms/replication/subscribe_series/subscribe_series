@@ -59,7 +59,7 @@ function MV {
 
 function SCP {
 
-  cmd="scp";
+  cmd="scp -P $kRSPort";
   args="$@"
 
   $cmd $@
@@ -75,7 +75,7 @@ function SCP {
 
 function SSH {
 
-  cmd="ssh";
+  cmd="ssh -p $kRSPort";
   args="$@"
 
   $cmd $@
@@ -664,8 +664,8 @@ then
         seriestab=`perl -e 'if ($ARGV[0] =~ /\.(.+)/) { print $1; }' ${subseries[$iseries]}`
 
         logwrite "Checking for existence of series ${subseries[$iseries]}."
-        logwrite "Executing [psql -p $pg_port -U $pg_user $pg_dbname -c '\dt ${subseries[$iseries]}' | egrep $seriesns[[:space:]]+\|[[:space:]]+$seriestab]"
-        check=`psql -p "$pg_port" -U "$pg_user" "$pg_dbname" -c "\dt ${subseries[$iseries]}" | egrep "${seriesns}[[:space:]]+\|[[:space:]]+${seriestab}"`
+        logwrite "Executing [psql -p $pg_port -h $pg_host -U $pg_user $pg_dbname -c '\dt ${subseries[$iseries]}' | egrep $seriesns[[:space:]]+\|[[:space:]]+$seriestab]"
+        check=`psql -p "$pg_port" -h "$pg_host" -U "$pg_user" "$pg_dbname" -c "\dt ${subseries[$iseries]}" | egrep "${seriesns}[[:space:]]+\|[[:space:]]+${seriestab}"`
         
         if [ ! -z "$check" ]
         then
@@ -708,8 +708,8 @@ fi
 
 if [ $state == "crtrigger_comp" ]
 then
-    logwrite "Executing [psql -p $pg_port -U $pg_user $pg_dbname -c '\dt admin.*' | grep \" ns \"]"
-    check=`psql -p "$pg_port" -U "$pg_user" "$pg_dbname" -c '\dt admin.*' | grep " ns "`
+    logwrite "Executing [psql -p $pg_port -h $pg_host -U $pg_user $pg_dbname -c '\dt admin.*' | grep \" ns \"]"
+    check=`psql -p "$pg_port" -h "$pg_host" -U "$pg_user" "$pg_dbname" -c '\dt admin.*' | grep " ns "`
     
     if [ ! "$check" == "" ]
     then
@@ -1026,6 +1026,40 @@ SSH "$kRSUser@$kRSServer" 'cp -f '"'$kRSTriggerDir/$node.subscribe_series.cfg'"'
 
 unset result
 unset check
+
+#--------------------------------------------------------------------
+
+#--------------------------------------------------------------------
+
+# Eventually we're going to convert this script to a perl script, something I can program
+# quickly in, so let's just call a specialized perl script now. Then later
+# will combine everything into a single subscribeseries.pl.
+
+# This command will be a nop if the subscribe_file does not contain
+# an additional field
+scrpath=`dirname $0`
+
+# For each row in the series just populated, insert a row into the JMD's queue, if 
+# the user has requested this with the 'popjmd' flag.
+$kRSPerl $scrpath/subscribeseries.pl -o POPULATEJMD -c $config_file -s $subscribe_file -a $rsFile -l $logfile
+
+if [ $? -ne 0 ]
+then
+    # Let's not consider this an error. The user will have to manually copy the 
+    # records for the subscribed-to series to the JMD's sunum_queue table.
+    logwrite "WARNING: Could not populate the JMD's queue with data from the subscribed-to series."
+fi
+
+# Install the default JMD trigger on the series just subscribed to.
+# Do this only if the subscribe_list file says to install the trigger (the 'jmdtrigger' flag)
+$kRSPerl $scrpath/subscribeseries.pl -o INSTALLTRIGGER -c $config_file -s $subscribe_file -a $rsFile -l $logfile
+if [ $? -ne 0 ]
+then
+    # Let's not consider this an error. The user will have to manually install the 
+    # trigger after the completion of subscribe_series. subscribeseries.pl will
+    # list the triggers that could not be installed.
+    logwrite "WARNING: Could not install one or more triggers."
+fi
 
 #--------------------------------------------------------------------
 # Loop waiting for done file to continue (which signifies that manager is done and has cleaned up)

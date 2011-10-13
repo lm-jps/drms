@@ -17,6 +17,8 @@ use constant kInvalidSQL => 3;
 use constant kDelSeriesFailed => 4;
 use constant kEditLstFailed => 5;
 
+$| = 1; # autoflush
+
 # This script takes 2 arguments: the path to the server-side configuration file, and a series name.
 my($conf);
 my($series);
@@ -157,14 +159,15 @@ if ($rv == kSuccess)
           {
              print("success!\n");
 
+             print("Checking for propagation of un-publication to slave db...");
+
              # Wait until slony replication has propagated to the slave.
              while (1)
              {
-                print("Checking for propagation of un-publication to slave db...");
                 $id = GetRepTableID(\$slavedbh, $cfg{'CLUSTERNAME'}, $schema, $table);
                 if ($id == -1)
                 {
-                   print("un-publication successfully propagated!\n");
+                   print("\nUn-publication successfully propagated!\n");
                    last;
                 }
                 elsif ($id == -2)
@@ -175,7 +178,7 @@ if ($rv == kSuccess)
                 else
                 {
                    # Table un-publication has not been propagated to slave yet.
-                   print("not yet.\n");
+                   print("\.");
                 }
 
                 sleep(1);
@@ -266,7 +269,6 @@ sub GetRepTableID
    $tabid = -1;
 
    $stmnt = "SELECT tab_id FROM _$clust.sl_table WHERE tab_nspname='" . lc($schema) . "' AND tab_relname='" . lc($table) . "'";
-   print "Executing SQL ==> $stmnt\n";
    $rrows = $$rdbh->selectall_arrayref($stmnt, undef);
    
    if (NoErr($rrows, $rdbh, $stmnt))
