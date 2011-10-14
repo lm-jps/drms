@@ -215,19 +215,7 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
 for(i=0; i < numSUM; i++) {
   switch(i) {
   case 0:	//this is numSUM=1. just sum_svc is running
-    clopen = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
-    if(!clopen) {              //no SUMVERS in portmap or timeout (default 25sec?)
-      clnt_pcreateerror("Can't get client handle for OPEN to sum_svc");
-      (*history)("sum_svc OPEN timeout or not there on %s\n", server_name);
-      (*history)("Going to retry in 1 sec\n");
-      sleep(1);
-      clopen = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
-      if(!clopen) { 
-        clnt_pcreateerror("Can't get client handle for OPEN to sum_svc");
-        (*history)("sum_svc OPEN timeout or not there on %s\n", server_name);
-        return(NULL);
-      }
-    }
+    clopen = cl;		//already opened to sum_svc
     break;
   case 1:	//numSUM=2. sum_svc, Sopen, and Sopen1 are running
     clopen = clnt_create(server_name, SUMOPEN, SUMOPENV, "tcp");
@@ -403,63 +391,11 @@ for(i=0; i < numSUM; i++) {
 for(j=0; j < numSUM; j++) {
   switch(j) {
   case 0:
-    sumptr->clopen = clopen;
-    clalloc = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
-    if(!clalloc) {
-      for(i=0; i < 4; i++) {		//keep on trying
-        clnt_pcreateerror("Can't get client handle to sum_svc SUMPROG. Retry..");
-        //fprintf(stderr, "Retry in 1 sec. i = %d\n", i);
-        (*history)("Going to retry in 1 sec. i=%d\n", i);
-        sleep(1);
-        clalloc = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
-        if(clalloc) { break; }
-      }
-      if(!clalloc) {
-        clnt_pcreateerror("Can't get retry client handle to sum_svc SUMPROG");
-        (*history)("sum_svc error on handle to SUMPROG on %s\n", server_name);
-        return(NULL);
-      }
-    }
-    sumptr->clalloc = clalloc;
-    clget = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
-    if(!clget) {
-      clnt_pcreateerror("Can't get client handle to sum_svc SUMPROG");
-      (*history)("sum_svc error on handle to SUMPROG on %s\n", server_name);
-      sleep(1);
-      clget = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
-      if(!clget) { 
-        clnt_pcreateerror("Can't get client handle to sum_svc SUMPROG");
-        (*history)("sum_svc error on handle to SUMPROG on %s\n", server_name);
-        return(NULL);
-      }
-    }
-    sumptr->clget = clget;
-    clput = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
-    if(!clput) {
-      clnt_pcreateerror("Can't get client handle to sum_svc SUMPROG");
-      (*history)("sum_svc error on handle to SUMPROG on %s\n", server_name);
-      sleep(1);
-      clput = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
-      if(!clput) { 
-        clnt_pcreateerror("Can't get client handle to sum_svc SUMPROG");
-        (*history)("sum_svc error on handle to SUMPROG on %s\n", server_name);
-        return(NULL);
-      }
-    }
-    sumptr->clput = clput;
-    clinfo = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
-    if(!clinfo) {
-      clnt_pcreateerror("Can't get client handle to sum_svc SUMPROG");
-      (*history)("sum_svc error on handle to SUMPROG on %s\n", server_name);
-      sleep(1);
-      clinfo = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
-      if(!clinfo) { 
-        clnt_pcreateerror("Can't get client handle to sum_svc SUMPROG");
-        (*history)("sum_svc error on handle to SUMPROG on %s\n", server_name);
-        return(NULL);
-      }
-    }
-    sumptr->clinfo = clinfo;
+    sumptr->clopen = cl;
+    sumptr->clalloc = cl;
+    sumptr->clget = cl;
+    sumptr->clput = cl;
+    sumptr->clinfo = cl;
     break;
   case 1:	//this is the case w/e.g. Salloc and Salloc1
     sumptr->clopen = clopen;
@@ -926,18 +862,7 @@ for(j=0; j < numSUM; j++) {
   }
 }
 if(numSUM == 1) {
-  cldelser = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
-  if(!cldelser) {
-    clnt_pcreateerror("Can't get client handle to sum_svc SUMPROG");
-    (*history)("sum_svc error on handle to SUMPROG on %s\n", server_name);
-    sleep(1);
-    cldelser = clnt_create(server_name, SUMPROG, SUMVERS, "tcp");
-    if(!cldelser) { 
-      clnt_pcreateerror("Can't get client handle to sum_svc SUMPROG");
-      (*history)("sum_svc error on handle to SUMPROG on %s\n", server_name);
-      return(NULL);
-    }
-  }
+  cldelser = cl;
 }
 else {
   cldelser = clnt_create(server_name, SUMDELSER, SUMDELSERV, "tcp");
@@ -1502,6 +1427,10 @@ int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
 
   (void)pmap_unset(RESPPROG, sum->uid); /* unreg response server */
   remsumopened(&sumopened_hdr, sum->uid); /* rem from linked list */
+  if(numSUM == 1) {
+    clnt_destroy(sum->cl);	//don't close the same connec more than once
+  }
+  else {
   clnt_destroy(sum->cl);	/* destroy handle to sum_svc */
   if(sum->clopen) clnt_destroy(sum->clopen);
   if(sum->clopen1) clnt_destroy(sum->clopen1);
@@ -1544,6 +1473,7 @@ int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
   if(sum->clinfo6) clnt_destroy(sum->clinfo6);
   if(sum->clinfo7) clnt_destroy(sum->clinfo7);
   if(sum->cldelser) clnt_destroy(sum->cldelser);
+  }
   for(i=0; i < MAXSUMOPEN; i++) {
     if(transpid[i] == sum->uid) {
       svc_destroy(transp[i]);
@@ -2017,6 +1947,7 @@ KEY *respdoarray_1(KEY *params)
   reqcnt = getkey_int(params, "reqcnt");
   file = getkey_str(params, "FILE");
   filemode = getkey_int(params, "filemode");
+printf("mode=%d file=%s\n", filemode, file); //!!TEMP
   if((rfp=fopen(file, "r")) == NULL) { 
     printf("**Can't open %s from sum_svc ret from SUM_infoArray() call\n", file);
     return((KEY *)NULL);
