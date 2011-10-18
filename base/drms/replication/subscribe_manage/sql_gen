@@ -249,8 +249,6 @@ then
 #-------------------------------------------------------------------------
     logwrite "Executing: [. $kRepDir/subscribe_manage/sdo_slony1_dump.sh $SLAVEDBNAME jsoc $SLAVEPORT $new_site_bool \"$SMworkDir/slon_counter.$node.txt\" ${schema_table[@]} >> $triggerdir/$node.subscribe_series.sql 2> $SMworkDir/slony1_dump.$node.log"
 
-ART fix this - jsoc is hardcoded - should be slony cluster name (I did change this below).
-
     . $kRepDir/subscribe_manage/sdo_slony1_dump.sh $SLAVEDBNAME $CLUSTERNAME $SLAVEPORT $new_site_bool "$SMworkDir/slon_counter.$node.txt" ${schema_table[@]} >> $triggerdir/$node.subscribe_series.sql 2> $SMworkDir/slony1_dump.$node.log
 
     trap - INT TERM HUP
