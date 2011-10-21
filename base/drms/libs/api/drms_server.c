@@ -1870,6 +1870,7 @@ void *drms_sums_thread(void *arg)
   int tryconnect;
   int shuttingdown;
   sem_t *sdsem = drms_server_getsdsem();
+  int rv;
 
   env = (DRMS_Env_t *) arg;
 
@@ -1900,12 +1901,32 @@ void *drms_sums_thread(void *arg)
   empty = 0;
   tryconnect = 1;
 
-  while ( !stop || (stop && !empty))
+  while ( !stop || !empty)
   {
+     /* if stop == 1, the the queue is corked, accepting no new items. So then we want
+      * to process any remaining items in the queue before breaking out of this while loop.
+      * If the queue has been corked (and stop == 1), then tqueueDelAny() will return
+      * whether or not the queue is empty (unless there was an error in tqueueDelAny() - 
+      * this is a bug - this function shouldn't mix up "status" with "emptiness"). But 
+      * the original code, here since the beginning of time, always considered the return
+      * value from tqueueDelAny() as an indicator of emptiness. If the queue has not
+      * been corked then, if tqueueDelAny() encounters no internal error, the function
+      * returns 0 always. So, we really shouldn't look at the return value from this
+      * function, unless stop == 1. If stop == 1, then we should set empty to 
+      * the return from this function. 
+      *
+      * ART - 10/21/2011 */
+
      /* Wait for the next SUMS request to arrive in the inbox. */
      /* sum_tag is the thread id of the thread who made the original SUMS request */
     env->sum_tag = 0;
-    empty = tqueueDelAny(env->sum_inbox, &env->sum_tag,  &ptmp );
+    rv = tqueueDelAny(env->sum_inbox, &env->sum_tag,  &ptmp );
+
+    if (stop == 1)
+    {
+       empty = rv;
+    }
+
     request = (DRMS_SumRequest_t *) ptmp;
 
     if (tryconnect && !connected && request->opcode!=DRMS_SUMCLOSE)
@@ -1991,10 +2012,24 @@ void *drms_sums_thread(void *arg)
     /* Check for special CLOSE or ABORT codes. */
     if (request->opcode==DRMS_SUMCLOSE)
     {
-      stop = 1;
-      if (tryconnect)
+      if (!stop)
       {
-         /* tryconnect == 0 ==> the first SUM_open() failed, so we already corked the queue. */
+         /* if stop == 1, then the first SUM_open() failed, so we already corked the queue.
+          * Don't try to cork a corked queue. */
+         stop = 1;
+
+         /* tqueueCork() does, when no error happens, return whether or not the 
+          * queue is empty. Otherwise it returns an error code. So this is a bug -
+          * it should always return one thing, either whether or not the queue
+          * is empty, or a status, not both. 
+          *
+          * There is actually no race condition with empty 
+          * because a corked queue cannot accept new items. Even as tqueueDelAny()
+          * is called, there is no race condition, because no new items can
+          * be added to the queue. This is only true if stop == 1 (and the queue is
+          * corked). 
+          *
+          * ART - 10/21/2011 */
          empty = tqueueCork(env->sum_inbox); /* Do not accept any more requests, but keep
                                                 processing all the requests already in
                                                 the queue.*/
