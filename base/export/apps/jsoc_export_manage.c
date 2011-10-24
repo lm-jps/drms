@@ -97,7 +97,8 @@ enum Protocol_enum
    kProto_FITS = 1,
    kProto_MPEG = 2,
    kProto_JPEG = 3,
-   kProto_PNG  = 4
+   kProto_PNG  = 4,
+   kProto_MP4  = 5
 };
 
 typedef enum Protocol_enum Protocol_t;
@@ -106,9 +107,10 @@ const char *protos[] =
 {
    "as-is",
    "fits",
-   "mpeg", 
-   "jpeg",
-   "png"
+   "mpg", 
+   "jpg",
+   "png",
+   "mp4"
 };
 
 enum Processing_enum
@@ -453,7 +455,8 @@ static int GenProtoExpCmd(FILE *fptr,
       /* No "n=XX" */
       /* The arguments are all position-dependent. */
       fprintf(fptr, 
-              "jsoc_export_as_movie '%s' '%s' '%s' '%s' '%s' $REQDIR '%s' '%s'\n",
+              "%s '%s' '%s' '%s' '%s' '%s' $REQDIR '%s' '%s'\n",
+              (TESTMODE ? "/home/phil/jsoc/base/export/scripts/jsoc_export_as_movie_test" : "jsoc_export_as_movie"),
               dataset,
               requestid,
               PACKLIST_VER,
@@ -467,7 +470,8 @@ static int GenProtoExpCmd(FILE *fptr,
       /* No "n=XX" */
       /* The arguments are all position-dependent. */
       fprintf(fptr, 
-              "jsoc_export_as_images '%s' '%s' '%s' '%s' '%s' $REQDIR '%s' '%s'\n",
+              "%s '%s' '%s' '%s' '%s' '%s' $REQDIR '%s' '%s'\n",
+              (TESTMODE ? "/home/phil/jsoc/base/export/scripts/jsoc_export_as_images_test" : "jsoc_export_as_images"),
               dataset,
               requestid,
               PACKLIST_VER,
