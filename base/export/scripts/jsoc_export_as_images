@@ -18,7 +18,7 @@ outpath=$6
 cd $outpath
 #set env variables
 
-type=jpg    # default could also do jpg
+type=$5    # default could also do jpg
 
 #make sure all arguments are there
   if  (( $# != 8 ))
@@ -34,11 +34,11 @@ type=jpg    # default could also do jpg
  if [ $hglog ]
   then
    nRec=`awk 'END{print NR}' $hglog`
-   rm -rf *.$type ;rm -rf images;  rm -rf tmpImages/*.* ; rm -rf  *.mp4  
+   rm -rf *.$type ;rm -rf images;  rm -rf tmpImages/*.* ; rm -rf  *.$type  
    rm -rf data*
  else    
    nRec=`show_info -cq ds=$in`
-rm -rf index.txt ; rm -rf tmpImages/*.* ; rm -rf  *.mp4  ;rm -f images;
+rm -rf index.txt ; rm -rf tmpImages/*.* ; rm -rf  *.$type  ;rm -f images;
     rm -rf *.$type;  rm -rf data* 
   
  fi

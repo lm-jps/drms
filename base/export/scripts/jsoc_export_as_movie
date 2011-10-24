@@ -16,6 +16,7 @@ cd $outpath
 tkey=T_REC
 
 type=jpg    # default could also do jpg
+movie_type=$5  # expect mpg or mp4
 
 #make sure all arguments are there
   if  (( $# != 8 ))
@@ -31,11 +32,11 @@ type=jpg    # default could also do jpg
  if [ $hglog ]
   then
    nRec=`awk 'END{print NR}' $hglog`
-   rm -rf *.$type ;rm -rf images;  rm -rf tmpImages/*.* ; rm -rf  *.mp4  
+   rm -rf *.$type ;rm -rf images;  rm -rf tmpImages/*.* ; rm -rf  *.$movie_type  
    rm -rf data*
  else    
    nRec=`show_info -cq ds=$in`
-   rm -rf index.txt ; rm -rf tmpImages/*.* ; rm -rf  *.mp4  ;rm -f images;
+   rm -rf index.txt ; rm -rf tmpImages/*.* ; rm -rf  *.$movie_type  ;rm -f images;
     rm -rf *.$type;  rm -rf data* 
   
  fi
@@ -228,13 +229,13 @@ mkdir tmpImages
 
 #make movie
 cd tmpImages
-ffmpeg -qscale 5 -r 20 -b 9600 -i  %04d.$type   ../$seriesName.mp4
+ffmpeg -qscale 5 -r 20 -b 9600 -i  %04d.$type   ../$seriesName.$movie_type
 
 
 cd ../
 
 #write into index.txt
-echo "Movie name=$seriesName.mp4" >>index.txt 
+echo "Movie name=$seriesName.$movie_type" >>index.txt 
 echo "# DATA ">>index.txt
  
 if [ $hglog ]
@@ -245,7 +246,7 @@ else
 fi
 
 echo "movie of the following data">>mv1
-echo $seriesName.mp4 >>mv2
+echo $seriesName.$movie_type >>mv2
 paste  mv1  mv2 >>index.txt 
 paste  data1  images >> index.txt
 
