@@ -450,49 +450,35 @@ static int GenProtoExpCmd(FILE *fptr,
    {
       rv = (GenExpFitsCmd(fptr, protocol, dbmainhost, requestid, dataset, RecordLimit, filenamefmt, method, dbids, proctype) != 0);
    }
-   else if (strncasecmp(protocol, protos[kProto_MPEG], strlen(protos[kProto_MPEG])) == 0)
+   else if (strncasecmp(protocol, "mpg",3)==0 ||
+            strncasecmp(protocol, "mp4",3)==0 ||
+            strncasecmp(protocol, "jpg",3)==0 ||
+            strncasecmp(protocol, "png",3)==0 )
    {
-      /* No "n=XX" */
-      /* The arguments are all position-dependent. */
-      fprintf(fptr, 
-              "%s '%s' '%s' '%s' '%s' '%s' $REQDIR '%s' '%s'\n",
-              (TESTMODE ? "/home/phil/jsoc/base/export/scripts/jsoc_export_as_movie_test" : "jsoc_export_as_movie"),
-              dataset,
-              requestid,
-              PACKLIST_VER,
-              method,
-              protos[kProto_MPEG],
-              filenamefmt,
-              "cparms is not needed");
-   }
-   else if (strncasecmp(protocol, protos[kProto_JPEG], strlen(protos[kProto_JPEG])) == 0)
-   {
-      /* No "n=XX" */
-      /* The arguments are all position-dependent. */
-      fprintf(fptr, 
-              "%s '%s' '%s' '%s' '%s' '%s' $REQDIR '%s' '%s'\n",
-              (TESTMODE ? "/home/phil/jsoc/base/export/scripts/jsoc_export_as_images_test" : "jsoc_export_as_images"),
-              dataset,
-              requestid,
-              PACKLIST_VER,
-              method,
-              protos[kProto_JPEG],
-              filenamefmt,
-              "cparms is not needed");
-   }
-   else if (strncasecmp(protocol, protos[kProto_PNG], strlen(protos[kProto_PNG])) == 0)
-   {
-      /* No "n=XX" */
-      /* The arguments are all position-dependent. */
-      fprintf(fptr, 
-              "jsoc_export_as_images '%s' '%s' '%s' '%s' '%s' $REQDIR '%s' '%s'\n",
-              dataset,
-              requestid,
-              PACKLIST_VER,
-              method,
-              protos[kProto_PNG],
-              filenamefmt,
-              "cparms is not needed");
+      char *newproto = strdup(protocol);
+      char *pcomma=index(newproto,',');
+      if (pcomma)
+        *pcomma = '\0';
+
+      if (strcasecmp(newproto,"mpg")==0 || strcasecmp(protocol, "mp4")==0)
+         fprintf(fptr, "%s ", (TESTMODE ? "/home/phil/jsoc/base/export/scripts/jsoc_export_as_movie_test" : "jsoc_export_as_movie"));
+      else
+         fprintf(fptr, "%s ", (TESTMODE ? "/home/phil/jsoc/base/export/scripts/jsoc_export_as_images_test" : "jsoc_export_as_images"));
+
+      fprintf(fptr, "in='%s' reqid='%s' expversion='%s' method='%s' outpath=$REQDIR ffmt='%s' cparms='%s'",
+              dataset, requestid, PACKLIST_VER, method, filenamefmt, "cparms is not needed");
+
+      fprintf(fptr, " protocol='%s'", newproto);
+      while(pcomma)
+        {
+        newproto = pcomma+1;
+        pcomma=index(newproto,',');
+        if (pcomma)
+          *pcomma = '\0';
+        fprintf(fptr, " '%s'", newproto);
+        }
+      fprintf(fptr, "\n");
+
    }
    else if (strncasecmp(protocol, protos[kProto_AsIs], strlen(protos[kProto_AsIs])) == 0)
    {
