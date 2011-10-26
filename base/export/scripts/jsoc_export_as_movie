@@ -3,29 +3,41 @@ export RGBDEF=/home/jsoc/cvs/Development/JSOC/proj/workflow/scripts/rgb.txt
 export JSOC_DBHOST=hmidb
 
 
+# expects args of form name=value for names: ds, reqid, expversion, method, protocol, out_dir, ffmt, ...
 #use as jsoc_export_as_movie  ds  reqid expversion  export_ method  protocol  output_path ffmt cparms    
-#                        1    2       3             4            5           6        7      8    
+#                             1    2       3             4            5           6        7      8    
 
+# get all args and set the values
+for cmdarg; do declare "$cmdarg"; done
 
+echo $in, $reqid, $expversion, $protocol, $outpath, $ffmt, $cparms
 
-#make sure all arguments are there
+# set defaults
+in=${in:-NOT_SPECIFIED}
+reqid=${reqid:-NOT_SPECIFIED}
+expversion=${expversion:-NOT_SPECIFIED}
+method=${method:-NOT_SPECIFIED}
+protocol=${protocol:-NOT_SPECIFIED}
+outpath=${outpath:-NOT_SPECIFIED}
+ffmt=${ffmt:-NOT_SPECIFIED}
+cparms=${cparms:-NOT_SPECIFIED}
+# deal with min and max for each case below
+# max=${max:-NOT_SPECIFIED}
+# min=${min:-NOT_SPECIFIED}
+CT=${CT:-NOT_SPECIFIED}
+scale=${scale:-"8"}
 
-outpath=$6 
+echo $in, $reqid, $expversion, $protocol, $outpath, $ffmt, $cparms
+
+#make sure all arguments are there, or get from colortable
+
 cd $outpath
 #set env variables
 tkey=T_REC
 
 type=jpg    # default could also do jpg
-movie_type=$5  # expect mpg or mp4
+movie_type=$protocol  # expect mpg or mp4
 
-#make sure all arguments are there
-  if  (( $# != 8 ))
-  then                                                
-  echo "$0 requires 8 arguments"
-    exit 2
-  fi
-
-    in=$1
     hglog=`echo $in | awk -F'[@]' /hg_patch.log/'{print $2}'`
     hg=`echo $in | grep hg` 
       
@@ -61,15 +73,14 @@ movie_type=$5  # expect mpg or mp4
 
 # Write into the new index.txt
 
-reqid=$2
 echo "# JSOC " > index.txt
-echo "reqid=$2" >>index.txt
-echo "expversion=$3" >>index.txt  
-echo "method=$4" >>index.txt  
-echo "protocol=$5" >>index.txt  
-echo "dir=$6" >>index.txt  
-echo "filefmt=$7" >>index.txt  
-echo "cparams=$8" >>index.txt  
+echo "reqid=$reqid" >>index.txt
+echo "expversion=$expversion" >>index.txt  
+echo "method=$method" >>index.txt  
+echo "protocol=$protocol" >>index.txt  
+echo "dir=$outpath" >>index.txt  
+echo "filefmt=$ffmt" >>index.txt  
+echo "cparams=$cparms" >>index.txt  
 echo "# DATA ">>index.txt
 
 #check to see if its an AIA or HMI data set.
@@ -84,7 +95,7 @@ then
   
       content=`echo $in | awk  -F'[.]' 'NR==1{print substr($2, 1, 2)}' $hglog`
          tkey=T_REC
-           junk=`show_info key=T_REC $in`
+           junk=`show_info key=T_REC ds=$in`
            if [ $? ]
               then 
                tkey=T_OBS
@@ -95,10 +106,7 @@ then
       then 
         declare -i scale=1     # default -could read in as a parameter
         p=u
-      else
-      declare -i scale=8  # default -could read in as a parameter
-        p=c  
-      fi     
+      fi
       
        # hg=`echo $in | awk -F '[_]' '/hgpatch/{print $3}'`
       # or use:  if [ !  "echo $in | awk -F '[_]' '/hgpatch/{print $3}' " ] 
@@ -112,15 +120,21 @@ then
 case "$content" in 
        
   M_) 
-         render_image  in=$in  min=-1500 max=1500  pallette=/home/priya/Colormaps/grey.sao scaling=mag tkey=$tkey outname=$seriesName scale=$scale type=$type   out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  -c 
+         max=${max:-"1500"}
+         min=${min:-"-1500"}
+         render_image  in=$in  min=$min max=$max  pallette=/home/priya/Colormaps/grey.sao scaling=mag tkey=$tkey outname=$seriesName scale=$scale type=$type   out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  -c 
         
              ;;
   Ic)
            if [[ $seriesName = *Ic_noLimbDark* ]]
            then 
-                  render_image in=$in   min=0.3	 max=1.2  scaling=minmaxgiven    pallette=/home/priya/Colormaps/heat.sao tkey=$tkey outname=$seriesName  scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p}  
+                  max=${max:-"0.3"}
+                  min=${min:-"1.2"}
+                  render_image in=$in   min=$min max=$max  scaling=minmaxgiven    pallette=/home/priya/Colormaps/heat.sao tkey=$tkey outname=$seriesName  scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p}  
           else
-                  render_image in=$in  min=25000 max=75000    pallette=/home/priya/Colormaps/heat.sao outname=$seriesName  scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}
+                  max=${max:-"2500"}
+                  min=${min:-"75000"}
+                  render_image in=$in  min=$min max=$max    pallette=/home/priya/Colormaps/heat.sao outname=$seriesName  scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}
           fi
              ;;
   Ld)
@@ -143,21 +157,17 @@ esac
 elif [[ $instr == [Aa][Ii][Aa] ]] 
  then
      { 
-      if [ $hg ]
-        then 
-          declare -i scale=1     # default -could read in as a parameter
-        p=u
-         else
-           declare -i scale=16  # default -could read in as a parameter
-        p=c  
-      fi     
-      
+       if [ $hg ]
+         then 
+           declare -i scale=1     # default -could read in as a parameter
+         p=u
+          else
+            declare -i scale=16  # default -could read in as a parameter
+         p=c  
+       fi     
 
-     
-        type=$type                # default could also do jpg
-     
     seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
-     min=100
+     min_val=100
        wvl_arr=(94 131 171 193 211 304 335 1600 1700 4500)
              max_val=(100 2000 2000 10000 10000 10000 1000 1000 2500 10000)
               for i in  0 1 2 3 4 5 6 7 8 9; do wvl=${wvl_arr[$i]}; let max_$wvl=${max_val[$i]}; done
@@ -181,14 +191,17 @@ elif [[ $instr == [Aa][Ii][Aa] ]]
     
  
            tkey=T_REC
-           junk=`show_info key=T_REC $in_new`
+           junk=`show_info key=T_REC ds=$in_new`
            if [ $? ]
               then 
                tkey=T_OBS
            fi
            
+
                          
-                render_image in=$in_new  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/AIA  M:{ID}\" | pnmtojpeg -quality=95'  pallette=/home/priya/Colormaps/AIA/aia_$wvl.lut tkey=$tkey  outname=aia_$wvl  min=$min max=$[max_$wvl]  scale=$scale outid=time  type=$type scaling=$scaling -w  -{$p}
+                max=${max:-$[max_$wvl]}
+                min=${min:-$min_val}
+                render_image in=$in_new  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/AIA  M:{ID}\" | pnmtojpeg -quality=95'  pallette=/home/priya/Colormaps/AIA/aia_$wvl.lut tkey=$tkey  outname=aia_$wvl  min=$min max=$max  scale=$scale outid=time  type=$type scaling=$scaling -w  -{$p}
 
           done 
 
@@ -203,7 +216,7 @@ fi
 #
 #if [ "$hg" ]
 #   then  
-#size=`ls *.*.$type | awk -F'[_]'  'NR==1{print $2}' | awk -F'[.]'  '{print $1}' ` 
+#size=`ls *.*.$type | awk -F'[_]'  'NR==1{print $2}' | awk -F'[.]'  '{print $in}' ` 
 #   else 
 #declare -i size=4096/$scale 
 #fi

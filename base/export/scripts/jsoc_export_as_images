@@ -5,48 +5,55 @@ export JSOC_DBHOST=hmidb
 #This script combines the AIA images part and hmi images part
 # script should figure out what kind of data series it is and then use appropriate default scaling/ colortable. 
 
-#jsoc_export_as_movie ds=<record_set_query>  reqid=<export request id> expversion=<version> method=<exp method> protocol=<output-file protocol> path=<output path> 
-#     { ffmt=<filename format> } { cparms=<compression string list> }
-# jsoc_export_as_movie  ds  reqid expversion  export_ method  protocol  output_path ffmt cparms    
-#                        1    2       3             4            5           6        7      8    
+#old version jsoc_export_as_images ds=<record_set_query>  reqid=<export request id> expversion=<version> method=<exp method> protocol=<output-file protocol> path=<output path> { ffmt=<filename format> } { cparams=<compression string list> }
+#Now call the args in the form: name=value for names: ds, reqid, expversion, method, protocol, outpath, ffmt, ...
 
+# get all args one at a time into cmdarg and set the values
+for cmdarg; do declare "$cmdarg"; done
+
+# set defaults
+in=${in:-NOT_SPECIFIED}
+reqid=${reqid:-NOT_SPECIFIED}
+expversion=${expversion:-NOT_SPECIFIED}
+method=${method:-NOT_SPECIFIED}
+protocol=${protocol:-NOT_SPECIFIED}
+outpath=${outpath:-NOT_SPECIFIED}
+ffmt=${ffmt:-NOT_SPECIFIED}
+cparms=${cparms:-NOT_SPECIFIED}
+# deal with min and max for each case below
+# max=${max:-NOT_SPECIFIED}
+# min=${min:-NOT_SPECIFIED}
+CT=${CT:-NOT_SPECIFIED}
+scale=${scale:-"8"}
+
+echo $in, $reqid, $expversion, $protocol, $outpath, $ffmt, $cparms
 
 
 #make sure all arguments are there
 
-outpath=$6 
 cd $outpath
 #set env variables
 
-type=$5    # default could also do jpg
+type=jpg    # default could also do jpg
 
-#make sure all arguments are there
-  if  (( $# != 8 ))
-  then                                                
-  echo "$0 requires 8 arguments"
-    exit 2
-  fi
+hglog=`echo $in | awk -F'[@]' /hg_patch.log/'{print $2}'`
+hg=`echo $in | grep hg`
 
-    in=$1
-    hglog=`echo $in | awk -F'[@]' /hg_patch.log/'{print $2}'`
-    hg=`echo $in | grep hg`
-
- if [ $hglog ]
+if [ $hglog ]
   then
-   nRec=`awk 'END{print NR}' $hglog`
-   rm -rf *.$type ;rm -rf images;  rm -rf tmpImages/*.* ; rm -rf  *.$type  
-   rm -rf data*
- else    
-   nRec=`show_info -cq ds=$in`
-rm -rf index.txt ; rm -rf tmpImages/*.* ; rm -rf  *.$type  ;rm -f images;
+    nRec=`awk 'END{print NR}' $hglog`
+    rm -rf *.$type ;rm -rf images;  rm -rf tmpImages/*.* ; rm -rf  *.$type  
+    rm -rf data*
+  else    
+    nRec=`show_info -cq ds=$in`
+    rm -rf index.txt ; rm -rf tmpImages/*.* ; rm -rf  *.$type  ;rm -f images;
     rm -rf *.$type;  rm -rf data* 
-  
- fi
+  fi
  
-  if (( $nRec < 1 ))
- then 
+if (( $nRec < 1 ))
+  then 
      echo "No records exist"
-      exit 2
+     exit 2
   fi   
 
 #if 
@@ -57,25 +64,18 @@ rm -rf index.txt ; rm -rf tmpImages/*.* ; rm -rf  *.$type  ;rm -f images;
 #  outtype=$outpath    
 #fi 
 
-
-
 # chk to see if hg_patch -then need to append to existing index files else create new one after clobbering the old ones image files if they exist
-
-
-
-
 
 # Write into the new index.txt
 
-reqid=$2
 echo "# JSOC " > index.txt
-echo "reqid=$2" >>index.txt
-echo "expversion=$3" >>index.txt  
-echo "method=$4" >>index.txt  
-echo "protocol=$5" >>index.txt  
-echo "dir=$6" >>index.txt  
-echo "filefmt=$7" >>index.txt  
-echo "cparams=$8" >>index.txt  
+echo "reqid=$reqid" >>index.txt
+echo "expversion=$expversion" >>index.txt  
+echo "method=$method" >>index.txt  
+echo "protocol=$protocol" >>index.txt  
+echo "dir=$outpath" >>index.txt  
+echo "filefmt=$ffmt" >>index.txt  
+echo "cparms=$cparms" >>index.txt  
 echo "# DATA ">>index.txt
 
 #check to see if its an AIA or HMI data set.
@@ -84,140 +84,125 @@ echo "# DATA ">>index.txt
   seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
    
 if [[ $instr == [Hh][Mm][Ii] ]] 
-then    
- {
+  then    
+    {
     content=`echo $in | awk  -F'[.]' 'NR==1{print substr($2, 1, 2)}' $hglog`
-  tkey=T_REC
-           junk=`show_info key=T_REC $in`
-           if [ $? ]
-              then 
-               tkey=T_OBS
-           fi
+    tkey=T_REC
+    junk=`show_info key=T_REC $in`
+    if [ $? ]
+      then 
+        tkey=T_OBS
+      fi
              
     if [ $hg ]
-    then 
+      then 
         declare -i scale=1     # default -could read in as a parameter
         p=u
-         
-     else
-        declare -i scale=8  # default -could read in as a parameter
-        p=c
-     fi
+      fi
      
+    # default could also do jpg
+    # declare -i size=4096/$scale      
+    min_fl_sz=10000      #min file size
 
+    seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
 
-
-       # default could also do jpg
-#declare -i size=4096/$scale      
- min_fl_sz=10000      #min file size
-
- seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
-
-case "$content" in 
-  M_) 
-         render_image  in=$in  min=-1500 max=1500   pallette=/home/priya/Colormaps/grey.sao scaling=mag  outname=$seriesName  scale=$scale type=$type  tkey=$tkey  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p} -c 
-        
+    case "$content" in 
+      M_)    max=${max:-"1500"}
+             min=${min:-"-1500"}
+             render_image  in=$in  min=$min max=$max pallette=/home/priya/Colormaps/grey.sao scaling=mag  outname=$seriesName  scale=$scale type=$type  tkey=$tkey  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p} -c 
              ;;
-  Ic)
-           if [[ $seriesName = *Ic_noLimbDark* ]]
-           then 
-                  render_image in=$in   min=0.3	 max=1.2 scaling=minmaxgiven    pallette=/home/priya/Colormaps/heat.sao outname=$seriesName scale=$scale tkey=$tkey  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p}    
-          else
-                  render_image in=$in  min=20000 max=75000 tkey=$tkey    pallette=/home/priya/Colormaps/heat.sao outname=$seriesName scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  
-          fi
+      Ic)
+             if [[ $seriesName = *Ic_noLimbDark* ]]
+               then 
+                  max=${max:-"0.3"}
+                  min=${min:-"1.2"}
+                  render_image in=$in min=$min max=$max  scaling=minmaxgiven    pallette=/home/priya/Colormaps/heat.sao outname=$seriesName scale=$scale tkey=$tkey  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p}    
+              else
+                  max=${max:-"2500"}
+                  min=${min:-"75000"} 
+                  render_image in=$in min=$min max=$max tkey=$tkey    pallette=/home/priya/Colormaps/heat.sao outname=$seriesName scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  
+              fi
              ;;
-  Ld)
-          render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$seriesName tkey=$tkey scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  -c
-            ;;
-  Lw)
-         render_image in=$in   pallette=/home/priya/Colormaps/bb.sao tkey=$tkey outname=$seriesName scale=$scale type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  -c
+      Ld)
+             render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$seriesName tkey=$tkey scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  -c
+             ;;
+      Lw)
+             render_image in=$in   pallette=/home/priya/Colormaps/bb.sao tkey=$tkey outname=$seriesName scale=$scale type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  -c
              ;;     
-  V_)
-         render_image in=$in  pallette=/home/priya/Colormaps/bb.sao outname=$seriesName tkey=$tkey  scale=$scale type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p}  -c
+      V_)
+             render_image in=$in  pallette=/home/priya/Colormaps/bb.sao outname=$seriesName tkey=$tkey  scale=$scale type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p}  -c
              ;;
         
-   *) 
-       echo -e Out of case command
+      *) 
+        echo -e Out of case command
              ;;
-esac
+    esac
 
- }
-
-elif [[ $instr == [Aa][Ii][Aa] ]] 
- then
-     { 
-     if [ $hg ]
-        then 
-          declare -i scale=1     # default -could read in as a parameter
+    }
+  elif [[ $instr == [Aa][Ii][Aa] ]] 
+  then
+    { 
+    if [ $hg ]
+      then 
+        declare -i scale=1   # default -could read in as a parameter
         p=u
-         else
-           declare -i scale=16  # default -could read in as a parameter
+      else
+        declare -i scale=16  # default -could read in as a parameter
         p=c  
       fi     
       
-       type=$type                # default could also do jpg
-
-     
+    type=$type               # default could also do jpg
     seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
-        min=100
-       wvl_arr=(94 131 171 193 211 304 335 1600 1700 4500)
-             max_val=(100 2000 2000 10000 10000 10000 1000 1000 2500 10000)
-              for i in  0 1 2 3 4 5 6 7 8 9; do wvl=${wvl_arr[$i]}; let max_$wvl=${max_val[$i]}; done
+    min=100
+    wvl_arr=(94 131 171 193 211 304 335 1600 1700 4500)
+    max_val=(100 2000 2000 10000 10000 10000 1000 1000 2500 10000)
+    for i in  0 1 2 3 4 5 6 7 8 9; do wvl=${wvl_arr[$i]}; let max_$wvl=${max_val[$i]}; done
               
-       for wvl in 171 211 94 335 4500 1600 131 1700 193 304
-          do 
-             if [ $hglog ]
-                then
-		 in_new=$seriesName[][][RequestID=$reqid][?WAVELNTH=$wvl?]
-                else
-                  in_new=$in[?WAVELNTH=$wvl?]
-            fi
+    for wvl in 171 211 94 335 4500 1600 131 1700 193 304
+      do 
+        if [ $hglog ]
+          then
+            in_new=$seriesName[RequestID=$reqid][?WAVELNTH=$wvl?]
+          else
+            in_new=$in[?WAVELNTH=$wvl?]
+          fi
 
-            if [ $wvl == 171 ]
-               then 
-                 scaling=SQRT
-               else 
-                 scaling=LOG
-            fi 
+        if [ $wvl == 171 ]
+          then 
+            scaling=SQRT
+          else 
+            scaling=LOG
+          fi 
 
-          tkey=T_REC
-           junk=`show_info key=T_REC $in_new`
-           if [ $? ]
-              then 
-               tkey=T_OBS
-           fi
+        tkey=T_REC
+        junk=`show_info key=T_REC $in_new`
+        if [ $? ]
+          then 
+            tkey=T_OBS
+          fi
              
+        max=${max:-$[max_$wvl]}
+        min=${min:-$min_val}
 
+        render_image in=$in_new  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   pallette=/home/priya/Colormaps/AIA/aia_$wvl.lut outname=aia_$wvl  scale=$scale outid=time min=$min max=$max  tkey=$tkey  type=$type scaling=$scaling  -w -{$p}
 
-            render_image in=$in_new  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   pallette=/home/priya/Colormaps/AIA/aia_$wvl.lut outname=aia_$wvl  scale=$scale outid=time min=$min max=$[max_$wvl]  tkey=$tkey    type=$type scaling=$scaling  -w -{$p}
-
-          done 
-
-
-}
-
-else
-  echo "P=png/Mpeg cannot be made for this dataset"
-fi
+    done 
+    }
+  else
+    echo "P=png/Mpeg cannot be made for this dataset"
+  fi
 
 ls *.$type>images 
 #write into index.txt
-echo "# DATA ">>index.txt
  
 if [ $hglog ]
-then
- show_info -iq ds=$in n=1> data1
-else
-  show_info -iq ds=$in> data1
-fi
+  then
+    show_info -iq ds=$in n=1> data1
+  else
+    show_info -iq ds=$in> data1
+  fi
  
 paste  data1  images >> index.txt
 
+#rm -rf images/
 
-#rm -rf images
-
-
- 
- 
- 
- 
