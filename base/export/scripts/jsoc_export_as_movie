@@ -25,7 +25,7 @@ cparms=${cparms:-NOT_SPECIFIED}
 # max=${max:-NOT_SPECIFIED}
 # min=${min:-NOT_SPECIFIED}
 CT=${CT:-NOT_SPECIFIED}
-scale=${scale:-"8"}
+scale=${scale:-"4"}
 
 echo $in, $reqid, $expversion, $protocol, $outpath, $ffmt, $cparms
 
@@ -59,16 +59,6 @@ movie_type=$protocol  # expect mpg or mp4
       exit 2
   fi   
 
-#if 
-# [[ $type = [Jj][Pp][Gg] ]]
-#then
-#  outtype=`echo " '| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text #\"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95' " `
-#else
-#  outtype=$outpath    
-#fi 
-
-
-
 # chk to see if hg_patch -then need to append to existing index files else create new one after clobbering the old ones image files if they exist
 
 # Write into the new index.txt
@@ -89,161 +79,156 @@ echo "# DATA ">>index.txt
   seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
     
 if [[ $instr == [Hh][Mm][Ii] ]] 
-then    
- {
+  then    
+    {
     #content=`show_info -q ds=$in n=1 key=CONTENT`
   
-      content=`echo $in | awk  -F'[.]' 'NR==1{print substr($2, 1, 2)}' $hglog`
-         tkey=T_REC
-           junk=`show_info key=T_REC ds=$in`
-           if [ $? ]
-              then 
-               tkey=T_OBS
-           fi
-              
+    content=`echo $in | awk  -F'[.]' 'NR==1{print substr($2, 1, 2)}' $hglog`
+    tkey=T_REC
+    junk=`show_info key=T_REC ds=$in`
+    if [ $? ]
+      then 
+        tkey=T_OBS
+    fi
 
-     if [ $hg ]
+    if [ $hg ]
       then 
         declare -i scale=1     # default -could read in as a parameter
         p=u
       fi
       
-       # hg=`echo $in | awk -F '[_]' '/hgpatch/{print $3}'`
+      # hg=`echo $in | awk -F '[_]' '/hgpatch/{print $3}'`
       # or use:  if [ !  "echo $in | awk -F '[_]' '/hgpatch/{print $3}' " ] 
 
 
-       # default could also do jpg
-#declare -i size=4096/$scale      
- min_fl_sz=10000      #min file size
+      # default use jpg
+      min_fl_sz=10000      #min file size
 
- seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
-case "$content" in 
-       
-  M_) 
-         max=${max:-"1500"}
-         min=${min:-"-1500"}
-         render_image  in=$in  min=$min max=$max  pallette=/home/priya/Colormaps/grey.sao scaling=mag tkey=$tkey outname=$seriesName scale=$scale type=$type   out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  -c 
+      seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
+
+      case "$content" in 
+        M_) 
+          max=${max:-"1500"}
+          min=${min:-"-1500"}
+          render_image in=$in  min=$min max=$max  pallette=/home/priya/Colormaps/grey.sao scaling=mag \
+                       tkey=$tkey outname=$seriesName scale=$scale type=$type  \
+                       out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95' \
+                       -{$p}  -c 
+        ;;
+      Ic)
+        if [[ $seriesName = *Ic_noLimbDark* ]]
+          then 
+            max=${max:-"0.3"}
+            min=${min:-"1.2"}
+            render_image in=$in   min=$min max=$max  scaling=minmaxgiven    pallette=/home/priya/Colormaps/heat.sao \
+                         tkey=$tkey outname=$seriesName  scale=$scale  type=$type  \
+                         out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  \
+                         -{$p}  
+           else
+             max=${max:-"2500"}
+             min=${min:-"75000"}
+             render_image in=$in  min=$min max=$max    pallette=/home/priya/Colormaps/heat.sao \
+                        outname=$seriesName  scale=$scale  type=$type  \
+                        out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95' \
+                        -{$p}
+            fi
+         ;;
+      Ld)
+        render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale  type=$type tkey=$tkey  \
+                     out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95' \
+                     -{$p}  -c
+        ;;
+      Lw)
+        render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale type=$type tkey=$tkey \
+                     out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  \
+                     -{$p} -c
+        ;;     
+      V_)
+        render_image in=$in  pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale type=$type tkey=$tkey \
+                     out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  \
+                     -{$p} -c
+        ;;
         
-             ;;
-  Ic)
-           if [[ $seriesName = *Ic_noLimbDark* ]]
-           then 
-                  max=${max:-"0.3"}
-                  min=${min:-"1.2"}
-                  render_image in=$in   min=$min max=$max  scaling=minmaxgiven    pallette=/home/priya/Colormaps/heat.sao tkey=$tkey outname=$seriesName  scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p}  
-          else
-                  max=${max:-"2500"}
-                  min=${min:-"75000"}
-                  render_image in=$in  min=$min max=$max    pallette=/home/priya/Colormaps/heat.sao outname=$seriesName  scale=$scale  type=$type  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}
-          fi
-             ;;
-  Ld)
-          render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale  type=$type tkey=$tkey  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p}  -c
-            ;;
-  Lw)
-         render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale type=$type tkey=$tkey out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  -{$p} -c
-             ;;     
-  V_)
-         render_image in=$in  pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale type=$type tkey=$tkey out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'   -{$p} -c
-             ;;
-        
-   *) 
-       echo -e Out of case command
-             ;;
-esac
+      *) 
+        echo -e Out of case command
+        ;;
+    esac
+    }
+  elif [[ $instr == [Aa][Ii][Aa] ]] 
+    then
+      { 
+      if [ $hg ]
+        then 
+          declare -i scale=1     # default -could read in as a parameter
+          p=u
+        else
+          p=c  
+        fi     
+      seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
+      min_val=100
+      wvl_arr=(94 131 171 193 211 304 335 1600 1700 4500)
+      max_val=(100 2000 2000 10000 10000 10000 1000 1000 2500 10000)
+      for i in  0 1 2 3 4 5 6 7 8 9; do wvl=${wvl_arr[$i]}; let max_$wvl=${max_val[$i]}; done
 
- }
-
-elif [[ $instr == [Aa][Ii][Aa] ]] 
- then
-     { 
-       if [ $hg ]
-         then 
-           declare -i scale=1     # default -could read in as a parameter
-         p=u
-          else
-            declare -i scale=16  # default -could read in as a parameter
-         p=c  
-       fi     
-
-    seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
-     min_val=100
-       wvl_arr=(94 131 171 193 211 304 335 1600 1700 4500)
-             max_val=(100 2000 2000 10000 10000 10000 1000 1000 2500 10000)
-              for i in  0 1 2 3 4 5 6 7 8 9; do wvl=${wvl_arr[$i]}; let max_$wvl=${max_val[$i]}; done
-              
-
-       for wvl in 171 211 94 335 4500 1600 131 1700 193 304
-          do 
-            if [ $hglog ]
-                then
-                  in_new=$seriesName[RequestID=$reqid][?WAVELNTH=$wvl?]
-                else
-                  in_new=$in[?WAVELNTH=$wvl?]
+      for wvl in 171 211 94 335 4500 1600 131 1700 193 304
+        do 
+          if [ $hglog ]
+            then
+              in_new=$seriesName[RequestID=$reqid][?WAVELNTH=$wvl?]
+            else
+              in_new=$in[?WAVELNTH=$wvl?]
             fi
    
-            if [ $wvl == 171 ]
-               then 
-                 scaling=SQRT
-               else 
-                 scaling=LOG
-            fi 
+          if [ $wvl == 171 ]
+            then 
+              scaling=SQRT
+            else 
+              scaling=LOG
+          fi 
     
  
-           tkey=T_REC
-           junk=`show_info key=T_REC ds=$in_new`
-           if [ $? ]
-              then 
-               tkey=T_OBS
-           fi
-           
-
+          tkey=T_REC
+          junk=`show_info key=T_REC ds=$in_new`
+          if [ $? ]
+            then 
+              tkey=T_OBS
+            fi
                          
-                max=${max:-$[max_$wvl]}
-                min=${min:-$min_val}
-                render_image in=$in_new  out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/AIA  M:{ID}\" | pnmtojpeg -quality=95'  pallette=/home/priya/Colormaps/AIA/aia_$wvl.lut tkey=$tkey  outname=aia_$wvl  min=$min max=$max  scale=$scale outid=time  type=$type scaling=$scaling -w  -{$p}
+          max=${max:-$[max_$wvl]}
+          min=${min:-$min_val}
+          render_image in=$in_new pallette=/home/priya/Colormaps/AIA/aia_$wvl.lut tkey=$tkey \
+                       out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/AIA  M:{ID}\" | pnmtojpeg -quality=95' \
+                       outname=aia_$wvl  min=$min max=$max  scale=$scale outid=time  type=$type scaling=$scaling -{$p}
+          # omit -w
 
-          done 
+        done 
+      }
+    else
+      echo "P=png/Mpeg cannot be made for this dataset"
+    fi
 
+  ls *.$type>images 
+  mkdir tmpImages
 
-}
-
-else
-  echo "P=png/Mpeg cannot be made for this dataset"
-fi
-
-
-#
-#if [ "$hg" ]
-#   then  
-#size=`ls *.*.$type | awk -F'[_]'  'NR==1{print $2}' | awk -F'[.]'  '{print $in}' ` 
-#   else 
-#declare -i size=4096/$scale 
-#fi
-
-ls *.$type>images 
-mkdir tmpImages
-
- N=`wc -l <images`
- i=1
+  N=`wc -l <images`
+  i=1
   while (( $i  <=  $N ))
-  do 
-  img=`head --lines $i <images | tail -1`
-  I=`printf "%04d" $i`
-          if [[ -e $img ]]
-          then 
-              ln  $img  tmpImages/$I.$type
-              let i+=1
-            else
-             echo "no frame for $img" 
-               let i+=1
-       fi 
- done
+    do 
+    img=`head --lines $i <images | tail -1`
+    I=`printf "%04d" $i`
+    if [[ -e $img ]]
+      then 
+        ln  $img  tmpImages/$I.$type
+        let i+=1
+      else
+        echo "no frame for $img" 
+        let i+=1
+      fi 
+    done
 
 #make movie
 cd tmpImages
 ffmpeg -qscale 5 -r 20 -b 9600 -i  %04d.$type   ../$seriesName.$movie_type
-
 
 cd ../
 
@@ -269,8 +254,5 @@ rmdir tmpImages
 rm images
 
 # rm -f $outpath/data1 ; rm -f $outpath/images 
-# rm -f $outpath/*.png
- 
- 
- 
+# rm -f $outpath/*.jpg
  
