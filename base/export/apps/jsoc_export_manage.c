@@ -1,3 +1,5 @@
+#include "list.h"
+
 // #define DEBUG 1
 #define DEBUG 0
 
@@ -116,10 +118,11 @@ const char *protos[] =
 enum Processing_enum
 {
    kProc_Unk = 0,
-   kProc_Noop = 1,
-   kProc_NotSpec = 2,
-   kProc_HgPatch = 3,
-   kProc_SuExport = 4
+   kProc_Reclimit = 1,
+   kProc_Noop = 2,
+   kProc_NotSpec = 3,
+   kProc_HgPatch = 4,
+   kProc_SuExport = 5
 };
 
 typedef enum Processing_enum Processing_t;
@@ -127,11 +130,22 @@ typedef enum Processing_enum Processing_t;
 const char *procs[] =
 {
    "uknown",
+   "n==",
    "no_op",
    "Not Specified",
    "hg_patch",
    "su_export"
 };
+
+struct ProcStep_struct
+{
+  Processing_t type;
+  char *args;
+  char *input; /* data-set input to processing */
+  char *output; /* data-set output by processing */
+};
+
+typedef struct ProcStep_struct ProcStep_t;
 
 ModuleArgs_t module_args[] =
 { 
@@ -262,6 +276,493 @@ TIME timenow()
   return(now);
   }
 
+enum PParseState_enum
+{
+   kPPStError,
+   kPPStBeginProc,
+   kPPStOneProc,
+   kPPStEndProc,
+   kPPStEnd
+};
+
+typedef enum PParseState_enum PParseState_t;
+
+/* action == 0 => return current data-set, don't advance to next 
+ * action == 1 => return current data-set, advance to next 
+ * action == 2 => free allocated memory
+ *
+ * field number of current field.
+ * 
+ * If field == NULL, then this is a continuation of previous parsing, 
+ * otherwise, this is the beginning of parsing a new field.
+ */
+static const char *GetDataSet(const char *field, int action, int *fieldn)
+{
+   static char *ds = NULL;
+   static char *pc = NULL;
+   static int fieldno = 0;
+   char *delim = NULL;
+
+   if ((!field && !ds))
+   {
+      return NULL;
+   }
+
+   if (field)
+   {
+      if (ds)
+      {
+         free(ds);
+      }
+
+      ds = NULL;
+      pc = NULL;
+      fieldno = 0;
+   }
+
+   if (!ds)
+   {
+      ds = strdup(field);
+   }
+
+   /* point to first data-set */
+   if (!pc)
+   {
+      pc = ds;
+      fieldno = 1;
+   }
+
+   if (pc == ds + strlen(ds))
+   {
+      /* end of the line */
+      *fieldn = fieldno;
+      return NULL;
+   }
+   else if (action == 0)
+   {
+      /* just return current data-set */
+      *fieldn = fieldno;
+      return pc;
+   }
+   else if (action == 1)
+   {
+      char *rv = NULL;
+
+      rv = pc;
+
+      /* advance to next data-set */
+      if ((delim = strchr(pc, '|')) != NULL)
+      {
+         *delim = '\0';
+         pc = delim + 1;
+         fieldno++;
+      }
+      else
+      {
+         /* no more data-sets */
+         pc = pc + strlen(pc);
+      }
+
+      /* return current dataset */
+      *fieldn = fieldno;
+      return rv;
+   }
+   else if (action == 2 && ds)
+   {
+      free(ds);
+      ds = NULL;
+      pc = NULL;
+      fieldno = 0;
+      *fieldn = fieldno;
+      return NULL;
+   }
+
+   *fieldn = fieldno;
+   return NULL;
+}
+
+static void FreeProcStep(void *ps)
+{
+   ProcStep_t *data = (ProcStep_t *)ps;
+
+   if (data && data->args)
+   {
+      free(data->args);
+   }
+
+   if (data && data->input)
+   {
+      free(data->input);
+   }
+
+   if (data && data->output)
+   {
+      free(data->output);
+   }
+}
+
+/* returns 1 on good parse, 0 otherwise */
+/* Ignore the kProc_Reclimit set when obtaining the corresponding input/output datasets from
+ * the dataset field. */
+static LinkedList_t *ParseFields(const char *val, const char *dset, int *status)
+{
+   LinkedList_t *rv = NULL;
+   char *activestr = NULL;
+   char *pc = NULL;
+   PParseState_t state = kPPStBeginProc;
+   char *onecmd = NULL;
+   char *args = NULL;
+   ProcStep_t data;
+   int procnum;
+   const char *adataset = NULL;
+   int fieldn;
+   char *end = NULL;
+
+   *status = 0;
+   procnum = 0;
+   activestr = malloc(strlen(val) + 2);
+   pc = activestr;
+   snprintf(pc, strlen(val) + 2, "%s|", val); /* to make parsing easier */
+   end = pc + strlen(pc);
+
+   /* point to first data-set */
+   adataset = GetDataSet(dset, 0, &fieldn);
+
+   while (1)
+   {
+      if (state == kPPStError || state == kPPStEnd || pc == end)
+      {
+         break;
+      }
+      else if (state == kPPStBeginProc)
+      {
+         onecmd = pc;
+         args = NULL;
+         procnum++;
+         state = kPPStOneProc;
+         data.type = kProc_Unk;
+         data.args = NULL;
+         data.input = NULL;
+         data.output = NULL;
+      }
+      else if (state == kPPStOneProc)
+      {
+         if ((*pc == '|' || *pc == ',') && data.type == kProc_Unk)
+         {
+            /* Check for old-style comma delimiter between the first proc step (which
+             * must be the reclimit step), and the real proc steps. */
+            if (strncasecmp(onecmd, "n=", 2) == 0 && procnum == 1)
+            {
+               args = onecmd + 2;
+               data.type = kProc_Reclimit;
+               
+               /* This step is not a real processing step, so it will not modify any 
+                * image data --> input == output. Don't advance to next data set. */
+               adataset = GetDataSet(NULL, 0, &fieldn);
+
+               if (!adataset)
+               {
+                  fprintf(stderr, "Required input dataset missing.\n");
+                  state = kPPStError;
+               }
+               else
+               {
+                  data.input = strdup(adataset);
+                  data.output = strdup(adataset);
+
+                  if (*pc == '|' && *(pc + 1) == '|')
+                  {
+                     pc++;
+                  }
+               }
+            }
+            else if (strncasecmp(onecmd, procs[kProc_Noop], strlen(procs[kProc_Noop])) == 0)
+            {
+               /* noop takes no args */
+               data.type = kProc_Noop;
+
+               /* Don't advance to next data set. */
+               adataset = GetDataSet(NULL, 0, &fieldn);
+
+               if (!adataset)
+               {
+                  fprintf(stderr, "Required input dataset missing.\n");
+                  state = kPPStError;
+               }
+               else
+               {
+                  data.input = strdup(adataset);
+                  data.output = strdup(adataset);
+               }
+            }
+            else if (strncasecmp(onecmd, procs[kProc_NotSpec], strlen(procs[kProc_NotSpec])) == 0)
+            {
+               /* notspec takes no args */
+               data.type = kProc_NotSpec;
+
+               /* Don't advance to next data set. */
+               adataset = GetDataSet(NULL, 0, &fieldn);
+
+               if (!adataset)
+               {
+                  fprintf(stderr, "Required input dataset missing.\n");
+                  state = kPPStError;
+               }
+               else
+               {
+                  data.input = strdup(adataset);
+                  data.output = strdup(adataset);
+               }
+            }
+            else if (strncasecmp(onecmd, procs[kProc_HgPatch], strlen(procs[kProc_HgPatch])) == 0)
+            {
+               /* Stuff following comma are args to hg_patch */
+               args = pc + 1;
+               data.type = kProc_HgPatch;
+
+               /* Advance to next data set. */
+               adataset = GetDataSet(NULL, 1, &fieldn);
+
+               if (!adataset)
+               {
+                  fprintf(stderr, "Required input dataset missing.\n");
+                  state = kPPStError;
+               }
+               else
+               {
+                  data.input = strdup(adataset);
+
+                  int whocares;
+                  adataset = GetDataSet(NULL, 0, &whocares);
+                  if (!adataset)
+                  {
+                     /* If we're here, then either the dataset column value had only a single dataset,
+                      * in which case we just put "@hgpatch.log" into the data-set field, OR
+                      * this is an error. */
+                     if (fieldn == 1)
+                     {
+                        data.output = strdup("@hg_patch.log");
+                     }
+                     else
+                     {
+                        fprintf(stderr, "Required input dataset missing.\n");
+                        state = kPPStError;
+                     }
+                  }
+                  else
+                  {
+                     data.output = strdup(adataset);
+                  }
+               }
+            }
+            else if (strncasecmp(onecmd, procs[kProc_SuExport], strlen(procs[kProc_SuExport])) == 0)
+            {
+               data.type = kProc_SuExport;
+
+               /* Don't advance to next data set. */
+               adataset = GetDataSet(NULL, 0, &fieldn);
+
+               if (!adataset)
+               {
+                  fprintf(stderr, "Required input dataset missing.\n");
+                  state = kPPStError;
+               }
+               else
+               {
+                  data.input = strdup(adataset);
+                  data.output = strdup(adataset);
+               }
+            }
+            else
+            {
+               /* Unknown type - processing error */
+               fprintf(stderr, "Unknown processing step %s.\n", onecmd);
+               state = kPPStError;
+            }
+            
+            if (state != kPPStError)
+            {
+               if ((*pc == '|') || 
+                   (data.type == kProc_Reclimit) ||
+                   (data.type == kProc_Noop) ||
+                   (data.type == kProc_NotSpec) ||
+                   (data.type == kProc_SuExport))
+               {
+                  *pc = '\0';
+                  state = kPPStEndProc;
+               }
+            }
+         }
+         else if (*pc == '|' && data.type == kProc_HgPatch)
+         {
+            *pc = '\0';
+            state = kPPStEndProc;
+         }
+         else
+         {
+            pc++;
+         }
+      }
+      else if (state == kPPStEndProc)
+      {
+         if (args)
+         {
+            data.args = strdup(args);
+         }
+
+         if (!rv)
+         {
+            rv = list_llcreate(sizeof(ProcStep_t), FreeProcStep);
+         }
+
+         list_llinserttail(rv, &data);
+         state = kPPStBeginProc;
+         pc++; /* Advance to first char after the proc-step delimiter. */
+      }
+
+      if (state != kPPStError)
+      {
+         if (pc == end && state == kPPStBeginProc)
+         {
+            state = kPPStEnd;
+         }
+      }
+   } /* while loop */
+
+   if (activestr)
+   {
+      free(activestr);
+   }
+
+   if (state == kPPStEnd)
+   {
+      *status = 1;
+   }
+
+   GetDataSet(NULL, 2, &fieldn);
+
+   return rv;
+}
+
+enum PSeqState_enum
+{
+   kPSeqBegin,
+   kPSeqReclim,
+   kPSeqNoMore,
+   kPSeqError,
+   kPSeqMoreOK
+};
+
+typedef enum PSeqState_enum PSeqState_t;
+
+int IsBadProcSequence(LinkedList_t *procs)
+{
+   /* There is an acceptable order to proc steps. */
+   ListNode_t *node = NULL;
+   Processing_t type = kProc_Unk;
+   PSeqState_t state = kPSeqBegin;
+   int quit;
+   int rv;
+
+   quit = 0;
+   list_llreset(procs);
+   while (!quit && (node = list_llnext(procs)) != 0)
+   {
+      type = ((ProcStep_t *)node->data)->type;
+
+      switch (state)
+      {
+         case kPSeqError:
+           {
+              quit = 1;
+           }
+           break;
+         case kPSeqBegin:
+           {
+              if (type == kProc_Noop || type == kProc_SuExport)
+              {
+                 state = kPSeqNoMore;
+              }
+              else if (type == kProc_Reclimit)
+              {
+                 state = kPSeqReclim;
+              }
+              else if (type == kProc_NotSpec || type == kProc_HgPatch)
+              {
+                 state = kPSeqMoreOK;
+              }
+              else
+              {
+                 fprintf(stderr, "Unknown processing type %d.\n", (int)type);
+                 state = kPSeqError;
+              }
+           }
+           break;
+         case kPSeqReclim:
+           {
+              if (type == kProc_Noop || type == kProc_SuExport)
+              {
+                 state = kPSeqNoMore;
+              }
+              else if (type == kProc_Reclimit)
+              {
+                 fprintf(stderr, "Multiple record-limit statements.\n");
+                 state = kPSeqError;
+              }
+              else if (type == kProc_NotSpec || type == kProc_HgPatch)
+              {
+                 state = kPSeqMoreOK;
+              }
+              else
+              {
+                 fprintf(stderr, "Unknown processing type %d.\n", (int)type);
+                 state = kPSeqError;
+              }
+           }
+           break;
+         case kPSeqNoMore:
+           {
+              fprintf(stderr, "No additional processing allowed.\n");
+              state = kPSeqError;
+           }
+           break;
+         case kPSeqMoreOK:
+           {
+              if (type == kProc_Reclimit || type == kProc_Noop)
+              {
+                 fprintf(stderr, "Multiple record-limit statements, or a processing step combined with a noop processing step.\n");
+                 state = kPSeqError;
+              }
+              else if (type == kProc_NotSpec || type == kProc_HgPatch)
+              {
+                 state = kPSeqMoreOK;
+              }
+              else if (kProc_SuExport)
+              {
+                 state = kPSeqNoMore;
+              }
+              else
+              {
+                 fprintf(stderr, "Unknown processing type %d.\n", (int)type);
+                 state = kPSeqError;
+              }
+           }
+           break;
+      }
+   }
+   
+   if (state == kPSeqError)
+   {
+      rv = 1;
+   }
+   else
+   {
+      rv = 0;
+   }
+
+   return rv;
+}
+
 static void GenErrChkCmd(FILE *fptr)
 {
    fprintf(fptr, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
@@ -309,8 +810,7 @@ static int GenExpFitsCmd(FILE *fptr,
                          int RecordLimit,
                          const char *filenamefmt,
                          const char *method,
-                         const char *dbids,
-                         Processing_t proctype)
+                         const char *dbids)
 {
    char *protocol = strdup(proto);
    int rv = 0;
@@ -331,19 +831,11 @@ static int GenExpFitsCmd(FILE *fptr,
       else
         cparms = "**NONE**";
 
-      if (proctype == kProc_HgPatch)
-      {
-         /* no "n=XX" */
-         fprintf(fptr, "jsoc_export_as_fits JSOC_DBHOST=%s reqid='%s' expversion=%s rsquery='%s' path=$REQDIR ffmt='%s' "
-                 "method='%s' protocol='%s' cparms='%s' %s\n",
-                 dbmainhost, requestid, PACKLIST_VER, dataset, filenamefmt, method, protos[kProto_FITS], cparms, dbids);
-      }
-      else
-      {
-         fprintf(fptr, "jsoc_export_as_fits JSOC_DBHOST=%s reqid='%s' expversion=%s rsquery='%s' n=%d path=$REQDIR ffmt='%s' "
-                 "method='%s' protocol='%s' cparms='%s' %s\n",
-                 dbmainhost, requestid, PACKLIST_VER, dataset, RecordLimit, filenamefmt, method, protos[kProto_FITS], cparms, dbids);
-      }
+      /* ART - multiple processing steps
+       * Always use record limit, since we can no longer make the export commands processing-specific. */
+      fprintf(fptr, "jsoc_export_as_fits JSOC_DBHOST=%s reqid='%s' expversion=%s rsquery='%s' n=%d path=$REQDIR ffmt='%s' "
+              "method='%s' protocol='%s' cparms='%s' %s\n",
+              dbmainhost, requestid, PACKLIST_VER, dataset, RecordLimit, filenamefmt, method, protos[kProto_FITS], cparms, dbids);
 
       GenErrChkCmd(fptr);
    }
@@ -359,39 +851,28 @@ static int GenExpFitsCmd(FILE *fptr,
 /* returns 1 on error, 0 on success */
 static int GenPreProcessCmd(FILE *fptr, 
                             const char *protocol,
-                            const char *process,
+                            Processing_t process,
+                            const char * args,
                             const char *dbmainhost,
                             const char *dataset,
                             int RecordLimit,
                             const char *requestid,
                             const char *method,
-                            const char *dbids,
-                            Processing_t *proctype,
-                            char **dsetout)
+                            const char *dbids)
 {
    int rv = 0;
    char hgds[PATH_MAX];
 
-   if (strncasecmp(process, procs[kProc_HgPatch], strlen(procs[kProc_HgPatch])) == 0)
+   if (process == kProc_HgPatch)
    {
-      *proctype = kProc_HgPatch;
-
       /* hg_patch compatible with all protocols (if not fits, then assume as-is). */
 
       /* hg_patch requires additional arguments */
-      char *hgparms = NULL;
-
-      if ((hgparms = index(process, ',')) != 0)
+      if (args)
       {
-         hgparms++;
-
-         if (!(rv = (GenHgPatchCmd(fptr, hgparms, dbmainhost, dataset, RecordLimit, requestid, dbids) != 0)))
+         if (!(rv = (GenHgPatchCmd(fptr, args, dbmainhost, dataset, RecordLimit, requestid, dbids) != 0)))
          {
             snprintf(hgds, sizeof(hgds), "@%s", kHgPatchLog);
-            if (dsetout)
-            {
-               *dsetout = strdup(hgds);
-            }
          }
       }
       else
@@ -399,25 +880,22 @@ static int GenPreProcessCmd(FILE *fptr,
          /* arguments missing */
          fprintf(stderr,
                  "XX jsoc_export_manage FAIL NOT implemented yet, requestid=%s, process=%s, protocol=%s, method=%s\n",
-                 requestid, process, protocol, method);
+                 requestid, procs[process], protocol, method);
          rv = 1;
       }
    }
-   else if (strncasecmp(process, procs[kProc_SuExport], strlen(procs[kProc_SuExport])) == 0)
+   else if (process == kProc_SuExport)
    {
-      *proctype = kProc_SuExport;
       fprintf(fptr, "jsoc_export_SU_as_is_sock ds='%s' requestid=%s\n", dataset, requestid); 
       GenErrChkCmd(fptr);
       /* rv = 0 */
    }
-   else if (strncasecmp(process, procs[kProc_Noop], strlen(procs[kProc_Noop])) == 0)
+   else if (process == kProc_Noop)
    {
-      *proctype = kProc_Noop;
       /* rv = 0 */
    }
-   else if (strncasecmp(process, procs[kProc_NotSpec], strlen(procs[kProc_NotSpec])) == 0)
+   else if (process == kProc_NotSpec)
    {
-      *proctype = kProc_NotSpec;
       /* rv = 0 */
    }
    else
@@ -425,7 +903,7 @@ static int GenPreProcessCmd(FILE *fptr,
       /* Unknown processing */
       fprintf(stderr,
               "XX jsoc_export_manage FAILURE; invalid processing request, requestid=%s, process=%s, protocol=%s, method=%s\n",
-              requestid, process, protocol, method);
+              requestid, procs[process], protocol, method);
       rv = 1;
    }
 
@@ -434,97 +912,75 @@ static int GenPreProcessCmd(FILE *fptr,
 
 static int GenProtoExpCmd(FILE *fptr, 
                           const char *protocol,
-                          const char *process,
                           const char *dbmainhost,
                           const char *dataset,
                           int RecordLimit,
                           const char *requestid,
                           const char *method,
                           const char *filenamefmt,
-                          const char *dbids,
-                          Processing_t proctype)
+                          const char *dbids)
 {
    int rv = 0;
 
    if (strncasecmp(protocol, protos[kProto_FITS], strlen(protos[kProto_FITS])) == 0)
    {
-      rv = (GenExpFitsCmd(fptr, protocol, dbmainhost, requestid, dataset, RecordLimit, filenamefmt, method, dbids, proctype) != 0);
+      rv = (GenExpFitsCmd(fptr, protocol, dbmainhost, requestid, dataset, RecordLimit, filenamefmt, method, dbids) != 0);
    }
-   else if (strncasecmp(protocol, "mpg",3)==0 ||
-            strncasecmp(protocol, "mp4",3)==0 ||
-            strncasecmp(protocol, "jpg",3)==0 ||
-            strncasecmp(protocol, "png",3)==0 )
+   else if (strncasecmp(protocol, protos[kProto_MPEG], strlen(protos[kProto_MPEG])) == 0 ||
+            strncasecmp(protocol, protos[kProto_JPEG], strlen(protos[kProto_JPEG])) == 0 ||
+            strncasecmp(protocol, protos[kProto_PNG], strlen(protos[kProto_PNG])) == 0 ||
+            strncasecmp(protocol, protos[kProto_MP4], strlen(protos[kProto_MP4])) == 0)
    {
       char *newproto = strdup(protocol);
       char *pcomma=index(newproto,',');
+
       if (pcomma)
         *pcomma = '\0';
 
       if (strcasecmp(newproto,"mpg")==0 || strcasecmp(protocol, "mp4")==0)
-         fprintf(fptr, "%s ", (TESTMODE ? "/home/phil/jsoc/base/export/scripts/jsoc_export_as_movie_test" : "jsoc_export_as_movie"));
+        fprintf(fptr, "%s ", (TESTMODE ? "/home/phil/jsoc/base/export/scripts/jsoc_export_as_movie_test" : "jsoc_export_as_movie"));
       else
-         fprintf(fptr, "%s ", (TESTMODE ? "/home/phil/jsoc/base/export/scripts/jsoc_export_as_images_test" : "jsoc_export_as_images"));
+        fprintf(fptr, "%s ", (TESTMODE ? "/home/phil/jsoc/base/export/scripts/jsoc_export_as_images_test" : "jsoc_export_as_images"));
 
       fprintf(fptr, "in='%s' reqid='%s' expversion='%s' method='%s' outpath=$REQDIR ffmt='%s' cparms='%s'",
               dataset, requestid, PACKLIST_VER, method, filenamefmt, "cparms is not needed");
 
       fprintf(fptr, " protocol='%s'", newproto);
       while(pcomma)
-        {
-        newproto = pcomma+1;
-        pcomma=index(newproto,',');
-        if (pcomma)
-          *pcomma = '\0';
-        fprintf(fptr, " '%s'", newproto);
-        }
+      {
+         newproto = pcomma+1;
+         pcomma=index(newproto,',');
+         if (pcomma)
+           *pcomma = '\0';
+         fprintf(fptr, " '%s'", newproto);
+      }
       fprintf(fptr, "\n");
 
+      if (newproto)
+      {
+         free(newproto);
+      }
    }
    else if (strncasecmp(protocol, protos[kProto_AsIs], strlen(protos[kProto_AsIs])) == 0)
    {
-      if (proctype == kProc_HgPatch)
-      {
-         /* No "n=XX" */
-         fprintf(fptr, "jsoc_export_as_is JSOC_DBHOST=%s ds='%s' requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n",
-                 dbmainhost, dataset, requestid, method, protos[kProto_AsIs], filenamefmt);
-      }
-      else
-      {
-         fprintf(fptr, "jsoc_export_as_is JSOC_DBHOST=%s ds='%s' n=%d requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n",
-                 dbmainhost, dataset, RecordLimit, requestid, method, protos[kProto_AsIs], filenamefmt);
-      }
+      /* ART - multiple processing steps
+       * Always use record limit, since we can no longer make the export commands processing-specific. */
+      fprintf(fptr, "jsoc_export_as_is JSOC_DBHOST=%s ds='%s' n=%d requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n",
+              dbmainhost, dataset, RecordLimit, requestid, method, protos[kProto_AsIs], filenamefmt);
 
       GenErrChkCmd(fptr);
 
-      /* There is some processing-specific stuff too. */
-      if (proctype == kProc_HgPatch)
-      {
-         fprintf(fptr, "set RECSMADE = `cat hg_patch.log | wc -l` \n");
-         GenErrChkCmd(fptr);
-         fprintf(fptr, "show_info JSOC_DBHOST=%s n=$RECSMADE -aAit ds='@hg_patch.log' > %s.keywords.txt\n", 
-                 dbmainhost, requestid);
-         GenErrChkCmd(fptr);
-      }
-      else if (proctype == kProc_Noop || proctype == kProc_NotSpec)
-      {
-         fprintf(fptr, "show_info JSOC_DBHOST=%s -ait ds='%s' n=%d > %s.keywords.txt\n",
-                 dbmainhost, dataset, RecordLimit, requestid);
-         GenErrChkCmd(fptr);
-      }
-      else
-      {
-         /* error - can't use this type of processing with as-is */
-         fprintf(stderr,
-                 "XX jsoc_export_manage FAILURE; invalid protocol/processing type combination, requestid=%s, process=%s, protocol=%s, method=%s\n",
-                 requestid, process, protocol, method);
-      }
+      /* print keyword values for as-is processing */
+      fprintf(fptr, "show_info JSOC_DBHOST=%s -ait ds='%s' n=%d > %s.keywords.txt\n",
+              dbmainhost, dataset, RecordLimit, requestid);
+      GenErrChkCmd(fptr);
    }
    else
    {
       /* Unknown protocol */
       fprintf(stderr,
-              "XX jsoc_export_manage FAILURE; invalid protocol, requestid=%s, process=%s, protocol=%s, method=%s\n",
-              requestid, process, protocol, method);
+              "XX jsoc_export_manage FAILURE; invalid protocol, requestid=%s, protocol=%s, method=%s\n",
+              requestid, protocol, method);
       rv = 1;
    }
 
@@ -566,6 +1022,8 @@ int DoIt(void)
   char runscript[DRMS_MAXPATHLEN];
   char *dashp;
   int testmode = 0;
+  LinkedList_t *proccmds = NULL;
+  DRMS_Type_Value_t val;
 
   const char *dbname = NULL;
   const char *dbexporthost = NULL;
@@ -578,7 +1036,12 @@ int DoIt(void)
 
   int procerr;
   Processing_t proctype;
-  char *dset = NULL;
+  ListNode_t *node = NULL;
+  int quit;
+  char *now_at = NULL;
+  char *args = NULL;
+  const char *cdataset = NULL;
+  ProcStep_t *ndata = NULL;
 
   if (nice_intro ()) return (0);
 
@@ -756,6 +1219,23 @@ int DoIt(void)
        * analogous to the n=XX parameter to show_info). So the "Processing" field got overloaded.
        * The following block of code checks for the presence of a "n=XX" prefix and strips it off
        * if it is present (setting RecordLimit in the process). */
+
+      int posthgpatch = 0; /* If 1, then there is some clean-up stuff to do after the actual 
+                            * file export command. */
+      int ppstat = 0;
+      int morestat = 0;
+
+      /* Parse the Dataset and Process fields to create the processing step struct. 
+       * HACK!! For now, if hgpatch is present, just put '@hgpath' in the ds output field
+       * of the hgpatch processing step. */
+      proccmds = ParseFields(process, dataset, &ppstat);
+      if (ppstat == 0)
+      {
+         fprintf(stderr, "Invalid process field value: %s.\n", process);
+         continue;
+      }
+
+#if 0
       if (process && strncmp(process,"n=",2)==0)
         {
         char *now_at = NULL;
@@ -766,73 +1246,102 @@ fprintf(stderr,"XX Dealing with process=n=xx, RecordLimit=%d, new process=%s\n",
         }
       else
         RecordLimit = 0;
+#endif
 
       /* PRE-PROCESSING */
 
-      /* First do the pre-processing of one dataseries into another (if requested). For example, the user may have 
-       * requested region extraction. The pre-processing will first make a series of extracted regions 
-       * (if it doesn't already exist). The export code will then export from the series of extracted regions, 
-       * not from the original full images. */
-      procerr = 0;
-      proctype = kProc_Unk;
-      dset = NULL;
-
-      procerr = GenPreProcessCmd(fp,
-                                 protocol,
-                                 process, 
-                                 dbmainhost, 
-                                 dataset, 
-                                 RecordLimit, 
-                                 requestid, 
-                                 method, 
-                                 dbids, 
-                                 &proctype, 
-                                 &dset);
-
-      if (procerr)
+      if (IsBadProcSequence(proccmds))
       {
-         drms_setkey_int(export_log, "Status", 4);
-         drms_close_record(export_rec, DRMS_FREE_RECORD);
-         fclose(fp);
-         fp = NULL;
-         if (dataset)
-         {
-            free(dataset); /* this was malloc'd in this loop */
-         }
-
-         if (dset)
-         {
-            free(dset);
-            dset = NULL;
-         }
+         fprintf(stderr, "Bad sequence of processing steps, skipping recnum %lld.\n", export_rec->recnum);
+         list_llfree(&proccmds);
          continue;
       }
-      else
+
+      /* First do the pre-processing of one dataseries into another (if requested). For example, the 
+       * user may have requested region extraction. The pre-processing will first make a series of 
+       * extracted regions (if it doesn't already exist). The export code will then export from the series 
+       * of extracted regions, not from the original full images. */
+      procerr = 0;
+      quit = 0;
+      RecordLimit = 0;
+      list_llreset(proccmds);
+
+      while (!quit && (node = list_llnext(proccmds)) != 0)
       {
-         /* If dset was set, then this record-set query should be used in subsequent calls. 
-          * As of this writing, dset gets set only if the processing is hg_patch. */
-         if (dset)
+         ndata = (ProcStep_t *)node->data;
+         proctype = ndata->type;
+         cdataset = ndata->input;
+         args = ((ProcStep_t *)node->data)->args;
+
+         if (proctype == kProc_Reclimit)
          {
-            if (dataset)
+            val.string_val = args;
+            RecordLimit = drms2int(DRMS_TYPE_STRING, &val, &morestat);
+
+            if (morestat == DRMS_RANGE)
             {
-               free(dataset); /* this was malloc'd in this loop */
+               fprintf(stderr, "Invalid record-limit argument %d.\n", RecordLimit);
+               quit = 1;
+               break;
             }
-            dataset = dset;
+
+            continue; /* Onto the real processing steps. */
          }
+         else if (proctype == kProc_HgPatch)
+         {
+            posthgpatch = 1;
+         }
+
+
+         procerr = GenPreProcessCmd(fp,
+                                    protocol,
+                                    proctype,
+                                    args,
+                                    dbmainhost, 
+                                    cdataset, 
+                                    RecordLimit, 
+                                    requestid, 
+                                    method, 
+                                    dbids);
+
+         if (procerr)
+         {
+            drms_setkey_int(export_log, "Status", 4);
+            drms_close_record(export_rec, DRMS_FREE_RECORD);
+            fclose(fp);
+            fp = NULL;
+            list_llfree(&proccmds);
+            quit = 1;
+            break;
+         }
+         else
+         {
+            /* This processing succeeded, and it might have changed the record-set query needed 
+             * for subsequent processing steps. For example, regardless of the input record-set 
+             * query to the hgpatch processing code, which might be aia.lev1[blah] for example, 
+             * the output record-set query is @hgpatch.log. This will need to be used as the  
+             * input query to subsequent processing, or to the final export cmd (e.g., 
+             * jsoc_export_as_fits). */
+            cdataset = ndata->output;
+         }
+      } /* loop over processing steps */
+
+      if (quit)
+      {
+         continue; /* next export record */
       }
 
       /* PROTOCOL-SPECIFIC EXPORT */
+      /* Use the dataset output by the last processing step (if processing was performed). */
       procerr = GenProtoExpCmd(fp, 
                                protocol,
-                               process, 
                                dbmainhost, 
-                               dataset, 
+                               cdataset ? cdataset : dataset, 
                                RecordLimit, 
                                requestid, 
                                method, 
                                filenamefmt, 
-                               dbids, 
-                               proctype);
+                               dbids);
 
       if (procerr)
       {
@@ -845,11 +1354,7 @@ fprintf(stderr,"XX Dealing with process=n=xx, RecordLimit=%d, new process=%s\n",
             free(dataset); /* this was malloc'd in this loop */
          }
 
-         if (dset)
-         {
-            free(dset);
-            dset = NULL;
-         }
+         list_llfree(&proccmds);
          continue;
       }
  
@@ -861,7 +1366,7 @@ fprintf(stderr,"XX Dealing with process=n=xx, RecordLimit=%d, new process=%s\n",
       dashp = rindex(method, '-');
       if (dashp && strcmp(dashp, "-tar") == 0)
         {
-           if (proctype == kProc_HgPatch)
+           if (posthgpatch)
            {
               fprintf(fp, "cp %s ..\n", kHgPatchLog);
            }
@@ -871,7 +1376,7 @@ fprintf(stderr,"XX Dealing with process=n=xx, RecordLimit=%d, new process=%s\n",
         fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
         fprintf(fp, "mv ../%s.* ../index.* .\n", requestid);
 
-        if (proctype == kProc_HgPatch)
+        if (posthgpatch)
         {
            fprintf(fp, "mv ../%s .\n", kHgPatchLog);
         }
@@ -919,8 +1424,10 @@ fprintf(stderr,"XX Dealing with process=n=xx, RecordLimit=%d, new process=%s\n",
   */
 // fprintf(stderr,"export_manage for %s, qsub=%s\n",requestid, command);
       if (system(command))
+      {
+         list_llfree(&proccmds);
         DIE("Submission of qsub command failed");
-  
+      }
       // Mark the record in jsoc.export_new as accepted for processing.
       drms_setkey_int(export_log, "Status", 1);
       printf("Request %s submitted\n",requestid);
