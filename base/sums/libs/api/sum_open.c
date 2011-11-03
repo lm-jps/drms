@@ -1950,8 +1950,10 @@ KEY *respdoarray_1(KEY *params)
 printf("mode=%d file=%s\n", filemode, file); //!!TEMP
   if((rfp=fopen(file, "r")) == NULL) { 
     printf("**Can't open %s from sum_svc ret from SUM_infoArray() call\n", file);
+    free(file);
     return((KEY *)NULL);
   }
+  free(file);
   sum->sinfo = (SUM_info_t *)calloc(reqcnt, sizeof(SUM_info_t));
   sinfod = sum->sinfo;
   if(filemode == 0)
