@@ -861,7 +861,6 @@ static int GenPreProcessCmd(FILE *fptr,
                             const char *dbids)
 {
    int rv = 0;
-   char hgds[PATH_MAX];
 
    if (process == kProc_HgPatch)
    {
@@ -870,10 +869,7 @@ static int GenPreProcessCmd(FILE *fptr,
       /* hg_patch requires additional arguments */
       if (args)
       {
-         if (!(rv = (GenHgPatchCmd(fptr, args, dbmainhost, dataset, RecordLimit, requestid, dbids) != 0)))
-         {
-            snprintf(hgds, sizeof(hgds), "@%s", kHgPatchLog);
-         }
+         rv = (GenHgPatchCmd(fptr, args, dbmainhost, dataset, RecordLimit, requestid, dbids) != 0);
       }
       else
       {
@@ -932,6 +928,7 @@ static int GenProtoExpCmd(FILE *fptr,
             strncasecmp(protocol, protos[kProto_MP4], strlen(protos[kProto_MP4])) == 0)
    {
       char *newproto = strdup(protocol);
+      char *origproto = newproto;
       char *pcomma=index(newproto,',');
 
       if (pcomma)
@@ -956,9 +953,9 @@ static int GenProtoExpCmd(FILE *fptr,
       }
       fprintf(fptr, "\n");
 
-      if (newproto)
+      if (origproto)
       {
-         free(newproto);
+         free(origproto);
       }
    }
    else if (strncasecmp(protocol, protos[kProto_AsIs], strlen(protos[kProto_AsIs])) == 0)
@@ -1226,7 +1223,7 @@ int DoIt(void)
       int morestat = 0;
 
       /* Parse the Dataset and Process fields to create the processing step struct. 
-       * HACK!! For now, if hgpatch is present, just put '@hgpath' in the ds output field
+       * HACK!! For now, if hgpatch is present, just put '@hgpatchlog.txt' in the ds output field
        * of the hgpatch processing step. */
       proccmds = ParseFields(process, dataset, &ppstat);
       if (ppstat == 0)
