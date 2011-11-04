@@ -2109,15 +2109,6 @@ int SUMExptErr(const char *fmt, ...)
    return fprintf(stderr, "%s", string);
 }
 
-static void FreeInfo(const void *value)
-{
-   SUM_info_t *tofree = *((SUM_info_t **)value);
-   if (tofree)
-   {
-      free(tofree);
-   }
-}
-
 static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 						    SUM_t **suminout,
 						    DRMS_SumRequest_t *request)
@@ -2821,6 +2812,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        int isunum;
        char key[128];
        SUM_info_t *nulladdr = NULL;
+       uint64_t dxarray[MAXSUNUMARRAY];
 
        if (request->reqcnt < 1 || request->reqcnt > MAXSUMREQCNT)
        {
@@ -2860,14 +2852,14 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           /* IMPORTANT! SUM_infoEx() will not support duplicate sunums. So, need to 
            * remove duplicates, but map each SUNUM in the original request to 
            * the SUNUM in the array of streamlined requests. */
-          map = hcon_create(sizeof(SUM_info_t *), 128, FreeInfo, NULL, NULL, NULL, 0);
+          map = hcon_create(sizeof(SUM_info_t *), 128, NULL, NULL, NULL, NULL, 0);
 
           for (i = 0, isunum = 0; i < request->reqcnt; i++)
           {
              snprintf(key, sizeof(key), "%llu", (unsigned long long)request->sunum[i]);
              if (!hcon_member(map, key))
              {
-                sum->dsix_ptr[isunum] = request->sunum[i];
+                dxarray[isunum] = request->sunum[i];
                 hcon_insert(map, key, &nulladdr);
                 isunum++;
              }
@@ -2877,7 +2869,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           sum->sinfo = NULL;
 
           /* Make RPC call to the SUM server. */
-          reply->opcode = SUM_infoEx(sum, printf);
+          reply->opcode = SUM_infoArray(sum, &dxarray, isunum, printf);
       
           if (reply->opcode != 0)
           {
@@ -2893,7 +2885,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
              }
              else
              {
-                fprintf(stderr,"SUM thread: SUM_infoEx RPC call failed with "
+                fprintf(stderr,"SUM thread: SUM_infoArray RPC call failed with "
                         "error code %d\n", reply->opcode);
                 nosums = 1;
                 break; // from loop
@@ -2914,12 +2906,12 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           {
              /* NOTE - if an sunum is unknown, the returned SUM_info_t will have the sunum set 
               * to -1.  So don't use the returned sunum. */
-             snprintf(key, sizeof(key), "%llu", (unsigned long long)(sum->dsix_ptr[i]));
+             snprintf(key, sizeof(key), "%llu", (unsigned long long)(dxarray[i]));
              if ((pinfo = hcon_lookup(map, key)) != NULL)
              {
                 *pinfo = psinfo;
                 /* work around SUMS ditching the SUNUM for bad SUNUMs */
-                (*pinfo)->sunum = sum->dsix_ptr[i];
+                (*pinfo)->sunum = dxarray[i];
              }
              else
              {
@@ -2948,7 +2940,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
              }
           }
 
-          sum->sinfo = NULL; /* server main thread now owns the SUM_info_t structs. */
+          SUM_infoArray_free(sum); /* This will free all the SUM_info_t structs owned by SUMS. */
        }
 
        /* clean up - free up the SUM_info_t structs pointed to by map */
