@@ -92,7 +92,7 @@ float StopTimer(int n)
 /*********************************************************/
 void open_log(char *filename)
 {
-  if((logfp=fopen(filename, "a")) == NULL) {
+  if((logfp=fopen(filename, "a+")) == NULL) {
     fprintf(stderr, "Can't open the log file %s\n", filename);
   }
 }
