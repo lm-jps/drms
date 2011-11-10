@@ -98,7 +98,7 @@ int tape_inventory(int sim, int catalog)
   sprintf(cmd, "/usr/sbin/mtx -f %s status 1> %s 2>&1", LIBDEV, STATUSDUMP);
   write_log("*Inv: %s\n", cmd);
   if(sim) {			/* simulation mode only */
-    sleep(10);
+    sleep(5);
     sprintf(cmd, "cp %s %s", STATUSDUMPSIM, STATUSDUMP);
     system(cmd);
   }
@@ -256,7 +256,7 @@ int tape_reinventory(int sim, int catalog)
   sprintf(cmd, "/usr/sbin/mtx -f %s status 1> %s 2>&1", LIBDEV, STATUSDUMP);
   write_log("*Inv: %s\n", cmd);
   if(sim) {			/* simulation mode only */
-    sleep(10);
+    sleep(5);
     sprintf(cmd, "cp %s %s", STATUSDUMPSIM, STATUSDUMP);
     system(cmd);
   }
