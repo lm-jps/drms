@@ -19,7 +19,7 @@ extern int write_log();
 extern int tapeindrive();
 extern int tapeinslot();
 extern void rd_q_print();
-extern void tq_entry_rd_dump();
+extern void tq_entry_rd_dump2();
 extern void insert_tq_entry_rd_sort();
 extern void insert_tq_entry_rd_need();
 extern void insert_tq_entry_wrt_need();
@@ -765,7 +765,7 @@ KEY *readdo_1(KEY *params) {
     /*rd_q_print(q_rd_front);		/* !!!TEMP */
   }
   write_log("*Tp:RdQsort:\n");	/* tell tui new RdQ sort */
-  tq_entry_rd_dump(user);
+  tq_entry_rd_dump2();		// print out the Q
   state = kick_next_entry_rd();	/* see if can start an entry */
     				/* poff set if entry removed from q */
   free(user);
