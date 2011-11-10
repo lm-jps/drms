@@ -120,7 +120,7 @@ int soi_errno = NO_ERROR;
 void open_log(char *filename)
 {
   /*if((logfp=fopen(filename, "w")) == NULL) {*/
-  if((logfp=fopen(filename, "a")) == NULL) {
+  if((logfp=fopen(filename, "a+")) == NULL) {
     fprintf(stderr, "Can't open the log file %s\n", filename);
   }
 }
@@ -274,6 +274,7 @@ void setup()
   sprintf(logfile, "/usr/local/logs/SUM/tape_svc_%s.log", timetag);
   open_log(logfile);
   printk_set(write_log, write_log);
+  sleep(1);
   write_log("\n## %s %s for pid = %d ##\n", 
 		datestring(), drvname, pid);
   write_log("Database to connect to is %s\n", dbname);
@@ -1259,7 +1260,7 @@ int position_tape_eod(int sim, int dnum)
   sprintf(cmd, "/usr/local/bin/mt -f %s eod 1>> %s 2>&1", dname, logfile);
   write_log("*Dr%d:wt: %s\n", dnum, cmd);
   if(sim) {			/* simulation mode only */
-    sleep(4);
+    sleep(2);
     lastfilenum = 999999;
   }
   else {
@@ -1287,7 +1288,7 @@ int position_tape_bot(int sim, int dnum)
   sprintf(cmd, "/usr/local/bin/mt -f %s rewind 1>> %s 2>&1", dname, logfile);
   write_log("*Dr%d:wt: %s\n", drivenum, cmd);
   if(sim) {			/* simulation mode only */
-    sleep(4);
+    sleep(2);
   }
   else {
     if(system(cmd)) {
@@ -1315,7 +1316,7 @@ int position_tape_file_asf(int sim, int dnum, int fnum)
   sprintf(cmd, "/usr/local/bin/mt -f %s asf %d 1>> %s 2>&1", dname, fnum, logfile);
   write_log("*Dr%d:rd: %s\n", drivenum, cmd);
   if(sim) {				/* simulation mode only */
-    sleep(4);
+    sleep(2);
   }
   else {
     if(system(cmd)) {
@@ -1353,7 +1354,7 @@ int position_tape_file_fsf(int sim, int dnum, int fdelta)
   }
   write_log("*Dr%d:rd: %s\n", drivenum, cmd);
   if(sim) {				/* simulation mode only */
-    sleep(4);
+    sleep(2);
   }
   else {
     if(system(cmd)) {
@@ -1510,7 +1511,7 @@ int write_wd_to_drive(int sim, KEY *params, int drive, int fnum, char *logname)
   write_time();
   write_log("*Dr%d:wt: %s\n", drive, cmd);
   if(sim) {                             /* simulation mode only */
-    sleep(7);
+    sleep(2);
   }
   else {
     /***********************orig pipe cmd execution**********************
@@ -1622,7 +1623,7 @@ int write_hdr_to_drive(int sim, char *tapeid, int group, int drive, char *log)
   write_time();
   write_log("*Dr%d:wt: %s\n", drivenum, cmd);
   if(sim) {				/* simulation mode only */
-    sleep(4);
+    sleep(2);
   }
   else {
     if(status = system(cmd)) {
@@ -1754,7 +1755,7 @@ int read_drive_to_wd(int sim, char *wd, int drive, char *tapeid,
   write_time();
   write_log("*Dr%d:rd: %s\n", drivenum, rcmd);
   if(sim) {				/* simulation mode only */
-    sleep(7);
+    sleep(2);
     /* !!!TEMP for test */
     /*write_log("***Dr%d:rd:!!SIM Error. exit status=%d\n", drivenum, 1);*/
     /*return(-1);*/
@@ -1766,11 +1767,11 @@ int read_drive_to_wd(int sim, char *wd, int drive, char *tapeid,
       return(-1);
     }
   }
-  if(get_cksum(md5file, md5sum)) { return(-1); }
-  if(SUMLIB_Get_MD5(tapeid, tapefilenum, md5db)) {
-    return(-1);
-  }
   if(!sim) {
+    if(get_cksum(md5file, md5sum)) { return(-1); }
+    if(SUMLIB_Get_MD5(tapeid, tapefilenum, md5db)) {
+      return(-1);
+    }
     if(strcmp(md5sum, md5db)) {
       write_log("***Dr%d:rd:Error md5 compare:\n", drivenum);
       write_log(" exp=%s read=%s\n", md5db, md5sum);
