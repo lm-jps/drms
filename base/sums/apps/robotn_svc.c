@@ -37,7 +37,7 @@ static struct timeval TIMEOUT = { 120, 0 };
 uint32_t rinfo;		/* info returned by XXXdo_1() calls */
 uint32_t procnum;	/* remote procedure # to call for current_client call*/
 
-FILE *logfp;
+static FILE *logfp;
 CLIENT *current_client, *clnttape;
 SVCXPRT *glb_transp;
 int debugflg = 0;
@@ -53,7 +53,7 @@ int soi_errno = NO_ERROR;
 /*********************************************************/
 void open_log(char *filename)
 {
-  if((logfp=fopen(filename, "a")) == NULL) {
+  if((logfp=fopen(filename, "a+")) == NULL) {
     fprintf(stderr, "Can't open the log file %s\n", filename);
   }
 }
@@ -403,7 +403,7 @@ KEY *robotdo_1(KEY *params)
     }
     write_log("*Rb:cmd: %s\n", cmd);
     if(sim) {				/* simulation mode only */
-      sleep(4);
+      sleep(2);
     } 
     else {
       sleep(2);				/* !!!TEMP - test for robot ready*/
@@ -444,7 +444,7 @@ KEY *robotdo_1(KEY *params)
     }
     write_log("*Rb:cmd: %s\n", cmd);
     if(sim) {				/* simulation mode only */
-      sleep(4);
+      sleep(2);
     } 
     else {
       sleep(2);				/* !!!TEMP - test for robot ready*/
@@ -532,7 +532,7 @@ KEY *robotdoordo_1(KEY *params)
     else
       write_log("*Rb:door: %s\n", cmd);
     if(sim) {				/* simulation mode only */
-      sleep(4);
+      sleep(2);
     } 
     else {
       sleep(2);				/* !!!TEMP - test for robot ready*/
