@@ -174,6 +174,8 @@ char STMT[] = "SELECT ONLINE_LOC, ONLINE_STATUS, ARCHIVE_STATUS, OFFSITE_ACK, BY
           change = 1;
         }
         if(change) {
+          printk("touch %lu %s %d days %s\n",
+		ds_index, GETKEY_str(params, "username"), tdays, eff_date); 
           sprintf(l_eff_date.arr, "%s", eff_date);
           l_eff_date.len = strlen(l_eff_date.arr);
           EXEC SQL WHENEVER SQLERROR CONTINUE;
