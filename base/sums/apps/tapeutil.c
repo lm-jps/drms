@@ -289,12 +289,23 @@ TQ *q_entry_make(KEY *list, SUMID_t uid, char *tapeid, int filenum,
 /* Write to log file the current read Q entries for the tui to display.
  * This should be called whenever a new rd Q entry is made as the order
  * of the Q can change and tui needs to know.
+ * NOTE: 27Oct2011 This rte was found to be N.G. as the user arg is
+ * not always the user of the Q entry. 
+ * Switch to using tq_entry_rd_dump2() below.
 */
 void tq_entry_rd_dump(char *user) {
   TQ *q = q_rd_front;
   while(q) {
     write_log("*Tp:RdQadd: uid=%lu tapeid=%s filenum=%d user=%s dsix=%lu\n",
                 q->uid, q->tapeid, q->filenum, user, q->ds_index);
+    q = q->next;
+  }
+}
+void tq_entry_rd_dump2() {	//See NOTE: above
+  TQ *q = q_rd_front;
+  while(q) {
+    write_log("*Tp:RdQadd: uid=%lu tapeid=%s filenum=%d user=%s dsix=%lu\n",
+                q->uid, q->tapeid, q->filenum, q->username, q->ds_index);
     q = q->next;
   }
 }
