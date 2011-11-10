@@ -14,7 +14,7 @@
 #include <SUM.h>
 #include <sum_rpc.h>
 #include <soi_error.h>
-//#include <keyU.h>
+#include <keyU.h>
 #include <printk.h>
 
 
@@ -27,7 +27,7 @@ extern char jsoc_machine[];
 
 int SUMLIB_InfoGetEx(KEY *params, KEY **results);
 //int SUMLIB_InfoGetEx_U(KEYU *params, KEYU **results);
-int SUMLIB_InfoGetArray(Sunumarray *params, SUM_info_t **results, int *mode);
+int SUMLIB_InfoGetArray(Sunumarray *params, char *file, int *mode);
 int compare_sta(const void *a, const void *b);
 
 int SUMLIB_InfoGetEx(KEY *params, KEY **results)
@@ -467,6 +467,30 @@ EXEC SQL END DECLARE SECTION;
   FILE *ifp;
   SUM_info_t *sit, *sitX, *sitsv;
   int filemode;
+  KEYU *L_ds_index = newkeylistU();;
+  KEYU *L_online_loc = newkeylistU();;
+  KEYU *L_online_status = newkeylistU();;
+  KEYU *L_archive_status = newkeylistU();;
+  KEYU *L_offsite_ack = newkeylistU();;
+  KEYU *L_history_comment = newkeylistU();;
+  KEYU *L_owning_series = newkeylistU();;
+  KEYU *L_storage_group = newkeylistU();;
+  KEYU *L_bytes = newkeylistU();;
+  KEYU *L_create_sumid = newkeylistU();;
+  KEYU *L_creat_date = newkeylistU();;
+  KEYU *L_username = newkeylistU();;
+  KEYU *L_arch_tape = newkeylistU();;
+  KEYU *L_arch_tape_fn = newkeylistU();;
+  KEYU *L_arch_tape_date = newkeylistU();;
+  KEYU *L_safe_tape = newkeylistU();;
+  KEYU *L_safe_tape_fn = newkeylistU();;
+  KEYU *L_safe_tape_date = newkeylistU();;
+  KEYU *L_effective_date = newkeylistU();;
+  KEYU *L_pa_status = newkeylistU();;
+  KEYU *L_pa_substatus = newkeylistU();;
+  KEYU *L_key_index = newkeylistU();;
+  char key[16], keyindex[16];
+
 
 //char STMT[] = "SELECT ds_index, online_loc, online_status, archive_status, offsite_ack, history_comment, owning_series, storage_group, bytes, create_sumid, creat_date, username, coalesce(arch_tape,'N/A'), coalesce(arch_tape_fn,0), coalesce(arch_tape_date,'1958-01-01 00:00:00'), coalesce(safe_tape,'N/A'), coalesce(safe_tape_fn,0), coalesce(safe_tape_date,'1958-01-01 00:00:00') from sum_main where ds_index in (";
 
@@ -484,7 +508,8 @@ char STMT[] = "SELECT T1.ds_index, T1.online_loc, T1.online_status, T1.archive_s
       return(1);
     }
     //must sort suptr array in ascending sunum (i.e. ds_index) order
-    qsort(suptr, reqcnt, sizeof(uint64_t), &compare_sunum);
+    //Going to do the query w/order by ds_index so need to match this list.
+    //qsort(suptr, reqcnt, sizeof(uint64_t), &compare_sunum);
 
     stmt = (char *)malloc((32*reqcnt)+2048); //will hold sql query
     if(filemode == 0) {
@@ -497,7 +522,8 @@ char STMT[] = "SELECT T1.ds_index, T1.online_loc, T1.online_status, T1.archive_s
     }
     cptr = rindex(stmt, ',');
     if(cptr) *cptr = '\0';
-    sprintf(stmt, "%s) AND (T2.status is NULL OR T2.status != 8) order by T1.ds_index;", stmt);
+    //sprintf(stmt, "%s) AND (T2.status is NULL OR T2.status != 8) order by T1.ds_index;", stmt);
+    sprintf(stmt, "%s) AND (T2.status is NULL OR T2.status != 8);", stmt);
 
      EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
      EXEC SQL PREPARE query FROM :stmt;
@@ -508,146 +534,124 @@ char STMT[] = "SELECT T1.ds_index, T1.online_loc, T1.online_status, T1.archive_s
 
   //Make the query statement.
   i=0;
-  suptr = params->sunums;
   for(;;) {
     EXEC SQL FETCH reqcursor INTO :ds_index, :online_loc, :online_status, :archive_status, :offsite_ack, :history_comment, :owning_series, :storage_group, :bytes, :create_sumid, :creat_date, :username, :arch_tape, :arch_tape_fn, :arch_tape_date, :safe_tape, :safe_tape_fn, :safe_tape_date, :effective_date, :pa_status, :pa_substatus;
 
-  while(1) {			//return an entry for all sunums asked for
-    if(filemode == 0) {		//binary mode
-      if(suptr[i] == ds_index) {
-	sit->sunum = ds_index;
-	sprintf(sit->online_loc, "%s", online_loc.arr);
-	sprintf(sit->online_status, "%s", online_status.arr);
-	sprintf(sit->archive_status, "%s", archive_status.arr);
-	sprintf(sit->offsite_ack, "%s", offsite_ack.arr);
-	snprintf(sit->history_comment, 80, "%s", history_comment.arr);
-	sprintf(sit->owning_series, "%s", owning_series.arr);
-	sit->storage_group = storage_group;
-	sit->bytes = bytes;
-	sprintf(sit->creat_date, "%s", creat_date.arr);
-	sprintf(sit->username, "%s", username.arr);
-	sprintf(sit->arch_tape, "%s", arch_tape.arr);
-        sit->arch_tape_fn = arch_tape_fn;
-	sprintf(sit->arch_tape_date, "%s", arch_tape_date.arr);
-	sprintf(sit->safe_tape, "%s", safe_tape.arr);
-        sit->safe_tape_fn = safe_tape_fn;
-	sprintf(sit->safe_tape_date, "%s", safe_tape_date.arr);
-          sit->pa_status = pa_status;
-          sit->pa_substatus = pa_substatus;
-          sprintf(sit->effective_date, "%s", effective_date.arr);
-        sitX = sit;
-        sitX++;
-	sit->next = sitX;
-        //fwrite(sit, sizeof(SUM_info_t), 1, ifp); //!!TEMP
-        sit = sitX;
-        i++;
-        break;
-      }
-      else {
-	sit->sunum = suptr[i];
-	sit->pa_status = 0;
-	sit->pa_substatus = 0;
-	sprintf(sit->effective_date, "N/A");
-        sitX = sit;
-        sitX++;
-	sit->next = sitX;
-        //fwrite(sit, sizeof(SUM_info_t), 1, ifp); //!!TEMP
-        sit = sitX;
-        i++;
-      }
-    }
-    else {		//text mode
-      if(suptr[i] == ds_index) {
-        fprintf(ifp, "ds_index= %lu\n", ds_index);
-        fprintf(ifp, "online_loc= %s\n", online_loc.arr);
-        fprintf(ifp, "online_status= %s\n", online_status.arr);
-        fprintf(ifp, "archive_status= %s\n", archive_status.arr);
-        fprintf(ifp, "offsite_ack= %s\n", offsite_ack.arr);
-        fprintf(ifp, "history_comment= %s\n", history_comment.arr);
-        fprintf(ifp, "owning_series= %s\n", owning_series.arr);
-        fprintf(ifp, "storage_group= %d\n", storage_group);
-        fprintf(ifp, "bytes= %g\n", bytes);
-        fprintf(ifp, "creat_date= %s\n", creat_date.arr);
-        fprintf(ifp, "username= %s\n", username.arr);
-        fprintf(ifp, "arch_tape= %s\n", arch_tape.arr);
-        fprintf(ifp, "arch_tape_fn= %d\n", arch_tape_fn);
-        fprintf(ifp, "arch_tape_date= %s\n", arch_tape_date.arr);
-        fprintf(ifp, "safe_tape= %s\n", safe_tape.arr);
-        fprintf(ifp, "safe_tape_fn= %d\n", safe_tape_fn);
-        fprintf(ifp, "safe_tape_date= %s\n", safe_tape_date.arr);
-        fprintf(ifp, "pa_status= %d\n", pa_status);
-        fprintf(ifp, "pa_substatus= %d\n", pa_substatus);
-        fprintf(ifp, "effective_date= %s\n", effective_date.arr);
-        i++;
-        break;
-      }
-      else {
-        fprintf(ifp, "ds_index= %lu\n", suptr[i]);
-        fprintf(ifp, "pa_status= %d\n", 0);
-        fprintf(ifp, "pa_substatus= %d\n", 0);
-        fprintf(ifp, "effective_date= %s\n", "N/A");
-        i++;
-      }
-    }
-  }
+  //printk("i=%d ds_index=%lu\n", i, ds_index); //!!TEMP
+  sprintf(key, "%d", i);
+  sprintf(keyindex, "%lu", ds_index);
+  setkey_strU(&L_key_index, keyindex, key); //the ds_index key gives u the order
+  setkey_uint64U(&L_ds_index, key, ds_index);
+  setkey_strU(&L_online_loc, key, online_loc.arr);
+  setkey_strU(&L_online_status, key, online_status.arr);
+  setkey_strU(&L_archive_status, key, archive_status.arr);
+  setkey_strU(&L_offsite_ack, key, offsite_ack.arr);
+  setkey_strU(&L_history_comment, key, history_comment.arr);
+  setkey_strU(&L_owning_series, key, owning_series.arr);
+  setkey_intU(&L_storage_group, key, storage_group);
+  setkey_doubleU(&L_bytes, key, bytes);
+  setkey_uint64U(&L_create_sumid, key, create_sumid);
+  setkey_strU(&L_creat_date, key, creat_date.arr);
+  setkey_strU(&L_username, key, username.arr);
+  setkey_strU(&L_arch_tape, key, arch_tape.arr);
+  setkey_intU(&L_arch_tape_fn, key, arch_tape_fn);
+  setkey_strU(&L_arch_tape_date, key, arch_tape_date.arr);
+  setkey_strU(&L_safe_tape, key, safe_tape.arr);
+  setkey_intU(&L_safe_tape_fn, key, safe_tape_fn);
+  setkey_strU(&L_safe_tape_date, key, safe_tape_date.arr);
+  setkey_strU(&L_effective_date, key, effective_date.arr);
+  setkey_intU(&L_pa_status, key, pa_status);
+  setkey_intU(&L_pa_substatus, key, pa_substatus);
+  
 sqlerror:
 //        printk("sqlerror in SUMLIB_InfoGetArray for i=%d ds_index = %u\n",
 //		 i, ds_index);
+    i++;
   }
 end_fetch:
         EXEC SQL CLOSE reqcursor;
 
-/**************************OLD 2nd query below***************************
-      //now get values in sum_partn_alloc
-      //use DISTINCT in case dup entries
+  char *thekey;
 
-char STMT2[] = "SELECT effective_date,  status, archive_substatus, ds_index from SUM_PARTN_ALLOC where ds_index in (";
-
-    suptr = params->sunums;
-    sprintf(stmt, "%s", STMT2);
-    for(i=0; i < reqcnt; i++) {
-      sprintf(stmt, "%s%lu, ", stmt, *suptr++);
-    }
-    cptr = rindex(stmt, ',');
-    if(cptr) *cptr = '\0';
-    sprintf(stmt, "%s) and STATUS != 8 order by ds_index;", stmt);
-     EXEC SQL WHENEVER SQLERROR GOTO sqlerror2;
-     EXEC SQL PREPARE query FROM :stmt;
-     EXEC SQL DECLARE reqcursor2 CURSOR FOR query;
-     EXEC SQL OPEN reqcursor2;
-     EXEC SQL WHENEVER NOT FOUND GOTO end_fetch2;
-
-  //Make the query statement.
-  i=0;
+  reqcnt = params->reqcnt;
   suptr = params->sunums;
-  sit = sitsv;
-  for(;;) {
-    EXEC SQL FETCH reqcursor2 INTO :effective_date, :pa_status, :pa_substatus, :ds_index;
-
-    while(1) {			//return an entry for all sunums asked for
-      if(suptr[i] == ds_index) {
-        sit->pa_status = pa_status;
-        sit->pa_substatus = pa_substatus;
-        sprintf(sit->effective_date, "%s", effective_date.arr);
-        sit++;
-        i++;
-        break;
+  //set up answers in original request order and see if any blank results
+  for(i=0; i < reqcnt; i++) {
+    ds_index = suptr[i];
+    sprintf(keyindex, "%lu", ds_index);
+    if(findkeyU(L_key_index, keyindex)) {
+      thekey = getkey_strU(L_key_index, keyindex);
+      if(filemode == 0) {	//binary mode
+	sit->sunum = ds_index;
+	sprintf(sit->online_loc, "%s", GETKEY_strU(L_online_loc, thekey));
+        sprintf(sit->online_status, "%s", GETKEY_strU(L_online_status, thekey));
+        sprintf(sit->archive_status, "%s", GETKEY_strU(L_archive_status, thekey));
+        sprintf(sit->offsite_ack, "%s", GETKEY_strU(L_offsite_ack, thekey));
+        snprintf(sit->history_comment, 80, "%s", GETKEY_strU(L_history_comment, thekey));
+        sprintf(sit->owning_series, "%s", GETKEY_strU(L_owning_series, thekey));
+        sit->storage_group = getkey_intU(L_storage_group, thekey);
+        sit->bytes = getkey_doubleU(L_bytes, thekey);
+        sprintf(sit->creat_date, "%s", GETKEY_strU(L_creat_date, thekey));
+        sprintf(sit->username, "%s", GETKEY_strU(L_username, thekey));
+        sprintf(sit->arch_tape, "%s", GETKEY_strU(L_arch_tape, thekey));
+        sit->arch_tape_fn = getkey_intU(L_arch_tape_fn, thekey);
+        sprintf(sit->arch_tape_date, "%s", GETKEY_strU(L_arch_tape_date, thekey));
+        sprintf(sit->safe_tape, "%s", GETKEY_strU(L_safe_tape, thekey));
+        sit->safe_tape_fn = getkey_intU(L_safe_tape_fn, thekey);
+        sprintf(sit->safe_tape_date, "%s", GETKEY_strU(L_safe_tape_date, thekey));
+        sit->pa_status = getkey_intU(L_pa_status, thekey);
+        sit->pa_substatus = getkey_intU(L_pa_substatus, thekey);
+        sprintf(sit->effective_date, "%s", GETKEY_strU(L_effective_date, thekey));
+        sitX = sit;
+        sitX++;
+        sit->next = sitX;
+        //fwrite(sit, sizeof(SUM_info_t), 1, ifp); //!!TEMP
+        sit = sitX;
       }
       else {
+        fprintf(ifp, "ds_index= %lu\n", ds_index);
+        fprintf(ifp, "online_loc= %s\n", GETKEY_strU(L_online_loc, thekey));
+        fprintf(ifp, "online_status= %s\n", GETKEY_strU(L_online_status, thekey));
+        fprintf(ifp, "archive_status= %s\n", GETKEY_strU(L_archive_status, thekey));
+        fprintf(ifp, "offsite_ack= %s\n", GETKEY_strU(L_offsite_ack, thekey));
+        fprintf(ifp, "history_comment= %s\n", GETKEY_strU(L_history_comment, thekey));
+        fprintf(ifp, "owning_series= %s\n", GETKEY_strU(L_owning_series, thekey));
+        fprintf(ifp, "storage_group= %d\n", getkey_intU(L_storage_group, thekey));
+        fprintf(ifp, "bytes= %g\n", getkey_doubleU(L_bytes, thekey));
+        fprintf(ifp, "creat_date= %s\n", GETKEY_strU(L_creat_date, thekey));
+        fprintf(ifp, "username= %s\n", GETKEY_strU(L_username, thekey));
+        fprintf(ifp, "arch_tape= %s\n", GETKEY_strU(L_arch_tape, thekey));
+        fprintf(ifp, "arch_tape_fn= %d\n", getkey_intU(L_arch_tape_fn, thekey));
+        fprintf(ifp, "arch_tape_date= %s\n", GETKEY_strU(L_arch_tape_date, thekey));
+        fprintf(ifp, "safe_tape= %s\n", GETKEY_strU(L_safe_tape, thekey));
+        fprintf(ifp, "safe_tape_fn= %d\n", getkey_intU(L_safe_tape_fn, thekey));
+        fprintf(ifp, "safe_tape_date= %s\n", GETKEY_strU(L_safe_tape_date, thekey));
+        fprintf(ifp, "pa_status= %d\n", getkey_intU(L_pa_status, thekey));
+        fprintf(ifp, "pa_substatus= %d\n", getkey_intU(L_pa_substatus, thekey));
+        fprintf(ifp, "effective_date= %s\n", GETKEY_strU(L_effective_date, thekey));
+      }
+      free(thekey);
+    }
+    else {			//sunum not in query results
+      if(filemode == 0) {	//binary mode
+        sit->sunum = ds_index;
         sit->pa_status = 0;
         sit->pa_substatus = 0;
         sprintf(sit->effective_date, "N/A");
-        sit++;
-        i++;
+        sitX = sit;
+        sitX++;
+        sit->next = sitX;
+        //fwrite(sit, sizeof(SUM_info_t), 1, ifp); //!!TEMP
+        sit = sitX;
+      }
+      else {			//text mode
+        fprintf(ifp, "ds_index= %lu\n", ds_index);
+        fprintf(ifp, "pa_status= %d\n", 0);
+        fprintf(ifp, "pa_substatus= %d\n", 0);
+        fprintf(ifp, "effective_date= %s\n", "N/A");
       }
     }
-sqlerror2:
-//        printk("sqlerror2 in SUMLIB_InfoGetArray for i=%d ds_index = %u\n",
-//		 i, ds_index);
   }
-    
-end_fetch2:
-**************************END of OLD 2nd query***************************/
       if(filemode == 0) {
         fwrite(sitsv, sizeof(SUM_info_t), reqcnt, ifp);
         free(sitsv);
@@ -659,3 +663,4 @@ end_fetch2:
     	EXEC SQL COMMIT WORK;
 	return NO_ERROR;
 }
+
