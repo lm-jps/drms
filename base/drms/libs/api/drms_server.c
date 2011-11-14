@@ -541,6 +541,12 @@ void drms_server_abort(DRMS_Env_t *env, int final)
 
   /* Free memory.*/
   if (final) {
+     /* drms_lock_server() was called at the beginning of this function, and drms_free_env() calls it as well
+      * (if this library is being used by a server app). So, we need to release the lock here. */
+#ifndef DRMS_CLIENT
+     drms_unlock_server(env);
+#endif
+
     drms_free_env(env, 1);
   } else {
     //    fprintf(stderr, "skip freeing drms_free_env()");
