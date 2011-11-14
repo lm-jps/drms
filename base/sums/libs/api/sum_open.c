@@ -1947,7 +1947,7 @@ KEY *respdoarray_1(KEY *params)
   reqcnt = getkey_int(params, "reqcnt");
   file = getkey_str(params, "FILE");
   filemode = getkey_int(params, "filemode");
-printf("mode=%d file=%s\n", filemode, file); //!!TEMP
+  //printf("mode=%d file=%s\n", filemode, file); //!!TEMP
   if((rfp=fopen(file, "r")) == NULL) { 
     printf("**Can't open %s from sum_svc ret from SUM_infoArray() call\n", file);
     free(file);
