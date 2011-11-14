@@ -615,7 +615,9 @@ int SUM_delete_series();
 int SUM_export();
 int SUM_info(SUM_t *sum, uint64_t sunum, int (*history)(const char *fmt, ...));
 int SUM_infoEx(SUM_t *sum, int (*history)(const char *fmt, ...));
+int SUM_infoArray(SUM_t *sum, uint64_t *dxarray, int reqcnt, int (*history)(const char *fmt, ...));
 void SUM_infoEx_free(SUM_t *sum);
+void SUM_infoArray_free(SUM_t *sum);
 int SUM_nop();
 
 int NC_PaUpdate();
