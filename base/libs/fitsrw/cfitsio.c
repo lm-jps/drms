@@ -558,7 +558,7 @@ static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD**
     * required by image_info; you need to convert them. */
 
    kptr = keylist;
-   while(kptr)
+   while (kptr && !status)
    {
       if(!strcmp(kptr->key_name,"SIMPLE")) 
       {
@@ -566,6 +566,10 @@ static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD**
          if (!status)
          {
             (*image_info)->bitfield |= kInfoPresent_SIMPLE;
+         }
+         else
+         {
+            fprintf(stderr, "Invalid value for keyword 'SIMPLE'.\n");
          }
       }
       else if(!strcmp(kptr->key_name,"EXTEND")) 
@@ -575,6 +579,10 @@ static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD**
          {
             (*image_info)->bitfield |= kInfoPresent_EXTEND;
          }
+         else
+         {
+            fprintf(stderr, "Invalid value for keyword 'EXTEND'.\n");
+         }
       }
       else if(!strcmp(kptr->key_name,"BLANK"))
       {
@@ -582,6 +590,10 @@ static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD**
          if (!status)
          {
             (*image_info)->bitfield |= kInfoPresent_BLANK;
+         }
+         else
+         {
+            fprintf(stderr, "Invalid value for keyword 'BLANK'.\n");
          }
       }
       else if(!strcmp(kptr->key_name,"BSCALE"))
@@ -591,6 +603,10 @@ static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD**
          {
             (*image_info)->bitfield |= kInfoPresent_BSCALE;
          }
+         else
+         {
+            fprintf(stderr, "Invalid value for keyword 'BSCALE'.\n");
+         }
       }
       else if(!strcmp(kptr->key_name,"BZERO")) 
       {
@@ -599,9 +615,18 @@ static int cfitsio_read_keylist_and_image_info(fitsfile* fptr, CFITSIO_KEYWORD**
          {
             (*image_info)->bitfield |= kInfoPresent_BZERO;
          }
+         else
+         {
+            fprintf(stderr, "Invalid value for keyword 'BZERO'.\n");
+         }
       }
       
-      kptr = kptr->next;          
+      kptr = kptr->next;
+   }
+
+   if (status)
+   {
+      goto error_exit;
    }
 
    /* Never use the fits keywords to determine NAXIS, NAXISi, BITPIX - if the image is compressed
@@ -666,10 +691,10 @@ error_exit:
 
    if(keylist) cfitsio_free_keys(&keylist);
 
-   if(*image_info) 
+   if(image_info && *image_info) 
    {
       free(*image_info);
-      image_info = NULL;
+      *image_info = NULL;
    }
    
    return error_code;
