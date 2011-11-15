@@ -148,6 +148,18 @@ __PROJ__
              <subdir>apps</subdir>
         </subdirs>
    </proj>
+  <proj>
+        <name>farside</name>
+        <subdirs>
+             <subdir>apps</subdir>
+        </subdirs>
+   </proj>
+  <proj>
+        <name>timed</name>
+        <subdirs>
+             <subdir>apps</subdir>
+        </subdirs>
+   </proj>
    <proj>
         <name>mag</name>
         <subdirs>
