@@ -431,7 +431,7 @@ KEY *allocdo_1(KEY *params)
   if(findkey(params, "SUNUM")) {	//this is a SUM_alloc2() call
     sunum = getkey_uint64(params, "SUNUM");
   }
-#ifdef SUMS_MULTIPLE_PARTNSETS
+#if defined(SUMS_MULTIPLE_PARTNSETS) && SUMS_MULTIPLE_PARTNSETS
   /* This def is defined in serverdefs.h (all Stanford-specific settings are in this header). 
    * It is NOT part of the localization files/codes/scripts (i.e., config.local knows nothing
    * about it). Therefore, no localization site will be able to take advantage of this
