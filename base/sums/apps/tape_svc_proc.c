@@ -680,8 +680,8 @@ KEY *readdo_1(KEY *params) {
   char *tapeid, *cptr, *user;
   char tmpname[80];
 
-  setkey_str(&params, "OP", "rd");
-  setkey_int(&params, "sim", sim);
+  //setkey_str(&params, "OP", "rd");    //moved below so not on params so
+  //setkey_int(&params, "sim", sim);    //can get removed when ret
   if(findkey(params, "DEBUGFLG")) {
     debugflg = getkey_int(params, "DEBUGFLG");
     if(debugflg) {
@@ -748,7 +748,6 @@ KEY *readdo_1(KEY *params) {
   write_log("!!TEMP offptr->uniqcnt = %d\n", offptr->uniqcnt); /* !!TEMP */
   for(j=0; j < offptr->uniqcnt; j++) {	/* now q all unique entries */
     /* put in the keylist for this entry which entry was offline */
-    setkey_int(&params, "reqofflinenum", offptr->reqofflinenum[j]);
     if((p=q_entry_make(params, uid, offptr->tapeids[j], 
 	offptr->tapefns[j], user, offptr->dsix[j]))==NULL) {
       write_log("**Err: can't malloc a new rd Q entry\n");
@@ -759,6 +758,9 @@ KEY *readdo_1(KEY *params) {
     }
     rinfo = RESULT_PEND;    /* tell caller to wait later for results */
     send_ack();		    /* ack to caller */
+    setkey_int(&p->list, "reqofflinenum", offptr->reqofflinenum[j]);
+    setkey_str(&p->list, "OP", "rd");
+    setkey_int(&p->list, "sim", sim);
     insert_tq_entry_rd_sort(p);	/* put in file# order in rd q */
     /*insert_tq_entry_rd(p);	/* put at end of rd q */
     /*write_log("RD Q:\n");*/
@@ -1585,6 +1587,7 @@ KEY *taperespreaddo_1(KEY *params) {
     }
     return(retlist);
   }
+  freekeylist((KEY **)&retlist); //NEW 11/15/2011
   return((KEY *)1);	/* our caller will try to kick off another read */
 }
 
@@ -2015,6 +2018,7 @@ KEY *taperesprobotdo_1_rd(KEY *params) {
     procnum = SUMRESPDO;
     return(retlist);
   }
+  freekeylist((KEY **)&retlist); //NEW 11/15/2011
   return((KEY *)1);		/* driven_svc will send answer later */
 }
 
