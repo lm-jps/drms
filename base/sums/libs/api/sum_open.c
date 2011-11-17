@@ -1307,8 +1307,9 @@ int SUM_infoArray(SUM_t *sum, uint64_t *dxarray, int reqcnt, int (*history)(cons
   suarray.uid = sum->uid;
   suarray.username = sum->username;
   if(!(jsoc_machine = (char *)getenv("JSOC_MACHINE"))) {
-    (*history)("No JSOC_MACHINE in SUM_infoArray(). Not a JSOC environment\n");
-    return(1);			//error. not a JSOC environment
+    //(*history)("No JSOC_MACHINE in SUM_infoArray(). Not a JSOC environment\n");
+    //return(1);			//error. not a JSOC environment
+    jsoc_machine = "linux_x86_64";	//assume this
   }
   suarray.machinetype = jsoc_machine;
   suarray.sunums = dxarray;
