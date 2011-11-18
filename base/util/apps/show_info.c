@@ -811,8 +811,8 @@ int DoIt(void)
   int ikey, nkeys = 0;
   int iseg, nsegs, linked_segs = 0;
   int ilink, nlinks = 0;
-  char *inqry;
-  const char *atfile = NULL;
+  int inqry; // means "has a record-set filter"
+  int atfile; // means "rs spec was an atfile"
 						/* Get command line arguments */
   const char *in;
   char *keylist;
@@ -1178,7 +1178,31 @@ int DoIt(void)
   /* NOW in mode to list per-record information.  Get recordset */
 
   /* check for poor usage of no query and no n=record_count */
-  inqry = index(in, '[');
+
+  /* It is not clear if the record-set query has been parsed yet - it may have. Just parse it - we need the info to decide       
+   * whether show_info should continue. BTW, checking for an @file argument isn't sufficient - the file could be empty, or
+   * it could contain seriesnames with no filters. The check below will make sure a filter is found somewhere, even if 
+   * it is inside the @file. */
+  {
+     char *allvers = NULL; /* If 'y', then don't do a 'group by' on the primekey value.
+                            * The rationale for this is to allow users to get all versions
+                            * of the requested DRMS records */
+     char **sets = NULL;
+     DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
+     int nsets = 0;
+     
+     DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
+     if (drms_record_parserecsetspec(in, &allvers, &sets, &settypes, &nsets, &rsinfo) != DRMS_SUCCESS)
+     {     
+        show_info_return(2);
+     }
+     
+     inqry = rsinfo & kFilters;
+     atfile = rsinfo & kAtFile;
+
+     drms_record_freerecsetspecarr(&allvers, &sets, &settypes, nsets);
+  }
+
   if (!inqry && max_recs == 0 && !atfile)
     {
     fprintf(stderr, "### show_info - the query must contain a record-filter, or the n=num_records or @file argument must be present.\n");

@@ -1236,6 +1236,27 @@ typedef struct DRMS_SuAndSeries_struct
   char *series;
 } DRMS_SuAndSeries_t;
 
+
+/* When the record-set parser runs, it fills in a bit mask that describes the various elements of 
+ * the record-set query just parsed. 
+ *
+ * bits:
+ * 0x00000001 - has >= 1 filter
+ * 0x00000002 - has @file
+ * 0x00000004
+ * 0x00000008
+ * 0x00000010
+ */
+typedef int DRMS_RecQueryInfo_t;
+
+enum DRMS_RecQueryInfoFlag_enum
+{
+   kFilters = 0x00000001, // has >= 1 filter
+   kAtFile  = 0x00000002  // has @file
+};
+
+typedef enum DRMS_RecQueryInfoFlag_enum DRMS_RecQueryInfoFlag_t;
+
 /*********** Various utility functions ****************/
 DRMS_Type_t drms_str2type(const char *);
 

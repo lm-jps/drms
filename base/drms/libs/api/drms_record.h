@@ -230,6 +230,14 @@ DRMS_Segment_t *drms_record_nextseg(DRMS_Record_t *rec, HIterator_t **last, int 
 DRMS_Keyword_t *drms_record_nextkey(DRMS_Record_t *rec, HIterator_t **last, int followlink);
 DRMS_Link_t *drms_record_nextlink(DRMS_Record_t *rec, HIterator_t **last);
 
+int drms_record_parserecsetspec(const char *recsetsStr, 
+                                char **allvers, 
+                                char ***sets, 
+                                DRMS_RecordSetType_t **types, 
+                                int *nsets,
+                                DRMS_RecQueryInfo_t *info);
+int drms_record_freerecsetspecarr(char **allvers, char ***sets, DRMS_RecordSetType_t **types, int nsets);
+
 /* DSDS */
 int drms_record_isdsds(DRMS_Record_t *rec);
 int drms_record_islocal(DRMS_Record_t *rec);

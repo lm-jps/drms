@@ -77,7 +77,8 @@ static int ParseRecSetDesc(const char *recsetsStr,
                            char **allvers, 
 			   char ***sets, 
 			   DRMS_RecordSetType_t **types, 
-			   int *nsets);
+			   int *nsets,
+                           DRMS_RecQueryInfo_t *info);
 static int FreeRecSetDescArr(char **allvers, char ***sets, DRMS_RecordSetType_t **types, int nsets);
 
 /* drms_open_records() helpers */
@@ -1352,7 +1353,8 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
   char *allvers = NULL; /* If 'y', then don't do a 'group by' on the primekey value.
                          * The rationale for this is to allow users to get all versions
                          * of the requested DRMS records */
-  int stat = ParseRecSetDesc(recordsetname, &allvers, &sets, &settypes, &nsets);
+  DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
+  int stat = ParseRecSetDesc(recordsetname, &allvers, &sets, &settypes, &nsets, &rsinfo);
 
   if (stat == DRMS_SUCCESS)
   {
@@ -6263,7 +6265,8 @@ int ParseRecSetDesc(const char *recsetsStr,
                     char **allvers, 
                     char ***sets, 
                     DRMS_RecordSetType_t **settypes, 
-                    int *nsets)
+                    int *nsets, 
+                    DRMS_RecQueryInfo_t *info)
 {
    int status = DRMS_SUCCESS;
    RSParseState_t state = kRSParseState_Begin;
@@ -6366,6 +6369,9 @@ int ParseRecSetDesc(const char *recsetsStr,
 		       /* text file that contains one or more recset queries */
 		       /* recursively parse those queries! */
 		       state = kRSParseState_AtFile;
+
+                       /* Mark the '@file' flag in the record-set spec info returned to caller. */
+                       *info |= kAtFile;
 		       pc++;
 		    }
 		    else if (*pc == '/' || *pc == '.')
@@ -6411,6 +6417,9 @@ int ParseRecSetDesc(const char *recsetsStr,
                     {
                        state = kRSParseState_DRMSFilt;
                     }
+
+                    /* Mark the 'filters' flag in the record-set spec info returned to caller. */
+                    *info |= kFilters;
 		 }
 		 else if (*pc == '{')
 		 {
@@ -7075,7 +7084,8 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
                                                             &allversAtFile, 
 							    &queriesAtFile, 
 							    &typesAtFile, 
-							    &nsetsAtFile);
+							    &nsetsAtFile,
+                                                            info);
 				   if (status == DRMS_SUCCESS)
 				   {
 				      /* add all nsetsAtFile recordsets to multiRSQueries 
@@ -8768,4 +8778,19 @@ DRMS_Link_t *drms_record_nextlink(DRMS_Record_t *rec, HIterator_t **last)
    }
 
    return lnk;
+}
+
+int drms_record_parserecsetspec(const char *recsetsStr, 
+                                char **allvers, 
+                                char ***sets, 
+                                DRMS_RecordSetType_t **types, 
+                                int *nsets,
+                                DRMS_RecQueryInfo_t *info)
+{
+   return ParseRecSetDesc(recsetsStr, allvers, sets, types, nsets, info);
+}
+
+int drms_record_freerecsetspecarr(char **allvers, char ***sets, DRMS_RecordSetType_t **types, int nsets)
+{
+   return FreeRecSetDescArr(allvers, sets, types, nsets);
 }
