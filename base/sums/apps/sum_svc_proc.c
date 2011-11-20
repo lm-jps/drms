@@ -467,6 +467,7 @@ KEY *allocdo_1(KEY *params)
 		GETKEY_str(retlist, "USER"), uid);
     if(!(set_client_handle(RESPPROG, (uint32_t)uid))) { /*set up for response*/
       write_log("Alloc Error Can't set client handle id=%d user=%s sumid=%lu\n", rrid, GETKEY_str(retlist, "USER"), uid);
+      free(wd);
       freekeylist(&retlist);
       rinfo = 1;  /* give err status back to original caller */
       send_ack();
@@ -799,7 +800,7 @@ KEY *nopdo_1(KEY *params)
   int ans;
   enum clnt_stat status;
 
-  usr = getkey_str(params, "USER");
+  //usr = getkey_str(params, "USER");
   if(findkey(params, "DEBUGFLG")) {
     debugflg = getkey_int(params, "DEBUGFLG");
     if(debugflg) {
