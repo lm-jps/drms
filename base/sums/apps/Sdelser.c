@@ -781,6 +781,7 @@ sumprog_1_array(rqstp, transp)
               clnt_destroy(current_client); 
             }
           }
+          freekeylist((KEY **)&result);
         }
       }
       else {
