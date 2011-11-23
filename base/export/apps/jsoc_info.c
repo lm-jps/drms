@@ -698,7 +698,7 @@ report_summary(const char *host, double StartTime, const char *remote_IP, const 
 /* callback that fires when the signal thread catches the SIGINT signal. */
 int OnSIGINT(void *data)
 {
-   printf("Content-Type: application/json\n\n{'status':-1}\n");
+   printf("Content-Type: application/json\n\n{\"status\":-1}\n");
    return 0;
 }
 
