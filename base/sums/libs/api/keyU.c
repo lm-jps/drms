@@ -12,11 +12,25 @@ KEYU *newkeylistU () {
    return NULL;
 }
 
+/********ORIG***************************************
 void freekeylistU (KEYU **list) {
    KEYU *node, *tmp;
    if (*list) {
        HASH_ITER(hh, *list, node, tmp) {
 	   HASH_DEL(*list, node);
+	   free(node);
+       }
+       *list = NULL;
+   }
+}
+*****************************************************/
+void freekeylistU (KEYU **list) {
+   KEYU *node, *tmp;
+   if (*list) {
+       HASH_ITER(hh, *list, node, tmp) {
+	   HASH_DEL(*list, node);
+           if(node->name) free(node->name);
+           if(node->val) free(node->val);
 	   free(node);
        }
        *list = NULL;
