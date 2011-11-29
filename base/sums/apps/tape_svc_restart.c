@@ -62,6 +62,20 @@ void get_cmd(int argc, char *argv[])
   }
 }
 
+int send_mail(char *fmt, ...)
+{
+  va_list args;
+  char string[1024], cmd[1024];
+
+  va_start(args, fmt);
+  vsprintf(string, fmt, args);
+  sprintf(cmd, "echo \"%s\" | Mail -s \"test mail\" jeneen@sun.stanford.edu,jim@sun.stanford.edu", string);
+  system(cmd);
+  va_end(args);
+  return(0);
+}
+
+
 /*********************************************************/
 int main(int argc, char *argv[])
 {
@@ -233,6 +247,7 @@ SKIPSUMSCALL:
   printf("to connect to it (yes/no) [no] = ");
   if(gets(line) == NULL) { return; }
   if(!strcmp(line, "yes")) { 
+    send_mail("tape_svc has been manually restarted\n");
     setkey_str(&list, "HOST", hostn);
     setkey_str(&list, "USER", username);
     setkey_str(&list, "ACTION", "reconnect");
