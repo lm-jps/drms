@@ -36,6 +36,7 @@ http://sun.stanford.edu/web.hmi/development/SU_Development_Plan/SUM_API.html
 #include <sys/time.h>
 #include <sys/errno.h>
 #include <sum_rpc.h>
+#include <signal.h>
 #include "serverdefs.h"
 
 extern int errno;
@@ -123,6 +124,13 @@ int SUM_shutdown(int query, int (*history)(const char *fmt, ...))
   return(response);
 }
 
+//!!TEMP for test.
+void sigpipehandler(int sig_num)
+{
+    fprintf(stderr, "%s sigpipehandler() set up by SUM_open() has been called \n", datestring());
+}
+
+
 /* This must be the first thing called by DRMS to open with the SUMS.
  * Any one client may open up to MAXSUMOPEN times (TBD check) 
  * (although it's most likely that a client only needs one open session 
@@ -144,6 +152,9 @@ SUM_t *SUM_open(char *server, char *db, int (*history)(const char *fmt, ...))
   char *server_name, *cptr, *username;
   char *call_err;
   int i, j, rr;
+
+  //!!TEMP for testing. Put in a SIGPIPE handler to catch any broken pipe.
+  signal(SIGPIPE, sigpipehandler);
 
   if(numopened >= MAXSUMOPEN) {
     (*history)("Exceeded max=%d SUM_open() for a client\n", MAXSUMOPEN);
