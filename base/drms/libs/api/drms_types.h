@@ -386,6 +386,7 @@ typedef struct DRMS_ThreadInfo_struct
 #define DRMS_SUMALLOC2  5
 #define DRMS_SUMEXPORT  6
 #define DRMS_SUMINFO    7
+#define DRMS_SUMOPEN    8
 #define DRMS_SUMABORT 99
 #define DRMS_MAX_REQCNT MAXSUMREQCNT
 

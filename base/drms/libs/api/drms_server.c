@@ -26,6 +26,7 @@
 #define kDELSERFILE "thefile.txt"
 #define kDelSerChunk 10000
 #define kMaxSleep   (90)
+#define kBrokenPipe -99
 
 sem_t *gShutdownsem = NULL; /* synchronization among signal thread, main thread, 
                                sums thread, and server threads during shutdown */
@@ -35,7 +36,110 @@ DRMS_Shutdown_State_t gShutdown; /* shudown state following receipt by DRMS of a
 pthread_mutex_t *gSUMSbusyMtx = NULL;
 int gSUMSbusy = 0;
 
+/* 0, unless a SIGPIPE signal was CAUGHT. */
+static volatile sig_atomic_t gGotPipe = 0;
+
 /******************* Main server thread(s) functions ************************/
+
+/* returns the SUMS opcode, or -99 if a broken-pipe error occurred. */
+static int MakeSumsCall(int calltype, SUM_t **sumt, int (*history)(const char *fmt, ...), ...)
+{
+   int opcode = 0;
+   va_list ap;
+
+   gGotPipe = 0;
+
+   switch (calltype)
+   {
+      case DRMS_SUMOPEN:
+      {
+         /* fetch args */
+         va_start(ap, history);
+         char *server = va_arg(ap, char *);
+         char *db = va_arg(ap, char *);
+
+         *sumt = SUM_open(server, db, history);
+         opcode = -1; /* not used for this call */
+
+         va_end(ap);
+      }
+      break;
+      case DRMS_SUMALLOC:
+      {
+         opcode = SUM_alloc(*sumt, history);
+      }
+      break;
+      case DRMS_SUMGET:
+      {
+         opcode = SUM_get(*sumt, history);
+      }
+      break;
+      case DRMS_SUMPUT:
+      {
+         opcode = SUM_put(*sumt, history);
+      }
+      break;
+      case DRMS_SUMCLOSE:
+      {
+         opcode = SUM_close(*sumt, history);
+      }
+      break;
+      case DRMS_SUMDELETESERIES:
+      {
+         va_start(ap, history);
+         char *fpath = va_arg(ap, char *);
+         char *series = va_arg(ap, char *);
+
+         opcode = SUM_delete_series(fpath, series, history);
+
+         va_end(ap);
+      }
+      break;
+      case DRMS_SUMALLOC2:
+      {
+         va_start(ap, history);
+         uint64_t sunum = va_arg(ap, uint64_t);
+
+         opcode = SUM_alloc2(*sumt, sunum, history);
+
+         va_end(ap);
+      }
+      break;
+      case DRMS_SUMEXPORT:
+      {
+         va_start(ap, history);
+         SUMEXP_t *sumexpt = va_arg(ap, SUMEXP_t *);
+
+         opcode = SUM_export(sumexpt, history);
+
+         va_end(ap);
+      }
+      break;
+      case DRMS_SUMINFO:
+      {
+         va_start(ap, history);
+         uint64_t *dxarray = va_arg(ap, uint64_t *);
+         int reqcnt = va_arg(ap, int);
+
+         opcode = SUM_infoArray(*sumt, dxarray, reqcnt, history);
+
+         va_end(ap);
+      }
+      break;
+      default:
+        fprintf(stderr, "Invalid SUMS call type '%d'.\n", calltype);
+        
+   }
+
+   if (gGotPipe)
+   {
+      /* Print an error message with a timestamp. */
+      fprintf(stderr, "Received a SIGPIPE signal; error calling SUMS call %d.\n", calltype);
+      opcode = kBrokenPipe;
+   }
+
+   return opcode;
+}
 
 static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 						    SUM_t **sum,
@@ -1851,7 +1955,10 @@ void drms_delete_temporaries(DRMS_Env_t *env)
 
 /****************** SUMS server thread functions **********************/
 
-
+static void SigPipeHndlr(int signum)
+{
+   gGotPipe = 1;
+}
 
 /* This is the thread in the DRMS server which is responsible for
    forwarding requests to the SUM server. It receives requests from the
@@ -1889,6 +1996,18 @@ void *drms_sums_thread(void *arg)
     fprintf(stderr,"pthread_sigmask call failed with status = %d\n", status);
     Exit(1);
   }
+
+  /* Set up signal-handler - just to handle SIGPIPE, which could be sent when DRMS tries to
+   * write to the (absent or non-functioning) RPC socket to SUMS. */
+  struct sigaction nact;
+
+  memset(&nact, 0, sizeof(struct sigaction));
+  nact.sa_handler = SigPipeHndlr;
+  nact.sa_flags = SA_RESTART;
+
+  /* Handle SIGPIPE - this is process-wide behavior! What happens if SIGPIPE is delivered to some thread
+   * other than the SUMS thread? I dunno - must test this. */
+  sigaction(SIGPIPE, &nact, NULL);
 
 #ifdef DEBUG
   printf("drms_sums_thread started.\n");
@@ -1953,7 +2072,11 @@ void *drms_sums_thread(void *arg)
                 timer = CreateTimer();
              }
 
-             sum = SUM_open(NULL, NULL, printkerr);
+             if (MakeSumsCall(DRMS_SUMOPEN, &sum, printkerr, NULL, NULL) == kBrokenPipe)
+             {
+                /* free a non-null sum? */
+                sum = NULL;
+             }
 
              if (env->verbose && timer)
              {
@@ -2093,7 +2216,10 @@ void *drms_sums_thread(void *arg)
   if (connected && sum)
   {
     /* Disconnect from SUMS. */
-    SUM_close(sum,printf);
+     if (MakeSumsCall(DRMS_SUMCLOSE, &sum, printf) == kBrokenPipe)
+     {
+        fprintf(stderr, "Unable to call SUM_close(); broken pipe; not retrying.\n");
+     }
   }
 
   if (gSUMSbusyMtx)
@@ -2170,7 +2296,12 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        if (!sum)
        {
           /* SUMS crashed - open a new SUMS. */
-          sum = SUM_open(NULL, NULL, printkerr);
+          if (MakeSumsCall(DRMS_SUMOPEN, &sum, printkerr, NULL, NULL) == kBrokenPipe)
+          {
+             /* free a non-null sum? */
+             sum = NULL;
+          }
+
           if (!sum)
           {
              fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
@@ -2214,11 +2345,11 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        /* PERFORMANCE BOTTLENECK */
        /* drms_su_alloc() can be slow when the dbase is busy - this is due to 
         * SUM_open() calls backing up. */
-       reply->opcode = SUM_alloc(sum, printf);
+       reply->opcode = MakeSumsCall(DRMS_SUMALLOC, &sum, printf);
 
        if (reply->opcode != 0)
        {
-          sumscrashed = (reply->opcode == 4);
+          sumscrashed = (reply->opcode == 4 || reply->opcode == kBrokenPipe);
           if (sumscrashed)
           {
              /* Not sure how to free sum - probably need to do this, especially since we're looping. */
@@ -2278,7 +2409,12 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        if (!sum)
        {
           /* SUMS crashed - open a new SUMS. */
-          sum = SUM_open(NULL, NULL, printkerr);
+          if (MakeSumsCall(DRMS_SUMOPEN, &sum, printkerr, NULL, NULL) == kBrokenPipe)
+          {
+             /* free a non-null sum? */
+             sum = NULL;
+          }
+
           if (!sum)
           {
              fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
@@ -2300,7 +2436,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
          sum->dsix_ptr[i] = request->sunum[i];
 
        /* Make RPC call to the SUM server. */
-       reply->opcode = SUM_get(sum, printf);
+       reply->opcode = MakeSumsCall(DRMS_SUMGET, &sum, printf);
 
 #ifdef DEBUG
        printf("SUM thread: SUM_get returned %d\n",reply->opcode);
@@ -2461,8 +2597,8 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        else if (reply->opcode != 0)
        {
           sumnoop = SUM_nop(sum, printf);
-          sumscrashed = (sumnoop == 4);
-          if (sumnoop >= 4)
+          sumscrashed = (sumnoop == 4 || reply->opcode == kBrokenPipe);
+          if (sumnoop >= 4 || reply->opcode == kBrokenPipe)
           {
              if (sumscrashed)
              {
@@ -2555,7 +2691,12 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        if (!sum)
        {
           /* SUMS crashed - open a new SUMS. */
-          sum = SUM_open(NULL, NULL, printkerr);
+          if (MakeSumsCall(DRMS_SUMOPEN, &sum, printkerr, NULL, NULL) == kBrokenPipe)
+          {
+             /* free a non-null sum? */
+             sum = NULL;
+          }
+
           if (!sum)
           {
              fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
@@ -2595,11 +2736,11 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        }
 
        /* Make RPC call to the SUM server. */
-       reply->opcode = SUM_put(sum, printf);
+       reply->opcode = MakeSumsCall(DRMS_SUMPUT, &sum, printf);
 
        if (reply->opcode != 0)
        {
-          sumscrashed = (reply->opcode == 4);
+          sumscrashed = (reply->opcode == 4 || reply->opcode == kBrokenPipe);
           if (sumscrashed)
           {
              sum = NULL;
@@ -2655,7 +2796,12 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                 if (!sum)
                 {
                    /* SUMS crashed - open a new SUMS. */
-                   sum = SUM_open(NULL, NULL, printkerr);
+                   if (MakeSumsCall(DRMS_SUMOPEN, &sum, printkerr, NULL, NULL) == kBrokenPipe)
+                   {
+                      /* free a non-null sum? */
+                      sum = NULL;
+                   }
+
                    if (!sum)
                    {
                       fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
@@ -2670,11 +2816,11 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                    }
                 }
 
-                reply->opcode = SUM_delete_series(fpath, series, printf);
+                reply->opcode = MakeSumsCall(DRMS_SUMDELETESERIES, NULL, printf, fpath, series);
 
                 if (reply->opcode != 0)
                 {
-                   sumscrashed = (reply->opcode == 4);
+                   sumscrashed = (reply->opcode == 4 || reply->opcode == kBrokenPipe);
                    if (sumscrashed)
                    {
                       sum = NULL;
@@ -2722,7 +2868,12 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        if (!sum)
        {
           /* SUMS crashed - open a new SUMS. */
-          sum = SUM_open(NULL, NULL, printkerr);
+          if (MakeSumsCall(DRMS_SUMOPEN, &sum, printkerr, NULL, NULL) == kBrokenPipe)
+          {
+             /* free a non-null sum? */
+             sum = NULL;
+          }
+
           if (!sum)
           {
              fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
@@ -2763,10 +2914,11 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        }
 
        /* Make RPC call to the SUM server. */
-       reply->opcode = SUM_alloc2(sum, request->sunum[0], printf);
+       reply->opcode = MakeSumsCall(DRMS_SUMALLOC2, &sum, printf, request->sunum[0]);
+
        if (reply->opcode != 0)
        {
-          sumscrashed = (reply->opcode == 4);
+          sumscrashed = (reply->opcode == 4 || reply->opcode == kBrokenPipe);
           if (sumscrashed)
           {
              sum = NULL;
@@ -2801,7 +2953,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
        sumexpt->uid = sum->uid;
 
        /* Make RPC call to the SUM server. */
-       if ((reply->opcode = SUM_export(sumexpt, SUMExptErr)))
+       if ((reply->opcode = MakeSumsCall(DRMS_SUMEXPORT, &sum, SUMExptErr, sumexpt)))
        {
           fprintf(stderr,"SUM thread: SUM_export RPC call failed with "
                   "error code %d\n", reply->opcode);
@@ -2840,7 +2992,12 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           if (!sum)
           {
              /* SUMS crashed - open a new SUMS. */
-             sum = SUM_open(NULL, NULL, printkerr);
+             if (MakeSumsCall(DRMS_SUMOPEN, &sum, printkerr, NULL, NULL) == kBrokenPipe)
+             {
+                /* free a non-null sum? */
+                sum = NULL;
+             }
+
              if (!sum)
              {
                 fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
@@ -2875,11 +3032,11 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           sum->sinfo = NULL;
 
           /* Make RPC call to the SUM server. */
-          reply->opcode = SUM_infoArray(sum, &dxarray, isunum, printf);
+          reply->opcode = MakeSumsCall(DRMS_SUMINFO, &sum, printf, dxarray, isunum);
       
           if (reply->opcode != 0)
           {
-             sumscrashed = (reply->opcode == 4);
+             sumscrashed = (reply->opcode == 4 || reply->opcode == kBrokenPipe);
              if (sumscrashed)
              {
                 sum = NULL;
