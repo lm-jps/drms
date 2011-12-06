@@ -1,0 +1,68 @@
+                       Release Notes JSOC V6.10        6DEC2011
+                       ------------------------        ---------
+
+
+A release is a set of files, each having a specific version.  And a release typcially
+has a version number because over time you have newer and newer releases of the 
+same product.  For example, a hypothetical 1.3 release may contain fileA#1.8, 
+fileB#1.2, fileC#2.2 and a 1.4 release may contain fileA#2.5, fileB#2.1, fileC#2.9. 
+JSOC releases are similarly versioned and contain a set of such files.  JSOC release
+code is guaranteed to compile on cluster nodes (eg., n00, n02).  At the
+time of the creation of the release, the release versions of each file
+will be the most recent.  But as time passes, newer versions of some
+files will be made, and there is no guarantee that these changes will
+not destabilize JSOC (ie., they may cause JSOC to no longer compile or execute
+properly).  
+
+There are several ways to use this release.  If you wish to simply use pre-built
+binaries, you can simply use the production binaries, which are located at 
+/home/jsoc/cvs/Development/JSOC (The release binaries are actually in
+/home/jsoc/cvs/JSOC, but as our production code changes emore quickly
+than releases are generated, we put critical fixes in the
+"Development" tree. To be sure you use code that has been built with
+these critical fixes, you'll need to use the "Development" tree. As
+time passes our production code will stabilize. When that happens, you should use
+/home/jsoc/cvs/JSOC. But for now, you should use the "Development"
+tree.). Every time a release is created, the binaries in
+this location get updated.  Only the jsoc user can update these binaries.
+You could run /home/production/cvs/JSOC/Development/bin/linux_x86_64/show_keys, 
+for example.
+
+If instead you want to work with stable source files, then you must have a sandbox,
+which is a local copy (in your home directory) of the files in the cvs depot.  
+You would probably want to work with a sandbox if you plan on making eventual 
+changes to the depot files.  Changes you make to your sandbox files are not visible 
+to other users until you "commit" those changes back to the cvs depot.  Please see
+"If You Don't Have a Sandbox" below for more information on how to create a sandbox.  
+
+Obtaining the Release
+---------------------
+To update your working directory to this release, or to check-out this release anew, 
+please visit http://jsoc.stanford.edu/jsocwiki/CvsInit. Please keep in mind that
+users may have modified files since the release was created, so use of the 
+scripts documented in the web page may result in a working directory whose
+content is not identical to the release.  
+
+Additional Info
+---------------
+Use the Apache cvs gui to see the diffs between file revisions. For
+example, go to http://jsoc.stanford.edu/cvs/JSOC/base/drms/
+and click on the name in the File column and then click on
+"diffs to previous #" to see the diffs.
+
+Changes since previous release (V6.00 - November 16, 2011)
+----------------------------------------------------------
+
+NEW FEATURES:
+- We migrated to the "jsocprod" environment the MOC-access code, the FDS-data-product-ingestion code, and the LZP-data-product-and-processing code.
+- A new module, drms2hdir, was added to the source tree.
+
+DEFECTS FIXED:
+- If the communication between DRMS and SUMS caused a broke-pipe signal to be delivered to the SUMS thread in the DRMS module, then the module would terminate with a broken-pipe error. This was modified so that the module now handles SIGPIPE if it receives that signal when it is communicating with SUMS. When it catches such an error, it prints an error message, but continues and re-connects to SUMS. We believe that this will fix many of the issues we've been seeing (for a long time) with the SUMS connection to DRMS not being automatically re-established after it goes down.
+- A serious leak in sum_svc was fixed. The leak showed only when a certain SUMS API function (SUM_infoArray()) was called.This function is used in several places, notably by show_info sunum=xxx.
+- show_info would not allow a record-set query containing an @file if there was no n=XX argument present as well. This restriction was removed.
+- jsoc_info now properly double-quotes its status javasript property name (so that it is valid JSON).
+- Several bug in the global-helioseismology-pipeline code were fixed.
+- Remove all uses of DEFS_MKPATH from the code. This macro was evil - good has finally triumphed! It resulted in the hard-coding of paths into binaries, and was mostly used for hard-coding paths relative to the binary. As a result, when people moved the binary, the paths no longer pointed to anything. This change affected the interpolation library, the observable code, and the limb fit code.
+- The correction_velocities module is now part of the default make target.
+- A serious bug in the statistics library was fixed.
