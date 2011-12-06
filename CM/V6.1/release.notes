@@ -56,6 +56,17 @@ Changes since previous release (V6.00 - November 16, 2011)
 NEW FEATURES:
 - We migrated to the "jsocprod" environment the MOC-access code, the FDS-data-product-ingestion code, and the LZP-data-product-and-processing code.
 - A new module, drms2hdir, was added to the source tree.
+- New features for the rings-diagram pipeline scripts (in proj/rings):
+scripts/avg120, avgpsbycr, rdday, runrdsyn
+	Minor modifications to externalize choice of file system for tmp and
+	scratch directories used for script preparation and logging
+	Documentation at http://hmi.stanford.edu/teams/rings/pipe_avg120.html etc.
+	(runrdsyn not yet documented)
+- New features for the farside pipeline scripts (in proj/farside):
+scripts/fsbin_nrt
+	Minor modifications to externalize choice of file system for tmp and
+	scratch directories used for script preparation and logging
+	Not yet documented
 
 DEFECTS FIXED:
 - If the communication between DRMS and SUMS caused a broke-pipe signal to be delivered to the SUMS thread in the DRMS module, then the module would terminate with a broken-pipe error. This was modified so that the module now handles SIGPIPE if it receives that signal when it is communicating with SUMS. When it catches such an error, it prints an error message, but continues and re-connects to SUMS. We believe that this will fix many of the issues we've been seeing (for a long time) with the SUMS connection to DRMS not being automatically re-established after it goes down.
@@ -66,3 +77,7 @@ DEFECTS FIXED:
 - Remove all uses of DEFS_MKPATH from the code. This macro was evil - good has finally triumphed! It resulted in the hard-coding of paths into binaries, and was mostly used for hard-coding paths relative to the binary. As a result, when people moved the binary, the paths no longer pointed to anything. This change affected the interpolation library, the observable code, and the limb fit code.
 - The correction_velocities module is now part of the default make target.
 - A serious bug in the statistics library was fixed.
+- Fixes to the rings-diagram pipeline modules (in proj/rings):
+apps/rdvinv
+	Changes to file names within record segments, correcting Stonyhurst
+	longitude identifications; Documentation at http://hmi.stanford.edu/teams/rings/mod_rdvinv.html
