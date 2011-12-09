@@ -11,6 +11,7 @@ use DBI;
 sub usage {
   print "Mark given sunum(s) as archive pending in the given DB\n";
   print "Usage: sum_arch_su.pl [-t30] [-ffile] [sunum,sunum,sunum] database\n";
+  print "       -u = Update mode, updates the DB, else advise only mode.\n";
   print "       -t = Number of days in the future to set effective_date.\n";
   print "            If no -t is given the effective_date is not changed.\n";
   print "       -f = file name that contains the sunums. One or more \n";
@@ -58,6 +59,7 @@ sub reteffdate {
 $HOSTDB = "hmidb";      #host where DB runs
 $INFILE = 0;
 $TOUCH = 0;
+$UPDATEMODE = 0;
 while ($ARGV[0] =~ /^-/) {
   $_ = shift;
   if (/^-f(.*)/) {
@@ -65,6 +67,9 @@ while ($ARGV[0] =~ /^-/) {
   }
   if (/^-t(.*)/) {
     $TOUCH = $1;
+  }
+  if (/^-u(.*)/) {
+    $UPDATEMODE = 1;
   }
 }
 if($INFILE) {
@@ -104,6 +109,8 @@ else {
     die "Cannot do \$dbh->connect: $DBI::errstr\n";
   }
   #printf("%16s %16s\n", "sunum", "effective_date");
+  if(!$UPDATEMODE) { print "ADVISE ONLY MODE\n"; }
+  else { print "UPDATE MODE\n"; }
   print "#sunum\t\teffective_date\n";
   if(!$INFILE) {
     $single = 1;
@@ -122,7 +129,7 @@ else {
       %HofDsix = ();   #hash key is ds_index (sunum)
 SINGLE:
       @dsix = split(/\,/);
-      #print "\@dsix = @dsix\n"; #!!TEMP
+    if($UPDATEMODE) {		#ok to update DB
       if($TOUCH) {
         #$sql = "update sum_partn_alloc set status=4, archive_substatus=128, effective_date=$xeffdate where ds_index in ($_) and (archive_substatus!=128 or status=2)";
         $sql = "update sum_partn_alloc set status=4, archive_substatus=128, effective_date=$xeffdate where ds_index in ($_)";
@@ -140,7 +147,9 @@ SINGLE:
       }
       # Execute the statement at the database level
       $sth->execute;
-      $sql = "select ds_index,status,archive_substatus,effective_date from sum_partn_alloc where ds_index in ($_)";
+    }
+      #$sql = "select ds_index,status,archive_substatus,effective_date from sum_partn_alloc where ds_index in ($_) order by ds_index";
+      $sql = "select ds_index,group_id,effective_date from sum_partn_alloc where ds_index in ($_) order by ds_index";
       #print "$sql\n";
       $sth = $dbh->prepare($sql);
       if ( !defined $sth ) {
@@ -151,19 +160,43 @@ SINGLE:
       # Execute the statement at the database level
       $sth->execute;
       # Fetch the rows back from the SELECT statement
-      @row = ();
+      @row = (); @entry = ();
       while ( @row = $sth->fetchrow() ) {
         $dsix = shift(@row);
         $HofDsix{$dsix} = 1;
-        $status = shift(@row);
-        $archive_substatus = shift(@row);
+        #$status = shift(@row);
+        #$archive_substatus = shift(@row);
+        $group_id = shift(@row);
         $eff_date = shift(@row);
-        #printf("%16s %16s\n", $dsix, $eff_date);
-        print "$dsix\t$eff_date\n";
+        $entry = sprintf("%s,%s,%s", $dsix, $eff_date, $group_id);
+        push(@entry, $entry);	#must save this before do next query
+        #print "$dsix\t$eff_date\t$group_id\n";
+      }
+      @entryx = @entry;
+      while($entry = shift(@entryx)) {
+        ($dsix, $eff_date, $group_id) = split(/\,/, $entry);
+        $sql = "select cadence_days from sum_arch_group where group_id=$group_id";
+        $sth = $dbh->prepare($sql);
+        if ( !defined $sth ) {
+          print "Cannot prepare statement: $DBI::errstr\n";
+          $dbh->disconnect();
+          exit; 
+        }
+        # Execute the statement at the database level
+        $sth->execute;
+        while ( @row = $sth->fetchrow() ) {
+          $cadence = shift(@row);
+        }
+        if($cadence) { 
+          print "$dsix\t$eff_date\t$group_id\t$cadence\n";
+        }
+        else { 
+          print "$dsix\t$eff_date\t$group_id\tWARNING: Not Enabled for Archive\n";
+        }
       }
       while($ix = shift(@dsix)) {
         if(!$HofDsix{$ix}) {
-          print "$ix\tnot found in sum_partn_alloc table\n";
+          print "$ix\tnot found\n";
         }
       }
       if($single) { break; }
