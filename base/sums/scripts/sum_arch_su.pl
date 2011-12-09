@@ -111,7 +111,7 @@ else {
   #printf("%16s %16s\n", "sunum", "effective_date");
   if(!$UPDATEMODE) { print "ADVISE ONLY MODE\n"; }
   else { print "UPDATE MODE\n"; }
-  print "#sunum\t\teffective_date\n";
+  print "#sunum\t\teffective_date\tgroup\tcadence\n";
   if(!$INFILE) {
     $single = 1;
     $_ = $sunums;
@@ -191,7 +191,7 @@ SINGLE:
           print "$dsix\t$eff_date\t$group_id\t$cadence\n";
         }
         else { 
-          print "$dsix\t$eff_date\t$group_id\tWARNING: Not Enabled for Archive\n";
+          print "$dsix\t$eff_date\t$group_id\t$cadence WARNING: Not Enabled for Archive\n";
         }
       }
       while($ix = shift(@dsix)) {
