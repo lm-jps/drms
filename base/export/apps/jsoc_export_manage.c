@@ -122,7 +122,8 @@ enum Processing_enum
    kProc_Noop = 2,
    kProc_NotSpec = 3,
    kProc_HgPatch = 4,
-   kProc_SuExport = 5
+   kProc_SuExport = 5,
+   kProc_AiaScale = 6
 };
 
 typedef enum Processing_enum Processing_t;
@@ -134,7 +135,8 @@ const char *procs[] =
    "no_op",
    "Not Specified",
    "hg_patch",
-   "su_export"
+   "su_export",
+   "aia_scale"
 };
 
 struct ProcStep_struct
@@ -156,6 +158,78 @@ ModuleArgs_t module_args[] =
 };
 
 char *module_name = "jsoc_export_manage";
+
+/* returns by reference an array of series names determined by parsing the rsquery record-set query. */
+static int ExtractSeriesNames(const char *rsquery, char ***snamesout, int *nnamesout, DRMS_RecQueryInfo_t *infoout)
+{
+   int err = 0;
+   char *allvers = NULL;
+   char **sets = NULL;
+   DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
+   char **snames = NULL;
+   int nsets = 0;
+   DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
+   int iset;
+
+   if (drms_record_parserecsetspec(rsquery, &allvers, &sets, &settypes, &snames, &nsets, &rsinfo) == DRMS_SUCCESS)
+   {     
+      *infoout = rsinfo;
+      *nnamesout = nsets;
+
+      if (nsets > 0)
+      {
+         *snamesout = (char **)malloc(sizeof(char *) * nsets);
+
+         if (snamesout)
+         {
+            for (iset = 0; iset < nsets; iset++)
+            {
+               (*snamesout)[iset] = strdup(snames[iset]);
+            }
+         }
+         else
+         {
+            fprintf(stderr, "jsoc_export_manage FAILURE: out of memory.\n");
+            err = 1;
+         }
+      }
+   }
+   else
+   {
+      fprintf(stderr, "jsoc_export_manage FAILURE: invalid record-set query %s.\n", rsquery);
+      err = 1;
+   }
+     
+   drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, nsets);
+
+   return err;
+}
+
+static void FreeSeriesNames(char ***snames, int nnames)
+{
+   if (snames)
+   {
+      int iname;
+      char **snameArr = *snames;
+
+      if (snameArr)
+      {
+	 for (iname = 0; iname < nnames; iname++)
+	 {
+	    char *oneSname = snameArr[iname];
+
+	    if (oneSname)
+	    {
+	       free(oneSname);
+	    }
+	 }
+
+	 free(snameArr);
+      }
+
+      *snames = NULL;
+   }
+}
 
 int nice_intro ()
   {
@@ -573,6 +647,21 @@ static LinkedList_t *ParseFields(const char *val, const char *dset, int *status)
                   data.output = strdup(adataset);
                }
             }
+            else if (strncasecmp(onecmd, procs[kProc_AiaScale], strlen(procs[kProc_AiaScale])) == 0)
+            {
+               data.type = kProc_AiaScale;
+
+               if (!adataset)
+               {
+                  fprintf(stderr, "Required input dataset missing.\n");
+                  state = kPPStError;
+               }
+               else
+               {
+                  data.input = strdup(adataset);
+                  data.output = strdup(adataset);
+               }
+            }
             else
             {
                /* Unknown type - processing error */
@@ -687,7 +776,7 @@ int IsBadProcSequence(LinkedList_t *procs)
               {
                  state = kPSeqReclim;
               }
-              else if (type == kProc_NotSpec || type == kProc_HgPatch)
+              else if (type == kProc_NotSpec || type == kProc_HgPatch || type == kProc_AiaScale)
               {
                  state = kPSeqMoreOK;
               }
@@ -733,7 +822,7 @@ int IsBadProcSequence(LinkedList_t *procs)
                  fprintf(stderr, "Multiple record-limit statements, or a processing step combined with a noop processing step.\n");
                  state = kPSeqError;
               }
-              else if (type == kProc_NotSpec || type == kProc_HgPatch)
+              else if (type == kProc_NotSpec || type == kProc_HgPatch || type == kProc_AiaScale)
               {
                  state = kPSeqMoreOK;
               }
@@ -854,7 +943,9 @@ static int GenPreProcessCmd(FILE *fptr,
                             Processing_t process,
                             const char * args,
                             const char *dbmainhost,
-                            const char *dataset,
+                            const char *datasetin,
+                            const char *seriesin,
+                            const char *seriesout,
                             int RecordLimit,
                             const char *requestid,
                             const char *method,
@@ -869,7 +960,7 @@ static int GenPreProcessCmd(FILE *fptr,
       /* hg_patch requires additional arguments */
       if (args)
       {
-         rv = (GenHgPatchCmd(fptr, args, dbmainhost, dataset, RecordLimit, requestid, dbids) != 0);
+         rv = (GenHgPatchCmd(fptr, args, dbmainhost, datasetin, RecordLimit, requestid, dbids) != 0);
       }
       else
       {
@@ -882,7 +973,7 @@ static int GenPreProcessCmd(FILE *fptr,
    }
    else if (process == kProc_SuExport)
    {
-      fprintf(fptr, "jsoc_export_SU_as_is_sock ds='%s' requestid=%s\n", dataset, requestid); 
+      fprintf(fptr, "jsoc_export_SU_as_is_sock ds='%s' requestid=%s\n", datasetin, requestid); 
       GenErrChkCmd(fptr);
       /* rv = 0 */
    }
@@ -893,6 +984,23 @@ static int GenPreProcessCmd(FILE *fptr,
    else if (process == kProc_NotSpec)
    {
       /* rv = 0 */
+   }
+   else if (process == kProc_AiaScale)
+   {
+      /* This will currently work ONLY with aia.lev1 as input and aia.lev1p5 as output. Eventually,
+       * this should work with other series. I'm not sure how this is going to work when the output
+       * series does not exist. For now, fail.
+       *
+       * -Art */
+      if (strcasecmp(seriesin, "aia.lev1") !=0 || strcasecmp(seriesout, "aia.lev1p5") != 0)
+      {
+         fprintf(stderr, "Currently, aia_scale processing can be applied to aia.lev1 only, generating records in aia.lev1p5.\n");
+         rv = 1;
+      }
+      else
+      {
+         fprintf(fptr, "aia_lev1p5 dsin='%s' dsout='%s'", datasetin, seriesout);
+      }
    }
    else
    {
@@ -1038,7 +1146,16 @@ int DoIt(void)
   char *now_at = NULL;
   char *args = NULL;
   const char *cdataset = NULL;
+  const char *datasetout = NULL;
+  char **snames = NULL;
+  char seriesin[DRMS_MAXSERIESNAMELEN];
+  char seriesout[DRMS_MAXSERIESNAMELEN];
+  int nnames;
+  char *series = NULL;
   ProcStep_t *ndata = NULL;
+  DRMS_RecQueryInfo_t info;
+  char csname[DRMS_MAXSERIESNAMELEN];
+  int iname;
 
   if (nice_intro ()) return (0);
 
@@ -1268,6 +1385,98 @@ fprintf(stderr,"XX Dealing with process=n=xx, RecordLimit=%d, new process=%s\n",
          ndata = (ProcStep_t *)node->data;
          proctype = ndata->type;
          cdataset = ndata->input;
+         datasetout = ndata->output;
+
+         /* Ensure that only a single input series is being exported; ensure that the input series exists. */
+         if (ExtractSeriesNames(cdataset, &snames, &nnames, &info))
+         {
+            fprintf(stderr, "Invalid input series record-set query %s.\n", cdataset);
+            quit = 1;
+            break;
+         }
+
+         /* If the record-set query is an @file or contains multiple sub-record-set queries. We currently
+          * support exports from a single series. */
+         for (iname = 0, *csname = '\0'; iname < nnames; iname++)
+         {
+            series = snames[iname];
+            if (*csname != '\0') 
+            {
+               if (strcmp(series, csname) != 0)
+               {
+                  fprintf(stderr, "jsoc_export_manage FAILURE: attempt to export a recordset containing multiple input series.\n");
+                  quit = 1;
+                  break;
+               }
+            }
+            else
+            {
+               snprintf(csname, sizeof(csname), "%s", series);
+            }
+         } // end series-name loop
+
+         FreeSeriesNames(&snames, nnames);
+
+         if (quit)
+         {
+            break;
+         }
+
+         snprintf(seriesin, sizeof(seriesin), "%s", csname);
+
+         /* The JSOC_DBHOST variable will properly identify the db that must contain the input and output series. */
+         if (!drms_series_exists(drms_env, seriesin, &status) || status != DRMS_SUCCESS)
+         {
+            fprintf(stderr, "Input series %s does not exist.\n", csname);
+            quit = 1;
+            break;
+         }
+
+         /* Ensure that only a single output series is being written to; ensure that the output series exists. */
+         if (ExtractSeriesNames(datasetout, &snames, &nnames, &info))
+         {
+            fprintf(stderr, "Invalid output series record-set query %s.\n", datasetout);
+            quit = 1;
+            break;
+         }
+
+         /* If the record-set query is an @file or contains multiple sub-record-set queries. We currently
+          * support exports to only a single series. */
+         for (iname = 0, *csname = '\0'; iname < nnames; iname++)
+         {
+            series = snames[iname];
+            if (*csname != '\0') 
+            {
+               if (strcmp(series, csname) != 0)
+               {
+                  fprintf(stderr, "jsoc_export_manage FAILURE: attempt to export a recordset to multiple output series.\n");
+                  quit = 1;
+                  break;
+               }
+            }
+            else
+            {
+               snprintf(csname, sizeof(csname), "%s", series);
+            }
+         } // end series-name loop
+
+         FreeSeriesNames(&snames, nnames);
+
+         if (quit)
+         {
+            break;
+         }
+
+         snprintf(seriesout, sizeof(seriesout), "%s", csname);
+
+         /* The JSOC_DBHOST variable will properly identify the db that must contain the input and output series. */
+         if (!drms_series_exists(drms_env, seriesout, &status) || status != DRMS_SUCCESS)
+         {
+            fprintf(stderr, "Output series %s does not exist.\n", csname);
+            quit = 1;
+            break;
+         }
+
          args = ((ProcStep_t *)node->data)->args;
 
          if (proctype == kProc_Reclimit)
@@ -1289,13 +1498,14 @@ fprintf(stderr,"XX Dealing with process=n=xx, RecordLimit=%d, new process=%s\n",
             posthgpatch = 1;
          }
 
-
          procerr = GenPreProcessCmd(fp,
                                     protocol,
                                     proctype,
                                     args,
                                     dbmainhost, 
                                     cdataset, 
+                                    seriesin,
+                                    seriesout, 
                                     RecordLimit, 
                                     requestid, 
                                     method, 

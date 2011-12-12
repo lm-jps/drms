@@ -77,9 +77,10 @@ static int ParseRecSetDesc(const char *recsetsStr,
                            char **allvers, 
 			   char ***sets, 
 			   DRMS_RecordSetType_t **types, 
+                           char ***snames,
 			   int *nsets,
                            DRMS_RecQueryInfo_t *info);
-static int FreeRecSetDescArr(char **allvers, char ***sets, DRMS_RecordSetType_t **types, int nsets);
+static int FreeRecSetDescArr(char **allvers, char ***sets, DRMS_RecordSetType_t **types, char ***snames, int nsets);
 
 /* drms_open_records() helpers */
 static int IsValidPlainFileSpec(const char *recSetSpec, 
@@ -1347,6 +1348,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
    * mechanism more sophisticated than strtok() */
   char **sets = NULL;
   DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
+  char **snames = NULL;
   int *setstarts = NULL;
   
   int nsets = 0;
@@ -1354,7 +1356,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                          * The rationale for this is to allow users to get all versions
                          * of the requested DRMS records */
   DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
-  int stat = ParseRecSetDesc(recordsetname, &allvers, &sets, &settypes, &nsets, &rsinfo);
+  int stat = ParseRecSetDesc(recordsetname, &allvers, &sets, &settypes, &snames, &nsets, &rsinfo);
 
   if (stat == DRMS_SUCCESS)
   {
@@ -1852,7 +1854,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 	free(setstarts);
      }
 
-     FreeRecSetDescArr(&allvers, &sets, &settypes, nsets);
+     FreeRecSetDescArr(&allvers, &sets, &settypes, &snames, nsets);
 
      if (status)
        *status = stat;
@@ -1885,7 +1887,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
      free(seglist);
   }
 
-  FreeRecSetDescArr(&allvers, &sets, &settypes, nsets);
+  FreeRecSetDescArr(&allvers, &sets, &settypes, &snames, nsets);
 
   if (rs)
   {
@@ -6265,6 +6267,7 @@ int ParseRecSetDesc(const char *recsetsStr,
                     char **allvers, 
                     char ***sets, 
                     DRMS_RecordSetType_t **settypes, 
+                    char ***snames,
                     int *nsets, 
                     DRMS_RecQueryInfo_t *info)
 {
@@ -6276,19 +6279,23 @@ int ParseRecSetDesc(const char *recsetsStr,
    LinkedList_t *intSets = NULL;
    LinkedList_t *intSettypes = NULL;
    LinkedList_t *intAllVers = NULL;
+   LinkedList_t *intSnames = NULL;
    char *pset = NULL;
+   char *sname = NULL;
    int count = 0;
-   char buf[kMAXRSETSPEC];
+   char buf[kMAXRSETSPEC] = {0};
    char *pcBuf = buf;
    LinkedList_t *multiRSQueries = NULL;
    LinkedList_t *multiRSTypes = NULL;
    LinkedList_t *multiRSAllVers = NULL;
+   LinkedList_t *multiRSSnames = NULL;
    DRMS_RecordSetType_t currSettype;
    char currAllVers = 'n';
    int countMultiRS = 0;
    char *endInput = rsstr + strlen(rsstr); /* points to null terminator */
    int nfilter = 0;
    int recnumrsseen = 0;
+   DRMS_RecQueryInfo_t intinfo = 0;
 
    /* Test for an empty string. */
    int empty = 0;
@@ -6309,7 +6316,8 @@ int ParseRecSetDesc(const char *recsetsStr,
 	      intSets = list_llcreate(sizeof(char *), NULL);
 	      intSettypes = list_llcreate(sizeof(DRMS_RecordSetType_t), NULL);
               intAllVers = list_llcreate(sizeof(char), NULL);
-	      if (!intSets || !intSettypes || !intAllVers)
+              intSnames = list_llcreate(sizeof(char *), NULL);
+	      if (!intSets || !intSettypes || !intAllVers || !intSnames)
 	      {
 		 state = kRSParseState_Error;
 		 status = DRMS_ERROR_OUTOFMEMORY;
@@ -6371,7 +6379,7 @@ int ParseRecSetDesc(const char *recsetsStr,
 		       state = kRSParseState_AtFile;
 
                        /* Mark the '@file' flag in the record-set spec info returned to caller. */
-                       *info |= kAtFile;
+                       intinfo |= kAtFile;
 		       pc++;
 		    }
 		    else if (*pc == '/' || *pc == '.')
@@ -6419,7 +6427,7 @@ int ParseRecSetDesc(const char *recsetsStr,
                     }
 
                     /* Mark the 'filters' flag in the record-set spec info returned to caller. */
-                    *info |= kFilters;
+                    intinfo |= kFilters;
 		 }
 		 else if (*pc == '{')
 		 {
@@ -6507,6 +6515,15 @@ int ParseRecSetDesc(const char *recsetsStr,
 	      /* inside '[' and ']' */
 	      if (pc < endInput)
 	      {
+                 if (sname == NULL)
+                 {
+                    /* We know we've seen a '[', the first char in a filter. buf has the preceding series name, 
+                     * plus a trailing '['. */
+                    size_t len = strlen(buf);
+                    sname = strdup(buf);
+                    *(sname + len - 1) = '\0';
+                 }
+
                  /* If a recnumrangeset has been seen already, then it makes
                   * no sense to have a second filter. 
                   */
@@ -6643,6 +6660,16 @@ int ParseRecSetDesc(const char *recsetsStr,
 	    case kRSParseState_DRMSFiltSQL:
 	      if (pc < endInput)
 	      {
+                 if (sname == NULL)
+                 {
+                    /* We know we've seen a "[?" or a "[!", the first 2 chars in a filter. buf has 
+                     * the preceding series name, plus a trailing "[?" or "[!". */
+                    size_t len = strlen(buf);
+
+                    sname = strdup(buf);
+                    *(sname + len - 2) = '\0';
+                 }
+
                  if (*pc == '"' || *pc == '\'')
                  {
                     /* skip quoted strings */
@@ -7013,6 +7040,7 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
                  char *fullline = NULL;
 		 char **queriesAtFile = NULL;
 		 DRMS_RecordSetType_t *typesAtFile = NULL;
+                 char **snamesAtFile = NULL;
                  char *allversAtFile = NULL;
 		 int nsetsAtFile = 0;
 		 int iSet = 0;
@@ -7075,6 +7103,8 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
 				/* skip empty lines*/
 				if (len > 1)
 				{
+                                   DRMS_RecQueryInfo_t infoAtFile;
+
 				   if (fullline[len - 1] == '\n')
 				   {
 				      fullline[len - 1] = '\0';
@@ -7084,8 +7114,10 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
                                                             &allversAtFile, 
 							    &queriesAtFile, 
 							    &typesAtFile, 
+                                                            &snamesAtFile,
 							    &nsetsAtFile,
-                                                            info);
+                                                            &infoAtFile);
+
 				   if (status == DRMS_SUCCESS)
 				   {
 				      /* add all nsetsAtFile recordsets to multiRSQueries 
@@ -7098,8 +7130,11 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
                                          list_llinserttail(multiRSQueries, &pset);
                                          list_llinserttail(multiRSTypes, &(typesAtFile[iSet]));
                                          list_llinserttail(multiRSAllVers, &(allversAtFile[iSet]));
+                                         list_llinserttail(multiRSSnames, &(snamesAtFile[iSet]));
 					 countMultiRS++;
 				      }
+
+                                      intinfo |= infoAtFile;
 				   }
 				   else
 				   {
@@ -7107,7 +7142,7 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
 				      break;
 				   }
 
-				   FreeRecSetDescArr(&allversAtFile, &queriesAtFile, &typesAtFile, nsetsAtFile);
+				   FreeRecSetDescArr(&allversAtFile, &queriesAtFile, &typesAtFile, &snamesAtFile, nsetsAtFile);
 				}
                                 
                                 if (fullline)
@@ -7198,7 +7233,7 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
 	      /* pc points to whatever is after a ds delim, or trailing ws. */
 	      /* could be next ds elem, ws, delim, or NULL (end of input). */
 	      *pcBuf = '\0';
-	      pcBuf = buf;
+
 
               /* multiRSQueries implies @filename */
 	      if (!multiRSQueries)
@@ -7207,6 +7242,7 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
                  list_llinserttail(intSets, &pset);
                  list_llinserttail(intSettypes, &currSettype);
                  list_llinserttail(intAllVers, &currAllVers);
+                 list_llinserttail(intSnames, &sname);
                  currAllVers = 'n';
 		 count++;
 	      }
@@ -7242,6 +7278,14 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
                        list_llfreenode(&node);
                     }
 
+                    node = list_llgethead(multiRSSnames);
+                    if (node)
+                    {
+                       list_llinserttail(intSnames, &sname);
+                       list_llremove(multiRSSnames, node);
+                       list_llfreenode(&node);
+                    }
+
 		    count++;
 		 }
 
@@ -7269,6 +7313,10 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
 	      {
 		 state = kRSParseState_End;
 	      }
+
+              pcBuf = buf;
+              bzero(buf, sizeof(buf));
+
 	      break;
 	    case kRSParseState_End:
 	      if (DSElem_SkipWS(&pc))
@@ -7295,8 +7343,9 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
       *sets = (char **)malloc(sizeof(char *) * count);
       *settypes = (DRMS_RecordSetType_t *)malloc(sizeof(DRMS_RecordSetType_t) * count);
       *allvers = (char *)malloc(sizeof(char) * count + 1);
+      *snames = (char **)malloc(sizeof(char *) * count);
 
-      if (*sets && *settypes && *allvers)
+      if (*sets && *settypes && *allvers && *snames)
       {
          int iset;
          ListNode_t *node = NULL;
@@ -7328,9 +7377,22 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
                list_llremove(intAllVers, node);
                list_llfreenode(&node);
             }
+
+            node = list_llgethead(intSnames);
+            if (node)
+            {
+               memcpy(&((*snames)[iset]), node->data, sizeof(char *));
+               list_llremove(intSnames, node);
+               list_llfreenode(&node);
+            }
          }
 
          (*allvers)[count] = '\0';
+
+         if (info)
+         {
+            *info = intinfo;
+         }
       }
       else
       {
@@ -7361,7 +7423,7 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
    return status;
 }
 
-int FreeRecSetDescArr(char **allvers, char ***sets, DRMS_RecordSetType_t **types, int nsets)
+int FreeRecSetDescArr(char **allvers, char ***sets, DRMS_RecordSetType_t **types, char ***snames, int nsets)
 {
    int error = 0;
 
@@ -7399,6 +7461,30 @@ int FreeRecSetDescArr(char **allvers, char ***sets, DRMS_RecordSetType_t **types
       free(*types);
       types = NULL;
    }
+
+   if (snames)
+   {
+      int iSet;
+      char **snameArr = *snames;
+
+      if (snameArr)
+      {
+	 for (iSet = 0; iSet < nsets; iSet++)
+	 {
+	    char *oneSname = snameArr[iSet];
+
+	    if (oneSname)
+	    {
+	       free(oneSname);
+	    }
+	 }
+
+	 free(snameArr);
+      }
+
+      *snames = NULL;
+   }
+
 
    return error;
 }
@@ -8784,13 +8870,14 @@ int drms_record_parserecsetspec(const char *recsetsStr,
                                 char **allvers, 
                                 char ***sets, 
                                 DRMS_RecordSetType_t **types, 
+                                char ***snames,
                                 int *nsets,
                                 DRMS_RecQueryInfo_t *info)
 {
-   return ParseRecSetDesc(recsetsStr, allvers, sets, types, nsets, info);
+   return ParseRecSetDesc(recsetsStr, allvers, sets, types, snames, nsets, info);
 }
 
-int drms_record_freerecsetspecarr(char **allvers, char ***sets, DRMS_RecordSetType_t **types, int nsets)
+int drms_record_freerecsetspecarr(char **allvers, char ***sets, DRMS_RecordSetType_t **types,  char ***snames, int nsets)
 {
-   return FreeRecSetDescArr(allvers, sets, types, nsets);
+   return FreeRecSetDescArr(allvers, sets, types, snames, nsets);
 }

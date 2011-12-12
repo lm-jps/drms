@@ -1189,18 +1189,19 @@ int DoIt(void)
                             * of the requested DRMS records */
      char **sets = NULL;
      DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
+     char **snames = NULL;
      int nsets = 0;
      
      DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
-     if (drms_record_parserecsetspec(in, &allvers, &sets, &settypes, &nsets, &rsinfo) != DRMS_SUCCESS)
+     if (drms_record_parserecsetspec(in, &allvers, &sets, &settypes, &snames, &nsets, &rsinfo) != DRMS_SUCCESS)
      {     
         show_info_return(2);
      }
      
-     inqry = rsinfo & kFilters;
-     atfile = rsinfo & kAtFile;
+     inqry = ((rsinfo & kFilters) != 0);
+     atfile = ((rsinfo & kAtFile) != 0);
 
-     drms_record_freerecsetspecarr(&allvers, &sets, &settypes, nsets);
+     drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, nsets);
   }
 
   if (!inqry && max_recs == 0 && !atfile)
