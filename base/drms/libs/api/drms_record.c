@@ -6761,6 +6761,8 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
 		 /* didn't finish query */
 		 state = kRSParseState_Error;
 	      }
+
+              /* We exit this state by either erroring out, or going to state kRSParseState_DRMSFilt. */
 	      break;
 	    case kRSParseState_DRMSSeglist:
 	      /* first char after '{' */
@@ -7234,7 +7236,6 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
 	      /* could be next ds elem, ws, delim, or NULL (end of input). */
 	      *pcBuf = '\0';
 
-
               /* multiRSQueries implies @filename */
 	      if (!multiRSQueries)
 	      {
@@ -7281,7 +7282,7 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
                     node = list_llgethead(multiRSSnames);
                     if (node)
                     {
-                       list_llinserttail(intSnames, &sname);
+                       list_llinserttail(intSnames, node->data);
                        list_llremove(multiRSSnames, node);
                        list_llfreenode(&node);
                     }
@@ -7317,6 +7318,10 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
               pcBuf = buf;
               bzero(buf, sizeof(buf));
 
+              /* Don't forget to set sname back to NULL to prepare for next record-set subquery. sname is now 
+               * owned by intSnames*/
+              sname = NULL;
+              
 	      break;
 	    case kRSParseState_End:
 	      if (DSElem_SkipWS(&pc))
