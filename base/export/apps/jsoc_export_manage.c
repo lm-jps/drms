@@ -1569,6 +1569,13 @@ fprintf(stderr,"XX Dealing with process=n=xx, RecordLimit=%d, new process=%s\n",
       // convert index.txt list into index.json and index.html packing list files. 
       fprintf(fp, "jsoc_export_make_index\n");
       fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
+
+      // Parse out the size property from the index.json JSON.
+      // Hard-code index.json - this probably will never change
+      fprintf(fp, "set EXPSIZE = `extractexpsize.pl $REQDIR/index.json`\n");
+      GenErrChkCmd(fp);
+      fprintf(fp, "set_info_sock JSOC_DBHOST=%s ds='jsoc.export[%s]' Size=$EXPSIZE\n", dbexporthost, requestid);
+
       // create tar file if '-tar' suffix on method
       dashp = rindex(method, '-');
       if (dashp && strcmp(dashp, "-tar") == 0)
