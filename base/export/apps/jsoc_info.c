@@ -287,6 +287,35 @@ void drms_sprint_rec_query(char *text, DRMS_Record_t *rec)
   return;
   }
 
+/* returns series owner as static string */
+char *drms_getseriesowner(DRMS_Env_t *drms_env, char *series, int *status)
+   {
+   char *nspace = NULL;
+   char *relname = NULL;
+   int istat = DRMS_SUCCESS;
+   DB_Text_Result_t *qres = NULL;
+   static char owner[256];
+   owner[0] = '\0';
+
+   if (!get_namespace(series, &nspace, &relname))
+      {
+      char query[1024];
+      strtolower(nspace);
+      strtolower(relname);
+
+      snprintf(query, sizeof(query), "SELECT pg_catalog.pg_get_userbyid(T1.relowner) AS owner FROM pg_catalog.pg_class AS T1, (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = '%s') AS T2 WHERE T1.relnamespace = T2.oid AND T1.relname = '%s'", nspace, relname);
+
+      if ((qres = drms_query_txt(drms_env->session, query)) != NULL)
+         {
+         if (qres->num_cols == 1 && qres->num_rows == 1)
+            strcpy(owner, qres->field[0][0]);
+         db_free_text_result(qres);
+         }
+      }
+   *status = owner[0] != 0;
+   return(owner);
+   }
+
 char * string_to_json(char *in)
   { // for json vers 0.9 no longer uses wide chars
   char *new;
@@ -295,7 +324,7 @@ char * string_to_json(char *in)
   }
 
 
-static void list_series_info(DRMS_Record_t *rec, json_t *jroot)
+static void list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *jroot)
   {
   DRMS_Keyword_t *key;
   DRMS_Segment_t *seg;
@@ -303,9 +332,11 @@ static void list_series_info(DRMS_Record_t *rec, json_t *jroot)
   HIterator_t *last = NULL;
   char intstring[100];
   char *notework;
+  char *owner;
   json_t *indexarray, *primearray, *keyarray, *segarray, *linkarray;
   json_t *primeinfoarray;
   int npkeys;
+  int status;
   char prevKeyName[DRMS_MAXNAMELEN] = "";
   char baseKeyName[DRMS_MAXNAMELEN];
 
@@ -322,6 +353,10 @@ static void list_series_info(DRMS_Record_t *rec, json_t *jroot)
   json_insert_pair_into_object(jroot, "archive", json_new_number(intstring));
   sprintf(intstring, "%d", rec->seriesinfo->tapegroup);
   json_insert_pair_into_object(jroot, "tapegroup", json_new_number(intstring));
+  /* add ownder for series */
+  owner = string_to_json(drms_getseriesowner(drms_env, rec->seriesinfo->seriesname, &status));
+  json_insert_pair_into_object(jroot, "owner", json_new_string(owner));
+  free(owner);
   
   /* show the prime index keywords */
   // both the original simple list and new array of objects are generated -- XXXXX REMOVE SOMEDAY                             
@@ -787,7 +822,7 @@ int DoIt(void)
     if (status)
       JSONDIE("series not found");
     jroot = json_new_object();
-    list_series_info(rec, jroot);
+    list_series_info(drms_env, rec, jroot);
     get_series_stats(rec, jroot);
     json_insert_runtime(jroot, StartTime);
     json_insert_pair_into_object(jroot, "status", json_new_number("0"));
