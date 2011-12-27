@@ -49,6 +49,8 @@ series
 #include <sys/types.h>
 #include <regex.h>
 
+char * json_escape (char * text);
+
 static char x2c (char *what) {
   char digit;
 
@@ -70,6 +72,34 @@ static void CGI_unescape_url (char *url) {
   url[x] = '\0';
 }
 
+/* returns series owner as static string */
+char *drms_getseriesowner(DRMS_Env_t *drms_env, char *series, int *status)
+   {
+   char *nspace = NULL;
+   char *relname = NULL;
+   int istat = DRMS_SUCCESS;
+   DB_Text_Result_t *qres = NULL;
+   static char owner[256];
+   owner[0] = '\0';
+
+   if (!get_namespace(series, &nspace, &relname))
+      {
+      char query[1024];
+      strtolower(nspace);
+      strtolower(relname);
+
+      snprintf(query, sizeof(query), "SELECT pg_catalog.pg_get_userbyid(T1.relowner) AS owner FROM pg_catalog.pg_class AS T1, (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = '%s') AS T2 WHERE T1.relnamespace = T2.oid AND T1.relname = '%s'", nspace, relname);
+
+      if ((qres = drms_query_txt(drms_env->session, query)) != NULL)
+         {
+         if (qres->num_cols == 1 && qres->num_rows == 1)
+            strcpy(owner, qres->field[0][0]);
+         db_free_text_result(qres);
+         }
+      }
+   *status = owner[0] != 0;
+   return(owner);
+   }
 
 
 /* Some important variables are pre-defined by main.  These include:
@@ -107,7 +137,6 @@ int nice_intro() {
 	"  -z JSON formatted output \n");
     return (1);
   }
-  if (verbose) cmdparams_printall (&cmdparams);
   return(0);
 }
 
@@ -278,12 +307,30 @@ for (iseries=0; iseries<nseries; iseries++)
         }
       if (want_JSON)
         printf("\",");
+      if (verbose)
+        {
+        int status;
+        DRMS_Record_t *rec = drms_template_record(drms_env, seriesname, &status);
+        if (want_JSON)
+          {
+	  printf("\"archive\":\"%d\",",rec->seriesinfo->archive);
+	  printf("\"retention\":\"%d\",",rec->seriesinfo->retention);
+	  printf("\"tapegroup\":\"%d\",",rec->seriesinfo->tapegroup);
+	  printf("\"unitsize\":\"%d\",",rec->seriesinfo->unitsize);
+	  printf("\"owner\":\"%s\",",drms_getseriesowner(drms_env, seriesname, &status));
+          }
+        else
+          {
+          printf("\n      Archive: %d", rec->seriesinfo->archive);
+          printf("\n      Retention: %d", rec->seriesinfo->retention);
+          printf("\n      Tapegroup: %d", rec->seriesinfo->tapegroup);
+          printf("\n      Unitsize: %d", rec->seriesinfo->unitsize);
+          printf("\n      Owner: %s", drms_getseriesowner(drms_env, seriesname, &status));
+          }
+        }
       if (want_JSON)
 	{
-        char *json_escape(char *desc);
-// fprintf(stderr,"show_series desc=%s\n",description);
         char *desc_escaped = json_escape(description);
-// fprintf(stderr,"show_series desc_escaped==%s\n",desc_escaped);
 	printf("\"note\":\"%s\"}",desc_escaped);
 	free(desc_escaped);
 	}
