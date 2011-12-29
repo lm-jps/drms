@@ -22,7 +22,7 @@ The output structure is described at: http://jsoc.stanford.edu/jsocwiki/AjaxJsoc
 \par Synopsis:
 
 \code
-jsoc_info [-hRz] op=<command> ds=<record_set> [[key=<keylist>] [seg=<seglist>] [link=<linklist>]
+jsoc_info [-hRoz] op=<command> ds=<record_set> [[key=<keylist>] [seg=<seglist>] [link=<linklist>]
 or
 jsoc_info QUERY_STRING=<url equivalent of command-line args above>
 \endcode
@@ -184,6 +184,7 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "h", "0", "help - show usage"},
   {ARG_FLAG, "R", "0", "Show record query"},
   {ARG_FLAG, "z", "0", "emit JSON output"},
+  {ARG_FLAG, "o", "0", "add owner info to series_struct"},
   {ARG_STRING, "QUERY_STRING", "Not Specified", "AJAX query from the web"},
   {ARG_STRING, "REMOTE_ADDR", "0.0.0.0", "Remote IP address"},
   {ARG_STRING, "SERVER_NAME", "ServerName", "JSOC Server Name"},
@@ -287,6 +288,9 @@ void drms_sprint_rec_query(char *text, DRMS_Record_t *rec)
   return;
   }
 
+/* temp hack to let -o add owner to series_struct, 28 Dec 11 */
+int wantowner = 0;
+
 /* returns series owner as static string */
 char *drms_getseriesowner(DRMS_Env_t *drms_env, char *series, int *status)
    {
@@ -354,9 +358,12 @@ static void list_series_info(DRMS_Env_t *drms_env, DRMS_Record_t *rec, json_t *j
   sprintf(intstring, "%d", rec->seriesinfo->tapegroup);
   json_insert_pair_into_object(jroot, "tapegroup", json_new_number(intstring));
   /* add ownder for series */
+if (wantowner)
+{
   owner = string_to_json(drms_getseriesowner(drms_env, rec->seriesinfo->seriesname, &status));
   json_insert_pair_into_object(jroot, "owner", json_new_string(owner));
   free(owner);
+}
   
   /* show the prime index keywords */
   // both the original simple list and new array of objects are generated -- XXXXX REMOVE SOMEDAY                             
@@ -798,6 +805,9 @@ int DoIt(void)
   userhandle = cmdparams_get_str (&cmdparams, "userhandle", NULL);
   Remote_Address = cmdparams_get_str(&cmdparams, "REMOTE_ADDR", NULL);
   Server = cmdparams_get_str(&cmdparams, "SERVER_NAME", NULL);
+
+/* -o hack to allow owner added to series_struct 28 Dec 11 */
+wantowner = cmdparams_get_int (&cmdparams, "o", NULL);
 
   // allow possible user kill
   if (strcmp(userhandle, "Not Specified") != 0)
