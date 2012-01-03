@@ -1785,6 +1785,9 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 			  }
 		       }
 
+                       /* oners's records have been transferred to ret, but the record-set struct has not been freed. */
+                       free(oners->records);
+                       free(oners);
 		       oners = NULL;
 		    }
 		    else
@@ -7061,6 +7064,7 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
 		    multiRSQueries = list_llcreate(sizeof(char *), NULL);
                     multiRSTypes = list_llcreate(sizeof(DRMS_RecordSetType_t), NULL);
                     multiRSAllVers = list_llcreate(sizeof(char), NULL);
+                    multiRSSnames = list_llcreate(sizeof(char *), NULL);
 
 		    /* buf has filename */
 		    *pcBuf = '\0';
@@ -7128,11 +7132,16 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
                                        */
 				      for (iSet = 0; iSet < nsetsAtFile; iSet++)
 				      {
+                                         /* dupe this string because FreeRecSetDescArr() will 
+                                          * free the original string. */
                                          pset = strdup(queriesAtFile[iSet]);
                                          list_llinserttail(multiRSQueries, &pset);
                                          list_llinserttail(multiRSTypes, &(typesAtFile[iSet]));
                                          list_llinserttail(multiRSAllVers, &(allversAtFile[iSet]));
-                                         list_llinserttail(multiRSSnames, &(snamesAtFile[iSet]));
+                                         /* dupe this string because FreeRecSetDescArr() will 
+                                          * free the original string. */
+                                         pset = strdup(snamesAtFile[iSet]);
+                                         list_llinserttail(multiRSSnames, &pset);
 					 countMultiRS++;
 				      }
 
@@ -7296,6 +7305,8 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
 		 multiRSTypes = NULL;
                  free(multiRSAllVers);
                  multiRSAllVers = NULL;
+                 free(multiRSSnames);
+                 multiRSSnames = NULL;
 		 countMultiRS = 0;
 	      }
 
@@ -7423,6 +7434,11 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
    if (intAllVers)
    {
       free(intAllVers);
+   }
+
+   if (intSnames)
+   {
+      free(intSnames);
    }
 
    return status;
