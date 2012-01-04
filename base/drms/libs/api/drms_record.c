@@ -1362,13 +1362,20 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
   {
      int iSet;
 
-     if (allversout)
+     if (nsets > 0)
      {
-        *allversout = strdup(allvers);
+        if (allversout)
+        {
+           *allversout = strdup(allvers);
+        }
      }
 
      CHECKNULL_STAT(env,status);
-     setstarts = (int *)malloc(sizeof(int) * nsets);
+
+     if (nsets > 0)
+     {
+        setstarts = (int *)malloc(sizeof(int) * nsets);
+     }
 
      for (iSet = 0; stat == DRMS_SUCCESS && iSet < nsets; iSet++)
      {
@@ -1799,7 +1806,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 	      }
 	   }
 	}
-	else
+	else if (nsets > 0)
 	{
 	   /* One set only - save the number of records in a set into setstarts */
 	   if (ret->n > 0)
@@ -1819,27 +1826,32 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 
 	/* Add fields that are used to track record-set sources */
 	ret->ss_n = nsets;
-	ret->ss_starts = setstarts; /* ret assumes ownership */
-	setstarts = NULL;
-	ret->ss_currentrecs = (int *)malloc(sizeof(int) * nsets);
 	ret->cursor = NULL;
-	/* ret can't assume ownership of sets or settypes */
-	ret->ss_queries = (char **)malloc(sizeof(char *) * nsets);
-	ret->ss_types = (DRMS_RecordSetType_t *)malloc(sizeof(DRMS_RecordSetType_t) * nsets);
-	if (ret->ss_currentrecs && ret->ss_queries && ret->ss_types)
-	{
-	   for (iSet = 0; iSet < nsets; iSet++)
-	   {
-	      ret->ss_queries[iSet] = strdup(sets[iSet]);
-	      ret->ss_types[iSet] = settypes[iSet];
-	      ret->ss_currentrecs[iSet] = -1;
-	   }
-	}
-	else
-	{
-	   stat = DRMS_ERROR_OUTOFMEMORY;
-	   goto failure;
-	}
+
+        if (nsets > 0)
+        {
+           ret->ss_starts = setstarts; /* ret assumes ownership */
+           setstarts = NULL;
+           ret->ss_currentrecs = (int *)malloc(sizeof(int) * nsets);
+
+           /* ret can't assume ownership of sets or settypes */
+           ret->ss_queries = (char **)malloc(sizeof(char *) * nsets);
+           ret->ss_types = (DRMS_RecordSetType_t *)malloc(sizeof(DRMS_RecordSetType_t) * nsets);
+           if (ret->ss_currentrecs && ret->ss_queries && ret->ss_types)
+           {
+              for (iSet = 0; iSet < nsets; iSet++)
+              {
+                 ret->ss_queries[iSet] = strdup(sets[iSet]);
+                 ret->ss_types[iSet] = settypes[iSet];
+                 ret->ss_currentrecs[iSet] = -1;
+              }
+           }
+           else
+           {
+              stat = DRMS_ERROR_OUTOFMEMORY;
+              goto failure;
+           }
+        }
      }
      else
      {
