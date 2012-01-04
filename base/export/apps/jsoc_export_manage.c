@@ -1433,34 +1433,40 @@ fprintf(stderr,"XX Dealing with process=n=xx, RecordLimit=%d, new process=%s\n",
          }
 
          /* Ensure that only a single output series is being written to; ensure that the output series exists. */
-         if (ExtractSeriesNames(datasetout, &snames, &nnames, &info))
+         /* HACK!! If the processing-step type is kProc_HgPatch, then don't try to find the output series. The 
+          * datasetout field will be @hg_patch.log, but this file won't exist yet (hg_patch will not have run yet). 
+          * So skip this step if the processing is kProc_HgPatch. */
+         if (proctype != kProc_HgPatch)
          {
-            fprintf(stderr, "Invalid output series record-set query %s.\n", datasetout);
-            quit = 1;
-            break;
-         }
-
-         /* If the record-set query is an @file or contains multiple sub-record-set queries. We currently
-          * support exports to only a single series. */
-         for (iname = 0, *csname = '\0'; iname < nnames; iname++)
-         {
-            series = snames[iname];
-            if (*csname != '\0') 
+            if (ExtractSeriesNames(datasetout, &snames, &nnames, &info))
             {
-               if (strcmp(series, csname) != 0)
+               fprintf(stderr, "Invalid output series record-set query %s.\n", datasetout);
+               quit = 1;
+               break;
+            }
+         
+            /* If the record-set query is an @file or contains multiple sub-record-set queries. We currently
+             * support exports to only a single series. */
+            for (iname = 0, *csname = '\0'; iname < nnames; iname++)
+            {
+               series = snames[iname];
+               if (*csname != '\0') 
                {
-                  fprintf(stderr, "jsoc_export_manage FAILURE: attempt to export a recordset to multiple output series.\n");
-                  quit = 1;
-                  break;
+                  if (strcmp(series, csname) != 0)
+                  {
+                     fprintf(stderr, "jsoc_export_manage FAILURE: attempt to export a recordset to multiple output series.\n");
+                     quit = 1;
+                     break;
+                  }
                }
-            }
-            else
-            {
-               snprintf(csname, sizeof(csname), "%s", series);
-            }
-         } // end series-name loop
+               else
+               {
+                  snprintf(csname, sizeof(csname), "%s", series);
+               }
+            } // end series-name loop
 
-         FreeSeriesNames(&snames, nnames);
+            FreeSeriesNames(&snames, nnames);
+         }
 
          if (quit)
          {
