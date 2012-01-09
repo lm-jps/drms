@@ -57,7 +57,8 @@ typedef enum
    kCrtabErr_Argument,
    kCrtabErr_FileIO,
    kCrtabErr_UnknownSeries,
-   kCrtabErr_OutOfMemory
+   kCrtabErr_OutOfMemory,
+   kCrtabErr_Internal
 } CrtabError_t;
 
 #define kSeriesin      "in"
@@ -109,6 +110,43 @@ static char *replacestr(char *str, int size, const char *orig, const char *rep)
    }
 
    return ret;
+}
+
+static int EscapeQuotes(const char *orig, char *out, int szout)
+{
+   const char *pin = orig;
+   int istr;
+   int err = 0;
+
+   if (orig)
+   {
+      for (istr = 0; *pin && istr < szout - 1; istr++, pin++)
+      {
+         if (*pin == '\'')
+         {
+            if (istr > szout - 3)
+            {
+               err = 1;
+               break;
+            }
+
+            out[istr++] = '\\';
+         }
+
+         out[istr] = *pin;
+      }
+
+      if (istr >= szout)
+      {
+         err = 1;
+      }
+      else
+      {
+         out[istr] = '\0';
+      }
+   }
+
+   return err;
 }
 
 static CrtabError_t CrtabGetTableOID(DRMS_Env_t *env, const char *ns, const char *table, char **oid)
@@ -535,14 +573,23 @@ static CrtabError_t CreateSQLInsertIntoTable(FILE *fptr,
 
          if (((rows->column)[icol]).type == DB_STRING)
          {
+            char escval[1024];
+
             /* Substitute seriesout for series */
             if (strcasecmp(val, series) == 0 && strcmp(val, seriesout) != 0)
             {
                snprintf(val, sizeof(val), "%s", seriesout);
             }
 
-            list = base_strcatalloc(list, "'", &strsize);
-            list = base_strcatalloc(list, val, &strsize);
+            /* Escape any single quotes. */
+            if (EscapeQuotes(val, escval, sizeof(escval)))
+            {
+               err = kCrtabErr_Internal;
+               break;
+            }
+
+            list = base_strcatalloc(list, "E'", &strsize);
+            list = base_strcatalloc(list, escval, &strsize);
             list = base_strcatalloc(list, "'", &strsize);
          }
          else
