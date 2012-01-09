@@ -1864,7 +1864,7 @@ sub ImpExp_sub_unload {
     #If so, delete the NOTAPEARC file and give a msg no imp/exp now.
     #if no tapearc running, continue. rm NOTAPEARC when done.
     `/bin/touch $NOTAPEARC`;
-#!!!TBD: fix this for the multi tapearc[0-7]??
+#!!!TBD: fix this for tapearcX runs. See if still need this??
     @arctest = `ps -ef | grep "tapearc -v jsocdc"`;
     if($#arctest > 1) {         #don't count our sh and grep
       `/bin/rm $NOTAPEARC`;
