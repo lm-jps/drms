@@ -131,9 +131,14 @@ EXEC SQL END DECLARE SECTION;
 
 tapenotfound:
     ablocks = MAX_AVAIL_BLOCKS;
-    EXEC SQL INSERT INTO SUM_TAPE (tapeid, nxtwrtfn, spare, group_id, avail_blocks, closed, last_write) VALUES (:l_tapeid, 1, -1, -1, :ablocks, -1, NULL);
+    if(strstr(tapeid , "CLN")) {	//cleaning tape. make it closed
+      EXEC SQL INSERT INTO SUM_TAPE (tapeid, nxtwrtfn, spare, group_id, avail_blocks, closed, last_write) VALUES (:l_tapeid, 1, -1, -1, :ablocks, -2, NULL);
+    }
+    else {
+      EXEC SQL INSERT INTO SUM_TAPE (tapeid, nxtwrtfn, spare, group_id, avail_blocks, closed, last_write) VALUES (:l_tapeid, 1, -1, -1, :ablocks, -1, NULL);
+      printk("*Cataloged new tape %s\n", tapeid);
+    }
     EXEC SQL COMMIT WORK;
-    printk("*Cataloged new tape %s\n", tapeid);
     return(-1);
 
 sqlerror:
