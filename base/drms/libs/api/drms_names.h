@@ -8,6 +8,7 @@
 
 
 int drms_names_parseduration(char **in, double *duration, double width);
+char *drms_recordset_extractfilter(DRMS_Record_t *template, const char *in, int *status);
 
 /**
    @addtogroup names_api

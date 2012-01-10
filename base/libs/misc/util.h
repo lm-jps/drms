@@ -24,6 +24,7 @@ void strtoupper(char *str);
 void copy_string(char **dst, char *src); /* like strdup with assert on error. */
 size_t base_strlcat(char *dst, const char *src, size_t size);
 void *base_strcatalloc(char *dst, const char *src, size_t *sizedst);
+char *base_strreplace(const char *text, const char *orig, const char *repl);
 int convert_int_field(char *field, int len);
 long convert_long_field(char *field, int len);
 float convert_float_field(char *field, int len);
