@@ -170,77 +170,6 @@ ModuleArgs_t module_args[] =
 
 char *module_name = "jsoc_export_manage";
 
-/* returns by reference an array of series names determined by parsing the rsquery record-set query. */
-static int ParseRecSetSpec(DRMS_Env_t *env,
-                           const char *rsquery, 
-                           char ***snamesout, 
-                           char ***filtsout,
-                           int *nsetsout, 
-                           DRMS_RecQueryInfo_t *infoout)
-{
-   int err = 0;
-   char *allvers = NULL;
-   char **sets = NULL;
-   DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
-   char **snames = NULL;
-   int nsets = 0;
-   DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
-   int iset;
-   DRMS_Record_t *template = NULL;
-   int drmsstat = 0;
-   char *filter = NULL;
-
-   if (drms_record_parserecsetspec(rsquery, &allvers, &sets, &settypes, &snames, &nsets, &rsinfo) == DRMS_SUCCESS)
-   {     
-      *infoout = rsinfo;
-      *nsetsout = nsets;
-
-      if (nsets > 0)
-      {
-         *snamesout = (char **)malloc(sizeof(char *) * nsets);
-         *filtsout = (char **)malloc(sizeof(char *) * nsets);
-
-         if (snamesout && filtsout)
-         {
-            for (iset = 0; iset < nsets; iset++)
-            {
-               (*snamesout)[iset] = strdup(snames[iset]);
-
-               /* Now grab the filter for this record-set specification - pass it to drms_recordset_extractfilter(). */
-               template = drms_template_record(env, snames[iset], &drmsstat);
-
-               if (drmsstat)
-               {
-                  err = 1;
-               }
-               else
-               {
-                  filter = drms_recordset_extractfilter(template, sets[iset], &err);
-                  if (!err && filter)
-                  {
-                     (*filtsout)[iset] = filter; /* transfer ownership to caller. */
-                  }
-               }
-            }
-         }
-         else
-         {
-            fprintf(stderr, "jsoc_export_manage FAILURE: out of memory.\n");
-            err = 1;
-         }
-      }
-   }
-   else
-   {
-      fprintf(stderr, "jsoc_export_manage FAILURE: invalid record-set query %s.\n", rsquery);
-      err = 1;
-   }
-     
-   drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, nsets);
-
-   return err;
-}
-
 static void FreeRecSpecParts(char ***snames, char ***filts, int nitems)
 {
    if (snames)
@@ -288,6 +217,93 @@ static void FreeRecSpecParts(char ***snames, char ***filts, int nitems)
 
       *filts = NULL;
    }
+}
+
+/* returns by reference an array of series names determined by parsing the rsquery record-set query. */
+/* returns 1 if an error occurred, 0 otherwise. */
+static int ParseRecSetSpec(DRMS_Env_t *env,
+                           const char *rsquery, 
+                           char ***snamesout, 
+                           char ***filtsout,
+                           int *nsetsout, 
+                           DRMS_RecQueryInfo_t *infoout)
+{
+   int err = 0;
+   char *allvers = NULL;
+   char **sets = NULL;
+   DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
+   char **snames = NULL;
+   int nsets = 0;
+   DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
+   int iset;
+   DRMS_Record_t *template = NULL;
+   int drmsstat = 0;
+   char *filter = NULL;
+
+   if (drms_record_parserecsetspec(rsquery, &allvers, &sets, &settypes, &snames, &nsets, &rsinfo) == DRMS_SUCCESS)
+   {     
+      *infoout = rsinfo;
+      *nsetsout = nsets;
+
+      if (nsets > 0)
+      {
+         *snamesout = (char **)calloc(nsets, sizeof(char *));
+         *filtsout = (char **)calloc(nsets, sizeof(char *));
+
+         if (snamesout && filtsout)
+         {
+            for (iset = 0; iset < nsets; iset++)
+            {
+               (*snamesout)[iset] = strdup(snames[iset]);
+
+               /* Now grab the filter for this record-set specification - pass it to drms_recordset_extractfilter(). */
+               template = drms_template_record(env, snames[iset], &drmsstat);
+
+               if (drmsstat)
+               {
+                  if (DRMS_ERROR_UNKNOWNSERIES == drmsstat)
+                  {
+                     fprintf(stderr, "Unable to open template record for series '%s'; this series does not exist.\n", snames[iset]);
+                  }
+
+                  err = 1;
+                  break;
+               }
+               else
+               {
+                  filter = drms_recordset_extractfilter(template, sets[iset], &err);
+                  if (!err && filter)
+                  {
+                     (*filtsout)[iset] = filter; /* transfer ownership to caller. */
+                  }
+               }
+            }
+         }
+         else
+         {
+            fprintf(stderr, "jsoc_export_manage FAILURE: out of memory.\n");
+            err = 1;
+         }
+      }
+   }
+   else
+   {
+      fprintf(stderr, "jsoc_export_manage FAILURE: invalid record-set query %s.\n", rsquery);
+      err = 1;
+   }
+     
+   drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, nsets);
+
+   if (err == 1)
+   {
+      /* free up stuff */
+      if (nsets > 0)
+      {
+         FreeRecSpecParts(snamesout, filtsout, nsets);
+      }
+   }
+
+   return err;
 }
 
 int nice_intro ()
@@ -634,6 +650,7 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, const char *val, const char *d
    {
       if (state == kPPStError || state == kPPStEnd || pc == end)
       {
+         /* Must free stuff in data. */
          break;
       }
       else if (state == kPPStBeginProc)
@@ -664,7 +681,12 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, const char *val, const char *d
                if (suffix && *suffix)
                {
                   /* output is input with the suffix appended. */
-                  ParseRecSetSpec(env, data.input, &snames, &filts, &nsets, &info);
+                  if (ParseRecSetSpec(env, data.input, &snames, &filts, &nsets, &info))
+                  {
+                     state = kPPStError;
+                     continue;
+                  }
+
                   outputname = strdup(data.input);
 
                   for (iset = 0; iset < nsets; iset++)
@@ -732,7 +754,12 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, const char *val, const char *d
                 * hmi.lev1_hgpatch[2012.1.5] at this point (it won't after figure out how
                 * to specify in the db table that we use a different output series filter than
                 * the input series filter). Blah! */
-               ParseRecSetSpec(env, data.output, &snames, &filts, &nsets, &info);
+               if (ParseRecSetSpec(env, data.output, &snames, &filts, &nsets, &info))
+               {
+                  state = kPPStError;
+                  continue;
+               }
+
                outputname = strdup(data.output);
 
                for (iset = 0; iset < nsets; iset++)
@@ -759,7 +786,13 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, const char *val, const char *d
                /* HACK!! For now, the only series to which aiascale processing can be applied is 
                 * aia.lev1, producing the output aia_test.lev1p5. */
                outputname = strdup(data.output);
-               ParseRecSetSpec(env, data.input, &snames, &filts, &nsets, &info);
+               if (ParseRecSetSpec(env, data.input, &snames, &filts, &nsets, &info))
+               {
+                  state = kPPStError;
+                  free(outputname);
+                  continue;
+               }
+
                for (iset = 0; iset < nsets; iset++)
                {
                   if (strcasecmp(snames[iset], "aia.lev1") != 0)
@@ -1483,7 +1516,13 @@ int DoIt(void)
       if (ppstat == 0)
       {
          fprintf(stderr, "Invalid process field value: %s.\n", process);
-         continue;
+         drms_setkey_int(export_log, "Status", 4);
+         drms_close_record(export_rec, DRMS_FREE_RECORD);
+         fclose(fp);
+         fp = NULL;
+
+         /* mem leak - need to free all strings obtained with drms_getkey_string(). */
+         continue; /* next export record */
       }
 
       /* PRE-PROCESSING */
@@ -1492,7 +1531,13 @@ int DoIt(void)
       {
          fprintf(stderr, "Bad sequence of processing steps, skipping recnum %lld.\n", export_rec->recnum);
          list_llfree(&proccmds);
-         continue;
+         drms_setkey_int(export_log, "Status", 4);
+         drms_close_record(export_rec, DRMS_FREE_RECORD);
+         fclose(fp);
+         fp = NULL;
+
+         /* mem leak - need to free all strings obtained with drms_getkey_string(). */
+         continue; /* next export record */
       }
 
       /* First do the pre-processing of one dataseries into another (if requested). For example, the 
