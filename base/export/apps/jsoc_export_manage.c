@@ -1125,7 +1125,7 @@ static int GenPreProcessCmd(FILE *fptr,
       }
       else
       {
-         fprintf(fptr, "aia_lev1p5 dsin='%s' dsout='%s'", datasetin, seriesout);
+         fprintf(fptr, "aia_lev1p5 dsinp='%s' dsout='%s'\n", datasetin, seriesout);
       }
    }
    else
