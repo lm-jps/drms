@@ -585,6 +585,8 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, const char *val, const char *d
    DRMS_RecQueryInfo_t info;
    ProcStepInfo_t *cpinfo = NULL;
    const char *suffix = NULL;
+   char *outputname = NULL;
+   char *newoutputname = NULL;
 
    *status = 0;
    procnum = 0;
@@ -606,6 +608,10 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, const char *val, const char *d
 
    ProcStepInfo_t pi;
 
+   pi.name = strdup("Not Specified");
+   pi.suffix = strdup("");
+   hcon_insert(pinfo, "Not Specified", &pi);
+
    pi.name = strdup("no_op");
    pi.suffix = strdup("");
    hcon_insert(pinfo, "no_op", &pi);
@@ -618,8 +624,10 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, const char *val, const char *d
    pi.suffix = strdup("");
    hcon_insert(pinfo, "su_export", &pi);
 
+   /* Eventually we will have to have a real suffix for this - right now we special case: 
+    * aia.lev1 --> aia_test.lev1p5. */
    pi.name = strdup("aia_scale");
-   pi.suffix = strdup("scale");
+   pi.suffix = strdup("");
    hcon_insert(pinfo, "aia_scale", &pi);
 
    while (1)
@@ -651,9 +659,6 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, const char *val, const char *d
 
             if (cpinfo)
             {
-               char *outputname = NULL;
-               char *newoutputname = NULL;
-
                suffix = cpinfo->suffix;
 
                if (suffix && *suffix)
@@ -715,9 +720,6 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, const char *val, const char *d
             }
             else if (strncasecmp(onecmd, procs[kProc_HgPatch], strlen(procs[kProc_HgPatch])) == 0)
             {
-               char *outputname = NULL;
-               char *newoutputname = NULL;
-
                /* Stuff following comma are args to hg_patch */
                /* These args will also have to be fetched from cpinfo. */
                args = pc + 1;
@@ -753,6 +755,35 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, const char *val, const char *d
             {
                data.type = kProc_AiaScale;
                state = kPPStEndProc;
+
+               /* HACK!! For now, the only series to which aiascale processing can be applied is 
+                * aia.lev1, producing the output aia_test.lev1p5. */
+               outputname = strdup(data.output);
+               ParseRecSetSpec(env, data.input, &snames, &filts, &nsets, &info);
+               for (iset = 0; iset < nsets; iset++)
+               {
+                  if (strcasecmp(snames[iset], "aia.lev1") != 0)
+                  {
+                     state = kPPStError;
+                     break;
+                  }
+                  else
+                  {
+                     /* Force to aia.lev1p5 */
+                     if (outputname)
+                     {
+                        snprintf(spec, sizeof(spec), "%s%s", snames[iset], filts[iset]);
+                        snprintf(onamebuf, sizeof(onamebuf), "aia.lev1p5%s", filts[iset]);
+                        newoutputname = base_strreplace(outputname, spec, onamebuf);
+                        free(outputname);
+                        outputname = newoutputname;
+                     }
+
+                     data.output = outputname;
+                  }
+               }
+               
+               FreeRecSpecParts(&snames, &filts, nsets);
             }
             else
             {
@@ -786,10 +817,16 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, const char *val, const char *d
          list_llinserttail(rv, &data);
 
          /* The output record-set now becomes the input record-set of the next processing step. */
-         adataset = strdup(data.output);
-
-         state = kPPStBeginProc;
-         pc++; /* Advance to first char after the proc-step delimiter. */
+         if (data.output)
+         {
+            adataset = strdup(data.output);
+            state = kPPStBeginProc;
+            pc++; /* Advance to first char after the proc-step delimiter. */
+         }
+         else
+         {
+            state = kPPStError;
+         }
       }
 
       if (state != kPPStError)
@@ -887,7 +924,7 @@ int IsBadProcSequence(LinkedList_t *procs)
                  fprintf(stderr, "Multiple record-limit statements.\n");
                  state = kPSeqError;
               }
-              else if (type == kProc_NotSpec || type == kProc_HgPatch)
+              else if (type == kProc_NotSpec || type == kProc_HgPatch || type == kProc_AiaScale)
               {
                  state = kPSeqMoreOK;
               }
