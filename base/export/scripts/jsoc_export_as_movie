@@ -71,7 +71,8 @@ echo "protocol=$protocol" >>index.txt
 echo "dir=$outpath" >>index.txt  
 echo "filefmt=$ffmt" >>index.txt  
 echo "cparams=$cparms" >>index.txt  
-echo "# DATA ">>index.txt
+#echo "keywords= jpg and $protocol files">>index.txt
+#echo "# DATA ">>index.txt
 
 #check to see if its an AIA or HMI data set.
 
@@ -107,7 +108,7 @@ if [[ $instr == [Hh][Mm][Ii] ]]
       seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
 
       case "$content" in 
-        M_) 
+        [Mm]_) 
           max=${max:-"1500"}
           min=${min:-"-1500"}
           render_image in=$in  min=$min max=$max  pallette=/home/priya/Colormaps/grey.sao scaling=mag \
@@ -115,35 +116,35 @@ if [[ $instr == [Hh][Mm][Ii] ]]
                        out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95' \
                        -{$p}  -c 
         ;;
-      Ic)
+      [Ii][Cc]  )
         if [[ $seriesName = *Ic_noLimbDark* ]]
           then 
-            max=${max:-"0.3"}
-            min=${min:-"1.2"}
+            max=${max:-"1.2"}
+            min=${min:-"0.3"}
             render_image in=$in   min=$min max=$max  scaling=minmaxgiven    pallette=/home/priya/Colormaps/heat.sao \
                          tkey=$tkey outname=$seriesName  scale=$scale  type=$type  \
                          out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  \
                          -{$p}  
            else
-             max=${max:-"2500"}
-             min=${min:-"75000"}
+             max=${max:-"75000"}
+             min=${min:-"20000"}
              render_image in=$in  min=$min max=$max    pallette=/home/priya/Colormaps/heat.sao \
                         outname=$seriesName  scale=$scale  type=$type  \
                         out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95' \
                         -{$p}
             fi
          ;;
-      Ld)
+      [lL][Dd] )
         render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale  type=$type tkey=$tkey  \
                      out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95' \
                      -{$p}  -c
         ;;
-      Lw)
+      [lL][Ww])
         render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale type=$type tkey=$tkey \
                      out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  \
                      -{$p} -c
         ;;     
-      V_)
+      [Vv]_)
         render_image in=$in  pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale type=$type tkey=$tkey \
                      out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  \
                      -{$p} -c
@@ -233,15 +234,37 @@ ffmpeg -qscale 5 -r 20 -b 9600 -i  %04d.$type   ../$seriesName.$movie_type
 cd ../
 
 #write into index.txt
-echo "Movie name=$seriesName.$movie_type" >>index.txt 
+ #du -ch *.jpg
+
+export_files=`find -type f -iname "*.jpg"`
+export_files=$export_files,*.$protocol
+total=0
+for f in $export_files; do
+     if [ -f $f ]; then
+         Sz=`stat -c "%s" "$f"`
+         total=$(($Sz + $total))
+     fi
+ done    
+
+totK=$(echo "scale=3; $total / 1024 " | bc -l)
+totM=$(echo "scale=3; $totK / 1024 " | bc -l)
+
+echo "Size = $totM ">>index.txt
+echo "hello"
+# kk=`show_info -q key=Status  ds='jsoc.export['$reqid']'  `
+echo "status=0"  >>index.txt
+
+echo "Movie name=$seriesName.$movie_type " >>index.txt 
 echo "# DATA ">>index.txt
- 
+
 if [ $hglog ]
 then
  show_info -iq ds=$in n=1> data1
 else
   show_info -iq ds=$in> data1
 fi
+
+
 
 echo "movie of the following data">>mv1
 echo $seriesName.$movie_type >>mv2
