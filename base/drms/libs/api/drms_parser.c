@@ -319,8 +319,8 @@ static int parse_segments (char *desc, DRMS_Record_t *template, HContainer_t *cp
 
 static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContainer_t *cparmkeys, int *keynum)
 {
-  int i;
-  char *p,*q;
+  int i,b,status,count,tempval;
+  char *p,*q,*endptr;
   char name[DRMS_MAXSEGNAMELEN]={0}, scope[DRMS_MAXNAMELEN]={0};
   char type[DRMS_MAXNAMELEN]={0}, naxis[24]={0}, axis[24]={0}, protocol[DRMS_MAXNAMELEN]={0};
   char cparms[DRMS_MAXCPARMS]={0};
@@ -329,8 +329,9 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
   char bscale[64]; /* for TAS, default scale */
   DRMS_Segment_t *seg;
   int parserline = -1;
-
-  p = q = *in;
+  long long  ival;
+  DRMS_Type_Value_t nval,myval;
+   p = q = *in;
   SKIPWS(p);
   q = p;
 
@@ -349,32 +350,59 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
   seg->info->segnum = segnum;
 
   if (GETTOKEN(&q,scope,sizeof(scope)) <= 0) GOTOFAILURE;
-  if ( !strcasecmp(scope,"link") ) {
+  if ( !strcasecmp(scope,"link") ) 
+  {
     /* Link segment */
     seg->info->islink = 1;
     seg->info->scope= DRMS_VARIABLE;
     seg->info->type = DRMS_TYPE_INT;
     seg->info->protocol = DRMS_GENERIC;
-    if(GETTOKEN(&q,seg->info->linkname,sizeof(seg->info->linkname)) <= 0)     GOTOFAILURE;
+    
+     if(GETTOKEN(&q,seg->info->linkname,sizeof(seg->info->linkname)) <= 0)     GOTOFAILURE;
     if(GETTOKEN(&q,seg->info->target_seg,sizeof(seg->info->target_seg)) <= 0) GOTOFAILURE;
     /* Naxis */      
     if (GETTOKEN(&q,naxis,sizeof(naxis)) <= 0) GOTOFAILURE;
-    seg->info->naxis = atoi(naxis);
+             ival = strtoll(naxis,&endptr,10);        
+         nval.string_val = naxis;
+         if (endptr != naxis + strlen(naxis))
+            {  GOTOFAILURE; }
+        else
+            {             
+	      tempval = drms2int(DRMS_TYPE_STRING, &nval, &status);                
+            if (status == DRMS_RANGE || tempval < 0 ) 
+              {GOTOFAILURE;}
+            else
+             seg->info->naxis = drms2int(DRMS_TYPE_STRING, &nval, &status);     
+            }          
     /* Axis */
     for (i=0; i<seg->info->naxis; i++)
-      {
-	if (GETTOKEN(&q,axis,sizeof(axis)) <= 0) GOTOFAILURE;
-	seg->axis[i] = atoi(axis);
+      {         	
+       if (GETTOKEN(&q,axis,sizeof(axis)) <= 0) GOTOFAILURE;        
+          myval.string_val = axis;
+          ival = strtoll(axis,&endptr,10);
+          if (endptr != axis + strlen(axis)) 
+	    {GOTOFAILURE;}
+          else
+            {
+         tempval = drms2int(DRMS_TYPE_STRING, &myval, &status);
+	 /*   seg->axis[i] = drms2int(DRMS_TYPE_STRING, &myval, &status); */
+             if (status == DRMS_RANGE || tempval < 0 )
+	       {GOTOFAILURE;}
+	     else 
+            seg->axis[i] = drms2int(DRMS_TYPE_STRING, &myval, &status);     
+	    } 
       }
-
+     
     if (getstring(&q,seg->info->description,sizeof(seg->info->description))<0) GOTOFAILURE;
-  } else {
+   } 
+    else
+   {
     /* Simple segment */
     seg->info->islink = 0;
     /* Scope */
     if (!strcmp(scope, "constant"))
       seg->info->scope = DRMS_CONSTANT;
-    else if (!strcmp(scope, "variable"))
+       else if (!strcmp(scope, "variable"))
       seg->info->scope = DRMS_VARIABLE;
     else if (!strcmp(scope, "vardim"))
       seg->info->scope = DRMS_VARDIM;
@@ -383,20 +411,97 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
     /* Type */
     if (GETTOKEN(&q,type,sizeof(type)) <= 0) GOTOFAILURE;
     seg->info->type  = drms_str2type(type);
-    /* Naxis */      
+    /* Naxis */      //need to write a function**
     if (GETTOKEN(&q,naxis,sizeof(naxis)) <= 0) GOTOFAILURE;
-    seg->info->naxis = atoi(naxis);
-    /* Axis */
-    for (i=0; i<seg->info->naxis; i++)
-      {
-	if (GETTOKEN(&q,axis,sizeof(axis)) <= 0) GOTOFAILURE;
-	seg->axis[i] = atoi(axis);
-      }
+          ival = strtoll(naxis,&endptr,10);        
+          nval.string_val = naxis;
+         if (endptr != naxis + strlen(naxis))
+            {  GOTOFAILURE; }
+        else
+            {             
+	      /*    seg->info->naxis = drms2int(DRMS_TYPE_STRING, &nval, &status); */
+           tempval = drms2int(DRMS_TYPE_STRING, &nval, &status);
+            if (status == DRMS_RANGE || tempval < 0 ) 
+	      { GOTOFAILURE;}
+            else
+              seg->info->naxis = drms2int(DRMS_TYPE_STRING, &nval, &status);
+            }          
+    /* Axis */   
+    if ( !strcasecmp(scope, "vardim"))
+    {
+       for(i=0; i<seg->info->naxis; i++)
+        { 
+         if (GETTOKEN(&q,axis,sizeof(axis)) <= 0) GOTOFAILURE;        
+         if( !strcasecmp(axis, "*") || !strcasecmp(axis, "NA"))
+            {
+          seg->axis[i] = 0;
+            }
+         else
+           {
+          myval.string_val = axis;
+          ival = strtoll(axis,&endptr,10);
+           if (endptr != axis + strlen(axis))  
+	     { GOTOFAILURE;}
+           else
+            {
+            tempval = drms2int(DRMS_TYPE_STRING,&myval, &status);
+            if (status == DRMS_RANGE || tempval < 0 )
+              { GOTOFAILURE;}
+            else
+              seg->axis[i] = drms2int(DRMS_TYPE_STRING,&myval, &status);
+            }
+          }
+       }
+      if (GETTOKEN(&q,unit,sizeof(unit)) < 0) GOTOFAILURE;
+             strcpy(seg->info->unit, unit);
+      if (GETTOKEN(&q,protocol,sizeof(protocol)) <= 0) GOTOFAILURE;
+       seg->info->protocol = drms_str2prot(protocol);
+    }
+    else if( (!strcasecmp(scope, "variable")) ||  (!strcasecmp(scope, "constant")))
+    {
+         
+	 count=0;
+          for(i=0; i<seg->info->naxis; i++)
+         {
+         if (GETTOKEN(&q,axis,sizeof(axis)) <= 0) GOTOFAILURE;
+	 if( !strcasecmp(axis, "*") || !strcasecmp(axis, "NA")) //then check to see if the protocol is generic
+	   {
+                   seg->axis[i] = 0;
+		   count=1;
+	   }
+         else
+	     {
+               myval.string_val = axis;
+             ival = strtoll(axis,&endptr,10);
+               if (endptr != axis + strlen(axis))  
+		 { GOTOFAILURE;}
+               else
+                  {
+                     tempval = drms2int(DRMS_TYPE_STRING,&myval, &status);
+		     /*  seg->axis[i] = drms2int(DRMS_TYPE_STRING,&myval, &status); */
+                   if (status == DRMS_RANGE || tempval <0 )  
+                     {GOTOFAILURE; }
+                   else
+                     seg->axis[i] = drms2int(DRMS_TYPE_STRING,&myval, &status);
+                  }
+             }
+         }
+       if (GETTOKEN(&q,unit,sizeof(unit)) < 0) GOTOFAILURE;
+             strcpy(seg->info->unit, unit);
+      if (GETTOKEN(&q,protocol,sizeof(protocol)) <= 0) GOTOFAILURE;
+      if (count==1)
+	{
+             if(!strcasecmp(protocol,"generic"))
+	            seg->info->protocol = drms_str2prot(protocol);
+             else
+                  GOTOFAILURE;
+        }
+     else
+          seg->info->protocol = drms_str2prot(protocol);
+    }
 
-    if (GETTOKEN(&q,unit,sizeof(unit)) < 0) GOTOFAILURE;
-    strcpy(seg->info->unit, unit);
-    if (GETTOKEN(&q,protocol,sizeof(protocol)) <= 0) GOTOFAILURE;
-    seg->info->protocol = drms_str2prot(protocol);
+
+	
 
     /* .jsd is version 2.0 or greater */
     /* CFITSIO can't compress 64-bit data. */
