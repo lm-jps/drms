@@ -390,7 +390,7 @@ int DoIt(void)
                      /* Copy file to path */
                      if (CopyFile(paths[0], path, &ioerr) != 0 || ioerr != 0)
                      {
-                        fprintf(stderr, "WTF?\n");
+                        fprintf(stderr, "WTF1?\n");
                         if (ioerr != 0)
                         {
                            fprintf(stderr, "Problem writing slony log file, errno %d.\n", ioerr);
@@ -426,6 +426,7 @@ int DoIt(void)
 
                      if (CopyFile(paths[irec], outpath, &ioerr) != 0 || ioerr != 0)
                      {
+                        fprintf(stderr, "WTF2?\n");
                         if (ioerr != 0)
                         {
                            fprintf(stderr, "Problem writing slony log file, errno %d.\n", ioerr);
