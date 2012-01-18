@@ -370,6 +370,7 @@ int DoIt(void)
 
    int status = DRMS_SUCCESS;
    int ioerr = 0;
+   size_t bwritten = 0;
 
    /* branch on action */
    if (strcasecmp(action, kActionRetrieve) == 0)
@@ -388,14 +389,15 @@ int DoIt(void)
                   if (rs->n == 1)
                   {
                      /* Copy file to path */
-                     if (CopyFile(paths[0], path, &ioerr) != stBuf.st_size || ioerr != 0)
+                     bwritten = CopyFile(paths[0], path, &ioerr);
+                     if (bwritten != stBuf.st_size || ioerr != 0)
                      {
                         if (ioerr != 0)
                         {
                            fprintf(stderr, "Problem writing slony log file, errno %d.\n", ioerr);
                         }
 
-                        fprintf(stderr, "Error copying file from '%s' to '%s'.\n", paths[0], path);
+                        fprintf(stderr, "Error copying file from '%s' to '%s', bytes written %lld.\n", paths[0], path, (long long)bwritten);
                         err = kARLErr_FileIO;
                      }
                   }
@@ -423,14 +425,15 @@ int DoIt(void)
                         snprintf(outpath, sizeof(outpath), "%s/%s", path, paths[irec]);
                      }
 
-                     if (CopyFile(paths[irec], outpath, &ioerr) != stBuf.st_size || ioerr != 0)
+                     bwritten = CopyFile(paths[irec], outpath, &ioerr);
+                     if (bwritten != stBuf.st_size || ioerr != 0)
                      {
                         if (ioerr != 0)
                         {
                            fprintf(stderr, "Problem writing slony log file, errno %d.\n", ioerr);
                         }
 
-                        fprintf(stderr, "Error copying file from '%s' to '%s'.\n", paths[irec], outpath);
+                        fprintf(stderr, "Error copying file from '%s' to '%s', bytes writen %lld.\n", paths[irec], outpath, (long long)bwritten);
                         err = kARLErr_FileIO;
 
                         break;
