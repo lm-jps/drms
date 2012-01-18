@@ -388,15 +388,15 @@ int DoIt(void)
                   if (rs->n == 1)
                   {
                      /* Copy file to path */
-                     if (CopyFile(paths[0], path, &ioerr) != 0)
+                     if (CopyFile(paths[0], path, &ioerr) != 0 || ioerr != 0)
                      {
-                        fprintf(stderr, "Error copying file from '%s' to '%s'.\n", paths[0], path);
-                        err = kARLErr_FileIO;
-                     }
+                        fprintf(stderr, "WTF?\n");
+                        if (ioerr != 0)
+                        {
+                           fprintf(stderr, "Problem writing slony log file, errno %d.\n", ioerr);
+                        }
 
-                     if (ioerr != 0)
-                     {
-                        fprintf(stderr, "Problem writing slony log file, errno %d.\n", ioerr);
+                        fprintf(stderr, "Error copying file from '%s' to '%s'.\n", paths[0], path);
                         err = kARLErr_FileIO;
                      }
                   }
