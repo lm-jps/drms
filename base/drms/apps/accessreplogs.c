@@ -388,9 +388,8 @@ int DoIt(void)
                   if (rs->n == 1)
                   {
                      /* Copy file to path */
-                     if (CopyFile(paths[0], path, &ioerr) != 0 || ioerr != 0)
+                     if (CopyFile(paths[0], path, &ioerr) != stBuf.st_size || ioerr != 0)
                      {
-                        fprintf(stderr, "WTF1?\n");
                         if (ioerr != 0)
                         {
                            fprintf(stderr, "Problem writing slony log file, errno %d.\n", ioerr);
@@ -424,9 +423,8 @@ int DoIt(void)
                         snprintf(outpath, sizeof(outpath), "%s/%s", path, paths[irec]);
                      }
 
-                     if (CopyFile(paths[irec], outpath, &ioerr) != 0 || ioerr != 0)
+                     if (CopyFile(paths[irec], outpath, &ioerr) != stBuf.st_size || ioerr != 0)
                      {
-                        fprintf(stderr, "WTF2?\n");
                         if (ioerr != 0)
                         {
                            fprintf(stderr, "Problem writing slony log file, errno %d.\n", ioerr);
