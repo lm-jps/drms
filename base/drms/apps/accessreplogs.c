@@ -425,17 +425,27 @@ int DoIt(void)
                         snprintf(outpath, sizeof(outpath), "%s/%s", path, paths[irec]);
                      }
 
-                     bwritten = CopyFile(paths[irec], outpath, &ioerr);
-                     if (bwritten != stBuf.st_size || ioerr != 0)
+                     if (!stat(paths[irec], &stBuf))
                      {
-                        if (ioerr != 0)
+                        bwritten = CopyFile(paths[irec], outpath, &ioerr);
+                        if (bwritten != stBuf.st_size || ioerr != 0)
                         {
-                           fprintf(stderr, "Problem writing slony log file, errno %d.\n", ioerr);
+                           if (ioerr != 0)
+                           {
+                              fprintf(stderr, "Problem writing slony log file, errno %d.\n", ioerr);
+                           }
+
+                           fprintf(stderr, "Error copying file from '%s' to '%s', bytes writen %lld.\n", paths[irec], outpath, (long long)bwritten);
+                           err = kARLErr_FileIO;
+
+                           break;
                         }
-
-                        fprintf(stderr, "Error copying file from '%s' to '%s', bytes writen %lld.\n", paths[irec], outpath, (long long)bwritten);
+                     }
+                     else
+                     {
+                        /* error - not a valid directory or file */
+                        fprintf(stderr, "File '%s' is not a valid regular file.\n", paths[irec]);
                         err = kARLErr_FileIO;
-
                         break;
                      }
                   }
