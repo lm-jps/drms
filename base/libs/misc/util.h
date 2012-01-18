@@ -39,7 +39,7 @@ int copyfile(const char *inputfile, const char *outputfile);
 int GenerateDRMSKeyName(const char *fitsName, char *drmsName, int size);
 int GenerateFitsKeyName(const char *drmsName, char *fitsName, int size);
 int RemoveDir(const char *pathname, int maxrec);
-size_t CopyFile(const char *src, const char *dst);
+size_t CopyFile(const char *src, const char *dst, int *ioerr);
 
 /* clean up */
 void base_cleanup_init();

@@ -772,9 +772,11 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
               break;
             case DRMS_GENERIC:
               {
+                 int ioerr;
+
                  /* Simply copy the file from the segment's data-file path
                   * to fileout, no keywords to worry about. */
-                 if (CopyFile(filename, fileout) != stbuf.st_size)
+                 if (CopyFile(filename, fileout, &ioerr) != stbuf.st_size)
                  {
                     fprintf(stderr, "Unable to export file '%s' to '%s'.\n", filename, fileout);
                     status = DRMS_ERROR_FILECOPY;

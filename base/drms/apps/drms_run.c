@@ -527,13 +527,14 @@ int main(int argc, char *argv[])
       {
          /* copy log file to log directory */
          char sulogfile[PATH_MAX];
+         int ioerr;
 
          snprintf(logfile, sizeof(logfile), "%s/drmsserver_%llu.log", serverlog, (unsigned long long)pid);
          snprintf(sulogfile, sizeof(sulogfile), "%s/command.txt", sulogdir);
 
          if (!stat(logfile, &stbuf))
          {
-            if (CopyFile(logfile, sulogfile) != stbuf.st_size)
+            if (CopyFile(logfile, sulogfile, &ioerr) != stbuf.st_size)
             {
                fprintf(stderr, "Failed to copy drms log file to log-file SU.\n");
             }

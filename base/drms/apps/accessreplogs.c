@@ -247,6 +247,7 @@ ARLError_t IngestFile(const char *path, const char *basefile, DRMS_Record_t *ore
    char *filetmp = NULL;
    struct stat stBuf;
    DRMS_RecordSet_t *rs = NULL;
+   int ioerr = 0;
 
    filetmp = strdup(basefile);
 
@@ -303,17 +304,25 @@ ARLError_t IngestFile(const char *path, const char *basefile, DRMS_Record_t *ore
 
                snprintf(seg->filename, DRMS_MAXSEGFILENAME, "%s", basefile);
                drms_segment_filename(seg, filepath);
-               copyfile(dirEntry, filepath);
-            
-               /* Set the keywords */
-               modtime = stBuf.st_mtime + UNIX_EPOCH;
+               CopyFile(dirEntry, filepath, &ioerr);
 
-               drms_setkey_time(orec, kObsDate, modtime);
-               drms_setkey_longlong(orec, kCBegin, bcounter);
-               drms_setkey_longlong(orec, kCEnd, ecounter);
-               drms_keyword_setdate(orec);
+               if (ioerr != 0)
+               {
+                  fprintf(stderr, "Problem ingesting slony log, errno %d.\n", ioerr);
+                  err = kARLErr_FileIO;
+               }
+               else
+               {
+                  /* Set the keywords */
+                  modtime = stBuf.st_mtime + UNIX_EPOCH;
 
-               err = kARLErr_Success;
+                  drms_setkey_time(orec, kObsDate, modtime);
+                  drms_setkey_longlong(orec, kCBegin, bcounter);
+                  drms_setkey_longlong(orec, kCEnd, ecounter);
+                  drms_keyword_setdate(orec);
+
+                  err = kARLErr_Success;
+               }
             }
          }
          else
@@ -360,6 +369,7 @@ int DoIt(void)
    struct stat stBuf;
 
    int status = DRMS_SUCCESS;
+   int ioerr = 0;
 
    /* branch on action */
    if (strcasecmp(action, kActionRetrieve) == 0)
@@ -378,9 +388,15 @@ int DoIt(void)
                   if (rs->n == 1)
                   {
                      /* Copy file to path */
-                     if (copyfile(paths[0], path) != 0)
+                     if (CopyFile(paths[0], path, &ioerr) != 0)
                      {
                         fprintf(stderr, "Error copying file from '%s' to '%s'.\n", paths[0], path);
+                        err = kARLErr_FileIO;
+                     }
+
+                     if (ioerr != 0)
+                     {
+                        fprintf(stderr, "Problem writing slony log file, errno %d.\n", ioerr);
                         err = kARLErr_FileIO;
                      }
                   }
@@ -408,10 +424,16 @@ int DoIt(void)
                         snprintf(outpath, sizeof(outpath), "%s/%s", path, paths[irec]);
                      }
 
-                     if (copyfile(paths[irec], outpath) != 0)
+                     if (CopyFile(paths[irec], outpath, &ioerr) != 0 || ioerr != 0)
                      {
+                        if (ioerr != 0)
+                        {
+                           fprintf(stderr, "Problem writing slony log file, errno %d.\n", ioerr);
+                        }
+
                         fprintf(stderr, "Error copying file from '%s' to '%s'.\n", paths[irec], outpath);
                         err = kARLErr_FileIO;
+
                         break;
                      }
                   }

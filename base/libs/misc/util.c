@@ -730,7 +730,8 @@ int RemoveDir(const char *pathname, int maxrec)
    return status;
 }
 
-size_t CopyFile(const char *src, const char *dst)
+/* On error, returns errno. */
+size_t CopyFile(const char *src, const char *dst, int *ioerr)
 {
    struct stat stbuf;
    FILE *fptrS = NULL;
@@ -739,36 +740,82 @@ size_t CopyFile(const char *src, const char *dst)
    size_t nbytes = 0;
    size_t nbytesW = 0;
    size_t nbytesTotal = 0;
-   
+   int err = 0;
 
-   if (!stat(src, &stbuf) && (S_ISREG(stbuf.st_mode) || S_ISLNK(stbuf.st_mode)))
+   if (!stat(src, &stbuf))
    {
-      fptrS = fopen(src, "r");
-      fptrD = fopen(dst, "w");
-
-      if (fptrS && fptrD)
+      if (S_ISREG(stbuf.st_mode) || S_ISLNK(stbuf.st_mode))
       {
-         while ((nbytes = fread(buf, sizeof(char), sizeof(buf), fptrS)) > 0 && !ferror(fptrS) && !ferror(fptrD))
-         {
-            nbytesW = fwrite(buf, sizeof(char), nbytes, fptrD);
-            if (nbytesW != nbytes)
-            {
-               break;
-            }
+         fptrS = fopen(src, "r");
 
-            nbytesTotal += nbytesW;
+         if (!fptrS)
+         {
+            err = errno;
+         }
+         else
+         {
+            fptrD = fopen(dst, "w");
+
+            if (!fptrD)
+            {
+               err = errno;
+            }
+         }
+
+         if (fptrS && fptrD)
+         {
+            while (1)
+            {
+               nbytes = fread(buf, sizeof(char), sizeof(buf), fptrS);
+
+               if (ferror(fptrS))
+               {
+                  fprintf(stderr, "CopyFile(): read-stream error indicator.\n");
+                  break;
+               }
+
+               if (nbytes == 0)
+               {
+                  break;
+               }
+
+               nbytesW = fwrite(buf, sizeof(char), nbytes, fptrD);
+
+               if (ferror(fptrD))
+               {
+                  fprintf(stderr, "CopyFile(): write-stream error indicator.\n");
+                  break;
+               }
+
+               if (nbytesW != nbytes)
+               {
+                  fprintf(stderr, "CopyFile(): Failure writing all bytes.\n");
+                  break;
+               }
+
+               nbytesTotal += nbytesW;
+            }
+         }
+
+         if (fptrS)
+         {
+            fclose(fptrS);
+         }
+
+         if (fptrD)
+         {
+            fclose(fptrD);
          }
       }
+   }
+   else
+   {
+      err = errno;
+   }
 
-      if (fptrS)
-      {
-         fclose(fptrS);
-      }
-
-      if (fptrD)
-      {
-         fclose(fptrD);
-      }
+   if (ioerr)
+   {
+      *ioerr = err;
    }
 
    return nbytesTotal;
