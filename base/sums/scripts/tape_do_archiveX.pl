@@ -6,7 +6,7 @@ eval 'exec /home/jsoc/bin/linux_ia64/perl -S $0 "$@"'
 use DBI;
 use POSIX ":sys_wait_h";
 
-$MAXFORKS = 4;		#max tapearcX forks (i.e. limit of drives to write)
+$MAXFORKS = 6;		#max tapearcX forks (i.e. limit of drives to write)
 $CURRFORKS = 0;
 $nochild = 0;
 
