@@ -98,15 +98,22 @@ use File::Basename;
 use FileHandle;
 use IPC::Open3;
 
+# config-file parser
+use FindBin qw($Bin);
+use lib "$Bin/..";
+use toolbox qw(GetCfg);
+
 my($lockfh);
 my($insubcrit);
 my($subscribelockpath);
+my($anode);
 
-my ($repro,$begin,$end);
+my ($repro,$begin,$end,$repronodes,@repronodelst,%repronodeH);
 my $opts = GetOptions ("help|h|H" => \&usage,
                        "repro"    => \$repro,
                        "begin|beg=i"    => \$begin,
-                       "end=i"    => \$end);
+                       "end=i"    => \$end,
+                       "nodes=s"  => \$repronodes);
 
 my $config_file=$ARGV[0] or die ("No config_file specified");
 my $parselock=$ARGV[1] or die ("No parse lock file specified");
@@ -115,22 +122,20 @@ my $subscribelock=$ARGV[2] or die ("No subscribe lock file specified");
 ###################################################################################################################
 
 #### Get CONFIGURATION variables from $config_file
-open (SETTINGS, '<', $config_file)
-        or die "Error cannot open config file [$config_file] : $!";
+my %config;
 
-my %config = map {
-        chomp;
-        my ( $key, $val ) = m/^\s*(\w+)\s*=\s*([^#]*?)\s*(?:$|#)/;
-        $val =~ s/^"(.*)"$/$1/;
-        $val =~ s/^'(.*)'$/$1/;
-        defined($val)
-                ? ($key,$val)
-                : ()
-} grep {
-        # must have an equals sign, must not start with a '#';
-        m/=/ and !( m/^#/)
-} (<SETTINGS>);
-close(SETTINGS);
+if (-e $config_file)
+   {
+      # fetch needed parameter values from configuration file
+      if (toolbox::GetCfg($config_file, \%config))
+      {
+         die "Error cannot open and parse config file [$config_file].\n";
+      }
+   } 
+   else
+   {
+      die "Config file [$config_file] does not exist.\n";
+   }
 
 # This script must share a lock with managelogs.pl and archivelogs.pl because
 # they all modify the logs files, and if the reads and writes aren't synchonized
@@ -208,6 +213,7 @@ unless ($repro) {
 
      my $counter      = readCounter($config{'kPSLparseCounter'});
      my $slon_counter = readSlonCounter($config{'kPSLlogReady'});
+
      info ("Current counter [$counter]");
 
      debug("b4 while loop [$counter] [$slon_counter]");
@@ -246,52 +252,75 @@ unless ($repro) {
 	## you risk someone making a copy of the script to test, and running it
 	## while the production copy is running -- I'd hard code the lock file.
 	##
+
   thisLock(basename($0)."repro");  ## only one instance of reprocessing running
 
   info("load config " . $config{'kPSLprepCfg'});
 
+  # Fetch array of nodes for which reprocessing should be performed.
+  @repronodelst = split(/,/, $repronodes);
+
+  foreach $anode (@repronodelst)
+  {
+     # skip previously defined nodes; use case-insensitive comparisons
+     if (!defined($repronodeH{lc($anode)}))
+     {
+        $repronodeH{lc($anode)} = 1;
+     }
+  }
+
   ## load configuration in a hash structure
-  my ($cfgH, $nodeH) = loadConfig($config{'kPSLprepCfg'});
+  if ($#repronodelst >= 0)
+  {
+     my ($cfgH, $nodeH) = loadConfigFilt($config{'kPSLprepCfg'}, \%repronodeH);
 
-  unless (($begin =~ /\d+/) && ($end =~ /\d+/)) {
-    die(usage());
+     unless (($begin =~ /\d+/) && ($end =~ /\d+/)) {
+        die(usage());
+     }
+
+     $nodeH->{'suffix'}="repro"; ## This assumes a repro directory exists on the slony_logs/sites directories. If it doesn't exist it tries to create it and generate all the logs for that site in that location.
+
+     info ("reprocessing range [$begin] - [$end]");
+     ## run access repro to download data.
+
+     run( $config{'kPSLaccessRepro'}, 'logs=su_production.slonylogs', "path=$config{'kPSLreproPath'}", "beg=$begin", "end=$end", 'action=ret' );
+
+     ## should do this in another way. The access repro won't have todays data. For that we'll need to copy from the current slon logs directory
+
+     map { my $base = basename($_); copy($_,"$config{'kPSLreproPath'}/$base"); } glob ("$config{'kPSLlogsSourceDir'}/*.sql*");
+
+
+     ## untar files
+     run( 'find ', $config{'kPSLreproPath'}, " -name \"*.tar.gz\" -exec tar zxf {} -C $config{'kPSLreproPath'} \\;" );
+
+     ## check if in the sites directory exists any slony_logs tar file in the range specified in $begin - $end.  if so extract the tar files to the repro directory and let the sql logs be overwritten by the new ones.
+     ## This function looks for tar files in the site-specific directories that contain log files that 
+     ## lie within the requested reprocessing range. If it finds any, it extract the contained files into
+     ## the site-specific repro directory. And it pushes the tar-file path (in then site-specific log-file
+     ## directory, not the repro subdirectory) into the 'tar_repro' array.
+     expandOldTars($nodeH, $begin, $end);
+
+     ## change kPSLlogsSourceDir to temp location
+     $config{'kPSLlogsSourceDir'} = $config{'kPSLreproPath'};
+
+     ## make in memory counter
+     my $counter = $begin - 1;
+     ##
+
+     while ((my $srcFile = nextCounter(\$counter,$config{'kPSLlogsSourceDir'})) && ($counter <= $end))
+     {
+        parseLog($cfgH,$nodeH,$srcFile);
+        $counter = saveCounter(undef,$srcFile);
+     }
+
+     ## recreate tars for sites if needed.
+     ## This will create tar files in the site-specific log-file directory (not in the repro subdirectory).
+     my ($tar_begin, $tar_end) = recreateNewTars($nodeH, $begin, $end);
+
+     ## clean up main repro directory
+
+     unlink glob("$config{'kPSLreproPath'}/*");
   }
-
-  $nodeH->{'suffix'}="repro";  ## This assumes a repro directory exists on the slony_logs/sites directories. If it doesn't exist it tries to create it and generate all the logs for that site in that location.
-
-  info ("reprocessing range [$begin] - [$end]");
-  ## run access repro to download data.
-  run( $config{'kPSLaccessRepro'}, 'logs=su_production.slonylogs', "path=$config{'kPSLreproPath'}", "beg=$begin", "end=$end", 'action=ret' );
-
-  ## should do this in another way. The access repro won't have todays data. For that we'll need to copy from the current slon logs directory
-
-  map { my $base = basename($_); copy($_,"$config{'kPSLreproPath'}/$base"); } glob ("$config{'kPSLlogsSourceDir'}/*.sql*");
-
-
-  ## untar files
-  run( 'find ', $config{'kPSLreproPath'}, " -name \"*.tar.gz\" -exec tar zxf {} -C $config{'kPSLreproPath'} \\;" );
-
-  ## check if in the sites directory exists any slony_logs tar file in the range specified in $begin - $end.  if so extract the tar files to the repro directory and let the sql logs be overwritten by the new ones.
-  expandOldTars($nodeH, $begin, $end);
-
-  ## change kPSLlogsSourceDir to temp location
-  $config{'kPSLlogsSourceDir'} = $config{'kPSLreproPath'};
-
-  ## make in memory counter
-  my $counter = $begin - 1;
-  ##
-
-  while ((my $srcFile = nextCounter(\$counter,$config{'kPSLlogsSourceDir'})) && ($counter <= $end)) {
-    parseLog($cfgH,$nodeH,$srcFile);
-    $counter = saveCounter(undef,$srcFile);
-  }
-
-  ## recreate tars for sites if needed.
-  my ($tar_begin, $tar_end) = recreateNewTars($nodeH, $begin, $end);
-
-  ## clean up main repro directory
-
-  unlink glob("$config{'kPSLreproPath'}/*");
 
 }
 ### END OF MAIN ROUTINE ####
@@ -365,7 +394,12 @@ sub  expandOldTars {
 
 }
 
-
+# I think the point of this function is to make tar files out of just-parsed slony log files
+# that were created during a reprocessing request. So...
+#   1. One or more tar files of unparsed slony logs is extracted.
+#   2. The extracted log files are parsed and made site-specific.
+#   3. The site-specific log files are tar'd by this function. Presumably this makes
+#      for a smaller download by remote sites.
 sub recreateNewTars {
   my ($nodeH, $begin, $end) = @_;
 
@@ -382,7 +416,18 @@ sub recreateNewTars {
     ## go through the list of tar files finding those that are withing the repro range
     ## $tfile is the tar file found
 #    print Dumper $nodeH;
+
     ## find the lower and upper range in the tar files
+    ## THIS LOOP FINDS THE BEGINNING COUNTER NUMBER OF THE OLDEST LOG FILE IN
+    ## THE SET OF TAR FILES IN THE SITE-SPECIFIC LOG DIRECTORY THAT WERE EXPANDED.
+    ## THESE TAR FILES WERE USED BECAUSE THEY CONTAINED LOGS IN THE REPROCESSING
+    ## RANGE. THIS IS AN OPTIMIZATION - THIS SCRIPT USES THOSE LOGS, WHICH ARE
+    ## ALREADY PARSED, RATHER THAN PARSING NEWLY EXPANDED TAR FILES THAT WERE
+    ## FETCHED FROM ARCHIVE.
+    ##
+    ## IT ALSO FINDS THE
+    ## COUNTER NUMBER OF THE NEWEST LOG FILE IN THIS SET OF TAR FILES. $tar_begin
+    ## holds the oldest counter number, and $tar_end holds the newest counter number.
     my ($tar_begin, $tar_end)=(undef,undef);
     @tarlist=();
     for my $tfile (@{$nodeH->{'nodes'}->{$node}->{'tar_repro'}}) {
@@ -405,21 +450,38 @@ sub recreateNewTars {
     }
 
 ## Now match new tar ranges with reprocessing begin and end ranges
+    ## SELECT AS THE OLDEST LOG FILE TO TAR the log file with the counter $tar_begin, unless
+    ## that log file is newer than the oldest log file requested for reprocessing. If the latter
+    ## is true, use the oldest log file requested for reprocessing instead.
     $tar_begin = $begin
       if (!defined $tar_begin || $tar_begin > $begin);
 
     my $tar_name = undef;
     if (defined $tar_end) { ## means there is a tar file to be generated
-
+       ## If $tar_end is defined, then there was at least one tar file that was extracted and
+       ## used for reprocessing.
       info("working out final ranges on [$tar_begin] [$tar_end]\n");
       ## generateTar generates an aggregate tar file
       $tar_name = generateTar($repro_path,$tar_begin, $tar_end);
     }
+
+    ## Moves the parsed log files from the repro subdirectory to the site-specific log-file
+    ## directory.
     cleanUpNode($nodeH->{'nodes'}->{$node}, $path, $repro_path, $tar_name, $tar_begin, $tar_end);
 
   }
 }
 
+## 1. Replace any tar files in the site-specific log-file directory with newly created
+##    tar files (in the repro subdirectory) that contain all the files in the original 
+##    tar files. The new tar files will contain files not in the original tar files,
+##    and the reprocessing requestor will want the log files that were not in the original.
+## 2. Move the remaining (not-tar'd) files in the repro directory up one level to the
+##    site-specific log-file directory. 
+##
+## After 1 and 2 have been completed, then the site-specific log-file directory will have
+## a combination of tar files and slony log files that contain the complete set of slony
+## log files requested.
 sub cleanUpNode {
   my ($node, $path, $repro_path, $tar_name, $tar_begin, $tar_end) = @_;
 
@@ -789,8 +851,8 @@ sub readCounter {
 }
 ## Function : loadConfig
 ## Arguments: parse_slon_logs config file
-## Returns : Array of hashes
-## The first hash is an array of hashes. Where the hash key is series name 
+## Returns : Array of hash references
+## The first hash reference is to an array of hashes. Where the hash key is series name 
 ## and the array elements the node names
 ## get all the configuration into a perl hash of the form
 ## key1 => [ array of node names ]
@@ -821,21 +883,53 @@ sub readCounter {
 #
 ## where key has the form of namespace.series_name
 ##
-## The second argument is a simple hash of
-## node => path to slony log
-sub loadConfig {
+## The second hash reference is a reference to a hash (A) with two elements. The first element, 
+## 'nodes' of hash A, is a reference to a hash reference and it is keyed by the node name. The hash
+## reference to which it refers contains four elements: 'path', 'tar_repro', 'filename, and 'FD'.
+## The first two are defined in this function, the last two are defined in other functions.
+## 'path' is the path to the site-specific log directory. tar_repro is a reference to an array containing a 
+## list of tar files that need to be extracted during reprocessing. 'filename' is the full path to
+## the parsed log file being currently written, and 'FD' is the perl filehandle to that open 
+## file.  
+##
+## The second element of hash A is 'suffix', which is used to form the path into which re-extracted tar
+## files will be placed ( $A->{nodes}->{rob}->{path} . "/" . $A->{suffix} ).
+##
+## e.g.
+## {
+#      'nodes' => { 'rob' => { 'path' => '/solarport/pgsql/slon_logs/live/site_logs//rob',
+#                              'tar_repro' => [ 'slony_logs_1604324-1605763.tar.gz',
+#                                               'slony_logs_1605764-1607203.tar.gz' ],
+#                              'filename' => '/solarport/pgsql/slon_logs/live/site_logs/rob/repro/slony1_log_2_00000000000001607634.sql',
+#                              'FD' => <filehandle to filename> },
+#                   'mps' => { 'path' => '/solarport/pgsql/slon_logs/live/site_logs//mps',
+#                              'tar_repro' => [ 'slony_logs_1204324-1205763.tar.gz' ], 
+#                              'filename' => '/solarport/pgsql/slon_logs/live/site_logs/mps/repro/slony1_log_2_00000000000001607642.sql',
+#                              'FD' => <filehandle to filename> }
+#                  },
+#
+#      'suffix' => 'repro'
+#
+## }
+
+sub loadConfigInt {
   my $cfg_file = shift;
+  my $nodelstH = shift; # reference to hash of nodes whose slony logs we want to reprocess
 
   open CFG, '<', $cfg_file or CallDie ("Couldn't open $cfg_file [$!]");
 
+  ## AN HASH KEYED BY seriesname. EACH ELEMENT IS A REFERENCE TO AN ARRAY OF NODE NAMES.
+  ## This hash tells you, for each series, which nodes are subscribed to that series.
   my $cfgH = {};
+
+  ## 
   my $npath= {};
 
   while (<CFG>) {
     chomp;
  
     ## a config file row looks like
-    ## /solarport/pgsql/slon_logs/site_logs//ROB    /solarport/pgsql/slon_logs/etc//ROB.lst 
+    ## /solarport/pgsql/slon_logs/live/site_logs//rob        /solarport/pgsql/slon_logs/live/etc//rob.lst
 
 
     ## the format of the configuration file is:
@@ -851,7 +945,20 @@ sub loadConfig {
     ## /solarport/pgsql/slon_logs/site_logs//ROB 
     my @b = split('/',$a[0]);
     my $node = pop @b; ## get last element only
+    my @nodelst = keys(%$nodelstH);
+    
+    if ($#nodelst >= 0)
+    {
+       if (!defined($nodelstH->{lc($node)}))
+       {
+          # skip nodes we don't care about
+          next;
+       }
+    }
 
+    # 'path' is the path to the site's site-specific log directory
+    # 'tar_repro' is an array of tar files that need to be extracted for 
+    #    reprocessing.
     $npath->{nodes}->{$node} = { 'path'=>$a[0], 'tar_repro'=>[] };
 
     ## opening node list file 
@@ -875,6 +982,8 @@ sub loadConfig {
       # the followin regex matches all of the above 
       my ($namespace, $series) = (undef,undef);
 
+      ## EXTRACT THE namespace AND specific name FROM THE SERIES NAME IN THE 
+      ##   CURRENT LINE OF THE LST FILE.
       my $pstring = $_;
       if ($pstring=~m/"?(([^\."'\s]+)"?\.)?"?([^\."'\s]+)"?/) {
         unless (defined $2) {
@@ -893,6 +1002,7 @@ sub loadConfig {
         next;
       }
 
+      ## $key IS A SERIESNAME OBTAINED FROM THE CURRENT LST FILE
       my $key = sprintf(qq("%s"."%s"),lc($namespace),lc($series));
       if ( exists $cfgH->{$key} ) {
         if (grep { m/$node/ } @{$cfgH->{$key}}) {
@@ -912,6 +1022,20 @@ sub loadConfig {
   return ($cfgH, $npath);
 }
 
+sub loadConfig
+{
+   return loadConfigInt(@_);
+}
+
+sub loadConfigFilt
+{
+   return loadConfigInt(@_);
+}
+
+# This function opens, in the site-specific log directory, new slony logs for writing. The parser will
+# process each original slony log and dump the resulting site-specific SQL into the site-specific log 
+# directory. If this function is called as part of a reprocessing request, the new log files will
+# be created in a "repro" subdirectory in the site-specific log directory.
 sub openSlonLogs {
   my ($nodeH, $slon_name) = @_;
 
@@ -935,6 +1059,8 @@ sub openSlonLogs {
   
 }
 
+# This function closes the file handle of the current site-specific log being written. It does
+# so for all nodes' current log files. It then renames the log by removing the ".tmp" suffix.
 sub closeSlonLogs {
   my ($nodeH) = @_;
 
@@ -1011,7 +1137,6 @@ sub parseLog {
 
   close SRC;
   closeSlonLogs($nodeH);
-
 }
 
 sub serverLock {
