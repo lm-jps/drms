@@ -174,21 +174,25 @@ my $complete = {
 
 ## setting log file and targets
 logThreshold("info");
+
 map { logTarget($_,$config{'kPSLprepLog'}) } qw(notice info error emergency warning debug);
 
 debug "$_=$config{$_}\n" foreach ( sort keys %config );
+debug("Checkpoint A.");
 
 ## Normal operation (no reprocessing)
 unless ($repro) {
 	##
 	## for normal processing use the passed in lock file name
+  my($lckFH);
+
   info("locking $config{'kServerLockDir'}/$parselock");
 
   # parselock facilitates coordination between this process and the processes
   # instantiated via invocations of manage_logs.pl and archivelogs.pl.
   # These three processes are accessing the original logs and parsed logs, and
   # can attempt to do so simultaneously
-  thisLock("$config{'kServerLockDir'}/$parselock");  ## only one instance of this process running
+  thisLock("$config{'kServerLockDir'}/$parselock", \$lckFH);  ## only one instance of this process running
 
   # parselock facilitates coordination between this process and the processes
   # instantiated via invocations of sql_gen, subscription_cleanup, and sdo_slony1_dump.sh.
@@ -252,12 +256,16 @@ unless ($repro) {
 	## you risk someone making a copy of the script to test, and running it
 	## while the production copy is running -- I'd hard code the lock file.
 	##
+  my($lckFH);
 
-  thisLock(basename($0)."repro");  ## only one instance of reprocessing running
+  info("Acquiring single-instance lock.");
 
-  info("load config " . $config{'kPSLprepCfg'});
+  ## ART - Don't use an NFS-mounted file as the lock file!!!! flock was hanging for me on such a file.
+  thisLock($config{'kServerLockDir'} . "/" . basename($0) . "repro", \$lckFH);  ## only one instance of reprocessing running
+  info("  Lock acquired!");
 
   # Fetch array of nodes for which reprocessing should be performed.
+  debug("Regenerating logs for $repronodes.");
   @repronodelst = split(/,/, $repronodes);
 
   foreach $anode (@repronodelst)
@@ -265,63 +273,81 @@ unless ($repro) {
      # skip previously defined nodes; use case-insensitive comparisons
      if (!defined($repronodeH{lc($anode)}))
      {
+        info("Re-generating site-specific log files $anode.");
         $repronodeH{lc($anode)} = 1;
      }
   }
 
+  info("load config " . $config{'kPSLprepCfg'});
+
   ## load configuration in a hash structure
+  my ($cfgH, $nodeH);
+
   if ($#repronodelst >= 0)
   {
-     my ($cfgH, $nodeH) = loadConfigFilt($config{'kPSLprepCfg'}, \%repronodeH);
-
-     unless (($begin =~ /\d+/) && ($end =~ /\d+/)) {
-        die(usage());
-     }
-
-     $nodeH->{'suffix'}="repro"; ## This assumes a repro directory exists on the slony_logs/sites directories. If it doesn't exist it tries to create it and generate all the logs for that site in that location.
-
-     info ("reprocessing range [$begin] - [$end]");
-     ## run access repro to download data.
-
-     run( $config{'kPSLaccessRepro'}, 'logs=su_production.slonylogs', "path=$config{'kPSLreproPath'}", "beg=$begin", "end=$end", 'action=ret' );
-
-     ## should do this in another way. The access repro won't have todays data. For that we'll need to copy from the current slon logs directory
-
-     map { my $base = basename($_); copy($_,"$config{'kPSLreproPath'}/$base"); } glob ("$config{'kPSLlogsSourceDir'}/*.sql*");
-
-
-     ## untar files
-     run( 'find ', $config{'kPSLreproPath'}, " -name \"*.tar.gz\" -exec tar zxf {} -C $config{'kPSLreproPath'} \\;" );
-
-     ## check if in the sites directory exists any slony_logs tar file in the range specified in $begin - $end.  if so extract the tar files to the repro directory and let the sql logs be overwritten by the new ones.
-     ## This function looks for tar files in the site-specific directories that contain log files that 
-     ## lie within the requested reprocessing range. If it finds any, it extract the contained files into
-     ## the site-specific repro directory. And it pushes the tar-file path (in then site-specific log-file
-     ## directory, not the repro subdirectory) into the 'tar_repro' array.
-     expandOldTars($nodeH, $begin, $end);
-
-     ## change kPSLlogsSourceDir to temp location
-     $config{'kPSLlogsSourceDir'} = $config{'kPSLreproPath'};
-
-     ## make in memory counter
-     my $counter = $begin - 1;
-     ##
-
-     while ((my $srcFile = nextCounter(\$counter,$config{'kPSLlogsSourceDir'})) && ($counter <= $end))
-     {
-        parseLog($cfgH,$nodeH,$srcFile);
-        $counter = saveCounter(undef,$srcFile);
-     }
-
-     ## recreate tars for sites if needed.
-     ## This will create tar files in the site-specific log-file directory (not in the repro subdirectory).
-     my ($tar_begin, $tar_end) = recreateNewTars($nodeH, $begin, $end);
-
-     ## clean up main repro directory
-
-     unlink glob("$config{'kPSLreproPath'}/*");
+     ($cfgH, $nodeH) = loadConfigFilt($config{'kPSLprepCfg'}, \%repronodeH);
+  }
+  else
+  {
+     info("Re-generating site-specific log files for all nodes.");
+     ($cfgH, $nodeH) = loadConfig($config{'kPSLprepCfg'});
   }
 
+  unless (($begin =~ /\d+/) && ($end =~ /\d+/)) {
+     die(usage());
+  }
+
+  $nodeH->{'suffix'}="repro"; ## This assumes a repro directory exists on the slony_logs/sites directories. If it doesn't exist it tries to create it and generate all the logs for that site in that location.
+
+  info ("reprocessing range [$begin] - [$end]");
+  ## run access repro to download data.
+
+  info("Running accessreplogs to fetch archived slony-log tar files.");
+  run( $config{'kPSLaccessRepro'}, 'logs=su_production.slonylogs', "path=$config{'kPSLreproPath'}", "beg=$begin", "end=$end", 'action=ret' );
+
+  ## should do this in another way. The access repro won't have todays data. For that we'll need to copy from the current slon logs directory
+
+  map { my $base = basename($_); copy($_,"$config{'kPSLreproPath'}/$base"); } glob ("$config{'kPSLlogsSourceDir'}/*.sql*");
+
+
+  ## untar files
+  info("Extracting slony-log tar files into $config{'kPSLreproPath'}.");
+  run( 'find ', $config{'kPSLreproPath'}, " -name \"*.tar.gz\" -exec tar zxf {} -C $config{'kPSLreproPath'} \\;" );
+
+  ## check if in the sites directory exists any slony_logs tar file in the range specified in $begin - $end.  if so extract the tar files to the repro directory and let the sql logs be overwritten by the new ones.
+  ## This function looks for tar files in the site-specific directories that contain log files that 
+  ## lie within the requested reprocessing range. If it finds any, it extract the contained files into
+  ## the site-specific repro directory. And it pushes the tar-file path (in then site-specific log-file
+  ## directory, not the repro subdirectory) into the 'tar_repro' array.
+  info("Extracting slony-log tar files from any relevant pre-archived tar files into $config{'kPSLreproPath'}.");
+  expandOldTars($nodeH, $begin, $end);
+
+  ## change kPSLlogsSourceDir to temp location
+  $config{'kPSLlogsSourceDir'} = $config{'kPSLreproPath'};
+
+  ## make in memory counter
+  my $counter = $begin - 1;
+  ##
+
+  info("Entering log-file parse loop.");
+  while ((my $srcFile = nextCounter(\$counter,$config{'kPSLlogsSourceDir'})) && ($counter <= $end))
+  {
+     info("Parsing file $srcFile");
+     parseLog($cfgH,$nodeH,$srcFile);
+     $counter = saveCounter(undef,$srcFile);
+  }
+  info("Exiting log-file parse loop.");
+
+  ## recreate tars for sites if needed.
+  ## This will create tar files in the site-specific log-file directory (not in the repro subdirectory).
+  info("Tar'ing log files in the site-specific log-file directories.");
+  my ($tar_begin, $tar_end) = recreateNewTars($nodeH, $begin, $end);
+
+  ## clean up main repro directory
+
+  info("Cleaning up repro directory $config{'kPSLreproPath'}.");
+  unlink glob("$config{'kPSLreproPath'}/*");
+  thisUnlock(\$lckFH);
 }
 ### END OF MAIN ROUTINE ####
 
@@ -622,44 +648,48 @@ sub generateTar {
 
 sub thisLock {
   my $this_lock=shift;
+  my($fh) = shift; # reference to FH
 
   debug "trying to get $this_lock\n";
 
-  open $lockfh, '>', "$this_lock" or die ("error opening file [$this_lock] [$!]\n");
+  # open $lockfh, '>', "$this_lock" or die ("error opening file [$this_lock] [$!]\n");
+  if (!defined($$fh = FileHandle->new(">$this_lock")))
+  {
+     die ("error opening file [$this_lock] [$!]\n");
+  }
 
   my($natt) = 0;
   while (1)
   {
-    if (flock($lockfh, LOCK_EX|LOCK_NB)) 
+    if (flock($$fh, LOCK_EX|LOCK_NB)) 
     {
       debug "Created parse-lock file $this_lock.\n";
       last;
     }
     else
     {
+      debug("Didn't acquire lock.");
       if ($natt < 10)
       {
-        print "Another process is currently modifying files - waiting for completion.\n";
+        info("Another process is currently modifying files - waiting for completion.");
         sleep 1;
       }
       else
       {
-        print "Warning:: couldn't obtain parse lock; bailing.\n";
+        info("Warning:: couldn't obtain parse lock; bailing.\n");
         exit(1);
       }
    }
 
    $natt++;
   }
-
-  return $lockfh;
 }
 
 sub thisUnlock {
-   my $this_lock_fh=shift;
+   my $this_lock_fh=shift; #reference to FH
 
-   flock($this_lock_fh, LOCK_UN);
-   $this_lock_fh->close;
+   flock($$this_lock_fh, LOCK_UN);
+   $$this_lock_fh->close;
 }
 
 sub run {
