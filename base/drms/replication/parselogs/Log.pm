@@ -69,6 +69,10 @@ sub logTarget
       my $fh=undef;
       $fileName = "/tmp/$target.log" unless ( $fileName);
       open $fh, ">>$fileName";
+
+      # ART 2012.01.20 - try to turn on autoflushing of this stream.
+      $fh->autoflush(1);
+
       $__fDescCache{$target}->{fd} = $fh;
       $__fDescCache{$target}->{fileName} = $fileName;
     }
