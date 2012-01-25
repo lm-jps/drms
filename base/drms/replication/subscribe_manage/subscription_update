@@ -361,7 +361,7 @@ logwrite "counter [$counter] [${#series[*]}] request counter [${request[$counter
 		then
 			logwrite "Checking to see if subscription request already exists"
 			logwrite "Executing [check=cat $newtablefile | grep ${series[$counter]}]"
-			check=`cat $newtablefile | grep "${series[$counter]}"`
+			check=`cat $newtablefile | grep -w "${series[$counter]}"`
 			if [ "$check" == "" ]
 			then
 				logwrite "Subscription does not already exist"
