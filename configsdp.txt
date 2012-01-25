@@ -169,6 +169,7 @@ __PROJ__
              <subdir>harp/apps</subdir>
              <subdir>harp/libs/matlab/mex/src/util</subdir>
              <subdir>harp/libs/matlab/mex/src/mex2c</subdir>
+             <subdir>harp/libs/matlab/mfile-mex/standalone</subdir>
              <subdir>ident/apps</subdir>
              <subdir>ident/libs/mex2c</subdir>
              <subdir>ident/libs/mexfunctions</subdir>
