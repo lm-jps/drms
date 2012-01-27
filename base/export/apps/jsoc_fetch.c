@@ -993,7 +993,7 @@ int DoIt(void)
          paths[count] = strdup(supath);
          series[count] = strdup(sinfo->owning_series);
          sustatus[count] = strdup(onlinestat);
-         snprintf(yabuff, sizeof(yabuff), "ll%d", dirsize);
+         snprintf(yabuff, sizeof(yabuff), "%lld", dirsize);
          susize[count] = strdup(yabuff);
 
          count += 1;
