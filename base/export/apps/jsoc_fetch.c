@@ -933,7 +933,7 @@ int DoIt(void)
     }
 
     char onlinestat[128];
-    int dirsize;
+    long long dirsize;
     char supath[DRMS_MAXPATHLEN];
     char yabuff[64];
     int isunum;
@@ -963,7 +963,7 @@ int DoIt(void)
       else
          {
          size += (long long)sinfo->bytes;
-         dirsize = (int)sinfo->bytes;
+         dirsize = (long long)sinfo->bytes;
 
          if (strcmp(sinfo->online_status,"Y")==0)
             {
@@ -993,7 +993,7 @@ int DoIt(void)
          paths[count] = strdup(supath);
          series[count] = strdup(sinfo->owning_series);
          sustatus[count] = strdup(onlinestat);
-         snprintf(yabuff, sizeof(yabuff), "%d", dirsize);
+         snprintf(yabuff, sizeof(yabuff), "ll%d", dirsize);
          susize[count] = strdup(yabuff);
 
          count += 1;
@@ -1069,7 +1069,7 @@ int DoIt(void)
         
         sprintf(numval, "%d", count);
         json_insert_pair_into_object(jroot, "count", json_new_number(numval));
-        sprintf(numval, "%d", (int)(size));
+        sprintf(numval, "%lld", size);
         json_insert_pair_into_object(jroot, "size", json_new_number(numval));
         json_insert_pair_into_object(jroot, "dir", json_new_string(""));
         json_insert_pair_into_object(jroot, "data", data);
@@ -1105,7 +1105,7 @@ int DoIt(void)
         printf("protocol=%s\n", protocol);
         printf("wait=0\n");
         printf("count=%d\n", count);
-        printf("size=%d\n", (int)size);
+        printf("size=%lld\n", size);
         printf("dir=/\n");
         printf("# DATA\n");
         for (i=0; i<count; i++)
