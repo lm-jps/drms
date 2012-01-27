@@ -6451,11 +6451,27 @@ int ParseRecSetDesc(const char *recsetsStr,
 		 }
 		 else if (DSElem_IsDelim((const char **)&pc))
 		 {
+                    /* Pointing to a delimiter after series name. */
+                    if (sname == NULL)
+                    {
+                       size_t len = strlen(buf);
+                       sname = strdup(buf);
+                       *(sname + len - 1) = '\0';
+                    }
+
 		    pc++;
 		    state = kRSParseState_EndElem;
 		 }
 		 else if (DSElem_IsComment((const char **)&pc))
 		 {
+                    /* Pointing to # after series name. */
+                    if (sname == NULL)
+                    {
+                       size_t len = strlen(buf);
+                       sname = strdup(buf);
+                       *(sname + len - 1) = '\0';
+                    }
+
 		    DSElem_SkipComment(&pc);
 		    state = kRSParseState_EndElem;
 		 }
@@ -6493,11 +6509,53 @@ int ParseRecSetDesc(const char *recsetsStr,
 		       }
 		       else if (DSElem_IsDelim((const char **)&pc))
 		       {
+                          /* Pointing to delimiter AFTER whitespace AFTER seriesname. */
+                          if (sname == NULL)
+                          {
+                             size_t len = strlen(buf);
+                             char *pchar = buf;
+
+                             sname = strdup(buf);
+                             *(sname + len - 1) = '\0';
+
+                             /* Now strip off trailing whitespace. */
+                             while (*pchar)
+                             {
+                                if (DSElem_IsWS((const char **)&pchar))
+                                {
+                                   /* found whitespace. */
+                                   *pchar = '\0';
+                                   break;
+                                }
+                             }
+                          }
+
 			  pc++;
 			  state = kRSParseState_EndElem;
 		       }
 		       else if (DSElem_IsComment((const char **)&pc))
 		       {
+                          /* Pointing to # AFTER whitespace AFTER seriesname.*/
+                          if (sname == NULL)
+                          {
+                             size_t len = strlen(buf);
+                             char *pchar = buf;
+
+                             sname = strdup(buf);
+                             *(sname + len - 1) = '\0';
+
+                             /* Now strip off trailing whitespace. */
+                             while (*pchar)
+                             {
+                                if (DSElem_IsWS((const char **)&pchar))
+                                {
+                                   /* found whitespace. */
+                                   *pchar = '\0';
+                                   break;
+                                }
+                             }
+                          }
+
 			  DSElem_SkipComment(&pc);
 			  state = kRSParseState_EndElem;
 		       }
@@ -6508,6 +6566,25 @@ int ParseRecSetDesc(const char *recsetsStr,
 		    }
 		    else
 		    {
+                       /* whitespace AFTER series name, but nothing following this whitespace. */
+                       if (sname == NULL)
+                       {
+                          char *pchar = buf;
+
+                          sname = strdup(buf);
+
+                          /* Now strip off trailing whitespace. */
+                          while (*pchar)
+                          {
+                             if (DSElem_IsWS((const char **)&pchar))
+                             {
+                                /* found whitespace. */
+                                *pchar = '\0';
+                                break;
+                             }
+                          }
+                       }
+
 		       state = kRSParseState_EndElem;
 		    }
 		 }
@@ -6518,6 +6595,11 @@ int ParseRecSetDesc(const char *recsetsStr,
 	      }
 	      else
 	      {
+                 if (sname == NULL)
+                 {
+                    sname = strdup(buf);
+                 }
+
 		 state = kRSParseState_EndElem;
 	      }
 
