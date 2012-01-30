@@ -119,6 +119,7 @@ static double ut_leap_time[] = {
  694224032.0,                                                /*  1999.01.01  */
  915148833.0,                                                /*  2006.01.01  */
 1009843234.0                                                 /*  2009.01.01  */
+1120176035.0						     /*  2012.07.01  */
 /*
  * IMPORTANT NOTE ---
  *   When adding a new leap second add time be sure to make changes in  BOTH
@@ -1683,4 +1684,5 @@ int parsetimestr (const char *timestr,
  *  08.02.21	in sprint_time, put in checks for NaN's or Inf's, forcing
  *	printing of JD_0.0, and for times that would result in years out of
  *	signed int range, force JD format
+ *  12.01.29	added leap second
  */
