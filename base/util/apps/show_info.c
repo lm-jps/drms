@@ -196,6 +196,7 @@ http://jsoc.stanford.edu/ajax/lookdata.html drms_query describe_series jsoc_info
 #include "drms.h"
 #include "drms_names.h"
 #include "cmdparams.h"
+#include "drmssite_info.h"
 #include "printk.h"
 
 
@@ -615,7 +616,7 @@ static int GetSUMinfo(DRMS_Env_t *env, HContainer_t **info, int64_t *given_sunum
             {
                /* Jim says this check might be something else - he thinks the SUM_info_t * might 
                 * not be NULL, and instead one of the fields will indicate an invalid SUNUM. */
-               if (*(infostructs[iinfo]->online_loc) == '\0')
+               if (!drmssite_sunum_is_local(infostructs[iinfo]->sunum) && *(infostructs[iinfo]->online_loc) == '\0')
                {
                   printf("### show_info: SUNUM '%llu' unknown to local SUMS - initiating remotesums call.\n", (unsigned long long)infostructs[iinfo]->sunum);
 
@@ -665,6 +666,9 @@ static int GetSUMinfo(DRMS_Env_t *env, HContainer_t **info, int64_t *given_sunum
                   su->seriesinfo = NULL;
                }
 
+               /* This could return DRMS_REMOTESUMS_TRYLATER, which means that
+                * the size of the requested payload is large, so remotesums_master.pl
+                * launched remotesums_ingest in the background. */
                suret = drms_getsudirs(env, sus, iremote, 1, 0);
 
                if (suret == DRMS_REMOTESUMS_TRYLATER)
@@ -1326,6 +1330,9 @@ int DoIt(void)
          char key[128];
 
          rec = drms_recordset_fetchnext(drms_env, recordset, &status, &cstat, &newchunk);
+
+         /* ART - status may be DRMS_REMOTESUMS_TRYLATER, but there should still be a
+          * valid record in rec. */
 
          if (rec->suinfo == NULL)
          {

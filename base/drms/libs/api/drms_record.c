@@ -8156,7 +8156,10 @@ int drms_open_recordchunk(DRMS_Env_t *env,
             }
          } /* for iset */
 
-         if (stat == DRMS_SUCCESS)
+         /* ART - stat may be DRMS_REMOTESUMS_TRYLATER. This is basically the same thing
+          * as calling drms_open_recordchunk() without ever having called drms_stage_records()
+          * on the record-set. This is an okay thing to do. */
+         if (stat == DRMS_SUCCESS || stat == DRMS_REMOTESUMS_TRYLATER)
          {
             rs->cursor->currentchunk = chunkindex;
             rs->cursor->currentrec = -1; /* one record before chunk */
@@ -8498,7 +8501,11 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env,
          }
       }
 
-      if (stat == DRMS_SUCCESS && rs->cursor->currentrec >= 0)
+      /* ART - If remote sums is running asynchronously, then this is okay, we still need to 
+       * update the cursor information and return the next record. This record will not 
+       * have its SU retrieved, because it is happening asynchronously, but we still have 
+       * a valid record to return. */
+      if ((stat == DRMS_SUCCESS || stat == DRMS_REMOTESUMS_TRYLATER) && rs->cursor->currentrec >= 0)
       {
 	 /* Now, get the next record */
 	 ret = rs->records[rs->cursor->currentchunk * rs->cursor->chunksize + 
