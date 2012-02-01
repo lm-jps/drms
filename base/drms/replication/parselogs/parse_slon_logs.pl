@@ -225,10 +225,21 @@ unless ($repro) {
      {
         debug("counter is [$counter]");
 
-        parseLog($cfgH,$nodeH,$srcFile);
+        # parseLog will take one source log, and it will parse it N times, once for each node 
+        # that is subscribed to a series in that source log. The parsed content will be 
+        # written to each node's site-specific log directory.
+        if (parseLog($cfgH,$nodeH,$srcFile))
+        {
+           # ART - If an error occurred in parseLog, should bail here before updating the counter file and 
+           # renaming the log file.
+           error("Problem parsing a file; bailing out.");
+           last;
+        }
+
         $counter = saveCounter($config{'kPSLparseCounter'},$srcFile);
 
         debug("moving $srcFile to $srcFile.parsed");
+
         move( $srcFile, "$srcFile.parsed" );
      }
 
@@ -257,12 +268,17 @@ unless ($repro) {
 	## while the production copy is running -- I'd hard code the lock file.
 	##
   my($lckFH);
+  my($bail) = 0;
 
   info("Acquiring single-instance lock.");
 
   ## ART - Don't use an NFS-mounted file as the lock file!!!! flock was hanging for me on such a file.
   thisLock($config{'kServerLockDir'} . "/" . basename($0) . "repro", \$lckFH);  ## only one instance of reprocessing running
   info("  Lock acquired!");
+
+  # Don't start with junk in the repro directory (a previous failure could leave junk).
+  info("Cleaning up repro directory $config{'kPSLreproPath'} before reprocessing.");
+  unlink glob("$config{'kPSLreproPath'}/*");
 
   # Fetch array of nodes for which reprocessing should be performed.
   debug("Regenerating logs for $repronodes.");
@@ -333,20 +349,33 @@ unless ($repro) {
   while ((my $srcFile = nextCounter(\$counter,$config{'kPSLlogsSourceDir'})) && ($counter <= $end))
   {
      info("Parsing file $srcFile");
-     parseLog($cfgH,$nodeH,$srcFile);
+     if (parseLog($cfgH,$nodeH,$srcFile))
+     {
+        # ART - If an error occurred in parseLog, should bail here.
+        error("Problem parsing a file; bailing out.");
+        $bail = 1;
+        last;
+     }
+
      $counter = saveCounter(undef,$srcFile);
   }
+
   info("Exiting log-file parse loop.");
 
-  ## recreate tars for sites if needed.
-  ## This will create tar files in the site-specific log-file directory (not in the repro subdirectory).
-  info("Tar'ing log files in the site-specific log-file directories.");
-  my ($tar_begin, $tar_end) = recreateNewTars($nodeH, $begin, $end);
+  if (!$bail)
+  {
+     ## recreate tars for sites if needed.
+     ## This will create tar files in the site-specific log-file directory (not in the repro subdirectory).
+     info("Tar'ing log files in the site-specific log-file directories.");
+     my ($tar_begin, $tar_end) = recreateNewTars($nodeH, $begin, $end);
 
-  ## clean up main repro directory
+     ## clean up main repro directory
+     info("Cleaning up repro directory $config{'kPSLreproPath'}.");
+     unlink glob("$config{'kPSLreproPath'}/*");
+  }
 
-  info("Cleaning up repro directory $config{'kPSLreproPath'}.");
-  unlink glob("$config{'kPSLreproPath'}/*");
+  # If we bailed out, then all re-processing rolls back, but the repro directory contains a partial parsing.
+
   thisUnlock(\$lckFH);
 }
 ### END OF MAIN ROUTINE ####
@@ -1091,17 +1120,36 @@ sub openSlonLogs {
 
 # This function closes the file handle of the current site-specific log being written. It does
 # so for all nodes' current log files. It then renames the log by removing the ".tmp" suffix.
+#
+# Returns 0 upon success, 1 upon failure.
 sub closeSlonLogs {
   my ($nodeH) = @_;
+  my($rv) = 0;
 
   for $node (keys %{$nodeH->{nodes}}) {
     ## close and rename file from .tmp to final name
-    close $nodeH->{nodes}->{$node}->{'FD'} if defined $nodeH->{nodes}->{$node}->{'FD'};
-    rename $nodeH->{nodes}->{$node}->{'filename'}.".tmp", $nodeH->{nodes}->{$node}->{'filename'}
-      if defined $nodeH->{nodes}->{$node}->{'filename'};
+     if (defined $nodeH->{nodes}->{$node}->{'FD'})
+     {
+        unless(close $nodeH->{nodes}->{$node}->{'FD'})
+        {
+           my $fpath = $nodeH->{nodes}->{$node}->{'path'}; 
+           error("Problem writing file $fpath"); 
+           $rv = 1; 
+           last; 
+        }
+     }
+
+     rename $nodeH->{nodes}->{$node}->{'filename'}.".tmp", $nodeH->{nodes}->{$node}->{'filename'}
+       if defined $nodeH->{nodes}->{$node}->{'filename'};
   }
   
+  return $rv;
 }
+
+# Writes a single line to each node's site-specific log file. If the line being 
+# written contains an insert statement, then that line is written to a nodes'
+# site-specific logs only if the insert is into a series to which that the node is 
+# subscribed.
 sub dumpSlonLog {
   my ($cfgH, $nodeH, $series, $line) = @_;
 
@@ -1118,6 +1166,18 @@ sub dumpSlonLog {
       print $fh $line if defined $fh
     }
   }
+
+  # These file writes could fail! Check for failure at file-close time.
+  # Do not check the file stream status after every write. If the file is
+  # NFS-mounted, and NFS is set to write asynchronously (a performance
+  # enhancement, then you can't rely upon the return value of the 
+  # fh->close() call. 
+
+  # ART - 2012.02.01 - Keh-Cheng and I moved the slony logs to local disk, so we don't have to worry about
+  # NFS reporting a false negative. Now we need to check all calls on close($fh) [returns true if succeeds].
+  # This script currently closes all open output log file handles en masse. These open file descriptors
+  # correspond to a single open (for reading) original log file. As the descriptors are closed, we
+  # should check the close() return values, and bail if there is a problem. And log that problem.
 }
 
 ## test end of line in insert sql  - ISS 2010/Aug/20
@@ -1130,10 +1190,19 @@ sub dumpErrorLog {
   }
 }
 
+# Parse a single original slony log file into N site-specific log files, one for each node.
+# In the closeSlonLogs() function, check for problems writing files, the return a status
+# code to indicate problems. Callers of parseLog should bail without continuing if there
+# is a problem.
+#
+# Returns 0 upon success, 1 upon failure.
 sub parseLog {
   my ($cfgH, $nodeH, $srcFile) = @_;
 
   my $srcFileBName = basename($srcFile);
+  my($rv);
+
+  $rv = 0;
 
   debug("Parsing log [$srcFile]");
 
@@ -1166,7 +1235,13 @@ sub parseLog {
   }
 
   close SRC;
-  closeSlonLogs($nodeH);
+
+  if (($rv = closeSlonLogs($nodeH)))
+  {
+     error("Problem parsing source log file $srcFile.") 
+  }
+
+  return $rv;
 }
 
 sub serverLock {
