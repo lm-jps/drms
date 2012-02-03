@@ -1262,6 +1262,94 @@ static void FreeDataSetKw(void *val)
    }
 }
 
+/* Check for the existence of series series in the db on host dbhost. */
+static int SeriesExists(DRMS_Env_t *env, const char *series, const char *dbhost)
+{
+   int rv = 0;
+   char contexthost[DRMS_MAXHOSTNAME];
+   int status;
+   int forceconn = 0;
+   DB_Handle_t *dbh = NULL;
+   
+#ifdef DRMS_CLIENT
+   /* For a sock module, the db host to which it has access is the db host that the 
+    * serving drms_server is connected to. And I don't think there is a way to 
+    * determine to which db host drms_server is connected, so we'll HAVE TO 
+    * connect to dbhost here, regardless of the existing connection between 
+    * drms_server and a db. */
+   forceconn = 1;
+#else
+   /* For a server module, hostname is in drms_env->session->db_handle->dbhost. */
+   snprintf(contexthost, sizeof(contexthost), "%s", env->session->db_handle->dbhost);
+   forceconn = (strcasecmp(dbhost, contexthost) != 0);
+#endif
+
+   if (forceconn)
+   {
+      /* The caller wants to check for series existence in a db on host to which 
+       * this module has no connection */
+
+      /* Use db_connect to connect to the jsoc db on dbhost. Steal dbuser from the existing, 
+       * irrelevant db connection. */
+      if ((dbh = db_connect(dbhost, env->session->db_handle->dbuser, NULL, "jsoc", 1)) == NULL)
+      {
+         fprintf(stderr,"Couldn't connect to jsoc database on %s.\n", dbhost);
+      }
+      else
+      {
+         /* Successfully connected to dbhost; can't use DRMS calls since we don't have a 
+          * functioning environment for this ad hoc connection. */
+         char query[512];
+         char *schema = NULL;
+         char *table = NULL;
+         DB_Text_Result_t *res = NULL;
+         
+         if (get_namespace(series, &schema, &table))
+         {
+            fprintf(stderr, "Invalid series name %s.\n", series);
+         }
+         else
+         {
+            snprintf (query, sizeof(query), 
+                      "SELECT * FROM pg_catalog.pg_tables WHERE schemaname = lower(\'%s\') AND tablename = lower(\'%s\')", 
+                      schema, 
+                      table);
+
+            res = db_query_txt(dbh, query);
+
+            if (res) 
+            {
+               rv = (res->num_rows != 0);
+               db_free_text_result(res);
+               res = NULL;
+            }
+            else
+            {
+               fprintf(stderr, "Invalid SQL query: %s.\n", query);
+            }
+
+            free(schema);
+            free(table);
+
+            db_disconnect(&dbh);
+         }
+      }  
+   }
+   else
+   {
+      /* The caller wants to check for the existence of a series in the database to which 
+       * this modue is currently connected. */
+      rv = drms_series_exists(env, series, &status);
+      if (status != DRMS_SUCCESS)
+      {
+         fprintf(stderr, "Problems checking for series '%s' existence on %s.\n", series, dbhost);
+         rv = 0;
+      }
+   }
+
+   return rv;
+}
+
 /* Module main function. */
 int DoIt(void)
   {
@@ -1613,7 +1701,7 @@ int DoIt(void)
          snprintf(seriesin, sizeof(seriesin), "%s", csname);
 
          /* The JSOC_DBHOST variable will properly identify the db that must contain the input and output series. */
-         if (!drms_series_exists(drms_env, seriesin, &status) || status != DRMS_SUCCESS)
+         if (!SeriesExists(drms_env, seriesin, dbmainhost))
          {
             fprintf(stderr, "Input series %s does not exist.\n", csname);
             quit = 1;
@@ -1653,7 +1741,7 @@ int DoIt(void)
          snprintf(seriesout, sizeof(seriesout), "%s", csname);
 
          /* The JSOC_DBHOST variable will properly identify the db that must contain the input and output series. */
-         if (!drms_series_exists(drms_env, seriesout, &status) || status != DRMS_SUCCESS)
+         if (!SeriesExists(drms_env, seriesout, dbmainhost))
          {
             fprintf(stderr, "Output series %s does not exist.\n", csname);
             quit = 1;
