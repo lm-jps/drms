@@ -752,6 +752,12 @@ fprintf(stderr,"got %f\n",high);
                                 total_gone++;
                                 }
 			}
+		else if (verify && !online[irec])
+			{
+			val = (no_gone ? DATA_UNK : DATA_GONE);
+			total_ok--;
+			total_gone++;
+			}
 		map[thisslot - lowslot] = val;
 		}
 	islot = jslot + 1;
