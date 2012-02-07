@@ -118,7 +118,9 @@ the storage unit's retention expires).
 \arg \c DRMS_RETENTION Sets (forces) the storage-unit retention time for the DRMS session
 started by <module>. This affects all storage units created during the session. <value> is 
 the number number of days that the storage units will remain on disk. CANNOT BE SPECIFIED 
-IN THE ENVIRONMENT.
+IN THE ENVIRONMENT. THIS FLAG WILL AFFECT RETENTION TIMES ONLY IF THE MODULE INVOKED
+WITH THIS ARGUMENT MAKES A SUMS REQUEST. For example, to modify retention times with the
+show_info module, call show_info with the "-P" flag.
 \arg \c DRMS_QUERY_MEM Sets the memory maximum for a database query.
 \arg \c JSOC_DBHOST Specifies (overrides) the database host to connect to. Default is ::DBNAME
 \arg \c JSOC_DBNAME Specifies (overrides) the database name to use. Default is ::DBNAME

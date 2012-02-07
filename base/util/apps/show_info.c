@@ -158,6 +158,13 @@ the record_set query that finds that record and followed by a single blank line.
 The \a -q flag is provided to make it convenient to use the output of \a show_info in scripts.
 Example 3 below shows such a usage.
 
+\par Note about DRMS_RETENTION flag:
+
+If show_info is used to modify the retention time or one or more storage units, you must
+call show_info in a way that it makes a SUMS request. The easiest way to do this is to 
+call it with the -P flag. Retention can be reduced only if the caller is the owner of 
+the database "series" table (the table whose name is also the name of the series).
+
 \par Examples:
 
 \b Example 1:
