@@ -381,6 +381,27 @@ fprintf(stderr,"XXXXX in parse_record_query, convert time %s uses %d chars, give
   return NULL;
 }
 
+static DRMS_Keyword_t *GetSlottedKey(DRMS_Record_t *template, DRMS_Keyword_t *indx)
+{
+   DRMS_Keyword_t *ret = NULL;
+   char *kname = strdup(indx->info->name);
+
+   if (kname)
+   {
+      char *underscore = strstr(kname, kSlotAncKey_Index);
+
+      if (underscore && drms_keyword_isindex(indx))
+      {
+	 *underscore = '\0';
+	 ret = (DRMS_Keyword_t *)hcon_lookup_lower(&(template->keywords), kname);
+      }
+
+      free(kname);
+   }
+
+   return ret;
+}
+
 static RecordList_t *parse_record_list(DRMS_Record_t *template, char **in) {
   int err,i,keynum;
   RecordList_t *rl;
@@ -507,8 +528,7 @@ static RecordList_t *parse_record_list(DRMS_Record_t *template, char **in) {
     else if (!explKW && drms_keyword_isindex(si->pidx_keywords[keynum]))
     {
        /* User specified [<value>] */
-       DRMS_Keyword_t *slottedkey = 
-	 drms_keyword_slotfromindex(si->pidx_keywords[keynum]);
+       DRMS_Keyword_t *slottedkey = GetSlottedKey(template, si->pidx_keywords[keynum]);
        rl->primekey_rangeset = parse_slottedkey_set (slottedkey, &p);
     }
     else
@@ -577,8 +597,8 @@ static PrimekeyRangeSet_t *parse_primekey_set(DRMS_Keyword_t *keyword,
 /* From the user's point of view, a slotted keyword IS a drms prime keyword. 
  * the user can substitute, in the grammar, a slotted keyword wherever 
  * a drms prime keyword is expected. */
-PrimekeyRangeSet_t *parse_slottedkey_set(DRMS_Keyword_t *slotkey,
-					 char **in)
+static PrimekeyRangeSet_t *parse_slottedkey_set(DRMS_Keyword_t *slotkey,
+                                                char **in)
 {
    PrimekeyRangeSet_t *ret = NULL;
    ValueRangeSet_t *onerange = NULL;
@@ -1510,7 +1530,7 @@ static int sql_primekey_value_set(ValueRangeSet_t *rs, DRMS_Keyword_t *keyword,
 
 
 
-int sql_record_set(RecordSet_t *rs, char *seriesname, char *query)
+static int sql_record_set(RecordSet_t *rs, char *seriesname, char *query)
 {
   char *p=query;
   /*  char *field_list; */
@@ -2315,4 +2335,359 @@ int drms_recordset_query(DRMS_Env_t *env, const char *recordsetname,
   }
 
   return ret;
+}
+
+static RecordSet_t *parse_record_set_ext(DB_Handle_t *dbh, DRMS_Record_t *template, char **in, char **seriesstr, char **filterstr)
+{
+   char *p = *in;
+   RecordSet_t *rs;
+   int allvers = 0;
+   char query[1024];
+   char *lcseries = NULL;
+   DB_Binary_Result_t *qres = NULL;
+   char buf[DRMS_MAXPRIMIDX * DRMS_MAXKEYNAMELEN];
+   char *pch = NULL;
+   char *qch = NULL;
+   char *namespace = NULL;
+   char *table = NULL;
+   int irow;
+   DRMS_Keyword_t *key = NULL;
+   DRMS_Keyword_t *kw = NULL;
+   char kwname[DRMS_MAXKEYNAMELEN];
+   char kwtype[16];
+   char *filter = NULL;
+   char defval[DRMS_DEFVAL_MAXLEN];
+
+   prime_keynum = 0;  
+   syntax_error = 0;  /* So far so good... */
+   recnum_filter = 0;
+
+   rs = malloc(sizeof(RecordSet_t));
+   XASSERT(rs);
+   memset(rs, 0, sizeof(RecordSet_t));
+
+   /* Remove leading whitespace. */
+   SKIPWS(p);
+   if (!parse_name(&p, rs->seriesname, DRMS_MAXSERIESNAMELEN))
+   {
+      if (seriesstr)
+      {
+         *seriesstr = strdup(rs->seriesname);
+      }
+
+      /* Now use the seriesname to fill in the rest of the pseudo-template structure 
+       * that was created in the calling function. */
+      lcseries = strdup(rs->seriesname);
+
+      if (!lcseries)
+      {
+         fprintf(stderr, "Out of memory.\n");
+         goto empty;
+      }
+
+      strtolower(lcseries);
+      
+      if (!get_namespace(lcseries, &namespace, &table))
+      {
+         snprintf(query, sizeof(query), 
+                  "SELECT seriesname, primary_idx FROM %s.%s WHERE lower(seriesname) = '%s'", 
+                  namespace, 
+                  DRMS_MASTER_SERIES_TABLE, 
+                  lcseries);
+         
+      }
+      else
+      {
+         fprintf(stderr, "Out of memory.\n");
+         goto empty;
+      }
+
+      if ((qres = db_query_bin(dbh, query)) == NULL)
+      {
+         fprintf(stderr, "Failed to retrieve series information for series %s.\n", rs->seriesname);
+         goto empty;
+      }
+
+      /* Fill in the template with the results. */
+      if (qres->num_rows != 1 || qres->num_cols != 2)
+      {
+         fprintf(stderr, "Unexpected query result.\n");
+         goto empty;
+      }
+
+      /* Series name. */
+      db_binary_field_getstr(qres, 0, 0, DRMS_MAXSERIESNAMELEN, template->seriesinfo->seriesname);
+
+      /* List of primary keys. */
+      db_binary_field_getstr(qres, 0, 1, sizeof(buf), buf);
+
+      /* Don't need qres any more. */
+      db_free_binary_result(qres);
+      qres = NULL;
+
+      snprintf(query, sizeof(query),
+               "SELECT keywordname, type, defaultval, islink, isconstant, persegment FROM %s.%s WHERE lower(seriesname) = '%s'",
+               namespace, 
+               DRMS_MASTER_KEYWORD_TABLE, 
+               lcseries);
+
+      /* These will have been allocated. */
+      free(namespace);
+      free(table);
+      free(lcseries);
+
+      if ((qres = db_query_bin(dbh, query)) == NULL)
+      {
+         fprintf(stderr, "Failed to retrieve keyword information for series %s.\n", rs->seriesname);
+         goto empty;
+      }
+
+      /* keywordname [0] => info->name
+       * type        [1] => info->type
+       * defaultval  [2] => value
+       * islink      [3] => info->islink
+       * isconstant  [4] => info->recscope 
+       * persegment  [5] => info->kwflags 
+       */
+      for (irow = 0; irow < (int)qres->num_rows; irow++)
+      {
+         db_binary_field_getstr(qres, irow, 0, sizeof(kwname), kwname);
+         key = hcon_allocslot_lower(&template->keywords, kwname);
+         memset(key, 0, sizeof(DRMS_Keyword_t));      
+         key->record = template;
+         key->info = malloc(sizeof(DRMS_KeywordInfo_t));
+         XASSERT(key->info);
+         memset(key->info, 0, sizeof(DRMS_KeywordInfo_t));
+         snprintf(key->info->name, sizeof(key->info->name), "%s", kwname);
+         db_binary_field_getstr(qres, irow, 1, sizeof(kwtype), kwtype);
+         key->info->type = drms_str2type(kwtype);
+         db_binary_field_getstr(qres, irow, 2, sizeof(defval), defval);
+         drms_strval(key->info->type, &key->value, defval);
+         key->info->islink = db_binary_field_getint(qres, irow, 3);
+         key->info->recscope = (DRMS_RecScopeType_t)db_binary_field_getint(qres, irow, 4);
+         key->info->kwflags = db_binary_field_getint(qres, irow, 5);
+      }
+
+      /* Set up the pointers to the primary-key keywords. */
+      if (!db_binary_field_is_null(qres, 0, 1))
+      {
+         pch = buf;
+
+         template->seriesinfo->pidx_num = 0;
+         while(*pch)
+         {
+            XASSERT(template->seriesinfo->pidx_num < DRMS_MAXPRIMIDX);
+            while(*pch && isspace(*pch))
+            {
+               ++pch;
+            }
+
+            qch = pch;
+            while(*pch && !isspace(*pch) && *pch != ',')
+            {
+               ++pch;
+            }
+
+            *pch++ = 0;
+
+            /* qch is the keyword name. */
+            kw = hcon_lookup_lower(&template->keywords, qch);
+            XASSERT(kw);
+            
+            template->seriesinfo->pidx_keywords[(template->seriesinfo->pidx_num)++] = kw; 
+         }
+      }
+      else
+      {
+         template->seriesinfo->pidx_num = 0;
+      }
+
+      db_free_binary_result(qres);
+      qres = NULL;
+
+      SKIPWS(p);
+
+      if (*p==0)
+      {
+         rs->template = NULL;
+         rs->recordset_spec = NULL;
+         return rs;
+      }
+      else if (*p != '[')
+      {
+         fprintf(stderr,"Syntax error in record_set: Series name must be "
+                 "followed by '[', found '%c'\n",*p);
+         ++syntax_error;
+         goto empty;
+      }
+
+      /* Get series template. It is needed to look up the data type 
+         and other information about primary indices. */
+      rs->template = template;
+      filter = p;
+      rs->recordset_spec = parse_record_set_filter(rs->template, &p, &allvers);
+
+      /* p points to the first char after any filter (there is no filter if rs->recordset_spec is NULL) in rsquery. */
+      if (filterstr)
+      {
+         if (rs->recordset_spec)
+         {
+            *filterstr = strdup(filter);
+            (*filterstr)[p - filter] = '\0';
+         }
+         else
+         {
+            *filterstr = NULL;
+         }
+      }
+
+      if (syntax_error)
+        goto empty;
+    
+      rs->allvers = allvers;
+
+      *in = p;
+#ifdef DEBUG
+      printf("exit parse_record_set\n");
+#endif
+      return rs;
+   }
+ empty:
+   free(rs);
+   return NULL;  
+}
+
+/* Function overloads that take as an argument a headless template DRMS_Record_t * as an argument. 
+ * A DRMS_Record_t has a DRMS_Env_t, which implies a database connection, or a connection 
+ * to a drms_server. But this module doesn't really need a database connection - it just needs a 
+ * list of prime keys. These functions don't rely upon a valid DRMS_Env_t so we can parse 
+ * record-set queries without it. 
+ */
+
+/*
+ *  dbh - the connection to the database where the ns.drms_series table lives that identifies the names
+ *      of the prime-key keywords.
+ */
+int drms_recordset_query_ext(DB_Handle_t *dbh,
+                             const char *recordsetname, 
+                             char **query, 
+                             char **seriesname, 
+                             char **filterstr, 
+                             int *filter, 
+                             int *mixed,
+                             int *allvers)
+{
+   RecordSet_t *rs;
+   char *rsn = strdup(recordsetname);
+   char *p = rsn;
+   int ret = 0;
+   RecordSet_Filter_t *filt = NULL;
+   DRMS_Record_t *template = NULL;
+
+   *mixed = 0;
+
+   /* Make a pseudo-, headless template record, and pass it along. We can't fill it all in right now 
+    * (we're parsing the things we need), so fill it in as we go. */
+   template = malloc(sizeof(DRMS_Record_t));
+   memset(template, 0, sizeof(DRMS_Record_t));
+
+   /* Don't got one of these environment thingies! Keep this NULL so we crash if there is an attempt to use it. */
+   template->env = NULL;
+
+   /* Treat this as 'initialized', although this probably has meaning only for real template records. */
+   template->init = 1;
+   template->recnum = 0;
+   template->sunum = -1LL;
+   template->sessionid = 0;
+   template->sessionns = NULL;
+   template->su = NULL;
+   template->seriesinfo = calloc(1, sizeof(DRMS_SeriesInfo_t));
+   XASSERT(template->seriesinfo);
+
+   /* Initialize keyword container structure. Don't worry about segments or links - the whole point of this 
+    * is to pass the names of the prime-key keywords to lower-level functions. */
+   hcon_init(&template->keywords, sizeof(DRMS_Keyword_t), 
+             DRMS_MAXHASHKEYLEN, 
+             (void (*)(const void *)) drms_free_template_keyword_struct, 
+             (void (*)(const void *, const void *)) drms_copy_keyword_struct);
+
+   if ((rs = parse_record_set_ext(dbh, template, &p, NULL, filterstr)))
+   {
+      filt = rs->recordset_spec;
+
+      /* Traverse linked-list, looking for both record_list and record_query. */
+      while (filt != NULL)
+      {
+         if (filt->record_query)
+         {
+            *mixed = 1;
+            break;
+         }
+
+         filt = filt->next;
+      }
+
+      *query = malloc(DRMS_MAXQUERYLEN);
+      XASSERT(*query);
+      *seriesname = strdup(rs->seriesname);
+      *filter = !recnum_filter;
+
+      if (allvers)
+      {
+         *allvers = rs->allvers;
+      }
+
+      sql_record_set(rs, *seriesname, *query);
+      free_record_set(rs);
+      ret = 0;
+   }
+   else
+   {
+      ret =  1;
+   }
+
+   /* Free the template record. */
+   hcon_free(&template->keywords);
+   free(template->seriesinfo);
+   free(template);
+   template = NULL;
+
+   if (rsn)
+   {
+      free(rsn);
+   }
+
+   return ret;
+}
+
+/* returns 1 on syntax error, 0 otherwise. */
+char *drms_recordset_extractfilter_ext(DB_Handle_t *dbh, const char *in, int *status)
+{
+   char *query = NULL;
+   char *seriesname = NULL;
+   char *filterstr = NULL;
+   int filter = 0;
+   int mixed = 0;
+   int allvers = 0;
+   int istat = 0;
+
+   istat = drms_recordset_query_ext(dbh, in, &query, &seriesname, &filterstr, &filter, &mixed, &allvers);
+
+   /* Don't need any of these. */
+   if (query)
+   {
+      free(query);
+   }
+
+   if (seriesname)
+   {
+      free(seriesname);
+   }
+
+   if (status)
+   {
+      *status = istat;
+   }
+
+   return filterstr;
 }
