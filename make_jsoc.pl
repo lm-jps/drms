@@ -28,7 +28,9 @@ chdir($wd);
 # make clean 
 # make -j 4 
 
-if (-e "suflag.txt")
+system("make clean");
+
+if (-e "configsdp.txt")
 {
     system("make all dsds");
 }
