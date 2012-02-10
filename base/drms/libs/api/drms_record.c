@@ -71,6 +71,19 @@ typedef enum
 
 #define kQUERYNFUDGE      (4);
 
+static void FreeSummaryChkCache()
+{
+   if (gSummcon)
+   {
+      hcon_destroy(&gSummcon);
+   }
+}
+
+static void drms_record_summchkcache_term(void *data)
+{
+   FreeSummaryChkCache();
+}
+
 static int CopySeriesInfo(DRMS_Record_t *target, DRMS_Record_t *source);
 static int CopySegments(DRMS_Record_t *target, DRMS_Record_t *source);
 static int CopyLinks(DRMS_Record_t *target, DRMS_Record_t *source);
@@ -2075,6 +2088,11 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
         stat = DRMS_ERROR_OUTOFMEMORY;
         goto failure;
      }
+
+     BASE_Cleanup_t cu;
+     cu.item = NULL;
+     cu.free = drms_record_summchkcache_term;
+     base_cleanup_register("summarytablechkcache", &cu);
   }
 
   if (gSummcon)
@@ -3557,6 +3575,14 @@ DRMS_Record_t *drms_create_record(DRMS_Env_t *env, char *series,
     rec = rs->records[0]; 
     free(rs->records);
     free(rs);
+    
+    /* rs->ss_currentrecs will have been alloc'd, but no longer needed. Free. */
+    if (rs->ss_currentrecs)
+    {
+       free(rs->ss_currentrecs);
+       rs->ss_currentrecs = NULL;
+    }
+
     return rec;
   }
   else
@@ -9066,3 +9092,5 @@ int drms_record_freerecsetspecarr(char **allvers, char ***sets, DRMS_RecordSetTy
 {
    return FreeRecSetDescArr(allvers, sets, types, snames, nsets);
 }
+
+

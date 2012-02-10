@@ -249,5 +249,7 @@ int drms_open_recordchunk(DRMS_Env_t *env,
 
 int drms_close_recordchunk(DRMS_RecordSet_t *rs);
 
+void drms_record_term(int verbose);
+
 #endif /* EXTERNALCODE */
 #endif /* _DRMS_RECORD_PRIV_H */
