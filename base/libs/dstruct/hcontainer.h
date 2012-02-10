@@ -41,6 +41,14 @@ typedef struct HIterator_struct {
   int szelems;                 /* number of elem slots allocated in elems */
 } HIterator_t;
 
+struct Bundle_struct
+{
+  void (*fmap)(const void *value, void *data);
+  void *data;
+};
+
+typedef struct Bundle_struct HContainerBundle_t;
+
 void hcon_init(HContainer_t *hc, int datasize, int keysize,
 	       void (*deep_free)(const void *value),
 	       void (*deep_copy)(const void *dst, const void *src));
@@ -60,6 +68,7 @@ void hcon_remove(HContainer_t *hc, const char *key);
 void hcon_print(HContainer_t *hc);
 void hcon_printf(FILE *fp, HContainer_t *hc);
 void hcon_map(HContainer_t *hc, void (*fmap)(const void *value));
+void hcon_map_ext(HContainer_t *hc, void (*fmap)(const void *value, void *data), void *data);
 void hcon_copy(HContainer_t *dst, HContainer_t *src);
 //int hcon_size(HContainer_t *hc);
 void hcon_stat(HContainer_t *hc);

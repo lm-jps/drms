@@ -106,6 +106,14 @@ float GetElapsedTime(TIMER_t *timer)
    return seconds;
 }
 
+void ResetTimer(TIMER_t *timer)
+{
+   if (timer)
+   {
+      gettimeofday(&(timer->first), NULL);
+   }
+}
+
 void DestroyTimer(TIMER_t **timer)
 {
    if (timer && *timer)

@@ -22,6 +22,9 @@ static void *ghDSDS = NULL;
 static int gAttemptedDSDS = 0;
 static unsigned int gRSChunkSize = 128;
 
+/* Cache the summary-table check */
+static HContainer_t *gSummcon = NULL;
+
 typedef enum
 {
    /* Begin parsing dataset string. */
@@ -2023,6 +2026,20 @@ DRMS_RecordSet_t *drms_create_records(DRMS_Env_t *env, int n, char *series,
   return drms_create_records_fromtemplate(env, n, template, lifetime, status);
 }
 
+static void CountNonLinkedSegs(const void *value, void *data)
+{
+   int *count = (int *)data;
+   DRMS_Segment_t *seg = (DRMS_Segment_t *)value;
+
+   if (seg && count)
+   {
+      if (!seg->info->islink)
+      {
+         *count++;
+      }
+   }
+}
+
 /* Create n new records by calling drms_create_record n times.  */
 DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,  
 						   DRMS_Record_t *template,     
@@ -2046,40 +2063,79 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
   int summaryexists = -1;
   int canupdatesummaries = -1;
 
-  summaryexists = drms_series_summaryexists(env, template->seriesinfo->seriesname, &stat);
+  int nnonlinkedsegs = 0;
 
-  if (stat == DRMS_SUCCESS)
+  /* Cache the summary-table check */
+  if (!gSummcon)
   {
-     if (summaryexists)
+     gSummcon = hcon_create(sizeof(char), DRMS_MAXSERIESNAMELEN, NULL, NULL, NULL, NULL, 0);
+
+     if (!gSummcon)
      {
-        /* No need to check on the ability to update the summary tables if the summary tables 
-         * do not exist. */
-        canupdatesummaries = drms_series_canupdatesummaries(env, template->seriesinfo->seriesname, &stat);
+        stat = DRMS_ERROR_OUTOFMEMORY;
+        goto failure;
      }
   }
 
-  if (stat == DRMS_SUCCESS)
+  if (gSummcon)
   {
-     if (summaryexists && !canupdatesummaries)
+     char *disp = (char *)hcon_lookup_lower(gSummcon, template->seriesinfo->seriesname);
+     if (disp)
      {
-        fprintf(stderr, "You must update your DRMS libraries before you can add records to series '%s'.\n", template->seriesinfo->seriesname);
-        if (status)
+        /* summary-table check has been performed, and results cached. */
+        if (*disp == 'y')
         {
-           *status = DRMS_ERROR_CANTCREATERECORD;
+           /* summary table exists for this series. */
+           summaryexists = 1;
+        }
+        else
+        {
+           /* summary table does not for this series. */
+           summaryexists = 0;
+        }
+     }
+     else
+     {
+        /* perform check. */
+        summaryexists = drms_series_summaryexists(env, template->seriesinfo->seriesname, &stat);
+
+        if (stat == DRMS_SUCCESS)
+        {
+           char res;
+
+           if (summaryexists)
+           {
+              res = 'y';
+
+              /* No need to check on the ability to update the summary table if the summary table 
+               * does exist. */
+              canupdatesummaries = drms_series_canupdatesummaries(env, template->seriesinfo->seriesname, &stat);
+           }
+           else
+           {
+              res = 'n';
+           }
+
+           /* cache result. */
+           hcon_insert(gSummcon, template->seriesinfo->seriesname, &res);
         }
 
-        return NULL;
+        if (stat == DRMS_SUCCESS)
+        {
+           if (summaryexists && !canupdatesummaries)
+           {
+              fprintf(stderr, "You must update your DRMS libraries before you can add records to series '%s'.\n", template->seriesinfo->seriesname);
+              stat = DRMS_ERROR_CANTCREATERECORD;
+              goto failure;
+           }
+        }
+        else
+        {
+           goto failure;
+        }
      }
   }
-  else
-  {
-     if (status)
-     {
-        *status = stat;
-     }
 
-     return NULL;
-  }
 
   if (n<1)
   {
@@ -2099,7 +2155,10 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
   rs->ss_queries = NULL;
   rs->ss_types = NULL;
   rs->ss_starts = NULL;
-  rs->ss_currentrecs = NULL;
+
+  /* Need to malloc (used by drms_record_fetchnext()). */
+  rs->ss_currentrecs = (int *)malloc(sizeof(int));
+  *rs->ss_currentrecs = -1;
   rs->cursor = NULL;
 
   series = template->seriesinfo->seriesname;
@@ -2128,7 +2187,11 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
 
   /* If this series has data segments associated with it then allocate 
      a storage unit slot for each record to hold them. */
-  if ( drms_record_numsegments(rs->records[0]) )
+
+  hcon_map_ext(&template->segments, CountNonLinkedSegs, &nnonlinkedsegs);
+
+  //  if ( drms_record_numsegments(rs->records[0]) )
+  if (nnonlinkedsegs > 0)
   {
     su = malloc(n*sizeof(DRMS_StorageUnit_t *));
     XASSERT(su);

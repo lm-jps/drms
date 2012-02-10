@@ -20,6 +20,7 @@ typedef struct TIMER_struct TIMER_t;
 
 TIMER_t *CreateTimer();
 float GetElapsedTime(TIMER_t *timer);
+void ResetTimer(TIMER_t *timer);
 void DestroyTimer(TIMER_t **timer);
 
 #endif

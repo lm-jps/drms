@@ -1802,6 +1802,7 @@ int GetColumnNames(DRMS_Env_t *env, const char *oid, char **colnames)
 
 int drms_series_summaryexists(DRMS_Env_t *env, const char *series, int *status)
 {
+#if (defined TOC && TOC)
    int istat = DRMS_SUCCESS;
    int tocexists = -1;
    int shadowexists = -1;
@@ -1849,6 +1850,31 @@ int drms_series_summaryexists(DRMS_Env_t *env, const char *series, int *status)
    }
 
    return summexists;
+#else
+
+   int istat = DRMS_SUCCESS;
+   int shadowexists = -1;
+   int summexists = -1;
+
+   shadowexists = ShadowExists(env, series, &istat);
+
+   if (istat == DRMS_SUCCESS)
+   {
+      summexists = shadowexists ? 1 : 0;
+   }
+   else
+   {
+      summexists = -1; /* since we don't know if it really exists. */
+   }
+
+   if (status)
+   {
+      *status = istat;
+   }
+
+   return summexists;
+
+#endif
 }
 
 int drms_series_canupdatesummaries(DRMS_Env_t *env, const char *series, int *status)

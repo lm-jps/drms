@@ -316,9 +316,34 @@ static void hconmapmap(const void *key, const void *value, const void *data)
    }
 }
 
+static void hconmapmap_ext(const void *key, const void *value, const void *bundle)
+{
+   HContainerBundle_t *bundlearg = (HContainerBundle_t *)bundle;
+   void (*fmap)(const void *value, void *data) = bundlearg->fmap;
+   void *data = bundlearg->data;
+
+   /* hash value */
+   if (value)
+   {
+      (*fmap)(((HContainerElement_t *)value)->val, data); /* Apply fmap to every value in the hcontainer element (which is value);
+                                                           * this version of the function also takes an additional argument 
+                                                           * to be used for virtually unlimited purposes. */
+   }
+}
+
 void hcon_map(HContainer_t *hc, void (*fmap)(const void *value))
 {
    hash_map_data(&hc->hash, hconmapmap, fmap);
+}
+
+void hcon_map_ext(HContainer_t *hc, void (*fmap)(const void *value, void *data), void *data)
+{
+   HContainerBundle_t bundle;
+
+   bundle.fmap = fmap;
+   bundle.data = data;
+
+   hash_map_data(&hc->hash, hconmapmap_ext, &bundle);
 }
 
 /*
