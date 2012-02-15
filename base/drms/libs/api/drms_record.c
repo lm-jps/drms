@@ -2048,7 +2048,7 @@ static void CountNonLinkedSegs(const void *value, void *data)
    {
       if (!seg->info->islink)
       {
-         *count++;
+         (*count)++;
       }
    }
 }
