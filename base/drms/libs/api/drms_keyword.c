@@ -1532,6 +1532,8 @@ int drms_copykeys(DRMS_Record_t *target,
       }
    }
 
+   hiter_free(&sethit);
+
    return status;
 }
 
