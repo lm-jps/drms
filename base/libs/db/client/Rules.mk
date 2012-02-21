@@ -7,7 +7,10 @@ d		:= $(dir)
 LIBDBCLIENT		:= $(d)/libdbclient.a
 
 # Common to client and server - keep .o files in parent.
-COMMOBJ_$(d)		:= $(addprefix $(d)/../, db_common.o db_network.o db_client.o db_sort.o)
+# Add db_postgresql.o, from server code dir, because the client should be able to 
+# make a db connection and use PG functions.
+#  Art 2/21/2012
+COMMOBJ_$(d)		:= $(addprefix $(d)/../, db_common.o db_network.o db_client.o db_sort.o server/db_postgresql.o)
 
 OBJ_$(d)		:= 
 
