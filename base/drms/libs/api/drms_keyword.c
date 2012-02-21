@@ -2453,14 +2453,6 @@ int drms_keyword_slotval2indexval(DRMS_Keyword_t *slotkey,
          else
            valout->value.longlong_val = CalcSlot(valind, base, stepsecs, stepsecs);
       }
-
-      if (startdur)
-      {
-         if (!toosmall && (fabs(exact - inexact) > 1.0e-11 * (fabs(exact) + fabs(inexact))))
-         {
-            fprintf(stderr, "Invalid slotted-keyword duration '%f seconds' specified.  Should be a multiple of step size '%f seconds'.  Duration was rounded to nearest multiple.\n", valind, stepsecs);
-         }
-      }
    }
    else
    {
