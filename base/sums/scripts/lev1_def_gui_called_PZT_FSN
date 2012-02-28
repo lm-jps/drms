@@ -40,7 +40,7 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
 #6. Check that hmi,aia.temperature_summary_300s exists for our date.
 #
 #7. Check that the manually set No Go file does not exist:
-#/home/jsoc/cvs/Development/JSOC/proj/lev0/data/NoDefLev1[HMI,AIA]
+#/surge40/jsocprod/lev0/data/NoDefLev1[HMI,AIA]
 #
 #
 ######################################################################
@@ -49,8 +49,8 @@ use DBI;
 
 $XmitFlgDirHMI = "/dds/soc2pipe/hmi";
 $XmitFlgDirAIA = "/dds/soc2pipe/aia";
-$NoGoFileHMI = "/home/jsoc/cvs/Development/JSOC/proj/lev0/data/NoDefLev1HMI";
-$NoGoFileAIA = "/home/jsoc/cvs/Development/JSOC/proj/lev0/data/NoDefLev1AIA";
+$NoGoFileHMI = "/surge40/jsocprod/lev0/data/NoDefLev1HMI";
+$NoGoFileAIA = "/surge40/jsocprod/lev0/data/NoDefLev1AIA";
 #$DSFFNAMEHMI = "su_production.hmi_flatfield";
 $DSFFNAMEHMI = "hmi.flatfield";
 #$DSFFNAMEAIA = "aia_test.flatfield";
@@ -72,7 +72,7 @@ $PGPORT=5432;
 $| = 1;
 
 $PID = getppid;
-$alog = "/home/jsoc/cvs/Development/JSOC/proj/lev0/data/arg_lev1_empty_$PID.txt";
+$alog = "/surge40/jsocprod/lev0/data/arg_lev1_empty_$PID.txt";
 
 @allowhost = ("cl1n001", "cl1n002", "cl1n003"); #hosts w/dcs[0,1] mounts
 @wavestr = ("131_OPEN", "131_THICK", "131_THIN", "1600", "1700", "171_THICK", "171_THIN", "193_OPEN", "193_THICK", "193_THIN", "211_OPEN", "211_THICK", "211_THIN", "304_OPEN", "304_THICK", "304_THIN", "335_OPEN", "335_THICK", "335_THIN", "4500", "94_OPEN", "94_THICK", "94_THIN");
