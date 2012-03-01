@@ -126,10 +126,13 @@ void *DSDS_GetLibHandle(const char *libname, kDSDS_Stat_t *status)
          needle += strlen(DRMS_ARCH);
          *needle = '\0';
 
+         /* We have the path to the make output directory. Now we need 
+          * to get the parent and append "lib/DRMS_ARCH/libname. "*/
          snprintf(lpath, 
                   sizeof(lpath), 
-                  "%s/%s",
-                  spath, 
+                  "%s/../lib/%s/%s",
+                  spath,
+                  DRMS_ARCH,
                   libname);
       }
       else
