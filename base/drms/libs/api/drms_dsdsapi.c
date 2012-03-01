@@ -102,32 +102,60 @@ void *DSDS_GetLibHandle(const char *libname, kDSDS_Stat_t *status)
    kDSDS_Stat_t stat = kDSDS_Stat_Success;
    void *ret = NULL;
    char lpath[PATH_MAX];
+   char spath[PATH_MAX];
    char *msg = NULL;
 
-#ifdef DRMS_LIBDIR
-   snprintf(lpath, 
-            sizeof(lpath), 
-            "%s/%s", 
-            DRMS_LIBDIR, 
-            libname);
-   dlerror();
-   ret = dlopen(lpath, RTLD_NOW);
-   if ((msg = dlerror()) != NULL)
-   {
-      /* library not found */
-      fprintf(stderr, "dlopen(%s) error: %s.\n", lpath, msg);
-      if (ret)
-      {
-         dlclose(ret);
-         ret = NULL;
-      }
-      stat = kDSDS_Stat_CantOpenLibrary;
-   }
-
+#ifdef DRMS_ARCH
 #else
-   #error Ensure the DRMS_LIBDIR is defined in make_basic.mk
+   #error Ensure the DRMS_ARCH macro is defined in make_basic.mk
 #endif
 
+   /* Obtain library tree path relative to binary path. */
+   if (readlink("/proc/self/exe", spath, sizeof(spath)) == -1)
+   {
+      fprintf(stderr, "Cannot locate this binary.\n");
+      stat = kDSDS_Stat_CantOpenLibrary;
+   }
+   else
+   {
+      /* Find architecture subdirectory. */
+      char *needle = NULL;
+
+      if ((needle = strstr(spath, DRMS_ARCH)) != NULL)
+      {
+         needle += strlen(DRMS_ARCH);
+         *needle = '\0';
+
+         snprintf(lpath, 
+                  sizeof(lpath), 
+                  "%s/%s",
+                  spath, 
+                  libname);
+      }
+      else
+      {
+         fprintf(stderr, "Cannot find architecture %s subpath.\n", DRMS_ARCH);
+         stat = kDSDS_Stat_CantOpenLibrary;
+      }
+   }
+
+   if (!stat)
+   {
+      dlerror();
+      ret = dlopen(lpath, RTLD_NOW);
+      if ((msg = dlerror()) != NULL)
+      {
+         /* library not found */
+         fprintf(stderr, "dlopen(%s) error: %s.\n", lpath, msg);
+         if (ret)
+         {
+            dlclose(ret);
+            ret = NULL;
+         }
+         stat = kDSDS_Stat_CantOpenLibrary;
+      }
+   }
+   
    if (status)
    {
       *status = stat;

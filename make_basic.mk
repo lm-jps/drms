@@ -137,7 +137,7 @@ endif
 # All modules must be able to find libdsds.so. The define DRMS_LIBDIR specifies the path to 
 # all libraries.
 
-GLOBALSW = -DDRMS_LIBDIR="\"$(WORKINGDIR)/lib/$(MACH)\""
+GLOBALSW = -DDRMS_ARCH="\"$(MACH)\""
 #
 #***********************************************************************************************#
 
