@@ -217,8 +217,6 @@ __PROJCFG__
 # directory).
 
 find ../proj/lev0/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
-
-find ../proj/datacapture/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
 __END__
 __LIBS__
 # JSOC_SDP third-party libraries used by base
