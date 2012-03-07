@@ -8,6 +8,21 @@
  *  jsoc_fetch - cgi-bin program to recieve jsoc export and export status requests
  *
  */
+
+
+/*
+ * There are two ways to emulate a POST request on the cmd-line. Both involve 
+ * forcing qDecoder, the HTTP-request parsing library, to process a GET request.
+ * Since POST passes its argument via stdin to jsoc_fetch, it would be cumbersome
+ * to use the POST branch of qDecoder code (which expects args to arrive via stdin, 
+ * and expects additional env variables). Instead we can pass the arguments via
+ * the cmd-line, or via environment variables.
+ *   1. Set two shell environment variables, then run jsoc_fetch:
+ *      a. setenv REQUEST_METHOD GET
+ *      b. setenv QUERY_STRING 'op=exp_su&method=url_quick&format=json&protocol='as-is'&formatvar=dataobj&requestid=NOASYNCREQUEST&sunum=38400738,38400812' (this is an example - substitute your own arguments).
+ *      c. jsoc_fetch
+ *   2. Provide the QUERY_STRING argument to jsoc_fetch: jsoc_fetch QUERY_STRING='op=exp_su&method=url_quick&format=json&protocol='as-is'&formatvar=dataobj&requestid=NOASYNCREQUEST&sunum=38400738,38400812' (this is an example - substitute your own arguments).
+ */
 #include "jsoc_main.h"
 #include "drms.h"
 #include "drms_names.h"
@@ -604,7 +619,7 @@ report_summary(const char *host, double StartTime, const char *remote_IP, const 
 
 /* Module main function. */
 int DoIt(void)
-  {
+{
 						/* Get command line arguments */
   const char *op;
   const char *dsin;
@@ -644,7 +659,6 @@ int DoIt(void)
   char new_requestid[200];
   char status_query[1000];
   char *export_series; 
-  int is_POST = 0;
   char msgbuf[128];
   SUM_info_t **infostructs = NULL;
   char *webarglist = NULL;
@@ -657,60 +671,90 @@ int DoIt(void)
   char *sustatus[DRMS_MAXQUERYLEN/8] = {0};
   char *susize[DRMS_MAXQUERYLEN/8] = {0};
   int arrsize = DRMS_MAXQUERYLEN/8;
+    
+    int postorget = 0;
+    
+    if (getenv("REQUEST_METHOD"))
+    {
+        postorget = (strcasecmp(getenv("REQUEST_METHOD"), "POST") == 0 || 
+                     strcasecmp(getenv("REQUEST_METHOD"), "GET") == 0);
+    }
 
   if (nice_intro ()) return (0);
 
   gettimeofday(&thistv, NULL);
   StartTime = thistv.tv_sec + thistv.tv_usec/1000000.0;
   web_query = strdup (cmdparams_get_str (&cmdparams, "QUERY_STRING", NULL));
-  from_web = strcmp (web_query, kNotSpecified) != 0;
+  from_web = (strcmp (web_query, kNotSpecified) != 0) || postorget;
 
-  if (from_web)
-     {
-     const char * rmeth = NULL;
-     Q_ENTRY *req = NULL;
-
-      /* Use qDecoder to parse HTTP POST requests. qDecoder actually handles 
-       * HTTP GET requests as well.
-       * See http://www.qdecoder.org
-       */
-
-     /* Use the REQUEST_METHOD environment variable as a indicator of 
-      * a POST request. */
-     rmeth = cmdparams_get_str(&cmdparams, "REQUEST_METHOD", NULL);
-     is_POST = strcasecmp(rmeth, "post") == 0;
-
-     webarglistsz = 2048;
-     webarglist = (char *)malloc(webarglistsz);
-     *webarglist = '\0';
-
-     req = qCgiRequestParseQueries(NULL, NULL);
-     if (req)
+    if (from_web)
+    {
+        Q_ENTRY *req = NULL;
+        
+        /* If we are here then one of three things is true (implied by the existence of QUERY_STRING):
+         *   1. We are processing an HTTP GET. The webserver will put the arguments in the
+         *      QUERY_STRING environment variable.
+         *   2. We are processing an HTT POST. The webserver will NOT put the arguments in the
+         *      QUERY_STRING environment variable. Instead the arguments will be passed to jsoc_fetch
+         *      via stdin. QUERY_STRING should not be set, but it looks like it might be. In any
+         *      case qDecoder will ignore it.
+         *   3. jsoc_fetch was invoked via the cmd-line, and the caller provided the QUERY_STRING
+         *      argument. The caller is trying to emulate an HTTP request - they want to invoke
+         *      the web-processing code, most likely to develop or debug a problem. 
+         *
+         *   If we are in case 3, then we need to make sure that the QUERY_STRING environment variable
+         *   is set since qDecoder will be called, and to process a GET, QUERY_STRING must be set.
+         */
+        
+        if (!getenv("QUERY_STRING"))
         {
-           /* Accept only known key-value pairs - ignore the rest. */
-           SetWebArg(req, kArgOp, &webarglist, &webarglistsz);
-           SetWebArg(req, kArgRequestid, &webarglist, &webarglistsz);
-           SetWebArg(req, kArgDs, &webarglist, &webarglistsz);
-           SetWebArg(req, kArgSunum, &webarglist, &webarglistsz);
-           SetWebArg(req, kArgSeg, &webarglist, &webarglistsz);
-           SetWebArg(req, kArgProcess, &webarglist, &webarglistsz);
-           SetWebArg(req, kArgFormat, &webarglist, &webarglistsz);
-           SetWebArg(req, kArgFormatvar, &webarglist, &webarglistsz);
-           SetWebArg(req, kArgMethod, &webarglist, &webarglistsz);
-           SetWebArg(req, kArgProtocol, &webarglist, &webarglistsz);
-           SetWebArg(req, kArgFilenamefmt, &webarglist, &webarglistsz);
-           SetWebArg(req, kArgRequestor, &webarglist, &webarglistsz);
-           SetWebArg(req, kArgNotify, &webarglist, &webarglistsz);
-           SetWebArg(req, kArgShipto, &webarglist, &webarglistsz);
-           SetWebArg(req, kArgRequestorid, &webarglist, &webarglistsz);
-           SetWebArg(req, kUserHandle, &webarglist, &webarglistsz);
-           if (strncmp(cmdparams_get_str (&cmdparams, kArgDs, NULL),"*file*", 6) == 0);
-           SetWebFileArg(req, kArgFile, &webarglist, &webarglistsz);
-           SetWebArg(req, kArgTestmode, &webarglist, &webarglistsz);
-
-           qEntryFree(req); 
+            /* Either case 2 or 3. Definitely not case 1. */
+            if (!postorget)
+            {
+                /* Case 3 - set QUERY_STRING from cmd-line arg. */
+                setenv("QUERY_STRING", web_query, 1);
+                
+                /* REQUEST_METHOD is not set - set it to GET. */
+                setenv("REQUEST_METHOD", "GET", 1);
+            }
         }
-     }
+        
+        /* Use qDecoder to parse HTTP POST requests. qDecoder actually handles 
+         * HTTP GET requests as well.
+         * See http://www.qdecoder.org
+         */
+        
+        webarglistsz = 2048;
+        webarglist = (char *)malloc(webarglistsz);
+        *webarglist = '\0';
+        
+        req = qCgiRequestParseQueries(NULL, NULL);
+        if (req)
+        {
+            /* Accept only known key-value pairs - ignore the rest. */
+            SetWebArg(req, kArgOp, &webarglist, &webarglistsz);
+            SetWebArg(req, kArgRequestid, &webarglist, &webarglistsz);
+            SetWebArg(req, kArgDs, &webarglist, &webarglistsz);
+            SetWebArg(req, kArgSunum, &webarglist, &webarglistsz);
+            SetWebArg(req, kArgSeg, &webarglist, &webarglistsz);
+            SetWebArg(req, kArgProcess, &webarglist, &webarglistsz);
+            SetWebArg(req, kArgFormat, &webarglist, &webarglistsz);
+            SetWebArg(req, kArgFormatvar, &webarglist, &webarglistsz);
+            SetWebArg(req, kArgMethod, &webarglist, &webarglistsz);
+            SetWebArg(req, kArgProtocol, &webarglist, &webarglistsz);
+            SetWebArg(req, kArgFilenamefmt, &webarglist, &webarglistsz);
+            SetWebArg(req, kArgRequestor, &webarglist, &webarglistsz);
+            SetWebArg(req, kArgNotify, &webarglist, &webarglistsz);
+            SetWebArg(req, kArgShipto, &webarglist, &webarglistsz);
+            SetWebArg(req, kArgRequestorid, &webarglist, &webarglistsz);
+            SetWebArg(req, kUserHandle, &webarglist, &webarglistsz);
+            if (strncmp(cmdparams_get_str (&cmdparams, kArgDs, NULL),"*file*", 6) == 0);
+            SetWebFileArg(req, kArgFile, &webarglist, &webarglistsz);
+            SetWebArg(req, kArgTestmode, &webarglist, &webarglistsz);
+            
+            qEntryFree(req); 
+        }
+    }
   free(web_query);
   // From here on, called as cgi-bin same as from command line
 
