@@ -3067,9 +3067,17 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           /* Use the sudir field to hold the resultant SUM_info_t structs */
           for (i = 0; i < isunum; i++)
           {
+             snprintf(key, sizeof(key), "%llu", (unsigned long long)(dxarray[i]));
+
+             if (!psinfo)
+             {
+                fprintf(stderr, "SUMS did not return a SUM_info_t struct for sunum %s.\n", key);
+                reply->opcode = 99;
+                break;
+             }
+
              /* NOTE - if an sunum is unknown, the returned SUM_info_t will have the sunum set 
               * to -1.  So don't use the returned sunum. */
-             snprintf(key, sizeof(key), "%llu", (unsigned long long)(dxarray[i]));
              if ((pinfo = hcon_lookup(map, key)) != NULL)
              {
                 *pinfo = psinfo;
@@ -3086,22 +3094,25 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
              psinfo = psinfo->next;
           }
 
-          for (i = 0; i < request->reqcnt; i++)
-          {
-             snprintf(key, sizeof(key), "%llu", (unsigned long long)(request->sunum[i]));
-             if ((pinfo = hcon_lookup(map, key)) != NULL)
-             {
-                reply->sudir[i] = (char *)malloc(sizeof(SUM_info_t));
-                *((SUM_info_t *)(reply->sudir[i])) = **pinfo;
-                ((SUM_info_t *)(reply->sudir[i]))->next = NULL;
-             }
-             else
-             {
-                fprintf(stderr, "Information returned for sunum '%s' unknown to DRMS.\n", key);
-                reply->opcode = 99;
-                break; // from loop
-             }
-          }
+           if (reply->opcode == 0)
+           {
+               for (i = 0; i < request->reqcnt; i++)
+               {
+                   snprintf(key, sizeof(key), "%llu", (unsigned long long)(request->sunum[i]));
+                   if ((pinfo = hcon_lookup(map, key)) != NULL)
+                   {
+                       reply->sudir[i] = (char *)malloc(sizeof(SUM_info_t));
+                       *((SUM_info_t *)(reply->sudir[i])) = **pinfo;
+                       ((SUM_info_t *)(reply->sudir[i]))->next = NULL;
+                   }
+                   else
+                   {
+                       fprintf(stderr, "Information returned for sunum '%s' unknown to DRMS.\n", key);
+                       reply->opcode = 99;
+                       break; // from loop
+                   }
+               }
+           }
 
           SUM_infoArray_free(sum); /* This will free all the SUM_info_t structs owned by SUMS. */
        }
