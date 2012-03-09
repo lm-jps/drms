@@ -1743,6 +1743,112 @@ int SUM_put(SUM_t *sum, int (*history)(const char *fmt, ...))
   return(sum->status);
 }
 
+/* Take an array of sunums and mark them for archiving.
+ * Any sunum that is not already online, cannot be marked for archiving.
+ * This sunum is ignored and does not cause an error.
+ * An error return indicates some failure along the way. One or more sunum
+ * may not have gotten marked archive pending.
+ * If you need detailed knowledge, call w/one sunum at a time.
+ * A touch option can be used in the mode and tday fields of the sum_t. 
+ * This option wll apply to all the sunums.
+ * This function can take up to MAXSUMREQCNT (512) sunums in a call.
+*/
+int SUM_archSU(SUM_t *sum, int (*history)(const char *fmt, ...))
+{
+//!!!TBD. NOTE: May develop a seperate utility script to do this 
+//instead of a new API. See sum_arch_recset.pl and sum_arch_su.pl
+/*****************************************************************
+  int rr;
+  KEY *klist;
+  char dsix_name[64];
+  char *call_err;
+  uint64_t *dsixpt;
+  int i, cnt, msgstat;
+  uint32_t retstat;
+  enum clnt_stat status;
+
+  dsixpt = sum->dsix_ptr;
+  if(sum->debugflg) {
+    (*history)("Going to archSU reqcnt=%d with 1st ix=%lu\n", 
+			sum->reqcnt, *dsixpt);
+  }
+  klist = newkeylist();
+  setkey_uint64(&klist, "uid", sum->uid);
+  setkey_int(&klist, "mode", sum->mode);
+  setkey_int(&klist, "tdays", sum->tdays);
+  setkey_int(&klist, "reqcnt", sum->reqcnt);
+  //setkey_str(&klist, "dsname", sum->dsname);
+  //setkey_str(&klist, "username", sum->username);
+  //setkey_int(&klist, "group", sum->group);
+  //setkey_int(&klist, "storage_set", sum->storeset);
+  //setkey_double(&klist, "bytes", sum->bytes);
+  setkey_int(&klist, "DEBUGFLG", sum->debugflg);
+  setkey_int(&klist, "REQCODE", ARCHSUDO);
+  for(i = 0; i < sum->reqcnt; i++) {
+    sprintf(dsix_name, "dsix_%d", i);
+    setkey_uint64(&klist, dsix_name, *dsixpt++);
+    sprintf(dsix_name, "wd_%d", i);
+    setkey_str(&klist, dsix_name, *cptr++);
+  }
+  rr = rr_random(0, numSUM-1);
+  switch(rr) {
+  case 0: 
+    clput = sum->clput;
+    break;
+  case 1:
+    clput = sum->clput1;
+    break;
+  case 2:
+    clput = sum->clput2;
+    break;
+  case 3:
+    clput = sum->clput3;
+    break;
+  case 4:
+    clput = sum->clput4;
+    break;
+  case 5:
+    clput = sum->clput5;
+    break;
+  case 6:
+    clput = sum->clput6;
+    break;
+  case 7:
+    clput = sum->clput7;
+    break;
+  }
+  clprev = clput;
+  status = clnt_call(clput, PUTDO, (xdrproc_t)xdr_Rkey, (char *)klist, 
+			(xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
+
+  // NOTE: These rtes seem to return after the reply has been received despite
+  // the timeout value. If it did take longer than the timeout then the timeout
+  // error status is set but it should be ignored.
+  if(status != RPC_SUCCESS) {
+    if(status != RPC_TIMEDOUT) {
+      call_err = clnt_sperror(clput, "Err clnt_call for PUTDO");
+      (*history)("%s %d %s\n", datestring(), status, call_err);
+      freekeylist(&klist);
+      return (4);
+    }
+  }
+  freekeylist(&klist);
+  if(retstat == 1) return(1);           // error occured
+  // NOTE: RESULT_PEND cannot happen for SUM_put() call
+  //if(retstat == RESULT_PEND) return((int)retstat); // caller to check later
+  msgstat = getanymsg(1);		// answer avail now
+  if(msgstat == ERRMESS) return(ERRMESS);
+  if(sum->debugflg) {
+    (*history)("In SUM_put() print out wd's \n");
+    cnt = sum->reqcnt;
+    cptr = sum->wd;
+    for(i = 0; i < cnt; i++) {
+      printf("wd = %s\n", *cptr++);
+    }
+  }
+  return(sum->status);
+*****************************************************************/
+}
 
 /* Called by the delete_series program before it deletes the series table.
  * Called with a pointer to a full path name that contains the sunums
@@ -2025,6 +2131,7 @@ KEY *respdoarray_1(KEY *params)
     sinfod = sinfod->next; //sinfod->next set up from the malloc
   } 
   }
+  fclose(rfp);
   return((KEY *)NULL);
 }
 
