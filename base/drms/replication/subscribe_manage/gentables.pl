@@ -30,7 +30,9 @@ use constant kOptPop        => "populate"; # Populate both tables from data file
 # Op values
 use constant kOpValRep  => qr(replace)i;
 use constant kOpValAdd  => qr(add)i;
+use constant kOpValRem  => qr(remove)i;
 use constant kOpValCrt  => qr(create)i;
+use constant kOpValDrp  => qr(drop)i;
 use constant kOpValPop  => qr(populate)i;
 
 # Return codes
@@ -54,7 +56,7 @@ my($tblmgr);
 my($node);
 my($lstfile);
 my($sitedir);
-my($dopop); 
+my($dopop);
 my(%cfg);
 
 # Required arguments
@@ -154,6 +156,11 @@ if (!$rv)
         
         $tblmgr->Add($node, $sitedir, $lstfile);
     }
+    elsif ($op =~ &kOpValRem)
+    {
+        $node = $optsH->{&kOptNode};
+        $tblmgr->Remove($node);
+    }
     elsif ($op =~ &kOpValCrt)
     {
         $dopop = $optsH->{&kOptPop};
@@ -172,9 +179,13 @@ if (!$rv)
             $tblmgr->Create();
         }
     }
+    elsif ($op =~ &kOpValDrp)
+    {
+        $tblmgr->Drop();
+    }
     elsif ($op =~ &kOpValPop)
     {
-        $tblmgr->Populate($cfg{parser_config});
+        $rv = $tblmgr->Populate($cfg{parser_config});
     }
     else
     {
@@ -240,17 +251,25 @@ sub Usage
 {
     # REPLACE existing rows in the lsts table with data from lstfile.
     print "Usage:\n";
-    print "gentables.pl config=<server config file> op=replace --node=<node> --lstfile=<file with series list>\n";
-    print "REPLACE existing rows in the lst table with data from lstfile.\n\n";
+    print "gentables.pl config=<server config file> op=replace --node=<node> --lst=<file with series list>\n";
+    print "REPLACE existing rows in the lst table with data from lst file.\n\n";
     
     # ADD a new node to the configuration table.
-    print "gentables.pl config=<server config file> op=add --node=<node> --sitedir=<site dir> [ --lstfile=<file with series list> ]\n";
+    print "gentables.pl config=<server config file> op=add --node=<node> --sitedir=<site dir> [ --lst=<file with series list> ]\n";
     print "ADD a new node to the configuration table. Optionally populate the node's lst-table records with the series list in <file with series list>.\n\n";
+    
+    # REMOVE a node from the configuration table.
+    print "gentables.pl config=<server config file> op=remove --node=<node>\n";
+    print "REMOVE a node from the configuration and lst tables.\n\n";
     
     # CREATE both configuration and lsts tables. Optionally populate both tables from data in the
     #   configuration and lst FILES.
     print "gentables.pl config=<server config file> op=create [ --populate ]\n";
     print "CREATE both configuration and lsts tables. Optionally populate both tables \nfrom data in the configuration and lst FILES.\n\n";
+    
+    # DELETE both configuration and lsts tables. 
+    print "gentables.pl config=<server config file> op=drop\n";
+    print "DROP both configuration and lsts tables.\n\n";
     
     # POPULATE both configuration and lsts tables from data in the configuration and lst FILES.
     print "gentables.pl config=<server config file> op=populate\n";

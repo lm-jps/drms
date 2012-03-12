@@ -193,6 +193,34 @@ sub Add
     }
 }
 
+sub Remove
+{
+    my($self) = shift;
+    my($node) = shift;
+    
+    if (defined($node))
+    {
+        if ($self->{_cfgtable}->Remove($node, &kCfgNode))
+        {
+            print STDERR "Unable to remove node $node's data.\n";
+            $self->{_err} = &kRetTable;
+        }
+        else
+        {
+            if ($self->{_lsttable}->Remove($node, &kLstNode))
+            {
+                print STDERR "Unable to remove node $node's data.\n";
+                $self->{_err} = &kRetTable;
+            }
+        }
+    }
+    else
+    {
+        print STDERR "Must provide node name.\n";
+        $self->{_err} = &kRetInvalidArg;
+    }
+}
+
 sub Create
 {
     my($self) = shift;
@@ -207,6 +235,7 @@ sub Create
         
         unless (defined($cfgexists))
         {
+            # Error - Exists() should return something.
             $self->{_err} = &kRetTable;
         }
         elsif (!$cfgexists)
@@ -285,6 +314,74 @@ sub Create
         }   
     }
 }
+
+sub Drop
+{
+    my($self) = shift;
+    
+    if ($self->{_cfgtable}->{_exists})
+    {
+        if ($self->{_cfgtable}->Drop())
+        {
+            print STDERR "Unable to drop configuration table.\n";
+            $self->{_err} = &kRetTable;
+        }
+    }
+    
+    if ($self->{_lsttable}->{_exists})
+    {
+        if ($self->{_lsttable}->Drop())
+        {
+            print STDERR "Unable to drop lst table.\n";
+            $self->{_err} = &kRetTable;
+        }
+    }
+}
+
+sub Populate
+{
+    my($self) = shift;
+    my($cfgfile) = shift; 
+    
+    if (defined($cfgfile))
+    {
+        if (-e $cfgfile && open(CFG, "<$cfgfile"))
+        {
+            my(@content) = <CFG>;
+            
+            # Populate the CFG table from the first column of $cfgfile.
+            if ($self->{_cfgtable}->Ingest(\@content))
+            {
+                # Bad content.
+                print STDERR "cfg file $cfgfile has improper format.\n";
+                $self->{_err} = &kRetTable;
+            }
+            else
+            {
+                # Populate the LST table from the series lists in the lst files in the second column of $cfgfile.
+                if ($self->{_lsttable}->Ingest(\@content, &kLstNode, &kLstSeries))
+                {
+                    # Bad content.
+                    print STDERR "cfg file $cfgfile has improper format.\n";
+                    $self->{_err} = &kRetTable;
+                }
+            }
+            
+            close(CFG);
+        }
+        else
+        {
+            print STDERR "Unable to read cfg file $cfgfile.\n";
+            $self->{_err} = &kRetIO;
+        }
+    }
+    else
+    {
+        print STDERR "Must provide path to parser configuration file.\n";
+        $self->{_err} = &kRetInvalidArg;
+    }
+}
+
 
 # Accessor functions
 sub GetErr
@@ -522,6 +619,26 @@ sub Exists
     return $rv;
 }
 
+sub Remove
+{
+    my($self) = shift;
+    my($node) = shift;
+    my($nodecol) = shift;
+    my($rv);
+    my($stmnt);
+    
+    $rv = 0;
+    
+    $stmnt = "DELETE FROM $self->{_name} WHERE $self->{_cols}->[$nodecol] = '$node'";
+    
+    if ($self->{_dbh}->ExeQuery($stmnt))
+    {
+        $rv = 1;
+    }
+    
+    return $rv;
+}
+
 # Returns 0 on success, 1 on failure.
 sub Create
 {
@@ -600,12 +717,25 @@ sub Create
     return $rv;
 }
 
-sub Replace
+sub Drop
 {
-    # Noop - done by child classes.
     my($self) = shift;
+    my($rv);
+    my($stmnt);
     
-    return 0;
+    $rv = 0;
+    
+    if ($self->{_exists})
+    {
+        $stmnt = "DROP TABLE $self->{_name}";
+        
+        if ($self->{_dbh}->ExeQuery($stmnt))
+        {
+            $rv = 1;
+        }
+    }
+    
+    return $rv;
 }
 
 sub GetName
@@ -812,6 +942,10 @@ sub Add
                 if ($self->{_dbh}->ExeQuery($stmnt))
                 {
                     $rv = 2;
+                }
+                else
+                {
+                    print "Inserted record ('$node', '$sitedir') into $self->{_name} for node $node.\n";
                 }
             }
         }
