@@ -62,11 +62,17 @@ int DoIt(void) {
   struct stat file_stat;
   DRMS_Record_t *template;
   char yesno[10];
+    int usestdin = 0;
 
   /* Parse command line parameters. */
-  if (cmdparams_numargs (&cmdparams) < 2) goto usage;
+  if (cmdparams_numargs (&cmdparams) < 1) 
+  {
+      fprintf(stderr, "Insufficient number of args.\n");
+      goto usage;
+  }
 
-  force = cmdparams_exists(&cmdparams, "f");     
+  force = cmdparams_exists(&cmdparams, "f");
+    usestdin = cmdparams_isflagset(&cmdparams, "i");
 
   /* Get privileges to be granted to the public on the tables belonging to
      the new series. */
@@ -75,24 +81,64 @@ int DoIt(void) {
 
   filename = cmdparams_getarg(&cmdparams, 1);
 
-  /* Read the whole series definition file into memory. */
-  if (stat(filename, &file_stat)) 
-  {
-    printf("Can't stat file %s\n", filename);
-    return 1;
-  }  
-  buf = (char *)malloc( file_stat.st_size+1 );
-  XASSERT(buf);
-  fp = fopen(filename,"r");
-  fread(buf,file_stat.st_size,1,fp);
-  buf[file_stat.st_size] = 0;
+    if (filename)
+    {
+        /* Read the whole series definition file into memory. */
+        if (stat(filename, &file_stat)) 
+        {
+            printf("Can't stat file %s\n", filename);
+            return 1;
+        }  
+        buf = (char *)malloc( file_stat.st_size+1 );
+        XASSERT(buf);
+        fp = fopen(filename,"r");
+        fread(buf,file_stat.st_size,1,fp);
+        buf[file_stat.st_size] = 0;
+    }
+    else if (usestdin)
+    {
+        char bufin[80];
+        char *bufout = NULL;
+        size_t szbuf = 1024;
+        
+        bufout = malloc(szbuf * sizeof(char));
+        *bufout = '\0';
+        
+        if (!bufout)
+        {
+            fprintf(stderr, "No memory!\n");
+            goto bailout;
+        }
+        
+        while (fgets(bufin, sizeof(bufin), stdin) != NULL)
+        {
+            bufout = base_strcatalloc(bufout, bufin, &szbuf);    
+        }
+        
+        buf = bufout;
+    }
+    else
+    {
+        /* Bail */
+        fprintf(stderr, "No jsd provided?\n");
+        goto usage;
+    }
 
   /* Parse the description into a template record structure. */
   template = drms_parse_description(drms_env, buf);
   free(buf);
   if (template==NULL)
   {
-    printf("Failed to parse series description in file '%s'.\n",filename);
+      if (!usestdin)
+      {
+          printf("Failed to parse series description in file '%s'.\n",filename);
+      }
+      else
+      {
+          printf("Failed to parse series description from stdin.\n");
+      }
+      fflush(stdout);
+      fflush(stderr);
     return 1;
   }
 //  if (series = strdup(cmdparams_get_str(&cmdparams, "name", NULL))) {
@@ -135,11 +181,17 @@ int DoIt(void) {
   drms_free_record_struct (template);
   free (template);
 
+    fflush(stdout);
+    fflush(stderr);
   return 0;
  bailout:
+    fflush(stdout);
+    fflush(stderr);
   return 1;
  usage:
-  printf ("Usage: %s [-f] [perm=[s|i|u]] [name=seriesname] file.jsd\n",
+  printf ("Usage: %s [-f] [perm=[s|i|u]] [name=seriesname] (file.jsd | -i)\n",
       cmdparams_getarg (&cmdparams, 0));
+    fflush(stdout);
+    fflush(stderr);
   return 1;
 }
