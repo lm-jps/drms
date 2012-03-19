@@ -190,13 +190,13 @@ unless ($repro) {
 
   # parselock facilitates coordination between this process and the processes
   # instantiated via invocations of manage_logs.pl and archivelogs.pl.
-  # These three processes are accessing the original logs and parsed logs, and
-  # can attempt to do so simultaneously
+  # These three processes are accessing the original log and parsed logs, and
+  # can attempt to do so simultaneously.
   thisLock("$config{'kServerLockDir'}/$parselock", \$lckFH);  ## only one instance of this process running
 
-  # parselock facilitates coordination between this process and the processes
+  # $subscribelock facilitates coordination between this process and the processes
   # instantiated via invocations of sql_gen, subscription_cleanup, and sdo_slony1_dump.sh.
-  # These four processes access the nodes' .lst files and nodes' site-specific-
+  # These four processes access slon_parser.cfg, the nodes' .lst files, and the nodes' site-specific-
   # log directories, and can do so simultaneously.
   $subscribelockpath = "$config{'kServerLockDir'}/$subscribelock";
   system("(set -o noclobber; echo $$ > $subscribelockpath) 2> /dev/null");

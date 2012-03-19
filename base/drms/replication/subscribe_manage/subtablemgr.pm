@@ -1,15 +1,25 @@
 #!/home/jsoc/bin/linux_x86_64/perl5.12.2
 
+# WARNING!! These classes can modify global subscription tables/files used by both the subscription manager
+# and by parse_slon_logs.pl. You must first acquire the subscription lock before using these classes.
+
 use strict;
 use warnings;
 
 use DBI;
 use DBD::Pg;
+use Data::UUID;
+use File::Copy;
+use File::Basename;
 use FindBin qw($Bin);
 use lib "$Bin/..";
 use toolbox qw(GetCfg AcquireLock ReleaseLock);
 
 package SubTableMgr;
+
+
+use File::Basename;
+use File::Copy;
 
 ##### Return Codes #####
 use constant kRetSuccess       => 0;
@@ -34,6 +44,10 @@ use constant kLstNode   => 0;
 use constant kLstSeries => 1;
 use constant kCfgNode => 0;
 use constant kCfgSiteDir => 1;
+
+##### Legacy #####
+use constant kSupportPlainfiles  => 1;
+
 
 sub new
 {
@@ -193,10 +207,15 @@ sub Add
     }
 }
 
+# This function removes $node's records from the cfg and lst tables. Optionally,
+# in support of legacy software, it will remove the entry from the soon-to-be-obsolete
+# cfg file. It will also remove the $node's lst file altogether.
 sub Remove
 {
     my($self) = shift;
     my($node) = shift;
+    my($cfgfile) = shift; # optional
+    my($lstfile);
     
     if (defined($node))
     {
@@ -213,11 +232,191 @@ sub Remove
                 $self->{_err} = &kRetTable;
             }
         }
+        
+        if (&kSupportPlainfiles && defined($cfgfile) && -e $cfgfile)
+        {
+            # Remove entries from slon_parser.cfg and <node>.lst.
+            # Remove node's site-specific log files elsewhere.
+            
+            # Back-up the original files and then rename them if no errors. 
+            # Use a UUID for the .tmp file name so that there is little chance
+            # of accidental filename collisions (There is a much greater chance
+            # of being hit by a meteorite than generating a duplicate).
+            my($ug) = new Data::UUID;
+            my($uuid) = $ug->create_str();
+            my($cfgorig);
+            my($lstorig);
+            my($cfgbak);
+            my($lstbak);
+            my($cfgdir);
+            my($lstdir);
+            
+            ($cfgorig, $cfgdir) = fileparse($cfgfile);
+            $cfgbak = $cfgorig . ".$uuid";
+            
+            if (!copy($cfgfile, "$cfgdir/$cfgbak"))
+            {
+                print STDERR "Unable to back-up cfg file.\n";
+                $self->{_err} = &kRetIO;
+            }
+            else
+            {
+                my($err) = 0;
+                my(@content);
+                my(@newcontent);
+                my($newcontentstr);
+                my(@nodeentries);
+                my($curr);
+                
+                # Edit cfg file (remove $node's record(s)).
+                if (open(CFG, "<$cfgfile"))
+                {
+                    @content = <CFG>;
+                    chomp(@content);
+                    @newcontent = map({ ($_ =~ /$node/) ? () : $_ } @content);
+                    
+                    # Find lst file from cfgfile entry.
+                    @nodeentries = map({ ($_ =~ /$node/) ? $_ : () } @content);
+                    
+                    if ($#nodeentries < 0)
+                    {
+                        print STDERR "No entry for $node in cfg file.\n";
+                        $err = 1;
+                        $self->{_err} = &kRetInvalidArg;                        
+                    }
+                    elsif ($#nodeentries > 0)
+                    {
+                        # There should only be one entry per record, but there is some bug somewhere
+                        # that causes multiple entries.
+                        my($line);
+                        
+                        foreach $line (@nodeentries)
+                        {
+                            if (!defined($curr))
+                            {
+                                $curr = $line;
+                            }
+                            else
+                            {
+                                if ($line ne $curr)
+                                {
+                                    print STDERR "Conflicting information for $node in lst table.\n";
+                                    $err = 1;
+                                    $self->{_err} = &kRetInvalidArg;
+                                    last;
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        $curr = $nodeentries[0];
+                    }
+                    
+                    if ($curr =~ /^\s*\S+\s+(\S+)/)
+                    {
+                        $lstfile = $1;
+                    }
+                    else
+                    {
+                        print STDERR "Invalid cfg table.\n";
+                        $err = 1;
+                        $self->{_err} = &kRetInvalidArg;
+                    }
+                    
+                    if (!$err)
+                    {
+                        ($lstorig, $lstdir) = fileparse($lstfile);
+                        $lstbak = $lstorig . ".$uuid";
+                        
+                        if (!copy($lstfile, "$lstdir/$lstbak"))
+                        {
+                            print STDERR "Unable to back-up lst file.\n";
+                            $err = 1;
+                            $self->{_err} = &kRetIO;
+                        }
+                    }
+                    
+                    close(CFG);
+                    
+                    if (!$err)
+                    {
+                        if (open(CFG, ">$cfgfile"))
+                        {
+                            $newcontentstr = join("\n", @newcontent);
+                            print CFG $newcontentstr;
+                            if (!close(CFG))
+                            {
+                                $err = 1;
+                                $self->{_err} = &kRetIO;
+                            }
+                        }
+                        else
+                        {
+                            print STDERR "Can't open $cfgfile for writing.\n";
+                            $err = 1;
+                            $self->{_err} = &kRetIO;
+                        }
+                    }
+                }
+                else
+                {
+                    print STDERR "Can't open $cfgfile for reading.\n";
+                    $err = 1;
+                    $self->{_err} = &kRetIO;
+                }
+                
+                # Delete lst file.
+                if (!$err)
+                {
+                    unless (unlink($lstfile))
+                    {
+                        print STDERR "Can't delete $lstfile.\n";
+                        $err = 1;
+                        $self->{_err} = &kRetIO;
+                    }
+                }
+                
+                # If everything is okay, delete tmp files, else copy them back in place.
+                if (!$err)
+                {
+                    unlink("$cfgdir/$cfgbak");
+                    unlink("$lstdir/$lstbak");
+                }
+                else
+                {
+                    if (!copy("$cfgdir/$cfgbak", $cfgfile) ||(-e "$lstdir/$lstbak") && !copy("$lstdir/$lstbak", $lstfile))
+                    {
+                        print STDERR "Unable to restore cfg and/or lst files.\n";
+                        $self->{_err} = &kRetIO;
+                    }
+                }
+            }
+        }
     }
     else
     {
         print STDERR "Must provide node name.\n";
         $self->{_err} = &kRetInvalidArg;
+    }
+}
+
+# Remove one series from the lst table. If $node is provided, then remove the 
+# entry for the series for a single node. Otherwise, remove the entries for 
+# the series for all nodes.
+sub RemoveSeries
+{
+    my($self) = shift;
+    my($series) = shift;
+    my($node) = shift; # optional
+    
+    if (defined($node))
+    {
+        if ($self->{_lsttable}->RemoveSeries($node, &kLstNode, &kLstSeries, $series))
+        {
+            print STDERR "Unable to remove $series from node $node's list of series.\n";
+            $self->{_err} = &kRetTable;
+        }
     }
 }
 
@@ -382,6 +581,33 @@ sub Populate
     }
 }
 
+sub Commit
+{
+    my($self) = shift;
+    
+    $self->{_dbh}->Commit();
+
+    # Disconnect
+    $self->{_dbh}->Disconnect();
+}
+
+sub Rollback
+{
+    my($self) = shift;
+    
+    $self->{_dbh}->Rollback();
+    
+    # Disconnect
+    $self->{_dbh}->Disconnect();
+}
+
+sub GetSiteDir
+{
+    my($self) = shift;
+    my($node) = shift;
+    
+    return $self->{_cfgtable}->GetSiteDir($node, &kCfgNode, &kCfgSiteDir);
+}
 
 # Accessor functions
 sub GetErr
@@ -459,6 +685,7 @@ sub Disconnect
     if (defined($self->{_dbh}))
     {
         $self->{_dbh}->disconnect();
+        $self->{_dbh} = undef;
     }
 }
 
@@ -630,6 +857,34 @@ sub Remove
     $rv = 0;
     
     $stmnt = "DELETE FROM $self->{_name} WHERE $self->{_cols}->[$nodecol] = '$node'";
+    
+    if ($self->{_dbh}->ExeQuery($stmnt))
+    {
+        $rv = 1;
+    }
+    
+    return $rv;
+}
+
+sub RemoveSeries
+{
+    my($self) = shift;
+    my($node) = shift;
+    my($nodecol) = shift;
+    my($seriescol) = shift;
+    my($series) = shift;
+    my($rv);
+    my($stmnt);
+    my($nodewhere);
+    
+    $rv = 0;
+    
+    if (defined($node))
+    {
+        $nodewhere = " AND $self->{_cols}->[$nodecol] = '$node'";
+    }
+    
+    $stmnt = "DELETE FROM $self->{_name} WHERE $self->{_cols}->[$seriescol] = '$series'$nodewhere";
     
     if ($self->{_dbh}->ExeQuery($stmnt))
     {
@@ -1029,5 +1284,35 @@ sub Ingest
     map({ $self->ProcessCfg($_) } @$content);
     
     return 0;
+}
+
+sub GetSiteDir
+{
+    my($self) = shift;
+    my($node) = shift;
+    my($nodecol) = shift;
+    my($sitedircol) = shift;
+    
+    my($rv);
+    
+    my($stmnt);
+    my($rows);
+    
+    $rv = "";
+    
+    $stmnt = "SELECT $self->{_cols}->[$sitedircol] FROM $self->{_name} WHERE $self->{_cols}->[$nodecol] = '$node'";
+    unless ($self->{_dbh}->ExeQuery($stmnt, \$rows))
+    {
+        # Good query.
+        
+        # Can only be a single row/single column.
+        $rv = $rows->[0]->[0];
+    }
+    else
+    {
+        print STDERR "Unable to get site-dir for $node.\n";
+    }
+    
+    return $rv;
 }
 1;
