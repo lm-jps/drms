@@ -163,8 +163,9 @@ static RecordSet_Filter_t *parse_record_set_filter(DRMS_Record_t *template,
     syntax_error++;
     goto error1;
   }
-  while (*p && *p++=='[')
+  while (*p && *p=='[')
   {
+      ++p; /* advance one char past '['. */
     if (*p==']') /* empty set, increment prime key counter */
     {
       prime_keynum++;
@@ -211,13 +212,18 @@ static RecordSet_Filter_t *parse_record_set_filter(DRMS_Record_t *template,
     while (*p == ' ')
       p++;
 
-    if (*p++ != ']')
-    {
-      fprintf(stderr,"Syntax error: Record_set_filter should "
-	      "end in ']', found '%c' then '%s'\n", *(p-1), p);
-      syntax_error++;
-      goto error;
-    }
+      
+      if (*p != ']')
+      {
+          fprintf(stderr,"Syntax error: Record_set_filter should "
+                  "end in ']', found '%c' then '%s'\n", *(p-1), p);
+          syntax_error++;
+          goto error;
+      }
+      else
+      {
+          ++p; /* advance one char past ']'. */
+      }
   }
   *in = p;
 #ifdef DEBUG
