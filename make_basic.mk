@@ -367,7 +367,7 @@ $(MODEXE_SOCK): %_sock: %.o $(MODLIBS_SOCK)
 # FMODEXE_SOCK contains all Fortran modules - the DoIt() function is defined inside a .f file.
 # These are socket-connect modules only. Assume they use third-party Fortran libraries
 # (although this may not be the case).
-$(FMODEXE_SOCK):	LL_TGT := $(LL_TGT) $(CFITSIOLIBS) 
+$(FMODEXE_SOCK):	LL_TGT := $(LL_TGT) $(PGLIBS) $(CFITSIOLIBS) 
 $(FMODEXE_SOCK):     %_sock:	%.o $(FMODLIBS_SOCK) 
 			$(FLINK)
 			$(SLBIN)
