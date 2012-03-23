@@ -133,6 +133,8 @@ int drms_fitstas_writeslice(DRMS_Env_t *env,
    start[naxis] = slotnum;
    end[naxis] = slotnum;
 
+    /* No need to specify final image size. drms_create_records() will have already 
+     * created an "empty" image of final dimensions. */
    status = drms_fitsrw_writeslice(env, seg, filename, naxis, start, end, arrayout);
 
    if (status == DRMS_SUCCESS)

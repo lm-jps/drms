@@ -1965,7 +1965,12 @@ int drms_segment_writewithkeys(DRMS_Segment_t *seg, DRMS_Array_t *arr, int autos
    return drms_segment_writeinternal(seg, arr, autoscale, 1);  
 }
 
-int drms_segment_writeslice(DRMS_Segment_t *seg, DRMS_Array_t *arr, int *start, int *end, int autoscale)
+int drms_segment_writeslice_ext(DRMS_Segment_t *seg, 
+                                DRMS_Array_t *arr, 
+                                int *start, 
+                                int *end, 
+                                int *finaldims,
+                                int autoscale)
 {
   int status,i;
   char filename[DRMS_MAXPATHLEN]; 
@@ -2098,13 +2103,14 @@ int drms_segment_writeslice(DRMS_Segment_t *seg, DRMS_Array_t *arr, int *start, 
                 }
              }
 
-             if ((status = drms_fitsrw_writeslice(seg->record->env, 
-                                                  seg,
-                                                  filename, 
-                                                  out->naxis, 
-                                                  start, 
-                                                  end, 
-                                                  out)) != DRMS_SUCCESS)
+              if ((status = drms_fitsrw_writeslice_ext(seg->record->env, 
+                                                       seg,
+                                                       filename, 
+                                                       out->naxis, 
+                                                       start, 
+                                                       end, 
+                                                       finaldims,
+                                                       out)) != DRMS_SUCCESS)
                goto bailout;
           }
           break;  
@@ -2159,6 +2165,15 @@ int drms_segment_writeslice(DRMS_Segment_t *seg, DRMS_Array_t *arr, int *start, 
     drms_free_array(out);
   fprintf(stderr,"ERROR: Couldn't write data to file '%s'.\n", filename);
   return status;
+}
+
+int drms_segment_writeslice(DRMS_Segment_t *seg, 
+                            DRMS_Array_t *arr, 
+                            int *start, 
+                            int *end, 
+                            int autoscale)
+{
+    return drms_segment_writeslice_ext(seg, arr, start, end, NULL, autoscale);
 }
 
 int drms_segment_write_from_file(DRMS_Segment_t *seg, const char *infile) {

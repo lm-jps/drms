@@ -437,6 +437,13 @@ int drms_segment_writeslice(DRMS_Segment_t *seg,
                             int *end, 
                             int autoscale);
 
+int drms_segment_writeslice_ext(DRMS_Segment_t *seg, 
+                                DRMS_Array_t *arr, 
+                                int *start, 
+                                int *end, 
+                                int *finaldims,
+                                int autoscale);
+
 /* Write a file specified by filename argument to the file occupied by
    the segment argument. The filename of the segment is set.
  */

@@ -705,6 +705,11 @@ int fitsrw_writeslice(int verbose, const char *filename, int *fpixel, int *lpixe
    firstpix = 0;
    contiguous = 1;
    
+    /* This section does two things:
+     *   1. It sets lfpixel and llpixel. These are the fpixel and lpixel incremented
+     *      by one, since cfitsio uses 1-based arrays, but fpixel and lpixel are 
+     *      0-based arrays.
+     *   2. It determines if the slice being written is contiguous in memory. */
    for (idim = 0; idim < fpinfo.naxis; idim++)
    {
       /* FITS uses column-major order, and C uses row-major order for its arrays.  So, 
@@ -722,12 +727,32 @@ int fitsrw_writeslice(int verbose, const char *filename, int *fpixel, int *lpixe
       npix += npix * (lpixel[idim] - fpixel[idim]);
       intermed = 1;
       
-      for (idim2 = idim - 1; idim2 >= 0; idim2--)
-      {
-         intermed = intermed * fpinfo.naxes[idim2];
-      }
-
-      firstpix += firstpix + intermed * fpixel[idim];
+       if (fpinfo.naxis > 1)
+       {
+           if (idim == fpinfo.naxis - 1)
+           {
+               /* This calculates the number of pixels in a slice of the final image when 
+                * the current dimension has a thickness of one pixel. The slice spans 
+                * the entire final image in all dimensions other than the current dimension. 
+                * This information is used only when the slice being written to file is 
+                * contiguous in memory. This calcuation should happen only when 
+                * idim == fpinfo.naxis - 1 (when we are processing the last dimension). */
+               for (idim2 = idim - 1; idim2 >= 0; idim2--)
+               {
+                   intermed = intermed * fpinfo.naxes[idim2];
+               }
+               
+               /* This assumes a contiguous image, which means all 0-based 
+                * dims < fpinfo.naxis - 1 of the slice span the entire final
+                * image. */
+               firstpix = fpixel[idim - 1] + intermed * fpixel[idim];
+           }
+       }
+       else
+       {
+           /* Must be contiguous! */
+           firstpix = fpixel[idim];
+       }
 
       /* check for contiguousness - basically if in the current dimension 
        * the slice has a thickness greater than 1, then all previous dimensions

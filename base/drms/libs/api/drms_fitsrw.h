@@ -26,5 +26,13 @@ int drms_fitsrw_writeslice(DRMS_Env_t *env,
                            int *start,
                            int *end,
                            DRMS_Array_t *arrayout);
+int drms_fitsrw_writeslice_ext(DRMS_Env_t *env,
+                               DRMS_Segment_t *seg,
+                               const char *filename, 
+                               int naxis,
+                               int *start,
+                               int *end,
+                               int *finaldims,
+                               DRMS_Array_t *arrayout);
 
 #endif /* _DRMS_FITSRW_H */

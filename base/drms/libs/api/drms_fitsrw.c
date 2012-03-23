@@ -515,13 +515,14 @@ int drms_fitsrw_write(DRMS_Env_t *env,
 }
 
 /* Array may be converted in calling function, but not here */
-int drms_fitsrw_writeslice(DRMS_Env_t *env,
-                           DRMS_Segment_t *seg,
-                           const char *filename, 
-                           int naxis,
-                           int *start,
-                           int *end,
-                           DRMS_Array_t *arrayout)
+int drms_fitsrw_writeslice_ext(DRMS_Env_t *env,
+                               DRMS_Segment_t *seg,
+                               const char *filename, 
+                               int naxis,
+                               int *start,
+                               int *end,
+                               int *finaldims,
+                               DRMS_Array_t *arrayout)
 {
    int status = DRMS_SUCCESS;
    int fitsrwstat = CFITSIO_SUCCESS;
@@ -560,67 +561,98 @@ int drms_fitsrw_writeslice(DRMS_Env_t *env,
             arr.israw = 1;
          }
 
-         idim = 0;
+         
          usearrout = 0;
 
          /* The jsd axis information is only valid if all but the last dimension are non-zero. If the jsd
-          * information is invalid, use the output array to obtain the first n - 1 dimensions. */
-         while (idim < arr.naxis - 1)
-         {
-            if (arr.axis[idim++] == 0)
-            {
-               usearrout = 1;
-               break;
-            }
-         }
+          * information is invalid, use the output array to obtain the first n - 1 dimensions. If there
+          * is only one dimension, then skip this determination - the jsd will automatically be 
+          correct. */
+          
+          if (finaldims)
+          {
+              /* Override the jsd's axis lengths AND the output array's lengths. Use
+               * the values contained in finaldims. Ensure the values are 
+               * larger than the output-array-dimension values. */
+              idim = 0;
+              while (idim < arr.naxis)
+              {
+                  if (finaldims[idim] < arrayout->axis[idim]) 
+                  {
+                      status = DRMS_ERROR_INVALIDDIMS;
+                      break;
+                  }
+                  else
+                  {
+                      arr.axis[idim] = finaldims[idim];
+                  }
+                  
+                  idim++;
+              }
+          }
+          else
+          {
+              idim = 0;
+              while (idim < arr.naxis - 1)
+              {
+                  if (arr.axis[idim++] == 0)
+                  {
+                      usearrout = 1;
+                      break;
+                  }
+              }
+              
+              if (usearrout)
+              {
+                  idim = 0;
+                  while (idim < arr.naxis - 1)
+                  {
+                      arr.axis[idim] = arrayout->axis[idim];
+                      idim++;
+                  }
+              }
+          }
 
-         if (usearrout)
-         {
-            idim = 0;
-            while (idim < arr.naxis - 1)
-            {
-               arr.axis[idim] = arrayout->axis[idim];
-               idim++;
-            }
-         }
-
-         if (arr.axis[arr.naxis - 1] == 0)
-         {
-            /* A last-dimension length of zero implies that the total number of slices in 
-             * the cube is unknown. Although this is typically the case for VARDIM segments,
-             * this scenario isn't restricted to VARDIM. And it may be known at JSD-creation
-             * time, for VARMDIM segments, was the last dimension length is. */
-
-            /* Write a file with a last dimension of 1. CFITSIO will automatically 
-             * increase the size of the last dimension before it closes the file, 
-             * IF the relevant NAXISn keyword is updated with the appropriate length
-             * before the file is closed. */
-            arr.axis[arr.naxis - 1] = 1;
-         }
-
-         if (!drms_fitsrw_SetImageInfo(&arr, &info))
-         {
-            if (fitsrw_writeintfile(env->verbose, filename, &info, NULL, seg->cparms, NULL) != CFITSIO_SUCCESS)
-            {
-               fprintf(stderr, "Couldn't create FITS file '%s'.\n", filename); 
-               status = DRMS_ERROR_CANTCREATETASFILE;
-            }
-
-            /* At this point, the first n-1 dimension lengths are set in stone. These lengths originated
-             * from either the output array or the jsd. The nth length is not set and could increase 
-             * as slices are written. As we write slices, we need to check the nth dimension of the 
-             * slice being written. If the slice's largest value of this dimension is greater than 
-             * the existing value stored in memory (there is a TASRW_FilePtrInfo_t that 
-             * holds the lenghts of all dimensions), then we need to increase the value stored in memory
-             * to this largest value. When the file gets closed, we then need to update the nth NAXIS keyword
-             * in the FITS file. To do this we need a dirty flag in the TASRW_FilePtrInfo_t struct. We set the
-             * dirty flag if we have ever increased the value of the nth length in TASRW_FilePtrInfo_t. */
-         }
-         else
-         {
-            fprintf(stderr, "Couldn't set FITS file image info.\n"); 
-            status = DRMS_ERROR_CANTCREATETASFILE;
-         }
+          if (status == DRMS_SUCCESS)
+          {
+              if (arr.axis[arr.naxis - 1] == 0)
+              {
+                  /* A last-dimension length of zero implies that the total number of slices in 
+                   * the cube is unknown. Although this is typically the case for VARDIM segments,
+                   * this scenario isn't restricted to VARDIM. And it may be known at JSD-creation
+                   * time, for VARMDIM segments, was the last dimension length is. */
+                  
+                  /* Write a file with a last dimension of 1. CFITSIO will automatically 
+                   * increase the size of the last dimension before it closes the file, 
+                   * IF the relevant NAXISn keyword is updated with the appropriate length
+                   * before the file is closed. */
+                  arr.axis[arr.naxis - 1] = 1;
+              }
+              
+              if (!drms_fitsrw_SetImageInfo(&arr, &info))
+              {
+                  if (fitsrw_writeintfile(env->verbose, filename, &info, NULL, seg->cparms, NULL) != CFITSIO_SUCCESS)
+                  {
+                      fprintf(stderr, "Couldn't create FITS file '%s'.\n", filename); 
+                      status = DRMS_ERROR_CANTCREATETASFILE;
+                  }
+                  
+                  /* At this point, the first n-1 dimension lengths are set in stone. These lengths originated
+                   * from either the output array or the jsd. The nth length is not set and could increase 
+                   * as slices are written. As we write slices, we need to check the nth dimension of the 
+                   * slice being written. If the slice's largest value of this dimension is greater than 
+                   * the existing value stored in memory (there is a TASRW_FilePtrInfo_t that 
+                   * holds the lenghts of all dimensions), then we need to increase the value stored in memory
+                   * to this largest value. When the file gets closed, we then need to update the nth NAXIS keyword
+                   * in the FITS file. To do this we need a dirty flag in the TASRW_FilePtrInfo_t struct. We set the
+                   * dirty flag if we have ever increased the value of the nth length in TASRW_FilePtrInfo_t. */
+              }
+              else
+              {
+                  fprintf(stderr, "Couldn't set FITS file image info.\n"); 
+                  status = DRMS_ERROR_CANTCREATETASFILE;
+              }
+          }
       }
       else
       {
@@ -655,4 +687,15 @@ int drms_fitsrw_writeslice(DRMS_Env_t *env,
    }
 
    return status;
+}
+
+int drms_fitsrw_writeslice(DRMS_Env_t *env,
+                           DRMS_Segment_t *seg,
+                           const char *filename, 
+                           int naxis,
+                           int *start,
+                           int *end,
+                           DRMS_Array_t *arrayout)
+{
+    return drms_fitsrw_writeslice_ext(env, seg, filename, naxis, start, end, NULL, arrayout);
 }
