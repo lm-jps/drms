@@ -7224,143 +7224,154 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
 	      break;
 	    case kRSParseState_EndAtFile:
 	      {
-		 char lineBuf[LINE_MAX];
-                 char *fullline = NULL;
-		 char **queriesAtFile = NULL;
-		 DRMS_RecordSetType_t *typesAtFile = NULL;
-                 char **snamesAtFile = NULL;
-                 char *allversAtFile = NULL;
-		 int nsetsAtFile = 0;
-		 int iSet = 0;
-		 struct stat stBuf;
-		 FILE *atfile = NULL;
-
-		 /* finished reading an AtFile filename - read file one line at a time,
-		  * parsing each line recursively. */
-		 if (multiRSQueries)
-		 {
-		    state = kRSParseState_Error;
-		    break;
-		 }
-		 else
-		 {
-		    multiRSQueries = list_llcreate(sizeof(char *), NULL);
-                    multiRSTypes = list_llcreate(sizeof(DRMS_RecordSetType_t), NULL);
-                    multiRSAllVers = list_llcreate(sizeof(char), NULL);
-                    multiRSSnames = list_llcreate(sizeof(char *), NULL);
-
-		    /* buf has filename */
-		    *pcBuf = '\0';
-		    if (buf && !stat(buf, &stBuf))
-		    {
-		       if (S_ISREG(stBuf.st_mode))
-		       {
-			  /* read a line */
-			  if ((atfile = fopen(buf, "r")) == NULL)
-			  {
-			     fprintf(stderr, "Cannot open @file %s for reading, skipping.\n", buf);
-			  }
-			  else
-			  {
-			     int len = 0;
-			     while (!(fgets(lineBuf, LINE_MAX, atfile) == NULL))
-			     {
-				/* strip \n from end of lineBuf */
-				len = strlen(lineBuf);
-
-                                fullline = strdup(lineBuf);
-
-                                if (len == LINE_MAX - 1)
-                                {
-                                   /* may be more on this line */
-                                   while (!(fgets(lineBuf, LINE_MAX, atfile) == NULL))
-                                   {
-                                      fullline = realloc(fullline, strlen(fullline) + strlen(lineBuf) + 1);
-                                      snprintf(fullline + strlen(fullline), 
-                                               strlen(lineBuf) + 1, 
-                                               "%s",
-                                               lineBuf);
-                                      if (strlen(lineBuf) > 1 && lineBuf[strlen(lineBuf) - 1] == '\n')
+              char lineBuf[LINE_MAX];
+              char *fullline = NULL;
+              char **queriesAtFile = NULL;
+              DRMS_RecordSetType_t *typesAtFile = NULL;
+              char **snamesAtFile = NULL;
+              char *allversAtFile = NULL;
+              int nsetsAtFile = 0;
+              int iSet = 0;
+              struct stat stBuf;
+              FILE *atfile = NULL;
+              
+              /* finished reading an AtFile filename - read file one line at a time,
+               * parsing each line recursively. */
+              if (multiRSQueries)
+              {
+                  state = kRSParseState_Error;
+                  break;
+              }
+              else
+              {
+                  multiRSQueries = list_llcreate(sizeof(char *), NULL);
+                  multiRSTypes = list_llcreate(sizeof(DRMS_RecordSetType_t), NULL);
+                  multiRSAllVers = list_llcreate(sizeof(char), NULL);
+                  multiRSSnames = list_llcreate(sizeof(char *), NULL);
+                  
+                  /* buf has filename */
+                  *pcBuf = '\0';
+                  if (buf && !stat(buf, &stBuf))
+                  {
+                      if (S_ISREG(stBuf.st_mode))
+                      {
+                          /* read a line */
+                          if ((atfile = fopen(buf, "r")) == NULL)
+                          {
+                              fprintf(stderr, "Cannot open @file %s for reading, skipping.\n", buf);
+                          }
+                          else
+                          {
+                              int len = 0;
+                              while (!(fgets(lineBuf, LINE_MAX, atfile) == NULL))
+                              {
+                                  /* strip \n from end of lineBuf */
+                                  len = strlen(lineBuf);
+                                  
+                                  fullline = strdup(lineBuf);
+                                  
+                                  if (len == LINE_MAX - 1)
+                                  {
+                                      /* may be more on this line */
+                                      while (!(fgets(lineBuf, LINE_MAX, atfile) == NULL))
                                       {
-                                         break;
+                                          fullline = realloc(fullline, strlen(fullline) + strlen(lineBuf) + 1);
+                                          snprintf(fullline + strlen(fullline), 
+                                                   strlen(lineBuf) + 1, 
+                                                   "%s",
+                                                   lineBuf);
+                                          if (strlen(lineBuf) > 1 && lineBuf[strlen(lineBuf) - 1] == '\n')
+                                          {
+                                              break;
+                                          }
                                       }
-                                   }
-                                }
-
-                                len = strlen(fullline);
-
-				/* skip empty lines*/
-				if (len > 1)
-				{
-                                   DRMS_RecQueryInfo_t infoAtFile;
-
-				   if (fullline[len - 1] == '\n')
-				   {
-				      fullline[len - 1] = '\0';
-				   }
-			
-				   status = ParseRecSetDesc(fullline, 
-                                                            &allversAtFile, 
-							    &queriesAtFile, 
-							    &typesAtFile, 
-                                                            &snamesAtFile,
-							    &nsetsAtFile,
-                                                            &infoAtFile);
-
-				   if (status == DRMS_SUCCESS)
-				   {
-				      /* add all nsetsAtFile recordsets to multiRSQueries 
-                                       * NOTE: nsetsAtFile is the number of record-sets on
-                                       * the current line.
-                                       */
-				      for (iSet = 0; iSet < nsetsAtFile; iSet++)
-				      {
-                                         /* dupe this string because FreeRecSetDescArr() will 
-                                          * free the original string. */
-                                         pset = strdup(queriesAtFile[iSet]);
-                                         list_llinserttail(multiRSQueries, &pset);
-                                         list_llinserttail(multiRSTypes, &(typesAtFile[iSet]));
-                                         list_llinserttail(multiRSAllVers, &(allversAtFile[iSet]));
-                                         /* dupe this string because FreeRecSetDescArr() will 
-                                          * free the original string. */
-                                         pset = strdup(snamesAtFile[iSet]);
-                                         list_llinserttail(multiRSSnames, &pset);
-					 countMultiRS++;
-				      }
-
-                                      intinfo |= infoAtFile;
-				   }
-				   else
-				   {
-				      state = kRSParseState_Error;
-				      break;
-				   }
-
-				   FreeRecSetDescArr(&allversAtFile, &queriesAtFile, &typesAtFile, &snamesAtFile, nsetsAtFile);
-				}
-                                
-                                if (fullline)
-                                {
-                                   free(fullline);
-                                   fullline = NULL;
-                                }
-			     } /* while */
-			  }
-		       }
-		       else
-		       {
-			  fprintf(stderr, "@file %s is not a regular file, skipping.\n", buf);
-		       }
-		    }
-		    else
-		    {
-		       fprintf(stderr, "Cannot find @file %s, skipping.\n", buf);
-		    }
-		 }
+                                  }
+                                  
+                                  len = strlen(fullline);
+                                  
+                                  /* skip empty lines*/
+                                  if (len > 1)
+                                  {
+                                      DRMS_RecQueryInfo_t infoAtFile;
+                                      
+                                      if (fullline[len - 1] == '\n')
+                                      {
+                                          fullline[len - 1] = '\0';
+                                      }
+                                      
+                                      status = ParseRecSetDesc(fullline, 
+                                                               &allversAtFile, 
+                                                               &queriesAtFile, 
+                                                               &typesAtFile, 
+                                                               &snamesAtFile,
+                                                               &nsetsAtFile,
+                                                               &infoAtFile);
+                                      
+                                      if (status == DRMS_SUCCESS)
+                                      {
+                                          /* add all nsetsAtFile recordsets to multiRSQueries 
+                                           * NOTE: nsetsAtFile is the number of record-sets on
+                                           * the current line.
+                                           */
+                                          for (iSet = 0; iSet < nsetsAtFile; iSet++)
+                                          {
+                                              /* dupe this string because FreeRecSetDescArr() will 
+                                               * free the original string. */
+                                              pset = strdup(queriesAtFile[iSet]);
+                                              list_llinserttail(multiRSQueries, &pset);
+                                              list_llinserttail(multiRSTypes, &(typesAtFile[iSet]));
+                                              list_llinserttail(multiRSAllVers, &(allversAtFile[iSet]));
+                                              /* dupe this string because FreeRecSetDescArr() will 
+                                               * free the original string. */
+                                              
+                                              /* There might be no series name associated with this 
+                                               * atfile line (e.g., the line is a plain-file spec. If 
+                                               * this is the case, then insert a null pointer. */
+                                              if (snamesAtFile[iSet])
+                                              {
+                                                  pset = strdup(snamesAtFile[iSet]);
+                                              }
+                                              else
+                                              {
+                                                  pset = NULL;
+                                              }
+                                              list_llinserttail(multiRSSnames, &pset);
+                                              countMultiRS++;
+                                          }
+                                          
+                                          intinfo |= infoAtFile;
+                                      }
+                                      else
+                                      {
+                                          state = kRSParseState_Error;
+                                          break;
+                                      }
+                                      
+                                      FreeRecSetDescArr(&allversAtFile, &queriesAtFile, &typesAtFile, &snamesAtFile, nsetsAtFile);
+                                  }
+                                  
+                                  if (fullline)
+                                  {
+                                      free(fullline);
+                                      fullline = NULL;
+                                  }
+                              } /* while */
+                          }
+                      }
+                      else
+                      {
+                          fprintf(stderr, "@file %s is not a regular file, skipping.\n", buf);
+                      }
+                  }
+                  else
+                  {
+                      fprintf(stderr, "Cannot find @file %s, skipping.\n", buf);
+                  }
+              }
 	      }
-
-	      /* Got into this state because either saw a delimiter, or end of input */
-
+             
+             /* Got into this state because either saw a delimiter, or end of input */
+             
 	      state = kRSParseState_EndElem;
 	      break;
 	    case kRSParseState_Plainfile:
