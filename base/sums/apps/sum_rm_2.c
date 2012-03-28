@@ -67,6 +67,7 @@
 int stat_storage();
 void get_cfg();
 static char *datestring(void);
+static int ponoff[MAX_PART];
 
 char mod_name[] = "sum_rm";
 
@@ -208,7 +209,7 @@ int stat_storage()
 
   //for(i=0; i<MAX_PART-1; i++) {
   //for(i=11; i<MAX_PART-1; i++) { //for sum_rm_1 do remaining partitions
-  for(i=15; i<MAX_PART-1; i++) { //for sum_rm_2 do remaining partitions
+  for(i=27; i<MAX_PART-1; i++) { //for sum_rm_2 do remaining partitions
     pptr=(PART *)&ptab[i];
     if(pptr->name == NULL) break;
     //skip the special partitions for permanent aia.lev1 (save DB time)
@@ -229,9 +230,21 @@ int stat_storage()
       //if(df_reserve > df_avail) df_avail = 0.0;
       //else df_avail = df_avail - df_reserve;
       upercent = df_avail/df_total;
-      if(upercent < 0.01) {		//turn off partition at 99%
+      if(upercent < 0.01) {             //turn off partition at 99%
         printk("Turning off full partition %s\n", pptr->name);
-        SUMLIB_PavailOff(pptr->name); //no more allocation from this parti
+        if(ponoff[i] != -1) {
+          SUMLIB_PavailOff(pptr->name); //no more allocation from this parti
+          ponoff[i] = -1;
+        }
+      }
+      else if(upercent >= 0.05) {       //turn it back on unless -1 in DB
+        if(ptab[i].pds_set_num != -1) {
+          if(ponoff[i] == -1) {
+            printk("Turning on former full partition %s\n", pptr->name);
+            SUMLIB_PavailOn(pptr->name, ptab[i].pds_set_num); //can alloc again
+            ponoff[i] = ptab[i].pds_set_num;
+          }
+        }
       }
       if(SUMLIB_PavailUpdate(pptr->name, df_avail))
        printk("Err: SUMLIB_PavailUpdate(%s, %e, ...)\n",
@@ -466,6 +479,9 @@ void setup()
   DS_ConnectDB(dbname);		/* connect to DB for init */
   if(DS_PavailRequest())	/* get sum_partn_avail info in mem */
     exit(1);
+  for(i=0; i < MAX_PART-1; i++) {
+    ponoff[i] = ptab[i].pds_set_num; //init the 99% off/ 95% on table
+  }
   signal(SIGALRM, &alrm_sig);	/* setup for alarm signal */
   alarm(2);			/* set up first alarm */
 }
