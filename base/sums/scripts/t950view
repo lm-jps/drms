@@ -2232,7 +2232,7 @@ sub Exptlm_sub {
     $exptlmf->destroy();
   }
   $exptlmf = $mw->Toplevel();
-  $exptlmf->geometry("310x480");
+  $exptlmf->geometry("310x700");
   $exptlmf->title("export closed tapes");
   if(!$interactive) {
     $msg = "\nSorry, you are not the interactive user. You cannot do Export.";
@@ -2355,6 +2355,68 @@ sub Exptlm_sub {
     }
   }
   close(QLOG);
+
+  #hmi.lev1 is group 10
+  $sqlcmd = "select tapeid,last_write from sum_tape where group_id=10 and closed=2 order by last_write";
+  $sth = $dbh->prepare($sqlcmd);
+  if ( !defined $sth ) {
+    print "Cannot prepare statement: $DBI::errstr\n";
+    system "/bin/rm $runtag";
+    exit;
+  }
+  $sth->execute;
+  $h1cnt = 0; @h1unloads= (); @xtemp = ();
+  $qlog = "/tmp/t950view.$user.10.log";
+  if(!open(QLOG, ">$qlog")) {
+    print "Can't open $qlog: $!\n";
+    system "/bin/rm $runtag";
+    exit;
+  }
+  print "View query result for group 10 in: $qlog\n";
+  print QLOG "sqlcmd is: $sqlcmd\n"; #!!TEMP
+  while(@h1query = $sth->fetchrow()) { #get row from the DB
+    @xtemp = @h1query;
+    $h1tape = shift(@h1query);
+    if(grep(/$h1tape/, @slottapes)) {
+      #print "$h1tape\n";
+      push(@h1unloads, $h1tape);
+      print QLOG "@xtemp\n";
+      $h1cnt++;
+    }
+  }
+  close(QLOG);
+
+  #hmi > lev1 is group 6 (exclusively after 2011-04-06 09:45:04)
+  $sqlcmd = "select tapeid,last_write from sum_tape where group_id=6 and closed=2 and last_write > '2011-04-07' order by last_write";
+  #Use this query if you want to get 500+ more old tapes w/mixed groups on them
+  #$sqlcmd = "select tapeid,last_write from sum_tape where group_id=6 and closed=2 order by last_write";
+  $sth = $dbh->prepare($sqlcmd);
+  if ( !defined $sth ) {
+    print "Cannot prepare statement: $DBI::errstr\n";
+    system "/bin/rm $runtag";
+    exit;
+  }
+  $sth->execute;
+  $h1pluscnt = 0; @h1plusunloads= (); @xtemp = ();
+  $qlog = "/tmp/t950view.$user.6.log";
+  if(!open(QLOG, ">$qlog")) {
+    print "Can't open $qlog: $!\n";
+    system "/bin/rm $runtag";
+    exit;
+  }
+  print "View query result for group 6 in: $qlog\n";
+  print QLOG "sqlcmd is: $sqlcmd\n"; #!!TEMP
+  while(@h1plusquery = $sth->fetchrow()) { #get row from the DB
+    @xtemp = @h1plusquery;
+    $h1plustape = shift(@h1plusquery);
+    if(grep(/$h1plustape/, @slottapes)) {
+      #print "$h1plustape\n";
+      push(@h1plusunloads, $h1plustape);
+      print QLOG "@xtemp\n";
+      $h1pluscnt++;
+    }
+  }
+  close(QLOG);
       $txt = "\nNumber of closed tapes\n\nHMI tlm: $hmicnt";
       $exptlmf->Label(-text => "$txt", -font => 'arial 16')->pack();
       $exptlmf->Button(
@@ -2382,6 +2444,20 @@ sub Exptlm_sub {
           -text => 'Export AIA lev0',
           -background => 'lightyellow',
           -command => [\&ExpHMItlm_sub, 3],	#aia.lev0 is group 3
+          )->pack(-pady => 0);
+      $txt = "\nHMI lev1: $h1cnt";
+      $exptlmf->Label(-text => "$txt", -font => 'arial 16')->pack();
+      $exptlmf->Button(
+          -text => 'Export HMI lev1',
+          -background => 'lightyellow',
+          -command => [\&ExpHMItlm_sub, 10],	#hmi.lev1 is group 10 
+          )->pack(-pady => 0);
+      $txt = "\nHMI > lev1: $h1pluscnt";
+      $exptlmf->Label(-text => "$txt", -font => 'arial 16')->pack();
+      $exptlmf->Button(
+          -text => 'Export HMI > lev1',
+          -background => 'lightyellow',
+          -command => [\&ExpHMItlm_sub, 6],	#hmi > lev1 is group 6
           )->pack(-pady => 0);
       $exptlmf->Button(
           -text => 'Redisplay-in case you retarted t950view',
@@ -2638,6 +2714,16 @@ sub ExpHMItlm_sub {
     if($grpn == 5) {
       $xxcnt = $aiacnt;		#aia.tlm
       @txorder = @aiaunloads;
+      last SWITCH;
+    }
+    if($grpn == 6) {
+      $xxcnt = $h1pluscnt;	#hmi > lev1
+      @txorder = @h1plusunloads;
+      last SWITCH;
+    }
+    if($grpn == 10) {
+      $xxcnt = $h1cnt;		#hmi.lev1
+      @txorder = @h1unloads;
       last SWITCH;
     }
   }
