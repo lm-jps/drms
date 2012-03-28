@@ -34,7 +34,8 @@ EXEC SQL END DECLARE SECTION;
   //PALLOC_CURSOR pcursor[1600];
   PALLOC_CURSOR pcursor[60000];
 
-char STMT[] = "SELECT WD, SUMID, BYTES, EFFECTIVE_DATE, DS_INDEX, ARCHIVE_SUBSTATUS FROM SUM_PARTN_ALLOC where STATUS=2 and WD like '%s/%s' order by effective_date limit 60000";
+//char STMT[] = "SELECT WD, SUMID, BYTES, EFFECTIVE_DATE, DS_INDEX, ARCHIVE_SUBSTATUS FROM SUM_PARTN_ALLOC where STATUS=2 and WD like '%s/%s' order by effective_date limit 60000";
+char STMT[] = "SELECT WD, SUMID, BYTES, EFFECTIVE_DATE, DS_INDEX, ARCHIVE_SUBSTATUS FROM SUM_PARTN_ALLOC where STATUS=2 and WD like '%s/%s' order by effective_date limit 600";
 
 EXEC SQL INCLUDE sqlca;
 
@@ -126,6 +127,7 @@ EXEC SQL END DECLARE SECTION;
     effd = get_effdate(0);
     today_date = (uint64_t)atol(effd);
     free(effd);
+    l_ds_index = ds_index;
     EXEC SQL SELECT count(*) INTO :l_count from SUM_PARTN_ALLOC
         where DS_INDEX = :l_ds_index and status = 8;
     /* !!!TBD lock the table before determine if it's DARO */
