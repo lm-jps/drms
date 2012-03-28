@@ -174,6 +174,7 @@ sub ParseOpts
     # A previous Configure call could mess everything up. Just always precede GetOptions()
     # with the proper configuration.
     Getopt::Long::Configure("default");
+    Getopt::Long::Configure("pass_through");
     
     $rsp = GetOptions($argsoutH, @optlist);
     
@@ -195,7 +196,6 @@ sub Get
     }
     else
     {
-        print STDERR "Unknown argument $name.\n";
         return undef;
     }
 }

@@ -518,8 +518,10 @@ int DoIt(void)
     rs = drms_create_records(drms_env, 1, query, (force_transient ? DRMS_TRANSIENT : DRMS_PERMANENT), &status);
     if (status)
     {
+        char msgbuf[128];
+        snprintf(msgbuf, sizeof(msgbuf), "cant create records in series %s, status %d", query, status);
        if (query) { free(query); query = NULL; }
-       DIE("cant create records from in given series");
+       DIE(msgbuf);
     }
     nrecs = 1;
     rec = rs->records[0];   
