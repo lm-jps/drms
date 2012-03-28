@@ -69,7 +69,7 @@ int send_mail(char *fmt, ...)
 
   va_start(args, fmt);
   vsprintf(string, fmt, args);
-  sprintf(cmd, "echo \"%s\" | Mail -s \"test mail\" jeneen@sun.stanford.edu,jim@sun.stanford.edu", string);
+  sprintf(cmd, "echo \"%s\" | Mail -s \"test mail\" jeneen@sun.stanford.edu,hao@sun.stanford.edu,jim@sun.stanford.edu", string);
   system(cmd);
   va_end(args);
   return(0);
