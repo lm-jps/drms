@@ -959,6 +959,13 @@ static int SuckInProcInfo(DRMS_Env_t *env, const char *procser, HContainer_t *in
     
     if (info)
     {
+        /* ART - I had to ensure the processing series, jsoc.export_procs, is replicated on 
+         * hmidb and hmidb2. We cannot call drms_open_records() on series in hmidb if the 
+         * current export is from jsoc.stanford.edu. The DRMS_Env_t is for hmidb2, so we 
+         * cannot do all the things we want to on hmidb (DRMS calls that would like to access 
+         * the hmidb db essentially do not work.) 
+         *
+         * The quick and dirty fix was to copy jsoc.export_procs from hmidb to hmidb2. */
         prs = drms_open_records(env, procser, &status);
         if (status == DRMS_SUCCESS && prs)
         {
@@ -1082,7 +1089,7 @@ static int NumPKeyKeys(DRMS_Env_t *env, const char *dbhost, const char *series)
                     fprintf(stderr, "Invalid SQL query: %s.\n", query);
                 }
                 
-                free(ns);
+                free(schema);
             }
         }
         else
