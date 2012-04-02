@@ -84,8 +84,12 @@
 #define PACKLIST_VER "0.5"
 
 #define kArgTestmode    "t"
+#define kArgProcSeries  "procser"
 
 #define kMaxProcNameLen 128
+#define kMaxIntVar 64
+#define kMaxShVar  32
+#define kMaxArgVar 64
 
 #define DIE(msg) { fprintf(stderr,"XXXX jsoc_exports_manager failure: %s\nstatus=%d",msg,status); exit(1); }
 
@@ -113,58 +117,175 @@ const char *protos[] =
    "mp4"
 };
 
-enum Processing_enum
+struct ExpProcArg_struct
 {
-   kProc_Unk = 0,
-   kProc_Reclimit = 1,
-   kProc_Noop = 2,
-   kProc_NotSpec = 3,
-   kProc_HgPatch = 4,
-   kProc_SuExport = 5,
-   kProc_AiaScale = 6
+    char *name;
+    char *def;
 };
 
-typedef enum Processing_enum Processing_t;
-
-const char *procs[] =
-{
-   "uknown",
-   "n==",
-   "no_op",
-   "Not Specified",
-   "hg_patch",
-   "su_export",
-   "aia_scale"
-};
+typedef struct ExpProcArg_struct ExpProcArg_t;
 
 struct ProcStep_struct
 {
-  Processing_t type;
-  char *args;
-  char *input; /* data-set input to processing */
-  char *output; /* data-set output by processing */
+    char *name; /* Name of program. */
+    char *path; /* Path to program. */
+    char *args; /* Program argument key=value pairs, comma-separated. */
+    char *input; /* data-set input to processing */
+    char *output; /* data-set output by processing */
 };
 
 typedef struct ProcStep_struct ProcStep_t;
 
+/* Proc series keyword names. */
+#define kProcSerCOLproc     "proc"
+#define kProcSerCOLpath     "path"
+#define kProcSerCOLreq      "required"
+#define kProcSerCOLopt      "optional"
+#define kProcSerCOLmap      "map"
+#define kProcSerCOLout      "out"
+
 struct ProcStepInfo_struct
 {
-  char *name;
-  char *suffix;
-  /* TBD */
+    char *name;
+    char *path;
+    LinkedList_t *req;
+    LinkedList_t *opt;
+    HContainer_t *namemap;
+    char *suffix;
+    /* TBD */
 };
 
 typedef struct ProcStepInfo_struct ProcStepInfo_t;
 
 ModuleArgs_t module_args[] =
 { 
-  {ARG_STRING, "op", "process", "<Operation>"},
-  {ARG_FLAG, kArgTestmode, NULL, "if set, then operates on new requests with status 12 (not 2)"},
-  {ARG_FLAG, "h", "0", "help - show usage"},
-  {ARG_END}
+    {ARG_STRING, "op", "process", "<Operation>"},
+    {ARG_STRING, kArgProcSeries, "jsoc.export_procs", "The series containing the list of available processing steps. There is one such series on hmidb and one on hmidb2."},
+    {ARG_FLAG, kArgTestmode, NULL, "if set, then operates on new requests with status 12 (not 2)"},
+    {ARG_FLAG, "h", "0", "help - show usage"},
+    {ARG_END}
 };
 
 char *module_name = "jsoc_export_manage";
+
+/* The internal (to jsoc_export_manage) variables available for use as export program
+ * argument values. */
+HContainer_t *gIntVars = NULL;
+HContainer_t *gShVars = NULL;
+
+static void FreeIntVars(void *data)
+{
+    char **pstr = (char **)data;
+    
+    if (pstr && *pstr)
+    {
+        free(*pstr);
+        *pstr = NULL;
+    }
+}
+
+static void FreeShVars(void *data)
+{
+    FreeIntVars(data);
+}
+
+static int RegisterIntVar(const char *key, char type, void *val)
+{
+    char numbuf[64];
+    char *strval = NULL;
+    int err;
+    
+    err = 0;
+    
+    if (key && val)
+    {
+        switch (type)
+        {
+            case 's':
+                strval = strdup((char *)val);
+                break;
+            case 'i':
+                snprintf(numbuf, sizeof(numbuf), "%d", *((int *)val));
+                strval = strdup(numbuf);
+                break;
+            case 'f':
+                snprintf(numbuf, sizeof(numbuf), "%f", *((double *)val));
+                strval = strdup(numbuf);
+                break;
+            default:
+                err = 1;
+        }
+        
+        if (!gIntVars)
+        {
+            gIntVars = hcon_create(sizeof(char *), 
+                                   kMaxIntVar, 
+                                   (void (*)(const void *))FreeIntVars,
+                                   NULL,
+                                   NULL,
+                                   NULL,
+                                   0);
+        }
+        
+        if (!gIntVars)
+        {
+            fprintf(stderr, "Out of memory.\n");
+            err = 1;
+        }
+        
+        /* Remove previous value, if it exists, otherwise hcon_insert() will be a noop. */
+        hcon_remove(gIntVars, key);
+        
+        /* Assumes ownership of string value. */
+        hcon_insert(gIntVars, key, &strval);
+    }
+    else
+    {
+        err = 1;
+    }
+    
+    return err;
+}
+
+static int RegisterShVar(const char *key, const char *val)
+{
+    char *strval = NULL;
+    int err;
+    
+    err = 0;
+    
+    if (key && val)
+    {
+        if (!gShVars)
+        {
+            gShVars = hcon_create(sizeof(char *), 
+                                   kMaxShVar, 
+                                   (void (*)(const void *))FreeShVars,
+                                   NULL,
+                                   NULL,
+                                   NULL,
+                                   0);
+        }
+        
+        if (!gShVars)
+        {
+            fprintf(stderr, "Out of memory.\n");
+            err = 1;
+        }
+        
+        strval = strdup(val);
+        
+        /* Assumes ownership of string value. */
+        hcon_insert(gShVars, key, &strval);
+        
+    }
+    else
+    {
+        err = 1;
+    }
+    
+    return err;
+}
 
 /* The caller wants to connect to the db on the host specified by dbhost. The current context, 
  * env, may hanve a handle to the desired connection. If so, contextOKout is set to 1. If not, 
@@ -192,6 +313,11 @@ static DB_Handle_t *GetDBHandle(DRMS_Env_t *env, const char *dbhost, int *contex
 
       return dbh;
    }
+    else if (close)
+    {
+        /* There was no db connection - do nothing. */
+        return NULL;
+    }
 
    XASSERT(env && dbhost);
 
@@ -422,7 +548,7 @@ int nice_intro ()
 
 // generate qsub script
 void make_qsub_call(char *requestid, char *reqdir, int requestorid, const char *dbname, 
-               const char *dbuser, const char *dbids, const char *dbexporthost, const char *dbmainhost)
+               const char *dbuser, const char *dbids, const char *dbexporthost)
   {
   FILE *fp;
   char qsubscript[DRMS_MAXPATHLEN];
@@ -502,13 +628,13 @@ void make_qsub_call(char *requestid, char *reqdir, int requestorid, const char *
 
 // Security testing.  Make sure DataSet does not contain attempt to run program
 //   example: look out for chars that end dataset spec and give command.
-int isbadDataSet(char *in)
+int isbadDataSet()
   {
   return(0);
   }
 
 // Security testing.  Make sure Processing does not contain attempt to run illegal program
-int isbadProcessing(char *process)
+int isbadProcessing()
   {
   return(0);
   }
@@ -532,135 +658,980 @@ enum PParseState_enum
 
 typedef enum PParseState_enum PParseState_t;
 
-#if 0
-/* action == 0 => return current data-set, don't advance to next 
- * action == 1 => return current data-set, advance to next 
- * action == 2 => free allocated memory
- *
- * field number of current field.
- * 
- * If field == NULL, then this is a continuation of previous parsing, 
- * otherwise, this is the beginning of parsing a new field.
- */
-static const char *GetDataSet(const char *field, int action, int *fieldn)
-{
-   static char *ds = NULL;
-   static char *pc = NULL;
-   static int fieldno = 0;
-   char *delim = NULL;
-
-   if ((!field && !ds))
-   {
-      return NULL;
-   }
-
-   if (field)
-   {
-      if (ds)
-      {
-         free(ds);
-      }
-
-      ds = NULL;
-      pc = NULL;
-      fieldno = 0;
-   }
-
-   if (!ds)
-   {
-      ds = strdup(field);
-   }
-
-   /* point to first data-set */
-   if (!pc)
-   {
-      pc = ds;
-      fieldno = 1;
-   }
-
-   if (pc == ds + strlen(ds))
-   {
-      /* end of the line */
-      *fieldn = fieldno;
-      return NULL;
-   }
-   else if (action == 0)
-   {
-      /* just return current data-set */
-      *fieldn = fieldno;
-      return pc;
-   }
-   else if (action == 1)
-   {
-      char *rv = NULL;
-
-      rv = pc;
-
-      /* advance to next data-set */
-      if ((delim = strchr(pc, '|')) != NULL)
-      {
-         *delim = '\0';
-         pc = delim + 1;
-         fieldno++;
-      }
-      else
-      {
-         /* no more data-sets */
-         pc = pc + strlen(pc);
-      }
-
-      /* return current dataset */
-      *fieldn = fieldno;
-      return rv;
-   }
-   else if (action == 2 && ds)
-   {
-      free(ds);
-      ds = NULL;
-      pc = NULL;
-      fieldno = 0;
-      *fieldn = fieldno;
-      return NULL;
-   }
-
-   *fieldn = fieldno;
-   return NULL;
-}
-#endif
-
 static void FreeProcStep(void *ps)
 {
-   ProcStep_t *data = (ProcStep_t *)ps;
-
-   if (data && data->args)
-   {
-      free(data->args);
-   }
-
-   if (data && data->input)
-   {
-      free(data->input);
-   }
-
-   if (data && data->output)
-   {
-      free(data->output);
-   }
+    ProcStep_t *data = (ProcStep_t *)ps;
+    
+    if (data && data->name)
+    {
+        free(data->name);
+    }
+    
+    if (data && data->args)
+    {
+        free(data->args);
+    }
+    
+    if (data && data->input)
+    {
+        free(data->input);
+    }
+    
+    if (data && data->output)
+    {
+        free(data->output);
+    }
 }
 
 static void FreeProcStepInfo(void *val)
 {
-   ProcStepInfo_t *info = (ProcStepInfo_t *)val;
+    ProcStepInfo_t *info = (ProcStepInfo_t *)val;
+    
+    if (info->name)
+    {
+        free(info->name);
+    }
+    
+    if (info->path)
+    {
+        free(info->path);
+    }
+    
+    if (info->req)
+    {
+        list_llfree(&info->req);
+    }
+    
+    if (info->opt)
+    {
+        list_llfree(&info->opt);
+    }
+    
+    if (info->namemap)
+    {
+        hcon_destroy(&info->namemap);
+    }
+    
+    if (info->suffix)
+    {
+        free(info->suffix);
+    }
+}
 
-   if (info->name)
-   {
-      free(info->name);
-   }
+static void FreeProcArg(void *data)
+{
+    ExpProcArg_t *parg = (ExpProcArg_t *)data;
+    
+    if (parg)
+    {
+        if (parg->name)
+        {
+            free(parg->name);
+        }
+        
+        if (parg->def)
+        {
+            free(parg->def);
+        }
+        
+        memset(parg, 0, sizeof(ExpProcArg_t));
+    }
+}
 
-   if (info->suffix)
+static LinkedList_t *ParseArgs(const char *list, int dodef, int *status)
+{
+    char *arg = NULL;
+    char *name = NULL;
+    char *def = NULL; /* for options only */
+    char *cpy = NULL;
+    char *pc = NULL;
+    char *eq = NULL;
+    char *co = NULL;
+    int intstat;
+    int done;
+    LinkedList_t *lst = NULL;
+    ExpProcArg_t argnode;
+    
+    if (list)
+    {
+        cpy = strdup(list);
+        
+        intstat = DRMS_SUCCESS;
+        for (pc = cpy, done = 0; !done;)
+        {
+            arg = pc;
+            co = strchr(pc, ',');
+            if (co)
+            {
+                *co = '\0';
+                pc = co + 1;
+            }
+            else
+            {
+                /* done */
+                done = 1;
+            } 
+            
+            name = arg;
+            argnode.def = NULL;
+            
+            if (dodef)
+            {
+                eq = strchr(arg, '=');
+                if (eq)
+                {
+                    *eq = '\0';
+                    def = eq + 1;
+                    argnode.def = strdup(def);
+                }
+            }
+            
+            argnode.name = strdup(name);
+            
+            if (!lst)
+            {
+                lst = list_llcreate(sizeof(ExpProcArg_t), (void (*)(const void *))FreeProcArg);
+            }
+            
+            if (lst)
+            {
+                list_llinserttail(lst, &argnode);
+            }
+            else
+            {
+                intstat = DRMS_ERROR_OUTOFMEMORY;
+            }
+        }
+    }
+    else
+    {
+        intstat = DRMS_ERROR_INVALIDDATA;
+    }
+    
+    if (status)
+    {
+        *status = intstat;
+    }
+    
+    return lst;
+}
+
+static void FreeProcMap(void *data)
+{
+    char **pname = (char **)data;
+    
+    if (pname && *pname)
+    {
+        free(*pname);
+        *pname = NULL;
+    }
+}
+
+static HContainer_t *ParseMap(const char *list, int *status)
+{
+    HContainer_t *map = NULL;
+    char *cpy = NULL;
+    int intstat;
+    int done;
+    char *pc = NULL;
+    char *co = NULL;
+    char *eq = NULL;
+    char *mapping = NULL;
+    char *argname = NULL;
+    char *intname = NULL;
+    
+    intstat = 0;
+    if (list && *list)
+    {
+        cpy = strdup(list);
+        if (cpy)
+        {
+            for (pc = cpy, done = 0; !done; )
+            {
+                mapping = pc;
+                co = strchr(pc, ',');
+                if (co)
+                {
+                    *co = '\0';
+                    pc = co + 1;
+                }
+                else
+                {
+                    /* done */
+                    done = 1;
+                }
+                
+                argname = mapping;
+                
+                eq = strchr(mapping, ':');
+                if (!eq)
+                {
+                    fprintf(stderr, "Invalid argument - no internal name supplied.\n");
+                    intstat = DRMS_ERROR_INVALIDDATA;
+                    break;
+                }
+                else
+                {
+                    *eq = '\0';
+                    intname = strdup(eq + 1);
+                    
+                    if (!intname)
+                    {
+                        intstat = DRMS_ERROR_OUTOFMEMORY;
+                        break;
+                    }
+                }
+                
+                if (!map)
+                {
+                    map = hcon_create(sizeof(char *), 
+                                      kMaxProcNameLen, 
+                                      (void (*)(const void *))FreeProcMap,
+                                      NULL,
+                                      NULL,
+                                      NULL,
+                                      0);
+                }
+                
+                hcon_insert(map, argname, &intname);
+            }
+            
+            free(cpy);
+        }
+        else
+        {
+            intstat = DRMS_ERROR_OUTOFMEMORY;
+        }
+    }
+    
+    if (status)
+    {
+        *status = intstat;
+    }
+    
+    return map;
+}
+
+static int SuckInProcInfo(DRMS_Env_t *env, const char *procser, HContainer_t *info)
+{
+    /* Must support these 
+     ProcStepInfo_t pi;
+     
+     pi.name = strdup("Not Specified");
+     pi.suffix = strdup("");
+     hcon_insert(pinfo, "Not Specified", &pi);
+     
+     pi.name = strdup("no_op");
+     pi.suffix = strdup("");
+     hcon_insert(pinfo, "no_op", &pi);
+     
+     pi.name = strdup("hg_patch");
+     pi.suffix = strdup("hgpatch");
+     hcon_insert(pinfo, "hg_patch", &pi);
+     
+     pi.name = strdup("su_export");
+     pi.suffix = strdup("");
+     hcon_insert(pinfo, "su_export", &pi);
+     
+     //Eventually we will have to have a real suffix for this - right now we special case: 
+     //aia.lev1 --> aia_test.lev1p5. 
+     pi.name = strdup("aia_scale");
+     pi.suffix = strdup("");
+     hcon_insert(pinfo, "aia_scale", &pi);
+     */
+    
+    int status;
+    DRMS_RecordSet_t *prs = NULL;
+    DRMS_Record_t *rec = NULL;
+    DRMS_RecChunking_t chunkstat;
+    int newchunk;
+    
+    char *proc = NULL;
+    char *path = NULL;
+    char *req = NULL;
+    char *opt = NULL;    
+    char *map = NULL;
+    char *out = NULL;
+    
+    ProcStepInfo_t pi;
+    
+    status = DRMS_SUCCESS;
+    
+    if (info)
+    {
+        prs = drms_open_records(env, procser, &status);
+        if (status == DRMS_SUCCESS && prs)
+        {
+            if (prs->n > 0)
+            {
+                while ((rec = drms_recordset_fetchnext(env, prs, &status, &chunkstat, &newchunk)) 
+                       != NULL)
+                {
+                    proc = drms_getkey_string(rec, kProcSerCOLproc, &status);
+                    if (status) break;
+                    path = drms_getkey_string(rec, kProcSerCOLpath, &status);
+                    if (status) break;
+                    req = drms_getkey_string(rec, kProcSerCOLreq, &status);
+                    if (status) break;
+                    opt = drms_getkey_string(rec, kProcSerCOLopt, &status);
+                    if (status) break;
+                    map = drms_getkey_string(rec, kProcSerCOLmap, &status);
+                    if (status) break;
+                    out = drms_getkey_string(rec, kProcSerCOLout, &status);
+                    if (status) break;
+                    
+                    /* No need to dupe strings - drms_getkey_string() already does that. */
+                    /* The objects in the db have already passed a syntax test. */
+                    pi.name = proc;
+                    pi.path = path;
+                    pi.req = ParseArgs(req, 0, &status);
+                    if (status) break;
+                    pi.opt = ParseArgs(opt, 1, &status);
+                    if (status) break;
+                    pi.namemap = ParseMap(map, &status);
+                    if (status) break;
+                    pi.suffix = out;
+                    
+                    /* container takes ownership of all strings, lists, and containers. */
+                    hcon_insert(info, proc, &pi);
+                }
+            }
+            
+            drms_close_records(prs, DRMS_FREE_RECORD);
+        }
+    }
+    
+    return status;
+}
+
+static int NumPKeyKeys(DRMS_Env_t *env, const char *dbhost, const char *series)
+{
+    int rv = -1;
+    DB_Handle_t *dbh = NULL;
+    int contextOK = 0;
+    int istat = 0;
+    
+    /* returns NULL on error. */
+    dbh = GetDBHandle(env, dbhost, &contextOK, 0);
+    
+    if (!dbh)
+    {
+        fprintf(stderr, "jsoc_export_manage: Unable to connect to database.\n");
+    }
+    else
+    {
+        if (!contextOK)
+        {
+            /* The caller wants to check for series existence in a db on host to which 
+             * this module has no connection. Use dbh, not env. */
+            
+            /* Successfully connected to dbhost; can't use DRMS calls since we don't have a 
+             * functioning environment for this ad hoc connection. */
+            char query[512];
+            char *schema = NULL;
+            DB_Text_Result_t *res = NULL;
+            
+            if (get_namespace(series, &schema, NULL))
+            {
+                fprintf(stderr, "Invalid series name %s.\n", series);
+            }
+            else
+            {
+                snprintf (query, 
+                          sizeof(query), 
+                          "SELECT primary_idx FROM %s.drms_series WHERE lower(seriesname) = lower(\'%s\')", 
+                          schema, 
+                          series);
+                
+                res = db_query_txt(dbh, query);
+                
+                if (res && res->num_rows == 1) 
+                {
+                    const char *pidx = res->field[0][0];
+                    int nkeys = 0;
+                    const char *pc = pidx;
+                    
+                    if (*pc == '\0')
+                    {
+                        /* No prime keys. */
+                        rv = 0;
+                    }
+                    else
+                    {    
+                        nkeys++;
+                        
+                        /* bah, gotta parse pidx to get number of keys. */
+                        while (*pc)
+                        {
+                            if (*pc == ',')
+                            {
+                                nkeys++;
+                            }
+                            
+                            pc++;
+                        }
+                        
+                        rv = nkeys;
+                    }
+                    
+                    db_free_text_result(res);
+                    res = NULL;
+                }
+                else
+                {
+                    fprintf(stderr, "Invalid SQL query: %s.\n", query);
+                }
+                
+                free(ns);
+            }
+        }
+        else
+        {
+            /* The caller wants to get the number of prime keys of a series in the database to which 
+             * this modue is currently connected. */
+            DRMS_Record_t *template = drms_template_record(env, series, &istat);
+            
+            if (istat != DRMS_SUCCESS || !template)
+            {
+                fprintf(stderr, "Problems obtaining template record for %s on %s.\n", series, dbhost);
+            }
+            else
+            {
+                rv = template->seriesinfo->pidx_num;
+            }
+        }
+    }
+
+    return rv;
+}
+
+void FreeArgInfo(const void *data)
+{
+   char **info = (char **)data;
+
+   if (info && *info)
    {
-      free(info->suffix);
+      free(*info);
+      *info = NULL;
    }
+}
+
+/* pvarsargs - arguments/values from jsoc.export_new. */
+static int InitVarConts(const char *args, 
+                        HContainer_t **pvarsargs /* both req and opt args. */)
+{
+    char *cpy = NULL;
+    char *pc = NULL;
+    char *onename = NULL;
+    char *oneval = NULL;
+    int err;
+    
+    err = 0;
+    
+    /* Optional parameters in the processing field of jsoc.export_new (in opt). */
+    /* Must parse comma-separated list. */
+    if (pvarsargs && !*pvarsargs && args)
+    {
+        const char *valcpy = NULL;
+        *pvarsargs = hcon_create(sizeof(char *),
+                                 kMaxArgVar, 
+                                 (void (*)(const void *))FreeArgInfo,
+                                 NULL,
+                                 NULL,
+                                 NULL,
+                                 0);
+        
+        if (*args)
+        {
+            cpy = strdup(args);
+            pc = cpy;
+            onename = pc;
+            while (*pc)
+            {
+                if (*pc == '=')
+                {
+                    *pc = '\0';
+                    oneval = ++pc; /* for varsargs, RHS of '=' is actual value. */
+                }
+                else if (*pc == ',')
+                {
+                    *pc = '\0';
+                    
+                    if (oneval)
+                    {
+                        valcpy = strdup(oneval);
+                        hcon_insert(*pvarsargs, onename, &valcpy);
+                    }
+                    else
+                    {
+                        valcpy = strdup("");
+                        hcon_insert(*pvarsargs, onename, &valcpy);
+                    }
+                    pc++;
+                    onename = pc;
+                    oneval = NULL;
+                }
+                
+                pc++;
+            }
+            
+            if (!err)
+            {
+                /* do last one. */
+                if (oneval)
+                {
+                    valcpy = strdup(oneval);
+                    hcon_insert(*pvarsargs, onename, &valcpy);
+                }
+                else
+                {
+                    valcpy = strdup("");
+                    hcon_insert(*pvarsargs, onename, &valcpy);
+                }
+            }
+            
+            free(cpy);
+        }
+    }
+    
+    return err;
+}
+
+/* Returns 1 on success, 0 on failure. */
+/*   pinfo - information from the processing-step series specific to the current procsessing step. 
+*    args - argument values from the processing keyword of jsoc.export_new. 
+*    argsout - final argument string (comma-separated list of arguments/values).
+*    stepdata - has program name, input record-set, output record-set.
+*/
+static int GenProgArgs(ProcStepInfo_t *pinfo, 
+                       HContainer_t *args, 
+                       ProcStep_t *stepdata,
+                       const char *reclim,
+                       char **argsout)
+{
+    /*
+     *   1. Grab an argument from pinfo->req. Map the argument name, using 
+     *      pinfo->namemap, to an "internal" name. 
+     *   2. If the internal name is in args, then use the corresponding value in args 
+     *      as the value of this argument. 
+     *   3. If the internal name is NOT in args, then look for it in gIntVars. If it 
+     *      is there, use the associated value as the value of this argument. 
+     *   4. If the internal name is NOT in gIntVars, then look for it in gShVars. If it 
+     *      is there, use the associated value as the value of this argument.
+     *   5. If the internal name is NOT in gShVars, bail. A required argument was 
+     *      not specified in any way. 
+     *   6. Repeat for all remaining required arguments. 
+     *   7. Grab an option from pinfo->opt. Proceed as before with required arguments, 
+     *      through step 5. 
+     *   8. If no value for the option can be found in args, gIntVars, or gShVars, then use 
+     *      the default value in pinfo->opt. 
+     *   9. If there is no default value in pinfo->opt, then bail. 
+     */
+    
+    int err;
+    HIterator_t *hit = NULL;
+    ListNode_t *node = NULL;
+    ExpProcArg_t *data = NULL;
+    const char *intname = NULL;
+    const char **pintname = NULL;
+    size_t sz = 128;
+    const char **pval = NULL;
+    const char *val = NULL;
+    char *finalargs = NULL;
+    int first;
+    int isflag;
+    
+    err = 0;
+    finalargs = malloc(sz);
+    memset(finalargs, 0, sz);
+    
+    if (pinfo)
+    {
+        if (pinfo->req)
+        {
+            list_llreset(pinfo->req);
+            
+            /* loop through required arguments. */
+            first = 1;
+            while ((node = list_llnext(pinfo->req)) != NULL)
+            {
+                data = (ExpProcArg_t *)node->data;
+                if (pinfo->namemap)
+                {
+                    pintname = (const char **)hcon_lookup(pinfo->namemap, data->name);
+                }
+                else
+                {
+                    pintname = NULL;
+                }
+                
+                if (pintname == NULL)
+                {
+                    /* There is NO mapping from program argument to internal variable name - use 
+                     * original name. */
+                    intname = data->name;
+                }
+                else
+                {
+                    intname = *pintname; 
+                }
+                
+                /* Look for intname first in args, then in gIntVars, then in gShVars. */
+                if ((args && (pval = (const char **)hcon_lookup(args, intname)) != NULL) ||
+                    (gIntVars && (pval = (const char **)hcon_lookup(gIntVars, intname)) != NULL) ||
+                    (gShVars && (pval = (const char **)hcon_lookup(gShVars, intname)) != NULL))
+                {
+                    val = *pval;
+                }
+                else if (strcasecmp(intname, "in") == 0)
+                {
+                    /* Special case for the input and output record-set specification arguments. 
+                     * The values for these come from stepdata. There MUST be a namemap entry 
+                     * for <input arg>=in and <output arg>=out in the processing series map
+                     * field. */
+                    val = stepdata->input;
+                }
+                else if (strcasecmp(intname, "out") == 0)
+                {
+                    /* Special case for the input and output record-set specification arguments. 
+                     * The values for these come from stepdata. There MUST be a namemap entry 
+                     * for <input arg>=in and <output arg>=out in the processing series map
+                     * field. */
+                    val = stepdata->output;
+                }
+                else
+                {
+                    /* Couldn't find required arg - bail. */
+                    val = NULL;
+                    fprintf(stderr, "Unable to locate value for program argument %s.\n", data->name);
+                    err = 1;
+                    break;
+                }
+                
+                if (val)
+                {
+                    if (!first)
+                    {
+                        finalargs = base_strcatalloc(finalargs, " ", &sz);
+                    }
+                    else
+                    {
+                        first = 0;
+                    }
+                    
+                    finalargs = base_strcatalloc(finalargs, data->name, &sz);
+                    finalargs = base_strcatalloc(finalargs, "=", &sz);
+                    finalargs = base_strcatalloc(finalargs, "'", &sz);
+                    finalargs = base_strcatalloc(finalargs, val, &sz);
+                    finalargs = base_strcatalloc(finalargs, "'", &sz);
+                }
+            }
+        }
+        
+        if (!err)
+        {
+            /* loop through optional arguments. */
+            if (pinfo->opt)
+            {
+                list_llreset(pinfo->opt);
+                
+                first = 1;
+                while ((node = list_llnext(pinfo->opt)) != NULL)
+                {
+                    data = (ExpProcArg_t *)node->data;
+                    if (pinfo->namemap)
+                    {
+                        pintname = (const char **)hcon_lookup(pinfo->namemap, data->name);
+                    }
+                    else
+                    {
+                        pintname = NULL;
+                    }
+                    
+                    if (pintname == NULL)
+                    {
+                        /* There is NO mapping from program argument to internal variable name - use 
+                         * original name. */
+                        intname = data->name;
+                    }
+                    else
+                    {
+                        intname = *pintname;
+                    }
+                    
+                    /* Look for intname first in args, then in gIntVars, then in gShVars. */
+                    if ((pval = (const char **)hcon_lookup(args, intname)) != NULL ||
+                        (pval = (const char **)hcon_lookup(gIntVars, intname)) != NULL ||
+                        (pval = (const char **)hcon_lookup(gShVars, intname)) != NULL
+                        )
+                    {
+                        val = *pval;
+                    }
+                    else if (strcasecmp(intname, "reclim") == 0)
+                    {
+                        /* Special case for the record-limit argument. There MUST be a 
+                         * namemap entry for <record-limit arg>=reclim in the processing series map
+                         * field IF we want to apply a record-limit. For example, there must 
+                         * be an entry with n=reclim for hg_patch processing. 
+                         */
+                        val = reclim;
+                    }
+                    else
+                    {
+                        /* Couldn't find optional arg. See if it is in pinfo->opt, default values
+                         * from the processing-step dataseries. */
+                        val = NULL;
+                        if (data->def && *data->def)
+                        {
+                            /* default value exists, use it. */
+                            val = data->def;
+                        }
+                        else
+                        {
+                            /* No default value for this optional argument, so do not add the 
+                             * argument to the cmd-line. */
+                            val = NULL;
+                        }
+                    }
+                    
+                    if (val)
+                    {
+                        if (!first)
+                        {
+                            finalargs = base_strcatalloc(finalargs, " ", &sz);
+                        }
+                        else
+                        {
+                            if (*finalargs)
+                            {
+                                /* Need space between req args and options. */
+                                finalargs = base_strcatalloc(finalargs, " ", &sz);
+                            }
+                            first = 0;
+                        }
+                        
+                        finalargs = base_strcatalloc(finalargs, data->name, &sz);
+                        
+                        /* Argument names that begin with '-' are flags and have no value. */
+                        if (!(*data->name == '-'))
+                        {
+                            finalargs = base_strcatalloc(finalargs, "=", &sz);
+                            finalargs = base_strcatalloc(finalargs, val, &sz);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    if (!err && finalargs && *finalargs)
+    {
+        *argsout = finalargs;
+    }
+    else
+    {
+        *argsout = NULL;
+    }
+    
+    return err;
+}
+
+static int GenOutRSSpec(DRMS_Env_t *env, 
+                        const char *dbhost, 
+                        ProcStepInfo_t *cpinfo, 
+                        ProcStepInfo_t *ppinfo,
+                        ProcStep_t *data,
+                        const char *reqid)
+{
+    int err = 0;
+    
+    if (cpinfo)
+    {
+        const char *suffix = cpinfo->suffix;
+        const char *psuffix = NULL;
+        char **snames = NULL;
+        char **filts = NULL;
+        int nsets;
+        int iset;
+        DRMS_RecQueryInfo_t info;
+        char *outseries = NULL;
+        char *newoutseries = NULL;
+        char *newfilter = NULL;
+        int npkeys;
+        size_t sz;
+        int len;
+        char *repl = NULL;
+        
+        while (1)
+        {
+            if (ppinfo)
+            {
+                /* The input to the current processing step, which is identical to ppinfo->output,
+                 * might have a suffix. If it has a suffix, then it is ppinfo->suffix. */
+                psuffix = ppinfo->suffix;
+            }
+            else
+            {
+                /* Since there was no previous processing step, there is no suffix 
+                 * attached to the input of this processing step. */
+            }
+            
+            /* Parse input record-set query parts. */
+            
+            /* ART - env is not necessarily the correct environment for talking 
+             * to the database about DRMS objects (like records, keywords, etc.). 
+             * It is connected to the db on dbexporthost. dbmainhost is the host
+             * of the correct jsoc database. This function will ensure that
+             * it talks to dbmainhost. */
+            if (ParseRecSetSpec(env, dbhost, data->input, &snames, &filts, &nsets, &info))
+            {
+                err = 1;
+                break;
+            }
+            
+            /* The suffix column's value is a true suffix only if the string begins with '_'. If
+             * not, then the value is actually the output series name. So if *psuffix != '_', 
+             * then there was really no suffix for the previous processing step, and if *suffix != '_',
+             * then we need to replace the input series name with the output series name. */
+            if (psuffix && *psuffix == '_' && suffix && *suffix == '_')
+            {
+                /* The input series and output series both have suffixes. Replace the 
+                 * input series' suffixes with the output series' suffixes. */
+                for (iset = 0; iset < nsets; iset++)
+                {
+                    outseries = base_strreplace(data->input, psuffix, suffix);
+                }   
+            }
+            else if (suffix && *suffix == '_')
+            {
+                /* No suffix on input series names, but suffix on output series names. Append 
+                 * the output series' suffix onto the input series' names. */
+                char replname[DRMS_MAXSERIESNAMELEN];
+                
+                outseries = strdup(data->input);
+                for (iset = 0; iset < nsets; iset++)
+                {
+                    snprintf(replname, sizeof(replname), "%s%s", snames[iset], suffix);
+                    newoutseries = base_strreplace(outseries, snames[iset], replname);
+                    free(outseries);
+                    outseries = newoutseries;
+                }   
+            }
+            else if (suffix && *suffix)
+            {
+                /* No suffix on either the input series or the output series, but there 
+                 * is a new output series name. Replace input series names with the name
+                 * in suffix. */
+                for (iset = 0; iset < nsets; iset++)
+                {
+                    outseries = base_strreplace(data->input, snames[iset], suffix);
+                }
+                
+                /* ART - This is the case for aia_scale processing (so far). This code will 
+                 * take whatever the input series is, and replace the series name with 
+                 * aia_test.lev1p5. Because we no longer have processing-step specific code, 
+                 * we cannot ensure that the input series is aia.lev1 only. If it isn't, then
+                 * this processing step is invalid. */
+            }
+            else
+            {
+                /* No suffix on input series names, and no suffix on output series names. */
+                outseries = strdup(data->input);
+            }
+            
+            /* Remove input series' filters. */
+            for (iset = 0; iset < nsets; iset++)
+            {
+                newoutseries = base_strreplace(outseries, filts[iset], "");
+                free(outseries);
+                outseries = newoutseries;
+            }
+            
+            FreeRecSpecParts(&snames, &filts, nsets);
+            
+            /* Add filters to output series names. */
+            if (ParseRecSetSpec(env, dbhost, outseries, &snames, &filts, &nsets, &info))
+            {
+                err = 1;
+                break;
+            }
+            
+            sz = 32;
+            newfilter = malloc(sz);
+            memset(newfilter, 0, sz);
+            for (iset = 0; iset < nsets; iset++)
+            {  
+                /* snames now contains output series names. */
+                
+                /* Get number of prime-key keywords for current series. */
+                
+                /* Must talk to db that has actual series (i.e., hmidb), despite the fact
+                 * that the env might contain a connection to the wrong db. NumPKeyKeys()
+                 * will talk to the correct db. */
+                npkeys = NumPKeyKeys(env, dbhost, snames[iset]);
+                
+                if (npkeys < 1)
+                {
+                    /* There must be at least one prime key constituent - the reqid keyword. */
+                    err = 1;
+                    break;
+                }
+                
+                /* create npkeys - 1 "[]"*/
+                while (--npkeys)
+                {
+                    newfilter = base_strcatalloc(newfilter, "[]", &sz);
+                }
+                
+                newfilter = base_strcatalloc(newfilter, "[", &sz);
+                newfilter = base_strcatalloc(newfilter, reqid, &sz);
+                newfilter = base_strcatalloc(newfilter, "]", &sz);
+                
+                len = strlen(snames[iset]) + strlen(newfilter) + 16;
+                repl = malloc(len);
+                
+                if (repl)
+                {
+                    snprintf(repl, len, "%s%s", snames[iset], newfilter);
+                    newoutseries = base_strreplace(outseries, snames[iset], repl);
+                    free(repl);
+                    repl = NULL;
+                }
+                else
+                {
+                    fprintf(stderr, "Out of memory.\n");
+                    err = 1;
+                    break;
+                }
+                
+                free(outseries);
+                outseries = newoutseries;
+                
+                *newfilter = '\0';
+            }
+            
+            if (err == 1)
+            {
+                break;
+            }
+            
+            free(newfilter);
+            newfilter = NULL;
+            
+            FreeRecSpecParts(&snames, &filts, nsets);
+            /* Done! outseries has record-set specifications that have the proper 
+             * suffix and that have the proper filters. */
+            data->output = outseries;
+            
+            break; /* one-time through */
+        }  
+        /* The output series name is the input series name, stripped of the suffix, 
+         * with the output suffix appended. The output filter is a string consisting 
+         * of [] for every prime-key constituent, except for the requestid keyword, 
+         * in which case the subfilter is [reqid]. */
+    }
+    
+    return err;
 }
 
 /* returns 1 on good parse, 0 otherwise */
@@ -675,339 +1646,288 @@ static void FreeProcStepInfo(void *val)
  * dset - The dataset field of jsoc.export_new
  * status - boy, I wonder what this field is for.
  */
-static LinkedList_t *ParseFields(DRMS_Env_t *env, 
-                                 const char *dbhost, 
+static LinkedList_t *ParseFields(DRMS_Env_t *env, /* dbhost of jsoc.export_new. */
+                                 const char *procser,
+                                 const char *dbhost, /* dbhost of db containing series. */
                                  const char *val, 
                                  const char *dset, 
                                  const char *reqid, 
+                                 char **reclim, /* returned by reference */
                                  int *status)
 {
-   LinkedList_t *rv = NULL;
-   char *activestr = NULL;
-   char *pc = NULL;
-   PParseState_t state = kPPStBeginProc;
-   char *onecmd = NULL;
-   char *args = NULL;
-   ProcStep_t data;
-   int procnum;
-   char *adataset = NULL;
-   char *end = NULL;
-   HContainer_t *pinfo = NULL;
-   char onamebuf[2048];
-   char spec[2048];
-   char **snames = NULL;
-   char **filts = NULL;
-   int nsets;
-   int iset;
-   DRMS_RecQueryInfo_t info;
-   ProcStepInfo_t *cpinfo = NULL;
-   const char *suffix = NULL;
-   char *outputname = NULL;
-   char *newoutputname = NULL;
-
-   *status = 0;
-   procnum = 0;
-   activestr = malloc(strlen(val) + 2);
-   pc = activestr;
-   snprintf(pc, strlen(val) + 2, "%s|", val); /* to make parsing easier */
-   end = pc + strlen(pc);
-
-   /* point to data-set */
-   adataset = strdup(dset);
-
-   /* Set-up proc-step name associative array. Soon, these names will come from a db table, but
-    * for now they are hard-coded in this module. The value of each element of this container will
-    * be a struct that has the contents of the processing step's record in this db table. */
-   pinfo = hcon_create(sizeof(ProcStepInfo_t), kMaxProcNameLen, (void (*)(const void *))FreeProcStepInfo, NULL, NULL, NULL, 0);
-
-   /* Hacky-hacky. Manually add the processing steps here. In the future, the step info will come from
-    * the db table. */
-
-   ProcStepInfo_t pi;
-
-   pi.name = strdup("Not Specified");
-   pi.suffix = strdup("");
-   hcon_insert(pinfo, "Not Specified", &pi);
-
-   pi.name = strdup("no_op");
-   pi.suffix = strdup("");
-   hcon_insert(pinfo, "no_op", &pi);
-
-   pi.name = strdup("hg_patch");
-   pi.suffix = strdup("hgpatch");
-   hcon_insert(pinfo, "hg_patch", &pi);
-   
-   pi.name = strdup("su_export");
-   pi.suffix = strdup("");
-   hcon_insert(pinfo, "su_export", &pi);
-
-   /* Eventually we will have to have a real suffix for this - right now we special case: 
-    * aia.lev1 --> aia_test.lev1p5. */
-   pi.name = strdup("aia_scale");
-   pi.suffix = strdup("");
-   hcon_insert(pinfo, "aia_scale", &pi);
-
-   while (1)
-   {
-      if (state == kPPStError || state == kPPStEnd || pc == end)
-      {
-         /* Must free stuff in data. */
-         break;
-      }
-      else if (state == kPPStBeginProc)
-      {
-         onecmd = pc;
-         args = NULL;
-         procnum++;
-         state = kPPStOneProc;
-         data.type = kProc_Unk;
-         data.args = NULL;
-         data.input = adataset; 
-         data.output = NULL;
-      }
-      else if (state == kPPStOneProc)
-      {
-         if ((*pc == '|' || *pc == ',') && data.type == kProc_Unk)
-         {
-            *pc = '\0';
-
-            /* We have a complete processing-step name in onecmd. It will be in pinfo, unless it is n=XX, which 
-             * was used before we standardized the processing column. */
-            cpinfo = hcon_lookup(pinfo, onecmd);
-
-            if (cpinfo)
+    LinkedList_t *rv = NULL;
+    char *activestr = NULL;
+    char *pc = NULL;
+    PParseState_t state = kPPStBeginProc;
+    char *onecmd = NULL;
+    char *args = NULL;
+    ProcStep_t data; /* current step's data. */
+    int procnum; /* The number of the proc-step being currently processed. */
+    char *adataset = NULL;
+    char *end = NULL;
+    HContainer_t *pinfo = NULL;
+    ProcStepInfo_t *cpinfo = NULL;
+    ProcStepInfo_t *ppinfo = NULL; /* previous step's data */
+    int intstat;
+    int gettingargs;
+    char *reclimint = NULL;
+    int bar;
+    
+    HContainer_t *varsargs = NULL;
+    
+    intstat = 0;
+    procnum = 0;
+    activestr = malloc(strlen(val) + 2);
+    pc = activestr;
+    snprintf(pc, strlen(val) + 2, "%s|", val); /* to make parsing easier */
+    end = pc + strlen(pc);
+    
+    /* point to data-set */
+    adataset = strdup(dset);
+    
+    /* Set-up proc-step name associative array. The value of each element of this container is
+     * a struct that has the contents of the processing step's record in this db table. There 
+     * is one hash element per processing step, keyed by processing-step name. */
+    pinfo = hcon_create(sizeof(ProcStepInfo_t), kMaxProcNameLen, (void (*)(const void *))FreeProcStepInfo, NULL, NULL, NULL, 0);
+    
+    /* Collect proc info from jsoc.export_procs */
+    SuckInProcInfo(env, procser, pinfo);
+    
+    while (1)
+    {
+        if (state == kPPStError)
+        {
+            /* Must free stuff in data. */
+            break;
+        }
+        
+        if (state == kPPStBeginProc)
+        {
+            onecmd = pc;
+            args = NULL;
+            procnum++;
+            state = kPPStOneProc;
+            data.name = NULL;
+            data.path = NULL;
+            data.args = NULL; /* complete set of arguments with which to call processing step. */
+            data.input = adataset; 
+            data.output = NULL;
+            cpinfo = NULL;
+            gettingargs = 0;
+            bar = 0;
+        }
+        else if (state == kPPStOneProc)
+        {
+            if ((*pc == '|' || *pc == ',') && !gettingargs)
             {
-               suffix = cpinfo->suffix;
-
-               if (suffix && *suffix)
-               {
-                  /* output is input with the suffix appended. */
-                  /* ART - env is not necessarily the correct environment for talking 
-                   * to the database about DRMS objects (like records, keywords, etc.). 
-                   * It is connected to the db on dbexporthost. dbmainhost is the host
-                   * of the correct jsoc database. This function will ensure that
-                   * it talks to dbmainhost. */
-                  if (ParseRecSetSpec(env, dbhost, data.input, &snames, &filts, &nsets, &info))
-                  {
-                     state = kPPStError;
-                     continue;
-                  }
-
-                  outputname = strdup(data.input);
-
-                  for (iset = 0; iset < nsets; iset++)
-                  {
-                     snprintf(spec, sizeof(spec), "%s%s", snames[iset], filts[iset]);
-                     snprintf(onamebuf, sizeof(onamebuf), "%s_%s%s", snames[iset], suffix, filts[iset]);
-                     newoutputname = base_strreplace(outputname, spec, onamebuf);
-                     free(outputname);
-                     outputname = newoutputname;
-                  }
-
-                  data.output = outputname;
-
-                  FreeRecSpecParts(&snames, &filts, nsets);
-               }
-               else
-               {
-                  data.output = strdup(data.input);
-               }
+                /* We may be at the end of a current processing step, but maybe not. If the current 
+                 * char is a comma, then this could be the separator between the program name
+                 * and the arguments to the program. */
+                if (*pc == '|')
+                {
+                    bar = 1;
+                }
+                
+                *pc = '\0'; 
+                
+                /* We have a complete processing-step name in onecmd. It will be in pinfo, unless it is n=XX, which 
+                 * was used before we standardized the processing column. */
+                cpinfo = hcon_lookup(pinfo, onecmd);
+                
+                /* Check for old-style comma delimiter between the first proc step (which
+                 * must be the reclimit step), and the real proc steps. */
+                if (!cpinfo && strncasecmp(onecmd, "n=", 2) == 0 && procnum == 1)
+                {
+                    args = onecmd + 2;
+                    
+                    /* This step is not a real processing step, so it will not modify any 
+                     * image data --> input == output. */
+                    data.name = strdup("n=xx");
+                    data.output = strdup(data.input);
+                    
+                    /* There could be two '|' between n=XX and the next cmd. */
+                    if (bar && *(pc + 1) == '|')
+                    {
+                        pc++;
+                    }
+                    
+                    state = kPPStEndProc;
+                }
+                else if (cpinfo)
+                {
+                    /* These are all the real processing steps. There may or may not be arguments 
+                     * associated with these steps. Start collecting chars in the input val as 
+                     * potential argument chars. */
+                    data.name = strdup(onecmd);
+                    args = pc + 1;
+                    if (bar)
+                    {
+                        /* Done with this proc-step. There may or may not be proc-steps that follow. */
+                        state = kPPStEndProc;
+                    }
+                    else
+                    {
+                        gettingargs = 1;
+                    }
+                }
+                else
+                {
+                    /* Unknown type - processing error */
+                    fprintf(stderr, "Unknown processing step %s.\n", onecmd);
+                    state = kPPStError;
+                }
             }
-
-            /* Check for old-style comma delimiter between the first proc step (which
-             * must be the reclimit step), and the real proc steps. */
-            if (!cpinfo && strncasecmp(onecmd, "n=", 2) == 0 && procnum == 1)
+            else if (*pc == '|')
             {
-               args = onecmd + 2;
-               data.type = kProc_Reclimit;
-               
-               /* This step is not a real processing step, so it will not modify any 
-                * image data --> input == output. */
-               data.output = strdup(data.input);
-
-               /* There could be two '|' between n=XX and the next cmd. */
-               if (*pc == '|' && *(pc + 1) == '|')
-               {
-                  pc++;
-                  *pc = '\0';
-               }
-
-               state = kPPStEndProc;
-            }
-            else if (strncasecmp(onecmd, procs[kProc_Noop], strlen(procs[kProc_Noop])) == 0)
-            {
-               /* noop takes no args */
-               data.type = kProc_Noop;
-               state = kPPStEndProc;
-            }
-            else if (strncasecmp(onecmd, procs[kProc_NotSpec], strlen(procs[kProc_NotSpec])) == 0)
-            {
-               /* notspec takes no args */
-               data.type = kProc_NotSpec;
-               state = kPPStEndProc;
-            }
-            else if (strncasecmp(onecmd, procs[kProc_HgPatch], strlen(procs[kProc_HgPatch])) == 0)
-            {
-               /* Stuff following comma are args to hg_patch */
-               /* These args will also have to be fetched from cpinfo. */
-               args = pc + 1;
-               data.type = kProc_HgPatch;
-
-               /* ACK - somehow we have to figure out how to specify in the db table that 
-                * the output record-set filter isn't just adding the _hgpatch suffix to 
-                * the input series name. You have to go from an input of hmi.lev1[2012.1.5] to 
-                * an output of hmi.lev1_hgpatch[][][JSOC_20111104_037_IN]. data.output has
-                * hmi.lev1_hgpatch[2012.1.5] at this point (it won't after figure out how
-                * to specify in the db table that we use a different output series filter than
-                * the input series filter). Blah! */
-
-               /* ART - env is not necessarily the correct environment for talking 
-                * to the database about DRMS objects (like records, keywords, etc.). 
-                * It is connected to the db on dbexporthost. dbmainhost is the host
-                * of the correct jsoc database. This function will ensure that
-                * it talks to dbmainhost. */
-               if (ParseRecSetSpec(env, dbhost, data.output, &snames, &filts, &nsets, &info))
-               {
-                  state = kPPStError;
-                  continue;
-               }
-
-               outputname = strdup(data.output);
-
-               for (iset = 0; iset < nsets; iset++)
-               {
-                  snprintf(spec, sizeof(spec), "%s%s", snames[iset], filts[iset]);
-                  snprintf(onamebuf, sizeof(onamebuf), "%s[][][%s]", snames[iset], reqid);
-                  newoutputname = base_strreplace(outputname, spec, onamebuf);
-                  free(outputname);
-                  outputname = newoutputname;
-               }
-
-               data.output = outputname;
-            }
-            else if (strncasecmp(onecmd, procs[kProc_SuExport], strlen(procs[kProc_SuExport])) == 0)
-            {
-               data.type = kProc_SuExport;
-               state = kPPStEndProc;
-            }
-            else if (strncasecmp(onecmd, procs[kProc_AiaScale], strlen(procs[kProc_AiaScale])) == 0)
-            {
-               data.type = kProc_AiaScale;
-               state = kPPStEndProc;
-
-               /* HACK!! For now, the only series to which aiascale processing can be applied is 
-                * aia.lev1, producing the output aia_test.lev1p5. */
-               outputname = strdup(data.output);
-
-                /* ART - env is not necessarily the correct environment for talking 
-                * to the database about DRMS objects (like records, keywords, etc.). 
-                * It is connected to the db on dbexporthost. dbmainhost is the host
-                * of the correct jsoc database. This function will ensure that
-                * it talks to dbmainhost. */
-               if (ParseRecSetSpec(env, dbhost, data.input, &snames, &filts, &nsets, &info))
-               {
-                  state = kPPStError;
-                  free(outputname);
-                  continue;
-               }
-
-               for (iset = 0; iset < nsets; iset++)
-               {
-                  if (strcasecmp(snames[iset], "aia.lev1") != 0)
-                  {
-                     state = kPPStError;
-                     break;
-                  }
-                  else
-                  {
-                     /* Force to aia.lev1p5 */
-                     if (outputname)
-                     {
-                        snprintf(spec, sizeof(spec), "%s%s", snames[iset], filts[iset]);
-                        snprintf(onamebuf, sizeof(onamebuf), "aia.lev1p5%s", filts[iset]);
-                        newoutputname = base_strreplace(outputname, spec, onamebuf);
-                        free(outputname);
-                        outputname = newoutputname;
-                     }
-
-                     data.output = outputname;
-                  }
-               }
-               
-               FreeRecSpecParts(&snames, &filts, nsets);
+                /* This is the end of the processing step when that step's program takes arguments. */
+                *pc = '\0';
+                state = kPPStEndProc;
             }
             else
             {
-               /* Unknown type - processing error */
-               fprintf(stderr, "Unknown processing step %s.\n", onecmd);
-               state = kPPStError;
+                /* Still looking for the end of the processing step. */
+                pc++;
             }
-         }
-         else if (*pc == '|' && data.type == kProc_HgPatch)
-         {
-            *pc = '\0';
-            state = kPPStEndProc;
-         }
-         else
-         {
-            pc++;
-         }
-      }
-      else if (state == kPPStEndProc)
-      {
-         if (args)
-         {
-            data.args = strdup(args);
-         }
-
-         if (!rv)
-         {
-            rv = list_llcreate(sizeof(ProcStep_t), (ListFreeFn_t)FreeProcStep);
-         }
-
-         list_llinserttail(rv, &data);
-
-         /* The output record-set now becomes the input record-set of the next processing step. */
-         if (data.output)
-         {
-            adataset = strdup(data.output);
-            state = kPPStBeginProc;
-            pc++; /* Advance to first char after the proc-step delimiter. */
-         }
-         else
-         {
-            state = kPPStError;
-         }
-      }
-
-      if (state != kPPStError)
-      {
-         if (pc == end && state == kPPStBeginProc)
-         {
-            state = kPPStEnd;
-         }
-      }
-   } /* while loop */
-
-   hcon_destroy(&pinfo);
-
-   if (activestr)
-   {
-      free(activestr);
-   }
-
-   if (adataset)
-   {
-      /* There will always be an unused adataset when parsing completes, or when an error occurs. */
-      free(adataset);
-   }
-
-   if (state == kPPStEnd)
-   {
-      *status = 1;
-   }
-
-   return rv;
+        }
+        else if (state == kPPStEndProc)
+        {
+            /* These are all the real processing steps. There is now a single function 
+             * that generates the final arguments from the processing step's 
+             * information from the processing series (cpinfo), 
+             * the argument values in the processing keyword of the jsoc.export_new series
+             * (args), the list of available jsoc_export_manage internal variables (gIntVars), 
+             * and the shell variables (gShVars). 
+             * 
+             * This is the only state where a valid input string can result in pc reaching end.
+             */
+            char *finalargs = NULL;
+            
+            /* If this is the record-limit "processing step", then simply set reclim, 
+             * and go to the next processing step. */
+            if (strcasecmp(data.name, "n=xx") == 0)
+            {
+                state = kPPStBeginProc;
+                reclimint = strdup(args);
+                pc++; /* Advance to first char after the proc-step delimiter. */
+            }
+            else if (cpinfo->path && *cpinfo->path)
+            {
+                /* If there is no program path for this processing step, then it is not 
+                 * possible for this processing step to modify the series' data, and there
+                 * will not be the need for any program cmd-line in the drms run script. */
+                if (!varsargs)
+                {
+                    if (InitVarConts(args, &varsargs))
+                    {
+                        state = kPPStError;
+                        continue;
+                    }
+                }
+                
+                if (!varsargs)
+                {
+                    state = kPPStError;
+                    continue;
+                }
+                
+                /* Generate output name. The plan is to take the input name, strip its suffix (if one
+                 * exists), then add the new suffix (if one exists). The output series will have 
+                 * requestid as a keyword. So the output record-set will be <series>[][][reqid]. */
+                if (GenOutRSSpec(env, dbhost, cpinfo, ppinfo, &data, reqid))
+                {
+                    state = kPPStError;
+                    continue;
+                }
+                
+                if (GenProgArgs(cpinfo, varsargs, &data, reclimint, &finalargs))
+                {
+                    state = kPPStError;
+                    continue;
+                }
+                
+                data.path = strdup(cpinfo->path);
+                
+                /* Finalize args. */
+                if (finalargs)
+                {
+                    data.args = finalargs;
+                }
+                
+                if (!rv)
+                {
+                    rv = list_llcreate(sizeof(ProcStep_t), (ListFreeFn_t)FreeProcStep);
+                }
+                
+                list_llinserttail(rv, &data);
+                
+                ppinfo = cpinfo;
+                
+                /* The output record-set now becomes the input record-set of the next processing step. */
+                if (data.output)
+                {
+                    adataset = strdup(data.output);
+                    state = kPPStBeginProc;
+                    pc++; /* Advance to first char after the proc-step delimiter. */
+                }
+                else
+                {
+                    state = kPPStError;
+                }
+            }
+            else
+            {
+                /* Go to the next processing step, if one exists. */
+                state = kPPStBeginProc;
+                pc++; /* Advance to first char after the proc-step delimiter. */
+            }
+        }
+        
+        if (pc == end)
+        {
+            if (state == kPPStBeginProc)
+            {
+                state = kPPStEnd;
+            }
+            
+            if (state != kPPStEnd)
+            {
+                state = kPPStError;
+            }
+            
+            break;
+        }
+        
+    } /* while loop */
+    
+    hcon_destroy(&pinfo);
+    
+    if (activestr)
+    {
+        free(activestr);
+    }
+    
+    if (adataset)
+    {
+        /* There will always be an unused adataset when parsing completes, or when an error occurs. */
+        free(adataset);
+    }
+    
+    if (state == kPPStEnd)
+    {
+        intstat = 1;
+    }
+    
+    if (reclim)
+    {
+        *reclim = reclimint;
+    }
+    
+    if (status)
+    {
+        *status = intstat;
+    }
+    
+    return rv;
 }
 
 enum PSeqState_enum
@@ -1021,8 +1941,9 @@ enum PSeqState_enum
 
 typedef enum PSeqState_enum PSeqState_t;
 
-int IsBadProcSequence(LinkedList_t *procs)
+static int IsBadProcSequence(LinkedList_t *procs)
 {
+#if 0
    /* There is an acceptable order to proc steps. */
    ListNode_t *node = NULL;
    Processing_t type = kProc_Unk;
@@ -1127,6 +2048,9 @@ int IsBadProcSequence(LinkedList_t *procs)
    }
 
    return rv;
+#endif
+    
+    return 0;
 }
 
 static void GenErrChkCmd(FILE *fptr)
@@ -1135,45 +2059,12 @@ static void GenErrChkCmd(FILE *fptr)
 }
 
 /* returns 1 on error, 0 on success */
-static int GenHgPatchCmd(FILE *fptr, 
-                         const char *hgparms,
-                         const char *dbmainhost,
-                         const char *dataset,
-                         int RecordLimit,
-                         const char *requestid,
-                         const char *dbids)
-{
-   int rv = 0;
-   char *p = NULL;
-   char *hgparams = strdup(hgparms);
-
-   if (hgparams)
-   {
-      for (p=hgparams; *p; p++)
-        if (*p == ',') *p = ' ';
-      
-      /* Phil says it is okay to remove the hard-coding of his home dir */
-      //      fprintf(fptr, "/home/phil/cvs/JSOC/bin/linux_x86_64/hg_patch JSOC_DBHOST=%s %s in='%s' n=%d requestid='%s' log=hg_patch.log %s\n",
-      fprintf(fptr, "hg_patch JSOC_DBHOST=%s %s in='%s' n=%d requestid='%s' log=hg_patch.log %s\n",
-              dbmainhost, hgparams, dataset, RecordLimit, requestid,  dbids);
-      GenErrChkCmd(fptr);
-   }
-   else
-   {
-      fprintf(stderr, "XX jsoc_export_manage FAIL - out of memory.\n");
-      rv = 1;
-   }
-
-   return rv;
-}
-
-/* returns 1 on error, 0 on success */
 static int GenExpFitsCmd(FILE *fptr, 
                          const char *proto,
                          const char *dbmainhost,
                          const char *requestid,
                          const char *dataset,
-                         int RecordLimit,
+                         const char *RecordLimit,
                          const char *filenamefmt,
                          const char *method,
                          const char *dbids)
@@ -1199,7 +2090,7 @@ static int GenExpFitsCmd(FILE *fptr,
 
       /* ART - multiple processing steps
        * Always use record limit, since we can no longer make the export commands processing-specific. */
-      fprintf(fptr, "jsoc_export_as_fits JSOC_DBHOST=%s reqid='%s' expversion=%s rsquery='%s' n=%d path=$REQDIR ffmt='%s' "
+      fprintf(fptr, "jsoc_export_as_fits JSOC_DBHOST=%s reqid='%s' expversion=%s rsquery='%s' n=%s path=$REQDIR ffmt='%s' "
               "method='%s' protocol='%s' cparms='%s' %s\n",
               dbmainhost, requestid, PACKLIST_VER, dataset, RecordLimit, filenamefmt, method, protos[kProto_FITS], cparms, dbids);
 
@@ -1216,86 +2107,38 @@ static int GenExpFitsCmd(FILE *fptr,
 
 /* returns 1 on error, 0 on success */
 static int GenPreProcessCmd(FILE *fptr, 
-                            const char *protocol,
-                            Processing_t process,
-                            const char * args,
-                            const char *dbmainhost,
-                            const char *datasetin,
-                            const char *seriesin,
-                            const char *seriesout,
-                            int RecordLimit,
-                            const char *requestid,
-                            const char *method,
-                            const char *dbids)
+                            const char *progpath,
+                            const char *args,
+                            const char *dbhost,
+                            const char *dbids) /* JSOC_DBNAME and JSOC_DBUSER */
 {
-   int rv = 0;
+    int rv = 0;
 
-   if (process == kProc_HgPatch)
-   {
-      /* hg_patch compatible with all protocols (if not fits, then assume as-is). */
-
-      /* hg_patch requires additional arguments */
-      if (args)
-      {
-         rv = (GenHgPatchCmd(fptr, args, dbmainhost, datasetin, RecordLimit, requestid, dbids) != 0);
-      }
-      else
-      {
-         /* arguments missing */
-         fprintf(stderr,
-                 "XX jsoc_export_manage FAIL NOT implemented yet, requestid=%s, process=%s, protocol=%s, method=%s\n",
-                 requestid, procs[process], protocol, method);
-         rv = 1;
-      }
-   }
-   else if (process == kProc_SuExport)
-   {
-      fprintf(fptr, "jsoc_export_SU_as_is_sock ds='%s' requestid=%s\n", datasetin, requestid); 
-      GenErrChkCmd(fptr);
-      /* rv = 0 */
-   }
-   else if (process == kProc_Noop)
-   {
-      /* rv = 0 */
-   }
-   else if (process == kProc_NotSpec)
-   {
-      /* rv = 0 */
-   }
-   else if (process == kProc_AiaScale)
-   {
-      /* This will currently work ONLY with aia.lev1 as input and aia.lev1p5 as output. Eventually,
-       * this should work with other series. I'm not sure how this is going to work when the output
-       * series does not exist. For now, fail.
-       *
-       * -Art */
-      if (strcasecmp(seriesin, "aia.lev1") !=0 || strcasecmp(seriesout, "aia.lev1p5") != 0)
-      {
-         fprintf(stderr, "Currently, aia_scale processing can be applied to aia.lev1 only, generating records in aia.lev1p5.\n");
-         rv = 1;
-      }
-      else
-      {
-         fprintf(fptr, "aia_lev1p5 dsinp='%s' dsout='%s'\n", datasetin, seriesout);
-      }
-   }
-   else
-   {
-      /* Unknown processing */
-      fprintf(stderr,
-              "XX jsoc_export_manage FAILURE; invalid processing request, requestid=%s, process=%s, protocol=%s, method=%s\n",
-              requestid, procs[process], protocol, method);
-      rv = 1;
-   }
-
-   return rv;
+    if (progpath)
+    {
+        /* There are some legacy processing steps - "Not Specified", "no_op", */
+        
+        /* All processing-step shell cmds can now be created with the same code. */
+        if (dbhost)
+        {
+            fprintf(fptr, "%s %s JSOC_DBHOST=%s %s\n", progpath, args, dbhost, dbids);
+        }
+        else
+        {
+            fprintf(fptr, "%s %s %s\n", progpath, args, dbids);
+        }
+    }
+    
+    GenErrChkCmd(fptr);
+    
+    return rv;
 }
 
 static int GenProtoExpCmd(FILE *fptr, 
                           const char *protocol,
                           const char *dbmainhost,
                           const char *dataset,
-                          int RecordLimit,
+                          const char *RecordLimit,
                           const char *requestid,
                           const char *method,
                           const char *filenamefmt,
@@ -1347,13 +2190,13 @@ static int GenProtoExpCmd(FILE *fptr,
    {
       /* ART - multiple processing steps
        * Always use record limit, since we can no longer make the export commands processing-specific. */
-      fprintf(fptr, "jsoc_export_as_is JSOC_DBHOST=%s ds='%s' n=%d requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n",
+      fprintf(fptr, "jsoc_export_as_is JSOC_DBHOST=%s ds='%s' n=%s requestid='%s' method='%s' protocol='%s' filenamefmt='%s'\n",
               dbmainhost, dataset, RecordLimit, requestid, method, protos[kProto_AsIs], filenamefmt);
 
       GenErrChkCmd(fptr);
 
       /* print keyword values for as-is processing */
-      fprintf(fptr, "show_info JSOC_DBHOST=%s -ait ds='%s' n=%d > %s.keywords.txt\n",
+      fprintf(fptr, "show_info JSOC_DBHOST=%s -ait ds='%s' n=%s > %s.keywords.txt\n",
               dbmainhost, dataset, RecordLimit, requestid);
       GenErrChkCmd(fptr);
    }
@@ -1464,7 +2307,8 @@ static int SeriesExists(DRMS_Env_t *env, const char *series, const char *dbhost,
 int DoIt(void)
   {
 						/* Get command line arguments */
-  char *op;
+  const char *op;
+      const char *procser = NULL;
   char *dataset;
   char *requestid;
   char *process;
@@ -1479,7 +2323,7 @@ int DoIt(void)
   char *errorreply;
   char reqdir[DRMS_MAXPATHLEN];
   char command[DRMS_MAXPATHLEN];
-  int RecordLimit;
+  char *RecordLimit = NULL;
   long long size;
   TIME reqtime;
   TIME esttime;
@@ -1496,7 +2340,6 @@ int DoIt(void)
   char *dashp;
   int testmode = 0;
   LinkedList_t *proccmds = NULL;
-  DRMS_Type_Value_t val;
 
   const char *dbname = NULL;
   const char *dbexporthost = NULL;
@@ -1508,10 +2351,10 @@ int DoIt(void)
   int pc = 0;
 
   int procerr;
-  Processing_t proctype;
   ListNode_t *node = NULL;
   int quit;
   char *now_at = NULL;
+      char *progpath = NULL;
   char *args = NULL;
   const char *cdataset = NULL;
   const char *datasetout = NULL;
@@ -1569,7 +2412,8 @@ int DoIt(void)
      pc += snprintf(dbids + pc, sizeof(dbids) - pc, "JSOC_DBUSER=%s ", dbuser);
   }
 
-  op = (char *)cmdparams_get_str (&cmdparams, "op", NULL);
+  op = cmdparams_get_str (&cmdparams, "op", NULL);
+      procser = cmdparams_get_str(&cmdparams, kArgProcSeries, NULL);
 
   /*  op == process, this is export_manage cmd line, NOT for request being managed */
   if (strcmp(op,"process") == 0) 
@@ -1611,6 +2455,8 @@ int DoIt(void)
       printf("New Request #%d/%d: %s, Status=%d, Processing=%s, DataSet=%s, Protocol=%s, Method=%s\n",
 	irec, exports_new->n, requestid, status, process, dataset, protocol, method);
       fflush(stdout);
+          
+          RegisterIntVar("requestid", 's', requestid);
 
       // Get user notification email address
       sprintf(requestorquery, "%s[? RequestorID = %ld ?]", EXPORT_USER, requestorid);
@@ -1648,7 +2494,7 @@ int DoIt(void)
       drms_setkey_int(export_rec, "Requestor", requestorid);
   
       // check  security risk dataset spec or processing request
-      if (isbadDataSet(dataset) || isbadProcessing(process))
+      if (isbadDataSet() || isbadProcessing())
         { 
         fprintf(stderr," Illegal format detected - security risk!\n"
   		     "RequestID= %s\n"
@@ -1662,7 +2508,7 @@ int DoIt(void)
       drms_record_directory(export_rec, reqdir, 1);
 
       // Insert qsub command to execute processing script into SU
-      make_qsub_call(requestid, reqdir, (notify ? requestorid : 0), dbname, dbuser, dbids, dbexporthost, dbmainhost);
+      make_qsub_call(requestid, reqdir, (notify ? requestorid : 0), dbname, dbuser, dbids, dbexporthost);
   
       // Insert export processing drms_run script into export record SU
       // The script components must clone the export record with COPY_SEGMENTS in the first usage
@@ -1695,6 +2541,14 @@ int DoIt(void)
       fprintf(fp, "echo SUdir = $REQDIR\n");
 
       // Now generate specific processing related commands
+          
+          
+          /* Register shell variables available for the drms_run script. The value must match the 
+           * shell variable name. The key does not necessarily need to match the shell variable, but
+           * it does need to match the RHS of the namemap entry. */
+          RegisterShVar("$REQDIR", "$REQDIR");
+          RegisterShVar("$HOSTNAME", "$HOSTNAME");
+          RegisterShVar("$EXPSIZE", "$EXPSIZE");
 
       // extract optional record count limit from process field.
       /* 'process' contains the contents of the 'Processing' column in jsoc.export. Originally, it 
@@ -1705,23 +2559,20 @@ int DoIt(void)
        * if it is present (setting RecordLimit in the process). */
 
       int ppstat = 0;
-      int morestat = 0;
 
-      /* Parse the Dataset and Process fields to create the processing step struct. 
-       * HACK!! For now, if hgpatch is present, just put '@hgpatchlog.txt' in the ds output field
-       * of the hgpatch processing step. */
+      /* Parse the Dataset and Process fields to create the processing step struct. */
 
       /* ART - env is not necessarily the correct environment for talking 
        * to the database about DRMS objects (like records, keywords, etc.). 
        * It is connected to the db on dbexporthost. dbmainhost is the host
        * of the correct jsoc database. This function will ensure that
        * it talks to dbmainhost. */
-      proccmds = ParseFields(drms_env, dbmainhost, process, dataset, requestid, &ppstat);
+      proccmds = ParseFields(drms_env, procser, dbmainhost, process, dataset, requestid, &RecordLimit, &ppstat);
       if (ppstat == 0)
       {
          fprintf(stderr, "Invalid process field value: %s.\n", process);
          drms_setkey_int(export_log, "Status", 4);
-         drms_close_record(export_rec, DRMS_FREE_RECORD);
+         drms_close_record(export_rec, DRMS_INSERT_RECORD);
          fclose(fp);
          fp = NULL;
 
@@ -1731,6 +2582,10 @@ int DoIt(void)
 
       /* PRE-PROCESSING */
 
+      /* For now, this does nothing. Since jsoc_export_manage has no knowledge of specific 
+       * processing steps, this function cannot assess whether the sequence is appropriate. 
+       * If we want to enforce a proper sequence, we'll have to put that information in
+       * the processing-series table. */
       if (IsBadProcSequence(proccmds))
       {
          fprintf(stderr, "Bad sequence of processing steps, skipping recnum %lld.\n", export_rec->recnum);
@@ -1750,8 +2605,12 @@ int DoIt(void)
        * of extracted regions, not from the original full images. */
       procerr = 0;
       quit = 0;
-      RecordLimit = 0;
-      list_llreset(proccmds);
+          
+          if (proccmds)
+          {
+              list_llreset(proccmds);
+          }
+              
       datasetout = NULL;
 
       LinkedList_t *datasetkwlist = NULL;
@@ -1780,7 +2639,6 @@ int DoIt(void)
             list_llinserthead(datasetkwlist, &rsstr);
          }
 
-         proctype = ndata->type;
          cdataset = ndata->input;
          datasetout = ndata->output;
 
@@ -1822,7 +2680,6 @@ int DoIt(void)
 
          snprintf(seriesin, sizeof(seriesin), "%s", csname);
 
-         /* The JSOC_DBHOST variable will properly identify the db that must contain the input and output series. */
          if (!SeriesExists(drms_env, seriesin, dbmainhost, &status) || status)
          {
             fprintf(stderr, "Input series %s does not exist.\n", csname);
@@ -1868,7 +2725,6 @@ int DoIt(void)
 
          snprintf(seriesout, sizeof(seriesout), "%s", csname);
 
-         /* The JSOC_DBHOST variable will properly identify the db that must contain the input and output series. */
          if (!SeriesExists(drms_env, seriesout, dbmainhost, &status) || status)
          {
             fprintf(stderr, "Output series %s does not exist.\n", csname);
@@ -1876,34 +2732,14 @@ int DoIt(void)
             break;
          }
 
+          progpath = ((ProcStep_t *)node->data)->path;
          args = ((ProcStep_t *)node->data)->args;
-
-         if (proctype == kProc_Reclimit)
-         {
-            val.string_val = args;
-            RecordLimit = drms2int(DRMS_TYPE_STRING, &val, &morestat);
-
-            if (morestat == DRMS_RANGE)
-            {
-               fprintf(stderr, "Invalid record-limit argument %d.\n", RecordLimit);
-               quit = 1;
-               break;
-            }
-
-            continue; /* Onto the real processing steps. */
-         }
+          
 
          procerr = GenPreProcessCmd(fp,
-                                    protocol,
-                                    proctype,
+                                    progpath,
                                     args,
-                                    dbmainhost, 
-                                    cdataset, 
-                                    seriesin,
-                                    seriesout, 
-                                    RecordLimit, 
-                                    requestid, 
-                                    method, 
+                                    dbmainhost,
                                     dbids);
 
          if (procerr)
@@ -1928,7 +2764,10 @@ int DoIt(void)
          }
       }
 
-      list_llfree(&proccmds);
+          if (proccmds)
+          {
+              list_llfree(&proccmds);
+          }
 
       if (quit)
       {
