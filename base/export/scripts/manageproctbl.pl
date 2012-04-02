@@ -312,6 +312,7 @@ sub AddProc
             my(@content);
             my(@usage);
             my($line);
+            my($copts);
             my($opts);
             my($arg);
             
@@ -328,13 +329,14 @@ sub AddProc
                 
                 # Parse $rsp for all program arguments.
                 @usage = grep(/=/, @content);
+                $opts = "";
                 
                 foreach $line (@usage)
                 {
                     if ($line =~ /\[-(.+)\]/)
                     {
-                        $opts = $1;
-                        $line =~ s/\[-$opts\]//;
+                        $copts = $1;
+                        $line =~ s/\[-$copts\]//;
                     }
                     
                     while ($line =~ /(\S+)=/)
@@ -347,6 +349,8 @@ sub AddProc
                         $realargs->{$arg} = 1;
                         $line =~ s/$arg=//;
                     }
+                    
+                    $opts = $opts . $copts;
                 }
                 
                 # Now add opts to %realargs. $opts will have the form "aDcFPp". Each
