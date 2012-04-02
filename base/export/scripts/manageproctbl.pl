@@ -470,11 +470,20 @@ sub CheckArgs
         }
         else
         {
-            $lhs = $arg;
+            # Args that begin with '-' are flags. The '-' will not be in $realargs.
+            if ($arg =~ /^\-(.+)/)
+            {
+                $lhs = $1;
+            }
+            else
+            {
+                $lhs = $arg;
+            }
         }
         
         if (!exists($realargs->{$lhs}))
         {
+
             print STDERR "Invalid program argument: $arg.\n";
             $rv = 1;
             last;
