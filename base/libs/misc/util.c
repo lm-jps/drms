@@ -233,9 +233,9 @@ char *base_strreplace(const char *text, const char *orig, const char *repl)
       replacement = (repl == NULL ? "" : repl);
       lenrepl = strlen(replacement);
 
-      for (count = 0, pc = strstr(text, orig), ins = pc; pc = strstr(ins, orig); count++) 
+      for (count = 0, pc = strstr(text, orig), ins = pc; ins && (pc = strstr(ins, orig)); count++) 
       {
-         ins = pc + lenrepl;
+         ins = pc + lenorig;
       }
 
       if (count > 0)
@@ -256,7 +256,7 @@ char *base_strreplace(const char *text, const char *orig, const char *repl)
          }
 
          strncpy(pc, pcin, strlen(pcin));
-         *pc = '\0';
+         *(pc + strlen(pcin)) = '\0';
       }
    }
 
