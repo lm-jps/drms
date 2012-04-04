@@ -790,7 +790,7 @@ static LinkedList_t *ParseArgs(const char *list, int dodef, int *status)
             
             if (!lst)
             {
-                lst = list_llcreate(sizeof(ExpProcArg_t), (void (*)(const void *))FreeProcArg);
+                lst = list_llcreate(sizeof(ExpProcArg_t), (ListFreeFn_t)FreeProcArg);
             }
             
             if (lst)
@@ -1236,7 +1236,6 @@ static int GenProgArgs(ProcStepInfo_t *pinfo,
      */
     
     int err;
-    HIterator_t *hit = NULL;
     ListNode_t *node = NULL;
     ExpProcArg_t *data = NULL;
     const char *intname = NULL;
@@ -1246,7 +1245,6 @@ static int GenProgArgs(ProcStepInfo_t *pinfo,
     const char *val = NULL;
     char *finalargs = NULL;
     int first;
-    int isflag;
     
     err = 0;
     finalargs = malloc(sz);
@@ -1379,7 +1377,7 @@ static int GenProgArgs(ProcStepInfo_t *pinfo,
                         /* Special case for the record-limit argument. There MUST be a 
                          * namemap entry for <record-limit arg>=reclim in the processing series map
                          * field IF we want to apply a record-limit. For example, there must 
-                         * be an entry with n=reclim for hg_patch processing. 
+                         * be an entry with n:reclim for hg_patch processing. 
                          */
                         val = reclim;
                     }
@@ -1926,7 +1924,14 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, /* dbhost of jsoc.export_new. 
     
     if (reclim)
     {
-        *reclim = reclimint;
+        if (reclimint)
+        {
+            *reclim = reclimint;            
+        }
+        else
+        {
+            *reclim = strdup("0");
+        }
     }
     
     if (status)
