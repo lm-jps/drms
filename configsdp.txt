@@ -149,6 +149,12 @@ __PROJ__
         </subdirs>
    </proj>
   <proj>
+        <name>sharp</name>
+        <subdirs>
+             <subdir>apps</subdir>
+        </subdirs>
+   </proj>
+  <proj>
         <name>farside</name>
         <subdirs>
              <subdir>apps</subdir>
