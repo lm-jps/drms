@@ -214,6 +214,7 @@ ModuleArgs_t module_args[] =
   {ARG_STRING, "seg", "Not Specified", "<comma delimited segment list>"},
   {ARG_FLAG, "a", "0", "Show info for all keywords"},
   {ARG_FLAG, "A", "0", "Show info for all segments"},
+  {ARG_FLAG, "b", NULL, "Disable prime-key logic"},
   {ARG_FLAG, "c", "0", "Show count of records in query"},
   {ARG_FLAG, "d", "0", "Show dimensions of segment files with selected segs"},
   {ARG_FLAG, "h", "0", "help - print usage info"},
@@ -834,6 +835,7 @@ int DoIt(void)
   int list_keys;
   int show_all;
   int show_all_segs;
+  int autobang = 0;
   int show_all_links;
   int show_recordspec;
   int show_stats;
@@ -859,6 +861,8 @@ int DoIt(void)
   int i_set, n_sets;
   int requireSUMinfo;
   char *sunum_rs_query = NULL;
+  char *autobangstr = NULL;
+  char *finalin = NULL;
 
   HContainer_t *suinfo = NULL;
 
@@ -916,6 +920,7 @@ int DoIt(void)
 
   show_all = cmdparams_get_int (&cmdparams, "a", NULL) != 0;
   show_all_segs = cmdparams_get_int (&cmdparams, "A", NULL) != 0;
+  autobang = cmdparams_isflagset(&cmdparams, "b");
   want_count = cmdparams_get_int (&cmdparams, "c", NULL) != 0;
   want_dims = cmdparams_get_int (&cmdparams, "d", NULL) != 0;
   show_recordspec = cmdparams_get_int (&cmdparams, "i", NULL) != 0;
@@ -938,6 +943,12 @@ int DoIt(void)
   show_types =  cmdparams_get_int(&cmdparams, "t", NULL) != 0;
   verbose = cmdparams_isflagset(&cmdparams, "v");
 
+      /* If autobang is enabled, then set the string that will be used in all recordset specifications. */
+      if (autobang)
+      {
+          autobangstr = "[! 1=1 !]";
+      }
+      
   if(want_path_noret) want_path = 1;	/* also set this flag */
 
   requireSUMinfo = show_online || show_retention || show_archive || show_tapeinfo || show_size || show_session;
@@ -1038,6 +1049,8 @@ int DoIt(void)
      {
         in = sunum_rs_query;
         /* free sunum_rs_query before exiting. */
+         /* Don't modify sunum_rs_query if -b flag is set - sunum_rs_query has prime-key logic disabled
+          * already. */
      }
   }
   else if (strcmp(in, "Not Specified") == 0)
@@ -1049,13 +1062,125 @@ int DoIt(void)
       show_info_return(1);
       }
     }
-
   if (verbose)
      {
      /* Print something to identify what series is being accessed */
      printf("show_info() query is %s.\n", in);
      }
 
+      /* The variable "in" will have been finalized by this point. If the -b flag has been 
+       * specified, then append the autobangstr string. */
+      
+      /* Parse "in" to isolate the record-set filter. 
+       *
+       * Not only do we need to isolate the filter, we need the parsed fields to decide, later, whether 
+       * show_info should continue (there must either be a n=XX arg, or a record-set fitler).
+       * BTW, checking for an @file argument isn't sufficient - the file could be empty, or
+       * it could contain seriesnames with no filters. The parsing below will make sure a filter 
+       * is found somewhere, even if it is inside the @file. */
+      {
+          char *allvers = NULL; /* If 'y', then don't do a 'group by' on the primekey value.
+                                 * The rationale for this is to allow users to get all versions
+                                 * of the requested DRMS records */
+          char **sets = NULL;
+          DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
+          char **snames = NULL;
+          int nsets = 0;
+          
+          DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
+          if (drms_record_parserecsetspec(in, &allvers, &sets, &settypes, &snames, &nsets, &rsinfo) != DRMS_SUCCESS)
+          {     
+              show_info_return(2);
+          }
+          
+          inqry = ((rsinfo & kFilters) != 0);
+          atfile = ((rsinfo & kAtFile) != 0);
+          
+          if (autobangstr && !sunum_rs_query)
+          {
+              /* Replace filter with filter + autobangstr appended. */
+              char *filterbuf = NULL;
+              size_t fbsz = 128;
+              char *filter = NULL;
+              int err = 0;
+              int drmsstat;
+              DRMS_Record_t *templrec = NULL;
+              char *intermed = NULL;
+              int iset;
+              
+              filterbuf = malloc(fbsz);
+              finalin = strdup(in);
+              if (filterbuf && finalin)
+              {
+                  memset(filterbuf, 0, sizeof(filterbuf));
+              }
+              else
+              {
+                  show_info_return(3);
+              }
+              
+              for (iset = 0; iset < nsets; iset++)
+              {
+                  if (settypes[iset] == kRecordSetType_DSDSPort || settypes[iset] == kRecordSetType_DRMS)
+                  {
+                      templrec = drms_template_record(drms_env, snames[iset], &drmsstat);
+                      if (DRMS_ERROR_UNKNOWNSERIES == drmsstat)
+                      {
+                          fprintf(stderr, "Unable to open template record for series '%s'; this series does not exist.\n", snames[iset]);
+                          err = 1;
+                          break;
+                      }
+                      else
+                      {
+                          filter = drms_recordset_extractfilter(templrec, sets[iset], &err);
+                          
+                          if (!err)
+                          {
+                              *filterbuf = '\0';
+                              if (filter)
+                              {
+                                  filterbuf = base_strcatalloc(filterbuf, filter, &fbsz);
+                                  filterbuf = base_strcatalloc(filterbuf, autobangstr, &fbsz);
+                                  
+                                  /* Replace filter with filterbuf. */
+                                  intermed = base_strreplace(finalin, filter, filterbuf);
+                                  free(finalin);
+                                  finalin = intermed;
+                              }
+                              else
+                              {
+                                  filterbuf = base_strcatalloc(filterbuf, snames[iset], &fbsz);
+                                  filterbuf = base_strcatalloc(filterbuf, autobangstr, &fbsz);
+                                  
+                                  /* Replace series name with filterbuf. */
+                                  intermed = base_strreplace(finalin, snames[iset], filterbuf);
+                                  free(finalin);
+                                  finalin = intermed;
+                              }
+                          }
+                          
+                          free(filter);
+                          
+                          if (err)
+                          {
+                              break;
+                          }
+                      }
+                  }
+              }
+              
+              if (!err)
+              {
+                  in = finalin;
+              }
+              
+              free(filterbuf);
+              filterbuf = NULL;
+          }
+          
+          drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, nsets);
+      }
+      
   /*  if -j, -l or -s is set, just do the short function and exit */
   if (list_keys || jsd_list || show_stats) 
   {
@@ -1190,31 +1315,6 @@ int DoIt(void)
 
   /* check for poor usage of no query and no n=record_count */
 
-  /* It is not clear if the record-set query has been parsed yet - it may have. Just parse it - we need the info to decide       
-   * whether show_info should continue. BTW, checking for an @file argument isn't sufficient - the file could be empty, or
-   * it could contain seriesnames with no filters. The check below will make sure a filter is found somewhere, even if 
-   * it is inside the @file. */
-  {
-     char *allvers = NULL; /* If 'y', then don't do a 'group by' on the primekey value.
-                            * The rationale for this is to allow users to get all versions
-                            * of the requested DRMS records */
-     char **sets = NULL;
-     DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
-     char **snames = NULL;
-     int nsets = 0;
-     
-     DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
-     if (drms_record_parserecsetspec(in, &allvers, &sets, &settypes, &snames, &nsets, &rsinfo) != DRMS_SUCCESS)
-     {     
-        show_info_return(2);
-     }
-     
-     inqry = ((rsinfo & kFilters) != 0);
-     atfile = ((rsinfo & kAtFile) != 0);
-
-     drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, nsets);
-  }
-
   if (!inqry && max_recs == 0 && !atfile)
     {
     fprintf(stderr, "### show_info - the query must contain a record-filter, or the n=num_records or @file argument must be present.\n");
@@ -1245,6 +1345,12 @@ int DoIt(void)
     show_info_return(1);
     }
 
+      if (finalin)
+      {
+          free(finalin);
+          finalin = NULL;
+      }
+      
 /* recordset now points to a struct with  count of records found ("n"), and a pointer to an
  * array of record pointers ("records");
  * it may be a chunked recordset (max_recs==0) or a limited size (max_recs!=0).
