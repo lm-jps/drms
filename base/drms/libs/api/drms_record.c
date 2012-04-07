@@ -6954,6 +6954,18 @@ fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, 
 	      /* first char after '{' */
 	      if (pc < endInput)
 	      {
+              if (sname == NULL)
+              {
+                  /* We know we've seen a '{', the first char in a seglist. buf has 
+                   * the preceding series name, plus a trailing '{'. We also know 
+                   * that there was NO filter, otherwise sname would have been 
+                   * set in the kRSParseState_DRMSFilt-case code block. */
+                  size_t len = strlen(buf);
+                  
+                  sname = strdup(buf);
+                  *(sname + len - 1) = '\0';
+              }
+              
 		 DSElem_SkipWS(&pc); /* ingore ws, if any */
 		 
 		 while (*pc != '}' && pc < endInput)
