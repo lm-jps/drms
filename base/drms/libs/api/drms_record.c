@@ -3362,6 +3362,12 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
      {
         hcon_destroy(&suinfoauth);
      }
+      
+      if (seriesreqinfo)
+      {
+          free(seriesreqinfo);
+          seriesreqinfo = NULL;
+      }
 
      if (sunumreqinfo)
      {
@@ -4649,12 +4655,20 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
     /* If any segments present, lookup pemission to set retention */
     if (template->segments.num_total > 0)
     {
-      template->seriesinfo->retention_perm = drms_series_isdbowner(env, template->seriesinfo->seriesname, &stat);
+        template->seriesinfo->retention_perm = drms_series_isdbowner(env, template->seriesinfo->seriesname, &stat);
+        
+        if (stat)
+        {
+            goto bailout;
+        }
+        
+        template->seriesinfo->retention_perm = (template->seriesinfo->retention_perm || drms_client_isproduser(env, &stat));
 
-      if (stat)
-      {
-         goto bailout;
-      }
+        if (stat)
+        {
+            goto bailout;
+        }
+      
 #ifdef DEBUG
       printf("retention_perm=%d\n",template->seriesinfo->retention_perm);
 #endif

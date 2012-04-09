@@ -4,6 +4,10 @@
 #include "db.h"
 // #define DEBUG
 
+#define kProdUsrDBHost "hmidb"
+#define kProdUsrDBName "jsoc"
+#define kProdUsrTab "su_production.produsers"
+#define kProdUsrColUser "username"
 
 DRMS_Session_t *drms_connect(const char *host)
 {
@@ -1953,6 +1957,91 @@ int drms_series_isdbowner(DRMS_Env_t *env, const char *series, int *status)
    }
 
    return isowner;
+}
+
+/* Table su_production.produsers has a single column, "user". This table is on the hmidb host, not the hmidb2 host. */
+int drms_client_isproduser(DRMS_Env_t *env, int *status)
+{
+    int isproduser = 0;
+    char query[1024];
+    char *dbuser = NULL;
+    DB_Text_Result_t *qres = NULL;
+    int istat = DRMS_SUCCESS;
+    int forceconn = 0;
+    DB_Handle_t *dbh = NULL;
+    
+#ifndef DRMS_CLIENT
+    dbuser = env->session->db_handle->dbuser;
+    
+    /* For a server module, hostname is in drms_env->session->db_handle->dbhost. */
+    forceconn = (strcasecmp(kProdUsrDBHost, env->session->db_handle->dbhost) != 0);
+#else
+    drms_send_commandcode(env->session->sockfd, DRMS_GETDBUSER);
+    dbuser = receive_string(env->session->sockfd);
+    
+    /* For a sock module, the db host to which it has access is the db host that the 
+     * serving drms_server is connected to. And I don't think there is a way to 
+     * determine to which db host drms_server is connected, so we'll HAVE TO 
+     * connect to dbhost here, regardless of the existing connection between 
+     * drms_server and a db. */
+    forceconn = 1;
+#endif
+    
+    if (forceconn)
+    {
+        /* The caller wants to obtain the list of production users on a db host to which 
+         * this module has no connection */
+        
+        /* Use db_connect to connect to the jsoc db on dbhost. Steal dbuser from the existing, 
+         * irrelevant db connection. */
+        if ((dbh = db_connect(kProdUsrDBHost, dbuser, NULL, kProdUsrDBName, 1)) == NULL)
+        {
+            fprintf(stderr,"Couldn't connect to %s database on %s.\n", kProdUsrDBName, kProdUsrDBHost);
+            istat = DRMS_ERROR_CANTCONNECTTODB;
+        }
+    }
+    else
+    {
+        dbh = env->session->db_handle;
+    }
+
+#ifdef DRMS_CLIENT
+    free(dbuser);
+    dbuser = NULL;
+#endif 
+    
+    if (istat == DRMS_SUCCESS)
+    {
+        snprintf(query, sizeof(query), "SELECT %s FROM %s WHERE %s = '%s'", kProdUsrColUser, kProdUsrTab, kProdUsrColUser, dbuser);
+        
+        if ((qres = db_query_txt(dbh, query)) != NULL)
+        {
+            if (qres->num_cols == 1 && qres->num_rows == 1)
+            {
+                isproduser = 1;
+            }
+            
+            db_free_text_result(qres);
+        }
+        else
+        {
+            fprintf(stderr, "Unexpected database response to query '%s'.\n", query);
+            istat = DRMS_ERROR_BADDBQUERY;
+        }
+    }
+    
+    if (forceconn && dbh)
+    {
+        /* Need to terminate new db connection. */
+        db_disconnect(&dbh);
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return isproduser;
 }
 
 #ifdef DRMS_CLIENT
