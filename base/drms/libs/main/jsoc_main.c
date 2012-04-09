@@ -160,6 +160,7 @@ These are module-specific; refer to @ref drms_util for module-specific documenta
  series owner or a production user):
  \code
  show_info -P hmi.m_45s[2011.12.10_00:00/10m] DRMS_RETENTION=0
+ \endcode
  
  \b Example 3:
  To change the retention to 100 days (the caller must be the series owner or a production user):
