@@ -111,16 +111,32 @@ To specify an argument that affects properties of the DRMS session,
 use @c param=value, where @c param is one of the following.
 
 @arg @c DRMS_ARCHIVE Sets the archive status for all storage units created during the DRMS
-session started by <module>. <value> can be either -1 (don't archive data, and when a 
+session started by @a module. @a value can be either -1 (don't archive data, and when a 
 storage unit's retention expires, delete all DRMS records whose data resides within this
 storage unit), 0 (don't archive, but do not delete any DRMS records), or 1 (archive data when 
 the storage unit's retention expires).
-\arg \c DRMS_RETENTION Sets (forces) the storage-unit retention time for the DRMS session
-started by <module>. This affects all storage units created during the session. <value> is 
-the number number of days that the storage units will remain on disk. CANNOT BE SPECIFIED 
-IN THE ENVIRONMENT. THIS FLAG WILL AFFECT RETENTION TIMES ONLY IF THE MODULE INVOKED
-WITH THIS ARGUMENT MAKES A SUMS REQUEST. For example, to modify retention times with the
-show_info module, call show_info with the "-P" flag.
+\arg \c DRMS_RETENTION For all storage units allocated during the module's session, the
+ value of this argument overrides the jsd value. Each newly created storage unit will
+ be given abs(argument value) for its days of retention. For each storage unit created in previous
+ module sessions and referenced by the record-set specification, the retention
+ will be set to argument value if the argument value is greater than zero, unless the argument value
+ is less than the current retention value. If that is true, then the retention of the storage unit
+ will be decreased to the argument value only if the the module is connected to the database
+ as the db user who owns the dataseries' series table, OR if db user is a production user 
+ (i.e., prodution or jsocprod). If the db user is not the owner or a production user, then
+ the storage unit retention will not be modified. In other words, a user cannot decrease 
+ a storage unit's retention value, unless that user is the owner of the dataseries, or the user
+ is a production user.  If the retention argument value is less than 
+ zero, then the storage unit's retention value will be set to abs(value), but only if the 
+ change would result in an increase in the retention time. In other words, a negative argument value can
+ only increase a storage unit's retention value. The "series owner" is the db user who owns the "series table".
+ The series table is the PostgreSQL table that contains the DRMS series' variable record values, and 
+ its name is lc(series name) (for example, if the series is hmi.M_45s, then the series 
+ table is named hmi.m_45s). Changes in a session to a previously existing 
+ storage unit require that the referred-to storage unit be "retrieved" from SUMS with a SUM_get()
+ call (e.g., call drms_segment_read() or drms_stage_records() with this storage unit's SUNUM as
+ an argument. This can be achieved by calling show_info -P). One further caveat: this argument
+ cannot be specified as an environment variable. 
 \arg \c DRMS_QUERY_MEM Sets the memory maximum for a database query.
 \arg \c JSOC_DBHOST Specifies (overrides) the database host to connect to. Default is ::DBNAME
 \arg \c JSOC_DBNAME Specifies (overrides) the database name to use. Default is ::DBNAME
@@ -130,7 +146,26 @@ show_info module, call show_info with the "-P" flag.
 
 \par MODULE_ARGUMENTS:
 These are module-specific; refer to @ref drms_util for module-specific documentation.
-
+ 
+ \par Examples:
+ 
+ \b Example 1:
+ To ensure that the retention of existing storage units is at least 10000 days:
+ \code
+ show_info -P hmi.m_45s[2011.12.10_00:00/10m] DRMS_RETENTION=-10000
+ \endcode
+ 
+ \b Example 2:
+ To reduce retention to 0 so that SUMS will delete the storage units from disk (the caller must be the 
+ series owner or a production user):
+ \code
+ show_info -P hmi.m_45s[2011.12.10_00:00/10m] DRMS_RETENTION=0
+ 
+ \b Example 3:
+ To change the retention to 100 days (the caller must be the series owner or a production user):
+ \code
+ show_info -P hmi.m_45s[2011.12.10_00:00/10m] DRMS_RETENTION=100
+ \endcode
 */
 
 /**
