@@ -132,7 +132,9 @@ the storage unit's retention expires).
  only increase a storage unit's retention value. The "series owner" is the db user who owns the "series table".
  The series table is the PostgreSQL table that contains the DRMS series' variable record values, and 
  its name is lc(series name) (for example, if the series is hmi.M_45s, then the series 
- table is named hmi.m_45s). Changes in a session to a previously existing 
+ table is named hmi.m_45s). The list of production users is stored in the database table
+ su_production.produsers in db jsoc on hmidb. You must be a superuser to modify the contents of
+ this table. Changes in a session to a previously existing 
  storage unit require that the referred-to storage unit be "retrieved" from SUMS with a SUM_get()
  call (e.g., call drms_segment_read() or drms_stage_records() with this storage unit's SUNUM as
  an argument. This can be achieved by calling show_info -P). One further caveat: this argument
