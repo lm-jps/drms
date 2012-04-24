@@ -180,6 +180,7 @@ endif
 	endif
 
         if (!(-e configsdp.txt)) then
+            # This is NetDRMS.
             if (!(-e config.local)) then
                 echo "Error: config.local not found. If you have a saved version of this"
                 echo "       file from a previous installation, you should copy that into"
@@ -197,6 +198,12 @@ endif
                 echo "CUSTOM_DEFINES = __LOCALIZED_DEFS__" >> ${LOCALIZATIONDIR}/custom.mk
                 ./gen_init.csh
 
+                # Non-customizable parameters. There are certain features that are not
+                # present in NetDRMS, but that are present in the SDP JSOC version of DRMS.
+                # Set defines needed to accomplish this here.
+                # NetDRMS sites do not have DSDS.
+                echo '#define DSDS_SUPPORT (0)' >> base/include/localization.h
+
                 set CUSTOMDEFSFILE = "base/include/localization.h"
 
                 # run moreconfigure.pl - this script is written in perl because it is easier to do the compiler detection 
@@ -208,6 +215,8 @@ endif
                 $PERLBIN ./customizemake.pl ./config.local ${LOCALIZATIONDIR}
             endif
         else if (-e config.local) then
+            # This is Stanford.
+
             # config.local is optional at Stanford, but it won't necessarily contain the same information that 
             # a NetDRMS config.local contains. The first section contains items that will override the
             # the items in serverdefs.h. The second section contains items used to populate custom.mk, 

@@ -43,6 +43,10 @@
 
 #define SUMS_DEBUG 1
 
+/* Do NOT create a NetDRMS configuration parameter for DSDS support. NetDRMS 
+ * does not support DSDS, ever. */
+#define DSDS_SUPPORT (1)
+
 #endif /* _LOCALIZED_DEFS */
 
 /* Override one or more defaults (but not all of them, unlike in the case of localization.h), 
