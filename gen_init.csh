@@ -167,10 +167,6 @@ endif
 
 # generate file localization.h
 set SCRIPT = base/include/localization.h
-echo "*** generating $SCRIPT ***"
-cat /dev/null > $SCRIPT
-echo '#ifndef __LOCALIZATION_H' >> $SCRIPT
-echo '#define __LOCALIZATION_H' >> $SCRIPT
 echo '#define SERVER			"'$DBSERVER_HOST'"' >> $SCRIPT
 echo '#define DBNAME			"'$DRMS_DATABASE'"' >> $SCRIPT
 echo '#define DRMSPGPORT		"'$DRMS_DBPORT'"' >> $SCRIPT
@@ -203,7 +199,7 @@ endif
 if ($#SUMEXP_PORTFMT) then
   echo '#define LOC_SUMEXP_PORTFMT	'$SUMEXP_PORTFMT  >> $SCRIPT
 endif
-echo '#endif' >> $SCRIPT
+
 
 # modify targets as appropriate in custom.mk
 # don't do anything here that will modify custom.mk. Another script

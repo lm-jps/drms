@@ -196,15 +196,20 @@ endif
                 exit 1;
             else
                 echo "CUSTOM_DEFINES = __LOCALIZED_DEFS__" >> ${LOCALIZATIONDIR}/custom.mk
+
+                set CUSTOMDEFSFILE = "base/include/localization.h"
+                echo "*** generating $CUSTOMDEFSFILE ***"
+                cat /dev/null > $CUSTOMDEFSFILE
+                echo '#ifndef __LOCALIZATION_H' >> $CUSTOMDEFSFILE
+                echo '#define __LOCALIZATION_H' >> $CUSTOMDEFSFILE
                 ./gen_init.csh
 
                 # Non-customizable parameters. There are certain features that are not
                 # present in NetDRMS, but that are present in the SDP JSOC version of DRMS.
                 # Set defines needed to accomplish this here.
                 # NetDRMS sites do not have DSDS.
-                echo '#define DSDS_SUPPORT (0)' >> base/include/localization.h
-
-                set CUSTOMDEFSFILE = "base/include/localization.h"
+                echo '#define DSDS_SUPPORT (0)' >> $CUSTOMDEFSFILE
+                echo '#endif' >> $CUSTOMDEFSFILE
 
                 # run moreconfigure.pl - this script is written in perl because it is easier to do the compiler detection 
                 # in perl. It also reads configdsp.txt (if it exists) to set the default Stanford values for certain make variables
