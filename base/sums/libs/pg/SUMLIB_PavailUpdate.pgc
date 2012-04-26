@@ -84,6 +84,7 @@ int SUMLIB_PavailOn(char *name, int setnum)
 {
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR l_name[80];
+  int l_setnum;
 EXEC SQL END DECLARE SECTION;
 
 EXEC SQL INCLUDE sqlca;
@@ -96,12 +97,13 @@ EXEC SQL INCLUDE sqlca;
     /*printf("null l_wd.arr:: %s\n", l_wd.arr); */
             return DS_PAVAIL_ERR;
     }
+    l_setnum = setnum;
     EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
 
     EXEC SQL WHENEVER NOT FOUND GOTO sqlerror;
 
     EXEC SQL UPDATE SUM_PARTN_AVAIL 
-		SET pds_set_num = setnum
+		SET pds_set_num = :l_setnum
         WHERE PARTN_NAME = :l_name;
     EXEC SQL COMMIT WORK;
 	return NO_ERROR;
