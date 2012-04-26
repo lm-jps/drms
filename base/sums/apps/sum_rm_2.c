@@ -230,15 +230,16 @@ int stat_storage()
       //if(df_reserve > df_avail) df_avail = 0.0;
       //else df_avail = df_avail - df_reserve;
       upercent = df_avail/df_total;
-      if(upercent < 0.01) {             //turn off partition at 99%
-        printk("Turning off full partition %s\n", pptr->name);
-        if(ponoff[i] != -1) {
+      //if(upercent < 0.01) {             //turn off partition at 99%
+      if(upercent < 0.02) {             //turn off partition at 98%
+        if(ponoff[i] >= 0) {
+          printk("Turning off full partition %s\n", pptr->name);
           SUMLIB_PavailOff(pptr->name); //no more allocation from this parti
           ponoff[i] = -1;
         }
       }
       else if(upercent >= 0.05) {       //turn it back on unless -1 in DB
-        if(ptab[i].pds_set_num != -1) {
+        if(ponoff[i] != -2) {		//ok to turn on again
           if(ponoff[i] == -1) {
             printk("Turning on former full partition %s\n", pptr->name);
             SUMLIB_PavailOn(pptr->name, ptab[i].pds_set_num); //can alloc again
@@ -480,7 +481,12 @@ void setup()
   if(DS_PavailRequest())	/* get sum_partn_avail info in mem */
     exit(1);
   for(i=0; i < MAX_PART-1; i++) {
-    ponoff[i] = ptab[i].pds_set_num; //init the 99% off/ 95% on table
+    if(ptab[i].pds_set_num == -1) {  //orig value is off. don't ever change
+      ponoff[i] = -2;
+    }
+    else {
+      ponoff[i] = ptab[i].pds_set_num; //init the 99% off/ 95% on table
+    }
   }
   signal(SIGALRM, &alrm_sig);	/* setup for alarm signal */
   alarm(2);			/* set up first alarm */
