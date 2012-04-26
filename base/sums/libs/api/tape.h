@@ -111,7 +111,9 @@ typedef struct {
   uint64_t sumid;	/* identifies who is using the drive */
   int busy;
   int lock;
-  int to;		/* timeout set by alrm_sig, cleared when wt a tape */
+  //int to; (OLD)	/* timeout set by alrm_sig, cleared when wt a tape */
+  int to;		/* 1= timeout active for a read for a uid */
+  int tocnt;		/* dec by alrm_sig(). Timeout has occured when 0 */
   int tapemode;		/* TAPE_NOT_LOADED, TAPE_RD_INIT, TAPE_RD_CONT */
   int slotnum;		/* slot# where the cartridge in the drive belongs */
   int filenum;		/* file # starting at 0 (rewound) */
