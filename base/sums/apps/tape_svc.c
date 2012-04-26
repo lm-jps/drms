@@ -1,4 +1,4 @@
-/* xtape_svc.c
+/* tape_svc.c
  *
  * This is spawned during the sum_svc startup.
  * sum_svc makes calls for tape reads and tapearc makes calles for writes 
@@ -20,6 +20,7 @@
 #include "serverdefs.h"
 
 #define REBOOT "/usr/local/logs/SUM/RESTART_AFTER_REBOOT"
+#define ALRMSECTO 40	//40 will give average 60sec t.o. on rd drive
 
 SLOT slots[MAX_SLOTS];
 DRIVE drives[MAX_DRIVES];
@@ -33,6 +34,7 @@ int nxtscanwt;
 int max_drives_rd = 0;
 int max_drives_wt = 0;
 #endif
+int noalrm = 0;
 int Empty_Slot_Cnt;
 
 void logkey();
@@ -66,6 +68,7 @@ int sim = 0;
 int tapeoffline = 0;
 int robotoffline = 0;
 int driveonoffstatus = 0;
+int pactive = 0;
 int current_client_destroy;
 int alrm_sec;			//secs to next alarm signal
 char *dbname;
@@ -150,29 +153,109 @@ void sighandler(sig)
 }
 
 /* Called when get a SIGALRM every alrm_sec seconds.
- * Unlock any idle write drive.
+ * Clear any expired timeout on a drive.
 */
 void alrm_sig(int sig)
 {
-  int d, e;
+  int d, e, tocheck, offcnt, kstatus;
+  enum clnt_stat clnt_stat;
+  SUMID_t uid;
+  char *call_err;
+  TQ *p;
+  SUMOFFCNT *offptr;
+  bool_t (*xdr_argument)(), (*xdr_result)();
 
-  //write_log("Called alrm_sig()\n");
-  signal(SIGALRM, &alrm_sig);   //setup for alarm signal
-  for(e=max_drives_rd; e < MAX_DRIVES; e++) {
-    d = drive_order_wt[e];
-    if(drives[d].offline || drives[d].busy) continue;
-    if(!drives[d].to) {		//drive active
-      drives[d].to = 1;
+    if(noalrm) {
+      signal(SIGALRM, &alrm_sig);   //setup for alarm signal
+      alarm(alrm_sec);		//start again
+      return;
     }
-    else {			//drive has timed out
-      if(drives[d].to == 1) {
-        write_log("Unlock drive %d on timeout\n", d);
-        drives[d].lock = 0;
-        drives[d].to = -1;
+    tocheck = 0;
+    for(e=0; e < max_drives_rd; e++) {
+      d = drive_order_rd[e];
+      if(drives[d].to) {		//timeout is active
+        --drives[d].tocnt;
+        if(drives[d].tocnt == 0) {  //timeout 
+          drives[d].to = 0;
+          tocheck = 1;
+        }
       }
     }
-  }
-
+    //There might be an entry in the rd Q that was waiting on a final timeout
+    if(tocheck) {
+      //make sure don't re-enter
+      if(!pactive) { 
+      /* check the q if something else can be kicked off now */
+      if((p = q_rd_front) != NULL) {	/* try to kick off next entry */
+        write_log("Attempt to kick next rd from alrm_sig()\n");
+        kstatus = kick_next_entry_rd(); /* sets poff if entry removed */
+        poffrd = poff;
+        //write_time(); 
+	//write_log("kick_next_entry_rd() call from tapeprog_1() returned %d\n",
+	//		kstatus);	/* !!TEMP */
+        switch(kstatus) {
+        case 0:			/* can't process now. remains on q */
+          break;
+        case 1:			/* entry started and removed from q */
+          break;
+        case 2:			/* error occured. ret list to orig sender*/
+          setkey_int(&poff->list, "STATUS", 1); /* give error back to caller */
+          uid = getkey_uint64(poff->list, "uid");
+          offptr = getsumoffcnt(offcnt_hdr, uid);
+          offptr->offcnt++;
+          offcnt = getkey_int(poff->list, "offcnt");
+          if(offcnt == offptr->offcnt) { /* now can send completion msg back */
+            remsumoffcnt(&offcnt_hdr, uid);
+            sumprog = getkey_uint32(poff->list, "SPROG");
+            //sumvers = getkey_uint32(poff->list, "SVERS");
+            //set client handle for the sums process
+            switch(sumprog) {
+            case SUMPROG:
+              clntsum = clntsums[0];
+              break;
+            case SUMGET:
+              clntsum = clntsums[1];
+              break;
+            case SUMGET1:
+              clntsum = clntsums[2];
+              break;
+            case SUMGET2:
+              clntsum = clntsums[3];
+              break;
+            case SUMGET3:
+              clntsum = clntsums[4];
+              break;
+            case SUMGET4:
+              clntsum = clntsums[5];
+              break;
+            case SUMGET5:
+              clntsum = clntsums[6];
+              break;
+            case SUMGET6:
+              clntsum = clntsums[7];
+              break;
+            case SUMGET7:
+              clntsum = clntsums[8];
+              break;
+            default:
+              write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
+              break;
+            }
+            clnt_stat=clnt_call(clntsum, SUMRESPDO, (xdrproc_t)xdr_result, 
+			   (char *)poff->list, (xdrproc_t)xdr_void, 0, TIMEOUT);
+            if(clnt_stat != 0) {
+              clnt_perrno(clnt_stat);		/* outputs to stderr */
+              write_log("***Error in tape_svc on clnt_call() back to sum_svc SUMRESPDO\n");
+              call_err = clnt_sperror(current_client, "Err");
+              write_log("%s\n", call_err);
+            }
+          }
+          break;
+        }
+      }
+      }
+    }
+  signal(SIGALRM, &alrm_sig);   //setup for alarm signal
   alarm(alrm_sec);		//start again
 }
 
@@ -234,7 +317,7 @@ void setoffline()
       printf("%s\n", line);
       write_log("%s\n", line);
       drives[order0].offline = 1;
-      drives[order0].lock = 0;
+      //drives[order0].lock = 0;  //lock no longer used
     }
   }
   fclose(drfp);
@@ -343,7 +426,7 @@ void setup()
     fclose(drfp);
   }
 #endif
-  alrm_sec = 90;
+  alrm_sec = ALRMSECTO;	//40 will give an average 60sec t.o. on a rd drive
   //if (signal(SIGINT, SIG_IGN) != SIG_IGN)
       signal(SIGINT, sighandler);
   if (signal(SIGTERM, SIG_IGN) != SIG_IGN)
@@ -598,10 +681,12 @@ tapeprog_1(rqstp, transp)
 
 	bool_t (*xdr_argument)(), (*xdr_result)();
 	char *(*local)();
+        pactive = 1;		//process active. used by alrm_sig
         rinfox = 1;
 	switch (rqstp->rq_proc) {
 	case NULLPROC:
 		(void) svc_sendreply(transp, (xdrproc_t)xdr_void, (char *)NULL);
+                pactive = 0;
 		return;
 	case READDO:
                 if(tapeoffline) rinfox = SUM_TAPE_SVC_OFF; //special case 
@@ -685,6 +770,7 @@ tapeprog_1(rqstp, transp)
 	default:
                 write_log("**tapeprog_1() dispatch default procedure %d,ignore\n", rqstp->rq_proc);
 		svcerr_noproc(transp);
+                pactive = 0;
 		return;
 	}
 	bzero((char *)&argument, sizeof(argument));
@@ -692,6 +778,7 @@ tapeprog_1(rqstp, transp)
           write_log("***Error on svc_getargs()\n");
           svcerr_decode(transp);
           svc_sendreply(transp, (xdrproc_t)xdr_void, (char *)NULL);
+          pactive = 0;
           return;
 	}
         glb_transp = transp;		     /* needed by function */
@@ -907,5 +994,6 @@ tapeprog_1(rqstp, transp)
         poffwt = NULL;
       }
       poff = NULL;
+      pactive = 0;
       return;
 }
