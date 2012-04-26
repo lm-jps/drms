@@ -206,6 +206,7 @@ bool_t xdr_sum_info_t(XDR *xdrs, SUM_info_t *objp);
 #define SUMRESPDO ((uint32_t)5)
 #define ALLOCDO ((uint32_t)6)
 #define PUTDO ((uint32_t)7)
+#define ARCHSUDO ((uint32_t)8)
 /**********************************
 #define APUPDO ((uint32_t)8)
 #define DPUPDO ((uint32_t)9)
@@ -233,6 +234,7 @@ extern Sunumarray *infodoArray_1();
 extern KEY *sumrespdo_1();
 extern KEY *allocdo_1();
 extern KEY *putdo_1();
+extern KEY *archsudo_1();
 extern KEY *nopdo_1();
 extern KEY *tapereconnectdo_1();
 /**********************************
@@ -606,6 +608,7 @@ int SUM_shutdown();
 int SUM_close();
 int SUM_get();
 int SUM_put();
+int SUM_archSU();
 int SUM_alloc();
 int SUM_alloc2();
 int SUM_poll();
