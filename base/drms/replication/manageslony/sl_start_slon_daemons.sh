@@ -52,6 +52,7 @@ while [[ 1 == 1 ]]
 do
     if ( set -o noclobber; echo "$$" > "$slondaemonlockpath") 2> /dev/null;
     then
+        echo "Acquired lock, continuing."
         trap 'rm -f "$slondaemonlockpath"; exit 1' INT TERM HUP
 
         # Don't start the daemons if they are already running
@@ -63,6 +64,8 @@ do
                 $kSlonCmd -p $kMSMasterPIDFile -s 60000 -t 300000 $CLUSTERNAME "dbname=$MASTERDBNAME port=$MASTERPORT host=$MASTERHOST user=$REPUSER"  > $kMSLogDir/slon.node1.log 2>&1 &
                 startmaster=1
             fi
+        else
+            echo "Master PID file ($kMSMasterPIDFile) exists - skipping master start-up."
         fi
 
         if [ ! -e $kMSSlavePIDFile ]
@@ -73,6 +76,8 @@ do
                 $kSlonCmd -p $kMSSlavePIDFile -s 60000 -a $kPSLlogsSourceDir -t 300000 -x "$kMSOnSync" $CLUSTERNAME "dbname=$SLAVEDBNAME port=$SLAVEPORT host=$SLAVEHOST user=$REPUSER"  > $kMSLogDir/slon.node2.log 2>&1 &
                 startslave=1
             fi
+        else
+            echo "Slave PID file ($kMSSlavePIDFile) exists - skipping master start-up."
         fi
 
         # Just in case it takes a while for the PID files to appear...
