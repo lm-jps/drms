@@ -1404,6 +1404,12 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 	      char pbuf[DRMS_MAXPATHLEN];
 	      struct stat stBuf;
 	      int foundOV = 0;
+           
+
+#if !defined(DSDS_SUPPORT) || !DSDS_SUPPORT
+           stat = DRMS_ERROR_NODSDSSUPPORT;
+           goto failure;
+#endif
 
 	      if (!(*filestat)(oneSet, &stBuf) && S_ISDIR(stBuf.st_mode))
 	      {
@@ -1486,6 +1492,11 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 	   } /* Plain File */
 	   else if (settypes[iSet] == kRecordSetType_DSDS)
 	   {
+#if !defined(DSDS_SUPPORT) || !DSDS_SUPPORT
+           stat = DRMS_ERROR_NODSDSSUPPORT;
+           goto failure;
+#endif
+           
 	      rs = drms_open_dsdsrecords(env, oneSet, &stat);
 	      if (stat)
               {
@@ -1518,6 +1529,11 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                *
                * Currently (8/20/2008), if the data are offline, a failure will occur.
                */
+#if !defined(DSDS_SUPPORT) || !DSDS_SUPPORT
+               stat = DRMS_ERROR_NODSDSSUPPORT;
+               goto failure;
+#endif
+               
               rs = drms_open_dsdsrecords(env, oneSet, &stat);
 	      if (stat)
               {
