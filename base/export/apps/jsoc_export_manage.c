@@ -1210,7 +1210,9 @@ static int InitVarConts(const char *args,
 *    argsout - final argument string (comma-separated list of arguments/values).
 *    stepdata - has program name, input record-set, output record-set.
 */
-static int GenProgArgs(ProcStepInfo_t *pinfo, 
+static int GenProgArgs(DRMS_Env_t *env,
+                       const char *dbhost,
+                       ProcStepInfo_t *pinfo, 
                        HContainer_t *args, 
                        ProcStep_t *stepdata,
                        const char *reclim,
@@ -1254,6 +1256,11 @@ static int GenProgArgs(ProcStepInfo_t *pinfo,
     {
         if (pinfo->req)
         {
+            char **snames = NULL;
+            char **filts = NULL;
+            int nsets;
+            DRMS_RecQueryInfo_t info;
+            
             list_llreset(pinfo->req);
             
             /* loop through required arguments. */
@@ -1302,7 +1309,18 @@ static int GenProgArgs(ProcStepInfo_t *pinfo,
                      * The values for these come from stepdata. There MUST be a namemap entry 
                      * for <input arg>=in and <output arg>=out in the processing series map
                      * field. */
-                    val = stepdata->output;
+                    
+                    /* stepdata->output has the full record-set query, but we need only the 
+                     * series name. Parse stepdata->output. */
+                    if (ParseRecSetSpec(env, dbhost, stepdata->output, &snames, &filts, &nsets, &info))
+                    {
+                        fprintf(stderr, "Invalid output series record specification %s.\n", stepdata->output);
+                        err = 1;
+                        break;
+                    }
+                    
+                    /* There can be only one output series. */
+                    val = snames[0];
                 }
                 else
                 {
@@ -1331,6 +1349,8 @@ static int GenProgArgs(ProcStepInfo_t *pinfo,
                     finalargs = base_strcatalloc(finalargs, "'", &sz);
                 }
             }
+            
+            FreeRecSpecParts(&snames, &filts, nsets);
         }
         
         if (!err)
@@ -1844,7 +1864,7 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, /* dbhost of jsoc.export_new. 
                     continue;
                 }
                 
-                if (GenProgArgs(cpinfo, varsargs, &data, reclimint, &finalargs))
+                if (GenProgArgs(env, dbhost, cpinfo, varsargs, &data, reclimint, &finalargs))
                 {
                     state = kPPStError;
                     continue;
