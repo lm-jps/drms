@@ -1204,6 +1204,11 @@ static int InitVarConts(const char *args,
     return err;
 }
 
+static void DestroyVarConts(HContainer_t **pvarsargs)
+{
+    hcon_destroy(pvarsargs);
+}
+
 /* Returns 1 on success, 0 on failure. */
 /*   pinfo - information from the processing-step series specific to the current procsessing step. 
 *    args - argument values from the processing keyword of jsoc.export_new. 
@@ -1869,6 +1874,9 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, /* dbhost of jsoc.export_new. 
                     state = kPPStError;
                     continue;
                 }
+                
+                /* Done with varsargs, free it. */
+                DestroyVarConts(&varsargs);
                 
                 data.path = strdup(cpinfo->path);
                 
