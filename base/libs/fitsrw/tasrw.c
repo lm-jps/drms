@@ -185,6 +185,7 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
 
                if (fiostat != 0)
                {
+                   fprintf(stderr, "FITSIO error: %d.\n", fiostat);
                   fprintf(stdout, "Unable to close fits file '%s'.\n", filename);
                   perror("fitsrw_getfptr_internal() system error");
                   stat = CFITSIO_ERROR_FILE_IO;
@@ -225,6 +226,7 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
                if (fits_create_file(&fptr, filename, &fiostat)) 
                {
                   /* Couldn't create new file. */
+                   fprintf(stderr, "FITSIO error: %d.\n", fiostat);
                   stat = CFITSIO_ERROR_FILE_IO;
                }
             }
@@ -252,6 +254,7 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
          {
             if (fits_verify_chksum(fptr, &datachk, &hduchk, &fiostat))
             {
+                fprintf(stderr, "FITSIO error: %d.\n", fiostat);
                fprintf(stderr, "Unable to verify fits-file checksum.\n");
                stat = CFITSIO_ERROR_LIBRARY;
             }
@@ -325,6 +328,7 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
 
                            if (fiostat)
                            {
+                               fprintf(stderr, "FITSIO error: %d.\n", fiostat);
                               fprintf(stderr, "Unable to update %s keyword.\n", naxisname);
                               stat = CFITSIO_ERROR_LIBRARY;
                               break;
@@ -485,7 +489,9 @@ int fitsrw_readslice(int verbose,
                      void** image)
 {
    fitsfile *fptr=NULL;     
-   int error_code, status=0;
+    int error_code;
+    int status; /* FITSIO error codes. */
+    int istat; /* Status for other calls. */
    long increments[CFITSIO_MAX_DIM]; /* ffgsv requires long type, although this is dangerous 
                                       * as long is a different number of bytes on different 
                                       * machines. 
@@ -520,14 +526,17 @@ int fitsrw_readslice(int verbose,
    memset((void*)(*image_info), 0, sizeof(CFITSIO_IMAGE_INFO));
 
    status = 0; // first thing!
+    istat = 0;
+    
+   fptr = fitsrw_getfptr_nochksum(verbose, filename, 0, &istat);
 
-   fptr = fitsrw_getfptr_nochksum(verbose, filename, 0, &status);
-
-   if (!fptr)
+    /* The call fitsrw_getfptr_nochksum() is not clean - it looks like it might return
+     * a  fptr, but also return istat != 0. fitsrw_getfptr_nochksum() needs to be cleaned 
+     * up so that if istat != 0, the fptr == 0. */
+   if (!fptr || istat)
    {
       goto error_exit;
    }
-
 
    /* Fetch img parameter info - should have been cached when the file was originally opened */
    if (fitsrw_getfpinfo(fptr, &fpinfo))
@@ -620,8 +629,12 @@ int fitsrw_readslice(int verbose,
 
   error_exit:
 
-   fits_get_errstatus(status, cfitsiostat);
-   fprintf(stderr, "cfitsio error '%s'.\n", cfitsiostat);
+    if (status != 0)
+    {
+        fits_get_errstatus(status, cfitsiostat);
+        fprintf(stderr, "cfitsio error '%s'.\n", cfitsiostat);
+    }
+    
    if(fptr) 
    {
       /* Must call fitsrw_closefptr() to free the readonly fitsfile */
@@ -639,7 +652,9 @@ int fitsrw_readslice(int verbose,
 int fitsrw_writeslice(int verbose, const char *filename, int *fpixel, int *lpixel, void *image)
 {
    fitsfile *fptr=NULL;     
-   int error_code, status=0;
+    int error_code;
+    int status; /* FITSIO error code. */
+    int istat; /* non-FITSIO error code. */
    int data_type;
    long lfpixel[CFITSIO_MAX_DIM];
    long llpixel[CFITSIO_MAX_DIM];
@@ -654,6 +669,7 @@ int fitsrw_writeslice(int verbose, const char *filename, int *fpixel, int *lpixe
    int dimlen = 0;
 
    status = 0; // first thing!
+    istat = 0;
 
    /* ART - If the file to write doesn't exist, this call will create a new empty file. This is probably 
     * bad since an empty file has no fpinfo (other than the fhash value), which means uses of 
@@ -661,9 +677,13 @@ int fitsrw_writeslice(int verbose, const char *filename, int *fpixel, int *lpixe
     *
     * There should be a test here. If the file does not already exist, then we need to use the fpixel/lpixel
     * information to initialize the fpinfo. */
-   fptr = fitsrw_getfptr(verbose, filename, 1, &status);
+    
+    /* The call fitsrw_getfptr() is not clean - it looks like it might return
+     * a  fptr, but also return istat != 0. fitsrw_getfptr() needs to be cleaned 
+     * up so that if istat != 0, the fptr == 0. */
+   fptr = fitsrw_getfptr(verbose, filename, 1, &istat);
 
-   if (!fptr)
+   if (!fptr || istat)
    {
       goto error_exit;
    }
@@ -827,8 +847,11 @@ int fitsrw_writeslice(int verbose, const char *filename, int *fpixel, int *lpixe
 
  error_exit:
 
-   fits_get_errstatus(status, cfitsiostat);
-   fprintf(stderr, "cfitsio error '%s'.\n", cfitsiostat);
+    if (status != 0)
+    {
+        fits_get_errstatus(status, cfitsiostat);
+        fprintf(stderr, "cfitsio error '%s'.\n", cfitsiostat);
+    }
 
    /* Some error writing the file - don't worry about computing checksum. */
    if(fptr) 
