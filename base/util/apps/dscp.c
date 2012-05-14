@@ -89,141 +89,174 @@ static int SeriesExist(DRMS_Env_t *env, const char *rsspec, char ***names, int *
    return rv;
 }
 
-/* returns 0 on error, otherwise it returns an estimated good-chunk size (the
+/* returns kMaxChunkSize on error, otherwise it returns an estimated good-chunk size (the
  * number of records whose SUs comprise a GB of storage). */
 static int CalcChunkSize(DRMS_Env_t *env, const char *sname)
 {
-   int rv = 0;
-   int istat = DRMS_SUCCESS;
-
-   if (istat)
-   {
-      fprintf(stderr, "Problem counting records, internal error %d.\n", istat);
-   }
-   else
-   {
-      /* Open latest record to get file sizes. Use this as a (poor) estimate of 
-       * the file size of each segment. Use an SQL query, because this is the only 
-       * way to get the 'last' record in a series without knowing anything about 
-       * the series (i.e., the number of prime keys). */
-      char query[2048];
-      DB_Binary_Result_t *res = NULL;
-
-      /* series-name case matters not */
-      snprintf(query, sizeof(query), 
-               "SELECT sunum FROM %s WHERE recnum = (SELECT max(recnum) FROM %s)", 
-               sname, 
-               sname);
-      res = drms_query_bin(env->session, query);
-
-      if (res) 
-      {
-         if (res->num_rows == 1 && res->num_cols == 1)
-         {
+    int rv = 0;
+    
+    /* Open latest record to get file sizes. Use this as a (poor) estimate of 
+     * the file size of each segment. Use an SQL query, because this is the only 
+     * way to get the 'last' record in a series without knowing anything about 
+     * the series (i.e., the number of prime keys). */
+    char query[2048];
+    DB_Binary_Result_t *res = NULL;
+    
+    /* series-name case matters not */
+    snprintf(query, sizeof(query), 
+             "SELECT sunum FROM %s WHERE recnum = (SELECT max(recnum) FROM %s)", 
+             sname, 
+             sname);
+    res = drms_query_bin(env->session, query);
+    
+    if (res) 
+    {
+        if (res->num_rows == 1 && res->num_cols == 1)
+        {
             long long sunum = db_binary_field_getint(res, 0, 0);
             SUM_info_t **info = (SUM_info_t **)malloc(sizeof(SUM_info_t *) * 1);
-
+            
             /* Get file-size info from SUMS. */
             if (drms_getsuinfo(env, &sunum, 1, info) == DRMS_SUCCESS)
             {
-               if (info[0]->online_loc == '\0')
-               {
-                  /* Not online or invalid SUNUM. Give up and use maximum chunk size. */
-                  rv = kMaxChunkSize;
-               }
-               else
-               {
-                  rv =  (int)((double)kGb / info[0]->bytes);
-               }
+                if (info[0]->online_loc == '\0')
+                {
+                    /* Not online or invalid SUNUM. Give up and use maximum chunk size. */
+                    rv = kMaxChunkSize;
+                }
+                else
+                {
+                    rv =  (int)((double)kGb / info[0]->bytes);
+                    if (rv < 1)
+                    {
+                        rv = 1;
+                    }
+                }
             }
             else
             {
-               fprintf(stderr, "Unable to get SU size for sunum %lld.\n", sunum);
+                rv = kMaxChunkSize;
             }
-
+            
             if (info)
             {
-               int iinfo;
-
-               for (iinfo = 0; iinfo < 1; iinfo++)
-               {
-                  if (info[iinfo])
-                  {
-                     free(info[iinfo]);
-                     info[iinfo] = NULL;
-                  }
-               }
-
-               free(info);
+                int iinfo;
+                
+                for (iinfo = 0; iinfo < 1; iinfo++)
+                {
+                    if (info[iinfo])
+                    {
+                        free(info[iinfo]);
+                        info[iinfo] = NULL;
+                    }
+                }
+                
+                free(info);
             }
-         }
-         else
-         {
-            fprintf(stderr, "Unexpected db response to query '%s'.\n", query);
-         }
-
-         db_free_binary_result(res);
-         res = NULL;
-      }
-   }
-
-   return rv;
+        }
+        else
+        {
+            rv = kMaxChunkSize;
+        }
+        
+        db_free_binary_result(res);
+        res = NULL;
+    }
+    else
+    {
+        rv = kMaxChunkSize;
+    }
+    
+    return rv;
 }
 
 static int ProcessRecord(DRMS_Record_t *recin, DRMS_Record_t *recout)
 {
-   HIterator_t *iter = NULL;
-   char infile[DRMS_MAXPATHLEN];
-   char outfile[DRMS_MAXPATHLEN];
-   DRMS_Segment_t *segin = NULL;
-   DRMS_Segment_t *segout = NULL;
-   int rv = 0;
-
-   /* copy keywords to output records */
-   if (!drms_copykeys(recout, recin, 1, kDRMS_KeyClass_Explicit))
-   {
-      /* copy segment files */
-      while ((segin = drms_record_nextseg(recin, &iter, 0)) != NULL)
-      {
-         /* Get output segment */
-         segout = drms_segment_lookup(recout, segin->info->name);
-
-         if (segout)
-         {
-            *infile = '\0';
-            *outfile = '\0';
-
-            if (recin->sunum != -1LL)
+    HIterator_t *iter = NULL;
+    char infile[DRMS_MAXPATHLEN];
+    char outfile[DRMS_MAXPATHLEN];
+    DRMS_Segment_t *segin = NULL;
+    DRMS_Segment_t *segout = NULL;
+    DRMS_Link_t *linkin = NULL;
+    DRMS_Record_t *lrec = NULL;
+    int istat = DRMS_SUCCESS;
+    int rv = 0;
+    
+    /* copy keywords to output records */
+    if (!drms_copykeys(recout, recin, 1, kDRMS_KeyClass_Explicit))
+    {
+        /* copy segment files */
+        while ((segin = drms_record_nextseg(recin, &iter, 0)) != NULL)
+        {
+            /* Get output segment */
+            segout = drms_segment_lookup(recout, segin->info->name);
+            
+            if (segout)
             {
-               /* skip input records that have no SU associated with them */
-               drms_segment_filename(segin, infile);
-               drms_segment_filename(segout, outfile);
-
-               if (*infile != '\0' && *outfile != '\0')
-               {
-                  if (copyfile(infile, outfile) != 0)
-                  {
-                     fprintf(stderr, "failure copying file '%s' to '%s'.\n", infile, outfile);
-                     rv = 1;
-                  }
-               }
+                *infile = '\0';
+                *outfile = '\0';
+                
+                if (recin->sunum != -1LL)
+                {
+                    /* skip input records that have no SU associated with them */
+                    drms_segment_filename(segin, infile);
+                    drms_segment_filename(segout, outfile);
+                    
+                    if (*infile != '\0' && *outfile != '\0')
+                    {
+                        if (copyfile(infile, outfile) != 0)
+                        {
+                            fprintf(stderr, "failure copying file '%s' to '%s'.\n", infile, outfile);
+                            rv = 1;
+                            break;
+                        }
+                    }
+                }
             }
-         }
-      }
-
-      if (iter)
-      {
-         free(iter);
-         iter = NULL;
-      }
-   }
-   else
-   {
-      fprintf(stderr, "copy keys failure.\n");
-      rv = 1;
-   }
-
-   return rv;
+        }
+        
+        if (iter)
+        {
+            free(iter);
+            iter = NULL;
+        }
+        
+        /* If recin is linked to a record in another series, then
+         * copy that link to recout, if recout has a same-named link. */
+        while ((linkin = drms_record_nextlink(recin, &iter)) != NULL)
+        {
+            /* If the output record has a link whose name matches the current input 
+             * record's link ...*/
+            if (hcon_lookup_lower(&recout->links, linkin->info->name))
+            {
+                /* Obtain record linked-to from recin, if such a link exists. */
+                lrec = drms_link_follow(recin, linkin->info->name, &istat);
+                
+                if (istat == DRMS_SUCCESS && lrec)
+                {
+                    if (drms_link_set(linkin->info->name, recout, lrec) != DRMS_SUCCESS)
+                    {
+                        fprintf(stderr, "Failure setting output record's link '%s'.\n", linkin->info->name);
+                        rv = 1;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        if (iter)
+        {
+            free(iter);
+            iter = NULL;
+        }
+    }
+    else
+    {
+        fprintf(stderr, "copy keys failure.\n");
+        rv = 1;
+    }
+    
+    return rv;
 }
 
 int DoIt(void)
