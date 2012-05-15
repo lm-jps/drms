@@ -20,7 +20,7 @@
 #include "serverdefs.h"
 
 #define REBOOT "/usr/local/logs/SUM/RESTART_AFTER_REBOOT"
-#define ALRMSECTO 40	//40 will give average 60sec t.o. on rd drive
+#define ALRMSECTO 30	//30 will give average 45sec t.o. on rd drive
 
 SLOT slots[MAX_SLOTS];
 DRIVE drives[MAX_DRIVES];
@@ -669,6 +669,7 @@ tapeprog_1(rqstp, transp)
 {
 	char *result, *call_err;
         int force = 0;
+        int rdflg = 0;
         enum clnt_stat clnt_stat;
         SUMOFFCNT *offptr;
         SUMID_t uid;
@@ -701,6 +702,7 @@ tapeprog_1(rqstp, transp)
 		local = (char *(*)()) writedo_1;
 		break;
         case TAPERESPREADDO:
+		rdflg = 1;
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_Rkey;
 		local = (char *(*)()) taperespreaddo_1;
@@ -808,7 +810,9 @@ tapeprog_1(rqstp, transp)
           }
           else {
             sprintf(heapcln, "%lx", current_client); 
-            write_log("current_client = %s\n", heapcln); //!!TEMP for debug
+            if(rdflg) {
+              write_log("current_client = %s\n", heapcln); //!!TEMP for debug
+            }
             if(((strcmp(heapcln, heaphigh)) > 0) || ((strcmp(heapcln, heaplow)) < 0)) {
               write_log("***Error: current_client = %lx is off heap\n", 
 			current_client);
