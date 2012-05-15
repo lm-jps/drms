@@ -1943,6 +1943,8 @@ int DoIt(void)
     /* now show desired segments */
     for (iseg=0; iseg<nsegs; iseg++) 
       {
+          /* drms_segment_lookup() will follow links. So rec_seg_iseg->record ~= rec if
+           * the segment is a link. */
       DRMS_Segment_t *rec_seg_iseg = drms_segment_lookup (rec, segs[iseg]); 
       if (rec_seg_iseg)
         {
@@ -1952,13 +1954,15 @@ int DoIt(void)
         if (rec_seg_iseg->info->protocol != DRMS_DSDS && rec_seg_iseg->info->protocol != DRMS_LOCAL)
            {
            if (want_path)
-             {
-             int stat;
-             // use segs rec to get linked record's path
-             if(want_path_noret) stat=drms_record_directory (rec_seg_iseg->record, path, 0);
-             else stat=drms_record_directory (rec_seg_iseg->record, path, 1);
-             if (stat) strcpy(path,"**_NO_sudir_**");
-             }
+           {
+               int stat;
+               
+               // use segs rec to get linked record's path
+               if(want_path_noret) stat=drms_record_directory (rec_seg_iseg->record, path, 0);
+               else stat=drms_record_directory (rec_seg_iseg->record, path, 1);
+               
+               if (stat) strcpy(path,"**_NO_sudir_**");
+           }
            else
              strcpy(path,"");
 
