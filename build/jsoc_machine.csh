@@ -27,7 +27,12 @@ if ( ! $?JSOC_MACHINE ) then
       breaksw
     case "x86_64":
     case "em64t":
-      echo linux_x86_64
+      /bin/grep -qw avx /proc/cpuinfo
+      if ( $? ) then
+	echo linux_x86_64
+      else
+	echo linux_avx
+      endif
       breaksw
     default:
       echo custom
