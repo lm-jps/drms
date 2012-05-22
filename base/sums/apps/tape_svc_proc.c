@@ -841,7 +841,7 @@ KEY *readdo_1(KEY *params) {
     clntsum = clntsums[8];
     break;
   default:
-    write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
+    write_log("**ERROR: bad sumprog in readdo_1()\n");
     break;
   }
     current_client = clntsum;
@@ -1556,7 +1556,16 @@ KEY *taperespreaddo_1(KEY *params) {
   client = (CLIENT *)getkey_fileptr(params, "current_client");
   /* final destination */
   setkey_fileptr(&retlist,  "current_client", (FILE *)client);
+//char ccstr[32];				//!!TEMP for debug
+//  sprintf(ccstr, "%lx", client);
+//  write_log("In taperespreaddo_1() from keylist,current_client = %s\n",ccstr);
+
   sumprog = getkey_uint32(params, "SPROG");
+  if(sumprog == -1) {	//SPROG not in keylist??
+    write_log("**ERROR: SPROG not in keylist when tape rd completes!\n");
+    setkey_int(&retlist, "STATUS", 1);
+    return(retlist);
+  }
   //sumvers = getkey_uint32(params, "SVERS");
   //set client handle for the sums process
   switch(sumprog) {
