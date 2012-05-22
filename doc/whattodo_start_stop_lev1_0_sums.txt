@@ -1,7 +1,7 @@
-  /home/production/cvs/JSOC/doc/whattodo_start_stop_lev1_0_sums.txt 16Dec2010 
+  /home/production/cvs/JSOC/doc/whattodo_start_stop_lev1_0_sums.txt 27Apr2012
 
 
-As user production. Do in this order:
+Do as user production or jsocprod as indicated. Do in this order:
 
 NOTE: Now the drms/sums restart feature is working, there is no need 
 to do the "Stop lev1" and "Start lev0" sections below.
@@ -9,8 +9,8 @@ to do the "Stop lev1" and "Start lev0" sections below.
 STOP:
 =====
 
-On cl1n003: Stop lev1 processing for AIA
-----------------------------------------
+On cl1n003: Stop lev1 processing for AIA as jsocprod
+----------------------------------------------------
 > touch /usr/local/logs/lev1/build_mgr_stop_aia
 
 Wait until you see on the screen running build_lev1_mgr on cl1n003:
@@ -22,8 +22,8 @@ Of course, if you not local with the screen, use ps.
 
 (note: ignore any core dump)
 
-On cl1n002: Stop lev1 processing for HMI
-----------------------------------------
+On cl1n002: Stop lev1 processing for HMI as jsocprod
+----------------------------------------------------
 > touch /usr/local/logs/lev1/build_mgr_stop_hmi
 
 Wait until you see on the screen running build_lev1_mgr on cl1n002:
@@ -36,10 +36,10 @@ Of course, if you not local with the screen, use ps.
 (note: ignore any core dump)
 
 
-On cl1n001: Stop lev0 processing
--------------------------------------
+On cl1n001: Stop lev0 processing as jsocprod
+--------------------------------------------
 
-> cd /home/production/cvs/JSOC/proj/lev0/apps
+> cd /home/jsocprod
 > stop_lev0_HMI.pl
 
 This may take a few minutes while the processing of ingest_lev0 for
@@ -48,39 +48,25 @@ Likewise for AIA VC01 and VC04:
 
 > stop_lev0_AIA.pl
 
-On d02: Stop any tapearc
-------------------------------------
-> cd /usr/local/logs/tapearc
-> touch TAPEARC_ABORT0
-> touch TAPEARC_ABORT1
-> touch TAPEARC_ABORT2
-> touch TAPEARC_ABORT3
-> touch TAPEARC_ABORT4
-> touch TAPEARC_ABORT7
-(Note: There are 6 drives for write. Meta-group 5 and 6 are depricated.
-Wait until you see the windows running tapearc0, tapearc1, etc. finish.
-If you don't have the windows us ps.
-This may take awhile.
-
-On j1: Stop SUMS
+On j1: Stop SUMS as production
 -------------------------------------
 
 > cd /home/production/cvs/JSOC/base/sums/scripts
-> sum_stop_j1 -f		(note: may need the -f(orce) flag)
+> sum_stop_j1.MULTI -f		(note: may need the -f(orce) flag)
 
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 START:
 =====
 
-On j1: Start SUMS
+On j1: Start SUMS as production
 -------------------------------------
 
 > cd /home/production/cvs/JSOC/base/sums/scripts
-> sum_start_j1
+> sum_start_j1.MULTI
 
-On d02: Restart t950view
---------------------------
+On d02: Restart t950view as production
+--------------------------------------
 This is optional if you want to view the tape activity.
 Restore the minimized t950view window and hit the Exit button (upper right),
 or use ps and kill.
@@ -88,39 +74,66 @@ or use ps and kill.
 (password: hmi4sdo)
 
 
-On d02: Start tapearc0,1,2,3,4,7
---------------------------------
-> cd /home/production/cvs/JSOC/base/sums/scripts
-(Now do in six different windows on d02)
-> tape_do0.pl
-> tape_do1.pl
-> tape_do2.pl
-> tape_do3.pl
-> tape_do4.pl
-> tape_do7.pl
+On cl1n001: Start lev0 processing (if needed) as jsocprod
+---------------------------------------------------------
+This should be done through 'screen' running on cl1n001.
+For "How to Use 'screen'" see: 
+http://linux.about.com/od/Bash_Scripting_Solutions/a/How-To-Use-The-Gnu-Linux-Screen-Terminal-Window-Manager.htm
+This will allow the lev1 processing to continue if your w/s (xim) crashes, 
+and the screens to be re-attached to, when xim reboots, or from another w/s.
 
+xim:/home/jim> ssh jsocprod@j1
+Password: 
+Last login: Fri Apr 27 12:14:41 2012 from xim.stanford.edu
+Fri Apr 27 12:20:49 PDT 2012
+j1:/home/jsocprod>  ssh cl1n001
+cl1n001:/home/jsocprod> screen
+Directory: /home/jsocprod
+csh> cd
+cl1n001:/home/jsocprod> Ctrl-c	(to create anothe screen)
+To toggle between screens do: Ctrl-a space
+Or to go to screen 2: Ctrl-a 2
+To disconnect from 'screen' do: Ctrl-a d
+(You will still see a process running called SCREEN).
+To reconnect to a previous screen (after disconnect or machine restart or
+from another workstation from a cl1n001 window):
+> screen -r
+To kill a screen window: Ctrl-a K  (on some machine small 'k')
+To see all your screens created and which on you're on now: Ctrl-a w
+To see all screen key bindings: Ctrl-a ?
 
-On cl1n001: Start lev0 processing (if needed)
---------------------------------------------
+In screen 0 do:
 
 !!Make sure run Phil's script for watchlev0 in the background on cl1n001:
 /home/production/cvs/JSOC/base/sums/scripts/get_dcs_times.csh
 
-> cd /home/production/cvs/JSOC/proj/lev0/apps
-> doingestlev0_HMI.pl
-> doingestlev0_AIA.pl (in seperate window)
+> cd /home/jsocprod
+> doingestlev0_HMI.pl &
+> doingestlev0_AIA.pl &
 
-On cl1n002: Start lev1 processing for HMI (if needed)
------------------------------------------------------
-
-> cd /home/production/cvs/JSOC/proj/lev0/apps 
+On cl1n002: Start lev1 processing for HMI (if needed) as jsocprod
+-----------------------------------------------------------------
+Run a 'screen' on cl1n002:
+xim:/home/jim> ssh jsocprod@j1
+Password:
+Last login: Thu Apr 26 14:54:53 2012 from xim.stanford.edu
+Directory: /home/jsocprod
+j1:/home/jsocprod> ssh cl1n002
+> screen
+> cd /home/jsocprod
 > build_lev1_mgr mode=recnum
-instru=hmi dsin=hmi.lev0a dsout=hmi.lev1c_nrt brec=0 erec=0
+instru=hmi dsin=hmi.lev0a dsout=hmi.lev1_nrt brec=0 erec=0
 
-On cl1n003: Start lev1 processing for AIA (if needed)
------------------------------------------------------
-
-> cd /home/production/cvs/JSOC/proj/lev0/apps 
+On cl1n003: Start lev1 processing for AIA (if needed) as jsocprod
+-----------------------------------------------------------------
+Run a 'screen' on cl1n003
+xim:/home/jim> ssh jsocprod@j1
+Password:
+Last login: Thu Apr 26 14:54:53 2012 from xim.stanford.edu
+Directory: /home/jsocprod
+j1:/home/jsocprod> ssh cl1n003
+> screen
+> cd /home/jsocprod
 > build_lev1_mgr mode=recnum
 instru=aia dsin=aia.lev0 dsout=aia.lev1_nrt2 brec=0 erec=0
 
