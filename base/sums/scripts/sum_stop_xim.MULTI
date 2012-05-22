@@ -4,24 +4,6 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S  $0 "$@"'
 #This is to stop the xsum_svc and multiple related servers on xim.
 #
 $| = 1;                 #flush output as we go
-$ENV{'SUMSERVER'} = "xim";	#make sure we stay in this machine
-$DB = "jsoc_sums";	#the "real" db that production uses for sums
-$DBDRMS = "jsoc_sums";	#the db sum_pe_rpc uses for drms
-$GREPPS = "388";
-#$GREPPS = "jim";
-$HOST = "xim.Stanford.EDU";		#where xsum_svc runs
-
-$user = $ENV{'USER'};
-if($user ne "production") {
-  print "You must be user production to run\n";
-  exit;
-}
-$host = `hostname`;
-chomp($host);
-if($host ne $HOST) {
-  print "This can only be run on $HOST.\n";
-  exit;
-}
 $mailflg = 1;
 $forceflg = 0;
 while ($ARGV[0] =~ /^-/) {
@@ -38,14 +20,86 @@ while ($ARGV[0] =~ /^-/) {
   }
 }
 
-print "  If you are asked for a passphrase then you do not have \n";
-print "  ssh-agent set up properly on $HOST.\n";
-print "  Ctrl-C this script, and do this:\n";
-print "  > ssh-agent | head -2 > /var/tmp/ssh-agent.env
-  > chmod 600 /var/tmp/ssh-agent.env
-  > source /var/tmp/ssh-agent.env
-  > ssh-add
-  (The production password)\n";
+#print "  If you are asked for a passphrase then you do not have \n";
+#print "  ssh-agent set up properly on $HOST.\n";
+#print "  Ctrl-C this script, and do this:\n";
+#print "  > ssh-agent | head -2 > /var/tmp/ssh-agent.env
+#  > chmod 600 /var/tmp/ssh-agent.env
+#  > source /var/tmp/ssh-agent.env
+#  > ssh-add
+#  (The production password)\n";
+
+$wdpath = `which $0`;
+chomp($wdpath);
+$pos = rindex($wdpath, "/");
+$wd = substr($wdpath, 0, $pos);
+$ldir = "$wd/../include/localization.h";
+$sdir = "$wd/../include/serverdefs.h";
+
+if(-e $ldir) {
+  $xdir = $ldir;
+  $localization = 1;
+}
+else {
+  $xdir = $sdir;
+  $localization = 0;
+}
+@servdefs = `cat $xdir`;
+@def = grep(/^#define SUM_NUMSUM/, @servdefs);
+($a,$b,$numsum) = split(/\s+/, shift(@def));
+if(!$numsum) {
+  print "ERROR: Can't get SUM_NUMSUM from $xdir\n";
+  exit(1);
+}
+#print "Number of SUM process sets to spawn = $numsum\n";
+@def = grep(/^#define SUM_MAXNUMSUM/, @servdefs);
+($a,$b,$maxnumsum) = split(/\s+/, shift(@def));
+#print "Max number of SUM process can spawn = $maxnumsum\n";
+
+if($numsum == 0 || $numsum > $maxnumsum) {
+  print "**ERROR: in $xdir def for SUM_NUMSUM\n";
+  print "Number must be between 1 and $maxnumsum\n";
+  exit;
+}
+
+@def = grep(/^#define SUMSERVER/, @servdefs);
+($a,$b,$sumserver) = split(/\s+/, shift(@def));
+if(($pos = index($sumserver, '.')) != -1) {
+  $sumserver = substr($sumserver, 0, $pos);
+}
+$sumserver = substr($sumserver, 1, -1); #get rid of quotes (")
+$host = `hostname`;
+chomp($host);
+if(($pos = index($host, '.')) != -1) {
+  $host = substr($host, 0, $pos);
+}
+#for specific script sum_start_xim.MULTI force xim
+$sumserver = "xim";     #!!!Special case for testing
+if($host ne $sumserver) {
+  print "This can only be run on $sumserver.\n";
+  exit;
+}
+@def = grep(/^#define SUMS_MANAGER/, @servdefs);
+($a,$b,$sumsmanager) = split(/\s+/, shift(@def));
+$sumsmanager = substr($sumsmanager, 1, -1); #get rid of quotes (")
+#print "SUMS_MANAGER is $sumsmanager\n";
+$user = $ENV{'USER'};
+if($user ne $sumsmanager) {
+  print "You must be user $sumsmanager to run\n";
+  exit;
+}
+@def = grep(/^#define SUMS_MANAGER_UID/, @servdefs);
+($a,$b,$sumsmanageruid) = split(/\s+/, shift(@def));
+$sumsmanageruid = substr($sumsmanageruid, 1, -1); #get rid of quotes (")
+#print "SUMS_MANAGER_UID is $sumsmanageruid\n";
+$GREPPS = $sumsmanageruid;
+
+@def = grep(/^#define DBNAME/, @servdefs);
+($a,$b,$dbname) = split(/\s+/, shift(@def));
+$dbname = substr($dbname, 1, -1); #get rid of quotes (")
+$DB = $dbname."_sums";
+
+$DB = "jim";  #!!TEMP override
 
 $PID = getppid;
 $LOGFILE = "/tmp/sum_stop_xim_multi.$PID";
@@ -66,6 +120,7 @@ print MLOG "sum_stop_xim.MULTI at $date\n";
 print MLOG "See $LOGFILE on $host for more details\n";
   print "NOTE: This will stop xsum_svc and tape_svc. Make sure you want to do this\n";
 
+#goto SKIP;
   print "Enter reason for stop (terminate with single '.' or ^D):\n>> ";
   print LOG "Enter reason for stop (terminate with single '.' or ^D):\n";
   print MLOG "Enter reason for stop (terminate with single '.' or ^D):\n";
@@ -84,126 +139,33 @@ print MLOG "See $LOGFILE on $host for more details\n";
   chomp($ID);
   if(!$ID) { $ID = "<none>"; }
   print LOG ">> $ID\n"; print MLOG ">> $ID\n";
-
+SKIP:
   @ps_prod = `ps -ef | grep $GREPPS`;
-  while($_ = shift(@ps_prod)) {
-    if(/^$GREPPS/) {            #do for all production processes
-      if(/sumck/) {
-        ($a, $psid, $c) = split(/\s+/, $_);
-        $process = "sumck";
-        print "Killing $process with kill -9 $psid\n";
-        print LOG "Killing $process with kill -9 $psid\n";
-        `kill -9 $psid`;
-        last;
-      }
-    }
-  }
-@ps_prod = `ps -ef | grep $GREPPS`;
-print "The ps -ef for producttion is:\n@ps_prod\n";
-print LOG "The ps -ef for product is:\n@ps_prod\n";
-while($_ = shift(@ps_prod)) {
-  if(/^$GREPPS/) {		#do for all production processes
-    if(/sum_stop_xim.MULTI/) {	#don't kill ourselves
-      next;
-    }
-    if(/xsum_svc $DB/ || /xsum_svc -o $DB/) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "xsum_svc";
-    }
-    elsif(/Sdelser $DB/) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "Sdelser";
-    }
-    elsif(/Sinfo $DB/) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "Sinfo";
-    }
-    elsif(/Sinfo1 $DB/) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "Sinfo1";
-    }
-    elsif(/Sinfo2 $DB/) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "Sinfo2";
-    }
-    elsif(/Sput $DB/) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "Sput";
-    }
-    elsif(/Sput1 $DB/) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "Sput1";
-    }
-    elsif(/Sput2 $DB/) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "Sput2";
-    }
-    elsif(/Sget $DB/) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "Sget";
-    }
-    elsif(/Sget1 $DB/) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "Sget1";
-    }
-    elsif(/Sget2 $DB/) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "Sget2";
-    }
-    elsif(/Salloc $DB/) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "Salloc";
-    }
-    elsif(/Salloc1 $DB/) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "Salloc1";
-    }
-    elsif(/Salloc2 $DB/) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "Salloc2";
-    }
-    elsif(/Sopen $DB/) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "Sopen";
-    }
-    elsif(/Sopen1 $DB/) { 
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "Sopen1";
-    } 
-    elsif(/Sopen2 $DB/) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "Sopen2";
-    }
-    #tape_svc and drives now on d02
-    #elsif(/tape_svc $DB/ || /tape_svc -o $DB/) {
-    #  ($a, $psid, $c) = split(/\s+/, $_);
-    #  $process = "tape_svc";
-    #}
-    #elsif(/drive0_svc $DB/) {
-    #  ($a, $psid, $c) = split(/\s+/, $_);
-    #  $process = "drive0_svc";
-    #}
-    elsif(/sum_rm $DB/) {
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "sum_rm";
-    }
-    #elsif(/sum_pe_svc $DBDRMS/) {
-    #  ($a, $psid, $c) = split(/\s+/, $_);
-    #  $process = "sum_pe_svc";
-    #}
-    else {
-      next;
-    }
-    print "Killing $process with kill -2 $psid\n";
-    print LOG "Killing $process with kill -INT $psid\n";
-    if($process eq "sum_pe_svc") {
+
+  #All possible sums processes to stop
+  @spawn = (xsum_svc, Sdelser, Sinfo, Sinfo1, Sinfo2, Sinfo3, Sinfo4, Sinfo5, Sinfo6, Sinfo7, Sput, Sput1, Sput2, Sput3, Sput4, Sput5, Sput6, Sput7, Sget, Sget1, Sget2, Sget3, Sget4, Sget5, Sget6, Sget7, Salloc, Salloc1, Salloc2, Salloc3, Salloc4, Salloc5, Salloc6, Salloc7, Sopen, Sopen1, Sopen2, Sopen3, Sopen4, Sopen5, Sopen6, Sopen7, xtape_svc, xdrive0_svc, xdrive1_svc, xdrive2_svc, xdrive3_svc, xdrive4_svc, xdrive5_svc, xdrive6_svc, xdrive7_svc, xdrive8_svc, xdrive9_svc, xdrive10_svc, xdrive11_svc, robot0_svc);
+
+  #first do sumck_ximM
+  @line = grep(/sumck_ximM/, @ps_prod);
+  $x = shift(@line);
+  ($a, $psid, $c) = split(/\s+/, $x);
+  print "Killing sumck_ximM with kill -9 $psid\n";
+  print LOG "Killing sumck_ximM with kill -9 $psid\n";
+  `kill -9 $psid`;
+
+  #Find if any sums process is still running.
+  #Assumes max of 8 sum process sets can be running.
+  while($p = shift(@spawn)) {
+    $name = "$p $db";
+    @line = grep(/$name/, @ps_prod);
+    if(@line) {
+      $x = shift(@line);
+      ($a, $psid, $c) = split(/\s+/, $x);
+      print "Killing $p with kill -9 $psid\n";
+      print LOG "Killing $p with kill -9 $psid\n";
       `kill -9 $psid`;
     }
-    else {
-      `kill -2 $psid`;
-    }
   }
-}
 
 #Now kill the tape_svc, etc on n02
 #`ssh d02.stanford.edu /home/production/cvs/JSOC/base/sums/scripts/sum_stop_d02_tape`;
@@ -218,6 +180,6 @@ close(LOG);
 close(MLOG);
 $mail = "Mail -s \"SUM Stop xim MULTI Complete\"";
 #$to = "jsoc_users";
-$to = "jim";
+$to = "jim\@sun.stanford.edu";
 $cmd = "$mail $to < $MLOGFILE";
 if($mailflg) { system $cmd; }
