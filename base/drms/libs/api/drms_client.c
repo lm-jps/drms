@@ -318,6 +318,8 @@ int drms_rollback(DRMS_Session_t *session)
 
 DB_Text_Result_t *drms_query_txt(DRMS_Session_t *session,  char *query)
 {
+    char *errmsg = NULL;
+    DB_Text_Result_t *rv = NULL;
 #ifdef DEBUG
   printf("drms_query_txt: query = %s\n",query);
 #endif
@@ -332,12 +334,22 @@ DB_Text_Result_t *drms_query_txt(DRMS_Session_t *session,  char *query)
 #endif
   {
    drms_send_commandcode(session->sockfd, DRMS_TXTQUERY);
-   return db_client_query_txt(session->sockfd, query, 0);
+   rv = db_client_query_txt(session->sockfd, query, 0, &errmsg);
+      
+   if (errmsg)
+   {
+       snprintf(session->db_handle->errmsg, sizeof(session->db_handle->errmsg), "%s", errmsg);
+       free(errmsg);
+   }
+      
+      return rv;
   }
 }
 
 DB_Binary_Result_t *drms_query_bin(DRMS_Session_t *session,  char *query)
 {
+    char *errmsg = NULL;
+    DB_Binary_Result_t *rv = NULL;
 #ifdef DEBUG
   printf("drms_query_bin: query = %s\n",query);
 #endif
@@ -353,7 +365,15 @@ DB_Binary_Result_t *drms_query_bin(DRMS_Session_t *session,  char *query)
 #endif
   {
     drms_send_commandcode(session->sockfd, DRMS_BINQUERY);
-    return db_client_query_bin(session->sockfd, query, 0);
+    rv = db_client_query_bin(session->sockfd, query, 0, &errmsg);
+      
+    if (errmsg)
+    {
+        snprintf(session->db_handle->errmsg, sizeof(session->db_handle->errmsg), "%s", errmsg);
+        free(errmsg);
+    }
+      
+    return rv;
   }
 }
 

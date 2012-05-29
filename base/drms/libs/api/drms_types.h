@@ -358,6 +358,8 @@ struct DRMS_Env_struct
   int sessionrunning; /* 1 if a DRMS session has been started by drms_server_open_session() (set by
                        * drms_server_begin_transaction()); 0 otherwise (set by drms_server_end_transaction()) */
   int loopconn;
+    int dbtimeout; /* DB queries running longer than this number milliseconds will be terminated.
+                    * By default this is INT_MIN, which implies no timeout. */
 };
 
 /** \brief DRMS environment struct reference */

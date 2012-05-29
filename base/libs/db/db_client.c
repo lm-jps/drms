@@ -18,7 +18,7 @@
 #include "xmem.h"
 /***************  Client side functions *******************/
 
-DB_Text_Result_t *db_recv_text_query(int sockfd, int comp)
+DB_Text_Result_t *db_recv_text_query(int sockfd, int comp, char **errmsg)
 {
   DB_Text_Result_t *result;
   char *buffer, *zbuf;
@@ -29,11 +29,31 @@ DB_Text_Result_t *db_recv_text_query(int sockfd, int comp)
 
   if (nrows<=0)
   {
+      /* nrows == 0 does not imply an error. The query could have returned 0 rows. 
+       * When this happens, return a non-NULL (albeit meaningless) result. */
+     char *msg = NULL;
+
     result = malloc(sizeof(DB_Text_Result_t));
     XASSERT(result);
     memset(result, 0, sizeof(DB_Text_Result_t));
     result->num_rows = 0;
     result->num_cols = ncols;
+
+    if (nrows == -1)
+    {
+        /* An error occurred when querying the database. Free the result and 
+         * return any error message that the query generated. */
+        free(result);
+        result = NULL;
+        
+        msg = receive_string(sockfd);
+        
+        if (errmsg)
+        {
+            *errmsg = strdup(msg);
+        }
+    }
+
     /* FIXME We really should send the column names even in this case... */
     return result;
   }
@@ -162,7 +182,7 @@ DB_Text_Result_t *db_unpack_text(char *buf)
   return result;
 }
 
-DB_Binary_Result_t *db_recv_binary_query(int sockfd, int comp)
+DB_Binary_Result_t *db_recv_binary_query(int sockfd, int comp, char **errmsg)
 {
   //  uint64_t size=0;
   int i, anynull, nrows;
@@ -174,7 +194,16 @@ DB_Binary_Result_t *db_recv_binary_query(int sockfd, int comp)
   nrows = Readint(sockfd);
   //    size+=4;
   if (nrows == -1)
-    return NULL;
+  {
+      char *msg = receive_string(sockfd);
+      
+      if (errmsg)
+      {
+          *errmsg = strdup(msg);
+      }
+      
+      return NULL;
+  }
   else
     result->num_rows = (unsigned int) nrows;
   result->num_cols = (unsigned int) Readint(sockfd);
@@ -218,7 +247,7 @@ DB_Binary_Result_t *db_recv_binary_query(int sockfd, int comp)
   return result;
 }
 
-DB_Text_Result_t *db_client_query_txt(int sockfd, char *query, int compress)
+DB_Text_Result_t *db_client_query_txt(int sockfd, char *query, int compress, char **errmsg)
 {
   int len,ctmp;
   struct iovec vec[3];
@@ -237,11 +266,11 @@ DB_Text_Result_t *db_client_query_txt(int sockfd, char *query, int compress)
   Writevn(sockfd, vec, 3);
 
   /* Get result back from server. */
-  return db_recv_text_query(sockfd, compress);
+  return db_recv_text_query(sockfd, compress, errmsg);
 }
 
 
-DB_Binary_Result_t *db_client_query_bin(int sockfd, char *query, int compress)
+DB_Binary_Result_t *db_client_query_bin(int sockfd, char *query, int compress, char **errmsg)
 {
   int len,ctmp;
   struct iovec vec[3];
@@ -260,7 +289,7 @@ DB_Binary_Result_t *db_client_query_bin(int sockfd, char *query, int compress)
   Writevn(sockfd, vec, 3);
 
   /* Get result back from server. */
-  return db_recv_binary_query(sockfd, compress);
+  return db_recv_binary_query(sockfd, compress, errmsg);
 }
 
 
@@ -271,6 +300,8 @@ DB_Binary_Result_t *db_client_query_bin_array(int sockfd, char *query,
   int i,vc,tc;  
   int *tmp;
   struct iovec *vec;
+  char *errmsg = NULL;
+
   vec = malloc((4+3*n_args)*sizeof(struct iovec));
   XASSERT(vec);
   tmp = malloc((4+3*n_args)*sizeof(int));
@@ -336,7 +367,7 @@ DB_Binary_Result_t *db_client_query_bin_array(int sockfd, char *query,
   free(vec);
 
   /* Get result back from server. */
-  return db_recv_binary_query(sockfd, compress);
+  return db_recv_binary_query(sockfd, compress, &errmsg);
 }
 
 

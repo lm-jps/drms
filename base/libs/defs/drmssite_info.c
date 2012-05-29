@@ -92,7 +92,7 @@ short drmssite_server_info_from_sunum (unsigned long long sunum,
 	"select * from pg_catalog.pg_tables where schemaname = \'%s\' and tablename = \'%s\'",
 	schema, series);
 #ifdef DEFS_CLIENT
-    text_res = db_client_query_txt (sockfd, query, 0);
+    text_res = db_client_query_txt (sockfd, query, 0, NULL);
 #else
     text_res = db_query_txt (dbin, query);
 #endif
@@ -112,7 +112,7 @@ short drmssite_server_info_from_sunum (unsigned long long sunum,
          text_res = NULL;
       }
 #ifdef DEFS_CLIENT
-      text_res = db_client_query_txt (sockfd, query, 0);
+      text_res = db_client_query_txt (sockfd, query, 0, NULL);
 #else
       text_res = db_query_txt (dbin, query);
 #endif
@@ -131,7 +131,7 @@ short drmssite_server_info_from_sunum (unsigned long long sunum,
      text_res = NULL;
   }
 #ifdef DEFS_CLIENT
-      text_res = db_client_query_txt (sockfd, query, 0);
+  text_res = db_client_query_txt (sockfd, query, 0, NULL);
 #else
   text_res = db_query_txt (dbin, query);
 #endif

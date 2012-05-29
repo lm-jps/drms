@@ -164,6 +164,8 @@ DB_Handle_t *db_connect(const char *host, const char *user,
   }
   else
     handle->db_lock = NULL;
+    
+    memset(handle->errmsg, 0, sizeof(handle->errmsg));
 
   if (port)
   {
@@ -224,10 +226,12 @@ DB_Text_Result_t *db_query_txt(DB_Handle_t  *dbin,  char *query_string)
 #ifdef DEBUG
   printf("db_query_txt: query = %s\n",query_string);
 #endif
+    DB_ResetErrmsg(dbin);
   res = PQexec(db, query_string);
   if (PQresultStatus(res) != PGRES_TUPLES_OK)
   {
-    fprintf(stderr, "query failed: %s", PQerrorMessage(db));
+      DB_SetErrmsg(dbin, PQerrorMessage(db));
+    fprintf(stderr, "query failed: %s", DB_GetErrmsg(dbin));
     PQclear(res);
     goto failure;
   }
@@ -344,9 +348,11 @@ DB_Binary_Result_t *db_query_bin(DB_Handle_t  *dbin,  char *query_string)
   res = PQexecParams(db,query_string, 0, NULL,
 		     NULL, NULL, NULL, 1);
   
+    DB_ResetErrmsg(dbin);
   if (PQresultStatus(res) != PGRES_TUPLES_OK)
   {
-    fprintf(stderr, "query failed: %s", PQerrorMessage(db));
+      DB_SetErrmsg(dbin, PQerrorMessage(db));
+    fprintf(stderr, "query failed: %s", DB_GetErrmsg(dbin));
     PQclear(res);
     goto failure;
   }
@@ -1227,4 +1233,13 @@ int db_cancel(DB_Handle_t *db, char *effbuf, int size)
    }
 
    return rv;
+}
+
+/* returns 1 on failure, 0 on success. */
+int db_settimeout(DB_Handle_t *db, unsigned int timeoutval)
+{
+    char stmnt[128];
+
+    snprintf(stmnt, sizeof(stmnt), "SET statement_timeout TO %d", timeoutval);    
+    return db_dms(db, NULL, stmnt);
 }

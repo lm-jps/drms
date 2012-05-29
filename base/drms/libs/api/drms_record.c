@@ -1626,7 +1626,6 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                                                  allvers[iSet] == 'y',
                                                  nrecslimit, 
 						 &stat));
-                 
                  /* Remove unrequested segments now */
 	      }
 	      else
@@ -1657,7 +1656,13 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                     countquery = NULL;
                  }
 
-                 if (tres && tres->num_rows == 1 && tres->num_cols == 1)
+              if (!tres)
+              {
+                  stat = DRMS_ERROR_QUERYFAILED;
+                  goto failure;
+              }
+              
+                 if (tres->num_rows == 1 && tres->num_cols == 1)
                  {
                     rs->n = atoi(tres->field[0][0]);
                  }

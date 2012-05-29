@@ -236,6 +236,16 @@ int drms_server_begin_transaction(DRMS_Env_t *env) {
      drms_lock_server(env);
      env->transrunning = 1;
      drms_unlock_server(env);
+      
+      /* Issue the statement_timeout statement, but only if env->dbtimeout is not 
+       * INT_MIN (the default). A default value implies a timeout is not desired. */
+      if (env->dbtimeout != INT_MIN)
+      {
+          if (db_settimeout(env->session->db_handle, env->dbtimeout))
+          {
+              fprintf(stderr, "Failed to modify db-statement time-out to %d.\n", env->dbtimeout);
+          }
+      }
   }
 
   /* It is possible that the user has previously called drms_server_end_transaction(),
@@ -1120,6 +1130,23 @@ void *drms_server_thread(void *arg)
 
       // Exit(1); - never call exit(), only the signal thread can do that.
       // Instead, send a TERM signal to the signal thread.
+        
+        /* Killing the drms_server here is a bad idea. The clients do not know that 
+         * it is being terminated. They will continue to send requests to drms_server. 
+         * But because drms_sever will not respond, the clients will error out with
+         * a cryptic error message:
+         
+         FATAL ERROR: The DRMS server echoed a different command code (16777216)
+         from the one sent (1).
+         This usually indicates that the module generated an invalid command
+         that caused the DRMS server to terminate the connection.
+         
+         * A better architecture would be to 1. block new client connections, and
+         * 2. send some kind of failure status to all new requests, and 3. when
+         * all client connections have disappeared, then drms_server can quit.
+         * This way, existing clients can continue to send requests that will
+         * go unsatified (all requests will fail) until they ultimately fail and
+         * disconnect. */
       pthread_kill(env->signal_thread, SIGTERM);
     }
   }

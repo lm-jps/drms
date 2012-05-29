@@ -13,7 +13,7 @@ show_info -j {ds=}<seriesname>
 show_info -l {ds=}<seriesname>
 show_info -c {ds=}<record_set>
 show_info -s {ds=}<seriesname>
-show_info [-aAiLopPrRSTz] [-dkqt] {ds=}<record_set>|sunum=<sunum> [n=<count>] [key=<keylist>] [seg=<seglist>]
+show_info [-aAbiIKoOpPrRSTvxz] [-dkqt] {ds=}<record_set>|sunum=<sunum> [n=<count>] [key=<keylist>] [seg=<seglist>]
 show_info_sock {same options as above}
 \endcode
 
@@ -69,11 +69,12 @@ This group of arguments specifies the set of keywords, segments, links, or virtu
 \li \c  seg=<seglist> - string with dedfauly "Not Specified", see below.
 \li \c  -a: Select all keywords and display their values for the chosen records
 \li \c  -A: Select all segments and display their filenames/paths/dimensions for the chosen records
-\li \c  -x: archive - show archived flag for the storage unit. 
-\li \c  -K: Select all links and display their targets for the chosen records
+\li \c  -b: Disable the prime-key logic when opening records (implicitly adds the [! 1=1 !] to the record-set specification)
 \li \c  -i: print record query, for each record, will be before any keywwords or segment data
 \li \c  -I: print session information including host, sessionid, runtime, jsoc_version, and logdir
+\li \c  -K: Select all links and display their targets for the chosen records
 \li \c  -o: list the record's online status 
+\li \c  -O: disable the code that sets a database query time-out of 10 minutes
 \li \c  -p: list the record's storage_unit path, waits for retrieval if offline
 \li \c  -P: list the record\'s storage_unit path but no retrieve
 \li \c  -r: recnum - show record number as first keyword
@@ -81,6 +82,7 @@ This group of arguments specifies the set of keywords, segments, links, or virtu
 \li \c  -S: SUNUM - show the sunum for the record
 \li \c  -T: Tape - show the archive tape name for the record
 \li \c  -v: verbose - print extra, helpful information
+\li \c  -x: archive - show archived flag for the storage unit. 
 \li \c  -z: SUNUM - show the storage unit size for the SU that contains the record's segments
 
 \par Flags controling how to display values:
@@ -226,6 +228,7 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "K", "0", "Show info for all links"},
   {ARG_INT,  "n", "0", "number of records to show, +from first, -from last"},
   {ARG_FLAG, "o", "0", "list the record\'s storage_unit online status"},
+  {ARG_FLAG, "O", NULL, "disable the code that sets a database query time-out of 10 minutes"},
   {ARG_FLAG, "p", "0", "list the record\'s storage_unit path"},
   {ARG_FLAG, "P", "0", "list the record\'s storage_unit path but no retrieve"},
   {ARG_FLAG, "q", "0", "quiet - skip header of chosen keywords"},
@@ -261,11 +264,13 @@ int nice_intro ()
         " per-record information modes are:\n"
 	"  -a: show information for all keywords\n"
 	"  -A: show information for all segments\n"
+    "  -b: disable prime-key logic when opening records\n"
   	"  -d: Show dimensions of segment files with selected segs\n"
 	"  -i: query- show the record query that matches the current record\n"
         "  -I: print session information for record creation, host, sessionid, runtime, jsoc_version, and logdir\n"
 	"  -K: show information for all links\n"
 	"  -o: online - tell the online state\n"
+    "  -O: disable the code that sets a database query time-out of 10 minutes\n"
 	"  -p: list the record's storage_unit path (retrieve if necessary)\n"
 	"  -P: list the record's storage_unit path (no retrieve)\n"
 	"  -r: recnum - show record number as first keyword\n"
@@ -846,6 +851,7 @@ int DoIt(void)
   int show_retention;
   int show_archive;
   int show_online;
+  int disableTO;
   int show_recnum;
   int show_sunum;
   int show_tapeinfo;
@@ -931,6 +937,7 @@ int DoIt(void)
   show_all_links = cmdparams_get_int (&cmdparams, "K", NULL) != 0;
   show_stats = cmdparams_get_int (&cmdparams, "s", NULL) != 0;
   show_online = cmdparams_get_int (&cmdparams, "o", NULL) != 0;
+  disableTO = cmdparams_isflagset(&cmdparams, "O");
   want_path = cmdparams_get_int (&cmdparams, "p", NULL) != 0;
   want_path_noret = cmdparams_get_int (&cmdparams, "P", NULL) != 0;
   quiet = cmdparams_get_int (&cmdparams, "q", NULL) != 0;
@@ -948,6 +955,20 @@ int DoIt(void)
       {
           autobangstr = "[! 1=1 !]";
       }
+      
+      
+      // Set a 10-minute database statement time-out. This code can be disabled by providing the 
+      // -O flag on the command-line. THIS CAN ONLY BE DONE IN DIRECT-CONNECT CODE! We don't want
+      // to have a socket-connect module affect the time-out for all drms_server clients.
+#ifndef DRMS_CLIENT
+      if (!disableTO && drms_env->dbtimeout == INT_MIN)
+      {
+          if (db_settimeout(drms_env->session->db_handle, 600000))
+          {
+              fprintf(stderr, "Failed to modify db-statement time-out to %d.\n", 600000);
+          }
+      }
+#endif
       
   if(want_path_noret) want_path = 1;	/* also set this flag */
 
@@ -1204,6 +1225,18 @@ int DoIt(void)
        * or not any recognizable series.  Try for non-drms series before quitting (drms_open_records()
        * handles a few different types of series specifiers. */
       recordset = drms_open_records (drms_env, in, &status);
+          
+          if (status == DRMS_ERROR_QUERYFAILED)
+          {
+              /* Check for error message. */
+              const char *emsg = DB_GetErrmsg(drms_env->session->db_handle);
+              
+              if (emsg)
+              {
+                  fprintf(stderr, "DB error message: %s\n", emsg);
+              }
+          }
+          
       if (!recordset) 
         {
         fprintf(stderr,"### show_info: series %s not found.\n",seriesname);
@@ -1338,10 +1371,29 @@ int DoIt(void)
     {
     recordset = drms_open_nrecords (drms_env, in, max_recs, &status);
     }
+      
+      if (status == DRMS_ERROR_QUERYFAILED)
+      {
+          /* Check for error message. */
+          const char *emsg = DB_GetErrmsg(drms_env->session->db_handle);
+          
+          if (emsg)
+          {
+              fprintf(stderr, "DB error message: %s\n", emsg);
+          }
+      }
 
   if (!recordset) 
     {
-    fprintf(stderr,"### show_info: series %s not found.\n",in);
+        if (status == DRMS_ERROR_UNKNOWNSERIES)
+        {
+            fprintf(stderr,"### show_info: series %s not found.\n",in);
+        }
+        else if (status == DRMS_ERROR_DBTIMEOUT)
+        {
+            fprintf(stderr,"### show_info: unable to open recordset, db query timeout.\n");
+        }
+        
     show_info_return(1);
     }
 
@@ -1445,7 +1497,19 @@ int DoIt(void)
          rec = drms_recordset_fetchnext(drms_env, recordset, &status, &cstat, &newchunk);
 
          /* ART - status may be DRMS_REMOTESUMS_TRYLATER, but there should still be a
-          * valid record in rec. */
+          * valid record in rec, unless the recordset is bad or there was a db timeout. */
+          
+          if (status == DRMS_ERROR_QUERYFAILED)
+          {
+              /* Check for error message. */
+              const char *emsg = DB_GetErrmsg(drms_env->session->db_handle);
+              
+              if (emsg)
+              {
+                  fprintf(stderr, "DB error message: %s\n", emsg);
+                  show_info_return(1);
+              }
+          }
 
          if (rec->suinfo == NULL)
          {
