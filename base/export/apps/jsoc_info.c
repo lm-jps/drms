@@ -592,7 +592,7 @@ if (DEBUG) fprintf(stderr," link: %s\n",link->info->name);
   return;
   }
 
-void get_series_stats(DRMS_Record_t *rec, json_t *jroot)
+static int get_series_stats(DRMS_Record_t *rec, json_t *jroot)
   {
   DRMS_RecordSet_t *rs;
   int nprime;
@@ -607,6 +607,16 @@ void get_series_stats(DRMS_Record_t *rec, json_t *jroot)
     sprintf(query,"%s[:#^]", rec->seriesinfo->seriesname);
   rs = drms_open_nrecords(rec->env, query, 1, &status);
 
+  if (status == DRMS_ERROR_QUERYFAILED)
+  {
+     if (rs) 
+     {
+        drms_free_records(rs);
+     }
+
+     return status;
+  }
+
   if (!rs || rs->n < 1)
     {
     json_insert_pair_into_object(interval, "FirstRecord", json_new_string("NA"));
@@ -616,7 +626,7 @@ void get_series_stats(DRMS_Record_t *rec, json_t *jroot)
     json_insert_pair_into_object(interval, "MaxRecnum", json_new_number("0"));
     if (rs) drms_free_records(rs);
     json_insert_pair_into_object(jroot, "Interval", interval);
-    return;
+    return DRMS_SUCCESS;
     }
   else
     {
@@ -638,6 +648,17 @@ if (status != JSON_OK) fprintf(stderr, "json_insert_pair_into_object, status=%d,
     else
       sprintf(query,"%s[:#$]", rec->seriesinfo->seriesname);
     rs = drms_open_nrecords(rec->env, query, -1, &status);
+
+    if (status == DRMS_ERROR_QUERYFAILED)
+    {
+       if (rs)
+       {
+          drms_free_records(rs);
+       }
+
+       return status;
+    }
+
     drms_sprint_rec_query(recquery,rs->records[0]);
     jsonquery = string_to_json(recquery);
     json_insert_pair_into_object(interval, "LastRecord", json_new_string(jsonquery));
@@ -648,6 +669,17 @@ if (status != JSON_OK) fprintf(stderr, "json_insert_pair_into_object, status=%d,
  
     sprintf(query,"%s[:#$]", rec->seriesinfo->seriesname);
     rs = drms_open_records(rec->env, query, &status);
+
+    if (status == DRMS_ERROR_QUERYFAILED)
+    {
+       if (rs)
+       {
+          drms_free_records(rs);
+       }
+
+       return status;
+    }
+
     sprintf(val,"%lld", rs->records[0]->recnum);
     json_insert_pair_into_object(interval, "MaxRecnum", json_new_number(val));
     drms_free_records(rs);
@@ -736,6 +768,7 @@ report_summary(const char *host, double StartTime, const char *remote_IP, const 
   manage_userhandle(0, userhandle); \
   return(1);	\
   }
+
 
 /* callback that fires when the signal thread catches the SIGINT signal. */
 int OnSIGINT(void *data)
@@ -829,11 +862,39 @@ wantowner = cmdparams_get_int (&cmdparams, "o", NULL);
     if ((p = index(seriesname,'['))) *p = '\0';
     if ((p = index(seriesname,'{'))) *p = '\0';
     rec = drms_template_record (drms_env, seriesname, &status);
-    if (status)
-      JSONDIE("series not found");
+        
+        if (status == DRMS_ERROR_QUERYFAILED)
+        {
+            const char *emsg = DB_GetErrmsg(drms_env->session->db_handle);
+            
+            if (emsg)
+            {
+                JSONDIE(emsg);
+            }
+            else
+            {
+                JSONDIE("problem with database query");
+            }
+        }
+        else if (status)
+            JSONDIE("series not found");
+        
     jroot = json_new_object();
     list_series_info(drms_env, rec, jroot);
-    get_series_stats(rec, jroot);
+    if (get_series_stats(rec, jroot) == DRMS_ERROR_QUERYFAILED)
+    {
+       const char *emsg = DB_GetErrmsg(drms_env->session->db_handle);
+
+       if (emsg)
+       {
+          JSONDIE(emsg);
+       }
+       else
+       {
+          JSONDIE("problem with database query");
+       }
+    }
+
     json_insert_runtime(jroot, StartTime);
     json_insert_pair_into_object(jroot, "status", json_new_number("0"));
     json_tree_to_string(jroot,&json);
@@ -865,15 +926,53 @@ wantowner = cmdparams_get_int (&cmdparams, "o", NULL);
     if (countlimit)
       {
       DRMS_RecordSet_t *recordset = drms_open_nrecords (drms_env, in, max_recs, &status);
-      count = recordset->n;
+          
+          if (status == DRMS_ERROR_QUERYFAILED)
+          {
+              const char *emsg = DB_GetErrmsg(drms_env->session->db_handle);
+              
+              if (emsg)
+              {
+                  JSONDIE(emsg);
+              }
+              else
+              {
+                  JSONDIE("problem with database query");
+              }
+          }
+          
+          if (recordset)
+          {
+              count = recordset->n;
+          }
+          else
+          {
+              drms_close_records(recordset, DRMS_FREE_RECORD);
+              JSONDIE("unable to open records");
+          }
+          
       drms_close_records(recordset, DRMS_FREE_RECORD);
       }
     else
       count = drms_count_records(drms_env, (char *)in, &status);
     if (bracket)
 	*bracket = '{';
-    if (status)
-      JSONDIE("series not found");
+    if (status == DRMS_ERROR_QUERYFAILED)
+    {
+        const char *emsg = DB_GetErrmsg(drms_env->session->db_handle);
+        
+        if (emsg)
+        {
+            JSONDIE(emsg);
+        }
+        else
+        {
+            JSONDIE("problem with database query");
+        }
+    }
+    else if (status)
+        JSONDIE("series not found");
+    
     /* send the output json back to client */
     sprintf(val, "%d", count);
     json_insert_pair_into_object(jroot, "count", json_new_number(val));
@@ -930,7 +1029,20 @@ wantowner = cmdparams_get_int (&cmdparams, "o", NULL);
     lbracket = index(seriesname, '[');
     if (lbracket) *lbracket = '\0';
     template = drms_template_record(drms_env, seriesname, &status);
-    if (status)
+    if (status == DRMS_ERROR_QUERYFAILED)
+    {
+       const char *emsg = DB_GetErrmsg(drms_env->session->db_handle);
+
+       if (emsg)
+       {
+          JSONDIE(emsg);
+       }
+       else
+       {
+          JSONDIE("problem with database query");
+       }
+    }
+    else if (status)
       JSONDIE(" jsoc_info: series not found.");
 
     /* Open record_set(s) */
@@ -941,6 +1053,20 @@ wantowner = cmdparams_get_int (&cmdparams, "o", NULL);
       recordset = drms_open_records (drms_env, in, &status);
     else // max_recs specified via "n=" parameter.                                                                            
       recordset = drms_open_nrecords (drms_env, in, max_recs, &status);
+
+    if (status == DRMS_ERROR_QUERYFAILED)
+    {
+       const char *emsg = DB_GetErrmsg(drms_env->session->db_handle);
+
+       if (emsg)
+       {
+          JSONDIE(emsg);
+       }
+       else
+       {
+          JSONDIE("problem with database query");
+       }
+    }
 
     if (!recordset) 
       JSONDIE(" jsoc_info: series not found.");

@@ -4451,6 +4451,8 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
 
   char *lcseries = strdup(seriesname);
 
+  stat = DRMS_SUCCESS;
+
   if (!lcseries)
   {
      stat = DRMS_ERROR_OUTOFMEMORY;
@@ -4645,6 +4647,11 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
 
     err = GetTableOID(env, ns, table, &oid);
 
+    if (err == DRMS_ERROR_QUERYFAILED)
+    {
+       stat = DRMS_ERROR_QUERYFAILED;
+    }
+
     if (ns)
     {
        free(ns);
@@ -4663,6 +4670,11 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
     if (oid)
     {
        free(oid);
+    }
+
+    if (stat)
+    {
+       goto bailout;
     }
 
     /* Populate series info segments, keywords, and links part */
@@ -8855,6 +8867,12 @@ int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status)
      goto failure;
 
    tres = drms_query_txt(env->session,  query);
+    
+    if (!tres)
+    {
+        stat = DRMS_ERROR_QUERYFAILED;
+        goto failure;
+    }
 
    if (tres && tres->num_rows == 1 && tres->num_cols == 1)
      count = atoi(tres->field[0][0]);

@@ -1389,10 +1389,6 @@ int DoIt(void)
         {
             fprintf(stderr,"### show_info: series %s not found.\n",in);
         }
-        else if (status == DRMS_ERROR_DBTIMEOUT)
-        {
-            fprintf(stderr,"### show_info: unable to open recordset, db query timeout.\n");
-        }
         
     show_info_return(1);
     }

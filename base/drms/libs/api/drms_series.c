@@ -1712,7 +1712,7 @@ int GetTableOID(DRMS_Env_t *env, const char *ns, const char *table, char **oid)
    else if ((qres = drms_query_bin(session, query)) == NULL)
    {
       fprintf(stderr, "Invalid database query: '%s'\n", query);
-      err = 1;
+      err = DRMS_ERROR_QUERYFAILED;
    }
    else
    {
