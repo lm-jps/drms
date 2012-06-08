@@ -1335,6 +1335,74 @@ static int SetKeyInternal(DRMS_Record_t *rec, const char *key, DRMS_Value_t *val
    }
 }
 
+static int AppendStrKeyInternal(DRMS_Record_t *rec, const char *key, const char *val)
+{
+    DRMS_Keyword_t *keyword = NULL;
+    int rv;
+    
+    if (rec && val && *val)
+    {
+        keyword = drms_keyword_lookup(rec, key, 0);
+        if (keyword != NULL)
+        {
+            if (keyword->info->islink || drms_keyword_isconstant(keyword) || drms_keyword_isslotted(keyword))
+            {
+                rv = DRMS_ERROR_KEYWORDREADONLY;
+            }
+            else if (keyword->info->type != DRMS_TYPE_STRING)
+            {
+                rv = DRMS_ERROR_INVALIDDATA;
+            }
+            else
+            {
+                /* Append to old string, if it exists, otherwise just assign. */
+                if (keyword->value.string_val)
+                {
+                    char *tmp = NULL;
+                    
+                    if (*keyword->value.string_val)
+                    {    
+                        size_t strsz = strlen(keyword->value.string_val) + strlen(val) + 2;
+                        tmp = malloc(strsz);
+                        snprintf(tmp, strsz, "%s\n%s", keyword->value.string_val, val);
+                    }
+                    else
+                    {
+                        tmp = strdup(val);
+                    }
+                    
+                    free(keyword->value.string_val);
+                    keyword->value.string_val = tmp;
+                }
+                else
+                {
+                    keyword->value.string_val = strdup(val);
+                }
+            }
+        }
+        else
+        {
+            rv = DRMS_ERROR_UNKNOWNKEYWORD;
+        }
+    }
+    else
+    {
+        rv = DRMS_ERROR_INVALIDDATA;
+    }
+    
+    return rv;
+}
+
+int drms_appendhistory(DRMS_Record_t *rec, const char *str)
+{
+    return AppendStrKeyInternal(rec, "HISTORY", str);
+}
+
+int drms_appendcomment(DRMS_Record_t *rec, const char *str)
+{
+    return AppendStrKeyInternal(rec, "COMMENT", str);
+}
+
 int drms_setkey(DRMS_Record_t *rec, const char *key, DRMS_Type_t type, 
 		DRMS_Type_Value_t *value)
 {

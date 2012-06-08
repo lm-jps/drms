@@ -48,6 +48,10 @@ DRMS_Type_Value_t drms_getkey(DRMS_Record_t *rec, const char *key,
 			      DRMS_Type_t *type, int *status);
 DRMS_Value_t drms_getkey_p(DRMS_Record_t *rec, const char *key, int *status);
 
+/* HISTORY and COMMENT keywords. */
+int drms_appendhistory(DRMS_Record_t *rec, const char *str);
+int drms_appendcomment(DRMS_Record_t *rec, const char *str);
+
 /* Versions with type conversion. */
 int drms_setkey_char(DRMS_Record_t *rec, const char *key, char value);
 int drms_setkey_short(DRMS_Record_t *rec, const char *key, short value);
