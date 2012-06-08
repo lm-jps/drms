@@ -49,8 +49,8 @@ DRMS_Type_Value_t drms_getkey(DRMS_Record_t *rec, const char *key,
 DRMS_Value_t drms_getkey_p(DRMS_Record_t *rec, const char *key, int *status);
 
 /* HISTORY and COMMENT keywords. */
-int drms_appendhistory(DRMS_Record_t *rec, const char *str);
-int drms_appendcomment(DRMS_Record_t *rec, const char *str);
+int drms_appendhistory(DRMS_Record_t *rec, const char *str, int newline);
+int drms_appendcomment(DRMS_Record_t *rec, const char *str, int newline);
 
 /* Versions with type conversion. */
 int drms_setkey_char(DRMS_Record_t *rec, const char *key, char value);
@@ -61,6 +61,7 @@ int drms_setkey_float(DRMS_Record_t *rec, const char *key, float value);
 int drms_setkey_double(DRMS_Record_t *rec, const char *key, double value);
 int drms_setkey_time(DRMS_Record_t *rec, const char *key, TIME value);
 int drms_setkey_string(DRMS_Record_t *rec, const char *key, const char *value);
+int drms_appkey_string(DRMS_Record_t *rec, const char *key, const char *value);
 
 /* Generic version. */
 int drms_setkey(DRMS_Record_t *rec, const char *key, DRMS_Type_t type, 
@@ -319,6 +320,42 @@ static inline int drms_keyword_ranksort(const void *he1, const void *he2)
 */
 
 /**
+ @fn int drms_appendhistory(DRMS_Record_t *rec, const char *str, int newline);
+ 
+ Append a text string to the \a HISTORY keyword's value.
+ 
+ If the record \a rec has an \a HISTORY keyword, and if the \a HISTORY keyword has an existing non-empty-string value, 
+ the text string \a str will be appended to the existing text string. If the \a HISTORY keyword has no
+ existing text-string value, then \a str will become the \a HISTORY keyword value.
+ 
+ If \a newline is set to 1, then prior to appending \a str, a newline character will be appended to an existing 
+ text-string value. If there is no existing text-string value, then \a newline has no effect.
+ 
+ @param rec The record whose \a HISTORY keyword is being modified.
+ @param str The text string to append to the \a HISTORY keyword.
+ @param newline If set to 1, then a newline will be appended to the \a HISTORY keyword's value before \a str is appended.
+ @return The DRMS status (see drms_statuscodes.h).
+ */
+
+/**
+ @fn int drms_appendcomment(DRMS_Record_t *rec, const char *str, int newline);
+ 
+ Append a text string to the \a COMMENT keyword's value.
+ 
+ If the record \a rec has an \a COMMENT keyword, and if the \a COMMENT keyword has an existing non-empty-string value, 
+ the text string \a str will be appended to the existing text string. If the \a COMMENT keyword has no
+ existing text-string value, then \a str will become the \a COMMENT keyword value.
+ 
+ If \a newline is set to 1, then prior to appending \a str, a newline character will be appended to an existing 
+ text-string value. If there is no existing text-string value, then \a newline has no effect.
+ 
+ @param rec The record whose \a COMMENT keyword is being modified.
+ @param str The text string to append to the \a COMMENT keyword.
+ @param newline If set to 1, then a newline will be appended to the \a COMMENT keyword's value before \a str is appended.
+ @return The DRMS status (see drms_statuscodes.h).
+ */
+
+/**
    @fn int drms_setkey_char(DRMS_Record_t *rec, const char *key, char value)
    blah blah
 */
@@ -357,6 +394,22 @@ static inline int drms_keyword_ranksort(const void *he1, const void *he2)
    @fn int drms_setkey_string(DRMS_Record_t *rec, const char *key, const char *value)
    blah blah
 */
+
+/**
+ @fn int drms_appkey_string(DRMS_Record_t *rec, const char *key, const char *value)
+ 
+ Append a text string to a string keyword's existing value.
+ 
+ If the record \a rec has a keyword named \a key, and if this keyword has an existing non-empty-string value, 
+ the text string \a value will be appended to the existing text string. If the keyword has no
+ existing text-string value, then \a str will become the new keyword value.
+ 
+ @param rec The record whose \a key keyword is being modified.
+ @param key The keyword to modify.
+ @param value The text string to append to the \a key keyword.
+ @return The DRMS status (see drms_statuscodes.h).
+ */
+
 
 /**
    @fn int drms_setkey(DRMS_Record_t *rec, const char *key, DRMS_Type_t type, DRMS_Type_Value_t *value)

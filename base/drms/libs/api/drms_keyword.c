@@ -1335,7 +1335,7 @@ static int SetKeyInternal(DRMS_Record_t *rec, const char *key, DRMS_Value_t *val
    }
 }
 
-static int AppendStrKeyInternal(DRMS_Record_t *rec, const char *key, const char *val)
+static int AppendStrKeyInternal(DRMS_Record_t *rec, const char *key, const char *val, int newline)
 {
     DRMS_Keyword_t *keyword = NULL;
     int rv;
@@ -1364,7 +1364,15 @@ static int AppendStrKeyInternal(DRMS_Record_t *rec, const char *key, const char 
                     {    
                         size_t strsz = strlen(keyword->value.string_val) + strlen(val) + 2;
                         tmp = malloc(strsz);
-                        snprintf(tmp, strsz, "%s\n%s", keyword->value.string_val, val);
+                        
+                        if (newline)
+                        {
+                            snprintf(tmp, strsz, "%s\n%s", keyword->value.string_val, val);
+                        }
+                        else
+                        {
+                            snprintf(tmp, strsz, "%s%s", keyword->value.string_val, val);
+                        }
                     }
                     else
                     {
@@ -1393,14 +1401,14 @@ static int AppendStrKeyInternal(DRMS_Record_t *rec, const char *key, const char 
     return rv;
 }
 
-int drms_appendhistory(DRMS_Record_t *rec, const char *str)
+int drms_appendhistory(DRMS_Record_t *rec, const char *str, int newline)
 {
-    return AppendStrKeyInternal(rec, "HISTORY", str);
+    return AppendStrKeyInternal(rec, "HISTORY", str, newline);
 }
 
-int drms_appendcomment(DRMS_Record_t *rec, const char *str)
+int drms_appendcomment(DRMS_Record_t *rec, const char *str, int newline)
 {
-    return AppendStrKeyInternal(rec, "COMMENT", str);
+    return AppendStrKeyInternal(rec, "COMMENT", str, newline);
 }
 
 int drms_setkey(DRMS_Record_t *rec, const char *key, DRMS_Type_t type, 
@@ -1485,6 +1493,11 @@ int drms_setkey_string(DRMS_Record_t *rec, const char *key, const char *value)
    free(v.string_val);
    v.string_val = NULL;
    return ret;
+}
+
+int drms_appkey_string(DRMS_Record_t *rec, const char *key, const char *value)
+{
+    return AppendStrKeyInternal(rec, key, value, 0);
 }
 
 int drms_keyword_inclass(DRMS_Keyword_t *key, DRMS_KeywordClass_t class)
