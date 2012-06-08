@@ -221,6 +221,7 @@ bool_t xdr_sum_info_t(XDR *xdrs, SUM_info_t *objp);
 #define TAPERECONNECTDO ((uint32_t)17)
 #define CONFIGDO ((uint32_t)18)
 #define INFODOARRAY ((uint32_t)19)
+#define SUMREPARTN ((uint32_t)20)
 
 extern KEY *sumdo_1();
 extern KEY *opendo_1();
@@ -244,6 +245,7 @@ extern KEY *sumrmdo_1();
 ***********************************/
 extern KEY *delseriesdo_1();
 extern KEY *configdo_1();
+extern KEY *repartndo_1();
 
 /* This is the tape_svc program registration */
 #define TAPEPROG ((uint32_t)0x20000612)  /* 536872466 */
@@ -542,6 +544,7 @@ struct sumoffcnt {
   int tapefns[MAXSUMREQCNT];
   int reqofflinenum[MAXSUMREQCNT];
   uint64_t dsix[MAXSUMREQCNT];
+  uint32_t sprog;		//added 22May2012
 };
 typedef struct sumoffcnt SUMOFFCNT;
  
@@ -622,6 +625,7 @@ int SUM_infoArray(SUM_t *sum, uint64_t *dxarray, int reqcnt, int (*history)(cons
 void SUM_infoEx_free(SUM_t *sum);
 void SUM_infoArray_free(SUM_t *sum);
 int SUM_nop();
+int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...));
 
 int NC_PaUpdate();
 SUMID_t SUMLIB_Open();
