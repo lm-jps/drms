@@ -284,11 +284,12 @@ static unsigned long long MapexportRecordToDir(DRMS_Record_t *recin,
    DRMS_Segment_t *segin = NULL;
    DRMS_Segment_t *tgtseg = NULL; /* If segin is a linked segment, then tgtset is the segment in the target series. */
    unsigned long long tsize = 0;
+    unsigned long long expsize = 0;
+    char *actualfname = NULL;
    char dir[DRMS_MAXPATHLEN];
    char fmtname[DRMS_MAXPATHLEN];
    char fullfname[DRMS_MAXPATHLEN];
    char query[DRMS_MAXQUERYLEN];
-   struct stat filestat;
    HIterator_t *last = NULL;
    int iseg;
    int lastcparms;
@@ -352,13 +353,15 @@ static unsigned long long MapexportRecordToDir(DRMS_Record_t *recin,
                                              !lastcparms ? cparms[iseg] : NULL, 
                                              classname, 
                                              mapfile, 
-                                             fullfname);
+                                             fullfname, 
+                                             &actualfname,
+                                             &expsize);
       if (drmsstat == DRMS_ERROR_INVALIDFILE)
       {
          /* No input segment file. */
          fprintf(stderr, "Requested input file %s is missing or invalid.\n", segin->filename);
       }
-      else if (drmsstat != DRMS_SUCCESS || stat(fullfname, &filestat))
+      else if (drmsstat != DRMS_SUCCESS)
       {
          /* There was an input segment file, but for some reason the export failed. */
          modstat = kMymodErr_ExportFailed;
@@ -368,8 +371,8 @@ static unsigned long long MapexportRecordToDir(DRMS_Record_t *recin,
       else
       {
          count++;
-         tsize += filestat.st_size;
-         WritePListRecord(kPL_content, pklist, query, fmtname);
+         tsize += expsize;
+         WritePListRecord(kPL_content, pklist, query, actualfname);
       }
 
       iseg++;
@@ -392,6 +395,11 @@ static unsigned long long MapexportRecordToDir(DRMS_Record_t *recin,
       hiter_destroy(&last);
    }
 
+    if (actualfname)
+    {
+        free(actualfname);
+    }
+    
    if (status)
    {
       *status = modstat;
@@ -537,6 +545,8 @@ static MymodError_t CallExportToFile(DRMS_Segment_t *segout,
    char filein[DRMS_MAXPATHLEN];
    char basename[DRMS_MAXPATHLEN];
    unsigned long long size = 0;
+    unsigned long long expsize = 0;
+    char *actualfname = NULL;
    struct stat filestat;
 
    if (segout)
@@ -560,7 +570,7 @@ static MymodError_t CallExportToFile(DRMS_Segment_t *segout,
             CHECKSNPRINTF(snprintf(segout->filename, DRMS_MAXSEGFILENAME, "%s", basename), DRMS_MAXSEGFILENAME);
             drms_segment_filename(segout, fileout);
 
-            status = fitsexport_mapexport_tofile(segin, cparms, clname, mapfile, fileout);
+            status = fitsexport_mapexport_tofile(segin, cparms, clname, mapfile, fileout, &actualfname, &expsize);
             if (status == DRMS_ERROR_INVALIDFILE)
             {
                /* No input file for segment - not necessarily an error. */
@@ -599,6 +609,11 @@ static MymodError_t CallExportToFile(DRMS_Segment_t *segout,
       *szout = size;
       snprintf(filewritten, DRMS_MAXPATHLEN, "%s", basename);
    }
+    
+    if (actualfname)
+    {
+        free(actualfname);
+    }
 
    return err;
 }

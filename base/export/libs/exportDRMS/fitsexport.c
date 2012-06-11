@@ -659,9 +659,9 @@ static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key,
 }
 
 /* These two function export to FITS files only. */
-int fitsexport_export_tofile(DRMS_Segment_t *seg, const char *cparms, const char *fileout)
+int fitsexport_export_tofile(DRMS_Segment_t *seg, const char *cparms, const char *fileout, char **actualfname, unsigned long long *expsize)
 {
-   return fitsexport_mapexport_tofile(seg, cparms, NULL, NULL, fileout);
+   return fitsexport_mapexport_tofile(seg, cparms, NULL, NULL, fileout, actualfname, expsize);
 }
 
 /* Input seg must be the source segment, not the target segment, if the input seg is a linked segment. */
@@ -669,7 +669,9 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
                                 const char *cparms, 
                                 const char *clname, 
                                 const char *mapfile,
-                                const char *fileout)
+                                const char *fileout,
+                                char **actualfname,
+                                unsigned long long *expsize)
 {
    int status = DRMS_SUCCESS;
 
@@ -677,6 +679,8 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
    char filename[DRMS_MAXPATHLEN]; 
    struct stat stbuf;
    DRMS_Segment_t *tgtseg = NULL;
+    char realfileout[DRMS_MAXPATHLEN];
+    struct stat filestat;
 
    if (seg->info->islink)
    {
@@ -718,6 +722,8 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
          {
             swval = seg->info->protocol;
          }
+          
+          snprintf(realfileout, sizeof(realfileout), "%s", fileout);
 
          switch (swval)
          {
@@ -730,6 +736,41 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
             case DRMS_FITS:
               /* intentional fall-through */
             case DRMS_TAS:
+             {
+                 /* If we are reading a single record from a TAS file, this means that we're 
+                  * reading a single slice. fileout will have a .tas extension, since 
+                  * the output file name is derived from the input file name. We need to 
+                  * substitute .fits for .tas. */
+                 size_t len = strlen(realfileout) + 64;
+                 size_t lenstr;
+                 char *dup = malloc(len);
+                 snprintf(dup, len, "%s", realfileout);
+
+                 if (dup)
+                 {
+                     lenstr = strlen(dup);
+                     strtolower(dup);
+                     if (lenstr > 0 && dup[lenstr - 1] == 's' && dup[lenstr - 2] == 'a' && dup[lenstr - 3] == 't' && dup[lenstr - 4] == '.')
+                     {
+                         *(dup + lenstr - 3) = '\0';
+                         snprintf(realfileout, sizeof(realfileout), "%sfits", dup);
+                     }
+                     else
+                     {
+                         fprintf(stderr, "Unexpected export file name '%s'.\n", dup);
+                         free(dup);
+                         status = DRMS_ERROR_EXPORT;
+                         break;
+                     }
+                     
+                     free(dup);
+                 }
+                 else
+                 {
+                     status = DRMS_ERROR_OUTOFMEMORY;
+                 }
+             }
+                 
               /* intentional fall-through */
             case DRMS_DSDS:
               /* intentional fall-through */
@@ -765,7 +806,7 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
 
                  if (arrout)
                  {
-                    status = ExportFITS(seg->record->env, arrout, fileout, cparms ? cparms : (seg->info->islink ? tgtseg->cparms : seg->cparms), fitskeys);
+                    status = ExportFITS(seg->record->env, arrout, realfileout, cparms ? cparms : (seg->info->islink ? tgtseg->cparms : seg->cparms), fitskeys);
                     drms_free_array(arrout);	     
                  }
               }
@@ -776,9 +817,9 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
 
                  /* Simply copy the file from the segment's data-file path
                   * to fileout, no keywords to worry about. */
-                 if (CopyFile(filename, fileout, &ioerr) != stbuf.st_size)
+                 if (CopyFile(filename, realfileout, &ioerr) != stbuf.st_size)
                  {
-                    fprintf(stderr, "Unable to export file '%s' to '%s'.\n", filename, fileout);
+                    fprintf(stderr, "Unable to export file '%s' to '%s'.\n", filename, realfileout);
                     status = DRMS_ERROR_FILECOPY;
                  }
               }
@@ -788,6 +829,17 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
                       "Data export does not support data segment protocol '%s'.\n", 
                       drms_prot2str(seg->info->protocol));
          }
+          
+          /* Ensure file got created. */
+          if (stat(realfileout, &filestat))
+          {
+              status = DRMS_ERROR_EXPORT;
+          }
+          else if (expsize)
+          {
+              *actualfname = strdup(basename(realfileout));
+              *expsize = filestat.st_size;
+          }
    
          cfitsio_free_keys(&fitskeys);
       }
