@@ -198,6 +198,32 @@ KEY *configdo_1(KEY *params)
   return((KEY *)1);			/* nothing will be sent later */
 }
 
+/* Called by the SUM API SUM_repartn() in order to get this sums process
+ * to reread the sum_partn_avail DB table. (Used after a change to the
+ * sum_partn_avail DB table.)
+ * Returns 0 if error. Called:
+ * USER:           KEYTYP_STRING   production
+ * DEBUGFLG:	   KEYTYPE_INT	   0
+ * uid:		   KEYTYP_UINT64   574
+*/
+KEY *repartndo_1(KEY *params)
+{
+  int stat;
+
+  stat = DS_PavailRequest2();
+  if(!stat) {
+    write_time();
+    write_log("Successful reread of sum_partn_avail DB table\n");
+    rinfo = 0;
+  }
+  else {
+    write_log("Unsuccessful reread of sum_partn_avail DB table\n");
+    rinfo = 1;
+  }
+  send_ack();				/* ack original sum_svc caller */
+  return((KEY *)1);			/* nothing will be sent later */
+}
+
 /* Called by the SUM API SUM_shutdown() making a clnt_call to sum_svc for the
  * SHUTDO procedure. First sets the NO_OPEN flag to prevent further 
  * SUM_open's by a user if QUERY = 0. NOTE: QUERY =1 will clear NO_OPEN. 
