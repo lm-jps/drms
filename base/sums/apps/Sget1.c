@@ -610,6 +610,12 @@ sumprog_1(rqstp, transp)
 		xdr_result = xdr_uint32_t;
 		local = (char *(*)()) tapereconnectdo_1;
 		break;
+	case SUMREPARTN:
+		sprintf(procname, "SUMREPARTN");
+		xdr_argument = xdr_Rkey;
+		xdr_result = xdr_uint32_t;
+		local = (char *(*)()) repartndo_1;
+		break;
 	default:
                 write_log("**sumprog_1() dispatch default procedure %d,ignore\n", rqstp->rq_proc);
 		svcerr_noproc(transp);
