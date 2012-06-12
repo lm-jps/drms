@@ -62,7 +62,7 @@ endif
 
 # other tape apps
 ifneq ($(SUMS_TAPE_AVAILABLE), 0)
-BINTGT_3_$(d)	:= $(addprefix $(d)/, tapeonoff driveonoff drive0_svc drive1_svc drive2_svc drive3_svc drive4_svc drive5_svc drive6_svc drive7_svc drive8_svc drive9_svc drive10_svc drive11_svc robot0_svc sum_forker tape_svc_restart)
+BINTGT_3_$(d)	:= $(addprefix $(d)/, tapeonoff driveonoff drive0_svc drive1_svc drive2_svc drive3_svc drive4_svc drive5_svc drive6_svc drive7_svc drive8_svc drive9_svc drive10_svc drive11_svc robot0_svc sum_forker tape_svc_restart sumrepartn)
 endif
 
 TGT_$(d)        := $(BINTGT_$(d)) $(BINTGT_2_$(d)) $(BINTGT_3_$(d))
