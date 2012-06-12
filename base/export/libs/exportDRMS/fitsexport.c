@@ -727,14 +727,6 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
 
          switch (swval)
          {
-            case DRMS_BINARY:
-              /* intentional fall-through */
-            case DRMS_BINZIP:
-              /* intentional fall-through */
-            case DRMS_FITZ:
-              /* intentional fall-through */
-            case DRMS_FITS:
-              /* intentional fall-through */
             case DRMS_TAS:
              {
                  /* If we are reading a single record from a TAS file, this means that we're 
@@ -772,6 +764,14 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
              }
                  
               /* intentional fall-through */
+             case DRMS_BINARY:
+                 /* intentional fall-through */
+             case DRMS_BINZIP:
+                 /* intentional fall-through */
+             case DRMS_FITZ:
+                 /* intentional fall-through */
+             case DRMS_FITS:
+                 /* intentional fall-through */
             case DRMS_DSDS:
               /* intentional fall-through */
             case DRMS_LOCAL:
