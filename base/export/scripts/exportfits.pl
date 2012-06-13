@@ -7,6 +7,7 @@ require HTTP::Request;
 use LWP::UserAgent;
 use URI::Escape;
 use Sys::Hostname;
+use CGI;
 use JSON -support_by_pp;
 use FindBin qw($Bin);
 use lib "$Bin/../../../base/libs/perl";
@@ -167,36 +168,45 @@ sub HTTPget
     my($uri) = shift;
     my($content) = $_[0];
     
+    my($base);
+    my($args);
     my($ua);
     my($req);
     my($rsp);
     my($rv);
     
     # percent-encode the URI string.
-    uri_escape($uri);
+    $uri = URIescape($uri);
     
-    $ua = LWP::UserAgent->new();
-    $ua->agent("AgentName/0.1 " . $ua->agent);
-    
-    # Append arguments to URI. Do not use the content() member of HTTP::Request to set the arguments...
-    # i.e., this doesn't work -> $req->content("op=exp_su&sunum=$sunumlst&method=url_quick&format=txt&protocol=as-is");
-    $req = HTTP::Request->new(GET => $uri);
-    $req->content_type('application/x-www-form-urlencoded');
-    
-    # Send the request
-    $rsp = $ua->request($req);
-    
-    if ($rsp->is_error)
+    if (length($uri) > 0)
     {
-        $$content = $rsp->status_line;
-        print STDERR "$$content\n";
-        $rv = 1;
+        $ua = LWP::UserAgent->new();
+        $ua->agent("AgentName/0.1 " . $ua->agent);
+        
+        # Append arguments to URI. Do not use the content() member of HTTP::Request to set the arguments...
+        # i.e., this doesn't work -> $req->content("op=exp_su&sunum=$sunumlst&method=url_quick&format=txt&protocol=as-is");
+        $req = HTTP::Request->new(GET => $uri);
+        $req->content_type('application/x-www-form-urlencoded');
+        
+        # Send the request
+        $rsp = $ua->request($req);
+        
+        if ($rsp->is_error)
+        {
+            $$content = $rsp->status_line;
+            print STDERR "$$content\n";
+            $rv = 1;
+        }
+        else
+        {
+            # $rsp->content has result
+            $$content = $rsp->decoded_content;
+            $rv = 0;
+        }
     }
     else
     {
-        # $rsp->content has result
-        $$content = $rsp->decoded_content;
-        $rv = 0;
+        $rv = 1;
     }
 
     return $rv;
@@ -227,4 +237,43 @@ sub PrintResults
         
         print "$record\t$root$dir/$filename\n";
     }
+}
+
+sub URIescape
+{
+    my($uri) = shift;
+    my($rv);
+    my($base);
+    my($args);
+    my($arg);
+    my($argname);
+    my($argval);
+    
+    $rv = "";
+    
+    if ($uri =~ /^([^?]+)\?(.+)/)
+    {
+        $base = $1;
+        $args = $2;
+        
+        $rv = "$base?";
+        $arg = $args;
+        
+        while ($arg =~ /([^=]+)=([^&]+)&(.+)/)
+        {
+            $rv = $rv . $1 . "=" . CGI::escape($2) . "&";
+            $arg = $3;
+        }
+        
+        if ($arg =~ /(.+)=(.+)/)
+        {
+            $rv = $rv . $1 . "=" . CGI::escape($2);
+        }
+    }
+    else
+    {
+        print STDERR "Invalid URI $uri\n";
+    }
+    
+    return $rv;
 }

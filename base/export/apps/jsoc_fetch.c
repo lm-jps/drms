@@ -616,6 +616,31 @@ report_summary(const char *host, double StartTime, const char *remote_IP, const 
   fclose(log);
   }
 
+static void FreeRecSpecParts(char ***snames, int nitems)
+{
+    if (snames)
+    {
+        int iname;
+        char **snameArr = *snames;
+        
+        if (snameArr)
+        {
+            for (iname = 0; iname < nitems; iname++)
+            {
+                char *oneSname = snameArr[iname];
+                
+                if (oneSname)
+                {
+                    free(oneSname);
+                }
+            }
+            
+            free(snameArr);
+        }
+        
+        *snames = NULL;
+    }
+}
 
 /* Module main function. */
 int DoIt(void)
@@ -1312,6 +1337,41 @@ check for requestor to be valid remote DRMS site
       }
     else // normal request, check for embedded segment list
       {
+          char mbuf[1024];
+          
+          // Check for series existence. The jsoc_fetch cgi can be used outside of the 
+          // exportdata.html context, in which case there is no check for series existence
+          // before we reach this point in code. Let's catch bad-series errors here
+          // so we can tell the user that they're trying to export a non-existent 
+          // series.
+          char *allvers = NULL;
+          char **sets = NULL;
+          DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
+          char **snames = NULL;
+          int nsets = 0;
+          DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
+          int iset;
+          
+          if (drms_record_parserecsetspec(dsquery, &allvers, &sets, &settypes, &snames, &nsets, &rsinfo) == DRMS_SUCCESS)
+          { 
+              for (iset = 0; iset < nsets; iset++)
+              {
+                  
+                  if (!drms_series_exists(drms_env, snames[iset], &status))
+                  {
+                      snprintf(mbuf, sizeof(mbuf), "Cannot export series '%s' - it does not exist.\n", snames[iset]);
+                      JSONDIE(mbuf);
+                  }
+              }
+          }
+          else
+          {
+              snprintf(mbuf, sizeof(mbuf), "Bad record-set query '%s'.\n", dsquery);
+              JSONDIE(mbuf);
+          }
+          
+          FreeRecSpecParts(&snames, nsets);
+          
       if (index(dsquery,'[') == NULL)
         {
         char *cb = index(dsquery, '{');
