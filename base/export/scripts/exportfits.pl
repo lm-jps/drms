@@ -21,7 +21,7 @@ use constant kOptBaseURI   => "uri";
 use constant kOptFnameFmt  => "ffmt";
 
 # Default argument values
-use constant kDefBaseURI   => "http://jsoc.stanford.edu/cgi-bin/ajax/jsoc_fetch";
+use constant kDefBaseURI   => "http://jsoc.stanford.edu/cgi-bin/ajax";
 
 # Other constants
 use constant kTimeOut      => 300; # seconds
@@ -31,6 +31,8 @@ use constant kRetSuccess       => 0;
 use constant kRetInvalidArgs   => 1;
 use constant kRetHTTPreqFailed => 2;
 use constant kRetExpReqFailed  => 3;
+use constant kRetRsSummFailed  => 4;
+use constant kRetNoRecords     => 5;
 
 my($argsinH);
 my($optsinH);
@@ -71,6 +73,10 @@ else
     my($fnamefmt);
     my($content);
     my($reqid);
+    my($json) = JSON->new->utf8;
+    my($txt);
+    my($expstat);
+    my($errmsg);
     
     # Use the base URI provided on the command-line (default to &kDefBaseURI).
     $opt = $opts->Get(&kOptBaseURI);
@@ -89,75 +95,127 @@ else
     # This record-set-specification argument is required.
     $rsspec = $args->Get(&kArgRsSpec);
     
-    $uri = "$baseuri?op=exp_request&ds=$rsspec&protocol=fits$fnamefmt&format=json&method=url&requestor=$requestor";
+    print "CGI root: $baseuri\n";
     
-    # Send an aynchronous HTTP GET request to the server identified in $baseuri.
+    # First, check to see if user properly specified at least one record.
+    $uri = "$baseuri/jsoc_info?op=rs_summary&ds=$rsspec";
     if (!HTTPget($uri, \$content))
     {
-        my($json) = JSON->new->utf8;
-        my($txt);
-        my($expstat);
-        my($reqid);
-        
-        # The HTTP request will return JSON content. Parse that with one of Perl's built-in JSON parsers.
         $txt = $json->decode($content);
-        
-        # Extract the export-request status.
         $expstat = $txt->{status};
+        $errmsg = $txt->{error};
         
-        if ($expstat == 1 || $expstat == 2)
+        if (defined($errmsg))
         {
-            # Extract the export-request request ID. We'll need this to check on the status of the request.
-            $reqid = $txt->{requestid};
+            chomp($errmsg);
+        }
+        
+        if ($expstat == 0)
+        {
+            my($count) = $txt->{count};
             
-            # If the request succeeded, poll with a second request until we get confirmation that the 
-            # export request has completed.
-            $uri = "$baseuri?op=exp_status&requestid=$reqid";
-            while (1)
+            if ($count == 0)
             {
-                if (!HTTPget($uri, \$content))
-                {
-                    $txt = $json->decode($content);
-                    $expstat = $txt->{status};
-                    if ($expstat == 6 || $expstat == 2 || $expstat == 1)
-                    {
-                        # The request hasn't completed yet.
-                        print STDERR "Request not complete (status $expstat), trying again in 1 second\n";
-                        sleep(1);
-                        next;
-                    }
-                    elsif ($expstat == 0)
-                    {
-                        # Export complete!
-                        print STDERR "Export complete!\n";
-                        PrintResults($baseuri, $txt);
-                        last;
-                    }
-                    else
-                    {
-                        # The request errored-out.
-                        print STDERR "exp_request failure (2), status $expstat.\n";
-                        $rv = &kRetExpReqFailed;
-                    }
-                }
-                else
-                {
-                    print STDERR "HTTP GET request failure.\n";
-                    $rv = &kRetHTTPreqFailed;
-                    last;
-                }
+                # No records, bail.
+                print STDERR "Record-set specification identifies no records.\n";
+                $rv = &kRetNoRecords;
             }
         }
         else
         {
-            print STDERR "exp_request failure (1), status $expstat.\n";
-            $rv = &kRetExpReqFailed;
+            print STDERR "rs_summary failure, status $expstat: \"$errmsg\".\n";
+            $rv = &kRetRsSummFailed;
         }
     }
     else
     {
         print STDERR "HTTP GET request failure.\n";
         $rv = &kRetHTTPreqFailed;
+    }
+    
+    if ($rv == &kRetSuccess)
+    {
+        $uri = "$baseuri/jsoc_fetch?op=exp_request&ds=$rsspec&protocol=fits$fnamefmt&format=json&method=url&requestor=$requestor";
+        
+        # Send an aynchronous HTTP GET request to the server identified in $baseuri.
+        if (!HTTPget($uri, \$content))
+        {
+            my($reqid);
+            
+            # The HTTP request will return JSON content. Parse that with one of Perl's built-in JSON parsers.
+            $txt = $json->decode($content);
+            
+            # Extract the export-request status.
+            $expstat = $txt->{status};
+            $errmsg = $txt->{error};
+            
+            if (defined($errmsg))
+            {
+                chomp($errmsg);
+            }
+            
+            if ($expstat == 1 || $expstat == 2)
+            {
+                # Extract the export-request request ID. We'll need this to check on the status of the request.
+                $reqid = $txt->{requestid};
+                
+                # If the request succeeded, poll with a second request until we get confirmation that the 
+                # export request has completed.
+                $uri = "$baseuri/jsoc_fetch?op=exp_status&requestid=$reqid";
+                while (1)
+                {
+                    if (!HTTPget($uri, \$content))
+                    {
+                        $txt = $json->decode($content);
+                        $expstat = $txt->{status};
+                        $errmsg = $txt->{error};
+                        
+                        if (defined($errmsg))
+                        {
+                            chomp($errmsg);
+                        }
+                        
+                        if ($expstat == 6 || $expstat == 2 || $expstat == 1)
+                        {
+                            # The request hasn't completed yet.
+                            print STDERR "Request not complete (status $expstat), trying again in 1 second\n";
+                            sleep(1);
+                            next;
+                        }
+                        elsif ($expstat == 0)
+                        {
+                            # Export complete!
+                            print STDERR "Export complete!\n";
+                            PrintResults($baseuri, $txt);
+                            last;
+                        }
+                        else
+                        {
+                            # The request errored-out.
+                            print STDERR "exp_request failure (2), status $expstat: \"$errmsg\".\n";
+                            $rv = &kRetExpReqFailed;
+                        }
+                    }
+                    else
+                    {
+                        print STDERR "HTTP GET request failure.\n";
+                        $rv = &kRetHTTPreqFailed;
+                        last;
+                    }
+                }
+            }
+            else
+            {
+                # Parse response to obtain the error message
+                print STDERR "exp_request failure (1), status $expstat: \"$errmsg\".\n";
+                $rv = &kRetExpReqFailed;
+            }
+        }
+        else
+        {
+            print STDERR "HTTP GET request failure.\n";
+            $rv = &kRetHTTPreqFailed;
+        }
     }
 }
 
@@ -222,20 +280,27 @@ sub PrintResults
     my($filename);
     my($root);
     
-    if ($baseuri =~ /\s*(http:\/\/[^\/]+)\//)
+    if ($rspjson->{count} > 0)
     {
-        $root = $1;
-    }   
-    
-    print "URLs of requested data files:\n";
-    $dir = $rspjson->{dir};
-    
-    foreach my $datum (@{$rspjson->{data}})
-    {
-        $record = $datum->{record};
-        $filename = $datum->{filename};
+        if ($baseuri =~ /\s*(http:\/\/[^\/]+)\//)
+        {
+            $root = $1;
+        }   
         
-        print "$record\t$root$dir/$filename\n";
+        print "URLs of requested data files:\n";
+        $dir = $rspjson->{dir};
+        
+        foreach my $datum (@{$rspjson->{data}})
+        {
+            $record = $datum->{record};
+            $filename = $datum->{filename};
+            
+            print "$record\t$root$dir/$filename\n";
+        }
+    }
+    else
+    {
+        print "The requested FITS files are not present, check the record-set specification.\n";
     }
 }
 
