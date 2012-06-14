@@ -399,6 +399,10 @@ static void CleanUp(int64_t **psunumarr, SUM_info_t ***infostructs, char **webar
 #define JSONDIE2(msg,info) {die(dojson,msg,info,"4",&sunumarr,&infostructs,&webarglist,series,paths,sustatus,susize,arrsize,userhandle);return(1);}
 #define JSONDIE3(msg,info) {die(dojson,msg,info,"6",&sunumarr,&infostructs,&webarglist,series,paths,sustatus,susize,arrsize,userhandle);return(1);}
 
+/* The drms_setkey_string() could fail. */
+#define JSONCOMMIT(msg,rec) {die(dojson,msg,"","4",&sunumarr,&infostructs,&webarglist,series,paths,sustatus,susize,arrsize,userhandle); if (drms_setkey_string(rec, "errmsg", msg)) return(1); drms_close_record(exprec, DRMS_INSERT_RECORD); return(0);}
+
+
 int fileupload = 0;
 
 int die(int dojson, char *msg, char *info, char *stat, int64_t **psunumarr, SUM_info_t ***infostructs, char **webarglist,
@@ -681,6 +685,7 @@ int DoIt(void)
   int dodataobj=1, dojson=1, dotxt=0, dohtml=0, doxml=0;
   DRMS_RecordSet_t *exports;
   DRMS_Record_t *export_log;
+    DRMS_Record_t *exprec = NULL;
   char new_requestid[200];
   char status_query[1000];
   char *export_series; 
@@ -1254,22 +1259,22 @@ check for requestor to be valid remote DRMS site
     if (strcmp(dsin, kNotSpecified) == 0 && (!sunumarr || sunumarr[0] < 0))
       JSONDIE("Must have valid Recordset or SU set");
 
-    export_log = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
-    if (!export_log)
+    exprec = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
+    if (!exprec)
       JSONDIE("Cant create new export control record");
-    drms_setkey_string(export_log, "RequestID", requestid);
-    drms_setkey_string(export_log, "DataSet", dsin);
-    drms_setkey_string(export_log, "Processing", process);
-    drms_setkey_string(export_log, "Protocol", protocol);
-    drms_setkey_string(export_log, "FilenameFmt", filenamefmt);
-    drms_setkey_string(export_log, "Method", method);
-    drms_setkey_string(export_log, "Format", format);
-    drms_setkey_time(export_log, "ReqTime", now);
-    drms_setkey_time(export_log, "EstTime", now+10); // Crude guess for now
-    drms_setkey_longlong(export_log, "Size", (int)size);
-    drms_setkey_int(export_log, "Status", (testmode ? 12 : 2));
-    drms_setkey_int(export_log, "Requestor", requestorid);
-    drms_close_record(export_log, DRMS_INSERT_RECORD); 
+    drms_setkey_string(exprec, "RequestID", requestid);
+    drms_setkey_string(exprec, "DataSet", dsin);
+    drms_setkey_string(exprec, "Processing", process);
+    drms_setkey_string(exprec, "Protocol", protocol);
+    drms_setkey_string(exprec, "FilenameFmt", filenamefmt);
+    drms_setkey_string(exprec, "Method", method);
+    drms_setkey_string(exprec, "Format", format);
+    drms_setkey_time(exprec, "ReqTime", now);
+    drms_setkey_time(exprec, "EstTime", now+10); // Crude guess for now
+    drms_setkey_longlong(exprec, "Size", (int)size);
+    drms_setkey_int(exprec, "Status", (testmode ? 12 : 2));
+    drms_setkey_int(exprec, "Requestor", requestorid);
+    // drms_close_record(exprec, DRMS_INSERT_RECORD); 
     } // end of exp_su
 
   /*  op == exp_request  */
@@ -1707,28 +1712,27 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
       JSONDIE("Must have valid requestID - internal error.");
     if (strcmp(dsin, "Not Specified") == 0)
       JSONDIE("Must have Recordset specified");
-     export_log = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
-     if (!export_log)
+     exprec = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
+     if (!exprec)
       JSONDIE("Cant create new export control record");
-     drms_setkey_string(export_log, "RequestID", requestid);
-     drms_setkey_string(export_log, "DataSet", dsquery);
-     drms_setkey_string(export_log, "Processing", process);
-     drms_setkey_string(export_log, "Protocol", protocol);
-     drms_setkey_string(export_log, "FilenameFmt", filenamefmt);
-     drms_setkey_string(export_log, "Method", method);
-     drms_setkey_string(export_log, "Format", format);
-     drms_setkey_time(export_log, "ReqTime", now);
-     drms_setkey_time(export_log, "EstTime", now+10); // Crude guess for now
-     drms_setkey_longlong(export_log, "Size", (int)size);
-     drms_setkey_int(export_log, "Status", (testmode ? 12 : 2));
-     drms_setkey_int(export_log, "Requestor", requestorid);
-     drms_close_record(export_log, DRMS_INSERT_RECORD);
+     drms_setkey_string(exprec, "RequestID", requestid);
+     drms_setkey_string(exprec, "DataSet", dsquery);
+     drms_setkey_string(exprec, "Processing", process);
+     drms_setkey_string(exprec, "Protocol", protocol);
+     drms_setkey_string(exprec, "FilenameFmt", filenamefmt);
+     drms_setkey_string(exprec, "Method", method);
+     drms_setkey_string(exprec, "Format", format);
+     drms_setkey_time(exprec, "ReqTime", now);
+     drms_setkey_time(exprec, "EstTime", now+10); // Crude guess for now
+     drms_setkey_longlong(exprec, "Size", (int)size);
+     drms_setkey_int(exprec, "Status", (testmode ? 12 : 2));
+     drms_setkey_int(exprec, "Requestor", requestorid);
+     // drms_close_record(exprec, DRMS_INSERT_RECORD);
      } // End of kOpExpRequest setup
     
   /*  op == exp_repeat  */
   else if (strcmp(op,kOpExpRepeat) == 0) 
     {
-    DRMS_RecordSet_t *RsClone;
     char logpath[DRMS_MAXPATHLEN];
 
     if (strcmp(requestid, kNotSpecified) == 0)
@@ -1764,6 +1768,8 @@ JSONDIE("Re-Export requests temporarily disabled.");
       JSONDIE("Can't re-request a failed or incomplete prior request");
     // if sunum and su exist, then just want the retention updated.  This will
     // be accomplished by checking the record_directory.
+        
+        // *** export_log == NULL here - not sure what it should equal, exp_repeat must not be implemented yet.
     if (drms_record_directory(export_log, logpath, 0) != DRMS_SUCCESS || *logpath == '\0')
       {  // really is no SU so go ahead and resubmit the request
       drms_close_records(exports, DRMS_FREE_RECORD);
@@ -1790,20 +1796,23 @@ JSONDIE("Re-Export requests temporarily disabled.");
       // Now switch to jsoc.export_new
       export_series = kExportSeriesNew;
       sprintf(status_query, "%s[%s]", export_series, requestid);
+          
+          // For exp_repeat, the exprec will not have been opened yet.
       exports = drms_open_records(drms_env, status_query, &status);
       if (!exports)
         JSONDIE3("Cant locate export series: ", status_query);
       if (exports->n < 1)
         JSONDIE3("Cant locate export request: ", status_query);
-      RsClone = drms_clone_records(exports, DRMS_PERMANENT, DRMS_SHARE_SEGMENTS, &status);
-      if (!RsClone)
+      exprec = drms_clone_record(exports->records[0], DRMS_PERMANENT, DRMS_SHARE_SEGMENTS, &status);
+      if (!exprec)
         JSONDIE("Cant create new export control record");
-      export_log = RsClone->records[0];
-      drms_setkey_int(export_log, "Status", 2);
-      if (requestorid)
-        drms_setkey_int(export_log, "Requestor", requestorid);
-      drms_setkey_time(export_log, "ReqTime", now);
-      drms_close_records(RsClone, DRMS_INSERT_RECORD);
+      
+          drms_setkey_int(exprec, "Status", 2);
+          if (requestorid)
+              drms_setkey_int(exprec, "Requestor", requestorid);
+          drms_setkey_time(exprec, "ReqTime", now);
+          // drms_close_records(RsClone, DRMS_INSERT_RECORD);
+          drms_close_records(exports, DRMS_FREE_RECORD);
       }
     else // old export is still available, do not repeat, but treat as status request.
       {
@@ -1811,7 +1820,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
       }
     // if repeating export then export_series is set to jsoc.export_new
     // else if just touching retention then is it jsoc_export
-    }
+    } // End kOpExpRepeat
 
   // Now report back to the requestor by dropping into the code for status request.
   // This is entry point for status request and tail of work for exp_request and exp_su
@@ -1819,29 +1828,38 @@ JSONDIE("Re-Export requests temporarily disabled.");
 
   // op = exp_status, kOpExpStatus,  Implied here
 
+    
+    // ******************************************** //
+    // A jsoc.export_new record was created in      //
+    // memory, but not saved to the db. If we're    //
+    // going to exit                                //
+    // from this module after this point, we must   //
+    // call drms_close_record() on the newly        //
+    // created record in jsoc.export_new. The       //
+    // handle to this record is exprec.             //
+    // ******************************************** //
+    
+    
   if (strcmp(requestid, kNotSpecified) == 0)
-    JSONDIE("RequestID must be provided");
+  {
+      // ART - must save exprec first (it was created in one of the case blocks above).
+      JSONCOMMIT("RequestID must be provided", exprec);
+  }
 
-  sprintf(status_query, "%s[%s]", export_series, requestid);
-  exports = drms_open_records(drms_env, status_query, &status);
-  if (!exports)
-    JSONDIE3("Cant locate export series: ", status_query);
-  if (exports->n < 1)
-    JSONDIE3("Cant locate export request: ", status_query);
-  export_log = exports->records[0];
+    // export_series is jsoc.export_new; no need to call drms_open_records(), exprec is already available
 
-  status     = drms_getkey_int(export_log, "Status", NULL);
-  dslog      = drms_getkey_string(export_log, "DataSet", NULL); /* not used */
-  process = drms_getkey_string(export_log, "Processing", NULL);
-  protocol   = drms_getkey_string(export_log, "Protocol", NULL);
-  filenamefmt = drms_getkey_string(export_log, "FilenameFmt", NULL);
-  method     = drms_getkey_string(export_log, "Method", NULL);
-  format     = drms_getkey_string(export_log, "Format", NULL);
-  reqtime    = drms_getkey_time(export_log, "ReqTime", NULL);
-  esttime    = drms_getkey_time(export_log, "EstTime", NULL); // Crude guess for now
-  size       = drms_getkey_longlong(export_log, "Size", NULL);
-  requestorid = drms_getkey_int(export_log, "Requestor", NULL);
-
+  status     = drms_getkey_int(exprec, "Status", NULL);
+  dslog      = drms_getkey_string(exprec, "DataSet", NULL); /* not used */
+  process = drms_getkey_string(exprec, "Processing", NULL);
+  protocol   = drms_getkey_string(exprec, "Protocol", NULL);
+  filenamefmt = drms_getkey_string(exprec, "FilenameFmt", NULL);
+  method     = drms_getkey_string(exprec, "Method", NULL);
+  format     = drms_getkey_string(exprec, "Format", NULL);
+  reqtime    = drms_getkey_time(exprec, "ReqTime", NULL);
+  esttime    = drms_getkey_time(exprec, "EstTime", NULL); // Crude guess for now
+  size       = drms_getkey_longlong(exprec, "Size", NULL);
+  requestorid = drms_getkey_int(exprec, "Requestor", NULL);
+    
   // Do special actions on status
   switch (status)
     {
@@ -1871,7 +1889,10 @@ JSONDIE("Re-Export requests temporarily disabled.");
             errorreply = "Request was completed but is now deleted, 7 day limit exceeded";
             break;
     default:
-      JSONDIE("Illegal status in export record");
+        {
+            // ART - must save exprec first
+            JSONCOMMIT("Illegal status in export record", exprec);
+        }
     }
 
   // Return status information to user
@@ -1891,7 +1912,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
       int c;
       char *indexfile = (dojson ? "index.json" : "index.txt");
       jroot = json_new_object();
-      if (drms_record_directory(export_log, logpath, 0) != DRMS_SUCCESS || *logpath == '\0')
+      if (drms_record_directory(exprec, logpath, 0) != DRMS_SUCCESS || *logpath == '\0')
         {
         status = 5;  // Assume storage unit expired.  XXXX better to do SUMinfo here to check
         waittime = 999999;
@@ -1903,7 +1924,13 @@ JSONDIE("Re-Export requests temporarily disabled.");
         strncat(logpath, indexfile, DRMS_MAXPATHLEN);
         fp = fopen(logpath, "r");
         if (!fp)
-          JSONDIE2("Export should be complete but return %s file not found", indexfile);
+        {
+            // ART - must save exprec first
+            char dbuf[1024];
+            
+            snprintf(dbuf, sizeof(dbuf), "Export should be complete but return %s file not found", indexfile);
+            JSONCOMMIT(dbuf, exprec);
+        }
   
         if (dojson)
           printf("Content-type: application/json\n\n");
@@ -2019,5 +2046,11 @@ JSONDIE("Re-Export requests temporarily disabled.");
 
   report_summary(Server, StartTime, Remote_Address, op, dsin, rcountlimit, status);
   CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize, userhandle);
+    
+    if (exprec)
+    {
+        drms_close_record(exprec, DRMS_INSERT_RECORD);
+    }
+    
   return(0);
   }
