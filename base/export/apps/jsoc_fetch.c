@@ -703,6 +703,7 @@ int DoIt(void)
   int arrsize = DRMS_MAXQUERYLEN/8;
     
     int postorget = 0;
+    int insertexprec = 1;
     
     if (getenv("REQUEST_METHOD"))
     {
@@ -1827,7 +1828,26 @@ JSONDIE("Re-Export requests temporarily disabled.");
   // If data was as-is and online and url_quick the exit will have happened above.
 
   // op = exp_status, kOpExpStatus,  Implied here
-
+    if (strcmp(op,kOpExpStatus) == 0)
+    {
+        // There is no case statement for kOpExpStatus above. We need to read in exprec
+        // here.
+        if (strcmp(requestid, kNotSpecified) == 0)
+        {
+            JSONDIE("RequestID must be provided");
+        }
+        
+        sprintf(status_query, "%s[%s]", kExportSeriesNew, requestid);
+        exports = drms_open_records(drms_env, status_query, &status);
+        if (!exports)	 
+            JSONDIE3("Cant locate export series: ", status_query);	 
+        if (exports->n < 1)	 
+            JSONDIE3("Cant locate export request: ", status_query);	 
+        exprec = exports->records[0];
+        exports->records[0] = NULL; // Detach this record from the record-set so we can free record-set, but not exprec.
+        drms_close_records(exports, DRMS_FREE_RECORD);
+        insertexprec = 0;
+    }
     
     // ******************************************** //
     // A jsoc.export_new record was created in      //
@@ -2049,7 +2069,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
     
     if (exprec)
     {
-        drms_close_record(exprec, DRMS_INSERT_RECORD);
+        insertexprec ? drms_close_record(exprec, DRMS_INSERT_RECORD) : drms_close_record(exprec, DRMS_FREE_RECORD);
     }
     
   return(0);
