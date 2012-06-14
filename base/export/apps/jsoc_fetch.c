@@ -1837,7 +1837,8 @@ JSONDIE("Re-Export requests temporarily disabled.");
             JSONDIE("RequestID must be provided");
         }
         
-        sprintf(status_query, "%s[%s]", kExportSeriesNew, requestid);
+        // Must check jsoc.export, NOT jsoc.export_new.
+        sprintf(status_query, "%s[%s]", kExportSeries, requestid);
         exports = drms_open_records(drms_env, status_query, &status);
         if (!exports)	 
             JSONDIE3("Cant locate export series: ", status_query);	 
