@@ -399,10 +399,6 @@ static void CleanUp(int64_t **psunumarr, SUM_info_t ***infostructs, char **webar
 #define JSONDIE2(msg,info) {die(dojson,msg,info,"4",&sunumarr,&infostructs,&webarglist,series,paths,sustatus,susize,arrsize,userhandle);return(1);}
 #define JSONDIE3(msg,info) {die(dojson,msg,info,"6",&sunumarr,&infostructs,&webarglist,series,paths,sustatus,susize,arrsize,userhandle);return(1);}
 
-/* The drms_setkey_string() could fail. */
-#define JSONCOMMIT(msg,rec) {die(dojson,msg,"","4",&sunumarr,&infostructs,&webarglist,series,paths,sustatus,susize,arrsize,userhandle); if (drms_setkey_string(rec, "errmsg", msg)) return(1); drms_close_record(exprec, DRMS_INSERT_RECORD); return(0);}
-
-
 int fileupload = 0;
 
 int die(int dojson, char *msg, char *info, char *stat, int64_t **psunumarr, SUM_info_t ***infostructs, char **webarglist,
@@ -438,6 +434,58 @@ if (DEBUG) fprintf(stderr,"%s%s\n",msg,info);
 
   return(1);
   }
+
+static int JsonCommitFn(DRMS_Record_t **exprec,
+                        int ro,
+                        int dojson, 
+                        char *msg, 
+                        char *info, 
+                        char *stat, 
+                        int64_t **psunumarr, 
+                        SUM_info_t ***infostructs, 
+                        char **webarglist,
+                        char **series, 
+                        char **paths, 
+                        char **sustatus, 
+                        char **susize, 
+                        int arrsize, 
+                        const char *userhandle)
+{
+    int rv = 1; // rollback db
+    
+    // Return some json or plain text in response to the HTTP request
+    die(dojson, msg, "", "4", psunumarr, infostructs, webarglist, series, paths, sustatus, susize, arrsize, userhandle); // ignore return value
+    
+    if (exprec && *exprec)
+    {
+        if (ro)
+        {
+            drms_close_record(*exprec, DRMS_FREE_RECORD);
+        }
+        else
+        {
+            if (drms_setkey_int(*exprec, "Status", 4))
+            {
+                drms_close_record(*exprec, DRMS_FREE_RECORD);
+                rv = 1;
+            }
+            else
+            {
+                // Don't worry about errmsg-write failure.
+                drms_setkey_string(*exprec, "errmsg", msg);
+                drms_close_record(*exprec, DRMS_INSERT_RECORD);
+                rv = 0;
+            }
+        }
+        
+        *exprec = NULL;
+    }
+    
+    return rv;
+}
+
+#define JSONCOMMIT(msg,rec,ro) {return JsonCommitFn(rec, ro, dojson, msg, "", "4", &sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize, userhandle);};
+
 
 static int send_file(DRMS_Record_t *rec, int segno, char *pathret, int size)
   {
@@ -1864,7 +1912,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
   if (strcmp(requestid, kNotSpecified) == 0)
   {
       // ART - must save exprec first (it was created in one of the case blocks above).
-      JSONCOMMIT("RequestID must be provided", exprec);
+      JSONCOMMIT("RequestID must be provided", &exprec, !insertexprec);
   }
 
     // export_series is jsoc.export_new; no need to call drms_open_records(), exprec is already available
@@ -1912,7 +1960,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
     default:
         {
             // ART - must save exprec first
-            JSONCOMMIT("Illegal status in export record", exprec);
+            JSONCOMMIT("Illegal status in export record", &exprec, !insertexprec);
         }
     }
 
@@ -1950,7 +1998,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
             char dbuf[1024];
             
             snprintf(dbuf, sizeof(dbuf), "Export should be complete but return %s file not found", indexfile);
-            JSONCOMMIT(dbuf, exprec);
+            JSONCOMMIT(dbuf, &exprec, !insertexprec);
         }
   
         if (dojson)
