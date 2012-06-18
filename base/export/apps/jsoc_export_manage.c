@@ -2350,7 +2350,7 @@ static void ErrorOutExpRec(DRMS_Record_t **exprec, int expstatus, const char *mb
     // Print mbuf to stderr
     if (mbuf)
     {
-        fprintf(stderr, "%s", mbuf);
+        fprintf(stderr, "%s\n", mbuf);
     }
     
     // Write to export record in jsoc.export
@@ -2373,7 +2373,7 @@ static void ErrorOutExpNewRec(DRMS_RecordSet_t *exprecs, DRMS_Record_t **exprec,
     // Print mbuf to stderr
     if (mbuf)
     {
-        fprintf(stderr, "%s", mbuf);
+        fprintf(stderr, "%s\n", mbuf);
     }
     
     // Write to export record in jsoc.export
@@ -2412,7 +2412,7 @@ static int DBCOMM(DRMS_Record_t **rec, const char *mbuf, int expstatus)
             return 1; // Abort db changes
         }
         
-        drms_setkey_string(*rec, "errmsg", expstatus);
+        drms_setkey_string(*rec, "errmsg", mbuf);
         drms_close_record(*rec, DRMS_INSERT_RECORD);
         *rec = NULL;
     }
@@ -2437,7 +2437,7 @@ static int DBNEWCOMM(DRMS_RecordSet_t **exprecs, DRMS_Record_t **rec, int irec, 
             return 1; // Abort db changes
         }
         
-        drms_setkey_string(*rec, "errmsg", expstatus);
+        drms_setkey_string(*rec, "errmsg", mbuf);
         drms_close_record(*rec, DRMS_INSERT_RECORD);
         *rec = NULL;
         closedrec = 1;
@@ -2667,7 +2667,7 @@ int DoIt(void)
         { 
             snprintf(msgbuf, 
                      sizeof(msgbuf), 
-                     "Illegal format detected - security risk!\nRequestID= %s\n Processing = %s\n, DataSet=%s\n",
+                     "Illegal format detected - security risk!\nRequestID= %s\n Processing = %s\n, DataSet=%s",
                      requestid, 
                      process, 
                      dataset);
@@ -2742,7 +2742,7 @@ int DoIt(void)
       proccmds = ParseFields(drms_env, procser, dbmainhost, process, dataset, requestid, &RecordLimit, &ppstat);
       if (ppstat == 0)
       {
-          snprintf(msgbuf, sizeof(msgbuf), "Invalid process field value: %s.\n", process);          
+          snprintf(msgbuf, sizeof(msgbuf), "Invalid process field value: %s.", process);          
           ErrorOutExpRec(&export_rec, 4, msgbuf);
           ErrorOutExpNewRec(exports_new, &export_log, irec, 4, msgbuf);
           fclose(fp);
@@ -2761,7 +2761,7 @@ int DoIt(void)
       if (IsBadProcSequence(proccmds))
       {
           list_llfree(&proccmds);
-          snprintf(msgbuf, sizeof(msgbuf), "Bad sequence of processing steps, skipping recnum %lld.\n", export_rec->recnum);
+          snprintf(msgbuf, sizeof(msgbuf), "Bad sequence of processing steps, skipping recnum %lld.", export_rec->recnum);
           ErrorOutExpRec(&export_rec, 4, msgbuf);
           ErrorOutExpNewRec(exports_new, &export_log, irec, 4, msgbuf);
           fclose(fp);
@@ -2823,7 +2823,7 @@ int DoIt(void)
           * it talks to dbmainhost. */
          if (ParseRecSetSpec(drms_env, dbmainhost, cdataset, &snames, &filts, &nsets, &info))
          {
-             snprintf(msgbuf, sizeof(msgbuf), "Invalid input series record-set query %s.\n", cdataset);
+             snprintf(msgbuf, sizeof(msgbuf), "Invalid input series record-set query %s.", cdataset);
              quit = 1;
              break;
          }
@@ -2837,7 +2837,7 @@ int DoIt(void)
             {
                if (strcmp(series, csname) != 0)
                {
-                   snprintf(msgbuf, sizeof(msgbuf), "jsoc_export_manage FAILURE: attempt to export a recordset containing multiple input series.\n");
+                   snprintf(msgbuf, sizeof(msgbuf), "jsoc_export_manage FAILURE: attempt to export a recordset containing multiple input series.");
                    quit = 1;
                    break;
                }
@@ -2854,7 +2854,7 @@ int DoIt(void)
 
          if (!SeriesExists(drms_env, seriesin, dbmainhost, &status) || status)
          {
-             snprintf(msgbuf, sizeof(msgbuf), "Input series %s does not exist.\n", csname);
+             snprintf(msgbuf, sizeof(msgbuf), "Input series %s does not exist.", csname);
              quit = 1;
              break;
          }
@@ -2868,7 +2868,7 @@ int DoIt(void)
           * it talks to dbmainhost. */
          if (ParseRecSetSpec(drms_env, dbmainhost, datasetout, &snames, &filts, &nsets, &info))
          {
-             snprintf(msgbuf, sizeof(msgbuf), "Invalid output series record-set query %s.\n", datasetout);
+             snprintf(msgbuf, sizeof(msgbuf), "Invalid output series record-set query %s.", datasetout);
              quit = 1;
              break;
          }
@@ -2882,7 +2882,7 @@ int DoIt(void)
             {
                if (strcmp(series, csname) != 0)
                {
-                   snprintf(msgbuf, sizeof(msgbuf), "jsoc_export_manage FAILURE: attempt to export a recordset to multiple output series.\n");
+                   snprintf(msgbuf, sizeof(msgbuf), "jsoc_export_manage FAILURE: attempt to export a recordset to multiple output series.");
                    quit = 1;
                    break;
                }
@@ -2899,7 +2899,7 @@ int DoIt(void)
 
          if (!SeriesExists(drms_env, seriesout, dbmainhost, &status) || status)
          {
-             snprintf(msgbuf, sizeof(msgbuf), "Output series %s does not exist.\n", csname);
+             snprintf(msgbuf, sizeof(msgbuf), "Output series %s does not exist.", csname);
              quit = 1;
              break;
          }
@@ -2916,7 +2916,7 @@ int DoIt(void)
 
          if (procerr)
          {
-             snprintf(msgbuf, sizeof(msgbuf), "Problem running processing command '%s'.\n", progpath);
+             snprintf(msgbuf, sizeof(msgbuf), "Problem running processing command '%s'.", progpath);
              quit = 1;
              break;
          }
@@ -2985,7 +2985,7 @@ int DoIt(void)
             }
             else
             {
-                snprintf(msgbuf, sizeof(msgbuf), "Problem obtaining a record-set specification string.\n");
+                snprintf(msgbuf, sizeof(msgbuf), "Problem obtaining a record-set specification string.");
                 quit = 1;
                 break;
             }
@@ -3023,7 +3023,7 @@ int DoIt(void)
 
       if (procerr)
       {
-          snprintf(msgbuf, sizeof(msgbuf), "Problem running protocol-export command.\n");
+          snprintf(msgbuf, sizeof(msgbuf), "Problem running protocol-export command.");
           ErrorOutExpRec(&export_rec, 4, msgbuf);
           ErrorOutExpNewRec(exports_new, &export_log, irec, 4, msgbuf);
           fclose(fp);
