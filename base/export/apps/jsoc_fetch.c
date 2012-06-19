@@ -35,8 +35,17 @@
 #include <time.h>
 #include <sys/file.h>
 
-#define kLockFile "/home/jsoc/exports/tmp/lock.txt"
-#define kLogFile "/home/jsoc/exports/tmp/fetchlog.txt"
+// Log files
+#define kLockFile "/tmp/lock.txt"
+#define kLogFileSummInt    "/home/jsoc/exports/fetchlogSummInt.txt"
+#define kLogFileSummExt    "/home/jsoc/exports/fetchlogSummExt.txt"
+#define kLogFileExpSuInt   "/home/jsoc/exports/fetchlogExpSuInt.txt"
+#define kLogFileExpSuExt   "/home/jsoc/exports/fetchlogExpSuExt.txt"
+#define kLogFileExpReqInt  "/home/jsoc/exports/fetchlogExpReqInt.txt"
+#define kLogFileExpReqExt  "/home/jsoc/exports/fetchlogExpReqExt.txt"
+#define kLogFileExpStatInt "/home/jsoc/exports/fetchlogExpStatInt.txt"
+#define kLogFileExpStatExt "/home/jsoc/exports/fetchlogExpStatExt.txt"
+
 
 #define MAX_EXPORT_SIZE 100000  // 100GB
 
@@ -81,6 +90,8 @@
 #define kNoAsyncReq     "NOASYNCREQUEST"
 
 int dojson, dotxt, dohtml, doxml;
+
+HContainer_t *gLogs = NULL;
 
 ModuleArgs_t module_args[] =
 { 
@@ -386,6 +397,8 @@ static void CleanUp(int64_t **psunumarr, SUM_info_t ***infostructs, char **webar
    }
    if (userhandle && *userhandle)
      manage_userhandle(0, userhandle);
+    
+    hcon_destroy(&gLogs);
 }
 
 /* Can't call these from sub-functions - can only be called from DoIt(). And 
@@ -623,6 +636,95 @@ static void ReleaseLock(int fd)
    flock(fd, LOCK_UN);
 }
 
+static void FreeLogs(void *val)
+{
+    FILE **pfptr = (FILE **)val;
+    
+    if (pfptr && *pfptr)
+    {
+        fflush(*pfptr);
+        fchmod(fileno(*pfptr), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+        fclose(*pfptr);
+        *pfptr = NULL;
+    }
+}
+
+static void WriteLog(const char *logpath, const char *format, ...)
+{
+    FILE *fptr = NULL;
+    FILE **pfptr = NULL;
+    int lockfd;
+    
+    if (!gLogs)
+    {
+        gLogs = hcon_create(sizeof(FILE *), 128, (void(*)(const void *value))FreeLogs, NULL, NULL, NULL, 0);
+        
+        if (gLogs)
+        {
+            // Insert NULL fptrs, to initialize.
+            hcon_insert(gLogs, kLogFileSummInt, &fptr);
+            hcon_insert(gLogs, kLogFileSummExt, &fptr);
+            hcon_insert(gLogs, kLogFileExpSuInt, &fptr);
+            hcon_insert(gLogs, kLogFileExpSuExt, &fptr);
+            hcon_insert(gLogs, kLogFileExpReqInt, &fptr);
+            hcon_insert(gLogs, kLogFileExpReqExt, &fptr);
+            hcon_insert(gLogs, kLogFileExpStatInt, &fptr);
+            hcon_insert(gLogs, kLogFileExpStatExt, &fptr);
+        }
+        else
+        {
+            fprintf(stderr, "Out of memory.\n");
+            return;
+        }
+    }
+    
+    pfptr = hcon_lookup(gLogs, logpath);
+    
+    if (pfptr)
+    {
+        if (!*pfptr)
+        {
+            *pfptr = fopen(logpath, "a");
+        }
+        
+        if (*pfptr)
+        {
+            // Acquire the lock
+            lockfd = open(kLockFile, O_RDONLY | O_CREAT, S_IRWXU | S_IRWXG);
+            if (lockfd >= 0)
+            {
+                if (AcquireLock(lockfd))
+                {
+                    // Now we can do the actual writing.
+                    va_list ap;
+                    
+                    va_start(ap, format);
+                    vfprintf(*pfptr, format, ap);
+                    va_end(ap);
+                    
+                    ReleaseLock(lockfd);
+                }
+                else
+                {
+                    fprintf(stderr, "Unable to acquire lock on %s.\n", kLockFile);
+                }
+
+                fchmod(lockfd, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+                close(lockfd);
+            }
+        }
+        else
+        {
+            fprintf(stderr, "Unable to open log file for writing: %s.\n", logpath);
+        }
+        
+    }
+    else
+    {
+        fprintf(stderr, "Invalid log-file path %s.\n", logpath);
+    }
+}
+
 json_insert_runtime(json_t *jroot, double StartTime)
   {
   char runtime[100];
@@ -634,38 +736,32 @@ json_insert_runtime(json_t *jroot, double StartTime)
   json_insert_pair_into_object(jroot, "runtime", json_new_number(runtime));
   }
 
-#define LOGFILE "/home/jsoc/exports/fetch_log"
-
 // report_summary - record  this call of the program.
-report_summary(const char *host, double StartTime, const char *remote_IP, const char *op, const char *ds, int n, int status)
+static void report_summary(const char *host, double StartTime, const char *remote_IP, const char *op, const char *ds, int n, int internal, int status)
   {
-  FILE *log;
-  int sleeps;
   double EndTime;
   struct timeval thistv;
+  char *logfile = NULL;
+      
   gettimeofday(&thistv, NULL);
   EndTime = thistv.tv_sec + thistv.tv_usec/1000000.0;
-  log = fopen(LOGFILE,"a");
-  for(sleeps=0; lockf(fileno(log),F_TLOCK,0); sleeps++)
-    {
-    if (sleeps >= 5)
-      {
-      fprintf(stderr,"Lock stuck on %s, no report made.\n", LOGFILE);
-      fclose(log);
-      return;
-      }
-    sleep(1);
-    }
-  fprintf(log, "host='%s'\t",host);
-  fprintf(log, "lag=%0.3f\t",EndTime - StartTime);
-  fprintf(log, "IP='%s'\t",remote_IP);
-  fprintf(log, "op='%s'\t",op);
-  fprintf(log, "ds='%s'\t",ds);
-  fprintf(log, "n=%d\t",n);
-  fprintf(log, "status=%d\n",status);
-  fflush(log);
-  lockf(fileno(log),F_ULOCK,0);
-  fclose(log);
+      
+  if (internal)
+  {
+      logfile = kLogFileSummInt;
+  }
+  else
+  {
+      logfile = kLogFileSummExt;          
+  }
+      
+  WriteLog(logfile, "host='%s'\t",host);
+  WriteLog(logfile, "lag=%0.3f\t",EndTime - StartTime);
+  WriteLog(logfile, "IP='%s'\t",remote_IP);
+  WriteLog(logfile, "op='%s'\t",op);
+  WriteLog(logfile, "ds='%s'\t",ds);
+  WriteLog(logfile, "n=%d\t",n);
+  WriteLog(logfile, "status=%d\n",status);
   }
 
 static void FreeRecSpecParts(char ***snames, int nitems)
@@ -692,6 +788,68 @@ static void FreeRecSpecParts(char ***snames, int nitems)
         
         *snames = NULL;
     }
+}
+
+static void LogReqInfo(const char *fname, 
+                       int fileupload, 
+                       const char *op, 
+                       const char *dsin, 
+                       const char *requestid, 
+                       const char *dbhost,
+                       int from_web,
+                       const char *webarglist)
+{
+    /* Before opening the log file, acquire a lock. Not only will this allow multiple jsoc_fetchs to 
+     * write to the same log, but it will facilitate synchronization with code that manages compression
+     * and clean-up of the log. */
+
+    char nowtxt[100];
+
+    sprint_ut(nowtxt, timenow());
+    WriteLog(fname, "PID=%d\n   %s\n   op=%s\n   in=%s\n   RequestID=%s\n   DBHOST=%s\n   REMOTE_ADDR=%s\n",
+            getpid(), nowtxt, op, dsin, requestid, dbhost, getenv("REMOTE_ADDR"));
+    if (fileupload)  // recordset passed as uploaded file
+    {
+        char *file = (char *)cmdparams_get_str (&cmdparams, kArgFile, NULL);
+        int filesize = cmdparams_get_int (&cmdparams, kArgFile".length", NULL);
+        char *filename = (char *)cmdparams_get_str (&cmdparams, kArgFile".filename", NULL);
+        WriteLog(fname,"   UploadFile: size=%d, name=%s, contents=%s\n",filesize,filename,file);
+    }
+    
+    /* Now print the web arguments (if jsoc_fetch was invoked via an HTTP POST verb). */
+    if (from_web && strlen(webarglist) > 0)
+    {
+        int rlsize = strlen(webarglist) * 2;
+        char *rlbuf = malloc(rlsize);
+        memset(rlbuf, 0, rlsize);
+        const char *pwa = webarglist;
+        char *prl = rlbuf;
+        
+        /* Before printing the webarglist string, escape '%' chars - otherwise fprintf(), will
+         * think you want to replace things like "%lld" with a formated value - this happens
+         * even though there is no arg provided after webarglist. */
+        while (*pwa && (prl - rlbuf < rlsize - 1))
+        {
+            if (*pwa == '%')
+            {
+                *prl = '%';
+                prl++;
+            }
+            
+            *prl = *pwa;
+            pwa++;
+            prl++;
+        }
+        
+        *prl = '\0';
+        
+        WriteLog(fname, "** HTTP POST arguments:\n");
+        WriteLog(fname, rlbuf);
+        WriteLog(fname, "\n");
+        free(rlbuf);
+    }
+    
+    WriteLog(fname, "**********************\n");
 }
 
 /* Module main function. */
@@ -903,105 +1061,15 @@ int DoIt(void)
     }
 
 // SPECIAL DEBUG LOG HERE XXXXXX
-{
-   /* Before opening the log file, acquire a lock. Not only will this allow multiple jsoc_fetchs to 
-    * write to the same log, but it will facilitate synchronization with code that manages compression
-    * and clean-up of the log. */
-   
-   FILE *runlog = NULL;
-   int lockfd;
-   int gotlock;
 
-   gotlock = 0;
-   lockfd = open(kLockFile, O_RDONLY | O_CREAT, S_IRWXU | S_IRWXG);
-   if (lockfd >= 0)
-   {
-      if (AcquireLock(lockfd))
-      {
-         gotlock = 1;
-         runlog = fopen(kLogFile, "a");
-      }
-      else
-      {
-         fprintf(stderr, "Unable to acquire lock file; skipping debug logging (but continuing).\n");
-      }
-   }
-
- if (runlog)
- {
-    char nowtxt[100];
-    int fileupload = strncmp(dsin, "*file*", 6) == 0;
-    sprint_ut(nowtxt, now);
-    fprintf(runlog,"PID=%d\n   %s\n   op=%s\n   in=%s\n   RequestID=%s\n   DBHOST=%s\n   REMOTE_ADDR=%s\n",
-            getpid(), nowtxt, op, dsin, requestid, dbhost, getenv("REMOTE_ADDR"));
-    if (fileupload)  // recordset passed as uploaded file
-    {
-       char *file = (char *)cmdparams_get_str (&cmdparams, kArgFile, NULL);
-       int filesize = cmdparams_get_int (&cmdparams, kArgFile".length", NULL);
-       char *filename = (char *)cmdparams_get_str (&cmdparams, kArgFile".filename", NULL);
-       fprintf(runlog,"   UploadFile: size=%d, name=%s, contents=%s\n",filesize,filename,file);
-    }
-
-    /* Now print the web arguments (if jsoc_fetch was invoked via an HTTP POST verb). */
-    if (from_web && strlen(webarglist) > 0)
-    {
-       int rlsize = strlen(webarglist) * 2;
-       char *rlbuf = malloc(rlsize);
-       memset(rlbuf, 0, rlsize);
-       char *pwa = webarglist;
-       char *prl = rlbuf;
-
-       /* Before printing the webarglist string, escape '%' chars - otherwise fprintf(), will
-        * think you want to replace things like "%lld" with a formated value - this happens
-        * even though there is no arg provided after webarglist. */
-       while (*pwa && (prl - rlbuf < rlsize - 1))
-       {
-          if (*pwa == '%')
-          {
-             *prl = '%';
-             prl++;
-          }
-
-          *prl = *pwa;
-          pwa++;
-          prl++;
-       }
-
-       *prl = '\0';
-
-       fprintf(runlog, "** HTTP POST arguments:\n");
-       fprintf(runlog, rlbuf);
-       fprintf(runlog, "\n");
-       free(rlbuf);
-    }
-
-    fprintf(runlog, "**********************\n");
-
-    fclose(runlog);
-    chmod(kLogFile, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
- }
- else
- {
-    fprintf(stderr, "Unable to open log file; skipping debug logging (but continuing).\n");
- }
-
- if (gotlock)
- {
-    ReleaseLock(lockfd);
-    gotlock = 0;
- }
-
- if (lockfd >= 0)
- {
-    close(lockfd);
-    chmod(kLockFile, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
- }
-}
 
   export_series = kExportSeries;
 
   long long sunums[DRMS_MAXQUERYLEN/8];  // should be enough!
   int expsucount;
+  const char *lfname = NULL;
+  int fileupload = strncmp(dsin, "*file*", 6) == 0;
+  int internal = (strcmp(dbhost, "hmidb") == 0);
 
   /*  op == exp_su - export Storage Units */
   if (strcmp(op, kOpExpSu) == 0)
@@ -1011,6 +1079,17 @@ int DoIt(void)
     int status=0;
     int sums_status = 0; //ISS
     int all_online;
+        
+    if (internal)
+    {
+        lfname = kLogFileExpSuInt;
+    }
+    else
+    {
+        lfname = kLogFileExpSuExt;            
+    }
+
+    LogReqInfo(lfname, fileupload, op, dsin, requestid, dbhost, from_web, webarglist);
 
     export_series = kExportSeriesNew;
     // Do survey of sunum list
@@ -1235,7 +1314,7 @@ int DoIt(void)
           printf("%lld\t%s\t%s\t%s\t%s\n",sunums[i],series[i],paths[i], sustatus[i], susize[i]);
         }
 
-      report_summary(Server, StartTime, Remote_Address, op, dsin, 0, 0);
+      report_summary(Server, StartTime, Remote_Address, op, dsin, 0, internal, 0);
       if (!dodataobj || (sums_status == 1 || all_online))
         {
          /* If not a VSO request, we're done. If a VSO request, done if all online, or if SUMS is down. 
@@ -1339,6 +1418,17 @@ check for requestor to be valid remote DRMS site
     int filesize;
     DRMS_RecordSet_t *rs;
     export_series = kExportSeriesNew;
+        
+    if (internal)
+    {
+        lfname = kLogFileExpReqInt;
+    }
+    else
+    {
+        lfname = kLogFileExpReqExt;            
+    }
+        
+    LogReqInfo(lfname, fileupload, op, dsin, requestid, dbhost, from_web, webarglist);
 
     size=0;
     strncpy(dsquery,dsin,DRMS_MAXQUERYLEN);
@@ -1783,7 +1873,7 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
   else if (strcmp(op,kOpExpRepeat) == 0) 
     {
     char logpath[DRMS_MAXPATHLEN];
-
+        
     if (strcmp(requestid, kNotSpecified) == 0)
       JSONDIE("RequestID must be provided");
 
@@ -1884,6 +1974,17 @@ JSONDIE("Re-Export requests temporarily disabled.");
         {
             JSONDIE("RequestID must be provided");
         }
+        
+        if (internal)
+        {
+            lfname = kLogFileExpStatInt;
+        }
+        else
+        {
+            lfname = kLogFileExpStatExt;            
+        }
+        
+        LogReqInfo(lfname, fileupload, op, dsin, requestid, dbhost, from_web, webarglist);
         
         // Must check jsoc.export, NOT jsoc.export_new.
         sprintf(status_query, "%s[%s]", kExportSeries, requestid);
@@ -2113,7 +2214,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
       }
     }
 
-  report_summary(Server, StartTime, Remote_Address, op, dsin, rcountlimit, status);
+  report_summary(Server, StartTime, Remote_Address, op, dsin, rcountlimit, internal, status);
   CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize, userhandle);
     
     if (exprec)
