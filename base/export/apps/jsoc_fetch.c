@@ -37,14 +37,14 @@
 
 // Log files
 #define kLockFile "/tmp/lock.txt"
-#define kLogFileSummInt    "/home/jsoc/exports/fetchlogSummInt.txt"
-#define kLogFileSummExt    "/home/jsoc/exports/fetchlogSummExt.txt"
-#define kLogFileExpSuInt   "/home/jsoc/exports/fetchlogExpSuInt.txt"
-#define kLogFileExpSuExt   "/home/jsoc/exports/fetchlogExpSuExt.txt"
-#define kLogFileExpReqInt  "/home/jsoc/exports/fetchlogExpReqInt.txt"
-#define kLogFileExpReqExt  "/home/jsoc/exports/fetchlogExpReqExt.txt"
-#define kLogFileExpStatInt "/home/jsoc/exports/fetchlogExpStatInt.txt"
-#define kLogFileExpStatExt "/home/jsoc/exports/fetchlogExpStatExt.txt"
+#define kLogFileSummInt    "/home/jsoc/exports/logs/fetchlogSummInt.txt"
+#define kLogFileSummExt    "/home/jsoc/exports/logs/fetchlogSummExt.txt"
+#define kLogFileExpSuInt   "/home/jsoc/exports/logs/fetchlogExpSuInt.txt"
+#define kLogFileExpSuExt   "/home/jsoc/exports/logs/fetchlogExpSuExt.txt"
+#define kLogFileExpReqInt  "/home/jsoc/exports/logs/fetchlogExpReqInt.txt"
+#define kLogFileExpReqExt  "/home/jsoc/exports/logs/fetchlogExpReqExt.txt"
+#define kLogFileExpStatInt "/home/jsoc/exports/logs/fetchlogExpStatInt.txt"
+#define kLogFileExpStatExt "/home/jsoc/exports/logs/fetchlogExpStatExt.txt"
 
 
 #define MAX_EXPORT_SIZE 100000  // 100GB
