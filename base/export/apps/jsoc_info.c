@@ -768,11 +768,11 @@ report_summary(const char *host, double StartTime, const char *remote_IP, const 
         fclose(log);
         }
       
-        lockf(lockfd,F_ULOCK,0);
         if (mustchmodlck)
           {
           fchmod(lockfd, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
           }
+        lockf(lockfd,F_ULOCK,0);
         close(lockfd);
     }
   else

@@ -88,6 +88,7 @@ static void getlock(int fd, char *fname, int mustchmodlck)
         {
         fchmod(fd, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
         }
+      lockf(fd,F_ULOCK,0);
       close(fd);
       exit(1);
       }
