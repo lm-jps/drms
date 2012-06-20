@@ -718,7 +718,8 @@ json_insert_runtime(json_t *jroot, double StartTime)
   json_insert_pair_into_object(jroot, "runtime", json_new_number(runtime));
   }
 
-#define LOGFILE "/home/jsoc/exports/fetch_log"
+#define LOGFILE     "/home/jsoc/exports/logs/fetch_log"
+#define kLockFile   "/home/jsoc/exports/tmp/lock.txt"
 
 // report_summary - record  this call of the program.
 report_summary(const char *host, double StartTime, const char *remote_IP, const char *op, const char *ds, int n, int status)
@@ -727,29 +728,57 @@ report_summary(const char *host, double StartTime, const char *remote_IP, const 
   int sleeps;
   double EndTime;
   struct timeval thistv;
-  gettimeofday(&thistv, NULL);
-  EndTime = thistv.tv_sec + thistv.tv_usec/1000000.0;
-  log = fopen(LOGFILE,"a");
-  for(sleeps=0; lockf(fileno(log),F_TLOCK,0); sleeps++)
+  struct stat stbuf;
+  int mustchmodlck = (stat(kLockFile, &stbuf) != 0);
+  int mustchmodlog = (stat(LOGFILE, &stbuf) != 0);
+  int lockfd = open(kLockFile, O_WRONLY | O_CREAT, S_IRWXU | S_IRWXG);
+      
+  if (lockfd >= 0)
     {
-    if (sleeps >= 5)
+    gettimeofday(&thistv, NULL);
+    EndTime = thistv.tv_sec + thistv.tv_usec/1000000.0;
+      
+    for(sleeps=0; lockf(lockfd,F_TLOCK,0); sleeps++)
       {
-      fprintf(stderr,"Lock stuck on %s, no report made.\n", LOGFILE);
-      fclose(log);
-      return;
+      if (sleeps >= 5)
+        {
+        fprintf(stderr,"Lock stuck on %s, no report made.\n", LOGFILE);
+        lockf(lockfd,F_ULOCK,0);
+        return;
+        }
+        sleep(1);
       }
-    sleep(1);
+      
+      log = fopen(LOGFILE,"a");
+      
+      if (log)
+        {
+        fprintf(log, "host='%s'\t",host);
+        fprintf(log, "lag=%0.3f\t",EndTime - StartTime);
+        fprintf(log, "IP='%s'\t",remote_IP);
+        fprintf(log, "op='%s'\t",op);
+        fprintf(log, "ds='%s'\t",ds);
+        fprintf(log, "n=%d\t",n);
+        fprintf(log, "status=%d\n",status);
+        fflush(log);
+        if (mustchmodlog)
+          {
+          fchmod(fileno(log), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+          }
+        fclose(log);
+        }
+      
+        lockf(lockfd,F_ULOCK,0);
+        if (mustchmodlck)
+          {
+          fchmod(lockfd, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+          }
+        close(lockfd);
     }
-  fprintf(log, "host='%s'\t",host);
-  fprintf(log, "lag=%0.3f\t",EndTime - StartTime);
-  fprintf(log, "IP='%s'\t",remote_IP);
-  fprintf(log, "op='%s'\t",op);
-  fprintf(log, "ds='%s'\t",ds);
-  fprintf(log, "n=%d\t",n);
-  fprintf(log, "status=%d\n",status);
-  fflush(log);
-  lockf(fileno(log),F_ULOCK,0);
-  fclose(log);
+  else
+    {
+      fprintf(stderr, "Unable to open lock file for writing: %s.\n", kLockFile);
+    }
   }
 
 #define JSONDIE(msg) \

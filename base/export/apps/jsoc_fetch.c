@@ -36,9 +36,8 @@
 #include <sys/file.h>
 
 // Log files
-#define kLockFile "/tmp/lock.txt"
-#define kLogFileSummInt    "/home/jsoc/exports/logs/fetchlogSummInt.txt"
-#define kLogFileSummExt    "/home/jsoc/exports/logs/fetchlogSummExt.txt"
+#define kLockFile          "/home/jsoc/exports/tmp/lock.txt"
+#define kLogFileSumm       "/home/jsoc/exports/logs/fetch_log"
 #define kLogFileExpSuInt   "/home/jsoc/exports/logs/fetchlogExpSuInt.txt"
 #define kLogFileExpSuExt   "/home/jsoc/exports/logs/fetchlogExpSuExt.txt"
 #define kLogFileExpReqInt  "/home/jsoc/exports/logs/fetchlogExpReqInt.txt"
@@ -621,7 +620,7 @@ static int AcquireLock(int fd)
    int ret = -1;
    int natt = 0;
 
-   while ((ret = flock(fd, LOCK_EX | LOCK_NB)) != 0 && natt < 10)
+   while ((ret = lockf(fd, F_TLOCK, 0)) != 0 && natt < 10)
    {
       // printf("couldn't get lock, trying again.\n");
       sleep(1);
@@ -633,7 +632,7 @@ static int AcquireLock(int fd)
 
 static void ReleaseLock(int fd)
 {
-   flock(fd, LOCK_UN);
+   lockf(fd, F_ULOCK, 0);
 }
 
 static void FreeLogs(void *val)
@@ -643,7 +642,7 @@ static void FreeLogs(void *val)
     if (pfptr && *pfptr)
     {
         fflush(*pfptr);
-        fchmod(fileno(*pfptr), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+        fchmod(fileno(*pfptr), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
         fclose(*pfptr);
         *pfptr = NULL;
     }
@@ -654,6 +653,9 @@ static void WriteLog(const char *logpath, const char *format, ...)
     FILE *fptr = NULL;
     FILE **pfptr = NULL;
     int lockfd;
+    struct stat stbuf;
+    int mustchmodlck = (stat(kLockFile, &stbuf) != 0);
+    int mustchmodlog = (stat(logpath, &stbuf) != 0);
     
     if (!gLogs)
     {
@@ -662,8 +664,7 @@ static void WriteLog(const char *logpath, const char *format, ...)
         if (gLogs)
         {
             // Insert NULL fptrs, to initialize.
-            hcon_insert(gLogs, kLogFileSummInt, &fptr);
-            hcon_insert(gLogs, kLogFileSummExt, &fptr);
+            hcon_insert(gLogs, kLogFileSumm, &fptr);
             hcon_insert(gLogs, kLogFileExpSuInt, &fptr);
             hcon_insert(gLogs, kLogFileExpSuExt, &fptr);
             hcon_insert(gLogs, kLogFileExpReqInt, &fptr);
@@ -682,18 +683,18 @@ static void WriteLog(const char *logpath, const char *format, ...)
     
     if (pfptr)
     {
-        if (!*pfptr)
+        // Acquire the lock
+        lockfd = open(kLockFile, O_WRONLY | O_CREAT, S_IRWXU | S_IRWXG);
+        if (lockfd >= 0)
         {
-            *pfptr = fopen(logpath, "a");
-        }
-        
-        if (*pfptr)
-        {
-            // Acquire the lock
-            lockfd = open(kLockFile, O_RDONLY | O_CREAT, S_IRWXU | S_IRWXG);
-            if (lockfd >= 0)
+            if (AcquireLock(lockfd))
             {
-                if (AcquireLock(lockfd))
+                if (!*pfptr)
+                {
+                    *pfptr = fopen(logpath, "a");
+                }
+                
+                if (*pfptr)
                 {
                     // Now we can do the actual writing.
                     va_list ap;
@@ -701,23 +702,34 @@ static void WriteLog(const char *logpath, const char *format, ...)
                     va_start(ap, format);
                     vfprintf(*pfptr, format, ap);
                     va_end(ap);
-                    
-                    ReleaseLock(lockfd);
+
+                    if (mustchmodlog)
+                    {
+                       fchmod(fileno(*pfptr), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+                    }
                 }
                 else
                 {
-                    fprintf(stderr, "Unable to acquire lock on %s.\n", kLockFile);
+                    fprintf(stderr, "Unable to open log file for writing: %s.\n", logpath);
                 }
-
-                fchmod(lockfd, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
-                close(lockfd);
+                
+                ReleaseLock(lockfd);
             }
+            else
+            {
+                fprintf(stderr, "Unable to acquire lock on %s.\n", kLockFile);
+            }
+
+            if (mustchmodlck)
+            {
+               fchmod(lockfd, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+            }
+            close(lockfd);
         }
         else
         {
-            fprintf(stderr, "Unable to open log file for writing: %s.\n", logpath);
+            fprintf(stderr, "Unable to open lock file for writing: %s.\n", kLockFile);
         }
-        
     }
     else
     {
@@ -737,7 +749,14 @@ json_insert_runtime(json_t *jroot, double StartTime)
   }
 
 // report_summary - record  this call of the program.
-static void report_summary(const char *host, double StartTime, const char *remote_IP, const char *op, const char *ds, int n, int internal, int status)
+static void report_summary(const char *host, 
+                           double StartTime, 
+                           const char *remote_IP, 
+                           const char *op, 
+                           const char *ds, 
+                           int n, 
+                           int internal, 
+                           int status)
   {
   double EndTime;
   struct timeval thistv;
@@ -746,14 +765,7 @@ static void report_summary(const char *host, double StartTime, const char *remot
   gettimeofday(&thistv, NULL);
   EndTime = thistv.tv_sec + thistv.tv_usec/1000000.0;
       
-  if (internal)
-  {
-      logfile = kLogFileSummInt;
-  }
-  else
-  {
-      logfile = kLogFileSummExt;          
-  }
+  logfile = kLogFileSumm;
       
   WriteLog(logfile, "host='%s'\t",host);
   WriteLog(logfile, "lag=%0.3f\t",EndTime - StartTime);
@@ -798,56 +810,56 @@ static void LogReqInfo(const char *fname,
                        const char *dbhost,
                        int from_web,
                        const char *webarglist)
-{
-    /* Before opening the log file, acquire a lock. Not only will this allow multiple jsoc_fetchs to 
-     * write to the same log, but it will facilitate synchronization with code that manages compression
-     * and clean-up of the log. */
+  {
+  /* Before opening the log file, acquire a lock. Not only will this allow multiple jsoc_fetchs to 
+   * write to the same log, but it will facilitate synchronization with code that manages compression
+   * and clean-up of the log. */
 
-    char nowtxt[100];
+  char nowtxt[100];
 
-    sprint_ut(nowtxt, timenow());
-    WriteLog(fname, "PID=%d\n   %s\n   op=%s\n   in=%s\n   RequestID=%s\n   DBHOST=%s\n   REMOTE_ADDR=%s\n",
-            getpid(), nowtxt, op, dsin, requestid, dbhost, getenv("REMOTE_ADDR"));
-    if (fileupload)  // recordset passed as uploaded file
+  sprint_ut(nowtxt, timenow());
+  WriteLog(fname, "PID=%d\n   %s\n   op=%s\n   in=%s\n   RequestID=%s\n   DBHOST=%s\n   REMOTE_ADDR=%s\n",
+           getpid(), nowtxt, op, dsin, requestid, dbhost, getenv("REMOTE_ADDR"));
+  if (fileupload)  // recordset passed as uploaded file
     {
-        char *file = (char *)cmdparams_get_str (&cmdparams, kArgFile, NULL);
-        int filesize = cmdparams_get_int (&cmdparams, kArgFile".length", NULL);
-        char *filename = (char *)cmdparams_get_str (&cmdparams, kArgFile".filename", NULL);
-        WriteLog(fname,"   UploadFile: size=%d, name=%s, contents=%s\n",filesize,filename,file);
+    char *file = (char *)cmdparams_get_str (&cmdparams, kArgFile, NULL);
+    int filesize = cmdparams_get_int (&cmdparams, kArgFile".length", NULL);
+    char *filename = (char *)cmdparams_get_str (&cmdparams, kArgFile".filename", NULL);
+    WriteLog(fname,"   UploadFile: size=%d, name=%s, contents=%s\n",filesize,filename,file);
     }
     
     /* Now print the web arguments (if jsoc_fetch was invoked via an HTTP POST verb). */
     if (from_web && strlen(webarglist) > 0)
-    {
-        int rlsize = strlen(webarglist) * 2;
-        char *rlbuf = malloc(rlsize);
-        memset(rlbuf, 0, rlsize);
-        const char *pwa = webarglist;
-        char *prl = rlbuf;
+      {
+      int rlsize = strlen(webarglist) * 2;
+      char *rlbuf = malloc(rlsize);
+      memset(rlbuf, 0, rlsize);
+      const char *pwa = webarglist;
+      char *prl = rlbuf;
         
-        /* Before printing the webarglist string, escape '%' chars - otherwise fprintf(), will
-         * think you want to replace things like "%lld" with a formated value - this happens
-         * even though there is no arg provided after webarglist. */
-        while (*pwa && (prl - rlbuf < rlsize - 1))
+      /* Before printing the webarglist string, escape '%' chars - otherwise fprintf(), will
+       * think you want to replace things like "%lld" with a formated value - this happens
+       * even though there is no arg provided after webarglist. */
+      while (*pwa && (prl - rlbuf < rlsize - 1))
         {
-            if (*pwa == '%')
-            {
-                *prl = '%';
-                prl++;
-            }
-            
-            *prl = *pwa;
-            pwa++;
+        if (*pwa == '%')
+          {
+            *prl = '%';
             prl++;
+          }
+            
+        *prl = *pwa;
+        pwa++;
+        prl++;
         }
         
-        *prl = '\0';
+      *prl = '\0';
         
-        WriteLog(fname, "** HTTP POST arguments:\n");
-        WriteLog(fname, rlbuf);
-        WriteLog(fname, "\n");
-        free(rlbuf);
-    }
+      WriteLog(fname, "** HTTP POST arguments:\n");
+      WriteLog(fname, rlbuf);
+      WriteLog(fname, "\n");
+      free(rlbuf);
+      }
     
     WriteLog(fname, "**********************\n");
 }

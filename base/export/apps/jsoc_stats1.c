@@ -50,7 +50,8 @@ jsoc_fetch lookdata.html
 #include <sys/types.h>
 #include <unistd.h>
 
-#define LOGFILE "/home/jsoc/exports/fetch_log"
+#define LOGFILE     "/home/jsoc/exports/logs/fetch_log"
+#define kLockFile   "/home/jsoc/exports/tmp/lock.txt"
 
 static char x2c (char *what)
   {
@@ -75,14 +76,19 @@ static void CGI_unescape_url (char *url)
   url[x] = '\0';
   }
 
-void static getlock(FILE *fp, char *fname)
+static void getlock(int fd, char *fname, int mustchmodlck)
   {
   int sleeps;
-  for(sleeps=0; lockf(fileno(fp),F_TLOCK,0); sleeps++)
+  for(sleeps=0; lockf(fd,F_TLOCK,0); sleeps++)
     {
     if (sleeps >= 20)
       {
       fprintf(stderr,"Lock stuck on %s, GetNextID failed.\n", fname);
+      if (mustchmodlck)
+        {
+        fchmod(fd, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+        }
+      close(fd);
       exit(1);
       }
     sleep(1);
@@ -118,6 +124,10 @@ int DoIt(void)
   int n;
   FILE *log;
   double lag;
+  int lockfd;
+  struct stat stbuf;
+  int mustchmodlck = (stat(kLockFile, &stbuf) != 0);
+  int mustchmodlog = (stat(LOGFILE, &stbuf) != 0);;
 
   web_query = strdup (cmdparams_get_str (&cmdparams, "QUERY_STRING", NULL));
   from_web = strcmp (web_query, "Not Specified") != 0;
@@ -149,20 +159,44 @@ int DoIt(void)
   rstatus = cmdparams_get_int (&cmdparams, "status", NULL);
   lag = cmdparams_get_double (&cmdparams, "lag", NULL);
 
-  log = fopen(LOGFILE,"a");
-  getlock(log, LOGFILE);
-
-  fprintf(log, "host='%s'\t",host);
-  fprintf(log, "lag=%0.3f\t",lag);
-  fprintf(log, "IP='%s'\t",IP);
-  fprintf(log, "op='%s'\t",op);
-  fprintf(log, "ds='%s'\t",ds);
-  fprintf(log, "n=%d\t",n);
-  fprintf(log, "status=%d\n",rstatus);
-  fflush(log);
-
-  lockf(fileno(log),F_ULOCK,0);
-  fclose(log);
+  lockfd = open(kLockFile, O_WRONLY | O_CREAT, S_IRWXU | S_IRWXG);
+  if (lockfd >= 0)
+    {
+    getlock(lockfd, kLockFile, mustchmodlck);
+    log = fopen(LOGFILE,"a");
+        
+    if (log)
+      {
+      fprintf(log, "host='%s'\t",host);
+      fprintf(log, "lag=%0.3f\t",lag);
+      fprintf(log, "IP='%s'\t",IP);
+      fprintf(log, "op='%s'\t",op);
+      fprintf(log, "ds='%s'\t",ds);
+      fprintf(log, "n=%d\t",n);
+      fprintf(log, "status=%d\n",rstatus);
+      fflush(log);
+      if (mustchmodlog)
+        {
+        fchmod(fileno(log), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+        }
+        fclose(log);
+      }
+    else
+      {
+        fprintf(stderr, "Unable to open log file for writing: %s.\n", LOGFILE);
+      }
+        
+      lockf(lockfd,F_ULOCK,0);
+      if (mustchmodlck)
+        {
+        fchmod(lockfd, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+        }
+      close(lockfd);
+    }
+  else
+    {
+    fprintf(stderr, "Unable to open lock file for writing: %s.\n", kLockFile);
+    }
 
   // printf("Status: 204 No Response\n\n");
   printf("Content-Type: text/plain\n\nOK\n");
