@@ -22,7 +22,7 @@ use Time::HiRes qw(gettimeofday);
 
 use constant kTarChunk => 64;
 # Number of days to keep tar files on server
-use constant kExp => 10;
+use constant kExp => 30;
 
 my($arg);
 my($siteDir);   # dir on server containing site-specific slony log files
