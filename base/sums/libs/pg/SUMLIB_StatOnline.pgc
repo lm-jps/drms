@@ -18,6 +18,7 @@ int SUM_StatOnline(uint64_t ds_index, char *newwd)
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR l_newwd[80];
   VARCHAR l_status[5];
+  VARCHAR l_date[32];
   uint64_t l_ds_index;
 EXEC SQL END DECLARE SECTION;
   
@@ -27,6 +28,8 @@ EXEC SQL END DECLARE SECTION;
     l_newwd.len = strlen(l_newwd.arr);
     sprintf(l_status.arr,"%s", "Y");
     l_status.len = strlen(l_status.arr);
+    sprintf(l_date.arr, "%s", get_datetime());
+    l_date.len = strlen(l_date.arr);
 
 	EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
 
@@ -34,7 +37,8 @@ EXEC SQL END DECLARE SECTION;
 
 	EXEC SQL UPDATE SUM_MAIN 
 		SET  ONLINE_STATUS = :l_status, 
-		ONLINE_LOC =:l_newwd
+		ONLINE_LOC =:l_newwd,
+		ACCESS_DATE = :l_date
                  WHERE DS_INDEX = :l_ds_index;
 	EXEC SQL COMMIT WORK;
     return NO_ERROR;
