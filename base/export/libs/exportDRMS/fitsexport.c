@@ -2,6 +2,7 @@
 
 #include "fitsexport.h"
 #include "util.h"
+#include "tasrw.h"
 
 #define kFERecnum "RECNUM"
 #define kFERecnumFormat "%lld"
@@ -474,52 +475,61 @@ static int ExportFITS(DRMS_Env_t *env,
                       const char *cparms, 
                       CFITSIO_KEYWORD *fitskeys)
 {
-   int stat = DRMS_SUCCESS;
-
-   if (arrout)
-   {
-      /* Need to manually add required keywords that don't exist in the record's 
-       * DRMS keywords. */
-      CFITSIO_IMAGE_INFO imginfo;
-
-      /* To deal with CFITSIO not handling signed bytes, must convert DRMS_TYPE_CHAR to 
-       * DRMS_TYPE_SHORT */
-      if (arrout->type == DRMS_TYPE_CHAR)
-      {
-	drms_array_convert_inplace(DRMS_TYPE_SHORT, 0, 1, arrout);
-	fprintf(stdout, "FITS doesn't support signed char, converting to signed short.\n");
-      }
-      
-      if (!drms_fitsrw_SetImageInfo(arrout, &imginfo))
-      {
-         /* Not sure if data need to be scaled, or if the original blank value
-          * should be resurrected. */
-         if (arrout->type == DRMS_TYPE_STRING)
-         {
-            fprintf(stderr, "Can't save string data into a fits file.\n");
-            stat = DRMS_ERROR_EXPORT;
-         }
-         else
-         {
-            if (fitsrw_write(env->verbose, fileout, &imginfo, arrout->data, cparms, fitskeys))
+    int stat = DRMS_SUCCESS;
+    
+    if (arrout)
+    {
+        /* Need to manually add required keywords that don't exist in the record's 
+         * DRMS keywords. */
+        CFITSIO_IMAGE_INFO imginfo;
+        
+        /* To deal with CFITSIO not handling signed bytes, must convert DRMS_TYPE_CHAR to 
+         * DRMS_TYPE_SHORT */
+        if (arrout->type == DRMS_TYPE_CHAR)
+        {
+            drms_array_convert_inplace(DRMS_TYPE_SHORT, 0, 1, arrout);
+            fprintf(stdout, "FITS doesn't support signed char, converting to signed short.\n");
+        }
+        
+        /* Reject exports of Rice-compressed floating-point images. */
+        if (fitsrw_iscompressed(cparms) && (arrout->type == DRMS_TYPE_FLOAT || arrout->type == DRMS_TYPE_DOUBLE))
+        {
+            fprintf(stderr, "Cannot export Rice-compressed floating-point images.\n");
+            stat = DRMS_ERROR_CANTCOMPRESSFLOAT;
+        }
+        else
+        {
+            if (!drms_fitsrw_SetImageInfo(arrout, &imginfo))
             {
-               fprintf(stderr, "Can't write fits file '%s'.\n", fileout);
-               stat = DRMS_ERROR_EXPORT;
+                /* Not sure if data need to be scaled, or if the original blank value
+                 * should be resurrected. */
+                if (arrout->type == DRMS_TYPE_STRING)
+                {
+                    fprintf(stderr, "Can't save string data into a fits file.\n");
+                    stat = DRMS_ERROR_EXPORT;
+                }
+                else
+                {
+                    if (fitsrw_write(env->verbose, fileout, &imginfo, arrout->data, cparms, fitskeys))
+                    {
+                        fprintf(stderr, "Can't write fits file '%s'.\n", fileout);
+                        stat = DRMS_ERROR_EXPORT;
+                    }
+                }
             }
-         }
-      }
-      else
-      {
-         fprintf(stderr, "Data array being exported is invalid.\n");
-         stat = DRMS_ERROR_EXPORT;
-      }
-   }
-   else
-   {
-      stat = DRMS_ERROR_INVALIDDATA;
-   }
-
-   return stat;
+            else
+            {
+                fprintf(stderr, "Data array being exported is invalid.\n");
+                stat = DRMS_ERROR_EXPORT;
+            }
+        }
+    }
+    else
+    {
+        stat = DRMS_ERROR_INVALIDDATA;
+    }
+    
+    return stat;
 }
 
 static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key, 

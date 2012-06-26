@@ -21,6 +21,7 @@ S_$(d)		:= $(notdir $(LIBEXPDRMS))
 
 # Local rules
 $(OBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
+$(OBJ_$(d)):    CF_TGT := $(CF_TGT) $(CFITSIOH)
 
 $(LIBEXPDRMS):	$(OBJ_$(d))
 		$(ARCHIVE)

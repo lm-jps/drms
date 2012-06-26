@@ -19,6 +19,7 @@ int fitsrw_closefptr(int verbose, fitsfile *fptr);
 void fitsrw_closefptrs(int verbose);
 int fitsrw_getfpinfo_ext(fitsfile *fptr, CFITSIO_IMAGE_INFO *info);
 int fitsrw_setfpinfo_ext(fitsfile *fptr, CFITSIO_IMAGE_INFO *info);
+int fitsrw_iscompressed(const char *cparms);
 
 #endif /* _TASRW_H */
 

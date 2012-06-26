@@ -277,7 +277,8 @@ static unsigned long long MapexportRecordToDir(DRMS_Record_t *recin,
                                                const char *mapfile,
                                                int *tcount, 
                                                const char **cparms,
-                                               MymodError_t *status)
+                                               MymodError_t *status,
+                                               char **errmsg)
 {
    int drmsstat = DRMS_SUCCESS;
    MymodError_t modstat = kMymodErr_Success;
@@ -366,6 +367,14 @@ static unsigned long long MapexportRecordToDir(DRMS_Record_t *recin,
          /* There was an input segment file, but for some reason the export failed. */
          modstat = kMymodErr_ExportFailed;
          fprintf(stderr, "Failure exporting segment '%s'.\n", segin->info->name);
+
+         if (errmsg)
+         {
+            if (drmsstat == DRMS_ERROR_CANTCOMPRESSFLOAT)
+            {
+               *errmsg = strdup("Cannot export Rice-compressed floating-point images.\n");
+            }
+         }
          break;
       }
       else
@@ -479,7 +488,8 @@ static unsigned long long MapexportToDir(DRMS_Env_t *env,
                                              mapfile, 
                                              &count, 
                                              cparms, 
-                                             &modstat);
+                                             &modstat,
+                                             NULL);
                if (modstat == kMymodErr_Success)
                {
                   okayCount++;
@@ -537,7 +547,8 @@ static MymodError_t CallExportToFile(DRMS_Segment_t *segout,
                                      const char *ffmt,
                                      unsigned long long *szout,
                                      char *filewritten,
-                                     const char *cparms)
+                                     const char *cparms,
+                                     char **errmsg)
 {
    int status = DRMS_SUCCESS;
    MymodError_t err = kMymodErr_Success;
@@ -580,6 +591,13 @@ static MymodError_t CallExportToFile(DRMS_Segment_t *segout,
             {
                err = kMymodErr_ExportFailed;
                fprintf(stderr, "Failed to export segment '%s' to '%s'.\n", segin->info->name, fileout);
+               if (errmsg)
+               {
+                  if (status == DRMS_ERROR_CANTCOMPRESSFLOAT)
+                  {
+                     *errmsg = strdup("Cannot export Rice-compressed floating-point images.\n");
+                  }
+               }
             }
          }
          else
@@ -722,7 +740,8 @@ static int MapexportRecord(DRMS_Record_t *recout,
                                 ffmt, 
                                 &size, 
                                 fname, 
-                                !lastcparms ? cparms[iseg] : NULL);
+                                !lastcparms ? cparms[iseg] : NULL,
+                                NULL);
 
          if (err == kMymodErr_MissingSegFile)
          {

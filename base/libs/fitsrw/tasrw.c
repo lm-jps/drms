@@ -19,6 +19,17 @@
  * The maximum number of fitsfiles allowed to be open per CFITSIO lib is 300. */
 #define MAXFFILES 300
 
+#ifdef SKIPWS
+#undef SKIPWS
+#endif
+
+#ifdef ISBLANK
+#undef ISBLANK
+#endif
+
+#define ISBLANK(c) (c==' ' || c=='\t' || c=='\r')
+#define SKIPWS(p) {while(*p && ISBLANK(*p)) { ++p; }}
+
 typedef CFITSIO_IMAGE_INFO TASRW_FilePtrInfo_t;
 
 HContainer_t *gFFiles = NULL;
@@ -1127,4 +1138,30 @@ int fitsrw_getfpinfo_ext(fitsfile *fptr, CFITSIO_IMAGE_INFO *info)
 int fitsrw_setfpinfo_ext(fitsfile *fptr, CFITSIO_IMAGE_INFO *info)
 {
    return fitsrw_setfpinfo(fptr, (TASRW_FilePtrInfo_t *)info);
+}
+
+int fitsrw_iscompressed(const char *cparms)
+{
+   int rv = 0;
+   
+   if (cparms && *cparms)
+   {
+      const char *pc = cparms;
+
+      SKIPWS(pc);
+
+      /* Same parsing logic as cfileio.c (in the FITSIO library). */
+      if (strncmp(pc, "compress", 8) || strncmp(pc, "COMPRESS", 8))
+      {
+         pc += 8;
+         SKIPWS(pc);
+
+         if (*pc == 'r' || *pc == 'R')
+         {
+            rv = 1;
+         }
+      }
+   }
+
+   return rv;
 }
