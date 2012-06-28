@@ -1,4 +1,4 @@
-  /home/production/cvs/JSOC/doc/whattodo_start_stop_lev1_0_sums.txt 27Apr2012
+  /home/production/cvs/JSOC/doc/whattodo_start_stop_lev1_0_sums.txt 28Jun2012
 
 
 Do as user production or jsocprod as indicated. Do in this order:
@@ -22,6 +22,7 @@ Of course, if you not local with the screen, use ps.
 
 (note: ignore any core dump)
 
+
 On cl1n002: Stop lev1 processing for HMI as jsocprod
 ----------------------------------------------------
 > touch /usr/local/logs/lev1/build_mgr_stop_hmi
@@ -44,9 +45,13 @@ On cl1n001: Stop lev0 processing as jsocprod
 
 This may take a few minutes while the processing of ingest_lev0 for
 VC02 and VC05 completes to a commit point. 
+If the ingest_lev0 process is hung, it may not see the stop file signal.
+Then do a kill -9 of the ingest_lev0 processes.
+
 Likewise for AIA VC01 and VC04:
 
 > stop_lev0_AIA.pl
+
 
 On j1: Stop SUMS as production
 -------------------------------------
@@ -54,6 +59,7 @@ On j1: Stop SUMS as production
 > cd /home/production/cvs/JSOC/base/sums/scripts
 > sum_stop_j1.MULTI -f		(note: may need the -f(orce) flag)
 
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 START:
@@ -64,6 +70,7 @@ On j1: Start SUMS as production
 
 > cd /home/production/cvs/JSOC/base/sums/scripts
 > sum_start_j1.MULTI
+
 
 On d02: Restart t950view as production
 --------------------------------------
@@ -90,7 +97,7 @@ j1:/home/jsocprod>  ssh cl1n001
 cl1n001:/home/jsocprod> screen
 Directory: /home/jsocprod
 csh> cd
-cl1n001:/home/jsocprod> Ctrl-c	(to create anothe screen)
+cl1n001:/home/jsocprod> Ctrl-a c  (to create anothe screen)
 To toggle between screens do: Ctrl-a space
 Or to go to screen 2: Ctrl-a 2
 To disconnect from 'screen' do: Ctrl-a d
