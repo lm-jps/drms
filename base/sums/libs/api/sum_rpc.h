@@ -231,7 +231,7 @@ extern KEY *getdo_1();
 extern KEY *infodo_1();
 extern KEY *infodoX_1();
 extern KEY *infodoX_1_U();
-extern Sunumarray *infodoArray_1();
+extern KEY *infodoArray_1();
 extern KEY *sumrespdo_1();
 extern KEY *allocdo_1();
 extern KEY *putdo_1();
