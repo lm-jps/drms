@@ -12,6 +12,7 @@
 #define kShadowColNRecs "nrecords"
 #define kShadowColRecnum "recnum"
 
+#if (defined TOC && TOC)
 static int TocExists(DRMS_Env_t *env, int *status)
 {
    int istat = DRMS_SUCCESS;
@@ -26,6 +27,7 @@ static int TocExists(DRMS_Env_t *env, int *status)
 
    return tabexists;
 }
+#endif
 
 static int ShadowExists(DRMS_Env_t *env, const char *series, int *status)
 {
@@ -356,9 +358,14 @@ int drms_insert_series(DRMS_Session_t *session, int update,
 		  DB_STRING, si->seriesname, DB_STRING, link->info->name,
 		  DB_STRING, link->info->target_series, DB_STRING, linktype,
 		  DB_STRING, link->info->description))
-      goto failure;
-
+    {
+        hiter_free(&hit);
+        goto failure;
+    }
   }
+    
+  hiter_free(&hit);
+    
   /* Keyword fields. */
   hiter_new_sort(&hit, &template->keywords, drms_keyword_ranksort); /* Iterator for keyword container. */
   while( (key = (DRMS_Keyword_t *)hiter_getnext(&hit)) )
@@ -402,10 +409,10 @@ int drms_insert_series(DRMS_Session_t *session, int update,
        TIME interval = atoinc(key->info->unit);
        int internal = (interval > 0);
 
-       pret = drms_sprintfval_format(defval, key->info->type, 
-                                     &key->value, 
-                                     key->info->unit, 
-                                     internal);
+        pret = drms_sprintfval(defval, 
+                               key->info->type, 
+                               &key->value, 
+                               internal);
        XASSERT(pret < DRMS_DEFVAL_MAXLEN);
     }
     else
@@ -421,12 +428,34 @@ int drms_insert_series(DRMS_Session_t *session, int update,
         *   time -> sscan_time
         *   string -> none (copy_string)
         */
-       pret = drms_sprintfval_format(defval, 
-                                     key->info->type,
-                                     &key->value,
-                                     key->info->format, 	 
-                                     0);
+        pret = drms_sprintfval(defval, 
+                               key->info->type,
+                               &key->value,	 
+                               0);
        XASSERT(pret < DRMS_DEFVAL_MAXLEN);
+        
+        /* If the resulting string is quoted, strip the quotes. */
+        if (key->info->type == DRMS_TYPE_STRING)
+        {
+            size_t slen = strlen(defval);
+            int ich;
+            
+            if (slen > 1)
+            {
+                if ((defval[0] == '\'' && defval[slen - 1] == '\'') ||
+                    (defval[0] == '\"' && defval[slen - 1] == '\"'))
+                {
+                    ich = 0;
+                    while(ich < slen - 2)
+                    {
+                        defval[ich] = defval[ich + 1];
+                        ich++;
+                    }
+                    
+                    defval[ich] = '\0';
+                }
+            }
+        }
     }
 
     /* The persegment column used to be either 0 or 1 and it said whether the keyword
@@ -448,7 +477,10 @@ int drms_insert_series(DRMS_Session_t *session, int update,
 		  DB_INT4, key->info->islink,DB_INT4, key->info->recscope, /* stored in the isconstant column of
                                                                             * drms_keyword. */
 		  DB_INT4, key->info->kwflags))
-      goto failure;
+    {
+        hiter_free(&hit);
+        goto failure;
+    }
 
     /* key->info->per_segment overload: This will work on <= drms_series.c:1.23 because
      * in that version of DRMS, the version of drms_parser.c will not have the 
@@ -458,6 +490,9 @@ int drms_insert_series(DRMS_Session_t *session, int update,
       key->info->name[len-4] = '_';
 
   }
+    
+  hiter_free(&hit);
+    
   /* Segment fields. */
   hiter_new_sort(&hit, &template->segments, drms_segment_ranksort); /* Iterator for segment container. */
   segnum = 0;
@@ -476,11 +511,13 @@ int drms_insert_series(DRMS_Session_t *session, int update,
       break;
     default:
       printf("ERROR: Invalid value of scope (%d).\n", (int)seg->info->scope);
+      hiter_free(&hit);
       goto failure;
     }
     if (seg->info->naxis < 0 || seg->info->naxis>DRMS_MAXRANK)
     {
       printf("ERROR: Invalid value of rank (%d).\n",seg->info->naxis);
+      hiter_free(&hit);
       goto failure;
     }
     else
@@ -518,6 +555,7 @@ int drms_insert_series(DRMS_Session_t *session, int update,
 		  DB_STRING, seg->info->target_seg))
     {
       free(axisstr);
+      hiter_free(&hit);
       goto failure;
     }
     free(axisstr);
@@ -536,6 +574,9 @@ int drms_insert_series(DRMS_Session_t *session, int update,
 
     segnum++;
   }
+    
+  hiter_free(&hit);
+    
   p += sprintf(p,", primary key(recnum))");
 #ifdef DEBUG
   printf("statement = '%s'\n",createstmt);
@@ -654,6 +695,7 @@ int drms_insert_series(DRMS_Session_t *session, int update,
   free(namespace);
   free(series_lower);
   free(pidx_buf);
+  free(dbidx_buf);
   free(createstmt);
   return 0;
  failure:
@@ -662,9 +704,78 @@ int drms_insert_series(DRMS_Session_t *session, int update,
   free(namespace);
   free(series_lower);
   free(pidx_buf);
+  free(dbidx_buf);
   free(createstmt);
   return 1;
 }
+
+/* This function will take as input a jsd keyword specification as input, and a series
+ * name, and it will modify the series' db information to add the keywords listed
+ * in the spec. 
+ *
+ */
+#if 0
+int drms_addkeyto_series(DRMS_Env_t *env, const char *series, const char *spec)
+{
+    int rv = 1;
+    size_t len;
+    char *dupe = NULL;
+    char *start = NULL;
+    char *p = NULL;
+    char *q = NULL;
+    int keynum = 0;
+    DRMS_Record_t *fauxtemplate = NULL;
+    HContainer_t *slotted = hcon_create(sizeof(DRMS_Keyword_t *),
+                                        DRMS_MAXKEYNAMELEN,
+                                        NULL,
+                                        NULL,
+                                        NULL,
+                                        NULL,
+                                        0);
+    
+    if (spec && *spec)
+    {
+        dupe = strdup(spec);
+        
+        if (dupe)
+        {
+            /* Parse spec with drms_parser code. This will return a container of DRMS_Keyword_t structs. */
+            fauxtemplate = drms_parse_keyworddesc(env, dupe);
+            
+            if (fauxtemplate)
+            {
+                
+                
+            }
+            else
+            {
+                
+            }
+            
+
+            
+            
+            
+            /* Check for previous existence of keyword. */
+            
+            /* Don't modify series under slony replication. */
+            
+            /* Reject specs with prime-key specifications. */
+            
+            /* Determine if this is an old series where the keyword rank was not inlcuded in the persegment 
+             * column of drms_keyword. If so, do not set the rank bits of the persegment column. Otherwise, 
+             * determine the rank of the highest-ranked keyword, and add one to that rank before setting
+             * the persegment column value. REMEMBER: the rank in the DRMS_Keyword_t struct is 0-based, but 
+             * the rank in the persegment column is 1-based. */
+            
+            free(dupe);
+        }
+    }
+    
+    
+    return rv;
+}
+#endif
 
 /* cascade - I think this means to delete the PostgreSQL record-table and sequence
  * objects, and the SUs that the record table refers to. cascade == 0 when called 
