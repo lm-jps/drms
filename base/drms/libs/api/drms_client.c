@@ -2066,7 +2066,9 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
         else
         {
             fprintf(stderr, "Unexpected database response to query '%s'.\n", query);
-            istat = DRMS_ERROR_BADDBQUERY;
+            
+            /* Don't set an error status - the site may not have a PRODUSER table at all. The behavior in that
+             * case should be identical to the behavior where the table exists, but is empty. */
         }
     }
     
