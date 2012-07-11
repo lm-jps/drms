@@ -1987,7 +1987,7 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
     int forceconn = 0;
     DB_Handle_t *dbh = NULL;
     
-
+#ifdef PRODUSER_DBHOST
     /* Derive the db host machine from the PRODUSER_DBHOST string (which has the format host:port). */
     dbhost = strdup(PRODUSER_DBHOST);
     
@@ -2090,6 +2090,7 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
     {
         *status = istat;
     }
+#endif
     
     return isproduser;
 }
