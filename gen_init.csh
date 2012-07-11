@@ -37,6 +37,10 @@ set SUMEXP_METHFMT = `perl -n -e 'if ($_ =~ /^SUMEXP_METHFMT\s+(.+)/) { print $1
 set SUMEXP_USERFMT = `perl -n -e 'if ($_ =~ /^SUMEXP_USERFMT\s+(.+)/) { print $1; }' $LOCALINF`
 set SUMEXP_HOSTFMT = `perl -n -e 'if ($_ =~ /^SUMEXP_HOSTFMT\s+(.+)/) { print $1; }' $LOCALINF`
 set SUMEXP_PORTFMT = `perl -n -e 'if ($_ =~ /^SUMEXP_PORTFMT\s+(.+)/) { print $1; }' $LOCALINF`
+set PRODUSER_DBHOST = `perl -n -e 'if ($_ =~ /^PRODUSER_DBHOST\s+(.+)/) { print $1; }' $LOCALINF`
+set PRODUSER_DBNAME = `perl -n -e 'if ($_ =~ /^PRODUSER_DBNAME\s+(.+)/) { print $1; }' $LOCALINF`
+set PRODUSER_PRODTAB = `perl -n -e 'if ($_ =~ /^PRODUSER_PRODTAB\s+(.+)/) { print $1; }' $LOCALINF`
+set PRODUSER_COLUSER = `perl -n -e 'if ($_ =~ /^PRODUSER_COLUSER\s+(.+)/) { print $1; }' $LOCALINF`
 
 # check that local config file has been edited appropriately
 if ($#LOCAL_CONFIG_SET == 1) then
@@ -134,6 +138,28 @@ if ($#SUMS_DBPORT != 1) then
   echo "         using default value $SUMS_DBPORT"
 endif
 
+if ($#PRODUSER_DBHOST != 1) then
+  echo "Error: PRODUSER_DBHOST undefined in local configuration file $LOCALINF"
+  exit
+endif
+
+if ($#PRODUSER_DBNAME != 1) then
+  echo "Error: PRODUSER_DBNAME undefined in local configuration file $LOCALINF"
+  exit
+endif
+
+if ($#PRODUSER_PRODTAB != 1) then
+  echo "Error: PRODUSER_PRODTAB undefined in local configuration file $LOCALINF"
+  exit
+endif
+
+if ($#PRODUSER_COLUSER != 1) then
+  echo "Error: PRODUSER_COLUSER undefined in local configuration file $LOCALINF"
+  exit
+endif
+
+
+
 # generate script create_sumindex.sql
 set SCRIPT = scripts/create_sumindex.sql
 echo "*** generating $SCRIPT ***"
@@ -199,6 +225,11 @@ endif
 if ($#SUMEXP_PORTFMT) then
   echo '#define LOC_SUMEXP_PORTFMT	'$SUMEXP_PORTFMT  >> $SCRIPT
 endif
+
+echo '#define PRODUSER_DBHOST           "'$PRODUSER_DBHOST'"' >> $SCRIPT
+echo '#define PRODUSER_DBNAME           "'$PRODUSER_DBNAME'"' >> $SCRIPT
+echo '#define PRODUSER_PRODTAB          "'$PRODUSER_PRODTAB'"' >> $SCRIPT
+echo '#define PRODUSER_COLUSER          "'$PRODUSER_COLUSER'"' >> $SCRIPT
 
 
 # modify targets as appropriate in custom.mk
