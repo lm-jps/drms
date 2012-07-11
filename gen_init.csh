@@ -138,27 +138,6 @@ if ($#SUMS_DBPORT != 1) then
   echo "         using default value $SUMS_DBPORT"
 endif
 
-if ($#PRODUSER_DBHOST != 1) then
-  echo "Error: PRODUSER_DBHOST undefined in local configuration file $LOCALINF"
-  exit
-endif
-
-if ($#PRODUSER_DBNAME != 1) then
-  echo "Error: PRODUSER_DBNAME undefined in local configuration file $LOCALINF"
-  exit
-endif
-
-if ($#PRODUSER_PRODTAB != 1) then
-  echo "Error: PRODUSER_PRODTAB undefined in local configuration file $LOCALINF"
-  exit
-endif
-
-if ($#PRODUSER_COLUSER != 1) then
-  echo "Error: PRODUSER_COLUSER undefined in local configuration file $LOCALINF"
-  exit
-endif
-
-
 
 # generate script create_sumindex.sql
 set SCRIPT = scripts/create_sumindex.sql
@@ -226,11 +205,18 @@ if ($#SUMEXP_PORTFMT) then
   echo '#define LOC_SUMEXP_PORTFMT	'$SUMEXP_PORTFMT  >> $SCRIPT
 endif
 
-echo '#define PRODUSER_DBHOST           "'$PRODUSER_DBHOST'"' >> $SCRIPT
-echo '#define PRODUSER_DBNAME           "'$PRODUSER_DBNAME'"' >> $SCRIPT
-echo '#define PRODUSER_PRODTAB          "'$PRODUSER_PRODTAB'"' >> $SCRIPT
-echo '#define PRODUSER_COLUSER          "'$PRODUSER_COLUSER'"' >> $SCRIPT
-
+if ($#PRODUSER_DBHOST) then
+  echo '#define PRODUSER_DBHOST           "'$PRODUSER_DBHOST'"' >> $SCRIPT
+endif
+if ($#PRODUSER_DBHOST) then
+  echo '#define PRODUSER_DBNAME           "'$PRODUSER_DBNAME'"' >> $SCRIPT
+endif
+if ($#PRODUSER_DBHOST) then
+  echo '#define PRODUSER_PRODTAB          "'$PRODUSER_PRODTAB'"' >> $SCRIPT
+endif
+if ($#PRODUSER_DBHOST) then
+  echo '#define PRODUSER_COLUSER          "'$PRODUSER_COLUSER'"' >> $SCRIPT
+endif
 
 # modify targets as appropriate in custom.mk
 # don't do anything here that will modify custom.mk. Another script
