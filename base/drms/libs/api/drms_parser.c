@@ -191,7 +191,171 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
   return NULL;
 }
 
-      
+/* Returns a container of keyword structs. The record pointer for each keyword is NULL. */
+HContainer_t *drms_parse_keyworddesc(DRMS_Env_t *env, char *desc, int *status)
+{
+    DRMS_Record_t *fauxtemplate = NULL;
+    char *start = NULL;
+    char *p = NULL;
+    char *q = NULL;
+    int keynum = 0;
+    HContainer_t *keys = NULL;
+    int len;
+    HContainer_t *slotted = NULL;
+    int rv = DRMS_SUCCESS;
+    
+    slotted = hcon_create(sizeof(DRMS_Keyword_t *),
+                          DRMS_MAXKEYNAMELEN,
+                          NULL,
+                          NULL,
+                          NULL,
+                          NULL,
+                          0);
+    
+    if (slotted)
+    {
+        start = desc;
+        len = getnextline(&start);
+        while (*start)
+        {
+            p = start;
+            SKIPWS(p);
+            
+            if (*p == '\n')
+            {
+                p++;
+                start = p;
+                len = getnextline(&start);
+                continue;
+            }
+            
+            q = p;
+            if (GETKEYWORD(&q))
+            {
+                rv = DRMS_ERROR_BADJSD;
+                break;
+            }
+            
+            if (prefixmatch(p, "Keyword:"))
+            {
+                if (!fauxtemplate)
+                {
+                    /* Do the minimal amount of work to intialize a fake fauxtemplate record structure. */
+                    fauxtemplate = calloc(1, sizeof(DRMS_Record_t));
+                    
+                    if (fauxtemplate)
+                    {
+                        XASSERT(fauxtemplate);
+                        fauxtemplate->seriesinfo = calloc(1, sizeof(DRMS_SeriesInfo_t));
+                        XASSERT(fauxtemplate->seriesinfo);
+                        fauxtemplate->env = env;
+                        fauxtemplate->init = 1;
+                        fauxtemplate->recnum = 0;
+                        fauxtemplate->sunum = -1;
+                        fauxtemplate->sessionid = 0;
+                        fauxtemplate->sessionns = NULL;
+                        fauxtemplate->su = NULL;
+                        
+                        /* Initialize container structure. */
+                        /* drms_free_keyword_struct doesn't free key->info. */
+                        /* drms_copy_keyword_struct doesn't copy key->info. */
+                        hcon_init(&fauxtemplate->keywords, sizeof(DRMS_Keyword_t), DRMS_MAXHASHKEYLEN, 
+                                  (void (*)(const void *)) drms_free_keyword_struct, 
+                                  (void (*)(const void *, const void *)) drms_copy_keyword_struct);
+                    }
+                    else
+                    {
+                        rv = DRMS_ERROR_OUTOFMEMORY;
+                    }
+                }
+                
+                /* Let parse_keyword advance the keyword number since it may 
+                 * expand per-segment keywords into multiple keywords. */
+                if (rv == DRMS_SUCCESS)
+                {
+                    /* The is the sole reason for making a fake template record. parse_keyword()
+                     * needs it. It would be better if parse_keyword() returned a simple 
+                     * DRMS_Keyword_t to a calling function that then set up the link from the 
+                     * keyword sturct back to the template record. Then we could avoid having
+                     * to always make this fake template record. */
+                    if (parse_keyword(&q, fauxtemplate, slotted, &keynum))
+                    {
+                        rv = DRMS_ERROR_BADJSD;
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                fprintf(stderr, "Warning: Unexpected line '%s', skipping and continuing.\n", p);
+            }
+            
+            start += len + 1;
+            len = getnextline(&start);
+        } /* end while */
+        
+        if (rv == DRMS_SUCCESS)
+        {
+            if (hcon_size(&fauxtemplate->keywords) > 0)
+            {
+                /* Copy to keys container. */
+                keys = (HContainer_t *)malloc(sizeof(HContainer_t));
+                if (keys)
+                {
+                    HIterator_t *hit = NULL;
+                    DRMS_Keyword_t *key = NULL;
+                    
+                    /* If fauxtemplate->keywords has a deep_copy, then so will keys. But it does not,
+                     * so this is a shallow copy. */
+                    hcon_copy(keys, &fauxtemplate->keywords);
+                    
+                    /* NULL-out all references to the parent record. We're making a headless container of
+                     * keyword structs. */
+                    hit = hiter_create(keys);
+                    if (hit)
+                    {
+                        while ((key = hiter_getnext(hit)) != NULL)
+                        {
+                            key->record = NULL;
+                        }
+                        
+                        hiter_destroy(&hit);
+                    }
+                    else
+                    {
+                        rv = DRMS_ERROR_OUTOFMEMORY;
+                    }
+                }
+                else
+                {
+                    rv = DRMS_ERROR_OUTOFMEMORY;
+                }
+            }
+        }
+        
+        /* Free record (and keys inside the record). This will not free the key->infos, but
+         * this is good since we shallow copied the key structs from fauxtemplate->keywords to keys.
+         * So keys takes ownership of all the key->infos. */
+        drms_free_record_struct(fauxtemplate);
+        fauxtemplate = NULL;
+    }
+    else
+    {
+        rv = DRMS_ERROR_OUTOFMEMORY;   
+    }
+    
+    if (slotted)
+    {
+        hcon_destroy(&slotted);
+    }
+    
+    if (status)
+    {
+        *status = rv;
+    }
+    
+    return keys;
+}
 
 
 
