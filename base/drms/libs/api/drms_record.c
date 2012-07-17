@@ -6226,7 +6226,7 @@ int CopySeriesInfo(DRMS_Record_t *target, DRMS_Record_t *source)
 {
    memcpy(target->seriesinfo, source->seriesinfo, sizeof(DRMS_SeriesInfo_t));
    memset(target->seriesinfo->pidx_keywords, 0, sizeof(DRMS_Keyword_t *) * DRMS_MAXPRIMIDX);
-   memset(target->seriesinfo->dbidx_keywords, 0, sizeof(DRMS_Keyword_t *) * DRMS_MAXPRIMIDX);
+   memset(target->seriesinfo->dbidx_keywords, 0, sizeof(DRMS_Keyword_t *) * DRMS_MAXDBIDX);
 
    return DRMS_SUCCESS;
 }

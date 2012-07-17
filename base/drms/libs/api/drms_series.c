@@ -709,12 +709,72 @@ int drms_insert_series(DRMS_Session_t *session, int update,
   return 1;
 }
 
+static int RankReverseSort(const void *he1, const void *he2)
+{
+    DRMS_Keyword_t *k1 = (DRMS_Keyword_t *)hcon_getval(*((HContainerElement_t **)he1));
+    DRMS_Keyword_t *k2 = (DRMS_Keyword_t *)hcon_getval(*((HContainerElement_t **)he2));
+    
+    XASSERT(k1 && k2);
+    
+    return (k1->info->rank < k2->info->rank) ? 1 : (k1->info->rank > k2->info->rank ? -1 : 0);
+}
+/* Returns -1 if the series does not have ranked keywords (with valid ranks), 
+ * otherwise returns the 0-based rank. */
+int drms_series_gethighestkeyrank(DRMS_Env_t *env, const char *series, int *status)
+{
+    int drmsstat = DRMS_SUCCESS;
+    DRMS_Record_t *rec = NULL;
+    HContainer_t *keys = NULL;
+    DRMS_Keyword_t *key = NULL;
+    HIterator_t hit;
+    int rv = -1; /* The series does not have rankings. */
+    
+    rec = drms_template_record(env, series, &drmsstat);
+    
+    if (!rec || drmsstat)
+    {
+        if (!drmsstat)
+        {
+            drmsstat = DRMS_ERROR_UNKNOWNSERIES;
+        }
+        
+        fprintf(stderr, "Unable to obtain template record for series %s; error %d.\n", series, drmsstat);
+    }
+    else
+    {
+        keys = &rec->keywords;
+        if (hcon_size(keys) > 0)
+        {
+            hiter_new_sort(&hit, keys, RankReverseSort);
+            key = (DRMS_Keyword_t *)hiter_getnext(&hit);
+            if (!key)
+            {
+                fprintf(stderr, "Missing keyword.\n");
+                drmsstat = DRMS_ERROR_UNKNOWNKEYWORD;
+            }
+            else
+            {
+                rv = key->info->rank;
+            }
+            
+            hiter_free(&hit);
+        }
+    }
+    
+    if (status)
+    {
+        *status = drmsstat;
+    }
+    
+    return rv;
+}
+
+#if 0
 /* This function will take as input a jsd keyword specification as input, and a series
  * name, and it will modify the series' db information to add the keywords listed
  * in the spec. 
  *
  */
-#if 0
 int drms_addkeyto_series(DRMS_Env_t *env, const char *series, const char *spec)
 {
     int rv = 1;

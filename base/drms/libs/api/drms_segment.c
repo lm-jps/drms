@@ -166,68 +166,75 @@ HContainer_t *drms_create_segment_prototypes(DRMS_Record_t *target,
 					     DRMS_Record_t *source, 
 					     int *status)
 {
-   HContainer_t *ret = NULL;
-   DRMS_Segment_t *tSeg = NULL;
-   DRMS_Segment_t *sSeg = NULL;
-
-   XASSERT(target != NULL && target->segments.num_total == 0 && source != NULL);
-
-   if (target != NULL && target->segments.num_total == 0 && source != NULL)
-   {
-      *status = DRMS_SUCCESS;
-      HIterator_t hit;
-      hiter_new_sort(&hit, &(source->segments), drms_segment_ranksort);
-
-      while ((sSeg = hiter_getnext(&hit)) != NULL)
-      {
-	 if (sSeg->info && strlen(sSeg->info->name) > 0)
-	 {
-            tSeg = hcon_allocslot_lower(&(target->segments), sSeg->info->name);
-            XASSERT(tSeg);
-	    memset(tSeg, 0, sizeof(DRMS_Segment_t));
-            tSeg->info = malloc(sizeof(DRMS_SegmentInfo_t));
-            XASSERT(tSeg->info);
-	    memset(tSeg->info, 0, sizeof(DRMS_SegmentInfo_t));
-
-	    if (tSeg && tSeg->info)
-	    {
-	       /* record */
-	       tSeg->record = target;
-	       
-	       /* segment info*/
-	       memcpy(tSeg->info, sSeg->info, sizeof(DRMS_SegmentInfo_t));
-
-	       /* axis is allocated as static array */
-	       memcpy(tSeg->axis, sSeg->axis, sizeof(int) * DRMS_MAXRANK);
-
-	        if (tSeg->info->protocol == DRMS_TAS)
-		{
-		   /* blocksize is allocated as static array */
-		   memcpy(tSeg->blocksize, sSeg->blocksize, sizeof(int) * DRMS_MAXRANK);
-		}
-	    }
-	    else
-	    {
-	       *status = DRMS_ERROR_OUTOFMEMORY;
-	    }
-	 }
-	 else
-	 {
-	    *status = DRMS_ERROR_INVALIDSEGMENT;
-	 }
-      }
-
-      if (*status == DRMS_SUCCESS)
-      {
-	 ret = &(target->segments);
-      }
-   }
-   else
-   {
-      *status = DRMS_ERROR_INVALIDRECORD;
-   }
-
-   return ret;
+    HContainer_t *ret = NULL;
+    DRMS_Segment_t *tSeg = NULL;
+    DRMS_Segment_t *sSeg = NULL;
+    
+    XASSERT(target != NULL && target->segments.num_total == 0 && source != NULL);
+    
+    if (target != NULL && target->segments.num_total == 0 && source != NULL)
+    {
+        *status = DRMS_SUCCESS;
+        HIterator_t hit;
+        hiter_new_sort(&hit, &(source->segments), drms_segment_ranksort);
+        
+        while ((sSeg = hiter_getnext(&hit)) != NULL)
+        {
+            if (sSeg->info && strlen(sSeg->info->name) > 0)
+            {
+                tSeg = hcon_allocslot_lower(&(target->segments), sSeg->info->name);
+                XASSERT(tSeg);
+                memset(tSeg, 0, sizeof(DRMS_Segment_t));
+                tSeg->info = malloc(sizeof(DRMS_SegmentInfo_t));
+                XASSERT(tSeg->info);
+                memset(tSeg->info, 0, sizeof(DRMS_SegmentInfo_t));
+                
+                if (tSeg && tSeg->info)
+                {
+                    /* record */
+                    tSeg->record = target;
+                    
+                    /* segment info*/
+                    memcpy(tSeg->info, sSeg->info, sizeof(DRMS_SegmentInfo_t));
+                    
+                    /* axis is allocated as static array */
+                    memcpy(tSeg->axis, sSeg->axis, sizeof(int) * DRMS_MAXRANK);
+                    
+                    if (tSeg->info->protocol == DRMS_TAS)
+                    {
+                        /* blocksize is allocated as static array */
+                        memcpy(tSeg->blocksize, sSeg->blocksize, sizeof(int) * DRMS_MAXRANK);
+                    }
+                    
+                    /* copy cparms - compression string */
+                    snprintf(tSeg->cparms, sizeof(tSeg->cparms), "%s", sSeg->cparms);
+                    
+                    /* bzero/bscale */
+                    tSeg->bzero = sSeg->bzero;
+                    tSeg->bscale = sSeg->bscale;
+                }
+                else
+                {
+                    *status = DRMS_ERROR_OUTOFMEMORY;
+                }
+            }
+            else
+            {
+                *status = DRMS_ERROR_INVALIDSEGMENT;
+            }
+        }
+        
+        if (*status == DRMS_SUCCESS)
+        {
+            ret = &(target->segments);
+        }
+    }
+    else
+    {
+        *status = DRMS_ERROR_INVALIDRECORD;
+    }
+    
+    return ret;
 }
 
 /* 
