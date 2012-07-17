@@ -200,7 +200,27 @@ static int ProcessRecord(DRMS_Record_t *recin, DRMS_Record_t *recout)
                 {
                     /* skip input records that have no SU associated with them */
                     drms_segment_filename(segin, infile);
-                    drms_segment_filename(segout, outfile);
+                    
+                    if (segout->info->protocol == DRMS_GENERIC)
+                    {
+                        char *filename = NULL;
+                        filename = rindex(infile, '/');
+                        if (filename)
+                        {
+                            filename++;
+                        }
+                        else 
+                        {
+                            filename = infile;
+                        }
+                        
+                        CHECKSNPRINTF(snprintf(segout->filename, DRMS_MAXSEGFILENAME, "%s", filename), DRMS_MAXSEGFILENAME);
+                        drms_segment_filename(segout, outfile);
+                    }
+                    else
+                    {
+                        drms_segment_filename(segout, outfile);
+                    }
                     
                     if (*infile != '\0' && *outfile != '\0')
                     {
@@ -346,6 +366,18 @@ int DoIt(void)
       }
       else if (rsin && rsin->n > 0)
       {
+          /* Adjust chunksize - if rsin->n < chunksize, then there are fewer records in the 
+           * record-set than exist in a chunk. Make the chunksize = rsin->n. */
+          if (chunksize > rsin->n)
+          {
+              chunksize = rsin->n;
+              if (drms_recordset_setchunksize(chunksize))
+              {
+                  fprintf(stderr, "Unable to set record-set chunk size of %d; using default.\n", chunksize);
+                  chunksize = drms_recordset_getchunksize();
+              }
+          }
+          
          /* Stage the records. The retrieval is actually deferred until the drms_recordset_fetchnext()
           * call opens a new record chunk. */
          drms_sortandstage_records(rsin, 1, 0, NULL); 
