@@ -566,7 +566,7 @@ int fitsrw_readslice(int verbose,
 
    switch((*image_info)->bitpix)
    {
-      case(BYTE_IMG):    data_type = TSBYTE; break;
+      case(BYTE_IMG):    data_type = TBYTE; break;
       case(SHORT_IMG):   data_type = TSHORT; break;
       case(LONG_IMG):    data_type = TINT; break; 
       case(LONGLONG_IMG):data_type = TLONGLONG; break;
@@ -586,7 +586,7 @@ int fitsrw_readslice(int verbose,
       increments[i]=1; // no skipping
    }
 
-   pixels = calloc(npixels,  bytepix);
+   pixels = calloc(npixels, bytepix);
    if(!pixels)
    {
       error_code = CFITSIO_ERROR_OUT_OF_MEMORY;
@@ -629,12 +629,71 @@ int fitsrw_readslice(int verbose,
       goto error_exit;
    }
 
-   *image = pixels;
-
-   /* bzero/bscale are always 0.0/1.0 in a TAS FITS file, thank goodness, so 
-    * we don't have to worry about correcting the values when type is TSBYTE.  Otherwise,
-    * you'd have to account for the fact that cfitsio doesn't understand that 
-    * bzero must be -128 for BYTE_IMG type of images. */
+    /* If data_type is TBYTE, then data are unsigned. We need to convert to signed data, 
+     * which is the only type of byte data supported in DRMS. But we don't want 
+     * to apply bzero/bscale either, because that gets applied in a calling function.
+     * So what we'll do is to apply bzero/bscale here, then set bzero and bscale to 
+     * 0 and 1 so that the calling function doesn't re-apply the bzero/bscale values. */
+    
+    /* I don't know how to compare floating-point numbers without generting a compiler 
+     * warning - the comparisons below are valid. */
+    if (data_type == TBYTE)
+    {
+        long long ipix;
+        signed char *opix = NULL;
+        unsigned char *val = NULL;
+        signed char *oval = NULL;
+        
+        if ((*image_info)->bscale != 1 || (*image_info)->bzero != -128)
+        {
+            /* We can't support this, at least with char data. What this would mean is
+             * that the data are all positive, and potentially floating-point data (stored
+             * as unsigned chars). We could promote the data to shorts, then hack the 
+             * image_info struct so that image_info says that data are shorts with  
+             * bzero and bscale values. We would put the raw positive byte values into a 
+             * short array (without applying any bzero/bscale scaling) and it would be
+             * as if we read a short image to begin with. But I would have to
+             * change a bunch of code at the higher level, so let's not do this unless 
+             * the need arises. */
+            error_code = CFITSIO_ERROR_LIBRARY;
+            goto error_exit;
+        }
+        
+        opix = calloc(npixels, bytepix);
+        
+        if (!opix)
+        {
+            error_code = CFITSIO_ERROR_OUT_OF_MEMORY;
+            goto error_exit;
+        }
+        
+        for (ipix = npixels, val = (unsigned char *)pixels, oval = opix; ipix >= 1; ipix--)
+        {
+            /* Sheesh. We cannot use casting to convert the unsigned char to a signed char, 
+             * since casting will subtract UCHAR_MAX + 1 (= 256) from the unsigned value.
+             * Since bzero is -128, this implies that the image contains signed char data, 
+             * as specified in the FITS standard. Convert from unsigned char to signed char
+             * by subtracting 128.
+             */
+            *oval = (signed char)((int)(*image_info)->bzero + *val);
+            val++;
+            oval++;
+        }
+        
+        (*image_info)->bzero = 0;
+        (*image_info)->bscale = 1;
+        
+        *image = opix;
+        opix = NULL;
+        
+        free(pixels);
+        pixels = NULL;
+    }
+    else
+    {
+        *image = pixels;
+        pixels = NULL;
+    }
 
    return CFITSIO_SUCCESS;
 

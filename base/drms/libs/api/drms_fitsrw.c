@@ -100,7 +100,7 @@ void drms_fitsrw_ShootBlanks(DRMS_Array_t *arr, long long blank)
 
       while (nelem > 0)
       {
-	 void *elem = (char *)arr->data + nelem;
+	 void *elem = (char *)arr->data + nelem - 1;
 
 	 DRMS_VAL_SET(arr->type, elem, val);
 	 dataval = conv2longlong(arr->type, &(val.value), NULL);
