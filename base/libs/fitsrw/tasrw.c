@@ -683,6 +683,15 @@ int fitsrw_readslice(int verbose,
         (*image_info)->bzero = 0;
         (*image_info)->bscale = 1;
         
+        /* We have to convert the blank value back into the DRMS signed char system. 
+         * drms_fitsrw_ShootBlanks(), called downstream, will compare pixel values 
+         * to the blank value. At this point, the blank value is 0 - when the fits file
+         * was first written, the blank value of -128 was converted to 0 (we made a 
+         * signed value into an unsigned value). Now that we've read the blank value 
+         * of 0, an unsigned char, we need to convert this value back to a signe char
+         * value. */
+        (*image_info)->blank = -128;
+        
         *image = opix;
         opix = NULL;
         
