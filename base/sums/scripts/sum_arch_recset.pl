@@ -11,10 +11,12 @@ use DBI;
 
 sub usage {
   print "Mark the given record set sunums as archive pending\n";
-  print "Usage: sum_arch_recset.pl [-u] [-t30] [-ffile] 'aia.lev1[2011-12-10/1m]'\n";
+  print " NOTE: You must be user production to run\n";
+  print "Usage: sum_arch_recset.pl [-u] [-t30] [-g9] [-ffile] 'aia.lev1[2011-12-10/1m]'\n";
   print "       -u = Update mode, updates the DB, else advise only mode.\n";
   print "       -t = Number of days in the future to set effective_date.\n";
   print "            If no -t is given the effective_date is not changed.\n";
+  print "	-g = Group # to put in the sum_partn_alloc table. Default 0.\n";
   print "       -f = file name that contains the record sets. One record set \n";
   print "            per line.\n";
   print "       If no -f, specify the record set\n";
@@ -61,6 +63,7 @@ $DBIN = "jsoc_sums";
 $PORTIN = 5434;		#port for jsoc_sums DB
 $INFILE = 0;
 $TOUCH = 0;
+$GROUP = 0;
 $UPDATEMODE = 0;
 while ($ARGV[0] =~ /^-/) {
   $_ = shift;
@@ -69,6 +72,9 @@ while ($ARGV[0] =~ /^-/) {
   }
   if (/^-t(.*)/) {
     $TOUCH = $1;
+  }
+  if (/^-g(.*)/) {
+    $GROUP = $1;
   }
   if (/^-u(.*)/) {
     $UPDATEMODE = 1;
@@ -142,15 +148,16 @@ SINGLE:
       # Fetch the rows back from the SELECT statement
       if(@row = $sth->fetchrow()) {
         $group_id = shift(@row);
+        $group_id = $GROUP;		#override w/cmd arg
         $eff_date = shift(@row);
         $entry = sprintf("%s,%s,%s", $dsix, $eff_date, $group_id);
         #push(@entry, $entry);	#must save this before do next query
         if($UPDATEMODE) {		#ok to update DB
           if($TOUCH) {
-            $sql = "update sum_partn_alloc set status=4, archive_substatus=128, effective_date=$xeffdate where ds_index=$dsix";
+            $sql = "update sum_partn_alloc set status=4, archive_substatus=128, effective_date=$xeffdate, group_id=$group_id  where ds_index=$dsix";
           }
           else {
-            $sql = "update sum_partn_alloc set status=4, archive_substatus=128 where ds_index=$dsix";
+            $sql = "update sum_partn_alloc set status=4, archive_substatus=128, group_id=$group_id where ds_index=$dsix";
           }
           #print "$sql\n";
           $sth = $dbh->prepare($sql);
