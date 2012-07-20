@@ -16,7 +16,7 @@ sub usage {
   print "       -u = Update mode, updates the DB, else advise only mode.\n";
   print "       -t = Number of days in the future to set effective_date.\n";
   print "            If no -t is given the effective_date is not changed.\n";
-  print "	-g = Group # to put in the sum_partn_alloc table. Default 0.\n";
+  print "       -g = Group # to put in the sum_partn_alloc table. Default 0.\n";
   print "       -f = file name that contains the record sets. One record set \n";
   print "            per line.\n";
   print "       If no -f, specify the record set\n";
