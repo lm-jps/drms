@@ -2,6 +2,7 @@
 #include "drms.h"
 #include "cmdparams_priv.h"
 
+/* These args cannot be set via the environment. They can be set only via the cmd-line. */
 static char *blacklist[] =
 {
    "DRMS_RETENTION",
