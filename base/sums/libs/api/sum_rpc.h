@@ -583,13 +583,19 @@ struct padata {
 typedef struct padata PADATA;
 
 /* Partition definition table. One for each dedicated SUM partition.
- * Initialized by sum_svc from the sum_partn_avail data base table. */
+ * Initialized by sum_svc from the sum_partn_avail data base table.
+ * NOTE: pds_set_prime was added to sum_partn_avail on 7/23/2012.
+ * It may not be added to the NetDRMS DBs. They use sum_rm instead
+ * of sum_rm_[0,1,2] which needs the new pds_set_prime.
+*/
 struct partition {
   char *name;           /* name of the partition */
   double bytes_total;   /* total number of bytes of the partition */
   double bytes_left;    /* bytes unassigned */
   double bytes_alloc;   /* bytes allocated by DS_Allocate() */
   int pds_set_num;      /* SUM set the part. belongs to. aka sum_set_num */
+			/* This can be taken offline (-1) by sum_rm */
+  int pds_set_prime;	/* used by sum_rm to restore pds_set_num from -1 */
 };
 typedef struct partition PART;
 
