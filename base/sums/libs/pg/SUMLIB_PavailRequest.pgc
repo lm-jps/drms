@@ -93,16 +93,16 @@ int i;
     printk("DS_PavailRequestEx \n");  
     EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
 
-	EXEC SQL DECLARE pavail CURSOR FOR
+	EXEC SQL DECLARE pavailx CURSOR FOR
 	SELECT PARTN_NAME, TOTAL_BYTES, AVAIL_BYTES, PDS_SET_NUM, PDS_SET_PRIME
 	FROM SUM_PARTN_AVAIL;
 
-	EXEC SQL OPEN pavail;
+	EXEC SQL OPEN pavailx;
 
     EXEC SQL WHENEVER NOT FOUND GOTO end_fetch; 
 	
 	for(i=0; i<MAX_PART-1; i++){
-		EXEC SQL FETCH pavail INTO :l_name, :l_total, :l_avail, :l_pnum, :l_pnumprime;
+		EXEC SQL FETCH pavailx INTO :l_name, :l_total, :l_avail, :l_pnum, :l_pnumprime;
 		strcpy(name, l_name.arr);
 		namestr = (char *) malloc (sizeof(name));
 		strcpy(namestr, name);
@@ -117,7 +117,7 @@ int i;
 	}
 	if (i==MAX_PART-1){
 		/*printf("more partitions than reqd \n"); */
-                EXEC SQL CLOSE pavail;
+                EXEC SQL CLOSE pavailx;
                 EXEC SQL COMMIT WORK;
 		return DS_DATA_QRY;
 	} 
@@ -128,12 +128,12 @@ end_fetch:
         /* put a terminating entry in the in-memory table */
 	ptab[i].name = NULL;	
 	ptab[i].pds_set_num = -1;	
-	EXEC SQL CLOSE pavail;
+	EXEC SQL CLOSE pavailx;
     EXEC SQL COMMIT WORK;
     return NO_ERROR;
 	
 sqlerror:
-    printk("Error in DS_PavailRequest\n");
+    printk("Error in DS_PavailRequestEx\n");
     printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
     EXEC SQL WHENEVER SQLERROR CONTINUE;
     EXEC SQL ROLLBACK WORK;
