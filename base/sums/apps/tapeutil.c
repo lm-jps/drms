@@ -358,8 +358,21 @@ void insert_tq_entry_wrt(TQ *p) {
 }
 
 void insert_tq_entry_rd_need(TQ *p) {
-  if(empty_q_rd_need()) q_rd_need_front = p;
-  else q_rd_need_rear->next = p;
+  TQ *px;
+
+  if(empty_q_rd_need()) {
+    q_rd_need_front = p;
+    q_rd_need_rear = p;
+    return;
+  }
+  px = q_rd_need_front;
+  while(px) {
+    if((px->filenum == p->filenum) && (!strcmp(px->tapeid, p->tapeid))) {
+      return; //no dups
+    }
+    px = px->next;
+  }
+  q_rd_need_rear->next = p;
   q_rd_need_rear = p;
 }
 
@@ -371,8 +384,10 @@ void insert_tq_entry_wrt_need(TQ *p) {
 
 void rd_q_print(TQ *p) {
   while(p) {
-    write_log("next=%ld, dsix=%lu, filenum=%d, tapeid=%s, user=%s\n",
-	p->next, p->ds_index, p->filenum, p->tapeid, p->username);
+    //write_log("next=%ld, dsix=%lu, filenum=%d, tapeid=%s, user=%s\n",
+    //	p->next, p->ds_index, p->filenum, p->tapeid, p->username);
+    write_log("uid=%lu, dsix=%lu, filenum=%d, tapeid=%s, user=%s\n",
+	p->uid, p->ds_index, p->filenum, p->tapeid, p->username);
     p = p->next;
   }
 }
