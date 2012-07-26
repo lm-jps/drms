@@ -25,6 +25,7 @@ typedef enum
 #define kKeyReqID      "RequestID"
 #define kKeyHistory    "HISTORY"
 #define kKeyComment    "COMMENT"
+#define kKeySource     "SOURCE"
 
 ModuleArgs_t module_args[] =
 {
@@ -273,6 +274,16 @@ int DoIt(void)
                           "Keyword:COMMENT, string, variable, record, \"No comment\", %s, NA, \"Commentary on the data processing.\"", 
                           0, 
                           0, 
+                          1 + hirank++);
+        }
+
+        if (err == kExpCloneErr_Success)
+        {
+            err = AddAKey(kKeySource,
+                          copy,
+                          "Keyword:SOURCE, string, variable, record, \"No source\", %s, NA, \"Input record record-set specification.\"",
+                          0,
+                          0,
                           1 + hirank++);
         }
         
