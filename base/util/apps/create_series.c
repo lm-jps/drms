@@ -58,7 +58,8 @@ int DoIt(void) {
   int force, len, perms;
   const char *filename;
   FILE *fp;
-  char *buf, *series;
+  char *buf;
+  const char *series = NULL;
   struct stat file_stat;
   DRMS_Record_t *template;
   char yesno[10];
