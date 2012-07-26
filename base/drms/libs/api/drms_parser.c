@@ -68,8 +68,57 @@ static void FreeCparmKey(const void *v)
 
 DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
 {
-  DRMS_Record_t *template;
+  DRMS_Record_t *template = NULL;
   int keynum = 0;
+  HContainer_t *cparmkeys = NULL;
+
+  /* Before we do anything, check for a file with proper line endings. */
+  char *pc = desc;
+  int winle = 0;
+  int macle = 0;
+  int crseen = 0;
+
+  while (pc && *pc)
+  {
+     if (!crseen)
+     {
+        if (*pc == '\r')
+        {
+           crseen = 1;
+        }
+        else if (*pc == '\n')
+        {
+           /* Unix line ending. */
+           break;
+        }
+     }
+     else
+     {
+        if (*pc != '\n')
+        {
+           macle = 1;
+           break;
+        }
+        else
+        {
+           winle = 1;
+           break;
+        }
+     }
+
+     pc++;
+  }
+
+  if (macle)
+  {
+     fprintf(stderr, "DRMS does not support JSD files with Mac line endings.\n");
+     goto bailout;
+  }
+  else if (winle)
+  {
+     fprintf(stderr, "DRMS does not support JSD files with Windows line endings.\n");
+     goto bailout;
+  }
 
   template = calloc(1, sizeof(DRMS_Record_t));
   XASSERT(template);
@@ -104,13 +153,13 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
   /* Possibly creating cparms_sgXXX keywords from information in the segment descriptions. 
    * Must save that information during parse_segments() and use in 
    * parse_keywords() */
-  HContainer_t *cparmkeys = hcon_create(sizeof(DRMS_Keyword_t *),
-					DRMS_MAXKEYNAMELEN,
-					FreeCparmKey,
-					NULL,
-					NULL,
-					NULL,
-					0);
+  cparmkeys = hcon_create(sizeof(DRMS_Keyword_t *),
+                          DRMS_MAXKEYNAMELEN,
+                          FreeCparmKey,
+                          NULL,
+                          NULL,
+                          NULL,
+                          0);
 
   lineno = 0;
   if (parse_seriesinfo(desc, template))
@@ -180,10 +229,14 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
   return template; /* Return series template. */
 
  bailout:
-  hcon_free(&template->segments);
-  hcon_free(&template->links);
-  hcon_free(&template->keywords);
-  free(template);
+  if (template)
+  {
+     hcon_free(&template->segments);
+     hcon_free(&template->links);
+     hcon_free(&template->keywords);
+     free(template);
+  }
+
   if (cparmkeys)
   {
      hcon_destroy(&cparmkeys);
@@ -499,7 +552,7 @@ static int parse_segments (char *desc, DRMS_Record_t *template, HContainer_t *cp
 
 static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContainer_t *cparmkeys, int *keynum)
 {
-  int i,b,status,count,tempval;
+  int i,status,count,tempval;
   char *p,*q,*endptr;
   char name[DRMS_MAXSEGNAMELEN]={0}, scope[DRMS_MAXNAMELEN]={0};
   char type[DRMS_MAXNAMELEN]={0}, naxis[24]={0}, axis[24]={0}, protocol[DRMS_MAXNAMELEN]={0};
@@ -509,7 +562,6 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
   char bscale[64]; /* for TAS, default scale */
   DRMS_Segment_t *seg;
   int parserline = -1;
-  long long  ival;
   DRMS_Type_Value_t nval,myval;
    p = q = *in;
   SKIPWS(p);
@@ -542,7 +594,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
     if(GETTOKEN(&q,seg->info->target_seg,sizeof(seg->info->target_seg)) <= 0) GOTOFAILURE;
     /* Naxis */      
     if (GETTOKEN(&q,naxis,sizeof(naxis)) <= 0) GOTOFAILURE;
-             ival = strtoll(naxis,&endptr,10);        
+             strtoll(naxis,&endptr,10);        
          nval.string_val = naxis;
          if (endptr != naxis + strlen(naxis))
             {  GOTOFAILURE; }
@@ -559,7 +611,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
       {         	
        if (GETTOKEN(&q,axis,sizeof(axis)) <= 0) GOTOFAILURE;        
           myval.string_val = axis;
-          ival = strtoll(axis,&endptr,10);
+          strtoll(axis,&endptr,10);
           if (endptr != axis + strlen(axis)) 
 	    {GOTOFAILURE;}
           else
@@ -593,7 +645,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
     seg->info->type  = drms_str2type(type);
     /* Naxis */      //need to write a function**
     if (GETTOKEN(&q,naxis,sizeof(naxis)) <= 0) GOTOFAILURE;
-          ival = strtoll(naxis,&endptr,10);        
+          strtoll(naxis,&endptr,10);        
           nval.string_val = naxis;
          if (endptr != naxis + strlen(naxis))
             {  GOTOFAILURE; }
@@ -619,7 +671,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
          else
            {
           myval.string_val = axis;
-          ival = strtoll(axis,&endptr,10);
+          strtoll(axis,&endptr,10);
            if (endptr != axis + strlen(axis))  
 	     { GOTOFAILURE;}
            else
@@ -652,7 +704,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
          else
 	     {
                myval.string_val = axis;
-             ival = strtoll(axis,&endptr,10);
+               strtoll(axis,&endptr,10);
                if (endptr != axis + strlen(axis))  
 		 { GOTOFAILURE;}
                else
