@@ -902,8 +902,7 @@ int DoIt(void)
   int from_web,status;
   int dodataobj=1, dojson=1, dotxt=0, dohtml=0, doxml=0;
   DRMS_RecordSet_t *exports;
-  DRMS_Record_t *export_log;
-    DRMS_Record_t *exprec = NULL;
+  DRMS_Record_t *exprec = NULL;  // Why was the name changed from export_log ??
   char new_requestid[200];
   char status_query[1000];
   char *export_series; 
@@ -943,7 +942,7 @@ int DoIt(void)
         /* If we are here then one of three things is true (implied by the existence of QUERY_STRING):
          *   1. We are processing an HTTP GET. The webserver will put the arguments in the
          *      QUERY_STRING environment variable.
-         *   2. We are processing an HTT POST. The webserver will NOT put the arguments in the
+         *   2. We are processing an HTTP POST. The webserver will NOT put the arguments in the
          *      QUERY_STRING environment variable. Instead the arguments will be passed to jsoc_fetch
          *      via stdin. QUERY_STRING should not be set, but it looks like it might be. In any
          *      case qDecoder will ignore it.
@@ -1921,7 +1920,9 @@ JSONDIE("Re-Export requests temporarily disabled.");
     // be accomplished by checking the record_directory.
         
         // *** export_log == NULL here - not sure what it should equal, exp_repeat must not be implemented yet.
-    if (drms_record_directory(export_log, logpath, 0) != DRMS_SUCCESS || *logpath == '\0')
+        // YES it is!! and it at least used to work. In version 1.36 export_log was changed to exprec in almost all places by Art.
+
+    if (drms_record_directory(exprec, logpath, 0) != DRMS_SUCCESS || *logpath == '\0')
       {  // really is no SU so go ahead and resubmit the request
       drms_close_records(exports, DRMS_FREE_RECORD);
   
@@ -2041,6 +2042,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
   esttime    = drms_getkey_time(exprec, "EstTime", NULL); // Crude guess for now
   size       = drms_getkey_longlong(exprec, "Size", NULL);
   requestorid = drms_getkey_int(exprec, "Requestor", NULL);
+  char *export_errmsg = drms_getkey_string(exprec, "errmsg", NULL);
     
   // Do special actions on status
   switch (status)
@@ -2064,7 +2066,10 @@ JSONDIE("Re-Export requests temporarily disabled.");
             break;
     case 4:
             waittime = 999999;
-            errorreply = "RecordSet specified does not exist";
+            if (strcmp("NA", export_errmsg))
+              errorreply = export_errmsg;
+            else
+              errorreply = "RecordSet specified does not exist";
             break;
     case 5:
             waittime = 999999;
