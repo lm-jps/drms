@@ -127,11 +127,12 @@ typedef struct ExpProcArg_struct ExpProcArg_t;
 
 struct ProcStep_struct
 {
-    char *name; /* Name of program. */
-    char *path; /* Path to program. */
-    char *args; /* Program argument key=value pairs, comma-separated. */
-    char *input; /* data-set input to processing */
+    char *name;   /* Name of program. */
+    char *path;   /* Path to program. */
+    char *args;   /* Program argument key=value pairs, comma-separated. */
+    char *input;  /* data-set input to processing */
     char *output; /* data-set output by processing */
+    int crout;    /* The processing step may need its intermediate output series created. */
 };
 
 typedef struct ProcStep_struct ProcStep_t;
@@ -1498,7 +1499,8 @@ static int GenOutRSSpec(DRMS_Env_t *env,
             if (ppinfo)
             {
                 /* The input to the current processing step, which is identical to ppinfo->output,
-                 * might have a suffix. If it has a suffix, then it is ppinfo->suffix. */
+                 * the output of the previous step, might have a suffix. If it has a suffix, then 
+                 * it is ppinfo->suffix. */
                 psuffix = ppinfo->suffix;
             }
             else
@@ -1531,7 +1533,15 @@ static int GenOutRSSpec(DRMS_Env_t *env,
                 for (iset = 0; iset < nsets; iset++)
                 {
                     outseries = base_strreplace(data->input, psuffix, suffix);
-                }   
+                }
+                
+                if (strcmp(psuffix, suffix) != 0)
+                {
+                    /* If the suffixes differ, then the output series MAY not exist. In this case, 
+                     * we need to run jsoc_export_clone from the drms_run script. If the output series
+                     * already exists, then jsoc_export_clone is a no-op. */
+                    data->crout = 1;
+                }
             }
             else if (suffix && *suffix == '_')
             {
@@ -1546,7 +1556,12 @@ static int GenOutRSSpec(DRMS_Env_t *env,
                     newoutseries = base_strreplace(outseries, snames[iset], replname);
                     free(outseries);
                     outseries = newoutseries;
-                }   
+                }
+                
+                /* We are writing to an output series that differs fromt the input series. 
+                 * We need to run jsoc_export_clone from the drms_run script. If the output series
+                 * already exists, then jsoc_export_clone is a no-op. */
+                data->crout = 1;
             }
             else if (suffix && *suffix)
             {
@@ -1743,6 +1758,7 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, /* dbhost of jsoc.export_new. 
             data.args = NULL; /* complete set of arguments with which to call processing step. */
             data.input = adataset; 
             data.output = NULL;
+            data.crout = 0;
             cpinfo = NULL;
             gettingargs = 0;
             bar = 0;
@@ -2787,6 +2803,7 @@ int DoIt(void)
 
       LinkedList_t *datasetkwlist = NULL;
       char *rsstr = NULL;
+      int firstnode = 1;
 
       while (!quit && (node = list_llnext(proccmds)) != 0)
       {
@@ -2814,105 +2831,146 @@ int DoIt(void)
          cdataset = ndata->input;
          datasetout = ndata->output;
 
-         /* Ensure that only a single input series is being exported; ensure that the input series exists. */
+          /* Ensure that only a single input series is being exported; ensure that the input series exists. */
+          /* Need to check input series of the first node only of the processing-step pipeline */
          
-         /* ART - env is not necessarily the correct environment for talking 
-          * to the database about DRMS objects (like records, keywords, etc.). 
-          * It is connected to the db on dbexporthost. dbmainhost is the host
-          * of the correct jsoc database. This function will ensure that
-          * it talks to dbmainhost. */
-         if (ParseRecSetSpec(drms_env, dbmainhost, cdataset, &snames, &filts, &nsets, &info))
-         {
-             snprintf(msgbuf, sizeof(msgbuf), "Invalid input series record-set query %s.", cdataset);
-             quit = 1;
-             break;
-         }
-
-         /* If the record-set query is an @file or contains multiple sub-record-set queries. We currently
-          * support exports from a single series. */
-         for (iset = 0, *csname = '\0'; iset < nsets; iset++)
-         {
-            series = snames[iset];
-            if (*csname != '\0') 
-            {
-               if (strcmp(series, csname) != 0)
-               {
-                   snprintf(msgbuf, sizeof(msgbuf), "jsoc_export_manage FAILURE: attempt to export a recordset containing multiple input series.");
-                   quit = 1;
-                   break;
-               }
-            }
-            else
-            {
-               snprintf(csname, sizeof(csname), "%s", series);
-            }
-         } // end series-name loop
-
-         FreeRecSpecParts(&snames, &filts, nsets);
-
-         snprintf(seriesin, sizeof(seriesin), "%s", csname);
-
-         if (!SeriesExists(drms_env, seriesin, dbmainhost, &status) || status)
-         {
-             snprintf(msgbuf, sizeof(msgbuf), "Input series %s does not exist.", csname);
-             quit = 1;
-             break;
-         }
+          /* ART - env is not necessarily the correct environment for talking 
+           * to the database about DRMS objects (like records, keywords, etc.). 
+           * It is connected to the db on dbexporthost. dbmainhost is the host
+           * of the correct jsoc database. This function will ensure that
+           * it talks to dbmainhost. */
+          if (ParseRecSetSpec(drms_env, dbmainhost, cdataset, &snames, &filts, &nsets, &info))
+          {
+              snprintf(msgbuf, sizeof(msgbuf), "Invalid input series record-set query %s.", cdataset);
+              quit = 1;
+              break;
+          }
+          
+          /* If the record-set query is an @file or contains multiple sub-record-set queries. We currently
+           * support exports from a single series. */
+          if (firstnode)
+          {
+              for (iset = 0, *csname = '\0'; iset < nsets; iset++)
+              {
+                  series = snames[iset];
+                  if (*csname != '\0') 
+                  {
+                      if (strcmp(series, csname) != 0)
+                      {
+                          snprintf(msgbuf, sizeof(msgbuf), "jsoc_export_manage FAILURE: attempt to export a recordset containing multiple input series.");
+                          quit = 1;
+                          break;
+                      }
+                  }
+                  else
+                  {
+                      snprintf(csname, sizeof(csname), "%s", series);
+                  }
+              } // end series-name loop 
+          }
+          else if (nsets > 0)
+          {
+              snprintf(csname, sizeof(csname), "%s", snames[0]);
+          }
+          else
+          {
+              snprintf(msgbuf, sizeof(msgbuf), "No input series.\n");
+              quit = 1;
+          }
+          
+          FreeRecSpecParts(&snames, &filts, nsets);
+          
+          if (quit)
+          {
+              break;
+          }
+          
+          snprintf(seriesin, sizeof(seriesin), "%s", csname);
+              
+          if (firstnode)
+          {
+              firstnode = 0;
+              if (!SeriesExists(drms_env, seriesin, dbmainhost, &status) || status)
+              {
+                  snprintf(msgbuf, sizeof(msgbuf), "Input series %s does not exist.", csname);
+                  quit = 1;
+                  break;
+              }
+          }
 
          /* Ensure that only a single output series is being written to; ensure that the output series exists. */
          
-         /* ART - env is not necessarily the correct environment for talking 
-          * to the database about DRMS objects (like records, keywords, etc.). 
-          * It is connected to the db on dbexporthost. dbmainhost is the host
-          * of the correct jsoc database. This function will ensure that
-          * it talks to dbmainhost. */
-         if (ParseRecSetSpec(drms_env, dbmainhost, datasetout, &snames, &filts, &nsets, &info))
-         {
-             snprintf(msgbuf, sizeof(msgbuf), "Invalid output series record-set query %s.", datasetout);
-             quit = 1;
-             break;
-         }
-         
-         /* If the record-set query is an @file or contains multiple sub-record-set queries. We currently
-          * support exports to only a single series. */
-         for (iset = 0, *csname = '\0'; iset < nsets; iset++)
-         {
-            series = snames[iset];
-            if (*csname != '\0') 
-            {
-               if (strcmp(series, csname) != 0)
-               {
-                   snprintf(msgbuf, sizeof(msgbuf), "jsoc_export_manage FAILURE: attempt to export a recordset to multiple output series.");
-                   quit = 1;
-                   break;
-               }
-            }
-            else
-            {
-               snprintf(csname, sizeof(csname), "%s", series);
-            }
-         } // end series-name loop
+          /* ART - env is not necessarily the correct environment for talking 
+           * to the database about DRMS objects (like records, keywords, etc.). 
+           * It is connected to the db on dbexporthost. dbmainhost is the host
+           * of the correct jsoc database. This function will ensure that
+           * it talks to dbmainhost. */
+          if (ParseRecSetSpec(drms_env, dbmainhost, datasetout, &snames, &filts, &nsets, &info))
+          {
+              snprintf(msgbuf, sizeof(msgbuf), "Invalid output series record-set query %s.", datasetout);
+              quit = 1;
+              break;
+          }
+          
+          /* If the record-set query is an @file or contains multiple sub-record-set queries. We currently
+           * support exports to only a single series. */
+          for (iset = 0, *csname = '\0'; iset < nsets; iset++)
+          {
+              series = snames[iset];
+              if (*csname != '\0') 
+              {
+                  if (strcmp(series, csname) != 0)
+                  {
+                      snprintf(msgbuf, sizeof(msgbuf), "jsoc_export_manage FAILURE: attempt to export a recordset to multiple output series.");
+                      quit = 1;
+                      break;
+                  }
+              }
+              else
+              {
+                  snprintf(csname, sizeof(csname), "%s", series);
+              }
+          } // end series-name loop
+          
+          FreeRecSpecParts(&snames, &filts, nsets);
+          
+          if (quit)
+          {
+              break;
+          }
+          
+          snprintf(seriesout, sizeof(seriesout), "%s", csname);
 
-         FreeRecSpecParts(&snames, &filts, nsets);
-
-         snprintf(seriesout, sizeof(seriesout), "%s", csname);
-
-         if (!SeriesExists(drms_env, seriesout, dbmainhost, &status) || status)
-         {
-             snprintf(msgbuf, sizeof(msgbuf), "Output series %s does not exist.", csname);
-             quit = 1;
-             break;
-         }
+          /* Some processing steps will write to series that contain 'intermediate results', whose names generally
+           * end in the suffix '_mod'. The drms-run script will call jsoc_export_clone immediately before the 
+           * processing module runs. This will result in the creation of the intermediate series if it does not
+           * already exist. If the series already does exist, then the call to jsoc_export_clone will be a no-op.
+           * Processing steps that write to intermediate series have the crout processing step flag set. If this flag
+           * is not set, then we need to check for the previous existence of the output series. */
+          if (!ndata->crout)
+          {
+              if (!SeriesExists(drms_env, seriesout, dbmainhost, &status) || status)
+              {
+                  snprintf(msgbuf, sizeof(msgbuf), "Output series %s does not exist.", csname);
+                  quit = 1;
+                  break;
+              }
+          }
+          else
+          {
+              /* Call jsoc_export_clone. */
+              fprintf(fp, "jsoc_export_clone dsin=%s dsout=%s", seriesin, seriesout);
+          }
 
           progpath = ((ProcStep_t *)node->data)->path;
-         args = ((ProcStep_t *)node->data)->args;
+          args = ((ProcStep_t *)node->data)->args;
           
-
-         procerr = GenPreProcessCmd(fp,
-                                    progpath,
-                                    args,
-                                    dbmainhost,
-                                    dbids);
+          
+          procerr = GenPreProcessCmd(fp,
+                                     progpath,
+                                     args,
+                                     dbmainhost,
+                                     dbids);
 
          if (procerr)
          {
