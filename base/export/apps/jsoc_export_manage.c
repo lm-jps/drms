@@ -2959,7 +2959,7 @@ int DoIt(void)
           else
           {
               /* Call jsoc_export_clone. */
-              fprintf(fp, "jsoc_export_clone dsin=%s dsout=%s", seriesin, seriesout);
+              fprintf(fp, "jsoc_export_clone dsin=%s dsout=%s\n", seriesin, seriesout);
           }
 
           progpath = ((ProcStep_t *)node->data)->path;
