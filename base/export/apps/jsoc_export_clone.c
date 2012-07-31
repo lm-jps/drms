@@ -196,6 +196,7 @@ int DoIt(void)
     DRMS_Segment_t *seg = NULL;
     HIterator_t *lastseg = NULL;
     int hirank = -1;
+    int exists = 0;
     
     /* seriesin is the input series. */
     seriesin = strdup(cmdparams_get_str(&cmdparams, kArgSeriesIn, NULL));
@@ -216,122 +217,132 @@ int DoIt(void)
     {
         name = strdup(seriesout);
     }
-    
-    /* retention is name's jsd retention value. */
-    retention = cmdparams_get_int(&cmdparams, kArgRetention, NULL);
-    
-    /* archive is name's jsd archive value. */
-    archive = cmdparams_get_int(&cmdparams, kArgArchive, NULL);
-    
-    /* Get a COPY of the input series template record. */
-    copy = CopySeriesTemplate(drms_env, seriesin, &err);
-    
-    if (!copy || err)
+
+    exists = drms_series_exists(drms_env, name, &drmsstat);
+
+    if (drmsstat)
     {
-        fprintf(stderr, "Unable to copy template record for series '%s'.\n", seriesin);
-        if (!err)
-        {
-            err = kExpCloneErr_CantCreateProto;
-        }
+       fprintf(stderr, "Unable to check for series '%s' existence; bailing out.\n", name);
+       err = kExpCloneErr_LibDRMS;
     }
-    else
+    else if (!exists)
     {
-        /* unitsize will match the unitsize of the input series. */
-        /* tapegroup will match the tapegroup of the input series, but will not
-         * matter, since archive == -1. */
-        copy->seriesinfo->archive = archive;
-        copy->seriesinfo->retention = retention;
-        
-        hirank = drms_series_gethighestkeyrank(drms_env, seriesin, &drmsstat);
-        if (drmsstat || hirank == -1)
-        {
-            hirank = 0;
-        }
-        
-        /* Add prime keyword RequestID, if it doesn't already exist. */
-        err = AddAKey(kKeyReqID, 
-                      copy, 
-                      "Keyword:RequestID, string, variable, record, \"Invalid RequestID\", %s, NA, \"The export request identifier, if this record was inserted while an export was being processed.\"", 
-                      1, 
-                      1, 
-                      1 + hirank++);
-
-        /* Add keywords HISTORY and COMMENT, if they don't exist. */
-        if (err == kExpCloneErr_Success)
-        {
-            err = AddAKey(kKeyHistory, 
-                          copy, 
-                          "Keyword:HISTORY, string, variable, record, \"No history\", %s, NA, \"The processing history of the data.\"", 
-                          0, 
-                          0, 
-                          1 + hirank++);
-        }
-        
-        if (err == kExpCloneErr_Success)
-        {
-            err = AddAKey(kKeyComment, 
-                          copy, 
-                          "Keyword:COMMENT, string, variable, record, \"No comment\", %s, NA, \"Commentary on the data processing.\"", 
-                          0, 
-                          0, 
-                          1 + hirank++);
-        }
-
-        if (err == kExpCloneErr_Success)
-        {
-            err = AddAKey(kKeySource,
-                          copy,
-                          "Keyword:SOURCE, string, variable, record, \"No source\", %s, NA, \"Input record record-set specification.\"",
-                          0,
-                          0,
-                          1 + hirank++);
-        }
-        
-        /* If the first input FITS data segment does not have a VARDIM segment scope, then make it so. */
-        if (err == kExpCloneErr_Success)
-        {
-            while ((seg = drms_record_nextseg(copy, &lastseg, 0)))
-            {
+       /* retention is name's jsd retention value. */
+       retention = cmdparams_get_int(&cmdparams, kArgRetention, NULL);
+    
+       /* archive is name's jsd archive value. */
+       archive = cmdparams_get_int(&cmdparams, kArgArchive, NULL);
+    
+       /* Get a COPY of the input series template record. */
+       copy = CopySeriesTemplate(drms_env, seriesin, &err);
+       
+       if (!copy || err)
+       {
+          fprintf(stderr, "Unable to copy template record for series '%s'.\n", seriesin);
+          if (!err)
+          {
+             err = kExpCloneErr_CantCreateProto;
+          }
+       }
+       else
+       {
+          /* unitsize will match the unitsize of the input series. */
+          /* tapegroup will match the tapegroup of the input series, but will not
+           * matter, since archive == -1. */
+          copy->seriesinfo->archive = archive;
+          copy->seriesinfo->retention = retention;
+          
+          hirank = drms_series_gethighestkeyrank(drms_env, seriesin, &drmsstat);
+          if (drmsstat || hirank == -1)
+          {
+             hirank = 0;
+          }
+          
+          /* Add prime keyword RequestID, if it doesn't already exist. */
+          err = AddAKey(kKeyReqID, 
+                        copy, 
+                        "Keyword:RequestID, string, variable, record, \"Invalid RequestID\", %s, NA, \"The export request identifier, if this record was inserted while an export was being processed.\"", 
+                        1, 
+                        1, 
+                        1 + hirank++);
+          
+          /* Add keywords HISTORY and COMMENT, if they don't exist. */
+          if (err == kExpCloneErr_Success)
+          {
+             err = AddAKey(kKeyHistory, 
+                           copy, 
+                           "Keyword:HISTORY, string, variable, record, \"No history\", %s, NA, \"The processing history of the data.\"", 
+                           0, 
+                           0, 
+                           1 + hirank++);
+          }
+          
+          if (err == kExpCloneErr_Success)
+          {
+             err = AddAKey(kKeyComment, 
+                           copy, 
+                           "Keyword:COMMENT, string, variable, record, \"No comment\", %s, NA, \"Commentary on the data processing.\"", 
+                           0, 
+                           0, 
+                           1 + hirank++);
+          }
+          
+          if (err == kExpCloneErr_Success)
+          {
+             err = AddAKey(kKeySource,
+                           copy,
+                           "Keyword:SOURCE, string, variable, record, \"No source\", %s, NA, \"Input record record-set specification.\"",
+                           0,
+                           0,
+                           1 + hirank++);
+          }
+          
+          /* If the first input FITS data segment does not have a VARDIM segment scope, then make it so. */
+          if (err == kExpCloneErr_Success)
+          {
+             while ((seg = drms_record_nextseg(copy, &lastseg, 0)))
+             {
                 if (seg->info->protocol == DRMS_FITS)
                 {
-                    if (seg->info->scope != DRMS_VARDIM)
-                    {
-                        seg->info->scope = DRMS_VARDIM;
-                        memset(seg->axis, 0, sizeof(seg->axis));
-                    }
-                    
-                    break;
+                   if (seg->info->scope != DRMS_VARDIM)
+                   {
+                      seg->info->scope = DRMS_VARDIM;
+                      memset(seg->axis, 0, sizeof(seg->axis));
+                   }
+                   
+                   break;
                 }
-            }
-            
-            if (lastseg)
-            {
+             }
+             
+             if (lastseg)
+             {
                 hiter_destroy(&lastseg);
-            }
-            
-            /* If the segment contains integer data, then the bzero and bscale values of the original series will suffice, 
-             * and that is what seg contains. If they are float data, then bzero and bscale are ignored. */
-        }
-        
-        if (err == kExpCloneErr_Success)
-        {
-            /* drms_create_series_fromprototype() will first copy keywords with drms_copy_keyword_struct().
-             * This latter function shallow-copies each keyword's info struct. */
-            if (drms_create_series_fromprototype(&copy, name, 0))
-            {
+             }
+             
+             /* If the segment contains integer data, then the bzero and bscale values of the original series will suffice, 
+              * and that is what seg contains. If they are float data, then bzero and bscale are ignored. */
+          }
+          
+          if (err == kExpCloneErr_Success)
+          {
+             /* drms_create_series_fromprototype() will first copy keywords with drms_copy_keyword_struct().
+              * This latter function shallow-copies each keyword's info struct. */
+             if (drms_create_series_fromprototype(&copy, name, 0))
+             {
                 err = kExpCloneErr_CantCreateSeries;
-            }
-        }
+             }
+          }
+       }
     }
-
+    
     if (name)
     {
-        free(name);
+       free(name);
     }
     
     if (seriesin)
     {
-        free(seriesin);
+       free(seriesin);
     }
     
     return err;
