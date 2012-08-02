@@ -59,35 +59,27 @@ static int EmptyDir(const char *dir)
 
         if (entry != NULL)
         {
-           char *oneFile = entry->d_name;
+           if (!notempty)
+           {   
+              char *oneFile = entry->d_name;
 
-           if (strcmp(oneFile, ".") != 0 && strcmp(oneFile, "..") != 0)
-           {
-              snprintf(subdir, sizeof(subdir), "%s/%s", dir, oneFile);
-
-              if (!stat(subdir, &stBuf))
+              if (strcmp(oneFile, ".") != 0 && strcmp(oneFile, "..") != 0)
               {
-                 if (S_ISDIR(stBuf.st_mode))
+                 snprintf(subdir, sizeof(subdir), "%s/%s", dir, oneFile);
+                 
+                 if (!stat(subdir, &stBuf))
                  {
-                    notempty = !EmptyDir(subdir);
-
-                    /* ART - Do'h! Fix bug where the SUMS slots at the end of the file list was 
-                     * empty, but ones earlier in the list were not. The last one overrode all
-                     * earlier ones. */
-                    if (notempty)
+                    if (S_ISDIR(stBuf.st_mode))
                     {
-                       free(entry);
-                       break;
+                       notempty = !EmptyDir(subdir);
+                    }
+                    else
+                    {
+                       notempty = 1;
                     }
                  }
-                 else
-                 {
-                    notempty = 1;
-                    free(entry);
-                    break;
-                 }
               }
-           }           
+           }        
 
            free(entry);
         }

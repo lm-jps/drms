@@ -1106,10 +1106,11 @@ int DoIt(void)
           char **sets = NULL;
           DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
           char **snames = NULL;
+          char **filts = NULL;
           int nsets = 0;
           
           DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
-          if (drms_record_parserecsetspec(in, &allvers, &sets, &settypes, &snames, &nsets, &rsinfo) != DRMS_SUCCESS)
+          if (drms_record_parserecsetspec(in, &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo) != DRMS_SUCCESS)
           {     
               show_info_return(2);
           }
@@ -1198,8 +1199,8 @@ int DoIt(void)
               free(filterbuf);
               filterbuf = NULL;
           }
-          
-          drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, nsets);
+        
+          drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
       }
       
   /*  if -j, -l or -s is set, just do the short function and exit */

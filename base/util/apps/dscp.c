@@ -26,67 +26,68 @@ ModuleArgs_t module_args[] =
 
 static int SeriesExist(DRMS_Env_t *env, const char *rsspec, char ***names, int *nseries, int *ostat)
 {
-   int rv = 0;
-   char *allvers = NULL;
-   char **sets = NULL;
-   DRMS_RecordSetType_t *settypes = NULL;
-   char **snames = NULL;
-   int nsets = 0;
-   int istat;
-
-   if ((istat = drms_record_parserecsetspec(rsspec, &allvers, &sets, &settypes, &snames, &nsets, NULL)) == DRMS_SUCCESS)
-   {
-      int iseries;
-
-      for (iseries = 0; iseries < nsets; iseries++)
-      {
-         rv = drms_series_exists(env, snames[iseries], &istat);
-         if (istat != DRMS_SUCCESS)
-         {
-            fprintf(stderr, "Problems checking for series '%s' existence.\n", snames[iseries]);
-            rv = 0;
-            break;
-         }
-         else if (rv == 0)
-         {
-            break;
-         }
-      }
-   }
-   else
-   {
-      fprintf(stderr, "dscp FAILURE: invalid record-set specification %s.\n", rsspec);
-      rv = 0;
-   }
-
-   if (istat == DRMS_SUCCESS)
-   {
-      int iseries;
-
-      if (nseries)
-      {
-         *nseries = nsets;
-      }
-
-      if (names)
-      {
-         *names = (char **)malloc(nsets * sizeof(char *));
-
-         for (iseries = 0; iseries < nsets; iseries++)
-         {
-            (*names)[iseries] = strdup(snames[iseries]);
-         }
-      }
-   }
-
-   drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, nsets);
-
-   if (ostat)
-   {
-      *ostat = istat;
-   }
-
-   return rv;
+    int rv = 0;
+    char *allvers = NULL;
+    char **sets = NULL;
+    DRMS_RecordSetType_t *settypes = NULL;
+    char **snames = NULL;
+    char **filts = NULL;
+    int nsets = 0;
+    int istat;
+    
+    if ((istat = drms_record_parserecsetspec(rsspec, &allvers, &sets, &settypes, &snames, &filts, &nsets, NULL)) == DRMS_SUCCESS)
+    {
+        int iseries;
+        
+        for (iseries = 0; iseries < nsets; iseries++)
+        {
+            rv = drms_series_exists(env, snames[iseries], &istat);
+            if (istat != DRMS_SUCCESS)
+            {
+                fprintf(stderr, "Problems checking for series '%s' existence.\n", snames[iseries]);
+                rv = 0;
+                break;
+            }
+            else if (rv == 0)
+            {
+                break;
+            }
+        }
+    }
+    else
+    {
+        fprintf(stderr, "dscp FAILURE: invalid record-set specification %s.\n", rsspec);
+        rv = 0;
+    }
+    
+    if (istat == DRMS_SUCCESS)
+    {
+        int iseries;
+        
+        if (nseries)
+        {
+            *nseries = nsets;
+        }
+        
+        if (names)
+        {
+            *names = (char **)malloc(nsets * sizeof(char *));
+            
+            for (iseries = 0; iseries < nsets; iseries++)
+            {
+                (*names)[iseries] = strdup(snames[iseries]);
+            }
+        }
+    }
+    
+    drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
+    
+    if (ostat)
+    {
+        *ostat = istat;
+    }
+    
+    return rv;
 }
 
 /* returns kMaxChunkSize on error, otherwise it returns an estimated good-chunk size (the

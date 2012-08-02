@@ -776,7 +776,7 @@ static void report_summary(const char *host,
   WriteLog(logfile, "status=%d\n",status);
   }
 
-static void FreeRecSpecParts(char ***snames, int nitems)
+static void FreeRecSpecParts(char ***snames, char ***filts, int nitems)
 {
     if (snames)
     {
@@ -799,6 +799,29 @@ static void FreeRecSpecParts(char ***snames, int nitems)
         }
         
         *snames = NULL;
+    }
+    
+    if (filts)
+    {
+        int iname;
+        char **filtsArr = *filts;
+        
+        if (filtsArr)
+        {
+            for (iname = 0; iname < nitems; iname++)
+            {
+                char *oneFilt = filtsArr[iname];
+                
+                if (oneFilt)
+                {
+                    free(oneFilt);
+                }
+            }
+            
+            free(filtsArr);
+        }
+        
+        *filts = NULL;
     }
 }
 
@@ -1503,11 +1526,12 @@ check for requestor to be valid remote DRMS site
           char **sets = NULL;
           DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
           char **snames = NULL;
+          char **filts = NULL;
           int nsets = 0;
           DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
           int iset;
           
-          if (drms_record_parserecsetspec(dsquery, &allvers, &sets, &settypes, &snames, &nsets, &rsinfo) == DRMS_SUCCESS)
+          if (drms_record_parserecsetspec(dsquery, &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo) == DRMS_SUCCESS)
           { 
               for (iset = 0; iset < nsets; iset++)
               {
@@ -1525,7 +1549,7 @@ check for requestor to be valid remote DRMS site
               JSONDIE(mbuf);
           }
           
-          FreeRecSpecParts(&snames, nsets);
+          FreeRecSpecParts(&snames, &filts, nsets);
           
       if (index(dsquery,'[') == NULL)
         {

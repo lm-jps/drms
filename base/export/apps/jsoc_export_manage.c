@@ -428,105 +428,82 @@ static void FreeRecSpecParts(char ***snames, char ***filts, int nitems)
 
 /* returns by reference an array of series names determined by parsing the rsquery record-set query. */
 /* returns 1 if an error occurred, 0 otherwise. */
-static int ParseRecSetSpec(DRMS_Env_t *env, 
-                           const char *dbhost, 
-                           const char *rsquery, 
+static int ParseRecSetSpec(const char *rsquery, 
                            char ***snamesout, 
                            char ***filtsout,
                            int *nsetsout, 
                            DRMS_RecQueryInfo_t *infoout)
 {
-   int err = 0;
-   char *allvers = NULL;
-   char **sets = NULL;
-   DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
-   char **snames = NULL;
-   int nsets = 0;
-   DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
-   int iset;
-   DRMS_Record_t *template = NULL;
-   int drmsstat = 0;
-   char *filter = NULL;
-   DB_Handle_t *dbh = NULL;
-   int contextOK = 0;
-
-   if (drms_record_parserecsetspec(rsquery, &allvers, &sets, &settypes, &snames, &nsets, &rsinfo) == DRMS_SUCCESS)
-   {     
-      *infoout = rsinfo;
-      *nsetsout = nsets;
-
-      if (nsets > 0)
-      {
-         *snamesout = (char **)calloc(nsets, sizeof(char *));
-         *filtsout = (char **)calloc(nsets, sizeof(char *));
-
-         if (snamesout && filtsout)
-         {
-            dbh = GetDBHandle(env, dbhost, &contextOK, 0);
-
-            if (!dbh)
+    int err = 0;
+    char *allvers = NULL;
+    char **sets = NULL;
+    DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
+    char **snames = NULL;
+    char **filts = NULL;
+    int nsets = 0;
+    DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
+    int iset;
+    
+    /* This call does NOT fetch a record template, so it is safe to use, even if the series in 
+     * rsquery does not exist. */
+    if (drms_record_parserecsetspec(rsquery, &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo) == DRMS_SUCCESS)
+    {     
+        *infoout = rsinfo;
+        *nsetsout = nsets;
+        
+        if (nsets > 0)
+        {
+            *snamesout = (char **)calloc(nsets, sizeof(char *));            
+            *filtsout = (char **)calloc(nsets, sizeof(char *));
+            
+            if (snamesout && filtsout)
             {
-               fprintf(stderr, "jsoc_export_manage: Unable to connect to database.\n");
-               err = 1;
+                for (iset = 0; iset < nsets; iset++)
+                {
+                    if (snames[iset])
+                    {
+                        (*snamesout)[iset] = strdup(snames[iset]);
+                    }
+                    else
+                    {
+                        (*snamesout)[iset] = NULL;
+                    }
+
+                    if (filts[iset])
+                    {
+                        (*filtsout)[iset] = strdup(filts[iset]);
+                    }
+                    else
+                    {
+                        (*filtsout)[iset] = NULL;
+                    }
+                }
             }
             else
             {
-               for (iset = 0; iset < nsets; iset++)
-               {
-                  (*snamesout)[iset] = strdup(snames[iset]);
-               
-                  if (contextOK)
-                  {
-                     /* Get template record. */
-                     template = drms_template_record(env, snames[iset], &drmsstat);
-                     if (DRMS_ERROR_UNKNOWNSERIES == drmsstat)
-                     {
-                        fprintf(stderr, "Unable to open template record for series '%s'; this series does not exist.\n", snames[iset]);
-                        err = 1;
-                        break;
-                     }
-                     else
-                     {
-                        filter = drms_recordset_extractfilter(template, sets[iset], &err);
-                     }
-                  }
-                  else
-                  {
-                     filter = drms_recordset_extractfilter_ext(dbh, sets[iset], &err);
-                  }
-
-                  if (!err && filter)
-                  {
-                     (*filtsout)[iset] = filter; /* transfer ownership to caller. */
-                  }
-               }
+                fprintf(stderr, "jsoc_export_manage FAILURE: out of memory.\n");
+                err = 1;
             }
-         }
-         else
-         {
-            fprintf(stderr, "jsoc_export_manage FAILURE: out of memory.\n");
-            err = 1;
-         }
-      }
-   }
-   else
-   {
-      fprintf(stderr, "jsoc_export_manage FAILURE: invalid record-set query %s.\n", rsquery);
-      err = 1;
-   }
-     
-   drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, nsets);
-
-   if (err == 1)
-   {
-      /* free up stuff */
-      if (nsets > 0)
-      {
-         FreeRecSpecParts(snamesout, filtsout, nsets);
-      }
-   }
-
-   return err;
+        }
+    }
+    else
+    {
+        fprintf(stderr, "jsoc_export_manage FAILURE: invalid record-set query %s.\n", rsquery);
+        err = 1;
+    }
+    
+    drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
+    
+    if (err == 1)
+    {
+        /* free up stuff */
+        if (nsets > 0)
+        {
+            FreeRecSpecParts(snamesout, filtsout, nsets);
+        }
+    }
+    
+    return err;
 }
 
 int nice_intro ()
@@ -1217,9 +1194,7 @@ static void DestroyVarConts(HContainer_t **pvarsargs)
 *    argsout - final argument string (comma-separated list of arguments/values).
 *    stepdata - has program name, input record-set, output record-set.
 */
-static int GenProgArgs(DRMS_Env_t *env,
-                       const char *dbhost,
-                       ProcStepInfo_t *pinfo, 
+static int GenProgArgs(ProcStepInfo_t *pinfo, 
                        HContainer_t *args, 
                        ProcStep_t *stepdata,
                        const char *reclim,
@@ -1319,12 +1294,13 @@ static int GenProgArgs(DRMS_Env_t *env,
                     
                     /* stepdata->output has the full record-set query, but we need only the 
                      * series name. Parse stepdata->output. */
-                    if (ParseRecSetSpec(env, dbhost, stepdata->output, &snames, &filts, &nsets, &info))
+                    /* Series may not exist, so don't */
+                    if (ParseRecSetSpec(stepdata->output, &snames, &filts, &nsets, &info))
                     {
                         fprintf(stderr, "Invalid output series record specification %s.\n", stepdata->output);
                         err = 1;
                         break;
-                    }
+                    }                    
                     
                     /* There can be only one output series. */
                     val = snames[0];
@@ -1510,13 +1486,7 @@ static int GenOutRSSpec(DRMS_Env_t *env,
             }
             
             /* Parse input record-set query parts. */
-            
-            /* ART - env is not necessarily the correct environment for talking 
-             * to the database about DRMS objects (like records, keywords, etc.). 
-             * It is connected to the db on dbexporthost. dbmainhost is the host
-             * of the correct jsoc database. This function will ensure that
-             * it talks to dbmainhost. */
-            if (ParseRecSetSpec(env, dbhost, data->input, &snames, &filts, &nsets, &info))
+            if (ParseRecSetSpec(data->input, &snames, &filts, &nsets, &info))
             {
                 err = 1;
                 break;
@@ -1588,15 +1558,18 @@ static int GenOutRSSpec(DRMS_Env_t *env,
             /* Remove input series' filters. */
             for (iset = 0; iset < nsets; iset++)
             {
-                newoutseries = base_strreplace(outseries, filts[iset], "");
-                free(outseries);
-                outseries = newoutseries;
+                if (filts[iset])
+                {
+                    newoutseries = base_strreplace(outseries, filts[iset], "");
+                    free(outseries);
+                    outseries = newoutseries;
+                }
             }
             
             FreeRecSpecParts(&snames, &filts, nsets);
             
             /* Add filters to output series names. */
-            if (ParseRecSetSpec(env, dbhost, outseries, &snames, &filts, &nsets, &info))
+            if (ParseRecSetSpec(outseries, &snames, &filts, &nsets, &info))
             {
                 err = 1;
                 break;
@@ -1886,7 +1859,7 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, /* dbhost of jsoc.export_new. 
                     continue;
                 }
                 
-                if (GenProgArgs(env, dbhost, cpinfo, varsargs, &data, reclimint, &finalargs))
+                if (GenProgArgs(cpinfo, varsargs, &data, reclimint, &finalargs))
                 {
                     state = kPPStError;
                     continue;
@@ -2839,7 +2812,7 @@ int DoIt(void)
            * It is connected to the db on dbexporthost. dbmainhost is the host
            * of the correct jsoc database. This function will ensure that
            * it talks to dbmainhost. */
-          if (ParseRecSetSpec(drms_env, dbmainhost, cdataset, &snames, &filts, &nsets, &info))
+          if (ParseRecSetSpec(cdataset, &snames, &filts, &nsets, &info))
           {
               snprintf(msgbuf, sizeof(msgbuf), "Invalid input series record-set query %s.", cdataset);
               quit = 1;
@@ -2905,7 +2878,7 @@ int DoIt(void)
            * It is connected to the db on dbexporthost. dbmainhost is the host
            * of the correct jsoc database. This function will ensure that
            * it talks to dbmainhost. */
-          if (ParseRecSetSpec(drms_env, dbmainhost, datasetout, &snames, &filts, &nsets, &info))
+          if (ParseRecSetSpec(datasetout, &snames, &filts, &nsets, &info))
           {
               snprintf(msgbuf, sizeof(msgbuf), "Invalid output series record-set query %s.", datasetout);
               quit = 1;
