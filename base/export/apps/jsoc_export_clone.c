@@ -220,7 +220,7 @@ int DoIt(void)
 
     exists = drms_series_exists(drms_env, name, &drmsstat);
 
-    if (drmsstat)
+    if (drmsstat && drmsstat != DRMS_ERROR_UNKNOWNSERIES)
     {
        fprintf(stderr, "Unable to check for series '%s' existence; bailing out.\n", name);
        err = kExpCloneErr_LibDRMS;
