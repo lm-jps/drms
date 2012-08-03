@@ -1444,6 +1444,168 @@ static int GenProgArgs(ProcStepInfo_t *pinfo,
     return err;
 }
 
+/* Check for the existence of series series in the db on host dbhost. 
+ * Returns 1 on error, 0 on success. */
+static int SeriesExists(DRMS_Env_t *env, const char *series, const char *dbhost, int *status)
+{
+    int rv = 0;
+    int istat = 0;
+    DB_Handle_t *dbh = NULL;
+    int contextOK = 0;
+    
+    /* returns NULL on error. */
+    dbh = GetDBHandle(env, dbhost, &contextOK, 0);
+    
+    if (!dbh)
+    {
+        fprintf(stderr, "jsoc_export_manage: Unable to connect to database.\n");
+        istat = 1;
+    }
+    else
+    {
+        if (!contextOK)
+        {
+            /* The caller wants to check for series existence in a db on host to which 
+             * this module has no connection. Use dbh, not env. */
+            
+            /* Successfully connected to dbhost; can't use DRMS calls since we don't have a 
+             * functioning environment for this ad hoc connection. */
+            char query[512];
+            char *schema = NULL;
+            char *table = NULL;
+            DB_Text_Result_t *res = NULL;
+            
+            if (get_namespace(series, &schema, &table))
+            {
+                fprintf(stderr, "Invalid series name %s.\n", series);
+                istat = DRMS_ERROR_UNKNOWNSERIES;
+            }
+            else
+            {
+                snprintf (query, sizeof(query), 
+                          "SELECT * FROM pg_catalog.pg_tables WHERE schemaname = lower(\'%s\') AND tablename = lower(\'%s\')", 
+                          schema, 
+                          table);
+                
+                res = db_query_txt(dbh, query);
+                
+                if (res) 
+                {
+                    rv = (res->num_rows != 0);
+                    db_free_text_result(res);
+                    res = NULL;
+                }
+                else
+                {
+                    fprintf(stderr, "Invalid SQL query: %s.\n", query);
+                }
+                
+                free(schema);
+                free(table);
+            }
+        }
+        else
+        {
+            /* The caller wants to check for the existence of a series in the database to which 
+             * this modue is currently connected. */
+            rv = drms_series_exists(env, series, &istat);
+            if (istat != DRMS_SUCCESS && istat != DRMS_ERROR_UNKNOWNSERIES)
+            {
+                fprintf(stderr, "Problems checking for series '%s' existence on %s.\n", series, dbhost);
+                rv = 0;
+            }
+        }
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return rv;
+}
+
+/* Check for the existence of keyword 'keyname' in the series 'series' in the db on host dbhost. 
+ * Returns 1 on error, 0 on success. */
+static int KeyExists(DRMS_Env_t *env, const char *dbhost, const char *series, const char *keyname, int *status)
+{
+    int rv = 0;
+    int istat = 0;
+    DB_Handle_t *dbh = NULL;
+    int contextOK = 0;
+    
+    /* returns NULL on error. */
+    dbh = GetDBHandle(env, dbhost, &contextOK, 0);
+    
+    if (!dbh)
+    {
+        fprintf(stderr, "jsoc_export_manage: Unable to connect to database.\n");
+        istat = 1;
+    }
+    else
+    {
+        if (!contextOK)
+        {
+            char query[512];
+            char *schema = NULL;
+            char *table = NULL;
+            DB_Text_Result_t *res = NULL;
+            
+            if (get_namespace(series, &schema, &table))
+            {
+                fprintf(stderr, "Invalid series name %s.\n", series);
+                istat = DRMS_ERROR_UNKNOWNSERIES;
+            }
+            else
+            {
+                snprintf (query, 
+                          sizeof(query), 
+                          "SELECT * FROM %s.drms_keyword WHERE lower(seriesname) = lower(\'%s\') AND lower(keywordname) = lower(\'%s\')", 
+                          series, 
+                          series,
+                          keyname);
+                
+                res = db_query_txt(dbh, query);
+                
+                if (res) 
+                {
+                    rv = (res->num_rows != 0);
+                    db_free_text_result(res);
+                    res = NULL;
+                }
+                else
+                {
+                    fprintf(stderr, "Invalid SQL query: %s.\n", query);
+                }
+                
+                free(schema);
+                free(table);
+            }
+        }
+        else
+        {
+            /* Use the template record to see if a keyword exists. */
+            DRMS_Record_t *template = drms_template_record(env, series, &istat);
+            
+            if (istat != DRMS_SUCCESS || !template)
+            {
+                fprintf(stderr, "Problems obtaining template record for %s on %s.\n", series, dbhost);
+            }
+            else
+            {
+                rv = (drms_keyword_lookup(template, keyname, 0) != NULL);
+            }
+        }
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return rv;
+}
+
 static int GenOutRSSpec(DRMS_Env_t *env, 
                         const char *dbhost, 
                         ProcStepInfo_t *cpinfo, 
@@ -1457,11 +1619,16 @@ static int GenOutRSSpec(DRMS_Env_t *env,
     {
         const char *suffix = cpinfo->suffix;
         const char *psuffix = NULL;
-        char **snames = NULL;
-        char **filts = NULL;
-        int nsets;
+        const char *pdataset = NULL;
+        char **snamesIn = NULL;
+        char **snamesOut = NULL;
+        char **filtsIn = NULL;
+        char **filtsOut = NULL;
+        int nsetsIn;
+        int nsetsOut;
         int iset;
-        DRMS_RecQueryInfo_t info;
+        DRMS_RecQueryInfo_t infoIn;
+        DRMS_RecQueryInfo_t infoOut;
         char *outseries = NULL;
         char *newoutseries = NULL;
         char *newfilter = NULL;
@@ -1469,6 +1636,7 @@ static int GenOutRSSpec(DRMS_Env_t *env,
         size_t sz;
         int len;
         char *repl = NULL;
+        int ierr = 0;
         
         while (1)
         {
@@ -1486,7 +1654,7 @@ static int GenOutRSSpec(DRMS_Env_t *env,
             }
             
             /* Parse input record-set query parts. */
-            if (ParseRecSetSpec(data->input, &snames, &filts, &nsets, &info))
+            if (ParseRecSetSpec(data->input, &snamesIn, &filtsIn, &nsetsIn, &infoIn))
             {
                 err = 1;
                 break;
@@ -1500,7 +1668,7 @@ static int GenOutRSSpec(DRMS_Env_t *env,
             {
                 /* The input series and output series both have suffixes. Replace the 
                  * input series' suffixes with the output series' suffixes. */
-                for (iset = 0; iset < nsets; iset++)
+                for (iset = 0; iset < nsetsIn; iset++)
                 {
                     outseries = base_strreplace(data->input, psuffix, suffix);
                 }
@@ -1520,10 +1688,10 @@ static int GenOutRSSpec(DRMS_Env_t *env,
                 char replname[DRMS_MAXSERIESNAMELEN];
                 
                 outseries = strdup(data->input);
-                for (iset = 0; iset < nsets; iset++)
+                for (iset = 0; iset < nsetsIn; iset++)
                 {
-                    snprintf(replname, sizeof(replname), "%s%s", snames[iset], suffix);
-                    newoutseries = base_strreplace(outseries, snames[iset], replname);
+                    snprintf(replname, sizeof(replname), "%s%s", snamesIn[iset], suffix);
+                    newoutseries = base_strreplace(outseries, snamesIn[iset], replname);
                     free(outseries);
                     outseries = newoutseries;
                 }
@@ -1538,9 +1706,9 @@ static int GenOutRSSpec(DRMS_Env_t *env,
                 /* No suffix on either the input series or the output series, but there 
                  * is a new output series name. Replace input series names with the name
                  * in suffix. */
-                for (iset = 0; iset < nsets; iset++)
+                for (iset = 0; iset < nsetsIn; iset++)
                 {
-                    outseries = base_strreplace(data->input, snames[iset], suffix);
+                    outseries = base_strreplace(data->input, snamesIn[iset], suffix);
                 }
                 
                 /* ART - This is the case for aia_scale processing (so far). This code will 
@@ -1556,20 +1724,18 @@ static int GenOutRSSpec(DRMS_Env_t *env,
             }
             
             /* Remove input series' filters. */
-            for (iset = 0; iset < nsets; iset++)
+            for (iset = 0; iset < nsetsIn; iset++)
             {
-                if (filts[iset])
+                if (filtsIn[iset])
                 {
-                    newoutseries = base_strreplace(outseries, filts[iset], "");
+                    newoutseries = base_strreplace(outseries, filtsIn[iset], "");
                     free(outseries);
                     outseries = newoutseries;
                 }
             }
             
-            FreeRecSpecParts(&snames, &filts, nsets);
-            
             /* Add filters to output series names. */
-            if (ParseRecSetSpec(outseries, &snames, &filts, &nsets, &info))
+            if (ParseRecSetSpec(outseries, &snamesOut, &filtsOut, &nsetsOut, &infoOut))
             {
                 err = 1;
                 break;
@@ -1578,16 +1744,39 @@ static int GenOutRSSpec(DRMS_Env_t *env,
             sz = 32;
             newfilter = malloc(sz);
             memset(newfilter, 0, sz);
-            for (iset = 0; iset < nsets; iset++)
-            {  
-                /* snames now contains output series names. */
-                
+            for (iset = 0; iset < nsetsOut; iset++)
+            {                
                 /* Get number of prime-key keywords for current series. */
                 
                 /* Must talk to db that has actual series (i.e., hmidb), despite the fact
                  * that the env might contain a connection to the wrong db. NumPKeyKeys()
                  * will talk to the correct db. */
-                npkeys = NumPKeyKeys(env, dbhost, snames[iset]);
+                
+                /* Tthe output series might not exist though! This is only true if 
+                 * crout == 1. If the output series doesn't exist, then 
+                 * obtain the number of prime keys of the input series, snamesIn[iset]. 
+                 * Actually, all the snamesIn should be identical, since we don't 
+                 * allow exporting from more than one series. */
+                if (data->crout == 1 && (!SeriesExists(env, snamesOut[iset], dbhost, &ierr) || ierr))
+                {
+                    npkeys = NumPKeyKeys(env, dbhost, snamesIn[iset]);
+                    
+                    /* Now, need to check to see if the input series has the RequestID keyword.
+                     * The environment might not allow this check, since we might 
+                     * not be connected to the dbmainhost, so we have to come up with an 
+                     * independent SQL query that tests for the existence of a keyword. 
+                     * KeyExists() does connect to the correct db. */
+                    if (!KeyExists(env, dbhost, snamesIn[iset], "RequestID", &ierr) || ierr)
+                    {
+                        /* Need to add one to npkeys, since the output series will have one 
+                         * more prime-key key constituent (RequestID) than the input series. */
+                        npkeys++;
+                    }
+                }
+                else
+                {
+                    npkeys = NumPKeyKeys(env, dbhost, snamesOut[iset]);
+                }
                 
                 if (npkeys < 1)
                 {
@@ -1606,13 +1795,13 @@ static int GenOutRSSpec(DRMS_Env_t *env,
                 newfilter = base_strcatalloc(newfilter, reqid, &sz);
                 newfilter = base_strcatalloc(newfilter, "]", &sz);
                 
-                len = strlen(snames[iset]) + strlen(newfilter) + 16;
+                len = strlen(snamesOut[iset]) + strlen(newfilter) + 16;
                 repl = malloc(len);
                 
                 if (repl)
                 {
-                    snprintf(repl, len, "%s%s", snames[iset], newfilter);
-                    newoutseries = base_strreplace(outseries, snames[iset], repl);
+                    snprintf(repl, len, "%s%s", snamesOut[iset], newfilter);
+                    newoutseries = base_strreplace(outseries, snamesOut[iset], repl);
                     free(repl);
                     repl = NULL;
                 }
@@ -1637,7 +1826,8 @@ static int GenOutRSSpec(DRMS_Env_t *env,
             free(newfilter);
             newfilter = NULL;
             
-            FreeRecSpecParts(&snames, &filts, nsets);
+            FreeRecSpecParts(&snamesOut, &filtsOut, nsetsOut);
+            FreeRecSpecParts(&snamesIn, &filtsIn, nsetsIn);
             /* Done! outseries has record-set specifications that have the proper 
              * suffix and that have the proper filters. */
             data->output = outseries;
@@ -2251,86 +2441,6 @@ static void FreeDataSetKw(void *val)
       free(*str);
       *str = NULL;
    }
-}
-
-/* Check for the existence of series series in the db on host dbhost. 
- * Returns 1 on error, 0 on success. */
-static int SeriesExists(DRMS_Env_t *env, const char *series, const char *dbhost, int *status)
-{
-   int rv = 0;
-   int istat = 0;
-   DB_Handle_t *dbh = NULL;
-   int contextOK = 0;
-
-   /* returns NULL on error. */
-   dbh = GetDBHandle(env, dbhost, &contextOK, 0);
-
-   if (!dbh)
-   {
-      fprintf(stderr, "jsoc_export_manage: Unable to connect to database.\n");
-      istat = 1;
-   }
-   else
-   {
-      if (!contextOK)
-      {
-         /* The caller wants to check for series existence in a db on host to which 
-          * this module has no connection. Use dbh, not env. */
-      
-         /* Successfully connected to dbhost; can't use DRMS calls since we don't have a 
-          * functioning environment for this ad hoc connection. */
-         char query[512];
-         char *schema = NULL;
-         char *table = NULL;
-         DB_Text_Result_t *res = NULL;
-         
-         if (get_namespace(series, &schema, &table))
-         {
-            fprintf(stderr, "Invalid series name %s.\n", series);
-         }
-         else
-         {
-            snprintf (query, sizeof(query), 
-                      "SELECT * FROM pg_catalog.pg_tables WHERE schemaname = lower(\'%s\') AND tablename = lower(\'%s\')", 
-                      schema, 
-                      table);
-
-            res = db_query_txt(dbh, query);
-
-            if (res) 
-            {
-               rv = (res->num_rows != 0);
-               db_free_text_result(res);
-               res = NULL;
-            }
-            else
-            {
-               fprintf(stderr, "Invalid SQL query: %s.\n", query);
-            }
-
-            free(schema);
-            free(table);
-         }
-      }
-      else
-      {
-         /* The caller wants to check for the existence of a series in the database to which 
-          * this modue is currently connected. */
-         rv = drms_series_exists(env, series, &istat);
-         if (istat != DRMS_SUCCESS)
-         {
-            fprintf(stderr, "Problems checking for series '%s' existence on %s.\n", series, dbhost);
-            rv = 0;
-         }
-      }
-   }
-
-   if (status)
-   {
-      *status = istat;
-   }
-
-   return rv;
 }
 
 // jsoc.export
