@@ -15,8 +15,8 @@
 
 \code
 set_info [-h] 
-set_info [-ctv] [JSOC_FLAGS] ds=<seriesname> [<keyword>=<value>]... [<segment>=<filename>]... [<link>=<record-set specification>]...
-set_info [-Cmtv] [JSOC_FLAGS] ds=<record_set> [<keyword>=<value>]... [<segment>=<filename>]... [<link>=<record-set specification>]...
+set_info [-ctv] [JSOC_FLAGS] ds=<seriesname> [<keyword>=<value>]... [<segment>=<filename>]...
+set_info [-Cmtv] [JSOC_FLAGS] ds=<record_set> [<keyword>=<value>]... [<segment>=<filename>]...
 set_info_soc {options as above}
 \endcode
 
@@ -48,9 +48,6 @@ and any other segment's files will be copied (cloned) to the new directory and a
 If the \a -C "clone" flag is present then a new record directory will be allocated even if none of the
 segments are to be updated.  This usually only makes sense in a JSOC session script where the same record
 will be incrementally updated by multiple modules and set_info is invoked as set_info_sock.  
-For each link argument specified, the argument name must match the name of a link in the series.
-The argument value for each such argument must be a record-set specification that identifies a single record in a target series. If these conditions are met, then for each link argument specified, a link between the newly created record and the record specified by the 
-record-set specification will be created.
 
 Only one instance of each keyword name or segment name is allowed.
 
@@ -422,115 +419,34 @@ static int WriteKeyValues(DRMS_Record_t *rec, int nsegments, HContainer_t *keyli
 
 static int IngestingAFile(DRMS_Record_t * rec)
 {
-    int rv = 0;
-    DRMS_Segment_t *seg = NULL;
-    HIterator_t *hit = NULL;
+   int rv = 0;
+   int nsegments;
+   int isegment;
+   DRMS_Segment_t *seg = NULL;
 
-    /* We do NOT want to follow links, so don't use drms_segment_lookup...(). */
-    while ((seg = drms_record_nextseg(rec, &hit, 0)) != NULL)
-    {        
-        if (!seg->info->islink)
-        {
-            /* Can't ingest a file for a linked segment. */
-            
-            if (seg->info->protocol == DRMS_GENERIC || seg->info->protocol == DRMS_FITS)
-            {
-                const char *segname = NULL;
-                const char *filename = NULL;
-                segname = seg->info->name;
-                filename = cmdparams_get_str(&cmdparams, segname, NULL);
-                if (filename && *filename)
-                {
-                    rv = 1;
-                    break; /* Stop iterating if we found a segment file. */
-                    /* We know that there is a valid segment name on the cmd-line, so we WILL need 
-                     * to fetch the SU containing the segment at some point. If we don't reach 
-                     * this spot, then we don't want to access SUMS, unless force_copyseg is set. */
-                }
-            }
-        }
-    }
-    
-    if (hit)
-    {
-        hiter_destroy(&hit);
-    }
-    
-    return rv;
-}
+   nsegments = hcon_size(&rec->segments);
+   for (isegment=0; isegment<nsegments; isegment++)
+   {
+      seg = drms_segment_lookupnum(rec, isegment);
+	   
+      if (seg->info->protocol == DRMS_GENERIC || seg->info->protocol == DRMS_FITS)
+      {
+         char *segname = NULL;
+         const char *filename = NULL;
+         segname = seg->info->name;
+         filename = cmdparams_get_str(&cmdparams, segname, NULL);
+         if (filename && *filename)
+         {
+            rv = 1;
+            break; /* Stop iterating if we found a segment file. */
+            /* We know that there is a valid segment name on the cmd-line, so we WILL need 
+             * to fetch the SU containing the segment at some point. If we don't reach 
+             * this spot, then we don't want to access SUMS, unless force_copyseg is set. */
+         }
+      }
+   }
 
-int CreateLinks(DRMS_Record_t *srec, HContainer_t *links)
-{
-    HIterator_t *lhit = NULL;
-    DRMS_Link_t *lnk = NULL;
-    int status;
-    int rv = 0;
-    
-    lhit = hiter_create(links);
-    
-    if (lhit)
-    {
-        const char *lname = NULL;
-        const char *lval = NULL;
-        DRMS_RecordSet_t *rs = NULL;
-        DRMS_Record_t *rec = NULL;
-        
-        while ((lnk = (DRMS_Link_t *)hiter_getnext(lhit)) != NULL)
-        {
-            lname = lnk->info->name;
-            
-            if (cmdparams_exists(&cmdparams, lname))
-            {
-                lval = cmdparams_get_str(&cmdparams, lname, NULL);
-                
-                /* Verify that lval is a valid record-set specification. */
-                rs = drms_open_records(drms_env, lval, &status);
-                if (!rs || status != DRMS_SUCCESS)
-                {
-                    fprintf(stderr, "Invalid record-set specification '%s'.\n", lval);
-                    rv = 1;
-                    break;
-                }
-                
-                if (rs->n != 1)
-                {
-                    fprintf(stderr, "Record-set specification '%s' does not identify a single record.\n", lval);
-                    rv = 1;
-                    break;
-                }
-                
-                rec = drms_recordset_fetchnext(drms_env, rs, &status, NULL, NULL);
-                
-                if (!rec || status != DRMS_SUCCESS)
-                {
-                    fprintf(stderr, "Unable to fetch records.\n");
-                    rv = 1;
-                    break;
-                }
-                
-                if (drms_link_set(lname, srec, rec) != DRMS_SUCCESS)
-                {
-                    fprintf(stderr, "Failure creating %s link.\n", lname);
-                    rv = 1;
-                    break;
-                }
-            }       
-        }
-        
-        if (rs)
-        {
-            drms_close_records(rs, DRMS_FREE_RECORD);
-        }
-        
-        hiter_destroy(&lhit);
-    }
-    else
-    {
-        fprintf(stderr, "Unable to create iterator.\n");
-        rv = 1;
-    }
-    
-    return rv;
+   return rv;
 }
 
 /* Module main function. */
@@ -608,7 +524,10 @@ int DoIt(void)
        DIE(msgbuf);
     }
     nrecs = 1;
-    rec = rs->records[0];
+    rec = rs->records[0];   
+
+    /* find out if the caller is trying to ingest a file - if so, set is_new_seg --> 1 */
+    is_new_seg = IngestingAFile(rec);
 
     pkeys = drms_series_createpkeyarray(drms_env, 
 					rec->seriesinfo->seriesname,
@@ -702,7 +621,7 @@ int DoIt(void)
        this module is in the same session that created the original
        record.
      */
-    /* if a segment is present matching the name of a segment=filename then copy instead of share */
+    /* if a segment is present matching the name of a keyword=filename then copy instead of share */
 
     /* find out if the caller is trying to ingest a file - if so, set is_new_seg --> 1 */
     is_new_seg = IngestingAFile(rec);
@@ -731,201 +650,184 @@ int DoIt(void)
   HContainer_t **segfilekeys = NULL;
   HContainer_t *keylist = NULL;
   int noutsegs = 0;
-    int nonlnksegs = 0;
-    HIterator_t *seghit = NULL;
 
   for (irec = 0; irec<nrecs; irec++)
-  {
-      char recordpath[DRMS_MAXPATHLEN];
-      rec = rs->records[irec];
-      noutsegs = hcon_size(&rec->segments);
-      
-      if (noutsegs > 0)
-      {
-          segfilekeys = malloc(sizeof(HContainer_t *) * noutsegs);
-          memset(segfilekeys, 0, sizeof(HContainer_t *) * noutsegs);
-          keylist = hcon_create(sizeof(int), sizeof(DRMS_MAXKEYNAMELEN), NULL, NULL, NULL, NULL, 0);
-      }
-      
-      /* make sure record directory is staged and included in the new record IF we are going to write
-       * to the record directory (if the user has supplied a filename on the cmd-line of a file to 
-       * be ingested, or if the user has specified the -C flag, which means to copy segments files
-       * when cloning the original record). */
-      if (is_new_seg || force_copyseg)
-      {
-          drms_record_directory(rec, recordpath, 1);
-      }
-      
-      /* We do NOT want to follow links, so don't use drms_segment_lookup...(). */
-      while ((seg = drms_record_nextseg(rec, &seghit, 0)) != NULL)
-      {        
-          if (!seg->info->islink)
-          {
-              const char *filename = NULL;
-              const char *segname = seg->info->name;
-              
-              nonlnksegs++;
-              segfilekeys[seg->info->segnum] = NULL; /* initialize to NULL - FitsImport
-                                                      * may override this. */
-              filename = cmdparams_get_str(&cmdparams, segname, NULL);
-              
-              if (filename && *filename)
-              {
-                  /* check to see if generic segment(s) present */
-                  if (seg->info->protocol == DRMS_GENERIC)
-                  {
-                      /* filename might contain a comma-separated list of files to import */
-                      char *afile = NULL;
-                      char *pch = NULL;
-                      char *tmp = strdup(filename);
-                      
-                      if (tmp)
-                      {
-                          afile = tmp;
-                          while ((pch = strchr(afile, ',')) != NULL)
-                          {             
-                              *pch = '\0';
-                              
-                              /* For generic protocol, there are no keyword values to import. */
-                              if ((status = drms_segment_write_from_file(seg, afile)))
-                              {
-                                  if (query) { free(query); query = NULL; }
-                                  free(tmp);
-                                  tmp = NULL;
-                                  DIE("segment name matches cmdline arg but file copy failed.\n");
-                              }
-                              
-                              afile = pch + 1;
-                          }
-                          
-                          /* handle last file in list */
-                          if ((status = drms_segment_write_from_file(seg, afile)))
-                          {
-                              if (query) { free(query); query = NULL; }
-                              free(tmp);
-                              tmp = NULL;
-                              DIE("segment name matches cmdline arg but file copy failed.\n");
-                          }
-                          
+    {
+    char recordpath[DRMS_MAXPATHLEN];
+    rec = rs->records[irec];
+    noutsegs = hcon_size(&rec->segments);
+
+    if (noutsegs > 0)
+    {
+       segfilekeys = malloc(sizeof(HContainer_t *) * noutsegs);
+       memset(segfilekeys, 0, sizeof(HContainer_t *) * noutsegs);
+       keylist = hcon_create(sizeof(int), sizeof(DRMS_MAXKEYNAMELEN), NULL, NULL, NULL, NULL, 0);
+    }
+    
+    /* make sure record directory is staged and included in the new record IF we are going to write
+     * to the record directory (if the user has supplied a filename on the cmd-line of a file to 
+     * be ingested, or if the user has specified the -C flag, which means to copy segments files
+     * when cloning the original record). */
+    if (is_new_seg || force_copyseg)
+    {
+       drms_record_directory(rec, recordpath, 1);
+    }
+
+    /* insert new generic segment files found on command line */
+    for (isegment=0; isegment<noutsegs; isegment++)
+    { 
+	 seg = drms_segment_lookupnum(rec, isegment);
+	 const char *filename = NULL;
+	 char *segname = seg->info->name;
+         segfilekeys[seg->info->segnum] = NULL; /* initialize to NULL - FitsImport
+                                                 * may override this. */
+	 filename = cmdparams_get_str(&cmdparams, segname, NULL);
+
+	 if (filename && *filename)
+	 {
+	      /* check to see if generic segment(s) present */
+	      if (seg->info->protocol == DRMS_GENERIC)
+	      {
+                 /* filename might contain a comma-separated list of files to import */
+                 char *afile = NULL;
+                 char *pch = NULL;
+                 char *tmp = strdup(filename);
+
+                 if (tmp)
+                 {
+                    afile = tmp;
+                    while ((pch = strchr(afile, ',')) != NULL)
+                    {             
+                       *pch = '\0';
+
+                       /* For generic protocol, there are no keyword values to import. */
+                       if ((status = drms_segment_write_from_file(seg, afile)))
+                       {
+                          if (query) { free(query); query = NULL; }
                           free(tmp);
                           tmp = NULL;
-                      }
-                  }
-                  else if (seg->info->protocol == DRMS_FITS)
-                  {
-                      if (FitsImport(seg, filename, segfilekeys, keylist) != 0)
-                      {
-                          char diebuf[256];
-                          
-                          snprintf(diebuf, sizeof(diebuf), 
-                                   "File '%s' does not contain data compatible with segment '%s'.\n", 
-                                   filename, seg->info->name);
-                          if (query) { free(query); query = NULL; }
-                          DIE(diebuf);
-                      }
-                  }
-                  else
-                  {
-                      fprintf(stderr, "Unsupported file protocol '%s'.\n", drms_prot2str(seg->info->protocol));
-                  }
-              }
-          }
-      } /* foreach(seg) */
-      
-      if (seghit)
-      {
-          hiter_destroy(&seghit);
-      }
-      
-      /* Resolve keyword value conflicts - iterate over keylist */
-      if (nonlnksegs > 0)
-      {
-          WriteKeyValues(rec, noutsegs, keylist, segfilekeys);
-      }
-      
-      /* Free segment files' keylists */
-      if (segfilekeys)
-      {
-          for (isegment = 0; isegment < noutsegs; isegment++)
-          { 
-              if (segfilekeys[isegment])
+                          DIE("segment name matches cmdline arg but file copy failed.\n");
+                       }
+
+                       afile = pch + 1;
+                    }
+
+                    /* handle last file in list */
+                    if ((status = drms_segment_write_from_file(seg, afile)))
+                    {
+                       if (query) { free(query); query = NULL; }
+                       free(tmp);
+                       tmp = NULL;
+                       DIE("segment name matches cmdline arg but file copy failed.\n");
+                    }
+
+                    free(tmp);
+                    tmp = NULL;
+                 }
+	      }
+              else if (seg->info->protocol == DRMS_FITS)
               {
-                  hcon_destroy(&segfilekeys[isegment]);
-              }
-          }
-          
-          free(segfilekeys);
-      }
-      /* Free keylist of unique keys from all segments. */
-      if (keylist)
-      {
-          hcon_destroy(&keylist);
-      }
-      
-      hiter_new(&key_hit, &rec->keywords);
-      while( (key = (DRMS_Keyword_t *)hiter_getnext(&key_hit)) )
-      {
-          int is_prime = 0;
-          keyname = key->info->name;
-          keytype = key->info->type;
-          
-          if (lckeys)
-          {
-              lckeyname = strdup(keyname);
-              strtolower(lckeyname);
-              keyname = lckeyname;
-          }
-          
-          /* look to see if given on command line */
-          if (cmdparams_exists(&cmdparams, keyname))
-          {
-              /* check to see if prime key */
-              for (is_prime=0, iprime = 0; iprime < nprime; iprime++)
-                  if (strcasecmp(keyname,  prime_names[iprime]) == 0)
-                      is_prime = 1;
-              if (is_prime)
-              { /* is prime, so DIE unless just made in create mode */
-                  if (!create)
-                  {
-                      if (query) { free(query); query = NULL; }
-                      DIE("Attempt to change prime key - not allowed");
-                  }
+                 if (FitsImport(seg, filename, segfilekeys, keylist) != 0)
+                 {
+                    char diebuf[256];
+
+                    snprintf(diebuf, sizeof(diebuf), 
+                             "File '%s' does not contain data compatible with segment '%s'.\n", 
+                             filename, seg->info->name);
+                    if (query) { free(query); query = NULL; }
+                    DIE(diebuf);
+                 }
               }
               else
-              { /* not prime, so update this value */
-                  key_anyval = cmdparams_get_type(&cmdparams, keyname, keytype, &status);
-                  status = drms_setkey(rec, keyname, keytype, &key_anyval);
-                  
-                  if (keytype == DRMS_TYPE_STRING)
-                  {
-                      free(key_anyval.string_val);
-                      key_anyval.string_val = NULL;
-                  }
-                  
-                  if (status)
-                  {
-                      if (query) { free(query); query = NULL; }
-                      DIE("keyval bad, cant set  key val with keyname");
-                  }
+              {
+                 fprintf(stderr, "Unsupported file protocol '%s'.\n", drms_prot2str(seg->info->protocol));
               }
-          }
-          
-          if (lckeys && lckeyname)
+	 }
+    } /* foreach(seg) */
+
+    /* Resolve keyword value conflicts - iterate over keylist */
+    if (noutsegs > 0)
+    {
+       WriteKeyValues(rec, noutsegs, keylist, segfilekeys);
+    }
+
+    /* Free segment files' keylists */
+    if (segfilekeys)
+    {
+       for (isegment = 0; isegment < noutsegs; isegment++)
+       { 
+          if (segfilekeys[isegment])
           {
-              free(lckeyname);
-              lckeyname = NULL;
+             hcon_destroy(&segfilekeys[isegment]);
           }
-      }
-      
-      hiter_free(&key_hit);
-      
-      /* Set any links for cmd-line link arguments. */
-      if (CreateLinks(rec, &rec->links))
+       }
+
+       free(segfilekeys);
+    }
+    /* Free keylist of unique keys from all segments. */
+    if (keylist)
+    {
+       hcon_destroy(&keylist);
+    }
+    
+    hiter_new(&key_hit, &rec->keywords);
+    while( (key = (DRMS_Keyword_t *)hiter_getnext(&key_hit)) )
       {
-          DIE("Unable to create link.");
+      int is_prime = 0;
+      keyname = key->info->name;
+      keytype = key->info->type;
+
+      if (lckeys)
+         {
+         lckeyname = strdup(keyname);
+         strtolower(lckeyname);
+         keyname = lckeyname;
+         }
+
+      /* look to see if given on command line */
+      if (cmdparams_exists(&cmdparams, keyname))
+        {
+        /* check to see if prime key */
+        for (is_prime=0, iprime = 0; iprime < nprime; iprime++)
+          if (strcasecmp(keyname,  prime_names[iprime]) == 0)
+            is_prime = 1;
+        if (is_prime)
+          { /* is prime, so DIE unless just made in create mode */
+          if (!create)
+          {
+             if (query) { free(query); query = NULL; }
+             DIE("Attempt to change prime key - not allowed");
+          }
+          }
+        else
+          { /* not prime, so update this value */
+	  key_anyval = cmdparams_get_type(&cmdparams, keyname, keytype, &status);
+	  status = drms_setkey(rec, keyname, keytype, &key_anyval);
+
+          if (keytype == DRMS_TYPE_STRING)
+          {
+             free(key_anyval.string_val);
+             key_anyval.string_val = NULL;
+          }
+
+           if (status)
+           {
+              if (query) { free(query); query = NULL; }
+              DIE("keyval bad, cant set  key val with keyname");
+           }
+          }
+	}
+
+      if (lckeys && lckeyname)
+         {
+         free(lckeyname);
+         lckeyname = NULL;
+         }
       }
-      
-  } /* foreach(rec) */
+
+    hiter_free(&key_hit);
+
+    } /* foreach(rec) */
 
   if (pkeys)
   {

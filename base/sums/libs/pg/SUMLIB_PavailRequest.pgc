@@ -10,7 +10,6 @@
 
 int cmp_pds_num(const void *a, const void *b);
 int DS_PavailRequest();
-int DS_PavailRequestEx();  /* extended w/new column pds_set_prime 7/23/2012 */
 int DS_PavailRequest2();
 
 PART ptab[MAX_PART]; 		/* used in sum_rm.c */
@@ -71,69 +70,6 @@ end_fetch:
 	
 sqlerror:
     printk("Error in DS_PavailRequest\n");
-    printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
-    EXEC SQL WHENEVER SQLERROR CONTINUE;
-    EXEC SQL ROLLBACK WORK;
-    return DS_DATA_QRY;
-}
-
-int DS_PavailRequestEx()
-{
-EXEC SQL BEGIN DECLARE SECTION;
-  VARCHAR l_name[80];
-  double l_total;
-  double l_avail;
-  int l_pnum;
-  int l_pnumprime;
-  char name[80];
-  char *namestr;
-EXEC SQL END DECLARE SECTION;
-int i;
-
-    printk("DS_PavailRequestEx \n");  
-    EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
-
-	EXEC SQL DECLARE pavailx CURSOR FOR
-	SELECT PARTN_NAME, TOTAL_BYTES, AVAIL_BYTES, PDS_SET_NUM, PDS_SET_PRIME
-	FROM SUM_PARTN_AVAIL;
-
-	EXEC SQL OPEN pavailx;
-
-    EXEC SQL WHENEVER NOT FOUND GOTO end_fetch; 
-	
-	for(i=0; i<MAX_PART-1; i++){
-		EXEC SQL FETCH pavailx INTO :l_name, :l_total, :l_avail, :l_pnum, :l_pnumprime;
-		strcpy(name, l_name.arr);
-		namestr = (char *) malloc (sizeof(name));
-		strcpy(namestr, name);
- 
-    	/* setting up memory tables here */
-		ptab[i].name = namestr;
-		ptab[i].bytes_total = l_total;
-		ptab[i].bytes_left = l_avail;
-		ptab[i].bytes_alloc = 0.0;
-		ptab[i].pds_set_num = l_pnum;
-		ptab[i].pds_set_prime = l_pnumprime;
-	}
-	if (i==MAX_PART-1){
-		/*printf("more partitions than reqd \n"); */
-                EXEC SQL CLOSE pavailx;
-                EXEC SQL COMMIT WORK;
-		return DS_DATA_QRY;
-	} 
-
-end_fetch:
-        /* sort ptab[] in ascending pds_set_num */
-        qsort(ptab, i, sizeof(PART), &cmp_pds_num);
-        /* put a terminating entry in the in-memory table */
-	ptab[i].name = NULL;	
-	ptab[i].pds_set_num = -1;	
-	EXEC SQL CLOSE pavailx;
-    EXEC SQL COMMIT WORK;
-    return NO_ERROR;
-	
-sqlerror:
-    printk("Error in DS_PavailRequestEx\n");
     printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
     EXEC SQL WHENEVER SQLERROR CONTINUE;
     EXEC SQL ROLLBACK WORK;

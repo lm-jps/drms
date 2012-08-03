@@ -59,27 +59,35 @@ static int EmptyDir(const char *dir)
 
         if (entry != NULL)
         {
-           if (!notempty)
-           {   
-              char *oneFile = entry->d_name;
+           char *oneFile = entry->d_name;
 
-              if (strcmp(oneFile, ".") != 0 && strcmp(oneFile, "..") != 0)
+           if (strcmp(oneFile, ".") != 0 && strcmp(oneFile, "..") != 0)
+           {
+              snprintf(subdir, sizeof(subdir), "%s/%s", dir, oneFile);
+
+              if (!stat(subdir, &stBuf))
               {
-                 snprintf(subdir, sizeof(subdir), "%s/%s", dir, oneFile);
-                 
-                 if (!stat(subdir, &stBuf))
+                 if (S_ISDIR(stBuf.st_mode))
                  {
-                    if (S_ISDIR(stBuf.st_mode))
+                    notempty = !EmptyDir(subdir);
+
+                    /* ART - Do'h! Fix bug where the SUMS slots at the end of the file list was 
+                     * empty, but ones earlier in the list were not. The last one overrode all
+                     * earlier ones. */
+                    if (notempty)
                     {
-                       notempty = !EmptyDir(subdir);
-                    }
-                    else
-                    {
-                       notempty = 1;
+                       free(entry);
+                       break;
                     }
                  }
+                 else
+                 {
+                    notempty = 1;
+                    free(entry);
+                    break;
+                 }
               }
-           }        
+           }           
 
            free(entry);
         }
@@ -498,17 +506,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
       * a positive value on the cmd-line and the user owns this series, use that value.  But if the
       * user doesn't own this series multiply the positive value by -1.
       */
-      
-      /* Override STDRETENTION with the jsd retention time if the user has set the DRMS_JSDRETENTION main flag. */
-      if (env->jsdsgetret && su->seriesinfo)
-      {
-          request->tdays = su->seriesinfo->retention;
-      }
-      else
-      {
-          request->tdays = STDRETENTION;
-      }
-      
+     request->tdays = STDRETENTION;
      if (request->tdays > 0)
      {
         /* Since STDRETENTION can be customized, don't allow the definition of a positive number */
@@ -517,7 +515,6 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 
      if (env->retention != INT_MIN) 
      {
-         /* if su->seriesinfo->retention_perm == 1, then the user has permission to reduce retention. */
         if (!su->seriesinfo || !su->seriesinfo->retention_perm)
         {
            if (env->retention > 0)
@@ -710,7 +707,6 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
   /* There is a maximum no. of SUs that can be requested from SUMS, MAXSUMREQCNT. So, loop. */
   int start = 0;
   int end = SUMIN(MAXSUMREQCNT, n); /* index of SU one past the last one to be processed */
-  int maxret;
 
   workingsus = su;
   workingn = n;
@@ -724,37 +720,16 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
      /* Ask SUMS for ALL SUS in workingsus (in chunks of MAXSUMREQCNT) */
      while (start < workingn)
      {
-        maxret = -1;
-         
         /* create SUMS request (apparently, SUMS frees this request) */
         request = malloc(sizeof(DRMS_SumRequest_t));
         XASSERT(request);
 
         request->opcode = DRMS_SUMGET;
         request->reqcnt = end - start;
-         
-         if (env->jsdsgetret)
-         {
-             for (isu = start, iSUMSsunum = 0; isu < end; isu++, iSUMSsunum++) 
-             {
-                 request->sunum[iSUMSsunum] = workingsus[isu]->sunum;
-                 
-                 /* Find largest jsd retention time. We will use this when setting the retention time 
-                  * of SUs retrieved from tape. */
-                 if (workingsus[isu]->seriesinfo && workingsus[isu]->seriesinfo->retention > maxret)
-                 {
-                     maxret = workingsus[isu]->seriesinfo->retention;
-                 }
-             }
-         }
-         else
-         {
-             for (isu = start, iSUMSsunum = 0; isu < end; isu++, iSUMSsunum++) 
-             {
-                 request->sunum[iSUMSsunum] = workingsus[isu]->sunum;
-             }
-         }
-        
+
+        for (isu = start, iSUMSsunum = 0; isu < end; isu++, iSUMSsunum++) {
+           request->sunum[iSUMSsunum] = workingsus[isu]->sunum;
+        }
         request->mode = NORETRIEVE + TOUCH;
         if (retrieve) 
           request->mode = RETRIEVE + TOUCH;
@@ -767,17 +742,7 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
          * a positive value on the cmd-line and the user owns this series, use that value.  But if the
          * user doesn't own this series multiply the positive value by -1.
          */
-         
-         /* Override STDRETENTION with the jsd retention time if the user has set the DRMS_JSDRETENTION main flag. */
-         if (env->jsdsgetret && maxret > -1)
-         {
-             request->tdays = maxret;
-         }
-         else
-         {
-             request->tdays = STDRETENTION;
-         }
-         
+        request->tdays = STDRETENTION;
         if (request->tdays > 0)
         {
            /* Since STDRETENTION can be customized, don't allow the definition of a positive number */

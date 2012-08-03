@@ -1076,9 +1076,6 @@ KEY *readdrvdo_1(KEY *params)
     }
   }
   setkey_int(&retlist, "STATUS", 0);   /* give success back to caller */
-uint32_t sprog;
-  sprog = getkey_uint32(retlist, "SPROG");
-  write_log("!!TEMP: SPROG for tape rd completion = %d\n", sprog);
   free(wd);
   free(tapeid);
   return(retlist);

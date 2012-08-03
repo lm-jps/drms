@@ -26,68 +26,67 @@ ModuleArgs_t module_args[] =
 
 static int SeriesExist(DRMS_Env_t *env, const char *rsspec, char ***names, int *nseries, int *ostat)
 {
-    int rv = 0;
-    char *allvers = NULL;
-    char **sets = NULL;
-    DRMS_RecordSetType_t *settypes = NULL;
-    char **snames = NULL;
-    char **filts = NULL;
-    int nsets = 0;
-    int istat;
-    
-    if ((istat = drms_record_parserecsetspec(rsspec, &allvers, &sets, &settypes, &snames, &filts, &nsets, NULL)) == DRMS_SUCCESS)
-    {
-        int iseries;
-        
-        for (iseries = 0; iseries < nsets; iseries++)
-        {
-            rv = drms_series_exists(env, snames[iseries], &istat);
-            if (istat != DRMS_SUCCESS)
-            {
-                fprintf(stderr, "Problems checking for series '%s' existence.\n", snames[iseries]);
-                rv = 0;
-                break;
-            }
-            else if (rv == 0)
-            {
-                break;
-            }
-        }
-    }
-    else
-    {
-        fprintf(stderr, "dscp FAILURE: invalid record-set specification %s.\n", rsspec);
-        rv = 0;
-    }
-    
-    if (istat == DRMS_SUCCESS)
-    {
-        int iseries;
-        
-        if (nseries)
-        {
-            *nseries = nsets;
-        }
-        
-        if (names)
-        {
-            *names = (char **)malloc(nsets * sizeof(char *));
-            
-            for (iseries = 0; iseries < nsets; iseries++)
-            {
-                (*names)[iseries] = strdup(snames[iseries]);
-            }
-        }
-    }
-    
-    drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
-    
-    if (ostat)
-    {
-        *ostat = istat;
-    }
-    
-    return rv;
+   int rv = 0;
+   char *allvers = NULL;
+   char **sets = NULL;
+   DRMS_RecordSetType_t *settypes = NULL;
+   char **snames = NULL;
+   int nsets = 0;
+   int istat;
+
+   if ((istat = drms_record_parserecsetspec(rsspec, &allvers, &sets, &settypes, &snames, &nsets, NULL)) == DRMS_SUCCESS)
+   {
+      int iseries;
+
+      for (iseries = 0; iseries < nsets; iseries++)
+      {
+         rv = drms_series_exists(env, snames[iseries], &istat);
+         if (istat != DRMS_SUCCESS)
+         {
+            fprintf(stderr, "Problems checking for series '%s' existence.\n", snames[iseries]);
+            rv = 0;
+            break;
+         }
+         else if (rv == 0)
+         {
+            break;
+         }
+      }
+   }
+   else
+   {
+      fprintf(stderr, "dscp FAILURE: invalid record-set specification %s.\n", rsspec);
+      rv = 0;
+   }
+
+   if (istat == DRMS_SUCCESS)
+   {
+      int iseries;
+
+      if (nseries)
+      {
+         *nseries = nsets;
+      }
+
+      if (names)
+      {
+         *names = (char **)malloc(nsets * sizeof(char *));
+
+         for (iseries = 0; iseries < nsets; iseries++)
+         {
+            (*names)[iseries] = strdup(snames[iseries]);
+         }
+      }
+   }
+
+   drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, nsets);
+
+   if (ostat)
+   {
+      *ostat = istat;
+   }
+
+   return rv;
 }
 
 /* returns kMaxChunkSize on error, otherwise it returns an estimated good-chunk size (the
@@ -201,27 +200,7 @@ static int ProcessRecord(DRMS_Record_t *recin, DRMS_Record_t *recout)
                 {
                     /* skip input records that have no SU associated with them */
                     drms_segment_filename(segin, infile);
-                    
-                    if (segout->info->protocol == DRMS_GENERIC)
-                    {
-                        char *filename = NULL;
-                        filename = rindex(infile, '/');
-                        if (filename)
-                        {
-                            filename++;
-                        }
-                        else 
-                        {
-                            filename = infile;
-                        }
-                        
-                        CHECKSNPRINTF(snprintf(segout->filename, DRMS_MAXSEGFILENAME, "%s", filename), DRMS_MAXSEGFILENAME);
-                        drms_segment_filename(segout, outfile);
-                    }
-                    else
-                    {
-                        drms_segment_filename(segout, outfile);
-                    }
+                    drms_segment_filename(segout, outfile);
                     
                     if (*infile != '\0' && *outfile != '\0')
                     {
@@ -367,18 +346,6 @@ int DoIt(void)
       }
       else if (rsin && rsin->n > 0)
       {
-          /* Adjust chunksize - if rsin->n < chunksize, then there are fewer records in the 
-           * record-set than exist in a chunk. Make the chunksize = rsin->n. */
-          if (chunksize > rsin->n)
-          {
-              chunksize = rsin->n;
-              if (drms_recordset_setchunksize(chunksize))
-              {
-                  fprintf(stderr, "Unable to set record-set chunk size of %d; using default.\n", chunksize);
-                  chunksize = drms_recordset_getchunksize();
-              }
-          }
-          
          /* Stage the records. The retrieval is actually deferred until the drms_recordset_fetchnext()
           * call opens a new record chunk. */
          drms_sortandstage_records(rsin, 1, 0, NULL); 

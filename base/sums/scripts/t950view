@@ -2020,8 +2020,7 @@ sub Imp_Exp_Open_Door {
   		-background=>'orange', -font => 'arial 12 bold')->pack(@pl);
     delete($Hofneed{$tid});	#remove this tape as needed from the hash
   }
- #$ImpExpf->Label(-text=>"When these tapes are in the EE slots, hit 'Continue'",
-  $ImpExpf->Label(-text=>"When these tapes are in the EE slots, hit 'Stop Export'",
+  $ImpExpf->Label(-text=>"When these tapes are in the EE slots, hit 'Continue'",
 		-font => 'arial 12 bold')->pack(@pl);
   $msg = "When Export/Exchange is finished, hit 'Inventory'";
   $ImpExpf->Label(-text => $msg, 

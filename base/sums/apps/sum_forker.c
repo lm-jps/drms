@@ -22,9 +22,6 @@ extern int errno;
 char *dbname, *timetag;
 int tapeoffline = 0;
 int sim = 0;
-rm_0_found = 0;
-rm_1_found = 0;
-rm_2_found = 0;
 
 int send_mail(char *fmt, ...)
 {
@@ -81,38 +78,6 @@ void get_cmd(int argc, char *argv[])
   //printf("timetag = %s\n", timetag);
 }
 
-/* Set flags for the sum_rm_[0,1,2] found still running.
- * Return 0 on success, else -1.
-*/
-int find_sum_rm()
-{
-  FILE *fplog;
-  char acmd[128], line[128], look[64];
-  char log[] = "/usr/local/logs/SUM/find_sum_rm.log";
-
-  sprintf(acmd, "ps -ef | grep sum_rm_  1> %s 2>&1", log);
-  if(system(acmd)) {
-    printf("Can't execute %s.\n", acmd);
-    return(-1);
-  }
-  if((fplog=fopen(log, "r")) == NULL) {
-    printf("Can't open %s to find sum_rm_\n", log);
-    return(-1);
-  }
-  sprintf(look, " %s", dbname);
-  while(fgets(line, 128, fplog)) {       /* get ps lines */
-     if (strstr(line, look) && strstr(line, "sum_rm_")) {
-       if(!strstr(line, "sh ")) {
-         if(strstr(line, "sum_rm_0")) rm_0_found = 1;
-         else if(strstr(line, "sum_rm_1")) rm_1_found = 1;
-         else if(strstr(line, "sum_rm_2")) rm_2_found = 1;
-       }
-     }
-  }
-  fclose(fplog);
-  return (0);
-}
-
 int main(int argc, char *argv[])
 { 
   int i;
@@ -121,10 +86,6 @@ int main(int argc, char *argv[])
   char dsvcname[80], pgport[32], cmd[128];
 
   get_cmd(argc, argv);                  /* check the calling sequence */
-  if(find_sum_rm() == -1) {
-    printf("Fatal Error, quit\n");
-    exit(1);
-  }
 
   //printf("!!TEMP sum_forker just exits for now\n");
   //exit(0); //!!!TEMP
@@ -221,57 +182,7 @@ int main(int argc, char *argv[])
       exit(1);
     }
   }
-  if(!rm_0_found) {		//only run if not already running
-  if((pid = fork()) < 0) {
-    printf("***Can't fork(). errno=%d\n", errno);
-    exit(1);
-  }
-  else if(pid == 0) {                   /* this is the beloved child */
-    printf("execvp of sum_rm_0\n");
-    args[0] = "sum_rm_0";
-    args[1] = dbname;
-    args[2] = timetag;
-    args[3] = NULL;
-    if(execvp(args[0], args) < 0) {
-      printf("***Can't execvp() sum_rm_0. errno=%d\n", errno);
-      exit(1);
-    }
-  }
-  }
-  if(!rm_1_found) {		//only run if not already running
-  if((pid = fork()) < 0) {
-    printf("***Can't fork(). errno=%d\n", errno);
-    exit(1);
-  }
-  else if(pid == 0) {                   /* this is the beloved child */
-    printf("execvp of sum_rm_1\n");
-    args[0] = "sum_rm_1";
-    args[1] = dbname;
-    args[2] = timetag;
-    args[3] = NULL;
-    if(execvp(args[0], args) < 0) {
-      printf("***Can't execvp() sum_rm_1. errno=%d\n", errno);
-      exit(1);
-    }
-  }
-  }
-  if(!rm_2_found) {		//only run if not already running
-  if((pid = fork()) < 0) {
-    printf("***Can't fork(). errno=%d\n", errno);
-    exit(1);
-  }
-  else if(pid == 0) {                   /* this is the beloved child */
-    printf("execvp of sum_rm_2\n");
-    args[0] = "sum_rm_2";
-    args[1] = dbname;
-    args[2] = timetag;
-    args[3] = NULL;
-    if(execvp(args[0], args) < 0) {
-      printf("***Can't execvp() sum_rm_2. errno=%d\n", errno);
-      exit(1);
-    }
-  }
-  }
+  //Now see if sum_rm_[0,1,2] need to be started. !!!TBD!!!
 
   //printf("End of sum_forker to start tape services\n");
 }

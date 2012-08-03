@@ -35,16 +35,8 @@
 #include <time.h>
 #include <sys/file.h>
 
-// Log files
-#define kLockFile          "/home/jsoc/exports/tmp/lock.txt"
-#define kLogFileSumm       "/home/jsoc/exports/logs/fetch_log"
-#define kLogFileExpSuInt   "/home/jsoc/exports/logs/fetchlogExpSuInt.txt"
-#define kLogFileExpSuExt   "/home/jsoc/exports/logs/fetchlogExpSuExt.txt"
-#define kLogFileExpReqInt  "/home/jsoc/exports/logs/fetchlogExpReqInt.txt"
-#define kLogFileExpReqExt  "/home/jsoc/exports/logs/fetchlogExpReqExt.txt"
-#define kLogFileExpStatInt "/home/jsoc/exports/logs/fetchlogExpStatInt.txt"
-#define kLogFileExpStatExt "/home/jsoc/exports/logs/fetchlogExpStatExt.txt"
-
+#define kLockFile "/home/jsoc/exports/tmp/lock.txt"
+#define kLogFile "/home/jsoc/exports/tmp/fetchlog.txt"
 
 #define MAX_EXPORT_SIZE 100000  // 100GB
 
@@ -89,8 +81,6 @@
 #define kNoAsyncReq     "NOASYNCREQUEST"
 
 int dojson, dotxt, dohtml, doxml;
-
-HContainer_t *gLogs = NULL;
 
 ModuleArgs_t module_args[] =
 { 
@@ -396,8 +386,6 @@ static void CleanUp(int64_t **psunumarr, SUM_info_t ***infostructs, char **webar
    }
    if (userhandle && *userhandle)
      manage_userhandle(0, userhandle);
-    
-    hcon_destroy(&gLogs);
 }
 
 /* Can't call these from sub-functions - can only be called from DoIt(). And 
@@ -446,58 +434,6 @@ if (DEBUG) fprintf(stderr,"%s%s\n",msg,info);
 
   return(1);
   }
-
-static int JsonCommitFn(DRMS_Record_t **exprec,
-                        int ro,
-                        int dojson, 
-                        char *msg, 
-                        char *info, 
-                        char *stat, 
-                        int64_t **psunumarr, 
-                        SUM_info_t ***infostructs, 
-                        char **webarglist,
-                        char **series, 
-                        char **paths, 
-                        char **sustatus, 
-                        char **susize, 
-                        int arrsize, 
-                        const char *userhandle)
-{
-    int rv = 1; // rollback db
-    
-    // Return some json or plain text in response to the HTTP request
-    die(dojson, msg, "", "4", psunumarr, infostructs, webarglist, series, paths, sustatus, susize, arrsize, userhandle); // ignore return value
-    
-    if (exprec && *exprec)
-    {
-        if (ro)
-        {
-            drms_close_record(*exprec, DRMS_FREE_RECORD);
-        }
-        else
-        {
-            if (drms_setkey_int(*exprec, "Status", 4))
-            {
-                drms_close_record(*exprec, DRMS_FREE_RECORD);
-                rv = 1;
-            }
-            else
-            {
-                // Don't worry about errmsg-write failure.
-                drms_setkey_string(*exprec, "errmsg", msg);
-                drms_close_record(*exprec, DRMS_INSERT_RECORD);
-                rv = 0;
-            }
-        }
-        
-        *exprec = NULL;
-    }
-    
-    return rv;
-}
-
-#define JSONCOMMIT(msg,rec,ro) {return JsonCommitFn(rec, ro, dojson, msg, "", "4", &sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize, userhandle);};
-
 
 static int send_file(DRMS_Record_t *rec, int segno, char *pathret, int size)
   {
@@ -620,7 +556,7 @@ static int AcquireLock(int fd)
    int ret = -1;
    int natt = 0;
 
-   while ((ret = lockf(fd, F_TLOCK, 0)) != 0 && natt < 10)
+   while ((ret = flock(fd, LOCK_EX | LOCK_NB)) != 0 && natt < 10)
    {
       // printf("couldn't get lock, trying again.\n");
       sleep(1);
@@ -632,109 +568,7 @@ static int AcquireLock(int fd)
 
 static void ReleaseLock(int fd)
 {
-   lockf(fd, F_ULOCK, 0);
-}
-
-static void FreeLogs(void *val)
-{
-    FILE **pfptr = (FILE **)val;
-    
-    if (pfptr && *pfptr)
-    {
-        fflush(*pfptr);
-        fchmod(fileno(*pfptr), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
-        fclose(*pfptr);
-        *pfptr = NULL;
-    }
-}
-
-static void WriteLog(const char *logpath, const char *format, ...)
-{
-    FILE *fptr = NULL;
-    FILE **pfptr = NULL;
-    int lockfd;
-    struct stat stbuf;
-    int mustchmodlck = (stat(kLockFile, &stbuf) != 0);
-    int mustchmodlog = (stat(logpath, &stbuf) != 0);
-    
-    if (!gLogs)
-    {
-        gLogs = hcon_create(sizeof(FILE *), 128, (void(*)(const void *value))FreeLogs, NULL, NULL, NULL, 0);
-        
-        if (gLogs)
-        {
-            // Insert NULL fptrs, to initialize.
-            hcon_insert(gLogs, kLogFileSumm, &fptr);
-            hcon_insert(gLogs, kLogFileExpSuInt, &fptr);
-            hcon_insert(gLogs, kLogFileExpSuExt, &fptr);
-            hcon_insert(gLogs, kLogFileExpReqInt, &fptr);
-            hcon_insert(gLogs, kLogFileExpReqExt, &fptr);
-            hcon_insert(gLogs, kLogFileExpStatInt, &fptr);
-            hcon_insert(gLogs, kLogFileExpStatExt, &fptr);
-        }
-        else
-        {
-            fprintf(stderr, "Out of memory.\n");
-            return;
-        }
-    }
-    
-    pfptr = hcon_lookup(gLogs, logpath);
-    
-    if (pfptr)
-    {
-        // Acquire the lock
-        lockfd = open(kLockFile, O_WRONLY | O_CREAT, S_IRWXU | S_IRWXG);
-        if (lockfd >= 0)
-        {
-            if (AcquireLock(lockfd))
-            {
-                if (!*pfptr)
-                {
-                    *pfptr = fopen(logpath, "a");
-                }
-                
-                if (*pfptr)
-                {
-                    // Now we can do the actual writing.
-                    va_list ap;
-                    
-                    va_start(ap, format);
-                    vfprintf(*pfptr, format, ap);
-                    va_end(ap);
-
-                    if (mustchmodlog)
-                    {
-                       fchmod(fileno(*pfptr), S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
-                    }
-                }
-                else
-                {
-                    fprintf(stderr, "Unable to open log file for writing: %s.\n", logpath);
-                }
-                
-                ReleaseLock(lockfd);
-            }
-            else
-            {
-                fprintf(stderr, "Unable to acquire lock on %s.\n", kLockFile);
-            }
-
-            if (mustchmodlck)
-            {
-               fchmod(lockfd, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
-            }
-            close(lockfd);
-        }
-        else
-        {
-            fprintf(stderr, "Unable to open lock file for writing: %s.\n", kLockFile);
-        }
-    }
-    else
-    {
-        fprintf(stderr, "Invalid log-file path %s.\n", logpath);
-    }
+   flock(fd, LOCK_UN);
 }
 
 json_insert_runtime(json_t *jroot, double StartTime)
@@ -748,144 +582,40 @@ json_insert_runtime(json_t *jroot, double StartTime)
   json_insert_pair_into_object(jroot, "runtime", json_new_number(runtime));
   }
 
+#define LOGFILE "/home/jsoc/exports/fetch_log"
+
 // report_summary - record  this call of the program.
-static void report_summary(const char *host, 
-                           double StartTime, 
-                           const char *remote_IP, 
-                           const char *op, 
-                           const char *ds, 
-                           int n, 
-                           int internal, 
-                           int status)
+report_summary(const char *host, double StartTime, const char *remote_IP, const char *op, const char *ds, int n, int status)
   {
+  FILE *log;
+  int sleeps;
   double EndTime;
   struct timeval thistv;
-  char *logfile = NULL;
-      
   gettimeofday(&thistv, NULL);
   EndTime = thistv.tv_sec + thistv.tv_usec/1000000.0;
-      
-  logfile = kLogFileSumm;
-      
-  WriteLog(logfile, "host='%s'\t",host);
-  WriteLog(logfile, "lag=%0.3f\t",EndTime - StartTime);
-  WriteLog(logfile, "IP='%s'\t",remote_IP);
-  WriteLog(logfile, "op='%s'\t",op);
-  WriteLog(logfile, "ds='%s'\t",ds);
-  WriteLog(logfile, "n=%d\t",n);
-  WriteLog(logfile, "status=%d\n",status);
+  log = fopen(LOGFILE,"a");
+  for(sleeps=0; lockf(fileno(log),F_TLOCK,0); sleeps++)
+    {
+    if (sleeps >= 5)
+      {
+      fprintf(stderr,"Lock stuck on %s, no report made.\n", LOGFILE);
+      fclose(log);
+      return;
+      }
+    sleep(1);
+    }
+  fprintf(log, "host='%s'\t",host);
+  fprintf(log, "lag=%0.3f\t",EndTime - StartTime);
+  fprintf(log, "IP='%s'\t",remote_IP);
+  fprintf(log, "op='%s'\t",op);
+  fprintf(log, "ds='%s'\t",ds);
+  fprintf(log, "n=%d\t",n);
+  fprintf(log, "status=%d\n",status);
+  fflush(log);
+  lockf(fileno(log),F_ULOCK,0);
+  fclose(log);
   }
 
-static void FreeRecSpecParts(char ***snames, char ***filts, int nitems)
-{
-    if (snames)
-    {
-        int iname;
-        char **snameArr = *snames;
-        
-        if (snameArr)
-        {
-            for (iname = 0; iname < nitems; iname++)
-            {
-                char *oneSname = snameArr[iname];
-                
-                if (oneSname)
-                {
-                    free(oneSname);
-                }
-            }
-            
-            free(snameArr);
-        }
-        
-        *snames = NULL;
-    }
-    
-    if (filts)
-    {
-        int iname;
-        char **filtsArr = *filts;
-        
-        if (filtsArr)
-        {
-            for (iname = 0; iname < nitems; iname++)
-            {
-                char *oneFilt = filtsArr[iname];
-                
-                if (oneFilt)
-                {
-                    free(oneFilt);
-                }
-            }
-            
-            free(filtsArr);
-        }
-        
-        *filts = NULL;
-    }
-}
-
-static void LogReqInfo(const char *fname, 
-                       int fileupload, 
-                       const char *op, 
-                       const char *dsin, 
-                       const char *requestid, 
-                       const char *dbhost,
-                       int from_web,
-                       const char *webarglist)
-  {
-  /* Before opening the log file, acquire a lock. Not only will this allow multiple jsoc_fetchs to 
-   * write to the same log, but it will facilitate synchronization with code that manages compression
-   * and clean-up of the log. */
-
-  char nowtxt[100];
-
-  sprint_ut(nowtxt, timenow());
-  WriteLog(fname, "PID=%d\n   %s\n   op=%s\n   in=%s\n   RequestID=%s\n   DBHOST=%s\n   REMOTE_ADDR=%s\n",
-           getpid(), nowtxt, op, dsin, requestid, dbhost, getenv("REMOTE_ADDR"));
-  if (fileupload)  // recordset passed as uploaded file
-    {
-    char *file = (char *)cmdparams_get_str (&cmdparams, kArgFile, NULL);
-    int filesize = cmdparams_get_int (&cmdparams, kArgFile".length", NULL);
-    char *filename = (char *)cmdparams_get_str (&cmdparams, kArgFile".filename", NULL);
-    WriteLog(fname,"   UploadFile: size=%d, name=%s, contents=%s\n",filesize,filename,file);
-    }
-    
-    /* Now print the web arguments (if jsoc_fetch was invoked via an HTTP POST verb). */
-    if (from_web && strlen(webarglist) > 0)
-      {
-      int rlsize = strlen(webarglist) * 2;
-      char *rlbuf = malloc(rlsize);
-      memset(rlbuf, 0, rlsize);
-      const char *pwa = webarglist;
-      char *prl = rlbuf;
-        
-      /* Before printing the webarglist string, escape '%' chars - otherwise fprintf(), will
-       * think you want to replace things like "%lld" with a formated value - this happens
-       * even though there is no arg provided after webarglist. */
-      while (*pwa && (prl - rlbuf < rlsize - 1))
-        {
-        if (*pwa == '%')
-          {
-            *prl = '%';
-            prl++;
-          }
-            
-        *prl = *pwa;
-        pwa++;
-        prl++;
-        }
-        
-      *prl = '\0';
-        
-      WriteLog(fname, "** HTTP POST arguments:\n");
-      WriteLog(fname, rlbuf);
-      WriteLog(fname, "\n");
-      free(rlbuf);
-      }
-    
-    WriteLog(fname, "**********************\n");
-}
 
 /* Module main function. */
 int DoIt(void)
@@ -925,7 +655,7 @@ int DoIt(void)
   int from_web,status;
   int dodataobj=1, dojson=1, dotxt=0, dohtml=0, doxml=0;
   DRMS_RecordSet_t *exports;
-  DRMS_Record_t *exprec = NULL;  // Why was the name changed from export_log ??
+  DRMS_Record_t *export_log;
   char new_requestid[200];
   char status_query[1000];
   char *export_series; 
@@ -943,7 +673,6 @@ int DoIt(void)
   int arrsize = DRMS_MAXQUERYLEN/8;
     
     int postorget = 0;
-    int insertexprec = 1;
     
     if (getenv("REQUEST_METHOD"))
     {
@@ -965,7 +694,7 @@ int DoIt(void)
         /* If we are here then one of three things is true (implied by the existence of QUERY_STRING):
          *   1. We are processing an HTTP GET. The webserver will put the arguments in the
          *      QUERY_STRING environment variable.
-         *   2. We are processing an HTTP POST. The webserver will NOT put the arguments in the
+         *   2. We are processing an HTT POST. The webserver will NOT put the arguments in the
          *      QUERY_STRING environment variable. Instead the arguments will be passed to jsoc_fetch
          *      via stdin. QUERY_STRING should not be set, but it looks like it might be. In any
          *      case qDecoder will ignore it.
@@ -1095,15 +824,105 @@ int DoIt(void)
     }
 
 // SPECIAL DEBUG LOG HERE XXXXXX
+{
+   /* Before opening the log file, acquire a lock. Not only will this allow multiple jsoc_fetchs to 
+    * write to the same log, but it will facilitate synchronization with code that manages compression
+    * and clean-up of the log. */
+   
+   FILE *runlog = NULL;
+   int lockfd;
+   int gotlock;
 
+   gotlock = 0;
+   lockfd = open(kLockFile, O_RDONLY | O_CREAT, S_IRWXU | S_IRWXG);
+   if (lockfd >= 0)
+   {
+      if (AcquireLock(lockfd))
+      {
+         gotlock = 1;
+         runlog = fopen(kLogFile, "a");
+      }
+      else
+      {
+         fprintf(stderr, "Unable to acquire lock file; skipping debug logging (but continuing).\n");
+      }
+   }
+
+ if (runlog)
+ {
+    char nowtxt[100];
+    int fileupload = strncmp(dsin, "*file*", 6) == 0;
+    sprint_ut(nowtxt, now);
+    fprintf(runlog,"PID=%d\n   %s\n   op=%s\n   in=%s\n   RequestID=%s\n   DBHOST=%s\n   REMOTE_ADDR=%s\n",
+            getpid(), nowtxt, op, dsin, requestid, dbhost, getenv("REMOTE_ADDR"));
+    if (fileupload)  // recordset passed as uploaded file
+    {
+       char *file = (char *)cmdparams_get_str (&cmdparams, kArgFile, NULL);
+       int filesize = cmdparams_get_int (&cmdparams, kArgFile".length", NULL);
+       char *filename = (char *)cmdparams_get_str (&cmdparams, kArgFile".filename", NULL);
+       fprintf(runlog,"   UploadFile: size=%d, name=%s, contents=%s\n",filesize,filename,file);
+    }
+
+    /* Now print the web arguments (if jsoc_fetch was invoked via an HTTP POST verb). */
+    if (from_web && strlen(webarglist) > 0)
+    {
+       int rlsize = strlen(webarglist) * 2;
+       char *rlbuf = malloc(rlsize);
+       memset(rlbuf, 0, rlsize);
+       char *pwa = webarglist;
+       char *prl = rlbuf;
+
+       /* Before printing the webarglist string, escape '%' chars - otherwise fprintf(), will
+        * think you want to replace things like "%lld" with a formated value - this happens
+        * even though there is no arg provided after webarglist. */
+       while (*pwa && (prl - rlbuf < rlsize - 1))
+       {
+          if (*pwa == '%')
+          {
+             *prl = '%';
+             prl++;
+          }
+
+          *prl = *pwa;
+          pwa++;
+          prl++;
+       }
+
+       *prl = '\0';
+
+       fprintf(runlog, "** HTTP POST arguments:\n");
+       fprintf(runlog, rlbuf);
+       fprintf(runlog, "\n");
+       free(rlbuf);
+    }
+
+    fprintf(runlog, "**********************\n");
+
+    fclose(runlog);
+    chmod(kLogFile, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+ }
+ else
+ {
+    fprintf(stderr, "Unable to open log file; skipping debug logging (but continuing).\n");
+ }
+
+ if (gotlock)
+ {
+    ReleaseLock(lockfd);
+    gotlock = 0;
+ }
+
+ if (lockfd >= 0)
+ {
+    close(lockfd);
+    chmod(kLockFile, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+ }
+}
 
   export_series = kExportSeries;
 
   long long sunums[DRMS_MAXQUERYLEN/8];  // should be enough!
   int expsucount;
-  const char *lfname = NULL;
-  int fileupload = strncmp(dsin, "*file*", 6) == 0;
-  int internal = (strcmp(dbhost, "hmidb") == 0);
 
   /*  op == exp_su - export Storage Units */
   if (strcmp(op, kOpExpSu) == 0)
@@ -1113,17 +932,6 @@ int DoIt(void)
     int status=0;
     int sums_status = 0; //ISS
     int all_online;
-        
-    if (internal)
-    {
-        lfname = kLogFileExpSuInt;
-    }
-    else
-    {
-        lfname = kLogFileExpSuExt;            
-    }
-
-    LogReqInfo(lfname, fileupload, op, dsin, requestid, dbhost, from_web, webarglist);
 
     export_series = kExportSeriesNew;
     // Do survey of sunum list
@@ -1348,7 +1156,7 @@ int DoIt(void)
           printf("%lld\t%s\t%s\t%s\t%s\n",sunums[i],series[i],paths[i], sustatus[i], susize[i]);
         }
 
-      report_summary(Server, StartTime, Remote_Address, op, dsin, 0, internal, 0);
+      report_summary(Server, StartTime, Remote_Address, op, dsin, 0, 0);
       if (!dodataobj || (sums_status == 1 || all_online))
         {
          /* If not a VSO request, we're done. If a VSO request, done if all online, or if SUMS is down. 
@@ -1421,22 +1229,22 @@ check for requestor to be valid remote DRMS site
     if (strcmp(dsin, kNotSpecified) == 0 && (!sunumarr || sunumarr[0] < 0))
       JSONDIE("Must have valid Recordset or SU set");
 
-    exprec = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
-    if (!exprec)
+    export_log = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
+    if (!export_log)
       JSONDIE("Cant create new export control record");
-    drms_setkey_string(exprec, "RequestID", requestid);
-    drms_setkey_string(exprec, "DataSet", dsin);
-    drms_setkey_string(exprec, "Processing", process);
-    drms_setkey_string(exprec, "Protocol", protocol);
-    drms_setkey_string(exprec, "FilenameFmt", filenamefmt);
-    drms_setkey_string(exprec, "Method", method);
-    drms_setkey_string(exprec, "Format", format);
-    drms_setkey_time(exprec, "ReqTime", now);
-    drms_setkey_time(exprec, "EstTime", now+10); // Crude guess for now
-    drms_setkey_longlong(exprec, "Size", (int)size);
-    drms_setkey_int(exprec, "Status", (testmode ? 12 : 2));
-    drms_setkey_int(exprec, "Requestor", requestorid);
-    // drms_close_record(exprec, DRMS_INSERT_RECORD); 
+    drms_setkey_string(export_log, "RequestID", requestid);
+    drms_setkey_string(export_log, "DataSet", dsin);
+    drms_setkey_string(export_log, "Processing", process);
+    drms_setkey_string(export_log, "Protocol", protocol);
+    drms_setkey_string(export_log, "FilenameFmt", filenamefmt);
+    drms_setkey_string(export_log, "Method", method);
+    drms_setkey_string(export_log, "Format", format);
+    drms_setkey_time(export_log, "ReqTime", now);
+    drms_setkey_time(export_log, "EstTime", now+10); // Crude guess for now
+    drms_setkey_longlong(export_log, "Size", (int)size);
+    drms_setkey_int(export_log, "Status", (testmode ? 12 : 2));
+    drms_setkey_int(export_log, "Requestor", requestorid);
+    drms_close_record(export_log, DRMS_INSERT_RECORD); 
     } // end of exp_su
 
   /*  op == exp_request  */
@@ -1452,17 +1260,6 @@ check for requestor to be valid remote DRMS site
     int filesize;
     DRMS_RecordSet_t *rs;
     export_series = kExportSeriesNew;
-        
-    if (internal)
-    {
-        lfname = kLogFileExpReqInt;
-    }
-    else
-    {
-        lfname = kLogFileExpReqExt;            
-    }
-        
-    LogReqInfo(lfname, fileupload, op, dsin, requestid, dbhost, from_web, webarglist);
 
     size=0;
     strncpy(dsquery,dsin,DRMS_MAXQUERYLEN);
@@ -1515,42 +1312,6 @@ check for requestor to be valid remote DRMS site
       }
     else // normal request, check for embedded segment list
       {
-          char mbuf[1024];
-          
-          // Check for series existence. The jsoc_fetch cgi can be used outside of the 
-          // exportdata.html context, in which case there is no check for series existence
-          // before we reach this point in code. Let's catch bad-series errors here
-          // so we can tell the user that they're trying to export a non-existent 
-          // series.
-          char *allvers = NULL;
-          char **sets = NULL;
-          DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
-          char **snames = NULL;
-          char **filts = NULL;
-          int nsets = 0;
-          DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
-          int iset;
-          
-          if (drms_record_parserecsetspec(dsquery, &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo) == DRMS_SUCCESS)
-          { 
-              for (iset = 0; iset < nsets; iset++)
-              {
-                  
-                  if (!drms_series_exists(drms_env, snames[iset], &status))
-                  {
-                      snprintf(mbuf, sizeof(mbuf), "Cannot export series '%s' - it does not exist.\n", snames[iset]);
-                      JSONDIE(mbuf);
-                  }
-              }
-          }
-          else
-          {
-              snprintf(mbuf, sizeof(mbuf), "Bad record-set query '%s'.\n", dsquery);
-              JSONDIE(mbuf);
-          }
-          
-          FreeRecSpecParts(&snames, &filts, nsets);
-          
       if (index(dsquery,'[') == NULL)
         {
         char *cb = index(dsquery, '{');
@@ -1886,29 +1647,30 @@ fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path
       JSONDIE("Must have valid requestID - internal error.");
     if (strcmp(dsin, "Not Specified") == 0)
       JSONDIE("Must have Recordset specified");
-     exprec = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
-     if (!exprec)
+     export_log = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
+     if (!export_log)
       JSONDIE("Cant create new export control record");
-     drms_setkey_string(exprec, "RequestID", requestid);
-     drms_setkey_string(exprec, "DataSet", dsquery);
-     drms_setkey_string(exprec, "Processing", process);
-     drms_setkey_string(exprec, "Protocol", protocol);
-     drms_setkey_string(exprec, "FilenameFmt", filenamefmt);
-     drms_setkey_string(exprec, "Method", method);
-     drms_setkey_string(exprec, "Format", format);
-     drms_setkey_time(exprec, "ReqTime", now);
-     drms_setkey_time(exprec, "EstTime", now+10); // Crude guess for now
-     drms_setkey_longlong(exprec, "Size", (int)size);
-     drms_setkey_int(exprec, "Status", (testmode ? 12 : 2));
-     drms_setkey_int(exprec, "Requestor", requestorid);
-     // drms_close_record(exprec, DRMS_INSERT_RECORD);
+     drms_setkey_string(export_log, "RequestID", requestid);
+     drms_setkey_string(export_log, "DataSet", dsquery);
+     drms_setkey_string(export_log, "Processing", process);
+     drms_setkey_string(export_log, "Protocol", protocol);
+     drms_setkey_string(export_log, "FilenameFmt", filenamefmt);
+     drms_setkey_string(export_log, "Method", method);
+     drms_setkey_string(export_log, "Format", format);
+     drms_setkey_time(export_log, "ReqTime", now);
+     drms_setkey_time(export_log, "EstTime", now+10); // Crude guess for now
+     drms_setkey_longlong(export_log, "Size", (int)size);
+     drms_setkey_int(export_log, "Status", (testmode ? 12 : 2));
+     drms_setkey_int(export_log, "Requestor", requestorid);
+     drms_close_record(export_log, DRMS_INSERT_RECORD);
      } // End of kOpExpRequest setup
     
   /*  op == exp_repeat  */
   else if (strcmp(op,kOpExpRepeat) == 0) 
     {
+    DRMS_RecordSet_t *RsClone;
     char logpath[DRMS_MAXPATHLEN];
-        
+
     if (strcmp(requestid, kNotSpecified) == 0)
       JSONDIE("RequestID must be provided");
 
@@ -1942,11 +1704,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
       JSONDIE("Can't re-request a failed or incomplete prior request");
     // if sunum and su exist, then just want the retention updated.  This will
     // be accomplished by checking the record_directory.
-        
-        // *** export_log == NULL here - not sure what it should equal, exp_repeat must not be implemented yet.
-        // YES it is!! and it at least used to work. In version 1.36 export_log was changed to exprec in almost all places by Art.
-
-    if (drms_record_directory(exprec, logpath, 0) != DRMS_SUCCESS || *logpath == '\0')
+    if (drms_record_directory(export_log, logpath, 0) != DRMS_SUCCESS || *logpath == '\0')
       {  // really is no SU so go ahead and resubmit the request
       drms_close_records(exports, DRMS_FREE_RECORD);
   
@@ -1972,23 +1730,20 @@ JSONDIE("Re-Export requests temporarily disabled.");
       // Now switch to jsoc.export_new
       export_series = kExportSeriesNew;
       sprintf(status_query, "%s[%s]", export_series, requestid);
-          
-          // For exp_repeat, the exprec will not have been opened yet.
       exports = drms_open_records(drms_env, status_query, &status);
       if (!exports)
         JSONDIE3("Cant locate export series: ", status_query);
       if (exports->n < 1)
         JSONDIE3("Cant locate export request: ", status_query);
-      exprec = drms_clone_record(exports->records[0], DRMS_PERMANENT, DRMS_SHARE_SEGMENTS, &status);
-      if (!exprec)
+      RsClone = drms_clone_records(exports, DRMS_PERMANENT, DRMS_SHARE_SEGMENTS, &status);
+      if (!RsClone)
         JSONDIE("Cant create new export control record");
-      
-          drms_setkey_int(exprec, "Status", 2);
-          if (requestorid)
-              drms_setkey_int(exprec, "Requestor", requestorid);
-          drms_setkey_time(exprec, "ReqTime", now);
-          // drms_close_records(RsClone, DRMS_INSERT_RECORD);
-          drms_close_records(exports, DRMS_FREE_RECORD);
+      export_log = RsClone->records[0];
+      drms_setkey_int(export_log, "Status", 2);
+      if (requestorid)
+        drms_setkey_int(export_log, "Requestor", requestorid);
+      drms_setkey_time(export_log, "ReqTime", now);
+      drms_close_records(RsClone, DRMS_INSERT_RECORD);
       }
     else // old export is still available, do not repeat, but treat as status request.
       {
@@ -1996,78 +1751,37 @@ JSONDIE("Re-Export requests temporarily disabled.");
       }
     // if repeating export then export_series is set to jsoc.export_new
     // else if just touching retention then is it jsoc_export
-    } // End kOpExpRepeat
+    }
 
   // Now report back to the requestor by dropping into the code for status request.
   // This is entry point for status request and tail of work for exp_request and exp_su
   // If data was as-is and online and url_quick the exit will have happened above.
 
   // op = exp_status, kOpExpStatus,  Implied here
-    if (strcmp(op,kOpExpStatus) == 0)
-    {
-        // There is no case statement for kOpExpStatus above. We need to read in exprec
-        // here.
-        if (strcmp(requestid, kNotSpecified) == 0)
-        {
-            JSONDIE("RequestID must be provided");
-        }
-        
-        if (internal)
-        {
-            lfname = kLogFileExpStatInt;
-        }
-        else
-        {
-            lfname = kLogFileExpStatExt;            
-        }
-        
-        LogReqInfo(lfname, fileupload, op, dsin, requestid, dbhost, from_web, webarglist);
-        
-        // Must check jsoc.export, NOT jsoc.export_new.
-        sprintf(status_query, "%s[%s]", kExportSeries, requestid);
-        exports = drms_open_records(drms_env, status_query, &status);
-        if (!exports)	 
-            JSONDIE3("Cant locate export series: ", status_query);	 
-        if (exports->n < 1)	 
-            JSONDIE3("Cant locate export request: ", status_query);	 
-        exprec = exports->records[0];
-        exports->records[0] = NULL; // Detach this record from the record-set so we can free record-set, but not exprec.
-        drms_close_records(exports, DRMS_FREE_RECORD);
-        insertexprec = 0;
-    }
-    
-    // ******************************************** //
-    // A jsoc.export_new record was created in      //
-    // memory, but not saved to the db. If we're    //
-    // going to exit                                //
-    // from this module after this point, we must   //
-    // call drms_close_record() on the newly        //
-    // created record in jsoc.export_new. The       //
-    // handle to this record is exprec.             //
-    // ******************************************** //
-    
-    
+
   if (strcmp(requestid, kNotSpecified) == 0)
-  {
-      // ART - must save exprec first (it was created in one of the case blocks above).
-      JSONCOMMIT("RequestID must be provided", &exprec, !insertexprec);
-  }
+    JSONDIE("RequestID must be provided");
 
-    // export_series is jsoc.export_new; no need to call drms_open_records(), exprec is already available
+  sprintf(status_query, "%s[%s]", export_series, requestid);
+  exports = drms_open_records(drms_env, status_query, &status);
+  if (!exports)
+    JSONDIE3("Cant locate export series: ", status_query);
+  if (exports->n < 1)
+    JSONDIE3("Cant locate export request: ", status_query);
+  export_log = exports->records[0];
 
-  status     = drms_getkey_int(exprec, "Status", NULL);
-  dslog      = drms_getkey_string(exprec, "DataSet", NULL); /* not used */
-  process = drms_getkey_string(exprec, "Processing", NULL);
-  protocol   = drms_getkey_string(exprec, "Protocol", NULL);
-  filenamefmt = drms_getkey_string(exprec, "FilenameFmt", NULL);
-  method     = drms_getkey_string(exprec, "Method", NULL);
-  format     = drms_getkey_string(exprec, "Format", NULL);
-  reqtime    = drms_getkey_time(exprec, "ReqTime", NULL);
-  esttime    = drms_getkey_time(exprec, "EstTime", NULL); // Crude guess for now
-  size       = drms_getkey_longlong(exprec, "Size", NULL);
-  requestorid = drms_getkey_int(exprec, "Requestor", NULL);
-  char *export_errmsg = drms_getkey_string(exprec, "errmsg", NULL);
-    
+  status     = drms_getkey_int(export_log, "Status", NULL);
+  dslog      = drms_getkey_string(export_log, "DataSet", NULL); /* not used */
+  process = drms_getkey_string(export_log, "Processing", NULL);
+  protocol   = drms_getkey_string(export_log, "Protocol", NULL);
+  filenamefmt = drms_getkey_string(export_log, "FilenameFmt", NULL);
+  method     = drms_getkey_string(export_log, "Method", NULL);
+  format     = drms_getkey_string(export_log, "Format", NULL);
+  reqtime    = drms_getkey_time(export_log, "ReqTime", NULL);
+  esttime    = drms_getkey_time(export_log, "EstTime", NULL); // Crude guess for now
+  size       = drms_getkey_longlong(export_log, "Size", NULL);
+  requestorid = drms_getkey_int(export_log, "Requestor", NULL);
+
   // Do special actions on status
   switch (status)
     {
@@ -2090,20 +1804,14 @@ JSONDIE("Re-Export requests temporarily disabled.");
             break;
     case 4:
             waittime = 999999;
-            if (strcmp("NA", export_errmsg))
-              errorreply = export_errmsg;
-            else
-              errorreply = "RecordSet specified does not exist";
+            errorreply = "RecordSet specified does not exist";
             break;
     case 5:
             waittime = 999999;
             errorreply = "Request was completed but is now deleted, 7 day limit exceeded";
             break;
     default:
-        {
-            // ART - must save exprec first
-            JSONCOMMIT("Illegal status in export record", &exprec, !insertexprec);
-        }
+      JSONDIE("Illegal status in export record");
     }
 
   // Return status information to user
@@ -2123,7 +1831,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
       int c;
       char *indexfile = (dojson ? "index.json" : "index.txt");
       jroot = json_new_object();
-      if (drms_record_directory(exprec, logpath, 0) != DRMS_SUCCESS || *logpath == '\0')
+      if (drms_record_directory(export_log, logpath, 0) != DRMS_SUCCESS || *logpath == '\0')
         {
         status = 5;  // Assume storage unit expired.  XXXX better to do SUMinfo here to check
         waittime = 999999;
@@ -2135,13 +1843,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
         strncat(logpath, indexfile, DRMS_MAXPATHLEN);
         fp = fopen(logpath, "r");
         if (!fp)
-        {
-            // ART - must save exprec first
-            char dbuf[1024];
-            
-            snprintf(dbuf, sizeof(dbuf), "Export should be complete but return %s file not found", indexfile);
-            JSONCOMMIT(dbuf, &exprec, !insertexprec);
-        }
+          JSONDIE2("Export should be complete but return %s file not found", indexfile);
   
         if (dojson)
           printf("Content-type: application/json\n\n");
@@ -2255,13 +1957,7 @@ JSONDIE("Re-Export requests temporarily disabled.");
       }
     }
 
-  report_summary(Server, StartTime, Remote_Address, op, dsin, rcountlimit, internal, status);
+  report_summary(Server, StartTime, Remote_Address, op, dsin, rcountlimit, status);
   CleanUp(&sunumarr, &infostructs, &webarglist, series, paths, sustatus, susize, arrsize, userhandle);
-    
-    if (exprec)
-    {
-        insertexprec ? drms_close_record(exprec, DRMS_INSERT_RECORD) : drms_close_record(exprec, DRMS_FREE_RECORD);
-    }
-    
   return(0);
   }

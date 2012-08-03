@@ -185,7 +185,6 @@ create_series describe_series delete_series modify_series show_info
 #define kDOLOGFLAG "L"
 #define kFGFLAG "f"
 #define kLoopConnFlag "loopconn"
-#define kDBTimeOut "DRMS_DBTIMEOUT"
 
 /* Global structure holding command line parameters. */
 CmdParams_t cmdparams;
@@ -195,7 +194,6 @@ ModuleArgs_t module_args[] = {
   {ARG_INT, "DRMS_ARCHIVE", "-9999"}, 
   {ARG_INT, "DRMS_QUERY_MEM", "512"}, 
   {ARG_INT, "DRMS_SERVER_WAIT", "1"},
-    {ARG_INT, kDBTimeOut, "-99"},
   {ARG_STRING, kCENVFILE, kNOTSPECIFIED, "If set, write out to a file all C-shell commands that set the essential DRMS_* env variables."},
   {ARG_STRING, kSHENVFILE, kNOTSPECIFIED, "If set, write out to a file all bash-shell command that set the essential DRMS_* env variables."},
   {ARG_FLAG, kSELFSTARTFLAG, NULL, "Indicates that drms_server was started by a socket module."},
@@ -402,11 +400,6 @@ int main (int argc, char *argv[]) {
   env->archive	   = drms_cmdparams_get_int(&cmdparams, "DRMS_ARCHIVE", NULL);
   if (env->archive < -1 ) env->archive = INT_MIN;
   env->retention   = drms_cmdparams_get_int(&cmdparams, "DRMS_RETENTION", NULL);
-    env->dbtimeout = drms_cmdparams_get_int(&cmdparams, kDBTimeOut, NULL);
-    if (env->dbtimeout < 0)
-    {
-        env->dbtimeout = INT_MIN;
-    }
   env->query_mem   = cmdparams_get_int(&cmdparams, "DRMS_QUERY_MEM", NULL);
   env->server_wait = cmdparams_get_int(&cmdparams, "DRMS_SERVER_WAIT", NULL);
   env->verbose     = verbose;

@@ -4,6 +4,11 @@
 #include "db.h"
 // #define DEBUG
 
+#define kProdUsrDBHost "hmidb"
+#define kProdUsrDBName "jsoc"
+#define kProdUsrTab "su_production.produsers"
+#define kProdUsrColUser "username"
+
 DRMS_Session_t *drms_connect(const char *host)
 {
   struct sockaddr_in server;
@@ -313,8 +318,6 @@ int drms_rollback(DRMS_Session_t *session)
 
 DB_Text_Result_t *drms_query_txt(DRMS_Session_t *session,  char *query)
 {
-    char *errmsg = NULL;
-    DB_Text_Result_t *rv = NULL;
 #ifdef DEBUG
   printf("drms_query_txt: query = %s\n",query);
 #endif
@@ -329,22 +332,12 @@ DB_Text_Result_t *drms_query_txt(DRMS_Session_t *session,  char *query)
 #endif
   {
    drms_send_commandcode(session->sockfd, DRMS_TXTQUERY);
-   rv = db_client_query_txt(session->sockfd, query, 0, &errmsg);
-      
-   if (errmsg)
-   {
-       snprintf(session->db_handle->errmsg, sizeof(session->db_handle->errmsg), "%s", errmsg);
-       free(errmsg);
-   }
-      
-      return rv;
+   return db_client_query_txt(session->sockfd, query, 0);
   }
 }
 
 DB_Binary_Result_t *drms_query_bin(DRMS_Session_t *session,  char *query)
 {
-    char *errmsg = NULL;
-    DB_Binary_Result_t *rv = NULL;
 #ifdef DEBUG
   printf("drms_query_bin: query = %s\n",query);
 #endif
@@ -360,15 +353,7 @@ DB_Binary_Result_t *drms_query_bin(DRMS_Session_t *session,  char *query)
 #endif
   {
     drms_send_commandcode(session->sockfd, DRMS_BINQUERY);
-    rv = db_client_query_bin(session->sockfd, query, 0, &errmsg);
-      
-    if (errmsg)
-    {
-        snprintf(session->db_handle->errmsg, sizeof(session->db_handle->errmsg), "%s", errmsg);
-        free(errmsg);
-    }
-      
-    return rv;
+    return db_client_query_bin(session->sockfd, query, 0);
   }
 }
 
@@ -1980,79 +1965,54 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
     int isproduser = 0;
     char query[1024];
     char *dbuser = NULL;
-    char *dbhost = NULL; /* The host without the port. */
-    char *pc = NULL;
     DB_Text_Result_t *qres = NULL;
     int istat = DRMS_SUCCESS;
     int forceconn = 0;
     DB_Handle_t *dbh = NULL;
     
-#ifdef PRODUSER_DBHOST
-    /* Derive the db host machine from the PRODUSER_DBHOST string (which has the format host:port). */
-    dbhost = strdup(PRODUSER_DBHOST);
+#ifndef DRMS_CLIENT
+    dbuser = env->session->db_handle->dbuser;
     
-    if (!dbhost)
+    /* For a server module, hostname is in drms_env->session->db_handle->dbhost. */
+    forceconn = (strcasecmp(kProdUsrDBHost, env->session->db_handle->dbhost) != 0);
+#else
+    drms_send_commandcode(env->session->sockfd, DRMS_GETDBUSER);
+    dbuser = receive_string(env->session->sockfd);
+    
+    /* For a sock module, the db host to which it has access is the db host that the 
+     * serving drms_server is connected to. And I don't think there is a way to 
+     * determine to which db host drms_server is connected, so we'll HAVE TO 
+     * connect to dbhost here, regardless of the existing connection between 
+     * drms_server and a db. */
+    forceconn = 1;
+#endif
+    
+    if (forceconn)
     {
-        istat = DRMS_ERROR_OUTOFMEMORY;
+        /* The caller wants to obtain the list of production users on a db host to which 
+         * this module has no connection */
+        
+        /* Use db_connect to connect to the jsoc db on dbhost. Steal dbuser from the existing, 
+         * irrelevant db connection. */
+        if ((dbh = db_connect(kProdUsrDBHost, dbuser, NULL, kProdUsrDBName, 1)) == NULL)
+        {
+            fprintf(stderr,"Couldn't connect to %s database on %s.\n", kProdUsrDBName, kProdUsrDBHost);
+            istat = DRMS_ERROR_CANTCONNECTTODB;
+        }
     }
     else
     {
-        pc = strchr(dbhost, ':');
-        if (pc)
-        {
-            *pc = '\0';
-        }    
+        dbh = env->session->db_handle;
     }
-        
-    if (istat == DRMS_SUCCESS)
-    {
-#ifndef DRMS_CLIENT
-        dbuser = env->session->db_handle->dbuser;
-        
-        /* For a server module, hostname is in drms_env->session->db_handle->dbhost. */
-        forceconn = (strcasecmp(dbhost, env->session->db_handle->dbhost) != 0);
-#else
-        drms_send_commandcode(env->session->sockfd, DRMS_GETDBUSER);
-        dbuser = receive_string(env->session->sockfd);
-        
-        if (!dbuser)
-        {
-            istat = DRMS_ERROR_OUTOFMEMORY;
-        }
-        
-        /* For a sock module, the db host to which it has access is the db host that the 
-         * serving drms_server is connected to. And I don't think there is a way to 
-         * determine to which db host drms_server is connected, so we'll HAVE TO 
-         * connect to PRODUSER_DBHOST here, regardless of the existing connection between 
-         * drms_server and a db. */
-        forceconn = 1;
-#endif
-    }
+
+#ifdef DRMS_CLIENT
+    free(dbuser);
+    dbuser = NULL;
+#endif 
     
     if (istat == DRMS_SUCCESS)
     {
-        if (forceconn)
-        {
-            /* The caller wants to obtain the list of production users on a db host to which 
-             * this module has no connection */
-            
-            /* Use db_connect to connect to the PRODUSER_DBNAME db on PRODUSER_DBHOST. Steal dbuser from the existing, 
-             * irrelevant db connection. */
-            if ((dbh = db_connect(PRODUSER_DBHOST, dbuser, NULL, PRODUSER_DBNAME, 1)) == NULL)
-            {
-                fprintf(stderr,"Couldn't connect to %s database on %s.\n", PRODUSER_DBNAME, PRODUSER_DBHOST);
-                istat = DRMS_ERROR_CANTCONNECTTODB;
-            }
-        }
-        else
-        {
-            dbh = env->session->db_handle;
-        }
-    }
-    
-    if (istat == DRMS_SUCCESS)
-    {
-        snprintf(query, sizeof(query), "SELECT %s FROM %s WHERE %s = '%s'", PRODUSER_COLUSER, PRODUSER_PRODTAB, PRODUSER_COLUSER, dbuser);
+        snprintf(query, sizeof(query), "SELECT %s FROM %s WHERE %s = '%s'", kProdUsrColUser, kProdUsrTab, kProdUsrColUser, dbuser);
         
         if ((qres = db_query_txt(dbh, query)) != NULL)
         {
@@ -2066,9 +2026,7 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
         else
         {
             fprintf(stderr, "Unexpected database response to query '%s'.\n", query);
-            
-            /* Don't set an error status - the site may not have a PRODUSER table at all. The behavior in that
-             * case should be identical to the behavior where the table exists, but is empty. */
+            istat = DRMS_ERROR_BADDBQUERY;
         }
     }
     
@@ -2078,19 +2036,10 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
         db_disconnect(&dbh);
     }
     
-#ifdef DRMS_CLIENT
-    if (dbuser)
-    {
-        free(dbuser);
-        dbuser = NULL;
-    }
-#endif
-
     if (status)
     {
         *status = istat;
     }
-#endif
     
     return isproduser;
 }

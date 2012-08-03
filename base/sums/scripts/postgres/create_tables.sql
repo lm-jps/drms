@@ -83,7 +83,6 @@ create table SUM_PARTN_AVAIL (
        total_bytes   bigint not null,
        avail_bytes   bigint not null,
        pds_set_num   integer not null,
-       pds_set_prime integer not null,
        constraint pk_sumpartnavail primary key (partn_name)
 );
 

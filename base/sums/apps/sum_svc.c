@@ -52,6 +52,7 @@ float ftmp;
 char jsoc_machine[MAX_STR];
 static struct timeval first[4], second[4];
 
+
 FILE *logfp;
 CLIENT *current_client, *clnttape, *clnttape_old;
 SVCXPRT *glb_transp;
@@ -271,7 +272,7 @@ void setup()
   else 
     sprintf(jsoc_machine, "%s", machine);
   //sprintf(logname, "%s/sum_svc_%s.log", SUMLOG_BASEDIR, gettimetag());
-  //open_log(logname);  //now done in get_cmd()
+  //open_log(logname);  //now done in  get_cmd()
   printk_set(write_log, write_log);
   write_log("\n## %s sum_svc on %s (%s) for pid = %d ##\n", 
 		datestring(), thishost, hostn, thispid);
@@ -382,7 +383,7 @@ if(!strcmp(hostn, "dcs0") || !strcmp(hostn, "dcs1") || !strcmp(hostn, "dcs2") ||
       exit(1);
     }
   }
-  sleep(2);				/* let tape_svc start */
+  sleep(1);				/* let tape_svc start */
   for(i=0; i < MAX_DRIVES; i++) { 	/* start all the driven_svc */
     if((pid = fork()) < 0) {
       write_log("***Can't fork(). errno=%d\n", errno);
@@ -621,12 +622,6 @@ sumprog_1(rqstp, transp)
 		xdr_argument = xdr_Rkey;
 		xdr_result = xdr_uint32_t;
 		local = (char *(*)()) tapereconnectdo_1;
-		break;
-	case SUMREPARTN:
-		sprintf(procname, "SUMREPARTN");
-		xdr_argument = xdr_Rkey;
-		xdr_result = xdr_uint32_t;
-		local = (char *(*)()) repartndo_1;
 		break;
 	default:
                 write_log("**sumprog_1() dispatch default procedure %d,ignore\n", rqstp->rq_proc);

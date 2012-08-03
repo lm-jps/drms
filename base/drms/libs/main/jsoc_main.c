@@ -382,14 +382,12 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   /* Parse command line parameters. */
   snprintf(reservebuf, 
            sizeof(reservebuf), 
-           "%s,%s,%s,%s,%s,%s", 
+           "%s,%s,%s,%s,%s", 
            "L,Q,V,jsocmodver", 
            kARCHIVEARG,
            kRETENTIONARG,
-           kJsdRetention,
            kQUERYMEMARG,
-           kLoopConn,
-           kDBTimeOut);
+           kLoopConn);
   cmdparams_reserve(&cmdparams, reservebuf, "jsocmain");
 
   status = cmdparams_parse (&cmdparams, argc, argv);
@@ -461,23 +459,10 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   if (drms_cmdparams_exists(&cmdparams, kRETENTIONARG)) {
     retention = drms_cmdparams_get_int(&cmdparams, kRETENTIONARG, NULL);
   }
-    
-    int jsdretention = 0;
-    if (drms_cmdparams_exists(&cmdparams, kJsdRetention)) 
-    {
-        jsdretention = (drms_cmdparams_get_int(&cmdparams, kJsdRetention, NULL) != 0);
-    }
-    
   int query_mem = 512;
   if (cmdparams_exists (&cmdparams, kQUERYMEMARG)) {
     query_mem = cmdparams_get_int(&cmdparams, kQUERYMEMARG, NULL);
   }
-    
-    int dbtimeout = INT_MIN;
-    if (drms_cmdparams_exists(&cmdparams, kDBTimeOut))
-    {
-        dbtimeout = drms_cmdparams_get_int(&cmdparams, kDBTimeOut, NULL);
-    }
 
   int loopconn = cmdparams_isflagset(&cmdparams, kLoopConn);
 
@@ -549,9 +534,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
 
   drms_env->archive = archive;
   drms_env->retention = retention;
-  drms_env->jsdsgetret = jsdretention;
   drms_env->query_mem = query_mem;
-    drms_env->dbtimeout = dbtimeout;
   drms_env->verbose = verbose;
   drms_env->server_wait = 0;
 

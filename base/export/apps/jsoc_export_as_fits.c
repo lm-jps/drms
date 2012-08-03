@@ -277,20 +277,18 @@ static unsigned long long MapexportRecordToDir(DRMS_Record_t *recin,
                                                const char *mapfile,
                                                int *tcount, 
                                                const char **cparms,
-                                               MymodError_t *status,
-                                               char **errmsg)
+                                               MymodError_t *status)
 {
    int drmsstat = DRMS_SUCCESS;
    MymodError_t modstat = kMymodErr_Success;
    DRMS_Segment_t *segin = NULL;
    DRMS_Segment_t *tgtseg = NULL; /* If segin is a linked segment, then tgtset is the segment in the target series. */
    unsigned long long tsize = 0;
-    unsigned long long expsize = 0;
-    char *actualfname = NULL;
    char dir[DRMS_MAXPATHLEN];
    char fmtname[DRMS_MAXPATHLEN];
    char fullfname[DRMS_MAXPATHLEN];
    char query[DRMS_MAXQUERYLEN];
+   struct stat filestat;
    HIterator_t *last = NULL;
    int iseg;
    int lastcparms;
@@ -354,34 +352,24 @@ static unsigned long long MapexportRecordToDir(DRMS_Record_t *recin,
                                              !lastcparms ? cparms[iseg] : NULL, 
                                              classname, 
                                              mapfile, 
-                                             fullfname, 
-                                             &actualfname,
-                                             &expsize);
+                                             fullfname);
       if (drmsstat == DRMS_ERROR_INVALIDFILE)
       {
          /* No input segment file. */
          fprintf(stderr, "Requested input file %s is missing or invalid.\n", segin->filename);
       }
-      else if (drmsstat != DRMS_SUCCESS)
+      else if (drmsstat != DRMS_SUCCESS || stat(fullfname, &filestat))
       {
          /* There was an input segment file, but for some reason the export failed. */
          modstat = kMymodErr_ExportFailed;
          fprintf(stderr, "Failure exporting segment '%s'.\n", segin->info->name);
-
-         if (errmsg)
-         {
-            if (drmsstat == DRMS_ERROR_CANTCOMPRESSFLOAT)
-            {
-               *errmsg = strdup("Cannot export Rice-compressed floating-point images.\n");
-            }
-         }
          break;
       }
       else
       {
          count++;
-         tsize += expsize;
-         WritePListRecord(kPL_content, pklist, query, actualfname);
+         tsize += filestat.st_size;
+         WritePListRecord(kPL_content, pklist, query, fmtname);
       }
 
       iseg++;
@@ -404,11 +392,6 @@ static unsigned long long MapexportRecordToDir(DRMS_Record_t *recin,
       hiter_destroy(&last);
    }
 
-    if (actualfname)
-    {
-        free(actualfname);
-    }
-    
    if (status)
    {
       *status = modstat;
@@ -488,8 +471,7 @@ static unsigned long long MapexportToDir(DRMS_Env_t *env,
                                              mapfile, 
                                              &count, 
                                              cparms, 
-                                             &modstat,
-                                             NULL);
+                                             &modstat);
                if (modstat == kMymodErr_Success)
                {
                   okayCount++;
@@ -547,8 +529,7 @@ static MymodError_t CallExportToFile(DRMS_Segment_t *segout,
                                      const char *ffmt,
                                      unsigned long long *szout,
                                      char *filewritten,
-                                     const char *cparms,
-                                     char **errmsg)
+                                     const char *cparms)
 {
    int status = DRMS_SUCCESS;
    MymodError_t err = kMymodErr_Success;
@@ -556,8 +537,6 @@ static MymodError_t CallExportToFile(DRMS_Segment_t *segout,
    char filein[DRMS_MAXPATHLEN];
    char basename[DRMS_MAXPATHLEN];
    unsigned long long size = 0;
-    unsigned long long expsize = 0;
-    char *actualfname = NULL;
    struct stat filestat;
 
    if (segout)
@@ -581,7 +560,7 @@ static MymodError_t CallExportToFile(DRMS_Segment_t *segout,
             CHECKSNPRINTF(snprintf(segout->filename, DRMS_MAXSEGFILENAME, "%s", basename), DRMS_MAXSEGFILENAME);
             drms_segment_filename(segout, fileout);
 
-            status = fitsexport_mapexport_tofile(segin, cparms, clname, mapfile, fileout, &actualfname, &expsize);
+            status = fitsexport_mapexport_tofile(segin, cparms, clname, mapfile, fileout);
             if (status == DRMS_ERROR_INVALIDFILE)
             {
                /* No input file for segment - not necessarily an error. */
@@ -591,13 +570,6 @@ static MymodError_t CallExportToFile(DRMS_Segment_t *segout,
             {
                err = kMymodErr_ExportFailed;
                fprintf(stderr, "Failed to export segment '%s' to '%s'.\n", segin->info->name, fileout);
-               if (errmsg)
-               {
-                  if (status == DRMS_ERROR_CANTCOMPRESSFLOAT)
-                  {
-                     *errmsg = strdup("Cannot export Rice-compressed floating-point images.\n");
-                  }
-               }
             }
          }
          else
@@ -627,11 +599,6 @@ static MymodError_t CallExportToFile(DRMS_Segment_t *segout,
       *szout = size;
       snprintf(filewritten, DRMS_MAXPATHLEN, "%s", basename);
    }
-    
-    if (actualfname)
-    {
-        free(actualfname);
-    }
 
    return err;
 }
@@ -740,8 +707,7 @@ static int MapexportRecord(DRMS_Record_t *recout,
                                 ffmt, 
                                 &size, 
                                 fname, 
-                                !lastcparms ? cparms[iseg] : NULL,
-                                NULL);
+                                !lastcparms ? cparms[iseg] : NULL);
 
          if (err == kMymodErr_MissingSegFile)
          {

@@ -306,15 +306,6 @@ int db_server_query_bin(int sockfd, DB_Handle_t *db_handle)
     {
       fprintf(stderr,"Query failed, check query string.\n");
       Writeint(sockfd, -1);
-
-      if (*db_handle->errmsg)
-      {
-         send_string(sockfd, db_handle->errmsg);
-      }
-      else
-      {
-         send_string(sockfd, "no message");
-      }
     }
     free(query);
   }
@@ -404,7 +395,7 @@ int db_server_query_txt(int sockfd, DB_Handle_t *db_handle)
 
     /* Query database. */
     result = db_query_txt(db_handle, query);
-      
+
     /* Send result to client. */
     if (result)
     {
@@ -419,17 +410,7 @@ int db_server_query_txt(int sockfd, DB_Handle_t *db_handle)
     else
     {
       fprintf(stderr,"Query failed, check query string.\n");
-      Writeint(sockfd, -1); /* num rows */
-      Writeint(sockfd, -1); /* num cols */
-
-      if (*db_handle->errmsg)
-      {
-         send_string(sockfd, db_handle->errmsg);
-      }
-      else
-      {
-         send_string(sockfd, "no message");
-      }
+      Writeint(sockfd, 0);
     }
   }
 

@@ -112,14 +112,6 @@ struct CmdParams_Arg_struct
                            * May have just one value. */
   int nelems;             /* Number of elements in actvals. */
   int8_t accessed;        /* 1 if calling code accessed the argument with a cmdparams_get...() call. */
-  int8_t casesensitive;   /* 1 if argument is stored in the args struct in a case-sensitive manner. Arguments of 
-                           * the form "--ARGUMENT" are stored in a case-insensitive manner (they are stored
-                           * in lower-case from, but the find operation should be performed in a 
-                           * case-insensitive manner). To find such a keyword, code must first search for 
-                           * the key sensitive to case. Then if the search fails, a case-insensitive search
-                           * should be performed. Then if an arg is found and the casesensitive flag is set, 
-                           * the search should be considered a "miss". But if the casesensitive flag is 
-                           * not set, then the search should be considered a "hit". */
 };
 
 typedef struct CmdParams_Arg_struct CmdParams_Arg_t;

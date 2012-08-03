@@ -91,18 +91,12 @@ static int CopyKeywords(DRMS_Record_t *target, DRMS_Record_t *source);
 static int CopyPrimaryIndex(DRMS_Record_t *target, DRMS_Record_t *source);
 static int ParseRecSetDesc(const char *recsetsStr, 
                            char **allvers, 
-                           char ***sets, 
-                           DRMS_RecordSetType_t **types, 
+			   char ***sets, 
+			   DRMS_RecordSetType_t **types, 
                            char ***snames,
-                           char ***filts,
-                           int *nsets,
+			   int *nsets,
                            DRMS_RecQueryInfo_t *info);
-static int FreeRecSetDescArr(char **allvers, 
-                             char ***sets, 
-                             DRMS_RecordSetType_t **types, 
-                             char ***snames, 
-                             char ***filts,
-                             int nsets);
+static int FreeRecSetDescArr(char **allvers, char ***sets, DRMS_RecordSetType_t **types, char ***snames, int nsets);
 
 /* drms_open_records() helpers */
 static int IsValidPlainFileSpec(const char *recSetSpec, 
@@ -1371,7 +1365,6 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
   char **sets = NULL;
   DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
   char **snames = NULL;
-    char **filts = NULL;
   int *setstarts = NULL;
   
   int nsets = 0;
@@ -1379,7 +1372,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                          * The rationale for this is to allow users to get all versions
                          * of the requested DRMS records */
   DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
-  int stat = ParseRecSetDesc(recordsetname, &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo);
+  int stat = ParseRecSetDesc(recordsetname, &allvers, &sets, &settypes, &snames, &nsets, &rsinfo);
 
   if (stat == DRMS_SUCCESS)
   {
@@ -1633,6 +1626,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                                                  allvers[iSet] == 'y',
                                                  nrecslimit, 
 						 &stat));
+                 
                  /* Remove unrequested segments now */
 	      }
 	      else
@@ -1663,13 +1657,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                     countquery = NULL;
                  }
 
-              if (!tres)
-              {
-                  stat = DRMS_ERROR_QUERYFAILED;
-                  goto failure;
-              }
-              
-                 if (tres->num_rows == 1 && tres->num_cols == 1)
+                 if (tres && tres->num_rows == 1 && tres->num_cols == 1)
                  {
                     rs->n = atoi(tres->field[0][0]);
                  }
@@ -1913,7 +1901,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 	free(setstarts);
      }
 
-     FreeRecSetDescArr(&allvers, &sets, &settypes, &snames, &filts, nsets);
+     FreeRecSetDescArr(&allvers, &sets, &settypes, &snames, nsets);
 
      if (status)
        *status = stat;
@@ -1946,7 +1934,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
      free(seglist);
   }
 
-  FreeRecSetDescArr(&allvers, &sets, &settypes, &snames, &filts, nsets);
+  FreeRecSetDescArr(&allvers, &sets, &settypes, &snames, nsets);
 
   if (rs)
   {
@@ -3608,6 +3596,7 @@ DRMS_Record_t *drms_create_record(DRMS_Env_t *env, char *series,
   {
     rec = rs->records[0]; 
     free(rs->records);
+    free(rs);
     
     /* rs->ss_currentrecs will have been alloc'd, but no longer needed. Free. */
     if (rs->ss_currentrecs)
@@ -3615,8 +3604,6 @@ DRMS_Record_t *drms_create_record(DRMS_Env_t *env, char *series,
        free(rs->ss_currentrecs);
        rs->ss_currentrecs = NULL;
     }
-
-    free(rs);
 
     return rec;
   }
@@ -4459,8 +4446,6 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
 
   char *lcseries = strdup(seriesname);
 
-  stat = DRMS_SUCCESS;
-
   if (!lcseries)
   {
      stat = DRMS_ERROR_OUTOFMEMORY;
@@ -4655,11 +4640,6 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
 
     err = GetTableOID(env, ns, table, &oid);
 
-    if (err == DRMS_ERROR_QUERYFAILED)
-    {
-       stat = DRMS_ERROR_QUERYFAILED;
-    }
-
     if (ns)
     {
        free(ns);
@@ -4678,11 +4658,6 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
     if (oid)
     {
        free(oid);
-    }
-
-    if (stat)
-    {
-       goto bailout;
     }
 
     /* Populate series info segments, keywords, and links part */
@@ -6234,7 +6209,7 @@ int CopySeriesInfo(DRMS_Record_t *target, DRMS_Record_t *source)
 {
    memcpy(target->seriesinfo, source->seriesinfo, sizeof(DRMS_SeriesInfo_t));
    memset(target->seriesinfo->pidx_keywords, 0, sizeof(DRMS_Keyword_t *) * DRMS_MAXPRIMIDX);
-   memset(target->seriesinfo->dbidx_keywords, 0, sizeof(DRMS_Keyword_t *) * DRMS_MAXDBIDX);
+   memset(target->seriesinfo->dbidx_keywords, 0, sizeof(DRMS_Keyword_t *) * DRMS_MAXPRIMIDX);
 
    return DRMS_SUCCESS;
 }
@@ -6427,1482 +6402,1348 @@ int ParseRecSetDesc(const char *recsetsStr,
                     char ***sets, 
                     DRMS_RecordSetType_t **settypes, 
                     char ***snames,
-                    char ***filts,
                     int *nsets, 
                     DRMS_RecQueryInfo_t *info)
 {
-    int status = DRMS_SUCCESS;
-    RSParseState_t state = kRSParseState_Begin;
-    RSParseState_t oldstate;
-    char *rsstr = strdup(recsetsStr);
-    char *pc = rsstr;
-    LinkedList_t *intSets = NULL;
-    LinkedList_t *intSettypes = NULL;
-    LinkedList_t *intAllVers = NULL;
-    LinkedList_t *intSnames = NULL;
-    LinkedList_t *intFilts = NULL;
-    char *pset = NULL;
-    char *sname = NULL;
-    char *pfiltstr = NULL;
-    char *filtstr = NULL;
-    int currfiltsz; /* The size of the CURRENT filter string inside buf (not in rsstr) */
-    size_t filtstrsz = 64;
-    int count = 0;
-    char buf[kMAXRSETSPEC] = {0};
-    char *pcBuf = buf;
-    LinkedList_t *multiRSQueries = NULL;
-    LinkedList_t *multiRSTypes = NULL;
-    LinkedList_t *multiRSAllVers = NULL;
-    LinkedList_t *multiRSSnames = NULL;
-    LinkedList_t *multiRSFilts = NULL;
-    DRMS_RecordSetType_t currSettype;
-    char currAllVers = 'n';
-    int countMultiRS = 0;
-    char *endInput = rsstr + strlen(rsstr); /* points to null terminator */
-    int nfilter = 0;
-    int recnumrsseen = 0;
-    DRMS_RecQueryInfo_t intinfo = 0;
-    
-    /* Test for an empty string. */
-    int empty = 0;
-    char *ptest = NULL;
-    
-    ptest = rsstr;
-    empty = (DSElem_SkipWS(&ptest) == 0);
-    
-    *nsets = 0;
-    
-    if (rsstr && !empty)
-    {
-        while (pc && pc <= endInput && state != kRSParseState_Error)
-        {
-            switch (state)
-            {
-                case kRSParseState_Begin:
-                    intSets = list_llcreate(sizeof(char *), NULL);
-                    intSettypes = list_llcreate(sizeof(DRMS_RecordSetType_t), NULL);
-                    intAllVers = list_llcreate(sizeof(char), NULL);
-                    intSnames = list_llcreate(sizeof(char *), NULL);
-                    intFilts = list_llcreate(sizeof(char *), NULL);
-                    if (!intSets || !intSettypes || !intAllVers || !intSnames || !intFilts)
+   int status = DRMS_SUCCESS;
+   RSParseState_t state = kRSParseState_Begin;
+   RSParseState_t oldstate;
+   char *rsstr = strdup(recsetsStr);
+   char *pc = rsstr;
+   LinkedList_t *intSets = NULL;
+   LinkedList_t *intSettypes = NULL;
+   LinkedList_t *intAllVers = NULL;
+   LinkedList_t *intSnames = NULL;
+   char *pset = NULL;
+   char *sname = NULL;
+   int count = 0;
+   char buf[kMAXRSETSPEC] = {0};
+   char *pcBuf = buf;
+   LinkedList_t *multiRSQueries = NULL;
+   LinkedList_t *multiRSTypes = NULL;
+   LinkedList_t *multiRSAllVers = NULL;
+   LinkedList_t *multiRSSnames = NULL;
+   DRMS_RecordSetType_t currSettype;
+   char currAllVers = 'n';
+   int countMultiRS = 0;
+   char *endInput = rsstr + strlen(rsstr); /* points to null terminator */
+   int nfilter = 0;
+   int recnumrsseen = 0;
+   DRMS_RecQueryInfo_t intinfo = 0;
+
+   /* Test for an empty string. */
+   int empty = 0;
+   char *ptest = NULL;
+
+   ptest = rsstr;
+   empty = (DSElem_SkipWS(&ptest) == 0);
+
+   *nsets = 0;
+
+   if (rsstr && !empty)
+   {
+      while (pc && pc <= endInput && state != kRSParseState_Error)
+      {
+	 switch (state)
+	 {
+	    case kRSParseState_Begin:
+	      intSets = list_llcreate(sizeof(char *), NULL);
+	      intSettypes = list_llcreate(sizeof(DRMS_RecordSetType_t), NULL);
+              intAllVers = list_llcreate(sizeof(char), NULL);
+              intSnames = list_llcreate(sizeof(char *), NULL);
+	      if (!intSets || !intSettypes || !intAllVers || !intSnames)
+	      {
+		 state = kRSParseState_Error;
+		 status = DRMS_ERROR_OUTOFMEMORY;
+	      }
+	      else
+	      {
+		 state = kRSParseState_BeginElem;
+	      }
+	      break;
+	    case kRSParseState_BeginElem:
+	      /* There may be whitespace at the beginning. */
+	      if (pc < endInput)
+	      {
+		 if (DSElem_IsWS((const char **)&pc))
+		 {
+		    /* skip whitespace */
+		    pc++;
+		 }
+		 else if (*pc == '[' || *pc == ']' || *pc == ',' || 
+			  *pc == ';' || *pc == '#')
+		 {
+		    state = kRSParseState_Error;
+		 }
+		 else
+		 {
+		    if (*pc == '{')
+		    {
+		       pc++;
+		       if (DSElem_SkipWS(&pc))
+		       {
+                          if (DSDS_IsDSDSSpec(pc))
+			  {
+			     state = kRSParseState_DSDS;
+			  }
+			  else if (strstr(pc, "vot:") == pc)
+			  {
+			     state = kRSParseState_VOT;
+			  }
+                          else if (DSDS_IsDSDSPort(pc))
+                          {
+                             state = kRSParseState_DSDSPort;
+                          }
+			  else
+			  {
+			     fprintf(stderr, 
+				     "Unexpected record-set specification within curly brackets.\n" );
+			     state = kRSParseState_Error;
+			  }
+		       }
+		       else
+		       {
+			  state = kRSParseState_Error;
+		       }
+		    }
+		    else if (*pc == '@')
+		    {
+		       /* text file that contains one or more recset queries */
+		       /* recursively parse those queries! */
+		       state = kRSParseState_AtFile;
+
+                       /* Mark the '@file' flag in the record-set spec info returned to caller. */
+                       intinfo |= kAtFile;
+		       pc++;
+		    }
+		    else if (*pc == '/' || *pc == '.')
+		    {
+		       state = kRSParseState_Plainfile;
+		    }
+		    else
+		    {
+		       state = kRSParseState_DRMS;
+		    }
+		 }
+	      }
+	      break;
+	    case kRSParseState_DRMS:
+	      /* first char is not ws */
+	      /* not parsing a DRMS RS filter (yet) */
+              recnumrsseen = 0; // reset watch for multiple recnum filters
+	      if (pc < endInput)
+	      {
+		 if (*pc == ']')
+		 {
+		    /* chars not allowed in a DRMS RS */
+		    state = kRSParseState_Error;
+		 }
+		 else if (*pc == '[')
+		 {
+                    *pcBuf++ = *pc++;
+
+                    if (pc < endInput && (*pc == '?' || *pc == '!'))
                     {
-                        state = kRSParseState_Error;
-                        status = DRMS_ERROR_OUTOFMEMORY;
+                       if (*pc == '!')
+                       {
+                          state = kRSParseState_DRMSFiltAllVersSQL;
+                       }
+                       else
+                       {
+                          state = kRSParseState_DRMSFiltSQL;
+                       }
+
+                       *pcBuf++ = *pc++;
                     }
                     else
                     {
-                        state = kRSParseState_BeginElem;
+                       state = kRSParseState_DRMSFilt;
                     }
-                    break;
-                case kRSParseState_BeginElem:
-                    /* There may be whitespace at the beginning. */
-                    if (pc < endInput)
+
+                    /* Mark the 'filters' flag in the record-set spec info returned to caller. */
+                    intinfo |= kFilters;
+		 }
+		 else if (*pc == '{')
+		 {
+		    *pcBuf++ = *pc++;
+		    state = kRSParseState_DRMSSeglist;
+		 }
+		 else if (DSElem_IsDelim((const char **)&pc))
+		 {
+                    /* Pointing to a delimiter after series name. */
+                    if (sname == NULL)
                     {
-                        if (DSElem_IsWS((const char **)&pc))
-                        {
-                            /* skip whitespace */
-                            pc++;
-                        }
-                        else if (*pc == '[' || *pc == ']' || *pc == ',' || 
-                                 *pc == ';' || *pc == '#')
-                        {
-                            state = kRSParseState_Error;
-                        }
-                        else
-                        {
-                            if (*pc == '{')
-                            {
-                                pc++;
-                                if (DSElem_SkipWS(&pc))
-                                {
-                                    if (DSDS_IsDSDSSpec(pc))
-                                    {
-                                        state = kRSParseState_DSDS;
-                                    }
-                                    else if (strstr(pc, "vot:") == pc)
-                                    {
-                                        state = kRSParseState_VOT;
-                                    }
-                                    else if (DSDS_IsDSDSPort(pc))
-                                    {
-                                        state = kRSParseState_DSDSPort;
-                                    }
-                                    else
-                                    {
-                                        fprintf(stderr, 
-                                                "Unexpected record-set specification within curly brackets.\n" );
-                                        state = kRSParseState_Error;
-                                    }
-                                }
-                                else
-                                {
-                                    state = kRSParseState_Error;
-                                }
-                            }
-                            else if (*pc == '@')
-                            {
-                                /* text file that contains one or more recset queries */
-                                /* recursively parse those queries! */
-                                state = kRSParseState_AtFile;
-                                
-                                /* Mark the '@file' flag in the record-set spec info returned to caller. */
-                                intinfo |= kAtFile;
-                                pc++;
-                            }
-                            else if (*pc == '/' || *pc == '.')
-                            {
-                                state = kRSParseState_Plainfile;
-                            }
-                            else
-                            {
-                                state = kRSParseState_DRMS;
-                            }
-                        }
-                        
-                        currfiltsz = 0;
+                       size_t len = strlen(buf);
+                       sname = strdup(buf);
+                       *(sname + len - 1) = '\0';
                     }
-                    break;
-                case kRSParseState_DRMS:
-                    /* first char is not ws */
-                    /* not parsing a DRMS RS filter (yet) */
-                    recnumrsseen = 0; // reset watch for multiple recnum filters
-                    if (pc < endInput)
+
+		    pc++;
+		    state = kRSParseState_EndElem;
+		 }
+		 else if (DSElem_IsComment((const char **)&pc))
+		 {
+                    /* Pointing to # after series name. */
+                    if (sname == NULL)
                     {
-                        if (*pc == ']')
-                        {
-                            /* chars not allowed in a DRMS RS */
-                            state = kRSParseState_Error;
-                        }
-                        else if (*pc == '[')
-                        {
-                            *pcBuf++ = *pc++;
-                            
-                            if (pc < endInput && (*pc == '?' || *pc == '!'))
-                            {
+                       size_t len = strlen(buf);
+                       sname = strdup(buf);
+                       *(sname + len - 1) = '\0';
+                    }
+
+		    DSElem_SkipComment(&pc);
+		    state = kRSParseState_EndElem;
+		 }
+		 else if (DSElem_IsWS((const char **)&pc))
+		 {
+		    /* whitespace between the series name and a filter is allowed */
+		    if (DSElem_SkipWS(&pc))
+		    {
+		       if (*pc == '[')
+		       {
+			  *pcBuf++ = *pc++;
+
+                          if (pc < endInput && (*pc == '?' || *pc == '!'))
+                          {
+                             if (*pc == '!')
+                             {
+                                state = kRSParseState_DRMSFiltAllVersSQL;
+                             }
+                             else
+                             {
+                                state = kRSParseState_DRMSFiltSQL;
+                             }
+
+                             *pcBuf++ = *pc++;
+                          }
+                          else
+                          {
+                             state = kRSParseState_DRMSFilt;
+                          }
+		       }
+		       else if (*pc == '{')
+		       {
+			  *pcBuf++ = *pc++;
+			  state = kRSParseState_DRMSSeglist;
+		       }
+		       else if (DSElem_IsDelim((const char **)&pc))
+		       {
+                          /* Pointing to delimiter AFTER whitespace AFTER seriesname. */
+                          if (sname == NULL)
+                          {
+                             size_t len = strlen(buf);
+                             char *pchar = buf;
+
+                             sname = strdup(buf);
+                             *(sname + len - 1) = '\0';
+
+                             /* Now strip off trailing whitespace. */
+                             while (*pchar)
+                             {
+                                if (DSElem_IsWS((const char **)&pchar))
+                                {
+                                   /* found whitespace. */
+                                   *pchar = '\0';
+                                   break;
+                                }
+                             }
+                          }
+
+			  pc++;
+			  state = kRSParseState_EndElem;
+		       }
+		       else if (DSElem_IsComment((const char **)&pc))
+		       {
+                          /* Pointing to # AFTER whitespace AFTER seriesname.*/
+                          if (sname == NULL)
+                          {
+                             size_t len = strlen(buf);
+                             char *pchar = buf;
+
+                             sname = strdup(buf);
+                             *(sname + len - 1) = '\0';
+
+                             /* Now strip off trailing whitespace. */
+                             while (*pchar)
+                             {
+                                if (DSElem_IsWS((const char **)&pchar))
+                                {
+                                   /* found whitespace. */
+                                   *pchar = '\0';
+                                   break;
+                                }
+                             }
+                          }
+
+			  DSElem_SkipComment(&pc);
+			  state = kRSParseState_EndElem;
+		       }
+		       else
+		       {
+			  state = kRSParseState_Error;
+		       }
+		    }
+		    else
+		    {
+                       /* whitespace AFTER series name, but nothing following this whitespace. */
+                       if (sname == NULL)
+                       {
+                          char *pchar = buf;
+
+                          sname = strdup(buf);
+
+                          /* Now strip off trailing whitespace. */
+                          while (*pchar)
+                          {
+                             if (DSElem_IsWS((const char **)&pchar))
+                             {
+                                /* found whitespace. */
+                                *pchar = '\0';
+                                break;
+                             }
+                          }
+                       }
+
+		       state = kRSParseState_EndElem;
+		    }
+		 }
+		 else
+		 {
+		    *pcBuf++ = *pc++;
+		 }
+	      }
+	      else
+	      {
+                 if (sname == NULL)
+                 {
+                    sname = strdup(buf);
+                 }
+
+		 state = kRSParseState_EndElem;
+	      }
+
+	      if (state == kRSParseState_EndElem)
+	      {
+		 currSettype = kRecordSetType_DRMS;
+	      }
+	      break;
+	    case kRSParseState_DRMSFilt:
+	      /* inside '[' and ']' */
+	      if (pc < endInput)
+	      {
+                 if (sname == NULL)
+                 {
+                    /* We know we've seen a '[', the first char in a filter. buf has the preceding series name, 
+                     * plus a trailing '['. */
+                    size_t len = strlen(buf);
+                    sname = strdup(buf);
+                    *(sname + len - 1) = '\0';
+                 }
+
+                 /* If a recnumrangeset has been seen already, then it makes
+                  * no sense to have a second filter. 
+                  */
+                 if (*pc == ':' && recnumrsseen)
+                 {
+                    state = kRSParseState_Error;
+                    fprintf(stderr, "Only one recnum list filter is allowed.\n");
+                    break;
+                 }
+                 else if (*pc == ':')
+                 {
+                    recnumrsseen = 1;
+                 }
+
+                 /* just do one pass now */
+                 /* check for SQL filt */
+                 if (*pc == '?')
+                 {
+                    *pcBuf++ = *pc++;
+                    state = kRSParseState_DRMSFiltSQL;
+                 }
+                 else if (*pc == '!')
+                 {
+                    *pcBuf++ = *pc++;
+                    state = kRSParseState_DRMSFiltAllVersSQL;
+                 }
+                 else
+                 {
+                    /* Assume the filter value is a string or set of strings */
+                    while (*pc != ']' && state != kRSParseState_Error)
+                    {
+                       DRMS_Type_Value_t val;
+                       memset(&val, 0, sizeof(DRMS_Type_Value_t));
+                       int rlen = drms_sscanf_str(pc, "]", &val);
+                       int ilen = 0;
+
+                       /* Don't need string - just strlen */
+                       DRMS_Value_t dummy = {DRMS_TYPE_STRING, val};
+                       drms_value_free(&dummy);
+
+                       /* if ending ']' was found, then pc + rlen is ']', otherwise
+                        * it is the next char after end quote */
+                       while (ilen < rlen)
+                       {
+                          *pcBuf++ = *pc++;
+
+                          if (pc == endInput)
+                          {
+                             state = kRSParseState_Error;
+                          }
+
+                          ilen++;
+                       }
+                    }
+
+                    /* skip any ws between last char and right bracket */
+                    //DSElem_SkipWS(&pc);
+
+                    if (*pc == ']' && state != kRSParseState_Error)
+                    {
+                       *pcBuf++ = *pc++;
+                       if (DSElem_SkipWS(&pc))
+                       {
+                          if (*pc == '[')
+                          {
+                             *pcBuf++ = *pc++;
+
+                             if (pc < endInput && (*pc == '?' || *pc == '!'))
+                             {
                                 if (*pc == '!')
                                 {
-                                    state = kRSParseState_DRMSFiltAllVersSQL;
+                                   state = kRSParseState_DRMSFiltAllVersSQL;
                                 }
                                 else
                                 {
-                                    state = kRSParseState_DRMSFiltSQL;
+                                   state = kRSParseState_DRMSFiltSQL;
                                 }
-                                
+
                                 *pcBuf++ = *pc++;
-                            }
-                            else
-                            {
+                             }
+                             else
+                             {
                                 state = kRSParseState_DRMSFilt;
-                            }
-                            
-                            /* Mark the 'filters' flag in the record-set spec info returned to caller. */
-                            intinfo |= kFilters;
-                        }
-                        else if (*pc == '{')
-                        {
-                            *pcBuf++ = *pc++;
-                            state = kRSParseState_DRMSSeglist;
-                        }
-                        else if (DSElem_IsDelim((const char **)&pc))
-                        {
-                            /* Pointing to a delimiter after series name. */
-                            if (sname == NULL)
-                            {
-                                size_t len = strlen(buf);
-                                sname = strdup(buf);
-                                *(sname + len - 1) = '\0';
-                            }
-                            
-                            pc++;
-                            state = kRSParseState_EndElem;
-                        }
-                        else if (DSElem_IsComment((const char **)&pc))
-                        {
-                            /* Pointing to # after series name. */
-                            if (sname == NULL)
-                            {
-                                size_t len = strlen(buf);
-                                sname = strdup(buf);
-                                *(sname + len - 1) = '\0';
-                            }
-                            
-                            DSElem_SkipComment(&pc);
-                            state = kRSParseState_EndElem;
-                        }
-                        else if (DSElem_IsWS((const char **)&pc))
-                        {
-                            /* whitespace between the series name and a filter is allowed */
-                            if (DSElem_SkipWS(&pc))
-                            {
-                                if (*pc == '[')
-                                {
-                                    *pcBuf++ = *pc++;
-                                    
-                                    if (pc < endInput && (*pc == '?' || *pc == '!'))
-                                    {
-                                        if (*pc == '!')
-                                        {
-                                            state = kRSParseState_DRMSFiltAllVersSQL;
-                                        }
-                                        else
-                                        {
-                                            state = kRSParseState_DRMSFiltSQL;
-                                        }
-                                        
-                                        *pcBuf++ = *pc++;
-                                    }
-                                    else
-                                    {
-                                        state = kRSParseState_DRMSFilt;
-                                    }
-                                }
-                                else if (*pc == '{')
-                                {
-                                    *pcBuf++ = *pc++;
-                                    state = kRSParseState_DRMSSeglist;
-                                }
-                                else if (DSElem_IsDelim((const char **)&pc))
-                                {
-                                    /* Pointing to delimiter AFTER whitespace AFTER seriesname. */
-                                    if (sname == NULL)
-                                    {
-                                        size_t len = strlen(buf);
-                                        char *pchar = buf;
-                                        
-                                        sname = strdup(buf);
-                                        *(sname + len - 1) = '\0';
-                                        
-                                        /* Now strip off trailing whitespace. */
-                                        while (*pchar)
-                                        {
-                                            if (DSElem_IsWS((const char **)&pchar))
-                                            {
-                                                /* found whitespace. */
-                                                *pchar = '\0';
-                                                break;
-                                            }
-                                        }
-                                    }
-                                    
-                                    pc++;
-                                    state = kRSParseState_EndElem;
-                                }
-                                else if (DSElem_IsComment((const char **)&pc))
-                                {
-                                    /* Pointing to # AFTER whitespace AFTER seriesname.*/
-                                    if (sname == NULL)
-                                    {
-                                        size_t len = strlen(buf);
-                                        char *pchar = buf;
-                                        
-                                        sname = strdup(buf);
-                                        *(sname + len - 1) = '\0';
-                                        
-                                        /* Now strip off trailing whitespace. */
-                                        while (*pchar)
-                                        {
-                                            if (DSElem_IsWS((const char **)&pchar))
-                                            {
-                                                /* found whitespace. */
-                                                *pchar = '\0';
-                                                break;
-                                            }
-                                        }
-                                    }
-                                    
-                                    DSElem_SkipComment(&pc);
-                                    state = kRSParseState_EndElem;
-                                }
-                                else
-                                {
-                                    state = kRSParseState_Error;
-                                }
-                            }
-                            else
-                            {
-                                /* whitespace AFTER series name, but nothing following this whitespace. */
-                                if (sname == NULL)
-                                {
-                                    char *pchar = buf;
-                                    
-                                    sname = strdup(buf);
-                                    
-                                    /* Now strip off trailing whitespace. */
-                                    while (*pchar)
-                                    {
-                                        if (DSElem_IsWS((const char **)&pchar))
-                                        {
-                                            /* found whitespace. */
-                                            *pchar = '\0';
-                                            break;
-                                        }
-                                    }
-                                }
-                                
-                                state = kRSParseState_EndElem;
-                            }
-                        }
-                        else
-                        {
-                            *pcBuf++ = *pc++;
-                        }
+                             }
+                          }
+                          else if (*pc == '{')
+                          {
+                             *pcBuf++ = *pc++;
+                             state = kRSParseState_DRMSSeglist;
+                          }
+                          else if (DSElem_IsDelim((const char **)&pc))
+                          {
+                             pc++;
+                             state = kRSParseState_EndElem;
+                          }
+                          else if (DSElem_IsComment((const char **)&pc))
+                          {
+                             DSElem_SkipComment(&pc);
+                             state = kRSParseState_EndElem;
+                          }
+                          else
+                          {
+                             state = kRSParseState_Error;
+                          }
+                       }
+                       else
+                       {
+                          state= kRSParseState_EndElem;
+                       }
                     }
                     else
                     {
-                        if (sname == NULL)
-                        {
-                            sname = strdup(buf);
-                        }
-                        
-                        state = kRSParseState_EndElem;
+                       state = kRSParseState_Error;
                     }
-                    
-                    if (state == kRSParseState_EndElem)
+                 }
+	      }
+	      else
+	      {
+		 /* didn't finish filter */
+		 state = kRSParseState_Error;
+	      }
+
+	      if (state == kRSParseState_EndElem)
+	      {
+		 currSettype = kRecordSetType_DRMS;
+	      }
+
+              nfilter++;
+
+	      break;
+            case kRSParseState_DRMSFiltAllVersSQL:
+              currAllVers = 'y';
+              /* intentional fall through */
+	    case kRSParseState_DRMSFiltSQL:
+	      if (pc < endInput)
+	      {
+                 if (sname == NULL)
+                 {
+                    /* We know we've seen a "[?" or a "[!", the first 2 chars in a filter. buf has 
+                     * the preceding series name, plus a trailing "[?" or "[!". */
+                    size_t len = strlen(buf);
+
+                    sname = strdup(buf);
+                    *(sname + len - 2) = '\0';
+                 }
+
+                 if (*pc == '"' || *pc == '\'')
+                 {
+                    /* skip quoted strings */
+                    DRMS_Type_Value_t val;
+                    memset(&val, 0, sizeof(DRMS_Type_Value_t));
+                    int rlen = drms_sscanf_str(pc, NULL, &val);
+                    int ilen = 0;
+
+                    /* Don't need string - just strlen */
+                    DRMS_Value_t dummy = {DRMS_TYPE_STRING, val};
+                    drms_value_free(&dummy);
+
+                    if (rlen == -1)
                     {
-                        currSettype = kRecordSetType_DRMS;
-                    }
-                    break;
-                case kRSParseState_DRMSFilt:
-                    /* inside '[' and ']' */
-                    if (pc < endInput)
-                    {
-                        if (sname == NULL)
-                        {
-                            /* We know we've seen a '[', the first char in a filter. buf has the preceding series name, 
-                             * plus a trailing '['. */
-                            size_t len = strlen(buf);
-                            sname = strdup(buf);
-                            *(sname + len - 1) = '\0';
-                        }
-                        
-                        if (pfiltstr == NULL)
-                        {
-                            /* We haven't started the filter capture yet. Do so now. */
-                            pfiltstr = pcBuf - 1;
-                        }
-                        
-                        /* If a recnumrangeset has been seen already, then it makes
-                         * no sense to have a second filter. 
-                         */
-                        if (*pc == ':' && recnumrsseen)
-                        {
-                            state = kRSParseState_Error;
-                            fprintf(stderr, "Only one recnum list filter is allowed.\n");
-                            break;
-                        }
-                        else if (*pc == ':')
-                        {
-                            recnumrsseen = 1;
-                        }
-                        
-                        /* just do one pass now */
-                        /* check for SQL filt */
-                        if (*pc == '?')
-                        {
-                            *pcBuf++ = *pc++;
-                            state = kRSParseState_DRMSFiltSQL;
-                        }
-                        else if (*pc == '!')
-                        {
-                            *pcBuf++ = *pc++;
-                            state = kRSParseState_DRMSFiltAllVersSQL;
-                        }
-                        else
-                        {
-                            /* Assume the filter value is a string or set of strings */
-                            while (*pc != ']' && state != kRSParseState_Error)
-                            {
-                                DRMS_Type_Value_t val;
-                                memset(&val, 0, sizeof(DRMS_Type_Value_t));
-                                int rlen = drms_sscanf_str(pc, "]", &val);
-                                int ilen = 0;
-                                
-                                /* Don't need string - just strlen */
-                                DRMS_Value_t dummy = {DRMS_TYPE_STRING, val};
-                                drms_value_free(&dummy);
-                                
-                                /* if ending ']' was found, then pc + rlen is ']', otherwise
-                                 * it is the next char after end quote */
-                                while (ilen < rlen)
-                                {
-                                    *pcBuf++ = *pc++;
-                                    
-                                    if (pc == endInput)
-                                    {
-                                        state = kRSParseState_Error;
-                                    }
-                                    
-                                    ilen++;
-                                }
-                            }
-                            
-                            /* skip any ws between last char and right bracket */
-                            //DSElem_SkipWS(&pc);
-                            
-                            if (*pc == ']' && state != kRSParseState_Error)
-                            {
-                                *pcBuf++ = *pc++;
-                                
-                                /* It MUST be true that pcBuf - pfiltstr + 1 >= 3. */
-                                char *tmpbuf = malloc(pcBuf - pfiltstr - currfiltsz + 1);
-                                
-                                if (!tmpbuf)
-                                {
-                                    status = DRMS_ERROR_OUTOFMEMORY;
-                                    state = kRSParseState_Error;
-                                }
-                                else
-                                {                                    
-                                    /* pcBuf now points, in the buffer buf, to the char after the end bracket of this filter. So 
-                                     * pfiltstr points to the beginning of the filter, and pcBuf points to the 
-                                     * char one past the end of the filter. Use strncpy to extract the filter 
-                                     * from buf and append it to filtstr. */
-                                    strncpy(tmpbuf, pfiltstr + currfiltsz, pcBuf - pfiltstr - currfiltsz);
-                                    tmpbuf[pcBuf - pfiltstr - currfiltsz] = '\0';
-                                    currfiltsz = pcBuf - pfiltstr;
-                                    
-                                    if (!filtstr)
-                                    {
-                                        filtstr = calloc(filtstrsz, 1);
-                                    }
-                                    
-                                    if (filtstr)
-                                    {
-                                        /* filtstr will be NULL if base_strcatalloc() fails to alloc memory. */
-                                        filtstr = base_strcatalloc(filtstr, tmpbuf, &filtstrsz);                                        
-                                    }
-                                    
-                                    if (tmpbuf)
-                                    {
-                                        free(tmpbuf);
-                                    }
-                                    
-                                    if (!filtstr)
-                                    {
-                                        status = DRMS_ERROR_OUTOFMEMORY;
-                                        state = kRSParseState_Error;
-                                    }
-                                    else
-                                    {
-                                        if (DSElem_SkipWS(&pc))
-                                        {
-                                            if (*pc == '[')
-                                            {
-                                                *pcBuf++ = *pc++;
-                                                
-                                                if (pc < endInput && (*pc == '?' || *pc == '!'))
-                                                {
-                                                    if (*pc == '!')
-                                                    {
-                                                        state = kRSParseState_DRMSFiltAllVersSQL;
-                                                    }
-                                                    else
-                                                    {
-                                                        state = kRSParseState_DRMSFiltSQL;
-                                                    }
-                                                    
-                                                    *pcBuf++ = *pc++;
-                                                }
-                                                else
-                                                {
-                                                    state = kRSParseState_DRMSFilt;
-                                                }
-                                            }
-                                            else if (*pc == '{')
-                                            {
-                                                *pcBuf++ = *pc++;
-                                                state = kRSParseState_DRMSSeglist;
-                                            }
-                                            else if (DSElem_IsDelim((const char **)&pc))
-                                            {
-                                                pc++;
-                                                state = kRSParseState_EndElem;
-                                            }
-                                            else if (DSElem_IsComment((const char **)&pc))
-                                            {
-                                                DSElem_SkipComment(&pc);
-                                                state = kRSParseState_EndElem;
-                                            }
-                                            else
-                                            {
-                                                state = kRSParseState_Error;
-                                            }
-                                        }
-                                        else
-                                        {
-                                            state= kRSParseState_EndElem;
-                                        }
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                state = kRSParseState_Error;
-                            }
-                        }
+                       /* There was a problem with the quoted string (like a missing end quote). */
+                       fprintf(stderr, "Invalid quoted string '%s'.\n", pc);
+                       state = kRSParseState_Error;
                     }
                     else
                     {
-                        /* didn't finish filter */
-                        state = kRSParseState_Error;
+                       /* if ending ']' was found, then pc + rlen is ']', otherwise
+                        * it is the next char after end quote */
+                       while (ilen < rlen)
+                       {
+                          *pcBuf++ = *pc++;
+                          ilen++;
+                       }
                     }
-                    
-                    if (state == kRSParseState_EndElem)
-                    {
-                        currSettype = kRecordSetType_DRMS;
-                    }
-                    
-                    nfilter++;
-                    
-                    break;
-                case kRSParseState_DRMSFiltAllVersSQL:
-                    currAllVers = 'y';
-                    /* intentional fall through */
-                case kRSParseState_DRMSFiltSQL:
-                    if (pc < endInput)
-                    {
-                        if (sname == NULL)
-                        {
-                            /* We know we've seen a "[?" or a "[!", the first 2 chars in a filter. buf has 
-                             * the preceding series name, plus a trailing "[?" or "[!". */
-                            size_t len = strlen(buf);
-                            
-                            sname = strdup(buf);
-                            *(sname + len - 2) = '\0';
-                        }
-                        
-                        if (pfiltstr == NULL)
-                        {
-                            /* We haven't started the filter capture yet. Do so now. pcBuf points to the 
-                             * char after "[?" or "[!". */
-                            pfiltstr = pcBuf - 2;
-                        }
-                        
-                        if (*pc == '"' || *pc == '\'')
-                        {
-                            /* skip quoted strings */
-                            DRMS_Type_Value_t val;
-                            memset(&val, 0, sizeof(DRMS_Type_Value_t));
-                            int rlen = drms_sscanf_str(pc, NULL, &val);
-                            int ilen = 0;
-                            
-                            /* Don't need string - just strlen */
-                            DRMS_Value_t dummy = {DRMS_TYPE_STRING, val};
-                            drms_value_free(&dummy);
-                            
-                            if (rlen == -1)
-                            {
-                                /* There was a problem with the quoted string (like a missing end quote). */
-                                fprintf(stderr, "Invalid quoted string '%s'.\n", pc);
-                                state = kRSParseState_Error;
-                            }
-                            else
-                            {
-                                /* if ending ']' was found, then pc + rlen is ']', otherwise
-                                 * it is the next char after end quote */
-                                while (ilen < rlen)
-                                {
-                                    *pcBuf++ = *pc++;
-                                    ilen++;
-                                }
-                            }
-                        }
-                        // put catching of time_convert flag X here, also in parse_record_query in drms_names.c
-                        else if (*pc == '$' && *(pc+1) == '(')
-                        {
-                            /* A form of '$(xxxx)' is taken to be a DRMS preprocessing function
-                             * which is evaluated prior to submitting the query to psql.  The
-                             * result of the function must be a valid SQL operand or expression.
-                             * the only DRMS preprocessing function at the moment is to
-                             * convert an explicit time constant into an internal DRMS TIME
-                             * expressed as a double constant. */
-                            char *rparen = strchr(pc+2, ')');
-                            char temptime[100];
-                            if (!rparen || rparen - pc > 40) // leave room for microsecs
-                            {
-                                fprintf(stderr,"Time conversion error starting at %s\n",pc+2);
-                                state = kRSParseState_Error;
-                            }
-                            else
-                            {
-                                /* pick function here, if ever more than time conversion */
-                                TIME t; 
+                 }
+// put catching of time_convert flag X here, also in parse_record_query in drms_names.c
+                 else if (*pc == '$' && *(pc+1) == '(')
+                 {
+                    /* A form of '$(xxxx)' is taken to be a DRMS preprocessing function
+                     * which is evaluated prior to submitting the query to psql.  The
+                     * result of the function must be a valid SQL operand or expression.
+                     * the only DRMS preprocessing function at the moment is to
+                     * convert an explicit time constant into an internal DRMS TIME
+                     * expressed as a double constant. */
+                     char *rparen = strchr(pc+2, ')');
+                     char temptime[100];
+                     if (!rparen || rparen - pc > 40) // leave room for microsecs
+                     {
+                        fprintf(stderr,"Time conversion error starting at %s\n",pc+2);
+		        state = kRSParseState_Error;
+                     }
+                     else
+                     {
+                        /* pick function here, if ever more than time conversion */
+                        TIME t; 
 #ifdef DEBUG
-                                int consumed;
+                        int consumed;
 #endif
-                                
-                                strncpy(temptime,pc+2,rparen-pc-2);
-                                
+
+                        strncpy(temptime,pc+2,rparen-pc-2);
+
 #ifdef DEBUG
-                                consumed = 
+                        consumed = 
 #endif
-                                sscan_time_ext(temptime, &t);
-                                
-                                
-                                if (time_is_invalid(t))
-                                    fprintf(stderr,"Warning: invalid time from %s\n",temptime);
+                          sscan_time_ext(temptime, &t);
+
+
+                        if (time_is_invalid(t))
+                            fprintf(stderr,"Warning: invalid time from %s\n",temptime);
 #ifdef DEBUG
-                                fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, gives %f\n",temptime, consumed,t);
+fprintf(stderr,"XXXXXXX original in drms_record, convert time %s uses %d chars, gives %f\n",temptime, consumed,t);
 #endif
-                                pc = rparen + 1;
-                                pcBuf += sprintf(pcBuf, "%16.6f", t);
-                            }
-                        }
-                        else if ((*pc == '?' && state == kRSParseState_DRMSFiltSQL) ||
-                                 (*pc == '!' && state == kRSParseState_DRMSFiltAllVersSQL))
-                        {
-                            *pcBuf++ = *pc++;
-                            if ((pc < endInput) && (*pc == ']'))
-                            {
-                                state = kRSParseState_DRMSFilt;
-                            }
-                        }
-                        else
-                        {
-                            /* simply copy query as is, whitespace okay in sql query 
-                             *   see drms_names.c */
-                            *pcBuf++ = *pc++;
-                        }
-                    }
-                    else
-                    {
-                        /* didn't finish query */
-                        state = kRSParseState_Error;
-                    }
-                    
-                    /* We exit this state by either erroring out, or going to state kRSParseState_DRMSFilt. */
-                    break;
-                case kRSParseState_DRMSSeglist:
-                    /* first char after '{' */
-                    if (pc < endInput)
-                    {
-                        if (sname == NULL)
-                        {
-                            /* We know we've seen a '{', the first char in a seglist. buf has 
-                             * the preceding series name, plus a trailing '{'. We also know 
-                             * that there was NO filter, otherwise sname would have been 
-                             * set in the kRSParseState_DRMSFilt-case code block. */
-                            size_t len = strlen(buf);
-                            
-                            sname = strdup(buf);
-                            *(sname + len - 1) = '\0';
-                        }
-                        
-                        DSElem_SkipWS(&pc); /* ingore ws, if any */
-                        
-                        while (*pc != '}' && pc < endInput)
-                        {
-                            if (DSElem_IsWS((const char **)&pc))
-                            {
-                                DSElem_SkipWS(&pc);
-                            }
-                            else if (*pc == ',' || *pc == ':' || *pc == ';')
-                            {
-                                DSElem_SkipWS(&pc);
-                                if (*pc == '}')
-                                {
-                                    state = kRSParseState_Error;
-                                    break;
-                                }
-                                
-                                *pcBuf++ = *pc++;
-                            }
-                            else
-                            {
-                                *pcBuf++ = *pc++;
-                            }
-                        }
-                        
-                        if (state != kRSParseState_Error && *pc != '}')
-                        {
-                            state = kRSParseState_Error;
-                        }
-                    }
-                    else
-                    {
-                        /* didn't finish seglist */
-                        state = kRSParseState_Error;
-                    }
-                    
-                    if (state != kRSParseState_Error)
-                    {
-                        /* *pc == '}' */
-                        *pcBuf++ = *pc++;
-                    }
-                    
-                    if (DSElem_SkipWS(&pc))
-                    {
-                        if (DSElem_IsDelim((const char **)&pc))
-                        {
-                            pc++;
-                            state = kRSParseState_EndElem;
-                        }
-                        else if (DSElem_IsComment((const char **)&pc))
-                        {
-                            DSElem_SkipComment(&pc);
-                            state = kRSParseState_EndElem;
-                        }
-                        else
-                        {
-                            state = kRSParseState_Error;
-                        }
-                    }
-                    else
-                    {
-                        state= kRSParseState_EndElem;
-                    }
-                    
-                    if (state == kRSParseState_EndElem)
-                    {
-                        currSettype = kRecordSetType_DRMS;
-                    }
-                    break;
-                case kRSParseState_DSDS:
-                case kRSParseState_DSDSPort:
-                    /* first non-ws after '{' */
-                    oldstate = state;
-                    
-                    if (pc < endInput)
-                    {
-                        if (*pc == '{')
-                        {
-                            state = kRSParseState_Error;
-                        }
-                        else if (DSElem_IsWS((const char **)&pc))
-                        {
-                            /* Allow WS anywhere within '{' and '}', but eliminate */
-                            pc++;
-                        }
-                        else if (*pc == '}')
-                        {
-                            pc++;
-                            
-                            if (pc < endInput)
-                            {
-                                if (DSElem_IsWS((const char **)&pc))
-                                {
-                                    if (!DSElem_SkipWS(&pc))
-                                    {
-                                        state = kRSParseState_EndElem;
-                                    }
-                                }
-                                
-                                if (state != kRSParseState_EndElem)
-                                {
-                                    if (DSElem_IsDelim((const char **)&pc))
-                                    {
-                                        pc++;
-                                        state = kRSParseState_EndElem;
-                                    }
-                                    else if (DSElem_IsComment((const char **)&pc))
-                                    {
-                                        DSElem_SkipComment(&pc);
-                                        state = kRSParseState_EndElem;
-                                    }
-                                    else
-                                    {
-                                        /* there is something after '}' that isn't
-                                         * ws or a delimeter */
-                                        state = kRSParseState_Error;
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                state = kRSParseState_EndElem;
-                            }
-                        }
-                        else
-                        {
-                            *pcBuf++ = *pc++;
-                        }
-                    }
-                    else
-                    {
-                        state = kRSParseState_Error;
-                    }
-                    
-                    if (state == kRSParseState_EndElem)
-                    {
-                        if (oldstate == kRSParseState_DSDS)
-                        {
-                            currSettype = kRecordSetType_DSDS;
-                        }
-                        else if (oldstate == kRSParseState_DSDSPort)
-                        {
-                            currSettype = kRecordSetType_DSDSPort;
-                        }
-                        else
-                        {
-                            state = kRSParseState_Error;
-                        }
-                    }
-                    break;
-                case kRSParseState_VOT:
-                    /* first non-ws after '{' */
-                    if (pc < endInput)
-                    {
-                        if (*pc == '{')
-                        {
-                            state = kRSParseState_Error;
-                        }
-                        else if (DSElem_IsWS((const char **)&pc))
-                        {
-                            /* Allow WS anywhere within '{' and '}', but eliminate */
-                            pc++;
-                        }
-                        else if (*pc == '}')
-                        {
-                            pc++;
-                            
-                            if (pc < endInput)
-                            {
-                                if (DSElem_IsWS((const char **)&pc))
-                                {
-                                    if (!DSElem_SkipWS(&pc))
-                                    {
-                                        state = kRSParseState_EndElem;
-                                    }
-                                }
-                                
-                                if (DSElem_IsDelim((const char **)&pc))
-                                {
-                                    pc++;
-                                    state = kRSParseState_EndElem;
-                                }
-                                else if (DSElem_IsComment((const char **)&pc))
-                                {
-                                    DSElem_SkipComment(&pc);
-                                    state = kRSParseState_EndElem;
-                                }
-                                else
-                                {
-                                    /* there is something after '}' that isn't
-                                     * ws or a delimeter */
-                                    state = kRSParseState_Error;
-                                }
-                            }
-                            else
-                            {
-                                state = kRSParseState_EndElem;
-                            }
-                        }
-                        else
-                        {
-                            *pcBuf++ = *pc++;
-                        }
-                    }
-                    else
-                    {
-                        state = kRSParseState_Error;
-                    }
-                    
-                    if (state == kRSParseState_EndElem)
-                    {
-                        currSettype = kRecordSetType_VOT;
-                    }
-                    break;
-                case kRSParseState_AtFile:
-                    if (pc < endInput)
-                    {
-                        if (DSElem_IsDelim((const char **)&pc))
-                        {
-                            pc++;
-                            state = kRSParseState_EndAtFile;
-                        }
-                        else if (DSElem_IsComment((const char **)&pc))
-                        {
-                            DSElem_SkipComment(&pc);
-                            state = kRSParseState_EndAtFile;
-                        }
-                        else if (DSElem_IsWS((const char **)&pc))
-                        {
-                            /* Don't allow ws in filenames! Print an error 
-                             * message if that happens.
-                             */
-                            if (DSElem_SkipWS(&pc))
-                            {
-                                /* Found non-ws */
-                                if (DSElem_IsDelim((const char **)&pc))
-                                {
-                                    pc++;
-                                    state = kRSParseState_EndAtFile;
-                                }
-                                else if (DSElem_IsComment((const char **)&pc))
-                                {
-                                    DSElem_SkipComment(&pc);
-                                    state = kRSParseState_EndAtFile;
-                                }
-                                else
-                                {
-                                    fprintf(stderr, 
-                                            "'@' files containing whitespace are not allowed.\n");
-                                    state = kRSParseState_Error;
-                                }
-                            }
-                            else
-                            {
-                                /* All ws after the filename */
-                                state = kRSParseState_EndAtFile;
-                            }
-                        }
-                        else
-                        {
-                            *pcBuf++ = *pc++;
-                        }
-                    }
-                    else
-                    {
-                        state = kRSParseState_EndAtFile;
-                    }
-                    break;
-                case kRSParseState_EndAtFile:
-                {
-                    char lineBuf[LINE_MAX];
-                    char *fullline = NULL;
-                    char **queriesAtFile = NULL;
-                    DRMS_RecordSetType_t *typesAtFile = NULL;
-                    char **snamesAtFile = NULL;
-                    char **filtsAtFile = NULL;
-                    char *allversAtFile = NULL;
-                    int nsetsAtFile = 0;
-                    int iSet = 0;
-                    struct stat stBuf;
-                    FILE *atfile = NULL;
-                    
-                    /* finished reading an AtFile filename - read file one line at a time,
-                     * parsing each line recursively. */
-                    if (multiRSQueries)
-                    {
-                        state = kRSParseState_Error;
-                        break;
-                    }
-                    else
-                    {
-                        multiRSQueries = list_llcreate(sizeof(char *), NULL);
-                        multiRSTypes = list_llcreate(sizeof(DRMS_RecordSetType_t), NULL);
-                        multiRSAllVers = list_llcreate(sizeof(char), NULL);
-                        multiRSSnames = list_llcreate(sizeof(char *), NULL);
-                        multiRSFilts = list_llcreate(sizeof(char *), NULL);
-                        
-                        /* buf has filename */
-                        *pcBuf = '\0';
-                        if (buf && !stat(buf, &stBuf))
-                        {
-                            if (S_ISREG(stBuf.st_mode))
-                            {
-                                /* read a line */
-                                if ((atfile = fopen(buf, "r")) == NULL)
-                                {
-                                    fprintf(stderr, "Cannot open @file %s for reading, skipping.\n", buf);
-                                }
-                                else
-                                {
-                                    int len = 0;
-                                    while (!(fgets(lineBuf, LINE_MAX, atfile) == NULL))
-                                    {
-                                        /* strip \n from end of lineBuf */
-                                        len = strlen(lineBuf);
-                                        
-                                        fullline = strdup(lineBuf);
-                                        
-                                        if (len == LINE_MAX - 1)
-                                        {
-                                            /* may be more on this line */
-                                            while (!(fgets(lineBuf, LINE_MAX, atfile) == NULL))
-                                            {
-                                                fullline = realloc(fullline, strlen(fullline) + strlen(lineBuf) + 1);
-                                                snprintf(fullline + strlen(fullline), 
-                                                         strlen(lineBuf) + 1, 
-                                                         "%s",
-                                                         lineBuf);
-                                                if (strlen(lineBuf) > 1 && lineBuf[strlen(lineBuf) - 1] == '\n')
-                                                {
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                        
-                                        len = strlen(fullline);
-                                        
-                                        /* skip empty lines*/
-                                        if (len > 1)
-                                        {
-                                            DRMS_RecQueryInfo_t infoAtFile;
-                                            
-                                            if (fullline[len - 1] == '\n')
-                                            {
-                                                fullline[len - 1] = '\0';
-                                            }
-                                            
-                                            status = ParseRecSetDesc(fullline, 
-                                                                     &allversAtFile, 
-                                                                     &queriesAtFile, 
-                                                                     &typesAtFile, 
-                                                                     &snamesAtFile,
-                                                                     &filtsAtFile,
-                                                                     &nsetsAtFile,
-                                                                     &infoAtFile);
-                                            
-                                            if (status == DRMS_SUCCESS)
-                                            {
-                                                /* add all nsetsAtFile recordsets to multiRSQueries 
-                                                 * NOTE: nsetsAtFile is the number of record-sets on
-                                                 * the current line.
-                                                 */
-                                                for (iSet = 0; iSet < nsetsAtFile; iSet++)
-                                                {
-                                                    /* dupe this string because FreeRecSetDescArr() will 
-                                                     * free the original string. */
-                                                    pset = strdup(queriesAtFile[iSet]);
-                                                    list_llinserttail(multiRSQueries, &pset);
-                                                    list_llinserttail(multiRSTypes, &(typesAtFile[iSet]));
-                                                    list_llinserttail(multiRSAllVers, &(allversAtFile[iSet]));
-                                                    /* dupe this string because FreeRecSetDescArr() will 
-                                                     * free the original string. */
-                                                    
-                                                    /* There might be no series name associated with this 
-                                                     * atfile line (e.g., the line is a plain-file spec). If 
-                                                     * this is the case, then insert a null pointer. */
-                                                    if (snamesAtFile[iSet])
-                                                    {
-                                                        pset = strdup(snamesAtFile[iSet]);
-                                                    }
-                                                    else
-                                                    {
-                                                        pset = NULL;
-                                                    }
-                                                    list_llinserttail(multiRSSnames, &pset);
-                                                    
-                                                    /* There might also be no filter associated with the current 
-                                                     * line of the at file. */
-                                                    if (filtsAtFile[iSet])
-                                                    {
-                                                        pset = strdup(filtsAtFile[iSet]);
-                                                    }
-                                                    else
-                                                    {
-                                                        pset = NULL;
-                                                    }
-                                                    list_llinserttail(multiRSFilts, &pset);
-                                                    
-                                                    countMultiRS++;
-                                                }
-                                                
-                                                intinfo |= infoAtFile;
-                                            }
-                                            else
-                                            {
-                                                state = kRSParseState_Error;
-                                                break;
-                                            }
-                                            
-                                            FreeRecSetDescArr(&allversAtFile, &queriesAtFile, &typesAtFile, &snamesAtFile, &filtsAtFile, nsetsAtFile);
-                                        }
-                                        
-                                        if (fullline)
-                                        {
-                                            free(fullline);
-                                            fullline = NULL;
-                                        }
-                                    } /* while */
-                                }
-                            }
-                            else
-                            {
-                                fprintf(stderr, "@file %s is not a regular file, skipping.\n", buf);
-                            }
-                        }
-                        else
-                        {
-                            fprintf(stderr, "Cannot find @file %s, skipping.\n", buf);
-                        }
-                    }
-                }
-                    
-                    /* Got into this state because either saw a delimiter, or end of input */
-                    
-                    state = kRSParseState_EndElem;
-                    break;
-                case kRSParseState_Plainfile:
-                    /* Pointing to leading '/' or './' */
-                    if (pc < endInput)
-                    {
-                        if (DSElem_IsDelim((const char **)&pc))
-                        {
-                            pc++;
-                            state = kRSParseState_EndElem;
-                        }
-                        else if (DSElem_IsComment((const char **)&pc))
-                        {
-                            DSElem_SkipComment(&pc);
-                            state = kRSParseState_EndElem;
-                        }
-                        else if (DSElem_IsWS((const char **)&pc))
-                        {
-                            /* Don't allow ws in filenames! Print an error 
-                             * message if that happens.
-                             */
-                            if (DSElem_SkipWS(&pc))
-                            {
-                                /* Found non-ws */
-                                if (DSElem_IsDelim((const char **)&pc))
-                                {
-                                    pc++;
-                                    state = kRSParseState_EndElem;
-                                }
-                                else if (DSElem_IsComment((const char **)&pc))
-                                {
-                                    DSElem_SkipComment(&pc);
-                                    state = kRSParseState_EndElem;
-                                }
-                                else
-                                {
-                                    fprintf(stderr, 
-                                            "'plainfiles' containing whitespace are not allowed.\n");
-                                    state = kRSParseState_Error;
-                                }
-                            }
-                            else
-                            {
-                                /* All ws after the filename */
-                                state = kRSParseState_EndElem;
-                            }
-                        }
-                        else
-                        {
-                            *pcBuf++ = *pc++;
-                        }
-                    }
-                    else
-                    {
-                        state = kRSParseState_EndElem;
-                    }
-                    
-                    if (state == kRSParseState_EndElem)
-                    {
-                        currSettype = kRecordSetType_PlainFile;
-                    }
-                    break;
-                case kRSParseState_EndElem:
-                    /* pc points to whatever is after a ds delim, or trailing ws. */
-                    /* could be next ds elem, ws, delim, or NULL (end of input). */
-                    *pcBuf = '\0';
-                    
-                    /* multiRSQueries implies @filename */
-                    if (!multiRSQueries)
-                    {
-                        pset = strdup(buf);
-                        list_llinserttail(intSets, &pset);
-                        list_llinserttail(intSettypes, &currSettype);
-                        list_llinserttail(intAllVers, &currAllVers);
-                        list_llinserttail(intSnames, &sname);
-                        list_llinserttail(intFilts, &filtstr);
-                        currAllVers = 'n';
-                        count++;
-                    }
-                    else
-                    {
-                        int iSet;
-                        ListNode_t *node = NULL;
-                        
-                        for (iSet = 0; iSet < countMultiRS; iSet++)
-                        {
-                            node = list_llgethead(multiRSQueries);
-                            if (node)
-                            {
-                                /* intSets now owns char * pointed to by node->data */
-                                list_llinserttail(intSets, node->data);
-                                list_llremove(multiRSQueries, node);
-                                list_llfreenode(&node);
-                            }
-                            
-                            node = list_llgethead(multiRSTypes);
-                            if (node)
-                            {
-                                list_llinserttail(intSettypes, node->data);
-                                list_llremove(multiRSTypes, node);
-                                list_llfreenode(&node);
-                            }
-                            
-                            node = list_llgethead(multiRSAllVers);
-                            if (node)
-                            {
-                                list_llinserttail(intAllVers, node->data);
-                                list_llremove(multiRSAllVers, node);
-                                list_llfreenode(&node);
-                            }
-                            
-                            node = list_llgethead(multiRSSnames);
-                            if (node)
-                            {
-                                list_llinserttail(intSnames, node->data);
-                                list_llremove(multiRSSnames, node);
-                                list_llfreenode(&node);
-                            }
-                            
-                            node = list_llgethead(multiRSFilts);
-                            if (node)
-                            {
-                                list_llinserttail(intFilts, node->data);
-                                list_llremove(multiRSFilts, node);
-                                list_llfreenode(&node);
-                            }
-                            
-                            count++;
-                        }
-                        
-                        free(multiRSQueries); /* don't deep-free; intSets now owns strings */
-                        multiRSQueries = NULL;
-                        free(multiRSTypes);
-                        multiRSTypes = NULL;
-                        free(multiRSAllVers);
-                        multiRSAllVers = NULL;
-                        free(multiRSSnames);
-                        multiRSSnames = NULL;
-                        free(multiRSFilts);
-                        multiRSFilts = NULL;
-                        countMultiRS = 0;
-                    }
-                    
-                    if (pc < endInput)
-                    {
-                        if (DSElem_SkipWS(&pc))
-                        {
-                            state = kRSParseState_BeginElem;
-                        }
-                        else
-                        {
-                            state = kRSParseState_End;
-                        }
-                    }
-                    else
-                    {
-                        state = kRSParseState_End;
-                    }
-                    
-                    pcBuf = buf;
-                    bzero(buf, sizeof(buf));
-                    
-                    /* Don't forget to set sname back to NULL to prepare for next record-set subquery. sname is now 
-                     * owned by intSnames*/
-                    sname = NULL;
-                    
-                    /* Reset pfiltstr and filtstr to NULL. */
-                    pfiltstr = NULL;
-                    filtstr = NULL;
-                    
-                    break;
-                case kRSParseState_End:
-                    if (DSElem_SkipWS(&pc))
-                    {
-                        /* found non-ws at the end, not acceptable */
-                        state = kRSParseState_Error;
-                    }
-                    else
-                    {
-                        pc = NULL;
-                        state = kRSParseState_Success;
-                    }
-                    break;
-                default:
+                        pc = rparen + 1;
+                        pcBuf += sprintf(pcBuf, "%16.6f", t);
+                     }
+                 }
+		 else if ((*pc == '?' && state == kRSParseState_DRMSFiltSQL) ||
+                          (*pc == '!' && state == kRSParseState_DRMSFiltAllVersSQL))
+		 {
+		    *pcBuf++ = *pc++;
+		    if ((pc < endInput) && (*pc == ']'))
+		    {
+		       state = kRSParseState_DRMSFilt;
+		    }
+		 }
+		 else
+		 {
+		    /* simply copy query as is, whitespace okay in sql query 
+		     *   see drms_names.c */
+		    *pcBuf++ = *pc++;
+		 }
+	      }
+	      else
+	      {
+		 /* didn't finish query */
+		 state = kRSParseState_Error;
+	      }
+
+              /* We exit this state by either erroring out, or going to state kRSParseState_DRMSFilt. */
+	      break;
+	    case kRSParseState_DRMSSeglist:
+	      /* first char after '{' */
+	      if (pc < endInput)
+	      {
+              if (sname == NULL)
+              {
+                  /* We know we've seen a '{', the first char in a seglist. buf has 
+                   * the preceding series name, plus a trailing '{'. We also know 
+                   * that there was NO filter, otherwise sname would have been 
+                   * set in the kRSParseState_DRMSFilt-case code block. */
+                  size_t len = strlen(buf);
+                  
+                  sname = strdup(buf);
+                  *(sname + len - 1) = '\0';
+              }
+              
+		 DSElem_SkipWS(&pc); /* ingore ws, if any */
+		 
+		 while (*pc != '}' && pc < endInput)
+		 {
+		    if (DSElem_IsWS((const char **)&pc))
+		    {
+		       DSElem_SkipWS(&pc);
+		    }
+		    else if (*pc == ',' || *pc == ':' || *pc == ';')
+		    {
+		       DSElem_SkipWS(&pc);
+		       if (*pc == '}')
+		       {
+			  state = kRSParseState_Error;
+			  break;
+		       }
+                       
+                       *pcBuf++ = *pc++;
+		    }
+		    else
+		    {
+		       *pcBuf++ = *pc++;
+		    }
+		 }
+
+		 if (state != kRSParseState_Error && *pc != '}')
+		 {
+		    state = kRSParseState_Error;
+		 }
+	      }
+	      else
+	      {
+		 /* didn't finish seglist */
+		 state = kRSParseState_Error;
+	      }
+
+	      if (state != kRSParseState_Error)
+	      {
+		 /* *pc == '}' */
+		 *pcBuf++ = *pc++;
+	      }
+
+	      if (DSElem_SkipWS(&pc))
+	      {
+		 if (DSElem_IsDelim((const char **)&pc))
+		 {
+		    pc++;
+		    state = kRSParseState_EndElem;
+		 }
+		 else if (DSElem_IsComment((const char **)&pc))
+		 {
+		    DSElem_SkipComment(&pc);
+		    state = kRSParseState_EndElem;
+		 }
+		 else
+		 {
+		    state = kRSParseState_Error;
+		 }
+	      }
+	      else
+	      {
+		 state= kRSParseState_EndElem;
+	      }
+
+	      if (state == kRSParseState_EndElem)
+	      {
+		 currSettype = kRecordSetType_DRMS;
+	      }
+	      break;
+	    case kRSParseState_DSDS:
+            case kRSParseState_DSDSPort:
+	      /* first non-ws after '{' */
+              oldstate = state;
+
+	      if (pc < endInput)
+	      {
+		 if (*pc == '{')
+		 {
+		    state = kRSParseState_Error;
+		 }
+		 else if (DSElem_IsWS((const char **)&pc))
+		 {
+		    /* Allow WS anywhere within '{' and '}', but eliminate */
+		    pc++;
+		 }
+		 else if (*pc == '}')
+		 {
+		    pc++;
+
+		    if (pc < endInput)
+		    {
+		       if (DSElem_IsWS((const char **)&pc))
+		       {
+			  if (!DSElem_SkipWS(&pc))
+			  {
+			     state = kRSParseState_EndElem;
+			  }
+		       }
+
+		       if (state != kRSParseState_EndElem)
+		       {
+			  if (DSElem_IsDelim((const char **)&pc))
+			  {
+			     pc++;
+			     state = kRSParseState_EndElem;
+			  }
+			  else if (DSElem_IsComment((const char **)&pc))
+			  {
+			     DSElem_SkipComment(&pc);
+			     state = kRSParseState_EndElem;
+			  }
+			  else
+			  {
+			     /* there is something after '}' that isn't
+			      * ws or a delimeter */
+			     state = kRSParseState_Error;
+			  }
+		       }
+		    }
+		    else
+		    {
+		       state = kRSParseState_EndElem;
+		    }
+		 }
+		 else
+		 {
+		    *pcBuf++ = *pc++;
+		 }
+	      }
+	      else
+	      {
+		 state = kRSParseState_Error;
+	      }
+
+	      if (state == kRSParseState_EndElem)
+	      {
+                 if (oldstate == kRSParseState_DSDS)
+                 {
+                    currSettype = kRecordSetType_DSDS;
+                 }
+                 else if (oldstate == kRSParseState_DSDSPort)
+                 {
+                    currSettype = kRecordSetType_DSDSPort;
+                 }
+                 else
+                 {
                     state = kRSParseState_Error;
-            }
-        }
-        
-        free(rsstr);
-    } /* rsstr */
-    
-    if (status == DRMS_SUCCESS && state == kRSParseState_Success && count > 0)
-    {
-        *sets = (char **)malloc(sizeof(char *) * count);
-        *settypes = (DRMS_RecordSetType_t *)malloc(sizeof(DRMS_RecordSetType_t) * count);
-        *allvers = (char *)malloc(sizeof(char) * count + 1);
-        *snames = (char **)malloc(sizeof(char *) * count);
-        *filts = (char **)malloc(sizeof(char *) * count);
-        
-        if (*sets && *settypes && *allvers && *snames && *filts)
-        {
-            int iset;
-            ListNode_t *node = NULL;
-            *nsets = count;
-            
-            for (iset = 0; iset < count; iset++)
+                 }
+	      }
+	      break;
+	    case kRSParseState_VOT:
+	      /* first non-ws after '{' */
+	      if (pc < endInput)
+	      {
+		 if (*pc == '{')
+		 {
+		    state = kRSParseState_Error;
+		 }
+		 else if (DSElem_IsWS((const char **)&pc))
+		 {
+		    /* Allow WS anywhere within '{' and '}', but eliminate */
+		    pc++;
+		 }
+		 else if (*pc == '}')
+		 {
+		    pc++;
+
+		    if (pc < endInput)
+		    {
+		       if (DSElem_IsWS((const char **)&pc))
+		       {
+			  if (!DSElem_SkipWS(&pc))
+			  {
+			     state = kRSParseState_EndElem;
+			  }
+		       }
+
+		       if (DSElem_IsDelim((const char **)&pc))
+		       {
+			  pc++;
+			  state = kRSParseState_EndElem;
+		       }
+		       else if (DSElem_IsComment((const char **)&pc))
+		       {
+			  DSElem_SkipComment(&pc);
+			  state = kRSParseState_EndElem;
+		       }
+		       else
+		       {
+			  /* there is something after '}' that isn't
+			   * ws or a delimeter */
+			  state = kRSParseState_Error;
+		       }
+		    }
+		    else
+		    {
+		       state = kRSParseState_EndElem;
+		    }
+		 }
+		 else
+		 {
+		    *pcBuf++ = *pc++;
+		 }
+	      }
+	      else
+	      {
+		 state = kRSParseState_Error;
+	      }
+
+	      if (state == kRSParseState_EndElem)
+	      {
+		 currSettype = kRecordSetType_VOT;
+	      }
+	      break;
+	    case kRSParseState_AtFile:
+	      if (pc < endInput)
+	      {
+		 if (DSElem_IsDelim((const char **)&pc))
+		 {
+		    pc++;
+		    state = kRSParseState_EndAtFile;
+		 }
+		 else if (DSElem_IsComment((const char **)&pc))
+		 {
+		    DSElem_SkipComment(&pc);
+		    state = kRSParseState_EndAtFile;
+		 }
+		 else if (DSElem_IsWS((const char **)&pc))
+		 {
+		    /* Don't allow ws in filenames! Print an error 
+		     * message if that happens.
+		     */
+		    if (DSElem_SkipWS(&pc))
+		    {
+		       /* Found non-ws */
+		       if (DSElem_IsDelim((const char **)&pc))
+		       {
+			  pc++;
+			  state = kRSParseState_EndAtFile;
+		       }
+		       else if (DSElem_IsComment((const char **)&pc))
+		       {
+			  DSElem_SkipComment(&pc);
+			  state = kRSParseState_EndAtFile;
+		       }
+		       else
+		       {
+			  fprintf(stderr, 
+				  "'@' files containing whitespace are not allowed.\n");
+			  state = kRSParseState_Error;
+		       }
+		    }
+		    else
+		    {
+		       /* All ws after the filename */
+		       state = kRSParseState_EndAtFile;
+		    }
+		 }
+		 else
+		 {
+		    *pcBuf++ = *pc++;
+		 }
+	      }
+	      else
+	      {
+		 state = kRSParseState_EndAtFile;
+	      }
+	      break;
+	    case kRSParseState_EndAtFile:
+	      {
+              char lineBuf[LINE_MAX];
+              char *fullline = NULL;
+              char **queriesAtFile = NULL;
+              DRMS_RecordSetType_t *typesAtFile = NULL;
+              char **snamesAtFile = NULL;
+              char *allversAtFile = NULL;
+              int nsetsAtFile = 0;
+              int iSet = 0;
+              struct stat stBuf;
+              FILE *atfile = NULL;
+              
+              /* finished reading an AtFile filename - read file one line at a time,
+               * parsing each line recursively. */
+              if (multiRSQueries)
+              {
+                  state = kRSParseState_Error;
+                  break;
+              }
+              else
+              {
+                  multiRSQueries = list_llcreate(sizeof(char *), NULL);
+                  multiRSTypes = list_llcreate(sizeof(DRMS_RecordSetType_t), NULL);
+                  multiRSAllVers = list_llcreate(sizeof(char), NULL);
+                  multiRSSnames = list_llcreate(sizeof(char *), NULL);
+                  
+                  /* buf has filename */
+                  *pcBuf = '\0';
+                  if (buf && !stat(buf, &stBuf))
+                  {
+                      if (S_ISREG(stBuf.st_mode))
+                      {
+                          /* read a line */
+                          if ((atfile = fopen(buf, "r")) == NULL)
+                          {
+                              fprintf(stderr, "Cannot open @file %s for reading, skipping.\n", buf);
+                          }
+                          else
+                          {
+                              int len = 0;
+                              while (!(fgets(lineBuf, LINE_MAX, atfile) == NULL))
+                              {
+                                  /* strip \n from end of lineBuf */
+                                  len = strlen(lineBuf);
+                                  
+                                  fullline = strdup(lineBuf);
+                                  
+                                  if (len == LINE_MAX - 1)
+                                  {
+                                      /* may be more on this line */
+                                      while (!(fgets(lineBuf, LINE_MAX, atfile) == NULL))
+                                      {
+                                          fullline = realloc(fullline, strlen(fullline) + strlen(lineBuf) + 1);
+                                          snprintf(fullline + strlen(fullline), 
+                                                   strlen(lineBuf) + 1, 
+                                                   "%s",
+                                                   lineBuf);
+                                          if (strlen(lineBuf) > 1 && lineBuf[strlen(lineBuf) - 1] == '\n')
+                                          {
+                                              break;
+                                          }
+                                      }
+                                  }
+                                  
+                                  len = strlen(fullline);
+                                  
+                                  /* skip empty lines*/
+                                  if (len > 1)
+                                  {
+                                      DRMS_RecQueryInfo_t infoAtFile;
+                                      
+                                      if (fullline[len - 1] == '\n')
+                                      {
+                                          fullline[len - 1] = '\0';
+                                      }
+                                      
+                                      status = ParseRecSetDesc(fullline, 
+                                                               &allversAtFile, 
+                                                               &queriesAtFile, 
+                                                               &typesAtFile, 
+                                                               &snamesAtFile,
+                                                               &nsetsAtFile,
+                                                               &infoAtFile);
+                                      
+                                      if (status == DRMS_SUCCESS)
+                                      {
+                                          /* add all nsetsAtFile recordsets to multiRSQueries 
+                                           * NOTE: nsetsAtFile is the number of record-sets on
+                                           * the current line.
+                                           */
+                                          for (iSet = 0; iSet < nsetsAtFile; iSet++)
+                                          {
+                                              /* dupe this string because FreeRecSetDescArr() will 
+                                               * free the original string. */
+                                              pset = strdup(queriesAtFile[iSet]);
+                                              list_llinserttail(multiRSQueries, &pset);
+                                              list_llinserttail(multiRSTypes, &(typesAtFile[iSet]));
+                                              list_llinserttail(multiRSAllVers, &(allversAtFile[iSet]));
+                                              /* dupe this string because FreeRecSetDescArr() will 
+                                               * free the original string. */
+                                              
+                                              /* There might be no series name associated with this 
+                                               * atfile line (e.g., the line is a plain-file spec. If 
+                                               * this is the case, then insert a null pointer. */
+                                              if (snamesAtFile[iSet])
+                                              {
+                                                  pset = strdup(snamesAtFile[iSet]);
+                                              }
+                                              else
+                                              {
+                                                  pset = NULL;
+                                              }
+                                              list_llinserttail(multiRSSnames, &pset);
+                                              countMultiRS++;
+                                          }
+                                          
+                                          intinfo |= infoAtFile;
+                                      }
+                                      else
+                                      {
+                                          state = kRSParseState_Error;
+                                          break;
+                                      }
+                                      
+                                      FreeRecSetDescArr(&allversAtFile, &queriesAtFile, &typesAtFile, &snamesAtFile, nsetsAtFile);
+                                  }
+                                  
+                                  if (fullline)
+                                  {
+                                      free(fullline);
+                                      fullline = NULL;
+                                  }
+                              } /* while */
+                          }
+                      }
+                      else
+                      {
+                          fprintf(stderr, "@file %s is not a regular file, skipping.\n", buf);
+                      }
+                  }
+                  else
+                  {
+                      fprintf(stderr, "Cannot find @file %s, skipping.\n", buf);
+                  }
+              }
+	      }
+             
+             /* Got into this state because either saw a delimiter, or end of input */
+             
+	      state = kRSParseState_EndElem;
+	      break;
+	    case kRSParseState_Plainfile:
+	      /* Pointing to leading '/' or './' */
+	      if (pc < endInput)
+	      {
+		 if (DSElem_IsDelim((const char **)&pc))
+		 {
+		    pc++;
+		    state = kRSParseState_EndElem;
+		 }
+		 else if (DSElem_IsComment((const char **)&pc))
+		 {
+		    DSElem_SkipComment(&pc);
+		    state = kRSParseState_EndElem;
+		 }
+		 else if (DSElem_IsWS((const char **)&pc))
+		 {
+		    /* Don't allow ws in filenames! Print an error 
+		     * message if that happens.
+		     */
+		    if (DSElem_SkipWS(&pc))
+		    {
+		       /* Found non-ws */
+		       if (DSElem_IsDelim((const char **)&pc))
+		       {
+			  pc++;
+			  state = kRSParseState_EndElem;
+		       }
+		       else if (DSElem_IsComment((const char **)&pc))
+		       {
+			  DSElem_SkipComment(&pc);
+			  state = kRSParseState_EndElem;
+		       }
+		       else
+		       {
+			  fprintf(stderr, 
+				  "'plainfiles' containing whitespace are not allowed.\n");
+			  state = kRSParseState_Error;
+		       }
+		    }
+		    else
+		    {
+		       /* All ws after the filename */
+		       state = kRSParseState_EndElem;
+		    }
+		 }
+		 else
+		 {
+		    *pcBuf++ = *pc++;
+		 }
+	      }
+	      else
+	      {
+		 state = kRSParseState_EndElem;
+	      }
+
+	      if (state == kRSParseState_EndElem)
+	      {
+		 currSettype = kRecordSetType_PlainFile;
+	      }
+	      break;
+	    case kRSParseState_EndElem:
+	      /* pc points to whatever is after a ds delim, or trailing ws. */
+	      /* could be next ds elem, ws, delim, or NULL (end of input). */
+	      *pcBuf = '\0';
+
+              /* multiRSQueries implies @filename */
+	      if (!multiRSQueries)
+	      {
+                 pset = strdup(buf);
+                 list_llinserttail(intSets, &pset);
+                 list_llinserttail(intSettypes, &currSettype);
+                 list_llinserttail(intAllVers, &currAllVers);
+                 list_llinserttail(intSnames, &sname);
+                 currAllVers = 'n';
+		 count++;
+	      }
+	      else
+	      {
+		 int iSet;
+                 ListNode_t *node = NULL;
+
+		 for (iSet = 0; iSet < countMultiRS; iSet++)
+		 {
+                    node = list_llgethead(multiRSQueries);
+                    if (node)
+                    {
+                       /* intSets now owns char * pointed to by node->data */
+                       list_llinserttail(intSets, node->data);
+                       list_llremove(multiRSQueries, node);
+                       list_llfreenode(&node);
+                    }
+
+                    node = list_llgethead(multiRSTypes);
+                    if (node)
+                    {
+                       list_llinserttail(intSettypes, node->data);
+                       list_llremove(multiRSTypes, node);
+                       list_llfreenode(&node);
+                    }
+
+                    node = list_llgethead(multiRSAllVers);
+                    if (node)
+                    {
+                       list_llinserttail(intAllVers, node->data);
+                       list_llremove(multiRSAllVers, node);
+                       list_llfreenode(&node);
+                    }
+
+                    node = list_llgethead(multiRSSnames);
+                    if (node)
+                    {
+                       list_llinserttail(intSnames, node->data);
+                       list_llremove(multiRSSnames, node);
+                       list_llfreenode(&node);
+                    }
+
+		    count++;
+		 }
+
+		 free(multiRSQueries); /* don't deep-free; intSets now owns strings */
+		 multiRSQueries = NULL;
+		 free(multiRSTypes);
+		 multiRSTypes = NULL;
+                 free(multiRSAllVers);
+                 multiRSAllVers = NULL;
+                 free(multiRSSnames);
+                 multiRSSnames = NULL;
+		 countMultiRS = 0;
+	      }
+
+	      if (pc < endInput)
+	      {
+		 if (DSElem_SkipWS(&pc))
+		 {
+		    state = kRSParseState_BeginElem;
+		 }
+		 else
+		 {
+		    state = kRSParseState_End;
+		 }
+	      }
+	      else
+	      {
+		 state = kRSParseState_End;
+	      }
+
+              pcBuf = buf;
+              bzero(buf, sizeof(buf));
+
+              /* Don't forget to set sname back to NULL to prepare for next record-set subquery. sname is now 
+               * owned by intSnames*/
+              sname = NULL;
+              
+	      break;
+	    case kRSParseState_End:
+	      if (DSElem_SkipWS(&pc))
+	      {
+		 /* found non-ws at the end, not acceptable */
+		 state = kRSParseState_Error;
+	      }
+	      else
+	      {
+		 pc = NULL;
+		 state = kRSParseState_Success;
+	      }
+	      break;
+	    default:
+	      state = kRSParseState_Error;
+	 }
+      }
+      
+      free(rsstr);
+   } /* rsstr */
+
+   if (status == DRMS_SUCCESS && state == kRSParseState_Success && count > 0)
+   {
+      *sets = (char **)malloc(sizeof(char *) * count);
+      *settypes = (DRMS_RecordSetType_t *)malloc(sizeof(DRMS_RecordSetType_t) * count);
+      *allvers = (char *)malloc(sizeof(char) * count + 1);
+      *snames = (char **)malloc(sizeof(char *) * count);
+
+      if (*sets && *settypes && *allvers && *snames)
+      {
+         int iset;
+         ListNode_t *node = NULL;
+	 *nsets = count;
+
+         for (iset = 0; iset < count; iset++)
+         {
+            node = list_llgethead(intSets);
+            if (node)
             {
-                node = list_llgethead(intSets);
-                if (node)
-                {
-                    /* sets now owns char * pointed to by node->data */
-                    memcpy(&((*sets)[iset]), node->data, sizeof(char *));
-                    list_llremove(intSets, node);
-                    list_llfreenode(&node);
-                }
-                
-                node = list_llgethead(intSettypes);
-                if (node)
-                {
-                    memcpy(&((*settypes)[iset]), node->data, sizeof(DRMS_RecordSetType_t));
-                    list_llremove(intSettypes, node);
-                    list_llfreenode(&node);
-                }
-                
-                node = list_llgethead(intAllVers);
-                if (node)
-                {
-                    memcpy(&((*allvers)[iset]), node->data, sizeof(char));
-                    list_llremove(intAllVers, node);
-                    list_llfreenode(&node);
-                }
-                
-                node = list_llgethead(intSnames);
-                if (node)
-                {
-                    memcpy(&((*snames)[iset]), node->data, sizeof(char *));
-                    list_llremove(intSnames, node);
-                    list_llfreenode(&node);
-                }
-                
-                node = list_llgethead(intFilts);
-                if (node)
-                {
-                    memcpy(&((*filts)[iset]), node->data, sizeof(char *));
-                    list_llremove(intFilts, node);
-                    list_llfreenode(&node);
-                }
+               /* sets now owns char * pointed to by node->data */
+               memcpy(&((*sets)[iset]), node->data, sizeof(char *));
+               list_llremove(intSets, node);
+               list_llfreenode(&node);
             }
-            
-            (*allvers)[count] = '\0';
-            
-            if (info)
+
+            node = list_llgethead(intSettypes);
+            if (node)
             {
-                *info = intinfo;
+               memcpy(&((*settypes)[iset]), node->data, sizeof(DRMS_RecordSetType_t));
+               list_llremove(intSettypes, node);
+               list_llfreenode(&node);
             }
-        }
-        else
-        {
-            status = DRMS_ERROR_OUTOFMEMORY;
-        }
-    }
-    
-    if (status == DRMS_SUCCESS && state != kRSParseState_Success)
-    {
-        status = DRMS_ERROR_INVALIDDATA;
-    }
-    
-    if (intSets)
-    {
-        list_llfree(&intSets);
-    }
-    
-    if (intSettypes)
-    {
-        list_llfree(&intSettypes);
-    }
-    
-    if (intAllVers)
-    {
-        list_llfree(&intAllVers);
-    }
-    
-    if (intSnames)
-    {
-        list_llfree(&intSnames);
-    }
-    
-    if (intFilts)
-    {
-        list_llfree(&intFilts);
-    }
-    
-    return status;
+
+            node = list_llgethead(intAllVers);
+            if (node)
+            {
+               memcpy(&((*allvers)[iset]), node->data, sizeof(char));
+               list_llremove(intAllVers, node);
+               list_llfreenode(&node);
+            }
+
+            node = list_llgethead(intSnames);
+            if (node)
+            {
+               memcpy(&((*snames)[iset]), node->data, sizeof(char *));
+               list_llremove(intSnames, node);
+               list_llfreenode(&node);
+            }
+         }
+
+         (*allvers)[count] = '\0';
+
+         if (info)
+         {
+            *info = intinfo;
+         }
+      }
+      else
+      {
+	 status = DRMS_ERROR_OUTOFMEMORY;
+      }
+   }
+
+   if (status == DRMS_SUCCESS && state != kRSParseState_Success)
+   {
+      status = DRMS_ERROR_INVALIDDATA;
+   }
+
+   if (intSets)
+   {
+      free(intSets);
+   }
+
+   if (intSettypes)
+   {
+      free(intSettypes);
+   }
+
+   if (intAllVers)
+   {
+      free(intAllVers);
+   }
+
+   if (intSnames)
+   {
+      free(intSnames);
+   }
+
+   return status;
 }
 
-int FreeRecSetDescArr(char **allvers, char ***sets, DRMS_RecordSetType_t **types, char ***snames, char ***filts, int nsets)
+int FreeRecSetDescArr(char **allvers, char ***sets, DRMS_RecordSetType_t **types, char ***snames, int nsets)
 {
-    int error = 0;
-    
-    if (allvers && *allvers)
-    {
-        free(*allvers);
-        allvers = NULL;
-    }
-    
-    if (sets)
-    {
-        int iSet;
-        char **setArr = *sets;
-        
-        if (setArr)
-        {
-            for (iSet = 0; iSet < nsets; iSet++)
-            {
-                char *oneSet = setArr[iSet];
-                
-                if (oneSet)
-                {
-                    free(oneSet);
-                }
-            }
-            
-            free(setArr);
-        }
-        
-        *sets = NULL;
-    }
-    
-    if (types && *types)
-    {
-        free(*types);
-        types = NULL;
-    }
-    
-    if (snames)
-    {
-        int iSet;
-        char **snameArr = *snames;
-        
-        if (snameArr)
-        {
-            for (iSet = 0; iSet < nsets; iSet++)
-            {
-                char *oneSname = snameArr[iSet];
-                
-                if (oneSname)
-                {
-                    free(oneSname);
-                }
-            }
-            
-            free(snameArr);
-        }
-        
-        *snames = NULL;
-    }
-    
-    if (filts)
-    {
-        int iSet;
-        char **filtsArr = *filts;
-        
-        if (filtsArr)
-        {
-            for (iSet = 0; iSet < nsets; iSet++)
-            {
-                char *oneFilt = filtsArr[iSet];
-                
-                if (oneFilt)
-                {
-                    free(oneFilt);
-                }
-            }
-            
-            free(filtsArr);
-        }
-        
-        *filts = NULL;
-    }
-    
-    return error;
+   int error = 0;
+
+   if (allvers && *allvers)
+   {
+      free(*allvers);
+      allvers = NULL;
+   }
+
+   if (sets)
+   {
+      int iSet;
+      char **setArr = *sets;
+
+      if (setArr)
+      {
+	 for (iSet = 0; iSet < nsets; iSet++)
+	 {
+	    char *oneSet = setArr[iSet];
+
+	    if (oneSet)
+	    {
+	       free(oneSet);
+	    }
+	 }
+
+	 free(setArr);
+      }
+
+      *sets = NULL;
+   }
+
+   if (types && *types)
+   {
+      free(*types);
+      types = NULL;
+   }
+
+   if (snames)
+   {
+      int iSet;
+      char **snameArr = *snames;
+
+      if (snameArr)
+      {
+	 for (iSet = 0; iSet < nsets; iSet++)
+	 {
+	    char *oneSname = snameArr[iSet];
+
+	    if (oneSname)
+	    {
+	       free(oneSname);
+	    }
+	 }
+
+	 free(snameArr);
+      }
+
+      *snames = NULL;
+   }
+
+
+   return error;
 }
 
 int drms_recproto_setseriesinfo(DRMS_Record_t *rec, 
@@ -9009,12 +8850,6 @@ int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status)
      goto failure;
 
    tres = drms_query_txt(env->session,  query);
-    
-    if (!tres)
-    {
-        stat = DRMS_ERROR_QUERYFAILED;
-        goto failure;
-    }
 
    if (tres && tres->num_rows == 1 && tres->num_cols == 1)
      count = atoi(tres->field[0][0]);
@@ -9300,21 +9135,15 @@ int drms_record_parserecsetspec(const char *recsetsStr,
                                 char ***sets, 
                                 DRMS_RecordSetType_t **types, 
                                 char ***snames,
-                                char ***filts,
                                 int *nsets,
                                 DRMS_RecQueryInfo_t *info)
 {
-   return ParseRecSetDesc(recsetsStr, allvers, sets, types, snames, filts, nsets, info);
+   return ParseRecSetDesc(recsetsStr, allvers, sets, types, snames, nsets, info);
 }
 
-int drms_record_freerecsetspecarr(char **allvers, 
-                                  char ***sets, 
-                                  DRMS_RecordSetType_t **types, 
-                                  char ***snames, 
-                                  char ***filts, 
-                                  int nsets)
+int drms_record_freerecsetspecarr(char **allvers, char ***sets, DRMS_RecordSetType_t **types,  char ***snames, int nsets)
 {
-   return FreeRecSetDescArr(allvers, sets, types, snames, filts, nsets);
+   return FreeRecSetDescArr(allvers, sets, types, snames, nsets);
 }
 
 

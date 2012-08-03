@@ -198,32 +198,6 @@ KEY *configdo_1(KEY *params)
   return((KEY *)1);			/* nothing will be sent later */
 }
 
-/* Called by the SUM API SUM_repartn() in order to get this sums process
- * to reread the sum_partn_avail DB table. (Used after a change to the
- * sum_partn_avail DB table.)
- * Returns 0 if error. Called:
- * USER:           KEYTYP_STRING   production
- * DEBUGFLG:	   KEYTYPE_INT	   0
- * uid:		   KEYTYP_UINT64   574
-*/
-KEY *repartndo_1(KEY *params)
-{
-  int stat;
-
-  stat = DS_PavailRequest2();
-  if(!stat) {
-    write_time();
-    write_log("Successful reread of sum_partn_avail DB table\n");
-    rinfo = 0;
-  }
-  else {
-    write_log("Unsuccessful reread of sum_partn_avail DB table\n");
-    rinfo = 1;
-  }
-  send_ack();				/* ack original sum_svc caller */
-  return((KEY *)1);			/* nothing will be sent later */
-}
-
 /* Called by the SUM API SUM_shutdown() making a clnt_call to sum_svc for the
  * SHUTDO procedure. First sets the NO_OPEN flag to prevent further 
  * SUM_open's by a user if QUERY = 0. NOTE: QUERY =1 will clear NO_OPEN. 
@@ -308,8 +282,8 @@ KEY *getdo_1(KEY *params)
   }
   reqcnt = getkey_int(params, "reqcnt");
   sunum = getkey_uint64(params, "dsix_0");
-  //write_log("SUM_get() id=%d for user=%s sunum=%lu cnt=%d\n", 
-  //		rrid, GETKEY_str(params, "username"), sunum, reqcnt);
+  write_log("SUM_get() id=%d for user=%s sunum=%lu cnt=%d\n", 
+		rrid, GETKEY_str(params, "username"), sunum, reqcnt);
   retlist=newkeylist();
   uid = getkey_uint64(params, "uid");
 //  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
@@ -321,9 +295,7 @@ KEY *getdo_1(KEY *params)
   add_keys(params, &retlist);
   /* set up for response. sets current_client */
   if(!(clresp = set_client_handle(RESPPROG, (uint32_t)uid))) {
-    write_log("SUM_get() id=%d for user=%s sunum=%lu cnt=%d uid=%lu\n**Error: getdo_1() can't set_client_handle for response\n", 
-  		rrid, GETKEY_str(params, "username"), sunum, reqcnt, uid);
-    //write_log("**Error: getdo_1() can't set_client_handle for response\n");
+    write_log("**Error: getdo_1() can't set_client_handle for response\n");
     freekeylist(&retlist);
     rinfo = 1;	/* give err status back to original caller */
     send_ack();	/* ack original sum_svc caller */
@@ -332,16 +304,12 @@ KEY *getdo_1(KEY *params)
     /* in case call tape_svc pass on who to eventually respond to */
     setkey_fileptr(&retlist, "current_client", (FILE *)clresp);
     if(DS_DataRequest(params, &retlist)) { /*get SU info & do any TOUCH */
-      write_log("SUM_get() id=%d for user=%s sunum=%lu cnt=%d uid=%lu\n**Error: DS_DataRequest() returns error\n", 
-  		rrid, GETKEY_str(params, "username"), sunum, reqcnt, uid);
       freekeylist(&retlist);
       rinfo = 1;	/* give err status back to original caller */
       send_ack();	/* ack original sum_svc caller */
       clnt_destroy(clresp);
       return((KEY *)1);	/* nothing more to be sent */
     }
-    write_log("SUM_get() id=%d for user=%s sunum=%lu cnt=%d uid=%lu rtrv=%d\n", 
-	rrid, GETKEY_str(params, "username"), sunum, reqcnt, uid, offline);
     /* param says if one or more are offline and need to be retrieved */
     if(offline = getkey_int(retlist, "offline")) {  
       offcnt = 0;

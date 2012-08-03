@@ -6,7 +6,6 @@
 #include <sys/uio.h>
 #include <netinet/in.h>
 #include <string.h>
-#include <stdio.h>
 //#include "xmem.h"
 
 /* Define actual types used for different back-end databases. */
@@ -61,6 +60,7 @@ typedef enum DB_Type_enum  {
   DB_FLOAT, DB_DOUBLE, DB_STRING, DB_VARCHAR
 } DB_Type_t; 
 
+
 /* Handle to database connection */
 typedef struct DB_Handle_struct
 {
@@ -71,35 +71,7 @@ typedef struct DB_Handle_struct
   unsigned int stmt_num;    /* Statement counter (for multi-threaded operation). */ 
   int isolation_level;      /* Transaction isolation level. */
   char dbport[1024];  /* Port on host connected to */
-  char errmsg[4096]; /* Error message of last command. */
 } DB_Handle_t;
-
-static inline void DB_ResetErrmsg(DB_Handle_t *dbh)
-{
-    if (dbh && *dbh->errmsg != 0)
-    {
-        *dbh->errmsg = '\0';
-    }
-}
-
-static inline void DB_SetErrmsg(DB_Handle_t *dbh, const char *msg)
-{
-    if (dbh)
-    {
-        snprintf(dbh->errmsg, sizeof(dbh->errmsg), "%s", msg);
-    }
-}
-
-static inline const char *DB_GetErrmsg(DB_Handle_t *dbh)
-{
-    if (dbh && *dbh->errmsg != 0)
-    {
-        return dbh->errmsg;
-    }
-    
-    return NULL;
-}
-
 
 /* Transaction isolation level constants. */
 #define DB_TRANS_READCOMMIT   0
@@ -259,7 +231,6 @@ int db_commit(DB_Handle_t *db);
 int db_start_transaction(DB_Handle_t  *db);
 int db_rollback(DB_Handle_t  *db);
 int db_cancel(DB_Handle_t *db, char *effbuf, int size);
-int db_settimeout(DB_Handle_t *db, unsigned int timeoutval);
 
 /* Set transaction isolation level.   
    0 = read commited
@@ -330,11 +301,9 @@ int db_server_sequence_getlast(int sockfd, DB_Handle_t *db_handle);
 
 /* Client side API. */
 DB_Text_Result_t *db_client_query_txt(int sockfd, char *query, 
-				      int compress, 
-                                      char **errmsg);
+				      int compress);
 DB_Binary_Result_t *db_client_query_bin(int sockfd, char *query, 
-					int compress,
-                                        char **errmsg);
+					int compress);
 DB_Binary_Result_t *db_client_query_bin_array(int sockfd, char *query, 
 					      int compress, int n_args,  
 					      DB_Type_t *intype, void **argin);

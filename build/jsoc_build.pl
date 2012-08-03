@@ -27,7 +27,7 @@ if ($TESTERR eq "no")
 
     `mkdir -p "$ROOTDIR/JSOC" 2>&1 1>>/dev/null`;
 
-    my $cmd = "cd $ROOTDIR; /home/jsoc/dlsource.pl; cd JSOC; ./configure";
+    my $cmd = "cd $ROOTDIR; cvs co JSOC; cvs update JSOC; cd JSOC; ./configure";
     $cmd = join("; ", map {
         $_." 2>&1 1>>$ROOTDIR/JSOC/cmd.log";
     } split("; ", $cmd));

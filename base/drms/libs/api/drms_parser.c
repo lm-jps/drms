@@ -68,57 +68,8 @@ static void FreeCparmKey(const void *v)
 
 DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
 {
-  DRMS_Record_t *template = NULL;
+  DRMS_Record_t *template;
   int keynum = 0;
-  HContainer_t *cparmkeys = NULL;
-
-  /* Before we do anything, check for a file with proper line endings. */
-  char *pc = desc;
-  int winle = 0;
-  int macle = 0;
-  int crseen = 0;
-
-  while (pc && *pc)
-  {
-     if (!crseen)
-     {
-        if (*pc == '\r')
-        {
-           crseen = 1;
-        }
-        else if (*pc == '\n')
-        {
-           /* Unix line ending. */
-           break;
-        }
-     }
-     else
-     {
-        if (*pc != '\n')
-        {
-           macle = 1;
-           break;
-        }
-        else
-        {
-           winle = 1;
-           break;
-        }
-     }
-
-     pc++;
-  }
-
-  if (macle)
-  {
-     fprintf(stderr, "DRMS does not support JSD files with Mac line endings.\n");
-     goto bailout;
-  }
-  else if (winle)
-  {
-     fprintf(stderr, "DRMS does not support JSD files with Windows line endings.\n");
-     goto bailout;
-  }
 
   template = calloc(1, sizeof(DRMS_Record_t));
   XASSERT(template);
@@ -153,13 +104,13 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
   /* Possibly creating cparms_sgXXX keywords from information in the segment descriptions. 
    * Must save that information during parse_segments() and use in 
    * parse_keywords() */
-  cparmkeys = hcon_create(sizeof(DRMS_Keyword_t *),
-                          DRMS_MAXKEYNAMELEN,
-                          FreeCparmKey,
-                          NULL,
-                          NULL,
-                          NULL,
-                          0);
+  HContainer_t *cparmkeys = hcon_create(sizeof(DRMS_Keyword_t *),
+					DRMS_MAXKEYNAMELEN,
+					FreeCparmKey,
+					NULL,
+					NULL,
+					NULL,
+					0);
 
   lineno = 0;
   if (parse_seriesinfo(desc, template))
@@ -229,14 +180,10 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
   return template; /* Return series template. */
 
  bailout:
-  if (template)
-  {
-     hcon_free(&template->segments);
-     hcon_free(&template->links);
-     hcon_free(&template->keywords);
-     free(template);
-  }
-
+  hcon_free(&template->segments);
+  hcon_free(&template->links);
+  hcon_free(&template->keywords);
+  free(template);
   if (cparmkeys)
   {
      hcon_destroy(&cparmkeys);
@@ -244,187 +191,7 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
   return NULL;
 }
 
-/* Returns a container of keyword structs. The record pointer for each keyword is NULL. */
-HContainer_t *drms_parse_keyworddesc(DRMS_Env_t *env, const char *desc, int *status)
-{
-    DRMS_Record_t *fauxtemplate = NULL;
-    char *copy = NULL;  
-    char *start = NULL;
-    char *p = NULL;
-    char *q = NULL;
-    int keynum = 0;
-    HContainer_t *keys = NULL;
-    int len;
-    HContainer_t *slotted = NULL;
-    int rv = DRMS_SUCCESS;
-    
-    lineno = 0;
-    
-    slotted = hcon_create(sizeof(DRMS_Keyword_t *),
-                          DRMS_MAXKEYNAMELEN,
-                          NULL,
-                          NULL,
-                          NULL,
-                          NULL,
-                          0);
-    
-    if (slotted)
-    {
-        /* copy points to the beginning of the desc string, always. */
-        /* start points to the beginning of the current line (after any whitespace has been removed). */
-        start = copy = strdup(desc);
-        if (copy)
-        {
-            len = getnextline(&start);
-            while (*start)
-            {
-                p = start;
-                SKIPWS(p);
-                
-                if (*p == '\n')
-                {
-                    p++;
-                    start = p;
-                    len = getnextline(&start);
-                    continue;
-                }
-                
-                q = p;
-                /* GETKEYWORD() just parses to the ':' after the word 'Keyword'. q points to the 
-                 * char after the ':'. */
-                if (GETKEYWORD(&q))
-                {
-                    rv = DRMS_ERROR_BADJSD;
-                    break;
-                }
-                
-                if (prefixmatch(p, "Keyword:"))
-                {
-                    if (!fauxtemplate)
-                    {
-                        /* Do the minimal amount of work to intialize a fake fauxtemplate record structure. */
-                        fauxtemplate = calloc(1, sizeof(DRMS_Record_t));
-                        
-                        if (fauxtemplate)
-                        {
-                            XASSERT(fauxtemplate);
-                            fauxtemplate->seriesinfo = calloc(1, sizeof(DRMS_SeriesInfo_t));
-                            XASSERT(fauxtemplate->seriesinfo);
-                            fauxtemplate->env = env;
-                            fauxtemplate->init = 1;
-                            fauxtemplate->recnum = 0;
-                            fauxtemplate->sunum = -1;
-                            fauxtemplate->sessionid = 0;
-                            fauxtemplate->sessionns = NULL;
-                            fauxtemplate->su = NULL;
-                            
-                            /* Initialize container structure. */
-                            /* drms_free_keyword_struct doesn't free key->info. */
-                            /* drms_copy_keyword_struct doesn't copy key->info. */
-                            hcon_init(&fauxtemplate->keywords, sizeof(DRMS_Keyword_t), DRMS_MAXHASHKEYLEN, 
-                                      (void (*)(const void *)) drms_free_keyword_struct, 
-                                      (void (*)(const void *, const void *)) drms_copy_keyword_struct);
-                        }
-                        else
-                        {
-                            rv = DRMS_ERROR_OUTOFMEMORY;
-                        }
-                    }
-                    
-                    /* Let parse_keyword advance the keyword number since it may 
-                     * expand per-segment keywords into multiple keywords. */
-                    if (rv == DRMS_SUCCESS)
-                    {
-                        /* The is the sole reason for making a fake template record. parse_keyword()
-                         * needs it. It would be better if parse_keyword() returned a simple 
-                         * DRMS_Keyword_t to a calling function that then set up the link from the 
-                         * keyword sturct back to the template record. Then we could avoid having
-                         * to always make this fake template record. */
-                        if (parse_keyword(&q, fauxtemplate, slotted, &keynum))
-                        {
-                            rv = DRMS_ERROR_BADJSD;
-                            break;
-                        }
-                    }
-                }
-                else
-                {
-                    fprintf(stderr, "Warning: Unexpected line '%s', skipping and continuing.\n", p);
-                }
-                
-                start += len + 1;
-                len = getnextline(&start);
-            } /* end while */
-            
-            if (rv == DRMS_SUCCESS)
-            {
-                if (hcon_size(&fauxtemplate->keywords) > 0)
-                {
-                    /* Copy to keys container. */
-                    keys = (HContainer_t *)malloc(sizeof(HContainer_t));
-                    if (keys)
-                    {
-                        HIterator_t *hit = NULL;
-                        DRMS_Keyword_t *key = NULL;
-                        
-                        /* If fauxtemplate->keywords has a deep_copy, then so will keys. But it does not,
-                         * so this is a shallow copy. */
-                        hcon_copy(keys, &fauxtemplate->keywords);
-                        
-                        /* NULL-out all references to the parent record. We're making a headless container of
-                         * keyword structs. */
-                        hit = hiter_create(keys);
-                        if (hit)
-                        {
-                            while ((key = hiter_getnext(hit)) != NULL)
-                            {
-                                key->record = NULL;
-                            }
-                            
-                            hiter_destroy(&hit);
-                        }
-                        else
-                        {
-                            rv = DRMS_ERROR_OUTOFMEMORY;
-                        }
-                    }
-                    else
-                    {
-                        rv = DRMS_ERROR_OUTOFMEMORY;
-                    }
-                }
-            }
-            
-            /* Free record (and keys inside the record). This will not free the key->infos, but
-             * this is good since we shallow copied the key structs from fauxtemplate->keywords to keys.
-             * So keys takes ownership of all the key->infos. */
-            drms_free_record_struct(fauxtemplate);
-            fauxtemplate = NULL;
-            
-            free(copy);
-        }
-        else
-        {
-            rv = DRMS_ERROR_OUTOFMEMORY;
-        }
-    }
-    else
-    {
-        rv = DRMS_ERROR_OUTOFMEMORY;   
-    }
-    
-    if (slotted)
-    {
-        hcon_destroy(&slotted);
-    }
-    
-    if (status)
-    {
-        *status = rv;
-    }
-    
-    return keys;
-}
+      
 
 
 
@@ -552,7 +319,7 @@ static int parse_segments (char *desc, DRMS_Record_t *template, HContainer_t *cp
 
 static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContainer_t *cparmkeys, int *keynum)
 {
-  int i,status,count,tempval;
+  int i,b,status,count,tempval;
   char *p,*q,*endptr;
   char name[DRMS_MAXSEGNAMELEN]={0}, scope[DRMS_MAXNAMELEN]={0};
   char type[DRMS_MAXNAMELEN]={0}, naxis[24]={0}, axis[24]={0}, protocol[DRMS_MAXNAMELEN]={0};
@@ -562,6 +329,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
   char bscale[64]; /* for TAS, default scale */
   DRMS_Segment_t *seg;
   int parserline = -1;
+  long long  ival;
   DRMS_Type_Value_t nval,myval;
    p = q = *in;
   SKIPWS(p);
@@ -594,7 +362,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
     if(GETTOKEN(&q,seg->info->target_seg,sizeof(seg->info->target_seg)) <= 0) GOTOFAILURE;
     /* Naxis */      
     if (GETTOKEN(&q,naxis,sizeof(naxis)) <= 0) GOTOFAILURE;
-             strtoll(naxis,&endptr,10);        
+             ival = strtoll(naxis,&endptr,10);        
          nval.string_val = naxis;
          if (endptr != naxis + strlen(naxis))
             {  GOTOFAILURE; }
@@ -611,7 +379,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
       {         	
        if (GETTOKEN(&q,axis,sizeof(axis)) <= 0) GOTOFAILURE;        
           myval.string_val = axis;
-          strtoll(axis,&endptr,10);
+          ival = strtoll(axis,&endptr,10);
           if (endptr != axis + strlen(axis)) 
 	    {GOTOFAILURE;}
           else
@@ -645,7 +413,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
     seg->info->type  = drms_str2type(type);
     /* Naxis */      //need to write a function**
     if (GETTOKEN(&q,naxis,sizeof(naxis)) <= 0) GOTOFAILURE;
-          strtoll(naxis,&endptr,10);        
+          ival = strtoll(naxis,&endptr,10);        
           nval.string_val = naxis;
          if (endptr != naxis + strlen(naxis))
             {  GOTOFAILURE; }
@@ -671,7 +439,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
          else
            {
           myval.string_val = axis;
-          strtoll(axis,&endptr,10);
+          ival = strtoll(axis,&endptr,10);
            if (endptr != axis + strlen(axis))  
 	     { GOTOFAILURE;}
            else
@@ -704,7 +472,7 @@ static int parse_segment(char **in, DRMS_Record_t *template, int segnum, HContai
          else
 	     {
                myval.string_val = axis;
-               strtoll(axis,&endptr,10);
+             ival = strtoll(axis,&endptr,10);
                if (endptr != axis + strlen(axis))  
 		 { GOTOFAILURE;}
                else

@@ -158,28 +158,6 @@ SUMS_DEBUG 0
 # PORT argument - The port on the host machine to connect to
 #SUMEXP_PORTFMT  "%s", port
 
-###############################
-# TABLE OF PRODUCTION USERS
-#   These parameters are used by lib DRMS to identify a database table (not a data series)
-#   that lists the database users that are 'production users'. These users have privileges
-#   that ordinary users do not. For example, production users can reduce the retention of
-#   data series that the production user does not own.
-
-# The host:port of the machine serving as the db server that contains the production-user table.
-PRODUSER_DBHOST    hmidb:5432
-
-# The name of database on the database host that contains the production-user table.
-PRODUSER_DBNAME    jsoc
-
-# The name of the production-user table
-PRODUSER_PRODTAB   su_production.produsers
-
-# The name of the column that contains the list of production users in the production-user table.
-PRODUSER_COLUSER   username
-#
-# END TABLE OF PRODUCTION USERS
-###############################
-
 __MAKE__
 
 # Third-party libraries required in order to make NetDRMS binaries. Specify

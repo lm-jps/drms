@@ -696,7 +696,6 @@ int kick_next_entry_wt() {
  * rootwd_0:       KEYTYP_STRING   /SUM0/D48
  * rootwd_1:       KEYTYP_STRING   /SUM0/D49
  * OP:		   KEYTYP_STRING   rd	(NOTE: added here)
- * SPROG:  KEYTYP_UINT32    536872432
 */
 KEY *readdo_1(KEY *params) {
   TQ *p;
@@ -725,7 +724,6 @@ KEY *readdo_1(KEY *params) {
     free(user);
     return((KEY *)1);  /* error. nothing to be sent */
   }
-  offptr->sprog = getkey_uint32(params, "SPROG");
   /* get tapeid for the offline storage units (su) */
   /* Only queue one request for any duplicate tapeid/tapefilenum */
   reqcnt = getkey_int(params, "reqcnt"); /* #of su in this request */
@@ -843,12 +841,11 @@ KEY *readdo_1(KEY *params) {
     clntsum = clntsums[8];
     break;
   default:
-    write_log("**ERROR: bad sumprog in readdo_1()\n");
+    write_log("**ERROR: bad sumprog in taperespreaddo_1()\n");
     break;
   }
     current_client = clntsum;
     procnum = SUMRESPDO;
-    remsumoffcnt(&offcnt_hdr, uid);
     return(poff->list);
     break;
   }
@@ -1559,30 +1556,7 @@ KEY *taperespreaddo_1(KEY *params) {
   client = (CLIENT *)getkey_fileptr(params, "current_client");
   /* final destination */
   setkey_fileptr(&retlist,  "current_client", (FILE *)client);
-//char ccstr[32];				//!!TEMP for debug
-//  sprintf(ccstr, "%lx", client);
-//  write_log("In taperespreaddo_1() from keylist,current_client = %s\n",ccstr);
-
-  uid = getkey_uint64(params, "uid");
   sumprog = getkey_uint32(params, "SPROG");
-  if(sumprog == -1) {	//SPROG not in keylist??
-    remsumoffcnt(&offcnt_hdr, uid);
-    write_log("**ERROR: SPROG not in keylist when tape rd completes!\n");
-    setkey_int(&retlist, "STATUS", 1);
-    return(retlist);
-  }
-  offptr = getsumoffcnt(offcnt_hdr, uid);
-  if(offptr == NULL) {
-    write_log("!!TMP find out why offptr is NULL. Assume all done...\n");
-    tmpflg = 1;
-  }
-  else {
-    offptr->offcnt++;
-  }
-  if(offptr->sprog != sumprog) {
-    write_log("**ERROR: Bug. In tape rd sprog != sumprog\n");
-    sumprog = offptr->sprog; 	//use this for the return
-  }
   //sumvers = getkey_uint32(params, "SVERS");
   //set client handle for the sums process
   switch(sumprog) {
@@ -1620,7 +1594,16 @@ KEY *taperespreaddo_1(KEY *params) {
   current_client = clntsum;
   procnum = SUMRESPDO;
   send_ack();
+  uid = getkey_uint64(params, "uid");
+  offptr = getsumoffcnt(offcnt_hdr, uid);
   tmpflg = 0;			//!!TEMP
+  if(offptr == NULL) {
+    write_log("!!TMP find out why offptr is NULL. Assume all done...\n");
+    tmpflg = 1;
+  }
+  else {
+    offptr->offcnt++;
+  }
   /* now can send completion msg back */
   if((offptr->uniqcnt == offptr->offcnt) || tmpflg) {
     write_log("!!TEMP remsumoffcnt uid=%lu\n", uid); //!!TEMP

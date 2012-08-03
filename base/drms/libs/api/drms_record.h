@@ -235,16 +235,9 @@ int drms_record_parserecsetspec(const char *recsetsStr,
                                 char ***sets, 
                                 DRMS_RecordSetType_t **types, 
                                 char ***snames,
-                                char ***filts,
                                 int *nsets,
                                 DRMS_RecQueryInfo_t *info);
-
-int drms_record_freerecsetspecarr(char **allvers, 
-                                  char ***sets, 
-                                  DRMS_RecordSetType_t **types, 
-                                  char ***snames, 
-                                  char ***filts, 
-                                  int nsets);
+int drms_record_freerecsetspecarr(char **allvers, char ***sets, DRMS_RecordSetType_t **types, char ***snames, int nsets);
 
 /* DSDS */
 int drms_record_isdsds(DRMS_Record_t *rec);

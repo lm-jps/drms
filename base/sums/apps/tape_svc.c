@@ -158,7 +158,6 @@ void sighandler(sig)
 void alrm_sig(int sig)
 {
   int d, e, tocheck, offcnt, kstatus;
-  uint32_t ssprog;
   enum clnt_stat clnt_stat;
   SUMID_t uid;
   char *call_err;
@@ -206,15 +205,11 @@ void alrm_sig(int sig)
           offptr->offcnt++;
           offcnt = getkey_int(poff->list, "offcnt");
           if(offcnt == offptr->offcnt) { /* now can send completion msg back */
-            ssprog = getkey_uint32(poff->list, "SPROG");
-            if(offptr->sprog != ssprog) { 
-              write_log("**ERROR: Bug at alrm_sig. tape rd sprog != ssprog\n");
-              ssprog = offptr->sprog;    //use this for the return
-            } 
-            //sumvers = getkey_uint32(poff->list, "SVERS");
             remsumoffcnt(&offcnt_hdr, uid);
+            sumprog = getkey_uint32(poff->list, "SPROG");
+            //sumvers = getkey_uint32(poff->list, "SVERS");
             //set client handle for the sums process
-            switch(ssprog) {
+            switch(sumprog) {
             case SUMPROG:
               clntsum = clntsums[0];
               break;
@@ -675,7 +670,6 @@ tapeprog_1(rqstp, transp)
 	char *result, *call_err;
         int force = 0;
         int rdflg = 0;
-        uint32_t sprog;
         enum clnt_stat clnt_stat;
         SUMOFFCNT *offptr;
         SUMID_t uid;
@@ -870,15 +864,10 @@ tapeprog_1(rqstp, transp)
           offcnt = getkey_int(poff->list, "offcnt");
           if(offcnt == offptr->offcnt) { /* now can send completion msg back */
             remsumoffcnt(&offcnt_hdr, uid);
-            sprog = getkey_uint32(poff->list, "SPROG");
-            if(offptr->sprog != sprog) {
-              write_log("**ERROR: Bug. In tape rd sprog != sumprog\n");
-              sprog = offptr->sprog;    //use this for the return
-            }
-
+            sumprog = getkey_uint32(poff->list, "SPROG");
             //sumvers = getkey_uint32(poff->list, "SVERS");
             //set client handle for the sums process
-            switch(sprog) {
+            switch(sumprog) {
             case SUMPROG:
               clntsum = clntsums[0];
               break;
@@ -938,12 +927,11 @@ tapeprog_1(rqstp, transp)
           setkey_int(&poff->list, "STATUS", 1);/* give err back to caller */
           uid = getkey_uint64(poff->list, "uid");
           errorcase = 1;
-          //NOTE there is no getsumoffcnt() to get! 22May2012
-          //if(offptr = getsumoffcnt(offcnt_hdr, uid)) {
-            //offptr->offcnt++;
-            //offcnt = getkey_int(poff->list, "offcnt");
-            //if(offcnt == offptr->offcnt) { //now can send completion msg back
-              //remsumoffcnt(&offcnt_hdr, uid);
+          if(offptr = getsumoffcnt(offcnt_hdr, uid)) {
+            offptr->offcnt++;
+            offcnt = getkey_int(poff->list, "offcnt");
+            if(offcnt == offptr->offcnt) { /* now can send completion msg back */
+              remsumoffcnt(&offcnt_hdr, uid);
               sumprog = getkey_uint32(poff->list, "SPROG");
               //sumvers = getkey_uint32(poff->list, "SVERS");
               //set client handle for the sums process
@@ -987,8 +975,8 @@ tapeprog_1(rqstp, transp)
                 call_err = clnt_sperror(current_client, "Err");
                 write_log("%s\n", call_err);
               }
-            //}
-          //}
+            }
+          }
           break;
         }
         if(errorcase == 0) break;	/* end while(p=q_wrt_front) */

@@ -47,12 +47,6 @@
  * does not support DSDS, ever. */
 #define DSDS_SUPPORT (1)
 
-/* Host:Port containing database () that has a table listing the production db users. */
-#define PRODUSER_DBHOST    "hmidb:5432"
-#define PRODUSER_DBNAME    "jsoc"
-#define PRODUSER_PRODTAB   "su_production.produsers"
-#define PRODUSER_COLUSER   "username"
-
 #endif /* _LOCALIZED_DEFS */
 
 /* Override one or more defaults (but not all of them, unlike in the case of localization.h), 

@@ -37,10 +37,6 @@ set SUMEXP_METHFMT = `perl -n -e 'if ($_ =~ /^SUMEXP_METHFMT\s+(.+)/) { print $1
 set SUMEXP_USERFMT = `perl -n -e 'if ($_ =~ /^SUMEXP_USERFMT\s+(.+)/) { print $1; }' $LOCALINF`
 set SUMEXP_HOSTFMT = `perl -n -e 'if ($_ =~ /^SUMEXP_HOSTFMT\s+(.+)/) { print $1; }' $LOCALINF`
 set SUMEXP_PORTFMT = `perl -n -e 'if ($_ =~ /^SUMEXP_PORTFMT\s+(.+)/) { print $1; }' $LOCALINF`
-set PRODUSER_DBHOST = `perl -n -e 'if ($_ =~ /^PRODUSER_DBHOST\s+(.+)/) { print $1; }' $LOCALINF`
-set PRODUSER_DBNAME = `perl -n -e 'if ($_ =~ /^PRODUSER_DBNAME\s+(.+)/) { print $1; }' $LOCALINF`
-set PRODUSER_PRODTAB = `perl -n -e 'if ($_ =~ /^PRODUSER_PRODTAB\s+(.+)/) { print $1; }' $LOCALINF`
-set PRODUSER_COLUSER = `perl -n -e 'if ($_ =~ /^PRODUSER_COLUSER\s+(.+)/) { print $1; }' $LOCALINF`
 
 # check that local config file has been edited appropriately
 if ($#LOCAL_CONFIG_SET == 1) then
@@ -138,7 +134,6 @@ if ($#SUMS_DBPORT != 1) then
   echo "         using default value $SUMS_DBPORT"
 endif
 
-
 # generate script create_sumindex.sql
 set SCRIPT = scripts/create_sumindex.sql
 echo "*** generating $SCRIPT ***"
@@ -205,18 +200,6 @@ if ($#SUMEXP_PORTFMT) then
   echo '#define LOC_SUMEXP_PORTFMT	'$SUMEXP_PORTFMT  >> $SCRIPT
 endif
 
-if ($#PRODUSER_DBHOST) then
-  echo '#define PRODUSER_DBHOST           "'$PRODUSER_DBHOST'"' >> $SCRIPT
-endif
-if ($#PRODUSER_DBHOST) then
-  echo '#define PRODUSER_DBNAME           "'$PRODUSER_DBNAME'"' >> $SCRIPT
-endif
-if ($#PRODUSER_DBHOST) then
-  echo '#define PRODUSER_PRODTAB          "'$PRODUSER_PRODTAB'"' >> $SCRIPT
-endif
-if ($#PRODUSER_DBHOST) then
-  echo '#define PRODUSER_COLUSER          "'$PRODUSER_COLUSER'"' >> $SCRIPT
-endif
 
 # modify targets as appropriate in custom.mk
 # don't do anything here that will modify custom.mk. Another script

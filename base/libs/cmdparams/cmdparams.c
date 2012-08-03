@@ -75,30 +75,6 @@ const double gNHugeVal = -HUGE_VAL;
 #define kARGSIZE     (128)
 #define kKEYSIZE     (128)
 
-/* Some arguments are saved in a case-sensitive manner, and some 
- * are saved in case-insensitive manner (i.e, --ARGUMENT args). This 
- * function will search for either kind. It will not search 
- * for un-named arguments by number (but it will search for 
- * them by the dummy name. */
-static CmdParams_Arg_t * LookUpArgByName(CmdParams_t *parms, const char *name)
-{
-    CmdParams_Arg_t *arg = NULL;
-    
-    arg = (CmdParams_Arg_t *)hcon_lookup(parms->args, name);
-    if (!arg)
-    {
-        /* The arg may have been stored in lower-case, if the argument
-         * was a "--ARGUMENT" type of argument. */
-        arg = (CmdParams_Arg_t *)hcon_lookup_lower(parms->args, name);
-        if (arg && arg->casesensitive)
-        {
-            arg = NULL;
-        }
-    }
-    
-    return arg;
-}
-
 /* Name can be the actual name for a named arg, or for an unnamed arg, it can be the
  * pseudo name under which the value is hashed (ie., CpUnNamEDaRg_XXX). Or, for unnamed
  * args, the name can be $XXX, where XXX is the number of the arg. Or, unammed
@@ -129,12 +105,12 @@ static CmdParams_Arg_t *GetCPArg(CmdParams_t *parms, const char *name, int *num)
       if (arg_num >=0 && arg_num < parms->numunnamed)
       {
          snprintf(namebuf, sizeof(namebuf), "%s_%03d", CMDPARAMS_MAGICSTR, arg_num);
-         arg = LookUpArgByName(parms, namebuf);
+         arg = (CmdParams_Arg_t *)hcon_lookup(parms->args, namebuf);
       }
    }
    else 
    {
-      arg = LookUpArgByName(parms, name);
+      arg = (CmdParams_Arg_t *)hcon_lookup(parms->args, name);
    }
   
    return arg;
@@ -335,7 +311,6 @@ static int cmdparams_parsetokens (CmdParams_t *parms, int argc, char *argv[],
            strtolower(fbuf);
            thisarg = cmdparams_set(parms, fbuf, "1"); 
            thisarg->cmdlinestr = strdup(argsaved);
-           thisarg->casesensitive = 0;
            free(fbuf);
            arg++;
 	}
@@ -648,7 +623,7 @@ static int parse_array (CmdParams_t *params, const char *root, ModuleArgs_Type_t
 
   if (!status)
   {
-     thisarg = LookUpArgByName(params, root); /* should find root, got parsed in cmdparams_parsetokens() */
+     thisarg = (CmdParams_Arg_t *)hcon_lookup(params->args, root); /* should find root, got parsed in cmdparams_parsetokens() */
      if (thisarg)
      {
         thisarg->type = origdtype;
@@ -1268,7 +1243,6 @@ CmdParams_Arg_t *cmdparams_set(CmdParams_t *parms, const char *name, const char 
 
    /* Make a new arg structure */
    memset(&arg, 0, sizeof(arg));
-   arg.casesensitive = 1; /* By default, searches are case-sensitive. */
 
    /* The type will be filled in by the default value structure. */
 
@@ -1278,7 +1252,7 @@ CmdParams_Arg_t *cmdparams_set(CmdParams_t *parms, const char *name, const char 
    {
       arg.name = strdup(name);
 
-      if ((ret = LookUpArgByName(parms, arg.name)))
+      if ((ret = hcon_lookup(parms->args, arg.name)))
       {
          /* If the argument already exists, then go ahead and modify its value (the second
           * cmdparams_set() call for a argument 'wins'). */
@@ -1288,7 +1262,7 @@ CmdParams_Arg_t *cmdparams_set(CmdParams_t *parms, const char *name, const char 
       else
       {
          hcon_insert(parms->args, name, &arg);
-         ret = LookUpArgByName(parms, name);
+         ret = (CmdParams_Arg_t *)hcon_lookup(parms->args, name);
          setargarr = 1;
       }
    }
@@ -1298,7 +1272,7 @@ CmdParams_Arg_t *cmdparams_set(CmdParams_t *parms, const char *name, const char 
       char namebuf[512];
       snprintf(namebuf, sizeof(namebuf), "%s_%03d", CMDPARAMS_MAGICSTR, parms->numunnamed);
 
-      if (LookUpArgByName(parms, namebuf))
+      if (hcon_lookup(parms->args, namebuf))
       {
          /* This shouldn't happen - unnamed args never collide with each other. */
          fprintf(stderr, "Unexpected argument-name collision for '%s'.\n", namebuf);
@@ -1306,7 +1280,7 @@ CmdParams_Arg_t *cmdparams_set(CmdParams_t *parms, const char *name, const char 
       else
       {
          hcon_insert(parms->args, namebuf, &arg);
-         ret = LookUpArgByName(parms, namebuf);
+         ret = (CmdParams_Arg_t *)hcon_lookup(parms->args, namebuf);
          setargarr = 1;
          ret->unnamednum = parms->numunnamed++;
       }
@@ -1386,7 +1360,7 @@ void cmdparams_remove (CmdParams_t *parms, char *name) {
    CmdParams_Arg_t **newarr = NULL;
    int iarg;
   
-   arg = LookUpArgByName(parms, name);
+   arg = (CmdParams_Arg_t *)hcon_lookup(parms->args, name);
    old = parms->argarr;
    newarr = (CmdParams_Arg_t **)malloc(sizeof(CmdParams_Arg_t *) * parms->numargs);
 
@@ -1539,7 +1513,7 @@ const char *cmdparams_getarg (CmdParams_t *parms, int num) {
 
   if (num < parms->numunnamed)
   {
-     arg = LookUpArgByName(parms, namebuf);
+     arg = (CmdParams_Arg_t *)hcon_lookup(parms->args, namebuf);
   }
   
   if (arg)
@@ -1727,7 +1701,7 @@ static int cmdparams_get_ints(CmdParams_t *parms, char *name, int64_t **arr, int
 
    if (arr)
    {
-      arg = LookUpArgByName(parms, name);
+      arg = (CmdParams_Arg_t *)hcon_lookup(parms->args, name);
 
       if (arg)
       {
@@ -1971,7 +1945,7 @@ int cmdparams_get_dblarr(CmdParams_t *parms, char *name, double **arr, int *stat
 
    if (arr)
    {
-      arg = LookUpArgByName(parms, name);
+      arg = (CmdParams_Arg_t *)hcon_lookup(parms->args, name);
 
       if (arg)
       {

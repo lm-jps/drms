@@ -2,7 +2,6 @@
 
 #include "fitsexport.h"
 #include "util.h"
-#include "tasrw.h"
 
 #define kFERecnum "RECNUM"
 #define kFERecnumFormat "%lld"
@@ -475,61 +474,52 @@ static int ExportFITS(DRMS_Env_t *env,
                       const char *cparms, 
                       CFITSIO_KEYWORD *fitskeys)
 {
-    int stat = DRMS_SUCCESS;
-    
-    if (arrout)
-    {
-        /* Need to manually add required keywords that don't exist in the record's 
-         * DRMS keywords. */
-        CFITSIO_IMAGE_INFO imginfo;
-        
-        /* To deal with CFITSIO not handling signed bytes, must convert DRMS_TYPE_CHAR to 
-         * DRMS_TYPE_SHORT */
-        if (arrout->type == DRMS_TYPE_CHAR)
-        {
-            drms_array_convert_inplace(DRMS_TYPE_SHORT, 0, 1, arrout);
-            fprintf(stdout, "FITS doesn't support signed char, converting to signed short.\n");
-        }
-        
-        /* Reject exports of Rice-compressed floating-point images. */
-        if (fitsrw_iscompressed(cparms) && (arrout->type == DRMS_TYPE_FLOAT || arrout->type == DRMS_TYPE_DOUBLE))
-        {
-            fprintf(stderr, "Cannot export Rice-compressed floating-point images.\n");
-            stat = DRMS_ERROR_CANTCOMPRESSFLOAT;
-        }
-        else
-        {
-            if (!drms_fitsrw_SetImageInfo(arrout, &imginfo))
+   int stat = DRMS_SUCCESS;
+
+   if (arrout)
+   {
+      /* Need to manually add required keywords that don't exist in the record's 
+       * DRMS keywords. */
+      CFITSIO_IMAGE_INFO imginfo;
+
+      /* To deal with CFITSIO not handling signed bytes, must convert DRMS_TYPE_CHAR to 
+       * DRMS_TYPE_SHORT */
+      if (arrout->type == DRMS_TYPE_CHAR)
+      {
+	drms_array_convert_inplace(DRMS_TYPE_SHORT, 0, 1, arrout);
+	fprintf(stdout, "FITS doesn't support signed char, converting to signed short.\n");
+      }
+      
+      if (!drms_fitsrw_SetImageInfo(arrout, &imginfo))
+      {
+         /* Not sure if data need to be scaled, or if the original blank value
+          * should be resurrected. */
+         if (arrout->type == DRMS_TYPE_STRING)
+         {
+            fprintf(stderr, "Can't save string data into a fits file.\n");
+            stat = DRMS_ERROR_EXPORT;
+         }
+         else
+         {
+            if (fitsrw_write(env->verbose, fileout, &imginfo, arrout->data, cparms, fitskeys))
             {
-                /* Not sure if data need to be scaled, or if the original blank value
-                 * should be resurrected. */
-                if (arrout->type == DRMS_TYPE_STRING)
-                {
-                    fprintf(stderr, "Can't save string data into a fits file.\n");
-                    stat = DRMS_ERROR_EXPORT;
-                }
-                else
-                {
-                    if (fitsrw_write(env->verbose, fileout, &imginfo, arrout->data, cparms, fitskeys))
-                    {
-                        fprintf(stderr, "Can't write fits file '%s'.\n", fileout);
-                        stat = DRMS_ERROR_EXPORT;
-                    }
-                }
+               fprintf(stderr, "Can't write fits file '%s'.\n", fileout);
+               stat = DRMS_ERROR_EXPORT;
             }
-            else
-            {
-                fprintf(stderr, "Data array being exported is invalid.\n");
-                stat = DRMS_ERROR_EXPORT;
-            }
-        }
-    }
-    else
-    {
-        stat = DRMS_ERROR_INVALIDDATA;
-    }
-    
-    return stat;
+         }
+      }
+      else
+      {
+         fprintf(stderr, "Data array being exported is invalid.\n");
+         stat = DRMS_ERROR_EXPORT;
+      }
+   }
+   else
+   {
+      stat = DRMS_ERROR_INVALIDDATA;
+   }
+
+   return stat;
 }
 
 static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key, 
@@ -669,9 +659,9 @@ static int DRMSKeyValToFITSKeyVal(DRMS_Keyword_t *key,
 }
 
 /* These two function export to FITS files only. */
-int fitsexport_export_tofile(DRMS_Segment_t *seg, const char *cparms, const char *fileout, char **actualfname, unsigned long long *expsize)
+int fitsexport_export_tofile(DRMS_Segment_t *seg, const char *cparms, const char *fileout)
 {
-   return fitsexport_mapexport_tofile(seg, cparms, NULL, NULL, fileout, actualfname, expsize);
+   return fitsexport_mapexport_tofile(seg, cparms, NULL, NULL, fileout);
 }
 
 /* Input seg must be the source segment, not the target segment, if the input seg is a linked segment. */
@@ -679,9 +669,7 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
                                 const char *cparms, 
                                 const char *clname, 
                                 const char *mapfile,
-                                const char *fileout,
-                                char **actualfname,
-                                unsigned long long *expsize)
+                                const char *fileout)
 {
    int status = DRMS_SUCCESS;
 
@@ -689,8 +677,6 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
    char filename[DRMS_MAXPATHLEN]; 
    struct stat stbuf;
    DRMS_Segment_t *tgtseg = NULL;
-    char realfileout[DRMS_MAXPATHLEN];
-    struct stat filestat;
 
    if (seg->info->islink)
    {
@@ -732,56 +718,19 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
          {
             swval = seg->info->protocol;
          }
-          
-          snprintf(realfileout, sizeof(realfileout), "%s", fileout);
 
          switch (swval)
          {
-            case DRMS_TAS:
-             {
-                 /* If we are reading a single record from a TAS file, this means that we're 
-                  * reading a single slice. fileout will have a .tas extension, since 
-                  * the output file name is derived from the input file name. We need to 
-                  * substitute .fits for .tas. */
-                 size_t len = strlen(realfileout) + 64;
-                 size_t lenstr;
-                 char *dup = malloc(len);
-                 snprintf(dup, len, "%s", realfileout);
-
-                 if (dup)
-                 {
-                     lenstr = strlen(dup);
-                     strtolower(dup);
-                     if (lenstr > 0 && dup[lenstr - 1] == 's' && dup[lenstr - 2] == 'a' && dup[lenstr - 3] == 't' && dup[lenstr - 4] == '.')
-                     {
-                         *(dup + lenstr - 3) = '\0';
-                         snprintf(realfileout, sizeof(realfileout), "%sfits", dup);
-                     }
-                     else
-                     {
-                         fprintf(stderr, "Unexpected export file name '%s'.\n", dup);
-                         free(dup);
-                         status = DRMS_ERROR_EXPORT;
-                         break;
-                     }
-                     
-                     free(dup);
-                 }
-                 else
-                 {
-                     status = DRMS_ERROR_OUTOFMEMORY;
-                 }
-             }
-                 
+            case DRMS_BINARY:
               /* intentional fall-through */
-             case DRMS_BINARY:
-                 /* intentional fall-through */
-             case DRMS_BINZIP:
-                 /* intentional fall-through */
-             case DRMS_FITZ:
-                 /* intentional fall-through */
-             case DRMS_FITS:
-                 /* intentional fall-through */
+            case DRMS_BINZIP:
+              /* intentional fall-through */
+            case DRMS_FITZ:
+              /* intentional fall-through */
+            case DRMS_FITS:
+              /* intentional fall-through */
+            case DRMS_TAS:
+              /* intentional fall-through */
             case DRMS_DSDS:
               /* intentional fall-through */
             case DRMS_LOCAL:
@@ -816,7 +765,7 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
 
                  if (arrout)
                  {
-                    status = ExportFITS(seg->record->env, arrout, realfileout, cparms ? cparms : (seg->info->islink ? tgtseg->cparms : seg->cparms), fitskeys);
+                    status = ExportFITS(seg->record->env, arrout, fileout, cparms ? cparms : (seg->info->islink ? tgtseg->cparms : seg->cparms), fitskeys);
                     drms_free_array(arrout);	     
                  }
               }
@@ -827,9 +776,9 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
 
                  /* Simply copy the file from the segment's data-file path
                   * to fileout, no keywords to worry about. */
-                 if (CopyFile(filename, realfileout, &ioerr) != stbuf.st_size)
+                 if (CopyFile(filename, fileout, &ioerr) != stbuf.st_size)
                  {
-                    fprintf(stderr, "Unable to export file '%s' to '%s'.\n", filename, realfileout);
+                    fprintf(stderr, "Unable to export file '%s' to '%s'.\n", filename, fileout);
                     status = DRMS_ERROR_FILECOPY;
                  }
               }
@@ -839,17 +788,6 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
                       "Data export does not support data segment protocol '%s'.\n", 
                       drms_prot2str(seg->info->protocol));
          }
-          
-          /* Ensure file got created. */
-          if (stat(realfileout, &filestat))
-          {
-              status = DRMS_ERROR_EXPORT;
-          }
-          else if (expsize)
-          {
-              *actualfname = strdup(basename(realfileout));
-              *expsize = filestat.st_size;
-          }
    
          cfitsio_free_keys(&fitskeys);
       }

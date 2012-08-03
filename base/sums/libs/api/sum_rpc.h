@@ -221,7 +221,6 @@ bool_t xdr_sum_info_t(XDR *xdrs, SUM_info_t *objp);
 #define TAPERECONNECTDO ((uint32_t)17)
 #define CONFIGDO ((uint32_t)18)
 #define INFODOARRAY ((uint32_t)19)
-#define SUMREPARTN ((uint32_t)20)
 
 extern KEY *sumdo_1();
 extern KEY *opendo_1();
@@ -231,7 +230,7 @@ extern KEY *getdo_1();
 extern KEY *infodo_1();
 extern KEY *infodoX_1();
 extern KEY *infodoX_1_U();
-extern KEY *infodoArray_1();
+extern Sunumarray *infodoArray_1();
 extern KEY *sumrespdo_1();
 extern KEY *allocdo_1();
 extern KEY *putdo_1();
@@ -245,7 +244,6 @@ extern KEY *sumrmdo_1();
 ***********************************/
 extern KEY *delseriesdo_1();
 extern KEY *configdo_1();
-extern KEY *repartndo_1();
 
 /* This is the tape_svc program registration */
 #define TAPEPROG ((uint32_t)0x20000612)  /* 536872466 */
@@ -544,7 +542,6 @@ struct sumoffcnt {
   int tapefns[MAXSUMREQCNT];
   int reqofflinenum[MAXSUMREQCNT];
   uint64_t dsix[MAXSUMREQCNT];
-  uint32_t sprog;		//added 22May2012
 };
 typedef struct sumoffcnt SUMOFFCNT;
  
@@ -583,19 +580,13 @@ struct padata {
 typedef struct padata PADATA;
 
 /* Partition definition table. One for each dedicated SUM partition.
- * Initialized by sum_svc from the sum_partn_avail data base table.
- * NOTE: pds_set_prime was added to sum_partn_avail on 7/23/2012.
- * It may not be added to the NetDRMS DBs. They use sum_rm instead
- * of sum_rm_[0,1,2] which needs the new pds_set_prime.
-*/
+ * Initialized by sum_svc from the sum_partn_avail data base table. */
 struct partition {
   char *name;           /* name of the partition */
   double bytes_total;   /* total number of bytes of the partition */
   double bytes_left;    /* bytes unassigned */
   double bytes_alloc;   /* bytes allocated by DS_Allocate() */
   int pds_set_num;      /* SUM set the part. belongs to. aka sum_set_num */
-			/* This can be taken offline (-1) by sum_rm */
-  int pds_set_prime;	/* used by sum_rm to restore pds_set_num from -1 */
 };
 typedef struct partition PART;
 
@@ -631,7 +622,6 @@ int SUM_infoArray(SUM_t *sum, uint64_t *dxarray, int reqcnt, int (*history)(cons
 void SUM_infoEx_free(SUM_t *sum);
 void SUM_infoArray_free(SUM_t *sum);
 int SUM_nop();
-int SUM_repartn(SUM_t *sum, int (*history)(const char *fmt, ...));
 
 int NC_PaUpdate();
 SUMID_t SUMLIB_Open();

@@ -127,12 +127,11 @@ typedef struct ExpProcArg_struct ExpProcArg_t;
 
 struct ProcStep_struct
 {
-    char *name;   /* Name of program. */
-    char *path;   /* Path to program. */
-    char *args;   /* Program argument key=value pairs, comma-separated. */
-    char *input;  /* data-set input to processing */
+    char *name; /* Name of program. */
+    char *path; /* Path to program. */
+    char *args; /* Program argument key=value pairs, comma-separated. */
+    char *input; /* data-set input to processing */
     char *output; /* data-set output by processing */
-    int crout;    /* The processing step may need its intermediate output series created. */
 };
 
 typedef struct ProcStep_struct ProcStep_t;
@@ -428,82 +427,105 @@ static void FreeRecSpecParts(char ***snames, char ***filts, int nitems)
 
 /* returns by reference an array of series names determined by parsing the rsquery record-set query. */
 /* returns 1 if an error occurred, 0 otherwise. */
-static int ParseRecSetSpec(const char *rsquery, 
+static int ParseRecSetSpec(DRMS_Env_t *env, 
+                           const char *dbhost, 
+                           const char *rsquery, 
                            char ***snamesout, 
                            char ***filtsout,
                            int *nsetsout, 
                            DRMS_RecQueryInfo_t *infoout)
 {
-    int err = 0;
-    char *allvers = NULL;
-    char **sets = NULL;
-    DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
-    char **snames = NULL;
-    char **filts = NULL;
-    int nsets = 0;
-    DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
-    int iset;
-    
-    /* This call does NOT fetch a record template, so it is safe to use, even if the series in 
-     * rsquery does not exist. */
-    if (drms_record_parserecsetspec(rsquery, &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo) == DRMS_SUCCESS)
-    {     
-        *infoout = rsinfo;
-        *nsetsout = nsets;
-        
-        if (nsets > 0)
-        {
-            *snamesout = (char **)calloc(nsets, sizeof(char *));            
-            *filtsout = (char **)calloc(nsets, sizeof(char *));
-            
-            if (snamesout && filtsout)
-            {
-                for (iset = 0; iset < nsets; iset++)
-                {
-                    if (snames[iset])
-                    {
-                        (*snamesout)[iset] = strdup(snames[iset]);
-                    }
-                    else
-                    {
-                        (*snamesout)[iset] = NULL;
-                    }
+   int err = 0;
+   char *allvers = NULL;
+   char **sets = NULL;
+   DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
+   char **snames = NULL;
+   int nsets = 0;
+   DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
+   int iset;
+   DRMS_Record_t *template = NULL;
+   int drmsstat = 0;
+   char *filter = NULL;
+   DB_Handle_t *dbh = NULL;
+   int contextOK = 0;
 
-                    if (filts[iset])
-                    {
-                        (*filtsout)[iset] = strdup(filts[iset]);
-                    }
-                    else
-                    {
-                        (*filtsout)[iset] = NULL;
-                    }
-                }
+   if (drms_record_parserecsetspec(rsquery, &allvers, &sets, &settypes, &snames, &nsets, &rsinfo) == DRMS_SUCCESS)
+   {     
+      *infoout = rsinfo;
+      *nsetsout = nsets;
+
+      if (nsets > 0)
+      {
+         *snamesout = (char **)calloc(nsets, sizeof(char *));
+         *filtsout = (char **)calloc(nsets, sizeof(char *));
+
+         if (snamesout && filtsout)
+         {
+            dbh = GetDBHandle(env, dbhost, &contextOK, 0);
+
+            if (!dbh)
+            {
+               fprintf(stderr, "jsoc_export_manage: Unable to connect to database.\n");
+               err = 1;
             }
             else
             {
-                fprintf(stderr, "jsoc_export_manage FAILURE: out of memory.\n");
-                err = 1;
+               for (iset = 0; iset < nsets; iset++)
+               {
+                  (*snamesout)[iset] = strdup(snames[iset]);
+               
+                  if (contextOK)
+                  {
+                     /* Get template record. */
+                     template = drms_template_record(env, snames[iset], &drmsstat);
+                     if (DRMS_ERROR_UNKNOWNSERIES == drmsstat)
+                     {
+                        fprintf(stderr, "Unable to open template record for series '%s'; this series does not exist.\n", snames[iset]);
+                        err = 1;
+                        break;
+                     }
+                     else
+                     {
+                        filter = drms_recordset_extractfilter(template, sets[iset], &err);
+                     }
+                  }
+                  else
+                  {
+                     filter = drms_recordset_extractfilter_ext(dbh, sets[iset], &err);
+                  }
+
+                  if (!err && filter)
+                  {
+                     (*filtsout)[iset] = filter; /* transfer ownership to caller. */
+                  }
+               }
             }
-        }
-    }
-    else
-    {
-        fprintf(stderr, "jsoc_export_manage FAILURE: invalid record-set query %s.\n", rsquery);
-        err = 1;
-    }
-    
-    drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
-    
-    if (err == 1)
-    {
-        /* free up stuff */
-        if (nsets > 0)
-        {
-            FreeRecSpecParts(snamesout, filtsout, nsets);
-        }
-    }
-    
-    return err;
+         }
+         else
+         {
+            fprintf(stderr, "jsoc_export_manage FAILURE: out of memory.\n");
+            err = 1;
+         }
+      }
+   }
+   else
+   {
+      fprintf(stderr, "jsoc_export_manage FAILURE: invalid record-set query %s.\n", rsquery);
+      err = 1;
+   }
+     
+   drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, nsets);
+
+   if (err == 1)
+   {
+      /* free up stuff */
+      if (nsets > 0)
+      {
+         FreeRecSpecParts(snamesout, filtsout, nsets);
+      }
+   }
+
+   return err;
 }
 
 int nice_intro ()
@@ -526,8 +548,7 @@ int nice_intro ()
 
 // generate qsub script
 void make_qsub_call(char *requestid, char *reqdir, int requestorid, const char *dbname, 
-                    const char *dbuser, const char *dbids, const char *dbexporthost,
-                    int submitcode)
+               const char *dbuser, const char *dbids, const char *dbexporthost)
   {
   FILE *fp;
   char qsubscript[DRMS_MAXPATHLEN];
@@ -550,7 +571,7 @@ void make_qsub_call(char *requestid, char *reqdir, int requestorid, const char *
   fprintf(fp, "  set path = ($JSOCROOT_EXPORT/bin/$JSOC_MACHINE $JSOCROOT_EXPORT/scripts $path)\n");
   fprintf(fp,"endif\n");
 
-  fprintf(fp, "while (`show_info JSOC_DBHOST=%s -q 'jsoc.export_new[%s]' key=Status %s` == %d)\n", dbexporthost, requestid, dbids, submitcode);
+  fprintf(fp, "while (`show_info JSOC_DBHOST=%s -q 'jsoc.export_new[%s]' key=Status %s` == 2)\n", dbexporthost, requestid, dbids);
   fprintf(fp, "  echo waiting for jsocdb commit >> /home/jsoc/exports/tmp/%s.runlog \n",requestid);
   fprintf(fp, "  sleep 1\nend \n");
   if (dbname)
@@ -1194,7 +1215,9 @@ static void DestroyVarConts(HContainer_t **pvarsargs)
 *    argsout - final argument string (comma-separated list of arguments/values).
 *    stepdata - has program name, input record-set, output record-set.
 */
-static int GenProgArgs(ProcStepInfo_t *pinfo, 
+static int GenProgArgs(DRMS_Env_t *env,
+                       const char *dbhost,
+                       ProcStepInfo_t *pinfo, 
                        HContainer_t *args, 
                        ProcStep_t *stepdata,
                        const char *reclim,
@@ -1294,13 +1317,12 @@ static int GenProgArgs(ProcStepInfo_t *pinfo,
                     
                     /* stepdata->output has the full record-set query, but we need only the 
                      * series name. Parse stepdata->output. */
-                    /* Series may not exist, so don't */
-                    if (ParseRecSetSpec(stepdata->output, &snames, &filts, &nsets, &info))
+                    if (ParseRecSetSpec(env, dbhost, stepdata->output, &snames, &filts, &nsets, &info))
                     {
                         fprintf(stderr, "Invalid output series record specification %s.\n", stepdata->output);
                         err = 1;
                         break;
-                    }                    
+                    }
                     
                     /* There can be only one output series. */
                     val = snames[0];
@@ -1475,8 +1497,7 @@ static int GenOutRSSpec(DRMS_Env_t *env,
             if (ppinfo)
             {
                 /* The input to the current processing step, which is identical to ppinfo->output,
-                 * the output of the previous step, might have a suffix. If it has a suffix, then 
-                 * it is ppinfo->suffix. */
+                 * might have a suffix. If it has a suffix, then it is ppinfo->suffix. */
                 psuffix = ppinfo->suffix;
             }
             else
@@ -1486,7 +1507,13 @@ static int GenOutRSSpec(DRMS_Env_t *env,
             }
             
             /* Parse input record-set query parts. */
-            if (ParseRecSetSpec(data->input, &snames, &filts, &nsets, &info))
+            
+            /* ART - env is not necessarily the correct environment for talking 
+             * to the database about DRMS objects (like records, keywords, etc.). 
+             * It is connected to the db on dbexporthost. dbmainhost is the host
+             * of the correct jsoc database. This function will ensure that
+             * it talks to dbmainhost. */
+            if (ParseRecSetSpec(env, dbhost, data->input, &snames, &filts, &nsets, &info))
             {
                 err = 1;
                 break;
@@ -1503,15 +1530,7 @@ static int GenOutRSSpec(DRMS_Env_t *env,
                 for (iset = 0; iset < nsets; iset++)
                 {
                     outseries = base_strreplace(data->input, psuffix, suffix);
-                }
-                
-                if (strcmp(psuffix, suffix) != 0)
-                {
-                    /* If the suffixes differ, then the output series MAY not exist. In this case, 
-                     * we need to run jsoc_export_clone from the drms_run script. If the output series
-                     * already exists, then jsoc_export_clone is a no-op. */
-                    data->crout = 1;
-                }
+                }   
             }
             else if (suffix && *suffix == '_')
             {
@@ -1526,12 +1545,7 @@ static int GenOutRSSpec(DRMS_Env_t *env,
                     newoutseries = base_strreplace(outseries, snames[iset], replname);
                     free(outseries);
                     outseries = newoutseries;
-                }
-                
-                /* We are writing to an output series that differs fromt the input series. 
-                 * We need to run jsoc_export_clone from the drms_run script. If the output series
-                 * already exists, then jsoc_export_clone is a no-op. */
-                data->crout = 1;
+                }   
             }
             else if (suffix && *suffix)
             {
@@ -1558,18 +1572,15 @@ static int GenOutRSSpec(DRMS_Env_t *env,
             /* Remove input series' filters. */
             for (iset = 0; iset < nsets; iset++)
             {
-                if (filts[iset])
-                {
-                    newoutseries = base_strreplace(outseries, filts[iset], "");
-                    free(outseries);
-                    outseries = newoutseries;
-                }
+                newoutseries = base_strreplace(outseries, filts[iset], "");
+                free(outseries);
+                outseries = newoutseries;
             }
             
             FreeRecSpecParts(&snames, &filts, nsets);
             
             /* Add filters to output series names. */
-            if (ParseRecSetSpec(outseries, &snames, &filts, &nsets, &info))
+            if (ParseRecSetSpec(env, dbhost, outseries, &snames, &filts, &nsets, &info))
             {
                 err = 1;
                 break;
@@ -1731,7 +1742,6 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, /* dbhost of jsoc.export_new. 
             data.args = NULL; /* complete set of arguments with which to call processing step. */
             data.input = adataset; 
             data.output = NULL;
-            data.crout = 0;
             cpinfo = NULL;
             gettingargs = 0;
             bar = 0;
@@ -1859,7 +1869,7 @@ static LinkedList_t *ParseFields(DRMS_Env_t *env, /* dbhost of jsoc.export_new. 
                     continue;
                 }
                 
-                if (GenProgArgs(cpinfo, varsargs, &data, reclimint, &finalargs))
+                if (GenProgArgs(env, dbhost, cpinfo, varsargs, &data, reclimint, &finalargs))
                 {
                     state = kPPStError;
                     continue;
@@ -2185,14 +2195,14 @@ static int GenProtoExpCmd(FILE *fptr,
             strncasecmp(protocol, protos[kProto_PNG], strlen(protos[kProto_PNG])) == 0 ||
             strncasecmp(protocol, protos[kProto_MP4], strlen(protos[kProto_MP4])) == 0)
    {
-      char *dupe = strdup(protocol);
-      char *newproto = dupe;
+      char *newproto = strdup(protocol);
+      char *origproto = newproto;
       char *pcomma=index(newproto,',');
 
       if (pcomma)
         *pcomma = '\0';
 
-      if (strcasecmp(newproto, "mpg") == 0 || strcasecmp(newproto, "mp4") == 0)
+      if (strcasecmp(newproto,"mpg")==0 || strcasecmp(protocol, "mp4")==0)
         fprintf(fptr, "%s ", (TESTMODE ? "/home/phil/jsoc/base/export/scripts/jsoc_export_as_movie_test" : "jsoc_export_as_movie"));
       else
         fprintf(fptr, "%s ", (TESTMODE ? "/home/phil/jsoc/base/export/scripts/jsoc_export_as_images_test" : "jsoc_export_as_images"));
@@ -2211,9 +2221,9 @@ static int GenProtoExpCmd(FILE *fptr,
       }
       fprintf(fptr, "\n");
 
-      if (dupe)
+      if (origproto)
       {
-         free(dupe);
+         free(origproto);
       }
    }
    else if (strncasecmp(protocol, protos[kProto_AsIs], strlen(protos[kProto_AsIs])) == 0)
@@ -2333,118 +2343,6 @@ static int SeriesExists(DRMS_Env_t *env, const char *series, const char *dbhost,
    return rv;
 }
 
-// jsoc.export
-static void ErrorOutExpRec(DRMS_Record_t **exprec, int expstatus, const char *mbuf)
-{
-    // Print mbuf to stderr
-    if (mbuf)
-    {
-        fprintf(stderr, "%s\n", mbuf);
-    }
-    
-    // Write to export record in jsoc.export
-    if (exprec && *exprec)
-    {
-        drms_setkey_string(*exprec, "errmsg", mbuf);
-        drms_setkey_int(*exprec, "Status", expstatus);
-        
-        // Close export record
-        drms_close_record(*exprec, DRMS_INSERT_RECORD);
-        *exprec = NULL;
-    }
-}
-
-// jsoc.export_new
-static void ErrorOutExpNewRec(DRMS_RecordSet_t *exprecs, DRMS_Record_t **exprec, int irec, int expstatus, const char *mbuf)
-{
-    int closedrec = 0;
-    
-    // Print mbuf to stderr
-    if (mbuf)
-    {
-        fprintf(stderr, "%s\n", mbuf);
-    }
-    
-    // Write to export record in jsoc.export
-    if (exprec && *exprec)
-    {
-        drms_setkey_string(*exprec, "errmsg", mbuf);
-        drms_setkey_int(*exprec, "Status", expstatus);
-        
-        // Close export record
-        drms_close_record(*exprec, DRMS_INSERT_RECORD);
-        *exprec = NULL;
-        closedrec = 1;
-    }
-    
-    if (exprecs)
-    {
-        if (closedrec)
-        {
-            exprecs->records[irec] = NULL; // Detach record - don't double free.
-        }
-    }
-}
-
-// jsoc.export
-static int DBCOMM(DRMS_Record_t **rec, const char *mbuf, int expstatus)
-{
-    if (mbuf)
-    {
-        fprintf(stderr, "%s\n", mbuf);
-    }
-    
-    if (rec && *rec)
-    {
-        if (drms_setkey_int(*rec, "Status", expstatus))
-        {
-            return 1; // Abort db changes
-        }
-        
-        drms_setkey_string(*rec, "errmsg", mbuf);
-        drms_close_record(*rec, DRMS_INSERT_RECORD);
-        *rec = NULL;
-    }
-    
-    return 0; // Commit db changes.
-}
-
-// jsoc.export_new
-static int DBNEWCOMM(DRMS_RecordSet_t **exprecs, DRMS_Record_t **rec, int irec, const char *mbuf, int expstatus)
-{
-    int closedrec = 0;
-    
-    if (mbuf)
-    {
-        fprintf(stderr, "%s\n", mbuf);
-    }
-    
-    if (rec && *rec)
-    {
-        if (drms_setkey_int(*rec, "Status", expstatus))
-        {
-            return 1; // Abort db changes
-        }
-        
-        drms_setkey_string(*rec, "errmsg", mbuf);
-        drms_close_record(*rec, DRMS_INSERT_RECORD);
-        *rec = NULL;
-        closedrec = 1;
-    }
-    
-    if (exprecs && *exprecs)
-    {
-        if (closedrec)
-        {
-            (*exprecs)->records[irec] = NULL; // Detach record - don't double free.
-        }
-        drms_close_records(*exprecs, DRMS_FREE_RECORD);
-        *exprecs = NULL;
-    }
-    
-    return 0; // Commit db changes.
-}
-
 /* Module main function. */
 int DoIt(void)
   {
@@ -2511,13 +2409,10 @@ int DoIt(void)
   DRMS_RecQueryInfo_t info;
   char csname[DRMS_MAXSERIESNAMELEN];
   int iset;
-  char msgbuf[1024];
-  int submitcode = -1;
 
   if (nice_intro ()) return (0);
 
   testmode = (TESTMODE || cmdparams_isflagset(&cmdparams, kArgTestmode));
-  submitcode = (testmode ? 12 : 2);
 
   if ((dbmainhost = cmdparams_get_str(&cmdparams, "JSOC_DBMAINHOST", NULL)) == NULL)
   {
@@ -2561,15 +2456,13 @@ int DoIt(void)
       procser = cmdparams_get_str(&cmdparams, kArgProcSeries, NULL);
 
   /*  op == process, this is export_manage cmd line, NOT for request being managed */
-      // This cmd-line argument has never been used.
   if (strcmp(op,"process") == 0) 
     {
     int irec;
-    char ctlrecspec[1024];
-        
-    snprintf(ctlrecspec, sizeof(ctlrecspec), "%s[][? Status=%d ?]", EXPORT_SERIES_NEW, submitcode);
-    exports_new_orig = drms_open_records(drms_env, ctlrecspec, &status);
-        
+    if (testmode)
+      exports_new_orig = drms_open_records(drms_env, EXPORT_SERIES_NEW"[][? Status=12 ?]", &status);
+    else
+      exports_new_orig = drms_open_records(drms_env, EXPORT_SERIES_NEW"[][? Status=2 ?]", &status);
     if (!exports_new_orig)
 	DIE("Can not open RecordSet");
     if (exports_new_orig->n < 1)  // No new exports to process.
@@ -2579,7 +2472,7 @@ int DoIt(void)
         }
     exports_new = drms_clone_records(exports_new_orig, DRMS_PERMANENT, DRMS_SHARE_SEGMENTS, &status);
     if (!exports_new)
-	DIE("Can not clone RecordSet"); // When jsoc_export_manage runs again, it will try to process this export record again.
+	DIE("Can not clone RecordSet");
     drms_close_records(exports_new_orig, DRMS_FREE_RECORD);
 
     for (irec=0; irec < exports_new->n; irec++) 
@@ -2609,11 +2502,7 @@ int DoIt(void)
       sprintf(requestorquery, "%s[? RequestorID = %ld ?]", EXPORT_USER, requestorid);
       requestor_rs = drms_open_records(drms_env, requestorquery, &status);
       if (!requestor_rs)
-      {
-          return DBNEWCOMM(&exports_new, &export_log, irec, "Cant find requestor info series", 4);
-          // When jsoc_export_manage runs again, it will NOT try to process this export record again.
-          // Cannot get here.
-      }
+        DIE("Cant find requestor info series");
       if (requestor_rs->n > 0)
         {
         DRMS_Record_t *rec = requestor_rs->records[0];
@@ -2630,14 +2519,7 @@ int DoIt(void)
       /* EXPORT_SERIES is jsoc.export. */
       export_rec = drms_create_record(drms_env, EXPORT_SERIES, DRMS_PERMANENT, &status);
       if (!export_rec)
-      {
-          return DBNEWCOMM(&exports_new, &export_log, irec, "Cant create export control record", 4); 
-          // When jsoc_export_manage runs again, it will try to process this export record again.
-          // Cannot get here.
-      }
-          
-          // export_log/exports_new is jsoc.export_new.
-          // export_rec is jsoc.export.
+        DIE("Cant create export control record");
   
       drms_setkey_string(export_rec, "RequestID", requestid);
       drms_setkey_string(export_rec, "DataSet", dataset);
@@ -2654,22 +2536,19 @@ int DoIt(void)
       // check  security risk dataset spec or processing request
       if (isbadDataSet() || isbadProcessing())
         { 
-            snprintf(msgbuf, 
-                     sizeof(msgbuf), 
-                     "Illegal format detected - security risk!\nRequestID= %s\n Processing = %s\n, DataSet=%s",
-                     requestid, 
-                     process, 
-                     dataset);
-                    
-            ErrorOutExpRec(&export_rec, 4, msgbuf);
-            ErrorOutExpNewRec(exports_new, &export_log, irec, 4, msgbuf);
-            continue;
+        fprintf(stderr," Illegal format detected - security risk!\n"
+  		     "RequestID= %s\n"
+                       " Processing = %s\n, DataSet=%s\n",
+  		     requestid, process, dataset);
+        drms_setkey_int(export_rec, "Status", 4);
+        drms_close_record(export_rec, DRMS_INSERT_RECORD);
+        continue;
         }
   
       drms_record_directory(export_rec, reqdir, 1);
 
       // Insert qsub command to execute processing script into SU
-      make_qsub_call(requestid, reqdir, (notify ? requestorid : 0), dbname, dbuser, dbids, dbexporthost, submitcode);
+      make_qsub_call(requestid, reqdir, (notify ? requestorid : 0), dbname, dbuser, dbids, dbexporthost);
   
       // Insert export processing drms_run script into export record SU
       // The script components must clone the export record with COPY_SEGMENTS in the first usage
@@ -2731,14 +2610,14 @@ int DoIt(void)
       proccmds = ParseFields(drms_env, procser, dbmainhost, process, dataset, requestid, &RecordLimit, &ppstat);
       if (ppstat == 0)
       {
-          snprintf(msgbuf, sizeof(msgbuf), "Invalid process field value: %s.", process);          
-          ErrorOutExpRec(&export_rec, 4, msgbuf);
-          ErrorOutExpNewRec(exports_new, &export_log, irec, 4, msgbuf);
-          fclose(fp);
-          fp = NULL;
-          
-          /* mem leak - need to free all strings obtained with drms_getkey_string(). */
-          continue; /* next export record */
+         fprintf(stderr, "Invalid process field value: %s.\n", process);
+         drms_setkey_int(export_log, "Status", 4);
+         drms_close_record(export_rec, DRMS_INSERT_RECORD);
+         fclose(fp);
+         fp = NULL;
+
+         /* mem leak - need to free all strings obtained with drms_getkey_string(). */
+         continue; /* next export record */
       }
 
       /* PRE-PROCESSING */
@@ -2749,15 +2628,15 @@ int DoIt(void)
        * the processing-series table. */
       if (IsBadProcSequence(proccmds))
       {
-          list_llfree(&proccmds);
-          snprintf(msgbuf, sizeof(msgbuf), "Bad sequence of processing steps, skipping recnum %lld.", export_rec->recnum);
-          ErrorOutExpRec(&export_rec, 4, msgbuf);
-          ErrorOutExpNewRec(exports_new, &export_log, irec, 4, msgbuf);
-          fclose(fp);
-          fp = NULL;
-          
-          /* mem leak - need to free all strings obtained with drms_getkey_string(). */
-          continue; /* next export record */
+         fprintf(stderr, "Bad sequence of processing steps, skipping recnum %lld.\n", export_rec->recnum);
+         list_llfree(&proccmds);
+         drms_setkey_int(export_log, "Status", 4);
+         drms_close_record(export_rec, DRMS_FREE_RECORD);
+         fclose(fp);
+         fp = NULL;
+
+         /* mem leak - need to free all strings obtained with drms_getkey_string(). */
+         continue; /* next export record */
       }
 
       /* First do the pre-processing of one dataseries into another (if requested). For example, the 
@@ -2776,7 +2655,6 @@ int DoIt(void)
 
       LinkedList_t *datasetkwlist = NULL;
       char *rsstr = NULL;
-      int firstnode = 1;
 
       while (!quit && (node = list_llnext(proccmds)) != 0)
       {
@@ -2804,152 +2682,110 @@ int DoIt(void)
          cdataset = ndata->input;
          datasetout = ndata->output;
 
-          /* Ensure that only a single input series is being exported; ensure that the input series exists. */
-          /* Need to check input series of the first node only of the processing-step pipeline */
+         /* Ensure that only a single input series is being exported; ensure that the input series exists. */
          
-          /* ART - env is not necessarily the correct environment for talking 
-           * to the database about DRMS objects (like records, keywords, etc.). 
-           * It is connected to the db on dbexporthost. dbmainhost is the host
-           * of the correct jsoc database. This function will ensure that
-           * it talks to dbmainhost. */
-          if (ParseRecSetSpec(cdataset, &snames, &filts, &nsets, &info))
-          {
-              snprintf(msgbuf, sizeof(msgbuf), "Invalid input series record-set query %s.", cdataset);
-              quit = 1;
-              break;
-          }
-          
-          /* If the record-set query is an @file or contains multiple sub-record-set queries. We currently
-           * support exports from a single series. */
-          if (firstnode)
-          {
-              for (iset = 0, *csname = '\0'; iset < nsets; iset++)
-              {
-                  series = snames[iset];
-                  if (*csname != '\0') 
-                  {
-                      if (strcmp(series, csname) != 0)
-                      {
-                          snprintf(msgbuf, sizeof(msgbuf), "jsoc_export_manage FAILURE: attempt to export a recordset containing multiple input series.");
-                          quit = 1;
-                          break;
-                      }
-                  }
-                  else
-                  {
-                      snprintf(csname, sizeof(csname), "%s", series);
-                  }
-              } // end series-name loop 
-          }
-          else if (nsets > 0)
-          {
-              snprintf(csname, sizeof(csname), "%s", snames[0]);
-          }
-          else
-          {
-              snprintf(msgbuf, sizeof(msgbuf), "No input series.\n");
-              quit = 1;
-          }
-          
-          FreeRecSpecParts(&snames, &filts, nsets);
-          
-          if (quit)
-          {
-              break;
-          }
-          
-          snprintf(seriesin, sizeof(seriesin), "%s", csname);
-              
-          if (firstnode)
-          {
-              firstnode = 0;
-              if (!SeriesExists(drms_env, seriesin, dbmainhost, &status) || status)
-              {
-                  snprintf(msgbuf, sizeof(msgbuf), "Input series %s does not exist.", csname);
+         /* ART - env is not necessarily the correct environment for talking 
+          * to the database about DRMS objects (like records, keywords, etc.). 
+          * It is connected to the db on dbexporthost. dbmainhost is the host
+          * of the correct jsoc database. This function will ensure that
+          * it talks to dbmainhost. */
+         if (ParseRecSetSpec(drms_env, dbmainhost, cdataset, &snames, &filts, &nsets, &info))
+         {
+            fprintf(stderr, "Invalid input series record-set query %s.\n", cdataset);
+            quit = 1;
+            break;
+         }
+
+         /* If the record-set query is an @file or contains multiple sub-record-set queries. We currently
+          * support exports from a single series. */
+         for (iset = 0, *csname = '\0'; iset < nsets; iset++)
+         {
+            series = snames[iset];
+            if (*csname != '\0') 
+            {
+               if (strcmp(series, csname) != 0)
+               {
+                  fprintf(stderr, "jsoc_export_manage FAILURE: attempt to export a recordset containing multiple input series.\n");
                   quit = 1;
                   break;
-              }
-          }
+               }
+            }
+            else
+            {
+               snprintf(csname, sizeof(csname), "%s", series);
+            }
+         } // end series-name loop
+
+         FreeRecSpecParts(&snames, &filts, nsets);
+
+         snprintf(seriesin, sizeof(seriesin), "%s", csname);
+
+         if (!SeriesExists(drms_env, seriesin, dbmainhost, &status) || status)
+         {
+            fprintf(stderr, "Input series %s does not exist.\n", csname);
+            quit = 1;
+            break;
+         }
 
          /* Ensure that only a single output series is being written to; ensure that the output series exists. */
          
-          /* ART - env is not necessarily the correct environment for talking 
-           * to the database about DRMS objects (like records, keywords, etc.). 
-           * It is connected to the db on dbexporthost. dbmainhost is the host
-           * of the correct jsoc database. This function will ensure that
-           * it talks to dbmainhost. */
-          if (ParseRecSetSpec(datasetout, &snames, &filts, &nsets, &info))
-          {
-              snprintf(msgbuf, sizeof(msgbuf), "Invalid output series record-set query %s.", datasetout);
-              quit = 1;
-              break;
-          }
-          
-          /* If the record-set query is an @file or contains multiple sub-record-set queries. We currently
-           * support exports to only a single series. */
-          for (iset = 0, *csname = '\0'; iset < nsets; iset++)
-          {
-              series = snames[iset];
-              if (*csname != '\0') 
-              {
-                  if (strcmp(series, csname) != 0)
-                  {
-                      snprintf(msgbuf, sizeof(msgbuf), "jsoc_export_manage FAILURE: attempt to export a recordset to multiple output series.");
-                      quit = 1;
-                      break;
-                  }
-              }
-              else
-              {
-                  snprintf(csname, sizeof(csname), "%s", series);
-              }
-          } // end series-name loop
-          
-          FreeRecSpecParts(&snames, &filts, nsets);
-          
-          if (quit)
-          {
-              break;
-          }
-          
-          snprintf(seriesout, sizeof(seriesout), "%s", csname);
-
-          /* Some processing steps will write to series that contain 'intermediate results', whose names generally
-           * end in the suffix '_mod'. The drms-run script will call jsoc_export_clone immediately before the 
-           * processing module runs. This will result in the creation of the intermediate series if it does not
-           * already exist. If the series already does exist, then the call to jsoc_export_clone will be a no-op.
-           * Processing steps that write to intermediate series have the crout processing step flag set. If this flag
-           * is not set, then we need to check for the previous existence of the output series. */
-          if (!ndata->crout)
-          {
-              if (!SeriesExists(drms_env, seriesout, dbmainhost, &status) || status)
-              {
-                  snprintf(msgbuf, sizeof(msgbuf), "Output series %s does not exist.", csname);
+         /* ART - env is not necessarily the correct environment for talking 
+          * to the database about DRMS objects (like records, keywords, etc.). 
+          * It is connected to the db on dbexporthost. dbmainhost is the host
+          * of the correct jsoc database. This function will ensure that
+          * it talks to dbmainhost. */
+         if (ParseRecSetSpec(drms_env, dbmainhost, datasetout, &snames, &filts, &nsets, &info))
+         {
+            fprintf(stderr, "Invalid output series record-set query %s.\n", datasetout);
+            quit = 1;
+            break;
+         }
+         
+         /* If the record-set query is an @file or contains multiple sub-record-set queries. We currently
+          * support exports to only a single series. */
+         for (iset = 0, *csname = '\0'; iset < nsets; iset++)
+         {
+            series = snames[iset];
+            if (*csname != '\0') 
+            {
+               if (strcmp(series, csname) != 0)
+               {
+                  fprintf(stderr, "jsoc_export_manage FAILURE: attempt to export a recordset to multiple output series.\n");
                   quit = 1;
                   break;
-              }
-          }
-          else
-          {
-              /* Call jsoc_export_clone. */
-              fprintf(fp, "jsoc_export_clone dsin=%s dsout=%s\n", seriesin, seriesout);
-          }
+               }
+            }
+            else
+            {
+               snprintf(csname, sizeof(csname), "%s", series);
+            }
+         } // end series-name loop
+
+         FreeRecSpecParts(&snames, &filts, nsets);
+
+         snprintf(seriesout, sizeof(seriesout), "%s", csname);
+
+         if (!SeriesExists(drms_env, seriesout, dbmainhost, &status) || status)
+         {
+            fprintf(stderr, "Output series %s does not exist.\n", csname);
+            quit = 1;
+            break;
+         }
 
           progpath = ((ProcStep_t *)node->data)->path;
-          args = ((ProcStep_t *)node->data)->args;
+         args = ((ProcStep_t *)node->data)->args;
           
-          
-          procerr = GenPreProcessCmd(fp,
-                                     progpath,
-                                     args,
-                                     dbmainhost,
-                                     dbids);
+
+         procerr = GenPreProcessCmd(fp,
+                                    progpath,
+                                    args,
+                                    dbmainhost,
+                                    dbids);
 
          if (procerr)
          {
-             snprintf(msgbuf, sizeof(msgbuf), "Problem running processing command '%s'.", progpath);
-             quit = 1;
-             break;
+            quit = 1;
+            break;
          }
       } /* loop over processing steps */
 
@@ -2975,13 +2811,13 @@ int DoIt(void)
 
       if (quit)
       {
-          ErrorOutExpRec(&export_rec, 4, msgbuf);
-          ErrorOutExpNewRec(exports_new, &export_log, irec, 4, msgbuf);
-          fclose(fp);
-          fp = NULL;
-          
-          /* mem leak - need to free all strings obtained with drms_getkey_string(). */
-          continue; /* next export record */
+         drms_setkey_int(export_log, "Status", 4);
+         drms_close_record(export_rec, DRMS_FREE_RECORD);
+         fclose(fp);
+         fp = NULL;
+
+         /* mem leak - need to free all strings obtained with drms_getkey_string(). */
+         continue; /* next export record */
       }
 
       /* We have finished generating the DataSet column value. */
@@ -3016,22 +2852,9 @@ int DoIt(void)
             }
             else
             {
-                snprintf(msgbuf, sizeof(msgbuf), "Problem obtaining a record-set specification string.");
-                quit = 1;
-                break;
+               fprintf(stderr, "Problem obtaining a record-set specification string.\n");
             }
          }
-          
-          if (quit)
-          {
-              ErrorOutExpRec(&export_rec, 4, msgbuf);
-              ErrorOutExpNewRec(exports_new, &export_log, irec, 4, msgbuf);
-              fclose(fp);
-              fp = NULL;
-              
-              /* mem leak - need to free all strings obtained with drms_getkey_string(). */
-              continue; /* next export record */
-          }
 
          drms_setkey_string(export_rec, "DataSet", datasetkw);
          free(datasetkw);
@@ -3054,24 +2877,23 @@ int DoIt(void)
 
       if (procerr)
       {
-          snprintf(msgbuf, sizeof(msgbuf), "Problem running protocol-export command.");
-          ErrorOutExpRec(&export_rec, 4, msgbuf);
-          ErrorOutExpNewRec(exports_new, &export_log, irec, 4, msgbuf);
-          fclose(fp);
-          fp = NULL;
-          
-          /* mem leak - need to free all strings obtained with drms_getkey_string(). */
-          if (dataset)
-          {
-              free(dataset); /* this was malloc'd in this loop */
-          }
-          
-          if (exprecspec)
-          {
-              free(exprecspec);
-          }
-          
-          continue;
+         drms_setkey_int(export_log, "Status", 4);
+         drms_close_record(export_rec, DRMS_FREE_RECORD);
+         fclose(fp);
+         fp = NULL;
+
+         /* mem leak - need to free all strings obtained with drms_getkey_string(). */
+         if (dataset)
+         {
+            free(dataset); /* this was malloc'd in this loop */
+         }
+
+         if (exprecspec)
+         {
+            free(exprecspec);
+         }
+
+         continue;
       }
       
       if (exprecspec)
@@ -3125,6 +2947,12 @@ int DoIt(void)
       fclose(fp);
       chmod(runscript, 0555);
   
+      // close the current (first) version of the record in jsoc.export
+// fprintf(stderr,"export_manage closing new record for %s\n",requestid);
+      drms_setkey_int(export_rec, "Status", 1);
+      drms_close_record(export_rec, DRMS_INSERT_RECORD);
+// fprintf(stderr,"export_manage closed new record for %s, starting qsub\n",requestid);
+  
       // SU now contains both qsub script and drms_run script, ready to execute and lock the record.
       //sprintf(command,"qsub -q x.q,o.q,j.q -v %s "
       sprintf(command,"qsub -q j.q -v %s "
@@ -3138,34 +2966,16 @@ int DoIt(void)
 // fprintf(stderr,"export_manage for %s, qsub=%s\n",requestid, command);
       if (system(command))
       {
-          return DBCOMM(&export_rec, "Submission of qsub command failed", 4);
-          // Cannot get here.
-          // When jsoc_export_manage runs again, it will try to process this export record again.
-          // The export record in jsoc.export_new will still have a status value of 2 or 12.
+        DIE("Submission of qsub command failed");
       }
-          
-      // OK to close the jsoc.export record now that the qsub command succeeded.
-
-      drms_setkey_int(export_rec, "Status", 1);
-      drms_close_record(export_rec, DRMS_INSERT_RECORD); // jsoc.export
-          
       // Mark the record in jsoc.export_new as accepted for processing.
-          
-      // The qsub script waits for the jsoc.export_new record to be written with status == 1 before it continues.
-      // This is important since the qsub script is launched asynchronously and could attempt
-      // to read the jsoc.export record before it exists (i.e., before jsoc_export_manage ends its 
-      // db transaction).
-      drms_setkey_int(export_log, "Status", 1); // jsoc.export_new
-      drms_close_record(export_log, DRMS_INSERT_RECORD);
-      exports_new->records[irec] = NULL; // Detach from record-set; drms_close_records() will free all records
-                                         // that never got inserted into jsoc.export_new.
+      drms_setkey_int(export_log, "Status", 1);
       printf("Request %s submitted\n",requestid);
 
       /* mem leak - need to free all strings obtained with drms_getkey_string(). */
       } // end looping on new export requests (looping over records in jsoc.export_new)
 
-    // Free all jsoc.export_new records that never got inserted (the remainder had failures).
-    drms_close_records(exports_new, DRMS_FREE_RECORD); // jsoc.export_new
+    drms_close_records(exports_new, DRMS_INSERT_RECORD);
     return(0);
     } // End process new requests.
   else if (strcmp(op, "SOMETHINGELSE") == 0)
