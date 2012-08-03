@@ -2185,14 +2185,14 @@ static int GenProtoExpCmd(FILE *fptr,
             strncasecmp(protocol, protos[kProto_PNG], strlen(protos[kProto_PNG])) == 0 ||
             strncasecmp(protocol, protos[kProto_MP4], strlen(protos[kProto_MP4])) == 0)
    {
-      char *newproto = strdup(protocol);
-      char *origproto = newproto;
+      char *dupe = strdup(protocol);
+      char *newproto = dupe;
       char *pcomma=index(newproto,',');
 
       if (pcomma)
         *pcomma = '\0';
 
-      if (strcasecmp(newproto,"mpg")==0 || strcasecmp(protocol, "mp4")==0)
+      if (strcasecmp(newproto, "mpg") == 0 || strcasecmp(newproto, "mp4") == 0)
         fprintf(fptr, "%s ", (TESTMODE ? "/home/phil/jsoc/base/export/scripts/jsoc_export_as_movie_test" : "jsoc_export_as_movie"));
       else
         fprintf(fptr, "%s ", (TESTMODE ? "/home/phil/jsoc/base/export/scripts/jsoc_export_as_images_test" : "jsoc_export_as_images"));
@@ -2211,9 +2211,9 @@ static int GenProtoExpCmd(FILE *fptr,
       }
       fprintf(fptr, "\n");
 
-      if (origproto)
+      if (dupe)
       {
-         free(origproto);
+         free(dupe);
       }
    }
    else if (strncasecmp(protocol, protos[kProto_AsIs], strlen(protos[kProto_AsIs])) == 0)
