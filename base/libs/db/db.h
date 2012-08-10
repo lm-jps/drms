@@ -307,9 +307,9 @@ int readint(int fd, int *val);
 int readshort(int fd, int *val);
 
 int db_send_text_result(int sockfd, DB_Text_Result_t *result, int compress);
-DB_Text_Result_t *db_recv_text_query(int sockfd, int compress);
+DB_Text_Result_t *db_recv_text_query(int sockfd, int compress, char **errmsg);
 int db_send_binary_result(int sockfd, DB_Binary_Result_t *result, int comp);
-DB_Binary_Result_t *db_recv_binary_query(int sockfd, int comp);
+DB_Binary_Result_t *db_recv_binary_query(int sockfd, int comp, char **errmsg);
 void db_hton(DB_Type_t dbtype, int n, void *data);
 #define db_ntoh(type,n,data) db_hton((type),(n),(data))
 void db_byteswap(DB_Type_t dbtype, int n, char *val);
