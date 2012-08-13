@@ -1538,7 +1538,7 @@ int DoIt(void)
             }
          }
 
-         if (want_path && status == DRMS_REMOTESUMS_TRYLATER)
+         if (want_path && (status == DRMS_REMOTESUMS_TRYLATER || status == DRMS_ERROR_SUMSTRYLATER))
          {
             /* The user wants segment files staged, but the files are being 
              * staged asynchronously via remote sums (because the payload is 

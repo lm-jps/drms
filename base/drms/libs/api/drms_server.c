@@ -2482,7 +2482,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
           /* WARNING - this is potentially an infinite loop. */
           while (1)
           {
-             if (maxloop <= 0)
+             if (maxloop <= 0)   
              {
                 /* tape read didn't complete */
                 fprintf(stderr, "Tape read has not completed; try again later.\n");
@@ -2612,10 +2612,9 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 
              if (reply->opcode || sum->status)
              {
-                fprintf(stderr,"SUM thread: SUM_wait call failed with "
+                fprintf(stderr,"SUM thread: Last SUM_poll call returned "
                         "error code = %d, sum->status = %d.\n",
-                        reply->opcode,sum->status);
-                reply->opcode = DRMS_ERROR_SUMWAIT;
+                        reply->opcode, sum->status);
                 nosums = 1; /* sums error - don't continue */
                 break; // from outer loop
              }

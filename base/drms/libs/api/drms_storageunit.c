@@ -548,10 +548,22 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 
      if (reply->opcode != 0)
      {
-        fprintf(stderr, "SUM GET failed with error code %d.\n",reply->opcode);
-        free(reply);
-        drms_unlock_server(env);
-        return 1;
+         if (reply->opcode == 3)
+         {
+             /* We waited over two hours for a tape fetch to complete, then we timed-out. */
+             free(reply);
+             drms_unlock_server(env);
+             
+             return DRMS_ERROR_SUMSTRYLATER;
+         }
+         else
+         {
+             fprintf(stderr, "SUM GET failed with error code %d.\n", reply->opcode);
+             free(reply);
+             drms_unlock_server(env);
+             
+             return 1;
+         }
      }
      else
      {
@@ -819,10 +831,22 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
      
            if (reply->opcode != 0)
            {
-              fprintf(stderr, "SUM GET failed with error code %d.\n",reply->opcode);
-              free(reply);
-              drms_unlock_server(env);
-              return 1;
+               if (reply->opcode == 3)
+               {
+                   free(reply);
+                   drms_unlock_server(env);
+                   
+                   /* We waited over two hours for a tape fetch to complete, then we timed-out. */
+                   return DRMS_ERROR_SUMSTRYLATER;
+               }
+               else
+               {
+                   fprintf(stderr, "SUM GET failed with error code %d.\n", reply->opcode);
+                   free(reply);
+                   drms_unlock_server(env);
+                   
+                   return 1;
+               }
            }
            else
            {

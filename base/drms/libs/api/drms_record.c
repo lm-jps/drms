@@ -8417,7 +8417,7 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                   }
 
                   /* if  stat == DRMS_REMOTESUMS_TRYLATER, segment files might be available later. */
-                  if (stat != DRMS_SUCCESS && stat != DRMS_REMOTESUMS_TRYLATER)
+                  if (stat != DRMS_SUCCESS && stat != DRMS_REMOTESUMS_TRYLATER && stat != DRMS_ERROR_SUMSTRYLATER)
                   {
                      fprintf(stderr, "Cursor query '%s' record staging failure, status=%d.\n", sqlquery, stat);
                      break;
@@ -8460,7 +8460,7 @@ int drms_open_recordchunk(DRMS_Env_t *env,
          /* ART - stat may be DRMS_REMOTESUMS_TRYLATER. This is basically the same thing
           * as calling drms_open_recordchunk() without ever having called drms_stage_records()
           * on the record-set. This is an okay thing to do. */
-         if (stat == DRMS_SUCCESS || stat == DRMS_REMOTESUMS_TRYLATER)
+         if (stat == DRMS_SUCCESS || stat == DRMS_REMOTESUMS_TRYLATER || stat == DRMS_ERROR_SUMSTRYLATER)
          {
             rs->cursor->currentchunk = chunkindex;
             rs->cursor->currentrec = -1; /* one record before chunk */
@@ -8786,7 +8786,7 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env,
          drms_open_recordchunk(env, rs, (DRMS_RecSetCursorSeek_t)neednewchunk, 0, &stat);
          /* if stat == DRMS_REMOTESUMS_TRYLATER, record will be present, but segment files
           * may not be online yet. */
-         if (stat != DRMS_SUCCESS && stat != DRMS_REMOTESUMS_TRYLATER)
+         if (stat != DRMS_SUCCESS && stat != DRMS_REMOTESUMS_TRYLATER && stat != DRMS_ERROR_SUMSTRYLATER)
          {
             fprintf(stderr, 
                     "Error retrieving record chunk '%d'.\n", 
@@ -8806,7 +8806,7 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env,
        * update the cursor information and return the next record. This record will not 
        * have its SU retrieved, because it is happening asynchronously, but we still have 
        * a valid record to return. */
-      if ((stat == DRMS_SUCCESS || stat == DRMS_REMOTESUMS_TRYLATER) && rs->cursor->currentrec >= 0)
+      if ((stat == DRMS_SUCCESS || stat == DRMS_REMOTESUMS_TRYLATER || stat == DRMS_ERROR_SUMSTRYLATER) && rs->cursor->currentrec >= 0)
       {
 	 /* Now, get the next record */
 	 ret = rs->records[rs->cursor->currentchunk * rs->cursor->chunksize + 
