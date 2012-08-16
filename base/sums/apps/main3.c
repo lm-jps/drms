@@ -16,6 +16,10 @@
 /*************************/
 #include <scsi/sg.h>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <stdio.h>
+
+static char *rcsid="$Id: main3.c,v 1.6 2012/08/16 18:18:12 production Exp $;
 
 extern int errno;
 /*static void respd();*/
@@ -29,6 +33,7 @@ KEY *list = NULL;
 FILE *logfp;
 SUM_t *sum;
 SUMID_t uid;
+CLIENT *cl;
 /*static int errcnt = 0;*/
 int soi_errno = NO_ERROR;
 int bytes, msgtag, petid, req_num, status, cnt, i, j, inum;
@@ -36,6 +41,7 @@ char **cptr;
 float ftmp;
 uint64_t *dsixpt;
 uint64_t alloc_index;
+uint64_t ix;
 char alloc_wd[64];
 char cmd[128];
 char mod_name[] = "sum_rpc";
@@ -90,6 +96,12 @@ void str_compress (char *s) {
    *dest = 0;
 }
 
+int my_random(int min, int max)
+{
+  return rand() % (max - min + 1) + min;
+}
+
+
 /* Before running this you must have the sum_svc running on d00 like so:
  * sum_svc hmidb &
  * The log file will be at /usr/local/logs/SUM/sum_svc_PID.log
@@ -97,6 +109,42 @@ void str_compress (char *s) {
 int main(int argc, char *argv[])
 {
   /*char touched[128];*/
+
+  int num, c;
+  int stime;
+  int xflg = 0;
+  long ltime;
+  //char xlogname[128], nametmp[128];
+
+  while(--argc > 0 && (*++argv)[0] == '-') {
+    while(c = *++argv[0])
+      switch(c) {
+      case 'x':
+        xflg=1;
+        break;
+      }
+  }
+  //setkey_uint32(&list, "test32", 0);
+  //xflg = getkey_uint32(list, "test32");
+  //xflg = getkey_uint32(list, "testX");
+
+  //sprintf(xlogname, "test_log.log");
+  //sprintf(nametmp, "%s/%s.chmown", "/usr/local/logs/SUM", xlogname);
+  //printf("%s\n", nametmp);
+  //exit(0);
+
+/**************************************
+  ltime = time(NULL);
+  stime = (unsigned) ltime/2;
+  srand(stime);
+
+for (i=0; i<50; i++) {
+  num = my_random(0, 2);
+  printf("num = %d\n", num);
+}
+exit(0);
+**************************************/
+
 /*******************************TEMP stuff******************
   int fd;
   int ret;
@@ -284,12 +332,33 @@ int main(int argc, char *argv[])
 
 *********************************************************************/
 
-  //if((sum = SUM_open("n02", NULL, printf)) == 0) {
+//  cl = (CLIENT *)0x6000000000024ab0;
+//  printf("cl = %lx\n", cl);
+//  exit(0);
+
+  //if((sum = SUM_open("xim", NULL, printf)) == 0) {
   if((sum = SUM_open(NULL, NULL, printf)) == 0) {
     printf("Failed on SUM_open()\n");
     exit(1);
   }
-goto XXX;
+
+// !!TEMP cause a sigpipe if pipe this to head (only does 10 lines)
+//    for (i = 0; i < 15; i++) {
+//        write(1, "Hello\n", 6);
+//        sleep(1);
+//    }
+
+//!!TEMP for test to see if get broken pipe
+//  printf("SUM_open() worked. Now sleep(60)\n");
+//  sleep(60);	//stop the sum_svc during this sleep
+//  printf("The sleep is done\n");
+//  if((sum = SUM_open("xim", NULL, printf)) == 0) {
+//    printf("Failed on SUM_open()\n");
+//    exit(1);
+//  }
+
+//goto XXX;
+//goto DEF;
   uid = sum->uid;
   //sum->debugflg = 1;			/* use debug mode for future calls */
   /*sum->debugflg = 0;*/
@@ -298,13 +367,17 @@ goto XXX;
 
   sum->bytes = (double)120000000;	/* 120MB */
   sum->reqcnt = 1;
-  sum->storeset = 1;			//!!TEMP test if get /SUM100
+  sum->storeset = 0;
+  sum->group = 4;
+//StartTimer(0);
   if(status = SUM_alloc(sum, printf)) {	/* allocate a data segment */
    printf("SUM_alloc() failed to alloc %g bytes. Error code = %d\n", 
 			sum->bytes, status);
    SUM_close(sum, printf);
    exit(1);
   }
+//ftmp = StopTimer ( 0 ) ;
+//printf("\nTime sec for alloc = %f\n\n", ftmp);
   cptr = sum->wd;
   dsixpt = sum->dsix_ptr;
   alloc_index = *dsixpt;
@@ -321,15 +394,22 @@ goto XXX;
 */
 
 /*************************************************************************/
+//goto DEF;
 XXX:
+  //sum->mode = RETRIEVE;
   sum->mode = RETRIEVE + TOUCH;
   //sum->mode = NORETRIEVE + TOUCH;
+  //sum->debugflg = 1;
   sum->tdays = 30;
   //sum->reqcnt = 3;
   sum->reqcnt = 1;
   dsixpt = sum->dsix_ptr;
-  *dsixpt++ = 102079934;
-//  *dsixpt++ = 102080317;
+//  *dsixpt++ = 245582;
+//  *dsixpt++ = 21503528; //prev used
+  *dsixpt++ = 101706864;
+//  *dsixpt++ = 21949607;
+//  *dsixpt++ = 187699531;
+//  *dsixpt++ = 4294976194;  //in DB 'jim'
 //  *dsixpt++ = 19328277;
 //  *dsixpt++ = 116105590;
 //  *dsixpt++ = 123082013;
@@ -369,23 +449,29 @@ XXX:
     break;
   case RESULT_PEND:		// result will be sent later 
     printf("SUM_get() call RESULT_PEND...\n");
+
+//!!TEMP do another sum_get() to see what happens!
+  dsixpt = sum->dsix_ptr;
+  *dsixpt++ = 101702788;
+  status = SUM_get(sum, printf); 
+  printf("status from SECOND SUM_get() = %d\n", status);
+//!!END TEMP
 while(1) {
   status = SUM_poll(sum);
   printf("SUM_poll() returns %d\n", status);
   if(status == 0) break;   //successful answer from the SUM_get()
   sleep(8);		   //must be <10sec for sum_svc t.o. to caller
-  status = SUM_nop(sum, printf);
-  printf("SUM_nop() returns %d\n", status);
-  if(status < 4) continue;   //sums alive. continue to wait
+//  status = SUM_nop(sum, printf);
+//  printf("SUM_nop() returns %d\n", status);
+//  if(status < 4) continue;   //sums alive. continue to wait
   //status 4 means sum_svc is dead. 5 means tape_svc is dead
-  /* OK, sums or tape_svc is dead. DRMS now has the ball on what to do*/
+  // OK, sums or tape_svc is dead. DRMS now has the ball on what to do
 }
 
-/**********************************************************************
+/**********************************************************
     status = SUM_wait();
     printf("status from SUM_wait() = %d\n", status);
-**********************************************************************/
-
+**********************************************************/
 
       if(sum->status) {
         printf("***Error on SUM_get() call. tape_svc may have died or\n");
@@ -404,16 +490,80 @@ while(1) {
     break;
   }
 
-goto GOEND;
+//goto GOEND;
+
+SUM_info_t *sinfo;
+int i, j, cnt;
 
 ftmp = StopTimer(0);
 //printf("\nTime sec for %d SUM_get() in one call = %f\n\n", MAXSUMREQCNT, ftmp);
 
+uint64_t dxarray[65536];
+//dxarray[0] = 21949607;
+//dxarray[1] = 187699531;
+//dxarray[2] = 19328277;
+//dxarray[3] = 116105590;
+//ix = 40350694;
+//ix = 178055194;
+//ix = 187699530;
+
+//ix = 190000000;
+ix = 18857884;
+for(i=0; i < 65536; i++) {
+  dxarray[i] = ix++;
+}
+/**************************/
+dxarray[0] = 18857884;
+dxarray[1] = 40350694;
+dxarray[2] = 18857895;
+dxarray[3] = 18857886;
+dxarray[4] = 18857891;
+dxarray[5] = 18857888;
+dxarray[6] = 18857893;
+dxarray[7] = 18857888;
+dxarray[8] = 18857896;
+dxarray[9] = 18857897;
+/**************************/
+
+cnt = 2048;
+//cnt = 10;
+
+for(i=0; i < 1; i++) {
+sum->sinfo = NULL;
+StartTimer(0);
+status = SUM_infoArray(sum, &dxarray, cnt, printf);
+ftmp = StopTimer ( 0 ) ;
+printf( "Time sec for %d SUM_infoArray() = %f\n", cnt, ftmp );
+//printf("status for SUM_infoArray = %d\n", status);
+if(xflg) {
+  sinfo = sum->sinfo;
+  for(j=0; j < cnt; j++) {
+    printf("\ncount of sinfo = %d\n", j);
+    printf("sum_info sunum = %u\n", sinfo->sunum);
+    printf("sum_info username = %s\n", sinfo->username);
+    printf("sum_info online_loc = %s\n", sinfo->online_loc);
+    printf("sum_info online_status = %s\n", sinfo->online_status);
+    printf("sum_info archive_status = %s\n", sinfo->archive_status);
+    printf("sum_info history_comment = %s\n", sinfo->history_comment);
+    printf("sum_info owning_series = %s\n", sinfo->owning_series);
+    printf("sum_info bytes = %g\n", sinfo->bytes);
+    printf("sum_info creat_date = %s\n", sinfo->creat_date);
+    printf("sum_info arch_tape = %s\n", sinfo->arch_tape);
+    printf("sum_info arch_tape_fn = %d\n", sinfo->arch_tape_fn);
+    printf("sum_info arch_tape_date = %s\n", sinfo->arch_tape_date);
+    printf("sum_info pa_status = %d\n", sinfo->pa_status);
+    printf("sum_info pa_substatus = %d\n", sinfo->pa_substatus);
+    printf("sum_info effective_date = %s\n", sinfo->effective_date);
+    sinfo = sinfo->next;
+  }
+}
+  SUM_infoArray_free(sum);
+  //free(sum->sinfo);
+  //sum->sinfo = NULL;            //must do so no double free in SUM_close()
+}
+
 /*************************************************************************/
 
-SUM_info_t *sinfo;
-int i;
-uint64_t ix;
 
 //ix = 4294967357;
 //ix = 4294967357;
@@ -429,6 +579,7 @@ ix = 669;
 /***********************************************************/
 
 goto ABC;	//just do the SUM_infoEx()
+//goto GOEND;
 
 StartTimer(1);
 for(i=0; i < 64; i++) {
@@ -460,37 +611,40 @@ printf( "\nTime sec for 64 SUM_info() = %f\n\n", ftmp );
 /**************************************************************/
 ABC:
 
-int cy;
-ix = 40350694;
+int cy, dcnt, rcnt;
+ix = 187699530;
+//ix = 178055194;
 StartTimer(1);			//time all 8 cycles
-for(cy=0; cy < 8; cy++) {
 
-//sum->reqcnt = 512;
-sum->reqcnt = 64;
-sum->sinfo = NULL;		//allow auto malloc
+rcnt = 512;
+sum->reqcnt = rcnt;
+//sum->reqcnt = 4;
 dsixpt = sum->dsix_ptr;
-for(i=0; i < 64; i++) {
+for(i=0; i < 512; i++) {
   *dsixpt++ = ix++;
 }
-/**************************************
-*dsixpt++ = 6379855;
-*dsixpt++ = 40954592;
 //*dsixpt++ = 6379855;
-*dsixpt++ = 40350695;
 //*dsixpt++ = 6379855;
-****************************************/
+write_log("\n");
+//dcnt = cnt/rcnt;
+//printf("dcnt = %d\n", dcnt);
+dcnt = 1;
+for(cy=0; cy < dcnt; cy++) {
+sum->sinfo = NULL;		//allow auto malloc
 StartTimer(0);
 if(SUM_infoEx(sum, printf)) {
   printf("\nFail on SUM_infoEx()\n");
 }
 else {
+  ftmp = StopTimer ( 0 ) ;
+  printf( "Time sec for %d SUM_infoEX() = %f\n", rcnt, ftmp );
+/******
   printf("\nOk, on SUM_infoEx()\n");
   sinfo = sum->sinfo;
   i = 1;
   while(sinfo) {
     printf("\ncount of sinfo = %d\n", i++);
     printf("sum_info sunum = %u\n", sinfo->sunum);
-/******
     printf("sum_info username = %s\n", sinfo->username);
     printf("sum_info online_loc = %s\n", sinfo->online_loc);
     printf("sum_info online_status = %s\n", sinfo->online_status);
@@ -503,22 +657,24 @@ else {
     printf("sum_info pa_status = %d\n", sinfo->pa_status);
     printf("sum_info pa_substatus = %d\n", sinfo->pa_substatus);
     printf("sum_info effective_date = %s\n", sinfo->effective_date);
-*******/
     sinfo = sinfo->next;
   }
   SUM_infoEx_free(sum);
+*******/
 }
-ftmp = StopTimer ( 0 ) ;
-printf( "\nTime sec for SUM_infoEX() = %f\n\n", ftmp );
 }
 ftmp = StopTimer ( 1 ) ;
-printf( "\nTime sec for 8 cycles of 64 SUM_infoEX() = %f\n\n", ftmp );
+printf( "\nTime sec for %d cycles of %d SUM_infoEX() = %f\n\n", dcnt, rcnt, ftmp );
 
+goto GOEND;
+
+DEF:
 //now do 1 cycle of 128 or 512
-sum->reqcnt = 128;
+sum->reqcnt = 512;
 sum->sinfo = NULL;		//allow auto malloc
 dsixpt = sum->dsix_ptr;
-for(i=0; i < 256; i++) {
+ix = 40350694;
+for(i=0; i < 512; i++) {
   *dsixpt++ = ix++;
 }
 StartTimer(0);
@@ -531,13 +687,13 @@ else {
   i = 1;
   while(sinfo) {
     printf("\ncount of sinfo = %d\n", i++);
-    printf("sum_info sunum = %u\n", sinfo->sunum);
+    printf("sum_info sunum = %lu\n", sinfo->sunum);
     sinfo = sinfo->next;
   }
   SUM_infoEx_free(sum);
 }
 ftmp = StopTimer ( 0 ) ;
-printf( "\nTime sec for 128 SUM_infoEX() = %f\n\n", ftmp );
+printf( "\nTime sec for 512 SUM_infoEX() = %f\n\n", ftmp );
 GOEND:
   SUM_close(sum, printf);
 }
