@@ -19,7 +19,7 @@
 #include <sys/socket.h>
 #include <stdio.h>
 
-static char *rcsid="$Id: main3.c,v 1.6 2012/08/16 18:18:12 production Exp $;
+static char *rcsid="$Id: main3.c,v 1.7 2012/08/16 18:20:35 production Exp $";
 
 extern int errno;
 /*static void respd();*/
