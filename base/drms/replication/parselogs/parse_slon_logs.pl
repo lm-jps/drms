@@ -85,6 +85,29 @@
 #    -> end_of_while_loop            
 #              
 
+# This is the "current" set of configuration parameters that this script uses:
+#   kPSLprepLog
+#   kServerLockDir
+#   kPSLprepCfg
+#   kPSLparseCounter
+#   kPSLlogReady
+#   kPSLlogsSourceDir
+#   kPSLreproPath
+#   kPSLaccessRepro
+#   SLAVEPORT
+#   SLAVEDBNAME
+#   kPsqlCmd
+ 
+# To test this script:
+# 1. Run on hmidb2.
+# 2. Use /home/jsoc/cvs/Development/JSOC/proj/replication/etc/repserver.testparser.cfg as the configuration file.
+# 3. Put some un-parsed logs in /tmp/slparsetest/slon_logs.
+# 4. Edit /tmp/slparsetest/slon_parser.cfg appropriately. Make sure edit the first column so that it doesn't point
+#    to some production location.
+# 5. Run:
+#    <path to test parser>/parse_slon_logs.pl /home/jsoc/cvs/Development/JSOC/proj/replication/etc/repserver.testparser.cfg
+#          parselock.txt subscribelock.txt
+
 use FindBin qw($Bin);
 use lib "$Bin/";
 use File::Basename;
@@ -1212,6 +1235,7 @@ sub parseLog {
 
   while (<SRC>) {
  
+      # Present in every slony log
     if ($_ =~ /select "_jsoc"\.archiveTracking_offline\('.*'\);/i ||
         $_ =~ /^--/ ||
         $_ =~ /^start tran/i ||
@@ -1220,6 +1244,45 @@ sub parseLog {
       dumpSlonLog($cfgH, $nodeH, undef, $_);
       next;
     }
+      
+      # Present in logs generated in response to a slonik change to DDL that alters a table.
+      # THIS LINE IS SERIES-SPECIFIC - print to the log only if we are altering a table
+      # to which the remote site is subscribed.
+      if ($_ =~ /^\s*alter\s+table\s+(\S+\.\S+)\s+/i)
+      {
+          my($series) = $1;
+          my($weirdseriesname);
+          my(@parts);
+          
+          # For some reason, the series name MUST be of the format "ns"."table". Rather
+          # than trying to make this the more sensible ns.table, and possibly miss
+          # all the places in this script where "ns"."table" is expected, just use the
+          # weird format. Of course, at this point, $series may have quotes around the
+          # ns, or around the table, or both, or neither.
+          @parts = ($series =~ /(\S+)\.(\S+)/);
+          if ($parts[0] !~ /"\S+"/)
+          {
+              $weirdseriesname = "\"" . $parts[0] . "\"";
+          }
+          else
+          {
+              $weirdseriesname = $parts[0];
+          }
+          
+          $weirdseriesname = $weirdseriesname . "\.";
+
+          if ($parts[1] !~ /"\S+"/)
+          {
+              $weirdseriesname = $weirdseriesname . "\"" . $parts[1] . "\"";
+          }
+          else
+          {
+              $weirdseriesname = $weirdseriesname . $parts[1];
+          }
+
+          dumpSlonLog($cfgH, $nodeH, $weirdseriesname, $_);
+          next;
+      }
 
   #e.g.
   #insert into "lm_jps"."lev1_test4k10s"
