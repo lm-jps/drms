@@ -18,8 +18,9 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <stdio.h>
+#include "tape.h"
 
-static char *rcsid="$Id: main3.c,v 1.7 2012/08/16 18:20:35 production Exp $";
+static char *rcsid="$Id: main3.c,v 1.8 2012/08/21 17:11:17 arta Exp $";
 
 extern int errno;
 /*static void respd();*/
@@ -611,7 +612,7 @@ printf( "\nTime sec for 64 SUM_info() = %f\n\n", ftmp );
 /**************************************************************/
 ABC:
 
-int cy, dcnt, rcnt;
+;int cy, dcnt, rcnt;
 ix = 187699530;
 //ix = 178055194;
 StartTimer(1);			//time all 8 cycles
