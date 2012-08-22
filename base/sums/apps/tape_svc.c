@@ -209,7 +209,7 @@ void alrm_sig(int sig)
             ssprog = getkey_uint32(poff->list, "SPROG");
             if(offptr->sprog != ssprog) { 
               write_log("**ERROR: Bug at alrm_sig. tape rd sprog != ssprog\n");
-              ssprog = offptr->sprog;    //use this for the return
+              //ssprog = offptr->sprog;    //use this for the return
             } 
             //sumvers = getkey_uint32(poff->list, "SVERS");
             remsumoffcnt(&offcnt_hdr, uid);
