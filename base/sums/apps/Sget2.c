@@ -475,6 +475,28 @@ if(strcmp(hostn, "lws") && strcmp(hostn, "n00") && strcmp(hostn, "d00") && strcm
   }
   clnttape_old = clnttape;	//used by tapereconnectdo_1()
 }
+
+//!!NOTE: Add 9Sep2011 special case for xim to connect to xtape_svc
+if(!strcmp(hostn, "xim")) { 
+  /* Create client handle used for calling the tape_svc */
+  printf("\nsum_svc waiting for tape servers to start (approx 10sec)...\n");
+  sleep(10);			/* give time to start */
+  //if running on j1, then the tape_svc is on TAPEHOST, else the localhost
+  if(strcmp(hostn, SUMSVCHOST)) { 
+    clnttape = clnt_create(thishost, TAPEPROG, TAPEVERS, "tcp");
+    strcpy(usedhost, thishost);
+  }
+  else {
+    clnttape = clnt_create(TAPEHOST, TAPEPROG, TAPEVERS, "tcp");
+    strcpy(usedhost, TAPEHOST);
+  }
+  if(!clnttape) {       /* server not there */
+    clnt_pcreateerror("Can't get client handle to tape_svc (xsum_svc)");
+    write_log("tape_svc not there on %s\n", usedhost);
+//    exit(1);
+  }
+  clnttape_old = clnttape;	//used by tapereconnectdo_1()
+}
 #endif
 
 //  if(SUM_Init(dbname)) {		/* init and connect to db */
@@ -511,6 +533,7 @@ sumprog_1(rqstp, transp)
 {
   char procname[128];
   uint64_t ck_client;     //used to ck high bits of current_client
+  uint64_t uid;
 
 	//StartTimer(1);
 	union __svcargun {
@@ -664,7 +687,13 @@ sumprog_1(rqstp, transp)
               if(clnt_stat != 0) {
                 clnt_perrno(clnt_stat);		/* outputs to stderr */
                 write_log("***Error on clnt_call() back to RESPDO procedure\n");
-                write_log("***The original client caller has probably exited\n");
+                if(findkey(result, "uid")) {
+                  uid = getkey_uint64(result, "uid");
+                  write_log("***The original client caller has probably exited. Its uid=%lu\n", uid);
+                }
+                else {
+                  write_log("***The original client caller has probably exited\n");
+                }
                 call_err = clnt_sperror(current_client, "Err");
                 write_log("%s\n", call_err);
               }
@@ -707,6 +736,7 @@ sumprog_1_array(rqstp, transp)
 {
   char procname[128];
   uint64_t ck_client;     //used to ck high bits of current_client
+  uint64_t uid;
 
 	//StartTimer(1);
 	union __svcargun {
@@ -771,7 +801,13 @@ sumprog_1_array(rqstp, transp)
                 if(clnt_stat != RPC_TIMEDOUT) {
                   clnt_perrno(clnt_stat);         // outputs to stderr 
                   write_log("***Error on clnt_call() back to RESPDO procedure\n");
-                  write_log("***The original client caller has probably exited\n");
+                  if(findkey(result, "uid")) {
+                    uid = getkey_uint64(result, "uid");
+                    write_log("***The original client caller has probably exited. Its uid=%lu\n", uid);
+                  }
+                  else {
+                    write_log("***The original client caller has probably exited\n");
+                  }
                   call_err = clnt_sperror(current_client, "Err");
                   write_log("%s\n", call_err);
 
