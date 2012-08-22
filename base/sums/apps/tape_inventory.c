@@ -66,6 +66,7 @@ extern int errno;
 #elif SUMT950
   #define STATUSDUMP "/tmp/t950_status_dump.out"
   #define STATUSDUMPSIM "/usr/local/logs/SUM/t950_status_dump.out.sim"
+  #define STATUSDUMPSIMREINV "/tmp/t950_status_dump.jmtx"
 #endif
 #define VDUMP "/usr/local/logs/SUM/t950_status.verify"
 
@@ -254,13 +255,14 @@ int tape_reinventory(int sim, int catalog)
 /*  system(cmd);
 */
   sprintf(cmd, "/usr/sbin/mtx -f %s status 1> %s 2>&1", LIBDEV, STATUSDUMP);
-  write_log("*Inv: %s\n", cmd);
   if(sim) {			/* simulation mode only */
     sleep(5);
-    sprintf(cmd, "cp %s %s", STATUSDUMPSIM, STATUSDUMP);
+    sprintf(cmd, "cp %s %s", STATUSDUMPSIMREINV, STATUSDUMP);
+    write_log("*Inv: %s\n", cmd);
     system(cmd);
   }
   else {
+    write_log("*Inv: %s\n", cmd);
     if(system(cmd)) {
       write_log("ReInv Fail on: %s\n", cmd);
       return(0);
