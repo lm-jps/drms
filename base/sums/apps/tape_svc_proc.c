@@ -222,7 +222,7 @@ int kick_next_entry_rd() {
           setkey_int(&poff->list, "tapemode", TAPE_RD_CONT);
         setkey_int(&poff->list, "filenum", drives[d].filenum);
         /* call drive[0,1]_svc and tell our caller to wait for completion */
-        /*write_log("Calling: clnt_call(clntdrv%d, READDRVDO, ...) \n", d);*/
+        write_log("kick_next_entry_rd(): clnt_call( READDRVDO ): drv=%d uid=%lu \n", d, p->uid);
         status = clnt_call(clntdrv[d], READDRVDO, (xdrproc_t)xdr_Rkey, 
 	(char *)poff->list, (xdrproc_t)xdr_uint32_t,(char *)&driveback,TIMEOUT);
         if(status != RPC_SUCCESS) {
@@ -719,7 +719,7 @@ KEY *readdo_1(KEY *params) {
   uid = getkey_uint64(params, "uid");
   write_log("!!TEMP setsumoffcnt uid=%lu\n", uid); //!!TEMP
   if(!(offptr = setsumoffcnt(&offcnt_hdr, uid, 0))) {
-    write_log("**Err: setsumoffcnt() in readdo_1() has malloc error for uid=%lu\n", uid);
+    write_log("**Err: setsumoffcnt() in readdo_1() has dup error for uid=%lu\n", uid);
     rinfo = 1;  /* give err status back to original caller */
     send_ack();
     free(user);
@@ -937,6 +937,8 @@ KEY *writedo_1(KEY *params) {
 
   /* get a tapeid for this group with enough storage to write to */
   /* will get the same tapeid until the tape fills up and is closed */
+  /* Pass the current tapeid in tapeinfo in case tape needs to be closed */
+  tapeinfo.tapeid = getkey_str(params, "tapeid");
   if(SUMLIB_TapeFindGroup(group_id, total_bytes, &tapeinfo)) {
     rinfo = NO_TAPE_IN_GROUP;  /* give err status back to original caller */
     send_ack();
@@ -1580,8 +1582,9 @@ KEY *taperespreaddo_1(KEY *params) {
     offptr->offcnt++;
   }
   if(offptr->sprog != sumprog) {
-    write_log("**ERROR: Bug. In tape rd sprog != sumprog\n");
-    sumprog = offptr->sprog; 	//use this for the return
+    write_log("**ERROR: Bug. In tape rd sprog (%u) != sumprog (%u)\n",
+		offptr->sprog, sumprog);
+    //sumprog = offptr->sprog; 	//use this for the return
   }
   //sumvers = getkey_uint32(params, "SVERS");
   //set client handle for the sums process
@@ -1968,7 +1971,7 @@ KEY *taperesprobotdo_1_rd(KEY *params) {
   setkey_int(&retlist, "filenum", drives[d].filenum);
 
   /* call drive[0,1]_svc and tell our caller to wait for completion */
-  /*write_log("Calling: clnt_call(clntdrv%d, READDRVDO, ...) \n", dnum);*/
+  write_log("taperesprobotdo_1_rd(): clnt_call( READDRVDO ) drv=%d\n", dnum);
   status = clnt_call(clntdrv[dnum], READDRVDO, (xdrproc_t)xdr_Rkey,
          (char *)retlist, (xdrproc_t)xdr_uint32_t, (char *)&driveback, TIMEOUT);
   if(status != RPC_SUCCESS) {
@@ -2774,26 +2777,44 @@ KEY *dronoffdo_1(KEY *params)
   static KEY *xlist;
   uint64_t robotback;
   char *action, *tapeid, *call_err;
-  int drivenum, slotnum;
+  int drivenum, slotnum, forceflg;
   char cmd[80];
   enum clnt_stat status;
 
   action = getkey_str(params, "action");
   drivenum = getkey_int(params, "drivenum");
+  forceflg = getkey_int(params, "forceflg");
   write_log("%s: driveonoff = %s %d\n", datestring(), action, drivenum);
   if(drivenum >= MAX_DRIVES) {
     write_log("Error driveonoff drivenum >= MAX_DRIVES (%d)\n", MAX_DRIVES);
     driveonoffstatus = 2;
   }
-  else if(drives[drivenum].busy) {
-    write_log("Drive# %d currently busy. Try again later.\n", drivenum);
-    driveonoffstatus = 3;
-  }
+  //else if(drives[drivenum].busy) {
+  //  write_log("Drive# %d currently busy. Try again later.\n", drivenum);
+  //  driveonoffstatus = 3;
+  //}
   else if(!strcmp(action, "on")) {
-    driveonoffstatus = 0;
-    drives[drivenum].offline = 0;
+    if(drives[drivenum].busy) {
+      write_log("Drive# %d currently busy. Try again later.\n", drivenum);
+      driveonoffstatus = 3;
+    }
+    else {
+      driveonoffstatus = 0;
+      drives[drivenum].offline = 0;
+    }
   }
   else if(!strcmp(action, "off")) {
+    if(drives[drivenum].busy) {
+      if(!forceflg) {
+        write_log("Drive# %d currently busy. Try again later.\n", drivenum);
+        driveonoffstatus = 3;
+        rinfo = driveonoffstatus;
+        send_ack();
+        free(action);
+        return((KEY *)1);
+      }
+      drives[drivenum].busy = 0;	//force it not busy
+    }
     driveonoffstatus = 1;
     drives[drivenum].offline = 1;
     //drives[drivenum].lock = 0;
@@ -2833,7 +2854,11 @@ KEY *dronoffdo_1(KEY *params)
     }
   }
   else if(!strcmp(action, "status")) {
-    driveonoffstatus = drives[drivenum].offline;
+    if(drives[drivenum].busy) {
+      write_log("Drive# %d currently busy. Try again later.\n", drivenum);
+      driveonoffstatus = 3;
+    }
+    else driveonoffstatus = drives[drivenum].offline;
   }
   rinfo = driveonoffstatus;
   send_ack();
@@ -2849,7 +2874,7 @@ int send_mail(char *fmt, ...)
   va_start(args, fmt);
   vsprintf(string, fmt, args);
   /* !!TBD send to admin alias instead of jim */
-  sprintf(cmd, "echo \"%s\" | Mail -s \"test mail\" jim@sun.stanford.edu,hao@sun.stanford.edu", string);
+  sprintf(cmd, "echo \"%s\" | Mail -s \"tape_svc mail\" jim@sun.stanford.edu,hao@sun.stanford.edu,jeneen@sun.stanford.edu", string);
   system(cmd);
   va_end(args);
   return(0);

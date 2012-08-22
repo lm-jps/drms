@@ -18,6 +18,7 @@ int SUMLIB_TapeFindGroup(int group, double bytes, TAPE *tape)
 
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR l_tapeid[20];
+  VARCHAR l_tapeid2[20];
   int  l_nxtwrtfn;
   int  l_spare;
   int  l_group_id;
@@ -25,7 +26,9 @@ EXEC SQL BEGIN DECLARE SECTION;
   uint64_t  l_availblocks;
 EXEC SQL END DECLARE SECTION;
   int found = 0;
+  int closeit = 0;
   double size;
+  char cltape[20];
 
     EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
     l_group_id = group;
@@ -34,7 +37,7 @@ EXEC SQL END DECLARE SECTION;
 	SELECT tapeid, nxtwrtfn, spare, avail_blocks, closed
         FROM SUM_TAPE
         WHERE GROUP_ID = :l_group_id AND CLOSED != 2 AND CLOSED != -2
-	ORDER BY tapeid;
+	ORDER BY tapeid;	//-2 may be found for a cleaning tape
 
         EXEC SQL OPEN pfind;
     EXEC SQL WHENEVER NOT FOUND GOTO end_fetch;
@@ -43,7 +46,6 @@ EXEC SQL END DECLARE SECTION;
       EXEC SQL FETCH pfind INTO :l_tapeid, :l_nxtwrtfn, :l_spare, :l_availblocks, :l_closed;
       size = (double)l_availblocks;
       size = size * 512.0;
-      /*if(size >= bytes) { */
       if(size >= (bytes + 100000000.0)) {   /* give 100MB leeway */
         found = 1;
         /* fill in the tape structure */
@@ -55,15 +57,25 @@ EXEC SQL END DECLARE SECTION;
         tape->tapeid = strdup(l_tapeid.arr);
         EXEC SQL CLOSE pfind;
         EXEC SQL COMMIT;
+        if(closeit) {
+          printk("SUMLIB_TapeFindGroup: TMP MSG: Need to close %s\n", cltape);
+          //just give above msg for now. Later after this test enable the close.
+          //SUMLIB_TapeClose(cltape);
+        }
 	printk("SUMLIB_TapeFindGroup found tape %s for group %d\n", 
 			l_tapeid.arr, group); 
         return(0);
+      }
+      else {			//the open tape doesn't have enough space
+        closeit = 1;		//can't call sql to close at this point
+        strcpy(cltape, l_tapeid.arr);
       }
     }
 
 end_fetch:
     EXEC SQL CLOSE pfind;
     EXEC SQL COMMIT;
+    EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
     /* now get an unused tape and assign it this group id */
         EXEC SQL DECLARE tfind CURSOR FOR
 	SELECT tapeid, nxtwrtfn, spare, avail_blocks, closed
@@ -76,7 +88,7 @@ end_fetch:
 
     found = 0;
     for( ; ; ){
-      EXEC SQL FETCH tfind INTO :l_tapeid, :l_nxtwrtfn, :l_spare, :l_availblocks, :l_closed;
+      EXEC SQL FETCH tfind INTO :l_tapeid2, :l_nxtwrtfn, :l_spare, :l_availblocks, :l_closed;
       found = 1;
       /* fill in the tape structure */
       tape->nxtwrtfn = l_nxtwrtfn;
@@ -84,21 +96,30 @@ end_fetch:
       tape->group_id = l_group_id;
       tape->availblocks = l_availblocks;
       tape->closed = l_closed;
-      tape->tapeid = strdup(l_tapeid.arr);
+      tape->tapeid = strdup(l_tapeid2.arr);
       EXEC SQL CLOSE tfind;
       /* now assign the group to this tapeid */
       EXEC SQL UPDATE SUM_TAPE
 		SET GROUP_ID = :l_group_id 
-		WHERE TAPEID = :l_tapeid;
+		WHERE TAPEID = :l_tapeid2;
       EXEC SQL COMMIT WORK;
       printk("SUMLIB_TapeFindGroup found tape %s for group %d\n", 
-			l_tapeid.arr, group); 
+			l_tapeid2.arr, group); 
+      if(closeit) {
+        printk("SUMLIB_TapeFindGroup: TMP MSG: Need to close %s\n", cltape);
+        //just give the above msg for now. Later after this test enable the close.
+        //SUMLIB_TapeClose(cltape);
+      }
       return(0);	/* just need 1st entry */
     }
 
 end_tfetch:
     EXEC SQL CLOSE tfind;
     EXEC SQL COMMIT;
+    if(closeit) {
+      printk("SUMLIB_TapeFindGroup: TMP: Need to close %s\n", cltape);
+      //SUMLIB_TapeClose(cltape);
+    }
     if(!found) {
       printk("Error in SUMLIB_TapeFindGroup.  Can't find tape for group %d\n", group); 
       return(1);
@@ -108,5 +129,9 @@ sqlerror:
     EXEC SQL ROLLBACK WORK;
     printk("Error in SUMLIB_TapeFindGroup.  Can't get tape for group %d\n", group); 
     printk("% .70s \n", sqlca.sqlerrm.sqlerrmc); 
+    if(closeit) {
+      printk("TMP msg: Need to close %s\n", cltape);
+      //SUMLIB_TapeClose(cltape);
+    }
     return(1);
 }

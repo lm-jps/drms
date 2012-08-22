@@ -21,6 +21,8 @@ void usage()
  printf("which will set internal tables to a new read of the\n");
  printf("sum_partn_avail table in the sums DB.\n");
  printf("Formerly, the sums would need to be restarted for a table change to take effect.\n\n");
+ printf("Usage: sumrepartn [-h] [-y]\n");
+ printf("       y = Don't ask yes/no. Force yes.\n");
  exit(0);
 }
 
@@ -29,6 +31,7 @@ int main(int argc, char *argv[])
   SUM_t *sum;
   char line[32];
   int status, c;
+  int yes=0;
 
   while((--argc > 0) && ((*++argv)[0] == '-')) {
     while((c = *++argv[0])) {
@@ -36,21 +39,25 @@ int main(int argc, char *argv[])
       case 'h':
         usage();
         break;
+      case 'y':
+        yes = 1;;
+        break;
       }
     }
   }
-  printf("Do you want SUMS to read a new sum_partn_avail table (yes/no) [no] = ");
-  if(gets(line) == NULL) { exit(0); }
-  if(!strcmp(line, "yes")) {
-    if((sum = SUM_open(NULL, NULL, printf)) == 0) {
-      printf("Failed on SUM_open()\n");
-      exit(1);
-    }
-    printf("Opened with SUMS uid=%lu\n", sum->uid);
-    if(status = SUM_repartn(sum, printf)) {
-      printf("ERROR on call to SUM_repartn() API\n");
-    }
-    SUM_close(sum, printf);
-    printf("Complete\n");
+  if(!yes) {
+    printf("Do you want SUMS to read a new sum_partn_avail table (yes/no) [no] = ");
+    if(gets(line) == NULL) { exit(0); }
+    if(strcmp(line, "yes")) { exit(0); }
   }
+  if((sum = SUM_open(NULL, NULL, printf)) == 0) {
+    printf("Failed on SUM_open()\n");
+    exit(1);
+  }
+  printf("Opened with SUMS uid=%lu\n", sum->uid);
+  if(status = SUM_repartn(sum, printf)) {
+    printf("ERROR on call to SUM_repartn() API\n");
+  }
+  SUM_close(sum, printf);
+  printf("Complete\n");
 }

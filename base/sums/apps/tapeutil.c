@@ -367,7 +367,7 @@ void insert_tq_entry_rd_need(TQ *p) {
   }
   px = q_rd_need_front;
   while(px) {
-    if((px->filenum == p->filenum) && (!strcmp(px->tapeid, p->tapeid))) {
+    if((px->uid == p->uid) && (px->filenum == p->filenum) && (!strcmp(px->tapeid, p->tapeid))) {
       return; //no dups
     }
     px = px->next;
@@ -517,10 +517,19 @@ TQ *delete_q_rd_need(TQ *p) {
  *	remove the entry containing the uid. (can only be one)
 */
 
+//Add 7/26/2012 error ret on dup uid
 SUMOFFCNT *setsumoffcnt(SUMOFFCNT **list, SUMID_t uid, int offcnt)
 {
+  SUMOFFCNT *walk;
   SUMOFFCNT *newone;
 
+  walk = *list;
+  while(walk) {
+    if(walk->uid != uid)
+      walk = walk->next;
+    else 
+      return(NULL);  //no dup uid allowed
+  }
   newone = (SUMOFFCNT *)malloc(sizeof(SUMOFFCNT));
   if(newone == NULL) return(newone);	/* err can't malloc */
   newone->next = *list;
