@@ -1,7 +1,9 @@
 /* driveonoff.c
  *
  * Takes the given t120 drive  on or off line. 
- * Will be a noop if the tape_svc sees the drive is busy.
+ * Will be a noop if the tape_svc sees the drive is busy unless
+ * it's an offline call w/the -f(orce) switch set. This will force
+ * the drive offline.
  *
  * Usage: driveonoff on|off|status drive#
 */
@@ -31,6 +33,7 @@ char thishost[MAX_STR];
 char datestr[32];
 int soi_errno = NO_ERROR;
 int debugflg = 0;
+int forceflg = 0;
 int sim = 0;
 int tapeoffline = 0;
 int statusflg = 0;
@@ -117,6 +120,9 @@ void get_cmd(int argc, char *argv[])
       case 'd':
         debugflg=1;
         break;
+      case 'f':
+        forceflg=1;
+        break;
       default:
         break;
       }
@@ -128,12 +134,16 @@ void get_cmd(int argc, char *argv[])
       statusflg = 1;
     }
     else {
-      printf("Usage: driveonoff on|off|status drive#(0-n)\n");
+      printf("Usage: driveonoff [-f] on|off|status drive#(0-n)\n");
+      printf("       -f = Only valid w/off action. Forces drive offline\n");
+      printf("            even if it's busy and marks it not busy.\n");
       exit(1);
     }
   }
   else if(argc != 2) {
-    printf("Usage: driveonoff on|off|status drive#(0-n)\n");
+    printf("Usage: driveonoff [-f] on|off|status drive#(0-n)\n");
+      printf("       -f = Only valid w/off action. Forces drive offline\n");
+      printf("            even if it's busy and marks it not busy.\n");
     exit(1);
   }
   else {
@@ -206,6 +216,7 @@ int main(int argc, char *argv[])
     list = newkeylist();
     setkey_str(&list, "host", thishost);
     setkey_str(&list, "action", action);
+    setkey_int(&list, "forceflg", forceflg);
     if(statusflg) drivenum = i;
     setkey_int(&list, "drivenum", drivenum);
     status = clnt_call(clnttape, DRONOFFDO, (xdrproc_t)xdr_Rkey, (char *)list,
