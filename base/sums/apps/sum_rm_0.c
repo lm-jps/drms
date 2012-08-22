@@ -204,6 +204,7 @@ int stat_storage()
   PART *pptr;
   int i, status;
   int updated = 0;
+  int partnchange = 0;
   double df_avail, df_total, df_del, total, upercent;
   struct statvfs vfs;
 
@@ -230,21 +231,23 @@ int stat_storage()
       //df_reserve = 0.01 * df_total;
       //if(df_reserve > df_avail) df_avail = 0.0;
       //else df_avail = df_avail - df_reserve;
-      upercent = df_avail/df_total;
-      if(upercent < 0.02) {		//turn off partition at 98%
-        if(ponoff[i] >= 0) {
-          printk("Turning off full partition %s\n", pptr->name);
-          SUMLIB_PavailOff(pptr->name); //no more allocation from this parti
-          ponoff[i] = -1;
-        }
-      }
-      else if(upercent >= 0.05) {	//turn it back on unless -1 in DB
-        if(ponoff[i] != -2) {		//ok to turn on again
-          if(ponoff[i] == -1) {
-            printk("Turning on former full partition %s\n", pptr->name);
-            SUMLIB_PavailOn(pptr->name, ptab[i].pds_set_num); //can alloc again
-            ponoff[i] = ptab[i].pds_set_num;
+      if(pptr->pds_set_num != -2) {	//don't touch a -2 partition
+        upercent = df_avail/df_total;
+        if(upercent < 0.02) {		//turn off partition at 98%
+          if(ponoff[i] >= 0) {
+            printk("Turning off full partition %s\n", pptr->name);
+            SUMLIB_PavailOff(pptr->name); //no more allocation from this parti
+            ponoff[i] = -1;
+            partnchange = 1;		//must resync memory w/db
           }
+        }
+        else if(upercent >= 0.05) {	//ok to turn it back on 
+            if(ponoff[i] == -1) {
+              printk("Turning on former full partition %s\n", pptr->name);
+              SUMLIB_PavailOn(pptr->name, ptab[i].pds_set_prime); //can alloc again
+              ponoff[i] = 0;
+              partnchange = 1;		//must resync memory w/db
+            }
         }
       }
       if(SUMLIB_PavailUpdate(pptr->name, df_avail))
@@ -261,6 +264,11 @@ int stat_storage()
           printk("%s Attempt to del %e bytes\n", pptr->name, df_del);
           DS_RmDoX(pptr->name, df_del); 
         }
+    }
+  }
+  if(partnchange) {
+    if(system("sumrepartn -y")) {
+      printk("Error on system() call to resync mem w/db\n");
     }
   }
   return(updated);
@@ -478,15 +486,11 @@ void setup()
   fclose(fplog);
   active = 0;
   DS_ConnectDB(dbname);		/* connect to DB for init */
-  if(DS_PavailRequest())	/* get sum_partn_avail info in mem */
+  if(DS_PavailRequestEx())	/* get sum_partn_avail info in mem */
     exit(1);
   for(i=0; i < MAX_PART-1; i++) {
-    if(ptab[i].pds_set_num == -1) {  //orig value is off. don't ever change
-      ponoff[i] = -2;
-    }
-    else {
-      ponoff[i] = ptab[i].pds_set_num; //init the 99% off/ 95% on table
-    }
+      //ponoff[i] = 0;		 //init the 98% off/ 95% on table
+      ponoff[i] = ptab[i].pds_set_num;	 //init the 98% off/ 95% on table
   }
   signal(SIGALRM, &alrm_sig);	/* setup for alarm signal */
   alarm(2);			/* set up first alarm */
