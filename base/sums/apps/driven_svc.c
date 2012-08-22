@@ -22,7 +22,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <stropts.h>
+//#include <stropts.h>
 #include <sys/mtio.h>
 #include <dirent.h>
 #include <openssl/md5.h>
@@ -1078,7 +1078,7 @@ KEY *readdrvdo_1(KEY *params)
   setkey_int(&retlist, "STATUS", 0);   /* give success back to caller */
 uint32_t sprog;
   sprog = getkey_uint32(retlist, "SPROG");
-  write_log("!!TEMP: SPROG for tape rd completion = %d\n", sprog);
+  write_log("!!TEMP: SPROG for tape rd completion = %d, uid = %lu\n",sprog,uid);
   free(wd);
   free(tapeid);
   return(retlist);
@@ -1783,6 +1783,7 @@ int read_drive_to_wd(int sim, char *wd, int drive, char *tapeid,
     }
   }
   write_log("***Dr%d:rd:success %s\n", drivenum, md5sum);
+  write_time();
   return(drive);
 }
 
