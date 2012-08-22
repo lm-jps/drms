@@ -340,10 +340,11 @@ KEY *getdo_1(KEY *params)
       clnt_destroy(clresp);
       return((KEY *)1);	/* nothing more to be sent */
     }
+    offline = getkey_int(retlist, "offline");
     write_log("SUM_get() id=%d for user=%s sunum=%lu cnt=%d uid=%lu rtrv=%d\n", 
 	rrid, GETKEY_str(params, "username"), sunum, reqcnt, uid, offline);
     /* param says if one or more are offline and need to be retrieved */
-    if(offline = getkey_int(retlist, "offline")) {  
+    if(offline) {  
       offcnt = 0;
       for(i=0; i < reqcnt; i++) {
         sprintf(nametmp, "online_status_%d", i);
@@ -841,6 +842,7 @@ KEY *nopdo_1(KEY *params)
     }
   }
   rinfo = 0;
+  uid = getkey_uint64(params, "uid");
 /********************************************************************
   //ck if a sum_svc to tape_svc reconnect call was made (done by
   //tape_svc_restart to start a new tape_svc). If so then return
@@ -856,7 +858,6 @@ KEY *nopdo_1(KEY *params)
 /***************************************************************
 //!!NOTE: if call tape_svc do we need to set up current_client here and pass it along
     rinfo = 1;
-    uid = getkey_uint64(params, "uid");
     klist = newkeylist();
     setkey_uint64(&klist, "uid", uid);
     setkey_str(&klist, "USER", GETKEY_str(params, "USER") );
