@@ -475,6 +475,28 @@ if(strcmp(hostn, "lws") && strcmp(hostn, "n00") && strcmp(hostn, "d00") && strcm
   }
   clnttape_old = clnttape;	//used by tapereconnectdo_1()
 }
+
+//!!NOTE: Add 9Sep2011 special case for xim to connect to xtape_svc
+if(!strcmp(hostn, "xim")) { 
+  /* Create client handle used for calling the tape_svc */
+  printf("\nsum_svc waiting for tape servers to start (approx 10sec)...\n");
+  sleep(10);			/* give time to start */
+  //if running on j1, then the tape_svc is on TAPEHOST, else the localhost
+  if(strcmp(hostn, SUMSVCHOST)) { 
+    clnttape = clnt_create(thishost, TAPEPROG, TAPEVERS, "tcp");
+    strcpy(usedhost, thishost);
+  }
+  else {
+    clnttape = clnt_create(TAPEHOST, TAPEPROG, TAPEVERS, "tcp");
+    strcpy(usedhost, TAPEHOST);
+  }
+  if(!clnttape) {       /* server not there */
+    clnt_pcreateerror("Can't get client handle to tape_svc (xsum_svc)");
+    write_log("tape_svc not there on %s\n", usedhost);
+//    exit(1);
+  }
+  clnttape_old = clnttape;	//used by tapereconnectdo_1()
+}
 #endif
 
 //  if(SUM_Init(dbname)) {		/* init and connect to db */
