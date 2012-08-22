@@ -123,11 +123,6 @@ if ($#SUMS_TAPE_AVAILABLE != 1) then
   echo "Error: SUMS_TAPE_AVAILABLE undefined in local configuration file $LOCALINF"
   exit
 endif
-if ($#SUMS_MULTIPLE_PARTNSETS != 1) then
-  echo "Warning: SUMS_MULTIPLE_PARTNSETS undefined in local configuration file $LOCALINF"
-  set SUMS_MULTIPLE_PARTNSETS = 3
-  echo "         using default value $SUMS_MULTIPLE_PARTNSETS"
-endif
 if ($#AUTOSELCOMP != 1) then
   echo "Error: AUTOSELCOMP undefined in local configuration file $LOCALINF"
   exit
@@ -189,7 +184,10 @@ echo '#define SUMS_GROUP		"'$SUMS_GROUP'"' >> $SCRIPT
 echo '#define SUMLOG_BASEDIR		"'$SUMS_LOG_BASEDIR'"' >> $SCRIPT
 echo '#define SUMBIN_BASEDIR		"'$SUMS_BIN_BASEDIR'"' >> $SCRIPT
 echo '#define SUMS_TAPE_AVAILABLE    '\($SUMS_TAPE_AVAIL\)'' >> $SCRIPT
-echo '#define SUMS_MULTIPLE_PARTNSETS		'$SUMS_MULTIPLE_PARTNSETS >> $SCRIPT
+
+if ($#SUMS_MULTIPLE_PARTNSETS) then
+  echo '#define SUMS_MULTIPLE_PARTNSETS		'$SUMS_MULTIPLE_PARTNSETS >> $SCRIPT
+endif
 
 echo '#define AUTOSELCOMP               '$AUTOSELCOMP >> $SCRIPT
 if ($#SUMEXP_METHFMT) then 
