@@ -167,7 +167,7 @@ for($i = 0; $i < 2; $i++) { 	#do first for HMI then AIA
   } else {
     open(PARC, ">$parcaia") || die "Can't open $parcaia: $!\n";
     $resultfile = $parcaia; $instru = "AIA";
-    $sql = "select online_loc, arch_tape, arch_tape_fn, arch_tape_date from sum_main where Arch_Tape_Date >= '$ldate' and Owning_Series = '$TLMDSAIA'";
+    $sql = "select online_loc, arch_tape, arch_tape_fn, arch_tape_date from sum_main where Arch_Tape_Date >= '$ldate' and Owning_Series = '$TLMDSAIA' and Online_Status='Y'";
   }
     print PARC "#Created by build_parc_file.pl for query past $ldate\n";
     print PARC "#owning_series_name                         tape_id  fn  date\n";
