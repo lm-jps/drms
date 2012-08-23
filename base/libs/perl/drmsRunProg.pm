@@ -52,7 +52,9 @@ sub new
     {
         _fh => undef,
         _rfh => undef,
-        _cmd => undef
+        _cmd => undef,
+        _rstat => undef,
+        _wstat => undef
     };
 
     bless($self, $clname);
@@ -184,11 +186,13 @@ sub ClosePipe
     {
         if (defined($self->{_fh}))
         {
+            # close will set $? to the return status of the process running on the pipe.
             unless (close($self->{_fh}))
             {
                 $rv = 1;
             }
             
+            $self->{_wstat} = $?;
             $self->{_fh} = undef;
         }
     }
@@ -197,15 +201,33 @@ sub ClosePipe
     {
         if (defined($self->{_rfh}))
         {
+            # close will set $? to the return status of the process running on the pipe.
             unless (close($self->{_rfh}))
             {
                 $rv = 1;
             }
             
+            $self->{_rstat} = $?;
             $self->{_rfh} = undef;
         }
     }
     
     return $rv;
+}
+
+sub GetStatus
+{
+    my($self) = shift;
+    my($which) = shift;
+    my($rv) = -1;
+    
+    if (!defined($which) || $which == 0)
+    {
+        return $self->{_rstat};
+    }
+    else
+    {
+        return $self->{_wstat};
+    }
 }
 1;
