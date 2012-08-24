@@ -352,7 +352,16 @@ HContainer_t *drms_parse_keyworddesc(DRMS_Env_t *env, const char *desc, int *sta
                     fprintf(stderr, "Warning: Unexpected line '%s', skipping and continuing.\n", p);
                 }
                 
-                start += len + 1;
+                /* start + len is the NULL-terminator if the last line didn't end with a newline (EOF). */
+                if (start[len] == '\n')
+                {
+                    start += len + 1;
+                }
+                else
+                {
+                    start += len;
+                }
+                
                 len = getnextline(&start);
             } /* end while */
             
@@ -398,8 +407,20 @@ HContainer_t *drms_parse_keyworddesc(DRMS_Env_t *env, const char *desc, int *sta
             /* Free record (and keys inside the record). This will not free the key->infos, but
              * this is good since we shallow copied the key structs from fauxtemplate->keywords to keys.
              * So keys takes ownership of all the key->infos. */
-            drms_free_record_struct(fauxtemplate);
-            fauxtemplate = NULL;
+            if (fauxtemplate)
+            {
+                drms_free_record_struct(fauxtemplate);
+                free(fauxtemplate->seriesinfo);
+                free(fauxtemplate);
+                fauxtemplate = NULL;
+            }
+            
+            if (keys)
+            {
+                /* Change the deep_free() function, so that when keys is destroyed, the key->infos get 
+                 * deleted too. */
+                keys->deep_free = (void (*)(const void *))drms_free_template_keyword_struct;
+            }
             
             free(copy);
         }

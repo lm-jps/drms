@@ -130,6 +130,8 @@
 #define DRMS_ERROR_CANTCONNECTTODB  (-10080)
 #define DRMS_ERROR_CANTCOMPRESSFLOAT      (-10081)
 #define DRMS_ERROR_SUMSTRYLATER     (-10082)
+#define DRMS_ERROR_CANTMODPUBSERIES (-10083)
+
 /* remote sums - not errors, but status codes*/
 #define DRMS_REMOTESUMS_TRYLATER     (-30000)
 
