@@ -68,7 +68,7 @@ endif
 TGT_$(d)        := $(BINTGT_$(d)) $(BINTGT_2_$(d)) $(BINTGT_3_$(d))
 
 # SUMS_BIN contains a list of applications that get built when 'make sums' is invoked
-SUMS_BIN	:= $(SUMS_BIN) $(TGT_$(d)) $(XSUMSVC_$(d)) $(TAPESVC_$(d)) $(TARCINFO_$(d)) $(MULTI_SUMS_$(d))
+SUMS_BIN	:= $(SUMS_BIN) $(TGT_$(d)) $(XSUMSVC_$(d)) $(MULTI_SUMS_$(d))
 
 OBJ_$(d)	:= $(sum_svc_comm_obj_$(d)) $(sum_svc_obj_$(d)) $(xsum_svc_obj_$(d)) $(tape_svc_obj_$(d)) $(tapearc_obj_$(d)) $(TGT_$(d):%=%.o) $(XSUMSVC_$(d):%=%.o) $(TAPESVC_$(d):%=%.o) $(TARCINFO_$(d):%:%.o) $(MULTI_SUMS_$(d):%=%.o)
 
