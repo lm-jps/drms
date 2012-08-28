@@ -22,29 +22,38 @@ static inline const char *jsoc_getversion(char *verstr, int size, int *isdev)
    char *vers = strdup(jsoc_version);
    char *pc = NULL;
    int len = strlen(jsoc_version);
-
-   if (isdev)
-   {
-      *isdev = 0;
-   }
-
-   if ((pc = strchr(vers, 'R')) != NULL)
-   {
-      *pc = '\0';
-   }
-
-   if (jsoc_version[len - 1] == 'X')
+   
+   if (vers)
    {
       if (isdev)
       {
-         *isdev = 1;
+         *isdev = 0;
       }
-     
-      vers[len - 1] = '\0';
+      
+      if ((pc = strchr(vers, 'R')) != NULL)
+      {
+         *pc = '\0';
+      }
+      
+      if (jsoc_version[len - 1] == 'X')
+      {
+         if (isdev)
+         {
+            *isdev = 1;
+         }
+         
+         vers[len - 1] = '\0';
+      }
+      
+      snprintf(verstr, size, "%s.%s", vers + 1, pc + 1);
+      
+      free(vers);
    }
-
-   snprintf(verstr, size, "%s.%s", vers + 1, pc + 1);
-
+   else
+   {
+      fprintf(stderr, "Out of memory.\n");
+   }  
+   
    return jsoc_version;
 }
 

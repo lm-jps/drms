@@ -198,6 +198,12 @@ else
   filter = NULL;
 // fprintf(stderr,"filter=%s\n",filter);
 
+ if (web_query)
+ {
+    free(web_query);
+    web_query = NULL;
+ }
+
 if (filter)
   {
   int i;

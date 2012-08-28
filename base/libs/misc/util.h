@@ -47,8 +47,8 @@ int base_cleanup_register(const char *key, BASE_Cleanup_t *cu);
 int base_cleanup_go(const char *explicit);
 void base_cleanup_term();
 void base_term();
-
 int base_drmskeycheck(const char *drmsName);
+int base_isvers(const char *vers, const char *minvers);
 
 #ifdef ICCCOMP
 #pragma warning (disable : 1572)

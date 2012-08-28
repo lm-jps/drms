@@ -911,3 +911,44 @@ int base_drmskeycheck(const char *drmsName)
 {
    return DRMSKeyNameValidationStatus(drmsName);
 }
+
+int base_isvers(const char *vers, const char *minvers)
+{
+    long long major;
+    long long minor;
+    long long minmajor;
+    long long minminor;
+    
+    int ok = 1;
+    
+    if (*vers == '\0')
+    {
+        ok = 0;
+    }
+    else if (sscanf(vers, "%lld.%lld", &major, &minor) == 2)
+    {
+        if (*minvers != '\0')
+        {
+            /* Series must be GTE to first */
+            if (sscanf(minvers, "%lld.%lld", &minmajor, &minminor) == 2)
+            {
+                if (major < minmajor || (major == minmajor && minor < minminor))
+                {
+                    ok = 0;
+                }
+            }
+            else
+            {
+                fprintf(stderr, "Invalid version string '%s'.\n", minvers);
+                ok = 0;
+            }
+        }
+    }
+    else
+    {
+        fprintf(stderr, "Invalid version string '%s'.\n", vers);
+        ok = 0;
+    }
+    
+    return ok;
+}

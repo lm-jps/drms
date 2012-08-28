@@ -4,6 +4,108 @@
 #include "db.h"
 // #define DEBUG
 
+/* Do not localize the version table. */
+#define DRMS_MINVERSTABLE "drms.minvers"
+
+/* Returns 1 if the table exists, 0 if it doesn't, and -1 if an error occurred. */
+static int TableExists(DRMS_Session_t *session, const char *schema, const char *table)
+{
+    int rv = 0;
+    DB_Text_Result_t *qres = NULL;
+    char query[256];
+    
+    snprintf(query, sizeof(query), "SELECT * FROM information_schema.tables WHERE table_schema = '%s' AND table_name = '%s'", schema, table);
+    
+    if ((qres = drms_query_txt(session, query)) == NULL)
+    {
+        /* Error */
+        fprintf(stderr, "Invalid database query: %s.\n", query);
+        rv = -1;
+    }
+    else
+    {
+        if (qres->num_rows == 1) 
+        {
+            rv = 1;
+        }
+        
+        db_free_text_result(qres);
+    }
+    
+    return rv;
+}
+
+/* returns 1 on success, 0 on failure */
+static int GetDBMinVersion(DRMS_Session_t *session, char **versout)
+{
+    int rv = 1;
+    char *schema = NULL;
+    char *table = NULL;
+    char query[256];
+    DB_Text_Result_t *qres = NULL;
+    
+    if (!versout)
+    {
+        fprintf(stderr, "Invalid argument to GetDBMinVersion().\n");
+        rv = 0;
+    }
+    else
+    {
+        if (get_namespace(DRMS_MINVERSTABLE, &schema, &table))
+        {
+            fprintf(stderr, "Out of memory in GetDBMinVersion().\n");
+            rv = 0;
+        }
+        else
+        {
+            /* If the version table, su_production.minvers at Stanford, doesn't exist, bail out. */
+            if (!TableExists(session, schema, table))
+            {
+                fprintf(stderr, "Missing database table %s.\n", DRMS_MINVERSTABLE);
+                rv = 0;
+            }
+            else
+            {
+                /* Fetch the version from the DB version table. */
+                snprintf(query, sizeof(query), "SELECT minversion FROM %s", DRMS_MINVERSTABLE);
+                
+                if ((qres = drms_query_txt(session, query)) == NULL)
+                {
+                    /* Error */
+                    fprintf(stderr, "Invalid database query: %s.\n", query);
+                    rv = 0;
+                }
+                else
+                {
+                    if (qres->num_rows == 0)
+                    {
+                        fprintf(stderr, "DRMS requires a record in drms.minvers.\n");
+                        rv = 0;
+                    }
+                    else if (qres->num_rows != 1)
+                    {
+                        fprintf(stderr, "Unexpected db response to query %s\n", query);
+                        rv = 0;
+                    }
+                    else
+                    {
+                        const char *version = qres->field[0][0];
+                        
+                        *versout = strdup(version);
+                    }
+
+                    db_free_text_result(qres);
+                }
+            }
+            
+            free(schema);
+            free(table);
+        }
+    }
+    
+    return rv;
+}
+
 DRMS_Session_t *drms_connect(const char *host)
 {
   struct sockaddr_in server;
@@ -213,35 +315,69 @@ DRMS_Session_t *drms_connect_direct(const char *dbhost, const char *dbuser,
   {
      /* Print out some diagnostic information */
   }
-  
-  if (sessionns) {
-     session->sessionns = strdup(sessionns);
-  } else {
-    // get the default session namespace
-    DB_Text_Result_t *tresult;
-    char query[1024];
-
-    // test existance of sessionns table
-    sprintf(query, "select c.relname from pg_class c, pg_namespace n where n.oid = c.relnamespace and n.nspname='admin' and c.relname='sessionns'");
-    tresult = db_query_txt(session->db_handle, query);
-    if (tresult->num_rows) {
-      db_free_text_result(tresult);    
-      sprintf(query, "select sessionns from admin.sessionns where username='%s'", session->db_handle->dbuser);
-      tresult = db_query_txt(session->db_handle, query);
-      if (tresult->num_rows) {
-	session->sessionns = strdup(tresult->field[0][0]);
-      } else {
-	goto bailout;
-      }
+    
+    /* Check the version of this module against the minimum version required by the DRMS database. */
+    char *minversion = NULL;
+    char jsocversion[128];
+    
+    if (!GetDBMinVersion(session, &minversion))
+    {
+        /* No transaction to rollback. */
+        db_disconnect(&session->db_handle);
+        free(session);
+        session = NULL;
     }
-    db_free_text_result(tresult);
-    return session;
- bailout:
-    fprintf(stderr, "Can't get default session namespace\n");
-    free(session);
-    session = NULL;
-    db_free_text_result(tresult);
-  }
+    else
+    {
+        jsoc_getversion(jsocversion, sizeof(jsocversion), NULL);
+        
+        if (!base_isvers(jsocversion, minversion))
+        {
+            fprintf(stderr, "Your DRMS module/client code (version %s) is incompatible with the current version of DRMS (which requires version %s). Please update.\n", jsocversion, minversion);
+            /* No transaction to rollback. */
+            db_disconnect(&session->db_handle);
+            free(session);
+            session = NULL;
+        }
+    }
+  
+    if (minversion)
+    {
+       free(minversion);
+    }
+
+    if (session)
+    {
+        if (sessionns) {
+            session->sessionns = strdup(sessionns);
+        } else {
+            // get the default session namespace
+            DB_Text_Result_t *tresult = NULL;
+            char query[1024];
+            
+            // test existance of sessionns table
+            sprintf(query, "select c.relname from pg_class c, pg_namespace n where n.oid = c.relnamespace and n.nspname='admin' and c.relname='sessionns'");
+            tresult = db_query_txt(session->db_handle, query);
+            if (tresult->num_rows) {
+                db_free_text_result(tresult);    
+                sprintf(query, "select sessionns from admin.sessionns where username='%s'", session->db_handle->dbuser);
+                tresult = db_query_txt(session->db_handle, query);
+                if (tresult->num_rows) {
+                    session->sessionns = strdup(tresult->field[0][0]);
+                } else {
+                    goto bailout;
+                }
+            }
+            db_free_text_result(tresult);
+            return session;
+        bailout:
+            fprintf(stderr, "Can't get default session namespace\n");
+            free(session);
+            session = NULL;
+            db_free_text_result(tresult);
+        }
+    }
+    
   return session;
 }
 #endif

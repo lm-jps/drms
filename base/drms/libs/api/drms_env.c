@@ -138,15 +138,21 @@ void drms_free_env (DRMS_Env_t *env, int final) {
    drms_unlock_server(env);
 #endif
   /* drms_lock in both server and client */
-  pthread_mutex_destroy(env->drms_lock);
+    if (env->drms_lock)
+    {
+        pthread_mutex_destroy(env->drms_lock);
+    }
   free (env->drms_lock);
   env->drms_lock = NULL;
 #ifndef DRMS_CLIENT
   /* Alloc'd by drms_server_begin_transaction() (server only) */
 
-  pthread_mutex_destroy(env->clientlock);
-  free (env->clientlock);
-  env->clientlock = NULL;
+    if (env->clientlock)
+    {
+        pthread_mutex_destroy(env->clientlock);
+        free (env->clientlock);
+        env->clientlock = NULL;
+    }
 
   /* Alloc'd by drms_server_begin_transaction() (server only) */
   if (env->sum_inbox) {
