@@ -6,6 +6,7 @@
 
 /* Do not localize the version table. */
 #define DRMS_MINVERSTABLE "drms.minvers"
+#define DRMS_OLDCODETABLE "drms.oldcode"
 
 /* Returns 1 if the table exists, 0 if it doesn't, and -1 if an error occurred. */
 static int TableExists(DRMS_Session_t *session, const char *schema, const char *table)
@@ -321,7 +322,7 @@ DRMS_Session_t *drms_connect_direct(const char *dbhost, const char *dbuser,
     char jsocversion[128];
     
     if (!GetDBMinVersion(session, &minversion))
-    {
+    {        
         /* No transaction to rollback. */
         db_disconnect(&session->db_handle);
         free(session);
@@ -333,11 +334,80 @@ DRMS_Session_t *drms_connect_direct(const char *dbhost, const char *dbuser,
         
         if (!base_isvers(jsocversion, minversion))
         {
+            char *schema = NULL;
+            char *table = NULL;
+            
+            /* Save some information about which executable was too old. */
+            if (get_namespace(DRMS_OLDCODETABLE, &schema, &table))
+            {
+                fprintf(stderr, "Out of memory in drms_connect_direct().\n");
+            }
+            else
+            {
+                /* If the old-code table doesn't exist, skip this. This is for finding people 
+                 * with old code. */
+                if (TableExists(session, schema, table))
+                {
+                    char binpath[PATH_MAX] = {0};
+                    char query[1024];
+                    struct timeval tv;
+                    char *date = NULL;
+                    int rowexists = 0;
+                    DB_Text_Result_t *qres = NULL;
+                    
+                    if (readlink("/proc/self/exe", binpath, sizeof(binpath)) == -1)
+                    {
+                        fprintf(stderr, "Cannot obtain path to running binary.\n");
+                    }
+                    else
+                    {
+                        /* Check for existence of a record for this binary. Update the 
+                         * date and version if the record does exist. */
+                        snprintf(query, sizeof(query), "SELECT path FROM %s WHERE path = '%s'", DRMS_OLDCODETABLE, binpath);
+                        
+                        if ((qres = drms_query_txt(session, query)) == NULL)
+                        {
+                            /* Error */
+                            fprintf(stderr, "Invalid database query: %s.\n", query);
+                        }
+                        else
+                        {
+                            rowexists = qres->num_rows > 0;
+                            db_free_text_result(qres);
+                            
+                            gettimeofday(&tv, NULL);
+                            date = ctime(&tv.tv_sec);
+                            
+                            if (rowexists)
+                            {
+                                /* Update */
+                                snprintf(query, sizeof(query), "UPDATE %s set date = '%s', version = '%s' WHERE path = '%s'", DRMS_OLDCODETABLE, date, jsocversion, binpath);
+                            }
+                            else
+                            {
+                                /* Fetch the version from the DB version table. */
+                                snprintf(query, sizeof(query), "INSERT INTO %s (path, date, version) VALUES ('%s', '%s', '%s')", DRMS_OLDCODETABLE, binpath, date, jsocversion);
+                            }
+                            
+                            if (drms_dms(session, NULL, query))
+                            {
+                                fprintf(stderr, "Invalid database query: %s.\n", query);
+                            }
+                        }
+                    }
+                }
+                
+                free(table);
+                free(schema);
+            }
+            
             fprintf(stderr, "Your DRMS module/client code (version %s) is incompatible with the current version of DRMS (which requires version %s). Please update.\n", jsocversion, minversion);
             /* No transaction to rollback. */
             db_disconnect(&session->db_handle);
             free(session);
             session = NULL;
+            
+            
         }
     }
   
