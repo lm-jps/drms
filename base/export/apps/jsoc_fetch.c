@@ -194,37 +194,6 @@ manage_userhandle(int register_handle, const char *handle)
     }
   }
 
-void drms_sprint_rec_query(char *text, DRMS_Record_t *rec)
-  {
-  int iprime, nprime=0;
-  char **external_pkeys, *pkey;
-  DRMS_Keyword_t *rec_key;
-  if (!rec)
-    {
-    sprintf(text, "** No Record **");
-    return;
-    }
-  strcpy(text,rec->seriesinfo->seriesname);
-  external_pkeys =
-        drms_series_createpkeyarray(rec->env, rec->seriesinfo->seriesname, &nprime, NULL);
-  if (external_pkeys && nprime > 0)
-    {
-    for (iprime = 0; iprime < nprime; iprime++)
-      {
-      char val[1000];
-      pkey = external_pkeys[iprime];
-      rec_key = drms_keyword_lookup (rec, pkey, 1);
-      drms_keyword_snprintfval(rec_key, val, sizeof(val));
-      strcat(text, "[");
-      strcat(text, val);
-      strcat(text, "]");
-      }
-    }
-  else
-    sprintf(text, "[:#%lld]",rec->recnum);
-  return;
-  }
-
 /* quick export of recordset - on entry it is known that all the records are online
  * so no directory file need be built.  The json structure will have 3 elements
  * added:
