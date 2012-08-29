@@ -166,16 +166,16 @@ SUMS_DEBUG 0
 #   data series that the production user does not own.
 
 # The host:port of the machine serving as the db server that contains the production-user table.
-PRODUSER_DBHOST    hmidb:5432
+#PRODUSER_DBHOST    hmidb:5432
 
 # The name of database on the database host that contains the production-user table.
-PRODUSER_DBNAME    jsoc
+#PRODUSER_DBNAME    jsoc
 
 # The name of the production-user table
-PRODUSER_PRODTAB   su_production.produsers
+#PRODUSER_PRODTAB   su_production.produsers
 
 # The name of the column that contains the list of production users in the production-user table.
-PRODUSER_COLUSER   username
+#PRODUSER_COLUSER   username
 #
 # END TABLE OF PRODUCTION USERS
 ###############################
