@@ -2258,23 +2258,56 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
     
     if (istat == DRMS_SUCCESS)
     {
-        snprintf(query, sizeof(query), "SELECT %s FROM %s WHERE %s = '%s'", PRODUSER_COLUSER, PRODUSER_PRODTAB, PRODUSER_COLUSER, dbuser);
+        /* If this table of production users does not exist, then assume that the user is not a member of the 
+         * production team. */
+        int tabexists = 0;
+        char *schema = NULL;
+        char *table = NULL;
         
-        if ((qres = db_query_txt(dbh, query)) != NULL)
+        if (get_namespace(PRODUSER_PRODTAB, &schema, &table))
         {
-            if (qres->num_cols == 1 && qres->num_rows == 1)
-            {
-                isproduser = 1;
-            }
-            
-            db_free_text_result(qres);
+            fprintf(stderr, "Out of memory in drms_client_isproduser().\n");
+            istat = DRMS_ERROR_OUTOFMEMORY;
         }
         else
         {
-            fprintf(stderr, "Unexpected database response to query '%s'.\n", query);
+            snprintf(query, sizeof(query), "SELECT * FROM information_schema.tables WHERE table_schema = '%s' AND table_name = '%s'", schema, table);
             
-            /* Don't set an error status - the site may not have a PRODUSER table at all. The behavior in that
-             * case should be identical to the behavior where the table exists, but is empty. */
+            if ((qres = db_query_txt(dbh, query)) != NULL)
+            {
+                if (qres->num_rows == 1)
+                {
+                    tabexists = 1;
+                }
+                
+                db_free_text_result(qres);
+            }
+            else
+            {
+                fprintf(stderr, "Unexpected database response to query '%s'.\n", query);
+            }
+            
+            free(schema);
+            free(table);
+        }
+        
+        if (istat == DRMS_SUCCESS && tabexists)
+        {
+            snprintf(query, sizeof(query), "SELECT %s FROM %s WHERE %s = '%s'", PRODUSER_COLUSER, PRODUSER_PRODTAB, PRODUSER_COLUSER, dbuser);
+            
+            if ((qres = db_query_txt(dbh, query)) != NULL)
+            {
+                if (qres->num_cols == 1 && qres->num_rows == 1)
+                {
+                    isproduser = 1;
+                }
+                
+                db_free_text_result(qres);
+            }
+            else
+            {
+                fprintf(stderr, "Unexpected database response to query '%s'.\n", query);
+            }
         }
     }
     
