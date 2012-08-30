@@ -2724,7 +2724,12 @@ sub ExpHMItlm_sub {
     }
     if($grpn == 10) {
       $xxcnt = $h1cnt;		#hmi.lev1
-      @txorder = @h1unloads;
+      #@txorder = @h1unloads;
+      #reverse order and use most recent tape for hmi.lev1
+      @txorder = ();
+      while($ul = pop(@h1unloads)) {
+        push(@txorder, $ul);
+      }
       last SWITCH;
     }
   }
