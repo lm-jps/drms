@@ -861,6 +861,16 @@ int drms_addkeys_toseries(DRMS_Env_t *env, const char *series, const char *spec,
                         }
                     }
                 }
+                else
+                {
+                   szalterbuf = 512;
+                   tblactionbuf = calloc(1, szalterbuf);
+
+                   if (!tblactionbuf)
+                   {
+                      drmsstat = DRMS_ERROR_OUTOFMEMORY;
+                   }
+                }
                 
                 if (drmsstat == DRMS_SUCCESS)
                 {
@@ -1003,12 +1013,15 @@ int drms_addkeys_toseries(DRMS_Env_t *env, const char *series, const char *spec,
                                 
                                 if (!skipkey)
                                 {
+                                    char ibuf[2048];
+                                    snprintf(ibuf, sizeof(ibuf), "INSERT INTO %s." DRMS_MASTER_KEYWORD_TABLE
+                                             "(seriesname, keywordname, linkname, targetkeyw, type, "
+                                             "defaultval, format, unit, description, islink, "
+                                             "isconstant, persegment) values (?,?,?,?,?,?,?,?,?,?,?,?)", ns);
+
                                     if (drms_dmsv(session, 
                                                   NULL, 
-                                                  "INSERT INTO " DRMS_MASTER_KEYWORD_TABLE
-                                                  "(seriesname, keywordname, linkname, targetkeyw, type, "
-                                                  "defaultval, format, unit, description, islink, "
-                                                  "isconstant, persegment) values (?,?,?,?,?,?,?,?,?,?,?,?)",
+                                                  ibuf,
                                                   -1,
                                                   DB_STRING, key->record->seriesinfo->seriesname, 
                                                   DB_STRING, key->info->name, 
