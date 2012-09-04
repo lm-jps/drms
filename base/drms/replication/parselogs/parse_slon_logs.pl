@@ -1264,22 +1264,22 @@ sub parseLog {
           @parts = ($series =~ /(\S+)\.(\S+)/);
           if ($parts[0] !~ /"\S+"/)
           {
-              $weirdseriesname = "\"" . $parts[0] . "\"";
+              $weirdseriesname = "\"" . lc($parts[0]) . "\"";
           }
           else
           {
-              $weirdseriesname = $parts[0];
+              $weirdseriesname = lc($parts[0]);
           }
           
           $weirdseriesname = $weirdseriesname . "\.";
 
           if ($parts[1] !~ /"\S+"/)
           {
-              $weirdseriesname = $weirdseriesname . "\"" . $parts[1] . "\"";
+              $weirdseriesname = $weirdseriesname . "\"" . lc($parts[1]) . "\"";
           }
           else
           {
-              $weirdseriesname = $weirdseriesname . $parts[1];
+              $weirdseriesname = $weirdseriesname . lc($parts[1]);
           }
 
           dumpSlonLog($cfgH, $nodeH, $weirdseriesname, $_);
@@ -1296,8 +1296,8 @@ sub parseLog {
           
           if ($series =~ /\'(\S+)\.(\S+)\'/ || /\"(\S+)\.(\S+)\"/)
           {
-              $parts[0] = $1;
-              $parts[1] = $2;
+              $parts[0] = lc($1);
+              $parts[1] = lc($2);
           }
           else
           {
