@@ -887,7 +887,7 @@ sub readCounter {
 
   my $source_dir=$config{'kPSLlogsSourceDir'};
 
-  my $slon_dir_counter = 0;
+  my $slon_dir_counter = -1;
 
   my $last_log_file = (glob("$source_dir/slony1_log_2_0*.sql.parsed"))[-1]; ## get the last element in the array
   if (defined $last_log_file) {
@@ -901,7 +901,7 @@ sub readCounter {
     }
   }
 
-  unless ( defined($slon_dir_counter) && $slon_dir_counter > 0 ) {
+  unless ( defined($slon_dir_counter) && $slon_dir_counter >= 0 ) {
     my $msg = "Could not find last counter for slon1_log_2_0*.sql.parsed or slony1_log_2_0*.sql logs in source directory [$source_dir]";
     emergency($msg);
     CallDie($msg);
