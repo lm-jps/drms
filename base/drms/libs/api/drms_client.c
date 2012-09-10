@@ -2217,6 +2217,10 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
         
         /* For a server module, hostname is in drms_env->session->db_handle->dbhost. */
         forceconn = (strcasecmp(dbhost, env->session->db_handle->dbhost) != 0);
+        if (env->verbose)
+        {
+            printf("Environment db host - %s, Query db host - %s.\n", env->session->db_handle->dbhost, dbhost);
+        }
 #else
         drms_send_commandcode(env->session->sockfd, DRMS_GETDBUSER);
         dbuser = receive_string(env->session->sockfd);
