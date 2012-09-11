@@ -150,11 +150,19 @@ long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir, int *tapeg
 
   if (reply->opcode)
   {
-    fprintf(stderr,"SUM ALLOC failed with error code %d.\n",reply->opcode);
-    stat = reply->opcode;
-    sunum = 0;
-    if (sudir)
-      *sudir = NULL;
+      if (reply->opcode == -2)
+      {
+          fprintf(stderr, "Cannot access SUMS in this DRMS session - a tape read is pending.\n");
+          stat = DRMS_ERROR_PENDINGTAPEREAD;
+      }
+      else
+      {
+          fprintf(stderr,"SUM ALLOC failed with error code %d.\n",reply->opcode);
+          stat = reply->opcode;
+      }
+      sunum = 0;
+      if (sudir)
+          *sudir = NULL;
   }
   else
   {
@@ -227,12 +235,21 @@ int drms_su_alloc2(DRMS_Env_t *env,
 
    if (reply->opcode)
    {
-      fprintf(stderr,"SUM ALLOC2 failed with error code %d.\n",reply->opcode);
-      stat = reply->opcode;
-      if (sudir)
-      {
-         *sudir = NULL;
-      }
+       if (reply->opcode == -2)
+       {
+           fprintf(stderr, "Cannot access SUMS in this DRMS session - a tape read is pending.\n");
+           stat = DRMS_ERROR_PENDINGTAPEREAD;
+       }
+       else
+       {
+           fprintf(stderr,"SUM ALLOC2 failed with error code %d.\n",reply->opcode);
+           stat = reply->opcode;
+       }
+       
+       if (sudir)
+       {
+           *sudir = NULL;
+       }
    }
    else
    {
@@ -553,8 +570,14 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
              /* We waited over two hours for a tape fetch to complete, then we timed-out. */
              free(reply);
              drms_unlock_server(env);
-             
              return DRMS_ERROR_SUMSTRYLATER;
+         }
+         else if (reply->opcode == -2)
+         {
+             fprintf(stderr, "Cannot access SUMS in this DRMS session - a tape read is pending.\n");
+             free(reply);
+             drms_unlock_server(env);
+             return DRMS_ERROR_PENDINGTAPEREAD;
          }
          else
          {
@@ -838,6 +861,13 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                    
                    /* We waited over two hours for a tape fetch to complete, then we timed-out. */
                    return DRMS_ERROR_SUMSTRYLATER;
+               }
+               else if (reply->opcode == -2)
+               {
+                   fprintf(stderr, "Cannot access SUMS in this DRMS session - a tape read is pending.\n");
+                   free(reply);
+                   drms_unlock_server(env);
+                   return DRMS_ERROR_PENDINGTAPEREAD;
                }
                else
                {
@@ -1201,22 +1231,35 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
          request->reqcnt = nReqs;
 
          /* Submit request to sums server thread. */
-         tqueueAdd(env->sum_inbox, (long)pthread_self(), (char *)request);  
+         tqueueAdd(env->sum_inbox, (long)pthread_self(), (char *)request);
+         drms_unlock_server(env);
          tqueueDel(env->sum_outbox,  (long)pthread_self(), (char **)&reply);
+         drms_lock_server(env);
      
          if (reply->opcode != 0)
          {
-            fprintf(stderr, "SUMINFO failed with error code %d.\n", reply->opcode);
-
-            hcon_destroy(&map);
-
-            if (reply)
-            {
-               free(reply);
-            }
-
-            drms_unlock_server(env);
-            return 1;
+             hcon_destroy(&map);
+             
+             if (reply->opcode == -2)
+             {
+                 fprintf(stderr, "Cannot access SUMS in this DRMS session - a tape read is pending.\n");
+                 if (reply)
+                 {
+                     free(reply);
+                 }
+                 drms_unlock_server(env);
+                 return DRMS_ERROR_PENDINGTAPEREAD;
+             }
+             
+             fprintf(stderr, "SUMINFO failed with error code %d.\n", reply->opcode);
+             
+             if (reply)
+             {
+                 free(reply);
+             }
+             
+             drms_unlock_server(env);
+             return 1;
          }
          else
          {
@@ -1377,10 +1420,17 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
      tqueueDel(env->sum_outbox,  (long) pthread_self(), (char **)&reply);
      if (reply->opcode != 0) 
      {
-        fprintf(stderr, "ERROR in drms_commitunit: SUM PUT failed with "
-                "error code %d.\n",reply->opcode);
-        free(reply);
-        return 1;
+         if (reply->opcode == -2)
+         {
+             fprintf(stderr, "Cannot access SUMS in this DRMS session - a tape read is pending.\n");
+             free(reply);
+             return DRMS_ERROR_PENDINGTAPEREAD;
+         }
+         
+         fprintf(stderr, "ERROR in drms_commitunit: SUM PUT failed with "
+                 "error code %d.\n",reply->opcode);
+         free(reply);
+         return 1;
      }
      free(reply);
      /* Now the storage unit is owned by SUMS, mark it read-only. */
@@ -1539,9 +1589,17 @@ static int CommitUnits(DRMS_Env_t *env,
 
          if (reply->opcode != 0) 
          {
-            fprintf(stderr, "ERROR in drms_commitunit: SUM PUT failed with "
-                    "error code %d.\n",reply->opcode);
-            statint = DRMS_ERROR_SUMPUT;
+             if (reply->opcode == -2)
+             {
+                 fprintf(stderr, "Cannot access SUMS in this DRMS session - a tape read is pending.\n");
+                 statint = DRMS_ERROR_PENDINGTAPEREAD;
+             }
+             else
+             {    
+                 fprintf(stderr, "ERROR in drms_commitunit: SUM PUT failed with "
+                         "error code %d.\n",reply->opcode);
+                 statint = DRMS_ERROR_SUMPUT;
+             }
          }
          else
          {
@@ -1993,9 +2051,17 @@ int drms_su_commitsu(DRMS_Env_t *env,
 
         if (reply->opcode != 0) 
         {
-           fprintf(stderr, "ERROR in drms_commitunit: SUM PUT failed with "
-                   "error code %d.\n", reply->opcode);
-           drmsst = DRMS_ERROR_SUMPUT;
+            if (reply->opcode == -2)
+            {
+                fprintf(stderr, "Cannot access SUMS in this DRMS session - a tape read is pending.\n");
+                drmsst = DRMS_ERROR_PENDINGTAPEREAD;
+            }
+            else
+            {
+                fprintf(stderr, "ERROR in drms_commitunit: SUM PUT failed with "
+                        "error code %d.\n", reply->opcode);
+                drmsst = DRMS_ERROR_SUMPUT;
+            }
         }
 
         if (tmp)
@@ -2049,8 +2115,16 @@ int drms_su_sumexport(DRMS_Env_t *env, SUMEXP_t *sumexpt)
 
    if (reply->opcode)
    {
-      fprintf(stderr,"SUM_EXPORT failed with error code %d.\n", reply->opcode);
-      drmsst = reply->opcode;
+       if (reply->opcode == -2)
+       {
+           fprintf(stderr, "Cannot access SUMS in this DRMS session - a tape read is pending.\n");
+           drmsst = DRMS_ERROR_PENDINGTAPEREAD;
+       }
+       else
+       {
+           fprintf(stderr,"SUM_EXPORT failed with error code %d.\n", reply->opcode);
+           drmsst = reply->opcode;
+       }
    }
    else
    {

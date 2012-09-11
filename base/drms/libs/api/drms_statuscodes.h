@@ -131,6 +131,7 @@
 #define DRMS_ERROR_CANTCOMPRESSFLOAT      (-10081)
 #define DRMS_ERROR_SUMSTRYLATER     (-10082)
 #define DRMS_ERROR_CANTMODPUBSERIES (-10083)
+#define DRMS_ERROR_PENDINGTAPEREAD  (-10084)
 
 /* remote sums - not errors, but status codes*/
 #define DRMS_REMOTESUMS_TRYLATER     (-30000)

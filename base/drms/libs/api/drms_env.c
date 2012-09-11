@@ -77,6 +77,7 @@ DRMS_Env_t *drms_open (const char *host, const char *user, const char *password,
   env->retention = -1;
   env->query_mem = 512;
   env->verbose = 0;
+  env->sumssafe = 1;
 #endif
   return env;
 

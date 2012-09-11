@@ -8429,14 +8429,17 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                /* OK to fetch info if the info was already fetched in drms_sortandstage_records() - 
                 * drms_sortandstage_records() will actually change some of the info values (like 
                 * online_status). */
-               if (rs->cursor->infoneeded)
+               if (stat == DRMS_SUCCESS)
                {
-                  stat = drms_record_getinfo(fetchedrecs);
-
-                  if (stat != DRMS_SUCCESS)
+                  if (rs->cursor->infoneeded)
                   {
-                     fprintf(stderr, "Failure calling drms_record_getinfo(), status=%d.\n", stat);
-                     break;
+                     stat = drms_record_getinfo(fetchedrecs);
+                     
+                     if (stat != DRMS_SUCCESS)
+                     {
+                        fprintf(stderr, "Failure calling drms_record_getinfo(), status=%d.\n", stat);
+                        break;
+                     }
                   }
                }
 
