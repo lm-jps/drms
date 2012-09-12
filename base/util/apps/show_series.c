@@ -77,7 +77,7 @@ char *drms_getseriesowner(DRMS_Env_t *drms_env, char *series, int *status)
    {
    char *nspace = NULL;
    char *relname = NULL;
-
+   int istat = DRMS_SUCCESS;
    DB_Text_Result_t *qres = NULL;
    static char owner[256];
    owner[0] = '\0';
@@ -164,10 +164,9 @@ int status = 0;
 int iseries, nseries, nused;
 char query[DRMS_MAXQUERYLEN];
 DB_Text_Result_t *qres;
-regex_t seriesfilter;
+char seriesfilter[1024];
 regmatch_t pmatch[10];
 char *filter;
-char *filterctx = NULL;
 int filterNOT;
 char *web_query;
 int from_web;
@@ -187,32 +186,27 @@ printinfo = cmdparams_get_int(&cmdparams, "p", NULL);
 
 if (cmdparams_numargs(&cmdparams)==2)
   { /* series filter provided, treat as regular expression. */
-  filterctx = strdup(cmdparams_getarg(&cmdparams, 1));
-  filter = filterctx;
+  filter = strdup(cmdparams_getarg(&cmdparams, 1));
   }
 else if (from_web && *web_query)
   {
-  filterctx = web_query;
-  web_query = NULL;
-  filter = index(filterctx,'=')+1;
+  filter = index(web_query,'=')+1;
 // fprintf(stderr,"raw filter=%s\n",filter);
   CGI_unescape_url(filter);
   }
 else
   filter = NULL;
 // fprintf(stderr,"filter=%s\n",filter);
-    
-if (web_query)
-  {
-  free(web_query);
-  web_query = NULL;
-}
+
+ if (web_query)
+ {
+    free(web_query);
+    web_query = NULL;
+ }
 
 if (filter)
   {
   int i;
-  char *chtmp = NULL;
-      
   // check for NOT method of exclusion
   if (strncmp(filter, "NOT ", 4)==0)
     {
@@ -235,18 +229,11 @@ if (filter)
          NameSpace[i-1] = '\0';
          }
     }
-  if (regcomp(&seriesfilter, filter, (REG_EXTENDED | REG_ICASE | REG_NOSUB)))
+  if (regcomp((regex_t *)seriesfilter, filter, (REG_EXTENDED | REG_ICASE | REG_NOSUB)))
     {
     status = SS_FORMATERROR;
     goto Failure;
     }
-      
-    chtmp = strdup(filter);
-    filter = chtmp;
-    chtmp = NULL;
-      
-    free(filterctx);
-    filterctx = NULL;
   }
   
 // if (singleNameSpace) fprintf(stderr,"TEST of single name space found: %s\n",NameSpace);
@@ -296,7 +283,7 @@ for (iseries=0; iseries<nseries; iseries++)
   char *seriesname = qres->field[iseries][0];
   int regex_result;
   if (filter)
-    regex_result = regexec(&seriesfilter, seriesname, 10, pmatch, 0);
+    regex_result = regexec((regex_t *)seriesfilter, seriesname, 10, pmatch, 0);
 
   if (!filter || (!filterNOT && !regex_result) || (filterNOT && regex_result)) 
     {
@@ -328,15 +315,15 @@ for (iseries=0; iseries<nseries; iseries++)
         printf("\",");
       if (verbose)
         {
-        int drmsstatus;
-        DRMS_Record_t *rec = drms_template_record(drms_env, seriesname, &drmsstatus);
+        int status;
+        DRMS_Record_t *rec = drms_template_record(drms_env, seriesname, &status);
         if (want_JSON)
           {
 	  printf("\"archive\":\"%d\",",rec->seriesinfo->archive);
 	  printf("\"retention\":\"%d\",",rec->seriesinfo->retention);
 	  printf("\"tapegroup\":\"%d\",",rec->seriesinfo->tapegroup);
 	  printf("\"unitsize\":\"%d\",",rec->seriesinfo->unitsize);
-	  printf("\"owner\":\"%s\",",drms_getseriesowner(drms_env, seriesname, &drmsstatus));
+	  printf("\"owner\":\"%s\",",drms_getseriesowner(drms_env, seriesname, &status));
           }
         else
           {
@@ -344,7 +331,7 @@ for (iseries=0; iseries<nseries; iseries++)
           printf("\n      Retention: %d", rec->seriesinfo->retention);
           printf("\n      Tapegroup: %d", rec->seriesinfo->tapegroup);
           printf("\n      Unitsize: %d", rec->seriesinfo->unitsize);
-          printf("\n      Owner: %s", drms_getseriesowner(drms_env, seriesname, &drmsstatus));
+          printf("\n      Owner: %s", drms_getseriesowner(drms_env, seriesname, &status));
           }
         }
       if (want_JSON)
@@ -374,12 +361,6 @@ else
   if (filter)
     printf("%d series found the matching %s\n", nused, filter);
   }
-
-if (filter)
-{
-    regfree(&seriesfilter);
-    free(filter);
-}
 
 db_free_text_result(qres);
 

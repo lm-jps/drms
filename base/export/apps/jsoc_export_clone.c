@@ -132,10 +132,9 @@ static ExpError_t AddAKey(const char *keyname,
                 /* Put the key into the prototype's keyword container. But first copy the keyword struct to 
                  * a new struct, deep-copying any string value. When we free the keys container, this will result in 
                  * any string keyword value to be freed (keys was set up with a deep-free function - see 
-                 * drms_free_template_keyword_struct). */
+                 * drms_free_keyword_struct). */
                 finalkey.record = tKey->record;
-                finalkey.info = malloc(sizeof(DRMS_KeywordInfo_t));
-                *(finalkey.info) = *(tKey->info);
+                finalkey.info = tKey->info;
                 
                 if (finalkey.info->type == DRMS_TYPE_STRING)
                 {
@@ -174,7 +173,7 @@ static ExpError_t AddAKey(const char *keyname,
         
         if (keys)
         {
-            /* Free the keys container. This will deep-free any string values, AND it will free the info
+            /* Free the keys container. This will deep-free any string values, but it will not free the info
              * struct. */
             hcon_destroy(&keys);
         }

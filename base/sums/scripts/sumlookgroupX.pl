@@ -168,8 +168,7 @@ print <<EOF;
     </style>
   </head>
   <body>
-  <h3 align=center>/SUM for db=jsoc_sums by group_id $ldate (Full mode=$FULL)
-  <a href="http://sun.stanford.edu/~jsoc/SUM/gChartBasicSums.html">Storage By User</a></h3>
+  <h3 align=center>/SUM for db=jsoc_sums by group_id $ldate (Full mode=$FULL)</h3>
   <h4>Rounded down to nearest MegaByte</h4>
   <table>
         <tr>

@@ -488,10 +488,6 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
     fprintf(stderr,"Failure during server initialization.\n");
     return 1;
   }
-    else if (verbose)
-    {
-        printf("Connected to database %s on host %s as user %s.\n", dbname, dbhost, dbuser);
-    }
 
   /* Initialize global things. */
 

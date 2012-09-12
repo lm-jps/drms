@@ -3041,23 +3041,13 @@ int DoIt(void)
           }
           else
           {
-              /* Call jsoc_export_clone. This is really a pre-processing command, so use GenPreProcessCmd(). */
-              char cloneargs[512];
-              
-              snprintf(cloneargs, sizeof(cloneargs), "dsin=%s dsout=%s", seriesin, seriesout);
-              
-              procerr = GenPreProcessCmd(fp,
-                                         "jsoc_export_clone",
-                                         cloneargs,
-                                         dbmainhost,
-                                         dbids);
+              /* Call jsoc_export_clone. */
+              fprintf(fp, "jsoc_export_clone dsin=%s dsout=%s\n", seriesin, seriesout);
           }
 
-          if (!procerr)
-          {
-              progpath = ((ProcStep_t *)node->data)->path;
-              args = ((ProcStep_t *)node->data)->args;
-          }
+          progpath = ((ProcStep_t *)node->data)->path;
+          args = ((ProcStep_t *)node->data)->args;
+          
           
           procerr = GenPreProcessCmd(fp,
                                      progpath,

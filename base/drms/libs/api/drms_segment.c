@@ -1900,8 +1900,6 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
             if (!drms_segment_checkscaling(out, seg->bzero, seg->bscale))
             {
                fprintf(stderr, "The output array's bzero/bscale values (%f, %f) do not match those of the TAS file (%f, %f).\n", out->bzero, out->bscale, seg->bzero, seg->bscale);
-                status = DRMS_ERROR_INVALIDSCALING;
-                goto bailout;
             }
          }
 
@@ -2094,52 +2092,48 @@ int drms_segment_writeslice_ext(DRMS_Segment_t *seg,
           break; 
         case DRMS_FITZ:
         case DRMS_FITS:
-         {
+          {
              if (out->type == DRMS_TYPE_STRING)
              {
-                 fprintf(stderr, "Can't save string data into a fits file.\n");
-                 goto bailout;
+                fprintf(stderr, "Can't save string data into a fits file.\n");
+                goto bailout;
              }
-             
+
              /* When writing a slice, bzero/bscale must match the segment's bzero/bscale. 
               * Otherwise, you could write slices with differing bzero/bscale values, 
               * which would be a big problem. */
              if (drms_series_isvers(seg->record->seriesinfo, &vers2_1))
              {
-                 if (!drms_segment_checkscaling(out, seg->bzero, seg->bscale))
-                 {
-                     fprintf(stderr, "The output array's bzero/bscale values (%f, %f) do not match those of the FITS file (%f, %f).\n", out->bzero, out->bscale, seg->bzero, seg->bscale);
-                     status = DRMS_ERROR_INVALIDSCALING;
-                     goto bailout;
-                 }
+                if (!drms_segment_checkscaling(out, seg->bzero, seg->bscale))
+                {
+                   fprintf(stderr, "The output array's bzero/bscale values (%f, %f) do not match those of the FITS file (%f, %f).\n", out->bzero, out->bscale, seg->bzero, seg->bscale);
+                }
              }
-             
-             if ((status = drms_fitsrw_writeslice_ext(seg->record->env, 
-                                                      seg,
-                                                      filename, 
-                                                      out->naxis, 
-                                                      start, 
-                                                      end, 
-                                                      finaldims,
-                                                      out)) != DRMS_SUCCESS)
-                 goto bailout;
-         }
+
+              if ((status = drms_fitsrw_writeslice_ext(seg->record->env, 
+                                                       seg,
+                                                       filename, 
+                                                       out->naxis, 
+                                                       start, 
+                                                       end, 
+                                                       finaldims,
+                                                       out)) != DRMS_SUCCESS)
+               goto bailout;
+          }
           break;  
         case DRMS_TAS:
-         {
+          {
              /* seg->bzero and seg->bscale cannot be overridden - all records must 
               * have the same bzero and bscale values, since they share the same
               * fits file */
              if (drms_series_isvers(seg->record->seriesinfo, &vers2_1))
              {
-                 if (!drms_segment_checkscaling(out, seg->bzero, seg->bscale))
-                 {
-                     fprintf(stderr, "The output array's bzero/bscale values (%f, %f) do not match those of the TAS file (%f, %f).\n", out->bzero, out->bscale, seg->bzero, seg->bscale);
-                     status = DRMS_ERROR_INVALIDSCALING;
-                     goto bailout;
-                 }
+                if (!drms_segment_checkscaling(out, seg->bzero, seg->bscale))
+                {
+                   fprintf(stderr, "The output array's bzero/bscale values (%f, %f) do not match those of the TAS file (%f, %f).\n", out->bzero, out->bscale, seg->bzero, seg->bscale);
+                }
              }
-             
+
              if ((status = drms_fitstas_writeslice(seg->record->env,
                                                    seg, 
                                                    filename, 
@@ -2149,8 +2143,8 @@ int drms_segment_writeslice_ext(DRMS_Segment_t *seg,
                                                    end, 
                                                    seg->record->slotnum, 
                                                    out)) != DRMS_SUCCESS)
-                 goto bailout;
-         }
+               goto bailout;
+          }
           break;
         default:
           return DRMS_ERROR_UNKNOWNPROTOCOL;
