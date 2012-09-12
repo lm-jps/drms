@@ -101,8 +101,8 @@
 # To test this script:
 # 1. Run on hmidb2.
 # 2. Use /home/jsoc/cvs/Development/JSOC/proj/replication/etc/repserver.testparser.cfg as the configuration file.
-# 3. Put some un-parsed logs in /c/pgsql/slon_logs/test/slon_logs.
-# 4. Edit /c/pgsql/slon_logs/test/slon_parser.cfg appropriately. Make sure edit the first column so that it doesn't point
+# 3. Put some un-parsed logs in /tmp/slparsetest/slon_logs.
+# 4. Edit /tmp/slparsetest/slon_parser.cfg appropriately. Make sure edit the first column so that it doesn't point
 #    to some production location.
 # 5. Run:
 #    <path to test parser>/parse_slon_logs.pl /home/jsoc/cvs/Development/JSOC/proj/replication/etc/repserver.testparser.cfg
@@ -223,7 +223,7 @@ unless ($repro) {
   # log directories, and can do so simultaneously.
   $subscribelockpath = "$config{'kServerLockDir'}/$subscribelock";
   system("(set -o noclobber; echo $$ > $subscribelockpath) 2> /dev/null");
-    
+
   if ($? == 0)
   {
      $SIG{INT} = "ReleaseLock";
@@ -244,7 +244,6 @@ unless ($repro) {
      info ("Current counter [$counter]");
 
      debug("b4 while loop [$counter] [$slon_counter]");
-
      while ((my $srcFile = nextCounter(\$counter,$config{'kPSLlogsSourceDir'})) && ($counter <= $slon_counter) )
      {
         debug("counter is [$counter]");
@@ -887,7 +886,7 @@ sub readCounter {
 
   my $source_dir=$config{'kPSLlogsSourceDir'};
 
-  my $slon_dir_counter = -1;
+  my $slon_dir_counter = 0;
 
   my $last_log_file = (glob("$source_dir/slony1_log_2_0*.sql.parsed"))[-1]; ## get the last element in the array
   if (defined $last_log_file) {
@@ -901,7 +900,7 @@ sub readCounter {
     }
   }
 
-  unless ( defined($slon_dir_counter) && $slon_dir_counter >= 0 ) {
+  unless ( defined($slon_dir_counter) && $slon_dir_counter > 0 ) {
     my $msg = "Could not find last counter for slon1_log_2_0*.sql.parsed or slony1_log_2_0*.sql logs in source directory [$source_dir]";
     emergency($msg);
     CallDie($msg);
@@ -1224,7 +1223,6 @@ sub parseLog {
   my ($cfgH, $nodeH, $srcFile) = @_;
 
   my $srcFileBName = basename($srcFile);
-  my($regexp);
   my($rv);
 
   $rv = 0;
@@ -1264,53 +1262,7 @@ sub parseLog {
           @parts = ($series =~ /(\S+)\.(\S+)/);
           if ($parts[0] !~ /"\S+"/)
           {
-              $weirdseriesname = "\"" . lc($parts[0]) . "\"";
-          }
-          else
-          {
-              $weirdseriesname = lc($parts[0]);
-          }
-          
-          $weirdseriesname = $weirdseriesname . "\.";
-
-          if ($parts[1] !~ /"\S+"/)
-          {
-              $weirdseriesname = $weirdseriesname . "\"" . lc($parts[1]) . "\"";
-          }
-          else
-          {
-              $weirdseriesname = $weirdseriesname . lc($parts[1]);
-          }
-
-          dumpSlonLog($cfgH, $nodeH, $weirdseriesname, $_);
-          next;
-      }
-      
-      # Along with the alter statement, there will be 1 or more insert statements. Capture those too.
-      # They could occur either before or after the alter statement though.
-      if ($_ =~ /^\s*insert\s+into\s+\S+\.drms_keyword.+\)\s+values\s+\(\s*(\S+\.[^,]+),/i)
-      {
-          # Yay, this is an insert statement that goes with the alter table statement.
-          my($series) = $1;
-          my(@parts);
-          
-          if ($series =~ /\'(\S+)\.(\S+)\'/ || /\"(\S+)\.(\S+)\"/)
-          {
-              $parts[0] = lc($1);
-              $parts[1] = lc($2);
-          }
-          else
-          {
-              @parts = ($series =~ /(\S+)\.(\S+)/);
-          }
-          
-          if ($parts[0] !~ /"\S+"/ && $parts[0] !~ /\'\S+\'/)
-          {
               $weirdseriesname = "\"" . $parts[0] . "\"";
-          }
-          elsif ($parts[0] =~ /\'(\S+)\'/)
-          {
-              $weirdseriesname = "\"" . $1 . "\"";
           }
           else
           {
@@ -1318,33 +1270,24 @@ sub parseLog {
           }
           
           $weirdseriesname = $weirdseriesname . "\.";
-          
-          if ($parts[1] !~ /"\S+"/ && $parts[1] !~ /\'\S+\'/)
+
+          if ($parts[1] !~ /"\S+"/)
           {
               $weirdseriesname = $weirdseriesname . "\"" . $parts[1] . "\"";
-          }
-          elsif ($parts[1] =~ /\'(\S+)\'/)
-          {
-              $weirdseriesname = $weirdseriesname . "\"" . $1 . "\"";
           }
           else
           {
               $weirdseriesname = $weirdseriesname . $parts[1];
           }
-          
+
           dumpSlonLog($cfgH, $nodeH, $weirdseriesname, $_);
           next;
       }
-      
 
   #e.g.
   #insert into "lm_jps"."lev1_test4k10s"
     ## test end of line in insert sql  - ISS 2010/Aug/20
-    if ($_ =~ /^insert\s+into\s+("\S+"\."\S+")/i ||
-        $_ =~ /^insert\s+into\s+(\S+\."\S+")/i ||
-        $_ =~ /^insert\s+into\s+("\S+"\.\S+)/i ||
-        $_ =~ /^insert\s+into\s+(\S+\.\S+)/i) 
-    {
+    if ($_ =~ /^insert\s+into\s+("\S+"\."\S+")/i) {
       my $series = $1;
       if ($_ =~ /.*\);$/ ) {
         dumpSlonLog($cfgH, $nodeH, $series, $_);

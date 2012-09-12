@@ -47,7 +47,6 @@ sub new
 {
     my($clname) = shift;
     my($cmd) = shift;
-    my($type) = shift;
     
     my($self) = 
     {
@@ -62,7 +61,7 @@ sub new
     
     if (defined($cmd))
     {
-        if ($self->OpenPipe($cmd, $type))
+        if ($self->OpenPipe($cmd))
         {
             $self = undef;
         }
@@ -82,44 +81,24 @@ sub OpenPipe
 {
     my($self) = shift;
     my($cmd) = shift;
-    my($type) = shift;
     my($ret) = 0;
     my($fh);
     my($rfh);
     
     if (!defined($self->{_fh}))
     {
-        if (!defined($type))
-        {
-            IPC::Open2::open2($rfh, $fh, "$cmd 2>&1");
-            
-            if (0)
-            {
-                print STDERR "Unable to open pipe for reading/writing.\n";
-                $ret = 1;
-            }
-        }
-        elsif ($type == 0)
-        {
-            # read-only pipe
-            unless (open($rfh, "$cmd 2>&1 |"))
-            {
-                print STDERR "Unable to open pipe for reading.\n";
-                $ret = 1;
-            }
-        }
-        elsif ($type == 1)
-        {
-            # write-only pipe
-            unless (open($fh, "| $cmd 2>&1"))
-            {
-                print STDERR "Unable to open pipe for writing.\n";
-                $ret = 1;
-            }
-        }
+        IPC::Open2::open2($rfh, $fh, "$cmd 2>&1");
 
-        $self->{_fh} = $fh;
-        $self->{_rfh} = $rfh;
+        if (0)
+        {
+            print STDERR "Unable to open pipe for reading/writing.\n";
+            $ret = 1;
+        }
+        else
+        {
+            $self->{_fh} = $fh;
+            $self->{_rfh} = $rfh;
+        }
     }
     else
     {
@@ -202,26 +181,19 @@ sub ClosePipe
     my($self) = shift;
     my($which) = shift;
     my($rv) = 0;
-    my($clret) = 0;
-    my($status);
     
     if (!defined($which) || $which == 1)
     {
         if (defined($self->{_fh}))
         {
             # close will set $? to the return status of the process running on the pipe.
-            # close will return 1 if the child process does not return 0.             
-            $clret = close($self->{_fh});
-            
-            $status = $? >> 8;
-            $self->{_wstat} = $status;
-            $self->{_fh} = undef;
-            
-            if ($clret == 0 && $status == 0)
+            unless (close($self->{_fh}))
             {
-                # close() failed (the child process returned 0, so close() must have had some problem).
                 $rv = 1;
             }
+            
+            $self->{_wstat} = $?;
+            $self->{_fh} = undef;
         }
     }
     
@@ -230,18 +202,13 @@ sub ClosePipe
         if (defined($self->{_rfh}))
         {
             # close will set $? to the return status of the process running on the pipe.
-            # close will return 1 if the child process does not return 0.
-            $clret = close($self->{_rfh});
-            
-            $status = $? >> 8;
-            $self->{_rstat} = $status;
-            $self->{_rfh} = undef;
-            
-            if ($clret == 0 && $status == 0)
+            unless (close($self->{_rfh}))
             {
-                # close() failed (the child process returned 0, so close() must have had some problem).
                 $rv = 1;
             }
+            
+            $self->{_rstat} = $?;
+            $self->{_rfh} = undef;
         }
     }
     

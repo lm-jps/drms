@@ -361,7 +361,6 @@ struct DRMS_Env_struct
   int dbtimeout; /* DB queries running longer than this number milliseconds will be terminated.
                     * By default this is INT_MIN, which implies no timeout. */
   int jsdsgetret; /* If 1, then use the retention value of the series' jsd when calling SUM_get(). */
-  int sumssafe; /* If 0, then don't call sums because DRMS timed-out waiting for SUMS. */
 };
 
 /** \brief DRMS environment struct reference */
