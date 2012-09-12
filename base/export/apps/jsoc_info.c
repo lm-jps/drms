@@ -423,6 +423,15 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
     json_insert_pair_into_object(keyinfo, "name", json_new_string(persegment ? baseKeyName : key->info->name));
     if (key->info->islink)
     {
+       /* provide link name and target keyword name */
+       char linknames[100], *tmpstr;
+       json_t *linkinfo;
+       sprintf(linknames,"%s->%s", key->info->linkname, key->info->target_key);
+       tmpstr = string_to_json(linknames);
+       linkinfo = json_new_string(tmpstr);
+       json_insert_pair_into_object(keyinfo, "linkinfo", linkinfo);
+       free(tmpstr);
+
        /* Display the target keyword data type. Must follow link now. */
        int lnkstat = DRMS_SUCCESS;
        DRMS_Keyword_t *linkedkw = drms_template_keyword_followlink(key, &lnkstat);
@@ -437,7 +446,7 @@ if (DEBUG) fprintf(stderr,"   starting all keywords\n");
        }
     }
     else
-	keytype = json_new_string(drms_type_names[key->info->type]);
+       keytype = json_new_string(drms_type_names[key->info->type]);
     json_insert_pair_into_object(keyinfo, "type", keytype);
     // scope                                                                                                                      
     // redundant - persegment = key->info->kwflags & kKeywordFlag_PerSegment;
@@ -488,6 +497,7 @@ if (DEBUG) fprintf(stderr," done with keywords, start segments\n");
 	    {
             char linkinfo[DRMS_MAXNAMELEN+10];
 	    sprintf(linkinfo, "link via %s", seg->info->linkname);
+            json_insert_pair_into_object(seginfo, "type", json_new_string(drms_type_names[seg->info->type]));
             json_insert_pair_into_object(seginfo, "units", json_new_null());
             json_insert_pair_into_object(seginfo, "protocol", json_new_string(linkinfo));
             json_insert_pair_into_object(seginfo, "dims", json_new_null());
@@ -498,6 +508,7 @@ if (DEBUG) fprintf(stderr," done with keywords, start segments\n");
             char diminfo[160];
             int iaxis;
             strcpy(prot, drms_prot2str(seg->info->protocol));
+            json_insert_pair_into_object(seginfo, "type", json_new_string(drms_type_names[seg->info->type]));
             json_insert_pair_into_object(seginfo, "units", json_new_string(seg->info->unit));
             json_insert_pair_into_object(seginfo, "protocol", json_new_string(prot));
 	    diminfo[0] = '\0';
@@ -654,7 +665,7 @@ if (status != JSON_OK) fprintf(stderr, "json_insert_pair_into_object, status=%d,
     drms_free_records(rs);
     }
   json_insert_pair_into_object(jroot, "Interval", interval);
-  return;
+  return 0;
   }
 
 # define MANAGE_HANDLES "/home/jsoc/cvs/Development/JSOC/bin/linux_x86_64/jsoc_manage_cgibin_handles"
@@ -867,7 +878,7 @@ wantowner = cmdparams_get_int (&cmdparams, "o", NULL);
             
             if (emsg)
             {
-                JSONDIE(emsg);
+                JSONDIE((char *)emsg);
             }
             else
             {
@@ -885,7 +896,7 @@ wantowner = cmdparams_get_int (&cmdparams, "o", NULL);
 
        if (emsg)
        {
-          JSONDIE(emsg);
+          JSONDIE((char *)emsg);
        }
        else
        {
@@ -931,7 +942,7 @@ wantowner = cmdparams_get_int (&cmdparams, "o", NULL);
               
               if (emsg)
               {
-                  JSONDIE(emsg);
+                  JSONDIE((char *)emsg);
               }
               else
               {
@@ -961,7 +972,7 @@ wantowner = cmdparams_get_int (&cmdparams, "o", NULL);
         
         if (emsg)
         {
-            JSONDIE(emsg);
+            JSONDIE((char *)emsg);
         }
         else
         {
@@ -1033,7 +1044,7 @@ wantowner = cmdparams_get_int (&cmdparams, "o", NULL);
 
        if (emsg)
        {
-          JSONDIE(emsg);
+          JSONDIE((char *)emsg);
        }
        else
        {
@@ -1058,7 +1069,7 @@ wantowner = cmdparams_get_int (&cmdparams, "o", NULL);
 
        if (emsg)
        {
-          JSONDIE(emsg);
+          JSONDIE((char *)emsg);
        }
        else
        {
