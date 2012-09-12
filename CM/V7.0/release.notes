@@ -38,7 +38,8 @@ to other users until you "commit" those changes back to the cvs depot.  Please s
 Obtaining the Release
 ---------------------
 To update your working directory to this release, or to check-out this release anew, 
-please visit http://jsoc.stanford.edu/jsocwiki/CvsInit. Please keep in mind that
+please visit http://jsoc.stanford.edu/jsocwiki/CvsInit (please see the section entitled
+Update Your Existing Working Directory ("Sandbox")). Please keep in mind that
 users may have modified files since the release was created, so use of the 
 scripts documented in the web page may result in a working directory whose
 content is not identical to the release.  
@@ -54,5 +55,64 @@ Changes since previous release (V6.03 - May 18, 2012)
 ----------------------------------------------------------
 
 NEW FEATURES:
+- libstats.a now links against all modules and exes.
+- When libDRMS connects to the database, and version check is performed. This allows us to ensure that users upgrade their code. We will need to do this occasionally, on a very limited basis.
+- New module: drms_addkeys. This module will allows users to add keywords to existing, non-replicated series. If the series is under slony replication, it returns SQL that can be used in a slonik script to use slony to add keywords to the original series, as well as all nodes in the slony cluster.
+- New script: addkeys.pl. This module adds one or more DRMS keywords to an existing series, whether or not the is under slony replication. If the series is under slony replication, then it runs a slonik script on the slony slave machine, and that script adds keywords to the original series, as well as all nodes in the slony cluster.
+- db-timeout handling: We can now limit how long a database query runs. When a timeout occurs, an error message is generated, and this message can be captured by higher-level code.
+- We modified show_info and jsoc_info to make use of the new db-timeout handling code. 
+- We modified lookdata.html and exportdata.html to run cgi modules that limit the length of time a db query can run.
+- There is now a mechanism that allows an administrator to specify a set of 'production' users who can perform certain privileged tasks. This was localized for NetDRMS use.
+- Support for DRMS versioning: when sufficiently 'old' DRMS code accesses our db, we can reject the attempted database connection. And when this happens, we log the attempted connection to drms.oldcode. Currently, we accept all versions of software, but sometime in the future, we will "flip a switch" and then reject code with a version earlier than a specified version.
+- We added a new jsoc_main cmd-line argument: --DRMS_JSDRETENTION. This flag, when set, sends a tdays retention value to SUMS equal to the value in the series jsd. If SUM_get() is operating on SUs from multiple series, then the retention value sent to SUMS is the max() of all series jsd retention values. The effect of this is to ensure that SUs so accessed have a least the jsd retention value. If an SU is retrieved from tape, then it will have the jsd retention value.
+- When DRMS times-out waiting for SUMS to fetch a tape, then DRMS is no longer allowed to call into SUMS.
+- We added two new API functions: drms_appendhistory() and drms_appendcomment(). These allow the caller to append text (optionally preceded by a newline char) to an existing HISTORY or COMMENT keyword value.
+- Added a check the the jsd file parser that will error out if the jsd file does not have Unix line endings.
+- We added a new module, jsoc_export_clone, that will make a new series (for use with the export system) based on an existing series. The new series generally has a name that is composed by concatenating "_mod" to the original series name. By default, new keywords are added when creating the _mod series to be used by the export system.
+- We modified the export-system manager to call jsoc_export_clone if processing steps are being performed in response to an export request.
+- We added a new function that will parse one or more JSD keyword description lines, returning the parsed keywords in a HContainer_t struct.
+- We modified jsoc_export_manage to no longer assume that the output series exists. It is now possible to create output series on-the-fly.
+- Remote DRMS: we increased the retention of site-specific logs to 30 days from 10 days. This increases the retention of both .sql and tar files.
+- We modified the slony-log parser to accept log lines that contain SQL needed to propagate new columns to remote sites.
+- We created a new script that traces idle db transactions back to processes running on a machine.
+- We modified the export-system manager to write any generated export error message to the export-request record.
+- We put the export logs under control of software that manages the logs (so they don't grow out of control).
+- We made a perl script that exports FITS-procotol segments as self-contained FITS files.
+- We added support for perl network locks (the code is in a perl module - drmsLocks.pm).
+- We added support for process pipes in perl to be used for running processes (the code is in a perl module - drmsRunProg.pm).
+- We added a -force switch to driveonoff.c.
+- We added some better logging/messaging to various SUMS modules.
+- t950view: reverse order for hmi.lev1 closed tapes to get most recent first.
+- We added build support for the linux AVX (an extended set of x86 machine instructions) platform.
+- We reorganized the export-system pages supporting html files. The export form specifications were moved to exportdata.d/export_request_form.html. We also moved certain html forms into js files, that then get interpreted as html.
+- The export system now rejects the export of compressed floating-point data (which would be lossy).
+- We added new keywords - CALVER32 and CALVER64 (which contain flags that provide information about the CROTA2 keyword). Many modules now read and write those keywords as necessary.
+- New modules: aia_most_recent (create the most recent AIA 1Kx1K FITS image every 3 minutes for Space Weather) and aia_synoptic_nrt (module to produce NRT 1Kx1K AIA synoptic images every 2 minutes).
+- New module: m2meharp.
+- We created a server-side slony-replication configuration file to be used to test the slony-log parser.
+- New module: im_patch.
+- New module: hmi_fixCROTA2 (this module sets the CALVER32 and CALVER64 keywords in various series, and it modifies CROTA2 based on observations obtained during the Venus transit).
 
 DEFECTS FIXED:
+- We fixed a problem having to do with the reading of CHAR-image slices. There was an overflow due to bzero/bscale not being applied to unsigned char data in the fits file that was supposed to be converted to signed char data. Also fix a buffer overrun in drms_fitsrw.c.
+- We fixed a crash in show_info that would happen when DRMS timed-out waiting for SUMS to fetch a tape.
+- We fixed some memory leaks in jsoc_export_manage.
+- DRMS now returns an error code if a user tries to write a slice to a FITS file that must have a consistent scaling across slices, and the scaling of the slice doesnt match the existing scaling of the file.
+- When writing the default value for a keyword being inserted into the drms_keyword table, consistently convert values to strings - do not use the keywords format jsd field, which can vary between users. Instead use the conversions in drms_sprintfval.
+- The export system now rejects the export of Rice-compressed, floating-point images.
+- We fixed a bug in the slony-log parser that resulted in the wrong last-parsed-log number.
+- When a user exports a slice of a TAS file, then the created file now has the .fits extension, not the .tas extension.
+- We modified jsoc_export_manage so that it adds the JSOC_* cmd-line arguments to the jsoc_export_clone command. Before the fix, jsoc_export_clone was attempting to create series in the wrong database.
+- We removed a redundant definition of drms_sprint_rec_query() that had broken the build.
+- We re-organized the directory locations of some export-system logs so that user apache (which is what the export cgis run as) can create new log files.
+- We fixed JSONCOMMIT (in jsoc_fetch) - it was calling die() which would have prevented it from doing half its work (because die was exiting from DoIt).
+- Instead of jsoc_fetch exiting with a 1 status (which causes the db to rollback) when an error occurs, it now exits with a 0 (which causes a db commit). And an error message/code is written into the export record in jsoc.export.
+- We fixed some problems with file locking involving jsoc_info.
+- We fixed the improper declaration of 2 database-access functions. A new argument was added to the function definitions, but we forgot to modify the declarations.
+- We made some minor changes to some of the SUMS test code so that it builds on gcc.
+- We fixed various compiler warnings, like the one about a mismatch between char * (a variable) and const char * (the return value from a cmdparams_get_XXX function call).
+- We fixed various memory leaks.
+- For the dscp module, we fixed the output file name for generic segments (the output file name now matches the input one). 
+- For the dscp module, we fixed the algorithm that calculate the size of the chunk of records to process. Before the fix, it could end up with a chunk size larger than the total number of records.
+- lookdata now properly displays per-segment keyword values in the record table.
+- The code that processes the FDS orbit data now includes the non-zero seconds field when setting the observation date in the sdo.fds_orbit_vectors data series. The specification from MOC says that this field would always be zero, but after the June 30th leap second they introduced non-zero seconds fields. 
