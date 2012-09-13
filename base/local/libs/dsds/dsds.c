@@ -714,7 +714,10 @@ static KEY *CreateSOIKeylist(const char *progspec, LinkedList_t **wdlist, kDSDS_
 
                if (*wdlist)
                {
-                  list_llinserthead(*wdlist, spec);
+                   char tbuf[PATH_MAX];
+                   
+                   snprintf(tbuf, sizeof(tbuf), "%s", spec);
+                  list_llinserthead(*wdlist, tbuf);
                }
             }
          }
