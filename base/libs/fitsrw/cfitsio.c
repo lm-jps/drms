@@ -806,7 +806,8 @@ int fitsrw_readintfile(int verbose,
  
    if (fptr) 
    {
-      fitsrw_closefptr(verbose, fptr);
+       /* We're reading a file, so don't worry about errors. */
+       fitsrw_closefptr(verbose, fptr);
    } 
 
    //---------------------------------  BYTE_IMG --------------------------------------------------
@@ -873,7 +874,8 @@ error_exit:
    
    if (fptr) 
    {
-      fitsrw_closefptr(verbose, fptr);
+       /* There is some other error, so don't worry about any error having to do with not closing the file pointer. */
+       fitsrw_closefptr(verbose, fptr);
    }
 
    return error_code;
@@ -1005,18 +1007,21 @@ int fitsrw_writeintfile(int verbose,
       /* Disallow unsupported types of tile-compressed files */
       if (data_type == TLONGLONG)
       {
-         fprintf(stderr, "CFITSIO doesn't support compression of 64-bit data.\n");
-	 goto error_exit;
+          fprintf(stderr, "CFITSIO doesn't support compression of 64-bit data.\n");
+          error_code = CFITSIO_ERROR_CANT_COMPRESS;
+          goto error_exit;
       }
       else if (data_type == TFLOAT || data_type == TDOUBLE)
       {
-         fprintf(stderr, "CFITSIO compression of floating-point data is lossy, bailing.\n");
-         goto error_exit;
+          fprintf(stderr, "CFITSIO compression of floating-point data is lossy, bailing.\n");
+          error_code = CFITSIO_ERROR_CANT_COMPRESS;
+          goto error_exit;
       }
    }
    else if (status)
    {
-      goto error_exit;
+       error_code = CFITSIO_ERROR_LIBRARY;
+       goto error_exit;
    }
    
    // keylist is optional. It is available only for export 
@@ -1259,7 +1264,8 @@ int fitsrw_writeintfile(int verbose,
 
    if (fptr) 
    {
-      fitsrw_closefptr(verbose, fptr);
+       /* There was some other error, so dont' worry about any errors having to do with closing the file. */
+       fitsrw_closefptr(verbose, fptr);
    }
 
    return error_code;
@@ -1526,7 +1532,11 @@ int fitsrw_read(int verbose,
 
    if(fptr) 
    {
-      status = fitsrw_closefptr(verbose, fptr);
+       status = fitsrw_closefptr(verbose, fptr);
+       if (status)
+       {
+           error_code = CFITSIO_ERROR_FILE_IO;
+       }
    }
    
    if (status)
