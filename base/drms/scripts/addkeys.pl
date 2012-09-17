@@ -278,8 +278,11 @@ sub ExeSlonik
         print "Logged-in!\n";
         
         # Run slonik cmd on hmidb2.
-        # ($stdout, $stderr, $exitcode) = $ssh->cmd("echo $slonikcmd | $cfg->{kSlonikCmd}");
-        ($stdout, $stderr, $exitcode) = $ssh->cmd("ls -l");
+        ($stdout, $stderr, $exitcode) = $ssh->cmd("echo \"$slonikcmd\" | $cfg->{kSlonikCmd}"); # un-remove
+        # $slonikcmd = "publish.hmi.M_720s_nrt.log"; # remove
+        # ($stdout, $stderr, $exitcode) = $ssh->cmd("cat $slonikcmd | grep CODEVER1"); # remove
+        # print "rsp is $stdout\n"; # remove
+
         if ($exitcode != 0)
         {
             $rv = &kRetSlonik;
@@ -313,7 +316,7 @@ sub NewKeysExist
     
     # We should make sure that drms_addkeys successfully added the keys. I guess we can use show_info -j to
     # do that.
-    $pipe = new drmsPipeRun("show_info -j $series", 0);
+    $pipe = new drmsPipeRun("show_info -j $series JSOC_DBHOST=hmidb2", 0);
     
     if (defined($pipe))
     {
