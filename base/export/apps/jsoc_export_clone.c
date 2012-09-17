@@ -12,7 +12,8 @@ typedef enum
     kExpCloneErr_CantCreateProto,
     kExpCloneErr_CantCreateSeries,
     kExpCloneErr_CantParseKeyDesc,
-    kExpCloneErr_LibDRMS
+    kExpCloneErr_LibDRMS,
+    kExpCloneErr_CantFollowLink
 } ExpError_t;
 
 #define kArgSeriesIn   "dsin"
@@ -179,14 +180,14 @@ static ExpError_t AddAKey(const char *keyname,
             hcon_destroy(&keys);
         }
     }
-
+    
     return rv;
 }
 
 int DoIt(void) 
 {
     ExpError_t err = kExpCloneErr_Success;
-
+    
     int drmsstat = DRMS_SUCCESS;
     char *seriesin = NULL;
     const char *seriesout = NULL;
@@ -218,132 +219,212 @@ int DoIt(void)
     {
         name = strdup(seriesout);
     }
-
+    
     exists = drms_series_exists(drms_env, name, &drmsstat);
-
+    
     if (drmsstat && drmsstat != DRMS_ERROR_UNKNOWNSERIES)
     {
-       fprintf(stderr, "Unable to check for series '%s' existence; bailing out.\n", name);
-       err = kExpCloneErr_LibDRMS;
+        fprintf(stderr, "Unable to check for series '%s' existence; bailing out.\n", name);
+        err = kExpCloneErr_LibDRMS;
     }
     else if (!exists)
     {
-       /* retention is name's jsd retention value. */
-       retention = cmdparams_get_int(&cmdparams, kArgRetention, NULL);
-    
-       /* archive is name's jsd archive value. */
-       archive = cmdparams_get_int(&cmdparams, kArgArchive, NULL);
-    
-       /* Get a COPY of the input series template record. */
-       copy = CopySeriesTemplate(drms_env, seriesin, &err);
-       
-       if (!copy || err)
-       {
-          fprintf(stderr, "Unable to copy template record for series '%s'.\n", seriesin);
-          if (!err)
-          {
-             err = kExpCloneErr_CantCreateProto;
-          }
-       }
-       else
-       {
-          /* unitsize will match the unitsize of the input series. */
-          /* tapegroup will match the tapegroup of the input series, but will not
-           * matter, since archive == -1. */
-          copy->seriesinfo->archive = archive;
-          copy->seriesinfo->retention = retention;
-          
-          hirank = drms_series_gethighestkeyrank(drms_env, seriesin, &drmsstat);
-          if (drmsstat || hirank == -1)
-          {
-             hirank = 0;
-          }
-          
-          /* Add prime keyword RequestID, if it doesn't already exist. */
-          err = AddAKey(kKeyReqID, 
-                        copy, 
-                        "Keyword:RequestID, string, variable, record, \"Invalid RequestID\", %s, NA, \"The export request identifier, if this record was inserted while an export was being processed.\"", 
-                        1, 
-                        1, 
-                        1 + hirank++);
-          
-          /* Add keywords HISTORY and COMMENT, if they don't exist. */
-          if (err == kExpCloneErr_Success)
-          {
-             err = AddAKey(kKeyHistory, 
-                           copy, 
-                           "Keyword:HISTORY, string, variable, record, \"No history\", %s, NA, \"The processing history of the data.\"", 
-                           0, 
-                           0, 
-                           1 + hirank++);
-          }
-          
-          if (err == kExpCloneErr_Success)
-          {
-             err = AddAKey(kKeyComment, 
-                           copy, 
-                           "Keyword:COMMENT, string, variable, record, \"No comment\", %s, NA, \"Commentary on the data processing.\"", 
-                           0, 
-                           0, 
-                           1 + hirank++);
-          }
-          
-          if (err == kExpCloneErr_Success)
-          {
-             err = AddAKey(kKeySource,
-                           copy,
-                           "Keyword:SOURCE, string, variable, record, \"No source\", %s, NA, \"Input record record-set specification.\"",
-                           0,
-                           0,
-                           1 + hirank++);
-          }
-          
-          /* If the first input FITS data segment does not have a VARDIM segment scope, then make it so. */
-          if (err == kExpCloneErr_Success)
-          {
-             while ((seg = drms_record_nextseg(copy, &lastseg, 0)))
-             {
-                if (seg->info->protocol == DRMS_FITS)
+        /* retention is name's jsd retention value. */
+        retention = cmdparams_get_int(&cmdparams, kArgRetention, NULL);
+        
+        /* archive is name's jsd archive value. */
+        archive = cmdparams_get_int(&cmdparams, kArgArchive, NULL);
+        
+        /* Get a COPY of the input series template record. */
+        copy = CopySeriesTemplate(drms_env, seriesin, &err);
+        
+        if (!copy || err)
+        {
+            fprintf(stderr, "Unable to copy template record for series '%s'.\n", seriesin);
+            if (!err)
+            {
+                err = kExpCloneErr_CantCreateProto;
+            }
+        }
+        else
+        {
+            /* unitsize will match the unitsize of the input series. */
+            /* tapegroup will match the tapegroup of the input series, but will not
+             * matter, since archive == -1. */
+            copy->seriesinfo->archive = archive;
+            copy->seriesinfo->retention = retention;
+            
+            hirank = drms_series_gethighestkeyrank(drms_env, seriesin, &drmsstat);
+            if (drmsstat || hirank == -1)
+            {
+                hirank = 0;
+            }
+            
+            /* Add prime keyword RequestID, if it doesn't already exist. */
+            err = AddAKey(kKeyReqID, 
+                          copy, 
+                          "Keyword:RequestID, string, variable, record, \"Invalid RequestID\", %s, NA, \"The export request identifier, if this record was inserted while an export was being processed.\"", 
+                          1, 
+                          1, 
+                          1 + hirank++);
+            
+            /* Add keywords HISTORY and COMMENT, if they don't exist. */
+            if (err == kExpCloneErr_Success)
+            {
+                err = AddAKey(kKeyHistory, 
+                              copy, 
+                              "Keyword:HISTORY, string, variable, record, \"No history\", %s, NA, \"The processing history of the data.\"", 
+                              0, 
+                              0, 
+                              1 + hirank++);
+            }
+            
+            if (err == kExpCloneErr_Success)
+            {
+                err = AddAKey(kKeyComment, 
+                              copy, 
+                              "Keyword:COMMENT, string, variable, record, \"No comment\", %s, NA, \"Commentary on the data processing.\"", 
+                              0, 
+                              0, 
+                              1 + hirank++);
+            }
+            
+            if (err == kExpCloneErr_Success)
+            {
+                err = AddAKey(kKeySource,
+                              copy,
+                              "Keyword:SOURCE, string, variable, record, \"No source\", %s, NA, \"Input record record-set specification.\"",
+                              0,
+                              0,
+                              1 + hirank++);
+            }
+            
+            /* If the first input FITS data segment does not have a VARDIM segment scope, then make it so. */
+            if (err == kExpCloneErr_Success)
+            {
+                DRMS_Link_t *link = NULL;
+                DRMS_Record_t *tRec = NULL;
+                DRMS_Segment_t *tSeg = NULL;
+                char oSegName[DRMS_MAXSEGNAMELEN];
+                
+                /* We're examine template segments. If a segment is linked to another series, then 
+                 * we can't use drms_segment_lookup() to find the target link, because the target
+                 * for a linked segment is not set if the segment is a template. Instead, we have
+                 * to obtain the link structure (the template segment has a field, seg->info->linkname, 
+                 * which identifies the name of the link pointing to the target series). The link
+                 * structure has a field, link->info->target_series, which identifies the series
+                 * that contains the actual link-target segment. The name of the segment in the target 
+                 * series is specified in the source segment structure, in the seg->info->target_seg
+                 * field. */
+                while ((seg = drms_record_nextseg(copy, &lastseg, 0)))
                 {
-                   if (seg->info->scope != DRMS_VARDIM)
-                   {
-                      seg->info->scope = DRMS_VARDIM;
-                      memset(seg->axis, 0, sizeof(seg->axis));
-                   }
-                   
-                   break;
+                    if (seg->info->islink)
+                    {
+                        /* If this segment was originally a linked segment, then we need to replace it
+                         * with the target of the link. */
+                        link = hcon_lookup_lower(&copy->links, seg->info->linkname);
+                        
+                        if (!link)
+                        {
+                            fprintf(stderr, "Unable to obtain link %s.\n", seg->info->linkname);
+                            err = kExpCloneErr_CantFollowLink;
+                            break;
+                        }
+                        else
+                        {
+                            tRec = drms_template_record(drms_env, link->info->target_series, &drmsstat);
+                            
+                            if (drmsstat != DRMS_SUCCESS || !tRec)
+                            {
+                                fprintf(stderr, "Unable to obtain template record for series %s.\n", link->info->target_series);
+                                err = kExpCloneErr_LibDRMS;
+                                break;
+                            }
+                            else
+                            {
+                                tSeg = drms_segment_lookup(tRec, seg->info->target_seg);
+                                
+                                if (!tSeg)
+                                {
+                                    fprintf(stderr, "Unable to follow link to target segment.\n");
+                                    err = kExpCloneErr_CantFollowLink;
+                                    break;
+                                }
+
+                                /* Need to use the name of the segment in the original series, not the name in the 
+                                 * target series, so save the original name before overwriting. */
+                                snprintf(oSegName, sizeof(oSegName), "%s", seg->info->name);
+                                
+                                /* Copy - must deep copy the info struct, since it will be freed during shutdown. */
+                                *seg = *tSeg;
+                                seg->info = malloc(sizeof(DRMS_SegmentInfo_t));
+                                
+                                if (!seg->info)
+                                {
+                                    err = kExpCloneErr_OutOfMemory;
+                                    break;
+                                }
+                                else
+                                {
+                                    *seg->info = *tSeg->info;
+                                    
+                                    /* Need to set record field to point to copy; seg->info points to the original 
+                                     * series seg->info struct. */
+                                    seg->record = copy;
+                                    
+                                    /* Copy the original segment's name field to the new series' segment name field. */
+                                    snprintf(seg->info->name, sizeof(seg->info->name), "%s", oSegName);
+                                }
+                            }
+                        }
+                    }
+                        
+                    if (seg->info->protocol == DRMS_FITS)
+                    {
+                        if (seg->info->scope != DRMS_VARDIM)
+                        {
+                            seg->info->scope = DRMS_VARDIM;
+                            memset(seg->axis, 0, sizeof(seg->axis));
+                        }
+                    }  
                 }
-             }
-             
-             if (lastseg)
-             {
-                hiter_destroy(&lastseg);
-             }
-             
-             /* If the segment contains integer data, then the bzero and bscale values of the original series will suffice, 
-              * and that is what seg contains. If they are float data, then bzero and bscale are ignored. */
-          }
-          
-          if (err == kExpCloneErr_Success)
-          {
-             /* drms_create_series_fromprototype() will first copy keywords with drms_copy_keyword_struct().
-              * This latter function shallow-copies each keyword's info struct. */
-             if (drms_create_series_fromprototype(&copy, name, 0))
-             {
-                err = kExpCloneErr_CantCreateSeries;
-             }
-          }
-       }
+                
+                if (lastseg)
+                {
+                    hiter_destroy(&lastseg);
+                }
+                
+                /* If the segment contains integer data, then the bzero and bscale values of the original series will suffice, 
+                 * and that is what seg contains. If they are float data, then bzero and bscale are ignored. */
+            }
+            
+            if (err == kExpCloneErr_Success)
+            {
+                /* drms_create_series_fromprototype() will first copy keywords with drms_copy_keyword_struct().
+                 * This latter function shallow-copies each keyword's info struct. */
+                if (drms_create_series_fromprototype(&copy, name, 0))
+                {
+                    err = kExpCloneErr_CantCreateSeries;
+                }
+            }
+        }
+    }
+ 
+    /* copy is freed by drms_create_series_fromprototype(), if it is called. */
+    if (copy)
+    {
+        /* Does not free the segment info structs (which is good). */
+        drms_destroy_recproto(&copy);
     }
     
     if (name)
     {
-       free(name);
+        free(name);
     }
     
     if (seriesin)
     {
-       free(seriesin);
+        free(seriesin);
     }
     
     return err;
