@@ -306,6 +306,7 @@ int DoIt(void)
                 DRMS_Record_t *tRec = NULL;
                 DRMS_Segment_t *tSeg = NULL;
                 char oSegName[DRMS_MAXSEGNAMELEN];
+                int segnum = 0;
                 
                 /* We're examine template segments. If a segment is linked to another series, then 
                  * we can't use drms_segment_lookup() to find the target link, because the target
@@ -318,6 +319,7 @@ int DoIt(void)
                  * field. */
                 while ((seg = drms_record_nextseg(copy, &lastseg, 0)))
                 {
+                    /* The segments will have been sorted by increasing segnum. */
                     if (seg->info->islink)
                     {
                         /* If this segment was originally a linked segment, then we need to replace it
@@ -354,6 +356,10 @@ int DoIt(void)
                                 /* Need to use the name of the segment in the original series, not the name in the 
                                  * target series, so save the original name before overwriting. */
                                 snprintf(oSegName, sizeof(oSegName), "%s", seg->info->name);
+
+                                /* Need to save the original segnum as well, since tSeg->info->segnum is for the 
+                                * target series, not the source series. */
+                                segnum = seg->info->segnum;
                                 
                                 /* Copy - must deep copy the info struct, since it will be freed during shutdown. */
                                 *seg = *tSeg;
@@ -372,8 +378,9 @@ int DoIt(void)
                                      * series seg->info struct. */
                                     seg->record = copy;
                                     
-                                    /* Copy the original segment's name field to the new series' segment name field. */
+                                    /* Copy the saved original segment's info to the new series' segment. */
                                     snprintf(seg->info->name, sizeof(seg->info->name), "%s", oSegName);
+                                    seg->info->segnum = segnum;
                                 }
                             }
                         }
