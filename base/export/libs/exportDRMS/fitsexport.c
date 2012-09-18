@@ -971,103 +971,103 @@ int fitsexport_mapexportkey(DRMS_Keyword_t *key,
                             Exputl_KeyMap_t *map,
                             CFITSIO_KEYWORD **fitskeys)
 {
-   int stat = DRMS_SUCCESS;
-
-   if (key && fitskeys)
-   {
-      char nameout[16];
-
-      if (fitsexport_getmappedextkeyname(key, clname, map, nameout, sizeof(nameout)))
-      {
-	 int fitsrwRet = 0;
-         char fitskwtype = '\0';
-         void *fitskwval = NULL;
-         char *format = NULL;
-         DRMS_Keyword_t *keywval = NULL;
-         int rv = 0;
-
-         /* follow link if key is a linked keyword, otherwise, use key. */
-         keywval = drms_keyword_lookup(key->record, key->info->name, 1);
-
-         /* It may be the case that the linked record is not found - the dependency 
-          * could be broken if somebody deleted the target record, for example. */
-         if (keywval)
-         {
-            FE_ReservedKeys_t *ikey = NULL;
-
-            if (gReservedFits && 
-                (ikey = (FE_ReservedKeys_t *)hcon_lookup_lower(gReservedFits, keywval->info->name)))
+    int stat = DRMS_SUCCESS;
+    
+    if (key && fitskeys)
+    {
+        char nameout[16];
+        
+        if (fitsexport_getmappedextkeyname(key, clname, map, nameout, sizeof(nameout)))
+        {
+            int fitsrwRet = 0;
+            char fitskwtype = '\0';
+            void *fitskwval = NULL;
+            char *format = NULL;
+            DRMS_Keyword_t *keywval = NULL;
+            int rv = 0;
+            
+            /* follow link if key is a linked keyword, otherwise, use key. */
+            keywval = drms_keyword_lookup(key->record, key->info->name, 1);
+            
+            /* It may be the case that the linked record is not found - the dependency 
+             * could be broken if somebody deleted the target record, for example. */
+            if (keywval)
             {
-               if (ExportHandlers[*ikey])
-               {
-                  /* A handler exists for this reserved keyword - okay to export it. */
-                  rv = (*(ExportHandlers[*ikey]))(keywval, (void **)fitskeys, (void *)nameout);
-                  if (rv == 2)
-                  {
-                     stat = DRMS_ERROR_FITSRW;
-                  }
-                  else if (rv == 1)
-                  {
-                     stat = DRMS_ERROR_INVALIDDATA;
-                  }
-               }
-               else
-               {
-                  /* No handler - don't export, but continue with other keys. */
-                  fprintf(stderr, "Cannot export reserved keyword '%s'.\n", keywval->info->name);
-               }
+                FE_ReservedKeys_t *ikey = NULL;
+                
+                if (gReservedFits && 
+                    (ikey = (FE_ReservedKeys_t *)hcon_lookup_lower(gReservedFits, keywval->info->name)))
+                {
+                    if (ExportHandlers[*ikey])
+                    {
+                        /* A handler exists for this reserved keyword - okay to export it. */
+                        rv = (*(ExportHandlers[*ikey]))(keywval, (void **)fitskeys, (void *)nameout);
+                        if (rv == 2)
+                        {
+                            stat = DRMS_ERROR_FITSRW;
+                        }
+                        else if (rv == 1)
+                        {
+                            stat = DRMS_ERROR_INVALIDDATA;
+                        }
+                    }
+                    else
+                    {
+                        /* No handler - don't export, but continue with other keys. */
+                        fprintf(stderr, "Cannot export reserved keyword '%s'.\n", keywval->info->name);
+                    }
+                }
+                else
+                {
+                    if ((rv = DRMSKeyValToFITSKeyVal(keywval, &fitskwtype, &format, &fitskwval)) == 0)
+                    {
+                        if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key(fitskeys, 
+                                                                               nameout, 
+                                                                               fitskwtype, 
+                                                                               NULL,
+                                                                               fitskwval,
+                                                                               format)))
+                        {
+                            fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
+                            stat = DRMS_ERROR_FITSRW;
+                        }
+                    }
+                    else
+                    {
+                        fprintf(stderr, 
+                                "Could not convert DRMS keyword '%s' to FITS keyword.\n", 
+                                key->info->name);
+                        stat = DRMS_ERROR_INVALIDDATA;
+                    }
+                }
             }
             else
             {
-               if ((rv = DRMSKeyValToFITSKeyVal(keywval, &fitskwtype, &format, &fitskwval)) == 0)
-               {
-                  if (CFITSIO_SUCCESS != (fitsrwRet = cfitsio_append_key(fitskeys, 
-                                                                         nameout, 
-                                                                         fitskwtype, 
-                                                                         NULL,
-                                                                         fitskwval,
-                                                                         format)))
-                  {
-                     fprintf(stderr, "FITSRW returned '%d'.\n", fitsrwRet);
-                     stat = DRMS_ERROR_FITSRW;
-                  }
-               }
-               else
-               {
-                  fprintf(stderr, 
-                          "Could not convert DRMS keyword '%s' to FITS keyword.\n", 
-                          key->info->name);
-                  stat = DRMS_ERROR_INVALIDDATA;
-               }
+                /* linked keyword structure not found */
+                fprintf(stderr, "Broken link - unable to locate target for linked keyword '%s'.\n", key->info->name);
+                stat = DRMS_ERROR_BADLINK;
             }
-         }
-         else
-         {
-            /* linked keyword structure not found */
-            fprintf(stderr, "Broken link - unable to locate target for linked keyword '%s'.\n", key->info->name);
-            stat = DRMS_ERROR_BADLINK;
-         }
-
-         if (fitskwval)
-         {
-            free(fitskwval);
-         }
-
-         if (format)
-         {
-            free(format);
-         }
-      }
-      else
-      {
-	 fprintf(stderr, 
-		 "Could not determine external FITS keyword name for DRMS name '%s'.\n", 
-		 key->info->name);
-	 stat = DRMS_ERROR_INVALIDDATA;
-      }
-   }
-
-   return stat;  
+            
+            if (fitskwval)
+            {
+                free(fitskwval);
+            }
+            
+            if (format)
+            {
+                free(format);
+            }
+        }
+        else
+        {
+            fprintf(stderr, 
+                    "Could not determine external FITS keyword name for DRMS name '%s'.\n", 
+                    key->info->name);
+            stat = DRMS_ERROR_INVALIDDATA;
+        }
+    }
+    
+    return stat;  
 }
 
 int fitsexport_getextkeyname(DRMS_Keyword_t *key, char *nameOut, int size)

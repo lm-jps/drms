@@ -500,7 +500,7 @@ int fitsrw_readslice(int verbose,
                      void** image)
 {
    fitsfile *fptr=NULL;     
-    int error_code;
+    int error_code = CFITSIO_SUCCESS;
     int status; /* FITSIO error codes. */
     int istat; /* Status for other calls. */
    long increments[CFITSIO_MAX_DIM]; /* ffgsv requires long type, although this is dangerous 
@@ -738,7 +738,7 @@ int fitsrw_readslice(int verbose,
 int fitsrw_writeslice(int verbose, const char *filename, int *fpixel, int *lpixel, void *image)
 {
    fitsfile *fptr=NULL;     
-    int error_code;
+    int error_code = CFITSIO_SUCCESS;
     int status; /* FITSIO error code. */
     int istat; /* non-FITSIO error code. */
    int data_type;
@@ -961,7 +961,7 @@ int fitsrw_closefptr(int verbose, fitsfile *fptr)
     int stat = 0; /* fitsio status */
     TASRW_FilePtrInfo_t fpinfo;
     char cfitsiostat[FLEN_STATUS];
-    int error_code;
+    int error_code = CFITSIO_SUCCESS;
     
     if (fptr)
     {

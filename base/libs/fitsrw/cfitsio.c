@@ -266,75 +266,79 @@ int cfitsio_append_key(CFITSIO_KEYWORD** keylist,
 		       void * value,
                        const char *format)
 {
-   CFITSIO_KEYWORD *node, *last;
-   int error_code = CFITSIO_SUCCESS;
-
-
-   if (name && value)
-   {
-      node = (CFITSIO_KEYWORD *) malloc(sizeof(CFITSIO_KEYWORD));
-
-      if (!node) return CFITSIO_ERROR_OUT_OF_MEMORY;
-      else
-      {
-	 memset(node, 0, sizeof(CFITSIO_KEYWORD));
-	 node->next = NULL;
-
-	 // append node to the end of list
-	 if (*keylist)
-	 {
-	    last = *keylist;
-	    while(last->next) last = last->next; 
-	    last->next = node;
-	 }
-	 else // first node
-	 {
-	    *keylist = node;
-	 }
-
-	 snprintf(node->key_name, FLEN_KEYWORD, "%s", name);
-	 node->key_type = type;
-
-	 // save value into union
-	 switch (type)
-	 {
-	    case( 'X'):
-	    case (kFITSRW_Type_String):
-               node->key_value.vs = strdup((char *)value);
-	       break;
-	    case (kFITSRW_Type_Logical):
-	       node->key_value.vl = *((int *)value);
-	       break;
-	    case (kFITSRW_Type_Integer):
-	       node->key_value.vi = *((long long *)value);
-	       break;
-	    case (kFITSRW_Type_Float):
-	       node->key_value.vf = *((double *)value);
-	       break;
-	    default:
-	       fprintf(stderr, "Invalid FITSRW keyword type '%c'.\n", (char)type);
-	       error_code = CFITSIO_ERROR_ARGS;
-	       break;
-	 }
-
-	 if (comment)
-	 {
-	    snprintf(node->key_comment, FLEN_COMMENT, "%s", comment);
-	 }
-
-         if (format)
-         {
-            snprintf(node->key_format, CFITSIO_MAX_FORMAT, "%s", format);
-         }
-      }
-   }
-   else
-   {
-      error_code = CFITSIO_ERROR_ARGS; 
-   }
-
-   return error_code;
-
+    CFITSIO_KEYWORD *node, *last;
+    int error_code = CFITSIO_SUCCESS;
+    
+    
+    if (name && value)
+    {
+        node = (CFITSIO_KEYWORD *) malloc(sizeof(CFITSIO_KEYWORD));
+        
+        if (!node) return CFITSIO_ERROR_OUT_OF_MEMORY;
+        else
+        {
+            memset(node, 0, sizeof(CFITSIO_KEYWORD));
+            node->next = NULL;
+            
+            // append node to the end of list
+            if (*keylist)
+            {
+                last = *keylist;
+                while(last->next) last = last->next; 
+                last->next = node;
+            }
+            else // first node
+            {
+                *keylist = node;
+            }
+            
+            snprintf(node->key_name, FLEN_KEYWORD, "%s", name);
+            node->key_type = type;
+            
+            // save value into union
+            switch (type)
+            {
+                case( 'X'):
+                case (kFITSRW_Type_String):
+                    /* 68 is the max chars in FITS string keyword, but the HISTORY and COMMENT keywords
+                     * can contain values with more than this number of characters, in which case
+                     * the fits API key-writing function will split the string across multiple 
+                     * instances of these special keywords. */
+                    node->key_value.vs = strdup((char *)value);             
+                    break;
+                case (kFITSRW_Type_Logical):
+                    node->key_value.vl = *((int *)value);
+                    break;
+                case (kFITSRW_Type_Integer):
+                    node->key_value.vi = *((long long *)value);
+                    break;
+                case (kFITSRW_Type_Float):
+                    node->key_value.vf = *((double *)value);
+                    break;
+                default:
+                    fprintf(stderr, "Invalid FITSRW keyword type '%c'.\n", (char)type);
+                    error_code = CFITSIO_ERROR_ARGS;
+                    break;
+            }
+            
+            if (comment)
+            {
+                snprintf(node->key_comment, FLEN_COMMENT, "%s", comment);
+            }
+            
+            if (format)
+            {
+                snprintf(node->key_format, CFITSIO_MAX_FORMAT, "%s", format);
+            }
+        }
+    }
+    else
+    {
+        error_code = CFITSIO_ERROR_ARGS; 
+    }
+    
+    return error_code;
+    
 }
 
 
@@ -1300,109 +1304,134 @@ int fitsrw_writeintfile(int verbose,
 
 int cfitsio_key_to_card(CFITSIO_KEYWORD* kptr, char* card)
 {
-   char temp[FLEN_CARD];
-   char buf[128];
-
-   memset(card,0,sizeof(FLEN_CARD));
-   if(!kptr) return CFITSIO_FAIL;
-
-   //TH:  add check for upper case, length limits
-   switch(kptr->key_type)
-   {
-      case(kFITSRW_Type_String):
-      case('X'):
-        if(strlen(kptr->key_comment) >0)
+    char temp[FLEN_CARD];
+    char buf[128];
+    
+    memset(card,0,sizeof(FLEN_CARD));
+    if(!kptr) return CFITSIO_FAIL;
+    
+    //TH:  add check for upper case, length limits
+    switch(kptr->key_type)
+    {
+        case(kFITSRW_Type_String):
+        case('X'):
         {
-           snprintf(temp, 
-                    sizeof(temp), "%-8s= '%s' / %s",
-                    kptr->key_name, 
-                    kptr->key_value.vs, 
-                    kptr->key_comment);
-        }
-        else
-        {
-           snprintf(temp, 
-                    sizeof(temp), 
-                    "%-8s= '%s'",
-                    kptr->key_name, 
-                    kptr->key_value.vs);
-        }
-        break;
-	  
-      case(kFITSRW_Type_Logical):
-        if(strlen(kptr->key_comment) >0)
-        {
-           if(kptr->key_value.vl)
-             sprintf(temp,"%-8s=                    T / %s", kptr->key_name, kptr->key_comment);
-           else
-             sprintf(temp,"%-8s=                    F / %s", kptr->key_name, kptr->key_comment);
-        }
-        else
-        {
-           if(kptr->key_value.vl)
-             sprintf(temp,"%-8s=                    T", kptr->key_name);
-           else
-             sprintf(temp,"%-8s=                    F", kptr->key_name);
-        }
-	    
-        break;
-	 
-      case(kFITSRW_Type_Integer):
-        if(strlen(kptr->key_comment) >0)
-        {
-           sprintf(temp,"%-8s= %20lld / %s", kptr->key_name, kptr->key_value.vi, kptr->key_comment);
-        }
-        else
-        {
-           sprintf(temp,"%-8s= %20lld", kptr->key_name, kptr->key_value.vi);
-        }
-        break;
-	 
-      case(kFITSRW_Type_Float):
-      {
-         int usedef = 1;
-
-         if (*kptr->key_format != '\0')
-         {
-            double tester = 0;
-            snprintf(buf, sizeof(buf), kptr->key_format, kptr->key_value.vf);
-            if (sscanf(buf, "%lf", &tester) == 1)
+            /* 68 is the maximum number of characters allowed in a FITS string keyword, 
+             * provided the opening single quote string starts on byte 11. We need
+             * to truncate strings that are longer than this. However, the HISTORY and COMMENT keywords, 
+             * which are strings, should not be truncated. They are written to the FITS file
+             * with special API function calls, and if the length of the values of these keywords
+             * is greater than 68 characters, FITSIO will split these strings over multiple
+             * instances of the keyword. */
+            int isspecial = (strcasecmp(kptr->key_name, "history") == 0 || strcasecmp(kptr->key_name, "comment") == 0);
+            char format[128] = {0};
+            char formatspecial[128] = {0};
+            
+            if (strlen(kptr->key_comment) > 0)
             {
-               snprintf(temp, sizeof(temp), "%-8s= %s", kptr->key_name, buf);
-               usedef = 0;
-            }
-         }
-
-         /* Use default scheme %20.15e */
-         if (usedef)
-         {
-            snprintf(temp, sizeof(temp), "%-8s= %20.15e", kptr->key_name, kptr->key_value.vf);
-         }
-
-         if(strlen(kptr->key_comment) > 0)
-         {
-            char *pref = strdup(temp);
-
-            if (pref)
-            {
-               snprintf(temp, sizeof(temp), "%s / %s", pref, kptr->key_comment);
-               free(pref);
+                snprintf(format, sizeof(format), "%s / %s", "%-8s= '%.68s'", kptr->key_comment);
+                snprintf(formatspecial, sizeof(formatspecial), "%s / %s", "%-8s= '%s'", kptr->key_comment);
             }
             else
             {
-               return CFITSIO_ERROR_OUT_OF_MEMORY;
+                snprintf(format, sizeof(format), "%s", "%-8s= '%.68s'");
+                snprintf(formatspecial, sizeof(formatspecial), "%s", "%-8s= '%s'");
+            }           
+            
+            if (isspecial)
+            {
+                snprintf(temp, 
+                         sizeof(temp), 
+                         formatspecial,
+                         kptr->key_name, 
+                         kptr->key_value.vs);
             }
-         }
-      }
-      break;
-   }
-
-   sprintf(card,"%-80s",temp); // append space to the end to 80 chars
-  
-   //DEBUGMSG((stderr,"[01234567890123456789012345678901234567890123456789012345678901234567890123456789]\n"));
-   //DEBUGMSG((stderr,"[%s]\n",card));
-
-   return CFITSIO_SUCCESS;
+            else
+            {
+                snprintf(temp, 
+                         sizeof(temp), 
+                         format,
+                         kptr->key_name, 
+                         kptr->key_value.vs);
+            }
+            
+        }
+            break;
+            
+        case(kFITSRW_Type_Logical):
+            if(strlen(kptr->key_comment) >0)
+            {
+                if(kptr->key_value.vl)
+                    sprintf(temp,"%-8s=                    T / %s", kptr->key_name, kptr->key_comment);
+                else
+                    sprintf(temp,"%-8s=                    F / %s", kptr->key_name, kptr->key_comment);
+            }
+            else
+            {
+                if(kptr->key_value.vl)
+                    sprintf(temp,"%-8s=                    T", kptr->key_name);
+                else
+                    sprintf(temp,"%-8s=                    F", kptr->key_name);
+            }
+            
+            break;
+            
+        case(kFITSRW_Type_Integer):
+            if(strlen(kptr->key_comment) >0)
+            {
+                sprintf(temp,"%-8s= %20lld / %s", kptr->key_name, kptr->key_value.vi, kptr->key_comment);
+            }
+            else
+            {
+                sprintf(temp,"%-8s= %20lld", kptr->key_name, kptr->key_value.vi);
+            }
+            break;
+            
+        case(kFITSRW_Type_Float):
+        {
+            int usedef = 1;
+            
+            if (*kptr->key_format != '\0')
+            {
+                double tester = 0;
+                snprintf(buf, sizeof(buf), kptr->key_format, kptr->key_value.vf);
+                if (sscanf(buf, "%lf", &tester) == 1)
+                {
+                    snprintf(temp, sizeof(temp), "%-8s= %s", kptr->key_name, buf);
+                    usedef = 0;
+                }
+            }
+            
+            /* Use default scheme %20.15e */
+            if (usedef)
+            {
+                snprintf(temp, sizeof(temp), "%-8s= %20.15e", kptr->key_name, kptr->key_value.vf);
+            }
+            
+            if(strlen(kptr->key_comment) > 0)
+            {
+                char *pref = strdup(temp);
+                
+                if (pref)
+                {
+                    snprintf(temp, sizeof(temp), "%s / %s", pref, kptr->key_comment);
+                    free(pref);
+                }
+                else
+                {
+                    return CFITSIO_ERROR_OUT_OF_MEMORY;
+                }
+            }
+        }
+            break;
+    }
+    
+    sprintf(card,"%-80s",temp); // append space to the end to 80 chars
+    
+    //DEBUGMSG((stderr,"[01234567890123456789012345678901234567890123456789012345678901234567890123456789]\n"));
+    //DEBUGMSG((stderr,"[%s]\n",card));
+    
+    return CFITSIO_SUCCESS;
 }
 
 //****************************************************************************
