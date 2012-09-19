@@ -1256,11 +1256,8 @@ sub parseLog {
           my($weirdseriesname);
           my(@parts);
           
-          # For some reason, the series name MUST be of the format "ns"."table". Rather
-          # than trying to make this the more sensible ns.table, and possibly miss
-          # all the places in this script where "ns"."table" is expected, just use the
-          # weird format. Of course, at this point, $series may have quotes around the
-          # ns, or around the table, or both, or neither.
+          # The series name MUST be of the format "ns"."table". At this point, $series may 
+          # have quotes around the ns, or around the table, or both, or neither.
           @parts = ($series =~ /(\S+)\.(\S+)/);
           if ($parts[0] !~ /"\S+"/)
           {
@@ -1352,6 +1349,23 @@ sub parseLog {
         dumpErrorLog($cfgH, $series, $_);
       }
     }
+      elsif ($_ =~ /^update\s+only\s+(\S+.\S+)/i || $_ =~ /^update\s+(\S+.\S+)/i)
+      {
+          # update "lm_jps"."lev1_test4k10s" set blah = 'hithere' ...
+          # There might be no namespace in the slong log (if there is a preceding set search_path to ... statement), 
+          # and if so, we're screwed.
+          my($series) = GetQuotedSeries($1);
+          
+          # I guess we want to make sure that the line ends with a semicolon.
+          if ($_ =~ /.*;$/ ) 
+          {
+              dumpSlonLog($cfgH, $nodeH, $series, $_);
+          } 
+          else 
+          {
+              dumpErrorLog($cfgH, $series, $_);
+          }
+      }
   }
 
   close SRC;
@@ -1474,4 +1488,43 @@ EOF
 exit;
 }
 
-
+sub GetQuotedSeries
+{
+    my($series) = shift;
+    my($quoted);
+    my(@parts);
+ 
+    @parts = ($series =~ /(\S+)\.(\S+)/);
+    
+    if ($parts[0] =~ /'(\S+)'/)
+    {
+        $parts[0] = $1;
+    }
+    
+    if ($parts[1] =~ /'(\S+)'/)
+    {
+        $parts[1] = $1;
+    }
+    
+    if ($parts[0] !~ /"\S+"/)
+    {
+        $quoted = "\"" . lc($parts[0]) . "\"";
+    }
+    else
+    {
+        $quoted = lc($parts[0]);
+    }
+    
+    $quoted = $quoted . "\.";
+    
+    if ($parts[1] !~ /"\S+"/)
+    {
+        $quoted = $quoted . "\"" . lc($parts[1]) . "\"";
+    }
+    else
+    {
+        $quoted = $quoted . lc($parts[1]);
+    }
+    
+    return $quoted;
+}
