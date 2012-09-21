@@ -134,69 +134,71 @@ HContainer_t *drms_create_keyword_prototypes(DRMS_Record_t *target,
 					     DRMS_Record_t *source, 
 					     int *status)
 {
-   HContainer_t *ret = NULL;
-   DRMS_Keyword_t *tKey = NULL;
-   DRMS_Keyword_t *sKey = NULL;
-
-   XASSERT(target != NULL && target->keywords.num_total == 0 && source != NULL);
-
-   if (target != NULL && target->keywords.num_total == 0 && source != NULL)
-   {
-      *status = DRMS_SUCCESS;
-      HIterator_t hit;
-      hiter_new_sort(&hit, &(source->keywords), drms_keyword_ranksort);
-      
-      while ((sKey = hiter_getnext(&hit)) != NULL)
-      {
-	 if (sKey->info && strlen(sKey->info->name) > 0)
-	 {
-            tKey = hcon_allocslot_lower(&(target->keywords), sKey->info->name);
-            XASSERT(tKey);
-	    memset(tKey, 0, sizeof(DRMS_Keyword_t));
-            tKey->info = malloc(sizeof(DRMS_KeywordInfo_t));
-            XASSERT(tKey->info);
-	    memset(tKey->info, 0, sizeof(DRMS_KeywordInfo_t));
-	    
-	    if (tKey && tKey->info)
-	    {
-	       /* record */
-	       tKey->record = target;
-
-	       /* keyword info */
-	       memcpy(tKey->info, sKey->info, sizeof(DRMS_KeywordInfo_t));
-
-	       if (tKey->info->type == DRMS_TYPE_STRING &&
-		   sKey->value.string_val != NULL)
-	       {
-		  copy_string(&(tKey->value.string_val), sKey->value.string_val);
-	       }
-	       else
-	       {
-		  tKey->value = sKey->value;
-	       }	       
-	    }
-	    else
-	    {
-	       *status = DRMS_ERROR_OUTOFMEMORY;
-	    }
-	 }
-	 else
-	 {
-	    *status = DRMS_ERROR_INVALIDKEYWORD;
-	 }
-      }
-      
-      if (*status == DRMS_SUCCESS)
-      {
-	 ret = &(target->keywords);
-      }
-   }
-   else
-   {
-      *status = DRMS_ERROR_INVALIDRECORD;
-   }
-
-   return ret;
+    HContainer_t *ret = NULL;
+    DRMS_Keyword_t *tKey = NULL;
+    DRMS_Keyword_t *sKey = NULL;
+    
+    XASSERT(target != NULL && target->keywords.num_total == 0 && source != NULL);
+    
+    if (target != NULL && target->keywords.num_total == 0 && source != NULL)
+    {
+        *status = DRMS_SUCCESS;
+        HIterator_t hit;
+        hiter_new_sort(&hit, &(source->keywords), drms_keyword_ranksort);
+        
+        while ((sKey = hiter_getnext(&hit)) != NULL)
+        {
+            if (sKey->info && strlen(sKey->info->name) > 0)
+            {
+                tKey = hcon_allocslot_lower(&(target->keywords), sKey->info->name);
+                XASSERT(tKey);
+                memset(tKey, 0, sizeof(DRMS_Keyword_t));
+                tKey->info = malloc(sizeof(DRMS_KeywordInfo_t));
+                XASSERT(tKey->info);
+                memset(tKey->info, 0, sizeof(DRMS_KeywordInfo_t));
+                
+                if (tKey && tKey->info)
+                {
+                    /* record */
+                    tKey->record = target;
+                    
+                    /* keyword info */
+                    memcpy(tKey->info, sKey->info, sizeof(DRMS_KeywordInfo_t));
+                    
+                    if (tKey->info->type == DRMS_TYPE_STRING &&
+                        sKey->value.string_val != NULL)
+                    {
+                        copy_string(&(tKey->value.string_val), sKey->value.string_val);
+                    }
+                    else
+                    {
+                        tKey->value = sKey->value;
+                    }	       
+                }
+                else
+                {
+                    *status = DRMS_ERROR_OUTOFMEMORY;
+                }
+            }
+            else
+            {
+                *status = DRMS_ERROR_INVALIDKEYWORD;
+            }
+        }
+        
+        hiter_free(&hit);
+        
+        if (*status == DRMS_SUCCESS)
+        {
+            ret = &(target->keywords);
+        }
+    }
+    else
+    {
+        *status = DRMS_ERROR_INVALIDRECORD;
+    }
+    
+    return ret;
 }
 /*Print the fields of a keyword struct to stdout.*/
 void drms_keyword_print(DRMS_Keyword_t *key)

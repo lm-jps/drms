@@ -224,6 +224,8 @@ HContainer_t *drms_create_segment_prototypes(DRMS_Record_t *target,
             }
         }
         
+        hiter_free(&hit);
+        
         if (*status == DRMS_SUCCESS)
         {
             ret = &(target->segments);

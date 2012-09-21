@@ -130,23 +130,18 @@ static ExpError_t AddAKey(const char *keyname,
                     drms_keyword_setextprime(tKey);
                 }
                 
-                /* Put the key into the prototype's keyword container. But first copy the keyword struct to 
-                 * a new struct, deep-copying any string value. When we free the keys container, this will result in 
-                 * any string keyword value to be freed (keys was set up with a deep-free function - see 
-                 * drms_free_template_keyword_struct). */
+                /* Put the key into the prototype's keyword container. But first copy the keyword info struct to 
+                 * a new struct. When we free the keys container, this will cause tKey->info 
+                 * to be freed (keys was set up with a deep-free function - see drms_free_template_keyword_struct). 
+                 * Unlike the case for finalkey.value, finalkey.info will NOT be copied into prototype->keywords. */
                 finalkey.record = tKey->record;
                 finalkey.info = malloc(sizeof(DRMS_KeywordInfo_t));
                 *(finalkey.info) = *(tKey->info);
+                finalkey.value = tKey->value;
                 
-                if (finalkey.info->type == DRMS_TYPE_STRING)
-                {
-                    finalkey.value.string_val = strdup(tKey->value.string_val);
-                }
-                else
-                {
-                    finalkey.value = tKey->value;
-                }
-                
+                /* hcon_insert_lower() will COPY finalkey.value.string_val because drms_copy_keyword_struct() 
+                 * was used as the deep_copy function when prototype->keywords was set up. It WILL NOT 
+                 * copy finalkey.info though. */
                 hcon_insert_lower(&prototype->keywords, keyname, &finalkey);
                 
                 if (intprime)
@@ -366,6 +361,11 @@ int DoIt(void)
                                 segnum = seg->info->segnum;
                                 
                                 /* Copy - must deep copy the info struct, since it will be freed during shutdown. */
+                                if (seg->info)
+                                {
+                                    free(seg->info);
+                                }
+                                
                                 *seg = *tSeg;
                                 seg->info = malloc(sizeof(DRMS_SegmentInfo_t));
                                 
@@ -468,6 +468,17 @@ int DoIt(void)
                                  * also copy the key->value value, if the keyword is a string, since the original
                                  * string will also be freed during shutdown. Both frees happen in drms_free_template_keyword_struct()
                                  * operating on the keywords in aia.lev1. */
+                                if (key->info->type == DRMS_TYPE_STRING && key->value.string_val)
+                                {
+                                    free(key->value.string_val);
+                                    key->value.string_val = NULL;
+                                }
+                                
+                                if (key->info)
+                                {
+                                    free(key->info);
+                                }
+                                
                                 *key = *tKey;
                                 key->info = malloc(sizeof(DRMS_KeywordInfo_t));
                                 
@@ -497,6 +508,11 @@ int DoIt(void)
                         }
                     }
                 } /* while */
+                
+                if (lastkey)
+                {
+                    hiter_destroy(&lastkey);
+                }
             }            
 
             if (err == kExpCloneErr_Success)

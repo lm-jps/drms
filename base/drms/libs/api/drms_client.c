@@ -2329,6 +2329,11 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
     }
 #endif
 
+    if (dbhost)
+    {
+        free(dbhost);    
+    }
+    
     if (status)
     {
         *status = istat;

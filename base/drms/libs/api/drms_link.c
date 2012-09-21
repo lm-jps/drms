@@ -73,81 +73,83 @@ HContainer_t *drms_create_link_prototypes(DRMS_Record_t *target,
 					  DRMS_Record_t *source, 
 					  int *status)
 {
-   HContainer_t *ret = NULL;
-   DRMS_Link_t *tLink = NULL;
-   DRMS_Link_t *sLink = NULL;
-
-   XASSERT(target != NULL && target->links.num_total == 0 && source != NULL);
-
-   if (target != NULL && target->links.num_total == 0 && source != NULL)
-   {
-      *status = DRMS_SUCCESS;
-      HIterator_t hit;
-
-      hiter_new_sort(&hit, &(source->links), drms_link_ranksort);
-      
-      while ((sLink = hiter_getnext(&hit)) != NULL)
-      {
-	 if (sLink->info && strlen(sLink->info->name) > 0)
-	 {
-            tLink = hcon_allocslot_lower(&(target->links), sLink->info->name);
-            XASSERT(tLink);
-	    memset(tLink, 0, sizeof(DRMS_Link_t));
-            tLink->info = malloc(sizeof(DRMS_LinkInfo_t));
-            XASSERT(tLink->info);
-	    memset(tLink->info, 0, sizeof(DRMS_LinkInfo_t));
-	    
-	    if (tLink && tLink->info)
-	    {
-	       /* record */
-	       tLink->record = target;
-
-	       memcpy(tLink->pidx_value, 
-		      sLink->pidx_value, 
-		      DRMS_MAXPRIMIDX * sizeof(DRMS_Type_Value_t));
-	       
-	       /* link info + pidx_value */
-	       memcpy(tLink->info, sLink->info, sizeof(DRMS_LinkInfo_t));
-
-	       int idx = 0;
-	       for (; idx < tLink->info->pidx_num; idx++)
-	       {
-		  tLink->info->pidx_name[idx] = strdup(sLink->info->pidx_name[idx]);
-		  
-		  // copy_string(&(tLink->info->pidx_name[idx]), sLink->info->pidx_name[idx]);
-		  if (tLink->info->pidx_type[idx] == DRMS_TYPE_STRING && 
-		      sLink->pidx_value[idx].string_val != NULL)
-		  {
-		     copy_string(&(tLink->pidx_value[idx].string_val), 
-				 sLink->pidx_value[idx].string_val);
-		  }
-	       }
-
-	       tLink->recnum = sLink->recnum;
-	       tLink->isset = sLink->isset;
-	    }
-	    else
-	    {
-	       *status = DRMS_ERROR_OUTOFMEMORY;
-	    }
-	 }
-	 else
-	 {
-	    *status = DRMS_ERROR_INVALIDLINK;
-	 }
-      }
-      
-      if (*status == DRMS_SUCCESS)
-      {
-	 ret = &(target->links);
-      }
-   }
-   else
-   {
-      *status = DRMS_ERROR_INVALIDRECORD;
-   }
-
-   return ret;
+    HContainer_t *ret = NULL;
+    DRMS_Link_t *tLink = NULL;
+    DRMS_Link_t *sLink = NULL;
+    
+    XASSERT(target != NULL && target->links.num_total == 0 && source != NULL);
+    
+    if (target != NULL && target->links.num_total == 0 && source != NULL)
+    {
+        *status = DRMS_SUCCESS;
+        HIterator_t hit;
+        
+        hiter_new_sort(&hit, &(source->links), drms_link_ranksort);
+        
+        while ((sLink = hiter_getnext(&hit)) != NULL)
+        {
+            if (sLink->info && strlen(sLink->info->name) > 0)
+            {
+                tLink = hcon_allocslot_lower(&(target->links), sLink->info->name);
+                XASSERT(tLink);
+                memset(tLink, 0, sizeof(DRMS_Link_t));
+                tLink->info = malloc(sizeof(DRMS_LinkInfo_t));
+                XASSERT(tLink->info);
+                memset(tLink->info, 0, sizeof(DRMS_LinkInfo_t));
+                
+                if (tLink && tLink->info)
+                {
+                    /* record */
+                    tLink->record = target;
+                    
+                    memcpy(tLink->pidx_value, 
+                           sLink->pidx_value, 
+                           DRMS_MAXPRIMIDX * sizeof(DRMS_Type_Value_t));
+                    
+                    /* link info + pidx_value */
+                    memcpy(tLink->info, sLink->info, sizeof(DRMS_LinkInfo_t));
+                    
+                    int idx = 0;
+                    for (; idx < tLink->info->pidx_num; idx++)
+                    {
+                        tLink->info->pidx_name[idx] = strdup(sLink->info->pidx_name[idx]);
+                        
+                        // copy_string(&(tLink->info->pidx_name[idx]), sLink->info->pidx_name[idx]);
+                        if (tLink->info->pidx_type[idx] == DRMS_TYPE_STRING && 
+                            sLink->pidx_value[idx].string_val != NULL)
+                        {
+                            copy_string(&(tLink->pidx_value[idx].string_val), 
+                                        sLink->pidx_value[idx].string_val);
+                        }
+                    }
+                    
+                    tLink->recnum = sLink->recnum;
+                    tLink->isset = sLink->isset;
+                }
+                else
+                {
+                    *status = DRMS_ERROR_OUTOFMEMORY;
+                }
+            }
+            else
+            {
+                *status = DRMS_ERROR_INVALIDLINK;
+            }
+        }
+        
+        hiter_free(&hit);
+        
+        if (*status == DRMS_SUCCESS)
+        {
+            ret = &(target->links);
+        }
+    }
+    else
+    {
+        *status = DRMS_ERROR_INVALIDRECORD;
+    }
+    
+    return ret;
 }
 
 /* Set link to point to target series record with record number "recnum". */
