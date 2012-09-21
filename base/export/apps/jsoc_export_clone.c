@@ -513,7 +513,14 @@ int DoIt(void)
                 {
                     hiter_destroy(&lastkey);
                 }
-            }            
+            }
+            
+            if (err == kExpCloneErr_Success)
+            {
+                /* Free all links - we don't want the created series having links. */
+                (copy->links).deep_free = (void (*)(const void *)) drms_free_template_link_struct;
+                hcon_free(&copy->links);
+            }
 
             if (err == kExpCloneErr_Success)
             {

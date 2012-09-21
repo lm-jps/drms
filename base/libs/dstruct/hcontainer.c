@@ -222,19 +222,22 @@ static void hconfreemap(const void *key, const void *value, const void *data)
 /* Free container. If "deep_free" is not NULL it is applied to every value in the container. */
 void hcon_free(HContainer_t *hc)
 {
-  /* Apply a function that will free the keys and value (and also deep-free the values, if a deep-free
-   * function was provided). After this call, the hash table will contain garbage for keys and values. */
-  hash_map_data(&hc->hash, hconfreemap, hc);
-
-  hc->num_total = 0;
-  hc->datasize = 0;
-  hc->keysize = 0;
-  hc->deep_free = NULL;
-  hc->deep_copy = NULL;
-
-  /* Free hash table - this frees an array of key-value structures; the actual key and value fields
-   * are freed by hconfreemap. */
-  hash_free(&hc->hash);  
+    /* Apply a function that will free the keys and value (and also deep-free the values, if a deep-free
+     * function was provided). After this call, the hash table will contain garbage for keys and values. */
+    if (hc->num_total > 0)
+    {
+        hash_map_data(&hc->hash, hconfreemap, hc);
+    }
+    
+    hc->num_total = 0;
+    hc->datasize = 0;
+    hc->keysize = 0;
+    hc->deep_free = NULL;
+    hc->deep_copy = NULL;
+    
+    /* Free hash table - this frees an array of key-value structures; the actual key and value fields
+     * are freed by hconfreemap. */
+    hash_free(&hc->hash);  
 }
 
 /*
@@ -364,11 +367,14 @@ static void hconcopymap(const void *key, const void *value, const void *data)
 
 void hcon_copy(HContainer_t *dst, HContainer_t *src)
 {
-   hcon_init(dst, src->datasize, src->keysize, src->deep_free, src->deep_copy);
-
-   /* Apply a function that inserts into the dst hcontainer a key-value pair from the src hcontainer. This will
-    * deep-copy if src->deep_free != NULL. */
-   hash_map_data(&src->hash, hconcopymap, dst);
+    hcon_init(dst, src->datasize, src->keysize, src->deep_free, src->deep_copy);
+    
+    /* Apply a function that inserts into the dst hcontainer a key-value pair from the src hcontainer. This will
+     * deep-copy if src->deep_free != NULL. */
+    if (src->num_total > 0)
+    {
+        hash_map_data(&src->hash, hconcopymap, dst);
+    }
 }
 
 /*
