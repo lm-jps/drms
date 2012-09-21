@@ -248,6 +248,10 @@ int DoIt(void)
         }
         else
         {
+            /* copy has has a copy of seriesin's seriesinfo, which has the name of the original series, 
+             * not the output series. Overwrite copy's seriesinfo's name with the the output series' name. */
+            snprintf(copy->seriesinfo->seriesname, sizeof(copy->seriesinfo->seriesname), "%s", name);
+            
             /* unitsize will match the unitsize of the input series. */
             /* tapegroup will match the tapegroup of the input series, but will not
              * matter, since archive == -1. */
@@ -404,7 +408,97 @@ int DoIt(void)
                 /* If the segment contains integer data, then the bzero and bscale values of the original series will suffice, 
                  * and that is what seg contains. If they are float data, then bzero and bscale are ignored. */
             }
-            
+
+            if (err == kExpCloneErr_Success)
+            {
+                DRMS_Keyword_t *key = NULL;
+                DRMS_Link_t *link = NULL;
+                DRMS_Record_t *tRec = NULL;
+                DRMS_Keyword_t *tKey = NULL;
+                HIterator_t *lastkey = NULL;
+                char oKeyName[DRMS_MAXKEYNAMELEN];
+                int rank = -1;
+                
+                /* If a keyword is linked to another series, we want to make that keyword a non-linked one. */
+                while ((key = drms_record_nextkey(copy, &lastkey, 0)))
+                {
+                    /* The segments will have been sorted by increasing segnum. */
+                    if (key->info->islink)
+                    {
+                        /* If this segment was originally a linked segment, then we need to replace it                                      
+                         * with the target of the link. */
+                        link = hcon_lookup_lower(&copy->links, key->info->linkname);
+                        
+                        if (!link)
+                        {
+                            fprintf(stderr, "Unable to obtain link %s.\n", key->info->linkname);
+                            err = kExpCloneErr_CantFollowLink;
+                            break;
+                        }
+                        else
+                        {
+                            tRec = drms_template_record(drms_env, link->info->target_series, &drmsstat);
+                            
+                            if (drmsstat != DRMS_SUCCESS || !tRec)
+                            {
+                                fprintf(stderr, "Unable to obtain template record for series %s.\n", link->info->target_series);
+                                err = kExpCloneErr_LibDRMS;
+                                break;
+                            }
+                            else
+                            {
+                                tKey = drms_keyword_lookup(tRec, key->info->target_key, 0);
+                                
+                                if (!tKey)
+                                {
+                                    fprintf(stderr, "Unable to follow link to target keyword.\n");
+                                    err = kExpCloneErr_CantFollowLink;
+                                    break;
+                                }
+                                
+                                /* Need to use the name of the keyword in the original series, not the name in the                          
+                                 * target series, so save the original name before overwriting. */
+                                snprintf(oKeyName, sizeof(oKeyName), "%s", key->info->name);
+                                
+                                /* Need to save the original keyword rank as well, since tKey->info->rank is for the                            
+                                 * target series, not the source series. */
+                                rank = key->info->rank;
+                                
+                                /* Copy - must deep copy the info struct, since it will be freed during shutdown. Must
+                                 * also copy the key->value value, if the keyword is a string, since the original
+                                 * string will also be freed during shutdown. Both frees happen in drms_free_template_keyword_struct()
+                                 * operating on the keywords in aia.lev1. */
+                                *key = *tKey;
+                                key->info = malloc(sizeof(DRMS_KeywordInfo_t));
+                                
+                                if (!key->info)
+                                {
+                                    err = kExpCloneErr_OutOfMemory;
+                                    break;
+                                }
+                                else
+                                {
+                                    *key->info = *tKey->info;
+                                    
+                                    /* Need to set record field to point to copy; seg->info points to the original                          
+                                     * series seg->info struct. */
+                                    key->record = copy;
+                                    
+                                    /* Copy the saved original segment's info to the new series' segment. */
+                                    snprintf(key->info->name, sizeof(key->info->name), "%s", oKeyName);
+                                    key->info->rank = rank;
+                                }
+                                
+                                if (key->info->type == DRMS_TYPE_STRING)
+                                {
+                                    key->value.string_val = strdup(tKey->value.string_val);
+                                }
+                            }
+                        }
+                    }
+                } /* while */
+            }            
+
             if (err == kExpCloneErr_Success)
             {
                 /* drms_create_series_fromprototype() will first copy keywords with drms_copy_keyword_struct().
