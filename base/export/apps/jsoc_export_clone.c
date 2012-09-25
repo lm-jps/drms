@@ -87,6 +87,7 @@ static ExpError_t AddAKey(const char *keyname,
                           const char *desc,
                           int intprime,
                           int extprime,
+                          int implicit,
                           int rank)
 {
     ExpError_t rv = kExpCloneErr_Success;
@@ -128,6 +129,11 @@ static ExpError_t AddAKey(const char *keyname,
                 if (extprime)
                 {
                     drms_keyword_setextprime(tKey);
+                }
+
+                if (implicit)
+                {
+                   drms_keyword_setimplicit(tKey);
                 }
                 
                 /* Put the key into the prototype's keyword container. But first copy the keyword info struct to 
@@ -265,6 +271,7 @@ int DoIt(void)
                           "Keyword:RequestID, string, variable, record, \"Invalid RequestID\", %s, NA, \"The export request identifier, if this record was inserted while an export was being processed.\"", 
                           1, 
                           1, 
+                          0, 
                           1 + hirank++);
             
             /* Add keywords HISTORY and COMMENT, if they don't exist. */
@@ -273,6 +280,7 @@ int DoIt(void)
                 err = AddAKey(kKeyHistory, 
                               copy, 
                               "Keyword:HISTORY, string, variable, record, \"No history\", %s, NA, \"The processing history of the data.\"", 
+                              0, 
                               0, 
                               0, 
                               1 + hirank++);
@@ -285,6 +293,7 @@ int DoIt(void)
                               "Keyword:COMMENT, string, variable, record, \"No comment\", %s, NA, \"Commentary on the data processing.\"", 
                               0, 
                               0, 
+                              0, 
                               1 + hirank++);
             }
             
@@ -294,10 +303,11 @@ int DoIt(void)
                               copy,
                               "Keyword:SOURCE, string, variable, record, \"No source\", %s, NA, \"Input record record-set specification.\"",
                               0,
-                              0,
+                              0, 
+                              0, 
                               1 + hirank++);
             }
-            
+
             /* If the first input FITS data segment does not have a VARDIM segment scope, then make it so. */
             if (err == kExpCloneErr_Success)
             {
@@ -306,6 +316,8 @@ int DoIt(void)
                 DRMS_Segment_t *tSeg = NULL;
                 char oSegName[DRMS_MAXSEGNAMELEN];
                 int segnum = 0;
+                char segkeybuf[512];
+                char segkeyname[DRMS_MAXKEYNAMELEN];
                 
                 /* We're examine template segments. If a segment is linked to another series, then 
                  * we can't use drms_segment_lookup() to find the target link, because the target
@@ -388,6 +400,49 @@ int DoIt(void)
                                 }
                             }
                         }
+
+                        /* Have to add bzero, bscale, and cparm keywords keyowrds for each output segment. These 
+                         * keywords do not exist in the original series, since these segments are linked to 
+                         * a target series. */
+                        if (err == kExpCloneErr_Success)
+                        {
+                           snprintf(segkeyname, sizeof(segkeyname), "%s_bzero", seg->info->name);
+                           snprintf(segkeybuf, sizeof(segkeybuf), "Keyword:%s, double, variable, record, %f, %%g, none, \"\"", segkeyname, seg->bzero);
+                           err = AddAKey(segkeyname,
+                                         copy,
+                                         segkeybuf, 
+                                         0,
+                                         0,
+                                         1,
+                                         1 + hirank++);
+                        }
+
+                        if (err == kExpCloneErr_Success)
+                        {
+                           snprintf(segkeyname, sizeof(segkeyname), "%s_bscale", seg->info->name);
+                           snprintf(segkeybuf, sizeof(segkeybuf), "Keyword:%s, double, variable, record, %f, %%g, none, \"\"", segkeyname, seg->bscale);
+                           err = AddAKey(segkeyname,
+                                         copy,
+                                         segkeybuf, 
+                                         0,
+                                         0,
+                                         1,
+                                         1 + hirank++);
+                        }
+
+                        if (err == kExpCloneErr_Success)
+                        {
+                           snprintf(segkeyname, sizeof(segkeyname), "cparms_sg%03d", seg->info->segnum);
+                           snprintf(segkeybuf, sizeof(segkeybuf), "Keyword:%s, string, variable, record, \"%s\", %%s, none, \"\"", segkeyname, seg->cparms);
+                           err = AddAKey(segkeyname,
+                                         copy,
+                                         segkeybuf, 
+                                         0,
+                                         0,
+                                         1,
+                                         1 + hirank++);
+                        }
+
                     }
                         
                     if (seg->info->protocol == DRMS_FITS)
