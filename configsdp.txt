@@ -135,12 +135,6 @@ __PROJ__
             <subdir>apps</subdir>
             <subdir>off_flat_IDL</subdir>
         </subdirs>
-        <filters>
-             <filter>
-                  <name>JSOC_MACHINE</name>
-                  <value>linux_x86_64</value>
-             </filter>
-       </filters>
    </proj>
   <proj>
         <name>rings</name>
@@ -229,6 +223,13 @@ __LIBS__
     POSTGRES_LIB = pq
     CFITSIO_LIB = cfitsio
 
+    ifeq ($(JSOC_MACHINE), linux_avx)
+      POSTGRES_INCS = /usr/include
+      POSTGRES_LIBS = /usr/lib64
+      CFITSIO_INCS = /home/jsoc/avx/include
+      CFITSIO_LIBS = /home/jsoc/avx/lib
+    endif
+
     ifeq ($(JSOC_MACHINE), linux_x86_64)
       POSTGRES_INCS = /usr/include
       POSTGRES_LIBS = /usr/lib64
@@ -247,20 +248,36 @@ __LIBS__
       POSTGRES_INCS = /usr/include/pgsql
       POSTGRES_LIBS = /usr/lib
       CFITSIO_INCS = /home/jsoc/include
-      CFITSIO_LIBS = /home/jsoc/lib/linux-x86_64
+      CFITSIO_LIBS = /home/jsoc/lib/linux-ia64
     endif
 
 # JSOC_SDP third-party libraries used by the project directories
-    FFTW3_LIB = fftw3
 
     ifeq ($(JSOC_MACHINE), linux_ia32)
       FFTW_INCS = /home/jsoc/include
       FFTW_LIBS = /home/jsoc/lib/linux-ia32
+      GSL_INCS = /home/jsoc/include
+      GSL_LIBS = /home/jsoc/lib/linux-ia32
     endif
 
     ifeq ($(JSOC_MACHINE), linux_x86_64)
       FFTW_INCS = /home/jsoc/include
       FFTW_LIBS = /home/jsoc/lib/linux-x86_64
+      GSL_INCS = /home/jsoc/include
+      GSL_LIBS = /home/jsoc/lib/linux-x86_64
+      MPI_INCS = /home/jsoc/mpich2/include
+      MPI_LIBS = /home/jsoc/mpich2/lib
+      MPI_PATH = /home/jsoc/mpich2/bin
+    endif
+
+    ifeq ($(JSOC_MACHINE), linux_avx)
+      FFTW_INCS = /home/jsoc/avx/include
+      FFTW_LIBS = /home/jsoc/avx/lib
+      GSL_INCS = /home/jsoc/avx/include
+      GSL_LIBS = /home/jsoc/avx/lib
+      MPI_INCS = /home/jsoc/avx/include
+      MPI_LIBS = /home/jsoc/avx/lib
+      MPI_PATH = /home/jsoc/avx/bin
     endif
 
 # Try to specialize for non-default machines

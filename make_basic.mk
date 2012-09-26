@@ -20,6 +20,8 @@ endif
 #
 COMPILER = icc
 FCOMPILER = ifort
+MPICOMPILER = $(MPI_PATH)/mpicc
+MPIFCOMPILER = $(MPI_PATH)/mpif90
 
 # can set through custom.mk or through environment
 ifneq ($(JSOC_COMPILER),)
@@ -109,6 +111,17 @@ CFITSIOL = -L$(CFITSIO_LIBS)
 CFITSIOLIBNAME = $(CFITSIO_LIB)
 CFITSIOLIBS =  $(CFITSIOL) -l$(CFITSIOLIBNAME)
 
+# GSL
+GSLH = -I$(GSL_INCS)
+GSLL = -L$(GSL_LIBS)
+GSLLIBS = $(GSLL) -lgsl
+
+# FFTW
+FFTWH = -I$(FFTW_INCS)
+FFTWL = -L$(FFTW_LIBS)
+FFTW3LIBS = $(FFTWL) -lfftw3
+FFTW3FLIBS = $(FFTWL) -lfftw3f
+
 #***********************************************************************************************#
 
 
@@ -183,11 +196,11 @@ endif
 #
 LL_ALL		= $(SYSLIBS)
 GCC_LF_ALL	= $(STATIC) 
-ICC_LF_ALL	= $(STATIC) -openmp -static-intel -Wl,-export-dynamic
+ICC_LF_ALL	= -diag-disable 10237 $(STATIC) -openmp -static-intel -Wl,-export-dynamic
 
 # Fortran global LINK flags
 ifeq ($(FCOMPILER), ifort)
-F_LF_ALL	= -nofor-main  -openmp -static-intel -Wl,-export-dynamic
+F_LF_ALL	= -diag-disable 10237 -nofor-main  -openmp -static-intel -Wl,-export-dynamic
 endif
 #***********************************************************************************************#
 
@@ -201,11 +214,14 @@ ICC_CF_ICCCOMP  = -DICCCOMP -openmp
 # can't figure out how to get stupid make to do if/else if/else
 ifeq ($(DEBUG), 0)
   GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW) $(GLOBALSW) -DNDEBUG
-# -xW tells the icc compiler to optimize for Pentium 4
-  ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW) $(GLOBALSW) -DNDEBUG
 
   ifeq ($(JSOC_MACHINE), linux_x86_64)
+    ICC_CF_ALL = -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW) $(GLOBALSW) -DNDEBUG
     GCC_CF_ALL	= -I$(SRCDIR)/base/include -std=gnu99 -O2 -march=opteron $(GCC_WARN) $(GCC_CF_GCCCOMP) $(CUSTOMSW) $(GLOBALSW) -DNDEBUG
+  endif
+
+  ifeq ($(JSOC_MACHINE), linux_avx)
+    ICC_CF_ALL = -xavx -I$(SRCDIR)/base/include -std=c99 -D_GNU_SOURCE $(ICC_WARN) $(ICC_CF_ICCCOMP) $(CUSTOMSW) $(GLOBALSW) -DNDEBUG
   endif
 
   ifeq ($(JSOC_MACHINE), linux_ia64)
@@ -223,6 +239,12 @@ else
 endif
 
 # Fortran global COMPILE flags
+ifeq ($(JSOC_MACHINE), linux_avx)
+  ifeq ($(FCOMPILER), ifort)
+    F_CF_ALL := -xavx -openmp
+  endif
+endif
+
 ifeq ($(JSOC_MACHINE), linux_x86_64)
   ifeq ($(FCOMPILER), ifort)
     F_CF_ALL := -openmp
