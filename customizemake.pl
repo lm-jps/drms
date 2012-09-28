@@ -135,33 +135,37 @@ if (open(CONFLOC, "<$tmp"))
       my(%map);
 
       foreach $mach (keys(%platmaps))
-      {
-         %map = %{$platmaps{$mach}};
-
-         # There are two special machine 'types' - X86_64 and IA32; they refer to 
-         # the two supported linux-CPU types, linux_x86_64 and linux_ia32 as
-         # identified by $JSOC_MACHINE
-         if ($mach =~ /x86_64/i)
-         {
-            print CUSTMK 'ifeq ($(JSOC_MACHINE), linux_x86_64)' . "\n";
-         }
-         elsif ($mach =~ /ia32/i)
-         {
-            print CUSTMK 'ifeq ($(JSOC_MACHINE), linux_ia32)' . "\n";
-         }
-         elsif ($mach =~ /ia64/i)
-         {
-            print CUSTMK 'ifeq ($(JSOC_MACHINE), linux_ia64)' . "\n";
-         }
-
-         foreach $varname (keys(%map))
-         {
-            $varvalu = $map{$varname};
-            print CUSTMK "$varname = $varvalu\n";
-         }
-
-         print CUSTMK "endif\n";
-      }
+       {
+           %map = %{$platmaps{$mach}};
+           
+           # There are two special machine 'types' - X86_64 and IA32; they refer to 
+           # the two supported linux-CPU types, linux_x86_64 and linux_ia32 as
+           # identified by $JSOC_MACHINE
+           if ($mach =~ /x86_64/i)
+           {
+               print CUSTMK 'ifeq ($(JSOC_MACHINE), linux_x86_64)' . "\n";
+           }
+           elsif ($mach =~ /ia32/i)
+           {
+               print CUSTMK 'ifeq ($(JSOC_MACHINE), linux_ia32)' . "\n";
+           }
+           elsif ($mach =~ /ia64/i)
+           {
+               print CUSTMK 'ifeq ($(JSOC_MACHINE), linux_ia64)' . "\n";
+           }
+           elsif ($mach =~ /avx/i)
+           {
+               print CUSTMK 'ifeq ($(JSOC_MACHINE), linux_avx)' . "\n";
+           }
+           
+           foreach $varname (keys(%map))
+           {
+               $varvalu = $map{$varname};
+               print CUSTMK "$varname = $varvalu\n";
+           }
+           
+           print CUSTMK "endif\n";
+       }
 
       foreach $mach (keys(%machmaps))
       {
@@ -194,7 +198,7 @@ sub SupportedPlat
 {
    my($plat) = $_[0];
 
-   if ($plat =~ /^x86_64$/i || $plat =~ /^ia32$/i || $plat =~ /^ia64$/i)
+   if ($plat =~ /^x86_64$/i || $plat =~ /^ia32$/i || $plat =~ /^ia64$/i || $plat =~ /^avx$/i)
    {
       return 1;
    }

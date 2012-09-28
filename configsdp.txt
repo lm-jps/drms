@@ -259,6 +259,13 @@ __LIBS__
       GSL_INCS = /home/jsoc/include
       GSL_LIBS = /home/jsoc/lib/linux-ia32
     endif
+    
+    ifeq ($(JSOC_MACHINE), linux_ia64)
+      FFTW_INCS = /home/jsoc/include
+      FFTW_LIBS = /home/jsoc/lib/linux-x86_64
+      GSL_INCS = /home/jsoc/include
+      GSL_LIBS = /home/jsoc/lib/linux-x86_64
+    endif
 
     ifeq ($(JSOC_MACHINE), linux_x86_64)
       FFTW_INCS = /home/jsoc/include

@@ -120,11 +120,13 @@ __MAKE__
 POSTGRES_INCS:X86_64	/usr/include
 POSTGRES_INCS:IA32	/usr/include
 POSTGRES_INCS:IA64	/usr/include/pgsql
+POSTGRES_INCS:AVX   /usr/include
 #     the location of the PostgreSQL libs; likely to be either
 #     /usr/lib or /usr/lib64 or /usr/local/pgsql/lib
 POSTGRES_LIBS:X86_64	/usr/lib
 POSTGRES_LIBS:IA32	/usr/lib
 POSTGRES_LIBS:IA64	/usr/lib
+POSTGRES_LIBS:AVX	/usr/lib64
 
 #     actual library names
 POSTGRES_LIB            pq
@@ -142,11 +144,13 @@ POSTGRES_LIB            pq
 CFITSIO_INCS:X86_64	/home/jsoc/include
 CFITSIO_INCS:IA32	/home/jsoc/include
 CFITSIO_INCS:IA64	/home/jsoc/include
+CFITSIO_INCS:AVX	/home/jsoc/avx/include
 
 #     the location of the cfitsio libraries
 CFITSIO_LIBS:X86_64	/home/jsoc/lib/linux-x86_64
 CFITSIO_LIBS:IA32	/home/jsoc/lib/linux-ia32
-CFITSIO_LIBS:IA64       /home/jsoc/lib/linux-x86_64
+CFITSIO_LIBS:IA64   /home/jsoc/lib/linux-x86_64
+CFITSIO_LIBS:AVX    /home/jsoc/avx/lib
 
 #     actual library names
 CFITSIO_LIB             cfitsio
