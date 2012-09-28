@@ -11,7 +11,7 @@
 #include <sum_info.h>
 #include <soi_error.h>
 /*************************/
-#include <stropts.h>
+//#include <stropts.h>
 #include <sys/mtio.h>
 /*************************/
 #include <scsi/sg.h>
@@ -20,7 +20,7 @@
 #include <stdio.h>
 #include "tape.h"
 
-static char *rcsid="$Id: main3.c,v 1.8 2012/08/21 17:11:17 arta Exp $";
+static char *rcsid="$Id: main3.c,v 1.9 2012/09/28 17:42:28 arta Exp $";
 
 extern int errno;
 /*static void respd();*/
