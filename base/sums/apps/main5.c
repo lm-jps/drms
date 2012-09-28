@@ -10,7 +10,7 @@
 #include <sum_rpc.h>
 #include <soi_error.h>
 /*************************/
-#include <stropts.h>
+//#include <stropts.h>
 #include <sys/mtio.h>
 /*************************/
 #include <scsi/sg.h>
