@@ -1252,9 +1252,6 @@ int cmdparams_parsefile (CmdParams_t *parms, char *filename, int depth) {
   }
   return 0;
 }
-
-#undef SKIPWS
-#undef ISBLANK
 						/*  Add a new keyword  */
 
 /* Now handles the special processing of ARG_NUME, ARG_INTS, ARG_FLOATS, ARG_DOUBLES, ARG_FLOAT, ARG_DOUBLE, ARG_INT 
@@ -1665,53 +1662,131 @@ int cmdparams_isflagset (CmdParams_t *parms, char *name) {
       return 0;
    }
 }
-//xxxxx
+
 int8_t cmdparams_get_int8 (CmdParams_t *parms, char *name, int *status) {
-  int stat;
-  const char *str_value;
-  char *endptr;
-  int64_t val;
-  int8_t value = CP_MISSING_CHAR;
-
-  str_value = cmdparams_get_str (parms, name, &stat);
-  
-  if (!stat) {
-    val = (int64_t)strtod(str_value, &endptr);
-    if ((val==0 && endptr==str_value) || (val < INT8_MIN || val > INT8_MAX)) {
-      value = CP_MISSING_CHAR;
-      stat = CMDPARAMS_INVALID_CONVERSION;
-    } else {
-      value = (int8_t) val;
-      stat = CMDPARAMS_SUCCESS;
+    int stat;
+    const char *str_value;
+    char *endptr;
+    int64_t val;
+    int8_t value = CP_MISSING_CHAR;
+    
+    str_value = cmdparams_get_str (parms, name, &stat);
+    
+    if (!stat) 
+    {
+        char *sbuf = strdup(str_value);
+        char *pbuf = sbuf;
+        
+        if (!sbuf)
+        {
+            stat = CMDPARAMS_OUTOFMEMORY;   
+        }
+        else
+        {
+            SKIPWS(pbuf);
+            
+            /* If a number string begins with 0 (but not 0x or 0X), then DO NOT interpret 
+             * that string as an octal number. Interpret it as a decimal number. */
+            if (strcasestr(pbuf, "0X") == pbuf)
+            {
+                val = strtoll(str_value, &endptr, 16);
+            }
+            else
+            {
+                val = strtoll(str_value, &endptr, 10);
+            }
+            
+            if (val==0 && endptr==str_value)
+            {
+                /* no valid chars in str_value at all (I don't think we want to fail
+                 * if some, but not all, of str_value is consumed. There is parsing
+                 * code in DRMS that relies on this behavior - when a parser 
+                 * finds an unexpected char, it considers this char as the first
+                 * char in the next field. So, don't error out if endptr != '\0'. */
+                value = CP_MISSING_CHAR;
+                stat = CMDPARAMS_INVALID_CONVERSION;
+            }
+            else if (((val == LLONG_MIN || val == LLONG_MAX) && errno == ERANGE) || val < INT8_MIN || val > INT8_MAX)
+            {
+                /* The number string encoded a number outside of the valid short range. */
+                value = CP_MISSING_CHAR;
+                stat = CMDPARAMS_INVALID_CONVERSION;
+            }
+            else 
+            {
+                value = (int8_t)val;
+                stat = CMDPARAMS_SUCCESS;
+            }
+            
+            free(sbuf);
+        }
     }
-  }
-  if (status) *status = stat;
-
-  return value;
+    if (status) *status = stat;
+    
+    return value;
 }
 
 int16_t cmdparams_get_int16 (CmdParams_t *parms, char *name, int *status) {
-  int stat;
-  const char *str_value;
-  char *endptr;
-  int64_t val;
-  int16_t value = CP_MISSING_SHORT;
-
-  str_value = cmdparams_get_str (parms, name, &stat);
-  
-  if (!stat) {
-    val = (int64_t)strtod(str_value, &endptr);
-    if ((val==0 && endptr==str_value) || (val < INT16_MIN || val > INT16_MAX)) {
-      value = CP_MISSING_SHORT;
-      stat = CMDPARAMS_INVALID_CONVERSION;
-    } else {
-      value = (int16_t) val;
-      stat = CMDPARAMS_SUCCESS;
+    int stat;
+    const char *str_value;
+    char *endptr;
+    int64_t val;
+    int16_t value = CP_MISSING_SHORT;
+    
+    str_value = cmdparams_get_str (parms, name, &stat);
+    
+    if (!stat) 
+    {
+        char *sbuf = strdup(str_value);
+        char *pbuf = sbuf;
+        
+        if (!sbuf)
+        {
+            stat = CMDPARAMS_OUTOFMEMORY;   
+        }
+        else
+        {
+            SKIPWS(pbuf);
+            
+            /* If a number string begins with 0 (but not 0x or 0X), then DO NOT interpret 
+             * that string as an octal number. Interpret it as a decimal number. */
+            if (strcasestr(pbuf, "0X") == pbuf)
+            {
+                val = strtoll(str_value, &endptr, 16);
+            }
+            else
+            {
+                val = strtoll(str_value, &endptr, 10);
+            }
+            
+            if (val==0 && endptr==str_value)
+            {
+                /* no valid chars in str_value at all (I don't think we want to fail
+                 * if some, but not all, of str_value is consumed. There is parsing
+                 * code in DRMS that relies on this behavior - when a parser 
+                 * finds an unexpected char, it considers this char as the first
+                 * char in the next field. So, don't error out if endptr != '\0'. */
+                value = CP_MISSING_SHORT;
+                stat = CMDPARAMS_INVALID_CONVERSION;
+            }
+            else if (((val == LLONG_MIN || val == LLONG_MAX) && errno == ERANGE) || val < INT16_MIN || val > INT16_MAX)
+            {
+                /* The number string encoded a number outside of the valid short range. */
+                value = CP_MISSING_SHORT;
+                stat = CMDPARAMS_INVALID_CONVERSION;
+            }
+            else 
+            {
+                value = (int16_t)val;
+                stat = CMDPARAMS_SUCCESS;
+            }
+            
+            free(sbuf);
+        }
     }
-  }
-  if (status) *status = stat;
-
-  return value;
+    if (status) *status = stat;
+    
+    return value;
 }
 
 int cmdparams_get_int (CmdParams_t *parms, char *name, int *status) {
@@ -1836,54 +1911,134 @@ int cmdparams_get_int64arr(CmdParams_t *parms, char *name, int64_t **arr, int *s
 }
 
 int32_t cmdparams_get_int32 (CmdParams_t *parms, char *name, int *status) {
-  int stat;
-  const char *str_value;
-  char *endptr;
-  int64_t val;
-  int32_t value = CP_MISSING_INT;
-
-  str_value = cmdparams_get_str (parms, name, &stat);
-
-  if (!stat) {
-    val = (int64_t)strtod(str_value, &endptr);
-    if ((val==0 && endptr==str_value) || (val < INT32_MIN || val > INT32_MAX)) {
-      value = CP_MISSING_INT;
-      stat = CMDPARAMS_INVALID_CONVERSION;
-    } else {
-      value = (int32_t) val;
-      stat = CMDPARAMS_SUCCESS;
+    int stat;
+    const char *str_value;
+    char *endptr;
+    int64_t val;
+    int32_t value = CP_MISSING_INT;
+    
+    str_value = cmdparams_get_str (parms, name, &stat);
+    
+    if (!stat) 
+    {
+        char *sbuf = strdup(str_value);
+        char *pbuf = sbuf;
+        
+        if (!sbuf)
+        {
+            stat = CMDPARAMS_OUTOFMEMORY;   
+        }
+        else
+        {
+            SKIPWS(pbuf);
+            
+            /* If a number string begins with 0 (but not 0x or 0X), then DO NOT interpret 
+             * that string as an octal number. Interpret it as a decimal number. */
+            if (strcasestr(pbuf, "0X") == pbuf)
+            {
+                val = strtoll(str_value, &endptr, 16);
+            }
+            else
+            {
+                val = strtoll(str_value, &endptr, 10);
+            }
+            
+            if (val==0 && endptr==str_value)
+            {
+                /* no valid chars in str_value at all (I don't think we want to fail
+                 * if some, but not all, of str_value is consumed. There is parsing
+                 * code in DRMS that relies on this behavior - when a parser 
+                 * finds an unexpected char, it considers this char as the first
+                 * char in the next field. So, don't error out if endptr != '\0'). */
+                value = CP_MISSING_INT;
+                stat = CMDPARAMS_INVALID_CONVERSION;
+            }
+            else if (((val == LLONG_MIN || val == LLONG_MAX) && errno == ERANGE) || val < INT32_MIN || val > INT32_MAX)
+            {
+                /* The number string encoded a number outside of the valid int range. */
+                value = CP_MISSING_INT;
+                stat = CMDPARAMS_INVALID_CONVERSION;
+            }
+            else 
+            {
+                value = (int32_t)val;
+                stat = CMDPARAMS_SUCCESS;
+            }
+            
+            free(sbuf);
+        }
     }
-  }
-  if (status) *status = stat;
-
-  return value;  
+    if (status) *status = stat;
+    
+    return value;  
 }
 
 int64_t cmdparams_get_int64 (CmdParams_t *parms, char *name, int *status) {
-  int stat;
-  const char *str_value;
-  char *endptr;
-  int64_t val;
-  int64_t value = CP_MISSING_LONGLONG;
-
-  str_value = cmdparams_get_str (parms, name, &stat);
- 
-  if (!stat) {
-    val = (int64_t)strtod(str_value, &endptr);
-    if ((val==0 && endptr==str_value)) {
-      value = CP_MISSING_LONGLONG;
-      stat = CMDPARAMS_INVALID_CONVERSION;
-    } else {
-      value = val;
-      stat = CMDPARAMS_SUCCESS;
+    int stat;
+    const char *str_value;
+    char *endptr;
+    int64_t val;
+    int64_t value = CP_MISSING_LONGLONG;
+    
+    str_value = cmdparams_get_str (parms, name, &stat);
+    
+    if (!stat) 
+    {
+        char *sbuf = strdup(str_value);
+        char *pbuf = sbuf;
+        
+        if (!sbuf)
+        {
+            stat = CMDPARAMS_OUTOFMEMORY;   
+        }
+        else
+        {
+            SKIPWS(pbuf);
+            
+            /* If a number string begins with 0 (but not 0x or 0X), then DO NOT interpret 
+             * that string as an octal number. Interpret it as a decimal number. */
+            if (strcasestr(pbuf, "0X") == pbuf)
+            {
+                val = strtoll(str_value, &endptr, 16);
+            }
+            else
+            {
+                val = strtoll(str_value, &endptr, 10);
+            }
+            
+            if (val==0 && endptr==str_value)
+            {
+                /* no valid chars in str_value at all (I don't think we want to fail
+                 * if some, but not all, of str_value is consumed. There is parsing
+                 * code in DRMS that relies on this behavior - when a parser 
+                 * finds an unexpected char, it considers this char as the first
+                 * char in the next field. So, don't error out if endptr != '\0'). */
+                value = CP_MISSING_LONGLONG;
+                stat = CMDPARAMS_INVALID_CONVERSION;
+            }
+            else if ((val == LLONG_MIN || val == LLONG_MAX) && errno == ERANGE)
+            {
+                /* The number string encoded a number outside of the valid long long range. */
+                value = CP_MISSING_LONGLONG;
+                stat = CMDPARAMS_INVALID_CONVERSION;
+            }
+            else 
+            {
+                value = val;
+                stat = CMDPARAMS_SUCCESS;
+            }
+            
+            free(sbuf);
+        }
     }
-  }
-  if (status) *status = stat;
-
-  return value;
+    
+    if (status) *status = stat;
+    
+    return value;
 }
 
-
+#undef SKIPWS
+#undef ISBLANK
 
 float cmdparams_get_float (CmdParams_t *parms, char *name, int *status) {
   int stat;
