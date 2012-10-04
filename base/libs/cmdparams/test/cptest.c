@@ -93,17 +93,14 @@ int main(int argc, char **argv)
     int16_t val16 = cmdparams_get_int16(&cmdparams, "intarg", &status);
     int32_t val32 = cmdparams_get_int32(&cmdparams, "intarg", &status);
     int64_t val64 = cmdparams_get_int64(&cmdparams, "intarg", &status);
+    uint64_t mask = cmdparams_get_mask64(&cmdparams, "intarg", &status);
     
     printf("8-bit signed int: %hhd\n", val8);
     printf("16-bit signed int: %hd\n", val16);
     printf("32-bit signed int: %d\n", val32);
     /* on 64-bit machines, int64_t is long int, not long long int*/
     printf("64-bit signed int: %lld\n", (long long)val64);
-    
-    printf("8-bit unsigned int: %hhu\n", (unsigned char)val8);
-    printf("16-bit unsigned int: %hu\n", (unsigned short)val16);
-    printf("32-bit unsigned int: %u\n", (unsigned int)val32);
-    printf("64-bit unsigned int: %llu\n", (unsigned long long)val64);
+    printf("64-bit mask (uint64_t): %llu\n", (unsigned long long)mask);
     
     cmdparams_freeall(&cmdparams);
     

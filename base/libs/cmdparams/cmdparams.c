@@ -608,7 +608,7 @@ static int cmdparams_conv2type(const char *sdata,
             /* 64-bit ints */
             intval = StringToInt64(sdata, CmdParams_Cast_Non, &ishexstr, &status);
             
-            if (stat != CMDPARAMS_SUCCESS)
+            if (status != CMDPARAMS_SUCCESS)
             {
                 intval = CP_MISSING_LONGLONG;
                 status = CMDPARAMS_INVALID_CONVERSION;
@@ -2137,6 +2137,7 @@ CmdParams_Mask64_t cmdparams_get_mask64(CmdParams_t *parms, const char *name, in
     int istat;
     CmdParams_Mask64_t mask = 0;
     
+    /* cmdparams_get_int64_int() returns a signed 64-bit number, but we will return an unsigned 64-bit number. */
     mask = (CmdParams_Mask64_t)cmdparams_get_int64_int(parms, name, CmdParams_Cast_Hex, &istat);
     
     if (status)

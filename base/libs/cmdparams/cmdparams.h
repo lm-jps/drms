@@ -39,7 +39,7 @@ of parameters expected to be available to a module as a global variable.
 #define CMDPARAMS_INVALID_CONVERSION	(-5) 
 #define CMDPARAMS_OUTOFMEMORY   	(-6) 
 
-typedef int64_t CmdParams_Mask64_t;
+typedef uint64_t CmdParams_Mask64_t;
 
 	       /*  Argument types in ModuleArgs_t used by cmdparams_parse()  */
 typedef enum {
