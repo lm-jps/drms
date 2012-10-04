@@ -75,6 +75,15 @@ const double gNHugeVal = -HUGE_VAL;
 #define kARGSIZE     (128)
 #define kKEYSIZE     (128)
 
+enum CmdParams_Cast_enum
+{
+   CmdParams_Cast_Non = 0,
+   CmdParams_Cast_Hex = 1,
+   CmdParams_Cast_Oct = 2
+};
+
+typedef enum CmdParams_Cast_enum CmdParams_Cast_t;
+
 /* Some arguments are saved in a case-sensitive manner, and some 
  * are saved in case-insensitive manner (i.e, --ARGUMENT args). This 
  * function will search for either kind. It will not search 
@@ -474,70 +483,186 @@ static char *strip_delimiters (char *s) {
   }
 }
 
+
+#undef SKIPWS
+#undef ISBLANK
+#define SKIPWS(p) {while(*p && isspace(*p)) { ++p; }}
+#define SKIPBS(p) {while(*p && !isspace(*p)) { ++p; }}
+
+static int64_t StringToInt64(const char *str, CmdParams_Cast_t type, int *ishexstr, int *status)
+{
+    int istat = CMDPARAMS_SUCCESS;
+    int64_t value = CP_MISSING_LONGLONG;
+    char *sbuf = strdup(str);
+    char *pbuf = sbuf;
+    char *endptr = NULL;
+    
+    if (!sbuf)
+    {
+        istat = CMDPARAMS_OUTOFMEMORY;
+    }
+    else
+    {
+        SKIPWS(pbuf);
+        
+        /* skip + or - */
+        if (*pbuf == '+' || *pbuf == '-')
+        {
+            pbuf++;
+        }
+        
+        if (ishexstr)
+        {
+            *ishexstr = 0;
+        }
+        
+        errno = -1;
+        
+        /* If a number string begins with 0 (but not 0x or 0X), then DO NOT interpret
+         * that string as an octal number. Interpret it as a decimal number. */
+        if ((type == CmdParams_Cast_Non && strcasestr(pbuf, "0X") == pbuf) || type == CmdParams_Cast_Hex)
+        {
+            uint64_t val64;
+            
+            if (ishexstr)
+            {
+                *ishexstr = 1;
+            }
+            
+            /* Gotta use strtoull, not strtoll. The latter considers values > 0x7FFFFFFFFFFFFFFF as out of
+             * range, when they are not. */
+            val64 = strtoull(str, &endptr, 16);
+            
+            if (val64 == 0 && endptr == str || (val64 == ULLONG_MAX && errno == ERANGE))
+            {
+                /* no valid chars in str_value at all (I don't think we want to fail
+                 * if some, but not all, of str is consumed. There is parsing
+                 * code in DRMS that relies on this behavior - when a parser
+                 * finds an unexpected char, it considers this char as the first
+                 * char in the next field. So, don't error out if endptr != '\0'),
+                 * OR the number represented by the string was outside the int64 range. */
+                value = CP_MISSING_LONGLONG;
+                istat = CMDPARAMS_INVALID_CONVERSION;
+            }
+            else
+            {
+                value = (int64_t)val64;
+                istat = CMDPARAMS_SUCCESS;
+            }
+        }
+        else
+        {
+            if (type == CmdParams_Cast_Oct)
+            {
+                value = strtoll(str, &endptr, 8);
+            }
+            else
+            {
+                value = strtoll(str, &endptr, 10);
+            }
+            
+            if (value == 0 && endptr == str || ((value == LLONG_MIN || value == LLONG_MAX) && errno == ERANGE))
+            {
+                /* no valid chars in str_value at all (I don't think we want to fail
+                 * if some, but not all, of str is consumed. There is parsing
+                 * code in DRMS that relies on this behavior - when a parser
+                 * finds an unexpected char, it considers this char as the first
+                 * char in the next field. So, don't error out if endptr != '\0'),
+                 * OR the number represented by the string was outside the int64 range. */
+                value = CP_MISSING_LONGLONG;
+                istat = CMDPARAMS_INVALID_CONVERSION;
+            }
+            else
+            {
+                istat = CMDPARAMS_SUCCESS;
+            }
+        }
+        
+        free(sbuf);
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return value;
+}
+
 /* Warning: converts ints to 64-bit numbers only. Cast to 32-bit, 16-bit, or 8-bit if needed. */
 static int cmdparams_conv2type(const char *sdata, 
                                ModuleArgs_Type_t dtype, 
                                char *bufout, 
                                int size)
 {
-   int status = CMDPARAMS_SUCCESS;
-   char *endptr = NULL;
-   int64_t intval;
-   float fval;
-   double dval;
-
-   switch (dtype)
-   {
-      case ARG_INT:
-        /* 64-bit ints */
-        intval = (int64_t)strtoll(sdata, &endptr, 0);
-        if ((intval == 0 && endptr == sdata)) 
-        {
-           intval = CP_MISSING_INT;
-           status = CMDPARAMS_INVALID_CONVERSION;
-        } 
-        else
-        {
-           XASSERT(sizeof(intval) <= size);
-           memcpy(bufout, &intval, sizeof(intval));
-        }
-
-        break;
-      case ARG_FLOAT:
-        fval = strtof(sdata, &endptr);
-        if ((*endptr != '\0' || endptr == sdata) || 
-            ((IsPosHugeValF(fval) || IsNegHugeValF(fval)) && errno == ERANGE))
-        {
-           status = CMDPARAMS_INVALID_CONVERSION;
-           fval = CP_MISSING_FLOAT;
-        } 
-        else
-        {
-           XASSERT(sizeof(fval) <= size);
-           memcpy(bufout, &fval, sizeof(fval));
-        }
-
-        break;
-      case ARG_DOUBLE:
-        dval = strtod(sdata, &endptr);
-        if ((*endptr != '\0' || endptr == sdata) || 
-            ((IsPosHugeVal(dval) || IsNegHugeVal(dval)) && errno == ERANGE))
-        {
-           status = CMDPARAMS_INVALID_CONVERSION;
-           dval = CP_MISSING_DOUBLE;
-        } 
-        else
-        {
-           XASSERT(sizeof(dval) <= size);
-           memcpy(bufout, &dval, sizeof(dval));
-        }
-
-        break;
-      default:
-        fprintf(stderr, "Incomplete implementation - type '%d' not supported.\n", (int)dtype);
-   }
-
-   return status;
+    int status = CMDPARAMS_SUCCESS;
+    char *endptr = NULL;
+    int64_t intval;
+    float fval;
+    double dval;
+    int ishexstr = 0;
+    
+    switch (dtype)
+    {
+        case ARG_INT:
+            /* 64-bit ints */
+            intval = StringToInt64(sdata, CmdParams_Cast_Non, &ishexstr, &status);
+            
+            if (stat != CMDPARAMS_SUCCESS)
+            {
+                intval = CP_MISSING_LONGLONG;
+                status = CMDPARAMS_INVALID_CONVERSION;
+            }
+            else
+            {
+                XASSERT(sizeof(intval) <= size);
+                if (sizeof(intval) <= size)
+                {
+                    memcpy(bufout, &intval, sizeof(intval));
+                    status = CMDPARAMS_SUCCESS;
+                }
+                else
+                {
+                    status = CMDPARAMS_INVALID_CONVERSION;
+                }
+            }
+            
+            break;
+        case ARG_FLOAT:
+            fval = strtof(sdata, &endptr);
+            if ((*endptr != '\0' || endptr == sdata) || 
+                ((IsPosHugeValF(fval) || IsNegHugeValF(fval)) && errno == ERANGE))
+            {
+                status = CMDPARAMS_INVALID_CONVERSION;
+                fval = CP_MISSING_FLOAT;
+            } 
+            else
+            {
+                XASSERT(sizeof(fval) <= size);
+                memcpy(bufout, &fval, sizeof(fval));
+            }
+            
+            break;
+        case ARG_DOUBLE:
+            dval = strtod(sdata, &endptr);
+            if ((*endptr != '\0' || endptr == sdata) || 
+                ((IsPosHugeVal(dval) || IsNegHugeVal(dval)) && errno == ERANGE))
+            {
+                status = CMDPARAMS_INVALID_CONVERSION;
+                dval = CP_MISSING_DOUBLE;
+            } 
+            else
+            {
+                XASSERT(sizeof(dval) <= size);
+                memcpy(bufout, &dval, sizeof(dval));
+            }
+            
+            break;
+        default:
+            fprintf(stderr, "Incomplete implementation - type '%d' not supported.\n", (int)dtype);
+    }
+    
+    return status;
 }
 
 /* Prior to this function call, each array will have been saved as a comma-delimited string of 
@@ -1160,10 +1285,6 @@ void cmdparams_freeall (CmdParams_t *parms) {
  *  Each non-comment line is parsed as a command line.
  *  Empty lines and lines starting with '#' are ignored.
  */
-#undef SKIPWS
-#undef ISBLANK
-#define SKIPWS(p) {while(*p && isspace(*p)) { ++p; }}
-#define SKIPBS(p) {while(*p && !isspace(*p)) { ++p; }}
 
 int cmdparams_parsefile (CmdParams_t *parms, char *filename, int depth) {
   FILE *fp;
@@ -1666,62 +1787,61 @@ int cmdparams_isflagset (CmdParams_t *parms, char *name) {
 int8_t cmdparams_get_int8 (CmdParams_t *parms, char *name, int *status) {
     int stat;
     const char *str_value;
-    char *endptr;
     int64_t val;
     int8_t value = CP_MISSING_CHAR;
+    int hexstr = 0;
     
     str_value = cmdparams_get_str (parms, name, &stat);
     
     if (!stat) 
     {
-        char *sbuf = strdup(str_value);
-        char *pbuf = sbuf;
+        val = StringToInt64(str_value, CmdParams_Cast_Non, &hexstr, &stat);
         
-        if (!sbuf)
+        if (stat != CMDPARAMS_SUCCESS)
         {
-            stat = CMDPARAMS_OUTOFMEMORY;   
+            value = CP_MISSING_CHAR;
+            stat = CMDPARAMS_INVALID_CONVERSION;
         }
         else
         {
-            SKIPWS(pbuf);
-            
-            /* If a number string begins with 0 (but not 0x or 0X), then DO NOT interpret 
-             * that string as an octal number. Interpret it as a decimal number. */
-            if (strcasestr(pbuf, "0X") == pbuf)
+            if (hexstr)
             {
-                val = strtoll(str_value, &endptr, 16);
-            }
-            else
-            {
-                val = strtoll(str_value, &endptr, 10);
-            }
-            
-            if (val==0 && endptr==str_value)
-            {
-                /* no valid chars in str_value at all (I don't think we want to fail
-                 * if some, but not all, of str_value is consumed. There is parsing
-                 * code in DRMS that relies on this behavior - when a parser 
-                 * finds an unexpected char, it considers this char as the first
-                 * char in the next field. So, don't error out if endptr != '\0'. */
-                value = CP_MISSING_CHAR;
-                stat = CMDPARAMS_INVALID_CONVERSION;
-            }
-            else if (((val == LLONG_MIN || val == LLONG_MAX) && errno == ERANGE) || val < INT8_MIN || val > INT8_MAX)
-            {
-                /* The number string encoded a number outside of the valid short range. */
-                value = CP_MISSING_CHAR;
-                stat = CMDPARAMS_INVALID_CONVERSION;
+                /* Ensure that value is within the UNSIGNED range (for less-than-64-bit integers
+                 * StringToInt64() will return the unsigned value). Although this function 
+                 * will reject decimal strings that represent numbers outside the 
+                 * signed, 8-bit range, it should accept 8-bit hexidecimal strings. */
+                if (val < 0 || val > UINT8_MAX)
+                {
+                    value = CP_MISSING_CHAR;
+                    stat = CMDPARAMS_INVALID_CONVERSION;
+                }
+                else
+                {
+                    value = (int8_t)val;
+                }
             }
             else 
             {
-                value = (int8_t)val;
-                stat = CMDPARAMS_SUCCESS;
+                /* decimal string */
+                if (val < INT8_MIN || val > INT8_MAX)
+                {
+                    /* The number string encoded a number outside of the valid short range. */
+                    value = CP_MISSING_CHAR;
+                    stat = CMDPARAMS_INVALID_CONVERSION;
+                }
+                else
+                {
+                    value = (int8_t)val;
+                    stat = CMDPARAMS_SUCCESS;
+                }
             }
-            
-            free(sbuf);
         }
     }
-    if (status) *status = stat;
+    
+    if (status) 
+    {
+        *status = stat;
+    }
     
     return value;
 }
@@ -1729,62 +1849,61 @@ int8_t cmdparams_get_int8 (CmdParams_t *parms, char *name, int *status) {
 int16_t cmdparams_get_int16 (CmdParams_t *parms, char *name, int *status) {
     int stat;
     const char *str_value;
-    char *endptr;
     int64_t val;
     int16_t value = CP_MISSING_SHORT;
+    int hexstr = 0;
     
     str_value = cmdparams_get_str (parms, name, &stat);
     
-    if (!stat) 
+    if (!stat)
     {
-        char *sbuf = strdup(str_value);
-        char *pbuf = sbuf;
+        val = StringToInt64(str_value, CmdParams_Cast_Non, &hexstr, &stat);
         
-        if (!sbuf)
+        if (stat != CMDPARAMS_SUCCESS)
         {
-            stat = CMDPARAMS_OUTOFMEMORY;   
+            value = CP_MISSING_SHORT;
+            stat = CMDPARAMS_INVALID_CONVERSION;
         }
         else
         {
-            SKIPWS(pbuf);
-            
-            /* If a number string begins with 0 (but not 0x or 0X), then DO NOT interpret 
-             * that string as an octal number. Interpret it as a decimal number. */
-            if (strcasestr(pbuf, "0X") == pbuf)
+            if (hexstr)
             {
-                val = strtoll(str_value, &endptr, 16);
-            }
-            else
-            {
-                val = strtoll(str_value, &endptr, 10);
-            }
-            
-            if (val==0 && endptr==str_value)
-            {
-                /* no valid chars in str_value at all (I don't think we want to fail
-                 * if some, but not all, of str_value is consumed. There is parsing
-                 * code in DRMS that relies on this behavior - when a parser 
-                 * finds an unexpected char, it considers this char as the first
-                 * char in the next field. So, don't error out if endptr != '\0'. */
-                value = CP_MISSING_SHORT;
-                stat = CMDPARAMS_INVALID_CONVERSION;
-            }
-            else if (((val == LLONG_MIN || val == LLONG_MAX) && errno == ERANGE) || val < INT16_MIN || val > INT16_MAX)
-            {
-                /* The number string encoded a number outside of the valid short range. */
-                value = CP_MISSING_SHORT;
-                stat = CMDPARAMS_INVALID_CONVERSION;
+                /* Ensure that value is within the UNSIGNED range (for less-than-64-bit integers
+                 * StringToInt64() will return the unsigned value). Although this function 
+                 * will reject decimal strings that represent numbers outside the 
+                 * signed, 16-bit range, it should accept 16-bit hexidecimal strings. */
+                if (val < 0 || val > UINT16_MAX)
+                {
+                    value = CP_MISSING_SHORT;
+                    stat = CMDPARAMS_INVALID_CONVERSION;
+                }
+                else
+                {
+                    value = (int16_t)val;
+                }
             }
             else 
             {
-                value = (int16_t)val;
-                stat = CMDPARAMS_SUCCESS;
+                /* decimal string */
+                if (val < INT16_MIN || val > INT16_MAX)
+                {
+                    /* The number string encoded a number outside of the valid short range. */
+                    value = CP_MISSING_SHORT;
+                    stat = CMDPARAMS_INVALID_CONVERSION;
+                }
+                else
+                {
+                    value = (int16_t)val;
+                    stat = CMDPARAMS_SUCCESS;
+                }
             }
-            
-            free(sbuf);
         }
     }
-    if (status) *status = stat;
+    
+    if (status)
+    {
+        *status = stat;
+    }
     
     return value;
 }
@@ -1913,128 +2032,119 @@ int cmdparams_get_int64arr(CmdParams_t *parms, char *name, int64_t **arr, int *s
 int32_t cmdparams_get_int32 (CmdParams_t *parms, char *name, int *status) {
     int stat;
     const char *str_value;
-    char *endptr;
     int64_t val;
     int32_t value = CP_MISSING_INT;
+    int hexstr = 0;
     
     str_value = cmdparams_get_str (parms, name, &stat);
     
-    if (!stat) 
+    if (!stat)
     {
-        char *sbuf = strdup(str_value);
-        char *pbuf = sbuf;
+        val = StringToInt64(str_value, CmdParams_Cast_Non, &hexstr, &stat);
         
-        if (!sbuf)
+        if (stat != CMDPARAMS_SUCCESS)
         {
-            stat = CMDPARAMS_OUTOFMEMORY;   
+            value = CP_MISSING_INT;
+            stat = CMDPARAMS_INVALID_CONVERSION;
         }
         else
         {
-            SKIPWS(pbuf);
-            
-            /* If a number string begins with 0 (but not 0x or 0X), then DO NOT interpret 
-             * that string as an octal number. Interpret it as a decimal number. */
-            if (strcasestr(pbuf, "0X") == pbuf)
+            if (hexstr)
             {
-                val = strtoll(str_value, &endptr, 16);
-            }
-            else
-            {
-                val = strtoll(str_value, &endptr, 10);
-            }
-            
-            if (val==0 && endptr==str_value)
-            {
-                /* no valid chars in str_value at all (I don't think we want to fail
-                 * if some, but not all, of str_value is consumed. There is parsing
-                 * code in DRMS that relies on this behavior - when a parser 
-                 * finds an unexpected char, it considers this char as the first
-                 * char in the next field. So, don't error out if endptr != '\0'). */
-                value = CP_MISSING_INT;
-                stat = CMDPARAMS_INVALID_CONVERSION;
-            }
-            else if (((val == LLONG_MIN || val == LLONG_MAX) && errno == ERANGE) || val < INT32_MIN || val > INT32_MAX)
-            {
-                /* The number string encoded a number outside of the valid int range. */
-                value = CP_MISSING_INT;
-                stat = CMDPARAMS_INVALID_CONVERSION;
+                /* Ensure that value is within the UNSIGNED range (for less-than-64-bit integers
+                 * StringToInt64() will return the unsigned value). Although this function 
+                 * will reject decimal strings that represent numbers outside the 
+                 * signed, 32-bit range, it should accept 32-bit hexidecimal strings. */
+                if (val < 0 || val > UINT32_MAX)
+                {
+                    value = CP_MISSING_INT;
+                    stat = CMDPARAMS_INVALID_CONVERSION;
+                }
+                else
+                {
+                    value = (int32_t)val;
+                }
             }
             else 
             {
-                value = (int32_t)val;
-                stat = CMDPARAMS_SUCCESS;
+                /* decimal string */
+                if (val < INT32_MIN || val > INT32_MAX)
+                {
+                    /* The number string encoded a number outside of the valid short range. */
+                    value = CP_MISSING_INT;
+                    stat = CMDPARAMS_INVALID_CONVERSION;
+                }
+                else
+                {
+                    value = (int32_t)val;
+                    stat = CMDPARAMS_SUCCESS;
+                }
             }
-            
-            free(sbuf);
         }
     }
-    if (status) *status = stat;
+    
+    if (status)
+    {
+        *status = stat;
+    }
     
     return value;  
 }
 
-int64_t cmdparams_get_int64 (CmdParams_t *parms, char *name, int *status) {
-    int stat;
-    const char *str_value;
-    char *endptr;
-    int64_t val;
+/* Type is the type of number string that the caller wants the string representation to be
+ * interpreted as. */
+static int64_t cmdparams_get_int64_int(CmdParams_t *parms, const char *name, CmdParams_Cast_t type, int *status) 
+{
+    int istat = CMDPARAMS_SUCCESS;
     int64_t value = CP_MISSING_LONGLONG;
+    const char *strval = NULL;
+    int hexstr = 0;
     
-    str_value = cmdparams_get_str (parms, name, &stat);
+    strval = cmdparams_get_str(parms, name, &istat);
     
-    if (!stat) 
+    if (!istat) 
     {
-        char *sbuf = strdup(str_value);
-        char *pbuf = sbuf;
+        int64_t val;
         
-        if (!sbuf)
+        val = StringToInt64(strval, type, &hexstr, &istat);
+        
+        if (istat != CMDPARAMS_SUCCESS)
         {
-            stat = CMDPARAMS_OUTOFMEMORY;   
+            value = CP_MISSING_LONGLONG;
+            istat = CMDPARAMS_INVALID_CONVERSION;
         }
         else
         {
-            SKIPWS(pbuf);
-            
-            /* If a number string begins with 0 (but not 0x or 0X), then DO NOT interpret 
-             * that string as an octal number. Interpret it as a decimal number. */
-            if (strcasestr(pbuf, "0X") == pbuf)
-            {
-                val = strtoll(str_value, &endptr, 16);
-            }
-            else
-            {
-                val = strtoll(str_value, &endptr, 10);
-            }
-            
-            if (val==0 && endptr==str_value)
-            {
-                /* no valid chars in str_value at all (I don't think we want to fail
-                 * if some, but not all, of str_value is consumed. There is parsing
-                 * code in DRMS that relies on this behavior - when a parser 
-                 * finds an unexpected char, it considers this char as the first
-                 * char in the next field. So, don't error out if endptr != '\0'). */
-                value = CP_MISSING_LONGLONG;
-                stat = CMDPARAMS_INVALID_CONVERSION;
-            }
-            else if ((val == LLONG_MIN || val == LLONG_MAX) && errno == ERANGE)
-            {
-                /* The number string encoded a number outside of the valid long long range. */
-                value = CP_MISSING_LONGLONG;
-                stat = CMDPARAMS_INVALID_CONVERSION;
-            }
-            else 
-            {
-                value = val;
-                stat = CMDPARAMS_SUCCESS;
-            }
-            
-            free(sbuf);
-        }
+            value = val;
+            istat = CMDPARAMS_SUCCESS;
+        }                 
     }
     
-    if (status) *status = stat;
+    if (status)
+    {
+        *status = istat;
+    }
     
     return value;
+}
+
+int64_t cmdparams_get_int64 (CmdParams_t *parms, char *name, int *status) {
+    return cmdparams_get_int64_int(parms, name, CmdParams_Cast_Non, status);
+}
+
+CmdParams_Mask64_t cmdparams_get_mask64(CmdParams_t *parms, const char *name, int *status)
+{
+    int istat;
+    CmdParams_Mask64_t mask = 0;
+    
+    mask = (CmdParams_Mask64_t)cmdparams_get_int64_int(parms, name, CmdParams_Cast_Hex, &istat);
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return mask;
 }
 
 #undef SKIPWS

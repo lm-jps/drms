@@ -38,6 +38,9 @@ of parameters expected to be available to a module as a global variable.
 #define CMDPARAMS_UNKNOWN_PARAM		(-4)
 #define CMDPARAMS_INVALID_CONVERSION	(-5) 
 #define CMDPARAMS_OUTOFMEMORY   	(-6) 
+
+typedef int64_t CmdParams_Mask64_t;
+
 	       /*  Argument types in ModuleArgs_t used by cmdparams_parse()  */
 typedef enum {
    /** @brief Marker denoting end of ::ModuleArgs_t array */
@@ -339,6 +342,7 @@ int8_t cmdparams_get_int8 (CmdParams_t *parms, char *name, int *status);
 int16_t cmdparams_get_int16 (CmdParams_t *parms, char *name, int *status);
 int32_t cmdparams_get_int32 (CmdParams_t *parms, char *name, int *status);
 int64_t cmdparams_get_int64 (CmdParams_t *parms, char *name, int *status);
+CmdParams_Mask64_t cmdparams_get_mask64(CmdParams_t *parms, const char *name, int *status);
 float cmdparams_get_float (CmdParams_t *parms, char *name, int *status);
 double cmdparams_get_double (CmdParams_t *parms, const char *name, int *status);
 int cmdparams_get_dblarr(CmdParams_t *parms, char *name, double **arr, int *status);
