@@ -140,6 +140,10 @@ the storage unit's retention expires).
  an argument. This can be achieved by calling show_info -P). One further caveat: this argument
  cannot be specified as an environment variable. 
 \arg \c DRMS_QUERY_MEM Sets the memory maximum for a database query.
+ \arg \c DRMS_DBTIMEOUT The value is the number of milliseconds any underlying database query is
+ allowed to run, after which the database will issue an error, causing the module to terminate
+ with an error, rolling back any database changes. The database time-out feature is initiated 
+ each time a transaction is started (in drms_server_begin_transaction()).
 \arg \c JSOC_DBHOST Specifies (overrides) the database host to connect to. Default is ::DBNAME
 \arg \c JSOC_DBNAME Specifies (overrides) the database name to use. Default is ::DBNAME
 \arg \c JSOC_DBUSER Specifies (overrides) the username used during database host connection. Default is ::USER.
