@@ -25,6 +25,10 @@ the series, all or some of the keyword and segment values for a range of records
 the full path to the SUMS storage for the data segment, etc. 
 Exactly what information gets printed is
 controlled by command-line flags (see below).
+ 
+ By default, show_info will time-out on long-running database queries after a 10-minute
+ wait. If -O is provided on the command-line, the time-out is disabled. Both of these
+ behaviors are overridden the by DRMS_DBTIMEOUT cmd-line argument.
 
 The argument descriptions are grouped by function.  The first group controls the overall
 operation of show_info.  If any of these flags (c,h,j,l,s) is present the specified action
