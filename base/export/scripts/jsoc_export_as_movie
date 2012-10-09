@@ -92,6 +92,7 @@ if [[ $instr == [Hh][Mm][Ii] ]]
         tkey=T_OBS
     fi
 
+    p=u
     if [ $hg ]
       then 
         declare -i scale=1     # default -could read in as a parameter
