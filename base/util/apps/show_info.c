@@ -979,6 +979,7 @@ int DoIt(void)
   requireSUMinfo = show_online || show_retention || show_archive || show_tapeinfo || show_size || show_session;
 
   /* At least seriesname or sunum must be specified */
+      /* THIS CODE DOES NOT FOLLOW LINKS TO TARGET SEGMENTS. */
   if (given_sunum && given_sunum[0] >= 0)
   { 
      /* use sunum to get seriesname instead of ds= or stand-along param */
@@ -1030,6 +1031,14 @@ int DoIt(void)
         }
         
         onesuinfo = *ponesuinfo;
+         
+         /* It is possible that onesuinfo is NULL. Lower-level code could return a NULL info-struct pointer
+          * if the sunum requested was -1. */
+         if (!onesuinfo)
+         {
+             /* skip this sunum - there is no info struct for it. */
+             continue;
+         }
         
         if (!lastsuinfo || strcasecmp(onesuinfo->owning_series, lastsuinfo->owning_series) != 0)
         {
@@ -1512,7 +1521,7 @@ int DoIt(void)
               }
           }
 
-         if (rec->suinfo == NULL)
+         if (rec->sunum >= 0 && rec->suinfo == NULL)
          {
             /* We may have an SUM_info_t struct for this record from a previous call
              * to drms_getsuinfo() - use it here. If drms_recordset_fetchnext() was 
@@ -1567,21 +1576,24 @@ int DoIt(void)
 
       rec = recordset->records[irec];  /* pointer to current record */
 
-      if (requireSUMinfo && (given_sunum && given_sunum[0] >= 0))
-      {
-         snprintf(key, sizeof(key), "%lld", rec->sunum);
-
-         if ((ponesuinfo = (SUM_info_t **)hcon_lookup(suinfo, key)) != NULL)
-         {
-            /* records take ownership of the SUM_info_t - so need to remove from suinfo. */
-            rec->suinfo = *ponesuinfo;
-            hcon_remove(suinfo, key);
-         }
-         else
-         {
-            /* unknown SUNUM */
-         }
-      }
+          if (rec->sunum >= 0)
+          {
+              if (requireSUMinfo && (given_sunum && given_sunum[0] >= 0))
+              {
+                  snprintf(key, sizeof(key), "%lld", rec->sunum);
+                  
+                  if ((ponesuinfo = (SUM_info_t **)hcon_lookup(suinfo, key)) != NULL)
+                  {
+                      /* records take ownership of the SUM_info_t - so need to remove from suinfo. */
+                      rec->suinfo = *ponesuinfo;
+                      hcon_remove(suinfo, key);
+                  }
+                  else
+                  {
+                      /* unknown SUNUM */
+                  }
+              }
+          }
 
       status = DRMS_SUCCESS;
       }
@@ -1849,104 +1861,132 @@ int DoIt(void)
       }
 
     if (show_online)
-      {
-       /* rec has the suinfo struct already */
-      char *msg;
-      if (*rec->suinfo->online_loc == '\0')
-        msg = "NA";
-      else
-        msg = rec->suinfo->online_status;
-      if (keyword_list)
-        printf("## online=%s\n", msg);
-      else
-        printf("%s%s", (col++ ? "\t" : ""), msg);
-      }
+    {
+        /* rec has the suinfo struct already */
+        char *msg;
+        
+        if (!rec->suinfo)
+            /* rec->sunum == -1 */
+            msg = "NA";
+        else if (*rec->suinfo->online_loc == '\0')
+            /* rec->sunum is invalid */
+            msg = "NA";
+        else
+            msg = rec->suinfo->online_status;
+        
+        if (keyword_list)
+            printf("## online=%s\n", msg);
+        else
+            printf("%s%s", (col++ ? "\t" : ""), msg);
+    }
 
     if (show_retention)
-      {
-       /* rec has the suinfo struct already */
-      char retain[20];
-      if (*rec->suinfo->online_loc == '\0')
-        strcpy(retain, "NA");
-      else
-        {
-        int y,m,d;
-        if (strcmp("N", rec->suinfo->online_status) == 0)
-          strcpy(retain,"-1");
+    {
+        /* rec has the suinfo struct already */
+        char retain[20];
+        
+        if (!rec->suinfo)
+            /* rec->sunum == -1 */
+            strcpy(retain, "NA");
+        else if (*rec->suinfo->online_loc == '\0')
+            /* rec->sunum is invalid */
+            strcpy(retain, "NA");
         else
-          {
-          int nscanned = sscanf(rec->suinfo->effective_date, "%4d%2d%2d", &y,&m,&d);
-          if (nscanned == 3) 
-            sprintf(retain, "%4d.%02d.%02d",y,m,d);
-          else
-            strcpy(retain, "NoRetValue ");
-          }
+        {
+            int y,m,d;
+            if (strcmp("N", rec->suinfo->online_status) == 0)
+                strcpy(retain,"-1");
+            else
+            {
+                int nscanned = sscanf(rec->suinfo->effective_date, "%4d%2d%2d", &y,&m,&d);
+                if (nscanned == 3) 
+                    sprintf(retain, "%4d.%02d.%02d",y,m,d);
+                else
+                    strcpy(retain, "NoRetValue ");
+            }
         }
-      if (keyword_list)
-        printf("## retain=%s\n", retain);
-      else
-        printf("%s%s", (col++ ? "\t" : ""), retain);
-      }
+        if (keyword_list)
+            printf("## retain=%s\n", retain);
+        else
+            printf("%s%s", (col++ ? "\t" : ""), retain);
+    }
 
     if (show_archive)
-      {
-      /* rec has the suinfo struct already */
-      char *msg;
-      if (*rec->suinfo->online_loc == '\0')
-        msg = "NA";
-      else
-        {
-        if(rec->suinfo->pa_status == DAAP && rec->suinfo->pa_substatus == DAADP)
-          msg = "Pending";
+    {
+        /* rec has the suinfo struct already */
+        char *msg;
+        
+        if (!rec->suinfo)
+            /* rec->sunum == -1 */
+            msg = "NA";
+        else if (*rec->suinfo->online_loc == '\0')
+            /* rec->sunum is invalid */
+            msg = "NA";
         else
-          msg = rec->suinfo->archive_status;
+        {
+            if(rec->suinfo->pa_status == DAAP && rec->suinfo->pa_substatus == DAADP)
+                msg = "Pending";
+            else
+                msg = rec->suinfo->archive_status;
         }
-      if (keyword_list)
-        printf("## archive=%s\n", msg);
-      else
-        printf("%s%s", (col++ ? "\t" : ""), msg);
-      }
+        if (keyword_list)
+            printf("## archive=%s\n", msg);
+        else
+            printf("%s%s", (col++ ? "\t" : ""), msg);
+    }
 
     if (show_tapeinfo)
-      {
-      /* rec has the suinfo struct already */
-      char *msg;
-      int fn;
-      if (*rec->suinfo->arch_tape == '\0')
+    {
+        /* rec has the suinfo struct already */
+        char *msg;
+        int fn;
+        
+        if (!rec->suinfo)
         {
-        msg = "NA";
-        fn = -9999;
+            /* rec->sunum == -1 */
+            msg = "NA";
+            fn = -9999;
         }
-      else
+        else if (*rec->suinfo->arch_tape == '\0')
         {
-        msg = rec->suinfo->arch_tape;
-        fn = rec->suinfo->arch_tape_fn;
+            msg = "NA";
+            fn = -9999;
         }
-      if (keyword_list)
+        else
         {
-        printf("## tapename=%s\n", msg);
-        printf("## tapeinfo=%04d\n", fn);
+            msg = rec->suinfo->arch_tape;
+            fn = rec->suinfo->arch_tape_fn;
         }
-      else
+        if (keyword_list)
         {
-        printf("%s%s", (col++ ? "\t" : ""), msg);
-        printf("%s%04d", (col++ ? "\t" : ""), fn);
+            printf("## tapename=%s\n", msg);
+            printf("## tapeinfo=%04d\n", fn);
         }
-      }
+        else
+        {
+            printf("%s%s", (col++ ? "\t" : ""), msg);
+            printf("%s%04d", (col++ ? "\t" : ""), fn);
+        }
+    }
 
     if (show_size)
-      {
-      /* rec has the suinfo struct already */
-      char size[20];
-      if (*rec->suinfo->online_loc == '\0')
-        strcpy(size, "NA");
-      else
-        sprintf(size, "%.0f", rec->suinfo->bytes);
-      if (keyword_list)
-        printf("## size=%s\n", size);
-      else
-        printf("%s%s", (col++ ? "\t" : ""), size);
-      }
+    {
+        /* rec has the suinfo struct already */
+        char size[20];
+        
+        if (!rec->suinfo)
+            /* rec->sunum == -1 */
+            strcpy(size, "NA");
+        else if (*rec->suinfo->online_loc == '\0')
+            /* rec->sunum is invalid */
+            strcpy(size, "NA");
+        else
+            sprintf(size, "%.0f", rec->suinfo->bytes);
+        if (keyword_list)
+            printf("## size=%s\n", size);
+        else
+            printf("%s%s", (col++ ? "\t" : ""), size);
+    }
 
     if (show_session)
       {  // show host, runtime, jsoc_version, and logdir

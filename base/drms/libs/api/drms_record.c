@@ -3186,7 +3186,7 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
                  {
                     if (!rec->suinfo)
                     {
-                       if (*suinfo && (ponesuinfo = (SUM_info_t **)hcon_lookup(*suinfo, key)))
+                       if (*suinfo && (ponesuinfo = (SUM_info_t **)hcon_lookup(*suinfo, key)) && *ponesuinfo)
                        {
                           /* The SU info was passed in to this function. */
                           dup = (SUM_info_t *)malloc(sizeof(SUM_info_t));
@@ -3257,8 +3257,12 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
            if (cntreqinfo > 0)
            {
               /* Call SUM_InfoEx(). */
+               /* THIS CODE DOES NOT FOLLOW LINKS TO TARGET SEGMENTS. */
               infostructs = (SUM_info_t **)malloc(sizeof(SUM_info_t *) * cntreqinfo);
               memset(infostructs, 0, sizeof(SUM_info_t *) * cntreqinfo);
+               
+               /* A -1 sunum provided to drms_getsuinfo() WILL result in an info struct being returned
+                * (but the struct will contain no information). */
               status = drms_getsuinfo(rs->records[0]->env, sunumreqinfo, cntreqinfo, infostructs);
 
               if (status != DRMS_SUCCESS)
@@ -3365,7 +3369,15 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
                            * of the SUM_info_t. When suinfo is destroyed, the source SUM_info_t 
                            * is deleted. */
                           rec->suinfo = (SUM_info_t *)malloc(sizeof(SUM_info_t));
-                          *(rec->suinfo) = **ponesuinfo;
+                           
+                           if (*ponesuinfo)
+                           {
+                               *(rec->suinfo) = **ponesuinfo;
+                           }
+                           else
+                           {
+                               memset(rec->suinfo, 0, sizeof(SUM_info_t));
+                           }
                        }
                        else
                        {
@@ -3440,100 +3452,267 @@ int drms_sortandstage_records(DRMS_RecordSet_t *rs, int retrieve, int dontwait, 
    return drms_stage_records_internal(rs, retrieve, dontwait, suinfo);   
 }
 
+static int InsertRec(HContainer_t **allRecs, DRMS_Record_t *rec, int *nsunums)
+{
+   char hashkey[DRMS_MAXHASHKEYLEN];
+   int istat = 0;
+
+   if (allRecs)
+   {
+      drms_make_hashkey(hashkey, rec->seriesinfo->seriesname, rec->recnum);
+      
+      if (!*allRecs)
+      {
+         *allRecs = hcon_create(sizeof(DRMS_Record_t *), 
+                                DRMS_MAXHASHKEYLEN, 
+                                NULL, 
+                                NULL, 
+                                NULL, 
+                                NULL, 
+                                0);
+      }
+
+      if (*allRecs)
+      {
+         if (!hcon_member_lower(*allRecs, hashkey))
+         {
+            (*nsunums)++;
+            hcon_insert_lower(*allRecs, hashkey, &rec);
+         }
+      }
+      else
+      {
+         fprintf(stderr, "Out of memory in InsertRec().\n");
+         istat = 1;
+      }
+   }
+   else
+   {
+      istat = 1;
+   }
+
+   return istat;
+}
+
+static int RecnumSort(const void *he1, const void *he2)
+{
+   DRMS_Record_t **pr1 = (DRMS_Record_t **)hcon_getval(*((HContainerElement_t **)he1));
+   DRMS_Record_t **pr2 = (DRMS_Record_t **)hcon_getval(*((HContainerElement_t **)he2));
+   DRMS_Record_t *r1 = NULL;
+   DRMS_Record_t *r2 = NULL;
+
+   XASSERT(pr1 && pr2);
+
+   r1 = *pr1;
+   r2 = *pr2;
+
+   return (r1->recnum < r2->recnum) ? -1 : (r1->recnum > r2->recnum ? 1 : 0);
+}
+
+/* recs is an array of DRMS_Record_t structs. */
+static HContainer_t *FindAllRecsWithSUs(DRMS_Record_t **recs, int nRecs, int *nAllRecs, int *status)
+{
+   int nsunums = 0;
+   HContainer_t *allRecs = NULL;
+   DRMS_Segment_t *seg = NULL;
+   int iRec;
+   HIterator_t *lastseg = NULL;
+   DRMS_Record_t *tRec = NULL;
+   int istat = DRMS_SUCCESS;
+
+   for (iRec = 0; iRec < nRecs && istat == DRMS_SUCCESS; iRec++)
+   {
+      while ((seg = drms_record_nextseg(recs[iRec], &lastseg, 0)))
+      {
+         if (seg->info->islink)
+         {
+            tRec = drms_link_follow(recs[iRec], seg->info->linkname, &istat);
+
+            if (istat == DRMS_ERROR_LINKNOTSET)
+            {
+               /* No link set for this record - skip and continue. */
+               continue;
+            }
+            else if (istat != DRMS_SUCCESS || tRec == NULL)
+            {
+               /* This is a more serious problem where we couldn't follow the link - bail. */
+               istat = DRMS_ERROR_BADLINK;
+               break;
+            }
+
+            /* We have a single segment linked to a segment in another record. */
+            if (InsertRec(&allRecs, tRec, &nsunums))
+            {
+               istat = DRMS_ERROR_INVALIDDATA;
+               break;
+            }
+         }
+      } /* while */
+      
+      if (lastseg)
+      {
+         hiter_destroy(&lastseg);
+      }
+
+      /* Add one for the record's record directory (if the record has an SU). */
+      if (recs[iRec]->sunum != -1)
+      {
+         if (InsertRec(&allRecs, recs[iRec], &nsunums))
+         {
+            istat = DRMS_ERROR_INVALIDDATA;
+         }
+      }
+   } /* for */
+
+   if (status)
+   {
+      *status = istat;
+   }
+
+   if (nAllRecs)
+   {
+      *nAllRecs = nsunums;
+   }
+
+   return allRecs;
+}
+
 /* ART - This should be modified to call drms_getsuinfo() only on records that do 
  * not already have a non-NULL suinfo field. */
 int drms_record_getinfo(DRMS_RecordSet_t *rs)
 {
-   int status = DRMS_SUCCESS;
-
-   DRMS_Record_t *rec = NULL;
-   int nSets = rs->ss_n;
-   int nRecs = 0;
-   int iSet;
-   int iRec;
-   int bail = 0;
-   long long *sunums = NULL;
-   SUM_info_t **infostructs = NULL;
-
-   if (rs->cursor)
-   {
-      /* This is a chunked recordset - defer the SUM_infoEx() call until the chunk is opened. */
-      rs->cursor->infoneeded = 1;
-      return(DRMS_SUCCESS);
-   }
-
-  if (rs->n >= 1)
-  {
-     for (iSet = 0; !bail && iSet < nSets; iSet++)
-     {
-        nRecs = drms_recordset_getssnrecs(rs, iSet, &status);
-
-        if (status != DRMS_SUCCESS)
+    int status = DRMS_SUCCESS;
+    
+    DRMS_Record_t *rec = NULL;
+    DRMS_Record_t **prec = NULL;
+    int nSets = rs->ss_n;
+    int nRecs = 0;
+    int nAllRecs; /* The number of records with associated SUs. This is equivalent to 
+                   * the number of SUNUMs to SUMS for info. This will NOT necessarily be
+                   * nRecs, since a record will have 1 sunum per linked segment, plus
+                   * 1 sunum for all non-linked segments (of which, there may be none). */
+    int iSet;
+    int iRec;
+    int bail = 0;
+    long long *sunums = NULL;
+    DRMS_Env_t *env = NULL;
+    SUM_info_t **infostructs = NULL;
+    HContainer_t *allRecs = NULL;
+    HIterator_t hit;
+    
+    if (rs->cursor)
+    {
+        /* This is a chunked recordset - defer the SUM_infoEx() call until the chunk is opened. */
+        rs->cursor->infoneeded = 1;
+        return(DRMS_SUCCESS);
+    }
+    
+    if (rs->n >= 1)
+    {
+        for (iSet = 0; !bail && iSet < nSets; iSet++)
         {
-           bail = 1;
-           break;
-        }
-
-        infostructs = (SUM_info_t **)malloc(sizeof(SUM_info_t *) * nRecs);
-        sunums = (long long *)malloc(sizeof(long long) * nRecs);
-
-        for (iRec = 0; iRec < nRecs; iRec++)
-        {
-           rec = rs->records[(rs->ss_starts)[iSet] + iRec];
-           sunums[iRec] = rec->sunum;
-        } /* iRec */
-
-        /* Insert results an array of structs - will be inserted back into
-         * the record structs when all drms_getsuinfo() calls have completed. */
-        status = drms_getsuinfo(rec->env, sunums, nRecs, infostructs);
-
-        if (sunums)
-        {
-           free(sunums);
-           sunums = NULL;
-        }
-
-        if (status != DRMS_SUCCESS)
-        {
-           fprintf(stderr, "drms_record_getinfo(): failure calling drms_getsuinfo(), error code %d.\n", status);
-           bail = 1;
-        }
-
-        /* Place the returned SUM_info_t structs back into the record structs.
-         * The allocated SUM_info_t must be freed in drms_free_records(). */
-        if (!bail)
-        {
-           for (iRec = 0; iRec < nRecs; iRec++)
-           {
-              rec = rs->records[(rs->ss_starts)[iSet] + iRec];
-
-              if (rec->suinfo)
-              {
-                 /* Must free existing SUM_info_t - drms_getsuinfo() was called more than once. */
-                 free(rec->suinfo);
-              }
-
-              rec->suinfo = infostructs[iRec];
-              rec->suinfo->next = NULL; /* just make sure */
-           }
-        }
-
-        if (infostructs)
-        {
-           free(infostructs);
-           infostructs = NULL;
-        }
-
-        if (sunums)
-        {
-           free(sunums);
-           sunums = NULL;
-        }
-        
-     } /* iSet */
-  }
-
-  return status;
+            nRecs = drms_recordset_getssnrecs(rs, iSet, &status);
+            
+            if (status == DRMS_SUCCESS)
+            {
+                allRecs = FindAllRecsWithSUs(&(rs->records[(rs->ss_starts)[iSet]]), 
+                                             nRecs, 
+                                             &nAllRecs, 
+                                             &status);
+            }
+            
+            if (status != DRMS_SUCCESS)
+            {
+                bail = 1;
+                break;
+            }
+            
+            infostructs = (SUM_info_t **)malloc(sizeof(SUM_info_t *) * nAllRecs);
+            sunums = (long long *)malloc(sizeof(long long) * nAllRecs);
+            
+            /* Iterate through all relevant records in this subset of records, in recnum order. */
+            hiter_new_sort(&hit, allRecs, RecnumSort);
+            iRec = 0;
+            while ((prec = (DRMS_Record_t **)hiter_getnext(&hit)) != NULL)
+            {
+                rec = *prec;
+                
+                if (!env)
+                {
+                    env = rec->env;
+                }
+                sunums[iRec++] = rec->sunum;
+            }
+            
+            hiter_free(&hit);
+            
+            /* Insert results into an array of structs - will be inserted back into
+             * the record structs. */
+            status = drms_getsuinfo(env, sunums, nAllRecs, infostructs);
+            
+            if (sunums)
+            {
+                free(sunums);
+                sunums = NULL;
+            }
+            
+            if (status != DRMS_SUCCESS)
+            {
+                fprintf(stderr, "drms_record_getinfo(): failure calling drms_getsuinfo(), error code %d.\n", status);
+                bail = 1;
+            }
+            
+            /* Place the returned SUM_info_t structs back into the record structs.
+             * The allocated SUM_info_t must be freed in drms_free_records(). */
+            if (!bail)
+            {
+                hiter_new_sort(&hit, allRecs, RecnumSort);
+                iRec = 0;
+                while ((prec = (DRMS_Record_t **)hiter_getnext(&hit)) != NULL)
+                {
+                    rec = *prec;
+                    
+                    if (rec->suinfo)
+                    {
+                        /* Must free existing SUM_info_t - drms_getsuinfo() was called more than once. */
+                        free(rec->suinfo);
+                    }
+                    
+                    if (rec->sunum != infostructs[iRec]->sunum)
+                    {
+                        fprintf(stderr, "Infostruct sunum does not match the record's sunum.\n");
+                        status = DRMS_ERROR_INVALIDRECORD;
+                        break;
+                    }
+                    
+                    rec->suinfo = infostructs[iRec++];
+                    rec->suinfo->next = NULL; /* just make sure */
+                }
+                
+                hiter_free(&hit);
+            }
+            
+            if (allRecs)
+            {
+                hcon_destroy(&allRecs);
+            }
+            
+            if (infostructs)
+            {
+                free(infostructs);
+                infostructs = NULL;
+            }
+            
+            if (sunums)
+            {
+                free(sunums);
+                sunums = NULL;
+            }
+            
+        } /* iSet */
+    }
+    
+    return status;
 }
 
 /* Call drms_free_record for each record in a record set. */

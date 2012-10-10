@@ -3125,6 +3125,15 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 
           for (i = 0, isunum = 0; i < request->reqcnt; i++)
           {
+             /* One or more sunums may be ULLONG_MAX (originally, they were -1, but because request->sunum 
+              * is an array of uint64_t, they will have been cast to ULLONG_MAX). Don't put the -1 
+              * requests in dxarray, because -1 is invalid as far as SUMS is concerned. */
+             if (request->sunum[i] == ULLONG_MAX)
+             {
+                /* skip sunum == -1. */
+                continue;
+             }
+
              snprintf(key, sizeof(key), "%llu", (unsigned long long)request->sunum[i]);
              if (!hcon_member(map, key))
              {
@@ -3187,7 +3196,8 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
              if ((pinfo = hcon_lookup(map, key)) != NULL)
              {
                 *pinfo = psinfo;
-                /* work around SUMS ditching the SUNUM for bad SUNUMs */
+                /* work around SUMS ditching the SUNUM for bad SUNUMs - modify the info struct returned 
+                 * by SUMS directly. */
                 (*pinfo)->sunum = dxarray[i];
              }
              else
@@ -3204,6 +3214,19 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
            {
                for (i = 0; i < request->reqcnt; i++)
                {
+                   /* request->sunum may contain duplicate sunums. One or more sunums may be ULLONG_MAX also 
+                    * (originally, they were -1, but because request->sunum is an array of uint64_t, 
+                    * they will have been cast to ULLONG_MAX). */
+                   if (request->sunum[i] == ULLONG_MAX)
+                   {
+                       /* Create a dummy, empty SUM_info_t*/
+                       reply->sudir[i] = (char *)malloc(sizeof(SUM_info_t));
+                       memset(reply->sudir[i], 0, sizeof(SUM_info_t));
+                       ((SUM_info_t *)(reply->sudir[i]))->sunum = ULLONG_MAX; /* This will be cast to -1 by the 
+                                                                               * calling code. */
+                       continue;
+                   }
+
                    snprintf(key, sizeof(key), "%llu", (unsigned long long)(request->sunum[i]));
                    if ((pinfo = hcon_lookup(map, key)) != NULL)
                    {

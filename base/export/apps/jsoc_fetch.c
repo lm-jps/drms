@@ -1125,7 +1125,7 @@ int DoIt(void)
        JSONDIE("There are no SUs in sunum or ds params");
     }
 
-    /* Fetch SUNUM_info_ts for all sunums now. */
+    /* Fetch SUNUM_info_ts for all sunums now. THIS CODE DOES NOT FOLLOW LINKS TO TARGET SEGMENTS. */
     infostructs = (SUM_info_t **)malloc(sizeof(SUM_info_t *) * nsunums);
     status = drms_getsuinfo(drms_env, (long long *)sunumarr, nsunums, infostructs);
 
@@ -1593,65 +1593,71 @@ check for requestor to be valid remote DRMS site
       if (strncmp(rec->seriesinfo->seriesname, "jsoc.export", 11)== 0)
         JSONDIE("Export of jsoc_export series not allowed.");
       while (seg = drms_record_nextseg(rec, &segp, 1))
-        {
-        DRMS_Record_t *segrec = seg->record;
-        SUM_info_t *sinfo = rec->suinfo;
-        if (!sinfo)
+      {
+          DRMS_Record_t *segrec = seg->record;
+          SUM_info_t *sinfo = rec->suinfo;
+          
+          if (!sinfo)
           {
-          fprintf(stderr, "JSOC_FETCH Bad sunum %lld for recnum %lld in RecordSet: %s\n", segrec->sunum, rec->recnum, dsquery);
-          // no longer die here, leave it to the export process to deal with missing segments
-          all_online = 0;
+              /* There was a request for an sunum of -1. */
+              all_online = 0;
           }
-  	else if (strcmp(sinfo->online_status,"N") == 0)
-          all_online = 0;
-        else
+          else if (*rec->suinfo->online_loc == '\0')
+          {
+              fprintf(stderr, "JSOC_FETCH Bad sunum %lld for recnum %lld in RecordSet: %s\n", segrec->sunum, rec->recnum, dsquery);
+              // no longer die here, leave it to the export process to deal with missing segments
+              all_online = 0;
+          }
+          else if (strcmp(sinfo->online_status,"N") == 0)
+              all_online = 0;
+          else
           { // found good sinfo info
-          struct stat buf;
-  	  char path[DRMS_MAXPATHLEN];
-	  drms_record_directory(segrec, path, 0);
-          drms_segment_filename(seg, path);
-          if (stat(path, &buf) != 0)
-            { // segment specified file is not present.
-              // it is an error if the record and QUALITY >=0 but no file matching
-              // the segment file name unless the filename is empty.
-            if (*(seg->filename))
-              {
-              DRMS_Keyword_t *quality = drms_keyword_lookup(segrec, "QUALITY",1);
-              if (quality && drms_getkey_int(segrec, "QUALITY", 0) >= 0)
-                { // there should be a file
-fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path);
-  	        // JSONDIE2("Bad path (file missing) in a record in RecordSet: ", dsquery);
-                }
-              }
-            }
-          else // Stat succeeded, get size
-            {
-            if (S_ISDIR(buf.st_mode))
-              { // Segment is directory, get size == for now == use system "du"
-              char cmd[DRMS_MAXPATHLEN+100];
-              FILE *du;
-              long long dirsize=0;
-              sprintf(cmd,"/usr/bin/du -s -b %s", path);
-              du = popen(cmd, "r");
-              if (du)
-                {
-                if (fscanf(du,"%lld",&dirsize) == 1)
+              struct stat buf;
+              char path[DRMS_MAXPATHLEN];
+              drms_record_directory(segrec, path, 0);
+              drms_segment_filename(seg, path);
+              if (stat(path, &buf) != 0)
+              { // segment specified file is not present.
+                  // it is an error if the record and QUALITY >=0 but no file matching
+                  // the segment file name unless the filename is empty.
+                  if (*(seg->filename))
                   {
-                  size += dirsize;
-                  segcount += 1;
+                      DRMS_Keyword_t *quality = drms_keyword_lookup(segrec, "QUALITY",1);
+                      if (quality && drms_getkey_int(segrec, "QUALITY", 0) >= 0)
+                      { // there should be a file
+                          fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path);
+                          // JSONDIE2("Bad path (file missing) in a record in RecordSet: ", dsquery);
+                      }
                   }
-                pclose(du);
-                }
-//fprintf(stderr,"dir size=%lld\n",dirsize);
               }
-            else
+              else // Stat succeeded, get size
               {
-              size += buf.st_size;
-              segcount += 1;
+                  if (S_ISDIR(buf.st_mode))
+                  { // Segment is directory, get size == for now == use system "du"
+                      char cmd[DRMS_MAXPATHLEN+100];
+                      FILE *du;
+                      long long dirsize=0;
+                      sprintf(cmd,"/usr/bin/du -s -b %s", path);
+                      du = popen(cmd, "r");
+                      if (du)
+                      {
+                          if (fscanf(du,"%lld",&dirsize) == 1)
+                          {
+                              size += dirsize;
+                              segcount += 1;
+                          }
+                          pclose(du);
+                      }
+                      //fprintf(stderr,"dir size=%lld\n",dirsize);
+                  }
+                  else
+                  {
+                      size += buf.st_size;
+                      segcount += 1;
+                  }
               }
-            }
           }
-        }
+      }
       if (segp)
         free(segp); 
       }

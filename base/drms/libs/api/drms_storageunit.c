@@ -1216,14 +1216,16 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
          request->dontwait = 0;
       }
 
-      snprintf(key, sizeof(key), "%llu", (unsigned long long)sunums[isunum]);
+      snprintf(key, sizeof(key), "%llu", (unsigned long long)sunums[isunum]); /* -1 converted to ULLONG_MAX. */
       if (!hcon_member(map, key))
       {
-         request->sunum[nReqs] = (uint64_t)sunums[isunum];
+         /* sunums[isnum] could be equal to -1. The code in drms_server.c will handle these, not 
+          * sending them onto sums. */
+         request->sunum[nReqs] = (uint64_t)sunums[isunum]; /* -1 converted to ULLONG_MAX. */
          hcon_insert(map, key, &nulladdr);
          nReqs++;
       }
-
+      
       /* ART - Although SUMS will handle up to MAXSUMREQCNT SUNUMs, the keylist 
        * code used by SUMS is inefficient - the optimal batch size is 64. */
       if (nReqs == MAXSUMREQCNT || (isunum + 1 == nsunums && nReqs > 0))
@@ -1269,9 +1271,12 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
             for (iinfo = 0; iinfo < nReqs; iinfo++)
             {
                /* NOTE - if an SUNUM is unknown, the SUM_info_t returned from SUM_infoEx() will have the sunum set 
-                * to -1.  But drms_server.c will overwrite that -1 with the SUNUM requested. */
+                * to -1.  But drms_server.c will overwrite that -1 with the SUNUM requested. BUT, there could have
+                * been a sunum of -1 passed to this function to begin with. In that case, the -1 got passed to 
+                * drms_server.c, and drms_server.c will return an info struct for that sunum, but it will
+                * be all zeros (except for the sunum, which will be -1). */
                retinfo = (SUM_info_t *)reply->sudir[iinfo];
-               snprintf(key, sizeof(key), "%llu", (unsigned long long)(retinfo->sunum));
+               snprintf(key, sizeof(key), "%llu", (unsigned long long)(retinfo->sunum)); /* -1 converted to ULLONG_MAX. */
                if ((pinfo = hcon_lookup(map, key)) != NULL)
                {
                   *pinfo = retinfo;
@@ -1301,7 +1306,7 @@ int drms_su_getinfo(DRMS_Env_t *env, long long *sunums, int nsunums, SUM_info_t 
       /* Copy all the SUM_info_t returned by SUMS into the info parameter (for return to caller). */
       for (isunum = 0; isunum < nsunums; isunum++)
       {
-         snprintf(key, sizeof(key), "%llu", (unsigned long long)(sunums[isunum]));
+         snprintf(key, sizeof(key), "%llu", (unsigned long long)(sunums[isunum])); /* -1 converted to ULLONG_MAX. */
          if ((pinfo = hcon_lookup(map, key)) != NULL)
          {
             info[isunum] = (SUM_info_t *)malloc(sizeof(SUM_info_t));
