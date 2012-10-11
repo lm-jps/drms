@@ -1568,6 +1568,10 @@ check for requestor to be valid remote DRMS site
         }
     rcount = rs->n;
     drms_stage_records(rs, 0, 0);
+        
+        /* drms_record_getinfo() will now fill-in the rec->suinfo for all recs in rs, PLUS all
+         * linked records (so if rs is an aia.lev1_euv_12s rs, then records in aia.lev1 will
+         * get their rec->suinfo structs initialized). */
     drms_record_getinfo(rs);
   
     // Do survey of recordset
@@ -1592,19 +1596,68 @@ check for requestor to be valid remote DRMS site
       // Disallow exporting jsoc.export* series
       if (strncmp(rec->seriesinfo->seriesname, "jsoc.export", 11)== 0)
         JSONDIE("Export of jsoc_export series not allowed.");
-      while (seg = drms_record_nextseg(rec, &segp, 1))
+          
+          DRMS_Record_t *tRec = NULL;
+          DRMS_Record_t *segrec = NULL;
+          SUM_info_t *sinfo = NULL;
+          DRMS_Segment_t *tSeg = NULL;
+
+          /* Don't follow links when obtaining the segments. 
+           * If you do that, and there is a problem following the 
+           * link (e.g., the link is not set), then the 
+           * function returns NULL, which would terminate the 
+           * while loop. But in this case, we want to continue
+           * with the next segment. It is as if the segment
+           * file does not exist, which shouldn't cause this
+           * loop to terminate.
+           */
+      while (seg = drms_record_nextseg(rec, &segp, 0))
       {
-          DRMS_Record_t *segrec = seg->record;
-          SUM_info_t *sinfo = rec->suinfo;
+          /* If this is a linked segment, then follow the link. */
+          if (seg->info->islink)
+          {
+              tRec = drms_link_follow(rec, seg->info->linkname, &status);
+              tSeg = hcon_lookup_lower(&tRec->segments, seg->info->target_seg);
+
+              if (status == DRMS_ERROR_LINKNOTSET)
+              {
+                  /* No link set for this record. */
+                  
+                  /* The whole point of this section of code is to:
+                   * 1. Determine if all segment files are online,
+                   * 2. See if there is at least one segment file to export, and 
+                   * 3. Count the number of bytes in all the segment files being exported. 
+                   *
+                   * So, if there is no link, this is the same as saying there is no segment file. */
+                  status = DRMS_SUCCESS;
+                  continue;
+              }
+              else if (status != DRMS_SUCCESS || tRec == NULL)
+              {
+                  /* This is a more serious problem where we couldn't follow the link - bail. */
+                  status = DRMS_ERROR_BADLINK;
+                  JSONDIE("Problem following link to target segment.");
+              }
+              
+              /* We have a single segment linked to a segment in another record. */
+              segrec = tRec; /* Use the target rec (aia.lev1), not the source rec (aia.lev1_euv_12s). */
+          }
+          else
+          {
+              tSeg = seg;
+              segrec = seg->record;
+          }
+
+          sinfo = segrec->suinfo;
           
           if (!sinfo)
           {
               /* There was a request for an sunum of -1. */
               all_online = 0;
           }
-          else if (*rec->suinfo->online_loc == '\0')
+          else if (sinfo->online_loc == '\0')
           {
-              fprintf(stderr, "JSOC_FETCH Bad sunum %lld for recnum %lld in RecordSet: %s\n", segrec->sunum, rec->recnum, dsquery);
+             fprintf(stderr, "JSOC_FETCH Bad sunum %lld for recnum %s:%lld in RecordSet: %s\n", segrec->sunum, segrec->seriesinfo->seriesname, segrec->recnum, dsquery);
               // no longer die here, leave it to the export process to deal with missing segments
               all_online = 0;
           }
@@ -1614,18 +1667,18 @@ check for requestor to be valid remote DRMS site
           { // found good sinfo info
               struct stat buf;
               char path[DRMS_MAXPATHLEN];
-              drms_record_directory(segrec, path, 0);
-              drms_segment_filename(seg, path);
+              //drms_record_directory(segrec, path, 0); I think this was a typo.
+              drms_segment_filename(tSeg, path);
               if (stat(path, &buf) != 0)
               { // segment specified file is not present.
                   // it is an error if the record and QUALITY >=0 but no file matching
                   // the segment file name unless the filename is empty.
-                  if (*(seg->filename))
+                  if (*(tSeg->filename))
                   {
                       DRMS_Keyword_t *quality = drms_keyword_lookup(segrec, "QUALITY",1);
                       if (quality && drms_getkey_int(segrec, "QUALITY", 0) >= 0)
                       { // there should be a file
-                          fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",seg->filename,path);
+                          fprintf(stderr,"QUALITY >=0, filename=%s, but %s not found\n",tSeg->filename,path);
                           // JSONDIE2("Bad path (file missing) in a record in RecordSet: ", dsquery);
                       }
                   }
