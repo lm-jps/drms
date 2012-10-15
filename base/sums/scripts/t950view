@@ -2358,6 +2358,7 @@ sub Exptlm_sub {
   close(QLOG);
 
   #hmi.lev1 is group 10
+  #eventually must query sum_main for owning_series, e.g. hmi.lev1 is both grp 6 and 10
   $sqlcmd = "select tapeid,last_write from sum_tape where group_id=10 and closed=2 order by last_write";
   $sth = $dbh->prepare($sqlcmd);
   if ( !defined $sth ) {
