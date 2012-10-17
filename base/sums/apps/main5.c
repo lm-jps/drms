@@ -9,8 +9,6 @@
 #include <rpc/rpc.h>
 #include <sum_rpc.h>
 #include <soi_error.h>
-<<<<<<< main5.c
-=======
 /*************************/
 //#include <stropts.h>
 #include <sys/mtio.h>
@@ -23,7 +21,6 @@
 
 /* Must include decls */
 int SUM_drop_series(char *tablename);
->>>>>>> 1.3
 
 extern int errno;
 /*static void respd();*/
