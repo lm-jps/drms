@@ -362,6 +362,7 @@ struct DRMS_Env_struct
                     * By default this is INT_MIN, which implies no timeout. */
   int jsdsgetret; /* If 1, then use the retention value of the series' jsd when calling SUM_get(). */
   int sumssafe; /* If 0, then don't call sums because DRMS timed-out waiting for SUMS. */
+  int createshadows;  /* 1 if it is okay for module code to attempt to create shadow tables. */
 };
 
 /** \brief DRMS environment struct reference */
@@ -552,6 +553,9 @@ typedef struct DRMS_SeriesInfo_struct
   int dbidx_num;   /* Number of keywords to make db index. */
   struct DRMS_Keyword_struct *dbidx_keywords[DRMS_MAXDBIDX]; 
   char version[DRMS_MAXSERIESVERSION];
+    int createshadow; /* The jsd contained a line requesting that the shadow be created. 
+                       * Used only when running create_series on a jsd. */
+    int hasshadow; /* -1: don't know, 0: no, 1: yes. */
 }  DRMS_SeriesInfo_t;
 
 

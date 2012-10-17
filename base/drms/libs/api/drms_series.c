@@ -4,13 +4,20 @@
 #include "xmem.h"
 #include "atoinc.h"
 
+/* There were problems coping with concurrent access to this table. For now, we're abandoning
+ * using the TOC. We can revisit this in the future if counting is too slow. */
+
+#if (defined TOC && TOC)
 #define kTableOfCountsNS   "public"
 #define kTableOfCountsTab  "recordcounts"
 #define kTableOfCountsColSeries "seriesname"
 #define kTableOfCountsColNRecs "nrecords"
+#endif
+
 #define kShadowSuffix "_shadow"
-#define kShadowColNRecs "nrecords"
 #define kShadowColRecnum "recnum"
+#define kShadowColNRecs "nrecords"
+
 
 #if (defined TOC && TOC)
 static int TocExists(DRMS_Env_t *env, int *status)
@@ -27,23 +34,111 @@ static int TocExists(DRMS_Env_t *env, int *status)
 
    return tabexists;
 }
-#endif
 
-static int ShadowExists(DRMS_Env_t *env, const char *series, int *status)
+static int CreateTableOfCounts(DRMS_Env_t *env)
+{
+   char createstmt[8192];
+   int status = DRMS_SUCCESS;
+
+   /* Create the table of counts. */
+   snprintf(createstmt, sizeof(createstmt), "CREATE TABLE %s (%s text not null, %s bigint not null, PRIMARY KEY (seriesname))", kTableOfCountsTab, kTableOfCountsColSeries, kTableOfCountsColNRecs);
+
+   if (drms_dms(env->session, NULL, createstmt))
+   {
+      fprintf(stderr, "Failed: %s\n", createstmt);
+      status = DRMS_ERROR_BADDBQUERY;
+   }
+   else
+   {
+      snprintf(createstmt, sizeof(createstmt), "GRANT ALL ON %s TO public", kTableOfCountsTab);
+
+      if (drms_dms(env->session, NULL, createstmt))
+      {
+         fprintf(stderr, "Failed: %s\n", createstmt);
+         status = DRMS_ERROR_BADDBQUERY;
+      }
+      else
+      {
+         /* Create an lower-case index on seriesname. This will speed up queries which will use seriesname
+          * as the search criterion. */
+         snprintf(createstmt, sizeof(createstmt), "CREATE INDEX %s_%s_lower ON %s.%s (lower(%s))", kTableOfCountsTab, kTableOfCountsColSeries, kTableOfCountsNS, kTableOfCountsTab, kTableOfCountsColSeries);
+
+         if (drms_dms(env->session, NULL, createstmt))
+         {
+            fprintf(stderr, "Failed: %s\n", createstmt);
+            status = DRMS_ERROR_BADDBQUERY;
+         }
+      }
+   }
+
+   return status;
+}
+
+static long long CountRecordGroups(DRMS_Env_t *env,
+                                   const char *series,
+                                   int *status)
 {
    int istat = DRMS_SUCCESS;
-   int tabexists = 0;
-   char *namespace = NULL;
-   char *table = NULL;
-   char shadowtable[DRMS_MAXSERIESNAMELEN];
+   char query[DRMS_MAXQUERYLEN];
+   char *pklist = NULL;
+   size_t stsz = DRMS_MAXQUERYLEN;
+   DB_Text_Result_t *tres = NULL;
+   long long count = -1;
+   int ipkey;
 
-   if (!get_namespace(series, &namespace, &table))
+   char *lcseries = strdup(series);
+
+   if (lcseries)
    {
-      snprintf(shadowtable, sizeof(shadowtable), "%s%s", table, kShadowSuffix);
-      tabexists = drms_query_tabexists(env->session, namespace, shadowtable, &istat);
+      strtolower(lcseries);
+      pklist = malloc(stsz);
 
-      free(namespace);
-      free(table);
+      if (pklist)
+      {
+         DRMS_Record_t *template = drms_template_record(env, series, &istat);
+
+         *pklist = '\0';
+
+         if (istat == DRMS_SUCCESS)
+         {
+            /* manually cons together list of prime-key names */
+            for (ipkey = 0; ipkey < template->seriesinfo->pidx_num; ipkey++)
+            {
+               pklist = base_strcatalloc(pklist, lcseries, &stsz);
+               pklist = base_strcatalloc(pklist, ".", &stsz);
+               pklist = base_strcatalloc(pklist, template->seriesinfo->pidx_keywords[ipkey]->info->name, &stsz);
+
+               if (ipkey < template->seriesinfo->pidx_num - 1)
+               {
+                  pklist = base_strcatalloc(pklist, ", ", &stsz);
+               }
+            }
+
+            snprintf(query, sizeof(query), "SELECT count(*) FROM (SELECT max(recnum) FROM %s GROUP BY %s) AS T1", lcseries, pklist);
+
+            tres = drms_query_txt(env->session, query);
+
+            if (tres)
+            {
+               if (tres->num_rows == 1 && tres->num_cols == 1)
+               {
+                  count = atoll(tres->field[0][0]);
+               }
+
+               db_free_text_result(tres);
+               tres = NULL;
+            }
+            else
+            {
+               fprintf(stderr, "Failed: %s\n", query);
+               istat = DRMS_ERROR_BADDBQUERY;
+            }
+         }
+      }
+      else
+      {
+         istat = DRMS_ERROR_OUTOFMEMORY;
+      }
    }
    else
    {
@@ -55,7 +150,7 @@ static int ShadowExists(DRMS_Env_t *env, const char *series, int *status)
       *status = istat;
    }
 
-   return tabexists;
+   return count;
 }
 
 /* Determine if 'series' is present in ns.tab */
@@ -77,7 +172,7 @@ static int IsSeriesPresent(DRMS_Env_t *env, const char *ns, const char *tab, con
       {
          *query = '\0';
 
-         query = base_strcatalloc(query, "SELECT seriesname from ", &stsz);
+         query = base_strcatalloc(query, "SELECT seriesname FROM ", &stsz);
          query = base_strcatalloc(query, ns, &stsz);
          query = base_strcatalloc(query, ".", &stsz);
          query = base_strcatalloc(query, tab, &stsz);
@@ -86,7 +181,7 @@ static int IsSeriesPresent(DRMS_Env_t *env, const char *ns, const char *tab, con
          query = base_strcatalloc(query, "'", &stsz);
 
          tres = drms_query_txt(env->session, query);
-      
+
          if (tres)
          {
             if (tres->num_rows == 1)
@@ -126,13 +221,1484 @@ static int IsSeriesPresent(DRMS_Env_t *env, const char *ns, const char *tab, con
    {
       istat = DRMS_ERROR_OUTOFMEMORY;
    }
-   
+
    if (status)
    {
       *status = istat;
    }
 
    return ans;
+}
+
+/* Insert the tuple (series, count) into table ns.tab. */
+static int InsertSeries(DRMS_Env_t *env, const char *ns, const char *tab, const char *series, long long count)
+{
+   char stmnt[8192];
+   int status = DRMS_SUCCESS;
+
+   snprintf(stmnt, sizeof(stmnt), "INSERT INTO %s.%s (%s, %s) VALUES ('%s', %lld)", ns, tab, "seriesname", "nrecords", series, count);
+
+   if (drms_dms(env->session, NULL, stmnt))
+   {
+      fprintf(stderr, "Failed: %s\n", stmnt);
+      status = DRMS_ERROR_BADDBQUERY;
+   }
+
+   return status;
+}
+
+static int AdvanceGroupCount(DRMS_Env_t *env,
+                             const char *ns,
+                             const char *tab,
+                             const char *series)
+{
+   // UPDATE public.artatest SET nrecords = nrecords + 1 WHERE lower(seriesname) = 'su_arta.fd_m_96m_lev18';
+   char *query = NULL;
+   size_t stsz = 8192;
+   char *lcseries = NULL;
+   int status = DRMS_SUCCESS;
+
+   lcseries = strdup(series);
+   if (lcseries)
+   {
+      strtolower(lcseries);
+
+      query = malloc(stsz);
+      if (query)
+      {
+         *query = '\0';
+
+         if (query)
+         {
+            query = base_strcatalloc(query, "UPDATE ", &stsz);
+            query = base_strcatalloc(query, ns, &stsz);
+            query = base_strcatalloc(query, ".", &stsz);
+            query = base_strcatalloc(query, tab, &stsz);
+            query = base_strcatalloc(query, " SET nrecords = nrecords + 1 WHERE lower(seriesname) = '", &stsz);
+            query = base_strcatalloc(query, lcseries, &stsz);
+            query = base_strcatalloc(query, "'", &stsz);
+
+            if (drms_dms(env->session, NULL, query))
+            {
+               fprintf(stderr, "Failed: %s\n", query);
+               status = DRMS_ERROR_BADDBQUERY;
+            }
+
+            free(query);
+            query = NULL;
+         }
+      }
+      else
+      {
+         status = DRMS_ERROR_OUTOFMEMORY;
+      }
+      free(lcseries);
+      lcseries = NULL;
+   }
+   else
+   {
+      status = DRMS_ERROR_OUTOFMEMORY;
+   }
+
+   return status;
+}
+#endif
+
+static int ShadowExists(DRMS_Env_t *env, const char *series, int *status)
+{
+    int istat = DRMS_SUCCESS;
+    int tabexists = 0;
+    char *namespace = NULL;
+    char *table = NULL;
+    char shadowtable[DRMS_MAXSERIESNAMELEN];
+    DRMS_Record_t *template = NULL;
+    
+    template = drms_template_record(env, series, &istat);
+    
+    if (istat == DRMS_SUCCESS)
+    {
+        /* First check template->seriesinfo->hasshadow. */
+        if (template->seriesinfo->hasshadow == 1)
+        {
+            return 1;
+        }
+        else if (template->seriesinfo->hasshadow == 0)
+        {
+            return 0;
+        }
+        
+        /* else fall through and check for the existing of the table. */
+        
+        if (!get_namespace(series, &namespace, &table))
+        {
+            snprintf(shadowtable, sizeof(shadowtable), "%s%s", table, kShadowSuffix);
+            tabexists = drms_query_tabexists(env->session, namespace, shadowtable, &istat);
+            
+            free(namespace);
+            free(table);
+        }
+        else
+        {
+            istat = DRMS_ERROR_OUTOFMEMORY;
+        }
+        
+        template->seriesinfo->hasshadow = tabexists;
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return tabexists;
+}
+
+/* Returns 1 on error, 0 otherwise. */
+static int GetTempTable(char *tabname, int size)
+{
+   static int id = 0;
+
+   if (id < INT_MAX)
+   {
+      snprintf(tabname, size, "shadowtemp%03d", id);
+      id++;
+      return 0;
+   }
+
+   return 1;
+}
+
+/* If this is a big table, then we don't want to do any of this on the client side. Just derive a SQL statement 
+ * and let the server manage memory and other resources. */
+// INSERT INTO <shadow table> (pkey1, pkey2, ..., nrecords, recnum) SELECT T1.pkey1, T1.pkey2, ..., T2.c, T2.m FROM <series table> AS T1, (SELECT count(*) AS c, max(recnum) AS m FROM <series table> GROUP BY pkey1, pkey2, ...) AS T2 WHERE T1.recnum = T2.m 
+static int PopulateShadow(DRMS_Env_t *env, const char *series)
+{
+    int status = DRMS_SUCCESS;
+    char *lcseries = NULL;
+    char *pklist = NULL; /* comma-separated list of lower-case prime-key keyword names */
+    char *tpklist = NULL;
+    size_t stsz = DRMS_MAXQUERYLEN;
+    size_t stsz2 = DRMS_MAXQUERYLEN;
+    int ipkey;
+    char stmnt[8192];
+    DRMS_Keyword_t *key = NULL;
+    
+    lcseries = strdup(series);
+    pklist = malloc(stsz);
+    tpklist = malloc(stsz2);
+    
+    if (lcseries && pklist && tpklist)
+    {
+        DRMS_Record_t *template = drms_template_record(env, series, &status);
+        char lckeyname[DRMS_MAXKEYNAMELEN + 1];
+        
+        *pklist = '\0';
+        *tpklist = '\0';
+
+        if (status == DRMS_SUCCESS)
+        {
+            /* manually cons together list of prime-key names */
+            for (ipkey = 0; ipkey < template->seriesinfo->pidx_num; ipkey++)
+            {
+                key = template->seriesinfo->pidx_keywords[ipkey];
+                snprintf(lckeyname, sizeof(lckeyname), "%s", key->info->name);
+                strtolower(lckeyname);
+                
+                pklist = base_strcatalloc(pklist, lckeyname, &stsz);
+                tpklist = base_strcatalloc(tpklist, "T1.", &stsz2);
+                tpklist = base_strcatalloc(tpklist, lckeyname, &stsz2);
+                
+                if (ipkey < template->seriesinfo->pidx_num - 1)
+                {
+                    pklist = base_strcatalloc(pklist, ", ", &stsz);
+                    tpklist = base_strcatalloc(tpklist, ", ", &stsz2);
+                }
+            }
+            
+            snprintf(stmnt, sizeof(stmnt), "INSERT INTO %s%s (%s, %s, %s) SELECT %s, T2.c, T2.m FROM %s AS T1, (SELECT count(*) AS c, max(recnum) AS m FROM %s GROUP BY %s) AS T2 WHERE T1.recnum = T2.m", series, kShadowSuffix, pklist, kShadowColNRecs, kShadowColRecnum, tpklist, lcseries, lcseries, pklist);
+            
+            if (drms_dms(env->session, NULL, stmnt))
+            {
+                fprintf(stderr, "Failed: %s\n", stmnt);
+                status = DRMS_ERROR_BADDBQUERY;
+            }
+        }
+    }
+    else
+    {
+        status = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    return status;
+}
+
+/* Update an EXISTING record in the shadow table. */
+static int UpdateShadow(DRMS_Env_t *env,
+                        const char *series,
+                        char **pkeynames,
+                        int ncols,
+                        long long recnum,
+                        int added)
+{
+    char *lcseries = NULL;
+    char *namespace = NULL;
+    char *table = NULL;
+    char *query = NULL;
+    size_t stsz = 1024;
+    char srecnum[32];
+    char smaxrec[32];
+    char scolnum[8];
+    DB_Binary_Result_t *qres = NULL;
+    long long maxrec = -1;
+    int status = DRMS_SUCCESS;
+    
+    /* Find the existing record in shadow table, using the series name. */
+    lcseries = strdup(series);
+    query = malloc(stsz);
+    
+    if (lcseries && query)
+    {
+        *query = '\0';
+        
+        if (!get_namespace(series, &namespace, &table))
+        {
+            int icol;
+            
+            /* Is the record just inserted the newest version?
+             *
+             * This query simply finds the maximum record number in the series table of all records that compose
+             * the DRMS record that just got a new version record inserted into it (or that just got a version
+             * deleted from it).
+             *
+             * SELECT max(T1.recnum) FROM <series> as T1, (SELECT <pkey1> AS p1, <pkey2> AS p2, ... FROM <series> WHERE recnum = <recnum>) AS T2 WHERE T1.<pkey1> = T2.p1 AND T1.<pkey2> = T2.p2 AND ...
+             *
+             * if (recnum > maxrec) newest = 1;
+             */
+            snprintf(srecnum, sizeof(srecnum), "%lld", recnum);
+            
+            query = base_strcatalloc(query, "SELECT max(T1.recnum) FROM ", &stsz);
+            query = base_strcatalloc(query, lcseries, &stsz);
+            query = base_strcatalloc(query, "AS T1, (SELECT ", &stsz);
+            
+            for (icol = 0; icol < ncols; icol++)
+            {
+                snprintf(scolnum, sizeof(scolnum), "%d", icol);
+                query = base_strcatalloc(query, pkeynames[icol], &stsz);
+                query = base_strcatalloc(query, " AS p", &stsz);
+                query = base_strcatalloc(query, scolnum, &stsz);
+                
+                if (icol < ncols - 1)
+                {
+                    query = base_strcatalloc(query, ", ", &stsz);
+                }
+            }
+            
+            query = base_strcatalloc(query, " FROM ", &stsz);
+            query = base_strcatalloc(query, lcseries, &stsz);
+            query = base_strcatalloc(query, " WHERE recnum = ", &stsz);
+            query = base_strcatalloc(query, srecnum, &stsz);
+            query = base_strcatalloc(query, ") AS T2 WHERE ", &stsz);
+            
+            for (icol = 0; icol < ncols; icol++)
+            {
+                snprintf(scolnum, sizeof(scolnum), "%d", icol);
+                query = base_strcatalloc(query, "T1.", &stsz);
+                query = base_strcatalloc(query, pkeynames[icol], &stsz);
+                query = base_strcatalloc(query, " = T2.p", &stsz);
+                query = base_strcatalloc(query, scolnum, &stsz);
+                
+                if (icol < ncols - 1)
+                {
+                    query = base_strcatalloc(query, " AND ", &stsz);
+                }
+            }
+            
+            if ((qres = drms_query_bin(env->session, query)) != NULL)
+            {
+                if (qres->num_cols == 1 && qres->num_rows == 1)
+                {
+                    maxrec = db_binary_field_getlonglong(qres, 0, 0);
+                }
+                else
+                {
+                    status = DRMS_ERROR_BADDBQUERY;
+                }
+                
+                db_free_binary_result(qres);
+                qres = NULL;
+            }
+            else
+            {
+                status = DRMS_ERROR_BADDBQUERY;
+            }
+            
+            if (status == DRMS_SUCCESS)
+            {
+                if (added && recnum > maxrec)
+                {
+                    /* The record just inserted into series is the newest version. Update the corresponding record's                        
+                     * shadow-table record, using the prime-key values to locate the shadow-table record.
+                     *
+                     * UPDATE <shadow> AS T1 SET recnum = <recnum>, nrecords = T1.nrecords + 1 FROM (SELECT pkey1, pkey2 FROM <series> WHERE recnum = <recnum>) AS T2 WHERE T1.pkey1=T2.pkey1 AND T1.pkey2=T2.pkey2 AND ...
+                     *
+                     * test - UPDATE su_arta.fd_m_96m_lev18_4 as T1 SET car_rot = 10000 FROM (select t_rec_index FROM su_arta.fd_m_96m_lev18 where recnum = 8592) AS T2 WHERE T1.t_rec_index = T2.t_rec_index;
+                     */
+                    *query = '\0';
+                    query = base_strcatalloc(query, "UPDATE ", &stsz);
+                    query = base_strcatalloc(query, namespace, &stsz);
+                    query = base_strcatalloc(query, ".", &stsz);
+                    query = base_strcatalloc(query, table, &stsz);
+                    query = base_strcatalloc(query, kShadowSuffix, &stsz);
+                    query = base_strcatalloc(query, "AS T1 SET ", &stsz);
+                    query = base_strcatalloc(query, kShadowColRecnum, &stsz);
+                    query = base_strcatalloc(query, " = ", &stsz);
+                    query = base_strcatalloc(query, srecnum, &stsz);
+                    query = base_strcatalloc(query, ", ", &stsz);
+                    query = base_strcatalloc(query, kShadowColNRecs, &stsz);
+                    query = base_strcatalloc(query, " = T1.", &stsz);
+                    query = base_strcatalloc(query, kShadowColNRecs, &stsz);
+                    query = base_strcatalloc(query, " + 1 FROM (SELECT ", &stsz);
+                    
+                    for (icol = 0; icol < ncols; icol++)
+                    {
+                        query = base_strcatalloc(query, pkeynames[icol], &stsz);
+                        
+                        if (icol < ncols - 1)
+                        {
+                            query = base_strcatalloc(query, ", ", &stsz);
+                        }
+                    }
+
+                    query = base_strcatalloc(query, " FROM ", &stsz);
+                    query = base_strcatalloc(query, lcseries, &stsz);                    
+                    query = base_strcatalloc(query, " WHERE recnum = ", &stsz);
+                    query = base_strcatalloc(query, srecnum, &stsz);
+                    query = base_strcatalloc(query, ") AS T2 WHERE ", &stsz);
+                    
+                    for (icol = 0; icol < ncols; icol++)
+                    {
+                        snprintf(scolnum, sizeof(scolnum), "%d", icol);
+                        query = base_strcatalloc(query, "T1.", &stsz);
+                        query = base_strcatalloc(query, pkeynames[icol], &stsz);
+                        query = base_strcatalloc(query, " = T2.", &stsz);
+                        query = base_strcatalloc(query, pkeynames[icol], &stsz);
+                        
+                        if (icol < ncols - 1)
+                        {
+                            query = base_strcatalloc(query, " AND ", &stsz);
+                        }
+                    }
+                    
+                    if (drms_dms(env->session, NULL, query))
+                    {
+                        /* If the shadow table doesn't exist, or if the series' record does not exist in the shadow table,                   
+                         * then this query will fail. */
+                        fprintf(stderr, "Failed: %s\n", query);
+                        status = DRMS_ERROR_BADDBQUERY;
+                    }
+                }
+
+                if (!added)
+                {
+                   /* A record was just deleted from the DRMS record group. */
+
+                   if (maxrec > recnum)
+                   {
+                       /* An obsolete version of the DRMS record was deleted. Update the nrecords column only.                                                                                                  
+                        *                                                                                  
+                        * UPDATE <shadow> AS T1 SET nrecords = T1.nrecords - 1 FROM (SELECT pkey1, pkey2 FROM <series> WHERE recnum = <recnum>) AS T2 WHERE T1.pkey1=T2.pkey1 AND T1.pkey2=T2.pkey2 AND ...     
+                        */
+                      *query = '\0';
+                      query = base_strcatalloc(query, "UPDATE ", &stsz);
+                      query = base_strcatalloc(query, namespace, &stsz);
+                      query = base_strcatalloc(query, ".", &stsz);
+                      query = base_strcatalloc(query, table, &stsz);
+                      query = base_strcatalloc(query, kShadowSuffix, &stsz);
+                      query = base_strcatalloc(query, " AS T1 SET ", &stsz);
+                      query = base_strcatalloc(query, kShadowColNRecs, &stsz);
+                      query = base_strcatalloc(query, " = T1.", &stsz);
+                      query = base_strcatalloc(query, kShadowColNRecs, &stsz);
+                      query = base_strcatalloc(query, " - 1 FROM (SELECT ", &stsz);
+
+                      for (icol = 0; icol < ncols; icol++)
+                      {
+                         query = base_strcatalloc(query, pkeynames[icol], &stsz);
+
+                         if (icol < ncols - 1)
+                         {
+                            query = base_strcatalloc(query, ", ", &stsz);
+                         }
+                      }
+
+                      query = base_strcatalloc(query, " FROM ", &stsz);
+                      query = base_strcatalloc(query, lcseries, &stsz);
+                      query = base_strcatalloc(query, " WHERE recnum = ", &stsz);
+                      query = base_strcatalloc(query, srecnum, &stsz);
+                      query = base_strcatalloc(query, ") AS T2 WHERE ", &stsz);
+
+                      for (icol = 0; icol < ncols; icol++)
+                      {
+                         snprintf(scolnum, sizeof(scolnum), "%d", icol);
+                         query = base_strcatalloc(query, "T1.", &stsz);
+                         query = base_strcatalloc(query, pkeynames[icol], &stsz);
+                         query = base_strcatalloc(query, " = T2.", &stsz);
+                         query = base_strcatalloc(query, pkeynames[icol], &stsz);
+
+                         if (icol < ncols - 1)
+                         {
+                            query = base_strcatalloc(query, " AND ", &stsz);
+                         }
+                      }
+
+                      if (drms_dms(env->session, NULL, query))
+                      {
+                          /* If the shadow table doesn't exist, or if the series' record does not exist in the shadow table, 
+                           * then this query will fail. */
+                          fprintf(stderr, "Failed: %s\n", query);
+                          status = DRMS_ERROR_BADDBQUERY;
+                      }
+
+                   }
+                   else if (maxrec < recnum)
+                   {
+                      /* The current version of the DRMS record was deleted. Update both the nrecords column
+                       * and the recnum column.
+                       *                                                                                  
+                       * UPDATE <shadow> AS T1 SET recnum = <maxrec>, nrecords = T1.nrecords - 1 FROM (SELECT pkey1, pkey2 FROM <series> WHERE recnum = <recnum>) AS T2 WHERE T1.pkey1=T2.pkey1 AND T1.pkey2=T2.pkey2 AND ...                                                                                       
+                       */
+                      snprintf(smaxrec, sizeof(smaxrec), "%lld", maxrec);
+
+                      *query = '\0';
+                      query = base_strcatalloc(query, "UPDATE ", &stsz);
+                      query = base_strcatalloc(query, namespace, &stsz);
+                      query = base_strcatalloc(query, ".", &stsz);
+                      query = base_strcatalloc(query, table, &stsz);
+                      query = base_strcatalloc(query, kShadowSuffix, &stsz);
+                      query = base_strcatalloc(query, " AS T1 SET ", &stsz);
+                      query = base_strcatalloc(query, kShadowColRecnum, &stsz);
+                      query = base_strcatalloc(query, " = ", &stsz);
+                      query = base_strcatalloc(query, smaxrec, &stsz);
+                      query = base_strcatalloc(query, ", ", &stsz);
+                      query = base_strcatalloc(query, kShadowColNRecs, &stsz);
+                      query = base_strcatalloc(query, " = T1.", &stsz);
+                      query = base_strcatalloc(query, kShadowColNRecs, &stsz);
+                      query = base_strcatalloc(query, " - 1 FROM (SELECT ", &stsz);
+
+                      for (icol = 0; icol < ncols; icol++)
+                      {
+                         query = base_strcatalloc(query, pkeynames[icol], &stsz);
+
+                         if (icol < ncols - 1)
+                         {
+                            query = base_strcatalloc(query, ", ", &stsz);
+                         }
+                      }
+
+                      query = base_strcatalloc(query, " FROM ", &stsz);
+                      query = base_strcatalloc(query, lcseries, &stsz);
+                      query = base_strcatalloc(query, " WHERE recnum = ", &stsz);
+                      query = base_strcatalloc(query, srecnum, &stsz);
+                      query = base_strcatalloc(query, ") AS T2 WHERE ", &stsz);
+
+                      for (icol = 0; icol < ncols; icol++)
+                      {
+                         snprintf(scolnum, sizeof(scolnum), "%d", icol);
+                         query = base_strcatalloc(query, "T1.", &stsz);
+                         query = base_strcatalloc(query, pkeynames[icol], &stsz);
+                         query = base_strcatalloc(query, " = T2.", &stsz);
+                         query = base_strcatalloc(query, pkeynames[icol], &stsz);
+
+                         if (icol < ncols - 1)
+                         {
+                            query = base_strcatalloc(query, " AND ", &stsz);
+                         }
+                      }
+
+                      if (drms_dms(env->session, NULL, query))
+                      {
+                          /* If the shadow table doesn't exist, or if the series' record does not exist in the shadow table,                                                                                    
+                           * then this query will fail. */
+                         fprintf(stderr, "Failed: %s\n", query);
+                         status = DRMS_ERROR_BADDBQUERY;
+                      }
+                   }
+                   else
+                   {
+                      /* Can't happen - duplicate recnums are not allowed. */
+                   }
+                }
+            }
+            
+            free(namespace);
+            free(table);
+        }
+        else
+        {
+            status = DRMS_ERROR_OUTOFMEMORY;
+        }
+        
+        free(query);
+        free(lcseries);
+    }
+    else
+    {
+        status = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    return status;
+}
+                    
+
+/* INSERT INTO <shadow> (pkey1, pkey2, ..., kShadowColRecnum, kShadowColNrecs) SELECT pkey1, pkey2, ..., recnum, 1 FROM <series> WHERE recnum = <recnum> */
+int InsertIntoShadow(DRMS_Env_t *env,
+                     const char *series,
+                     char **pkeynames,
+                     int ncols,
+                     long long recnum)
+{
+    char *lcseries = NULL;
+    char *query = NULL;
+    size_t stsz = 1024;
+    char srecnum[32];
+    int icol;
+    int status = DRMS_SUCCESS;
+    
+    lcseries = strdup(series);
+    query = malloc(stsz);
+    
+    if (lcseries && query)
+    {
+        *query = '\0';
+        snprintf(srecnum, sizeof(srecnum), "%lld", recnum);
+        
+        query = base_strcatalloc(query, "INSERT INTO ", &stsz);
+        query = base_strcatalloc(query, lcseries, &stsz);
+        query = base_strcatalloc(query, kShadowSuffix, &stsz);
+        query = base_strcatalloc(query, " (", &stsz);
+        
+        for (icol = 0; icol < ncols; icol++)
+        {
+            query = base_strcatalloc(query, pkeynames[icol], &stsz);
+            query = base_strcatalloc(query, ", ", &stsz);
+        }
+        
+        query = base_strcatalloc(query, kShadowColRecnum, &stsz);
+        query = base_strcatalloc(query, ", ", &stsz);
+        query = base_strcatalloc(query, kShadowColNRecs, &stsz);
+        query = base_strcatalloc(query, ") SELECT ", &stsz);
+        
+        for (icol = 0; icol < ncols; icol++)
+        {
+            query = base_strcatalloc(query, pkeynames[icol], &stsz);
+            query = base_strcatalloc(query, ", ", &stsz);
+        }
+        
+        query = base_strcatalloc(query, "recnum, 1 FROM ", &stsz);
+        query = base_strcatalloc(query, lcseries, &stsz);
+        query = base_strcatalloc(query, "WHERE recnum = ", &stsz);
+        query = base_strcatalloc(query, srecnum, &stsz);
+        
+        if (drms_dms(env->session, NULL, query))
+        {
+            status = DRMS_ERROR_BADDBQUERY;
+        }
+        
+        free(query);
+        free(lcseries);
+    }
+    else
+    {
+        status = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    return status;
+}
+
+/*                                                                                                       
+ * SELECT count(*) FROM <series> as T1, (SELECT <pkey1>, <pkey2>, ... FROM <series> WHERE recnum = <recnum>) AS T2 WHERE T1.<pkey1> = T2.<pkey1>, T1.<pkey2> = T2.<pkey2>, ...;                                  
+*/
+static int GroupExists(DRMS_Env_t *env,
+                       long long recnum,
+                       const char *series,
+                       char **pkeynames,
+                       int ncols,
+                       int *status)
+{
+   char *query = NULL;
+   size_t stsz = 4096;
+   char srecnum[32];
+   DB_Text_Result_t *tres = NULL;
+   int ans = -1;
+   int icol;
+   char *lcseries = NULL;
+   int istat = DRMS_SUCCESS;
+
+
+   snprintf(srecnum, sizeof(srecnum), "%lld", recnum);
+
+   lcseries = strdup(series);
+
+   if (lcseries)
+   {
+      strtolower(lcseries);
+      query = malloc(stsz);
+      if (query)
+      {
+         *query = '\0';
+         query = base_strcatalloc(query, "SELECT count(*) FROM ", &stsz);
+         query = base_strcatalloc(query, lcseries, &stsz);
+         query = base_strcatalloc(query, " AS T1, (SELECT ", &stsz);
+
+         for (icol = 0; icol < ncols; icol++)
+         {
+            query = base_strcatalloc(query, pkeynames[icol], &stsz);
+
+            if (icol < ncols - 1)
+            {
+               query = base_strcatalloc(query, ", ", &stsz);
+            }
+         }
+
+         query = base_strcatalloc(query, " FROM ", &stsz);
+         query = base_strcatalloc(query, lcseries, &stsz);
+         query = base_strcatalloc(query, " WHERE recnum = ", &stsz);
+         query = base_strcatalloc(query, srecnum, &stsz);
+         query = base_strcatalloc(query, ") AS T2 WHERE ", &stsz);
+
+         for (icol = 0; icol < ncols; icol++)
+         {
+            query = base_strcatalloc(query, "T1.", &stsz);
+            query = base_strcatalloc(query, pkeynames[icol], &stsz);
+            query = base_strcatalloc(query, " = T2.", &stsz);
+            query = base_strcatalloc(query, pkeynames[icol], &stsz);
+
+            if (icol < ncols - 1)
+            {
+               query = base_strcatalloc(query, " AND ", &stsz);
+            }
+         }
+
+         tres = drms_query_txt(env->session, query);
+
+         if (tres)
+         {
+            if (tres->num_rows == 0)
+            {
+               ans = 0;
+            }
+            else
+            {
+               ans = 1;
+            }
+
+            db_free_text_result(tres);
+         }
+         else
+         {
+            fprintf(stderr, "Failed: %s\n", query);
+            istat = DRMS_ERROR_BADDBQUERY;
+         }
+
+         free(query);
+      }
+
+      free(lcseries);
+   }
+
+   if (status)
+   {
+      *status = istat;
+   }
+
+   return ans;
+}
+
+static int WasGroupDeleted(DRMS_Env_t *env,
+                           long long recnum,
+                           const char *series,
+                           char **pkeynames,
+                           int ncols,
+                           int *status)
+{
+   return (!GroupExists(env, recnum, series, pkeynames, ncols, status));
+}
+
+/* DELETE FROM <shadow> USING (SELECT <pkey1>, <pkey2>, ... FROM <series> WHERE recnum = <recnum>) AS T2 WHERE T1.<pkey1> = T2.p1 AND T1.<pkey2> = T2.p2 AND ...*/
+static int DeleteFromShadow(DRMS_Env_t *env,
+                            const char *series,
+                            char **pkeynames,
+                            int ncols,
+                            long long recnum)
+{
+   char *lcseries = NULL;
+   char *query = NULL;
+   size_t stsz = 1024;
+   char srecnum[32];
+   int icol;
+   int status = DRMS_SUCCESS;
+
+   lcseries = strdup(series);
+   query = malloc(stsz);
+
+   if (lcseries && query)
+   {
+      snprintf(srecnum, sizeof(srecnum), "%lld", recnum);
+      *query = '\0';
+
+      query = base_strcatalloc(query, "DELETE FROM ", &stsz);
+      query = base_strcatalloc(query, lcseries, &stsz);
+      query = base_strcatalloc(query, kShadowSuffix, &stsz);
+      query = base_strcatalloc(query, " USING (SELECT ", &stsz);
+
+      for (icol = 0; icol < ncols; icol++)
+      {
+         query = base_strcatalloc(query, pkeynames[icol], &stsz);
+
+         if (icol < ncols - 1)
+         {
+            query = base_strcatalloc(query, ", ", &stsz);
+         }
+      }
+
+      query = base_strcatalloc(query, " FROM ", &stsz);
+      query = base_strcatalloc(query, lcseries, &stsz);
+      query = base_strcatalloc(query, " WHERE recnum = ", &stsz);
+      query = base_strcatalloc(query, srecnum, &stsz);
+      query = base_strcatalloc(query, ") AS T2 WHERE ", &stsz);
+
+      for (icol = 0; icol < ncols; icol++)
+      {
+         query = base_strcatalloc(query, "T1.", &stsz);
+         query = base_strcatalloc(query, pkeynames[icol], &stsz);
+         query = base_strcatalloc(query, " = T2.", &stsz);
+         query = base_strcatalloc(query, pkeynames[icol], &stsz);
+
+         if (icol < ncols - 1)
+         {
+            query = base_strcatalloc(query, " AND ", &stsz);
+         }
+      }
+
+      if (drms_dms(env->session, NULL, query))
+      {
+          /* If the shadow table doesn't exist, or if the series' record does not exist in the shadow table,                                                                                                      
+           * then this query will fail. */
+         fprintf(stderr, "Failed: %s\n", query);
+         status = DRMS_ERROR_BADDBQUERY;
+      }
+
+      free(query);
+      free(lcseries);
+   }
+   else
+   {
+      status = DRMS_ERROR_OUTOFMEMORY;
+   }
+
+   return status;
+}
+
+
+
+/* To copy privileges from one PG table to another, you have to
+ * parse this acl format <db user>=<priv array>. This is PG-specific, and this is not a good way to do things (because as
+ * a client, we don't know what the grammar is for privilege strings). But there doesn't appear to be an alternative.
+ *
+ * SELECT pg_catalog.array_to_string(T1.relacl,E'\n') AS acl FROM pg_catalog.pg_class T1, (SELECT oid FROM pg_catalog.pg_namespace WHE RE nspname = 'su_arta') AS T2 WHERE T1.relnamespace = T2.oid AND T1.relname = 'fd_m_96m_lev18'
+ *
+ * This function inserts into privs a comma-separated list of privileges, keyed by the db user that has
+ * those privileges.
+ */
+#define kPrivStringLen 32
+#define kPrivCodeLen 1
+#define kPrivStringList 256
+#define kPrivContainerUserLen 64
+
+typedef enum ExtPrivState_enum
+{
+    kEPStateNext = 0,
+    kEPStateUser = 1,
+    kEPStatePrivs = 2,
+    kEPStateGrantor = 3,
+    kEPStateErr = 4
+} ExtPrivState_t;
+
+static int ExtractPrivileges(DRMS_Env_t *env, const char *ns, const char *tab, HContainer_t *privs)
+{
+    static HContainer_t *privmap = NULL;
+    
+    int status = DRMS_SUCCESS;
+    char *lcns = NULL;
+    char *lctab = NULL;
+    char val[kPrivStringLen];
+    char *query = NULL;
+    size_t stsz = 512;
+    DB_Text_Result_t *qres = NULL;
+    char *row = NULL;
+    char aprivcode[2];
+    char *apriv = NULL;
+    char *pch = NULL;
+    char user[256];
+    char *privlist = NULL;
+    
+    /* Always prepare a valid return container. */
+    hcon_init(privs, kPrivStringList, kPrivContainerUserLen, NULL, NULL);
+    
+    if (!privmap)
+    {
+        privmap = hcon_create(kPrivStringLen, kPrivCodeLen, NULL, NULL, NULL, NULL, 0);
+    }
+    
+    if (privmap)
+    {
+        snprintf(val, sizeof(val), "%s", "SELECT");
+        hcon_insert(privmap, "r", val);
+        snprintf(val, sizeof(val), "%s", "UPDATE");
+        hcon_insert(privmap, "w", val);
+        snprintf(val, sizeof(val), "%s", "INSERT");
+        hcon_insert(privmap, "a", val);
+        snprintf(val, sizeof(val), "%s", "DELETE");
+        hcon_insert(privmap, "d", val);
+        snprintf(val, sizeof(val), "%s", "TRUNCATE");
+        hcon_insert(privmap, "D", val);
+        snprintf(val, sizeof(val), "%s", "REFERENCES");
+        hcon_insert(privmap, "x", val);
+        snprintf(val, sizeof(val), "%s", "TRIGGER");
+        hcon_insert(privmap, "t", val);
+        snprintf(val, sizeof(val), "%s", "EXECUTE");
+        hcon_insert(privmap, "X", val);
+        snprintf(val, sizeof(val), "%s", "USAGE");
+        hcon_insert(privmap, "U", val);
+        snprintf(val, sizeof(val), "%s", "CREATE");
+        hcon_insert(privmap, "C", val);
+        snprintf(val, sizeof(val), "%s", "CONNECT");
+        hcon_insert(privmap, "c", val);
+        snprintf(val, sizeof(val), "%s", "TEMPORARY");
+        hcon_insert(privmap, "T", val);
+    }
+    else
+    {
+        status = DRMS_ERROR_OUTOFMEMORY;
+    }   
+    
+    if (status == DRMS_SUCCESS)
+    {
+        query = malloc(stsz);
+        lcns = strdup(ns);
+        lctab = strdup(tab);
+        
+        if (query && lcns && lctab)
+        {
+            strtolower(lcns);
+            strtolower(lctab);
+            *query = '\0';
+            query = base_strcatalloc(query, "SELECT T1.relacl AS acl FROM pg_catalog.pg_class T1, (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = '", &stsz);
+            query = base_strcatalloc(query, lcns, &stsz);
+            query = base_strcatalloc(query, "\') AS T2 WHERE T1.relnamespace = T2.oid AND T1.relname = \'", &stsz);
+            query = base_strcatalloc(query, lctab, &stsz);
+            query = base_strcatalloc(query, "\'", &stsz);
+            
+            if ((qres = drms_query_txt(env->session, query)) != NULL)
+            {
+                if (qres->num_cols == 1 && qres->num_rows == 1)
+                {
+                    ExtPrivState_t state;
+                    char *puser = NULL;
+                    
+                    row = strdup(qres->field[0][0]);
+                    
+                    if (row)
+                    {
+                        /* row looks like {arta=arwd/postgres,=r/postgres}. All privs get put into a                                         
+                         * single row. We need to extract the                                                                                
+                         * db user (left of the '=') and the privilege codes (right of the '=', before the '/'). */
+                        pch = row;
+
+                        while (*pch)
+                        {
+                            if (*pch == ' ')
+                            {
+                                pch++;
+                            }
+                            else
+                            {
+                                break;
+                            }
+                        }
+                        
+                        if (*pch == '{')
+                        {
+                            pch++;
+                            state = kEPStateNext;
+                            aprivcode[1] = '\0';
+                            
+                            while (*pch)
+                            {
+                                if (state == kEPStateErr)
+                                {
+                                    status = DRMS_ERROR_BADDBQUERY;
+                                    break;
+                                }
+                                else if (state == kEPStateNext)
+                                {
+                                    if (*pch == '=')
+                                    {
+                                        snprintf(user, sizeof(user), "%s", "PUBLIC");
+                                        state = kEPStatePrivs;
+                                        pch++;
+                                    }
+                                    else if (*pch == '/' || *pch == ',')
+                                    {
+                                        fprintf(stderr, "Invalid user string.\n");
+                                        state = kEPStateErr;
+                                    }
+                                    else if (*pch == '}')
+                                    {
+                                        /* done! */
+                                        break;
+                                    }
+                                    else
+                                    {
+                                        state = kEPStateUser;
+                                        puser = user;
+                                    }
+                                }
+                                else if (state == kEPStateUser)
+                                {
+                                    if (*pch == '=')
+                                    {
+                                        *puser = '\0';
+                                        puser = user;
+                                        pch++;
+                                        state = kEPStatePrivs;
+                                    }
+                                    else if (*pch == '/' || *pch == ',' || *pch == '}')
+                                    {
+                                        fprintf(stderr, "Invalid user string.\n");
+                                        state = kEPStateErr;
+                                    }
+                                    else
+                                    {
+                                        *puser++ = *pch++;
+                                    }
+                                }
+                                else if (state == kEPStatePrivs)
+                                {
+                                    if (*pch == '/')
+                                    {
+                                        /* end of privs */
+                                        state = kEPStateGrantor;
+                                        pch++;
+                                    }
+                                    else if (*pch == '=' || *pch == ',' || *pch == '}')
+                                    {
+                                        fprintf(stderr, "Invalid grantor string.\n");
+                                        state = kEPStateErr;
+                                    }
+                                    else
+                                    {
+                                        aprivcode[0] = *pch;
+                                        
+                                        if ((apriv = (char *)hcon_lookup(privmap, aprivcode)) != NULL)
+                                        {
+                                            if ((privlist = (char *)hcon_lookup(privs, user)) != NULL)
+                                            {
+                                                /* If there is already a list established for this user,                                           
+                                                 * append to it. */
+                                                base_strlcat(privlist, ",", kPrivStringList);
+                                                base_strlcat(privlist, apriv, kPrivStringList);
+                                            }
+                                            else
+                                            {
+                                                /* Otherwise, create a list for this user and populate it with                                     
+                                                 * a single privilege string. */
+                                                hcon_insert(privs, user, apriv);
+                                            }
+                                            
+                                            pch++;
+                                        }
+                                        else
+                                        {
+                                            fprintf(stderr, "Unsupported privilege code '%s'.\n", aprivcode);
+                                            state = kEPStateErr;
+                                        }
+                                    }
+                                }
+                                else if (state == kEPStateGrantor)
+                                {
+                                    if (*pch == ',')
+                                    {
+                                        /* end of grantor */
+                                        state = kEPStateNext;
+                                        pch++;
+                                    }
+                                    else if (*pch == '}')
+                                    {
+                                        /* end of grantor */
+                                        state = kEPStateNext;
+                                    }
+                                    else if (*pch == '=' || *pch == '/')
+                                    {
+                                        fprintf(stderr, "Invalid grantor string.\n");
+                                        state = kEPStateErr;
+                                    }
+                                    else
+                                    {
+                                        /* don't need the grantor - just skip past it */
+                                        pch++;
+                                    }
+                                }
+                            }
+                        }
+                        else
+                        {
+                            /* No privileges to copy! */
+                        }
+                        
+                        free(row);
+                        row = NULL;
+                    }
+                    else
+                    {
+                        status = DRMS_ERROR_OUTOFMEMORY;
+                    }
+                }
+                else
+                {
+                    fprintf(stderr, "Unexpected database response to query '%s'.\n", query);
+                    status = DRMS_ERROR_BADDBQUERY;
+                }
+                
+                db_free_text_result(qres);
+                qres = NULL;
+            }
+            else
+            {
+                fprintf(stderr, "Invalid query '%s'.\n", query);
+                status = DRMS_ERROR_BADDBQUERY;
+            }
+            
+            free(lctab);
+            lctab = NULL;
+            free(lcns);
+            lcns = NULL;
+            free(query);
+            query = NULL;
+        }
+        else
+        {
+            status = DRMS_ERROR_OUTOFMEMORY;
+        }
+    }
+    
+    return status;
+}
+
+/* This function will not create the shadow table if: 1. it already exists, or
+ * 2. the table doesn't exist and the env->createshadows flag is not set. */
+static int CreateShadow(DRMS_Env_t *env, const char *series, int *created)
+{
+    int status = DRMS_SUCCESS;
+    int ipkey;
+    char *pklist = NULL; /* comma-separated list of lower-case prime-key keyword names */
+    char *pkdatatype = NULL; /* comma-separated list of lower-case data_type strings of the prime-key columns in the shadow table. */
+    size_t stsz = 256;
+    size_t stsz2 = 512;
+    char *lcseries = strdup(series);
+    char query[1024];
+    DRMS_Keyword_t *key = NULL;
+    char dtypestr[32];
+    
+    if (created)
+    {
+        *created = 0;
+    }
+
+    if (lcseries)
+    {
+        strtolower(lcseries);
+        pklist = malloc(stsz);
+        pkdatatype = malloc(stsz2);
+        *pklist = '\0';
+        *pkdatatype = '\0';
+        
+        if (pklist && pkdatatype)
+        {
+            DRMS_Record_t *template = drms_template_record(env, series, &status);
+            char lckeyname[DRMS_MAXKEYNAMELEN + 1];
+            
+            if (template->seriesinfo->hasshadow == -1)
+            {
+                /* Haven't checked to see if the shadow table exists - it might. */
+                /* This call will set template->seriesinfo->hasshadow. */
+                ShadowExists(env, series, &status);
+                
+                if (status == DRMS_ERROR_BADDBQUERY)
+                {
+                    fprintf(stderr, "Unable to check database for the existence of shadow table.\n");
+                }
+            }
+
+            if (status == DRMS_SUCCESS && template->seriesinfo->hasshadow == 0)
+            {
+                if (!env->createshadows)
+                {
+                    status = DRMS_ERROR_CANTCREATESHADOW;
+                }
+
+                if (status == DRMS_SUCCESS)
+                {
+                    /* manually cons together list of prime-key names */
+                    for (ipkey = 0; ipkey < template->seriesinfo->pidx_num; ipkey++)
+                    {
+                        key = template->seriesinfo->pidx_keywords[ipkey];
+                        snprintf(lckeyname, sizeof(lckeyname), "%s", key->info->name);
+                        strtolower(lckeyname);
+                        
+                        pklist = base_strcatalloc(pklist, lckeyname, &stsz);
+                        
+                        if (key->info->type == DRMS_TYPE_STRING)
+                        {
+                            snprintf(dtypestr, sizeof(dtypestr), "%s", db_stringtype_maxlen(4000));
+                        }
+                        else
+                        {
+                            snprintf(dtypestr, sizeof(dtypestr), "%s", db_type_string(drms2dbtype(key->info->type)));
+                        }
+                        
+                        pkdatatype = base_strcatalloc(pkdatatype, lckeyname, &stsz2);
+                        pkdatatype = base_strcatalloc(pkdatatype, " ", &stsz2);
+                        pkdatatype = base_strcatalloc(pkdatatype, dtypestr, &stsz2);
+                        
+                        if (ipkey < template->seriesinfo->pidx_num - 1)
+                        {
+                            pklist = base_strcatalloc(pklist, ", ", &stsz);
+                            pkdatatype = base_strcatalloc(pkdatatype, ", ", &stsz2);
+                        }
+                    }
+                    
+                    /* Create the shadow table. */
+
+                    /* The owner of the new shadow table will be the user running 
+                     * this code, but the permissions on the shadow table will match 
+                     * the permissions on the original table. */
+                    snprintf(query, sizeof(query), "CREATE TABLE %s%s (%s, nrecords integer, recnum bigint, PRIMARY KEY (%s))", lcseries, kShadowSuffix, pkdatatype, pklist);
+                    
+                    if (drms_dms(env->session, NULL, query))
+                    {
+                        fprintf(stderr, "Failed: %s\n", query);
+                        status = DRMS_ERROR_BADDBQUERY;
+                    }
+                    else
+                    {
+                        /* Copy the privileges of the original table. */
+                        HContainer_t privs;
+                        const char *user = NULL;
+                        char *privlist = NULL;
+                        char *ns = NULL;
+                        char *tab = NULL;
+                        
+                        if (!get_namespace(series, &ns, &tab))
+                        {
+                            status = ExtractPrivileges(env, ns, tab, &privs);
+                            
+                            if (status == DRMS_SUCCESS)
+                            {
+                                HIterator_t *hit = hiter_create(&privs);
+                                
+                                if (hit)
+                                {
+                                    while ((privlist = hiter_extgetnext(hit, &user)) != NULL)
+                                    {
+                                        snprintf(query, sizeof(query), "GRANT %s ON %s%s TO %s", privlist, lcseries, kShadowSuffix, user);
+                                        
+                                        if (drms_dms(env->session, NULL, query))
+                                        {
+                                            fprintf(stderr, "Failed: %s\n", query);
+                                            status = DRMS_ERROR_BADDBQUERY;
+                                        }
+                                    }
+                                    
+                                    hiter_destroy(&hit);
+                                }
+                                else
+                                {
+                                    status = DRMS_ERROR_OUTOFMEMORY;
+                                }
+                                
+                                hcon_free(&privs);
+                            }
+                            
+                            free(ns);
+                            free(tab);
+                        }
+                    }
+                    
+                    /* Populate the shadow table with data from the original series table. */
+                    status = PopulateShadow(env, series);
+                    
+                    if (status == DRMS_SUCCESS)
+                    {
+                        template->seriesinfo->hasshadow = 1;
+                        
+                        if (created)
+                        {
+                            *created = 1;
+                        }
+                    }
+                }
+            }
+            
+            free(pklist);
+            pklist = NULL;
+            
+            free(pkdatatype);
+            pkdatatype = NULL;
+        }
+        else
+        {
+            status = DRMS_ERROR_OUTOFMEMORY;
+        }
+        
+        free(lcseries);
+        lcseries = NULL;
+    }
+    else
+    {
+        status = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    return status;
+}
+
+/* The record just added to the series table is in a new group if there is only one record in that group. */
+/* "SELECT count(*) FROM <series> as T1, (SELECT <pkey1> AS p1, <pkey2> AS p2, ... FROM <series> WHERE recnum = <recnum>) AS T2 WHERE T1.<pkey1> = T2.p1, T1.<pkey2> = T2.p2, ...";                                                                                          
+ */
+static int IsGroupNew(DRMS_Env_t *env,
+                      long long recnum,
+                      const char *series,
+                      char **pkeynames,
+                      int ncols,
+                      int *status)
+{
+    char *query = NULL;
+    size_t stsz = 8192;
+    char scolnum[8];
+    char srecnum[32];
+    DB_Text_Result_t *tres = NULL;
+    int ans = -1;
+    int icol;
+    char *lcseries = NULL;
+    int istat = DRMS_SUCCESS;
+    
+    snprintf(srecnum, sizeof(srecnum), "%lld", recnum);
+    
+    lcseries = strdup(series);
+    
+    if (lcseries)
+    {
+        strtolower(lcseries);
+        query = malloc(stsz);
+        if (query)
+        {
+            *query = '\0';
+            
+            query = base_strcatalloc(query, "SELECT count(*) FROM ", &stsz);
+            query = base_strcatalloc(query, lcseries, &stsz);
+            query = base_strcatalloc(query, "AS T1, (SELECT ", &stsz);
+            
+            for (icol = 0; icol < ncols; icol++)
+            {
+                snprintf(scolnum, sizeof(scolnum), "%d", icol);
+                query = base_strcatalloc(query, pkeynames[icol], &stsz);
+                query = base_strcatalloc(query, " AS p", &stsz);
+                query = base_strcatalloc(query, scolnum, &stsz);
+                
+                if (icol < ncols - 1)
+                {
+                    query = base_strcatalloc(query, ", ", &stsz);
+                }
+            }
+            
+            query = base_strcatalloc(query, " FROM ", &stsz);
+            query = base_strcatalloc(query, lcseries, &stsz);
+            query = base_strcatalloc(query, " WHERE recnum = ", &stsz);
+            query = base_strcatalloc(query, srecnum, &stsz);
+            query = base_strcatalloc(query, ") AS T2 WHERE ", &stsz);
+            
+            for (icol = 0; icol < ncols; icol++)
+            {
+                snprintf(scolnum, sizeof(scolnum), "%d", icol);
+                query = base_strcatalloc(query, "T1.", &stsz);
+                query = base_strcatalloc(query, pkeynames[icol], &stsz);
+                query = base_strcatalloc(query, " = T2.p", &stsz);
+                query = base_strcatalloc(query, scolnum, &stsz);
+                
+                if (icol < ncols - 1)
+                {
+                    query = base_strcatalloc(query, " AND ", &stsz);
+                }
+            }
+        }
+        else
+        {
+            istat = DRMS_ERROR_OUTOFMEMORY;
+        }
+        
+        free(lcseries);
+        lcseries = NULL;
+    }
+    else
+    {
+        istat = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    /* Execute the query. */
+    if (istat == DRMS_SUCCESS)
+    {
+        tres = drms_query_txt(env->session, query);
+        
+        if (tres)
+        {
+            if (tres->num_rows == 1 && tres->num_cols == 1)
+            {
+                long long num = atoll(tres->field[0][0]);
+                
+                if (num < 1)
+                {
+                    /* This implies that the record just added doesn't exist */
+                    fprintf(stderr, "Unexpected record count %lld; should be at least one.\n", num);
+                    istat = DRMS_ERROR_BADFIELDCOUNT;
+                }
+                else
+                {
+                    ans = (num == 1) ? 1 : 0;
+                }
+            }
+            
+            db_free_text_result(tres);
+        }
+        else
+        {
+            fprintf(stderr, "Failed: %s\n", query);
+            istat = DRMS_ERROR_BADDBQUERY;
+        }
+        
+        free(query);
+        query = NULL;
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return ans;
+}
+
+static char *PrependFields(const char *list, const char *prefix, int *status)
+{
+    char *pnext = NULL;
+    char *fieldscp = NULL;
+    char *qualfields = NULL;
+    char *pch = NULL;
+    size_t stsz2 = 4096;
+    int istat = DRMS_SUCCESS;
+    
+    qualfields = malloc(stsz2);
+    fieldscp = strdup(list);
+    
+    if (qualfields && fieldscp)
+    {
+        *qualfields = '\0';
+        
+        pnext = fieldscp;
+        
+        while ((pch = strchr(pnext, ',')) != NULL)
+        {
+            *pch = '\0';
+            qualfields = base_strcatalloc(qualfields, prefix, &stsz2);
+            qualfields = base_strcatalloc(qualfields, pnext, &stsz2);
+            qualfields = base_strcatalloc(qualfields, ", ", &stsz2);
+            pch++;
+            
+            while (*pch == ' ')
+            {
+                pch++;
+            }
+            
+            pnext = pch;
+        }
+        
+        /* There is still one more column that has not been processed yet. */
+        qualfields = base_strcatalloc(qualfields, prefix, &stsz2);
+        qualfields = base_strcatalloc(qualfields, pnext, &stsz2);
+        
+        free(fieldscp);
+        fieldscp = NULL;
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return qualfields;
+}
+
+static char *CreatePKeyList(DRMS_Env_t *env, const char *series, const char *prefix, int *status)
+{
+    int istat = DRMS_SUCCESS;
+    int ipkey;
+    char lckeyname[DRMS_MAXKEYNAMELEN];
+    DRMS_Keyword_t *key = NULL;
+    DRMS_Record_t *template = drms_template_record(env, series, &istat);
+    char *pklist = NULL;
+    size_t stsz = 4096;
+    
+    if (istat == DRMS_SUCCESS)
+    {
+        if (template->seriesinfo->pidx_num > 0)
+        {
+            pklist = malloc(stsz);
+            
+            if (pklist)
+            {
+                *pklist = '\0';
+                
+                for (ipkey = 0; ipkey < template->seriesinfo->pidx_num; ipkey++)
+                {
+                    key = template->seriesinfo->pidx_keywords[ipkey];
+                    snprintf(lckeyname, sizeof(lckeyname), "%s", key->info->name);
+                    strtolower(lckeyname);
+                    
+                    if (prefix)
+                    {
+                        pklist = base_strcatalloc(pklist, prefix, &stsz);
+                        pklist = base_strcatalloc(pklist, ".", &stsz);
+                    }
+                    
+                    pklist = base_strcatalloc(pklist, lckeyname, &stsz);
+                    
+                    if (ipkey < template->seriesinfo->pidx_num - 1)
+                    {
+                        pklist = base_strcatalloc(pklist, ", ", &stsz);
+                    }
+                }
+            }
+            else
+            {
+                istat = DRMS_ERROR_OUTOFMEMORY;
+            }
+        }
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return pklist;
 }
 
 static void DetermineDefval(DRMS_Keyword_t *key, char *defvalout)
@@ -704,6 +2270,21 @@ int drms_insert_series(DRMS_Session_t *session, int update,
 	goto failure;
     }
   }
+    
+    /* If the createshadow flag is set, then, at this time, we will create a shadow table. */
+    if (si->createshadow)
+    {
+        int wascreated = 0;
+
+        if (CreateShadow(template->env, si->seriesname, &wascreated) != DRMS_SUCCESS || !wascreated)
+        {
+            /* If CreateShadow() returned success, but the shadow table was not created, 
+             * this means it had already existed. This shouldn't happen, because 
+             * we're creating the original series now. */
+            goto failure;
+        }
+    }
+    
   free(namespace);
   free(series_lower);
   free(pidx_buf);
@@ -1168,6 +2749,7 @@ int drms_delete_series(DRMS_Env_t *env, const char *series, int cascade, int kee
   DRMS_Array_t *array = NULL;
   int repl = 0;
   int retstat = -1;
+  char shadow[DRMS_MAXSERIESNAMELEN];
 
   if (!env->session->db_direct && !env->selfstart)
   {
@@ -1367,6 +2949,22 @@ int drms_delete_series(DRMS_Env_t *env, const char *series, int cascade, int kee
 
            if (drms_dms(session,NULL,query))
              goto bailout;
+            
+            /* MUST DELETE ANY ASSOCIATED shadow table. If the user requires permissions
+             * to delete the original table, then the user running this code must also 
+             * have the permissions needed to delete the shadow table. */
+            snprintf(shadow, sizeof(shadow), "%s_%s", series_lower, kShadowSuffix);
+            snprintf(query, sizeof(query), "DROP TABLE %s", shadow);
+            
+            if (env->verbose)
+            {
+                fprintf(stdout, "drms_delete_series(): %s\n", query);
+            }
+            
+            if (drms_dms(session,NULL,query))
+            {
+                goto bailout;
+            }
 
            /* Both DRMS servers and clients have a series_cache (one item per
               each series in all of DRMS). So, always remove the deleted series
@@ -2283,6 +3881,1005 @@ int GetColumnNames(DRMS_Env_t *env, const char *oid, char **colnames)
    }
    
    return err;
+}
+
+/* The caller has just inserted 'nrows' records into a the series table 'series'. Now they are updating the
+ * table of counts. 'pkeynames' is an array, with 'ncols' elements, of prime keyword names. 'recnums' is
+ * an array, one per row, of the record numbers of the records just inserted into 'series'. */
+
+/* Do not create the shadow table if it does not already exist. Otherwise, it might be the case that 
+ * we take a very long time to create a shadow table when a user has inserted some small number of
+ * records into a series. Create the shadow table only if the user is doing something that will
+ * result in the access of all of the records in the series. */
+int drms_series_updatesummaries(DRMS_Env_t *env,
+                                const char *series,
+                                int nrows,
+                                int ncols,
+                                char **pkeynames,
+                                long long* recnums,
+                                int added)
+{
+    int status = DRMS_SUCCESS;
+    int shadowexists = 0;
+    
+#if (defined TOC && TOC)
+    int tocexists = 0;
+    char stmnt[8192];
+#endif
+    
+    /* In practice, there will not be any prime-key duplicates (no duplicate DRMS records), but of course user error could 
+     * result in such duplicates. Given this, there is no need to sort the incoming records - just iterate through each 
+     * one in the order they were passed in and check the db to see if the series table already contains such a DRMS record. 
+     * If not, then add a new record to the table of counts. If so, then update one row in the table of counts. */
+    
+    /* If the table of counts does not exist, create it. */
+    
+#if (defined TOC && TOC)
+    tocexists = TocExists(env, &status);
+    
+    if (status == DRMS_ERROR_BADDBQUERY)
+    {
+        fprintf(stderr, "Unable to check database for the existence of %s.%s.\n", kTableOfCountsNS, kTableOfCountsTab);
+    }
+    else
+    {
+        snprintf(stmnt, sizeof(stmnt), "SET search_path TO %s", kTableOfCountsNS);
+        
+        if (drms_dms(env->session, NULL, stmnt))
+        {
+            fprintf(stderr, "Failed: %s\n", stmnt);
+            status = DRMS_ERROR_BADDBQUERY;
+        }
+        else
+        {
+            if (!tocexists && env->createshadows)
+            {
+                if ((status = CreateTableOfCounts(env)) == DRMS_SUCCESS)
+                {
+                    tocexists = 1;
+                }
+            }
+        }
+    }
+#endif
+    
+    if (status == DRMS_SUCCESS)
+    {
+        shadowexists = ShadowExists(env, series, &status);
+        
+        if (status == DRMS_ERROR_BADDBQUERY)
+        {
+            fprintf(stderr, "Unable to check database for the existence of the shadow table.\n");
+        }    
+    }
+    
+    /* Update the summary tables. If the shadow table exists, then it should be updated, regardless 
+     * of the env->createshadow flag. */
+    if (status == DRMS_SUCCESS && shadowexists)
+    {
+        /* Now check for the presence of a row for each record that was inserted into the series table. */
+        int irow;
+        
+#if (defined TOC && TOC)
+        int present;
+        long long count;
+#endif
+        
+        long long recnum;
+        int isnew = -1;
+        
+#if (defined TOC && TOC)
+        for (irow = 0; irow < nrows && status == DRMS_SUCCESS && tocexists; irow++)
+#else
+            for (irow = 0; irow < nrows && status == DRMS_SUCCESS; irow++)
+#endif
+            {
+                recnum = recnums[irow];
+#if (defined TOC && TOC)
+                if (tocexists)
+                {
+                    /* update the TOC if it exists. It will NOT accurately reflect the rows just added to the series table. */
+                    
+                    /* check for presence of a row in table of counts for the series into which rows were inserted */
+                    present = IsSeriesPresent(env, kTableOfCountsNS, kTableOfCountsTab, series, &status);
+                    
+                    if (status == DRMS_SUCCESS)
+                    {
+                        if (!present)
+                        {
+                            /* Insert a new row after doing the big count (which could take a while). Since we                                   
+                             * already added new rows to the series table, the count will reflect these recent                                   
+                             * insertions. */
+                            count = CountRecordGroups(env, series, &status);
+                            if (status == DRMS_SUCCESS)
+                            {
+                                status = InsertSeries(env, kTableOfCountsNS, kTableOfCountsTab, series, count);
+                            }
+                        }
+                        else
+                        {
+                            /* A row already exists. Update it. */
+                            
+                            /* Determine if this row belongs to a new DRMS-record group. If it doesn't, then do nothing -                        
+                             * there has been no increase in the number of groups. Otherwise, increment                                          
+                             * the existing count by one. */
+                            isnew = IsGroupNew(env, recnum, series, pkeynames, ncols, &status);
+                            
+                            if (status == DRMS_SUCCESS)
+                            {
+                                if (!isnew)
+                                {
+                                    status = AdvanceGroupCount(env, kTableOfCountsNS, kTableOfCountsTab, series);
+                                }
+                            }
+                        }
+                    }
+                } /* TOC update */
+#endif
+                
+                if (status == DRMS_SUCCESS)
+                {
+                    if (added)
+                    {
+                        /* We're updating the shadow table because one or more rows was inserted          
+                         * into the original series table. */
+                        if (isnew == -1)
+                        {
+                            /* isnew test was not done when the TOC was updated - do it now. */
+                            isnew = IsGroupNew(env, recnum, series, pkeynames, ncols, &status);
+                        }
+                        
+                        if (isnew == 0)
+                        {
+                            /* Need to update an existing record in the shadow table. */
+                            status = UpdateShadow(env, series, pkeynames, ncols, recnum, 1);
+                        }
+                        else if (isnew == 1)
+                        {
+                            /* Need to add a new group (record) to the shadow table. */
+                            /* shadow - pkey1, pkey2, ..., recnum, nrecords                                                                         
+                             */
+                            status = InsertIntoShadow(env, series, pkeynames, ncols, recnum);
+                        }
+                        else
+                        {
+                            /* Unexpected value for isnew. */
+                        }
+                    }
+                    else
+                    {
+                        /* We're updating the shadow table because one or more rows was deleted           
+                         * from the original series table. */
+                        int wasdel;
+                        
+                        wasdel = WasGroupDeleted(env, recnum, series, pkeynames, ncols, &status);
+                        if (wasdel)
+                        {
+                            /* The last DRMS record was deleted - delete corresponding group from          
+                             * shadow table. */
+                            status = DeleteFromShadow(env, series, pkeynames, ncols, recnum);
+                        }
+                        else
+                        {
+                            /* One version of a DRMS record was deleted. May need to update the            
+                             * corresponding group's record in the shadow table (update nrecords           
+                             * and recnum). If the version deleted was an obsolete version,                
+                             * then no change to the recnum in the shadow table is needed. */
+                            status = UpdateShadow(env, series, pkeynames, ncols, recnum, 0);
+                        }
+                    }
+                } /* shadow-table update */
+            } /* loop recs */
+    }
+    
+    return status;
+}
+
+#if (defined TOC && TOC)
+int drms_series_tocexists(DRMS_Env_t *env, int *status)
+{
+    return TocExists(env, status);
+}
+
+/* This function will not create the shadow table if: 1. it already exists, or
+ * 2. the table doesn't exist and the env->createshadows flag is not set. */
+int drms_series_createtoc(DRMS_Env_t *env)
+{
+    if (env->createshadows)
+    {
+        return CreateTableOfCounts(env);
+    }
+    else
+    {
+        return DRMS_ERROR_CANTCREATESHADOW;
+    }
+}
+
+int drms_series_intoc(DRMS_Env_t *env, const char *series, int *status)
+{
+    return IsSeriesPresent(env, kTableOfCountsNS, kTableOfCountsTab, series, status);
+}
+
+/* Assumes that series is not already in the table of counts. If it is, then the lower-level SQL queries will fail, and                
+ * the db will rollback and this function will return an error status. */
+int drms_series_insertintotoc(DRMS_Env_t *env, const char *series)
+{
+    int status = DRMS_SUCCESS;
+    int count;
+    
+    count = CountRecordGroups(env, series, &status);
+    if (status == DRMS_SUCCESS)
+    {
+        status = InsertSeries(env, kTableOfCountsNS, kTableOfCountsTab, series, count);
+    }
+    
+    return status;
+}
+#endif
+
+/* neither pkwhere nor npkwhere exists. */
+char *drms_series_nrecords_querystringA(const char *series, int *status)
+{
+    char *query = NULL;
+    size_t stsz = 8192;
+    char *lcseries = NULL;
+    int istat = DRMS_SUCCESS;
+    
+    lcseries = strdup(series);
+    
+    if (lcseries)
+    {
+        strtolower(lcseries);
+        query = malloc(stsz);
+        if (query)
+        {
+            *query = '\0';
+            
+#if (defined TOC && TOC)
+            query = base_strcatalloc(query, "SELECT ", &stsz);
+            query = base_strcatalloc(query, kTableOfCountsColNRecs, &stsz);
+            query = base_strcatalloc(query, " FROM ", &stsz);
+            query = base_strcatalloc(query, kTableOfCountsNS, &stsz);
+            query = base_strcatalloc(query, ".", &stsz);
+            query = base_strcatalloc(query, kTableOfCountsTab, &stsz);
+            query = base_strcatalloc(query, " WHERE lower(", &stsz);
+            query = base_strcatalloc(query, kTableOfCountsColSeries, &stsz);
+            query = base_strcatalloc(query, ") = '", &stsz);
+            query = base_strcatalloc(query, lcseries, &stsz);
+            query = base_strcatalloc(query, "'", &stsz);
+#else
+            /* No TOC - use shadow table only.*/
+            query = base_strcatalloc(query, "SELECT count(*) FROM ", &stsz);
+            query = base_strcatalloc(query, lcseries, &stsz);
+            query = base_strcatalloc(query, kShadowSuffix, &stsz);
+#endif
+        }
+        else
+        {
+            istat = DRMS_ERROR_OUTOFMEMORY;
+        }
+        
+        free(lcseries);
+        lcseries = NULL;
+    }
+    else
+    {
+        istat = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return query;
+}
+
+/* pkwhere does not exist, but npkwhere does. */
+/* First attempt - this selected the correct records, but it ran too slowly. PG would not always use the index.
+ *   SELECT count(*) FROM (SELECT recnum FROM <series> WHERE <npkwhere>) AS T1, <shadow table> AS T2 WHERE T1.recnum = T2.recnum */
+
+/* Second attempt -  - use temporary tables. These tables will be deleted when the database session ends. Each
+ * time one is created, it is given a unique name (shadowtempXXX).
+ * 
+ *   # Apply the prime-key logic by selecting all records from the shadow table.
+ *   CREATE TEMPORARY TABLE shadowtempXXX AS SELECT recnum FROM <shadow table>;
+ *
+ *   # Select the records in the series whose recnums are in the 
+ *   # list of recnums in shadowtempXXX (those that have satisfied the prime-key logic).
+ *   SELECT count(*) FROM <series> AS T WHERE T.recnum IN (SELECT recnum FROM shadowtempXXX) AND <npkwhere>;
+ */
+char *drms_series_nrecords_querystringB(const char *series, const char *npkwhere, int *status)
+{
+    char *query = NULL;
+    size_t stsz = 8192;
+    char *lcseries = NULL;
+    char shadow[DRMS_MAXSERIESNAMELEN];
+    char tabname[256];
+    int istat = DRMS_SUCCESS;
+    
+    lcseries = strdup(series);
+    
+    if (lcseries)
+    {
+        strtolower(lcseries);
+        query = malloc(stsz);
+        if (query)
+        {
+            *query = '\0';
+            snprintf(shadow, sizeof(shadow), "%s%s", lcseries, kShadowSuffix);
+            if (GetTempTable(tabname, sizeof(tabname)))
+            {
+                istat = DRMS_ERROR_OVERFLOW;
+            }
+            else
+            {
+                /* Create the temporary table. */
+                query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, " AS SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, shadow, &stsz);
+                query = base_strcatalloc(query, ";\n", &stsz);
+                
+                /* Select the records from the series table. */
+                query = base_strcatalloc(query, "SELECT count(*) FROM ", &stsz);
+                query = base_strcatalloc(query, lcseries, &stsz);
+                query = base_strcatalloc(query, " AS T WHERE T.recnum IN (SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, ") AND ", &stsz);
+                query = base_strcatalloc(query, npkwhere, &stsz);
+            }
+        }
+        else
+        {
+            istat = DRMS_ERROR_OUTOFMEMORY;
+        }
+        
+        free(lcseries);
+        lcseries = NULL;
+    }
+    else
+    {
+        istat = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return query;
+}
+
+/* pkwhere exists, but npkwhere does not. */
+/* SELECT count(recnum) FROM <shadow table> WHERE <pkwhere>;
+ */
+char *drms_series_nrecords_querystringC(const char *series, const char *pkwhere, int *status)
+{
+    char *query = NULL;
+    size_t stsz = 8192;
+    char *lcseries = NULL;
+    int istat = DRMS_SUCCESS;
+    
+    lcseries = strdup(series);
+    
+    if (lcseries)
+    {
+        strtolower(lcseries);
+        query = malloc(stsz);
+        if (query)
+        {
+            *query = '\0';
+            
+            query = base_strcatalloc(query, "SELECT count(recnum) FROM ", &stsz);
+            query = base_strcatalloc(query, lcseries, &stsz);
+            query = base_strcatalloc(query, kShadowSuffix, &stsz);
+            query = base_strcatalloc(query, " WHERE ", &stsz);
+            query = base_strcatalloc(query, pkwhere, &stsz);
+        }
+        else
+        {
+            istat = DRMS_ERROR_OUTOFMEMORY;
+        }
+        
+        free(lcseries);
+        lcseries = NULL;
+    }
+    else
+    {
+        istat = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return query;
+}
+
+/* both pkwhere and npkwhere exist. */
+/* First attempt - this selected the correct records, but it ran too slowly. PG would not always use the index.
+ *   SELECT count(*) FROM (SELECT recnum FROM <series> WHERE <npkwhere>) AS T1, (SELECT recnum FROM <shadow table> WHERE <pkwhere>) AS T2 WHERE T1.recnum = T2.recnum
+ */
+
+/* Second attempt -  - use temporary tables. These tables will be deleted when the database session ends. Each
+ * time one is created, it is given a unique name (shadowtempXXX).
+ * 
+ *   # Apply the prime-key logic by selecting all records from the shadow table.
+ *   CREATE TEMPORARY TABLE shadowtempXXX AS SELECT recnum FROM <shadow table> WHERE pkwhere;
+ *
+ *   # Select the records in the series whose recnums are in the 
+ *   # list of recnums in shadowtempXXX (those that have satisfied the prime-key logic).
+ *   SELECT count(*) FROM <series> AS T WHERE T.recnum IN (SELECT recnum FROM shadowtempXXX) AND <npkwhere>;
+ */
+char *drms_series_nrecords_querystringD(const char *series, const char *pkwhere, const char *npkwhere, int *status)
+{
+    char *query = NULL;
+    size_t stsz = 8192;
+    char *lcseries = NULL;
+    char shadow[DRMS_MAXSERIESNAMELEN];
+    char tabname[256];
+    int istat = DRMS_SUCCESS;
+    
+    lcseries = strdup(series);
+    
+    if (lcseries)
+    {
+        strtolower(lcseries);
+        query = malloc(stsz);
+        if (query)
+        {
+            *query = '\0';
+            
+            snprintf(shadow, sizeof(shadow), "%s%s", lcseries, kShadowSuffix);
+            if (GetTempTable(tabname, sizeof(tabname)))
+            {
+                istat = DRMS_ERROR_OVERFLOW;
+            }
+            else
+            {
+                /* Create the temporary table. */
+                query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, " AS SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, shadow, &stsz);
+                query = base_strcatalloc(query, " WHERE ", &stsz);
+                query = base_strcatalloc(query, pkwhere, &stsz);
+                query = base_strcatalloc(query, ";\n", &stsz);
+                
+                /* Select the records from the series table. */
+                query = base_strcatalloc(query, "SELECT count(*) FROM ", &stsz);
+                query = base_strcatalloc(query, lcseries, &stsz);
+                query = base_strcatalloc(query, " AS T WHERE T.recnum IN (SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, ") AND ", &stsz);
+                query = base_strcatalloc(query, npkwhere, &stsz);
+            }
+        }
+        else
+        {
+            istat = DRMS_ERROR_OUTOFMEMORY;
+        }
+        
+        free(lcseries);
+        lcseries = NULL;
+    }
+    else
+    {
+        istat = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return query;
+}
+
+int drms_series_nrecords(DRMS_Env_t *env, const char *series, int *status)
+{
+    int count;
+    int istat = DRMS_SUCCESS;
+    char *query = NULL;
+    DB_Text_Result_t *tres = NULL;
+    
+    count = -1;
+    
+    query = drms_series_nrecords_querystringA(series, &istat);
+    tres = drms_query_txt(env->session, query);
+    
+    if (tres)
+    {
+        if (tres->num_rows == 1 && tres->num_cols == 1)
+        {
+            count = atoll(tres->field[0][0]);
+        }
+        
+        db_free_text_result(tres);
+        tres = NULL;
+    }
+    else
+    {
+        fprintf(stderr, "Failed: %s\n", query);
+        istat = DRMS_ERROR_BADDBQUERY;
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return count;
+}
+
+int drms_series_shadowexists(DRMS_Env_t *env, const char *series, int *status)
+{
+    int istat = DRMS_SUCCESS;
+    int tabexists = 0;
+    char *namespace = NULL;
+    char *table = NULL;
+    char shadowtable[DRMS_MAXSERIESNAMELEN];
+    
+    if (!get_namespace(series, &namespace, &table))
+    {
+        snprintf(shadowtable, sizeof(shadowtable), "%s%s", table, kShadowSuffix);
+        tabexists = drms_query_tabexists(env->session, namespace, shadowtable, &istat);
+        
+        free(namespace);
+        free(table);
+    }
+    else
+    {
+        istat = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return tabexists;
+}
+
+
+int drms_series_createshadow(DRMS_Env_t *env, const char *series)
+{
+    return CreateShadow(env, series, NULL);
+}
+
+/* neither pkwhere nor npkwhere exists. */
+/* First attempt - this selected the correct records, but it ran too slowly. PG would not always use the index.
+ *   SELECT <fields> FROM <series> AS T1, (SELECT recnum AS therec FROM <shadow table>) AS T2 WHERE T1.recnum = T2.therec ORDER BY T1.pkey1, T1.pkey2, ... LIMIT <limit> 
+ *   Ensure that all column names in <fields> are prepended with "T1."
+ */
+/* Second attempt -  - use temporary tables. These tables will be deleted when the database session ends. Each
+ * time one is created, it is given a unique name (shadowtempXXX).
+ * 
+ * # Apply the prime-key logic by selecting all records from the shadow table.
+ *   CREATE TEMPORARY TABLE shadowtempXXX AS SELECT recnum FROM <shadow table>;
+ *
+ * # Select the records in the series whose recnums are in the 
+ * # list of recnums in shadowtempXXX (those that have satisfied the prime-key logic).
+ *   SELECT <fields> FROM <series> AS T WHERE T.recnum IN (SELECT recnum FROM shadowtempXXX)
+ *     ORDER BY T.pkey1, T.pkey2, ... LIMIT <limit>;
+ */
+char *drms_series_all_querystringA(DRMS_Env_t *env, const char *series, const char *fields, int limit, int *status)
+{
+    char *query = NULL;
+    int istat = DRMS_SUCCESS;
+    size_t stsz = 8192;
+    char *lcseries = NULL;
+    char *qualfields = NULL;
+    char *qualpkeylist = NULL;
+    char limitstr[32];
+    char shadow[DRMS_MAXSERIESNAMELEN];
+    char tabname[256];
+    
+    lcseries = strdup(series);
+    
+    if (lcseries)
+    {
+        strtolower(lcseries);
+        query = malloc(stsz);
+        
+        if (query)
+        {
+            *query = '\0';
+            
+            snprintf(shadow, sizeof(shadow), "%s%s", lcseries, kShadowSuffix);
+            snprintf(limitstr, sizeof(limitstr), "%d", limit);
+            
+            /* Prepend all column names in fields with T1 (just in case the series table has a column named "therec"). */
+            qualfields = PrependFields(fields, "T.", &istat);
+            
+            /* Create a list of all prime key names. */
+            qualpkeylist = CreatePKeyList(env, series, "T", &istat);
+            
+            if (istat == DRMS_SUCCESS)
+            {
+                if (GetTempTable(tabname, sizeof(tabname)))
+                {
+                    istat = DRMS_ERROR_OVERFLOW;
+                }
+            }
+
+            if (istat == DRMS_SUCCESS)
+            {
+                /* Create the temporary table. */
+                query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, " AS SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, shadow, &stsz);
+                query = base_strcatalloc(query, ";\n", &stsz);
+                
+                /* Select the records from the series table. */
+                query = base_strcatalloc(query, "SELECT ", &stsz);
+                query = base_strcatalloc(query, qualfields, &stsz);
+                query = base_strcatalloc(query, " FROM ", &stsz);
+                query = base_strcatalloc(query, lcseries, &stsz);
+                query = base_strcatalloc(query, " AS T WHERE T.recnum IN (SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, ") ORDER BY ", &stsz);
+                query = base_strcatalloc(query, qualpkeylist, &stsz);
+                query = base_strcatalloc(query, " LIMIT ", &stsz);
+                query = base_strcatalloc(query, limitstr, &stsz);
+            }
+                        
+            free(qualpkeylist);
+            qualpkeylist = NULL;
+            free(qualfields);
+            qualfields = NULL;
+        }
+        else
+        {
+            istat = DRMS_ERROR_OUTOFMEMORY;
+        }
+        
+        free(lcseries);
+        lcseries = NULL;
+    }
+    else
+    {
+        istat = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return query;
+}
+
+/* pkwhere does not exist, but npkwhere does. */
+/* First attempt - this selected the correct records, but it ran too slowly. PG would not always use the index.
+ *   SELECT <fields> FROM <series> AS T1, (SELECT T2.therec FROM (SELECT recnum AS therec FROM <series> WHERE <npkwhere>) AS T2, <shadow table> AS T3 WHERE T2.therec = T3.recnum) AS T4 WHERE T1.recnum = T4.therec ORDER BY T1.pkey1, T1.pkey2, ... LIMIT <limit>
+ *                                                                                                                                     
+ *   T4 is a list of recnums (column therec) that satisfy both the prime-key logic and the npkwhere clause.                              
+ *                                                                                                                                     
+ *   Ensure that all column names in <fields> are prepended with "T1." */
+
+/* Second attempt - use temporary tables. These tables will be deleted when the database session ends. Each
+ * time one is created, it is given a unique name (shadowtempXXX).
+ *
+ *   # Apply the prime-key logic by selecting all records from the shadow table.
+ *   CREATE TEMPORARY TABLE shadowtempXXX AS SELECT recnum FROM <shadow table>;
+ *
+ *   # Select the records in the series that satisfy the non-prime-key query AND whose recnums are in the 
+ *   # list of recnums in shadowtempXXX (those that have satisfied the prime-key logic).
+ *   SELECT <fields> FROM <series> AS T WHERE T.recnum IN (SELECT recnum FROM shadowtempXXX) AND <npkwhere>
+ *     ORDER BY T.pkey1, T.pkey2, ... LIMIT <limit>;
+ *
+ */
+char *drms_series_all_querystringB(DRMS_Env_t *env, const char *series, const char *npkwhere, const char *fields, int limit, int *status)
+{
+    char *query = NULL;
+    int istat = DRMS_SUCCESS;
+    size_t stsz = 8192;
+    char *lcseries = NULL;
+    char *qualfields = NULL;
+    char *qualpkeylist = NULL;
+    char limitstr[32];
+    char shadow[DRMS_MAXSERIESNAMELEN];
+    char tabname[256];
+    
+    lcseries = strdup(series);
+    
+    if (lcseries)
+    {
+        strtolower(lcseries);
+        query = malloc(stsz);
+        
+        if (query)
+        {
+            *query = '\0';
+            
+            snprintf(shadow, sizeof(shadow), "%s%s", lcseries, kShadowSuffix);
+            snprintf(limitstr, sizeof(limitstr), "%d", limit);
+            
+            /* Prepend all column names in fields with T1 (just in case the series table has a column named "therec"). */
+            qualfields = PrependFields(fields, "T", &istat);
+            
+            /* Create a list of all prime key names. */
+            qualpkeylist = CreatePKeyList(env, series, "T", &istat);
+            
+            if (istat == DRMS_SUCCESS)
+            {
+                if (GetTempTable(tabname, sizeof(tabname)))
+                {
+                    istat = DRMS_ERROR_OVERFLOW;
+                }
+                else
+                {
+                    /* Create the temporary table. */
+                    query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
+                    query = base_strcatalloc(query, tabname, &stsz);
+                    query = base_strcatalloc(query, " AS SELECT recnum FROM ", &stsz);
+                    query = base_strcatalloc(query, shadow, &stsz);
+                    query = base_strcatalloc(query, ";\n", &stsz);
+                    
+                    /* Select the records from the series table. */
+                    query = base_strcatalloc(query, "SELECT ", &stsz);
+                    query = base_strcatalloc(query, qualfields, &stsz);
+                    query = base_strcatalloc(query, " FROM ", &stsz);
+                    query = base_strcatalloc(query, lcseries, &stsz);
+                    query = base_strcatalloc(query, " AS T WHERE T.recnum IN (SELECT recnum FROM ", &stsz);
+                    query = base_strcatalloc(query, tabname, &stsz);
+                    query = base_strcatalloc(query, ") AND ", &stsz);
+                    query = base_strcatalloc(query, npkwhere, &stsz);
+                    query = base_strcatalloc(query, " ORDER BY ", &stsz);
+                    query = base_strcatalloc(query, qualpkeylist, &stsz);
+                    query = base_strcatalloc(query, " LIMIT ", &stsz);
+                    query = base_strcatalloc(query, limitstr, &stsz);
+                }
+            }
+            
+            free(qualpkeylist);
+            qualpkeylist = NULL;
+            free(qualfields);
+            qualfields = NULL;
+        }
+        else
+        {
+            istat = DRMS_ERROR_OUTOFMEMORY;
+        }
+        
+        free(lcseries);
+        lcseries = NULL;
+    }
+    else
+    {
+        istat = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return query;
+}
+
+/* pkwhere does exist, but npkwhere does not. */
+/* First attempt - this selected the correct records, but it ran too slowly. PG would not always use the index.
+ *   SELECT <fields> FROM <series> AS T1, (SELECT recnum AS therec FROM <shadow table> WHERE <pkwhere>) AS T2 WHERE T1.recnum = T2.therec ORDER BY T1.pkey1, T1.pkey2, ... LIMIT <limit>                                                                                       
+ *                                                                                                                                     
+ * Ensure that all column names in <fields> are prepended with "T1." */
+
+/* Second attempt - use temporary tables. These tables will be deleted when the database session ends. Each
+ * time one is created, it is given a unique name (shadowtempXXX).
+ *
+ *   # Apply the prime-key logic by selecting all records from the shadow table that satisfy the phwhere clause.
+ *   CREATE TEMPORARY TABLE shadowtempXXX AS SELECT recnum FROM <shadow table>
+ *     WHERE <pkwhere>;
+ *
+ *   # Select the records in the series whose recnums are in the 
+ *   # list of recnums in shadowtempXXX (those that have satisfied the prime-key logic AND the pkwhere clause).
+ *   SELECT <fields> FROM <series> AS T WHERE T.recnum IN (SELECT recnum FROM shadowtempXXX)
+ *     ORDER BY T.pkey1, T.pkey2, ... LIMIT <limit>;
+ */
+char *drms_series_all_querystringC(DRMS_Env_t *env, const char *series, const char *pkwhere, const char *fields, int limit, int *status)
+{
+    char *query = NULL;
+    int istat = DRMS_SUCCESS;
+    size_t stsz = 8192;
+    char *lcseries = NULL;
+    char *qualfields = NULL;
+    char *qualpkeylist = NULL;
+    char limitstr[32];
+    char shadow[DRMS_MAXSERIESNAMELEN];
+    char tabname[256];
+    
+    lcseries = strdup(series);
+    
+    if (lcseries)
+    {
+        strtolower(lcseries);
+        query = malloc(stsz);
+        
+        if (query)
+        {
+            *query = '\0';
+            
+            snprintf(shadow, sizeof(shadow), "%s%s", lcseries, kShadowSuffix);
+            snprintf(limitstr, sizeof(limitstr), "%d", limit);
+            
+            /* Prepend all column names in fields with T1 (just in case the series table has a column named "therec"). */
+            qualfields = PrependFields(fields, "T.", &istat);
+            
+            /* Create a list of all prime key names. */
+            qualpkeylist = CreatePKeyList(env, series, "T", &istat);
+            
+            if (istat == DRMS_SUCCESS)
+            {
+                if (GetTempTable(tabname, sizeof(tabname)))
+                {
+                    istat = DRMS_ERROR_OVERFLOW;
+                }
+            }
+            
+            if (istat == DRMS_SUCCESS)
+            {
+                /* Create the temporary table. */
+                query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, " AS SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, shadow, &stsz);
+                query = base_strcatalloc(query, " WHERE ", &stsz);
+                query = base_strcatalloc(query, pkwhere, &stsz);
+                query = base_strcatalloc(query, ";\n", &stsz);
+                
+                /* Select the records from the series table. */
+                query = base_strcatalloc(query, "SELECT ", &stsz);
+                query = base_strcatalloc(query, qualfields, &stsz);
+                query = base_strcatalloc(query, " FROM ", &stsz);
+                query = base_strcatalloc(query, lcseries, &stsz);
+                query = base_strcatalloc(query, " AS T WHERE T.recnum IN (SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, ") ORDER BY ", &stsz);
+                query = base_strcatalloc(query, qualpkeylist, &stsz);
+                query = base_strcatalloc(query, " LIMIT ", &stsz);
+                query = base_strcatalloc(query, limitstr, &stsz);
+            }
+            
+            free(qualpkeylist);
+            qualpkeylist = NULL;
+            free(qualfields);
+            qualfields = NULL;
+        }
+        else
+        {
+            istat = DRMS_ERROR_OUTOFMEMORY;
+        }
+        
+        free(lcseries);
+        lcseries = NULL;
+    }
+    else
+    {
+        istat = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return query;
+}
+
+/* both pkwhere and npkwhere exist. */
+/* First attempt - this selected the correct records, but it ran too slowly. PG would not always use the index.
+ *   SELECT <fields> FROM <series> AS T1, (SELECT T2.therec FROM (SELECT recnum AS therec FROM <series> WHERE <pkwhere> AND <npkwhere>) AS T2, <shadow table> AS T3 WHERE T2.therec = T3.recnum) AS T4 WHERE T1.recnum = T4.therec ORDER BY T1.pkey1, T1.pkey2, ... LIMIT <limit>
+ *                                                                                                                                     
+ *   T4 is a list of recnums (column therec) that satisfy the prime-key logic, the npkwhere clause, and the pkwhere clause.              
+ *                                                                                                                                     
+ *   Ensure that all column names in <fields> are prepended with "T1." */
+
+/* Second attempt - use temporary tables. These tables will be deleted when the database session ends. Each
+ * time one is created, it is given a unique name (shadowtempXXX).
+ *
+ *   # Apply the prime-key logic by selecting all records from the shadow table that satisfy the pkwhere clause.
+ *   CREATE TEMPORARY TABLE shadowtempXXX AS SELECT recnum FROM <shadow table>
+ *     WHERE <pkwhere>;
+ *
+ *   # Select the records in the series that satisfy the non-prime-key query AND whose recnums are in the
+ *   # list of recnums in shadowtempXXX (those that have satisfied the prime-key logic AND the pkwhere clause).
+ *   SELECT <fields> FROM <series> AS T WHERE T.recnum IN (SELECT recnum FROM shadowtempXXX) AND <npkwhere>
+ *     ORDER BY T.pkey1, T.pkey2, ... LIMIT <limit>;
+ */
+char *drms_series_all_querystringD(DRMS_Env_t *env, const char *series, const char *pkwhere, const char *npkwhere, const char *fields, int limit, int *status)
+{
+    char *query = NULL;
+    int istat = DRMS_SUCCESS;
+    size_t stsz = 8192;
+    char *lcseries = NULL;
+    char *qualfields = NULL;
+    char *qualpkeylist = NULL;
+    char limitstr[32];
+    char shadow[DRMS_MAXSERIESNAMELEN];
+    char tabname[256];
+    
+    lcseries = strdup(series);
+    
+    if (lcseries)
+    {
+        strtolower(lcseries);
+        query = malloc(stsz);
+        
+        if (query)
+        {
+            *query = '\0';
+            
+            snprintf(shadow, sizeof(shadow), "%s%s", lcseries, kShadowSuffix);
+            snprintf(limitstr, sizeof(limitstr), "%d", limit);
+            
+            /* Prepend all column names in fields with T1 (just in case the series table has a column named "therec"). */
+            qualfields = PrependFields(fields, "T.", &istat);
+            
+            /* Create a list of all prime key names. */
+            qualpkeylist = CreatePKeyList(env, series, "T", &istat);
+            
+            if (istat == DRMS_SUCCESS)
+            {
+                if (GetTempTable(tabname, sizeof(tabname)))
+                {
+                    istat = DRMS_ERROR_OVERFLOW;
+                }
+            }
+            
+            if (istat == DRMS_SUCCESS)
+            {
+                /* Create the temporary table. */
+                query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, " AS SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, shadow, &stsz);
+                query = base_strcatalloc(query, " WHERE ", &stsz);
+                query = base_strcatalloc(query, pkwhere, &stsz);
+                query = base_strcatalloc(query, ";\n", &stsz);
+                
+                /* Select the records from the series table. */
+                query = base_strcatalloc(query, "SELECT ", &stsz);
+                query = base_strcatalloc(query, qualfields, &stsz);
+                query = base_strcatalloc(query, " FROM ", &stsz);
+                query = base_strcatalloc(query, lcseries, &stsz);
+                query = base_strcatalloc(query, " AS T WHERE T.recnum IN (SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, ") AND ", &stsz);
+                query = base_strcatalloc(query, npkwhere, &stsz);
+                query = base_strcatalloc(query, " ORDER BY ", &stsz);
+                query = base_strcatalloc(query, qualpkeylist, &stsz);
+                query = base_strcatalloc(query, " LIMIT ", &stsz);
+                query = base_strcatalloc(query, limitstr, &stsz);
+            }
+            
+            free(qualpkeylist);
+            qualpkeylist = NULL;
+            free(qualfields);
+            qualfields = NULL;
+        }
+        else
+        {
+            istat = DRMS_ERROR_OUTOFMEMORY;
+        }
+        
+        free(lcseries);
+        lcseries = NULL;
+    }
+    else
+    {
+        istat = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return query;
 }
 
 int drms_series_summaryexists(DRMS_Env_t *env, const char *series, int *status)

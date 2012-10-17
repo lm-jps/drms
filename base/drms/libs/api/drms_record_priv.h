@@ -106,12 +106,14 @@ DRMS_Record_t *drms_retrieve_record(DRMS_Env_t *env, const char *seriesname,
 xxx
 */
 DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env, 
-					const char *seriesname, char *where, 
-					int filter, int mixed, 
-					HContainer_t *goodsegcont,
+                                        const char *seriesname, char *where, 
+                                        const char *pkwhere,
+                                        const char *npkwhere,
+                                        int filter, int mixed, 
+                                        HContainer_t *goodsegcont,
                                         int allvers, 
                                         int nrecs, 
-					int *status);
+                                        int *status);
 /* Insert multiple records in the database using the 
    fast bulk insert interface. */
 /**

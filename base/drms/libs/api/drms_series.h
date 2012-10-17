@@ -201,6 +201,39 @@ int drms_series_isvers(DRMS_SeriesInfo_t *si, DRMS_SeriesVersion_t *v);
 
 int GetTableOID(DRMS_Env_t *env, const char *ns, const char *table, char **oid);
 int GetColumnNames(DRMS_Env_t *env, const char *oid, char **colnames);
+
+int drms_series_updatesummaries(DRMS_Env_t *env,
+                                const char *series,
+                                int nrows,
+                                int ncols,
+                                char **pkeynames,
+                                long long* recnums,
+                                int added);
+
+#if (defined TOC && TOC)
+int drms_series_tocexists(DRMS_Env_t *env, int *status);
+int drms_series_createtoc(DRMS_Env_t *env);
+int drms_series_intoc(DRMS_Env_t *env, const char *series, int *status);
+int drms_series_insertintotoc(DRMS_Env_t *env, const char *series);
+#endif
+
+char * drms_series_nrecords_querystringA(const char *series, int *status);
+char *drms_series_nrecords_querystringB(const char *series, const char *npkwhere, int *status);
+char *drms_series_nrecords_querystringC(const char *series, const char *pkwhere, int *status);
+char *drms_series_nrecords_querystringD(const char *series, const char *pkwhere, const char *npkwhere, int *status);
+int drms_series_shadowexists(DRMS_Env_t *env, const char *series, int *status);
+int drms_series_createshadow(DRMS_Env_t *env, const char *series);
+char *drms_series_all_querystringA(DRMS_Env_t *env, const char *series, const char *fields, int limit, int *status);
+char *drms_series_all_querystringB(DRMS_Env_t *env, const char *series, const char *npkwhere, const char *fields, int limit, int *status);
+char *drms_series_all_querystringC(DRMS_Env_t *env, const char *series, const char *pkwhere, const char *fields, int limit, int *status);
+char *drms_series_all_querystringD(DRMS_Env_t *env,
+                                   const char *series,
+                                   const char *pkwhere,
+                                   const char *npkwhere,
+                                   const char *fields,
+                                   int limit,
+                                   int *status);
+
 int drms_series_summaryexists(DRMS_Env_t *env, const char *series, int *status);
 int drms_series_canupdatesummaries(DRMS_Env_t *env, const char *series, int *status);
 int drms_series_gethighestkeyrank(DRMS_Env_t *env, const char *series, int *status);

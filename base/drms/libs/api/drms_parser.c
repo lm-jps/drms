@@ -131,6 +131,9 @@ DRMS_Record_t *drms_parse_description(DRMS_Env_t *env, char *desc)
   template->sessionid = 0;
   template->sessionns = NULL;
   template->su = NULL;
+    template->seriesinfo->hasshadow = -1; /* -1: don't know, 0: no, 1: yes. */
+    template->seriesinfo->createshadow = 0;
+    
   /* Initialize container structure. */
   hcon_init(&template->segments, sizeof(DRMS_Segment_t), DRMS_MAXHASHKEYLEN, 
 	    (void (*)(const void *)) drms_free_segment_struct, 
@@ -317,6 +320,8 @@ HContainer_t *drms_parse_keyworddesc(DRMS_Env_t *env, const char *desc, int *sta
                             fauxtemplate->sessionid = 0;
                             fauxtemplate->sessionns = NULL;
                             fauxtemplate->su = NULL;
+                            fauxtemplate->seriesinfo->hasshadow = -1;
+                            fauxtemplate->seriesinfo->createshadow = 0;
                             
                             /* Initialize container structure. */
                             /* drms_free_keyword_struct doesn't free key->info. */
@@ -448,85 +453,111 @@ HContainer_t *drms_parse_keyworddesc(DRMS_Env_t *env, const char *desc, int *sta
 }
 
 
-
-static int parse_seriesinfo (char *desc, DRMS_Record_t *template) {
-  int len;
-  char *start, *p, *q;
-  /* Parse the description line by line, filling out the template struct. */
-  start = desc;
-  len = getnextline (&start);
-  while (*start) {
-     
-     p = start;
-     SKIPWS(p);
-
-     if (*p == '\n')
-     {
-        p++;
-        start = p;
+/* The way this function parses the series-info section is inefficient. 
+ * It is an O(n^2) algorithm (it would be better to parse the identifier
+ * present on each line, then hash to the list of acceptable identifiers).
+ *   -Art */
+static int parse_seriesinfo (char *desc, DRMS_Record_t *template) 
+{
+    int len;
+    char *start, *p, *q;
+    int iStat = 0;
+    
+    /* Parse the description line by line, filling out the template struct. */
+    start = desc;
+    len = getnextline (&start);
+    while (*start) {
+        
+        p = start;
+        SKIPWS(p);
+        
+        if (*p == '\n')
+        {
+            p++;
+            start = p;
+            len = getnextline (&start);
+            continue;
+        }
+        
+        q = p;
+        
+        /* Scan past keyword followed by ':'. */
+        if (GETKEYWORD(&q)) return 1;
+        /* Branch on keyword and insert appropriate information into struct. */
+        if (prefixmatch (p, "Seriesname"))
+        {
+            TRY(getstring (&q, template->seriesinfo->seriesname, DRMS_MAXSERIESNAMELEN) <= 0)
+        }
+        if (prefixmatch (p, "Version"))
+        {
+            TRY(getstring (&q, template->seriesinfo->version, DRMS_MAXSERIESVERSION) <= 0)
+        }
+        else if (prefixmatch (p, "Description"))
+        {
+            TRY(getstring (&q, template->seriesinfo->description, DRMS_MAXCOMMENTLEN) < 0)
+        }
+        else if (prefixmatch (p, "Owner"))
+        {
+            TRY(getstring (&q, template->seriesinfo->owner, DRMS_MAXOWNERLEN) <= 0)
+        }
+        else if (prefixmatch (p, "Author"))
+        {
+            TRY(getstring (&q, template->seriesinfo->author, DRMS_MAXCOMMENTLEN) <= 0)
+        }
+        else if (prefixmatch (p, "Archive"))
+        {
+            TRY(GETINT(&q, &(template->seriesinfo->archive)))
+        }
+        else if (prefixmatch (p, "Unitsize"))
+        {
+            TRY(GETINT (&q, &(template->seriesinfo->unitsize)))
+        }
+        else if (prefixmatch (p, "Tapegroup"))
+        {
+            TRY(GETINT (&q, &(template->seriesinfo->tapegroup)))
+        }
+        else if (prefixmatch (p, "Retention"))
+        {
+            TRY(GETINT (&q, &(template->seriesinfo->retention)))
+        }
+        else if (prefixmatch (p, "CreateShadow"))
+        {
+            TRY(GETINT (&q, &(template->seriesinfo->createshadow)));
+        }
+        start += len + 1; /* len doesn't account for \n*/
+        
         len = getnextline (&start);
-        continue;
-     }
-
-     q = p;
-
-     /* Scan past keyword followed by ':'. */
-     if (GETKEYWORD(&q)) return 1;
-     /* Branch on keyword and insert appropriate information into struct. */
-     if (prefixmatch (p, "Seriesname"))
-       TRY(getstring (&q, template->seriesinfo->seriesname, DRMS_MAXSERIESNAMELEN) <= 0)
-     if (prefixmatch (p, "Version"))
-       TRY(getstring (&q, template->seriesinfo->version, DRMS_MAXSERIESVERSION) <= 0)
-     else if (prefixmatch (p, "Description"))
-       TRY(getstring (&q, template->seriesinfo->description, DRMS_MAXCOMMENTLEN) < 0)
-     else if (prefixmatch (p, "Owner"))
-       TRY(getstring (&q, template->seriesinfo->owner, DRMS_MAXOWNERLEN) <= 0)
-     else if (prefixmatch (p, "Author"))
-       TRY(getstring (&q, template->seriesinfo->author, DRMS_MAXCOMMENTLEN) <= 0)
-     else if (prefixmatch (p, "Archive"))
-       TRY(GETINT(&q, &(template->seriesinfo->archive)))
-     else if (prefixmatch (p, "Unitsize"))
-     {
-        TRY(GETINT (&q, &(template->seriesinfo->unitsize)))
-     }
-     else if (prefixmatch (p, "Tapegroup"))
-       TRY(GETINT (&q, &(template->seriesinfo->tapegroup)))
-     else if (prefixmatch (p, "Retention"))
-       TRY(GETINT (&q, &(template->seriesinfo->retention)))
-     start += len + 1; /* len doesn't account for \n*/
-
-     len = getnextline (&start);
-  }
-
-  if (template->seriesinfo->archive != -1 && 
-      template->seriesinfo->archive !=  0 && 
-      template->seriesinfo->archive !=  1)
-  {
-     fprintf(stderr, "WARNING: Invalid archive value '%d' - setting to 0.\n", template->seriesinfo->archive);
-     template->seriesinfo->archive = 0;
-  }
-
-  //  /* Force series name to be all lower case. */
-  //  strtolower(template->seriesinfo->seriesname);
-
-  /* If version isn't specified, then assume the current version. This version will be used 
-   * in downstream parsing code to switch between code branches.
-   */
-  snprintf(template->seriesinfo->version, DRMS_MAXSERIESVERSION, "%s", drms_series_getvers());
-  
-
+    }
+    
+    if (template->seriesinfo->archive != -1 && 
+        template->seriesinfo->archive !=  0 && 
+        template->seriesinfo->archive !=  1)
+    {
+        fprintf(stderr, "WARNING: Invalid archive value '%d' - setting to 0.\n", template->seriesinfo->archive);
+        template->seriesinfo->archive = 0;
+    }
+    
+    //  /* Force series name to be all lower case. */
+    //  strtolower(template->seriesinfo->seriesname);
+    
+    /* If version isn't specified, then assume the current version. This version will be used 
+     * in downstream parsing code to switch between code branches.
+     */
+    snprintf(template->seriesinfo->version, DRMS_MAXSERIESVERSION, "%s", drms_series_getvers());
+    
+    
 #ifdef DEBUG 
-  printf("Seriesname = '%s'\n",template->seriesinfo->seriesname);
-  printf("Description = '%s'\n",template->seriesinfo->description);
-  printf("Owner = '%s'\n",template->seriesinfo->owner);
-  printf("Author = '%s'\n",template->seriesinfo->author);
-  printf("Archive = %d\n",template->seriesinfo->archive);
-  printf("Unitsize = %d\n",template->seriesinfo->unitsize);
-  printf("Tapegroup = %d\n",template->seriesinfo->tapegroup);
-  printf("Retention = %d\n",template->seriesinfo->retention);
+    printf("Seriesname = '%s'\n",template->seriesinfo->seriesname);
+    printf("Description = '%s'\n",template->seriesinfo->description);
+    printf("Owner = '%s'\n",template->seriesinfo->owner);
+    printf("Author = '%s'\n",template->seriesinfo->author);
+    printf("Archive = %d\n",template->seriesinfo->archive);
+    printf("Unitsize = %d\n",template->seriesinfo->unitsize);
+    printf("Tapegroup = %d\n",template->seriesinfo->tapegroup);
+    printf("Retention = %d\n",template->seriesinfo->retention);
 #endif
-
-  return 0;
+    
+    return iStat;
 }
 
 

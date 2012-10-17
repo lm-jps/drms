@@ -39,6 +39,7 @@ parsing, and default-parameter initialization.
 #define kLoopConn "loopconn"
 #define kDBTimeOut "DRMS_DBTIMEOUT"
 #define kJsdRetention "DRMS_JSDRETENTION"
+#define kCreateShadows "DRMS_SHADOW"
 
 extern CmdParams_t cmdparams;
 /* Global DRMS Environment handle. */

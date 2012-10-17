@@ -93,7 +93,8 @@ int JSOCMAIN_Init(int argc,
             kQUERYMEMARG,
             kSERVERWAITARG,
             kLoopConn,
-            kDBTimeOut);
+            kDBTimeOut,
+            kCreateShadows);
    cmdparams_reserve(&cmdparams, reservebuf, "jsocmain");
 
    status = cmdparams_parse (&cmdparams, argc, argv);
@@ -392,6 +393,7 @@ pid_t drms_start_server (int verbose, int dolog)  {
   int archive;
     int dbtimeout;
   int loopconn;
+    int createshadows = 0;
   char drms_session[DRMS_MAXPATHLEN];
   char drms_host[DRMS_MAXPATHLEN];
   char drms_port[DRMS_MAXPATHLEN];
@@ -438,6 +440,7 @@ pid_t drms_start_server (int verbose, int dolog)  {
     }
     
   loopconn = cmdparams_isflagset(&cmdparams, kLoopConn);
+     createshadows = cmdparams_isflagset(&cmdparams, kCreateShadows);
   
   int fd[2];
   pid_t	pid;
@@ -577,6 +580,14 @@ pid_t drms_start_server (int verbose, int dolog)  {
        snprintf(buf, sizeof(buf), "--%s", kLoopConn);
        argv[i++] = strdup(buf);
     }
+      
+      if (createshadows)
+      {
+          char buf[256];
+          
+          snprintf(buf, sizeof(buf), "--%s", kCreateShadows);
+          argv[i++] = strdup(buf);
+      }
 
     for (; i < num_args; i++) {
       argv[i] = NULL;

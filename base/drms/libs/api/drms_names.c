@@ -1524,7 +1524,7 @@ int drms_names_parsedegreedelta(char **deltastr, DRMS_SlotKeyUnit_t *unit, doubl
 
 /***************** Middle-end: Generate SQL from AST ********************/
 
-static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char **query);
+static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char **query, char **pkwhere, int sizep, char **npkwhere, int sizen);
 static int sql_record_query(RecordQuery_t *rs, char **query);
 static int sql_record_list(RecordList_t *rs, char *seriesname,  char **query);
 static int sql_recnum_set(IndexRangeSet_t  *rs, char *seriesname, char **query);
@@ -1536,7 +1536,13 @@ static int sql_primekey_value_set(ValueRangeSet_t *rs, DRMS_Keyword_t *keyword,
 
 
 
-static int sql_record_set(RecordSet_t *rs, char *seriesname, char *query)
+static int sql_record_set(RecordSet_t *rs, 
+                          char *seriesname, 
+                          char *query, 
+                          char *pkwhere, 
+                          int sizep, 
+                          char *npkwhere, 
+                          int sizen)
 {
   char *p=query;
   /*  char *field_list; */
@@ -1553,16 +1559,18 @@ static int sql_record_set(RecordSet_t *rs, char *seriesname, char *query)
   if (rs->recordset_spec)
   {
     /*    p += sprintf(p," WHERE "); */
-    return sql_record_set_filter(rs->recordset_spec, seriesname, &p);  
+     return sql_record_set_filter(rs->recordset_spec, seriesname, &p, &pkwhere, sizep, &npkwhere, sizen);
   }
   else
   {
-    *p = 0;
-    return 0;
+     *p = 0;
+     *pkwhere = '\0';
+     *npkwhere = '\0';
+     return 0;
   }
 }
 
-static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char **query)
+static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char **query, char **pkwhere, int sizep, char **npkwhere, int sizen)
 {
 #ifdef DEBUG
   printf("Enter sql_record_set_filter\n");
@@ -1581,6 +1589,8 @@ static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char 
    */
 
   char whereclz[DRMS_MAXQUERYLEN] = {0};
+  char pkwherebuf[DRMS_MAXQUERYLEN] = {0};
+  char npkwherebuf[DRMS_MAXQUERYLEN] = {0};
   char wherebuf[DRMS_MAXQUERYLEN];
   char *bogus = NULL;
 
@@ -1652,6 +1662,22 @@ static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char 
        /* put back into whereclz */
        base_strlcat(whereclz, " AND ", sizeof(whereclz));
        base_strlcat(whereclz, wherebuf, sizeof(whereclz));
+
+       /* do the same thing for pkwherebuf */
+       if (*pkwherebuf)
+       {
+          pin = '\0';
+          base_strlcat(pin, " WHERE ( ", sizeof(wherebuf) - (pin - wherebuf));
+          base_strlcat(pin, pkwherebuf, sizeof(wherebuf) - (pin - wherebuf));
+          base_strlcat(pin, " )", sizeof(wherebuf) - (pin - wherebuf));
+          base_strlcat(wherebuf, savebuf, sizeof(wherebuf));
+          base_strlcat(wherebuf, " )", sizeof(wherebuf));
+          base_strlcat(pkwherebuf, " AND ", sizeof(pkwherebuf));
+          base_strlcat(pkwherebuf, wherebuf, sizeof(pkwherebuf));
+       }
+
+       /* don't do the same thing for npkwherebuf - there are no FIRST_VALUE/LAST_VALUE rs types
+        * for non-primekeys. */
     }
     else
     {
@@ -1665,6 +1691,28 @@ static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char 
        }
 
        base_strlcat(whereclz, wherebuf, sizeof(whereclz));
+
+       /* Do the same thing for pkwherebuf and npkwherebuf. pkwherebuf gets all prime-key condition, 
+        * except explicit lists of recnums. npkwherebuf gets all other conditions. */
+       if (rs->type == RECORDLIST && rs->record_list->type == PRIMEKEYSET)
+       {
+          /* pkwherebuf*/
+          if (*pkwherebuf)
+          {
+             base_strlcat(pkwherebuf, " AND ", sizeof(pkwherebuf));
+          }
+
+          base_strlcat(pkwherebuf, wherebuf, sizeof(pkwherebuf));
+       }
+       else
+       {
+          if (*npkwherebuf)
+          {
+             base_strlcat(npkwherebuf, " AND ", sizeof(npkwherebuf));
+          }
+
+          base_strlcat(npkwherebuf, wherebuf, sizeof(npkwherebuf));
+       }
     }
 
     rs = rs->next;
@@ -1677,6 +1725,9 @@ static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char 
   /* DON'T know the size of query - ack - just strcat (very dangerous!!) */
   sprintf(*query, whereclz);
   *query += strlen(whereclz);
+
+  snprintf(*pkwhere, sizep, "%s", pkwherebuf);
+  snprintf(*npkwhere, sizen, "%s", npkwherebuf);
 
   return 0;
 }
@@ -2280,8 +2331,33 @@ char *drms_recordset_extractfilter(DRMS_Record_t *template, const char *in, int 
 // only and those on both prime and non-prime index. As it would
 // involve the query statement, an approximation of the latter case is
 // the where clause in between ?'s.
-int drms_recordset_query(DRMS_Env_t *env, const char *recordsetname, 
-			 char **query, char **seriesname, int *filter, int *mixed,
+
+/* query is the complete WHERE clause to be used when there are no
+ * shadow tables or the table of counts. pkwhere is the where
+ * clause for all the prime-key conditions, npkwhere is the
+ * where clause for all the non-prime-key conditions. We need 
+ * to separate the two types of clauses when the overall queries
+ * involve the shadow tables or table of counts since the prime-key 
+ * where clauses operate on the shadow table and the non-prime-key
+ * where clauses operate on a join between the series table and 
+ * an intermediate table. If *pkfilt == 0, then we should not
+ * use the shadow table as an optimization because: 1. the shadow table
+ * might not have the records requested, and 2. there will be no
+ * group-by statement in the resulting query. The shadow table is
+ * a table that caches the results of a group-by statement, so it is only
+ * useful if we need to do a group by.                                                                                                                 
+ * If *filter is 1, then the record-set query
+ * contains no record-number range-set . If *mixed is 1, then the record-set query
+ * contains WHERE subclause on a non-prime key. If *pkfilt is 1, then a 
+ * non-record-list prime-key filter exists.  */
+int drms_recordset_query(DRMS_Env_t *env, 
+                         const char *recordsetname, 
+			 char **query, 
+                         char **pkwhere, 
+                         char **npkwhere, 
+                         char **seriesname, 
+                         int *filter, 
+                         int *mixed,
                          int *allvers)
 {
   RecordSet_t *rs;
@@ -2320,6 +2396,10 @@ int drms_recordset_query(DRMS_Env_t *env, const char *recordsetname,
 
     *query = malloc(DRMS_MAXQUERYLEN);
     XASSERT(*query);
+    *pkwhere = malloc(DRMS_MAXQUERYLEN);
+    XASSERT(*pkwhere);
+    *npkwhere = malloc(DRMS_MAXQUERYLEN);
+    XASSERT(*npkwhere);
     *seriesname = strdup(rs->seriesname);
     *filter = !recnum_filter;
 
@@ -2328,7 +2408,7 @@ int drms_recordset_query(DRMS_Env_t *env, const char *recordsetname,
        *allvers = rs->allvers;
     }
 
-    sql_record_set(rs,*seriesname, *query);
+    sql_record_set(rs,*seriesname, *query, *pkwhere, DRMS_MAXQUERYLEN, *npkwhere, DRMS_MAXQUERYLEN);
     free_record_set(rs);
     ret = 0;
   }
@@ -2577,6 +2657,8 @@ static RecordSet_t *parse_record_set_ext(DB_Handle_t *dbh, DRMS_Record_t *templa
 int drms_recordset_query_ext(DB_Handle_t *dbh,
                              const char *recordsetname, 
                              char **query, 
+                             char **pkwhere,
+                             char **npkwhere,
                              char **seriesname, 
                              char **filterstr, 
                              int *filter, 
@@ -2609,6 +2691,8 @@ int drms_recordset_query_ext(DB_Handle_t *dbh,
    template->su = NULL;
    template->seriesinfo = calloc(1, sizeof(DRMS_SeriesInfo_t));
    XASSERT(template->seriesinfo);
+    template->seriesinfo->hasshadow = -1;
+    template->seriesinfo->createshadow = 0; /* Not relevant - only used by drms_insert_series(). */
 
    /* Initialize keyword container structure. Don't worry about segments or links - the whole point of this 
     * is to pass the names of the prime-key keywords to lower-level functions. */
@@ -2635,6 +2719,10 @@ int drms_recordset_query_ext(DB_Handle_t *dbh,
 
       *query = malloc(DRMS_MAXQUERYLEN);
       XASSERT(*query);
+      *pkwhere = malloc(DRMS_MAXQUERYLEN);
+      XASSERT(*pkwhere);
+      *npkwhere = malloc(DRMS_MAXQUERYLEN);
+      XASSERT(*npkwhere);
       *seriesname = strdup(rs->seriesname);
       *filter = !recnum_filter;
 
@@ -2643,7 +2731,7 @@ int drms_recordset_query_ext(DB_Handle_t *dbh,
          *allvers = rs->allvers;
       }
 
-      sql_record_set(rs, *seriesname, *query);
+      sql_record_set(rs, *seriesname, *query, *pkwhere, DRMS_MAXQUERYLEN, *npkwhere, DRMS_MAXQUERYLEN);
       free_record_set(rs);
       ret = 0;
    }
@@ -2670,6 +2758,8 @@ int drms_recordset_query_ext(DB_Handle_t *dbh,
 char *drms_recordset_extractfilter_ext(DB_Handle_t *dbh, const char *in, int *status)
 {
    char *query = NULL;
+   char *pkwhere = NULL;
+   char *npkwhere = NULL;
    char *seriesname = NULL;
    char *filterstr = NULL;
    int filter = 0;
@@ -2677,9 +2767,19 @@ char *drms_recordset_extractfilter_ext(DB_Handle_t *dbh, const char *in, int *st
    int allvers = 0;
    int istat = 0;
 
-   istat = drms_recordset_query_ext(dbh, in, &query, &seriesname, &filterstr, &filter, &mixed, &allvers);
+   istat = drms_recordset_query_ext(dbh, in, &query, &pkwhere, &npkwhere, &seriesname, &filterstr, &filter, &mixed, &allvers);
 
    /* Don't need any of these. */
+   if (pkwhere)
+   {
+      free(pkwhere);
+   }
+
+   if (npkwhere)
+   {
+      free(npkwhere);
+   }
+
    if (query)
    {
       free(query);

@@ -335,6 +335,7 @@ void drms_server_end_transaction(DRMS_Env_t *env, int abort, int final) {
 
 /* Get a new DRMS session ID from the database and insert a session 
    record in the drms_session_table table. */
+/* MUST HAVE CALLED drms_lock_server() before entering this function!! */
 int drms_server_open_session(DRMS_Env_t *env)
 {
 #ifdef DEBUG  
@@ -375,25 +376,33 @@ int drms_server_open_session(DRMS_Env_t *env)
   pid_t pid = getpid();
 
   /* drms_server always creates a SU for the logfile */
-  if (env->dolog) {
-     /* Allocate a 1MB storage unit for log files. */
-     /* drms_su_alloc() can be slow when the dbase is busy */
-     int tg = 1; /* Use tapegroup 1 - SUMS maps this number to a sums partition set. */
-     env->session->sunum = drms_su_alloc(env, 1<<20, &env->session->sudir, &tg, &status);
-    if (status)
-      {
-	fprintf(stderr,"Failed to allocate storage unit for log files: %d\n", 
-		status);          
-	return 1;
-      }
+    if (env->dolog) 
+    {
+        /* Allocate a 1MB storage unit for log files. */
+        /* drms_su_alloc() can be slow when the dbase is busy */
+        int tg = 1; /* Use tapegroup 1 - SUMS maps this number to a sums partition set. */
+        long long sunum = -1;
+        
+        /* Must release lock, cuz the sums thread will acquire it (in the wrapper around
+         * SUM_alloc()). */
+        drms_unlock_server(env);
+        sunum = drms_su_alloc(env, 1<<20, &env->session->sudir, &tg, &status);
+        drms_lock_server(env);
+        env->session->sunum = sunum;
+        if (status)
+        {
+            fprintf(stderr,"Failed to allocate storage unit for log files: %d\n", 
+                    status);          
+            return 1;
+        }
 #ifdef DEBUG  
-    else
-      {
-	printf("Session ID = %lld, Log sunum = %lld, Log file directory = %s\n",
-	       env->session->sessionid,env->session->sunum,env->session->sudir);
-      }
+        else
+        {
+            printf("Session ID = %lld, Log sunum = %lld, Log file directory = %s\n",
+                   env->session->sessionid,env->session->sunum,env->session->sudir);
+        }
 #endif
-  }
+    }
 
   if (!strcmp(env->logfile_prefix, "drms_server")) 
   {
@@ -501,6 +510,7 @@ int drms_server_open_session(DRMS_Env_t *env)
       
 /* Update record corresponding to the session associated with env
    from the session table and close the extra database connection. */
+/* MUST HAVE CALLED drms_lock_server() before entering this function!! */
 int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
 			      int log_retention, int archive_log)
 {
@@ -524,53 +534,59 @@ int drms_server_close_session(DRMS_Env_t *env, char *stat_str, int clients,
     printf("Can't restore stderr and stdout\n");
   }
 
-  if (env->session->sudir) {
-    if ((dp = opendir(env->session->sudir)) == NULL) {
-      fprintf(stderr, "Can't open %s\n", env->session->sudir);
-      return 1;
+    if (env->session->sudir) {
+        if ((dp = opendir(env->session->sudir)) == NULL) {
+            fprintf(stderr, "Can't open %s\n", env->session->sudir);
+            return 1;
+        }
+        
+        while ((dirp = readdir(dp)) != NULL) {
+            if (!strcmp(dirp->d_name, ".") ||
+                !strcmp(dirp->d_name, "..")) 
+                continue;
+            
+            /* Gzip drms_server log files. */
+            /* The module log files are now handled with gz* functions. */
+            /* Only the server logs are not compressed. */
+            if (strncmp(dirp->d_name+strlen(dirp->d_name)-3, ".gz", 3)) {
+                char command[DRMS_MAXPATHLEN];
+                sprintf(command,"/bin/gzip %s/%s", env->session->sudir, dirp->d_name);
+                system(command);
+                emptydir = 0;
+            } else {
+                emptydir = 0;
+            }
+        }
+        closedir(dp);
+        
+        /* Commit log storage unit to SUMS. */
+        memset(&su,0,sizeof(su));
+        su.seriesinfo = malloc(sizeof(DRMS_SeriesInfo_t));
+        XASSERT(su.seriesinfo);
+        strcpy(su.seriesinfo->seriesname,DRMS_LOG_DSNAME);
+        su.seriesinfo->tapegroup = DRMS_LOG_TAPEGROUP;
+        su.seriesinfo->archive = archive_log;
+        if (emptydir) 
+            su.seriesinfo->archive = 0;
+        if (log_retention <= 0 )
+            su.seriesinfo->retention = 1;
+        else
+            su.seriesinfo->retention = log_retention;
+        strcpy(su.sudir, env->session->sudir);
+        su.sunum = env->session->sunum;
+        su.mode = DRMS_READWRITE;
+        su.state = NULL;
+        su.recnum = NULL;
+        su.seriesinfo->hasshadow = 0;
+        su.seriesinfo->createshadow = 0;
+        
+        /* drms_commitunit() will lock the global env mutex, so must release here. */
+        drms_unlock_server(env);
+        if (drms_commitunit(env, &su))
+            fprintf(stderr,"Error: Couldn't commit log storage unit to SUMS.\n");
+        drms_lock_server(env);
+        free(su.seriesinfo);
     }
-
-    while ((dirp = readdir(dp)) != NULL) {
-      if (!strcmp(dirp->d_name, ".") ||
-	  !strcmp(dirp->d_name, "..")) 
-	continue;
-
-      /* Gzip drms_server log files. */
-      /* The module log files are now handled with gz* functions. */
-      /* Only the server logs are not compressed. */
-      if (strncmp(dirp->d_name+strlen(dirp->d_name)-3, ".gz", 3)) {
-	char command[DRMS_MAXPATHLEN];
-	sprintf(command,"/bin/gzip %s/%s", env->session->sudir, dirp->d_name);
-	system(command);
-	emptydir = 0;
-      } else {
-	emptydir = 0;
-      }
-    }
-    closedir(dp);
-
-    /* Commit log storage unit to SUMS. */
-    memset(&su,0,sizeof(su));
-    su.seriesinfo = malloc(sizeof(DRMS_SeriesInfo_t));
-    XASSERT(su.seriesinfo);
-    strcpy(su.seriesinfo->seriesname,DRMS_LOG_DSNAME);
-    su.seriesinfo->tapegroup = DRMS_LOG_TAPEGROUP;
-    su.seriesinfo->archive = archive_log;
-    if (emptydir) 
-      su.seriesinfo->archive = 0;
-    if (log_retention <= 0 )
-      su.seriesinfo->retention = 1;
-    else
-      su.seriesinfo->retention = log_retention;
-    strcpy(su.sudir, env->session->sudir);
-    su.sunum = env->session->sunum;
-    su.mode = DRMS_READWRITE;
-    su.state = NULL;
-    su.recnum = NULL;
-    if (drms_commitunit(env, &su))
-      fprintf(stderr,"Error: Couldn't commit log storage unit to SUMS.\n");
-    free(su.seriesinfo);
-  }
 
   /* Set sessionid and insert an entry in the session table */
   char stmt[1024];

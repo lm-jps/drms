@@ -393,7 +393,8 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
            kJsdRetention,
            kQUERYMEMARG,
            kLoopConn,
-           kDBTimeOut);
+           kDBTimeOut,
+           kCreateShadows);
   cmdparams_reserve(&cmdparams, reservebuf, "jsocmain");
 
   status = cmdparams_parse (&cmdparams, argc, argv);
@@ -484,6 +485,8 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
     }
 
   int loopconn = cmdparams_isflagset(&cmdparams, kLoopConn);
+    
+    int createshadows = cmdparams_isflagset(&cmdparams, kCreateShadows);
 
   /* Initialize server's own DRMS environment and connect to 
      DRMS database server. */
@@ -570,6 +573,7 @@ int JSOCMAIN_Main(int argc, char **argv, const char *module_name, int (*CallDoIt
   drms_env->quiet = quiet;
 
   drms_env->loopconn = loopconn;
+    drms_env->createshadows = createshadows;
 
   int abort_flag = 1;
 

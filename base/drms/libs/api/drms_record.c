@@ -438,6 +438,8 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
       XASSERT(template);
       template->seriesinfo = calloc(1, sizeof(DRMS_SeriesInfo_t));
       XASSERT(template->seriesinfo);
+       template->seriesinfo->hasshadow = -1;
+       template->seriesinfo->createshadow = 0;
    }
 
    if (template && template->seriesinfo)
@@ -1325,17 +1327,19 @@ static void QFree(void *data)
  * of if the query yields just one, unique record for the prime-key value.
  */
 DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, 
-					     const char *recordsetname, 
-					     int retrieverecs, 
-					     LinkedList_t **llistout,
+                                             const char *recordsetname, 
+                                             int retrieverecs, 
+                                             LinkedList_t **llistout,
                                              char **allversout,
                                              int nrecslimit, 
-					     int *status)
+                                             int *status)
 {
   DRMS_RecordSet_t *rs = NULL;
   DRMS_RecordSet_t *ret = NULL;
   int i, filter, mixed;
   char *query=0, *seriesname=0;
+    char *pkwhere = NULL;
+    char *npkwhere = NULL;
   HContainer_t *realSets = NULL;
   int nRecs = 0;
   int j = 0;
@@ -1569,9 +1573,16 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 		    seglist = strdup(psl);
 		    *psl = '\0';
 		 }
-	      
-		 TIME(stat = drms_recordset_query(env, actualSet, &query, &seriesname, 
-					       &filter, &mixed, NULL));
+
+              TIME(stat = drms_recordset_query(env, 
+                                               actualSet, 
+                                               &query, 
+                                               &pkwhere,
+                                               &npkwhere,
+                                               &seriesname, 
+                                               &filter, 
+                                               &mixed, 
+                                               NULL));
 
                  if (actualSet)
                  {
@@ -1623,17 +1634,19 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 
 	      if (retrieverecs)
 	      {
-                 XASSERT(allvers[iSet] != '\0');
-		 TIME(rs = drms_retrieve_records(env, 
-						 seriesname, 
-						 query, 
-						 filter, 
-						 mixed, 
-						 goodsegcont, 
-                                                 allvers[iSet] == 'y',
-                                                 nrecslimit, 
-						 &stat));
-                 /* Remove unrequested segments now */
+              XASSERT(allvers[iSet] != '\0');
+              TIME(rs = drms_retrieve_records(env, 
+                                              seriesname, 
+                                              query, 
+                                              pkwhere,
+                                              npkwhere,
+                                              filter, 
+                                              mixed, 
+                                              goodsegcont, 
+                                              allvers[iSet] == 'y',
+                                              nrecslimit, 
+                                              &stat));
+              /* Remove unrequested segments now */
 	      }
 	      else
 	      {
@@ -1646,6 +1659,8 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                  countquery = drms_query_string(env, 
                                                 seriesname, 
                                                 query, 
+                                                pkwhere,
+                                                npkwhere,
                                                 filter, 
                                                 mixed, 
                                                 DRMS_QUERY_COUNT, 
@@ -1700,17 +1715,19 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 
 	      if (llist)
 	      {
-                 /* one query per query set (sets are delimited by commas) */
-		 char *selquery = drms_query_string(env, 
-						    seriesname, 
-						    query, 
-						    filter, 
-						    mixed, 
-						    DRMS_QUERY_ALL, 
-                                                    NULL, 
-						    NULL,
-                                                    allvers[iSet] == 'y');
-		 list_llinserttail(llist, &selquery);
+              /* one query per query set (sets are delimited by commas) */
+              char *selquery = drms_query_string(env, 
+                                                 seriesname, 
+                                                 query, 
+                                                 pkwhere,
+                                                 npkwhere,
+                                                 filter, 
+                                                 mixed, 
+                                                 DRMS_QUERY_ALL, 
+                                                 NULL, 
+                                                 NULL,
+                                                 allvers[iSet] == 'y');
+              list_llinserttail(llist, &selquery);
 	      }
 
 	      if (goodsegcont)
@@ -1726,6 +1743,10 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 
 	      free(query);
 	      query = NULL;
+           if (pkwhere) free(pkwhere);
+           pkwhere = NULL;
+           if (npkwhere) free(npkwhere);
+           npkwhere = NULL;
 	      free(seriesname); 
 	      seriesname = NULL;
 	      
@@ -1926,6 +1947,16 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
   {
      free(query);
   }
+    
+    if (pkwhere)
+    {
+        free(pkwhere);
+    }
+    
+    if (npkwhere)
+    {
+        free(npkwhere);
+    }
 
   if (seriesname)
   {
@@ -2398,6 +2429,8 @@ DRMS_Record_t *drms_create_recproto(DRMS_Record_t *recSource, int *status)
    XASSERT(recTarget);
    recTarget->seriesinfo = calloc(1, sizeof(DRMS_SeriesInfo_t));
    XASSERT(recTarget->seriesinfo);
+    recTarget->seriesinfo->hasshadow = -1;
+    recTarget->seriesinfo->createshadow = 0;
 
    if (recTarget && recTarget->seriesinfo)
    {
@@ -4022,7 +4055,10 @@ DRMS_Record_t *drms_retrieve_record(DRMS_Env_t *env, const char *seriesname,
   */
 static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env, 
                                                         const char *seriesname, 
-                                                        char *where, int filter, int mixed,
+                                                        char *where, 
+                                                        const char *pkwhere,
+                                                        const char *npkwhere,
+                                                        int filter, int mixed,
                                                         HContainer_t *goodsegcont,
                                                         const char *qoverride,
                                                         int allvers, 
@@ -4058,6 +4094,8 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
     strdup(qoverride) : drms_query_string(env, 
                                           seriesname, 
                                           where, 
+                                          pkwhere,
+                                          npkwhere,
                                           filter, 
                                           mixed, 
                                           nrecs == 0 ? DRMS_QUERY_ALL : DRMS_QUERY_N, 
@@ -4252,7 +4290,10 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
 
 DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env, 
                                         const char *seriesname, 
-                                        char *where, int filter, int mixed,
+                                        char *where, 
+                                        const char *pkwhere,
+                                        const char *npkwhere,
+                                        int filter, int mixed,
                                         HContainer_t *goodsegcont,
                                         int allvers, 
                                         int nrecs, 
@@ -4261,6 +4302,8 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
    return drms_retrieve_records_internal(env, 
                                          seriesname, 
                                          where, 
+                                         pkwhere,
+                                         npkwhere,
                                          filter, 
                                          mixed, 
                                          goodsegcont, 
@@ -4271,12 +4314,17 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
 }
 
 char *drms_query_string(DRMS_Env_t *env, 
-			const char *seriesname,
-			char *where, int filter, int mixed,
-			DRMS_QueryType_t qtype, 
+                        const char *seriesname,
+                        char *where, 
+                        const char *pkwhere,
+                        const char *npkwhere,
+                        int filter, 
+                        int mixed,
+                        DRMS_QueryType_t qtype, 
                         void *data, /* specific to qtype */
                         const char *fl,
-                        int allvers) {
+                        int allvers) 
+{
   DRMS_Record_t *template;
   char *field_list, *query=0;
   char *series_lower;
@@ -4292,6 +4340,9 @@ char *drms_query_string(DRMS_Env_t *env,
   int unique = 0;
 
   int status = 0;
+    
+    char *rquery = NULL;
+    int shadowexists = 0;
 
   CHECKNULL_STAT(env,&status);
 
@@ -4301,31 +4352,325 @@ char *drms_query_string(DRMS_Env_t *env,
 
   switch (qtype) {
   case DRMS_QUERY_COUNT:
-    field_list = strdup("count(recnum)");
+      {
+          if (!allvers)
+          {
+              /* If the caller is using a bang query, then we cannot take advantage of the a shadow table.                                 
+               * There will be no "prime-key logic" performed. Run original query */
+              
+              if (!pkwhere || !*pkwhere)
+              {
+                  /* No prime-key where clause. */
+                  if (!npkwhere || !*npkwhere)
+                  {
+                      /* No non-prime-key where clause */
+                      
+                      /* There is no where clause of any kind, so it is okay to create a shadow table 
+                       * if it doesn't exist. */
+                      shadowexists = drms_series_shadowexists(env, seriesname, &status);
+                      
+                      if (status == DRMS_SUCCESS)
+                      {
+                          if (!shadowexists && env->createshadows)
+                          {
+                              /* No shadow table exists - create it and then use it. */
+                              if (drms_series_createshadow(env, seriesname))
+                              {
+                                  goto bailout;
+                              }
+                              else
+                              {
+                                  shadowexists = 1;
+                              }
+                          }
+
+                          if (shadowexists)
+                          {
+                              rquery = drms_series_nrecords_querystringA(seriesname, &status);
+                              if (status == DRMS_SUCCESS)
+                              {
+                                  return rquery;
+                              }
+                              else
+                              {
+                                  goto bailout;
+                              }
+                          }
+                      }
+                  }
+                  else
+                  {
+                      /* No prime-key filter, but there is a non-prime-key filter. If the shadow table is present,                 
+                       * using it in a query will speed up the evaluation of the query. But don't create the shadow table                       
+                       * if it doesn't exist, since this will require a group by on the whole original series table,                            
+                       * which could take a long time. Again, the caller is not interested in the whole table,                                  
+                       * so there is no need to do a table-wide group by. Finally, don't use                                                    
+                       * the original SQL query. That query is not optimized to use the shadow table.*/
+                      
+                      shadowexists = drms_series_shadowexists(env, seriesname, &status);
+                      
+                      if (status == DRMS_SUCCESS)
+                      {
+                          if (shadowexists)
+                          {
+                              rquery = drms_series_nrecords_querystringB(seriesname, npkwhere, &status);
+                              if (status == DRMS_SUCCESS)
+                              {
+                                  return rquery;
+                              }
+                              else
+                              {
+                                  goto bailout;
+                              }
+                          }
+                          else
+                          {
+                              /* No shadow table exists - just run the original SQL query (fall through). */
+                          }
+                      }
+                      else
+                      {
+                          goto bailout;
+                      }
+                  }
+              }
+              else
+              {
+                  /* Prime-key where clause. */
+                  
+                  /* The count-query can be optimized if the shadow table is available. The shadow table                                       
+                   * lists series' groups, max recnums in those groups, and the counts of PG records in                                        
+                   * those groups. So we can sum the counts column across all relevant records to obtain the                                   
+                   * total count requested. This means we need to separate the prime-key WHERE subclause                                       
+                   * from the non-prime-key WHERE subclause. We use the prime-key WHERE subclause to                                           
+                   * identify records in the shadow table, grab the recnums from this result and then                                          
+                   * consult the original series table to obtain the desired records (using the non-prime key                                  
+                   * WHERE clause to further limit the results). */
+                  
+                  if (!npkwhere || !*npkwhere)
+                  {
+                      /* There is only a pkwhere clause. If the shadow table exists, use it, but do not create                                  
+                       * it if it doesn't exist. Creating the shadow table requires a series-table-wide group-by                                
+                       * clause and can be time-consuming, and if the caller is providing an npkwhere clause,                                   
+                       * there is no need to perform a table-wide group by. */
+                      shadowexists = drms_series_shadowexists(env, seriesname, &status);
+                      
+                      if (status == DRMS_SUCCESS)
+                      {
+                          if (shadowexists)
+                          {
+                              rquery = drms_series_nrecords_querystringC(seriesname, pkwhere, &status);
+                              if (status == DRMS_SUCCESS)
+                              {
+                                  return rquery;
+                              }
+                              else
+                              {
+                                  goto bailout;
+                              }
+                          }
+                          else
+                          {
+                              /* No shadow table exists - just run the original SQL query (fall through). */
+                          }
+                      }
+                      else
+                      {
+                          goto bailout;
+                      }
+                  }
+                  else
+                  {
+                      /* There are both a prime-key where clause and an non-prime-key kwhere clause. Use the shadow table, if present, to                           
+                       * optimize the query, but do not create it if it doesn't exist. Creating the shadow table requires                       
+                       * a series-table-wide group-by clause and can be time-consuming, and if the caller is providing                          
+                       * a pkwhere clause and/or an npkwhere clause, there is no need to perform a table-wide group by. */
+                      shadowexists = drms_series_shadowexists(env, seriesname, &status);
+                      
+                      if (status == DRMS_SUCCESS)
+                      {
+                          if (shadowexists)
+                          {
+                              rquery = drms_series_nrecords_querystringD(seriesname, pkwhere, npkwhere, &status);
+                              if (status == DRMS_SUCCESS)
+                              {
+                                  return rquery;
+                              }
+                              else
+                              {
+                                  goto bailout;
+                              }
+                          }
+                          else
+                          {
+                              /* No shadow table exists - just run the original SQL query (i.e., fall through). */
+                          }
+                      }
+                  }
+              }
+          }
+          
+          field_list = strdup("count(recnum)");
+      }
     break;
   case DRMS_QUERY_FL:
-    field_list = strdup(fl);
-    recsize = drms_keylist_memsize(template, field_list);
-    if (!recsize) {
-      goto bailout;
-    }
-    unique = *(int *)(data);
+      {
+          field_list = strdup(fl);
+          recsize = drms_keylist_memsize(template, field_list);
+          if (!recsize) {
+              goto bailout;
+          }
+          
+          limit  = (long long)((0.4e6*env->query_mem)/recsize);
+          unique = *(int *)(data);
+      }
     break;
   case DRMS_QUERY_ALL:
-    field_list = drms_field_list(template, NULL);
-    recsize = drms_record_memsize(template);
+      {
+          field_list = drms_field_list(template, NULL);
+          recsize = drms_record_memsize(template);
+          limit = (long long)((0.4e6*env->query_mem)/recsize);
+      
+          if (!allvers)
+          {
+              shadowexists = drms_series_shadowexists(env, seriesname, &status);
+              
+              if (status != DRMS_SUCCESS)
+              {
+                  goto bailout;
+              }
+              
+              if (!pkwhere || !*pkwhere)
+              {
+                  /* No prime-key query. */
+                  if (!npkwhere || !*npkwhere)
+                  {
+                      /* No non-prime-key query. */
+                      
+                      /* No filters (where subclauses) at all. This is a query on all record groups. Use the                                    
+                       * shadow table if it exists. If it doesn't exist, create it, since we've already                                         
+                       * got to do a group-by on the entire series. */
+                      if (!shadowexists && env->createshadows)
+                      {
+                          /* No shadow table exists - create it and then use it. */
+                          if (drms_series_createshadow(env, seriesname))
+                          {
+                              goto bailout;
+                          }
+                          else
+                          {
+                              shadowexists = 1;
+                          }
+                      }
+                      
+                      if (shadowexists)
+                      {
+                          /* Use the shadow table to generate an optimized query involving all record groups. */
+                          rquery = drms_series_all_querystringA(env, seriesname, field_list, limit, &status);
+                          if (status == DRMS_SUCCESS)
+                          {
+                              return rquery;
+                          }
+                          else
+                          {
+                              goto bailout;
+                          }
+                      }
+                  }
+                  else
+                  {
+                      /* Non-prime-key query. */
+                      
+                      /* No prime-key where clause, but there is a non-prime-key one. */
+                      if (!shadowexists && env->createshadows)
+                      {
+                          /* No shadow table exists - create it and then use it. */
+                          if (drms_series_createshadow(env, seriesname))
+                          {
+                              goto bailout;
+                          }
+                          else
+                          {
+                              shadowexists = 1;
+                          }
+                      }
+                      
+                      if (shadowexists)
+                      {
+                          /* Use the shadow table to generate an optimized query involving all record groups. */
+                          rquery = drms_series_all_querystringB(env, seriesname, npkwhere, field_list, limit, &status);
+                          if (status == DRMS_SUCCESS)
+                          {
+                              return rquery;
+                          }
+                          else
+                          {
+                              goto bailout;
+                          }
+                      }
+                  }
+              }
+              else
+              {
+                  /* Prime-key query. */
+                  
+                  if (!npkwhere || !*npkwhere)
+                  {
+                      /* No non-prime-key query. */
+                      
+                      /* Since there is a pkwhere clause, there is no need to do a group-by on the entire series table. So, use                 
+                       * the shadow table, if it exists, to optimize the query performance, but don't create the shadow table                   
+                       * if it does not exist. */
+                      
+                      if (shadowexists)
+                      {
+                          /* Use the shadow table to generate an optimized query involving all record groups. */
+                          rquery = drms_series_all_querystringC(env, seriesname, pkwhere, field_list, limit, &status);
+                          if (status == DRMS_SUCCESS)
+                          {
+                              return rquery;
+                          }
+                          else
+                          {
+                              goto bailout;
+                          }
+                      }
+                  }
+                  else
+                  {
+                      /* Non-prime-key query. */
+                      
+                      if (shadowexists)
+                      {
+                          /* Use the shadow table to generate an optimized query involving all record groups. */
+                          rquery = drms_series_all_querystringD(env, seriesname, pkwhere, npkwhere, field_list, limit, &status);
+                          if (status == DRMS_SUCCESS)
+                          {
+                              return rquery;
+                          }
+                          else
+                          {
+                              goto bailout;
+                          }
+                      }
+                  }
+              }
+          }
+      }
     break;
   case DRMS_QUERY_N:
-    field_list = drms_field_list(template, NULL);
-    recsize = drms_record_memsize(template);
-    nrecs = *(int *)(data);
-    break;
+      {
+          field_list = drms_field_list(template, NULL);
+          recsize = drms_record_memsize(template);
+          limit  = (long long)((0.4e6*env->query_mem)/recsize);
+          nrecs = *(int *)(data);
+      }
+          break;
   default:
     printf("Unknown query type: %d\n", (int)qtype);
     return NULL;
   }
 
-  limit  = (long long)((0.4e6*env->query_mem)/recsize);
 #ifdef DEBUG
   printf("limit  = (%f / %lld) = %lld\n",0.4e6*env->query_mem, recsize, limit);
 #endif
@@ -4767,6 +5112,10 @@ static DRMS_Record_t *drms_template_record_int(DRMS_Env_t *env,
     template->su = NULL;
     template->seriesinfo = calloc(1, sizeof(DRMS_SeriesInfo_t));
     XASSERT(template->seriesinfo);
+      template->seriesinfo->hasshadow = -1;
+      template->seriesinfo->createshadow = 0; /* Used only when the original series is being created, 
+                                               * so it doesn't apply here. */
+
     /* Populate series info part */
     char *namespace = ns(seriesname);
 
@@ -5872,6 +6221,60 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
   free(sz);
   free(field_list);
   free(series_lower);
+    
+    /* We just inserted records into the database series table. We must keep the table of counts in sync. */
+    /* Do NOT skip this update to the table of counts. Even if status is not DRMS_SUCCESS, we have to update                             
+     * the table of counts. The module could still commit despit a non-DRMS_SUCCESS status, and if we haven't                            
+     * updated the table of counts, then the series table and the table of counts will by out-of-sync. */
+    char **pkeynames = NULL;
+    int ipk;
+    int rv;
+    int irec;
+    long long *recnums = NULL;
+    
+    pkeynames = malloc(sizeof(char *) * recset->records[0]->seriesinfo->pidx_num);
+    recnums = malloc(sizeof(long long) * num_rows);
+    
+    if (pkeynames && recnums)
+    {
+        for (ipk = 0; ipk < recset->records[0]->seriesinfo->pidx_num; ipk++)
+        {
+            pkeynames[ipk] = strdup(recset->records[0]->seriesinfo->pidx_keywords[ipk]->info->name);
+        }
+        
+        for (irec = 0; irec < num_rows; irec++)
+        {
+            recnums[irec] = recset->records[irec]->recnum;
+        }
+        
+        rv = drms_series_updatesummaries(env, seriesname, num_rows, recset->records[0]->seriesinfo->pidx_num, pkeynames, recnums, 1);
+        
+        if (!status)
+        {
+            /* If there was an error doing the bulk insert, that error should be returned to the caller. If not,
+             * but there was an error updating the table of counts, then we should report an error to the caller. */
+            status = rv;
+        }
+        
+        for (ipk = 0; ipk < recset->records[0]->seriesinfo->pidx_num; ipk++)
+        {
+            if (pkeynames[ipk])
+            {
+                free(pkeynames[ipk]);
+                pkeynames[ipk] = NULL;
+            }
+        }
+        
+        free(pkeynames);
+        pkeynames = NULL;
+        free(recnums);
+        recnums = NULL;
+    }
+    else
+    {
+        status = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
   return status;
 }
 
@@ -8549,6 +8952,8 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                fetchedrecs = drms_retrieve_records_internal(env, 
                                                             seriesname, 
                                                             NULL,
+                                                            NULL,
+                                                            NULL,
                                                             0, 
                                                             0, 
                                                             NULL, /* seg filter */
@@ -8740,173 +9145,216 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
 				      const char *rsquery, 
 				      int *status)
 {
-   DRMS_RecordSet_t *rs = NULL;
-   static long long guid = 1;
-   int stat = DRMS_SUCCESS;
-   char *cursorquery = NULL;
-   char cursorname[DRMS_MAXCURSORNAMELEN];
-   char *seriesname = NULL;
-   char *pQuery = NULL;
-   char *cursorselect = NULL;
-   char *pLimit = NULL;
-   int iset;
-   int querylen;
-
-   if (rsquery)
-   {
-      /* querylist has, for each queryset, the SQL query to select all records
-       * in that set (a queryset is a set of recordsets - they are comma-separated) */
-      LinkedList_t *querylist;
-      char *tmp = strdup(rsquery);
-      char *allvers = NULL;
+    DRMS_RecordSet_t *rs = NULL;
+    static long long guid = 1;
+    int stat = DRMS_SUCCESS;
+    char *cursorquery = NULL;
+    char cursorname[DRMS_MAXCURSORNAMELEN];
+    char *seriesname = NULL;
+    char *pQuery = NULL;
+    char *cursorselect = NULL;
+    char *pCursorStmnt = NULL;
+    char *pLimit = NULL;
+    int iset;
+    int querylen;
+    
+    if (rsquery)
+    {
+        /* querylist has, for each queryset, the SQL query to select all records
+         * in that set (a queryset is a set of recordsets - they are comma-separated) */
+        LinkedList_t *querylist;
+        char *tmp = strdup(rsquery);
+        char *allvers = NULL;
         
-      if (tmp)
-      {
-	 rs = drms_open_records_internal(env, tmp, 0, &querylist, &allvers, 0, &stat);
-	 free(tmp);
-      }
-      else
-      {
-         stat = DRMS_ERROR_OUTOFMEMORY;
-      }
-
-      if (rs && rs->n > 0 && querylist && allvers)
-      {
-         /* Create DRMS cursor, which has one psql cursor for each recordset. */
-	 rs->cursor = (DRMS_RecSetCursor_t *)malloc(sizeof(DRMS_RecSetCursor_t));
-	 rs->cursor->names = (char **)malloc(sizeof(char *) * rs->ss_n);
-         memset(rs->cursor->names, 0, sizeof(char *) * rs->ss_n);
-         rs->cursor->allvers = (int *)malloc(sizeof(int) * rs->ss_n);
-         memset(rs->cursor->allvers, 0, sizeof(int) * rs->ss_n);
-         /* Future staging request applies to entire record_set */
-         rs->cursor->staging_needed = rs->cursor->retrieve = rs->cursor->dontwait = 0;
-         rs->cursor->infoneeded = 0;
-         rs->cursor->suinfo = NULL;
-
-	 iset = 0;
-         list_llreset(querylist);
-         ListNode_t *ln = NULL;
-
-	 while ((ln = (ListNode_t *)(list_llnext(querylist))) != NULL)
-	 {
-            pQuery = *((char **)ln->data);
-
-            seriesname = drms_recordset_acquireseriesname(rs->ss_queries[iset]);
-
-            if (seriesname)
-            {
-               char *dot = strchr(seriesname, '.');
-               if (dot)
-               {
-                  *dot = '_';
-               }
-               snprintf(cursorname, sizeof(cursorname), "%s_CURSOR%lld", seriesname, guid++);
-
-               /* pQuery has a limit statement in it - remove that else FETCH could 
-                * operate on a subset of the total number of records. */
-               cursorselect = strdup(pQuery);
-
-               if (!cursorselect)
-               {
-                  stat = DRMS_ERROR_OUTOFMEMORY;
-               }
-               else
-               {
-                  if ((pLimit = strstr(cursorselect, "limit")) != NULL)
-                  {
-                     *pLimit = '\0';
-                  }
-
-                  querylen = sizeof(char) * (strlen(cursorname) + strlen(cursorselect) + 128);
-                  cursorquery = malloc(querylen);
-
-                  if (!cursorquery)
-                  {
-                     stat = DRMS_ERROR_OUTOFMEMORY;
-                  }
-                  else
-                  {
-                     snprintf(cursorquery, 
-                              querylen, 
-                              "DECLARE %s NO SCROLL CURSOR FOR (%s) FOR READ ONLY", 
-                              cursorname, 
-                              cursorselect);
-
-                     /* Now, create cursor in psql */
-                     if (env->verbose)
-                     {
-                        fprintf(stdout, "Cursor declaration ==> %s\n", cursorquery);
-                     }
-
-                     if (drms_dms(env->session, NULL, cursorquery))
-                     {
-                        stat = DRMS_ERROR_QUERYFAILED;
-                     }
-                     else
-                     {
-                        rs->cursor->names[iset] = strdup(cursorname);
-                     }
-
-                     free(cursorquery);
-                     cursorquery = NULL;
-                  }
-
-                  free(cursorselect);
-                  cursorselect = NULL;
-               }
-
-               free(seriesname);
-
-               if (stat != DRMS_SUCCESS)
-               {
-                  break;
-               }
-
-               XASSERT(allvers[iset] != '\0');
-               rs->cursor->allvers[iset] = (allvers[iset] == 'y');
-            }
+        if (tmp)
+        {
+            /* Since we are not retrieving records just yet, rsquery will not be evaluated
+             * by PG. */
+            rs = drms_open_records_internal(env, tmp, 0, &querylist, &allvers, 0, &stat);
+            free(tmp);
+        }
+        else
+        {
+            stat = DRMS_ERROR_OUTOFMEMORY;
+        }
+        
+        if (rs && rs->n > 0 && querylist && allvers)
+        {
+            /* Create DRMS cursor, which has one psql cursor for each recordset. */
+            rs->cursor = (DRMS_RecSetCursor_t *)malloc(sizeof(DRMS_RecSetCursor_t));
+            rs->cursor->names = (char **)malloc(sizeof(char *) * rs->ss_n);
+            memset(rs->cursor->names, 0, sizeof(char *) * rs->ss_n);
+            rs->cursor->allvers = (int *)malloc(sizeof(int) * rs->ss_n);
+            memset(rs->cursor->allvers, 0, sizeof(int) * rs->ss_n);
+            /* Future staging request applies to entire record_set */
+            rs->cursor->staging_needed = rs->cursor->retrieve = rs->cursor->dontwait = 0;
+            rs->cursor->infoneeded = 0;
+            rs->cursor->suinfo = NULL;
             
-            iset++;
-	 } /* while */
-
-         rs->cursor->parent = rs;
-         rs->cursor->env = env;
-	 rs->cursor->chunksize = drms_recordset_getchunksize();
-	 rs->cursor->currentchunk = -1;
-         rs->cursor->lastchunk = -1;
-	 rs->cursor->currentrec = -1;
-      }
-      else
-      {
-         if (rs)
-         {
-            rs->cursor = NULL;
-         }
-      }
-
-      if (querylist)
-      {
-	 list_llfree(&querylist);	    
-      }
-
-      if (allvers)
-      {
-         free(allvers);
-      }
-   }
-
-   if (stat != DRMS_SUCCESS)
-   {
-      /* frees cursor too */
-      drms_free_records(rs);
-   }
-
-   if (status)
-   {
-      *status = stat;
-   }
-
-   return rs;
+            iset = 0;
+            list_llreset(querylist);
+            ListNode_t *ln = NULL;
+            
+            while ((ln = (ListNode_t *)(list_llnext(querylist))) != NULL)
+            {
+                pQuery = *((char **)ln->data);
+                
+                seriesname = drms_recordset_acquireseriesname(rs->ss_queries[iset]);
+                
+                if (seriesname)
+                {
+                    char *dot = strchr(seriesname, '.');
+                    if (dot)
+                    {
+                        *dot = '_';
+                    }
+                    snprintf(cursorname, sizeof(cursorname), "%s_CURSOR%lld", seriesname, guid++);
+                    
+                    /* pQuery has a limit statement in it - remove that else FETCH could 
+                     * operate on a subset of the total number of records. */
+                    /* Also, pQuery might have two SQL statements in it:
+                     *
+                     *   1. A statement to create a temporary table. 
+                     *   2. A statment to use the temporary table. 
+                     *
+                     *   If this is case, we should evaluate the temporary-table statement now, 
+                     *   but we should create a cursor to handle the second statement. 
+                     *
+                     * There will NOT be more than two SQL statements.
+                     */
+                    cursorselect = strdup(pQuery);
+                    
+                    if (!cursorselect)
+                    {
+                        stat = DRMS_ERROR_OUTOFMEMORY;
+                    }
+                    else
+                    {
+                        /* Check for the temporary-table statement. If it exists, evaluate it 
+                         * now, then pass on the second statement to the cursor. */
+                        if ((pCursorStmnt = strstr(cursorselect, ";\n")) != NULL)
+                        {
+                            *pCursorStmnt = '\0';
+                            
+                            /* Evaluate temporary-table statement. */
+                            if (drms_dms(env->session, NULL, cursorselect))
+                            {
+                                stat = DRMS_ERROR_QUERYFAILED;
+                            }
+                            else
+                            {
+                                tmp = strdup(pCursorStmnt + 2);
+                                
+                                if (!tmp)
+                                {
+                                    stat = DRMS_ERROR_OUTOFMEMORY;
+                                }
+                                else
+                                {
+                                    free(cursorselect);
+                                    cursorselect = tmp;
+                                }
+                            }
+                        }
+                        
+                        if (stat == DRMS_SUCCESS)
+                        {
+                            if ((pLimit = strcasestr(cursorselect, "limit")) != NULL)
+                            {
+                                *pLimit = '\0';
+                            }
+                            
+                            querylen = sizeof(char) * (strlen(cursorname) + strlen(cursorselect) + 128);
+                            cursorquery = malloc(querylen);
+                            
+                            if (!cursorquery)
+                            {
+                                stat = DRMS_ERROR_OUTOFMEMORY;
+                            }
+                            else
+                            {
+                                snprintf(cursorquery, 
+                                         querylen, 
+                                         "DECLARE %s NO SCROLL CURSOR FOR (%s) FOR READ ONLY", 
+                                         cursorname, 
+                                         cursorselect);
+                                
+                                /* Now, create cursor in psql */
+                                if (env->verbose)
+                                {
+                                    fprintf(stdout, "Cursor declaration ==> %s\n", cursorquery);
+                                }
+                                
+                                if (drms_dms(env->session, NULL, cursorquery))
+                                {
+                                    stat = DRMS_ERROR_QUERYFAILED;
+                                }
+                                else
+                                {
+                                    rs->cursor->names[iset] = strdup(cursorname);
+                                }
+                                
+                                free(cursorquery);
+                                cursorquery = NULL;
+                            }
+                        }
+                        
+                        free(cursorselect);
+                        cursorselect = NULL;
+                    }
+                    
+                    free(seriesname);
+                    
+                    if (stat != DRMS_SUCCESS)
+                    {
+                        break;
+                    }
+                    
+                    XASSERT(allvers[iset] != '\0');
+                    rs->cursor->allvers[iset] = (allvers[iset] == 'y');
+                }
+                
+                iset++;
+            } /* while */
+            
+            rs->cursor->parent = rs;
+            rs->cursor->env = env;
+            rs->cursor->chunksize = drms_recordset_getchunksize();
+            rs->cursor->currentchunk = -1;
+            rs->cursor->lastchunk = -1;
+            rs->cursor->currentrec = -1;
+        }
+        else
+        {
+            if (rs)
+            {
+                rs->cursor = NULL;
+            }
+        }
+        
+        if (querylist)
+        {
+            list_llfree(&querylist);	    
+        }
+        
+        if (allvers)
+        {
+            free(allvers);
+        }
+    }
+    
+    if (stat != DRMS_SUCCESS)
+    {
+        /* frees cursor too */
+        drms_free_records(rs);
+    }
+    
+    if (status)
+    {
+        *status = stat;
+    }
+    
+    return rs;
 }
 
 /* Returns next record in current chunk, unless no more records in current chunk.
@@ -9177,16 +9625,18 @@ int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status)
 {
    int stat, filter, mixed;
    char *query=NULL, *where=NULL, *seriesname=NULL;
+   char *pkwhere = NULL;
+   char *npkwhere = NULL;
    int count = 0;
    DB_Text_Result_t *tres;
    int allvers = 0;
 
-   stat = drms_recordset_query(env, recordsetname, &where, &seriesname, &filter, &mixed, &allvers);
+   stat = drms_recordset_query(env, recordsetname, &where, &pkwhere, &npkwhere, &seriesname, &filter, &mixed, &allvers);
    if (stat)
      goto failure;
 
    stat = 1;
-   query = drms_query_string(env, seriesname, where, filter, mixed, DRMS_QUERY_COUNT, NULL, NULL, allvers);
+   query = drms_query_string(env, seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_COUNT, NULL, NULL, allvers);
    if (!query)
      goto failure;
 
@@ -9206,6 +9656,8 @@ int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status)
    free(seriesname);
    free(query);
    free(where);
+   if (pkwhere) free(pkwhere);
+   if (npkwhere) free(npkwhere);
    *status = DRMS_SUCCESS;
    return(count);
 
@@ -9213,6 +9665,8 @@ int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status)
    if (seriesname) free(seriesname);
    if (query) free(query);
    if (where) free(where);
+   if (pkwhere) free(pkwhere);
+   if (npkwhere) free(npkwhere);
    *status = stat;
    return(0);
 }
@@ -9227,19 +9681,23 @@ DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
 {
    int stat, filter, mixed;
    char *query=NULL, *where=NULL, *seriesname=NULL;
+   char *pkwhere = NULL;
+   char *npkwhere = NULL;
    int count = 0;
    int keys = 0;
    DB_Binary_Result_t *bres=NULL;
    DRMS_Array_t *vectors=NULL;
    int allvers = 0;
 
-   stat = drms_recordset_query(env, recordsetname, &where, &seriesname, &filter, &mixed, &allvers);
+   stat = drms_recordset_query(env, recordsetname, &where, &pkwhere, &npkwhere, &seriesname, &filter, &mixed, &allvers);
    if (stat)
      goto failure;
 
    query = drms_query_string(env, 
                              seriesname, 
                              where, 
+                             pkwhere,
+                             npkwhere,
                              filter, 
                              mixed, 
                              DRMS_QUERY_FL, 
@@ -9312,6 +9770,8 @@ DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
       if (seriesname) free(seriesname);
       if (query) free(query);
       if (where) free(where);
+      if (pkwhere) free(pkwhere);
+      if (npkwhere) free(npkwhere);
       if (status) *status = DRMS_SUCCESS;
       return(vectors);
    } // bres
@@ -9320,6 +9780,8 @@ DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
    if (seriesname) free(seriesname);
    if (query) free(query);
    if (where) free(where);
+   if (pkwhere) free(pkwhere);
+   if (npkwhere) free(npkwhere);
    if (status) *status = stat;
    return(NULL);
 }
