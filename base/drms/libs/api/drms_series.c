@@ -4600,7 +4600,7 @@ char *drms_series_all_querystringB(DRMS_Env_t *env, const char *series, const ch
             snprintf(limitstr, sizeof(limitstr), "%d", limit);
             
             /* Prepend all column names in fields with T1 (just in case the series table has a column named "therec"). */
-            qualfields = PrependFields(fields, "T", &istat);
+            qualfields = PrependFields(fields, "T.", &istat);
             
             /* Create a list of all prime key names. */
             qualpkeylist = CreatePKeyList(env, series, "T", &istat);
