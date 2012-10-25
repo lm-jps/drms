@@ -63,20 +63,7 @@
 
 
 /* Some required parameters may STILL be missing - use a default. */
-#ifndef PRODUSER_DBHOST
-#define PRODUSER_DBHOST    "hmidb:5432"
-#endif
 
-#ifndef PRODUSER_DBNAME
-#define PRODUSER_DBNAME    "jsoc"
-#endif
-
-#ifndef PRODUSER_PRODTAB
-#define PRODUSER_PRODTAB   "su_production.produsers"
-#endif
-
-#ifndef PRODUSER_COLUSER
-#define PRODUSER_COLUSER   "username"
-#endif
+/* end defaults */
 
 #endif /* __SERVERDEFS_H */
