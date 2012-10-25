@@ -143,13 +143,12 @@ if [[ $instr == [Hh][Mm][Ii] ]]
   elif [[ $instr == [Aa][Ii][Aa] ]] 
     then
       { 
-      if [ $hg ]
-        then 
-          declare -i scale=1     # default -could read in as a parameter
-          p=u
-        else
-          p=c  
-        fi     
+    datavals=`show_info key=DATAVALS -q n=1 ds=$in`
+    if (( $datavals < 1000000 ))
+      then 
+        declare -i scale=1     # default -could read in as a parameter
+        p=u
+      fi
       seriesName=`echo $in | awk  -F'[[]' 'NR==1{print $1}' $hglog `
       min_val=100
       wvl_arr=(94 131 171 193 211 304 335 1600 1700 4500)
