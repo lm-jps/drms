@@ -99,7 +99,7 @@ if [[ $instr == [Hh][Mm][Ii] ]]
           render_image in=$in  min=$min max=$max  pallette=/home/priya/Colormaps/grey.sao scaling=mag \
                        tkey=$tkey outname=$seriesName scale=$scale type=$type  \
                        out='| ppmlabel -color black -background white -size {%2:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95' \
-                       -{$p}  -c 
+                       -{$p}  -c  outid=time
         ;;
       [Ii][Cc]  )
         if [[ $seriesName = *Ic_noLimbDark* ]]
@@ -109,30 +109,30 @@ if [[ $instr == [Hh][Mm][Ii] ]]
             render_image in=$in   min=$min max=$max  scaling=minmaxgiven    pallette=/home/priya/Colormaps/heat.sao \
                          tkey=$tkey outname=$seriesName  scale=$scale  type=$type  \
                          out='| ppmlabel -color black -background white -size {%2:5} -x 15 -y {%98} -text \"SDO/HMI  Ic:{ID}\" | pnmtojpeg -quality=95'  \
-                         -{$p}  
+                         -{$p}   outid=time
            else
              max=${max:-"75000"}
              min=${min:-"20000"}
              render_image in=$in  min=$min max=$max    pallette=/home/priya/Colormaps/heat.sao \
                         outname=$seriesName  scale=$scale  type=$type  \
                         out='| ppmlabel -color black -background white -size {%2:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95' \
-                        -{$p}
+                        -{$p} outid=time
             fi
          ;;
       [lL][Dd] )
         render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale  type=$type tkey=$tkey  \
                      out='| ppmlabel -color black -background white -size {%2:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95' \
-                     -{$p}  -c
+                     -{$p}  -c outid=time
         ;;
       [lL][Ww])
         render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale type=$type tkey=$tkey \
                      out='| ppmlabel -color black -background white -size {%2:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  \
-                     -{$p} -c
+                     -{$p} -c outid=time
         ;;     
       [Vv]_)
         render_image in=$in  pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale type=$type tkey=$tkey \
                      out='| ppmlabel -color black -background white -size {%2:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  \
-                     -{$p} -c
+                     -{$p} -c outid=time
         ;;
         
       *) 
