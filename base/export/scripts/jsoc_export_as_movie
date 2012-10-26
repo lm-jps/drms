@@ -177,7 +177,7 @@ if [[ $instr == [Hh][Mm][Ii] ]]
           max=${max:-$[max_$wvl]}
           min=${min:-$min_val}
           render_image in=$in_new pallette=/home/priya/Colormaps/AIA/aia_$wvl.lut tkey=$tkey \
-                       out='| ppmlabel -color white -size {%3:5} -x 15 -y {%98} -text \"SDO/AIA  '$wvl':{ID}\" | pnmtojpeg -quality=95' \
+                       out='| ppmlabel -color white -size {%2:5} -x 15 -y {%98} -text \"SDO/AIA  '$wvl':{ID}\" | pnmtojpeg -quality=95' \
                        outname=aia_$wvl  min=$min max=$max  scale=$scale outid=time  type=$type scaling=$scaling -{$p}
           # omit -w
 
