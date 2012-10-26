@@ -2,6 +2,7 @@
 #include "drms.h"
 #include "drms_priv.h"
 #include "xmem.h"
+#include <regex.h>
 #include "atoinc.h"
 
 /* There were problems coping with concurrent access to this table. For now, we're abandoning
@@ -1646,7 +1647,7 @@ static char *PrependFields(const char *list, const char *prefix, int *status)
     return qualfields;
 }
 
-static char *CreatePKeyList(DRMS_Env_t *env, const char *series, const char *prefix, int *status)
+static char *CreatePKeyList(DRMS_Env_t *env, const char *series, const char *prefix, const char *suffix, int *status)
 {
     int istat = DRMS_SUCCESS;
     int ipkey;
@@ -1675,10 +1676,14 @@ static char *CreatePKeyList(DRMS_Env_t *env, const char *series, const char *pre
                     if (prefix)
                     {
                         pklist = base_strcatalloc(pklist, prefix, &stsz);
-                        pklist = base_strcatalloc(pklist, ".", &stsz);
                     }
                     
                     pklist = base_strcatalloc(pklist, lckeyname, &stsz);
+                    
+                    if (suffix)
+                    {
+                        pklist = base_strcatalloc(pklist, suffix, &stsz);
+                    }
                     
                     if (ipkey < template->seriesinfo->pidx_num - 1)
                     {
@@ -2953,19 +2958,29 @@ int drms_delete_series(DRMS_Env_t *env, const char *series, int cascade, int kee
             /* MUST DELETE ANY ASSOCIATED shadow table. If the user requires permissions
              * to delete the original table, then the user running this code must also 
              * have the permissions needed to delete the shadow table. */
-            snprintf(shadow, sizeof(shadow), "%s_%s", series_lower, kShadowSuffix);
-            snprintf(query, sizeof(query), "DROP TABLE %s", shadow);
-            
-            if (env->verbose)
+            if (ShadowExists(env, series_lower, &drmsstatus))
             {
-                fprintf(stdout, "drms_delete_series(): %s\n", query);
+                snprintf(shadow, sizeof(shadow), "%s%s", series_lower, kShadowSuffix);
+                snprintf(query, sizeof(query), "DROP TABLE %s", shadow);
+
+                if (env->verbose)
+                {
+                    fprintf(stdout, "drms_delete_series(): %s\n", query);
+                }
+                
+                if (drms_dms(session,NULL,query))
+                {
+                    goto bailout;
+                }
             }
             
-            if (drms_dms(session,NULL,query))
+            /* If ShadowExists() fails, then it returns 0. */
+            if (drmsstatus != DRMS_SUCCESS)
             {
+                fprintf(stderr, "Unable to check for the existing of the shadow table for series %s.\n", series);
                 goto bailout;
             }
-
+            
            /* Both DRMS servers and clients have a series_cache (one item per
               each series in all of DRMS). So, always remove the deleted series
               from this cache, whether or not this is a server. */
@@ -4416,31 +4431,7 @@ int drms_series_nrecords(DRMS_Env_t *env, const char *series, int *status)
 
 int drms_series_shadowexists(DRMS_Env_t *env, const char *series, int *status)
 {
-    int istat = DRMS_SUCCESS;
-    int tabexists = 0;
-    char *namespace = NULL;
-    char *table = NULL;
-    char shadowtable[DRMS_MAXSERIESNAMELEN];
-    
-    if (!get_namespace(series, &namespace, &table))
-    {
-        snprintf(shadowtable, sizeof(shadowtable), "%s%s", table, kShadowSuffix);
-        tabexists = drms_query_tabexists(env->session, namespace, shadowtable, &istat);
-        
-        free(namespace);
-        free(table);
-    }
-    else
-    {
-        istat = DRMS_ERROR_OUTOFMEMORY;
-    }
-    
-    if (status)
-    {
-        *status = istat;
-    }
-    
-    return tabexists;
+    return ShadowExists(env, series, status);
 }
 
 
@@ -4495,7 +4486,7 @@ char *drms_series_all_querystringA(DRMS_Env_t *env, const char *series, const ch
             qualfields = PrependFields(fields, "T.", &istat);
             
             /* Create a list of all prime key names. */
-            qualpkeylist = CreatePKeyList(env, series, "T", &istat);
+            qualpkeylist = CreatePKeyList(env, series, "T.", NULL, &istat);
             
             if (istat == DRMS_SUCCESS)
             {
@@ -4584,7 +4575,6 @@ char *drms_series_all_querystringB(DRMS_Env_t *env, const char *series, const ch
     char limitstr[32];
     char shadow[DRMS_MAXSERIESNAMELEN];
     char tabname[256];
-    
     lcseries = strdup(series);
     
     if (lcseries)
@@ -4603,7 +4593,7 @@ char *drms_series_all_querystringB(DRMS_Env_t *env, const char *series, const ch
             qualfields = PrependFields(fields, "T.", &istat);
             
             /* Create a list of all prime key names. */
-            qualpkeylist = CreatePKeyList(env, series, "T", &istat);
+            qualpkeylist = CreatePKeyList(env, series, "T.", NULL, &istat);
             
             if (istat == DRMS_SUCCESS)
             {
@@ -4710,7 +4700,7 @@ char *drms_series_all_querystringC(DRMS_Env_t *env, const char *series, const ch
             qualfields = PrependFields(fields, "T.", &istat);
             
             /* Create a list of all prime key names. */
-            qualpkeylist = CreatePKeyList(env, series, "T", &istat);
+            qualpkeylist = CreatePKeyList(env, series, "T.", NULL, &istat);
             
             if (istat == DRMS_SUCCESS)
             {
@@ -4820,7 +4810,7 @@ char *drms_series_all_querystringD(DRMS_Env_t *env, const char *series, const ch
             qualfields = PrependFields(fields, "T.", &istat);
             
             /* Create a list of all prime key names. */
-            qualpkeylist = CreatePKeyList(env, series, "T", &istat);
+            qualpkeylist = CreatePKeyList(env, series, "T.", NULL, &istat);
             
             if (istat == DRMS_SUCCESS)
             {
@@ -4856,6 +4846,513 @@ char *drms_series_all_querystringD(DRMS_Env_t *env, const char *series, const ch
                 query = base_strcatalloc(query, limitstr, &stsz);
             }
             
+            free(qualpkeylist);
+            qualpkeylist = NULL;
+            free(qualfields);
+            qualfields = NULL;
+        }
+        else
+        {
+            istat = DRMS_ERROR_OUTOFMEMORY;
+        }
+        
+        free(lcseries);
+        lcseries = NULL;
+    }
+    else
+    {
+        istat = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return query;
+}
+
+/* neither pkwhere nor npkwhere exists. */
+/* Use temporary tables. These tables will be deleted when the database session ends. Each
+ * time one is created, it is given a unique name (shadowtempXXX).
+ * 
+ * # Apply the prime-key logic by selecting all records from the shadow table.
+ *   CREATE TEMPORARY TABLE shadowtempXXX AS SELECT recnum FROM <shadow table> 
+ *     ORDER BY pkey1 [DESC], pkey2 [DESC], ... LIMIT <abs(nrecs)>;
+ *
+ * # Select the records in the series whose recnums are in the 
+ * # list of recnums in shadowtempXXX (those that have satisfied the prime-key logic).
+ *   SELECT <fields> FROM <series> AS T WHERE T.recnum IN (SELECT recnum FROM shadowtempXXX)
+ *     ORDER BY T.pkey1, T.pkey2, ... LIMIT <limit>;
+ */
+char *drms_series_n_querystringA(DRMS_Env_t *env, const char *series, const char *fields, int nrecs, int limit, int *status)
+{
+    char *query = NULL;
+    int istat = DRMS_SUCCESS;
+    size_t stsz = 8192;
+    char *lcseries = NULL;
+    int desc; /* If 1, then we are sorting the records in descending order. */
+    char nrecsstr[32];
+    char *qualfields = NULL;
+    char *qualpkeylist = NULL;
+    char *orderpkeylist = NULL; /* A comma-separated list of primary-key constituents. Each
+                               * key name will have " DESC" appeneded if nrecs < 0. */
+    char limitstr[32];
+    char shadow[DRMS_MAXSERIESNAMELEN];
+    char tabname[256];
+    
+    desc = nrecs < 0;
+    
+    lcseries = strdup(series);
+    
+    if (lcseries)
+    {
+        strtolower(lcseries);
+        query = malloc(stsz);
+        
+        if (query)
+        {
+            *query = '\0';
+            
+            snprintf(shadow, sizeof(shadow), "%s%s", lcseries, kShadowSuffix);
+            snprintf(limitstr, sizeof(limitstr), "%d", limit);
+            snprintf(nrecsstr, sizeof(nrecsstr), "%d", abs(nrecs));
+            
+            /* Prepend all column names in fields with T (just in case the series table has a column named "therec"). */
+            qualfields = PrependFields(fields, "T.", &istat);
+            
+            /* Create a list of all prime key names. */
+            qualpkeylist = CreatePKeyList(env, series, "T.", NULL, &istat);
+            
+            /* Create the list of prime-key names that will be used for sorting the records 
+             * before applying the limit to select the "n" records. */
+            orderpkeylist = CreatePKeyList(env, series, NULL, desc ? " DESC" : NULL, &istat);
+            
+            if (istat == DRMS_SUCCESS)
+            {
+                if (GetTempTable(tabname, sizeof(tabname)))
+                {
+                    istat = DRMS_ERROR_OVERFLOW;
+                }
+            }
+            
+            if (istat == DRMS_SUCCESS)
+            {
+                /* Create the temporary table. */
+                query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, " AS SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, shadow, &stsz);
+                query = base_strcatalloc(query, " ORDER BY ", &stsz);
+                query = base_strcatalloc(query, orderpkeylist, &stsz);
+                query = base_strcatalloc(query, " LIMIT ", &stsz);
+                query = base_strcatalloc(query, nrecsstr, &stsz);                
+                query = base_strcatalloc(query, ";\n", &stsz);
+                
+                /* Select the records from the series table. */
+                query = base_strcatalloc(query, "SELECT ", &stsz);
+                query = base_strcatalloc(query, qualfields, &stsz);
+                query = base_strcatalloc(query, " FROM ", &stsz);
+                query = base_strcatalloc(query, lcseries, &stsz);
+                query = base_strcatalloc(query, " AS T WHERE T.recnum IN (SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, ") ORDER BY ", &stsz);
+                query = base_strcatalloc(query, qualpkeylist, &stsz);
+                
+                if (limit < abs(nrecs))
+                {
+                    /* If nrecs is huge, then we might select too many records to fit in memory. */
+                    query = base_strcatalloc(query, " LIMIT ", &stsz);
+                    query = base_strcatalloc(query, limitstr, &stsz);
+                }
+            }
+            
+            free(orderpkeylist);
+            orderpkeylist = NULL;
+            free(qualpkeylist);
+            qualpkeylist = NULL;
+            free(qualfields);
+            qualfields = NULL;
+        }
+        else
+        {
+            istat = DRMS_ERROR_OUTOFMEMORY;
+        }
+        
+        free(lcseries);
+        lcseries = NULL;
+    }
+    else
+    {
+        istat = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return query;
+}
+
+/* pkwhere does not exist, but npkwhere does. */
+/* Use temporary tables. These tables will be deleted when the database session ends. Each
+ * time one is created, it is given a unique name (shadowtempXXX).
+ *
+ * # Select ALL PG records in the original table that satisfy the non-prime-key where
+ * # clause.
+ *   CREATE TEMPORARY TABLE shadowtempXXX AS SELECT recnum from <series> WHERE <npkwhere>;
+ * 
+ * # From this list of recnums, select the recnums that also appear in the shadow table.
+ * # The resulting list of recnums identify the records in the original table that satisfy
+ * # both the prime-key logic and the non-prime-key where clause. Then, select the entire
+ * # set of columns from the original table where the recnum matches the list of recnums
+ * # previously created.
+ *   SELECT <fields> FROM <series> AS T2 WHERE T2.recnum IN 
+ *     (SELECT recnum from <shadow table> as T1 WHERE T1.recnum IN 
+ *       (SELECT recnum from shadowtempXXX) ORDER BY T1.pkey1 [DESC], T1.pkey2 [DESC], ... LIMIT <abs(nrecs)>)
+ *     ORDER BY T2.pkey1, T2, pkey2, ... LIMIT <limit>
+ */
+char *drms_series_n_querystringB(DRMS_Env_t *env, const char *series, const char *npkwhere, const char *fields, int nrecs, int limit, int *status)
+{
+    char *query = NULL;
+    int istat = DRMS_SUCCESS;
+    size_t stsz = 8192;
+    char *lcseries = NULL;
+    int desc; /* If 1, then we are sorting the records in descending order. */
+    char nrecsstr[32];
+    char *qualfields = NULL;
+    char *qualpkeylist = NULL;
+    char *orderpkeylist = NULL; /* A comma-separated list of primary-key constituents. Each
+                                 * key name will have " DESC" appeneded if nrecs < 0. */
+    char limitstr[32];
+    char shadow[DRMS_MAXSERIESNAMELEN];
+    char tabname[256];
+    
+    desc = nrecs < 0;
+    
+    lcseries = strdup(series);
+    
+    if (lcseries)
+    {
+        strtolower(lcseries);
+        query = malloc(stsz);
+        
+        if (query)
+        {
+            *query = '\0';
+            
+            snprintf(shadow, sizeof(shadow), "%s%s", lcseries, kShadowSuffix);
+            snprintf(limitstr, sizeof(limitstr), "%d", limit);
+            snprintf(nrecsstr, sizeof(nrecsstr), "%d", abs(nrecs));
+            
+            /* Prepend all column names in fields with T (just in case the series table has a column named "therec"). */
+            qualfields = PrependFields(fields, "T2.", &istat);
+            
+            /* Create a list of all prime key names. */
+            qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, &istat);
+            
+            /* Create the list of prime-key names that will be used for sorting the records 
+             * before applying the limit to select the "n" records. */
+            orderpkeylist = CreatePKeyList(env, series, "T1.", desc ? " DESC" : NULL, &istat);
+            
+            if (istat == DRMS_SUCCESS)
+            {
+                if (GetTempTable(tabname, sizeof(tabname)))
+                {
+                    istat = DRMS_ERROR_OVERFLOW;
+                }
+            }
+            
+            if (istat == DRMS_SUCCESS)
+            {
+                /* Create the temporary table. */
+                query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, " AS SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, lcseries, &stsz);
+                query = base_strcatalloc(query, " WHERE ", &stsz);
+                query = base_strcatalloc(query, npkwhere, &stsz);
+                query = base_strcatalloc(query, ";\n", &stsz);
+                
+                /* Select the records from the series table. */
+                query = base_strcatalloc(query, "SELECT ", &stsz);
+                query = base_strcatalloc(query, qualfields, &stsz);
+                query = base_strcatalloc(query, " FROM ", &stsz);
+                query = base_strcatalloc(query, lcseries, &stsz);
+                query = base_strcatalloc(query, " AS T2 WHERE T2.recnum IN (SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, shadow, &stsz);
+                query = base_strcatalloc(query, " AS T1 WHERE T1.recnum IN (SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, ") ORDER BY ", &stsz);
+                query = base_strcatalloc(query, orderpkeylist, &stsz);
+                query = base_strcatalloc(query, " LIMIT ", &stsz);
+                query = base_strcatalloc(query, nrecsstr, &stsz);
+                query = base_strcatalloc(query, ") ORDER BY ", &stsz);
+                query = base_strcatalloc(query, qualpkeylist, &stsz);
+                
+                if (limit < abs(nrecs))
+                {
+                    /* If nrecs is huge, then we might select too many records to fit in memory. */
+                    query = base_strcatalloc(query, " LIMIT ", &stsz);
+                    query = base_strcatalloc(query, limitstr, &stsz);
+                }
+            }
+            
+            free(orderpkeylist);
+            orderpkeylist = NULL;
+            free(qualpkeylist);
+            qualpkeylist = NULL;
+            free(qualfields);
+            qualfields = NULL;
+        }
+        else
+        {
+            istat = DRMS_ERROR_OUTOFMEMORY;
+        }
+        
+        free(lcseries);
+        lcseries = NULL;
+    }
+    else
+    {
+        istat = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return query;
+}
+
+/* pkwhere does exist, but npkwhere does not. */
+/* Use temporary tables. These tables will be deleted when the database session ends. Each
+ * time one is created, it is given a unique name (shadowtempXXX).
+ * 
+ * # Apply the prime-key logic by selecting all records from the shadow table.
+ *   CREATE TEMPORARY TABLE shadowtempXXX AS SELECT recnum FROM <shadow table> WHERE <pkwhere>
+ *     ORDER BY pkey1 [DESC], pkey2 [DESC], ... LIMIT <abs(nrecs)>;
+ *
+ * # Select the records in the series whose recnums are in the 
+ * # list of recnums in shadowtempXXX (those that have satisfied the prime-key logic).
+ *   SELECT <fields> FROM <series> AS T WHERE T.recnum IN (SELECT recnum FROM shadowtempXXX)
+ *     ORDER BY T.pkey1, T.pkey2, ... LIMIT <limit>;
+ */
+char *drms_series_n_querystringC(DRMS_Env_t *env, const char *series, const char *pkwhere, const char *fields, int nrecs, int limit, int *status)
+{
+    char *query = NULL;
+    int istat = DRMS_SUCCESS;
+    size_t stsz = 8192;
+    char *lcseries = NULL;
+    int desc; /* If 1, then we are sorting the records in descending order. */
+    char nrecsstr[32];
+    char *qualfields = NULL;
+    char *qualpkeylist = NULL;
+    char *orderpkeylist = NULL; /* A comma-separated list of primary-key constituents. Each
+                                 * key name will have " DESC" appeneded if nrecs < 0. */
+    char limitstr[32];
+    char shadow[DRMS_MAXSERIESNAMELEN];
+    char tabname[256];
+    
+    desc = nrecs < 0;
+    
+    lcseries = strdup(series);
+    
+    if (lcseries)
+    {
+        strtolower(lcseries);
+        query = malloc(stsz);
+        
+        if (query)
+        {
+            *query = '\0';
+            
+            snprintf(shadow, sizeof(shadow), "%s%s", lcseries, kShadowSuffix);
+            snprintf(limitstr, sizeof(limitstr), "%d", limit);
+            snprintf(nrecsstr, sizeof(nrecsstr), "%d", abs(nrecs));
+            
+            /* Prepend all column names in fields with T (just in case the series table has a column named "therec"). */
+            qualfields = PrependFields(fields, "T.", &istat);
+            
+            /* Create a list of all prime key names. */
+            qualpkeylist = CreatePKeyList(env, series, "T.", NULL, &istat);
+            
+            /* Create the list of prime-key names that will be used for sorting the records 
+             * before applying the limit to select the "n" records. */
+            orderpkeylist = CreatePKeyList(env, series, NULL, desc ? " DESC" : NULL, &istat);
+            
+            if (istat == DRMS_SUCCESS)
+            {
+                if (GetTempTable(tabname, sizeof(tabname)))
+                {
+                    istat = DRMS_ERROR_OVERFLOW;
+                }
+            }
+            
+            if (istat == DRMS_SUCCESS)
+            {
+                /* Create the temporary table. */
+                query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, " AS SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, shadow, &stsz);
+                query = base_strcatalloc(query, " WHERE ", &stsz);
+                query = base_strcatalloc(query, pkwhere, &stsz);                
+                query = base_strcatalloc(query, " ORDER BY ", &stsz);
+                query = base_strcatalloc(query, orderpkeylist, &stsz);
+                query = base_strcatalloc(query, " LIMIT ", &stsz);
+                query = base_strcatalloc(query, nrecsstr, &stsz);                
+                query = base_strcatalloc(query, ";\n", &stsz);
+                
+                /* Select the records from the series table. */
+                query = base_strcatalloc(query, "SELECT ", &stsz);
+                query = base_strcatalloc(query, qualfields, &stsz);
+                query = base_strcatalloc(query, " FROM ", &stsz);
+                query = base_strcatalloc(query, lcseries, &stsz);
+                query = base_strcatalloc(query, " AS T WHERE T.recnum IN (SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, ") ORDER BY ", &stsz);
+                query = base_strcatalloc(query, qualpkeylist, &stsz);
+                
+                if (limit < abs(nrecs))
+                {
+                    /* If nrecs is huge, then we might select too many records to fit in memory. */
+                    query = base_strcatalloc(query, " LIMIT ", &stsz);
+                    query = base_strcatalloc(query, limitstr, &stsz);
+                }
+            }
+            
+            free(orderpkeylist);
+            orderpkeylist = NULL;
+            free(qualpkeylist);
+            qualpkeylist = NULL;
+            free(qualfields);
+            qualfields = NULL;
+        }
+        else
+        {
+            istat = DRMS_ERROR_OUTOFMEMORY;
+        }
+        
+        free(lcseries);
+        lcseries = NULL;
+    }
+    else
+    {
+        istat = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return query;
+}
+
+/* both pkwhere and npkwhere exist. */
+/* Use temporary tables. These tables will be deleted when the database session ends. Each
+ * time one is created, it is given a unique name (shadowtempXXX).
+ * 
+ * # Apply the prime-key logic by selecting all records from the shadow table.
+ *   CREATE TEMPORARY TABLE shadowtempXXX AS SELECT recnum FROM <shadow table> WHERE <pkwhere>
+ *     ORDER BY pkey1 [DESC], pkey2 [DESC], ... LIMIT <abs(nrecs)>;
+ *
+ * # Select the records in the series whose recnums are in the 
+ * # list of recnums in shadowtempXXX (those that have satisfied the prime-key logic).
+ *   SELECT <fields> FROM <series> AS T WHERE T.recnum IN (SELECT recnum FROM shadowtempXXX) AND <npkwhere>
+ *     ORDER BY T.pkey1, T.pkey2, ... LIMIT <limit>;
+ */
+char *drms_series_n_querystringD(DRMS_Env_t *env, const char *series, const char *pkwhere, const char *npkwhere, const char *fields, int nrecs, int limit, int *status)
+{
+    char *query = NULL;
+    int istat = DRMS_SUCCESS;
+    size_t stsz = 8192;
+    char *lcseries = NULL;
+    int desc; /* If 1, then we are sorting the records in descending order. */
+    char nrecsstr[32];
+    char *qualfields = NULL;
+    char *qualpkeylist = NULL;
+    char *orderpkeylist = NULL; /* A comma-separated list of primary-key constituents. Each
+                                 * key name will have " DESC" appeneded if nrecs < 0. */
+    char limitstr[32];
+    char shadow[DRMS_MAXSERIESNAMELEN];
+    char tabname[256];
+    
+    desc = nrecs < 0;
+    
+    lcseries = strdup(series);
+    
+    if (lcseries)
+    {
+        strtolower(lcseries);
+        query = malloc(stsz);
+        
+        if (query)
+        {
+            *query = '\0';
+            
+            snprintf(shadow, sizeof(shadow), "%s%s", lcseries, kShadowSuffix);
+            snprintf(limitstr, sizeof(limitstr), "%d", limit);
+            snprintf(nrecsstr, sizeof(nrecsstr), "%d", abs(nrecs));
+            
+            /* Prepend all column names in fields with T (just in case the series table has a column named "therec"). */
+            qualfields = PrependFields(fields, "T.", &istat);
+            
+            /* Create a list of all prime key names. */
+            qualpkeylist = CreatePKeyList(env, series, "T.", NULL, &istat);
+            
+            /* Create the list of prime-key names that will be used for sorting the records 
+             * before applying the limit to select the "n" records. */
+            orderpkeylist = CreatePKeyList(env, series, NULL, desc ? " DESC" : NULL, &istat);
+            
+            if (istat == DRMS_SUCCESS)
+            {
+                if (GetTempTable(tabname, sizeof(tabname)))
+                {
+                    istat = DRMS_ERROR_OVERFLOW;
+                }
+            }
+            
+            if (istat == DRMS_SUCCESS)
+            {
+                /* Create the temporary table. */
+                query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, " AS SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, shadow, &stsz);
+                query = base_strcatalloc(query, " WHERE ", &stsz);
+                query = base_strcatalloc(query, pkwhere, &stsz);                
+                query = base_strcatalloc(query, " ORDER BY ", &stsz);
+                query = base_strcatalloc(query, orderpkeylist, &stsz);
+                query = base_strcatalloc(query, " LIMIT ", &stsz);
+                query = base_strcatalloc(query, nrecsstr, &stsz);                
+                query = base_strcatalloc(query, ";\n", &stsz);
+                
+                /* Select the records from the series table. */
+                query = base_strcatalloc(query, "SELECT ", &stsz);
+                query = base_strcatalloc(query, qualfields, &stsz);
+                query = base_strcatalloc(query, " FROM ", &stsz);
+                query = base_strcatalloc(query, lcseries, &stsz);
+                query = base_strcatalloc(query, " AS T WHERE T.recnum IN (SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, tabname, &stsz);
+                query = base_strcatalloc(query, ") AND ", &stsz);
+                query = base_strcatalloc(query, npkwhere, &stsz);                
+                query = base_strcatalloc(query, " ORDER BY ", &stsz);
+                query = base_strcatalloc(query, qualpkeylist, &stsz);
+                
+                if (limit < abs(nrecs))
+                {
+                    /* If nrecs is huge, then we might select too many records to fit in memory. */
+                    query = base_strcatalloc(query, " LIMIT ", &stsz);
+                    query = base_strcatalloc(query, limitstr, &stsz);
+                }
+            }
+            
+            free(orderpkeylist);
+            orderpkeylist = NULL;
             free(qualpkeylist);
             qualpkeylist = NULL;
             free(qualfields);
@@ -4970,4 +5467,33 @@ int drms_series_canupdatesummaries(DRMS_Env_t *env, const char *series, int *sta
     * to allow the old code to add records to a series table that has associated summary tables
     * then the series table would get out of sync with the summary tables). */
    return 0;
+}
+
+/* This function determines if query contains a temporary-table-creating query. */
+int drms_series_hastemptab(const char *query)
+{
+    int rv = -1;
+    const char *pat = "CREATE[:space:]+TEMPORARY[:space:]+TABLE[:space:]+shadowtemp";
+    regex_t regexp;
+    
+    if (regcomp(&regexp, pat, (REG_EXTENDED | REG_ICASE)) != 0)
+    {
+        fprintf(stderr, "Bad regular expression '%s'.\n", pat);
+    }
+    else
+    {
+        if (regexec(&regexp, query, 0, NULL, 0) == 0)
+        {
+            /* Match. */
+            rv = 1;
+        }
+        else
+        {
+            rv = 0;
+        }
+        
+        regfree(&regexp);
+    }
+
+    return rv;
 }
