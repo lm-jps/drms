@@ -98,7 +98,7 @@ if [[ $instr == [Hh][Mm][Ii] ]]
           min=${min:-"-1500"}
           render_image in=$in  min=$min max=$max  pallette=/home/priya/Colormaps/grey.sao scaling=mag \
                        tkey=$tkey outname=$seriesName scale=$scale type=$type  \
-                       out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95' \
+                       out='| ppmlabel -color black -background white -size {%2:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95' \
                        -{$p}  -c 
         ;;
       [Ii][Cc]  )
@@ -108,30 +108,30 @@ if [[ $instr == [Hh][Mm][Ii] ]]
             min=${min:-"0.3"}
             render_image in=$in   min=$min max=$max  scaling=minmaxgiven    pallette=/home/priya/Colormaps/heat.sao \
                          tkey=$tkey outname=$seriesName  scale=$scale  type=$type  \
-                         out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  \
+                         out='| ppmlabel -color black -background white -size {%2:5} -x 15 -y {%98} -text \"SDO/HMI  Ic:{ID}\" | pnmtojpeg -quality=95'  \
                          -{$p}  
            else
              max=${max:-"75000"}
              min=${min:-"20000"}
              render_image in=$in  min=$min max=$max    pallette=/home/priya/Colormaps/heat.sao \
                         outname=$seriesName  scale=$scale  type=$type  \
-                        out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95' \
+                        out='| ppmlabel -color black -background white -size {%2:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95' \
                         -{$p}
             fi
          ;;
       [lL][Dd] )
         render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale  type=$type tkey=$tkey  \
-                     out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95' \
+                     out='| ppmlabel -color black -background white -size {%2:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95' \
                      -{$p}  -c
         ;;
       [lL][Ww])
         render_image in=$in   pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale type=$type tkey=$tkey \
-                     out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  \
+                     out='| ppmlabel -color black -background white -size {%2:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  \
                      -{$p} -c
         ;;     
       [Vv]_)
         render_image in=$in  pallette=/home/priya/Colormaps/bb.sao outname=$seriesName scale=$scale type=$type tkey=$tkey \
-                     out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  \
+                     out='| ppmlabel -color black -background white -size {%2:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95'  \
                      -{$p} -c
         ;;
         
