@@ -619,7 +619,11 @@ static void FreeLogs(void *val)
 
 static void LocalTime(char *buf, int sz)
 {
-   struct tm *ltime = localtime(NULL);
+   time_t sounnecessarilycomplicated;
+   struct tm *ltime = NULL;
+
+   time(&sounnecessarilycomplicated);
+   ltime = localtime(&sounnecessarilycomplicated);
 
    *buf = '\0';
    if (ltime)
