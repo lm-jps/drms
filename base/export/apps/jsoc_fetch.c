@@ -617,6 +617,17 @@ static void FreeLogs(void *val)
     }
 }
 
+static void LocalTime(char *buf, int sz)
+{
+   struct tm *ltime = localtime(NULL);
+
+   *buf = '\0';
+   if (ltime)
+   {
+      snprintf(buf, sz, "%s", asctime(ltime));
+   }
+}
+
 static void WriteLog(const char *logpath, const char *format, ...)
 {
     FILE *fptr = NULL;
@@ -730,12 +741,16 @@ static void report_summary(const char *host,
   double EndTime;
   struct timeval thistv;
   char *logfile = NULL;
+  char localnowtxt[128];
       
   gettimeofday(&thistv, NULL);
   EndTime = thistv.tv_sec + thistv.tv_usec/1000000.0;
       
   logfile = kLogFileSumm;
       
+  LocalTime(localnowtxt, sizeof(localnowtxt));
+
+  WriteLog(logfile, "*****%s\n", localnowtxt);
   WriteLog(logfile, "host='%s'\t",host);
   WriteLog(logfile, "lag=%0.3f\t",EndTime - StartTime);
   WriteLog(logfile, "IP='%s'\t",remote_IP);
@@ -808,10 +823,12 @@ static void LogReqInfo(const char *fname,
    * and clean-up of the log. */
 
   char nowtxt[100];
+      char localnowtxt[128];
 
   sprint_ut(nowtxt, timenow());
-  WriteLog(fname, "PID=%d\n   %s\n   op=%s\n   in=%s\n   RequestID=%s\n   DBHOST=%s\n   REMOTE_ADDR=%s\n",
-           getpid(), nowtxt, op, dsin, requestid, dbhost, getenv("REMOTE_ADDR"));
+      LocalTime(localnowtxt, sizeof(localnowtxt));
+  WriteLog(fname, "*****%s\n   PID=%d\n   %s\n   op=%s\n   in=%s\n   RequestID=%s\n   DBHOST=%s\n   REMOTE_ADDR=%s\n",
+           localnowtxt, getpid(), nowtxt, op, dsin, requestid, dbhost, getenv("REMOTE_ADDR"));
   if (fileupload)  // recordset passed as uploaded file
     {
     char *file = (char *)cmdparams_get_str (&cmdparams, kArgFile, NULL);
