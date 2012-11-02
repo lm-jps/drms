@@ -233,9 +233,14 @@ char *drms_series_all_querystringD(DRMS_Env_t *env,
                                    const char *fields,
                                    int limit,
                                    int *status);
+char *drms_series_n_querystringA(DRMS_Env_t *env, const char *series, const char *fields, int nrecs, int limit, int *status);
+char *drms_series_n_querystringB(DRMS_Env_t *env, const char *series, const char *npkwhere, const char *fields, int nrecs, int limit, int *status);
+char *drms_series_n_querystringC(DRMS_Env_t *env, const char *series, const char *pkwhere, const char *fields, int nrecs, int limit, int *status);
+char *drms_series_n_querystringD(DRMS_Env_t *env, const char *series, const char *pkwhere, const char *npkwhere, const char *fields, int nrecs, int limit, int *status);
 
 int drms_series_summaryexists(DRMS_Env_t *env, const char *series, int *status);
 int drms_series_canupdatesummaries(DRMS_Env_t *env, const char *series, int *status);
 int drms_series_gethighestkeyrank(DRMS_Env_t *env, const char *series, int *status);
+int drms_series_hastemptab(const char *query);
 
 #endif

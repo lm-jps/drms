@@ -223,12 +223,13 @@ xxx
 void drms_free_template_record_struct(DRMS_Record_t *rec);
 
 DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env, 
-					     const char *recordsetname, 
-					     int retrieverecs, 
-					     LinkedList_t **llistout,
+                                             const char *recordsetname, 
+                                             int retrieverecs, 
+                                             LinkedList_t **llistout,
                                              char **allversout,
+                                             int **hasshadowout,
                                              int nrecslimit,
-					     int *status);
+                                             int *status);
 
 DRMS_RecordSet_t *drms_open_localrecords(DRMS_Env_t *env, 
 					 const char *dsRecSet, 

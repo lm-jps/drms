@@ -1331,6 +1331,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                                              int retrieverecs, 
                                              LinkedList_t **llistout,
                                              char **allversout,
+                                             int **hasshadowout,
                                              int nrecslimit, 
                                              int *status)
 {
@@ -1355,7 +1356,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
   char *ans = NULL;
   HContainer_t *goodsegcont = NULL;
   char *countquery = NULL;
-  DB_Text_Result_t *tres = NULL;;
+  DB_Text_Result_t *tres = NULL;
 
   /* Must save SELECT statements if saving the query is desired (retreiverecs == 0) */
   LinkedList_t *llist = NULL;
@@ -1738,8 +1739,27 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
 #ifdef DEBUG
 	      printf("rs=%p, env=%p, seriesname=%s, filter=%d, stat=%d\n  query=%s\n",rs,env,seriesname,filter,stat,query);
 #endif
-	      if (stat)
-		goto failure;
+           if (stat)
+               goto failure;
+           
+           /* If drms_query_string() was called, then template->seriesinfo->hasshadow
+            * was set (and it not -1). */
+           if (hasshadowout)
+           {
+               DRMS_Record_t *template = drms_template_record(env, seriesname, &stat);
+               
+               if (!*hasshadowout)
+               {
+                   *hasshadowout = malloc(sizeof(int) * nsets);
+               }
+               
+               if (!*hasshadowout)
+               {
+                   goto failure;
+               }
+               
+               (*hasshadowout)[iSet] = template->seriesinfo->hasshadow;
+           }
 
 	      free(query);
 	      query = NULL;
@@ -2017,7 +2037,7 @@ DRMS_RecordSet_t *drms_open_records(DRMS_Env_t *env, const char *recordsetname,
    char *allvers = NULL;
    DRMS_RecordSet_t *ret = NULL;
 
-   ret = drms_open_records_internal(env, recordsetname, 1, NULL, &allvers, 0, status);
+   ret = drms_open_records_internal(env, recordsetname, 1, NULL, &allvers, NULL, 0, status);
    if (allvers)
    {
       free(allvers);
@@ -2031,59 +2051,91 @@ DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env,
                                      int n,
                                      int *status)
 {
-   char *allvers = NULL;
-   DRMS_RecordSet_t *rs = NULL;
-   DRMS_Record_t **recs = NULL;
-   int statint = DRMS_SUCCESS;
-   int iset;
-   int irec;
-   int nrecs = 0;
-   DRMS_Record_t *rec = NULL;
+    char *allvers = NULL;
+    DRMS_RecordSet_t *rs = NULL;
+    DRMS_Record_t **recs = NULL;
+    int statint = DRMS_SUCCESS;
+    int iset;
+    int irec;
+    int nrecs = 0;
+    DRMS_Record_t *rec = NULL;
+    int *hasshadow = NULL;
+    
+    rs = drms_open_records_internal(env, recordsetname, 1, NULL, NULL, &hasshadow, n, &statint);
+    
+    /* If there is a shadow table, then the order of the n records is already by increasing
+     * prime-key values. If a shadow-table was used to generated the SQL query that selects records, 
+     * then hasshadow will be 1. It could be -1, in which case there was no check for a shadow-table, 
+     * and no shadow-table was used to generated the query.  
+     *
+     * The record-set specification might specify more than one series. We have to loop through all
+     * record-set subsets and check each one for the presence of shadow-table queries.
+     */
 
-   rs = drms_open_records_internal(env, recordsetname, 1, NULL, NULL, n, &statint);
-
-   if (statint == DRMS_SUCCESS && n < 0)
-   {
-      /* loop through each record subset, and reverse the records (which are in descending prime-key order) */
-      for (iset = 0; iset < rs->ss_n; iset++)
-      {
-         nrecs = drms_recordset_getssnrecs(rs, iset, &statint);
-         recs = (DRMS_Record_t **)malloc(sizeof(DRMS_Record_t *) * nrecs);
-         if (recs)
-         {
-            memset(recs, 0, sizeof(DRMS_Record_t *) * nrecs);
-
-            for (irec = 0; irec < nrecs; irec++)
+    if (statint == DRMS_SUCCESS && rs && rs->n > 0 && n < 0)
+    {
+        for (iset = 0; iset < rs->ss_n && statint == DRMS_SUCCESS; iset++)
+        {
+            if (hasshadow[iset] == 1)
             {
-               rec = rs->records[(rs->ss_starts)[iset] + irec];
-               recs[nrecs - irec - 1] = rec;
+                continue;
             }
-         }
-         else
-         {
-            statint = DRMS_ERROR_OUTOFMEMORY;
-            break;
-         }
-      }
-      
-      if (statint == DRMS_SUCCESS)
-      {
-         /* now copy the record ptrs back to rs->records */
-         memcpy(rs->records, recs, sizeof(DRMS_Record_t *) * nrecs);
-      }
-
-      if (recs)
-      {
-         free(recs);
-      }
-   }
-
-   if (status)
-   {
-      *status = statint;
-   }
-
-   return rs;
+            else
+            {
+                /* Reverse the records (which are in descending prime-key order) for results
+                 * of queries that did not use shadow tables. */
+                {
+                    nrecs = drms_recordset_getssnrecs(rs, iset, &statint);
+                    
+                    if (statint != DRMS_SUCCESS)
+                    {
+                        break;   
+                    }
+                    
+                    recs = (DRMS_Record_t **)malloc(sizeof(DRMS_Record_t *) * nrecs);
+                    if (recs)
+                    {
+                        memset(recs, 0, sizeof(DRMS_Record_t *) * nrecs);
+                        
+                        for (irec = 0; irec < nrecs; irec++)
+                        {
+                            rec = rs->records[(rs->ss_starts)[iset] + irec];
+                            recs[nrecs - irec - 1] = rec;
+                        }
+                    }
+                    else
+                    {
+                        statint = DRMS_ERROR_OUTOFMEMORY;
+                        break;
+                    }
+                }
+                
+                if (statint == DRMS_SUCCESS)
+                {
+                    /* now copy the record ptrs back to rs->records */
+                    memcpy(rs->records, recs, sizeof(DRMS_Record_t *) * nrecs);
+                }
+                
+                if (recs)
+                {
+                    free(recs);
+                }
+            }
+        }
+    }
+    
+    if (hasshadow)
+    {
+        free(hasshadow);
+        hasshadow = NULL;
+    }
+    
+    if (status)
+    {
+        *status = statint;
+    }
+    
+    return rs;
 }
 
 /* Create n new records by calling drms_create_record n times.  */
@@ -4047,7 +4099,70 @@ DRMS_Record_t *drms_retrieve_record(DRMS_Env_t *env, const char *seriesname,
 }
 
 
-
+/* WARNING - This function may modify <query>. If <query> contains more than one SQL statement, 
+ * this function will strip-off the first one (which should be a temp-table-creation statement)
+ * and execute it. Then it will return the query sans the templ-table statement. If there
+ * is no temp-table query, then this function is a noop. */
+static int ParseAndExecTempTableSQL(DRMS_Session_t *session, char **pquery)
+{
+    int istat = DRMS_SUCCESS;
+    char *query = NULL;
+    char *pNextStatement = NULL;
+    int rsp = 0;
+    int tempTab = 0;
+    
+    if (pquery && *pquery)
+    {
+        query = *pquery;
+        
+        if ((pNextStatement = strstr(query, ";\n")) != NULL)
+        {
+            *pNextStatement = '\0';
+            *pquery = strdup(pNextStatement + 2); /* query still points to the original string. */
+            
+            if (*pquery)
+            {
+                tempTab = 1;
+            }
+            else
+            {
+                istat = DRMS_ERROR_OUTOFMEMORY;
+            }
+        }
+        else
+        {
+            /* There is no ";\n" statement separator. There could still be a temporary-
+             * table statement (but no other statement). But there might also be no
+             * temporary-table statement at all. */
+            rsp = drms_series_hastemptab(query);
+            
+            if (rsp == -1)
+            {
+                istat = DRMS_ERROR_BADDBQUERY;
+            }
+            else
+            {
+                tempTab = rsp;
+            }
+            
+            /* Copy original string, since query will be freed. */
+            *pquery = strdup(query);
+        }
+        
+        if (istat == DRMS_SUCCESS && tempTab == 1)
+        {
+            /* Evaluate temporary-table statement. */
+            if (drms_dms(session, NULL, query))
+            {
+                istat = DRMS_ERROR_QUERYFAILED;
+            }
+        }
+        
+        free(query);
+    }
+    
+    return istat;
+}
 
 /* Retrieve a set of data records from a series satisfying the condition
    given in the string "where", which must be valid SQL WHERE clause wrt. 
@@ -4076,6 +4191,7 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
   long long recsize, limit;
   HIterator_t *hit = NULL;
   const char *hkey = NULL;
+    char *tmpquery = NULL;
   
   CHECKNULL_STAT(env,status);
   
@@ -4110,6 +4226,17 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
   printf("query = '%s'\n",query);
   printf("\nMemory used = %Zu\n\n",xmem_recenthighwater());
 #endif
+
+    /* query_string may contain more than one SQL command, but drms_query_bin does not 
+     * support this. If this is the case, then the first command will be a command that
+     * creates a temporary table (used by the second command). So, we need to separate the 
+     * command, and issue the temp-table command separately. */
+    if (ParseAndExecTempTableSQL(env->session, &query))
+    {
+        stat = DRMS_ERROR_QUERYFAILED;
+        fprintf(stderr, "Failed in drms_retrieve_records, query = '%s'\n",query);
+        goto bailout1;
+    }
 
   TIME(qres = drms_query_bin(env->session, query));
   if (qres == NULL)
@@ -4281,6 +4408,11 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
     drms_free_records(rs);
   free(rs);
  bailout1:
+    if (tmpquery)
+    {
+        free(tmpquery);
+    }
+    
   free(series_lower);
   free(query);
   if (status)
@@ -4389,6 +4521,11 @@ char *drms_query_string(DRMS_Env_t *env,
                               rquery = drms_series_nrecords_querystringA(seriesname, &status);
                               if (status == DRMS_SUCCESS)
                               {
+                                  if (env->verbose)
+                                  {
+                                      printf("query (the big enchilada): %s\n", rquery);
+                                  }
+                                  
                                   return rquery;
                               }
                               else
@@ -4416,6 +4553,11 @@ char *drms_query_string(DRMS_Env_t *env,
                               rquery = drms_series_nrecords_querystringB(seriesname, npkwhere, &status);
                               if (status == DRMS_SUCCESS)
                               {
+                                  if (env->verbose)
+                                  {
+                                      printf("query (the big enchilada): %s\n", rquery);
+                                  }
+    
                                   return rquery;
                               }
                               else
@@ -4462,6 +4604,11 @@ char *drms_query_string(DRMS_Env_t *env,
                               rquery = drms_series_nrecords_querystringC(seriesname, pkwhere, &status);
                               if (status == DRMS_SUCCESS)
                               {
+                                  if (env->verbose)
+                                  {
+                                      printf("query (the big enchilada): %s\n", rquery);
+                                  }
+    
                                   return rquery;
                               }
                               else
@@ -4494,6 +4641,11 @@ char *drms_query_string(DRMS_Env_t *env,
                               rquery = drms_series_nrecords_querystringD(seriesname, pkwhere, npkwhere, &status);
                               if (status == DRMS_SUCCESS)
                               {
+                                  if (env->verbose)
+                                  {
+                                      printf("query (the big enchilada): %s\n", rquery);
+                                  }
+    
                                   return rquery;
                               }
                               else
@@ -4569,6 +4721,11 @@ char *drms_query_string(DRMS_Env_t *env,
                           rquery = drms_series_all_querystringA(env, seriesname, field_list, limit, &status);
                           if (status == DRMS_SUCCESS)
                           {
+                              if (env->verbose)
+                              {
+                                  printf("query (the big enchilada): %s\n", rquery);
+                              }
+                              
                               return rquery;
                           }
                           else
@@ -4601,6 +4758,11 @@ char *drms_query_string(DRMS_Env_t *env,
                           rquery = drms_series_all_querystringB(env, seriesname, npkwhere, field_list, limit, &status);
                           if (status == DRMS_SUCCESS)
                           {
+                              if (env->verbose)
+                              {
+                                  printf("query (the big enchilada): %s\n", rquery);
+                              }
+                              
                               return rquery;
                           }
                           else
@@ -4613,7 +4775,6 @@ char *drms_query_string(DRMS_Env_t *env,
               else
               {
                   /* Prime-key query. */
-                  
                   if (!npkwhere || !*npkwhere)
                   {
                       /* No non-prime-key query. */
@@ -4628,6 +4789,11 @@ char *drms_query_string(DRMS_Env_t *env,
                           rquery = drms_series_all_querystringC(env, seriesname, pkwhere, field_list, limit, &status);
                           if (status == DRMS_SUCCESS)
                           {
+                              if (env->verbose)
+                              {
+                                  printf("query (the big enchilada): %s\n", rquery);
+                              }
+                              
                               return rquery;
                           }
                           else
@@ -4639,13 +4805,17 @@ char *drms_query_string(DRMS_Env_t *env,
                   else
                   {
                       /* Non-prime-key query. */
-                      
                       if (shadowexists)
                       {
                           /* Use the shadow table to generate an optimized query involving all record groups. */
                           rquery = drms_series_all_querystringD(env, seriesname, pkwhere, npkwhere, field_list, limit, &status);
                           if (status == DRMS_SUCCESS)
                           {
+                              if (env->verbose)
+                              {
+                                  printf("query (the big enchilada): %s\n", rquery);
+                              }
+                              
                               return rquery;
                           }
                           else
@@ -4664,6 +4834,139 @@ char *drms_query_string(DRMS_Env_t *env,
           recsize = drms_record_memsize(template);
           limit  = (long long)((0.4e6*env->query_mem)/recsize);
           nrecs = *(int *)(data);
+          
+          if (!allvers)
+          {
+              shadowexists = drms_series_shadowexists(env, seriesname, &status);
+              
+              if (status != DRMS_SUCCESS)
+              {
+                  goto bailout;
+              }
+              
+              if (!pkwhere || !*pkwhere)
+              {
+                  /* No prime-key query. */
+                  if (!npkwhere || !*npkwhere)
+                  {
+                      /* No prime-key query, and no non-prime-key query. */
+                      if (!shadowexists && env->createshadows)
+                      {
+                          /* No shadow table exists - create it and then use it. */
+                          if (drms_series_createshadow(env, seriesname))
+                          {
+                              goto bailout;
+                          }
+                          else
+                          {
+                              shadowexists = 1;
+                          }
+                      }
+                      
+                      if (shadowexists)
+                      {
+                          /* Use the shadow table to generate an optimized query involving all record groups. */
+                          rquery = drms_series_n_querystringA(env, seriesname, field_list, nrecs, limit, &status);
+                          if (status == DRMS_SUCCESS)
+                          {
+                              if (env->verbose)
+                              {
+                                  printf("query (the big enchilada): %s\n", rquery);
+                              }
+                              
+                              return rquery;
+                          }
+                          else
+                          {
+                              goto bailout;
+                          }
+                      }
+                  }
+                  else
+                  {
+                      /* No prime-key query, but there is a non-prime key query. */
+                      if (!shadowexists && env->createshadows)
+                      {
+                          /* No shadow table exists - create it and then use it. */
+                          if (drms_series_createshadow(env, seriesname))
+                          {
+                              goto bailout;
+                          }
+                          else
+                          {
+                              shadowexists = 1;
+                          }
+                      }
+                      
+                      if (shadowexists)
+                      {
+                          /* Use the shadow table to generate an optimized query involving all record groups. */
+                          rquery = drms_series_n_querystringB(env, seriesname, npkwhere, field_list, nrecs, limit, &status);
+                          if (status == DRMS_SUCCESS)
+                          {
+                              if (env->verbose)
+                              {
+                                  printf("query (the big enchilada): %s\n", rquery);
+                              }
+                              
+                              return rquery;
+                          }
+                          else
+                          {
+                              goto bailout;
+                          }
+                      }
+                  }
+              }
+              else
+              {
+                  /* Prime-key query. */
+                  if (!npkwhere || !*npkwhere)
+                  {
+                      /* Prime-key query, but no non-prime-key query. */
+                      if (shadowexists)
+                      {
+                          /* Use the shadow table to generate an optimized query involving all record groups. */
+                          rquery = drms_series_n_querystringC(env, seriesname, pkwhere, field_list, nrecs, limit, &status);
+                          if (status == DRMS_SUCCESS)
+                          {
+                              if (env->verbose)
+                              {
+                                  printf("query (the big enchilada): %s\n", rquery);
+                              }
+
+                              return rquery;
+                          }
+                          else
+                          {
+                              goto bailout;
+                          }
+                      }
+                  }
+                  else
+                  {
+                      /* Prime-key query, and a non-prime key query. */
+                      if (shadowexists)
+                      {
+                          /* Use the shadow table to generate an optimized query involving all record groups. */
+                          rquery = drms_series_n_querystringD(env, seriesname, pkwhere, npkwhere, field_list, nrecs, limit, &status);
+                          if (status == DRMS_SUCCESS)
+                          {
+                              if (env->verbose)
+                              {
+                                  printf("query (the big enchilada): %s\n", rquery);
+                              }
+
+                              return rquery;
+                          }
+                          else
+                          {
+                              goto bailout;
+                          }
+                      }
+                  }
+              }
+          }
       }
           break;
   default:
@@ -9153,7 +9456,6 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
     char *seriesname = NULL;
     char *pQuery = NULL;
     char *cursorselect = NULL;
-    char *pCursorStmnt = NULL;
     char *pLimit = NULL;
     int iset;
     int querylen;
@@ -9170,7 +9472,7 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
         {
             /* Since we are not retrieving records just yet, rsquery will not be evaluated
              * by PG. */
-            rs = drms_open_records_internal(env, tmp, 0, &querylist, &allvers, 0, &stat);
+            rs = drms_open_records_internal(env, tmp, 0, &querylist, &allvers, NULL, 0, &stat);
             free(tmp);
         }
         else
@@ -9232,31 +9534,11 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
                     {
                         /* Check for the temporary-table statement. If it exists, evaluate it 
                          * now, then pass on the second statement to the cursor. */
-                        if ((pCursorStmnt = strstr(cursorselect, ";\n")) != NULL)
+                        if (ParseAndExecTempTableSQL(env->session, &cursorselect))
                         {
-                            *pCursorStmnt = '\0';
-                            
-                            /* Evaluate temporary-table statement. */
-                            if (drms_dms(env->session, NULL, cursorselect))
-                            {
-                                stat = DRMS_ERROR_QUERYFAILED;
-                            }
-                            else
-                            {
-                                tmp = strdup(pCursorStmnt + 2);
-                                
-                                if (!tmp)
-                                {
-                                    stat = DRMS_ERROR_OUTOFMEMORY;
-                                }
-                                else
-                                {
-                                    free(cursorselect);
-                                    cursorselect = tmp;
-                                }
-                            }
+                            stat = DRMS_ERROR_QUERYFAILED;
                         }
-                        
+
                         if (stat == DRMS_SUCCESS)
                         {
                             if ((pLimit = strcasestr(cursorselect, "limit")) != NULL)
