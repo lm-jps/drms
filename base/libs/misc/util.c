@@ -263,6 +263,60 @@ char *base_strreplace(const char *text, const char *orig, const char *repl)
    return result;
 }
 
+/* Returns a newly allocated string that contains the original string with all instances of 
+ * the 'repl' string replaced with the string 'with'. 
+ * 
+ * This is a case-insenstive version of base_strreplace(). */
+char *base_strcasereplace(const char *text, const char *orig, const char *repl)
+{
+    char *result; // the return string
+    const char *replacement = NULL;
+    char *ins;    // start, in text, of the next original substring to be replaced
+    char *pc;
+    const char *pcin;
+    size_t lenorig;  // length of original substring
+    size_t lenrepl;  // length of replacement substring
+    size_t lenprefix; // distance between repl and end of last repl
+    int count;    // number of instances of the 'repl' string in 'orig'
+    
+    XASSERT(text && orig && strlen(orig) > 0);
+    
+    if (text && orig && strlen(orig) > 0)
+    {
+        lenorig = strlen(orig);
+        replacement = (repl == NULL ? "" : repl);
+        lenrepl = strlen(replacement);
+        
+        for (count = 0, pc = strcasestr(text, orig), ins = pc; ins && (pc = strcasestr(ins, orig)); count++) 
+        {
+            ins = pc + lenorig;
+        }
+        
+        if (count > 0)
+        {
+            result = malloc(strlen(text) + (lenrepl - lenorig) * count + 1);
+            pc = result;
+            pcin = text;
+            
+            while (count--)
+            {
+                ins = strcasestr(pcin, orig);
+                lenprefix = ins - pcin;
+                strncpy(pc, pcin, lenprefix);
+                pc += lenprefix;
+                strncpy(pc, replacement, lenrepl);
+                pc += lenrepl;
+                pcin += lenprefix + lenorig;
+            }
+            
+            strncpy(pc, pcin, strlen(pcin));
+            *(pc + strlen(pcin)) = '\0';
+        }
+    }
+    
+    return result;
+}
+
 int convert_int_field(char *field, int len)
 {
   char *buf;
