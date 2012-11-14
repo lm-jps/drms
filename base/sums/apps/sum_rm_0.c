@@ -63,6 +63,7 @@
 #include "serverdefs.h"
 
 #define CFG_FILE "/home/production/cvs/JSOC/base/sums/apps/data/sum_rm.cfg"
+#define NEWLOG_FILE "/home/production/cvs/JSOC/base/sums/apps/data/sum_rm_0.newlog"
 
 int stat_storage();
 void get_cfg();
@@ -75,6 +76,7 @@ extern PART ptab[];	/* defined in SUMLIB_PavailRequest.pgc */
 
 FILE *logfp;
 char thishost[MAX_STR];
+char logname[MAX_STR];
 char *dbname;		/* name of database to connect to */
 char *timetag;		/* time tag for log file */
 char *username;		/* name of current user from getenv() */
@@ -87,6 +89,7 @@ struct tm *t_ptr;
 char datestr[32];
 char *dptr;
 int soi_errno = NO_ERROR;
+int logvers = 0;
 
 
 /* the following are set from the .cfg file */
@@ -156,9 +159,22 @@ void sighandler(sig)
 */
 void alrm_sig(int sig)
 {
+  FILE *tstfp;
+  char cmd[MAX_STR];
   int norunflg, update;
   double bytesdeleted, availstore;
 
+  if((tstfp=fopen(NEWLOG_FILE, "r"))) {	//close current log & start new one
+    fclose(tstfp);
+    fclose(logfp);
+    logvers++;
+    sprintf(logname, "%s_0.%s.%d", xlogfile, timetag, logvers);
+    open_log(logname);
+    sprintf(cmd, "/bin/rm %s", NEWLOG_FILE);
+    if(system(cmd)) {
+      write_log("sum_rm_0: Can't execute %s.\n", cmd);
+    }
+  }
   write_log("Called alrm_sig()\n");
   signal(SIGALRM, &alrm_sig);	/* setup for alarm signal */
   if(!active) {
@@ -433,7 +449,7 @@ void get_cmd(int argc, char *argv[])
 void setup()
 {
   FILE *fplog;
-  char logname[MAX_STR], cmd[MAX_STR], lfile[MAX_STR], line[MAX_STR];
+  char cmd[MAX_STR], lfile[MAX_STR], line[MAX_STR];
   char target[80], gfile[MAX_STR];
   int i, pid;
   char *cptr;
@@ -444,7 +460,7 @@ void setup()
   if(!(username = (char *)getenv("USER"))) username = "nouser";
   get_cfg();			/* get config info */
   pid = getppid();		/* pid of sum_svc */
-  sprintf(logname, "%s_0.%s", xlogfile, timetag);
+  sprintf(logname, "%s_0.%s.%d", xlogfile, timetag, logvers);
   open_log(logname);
   printk_set(write_log, write_log);
   write_log("\n\n## %s for %s  pid = %d ##\n",
