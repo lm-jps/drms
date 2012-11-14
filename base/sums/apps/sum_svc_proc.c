@@ -295,7 +295,7 @@ KEY *getdo_1(KEY *params)
   enum clnt_stat status;
   int reqcnt, i, offline, storeset, offcnt;
   char *call_err, *cptr, *wd;
-  char scmd[96];
+  char scmd[96], errstr[80];
   double bytes;
 
   sprintf(callername, "getdo_1");	//!!TEMP
@@ -308,6 +308,12 @@ KEY *getdo_1(KEY *params)
   }
   reqcnt = getkey_int(params, "reqcnt");
   sunum = getkey_uint64(params, "dsix_0");
+  if(sunum > LLONG_MAX) {	// > 0x7fffffffffffffff
+    write_log("**Error: getdo_1() called with sunum > LLONG_MAX uid=%lu\n", uid);
+    rinfo = 1;	/* give err status back to original caller */
+    send_ack();	/* ack original sum_svc caller */
+    return((KEY *)1);	/* error. nothing to be sent */ 
+  }
   //write_log("SUM_get() id=%d for user=%s sunum=%lu cnt=%d\n", 
   //		rrid, GETKEY_str(params, "username"), sunum, reqcnt);
   retlist=newkeylist();
@@ -345,6 +351,17 @@ KEY *getdo_1(KEY *params)
 	rrid, GETKEY_str(params, "username"), sunum, reqcnt, uid, offline);
     /* param says if one or more are offline and need to be retrieved */
     if(offline) {  
+      //ck if old code that has bug with tape rds (e.g. show_info)
+      if(!findkey(params, "newflg")) {	//this is old code 
+        rinfo = 0;	  /* indicate error through STATUS below */
+        send_ack();       /* ack original sum_svc caller */
+        setkey_int(&retlist, "STATUS", 1);   /* give error back to caller */
+        sprintf(errstr, "Caller is old DRMS version. No tape read allowed. Remake your code\n");
+        setkey_str(&retlist, "ERRSTR", errstr);
+        write_log("No tape read for old DRMS version. id=%d for user=%s sunum=%lu cnt=%d uid=%lu\n", 
+	rrid, GETKEY_str(params, "username"), sunum, reqcnt, uid);
+        return(retlist);    /* send ans now */
+      }
       offcnt = 0;
       for(i=0; i < reqcnt; i++) {
         sprintf(nametmp, "online_status_%d", i);
@@ -480,6 +497,10 @@ KEY *allocdo_1(KEY *params)
   else {				//query sum_arch_group db table
     group = getkey_int(params, "group");
     status = SUMLIB_SumsetGet(group, &storeset); //default storeset is 0
+    if(!status) {
+      write_log("Error ret from SUMLIB_SumsetGet() for group=%d, user=%s\n",
+                 group, GETKEY_str(params, "USER"));
+    }
   }
 #endif
   uid = getkey_uint64(params, "uid");
