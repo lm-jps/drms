@@ -105,7 +105,7 @@ EXEC SQL BEGIN DECLARE SECTION;
   varchar target[80];
   int l_count;
   uint64_t l_ds_index;
-  char stmt[16384];
+  char stmt[65536];
 EXEC SQL END DECLARE SECTION;
   FILE *rxfp;
   uint64_t eff_date, today_date;

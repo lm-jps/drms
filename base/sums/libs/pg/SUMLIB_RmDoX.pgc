@@ -114,7 +114,7 @@ EXEC SQL BEGIN DECLARE SECTION;
   varchar target[80];
   int l_count;
   uint64_t l_ds_index;
-  char stmt[16384];
+  char stmt[65536];
 EXEC SQL END DECLARE SECTION;
   FILE *rxfp;
   uint64_t eff_date, today_date;
@@ -179,6 +179,7 @@ EXEC SQL END DECLARE SECTION;
       }
     } 
 #ifndef SUMDC
+//goto BYPASS;		/* oct 30, 2012 bypass deleting DRMS records for JILA */
     //Note: Records.txt file is not on the datacapture nodes
     if(archsub != DADPDELSU) {
       sprintf(rectxt, "%s/Records.txt", wd);
@@ -241,6 +242,7 @@ EXEC SQL END DECLARE SECTION;
       }
     }
 #endif
+BYPASS:
     if(rmdirs(wd, rootdir)) {
       printk("Cannot rm %s\n", wd);
     }
@@ -273,5 +275,7 @@ sqljsocerror1:
     EXEC SQL DISCONNECT;
     //EXEC SQL ROLLBACK WORK;
     fclose(rxfp);
+    //NEW Oct 30,2012 for ignore JILA err on delete record from DRMS
+    //goto BYPASS;
     return DS_DATA_QRY;
 }
