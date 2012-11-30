@@ -192,10 +192,13 @@ __MAKE__
 #     PostgreSQL API headers (must contain libpq-fe.h)
 POSTGRES_INCS:X86_64	/usr/include
 POSTGRES_INCS:IA32	/usr/include
+POSTGRES_INCS:AVX	/usr/include
+
 #     the location of the PostgreSQL libs; likely to be either
 #     /usr/lib or /usr/lib64 or /usr/local/pgsql/lib
 POSTGRES_LIBS:X86_64	/usr/lib64
 POSTGRES_LIBS:IA32	/usr/lib
+POSTGRES_LIBS:AVX	/usr/lib64
 
 #     actual library names
 POSTGRES_LIB            pq
@@ -212,10 +215,12 @@ POSTGRES_LIB            pq
 #     CFITSIO API headers (must contain fitsio.h)
 CFITSIO_INCS:X86_64	/home/jsoc/include
 CFITSIO_INCS:IA32	/home/jsoc/include
+CFITSIO_INCS:AVX	/home/jsoc/include
 
 #     the location of the cfitsio libraries
 CFITSIO_LIBS:X86_64	/home/jsoc/lib/linux-x86_64
 CFITSIO_LIBS:IA32	/home/jsoc/lib/linux-ia32
+CFITSIO_LIBS:AVX	/home/jsoc/lib/linux_avx
 
 #     actual library names
 CFITSIO_LIB             cfitsio
