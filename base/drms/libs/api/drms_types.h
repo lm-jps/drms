@@ -464,8 +464,9 @@ struct DRMS_RecSetCursor_struct
   /** \brief The index of the chunk currently loaded in the record-set */
   /* If this is -1, then there are no chunks in memory */
   int currentchunk;
-  /** \brief The index of the chunk that was last in memory. */
-  int lastchunk; 
+  /** \brief If -1, then there are more PG records to fetch, if >= 0, then the value
+   * is the index of the last record-set record in the current chunk. */
+  int lastrec; 
   /** \brief The relative index of the current record in the downloaded chunk 0 <= currentrec <= chunksize */
   int currentrec;
   /** \brief For each record-set query, 1 means there was a [! ... !] query */

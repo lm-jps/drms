@@ -1,6 +1,12 @@
+#***********************************************************************************************#
+#
+# INITIALIZATION
+#
+
 VPATH  = $(SRCDIR)
 STATIC = 
 DBMS = POSTGRESQL
+CUSTOMSW =
 
 # Run a script to determine the machine on which make is being run. This
 # MAY return a machine type, if the host found falls into one of several
@@ -130,7 +136,6 @@ FFTW3FLIBS = $(FFTWL) -lfftw3f
 # CUSTOM BUILDS
 #
 # Compilation define customizations (eg., for remote DRMS builds)
-CUSTOMSW =
 ifneq ($(DRMS_DEFAULT_RETENTION),)
 #	CUSTOMSW = $(CUSTOMSW) -DDRMS_DEFAULT_RETENTION="\"$(DRMS_DEFAULT_RETENTION)\""
 	CUSTOMSW := $(CUSTOMSW) -DDRMS_DEFAULT_RETENTION=$(DRMS_DEFAULT_RETENTION)

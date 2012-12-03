@@ -15,7 +15,7 @@ CEXE_$(d)	:= $(addprefix $(d)/, drms_run)
 #CEXE		:= $(CEXE) $(CEXE_$(d)) $(CEXE_SUMS_$(d))
 CEXE		:= $(CEXE) $(CEXE_$(d))
 
-MODEXE_$(d)	:= $(addprefix $(d)/, drms_query drms_log createtabstructure createns accessreplogs drms_addkeys)
+MODEXE_$(d)	:= $(addprefix $(d)/, drms_query drms_log createtabstructure createns accessreplogs drms_addkeys createshadow)
 MODEXE		:= $(MODEXE) $(MODEXE_$(d))
 MODEXE_SOCK_$(d)	:= $(addprefix $(d)/, drms_log_sock)
 MODEXE_SOCK	:= $(MODEXE_SOCK) $(MODEXE_SOCK_$(d))

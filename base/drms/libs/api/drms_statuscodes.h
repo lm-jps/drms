@@ -134,6 +134,7 @@
 #define DRMS_ERROR_PENDINGTAPEREAD  (-10084)
 #define DRMS_ERROR_INVALIDSCALING   (-10085)
 #define DRMS_ERROR_OVERFLOW         (-10086)
+#define DRMS_ERROR_SHADOWTAB        (-10089)
 
 /* remote sums - not errors, but status codes*/
 #define DRMS_REMOTESUMS_TRYLATER     (-30000)
