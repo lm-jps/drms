@@ -318,6 +318,8 @@ static int ShadowExists(DRMS_Env_t *env, const char *series, int *status)
     char shadowtable[DRMS_MAXSERIESNAMELEN];
     DRMS_Record_t *template = NULL;
     
+    return 0;
+    
     template = drms_template_record(env, series, &istat);
     
     if (istat == DRMS_SUCCESS)
@@ -483,7 +485,7 @@ static int UpdateShadow(DRMS_Env_t *env,
             
             query = base_strcatalloc(query, "SELECT max(T1.recnum) FROM ", &stsz);
             query = base_strcatalloc(query, lcseries, &stsz);
-            query = base_strcatalloc(query, "AS T1, (SELECT ", &stsz);
+            query = base_strcatalloc(query, " AS T1, (SELECT ", &stsz);
             
             for (icol = 0; icol < ncols; icol++)
             {
@@ -539,9 +541,9 @@ static int UpdateShadow(DRMS_Env_t *env,
             
             if (status == DRMS_SUCCESS)
             {
-                if (added && recnum > maxrec)
+                if (added && recnum == maxrec)
                 {
-                    /* The record just inserted into series is the newest version. Update the corresponding record's                        
+                    /* The record just inserted into series is the newest version. Update the corresponding record's
                      * shadow-table record, using the prime-key values to locate the shadow-table record.
                      *
                      * UPDATE <shadow> AS T1 SET recnum = <recnum>, nrecords = T1.nrecords + 1 FROM (SELECT pkey1, pkey2 FROM <series> WHERE recnum = <recnum>) AS T2 WHERE T1.pkey1=T2.pkey1 AND T1.pkey2=T2.pkey2 AND ...
@@ -554,7 +556,7 @@ static int UpdateShadow(DRMS_Env_t *env,
                     query = base_strcatalloc(query, ".", &stsz);
                     query = base_strcatalloc(query, table, &stsz);
                     query = base_strcatalloc(query, kShadowSuffix, &stsz);
-                    query = base_strcatalloc(query, "AS T1 SET ", &stsz);
+                    query = base_strcatalloc(query, " AS T1 SET ", &stsz);
                     query = base_strcatalloc(query, kShadowColRecnum, &stsz);
                     query = base_strcatalloc(query, " = ", &stsz);
                     query = base_strcatalloc(query, srecnum, &stsz);
@@ -1661,7 +1663,7 @@ static int IsGroupNew(DRMS_Env_t *env,
             
             query = base_strcatalloc(query, "SELECT count(*) FROM ", &stsz);
             query = base_strcatalloc(query, lcseries, &stsz);
-            query = base_strcatalloc(query, "AS T1, (SELECT ", &stsz);
+            query = base_strcatalloc(query, " AS T1, (SELECT ", &stsz);
             
             for (icol = 0; icol < ncols; icol++)
             {
@@ -4303,7 +4305,7 @@ int drms_series_updatesummaries(DRMS_Env_t *env,
                     }
                     else
                     {
-                        if (ndel != 0 && ndel != nrows)
+                        if (nrows > 0 && ndel != nrows)
                         {
                             fprintf(stderr, "Unexpected number of rows (%d) in the shadow tracker.\n", ndel);
                             status = DRMS_ERROR_SHADOWTAB; 
@@ -5816,7 +5818,8 @@ int drms_series_canupdatesummaries(DRMS_Env_t *env, const char *series, int *sta
     * summary tables (The old code does not update the summary tables, and if we were
     * to allow the old code to add records to a series table that has associated summary tables
     * then the series table would get out of sync with the summary tables). */
-   return 0;
+    return 0;
+    return 1;
 }
 
 /* This function determines if query contains a temporary-table-creating query. */
