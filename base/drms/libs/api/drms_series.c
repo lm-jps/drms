@@ -318,8 +318,6 @@ static int ShadowExists(DRMS_Env_t *env, const char *series, int *status)
     char shadowtable[DRMS_MAXSERIESNAMELEN];
     DRMS_Record_t *template = NULL;
     
-    return 0;
-    
     template = drms_template_record(env, series, &istat);
     
     if (istat == DRMS_SUCCESS)
@@ -4262,7 +4260,7 @@ int drms_series_updatesummaries(DRMS_Env_t *env,
 #if (defined TRACKSHADOWS && TRACKSHADOWS)
     /* We need the ability to disable this feture, since it does get called every time we insert 
      * records and won't be necessary once we are confident that there isn't old code running around. */
-    if (status == DRMS_SUCCESS)
+    if (status == DRMS_SUCCESS && shadowexists)
     {
         /* When the series table had records inserted into it, a trigger MAY HAVE fired that caused a record to
          * be inserted into. The trigger might also not exist, in which case this block of code should be 
@@ -5818,7 +5816,6 @@ int drms_series_canupdatesummaries(DRMS_Env_t *env, const char *series, int *sta
     * summary tables (The old code does not update the summary tables, and if we were
     * to allow the old code to add records to a series table that has associated summary tables
     * then the series table would get out of sync with the summary tables). */
-    return 0;
     return 1;
 }
 
