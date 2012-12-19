@@ -1202,6 +1202,8 @@ KEY *writedrvdo_1(KEY *params)
       setkey_str(&retlist, "ERRSTR", errstr); 
       return(retlist);
     }
+    sprintf(cmd, "/bin/rm -f %s", gtarlog); //rm if no err (added 12/18/2012)
+    system(cmd);
     get_tape_fnum_rdy(sim, dname);	//make sure ready
   }
   if(filenumwrt != rdyfn) {
