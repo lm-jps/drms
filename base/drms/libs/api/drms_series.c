@@ -309,6 +309,18 @@ static int AdvanceGroupCount(DRMS_Env_t *env,
 }
 #endif
 
+/* Free the prime-keyword-name strings stored in the linked list. */
+void FreeKey(void *data)
+{
+    if (data)
+    {
+        if (*(char **)data)
+        {
+            free(*(char **)data);   
+        }
+    }
+}
+
 static int ShadowExists(DRMS_Env_t *env, const char *series, int *status)
 {
     int istat = DRMS_SUCCESS;
@@ -1802,7 +1814,7 @@ static char *PrependFields(const char *list, const char *prefix, int *status)
     return qualfields;
 }
 
-static char *CreatePKeyList(DRMS_Env_t *env, const char *series, const char *prefix, const char *suffix, int *status)
+static char *CreatePKeyList(DRMS_Env_t *env, const char *series, const char *prefix, const char *suffix, char *pkeyarr[], int *npkey, int *status)
 {
     int istat = DRMS_SUCCESS;
     int ipkey;
@@ -1844,6 +1856,12 @@ static char *CreatePKeyList(DRMS_Env_t *env, const char *series, const char *pre
                     {
                         pklist = base_strcatalloc(pklist, ", ", &stsz);
                     }
+                    
+                    /* Fill in the pkeyarr. */
+                    if (pkeyarr)
+                    {
+                        pkeyarr[ipkey] = strdup(lckeyname);
+                    }
                 }
             }
             else
@@ -1851,6 +1869,11 @@ static char *CreatePKeyList(DRMS_Env_t *env, const char *series, const char *pre
                 istat = DRMS_ERROR_OUTOFMEMORY;
             }
         }
+    }
+    
+    if (npkey)
+    {
+        *npkey = template->seriesinfo->pidx_num;
     }
     
     if (status)
@@ -4637,6 +4660,304 @@ char *drms_series_nrecords_querystringD(const char *series, const char *pkwhere,
     return query;
 }
 
+/* 
+ *
+ SELECT recnum FROM <series>
+ WHERE recnum IN
+ (SELECT recnum FROM <shadow> AS T4
+ WHERE (T4.pkey1, T4.pkey2, ..., T4.pkeyN) IN
+ (SELECT T3.pkey1, T3.pkey2, ..., max(T3.pkeyN) AS pkeyN FROM <shadow> T3
+ WHERE (T3.pkey1, T3.pkey2, ..., T3.pkey(N-1)) IN
+ (SELECT T2.pkey1, T2,pkey2, ..., max(T2.pkey(N-1)) AS pkey(N-1) FROM 
+ (SELECT T1.recnum, T1.pkey1, T1.pkey2, ..., T1.pkey(N-1) FROM <shadow> as T1
+ WHERE T1.pkey1 = (SELECT max(pkey1) FROM <shadow>)) AS T2 GROUP BY T2.pkey1)
+ GROUP BY T3.recnum, T3.pkey1, T3.pkey2))
+ *
+ * IGNORE the pkwhere clause. It will contain SQL that drms_names.c added to try and select records with the maximum/minimum
+ * prime-key value. It would have been better to not have done that in a general way in drms_names.c. It precludes 
+ * tailoring the queries to the context.
+ */
+
+
+/*
+ 
+ # 1
+ (SELECT recnum FROM su_arta.testshadow_shadow T2
+ WHERE (T2.observationtime) IN
+ (SELECT T1.observationtime FROM su_arta.testshadow_shadow as T1
+ WHERE T1.observationtime = (SELECT MAX(observationtime) FROM su_arta.testshadow_shadow)))
+ 
+ # 2
+ (SELECT recnum FROM su_arta.testshadow_shadow T3
+  WHERE (T3.observationtime, T3.regionnumber) IN
+   (SELECT T2.observationtime, max(T2.regionnumber) FROM su_arta.testshadow_shadow T2  
+    WHERE (T2.observationtime) IN
+      (SELECT T1.observationtime FROM su_arta.testshadow_shadow as T1
+       WHERE T1.observationtime = (SELECT MAX(observationtime) FROM su_arta.testshadow_shadow))
+    GROUP BY T2.observationtime))
+ 
+ #3
+ (SELECT recnum from su_arta.testshadow T4
+ WHERE (T4.observationtime, T4.regionnumber, T4.zurichclass) IN
+ (SELECT T3.observationtime, T3.regionnumber, max(T3.zurichclass) FROM su_arta.testshadow T3
+ WHERE (T3.observationtime, T3.regionnumber) IN 
+ (SELECT T2.observationtime, max(T2.regionnumber) FROM su_arta.testshadow_shadow T2  
+ WHERE (T2.observationtime) IN
+ (SELECT T1.observationtime FROM su_arta.testshadow_shadow as T1
+ WHERE T1.observationtime = (SELECT MAX(observationtime) FROM su_arta.testshadow_shadow))
+ GROUP BY T2.observationtime)
+ GROUP BY T3.observationtime, T3.regionnumber))
+ 
+ SELECT recnum, zurichclass FROM su_arta.testshadow T4
+ WHERE (T4.recnum) IN
+ (SELECT recnum FROM su_arta.testshadow_shadow T3 
+ WHERE T3.regionnumber IN
+ (SELECT max(T2.regionnumber) FROM su_arta.testshadow_shadow T2  
+ WHERE (T2.observationtime) IN
+ (SELECT T1.observationtime FROM su_arta.testshadow_shadow as T1
+ WHERE 1112659234.000000<=T1.ObservationTime AND T1.ObservationTime<( 1112659234.000000 + 864000.000000 ))))
+ AND T4.zurichclass != '?'
+ 
+ 
+ SELECT recnum, observationtime, regionnumber, zurichclass FROM su_arta.testshadow T3
+ WHERE (T3.recnum) IN
+ (SELECT T2.recnum FROM su_arta.testshadow_shadow T2  
+ WHERE (T2.observationtime) IN
+ (SELECT T1.observationtime FROM su_arta.testshadow_shadow as T1
+ WHERE T1.observationtime = (SELECT MAX(observationtime) FROM su_arta.testshadow_shadow))
+ AND T2.regionnumber > 11590) <-- pkwhere
+ AND T3.zurichclass != '?' <-- npkwhere
+ 
+ 
+ # order
+ 1. process all first/last filters
+ 2. select recnum from shadow table that satisfies these filters. As part of the where clause, AND the npkwhere clause. End up with a recnum into the shadow table.
+ 3. select all columns from series table where recnum IN recnums in #1, AND npkwhere clause.
+ 
+ */
+static int InnerFLSelect(int npkeys, HContainer_t *firstlast, size_t *stsz, char *pkey[], const char *pkeylist, const char *shadow, HContainer_t *pkwhereNFL, char **query, char **lasttab)
+{
+    int iloop;
+    int init;
+    char *pkwhere = NULL;
+    int istat = 0;  
+    char **ppkwhere = NULL;
+    char fl;
+    char tmptab[256];
+    char prevtmptab[256];
+    
+    init = 0;
+    for (iloop = 0; iloop < npkeys; iloop++)
+    {
+        if (hcon_member_lower(firstlast, pkey[iloop]))
+        {
+            /* We have a first/last filter for this element. */
+            
+            if (GetTempTable(tmptab, sizeof(tmptab)))
+            {
+                istat = DRMS_ERROR_OVERFLOW;
+            }
+            else
+            {
+                if (init != 0)
+                {
+                   *query = base_strcatalloc(*query, ";", stsz);
+                }
+
+                *query = base_strcatalloc(*query, "CREATE TEMPORARY TABLE ", stsz);
+                *query = base_strcatalloc(*query, tmptab, stsz);
+                *query = base_strcatalloc(*query, " AS ", stsz);
+                *query = base_strcatalloc(*query, "SELECT recnum, ", stsz);
+                *query = base_strcatalloc(*query, pkeylist, stsz);
+                *query = base_strcatalloc(*query, " FROM ", stsz);
+                
+                if (init == 0)
+                {
+                    *query = base_strcatalloc(*query, shadow, stsz);
+                }
+                else
+                {
+                    *query = base_strcatalloc(*query, prevtmptab, stsz);
+                }
+                
+                *query = base_strcatalloc(*query, " WHERE ", stsz);
+                *query = base_strcatalloc(*query, pkey[iloop], stsz);
+                *query = base_strcatalloc(*query, " = (SELECT ", stsz);
+                fl = *((char *)hcon_lookup_lower(firstlast, pkey[iloop]));
+                if (fl == 'F')
+                {
+                    *query = base_strcatalloc(*query, "min(", stsz);
+                }
+                else
+                {
+                    *query = base_strcatalloc(*query, "max(", stsz);
+                }
+                
+                *query = base_strcatalloc(*query, pkey[iloop], stsz);
+                *query = base_strcatalloc(*query, ") FROM ", stsz);
+                
+                if (init == 0)
+                {
+                    *query = base_strcatalloc(*query, shadow, stsz);
+                }
+                else
+                {
+                    *query = base_strcatalloc(*query, prevtmptab, stsz);
+                }
+                
+                *query = base_strcatalloc(*query, ")", stsz);
+                
+                snprintf(prevtmptab, sizeof(prevtmptab), "%s", tmptab);
+                
+                init = 1;
+            }
+        }
+        else
+        {
+            /* The where clause for the current keyword does NOT involve a FIRST/LAST
+             * filter. */
+            /* Need to add the where clause for JUST THIS KEY. */
+            ppkwhere = (char **)hcon_lookup_lower(pkwhereNFL, pkey[iloop]);
+            if (ppkwhere)
+            {
+                pkwhere = *ppkwhere;
+            }
+            
+            if (GetTempTable(tmptab, sizeof(tmptab)))
+            {
+                istat = DRMS_ERROR_OVERFLOW;
+            }
+            else
+            {
+                if (init != 0)
+                {
+                    *query = base_strcatalloc(*query, ";", stsz);
+                }
+
+                *query = base_strcatalloc(*query, "CREATE TEMPORARY TABLE ", stsz);
+                *query = base_strcatalloc(*query, tmptab, stsz);
+                *query = base_strcatalloc(*query, " AS ", stsz);
+                *query = base_strcatalloc(*query, "SELECT recnum, ", stsz);
+                *query = base_strcatalloc(*query, pkeylist, stsz);
+                *query = base_strcatalloc(*query, " FROM ", stsz);
+                
+                if (init == 0)
+                {
+                    *query = base_strcatalloc(*query, shadow, stsz);
+                }
+                else
+                {
+                    *query = base_strcatalloc(*query, prevtmptab, stsz);
+                }
+                
+                if (ppkwhere)
+                {
+                    *query = base_strcatalloc(*query, " WHERE ", stsz);
+                    *query = base_strcatalloc(*query, pkwhere, stsz);
+                }
+               
+                snprintf(prevtmptab, sizeof(prevtmptab), "%s", tmptab);
+                
+                init = 1;
+            }
+        }
+    }
+    
+    if (lasttab)
+    {
+        *lasttab = strdup(tmptab);
+    }
+    
+    return istat;
+}
+
+/* SELECT count(*) FROM <series> 
+ * WHERE recnum IN
+ *   (SELECT recnum FROM <lasttab>)
+ * AND <npkwhere>
+ */
+char *drms_series_nrecords_querystringFL(DRMS_Env_t *env, const char *series, const char *npkwhere, HContainer_t *pkwhereNFL, HContainer_t *firstlast, int *status)
+{
+    char *query = NULL;
+    size_t stsz = 2048;
+    char *lcseries = NULL;
+    int iloop;
+    char *pkey[DRMS_MAXPRIMIDX];
+    int npkeys;
+    char shadow[DRMS_MAXSERIESNAMELEN];
+    char *lasttab = NULL;
+    char *pkeylist = NULL;
+    int istat = DRMS_SUCCESS;
+    
+    lcseries = strdup(series);
+    
+    if (lcseries)
+    {
+        strtolower(lcseries);
+        query = malloc(stsz);
+        if (query)
+        {
+            *query = '\0';
+            snprintf(shadow, sizeof(shadow), "%s%s", lcseries, kShadowSuffix);
+            pkeylist = CreatePKeyList(env, series, NULL, NULL, pkey, &npkeys, &istat);
+            
+            if (istat == DRMS_SUCCESS)
+            {
+                istat = InnerFLSelect(npkeys, firstlast, &stsz, pkey, pkeylist, shadow, pkwhereNFL, &query, &lasttab);
+            }
+            
+            if (istat == DRMS_SUCCESS)
+            {
+                /* Make sure the CREATE TEMP TABLE statements that precede the SELECT statement    
+                 * are separated from the latter by ";\n". When this code is used in a db cursor, 
+                 * the CREATE statements are executed first, then a cursor is created on the       
+                 * remaining statements that follow the ";\n". */
+                query = base_strcatalloc(query, ";\n", &stsz);
+
+                query = base_strcatalloc(query, "SELECT count(*) FROM ", &stsz);
+                query = base_strcatalloc(query, lcseries, &stsz);                
+                query = base_strcatalloc(query, " WHERE recnum in (SELECT recnum FROM ", &stsz);
+                query = base_strcatalloc(query, lasttab, &stsz);
+                query = base_strcatalloc(query, ")", &stsz);
+                
+                if (npkwhere && *npkwhere)
+                {
+                    query = base_strcatalloc(query, " AND ", &stsz);
+                    query = base_strcatalloc(query, npkwhere, &stsz);
+                }
+            }
+            
+            /* free stuff. */
+            for (iloop = 0; iloop < npkeys; iloop++)
+            {
+                if (pkey[iloop])
+                {
+                    free(pkey[iloop]);
+                    pkey[iloop] = NULL;
+                }
+            }
+        }
+        else
+        { 
+            istat = DRMS_ERROR_OUTOFMEMORY;
+        }
+        
+        free(lcseries);
+        lcseries = NULL;
+    }
+    else
+    {
+        istat = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return query;
+}
+
 int drms_series_nrecords(DRMS_Env_t *env, const char *series, int *status)
 {
     int count;
@@ -4757,7 +5078,7 @@ char *drms_series_all_querystringA(DRMS_Env_t *env, const char *series, const ch
             qualfields = PrependFields(fields, "T1.", &istat);
             
             /* Create a list of all prime key names. */
-            qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, &istat);
+            qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, NULL, NULL, &istat);
 
             if (istat == DRMS_SUCCESS)
             {                
@@ -4860,7 +5181,7 @@ char *drms_series_all_querystringB(DRMS_Env_t *env, const char *series, const ch
             qualfields = PrependFields(fields, "T1.", &istat);
             
             /* Create a list of all prime key names. */
-            qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, &istat);
+            qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, NULL, NULL, &istat);
             
             if (istat == DRMS_SUCCESS)
             {
@@ -4967,7 +5288,7 @@ char *drms_series_all_querystringC(DRMS_Env_t *env, const char *series, const ch
             /* Create a list of all prime key names. */
             if (istat == DRMS_SUCCESS)
             {
-                qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, &istat);
+                qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, NULL, NULL, &istat);
             }
             
             /* Must prepend all prime-key column names with T2., otherwise the query has an ambiguity
@@ -5086,7 +5407,7 @@ char *drms_series_all_querystringD(DRMS_Env_t *env, const char *series, const ch
             /* Create a list of all prime key names. */
             if (istat == DRMS_SUCCESS)
             {
-                qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, &istat);
+                qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, NULL, NULL, &istat);
             }
             
             /* Must prepend all prime-key column names with T2., otherwise the query has an ambiguity
@@ -5142,6 +5463,117 @@ char *drms_series_all_querystringD(DRMS_Env_t *env, const char *series, const ch
     }
     
     return query;
+}
+
+
+/* SELECT <fields> FROM <series>
+ * WHERE recnum IN
+ *   (SELECT recnum FROM <lasttab>) 
+ * AND <npkwhere>
+ * ORDER BY pkey1, pkey2, ...
+ * LIMIT <limit>
+ */
+char *drms_series_all_querystringFL(DRMS_Env_t *env, const char *series, const char *npkwhere, HContainer_t *pkwhereNFL, const char *fields, int limit, HContainer_t *firstlast, int *status)
+{
+    char *query = NULL;
+    int istat = DRMS_SUCCESS;
+    size_t stsz = 2048;
+    char *lcseries = NULL;
+    int npkeys = 0;
+    char limitstr[32];
+    char shadow[DRMS_MAXSERIESNAMELEN];
+    char *pkey[DRMS_MAXPRIMIDX];
+    char *pkeylist = NULL;
+    char *lasttab = NULL;
+    int iloop;
+    
+    lcseries = strdup(series);
+    
+    if (lcseries)
+    {
+        strtolower(lcseries);
+        query = malloc(stsz);
+        
+        if (query)
+        {
+            *query = '\0';
+            
+            snprintf(shadow, sizeof(shadow), "%s%s", lcseries, kShadowSuffix);
+            snprintf(limitstr, sizeof(limitstr), "%d", limit);
+            
+            pkeylist = CreatePKeyList(env, series, NULL, NULL, pkey, &npkeys, &istat);
+            
+            if (istat == DRMS_SUCCESS)
+            {
+                if (istat == DRMS_SUCCESS)
+                {
+                    istat = InnerFLSelect(npkeys, firstlast, &stsz, pkey, pkeylist, shadow, pkwhereNFL, &query, &lasttab);
+                }
+                
+                if (istat == DRMS_SUCCESS)
+                {
+                    /* Make sure the CREATE TEMP TABLE statements that precede the SELECT statement 
+                     * are separated from the latter by ";\n". When this code is used in a db cursor, 
+                     * the CREATE statements are executed first, then a cursor is created on the 
+                     * remaining statements that follow the ";\n". */
+                    query = base_strcatalloc(query, ";\n", &stsz);
+
+                    query = base_strcatalloc(query, "SELECT ", &stsz);
+                    query = base_strcatalloc(query, fields, &stsz);
+                    query = base_strcatalloc(query, " FROM ", &stsz);
+                    query = base_strcatalloc(query, lcseries, &stsz);                
+                    query = base_strcatalloc(query, " WHERE recnum in (SELECT recnum FROM ", &stsz);
+                    query = base_strcatalloc(query, lasttab, &stsz);
+                    query = base_strcatalloc(query, ")", &stsz);
+                    
+                    if (npkwhere && *npkwhere)
+                    {
+                        query = base_strcatalloc(query, " AND ", &stsz);
+                        query = base_strcatalloc(query, npkwhere, &stsz);
+                    }
+                    
+                    query = base_strcatalloc(query, " ORDER BY ", &stsz);
+                    query = base_strcatalloc(query, pkeylist, &stsz);
+                    query = base_strcatalloc(query, " LIMIT ", &stsz);
+                    query = base_strcatalloc(query, limitstr, &stsz);
+                }
+                
+                /* free stuff. */
+                free(lasttab);
+                lasttab = NULL;
+                
+                free(pkeylist);
+                pkeylist = NULL;
+                
+                for (iloop = 0; iloop < npkeys; iloop++)
+                {
+                    if (pkey[iloop])
+                    {
+                        free(pkey[iloop]);
+                        pkey[iloop] = NULL;
+                    }
+                }
+            }
+            else
+            {
+                istat = DRMS_ERROR_OUTOFMEMORY;
+            }            
+        }
+        else
+        {
+            istat = DRMS_ERROR_OUTOFMEMORY;
+        }
+        
+        free(lcseries);
+        lcseries = NULL;
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return query;   
 }
 
 /* neither pkwhere nor npkwhere exists. */
@@ -5202,11 +5634,11 @@ char *drms_series_n_querystringA(DRMS_Env_t *env, const char *series, const char
             qualfields = PrependFields(fields, "T.", &istat);
             
             /* Create a list of all prime key names. */
-            qualpkeylist = CreatePKeyList(env, series, "T.", NULL, &istat);
+            qualpkeylist = CreatePKeyList(env, series, "T.", NULL, NULL, NULL, &istat);
             
             /* Create the list of prime-key names that will be used for sorting the records 
              * before applying the limit to select the "n" records. */
-            orderpkeylist = CreatePKeyList(env, series, NULL, desc ? " DESC" : NULL, &istat);
+            orderpkeylist = CreatePKeyList(env, series, NULL, desc ? " DESC" : NULL, NULL, NULL, &istat);
             
             if (istat == DRMS_SUCCESS)
             {
@@ -5347,11 +5779,11 @@ char *drms_series_n_querystringB(DRMS_Env_t *env, const char *series, const char
             qualfields = PrependFields(fields, "T1.", &istat);
             
             /* Create a list of all prime key names. */
-            qualpkeylist = CreatePKeyList(env, series, "T1.", NULL, &istat);
+            qualpkeylist = CreatePKeyList(env, series, "T1.", NULL, NULL, NULL, &istat);
             
             /* Create the list of prime-key names that will be used for sorting the records 
              * before applying the limit to select the "n" records. */
-            orderpkeylist = CreatePKeyList(env, series, "T1.", desc ? " DESC" : NULL, &istat);
+            orderpkeylist = CreatePKeyList(env, series, "T1.", desc ? " DESC" : NULL, NULL, NULL, &istat);
             
             if (istat == DRMS_SUCCESS)
             {
@@ -5487,11 +5919,11 @@ char *drms_series_n_querystringC(DRMS_Env_t *env, const char *series, const char
             qualfields = PrependFields(fields, "T.", &istat);
             
             /* Create a list of all prime key names. */
-            qualpkeylist = CreatePKeyList(env, series, "T.", NULL, &istat);
+            qualpkeylist = CreatePKeyList(env, series, "T.", NULL, NULL, NULL, &istat);
             
             /* Create the list of prime-key names that will be used for sorting the records 
              * before applying the limit to select the "n" records. */
-            orderpkeylist = CreatePKeyList(env, series, NULL, desc ? " DESC" : NULL, &istat);
+            orderpkeylist = CreatePKeyList(env, series, NULL, desc ? " DESC" : NULL, NULL, NULL, &istat);
             
             if (istat == DRMS_SUCCESS)
             {
@@ -5635,14 +6067,14 @@ char *drms_series_n_querystringD(DRMS_Env_t *env, const char *series, const char
             /* Create a list of all prime key names. */
             if (istat == DRMS_SUCCESS)
             {
-                qualpkeylist = CreatePKeyList(env, series, "T1.", NULL, &istat);
+                qualpkeylist = CreatePKeyList(env, series, "T1.", NULL, NULL, NULL, &istat);
             }
             
             /* Create the list of prime-key names that will be used for sorting the records 
              * before applying the limit to select the "n" records. */
             if (istat == DRMS_SUCCESS)
             {
-                orderpkeylist = CreatePKeyList(env, series, "T1.", desc ? " DESC" : NULL, &istat);
+                orderpkeylist = CreatePKeyList(env, series, "T1.", desc ? " DESC" : NULL, NULL, NULL, &istat);
             }
             
             if (istat == DRMS_SUCCESS)
@@ -5719,6 +6151,127 @@ char *drms_series_n_querystringD(DRMS_Env_t *env, const char *series, const char
     else
     {
         istat = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return query;
+}
+
+/* SELECT <fields> FROM <series> 
+ * WHERE recnum IN
+ *   (SELECT recnum FROM <lasttab>)
+ * AND <npkwhere>
+ * ORDER BY pkey1, pkey2, ..., pkeyN
+ * LIMIT min(abs(<nrecs>), <limit>)
+ */
+char *drms_series_n_querystringFL(DRMS_Env_t *env, const char *series, const char *npkwhere, HContainer_t *pkwhereNFL, const char *fields, int nrecs, int limit, HContainer_t *firstlast, int *status)
+{
+    char *lcseries = NULL;
+    char *query = NULL;
+    size_t stsz;
+    char shadow[DRMS_MAXSERIESNAMELEN];
+    char limitstr[32];
+    char nrecsstr[32];
+    char *pkey[DRMS_MAXPRIMIDX];
+    int npkeys = 0;
+    int desc;
+    char *lasttab = NULL;
+    int iloop;
+    char *pkeylist = NULL;
+    char *qualpkeylist = NULL;
+    int istat = DRMS_SUCCESS;
+    
+    desc = nrecs < 0;
+    lcseries = strdup(series);
+    
+    if (lcseries)
+    {
+        strtolower(lcseries);
+        stsz = 2048;
+        query = malloc(stsz);
+        
+        if (query)
+        {
+            *query = '\0';
+            
+            snprintf(shadow, sizeof(shadow), "%s%s", lcseries, kShadowSuffix);
+            snprintf(limitstr, sizeof(limitstr), "%d", limit);
+            snprintf(nrecsstr, sizeof(nrecsstr), "%d", abs(nrecs));
+            
+            if (istat == DRMS_SUCCESS)
+            {
+                pkeylist = CreatePKeyList(env, series, NULL, NULL, pkey, &npkeys, &istat);
+                
+                if (istat == DRMS_SUCCESS)
+                {
+                    istat = InnerFLSelect(npkeys, firstlast, &stsz, pkey, pkeylist, shadow, pkwhereNFL, &query, &lasttab);
+                }
+                
+                if (istat == DRMS_SUCCESS)
+                {
+                    qualpkeylist = CreatePKeyList(env, series, NULL, desc ? " DESC" : NULL, NULL, NULL, &istat);
+                }
+                
+                if (istat == DRMS_SUCCESS)
+                {
+                    /* Make sure the CREATE TEMP TABLE statements that precede the SELECT statement    
+                     * are separated from the latter by ";\n". When this code is used in a db cursor, 
+                     * the CREATE statements are executed first, then a cursor is created on the       
+                     * remaining statements that follow the ";\n". */
+                    query = base_strcatalloc(query, ";\n", &stsz);
+
+                    query = base_strcatalloc(query, "SELECT ", &stsz);
+                    query = base_strcatalloc(query, fields, &stsz);
+                    query = base_strcatalloc(query, " FROM ", &stsz);
+                    query = base_strcatalloc(query, lcseries, &stsz);                
+                    query = base_strcatalloc(query, " WHERE recnum in (SELECT recnum FROM ", &stsz);
+                    query = base_strcatalloc(query, lasttab, &stsz);
+                    query = base_strcatalloc(query, ")", &stsz);
+                    
+                    if (npkwhere && *npkwhere)
+                    {
+                        query = base_strcatalloc(query, " AND ", &stsz);
+                        query = base_strcatalloc(query, npkwhere, &stsz);
+                    }
+                    
+                    query = base_strcatalloc(query, " ORDER BY ", &stsz);
+                    query = base_strcatalloc(query, qualpkeylist, &stsz);
+                    query = base_strcatalloc(query, " LIMIT ", &stsz);
+
+                    if (limit < abs(nrecs))
+                    {
+                        query = base_strcatalloc(query, limitstr, &stsz);
+                    }
+                    else
+                    {
+                        query = base_strcatalloc(query, nrecsstr, &stsz);
+                    }
+                }
+                
+                /* free stuff. */
+                free(qualpkeylist);
+                qualpkeylist = NULL;
+                
+                free(lasttab);
+                lasttab = NULL;
+                
+                free(pkeylist);
+                pkeylist = NULL;
+                
+                for (iloop = 0; iloop < npkeys; iloop++)
+                {
+                    if (pkey[iloop])
+                    {
+                        free(pkey[iloop]);
+                        pkey[iloop] = NULL;
+                    }
+                }                
+            }
+        }
     }
     
     if (status)

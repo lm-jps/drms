@@ -1518,7 +1518,7 @@ static int PrintStuff(DRMS_Record_t *rec, int keyword_list, int show_recnum, int
     return 0;
 }
 
-static int RecordLoopCursor(DRMS_Env_t *env, DRMS_RecordSet_t *recordset, int requireSUMinfo, int64_t *given_sunum, HContainer_t *suinfo, int want_path, int want_path_noret, const char* series, const char *keylist, const char *seglist, int show_all, int show_keys, int show_all_segs, int show_segs, int show_all_links, int quiet, int keyword_list, int show_recnum, int show_sunum, int show_recordspec, int show_online, int show_retention, int show_archive, int show_tapeinfo, int show_size, int show_session, int want_dims, int show_types, char *sunum_rs_query)
+static int RecordLoopCursor(DRMS_Env_t *env, const char *rsq, DRMS_RecordSet_t *recordset, int requireSUMinfo, int64_t *given_sunum, HContainer_t *suinfo, int want_path, int want_path_noret, const char* series, const char *keylist, const char *seglist, int show_all, int show_keys, int show_all_segs, int show_segs, int show_all_links, int quiet, int keyword_list, int show_recnum, int show_sunum, int show_recordspec, int show_online, int show_retention, int show_archive, int show_tapeinfo, int show_size, int show_session, int want_dims, int show_types, char *sunum_rs_query)
 {
     /* rs->n is -1 - we won't know the total number of records until the loop terminates. */
     char key[128];
@@ -1616,6 +1616,11 @@ static int RecordLoopCursor(DRMS_Env_t *env, DRMS_RecordSet_t *recordset, int re
         
         irec++;
     } /* while */
+    
+    if (irec == 0)
+    {
+        printf ("** No records in selected data set, query was %s **\n", rsq);
+    }
     
     /* Finished.  Clean up and exit. */
     for (ikey=0; ikey<nkeys; ikey++)
@@ -2359,7 +2364,7 @@ int DoIt(void)
   /* MAIN loop over set of selected records */
   if (cursoredQ)
   {
-     status = RecordLoopCursor(drms_env, recordset, requireSUMinfo, given_sunum, suinfo, want_path, want_path_noret, seriesnameforheader, keylist, seglist, show_all, show_keys, show_all_segs, show_segs, show_all_links, quiet, keyword_list, show_recnum, show_sunum, show_recordspec, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_dims, show_types, sunum_rs_query);
+     status = RecordLoopCursor(drms_env, in, recordset, requireSUMinfo, given_sunum, suinfo, want_path, want_path_noret, seriesnameforheader, keylist, seglist, show_all, show_keys, show_all_segs, show_segs, show_all_links, quiet, keyword_list, show_recnum, show_sunum, show_recordspec, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_dims, show_types, sunum_rs_query);
   }
   else
   {

@@ -221,6 +221,8 @@ char * drms_series_nrecords_querystringA(const char *series, int *status);
 char *drms_series_nrecords_querystringB(const char *series, const char *npkwhere, int *status);
 char *drms_series_nrecords_querystringC(const char *series, const char *pkwhere, int *status);
 char *drms_series_nrecords_querystringD(const char *series, const char *pkwhere, const char *npkwhere, int *status);
+char *drms_series_nrecords_querystringFL(DRMS_Env_t *env, const char *series, const char *npkwhere, HContainer_t *pkwhereNFL, HContainer_t *firstlast, int *status);
+
 int drms_series_shadowexists(DRMS_Env_t *env, const char *series, int *status);
 int drms_series_createshadow(DRMS_Env_t *env, const char *series);
 void drms_series_setcreateshadows(DRMS_Env_t *env, int *val);
@@ -235,10 +237,13 @@ char *drms_series_all_querystringD(DRMS_Env_t *env,
                                    const char *fields,
                                    int limit,
                                    int *status);
+char *drms_series_all_querystringFL(DRMS_Env_t *env, const char *seriesname, const char *npkwhere, HContainer_t *pkwhereNFL, const char *fields, int limit, HContainer_t *firstlast, int *status);
+
 char *drms_series_n_querystringA(DRMS_Env_t *env, const char *series, const char *fields, int nrecs, int limit, int *status);
 char *drms_series_n_querystringB(DRMS_Env_t *env, const char *series, const char *npkwhere, const char *fields, int nrecs, int limit, int *status);
 char *drms_series_n_querystringC(DRMS_Env_t *env, const char *series, const char *pkwhere, const char *fields, int nrecs, int limit, int *status);
 char *drms_series_n_querystringD(DRMS_Env_t *env, const char *series, const char *pkwhere, const char *npkwhere, const char *fields, int nrecs, int limit, int *status);
+char *drms_series_n_querystringFL(DRMS_Env_t *env, const char *series, const char *npkwhere, HContainer_t *pkwhereNFL, const char *fields, int nrecs, int limit, HContainer_t *firstlast, int *status);
 
 int drms_series_summaryexists(DRMS_Env_t *env, const char *series, int *status);
 int drms_series_canupdatesummaries(DRMS_Env_t *env, const char *series, int *status);

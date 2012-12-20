@@ -113,6 +113,8 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
                                         HContainer_t *goodsegcont,
                                         int allvers, 
                                         int nrecs, 
+                                        HContainer_t *firstlast,
+                                        HContainer_t *pkwhereNFL,
                                         int *status);
 /* Insert multiple records in the database using the 
    fast bulk insert interface. */

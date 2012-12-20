@@ -1338,9 +1338,11 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
     DRMS_RecordSet_t *rs = NULL;
     DRMS_RecordSet_t *ret = NULL;
     int i, filter, mixed;
+    HContainer_t *firstlast = NULL;
     char *query=0, *seriesname=0;
     char *pkwhere = NULL;
     char *npkwhere = NULL;
+    HContainer_t *pkwhereNFL = NULL;
     HContainer_t *realSets = NULL;
     int nRecs = 0;
     int j = 0;
@@ -1583,7 +1585,9 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                                                          &seriesname, 
                                                          &filter, 
                                                          &mixed, 
-                                                         NULL));
+                                                         NULL,
+                                                         &firstlast,
+                                                         &pkwhereNFL));
                         
                         if (actualSet)
                         {
@@ -1646,6 +1650,8 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                                                         goodsegcont, 
                                                         allvers[iSet] == 'y',
                                                         nrecslimit, 
+                                                        firstlast,
+                                                        pkwhereNFL,
                                                         &stat));
                         /* Remove unrequested segments now */
                     }
@@ -1686,7 +1692,9 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                                                            DRMS_QUERY_ALL, 
                                                            NULL, 
                                                            NULL,
-                                                           allvers[iSet] == 'y');
+                                                           allvers[iSet] == 'y',
+                                                           firstlast,
+                                                           pkwhereNFL);
                         list_llinserttail(llist, &selquery);
                     }
                     
@@ -1726,6 +1734,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                     pkwhere = NULL;
                     if (npkwhere) free(npkwhere);
                     npkwhere = NULL;
+                    if (pkwhereNFL) hcon_destroy(&pkwhereNFL);
                     free(seriesname); 
                     seriesname = NULL;
                     
@@ -1958,6 +1967,11 @@ failure:
     if (npkwhere)
     {
         free(npkwhere);
+    }
+    
+    if (pkwhereNFL)
+    {
+        hcon_destroy(&pkwhereNFL);
     }
     
     if (seriesname)
@@ -4124,10 +4138,13 @@ DRMS_Record_t *drms_retrieve_record(DRMS_Env_t *env, const char *seriesname,
 }
 
 
-/* WARNING - This function may modify <query>. If <query> contains more than one SQL statement, 
- * this function will strip-off the first one (which should be a temp-table-creation statement)
- * and execute it. Then it will return the query sans the templ-table statement. If there
- * is no temp-table query, then this function is a noop. */
+/* WARNING - This function may modify <query>. If <query> contains a ";\n", then this
+ * function will split the SQL at the ";\n". It will then execute the first part, 
+ * and return by reference the second part. The first part should contain 
+ * only temporary table create statements (there could be more than one such
+ * statement), and the second should be a statement that is appropriate for a
+ * cursor - one that selects rows from the series table. 
+ */
 static int ParseAndExecTempTableSQL(DRMS_Session_t *session, char **pquery)
 {
     int istat = DRMS_SUCCESS;
@@ -4203,6 +4220,8 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
                                                         const char *qoverride,
                                                         int allvers, 
                                                         int nrecs, 
+                                                        HContainer_t *firstlast,
+                                                        HContainer_t *pkwhereNFL,
                                                         int *status)
 {
   int i,throttled;
@@ -4242,7 +4261,9 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
                                           nrecs == 0 ? DRMS_QUERY_ALL : DRMS_QUERY_N, 
                                           &nrecs, 
                                           NULL, 
-                                          allvers);
+                                          allvers,
+                                          firstlast,
+                                          pkwhereNFL);
 #ifdef DEBUG
   printf("ENTER drms_retrieve_records, env=%p, status=%p\n",env,status);
 #endif
@@ -4454,6 +4475,8 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
                                         HContainer_t *goodsegcont,
                                         int allvers, 
                                         int nrecs, 
+                                        HContainer_t *firstlast,
+                                        HContainer_t *pkwhereNFL,
                                         int *status)
 {
    return drms_retrieve_records_internal(env, 
@@ -4467,6 +4490,8 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
                                          NULL, 
                                          allvers, 
                                          nrecs, 
+                                         firstlast,
+                                         pkwhereNFL,
                                          status);
 }
 
@@ -4480,7 +4505,9 @@ char *drms_query_string(DRMS_Env_t *env,
                         DRMS_QueryType_t qtype, 
                         void *data, /* specific to qtype */
                         const char *fl,
-                        int allvers) 
+                        int allvers,
+                        HContainer_t *firstlast,
+                        HContainer_t *pkwhereNFL) 
 {
   DRMS_Record_t *template;
   char *field_list, *query=0;
@@ -4500,13 +4527,17 @@ char *drms_query_string(DRMS_Env_t *env,
     
     char *rquery = NULL;
     int shadowexists = 0;
+    int hasfirstlast = 0;
 
   CHECKNULL_STAT(env,&status);
 
   if ((template = drms_template_record(env,seriesname,&status)) == NULL)
     return NULL;
   drms_link_getpidx(template); /* Make sure links have pidx's set. */
-
+    
+    /* Determine if there are first-last filters in the record-set query. */
+    hasfirstlast = (hcon_size(firstlast) > 0);
+    
   switch (qtype) {
   case DRMS_QUERY_COUNT:
       {
@@ -4626,7 +4657,15 @@ char *drms_query_string(DRMS_Env_t *env,
                       {
                           if (shadowexists)
                           {
-                              rquery = drms_series_nrecords_querystringC(seriesname, pkwhere, &status);
+                              if (hasfirstlast)
+                              {
+                                  rquery = drms_series_nrecords_querystringFL(env, seriesname, npkwhere, pkwhereNFL, firstlast, &status);
+                              }
+                              else
+                              {
+                                  rquery = drms_series_nrecords_querystringC(seriesname, pkwhere, &status);
+                              }
+                              
                               if (status == DRMS_SUCCESS)
                               {
                                   if (env->verbose)
@@ -4663,7 +4702,15 @@ char *drms_query_string(DRMS_Env_t *env,
                       {
                           if (shadowexists)
                           {
-                              rquery = drms_series_nrecords_querystringD(seriesname, pkwhere, npkwhere, &status);
+                              if (hasfirstlast)
+                              {
+                                  rquery = drms_series_nrecords_querystringFL(env, seriesname, npkwhere, pkwhereNFL, firstlast, &status);
+                              }
+                              else
+                              {
+                                  rquery = drms_series_nrecords_querystringD(seriesname, pkwhere, npkwhere, &status);
+                              }
+                              
                               if (status == DRMS_SUCCESS)
                               {
                                   if (env->verbose)
@@ -4811,7 +4858,15 @@ char *drms_query_string(DRMS_Env_t *env,
                       if (shadowexists)
                       {
                           /* Use the shadow table to generate an optimized query involving all record groups. */
-                          rquery = drms_series_all_querystringC(env, seriesname, pkwhere, field_list, limit, &status);
+                          if (hasfirstlast)
+                          {
+                             rquery = drms_series_all_querystringFL(env, seriesname, npkwhere, pkwhereNFL, field_list, limit, firstlast, &status);
+                          }
+                          else
+                          {
+                             rquery = drms_series_all_querystringC(env, seriesname, pkwhere, field_list, limit, &status);
+                          }
+
                           if (status == DRMS_SUCCESS)
                           {
                               if (env->verbose)
@@ -4833,7 +4888,15 @@ char *drms_query_string(DRMS_Env_t *env,
                       if (shadowexists)
                       {
                           /* Use the shadow table to generate an optimized query involving all record groups. */
-                          rquery = drms_series_all_querystringD(env, seriesname, pkwhere, npkwhere, field_list, limit, &status);
+                          if (hasfirstlast)
+                          {
+                             rquery = drms_series_all_querystringFL(env, seriesname, npkwhere, pkwhereNFL, field_list, limit, firstlast, &status);
+                          }
+                          else
+                          {
+                              rquery = drms_series_all_querystringD(env, seriesname, pkwhere, npkwhere, field_list, limit, &status);
+                          }
+
                           if (status == DRMS_SUCCESS)
                           {
                               if (env->verbose)
@@ -4952,7 +5015,17 @@ char *drms_query_string(DRMS_Env_t *env,
                       if (shadowexists)
                       {
                           /* Use the shadow table to generate an optimized query involving all record groups. */
-                          rquery = drms_series_n_querystringC(env, seriesname, pkwhere, field_list, nrecs, limit, &status);
+
+                          if (hasfirstlast)
+                          {
+                              rquery = drms_series_n_querystringFL(env, seriesname, npkwhere, pkwhereNFL, field_list, nrecs, limit, firstlast, &status);
+                          }
+                          else
+                          {
+
+                            rquery = drms_series_n_querystringC(env, seriesname, pkwhere, field_list, nrecs, limit, &status);
+                          }
+
                           if (status == DRMS_SUCCESS)
                           {
                               if (env->verbose)
@@ -4974,7 +5047,16 @@ char *drms_query_string(DRMS_Env_t *env,
                       if (shadowexists)
                       {
                           /* Use the shadow table to generate an optimized query involving all record groups. */
-                          rquery = drms_series_n_querystringD(env, seriesname, pkwhere, npkwhere, field_list, nrecs, limit, &status);
+
+                          if (hasfirstlast)
+                          {
+                              rquery = drms_series_n_querystringFL(env, seriesname, npkwhere, pkwhereNFL, field_list, nrecs, limit, firstlast, &status);
+                          }
+                          else
+                          {
+                              rquery = drms_series_n_querystringD(env, seriesname, pkwhere, npkwhere, field_list, nrecs, limit, &status);
+                          }
+
                           if (status == DRMS_SUCCESS)
                           {
                               if (env->verbose)
@@ -9229,6 +9311,8 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                                                                sqlquery,
                                                                rs->cursor->allvers[iset],
                                                                0, 
+                                                               NULL,
+                                                               NULL,
                                                                &stat);
 
                   free(seriesname);
@@ -9834,16 +9918,18 @@ int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status)
    char *query=NULL, *where=NULL, *seriesname=NULL;
    char *pkwhere = NULL;
    char *npkwhere = NULL;
+    HContainer_t *pkwhereNFL = NULL;
    int count = 0;
    DB_Text_Result_t *tres;
    int allvers = 0;
-
-   stat = drms_recordset_query(env, recordsetname, &where, &pkwhere, &npkwhere, &seriesname, &filter, &mixed, &allvers);
+    HContainer_t *firstlast = NULL;
+    
+   stat = drms_recordset_query(env, recordsetname, &where, &pkwhere, &npkwhere, &seriesname, &filter, &mixed, &allvers, &firstlast, &pkwhereNFL);
    if (stat)
      goto failure;
 
    stat = 1;
-   query = drms_query_string(env, seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_COUNT, NULL, NULL, allvers);
+   query = drms_query_string(env, seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_COUNT, NULL, NULL, allvers, firstlast, pkwhereNFL);
    if (!query)
      goto failure;
 
@@ -9865,6 +9951,7 @@ int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status)
    free(where);
    if (pkwhere) free(pkwhere);
    if (npkwhere) free(npkwhere);
+    if (pkwhereNFL) hcon_destroy(&pkwhereNFL);
    *status = DRMS_SUCCESS;
    return(count);
 
@@ -9874,6 +9961,7 @@ int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status)
    if (where) free(where);
    if (pkwhere) free(pkwhere);
    if (npkwhere) free(npkwhere);
+    if (pkwhereNFL) hcon_destroy(&pkwhereNFL);
    *status = stat;
    return(0);
 }
@@ -9890,13 +9978,15 @@ DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
    char *query=NULL, *where=NULL, *seriesname=NULL;
    char *pkwhere = NULL;
    char *npkwhere = NULL;
+    HContainer_t *pkwhereNFL = NULL;
    int count = 0;
    int keys = 0;
    DB_Binary_Result_t *bres=NULL;
    DRMS_Array_t *vectors=NULL;
    int allvers = 0;
+    HContainer_t *firstlast = NULL;
 
-   stat = drms_recordset_query(env, recordsetname, &where, &pkwhere, &npkwhere, &seriesname, &filter, &mixed, &allvers);
+   stat = drms_recordset_query(env, recordsetname, &where, &pkwhere, &npkwhere, &seriesname, &filter, &mixed, &allvers, &firstlast, &pkwhereNFL);
    if (stat)
      goto failure;
 
@@ -9910,7 +10000,9 @@ DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
                              DRMS_QUERY_FL, 
                              &unique, 
                              keylist, 
-                             allvers);
+                             allvers,
+                             firstlast,
+                             pkwhereNFL);
    if (!query)
      goto failure;
 
@@ -9979,6 +10071,7 @@ DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
       if (where) free(where);
       if (pkwhere) free(pkwhere);
       if (npkwhere) free(npkwhere);
+       if (pkwhereNFL) hcon_destroy(&pkwhereNFL);
       if (status) *status = DRMS_SUCCESS;
       return(vectors);
    } // bres
@@ -9989,6 +10082,7 @@ DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
    if (where) free(where);
    if (pkwhere) free(pkwhere);
    if (npkwhere) free(npkwhere);
+    if (pkwhereNFL) hcon_destroy(&pkwhereNFL);
    if (status) *status = stat;
    return(NULL);
 }

@@ -1524,7 +1524,7 @@ int drms_names_parsedegreedelta(char **deltastr, DRMS_SlotKeyUnit_t *unit, doubl
 
 /***************** Middle-end: Generate SQL from AST ********************/
 
-static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char **query, char **pkwhere, int sizep, char **npkwhere, int sizen);
+static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char **query, char **pkwhere, int sizep, char **npkwhere, int sizen, HContainer_t *pkwhereNFL);
 static int sql_record_query(RecordQuery_t *rs, char **query);
 static int sql_record_list(RecordList_t *rs, char *seriesname,  char **query);
 static int sql_recnum_set(IndexRangeSet_t  *rs, char *seriesname, char **query);
@@ -1542,7 +1542,8 @@ static int sql_record_set(RecordSet_t *rs,
                           char *pkwhere, 
                           int sizep, 
                           char *npkwhere, 
-                          int sizen)
+                          int sizen,
+                          HContainer_t *pkwhereNFL)
 {
   char *p=query;
   /*  char *field_list; */
@@ -1559,7 +1560,7 @@ static int sql_record_set(RecordSet_t *rs,
   if (rs->recordset_spec)
   {
     /*    p += sprintf(p," WHERE "); */
-     return sql_record_set_filter(rs->recordset_spec, seriesname, &p, &pkwhere, sizep, &npkwhere, sizen);
+     return sql_record_set_filter(rs->recordset_spec, seriesname, &p, &pkwhere, sizep, &npkwhere, sizen, pkwhereNFL);
   }
   else
   {
@@ -1570,166 +1571,183 @@ static int sql_record_set(RecordSet_t *rs,
   }
 }
 
-static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char **query, char **pkwhere, int sizep, char **npkwhere, int sizen)
+static int sql_record_set_filter(RecordSet_Filter_t *rs, char *seriesname, char **query, char **pkwhere, int sizep, char **npkwhere, int sizen, HContainer_t *pkwhereNFL)
 {
 #ifdef DEBUG
-  printf("Enter sql_record_set_filter\n");
+    printf("Enter sql_record_set_filter\n");
 #endif
-
-  /* If there is a [#^] or [#$] in the filter, AND it is not the first 
-   * record list, then a different query needs to be done.  If the 
-   * filter is [165]['twiggy'], then a where clause of "id = 165 AND 
-   * model = 'twiggy' suffices.  But if the filter is [165][#^], then
-   * the where clause should be 
-   * "id = 165 AND model = (select min(model) from <seriesname> where id = 165)".
-   *
-   * So, instead of sequentially writing the query to *query, it is
-   * probably better to figure out what the entire where clause is, 
-   * and then concatenate it to query.
-   */
-
-  char whereclz[DRMS_MAXQUERYLEN] = {0};
-  char pkwherebuf[DRMS_MAXQUERYLEN] = {0};
-  char npkwherebuf[DRMS_MAXQUERYLEN] = {0};
-  char wherebuf[DRMS_MAXQUERYLEN];
-  char *bogus = NULL;
-
-  do {
-     memset(wherebuf, sizeof(wherebuf), 0);
-     bogus = wherebuf;
-
-     /* opening parenthesis around single var=xxx */
-     snprintf(wherebuf, sizeof(wherebuf), "( ");
-     bogus +=2;
-
-    switch(rs->type)
-    {
-    case RECORDQUERY:
-      sql_record_query(rs->record_query, &bogus);
-      break;
-    case RECORDLIST:
-      sql_record_list(rs->record_list, seriesname, &bogus);
-      break;
-    default:    
-      fprintf(stderr,"Wrong type (%d) in sql_record_set_filter.\n",
-	      rs->type);
-      return 1;
-    }
-
-    /* If rs->type == FIRST_VALUE or rs->type == LAST_VALUE, then 
-     * wherebuf is of the format (xxx=(select max(xxx) from series)), 
-     * and the existing whereclz must be embedded like this:
-     * yyy=max(yyy) AND (xxx=(select max(xxx) from series WHERE (whereclz)))
+    
+    /* If there is a [#^] or [#$] in the filter, AND it is not the first 
+     * record list, then a different query needs to be done.  If the 
+     * filter is [165]['twiggy'], then a where clause of "id = 165 AND 
+     * model = 'twiggy' suffices.  But if the filter is [165][#^], then
+     * the where clause should be 
+     * "id = 165 AND model = (select min(model) from <seriesname> where id = 165)".
+     *
+     * So, instead of sequentially writing the query to *query, it is
+     * probably better to figure out what the entire where clause is, 
+     * and then concatenate it to query.
      */
-    if (*whereclz && 
-        strlen(wherebuf) && 
-        rs->type == RECORDLIST && 
-        rs->record_list->type == PRIMEKEYSET && 
-        ((rs->record_list->primekey_rangeset->type == INDEX_RANGE &&        
-          (rs->record_list->primekey_rangeset->index_rangeset->type == FIRST_VALUE || 
-           rs->record_list->primekey_rangeset->index_rangeset->type == LAST_VALUE)) ||
-         (rs->record_list->primekey_rangeset->type == VALUE_RANGE &&
-          (rs->record_list->primekey_rangeset->value_rangeset->type == FIRST_VALUE || 
-           rs->record_list->primekey_rangeset->value_rangeset->type == LAST_VALUE)
-          )))
-    {
-       /* working backward, find first non-')', non-space */
-       char *pin = &(wherebuf[strlen(wherebuf) - 1]);
-       char savebuf[DRMS_MAXQUERYLEN] = {0};
-
-       while (*pin == ')' || *pin == ' ')
-       {
-          pin--;
-       }
-
-       pin++;
-       snprintf(savebuf, sizeof(savebuf), "%s", pin);
-       *pin = '\0';
-
-       base_strlcat(pin, " WHERE ( ", sizeof(wherebuf) - (pin - wherebuf));
-       
-       /* embed existing whereclz */
-       base_strlcat(pin, whereclz, sizeof(wherebuf) - (pin - wherebuf));
-       
-       base_strlcat(pin, " )", sizeof(wherebuf) - (pin - wherebuf));
-
-       /* now concatenate savebuf back onto wherebuf */
-       base_strlcat(wherebuf, savebuf, sizeof(wherebuf));
-
-       /* closing parenthesis */
-       base_strlcat(wherebuf, " )", sizeof(wherebuf));
-
-       /* put back into whereclz */
-       base_strlcat(whereclz, " AND ", sizeof(whereclz));
-       base_strlcat(whereclz, wherebuf, sizeof(whereclz));
-
-       /* do the same thing for pkwherebuf */
-       if (*pkwherebuf)
-       {
-          pin = '\0';
-          base_strlcat(pin, " WHERE ( ", sizeof(wherebuf) - (pin - wherebuf));
-          base_strlcat(pin, pkwherebuf, sizeof(wherebuf) - (pin - wherebuf));
-          base_strlcat(pin, " )", sizeof(wherebuf) - (pin - wherebuf));
-          base_strlcat(wherebuf, savebuf, sizeof(wherebuf));
-          base_strlcat(wherebuf, " )", sizeof(wherebuf));
-          base_strlcat(pkwherebuf, " AND ", sizeof(pkwherebuf));
-          base_strlcat(pkwherebuf, wherebuf, sizeof(pkwherebuf));
-       }
-
-       /* don't do the same thing for npkwherebuf - there are no FIRST_VALUE/LAST_VALUE rs types
-        * for non-primekeys. */
-    }
-    else
-    {
-       /* closing parenthesis around single var=xxx */
-       base_strlcat(wherebuf, " )", sizeof(wherebuf));
-
-       if (*whereclz)
-       {
-          /* simple AND of record lists */
-          base_strlcat(whereclz, " AND ", sizeof(whereclz));
-       }
-
-       base_strlcat(whereclz, wherebuf, sizeof(whereclz));
-
-       /* Do the same thing for pkwherebuf and npkwherebuf. pkwherebuf gets all prime-key condition, 
-        * except explicit lists of recnums. npkwherebuf gets all other conditions. */
-       if (rs->type == RECORDLIST && rs->record_list->type == PRIMEKEYSET)
-       {
-          /* pkwherebuf*/
-          if (*pkwherebuf)
-          {
-             base_strlcat(pkwherebuf, " AND ", sizeof(pkwherebuf));
-          }
-
-          base_strlcat(pkwherebuf, wherebuf, sizeof(pkwherebuf));
-       }
-       else
-       {
-          if (*npkwherebuf)
-          {
-             base_strlcat(npkwherebuf, " AND ", sizeof(npkwherebuf));
-          }
-
-          base_strlcat(npkwherebuf, wherebuf, sizeof(npkwherebuf));
-       }
-    }
-
-    rs = rs->next;
-  } while (rs);
+    
+    char whereclz[DRMS_MAXQUERYLEN] = {0};
+    char pkwherebuf[DRMS_MAXQUERYLEN] = {0};
+    char npkwherebuf[DRMS_MAXQUERYLEN] = {0};
+    char wherebuf[DRMS_MAXQUERYLEN];
+    char *bogus = NULL;
+    int isfirstlast = 0;
+    
+    do {
+        memset(wherebuf, sizeof(wherebuf), 0);
+        bogus = wherebuf;
+        
+        /* opening parenthesis around single var=xxx */
+        snprintf(wherebuf, sizeof(wherebuf), "( ");
+        bogus +=2;
+        
+        switch(rs->type)
+        {
+            case RECORDQUERY:
+                sql_record_query(rs->record_query, &bogus);
+                break;
+            case RECORDLIST:
+                sql_record_list(rs->record_list, seriesname, &bogus);
+                break;
+            default:    
+                fprintf(stderr,"Wrong type (%d) in sql_record_set_filter.\n",
+                        rs->type);
+                return 1;
+        }
+        
+        isfirstlast = (rs->type == RECORDLIST && 
+                       rs->record_list->type == PRIMEKEYSET && 
+                       ((rs->record_list->primekey_rangeset->type == INDEX_RANGE &&        
+                         (rs->record_list->primekey_rangeset->index_rangeset->type == FIRST_VALUE || 
+                          rs->record_list->primekey_rangeset->index_rangeset->type == LAST_VALUE)) ||
+                        (rs->record_list->primekey_rangeset->type == VALUE_RANGE &&
+                         (rs->record_list->primekey_rangeset->value_rangeset->type == FIRST_VALUE || 
+                          rs->record_list->primekey_rangeset->value_rangeset->type == LAST_VALUE)
+                         )));
+        
+        /* If rs->type == FIRST_VALUE or rs->type == LAST_VALUE, then 
+         * wherebuf is of the format (xxx=(select max(xxx) from series)), 
+         * and the existing whereclz must be embedded like this:
+         * yyy=max(yyy) AND (xxx=(select max(xxx) from series WHERE (whereclz)))
+         */
+        if (*whereclz && strlen(wherebuf) && isfirstlast)
+        {
+            /* working backward, find first non-')', non-space */
+            char *pin = &(wherebuf[strlen(wherebuf) - 1]);
+            char savebuf[DRMS_MAXQUERYLEN] = {0};
+            
+            while (*pin == ')' || *pin == ' ')
+            {
+                pin--;
+            }
+            
+            pin++;
+            snprintf(savebuf, sizeof(savebuf), "%s", pin);
+            *pin = '\0';
+            
+            base_strlcat(pin, " WHERE ( ", sizeof(wherebuf) - (pin - wherebuf));
+            
+            /* embed existing whereclz */
+            base_strlcat(pin, whereclz, sizeof(wherebuf) - (pin - wherebuf));
+            
+            base_strlcat(pin, " )", sizeof(wherebuf) - (pin - wherebuf));
+            
+            /* now concatenate savebuf back onto wherebuf */
+            base_strlcat(wherebuf, savebuf, sizeof(wherebuf));
+            
+            /* closing parenthesis */
+            base_strlcat(wherebuf, " )", sizeof(wherebuf));
+            
+            /* put back into whereclz */
+            base_strlcat(whereclz, " AND ", sizeof(whereclz));
+            base_strlcat(whereclz, wherebuf, sizeof(whereclz));
+            
+            /* do the same thing for pkwherebuf */
+            if (*pkwherebuf)
+            {
+                *pin = '\0';
+                base_strlcat(pin, " WHERE ( ", sizeof(wherebuf) - (pin - wherebuf));
+                base_strlcat(pin, pkwherebuf, sizeof(wherebuf) - (pin - wherebuf));
+                base_strlcat(pin, " )", sizeof(wherebuf) - (pin - wherebuf));
+                base_strlcat(wherebuf, savebuf, sizeof(wherebuf));
+                base_strlcat(wherebuf, " )", sizeof(wherebuf));
+                base_strlcat(pkwherebuf, " AND ", sizeof(pkwherebuf));
+                base_strlcat(pkwherebuf, wherebuf, sizeof(pkwherebuf));
+            }
+            
+            /* don't do the same thing for npkwherebuf - there are no FIRST_VALUE/LAST_VALUE rs types
+             * for non-primekeys. */
+        }
+        else
+        {
+            /* closing parenthesis around single var=xxx */
+            base_strlcat(wherebuf, " )", sizeof(wherebuf));
+            
+            if (*whereclz)
+            {
+                /* simple AND of record lists */
+                base_strlcat(whereclz, " AND ", sizeof(whereclz));
+            }
+            
+            base_strlcat(whereclz, wherebuf, sizeof(whereclz));
+            
+            /* Do the same thing for pkwherebuf and npkwherebuf. pkwherebuf gets all prime-key condition, 
+             * except explicit lists of recnums. npkwherebuf gets all other conditions. */
+            if (rs->type == RECORDLIST && rs->record_list->type == PRIMEKEYSET)
+            {
+                /* pkwherebuf*/
+                if (*pkwherebuf)
+                {
+                    base_strlcat(pkwherebuf, " AND ", sizeof(pkwherebuf));
+                }
+                
+                base_strlcat(pkwherebuf, wherebuf, sizeof(pkwherebuf));
+                
+                /* pkwhereNFL gets all the same stuff that pkwhere does, except for FIRST_VALUE or LAST_VALUE
+                 * filters. There is no npkwhereNFL, since FIRST_VALUE and LAST_VALUE apply to prime-key where 
+                 * clauses only. */
+                if (!isfirstlast)
+                {
+                    char *dup = strdup(wherebuf);
+                    if (dup)
+                    {
+                        hcon_insert_lower(pkwhereNFL, rs->record_list->primekey_rangeset->keyword->info->name, &dup); /* container assumes ownership. */
+                    }
+                    else
+                    {
+                        /* error */
+                    }
+                }
+            }
+            else
+            {
+                if (*npkwherebuf)
+                {
+                    base_strlcat(npkwherebuf, " AND ", sizeof(npkwherebuf));
+                }
+                
+                base_strlcat(npkwherebuf, wherebuf, sizeof(npkwherebuf));
+            }
+        }
+        
+        rs = rs->next;
+    } while (rs);
 #ifdef DEBUG
-  printf("Added '%s'\nExit sql_record_set_filter\n",*query);
+    printf("Added '%s'\nExit sql_record_set_filter\n",*query);
 #endif
-
-  /* whereclz contains final where clause - concatenate onto query */
-  /* DON'T know the size of query - ack - just strcat (very dangerous!!) */
-  sprintf(*query, whereclz);
-  *query += strlen(whereclz);
-
-  snprintf(*pkwhere, sizep, "%s", pkwherebuf);
-  snprintf(*npkwhere, sizen, "%s", npkwherebuf);
-
-  return 0;
+    
+    /* whereclz contains final where clause - concatenate onto query */
+    /* DON'T know the size of query - ack - just strcat (very dangerous!!) */
+    sprintf(*query, whereclz);
+    *query += strlen(whereclz);
+    
+    snprintf(*pkwhere, sizep, "%s", pkwherebuf);
+    snprintf(*npkwhere, sizen, "%s", npkwherebuf);
+    
+    return 0;
 }
 
 
@@ -2349,78 +2367,132 @@ char *drms_recordset_extractfilter(DRMS_Record_t *template, const char *in, int 
  * If *filter is 1, then the record-set query
  * contains no record-number range-set . If *mixed is 1, then the record-set query
  * contains WHERE subclause on a non-prime key. If *pkfilt is 1, then a 
- * non-record-list prime-key filter exists.  */
+ * non-record-list prime-key filter exists.  
+ *
+ * firstlast contains a string with one char per prime key. 
+ * If firstlast[i] == 'F', then the original record-set specification used the '$' notation
+ * to request the set of records where the value of prime key i was a maximum for the series.
+ * If firstlast[i] == 'L', then the original record-set specification used the '^' notation
+ * to request the set of records where the value of prime key i was a minimum for the series.
+ * If firstlast[i] == 'N', then neither a first nor a last value was requested.
+ */
+
+static void FreeNFL(void *data)
+{
+    if (data)
+    {
+        if (*(char **)data)
+        {
+            free(*(char **)data);   
+        }
+    }
+}
+
 int drms_recordset_query(DRMS_Env_t *env, 
                          const char *recordsetname, 
-			 char **query, 
+                         char **query, 
                          char **pkwhere, 
                          char **npkwhere, 
                          char **seriesname, 
                          int *filter, 
                          int *mixed,
-                         int *allvers)
+                         int *allvers,
+                         HContainer_t **firstlast,
+                         HContainer_t **pkwhereNFL)
 {
-  RecordSet_t *rs;
-  char *rsn = strdup(recordsetname);
-  char *p = rsn;
-  int ret = 0;
-  RecordSet_Filter_t *filt = NULL;
-
-  *mixed = 0;
-
-  if ((rs = parse_record_set(env,&p)))
-  {
-     /* Aha! This isn't the correct logic to detect a mixed case.
-      * You need to traverse all nodes in the list rs->recordset_spec,
-      * and if you see a non-NULL record_query,
-      * then you have a mixed query (query involving both a prime key
-      * and a non-prime key).
-      * if (rs->recordset_spec && rs->recordset_spec->record_query) {
-      *   *mixed = 1;
-      * }
-      */
-
-     filt = rs->recordset_spec;
-
-     /* Traverse linked-list, looking for both record_list and record_query. */
-     while (filt != NULL)
-     {
-        if (filt->record_query)
-        {
-           *mixed = 1;
-           break;
-        }
-
-        filt = filt->next;
-     }
-
-    *query = malloc(DRMS_MAXQUERYLEN);
-    XASSERT(*query);
-    *pkwhere = malloc(DRMS_MAXQUERYLEN);
-    XASSERT(*pkwhere);
-    *npkwhere = malloc(DRMS_MAXQUERYLEN);
-    XASSERT(*npkwhere);
-    *seriesname = strdup(rs->seriesname);
-    *filter = !recnum_filter;
-
-    if (allvers)
+    RecordSet_t *rs;
+    char *rsn = strdup(recordsetname);
+    char *p = rsn;
+    int ret = 0;
+    RecordSet_Filter_t *filt = NULL;
+    char fl;
+    
+    *mixed = 0;
+    
+    if ((rs = parse_record_set(env,&p)))
     {
-       *allvers = rs->allvers;
+        /* Aha! This isn't the correct logic to detect a mixed case.
+         * You need to traverse all nodes in the list rs->recordset_spec,
+         * and if you see a non-NULL record_query,
+         * then you have a mixed query (query involving both a prime key
+         * and a non-prime key).
+         * if (rs->recordset_spec && rs->recordset_spec->record_query) {
+         *   *mixed = 1;
+         * }
+         */
+        
+        filt = rs->recordset_spec;
+        *firstlast = hcon_create(sizeof(char), DRMS_MAXKEYNAMELEN, NULL, NULL, NULL, NULL, 0);
+        XASSERT(*firstlast);
+        
+        /* Traverse linked-list, looking for both record_list and record_query. */
+        while (filt != NULL)
+        {
+            if (filt->record_query)
+            {
+                *mixed = 1;
+            }
+            
+            if (filt->type == RECORDLIST)
+            {
+                if (filt->record_list->type == RECNUMSET)
+                {
+                    /* This isn't a real firstlast case (it doesn't affect the where clause of any prime-key. */
+                    //firstlast[i] = (char)((filt->record_list->recnum_rangeset->type == FIRST_VALUE ? 'F' : (filt->record_list->recnum_rangeset->type == LAST_VALUE ? 'L' : 'N')));
+                }
+                else if (filt->record_list->type == PRIMEKEYSET)
+                {
+                    if (filt->record_list->primekey_rangeset->type == INDEX_RANGE)
+                    {
+                        fl = (char)((filt->record_list->primekey_rangeset->index_rangeset->type ==  FIRST_VALUE ? 'F' : (filt->record_list->primekey_rangeset->index_rangeset->type == LAST_VALUE ? 'L' : 'N')));
+                        if (fl != 'N')
+                        {
+                            hcon_insert_lower(*firstlast, filt->record_list->primekey_rangeset->keyword->info->name, &fl);
+                        }
+                    }
+                    else if (filt->record_list->primekey_rangeset->type == VALUE_RANGE)
+                    {
+                        fl = (char)((filt->record_list->primekey_rangeset->value_rangeset->type ==  FIRST_VALUE ? 'F' : (filt->record_list->primekey_rangeset->value_rangeset->type == LAST_VALUE ? 'L' : 'N')));
+                        if (fl != 'N')
+                        {
+                            hcon_insert_lower(*firstlast, filt->record_list->primekey_rangeset->keyword->info->name, &fl);
+                        }
+                    }
+                }
+            }
+            
+            filt = filt->next;
+        }
+        
+        *query = malloc(DRMS_MAXQUERYLEN);
+        XASSERT(*query);
+        *pkwhere = malloc(DRMS_MAXQUERYLEN);
+        XASSERT(*pkwhere);
+        *npkwhere = malloc(DRMS_MAXQUERYLEN);
+        XASSERT(*npkwhere);
+        *seriesname = strdup(rs->seriesname);
+        *filter = !recnum_filter;
+        *pkwhereNFL = hcon_create(sizeof(char *), DRMS_MAXKEYNAMELEN, (void (*)(const void *value))FreeNFL, NULL, NULL, NULL, 0);
+        XASSERT(*pkwhereNFL);
+        
+        if (allvers)
+        {
+            *allvers = rs->allvers;
+        }
+        
+        sql_record_set(rs,*seriesname, *query, *pkwhere, DRMS_MAXQUERYLEN, *npkwhere, DRMS_MAXQUERYLEN, *pkwhereNFL);
+        free_record_set(rs);
+        ret = 0;
     }
-
-    sql_record_set(rs,*seriesname, *query, *pkwhere, DRMS_MAXQUERYLEN, *npkwhere, DRMS_MAXQUERYLEN);
-    free_record_set(rs);
-    ret = 0;
-  }
-  else
-    ret =  1;
-
-  if (rsn)
-  {
-     free(rsn);
-  }
-
-  return ret;
+    else
+        ret =  1;
+    
+    if (rsn)
+    {
+        free(rsn);
+    }
+    
+    return ret;
 }
 
 static RecordSet_t *parse_record_set_ext(DB_Handle_t *dbh, DRMS_Record_t *template, char **in, char **seriesstr, char **filterstr)
@@ -2663,7 +2735,9 @@ int drms_recordset_query_ext(DB_Handle_t *dbh,
                              char **filterstr, 
                              int *filter, 
                              int *mixed,
-                             int *allvers)
+                             int *allvers,
+                             HContainer_t **firstlast,
+                             HContainer_t **pkwhereNFL)
 {
    RecordSet_t *rs;
    char *rsn = strdup(recordsetname);
@@ -2671,6 +2745,7 @@ int drms_recordset_query_ext(DB_Handle_t *dbh,
    int ret = 0;
    RecordSet_Filter_t *filt = NULL;
    DRMS_Record_t *template = NULL;
+    char fl;
 
    *mixed = 0;
 
@@ -2703,37 +2778,62 @@ int drms_recordset_query_ext(DB_Handle_t *dbh,
 
    if ((rs = parse_record_set_ext(dbh, template, &p, NULL, filterstr)))
    {
-      filt = rs->recordset_spec;
-
-      /* Traverse linked-list, looking for both record_list and record_query. */
-      while (filt != NULL)
-      {
-         if (filt->record_query)
-         {
-            *mixed = 1;
-            break;
-         }
-
-         filt = filt->next;
-      }
-
-      *query = malloc(DRMS_MAXQUERYLEN);
-      XASSERT(*query);
-      *pkwhere = malloc(DRMS_MAXQUERYLEN);
-      XASSERT(*pkwhere);
-      *npkwhere = malloc(DRMS_MAXQUERYLEN);
-      XASSERT(*npkwhere);
-      *seriesname = strdup(rs->seriesname);
-      *filter = !recnum_filter;
-
-      if (allvers)
-      {
-         *allvers = rs->allvers;
-      }
-
-      sql_record_set(rs, *seriesname, *query, *pkwhere, DRMS_MAXQUERYLEN, *npkwhere, DRMS_MAXQUERYLEN);
-      free_record_set(rs);
-      ret = 0;
+       filt = rs->recordset_spec;
+       *firstlast = hcon_create(sizeof(char), DRMS_MAXKEYNAMELEN, NULL, NULL, NULL, NULL, 0);
+       XASSERT(*firstlast);
+       
+       /* Traverse linked-list, looking for both record_list and record_query. */
+       while (filt != NULL)
+       {
+           if (filt->record_query)
+           {
+               *mixed = 1;
+           }
+           
+           if (filt->type == RECORDLIST)
+           {
+               if (filt->record_list->type == RECNUMSET)
+               {
+                   /* This isn't a real firstlast case (it doesn't affect the where clause of any prime-key. */
+                   //firstlast[i] = (char)((filt->record_list->recnum_rangeset->type == FIRST_VALUE ? 'F' : (filt->record_list->recnum_rangeset->type == LAST_VALUE ? 'L' : 'N')));
+               }
+               else if (filt->record_list->type == PRIMEKEYSET)
+               {
+                   if (filt->record_list->primekey_rangeset->type == INDEX_RANGE)
+                   {
+                       fl = (char)((filt->record_list->primekey_rangeset->index_rangeset->type ==  FIRST_VALUE ? 'F' : (filt->record_list->primekey_rangeset->index_rangeset->type == LAST_VALUE ? 'L' : 'N')));
+                       hcon_insert_lower(*firstlast, filt->record_list->primekey_rangeset->keyword->info->name, &fl);
+                   }
+                   else if (filt->record_list->primekey_rangeset->type == VALUE_RANGE)
+                   {
+                       fl = (char)((filt->record_list->primekey_rangeset->value_rangeset->type ==  FIRST_VALUE ? 'F' : (filt->record_list->primekey_rangeset->value_rangeset->type == LAST_VALUE ? 'L' : 'N')));
+                       hcon_insert_lower(*firstlast, filt->record_list->primekey_rangeset->keyword->info->name, &fl);
+                   }
+               }
+           }
+           
+           filt = filt->next;
+       }
+       
+       *query = malloc(DRMS_MAXQUERYLEN);
+       XASSERT(*query);
+       *pkwhere = malloc(DRMS_MAXQUERYLEN);
+       XASSERT(*pkwhere);
+       *npkwhere = malloc(DRMS_MAXQUERYLEN);
+       XASSERT(*npkwhere);
+       *seriesname = strdup(rs->seriesname);
+       *filter = !recnum_filter;       
+       *pkwhereNFL = hcon_create(sizeof(char *), DRMS_MAXKEYNAMELEN, (void (*)(const void *value))FreeNFL, NULL, NULL, NULL, 0);
+       XASSERT(*pkwhereNFL);
+       
+       if (allvers)
+       {
+           *allvers = rs->allvers;
+       }
+       
+       sql_record_set(rs, *seriesname, *query, *pkwhere, DRMS_MAXQUERYLEN, *npkwhere, DRMS_MAXQUERYLEN, *pkwhereNFL);
+       free_record_set(rs);
+       ret = 0;
    }
    else
    {
@@ -2766,8 +2866,10 @@ char *drms_recordset_extractfilter_ext(DB_Handle_t *dbh, const char *in, int *st
    int mixed = 0;
    int allvers = 0;
    int istat = 0;
+    HContainer_t *firstlast = NULL;
+    HContainer_t *pkwhereNFL = NULL;
 
-   istat = drms_recordset_query_ext(dbh, in, &query, &pkwhere, &npkwhere, &seriesname, &filterstr, &filter, &mixed, &allvers);
+   istat = drms_recordset_query_ext(dbh, in, &query, &pkwhere, &npkwhere, &seriesname, &filterstr, &filter, &mixed, &allvers, &firstlast, &pkwhereNFL);
 
    /* Don't need any of these. */
    if (pkwhere)
@@ -2789,6 +2891,11 @@ char *drms_recordset_extractfilter_ext(DB_Handle_t *dbh, const char *in, int *st
    {
       free(seriesname);
    }
+    
+    if (pkwhereNFL)
+    {
+        hcon_destroy(&pkwhereNFL);
+    }
 
    if (status)
    {

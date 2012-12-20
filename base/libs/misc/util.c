@@ -263,13 +263,13 @@ char *base_strreplace(const char *text, const char *orig, const char *repl)
    return result;
 }
 
-/* Returns a newly allocated string that contains the original string with all instances of 
- * the 'repl' string replaced with the string 'with'. 
+/* Returns a newly allocated string that contains the original string ('text') with all instances of 
+ * the 'orig' string replaced with the string 'repl'. 
  * 
  * This is a case-insenstive version of base_strreplace(). */
 char *base_strcasereplace(const char *text, const char *orig, const char *repl)
 {
-    char *result; // the return string
+    char *result = NULL; // the return string
     const char *replacement = NULL;
     char *ins;    // start, in text, of the next original substring to be replaced
     char *pc;
