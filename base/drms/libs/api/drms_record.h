@@ -202,7 +202,8 @@ char *drms_query_string(DRMS_Env_t *env,
                         const char *fl,
                         int allvers,
                         HContainer_t *firstlast,
-                        HContainer_t *pkwhereNFL);
+                        HContainer_t *pkwhereNFL,
+                        int recnumq);
 
 /* Chunking record queries */
 int drms_recordset_setchunksize(unsigned int size);

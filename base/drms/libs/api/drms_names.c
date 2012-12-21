@@ -2398,7 +2398,8 @@ int drms_recordset_query(DRMS_Env_t *env,
                          int *mixed,
                          int *allvers,
                          HContainer_t **firstlast,
-                         HContainer_t **pkwhereNFL)
+                         HContainer_t **pkwhereNFL,
+                         int *recnumq)
 {
     RecordSet_t *rs;
     char *rsn = strdup(recordsetname);
@@ -2424,6 +2425,10 @@ int drms_recordset_query(DRMS_Env_t *env,
         filt = rs->recordset_spec;
         *firstlast = hcon_create(sizeof(char), DRMS_MAXKEYNAMELEN, NULL, NULL, NULL, NULL, 0);
         XASSERT(*firstlast);
+        if (recnumq)
+        {
+            *recnumq = 0;
+        }
         
         /* Traverse linked-list, looking for both record_list and record_query. */
         while (filt != NULL)
@@ -2437,8 +2442,14 @@ int drms_recordset_query(DRMS_Env_t *env,
             {
                 if (filt->record_list->type == RECNUMSET)
                 {
-                    /* This isn't a real firstlast case (it doesn't affect the where clause of any prime-key. */
-                    //firstlast[i] = (char)((filt->record_list->recnum_rangeset->type == FIRST_VALUE ? 'F' : (filt->record_list->recnum_rangeset->type == LAST_VALUE ? 'L' : 'N')));
+                    /* Set a flag to indicate that the record-set query involves a query on recnum. We
+                     * need to ensure that code in drms_record.c does not attempt to use the shadow
+                     * table if it exists (the query should be performed on the orginal series table
+                     * only). */
+                   if (recnumq)
+                   {
+                       *recnumq = 1;
+                   }
                 }
                 else if (filt->record_list->type == PRIMEKEYSET)
                 {
@@ -2737,7 +2748,8 @@ int drms_recordset_query_ext(DB_Handle_t *dbh,
                              int *mixed,
                              int *allvers,
                              HContainer_t **firstlast,
-                             HContainer_t **pkwhereNFL)
+                             HContainer_t **pkwhereNFL,
+                             int *recnumq)
 {
    RecordSet_t *rs;
    char *rsn = strdup(recordsetname);
@@ -2781,6 +2793,10 @@ int drms_recordset_query_ext(DB_Handle_t *dbh,
        filt = rs->recordset_spec;
        *firstlast = hcon_create(sizeof(char), DRMS_MAXKEYNAMELEN, NULL, NULL, NULL, NULL, 0);
        XASSERT(*firstlast);
+       if (recnumq)
+       {
+          *recnumq = 0;
+       }
        
        /* Traverse linked-list, looking for both record_list and record_query. */
        while (filt != NULL)
@@ -2794,8 +2810,14 @@ int drms_recordset_query_ext(DB_Handle_t *dbh,
            {
                if (filt->record_list->type == RECNUMSET)
                {
-                   /* This isn't a real firstlast case (it doesn't affect the where clause of any prime-key. */
-                   //firstlast[i] = (char)((filt->record_list->recnum_rangeset->type == FIRST_VALUE ? 'F' : (filt->record_list->recnum_rangeset->type == LAST_VALUE ? 'L' : 'N')));
+                   /* Set a flag to indicate that the record-set query involves a query on recnum. We                
+                    * need to ensure that code in drms_record.c does not attempt to use the shadow                   
+                    * table if it exists (the query should be performed on the orginal series table                  
+                    * only). */
+                   if (recnumq)
+                   {
+                      *recnumq = 1;
+                   }
                }
                else if (filt->record_list->type == PRIMEKEYSET)
                {
@@ -2868,8 +2890,9 @@ char *drms_recordset_extractfilter_ext(DB_Handle_t *dbh, const char *in, int *st
    int istat = 0;
     HContainer_t *firstlast = NULL;
     HContainer_t *pkwhereNFL = NULL;
+    int recnumq = 0;
 
-   istat = drms_recordset_query_ext(dbh, in, &query, &pkwhere, &npkwhere, &seriesname, &filterstr, &filter, &mixed, &allvers, &firstlast, &pkwhereNFL);
+    istat = drms_recordset_query_ext(dbh, in, &query, &pkwhere, &npkwhere, &seriesname, &filterstr, &filter, &mixed, &allvers, &firstlast, &pkwhereNFL, &recnumq);
 
    /* Don't need any of these. */
    if (pkwhere)

@@ -170,7 +170,8 @@ int drms_recordset_query(DRMS_Env_t *env,
                          int *mixed, 
                          int *allvers,
                          HContainer_t **firstlast,
-                         HContainer_t **pkwhereNFL);
+                         HContainer_t **pkwhereNFL,
+                         int *recnumq);
 int drms_recordset_query_ext(DB_Handle_t *dbh,
                              const char *recordsetname,
                              char **query,
@@ -182,7 +183,8 @@ int drms_recordset_query_ext(DB_Handle_t *dbh,
                              int *mixed,
                              int *allvers,
                              HContainer_t **firstlast,
-                             HContainer_t **pkwhereNFL);
+                             HContainer_t **pkwhereNFL,
+                             int *recnumq);
 int drms_names_parsedegreedelta(char **deltastr, DRMS_SlotKeyUnit_t *unit, double *delta);
 
 #endif

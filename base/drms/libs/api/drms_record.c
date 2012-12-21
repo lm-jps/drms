@@ -1338,6 +1338,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
     DRMS_RecordSet_t *rs = NULL;
     DRMS_RecordSet_t *ret = NULL;
     int i, filter, mixed;
+    int recnumq;
     HContainer_t *firstlast = NULL;
     char *query=0, *seriesname=0;
     char *pkwhere = NULL;
@@ -1587,7 +1588,8 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                                                          &mixed, 
                                                          NULL,
                                                          &firstlast,
-                                                         &pkwhereNFL));
+                                                         &pkwhereNFL,
+                                                         &recnumq));
                         
                         if (actualSet)
                         {
@@ -1652,6 +1654,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                                                         nrecslimit, 
                                                         firstlast,
                                                         pkwhereNFL,
+                                                        recnumq,
                                                         &stat));
                         /* Remove unrequested segments now */
                     }
@@ -1694,7 +1697,8 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                                                            NULL,
                                                            allvers[iSet] == 'y',
                                                            firstlast,
-                                                           pkwhereNFL);
+                                                           pkwhereNFL,
+                                                           recnumq);
                         list_llinserttail(llist, &selquery);
                     }
                     
@@ -4222,6 +4226,7 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
                                                         int nrecs, 
                                                         HContainer_t *firstlast,
                                                         HContainer_t *pkwhereNFL,
+                                                        int recnumq,
                                                         int *status)
 {
   int i,throttled;
@@ -4263,7 +4268,8 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
                                           NULL, 
                                           allvers,
                                           firstlast,
-                                          pkwhereNFL);
+                                          pkwhereNFL,
+                                          recnumq);
 #ifdef DEBUG
   printf("ENTER drms_retrieve_records, env=%p, status=%p\n",env,status);
 #endif
@@ -4477,6 +4483,7 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
                                         int nrecs, 
                                         HContainer_t *firstlast,
                                         HContainer_t *pkwhereNFL,
+                                        int recnumq,
                                         int *status)
 {
    return drms_retrieve_records_internal(env, 
@@ -4492,6 +4499,7 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
                                          nrecs, 
                                          firstlast,
                                          pkwhereNFL,
+                                         recnumq,
                                          status);
 }
 
@@ -4507,7 +4515,8 @@ char *drms_query_string(DRMS_Env_t *env,
                         const char *fl,
                         int allvers,
                         HContainer_t *firstlast,
-                        HContainer_t *pkwhereNFL) 
+                        HContainer_t *pkwhereNFL,
+                        int recnumq) 
 {
   DRMS_Record_t *template;
   char *field_list, *query=0;
@@ -4572,7 +4581,7 @@ char *drms_query_string(DRMS_Env_t *env,
                               }
                           }
 
-                          if (shadowexists)
+                          if (shadowexists && !recnumq)
                           {
                               rquery = drms_series_nrecords_querystringA(seriesname, &status);
                               if (status == DRMS_SUCCESS)
@@ -4604,7 +4613,7 @@ char *drms_query_string(DRMS_Env_t *env,
                       
                       if (status == DRMS_SUCCESS)
                       {
-                          if (shadowexists)
+                          if (shadowexists && !recnumq)
                           {
                               rquery = drms_series_nrecords_querystringB(seriesname, npkwhere, &status);
                               if (status == DRMS_SUCCESS)
@@ -4655,7 +4664,7 @@ char *drms_query_string(DRMS_Env_t *env,
                       
                       if (status == DRMS_SUCCESS)
                       {
-                          if (shadowexists)
+                          if (shadowexists && !recnumq)
                           {
                               if (hasfirstlast)
                               {
@@ -4700,7 +4709,7 @@ char *drms_query_string(DRMS_Env_t *env,
                       
                       if (status == DRMS_SUCCESS)
                       {
-                          if (shadowexists)
+                          if (shadowexists && !recnumq)
                           {
                               if (hasfirstlast)
                               {
@@ -4787,7 +4796,7 @@ char *drms_query_string(DRMS_Env_t *env,
                           }
                       }
                       
-                      if (shadowexists)
+                      if (shadowexists && !recnumq)
                       {
                           /* Use the shadow table to generate an optimized query involving all record groups. */
                           rquery = drms_series_all_querystringA(env, seriesname, field_list, limit, &status);
@@ -4824,7 +4833,7 @@ char *drms_query_string(DRMS_Env_t *env,
                           }
                       }
                       
-                      if (shadowexists)
+                      if (shadowexists && !recnumq)
                       {
                           /* Use the shadow table to generate an optimized query involving all record groups. */
                           rquery = drms_series_all_querystringB(env, seriesname, npkwhere, field_list, limit, &status);
@@ -4855,7 +4864,7 @@ char *drms_query_string(DRMS_Env_t *env,
                        * the shadow table, if it exists, to optimize the query performance, but don't create the shadow table                   
                        * if it does not exist. */
                       
-                      if (shadowexists)
+                      if (shadowexists && !recnumq)
                       {
                           /* Use the shadow table to generate an optimized query involving all record groups. */
                           if (hasfirstlast)
@@ -4885,7 +4894,7 @@ char *drms_query_string(DRMS_Env_t *env,
                   else
                   {
                       /* Non-prime-key query. */
-                      if (shadowexists)
+                      if (shadowexists && !recnumq)
                       {
                           /* Use the shadow table to generate an optimized query involving all record groups. */
                           if (hasfirstlast)
@@ -4951,7 +4960,7 @@ char *drms_query_string(DRMS_Env_t *env,
                           }
                       }
                       
-                      if (shadowexists)
+                      if (shadowexists && !recnumq)
                       {
                           /* Use the shadow table to generate an optimized query involving all record groups. */
                           rquery = drms_series_n_querystringA(env, seriesname, field_list, nrecs, limit, &status);
@@ -4986,7 +4995,7 @@ char *drms_query_string(DRMS_Env_t *env,
                           }
                       }
                       
-                      if (shadowexists)
+                      if (shadowexists && !recnumq)
                       {
                           /* Use the shadow table to generate an optimized query involving all record groups. */
                           rquery = drms_series_n_querystringB(env, seriesname, npkwhere, field_list, nrecs, limit, &status);
@@ -5012,7 +5021,7 @@ char *drms_query_string(DRMS_Env_t *env,
                   if (!npkwhere || !*npkwhere)
                   {
                       /* Prime-key query, but no non-prime-key query. */
-                      if (shadowexists)
+                      if (shadowexists && !recnumq)
                       {
                           /* Use the shadow table to generate an optimized query involving all record groups. */
 
@@ -5044,7 +5053,7 @@ char *drms_query_string(DRMS_Env_t *env,
                   else
                   {
                       /* Prime-key query, and a non-prime key query. */
-                      if (shadowexists)
+                      if (shadowexists && !recnumq)
                       {
                           /* Use the shadow table to generate an optimized query involving all record groups. */
 
@@ -9313,6 +9322,7 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                                                                0, 
                                                                NULL,
                                                                NULL,
+                                                               0,
                                                                &stat);
 
                   free(seriesname);
@@ -9923,13 +9933,14 @@ int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status)
    DB_Text_Result_t *tres;
    int allvers = 0;
     HContainer_t *firstlast = NULL;
+    int recnumq;
     
-   stat = drms_recordset_query(env, recordsetname, &where, &pkwhere, &npkwhere, &seriesname, &filter, &mixed, &allvers, &firstlast, &pkwhereNFL);
+    stat = drms_recordset_query(env, recordsetname, &where, &pkwhere, &npkwhere, &seriesname, &filter, &mixed, &allvers, &firstlast, &pkwhereNFL, &recnumq);
    if (stat)
      goto failure;
 
    stat = 1;
-   query = drms_query_string(env, seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_COUNT, NULL, NULL, allvers, firstlast, pkwhereNFL);
+   query = drms_query_string(env, seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_COUNT, NULL, NULL, allvers, firstlast, pkwhereNFL, recnumq);
    if (!query)
      goto failure;
 
@@ -9985,8 +9996,9 @@ DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
    DRMS_Array_t *vectors=NULL;
    int allvers = 0;
     HContainer_t *firstlast = NULL;
+    int recnumq;
 
-   stat = drms_recordset_query(env, recordsetname, &where, &pkwhere, &npkwhere, &seriesname, &filter, &mixed, &allvers, &firstlast, &pkwhereNFL);
+    stat = drms_recordset_query(env, recordsetname, &where, &pkwhere, &npkwhere, &seriesname, &filter, &mixed, &allvers, &firstlast, &pkwhereNFL, &recnumq);
    if (stat)
      goto failure;
 
@@ -10002,7 +10014,8 @@ DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
                              keylist, 
                              allvers,
                              firstlast,
-                             pkwhereNFL);
+                             pkwhereNFL,
+                             recnumq);
    if (!query)
      goto failure;
 
