@@ -2156,7 +2156,7 @@ DRMS_RecordSet_t *drms_open_nrecords(DRMS_Env_t *env,
 }
 
 /* Create n new records by calling drms_create_record n times.  */
-DRMS_RecordSet_t *drms_create_records(DRMS_Env_t *env, int n, char *series,
+DRMS_RecordSet_t *drms_create_records(DRMS_Env_t *env, int n, const char *series,
 				      DRMS_RecLifetime_t lifetime, int *status)
 {
   DRMS_Record_t *template;
@@ -9922,7 +9922,7 @@ void drms_free_cursor(DRMS_RecSetCursor_t **cursor)
    }
 }
 
-int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status)
+int drms_count_records(DRMS_Env_t *env, const char *recordsetname, int *status)
 {
    int stat, filter, mixed;
    char *query=NULL, *where=NULL, *seriesname=NULL;

@@ -68,7 +68,7 @@ DRMS_RecordSet_t *drms_clone_records_nosums(DRMS_RecordSet_t *recset,
                                             DRMS_CloneAction_t mode, int *status);
 
 DRMS_RecordSet_t *drms_create_records(DRMS_Env_t *env, int n, 
-				      char *seriesname, DRMS_RecLifetime_t lifetime,
+				      const char *seriesname, DRMS_RecLifetime_t lifetime,
 				      int *status);
 
 DRMS_RecordSet_t *drms_create_recprotos(DRMS_RecordSet_t *recset, int *status);
@@ -219,7 +219,7 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env,
                                         int *newchunk);
 void drms_free_cursor(DRMS_RecSetCursor_t **cursor);
 
-int drms_count_records(DRMS_Env_t *env, char *recordsetname, int *status);
+int drms_count_records(DRMS_Env_t *env, const char *recordsetname, int *status);
 
 DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env, 
                                     const char *recordsetname, 
