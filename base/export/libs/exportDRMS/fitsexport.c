@@ -751,8 +751,11 @@ int fitsexport_mapexport_tofile(DRMS_Segment_t *seg,
                  if (dup)
                  {
                      lenstr = strlen(dup);
-                     strtolower(dup);
-                     if (lenstr > 0 && dup[lenstr - 1] == 's' && dup[lenstr - 2] == 'a' && dup[lenstr - 3] == 't' && dup[lenstr - 4] == '.')
+                     if (lenstr > 0 && 
+                         (dup[lenstr - 1] == 's' || dup[lenstr - 1] == 'S') && 
+                         (dup[lenstr - 2] == 'a' || dup[lenstr - 2] == 'A') &&
+                         (dup[lenstr - 3] == 't' || dup[lenstr - 3] == 'T') &&
+                          dup[lenstr - 4] == '.')
                      {
                          *(dup + lenstr - 3) = '\0';
                          snprintf(realfileout, sizeof(realfileout), "%sfits", dup);
