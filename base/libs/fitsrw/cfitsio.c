@@ -1671,7 +1671,7 @@ int fitsrw_write(int verbose,
 
          remove(filein);
 
-         fptr = fitsrw_getfptr(verbose, filename, 1, &cfiostat);
+         fptr = fitsrw_getfptr(verbose, filename, 1, &err);
 
          if (!fptr)
          {

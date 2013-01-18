@@ -192,6 +192,7 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
                }
 
                /* we are closing a read-only file here. */
+                fiostat = 0;
                fits_close_file(*pfptr, &fiostat);
 
                if (fiostat != 0)
@@ -224,6 +225,7 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
 
       if (!stat)
       {
+          fiostat = 0;
          if (fits_open_image(&fptr, filename, writeable ? READWRITE : READONLY, &fiostat)) 
          {
             /* Couldn't open file - doesn't exist. */
@@ -236,9 +238,11 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
                newfile = 1;
                if (fits_create_file(&fptr, filename, &fiostat)) 
                {
-                  /* Couldn't create new file. */
-                   fprintf(stderr, "FITSIO error: %d.\n", fiostat);
-                  stat = CFITSIO_ERROR_FILE_IO;
+                   /* Couldn't create new file. */
+                   fprintf(stderr, "FITSIO error: %d; ", fiostat);
+                   fits_report_error(stderr, fiostat);
+                   fprintf(stderr, "\n");
+                   stat = CFITSIO_ERROR_FILE_IO;
                }
             }
             else
@@ -263,6 +267,8 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
          /* Check checksum, if it exists */
          if (verchksum)
          {
+             fiostat = 0;
+             
             if (fits_verify_chksum(fptr, &datachk, &hduchk, &fiostat))
             {
                 fprintf(stderr, "FITSIO error: %d.\n", fiostat);
@@ -335,6 +341,7 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
 
                            snprintf(naxisname, sizeof(naxisname), "NAXIS%d", finfo.naxis);
                            dimlen = (int)finfo.naxes[finfo.naxis - 1];
+                            fiostat = 0;
                            fits_update_key(*pfptr, TINT, naxisname, &dimlen, NULL, &fiostat);
 
                            if (fiostat)
@@ -351,6 +358,7 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
                            PushTimer();
                         }
 
+                         fiostat = 0;
                         fits_write_chksum(*pfptr, &fiostat);
 
                         if (fiostat)
@@ -373,6 +381,7 @@ fitsfile *fitsrw_getfptr_internal(int verbose, const char *filename, int writeab
                         PushTimer();
                      }
 
+                      fiostat = 0;
                      fits_close_file(*pfptr, &fiostat);
 
                      if (fiostat == 0)
