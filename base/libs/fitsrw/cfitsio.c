@@ -1671,6 +1671,8 @@ int fitsrw_write(int verbose,
 
          remove(filein);
 
+          fprintf(stderr, "attempting to open file %s\n", filename);
+          
          fptr = fitsrw_getfptr(verbose, filename, 1, &err);
 
          if (!fptr)
