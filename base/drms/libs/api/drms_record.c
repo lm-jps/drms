@@ -9632,7 +9632,7 @@ DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env,
 
                         if (stat == DRMS_SUCCESS)
                         {
-                            if ((pLimit = strcasestr(cursorselect, "limit")) != NULL)
+                            if ((pLimit = strcasestr(cursorselect, " limit")) != NULL)
                             {
                                 *pLimit = '\0';
                             }
