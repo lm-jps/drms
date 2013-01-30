@@ -217,6 +217,7 @@ ModuleArgs_t module_args[] =
     {ARG_STRING, "other", NOT_SPECIFIED, "additional clauses for queries"},
     {ARG_INT, "mask", "0", "Mask to use for bits in QUALITY that will cause the record to be counted as MISS"},
     {ARG_INT, "ignore", "0", "Mask to use for bits to ignore in QUALITY tests with mask that will cause the record to be counted as MISS"},
+    {ARG_INT, "chunk", "10000", "Number of records to request per get_vector query"},
     {ARG_FLAG, "o", "0", "Verify - verify that SU is available for records with data"},
     {ARG_FLAG, "m", "0", "no_miss -treat otherwise MISS records as UNK"},
     {ARG_FLAG, "g", "0", "no_gone -treat otherwise GONE records as UNK and treat otherwise UNK as MISS"},
@@ -301,6 +302,7 @@ int DoIt(void)
   int no_miss = cmdparams_get_int (&cmdparams, "m", NULL) != 0;
   int no_gone = cmdparams_get_int (&cmdparams, "g", NULL) != 0;
   int useindex = cmdparams_get_int (&cmdparams, "i", NULL) != 0;
+  int chunksize = cmdparams_get_int (&cmdparams, "chunk", NULL);
   uint32_t mask = (uint32_t)cmdparams_get_int64 (&cmdparams, "mask", NULL);
   uint32_t ignore = (uint32_t)cmdparams_get_int64 (&cmdparams, "ignore", NULL);
   char *map;
@@ -671,7 +673,7 @@ fprintf(stderr,"got %f\n",high);
 	char keylist[DRMS_MAXQUERYLEN];
 	int qualindex=0, verifyindex=0;
         char *online = NULL;
-	jslot = islot + 1000000;
+	jslot = islot + chunksize;
 	if (jslot >= nslots) jslot = nslots - 1;
 	sprintf(query, "%s[%s=#%lld-#%lld]%s", seriesname, pname, lowslot+islot, lowslot+jslot, other);
 	strcpy(keylist, piname);
