@@ -217,11 +217,11 @@ typedef enum
  */
 ModuleArgs_t module_args[] =
 {
-     {ARG_STRING, kArg_version, "", "jsoc export version."},
-     {ARG_STRING, kArg_reqid, "", 
+     {ARG_STRING, kArg_version, kNotSpecified, "jsoc export version."},
+     {ARG_STRING, kArg_reqid, kNotSpecified, 
         "Export series primary key value that identifies the output record."},
-     {ARG_STRING, kArg_method, "", "jsoc export method (eg, url or ftp)."},
-     {ARG_STRING, kArg_protocol, "", "file conversion method (eg, convert to fits)."},
+     {ARG_STRING, kArg_method, kNotSpecified, "jsoc export method (eg, url or ftp)."},
+     {ARG_STRING, kArg_protocol, kNotSpecified, "file conversion method (eg, convert to fits)."},
      {ARG_STRING, kArg_rsquery, kNotSpecified, 
         "Record-set query that specifies data to be exported."},
      {ARG_STRING, kArg_expSeries, kDef_expSeries, "Series to which exported data are saved."},
@@ -1134,127 +1134,137 @@ int DoIt(void)
          free(dup);
       }
    }
-
-   md_version = strdup(version);
-   md_reqid = strdup(reqid);
-   md_method = strdup(method);
-   md_protocol = strdup(protocol);
+ 
+   md_version = strdup(version);   /* Could be "NOT SPECIFIED". */
+   md_reqid = strdup(reqid);       /* Could be "NOT SPECIFIED". */
+   md_method = strdup(method);     /* Could be "NOT SPECIFIED". */
+   md_protocol = strdup(protocol); /* Could be "NOT SPECIFIED". */
 
    if (strcmp(rsquery, kNotSpecified) == 0)
    {
-      /* The record-set query that identifies records to export comes from 
-       * the export series, not from the command-line. A dbase query for the
-       * reqid in the export series returns a record which contains the
-       * record-set query. This export-series record is cloned, and the 
-       * output files are written to the clone's SUDIR. 
-       *
-       * The output filename format is obtained from the export series record */
-      char *outpath = NULL;
-
-      /* No record-set query provided - must use series to get rsquery */
-      const char *expseries = NULL;
-
-      expseries = cmdparams_get_str(&cmdparams, kArg_expSeries, &drmsstat);
-
-      /* Open packing-list file */         
-      tsize = Mapexport(drms_env, 
-                        reqid, 
-                        clname, 
-                        mapfile, 
-                        expseries, 
-                        pklistfnameTMP, 
-                        &tcount, 
-                        &outpath, 
-                        &exptime, 
-                        &pklistTMP,
-                        cparms, 
-                        &err);
-
-      if (err != kMymodErr_Success)
-      {
-         md_error = GenErrMsg("Failure occurred while processing export Request ID '%s'.\n", reqid);
-         err = kMymodErr_ExportFailed;
-      }
-      else
-      {
-         snprintf(pklistpathTMP, sizeof(pklistpathTMP), "%s/%s", outpath, pklistfnameTMP);
-
-         /* Set packing list info */
-         md_dir = strdup(outpath);
-      }
-
-      if (outpath)
-      {
-         free(outpath);
-      }
+       /* The record-set query that identifies records to export comes from 
+        * the export series, not from the command-line. A dbase query for the
+        * reqid in the export series returns a record which contains the
+        * record-set query. This export-series record is cloned, and the 
+        * output files are written to the clone's SUDIR. 
+        *
+        * The output filename format is obtained from the export series record */
+       char *outpath = NULL;
+       
+       /* No record-set query provided - must use series to get rsquery */
+       const char *expseries = NULL;
+       
+       if (strcmp(reqid, kNotSpecified) == 0)
+       {
+           /* No rsquery, and no reqid - cannot find an rsquery, error.*/
+           md_error = GenErrMsg("Invalid arguments - missing reqid.\n");
+           err = kMymodErr_MissingArg;
+       }
+       else
+       {
+           /* reqid is defined in the block. */
+           expseries = cmdparams_get_str(&cmdparams, kArg_expSeries, &drmsstat);
+           
+           /* Open packing-list file */         
+           tsize = Mapexport(drms_env, 
+                             reqid, 
+                             clname, 
+                             mapfile, 
+                             expseries, 
+                             pklistfnameTMP, 
+                             &tcount, 
+                             &outpath, 
+                             &exptime, 
+                             &pklistTMP,
+                             cparms, 
+                             &err);
+           
+           if (err != kMymodErr_Success)
+           {
+               md_error = GenErrMsg("Failure occurred while processing export Request ID '%s'.\n", reqid);
+               err = kMymodErr_ExportFailed;
+           }
+           else
+           {
+               snprintf(pklistpathTMP, sizeof(pklistpathTMP), "%s/%s", outpath, pklistfnameTMP);
+               
+               /* Set packing list info */
+               md_dir = strdup(outpath);
+           }
+           
+           if (outpath)
+           {
+               free(outpath);
+           }
+       }
    }
    else
    {
-      /* Packing list items that come from the cmd-line arguments. */
-      const char *outpath = NULL;
-
-      /* Filename Format comes from cmd-line argument */
-      const char *ffmt = NULL;
-      
-      outpath = cmdparams_get_str(&cmdparams, kArg_path, &drmsstat);
-      if (strcmp(outpath, kNotSpecified) == 0)
-      {
-         /* Use current working directory by default */
-         outpath = getenv(kPWD);
-      }
-
-      ffmt = cmdparams_get_str(&cmdparams, kArg_ffmt, &drmsstat);
-      if (strcmp(ffmt, kNotSpecified) == 0 || *ffmt == '\0')
-      {
-         /* Assume the user wants the default filename format - set to NULL */
-         ffmt = NULL;
-      }
-
-      /* Open tmp packing-list file */
-      snprintf(pklistpathTMP, sizeof(pklistpathTMP), "%s/%s", outpath, pklistfnameTMP);
-
-      pklistTMP = fopen(pklistpathTMP, "w+");
-      if (pklistTMP)
-      {
-         /* Call export code, filling in tsize, tcount, and exptime */
-         tcount = RecordLimit;
-         tsize = MapexportToDir(drms_env, 
-                                rsquery, 
-                                ffmt, 
-                                outpath, 
-                                pklistTMP, 
-                                clname, 
-                                mapfile, 
-                                &tcount, 
-                                &exptime, 
-                                cparms, 
-                                &err);
-      }
-      else
-      {
-         err = kMymodErr_CantOpenPackfile;
-         md_error = GenErrMsg("Couldn't open packing-list file '%s'.\n",  pklistpathTMP);
-      }
-
-      if (err != kMymodErr_Success)
-      {
-         md_error = GenErrMsg("Failure occurred while processing export Request ID '%s'.\n", reqid);
-         err = kMymodErr_ExportFailed;
-      }
-      else
-      {
-         /* Set packing list info */
-         md_dir = strdup(outpath);
-      }
+       /* The export system uses this branch of code - the record-set specification comes 
+        * from the cmd-line, not from the export DRMS record. */
+       
+       /* Packing list items that come from the cmd-line arguments. */
+       const char *outpath = NULL;
+       
+       /* Filename Format comes from cmd-line argument */
+       const char *ffmt = NULL;
+       
+       outpath = cmdparams_get_str(&cmdparams, kArg_path, &drmsstat);
+       if (strcmp(outpath, kNotSpecified) == 0)
+       {
+           /* Use current working directory by default */
+           outpath = getenv(kPWD);
+       }
+       
+       ffmt = cmdparams_get_str(&cmdparams, kArg_ffmt, &drmsstat);
+       if (strcmp(ffmt, kNotSpecified) == 0 || *ffmt == '\0')
+       {
+           /* Assume the user wants the default filename format - set to NULL */
+           ffmt = NULL;
+       }
+       
+       /* Open tmp packing-list file */
+       snprintf(pklistpathTMP, sizeof(pklistpathTMP), "%s/%s", outpath, pklistfnameTMP); 
+       
+       pklistTMP = fopen(pklistpathTMP, "w+");
+       if (pklistTMP)
+       {
+           /* Call export code, filling in tsize, tcount, and exptime */
+           tcount = RecordLimit;
+           tsize = MapexportToDir(drms_env, 
+                                  rsquery, 
+                                  ffmt, 
+                                  outpath, 
+                                  pklistTMP, 
+                                  clname, 
+                                  mapfile, 
+                                  &tcount, 
+                                  &exptime, 
+                                  cparms, 
+                                  &err);
+           
+       }
+       else
+       {
+           err = kMymodErr_CantOpenPackfile;
+           md_error = GenErrMsg("Couldn't open temporary packing-list file '%s'.\n",  pklistpathTMP);
+       }
+       
+       if (err != kMymodErr_Success)
+       {
+           md_error = GenErrMsg("Failure occurred while processing export Request ID '%s'.\n", reqid);
+           err = kMymodErr_ExportFailed;
+       }
+       else
+       {
+           /* Set packing list info */
+           md_dir = strdup(outpath);
+       }
    }
 
    tsizeMB = ToMB(tsize);
 
-   if (drmsstat != DRMS_SUCCESS)
-   {
-      md_error = GenErrMsg("DRMS error '%d'.\n", drmsstat);
-   }
-   else if (err == kMymodErr_Success)
+   if (err == kMymodErr_Success)
    {
       char tstr[64];
       int strsize = 0;
@@ -1271,78 +1281,79 @@ int DoIt(void)
 
    fprintf(stdout, "%lld megabytes exported.\n", tsizeMB); 
    
-   /* open 'real' pack list */
-   if (md_dir)
-   {
-      snprintf(pklistpath, sizeof(pklistpath), "%s/%s", md_dir, pklistfname);
-      pklist = fopen(pklistpath, "w+");
-
-      if (pklist)
-      {
-         if (fseek(pklistTMP, 0, SEEK_SET))
-         {
-            md_error = GenErrMsg("Failure accessing packing-list file '%s'.\n", pklistfnameTMP);
-            err = kMymodErr_PackfileFailure;
-         }
-      }
-      else
-      {
-         md_error = GenErrMsg("Failure opening packing-list file '%s'.\n", pklistfname);
-         err = kMymodErr_PackfileFailure;
-      }
-   }
-
-   /* For now, there is just success/failure in the packing-list file */
-   if (err == kMymodErr_Success)
-   {
-      md_status = strdup(drms_defs_getval("kMDStatus_Good"));
-   }
-   else
-   {
-      md_status = strdup(drms_defs_getval("kMDStatus_Bad"));
-   }
-
-   if (pklist)
-   {
-      /* write packing list */
-      fprintf(pklist, "# JSOC \n");
-      WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_Version"), md_version);
-      WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_RequestID"), md_reqid);
-      WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_Method"), md_method);
-      WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_Protocol"), md_protocol);
-      WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_Count"), md_count ? md_count : "-1");
-      WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_Size"), md_size ? md_size : "-1");
-      WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_ExpTime"), md_exptime ? md_exptime : "");
-      WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_Dir"), md_dir ? md_dir : "");
-      WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_Status"), md_status);
-
-      fflush(pklist);
-
-      if (err == kMymodErr_Success)
-      {
-         /* Copy the content from the temporary pklist into the real pklist */
-         fprintf(pklist, "# DATA \n");
-         fflush(pklist);
-         if (tsizeMB > 0)
-         {
-            err = AppendContent(pklist, pklistTMP);
-         }
-         else
-         {
-            WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_Warning"), "No FITS files were exported. The requested FITS files no longer exist.");  
-         }
-      }
-
-      if (err != kMymodErr_Success)
-      {
-         fflush(pklist);
-
-         /* If there is an error, write out the error message. */
-         WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_Error"), md_error ? md_error : "");
-      }
-   }
-
-
+    /* open 'real' pack list */
+    if (strcmp(reqid, kNotSpecified) != 0)
+    {
+        if (md_dir)
+        {
+            snprintf(pklistpath, sizeof(pklistpath), "%s/%s", md_dir, pklistfname);
+            pklist = fopen(pklistpath, "w+");
+            
+            if (pklist)
+            {
+                if (fseek(pklistTMP, 0, SEEK_SET))
+                {
+                    md_error = GenErrMsg("Failure accessing packing-list file '%s'.\n", pklistfnameTMP);
+                    err = kMymodErr_PackfileFailure;
+                }
+            }
+            else
+            {
+                md_error = GenErrMsg("Failure opening packing-list file '%s'.\n", pklistfname);
+                err = kMymodErr_PackfileFailure;
+            }
+        }
+        
+        /* For now, there is just success/failure in the packing-list file */
+        if (err == kMymodErr_Success)
+        {
+            md_status = strdup(drms_defs_getval("kMDStatus_Good"));
+        }
+        else
+        {
+            md_status = strdup(drms_defs_getval("kMDStatus_Bad"));
+        }
+        
+        if (pklist)
+        {
+            /* write packing list */
+            fprintf(pklist, "# JSOC \n");
+            WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_Version"), md_version);
+            WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_RequestID"), md_reqid);
+            WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_Method"), md_method);
+            WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_Protocol"), md_protocol);
+            WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_Count"), md_count ? md_count : "-1");
+            WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_Size"), md_size ? md_size : "-1");
+            WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_ExpTime"), md_exptime ? md_exptime : "");
+            WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_Dir"), md_dir ? md_dir : "");
+            WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_Status"), md_status);
+            
+            fflush(pklist);
+            
+            if (err == kMymodErr_Success)
+            {
+                /* Copy the content from the temporary pklist into the real pklist */
+                fprintf(pklist, "# DATA \n");
+                fflush(pklist);
+                if (tsizeMB > 0)
+                {
+                    err = AppendContent(pklist, pklistTMP);
+                }
+                else
+                {
+                    WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_Warning"), "No FITS files were exported. The requested FITS files no longer exist.");  
+                }
+            }
+            
+            if (err != kMymodErr_Success)
+            {
+                fflush(pklist);
+                
+                /* If there is an error, write out the error message. */
+                WritePListRecord(kPL_metadata, pklist, drms_defs_getval("kMD_Error"), md_error ? md_error : "");
+            }
+        }
+    }
 
    if (pklistTMP)
    {
