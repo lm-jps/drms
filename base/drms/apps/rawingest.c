@@ -83,10 +83,10 @@ static int GetKeyAndValue(DRMS_Record_t *orec, const char *json, jsmntok_t *toke
         /* All keys must be strings. */
         return 1;
     }
-
+    
     if (valtok->type == JSMN_ARRAY)
     {
-       /* Should really support this at some point. */
+        /* Should really support this at some point. */
     }
     else if (valtok->type == JSMN_OBJECT)
     {
@@ -124,16 +124,16 @@ static int GetKeyAndValue(DRMS_Record_t *orec, const char *json, jsmntok_t *toke
         }
         
         /* Get the data type from the DRMS keyword - do not follow link! We cannot set linked keywords. */
-
+        
         /* Create a DRMS_Value_t. */
         len = valtok->end - valtok->start;
         keyval = calloc(1, len + 1);
-
+        
         if (!keyval)
         {
-           return 1;
+            return 1;
         }
-
+        
         memcpy(keyval, &json[valtok->start], len);
         keyval[len] = '\0';
         
@@ -149,7 +149,7 @@ static int GetKeyAndValue(DRMS_Record_t *orec, const char *json, jsmntok_t *toke
         }
         else
         {
-           type = DRMS_TYPE_STRING;
+            type = DRMS_TYPE_STRING;
         }
         
         *val = calloc(1, sizeof(DRMS_Value_t));
@@ -168,11 +168,11 @@ static int GetKeyAndValue(DRMS_Record_t *orec, const char *json, jsmntok_t *toke
     return 0;
 }
 
-int GetNextKeyAndValue(DRMS_Record_t *orec, const char *json, jsmntok_t *tokens, int ntoks, char **key, DRMS_Value_t **val, int *nchild)
+static int GetNextKeyAndValue(DRMS_Record_t *orec, const char *json, jsmntok_t *tokens, int ntoks, char **key, DRMS_Value_t **val, int *nchild)
 {
     int itok = GetNextTokIndex();
     int ret = 0;
-
+    
     ret = GetKeyAndValue(orec, json, tokens, ntoks, itok, key, val, nchild);
     if (ret == 0)
     {
@@ -184,87 +184,70 @@ int GetNextKeyAndValue(DRMS_Record_t *orec, const char *json, jsmntok_t *tokens,
 
 static int IngestRawFile(DRMS_Record_t *orec, const char *segname, const char *infile)
 {
-   DRMS_Segment_t *seg = NULL;
-   struct stat stBuf;
-   char outfile[DRMS_MAXPATHLEN] = {0};
-   int rv;
-
-   rv = 0;
-   
-   /* Make sure the file to ingest really exists. */
-   if (stat(infile, &stBuf) == -1)
-   {
-      rv = 1;
-   }
-   else
-   {
-      /* Get the path to the SU dir.  */
-      seg = drms_segment_lookup(orec, segname);
-
-      if (!seg)
-      {
-         rv = 1;
-      }
-      else
-      {
-         if (seg->info->protocol == DRMS_GENERIC)
-         {
-            /* If the output segment has a protocol of generic, then use the base file
-             * name of the input file as the base file name of the output file. */
-            const char *filename = NULL;
-            filename = rindex(infile, '/');
-
-            if (filename)
+    DRMS_Segment_t *seg = NULL;
+    struct stat stBuf;
+    char outfile[DRMS_MAXPATHLEN] = {0};
+    int rv;
+    
+    rv = 0;
+    
+    /* Make sure the file to ingest really exists. */
+    if (stat(infile, &stBuf) == -1)
+    {
+        rv = 1;
+    }
+    else
+    {
+        /* Get the path to the SU dir.  */
+        seg = drms_segment_lookup(orec, segname);
+        
+        if (!seg)
+        {
+            rv = 1;
+        }
+        else
+        {
+            if (seg->info->protocol == DRMS_GENERIC)
             {
-               filename++;
+                /* If the output segment has a protocol of generic, then use the base file
+                 * name of the input file as the base file name of the output file. */
+                const char *filename = NULL;
+                filename = rindex(infile, '/');
+                
+                if (filename)
+                {
+                    filename++;
+                }
+                else
+                {
+                    filename = infile;
+                }
+                
+                CHECKSNPRINTF(snprintf(seg->filename, DRMS_MAXSEGFILENAME, "%s", filename), DRMS_MAXSEGFILENAME);
+                drms_segment_filename(seg, outfile);
             }
             else
             {
-               filename = infile;
+                /* Use the name that lib DRMS derives. */
+                drms_segment_filename(seg, outfile);
             }
-
-            CHECKSNPRINTF(snprintf(seg->filename, DRMS_MAXSEGFILENAME, "%s", filename), DRMS_MAXSEGFILENAME);
-            drms_segment_filename(seg, outfile);
-         }
-         else
-         {
-            /* Use the name that lib DRMS derives. */
-            drms_segment_filename(seg, outfile);
-         }
-      }
-   }
-
-   if (rv == 0)
-   {
-      if (*outfile)
-      {
-         if (copyfile(infile, outfile) != 0)
-         {
-            fprintf(stderr, "failure copying file '%s' to '%s'.\n", infile, outfile);
-            rv = 1;
-         }
-      }
-   }
-
-   return rv;
+        }
+    }
+    
+    if (rv == 0)
+    {
+        if (*outfile)
+        {
+            if (copyfile(infile, outfile) != 0)
+            {
+                fprintf(stderr, "failure copying file '%s' to '%s'.\n", infile, outfile);
+                rv = 1;
+            }
+        }
+    }
+    
+    return rv;
 }
-
-#if 0
-{
-   <harpnum> : 
-   {
-      <t_rec> :
-      {
-         "keys" : 
-         {
-            "key1" : <val1>,
-            "key2" : <val2>
-         },
-         "file" : <path>
-      }
-   }
-}
-#endif
 
 /* Processes a single json object. The current token must be the key of a js property. */
 int SetKeyValues(DRMS_Env_t *env,
@@ -295,6 +278,8 @@ int SetKeyValues(DRMS_Env_t *env,
     int nelem;
     int ielem;
     int subnchild;
+    HIterator_t *hit = NULL;
+    int isubirec;
     int rv;
     
     rv = 0;
@@ -328,6 +313,15 @@ int SetKeyValues(DRMS_Env_t *env,
             int subnproc;
             int subhasnpk;
             const char *pkeyname = NULL;
+            DRMS_RecordSet_t *inrs = NULL;
+            DRMS_Record_t *inrec = NULL;
+            char *spec = NULL;
+            char *stmp = NULL;
+            size_t szspec = 256;
+            DRMS_Segment_t *segin = NULL;
+            DRMS_Link_t *linkin = NULL;
+            DRMS_Record_t *lrec = NULL;
+            char infile[DRMS_MAXPATHLEN];
             
             
             /* Since the keys property contains an object, val will be NULL when key is "keys". */
@@ -335,6 +329,135 @@ int SetKeyValues(DRMS_Env_t *env,
             {
                 *hasnpk = 1;
                 
+                /* If we're processing a keys object, then we've seen all the prime-key keyword values 
+                 * for the current record. Now we can look up the original record and copy its keyword 
+                 * values into the output record.  Unfortunatley, 
+                 * DRMS doesn't provide a way to search for DRMS records that exist in memory, so we have to instead
+                 * go to the db every time we want to find a record by prime-key. DO THIS BEFORE 
+                 * SETTING THE KEYWORD VALUES PROVIDED IN THE JSON STRING. */
+                hit = hiter_create(pkeyvals);
+                if (!hit)
+                {
+                    rv = 1;
+                    break;
+                }
+                
+                spec = calloc(1, szspec * sizeof(char));
+                
+                if (!spec)
+                {
+                    rv = 1;
+                    break;
+                }
+                
+                spec = base_strcatalloc(spec, series, &szspec);
+                
+                while ((ppkeyval = hiter_extgetnext(hit, &pkeyname)) != NULL)
+                {
+                    spec = base_strcatalloc(spec, "[", &szspec);
+                    stmp = drms2string(ppkeyval->type, &(ppkeyval->value), &istat);
+                    if (istat)
+                    {
+                        rv = 1;
+                        break;
+                    }
+                    
+                    spec = base_strcatalloc(spec, stmp, &szspec);
+                    free(stmp);
+                    spec = base_strcatalloc(spec, "]", &szspec);
+                    
+                    /* We can also set the prime-key keyword values in the output record at this time. */
+                    drms_setkey_p(orec, pkeyname, ppkeyval);
+                }
+                
+                hiter_destroy(&hit);
+                
+                if (istat)
+                {
+                    rv = 1;
+                    break;
+                }
+                
+                inrs = drms_open_records(env, spec, &istat);
+                free(spec);
+                
+                if (!istat && inrs && inrs->n == 1)
+                {
+                    inrec = inrs->records[0];
+                    
+                    if (drms_copykeys(orec, inrec, 0, kDRMS_KeyClass_Explicit))
+                    {
+                        rv = 1;
+                        break;
+                    }
+                }
+                else
+                {
+                    rv = 1;
+                    break;
+                }
+                
+                /* We must also copy the segments other that the one whose name matches the name in the series variable. */
+                while ((segin = drms_record_nextseg(inrec, &hit, 0)) != NULL)
+                {
+                    if (segin->info->islink || strcasecmp(segin->info->name, segname) == 0)
+                    {
+                        /* Skip :
+                         * 1. If the input segment is a link - these are handled below. 
+                         * 2. If the segment is the one whose data file is being copied by this program. */
+                        continue;
+                    }
+                    
+                    if (segin->record->sunum != -1LL)
+                    {
+                        drms_segment_filename(segin, infile);
+                        
+                        if (IngestRawFile(orec, segin->info->name, infile) != 0)
+                        {
+                            rv = 1;
+                            break;
+                        }
+                    }
+                }
+                
+                if (rv)
+                {
+                    break;
+                }
+                
+                hiter_destroy(&hit);
+                
+                /* Finally, we must copy links from the input segment to other segments TO orec. */
+                while ((linkin = drms_record_nextlink(inrec, &hit)) != NULL)
+                {
+                    /* If the output record has a link whose name matches the current input 
+                     * record's link ...*/
+                    if (hcon_lookup_lower(&orec->links, linkin->info->name))
+                    {
+                        /* Obtain record linked-to from recin, if such a link exists. */
+                        lrec = drms_link_follow(inrec, linkin->info->name, &istat);
+                        
+                        if (istat == DRMS_SUCCESS && lrec)
+                        {
+                            if (drms_link_set(linkin->info->name, orec, lrec) != DRMS_SUCCESS)
+                            {
+                                fprintf(stderr, "Failure setting output record's link '%s'.\n", linkin->info->name);
+                                rv = 1;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                drms_close_records(inrs, DRMS_FREE_RECORD);
+                hiter_destroy(&hit);
+                
+                if (rv)
+                {
+                    break;
+                }
+                
+                /* Now we can overwrite the values of the keyword in orec that were specified in the json string. */
                 nelem = nchild / 2;
                 for (ielem = 0; ielem < nelem; ielem++)
                 {
@@ -375,21 +498,11 @@ int SetKeyValues(DRMS_Env_t *env,
                 
                 if (subhasnpk)
                 {
-                    /* loop through prime keys, setting all values for this record. */
-                    HIterator_t *hit = NULL;
-                    hit = hiter_create(pkeyvals);
-                    
-                    while ((ppkeyval = hiter_extgetnext(hit, &pkeyname)) != NULL)
-                    {
-                        drms_setkey_p(orec, pkeyname, ppkeyval);
-                    }
-                    
                     (*irec)++;
                     
                     if (*irec > (*chunk)->n - 1)
                     {
-                        int nrecs = *irec + 1;
-                        int isubirec;
+                        int nrecs = (*chunk)->n;
                         
                         /* Merge into final. */
                         for (isubirec = 0; isubirec < nrecs; isubirec++)
@@ -400,6 +513,7 @@ int SetKeyValues(DRMS_Env_t *env,
                         
                         /* final now owns the records *chunk used to own. */
                         drms_close_records(*chunk, DRMS_FREE_RECORD);
+                        *chunk = NULL;
                         
                         /* Get a new chunk */
                         *chunk = drms_create_records(env, kRecChunkSz, series, DRMS_PERMANENT, &istat);
@@ -418,12 +532,12 @@ int SetKeyValues(DRMS_Env_t *env,
             if (strcasecmp(key, "file") == 0)
             {
                 /* Ingest the file. */
-               if (IngestRawFile(orec, segname, val->value.string_val) != 0)
-               {
-                  rv = 1;
-                  break;
-               }
-
+                if (IngestRawFile(orec, segname, val->value.string_val) != 0)
+                {
+                    rv = 1;
+                    break;
+                }
+                
                 nproc += 2;
             }
             else
@@ -501,7 +615,7 @@ int DoIt(void)
              * all of the json string before we can process it. */
             json = base_strcatalloc(json, line, &szjson);
         }
-                
+        
         if (strlen(json) > 0)
         {   
             tokens = calloc(1, sizeof(jsmntok_t) * szjstokens);
@@ -569,9 +683,10 @@ int DoIt(void)
                     DRMS_RecordSet_t *chunk = NULL;
                     DRMS_RecordSet_t *final = NULL;
                     int irec;
+                    int isubirec;
                     int npkeys;
                     char **pkeys = NULL;
-
+                    
                     pkeys = drms_series_createpkeyarray(drms_env, series, &npkeys, &istat);                    
                     pkeyvals = hcon_create(sizeof(DRMS_Value_t), DRMS_MAXKEYNAMELEN, NULL, NULL, NULL, NULL, 0);
                     
@@ -587,13 +702,28 @@ int DoIt(void)
                         SetNextTokIndex(1); /* Skip the top-level object - it isn't of the same format as the rest. */
                         if (SetKeyValues(drms_env, series, segname, &chunk, final, pkeys, npkeys, pkeyvals, 0, json, tokens, tokens[0].size, tokens[0].size, &nproc, &hasnpk, &irec))
                         {
-                           /* Problem setting keyword values or ingesting SUMS files. */
-                           rv = kErrIngest;
+                            /* Problem setting keyword values or ingesting SUMS files. */
+                            rv = kErrIngest;
                         }
                         else
                         {
-                           /* Save the output records. */
-                           drms_close_records(final, DRMS_INSERT_RECORD);
+                            /* final now owns the records *chunk used to own. */
+                            if (chunk)
+                            {
+                                /* There might be a partially used chunk of records. Move those records into the final record-set. 
+                                 * (there might be no records to merge, in which case this loop is a no-op). */
+                                for (isubirec = 0; isubirec < irec; isubirec++)
+                                {
+                                    drms_merge_record(final, chunk->records[isubirec]);
+                                    chunk->records[isubirec] = NULL;
+                                }
+                                
+                                irec = 0;
+                                drms_close_records(chunk, DRMS_FREE_RECORD);
+                            }
+                            
+                            /* Save the output records. */
+                            drms_close_records(final, DRMS_INSERT_RECORD);
                         }
                     }
                     else
@@ -628,68 +758,7 @@ int DoIt(void)
     }
     
     return 1;
-    exit(rv);
-}
-
-#if 0
-nelem = (tokens[0]->size) / 2; /* This could be wrong - might need to use the size field
-                                * to calculate the number of elements. */
-
-for (ielem = 0; ielem < (tokens[itok]->size) / 2; ielem++)
-{   
-    for (ipkey = 0; ipkey < npkeys; ipkey++)
-    {
-        GetKeyAndValue(tokens, 0, &key, &val);
-        drms_setkey_p(orec, pkey[ikey], stringval(key));
-        
-        
-    }
+    return rv;
 }
 
 
-
-
-
-itok = 1;
-while (something)
-{
-    for (ipkey = 0; ipkey < npkeys; ipkey++)
-    {
-        GetKeyAndValue(tokens, itok, &key, &val);
-        itok += 2;
-        drms_setkey_p(orec, pkey[ikey], stringval(key));
-    }
-    
-    /* Now get the DRMS keyword value key-value pairs. */
-    if (val->type == JSMN_OBJECT)
-    {
-        nelem = (val->size) / 2; /* The values come in key-value pairs. */
-        
-        for (ipkey = 0; ipkey < nelem; ipkey++)
-        {
-            GetNextKeyAndValue(tokens, &key, &val);
-            itok += 2;
-            if (val->type == JSMN_PRIMITIVE || val->type == JSMN_STRING)
-            {
-                /* DRMS keyword values are ints, floats, strings, etc. key is the 
-                 * DRMS-keyword name, and val is the keyword's value (a string
-                 * representation of an int, float, string, etc.) */
-                GetTokenStrData(tokens[], );
-                drms_setkey_p(orec, );
-                
-            }
-            else
-            {
-                fprintf(stderr, "Invalid input - expecting a primitive or string value.\n");                                    
-            }
-        }
-    }
-    else
-    {
-        fprintf(stderr, "Invalid input - expecting a DRMS key-value json object.\n");
-        
-    }
-}
-
-int length = key.end - key.start;
-#endif
