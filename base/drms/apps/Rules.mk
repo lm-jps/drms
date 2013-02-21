@@ -15,7 +15,10 @@ CEXE_$(d)	:= $(addprefix $(d)/, drms_run)
 #CEXE		:= $(CEXE) $(CEXE_$(d)) $(CEXE_SUMS_$(d))
 CEXE		:= $(CEXE) $(CEXE_$(d))
 
-MODEXE_$(d)	:= $(addprefix $(d)/, drms_query drms_log createtabstructure createns accessreplogs drms_addkeys createshadow)
+MODEXE_JSON_$(d)	:= $(addprefix $(d)/, rawingest)
+JSON_OBJ_$(d)		:= $(MODEXE_JSON_$(d):%=%.o) 
+
+MODEXE_$(d)	:= $(addprefix $(d)/, drms_query drms_log createtabstructure createns accessreplogs drms_addkeys createshadow) $(MODEXE_JSON_$(d))
 MODEXE		:= $(MODEXE) $(MODEXE_$(d))
 MODEXE_SOCK_$(d)	:= $(addprefix $(d)/, drms_log_sock)
 MODEXE_SOCK	:= $(MODEXE_SOCK) $(MODEXE_SOCK_$(d))
@@ -29,7 +32,7 @@ DEP_$(d)	:= $(EXE_$(d):%=%.o.d) $(MODEXE_SUMS_$(d):%=%.o.d)
 CLEAN		:= $(CLEAN) \
 		   $(OBJ_$(d)) \
 		   $(EXE_$(d)) \
- 		   $(MODEXE_SUMS_$(d)) \
+		   $(MODEXE_SUMS_$(d)) \
 		   $(MODEXE_SOCK_$(d)) \
 		   $(DEP_$(d))
 
@@ -41,6 +44,9 @@ S_$(d)		:= $(notdir $(EXE_$(d)) $(MODEXE_SOCK_$(d)) $(MODEXE_SUMS_$(d)))
 # Local rules
 $(OBJ_$(d)):	CF_TGT := $(CF_$(d))
 $(OBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
+
+$(JSON_OBJ_$(d)): CF_TGT := $(CF_TGT) -I$(SRCDIR)/$(d)/../../libs/jsmn
+$(MODEXE_JSON_$(d)):	$(LIBJSMN)
 
 # Shortcuts
 .PHONY:	$(S_$(d))

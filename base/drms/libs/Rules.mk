@@ -10,6 +10,8 @@ dir	:= $(d)/main
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/meta
 -include		$(SRCDIR)/$(dir)/Rules.mk
+dir     := $(d)/pg
+-include                $(SRCDIR)/$(dir)/Rules.mk
 
 # Standard things
 d		:= $(dirstack_$(sp))
