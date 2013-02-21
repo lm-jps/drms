@@ -313,6 +313,7 @@ int SetKeyValues(DRMS_Env_t *env,
             int subnproc;
             int subhasnpk;
             const char *pkeyname = NULL;
+            char pkeynamelc[DRMS_MAXKEYNAMELEN];
             DRMS_RecordSet_t *inrs = NULL;
             DRMS_Record_t *inrec = NULL;
             char *spec = NULL;
@@ -381,6 +382,7 @@ int SetKeyValues(DRMS_Env_t *env,
                 inrs = drms_open_records(env, spec, &istat);
                 free(spec);
                 
+                inrec = NULL;
                 if (!istat && inrs && inrs->n == 1)
                 {
                     inrec = inrs->records[0];
@@ -391,66 +393,65 @@ int SetKeyValues(DRMS_Env_t *env,
                         break;
                     }
                 }
-                else
-                {
-                    rv = 1;
-                    break;
-                }
                 
-                /* We must also copy the segments other that the one whose name matches the name in the series variable. */
-                while ((segin = drms_record_nextseg(inrec, &hit, 0)) != NULL)
+                if (inrec)
                 {
-                    if (segin->info->islink || strcasecmp(segin->info->name, segname) == 0)
+                    /* We must also copy the segments other that the one whose name matches the name in the series variable. */
+                    while ((segin = drms_record_nextseg(inrec, &hit, 0)) != NULL)
                     {
-                        /* Skip :
-                         * 1. If the input segment is a link - these are handled below. 
-                         * 2. If the segment is the one whose data file is being copied by this program. */
-                        continue;
-                    }
-                    
-                    if (segin->record->sunum != -1LL)
-                    {
-                        drms_segment_filename(segin, infile);
-                        
-                        if (IngestRawFile(orec, segin->info->name, infile) != 0)
+                        if (segin->info->islink || strcasecmp(segin->info->name, segname) == 0)
                         {
-                            rv = 1;
-                            break;
+                            /* Skip :
+                             * 1. If the input segment is a link - these are handled below. 
+                             * 2. If the segment is the one whose data file is being copied by this program. */
+                            continue;
                         }
-                    }
-                }
-                
-                if (rv)
-                {
-                    break;
-                }
-                
-                hiter_destroy(&hit);
-                
-                /* Finally, we must copy links from the input segment to other segments TO orec. */
-                while ((linkin = drms_record_nextlink(inrec, &hit)) != NULL)
-                {
-                    /* If the output record has a link whose name matches the current input 
-                     * record's link ...*/
-                    if (hcon_lookup_lower(&orec->links, linkin->info->name))
-                    {
-                        /* Obtain record linked-to from recin, if such a link exists. */
-                        lrec = drms_link_follow(inrec, linkin->info->name, &istat);
                         
-                        if (istat == DRMS_SUCCESS && lrec)
+                        if (segin->record->sunum != -1LL)
                         {
-                            if (drms_link_set(linkin->info->name, orec, lrec) != DRMS_SUCCESS)
+                            drms_segment_filename(segin, infile);
+                            
+                            if (IngestRawFile(orec, segin->info->name, infile) != 0)
                             {
-                                fprintf(stderr, "Failure setting output record's link '%s'.\n", linkin->info->name);
                                 rv = 1;
                                 break;
                             }
                         }
                     }
+                    
+                    if (rv)
+                    {
+                        break;
+                    }
+                    
+                    hiter_destroy(&hit);
+                    
+                    /* Finally, we must copy links from the input segment to other segments TO orec. */
+                    while ((linkin = drms_record_nextlink(inrec, &hit)) != NULL)
+                    {
+                        /* If the output record has a link whose name matches the current input 
+                         * record's link ...*/
+                        if (hcon_lookup_lower(&orec->links, linkin->info->name))
+                        {
+                            /* Obtain record linked-to from recin, if such a link exists. */
+                            lrec = drms_link_follow(inrec, linkin->info->name, &istat);
+                            
+                            if (istat == DRMS_SUCCESS && lrec)
+                            {
+                                if (drms_link_set(linkin->info->name, orec, lrec) != DRMS_SUCCESS)
+                                {
+                                    fprintf(stderr, "Failure setting output record's link '%s'.\n", linkin->info->name);
+                                    rv = 1;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    hiter_destroy(&hit);
                 }
                 
                 drms_close_records(inrs, DRMS_FREE_RECORD);
-                hiter_destroy(&hit);
                 
                 if (rv)
                 {
@@ -483,6 +484,15 @@ int SetKeyValues(DRMS_Env_t *env,
                 keytype = drms_keyword_gettype(drmskey);
                 pkeyval.type = keytype;
                 drms_strval(keytype, &(pkeyval.value), key);
+                
+                /* AHH! If an element already exists in a hash container, then you cannot insert the same element again. So, 
+                 * if the element already exists, delete it. */
+                
+                snprintf(pkeynamelc, sizeof(pkeynamelc), "%s", pkeys[pklev]);
+                strtolower(pkeynamelc);
+                
+                /* If the element does not already exist, then hcon_remove() is a no-op. */
+                hcon_remove(pkeyvals, pkeynamelc);                
                 hcon_insert_lower(pkeyvals, pkeys[pklev], &pkeyval);
                 
                 if (SetKeyValues(env, series, segname, chunk, final, pkeys, npkeys, pkeyvals, pklev + 1, json, tokens, ntoks, nchild, &subnproc, &subhasnpk, irec))
@@ -615,7 +625,7 @@ int DoIt(void)
              * all of the json string before we can process it. */
             json = base_strcatalloc(json, line, &szjson);
         }
-        
+                        
         if (strlen(json) > 0)
         {   
             tokens = calloc(1, sizeof(jsmntok_t) * szjstokens);
@@ -757,7 +767,6 @@ int DoIt(void)
         json = NULL;
     }
     
-    return 1;
     return rv;
 }
 
