@@ -21,6 +21,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                     my($stmnt);
                     my($pkeysstr);
                     my(@draft);
+                    my($errmsg);
                     my($rv);
                     
                     $sname = lc("$ns\.$tab");
@@ -29,7 +30,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                     # seriesname is THE prime-key, so this query can return at most one row.
                     $rv = spi_exec_query($stmnt, 1);
                     
-                    if ($rv->{status} == 'SPI_OK_SELECT')
+                    if ($rv->{status} eq 'SPI_OK_SELECT')
                     {
                         $pkeysstr = $rv->{rows}[0]->{primary_idx};
                         
@@ -41,6 +42,8 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                     }
                     else
                     {
+                        $errmsg = "Bad db query: $stmnt.";
+                        elog(WARNING, $errmsg);
                         $$statusR = 1;
                     }
                     
@@ -57,7 +60,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                         $stmnt = "SELECT * FROM pg_tables WHERE schemaname ILIKE '$ns' AND tablename ILIKE '$tab'";
                         $rv = spi_exec_query($stmnt, 1);
                         
-                        if ($rv->{status} == 'SPI_OK_SELECT')
+                        if ($rv->{status} eq 'SPI_OK_SELECT')
                         {
                             $nrows = $rv->{processed};
                             $$statusR = 0;   
@@ -75,9 +78,10 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                         my($sname);
                         my($stmnt);
                         my($ikey);
-                        my($rv);
                         my($nvers);
                         my($newGroup);
+                        my($errmsg);
+                        my($rv);
                         
                         $newGroup = 0;
                         
@@ -94,7 +98,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                 $stmnt = "$stmnt, ";
                             }
                             
-                            $stmnt = "$stmnt$key AS p$ikey";
+                            $stmnt = "$stmnt$key";
                             $ikey++;
                         }
                         
@@ -107,14 +111,15 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                 $stmnt = "$stmnt AND ";
                             }
                         
-                            $stmnt = "T1\.$key = T2\.p$ikey";
+                            $stmnt = "${stmnt}T1\.$key = T2\.$key";
+                            $ikey++;
                         }
                         
                         # Execute the query - we expect to get one row / one column. The value
                         # is the number of versions of the DRMS record just inserted into the series.
                         $rv = spi_exec_query($stmnt, 1);
                         
-                        if ($rv->{status} == 'SPI_OK_SELECT' && $rv->{processed} == 1)
+                        if ($rv->{status} eq 'SPI_OK_SELECT' && $rv->{processed} == 1)
                         {
                             $nvers = $rv->{rows}[0]->{count};
                             
@@ -123,6 +128,8 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                 # Something went wrong - this implies there are no records whose prime-key
                                 # matches the record that just got inserted (but there should be at least one
                                 # such record - the one that just got inserted).
+                                $errmsg = "This should return at least one record: $stmnt.";
+                                elog(WARNING, $errmsg);
                                 $$statusR = 1;
                             }
                             else
@@ -136,6 +143,8 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                         }
                         else
                         {
+                            $errmsg = "Bad db query: $stmnt.";
+                            elog(WARNING, $errmsg);
                             $$statusR = 1;
                         }
                         
@@ -179,7 +188,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                             # Execute the query. There will only be one record. 
                             $rv = spi_exec_query($stmnt, 1);
                         
-                            if ($rv->{status} == 'SPI_OK_SELECT' && $rv->{processed} == 1)
+                            if ($rv->{status} eq 'SPI_OK_SELECT' && $rv->{processed} == 1)
                             {
                                 $maxrec = $rv->{rows}[0]->{max};
                             }
@@ -205,7 +214,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                         # Updating a single record.
                                         $rv = spi_exec_query($stmnt, 1);
                                 
-                                        if ($rv->{status} != 'SPI_OK_UPDATE' || $rv->{processed} != 1)
+                                        if ($rv->{status} ne 'SPI_OK_UPDATE' || $rv->{processed} != 1)
                                         {
                                             $$statusR = 1;
                                         }
@@ -224,7 +233,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                         # Updating a single record.
                                         $rv = spi_exec_query($stmnt, 1);
                                 
-                                        if ($rv->{status} != 'SPI_OK_UPDATE' || $rv->{processed} != 1)
+                                        if ($rv->{status} ne 'SPI_OK_UPDATE' || $rv->{processed} != 1)
                                         {
                                             $$statusR = 1;
                                         }
@@ -239,7 +248,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                         # Updating a single record.
                                         $rv = spi_exec_query($stmnt, 1);
                                 
-                                        if ($rv->{status} != 'SPI_OK_UPDATE' || $rv->{processed} != 1)
+                                        if ($rv->{status} ne 'SPI_OK_UPDATE' || $rv->{processed} != 1)
                                         {
                                             $$statusR = 1;
                                         }
@@ -259,8 +268,8 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                 my($sname);
                                 my($shadow);
                                 my($stmnt);
-                                my($ikey);
                                 my($keylist);
+                                my($errmsg);
                                 my($rv);
                                 
                                 $sname = lc("$ns\.$tab");
@@ -269,20 +278,21 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                 $stmnt = "INSERT INTO $shadow (";
                                 
                                 # Loop through prime-key keywords.
-                                $ikey = 0;
+                                $keylist = "";
                                 foreach my $key (@{$pkeynamesR})
                                 {
-                                    $keylist = "$key, ";
-                                    $ikey++;
+                                    $keylist = "$keylist$key, ";
                                 }
                                
-                                $stmnt = "${stmnt}${keylist}recnum, nrecords) SELECT $keylist, recnum, 1 FROM $sname WHERE recnum = $recno";
+                                $stmnt = "${stmnt}${keylist}recnum, nrecords) SELECT ${keylist}recnum, 1 FROM $sname WHERE recnum = $recno";
                                 
                                 # Inserting a single record.
                                 $rv = spi_exec_query($stmnt, 1);
                         
-                                if ($rv->{status} != 'SPI_OK_INSERT' || $rv->{processed} != 1)
+                                if ($rv->{status} ne 'SPI_OK_INSERT' || $rv->{processed} != 1)
                                 {
+                                    $errmsg = "Bad db insert statement: $stmnt.";
+                                    elog(ERROR, $errmsg);
                                     $$statusR = 1;
                                 }
                             };
@@ -315,7 +325,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
 
                                 $stmnt = "SELECT count(*) FROM $sname WHERE $keylist";
                                 
-                                if ($rv->{status} == 'SPI_OK_SELECT' && $rv->{processed} == 1)
+                                if ($rv->{status} eq 'SPI_OK_SELECT' && $rv->{processed} == 1)
                                 {
                                     # The group was deleted if there are no more records
                                     $rv = ($rv->{rows}[0]->{count} == 0);
@@ -358,7 +368,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
 
                                 $stmnt = "DELETE FROM $shadow WHERE $keylist";
 
-                                if ($rv->{status} != 'SPI_OK_DELETE' || $rv->{processed} != 1)
+                                if ($rv->{status} ne 'SPI_OK_DELETE' || $rv->{processed} != 1)
                                 {
                                     $$statusR = 1;
                                 }
@@ -411,7 +421,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
         # Query dbase to get a list of prime-key keyword names.
         @primekeys = &{$fGetPkeys}($_TD->{table_schema}, $_TD->{table_name}, \$istat);
         
-        if (!$istat)
+        if ($istat)
         {
             elog(ERROR, "Cannot obtain the names of the prime-key keywords.");
         }
