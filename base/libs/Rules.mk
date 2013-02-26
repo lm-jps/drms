@@ -14,6 +14,8 @@ dir	:= $(d)/dstruct
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/json
 -include		$(SRCDIR)/$(dir)/Rules.mk
+dir     := $(d)/jsmn
+-include                $(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/ricecomp
 -include		$(SRCDIR)/$(dir)/Rules.mk
 dir	:= $(d)/inthandles
