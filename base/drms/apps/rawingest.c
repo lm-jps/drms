@@ -409,6 +409,8 @@ int SetKeyValues(DRMS_Env_t *env,
                         
                         if (segin->record->sunum != -1LL)
                         {
+                            /* Believe it or not, drms_segment_filename() will STAGE the relevant SU too! We need 
+                             * to do that before trying to ingest the original SUMS files. */
                             drms_segment_filename(segin, infile);
                             
                             if (IngestRawFile(orec, segin->info->name, infile) != 0)
