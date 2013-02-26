@@ -18,6 +18,8 @@
 #define kShadowSuffix "_shadow"
 #define kShadowColRecnum "recnum"
 #define kShadowColNRecs "nrecords"
+#define kShadowTrig "updateshadowtrig"
+#define kShadowTrigFxn "updateshadow"
 
 #if (defined TRACKSHADOWS && TRACKSHADOWS)
     #define kShadowTrackTab "drms.shadowtrack"
@@ -1567,7 +1569,28 @@ static int CreateShadow(DRMS_Env_t *env, const char *series, int *created)
                                 /* Populate the shadow table with data from the original series table. */
                                 status = PopulateShadow(env, series);
                                 
+                                /* Create the updateshadowtrig trigger on the series table. This trigger 
+                                 * will call the updateshadow() function after an INSERT or DELETE on the 
+                                 * series table. updateshadow() will update the shadow table (if it exists) - 
+                                 * it will either update a row in, delete a row from , or insert a row into, 
+                                 * the shadow table. 
+                                 *
+                                 * CREATE TRIGGER updateshadowtrig AFTER INSERT OR DELETE on <TABLE>
+                                 *    FOR EACH ROW EXECUTE PROCEDURE updateshadow();
+                                 */
+                                if (status == DRMS_SUCCESS)
+                                {
+                                    snprintf(query, sizeof(query), "CREATE TRIGGER %s AFTER INSERT OR DELETE on %s FOR EACH ROW EXECUTE PROCEDURE %s()", kShadowTrig, lcseries, kShadowTrigFxn);
+                                    
+                                    if (drms_dms(env->session, NULL, query))
+                                    {
+                                        fprintf(stderr, "Failed: %s\n", query);
+                                        status = DRMS_ERROR_BADDBQUERY;   
+                                    }
+                                }
+                                
 #if (defined TRACKSHADOWS && TRACKSHADOWS)
+#error
                                 /* Create a temporary trigger on the ORIGINAL series table. This trigger will intercept
                                  * record insertions and deletions and execute a plpgsql function that will insert 
                                  * one record for each record inserted/deleted into a shadow-table tracker. This table */
@@ -1575,7 +1598,8 @@ static int CreateShadow(DRMS_Env_t *env, const char *series, int *created)
                                 {
                                     snprintf(query, 
                                              sizeof(query), 
-                                             "CREATE TRIGGER shadowtracker AFTER INSERT OR DELETE ON %s FOR EACH ROW EXECUTE PROCEDURE %s()",
+                                             "DROP TRIGGER IF EXISTS shadowtracker on %s; CREATE TRIGGER shadowtracker AFTER INSERT OR DELETE ON %s FOR EACH ROW EXECUTE PROCEDURE %s()",
+                                             lcseries,
                                              lcseries,
                                              kshadowTrackerFxn);
                                     
@@ -4286,8 +4310,8 @@ int drms_series_updatesummaries(DRMS_Env_t *env,
     if (status == DRMS_SUCCESS && shadowexists)
     {
         /* When the series table had records inserted into it, a trigger MAY HAVE fired that caused a record to
-         * be inserted into. The trigger might also not exist, in which case this block of code should be 
-         * a no-op. */
+         * be inserted into a shadow-tracking table. The trigger might also not exist, in which case this 
+         * block of code should be a no-op. */
         char *ns = NULL;
         char *tab = NULL;
         int track = 0;
