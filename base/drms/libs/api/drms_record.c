@@ -1358,7 +1358,6 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
     char *lasts = NULL;
     char *ans = NULL;
     HContainer_t *goodsegcont = NULL;
-    char *countquery = NULL;
     DB_Text_Result_t *tres = NULL;
     
     /* Must save SELECT statements if saving the query is desired (retreiverecs == 0) */
@@ -2013,11 +2012,6 @@ failure:
     {
         hcon_map(realSets, RSFree);
         hcon_destroy(&realSets);
-    }
-    
-    if (countquery)
-    {
-        free(countquery);
     }
     
     if (tres)
@@ -6641,10 +6635,18 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
   free(field_list);
   free(series_lower);
     
-    /* We just inserted records into the database series table. We must keep the table of counts in sync. */
-    /* Do NOT skip this update to the table of counts. Even if status is not DRMS_SUCCESS, we have to update                             
-     * the table of counts. The module could still commit despit a non-DRMS_SUCCESS status, and if we haven't                            
-     * updated the table of counts, then the series table and the table of counts will by out-of-sync. */
+    /* It used to be the case that we'd update the shadow table here, with C code. However, 
+     * it turned out that we needed the ability for the db to handle the update on its own.
+     * There are cases where the series table gets updated in a manner other than by using 
+     * lib DRMS. For example, slony could insert rows into a series table via replication. So, 
+     * I had to port the C shadow-table update code to a perl function that I attached to 
+     * a trigger that is installed in on every shadowed series. 
+     *
+     * ART - 26 FEB 2013 */
+    
+    /* We should make sure that, if a shadow table is installed, then there is also a 
+     * */
+#if 0
     char **pkeynames = NULL;
     int ipk;
     int rv;
@@ -6693,6 +6695,7 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
     {
         status = DRMS_ERROR_OUTOFMEMORY;
     }
+#endif
     
   return status;
 }
@@ -9922,59 +9925,159 @@ void drms_free_cursor(DRMS_RecSetCursor_t **cursor)
    }
 }
 
+/* This function does not support all kinds of record-set specifications. It will not 
+ * handle plain files, for example. 
+ *
+ * ART: Added support for @files and comma-separated lists of files 2/22/2013
+ *
+ */
 int drms_count_records(DRMS_Env_t *env, const char *recordsetname, int *status)
 {
-   int stat, filter, mixed;
-   char *query=NULL, *where=NULL, *seriesname=NULL;
-   char *pkwhere = NULL;
-   char *npkwhere = NULL;
+    int stat, filter, mixed;
+    char *query=NULL, *where=NULL, *seriesname=NULL;
+    char *pkwhere = NULL;
+    char *npkwhere = NULL;
     HContainer_t *pkwhereNFL = NULL;
-   int count = 0;
-   DB_Text_Result_t *tres;
-   int allvers = 0;
+    int count = 0;
+    int subcount = 0;
+    DB_Text_Result_t *tres = NULL;
+    int allvers = 0;
     HContainer_t *firstlast = NULL;
     int recnumq;
     
-    stat = drms_recordset_query(env, recordsetname, &where, &pkwhere, &npkwhere, &seriesname, &filter, &mixed, &allvers, &firstlast, &pkwhereNFL, &recnumq);
-   if (stat)
-     goto failure;
-
-   stat = 1;
-   query = drms_query_string(env, seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_COUNT, NULL, NULL, allvers, firstlast, pkwhereNFL, recnumq);
-   if (!query)
-     goto failure;
-
-   tres = drms_query_txt(env->session,  query);
+    char *allversA = NULL; /* If 'y', then don't do a 'group by' on the primekey value.
+                           * The rationale for this is to allow users to get all versions
+                           * of the requested DRMS records */
+    char **sets = NULL;
+    DRMS_RecordSetType_t *settypes = NULL; /* a maximum doesn't make sense */
+    char **snames = NULL;
+    char **filts = NULL;
+    int nsets = 0;
+    DRMS_RecQueryInfo_t rsinfo;
+    int iSet;
+    char *actualSet = NULL;
+    char *psl = NULL;
     
-    if (!tres)
+    
+    /* You cannot call drms_recordset_query() on recordsetname. recordsetname has not been parsed at all. 
+     * It might be an @file, or a comma-separated list of record-set specifications. */
+    stat = ParseRecSetDesc(recordsetname, &allversA, &sets, &settypes, &snames, &filts, &nsets, &rsinfo);
+    
+    if (stat)
     {
-        stat = DRMS_ERROR_QUERYFAILED;
         goto failure;
     }
+    
+    for (iSet = 0; stat == DRMS_SUCCESS && iSet < nsets; iSet++)
+    {
+        char *oneSet = sets[iSet];
+        
+        if (oneSet && strlen(oneSet) > 0)
+        {
+            if (settypes[iSet] == kRecordSetType_DRMS)
+            {
+                /* oneSet may have a segement specifier - strip that off and 
+                 * generate the HContainer_t that contains the requested segment 
+                 * names. */
+                actualSet = strdup(oneSet);
+                if (actualSet)
+                {
+                    /* Hide the segment-specification string. drms_recordset_query() doesn't like it. */
+                    psl = strchr(actualSet, '{');
+                    if (psl)
+                    {
+                        *psl = '\0';
+                    }
+                    
+                    stat = drms_recordset_query(env, actualSet, &where, &pkwhere, &npkwhere, &seriesname, &filter, &mixed, &allvers, &firstlast, &pkwhereNFL, &recnumq);
+                    
+                    if (stat)
+                    {
+                        goto failure;
+                    }
+                    
+                    query = drms_query_string(env, seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_COUNT, NULL, NULL, allvers, firstlast, pkwhereNFL, recnumq);
+                    
+                    if (!query)
+                    {
+                        stat = DRMS_ERROR_QUERYFAILED;
+                        goto failure;
+                    }
+                    
+                    tres = drms_query_txt(env->session,  query);
+                    
+                    if (!tres)
+                    {
+                        stat = DRMS_ERROR_QUERYFAILED;
+                        goto failure;
+                    }
+                    
+                    if (tres && tres->num_rows == 1 && tres->num_cols == 1)
+                    {
+                        subcount = atoi(tres->field[0][0]);
+                    }
+                    else
+                    {
+                        stat = DRMS_ERROR_BADQUERYRESULT;
+                        goto failure;
+                    }
+                    
+                    db_free_text_result(tres);
+                    tres = NULL;
+                    
+                    count += subcount;
+                    
+                    free(where);
+                    where = NULL;
+                    if (pkwhere)
+                    {
+                        free(pkwhere);
+                        pkwhere = NULL;
+                    }
+                    if (npkwhere) 
+                    {
+                        free(npkwhere);
+                        npkwhere = NULL;
+                    }
+                    free(seriesname);
+                    seriesname = NULL;                    
+                    if (pkwhereNFL)
+                    {
+                        hcon_destroy(&pkwhereNFL);
+                    }
+                    free(query);
+                    query = NULL;
+                    
+                    if (actualSet)
+                    {
+                        free(actualSet);
+                        actualSet = NULL;
+                    }
+                }
+            }
+        }
+        else
+        {
+            fprintf(stderr, "Unsupported record-set type: %d\n", (int)settypes[iSet]);
+        }
+    }
+    
+    FreeRecSetDescArr(&allversA, &sets, &settypes, &snames, &filts, nsets);
 
-   if (tres && tres->num_rows == 1 && tres->num_cols == 1)
-     count = atoi(tres->field[0][0]);
-   else
-     goto failure;
-
-   free(seriesname);
-   free(query);
-   free(where);
-   if (pkwhere) free(pkwhere);
-   if (npkwhere) free(npkwhere);
+    *status = DRMS_SUCCESS;
+    return(count);
+    
+failure:
+    if (seriesname) free(seriesname);
+    if (query) free(query);
+    if (where) free(where);
+    if (pkwhere) free(pkwhere);
+    if (npkwhere) free(npkwhere);
     if (pkwhereNFL) hcon_destroy(&pkwhereNFL);
-   *status = DRMS_SUCCESS;
-   return(count);
-
- failure:
-   if (seriesname) free(seriesname);
-   if (query) free(query);
-   if (where) free(where);
-   if (pkwhere) free(pkwhere);
-   if (npkwhere) free(npkwhere);
-    if (pkwhereNFL) hcon_destroy(&pkwhereNFL);
-   *status = stat;
-   return(0);
+    if (tres) db_free_text_result(tres);
+    FreeRecSetDescArr(&allversA, &sets, &settypes, &snames, &filts, nsets);
+    *status = stat;
+    return(0);
 }
 
 /* Columns are stored contiguously in DRMS_Arra_t::data */
