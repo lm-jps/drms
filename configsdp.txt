@@ -18,7 +18,6 @@ $(MODEXESUMS):                  $(LIBSUMSAPI) $(LIBSUM)
 
 $(MODEXEDROBJ):                 CF_TGT := $(CF_TGT) -I$(SRCDIR)/proj/libs/dr
 $(MODEXEDR) $(MODEXEDR_SOCK):   $(LIBDR)
-CUSTOMSW := $(CUSTOMSW) -DTRACKSHADOWS
 __END__
 __PROJ__
 <?xml version='1.0'?>
