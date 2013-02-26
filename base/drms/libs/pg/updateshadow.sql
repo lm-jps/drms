@@ -4,7 +4,7 @@
 CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshadow$    
     use strict;
     use warnings;
-    use constant kShadowSuffix = '_shadow';
+    use constant kShadowSuffix => '_shadow';
     
     my($fGetPkeys);
     my($fShadowExists);
@@ -21,6 +21,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                     my($stmnt);
                     my($pkeysstr);
                     my(@draft);
+                    my($rv);
                     
                     $sname = lc("$ns\.$tab");
                     $stmnt = "SELECT primary_idx FROM $ns\.drms_series WHERE lower(seriesname) = '$sname'";
@@ -33,7 +34,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                         $pkeysstr = $rv->{rows}[0]->{primary_idx};
                         
                         # Parse out prime-key keyword names.
-                        @draft = split(',', $pkeystr);
+                        @draft = split(',', $pkeysstr);
                         @pkeys = map({lc(($_ =~ /\s*(\S+)\s*/)[0])} @draft);
                         
                         $$statusR = 0;                        
@@ -48,8 +49,9 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
     
     $fShadowExists = sub {
                         my($ns, $tab, $statusR) = @_;
-                        my($rv);
                         my($nrows);
+                        my($stmnt);
+                        my($rv);
                         
                         $nrows = 0;
                         $stmnt = "SELECT * FROM pg_tables WHERE schemaname ILIKE '$ns' AND tablename ILIKE '$tab'";
@@ -149,6 +151,9 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                             my($stmnt);
                             my($keylist);
                             my($maxrec);
+                            my($shadow);
+                            my($ikey);
+                            my($rv);
                             
                             # SELECT max(T1.recnum) FROM <series> WHERE <pkey1> = <pkeyval1> AND <pkey2> = <pkeyval2> ...
                              
@@ -158,11 +163,11 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                             # Loop through prime-key keywords.
                             $ikey = 0;
                             $keylist = "";
-                            foreach my $key (@{$pkeynamesR})
+                            foreach my $key (@{$primekeysR})
                             {   
                                 if ($ikey > 0)
                                 {
-                                    $keylist3 = "$keylist AND ";
+                                    $keylist = "$keylist AND ";
                                 }
                             
                                 $keylist = "${keylist}$key = " . $primekeyvalsH->{$key};
@@ -224,7 +229,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                             $$statusR = 1;
                                         }
                                     }
-                                    elseif ($maxrec < $recno)
+                                    elsif ($maxrec < $recno)
                                     {
                                         # The current version of the DRMS record was deleted. Update both the nrecords column and the recnum column.
                                         # UPDATE <shadow> SET recnum = <maxrec>, nrecords = T1.nrecords - 1 WHERE <pkey1>=<pkey1val> AND <pkey2>=<pkey2val> AND ... 
@@ -256,7 +261,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                 my($stmnt);
                                 my($ikey);
                                 my($keylist);
-                                
+                                my($rv);
                                 
                                 $sname = lc("$ns\.$tab");
                                 $shadow = $sname . &kShadowSuffix;
@@ -371,6 +376,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
     my(@primekeys);
     my($primekeyvalsH);
     my($isnew);
+    my($wasdel);
     my($istat);
 
     # This function should be a no-op if there is no shadow table.
@@ -405,7 +411,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
         # Query dbase to get a list of prime-key keyword names.
         @primekeys = &{$fGetPkeys}($_TD->{table_schema}, $_TD->{table_name}, \$istat);
         
-        if (!istat)
+        if (!$istat)
         {
             elog(ERROR, "Cannot obtain the names of the prime-key keywords.");
         }
@@ -437,7 +443,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                     elog(ERROR, "Failure calling UpdateShadow() for record insertion.");
                 }
             }
-            else if ($isnew == 1)
+            elsif ($isnew == 1)
             {
                 # Need to add a new record to the shadow table for the new group just created in the series table.
                 # shadow-table structure - pkey1, pkey2, ..., recnum, nrecords
@@ -467,7 +473,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
             if ($wasdel)
             {
                 # The last DRMS record was deleted - delete the corresponding group from the shadow table.
-                ${$fDeleteFromShadow}($_TD->{table_schema}, $_TD->{table_name}, \@primekeys, $primekeyvalsH, $recnum, \$istat);
+                &{$fDeleteFromShadow}($_TD->{table_schema}, $_TD->{table_name}, \@primekeys, $primekeyvalsH, $recnum, \$istat);
                 
                 if ($istat)
                 {
@@ -487,8 +493,8 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
         }
     }
     
-    return NULL;
-$updateshadow$ LANGUAGE plperl;
+    return;
+$updateshadow$ LANGUAGE plperlu;
 
 -- This script is a template; must substitute in the name of the table
 -- CREATE TRIGGER updateshadowtrig AFTER INSERT OR DELETE on <TABLE>
