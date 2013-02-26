@@ -162,6 +162,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                             my($maxrec);
                             my($shadow);
                             my($ikey);
+                            my($errmsg);
                             my($rv);
                             
                             # SELECT max(T1.recnum) FROM <series> WHERE <pkey1> = <pkeyval1> AND <pkey2> = <pkeyval2> ...
@@ -207,17 +208,46 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                         # corresponding records shadow-table record, using the prime-key values to 
                                         # locate the shadow-table record.
                                         #
-                                        # UPDATE <shadow> AS T1 SET recnum = <recnum>, nrecords = T1.nrecords + 1 WHERE <pkey1>=<pkey1val> AND <pkey2>=<pkey2val> AND ...
+                                        # UPDATE <shadow> SET recnum = <recnum>, nrecords = nrecords + 1 WHERE <pkey1>=<pkey1val> AND <pkey2>=<pkey2val> AND ...
                                 
-                                        $stmnt = "UPDATE $shadow SET recnum = $recno, nrecords = T1.nrecords + 1 WHERE $keylist";
+                                        $stmnt = "UPDATE $shadow SET recnum = $recno, nrecords = nrecords + 1 WHERE $keylist";
                                 
                                         # Updating a single record.
-                                        $rv = spi_exec_query($stmnt, 1);
+                                        $rv = spi_exec_query($stmnt);
                                 
                                         if ($rv->{status} ne 'SPI_OK_UPDATE' || $rv->{processed} != 1)
                                         {
+                                            $errmsg = "Bad update db statement: $stmnt";
+                                            elog(WARNING, $errmsg);
                                             $$statusR = 1;
                                         }
+                                    }
+                                    elsif ($maxrec > $recno)
+                                    {
+                                        # The record just inserted into series is an obsolete version. This
+                                        # cannot happen if the record was inserted via DRMS. But it could 
+                                        # happen if somebody inserts a record by some other means. If this happens
+                                        # then increment the nrecords column.
+                                        # 
+                                        # UPDATE <shadow> SET nrecords = nrecords + 1 WHERE <pkey1>=<pkey1val> AND <pkey2>=<pkey2val> AND ...
+                                        
+                                        $stmnt = "UPDATE $shadow SET nrecords = nrecords + 1 WHERE $keylist";
+                                
+                                        # Updating a single record.
+                                        $rv = spi_exec_query($stmnt);
+                                
+                                        if ($rv->{status} ne 'SPI_OK_UPDATE' || $rv->{processed} != 1)
+                                        {
+                                            $errmsg = "Bad update db statement: $stmnt";
+                                            elog(WARNING, $errmsg);
+                                            $$statusR = 1;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        $errmsg = "What happened to the record just inserted?";
+                                        elog(WARNING, $errmsg);
+                                        $$statusR = 1;
                                     }
                                 }
                                 else
@@ -225,13 +255,12 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                     if ($maxrec > $recno)
                                     {
                                         # An obsolete version of the DRMS record was deleted. Update the nrecords column only.
-                                        # UPDATE <shadow> SET nrecords = T1.nrecords - 1 WHERE <pkey1>=<pkey1val> AND <pkey2>=<pkey2val> AND ...
+                                        # UPDATE <shadow> SET nrecords = nrecords - 1 WHERE <pkey1>=<pkey1val> AND <pkey2>=<pkey2val> AND ...
                                     
-                                        $stmnt = "UPDATE $shadow SET nrecords = T1.nrecords - 1 WHERE $keylist";
-                                        
+                                        $stmnt = "UPDATE $shadow SET nrecords = nrecords - 1 WHERE $keylist";
                                         
                                         # Updating a single record.
-                                        $rv = spi_exec_query($stmnt, 1);
+                                        $rv = spi_exec_query($stmnt);
                                 
                                         if ($rv->{status} ne 'SPI_OK_UPDATE' || $rv->{processed} != 1)
                                         {
@@ -241,12 +270,12 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                     elsif ($maxrec < $recno)
                                     {
                                         # The current version of the DRMS record was deleted. Update both the nrecords column and the recnum column.
-                                        # UPDATE <shadow> SET recnum = <maxrec>, nrecords = T1.nrecords - 1 WHERE <pkey1>=<pkey1val> AND <pkey2>=<pkey2val> AND ... 
+                                        # UPDATE <shadow> SET recnum = <maxrec>, nrecords = nrecords - 1 WHERE <pkey1>=<pkey1val> AND <pkey2>=<pkey2val> AND ... 
                                         
-                                        $stmnt = "UPDATE $shadow SET recnum = $maxrec, nrecords = T1.nrecords - 1 WHERE $keylist";
+                                        $stmnt = "UPDATE $shadow SET recnum = $maxrec, nrecords = nrecords - 1 WHERE $keylist";
                                                                                 
                                         # Updating a single record.
-                                        $rv = spi_exec_query($stmnt, 1);
+                                        $rv = spi_exec_query($stmnt);
                                 
                                         if ($rv->{status} ne 'SPI_OK_UPDATE' || $rv->{processed} != 1)
                                         {
@@ -256,6 +285,8 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                     else
                                     {
                                         # Cannot happen - duplicate recnums are not allowed.
+                                        $errmsg = "Was there a duplicate recnum? Impossible.";
+                                        elog(WARNING, $errmsg);
                                         $$statusR = 1;
                                     }
                                 }
@@ -287,7 +318,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                 $stmnt = "${stmnt}${keylist}recnum, nrecords) SELECT ${keylist}recnum, 1 FROM $sname WHERE recnum = $recno";
                                 
                                 # Inserting a single record.
-                                $rv = spi_exec_query($stmnt, 1);
+                                $rv = spi_exec_query($stmnt);
                         
                                 if ($rv->{status} ne 'SPI_OK_INSERT' || $rv->{processed} != 1)
                                 {
@@ -297,13 +328,14 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                 }
                             };
                             
-    # SELECT count(*) FROM <series> WHERE <pkey1> = <pkey1val> AND <pkey2> = T2.<pkey2val> AND ...; 
+    # SELECT count(*) FROM <series> WHERE <pkey1> = <pkey1val> AND <pkey2> = <pkey2val> AND ...; 
     $fWasGroupDeleted = sub {
                                 my($ns, $tab, $pkeynamesR, $primekeyvalsH, $recno, $statusR) = @_;
                                 my($sname);
                                 my($stmnt);
                                 my($ikey);
                                 my($keylist);
+                                my($errmsg);
                                 my($rv);
     
                                 $rv = -1;
@@ -325,6 +357,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
 
                                 $stmnt = "SELECT count(*) FROM $sname WHERE $keylist";
                                 
+                                $rv = spi_exec_query($stmnt, 1);
                                 if ($rv->{status} eq 'SPI_OK_SELECT' && $rv->{processed} == 1)
                                 {
                                     # The group was deleted if there are no more records
@@ -332,6 +365,8 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                 }
                                 else
                                 {
+                                    $errmsg = "Bad select statement $stmnt";
+                                    elog(WARNING, $errmsg);
                                     $$statusR = 1;
                                 }
                                 
@@ -367,7 +402,8 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                 }
 
                                 $stmnt = "DELETE FROM $shadow WHERE $keylist";
-
+                                
+                                $rv = spi_exec_query($stmnt);
                                 if ($rv->{status} ne 'SPI_OK_DELETE' || $rv->{processed} != 1)
                                 {
                                     $$statusR = 1;
