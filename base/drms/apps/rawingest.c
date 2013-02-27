@@ -2,6 +2,7 @@
 
 #include "jsmn.h"
 #include "jsoc_main.h"
+#include "tasrw.h"
 
 char *module_name = "rawingest";
 
@@ -187,6 +188,8 @@ static int IngestRawFile(DRMS_Record_t *orec, const char *segname, const char *i
     DRMS_Segment_t *seg = NULL;
     struct stat stBuf;
     char outfile[DRMS_MAXPATHLEN] = {0};
+    char key[DRMS_MAXKEYNAMELEN];
+    int istat;
     int rv;
     
     rv = 0;
@@ -226,10 +229,96 @@ static int IngestRawFile(DRMS_Record_t *orec, const char *segname, const char *i
                 CHECKSNPRINTF(snprintf(seg->filename, DRMS_MAXSEGFILENAME, "%s", filename), DRMS_MAXSEGFILENAME);
                 drms_segment_filename(seg, outfile);
             }
-            else
+            else if (seg->info->protocol == DRMS_BINARY ||
+                     seg->info->protocol == DRMS_BINZIP ||
+                     seg->info->protocol == DRMS_FITZ ||
+                     seg->info->protocol == DRMS_FITS)
             {
+                int naxis;
+                int iaxis;
+                fitsfile *fptr = NULL;
+                CFITSIO_IMAGE_INFO imginfo;
+
                 /* Use the name that lib DRMS derives. */
                 drms_segment_filename(seg, outfile);
+
+                /* Must fetch axis lengths from the actual FITS file. */
+                fptr = fitsrw_getfptr(0, infile, 0, &istat);
+
+                if (fptr && !istat)
+                {
+                   if (fitsrw_getfpinfo_ext(fptr, &imginfo))
+                   {
+                      fprintf(stderr, "Unable to retrieve file info.\n");
+                      rv = 1;
+                   }
+
+                }
+                else
+                {
+                   fprintf(stderr, "Unable to read file %s.\n", infile);
+                   rv = 1;
+                }
+
+                if (fptr)
+                {
+                   fitsrw_closefptr(0, fptr);
+                }
+
+                if (rv == 0)
+                {
+                    /* Need to set for protocols DRMS_BINARY, DRMS_BINZIP, DRMS_FITZ, DRMS_FITS. Reject DRMS_TAS
+                     * for now - I don't want to deal with it. */
+                    snprintf(key, sizeof(key), "%s_bzero", seg->info->name);
+                    
+                    if (imginfo.bitpix == BYTE_IMG)
+                    {
+                        /* For CHAR data, we store our image files with a bzero of -128 so that 
+                         * we can store unsigned char data in FITS, which does not support 
+                         * unsigned char data. When we read the image data, we apply the 
+                         * bzero value, which converts the data to unsigned char data. But then 
+                         * we need to adjust the bzero value that DRMS has. It should be 0, not
+                         * -128 (when bscale is 1). */
+                        drms_setkey_double(seg->record, key, 128 * imginfo.bscale + imginfo.bzero);
+                    }
+                    else
+                    {
+                        drms_setkey_double(seg->record, key, imginfo.bzero);
+                    }
+                    
+                    snprintf(key, sizeof(key), "%s_bscale", seg->info->name);
+                    drms_setkey_double(seg->record, key, imginfo.bscale);
+                    
+                    if (seg->info->protocol == DRMS_FITS)
+                    {
+                        if (seg->info->scope == DRMS_VARDIM)
+                        {
+                            /* Must fetch axis lengths from the actual FITS file. */
+                            naxis = imginfo.naxis;
+                            
+                            /* Use the input array's axis dimensionality and lengths for the output file */
+                            seg->info->naxis = naxis;
+                            
+                            for (iaxis = 0; iaxis < naxis; iaxis++)
+                            {
+                                seg->axis[iaxis] = imginfo.naxes[iaxis];
+                            }
+                        }
+                        else
+                        {
+                            /* I think that seg->axis is already correctly set for non DRMS_VARDIM. */
+                        }
+                    }
+                    else
+                    {
+                        /* I think that seg->axis is irrelevant for the other protocols, but I'm not sure.  */
+                    }
+                }
+            }
+            else
+            {
+                fprintf(stderr, "Unsupported segment protocol %d.\n", seg->info->protocol);
+                rv = 1;
             }
         }
     }

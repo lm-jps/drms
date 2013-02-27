@@ -45,7 +45,7 @@ S_$(d)		:= $(notdir $(EXE_$(d)) $(MODEXE_SOCK_$(d)) $(MODEXE_SUMS_$(d)))
 $(OBJ_$(d)):	CF_TGT := $(CF_$(d))
 $(OBJ_$(d)):	$(SRCDIR)/$(d)/Rules.mk
 
-$(JSON_OBJ_$(d)): CF_TGT := $(CF_TGT) -I$(SRCDIR)/$(d)/../../libs/jsmn
+$(JSON_OBJ_$(d)): CF_TGT := $(CF_TGT) -I$(SRCDIR)/$(d)/../../libs/jsmn $(CFITSIOH)
 $(MODEXE_JSON_$(d)):	$(LIBJSMN)
 
 # Shortcuts
