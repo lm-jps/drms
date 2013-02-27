@@ -69,7 +69,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                         else
                         {
                             $errmsg = "Bad db query: $stmnt";
-                            elog(WARNING: $errmsg);
+                            elog(WARNING, $errmsg);
                             $$statusR = 1;
                         }
                         
@@ -286,7 +286,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                 
                                         if ($rv->{status} ne 'SPI_OK_UPDATE' || $rv->{processed} != 1)
                                         {
-                                            errmsg = "Bad update db statement: $stmnt.";
+                                            $errmsg = "Bad update db statement: $stmnt.";
                                             elog(WARNING, $errmsg);
                                             $$statusR = 1;
                                         }
@@ -390,6 +390,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                 my($stmnt);
                                 my($ikey);
                                 my($keylist);
+                                my($errmsg);
                                 my($rv);
 
                                 $rv = -1;
@@ -415,7 +416,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                 $rv = spi_exec_query($stmnt);
                                 if ($rv->{status} ne 'SPI_OK_DELETE' || $rv->{processed} != 1)
                                 {
-                                    errmsg = "Bad delete db statement: $stmnt.";
+                                    $errmsg = "Bad delete db statement: $stmnt.";
                                     elog(WARNING, $errmsg);
                                     $$statusR = 1;
                                 }
@@ -530,7 +531,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
             if ($wasdel)
             {
                 # The last DRMS record was deleted - delete the corresponding group from the shadow table.
-                &{$fDeleteFromShadow}($_TD->{table_schema}, $_TD->{table_name}, \@primekeys, $primekeyvalsH, $recnum, \$istat);
+                &{$fDeleteFromShadow}($_TD->{table_schema}, $_TD->{table_name}, \@primekeys, $primekeyvalsH, \$istat);
                 
                 if ($istat)
                 {
