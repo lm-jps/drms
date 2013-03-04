@@ -7,7 +7,9 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
     use constant kShadowSuffix => '_shadow';
     
     my($fGetPkeys);
+    my($fCheckKeyType);
     my($fShadowExists);
+    my($fCleanKey);
     my($fIsGroupNew);
     my($fUpdateShadow);
     my($fInsertIntoShadow);
@@ -15,12 +17,62 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
     my($fDeleteFromShadow);
     
     # Anonymous-function definitions
-    $fGetPkeys = sub {my($ns, $tab, $statusR) = @_;
+    $fCheckKeyType = sub {
+                            # If keyword has a data type of string, then append a '*'
+                            # to the end of the keyword name. We need to mark 
+                            # such keywords because the SQL that queries keyword
+                            # values needs to treat string keywords differently 
+                            # from other types of keywords. For string keywords
+                            # their values must be enclosed in single quotes.
+                            my($ns, $seriesname, $keyname, $statusR) = @_;
+                            my($stmnt);
+                            my($errmsg);
+                            my($finalkeyname);
+                            my($rv);
+                            
+                            if ($$statusR)
+                            {
+                                return ();
+                            }
+                            
+                            $finalkeyname = lc(($keyname =~ /\s*(\S+)\s*/)[0]);
+                            
+                            $stmnt = "SELECT type FROM $ns.drms_keyword WHERE lower(seriesname) = '$seriesname' AND lower(keywordname) = '$keyname'";
+                            
+                            $rv = spi_exec_query($stmnt, 1);
+                    
+                            if ($rv->{status} eq 'SPI_OK_SELECT' && $rv->{processed} == 1)
+                            {
+                                if ($rv->{rows}[0]->{type} eq "string")
+                                {
+                                    # lib DRMS maps the string stored in the type field to an enum by comparing, 
+                                    # without regard to case, the string value to the strings in drms_type_names 
+                                    # (using the function drms_str2type()). I just hard-coded the string "string"
+                                    # here.
+                                    $finalkeyname = "$finalkeyname\*"
+                                }
+                                
+                                $$statusR = 0;
+                            }
+                            else
+                            {
+                                $errmsg = "Bad db query: $stmnt.";
+                                elog(WARNING, $errmsg);
+                                $$statusR = 1;
+                            }
+
+                            return $finalkeyname;
+                        };
+    
+    $fGetPkeys = sub {
+                    my($ns, $tab, $statusR) = @_;
                     my(@pkeys);
                     my($sname);
                     my($stmnt);
                     my($pkeysstr);
                     my(@draft);
+                    my($cleankey);
+                    my($mangled);
                     my($errmsg);
                     my($rv);
                     
@@ -36,9 +88,13 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                         
                         # Parse out prime-key keyword names.
                         @draft = split(',', $pkeysstr);
-                        @pkeys = map({lc(($_ =~ /\s*(\S+)\s*/)[0])} @draft);
                         
-                        $$statusR = 0;                        
+                        foreach my $key (@draft)
+                        {
+                            $cleankey = lc(($key =~ /\s*(\S+)\s*/)[0]);
+                            $mangled = &{$fCheckKeyType}($ns, $sname, $cleankey, $statusR);
+                            push(@pkeys, $mangled);
+                        }
                     }
                     else
                     {
@@ -76,12 +132,35 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                         return ($nrows == 1);
                         };
                         
+    $fCleanKey = sub {
+                        my($keyin) = @_;
+                                
+                        return ($keyin =~ /([^\*]+)(\*)?$/)[0];
+                    };
+                        
     $fIsGroupNew = sub {
-                        my($recno, $ns, $tab, $pkeynamesR, $statusR) = @_;
+                        # Because of the way that PG first inserts all records into the series
+                        # table for a given statement, THEN it calls the trigger function 
+                        # once per record inserted, we cannot use information in the series table
+                        # to distinguish between the inserted records. If the insert statement
+                        # causes three records to be inserted into the series table, then 
+                        # the trigger function will be called three times, but during each 
+                        # invocation, the series table will have had the three records already
+                        # inserted. So, between the three calls to the trigger function,
+                        # nothing will change in the series table.
+                        #
+                        # To determine if a group is new, we have to determine what group
+                        # (prime-key value) the inserted record will belong to, and then 
+                        # check the shadow table to see if that group exists. If not, then
+                        # IsGroupNew() should return true. Otherwise, it should return false.
+                        
+                        
+                        my($recno, $ns, $tab, $pkeynamesR, $primekeyvalsH, $statusR) = @_;
                         my($sname);
+                        my($shadow);
                         my($stmnt);
                         my($ikey);
-                        my($nvers);
+                        my($cleankey);
                         my($newGroup);
                         my($errmsg);
                         my($rv);
@@ -89,61 +168,42 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                         $newGroup = 0;
                         
                         $sname = lc("$ns\.$tab");
+                        $shadow = $sname . &kShadowSuffix;
                         
-                        $stmnt = "SELECT count(*) FROM $sname AS T1, (SELECT ";
-                        
-                        # Loop through prime-key keywords.
+                        $stmnt = "SELECT count(*) FROM $shadow WHERE ";
                         $ikey = 0;
                         foreach my $key (@{$pkeynamesR})
                         {
-                            if ($ikey > 0)
-                            {
-                                $stmnt = "$stmnt, ";
-                            }
+                            $cleankey = &{$fCleanKey}($key);
                             
-                            $stmnt = "$stmnt$key";
-                            $ikey++;
-                        }
-                        
-                        $stmnt = "$stmnt FROM $sname WHERE recnum = $recno) AS T2 WHERE ";
-                        $ikey = 0;
-                        foreach my $key (@{$pkeynamesR})
-                        {
                             if ($ikey > 0)
                             {
                                 $stmnt = "$stmnt AND ";
                             }
                         
-                            $stmnt = "${stmnt}T1\.$key = T2\.$key";
+                            if ($key =~ /\*$/)
+                            {
+                                $stmnt = "${stmnt}$cleankey = \'" . $primekeyvalsH->{$cleankey} . "\'";
+                            }
+                            else
+                            {
+                                $stmnt = "${stmnt}$cleankey = " . $primekeyvalsH->{$cleankey};
+                            }
+                                
                             $ikey++;
                         }
+
+                        # Execute the query - we expect to get one row / one column, the count of the
+                        # number of records in the shadow table whose prime-key value matches the prime-key
+                        # value of the record just inserted into the series table. The answer is either
+                        # 0 (which implies that we need to create a new group) or 1 (which implies
+                        # that group already exists).
                         
-                        # Execute the query - we expect to get one row / one column. The value
-                        # is the number of versions of the DRMS record just inserted into the series.
                         $rv = spi_exec_query($stmnt, 1);
                         
                         if ($rv->{status} eq 'SPI_OK_SELECT' && $rv->{processed} == 1)
                         {
-                            $nvers = $rv->{rows}[0]->{count};
-                            
-                            if ($nvers < 1)
-                            {
-                                # Something went wrong - this implies there are no records whose prime-key
-                                # matches the record that just got inserted (but there should be at least one
-                                # such record - the one that just got inserted).
-                                $errmsg = "This should return at least one record: $stmnt.";
-                                elog(WARNING, $errmsg);
-                                $$statusR = 1;
-                            }
-                            else
-                            {
-                                # If there is only one record with this prime-key value, then that was
-                                # the record that just got inserted, and the insertion created a 
-                                # new group, which required that a new row be added to the shadow table.
-                                $newGroup = ($nvers == 1);
-                                $$statusR = 0;
-                            }
-                        }
+                            $newGroup = ($rv->{rows}[0]->{count} == 0);                        }
                         else
                         {
                             $errmsg = "Bad db query: $stmnt.";
@@ -153,22 +213,20 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                         
                         return $newGroup;
                     };
-                    
-    # This function cannot use recnum to find a series record since this function may be called when a record
-    # is deleted from the series table, and if that is the case, then the series table will
-    # no longer contain a row with the deleted records recnum.
+
     $fUpdateShadow = sub {
-                            my($ns, $tab, $primekeysR, $primekeyvalsH, $recno, $inserted, $statusR) = @_;
+                            my($ns, $tab, $pkeynamesR, $primekeyvalsH, $recno, $inserted, $statusR) = @_;
                             my($sname);
                             my($stmnt);
                             my($keylist);
+                            my($cleankey);
                             my($maxrec);
                             my($shadow);
                             my($ikey);
                             my($errmsg);
                             my($rv);
                             
-                            # SELECT max(T1.recnum) FROM <series> WHERE <pkey1> = <pkeyval1> AND <pkey2> = <pkeyval2> ...
+                            # SELECT max(recnum) FROM <series> WHERE <pkey1> = <pkeyval1> AND <pkey2> = <pkeyval2> ...
                              
                             $sname = lc("$ns\.$tab");
                             $shadow = $sname . &kShadowSuffix;
@@ -176,14 +234,24 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                             # Loop through prime-key keywords.
                             $ikey = 0;
                             $keylist = "";
-                            foreach my $key (@{$primekeysR})
-                            {   
+                            foreach my $key (@{$pkeynamesR})
+                            {
+                                $cleankey = &{$fCleanKey}($key);
+                                
                                 if ($ikey > 0)
                                 {
                                     $keylist = "$keylist AND ";
                                 }
                             
-                                $keylist = "${keylist}$key = " . $primekeyvalsH->{$key};
+                                if ($key =~ /\*$/)
+                                {
+                                    $keylist = "${keylist}$cleankey = \'" . $primekeyvalsH->{$cleankey} . "\'";
+                                }
+                                else
+                                {
+                                    $keylist = "${keylist}$cleankey = " . $primekeyvalsH->{$cleankey};
+                                }
+                                    
                                 $ikey++;
                             }
                             
@@ -309,6 +377,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                 my($shadow);
                                 my($stmnt);
                                 my($keylist);
+                                my($cleankey);
                                 my($errmsg);
                                 my($rv);
                                 
@@ -321,7 +390,8 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                 $keylist = "";
                                 foreach my $key (@{$pkeynamesR})
                                 {
-                                    $keylist = "$keylist$key, ";
+                                    $cleankey = &{$fCleanKey}($key);
+                                    $keylist = "$keylist$cleankey, ";
                                 }
                                
                                 $stmnt = "${stmnt}${keylist}recnum, nrecords) SELECT ${keylist}recnum, 1 FROM $sname WHERE recnum = $recno";
@@ -344,8 +414,10 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                 my($stmnt);
                                 my($ikey);
                                 my($keylist);
+                                my($cleankey);
                                 my($errmsg);
                                 my($rv);
+                                my($wasdel);
     
                                 $rv = -1;
                                 $sname = lc("$ns\.$tab");
@@ -354,13 +426,23 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                 $ikey = 0;
                                 $keylist = "";
                                 foreach my $key (@{$pkeynamesR})
-                                {   
+                                {
+                                    $cleankey = &{$fCleanKey}($key);
+                                    
                                     if ($ikey > 0)
                                     {
                                         $keylist = "$keylist AND ";
                                     }
 
-                                    $keylist = "${keylist}$key = " . $primekeyvalsH->{$key};
+                                    if ($key =~ /\*$/)
+                                    {
+                                        $keylist = "${keylist}$cleankey = \'" . $primekeyvalsH->{$cleankey} . "\'";
+                                    }
+                                    else
+                                    {
+                                        $keylist = "${keylist}$cleankey = " . $primekeyvalsH->{$cleankey};
+                                    }
+                                    
                                     $ikey++;
                                 }
 
@@ -370,7 +452,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                 if ($rv->{status} eq 'SPI_OK_SELECT' && $rv->{processed} == 1)
                                 {
                                     # The group was deleted if there are no more records
-                                    $rv = ($rv->{rows}[0]->{count} == 0);
+                                    $wasdel = ($rv->{rows}[0]->{count} == 0);
                                 }
                                 else
                                 {
@@ -378,10 +460,19 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                     elog(WARNING, $errmsg);
                                     $$statusR = 1;
                                 }
-                                
-                                return $rv;
+
+                                return $wasdel;
                             };
 
+    # This function may be a no-op. This will happen if more than one record was deleted from the series
+    # table, such that the last record deleted caused the deletion of a group, and a previous deletion
+    # was in the same group. In that case, the first time the trigger function is called, the group record
+    # will be deleted from the shadow table. This happens because all series records are deleted before
+    # the trigger function is called (and then it is called for each series record that got deleted). 
+    # The second and subsequent calls of the trigger function will not result in the deletion of any records
+    # from the shadow table, since the record has already been removed. For these calls, $rv->{processed} will
+    # be 0 since the DELETE statement does not delete anything.
+    #    
     # DELETE FROM <shadow> WHERE <pkey1> = <pkey1val> AND <pkey2> = <pkey2val> ...*/
     $fDeleteFromShadow = sub {
                                 my($ns, $tab, $pkeynamesR, $primekeyvalsH, $statusR) = @_;
@@ -390,6 +481,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                 my($stmnt);
                                 my($ikey);
                                 my($keylist);
+                                my($cleankey);
                                 my($errmsg);
                                 my($rv);
 
@@ -402,19 +494,30 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                                 $keylist = "";
                                 foreach my $key (@{$pkeynamesR})
                                 {
+                                    $cleankey = &{$fCleanKey}($key);
+                                    
                                     if ($ikey > 0)
                                     {
                                         $keylist = "$keylist AND ";
                                     }
+                                    
+                                    if ($key =~ /\*$/)
+                                    {
+                                        $keylist = "${keylist}$cleankey = \'" . $primekeyvalsH->{$cleankey} . "\'";
+                                    }
+                                    else
+                                    {
+                                        $keylist = "${keylist}$cleankey = " . $primekeyvalsH->{$cleankey};
+                                    }
 
-                                    $keylist = "${keylist}$key = " . $primekeyvalsH->{$key};
                                     $ikey++;
                                 }
-
+                                
                                 $stmnt = "DELETE FROM $shadow WHERE $keylist";
                                 
                                 $rv = spi_exec_query($stmnt);
-                                if ($rv->{status} ne 'SPI_OK_DELETE' || $rv->{processed} != 1)
+                                # Will not delete any record if the record was previously deleted.
+                                if ($rv->{status} ne 'SPI_OK_DELETE' || ($rv->{processed} != 1 && $rv->{processed} != 0))
                                 {
                                     $errmsg = "Bad delete db statement: $stmnt.";
                                     elog(WARNING, $errmsg);
@@ -432,6 +535,7 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
                   # record.
     my($recnum);
     my(@primekeys);
+    my($cleankey);
     my($primekeyvalsH);
     my($isnew);
     my($wasdel);
@@ -478,13 +582,14 @@ CREATE OR REPLACE FUNCTION public.updateshadow() RETURNS trigger AS $updateshado
         $primekeyvalsH = {};
         foreach my $pkey (@primekeys)
         {
-            $primekeyvalsH->{$pkey} = $_TD->{$datarec}{$pkey};
+            $cleankey = &{$fCleanKey}($pkey);
+            $primekeyvalsH->{$cleankey} = $_TD->{$datarec}{$cleankey};
         }
             
         if ($inserted)
         {
             # We're updating the shadow table because one or more rows was inserted into the original series table.
-            $isnew = &{$fIsGroupNew}($recnum, $_TD->{table_schema}, $_TD->{table_name}, \@primekeys, \$istat);
+            $isnew = &{$fIsGroupNew}($recnum, $_TD->{table_schema}, $_TD->{table_name}, \@primekeys, $primekeyvalsH, \$istat);
             
             if ($istat)
             {
