@@ -15,7 +15,7 @@ static int TableExists(DRMS_Session_t *session, const char *schema, const char *
     DB_Text_Result_t *qres = NULL;
     char query[256];
     
-    snprintf(query, sizeof(query), "SELECT * FROM information_schema.tables WHERE table_schema = '%s' AND table_name = '%s'", schema, table);
+    snprintf(query, sizeof(query), "SELECT * FROM pg_stat_all_tables WHERE schemaname = '%s' AND relname = '%s'", schema, table);
     
     if ((qres = drms_query_txt(session, query)) == NULL)
     {
