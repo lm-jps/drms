@@ -9,10 +9,11 @@ char *module_name = "rawingest";
 #define kMaxJSONTokens 65536 /* A very large JSON string. */
 #define kRecChunkSz 128
 
-#define kArgTest "t"
 #define kArgNotSpec "not specified"
 #define kArgSeries "series"
 #define kArgSegment "segment"
+#define kArgTest "t"
+#define kArgSetDate "d"
 
 enum RIStatus_enum 
 {
@@ -36,16 +37,23 @@ ModuleArgs_t module_args[] =
         NULL},
 
     {ARG_STRING,
-     kArgSegment,
-     NULL,
-     "The segment that will contain the data files being ingested.",
-     NULL},
+        kArgSegment,
+        NULL,
+        "The segment that will contain the data files being ingested.",
+        NULL},
     
     {ARG_STRING, 
         kArgTest,    
         kArgNotSpec,  
         "Test argument - if set, then this will be the path to a file containing json for testing.",
         NULL},
+    
+    {ARG_FLAG,
+        kArgSetDate,
+        NULL,
+        "If set, then this flag will cause the DATE keyword, if present, to be updated in every record created.",
+        NULL},
+    
     {ARG_END}
 };
 
@@ -68,6 +76,8 @@ static int GetKeyAndValue(DRMS_Record_t *orec, const char *json, jsmntok_t *toke
     char *keyval = NULL;
     DRMS_Keyword_t *drmskey = NULL;
     DRMS_Type_t type;
+    int consumed;
+    int istat;
     
     keytok = &(tokens[itok]);
     valtok = &(tokens[itok + 1]);
@@ -160,8 +170,23 @@ static int GetKeyAndValue(DRMS_Record_t *orec, const char *json, jsmntok_t *toke
             return 1;
         }
         
-        (*val)->type = type;        
-        drms_strval(type, &((*val)->value), keyval);
+        (*val)->type = type;
+
+        if (type == DRMS_TYPE_CHAR ||
+            type == DRMS_TYPE_SHORT ||
+            type == DRMS_TYPE_INT ||
+            type == DRMS_TYPE_LONGLONG)
+        {
+           (*val)->value.longlong_val = drms_types_strtoll(keyval, type, &consumed, &istat);
+           if (istat)
+           {
+              return 1;
+           }
+        }
+        else
+        {
+           drms_strval(type, &((*val)->value), keyval);
+        }
         
         *nchild = 0; /* The property value is a primitive - no objects. */
     }
@@ -354,7 +379,8 @@ int SetKeyValues(DRMS_Env_t *env,
                  int ntoproc,
                  int *nprocessed, 
                  int * hasnpk, 
-                 int *irec)
+                 int *irec,
+                 int setdate)
 {
     char *key = NULL;
     DRMS_Value_t *val = NULL;
@@ -399,6 +425,7 @@ int SetKeyValues(DRMS_Env_t *env,
             /* key is a prime-key keyword value. */
             DRMS_Keyword_t *drmskey = NULL;
             DRMS_Type_t keytype;
+            int consumed;
             int subnproc;
             int subhasnpk;
             const char *pkeyname = NULL;
@@ -480,6 +507,12 @@ int SetKeyValues(DRMS_Env_t *env,
                     {
                         rv = 1;
                         break;
+                    }
+                    
+                    /* If the user has requested that the DATE keyword be set, do that now. */
+                    if (setdate)
+                    {
+                        drms_keyword_setdate(orec);
                     }
                 }
                 
@@ -574,7 +607,23 @@ int SetKeyValues(DRMS_Env_t *env,
                 
                 keytype = drms_keyword_gettype(drmskey);
                 pkeyval.type = keytype;
-                drms_strval(keytype, &(pkeyval.value), key);
+
+                if (keytype == DRMS_TYPE_CHAR ||
+                    keytype == DRMS_TYPE_SHORT ||
+                    keytype == DRMS_TYPE_INT ||
+                    keytype == DRMS_TYPE_LONGLONG)
+                {
+                   pkeyval.value.longlong_val = drms_types_strtoll(key, keytype, &consumed, &istat);
+                   if (istat)
+                   {
+                      rv = 1;
+                      break;
+                   }
+                }
+                else
+                {
+                   drms_strval(keytype, &(pkeyval.value), key);
+                }
                 
                 /* AHH! If an element already exists in a hash container, then you cannot insert the same element again. So, 
                  * if the element already exists, delete it. */
@@ -586,7 +635,7 @@ int SetKeyValues(DRMS_Env_t *env,
                 hcon_remove(pkeyvals, pkeynamelc);                
                 hcon_insert_lower(pkeyvals, pkeys[pklev], &pkeyval);
                 
-                if (SetKeyValues(env, series, segname, chunk, final, pkeys, npkeys, pkeyvals, pklev + 1, json, tokens, ntoks, nchild, &subnproc, &subhasnpk, irec))
+                if (SetKeyValues(env, series, segname, chunk, final, pkeys, npkeys, pkeyvals, pklev + 1, json, tokens, ntoks, nchild, &subnproc, &subhasnpk, irec, setdate))
                 {
                     rv = 1;
                     break;
@@ -617,8 +666,15 @@ int SetKeyValues(DRMS_Env_t *env,
                         *chunk = NULL;
                         
                         /* Get a new chunk */
-                        *chunk = drms_create_records(env, kRecChunkSz, series, DRMS_PERMANENT, &istat);
                         *irec = 0;
+
+                        if (nproc == ntoproc)
+                        {
+                           /* No need to create a new record chunk - we're done. */
+                           break;
+                        }
+
+                        *chunk = drms_create_records(env, kRecChunkSz, series, DRMS_PERMANENT, &istat);
                     }
                     
                     orec = (*chunk)->records[*irec];
@@ -687,6 +743,7 @@ int DoIt(void)
     const char *series = NULL;
     const char *segname = NULL;
     const char *testfile = NULL;
+    int setdate;
     int istat;
     RIStatus_t rv;
     
@@ -699,6 +756,7 @@ int DoIt(void)
         series = cmdparams_get_str(&cmdparams, kArgSeries, &istat);
         segname = cmdparams_get_str(&cmdparams, kArgSegment, &istat);
         testfile = cmdparams_get_str(&cmdparams, kArgTest, &istat);
+        setdate = cmdparams_isflagset(&cmdparams, kArgSetDate);
         
         if (strcmp(testfile, kArgNotSpec) != 0)
         {
@@ -801,7 +859,7 @@ int DoIt(void)
                         
                         chunk = drms_create_records(drms_env, kRecChunkSz, series, DRMS_PERMANENT, &istat);
                         SetNextTokIndex(1); /* Skip the top-level object - it isn't of the same format as the rest. */
-                        if (SetKeyValues(drms_env, series, segname, &chunk, final, pkeys, npkeys, pkeyvals, 0, json, tokens, tokens[0].size, tokens[0].size, &nproc, &hasnpk, &irec))
+                        if (SetKeyValues(drms_env, series, segname, &chunk, final, pkeys, npkeys, pkeyvals, 0, json, tokens, tokens[0].size, tokens[0].size, &nproc, &hasnpk, &irec, setdate))
                         {
                             /* Problem setting keyword values or ingesting SUMS files. */
                             rv = kErrIngest;

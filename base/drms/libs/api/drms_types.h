@@ -1314,6 +1314,7 @@ char *drms2string(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status);
 /* Misc. utility functions. */
 int drms_printfval_raw(DRMS_Type_t type, void *val);
 int drms_fprintfval_raw(FILE *keyfile, DRMS_Type_t type, void *val);
+long long drms_types_strtoll(const char *str, DRMS_Type_t inttype, int *consumed, int *status);
 void drms_byteswap(DRMS_Type_t type, int n, char *val);
 void drms_memset(DRMS_Type_t type, int n, void *array, DRMS_Type_Value_t val);
 int drms_daxpy(DRMS_Type_t type, const double alpha, DRMS_Type_Value_t *x, 
