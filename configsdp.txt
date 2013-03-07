@@ -147,6 +147,12 @@ __PROJ__
         <subdirs>
              <subdir>apps</subdir>
         </subdirs>
+        <filters>
+             <filter>
+                  <name>COMPILER</name>
+                  <value>icc</value>
+             </filter>
+       </filters>
    </proj>
   <proj>
         <name>farside</name>
@@ -195,6 +201,12 @@ __PROJ__
         <subdirs>
             <subdir>apps</subdir>
         </subdirs>
+        <filters>
+             <filter>
+                  <name>COMPILER</name>
+                  <value>icc</value>
+             </filter>
+       </filters>
    </proj>
    <proj>
         <name>vfisv</name>
