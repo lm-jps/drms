@@ -6,7 +6,7 @@ set PERLBIN = ""
 if ($PERLBIN == "") then
     if (-e configsdp.txt) then
         # at stanford, use 
-        set PERLBIN = "/usr/local/bin/perl"
+        set PERLBIN = "/home/jsoc/bin/linux_x86_64/perl5.12.2"
     else
         set PERLBIN = "perl"
     endif
