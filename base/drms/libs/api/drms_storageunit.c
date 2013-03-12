@@ -127,10 +127,13 @@ long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir, int *tapeg
     return 0;
   }
 
+  drms_lock_server(env);
+
   if (!env->sum_thread) {
     if((stat = pthread_create(&env->sum_thread, NULL, &drms_sums_thread, 
 			      (void *) env))) {
       fprintf(stderr,"Thread creation failed: %d\n", stat);
+      drms_unlock_server(env);
       return 1;
     }
   }
@@ -145,7 +148,8 @@ long long drms_su_alloc(DRMS_Env_t *env, uint64_t size, char **sudir, int *tapeg
    * back up when there are a lot of transactions. As a result, SUM_open() may not
    * return for a while. After it returns it puts the result of the request into
    * the queue with its own tqueueAdd. The following tqueueDel has been blocked
-   * the whole time waiting for the SUMS thread to call tqueueAdd. */ 
+   * the whole time waiting for the SUMS thread to call tqueueAdd. */
+  drms_unlock_server(env);
   tqueueDel(env->sum_outbox, (long) pthread_self(), (char **)&reply);
 
   if (reply->opcode)
@@ -217,12 +221,14 @@ int drms_su_alloc2(DRMS_Env_t *env,
       return 0;
    }
 
+   drms_lock_server(env);
    if (!env->sum_thread) 
    {
       if((stat = pthread_create(&env->sum_thread, NULL, &drms_sums_thread, 
                                 (void *) env))) 
       {
-         fprintf(stderr,"Thread creation failed: %d\n", stat);          
+         fprintf(stderr,"Thread creation failed: %d\n", stat);
+         drms_unlock_server(env);
          return 1;
       }
    }
@@ -230,6 +236,7 @@ int drms_su_alloc2(DRMS_Env_t *env,
    /* Submit request to sums server thread. */
    tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
 
+   drms_unlock_server(env);
    /* Wait for reply. FIXME: add timeout. */
    tqueueDel(env->sum_outbox, (long) pthread_self(), (char **)&reply);
 
@@ -2102,12 +2109,14 @@ int drms_su_sumexport(DRMS_Env_t *env, SUMEXP_t *sumexpt)
    request->opcode = DRMS_SUMEXPORT;
    request->comment = (char *)sumexpt;
 
+   drms_lock_server(env);
    if (!env->sum_thread) 
    {
       if((drmsst = pthread_create(&env->sum_thread, NULL, &drms_sums_thread, 
                                 (void *) env))) 
       {
          fprintf(stderr, "Thread creation failed: %d\n", drmsst);
+         drms_unlock_server(env);
          return 1;
       }
    }
@@ -2115,6 +2124,7 @@ int drms_su_sumexport(DRMS_Env_t *env, SUMEXP_t *sumexpt)
    /* Submit request to sums server thread. */
    tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
 
+   drms_unlock_server(env);
    /* Wait for reply. FIXME: add timeout. */
    tqueueDel(env->sum_outbox, (long) pthread_self(), (char **)&reply);
 

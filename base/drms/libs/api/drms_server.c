@@ -771,7 +771,13 @@ void drms_server_commit(DRMS_Env_t *env, int final)
     request->opcode = DRMS_SUMCLOSE;
     tqueueAdd(env->sum_inbox, (long) pthread_self(), (char *)request);
     /* Wait for SUM service thread to finish. */
+
+    /* It is possible that the SUMS thread is blocked right now. It will call drms_lock_server(), and 
+     * if it does so after execution has entered drms_server_commit(), then we will deadlock. To
+     * forestall this problem, release the lock now. */
+    drms_unlock_server(env);
     pthread_join(env->sum_thread, NULL);
+    drms_lock_server(env);
     env->sum_thread = 0;
   }
 
