@@ -53,7 +53,7 @@ static char *datestring()
 }
 
 static KEY *retlist;		/* must be static for svc dispatch rte */
-static SUMOPENED *sumopened_hdr = NULL; /* linked list of active opens*/
+SUMOPENED *sumopened_hdr = NULL; /* linked list of active opens*/
 
 /* These are the PROGNUM called in sum_svc. They're called by 
  * sumprog_1() in sum_svc.c
@@ -608,7 +608,7 @@ KEY *infodoArray_1(Sunumarray *params)
   int reqcnt, i, status, filemode;
   double bytes = 10000000.0;
   char *partname, *effective_date;
-  char filename[128];
+  char filename[128], cmd[92];
   //char *filename = "/home/production/junk/infoarray.ans"; //!!TEMP
 
   reqcnt = params->reqcnt;
@@ -623,6 +623,10 @@ KEY *infodoArray_1(Sunumarray *params)
     return((KEY *)1);	/* nothing will be sent later */
   } 
   partname = getkey_str(retlist, "partn_name");
+  sprintf(cmd, "chmod g-w %s", partname); //don't let K. see this a dangling
+  if(system(cmd)) {
+    write_log("Error in infodoArray_1(): %s\n", cmd);
+  }
   sprintf(filename, "%s/infoarray.ans", partname);
   effective_date = (char *)get_effdate(0);
 
@@ -1038,6 +1042,8 @@ KEY *delseriesdo_1(KEY *params)
 */
 KEY *sumrespdo_1(KEY *params)
 {
+  uint64_t uid;
+
   if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
   if(debugflg) {
@@ -1050,6 +1056,17 @@ KEY *sumrespdo_1(KEY *params)
   current_client = (CLIENT *)getkey_fileptr(params, "current_client");
   rinfo = 0;
   send_ack();
+  if(findkey(params, "uid")) {	//there s/b a uid in the keylist
+    uid = getkey_uint64(params, "uid");
+    if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
+      write_log("**Error: sumrespdo_1() called with unopened uid=%lu\n", uid);
+      write_log("**Force current_client = 0 so don't respond to nonexistent user\n");
+      current_client = 0;
+    }
+  }
+  else {
+    write_log("**No uid found in keylist in sumrespdo_1()??\n");
+  }
   return(retlist);
 }
 
