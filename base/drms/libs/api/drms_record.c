@@ -1359,10 +1359,12 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
     char *ans = NULL;
     HContainer_t *goodsegcont = NULL;
     DB_Text_Result_t *tres = NULL;
+    int cursor = 0; /* The query will be run in a db cursor. */
     
     /* Must save SELECT statements if saving the query is desired (retreiverecs == 0) */
     LinkedList_t *llist = NULL;
     
+    cursor = (!retrieverecs);
     if (llistout)
     {
         llist = list_llcreate(sizeof(char *), QFree);
@@ -1654,6 +1656,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                                                         firstlast,
                                                         pkwhereNFL,
                                                         recnumq,
+                                                        1,
                                                         &stat));
                         /* Remove unrequested segments now */
                     }
@@ -1697,7 +1700,8 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                                                            allvers[iSet] == 'y',
                                                            firstlast,
                                                            pkwhereNFL,
-                                                           recnumq);
+                                                           recnumq,
+                                                           cursor);
                         list_llinserttail(llist, &selquery);
                     }
                     
@@ -4221,6 +4225,7 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
                                                         HContainer_t *firstlast,
                                                         HContainer_t *pkwhereNFL,
                                                         int recnumq,
+                                                        int cursor,
                                                         int *status)
 {
   int i,throttled;
@@ -4263,7 +4268,8 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
                                           allvers,
                                           firstlast,
                                           pkwhereNFL,
-                                          recnumq);
+                                          recnumq,
+                                          cursor);
 #ifdef DEBUG
   printf("ENTER drms_retrieve_records, env=%p, status=%p\n",env,status);
 #endif
@@ -4273,7 +4279,7 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
   printf("\nMemory used = %Zu\n\n",xmem_recenthighwater());
 #endif
 
-    /* query_string may contain more than one SQL command, but drms_query_bin does not 
+    /* query may contain more than one SQL command, but drms_query_bin does not 
      * support this. If this is the case, then the first command will be a command that
      * creates a temporary table (used by the second command). So, we need to separate the 
      * command, and issue the temp-table command separately. */
@@ -4478,6 +4484,7 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
                                         HContainer_t *firstlast,
                                         HContainer_t *pkwhereNFL,
                                         int recnumq,
+                                        int cursor, 
                                         int *status)
 {
    return drms_retrieve_records_internal(env, 
@@ -4494,6 +4501,7 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
                                          firstlast,
                                          pkwhereNFL,
                                          recnumq,
+                                         cursor, 
                                          status);
 }
 
@@ -4510,7 +4518,8 @@ char *drms_query_string(DRMS_Env_t *env,
                         int allvers,
                         HContainer_t *firstlast,
                         HContainer_t *pkwhereNFL,
-                        int recnumq) 
+                        int recnumq,
+                        int cursor) 
 {
   DRMS_Record_t *template;
   char *field_list, *query=0;
@@ -4741,23 +4750,27 @@ char *drms_query_string(DRMS_Env_t *env,
       }
     break;
   case DRMS_QUERY_FL:
-      {
-          field_list = strdup(fl);
-          recsize = drms_keylist_memsize(template, field_list);
-          if (!recsize) {
-              goto bailout;
-          }
-          
-          limit  = (long long)((0.4e6*env->query_mem)/recsize);
-          unique = *(int *)(data);
-      }
-    break;
+    /* intentional fall-through */
   case DRMS_QUERY_ALL:
+    if (qtype == DRMS_QUERY_FL)
+    {
+       field_list = strdup(fl);
+       recsize = drms_keylist_memsize(template, field_list);
+       if (!recsize) {
+          goto bailout;
+       }
+
+       unique = *(int *)(data);
+    }
+    else
+    {
+       field_list = drms_field_list(template, NULL);
+       recsize = drms_record_memsize(template);
+    }
+
       {
-          field_list = drms_field_list(template, NULL);
-          recsize = drms_record_memsize(template);
-          limit = (long long)((0.4e6*env->query_mem)/recsize);
-      
+         limit  = (long long)((0.4e6*env->query_mem)/recsize);
+
           if (!allvers)
           {
               shadowexists = drms_series_shadowexists(env, seriesname, &status);
@@ -4793,7 +4806,7 @@ char *drms_query_string(DRMS_Env_t *env,
                       if (shadowexists && !recnumq)
                       {
                           /* Use the shadow table to generate an optimized query involving all record groups. */
-                          rquery = drms_series_all_querystringA(env, seriesname, field_list, limit, &status);
+                         rquery = drms_series_all_querystringA(env, seriesname, field_list, limit, cursor, &status);
                           if (status == DRMS_SUCCESS)
                           {
                               if (env->verbose)
@@ -4830,7 +4843,7 @@ char *drms_query_string(DRMS_Env_t *env,
                       if (shadowexists && !recnumq)
                       {
                           /* Use the shadow table to generate an optimized query involving all record groups. */
-                          rquery = drms_series_all_querystringB(env, seriesname, npkwhere, field_list, limit, &status);
+                         rquery = drms_series_all_querystringB(env, seriesname, npkwhere, field_list, limit, cursor, &status);
                           if (status == DRMS_SUCCESS)
                           {
                               if (env->verbose)
@@ -4867,7 +4880,7 @@ char *drms_query_string(DRMS_Env_t *env,
                           }
                           else
                           {
-                             rquery = drms_series_all_querystringC(env, seriesname, pkwhere, field_list, limit, &status);
+                             rquery = drms_series_all_querystringC(env, seriesname, pkwhere, field_list, limit, cursor, &status);
                           }
 
                           if (status == DRMS_SUCCESS)
@@ -4897,7 +4910,7 @@ char *drms_query_string(DRMS_Env_t *env,
                           }
                           else
                           {
-                              rquery = drms_series_all_querystringD(env, seriesname, pkwhere, npkwhere, field_list, limit, &status);
+                             rquery = drms_series_all_querystringD(env, seriesname, pkwhere, npkwhere, field_list, limit, cursor, &status);
                           }
 
                           if (status == DRMS_SUCCESS)
@@ -9326,6 +9339,7 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                                                                NULL,
                                                                NULL,
                                                                0,
+                                                               1,
                                                                &stat);
 
                   free(seriesname);
@@ -9996,7 +10010,7 @@ int drms_count_records(DRMS_Env_t *env, const char *recordsetname, int *status)
                         goto failure;
                     }
                     
-                    query = drms_query_string(env, seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_COUNT, NULL, NULL, allvers, firstlast, pkwhereNFL, recnumq);
+                    query = drms_query_string(env, seriesname, where, pkwhere, npkwhere, filter, mixed, DRMS_QUERY_COUNT, NULL, NULL, allvers, firstlast, pkwhereNFL, recnumq, 0);
                     
                     if (!query)
                     {
@@ -10118,9 +10132,21 @@ DRMS_Array_t *drms_record_getvector(DRMS_Env_t *env,
                              allvers,
                              firstlast,
                              pkwhereNFL,
-                             recnumq);
+                             recnumq,
+                             0);
    if (!query)
      goto failure;
+    
+    /* query may contain more than one SQL command, but drms_query_bin does not 
+     * support this. If this is the case, then the first command will be a command that
+     * creates a temporary table (used by the second command). So, we need to separate the 
+     * command, and issue the temp-table command separately. */
+    if (ParseAndExecTempTableSQL(env->session, &query))
+    {
+        stat = DRMS_ERROR_QUERYFAILED;
+        fprintf(stderr, "Failed in drms_record_getvector, query = '%s'\n",query);
+        goto failure;
+    }
 
    bres = drms_query_bin(env->session,  query);
 

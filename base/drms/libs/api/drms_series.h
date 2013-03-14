@@ -227,15 +227,16 @@ int drms_series_shadowexists(DRMS_Env_t *env, const char *series, int *status);
 int drms_series_createshadow(DRMS_Env_t *env, const char *series);
 void drms_series_setcreateshadows(DRMS_Env_t *env, int *val);
 void drms_series_unsetcreateshadows(DRMS_Env_t *env);
-char *drms_series_all_querystringA(DRMS_Env_t *env, const char *series, const char *fields, int limit, int *status);
-char *drms_series_all_querystringB(DRMS_Env_t *env, const char *series, const char *npkwhere, const char *fields, int limit, int *status);
-char *drms_series_all_querystringC(DRMS_Env_t *env, const char *series, const char *pkwhere, const char *fields, int limit, int *status);
+char *drms_series_all_querystringA(DRMS_Env_t *env, const char *series, const char *fields, int limit, int cursor, int *status);
+char *drms_series_all_querystringB(DRMS_Env_t *env, const char *series, const char *npkwhere, const char *fields, int limit, int cursor, int *status);
+char *drms_series_all_querystringC(DRMS_Env_t *env, const char *series, const char *pkwhere, const char *fields, int limit, int cursor, int *status);
 char *drms_series_all_querystringD(DRMS_Env_t *env,
                                    const char *series,
                                    const char *pkwhere,
                                    const char *npkwhere,
                                    const char *fields,
                                    int limit,
+                                   int cursor, 
                                    int *status);
 char *drms_series_all_querystringFL(DRMS_Env_t *env, const char *seriesname, const char *npkwhere, HContainer_t *pkwhereNFL, const char *fields, int limit, HContainer_t *firstlast, int *status);
 

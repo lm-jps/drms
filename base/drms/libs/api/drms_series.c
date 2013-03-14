@@ -20,6 +20,7 @@
 #define kShadowColNRecs "nrecords"
 #define kShadowTrig "updateshadowtrig"
 #define kShadowTrigFxn "updateshadow"
+#define kLimitCutoff 100000
 
 #if (defined TRACKSHADOWS && TRACKSHADOWS)
     #define kShadowTrackTab "drms.shadowtrack"
@@ -5073,7 +5074,7 @@ void drms_series_unsetcreateshadows(DRMS_Env_t *env)
  *
  * SPEED - The cursor declaration is instantaneous, and the first FETCH takes only a second (on su_arta.hmilev1). This is ideal!
  */
-char *drms_series_all_querystringA(DRMS_Env_t *env, const char *series, const char *fields, int limit, int *status)
+char *drms_series_all_querystringA(DRMS_Env_t *env, const char *series, const char *fields, int limit, int cursor, int *status)
 {
     char *query = NULL;
     int istat = DRMS_SUCCESS;
@@ -5082,6 +5083,7 @@ char *drms_series_all_querystringA(DRMS_Env_t *env, const char *series, const ch
     char *qualfields = NULL;
     char *qualpkeylist = NULL;
     char limitstr[32];
+    char tabname[256];
     char shadow[DRMS_MAXSERIESNAMELEN];
     
     lcseries = strdup(series);
@@ -5098,31 +5100,72 @@ char *drms_series_all_querystringA(DRMS_Env_t *env, const char *series, const ch
             snprintf(shadow, sizeof(shadow), "%s%s", lcseries, kShadowSuffix);
             snprintf(limitstr, sizeof(limitstr), "%d", limit);
             
-            /* Prepend all column names in fields with T1 (just in case the series table has a column named "therec"). */
-            qualfields = PrependFields(fields, "T1.", &istat);
-            
-            /* Create a list of all prime key names. */
-            qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, NULL, NULL, &istat);
-
-            if (istat == DRMS_SUCCESS)
-            {                
-                /* Select the records from the series table. */
-                query = base_strcatalloc(query, "SELECT ", &stsz);
-                query = base_strcatalloc(query, qualfields, &stsz);
-                query = base_strcatalloc(query, " FROM ", &stsz);
-                query = base_strcatalloc(query, lcseries, &stsz);
-                query = base_strcatalloc(query, " AS T1 JOIN ", &stsz);
-                query = base_strcatalloc(query, shadow, &stsz);
-                query = base_strcatalloc(query, " AS T2 ON (T1.recnum = T2.recnum) ORDER BY ", &stsz);
-                query = base_strcatalloc(query, qualpkeylist, &stsz);
-                query = base_strcatalloc(query, " LIMIT ", &stsz);
-                query = base_strcatalloc(query, limitstr, &stsz);
+            if (limit > kLimitCutoff && !cursor)
+            {
+                /* Use a temp table - if there is no cursor and the limit is too big, the non-temp-table solution 
+                 * sucks. */
+                if (GetTempTable(tabname, sizeof(tabname)))
+                {
+                    istat = DRMS_ERROR_OVERFLOW;
+                }
+                else
+                {
+                    qualpkeylist = CreatePKeyList(env, series, "", NULL, NULL, NULL, &istat);
+                    
+                    if (istat == DRMS_SUCCESS)
+                    {
+                        /* Create the temporary table. */
+                        query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
+                        query = base_strcatalloc(query, tabname, &stsz);
+                        query = base_strcatalloc(query, " AS SELECT recnum FROM ", &stsz);
+                        query = base_strcatalloc(query, shadow, &stsz);
+                        query = base_strcatalloc(query, ";\n", &stsz);
+                        
+                        /* Select the records from the series table. */
+                        query = base_strcatalloc(query, "SELECT ", &stsz);
+                        query = base_strcatalloc(query, fields, &stsz);
+                        query = base_strcatalloc(query, " FROM ", &stsz);
+                        query = base_strcatalloc(query, lcseries, &stsz);
+                        query = base_strcatalloc(query, " WHERE recnum IN (SELECT recnum FROM ", &stsz);
+                        query = base_strcatalloc(query, tabname, &stsz);
+                        query = base_strcatalloc(query, ") ORDER BY ", &stsz);
+                        query = base_strcatalloc(query, qualpkeylist, &stsz);
+                        query = base_strcatalloc(query, " LIMIT ", &stsz);
+                        query = base_strcatalloc(query, limitstr, &stsz);
+                        
+                        free(qualpkeylist);
+                        qualpkeylist = NULL;
+                    }
+                }           
             }
-             
-            free(qualpkeylist);
-            qualpkeylist = NULL;
-            free(qualfields);
-            qualfields = NULL;
+            else
+            {
+                /* Prepend all column names in fields with T1 (just in case the series table has a column named "therec"). */
+                qualfields = PrependFields(fields, "T1.", &istat);
+                
+                /* Create a list of all prime key names. */
+                qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, NULL, NULL, &istat);
+                
+                if (istat == DRMS_SUCCESS)
+                {                
+                    /* Select the records from the series table. */
+                    query = base_strcatalloc(query, "SELECT ", &stsz);
+                    query = base_strcatalloc(query, qualfields, &stsz);
+                    query = base_strcatalloc(query, " FROM ", &stsz);
+                    query = base_strcatalloc(query, lcseries, &stsz);
+                    query = base_strcatalloc(query, " AS T1 JOIN ", &stsz);
+                    query = base_strcatalloc(query, shadow, &stsz);
+                    query = base_strcatalloc(query, " AS T2 ON (T1.recnum = T2.recnum) ORDER BY ", &stsz);
+                    query = base_strcatalloc(query, qualpkeylist, &stsz);
+                    query = base_strcatalloc(query, " LIMIT ", &stsz);
+                    query = base_strcatalloc(query, limitstr, &stsz);
+                }
+                
+                free(qualpkeylist);
+                qualpkeylist = NULL;
+                free(qualfields);
+                qualfields = NULL;
+            }
         }
         else
         {
@@ -5177,7 +5220,7 @@ char *drms_series_all_querystringA(DRMS_Env_t *env, const char *series, const ch
  *   but the FETCH is a bit slow. But the performance when there are 7.5 million resulting rows isn't too bad.
  *   the first FETCH takes about 15 seconds to return.
  */
-char *drms_series_all_querystringB(DRMS_Env_t *env, const char *series, const char *npkwhere, const char *fields, int limit, int *status)
+char *drms_series_all_querystringB(DRMS_Env_t *env, const char *series, const char *npkwhere, const char *fields, int limit, int cursor, int *status)
 {
     char *query = NULL;
     int istat = DRMS_SUCCESS;
@@ -5188,6 +5231,8 @@ char *drms_series_all_querystringB(DRMS_Env_t *env, const char *series, const ch
     char *qualnpkwhere = NULL;
     char limitstr[32];
     char shadow[DRMS_MAXSERIESNAMELEN];
+    char tabname[256];
+
     lcseries = strdup(series);
     
     if (lcseries)
@@ -5202,50 +5247,106 @@ char *drms_series_all_querystringB(DRMS_Env_t *env, const char *series, const ch
             snprintf(shadow, sizeof(shadow), "%s%s", lcseries, kShadowSuffix);
             snprintf(limitstr, sizeof(limitstr), "%d", limit);
             
-            /* Prepend all column names in fields with T1 (just in case the series table has a column named "therec"). */
-            qualfields = PrependFields(fields, "T1.", &istat);
-            
-            if (istat == DRMS_SUCCESS)
+            if (limit > kLimitCutoff && !cursor)
             {
-                /* It is possible that npkwhere could be recnum (for the [:#X] notation). If this is
-                 * the case, then npkwhere will have recnum in it, and then "recnum" is ambiguous. We must prepend 
-                 * with T1. */
-                qualnpkwhere = base_strcasereplace(npkwhere, "recnum", "T1.recnum");
-            }
-            
-            if (qualnpkwhere)
-            {
-                /* Create a list of all prime key names. */
-                qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, NULL, NULL, &istat);
+                /* Use a temp table - if there is no cursor and the limit is too big, the non-temp-table solution 
+                 * sucks. */
+                if (GetTempTable(tabname, sizeof(tabname)))
+                {
+                    istat = DRMS_ERROR_OVERFLOW;
+                }
+                else
+                {
+                    qualpkeylist = CreatePKeyList(env, series, "", NULL, NULL, NULL, &istat);
+                    
+                    if (istat == DRMS_SUCCESS)
+                    {
+                        /* Create the temporary table. */
+                        query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
+                        query = base_strcatalloc(query, tabname, &stsz);
+                        query = base_strcatalloc(query, " AS SELECT recnum FROM ", &stsz);
+                        query = base_strcatalloc(query, shadow, &stsz);
+                        query = base_strcatalloc(query, ";\n", &stsz);
+                        
+                        /* Select the records from the series table. */
+                        query = base_strcatalloc(query, "SELECT ", &stsz);
+                        query = base_strcatalloc(query, fields, &stsz);
+                        query = base_strcatalloc(query, " FROM ", &stsz);
+                        query = base_strcatalloc(query, lcseries, &stsz);
+                        query = base_strcatalloc(query, " WHERE recnum IN (SELECT recnum FROM ", &stsz);
+                        query = base_strcatalloc(query, tabname, &stsz);
+                        query = base_strcatalloc(query, ") AND ", &stsz);
+                        query = base_strcatalloc(query, npkwhere, &stsz);
+                        query = base_strcatalloc(query, " ORDER BY ", &stsz);
+                        query = base_strcatalloc(query, qualpkeylist, &stsz);
+                        query = base_strcatalloc(query, " LIMIT ", &stsz);
+                        query = base_strcatalloc(query, limitstr, &stsz);
+                        
+                        free(qualpkeylist);
+                        qualpkeylist = NULL;
+                    }
+                }           
             }
             else
             {
-                istat = DRMS_ERROR_OUTOFMEMORY;
+                /* Prepend all column names in fields with T1 (just in case the series table has a column named "therec"). */
+                qualfields = PrependFields(fields, "T1.", &istat);
+                
+                if (istat == DRMS_SUCCESS)
+                {
+                    /* It is possible that npkwhere could be recnum (for the [:#X] notation). If this is
+                     * the case, then npkwhere will have recnum in it, and then "recnum" is ambiguous. We must prepend 
+                     * with T1. */
+                    qualnpkwhere = base_strcasereplace(npkwhere, "recnum", "T1.recnum");
+                }
+                
+                if (qualnpkwhere)
+                {
+                    /* Must prepend all prime-key column names in npkwhere with T2., otherwise the query has an ambiguity
+                     * since both T1 and T2 have the prime-key columns. */
+                    char *tmp = NULL;
+                    tmp = PrependWhere(env, qualnpkwhere, series, "T2.", &istat);
+                    if (istat == DRMS_SUCCESS)
+                    {
+                        free(qualnpkwhere);
+                        qualnpkwhere = tmp;
+                    }
+                }
+                else
+                {
+                    istat = DRMS_ERROR_OUTOFMEMORY;
+                }
+                
+                if (istat == DRMS_SUCCESS)
+                {
+                    /* Create a list of all prime key names. */
+                    qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, NULL, NULL, &istat);
+                }
+                
+                if (istat == DRMS_SUCCESS)
+                {
+                    /* Select the records from the series table. */
+                    query = base_strcatalloc(query, "SELECT ", &stsz);
+                    query = base_strcatalloc(query, qualfields, &stsz);
+                    query = base_strcatalloc(query, " FROM ", &stsz);
+                    query = base_strcatalloc(query, lcseries, &stsz);
+                    query = base_strcatalloc(query, " AS T1 JOIN ", &stsz);
+                    query = base_strcatalloc(query, shadow, &stsz);
+                    query = base_strcatalloc(query, " AS T2 ON (T1.recnum = T2.recnum) WHERE ", &stsz);
+                    query = base_strcatalloc(query, qualnpkwhere, &stsz);
+                    query = base_strcatalloc(query, " ORDER BY ", &stsz);
+                    query = base_strcatalloc(query, qualpkeylist, &stsz);
+                    query = base_strcatalloc(query, " LIMIT ", &stsz);
+                    query = base_strcatalloc(query, limitstr, &stsz);
+                }
+                
+                free(qualnpkwhere);
+                qualnpkwhere = NULL;
+                free(qualpkeylist);
+                qualpkeylist = NULL;
+                free(qualfields);
+                qualfields = NULL;
             }
-            
-            if (istat == DRMS_SUCCESS)
-            {
-                /* Select the records from the series table. */
-                query = base_strcatalloc(query, "SELECT ", &stsz);
-                query = base_strcatalloc(query, qualfields, &stsz);
-                query = base_strcatalloc(query, " FROM ", &stsz);
-                query = base_strcatalloc(query, lcseries, &stsz);
-                query = base_strcatalloc(query, " AS T1 JOIN ", &stsz);
-                query = base_strcatalloc(query, shadow, &stsz);
-                query = base_strcatalloc(query, " AS T2 ON (T1.recnum = T2.recnum) WHERE ", &stsz);
-                query = base_strcatalloc(query, qualnpkwhere, &stsz);
-                query = base_strcatalloc(query, " ORDER BY ", &stsz);
-                query = base_strcatalloc(query, qualpkeylist, &stsz);
-                query = base_strcatalloc(query, " LIMIT ", &stsz);
-                query = base_strcatalloc(query, limitstr, &stsz);
-            }
-            
-            free(qualnpkwhere);
-            qualnpkwhere = NULL;
-            free(qualpkeylist);
-            qualpkeylist = NULL;
-            free(qualfields);
-            qualfields = NULL;
         }
         else
         {
@@ -5298,7 +5399,7 @@ char *drms_series_all_querystringB(DRMS_Env_t *env, const char *series, const ch
  * 
  * SPEED: Excellent!
  */
-char *drms_series_all_querystringC(DRMS_Env_t *env, const char *series, const char *pkwhere, const char *fields, int limit, int *status)
+char *drms_series_all_querystringC(DRMS_Env_t *env, const char *series, const char *pkwhere, const char *fields, int limit, int cursor, int *status)
 {
     char *query = NULL;
     int istat = DRMS_SUCCESS;
@@ -5308,6 +5409,7 @@ char *drms_series_all_querystringC(DRMS_Env_t *env, const char *series, const ch
     char *qualpkeylist = NULL;
     char *qualpkwhere = NULL;
     char limitstr[32];
+    char tabname[256];
     char shadow[DRMS_MAXSERIESNAMELEN];
     
     lcseries = strdup(series);
@@ -5324,46 +5426,88 @@ char *drms_series_all_querystringC(DRMS_Env_t *env, const char *series, const ch
             snprintf(shadow, sizeof(shadow), "%s%s", lcseries, kShadowSuffix);
             snprintf(limitstr, sizeof(limitstr), "%d", limit);
             
-            /* Prepend all column names in fields with T1 (just in case the series table has a column named "therec"). */
-            qualfields = PrependFields(fields, "T1.", &istat);
-            
-            /* Create a list of all prime key names. */
-            if (istat == DRMS_SUCCESS)
+            if (limit > kLimitCutoff && !cursor)
             {
-                qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, NULL, NULL, &istat);
+                /* Use a temp table - if there is no cursor and the limit is too big, the non-temp-table solution 
+                 * sucks. */
+                if (GetTempTable(tabname, sizeof(tabname)))
+                {
+                    istat = DRMS_ERROR_OVERFLOW;
+                }
+                else
+                {
+                    qualpkeylist = CreatePKeyList(env, series, "", NULL, NULL, NULL, &istat);
+                    
+                    if (istat == DRMS_SUCCESS)
+                    {
+                        /* Create the temporary table. */
+                        query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
+                        query = base_strcatalloc(query, tabname, &stsz);
+                        query = base_strcatalloc(query, " AS SELECT recnum FROM ", &stsz);
+                        query = base_strcatalloc(query, shadow, &stsz);
+                        query = base_strcatalloc(query, " WHERE ", &stsz);
+                        query = base_strcatalloc(query, pkwhere, &stsz);
+                        query = base_strcatalloc(query, ";\n", &stsz);
+                        /* Select the records from the series table. */
+                        query = base_strcatalloc(query, "SELECT ", &stsz);
+                        query = base_strcatalloc(query, fields, &stsz);
+                        query = base_strcatalloc(query, " FROM ", &stsz);
+                        query = base_strcatalloc(query, lcseries, &stsz);
+                        query = base_strcatalloc(query, " WHERE recnum IN (SELECT recnum FROM ", &stsz);
+                        query = base_strcatalloc(query, tabname, &stsz);
+                        query = base_strcatalloc(query, ") ORDER BY ", &stsz);
+                        query = base_strcatalloc(query, qualpkeylist, &stsz);
+                        query = base_strcatalloc(query, " LIMIT ", &stsz);
+                        query = base_strcatalloc(query, limitstr, &stsz);
+                        
+                        free(qualpkeylist);
+                        qualpkeylist = NULL;
+                    }
+                }           
             }
-            
-            /* Must prepend all prime-key column names with T2., otherwise the query has an ambiguity
-             * since both T1 and T2 have the prime-key columns. Use a function that does a search and 
-             * replace. */
-            if (istat == DRMS_SUCCESS)
+            else
             {
-                qualpkwhere = PrependWhere(env, pkwhere, series, "T2.", &istat);
+                /* Prepend all column names in fields with T1 (just in case the series table has a column named "therec"). */
+                qualfields = PrependFields(fields, "T1.", &istat);
+                
+                /* Create a list of all prime key names. */
+                if (istat == DRMS_SUCCESS)
+                {
+                    qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, NULL, NULL, &istat);
+                }
+                
+                /* Must prepend all prime-key column names with T2., otherwise the query has an ambiguity
+                 * since both T1 and T2 have the prime-key columns. Use a function that does a search and 
+                 * replace. */
+                if (istat == DRMS_SUCCESS)
+                {
+                    qualpkwhere = PrependWhere(env, pkwhere, series, "T2.", &istat);
+                }
+                
+                if (istat == DRMS_SUCCESS)
+                {
+                    /* Select the records from the series table. */
+                    query = base_strcatalloc(query, "SELECT ", &stsz);
+                    query = base_strcatalloc(query, qualfields, &stsz);
+                    query = base_strcatalloc(query, " FROM ", &stsz);
+                    query = base_strcatalloc(query, lcseries, &stsz);
+                    query = base_strcatalloc(query, " AS T1 JOIN ", &stsz);
+                    query = base_strcatalloc(query, shadow, &stsz);
+                    query = base_strcatalloc(query, " AS T2 ON (T1.recnum = T2.recnum) WHERE ", &stsz);                
+                    query = base_strcatalloc(query, qualpkwhere, &stsz);
+                    query = base_strcatalloc(query, " ORDER BY ", &stsz);
+                    query = base_strcatalloc(query, qualpkeylist, &stsz);
+                    query = base_strcatalloc(query, " LIMIT ", &stsz);
+                    query = base_strcatalloc(query, limitstr, &stsz);
+                }
+                
+                free(qualpkwhere);
+                qualpkwhere = NULL;
+                free(qualpkeylist);
+                qualpkeylist = NULL;
+                free(qualfields);
+                qualfields = NULL;
             }
-            
-            if (istat == DRMS_SUCCESS)
-            {
-                /* Select the records from the series table. */
-                query = base_strcatalloc(query, "SELECT ", &stsz);
-                query = base_strcatalloc(query, qualfields, &stsz);
-                query = base_strcatalloc(query, " FROM ", &stsz);
-                query = base_strcatalloc(query, lcseries, &stsz);
-                query = base_strcatalloc(query, " AS T1 JOIN ", &stsz);
-                query = base_strcatalloc(query, shadow, &stsz);
-                query = base_strcatalloc(query, " AS T2 ON (T1.recnum = T2.recnum) WHERE ", &stsz);                
-                query = base_strcatalloc(query, qualpkwhere, &stsz);
-                query = base_strcatalloc(query, " ORDER BY ", &stsz);
-                query = base_strcatalloc(query, qualpkeylist, &stsz);
-                query = base_strcatalloc(query, " LIMIT ", &stsz);
-                query = base_strcatalloc(query, limitstr, &stsz);
-            }
-            
-            free(qualpkwhere);
-            qualpkwhere = NULL;
-            free(qualpkeylist);
-            qualpkeylist = NULL;
-            free(qualfields);
-            qualfields = NULL;
         }
         else
         {
@@ -5417,7 +5561,7 @@ char *drms_series_all_querystringC(DRMS_Env_t *env, const char *series, const ch
  *
  * SPEED: Excellent!
  */
-char *drms_series_all_querystringD(DRMS_Env_t *env, const char *series, const char *pkwhere, const char *npkwhere, const char *fields, int limit, int *status)
+char *drms_series_all_querystringD(DRMS_Env_t *env, const char *series, const char *pkwhere, const char *npkwhere, const char *fields, int limit, int cursor, int *status)
 {
     char *query = NULL;
     int istat = DRMS_SUCCESS;
@@ -5428,6 +5572,7 @@ char *drms_series_all_querystringD(DRMS_Env_t *env, const char *series, const ch
     char *qualpkwhere = NULL;
     char limitstr[32];
     char shadow[DRMS_MAXSERIESNAMELEN];
+    char tabname[256];
     
     lcseries = strdup(series);
     
@@ -5443,48 +5588,94 @@ char *drms_series_all_querystringD(DRMS_Env_t *env, const char *series, const ch
             snprintf(shadow, sizeof(shadow), "%s%s", lcseries, kShadowSuffix);
             snprintf(limitstr, sizeof(limitstr), "%d", limit);
             
-            /* Prepend all column names in fields with T1 (just in case the series table has a column named "therec"). */
-            qualfields = PrependFields(fields, "T1.", &istat);
-            
-            /* Create a list of all prime key names. */
-            if (istat == DRMS_SUCCESS)
+            if (limit > kLimitCutoff && !cursor)
             {
-                qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, NULL, NULL, &istat);
+                /* Use a temp table - if there is no cursor and the limit is too big, the non-temp-table solution 
+                 * sucks. */
+                if (GetTempTable(tabname, sizeof(tabname)))
+                {
+                    istat = DRMS_ERROR_OVERFLOW;
+                }
+                else
+                {
+                    qualpkeylist = CreatePKeyList(env, series, "", NULL, NULL, NULL, &istat);
+                    
+                    if (istat == DRMS_SUCCESS)
+                    {
+                        /* Create the temporary table. */
+                        query = base_strcatalloc(query, "CREATE TEMPORARY TABLE ", &stsz);
+                        query = base_strcatalloc(query, tabname, &stsz);
+                        query = base_strcatalloc(query, " AS SELECT recnum FROM ", &stsz);
+                        query = base_strcatalloc(query, shadow, &stsz);
+                        query = base_strcatalloc(query, " WHERE ", &stsz);
+                        query = base_strcatalloc(query, pkwhere, &stsz);
+                        query = base_strcatalloc(query, ";\n", &stsz);
+                        
+                        /* Select the records from the series table. */
+                        query = base_strcatalloc(query, "SELECT ", &stsz);
+                        query = base_strcatalloc(query, fields, &stsz);
+                        query = base_strcatalloc(query, " FROM ", &stsz);
+                        query = base_strcatalloc(query, lcseries, &stsz);
+                        query = base_strcatalloc(query, " WHERE recnum IN (SELECT recnum FROM ", &stsz);
+                        query = base_strcatalloc(query, tabname, &stsz);
+                        query = base_strcatalloc(query, ") AND ", &stsz);
+                        query = base_strcatalloc(query, npkwhere, &stsz);
+                        query = base_strcatalloc(query, " ORDER BY ", &stsz);
+                        query = base_strcatalloc(query, qualpkeylist, &stsz);
+                        query = base_strcatalloc(query, " LIMIT ", &stsz);
+                        query = base_strcatalloc(query, limitstr, &stsz);
+                        
+                        free(qualpkeylist);
+                        qualpkeylist = NULL;
+                    }
+                }           
             }
-            
-            /* Must prepend all prime-key column names with T2., otherwise the query has an ambiguity
-             * since both T1 and T2 have the prime-key columns. Use a function that does a search and 
-             * replace. */
-            if (istat == DRMS_SUCCESS)
+            else
             {
-                qualpkwhere = PrependWhere(env, pkwhere, series, "T2.", &istat);
+                
+                /* Prepend all column names in fields with T1 (just in case the series table has a column named "therec"). */
+                qualfields = PrependFields(fields, "T1.", &istat);
+                
+                /* Create a list of all prime key names. */
+                if (istat == DRMS_SUCCESS)
+                {
+                    qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, NULL, NULL, &istat);
+                }
+                
+                /* Must prepend all prime-key column names with T2., otherwise the query has an ambiguity
+                 * since both T1 and T2 have the prime-key columns. Use a function that does a search and 
+                 * replace. */
+                if (istat == DRMS_SUCCESS)
+                {
+                    qualpkwhere = PrependWhere(env, pkwhere, series, "T2.", &istat);
+                }
+                
+                if (istat == DRMS_SUCCESS)
+                {
+                    /* Select the records from the series table. */
+                    query = base_strcatalloc(query, "SELECT ", &stsz);
+                    query = base_strcatalloc(query, qualfields, &stsz);
+                    query = base_strcatalloc(query, " FROM ", &stsz);
+                    query = base_strcatalloc(query, lcseries, &stsz);
+                    query = base_strcatalloc(query, " AS T1 JOIN ", &stsz);
+                    query = base_strcatalloc(query, shadow, &stsz);
+                    query = base_strcatalloc(query, " AS T2 ON (T1.recnum = T2.recnum) WHERE ", &stsz);
+                    query = base_strcatalloc(query, qualpkwhere, &stsz);
+                    query = base_strcatalloc(query, " AND ", &stsz);
+                    query = base_strcatalloc(query, npkwhere, &stsz);
+                    query = base_strcatalloc(query, " ORDER BY ", &stsz);
+                    query = base_strcatalloc(query, qualpkeylist, &stsz);
+                    query = base_strcatalloc(query, " LIMIT ", &stsz);
+                    query = base_strcatalloc(query, limitstr, &stsz);
+                }
+                
+                free(qualpkwhere);
+                qualpkwhere = NULL;            
+                free(qualpkeylist);
+                qualpkeylist = NULL;
+                free(qualfields);
+                qualfields = NULL;
             }
-            
-            if (istat == DRMS_SUCCESS)
-            {
-                /* Select the records from the series table. */
-                query = base_strcatalloc(query, "SELECT ", &stsz);
-                query = base_strcatalloc(query, qualfields, &stsz);
-                query = base_strcatalloc(query, " FROM ", &stsz);
-                query = base_strcatalloc(query, lcseries, &stsz);
-                query = base_strcatalloc(query, " AS T1 JOIN ", &stsz);
-                query = base_strcatalloc(query, shadow, &stsz);
-                query = base_strcatalloc(query, " AS T2 ON (T1.recnum = T2.recnum) WHERE ", &stsz);
-                query = base_strcatalloc(query, qualpkwhere, &stsz);
-                query = base_strcatalloc(query, " AND ", &stsz);
-                query = base_strcatalloc(query, npkwhere, &stsz);
-                query = base_strcatalloc(query, " ORDER BY ", &stsz);
-                query = base_strcatalloc(query, qualpkeylist, &stsz);
-                query = base_strcatalloc(query, " LIMIT ", &stsz);
-                query = base_strcatalloc(query, limitstr, &stsz);
-            }
-            
-            free(qualpkwhere);
-            qualpkwhere = NULL;            
-            free(qualpkeylist);
-            qualpkeylist = NULL;
-            free(qualfields);
-            qualfields = NULL;
         }
         else
         {
@@ -5797,6 +5988,7 @@ char *drms_series_n_querystringB(DRMS_Env_t *env, const char *series, const char
     char *qualpkeylist = NULL;
     char *orderpkeylist = NULL; /* A comma-separated list of primary-key constituents. Each
                                  * key name will have " DESC" appeneded if nrecs < 0. */
+    char *qualnpkwhere = NULL;
     char limitstr[32];
     char shadow[DRMS_MAXSERIESNAMELEN];
     char tabname[256];
@@ -5847,31 +6039,50 @@ char *drms_series_n_querystringB(DRMS_Env_t *env, const char *series, const char
                 query = base_strcatalloc(query, " AS T1 JOIN ", &stsz);
                 query = base_strcatalloc(query, lcseries, &stsz);
                 query = base_strcatalloc(query, " AS T2 ON (T1.recnum = T2.recnum) WHERE ", &stsz);
-                query = base_strcatalloc(query, npkwhere, &stsz);
-                query = base_strcatalloc(query, " ORDER BY ", &stsz);
-                query = base_strcatalloc(query, orderpkeylist, &stsz);
-                query = base_strcatalloc(query, " LIMIT ", &stsz);
                 
-                if (limit < abs(nrecs))
+                /* Man, people can put a prime-key where clause in the place where a non-prime-key should be. 
+                 * For example, series[][? pkey > 0 ?]. So we need to prefix each keyword in the npkwhere clause. In general,
+                 * the keywords in the npkwhere clause will not exist in the shadow table, so prefix each such keyword 
+                 * with T2 (the series table). 
+                 *
+                 * PrependWhere() will prepend pkey names only. That is ok since the only keywords that will 
+                 * lead to ambiguity about which table the keyword resides in are prime-key keywords. */
+                qualnpkwhere = PrependWhere(env, npkwhere, series, "T1.", &istat);
+                
+                if (istat == DRMS_SUCCESS)
                 {
-                    query = base_strcatalloc(query, limitstr, &stsz);
+                    query = base_strcatalloc(query, qualnpkwhere, &stsz);
+                    query = base_strcatalloc(query, " ORDER BY ", &stsz);
+                    query = base_strcatalloc(query, orderpkeylist, &stsz);
+                    query = base_strcatalloc(query, " LIMIT ", &stsz);
+                    
+                    if (limit < abs(nrecs))
+                    {
+                        query = base_strcatalloc(query, limitstr, &stsz);
+                    }
+                    else
+                    {
+                        query = base_strcatalloc(query, nrecsstr, &stsz);
+                    }
+                    
+                    query = base_strcatalloc(query, ";\n", &stsz);
+                    
+                    /* Select the records from the series table. */
+                    query = base_strcatalloc(query, "SELECT ", &stsz);
+                    query = base_strcatalloc(query, qualfields, &stsz);
+                    query = base_strcatalloc(query, " FROM ", &stsz);
+                    query = base_strcatalloc(query, lcseries, &stsz);
+                    query = base_strcatalloc(query, " AS T1 WHERE T1.recnum IN (SELECT recnum FROM ", &stsz);
+                    query = base_strcatalloc(query, tabname, &stsz);                
+                    query = base_strcatalloc(query, ") ORDER BY ", &stsz);
+                    query = base_strcatalloc(query, qualpkeylist, &stsz);
                 }
-                else
-                {
-                    query = base_strcatalloc(query, nrecsstr, &stsz);
-                }
-                
-                query = base_strcatalloc(query, ";\n", &stsz);
-                
-                /* Select the records from the series table. */
-                query = base_strcatalloc(query, "SELECT ", &stsz);
-                query = base_strcatalloc(query, qualfields, &stsz);
-                query = base_strcatalloc(query, " FROM ", &stsz);
-                query = base_strcatalloc(query, lcseries, &stsz);
-                query = base_strcatalloc(query, " AS T1 WHERE T1.recnum IN (SELECT recnum FROM ", &stsz);
-                query = base_strcatalloc(query, tabname, &stsz);                
-                query = base_strcatalloc(query, ") ORDER BY ", &stsz);
-                query = base_strcatalloc(query, qualpkeylist, &stsz);
+            }
+            
+            if (qualnpkwhere)
+            {
+                free(qualnpkwhere);
+                qualnpkwhere = NULL;
             }
             
             free(orderpkeylist);
