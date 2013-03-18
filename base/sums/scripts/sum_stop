@@ -40,7 +40,7 @@ if ($user ne $SUMGR) {
 }
 $GREPPS = `id -u`;
 chomp ($GREPPS);
-$host = `hostname`;
+$host = `hostname -s`;
 chomp ($host);
 $host = lc ($host);
 if($host ne $HOST) {
