@@ -259,6 +259,7 @@ void setup()
   gethostname(hostn, 80);
   cptr = index(hostn, '.');     // must be short form
   if(cptr) *cptr = (char)NULL;
+  gettimetag();
   //how to call this sum process back
   sumprog = SUMPROG;
   sumvers = SUMVERS;
@@ -323,7 +324,7 @@ int main(int argc, char *argv[])
   char *args[5], pgport[32];
 
   get_cmd(argc, argv);
-  printf("\nPlease wait for sum_svc and tape inventory to initialize...\n");
+  printf("\nPlease wait for sum_svc and tape inventory (optional) to initialize...\n");
   setup();
   if(atexit(sumbye)) {
     printf("Can't register sumbye() function in atexit()\n");
@@ -348,7 +349,11 @@ int main(int argc, char *argv[])
       write_log("sum_svc sets SUMPGPORT env to %s\n", pgport);
   }
 
+//The __LOCALIZED_DEFS__ test is original code at Stanford and the NetDRMS.
+//Added IRISDCFLG for the irisdc host w/o tape. Defined in JSOC/base/sums/apps/Rules.mk
 #ifndef __LOCALIZED_DEFS__
+#ifndef IRISDCFLG
+//printf("LOCALIZED_DEFS not defined and IRISDCFLG not defined\n"); //!!TEMP
 //Only fork the tape stuff on the datacapture machines. The tape stuff for
 //the main SUMS is started by a call to ssh d02.stanford.edu sum_forker 
 //in sum_start_j1
@@ -431,6 +436,23 @@ if(!strcmp(hostn, "dcs0") || !strcmp(hostn, "dcs1") || !strcmp(hostn, "dcs2") ||
     }
   }
 }				/* !!end of TMP for lws only */
+#else
+  if((pid = fork()) < 0) {
+    write_log("***Can't fork(). errno=%d\n", errno);
+    exit(1);
+  }
+  else if(pid == 0) {                   // this is the beloved child 
+    write_log("execvp of sum_rm\n");
+    args[0] = "sum_rm";			// note: no -s to sum_rm 
+    args[1] = dbname;
+    args[2] = timetag;
+    args[3] = NULL;
+    if(execvp(args[0], args) < 0) {
+      write_log("***Can't execvp() sum_rm. errno=%d\n", errno);
+      exit(1);
+    }
+  }
+#endif
 #endif
 #ifdef __LOCALIZED_DEFS__
   if((pid = fork()) < 0) {
@@ -451,6 +473,7 @@ if(!strcmp(hostn, "dcs0") || !strcmp(hostn, "dcs1") || !strcmp(hostn, "dcs2") ||
 #endif
 
 #ifndef __LOCALIZED_DEFS__
+#ifndef IRISDCFLG
 /*****************dont fork here. sum_rm now runs on d02*******************
   if((pid = fork()) < 0) {
     write_log("***Can't fork(). errno=%d\n", errno);
@@ -488,6 +511,7 @@ if(strcmp(hostn, "xim") && strcmp(hostn, "n02")) {
   }
   clnttape_old = clnttape;	//used by tapereconnectdo_1()
 }
+#endif
 #endif
 
   if(SUM_Init(dbname)) {		/* init and connect to db */
