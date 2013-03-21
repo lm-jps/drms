@@ -1,14 +1,14 @@
-		irisdc:/home/prodtest/cvs/IRIS/doc/iris_lev0_on_front_back_end.txt
+		/home/prodtest/cvs/JSOC/doc/iris_lev0_on_front_back_end.txt
 
 The "real" IRIS datacapture machine is irisdc. This is called the front
-end machine. It runs /home/prodtest/cvs/IRIS/proj/datacapture/scripts/socdciris
+end machine. It runs /home/prodtest/cvs/JSOC/proj/datacapture/scripts/socdciris
 which in turn runs ingest_lev0_irisdc. This is as user prodtest.
-/home/prodtest/cvs/IRIS/proj/lev0/apps/ingest_lev0_irisdc.c is normally edited
+/home/prodtest/cvs/JSOC/proj/lev0/apps/ingest_lev0_irisdc.c is normally edited
 on irisdc. It must be coded to run on both the frontend and the backend
 (cl1n001) machines. It is run on the frontend by socdciris like so:
 
-ingest_lev0_irisdc vc=$vc_in indir=$DIRSOC2SOC outdir=$DIRSOC2PIPE
-pipedir=$DIRPIPE2SOC logfile=$log2
+ingest_lev0_irisdc vc=VC03 indir=/sds/soc2soc/iris outdir=/sds/soc2pipe/iris
+pipedir=/sds/pipe2soc/iris logfile=$log2 JSOC_DBNAME irisdb JSOC_DBHOST irisdc
 
 It is run on the backend by doingestlev0_IRIS.pl like so:
 
@@ -19,13 +19,13 @@ ingest_lev0_irisdc knows to rm the tlm and qac files from the indir after
 it has copied them to the /SUMs.
 
 
-/home/prodtest/cvs/IRIS/proj/lev0/apps/ingest_lev0_irisdc.c is normally edited
-on irisdc. It is then 'cvs commit' to the sunroom cvs/IRIS tree.
+/home/prodtest/cvs/JSOC/proj/lev0/apps/ingest_lev0_irisdc.c is normally edited
+on irisdc. It is then 'cvs commit' to the sunroom cvs/JSOC tree.
 It is made on irisdc as user prodtest.
 
 On n02, as user prodtest, do this:
-n02:/home/prodtest/cvs/IRIS/proj/lev0/apps> cvs update ingest_lev0_irisdc.c
-> cd /home/prodtest/cvs/IRIS
+n02:/home/prodtest/cvs/JSOC/proj/lev0/apps> cvs update ingest_lev0_irisdc.c
+> cd /home/prodtest/cvs/JSOC
 > make ingest_lev0_irisdc
 (Then tell Art that the cvs/Development tree must be update.
 Basically we want to get the new executable in place, something like this):
