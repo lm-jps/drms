@@ -1311,7 +1311,7 @@ static void PrintLnkInfo(int *col, DRMS_Record_t *rec, char **links, int nlinks,
    }
 }
 
-static int PrintStuff(DRMS_Record_t *rec, int keyword_list, int show_recnum, int show_sunum, int show_recordspec, int show_online, int show_retention, int show_archive, int show_tapeinfo, int show_size, int show_session, int want_path, int want_path_noret, int want_dims, char **keys, int nkeys, char **segs, int nsegs, int linked_segs, char **links, int nlinks, int nrecs, int nl)
+static int PrintStuff(DRMS_Record_t *rec, const char *rsq, int keyword_list, int show_recnum, int show_sunum, int show_recordspec, int show_online, int show_retention, int show_archive, int show_tapeinfo, int show_size, int show_session, int want_path, int want_path_noret, int want_dims, char **keys, int nkeys, char **segs, int nsegs, int linked_segs, char **links, int nlinks, int nrecs, int nl)
 {
     int col;
     
@@ -1508,7 +1508,27 @@ static int PrintStuff(DRMS_Record_t *rec, int keyword_list, int show_recnum, int
     
     if (!keyword_list && !col)
     {
-        printf("%d records found, no other information requested\n", nrecs);
+        int status = 0;
+        int count = 0;
+
+        if (nrecs < 0)
+        {
+            /* We don't know how many records we have, because we used drms_open_recordset() to 
+             * open the records. We need to call drms_count_records() now. 
+             *
+             * rsq must not be NULL
+             */
+            XASSERT(rsq != NULL);
+            
+            count = drms_count_records(rec->env, (char *)rsq, &status);
+            if (status)
+            {
+                fprintf(stderr,"can't call drms_count_records() on %s.\n", rsq);
+                return 1;
+            }
+        }
+        
+        printf("%d records found, no other information requested\n", count);
         return 1; /* Exit record loop. */
     }
     if (!keyword_list && (show_recnum || show_sunum || show_recordspec || show_online || show_session ||
@@ -1536,10 +1556,13 @@ static int RecordLoopCursor(DRMS_Env_t *env, const char *rsq, DRMS_RecordSet_t *
     int linked_segs = 0;
     int nlinks = 0;
     char *links[1024];
+    int atleastone = 0;
     
     irec = 0;
     while ((rec = drms_recordset_fetchnext(env, recordset, &status, &cstat, &newchunk)) != NULL)
     {
+        atleastone = 1;
+        
         if (irec == 0)
         {
             /* Print the header, if there is at least one row. */
@@ -1609,15 +1632,15 @@ static int RecordLoopCursor(DRMS_Env_t *env, const char *rsq, DRMS_RecordSet_t *
         if (status < 0)
             status = 0;
 
-        if (PrintStuff(rec, keyword_list, show_recnum, show_sunum, show_recordspec, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_path, want_path_noret, want_dims,keys, nkeys, segs, nsegs, linked_segs, links, nlinks, -1, irec != 0))
+        if (PrintStuff(rec, rsq, keyword_list, show_recnum, show_sunum, show_recordspec, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_path, want_path_noret, want_dims,keys, nkeys, segs, nsegs, linked_segs, links, nlinks, -1, irec != 0))
         {
-            break;
+            break;  
         }
         
         irec++;
     } /* while */
     
-    if (irec == 0)
+    if (!atleastone)
     {
         printf ("** No records in selected data set, query was %s **\n", rsq);
     }
@@ -1672,7 +1695,7 @@ static int RecordLoopNoCursor(DRMS_Env_t *env, DRMS_RecordSet_t *recordset, int 
             }
         }        
         
-        if (PrintStuff(rec, keyword_list, show_recnum, show_sunum, show_recordspec, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_path, want_path_noret, want_dims, keys, nkeys, segs, nsegs, linked_segs, links, nlinks, recordset->n, irec != 0))
+        if (PrintStuff(rec, NULL, keyword_list, show_recnum, show_sunum, show_recordspec, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_path, want_path_noret, want_dims, keys, nkeys, segs, nsegs, linked_segs, links, nlinks, recordset->n, irec != 0))
         {
             break;
         }
