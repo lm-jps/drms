@@ -44,3 +44,15 @@ run on cl1n001 as jsocprod:
 
 > stop_lev0_IRIS.pl
 
+===============================================================================
+
+On irisdc there is a cron job:
+30 20 * * * /home/prodtest/cvs/JSOC/proj/lev0/scripts/rsync_irisdc_jsoc.pl
+
+which rsync's:
+ irisdc:/home/prodtest/cvs/JSOC to sunroom:/home/prodtest/irisdc_backup
+
+There are some files in this tree, like with dcs[0,1,2] which are unique to
+the datacapture machine.
+
+
