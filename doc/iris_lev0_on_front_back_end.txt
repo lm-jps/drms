@@ -13,6 +13,7 @@ pipedir=/sds/pipe2soc/iris logfile=$log2 JSOC_DBNAME irisdb JSOC_DBHOST irisdc
 It is run on the backend by doingestlev0_IRIS.pl like so:
 
 ingest_lev0_irisdc vc=VC03 indir=/dds/soc2pipe/iris logfile=<log_file_name>
+ingest_lev0_irisdc vc=VC03 indir=/dds/soc2pipe/iris/rexmit logfile=<log_file_name>
 
 Note that an 'outdir=' must not be used in the bakend. This is how
 ingest_lev0_irisdc knows to rm the tlm and qac files from the indir after
@@ -32,10 +33,14 @@ Basically we want to get the new executable in place, something like this):
 > cp _linux_x86_64/proj/lev0/apps/ingest_lev0_irisdc
 /home/jsoc/cvs/Development/JSOC/bin/linux_x86_64/
 
-Run on cl1n001 as user jsocprod (actually this will eventually be done
-by doingestlev0_IRIS.pl):
+Run on cl1n001 as user jsocprod (actually this will be done
+by calling doingestlev0_IRIS.pl as user jsocprod):
 
 cl1n001:/home/jsocprod> ingest_lev0_irisdc vc=VC03 indir=/dds/soc2pipe/iris
 logfile=/tmp/iris.log1
 
+To stop the doingestlev0_IRIS.pl and the ingest_lev0_irisdc it has spawned,
+run on cl1n001 as jsocprod:
+
+> stop_lev0_IRIS.pl
 
