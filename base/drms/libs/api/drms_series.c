@@ -5298,6 +5298,11 @@ char *drms_series_all_querystringB(DRMS_Env_t *env, const char *series, const ch
                      * the case, then npkwhere will have recnum in it, and then "recnum" is ambiguous. We must prepend 
                      * with T1. */
                     qualnpkwhere = base_strcasereplace(npkwhere, "recnum", "T1.recnum");
+                    if (!qualnpkwhere)
+                    {
+                        /* recnum did not appear in the npkwhere clause */
+                        qualnpkwhere = strdup(npkwhere);
+                    }
                 }
                 
                 if (qualnpkwhere)
@@ -5570,6 +5575,7 @@ char *drms_series_all_querystringD(DRMS_Env_t *env, const char *series, const ch
     char *qualfields = NULL;
     char *qualpkeylist = NULL;
     char *qualpkwhere = NULL;
+    char *qualnpkwhere = NULL;
     char limitstr[32];
     char shadow[DRMS_MAXSERIESNAMELEN];
     char tabname[256];
@@ -5652,6 +5658,37 @@ char *drms_series_all_querystringD(DRMS_Env_t *env, const char *series, const ch
                 
                 if (istat == DRMS_SUCCESS)
                 {
+                    
+                    /* It is possible that npkwhere could be recnum (for the [:#X] notation). If this is
+                     * the case, then npkwhere will have recnum in it, and then "recnum" is ambiguous. We must prepend 
+                     * with T1. */
+                    qualnpkwhere = base_strcasereplace(npkwhere, "recnum", "T1.recnum");
+                    if (!qualnpkwhere)
+                    {
+                        /* recnum did not appear in the npkwhere clause */
+                        qualnpkwhere = strdup(npkwhere);
+                    }
+                    
+                    if (qualnpkwhere)
+                    {
+                        /* Must prepend all prime-key column names in npkwhere with T2., otherwise the query has an ambiguity
+                         * since both T1 and T2 have the prime-key columns. */
+                        char *tmp = NULL;
+                        tmp = PrependWhere(env, qualnpkwhere, series, "T2.", &istat);
+                        if (istat == DRMS_SUCCESS)
+                        {
+                            free(qualnpkwhere);
+                            qualnpkwhere = tmp;
+                        }
+                    }
+                    else
+                    {
+                        istat = DRMS_ERROR_OUTOFMEMORY;
+                    }
+                }
+                
+                if (istat == DRMS_SUCCESS)
+                {
                     /* Select the records from the series table. */
                     query = base_strcatalloc(query, "SELECT ", &stsz);
                     query = base_strcatalloc(query, qualfields, &stsz);
@@ -5662,13 +5699,15 @@ char *drms_series_all_querystringD(DRMS_Env_t *env, const char *series, const ch
                     query = base_strcatalloc(query, " AS T2 ON (T1.recnum = T2.recnum) WHERE ", &stsz);
                     query = base_strcatalloc(query, qualpkwhere, &stsz);
                     query = base_strcatalloc(query, " AND ", &stsz);
-                    query = base_strcatalloc(query, npkwhere, &stsz);
+                    query = base_strcatalloc(query, qualnpkwhere, &stsz);
                     query = base_strcatalloc(query, " ORDER BY ", &stsz);
                     query = base_strcatalloc(query, qualpkeylist, &stsz);
                     query = base_strcatalloc(query, " LIMIT ", &stsz);
                     query = base_strcatalloc(query, limitstr, &stsz);
                 }
                 
+                free(qualnpkwhere);
+                qualnpkwhere = NULL;
                 free(qualpkwhere);
                 qualpkwhere = NULL;            
                 free(qualpkeylist);
