@@ -2291,6 +2291,8 @@ int DoIt(void)
           {
               fprintf(stderr, "DB error message: %s\n", emsg);
           }
+          
+          show_info_return(1);
       }
 
   if (!recordset) 
