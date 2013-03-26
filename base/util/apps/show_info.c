@@ -1246,13 +1246,17 @@ static void PrintSegInfo(int *col, DRMS_Record_t *rec, char **segs, int nsegs, i
       }
       else
       {
-         int stat;
-         if(want_path_noret)
-           stat=drms_record_directory (rec, path, 0);
-         else
-           stat=drms_record_directory (rec, path, 1);
-         if (stat)
-           strcpy(path,"**_NO_sudir_**");
+          int stat = 1;
+          
+          if (rec->su)
+          {
+              if(want_path_noret)
+                  stat=drms_record_directory (rec, path, 0);
+              else
+                  stat=drms_record_directory (rec, path, 1);
+          }
+          if (stat)
+              strcpy(path,"**_NO_sudir_**");
       }
 
       if (keyword_list)
