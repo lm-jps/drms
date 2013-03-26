@@ -1056,6 +1056,7 @@ KEY *sumrespdo_1(KEY *params)
   current_client = (CLIENT *)getkey_fileptr(params, "current_client");
   rinfo = 0;
   send_ack();
+/*************************************************************************
   if(findkey(params, "uid")) {	//there s/b a uid in the keylist
     uid = getkey_uint64(params, "uid");
     if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
@@ -1067,6 +1068,7 @@ KEY *sumrespdo_1(KEY *params)
   else {
     write_log("**No uid found in keylist in sumrespdo_1()??\n");
   }
+*************************************************************************/
   return(retlist);
 }
 
