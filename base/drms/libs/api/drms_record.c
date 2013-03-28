@@ -426,216 +426,221 @@ static int CreateRecordProtoFromFitsAgg(DRMS_Env_t *env,
 					DRMS_Segment_t **segout,
 					int *status)
 {
-   DRMS_Record_t *template = NULL;
-   DRMS_Segment_t *seg = NULL;
-   int iRec = 0;
-   int stat = DRMS_SUCCESS;
-   int pkeysSpecified = (pkeyarr != NULL);
-	   
-   if (stat == DRMS_SUCCESS)
-   {
-      template = calloc(1, sizeof(DRMS_Record_t));
-      XASSERT(template);
-      template->seriesinfo = calloc(1, sizeof(DRMS_SeriesInfo_t));
-      XASSERT(template->seriesinfo);
-       template->seriesinfo->hasshadow = -1;
-       template->seriesinfo->createshadow = 0;
-   }
-
-   if (template && template->seriesinfo)
-   {
-      char drmsKeyName[DRMS_MAXKEYNAMELEN];
-      DRMS_Keyword_t *sKey = NULL;
-      DRMS_Keyword_t *tKey = NULL;
-
-      template->env = env;
-      template->init = 1;
-      template->recnum = 0;
-      template->sunum = -1;
-      template->sessionid = 0;
-      template->sessionns = NULL;
-      template->su = NULL;
-      
-      /* Initialize container structure. */
-      hcon_init(&template->segments, sizeof(DRMS_Segment_t), DRMS_MAXHASHKEYLEN, 
-		(void (*)(const void *)) drms_free_segment_struct, 
-		(void (*)(const void *, const void *)) drms_copy_segment_struct);
-      /* Initialize container structures for links. */
-      hcon_init(&template->links, sizeof(DRMS_Link_t), DRMS_MAXHASHKEYLEN, 
-		(void (*)(const void *)) drms_free_link_struct, 
-		(void (*)(const void *, const void *)) drms_copy_link_struct);
-      /* Initialize container structure. */
-      hcon_init(&template->keywords, sizeof(DRMS_Keyword_t), DRMS_MAXHASHKEYLEN, 
-		(void (*)(const void *)) drms_free_keyword_struct, 
-		(void (*)(const void *, const void *)) drms_copy_keyword_struct);
-
-      /* Loop through DSDS records - put a superset of keywords in rec->keywords and 
-       * ensure segments match */
-      for (iRec = 0; iRec < nRecs; iRec++)
-      {
-	 /* multiple keywords per record - walk keylistarr */
-	 DSDS_KeyList_t *kl = keylistarr[iRec];
-	 DRMS_Segment_t *oneSeg = &(segarr[iRec]); 
-
-	 if (kl && oneSeg)
-	 {
-	    while (kl != NULL && ((sKey = kl->elem) != NULL))
-	    {
-	       /* skip keywords that are empty or ws strings - they 
-		* don't provide any information, and DSDS represents
-		* missing values this way. */
-	        if (sKey->info->type == DRMS_TYPE_STRING &&
-		    (sKey->value.string_val == NULL || 
-		    IsWS(sKey->value.string_val)))
-		{
-		   kl = kl->next;
-		   continue;
-		}
-	       
-                /* generate a valid drms keyword (fits might not be valid) */
-                if (!fitsexport_getmappedintkeyname(sKey->info->name, 
-                                                    exputl_keymap_getclname(fitsclass),
-                                                    NULL, 
-                                                    drmsKeyName, 
-                                                    sizeof(drmsKeyName)))
+    DRMS_Record_t *template = NULL;
+    DRMS_Segment_t *seg = NULL;
+    int iRec = 0;
+    int stat = DRMS_SUCCESS;
+    int pkeysSpecified = (pkeyarr != NULL);
+    
+    if (stat == DRMS_SUCCESS)
+    {
+        template = calloc(1, sizeof(DRMS_Record_t));
+        XASSERT(template);
+        template->seriesinfo = calloc(1, sizeof(DRMS_SeriesInfo_t));
+        XASSERT(template->seriesinfo);
+        template->seriesinfo->hasshadow = -1;
+        template->seriesinfo->createshadow = 0;
+    }
+    
+    if (template && template->seriesinfo)
+    {
+        char drmsKeyName[DRMS_MAXKEYNAMELEN];
+        DRMS_Keyword_t *sKey = NULL;
+        DRMS_Keyword_t *tKey = NULL;
+        
+        template->env = env;
+        template->init = 1;
+        template->recnum = 0;
+        template->sunum = -1;
+        template->sessionid = 0;
+        template->sessionns = NULL;
+        template->su = NULL;
+        
+        /* Initialize container structure. */
+        hcon_init(&template->segments, sizeof(DRMS_Segment_t), DRMS_MAXHASHKEYLEN, 
+                  (void (*)(const void *)) drms_free_segment_struct, 
+                  (void (*)(const void *, const void *)) drms_copy_segment_struct);
+        /* Initialize container structures for links. */
+        hcon_init(&template->links, sizeof(DRMS_Link_t), DRMS_MAXHASHKEYLEN, 
+                  (void (*)(const void *)) drms_free_link_struct, 
+                  (void (*)(const void *, const void *)) drms_copy_link_struct);
+        /* Initialize container structure. */
+        hcon_init(&template->keywords, sizeof(DRMS_Keyword_t), DRMS_MAXHASHKEYLEN, 
+                  (void (*)(const void *)) drms_free_keyword_struct, 
+                  (void (*)(const void *, const void *)) drms_copy_keyword_struct);
+        
+        /* Loop through DSDS records - put a superset of keywords in rec->keywords and 
+         * ensure segments match */
+        for (iRec = 0; iRec < nRecs; iRec++)
+        {
+            /* multiple keywords per record - walk keylistarr */
+            DSDS_KeyList_t *kl = keylistarr[iRec];
+            DRMS_Segment_t *oneSeg = NULL;
+            
+            if (segarr)
+            {
+                oneSeg = &(segarr[iRec]); 
+            }
+            
+            if (kl)
+            {
+                while (kl != NULL && ((sKey = kl->elem) != NULL))
                 {
-                   *drmsKeyName = '\0';
-                   stat = DRMS_ERROR_INVALIDDATA;
-		  break;
-	       }
-
-	       if (!(tKey = hcon_lookup_lower(&(template->keywords), drmsKeyName)))
-	       {
-		  /* insert into template */
-                  tKey = hcon_allocslot_lower(&(template->keywords), drmsKeyName);
-                  XASSERT(tKey);
-		  memset(tKey, 0, sizeof(DRMS_Keyword_t));
-                  tKey->info = malloc(sizeof(DRMS_KeywordInfo_t));
-                  XASSERT(tKey->info);
-		  memset(tKey->info, 0, sizeof(DRMS_KeywordInfo_t));
-	    
-		  if (tKey && tKey->info)
-		  {
-		     /* record */
-		     tKey->record = template;
-
-		     /* keyword info */
-		     memcpy(tKey->info, sKey->info, sizeof(DRMS_KeywordInfo_t));
-		     snprintf(tKey->info->name, 
-			      DRMS_MAXKEYNAMELEN,
-			      "%s",
-			      drmsKeyName);
-
-		     /* default value - missing */
-		     drms_missing(tKey->info->type, &(tKey->value));
-		  }
-		  else
-		  {
-		     stat = DRMS_ERROR_OUTOFMEMORY;
-		  }
-	       }
-	       else if (sKey->info->type != tKey->info->type &&
-			tKey->info->type != DRMS_TYPE_STRING)
-	       {
-		  /* If the keyword already exists, and the type of 
-		   * the current keyword doesn't match the type of the
-		   * existing template keyword, and the current keyword
-		   * isn't the empty string or a whitespace string, 
-		   * then make the template keyword's data type be string. */
-		  if (sKey->info->type != DRMS_TYPE_STRING ||
-		      (sKey->value.string_val != NULL && 
-		       !IsWS(sKey->value.string_val)))
-		  {
-		     tKey->info->type = DRMS_TYPE_STRING;
-		     tKey->info->format[0] = '%';
-		     tKey->info->format[1] = 's';
-		     tKey->info->format[2] = '\0';
-		     /* The following uses copy_string(), which frees the value,
-		      * unless the value is zero. So set it to zero. */
-		     tKey->value.string_val = NULL;
-		     drms_missing(DRMS_TYPE_STRING, &(tKey->value));
-		  }		  
-	       }
-		     
-	       kl = kl->next;
-	    }
-
-	    if (stat == DRMS_SUCCESS)
-	    {
-	       /* one segment per record - but some records might now have a segment.
-                * Records that don't have segments will still have a DRMS_Segment_t 
-                * in the segarr, but the structure is zeroed out. */
-               if (oneSeg && oneSeg->info)
-               {
-                  if (!seg)
-                  {
-                     seg = oneSeg;
-                  }
-                  else if (!drms_segment_segsmatch(seg, oneSeg))
-                  {
-                     stat = DRMS_ERROR_INVALIDDATA;
-                  }
-               }
-	    }
-	 }
-      } /* iRec */
-
-      /* Add a keyword that will serve as primary key - not sure what to use here. 
-       * What about an increasing integer? */
-      if (fitsclass == kKEYMAPCLASS_LOCAL)
-      {
-	 if (!pkeysSpecified)
-	 {
-	    AddLocalPrimekey(template, &stat);
-	 }
-	 else
-	 {
-	    /* pkeysSpecified - ensure they exist; if kLocalPrimekey is specified, but
-	     * doesn't exist, add it */
-	    int iKey;
-	    for (iKey = 0; iKey < nPKeys && stat == DRMS_SUCCESS; iKey++)
-	    {
-	       if (!hcon_member_lower(&(template->keywords), pkeyarr[iKey]))
-	       {
-		  if (strcasecmp(pkeyarr[iKey], kLocalPrimekey) == 0)
-		  {
-		     /* user specified kLocalPrimekey, but it doesn't 
-		      * exist in the local data being read in.  This is 
-		      * a special keyword that may have gotten added the last 
-		      * time this code was run, so add it now. */
-		     AddLocalPrimekey(template, &stat);
-		  }
-		  else
-		  {
-		     /* error - user specified a prime keyword that doesn't exist
-		      * in the local data being read in. */
-		     stat = DRMS_ERROR_INVALIDDATA;
-		     fprintf(stderr, 
-			     "keyword %s doesn't exist in fits file header\n", 
-			     pkeyarr[iKey]);
-		  }
-	       }
-	    }
-	 }
-      }
-   }
-
-   if (status)
-   {
-      *status = stat;
-   }
-
-   if (stat == DRMS_SUCCESS)
-   {
-      *proto = template;
-      *segout = seg;
-   }
-   else
-   {
-      drms_destroy_recproto(&template);
-   }
-
-   return iRec;
+                    /* skip keywords that are empty or ws strings - they 
+                     * don't provide any information, and DSDS represents
+                     * missing values this way. */
+                    if (sKey->info->type == DRMS_TYPE_STRING &&
+                        (sKey->value.string_val == NULL || 
+                         IsWS(sKey->value.string_val)))
+                    {
+                        kl = kl->next;
+                        continue;
+                    }
+                    
+                    /* generate a valid drms keyword (fits might not be valid) */
+                    if (!fitsexport_getmappedintkeyname(sKey->info->name, 
+                                                        exputl_keymap_getclname(fitsclass),
+                                                        NULL, 
+                                                        drmsKeyName, 
+                                                        sizeof(drmsKeyName)))
+                    {
+                        *drmsKeyName = '\0';
+                        stat = DRMS_ERROR_INVALIDDATA;
+                        break;
+                    }
+                    
+                    if (!(tKey = hcon_lookup_lower(&(template->keywords), drmsKeyName)))
+                    {
+                        /* insert into template */
+                        tKey = hcon_allocslot_lower(&(template->keywords), drmsKeyName);
+                        XASSERT(tKey);
+                        memset(tKey, 0, sizeof(DRMS_Keyword_t));
+                        tKey->info = malloc(sizeof(DRMS_KeywordInfo_t));
+                        XASSERT(tKey->info);
+                        memset(tKey->info, 0, sizeof(DRMS_KeywordInfo_t));
+                        
+                        if (tKey && tKey->info)
+                        {
+                            /* record */
+                            tKey->record = template;
+                            
+                            /* keyword info */
+                            memcpy(tKey->info, sKey->info, sizeof(DRMS_KeywordInfo_t));
+                            snprintf(tKey->info->name, 
+                                     DRMS_MAXKEYNAMELEN,
+                                     "%s",
+                                     drmsKeyName);
+                            
+                            /* default value - missing */
+                            drms_missing(tKey->info->type, &(tKey->value));
+                        }
+                        else
+                        {
+                            stat = DRMS_ERROR_OUTOFMEMORY;
+                        }
+                    }
+                    else if (sKey->info->type != tKey->info->type &&
+                             tKey->info->type != DRMS_TYPE_STRING)
+                    {
+                        /* If the keyword already exists, and the type of 
+                         * the current keyword doesn't match the type of the
+                         * existing template keyword, and the current keyword
+                         * isn't the empty string or a whitespace string, 
+                         * then make the template keyword's data type be string. */
+                        if (sKey->info->type != DRMS_TYPE_STRING ||
+                            (sKey->value.string_val != NULL && 
+                             !IsWS(sKey->value.string_val)))
+                        {
+                            tKey->info->type = DRMS_TYPE_STRING;
+                            tKey->info->format[0] = '%';
+                            tKey->info->format[1] = 's';
+                            tKey->info->format[2] = '\0';
+                            /* The following uses copy_string(), which frees the value,
+                             * unless the value is zero. So set it to zero. */
+                            tKey->value.string_val = NULL;
+                            drms_missing(DRMS_TYPE_STRING, &(tKey->value));
+                        }		  
+                    }
+                    
+                    kl = kl->next;
+                }
+                
+                if (stat == DRMS_SUCCESS)
+                {
+                    /* one segment per record - but some records might not have a segment.
+                     * Records that don't have segments will still have a DRMS_Segment_t 
+                     * in the segarr, but the structure is zeroed out. */
+                    if (oneSeg && oneSeg->info)
+                    {
+                        if (!seg)
+                        {
+                            seg = oneSeg;
+                        }
+                        else if (!drms_segment_segsmatch(seg, oneSeg))
+                        {
+                            stat = DRMS_ERROR_INVALIDDATA;
+                        }
+                    }
+                }
+            }
+        } /* iRec */
+        
+        /* Add a keyword that will serve as primary key - not sure what to use here. 
+         * What about an increasing integer? */
+        if (fitsclass == kKEYMAPCLASS_LOCAL)
+        {
+            if (!pkeysSpecified)
+            {
+                AddLocalPrimekey(template, &stat);
+            }
+            else
+            {
+                /* pkeysSpecified - ensure they exist; if kLocalPrimekey is specified, but
+                 * doesn't exist, add it */
+                int iKey;
+                for (iKey = 0; iKey < nPKeys && stat == DRMS_SUCCESS; iKey++)
+                {
+                    if (!hcon_member_lower(&(template->keywords), pkeyarr[iKey]))
+                    {
+                        if (strcasecmp(pkeyarr[iKey], kLocalPrimekey) == 0)
+                        {
+                            /* user specified kLocalPrimekey, but it doesn't 
+                             * exist in the local data being read in.  This is 
+                             * a special keyword that may have gotten added the last 
+                             * time this code was run, so add it now. */
+                            AddLocalPrimekey(template, &stat);
+                        }
+                        else
+                        {
+                            /* error - user specified a prime keyword that doesn't exist
+                             * in the local data being read in. */
+                            stat = DRMS_ERROR_INVALIDDATA;
+                            fprintf(stderr, 
+                                    "keyword %s doesn't exist in fits file header\n", 
+                                    pkeyarr[iKey]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    if (status)
+    {
+        *status = stat;
+    }
+    
+    if (stat == DRMS_SUCCESS)
+    {
+        *proto = template;
+        *segout = seg;
+    }
+    else
+    {
+        drms_destroy_recproto(&template);
+    }
+    
+    return iRec;
 }
 
 static void AdjustRecordProtoSeriesInfo(DRMS_Env_t *env, 
@@ -820,102 +825,110 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
 
    int iNewRec = 1;
    int primekeyCnt = 0;
+    
+    DSDS_KeyList_t *kl = NULL;
+    DRMS_Segment_t *sSeg = NULL;
+    DRMS_Segment_t *tSeg = NULL;
+    
    for (iRec = 0; stat == DRMS_SUCCESS && iRec < nRecs; iRec++)
    {
-      DSDS_KeyList_t *kl = klarr[iRec];
-      DRMS_Segment_t *sSeg = &(segarr[iRec]);
-      DRMS_Segment_t *tSeg = NULL;
-
-      if (kl)
-      {
-	 rset->records[iRec] = drms_alloc_record2(cached, iNewRec, &stat);
-	 if (stat == DRMS_SUCCESS)
-	 {
-	    rset->records[iRec]->sessionid = env->session->sessionid;  
-	    rset->records[iRec]->sessionns = strdup(env->session->sessionns);
-	    rset->records[iRec]->lifetime = DRMS_TRANSIENT;
-	 }
-
-	 /* populate the new records with information from keylistarr and segarr */
-
-	 DRMS_Keyword_t *sKey = NULL;
-	 char drmsKeyName[DRMS_MAXKEYNAMELEN];
-	 int iKey = 0;
-
-	 while (stat == DRMS_SUCCESS && kl && ((sKey = kl->elem) != NULL))
-	 {
-	    if (!fitsexport_getmappedintkeyname(sKey->info->name, 
-                                                exputl_keymap_getclname(fitsclass),
-                                                NULL, 
-                                                drmsKeyName, 
-                                                sizeof(drmsKeyName)))
-	    {
-	       *drmsKeyName = '\0';
-	       stat = DRMS_ERROR_INVALIDDATA;
-	       break;
-	    }
-
-	    /* Essentially a DSDS keyword missing value - ignore.
-	     * When the template was created, such keywords were NOT
-	     * used. */
-	    if (sKey->info->type != DRMS_TYPE_STRING ||
-		(sKey->value.string_val != NULL && 
-		 !IsWS(sKey->value.string_val)))
-	    {
-	       stat = drms_setkey(rset->records[iRec], 
-				  drmsKeyName,
-				  sKey->info->type,
-				  &(sKey->value));
-
-	       if (stat != DRMS_SUCCESS)
-	       {
-		  fprintf(stderr, "Couldn't set keyword '%s'.\n", drmsKeyName);
-	       }
-	    }
-
-	    kl = kl->next;
-	    iKey++;
-	 } /* while */
-
-	 if (fitsclass == kKEYMAPCLASS_LOCAL)
-	 {
-	    /* set and increment primekey (if no prime key specified by user ) */
-	    if (setPrimeKey)
-	    {
-	       stat = drms_setkey_longlong(rset->records[iRec], 
-					   kLocalPrimekey,
-					   primekeyCnt);
-	       primekeyCnt++;
-	    }
-
-	    /* enter segment file names (kKEYMAPCLASS_LOCAL) */
-            tSeg = hcon_lookup_lower(&(rset->records[iRec]->segments), kLocalSegName);
-         }
-         else if (fitsclass == kKEYMAPCLASS_DSDS)
-         {
-            tSeg = drms_segment_lookupnum(rset->records[iRec], 0);
-         }
-
-         if (tSeg != NULL)
-         {
-            if (sSeg->info)
-            {
-               /* Not all DSDS records have a data file. This will be used if the protocol
-                * is DRMS_LOCAL.  In this case, the filename is the path to the file(s)
-                * that formed the rec-set query.  If the protocol is DRMS_DSDS, then filename 
-                * is the DSDS path to a fits file. */
-               snprintf(tSeg->filename, DRMS_MAXSEGFILENAME, "%s", sSeg->filename);
-            }
-         }
-         else
-         {
-            stat = DRMS_ERROR_INVALIDDATA;
-            break;
-         }
-
-	 rset->records[iRec]->readonly = 1;
-	 iNewRec++;
-      }
+       kl = klarr[iRec];
+       if (segarr)
+       {
+           sSeg = &(segarr[iRec]);
+       }
+       
+       tSeg = NULL;
+       
+       if (kl)
+       {
+           rset->records[iRec] = drms_alloc_record2(cached, iNewRec, &stat);
+           if (stat == DRMS_SUCCESS)
+           {
+               rset->records[iRec]->sessionid = env->session->sessionid;  
+               rset->records[iRec]->sessionns = strdup(env->session->sessionns);
+               rset->records[iRec]->lifetime = DRMS_TRANSIENT;
+           }
+           
+           /* populate the new records with information from keylistarr and segarr */
+           
+           DRMS_Keyword_t *sKey = NULL;
+           char drmsKeyName[DRMS_MAXKEYNAMELEN];
+           int iKey = 0;
+           
+           while (stat == DRMS_SUCCESS && kl && ((sKey = kl->elem) != NULL))
+           {
+               if (!fitsexport_getmappedintkeyname(sKey->info->name, 
+                                                   exputl_keymap_getclname(fitsclass),
+                                                   NULL, 
+                                                   drmsKeyName, 
+                                                   sizeof(drmsKeyName)))
+               {
+                   *drmsKeyName = '\0';
+                   stat = DRMS_ERROR_INVALIDDATA;
+                   break;
+               }
+               
+               /* Essentially a DSDS keyword missing value - ignore.
+                * When the template was created, such keywords were NOT
+                * used. */
+               if (sKey->info->type != DRMS_TYPE_STRING ||
+                   (sKey->value.string_val != NULL && 
+                    !IsWS(sKey->value.string_val)))
+               {
+                   stat = drms_setkey(rset->records[iRec], 
+                                      drmsKeyName,
+                                      sKey->info->type,
+                                      &(sKey->value));
+                   
+                   if (stat != DRMS_SUCCESS)
+                   {
+                       fprintf(stderr, "Couldn't set keyword '%s'.\n", drmsKeyName);
+                   }
+               }
+               
+               kl = kl->next;
+               iKey++;
+           } /* while */
+           
+           if (fitsclass == kKEYMAPCLASS_LOCAL)
+           {
+               /* set and increment primekey (if no prime key specified by user ) */
+               if (setPrimeKey)
+               {
+                   stat = drms_setkey_longlong(rset->records[iRec], 
+                                               kLocalPrimekey,
+                                               primekeyCnt);
+                   primekeyCnt++;
+               }
+               
+               /* enter segment file names (kKEYMAPCLASS_LOCAL) */
+               tSeg = hcon_lookup_lower(&(rset->records[iRec]->segments), kLocalSegName);
+           }
+           else if (fitsclass == kKEYMAPCLASS_DSDS)
+           {
+               tSeg = drms_segment_lookupnum(rset->records[iRec], 0);
+           }
+           
+           if (tSeg != NULL)
+           {
+               if (sSeg && sSeg->info)
+               {
+                   /* Not all DSDS records have a data file. This will be used if the protocol
+                    * is DRMS_LOCAL.  In this case, the filename is the path to the file(s)
+                    * that formed the rec-set query.  If the protocol is DRMS_DSDS, then filename 
+                    * is the DSDS path to a fits file. */
+                   snprintf(tSeg->filename, DRMS_MAXSEGFILENAME, "%s", sSeg->filename);
+               }
+           }
+           else
+           {
+               /* Not all DSDS series have a segment */
+           }
+           
+           rset->records[iRec]->readonly = 1;
+           iNewRec++;
+       }
    } /* for iRec */
 
    if (status)
@@ -1086,22 +1099,21 @@ static DRMS_RecordSet_t *OpenPlainFileRecords(DRMS_Env_t *env,
 	 /* segarr was created by DRMS, clean segments here */
 	 if (segarr && *segarr)
 	 {
-	    int i;
-	    for (i = 0; i < nRecs; i++)
-	    {
-	       seg = (*segarr + i);
-
-	       /* need to free malloc'd mem within each segment */
-	       if (seg->info)
-	       {
-		  free(seg->info);
-	       }
-	    }
-
-	    free(*segarr);
+         int i;
+         for (i = 0; i < nRecs; i++)
+         {
+             seg = (*segarr + i);
+             
+             /* need to free malloc'd mem within each segment */
+             if (seg->info)
+             {
+                 free(seg->info);
+             }
+         }
+         
+         free(*segarr);
+         *segarr = NULL;
 	 }
-
-	 *segarr = NULL;
 	 
 	 /* free primary key list */
 	 if (pkeys && *pkeys)
@@ -1177,137 +1189,144 @@ DRMS_RecordSet_t *drms_open_localrecords(DRMS_Env_t *env, const char *dsRecSet, 
 /* dsRecSet may resolve into more than one record (fits file) */
 DRMS_RecordSet_t *drms_open_dsdsrecords(DRMS_Env_t *env, const char *dsRecSet, int *status)
 {
-   DRMS_RecordSet_t *rset = NULL;
-   int stat = DRMS_SUCCESS;
-
-   if (!gAttemptedDSDS && !ghDSDS)
-   {
-      /* Get handle to libdsds.so */
-      kDSDS_Stat_t dsdsstat;
-      ghDSDS = DSDS_GetLibHandle(kLIBDSDS, &dsdsstat);
-      if (dsdsstat != kDSDS_Stat_Success)
-      {
-	 stat = DRMS_ERROR_CANTOPENLIBRARY;
-      }
-
-      gAttemptedDSDS = 1;
-   }
-
-   if (stat == DRMS_SUCCESS && ghDSDS)
-   {
-      pDSDSFn_DSDS_open_records_t pFn_DSDS_open_records = 
-	(pDSDSFn_DSDS_open_records_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_OPEN_RECORDS);
-      pDSDSFn_DSDS_free_keylistarr_t pFn_DSDS_free_keylistarr = 
-	(pDSDSFn_DSDS_free_keylistarr_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_FREE_KEYLISTARR);
-      pDSDSFn_DSDS_free_segarr_t pFn_DSDS_free_segarr = 
-	(pDSDSFn_DSDS_free_segarr_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_FREE_SEGARR);
-
-      if (pFn_DSDS_open_records && pFn_DSDS_free_keylistarr && pFn_DSDS_free_segarr)
-      {
-	 char seriesName[DRMS_MAXSERIESNAMELEN];
-	 DSDS_Handle_t hparams;
-	 DSDS_KeyList_t **keylistarr;
-	 DRMS_Segment_t *segarr;
-	 kDSDS_Stat_t dsdsStat;
-	 long long nRecs = 0; /* info returned from libdsds.so */
-
-	 /* Returns one keylist per record and one segment per record. Even though
-	  * this could involve a lot of alloc'd memory, and it isn't 100% necessary 
-	  * to do this to pass the needed information from libdsds.so here, it
-	  * does make keyword and segment analysis easier since the functions for 
-	  * doing the analysis are available in the module, but not in libdsds.so.
-	  * And, eventually it IS necessary to have n keywords and one segment 
-	  * per record - that is the way DRMS works. */
-	 nRecs = (*pFn_DSDS_open_records)(dsRecSet, 
-					  seriesName, 
-					  &hparams, 
-					  &keylistarr, 
-					  &segarr, 
-					  &dsdsStat);
-	 if (dsdsStat == kDSDS_Stat_Success)
-	 {
-	    /* make record prototype from this morass of information */
-	    DRMS_Record_t *template = NULL;
-	    DRMS_Segment_t *seg = NULL;
-	    DRMS_Record_t *cached = NULL;
-
-	    CreateRecordProtoFromFitsAgg(env, 
-					 keylistarr, 
-					 segarr, 
-					 nRecs, 
-					 NULL,
-					 0,
-					 kKEYMAPCLASS_DSDS,
-					 &template,
-					 &seg,
-					 &stat);
-
-	    if (stat == DRMS_SUCCESS)
-	    {
-	       /* Adjust seriesinfo */
-	       AdjustRecordProtoSeriesInfo(env, template, seriesName, 32);
-	       DSDS_SetDSDSParams(ghDSDS, template->seriesinfo, hparams);
-	      
-	       /* alloc segments */
-               if (seg)
-               {
-                  /* Not all DSDS records have a segment */
-                  AllocRecordProtoSeg(template, seg, &stat);
-               }
-	    }
-
-	    if (stat == DRMS_SUCCESS)
-	    {
-	       /* primary index - series_num and rn */
-	       char *pkeyarr[2] = {kDSDS_SERIES_NUM, kDSDS_RN};
-	       SetRecordProtoPKeys(template, pkeyarr, 2, &stat);
-	    }
-
-	    if (stat == DRMS_SUCCESS)
-	    {
-	       /* place proto in cache */
-	       cached = CacheRecordProto(env, template, seriesName, &stat);
-	    }
-
-	    /* create a new record (read-only) for each record */
-	    rset = CreateRecordsFromDSDSKeylist(env,
-						nRecs, 
-						cached, 
-						keylistarr,
-						segarr,
-						0,
-						kKEYMAPCLASS_DSDS,
-						&stat);
-
-	    /* clean up - let libdsds clean up the stuff it created */
-	    (*pFn_DSDS_free_keylistarr)(&keylistarr, nRecs);
-	    (*pFn_DSDS_free_segarr)(&segarr, nRecs);
-	 }
-	 else
-	 {
-	    stat = DRMS_ERROR_LIBDSDS;
-
-            if (dsdsStat == kDSDS_Stat_DSDSOffline)
+    DRMS_RecordSet_t *rset = NULL;
+    int stat = DRMS_SUCCESS;
+    
+    if (!gAttemptedDSDS && !ghDSDS)
+    {
+        /* Get handle to libdsds.so */
+        kDSDS_Stat_t dsdsstat;
+        ghDSDS = DSDS_GetLibHandle(kLIBDSDS, &dsdsstat);
+        if (dsdsstat != kDSDS_Stat_Success)
+        {
+            stat = DRMS_ERROR_CANTOPENLIBRARY;
+        }
+        
+        gAttemptedDSDS = 1;
+    }
+    
+    if (stat == DRMS_SUCCESS && ghDSDS)
+    {
+        pDSDSFn_DSDS_open_records_t pFn_DSDS_open_records = 
+        (pDSDSFn_DSDS_open_records_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_OPEN_RECORDS);
+        pDSDSFn_DSDS_free_keylistarr_t pFn_DSDS_free_keylistarr = 
+        (pDSDSFn_DSDS_free_keylistarr_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_FREE_KEYLISTARR);
+        pDSDSFn_DSDS_free_segarr_t pFn_DSDS_free_segarr = 
+        (pDSDSFn_DSDS_free_segarr_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_FREE_SEGARR);
+        
+        if (pFn_DSDS_open_records && pFn_DSDS_free_keylistarr && pFn_DSDS_free_segarr)
+        {
+            char seriesName[DRMS_MAXSERIESNAMELEN];
+            DSDS_Handle_t hparams;
+            DSDS_KeyList_t **keylistarr;
+            DRMS_Segment_t *segarr;
+            kDSDS_Stat_t dsdsStat;
+            long long nRecs = 0; /* info returned from libdsds.so */
+            
+            /* Returns one keylist per record and one segment per record. Even though
+             * this could involve a lot of alloc'd memory, and it isn't 100% necessary 
+             * to do this to pass the needed information from libdsds.so here, it
+             * does make keyword and segment analysis easier since the functions for 
+             * doing the analysis are available in the module, but not in libdsds.so.
+             * And, eventually it IS necessary to have n keywords and one segment 
+             * per record - that is the way DRMS works. */
+            
+            /* segarr is NULL if there were no data files in the dataset specified. In 
+             * this case, we're making a DRMS data-series that has no segments. */
+            nRecs = (*pFn_DSDS_open_records)(dsRecSet, 
+                                             seriesName, 
+                                             &hparams, 
+                                             &keylistarr, 
+                                             &segarr, 
+                                             &dsdsStat);
+            if (dsdsStat == kDSDS_Stat_Success)
             {
-               stat = DRMS_ERROR_DSDSOFFLINE;
+                /* make record prototype from this morass of information */
+                DRMS_Record_t *template = NULL;
+                DRMS_Segment_t *seg = NULL;
+                DRMS_Record_t *cached = NULL;
+                
+                CreateRecordProtoFromFitsAgg(env, 
+                                             keylistarr, 
+                                             segarr, 
+                                             nRecs, 
+                                             NULL,
+                                             0,
+                                             kKEYMAPCLASS_DSDS,
+                                             &template,
+                                             &seg,
+                                             &stat);
+                
+                if (stat == DRMS_SUCCESS)
+                {
+                    /* Adjust seriesinfo */
+                    AdjustRecordProtoSeriesInfo(env, template, seriesName, 32);
+                    DSDS_SetDSDSParams(ghDSDS, template->seriesinfo, hparams);
+                    
+                    /* alloc segments */
+                    if (seg)
+                    {
+                        /* Not all DSDS records have a segment */
+                        AllocRecordProtoSeg(template, seg, &stat);
+                    }
+                }
+                
+                if (stat == DRMS_SUCCESS)
+                {
+                    /* primary index - series_num and rn */
+                    char *pkeyarr[2] = {kDSDS_SERIES_NUM, kDSDS_RN};
+                    SetRecordProtoPKeys(template, pkeyarr, 2, &stat);
+                }
+                
+                if (stat == DRMS_SUCCESS)
+                {
+                    /* place proto in cache */
+                    cached = CacheRecordProto(env, template, seriesName, &stat);
+                }
+                
+                /* create a new record (read-only) for each record */
+                rset = CreateRecordsFromDSDSKeylist(env,
+                                                    nRecs, 
+                                                    cached, 
+                                                    keylistarr,
+                                                    segarr,
+                                                    0,
+                                                    kKEYMAPCLASS_DSDS,
+                                                    &stat);
+                
+                /* clean up - let libdsds clean up the stuff it created */
+                (*pFn_DSDS_free_keylistarr)(&keylistarr, nRecs);
+                
+                if (segarr)
+                {
+                    (*pFn_DSDS_free_segarr)(&segarr, nRecs);
+                }
             }
-	 }
-      }
-   }
-   else
-   {
-      fprintf(stdout, "Your JSOC environment does not support DSDS database access.\n");
-      stat = DRMS_ERROR_NODSDSSUPPORT;
-   }
-
-   if (status)
-   {
-      *status = stat;
-   }
-
-   /* Clean-up in the case of an error happens in calling function */
-
-   return rset;
+            else
+            {
+                stat = DRMS_ERROR_LIBDSDS;
+                
+                if (dsdsStat == kDSDS_Stat_DSDSOffline)
+                {
+                    stat = DRMS_ERROR_DSDSOFFLINE;
+                }
+            }
+        }
+    }
+    else
+    {
+        fprintf(stdout, "Your JSOC environment does not support DSDS database access.\n");
+        stat = DRMS_ERROR_NODSDSSUPPORT;
+    }
+    
+    if (status)
+    {
+        *status = stat;
+    }
+    
+    /* Clean-up in the case of an error happens in calling function */
+    
+    return rset;
 }
 
 static void QFree(void *data)

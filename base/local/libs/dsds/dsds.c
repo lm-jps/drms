@@ -1470,313 +1470,320 @@ long long DSDS_open_records(const char *dsspec,
 			    DRMS_Segment_t **segs,
 			    kDSDS_Stat_t *stat)
 {
-   kDSDS_Stat_t status = kDSDS_Stat_Success;
-   void *hSOI = GetSOI(&status);
-   long long nRecs = 0; /* No. of SOI records (some may have no data files) */
-   long long nDRMSRecs = 0; /* No. of DRMS records (all have data files) */
-   char drmsSeriesName[DRMS_MAXSERIESNAMELEN];
-   KEY *params = NULL;
-   char datafile[PATH_MAX];
-   char datapath[PATH_MAX];
-
-   *drmsSeries = '\0';
-   *keys = NULL;
-   *segs = NULL;
-
-   if (hSOI)
-   {
-      pSOIFn_getkey_str_t pFn_getkey_str = 
-	(pSOIFn_getkey_str_t)GetSOIFPtr(hSOI, kSOI_GETKEY_STR);
-      pSOIFn_getkey_int_t pFn_getkey_int = 
-	(pSOIFn_getkey_int_t)GetSOIFPtr(hSOI, kSOI_GETKEY_INT);
-      pSOIFn_vds_last_record_t pFn_vds_last_record =
-	(pSOIFn_vds_last_record_t)GetSOIFPtr(hSOI, kSOI_VDS_LAST_RECORD);
-      pSOIFn_vds_open_t pFn_vds_open = 
-	(pSOIFn_vds_open_t)GetSOIFPtr(hSOI, kSOI_VDS_OPEN);
-      pSOIFn_vds_close_t pFn_vds_close = 
-	(pSOIFn_vds_close_t)GetSOIFPtr(hSOI, kSOI_VDS_CLOSE);
-      pSOIFn_VDS_select_hdr_t pFn_VDS_select_hdr =
-	(pSOIFn_VDS_select_hdr_t)GetSOIFPtr(hSOI, kSOI_VDS_SELECT_HDR);
-      pSOIFn_sds_datatype_t pFn_sds_datatype =
-	(pSOIFn_sds_datatype_t)GetSOIFPtr(hSOI, kSOI_SDS_DATATYPE);
-
-      if (pFn_getkey_str && 
-	  pFn_getkey_int && pFn_vds_last_record && pFn_vds_open &&
-	  pFn_vds_close && pFn_VDS_select_hdr && pFn_sds_datatype)
-      {
-	 VDS *vds = NULL;
-	 SDS *sds = NULL;
-	 int nds = 0;
-	 int ds = 0;
-	 char dsname[kDSDS_MaxKeyName];
-	 char key[kDSDS_MaxKeyName];
-
-	 int fsn = 0;
-	 int lsn = 0;
-	 int sn = 0;
-
-         LinkedList_t *wdlist = NULL;
-
-	 params = CreateSOIKeylist(dsspec, &wdlist, &status);
-
-	 if (status == kDSDS_Stat_Success)
-	 {
-	    nds = (*pFn_getkey_int)(params, "in_nsets");
-	    nRecs = NumRecords(hSOI, nds, params, &status);
-
-	    if (status == kDSDS_Stat_Success)
-	    {
-	       /* can now malloc structures */
-	       if (keys && segs)
-	       {
-		  /* The actual number of drms records created is <= nRecs, so
-		   * some of these DSDS_KeyList_ts may not get used. But *keys
-		   * will get freed by DSDS_free_keylistarr() */
-		  *keys = (DSDS_KeyList_t **)malloc(sizeof(DSDS_KeyList_t *) * nRecs);
-		  *segs = (DRMS_Segment_t *)malloc(sizeof(DRMS_Segment_t) * nRecs);
-		  if (*keys && *segs)
-		  {
-		     memset(*keys, 0, sizeof(DSDS_KeyList_t *) * nRecs);
-		     memset(*segs, 0, sizeof(DRMS_Segment_t) * nRecs);
-		  }
-		  else
-		  {
-		     status = kDSDS_Stat_NoMemory;
-		  }
-	       }
-	       else
-	       {
-		  status = kDSDS_Stat_InvalidParams;
-	       }
-	    }
-	 }
-
-	 /* loop through datasets (directories) */
-	 int iRec = 0;
-	 for (ds = 0; status == kDSDS_Stat_Success && ds < nds; ds++) 
-	 {
-	    sprintf(dsname, "in_%d", ds);
-	    if (ds == 0)
-	    {
-	       /* Create DRMS (temporary) series name - this series won't be saved to dbase. */
-	       /* Must make a new series each time DSDS_open_records() is called 
-		* since the caller could make many calls to DSDS_open_records() requesting 
-		* the same DSDS series.  If each subsequent requests retrieve records with 
-		* differing keyword sets, then the cached template record will not
-		* be accurate from call to call. */
-	       MakeDRMSSeriesName(hSOI, 
-				  drmsSeriesName, 
-				  sizeof(drmsSeriesName), 
-				  params, 
-				  dsname,
-				  &status);
-	    }
-
-	    vds = (*pFn_vds_open)(params, dsname);
-
-	    if (vds)
-	    {
-	       sprintf(key, "%s_fsn", dsname); 
-	       fsn = (*pFn_getkey_int)(params, key);
-	       sprintf(key, "%s_lsn", dsname); 
-	       lsn = (*pFn_getkey_int)(params, key);
-
-	       if (lsn == -1)
-	       {
-		  lsn = (*pFn_vds_last_record)(vds);
-	       }
-
-	       /* get series_num */
-	       snprintf(key, sizeof(key), "%s_series_sn", dsname);
-	       int series_num = (*pFn_getkey_int)(params, key);
-
-	       /* loop through records (fits files) within a dataset */
-	       DRMS_Keyword_t *drmskey = NULL;
-
-	       for (sn = fsn; status == kDSDS_Stat_Success && sn <= lsn; sn++)
-	       {
-		  DSDS_KeyList_t *pKL = NULL;
-	       
-		  sds = (*pFn_VDS_select_hdr)(vds, 0, sn);
-
-		  if (sds)
-		  {
-		     /* make primary index keywords - series_num and sn */
-		     (*keys)[nDRMSRecs] = (DSDS_KeyList_t *)malloc(sizeof(DSDS_KeyList_t));
-		     pKL = (*keys)[nDRMSRecs];
-		     pKL->next = NULL;
-
-		     drmskey = (DRMS_Keyword_t *)malloc(sizeof(DRMS_Keyword_t));
-		     memset(drmskey, 0, sizeof(DRMS_Keyword_t));
-		     drmskey->info = (DRMS_KeywordInfo_t *)malloc(sizeof(DRMS_KeywordInfo_t));
-		     memset(drmskey->info, 0, sizeof(DRMS_KeywordInfo_t));
-
-		     snprintf(drmskey->info->name, DRMS_MAXKEYNAMELEN, "%s", kDSDS_SERIES_NUM);
-		     drmskey->info->type = DRMS_TYPE_INT;
-		     GetKWFormat(drmskey->info->format, DRMS_MAXFORMATLEN, drmskey->info->type);
-
-		     snprintf(drmskey->info->description, 
-			      DRMS_MAXCOMMENTLEN,
-			      "%s",
-			      "Identifies dataset.");
-		     
-		     (drmskey->value).int_val = series_num;
-
-		     pKL->elem = drmskey;
-
-		      /* make primary index keywords - sn */
-		     pKL->next = (DSDS_KeyList_t *)malloc(sizeof(DSDS_KeyList_t));
-		     pKL = pKL->next;
-		     pKL->next = NULL;
-
-		     drmskey = (DRMS_Keyword_t *)malloc(sizeof(DRMS_Keyword_t));
-		     memset(drmskey, 0, sizeof(DRMS_Keyword_t));
-		     drmskey->info = (DRMS_KeywordInfo_t *)malloc(sizeof(DRMS_KeywordInfo_t));
-		     memset(drmskey->info, 0, sizeof(DRMS_KeywordInfo_t));
-
-		     snprintf(drmskey->info->name, DRMS_MAXKEYNAMELEN, "%s", kDSDS_RN);
-		     drmskey->info->type = DRMS_TYPE_INT;
-		     GetKWFormat(drmskey->info->format, DRMS_MAXFORMATLEN, drmskey->info->type);
-
-		     snprintf(drmskey->info->description, 
-			      DRMS_MAXCOMMENTLEN,
-			      "%s",
-			      "Identifies record within dataset.");
-		     
-		     (drmskey->value).int_val = sn;
-
-		     pKL->elem = drmskey;
-
-		     /* make keyword needed for reading fits file - ds */
-		     pKL->next = (DSDS_KeyList_t *)malloc(sizeof(DSDS_KeyList_t));
-		     pKL = pKL->next;
-		     pKL->next = NULL;
-
-		     drmskey = (DRMS_Keyword_t *)malloc(sizeof(DRMS_Keyword_t));
-		     memset(drmskey, 0, sizeof(DRMS_Keyword_t));
-		     drmskey->info = (DRMS_KeywordInfo_t *)malloc(sizeof(DRMS_KeywordInfo_t));
-		     memset(drmskey->info, 0, sizeof(DRMS_KeywordInfo_t));
-
-		     snprintf(drmskey->info->name, DRMS_MAXKEYNAMELEN, "%s", kDSDS_DS);
-		     drmskey->info->type = DRMS_TYPE_INT;
-		     GetKWFormat(drmskey->info->format, DRMS_MAXFORMATLEN, drmskey->info->type);
-
-		     snprintf(drmskey->info->description, 
-			      DRMS_MAXCOMMENTLEN,
-			      "%s",
-			      "Identifies virtual dataset.");
-		     
-		     (drmskey->value).int_val = ds;
-
-		     pKL->elem = drmskey;
-
-
-		     /* loop through attributes */
-                     datafile[0] = '\0';
-                     int dataexist = 0;
-                     char *pdf = datafile;
-		     LoopAttrs(hSOI, sds, pKL, &status, &pdf, sizeof(datafile));
-
-                     if (strlen(datafile) > 0)
-                     {
-                        /* There is a data file.  There may be a single record's data
-                         * per FITS file, in which case sds->filename contains
-                         * the FITS file path (protocol RDB.FITS).  Or, there may be multiple 
-                         * records' data per FITS file, in which case 
-                         * vds->filename contains the FITS file path (protocol 
-                         * RDB.FITS_MERGE).
-                         */
-                        dataexist = 1;
-
-                        if (sds->filename && strlen(sds->filename) > 0)
+    kDSDS_Stat_t status = kDSDS_Stat_Success;
+    void *hSOI = GetSOI(&status);
+    long long nRecs = 0; /* No. of SOI records (some may have no data (SDSs)) */
+    long long nDRMSRecs = 0; /* No. of DRMS records (all have data (at least one SDS)) */
+    char drmsSeriesName[DRMS_MAXSERIESNAMELEN];
+    KEY *params = NULL;
+    char datafile[PATH_MAX];
+    char datapath[PATH_MAX];
+    
+    *drmsSeries = '\0';
+    *keys = NULL;
+    *segs = NULL;
+    int keepsegs = 0;
+    
+    if (hSOI)
+    {
+        pSOIFn_getkey_str_t pFn_getkey_str = 
+        (pSOIFn_getkey_str_t)GetSOIFPtr(hSOI, kSOI_GETKEY_STR);
+        pSOIFn_getkey_int_t pFn_getkey_int = 
+        (pSOIFn_getkey_int_t)GetSOIFPtr(hSOI, kSOI_GETKEY_INT);
+        pSOIFn_vds_last_record_t pFn_vds_last_record =
+        (pSOIFn_vds_last_record_t)GetSOIFPtr(hSOI, kSOI_VDS_LAST_RECORD);
+        pSOIFn_vds_open_t pFn_vds_open = 
+        (pSOIFn_vds_open_t)GetSOIFPtr(hSOI, kSOI_VDS_OPEN);
+        pSOIFn_vds_close_t pFn_vds_close = 
+        (pSOIFn_vds_close_t)GetSOIFPtr(hSOI, kSOI_VDS_CLOSE);
+        pSOIFn_VDS_select_hdr_t pFn_VDS_select_hdr =
+        (pSOIFn_VDS_select_hdr_t)GetSOIFPtr(hSOI, kSOI_VDS_SELECT_HDR);
+        pSOIFn_sds_datatype_t pFn_sds_datatype =
+        (pSOIFn_sds_datatype_t)GetSOIFPtr(hSOI, kSOI_SDS_DATATYPE);
+        
+        if (pFn_getkey_str && 
+            pFn_getkey_int && pFn_vds_last_record && pFn_vds_open &&
+            pFn_vds_close && pFn_VDS_select_hdr && pFn_sds_datatype)
+        {
+            VDS *vds = NULL;
+            SDS *sds = NULL;
+            int nds = 0;
+            int ds = 0;
+            char dsname[kDSDS_MaxKeyName];
+            char key[kDSDS_MaxKeyName];
+            
+            int fsn = 0;
+            int lsn = 0;
+            int sn = 0;
+            
+            LinkedList_t *wdlist = NULL;
+            
+            params = CreateSOIKeylist(dsspec, &wdlist, &status);
+            
+            if (status == kDSDS_Stat_Success)
+            {
+                nds = (*pFn_getkey_int)(params, "in_nsets");
+                nRecs = NumRecords(hSOI, nds, params, &status);
+                
+                if (status == kDSDS_Stat_Success)
+                {
+                    /* can now malloc structures */
+                    if (keys && segs)
+                    {
+                        /* The actual number of drms records created is <= nRecs, so
+                         * some of these DSDS_KeyList_ts may not get used. But *keys
+                         * will get freed by DSDS_free_keylistarr() */
+                        *keys = (DSDS_KeyList_t **)malloc(sizeof(DSDS_KeyList_t *) * nRecs);
+                        *segs = (DRMS_Segment_t *)malloc(sizeof(DRMS_Segment_t) * nRecs);
+                        if (*keys && *segs)
                         {
-                           snprintf(datapath, sizeof(datapath), "%s", sds->filename);
-                        }
-                        else if (vds->filename && strlen(vds->filename) > 0)
-                        {
-                           snprintf(datapath, sizeof(datapath), "%s", vds->filename);
+                            memset(*keys, 0, sizeof(DSDS_KeyList_t *) * nRecs);
+                            memset(*segs, 0, sizeof(DRMS_Segment_t) * nRecs);
                         }
                         else
                         {
-                           /* error */
-                           status = kDSDS_Stat_UnkFITSpath;
+                            status = kDSDS_Stat_NoMemory;
                         }
-                     }
-
-		     /* Must make segment now */
-		     DRMS_Segment_t *drmsseg = &((*segs)[nDRMSRecs]);
-		     kDSDS_Stat_t segstatus = kDSDS_Stat_Success;
-
-                     /* It is possible that VDS will create a record with no segment.  This is accomplished 
-                      * by creating a .record.rdb file, but no .fits file.  When this happens, we
-                      * basically have something analogous to a DRMS record with no segment.  Leave the 
-                      * segment undefined (the struct is zero'd out) so that callers of DSDS_open_records()
-                      * know there is no data segment. */
-                     if (status == kDSDS_Stat_Success && dataexist)
-                     {
-                        FillDRMSSeg(hSOI, 
-                                    sds, 
-                                    drmsseg, 
-                                    kDSDS_Segment, 
-                                    DRMS_DSDS, 
-                                    datapath, 
-                                    &segstatus);
-                     }
-
-		     if (segstatus != kDSDS_Stat_Success)
-		     {
-			/* free rec and its keyword list */
-			FreeDSDSKeyList(&((*keys)[nDRMSRecs]));
-			status = segstatus;
-		     }
-
-                     if (status == kDSDS_Stat_Success)
-                     {
-                        nDRMSRecs++;
-                     }
-		  }
-
-                  if (status == kDSDS_Stat_Success)
-                  { 
-                     iRec++;
-                  }
-	       } /* record loop */
-
-	       (*pFn_vds_close)(&vds); /* frees sds's */
-	    } /* vds */
-	 } /* dataset loop */
-
-         list_llfree(&wdlist);
-      }
-      else
-      {
-	 status = kDSDS_Stat_MissingAPI;
-      }
-   }
-
-   if (status == kDSDS_Stat_Success)
-   {
-      snprintf(drmsSeries, DRMS_MAXSERIESNAMELEN, "%s", drmsSeriesName);
-      GenerateHandle("DSDS_KEY", params, hparams);
-   }
-   else
-   {
-      if (keys)
-      {
-	 DSDS_free_keylistarr(keys, nDRMSRecs);
-      }
-      if (segs)
-      {
-	 DSDS_free_segarr(segs, nDRMSRecs);
-      }
-   }
-
-   if (stat)
-   {
-      *stat = status;
-   }
-
-   return nDRMSRecs;
+                    }
+                    else
+                    {
+                        status = kDSDS_Stat_InvalidParams;
+                    }
+                }
+            }
+            
+            /* loop through datasets (directories) */
+            int iRec = 0;
+            for (ds = 0; status == kDSDS_Stat_Success && ds < nds; ds++) 
+            {
+                sprintf(dsname, "in_%d", ds);
+                if (ds == 0)
+                {
+                    /* Create DRMS (temporary) series name - this series won't be saved to dbase. */
+                    /* Must make a new series each time DSDS_open_records() is called 
+                     * since the caller could make many calls to DSDS_open_records() requesting 
+                     * the same DSDS series.  If each subsequent requests retrieve records with 
+                     * differing keyword sets, then the cached template record will not
+                     * be accurate from call to call. */
+                    MakeDRMSSeriesName(hSOI, 
+                                       drmsSeriesName, 
+                                       sizeof(drmsSeriesName), 
+                                       params, 
+                                       dsname,
+                                       &status);
+                }
+                
+                vds = (*pFn_vds_open)(params, dsname);
+                
+                if (vds)
+                {
+                    sprintf(key, "%s_fsn", dsname); 
+                    fsn = (*pFn_getkey_int)(params, key);
+                    sprintf(key, "%s_lsn", dsname); 
+                    lsn = (*pFn_getkey_int)(params, key);
+                    
+                    if (lsn == -1)
+                    {
+                        lsn = (*pFn_vds_last_record)(vds);
+                    }
+                    
+                    /* get series_num */
+                    snprintf(key, sizeof(key), "%s_series_sn", dsname);
+                    int series_num = (*pFn_getkey_int)(params, key);
+                    
+                    /* loop through records (fits files) within a dataset */
+                    DRMS_Keyword_t *drmskey = NULL;
+                    
+                    for (sn = fsn; status == kDSDS_Stat_Success && sn <= lsn; sn++)
+                    {
+                        DSDS_KeyList_t *pKL = NULL;
+                        
+                        sds = (*pFn_VDS_select_hdr)(vds, 0, sn);
+                        
+                        if (sds)
+                        {
+                            /* make primary index keywords - series_num and sn */
+                            (*keys)[nDRMSRecs] = (DSDS_KeyList_t *)malloc(sizeof(DSDS_KeyList_t));
+                            pKL = (*keys)[nDRMSRecs];
+                            pKL->next = NULL;
+                            
+                            drmskey = (DRMS_Keyword_t *)malloc(sizeof(DRMS_Keyword_t));
+                            memset(drmskey, 0, sizeof(DRMS_Keyword_t));
+                            drmskey->info = (DRMS_KeywordInfo_t *)malloc(sizeof(DRMS_KeywordInfo_t));
+                            memset(drmskey->info, 0, sizeof(DRMS_KeywordInfo_t));
+                            
+                            snprintf(drmskey->info->name, DRMS_MAXKEYNAMELEN, "%s", kDSDS_SERIES_NUM);
+                            drmskey->info->type = DRMS_TYPE_INT;
+                            GetKWFormat(drmskey->info->format, DRMS_MAXFORMATLEN, drmskey->info->type);
+                            
+                            snprintf(drmskey->info->description, 
+                                     DRMS_MAXCOMMENTLEN,
+                                     "%s",
+                                     "Identifies dataset.");
+                            
+                            (drmskey->value).int_val = series_num;
+                            
+                            pKL->elem = drmskey;
+                            
+                            /* make primary index keywords - sn */
+                            pKL->next = (DSDS_KeyList_t *)malloc(sizeof(DSDS_KeyList_t));
+                            pKL = pKL->next;
+                            pKL->next = NULL;
+                            
+                            drmskey = (DRMS_Keyword_t *)malloc(sizeof(DRMS_Keyword_t));
+                            memset(drmskey, 0, sizeof(DRMS_Keyword_t));
+                            drmskey->info = (DRMS_KeywordInfo_t *)malloc(sizeof(DRMS_KeywordInfo_t));
+                            memset(drmskey->info, 0, sizeof(DRMS_KeywordInfo_t));
+                            
+                            snprintf(drmskey->info->name, DRMS_MAXKEYNAMELEN, "%s", kDSDS_RN);
+                            drmskey->info->type = DRMS_TYPE_INT;
+                            GetKWFormat(drmskey->info->format, DRMS_MAXFORMATLEN, drmskey->info->type);
+                            
+                            snprintf(drmskey->info->description, 
+                                     DRMS_MAXCOMMENTLEN,
+                                     "%s",
+                                     "Identifies record within dataset.");
+                            
+                            (drmskey->value).int_val = sn;
+                            
+                            pKL->elem = drmskey;
+                            
+                            /* make keyword needed for reading fits file - ds */
+                            pKL->next = (DSDS_KeyList_t *)malloc(sizeof(DSDS_KeyList_t));
+                            pKL = pKL->next;
+                            pKL->next = NULL;
+                            
+                            drmskey = (DRMS_Keyword_t *)malloc(sizeof(DRMS_Keyword_t));
+                            memset(drmskey, 0, sizeof(DRMS_Keyword_t));
+                            drmskey->info = (DRMS_KeywordInfo_t *)malloc(sizeof(DRMS_KeywordInfo_t));
+                            memset(drmskey->info, 0, sizeof(DRMS_KeywordInfo_t));
+                            
+                            snprintf(drmskey->info->name, DRMS_MAXKEYNAMELEN, "%s", kDSDS_DS);
+                            drmskey->info->type = DRMS_TYPE_INT;
+                            GetKWFormat(drmskey->info->format, DRMS_MAXFORMATLEN, drmskey->info->type);
+                            
+                            snprintf(drmskey->info->description, 
+                                     DRMS_MAXCOMMENTLEN,
+                                     "%s",
+                                     "Identifies virtual dataset.");
+                            
+                            (drmskey->value).int_val = ds;
+                            
+                            pKL->elem = drmskey;
+                            
+                            
+                            /* loop through attributes */
+                            datafile[0] = '\0';
+                            int dataexist = 0;
+                            char *pdf = datafile;
+                            LoopAttrs(hSOI, sds, pKL, &status, &pdf, sizeof(datafile));
+                            
+                            if (strlen(datafile) > 0)
+                            {
+                                /* There is a data file.  There may be a single record's data
+                                 * per FITS file, in which case sds->filename contains
+                                 * the FITS file path (protocol RDB.FITS).  Or, there may be multiple 
+                                 * records' data per FITS file, in which case 
+                                 * vds->filename contains the FITS file path (protocol 
+                                 * RDB.FITS_MERGE).
+                                 */
+                                dataexist = 1;
+                                keepsegs = 1; /* There is at least one data file present in the series*/
+                                
+                                if (sds->filename && strlen(sds->filename) > 0)
+                                {
+                                    snprintf(datapath, sizeof(datapath), "%s", sds->filename);
+                                }
+                                else if (vds->filename && strlen(vds->filename) > 0)
+                                {
+                                    snprintf(datapath, sizeof(datapath), "%s", vds->filename);
+                                }
+                                else
+                                {
+                                    /* error */
+                                    status = kDSDS_Stat_UnkFITSpath;
+                                }
+                            }
+                            
+                            /* Must make segment now */
+                            DRMS_Segment_t *drmsseg = &((*segs)[nDRMSRecs]);
+                            kDSDS_Stat_t segstatus = kDSDS_Stat_Success;
+                            
+                            /* It is possible that VDS will create a record with no segment.  This is accomplished 
+                             * by creating a .record.rdb file, but no .fits file.  When this happens, we
+                             * basically have something analogous to a DRMS record with no segment.  Leave the 
+                             * segment undefined (the struct is zero'd out) so that callers of DSDS_open_records()
+                             * know there is no data segment. */
+                            if (status == kDSDS_Stat_Success && dataexist)
+                            {
+                                FillDRMSSeg(hSOI, 
+                                            sds, 
+                                            drmsseg, 
+                                            kDSDS_Segment, 
+                                            DRMS_DSDS, 
+                                            datapath, 
+                                            &segstatus);
+                            }
+                            
+                            if (segstatus != kDSDS_Stat_Success)
+                            {
+                                /* free rec and its keyword list */
+                                FreeDSDSKeyList(&((*keys)[nDRMSRecs]));
+                                status = segstatus;
+                            }
+                            
+                            if (status == kDSDS_Stat_Success)
+                            {
+                                nDRMSRecs++;
+                            }
+                        }
+                        
+                        if (status == kDSDS_Stat_Success)
+                        { 
+                            iRec++;
+                        }
+                    } /* record loop */
+                    
+                    (*pFn_vds_close)(&vds); /* frees sds's */
+                } /* vds */
+            } /* dataset loop */
+            
+            list_llfree(&wdlist);
+        }
+        else
+        {
+            status = kDSDS_Stat_MissingAPI;
+        }
+    }
+    
+    if (status == kDSDS_Stat_Success)
+    {
+        snprintf(drmsSeries, DRMS_MAXSERIESNAMELEN, "%s", drmsSeriesName);
+        GenerateHandle("DSDS_KEY", params, hparams);
+        
+        if (!keepsegs && segs)
+        {
+            DSDS_free_segarr(segs, nDRMSRecs);
+        }
+    }
+    else
+    {
+        if (keys)
+        {
+            DSDS_free_keylistarr(keys, nDRMSRecs);
+        }
+        if (segs)
+        {
+            DSDS_free_segarr(segs, nDRMSRecs);
+        }
+    }
+    
+    if (stat)
+    {
+        *stat = status;
+    }
+    
+    return nDRMSRecs;
 }
 
 void DSDS_free_keylist(DSDS_KeyList_t **pkl)
