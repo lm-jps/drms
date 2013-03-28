@@ -1570,7 +1570,7 @@ static int RecordLoopCursor(DRMS_Env_t *env, const char *rsq, DRMS_RecordSet_t *
         if (irec == 0)
         {
             /* Print the header, if there is at least one row. */
-            PrintHeader(env, series, keylist, seglist, show_all, show_keys, show_all_segs, show_segs, show_all_links, quiet, keyword_list, show_recnum, show_sunum, show_recordspec, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_dims, want_path, show_types, keys, &nkeys, segs, &nsegs, &linked_segs, links, &nlinks);
+            PrintHeader(env, rec->seriesinfo->seriesname, keylist, seglist, show_all, show_keys, show_all_segs, show_segs, show_all_links, quiet, keyword_list, show_recnum, show_sunum, show_recordspec, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_dims, want_path, show_types, keys, &nkeys, segs, &nsegs, &linked_segs, links, &nlinks);
         }
         
         /* ART - status may be DRMS_REMOTESUMS_TRYLATER, but there should still be a                                                                                            
@@ -1673,7 +1673,17 @@ static int RecordLoopNoCursor(DRMS_Env_t *env, DRMS_RecordSet_t *recordset, int 
     
     if (recordset->n > 0)
     {
-        PrintHeader(env, series, keylist, seglist, show_all, show_keys, show_all_segs, show_segs, show_all_links, quiet, keyword_list, show_recnum, show_sunum, show_recordspec, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_dims, want_path, show_types, keys, &nkeys, segs, &nsegs, &linked_segs, links, &nlinks);
+        if (*series != '\0')
+        {
+            /* We were able to get the series name without having to actually open records. */
+            PrintHeader(env, series, keylist, seglist, show_all, show_keys, show_all_segs, show_segs, show_all_links, quiet, keyword_list, show_recnum, show_sunum, show_recordspec, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_dims, want_path, show_types, keys, &nkeys, segs, &nsegs, &linked_segs, links, &nlinks);
+        }
+        else
+        {
+            /* We were not able to get the series name from parsing the record-set specification (e.g., the record-set specification 
+             * was a DSDS set. */
+            PrintHeader(env, recordset->records[0]->seriesinfo->seriesname, keylist, seglist, show_all, show_keys, show_all_segs, show_segs, show_all_links, quiet, keyword_list, show_recnum, show_sunum, show_recordspec, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_dims, want_path, show_types, keys, &nkeys, segs, &nsegs, &linked_segs, links, &nlinks);
+        }
     }
     
     for (irec = 0; irec < recordset->n; irec++) 
@@ -1991,7 +2001,7 @@ int DoIt(void)
       /* Parse "in" to isolate the record-set filter. 
        *
        * Not only do we need to isolate the filter, we need the parsed fields to decide, later, whether 
-       * show_info should continue (there must either be a n=XX arg, or a record-set fitler).
+       * show_info should continue (there must either be a n=XX arg, or a record-set filter).
        * BTW, checking for an @file argument isn't sufficient - the file could be empty, or
        * it could contain seriesnames with no filters. The parsing below will make sure a filter 
        * is found somewhere, even if it is inside the @file. */
@@ -2011,9 +2021,22 @@ int DoIt(void)
               show_info_return(2);
           }
 
+          /* HELLO! snames contains information only if the settype is kRecordSetType_DRMS. For DSDS ds's, for example,
+           * snames[i] will be NULL. The series name for DSDS ds's is accessible at DRMS_Record_t::seriesinfo->name. 
+           *
+           * show_info DOES NOT SUPPORT MULTIPLE RECORD-SET SUB-SETS. This is why we look at just the first record-set subset
+           * (there should be only one subset).
+           */
           if (nsets > 0)
           {
-              snprintf(seriesnameforheader, sizeof(seriesnameforheader), "%s", snames[0]);
+              if (settypes[0] == kRecordSetType_DRMS)
+              {
+                  snprintf(seriesnameforheader, sizeof(seriesnameforheader), "%s", snames[0]);
+              }
+              else
+              {
+                  *seriesnameforheader = '\0';
+              }
           }
           else
           {
