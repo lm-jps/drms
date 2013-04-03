@@ -109,6 +109,13 @@ create sequence SUM_SEQ
   no cycle
   cache 50;
 
+create sequence SUM_DS_INDEX_SEQ
+  increment 1
+  start 1
+  no maxvalue
+  no cycle
+  cache 50;
+
 /* This is the file checksum table. For each file written to tape */
 /* it will get an entry here of the file md5 checksum value. */
 create table SUM_FILE (
@@ -118,6 +125,16 @@ create table SUM_FILE (
 	md5cksum	varchar(36) not null,
 	constraint pk_file primary key (tapeid, filenum)
        );
+
+create table SUM_ARCH_GROUP (
+	group_id	integer not null,
+	cadence_days	integer not null,
+	sec1970_start	bigint not null,
+	date_arch_start	timestamp(0),
+	name		varchar(96),
+	sum_set		integer not null,
+	constraint pk_arch_group primary key (group_id)
+);
 
 /* The group id for a dataseries is defined by the drms definition */
 /* for the series. */
