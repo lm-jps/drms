@@ -1367,6 +1367,9 @@ int drms_server_getunits(DRMS_Env_t *env, int sockfd)
 
   retrieve = Readint(sockfd);
   dontwait = Readint(sockfd);
+    
+    /* SUMS does not support dontwait == 1, so force dontwait to be 0 (deprecate the dontwait parameter). */
+    dontwait = 0;
 
   status = drms_getunits_ex(env, n, suandseries, retrieve, dontwait);
   Writeint(sockfd,status);
@@ -1478,6 +1481,9 @@ int drms_server_getsudirs(DRMS_Env_t *env, int sockfd)
 
    retrieve = Readint(sockfd);
    dontwait = Readint(sockfd);
+    
+    /* SUMS does not support dontwait == 1, so force dontwait to be 0 (deprecate the dontwait parameter). */
+    dontwait = 0;
 
    status = drms_su_getsudirs(env, num, su, retrieve, dontwait);
    
@@ -2486,238 +2492,248 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 
     while (tryagain)
     {
-       tryagain = 0;
-       sumscrashed = 0;
-
-       if (!sum)
-       {
-           /* SUMS crashed - open a new SUMS. */
-           sumscallret = MakeSumsCall(env, DRMS_SUMOPEN, &sum, printkerr, NULL, NULL);
-           if (sumscallret == kBrokenPipe)
-           {
-               /* free a non-null sum? */
-               sum = NULL;
-           }
-           else if (sumscallret == kSUMSDead)
-           {
-               sum = NULL;
-               nosums = 1;
-               reply->opcode = sumscallret;
-               break;
-           }
-           
-           if (!sum)
-           {
-               fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
-               tryagain = 1;
-               sleep(sleepiness);
-               GettingSleepier(&sleepiness);
-               continue;
-           }
-           else
-           {
-               *suminout = sum;
-           }
-       }
-
-       sum->reqcnt = request->reqcnt;
-       sum->mode = request->mode;
-       sum->tdays = request->tdays;
-       for (i=0; i<request->reqcnt; i++)
-         sum->dsix_ptr[i] = request->sunum[i];
-
-       /* Make RPC call to the SUM server. */
-       reply->opcode = MakeSumsCall(env, DRMS_SUMGET, &sum, printf);
-
-#ifdef DEBUG
-       printf("SUM thread: SUM_get returned %d\n",reply->opcode);
-#endif
-
-       if (reply->opcode == RESULT_PEND)
-       {
-          /* This SUM_wait() call can take a while. If DRMS is shutting down, 
-           * then don't wait. Should be okay to get shut down sem since 
-           * the main and signal threads don't hold onto them for too long. */
-          int pollrv = 0;
-          int naptime = 1;
-          int nloop = 10;
-          int maxloop = 7200; /* 2 hours (very roughly) */
-
-          /* WARNING - this is potentially an infinite loop. */
-          while (1)
-          {
-             if (maxloop <= 0)   
-             {
-                /* tape read didn't complete */
-                fprintf(stderr, "Tape read has not completed; try again later.\n");
+        tryagain = 0;
+        sumscrashed = 0;
+        
+        if (!sum)
+        {
+            /* SUMS crashed - open a new SUMS. */
+            sumscallret = MakeSumsCall(env, DRMS_SUMOPEN, &sum, printkerr, NULL, NULL);
+            if (sumscallret == kBrokenPipe)
+            {
+                /* free a non-null sum? */
+                sum = NULL;
+            }
+            else if (sumscallret == kSUMSDead)
+            {
+                sum = NULL;
                 nosums = 1;
-
-                drms_lock_server(env);
-                /* It is no longer ok to call SUMS. Once DRMS times-out waiting on SUMS, 
-                 * if DRMS were to call SUMS again, SUMS could break. */
-                env->sumssafe = 0;
-                drms_unlock_server(env);
+                reply->opcode = sumscallret;
                 break;
-             }
-
-             if (sdsem)
-             {
-                sem_wait(sdsem);
-                shuttingdown = (drms_server_getsd() != kSHUTDOWN_UNINITIATED);
-                sem_post(sdsem);
-             }
-
-             if (shuttingdown)
-             {
-                reply->opcode = 0;
-                break; // from inner loop
-             }
-
-             if (gSUMSbusyMtx)
-             {
-                pthread_mutex_lock(gSUMSbusyMtx);
-                gSUMSbusy = 1;
-                pthread_mutex_unlock(gSUMSbusyMtx);
-             }
-
-             /* if sum_svc is down, 
-              * then SUM_poll() will never return anything but TIMEOUTMSG. */
-             if (nloop <= 0)
-             {
-                pollrv = SUM_poll(sum);
-                nloop = 10;
-             }
-             else
-             {
+            }
+            
+            if (!sum)
+            {
+                fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
+                tryagain = 1;
+                sleep(sleepiness);
+                GettingSleepier(&sleepiness);
+                continue;
+            }
+            else
+            {
+                *suminout = sum;
+            }
+        }
+        
+        sum->reqcnt = request->reqcnt;
+        sum->mode = request->mode;
+        sum->tdays = request->tdays;
+        for (i=0; i<request->reqcnt; i++)
+            sum->dsix_ptr[i] = request->sunum[i];
+        
+        /* Make RPC call to the SUM server. */
+        reply->opcode = MakeSumsCall(env, DRMS_SUMGET, &sum, printf);
+        
+#ifdef DEBUG
+        printf("SUM thread: SUM_get returned %d\n",reply->opcode);
+#endif
+        
+        if (reply->opcode == RESULT_PEND)
+        {
+            /* This SUM_wait() call can take a while. If DRMS is shutting down, 
+             * then don't wait. Should be okay to get shut down sem since 
+             * the main and signal threads don't hold onto them for too long. */
+            int pollrv = 0;
+            int naptime = 1;
+            int nloop = 10;
+            int maxloop = 7200; /* 2 hours (very roughly) */
+            
+            /* WARNING - this is potentially an infinite loop. */
+            while (1)
+            {
+                if (maxloop <= 0)   
+                {
+                    /* tape read didn't complete */
+                    fprintf(stderr, "Tape read has not completed; try again later.\n");
+                    nosums = 1;
+                    
+                    drms_lock_server(env);
+                    /* It is no longer ok to call SUMS. Once DRMS times-out waiting on SUMS, 
+                     * if DRMS were to call SUMS again, SUMS could break. */
+                    env->sumssafe = 0;
+                    drms_unlock_server(env);
+                    break;
+                }
+                
+                if (sdsem)
+                {
+                    sem_wait(sdsem);
+                    shuttingdown = (drms_server_getsd() != kSHUTDOWN_UNINITIATED);
+                    sem_post(sdsem);
+                }
+                
+                if (shuttingdown)
+                {
+                    reply->opcode = 0;
+                    break; // from inner loop
+                }
+                
                 if (gSUMSbusyMtx)
                 {
-                   pthread_mutex_lock(gSUMSbusyMtx);
-                   gSUMSbusy = 0;
-                   pthread_mutex_unlock(gSUMSbusyMtx);
+                    pthread_mutex_lock(gSUMSbusyMtx);
+                    gSUMSbusy = 1;
+                    pthread_mutex_unlock(gSUMSbusyMtx);
                 }
-
-                nloop--;
-                maxloop--;
-                sleep(1);
-                continue;
-             }
-             
-             if (env->verbose)
-             {
-                fprintf(stdout, "SUM_poll() returned %d.\n", pollrv);
-             }
-
-             if (gSUMSbusyMtx)
-             {
-                pthread_mutex_lock(gSUMSbusyMtx);
-                gSUMSbusy = 0;
-                pthread_mutex_unlock(gSUMSbusyMtx);
-             }
-
-             if (pollrv == 0)
-             {
-                /* There could be an error: sum->status is examined below and if it is not 0, then
-                 * this means there was some fatal error. The module should bail. */
-                break; // from inner loop
-             }
-             else
-             {
-                /* One of four things is true:
-                 *   1. The tape drive is still working on the tape fetch request (the tape could be on a shelf somewhere even). 
-                 *   2. sum_svc has died. 
-                 *   3. tape_svc has died. 
-                 *   4. driveX_svc has died.
-                 * Call SUM_nop() to differentiate these options. It returns:
-                 *   4 - sum_svc crashed or restarted. 
-                 *   5 - tape_svc crashed or restarted. 
-                 *   6 - driveX_svc crashed or restarted. 
-                 *
-                 * If sum_svc has crashed or restarted, then SUM_open() needs to be called again. Otherwise, if
-                 * tape_svc or driveX_svc has crashed or restarted, then SUM_get() needs to be called again. */
-                sumnoop = SUM_nop(sum, printf);
                 
-                if (env->verbose)
+                /* if sum_svc is down, 
+                 * then SUM_poll() will never return anything but TIMEOUTMSG. */
+                if (nloop <= 0)
                 {
-                   fprintf(stdout, "SUM_nop() returned %d.\n", sumnoop);
-                }
-
-                sumscrashed = (sumnoop == 4);
-                if (sumnoop >= 4)
-                {
-                   /* try again...but figure out to which loop starting position to return. */
-                   if (sumscrashed)
-                   {
-                      /* Must go back to SUM_open(). */
-                      sum = NULL;
-                      fprintf(stderr, "sum_svc no longer there; trying SUM_open() then SUM_get() again in %d seconds.\n", sleepiness);
-                   }
-                   else
-                   {
-                      fprintf(stderr, "Either tape_svc or driveX_svc died; trying SUM_get() again in %d seconds.\n", sleepiness);
-                   }
-
-                   /* Must go back to SUM_get(). */
-                   tryagain = 1;
-                   sleep(sleepiness);
-                   GettingSleepier(&sleepiness);
-                   break; // from inner loop
+                    pollrv = SUM_poll(sum);
+                    nloop = 10;
                 }
                 else
                 {
-                   /* Must go back to SUM_poll(). */
-                   if (env->verbose)
-                   {
-                      fprintf(stdout, "Tape fetch has not completed, waiting for %d seconds.\n", naptime);
-                   }
-                   sleep(naptime);
-
-                   /* don't increase the length of the nap - we want to keep polling at a regular, quick interval. */
+                    if (gSUMSbusyMtx)
+                    {
+                        pthread_mutex_lock(gSUMSbusyMtx);
+                        gSUMSbusy = 0;
+                        pthread_mutex_unlock(gSUMSbusyMtx);
+                    }
+                    
+                    nloop--;
+                    maxloop--;
+                    sleep(1);
+                    continue;
                 }
-             }
-          } /* inner while (loop on polling) */
-
-          if (!shuttingdown && !tryagain)
-          {
-             reply->opcode = pollrv;
-
-             if (reply->opcode || sum->status)
-             {
-                fprintf(stderr,"SUM thread: Last SUM_poll call returned "
-                        "error code = %d, sum->status = %d.\n",
-                        reply->opcode, sum->status);
+                
+                if (env->verbose)
+                {
+                    fprintf(stdout, "SUM_poll() returned %d.\n", pollrv);
+                }
+                
+                if (gSUMSbusyMtx)
+                {
+                    pthread_mutex_lock(gSUMSbusyMtx);
+                    gSUMSbusy = 0;
+                    pthread_mutex_unlock(gSUMSbusyMtx);
+                }
+                
+                if (pollrv == 0)
+                {
+                    /* There could be an error: sum->status is examined below and if it is not 0, then
+                     * this means there was some fatal error. The module should bail. */
+                    break; // from inner loop
+                }
+                else
+                {
+                    /* One of four things is true:
+                     *   1. The tape drive is still working on the tape fetch request (the tape could be on a shelf somewhere even). 
+                     *   2. sum_svc has died. 
+                     *   3. tape_svc has died. 
+                     *   4. driveX_svc has died.
+                     * Call SUM_nop() to differentiate these options. It returns:
+                     *   4 - sum_svc crashed or restarted. 
+                     *   5 - tape_svc crashed or restarted. 
+                     *   6 - driveX_svc crashed or restarted. 
+                     *
+                     * If sum_svc has crashed or restarted, then SUM_open() needs to be called again. Otherwise, if
+                     * tape_svc or driveX_svc has crashed or restarted, then SUM_get() needs to be called again. */
+                    sumnoop = SUM_nop(sum, printf);
+                    
+                    if (env->verbose)
+                    {
+                        fprintf(stdout, "SUM_nop() returned %d.\n", sumnoop);
+                    }
+                    
+                    sumscrashed = (sumnoop == 4);
+                    if (sumnoop >= 4)
+                    {
+                        /* try again...but figure out to which loop starting position to return. */
+                        if (sumscrashed)
+                        {
+                            /* Must go back to SUM_open(). */
+                            sum = NULL;
+                            fprintf(stderr, "sum_svc no longer there; trying SUM_open() then SUM_get() again in %d seconds.\n", sleepiness);
+                        }
+                        else
+                        {
+                            fprintf(stderr, "Either tape_svc or driveX_svc died; trying SUM_get() again in %d seconds.\n", sleepiness);
+                        }
+                        
+                        /* Must go back to SUM_get(). */
+                        tryagain = 1;
+                        sleep(sleepiness);
+                        GettingSleepier(&sleepiness);
+                        break; // from inner loop
+                    }
+                    else
+                    {
+                        /* Must go back to SUM_poll(). */
+                        if (env->verbose)
+                        {
+                            fprintf(stdout, "Tape fetch has not completed, waiting for %d seconds.\n", naptime);
+                        }
+                        sleep(naptime);
+                        
+                        /* don't increase the length of the nap - we want to keep polling at a regular, quick interval. */
+                    }
+                }
+            } /* inner while (loop on polling) */
+            
+            if (!shuttingdown && !tryagain)
+            {
+                reply->opcode = pollrv;
+                
+                if (reply->opcode || sum->status)
+                {
+                    fprintf(stderr,"SUM thread: Last SUM_poll call returned "
+                            "error code = %d, sum->status = %d.\n",
+                            reply->opcode, sum->status);
+                    nosums = 1; /* sums error - don't continue */
+                    break; // from outer loop
+                }
+            }
+        }
+        else if (reply->opcode == 1)
+        {
+            /* SUMS received a duplicate SUNUM in the same SUMS session. This is a fatal error. We are actively 
+             * trying to find code that causes duplicate SUNUMs to be issued too, but in case we haven't found
+             * all the places that cause this error, this block of code will prevent Sget() from crashing 
+             * due to duplicate SUNUMs. */
+            fprintf(stderr, "SUMS thread: DRMS client called SUM_get() with a duplicate SUNUM (sums status = %d).\n", sum->status);
+            nosums = 1;
+            break;
+        }
+        else if (reply->opcode != 0)
+        {
+            sumnoop = SUM_nop(sum, printf);
+            sumscrashed = (sumnoop == 4 || reply->opcode == kBrokenPipe);
+            if (sumnoop >= 4 || reply->opcode == kBrokenPipe)
+            {
+                if (sumscrashed)
+                {
+                    sum = NULL;
+                    fprintf(stderr, "sum_svc no longer there; trying SUM_open() then SUM_get() again in %d seconds.\n", sleepiness);
+                }
+                else
+                {
+                    fprintf(stderr, "Either tape_svc or driveX_svc died; trying SUM_get() again in %d seconds.\n", sleepiness);
+                }
+                
+                tryagain = 1;
+                sleep(sleepiness);
+                GettingSleepier(&sleepiness);
+            }
+            else
+            {
+                fprintf(stderr,"SUM thread: SUM_get RPC call failed with "
+                        "error code %d\n",reply->opcode);
                 nosums = 1; /* sums error - don't continue */
                 break; // from outer loop
-             }
-          }
-       }
-       else if (reply->opcode != 0)
-       {
-          sumnoop = SUM_nop(sum, printf);
-          sumscrashed = (sumnoop == 4 || reply->opcode == kBrokenPipe);
-          if (sumnoop >= 4 || reply->opcode == kBrokenPipe)
-          {
-             if (sumscrashed)
-             {
-                sum = NULL;
-                fprintf(stderr, "sum_svc no longer there; trying SUM_open() then SUM_get() again in %d seconds.\n", sleepiness);
-             }
-             else
-             {
-                fprintf(stderr, "Either tape_svc or driveX_svc died; trying SUM_get() again in %d seconds.\n", sleepiness);
-             }
-
-             tryagain = 1;
-             sleep(sleepiness);
-             GettingSleepier(&sleepiness);
-          }
-          else
-          {
-             fprintf(stderr,"SUM thread: SUM_get RPC call failed with "
-                     "error code %d\n",reply->opcode);
-             nosums = 1; /* sums error - don't continue */
-             break; // from outer loop
-          }
-       }
+            }
+        }
     } /* tryagain (outer) loop */
 
     if (!nosums)

@@ -52,6 +52,18 @@ int drms_bulk_insertv(DRMS_Session_t *session, char *table,
 
 int drms_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve);
 
+
+/**
+ Request one or more storage units from SUMS. This function is a client wrapper for the ::drms_su_getsudirs / :: drms_server_getsudirs
+ functions - the semantics are identical for all three functions. Please see the documentation for ::drms_su_getsudirs for more information.
+ 
+ @param env DRMS session information.
+ @param su An array of ::DRMS_StorageUnit_t structs. Each struct contains \a sunum field that has the SUNUM of the storage unit being requested. 
+ @param num The number of structures in the array specified by the \a su parameter.
+ @param retrieve If set to 1, then SUMS will retrieve offline storage units from tape ato disk.
+ @param dontwait DEPRECATED - SUMS does not support dontwait == true, so this parameter is ignored.
+ @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
+ */
 int drms_getsudirs(DRMS_Env_t *env, DRMS_StorageUnit_t **su, int num, int retrieve, int dontwait);
 
 /** \brief Create a new series on-the-fly, using a series record prototype. */

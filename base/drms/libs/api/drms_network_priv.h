@@ -46,9 +46,44 @@ DRMS_StorageUnit_t *drms_getunit(DRMS_Env_t *env,  char *series,
 				 long long sunum, int retrieve, int *status);
 DRMS_StorageUnit_t *drms_getunit_nosums(DRMS_Env_t *env,  char *series, 
                                         long long sunum, int *status);
-/** \brief Retrieve the storage units specified by \a sunum */
-int drms_getunits(DRMS_Env_t *env,  char *series, 
-		  int n, long long *sunum, int retrieve, int dontwait);
+/** 
+ Request one or more storage units from SUMS. This function is a client wrapper for ::drms_su_getsudirs / ::drms_server_getunits functions - 
+ the semantics are identical for all three functions, with the exception that this function 
+ creates the ::DRMS_StorageUnit_t structures needed by ::drms_su_getsudirs / ::drms_server_getunit. The SUNUMs specified
+ must belong to a single series, identified by \a series.
+ Please see the documentation for ::drms_su_getsudirs for more information.
+ 
+ @param env DRMS session information.
+ @param series The DRMS series that contains the storage units to retrieve.
+ @param n The number of SUNUMs in the array specified by the \a sunum parameter.
+ @param sunum An array of SUNUMs that identify the storage units being requested from series \a series.
+ @param retrieve If set to 1, then SUMS will retrieve offline storage units from tape to disk.
+ @param dontwait DEPRECATED - SUMS does not support dontwait == true, so this parameter is ignored.
+ @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
+ */
+int drms_getunits(DRMS_Env_t *env, 
+                  char *series, 
+                  int n, 
+                  long long *sunum, 
+                  int retrieve, 
+                  int dontwait);
+
+
+/** 
+ Request one or more storage units from SUMS. This function is a client wrapper for ::drms_su_getsudirs / ::drms_server_getunits functions - 
+ the semantics are identical for all three functions, with the exception that this function 
+ creates the ::DRMS_StorageUnit_t structures needed by ::drms_su_getsudirs / ::drms_server_getunit. 
+ This function is very similar to ::drms_getunits, except that it supports the specification of SUNUMs from
+ more than one series, but ::drms_getunits does not.
+ Please see the documentation for ::drms_su_getsudirs for more information.
+ 
+ @param env DRMS session information.
+ @param num The number of structures in the array specified by the \a suandseries parameter.
+ @param suandseries An array of ::DRMS_SuAndSeries_t structures. Each structure contains a series name and an array of SUNUMs. This array specifies the storage units that are being requested and their containing series.
+ @param retrieve If set to 1, then SUMS will retrieve offline storage units from tape to disk.
+ @param dontwait DEPRECATED - SUMS does not support dontwait == true, so this parameter is ignored.
+ @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
+ */
 int drms_getunits_ex(DRMS_Env_t *env, 
                      int num, 
                      DRMS_SuAndSeries_t *suandseries, 

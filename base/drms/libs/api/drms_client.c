@@ -1241,6 +1241,7 @@ DRMS_StorageUnit_t *drms_getunit_nosums(DRMS_Env_t *env, char *series,
 
 /* series can be NULL, in which case the resulting storage units seriesinfo fields 
  * will also be NULL. */
+/* SUMS does not support dontwait == 1, so dontwait is ignored. */
 int drms_getunits_internal(DRMS_Env_t *env, 
                            int n, 
                            DRMS_SuAndSeries_t *suandseries,
@@ -1264,6 +1265,9 @@ int drms_getunits_internal(DRMS_Env_t *env,
   char **tosend = (char **)malloc(n * sizeof(char *));
 #endif
 
+    /* SUMS does not support dontwait == 1, so force dontwait to be 0 (deprecate the dontwait parameter). */
+    dontwait = 0;
+    
   su_nc = malloc(n*sizeof(DRMS_StorageUnit_t *));
   XASSERT(su_nc);
 #ifdef DEBUG
@@ -1397,6 +1401,9 @@ int drms_getunits(DRMS_Env_t *env,
 
    if (arr && dup)
    {
+       /* SUMS does not support dontwait == 1, so force dontwait to be 0 (deprecate the dontwait parameter). */
+       dontwait = 0;
+       
       for (isu = 0; isu < n; isu++)
       {
          arr[isu].sunum = sunum[isu];
@@ -1419,6 +1426,9 @@ int drms_getunits_ex(DRMS_Env_t *env,
                      int retrieve,
                      int dontwait)
 {
+    /* SUMS does not support dontwait == 1, so force dontwait to be 0 (deprecate the dontwait parameter). */
+    dontwait = 0;
+    
    return drms_getunits_internal(env, num, suandseries, retrieve, dontwait);
 }
 
@@ -1594,6 +1604,9 @@ int drms_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
 int drms_getsudirs(DRMS_Env_t *env, DRMS_StorageUnit_t **su, int num, int retrieve, int dontwait)
 {
    int status = DRMS_SUCCESS;
+    
+    /* SUMS does not support dontwait == 1, so force dontwait to be 0 (deprecate the dontwait parameter). */
+    dontwait = 0;
 
 #ifdef DRMS_CLIENT
    XASSERT(env->session->db_direct==0);

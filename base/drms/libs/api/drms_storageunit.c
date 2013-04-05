@@ -737,6 +737,9 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
   int iSUMSsunum;
   DRMS_StorageUnit_t *onesu = NULL;
 
+    /* SUMS does not support dontwait == 1, so force dontwait to be 0 (deprecate the dontwait parameter). */
+    dontwait = 0;
+    
   for (isu = 0; isu < n; isu++)
   {
      onesu = su[isu];

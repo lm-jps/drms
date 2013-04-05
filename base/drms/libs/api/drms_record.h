@@ -423,11 +423,22 @@ int drms_record_islocal(DRMS_Record_t *rec);
 
 /**
    @fn int drms_stage_records(DRMS_RecordSet_t *rs, int retrieve, int dontwait)
-   Stage a set of records. All records must come from the same series
+   Stage a set of records. All records must come from the same series.
    @param rs The set of records to stage
    @param retrieve Whether to retrieve the SU if it's off-line
-   @param dontwait Whether to wait for reply from SUMS
+   @param dontwait DEPRECATED - SUMS does not support dontwait == true, so this parameter is ignored.
 */
+
+/**
+ @fn int drms_sortandstage_records(DRMS_RecordSet_t *rs, int retrieve, int dontwait)
+ Stage a set of records. All records must come from the same series. The SUNUMs containing the data files
+ of the record's segments are first sorted before they are put into the request sent to SUMS.
+ @param rs The set of records to stage
+ @param retrieve Whether to retrieve the SU if it's off-line
+ @param dontwait DEPRECATED - SUMS does not support dontwait == true, so this parameter is ignored.
+ */
+
+
 
 /**
    @fn DRMS_RecordSet_t *drms_open_recordset(DRMS_Env_t *env, const char *rsquery, int *status)

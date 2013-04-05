@@ -60,7 +60,15 @@ int drms_server_authenticate(int sockfd, DRMS_Env_t *env, int clientid);
 int drms_server_newslots(DRMS_Env_t *env, int sockfd);
 /** \brief Server function for command code ::DRMS_GETUNIT. */
 int drms_server_getunit(DRMS_Env_t *env, int sockfd);
-/** \brief Server function for command code ::DRMS_GETUNITS. */
+
+/** 
+ Request one or more storage units from SUMS. This is a server function for command code ::DRMS_GETUNITS and is a wrapper for ::drms_getunits_ex.
+ Please see the documentation for ::drms_getunits_ex for more information.
+ 
+ @param env DRMS session information.
+ @param sockfd The file descriptor that identifies the client process that initiated the request. 
+ @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
+ */
 int drms_server_getunits(DRMS_Env_t *env, int sockfd);
 /** \brief Server function for command code ::DRMS_NEWSERIES. */
 int drms_server_newseries(DRMS_Env_t *env, int sockfd);
@@ -78,6 +86,14 @@ long long drms_server_gettmpguid(int *sockfd);
 
 int drms_server_getsudir(DRMS_Env_t *env, int sockfd);
 
+/** 
+ Request one or more storage units from SUMS. This is a server function for command code ::DRMS_GETSUDIRS and is a wrapper for ::drms_su_getsudirs.
+ Please see the documentation for ::drms_su_getsudirs for more information.
+ 
+ @param env DRMS session information.
+ @param sockfd The file descriptor that identifies the client process that initiated the request. 
+ @return DRMS status (see drms_statuscodes.h). 0 if successful, non-0 otherwise.
+ */
 int drms_server_getsudirs(DRMS_Env_t *env, int sockfd);
 
 int drms_server_getsuinfo(DRMS_Env_t *env, int sockfd);

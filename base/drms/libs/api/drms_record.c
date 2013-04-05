@@ -3179,6 +3179,7 @@ static void SuInfoCopyMap(const void *key, const void *value, const void *data)
 }
 
 /* Does not take ownership of suinfo, copies it. */
+/* SUMS does not support dontwait == 1, so dontwait is ignored. */
 static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int dontwait, HContainer_t **suinfo) 
 {
 
@@ -3214,6 +3215,9 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
   SUM_info_t *dummy = NULL;
 
   sortalso = (suinfo != NULL);
+    
+    /* SUMS does not support dontwait == 1, so force dontwait to be 0 (deprecate the dontwait parameter). */
+    dontwait = 0;
 
   /* if recordset is result of drms_open_recordset with a cursor simply remember
      that stage_records has been called.  Actual staging will happen when each
@@ -3547,29 +3551,35 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
 
 int drms_stage_records(DRMS_RecordSet_t *rs, int retrieve, int dontwait) 
 {
-   return drms_stage_records_internal(rs, retrieve, dontwait, NULL);
+    /* SUMS does not support dontwait == 1, so force dontwait to be 0 (deprecate the dontwait parameter). */
+    dontwait = 0;
+    
+    return drms_stage_records_internal(rs, retrieve, dontwait, NULL);
 }
 
 int drms_sortandstage_records(DRMS_RecordSet_t *rs, int retrieve, int dontwait, HContainer_t **suinfo) 
 {
-   /* Sort records by tapeid, filenumber first. */
-
-   /* To sort records for staging, calls to SUM_InfoEx() must be made. The records in the 
-    * record array in rs may already have SUM_info_t present (the module calling 
-    * drms_sortandstage_records() could have explicitly called SUM_InfoEx() or
-    * drms_sortandstage_records() could have been called previously). In addition,
-    * the SUM_info_t structs could be available, but not yet copied into the 
-    * suinfo field of the DRMS_Record_t structs. The suinfo-container parameter 
-    * can be used to pass these SUM_info_t structs to this function. */
-   
-   /* If the SUM_info_t information is present in the records' suinfo fields, 
-    * then use those structs for sorting the records. If the SUM_info_t information
-    * is not present, or the records are not present (for example, if the record-set
-    * was created by calling drms_open_recordset()), then use the information in the 
-    * suinfo parameter. If there is no SUM_info_t struct for a record, then 
-    * call SUM_InfoEx() to obtain that information. */
-
-   return drms_stage_records_internal(rs, retrieve, dontwait, suinfo);   
+    /* Sort records by tapeid, filenumber first. */
+    
+    /* To sort records for staging, calls to SUM_InfoEx() must be made. The records in the 
+     * record array in rs may already have SUM_info_t present (the module calling 
+     * drms_sortandstage_records() could have explicitly called SUM_InfoEx() or
+     * drms_sortandstage_records() could have been called previously). In addition,
+     * the SUM_info_t structs could be available, but not yet copied into the 
+     * suinfo field of the DRMS_Record_t structs. The suinfo-container parameter 
+     * can be used to pass these SUM_info_t structs to this function. */
+    
+    /* If the SUM_info_t information is present in the records' suinfo fields, 
+     * then use those structs for sorting the records. If the SUM_info_t information
+     * is not present, or the records are not present (for example, if the record-set
+     * was created by calling drms_open_recordset()), then use the information in the 
+     * suinfo parameter. If there is no SUM_info_t struct for a record, then 
+     * call SUM_InfoEx() to obtain that information. */
+    
+    /* SUMS does not support dontwait == 1, so force dontwait to be 0 (deprecate the dontwait parameter). */
+    dontwait = 0;
+    
+    return drms_stage_records_internal(rs, retrieve, dontwait, suinfo);   
 }
 
 static int InsertRec(HContainer_t **allRecs, DRMS_Record_t *rec, int *nsunums)
@@ -9391,7 +9401,7 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                       if (rs->cursor->staging_needed == 1)
                       {
                           /* Stage, but don't sort records by tapeid/filenum first. */
-                          stat = drms_stage_records(fetchedrecs, rs->cursor->retrieve,  rs->cursor->dontwait);
+                          stat = drms_stage_records(fetchedrecs, rs->cursor->retrieve, rs->cursor->dontwait);
                       }
                       else if (rs->cursor->staging_needed == 2)
                       {
