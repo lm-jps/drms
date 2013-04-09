@@ -525,9 +525,15 @@ int nice_intro ()
   }
 
 // generate qsub script
-void make_qsub_call(char *requestid, char *reqdir, int requestorid, const char *dbname, 
-                    const char *dbuser, const char *dbids, const char *dbexporthost,
-                    int submitcode)
+/* requestid is the ID and requestorid is the name of the person making the request (and is the only member of the prime-key set.) */
+void static make_qsub_call(char *requestid, /* like JSOC_20120906_199_IN*/
+                           char *reqdir, 
+                           const char *requestorname, /* the name of the requestor in jsoc.export_user. */
+                           const char *dbname, 
+                           const char *dbuser, 
+                           const char *dbids, 
+                           const char *dbexporthost,
+                           int submitcode)
   {
   FILE *fp;
   char qsubscript[DRMS_MAXPATHLEN];
@@ -561,9 +567,8 @@ void make_qsub_call(char *requestid, char *reqdir, int requestorid, const char *
   {
      fprintf(fp,   "setenv JSOC_DBUSER %s\n", dbuser);
   }
-// TEST
-//fprintf(fp,   "setenv JSOC_DBHOST %s\n", dbmainhost);
-  fprintf(fp,   "setenv JSOC_DBHOST %s\n", dbexporthost);
+
+      fprintf(fp,   "setenv JSOC_DBHOST %s\n", dbexporthost);
   fprintf(fp,   "setenv JSOC_DBEXPORTHOST %s\n", dbexporthost);
   fprintf(fp, "drms_run JSOC_DBHOST=%s %s/%s.drmsrun >>& /home/jsoc/exports/tmp/%s.runlog \n", dbexporthost, reqdir, requestid, requestid);
   fprintf(fp, "set DRMS_ERROR=$status\n");
@@ -574,27 +579,62 @@ void make_qsub_call(char *requestid, char *reqdir, int requestorid, const char *
   fprintf(fp, "  @ WAITCOUNT = $WAITCOUNT - 1\n");
   fprintf(fp, "  if ($WAITCOUNT <= 0) then\n    set DRMS_ERROR = -1\n    break\n  endif\n");
   fprintf(fp, "  sleep 1\nend \n");
-  if (requestorid)
-     fprintf(fp, "set Notify=`show_info JSOC_DBHOST=%s -q 'jsoc.export_user[? RequestorID=%d ?]' key=Notify %s` \n", dbexporthost, requestorid, dbids);
-  fprintf(fp, "set REQDIR = `show_info JSOC_DBHOST=%s -q -p 'jsoc.export[%s]' %s`\n", dbexporthost, requestid, dbids);
-  fprintf(fp, "if ($DRMS_ERROR) then\n");
-  fprintf(fp, "  set_keys -C JSOC_DBHOST=%s  ds='jsoc.export[%s]' Status=4 %s\n", dbexporthost, requestid, dbids);
-  if (requestorid)
-     {
-     fprintf(fp, "  mail -n -s 'JSOC export FAILED - %s' $Notify <<!\n", requestid);
-     fprintf(fp, "Error status returned from DRMS session.\n");
-     fprintf(fp, "See log files at http://jsoc.stanford.edu/$REQDIR\n");
-     fprintf(fp, "Also complete log file at /home/jsoc/exports/tmp/%s.runlog\n", requestid);
-     fprintf(fp, "!\n");
-     }
-  fprintf(fp, "else\n");
-  if (requestorid)
-     {
-     fprintf(fp, "  mail -n -s 'JSOC export complete - %s' $Notify <<!\n", requestid);
-     fprintf(fp, "JSOC export request %s is complete.\n", requestid);
-     fprintf(fp, "Results at http://jsoc.stanford.edu/$REQDIR\n");
-     fprintf(fp, "!\n");
-     }
+      
+      if (requestorname)
+      {
+          /* This is not a good way to get the notification addresses. It is using the RequestorID field to locate a requestor. However, 
+           * RequestorID is not a prime-key member (it is the record number of the record in jsoc.export_user for the user who made
+           * the request), so this can result in no records being found. It is often the case that a requestor
+           * will use the same reqestor name for multiple export requests. Whenever this happens, each request will generate a new RequestorID.
+           * But the Requestor field will be the same - so there is a single Requestor value associated with multiple RequestorIDs. Due to the
+           * "prime-key logic", all requests except for latest request will be hidden, so this code below will fail when it looks for a specific
+           * RequestID that is likely hidden. The export system should not create multiple RequestorIDs for the same Requestor. You
+           * can refer to a requestor by either a name or an id, so different ids should be different requestors. So, the current scheme of
+           * referring to the same requestor by different ids seems illogical. In addition, there is no reason to have both a RequestorID 
+           * and a Requestor keyword - they are redundant. The Requestor field is more informative, so we should remove the RequestorID field.
+           * Finally, when show_info returns no records, and this failure happens many dozens of times a day, it returns a string that
+           * begins with an asterisk. If you send mail to an address that is an asterisk, the asterisk acts like a glob and the asterisk gets
+           * replaced by the name of each file in the current working directory. As a result, mail has been going out to "everybody" in the 
+           * /home/jsoc directory. Also, for the vast majority of export request, users do not provide a requestor field. All of these
+           * will result in show_info failing to find records too.
+           *
+           * It also appears that requestorid is identical to recnum --> ??
+           *
+           * To fix these problems, we should be using the Requestor string to find the appropriate record. We also need to check the
+           * return value from show_info (but show_info doesn't have a good way to tell you if it found any records). It currently
+           * returns the string "** No records in selected data set ...". We have to search for that.
+           *
+           * fprinf(fp, "set Notify=`show_info JSOC_DBHOST=%s -q 'jsoc.export_user[? RequestorID=%d ?]' key=Notify %s` \n", dbexporthost, requestorid, dbids);
+           */
+          
+          fprintf(fp, "set Notify=`perl -e '{my($notify) = qx/show_info JSOC_DBHOST=%s -q \"jsoc.export_user[%s]\" key=Notify %s/; if ($notify =~ /^\\\*\\\* No records in selected data set/) { print \"0\"; } else { print $notify; }}'`\n", dbexporthost, requestorname, dbids);
+      }
+      
+      fprintf(fp, "set REQDIR = `show_info JSOC_DBHOST=%s -q -p 'jsoc.export[%s]' %s`\n", dbexporthost, requestid, dbids);
+      fprintf(fp, "if ($DRMS_ERROR) then\n");
+      fprintf(fp, "  set_keys -C JSOC_DBHOST=%s  ds='jsoc.export[%s]' Status=4 %s\n", dbexporthost, requestid, dbids);
+  
+      if (requestorname)
+      {
+          fprintf(fp, "if ($Notify != 0) then\n");
+          fprintf(fp, "  mail -n -s 'JSOC export FAILED - %s' $Notify <<!\n", requestid);
+          fprintf(fp, "Error status returned from DRMS session.\n");
+          fprintf(fp, "See log files at http://jsoc.stanford.edu/$REQDIR\n");
+          fprintf(fp, "Also complete log file at /home/jsoc/exports/tmp/%s.runlog\n", requestid);
+          fprintf(fp, "!\n");
+          fprintf(fp, "endif\n");
+      }
+      fprintf(fp, "else\n");
+      if (requestorname)
+      {
+          fprintf(fp, "if ($Notify != 0) then\n");
+          fprintf(fp, "  mail -n -s 'JSOC export complete - %s' $Notify <<!\n", requestid);
+          fprintf(fp, "JSOC export request %s is complete.\n", requestid);
+          fprintf(fp, "Results at http://jsoc.stanford.edu$REQDIR\n");
+          fprintf(fp, "!\n");
+          fprintf(fp, "endif\n");
+      }
+      
   fprintf(fp, "  rm /home/jsoc/exports/tmp/%s.recnum\n", requestid);
   fprintf(fp, "  mv /home/jsoc/exports/tmp/%s.reqlog /home/jsoc/exports/tmp/done \n", requestid);
   /* The log after the call to drms_run gets lost because of the following line - should preserve this
@@ -2567,6 +2607,8 @@ int DoIt(void)
   char *requestor;
   long requestorid;
   char *notify;
+      char *requestorname = NULL; /* This is the name of the requestor as it was entered into the Requestor text-edit control in 
+                                   * exportdata.html. */
   char *format;
   char *shipto;
   char *method;
@@ -2698,7 +2740,7 @@ int DoIt(void)
       export_log = exports_new->records[irec];
       // Get user provided new export request
       status     = drms_getkey_int(export_log, "Status", NULL);
-      requestid    = drms_getkey_string(export_log, "RequestID", NULL);
+      requestid    = drms_getkey_string(export_log, "RequestID", NULL); /* This is the name of a user, not an ID. */
       dataset    = drms_getkey_string(export_log, "DataSet", NULL);
       process    = drms_getkey_string(export_log, "Processing", NULL);
       protocol   = drms_getkey_string(export_log, "Protocol", NULL);
@@ -2708,7 +2750,20 @@ int DoIt(void)
       reqtime    = drms_getkey_time(export_log, "ReqTime", NULL);
       esttime    = drms_getkey_time(export_log, "EstTime", NULL); // Crude guess for now
       size       = drms_getkey_longlong(export_log, "Size", NULL);
-      requestorid = drms_getkey_int(export_log, "Requestor", NULL);
+      requestorid = drms_getkey_int(export_log, "Requestor", NULL); /* This is an ID, despite the name "Requestor". It is the 
+                                                                     * recnum of the requestor's record in jsoc.export_user . 
+                                                                     * When jsoc_fetch created the export request, it added a record
+                                                                     * to jsoc.export_user (even if the user already existed in 
+                                                                     * the table). The recnum of that record was stored in 
+                                                                     * jsoc.export_new in the Requestor column. (export_log is 
+                                                                     * a record in jsoc.export_new). This recnum links 
+                                                                     * the requestor's record in jsoc.export_user with 
+                                                                     * the request record in jsoc.export_new. 
+                                                                     *
+                                                                     * Ideally, the word linking the two tables should be
+                                                                     * the requestor's name, not the record number. But the Requestor
+                                                                     * field is an int, so I think we just punt on this.
+                                                                     */
       printf("New Request #%d/%d: %s, Status=%d, Processing=%s, DataSet=%s, Protocol=%s, Method=%s\n",
 	irec, exports_new->n, requestid, status, process, dataset, protocol, method);
       fflush(stdout);
@@ -2716,7 +2771,9 @@ int DoIt(void)
           RegisterIntVar("requestid", 's', requestid);
 
       // Get user notification email address
-      sprintf(requestorquery, "%s[? RequestorID = %ld ?]", EXPORT_USER, requestorid);
+          /* Have to use bang query since the same user could have added many request records, using the same 
+           * Requestor value (Requestor is the prime-key set for jsoc.export_user). */
+      sprintf(requestorquery, "%s[! RequestorID = %ld !]", EXPORT_USER, requestorid);
       requestor_rs = drms_open_records(drms_env, requestorquery, &status);
       if (!requestor_rs)
       {
@@ -2724,15 +2781,23 @@ int DoIt(void)
           // When jsoc_export_manage runs again, it will NOT try to process this export record again.
           // Cannot get here.
       }
-      if (requestor_rs->n > 0)
-        {
-        DRMS_Record_t *rec = requestor_rs->records[0];
-        notify = drms_getkey_string(rec, "Notify", NULL);
-        if (*notify == '\0')
-           notify = NULL;
-        }
-      else
-        notify = NULL;
+          
+          if (requestor_rs->n > 0)
+          {
+              DRMS_Record_t *rec = requestor_rs->records[0];
+              notify = drms_getkey_string(rec, "Notify", NULL);
+              if (*notify == '\0')
+                  notify = NULL;
+              requestorname = drms_getkey_string(rec, "Requestor", NULL);
+              if (drms_ismissing_string(requestorname))
+              {
+                  free(requestorname);
+                  requestorname = NULL;
+              }
+          }
+          else
+              notify = NULL;
+          
       drms_close_records(requestor_rs, DRMS_FREE_RECORD);
 
       // Create new record in export control series, this one must be DRMS_PERMANENT
@@ -2749,7 +2814,7 @@ int DoIt(void)
           // export_log/exports_new is jsoc.export_new.
           // export_rec is jsoc.export.
   
-      drms_setkey_string(export_rec, "RequestID", requestid);
+      drms_setkey_string(export_rec, "RequestID", requestid); /* The is the ID of the request. */
       drms_setkey_string(export_rec, "DataSet", dataset);
       drms_setkey_string(export_rec, "Processing", process);
       drms_setkey_string(export_rec, "Protocol", protocol);
@@ -2759,7 +2824,7 @@ int DoIt(void)
       drms_setkey_time(export_rec, "ReqTime", now);
       drms_setkey_time(export_rec, "EstTime", now+10); // Crude guess for now
       drms_setkey_longlong(export_rec, "Size", size);
-      drms_setkey_int(export_rec, "Requestor", requestorid);
+      drms_setkey_int(export_rec, "Requestor", requestorid); /* This is the name of the requestor. */
   
       // check  security risk dataset spec or processing request
       if (isbadDataSet() || isbadProcessing())
@@ -2779,7 +2844,13 @@ int DoIt(void)
       drms_record_directory(export_rec, reqdir, 1);
 
       // Insert qsub command to execute processing script into SU
-      make_qsub_call(requestid, reqdir, (notify ? requestorid : 0), dbname, dbuser, dbids, dbexporthost, submitcode);
+          /* requestid is an ID, requestorid is the name of a person (entered into the Requestor text-edit control), notify is a user-entered string
+           * (entered into the Notify text-edit control). We use the name of the person to find the user's record in jsoc.export (the requestor 
+           * column in jsoc.export_user contains the name of the user requesting the export, and this column is the only column in the prime-key
+           * set). So, we query jsoc.export_user by providing the requestor field, which then returns a record that contains the email address
+           * to send the notification to. This address is contained in the notify column of the returned record.
+           */
+      make_qsub_call(requestid, reqdir, (notify ? requestorname : NULL), dbname, dbuser, dbids, dbexporthost, submitcode);
   
       // Insert export processing drms_run script into export record SU
       // The script components must clone the export record with COPY_SEGMENTS in the first usage
