@@ -224,7 +224,8 @@ char *drms_series_nrecords_querystringD(const char *series, const char *pkwhere,
 char *drms_series_nrecords_querystringFL(DRMS_Env_t *env, const char *series, const char *npkwhere, HContainer_t *pkwhereNFL, HContainer_t *firstlast, int *status);
 
 int drms_series_shadowexists(DRMS_Env_t *env, const char *series, int *status);
-int drms_series_createshadow(DRMS_Env_t *env, const char *series);
+int drms_series_createshadow(DRMS_Env_t *env, const char *series, const char *tname);
+int drms_series_dropshadow(DRMS_Env_t *env, const char *series, const char *tname);
 void drms_series_setcreateshadows(DRMS_Env_t *env, int *val);
 void drms_series_unsetcreateshadows(DRMS_Env_t *env);
 char *drms_series_all_querystringA(DRMS_Env_t *env, const char *series, const char *fields, int limit, int cursor, int *status);

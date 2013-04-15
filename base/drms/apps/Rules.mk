@@ -18,7 +18,7 @@ CEXE		:= $(CEXE) $(CEXE_$(d))
 MODEXE_JSON_$(d)	:= $(addprefix $(d)/, rawingest)
 JSON_OBJ_$(d)		:= $(MODEXE_JSON_$(d):%=%.o) 
 
-MODEXE_$(d)	:= $(addprefix $(d)/, drms_query drms_log createtabstructure createns accessreplogs drms_addkeys createshadow) $(MODEXE_JSON_$(d))
+MODEXE_$(d)	:= $(addprefix $(d)/, drms_query drms_log createtabstructure createns accessreplogs drms_addkeys createshadow dropshadow) $(MODEXE_JSON_$(d))
 MODEXE		:= $(MODEXE) $(MODEXE_$(d))
 MODEXE_SOCK_$(d)	:= $(addprefix $(d)/, drms_log_sock)
 MODEXE_SOCK	:= $(MODEXE_SOCK) $(MODEXE_SOCK_$(d))

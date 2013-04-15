@@ -7,35 +7,35 @@
 
 typedef enum
 {
-    kCSErr_Success = 0,
-    kCSErr_BadArg,
-    kCSErr_OutOfMemory,
-    kCSErr_BadQuery,
-    kCSErr_CantCreateShadow
-} CSError_t;
+    kDSErr_Success = 0,
+    kDSErr_BadArg,
+    kDSErr_OutOfMemory,
+    kDSErr_BadQuery,
+    kDSErr_CantDropShadow
+} DSError_t;
 
-char *module_name = "createshadow";
+char *module_name = "dropshadow";
 
 /* Command line parameter values. */
 ModuleArgs_t module_args[] = 
 {
-    {ARG_STRING, kSeries, "", "The series for which a shadow table is to be created."},
-    {ARG_STRING, kTablename, kUndefined, "Optional - the name of the shadow-table to create. This is to be used for debugging since there is only one name that DRMS will recognize (<series name>_shadow). "},
+    {ARG_STRING, kSeries, "", "The series whose shadow table is to be dropped."},
+    {ARG_STRING, kTablename, kUndefined, "Optional - the name of the shadow table to drop. This table was used for debugging since there is only one name that DRMS will recognize (<series name>_shadow). "},
     {ARG_END}
 };
 
 
 int DoIt(void) 
 {
-    CSError_t err = kCSErr_Success;
+    DSError_t err = kDSErr_Success;
     int drmsstat = DRMS_SUCCESS;
-    
+
     const char *series = cmdparams_get_str(&cmdparams, kSeries, &drmsstat);
     const char *tname = cmdparams_get_str(&cmdparams, kTablename, &drmsstat);
     
     if (drmsstat != DRMS_SUCCESS)
     {
-        err = kCSErr_BadArg;
+        err = kDSErr_BadArg;
     }
     else
     {
@@ -44,25 +44,24 @@ int DoIt(void)
             tname = NULL;
         }
         
-        drms_series_setcreateshadows(drms_env, NULL);
-        drmsstat = drms_series_createshadow(drms_env, series, tname);
+        drmsstat = drms_series_dropshadow(drms_env, series, tname);
         
         if (drmsstat != DRMS_SUCCESS)
         {
             if (drmsstat == DRMS_ERROR_OUTOFMEMORY)
             {
-                err = kCSErr_OutOfMemory;
+                err = kDSErr_OutOfMemory;
             }
             else if (drmsstat == DRMS_ERROR_BADDBQUERY)
             {
-                err = kCSErr_BadQuery;
+                err = kDSErr_BadQuery;
             }
             else 
             {
-                err = kCSErr_CantCreateShadow;
+                err = kDSErr_CantDropShadow;
             }
         }
     }
-    
+
     return err;
 }

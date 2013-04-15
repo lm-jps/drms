@@ -391,7 +391,7 @@ static int GetTempTable(char *tabname, int size)
 /* If this is a big table, then we don't want to do any of this on the client side. Just derive a SQL statement 
  * and let the server manage memory and other resources. */
 // INSERT INTO <shadow table> (pkey1, pkey2, ..., nrecords, recnum) SELECT T1.pkey1, T1.pkey2, ..., T2.c, T2.m FROM <series table> AS T1, (SELECT count(*) AS c, max(recnum) AS m FROM <series table> GROUP BY pkey1, pkey2, ...) AS T2 WHERE T1.recnum = T2.m 
-static int PopulateShadow(DRMS_Env_t *env, const char *series)
+static int PopulateShadow(DRMS_Env_t *env, const char *series, const char *tname)
 {
     int status = DRMS_SUCCESS;
     char *lcseries = NULL;
@@ -402,6 +402,7 @@ static int PopulateShadow(DRMS_Env_t *env, const char *series)
     int ipkey;
     char stmnt[8192];
     DRMS_Keyword_t *key = NULL;
+    char shadow[DRMS_MAXSERIESNAMELEN * 2];
     
     lcseries = strdup(series);
     pklist = malloc(stsz);
@@ -435,7 +436,20 @@ static int PopulateShadow(DRMS_Env_t *env, const char *series)
                 }
             }
             
-            snprintf(stmnt, sizeof(stmnt), "INSERT INTO %s%s (%s, %s, %s) SELECT %s, T2.c, T2.m FROM %s AS T1, (SELECT count(*) AS c, max(recnum) AS m FROM %s GROUP BY %s) AS T2 WHERE T1.recnum = T2.m", series, kShadowSuffix, pklist, kShadowColNRecs, kShadowColRecnum, tpklist, lcseries, lcseries, pklist);
+            /* Generate the name of the shadow table. */
+            if (tname == NULL)
+            {
+                snprintf(shadow, sizeof(shadow), "%s%s", lcseries, kShadowSuffix);
+            }
+            else
+            {
+                char *lctname = strdup(tname);
+                
+                strtolower(lctname);
+                snprintf(shadow, sizeof(shadow), "%s", lctname);
+            }
+            
+            snprintf(stmnt, sizeof(stmnt), "INSERT INTO %s (%s, %s, %s) SELECT %s, T2.c, T2.m FROM %s AS T1, (SELECT count(*) AS c, max(recnum) AS m FROM %s GROUP BY %s) AS T2 WHERE T1.recnum = T2.m", shadow, pklist, kShadowColNRecs, kShadowColRecnum, tpklist, lcseries, lcseries, pklist);
             
             if (drms_dms(env->session, NULL, stmnt))
             {
@@ -1379,7 +1393,7 @@ static int ExtractPrivileges(DRMS_Env_t *env, const char *ns, const char *tab, H
 
 /* This function will not create the shadow table if: 1. it already exists, or
  * 2. the table doesn't exist and the env->createshadows flag is not set. */
-static int CreateShadow(DRMS_Env_t *env, const char *series, int *created)
+static int CreateShadow(DRMS_Env_t *env, const char *series, const char *tname, int *created)
 {
     int status = DRMS_SUCCESS;
     int ipkey;
@@ -1431,213 +1445,278 @@ static int CreateShadow(DRMS_Env_t *env, const char *series, int *created)
             
             if (status == DRMS_SUCCESS)
             {
-                if (template->seriesinfo->hasshadow == -1)
+                if (tname == NULL)
                 {
-                    /* Haven't checked to see if the shadow table exists - it might. */
-                    /* This call will set template->seriesinfo->hasshadow. */
-                    ShadowExists(env, series, &status);
-                    
-                    if (status == DRMS_ERROR_BADDBQUERY)
+                    if (template->seriesinfo->hasshadow == -1)
                     {
-                        fprintf(stderr, "Unable to check database for the existence of shadow table.\n");
+                        /* Haven't checked to see if the shadow table exists - it might. */
+                        /* This call will set template->seriesinfo->hasshadow. */
+                        ShadowExists(env, series, &status);
+                        
+                        if (status == DRMS_ERROR_BADDBQUERY)
+                        {
+                            fprintf(stderr, "Unable to check database for the existence of shadow table.\n");
+                        }
                     }
                 }
             }
 
             if (status == DRMS_SUCCESS)
             {
-                if (template->seriesinfo->hasshadow == 0)
+                char *shnamens = NULL;
+                char *shnametab = NULL;
+                
+                if (tname != NULL)
                 {
-                    if (!env->createshadows)
+                    if (get_namespace(tname, &shnamens, &shnametab))
                     {
-                        status = DRMS_ERROR_CANTCREATESHADOW;
-                        fprintf(stderr, "Environment does not permit shadow-table creation.\n");
+                        status = DRMS_ERROR_OUTOFMEMORY;
                     }
-                    
-                    if (status == DRMS_SUCCESS)
+                }
+                
+                if (status == DRMS_SUCCESS)
+                {
+                    if (template->seriesinfo->hasshadow == 0 || (tname != NULL && !drms_query_tabexists(env->session, shnamens, shnametab, &status)))
                     {
-                        char *ns = NULL;
-                        char *tab = NULL;
-                        
-                        if (!get_namespace(lcseries, &ns, &tab))
+                        if (status != DRMS_SUCCESS)
                         {
-                            /* manually cons together list of prime-key names */
-                            for (ipkey = 0; ipkey < template->seriesinfo->pidx_num; ipkey++)
-                            {
-                                key = template->seriesinfo->pidx_keywords[ipkey];
-                                snprintf(lckeyname, sizeof(lckeyname), "%s", key->info->name);
-                                strtolower(lckeyname);
-                                
-                                pklist = base_strcatalloc(pklist, lckeyname, &stsz);
-                                
-                                if (key->info->type == DRMS_TYPE_STRING)
-                                {
-                                    snprintf(dtypestr, sizeof(dtypestr), "%s", db_stringtype_maxlen(4000));
-                                }
-                                else
-                                {
-                                    snprintf(dtypestr, sizeof(dtypestr), "%s", db_type_string(drms2dbtype(key->info->type)));
-                                }
-                                
-                                pkdatatype = base_strcatalloc(pkdatatype, lckeyname, &stsz2);
-                                pkdatatype = base_strcatalloc(pkdatatype, " ", &stsz2);
-                                pkdatatype = base_strcatalloc(pkdatatype, dtypestr, &stsz2);
-                                
-                                if (ipkey < template->seriesinfo->pidx_num - 1)
-                                {
-                                    pklist = base_strcatalloc(pklist, ", ", &stsz);
-                                    pkdatatype = base_strcatalloc(pkdatatype, ", ", &stsz2);
-                                }
-                                
-                                /* Create indexes on the individual prime-key-constituent columns. */
-                                indexquery = base_strcatalloc(indexquery, "CREATE INDEX ", &stsz3);
-                                indexquery = base_strcatalloc(indexquery, tab, &stsz3);
-                                indexquery = base_strcatalloc(indexquery, kShadowSuffix, &stsz3);
-                                indexquery = base_strcatalloc(indexquery, "_", &stsz3);
-                                indexquery = base_strcatalloc(indexquery, lckeyname, &stsz3);
-                                indexquery = base_strcatalloc(indexquery, " ON ", &stsz3);
-                                indexquery = base_strcatalloc(indexquery, lcseries, &stsz3);
-                                indexquery = base_strcatalloc(indexquery, kShadowSuffix, &stsz3);
-                                indexquery = base_strcatalloc(indexquery, " (", &stsz3);
-                                indexquery = base_strcatalloc(indexquery, lckeyname, &stsz3);
-                                indexquery = base_strcatalloc(indexquery, ");", &stsz3);                                                
-                            }
-                        }
-                        else
-                        {
-                            status = DRMS_ERROR_OUTOFMEMORY;
+                            fprintf(stderr, "Unable to check for the existence of the shadow table %s.\n", tname);
                         }
                         
-                        /* Create the shadow table. */
-                        
-                        /* The owner of the new shadow table will be the user running 
-                         * this code, but the permissions on the shadow table will match 
-                         * the permissions on the original table. */
                         if (status == DRMS_SUCCESS)
                         {
-                            snprintf(query, sizeof(query), "CREATE TABLE %s%s (%s, nrecords integer, recnum bigint, PRIMARY KEY (%s))", lcseries, kShadowSuffix, pkdatatype, pklist);
-                            
-                            if (drms_dms(env->session, NULL, query))
+                            if (!env->createshadows)
                             {
-                                fprintf(stderr, "Failed: %s\n", query);
-                                status = DRMS_ERROR_BADDBQUERY;
+                                status = DRMS_ERROR_CANTCREATESHADOW;
+                                fprintf(stderr, "Environment does not permit shadow-table creation.\n");
+                            }
+                        }
+                        
+                        if (status == DRMS_SUCCESS)
+                        {
+                            char *ns = NULL;
+                            char *tab = NULL;
+                            size_t shnamestsz;
+                            
+                            if (!get_namespace(lcseries, &ns, &tab))
+                            {
+                                if (tname == NULL)
+                                {
+                                    shnamens = strdup(ns);
+                                    shnametab = strdup(tab);
+                                    shnamestsz = strlen(shnametab) + 1;
+                                    shnametab = base_strcatalloc(shnametab, kShadowSuffix, &shnamestsz);
+                                }
                             }
                             else
                             {
-                                /* Copy the privileges of the original table. */
-                                HContainer_t privs;
-                                const char *user = NULL;
-                                char *privlist = NULL;
-                                
-                                /* Create the indexes on the individual prime-key members. */
-                                if (drms_dms(env->session, NULL, indexquery))
+                                status = DRMS_ERROR_OUTOFMEMORY;
+                            }
+                            
+                            if (status == DRMS_SUCCESS)
+                            {
+                                /* Generate lists of prime-key names and datatypes. These are needed when the shadow table is
+                                 * created. */
+                                for (ipkey = 0; ipkey < template->seriesinfo->pidx_num; ipkey++)
                                 {
-                                    fprintf(stderr, "Failed: %s\n", indexquery);
-                                    status = DRMS_ERROR_BADDBQUERY;   
+                                    key = template->seriesinfo->pidx_keywords[ipkey];
+                                    snprintf(lckeyname, sizeof(lckeyname), "%s", key->info->name);
+                                    strtolower(lckeyname);
+                                    
+                                    pklist = base_strcatalloc(pklist, lckeyname, &stsz);
+                                    
+                                    if (key->info->type == DRMS_TYPE_STRING)
+                                    {
+                                        snprintf(dtypestr, sizeof(dtypestr), "%s", db_stringtype_maxlen(4000));
+                                    }
+                                    else
+                                    {
+                                        snprintf(dtypestr, sizeof(dtypestr), "%s", db_type_string(drms2dbtype(key->info->type)));
+                                    }
+                                    
+                                    pkdatatype = base_strcatalloc(pkdatatype, lckeyname, &stsz2);
+                                    pkdatatype = base_strcatalloc(pkdatatype, " ", &stsz2);
+                                    pkdatatype = base_strcatalloc(pkdatatype, dtypestr, &stsz2);
+                                    
+                                    if (ipkey < template->seriesinfo->pidx_num - 1)
+                                    {
+                                        pklist = base_strcatalloc(pklist, ", ", &stsz);
+                                        pkdatatype = base_strcatalloc(pkdatatype, ", ", &stsz2);
+                                    }
+                                    
+                                    /* The queries on the shadow tables will sometimes involve where clauses containing the individual 
+                                     * prime-key-constituent columns. To optimize queries, we need to create indexes for these
+                                     * columns. The CREATE TABLE command will create a composite index on all prime-key member columns.
+                                     *
+                                     * This statement is not executed at this point. It is run after the CREATE TABLE statement
+                                     * has succeeded. 
+                                     */
+                                    indexquery = base_strcatalloc(indexquery, "CREATE INDEX ", &stsz3);
+                                    indexquery = base_strcatalloc(indexquery, shnametab, &stsz3);
+                                    indexquery = base_strcatalloc(indexquery, "_", &stsz3);
+                                    indexquery = base_strcatalloc(indexquery, lckeyname, &stsz3);
+                                    indexquery = base_strcatalloc(indexquery, " ON ", &stsz3);
+                                    indexquery = base_strcatalloc(indexquery, shnamens, &stsz3);
+                                    indexquery = base_strcatalloc(indexquery, ".", &stsz3);
+                                    indexquery = base_strcatalloc(indexquery, shnametab, &stsz3);
+                                    indexquery = base_strcatalloc(indexquery, " (", &stsz3);
+                                    indexquery = base_strcatalloc(indexquery, lckeyname, &stsz3);
+                                    indexquery = base_strcatalloc(indexquery, ");", &stsz3);                                                
+                                }
+                            }
+                            
+                            /* Create the shadow table. */
+                            
+                            /* The owner of the new shadow table will be the user running 
+                             * this code, but the permissions on the shadow table will match 
+                             * the permissions on the original table. */
+                            if (status == DRMS_SUCCESS)
+                            {
+                                snprintf(query, sizeof(query), "CREATE TABLE %s.%s (%s, nrecords integer, recnum bigint, PRIMARY KEY (%s))", shnamens, shnametab, pkdatatype, pklist);
+                                
+                                if (drms_dms(env->session, NULL, query))
+                                {
+                                    fprintf(stderr, "Failed: %s\n", query);
+                                    status = DRMS_ERROR_BADDBQUERY;
                                 }
                                 else
                                 {
-                                    status = ExtractPrivileges(env, ns, tab, &privs);
+                                    /* Copy the privileges of the original table to the newly created shadow table. */
+                                    HContainer_t privs;
+                                    const char *user = NULL;
+                                    char *privlist = NULL;
                                     
-                                    if (status == DRMS_SUCCESS)
+                                    /* Create the indexes on the individual prime-key members. */
+                                    if (drms_dms(env->session, NULL, indexquery))
                                     {
-                                        HIterator_t *hit = hiter_create(&privs);
+                                        fprintf(stderr, "Failed: %s\n", indexquery);
+                                        status = DRMS_ERROR_BADDBQUERY;   
+                                    }
+                                    else
+                                    {
+                                        status = ExtractPrivileges(env, ns, tab, &privs);
                                         
-                                        if (hit)
+                                        if (status == DRMS_SUCCESS)
                                         {
-                                            while ((privlist = hiter_extgetnext(hit, &user)) != NULL)
+                                            HIterator_t *hit = hiter_create(&privs);
+                                            
+                                            if (hit)
                                             {
-                                                snprintf(query, sizeof(query), "GRANT %s ON %s%s TO %s", privlist, lcseries, kShadowSuffix, user);
-                                                
-                                                if (drms_dms(env->session, NULL, query))
+                                                while ((privlist = hiter_extgetnext(hit, &user)) != NULL)
                                                 {
-                                                    fprintf(stderr, "Failed: %s\n", query);
-                                                    status = DRMS_ERROR_BADDBQUERY;
+                                                    snprintf(query, sizeof(query), "GRANT %s ON %s.%s TO %s", privlist, shnamens, shnametab, user);
+                                                    
+                                                    if (drms_dms(env->session, NULL, query))
+                                                    {
+                                                        fprintf(stderr, "Failed: %s\n", query);
+                                                        status = DRMS_ERROR_BADDBQUERY;
+                                                    }
                                                 }
+                                                
+                                                hiter_destroy(&hit);
+                                            }
+                                            else
+                                            {
+                                                status = DRMS_ERROR_OUTOFMEMORY;
                                             }
                                             
-                                            hiter_destroy(&hit);
+                                            hcon_free(&privs);
                                         }
-                                        else
-                                        {
-                                            status = DRMS_ERROR_OUTOFMEMORY;
-                                        }
-                                        
-                                        hcon_free(&privs);
                                     }
-                                }
-                                
-                                /* Populate the shadow table with data from the original series table. */
-                                status = PopulateShadow(env, series);
-                                
-                                /* Create the updateshadowtrig trigger on the series table. This trigger 
-                                 * will call the updateshadow() function after an INSERT or DELETE on the 
-                                 * series table. updateshadow() will update the shadow table (if it exists) - 
-                                 * it will either update a row in, delete a row from , or insert a row into, 
-                                 * the shadow table. 
-                                 *
-                                 * CREATE TRIGGER updateshadowtrig AFTER INSERT OR DELETE on <TABLE>
-                                 *    FOR EACH ROW EXECUTE PROCEDURE updateshadow();
-                                 */
-                                if (status == DRMS_SUCCESS)
-                                {
-                                    snprintf(query, sizeof(query), "CREATE TRIGGER %s AFTER INSERT OR DELETE on %s FOR EACH ROW EXECUTE PROCEDURE %s()", kShadowTrig, lcseries, kShadowTrigFxn);
                                     
-                                    if (drms_dms(env->session, NULL, query))
+                                    /* Create the updateshadowtrig trigger on the series table. This trigger 
+                                     * will call the updateshadow() function after an INSERT or DELETE on the 
+                                     * series table. updateshadow() will update the shadow table (if it exists) - 
+                                     * it will either update a row in, delete a row from , or insert a row into, 
+                                     * the shadow table. 
+                                     *
+                                     * CREATE TRIGGER updateshadowtrig AFTER INSERT OR DELETE on <TABLE>
+                                     *    FOR EACH ROW EXECUTE PROCEDURE updateshadow();
+                                     */
+                                    if (status == DRMS_SUCCESS)
                                     {
-                                        fprintf(stderr, "Failed: %s\n", query);
-                                        status = DRMS_ERROR_BADDBQUERY;   
+                                        if (tname == NULL)
+                                        {
+                                            /* We should create the trigger only if the shadow table created has the sanctioned name. 
+                                             * Otherwise, we'll run the updateshadow db-server function, which would then fail because
+                                             * it would look for a shadow table that did not exist. */
+                                            snprintf(query, sizeof(query), "CREATE TRIGGER %s AFTER INSERT OR DELETE on %s FOR EACH ROW EXECUTE PROCEDURE %s()", kShadowTrig, lcseries, kShadowTrigFxn);
+                                            
+                                            if (drms_dms(env->session, NULL, query))
+                                            {
+                                                fprintf(stderr, "Failed: %s\n", query);
+                                                status = DRMS_ERROR_BADDBQUERY;   
+                                            }
+                                        }
                                     }
-                                }
-                                
+                                    
 #if (defined TRACKSHADOWS && TRACKSHADOWS)
 #error
-                                /* Create a temporary trigger on the ORIGINAL series table. This trigger will intercept
-                                 * record insertions and deletions and execute a plpgsql function that will insert 
-                                 * one record for each record inserted/deleted into a shadow-table tracker. This table */
-                                if (status == DRMS_SUCCESS)
-                                {
-                                    snprintf(query, 
-                                             sizeof(query), 
-                                             "DROP TRIGGER IF EXISTS shadowtracker on %s; CREATE TRIGGER shadowtracker AFTER INSERT OR DELETE ON %s FOR EACH ROW EXECUTE PROCEDURE %s()",
-                                             lcseries,
-                                             lcseries,
-                                             kshadowTrackerFxn);
-                                    
-                                    if (drms_dms(env->session, NULL, query))
+                                    /* Create a temporary trigger on the ORIGINAL series table. This trigger will intercept
+                                     * record insertions and deletions and execute a plpgsql function that will insert 
+                                     * one record for each record inserted/deleted into a shadow-table tracker. This table */
+                                    if (status == DRMS_SUCCESS)
                                     {
-                                        fprintf(stderr, "Failed: %s\n", query);
-                                        status = DRMS_ERROR_BADDBQUERY;   
+                                        snprintf(query, 
+                                                 sizeof(query), 
+                                                 "DROP TRIGGER IF EXISTS shadowtracker on %s; CREATE TRIGGER shadowtracker AFTER INSERT OR DELETE ON %s FOR EACH ROW EXECUTE PROCEDURE %s()",
+                                                 lcseries,
+                                                 lcseries,
+                                                 kshadowTrackerFxn);
+                                        
+                                        if (drms_dms(env->session, NULL, query))
+                                        {
+                                            fprintf(stderr, "Failed: %s\n", query);
+                                            status = DRMS_ERROR_BADDBQUERY;   
+                                        }
                                     }
-                                }
 #endif
+                                }
                             }
-                        }
-                        
-                        if (status == DRMS_SUCCESS)
-                        {
-                            template->seriesinfo->hasshadow = 1;
                             
-                            if (created)
+                            /* Populate the shadow table with data from the original series table. 
+                             * Do this last, otherwise we could spend hours populating the table, just to have 
+                             * one of the other steps fail. */
+                            if (status == DRMS_SUCCESS)
                             {
-                                *created = 1;
+                                status = PopulateShadow(env, series, tname);
                             }
-                        }
-                        
-                        if (ns)
-                        {
-                            free(ns);
-                        }
-                        
-                        if (tab)
-                        {
-                            free(tab);
+                            
+                            if (status == DRMS_SUCCESS)
+                            {
+                                template->seriesinfo->hasshadow = 1;
+                                
+                                if (created)
+                                {
+                                    *created = 1;
+                                }
+                            }
+                            
+                            if (ns)
+                            {
+                                free(ns);
+                            }
+                            
+                            if (tab)
+                            {
+                                free(tab);
+                            }
                         }
                     }
+                    else
+                    {
+                        fprintf(stderr, "Shadow table %s%s already exists.\n", lcseries, kShadowSuffix);
+                    }
                 }
-                else
+                
+                if (shnamens)
                 {
-                    fprintf(stderr, "Shadow table %s%s already exists.\n", lcseries, kShadowSuffix);
+                    free(shnamens);
+                }
+                
+                if (shnametab)
+                {
+                    free(shnametab);
                 }
             }
             
@@ -1659,6 +1738,133 @@ static int CreateShadow(DRMS_Env_t *env, const char *series, int *created)
     else
     {
         status = DRMS_ERROR_OUTOFMEMORY;
+    }
+    
+    return status;
+}
+
+/* Drops the shadow for series series. 
+ *
+ * If tname != NULL, then this drops the table specified in tname, and it does not drop any triggers that may exist
+ * on the original series table. */
+static int DropShadow(DRMS_Env_t *env, const char *series, const char *tname, int *dropped)
+{
+    int status = DRMS_SUCCESS;
+    int exists = 0;
+    char cmd[1024];
+    char *lcseries = strdup(series);
+    char *shadow = NULL;
+    
+    if (dropped)
+    {
+        *dropped = 0;
+    }
+
+    /* First, figure out if the shadow table exists already. */
+    if (tname != NULL)
+    {
+        shadow = strdup(tname);
+    }
+    else
+    {
+        shadow = malloc(strlen(lcseries) + strlen(kShadowSuffix) + 1);
+        if (shadow)
+        {
+            snprintf(shadow, strlen(lcseries) + strlen(kShadowSuffix) + 1, "%s%s", lcseries, kShadowSuffix);
+        }
+    }
+    
+    if (!shadow)
+    {
+        status = DRMS_ERROR_OUTOFMEMORY;
+    }
+    else
+    {
+        strtolower(shadow);
+    }
+    
+    if (status == DRMS_SUCCESS)
+    {
+        /* Gotta split-up the table name - uh. */
+        char *shnamens = NULL;
+        char *shnametab = NULL;
+        
+        if (get_namespace(shadow, &shnamens, &shnametab))
+        {
+            status = DRMS_ERROR_OUTOFMEMORY;
+        }
+        else
+        {
+            exists = drms_query_tabexists(env->session, shnamens, shnametab, &status);
+        }
+    }
+    
+    if (status == DRMS_SUCCESS)
+    {
+        if (lcseries)
+        {
+            strtolower(lcseries);
+        }
+        else
+        {
+            status = DRMS_ERROR_OUTOFMEMORY;
+        }
+    }
+
+    /* Drop the trigger on the series table. This trigger runs the function that updates the shadow table. */
+    if (status == DRMS_SUCCESS)
+    {
+        if (exists)
+        {
+            if (tname == NULL)
+            {
+                /* The trigger exists only if the caller did not provide a shadow-table name when creating the shadow
+                 * table. */
+                snprintf(cmd, sizeof(cmd), "DROP TRIGGER IF EXISTS %s ON %s", kShadowTrig, lcseries);
+                
+                if (drms_dms(env->session, NULL, cmd))
+                {
+                    fprintf(stderr, "Failed: %s\n", cmd);
+                    status = DRMS_ERROR_BADDBQUERY;   
+                }
+            }
+        }
+    }
+    
+    /* Drop the shadow - the existing records in this table and the indexes on this table will be
+     * dropped as well. */
+    if (status == DRMS_SUCCESS)
+    {
+        if (exists)
+        {
+            snprintf(cmd, sizeof(cmd), "DROP TABLE IF EXISTS %s CASCADE", shadow);
+            
+            if (drms_dms(env->session, NULL, cmd))
+            {
+                fprintf(stderr, "Failed: %s\n", cmd);
+                status = DRMS_ERROR_BADDBQUERY;   
+            }
+            else
+            {
+                if (dropped)
+                {
+                    *dropped = 1;
+                }
+            }
+        }
+    }
+    
+    /* Clean up. */
+    if (shadow)
+    {
+        free(shadow);
+        shadow = NULL;
+    }
+    
+    if (lcseries)
+    {
+        free(lcseries);
+        lcseries = NULL;
     }
     
     return status;
@@ -2484,7 +2690,7 @@ int drms_insert_series(DRMS_Session_t *session, int update,
     {
         int wascreated = 0;
 
-        if (CreateShadow(template->env, si->seriesname, &wascreated) != DRMS_SUCCESS || !wascreated)
+        if (CreateShadow(template->env, si->seriesname, NULL, &wascreated) != DRMS_SUCCESS || !wascreated)
         {
             /* If CreateShadow() returned success, but the shadow table was not created, 
              * this means it had already existed. This shouldn't happen, because 
@@ -5024,9 +5230,15 @@ int drms_series_shadowexists(DRMS_Env_t *env, const char *series, int *status)
     return ShadowExists(env, series, status);
 }
 
-int drms_series_createshadow(DRMS_Env_t *env, const char *series)
+/* tname is optional - if it is set, then this is the name of the shadow table that will be created. */
+int drms_series_createshadow(DRMS_Env_t *env, const char *series, const char *tname)
 {
-    return CreateShadow(env, series, NULL);
+    return CreateShadow(env, series, tname, NULL);
+}
+
+int drms_series_dropshadow(DRMS_Env_t *env, const char *series, const char *tname)
+{
+    return DropShadow(env, series, tname, NULL);
 }
 
 void drms_series_setcreateshadows(DRMS_Env_t *env, int *val)
