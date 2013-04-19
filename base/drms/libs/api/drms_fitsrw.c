@@ -342,7 +342,7 @@ DRMS_Array_t *drms_fitsrw_read(DRMS_Env_t *env,
             while (fitskey != NULL)
             {
                /* For now, don't use map or class to map fits to drms keywords */
-               if (fitsexport_mapimportkey(fitskey, NULL, NULL, *keywords))
+               if (fitsexport_mapimportkey(fitskey, NULL, NULL, *keywords, env->verbose))
                {
                   fprintf(stderr, "Error importing fits keyword '%s'; skipping.\n", fitskey->key_name);
                }
