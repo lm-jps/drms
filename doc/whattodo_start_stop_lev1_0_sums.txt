@@ -47,6 +47,7 @@ This may take a few minutes while the processing of ingest_lev0 for
 VC02 and VC05 completes to a commit point. 
 If the ingest_lev0 process is hung, it may not see the stop file signal.
 Then do a kill -9 of the ingest_lev0 processes.
+Make sure ingest_lev0 is not running before you try to restart it.
 
 Likewise for AIA VC01 and VC04:
 
