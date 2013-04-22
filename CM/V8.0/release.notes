@@ -57,7 +57,7 @@ Changes since previous release (V7.0 - August 28, 2012)
 NEW FEATURES:
 
 + Support for the linux-avx architecture was added. To build avx binaries for NetDRMS, you must have properly edited your config.local file. Please see config.local.template for an example.
-+ Support for shadow tables was added. A shadow table is a database table that acts as a cache for most database queries that DRMS uses when DRMS dataseries are queried. It allows DRMS to bypass doing expensive database operations. It is helpful for series that large and on which queries take a long time to complete.
++ Support for shadow tables was added (FULL JSOC RELEASE ONLY - NOT NetDRMS). A shadow table is a database table that acts as a cache for most database queries that DRMS uses when DRMS dataseries are queried. It allows DRMS to bypass doing expensive database operations. It is helpful for series that large and on which queries take a long time to complete.
 + The limbfit code now builds with icc only.
 + Added a json parser for C code (jsmn).
 + Added the module rawingest to be used for ingesting raw SUMS files.
@@ -83,6 +83,15 @@ NEW FEATURES:
 + Added support to the script that checks out files from the JSOC repository for a JSOC root directory that has a name other than "JSOC".
 + Added a script, findsessionrecs.pl, that will find all records in all series created within a time window. This is used for examining records that were created during a hardware crash.
 + Added a script, prodbuild.pl, that simplifies updating and building in the production CVS tree.
+
++ Added ring-diagram documentation (apps/datavg): added writing of verbose output to log segment if present, and recording of input recnum's; added logging of CalVer64 values used; added support for specification of tmid in date_time format; Documentation at http://hmi.stanford.edu/teams/rings/mod_datavg.html.
++ Added ring-diagram functionality (apps/gentargs): implemented Stonyhurst longitude reporting option for grids timed* Documentation at http://hmi.stanford.edu/teams/rings/mod_datavg.html.
++ Added ring-diagram functionality (apps/mtrack): added recording of recnums of mapped images to log; Added recording of calling params info to comment or history key; Added support for acceptance and/or rejection of records with certain values of CalVer64 (or other equivalent key); Added logging of image rejection cause summaries and CalVer64 values used; Documentation at http://hmi.stanford.edu/teams/rings/mod_datavg.html.
++ Added ring-diagram functionality (apps/rdcover): added pangle selection options as for datavg; Documentation at http://hmi.stanford.edu/teams/rings/mod_datavg.html.
++ Added time-distance functionality (apps/invert_td_hr): added option for selection of keywords to propagate, with standard list, including WCS keys for first two dimensions.
++ Added time-distance functionality (apps/travel_times): added option for selection of keywords to propagate from input.
++ Added time-distance functionality (scripts/tdsynop): changed default from test to non-test; Use hmi.TDKernels for inversion kernels; require version 1100; Use Stonyhurst rather than Carrington longitudes for targets in traveltimes (fixes problem due to rounding of slotted prime keys).
+
 
 DEFECTS FIXED:
 + In serverdefs.h: do not use Stanford-specific values as defaults, otherwise for localized builds, which may be remote sites, Stanford-specific values would be used.
@@ -119,3 +128,10 @@ DEFECTS FIXED:
 + We made two fixes to large numbers of records in the HARP series.
 + Fixed a bug in the code that maintains run logs.
 + Make the vfisv_filter() and invert_() declarations conform with the C99 standard.
+
++ Ring-diagram bug fixes (apps/mtrack): fixed bug in bscale-bzero overrides.
++ Ring-diagram bug fixes (apps/pspec3): fixed bug in test for minimum values out of scaling range (zero); Documentation at
+	http://hmi.stanford.edu/teams/rings/mod_datavg.html.
++ Ring-diagram bug fixes (scripts/avg120): fixed qmask argument bug; previously was only using default value of 80000000 rather than desired value of 80004000; set pkey to T_REC instead of default T_OBS; Documentation at http://hmi.stanford.edu/teams/rings/pipe_avg120.html etc.
++ Ring-diagram bug fixes (scripts/rdday): improved/fixed record accounting when reprocessing or restarting; Documentation at http://hmi.stanford.edu/teams/rings/pipe_avg120.html etc.
++ Ring-diagram bug fixes (scripts/runrdsyn): fixed bug involved with continuation over CR boundary; added notification on last submission.
