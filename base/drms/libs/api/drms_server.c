@@ -2547,7 +2547,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
             int pollrv = 0;
             int naptime = 1;
             int nloop = 10;
-            int maxloop = 21600; /* 6 hours (very roughly) */
+            int maxloop = 7200; /* 2 hours (very roughly) */
             
             /* WARNING - this is potentially an infinite loop. */
             while (1)

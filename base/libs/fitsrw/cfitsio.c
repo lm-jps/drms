@@ -1,10 +1,10 @@
-/****************************************************************************/
+//****************************************************************************
 // CFITSIO.C
 //
 // Functions for read/write FITS file format  using CFITSIO library.
 //
 //
-/****************************************************************************/
+//****************************************************************************
 
 #include <string.h>
 #include <stdio.h>
@@ -15,7 +15,7 @@
 #include "foundation.h"
 #include "tasrw.h"
 
-/****************************************************************************/
+//****************************************************************************
 
 #ifdef  __CFISTIO_DEBUG__           //Turn on/off DEBUGMSG
 #define DEBUGMSG(msg)  printf msg   //ex: DEBUGMSG ((stderr, "Hello World %d\n", 123));
@@ -226,9 +226,9 @@ static int cfitsio_writekeys(fitsfile *fptr, CFITSIO_KEYWORD *keylist)
    return err;
 }
 
-/****************************************************************************/
-/*********************   Using CFITSIO_KEYWORD  *****************************/
-/****************************************************************************/
+//****************************************************************************
+//*********************   Using CFITSIO_KEYWORD  *****************************
+//****************************************************************************
 
 int cfitsio_free_keys(CFITSIO_KEYWORD** keylist)
 {
@@ -256,7 +256,7 @@ int cfitsio_free_keys(CFITSIO_KEYWORD** keylist)
    return CFITSIO_SUCCESS;
 }
 
-/****************************************************************************/
+//****************************************************************************
 // TH: Append to the end of list to keep COMMENT in the right sequence.
 
 int cfitsio_append_key(CFITSIO_KEYWORD** keylist, 
@@ -342,7 +342,7 @@ int cfitsio_append_key(CFITSIO_KEYWORD** keylist,
 }
 
 
-/****************************************************************************/
+//****************************************************************************
 // Row ranges from 1 to NAXIS1
 // Col ranges from 1 to NAXIS2
 // Different image types, more than 2 dimensions, later...
@@ -375,7 +375,7 @@ int cfitsio_dump_image(void* image, CFITSIO_IMAGE_INFO* info, long from_row,
    return CFITSIO_SUCCESS;
 }
 
-/****************************************************************************/
+//****************************************************************************
 
 int cfitsio_free_image_info(CFITSIO_IMAGE_INFO** image_info)
 {
@@ -385,7 +385,7 @@ int cfitsio_free_image_info(CFITSIO_IMAGE_INFO** image_info)
    return CFITSIO_SUCCESS;
 }
 
-/****************************************************************************/
+//****************************************************************************
 // image_info returns a subset of keywords used by DRMS, where
 // (1) SIMPLE, EXTEND, BLANK, BSCALE, BZERO are extracted from keylist
 // (2) NAXIS, NAXES[],BITPIX  are extracted from fits_get_image_param()
@@ -712,7 +712,7 @@ int fitsrw_read_keylist_and_image_info(FITSRW_fhandle fhandle,
    return cfitsio_read_keylist_and_image_info((fitsfile *)fhandle, keylistout, image_info);
 }
 
-/****************************************************************************/
+//****************************************************************************
 
 int fitsrw_readintfile(int verbose,
                        char* fits_filename,
@@ -885,7 +885,7 @@ error_exit:
    return error_code;
 }
 
-/******************************************************************************/
+//******************************************************************************
 
 
 void cfitsio_free_these(CFITSIO_IMAGE_INFO** image_info,
@@ -930,7 +930,7 @@ void cfitsio_free_these(CFITSIO_IMAGE_INFO** image_info,
 
 }
 
-/****************************************************************************/
+//****************************************************************************
 
 /* Assumes file will live in SUMS - eg, if image is char, then it is signed data, etc. */
 int fitsrw_writeintfile(int verbose,
@@ -1275,7 +1275,7 @@ int fitsrw_writeintfile(int verbose,
    return error_code;
 }
 
-/****************************************************************************/
+//****************************************************************************
 // Will find the library call for writting card to replace this, later
 //
 //Format: name(8), '= '(2), value (20), ' / ', comment (the rest and pending spaces)
@@ -1299,7 +1299,7 @@ int fitsrw_writeintfile(int verbose,
   END
 */
 
-/****************************************************************************/
+//****************************************************************************
 
 
 int cfitsio_key_to_card(CFITSIO_KEYWORD* kptr, char* card)
@@ -1434,7 +1434,7 @@ int cfitsio_key_to_card(CFITSIO_KEYWORD* kptr, char* card)
     return CFITSIO_SUCCESS;
 }
 
-/****************************************************************************/
+//****************************************************************************
 
 int fitsrw_read(int verbose,
                 const char *filename, 

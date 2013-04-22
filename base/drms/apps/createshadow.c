@@ -2,8 +2,6 @@
 #include "jsoc_main.h"
 
 #define kSeries "series"
-#define kTablename "tname"
-#define kUndefined "undefined"
 
 typedef enum
 {
@@ -20,7 +18,6 @@ char *module_name = "createshadow";
 ModuleArgs_t module_args[] = 
 {
     {ARG_STRING, kSeries, "", "The series for which a shadow table is to be created."},
-    {ARG_STRING, kTablename, kUndefined, "Optional - the name of the shadow-table to create. This is to be used for debugging since there is only one name that DRMS will recognize (<series name>_shadow). "},
     {ARG_END}
 };
 
@@ -31,7 +28,6 @@ int DoIt(void)
     int drmsstat = DRMS_SUCCESS;
     
     const char *series = cmdparams_get_str(&cmdparams, kSeries, &drmsstat);
-    const char *tname = cmdparams_get_str(&cmdparams, kTablename, &drmsstat);
     
     if (drmsstat != DRMS_SUCCESS)
     {
@@ -39,13 +35,8 @@ int DoIt(void)
     }
     else
     {
-        if (strcmp(tname, kUndefined) == 0)
-        {
-            tname = NULL;
-        }
-        
         drms_series_setcreateshadows(drms_env, NULL);
-        drmsstat = drms_series_createshadow(drms_env, series, tname);
+        drmsstat = drms_series_createshadow(drms_env, series);
         
         if (drmsstat != DRMS_SUCCESS)
         {

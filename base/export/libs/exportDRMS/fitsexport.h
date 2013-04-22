@@ -91,12 +91,11 @@ int fitsexport_getmappedintkeyname(const char *keyname,
                                    char *nameOut, 
                                    int size);
 
-int fitsexport_importkey(CFITSIO_KEYWORD *fitskey, HContainer_t *keys, int verbose);
+int fitsexport_importkey(CFITSIO_KEYWORD *fitskey, HContainer_t *keys);
 int fitsexport_mapimportkey(CFITSIO_KEYWORD *fitskey,
                             const char *clname, 
                             const char *mapfile,
-                            HContainer_t *keys,
-                            int verbose);
+                            HContainer_t *keys);
 
 FE_Keyword_ExtType_t fitsexport_keyword_getcast(DRMS_Keyword_t *key);
 
