@@ -4603,7 +4603,7 @@ char *drms_query_string(DRMS_Env_t *env,
                           if (!shadowexists && env->createshadows)
                           {
                               /* No shadow table exists - create it and then use it. */
-                              if (drms_series_createshadow(env, seriesname, NULL))
+                              if (drms_series_createshadow(env, seriesname))
                               {
                                   goto bailout;
                               }
@@ -4822,7 +4822,7 @@ char *drms_query_string(DRMS_Env_t *env,
                       if (!shadowexists && env->createshadows)
                       {
                           /* No shadow table exists - create it and then use it. */
-                          if (drms_series_createshadow(env, seriesname, NULL))
+                          if (drms_series_createshadow(env, seriesname))
                           {
                               goto bailout;
                           }
@@ -4859,7 +4859,7 @@ char *drms_query_string(DRMS_Env_t *env,
                       if (!shadowexists && env->createshadows)
                       {
                           /* No shadow table exists - create it and then use it. */
-                          if (drms_series_createshadow(env, seriesname, NULL))
+                          if (drms_series_createshadow(env, seriesname))
                           {
                               goto bailout;
                           }
@@ -4986,7 +4986,7 @@ char *drms_query_string(DRMS_Env_t *env,
                       if (!shadowexists && env->createshadows)
                       {
                           /* No shadow table exists - create it and then use it. */
-                          if (drms_series_createshadow(env, seriesname, NULL))
+                          if (drms_series_createshadow(env, seriesname))
                           {
                               goto bailout;
                           }
@@ -5021,7 +5021,7 @@ char *drms_query_string(DRMS_Env_t *env,
                       if (!shadowexists && env->createshadows)
                       {
                           /* No shadow table exists - create it and then use it. */
-                          if (drms_series_createshadow(env, seriesname, NULL))
+                          if (drms_series_createshadow(env, seriesname))
                           {
                               goto bailout;
                           }

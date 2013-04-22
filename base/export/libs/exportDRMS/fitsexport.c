@@ -1507,17 +1507,15 @@ static int IsForbidden(const char *fitskey)
    return disp;
 }
 
-int fitsexport_importkey(CFITSIO_KEYWORD *fitskey, HContainer_t *keys, int verbose)
+int fitsexport_importkey(CFITSIO_KEYWORD *fitskey, HContainer_t *keys)
 {
-   return fitsexport_mapimportkey(fitskey, NULL, NULL, keys, verbose);
+   return fitsexport_mapimportkey(fitskey, NULL, NULL, keys);
 }
 
-/* If verbose, then warn about duplicate keywords discovered upon import. */
 int fitsexport_mapimportkey(CFITSIO_KEYWORD *fitskey,
                             const char *clname, 
                             const char *mapfile,
-                            HContainer_t *keys,
-                            int verbose)
+                            HContainer_t *keys)
 {
    int stat = DRMS_SUCCESS;
 
@@ -1594,9 +1592,9 @@ int fitsexport_mapimportkey(CFITSIO_KEYWORD *fitskey,
                         snprintf(newkey->info->format, sizeof(newkey->info->format), "%s", format);
                      }
                   }
-                  else if (verbose)
+                  else
                   {
-                     fprintf(stderr, "WARNING: Keyword '%s' already exists; the DRMS value is the value of the first instance .\n", nameout);
+                     fprintf(stderr, "Keyword '%s' already exists; the DRMS value is the value of the first instance .\n", nameout);
                   }
                }
                else if ((newkey = (DRMS_Keyword_t *)hcon_allocslot(keys, namelower)) != NULL)
