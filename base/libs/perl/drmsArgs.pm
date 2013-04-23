@@ -34,6 +34,10 @@ sub new
         {
             $self->{_req} = 1;
         }
+        else
+        {
+            $self->{_req} = 0;
+        }
         
         if ($self->{_req} == 1)
         {
