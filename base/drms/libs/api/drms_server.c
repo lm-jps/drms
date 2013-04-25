@@ -40,6 +40,9 @@ int gSUMSbusy = 0;
 /* 0, unless a SIGPIPE signal was CAUGHT. */
 static volatile sig_atomic_t gGotPipe = 0;
 
+/* Container of pending SUM_get() requests, indexed by the SUM_t::uid. */
+HContainer_t *gSgPending = NULL;
+
 /******************* Main server thread(s) functions ************************/
 
 /* returns the SUMS opcode, or -99 if a broken-pipe error occurred, or -1 if opcode is NA, 
@@ -2321,6 +2324,131 @@ int SUMExptErr(const char *fmt, ...)
    return fprintf(stderr, "%s", string);
 }
 
+static int IsSgPending(SUMID_t id, uint64_t *sunums, int nsunums)
+{
+    int ans;
+    int isunum;
+    char idstr[32];
+    char sunumstr[32];
+    HContainer_t *idH = NULL;
+    
+    ans = 0;
+    
+    if (gSgPending)
+    {
+        snprintf(idstr, sizeof(idstr), "%u", id); /* id is a uint32_t */
+        if ((idH = hcon_lookup(gSgPending, idstr)) != NULL)
+        {
+            for (isunum = 0; idH && isunum < nsunums; isunum++)
+            {    
+                snprintf(sunumstr, sizeof(sunumstr), "%llu", (unsigned long long)sunums[isunum]);
+                if (hcon_member(idH, sunumstr))
+                {
+                    fprintf(stderr, "A SUM_get() request for the SU identified by SUNUM %s is pending.\n", sunumstr);
+                    ans = 1;
+                    break;
+                }
+            }
+        }
+    }
+    
+    return ans;
+}
+
+static int SetSgPending(SUMID_t id, uint64_t *sunums, int nsunums)
+{
+    int err;
+    int isunum;
+    char idstr[32];
+    char sunumstr[32];
+    HContainer_t *idH = NULL;
+    
+    err = 0;
+    
+    /* First, see if the container of pending SUs exists. */
+    snprintf(idstr, sizeof(idstr), "%u", id); /* id is a uint32_t */
+    if (gSgPending == NULL)
+    {
+        err = ((gSgPending = hcon_create(sizeof(HContainer_t), sizeof(idstr), NULL, NULL, NULL, NULL, 0)) == NULL);
+    }
+    else
+    {
+        idH = hcon_lookup(gSgPending, idstr);
+    }
+    
+    if (!err)
+    {
+        if (!idH)
+        {
+            /* Must create the HContainer_t for this id. */
+            err = ((idH = hcon_create(sizeof(char), sizeof(sunumstr), NULL, NULL, NULL, NULL, 0)) == NULL);
+            
+            if (!err)
+            {
+                /* Now we must add the id-specific HContainer_t to the gSgPending HContainer_t. */
+                err = hcon_insert(gSgPending, idstr, gSgPending);
+            }
+        }
+    }
+    
+    if (!err)
+    {
+        char val = 't';
+        
+        for (isunum = 0; isunum < nsunums; isunum++)
+        {
+            snprintf(sunumstr, sizeof(sunumstr), "%llu", (unsigned long long)sunums[isunum]);
+            
+            /* If the su is already pending, then error out. */
+            if (hcon_member(idH, sunumstr))
+            {
+                fprintf(stderr, "Cannot flag this SU (sunum %s) as pending - it is already pending.\n", sunumstr);
+                err = 1;
+                break;
+            }
+            
+            err = hcon_insert(idH, sunumstr, &val);
+        }
+    }
+
+    return err;
+}
+
+static int UnsetSgPending(SUMID_t id)
+{
+    int err;
+    char idstr[32];
+    
+    err = 0;
+    
+    if (gSgPending)
+    {
+        /* Free entire HContainer_t for this id. */
+        snprintf(idstr, sizeof(idstr), "%u", id); /* id is a uint32_t */
+        hcon_remove(gSgPending, idstr); /* no-op if not HContainer_t for id */
+        
+        if (hcon_member(gSgPending, idstr))
+        {
+            err = 1;
+        }
+        
+        if (!err)
+        {
+            if (hcon_size(gSgPending) == 0)
+            {
+                hcon_destroy(&gSgPending);
+                
+                if (gSgPending)
+                {
+                    err = 1;
+                }
+            }
+        }
+    }
+    
+    return err;
+}
+
 static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
 						    SUM_t **suminout,
 						    DRMS_SumRequest_t *request)
@@ -2478,10 +2606,18 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
     {
       fprintf(stderr,"SUM thread: Invalid reqcnt (%d) in SUMGET request.\n",
 	     request->reqcnt);
-      reply->opcode = DRMS_ERROR_SUMGET;
+      reply->opcode = -5; /* invalid number of SUNUMs in SUM_get() request. */
       break;
     }
-   
+
+    /* Ensure that it is not the case that there is an SUNUM that is part of a pending SUM_get(). */
+    if (IsSgPending(sum->uid, request->sunum, request->reqcnt))
+    {
+       fprintf(stderr, "Unable to process a SUM_get() request. One or more requested storage units being requested are pending.n");
+       reply->opcode = -2; /* pending tape read */
+       break;
+    }
+
 #ifdef DEBUG
     printf("SUM thread: calling SUM_get\n");
 #endif
@@ -2534,7 +2670,7 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
         
         /* Make RPC call to the SUM server. */
         reply->opcode = MakeSumsCall(env, DRMS_SUMGET, &sum, printf);
-        
+
 #ifdef DEBUG
         printf("SUM thread: SUM_get returned %d\n",reply->opcode);
 #endif
@@ -2548,6 +2684,14 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
             int naptime = 1;
             int nloop = 10;
             int maxloop = 21600; /* 6 hours (very roughly) */
+            
+            /* Mark these sunums as SUM_get()-pending. */
+            if (SetSgPending(sum->uid, sum->dsix_ptr, sum->reqcnt))
+            {
+                reply->opcode = -3; /* failiure to run SetSgPending() */
+                nosums = 1;
+                break;
+            }
             
             /* WARNING - this is potentially an infinite loop. */
             while (1)
@@ -2624,6 +2768,12 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                 {
                     /* There could be an error: sum->status is examined below and if it is not 0, then
                      * this means there was some fatal error. The module should bail. */
+                    if (UnsetSgPending(sum->uid))
+                    {
+                       /* There was an error unsetting the pending flag on all the contained SUNUMS. It
+                        * might still be set. */
+                       reply->opcode = -4; /* Error releasing pending flags on SUNUMs. */
+                    }
                     break; // from inner loop
                 }
                 else
@@ -2655,6 +2805,14 @@ static DRMS_SumRequest_t *drms_process_sums_request(DRMS_Env_t  *env,
                         {
                             /* Must go back to SUM_open(). */
                             sum = NULL;
+                            if (UnsetSgPending((sum->uid)))
+                            {
+                               /* There was an error unsetting the pending flag on all the contained SUNUMS. It             
+                                * might still be set. */
+                               reply->opcode = -4; /* Error releasing pending flags on SUNUMs. */
+                               break; /* from inner loop, but tryagain == 0, so breaks from outter loop too. */
+                            }
+
                             fprintf(stderr, "sum_svc no longer there; trying SUM_open() then SUM_get() again in %d seconds.\n", sleepiness);
                         }
                         else

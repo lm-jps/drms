@@ -591,8 +591,7 @@ int drms_su_getsudir(DRMS_Env_t *env, DRMS_StorageUnit_t *su, int retrieve)
              fprintf(stderr, "SUM GET failed with error code %d.\n", reply->opcode);
              free(reply);
              drms_unlock_server(env);
-             
-             return 1;
+             return DRMS_ERROR_SUMGET;
          }
      }
      else
@@ -879,13 +878,26 @@ int drms_su_getsudirs(DRMS_Env_t *env, int n, DRMS_StorageUnit_t **su, int retri
                    drms_unlock_server(env);
                    return DRMS_ERROR_PENDINGTAPEREAD;
                }
+               else if (reply->opcode == -3)
+               {
+                   fprintf(stderr, "Failure setting sum-get-pending flag.\n");
+                   free(reply);
+                   drms_unlock_server(env);
+                   return DRMS_ERROR_SUMGET;
+               }
+               else if (reply->opcode == -4)
+               {
+                  fprintf(stderr, "Failure UNsetting sum-get-pending flag.\n");
+                  free(reply);
+                  drms_unlock_server(env);
+                  return DRMS_ERROR_SUMGET;
+               }
                else
                {
                    fprintf(stderr, "SUM GET failed with error code %d.\n", reply->opcode);
                    free(reply);
                    drms_unlock_server(env);
-                   
-                   return 1;
+                   return DRMS_ERROR_SUMGET;
                }
            }
            else
