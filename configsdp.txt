@@ -107,6 +107,9 @@ __PROJ__
         <name>globalhs</name>
         <subdirs>
             <subdir>apps/src</subdir>
+            <subdir>libs/dtgf</subdir>
+            <subdir>libs/pkbgn</subdir>
+            <subdir>libs/projection</subdir>
         </subdirs>
         <filters>
              <filter>
