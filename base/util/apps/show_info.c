@@ -1542,6 +1542,7 @@ static int PrintStuff(DRMS_Record_t *rec, const char *rsq, int keyword_list, int
     return 0;
 }
 
+/* returns status == 0 on successs and non-zero on failure. */
 static int RecordLoopCursor(DRMS_Env_t *env, const char *rsq, DRMS_RecordSet_t *recordset, int requireSUMinfo, int64_t *given_sunum, HContainer_t *suinfo, int want_path, int want_path_noret, const char* series, const char *keylist, const char *seglist, int show_all, int show_keys, int show_all_segs, int show_segs, int show_all_links, int quiet, int keyword_list, int show_recnum, int show_sunum, int show_recordspec, int show_online, int show_retention, int show_archive, int show_tapeinfo, int show_size, int show_session, int want_dims, int show_types, char *sunum_rs_query)
 {
     /* rs->n is -1 - we won't know the total number of records until the loop terminates. */
@@ -1583,8 +1584,10 @@ static int RecordLoopCursor(DRMS_Env_t *env, const char *rsq, DRMS_RecordSet_t *
             if (emsg)
             {
                 fprintf(stderr, "DB error message: %s\n", emsg);
-                show_info_return(1);
             }
+            
+            status = 1;
+            break;
         }
         
         if (rec->sunum >= 0 && rec->suinfo == NULL)
@@ -1630,12 +1633,15 @@ static int RecordLoopCursor(DRMS_Env_t *env, const char *rsq, DRMS_RecordSet_t *
              * pending sus will return some appropriate return code, and then                                                                                                    
              * show_info can handle that code properly.                                                                                                                          
              */
-            show_info_return(0);
+            status = 0;
+            break;
         }
         
-        if (status < 0)
-            status = 0;
-
+        if (status)
+        {
+            break;
+        }
+        
         if (PrintStuff(rec, rsq, keyword_list, show_recnum, show_sunum, show_recordspec, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_path, want_path_noret, want_dims,keys, nkeys, segs, nsegs, linked_segs, links, nlinks, -1, irec != 0))
         {
             break;  
@@ -1707,7 +1713,7 @@ static int RecordLoopNoCursor(DRMS_Env_t *env, DRMS_RecordSet_t *recordset, int 
                     /* unknown SUNUM */
                 }
             }
-        }        
+        }
         
         if (PrintStuff(rec, NULL, keyword_list, show_recnum, show_sunum, show_recordspec, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_path, want_path_noret, want_dims, keys, nkeys, segs, nsegs, linked_segs, links, nlinks, recordset->n, irec != 0))
         {
