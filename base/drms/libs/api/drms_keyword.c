@@ -1340,7 +1340,7 @@ static int SetKeyInternal(DRMS_Record_t *rec, const char *key, DRMS_Value_t *val
 static int AppendStrKeyInternal(DRMS_Record_t *rec, const char *key, const char *val, int newline)
 {
     DRMS_Keyword_t *keyword = NULL;
-    int rv;
+    int rv = DRMS_SUCCESS;
     
     if (rec && val && *val)
     {

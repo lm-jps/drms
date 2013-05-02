@@ -894,7 +894,40 @@ int DoIt(void)
               else
               { /* not prime, so update this value */
                   key_anyval = cmdparams_get_type(&cmdparams, keyname, keytype, &status);
-                  status = drms_setkey(rec, keyname, keytype, &key_anyval);
+                  
+                  /* Check for specialness - HISTORY and COMMENT keywords. */
+                  if (strcasecmp("history", keyname) == 0)
+                  {
+                      if (keytype == DRMS_TYPE_STRING)
+                      {
+                          if (drms_appendhistory(rec, key_anyval.string_val, 1))
+                          {
+                              DIE("Unable to append to HISTORY keyword.");
+                          }
+                      }
+                      else
+                      {
+                          DIE("Unable to append to HISTORY keyword - unexpected keyword type.");
+                      }
+                  }
+                  else if (strcasecmp("comment", keyname) == 0)
+                  {
+                      if (keytype == DRMS_TYPE_STRING)
+                      {
+                          if (drms_appendcomment(rec, key_anyval.string_val, 1))
+                          {
+                              DIE("Unable to append to COMMENT keyword.");
+                          }
+                      }
+                      else
+                      {
+                          DIE("Unable to append to COMMENT keyword - unexpected keyword type.");
+                      }
+                  }
+                  else
+                  {
+                      status = drms_setkey(rec, keyname, keytype, &key_anyval);
+                  }
                   
                   if (keytype == DRMS_TYPE_STRING)
                   {
