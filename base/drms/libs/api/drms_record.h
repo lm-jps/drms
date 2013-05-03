@@ -39,9 +39,9 @@ typedef enum {DRMS_QUERY_COUNT, DRMS_QUERY_FL, DRMS_QUERY_ALL, DRMS_QUERY_N} DRM
 enum DRMS_RecChunking_enum
 {
    kRecChunking_None = 0,
-   kRecChunking_NoMoreRecs,
-   kRecChunking_LastInChunk,
-   kRecChunking_LastInRS
+   kRecChunking_NoMoreRecs,  /* A call to drms_recordset_fetchnext() was made after a previous call returned the last record in the record set.  */
+   kRecChunking_LastInChunk, /* The last call to drms_recordset_fetchnext() advanced the rec pointer to the last record in chunk. */
+   kRecChunking_LastInRS     /* The last call to drms_recordset_fetchnext() advanced the rec pointer to the last record in the record set. */
 };
 
 typedef enum DRMS_RecChunking_enum DRMS_RecChunking_t;
