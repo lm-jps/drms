@@ -9854,6 +9854,18 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env,
                 }
             }
         }
+        else
+        {
+            /* If the last call to drms_recordset_fetchnext() retrieved the last record, then this call to 
+             * drms_recordset_fetchnext() is not valid, and we should return NULL with cstat set to kRecChunking_NoMoreRecs. 
+             * We should also set the record pointer, rs->cursor->currentrec, to the last record in the record set
+             * (it will be one past that now). */
+            if (rs->cursor->lastrec > 0 && rs->cursor->currentrec > rs->cursor->lastrec)
+            {
+                rs->cursor->currentrec = rs->cursor->lastrec;
+                cstat = kRecChunking_NoMoreRecs;
+            }
+        }
         
         /* ART - If remote sums is running asynchronously, then this is okay, we still need to 
          * update the cursor information and return the next record. This record will not 
