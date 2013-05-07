@@ -616,8 +616,8 @@ void static make_qsub_call(char *requestid, /* like JSOC_20120906_199_IN*/
   
       if (requestorname)
       {
-          fprintf(fp, "if ($Notify != 0) then\n");
-          fprintf(fp, "  mail -n -s 'JSOC export FAILED - %s' $Notify <<!\n", requestid);
+          fprintf(fp, "if (\"$Notify\" != 0) then\n");
+          fprintf(fp, "  mail -n -s 'JSOC export FAILED - %s' \"$Notify\" <<!\n", requestid);
           fprintf(fp, "Error status returned from DRMS session.\n");
           fprintf(fp, "See log files at http://jsoc.stanford.edu/$REQDIR\n");
           fprintf(fp, "Also complete log file at /home/jsoc/exports/tmp/%s.runlog\n", requestid);
@@ -627,8 +627,8 @@ void static make_qsub_call(char *requestid, /* like JSOC_20120906_199_IN*/
       fprintf(fp, "else\n");
       if (requestorname)
       {
-          fprintf(fp, "if ($Notify != 0) then\n");
-          fprintf(fp, "  mail -n -s 'JSOC export complete - %s' $Notify <<!\n", requestid);
+          fprintf(fp, "if (\"$Notify\" != 0) then\n");
+          fprintf(fp, "  mail -n -s 'JSOC export complete - %s' \"$Notify\" <<!\n", requestid);
           fprintf(fp, "JSOC export request %s is complete.\n", requestid);
           fprintf(fp, "Results at http://jsoc.stanford.edu$REQDIR\n");
           fprintf(fp, "!\n");
