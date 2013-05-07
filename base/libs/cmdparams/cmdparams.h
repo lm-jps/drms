@@ -377,6 +377,12 @@ void cmdparams_reserve(CmdParams_t *params, const char *reserved, const char *ow
 
 int cmdparams_isreserved(CmdParams_t *params, const char *key);
 
+HContainer_t *cmdparams_get_argscont(CmdParams_t *params);
+inline const char *cmdparams_get_argname(CmdParams_Arg_t *arg)
+{
+    return (const char *)arg->name;
+}
+
 /**
 @name params_get_XXX
 Functions to return the value of the parameter \a name from the set of 

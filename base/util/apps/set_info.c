@@ -61,7 +61,6 @@ Only one instance of each keyword name or segment name is allowed.
 \li \c -c: Create a new record
 \li \c -C: Force-copy the storage unit of the original record to the cloned record
 \li \c -h: Print usage message and exit
-\li \c -l: Indicates that the keyword names in the key=value cmd-line arguments are all lower case
 \li \c -m: Modify the keywords of multiple records. The \c -m flag should be
 used with caution.  A typo could damage many records. Do not use
 \c -m unless you are sure the query will specify ONLY the records
@@ -118,7 +117,6 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "C", "0", "Force cloning of needed records to be DRMS_COPY_SEGMENT mode"},
   {ARG_FLAG, "m", "0", "allow multiple records to be updated"},
   {ARG_FLAG, "t", "0", "create any needed records as DRMS_TRANSIENT, default is DRMS_PERMANENT"},
-  {ARG_FLAG, "l", NULL, "keyword names on cmd-line specified in all lower case (and may not match the case of the keyword names stored in DRMS)"},
   {ARG_FLAG, "v", "0", "verbose flag"},
   {ARG_END}
 };
@@ -459,7 +457,7 @@ static int IngestingAFile(DRMS_Record_t * rec)
     return rv;
 }
 
-int CreateLinks(DRMS_Record_t *srec, HContainer_t *links)
+static int CreateLinks(DRMS_Record_t *srec, HContainer_t *links)
 {
     HIterator_t *lhit = NULL;
     DRMS_Link_t *lnk = NULL;
@@ -539,12 +537,10 @@ int DoIt(void)
   int status = 0;
   int multiple = 0;
   int create = 0;
-  int lckeys = 0;
   int nrecs, irec;
   int force_transient;
   int force_copyseg;
-  char *keyname;
-  char *lckeyname = NULL;
+  const char *keyname;
   char prime_names[100][32];
   char **pkeys;
   char *query;
@@ -555,7 +551,6 @@ int DoIt(void)
   DRMS_RecordSet_t *rs;
   DRMS_Keyword_t *key;
   DRMS_Segment_t *seg;
-  HIterator_t key_hit;
   int nprime, iprime;
   int isegment;
   int is_new_seg = 0;
@@ -571,7 +566,6 @@ int DoIt(void)
 
    multiple = cmdparams_get_int(&cmdparams, "m", NULL) != 0;
    create = cmdparams_get_int(&cmdparams, "c", NULL) != 0;
-   lckeys = cmdparams_isflagset(&cmdparams, "l");
    if (multiple && create)
    {
       if (query) { free(query); query = NULL; }
@@ -627,38 +621,11 @@ int DoIt(void)
            DIE("series bad, prime key missing");
         }
 
-        if (lckeys)
-           {
-           lckeyname = strdup(keyname);
-           strtolower(lckeyname);
-           keyname = lckeyname;
-           }
-
-        if (!cmdparams_exists(&cmdparams, keyname))
-        {
-           if (query) { free(query); query = NULL; }
-           DIE("some prime key not specified on command line");
-        }
-        key_anyval = cmdparams_get_type(&cmdparams, keyname, keytype, &status); 
-	status = drms_setkey(rec, keyname, keytype, &key_anyval);
-
-        if (keytype == DRMS_TYPE_STRING)
-        {
-           free(key_anyval.string_val);
-           key_anyval.string_val = NULL;
-        }
-
-	if (status)
+            if (status)
         {
            if (query) { free(query); query = NULL; }
            DIE("keyval bad, cant set prime key val with keyname");
         }
-
-        if (lckeys && lckeyname)
-           {
-           free(lckeyname);
-           lckeyname = NULL;
-           }
 	}
 
     /* now record exists with prime keys set. */
@@ -862,38 +829,85 @@ int DoIt(void)
           hcon_destroy(&keylist);
       }
       
-      hiter_new(&key_hit, &rec->keywords);
-      while( (key = (DRMS_Keyword_t *)hiter_getnext(&key_hit)) )
+      /* Loop through cmd-line arguments, checking for keyword names. If a keyword is encountered, set the keyword value 
+       * in the record with the value from the cmd-line argument. */
+      HIterator_t *last = NULL;
+      const char *argname = NULL;
+      DRMS_Value_t *keyval = NULL;
+      CmdParams_Arg_t *arg = NULL;
+      
+      while ((arg = drms_cmdparams_getnext(&cmdparams, &last, &status)) != NULL)
       {
-          int is_prime = 0;
-          keyname = key->info->name;
-          keytype = key->info->type;
-          
-          if (lckeys)
+          if (status)
           {
-              lckeyname = strdup(keyname);
-              strtolower(lckeyname);
-              keyname = lckeyname;
+              DIE("Problem examining cmd-line arguments.");
           }
           
-          /* look to see if given on command line */
-          if (cmdparams_exists(&cmdparams, keyname))
+          argname = cmdparams_get_argname(arg);
+          
+          if (argname)
           {
-              /* check to see if prime key */
-              for (is_prime=0, iprime = 0; iprime < nprime; iprime++)
-                  if (strcasecmp(keyname,  prime_names[iprime]) == 0)
-                      is_prime = 1;
-              if (is_prime)
-              { /* is prime, so DIE unless just made in create mode */
+              key = drms_keyword_lookup(rec, argname, 0);
+          }
+          else
+          {
+              /* This is an unamed argument, and isn't relevant. */
+              continue;
+          }
+          
+          if (key)
+          {
+              keyname = argname; /* Use the cmd-line argument name since we'll be searching the arguments container
+                                  * for an argument with this name. */
+              keytype = drms_keyword_gettype(key);
+              
+              /* A valid DRMS-keyword name was provided on the cmd-line. */
+              if (drms_keyword_isprime(key))
+              {
+                  /* is prime, so DIE unless just made in create mode */
                   if (!create)
                   {
                       if (query) { free(query); query = NULL; }
                       DIE("Attempt to change prime key - not allowed");
                   }
+                  else
+                  {
+                      keyval = drms_cmdparams_get(&cmdparams, keyname, keytype, &status);
+                      
+                      if (status != DRMS_SUCCESS)
+                      {
+                          DIE("Cannot get cmd-line argument.");
+                      }
+                      
+                      key_anyval = keyval->value;
+                      status = drms_setkey(rec, keyname, keytype, &key_anyval);
+                      
+                      if (keytype == DRMS_TYPE_STRING)
+                      {
+                          free(key_anyval.string_val);
+                          key_anyval.string_val = NULL;
+                      } 
+                  }
               }
               else
-              { /* not prime, so update this value */
-                  key_anyval = cmdparams_get_type(&cmdparams, keyname, keytype, &status);
+              {
+                  keyval = drms_cmdparams_get(&cmdparams, keyname, keytype, &status);
+                  
+                  if (status != DRMS_SUCCESS)
+                  {
+                      DIE("Cannot get cmd-line argument.");
+                  }
+                  
+                  if (!keyname || !keytype || !keyval)
+                  {
+                      char buffer[DRMS_MAXKEYNAMELEN];
+                      
+                      snprintf(buffer, sizeof(buffer), "Unable to get cmd-line value for keyword %s.", keyname);
+                      status = DRMS_ERROR_INVALIDDATA;
+                      DIE(buffer);
+                  }
+                  
+                  key_anyval = keyval->value;
                   
                   /* Check for specialness - HISTORY and COMMENT keywords. */
                   if (strcasecmp("history", keyname) == 0)
@@ -934,7 +948,10 @@ int DoIt(void)
                       free(key_anyval.string_val);
                       key_anyval.string_val = NULL;
                   }
-                  
+               
+                  free(keyval);
+                  keyval = NULL;
+
                   if (status)
                   {
                       if (query) { free(query); query = NULL; }
@@ -942,15 +959,43 @@ int DoIt(void)
                   }
               }
           }
-          
-          if (lckeys && lckeyname)
-          {
-              free(lckeyname);
-              lckeyname = NULL;
-          }
       }
-      
-      hiter_free(&key_hit);
+
+      if (last)
+      {
+         hiter_destroy(&last);
+      }
+    
+      /* Ensure that all prime keys are set (if the record was created, not cloned). */
+      if (create)
+      {
+          keyval = malloc(sizeof(DRMS_Value_t));
+          
+          if (!keyval)
+          {
+              free(keyval);
+              DIE("Out of memory.");
+          }
+          
+          for (iprime = 0; iprime < nprime; iprime++)
+          {    
+              *keyval = drms_getkey_p(rec, prime_names[iprime], &status);
+              
+              if (status != DRMS_SUCCESS)
+              {
+                  free(keyval);
+                  DIE("Problem getting keyword value.");
+              }
+              
+              if (drms_ismissing(keyval))
+              {
+                  free(keyval);
+                  DIE("some prime key not specified on command line");
+              }
+          }
+          
+          free(keyval);
+      }
       
       /* Set any links for cmd-line link arguments. */
       if (CreateLinks(rec, &rec->links))

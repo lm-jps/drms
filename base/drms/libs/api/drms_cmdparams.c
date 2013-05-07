@@ -100,3 +100,123 @@ int drms_cmdparams_get_int(CmdParams_t *parms, const char *name, int *status)
       return DRMS_MISSING_INT;
    }
 }
+
+/* Unlike the other functions in this family, if there is a problem, this function returns NULL. */
+DRMS_Value_t *drms_cmdparams_get(CmdParams_t *parms, const char *name, DRMS_Type_t type, int *status)
+{
+    int statint = DRMS_SUCCESS;
+    DRMS_Value_t value;
+    const char *str = drms_cmdparams_get_str(parms, name, &statint);
+    DRMS_Value_t *rv = NULL;
+    char *tmp = NULL;
+
+    if (type == DRMS_TYPE_STRING)
+    {
+        /* If the string contains spaces, then drms_scsanf2 will parse out the substring to the 
+         * left of the first space, unless we surround the string string with double quotes. */
+        tmp = malloc(strlen(str) + 3);
+
+        if (tmp)
+        {
+           snprintf(tmp, strlen(str) + 3, "\"%s\"", str);
+           str = tmp;
+        }
+        else
+        {
+           statint = DRMS_ERROR_OUTOFMEMORY;
+        }
+    }
+
+    if (statint == DRMS_SUCCESS)
+    {
+        if (drms_sscanf2(str, NULL, 0, type, &value) == -1)
+        {
+            statint = DRMS_ERROR_INVALIDCMDARGCONV;
+        }
+    }
+
+    if (statint == DRMS_SUCCESS)
+    {
+        rv = malloc(sizeof(DRMS_Value_t));
+        
+        if (!rv)
+        {
+           statint = DRMS_ERROR_OUTOFMEMORY;
+        }
+        else
+        {
+           *rv = value;
+        }
+    }
+    
+    if (tmp)
+    {
+       free(tmp);
+       tmp = NULL;
+    }
+
+    if (status)
+    {
+        *status = statint;
+    }
+    
+    return rv;
+}
+
+/* Returns the next cmd-param argument if there is a next argument. Otherwise, returns NULL. */
+CmdParams_Arg_t *drms_cmdparams_getnext(CmdParams_t *parms, HIterator_t **last, int *status)
+{
+    int istat = DRMS_SUCCESS;
+    HIterator_t *hit = NULL;
+    CmdParams_Arg_t *arg = NULL;
+    HContainer_t *args = NULL;
+    CmdParams_Arg_t *argret = NULL;
+    
+    if (last)
+    {
+        if (*last)
+        {
+            /* This is not the first time this function was called. */
+            hit = *last;
+        }
+        else
+        {
+            hit = *last = (HIterator_t *)malloc(sizeof(HIterator_t));
+            if (hit != NULL)
+            {
+                args = cmdparams_get_argscont(parms);
+                
+                if (args)
+                {
+                    hiter_new(hit, args);
+                }
+                else
+                {
+                    /* error */
+                    istat = DRMS_ERROR_INVALIDDATA;
+                }
+            }
+            else
+            {
+                istat = DRMS_ERROR_OUTOFMEMORY;
+            }
+        }
+        
+        if (istat == DRMS_SUCCESS)
+        {
+            arg = hiter_getnext(hit);
+            
+            if (arg)
+            {
+                argret = arg;
+            }
+        }
+    }
+    
+    if (status)
+    {
+        *status = istat;
+    }
+    
+    return argret;
+}

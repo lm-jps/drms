@@ -1972,6 +1972,11 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
         }
         
         FreeRecSetDescArr(&allvers, &sets, &settypes, &snames, &filts, nsets);
+
+        if (firstlast)
+        {
+           hcon_destroy(&firstlast);
+        }
         
         if (status)
             *status = stat;
@@ -2021,6 +2026,11 @@ failure:
     
     FreeRecSetDescArr(&allvers, &sets, &settypes, &snames, &filts, nsets);
     
+    if (firstlast)
+    {
+       hcon_destroy(&firstlast);
+    }
+
     if (rs)
     {
         RSFree(&rs);
@@ -2966,6 +2976,9 @@ static DRMS_RecordSet_t *drms_clone_records_internal(DRMS_RecordSet_t *rs_in,
 	      drms_free_array(arr);
 	    }
 	  }
+
+          hiter_free(&hit_out);
+          hiter_free(&hit_in);
 	}
 	free(su);
 	free(slotnum);

@@ -2402,6 +2402,18 @@ int cmdparams_isreserved(CmdParams_t *params, const char *key)
    return ret;
 }
 
+HContainer_t *cmdparams_get_argscont(CmdParams_t *params)
+{
+    if (params)
+    {
+        return params->args;
+    }
+    else
+    {
+        return NULL;
+    }
+}
+
 			/*  Get values of keywords converted to various types,
 						 but without status options  */
 const char *params_get_str (CmdParams_t *parms, char *name) {
