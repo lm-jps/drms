@@ -51,6 +51,7 @@ static int MakeSumsCall(DRMS_Env_t *env, int calltype, SUM_t **sumt, int (*histo
 {
     int opcode = 0;
     va_list ap;
+    static int nsumsconn = 0;
     
     if (calltype != DRMS_SUMCLOSE)
     {
@@ -79,8 +80,23 @@ static int MakeSumsCall(DRMS_Env_t *env, int calltype, SUM_t **sumt, int (*histo
             va_start(ap, history);
             char *server = va_arg(ap, char *);
             char *db = va_arg(ap, char *);
-            
-            *sumt = SUM_open(server, db, history);
+
+            /* SUMS allows a maximum of MAXSUMOPEN number of connections. The module should terminate if 
+             * there is an attempt to open more than this number. */
+            if (nsumsconn >= MAXSUMOPEN)
+            {
+               *sumt = NULL;
+            }
+            else
+            {
+               *sumt = SUM_open(server, db, history);
+            }
+
+            if (*sumt)
+            {
+               ++nsumsconn;
+            }
+
             opcode = -1; /* not used for this call */
             
             va_end(ap);
