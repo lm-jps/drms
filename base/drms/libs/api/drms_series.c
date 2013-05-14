@@ -2921,21 +2921,24 @@ int drms_addkeys_toseries(DRMS_Env_t *env, const char *series, const char *spec,
                             /* Create the actual SQL. */
                             
                             /* ALTER TABLE action statement */
-                            if (first)
-                            {
-                                first = 0;
-                            }
-                            else
-                            {
-                                tblactionbuf = base_strcatalloc(tblactionbuf, ", ", &szalterbuf);
-                            }
-
-                            tblactionbuf = base_strcatalloc(tblactionbuf, "ADD COLUMN ", &szalterbuf);
-                            tblactionbuf = base_strcatalloc(tblactionbuf, key->info->name, &szalterbuf);
-                            
+                            /* Linked keywords and constant keywords have no associated columns int the series table. LINKS 
+                             * themmselves to have associated columns in the series table, but this function does not
+                             * add new links to series. */
                             if (!key->info->islink && !drms_keyword_isconstant(key))
                             {
+                                if (first)
+                                {
+                                    first = 0;
+                                }
+                                else
+                                {
+                                    tblactionbuf = base_strcatalloc(tblactionbuf, ", ", &szalterbuf);
+                                }
+                                
+                                tblactionbuf = base_strcatalloc(tblactionbuf, "ADD COLUMN ", &szalterbuf);
+                                tblactionbuf = base_strcatalloc(tblactionbuf, key->info->name, &szalterbuf);
                                 tblactionbuf = base_strcatalloc(tblactionbuf, " ", &szalterbuf);
+                                
                                 if (key->info->type == DRMS_TYPE_STRING)
                                 {
                                     tblactionbuf = base_strcatalloc(tblactionbuf, db_stringtype_maxlen(4000), &szalterbuf);
@@ -3146,6 +3149,194 @@ int drms_addkeys_toseries(DRMS_Env_t *env, const char *series, const char *spec,
     return drmsstat;
 }
 
+int drms_dropkeys_fromseries(DRMS_Env_t *env, const char *series, char **keys, int nkeys)
+{
+    int drmsstat = DRMS_SUCCESS;
+    DRMS_Record_t *seriestemp = NULL;
+    size_t szbuf;
+    char *sqlbuf = NULL;
+    int first;
+    char *keyname = NULL;
+    DRMS_Keyword_t *key = NULL;
+    char ibuf[2048];
+    char *lcseries = NULL;
+    char *lckeyname = NULL;
+    int ikey;
+    int iseg;
+    int nsegs;
+    char *ns = NULL;
+    DRMS_Session_t *session = NULL;
+    
+    if (series && *series && keys)
+    {
+        session = env->session;
+        lcseries = strdup(series);
+        
+        if (lcseries)
+        {
+            strtolower(lcseries);
+            get_namespace(lcseries, &ns, NULL);
+            
+            if (!ns)
+            {
+                drmsstat = DRMS_ERROR_OUTOFMEMORY;
+            }
+            else
+            {
+                /* ACK! For each persegment keyword, there exist only the expanded keywords in the regular
+                 * series template. Use drms_create_jsdtemplate_record() instead to get the non-expanded
+                 * persegment keywords. */
+                seriestemp = drms_create_jsdtemplate_record(env, series, &drmsstat);
+            }
+        }
+        else
+        {
+            drmsstat = DRMS_ERROR_OUTOFMEMORY;
+        }
+        
+        if (seriestemp && drmsstat == DRMS_SUCCESS)
+        {
+            if (drms_series_isreplicated(env, series))
+            {
+                fprintf(stderr, "Cannot drop keywords from replicated series %s.\n", series);
+                drmsstat = DRMS_ERROR_CANTMODPUBSERIES;
+            }
+            else
+            {
+                szbuf = 1024;
+                sqlbuf = calloc(1, szbuf);
+                
+                if (!sqlbuf)
+                {
+                    drmsstat = DRMS_ERROR_OUTOFMEMORY;
+                }
+            }
+        }
+        
+        if (drmsstat == DRMS_SUCCESS)
+        {
+            for (ikey = 0, first = 1; ikey < nkeys; ikey++)
+            {
+                keyname = keys[ikey];
+                
+                if (lckeyname)
+                {
+                    free(lckeyname);
+                }
+                
+                lckeyname = strdup(keyname);
+                strtolower(lckeyname);
+                                
+                /* First, ensure that the keyword to drop actually exists. */
+                if ((key = drms_keyword_lookup(seriestemp, keyname, 0)) == NULL)
+                {
+                    fprintf(stderr, "Cannot drop keyword %s because it does not exist in series %s, skipping.\n", keyname, series);
+                    continue;
+                }
+                
+                /* ALTER TABLE action statement - drop keys from the series table. */
+                /* There are no columns in the series table for linked or constant keywords. */
+                if (!key->info->islink && !drms_keyword_isconstant(key))
+                {
+                    if (drms_keyword_getperseg(key))
+                    {
+                        char keybuf[DRMS_MAXKEYNAMELEN + 4];
+                        
+                        /* We need to drop multiple columns for each per-segment keyword. */
+                        nsegs = drms_record_numsegments(seriestemp);
+                        for (iseg = 0; iseg < nsegs; iseg++)
+                        {
+                            snprintf(keybuf, sizeof(keybuf), "%s_%03d", keyname, iseg);
+                            
+                            if (first)
+                            {
+                                first = 0;
+                            }
+                            else
+                            {
+                                sqlbuf = base_strcatalloc(sqlbuf, ", ", &szbuf);
+                            }
+                            
+                            /* If a db object depends on the column, then this SQL will fail. */
+                            sqlbuf = base_strcatalloc(sqlbuf, "DROP COLUMN ", &szbuf);
+                            sqlbuf = base_strcatalloc(sqlbuf, keybuf, &szbuf);
+                        }                    
+                    }
+                    else
+                    {
+                        if (first)
+                        {
+                            first = 0;
+                        }
+                        else
+                        {
+                            sqlbuf = base_strcatalloc(sqlbuf, ", ", &szbuf);
+                        }
+                        
+                        /* If a db object depends on the column, then this SQL will fail. */
+                        sqlbuf = base_strcatalloc(sqlbuf, "DROP COLUMN ", &szbuf);
+                        sqlbuf = base_strcatalloc(sqlbuf, keyname, &szbuf);
+                    }
+                }
+                
+                snprintf(ibuf, sizeof(ibuf), "DELETE FROM %s." DRMS_MASTER_KEYWORD_TABLE
+                         " WHERE lower(seriesname) = '%s' AND lower(keywordname) = '%s'", ns, lcseries, lckeyname);
+                
+                if (drms_dms(session, NULL, ibuf))
+                {
+                    drmsstat = DRMS_ERROR_BADDBQUERY;
+                    break;
+                }
+            } /* key loop */
+            
+            if (lckeyname)
+            {
+                free(lckeyname);
+                lckeyname = NULL;
+            }
+            
+            /* Drop columns from the series table. */
+            if (sqlbuf && *sqlbuf)
+            {
+                size_t szalterbuf = 2048;
+                char *alterbuf = calloc(1, szalterbuf);
+                
+                if (alterbuf)
+                {
+                    alterbuf = base_strcatalloc(alterbuf, "ALTER TABLE ", &szalterbuf);
+                    alterbuf = base_strcatalloc(alterbuf, lcseries, &szalterbuf);
+                    alterbuf = base_strcatalloc(alterbuf, " ", &szalterbuf);
+                    alterbuf = base_strcatalloc(alterbuf, sqlbuf, &szalterbuf);
+                    
+                    if (drms_dms(session, NULL, alterbuf))
+                    {
+                        drmsstat = DRMS_ERROR_BADDBQUERY;
+                    }
+                    
+                    free(alterbuf);
+                    alterbuf = NULL;
+                }
+            }
+        }
+        
+        if (seriestemp)
+        {
+            drms_destroy_jsdtemplate_record(&seriestemp);
+        }
+        
+        if (lcseries)
+        {
+            free(lcseries);
+            lcseries = NULL;
+        }
+    }
+    else
+    {
+        drmsstat = DRMS_ERROR_INVALIDDATA;
+    }
+    
+    return drmsstat;
+}
 /* cascade - I think this means to delete the PostgreSQL record-table and sequence
  * objects, and the SUs that the record table refers to. cascade == 0 when called 
  * from modify_series, but cascade == 1 when called from delete_series. 

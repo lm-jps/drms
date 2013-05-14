@@ -173,6 +173,8 @@ int drms_series_isreplicated(DRMS_Env_t *env, const char *series);
 
 int drms_addkeys_toseries(DRMS_Env_t *env, const char *series, const char *spec, char **sql);
 
+int drms_dropkeys_fromseries(DRMS_Env_t *env, const char *series, char **keys, int nkeys);
+
 /************** Class functions **************/
 /*
 DRMS_Record_t *drms_series_new(DRMS_Env_t *env, const char *seriesname);
