@@ -66,6 +66,7 @@ typedef enum {
    /** @brief Marker denoting a double-array-value cmd-line argument */
    ARG_DOUBLES,
    /* ARG_STRINGS, */
+   ARG_STRINGS,
    /** @brief Marker denoting an enumeration-value cmd-line argument */
    ARG_NUME,
    /** @brief Marker denoting a dataset-descriptor-value cmd-line argument */
@@ -362,6 +363,8 @@ returns a NULL pointer.
 name, it will use the corresponding environment variable, if it exists.
 */
 const char *cmdparams_get_str (CmdParams_t *parms, const char *name, int *status);
+
+int cmdparams_get_strarr(CmdParams_t *parms, char *name, char ***arr, int *status);
 
 /** 
 Returns a double representing the internal time representation of a 

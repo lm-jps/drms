@@ -152,34 +152,52 @@ static CmdParams_Arg_t *GetCPArg(CmdParams_t *parms, const char *name, int *num)
 /* DEEP free arg, but don't actually free the arg structure. */
 static void FreeArg(const void *data)
 {
-   if (data)
-   {
-      CmdParams_Arg_t *arg = (CmdParams_Arg_t *)data;
-
-      /* name */
-      if (arg->name)
-      {
-         free(arg->name);
-      }
-
-      /* cmdlinestr */
-      if (arg->cmdlinestr)
-      {
-         free(arg->cmdlinestr);
-      }
-
-      /* strval */
-      if (arg->strval)
-      {
-         free(arg->strval);
-      }
-
-      /* actvals */
-      if (arg->actvals)
-      {
-         free(arg->actvals);
-      }
-   }
+    int ival;
+    char *strval = NULL;
+    
+    if (data)
+    {
+        CmdParams_Arg_t *arg = (CmdParams_Arg_t *)data;
+        
+        /* name */
+        if (arg->name)
+        {
+            free(arg->name);
+        }
+        
+        /* cmdlinestr */
+        if (arg->cmdlinestr)
+        {
+            free(arg->cmdlinestr);
+        }
+        
+        /* strval */
+        if (arg->strval)
+        {
+            free(arg->strval);
+        }
+        
+        /* actvals */
+        /* If actvals is an array of pointers to strings, then we need to free the strings. */
+        if (arg->type == ARG_STRINGS)
+        {
+            for (ival = 0; ival < arg->nelems; ival++)
+            {
+                strval = ((char **)(arg->actvals))[ival];
+                
+                if (strval && *strval)
+                {
+                    free(strval);
+                    ((char **)(arg->actvals))[ival] = NULL;
+                }
+            }
+        }
+        
+        if (arg->actvals)
+        {
+            free(arg->actvals);
+        }
+    }
 }
 
 /* Handle a few for now - if anybody wants more, add later */
@@ -600,6 +618,7 @@ static int cmdparams_conv2type(const char *sdata,
     int64_t intval;
     float fval;
     double dval;
+    char *sval = NULL;
     int ishexstr = 0;
     
     switch (dtype)
@@ -613,18 +632,16 @@ static int cmdparams_conv2type(const char *sdata,
                 intval = CP_MISSING_LONGLONG;
                 status = CMDPARAMS_INVALID_CONVERSION;
             }
+            
+            XASSERT(sizeof(intval) <= size);
+            if (sizeof(intval) <= size)
+            {
+                memcpy(bufout, &intval, sizeof(intval));
+                status = CMDPARAMS_SUCCESS;
+            }
             else
             {
-                XASSERT(sizeof(intval) <= size);
-                if (sizeof(intval) <= size)
-                {
-                    memcpy(bufout, &intval, sizeof(intval));
-                    status = CMDPARAMS_SUCCESS;
-                }
-                else
-                {
-                    status = CMDPARAMS_INVALID_CONVERSION;
-                }
+                status = CMDPARAMS_INVALID_CONVERSION;
             }
             
             break;
@@ -636,10 +653,16 @@ static int cmdparams_conv2type(const char *sdata,
                 status = CMDPARAMS_INVALID_CONVERSION;
                 fval = CP_MISSING_FLOAT;
             } 
+            
+            XASSERT(sizeof(fval) <= size);
+            if (sizeof(fval) <= size)
+            {
+                memcpy(bufout, &fval, sizeof(fval));
+                status = CMDPARAMS_SUCCESS;
+            }
             else
             {
-                XASSERT(sizeof(fval) <= size);
-                memcpy(bufout, &fval, sizeof(fval));
+                status = CMDPARAMS_INVALID_CONVERSION;
             }
             
             break;
@@ -651,10 +674,40 @@ static int cmdparams_conv2type(const char *sdata,
                 status = CMDPARAMS_INVALID_CONVERSION;
                 dval = CP_MISSING_DOUBLE;
             } 
+            
+            XASSERT(sizeof(dval) <= size);
+            if (sizeof(dval) <= size)
+            {
+                memcpy(bufout, &dval, sizeof(dval));   
+                status = CMDPARAMS_SUCCESS;
+            }
             else
             {
-                XASSERT(sizeof(dval) <= size);
-                memcpy(bufout, &dval, sizeof(dval));
+                status = CMDPARAMS_INVALID_CONVERSION;
+            }
+            
+            break;
+        case ARG_STRING:
+            if (!sdata)
+            {
+                status = CMDPARAMS_INVALID_CONVERSION;
+                sval = strdup(CP_MISSING_STRING);
+            }
+            else
+            {
+                sval = strdup((char *)sdata);
+                status = CMDPARAMS_SUCCESS;
+            }
+            
+            XASSERT(sizeof(sval) <= size);
+            if (sizeof(sval) <= size)
+            {
+                memcpy(bufout, &sval, sizeof(sval));
+                status = CMDPARAMS_SUCCESS;
+            }
+            else
+            {
+                status = CMDPARAMS_INVALID_CONVERSION;
             }
             
             break;
@@ -713,6 +766,10 @@ static int parse_array (CmdParams_t *params, const char *root, ModuleArgs_Type_t
      case ARG_DOUBLES:
        dtype = ARG_DOUBLE;
        dsize = sizeof(double);
+       break;
+     case ARG_STRINGS:
+       dtype = ARG_STRING;
+       dsize = sizeof(char *);
        break;
      default:
        fprintf(stderr, "Unexpected type '%d'\n", (int)dtype);
@@ -1188,7 +1245,8 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
         /* Still in default-value handler */
 	if (defps->type == ARG_FLOATS || 
 	    defps->type == ARG_DOUBLES || 
-	    defps->type == ARG_INTS) 
+	    defps->type == ARG_INTS ||
+        defps->type == ARG_STRINGS) 
 	{
            thisarg = GetCPArg(parms, defps->name, NULL);
            XASSERT(thisarg); /* must exist */
@@ -1242,7 +1300,7 @@ int cmdparams_parse (CmdParams_t *parms, int argc, char *argv[]) {
 
 void cmdparams_freeall (CmdParams_t *parms) {
   int i;
-
+        
   /* args */
   hcon_destroy(&(parms->args));
 
@@ -1375,7 +1433,7 @@ int cmdparams_parsefile (CmdParams_t *parms, char *filename, int depth) {
 }
 						/*  Add a new keyword  */
 
-/* Now handles the special processing of ARG_NUME, ARG_INTS, ARG_FLOATS, ARG_DOUBLES, ARG_FLOAT, ARG_DOUBLE, ARG_INT 
+/* Now handles the special processing of ARG_NUME, ARG_INTS, ARG_FLOATS, ARG_DOUBLES, ARG_STRINGS, ARG_FLOAT, ARG_DOUBLE, ARG_INT 
  * IF the argument is a member of the default list (which specifies the argument type). */
 CmdParams_Arg_t *cmdparams_set(CmdParams_t *parms, const char *name, const char *value) 
 {
@@ -1460,7 +1518,7 @@ CmdParams_Arg_t *cmdparams_set(CmdParams_t *parms, const char *name, const char 
    {
       argtype = (*pmodarg)->type;
 
-      if (argtype == ARG_INTS || argtype == ARG_FLOATS || argtype == ARG_DOUBLES)
+      if (argtype == ARG_INTS || argtype == ARG_FLOATS || argtype == ARG_DOUBLES || argtype == ARG_STRINGS)
       {
          parse_array(parms, name, argtype, value);
       }
@@ -1568,6 +1626,8 @@ static char *argtypename (int type) {
       return "double array";
     case (ARG_STRING):
       return "string";
+    case (ARG_STRINGS):
+      return "string array";
     case (ARG_TIME):
       return "time";
     case (ARG_NUME):
@@ -1757,6 +1817,50 @@ const char *cmdparams_get_str(CmdParams_t *parms, const char *name, int *status)
      *status = (value) ? CMDPARAMS_SUCCESS : CMDPARAMS_UNKNOWN_PARAM;      
   
    return value;
+}
+
+int cmdparams_get_strarr(CmdParams_t *parms, char *name, char ***arr, int *status)
+{
+    int stat = CMDPARAMS_SUCCESS;
+    char **arrint = NULL;
+    CmdParams_Arg_t *arg = NULL;
+    int nelems = 0;
+    
+    if (arr)
+    {
+        arg = LookUpArgByName(parms, name);
+        
+        if (arg)
+        {
+            if (arg->type != ARG_STRINGS)
+            {
+                fprintf(stderr, "Argument '%s' is not an array of strings.\n", name);
+                stat = CMDPARAMS_INVALID_CONVERSION;
+            }
+            else
+            {
+                arrint = (char **)arg->actvals;
+                *arr = arrint;
+            }
+        }
+        else
+        {
+            fprintf(stderr, "Unknown keyword name '%s'.\n", name);
+            stat = CMDPARAMS_UNKNOWN_PARAM;
+        }
+        
+        if (!stat)
+        {
+            nelems = arg->nelems;
+        }
+    }
+    
+    if (status)
+    {
+        *status = stat;
+    }
+    
+    return nelems;
 }
 
 int cmdparams_isflagset (CmdParams_t *parms, char *name) {
