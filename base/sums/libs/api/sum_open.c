@@ -2208,14 +2208,14 @@ int getanymsg(int block)
   static int ts=0;   /* file descriptor table size */
 
   wait = 1;
-  timeout.tv_sec=0;
-  timeout.tv_usec=500000;
   //if(!ts) ts = getdtablesize();
   //cluster nodes getdtablesize() is 16384, but select can only handle FD_SETSIZE
   if(!ts) ts = FD_SETSIZE;
 
   while(wait) {
     readfds=svc_fdset;
+    timeout.tv_sec=0;
+    timeout.tv_usec=500000;
     srdy=select(ts,&readfds,(fd_set *)0,(fd_set *)0,&timeout); /* # ready */
     switch(srdy) {
     case -1:
