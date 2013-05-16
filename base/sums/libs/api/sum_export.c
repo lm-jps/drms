@@ -150,11 +150,16 @@ int xgetanymsg(int block)
   int ts=FD_SETSIZE;	/* cluster nodes have 16384 fd instead of 1024 */
 
   wait = 1;
-  timeout.tv_sec=0;
-  timeout.tv_usec=500000;
   while(wait) {
     readfds=svc_fdset;
-    srdy=select(ts,&readfds,(fd_set *)0,(fd_set *)0,&timeout); /* # ready */
+    if(block) {
+      srdy=select(ts,&readfds,(fd_set *)0,(fd_set *)0,NULL); /* # ready */
+    }
+    else {
+      timeout.tv_sec=0;
+      timeout.tv_usec=500000;
+      srdy=select(ts,&readfds,(fd_set *)0,(fd_set *)0,&timeout); /* # ready */
+    }
     switch(srdy) {
     case -1:
       if(errno==EINTR) {
