@@ -6,7 +6,7 @@
 
 \par Synopsis:
 \code
-delete_series [-GEN_FLAGS] seriesname
+delete_series [-GEN_FLAGS] [-k] seriesname
 \endcode
 
 Removes the data series from the DRMS database. This program SHOULD BE USED
@@ -21,8 +21,10 @@ garbage from being left behind.
 Ubiquitous flags present in every module.
 \ref jsoc_main
 
+\param k If set, then the SUMS files belonging to the series will not be removed.
 \param seriesname
 
+ 
 \bug 
 Does not free non-archived storage units in SUMS
 
