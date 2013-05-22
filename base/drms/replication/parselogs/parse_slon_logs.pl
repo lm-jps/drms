@@ -102,7 +102,7 @@
 # 1. Run on hmidb2.
 # 2. Use /home/jsoc/cvs/Development/JSOC/proj/replication/etc/repserver.testparser.cfg as the configuration file.
 # 3. Put some un-parsed logs in /c/pgsql/slon_logs/test/slon_logs.
-# 4. Edit /c/pgsql/slon_logs/test/slon_parser.cfg appropriately. Make sure edit the first column so that it doesn't point
+# 4. Edit /c/pgsql/slon_logs/test/slon_parser.cfg appropriately. Make sure to edit the first column so that it doesn't point
 #    to some production location.
 # 5. Run:
 #    <path to test parser>/parse_slon_logs.pl /home/jsoc/cvs/Development/JSOC/proj/replication/etc/repserver.testparser.cfg
@@ -1171,8 +1171,8 @@ sub closeSlonLogs {
 }
 
 # Writes a single line to each node's site-specific log file. If the line being 
-# written contains an insert statement, then that line is written to a nodes'
-# site-specific logs only if the insert is into a series to which that the node is 
+# written contains an insert/delete statement, then that line is written to a nodes'
+# site-specific logs only if the insert/delete is into a series to which that the node is 
 # subscribed.
 sub dumpSlonLog {
   my ($cfgH, $nodeH, $series, $line) = @_;
@@ -1337,23 +1337,41 @@ sub parseLog {
   #e.g.
   #insert into "lm_jps"."lev1_test4k10s"
     ## test end of line in insert sql  - ISS 2010/Aug/20
-    if ($_ =~ /^insert\s+into\s+("\S+"\."\S+")/i ||
-        $_ =~ /^insert\s+into\s+(\S+\."\S+")/i ||
-        $_ =~ /^insert\s+into\s+("\S+"\.\S+)/i ||
-        $_ =~ /^insert\s+into\s+(\S+\.\S+)/i) 
-    {
-      my $series = $1;
-      if ($_ =~ /.*\);$/ ) {
-        dumpSlonLog($cfgH, $nodeH, $series, $_);
-      } else {
-        dumpErrorLog($cfgH, $series, $_);
+      if ($_ =~ /^insert\s+into\s+("\S+"\."\S+")/i ||
+          $_ =~ /^insert\s+into\s+(\S+\."\S+")/i ||
+          $_ =~ /^insert\s+into\s+("\S+"\.\S+)/i ||
+          $_ =~ /^insert\s+into\s+(\S+\.\S+)/i) 
+      {
+          my $series = $1;
+          if ($_ =~ /.*\);$/ ) 
+          {
+              dumpSlonLog($cfgH, $nodeH, $series, $_);
+          } 
+          else 
+          {
+              dumpErrorLog($cfgH, $series, $_);
+          }
       }
-    }
       elsif ($_ =~ /^update\s+only\s+(\S+.\S+)/i || $_ =~ /^update\s+(\S+.\S+)/i)
       {
           # update "lm_jps"."lev1_test4k10s" set blah = 'hithere' ...
           # There might be no namespace in the slong log (if there is a preceding set search_path to ... statement), 
           # and if so, we're screwed.
+          my($series) = GetQuotedSeries($1);
+          
+          # I guess we want to make sure that the line ends with a semicolon.
+          if ($_ =~ /.*;$/ ) 
+          {
+              dumpSlonLog($cfgH, $nodeH, $series, $_);
+          } 
+          else 
+          {
+              dumpErrorLog($cfgH, $series, $_);
+          }
+      }
+      elsif ($_ =~ /^delete\s+from\s+only\s+(\S+.\S+)/i || $_ =~ /^delete\s+from\s+(\S+.\S+)/i)
+      {
+          # delete from only "aia_test"."synoptic2" where "recnum"='1544700'.
           my($series) = GetQuotedSeries($1);
           
           # I guess we want to make sure that the line ends with a semicolon.
@@ -1488,6 +1506,7 @@ EOF
 exit;
 }
 
+# Ensures the quoted seriesname looks like "su_arta"."test"
 sub GetQuotedSeries
 {
     my($series) = shift;
