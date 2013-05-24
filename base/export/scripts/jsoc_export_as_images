@@ -216,7 +216,8 @@ for f in $export_files; do
 totK=$(echo "scale=3; $total / 1024 " | bc -l)
 totM=$(echo "scale=3; $totK / 1024" | bc -l)
 
-echo "Size = $totM">>index.txt
+# TMP PATCH echo "Size = $totM">>index.txt
+echo "Size = 100">>index.txt
 #st=`show_info -q key=Status  ds='jsoc.export['$reqid']' `
 echo "Status= 0 ">>index.txt
  echo "# DATA ">>index.txt
