@@ -16,7 +16,7 @@
 /* !!TBD fix up these defs */
 //#define OFFSITEHOST "d00.stanford.edu" //offsite hostname to send .md5 files
 #define OFFSITEDIR "/dds/socdc" /* offsite dir to put .md5 files */
-#define MAX_PART 64		/* max # +1 of dedicated /SUM partitions */
+#define MAX_PART 1024		/* max # +1 of dedicated /SUM partitions */
 #define MAXSUMSETS 4		/* max # of SUM sets */
 #define MAXSUMOPEN 16		/* max# of SUM opens for a single client */
 #define MAXSUMREQCNT 512	/* max# of SU that can request in a single
