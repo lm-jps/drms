@@ -159,7 +159,10 @@ the analysis based on time instead of the integer key (e.g. FSN) then "high" and
 expressed as a time if and only if the time string contains at least one "_" char.
 If the seriesname starts "hmi.lev" or "aia.lev" then the appropriate lev0 series will be used
 to convert times to FSN.  Note that this will fail if the low time is after the end of the data
-or if the high time requested is before the beginning of the mission.
+or if the high time requested is before the beginning of the mission.  NOTE May 2013, changed to
+hmi.lev1 or aia.lev1 instead of the lev0 since lev0 does not (yet) have shadow tables.  Also
+look to see if either T_REC or T_OBS is a prime key and use the one that is prime.  FUTURE -
+check to see if either is indexed, and use that one.
 
 b Example 3:
 To show the summary of records in a range of time where the prime key is FSN, such as hmi.lev0a:
@@ -302,7 +305,7 @@ int DoIt(void)
   int no_miss = cmdparams_get_int (&cmdparams, "m", NULL) != 0;
   int no_gone = cmdparams_get_int (&cmdparams, "g", NULL) != 0;
   int useindex = cmdparams_get_int (&cmdparams, "i", NULL) != 0;
-  int chunksize = cmdparams_get_int (&cmdparams, "chunk", NULL);
+  longlong chunksize = cmdparams_get_int (&cmdparams, "chunk", NULL);
   uint32_t mask = (uint32_t)cmdparams_get_int64 (&cmdparams, "mask", NULL);
   uint32_t ignore = (uint32_t)cmdparams_get_int64 (&cmdparams, "ignore", NULL);
   char *map;
@@ -436,10 +439,20 @@ int DoIt(void)
   // do special action to skip false low records with prime key containing missing data values.
   // Allow many MISSING time initial records
 
-  if (slotted)
+  if (strncmp(seriesname,"hmi.lev1",8) == 0 && strcasecmp(pname, "fsn") == 0)
+    {
+    sprintf(in, "%s[? T_OBS_index>0 ?]", seriesname);
+    rs = drms_open_nrecords (drms_env, in, 1, &status); // first record
+    }
+  else if (strncmp(seriesname, "aia.lev1", 8) == 0 && strcasecmp(pname, "fsn") == 0)
+    {
+    sprintf(in, "%s[? T_REC_index>0 ?]", seriesname);
+    rs = drms_open_nrecords (drms_env, in, 1, &status); // first record
+    }
+  else if (slotted)
     {
     sprintf(in, "%s[? %s_index>0 ?]", seriesname, pname);
-    rs = drms_open_nrecords (drms_env, in, 1000, &status); // first record
+    rs = drms_open_nrecords (drms_env, in, 1, &status); // first record
     }
   else
     {
@@ -471,24 +484,33 @@ int DoIt(void)
                 {
 		// Even if the params should be slot numbers or integer keys, if the low=xxx param is
 		// a string with at least one '_'  or ':' or 2 '.' then treat as a time and convert to a slot number.
-                // use hmi.lev0a or aia.lev0 for this time to fsn mapping if series starts with e.g. hmi.lev
+                // use hmi.lev1 or aia.lev1 for this time to fsn mapping if series starts with e.g. hmi.lev
                 char *tp, *index();
                 tp = index(lowstr,'.');
                 if (index(lowstr, '_') || index(lowstr,':') || (tp && index(tp+1,'.')))
 			{
+			int is_sdo = 0;
+                        char fsn_in[DRMS_MAXQUERYLEN];
 			char fsn_seriesname[DRMS_MAXSERIESNAMELEN];
+                        char *fsn_keyname;
 			TIME tmplow = sscan_time((char *)lowstr);
 			if (strncmp(seriesname,"hmi.",4) == 0)
-				strcpy(fsn_seriesname, "hmi.lev0a");
+                                {
+				sprintf(fsn_in, "hmi.lev1[? T_OBS_index >= %.0f ?]", tmplow);
+                                is_sdo = 1;
+                                }
 			else if (strncmp(seriesname, "aia.", 4) == 0)
-				strcpy(fsn_seriesname, "aia.lev0");
+                                {
+				sprintf(fsn_in, "aia.lev1[? T_REC_index >= %.0f ?]", tmplow);
+                                is_sdo = 1;
+                                }
 			else
-				strcpy(fsn_seriesname, seriesname);
-			if (slotted) // simple conversion
+                                {
+				sprintf(fsn_in, "%s[? %s >= %f ?]", seriesname, pname, tmplow);
+                                }
+			if (slotted || is_sdo) // simple conversion
 				{
-				low = sscan_time((char *)lowstr);
-				sprintf(in, "%s[? %s >= %f ?]", fsn_seriesname, pname, low);
-				rs = drms_open_nrecords (drms_env, in, 1, &status); // first record
+				rs = drms_open_nrecords (drms_env, fsn_in, 1, &status); // first record
 				if (status || !rs || rs->n == 0)
 					DIE("Series is empty");
 				rec = rs->records[0];
@@ -497,7 +519,6 @@ int DoIt(void)
 				}
 			else
 				{
-				low = sscan_time((char *)lowstr);
 // fprintf(stderr,"doing low=timestring case for integer not slotted case\n");
 				DRMS_Type_t tobstype;
                                 drms_getkey(template, "T_OBS", &tobstype, &status);
@@ -525,7 +546,7 @@ int DoIt(void)
   // Now get high limit
   // Do special action for seriesnames beginning "hmi.lev" or "aia.lev" to exclude
   // erroneous monster FSNs which are > 0X1C000000.
-  if ((strncmp(seriesname,"hmi.lev",7) == 0 || strncmp(seriesname, "aia.lev", 7) == 0) && strcasecmp(pname, "fsn") == 0)
+  if ((strncmp(seriesname,"hmi.lev",7) == 0 || strncmp(seriesname, "aia.lev",7) == 0) && strcasecmp(pname, "fsn") == 0)
     {
     sprintf(in, "%s[? FSN < CAST(x'1c000000' AS int) ?]", seriesname);
     rs = drms_open_nrecords (drms_env, in, -1, &status); // last record
@@ -559,23 +580,36 @@ int DoIt(void)
                 {
 		// Even if the params should be slot numbers or integer keys, if the high=xxx param is
 		// a string with at least one '_' then treat as a time and convert to a slot number.
-                // use hmi.lev0a or aia.lev0 for this time to fsn mapping if series starts with e.g. hmi.lev
+                // use hmi.lev1 or aia.lev1 for this time to fsn mapping if series starts with e.g. hmi.lev
                 char *tp, *index();
                 tp = index(highstr,'.');
                 if (index(highstr, '_') || index(highstr,':') || (tp && index(tp+1,'.')))
 			{
+                        int is_sdo = 0;
 			char fsn_seriesname[DRMS_MAXSERIESNAMELEN];
+                        char *fsn_keyname;
 			TIME tmphigh = sscan_time((char *)highstr);
 			if (strncmp(seriesname,"hmi.",4) == 0)
-				strcpy(fsn_seriesname, "hmi.lev0a");
+                                {
+				strcpy(fsn_seriesname, "hmi.lev1");
+                                fsn_keyname = "T_OBS_index";
+                                is_sdo = 1;
+                                }
 			else if (strncmp(seriesname, "aia.", 4) == 0)
-				strcpy(fsn_seriesname, "aia.lev0");
+                                {
+				strcpy(fsn_seriesname, "aia.lev1");
+                                fsn_keyname = "T_REC_index";
+                                is_sdo = 1;
+                                }
 			else
+                                {
 				strcpy(fsn_seriesname, seriesname);
-			if (slotted) // simple conversion
+                                fsn_keyname = pname;
+                                }
+			if (slotted || is_sdo) // simple conversion
 				{
 				high = sscan_time((char *)highstr);
-				sprintf(in, "%s[? %s > 0 AND %s <= %f ?]", fsn_seriesname, pname, pname, high);
+				sprintf(in, "%s[? %s > 0 AND %s <= %.0f ?]", fsn_seriesname, fsn_keyname, fsn_keyname, high);
 				rs = drms_open_nrecords (drms_env, in, -1, &status); // first record
 				if (status || !rs || rs->n == 0)
 					DIE("Series is empty");
