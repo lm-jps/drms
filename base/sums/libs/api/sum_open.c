@@ -1571,7 +1571,7 @@ int SUM_get(SUM_t *sum, int (*history)(const char *fmt, ...))
   setkey_int(&klist, "DEBUGFLG", sum->debugflg);
   setkey_int(&klist, "REQCODE", GETDO);
   setkey_str(&klist, "username", sum->username);
-  setkey_int(&klist, "newflg", 1);
+  setkey_int(&klist, "newflg", GET_FIX_VER);
   dxlong = sum->dsix_ptr;
   for(i = 0; i < sum->reqcnt; i++) {
     sprintf(dsix_name, "dsix_%d", i);
