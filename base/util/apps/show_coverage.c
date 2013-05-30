@@ -305,7 +305,7 @@ int DoIt(void)
   int no_miss = cmdparams_get_int (&cmdparams, "m", NULL) != 0;
   int no_gone = cmdparams_get_int (&cmdparams, "g", NULL) != 0;
   int useindex = cmdparams_get_int (&cmdparams, "i", NULL) != 0;
-  longlong chunksize = cmdparams_get_int (&cmdparams, "chunk", NULL);
+  long long chunksize = cmdparams_get_int (&cmdparams, "chunk", NULL);
   uint32_t mask = (uint32_t)cmdparams_get_int64 (&cmdparams, "mask", NULL);
   uint32_t ignore = (uint32_t)cmdparams_get_int64 (&cmdparams, "ignore", NULL);
   char *map;
