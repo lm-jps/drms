@@ -1,6 +1,7 @@
 /* SUM.h */
 #ifndef SUM_INCL
-
+#define GET_FIX_VER 2	/* DRMS fix level for calling multi SUM_get() */
+			/* This is tested for in sum_svc_proc.c getdo_1() */
 #if defined SUMDC
 #define SUM_VERSION_NUM    (1.0)
 //#define SUMSERVER "dcs0.Stanford.EDU"
