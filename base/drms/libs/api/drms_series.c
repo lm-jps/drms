@@ -5237,50 +5237,64 @@ static int InnerFLSelect(int npkeys, HContainer_t *firstlast, size_t *stsz, char
         else
         {
             /* The where clause for the current keyword does NOT involve a FIRST/LAST
-             * filter. */
+             * filter. But only if there is a prime-key filter. */
             /* Need to add the where clause for JUST THIS KEY. */
             ppkwhere = (char **)hcon_lookup_lower(pkwhereNFL, pkey[iloop]);
             if (ppkwhere)
             {
                 pkwhere = *ppkwhere;
             }
-            
-            if (GetTempTable(tmptab, sizeof(tmptab)))
-            {
-                istat = DRMS_ERROR_OVERFLOW;
-            }
             else
             {
-                if (init != 0)
+                pkwhere = NULL;
+            }
+            
+            if (pkwhere)
+            {   
+                if (GetTempTable(tmptab, sizeof(tmptab)))
                 {
-                    *query = base_strcatalloc(*query, ";", stsz);
-                }
-
-                *query = base_strcatalloc(*query, "CREATE TEMPORARY TABLE ", stsz);
-                *query = base_strcatalloc(*query, tmptab, stsz);
-                *query = base_strcatalloc(*query, " AS ", stsz);
-                *query = base_strcatalloc(*query, "SELECT recnum, ", stsz);
-                *query = base_strcatalloc(*query, pkeylist, stsz);
-                *query = base_strcatalloc(*query, " FROM ", stsz);
-                
-                if (init == 0)
-                {
-                    *query = base_strcatalloc(*query, shadow, stsz);
+                    istat = DRMS_ERROR_OVERFLOW;
                 }
                 else
                 {
-                    *query = base_strcatalloc(*query, prevtmptab, stsz);
+                    if (init != 0)
+                    {
+                        *query = base_strcatalloc(*query, ";", stsz);
+                    }
+                    
+                    *query = base_strcatalloc(*query, "CREATE TEMPORARY TABLE ", stsz);
+                    *query = base_strcatalloc(*query, tmptab, stsz);
+                    *query = base_strcatalloc(*query, " AS ", stsz);
+                    *query = base_strcatalloc(*query, "SELECT recnum, ", stsz);
+                    *query = base_strcatalloc(*query, pkeylist, stsz);
+                    *query = base_strcatalloc(*query, " FROM ", stsz);
+                    
+                    if (init == 0)
+                    {
+                        *query = base_strcatalloc(*query, shadow, stsz);
+                    }
+                    else
+                    {
+                        *query = base_strcatalloc(*query, prevtmptab, stsz);
+                    }
+                    
+                    if (ppkwhere)
+                    {
+                        *query = base_strcatalloc(*query, " WHERE ", stsz);
+                        *query = base_strcatalloc(*query, pkwhere, stsz);
+                    }
+                    
+                    snprintf(prevtmptab, sizeof(prevtmptab), "%s", tmptab);
+                    
+                    init = 1;
                 }
-                
-                if (ppkwhere)
-                {
-                    *query = base_strcatalloc(*query, " WHERE ", stsz);
-                    *query = base_strcatalloc(*query, pkwhere, stsz);
-                }
-               
-                snprintf(prevtmptab, sizeof(prevtmptab), "%s", tmptab);
-                
-                init = 1;
+            }
+            else
+            {
+                /* There is no where clause involving this prime-key, so there is no need to 
+                 * make a temporary table, which would otherwise be identical to the original shadow table. 
+                 * So, skip this prime-key. The temporary tables created by this function are used 
+                 * to restrict the number of records we pull from the shadow table. */
             }
         }
     }
