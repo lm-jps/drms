@@ -30,7 +30,7 @@ while ($#)
   # required
   if ($1 =~ 'in=*')       then
     set "$1"
-    set seriesname = `echo $in:al | sed -e 's/\[/\t/'`
+    set seriesname = `echo "$in:al" | sed -e 's/\[/\t/'`
     if ($#seriesname > 1) set seriesname = $seriesname[1]
   endif
   if ($1 =~ 'reqid=*')    set $1
@@ -70,12 +70,12 @@ while ($#)
 end
 
 #make sure all arguments are there
-if ($in == "NOT SPECIFIED" || $reqid == "NOT SPECIFIED" || $outpath == "NOT SPECIFIED") then
+if ("$in" == "NOT SPECIFIED" || $reqid == "NOT SPECIFIED" || $outpath == "NOT SPECIFIED") then
   echo All of in, reqid, outpath must be specified on command line
   exit 1
 endif
 
-nRec=`show_info -cq ds=$in`
+nRec=`show_info -cq ds="$in"`
 if ( $nRec < 1 ) then 
      echo "No records exist"
      exit 2
@@ -132,7 +132,7 @@ end
     min_fl_sz=10000      #min file size
 
 if ($CTinfo != NA) then
-  render_image  in=$in  $min $max pallette=$CTinfo \
+  render_image  in="$in"  $min $max pallette=$CTinfo \
    $scaling  outname=$seriesname  outid=time type=$type $scale type=$type  tkey=$tkey $flags \
    out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"'$DataName':{ID}\" | pnmtojpeg -quality=95' 
 else # cases with no color table file, for now these will be AIA with mixed wavelengths
@@ -158,7 +158,7 @@ else # cases with no color table file, for now these will be AIA with mixed wave
          set scaling = LOG
        endif
 
-       render_image in=$in_new min=$min max=$max pallette=/home/jsoc/ColorTables/AIA/aia_$wavl.lut  \
+       render_image in="$in_new" min=$min max=$max pallette=/home/jsoc/ColorTables/AIA/aia_$wavl.lut  \
          $scaling  outname=$seriesname  outid=time type=$type $scale type=$type  tkey=$tkey  $flags \
          out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95' 
     end
