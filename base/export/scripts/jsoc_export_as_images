@@ -1,6 +1,9 @@
 #!/bin/csh -f
+set echo
 setenv RGBDEF /home/jsoc/cvs/Development/JSOC/proj/workflow/scripts/rgb.txt
 setenv JSOC_DBHOST hmidb
+
+set noglob
 
 # script now assumes the color table, min,max, scaling, etc., are all on the command line.
 # command line args that are not used for image processing are ignored.
@@ -27,31 +30,34 @@ set protocol = "jpeg"
 
 # loop through command line to extract image making params
 while ($#)
+  set parm = ` echo "$1" | sed -e 's/=/\t/'`
+  set pname = parm[1]
+  set pval = "parm[2]"
   # required
-  if ($1 =~ 'in=*')       then
-    set "$1"
+  if ($pname == in)       then
+    set in = "$pval"
     set seriesname = `echo "$in:al" | sed -e 's/\[/\t/'`
     if ($#seriesname > 1) set seriesname = $seriesname[1]
   endif
-  if ($1 =~ 'reqid=*')    set $1
-  if ($1 =~ 'outpath=*')  set $1
+  if ($pname == reqid)    set reqid = $pval
+  if ($pname == outpath)  set outpath = $pval
   # image
-  if ($1 =~ 'scaling=*')  set $1
-  if ($1 =~ 'size=*')     then
-    set $1
+  if ($pname == scaling)  set scaling = $pval
+  if ($pname == size)     then
+    set size = $pval
     set scale = "scale="$size
   endif
-  if ($1 =~ 'min=*')      set $1
-  if ($1 =~ 'max=*')      set $1
-  if ($1 =~ 'CT=*')       then
-    set $1
+  if ($pname == min)      set min = $pval
+  if ($pname == max)      set max = $pval
+  if ($pname == CT)       then
+    set CT = $pval
     set CTinfo = `show_info jsoc.Color_Tables'[? CTname='$CT' ?]' n=1 -qPA`
     if ($CTinfo == /) set CTinfo = "NA"
   endif
   # index.txt
-  if ($1 =~ 'method=*')   set method = "$1"
-  if ($1 =~ 'protocol=*') then
-    set protocol = $1
+  if ($pname == method)   set method = "$pval"
+  if ($pname == protocol) then
+    set protocol = "protocol="$pval
     if ($protocol == jpg) then
       set type = jpg
     else if ($protocol == mpg) then
@@ -65,7 +71,7 @@ while ($#)
       exit 1
     endif
   endif   
-  if ($1 =~ 'expversion=*') set $1
+  if ($pname == expversion) setexpversion = $pval 
   shift
 end
 
@@ -169,6 +175,7 @@ else # cases with no color table file, for now these will be AIA with mixed wave
   endif
 endif
 
+unset noglob
 
 #write into index.txt
  
