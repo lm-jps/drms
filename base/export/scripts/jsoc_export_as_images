@@ -1,5 +1,5 @@
 #!/bin/csh -f
-set echo
+# set echo
 setenv RGBDEF /home/jsoc/cvs/Development/JSOC/proj/workflow/scripts/rgb.txt
 setenv JSOC_DBHOST hmidb
 
@@ -13,9 +13,9 @@ set noglob
 
 # set defaults
 # required params
-set in = "NOT SPECIFIED"
-set reqid = "NOT SPECIFIED"
-set outpath = "NOT SPECIFIED"
+set in = "NOT_SPECIFIED"
+set reqid = "NOT_SPECIFIED"
+set outpath = "NOT_SPECIFIED"
 # image params
 set type = jpg
 set scaling = "scaling=MINMAX"
@@ -25,39 +25,42 @@ set max = ""
 set CT = "pallette=/home/jsoc/ColorTables/grey.sao"
 # other params needed for index.txt
 set method = ""
-set expversion = ""
+set expversion = "expversion=1"
 set protocol = "jpeg"
+set process = ""
 
 # loop through command line to extract image making params
 while ($#)
   set parm = ` echo "$1" | sed -e 's/=/\t/'`
-  set pname = parm[1]
-  set pval = "parm[2]"
+  set pname = $parm[1]
+  set pval = "$parm[2]"
   # required
   if ($pname == in)       then
     set in = "$pval"
-    set seriesname = `echo "$in:al" | sed -e 's/\[/\t/'`
+    set seriesname = `echo "$in" | sed -e 's/\[/\t/'`
     if ($#seriesname > 1) set seriesname = $seriesname[1]
   endif
   if ($pname == reqid)    set reqid = $pval
   if ($pname == outpath)  set outpath = $pval
   # image
-  if ($pname == scaling)  set scaling = $pval
+  if ($pname == scaling)  set scaling = "scaling=$pval"
   if ($pname == size)     then
     set size = $pval
     set scale = "scale="$size
   endif
-  if ($pname == min)      set min = $pval
-  if ($pname == max)      set max = $pval
+  if ($pname == min)      set min = "min=$pval"
+  if ($pname == max)      set max = "max=$pval"
   if ($pname == CT)       then
     set CT = $pval
-    set CTinfo = `show_info jsoc.Color_Tables'[? CTname='$CT' ?]' n=1 -qPA`
-    if ($CTinfo == /) set CTinfo = "NA"
+    set CTinfo = `show_info jsoc.Color_Tables'[? CT_name="'$CT'" ?]' n=1 -qPA`
+    if ("$CTinfo" == "/") set CTinfo = "NA"
   endif
   # index.txt
   if ($pname == method)   set method = "$pval"
+  if ($pname == ffmt)   set ffmt = "$pval"
+  if ($pname == cparms)   set cparms = "$pval"
   if ($pname == protocol) then
-    set protocol = "protocol="$pval
+    set protocol = $pval
     if ($protocol == jpg) then
       set type = jpg
     else if ($protocol == mpg) then
@@ -71,17 +74,17 @@ while ($#)
       exit 1
     endif
   endif   
-  if ($pname == expversion) setexpversion = $pval 
+  if ($pname == expversion) set expversion = $pval 
   shift
 end
 
 #make sure all arguments are there
-if ("$in" == "NOT SPECIFIED" || $reqid == "NOT SPECIFIED" || $outpath == "NOT SPECIFIED") then
+if ("$in" == "NOT_SPECIFIED" || $reqid == "NOT_SPECIFIED" || $outpath == "NOT_SPECIFIED") then
   echo All of in, reqid, outpath must be specified on command line
   exit 1
 endif
 
-nRec=`show_info -cq ds="$in"`
+set nRec = `show_info -cq ds="$in"`
 if ( $nRec < 1 ) then 
      echo "No records exist"
      exit 2
@@ -102,19 +105,20 @@ echo "recordset=$in" >>index.txt
 echo "protocol=$protocol" >>index.txt  
 echo "dir=$outpath" >>index.txt  
 echo "filefmt=$ffmt" >>index.txt  
-echo "cparms=$cparms" >>index.txt  
+echo cparms="$cparms" >>index.txt  
 # echo "# DATA ">>index.txt
 
 # check to see if its an AIA or HMI data set.
 # If so, build nice name for image
 
 set flags = ""
-set project = $seriesname:r:al
-set series = $seriesname:e:al
+set project = $seriesname:r
+set project = $project:al
+set series = $seriesname:e
 if ($project == hmi) then
   set DataName = "SDO/HMI "$series
   set ser = $series:al
-  if ($ser =~ 'M_*' || $ser =~ 'V_*' || $ser =~ 'Ld_*' || $ser =~ 'Lw_*') set flags = ($flags -c)
+  if ($ser =~ 'm_*' || $ser =~ 'v_*' || $ser =~ 'ld_*' || $ser =~ 'lw_*') set flags = ($flags -c)
 else if ($project == mdi) then
   set DataName = "SOHO/MDI "$series
 else if ($project == aia) then
@@ -138,9 +142,9 @@ end
     min_fl_sz=10000      #min file size
 
 if ($CTinfo != NA) then
-  render_image  in="$in"  $min $max pallette=$CTinfo \
+  render_image -v in="$in"  $min $max pallette=$CTinfo \
    $scaling  outname=$seriesname  outid=time type=$type $scale type=$type  tkey=$tkey $flags \
-   out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"'$DataName':{ID}\" | pnmtojpeg -quality=95' 
+   out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"'"$DataName"':{ID}\" | pnmtojpeg -quality=95' 
 else # cases with no color table file, for now these will be AIA with mixed wavelengths
   if ($CT == aia_mixed) then
     set is_mod = 0
@@ -166,7 +170,7 @@ else # cases with no color table file, for now these will be AIA with mixed wave
 
        render_image in="$in_new" min=$min max=$max pallette=/home/jsoc/ColorTables/AIA/aia_$wavl.lut  \
          $scaling  outname=$seriesname  outid=time type=$type $scale type=$type  tkey=$tkey  $flags \
-         out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"SDO/HMI  M:{ID}\" | pnmtojpeg -quality=95' 
+         out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"'"$DataName"':{ID}\" | pnmtojpeg -quality=95' 
     end
     }
   else
@@ -185,19 +189,22 @@ show_info -iq ds="$in" > data1
 echo "keywords= $protocol files">>index.txt 
 set export_files = `find -type f -iname "*.$protocol"`
 
-total=0
-foreach f ($export_files)
+set total=0
+if ($#export_files > 0) then
+  foreach f ($export_files)
      if ( -f $f ) then
          set Sz = `stat -c "%s" "$f"`
          @ total = $total + $Sz
      endif
-end    
+  end    
+endif
 
-set totK = $(echo "scale=3; $total / 1024 " | bc -l)
-set totM = $(echo "scale=3; $totK / 1024" | bc -l)
+set totK = `echo "scale=3; $total / 1024 " | bc -l`
+set totM = `echo "scale=3; $totK / 1024" | bc -l`
+if ($totM =~ '.*') set totM = "0"$totM
 
-# TMP PATCH echo "Size = $totM">>index.txt
-echo "Size = 1">>index.txt
+echo "Size = $totM">>index.txt
+# echo "Size = 1">>index.txt
 echo "Status = 0 ">>index.txt
 echo "# DATA ">>index.txt
 paste  data1  images >> index.txt
