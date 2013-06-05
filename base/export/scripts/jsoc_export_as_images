@@ -1,5 +1,5 @@
 #!/bin/csh -f
-# set echo
+#  set echo
 setenv RGBDEF /home/jsoc/cvs/Development/JSOC/proj/workflow/scripts/rgb.txt
 setenv JSOC_DBHOST hmidb
 
@@ -119,7 +119,15 @@ echo cparms="$cparms" >>index.txt
 # check to see if its an AIA or HMI data set.
 # If so, build nice name for image
 
+# Collect some keyword values from first record.
+
+show_info ds="$in" n=1 -qk key=WAVELNTH,CROTA2 >data.sample
+
 set flags = ""
+set crotkey = `grep CROTA2 data.sample`
+set $crotkey
+if ($CROTA2:r > -2 && $CROTA2:r < 2) set flags = ($flags -u)
+
 set project = $seriesname:r
 set project = $project:al
 set series = $seriesname:e
@@ -130,23 +138,34 @@ if ($project == hmi) then
 else if ($project == mdi) then
   set DataName = "SOHO/MDI "$series
 else if ($project == aia) then
-  set WaveLength = `show_info ds="$in" n=1 -q key=WAVELNTH`
+  set wavekey = `grep WAVELNTH data.sample`
+  set $wavekey
+  set WaveLength = $WAVELNTH
   set DataName = "SDO/AIA "$WaveLength
 else
   set DataName = $seriesname
 endif
   
 # Get time key
-set t_key = T_OBS
+set tkey = none
 set primes = (`show_info -j $seriesname | grep PrimeKeys`)
 set nprimes = $#primes
-set iprime=1
+set iprime=2
 while ($iprime <= $nprimes)
   set prime = $primes[$iprime]:s/,//
-  if ($prime == T_REC) set tkey = T_REC
+  if ($prime == T_REC) then
+    set tkey = T_REC
+    break
+  else if ($prime == T_OBS) then
+    set tkey = T_OBS
+    break
+  endif
   @ iprime = $iprime + 1
 end
+if ($tkey == none) set tkey = $primes[2]:s/,//
 
+
+which render_image
 
 if ($CTinfo != NA) then
   render_image -v in="$in" n=$limit  $min $max palette=$CTinfo \
