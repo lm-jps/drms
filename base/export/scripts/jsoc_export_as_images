@@ -5,24 +5,25 @@ setenv JSOC_DBHOST hmidb
 
 set noglob
 
+# Make images and movies from RecordSet spec.
+# Intended use is in script to support exportdata.html
 # script now assumes the color table, min,max, scaling, etc., are all on the command line.
-# command line args that are not used for image processing are ignored.
-
-#old version jsoc_export_as_images ds=<record_set_query>  reqid=<export request id> expversion=<version> method=<exp method> protocol=<output-file protocol> path=<output path> { ffmt=<filename format> } { cparams=<compression string list> }
-#Now call the args in the form: name=value for names: ds, reqid, expversion, method, protocol, outpath, ffmt, ...
+# only in and outpath are required.
 
 # set defaults
 # required params
 set in = "NOT_SPECIFIED"
-set reqid = "NOT_SPECIFIED"
+set limit = 0
+set reqid = "NA"
 set outpath = "NOT_SPECIFIED"
 # image params
-set type = jpg
+set imtype = jpg
+set mvtype = none
 set scaling = "scaling=MINMAX"
 set size = "size=1"
 set min = ""
 set max = ""
-set CT = "pallette=/home/jsoc/ColorTables/grey.sao"
+set CT = "palette=/home/jsoc/Color_Tables/grey.sao"
 # other params needed for index.txt
 set method = ""
 set expversion = "expversion=1"
@@ -40,6 +41,7 @@ while ($#)
     set seriesname = `echo "$in" | sed -e 's/\[/\t/'`
     if ($#seriesname > 1) set seriesname = $seriesname[1]
   endif
+  if ($pname == n)    set limit = $pval
   if ($pname == reqid)    set reqid = $pval
   if ($pname == outpath)  set outpath = $pval
   # image
@@ -60,15 +62,15 @@ while ($#)
   if ($pname == ffmt)   set ffmt = "$pval"
   if ($pname == cparms)   set cparms = "$pval"
   if ($pname == protocol) then
-    set protocol = $pval
+    set protocol = $pval:al
     if ($protocol == jpg) then
-      set type = jpg
+      set imtype = jpg
     else if ($protocol == mpg) then
-      set type = jpg
-      set makemovie = 1
+      set imtype = jpg
+      set mvtype = mpg
     else if ($protocol == mp4) then
-      set type = jpg
-      set makemovie = 1
+      set imtype = jpg
+      set mvtype = mp4
     else
       echo Illegal protocol $protocol
       exit 1
@@ -79,12 +81,12 @@ while ($#)
 end
 
 #make sure all arguments are there
-if ("$in" == "NOT_SPECIFIED" || $reqid == "NOT_SPECIFIED" || $outpath == "NOT_SPECIFIED") then
-  echo All of in, reqid, outpath must be specified on command line
+if ("$in" == "NOT_SPECIFIED" || $outpath == "NOT_SPECIFIED") then
+  echo Both '"in"' and '"outpath"' must be specified on command line
   exit 1
 endif
 
-set nRec = `show_info -cq ds="$in"`
+set nRec = `show_info -cq ds="$in" n=$limit`
 if ( $nRec < 1 ) then 
      echo "No records exist"
      exit 2
@@ -92,8 +94,14 @@ endif
 
 cd $outpath
 
-rm -rf index.txt ; rm -rf tmpImages/*.* ; rm -rf  *.$type  ;rm -f images;
-rm -rf *.$type;  rm -rf data* 
+# cleanup prior export temps in case outpath is user location vs a new SU
+unset noglob
+rm -f images
+rm -f rslist 
+rm -f *.$imtype
+rm -f $seriesname.mp4 $seriesname.mpg
+rm -f index.txt 
+set noglob
  
 # Write into the new index.txt
 
@@ -139,11 +147,10 @@ while ($iprime <= $nprimes)
   @ iprime = $iprime + 1
 end
 
-    min_fl_sz=10000      #min file size
 
 if ($CTinfo != NA) then
-  render_image -v in="$in"  $min $max pallette=$CTinfo \
-   $scaling  outname=$seriesname  outid=time type=$type $scale type=$type  tkey=$tkey $flags \
+  render_image -v in="$in" n=$limit  $min $max palette=$CTinfo \
+   $scaling  outname=$seriesname  outid=time $scale type=$imtype  tkey=$tkey $flags \
    out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"'"$DataName"':{ID}\" | pnmtojpeg -quality=95' 
 else # cases with no color table file, for now these will be AIA with mixed wavelengths
   if ($CT == aia_mixed) then
@@ -168,8 +175,8 @@ else # cases with no color table file, for now these will be AIA with mixed wave
          set scaling = LOG
        endif
 
-       render_image in="$in_new" min=$min max=$max pallette=/home/jsoc/ColorTables/AIA/aia_$wavl.lut  \
-         $scaling  outname=$seriesname  outid=time type=$type $scale type=$type  tkey=$tkey  $flags \
+       render_image in="$in_new" n=$limit min=$min max=$max palette=/home/jsoc/ColorTables/AIA/aia_$wavl.lut  \
+         $scaling  outname=$seriesname  outid=time $scale type=$imtype  tkey=$tkey  $flags \
          out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"'"$DataName"':{ID}\" | pnmtojpeg -quality=95' 
     end
     }
@@ -183,21 +190,52 @@ unset noglob
 
 #write into index.txt
  
-show_info -iq ds="$in" > data1
-/bin/ls *.$type > images 
+show_info -iq ds="$in" n=$limit > rslist
+/bin/ls *.$imtype > images 
 
 echo "keywords= $protocol files">>index.txt 
-set export_files = `find -type f -iname "*.$protocol"`
+
+# set min_fl_sz=10000      #min file size
 
 set total=0
-if ($#export_files > 0) then
-  foreach f ($export_files)
-     if ( -f $f ) then
-         set Sz = `stat -c "%s" "$f"`
-         @ total = $total + $Sz
-     endif
-  end    
+set Nimages = `wc -l <images`
+set i=1
+while ( $i <= $Nimages )
+    set img = `head --lines $i <images | tail -1`
+    set Sz = `stat -c "%s" "$img"`
+    @ total = $total + $Sz
+    @ i = $i + 1
+end
+
+
+# End of image making, proceed to movie making if requested.
+
+if ($mvtype != none) then
+  rm -rf tmpImages/*.* 
+  mkdir tmpImages
+  set i=1
+  while ( $i <= $Nimages )
+    set img = `head --lines $i <images | tail -1`
+    set I = `printf "%04d" $i`
+    if ( -e $img ) then
+        ln  $img  tmpImages/$I.$imtype
+    else
+        echo "no frame for $img" 
+    endif
+    @ i = $i + 1
+  end
+
+  #make movie
+  cd tmpImages
+  ffmpeg -qscale 5 -r 20 -b 9600 -i %04d.$imtype ../$seriesname.$mvtype
+  cd ..
+  rm -rf tmpImages
+
+  set Sz = `stat -c "%s" "$seriesname.$mvtype"`
+  @ total = $total + $Sz
 endif
+
+# End of movie making
 
 set totK = `echo "scale=3; $total / 1024 " | bc -l`
 set totM = `echo "scale=3; $totK / 1024" | bc -l`
@@ -207,6 +245,7 @@ echo "Size = $totM">>index.txt
 # echo "Size = 1">>index.txt
 echo "Status = 0 ">>index.txt
 echo "# DATA ">>index.txt
-paste  data1  images >> index.txt
-rm -f data1 images
+paste  rslist  images >> index.txt
+
+# rm -f rslist images
 
