@@ -2422,9 +2422,9 @@ static int GenProtoExpCmd(FILE *fptr,
       if (pcomma)
         *pcomma = '\0';
 
-      if (strcasecmp(newproto, "mpg") == 0 || strcasecmp(newproto, "mp4") == 0)
-        fprintf(fptr, "%s ", (TESTMODE ? "/home/phil/jsoc/base/export/scripts/jsoc_export_as_movie_test" : "jsoc_export_as_movie"));
-      else
+      // if (strcasecmp(newproto, "mpg") == 0 || strcasecmp(newproto, "mp4") == 0)
+      //   fprintf(fptr, "%s ", (TESTMODE ? "/home/phil/jsoc/base/export/scripts/jsoc_export_as_movie_test" : "jsoc_export_as_movie"));
+      // else
         fprintf(fptr, "%s ", (TESTMODE ? "/home/phil/jsoc/base/export/scripts/jsoc_export_as_images_test" : "jsoc_export_as_images"));
 
       fprintf(fptr, "in='%s' reqid='%s' expversion='%s' method='%s' outpath=$REQDIR ffmt='%s' cparms='%s'",
