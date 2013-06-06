@@ -263,8 +263,16 @@ if ($totM =~ '.*') set totM = "0"$totM
 echo "Size = $totM">>index.txt
 # echo "Size = 1">>index.txt
 echo "Status = 0 ">>index.txt
-echo "# DATA ">>index.txt
+
+if ($mvtype != none) then
+  echo "Movie name=$seriesname.$mvtype " >> index.txt
+  echo "# DATA ">>index.txt
+  echo "movie of the following data\t$seriesname.$mvtype" >> index.txt
+else
+  echo "# DATA ">>index.txt
+endif
+
 paste  rslist  images >> index.txt
 
-# rm -f rslist images data.sample
+rm -f rslist images data.sample
 
