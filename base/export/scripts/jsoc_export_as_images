@@ -34,34 +34,45 @@ set process = ""
 while ($#)
   set parm = ` echo "$1" | sed -e 's/=/\t/'`
   set pname = $parm[1]
+  if ($#parm < 2) then
+    echo $parm has no value part, param as given is $1
+    shift
+    continue
+  endif
   set pval = "$parm[2]"
   # required
-  if ($pname == in)       then
+  if ($pname == in) then
     set in = "$pval"
     set seriesname = `echo "$in" | sed -e 's/\[/\t/'`
     if ($#seriesname > 1) set seriesname = $seriesname[1]
-  endif
-  if ($pname == n)    set limit = $pval
-  if ($pname == reqid)    set reqid = $pval
-  if ($pname == outpath)  set outpath = $pval
+  else if ($pname == n) then
+     set limit = $pval
+  else if ($pname == reqid) then
+     set reqid = $pval
+  else if ($pname == outpath) then
+     set outpath = $pval
   # image
-  if ($pname == scaling)  set scaling = "scaling=$pval"
-  if ($pname == size)     then
+  else if ($pname == scaling) then
+      set scaling = "scaling=$pval"
+  else if ($pname == size) then
     set size = $pval
     set scale = "scale="$size
-  endif
-  if ($pname == min)      set min = "min=$pval"
-  if ($pname == max)      set max = "max=$pval"
-  if ($pname == CT)       then
+  else if ($pname == min) then
+    set min = "min=$pval"
+  else if ($pname == max) then
+      set max = "max=$pval"
+  else if ($pname == CT) then
     set CT = $pval
     set CTinfo = `show_info jsoc.Color_Tables'[? CT_name="'$CT'" ?]' n=1 -qPA`
     if ("$CTinfo" == "/") set CTinfo = "NA"
-  endif
   # index.txt
-  if ($pname == method)   set method = "$pval"
-  if ($pname == ffmt)   set ffmt = "$pval"
-  if ($pname == cparms)   set cparms = "$pval"
-  if ($pname == protocol) then
+  else if ($pname == method) then
+    set method = "$pval"
+  else if ($pname == ffmt) then
+    set ffmt = "$pval"
+  else if ($pname == cparms) then
+    set cparms = "$pval"
+  else if ($pname == protocol) then
     set protocol = $pval:al
     if ($protocol == jpg) then
       set imtype = jpg
@@ -75,8 +86,9 @@ while ($#)
       echo Illegal protocol $protocol
       exit 1
     endif
-  endif   
-  if ($pname == expversion) set expversion = $pval 
+  else if ($pname == expversion) then
+    set expversion = $pval 
+  endif
   shift
 end
 
@@ -164,13 +176,11 @@ while ($iprime <= $nprimes)
 end
 if ($tkey == none) set tkey = $primes[2]:s/,//
 
-
-which render_image
-
 if ($CTinfo != NA) then
   render_image -v in="$in" n=$limit  $min $max palette=$CTinfo \
    $scaling  outname=$seriesname  outid=time $scale type=$imtype  tkey=$tkey $flags \
    out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"'"$DataName"':{ID}\" | pnmtojpeg -quality=95' 
+  set render_status = $?
 else # cases with no color table file, for now these will be AIA with mixed wavelengths
   if ($CT == aia_mixed) then
     set is_mod = 0
@@ -197,12 +207,34 @@ else # cases with no color table file, for now these will be AIA with mixed wave
        render_image in="$in_new" n=$limit min=$min max=$max palette=/home/jsoc/ColorTables/AIA/aia_$wavl.lut  \
          $scaling  outname=$seriesname  outid=time $scale type=$imtype  tkey=$tkey  $flags \
          out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"'"$DataName"':{ID}\" | pnmtojpeg -quality=95' 
+       set render_status = $?
+       if ($render_status) break
     end
     }
   else
     echo Do not know how to proceed
     exit 2
   endif
+endif
+
+if ($render_status) then
+  echo render_image failed.  Parameters were:
+  echo "  " in="$in_new"
+  echo "  " n=$limit
+  echo "  " min=$min
+  echo "  " max=$max
+  echo "  " palette=$CTinfo OR palette=/home/jsoc/ColorTables/AIA/aia_$wavl.lut
+  echo "  " $scaling
+  echo "  " outname=$seriesname
+  echo "  "  outid=time
+  echo "  " $scale
+  echo "  " type=$imtype
+  echo "  " tkey=$tkey
+  echo "  " $flags
+  echo "  " out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"'"$DataName"':{ID}\" | pnmtojpeg -quality=95'
+  echo "  " and status=$render_status
+  echo " "
+  exit 2
 endif
 
 unset noglob
@@ -247,9 +279,15 @@ if ($mvtype != none) then
   #make movie
   cd tmpImages
   ffmpeg -qscale 5 -r 20 -b 9600 -i %04d.$imtype ../$seriesname.$mvtype
+  set ffmpeg_status = $?
   cd ..
   rm -rf tmpImages
 
+  if ($ffmpeg_status) then
+    echo ffmpeg failed, args were:  -qscale 5 -r 20 -b 9600 -i %04d.$imtype ../$seriesname.$mvtype
+    echo status was $ffmpeg_status
+    exit 2
+  endif
   set Sz = `stat -c "%s" "$seriesname.$mvtype"`
   @ total = $total + $Sz
 endif
