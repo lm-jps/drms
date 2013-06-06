@@ -267,7 +267,7 @@ echo "Status = 0 ">>index.txt
 if ($mvtype != none) then
   echo "Movie name=$seriesname.$mvtype " >> index.txt
   echo "# DATA ">>index.txt
-  echo "movie of the following data\t$seriesname.$mvtype" >> index.txt
+  echo "movie of the following data" "\t" "$seriesname.$mvtype" >> index.txt
 else
   echo "# DATA ">>index.txt
 endif
