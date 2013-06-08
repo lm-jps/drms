@@ -582,29 +582,50 @@ void static make_qsub_call(char *requestid, /* like JSOC_20120906_199_IN*/
       
       if (requestorname)
       {
-          /* This is not a good way to get the notification addresses. It is using the RequestorID field to locate a requestor. However, 
-           * RequestorID is not a prime-key member (it is the record number of the record in jsoc.export_user for the user who made
-           * the request), so this can result in no records being found. It is often the case that a requestor
-           * will use the same reqestor name for multiple export requests. Whenever this happens, each request will generate a new RequestorID.
-           * But the Requestor field will be the same - so there is a single Requestor value associated with multiple RequestorIDs. Due to the
-           * "prime-key logic", all requests except for latest request will be hidden, so this code below will fail when it looks for a specific
-           * RequestID that is likely hidden. The export system should not create multiple RequestorIDs for the same Requestor. You
-           * can refer to a requestor by either a name or an id, so different ids should be different requestors. So, the current scheme of
-           * referring to the same requestor by different ids seems illogical. In addition, there is no reason to have both a RequestorID 
-           * and a Requestor keyword - they are redundant. The Requestor field is more informative, so we should remove the RequestorID field.
-           * Finally, when show_info returns no records, and this failure happens many dozens of times a day, it returns a string that
-           * begins with an asterisk. If you send mail to an address that is an asterisk, the asterisk acts like a glob and the asterisk gets
-           * replaced by the name of each file in the current working directory. As a result, mail has been going out to "everybody" in the 
-           * /home/jsoc directory. Also, for the vast majority of export request, users do not provide a requestor field. All of these
+          /* This is not a good way to get the notification addresses.
+           * It is using the RequestorID field to locate a requestor.
+           * However, RequestorID is not a prime-key member (it is the record number of the record in jsoc.export_user
+           * for the user who made * the request), so this can result in no records being found.
+           * It is often the case that a requestor will use the same reqestor name for multiple export requests.
+           * Whenever this happens, each request will generate a new RequestorID.
+           * But the Requestor field will be the same - so there is a single Requestor value associated
+           * with multiple RequestorIDs. Due to the "prime-key logic", all requests except for latest request will be hidden,
+           * so this code below will fail when it looks for a specific RequestID that is likely hidden.
+           * The export system should not create multiple RequestorIDs for the same Requestor. You
+           * can refer to a requestor by either a name or an id, so different ids should be different requestors.
+           * So, the current scheme of referring to the same requestor by different ids seems illogical.
+           * In addition, there is no reason to have both a RequestorID 
+           * and a Requestor keyword - they are redundant.
+           * The Requestor field is more informative, so we should remove the RequestorID field.
+           * Finally, when show_info returns no records, and this failure happens many dozens of times a day,
+           * it returns a string that begins with an asterisk.
+           * If you send mail to an address that is an asterisk, the asterisk acts like a glob and the asterisk gets
+           * replaced by the name of each file in the current working directory.
+           * As a result, mail has been going out to "everybody" in the /home/jsoc directory.
+           * Also, for the vast majority of export request, users do not provide a requestor field. All of these
            * will result in show_info failing to find records too.
            *
            * It also appears that requestorid is identical to recnum --> ??
            *
-           * To fix these problems, we should be using the Requestor string to find the appropriate record. We also need to check the
-           * return value from show_info (but show_info doesn't have a good way to tell you if it found any records). It currently
-           * returns the string "** No records in selected data set ...". We have to search for that.
+           * To fix these problems, we should be using the Requestor string to find the appropriate record.
+           * We also need to check the return value from show_info (but show_info doesn't have a good way to tell
+           * you if it found any records).
+           * It currently returns the string "** No records in selected data set ...". We have to search for that.
            *
            * fprinf(fp, "set Notify=`show_info JSOC_DBHOST=%s -q 'jsoc.export_user[? RequestorID=%d ?]' key=Notify %s` \n", dbexporthost, requestorid, dbids);
+           * - NOTE PHS 6/2013 - these problems were noted in discussions in 2010. 
+           * There needs to be a unique ID and the string name of the
+           * user does not suffice for that.  Thus requstorid, note tht the word requestor was used with two different meanings
+           * in the design document.  this may be part of the origin of the problems.  Not also that exports from "jsoc" can not
+           * require that a user identify themselves.  So the string field is allowed to be blank.  Perhaps we should
+           * build a unique code from the email address, os simply use that for the string name if one is given.  If notify
+           * is not provided these entries are not used for sending mail anyway.  perhaps we should pick up the IP address
+           * and store it in the string name field for usage management purposes.  There is still the need to link the
+           * export request to a non-world-visible record of the email address and name of the user.  I think we should
+           * add ability to ask users for a jsoc login name if they want and use that to store their email address.  Then
+           * we need to add ability to confirm they are using the right name by agreeing to to the email address.
+           *  Note that the first draft of the code to do this better is in an "ifdef" block in jsoc_fetch that is
+           * never enabled.
            */
           
           fprintf(fp, "set Notify=`perl -e '{my($notify) = qx/show_info JSOC_DBHOST=%s -q \"jsoc.export_user[%s]\" key=Notify %s/; if ($notify =~ /^\\\*\\\* No records in selected data set/) { print \"0\"; } else { print $notify; }}'`\n", dbexporthost, requestorname, dbids);
@@ -2422,13 +2443,8 @@ static int GenProtoExpCmd(FILE *fptr,
       if (pcomma)
         *pcomma = '\0';
 
-      // if (strcasecmp(newproto, "mpg") == 0 || strcasecmp(newproto, "mp4") == 0)
-      //   fprintf(fptr, "%s ", (TESTMODE ? "/home/phil/jsoc/base/export/scripts/jsoc_export_as_movie_test" : "jsoc_export_as_movie"));
-      // else
-        fprintf(fptr, "%s ", (TESTMODE ? "/home/phil/jsoc/base/export/scripts/jsoc_export_as_images_test" : "jsoc_export_as_images"));
-
-      fprintf(fptr, "in='%s' reqid='%s' expversion='%s' method='%s' outpath=$REQDIR ffmt='%s' cparms='%s'",
-              dataset, requestid, PACKLIST_VER, method, filenamefmt, "cparms is not needed");
+      fprintf(fptr, "jsoc_export_as_images in='%s' reqid='%s' expversion='%s' n='%s' method='%s' outpath=$REQDIR ffmt='%s' cparms='%s'",
+              dataset, requestid, PACKLIST_VER, RecordLimit, method, filenamefmt, "cparms is not needed");
 
       fprintf(fptr, " protocol='%s'", newproto);
       while(pcomma)
