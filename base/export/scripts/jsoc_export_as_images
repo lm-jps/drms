@@ -107,13 +107,16 @@ endif
 cd $outpath
 
 # cleanup prior export temps in case outpath is user location vs a new SU
+set echo
 unset noglob
+
 rm -f images
 rm -f rslist 
 rm -f *.$imtype
 rm -f $seriesname.mp4 $seriesname.mpg
 rm -f index.txt 
 set noglob
+unset echo
  
 # Write into the new index.txt
 
@@ -137,8 +140,12 @@ show_info ds="$in" n=1 -qk key=WAVELNTH,CROTA2 >data.sample
 
 set flags = ""
 set crotkey = `grep CROTA2 data.sample`
-set $crotkey
-if ($CROTA2:r > -2 && $CROTA2:r < 2) set flags = ($flags -u)
+if ($#crotkey < 1) then
+  set flags = ($flags -u)
+else
+  set $crotkey
+  if ($CROTA2:r > -2 && $CROTA2:r < 2) set flags = ($flags -u)
+endif
 
 set project = $seriesname:r
 set project = $project:al
@@ -177,10 +184,12 @@ end
 if ($tkey == none) set tkey = $primes[2]:s/,//
 
 if ($CTinfo != NA) then
+set echo
   render_image -v in="$in" n=$limit  $min $max palette=$CTinfo \
    $scaling  outname=$seriesname  outid=time $scale type=$imtype  tkey=$tkey $flags \
    out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"'"$DataName"':{ID}\" | pnmtojpeg -quality=95' 
   set render_status = $?
+unset echo
 else # cases with no color table file, for now these will be AIA with mixed wavelengths
   if ($CT == aia_mixed) then
     set is_mod = 0
