@@ -1,0 +1,72 @@
+Here's info on the new dcs0x and dcs1x that will replace the
+original datacapture machines dcs0 (aia) and dcs1 (hmi).
+
+The new datacapture will now make lev0 data as well as continue
+to ingest the qac/tlm files into the SUMS and archive to tape.
+
+The tape archive is currently TBD.
+
+==================================================================
+The postgres is started/stopped by user postgres like so:
+
+/var/lib/pgsql> pg_ctl -D /var/lib/pgsql/data_drms -l
+/tmp/postgres.drms.log start
+
+> pg_ctl -D /var/lib/pgsql/data_sums -l /tmp/postgres.sums.log start
+
+> pg_ctl -D /var/lib/pgsql/data_drms stop
+
+> pg_ctl -D /var/lib/pgsql/data_sums stop [-m fast]
+
+==================================================================
+
+The sums is run by user sumsadmin (uid 5947).
+dcs1x:/home/sumsadmin> sum_start
+
+dcs1x:/home/sumsadmin> ps -ef |g sum_svc
+5947      52650      1  0 13:22 pts/0    00:00:00 sum_svc hmidb_sums sum_svc_2013.06.10.132205.log
+
+dcs1x:/home/sumsadmin> sum_stop [-f]
+
+The data processing is run by user prodtest.
+
+dcs1x:/home/prodtest/cvs/JSOC/proj/datacapture/scripts> ./socdc
+
+Select the button for hmi which runs on dc1x.
+
+Data should be flowed into /dds/dds2soc/hmi.
+You will see these processes after data starts:
+
+> px prodtest
+root      46161   2688  0 May29 ?        00:00:00 sshd: prodtest [priv]
+prodtest  46163  46161  0 May29 ?        00:00:02 sshd: prodtest@pts/1
+prodtest  46164  46163  0 May29 pts/1    00:00:00 -tcsh
+prodtest  52694 120151  0 13:25 pts/0    00:00:00 /home/jsoc/bin/linux_x86_64/pe
+rl -S ./socdc
+prodtest  52744  52694  8 13:26 pts/0    00:00:11 ingest_lev0_hmiaia vc VC02 ind
+ir /dds/soc2soc/hmi outdir /dds/soc2pipe/hmi pipedir /dds/pipe2soc/hmi logfile /
+usr/local/logs/soc/soc_hmi_VC02_prodtest_2013.06.10_13:25:12.log JSOC_DBNAME hmi
+db JSOC_DBHOST dcs1x
+prodtest  52745  52694  0 13:26 pts/0    00:00:00 ingest_lev0_hmiaia vc VC05 ind
+ir /dds/soc2soc/hmi outdir /dds/soc2pipe/hmi pipedir /dds/pipe2soc/hmi logfile /
+usr/local/logs/soc/soc_hmi_VC05_prodtest_2013.06.10_13:25:12.log JSOC_DBNAME hmi
+db JSOC_DBHOST dcs1x
+postgres  52749  52592  0 13:26 ?        00:00:00 postgres: prodtest hmidb 192.1
+68.0.111(34129) idle in transaction
+postgres  52750  52592  0 13:26 ?        00:00:00 postgres: prodtest hmidb 192.1
+68.0.111(34128) idle in transaction
+postgres  52755  52592  0 13:26 ?        00:00:00 postgres: prodtest hmidb 192.1
+68.0.111(34132) idle
+postgres  52756  52829  0 13:26 ?        00:00:00 postgres: prodtest hmidb_sums 
+192.168.0.111(33990) idle
+postgres  52757  52829  0 13:26 ?        00:00:00 postgres: prodtest hmidb_sums 
+192.168.0.111(33991) idle
+postgres  52785  52592  0 13:26 ?        00:00:00 postgres: prodtest hmidb 192.1
+68.0.111(34142) idle
+prodtest  52866  46164  0 13:29 pts/1    00:00:00 ps -ef
+prodtest  52867  46164  0 13:29 pts/1    00:00:00 grep prodtest
+root     120148   2688  0 Jun05 ?        00:00:00 sshd: prodtest [priv]
+prodtest 120150 120148  0 Jun05 ?        00:00:05 sshd: prodtest@pts/0
+prodtest 120151 120150  0 Jun05 pts/0    00:00:00 -tcsh
+
+
