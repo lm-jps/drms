@@ -7,6 +7,7 @@
 #include "jsoc_main.h"
 #include "drms.h"
 #include "drms_names.h"
+#include "drms_cmdparams.h"
 /**
 \defgroup set_keys set_info - Add or update records with new keyword or segment filename values
 @ingroup drms_util
@@ -15,7 +16,7 @@
 
 \code
 set_info [-h] 
-set_info [-ctv] [JSOC_FLAGS] ds=<seriesname> [<keyword>=<value>]... [<segment>=<filename>]... [<link>=<record-set specification>]...
+set_info [-cktv] [JSOC_FLAGS] ds=<seriesname> [<keyword>=<value>]... [<segment>=<filename>]... [<link>=<record-set specification>]...
 set_info [-Cmtv] [JSOC_FLAGS] ds=<record_set> [<keyword>=<value>]... [<segment>=<filename>]... [<link>=<record-set specification>]...
 set_info_soc {options as above}
 \endcode
@@ -23,9 +24,11 @@ set_info_soc {options as above}
 \details
 
 Sets keyword values for a record in a DRMS dataseries.  \b set_info runs in one of two modes.
-\li If the "create" \c -c flag is present a new record will be created.  In this case ALL of the prime keys
+\li If a "create" \c -c or \c -k flag is present a new record will be created.  In this case ALL of the prime keys
 must be present in \e keyword=value pairs to specify the locator keywords for the new record.  Other keywords
-and or segments specifications are usually also present.
+and or segments specifications are usually also present.  If \c -c is set then a single record will be created
+and populated from the command line.  If the \c -k flag is set stdin will be read for a set of records in the same
+format as produced by show_info -k and a record will be created for each record specified in the stdin file.
 \li An existing record_set may be specified and a new version of those record will be made with the specified keywords
 given new values. Usually, almost always, only a single record is updated in one call of set_info since
 only one set of keyword values can be provided and all records modified will be given the same new
@@ -59,6 +62,7 @@ Only one instance of each keyword name or segment name is allowed.
 \par Flags:
 
 \li \c -c: Create a new record
+\li \c -k: Create a new set of records from stdin as if piped from show_info -k
 \li \c -C: Force-copy the storage unit of the original record to the cloned record
 \li \c -h: Print usage message and exit
 \li \c -m: Modify the keywords of multiple records. The \c -m flag should be
@@ -113,8 +117,9 @@ ModuleArgs_t module_args[] =
 { 
   {ARG_STRING, "ds", "Not Specified", "Series name with optional record spec"},
   {ARG_FLAG, "h", "0", "Print usage message and quit"},
-  {ARG_FLAG, "c", "0", "Create new record(s) if needed"},
+  {ARG_FLAG, "c", "0", "Create a new record from command line keywords"},
   {ARG_FLAG, "C", "0", "Force cloning of needed records to be DRMS_COPY_SEGMENT mode"},
+  {ARG_FLAG, "k", "0", "Create new records as specified from stdin"},
   {ARG_FLAG, "m", "0", "allow multiple records to be updated"},
   {ARG_FLAG, "t", "0", "create any needed records as DRMS_TRANSIENT, default is DRMS_PERMANENT"},
   {ARG_FLAG, "v", "0", "verbose flag"},
@@ -134,7 +139,8 @@ int nice_intro(int help)
     printf("set_info {-c}|{-m} {-C} {-t} {-h} {-v}  "
 	"ds=<recordset query> {keyword=value} ... \n"
 	"  -h: print this message\n"
-	"  -c: create - allow creation of new record\n"
+	"  -c: create - create new record\n"
+	"  -k: create_many - create a set of new records\n"
 	"  -m: multiple - allow multiple records to be updated\n"
         "  -C: Force cloning of needed records to be DRMS_COPY_SEGMENT mode\n"
         "  -t: create any needed records as DRMS_TRANSIENT, default is DRMS_PERMANENT\n"
@@ -477,7 +483,7 @@ static int CreateLinks(DRMS_Record_t *srec, HContainer_t *links)
         {
             lname = lnk->info->name;
             
-            if (cmdparams_exists(&cmdparams, lname))
+            if (cmdparams_exists(&cmdparams, (char*)lname))
             {
                 lval = cmdparams_get_str(&cmdparams, lname, NULL);
                 
@@ -531,12 +537,67 @@ static int CreateLinks(DRMS_Record_t *srec, HContainer_t *links)
     return rv;
 }
 
+int found_from_stdin = 0;
+
+/* prepare for create_from_stdin by getting next set of keywords and inserting onto command line */
+int get_params_from_stdin()
+  {
+  char buf[4096];
+  while (fgets(buf, 4096, stdin))
+    {
+    char *eq;
+    char *p = buf;
+    while (*p && isblank(*p))
+      p++;
+    if (*p == '\n') 
+      {
+      if (found_from_stdin) // blank line is between records
+{
+fprintf(stderr,"found_from_stdin=%d\n",found_from_stdin);
+        return(1);
+}
+      else
+{
+fprintf(stderr,"found blank line, skip\n");
+        continue; // skip blank lines ahead of keyword list
+}
+      }
+    if (*p == '#') // skip comment lines
+      continue;
+    eq = index(p, '=');
+    if (!eq)  // skip lines without '='
+      continue;
+    *eq++ = '\0';
+    while (*eq && isblank(*eq))
+      eq++;
+    found_from_stdin++;
+    if (*eq == '"') // strip leading and trailing quotes
+      {
+      eq++;
+      char *rquote = rindex(eq, '"');
+      if (rquote)
+        *rquote = '\0';
+      else
+        fprintf(stderr, "Keyword %s has leading but not trailing quote\n", p);
+      }
+    char *nl = rindex(eq, '\n');
+    if (nl)
+      *nl = '\0';
+    // now p points to keyword, eq points to value
+    cmdparams_set(&cmdparams, p, eq);
+    if (verbose)
+      fprintf(stderr,"added %s = %s\n",p,eq);
+    }
+  return(0);
+  }
+
 /* Module main function. */
 int DoIt(void)
 {
   int status = 0;
   int multiple = 0;
   int create = 0;
+  int create_from_stdin = 0;
   int nrecs, irec;
   int force_transient;
   int force_copyseg;
@@ -566,33 +627,34 @@ int DoIt(void)
 
    multiple = cmdparams_get_int(&cmdparams, "m", NULL) != 0;
    create = cmdparams_get_int(&cmdparams, "c", NULL) != 0;
-   if (multiple && create)
+   create_from_stdin = cmdparams_get_int(&cmdparams, "k", NULL) != 0;
+   if (multiple && (create || create_from_stdin))
    {
       if (query) { free(query); query = NULL; }
-      DIE("-c and -m not compatible");
+      DIE("-c or -k with -m not compatible");
    }
   p = index(query,'[');
-  if (!p && !create)
+  if (!p && !(create || create_from_stdin))
   {
      if (query) { free(query); query = NULL; }
      DIE ("must be in create mode if no record spec given");
   }
-  if (p && create)
+  if (p && (create || create_from_stdin))
   {
      if (query) { free(query); query = NULL; }
-     DIE("can only create new record, record set not allowed");
+     DIE("can only create new record, record set spec not allowed");
   }
   /* Now can test on create and multiple for program control */
 
   if (verbose)
   {
      /* Print something to identify what series is being modified */
-     printf("set_info() %s, query is %s.\n", create ? "creating record" : "updating record", query);
+     fprintf(stderr, "set_info() %s, query is %s.\n", (create || create_from_stdin) ? "creating record(s)" : "updating record", query);
   }
 
-  if (create)
-    {
-    if (verbose)printf("Make new record\n");
+  if (create || create_from_stdin)
+    { /* in case of create_from_stdin, this will be the first record only */
+    if (verbose)fprintf(stderr, "Make new record\n");
     rs = drms_create_records(drms_env, 1, query, (force_transient ? DRMS_TRANSIENT : DRMS_PERMANENT), &status);
     if (status)
     {
@@ -608,24 +670,19 @@ int DoIt(void)
 					rec->seriesinfo->seriesname,
 					&nprime, 
 					&status);
+    if (status)
+        {
+        if (query) { free(query); query = NULL; }
+          DIE("series bad, prime key missing");
+        }
 
     for (iprime = 0; iprime < nprime; iprime++)
         {
         keyname = pkeys[iprime];
 	strcpy(prime_names[iprime], keyname);
         key = drms_keyword_lookup(rec, keyname, 1);
-        keytype = key->info->type;
-	if (status)
-        {
-           if (query) { free(query); query = NULL; }
-           DIE("series bad, prime key missing");
-        }
-
-            if (status)
-        {
-           if (query) { free(query); query = NULL; }
-           DIE("keyval bad, cant set prime key val with keyname");
-        }
+        if (key->info->islink || key->info->recscope == kRecScopeType_Constant)
+          DIE("Prime keys may not be linked or constant");
 	}
 
     /* now record exists with prime keys set. */
@@ -634,7 +691,7 @@ int DoIt(void)
    {
       /* We are not creating a new record, but instead 'updating' an existing one. */
    DRMS_RecordSet_t *ors;
-   if (verbose)printf("Clone record for update\n");
+   if (verbose)fprintf(stderr, "Clone record for update\n");
    ors = drms_open_records(drms_env, query, &status);
    if (status)
    {
@@ -703,6 +760,15 @@ int DoIt(void)
 
   for (irec = 0; irec<nrecs; irec++)
   {
+      if (create_from_stdin)
+        { // get next record params onto command line
+        if (get_params_from_stdin() && found_from_stdin == 0)
+          {
+          drms_free_records(rs);
+          rs = NULL;
+          continue;
+          }
+        }
       char recordpath[DRMS_MAXPATHLEN];
       rec = rs->records[irec];
       noutsegs = hcon_size(&rec->segments);
@@ -865,7 +931,7 @@ int DoIt(void)
               if (drms_keyword_isprime(key))
               {
                   /* is prime, so DIE unless just made in create mode */
-                  if (!create)
+                  if (!create && !create_from_stdin)
                   {
                       if (query) { free(query); query = NULL; }
                       DIE("Attempt to change prime key - not allowed");
@@ -967,7 +1033,7 @@ int DoIt(void)
       }
     
       /* Ensure that all prime keys are set (if the record was created, not cloned). */
-      if (create)
+      if (create || create_from_stdin)
       {
           keyval = malloc(sizeof(DRMS_Value_t));
           
@@ -1003,6 +1069,19 @@ int DoIt(void)
           DIE("Unable to create link.");
       }
       
+      if (create_from_stdin && found_from_stdin)
+        { // close current record and create next one
+fprintf(stderr,"closing record\n");
+        status = drms_close_records(rs, DRMS_INSERT_RECORD);
+        if (status)
+          {
+          fprintf(stderr, "XXX close error from stdin record, rs=%p, nrecs=%d",rs,(rs ? rs->n : -1));
+          DIE("close failure");
+          }
+        rs = drms_create_records(drms_env, 1, query, (force_transient ? DRMS_TRANSIENT : DRMS_PERMANENT), &status);
+        irec = -1;
+        found_from_stdin = 0;
+        }
   } /* foreach(rec) */
 
   if (pkeys)
@@ -1010,7 +1089,8 @@ int DoIt(void)
      drms_series_destroypkeyarray(&pkeys, nprime);
   }
 
-  status = drms_close_records(rs, DRMS_INSERT_RECORD);
+  if (rs)
+    status = drms_close_records(rs, DRMS_INSERT_RECORD);
   if (status)
   {
      if (query) { free(query); query = NULL; }
