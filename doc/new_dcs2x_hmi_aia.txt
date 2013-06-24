@@ -1,0 +1,29 @@
+				new_dcs2x_hmi_aia.txt
+
+The dcs2x is configured with a hmidb and a aiadb.
+Thie can be used if a dcs0x (aia) or dcs1x (hmi) goes down.
+
+To run dcs2x with hmidb, log on as normal. The info in
+new_dcsx_run.txt applies.
+
+To run dcs2x with for aia, you must stop any hmi postgres
+instances:
+
+pg_ctl -D /var/lib/pgsql/data_drms stop
+pg_ctl -D /var/lib/pgsql/data_sums stop [-m fast]
+
+and start the aia instances:
+
+pg_ctl -D /var/lib/pgsql/data_sums_aia -l /tmp/postgres.sums.aia.log start
+pg_ctl -D /var/lib/pgsql/data_drms_aia -l /tmp/postgres.drms.aia.log start
+
+Make sure you have this env:
+
+JSOC_DBHOST=dcs2x
+JSOC_DBNAME=aiadb
+
+Run with 
+/home/prodtest/cvs/JSOC/proj/datacapture/scripts/socdc.dcs2x.aia
+
+Ths sums dir is /SUM12.
+
