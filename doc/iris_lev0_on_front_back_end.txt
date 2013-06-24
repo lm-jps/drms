@@ -47,6 +47,10 @@ run on cl1n001 as jsocprod:
 ===============================================================================
 /home/prodtest/cvs/JSOC/proj/lev0/apps/build_lev1_iris.c:
 
+To stop build_lev1_iris on cl1n001:
+touch /usr/local/logs/lev1/build_mgr_stop_iris
+
+
 Make on n02 prodtest:
 n02:/home/prodtest/cvs/JSOC> make build_lev1_iris
 
@@ -54,9 +58,12 @@ as user jsocprod on cl1n001 put in Development:
 cl1n001:/home/jsoc/cvs/Development/JSOC/bin/linux_x86_64> cp
 /home/prodtest/cvs/JSOC/bin/linux_x86_64/../../_linux_x86_64/proj/lev0/apps/build_lev1_iris .
 
-cl1n001:/home/jsocprod>  build_lev1_iris mode=recnum dsin=iris_ground.lev0_dc1
-dsout=iris_ground.lev1_dc1_TMP brec=19101 erec=19120 instru=hmi quicklook=1
-logfile=/tmp/lev1.log2
+For test w/IRIS pre-launch:
+cl1n001:/home/jsocprod> build_lev1_mgr mode=recnum instru=iris dsin=iris_ground.lev0_dc1 dsout=iris_ground.lev1_dc1_TMP brec=0 erec=0 quicklook=1 logfile=/tmp/lev1.log
+
+cl1n001:/home/jsocprod> build_lev1_mgr
+mode=recnum instru=iris dsin=iris_ground.lev0_dc1 dsout=iris_ground.lev1_dc1
+brec=0 erec=0 numrec=12 numcpu=8 numqsub=16
 
 ===============================================================================
 
