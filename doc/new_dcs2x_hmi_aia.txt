@@ -1,4 +1,4 @@
-				new_dcs2x_hmi_aia.txt
+		/home/prodtest/cvs/JSOC/doc/new_dcs2x_hmi_aia.txt
 
 The dcs2x is configured with a hmidb and a aiadb.
 Thie can be used if a dcs0x (aia) or dcs1x (hmi) goes down.
@@ -26,4 +26,7 @@ Run with
 /home/prodtest/cvs/JSOC/proj/datacapture/scripts/socdc.dcs2x.aia
 
 Ths sums dir is /SUM12.
+
+Use e.g.:
+dcs2x:/home/prodtest> psql -p 5434 aiadb_sums
 
