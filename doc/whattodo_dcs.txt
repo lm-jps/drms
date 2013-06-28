@@ -12,10 +12,12 @@ dcs0 = AIA
 dcs1 = HMI
 
 1. Login as user postgres:
+(This s/b running from the boot of the machine:
+/usr/local/pgsql-8.4/bin/postgres -D /var/lib/pgsql/dcs1_data)
 
 > ssh-agent | head -2 > /var/lib/pgsql/ssh-agent.env
 > chmod 600 /var/lib/pgsql/ssh-agent.env
-> source /var/lib/pgsql/ssh-agent.env
+> source /var/lib/pgsql/ssh-agent.env (NOTE: ^D if you went into csh earlier)
 > ssh-add
 (The password is written on my whiteboard (old production prod... passwd)) 
 
@@ -50,6 +52,7 @@ New 'X' desktop is dcs0.Stanford.EDU:1
 > vncviewer
 
 (answer what vncserver told you, e.g. dcs0.Stanford.EDU:1)
+(password is the 'basically no data')
 
 6. In the window that vncviewer opened do:
 
@@ -65,5 +68,7 @@ Stopping a dcs machine:
 -----------------------
 
 Hit the red "Exit" button on the VNC display of the socdc gui.
-If you are not local ps and kill socdc.
+If you are not local ps and kill socdc. !!NOTE: If you
+directly kill socdc you MUST also kill the 2 ingest_tlm processes.
+
 
