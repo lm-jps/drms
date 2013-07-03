@@ -13,7 +13,8 @@ typedef enum
     kExpCloneErr_CantCreateSeries,
     kExpCloneErr_CantParseKeyDesc,
     kExpCloneErr_LibDRMS,
-    kExpCloneErr_CantFollowLink
+    kExpCloneErr_CantFollowLink,
+    kExpCloneErr_CantChangeWCS
 } ExpError_t;
 
 #define kArgSeriesIn   "dsin"
@@ -80,6 +81,25 @@ static DRMS_Record_t *CopySeriesTemplate(DRMS_Env_t *env, const char *in, ExpErr
     }
     
     return proto;
+}
+
+/* Change a keyword's recordscope to variable if possible */
+static ExpError_t VariableKey(const char*keyname, DRMS_Record_t *prototype)
+{
+    ExpError_t rv = kExpCloneErr_Success;
+    int drmsstat = DRMS_SUCCESS;
+    DRMS_Keyword_t *tKey = drms_keyword_lookup(prototype, keyname, 0);
+    if (tKey)
+    {
+        if (tKey->info->recscope == kRecScopeType_Variable || tKey->info->recscope == kRecScopeType_Constant)
+        {
+            tKey->info->recscope = kRecScopeType_Variable;
+            return(rv);
+        }
+        else
+            return(kExpCloneErr_CantChangeWCS);
+    }
+    return(rv);
 }
 
 static ExpError_t AddAKey(const char *keyname, 
@@ -268,7 +288,7 @@ int DoIt(void)
             /* Add prime keyword RequestID, if it doesn't already exist. */
             err = AddAKey(kKeyReqID, 
                           copy, 
-                          "Keyword:RequestID, string, variable, record, \"Invalid RequestID\", %s, NA, \"The export request identifier, if this record was inserted while an export was being processed.\"", 
+                          "Keyword:RequestID, string, variable, record, \"NA\", %s, NA, \"The export request identifier, if this record was inserted while an export was being processed.\"", 
                           1, 
                           1, 
                           0, 
@@ -307,6 +327,21 @@ int DoIt(void)
                               0, 
                               1 + hirank++);
             }
+
+            /* make sure WCS keywords are variable recordscope if present */
+            if (err == kExpCloneErr_Success) err = VariableKey("CTYPE1", copy);
+            if (err == kExpCloneErr_Success) err = VariableKey("CTYPE2", copy);
+            if (err == kExpCloneErr_Success) err = VariableKey("CUNIT1", copy);
+            if (err == kExpCloneErr_Success) err = VariableKey("CUNIT2", copy);
+            if (err == kExpCloneErr_Success) err = VariableKey("CDELT1", copy);
+            if (err == kExpCloneErr_Success) err = VariableKey("CDELT2", copy);
+            if (err == kExpCloneErr_Success) err = VariableKey("CRVAL1", copy);
+            if (err == kExpCloneErr_Success) err = VariableKey("CRVAL2", copy);
+            if (err == kExpCloneErr_Success) err = VariableKey("CROTA2", copy);
+            if (err == kExpCloneErr_Success) err = VariableKey("WCSNAME", copy);
+
+            /* if present, change recscope of DATASIGN to be variable to allow change of perspective */
+            if (err == kExpCloneErr_Success) err = VariableKey("DATASIGN", copy);
 
             /* If the first input FITS data segment does not have a VARDIM segment scope, then make it so. */
             if (err == kExpCloneErr_Success)
