@@ -1650,7 +1650,7 @@ static int RecordLoopCursor(DRMS_Env_t *env, const char *rsq, DRMS_RecordSet_t *
         irec++;
     } /* while */
     
-    if (!atleastone)
+    if (!quiet && !atleastone)
     {
         printf ("** No records in selected data set, query was %s **\n", rsq);
     }
