@@ -192,7 +192,12 @@ void *base_strcatalloc(char *dst, const char *src, size_t *sizedst)
     
     while (srclen > *sizedst - dstlen - 1)
     {
-        tmp = realloc(dst, *sizedst * 2);
+        if (!tmp)
+        {
+           tmp = dst;
+        }
+
+        tmp = realloc(tmp, *sizedst * 2);
         if (tmp)
         {
             *sizedst *= 2;
