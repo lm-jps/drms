@@ -11,26 +11,14 @@
 /* Returns 1 if the table exists, 0 if it doesn't, and -1 if an error occurred. */
 static int TableExists(DRMS_Session_t *session, const char *schema, const char *table)
 {
+    int statint;
     int rv = 0;
-    DB_Text_Result_t *qres = NULL;
-    char query[256];
     
-    snprintf(query, sizeof(query), "SELECT * FROM pg_stat_all_tables WHERE schemaname = '%s' AND relname = '%s'", schema, table);
+    rv = drms_query_tabexists(session, schema, table, &statint);
     
-    if ((qres = drms_query_txt(session, query)) == NULL)
+    if (statint != DRMS_SUCCESS)
     {
-        /* Error */
-        fprintf(stderr, "Invalid database query: %s.\n", query);
         rv = -1;
-    }
-    else
-    {
-        if (qres->num_rows == 1) 
-        {
-            rv = 1;
-        }
-        
-        db_free_text_result(qres);
     }
     
     return rv;
@@ -2082,40 +2070,41 @@ int drms_series_canupdaterecord(DRMS_Env_t *env, const char *series)
    return drms_series_candosomething(env, series, "UPDATE");
 }
 
+/* Returns 1 if the specified table exists, 0 otherwise. */
 int drms_query_tabexists(DRMS_Session_t *session, const char *ns, const char *tab, int *status)
 {
-   int result = 0;
-   char query[DRMS_MAXQUERYLEN];
-   DB_Text_Result_t *qres = NULL;
-
-   if (status)
-   {
-      *status = DRMS_SUCCESS;
-   }
-
-   snprintf(query, sizeof(query), "SELECT * FROM pg_tables WHERE schemaname ILIKE '%s' AND tablename ILIKE '%s'", ns, tab);
-
-   if ((qres = drms_query_txt(session, query)) == NULL)
-   {
-      if (status)
-      {
-         *status = DRMS_ERROR_BADDBQUERY;
-      }
-
-      fprintf(stderr, "Bad database query '%s'\n", query);
-   }
-   else if (qres->num_rows > 0)
-   {
-      result = 1;
-   }
-
-   if (qres)
-   {
-      db_free_text_result(qres);
-      qres = NULL;
-   }
-
-   return result;
+    int result = 0;
+    char query[DRMS_MAXQUERYLEN];
+    DB_Text_Result_t *qres = NULL;
+    
+    if (status)
+    {
+        *status = DRMS_SUCCESS;
+    }
+        
+    snprintf(query, sizeof(query), "SELECT n.nspname, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = '%s' AND c.relname = '%s';", ns, tab);
+    
+    if ((qres = drms_query_txt(session, query)) == NULL)
+    {
+        if (status)
+        {
+            *status = DRMS_ERROR_BADDBQUERY;
+        }
+        
+        fprintf(stderr, "Bad database query '%s'\n", query);
+    }
+    else if (qres->num_rows > 0)
+    {
+        result = 1;
+    }
+    
+    if (qres)
+    {
+        db_free_text_result(qres);
+        qres = NULL;
+    }
+    
+    return result;
 }
 
 /*
