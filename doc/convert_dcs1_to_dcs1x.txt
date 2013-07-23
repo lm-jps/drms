@@ -1,4 +1,4 @@
-	dcs1x:/home/prodtest/cvs/JSOC/doc/convert_dcs1_to_dcs1x.txt
+7/23/2013       dcs1x:/home/prodtest/cvs/JSOC/doc/convert_dcs1_to_dcs1x.txt
 
 		PRELIMINARY NOTES
 		-------------------
@@ -35,12 +35,28 @@ be better just to copy like so:
 jsocdc=# copy sum_file to '/tmp/sum_file.copy';
 and on dcs1x after scp the file over:
 hmidb_sums=# copy sum_file from '/tmp/sum_file.copy';
+The files to copy from dcs1 are:
+ Schema |       Name       |   Type   |  Owner   
+--------+------------------+----------+----------
+ public | sum_ds_index_seq | sequence | postgres
+ public | sum_file         | table    | postgres
+ public | sum_group        | table    | postgres
+ public | sum_main         | table    | postgres
+ public | sum_open         | table    | postgres
+ public | sum_partn_alloc  | table    | postgres
+ public | sum_partn_avail  | table    | postgres
+ public | sum_seq          | sequence | postgres
+ public | sum_tape         | table    | postgres
+(9 rows)
+
 
 The drms tables are in place on dcs1x. The defined series are:
-  hmi.lev0a
-  hmi.lev0_isp_0021
-  hmi.lev0_seq_0011
-  hmi.tlm
+  Name			Archive	Retention  UnitSize
+--------------------    ------- ---------  --------
+  hmi.lev0_isp_0021        0      60          1
+  hmi.lev0_seq_0011        0      60          1
+  hmi.tlm                  1       5          1
+  hmi.lev0a	          -1      60         12
 
 TBD: Notes on moving the network connection and IP addr. And how
 we stop and start the dataflow.
