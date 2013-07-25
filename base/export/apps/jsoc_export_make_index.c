@@ -51,10 +51,14 @@ char * string_to_json(char *in)
   return(new);
   }
 
-#define HTML_INTRO "<HTML><HEAD TITLE=\"JSOC Data Export Request Results Index\">\n" \
-		"</HEAD><BODY>\n" \
-		"<H2>JSOC Data Request Summary</H2>\n" \
-		"<TABLE>\n"
+#define HTML_INTRO "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">" \
+		"<html><head title=\"JSOC Data Export Request Results Index\">\n"  \
+		"</head><body>\n"  \
+		"<h2>JSOC Data Request Summary</h2>\n"  \
+		"<table>\n"
+
+#define HTTP_SERVER "http://jsoc.stanford.edu"
+#define FTP_SERVER  "ftp://pail.stanford.edu/export"
 		
 
 /* Module main function. */
@@ -146,7 +150,7 @@ int main(int argc, char **argv)
 	  json_insert_pair_into_object(jroot, namestr, json_new_string(valstr));
 	  free(namestr);
 	  free(valstr);
-	  fprintf(index_html, "<TR><TD><B>keywords</B></TD><TD>%s</TD></TR>\n", protocolbuf);
+	  fprintf(index_html, "<tr><td><b>keywords</b></td><td>%s</td></tr>\n", protocolbuf);
           // special line for tarfiles
           if (method_tar)
             {
@@ -157,9 +161,10 @@ int main(int argc, char **argv)
 	    free(namestr);
 	    free(valstr);
 	    // put name=value pair into index.html
-	    fprintf(index_html, "<TR><TD><B>tarfile</B></TD><TD>%s</TD></TR>\n", tarfile);
+	    fprintf(index_html, "<tr><td>tarfile</td><td><a href=\"%s%s\">%s</a></td></tr>\n",
+                (method_ftp ? FTP_SERVER : HTTP_SERVER), tarfile, tarfile);
             }
-	  fprintf(index_html, "</TABLE><P><H2><B>Selected Data</B></H2><P><TABLE>\n");
+	  fprintf(index_html, "</table><p><h2><b>Selected Data</b></h2><p><table>\n");
 	  break;
 	  }
 	if (*p == '#' || !*p) // skip blank and comment lines
@@ -218,7 +223,7 @@ int main(int argc, char **argv)
 	free(namestr);
 	free(valstr);
 	// put name=value pair into index.html
-	fprintf(index_html, "<TR><TD><B>%s</B></TD><TD>%s</TD></TR>\n", name, val);
+	fprintf(index_html, "<tr><td><b>%s</b></td><td>%s</td></tr>\n", name, val);
 	break;
       case 2: // Data section contains pairs of record query and filenames
 	if (*p == '#' || !*p) // skip blank and comment lines
@@ -252,15 +257,11 @@ int main(int argc, char **argv)
 	json_insert_child(recinfo, fileinfo);
 	// put name=value pair into index.html
         if (method_tar)
-	  fprintf(index_html, "<TR><TD>%s</TD><TD>%s</TD></TR>\n", name, val);
+	  fprintf(index_html, "<tr><td>%s</td><td>%s</td></tr>\n", name, val);
         else
           {
-          if (method_ftp)
-	    fprintf(index_html, "<TR><TD>%s</TD><TD><A HREF=\"ftp://pail.stanford.edu/export%s/%s\">%s</A></TD></TR>\n",
-               name, dir, val, val);
-          else
-	    fprintf(index_html, "<TR><TD>%s</TD><TD><A HREF=\"http://jsoc.stanford.edu/%s/%s\">%s</A></TD></TR>\n",
-               name, dir, val, val);
+	  fprintf(index_html, "<tr><td>%s</td><td><A HREF=\"%s/%s/%s\">%s</A></td></tr>\n",
+            name, (method_ftp ? FTP_SERVER : HTTP_SERVER), dir, val, val);
           }
 	break;
       case 3: // Data section for Storage Units contains triples of sunum, seriesname, path, online status, file size
@@ -337,12 +338,12 @@ int main(int argc, char **argv)
         else
         {
            /* fill in with SU path */
-           snprintf(linkbuf, sizeof(linkbuf), "<A HREF=\"http://jsoc.stanford.edu/%s\">%s</A>", val, val);
+           snprintf(linkbuf, sizeof(linkbuf), "<A HREF=\"%s/%s\">%s</A>", HTTP_SERVER, val, val);
         }
 
         // put name=value pair into index.html
         fprintf(index_html, 
-                "<TR><TD>%s</TD><TD>%s</TD><TD>%s</TD><TD>%s</TD><TD>%s</TD></TR>\n", 
+                "<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\n", 
                 sustr, /* sunum */
                 name, /* owning series */
                 linkbuf, /* link or NA */
@@ -364,7 +365,7 @@ int main(int argc, char **argv)
   fclose(index_json);
 
   // finish html
-  fprintf(index_html, "</TABLE></BODY></HTML>\n");
+  fprintf(index_html, "</table></body></html>\n");
   fclose(index_html);
 
   return(0);
