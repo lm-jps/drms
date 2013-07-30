@@ -120,6 +120,7 @@ sub OpenPipe
 
         $self->{_fh} = $fh;
         $self->{_rfh} = $rfh;
+        $self->{_cmd} = $cmd;
     }
     else
     {

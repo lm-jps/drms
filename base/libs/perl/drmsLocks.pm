@@ -108,16 +108,20 @@ sub ReleaseLock
     my($lckfn);
     my($lckfpath);
     
-    $lckfn = fileno($$lckfh);
-    $lckfpath = $fpaths{$lckfn};
-    
-    flock($$lckfh, LOCK_UN);
-    $$lckfh->close;
-    
-    if (defined($lckfpath))
+    if (defined($lckfh))
     {
-        chmod(0664, $lckfpath);
-        delete($fpaths{$lckfn});
+        $lckfn = fileno($lckfh);
+        $lckfpath = $fpaths{$lckfn};
+        flock($$lckfh, LOCK_UN);
+        
+        $lckfh->close;
+        $self->{_lockfh} = undef;
+        
+        if (defined($lckfpath))
+        {
+            chmod(0664, $lckfpath);
+            delete($fpaths{$lckfn});
+        }
     }
 }
 
@@ -125,6 +129,7 @@ package drmsNetLocks;
 
 use FileHandle;
 use File::lockf;
+use Data::Dumper;
 
 # Class global variables
 my(%fpaths);
@@ -238,17 +243,21 @@ sub ReleaseLock
     my($lckfh) = $self->{_lockfh};
     my($lckfn);
     my($lckfpath);
-    
-    $lckfn = fileno($lckfh);
-    $lckfpath = $fpaths{$lckfn};
-    
-    File::lockf::ulock($lckfh, 0);
-    $lckfh->close;
-    
-    if (defined($lckfpath))
+
+    if (defined($lckfh))
     {
-        chmod(0666, $lckfpath);
-        delete($fpaths{$lckfn});
+        $lckfn = fileno($lckfh);
+        $lckfpath = $fpaths{$lckfn};
+        File::lockf::ulock($lckfh, 0);
+        
+        $lckfh->close;
+        $self->{_lockfh} = undef;
+        
+        if (defined($lckfpath))
+        {
+            chmod(0666, $lckfpath);
+            delete($fpaths{$lckfn});
+        }
     }
 }
 1;
