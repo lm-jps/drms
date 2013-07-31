@@ -1,4 +1,4 @@
-#!/home/jsoc/bin/linux_x86_64/perl5.12.2                                                                                                                                   
+#!/home/jsoc/bin/linux_x86_64/activeperl
 
 # Must run this on db host (i.e., hmidb or hmidb2). This script needs to ssh to the client machines, many
 # of which will be cluster nodes. The cluster nodes are all accessible directly from the db machines. 
@@ -25,6 +25,8 @@ use warnings;
 
 use DBI;
 use DBD::Pg;
+# ART - This module may not be installed. DO NOT USE CPAN to install modules. Use the ActiveState ppm. Unfortunately, 
+# ActiveState does not provide this module.
 use Net::SSH::Perl;
 use Date::Parse;
 use Socket;

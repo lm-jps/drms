@@ -1,4 +1,4 @@
-#!/home/jsoc/bin/linux_x86_64/perl5.12.2
+#!/home/jsoc/bin/linux_x86_64/activeperl
 
 # Use this script to generate the tables that hold information needed by the log parser
 # to generate site-specific logs.
@@ -159,7 +159,7 @@ if (!$rv)
     elsif ($op =~ &kOpValRem)
     {
         $node = $optsH->{&kOptNode};
-        $tblmgr->Remove($node);
+        $tblmgr->Remove($node, $cfg{parser_config});
     }
     elsif ($op =~ &kOpValCrt)
     {

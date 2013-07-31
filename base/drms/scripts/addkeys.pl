@@ -1,4 +1,4 @@
-#!/home/jsoc/bin/linux_x86_64/perl5.12.2 
+#!/home/jsoc/bin/linux_x86_64/activeperl
 
 # This script takes two arguments:
 #   series - the DRMS dataseries to which we want to add keywords.
@@ -9,6 +9,8 @@ use strict;
 
 use FindBin qw($Bin);
 use Cwd qw(realpath);
+# ART - This module may not be installed. DO NOT USE CPAN to install modules. Use the ActiveState ppm. Unfortunately,
+# ActiveState does not provide this module.
 use Net::SSH::Perl;
 use lib ("$Bin/../../libs/perl", "$Bin/../base/libs/perl");
 use lib ("$Bin/../replication", "$Bin/../base/drms/replication");

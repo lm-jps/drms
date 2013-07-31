@@ -1,4 +1,4 @@
-#!/home/jsoc/bin/linux_x86_64/perl5.12.2 -w 
+#!/home/jsoc/bin/linux_x86_64/activeperl -w 
 
 # This script prints series publication / subscription information. By default, a list of published series
 # is generated, but if the caller specifies the "-subscriptions" flag, then the list of series

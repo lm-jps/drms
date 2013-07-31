@@ -1,4 +1,4 @@
-#!/home/jsoc/bin/linux_x86_64/perl5.12.2 -w
+#!/home/jsoc/bin/linux_x86_64/activeperl -w
 
 use JSON -support_by_pp;
 

@@ -2,11 +2,15 @@
 
 use FileHandle;
 use File::Copy;
+use File::Spec;
 use IO::Dir;
 use Fcntl ':flock';
 use FindBin qw($Bin);
 use lib "$Bin/..";
 use toolbox qw(GetCfg);
+# For modifying the subscription config and lst tables.
+use lib "$Bin/../subscribe_manage";
+use subtablemgr;
 use DBI;
 use DBD::Pg;
 
@@ -16,6 +20,8 @@ use constant kSlonikFailed => 2;
 use constant kInvalidSQL => 3;
 use constant kDelSeriesFailed => 4;
 use constant kEditLstFailed => 5;
+
+use constant kLockFile => "gentables.txt";
 
 $| = 1; # autoflush
 
@@ -204,7 +210,7 @@ if ($rv == kSuccess)
        if ($rv == kSuccess)
        {
           # Remove the just-unpublished series entries from the remote sites' .lst files.
-          if (EditLstFiles("$cfg{'kServerLockDir'}/subscribelock.txt", "$cfg{'kServerLockDir'}/parselock.txt", "$cfg{'tables_dir'}", $schema, $table, 1) != 0)
+           if (EditLstFiles("$cfg{'kServerLockDir'}/subscribelock.txt", "$cfg{'kServerLockDir'}/parselock.txt", $cfg{kServerLockDir}/&kLockFile, "$cfg{'tables_dir'}", $cfg{kCfgTable}, $cfg{kLstTable}, $dbname, $dbhost, $dbport, $dbuser, $schema, $table, 1) != 0)
           {
              $rv = kEditLstFailed;
           }
@@ -416,129 +422,156 @@ sub DropLock
 
 sub EditLstFiles
 {
-   my($sublck) = $_[0];
-   my($parselck) = $_[1];
-   my($tablesdir) = $_[2];
-   my($schema) = $_[3];
-   my($table) = $_[4];
-   my($doit) = $_[5];
-   my($rv);
-   my($series);
-   my($line);
-   my($origdir);
-
-   $rv = 0;
-   $subscribelockpath = $sublck;
-
-   # EditLstFiles must obtain the subscription lock before proceeding since the subscription service
-   # and this function will both try to modify the lst files.
-   #
-   # Since the subscription service is a bash script, it cannot do flock properly. Instead, 
-   # we need to use the file system to lock a file.
-   #
-   # EditLstFiles must also acquire the parse lock since parse_slon_logs.pl will attempt to 
-   # read the .lst files. Since the .lst file being modified is first renamed to .lst.bak, 
-   # if the parser happened to attempt to read a .lst file right after the .lst rename, 
-   # the results could be disastrous.
-   system("(set -o noclobber; echo $$ > $subscribelockpath) 2> /dev/null");
-
-   if ($? == 0)
-   {
-      $SIG{INT} = "DropLock";
-      $SIG{TERM} = "DropLock";
-      $SIG{HUP} = "DropLock";
-
-      # Acquire parse lock
-      my($lckfh);
-
-      if (AcquireLock($parselck, \$lckfh))
-      {
-         $origdir = $ENV{'PWD'};
-         chdir($tablesdir);
-         tie(my(%allfiles), "IO::Dir", ".");
-         my(@files) = keys(%allfiles);
-         my(@lstfiles) = map({$_ =~ /(.+\.lst)$/ ? $1 : ()} @files);
-
-         $series = lc($schema) . "\." . lc($table);
-
-         foreach $item (@lstfiles)
-         {
-            print "moving $item to $item.bak\n";
-
-            if ($doit)
-            {
-               if (!move("$item", "$item.bak"))
-               {
-                  print STDERR "Unable to move $item to $item.bak\n";
-                  $rv = 1;
-                  last;
-               }
+    my($sublck) = $_[0];
+    my($parselck) = $_[1];
+    my($gentablck) = $_[2];
+    my($tablesdir) = $_[3];
+    my($cfgtab) = $_[4];
+    my($lsttab) = $_[5];
+    my($dbname) = $_[6];
+    my($dbhost) = $_[7];
+    my($dbport) = $_[8];
+    my($dbuser) = $_[9];
+    my($schema) = $_[10];
+    my($table) = $_[11];
+    my($doit) = $_[12];
+    my($rv);
+    my($series);
+    my($line);
+    my($origdir);
+    
+    $rv = 0;
+    $subscribelockpath = $sublck;
+    
+    # EditLstFiles must obtain the subscription lock before proceeding since the subscription service
+    # and this function will both try to modify the lst files.
+    #
+    # Since the subscription service is a bash script, it cannot do flock properly. Instead, 
+    # we need to use the file system to lock a file.
+    #
+    # EditLstFiles must also acquire the parse lock since parse_slon_logs.pl will attempt to 
+    # read the .lst files. Since the .lst file being modified is first renamed to .lst.bak, 
+    # if the parser happened to attempt to read a .lst file right after the .lst rename, 
+    # the results could be disastrous.
+    system("(set -o noclobber; echo $$ > $subscribelockpath) 2> /dev/null");
+    
+    if ($? == 0)
+    {
+        $SIG{INT} = "DropLock";
+        $SIG{TERM} = "DropLock";
+        $SIG{HUP} = "DropLock";
+        
+        # Acquire parse lock
+        my($lckfh);
+        
+        if (AcquireLock($parselck, \$lckfh))
+        {
+            $origdir = $ENV{'PWD'};
+            chdir($tablesdir);
+            tie(my(%allfiles), "IO::Dir", ".");
+            my(@files) = keys(%allfiles);
+            my(@lstfiles) = map({$_ =~ /(.+\.lst)$/ ? $1 : ()} @files);
+            my($tblmgr);
             
-               if (!open(LSTFILE, "<$item.bak"))
-               {
-                  print STDERR "Unable to open $item.bak for reading.\n";
-                  move("$item.bak", "$item");
-                  $rv = 1;
-                  last;
-               } 
-
-               if (!open(OUTFILE, ">$item"))
-               {
-                  print STDERR "Unable to open $item for writing.\n";
-                  move("$item.bak", "$item");
-                  $rv = 1;
-                  last;
-               } 
-
-               while (defined($line = <LSTFILE>))
-               {
-                  chomp($line);
-
-                  if ($line !~ /$series/)
-                  {
-                     print OUTFILE "$line\n";
-                  }
-               }
-   
-               if (!close(OUTFILE))
-               {
-                  # Error writing file, revert.
-                  move("$item.bak", "$item");
-                  $rv = 1;
-               } else
-               {
-                  unlink "$item.bak";
-               }
-
-               close(LSTFILE);
+            $series = lc($schema) . "\." . lc($table);
+            
+            foreach $item (@lstfiles)
+            {
+                print "moving $item to $item.bak\n";
+                
+                if ($doit)
+                {
+                    if (!move("$item", "$item.bak"))
+                    {
+                        print STDERR "Unable to move $item to $item.bak\n";
+                        $rv = 1;
+                        last;
+                    }
+                    
+                    if (!open(LSTFILE, "<$item.bak"))
+                    {
+                        print STDERR "Unable to open $item.bak for reading.\n";
+                        move("$item.bak", "$item");
+                        $rv = 1;
+                        last;
+                    } 
+                    
+                    if (!open(OUTFILE, ">$item"))
+                    {
+                        print STDERR "Unable to open $item for writing.\n";
+                        move("$item.bak", "$item");
+                        $rv = 1;
+                        last;
+                    } 
+                    
+                    while (defined($line = <LSTFILE>))
+                    {
+                        chomp($line);
+                        
+                        if ($line !~ /$series/)
+                        {
+                            print OUTFILE "$line\n";
+                        }
+                    }
+                    
+                    if (!close(OUTFILE))
+                    {
+                        # Error writing file, revert.
+                        move("$item.bak", "$item");
+                        $rv = 1;
+                    } 
+                    else
+                    {
+                        unlink "$item.bak";
+                    }
+                    
+                    close(LSTFILE);
+                }
+            } # loop over lst files
+            
+            untie(%allfiles);
+            
+            # Now update the subscription configuration and lst database tables. Eventually, 
+            # we will rid ourselves of the text files and exclusively use the database tables to 
+            # hold all the nodes' series lists.
+            if ($rv == 0)
+            {                
+                if (!defined($tblmgr))
+                {
+                    $tblmgr = new SubTableMgr($gentablck, $cfgtab, $lsttab, $dbname, $dbhost, $dbport, $dbuser);
+                    $rv = ($tblmgr->GetErr() != kRetSuccess);
+                }
+                
+                if ($rv == 0)
+                {
+                    $tblmgr->RemoveSeries($series, undef);
+                    $rv = ($tblmgr->GetErr() != kRetSuccess);
+                }
             }
-         }
-
-         untie(%allfiles);
-
-         ReleaseLock(\$lckfh);
-
-         unlink "$subscribelockpath";
-
-         chdir($origdir);
-
-         $SIG{INT} = 'DEFAULT';
-         $SIG{TERM} = 'DEFAULT';
-         $SIG{HUP} = 'DEFAULT';
-      }
-      else
-      {
-         $rv = 1;
-      }
-   }
-   else
-   {
-      print STDERR "Warning:: couldn't obtain subscribe lock; bailing.\n";
-      print STDERR "Run editlstfile.pl manually.\n";
-      $rv = 1;
-   }
-
-   return $rv;
+            
+            ReleaseLock(\$lckfh);
+            
+            unlink "$subscribelockpath";
+            
+            chdir($origdir);
+            
+            $SIG{INT} = 'DEFAULT';
+            $SIG{TERM} = 'DEFAULT';
+            $SIG{HUP} = 'DEFAULT';
+        }
+        else
+        {
+            $rv = 1;
+        }
+    }
+    else
+    {
+        print STDERR "Warning:: couldn't obtain subscribe lock; bailing.\n";
+        print STDERR "Run editlstfile.pl manually.\n";
+        $rv = 1;
+    }
+    
+    return $rv;
 }
 
 my(%fpaths);
