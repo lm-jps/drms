@@ -1,4 +1,4 @@
-#!/home/jsoc/bin/linux_x86_64/perl5.12.2
+#!/home/jsoc/bin/linux_x86_64/activeperl
 
 # WARNING!! These classes can modify global subscription tables/files used by both the subscription manager
 # and by parse_slon_logs.pl. You must first acquire the subscription lock before using these classes.
