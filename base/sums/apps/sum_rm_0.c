@@ -226,7 +226,8 @@ int stat_storage()
 
   //for(i=0; i<MAX_PART-1; i++) {
   //for(i=0; i<11; i++) {		//for sum_rm_0 do 1st 11 partitions
-  for(i=0; i<16; i++) {		//for sum_rm_0 do 1st 15 partitions
+
+  for(i=0; i<17; i++) {		//for sum_rm_0 do 1st 15 partitions
 				//this help account for /SUM100s not used
     pptr=(PART *)&ptab[i];
     if(pptr->name == NULL) break;
@@ -239,7 +240,7 @@ int stat_storage()
     //!!TEMP don't try to delete from these until disks are fixed 3/4/2013:
     //if(!strcmp(pptr->name, "/SUM3")) continue;
     //if(!strcmp(pptr->name, "/SUM16")) continue;
-    if(!strcmp(pptr->name, "/SUM17")) continue;
+    //if(!strcmp(pptr->name, "/SUM17")) continue;
 
     if(status = statvfs(pptr->name, &vfs)) {
       printk("Error %d on statvfs() for %s\n",status,pptr->name);
