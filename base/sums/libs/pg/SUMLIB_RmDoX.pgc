@@ -98,7 +98,7 @@ end_fetch2:
     if(bytesdeleted != 0.0) {
       printk("bytes deleted=%e\n", bytesdeleted);
     }
-    EXEC SQL COMMIT;
+    //EXEC SQL COMMIT;
     return NO_ERROR;
 	
 sqlerror:
@@ -134,7 +134,7 @@ EXEC SQL END DECLARE SECTION;
     if(l_count) {
        printk("%s is open DARO\n", wd);
        *rmbytes = 0.0;
-       EXEC SQL COMMIT;
+       //EXEC SQL COMMIT;
        return(0);		/* skip this dir opend for read */
     }
     eff_date = (uint64_t)atol(effdate);
@@ -144,7 +144,7 @@ EXEC SQL END DECLARE SECTION;
     if(eff_date < 3000000000000) { //yyyymmddhhss
       if(eff_date > today_date) {
         *rmbytes = 0.0;
-        EXEC SQL COMMIT;
+        //EXEC SQL COMMIT;
         return(0);
       }
     }
@@ -159,7 +159,7 @@ EXEC SQL END DECLARE SECTION;
     if(!(cptr = strstr(rootdir+1, "/D"))) {
       printk("The wd=%s doesn't have a /.../Dxxx term!\n",rootdir);
       *rmbytes = 0.0;
-      EXEC SQL COMMIT;
+      //EXEC SQL COMMIT;
       return(0);
     }
     if((cptr1 = strstr(cptr+1, "/"))) {
@@ -233,7 +233,7 @@ EXEC SQL END DECLARE SECTION;
             EXEC SQL CONNECT TO :target;
             EXEC SQL WHENEVER SQLERROR GOTO sqljsocerror1;
             EXEC SQL EXECUTE IMMEDIATE :stmt;
-            EXEC SQL COMMIT;
+            //EXEC SQL COMMIT;
             EXEC SQL DISCONNECT;
             EXEC SQL WHENEVER SQLERROR GOTO sqlrmerror;
           }
@@ -247,7 +247,7 @@ BYPASS:
       printk("Cannot rm %s\n", wd);
     }
     *rmbytes = bytes;
-    EXEC SQL COMMIT;
+    //EXEC SQL COMMIT;
     return(0);
 
 sqlrmerror:
@@ -278,4 +278,10 @@ sqljsocerror1:
     //NEW Oct 30,2012 for ignore JILA err on delete record from DRMS
     //goto BYPASS;
     return DS_DATA_QRY;
+}
+
+//Called at the end of each SIGALRM in sum_rm (i.e. typical 300sec cycle)
+int DS_Rm_Commit()
+{
+      EXEC SQL COMMIT;
 }
