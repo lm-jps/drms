@@ -25,6 +25,7 @@ NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "xxyx_pkey" for t
 one. Since this removes all the metadata for a series - essentially
 deleting the series - the user is prompted to confirm. Except for
 initial debugging of the .jsd file it is probably an error to use the
+\c -i: Use the jsd provided in stdin.
 <br>
 \c -f flag.
 <br>

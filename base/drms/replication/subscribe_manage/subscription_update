@@ -271,6 +271,11 @@ echo > $newtablefile
 #-------------------------------------------------------------------------
 newsubscription=0
 # If new_site is true, adds all subscriptions in the config file to the end of the new usertables file
+# ART - This section copies all series in the node's $series array to the $node.new.lst file. This
+#   assumes that the node has specified "subscribe" for all series in $series, and that the node
+#   is a brand new subscriber. This is not a valid
+#   assumption and there should be error checking to catch the error that a node could have 
+#   specified "unsubscribe", even thought the node is a new node. 
 if [ $new_site == "true" ]
 then
 	logwrite "The Subscription request is from a new site"
@@ -295,6 +300,8 @@ then
 # If new_site is false, does two things: 
 # First removes subscriptions with the tag "unsubscribe"
 # Second, adds all subscriptions with the tag "subscribe" to the end of the file
+# ART - This section removes from the current node's lst file all series that the node is 
+#   removing from subscription.
 elif [ $new_site == "false" ]
 then
     unsubhappening=0
@@ -320,6 +327,10 @@ then
                           continue
                         fi
 			# Loops through each entry in the $series array and $request array for each $line
+            # ART - I think that the $series array has the list of all series that the node is either
+            # subscribing to, or unsubscribing to. The $request array is contains the verb
+            # "subscribe" or "unsubscribe". So, for each series in $series, $request says
+            # whether the series is being subscribed to or removed from subscription.
 			while [ $counter -lt ${#series[*]} ]
 			do
 				linecompare="${series[$counter]}"
@@ -343,6 +354,9 @@ logwrite "counter [$counter] [${#series[*]}] request counter [${request[$counter
 			# if a match was not found, write the line to the new user tables file
                         # if not requesting an unsubscribe to the current series in the .lst file
                         # write the .lst file line to the newtablefile (node.lst.new)
+            # ART - here's my translation:
+            #   If we are NOT unsubscribing to the current series in the node's lst file, then we want
+            #   to copy the series name to newtablefile, which is the $node.new.lst file.
 			if [ $flag -eq 0 ]
 			then
 				logwrite "Writing $line to $newtablefile"
@@ -406,6 +420,7 @@ if [ $newsubscription -ne 1 -a $new_site == "false" -a $unsubhappening -eq 1 ]
 then
     # There were no new subscriptions, and at least one unsubscribe, so we need to
     # overwrite the old .lst file - the new one will be missing at least one series
+    # ART - I'm not sure what the above comment has to do with this line of code.
     rm -fr $subscribers_dir/$node.new
 fi
 

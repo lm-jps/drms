@@ -22,7 +22,46 @@ show_coverage_sock {same options as above}
 
 \details
 
-\b Show_coverage finds the record completeness map for a given series over an interval of a single prime-key.
+\b Show_coverage generates a "record-completeness map" for a given series over an interval of a single prime-key.
+ For each expected record in a range of time (or a range of another quantity, like the Frame Serial Number), 
+ show_coverage determines if an actual record exists. To determine which records are "expected", show_coverage
+ assumes that records are generated at a regular cadence over this quantity. For example, if a record is normally 
+ generated once
+ every second, and the first record was created at noon, then we can expect records to exist at 12:00:00, 
+ 12:00:01, 12:00:02, etc. In general, there is at least one such quantity in most data series that satisfy this
+ assumption. More complex cadence patterns (such as non-regularly-spaced ones) are neither supported nor needed.
+ This quantity is usually a keyword that represents time. Sometimes it is an ID or serial number such that each 
+ record has a unique ID/serial number.
+ 
+ In keeping with the assumption that records are generated at a regular cadence over some quantity, 
+ the quantity used to define the range of expected records must support the representation of 
+ regularly spaced values. There is a catch if the quantity is a "time" keyword, however. DRMS stores
+ time keywords as floating-point numbers, but due to limits of precision when representing floating-point 
+ numbers in computing, it is not possible to consistently specify the regularly-spaced values in a range
+ of times. This problem with precision of floating-point numbers has been solved by the adoption of
+ a scheme whereby the floating-point values are "slotted" - each floating-point value is mapped to a 
+ single integer value. This integer value is known as the "index value". This concept of slotting is discussed 
+ in detail elsewhere. 
+ 
+ As a consequence of floating-point imprecision, show_coverage requires that the quanity used to define
+ the range of expected records be a slotted time quantity (if the quantity is a time keyword). Otherwise
+ the quantity must be an integer-type of keyword. This allows the individual values in the range to be expressed
+ as integers internally.
+ 
+ The quantity used to define a range of regularly-spaced values is specified in the \a key parameter. The first
+ and last values in this range a specified with the \a low and \a high parameters, respectively. Providing
+ \a low and \a high is optional. If \a low is not specified, then the quantity's value for the first
+ series' record is used. Similarly, if \a high is not specified, then the quantity's value for the last
+ series' record is used. The assumed cadence comes from the data series itself. Slotted keywords have a 
+ defined cadence built-in (the *_step auxiliary keyword defines this value), so if a slotted keyword is used 
+ for the key quantity, the cadence is determined from an auxiliary keyword. If the key quantity is a 
+ keyword of integer data type, then the cadence assume is 1. For example, if the key quantify is FSN, and 
+ \a low is 100 and \a high is 200, then the expected values for FSN are 100, 101, 102, etc.
+
+ show_coverage provides some short-cuts for specifying the \a low and \a high values for certain types
+ of key quantities. If \a key is a 
+ 
+ 
 Since it needs a way to know if any given record is expected the program
 only works for series with an integer or slotted prime key.
 It will fail to be helpful for series that do not expect each index value of
