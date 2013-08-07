@@ -1886,13 +1886,8 @@ check for requestor to be valid remote DRMS site
      if (strcmp(requestor, kNotSpecified) != 0)
       {
       DRMS_Record_t *requestor_rec;
-      DRMS_RecordSet_t *requestor_rs = NULL;
-          char qry[1024];
-          int newuser;
-          char *lcrequestor = NULL;
-          
 #ifdef IN_MY_DREAMS
-
+      DRMS_RecordSet_t *requestor_rs;
       char requestorquery[2000];
       sprintf(requestorquery, "%s[? Requestor = '%s' ?]", kExportUser, requestor);
       requestor_rs = drms_open_records(drms_env, requestorquery, &status);
@@ -1902,66 +1897,24 @@ check for requestor to be valid remote DRMS site
         { // First request for this user
         drms_close_records(requestor_rs, DRMS_FREE_RECORD);
 #endif
-            /* First, see if the requestor exists in jsoc.export_user. If so, do not create a new record. */
-            lcrequestor = strdup(requestor);
-            if (!lcrequestor)
-            {
-                JSONDIE("Out of memory in jsoc_fetch update of jsoc.export_user.");
-            }
-            
-            strtolower(lcrequestor);
-            newuser = 1;
-            
-            snprintf(qry, sizeof(qry), "%s[%s]", kExportUser, lcrequestor);
-            if ((requestor_rs = drms_open_records(drms_env, kExportUser, &status)) != NULL)
-            {
-                if (requestor_rs->n > 0)
-                {
-                    newuser = 0;
-                }
-                
-                drms_close_records(requestor_rs, DRMS_FREE_RECORD);
-            }
-            
-            if (newuser)
-            {
-                /* Create a new entry for the user. */
-                requestor_rec = drms_create_record(drms_env, kExportUser, DRMS_PERMANENT, &status);
-                if (!requestor_rec)
-                    JSONDIE("Cant create new user info record");
-                
-                requestorid = requestor_rec->recnum;
-                drms_setkey_int(requestor_rec, "RequestorID", requestorid);
-                drms_setkey_string(requestor_rec, "Requestor", lcrequestor);
-                if (strncasecmp(notify,"solarmail",9) == 0)
-                {
-                    char tmp_notify[1024];
-                    sprintf(tmp_notify, "%s@spd.aas.org", requestor);
-                    drms_setkey_string(requestor_rec, "Notify", tmp_notify);
-                }
-                else
-                    drms_setkey_string(requestor_rec, "Notify", notify);
-                drms_setkey_string(requestor_rec, "ShipTo", shipto);
-                drms_setkey_time(requestor_rec, "FirstTime", now);
-                drms_setkey_time(requestor_rec, "UpdateTime", now);
-                drms_close_record(requestor_rec, DRMS_INSERT_RECORD);
-            }
-            else
-            {
-                /* The user is already in the db - just update their info. RequestorID is always the same as recnum, 
-                 * so it makes no sense to attempt to change it. */
-                snprintf(qry, sizeof(qry), "UPDATE %s SET notify = '%s', shipto = '%s', updatetime = %f WHERE lower(requestor) = '%s'", kExportUser, notify, shipto, now, lcrequestor);
-                
-                if (drms_dms(drms_env->session, NULL, qry))
-                {
-                    JSONDIE("Bad db statement in jsoc_fetch update of jsoc.export_user");
-                }
-            }
-            
-            free(lcrequestor);
-            lcrequestor = NULL;
-            
-        
+        requestor_rec = drms_create_record(drms_env, kExportUser, DRMS_PERMANENT, &status);
+        if (!requestor_rec)
+          JSONDIE("Cant create new user info record");
+        requestorid = requestor_rec->recnum;
+        drms_setkey_int(requestor_rec, "RequestorID", requestorid);
+        drms_setkey_string(requestor_rec, "Requestor", requestor);
+        if (strncasecmp(notify,"solarmail",9) == 0)
+          {
+          char tmp_notify[1024];
+          sprintf(tmp_notify, "%s@spd.aas.org", requestor);
+          drms_setkey_string(requestor_rec, "Notify", tmp_notify);
+          }
+        else
+          drms_setkey_string(requestor_rec, "Notify", notify);
+        drms_setkey_string(requestor_rec, "ShipTo", shipto);
+        drms_setkey_time(requestor_rec, "FirstTime", now);
+        drms_setkey_time(requestor_rec, "UpdateTime", now);
+        drms_close_record(requestor_rec, DRMS_INSERT_RECORD);
 #ifdef IN_MY_DREAMS
         }
       else
