@@ -317,7 +317,7 @@ static int WriteKeyValues(DRMS_Record_t *rec, int nsegments, HContainer_t *keyli
                strtolower(lckeyname);
                /* Check to see if keyword in output series is per-segment or not (if the series
                 * has a per-segment keyword, then you must specify an index in the keyword name). */
-               snprintf(query, sizeof(query), "SELECT * FROM %s.drms_keyword WHERE lower(keywordname) = '%s' AND persegment & 1 = 1", ns, lckeyname);
+               snprintf(query, sizeof(query), "SELECT * FROM %s.drms_keyword WHERE lower(seriesname) = '%s' AND lower(keywordname) = '%s' AND persegment & 1 = 1", ns, rec->seriesinfo->seriesname, lckeyname);
                free(lckeyname);
 
                if (rec->env->verbose)
@@ -942,7 +942,9 @@ int DoIt(void)
                       
                       if (status != DRMS_SUCCESS)
                       {
-                          DIE("Cannot get cmd-line argument.");
+                          char msg[128];
+                          snprintf(msg, sizeof(msg), "Cannot get cmd-line argument %s.", keyname);
+                          DIE(msg);
                       }
                       
                       key_anyval = keyval->value;
@@ -961,7 +963,9 @@ int DoIt(void)
                   
                   if (status != DRMS_SUCCESS)
                   {
-                      DIE("Cannot get cmd-line argument.");
+                      char msg[128];
+                      snprintf(msg, sizeof(msg), "Cannot get cmd-line argument %s.", keyname);
+                      DIE(msg);
                   }
                   
                   if (!keyname || !keytype || !keyval)
