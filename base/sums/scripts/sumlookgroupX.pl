@@ -217,10 +217,10 @@ EOF
 
       #now get DP<=30d
       if(!$FULL  || $group==400 || $group==401) {
-        $sql = "select sum(bytes) from sum_partn_alloc where (status=4 and archive_substatus=32 or status=2) and group_id=$group and effective_date <= '$yeffdate'";
+        $sql = "select sum(bytes) from sum_partn_alloc where (status=4 and archive_substatus=32 or status=2) and group_id=$group and effective_date > '$effdate' and effective_date <= '$yeffdate'";
       }
       else {
-        $sql = "select sum(bytes) from sum_main where storage_group=$group and ds_index in (select ds_index from sum_partn_alloc where (status=4 and archive_substatus=32 or status=2) and effective_date <= '$yeffdate')";
+        $sql = "select sum(bytes) from sum_main where storage_group=$group and ds_index in (select ds_index from sum_partn_alloc where (status=4 and archive_substatus=32 or status=2) and effective_date > '$effdate' and effective_date <= '$yeffdate')";
       }
       #print "$sql\n"; #!!!TEMP
       $sth = $dbh->prepare($sql);
@@ -233,15 +233,16 @@ EOF
       while ( @row = $sth->fetchrow() ) {
         $bytes30 = shift(@row);
         $bytes30 = $bytes30/1048576;
+        $bytes30 = $bytes30 + $bytes;
         push(@bytes30, $bytes30);
       }
 
       #now get DP<=100d
       if(!$FULL  || $group==400 || $group==401) {
-        $sql = "select sum(bytes) from sum_partn_alloc where (status=4 and archive_substatus=32 or status=2) and group_id=$group and effective_date <= '$xeffdate'";
+        $sql = "select sum(bytes) from sum_partn_alloc where (status=4 and archive_substatus=32 or status=2) and group_id=$group and effective_date > '$yeffdate' and effective_date <= '$xeffdate'";
       }
       else {
-        $sql = "select sum(bytes) from sum_main where storage_group=$group and ds_index in (select ds_index from sum_partn_alloc where (status=4 and archive_substatus=32 or status=2) and effective_date <= '$xeffdate')";
+        $sql = "select sum(bytes) from sum_main where storage_group=$group and ds_index in (select ds_index from sum_partn_alloc where (status=4 and archive_substatus=32 or status=2) and effective_date > '$yeffdate' and effective_date <= '$xeffdate')";
       }
       #print "$sql\n"; #!!!TEMP
       $sth = $dbh->prepare($sql);
@@ -254,6 +255,7 @@ EOF
       while ( @row = $sth->fetchrow() ) {
         $bytes100 = shift(@row);
         $bytes100 = $bytes100/1048576;
+        $bytes100 = $bytes100 + $bytes30;
         push(@bytes100, $bytes100);
       }
       #now get DPlater 
