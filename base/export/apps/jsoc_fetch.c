@@ -47,6 +47,7 @@
 
 
 #define MAX_EXPORT_SIZE 100000  // 100GB
+#define MAX_EXPORT_SIZE_UNCOMPRESSED 10000  // 10GB
 
 #define kExportSeries "jsoc.export"
 #define kExportSeriesNew "jsoc.export_new"
@@ -1743,7 +1744,10 @@ check for requestor to be valid remote DRMS site
       JSONDIE("There are no files in this RecordSet");
 
     // Return status==3 if request is too large.
-    if (size > MAX_EXPORT_SIZE)
+    /* Phil's change to limit export size when at least one segment will be written uncompressed 
+     * (it may be the case that the data were already uncompressed before export, in which case 
+     * no uncompression will happen). */
+    if (size > (strstr(protocol, "**NONE**") ? MAX_EXPORT_SIZE_UNCOMPRESSED : MAX_EXPORT_SIZE))
       {
       if (dojson)
         {
@@ -1765,7 +1769,7 @@ check for requestor to be valid remote DRMS site
         json_insert_pair_into_object(jroot, "count", json_new_number(numval));
         sprintf(numval, "%d", (int)size);
         json_insert_pair_into_object(jroot, "size", json_new_number(numval));
-        sprintf(numval,"Request exceeds max byte limit of %dMB", MAX_EXPORT_SIZE);
+        sprintf(numval,"Request exceeds max byte limit of %dMB", (strstr(protocol, "**NONE**") ? MAX_EXPORT_SIZE_UNCOMPRESSED : MAX_EXPORT_SIZE));
         strval = string_to_json(numval);
         json_insert_pair_into_object(jroot, "error", json_new_string(strval));
         free(strval);
