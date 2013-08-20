@@ -914,6 +914,8 @@ struct DRMS_Link_struct
   /*** Static link info ***/
   long long recnum;          /* recnum = -1 marks a unset link */
                              /* For static link, it is the recnum of the target */
+                             /* ART - for dynamic link, this holds the target recnum too (if drms_link_resolve()
+                              * was called).  */
 
   /*** Dynamic link info ***/
   int isset;

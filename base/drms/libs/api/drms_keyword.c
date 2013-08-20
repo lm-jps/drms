@@ -857,31 +857,41 @@ DRMS_Keyword_t *drms_keyword_lookup(DRMS_Record_t *rec, const char *key, int fol
 static DRMS_Keyword_t * __drms_keyword_lookup(DRMS_Record_t *rec, 
 					      const char *key, int depth)
 {
-  int stat;
-  DRMS_Keyword_t *keyword;
-
-  keyword = hcon_lookup_lower(&rec->keywords, key);
-  if (keyword!=NULL && depth<DRMS_MAXLINKDEPTH )
-  {
-    if (keyword->info->islink)
+    int stat;
+    DRMS_Keyword_t *keyword;
+    
+    keyword = hcon_lookup_lower(&rec->keywords, key);
+    if (keyword!=NULL && depth<DRMS_MAXLINKDEPTH )
     {
-      rec = drms_link_follow(rec, keyword->info->linkname, &stat);
-      if (stat)
-	return NULL;
-      else
-	return __drms_keyword_lookup(rec, keyword->info->target_key, depth+1);
+        if (keyword->info->islink)
+        {
+            /* drms_link_follow() will allocate the DRMS_Record_t returned. Must be freed. */
+            rec = drms_link_follow(rec, keyword->info->linkname, &stat);
+            if (stat)
+            {
+                if (rec)
+                {
+                    drms_close_record(rec, DRMS_FREE_RECORD);
+                }
+                return NULL;
+            }
+            else
+            {
+                DRMS_Keyword_t *key = __drms_keyword_lookup(rec, keyword->info->target_key, depth+1);
+                return key;
+            }
+        }
+        else
+        {
+            return keyword;
+        }
     }
-    else
-    {
-      return keyword;
-    }
-  }
-  if (depth>=DRMS_MAXLINKDEPTH)
-    fprintf(stderr, "WARNING: Max link depth exceeded for keyword '%s' in "
-	    "record %lld from series '%s'\n",keyword->info->name, rec->recnum, 
-	    rec->seriesinfo->seriesname);
-  
-  return NULL;
+    if (depth>=DRMS_MAXLINKDEPTH)
+        fprintf(stderr, "WARNING: Max link depth exceeded for keyword '%s' in "
+                "record %lld from series '%s'\n",keyword->info->name, rec->recnum, 
+                rec->seriesinfo->seriesname);
+    
+    return NULL;
 }
 
 DRMS_Type_t drms_keyword_type(DRMS_Keyword_t *key)

@@ -3862,15 +3862,52 @@ int drms_record_getinfo(DRMS_RecordSet_t *rs)
 void drms_free_records(DRMS_RecordSet_t *rs)
 {
     int i;
-    
+    HIterator_t *hit = NULL;
+    DRMS_Link_t *link = NULL;
+    DRMS_Record_t *lrec = NULL;
+    char hashkey[DRMS_MAXHASHKEYLEN];
+    DRMS_Env_t *env = NULL;
+
     if (!rs)
         return;
     
     if (!rs->cursor)
     {
         for (i=0; i<rs->n; i++)
-            if (rs->records[i]) {
-                drms_free_record(rs->records[i]);
+            if (rs->records[i]) 
+            {
+               env = rs->records[i]->env;
+
+               /* Follow all links and free target records. */
+               hit = hiter_create(&rs->records[i]->links);
+               if (hit)
+               {
+                  while ((link = (DRMS_Link_t *)hiter_getnext(hit)) != NULL)
+                  {
+                     if (link->recnum >= 0)
+                     {
+                        /* The link has been resolved, which probably happened via a call 
+                         * to drm_link_follow(), which means that the linked record may
+                         * be in memory. */
+                        drms_make_hashkey(hashkey, link->info->target_series, link->recnum);
+                        lrec = hcon_lookup(&env->record_cache, hashkey);
+
+                        if (lrec)
+                        {
+                           drms_free_record(lrec);
+                        }
+                     }
+                  }
+
+                  hiter_destroy(&hit);
+               }
+               else
+               {
+                  /* Don't do nuthin'. There is no return value from this function. */
+               }
+
+               /* Free source record. */
+               drms_free_record(rs->records[i]);
             }
         
         if (rs->n>0 && rs->records)
@@ -3885,6 +3922,37 @@ void drms_free_records(DRMS_RecordSet_t *rs)
            {
               if (rs->records[i]) 
               {
+                 env = rs->records[i]->env;
+
+                 /* Follow all links and free target records. */
+                 hit = hiter_create(&rs->records[i]->links);
+                 if (hit)
+                 {
+                    while ((link = (DRMS_Link_t *)hiter_getnext(hit)) != NULL)
+                    {
+                       if (link->recnum >= 0)
+                       {
+                          /* The link has been resolved, which probably happened via a call
+                           * to drm_link_follow(), which means that the linked record may
+                           * be in memory. */
+                          drms_make_hashkey(hashkey, link->info->target_series, link->recnum);
+                          lrec = hcon_lookup(&env->record_cache, hashkey);
+
+                          if (lrec)
+                          {
+                             drms_free_record(lrec);
+                          }
+                       }
+                    }
+
+                    hiter_destroy(&hit);
+                 }
+                 else
+                 {
+                    /* Don't do nuthin'. There is no return value from this function. */
+                 }
+
+                 /* Free source record. */
                  drms_free_record(rs->records[i]);
               }
            }
