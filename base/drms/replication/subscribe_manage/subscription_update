@@ -11,14 +11,14 @@ pidfile=$0.pid
 #-------------------------------------------------------------------------
 if [ $# -eq 8 ]
 then
-        config_file=$1
-	node=$2
-	new_site=$3
-	archive=$4
-	retention=$5
-	tapegroup=$6
-	input_file=$7
-        subscribelockpath=$8
+    config_file=$1       # The server configuration file
+    node=$2              # The client node requesting a subscription
+    new_site=$3          # 1 if the client node has never subscribed before
+    archive=$4           # The archive value to be used when creating the subscribed-to series on the client side
+    retention=$5         # The retention value to be used when creating the subscribed-to series on the client side
+	tapegroup=$6         # The tapegroup value to be used when creating the subscribed-to series on the client side
+    input_file=$7        # The data file (contains name of the series to subscribe to - and whether this is a subscription or an unsubscription request)
+    subscribelockpath=$8
 else
         error="ERROR: Usage: $0 <server configuration file> <node> <new subscription, true/false> <subscription information file> <subscription lock file path>"
         echo $error

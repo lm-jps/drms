@@ -2,7 +2,7 @@
 # ----------
 # slony1_dump.sh
 #
-# $Id: sdo_slony1_dump.sh,v 1.2 2010/05/01 23:00:52 arta Exp $
+# $Id: sdo_slony1_dump.sh,v 1.3 2013/08/21 16:23:16 arta Exp $
 #
 #	This script creates a special data only dump from a subscriber
 #	node. The stdout of this script, fed into psql for a database that
@@ -51,16 +51,17 @@ IFS="$oldIFS"
 
 
 # ----
-# Get a list of all replicated table ID's this subscriber receives,
-# and remember the table names.
+# Construct a list of all replicated-table IDs that the subscribing node would like to subscribe to.
+# This list of IDs will be saved in $tables.
 # ----
 
+# $tabs is an array of table names being subscribed to (like [hmi.v_45s hmi.m_720s]) by the subscribing node.
 tabSQL1="select tab_id from $clname.sl_table, $clname.sl_set "
 tabSQL1="${tabSQL1} where tab_set = set_id "
 tabSQL3="and exists (select 1 from $clname.sl_subscribe "
 tabSQL3="${tabSQL3} where sub_set = set_id and sub_receiver = $nodeid) "
 
-
+# Split the table names into namespaces and relation names.
 for I in `echo ${tabs}`; do
 	#echo "[$I]"
 	IFS="${IFS}."
@@ -87,6 +88,10 @@ done
 					#and exists (select 1 from $clname.sl_subscribe
 							#where sub_set = set_id
 								#and sub_receiver = $nodeid)"`
+
+
+# Create a set of variables named tabname_XX, where XX is the replicated-table ID of a table being subscribed to. For example,
+# tabname_3 is a variable holding the string "hmi.m_45s".
 for tab in $tables ; do
 	eval tabname_$tab=`psql -p $port -q -At -d $dbname -c \
 			"select $pgc.quote_ident(tab_nspname) || '.' || 
@@ -226,61 +231,35 @@ fi
 # replica.
 # ----
 
-(
-echo "start transaction;"
-echo "set transaction isolation level SERIALIZABLE;"
+# We need to run the log parser and edit the slony_parser.txt
+# file at times relative to the database activity. For example, we must first
+# lock the series tables before running the log parser and doing the dump. 
+# And we must edit slony_parser.txt after the
+# log-parser has run, but before the series tables are unlocked (which happens after the enclosing
+# transaction terminates). Shell has no way of interspersing db commands with non-db commands - you
+# can't keep a transaction to the db open and then alternate between db commands and non-db commands.
+# Shell cannot keep a transaction open and issue a mix of db and non-db commands. Instead, call a Perl Script.
 
-echo "create temp table subscriber_slon_counter as select ac_num from $clname.sl_archive_counter;"
-
-echo "copy subscriber_slon_counter to '$output_filecounter';"
-
-if [ $new_subscriber -eq 1 ] ; then
-# ----
-# Fill the sl_sequence_offline table and provide initial 
-# values for all sequences.
-# ----
-echo "select 'copy $clname.sl_sequence_offline from stdin;';"
-echo "select seq_id::text || '	' || seq_relname  || '	' || seq_nspname from $clname.sl_sequence;"
-	printf "select E'\\\\\\\\.';"
-
-for seq in $sequences ; do
-	eval seqname=\$seqname_$seq
-	echo "select 'select $clname.sequenceSetValue_offline($seq, ''' || last_value::text || ''');' from $seqname;"
-done
-
-# ----
-# Fill the setsync tracking table with the current status
-# ----
-echo "select 'insert into $clname.sl_archive_tracking values (' ||
-			ac_num::text || ', ''' || ac_timestamp::text || 
-			''', CURRENT_TIMESTAMP);'
-			from $clname.sl_archive_counter;";
-fi
-
-########################
-## Unlock the parser (was locked by sql_gen)
-########################
-rm -f "$subscribelockpath"
-
-# ----
-# Now dump all the user table data
-# ----
-system_type=`uname`
 for tab in $tables ; do
-	eval tabname=\$tabname_$tab
-	# Get fieldnames...
- 	fields=`psql -p $port -At -c "select $clname.copyfields($tab);" $dbname`
- 	echo "select 'copy $tabname $fields from stdin;';"
-	echo "copy $tabname $fields to stdout;"
- 	printf "select E'\\\\\\\\.';"
+    eval tabname=\$tabname_$tab # $tabname now has a name of a table being subscribed to (like "hmi.m_45s").
+    if [ -n "$sublist" ] then
+        sublist="$tabname"
+    else
+        sublist="$sublist,$tabname"
+    fi
+
+    if [ -n "$idlist" ] then
+        idlist=$tab
+    else
+        idlist="$idlist,tab"
+    fi
 done
 
-# ----
-# Commit the transaction here in the replica that provided us
-# with the information.
-# ----
-echo "commit;"
-) | psql -p $port -q -At -d $dbname
+# The stdout of from this call will contain SQL that runs on the client end. It creates the namespaces, series tables, etc. of 
+# the series being subscribed to.
+toprint=`$kJSOCRoot'/base/drms/replication/subscribe_manage/dumpreptables.pl' config=$kJSOCRoot'/proj/replication/etc/repserver.cfg' client=$node sublist=$sublist idlist=$idlist newcl=$new_subscriber filectr=$output_filecounter 2>$SMworkDir/slony1_dump.$node.log`
+
+echo -n "$toprint"
 
 # ----
 # Emit the commit for the dump to stdout.
