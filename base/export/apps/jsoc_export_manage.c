@@ -3334,7 +3334,7 @@ int DoIt(void)
   
       // SU now contains both qsub script and drms_run script, ready to execute and lock the record.
       //sprintf(command,"qsub -q x.q,o.q,j.q -v %s "
-      sprintf(command,"qsub -q j.q -v %s "
+      sprintf(command,"qsub -q exp.q -v %s "
   	" -o /home/jsoc/exports/tmp/%s.runlog "
   	" -e /home/jsoc/exports/tmp/%s.runlog "
   	"  %s/%s.qsub ",
