@@ -3304,8 +3304,10 @@ int DoIt(void)
       if (dashp && strcmp(dashp, "-tar") == 0)
         {
         fprintf(fp, "cp %s.* index.* ..\n", requestid);
-        fprintf(fp, "tar  chf ../%s.tar --remove-files ./\n", requestid);
+        fprintf(fp, "tar  chf ../%s.tar ./\n", requestid);
         fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
+            fprintf(fp, "rm -rf $REQDIR/*");
+        fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");            
         fprintf(fp, "mv ../%s.* ../index.* .\n", requestid);
         fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
         }
