@@ -157,6 +157,37 @@ sub ReadPipe
     return $ret;
 }
 
+# Returns the number of bytes read. No more lines to read when ReadLine returns undef, and
+# returns 0. Returns -1 on error.
+sub ReadLine
+{
+    my($self) = shift;
+    my($bufout) = shift;
+    my($ret) = 0;
+    my($fh);
+    my($line);
+    
+    if (defined($self->{_rfh}))
+    {
+        $fh = $self->{_rfh};
+        $line = <$fh>;
+        if (defined($line))
+        {
+            chomp($line);
+            $ret = length($line);
+        }
+        
+        $$bufout = $line;
+    }
+    else
+    {
+        print STDERR "Can't read from unopened pipe.\n";
+        $ret = -1;
+    }
+    
+    return $ret;
+}
+
 sub WritePipe
 {
     my($self) = shift;
