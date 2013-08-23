@@ -2155,7 +2155,17 @@ int DoIt(void)
                                   }
                                   
                                   apart.series = strdup(snames[iset]);
-                                  apart.filter = strdup(filter);
+                                  if (filter)
+                                  {
+                                      size_t sz = strlen(filter) + 1;
+                                      
+                                      apart.filter = strdup(filter);
+                                      apart.filter = base_strcatalloc(apart.filter, autobangstr, &sz);
+                                  }
+                                  else
+                                  {
+                                      apart.filter = NULL;
+                                  }
                                   list_llinserttail(parsedrs, &apart);
                               }
                           }
@@ -2206,7 +2216,14 @@ int DoIt(void)
                                   }
                                   
                                   apart.series = strdup(snames[iset]);
-                                  apart.filter = strdup(filter);
+                                  if (filter)
+                                  {
+                                      apart.filter = strdup(filter);
+                                  }
+                                  else
+                                  {
+                                      apart.filter = NULL;
+                                  }
                                   list_llinserttail(parsedrs, &apart);                            
                               }
                               
@@ -2241,7 +2258,14 @@ int DoIt(void)
           while ((node = list_llnext(parsedrs)) != NULL)
           {
               parts = (SIParts_t *)(node->data);
-              printf("%s\t%s\n", parts->series, parts->filter);
+              if (parts->filter)
+              {
+                  printf("%s\t%s\n", parts->series, parts->filter);
+              }
+              else
+              {
+                  printf("%s\t%s\n", parts->series, "NONE");
+              }
           }
           
           list_llfree(&parsedrs);
