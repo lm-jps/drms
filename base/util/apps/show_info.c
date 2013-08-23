@@ -48,6 +48,7 @@ to a drms_server session (see e.g. drms_run).
 This group of arguments controls the action of show_info.  The default action is to query for the specified record-set
 and perform the requested display of information.
 \li \c -c: Show count of records in query and exit.  This flag requires a record set query to be specified.
+\li \c -e: Parse the provided record-set query into constituent parts (e.g., "hmi.M_45s[2013.1.8][? QUALITY > 0 ?]" --> "hmi.M_45s" "[2013.1.8][? QUALITY > 0 ?]"
 \li \c -h: help - print usage info and exit
 \li \c -j: list series info in jsd format and exit
 \li \c -l: just list series keyword, segment, and link names with descriptions then exit
@@ -213,6 +214,15 @@ http://jsoc.stanford.edu/ajax/lookdata.html drms_query describe_series jsoc_info
 #include "printk.h"
 
 
+#define kArgParseRS "e"
+
+struct SIParts_struct
+{
+  char *series;
+  char *filter;
+};
+typedef struct SIParts_struct SIParts_t;
+
 ModuleArgs_t module_args[] =
 { 
   {ARG_STRING, "ds", "Not Specified", "<record_set query>"},
@@ -223,6 +233,7 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "b", NULL, "Disable prime-key logic"},
   {ARG_FLAG, "c", "0", "Show count of records in query"},
   {ARG_FLAG, "d", "0", "Show dimensions of segment files with selected segs"},
+  {ARG_FLAG, "e", NULL, "Parse the provided record-set query into seriesnames and filters"},
   {ARG_FLAG, "h", "0", "help - print usage info"},
   {ARG_FLAG, "i", "0", "print record query, for each record, will be before any keywwords or segment data"},
   {ARG_FLAG, "I", "0", "print session information for record creation, host, sessionid, runtime, jsoc_version, and logdir"},
@@ -1724,6 +1735,23 @@ static int RecordLoopNoCursor(DRMS_Env_t *env, DRMS_RecordSet_t *recordset, int 
     return DRMS_SUCCESS;
 }
 
+static void FreeParts(void *data)
+{
+   SIParts_t *parts = (SIParts_t *)data;
+
+   if (parts->series)
+   {
+      free(parts->series);
+      parts->series = NULL;
+   }
+
+   if (parts->filter)
+   {
+      free(parts->filter);
+      parts->filter = NULL;
+   }
+}
+
 /* Module main function. */
 int DoIt(void)
   {
@@ -1747,6 +1775,7 @@ int DoIt(void)
   int show_recordspec;
   int show_stats;
   int show_types;
+      int parseRS;
   int verbose;
   int max_recs;
       int cursoredQ;
@@ -1774,6 +1803,12 @@ int DoIt(void)
   char seriesnameforheader[DRMS_MAXSERIESNAMELEN]; /* show_info will not work if the record-set string specifies more than one series. */
 
   HContainer_t *suinfo = NULL;
+  LinkedList_t *parsedrs = NULL;
+  int iset;
+  int err = 0;
+  int drmsstat;
+  DRMS_Record_t *templrec = NULL;
+  char *filter = NULL;
 
   // Include this code segment to allow operating show_info as a cgi-bin program.
   // It will preceed any output to stdout with the content-type info for text.
@@ -1851,6 +1886,7 @@ int DoIt(void)
   show_archive = cmdparams_get_int (&cmdparams, "x", NULL) != 0;
   show_size =  cmdparams_get_int(&cmdparams, "z", NULL) != 0;
   show_types =  cmdparams_get_int(&cmdparams, "t", NULL) != 0;
+  parseRS = cmdparams_isflagset(&cmdparams, kArgParseRS);
   verbose = cmdparams_isflagset(&cmdparams, "v");
 
       /* If autobang is enabled, then set the string that will be used in all recordset specifications. */
@@ -2022,6 +2058,8 @@ int DoIt(void)
           int nsets = 0;
           
           DRMS_RecQueryInfo_t rsinfo; /* Filled in by parser as it encounters elements. */
+          SIParts_t apart;
+
           if (drms_record_parserecsetspec(in, &allvers, &sets, &settypes, &snames, &filts, &nsets, &rsinfo) != DRMS_SUCCESS)
           {     
               show_info_return(2);
@@ -2057,12 +2095,7 @@ int DoIt(void)
               /* Replace filter with filter + autobangstr appended. */
               char *filterbuf = NULL;
               size_t fbsz = 128;
-              char *filter = NULL;
-              int err = 0;
-              int drmsstat;
-              DRMS_Record_t *templrec = NULL;
               char *intermed = NULL;
-              int iset;
               
               filterbuf = malloc(fbsz);
               finalin = strdup(in);
@@ -2087,7 +2120,7 @@ int DoIt(void)
                           break;
                       }
                       else
-                      {
+                      {                              
                           filter = drms_recordset_extractfilter(templrec, sets[iset], &err);
                           
                           if (!err)
@@ -2113,6 +2146,18 @@ int DoIt(void)
                                   free(finalin);
                                   finalin = intermed;
                               }
+                              
+                              if (parseRS)
+                              {
+                                  if (!parsedrs)
+                                  {
+                                      parsedrs = list_llcreate(sizeof(SIParts_t), (ListFreeFn_t)FreeParts);
+                                  }
+                                  
+                                  apart.series = strdup(snames[iset]);
+                                  apart.filter = strdup(filter);
+                                  list_llinserttail(parsedrs, &apart);
+                              }
                           }
                           
                           free(filter);
@@ -2123,7 +2168,7 @@ int DoIt(void)
                           }
                       }
                   }
-              }
+              } /* loop over sets */
               
               if (!err)
               {
@@ -2132,13 +2177,89 @@ int DoIt(void)
               
               free(filterbuf);
               filterbuf = NULL;
+          } /* autobang */
+          else
+          {
+              if (parseRS)
+              {
+                  for (iset = 0; iset < nsets; iset++)
+                  {
+                      if (settypes[iset] == kRecordSetType_DSDSPort || settypes[iset] == kRecordSetType_DRMS)
+                      {
+                          templrec = drms_template_record(drms_env, snames[iset], &drmsstat);
+                          if (DRMS_ERROR_UNKNOWNSERIES == drmsstat)
+                          {
+                              fprintf(stderr, "Unable to open template record for series '%s'; this series does not exist\
+                                      .\n", snames[iset]);
+                              err = 1;
+                              break;
+                          }
+                          else
+                          {
+                              filter = drms_recordset_extractfilter(templrec, sets[iset], &err);
+                              
+                              if (!err)
+                              {
+                                  if (!parsedrs)
+                                  {
+                                      parsedrs = list_llcreate(sizeof(SIParts_t), (ListFreeFn_t)FreeParts);
+                                  }
+                                  
+                                  apart.series = strdup(snames[iset]);
+                                  apart.filter = strdup(filter);
+                                  list_llinserttail(parsedrs, &apart);                            
+                              }
+                              
+                              free(filter);
+                              
+                              if (err)
+                              {
+                                  break;
+                              }
+                          }
+                      }
+                  } /* loop over sets */
+              } /* parseRS */
           }
         
           drms_record_freerecsetspecarr(&allvers, &sets, &settypes, &snames, &filts, nsets);
       }
       
+      if (parsedrs)
+      {
+          /* No exit from this block. The needed info has already been extracted from the input record-set specification */
+          ListNode_t *node = NULL;
+          SIParts_t *parts = NULL;
+          
+          if (!quiet)
+          {
+              printf("SERIES\tFILTER\n");
+          }
+          
+          list_llreset(parsedrs);
+          
+          while ((node = list_llnext(parsedrs)) != NULL)
+          {
+              parts = (SIParts_t *)(node->data);
+              printf("%s\t%s\n", parts->series, parts->filter);
+          }
+          
+          list_llfree(&parsedrs);
+          
+          if (seglist)
+          {
+              free(seglist);
+          }
+          
+          if (keylist)
+          {
+              free(keylist);
+          }
+          
+          show_info_return(0);
+      }
   /*  if -j, -l or -s is set, just do the short function and exit */
-  if (list_keys || jsd_list || show_stats) 
+  else if (list_keys || jsd_list || show_stats) 
   {
     /* There is no return from this block! */
     char *p, *seriesname;
