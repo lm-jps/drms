@@ -34,6 +34,9 @@
 #include <unistd.h>
 #include <time.h>
 #include <sys/file.h>
+#include <regex.h>
+
+#define kDefRegexp       "JSOC_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9]+(_IN)?"
 
 // Log files
 #define kLockFile          "/home/jsoc/exports/tmp/lock.txt"
@@ -1087,7 +1090,7 @@ int DoIt(void)
 
 // SPECIAL DEBUG LOG HERE XXXXXX
 
-
+    /* jsoc.export */
   export_series = kExportSeries;
 
   long long sunums[DRMS_MAXQUERYLEN/8];  // should be enough!
@@ -1114,8 +1117,10 @@ int DoIt(void)
         lfname = kLogFileExpSuExt;            
     }
 
+        /* requestid is not provided via the command-line for kOpExpSu. */
     LogReqInfo(lfname, fileupload, op, dsin, requestid, dbhost, from_web, webarglist);
 
+        /* jsoc.export_new */
     export_series = kExportSeriesNew;
     // Do survey of sunum list
     size=0;
@@ -1364,6 +1369,7 @@ int DoIt(void)
     // initiate a new asynchronous request, which requires a new requestid
     // Get RequestID
    
+        /* This call to GetJsocRequestID is in kOpExpSu. */
     FILE *fp = popen("/home/phil/cvs/JSOC/bin/linux_ia32/GetJsocRequestID", "r");
     if (fscanf(fp, "%s", new_requestid) != 1)
       JSONDIE("Cant get new RequestID");
@@ -1412,6 +1418,7 @@ check for requestor to be valid remote DRMS site
     if (strcmp(dsin, kNotSpecified) == 0 && (!sunumarr || sunumarr[0] < 0))
       JSONDIE("Must have valid Recordset or SU set");
 
+        /* jsoc.export_new */
     exprec = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
     if (!exprec)
       JSONDIE("Cant create new export control record");
@@ -1453,6 +1460,7 @@ check for requestor to be valid remote DRMS site
         lfname = kLogFileExpReqExt;            
     }
         
+        /* requestid was not provided on the command-line. It is created near the end of this code block. */
     LogReqInfo(lfname, fileupload, op, dsin, requestid, dbhost, from_web, webarglist);
 
     size=0;
@@ -1859,6 +1867,7 @@ check for requestor to be valid remote DRMS site
 
      // Get RequestID
      {
+        /* This call to GetJsocRequestID is in kOpExpRequest. */
      FILE *fp = popen("/home/phil/cvs/JSOC/bin/linux_ia32/GetJsocRequestID", "r");
      if (fscanf(fp, "%s", new_requestid) != 1)
        JSONDIE("Cant get new RequestID");
@@ -1939,6 +1948,7 @@ check for requestor to be valid remote DRMS site
       JSONDIE("Must have valid requestID - internal error.");
     if (strcmp(dsin, "Not Specified") == 0)
       JSONDIE("Must have Recordset specified");
+        /* jsoc.export_new */
      exprec = drms_create_record(drms_env, export_series, DRMS_PERMANENT, &status);
      if (!exprec)
       JSONDIE("Cant create new export control record");
@@ -1962,6 +1972,7 @@ check for requestor to be valid remote DRMS site
     {
     char logpath[DRMS_MAXPATHLEN];
         
+        /* requestid must be provided on the command-line. It is not created by jsoc_fetch. */
     if (strcmp(requestid, kNotSpecified) == 0)
       JSONDIE("RequestID must be provided");
 
@@ -2058,11 +2069,37 @@ JSONDIE("Re-Export requests temporarily disabled.");
   // op = exp_status, kOpExpStatus,  Implied here
     if (strcmp(op,kOpExpStatus) == 0)
     {
+        char mybuf[128];
+        
         // There is no case statement for kOpExpStatus above. We need to read in exprec
         // here.
-        if (strcmp(requestid, kNotSpecified) == 0)
+        
+        /* requestid must be provided on the command-line. It is not created by jsoc_fetch. */
+        if (!requestid || !*requestid || strcmp(requestid, kNotSpecified) == 0)
         {
             JSONDIE("RequestID must be provided");
+        }
+        else
+        {
+            regex_t regexp;
+            
+            if (regcomp(&regexp, kDefRegexp, REG_EXTENDED) != 0)
+            {                
+                snprintf(mybuf, sizeof(mybuf), "Bad regular expression '%s'.", kDefRegexp);
+                JSONDIE(mybuf);
+            }
+            else
+            {
+                if (regexec(&regexp, requestid, (size_t)0, (regmatch_t *)NULL, 0) != 0)
+                {
+                    /* No match (failure). */
+                    regfree(&regexp);
+                    snprintf(mybuf, sizeof(mybuf), "Bad RequestID '%s' provided.", requestid);
+                    JSONDIE(mybuf);
+                }
+                
+                regfree(&regexp);
+            }
         }
         
         if (internal)
