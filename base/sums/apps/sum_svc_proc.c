@@ -293,7 +293,7 @@ KEY *getdo_1(KEY *params)
   uint32_t tapeback;
   uint64_t uid, sunum;
   enum clnt_stat status;
-  int reqcnt, i, offline, storeset, offcnt;
+  int reqcnt, i, offline, storeset, offcnt, getvers;
   char *call_err, *cptr, *wd;
   char scmd[96], errstr[80];
   double bytes;
@@ -307,6 +307,7 @@ KEY *getdo_1(KEY *params)
   }
   }
   reqcnt = getkey_int(params, "reqcnt");
+  uid = getkey_uint64(params, "uid");
   sunum = getkey_uint64(params, "dsix_0");
   if(sunum > LLONG_MAX) {	// > 0x7fffffffffffffff
     write_log("**Error: getdo_1() called with sunum > LLONG_MAX uid=%lu\n", uid);
@@ -317,7 +318,6 @@ KEY *getdo_1(KEY *params)
   //write_log("SUM_get() id=%d for user=%s sunum=%lu cnt=%d\n", 
   //		rrid, GETKEY_str(params, "username"), sunum, reqcnt);
   retlist=newkeylist();
-  uid = getkey_uint64(params, "uid");
 //  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
 //    write_log("**Error: getdo_1() called with unopened uid=%lu\n", uid);
 //    rinfo = 1;	/* give err status back to original caller */
@@ -352,6 +352,11 @@ KEY *getdo_1(KEY *params)
     /* param says if one or more are offline and need to be retrieved */
     if(offline) {  
       //ck if old code that has bug with tape rds (e.g. show_info)
+      if(findkey(params, "newflg")) {
+        getvers = getkey_int(params, "newflg");
+      }
+      else getvers = 0;
+      //if(getvers != GET_FIX_VER) {	//this is old code. !!Enable for release
       if(!findkey(params, "newflg")) {	//this is old code 
         rinfo = 0;	  /* indicate error through STATUS below */
         send_ack();       /* ack original sum_svc caller */
@@ -411,6 +416,8 @@ KEY *getdo_1(KEY *params)
       rinfo = RESULT_PEND;  /* now tell caller to wait for results */
       tapeback = 0;
       //tell tape_svc which sums process to respond to
+      write_log("SUM_get() id=%d for SPROG=%u SVERS=%u uid=%lu rtrv=%d\n", 
+	rrid, sumprog, sumvers, uid, offline);
       setkey_uint32(&retlist, "SPROG", sumprog);
       setkey_uint32(&retlist, "SVERS", sumvers);
       status = clnt_call(clnttape,READDO, (xdrproc_t)xdr_Rkey, (char *)retlist, 
@@ -623,16 +630,20 @@ KEY *infodoArray_1(Sunumarray *params)
     return((KEY *)1);	/* nothing will be sent later */
   } 
   partname = getkey_str(retlist, "partn_name");
-  sprintf(cmd, "chmod g-w %s", partname); //don't let K. see this a dangling
-  if(system(cmd)) {
-    write_log("Error in infodoArray_1(): %s\n", cmd);
-  }
+  //sprintf(cmd, "chmod g-w %s", partname); //don't let K. see this a dangling
+  //if(system(cmd)) {
+  //  write_log("Error in infodoArray_1(): %s\n", cmd);
+  //}
   sprintf(filename, "%s/infoarray.ans", partname);
   effective_date = (char *)get_effdate(0);
 
   //make the alloc dir del pending
-  NC_PaUpdate(partname, params->uid, bytes, DADP, DAAEDDP, effective_date, 
-		0, 0, getkey_uint64(retlist, "ds_index"), 1, 0);
+  //NOTE: 06Aug2013 This can be eliminated after users make with new
+  //sum_open.c that removes the dir after they use the info in it
+  //NOTE: 27Aug2013 the rm was taken out of the sum_open.c. We will just
+  //leave the dir rw and the dangling storage script will rm it.
+  //NC_PaUpdate(partname, params->uid, bytes, DADP, DAAEDDP, effective_date, 
+  //		0, 0, getkey_uint64(retlist, "ds_index"), 1, 0);
   free(partname);
   free(effective_date);
   freekeylist(&retlist);
