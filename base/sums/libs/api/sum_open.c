@@ -2315,7 +2315,7 @@ KEY *respdoarray_1(KEY *params)
     free(file);
     return((KEY *)NULL);
   }
-  //free(file);
+  free(file);
   sum->sinfo = (SUM_info_t *)calloc(reqcnt, sizeof(SUM_info_t));
   sinfod = sum->sinfo;
   if(filemode == 0)
@@ -2387,13 +2387,6 @@ KEY *respdoarray_1(KEY *params)
   } 
   }
   fclose(rfp);
-  sprintf(line, "/bin/rm -rf %s", file);
-  if (cptr = rindex(line, '/')) {
-    *cptr = NULL;		//just keep dir name
-    if(system(line)) 
-      printf("Error for SUM_infoArray() rm: %s\n", line);
-  }
-  free(file);
   return((KEY *)NULL);
 }
 
