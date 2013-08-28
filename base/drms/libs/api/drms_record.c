@@ -4,6 +4,8 @@
 #include <dlfcn.h>
 #include <sys/stat.h>
 #include <strings.h>
+#include <regex.h>
+#include <pwd.h>
 #include "drms.h"
 #include "drms_priv.h"
 #include "xmem.h"
@@ -8722,6 +8724,10 @@ int ParseRecSetDesc(const char *recsetsStr,
                     int iSet = 0;
                     struct stat stBuf;
                     FILE *atfile = NULL;
+                    regex_t regexp;
+                    regmatch_t matches[3]; /* index 0 - the entire string */
+                    struct passwd *pwordrec = NULL;
+                    char atfname[PATH_MAX];
                     
                     /* finished reading an AtFile filename - read file one line at a time,
                      * parsing each line recursively. */
@@ -8740,14 +8746,79 @@ int ParseRecSetDesc(const char *recsetsStr,
                         
                         /* buf has filename */
                         *pcBuf = '\0';
-                        if (buf && stat(buf, &stBuf) == 0)
+                        
+                        /* filename may start with '~', in which case we need to figure out what the user's home directory 
+                         * is. */
+                        
+                        if (regcomp(&regexp, "[:space:]*~([^/]+)/(.+)", REG_EXTENDED) != 0)
+                        {
+                            fprintf(stderr, "Invalid regular-expression pattern.\n");
+                            state = kRSParseState_Error;
+                            break;
+                        }
+                        else
+                        {
+                            char *tmpfname = strdup(buf);
+                            char *username = NULL;
+                            char *suffix = NULL;
+                            
+                            if (!tmpfname)
+                            {
+                                state = kRSParseState_Error;
+                                fprintf(stderr, "No memory.\n");
+                                break;
+                            }
+                            
+                            if (regexec(&regexp, buf, (size_t)3, matches, 0) != 0)
+                            {
+                                /* No match - the filename does not start with the ~ symbol, so no need to 
+                                 * figure out real path. */
+                                snprintf(atfname, sizeof(atfname), "%s", tmpfname);
+                            }
+                            else
+                            {
+                                tmpfname[matches[1].rm_eo] = '\0';
+                                username = strdup(tmpfname + matches[1].rm_so);
+                                
+                                if (!username)
+                                {
+                                    state = kRSParseState_Error;
+                                    fprintf(stderr, "No memory.\n");
+                                    break;
+                                }
+                                
+                                tmpfname[matches[2].rm_eo] = '\0';
+                                suffix = strdup(tmpfname + matches[2].rm_so);
+                                
+                                if (!suffix)
+                                {
+                                    state = kRSParseState_Error;
+                                    fprintf(stderr, "No memory.\n");
+                                    break;
+                                }
+                                
+                                pwordrec = getpwnam(username);
+                                
+                                if (pwordrec)
+                                {
+                                    snprintf(atfname, sizeof(atfname), "%s/%s", pwordrec->pw_dir, suffix);
+                                }
+                            }
+
+                            free(suffix);
+                            free(username);
+                            free(tmpfname);
+                            regfree(&regexp);
+                        }
+                        
+                        if (buf && stat(atfname, &stBuf) == 0)
                         {
                             if (S_ISREG(stBuf.st_mode))
                             {
                                 /* read a line */
-                                if ((atfile = fopen(buf, "r")) == NULL)
+                                if ((atfile = fopen(atfname, "r")) == NULL)
                                 {
-                                    fprintf(stderr, "Cannot open @file %s for reading, skipping.\n", buf);
+                                    fprintf(stderr, "Cannot open @file %s for reading, skipping.\n", atfname);
                                 }
                                 else
                                 {
@@ -8863,13 +8934,13 @@ int ParseRecSetDesc(const char *recsetsStr,
                             }
                             else
                             {
-                                fprintf(stderr, "@file %s is not a regular file, skipping.\n", buf);
+                                fprintf(stderr, "@file %s is not a regular file, skipping.\n", atfname);
                             }
                         }
                         else
                         {
                             perror(NULL);
-                            fprintf(stderr, "Cannot find @file %s, skipping.\n", buf);
+                            fprintf(stderr, "Cannot find @file %s, skipping.\n", atfname);
                         }
                     }
                 }
