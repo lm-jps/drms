@@ -3858,16 +3858,88 @@ int drms_record_getinfo(DRMS_RecordSet_t *rs)
     return status;
 }
 
+typedef HContainer_t * Tracker_t;
+
+static void TrackerMakeRecHash(DRMS_Record_t *rec, char *buf, size_t sz)
+{
+    snprintf(buf, sz, "%08p", rec);    
+}
+
+static Tracker_t *TrackerGetDelRecTracker(int *wascreated)
+{
+    static Tracker_t tracker = NULL;
+    
+    if (!wascreated)
+    {
+        return NULL;
+    }
+    
+    if (!tracker)
+    {
+        tracker = hcon_create(sizeof(char), DRMS_MAXHASHKEYLEN, NULL, NULL, NULL, NULL, 0);
+        *wascreated = 1;
+    }
+    else
+    {
+        *wascreated = 0;
+    }
+    
+    return &tracker;
+}
+
+/* The following Tracker functions assume that a valid Tracker_t is passed in - otherwise they are noops. */
+static void TrackerFreeTracker(Tracker_t *tracker)
+{
+    if (tracker)
+    {
+        /* Will set tracker in TrackerGetDelRecTracker() to NULL. */
+        hcon_destroy(tracker);
+    }
+}
+
+static int TrackerRecDeleted(Tracker_t tracker, DRMS_Record_t *rec)
+{
+    char hashkey[DRMS_MAXHASHKEYLEN];
+    
+    if (tracker)
+    {
+        TrackerMakeRecHash(rec, hashkey, sizeof(hashkey));
+        return (hcon_member(tracker, hashkey));
+    }
+    else
+    {
+        return 0;
+    }
+}
+
+static int TrackerInsertRec(Tracker_t tracker, DRMS_Record_t *rec)
+{
+    char hashkey[DRMS_MAXHASHKEYLEN];
+    char yes = 'y';
+    
+    if (tracker)
+    {
+        TrackerMakeRecHash(rec, hashkey, sizeof(hashkey));
+        hcon_insert(tracker, hashkey, &yes);
+    }
+}
+
 /* Call drms_free_record for each record in a record set. */
 void drms_free_records(DRMS_RecordSet_t *rs)
 {
     int i;
+    Tracker_t tracker = NULL;
+    Tracker_t *trackerRef = NULL;
     HIterator_t *hit = NULL;
     DRMS_Link_t *link = NULL;
     DRMS_Record_t *lrec = NULL;
     char hashkey[DRMS_MAXHASHKEYLEN];
     DRMS_Env_t *env = NULL;
-
+    DRMS_RecordSet_t *rslink = NULL;
+    DRMS_Record_t *delrec = NULL;
+    int wascreated = 0;
+    int wascreatedEver = 0;
+    
     if (!rs)
         return;
     
@@ -3876,38 +3948,112 @@ void drms_free_records(DRMS_RecordSet_t *rs)
         for (i=0; i<rs->n; i++)
             if (rs->records[i]) 
             {
-               env = rs->records[i]->env;
+                /* FIGURED IT OUT!! Go Art, go me! (sorry, this took a LONG time to understand the seg fault).
+                 *
+                 * We are trying to close a set of records, and the set of records that the original
+                 * set link to. The problem is that there may be one or more records that are in both sets!
+                 * If record A in rs links to record B, and record B exists in rs too (it is rs->records[x]), 
+                 * and we free record A, we then follow links to find and free record B. Then
+                 * as we iterate through rs, we encounter record B. B's record struct got freed, 
+                 * but rs->records[x] still points to the defunct record B struct! So, rs->records[x] is invalid and
+                 * will likely cause a seg fault in the code below.
+                 * 
+                 * To cope with these miserable links, we need to always check rs->records[i] before attempting
+                 * to delete it and the record, if any, to which it links.
+                 *
+                 * The downside of all this is that if a module opens record X in rs1 and its target
+                 * record Y in rs2, and then the module frees record X, this will cause record Y to be freed.
+                 * But rs2 will now have an invalid record pointer in it. The chances of this problem happening
+                 * are extremely small, but if it does happen, it will cause a lot of pain. Hopefully 
+                 * somebody will see this comment though. Even if we don't clean up linked records here
+                 * a similar problem exists. If a module opens a record and its linked record, and then frees
+                 * the linked record, the original linked-record pointer becomes invalid.
+                 *
+                 * The puzzle can be solved with refcounting, but who has time to implement this and 
+                 * likely destabilize DRMS. Every time a module opens a record, the refcount could
+                 * be incremented, and every time a record is freed, the refcount is decremented. And 
+                 * when the refcount reaches zero, then we truly free the record.
+                 */
+                
+                /* Make sure that this record has not already been deleted. */
+                trackerRef = TrackerGetDelRecTracker(&wascreated);
+                tracker = *trackerRef; /* trackerRef cannot be NULL (it is the address of a static variable) */
 
-               /* Follow all links and free target records. */
-               hit = hiter_create(&rs->records[i]->links);
-               if (hit)
-               {
-                  while ((link = (DRMS_Link_t *)hiter_getnext(hit)) != NULL)
-                  {
-                     if (link->recnum >= 0)
-                     {
-                        /* The link has been resolved, which probably happened via a call 
-                         * to drm_link_follow(), which means that the linked record may
-                         * be in memory. */
-                        drms_make_hashkey(hashkey, link->info->target_series, link->recnum);
-                        lrec = hcon_lookup(&env->record_cache, hashkey);
-
-                        if (lrec)
+                if (!tracker)
+                {
+                    fprintf(stderr, "WARNING: Couldn't obtain record tracker; not freeing records.\n");
+                    break;
+                }
+                
+                if (wascreated)
+                {
+                    wascreatedEver = 1;
+                }
+                
+                if (TrackerRecDeleted(tracker, rs->records[i]))
+                {
+                    continue;
+                }
+                
+                env = rs->records[i]->env;
+                
+                /* Follow all links and free target records. */
+                hit = hiter_create(&rs->records[i]->links);
+                if (hit)
+                {
+                    while ((link = (DRMS_Link_t *)hiter_getnext(hit)) != NULL)
+                    {
+                        if (link->recnum >= 0)
                         {
-                           drms_free_record(lrec);
+                            /* The link has been resolved, which probably happened via a call 
+                             * to drm_link_follow(), which means that the linked record may
+                             * be in memory. */
+                            drms_make_hashkey(hashkey, link->info->target_series, link->recnum);
+                            lrec = hcon_lookup(&env->record_cache, hashkey);
+                            
+                            if (lrec && lrec->readonly)
+                            {
+                                /* Don't free records that are writeable - those were not opened in 
+                                 * response to following links. */
+                                
+                                /* Gotta recurse, in case the linked record links to another record. */
+                                rslink = malloc(sizeof(DRMS_RecordSet_t));
+                                
+                                if (!rslink)
+                                {
+                                    /* Just skip this record. Go on to the next, the program may die somewhere else.*/
+                                    break;
+                                }
+                                
+                                rslink->n = 1;
+                                rslink->records = malloc(sizeof(DRMS_Record_t *));
+                                rslink->records[0] = lrec;
+                                rslink->ss_n = 0;
+                                rslink->ss_queries = NULL;
+                                rslink->ss_types = NULL;
+                                rslink->ss_starts = NULL;
+                                rslink->ss_currentrecs = NULL;
+                                rslink->cursor = NULL;
+                                
+                                delrec = lrec;
+                                drms_free_records(rslink);
+                                rslink = NULL;
+                            }
                         }
-                     }
-                  }
-
-                  hiter_destroy(&hit);
-               }
-               else
-               {
-                  /* Don't do nuthin'. There is no return value from this function. */
-               }
-
-               /* Free source record. */
-               drms_free_record(rs->records[i]);
+                    }
+                    
+                    hiter_destroy(&hit);
+                }
+                else
+                {
+                    /* Don't do nuthin'. There is no return value from this function. */
+                }
+                
+                /* Free source record. */
+                delrec = rs->records[i];
+                drms_free_record(rs->records[i]);
+                rs->records[i] = NULL;
+                TrackerInsertRec(tracker, delrec);
             }
         
         if (rs->n>0 && rs->records)
@@ -3918,49 +4064,123 @@ void drms_free_records(DRMS_RecordSet_t *rs)
         /* There are possibly rs->cursor->chunksize records to be freed. */
         if (rs->records)
         {
-           for (i=0; i < rs->cursor->chunksize; i++)
-           {
-              if (rs->records[i]) 
-              {
-                 env = rs->records[i]->env;
-
-                 /* Follow all links and free target records. */
-                 hit = hiter_create(&rs->records[i]->links);
-                 if (hit)
-                 {
-                    while ((link = (DRMS_Link_t *)hiter_getnext(hit)) != NULL)
+            for (i=0; i < rs->cursor->chunksize; i++)
+            {
+                if (rs->records[i]) 
+                {
+                    /* FIGURED IT OUT!! Go Art, go me! (sorry, this took a LONG time to understand the seg fault).
+                     *
+                     * We are trying to close a set of records, and the set of records that the original
+                     * set link to. The problem is that there may be one or more records that are in both sets!
+                     * If record A in rs links to record B, and record B exists in rs too (it is rs->records[x]), 
+                     * and we free record A, we then follow links to find and free record B. Then
+                     * as we iterate through rs, we encounter record B. B's record struct got freed, 
+                     * but rs->records[x] still points to the defunct record B struct! So, rs->records[x] is invalid and
+                     * will likely cause a seg fault in the code below.
+                     * 
+                     * To cope with these miserable links, we need to always check rs->records[i] before attempting
+                     * to delete it and the record, if any, to which it links.
+                     *
+                     * The downside of all this is that if a module opens record X in rs1 and its target
+                     * record Y in rs2, and then the module frees record X, this will cause record Y to be freed.
+                     * But rs2 will now have an invalid record pointer in it. The chances of this problem happening
+                     * are extremely small, but if it does happen, it will cause a lot of pain. Hopefully 
+                     * somebody will see this comment though. Even if we don't clean up linked records here
+                     * a similar problem exists. If a module opens a record and its linked record, and then frees
+                     * the linked record, the original linked-record pointer becomes invalid.
+                     *
+                     * The puzzle can be solved with refcounting, but who has time to implement this and 
+                     * likely destabilize DRMS. Every time a module opens a record, the refcount could
+                     * be incremented, and every time a record is freed, the refcount is decremented. And 
+                     * when the refcount reaches zero, then we truly free the record.
+                     */
+                    
+                    /* Make sure that this record really exists. */
+                    trackerRef = TrackerGetDelRecTracker(&wascreated);
+                    tracker = *trackerRef; /* trackerRef cannot be NULL (it is the address of a static variable) */
+                    
+                    if (!tracker)
                     {
-                       if (link->recnum >= 0)
-                       {
-                          /* The link has been resolved, which probably happened via a call
-                           * to drm_link_follow(), which means that the linked record may
-                           * be in memory. */
-                          drms_make_hashkey(hashkey, link->info->target_series, link->recnum);
-                          lrec = hcon_lookup(&env->record_cache, hashkey);
-
-                          if (lrec)
-                          {
-                             drms_free_record(lrec);
-                          }
-                       }
+                        fprintf(stderr, "WARNING: Couldn't obtain record tracker; not freeing records.\n");
+                        break;
+                    }
+                    
+                    if (wascreated)
+                    {
+                        wascreatedEver = 1;
+                    }
+                    
+                    if (TrackerRecDeleted(tracker, rs->records[i]))
+                    {
+                        continue;
                     }
 
-                    hiter_destroy(&hit);
-                 }
-                 else
-                 {
-                    /* Don't do nuthin'. There is no return value from this function. */
-                 }
-
-                 /* Free source record. */
-                 drms_free_record(rs->records[i]);
-              }
-           }
-           
-           if (rs->cursor->chunksize > 0)
-           {
-              free(rs->records);
-           }
+                    env = rs->records[i]->env;
+                    
+                    /* Follow all links and free target records. */
+                    hit = hiter_create(&rs->records[i]->links);
+                    if (hit)
+                    {
+                        while ((link = (DRMS_Link_t *)hiter_getnext(hit)) != NULL)
+                        {
+                            if (link->recnum >= 0)
+                            {
+                                /* The link has been resolved, which probably happened via a call
+                                 * to drm_link_follow(), which means that the linked record may
+                                 * be in memory. */
+                                drms_make_hashkey(hashkey, link->info->target_series, link->recnum);
+                                lrec = hcon_lookup(&env->record_cache, hashkey);
+                                
+                                if (lrec && lrec->readonly)
+                                {
+                                    /* Don't free records that are writeable - those were not opened in 
+                                     * response to following links. */
+                                    
+                                    /* Gotta recurse, in case the linked record links to another record. */
+                                    rslink = malloc(sizeof(DRMS_RecordSet_t));
+                                    
+                                    if (!rslink)
+                                    {
+                                        /* Just skip this record. Go on to the next, the program may die somewhere else.*/
+                                        break;
+                                    }
+                                    
+                                    rslink->n = 1;
+                                    rslink->records = malloc(sizeof(DRMS_Record_t *));
+                                    rslink->records[0] = lrec;
+                                    rslink->ss_n = 0;
+                                    rslink->ss_queries = NULL;
+                                    rslink->ss_types = NULL;
+                                    rslink->ss_starts = NULL;
+                                    rslink->ss_currentrecs = NULL;
+                                    rslink->cursor = NULL;
+                                    
+                                    delrec = lrec;
+                                    drms_free_records(rslink);
+                                    rslink = NULL;
+                                }
+                            }
+                        }
+                        
+                        hiter_destroy(&hit);
+                    }
+                    else
+                    {
+                        /* Don't do nuthin'. There is no return value from this function. */
+                    }
+                    
+                    /* Free source record. */
+                    delrec = rs->records[i];
+                    drms_free_record(rs->records[i]);
+                    rs->records[i] = NULL;
+                    TrackerInsertRec(tracker, delrec);                    
+                }
+            }
+            
+            if (rs->cursor->chunksize > 0)
+            {
+                free(rs->records);
+            }
         }
     }
     
@@ -4004,6 +4224,12 @@ void drms_free_records(DRMS_RecordSet_t *rs)
     rs->ss_n = 0;
     
     free(rs);
+    
+    /* Free only the top-level tracker!! */
+    if (tracker && wascreatedEver)
+    {
+        TrackerFreeTracker(trackerRef);
+    }
 }
 
 /*********************** Primary functions *********************/
@@ -8514,7 +8740,7 @@ int ParseRecSetDesc(const char *recsetsStr,
                         
                         /* buf has filename */
                         *pcBuf = '\0';
-                        if (buf && !stat(buf, &stBuf))
+                        if (buf && stat(buf, &stBuf) == 0)
                         {
                             if (S_ISREG(stBuf.st_mode))
                             {
@@ -8642,6 +8868,7 @@ int ParseRecSetDesc(const char *recsetsStr,
                         }
                         else
                         {
+                            perror(NULL);
                             fprintf(stderr, "Cannot find @file %s, skipping.\n", buf);
                         }
                     }
