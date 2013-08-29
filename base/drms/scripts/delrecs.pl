@@ -56,6 +56,7 @@ else
 {
     my($spec);
     my($series);
+    my($filter);
     my($cmd);
     my($rsp);
     my($stmnt);
@@ -77,45 +78,12 @@ else
     $dbport = $args->Get(&kArgDbport);
     $dbuser = &kDBSuperUser;
     
-    # Call show_info -e to parse the record-set specification into constituent parts.
-    $cmd = "show_info -eq '$spec'";
-    $pipe = new drmsPipeRun($cmd, 0);
-    
-    if (defined($pipe))
-    {
-        $pipe->ReadPipe(\$rsp);
-        
-        # close the read pipe
-        if ($pipe->ClosePipe())
-        {
-            print STDERR "Failure reading from pipe.\n";
-            $rv = &kRetPipeRead;
-        }
-        else
-        {
-            if ($rsp =~ /\s*(\S+)/)
-            {
-                $series = $1;
-            }
-            else
-            {
-                print STDERR "Unexpected response from show_info: $rsp.\n";
-                $rv = &kRetShowInfo;
-            }
-        }
-    }
-    else
-    {
-        print STDERR "Unable to call show_info.\n";
-        $rv = &kRetShowInfo;
-    }
-
     if ($rv == &kRetSuccess)
     {
         # Call show_info to get the list of records on which to operate. Also fetch the record-set specifications
         # for each individual record. These specifications will be printed to stdout so we know exactly which 
         # records were deleted.
-        $cmd = "show_info -qri '$spec'";
+        $cmd = "show_info -qrie ds='$spec'";
         $pipe = new drmsPipeRun($cmd, 0);
         
         if (defined($pipe))
@@ -137,6 +105,17 @@ else
                     {
                         $recnum = sprintf("%d", $1);
                         $rspec = $2;
+                        if ($rspec =~ /\s*([^|]+)\|(\S+)\s*/)
+                        {
+                            $series = $1;
+                            $filter = $2;
+                        }
+                        else
+                        {
+                            print STDERR "Unexpected response from show_info: $rsp.\n";
+                            $rv = &kRetShowInfo;
+                            last;
+                        }
                     }
                     else
                     {
@@ -153,7 +132,7 @@ else
                         @recs = ();
                         $stmnt = "DELETE FROM $series WHERE recnum IN ($reclist)";
 
-                        $rv = ExeStmnt($dbh, $stmnt, 1, "Deleting records from $series: $stmnt\n");
+                        $rv = ExeStmnt($dbh, $stmnt, 0, "Deleting records from $series: $stmnt\n");
                         if ($rv != &kRetSuccess)
                         {
                             last;
@@ -162,7 +141,7 @@ else
                     
                     # one recnum - add it to the list of recnums
                     push(@recs, $recnum);
-                    print "$recnum:$rspec\n";
+                    print "$recnum:$series$filter\n";
                 }
                 
                 if ($rv == &kRetSuccess)
@@ -174,7 +153,7 @@ else
                         @recs = ();
                         $stmnt = "DELETE FROM $series WHERE recnum IN ($reclist)";
                         
-                        $rv = ExeStmnt($dbh, $stmnt, 1, "Deleting records from $series: $stmnt\n");
+                        $rv = ExeStmnt($dbh, $stmnt, 0, "Deleting records from $series: $stmnt\n");
                     }
                 }
                 
