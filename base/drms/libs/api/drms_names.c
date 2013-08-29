@@ -2292,57 +2292,69 @@ WHERE
 /* returns 1 on syntax error, 0 otherwise. */
 char *drms_recordset_extractfilter(DRMS_Record_t *template, const char *in, int *status)
 {
-   int allvers = 0;
-   char *rsquery = strdup(in);
-   char *pc = rsquery;
-   char *rv = NULL;
-   RecordSet_Filter_t *dontcare = NULL;
-   char *filter = NULL;
-
-   /* Globals - bah. Initialize them just like is done in parse_record_set(). */
-   prime_keynum = 0;  
-   syntax_error = 0;  /* So far so good... */
-   recnum_filter = 0;
-
-   SKIPWS(pc);
-   if (!parse_name(&pc, template->seriesinfo->seriesname, DRMS_MAXSERIESNAMELEN))
-   {
-      SKIPWS(pc);
-
-      if (*pc == 0)
-      {
-         if (status)
-         {
+    int allvers = 0;
+    char *rsquery = strdup(in);
+    char *pc = rsquery;
+    char *rv = NULL;
+    RecordSet_Filter_t *dontcare = NULL;
+    char *filter = NULL;
+    
+    /* Globals - bah. Initialize them just like is done in parse_record_set(). */
+    prime_keynum = 0;  
+    syntax_error = 0;  /* So far so good... */
+    recnum_filter = 0;
+    
+    SKIPWS(pc);
+    if (!parse_name(&pc, template->seriesinfo->seriesname, DRMS_MAXSERIESNAMELEN))
+    {
+        SKIPWS(pc);
+        
+        if (*pc == 0)
+        {
+            if (status)
+            {
+                *status = 0;
+            }
+            
+            return NULL; /* no filter following name */
+        }
+        else if (*pc != '[')
+        {
+            if (status)
+            {
+                *status = 1;
+            }
+            
+            return NULL; /* syntax error */
+        }
+        
+        filter = pc;
+        dontcare = parse_record_set_filter(template, &pc, &allvers);
+        
+        /* pc points to the first char after any filter (there is no filter if dontcare is NULL) in rsquery. */
+        if (dontcare)
+        {
+            *pc = '\0';
+            rv = strdup(filter);
+            free_record_set_filter(dontcare);
+        }
+        
+        free(rsquery);
+        
+        if (status)
+        {
             *status = 0;
-         }
-
-         return NULL; /* no filter following name */
-      }
-      else if (*pc != '[')
-      {
-         if (status)
-         {
+        }
+    }
+    else
+    {
+        if (status)
+        {
             *status = 1;
-         }
-
-         return NULL; /* syntax error */
-      }
-
-      filter = pc;
-      dontcare = parse_record_set_filter(template, &pc, &allvers);
-
-      /* pc points to the first char after any filter (there is no filter if dontcare is NULL) in rsquery. */
-      if (dontcare)
-      {
-         *pc = '\0';
-         rv = strdup(filter);
-         free_record_set_filter(dontcare);
-      }
-
-      free(rsquery);
-   }
-
-   return rv;
+        }
+    }
+    
+    return rv;
 }
 
 // The mixed flag is meant to differentiate queries with prime index
