@@ -112,8 +112,10 @@ else
 
     if ($rv == &kRetSuccess)
     {
-        # Call show_info to get the list of records on which to operate.
-        $cmd = "show_info -qr '$spec'";
+        # Call show_info to get the list of records on which to operate. Also fetch the record-set specifications
+        # for each individual record. These specifications will be printed to stdout so we know exactly which 
+        # records were deleted.
+        $cmd = "show_info -qri '$spec'";
         $pipe = new drmsPipeRun($cmd, 0);
         
         if (defined($pipe))
@@ -124,11 +126,25 @@ else
             
             if (defined($dbh))
             {
+                my($recnum);
+                my($rspec);
+                
                 $nitems = 0;
                 while (($nbytes = $pipe->ReadLine(\$rsp)) > 0)
                 {
                     # $rsp is a string, and may have funky formatting.
-                    $rsp = sprintf("%d", $rsp);
+                    if ($rsp =~ /\s*(\S+)\s+(\S+)/)
+                    {
+                        $recnum = sprintf("%d", $1);
+                        $rspec = $2;
+                    }
+                    else
+                    {
+                        print STDERR "Unexpected response from show_info: $rsp.\n";
+                        $rv = &kRetShowInfo;
+                        last;
+                    }
+                    
                     if ($#recs + 1 >= &kChunkSize)
                     {
                         # Time to delete more records.
@@ -145,7 +161,8 @@ else
                     }
                     
                     # one recnum - add it to the list of recnums
-                    push(@recs, $rsp);
+                    push(@recs, $recnum);
+                    print "$recnum:$rspec\n";
                 }
                 
                 if ($rv == &kRetSuccess)
