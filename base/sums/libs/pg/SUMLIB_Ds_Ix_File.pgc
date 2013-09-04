@@ -11,6 +11,7 @@
  *   hmi_ground.raw_egse_hmifsfm or aia_ground.raw_egse_aiafsfm
  * NOTE: add 12Jan2009 Set dsmdiflg arg if Owning_Series is 
  *   hmi_ground.test_config_files
+ * NOTE: add 14Nov2012 Set dsmdiflg arg if dsds.mdi__lev1_5__fd_M_01h
 */
 
 #include <SUM.h>
@@ -67,6 +68,12 @@ EXEC SQL END DECLARE SECTION;
         *dsmdiflg = 1;
       }
       else if(!strcmp(own_series.arr, "sha.SNGB_rot30N")) { 
+        *dsmdiflg = 1;
+      }
+      else if(!strcmp(own_series.arr, "dsds.mdi__lev1_5__fd_M_01h")) { 
+        *dsmdiflg = 1;
+      }
+      else if(!strcmp(own_series.arr, "dsds.mdi__lev1_5__fd_M_96m_01d")) { 
         *dsmdiflg = 1;
       }
       else {
