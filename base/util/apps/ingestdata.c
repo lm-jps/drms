@@ -363,14 +363,18 @@ int DoIt(void)
                 ltime = localtime (&timenow);
                 strftime(tbuf, sizeof(tbuf) - 1, "%Y.%m.%d_%H:%M:%S_%Z", ltime);
                 
-                /* Set the DATE_imp keyword to this value */
-                if (drms_setkey_string(rec, kDateKeyName, tbuf))
+                if (drms_keyword_lookup(rec, kDateKeyName, 0))
                 {
-                    fprintf(stderr, "Couldn't set date keyword.\n");
-                    rv = kIDErr_DRMS;
-                    break;
+                    /* Set the DATE_imp keyword to this value */
+                    if (drms_setkey_string(rec, kDateKeyName, tbuf))
+                    {
+                        fprintf(stderr, "Couldn't set date keyword.\n");
+                        rv = kIDErr_DRMS;
+                        break;
+                    }
                 }
-                else
+                
+                if (drms_keyword_lookup(rec, kDateStrKeyName, 0))
                 {
                     if (drms_setkey_string(rec, kDateStrKeyName, tbuf))
                     {
