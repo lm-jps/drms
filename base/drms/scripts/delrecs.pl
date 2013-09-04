@@ -132,7 +132,7 @@ else
                         @recs = ();
                         $stmnt = "DELETE FROM $series WHERE recnum IN ($reclist)";
 
-                        $rv = ExeStmnt($dbh, $stmnt, 0, "Deleting records from $series: $stmnt\n");
+                        $rv = ExeStmnt($dbh, $stmnt, 1, "Deleting records from $series: $stmnt\n");
                         if ($rv != &kRetSuccess)
                         {
                             last;
@@ -153,7 +153,7 @@ else
                         @recs = ();
                         $stmnt = "DELETE FROM $series WHERE recnum IN ($reclist)";
                         
-                        $rv = ExeStmnt($dbh, $stmnt, 0, "Deleting records from $series: $stmnt\n");
+                        $rv = ExeStmnt($dbh, $stmnt, 1, "Deleting records from $series: $stmnt\n");
                     }
                 }
                 
