@@ -8,6 +8,13 @@
 
 EXEC SQL TYPE uint64_t IS unsigned long long;
 
+int DS_Rm_Commit()
+{
+  EXEC SQL COMMIT;
+  printk("Commit done at end of sum_rm cycle\n");
+  return(0);
+}
+
 int DS_RmDoX(char *name, double bytesdel)
 {
 
@@ -35,13 +42,15 @@ EXEC SQL END DECLARE SECTION;
   PALLOC_CURSOR pcursor[60000];
 
 //char STMT[] = "SELECT WD, SUMID, BYTES, EFFECTIVE_DATE, DS_INDEX, ARCHIVE_SUBSTATUS FROM SUM_PARTN_ALLOC where STATUS=2 and WD like '%s/%s' order by effective_date limit 60000";
-char STMT[] = "SELECT WD, SUMID, BYTES, EFFECTIVE_DATE, DS_INDEX, ARCHIVE_SUBSTATUS FROM SUM_PARTN_ALLOC where STATUS=2 and WD like '%s/%s' order by effective_date limit 600";
+//char STMT[] = "SELECT WD, SUMID, BYTES, EFFECTIVE_DATE, DS_INDEX, ARCHIVE_SUBSTATUS FROM SUM_PARTN_ALLOC where STATUS=2 and WD like '%s/%s' order by effective_date limit 600";
+//char STMT[] = "SELECT WD, SUMID, BYTES, EFFECTIVE_DATE, DS_INDEX, ARCHIVE_SUBSTATUS FROM SUM_PARTN_ALLOC where STATUS=2 and WD like '%s/%s' order by effective_date limit 1000";
+char STMT[] = "SELECT WD, SUMID, BYTES, EFFECTIVE_DATE, DS_INDEX, ARCHIVE_SUBSTATUS FROM SUM_PARTN_ALLOC where STATUS=2 and WD like '%s/%s' and effective_date < '%s' order by effective_date limit 4000";
 
 EXEC SQL INCLUDE sqlca;
 
   printk("DS_RmDoX\n");  
   bytesdeleted = 0.0;
-  sprintf(stmt, STMT, name, "%%");
+  sprintf(stmt, STMT, name, "%%", get_effdate(0));
   //printk("!!TEMP: stmt = %s\n", stmt);
 
   EXEC SQL WHENEVER SQLERROR GOTO sqlerror;
@@ -280,8 +289,3 @@ sqljsocerror1:
     return DS_DATA_QRY;
 }
 
-//Called at the end of each SIGALRM in sum_rm (i.e. typical 300sec cycle)
-int DS_Rm_Commit()
-{
-      EXEC SQL COMMIT;
-}
