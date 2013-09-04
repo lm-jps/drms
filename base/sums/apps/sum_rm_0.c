@@ -205,6 +205,7 @@ void alrm_sig(int sig)
     }
     active = 0;
   }
+  DS_Rm_Commit();
   alarm(sleep_sec);		/* start the timeout again */
 }
 
