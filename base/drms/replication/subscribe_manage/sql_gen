@@ -226,6 +226,7 @@ do
     fi
 
     if [ "$resp" != "0" ]
+    then
         logwrite "ERROR: createtabstructure returned $resp"
         rm -f $input_file
         exit 1
