@@ -50,8 +50,9 @@ static int GetDBMinVersion(DRMS_Session_t *session, char **versout)
             /* If the version table, su_production.minvers at Stanford, doesn't exist, bail out. */
             if (!TableExists(session, schema, table))
             {
-                fprintf(stderr, "Missing database table %s.\n", DRMS_MINVERSTABLE);
-                rv = 0;
+                /* If the drms.minvers table does not exist, then this means that the DRMS site does
+                 * not want to enforce a minimum version of the module/DRMS code. */
+                *versout = strdup("0.0");
             }
             else
             {
