@@ -22,6 +22,7 @@
 #include "serverdefs.h"
 
 extern PART ptabx[]; 	/* defined in SUMLIB_PavailRequest.pgc */
+extern SUMOPENED *sumopened_hdr;
 
 void logkey();
 extern int errno;
@@ -533,6 +534,7 @@ sumprog_1(rqstp, transp)
 {
   char procname[128];
   uint64_t ck_client;     //used to ck high bits of current_client
+  uint64_t uid;
 
 	//StartTimer(1);
 	union __svcargun {
@@ -686,7 +688,15 @@ sumprog_1(rqstp, transp)
               if(clnt_stat != 0) {
                 clnt_perrno(clnt_stat);		/* outputs to stderr */
                 write_log("***Error on clnt_call() back to RESPDO procedure\n");
-                write_log("***The original client caller has probably exited\n");
+                if(findkey(result, "uid")) {
+                  uid = getkey_uint64(result, "uid");
+                  write_log("***The original client caller has probably exited. Its uid=%lu\n", uid);
+                  write_log("***Removing from Sget7 active list of clients\n");
+                  remsumopened(&sumopened_hdr, (uint32_t)uid);
+                }
+                else {
+                  write_log("***The original client caller has probably exited\n");
+                }
                 call_err = clnt_sperror(current_client, "Err");
                 write_log("%s\n", call_err);
               }

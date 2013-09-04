@@ -22,6 +22,7 @@
 #include "serverdefs.h"
 
 extern PART ptabx[]; 	/* defined in SUMLIB_PavailRequest.pgc */
+extern SUMOPENED *sumopened_hdr;
 
 void logkey();
 extern int errno;
@@ -690,6 +691,8 @@ sumprog_1(rqstp, transp)
                 if(findkey(result, "uid")) {
                   uid = getkey_uint64(result, "uid");
                   write_log("***The original client caller has probably exited. Its uid=%lu\n", uid);
+                  write_log("***Removing from Sget active list of clients\n");
+                  remsumopened(&sumopened_hdr, (uint32_t)uid); 
                 }
                 else {
                   write_log("***The original client caller has probably exited\n");
