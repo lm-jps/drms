@@ -158,6 +158,7 @@ SINGLE:
           }
           else {
             $sql = "update sum_partn_alloc set status=4, archive_substatus=128, group_id=$group_id where ds_index=$dsix";
+            #$sql = "update sum_partn_alloc set archive_substatus=32 where ds_index=$dsix";
           }
           #print "$sql\n";
           $sth = $dbh->prepare($sql);

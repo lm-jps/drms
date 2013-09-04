@@ -569,7 +569,7 @@ while($u = pop(@sortusers)) {
   $maxby = pop(@sortby);
   $maxval = $maxby/$diver;
   $imax = int($maxval);
-  $imax++;
+  $imax++; $imax++;		#!!TEMP double inc
   $byx1 = $by1/$diver;
   $byx2 = $by2/$diver;
   $byx3 = $by3/$diver;
@@ -627,7 +627,7 @@ while(<TF>) {
   }
 }
 #!!!TBD: fill in with values in @tapeinfo
-  print OUT "\$('#basicGChart98').gchart({type: 'barVertGrouped', maxValue: 1200, title: 'Tape count in/out of T950', titleColor: 'green', barWidth: 25, backgroundColor: \$.gchart.gradient('horizontal', 'ccffff', 'ccffff00'),
+  print OUT "\$('#basicGChart98').gchart({type: 'barVertGrouped', maxValue: 1200, title: 'Tape count in/out of T950', titleColor: 'green', barWidth: 30, backgroundColor: \$.gchart.gradient('horizontal', 'ccffff', 'ccffff00'),
     markers: [
         \$.gchart.marker('text', 'green', 0, 0, 13, 'above', '$inrob0'),
         \$.gchart.marker('text', 'green', 0, 1, 13, 'above', '$inrob1'),
@@ -635,18 +635,24 @@ while(<TF>) {
         \$.gchart.marker('text', 'green', 0, 3, 13, 'above', '$inrob3'),
         \$.gchart.marker('text', 'green', 0, 4, 13, 'above', '$inrob4'),
         \$.gchart.marker('text', 'green', 0, 5, 13, 'above', '$inrob5'),
+        \$.gchart.marker('text', 'green', 0, 6, 13, 'above', '$inrob6'),
+        \$.gchart.marker('text', 'green', 0, 7, 13, 'above', '$inrob7'),
+        \$.gchart.marker('text', 'green', 0, 8, 13, 'above', '$inrob8'),
         \$.gchart.marker('text', 'red', 1, 0, 13, 'above', '$outrob0'),
         \$.gchart.marker('text', 'red', 1, 1, 13, 'above', '$outrob1'),
         \$.gchart.marker('text', 'red', 1, 2, 13, 'above', '$outrob2'),
         \$.gchart.marker('text', 'red', 1, 3, 13, 'above', '$outrob3'),
         \$.gchart.marker('text', 'red', 1, 4, 13, 'above', '$outrob4'),
-        \$.gchart.marker('text', 'red', 1, 5, 13, 'above', '$outrob5')
+        \$.gchart.marker('text', 'red', 1, 5, 13, 'above', '$outrob5'),
+        \$.gchart.marker('text', 'red', 1, 6, 13, 'above', '$outrob6'),
+        \$.gchart.marker('text', 'red', 1, 7, 13, 'above', '$outrob7'),
+        \$.gchart.marker('text', 'red', 1, 8, 13, 'above', '$outrob8')
     ],
- series: [\$.gchart.series('Robot', ['$inrob0', '$inrob1', '$inrob2', '$inrob3', '$inrob4', '$inrob5'], 'green'),
-        \$.gchart.series('Shelf', ['$outrob0', '$outrob1', '$outrob2', '$outrob3', '$outrob4', '$outrob5'], 'red')
+ series: [\$.gchart.series('Robot', ['$inrob0', '$inrob1', '$inrob2', '$inrob3', '$inrob4', '$inrob5', '$inrob6', '$inrob7', '$inrob8'], 'green'),
+        \$.gchart.series('Shelf', ['$outrob0', '$outrob1', '$outrob2', '$outrob3', '$outrob4', '$outrob5', '$outrob6', '$outrob7', '$outrob8'], 'red')
  ],
   axes: [
-      \$.gchart.axis('bottom', ['hmi.tlm', 'aia.tlm', 'hmi.lev0a', 'aia.lev0', 'hmi.lev1', 'hmi>lev1'], 'black'),
+      \$.gchart.axis('bottom', ['hmi.tlm', 'aia.tlm', 'hmi.lev0a', 'aia.lev0', 'hmi.lev1', 'rdVtrack_fd05', 'rdVtrack_fd15', 'rdVtrack_fd30', 'hmi>lev1'], 'black'),
       \$.gchart.axis('left', 0, 1200, 'black', 'right'),
       \$.gchart.axis('left', ['#'], [50], 'black', 'right')
   ],

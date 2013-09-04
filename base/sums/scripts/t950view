@@ -2233,7 +2233,7 @@ sub Exptlm_sub {
     $exptlmf->destroy();
   }
   $exptlmf = $mw->Toplevel();
-  $exptlmf->geometry("310x700");
+  $exptlmf->geometry("310x900");
   $exptlmf->title("export closed tapes");
   if(!$interactive) {
     $msg = "\nSorry, you are not the interactive user. You cannot do Export.";
@@ -2419,6 +2419,97 @@ sub Exptlm_sub {
     }
   }
   close(QLOG);
+
+  #hmi.rdVtrack is group 310 
+  $sqlcmd = "select tapeid,last_write from sum_tape where group_id=310 and closed=2 order by last_write";
+  $sth = $dbh->prepare($sqlcmd);
+  if ( !defined $sth ) {
+    print "Cannot prepare statement: $DBI::errstr\n";
+    system "/bin/rm $runtag";
+    exit;
+  }
+  $sth->execute;
+  $rdvtrackcnt = 0; @rdvtrackunloads= (); @xtemp = ();
+  $qlog = "/tmp/t950view.$user.310.log";
+  if(!open(QLOG, ">$qlog")) {
+    print "Can't open $qlog: $!\n";
+    system "/bin/rm $runtag";
+    exit;
+  }
+  print "View query result for group 310 in: $qlog\n";
+  print QLOG "sqlcmd is: $sqlcmd\n"; #!!TEMP
+  while(@rdvtrackquery = $sth->fetchrow()) { #get row from the DB
+    @xtemp = @rdvtrackquery;
+    $rdvtracktape = shift(@rdvtrackquery);
+    if(grep(/$rdvtracktape/, @slottapes)) {
+      #print "$rdvtracktape\n";
+      push(@rdvtrackunloads, $rdvtracktape);
+      print QLOG "@xtemp\n";
+      $rdvtrackcnt++;
+    }
+  }
+  close(QLOG);
+
+  #hmi.rdVpspec is group 311 
+  $sqlcmd = "select tapeid,last_write from sum_tape where group_id=311 and closed=2 order by last_write";
+  $sth = $dbh->prepare($sqlcmd);
+  if ( !defined $sth ) {
+    print "Cannot prepare statement: $DBI::errstr\n";
+    system "/bin/rm $runtag";
+    exit;
+  }
+  $sth->execute;
+  $rdVpspeccnt = 0; @rdVpspecunloads= (); @xtemp = ();
+  $qlog = "/tmp/t950view.$user.311.log";
+  if(!open(QLOG, ">$qlog")) {
+    print "Can't open $qlog: $!\n";
+    system "/bin/rm $runtag";
+    exit;
+  }
+  print "View query result for group 311 in: $qlog\n";
+  print QLOG "sqlcmd is: $sqlcmd\n"; #!!TEMP
+  while(@rdVpspecquery = $sth->fetchrow()) { #get row from the DB
+    @xtemp = @rdVpspecquery;
+    $rdVpspectape = shift(@rdVpspecquery);
+    if(grep(/$rdVpspectape/, @slottapes)) {
+      #print "$rdVpspectape\n";
+      push(@rdVpspecunloads, $rdVpspectape);
+      print QLOG "@xtemp\n";
+      $rdVpspeccnt++;
+    }
+  }
+  close(QLOG);
+
+  #hmi.tdVtimes/tdVtrack is group 320 
+  $sqlcmd = "select tapeid,last_write from sum_tape where group_id=320 and closed=2 order by last_write";
+  $sth = $dbh->prepare($sqlcmd);
+  if ( !defined $sth ) {
+    print "Cannot prepare statement: $DBI::errstr\n";
+    system "/bin/rm $runtag";
+    exit;
+  }
+  $sth->execute;
+  $tdVtrackcnt = 0; @tdVtrackunloads= (); @xtemp = ();
+  $qlog = "/tmp/t950view.$user.320.log";
+  if(!open(QLOG, ">$qlog")) {
+    print "Can't open $qlog: $!\n";
+    system "/bin/rm $runtag";
+    exit;
+  }
+  print "View query result for group 320 in: $qlog\n";
+  print QLOG "sqlcmd is: $sqlcmd\n"; #!!TEMP
+  while(@tdVtrackquery = $sth->fetchrow()) { #get row from the DB
+    @xtemp = @tdVtrackquery;
+    $tdVtracktape = shift(@tdVtrackquery);
+    if(grep(/$tdVtracktape/, @slottapes)) {
+      #print "$tdVtracktape\n";
+      push(@tdVtrackunloads, $tdVtracktape);
+      print QLOG "@xtemp\n";
+      $tdVtrackcnt++;
+    }
+  }
+  close(QLOG);
+
       $txt = "\nNumber of closed tapes\n\nHMI tlm: $hmicnt";
       $exptlmf->Label(-text => "$txt", -font => 'arial 16')->pack();
       $exptlmf->Button(
@@ -2460,6 +2551,27 @@ sub Exptlm_sub {
           -text => 'Export HMI > lev1',
           -background => 'lightyellow',
           -command => [\&ExpHMItlm_sub, 6],	#hmi > lev1 is group 6
+          )->pack(-pady => 0);
+      $txt = "\nHMI rdvtrack: $rdvtrackcnt";
+      $exptlmf->Label(-text => "$txt", -font => 'arial 16')->pack();
+      $exptlmf->Button(
+          -text => 'Export HMI rdvtrack',
+          -background => 'lightyellow',
+          -command => [\&ExpHMItlm_sub, 310],	#hmi rdvtrack is group 310
+          )->pack(-pady => 0);
+      $txt = "\nHMI rdVpspec: $rdVpspeccnt";
+      $exptlmf->Label(-text => "$txt", -font => 'arial 16')->pack();
+      $exptlmf->Button(
+          -text => 'Export HMI rdVpspec',
+          -background => 'lightyellow',
+          -command => [\&ExpHMItlm_sub, 311],	#hmi rdVpspec is group 311
+          )->pack(-pady => 0);
+      $txt = "\nHMI tdVtimes/tdVtrack: $tdVtrackcnt";
+      $exptlmf->Label(-text => "$txt", -font => 'arial 16')->pack();
+      $exptlmf->Button(
+          -text => 'Export HMI tdVtimes/tdVtrack',
+          -background => 'lightyellow',
+          -command => [\&ExpHMItlm_sub, 320],	#hmi tdVtimes/tdVtrack is group 320
           )->pack(-pady => 0);
       $exptlmf->Button(
           -text => 'Redisplay-in case you retarted t950view',
@@ -2731,6 +2843,16 @@ sub ExpHMItlm_sub {
       while($ul = pop(@h1unloads)) {
         push(@txorder, $ul);
       }
+      last SWITCH;
+    }
+    if($grpn == 310) {
+      $xxcnt = $rdvtrackcnt;	#hmi.rdVtrack
+      @txorder = @rdvtrackunloads;
+      last SWITCH;
+    }
+    if($grpn == 311) {
+      $xxcnt = $rdVpspeccnt;	#hmi.rdVpspec
+      @txorder = @rdVpspecunloads;
       last SWITCH;
     }
   }

@@ -598,10 +598,13 @@ if(!$hmiaiaflg) {		#only for hmi
   }
 }
 
-#!!TBD: put in Isabelle's lfwrp limbfit program here for all fsn of this day
-#$cmd = "time /home/production/cvs/JSOC/bin/linux_x86_64/lfwrp bfsn=$firstfsn efsn=$lastfsn dsin='hmi.lev1[]' dsout=hmi.limbfit";
-#print "$cmd\n";
-#`$cmd`;
+if(!$hmiaiaflg) {               #only for hmi
+  #Jeneen is now going to do this in her higher order pipeline
+  #put in Isabelle's lfwrp limbfit program here for all fsn of this day
+  #$cmd = "time lfwrp tmpdir=/tmp22/jsocprod/lfwrp/ logdir=/tmp22/jsocprod/lfwrp/logs/ bfsn=$firstfsn efsn=$lastfsn dsout=hmi.limbfit_set";
+  #print "$cmd\n";
+  #`$cmd`;
+}
 
 #    #Now queue up the higher level processing with Phil's workflow:
 #    $pos = index($prevdate, '_');

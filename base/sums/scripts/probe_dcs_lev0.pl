@@ -7,7 +7,7 @@
 #performing all their functions correctly, and that the lev0
 #data is being generated ok on the backend pipeline.
 #
-#d02 runs this script every midnight:
+#d02 runs the following script every midnight:
 #/home/production/cvs/JSOC/base/sums/scripts/build_parc_file.pl
 #This make a .parc file in /usr/local/logs/parc to be sent from the 
 #pipeline system to a datacapture system. 
@@ -129,7 +129,7 @@ $found = 1;
 print "\nNow check on crontab entries for dcs0:\n";
 @ctab = `source $sshfilesource; ssh dcs0 crontab -l`;
 open(CR,">/tmp/crontab.dcs0");
-print CR "Last dcs0 'crontab -u production -l' was on $fulldate\n";
+print CR "#Last dcs0 'crontab -u production -l' was on $fulldate\n";
 print CR "@ctab";
 close(CR);
 `source $sshfilesource; scp /tmp/crontab.dcs0 solarweb:/tmp/loglog`;
@@ -181,7 +181,7 @@ print "\nNow check on crontab entries for dcs1:\n";
 @ctabclean = ();
 @ctab = `source $sshfilesource; ssh dcs1 crontab -l`;
 open(CR,">/tmp/crontab.dcs1");
-print CR "Last dcs1 'crontab -u production -l' was on $fulldate\n";
+print CR "#Last dcs1 'crontab -u production -l' was on $fulldate\n";
 print CR "@ctab";
 close(CR);
 `source $sshfilesource; scp /tmp/crontab.dcs1 solarweb:/tmp/loglog`;
@@ -233,7 +233,7 @@ print "\nNow check on crontab entries for j1:\n";
 @ctabclean = ();
 @ctab = `source $sshfilesource; ssh j1.stanford.edu crontab -l`;
 open(CR,">/tmp/crontab.j1");
-print CR "Last j1 'crontab -u production -l' was on $fulldate\n";
+print CR "#Last j1 'crontab -u production -l' was on $fulldate\n";
 print CR "@ctab";
 close(CR);
 `source $sshfilesource; scp /tmp/crontab.j1 solarweb:/tmp/loglog`;
@@ -253,7 +253,7 @@ print "\nNow check on crontab entries for d02:\n";
 @ctabclean = ();
 @ctab = `crontab -l`;
 open(CR,">/tmp/crontab.d02");
-print CR "Last d02 'crontab -u production -l' was on $fulldate\n";
+print CR "#Last d02 'crontab -u production -l' was on $fulldate\n";
 print CR "@ctab";
 close(CR);
 `source $sshfilesource; scp /tmp/crontab.d02 solarweb:/tmp/loglog`;
@@ -272,7 +272,7 @@ else {
 print "\nNow get crontab entries for n02:\n";
 @ctab = `source $sshfilesource; ssh n02.stanford.edu crontab -l`;
 open(CR,">/tmp/crontab.n02");
-print CR "Last n02 'crontab -u production -l' was on $fulldate\n";
+print CR "#Last n02 'crontab -u production -l' was on $fulldate\n";
 print CR "@ctab";
 close(CR);
 `source $sshfilesource; scp /tmp/crontab.n02 solarweb:/tmp/loglog`;
@@ -280,9 +280,47 @@ close(CR);
 #print "\nNow get crontab entries for cl1n001 jsocprod:\n";
 #@ctab = `source $sshfilesource; ssh cl1n001.stanford.edu crontab -u jsocprod -l`;
 #open(CR,">/tmp/crontab.cl1n001");
-#print CR "Last cl1n001 'crontab -u jsocprod -l' was on $fulldate\n";
+#print CR "#Last cl1n001 'crontab -u jsocprod -l' was on $fulldate\n";
 #print CR "@ctab";
 #close(CR);
+
+print "\nNow check on log entries for j1:\n";
+@ctab = `source $sshfilesource; ssh j1.stanford.edu "cd /usr/local/logs/SUM; find . -maxdepth 1 -ctime -14 -type f | grep -v .gz | xargs ls -lt"`;
+open(CR,">/tmp/logtab.j1");
+print CR "/usr/local/logs/SUM> find . -maxdepth 1 -ctime -14 -type f | grep -v \.gz | xargs ls -lt\n";
+print CR "@ctab";
+close(CR);
+`source $sshfilesource; scp /tmp/logtab.j1 solarweb:/tmp/loglog`;
+
+print "\nNow check on log entries for d02:\n";
+@ctab = `source $sshfilesource; ssh d02.stanford.edu "cd /usr/local/logs/SUM; find . -maxdepth 1 -ctime -14 -type f | grep -v .gz | xargs ls -lt"`;
+open(CR,">/tmp/logtab.d02");
+print CR "/usr/local/logs/SUM> find . -maxdepth 1 -ctime -14 -type f | grep -v \.gz | xargs ls -lt\n";
+print CR "@ctab";
+close(CR);
+`source $sshfilesource; scp /tmp/logtab.d02 solarweb:/tmp/loglog`;
+
+print "\nNow check on log entries for dcs0:\n";
+@ctab = `source $sshfilesource; ssh dcs0 "cd /usr/local/logs/soc; find . -maxdepth 1 -ctime -14 -type f | grep -v .gz | xargs ls -lt"`;
+open(CR,">/tmp/logtab.dcs0");
+print CR "/usr/local/logs/soc> find . -maxdepth 1 -ctime -14 -type f | grep -v \.gz | xargs ls -lt\n";
+print CR "@ctab";
+close(CR);
+`source $sshfilesource; scp /tmp/logtab.dcs0 solarweb:/tmp/loglog`;
+
+print "\nNow check on log entries for dcs1:\n";
+@ctab = `source $sshfilesource; ssh dcs1 "cd /usr/local/logs/soc; find . -maxdepth 1 -ctime -14 -type f | grep -v .gz | xargs ls -lt"`;
+open(CR,">/tmp/logtab.dcs1");
+print CR "/usr/local/logs/soc> find . -maxdepth 1 -ctime -14 -type f | grep -v \.gz | xargs ls -lt\n";
+print CR "@ctab";
+close(CR);
+`source $sshfilesource; scp /tmp/logtab.dcs1 solarweb:/tmp/loglog`;
+
+#Log entries for cl1n00[1,2,3] are done on the local machine and 
+#scp'd to solarweb
+
+close(MLOG);
+
 
 if(!$found) { $mailflg = 1; }
 
