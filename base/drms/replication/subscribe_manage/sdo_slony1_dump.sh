@@ -2,7 +2,7 @@
 # ----------
 # slony1_dump.sh
 #
-# $Id: sdo_slony1_dump.sh,v 1.6 2013/09/05 16:41:29 arta Exp $
+# $Id: sdo_slony1_dump.sh,v 1.7 2013/09/05 16:53:27 arta Exp $
 #
 #	This script creates a special data only dump from a subscriber
 #	node. The stdout of this script, fed into psql for a database that
@@ -257,9 +257,8 @@ for tab in $tables ; do
     fi
 done
 
-# The stdout of from this call will contain SQL that runs on the client end. It creates the namespaces, series tables, etc. of 
-# the series being subscribed to.
-cmd="$kJSOCRoot/base/drms/replication/subscribe_manage/dumpreptables.pl config=$kJSOCRoot/proj/replication/etc/repserver.cfg client=$node sublist=$sublist idlist=$idlist newcl=$new_subscriber filectr=$output_filecounter 2>$SMworkDir/slony1_dump.$node.log"
+# The stdout of from this call will contain SQL that runs on the client end. It dumps the series tables.
+cmd="$kJSOCRoot/base/drms/replication/subscribe_manage/dumpreptables.pl config=$kJSOCRoot/proj/replication/etc/repserver.cfg client=$node sublist=$sublist idlist=$idlist newcl=$new_subscriber filectr=$output_filecounter 2>>$SMworkDir/slony1_dump.$node.log"
 echo "Executing $cmd" >$SMworkDir/slony1_dump.$node.log
 cp $SMworkDir/slony1_dump.$node.log $SMworkDir/slony1_dump.$node.bak.log
 toprint=`$cmd`
@@ -270,4 +269,4 @@ echo -n "$toprint"
 # Emit the commit for the dump to stdout.
 # ----
 #echo "commit;"
-echo "-- dump complete"
+echo "-- dump complete (test)"
