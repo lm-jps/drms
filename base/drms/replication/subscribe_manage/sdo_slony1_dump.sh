@@ -2,7 +2,7 @@
 # ----------
 # slony1_dump.sh
 #
-# $Id: sdo_slony1_dump.sh,v 1.7 2013/09/05 16:53:27 arta Exp $
+# $Id: sdo_slony1_dump.sh,v 1.8 2013/09/05 17:16:59 arta Exp $
 #
 #	This script creates a special data only dump from a subscriber
 #	node. The stdout of this script, fed into psql for a database that
@@ -242,18 +242,18 @@ fi
 
 for tab in $tables ; do
     eval tabname=\$tabname_$tab # $tabname now has a name of a table being subscribed to (like "hmi.m_45s").
-    if [ -n "$sublist" ] 
+    if [ -z "$sublist" ] 
     then
         sublist="$tabname"
     else
         sublist="$sublist,$tabname"
     fi
 
-    if [ -n "$idlist" ]
+    if [ -z "$idlist" ]
     then
-        idlist=$tab
+        idlist="$tab"
     else
-        idlist="$idlist,tab"
+        idlist="$idlist,$tab"
     fi
 done
 
@@ -269,4 +269,4 @@ echo -n "$toprint"
 # Emit the commit for the dump to stdout.
 # ----
 #echo "commit;"
-echo "-- dump complete (test)"
+echo "-- dump complete"
