@@ -87,6 +87,7 @@ else
     if (toolbox::GetCfg($config, \%cfg))
     {
         $rv = &kRetInvalidArgs;
+        print STDERR "Cannot open configuration file '$config'.\n";
     }
     else
     {
@@ -366,6 +367,10 @@ else
             
             ($rv == &kRetSuccess) ? $dbh->commit() : $dbh->rollback();
         } # defined($dbh)
+        else
+        {
+            print STDERR "Unable to connect to database using '$dsn'.\n";
+        }
     }
 }
 
