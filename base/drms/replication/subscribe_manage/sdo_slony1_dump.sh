@@ -2,7 +2,7 @@
 # ----------
 # slony1_dump.sh
 #
-# $Id: sdo_slony1_dump.sh,v 1.3 2013/08/21 16:23:16 arta Exp $
+# $Id: sdo_slony1_dump.sh,v 1.4 2013/09/05 14:46:18 arta Exp $
 #
 #	This script creates a special data only dump from a subscriber
 #	node. The stdout of this script, fed into psql for a database that
@@ -242,13 +242,15 @@ fi
 
 for tab in $tables ; do
     eval tabname=\$tabname_$tab # $tabname now has a name of a table being subscribed to (like "hmi.m_45s").
-    if [ -n "$sublist" ] then
+    if [ -n "$sublist" ] 
+    then
         sublist="$tabname"
     else
         sublist="$sublist,$tabname"
     fi
 
-    if [ -n "$idlist" ] then
+    if [ -n "$idlist" ]
+    then
         idlist=$tab
     else
         idlist="$idlist,tab"
