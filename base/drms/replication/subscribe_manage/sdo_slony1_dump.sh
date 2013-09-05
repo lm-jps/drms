@@ -2,7 +2,7 @@
 # ----------
 # slony1_dump.sh
 #
-# $Id: sdo_slony1_dump.sh,v 1.5 2013/09/05 16:26:30 arta Exp $
+# $Id: sdo_slony1_dump.sh,v 1.6 2013/09/05 16:41:29 arta Exp $
 #
 #	This script creates a special data only dump from a subscriber
 #	node. The stdout of this script, fed into psql for a database that
@@ -261,6 +261,7 @@ done
 # the series being subscribed to.
 cmd="$kJSOCRoot/base/drms/replication/subscribe_manage/dumpreptables.pl config=$kJSOCRoot/proj/replication/etc/repserver.cfg client=$node sublist=$sublist idlist=$idlist newcl=$new_subscriber filectr=$output_filecounter 2>$SMworkDir/slony1_dump.$node.log"
 echo "Executing $cmd" >$SMworkDir/slony1_dump.$node.log
+cp $SMworkDir/slony1_dump.$node.log $SMworkDir/slony1_dump.$node.bak.log
 toprint=`$cmd`
 
 echo -n "$toprint"
