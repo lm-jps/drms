@@ -140,7 +140,6 @@ else
         {
             # Use the serializable isolation level so that we have a consistent view of the 
             # database throughout the transaction.
-            print "-- Setting transaction isolation level to serializable\n";
             $stmnt = "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;";
             
             $rv = ExeStmnt($dbh, $stmnt, 1, "Starting db transaction: $stmnt\n");
@@ -156,9 +155,8 @@ else
                 # tables that happened between the start of the transaction and the issuance of the LOCK statements.
                 foreach my $table (@subtables)
                 {
-                    # LOCK <table> IN ROW EXCLUSIVE MODE
-                    print "-- Locking table $table.\n";
-                    $stmnt = "LOCK $table IN ROW EXCLUSIVE MODE;";
+                    # LOCK <table> IN SHARE MODE
+                    $stmnt = "LOCK $table IN SHARE MODE;";
                     $rv = ExeStmnt($dbh, $stmnt, 1, "Locking a table: $stmnt\n");
                     if ($rv != &kRetSuccess)
                     {
@@ -175,7 +173,6 @@ else
                 # be for records that are already in the dump.
                 #
                 # ENSURE THAT THE log-parser LOCK IS NOT BEING HELD!! Otherwise, deadlock will ensue.
-                print "-- Running the log parser.\n";
                 $cmd = $cfg{kJSOCRoot} . "/base/drms/replication/parselogs/parse_slon_logs.pl $config parselock.txt subscribelock.txt > /usr/local/pgsql/replication/live/log/cron.parse_slony_logs.log 2>&1";
                 
                 if (drmsSysRun::RunCmd($cmd) != 0)
@@ -190,7 +187,6 @@ else
             # I'm not sure what use it is to dump the tracking number.
             if ($rv == &kRetSuccess)
             {
-                print "-- Copying the slon counter to $filectr.\n";
                 $stmnt = "CREATE TEMP TABLE subscriber_slon_counter AS SELECT ac_num FROM $clnsp.sl_archive_counter;";
                 $stmnt = $stmnt . "COPY subscriber_slon_counter TO '$filectr';";
                 $rv = ExeStmnt($dbh, $stmnt, 1, "Dumping the current log number to $filectr: $stmnt\n");   
@@ -206,7 +202,6 @@ else
                     # ----
                     
                     # This goes into the .sql file. Everything that goes into the .sql file is sent to stdout.
-                    print "-- Setting the sequenence offline counter.\n";
                     print "COPY $clnsp.sl_sequence_offline FROM stdin;\n";
                     # This will provide the values that go into the $clnsp.sl_sequence_offline table at the client site. This command
                     # returns rows, unlike previous commands. Must call selectall_arrayref().
@@ -237,7 +232,6 @@ else
                         # Fill the setsync tracking table with the current status
                         # ----
                         # Returns rows.
-                        print "-- Set the current tracking number\n";
                         $stmnt = "SELECT 'INSERT INTO $clnsp.sl_archive_tracking values (' || ac_num::text || ', ''' || ac_timestamp::text || ''', CURRENT_TIMESTAMP);' FROM $clnsp.sl_archive_counter;";
                         $rrows = $dbh->selectall_arrayref($stmnt, undef);
                         
@@ -299,7 +293,6 @@ else
                         #   1       27804102        0     ...
                         #   2       27804102        1     ...
                         #   3       27804102        2     ...
-                        print "-- Dumping table $table\n";
                         print "COPY $table $fields FROM stdin;\n";
                         $stmnt = "COPY $table $fields TO stdout;"; # Acts like a print statement - goes to stdout. Does not return rows.
                         
