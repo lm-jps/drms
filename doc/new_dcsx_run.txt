@@ -1,10 +1,19 @@
+             dcs1x:/home/prodtest/cvs/JSOC/doc/new_dcsx_run.txt
+21Aug2013 16:58
+
 Here's info on the new dcs0x and dcs1x that will replace the
 original datacapture machines dcs0 (aia) and dcs1 (hmi).
 
 The new datacapture will now make lev0 data as well as continue
 to ingest the qac/tlm files into the SUMS and archive to tape.
 
-The tape archive is currently TBD.
+As user prodtest set up the ssh-agent:
+> ssh-agent | head -2 > /var/tmp/ssh-agent.env
+> chmod 600 /var/tmp/ssh-agent.env
+> source /var/tmp/ssh-agent.env
+> ssh-add
+(The password is written on my whiteboard (old production prod... passwd))
+NOTE: cron jobs use this /var/tmp/ssh-agent.env file
 
 ==================================================================
 The postgres is started/stopped by user postgres like so:
@@ -68,5 +77,23 @@ prodtest  52867  46164  0 13:29 pts/1    00:00:00 grep prodtest
 root     120148   2688  0 Jun05 ?        00:00:00 sshd: prodtest [priv]
 prodtest 120150 120148  0 Jun05 ?        00:00:05 sshd: prodtest@pts/0
 prodtest 120151 120150  0 Jun05 pts/0    00:00:00 -tcsh
+
+===========================================================================
+The dcs1x has been tested and the tararc also and is ready to go.
+A rsync has been done to save the code on a backend machine:
+
+/usr/bin/rsync --rsh=/usr/bin/ssh --rsync-path=/usr/bin/rsync -avz
+/home/prodtest/cvs/JSOC d00:/scr21/jim/dcs1x_backup
+
+/usr/bin/rsync --rsh=/usr/bin/ssh --rsync-path=/usr/bin/rsync -avz /srv/www
+d00:/scr21/jim/dcs1x_backup
+
+
+
+on dcs1x as prodtest:
+> vncserver -geometry 1280x1024
+use the -beer passwd
+
+j0:/home/prodtest> vncviewer
 
 

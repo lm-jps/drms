@@ -1,4 +1,4 @@
-7/23/2013       dcs1x:/home/prodtest/cvs/JSOC/doc/convert_dcs1_to_dcs1x.txt
+8/01/2013       dcs1x:/home/prodtest/cvs/JSOC/doc/convert_dcs1_to_dcs1x.txt
 
 		PRELIMINARY NOTES
 		-------------------
@@ -68,6 +68,8 @@ drwxrwsr-x 51996 sumsadmin sums 1175552 Jun 27 01:11 SUM1/
 
 
 Populate the T50 with the original dcs1 tapes.
+
+NFS /data on dcs1x to cl1n001
 
 To start dcs1x, see:
 /home/prodtest/cvs/JSOC/doc/new_dcsx_run.txt
