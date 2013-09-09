@@ -6,6 +6,8 @@ NOTE: to use like jim after su - postgres (newuser1):
 > csh
 > source .jimalias
 
+NOTE!! For dcs1: Substitute dcs1 for dcs0 below and 5431 for 5430
+
 Stop dcs0 DB on dcs0: pg_ctl -D /var/lib/pgsql/dcs0_data -m fast stop
 
 Stop dcs0/dcs1 warm standby on dcs2:
