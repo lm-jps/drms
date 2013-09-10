@@ -147,6 +147,7 @@ else
   if ($CROTA2:r > -2 && $CROTA2:r < 2) set flags = ($flags -u)
 endif
 
+set fontcolor = "white"
 set project = $seriesname:r
 set project = $project:al
 set series = $seriesname:e
@@ -187,7 +188,7 @@ if ($CTinfo != NA) then
 set echo
   render_image -v in="$in" n=$limit  $min $max palette=$CTinfo \
    $scaling  outname=$seriesname  outid=time $scale type=$imtype  tkey=$tkey $flags \
-   out='| ppmlabel -color black -size {%0.75:5} -x 15 -y {%98} -text \"'"$DataName"':{ID}\" | pnmtojpeg -quality=95' 
+   out='| ppmlabel -color '$fontcolor' -size {%0.75:8} -x 15 -y {%98} -text \"'"$DataName"':{ID}\" | pnmtojpeg -quality=95' 
   set render_status = $?
 unset echo
 else # cases with no color table file, for now these will be AIA with mixed wavelengths
