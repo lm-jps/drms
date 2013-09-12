@@ -824,6 +824,7 @@ static DRMS_RecordSet_t *CreateRecordsFromDSDSKeylist(DRMS_Env_t *env,
    rset->ss_starts = NULL;
    rset->ss_currentrecs = NULL;
    rset->cursor = NULL;
+   rset->env = env;
 
    int iNewRec = 1;
    int primekeyCnt = 0;
@@ -1702,7 +1703,8 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                         rs->ss_types = NULL;
                         rs->ss_starts = NULL;
                         rs->ss_currentrecs = NULL;
-                        rs->cursor = NULL;		
+                        rs->cursor = NULL;
+                        rs->env = env;
                     }
                     
                     if (llist)
@@ -1834,6 +1836,7 @@ DRMS_RecordSet_t *drms_open_records_internal(DRMS_Env_t *env,
                 ret->ss_starts = NULL;
                 ret->ss_currentrecs = NULL;
                 ret->cursor = NULL;
+                ret->env = env;
             }
         }
         
@@ -2330,11 +2333,13 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
   rs->ss_queries = NULL;
   rs->ss_types = NULL;
   rs->ss_starts = NULL;
+  rs->env = env;
 
   /* Need to malloc (used by drms_record_fetchnext()). */
   rs->ss_currentrecs = (int *)malloc(sizeof(int));
   *rs->ss_currentrecs = -1;
   rs->cursor = NULL;
+  rs->env = env;
 
   series = template->seriesinfo->seriesname;
 
@@ -2488,6 +2493,7 @@ DRMS_RecordSet_t *drms_create_recprotos(DRMS_RecordSet_t *recset, int *status)
       detached->ss_starts = NULL;
       detached->ss_currentrecs = NULL;
       detached->cursor = NULL;
+      detached->env = NULL;
    }
    else
    {
@@ -2715,6 +2721,7 @@ static DRMS_RecordSet_t *drms_clone_records_internal(DRMS_RecordSet_t *rs_in,
   rs_out->ss_starts = NULL;
   rs_out->ss_currentrecs = NULL;
   rs_out->cursor = NULL;
+  rs_out->env = env;
   
   /* Outer loop over runs of input records from the same series. */
   first = 0;
@@ -3926,7 +3933,28 @@ static int TrackerInsertRec(Tracker_t tracker, DRMS_Record_t *rec)
     }
 }
 
+/* This ain't perfect, since rec could be garbage at this point. If it is garbage, then MOST LIKELY 
+ * this function is a noop, returning 0, which means the record is not cached, which is true 
+ * if the record is garbage. */
+static int IsCachedRecord(DRMS_Env_t *env, DRMS_Record_t *rec)
+{
+   int ans = 0;
+   int drmsstat;
+
+   if (env && rec && rec->seriesinfo && rec->seriesinfo->seriesname && drms_series_exists(env, rec->seriesinfo->seriesname, &drmsstat))
+   {
+      char hashkey[DRMS_MAXHASHKEYLEN];
+
+      drms_make_hashkey(hashkey, rec->seriesinfo->seriesname, rec->recnum);
+      ans = (hcon_lookup(&env->record_cache, hashkey) != NULL);
+   }
+
+   return ans;
+}
+
 /* Call drms_free_record for each record in a record set. */
+/* ART: This function is for records that have been cached (inv env->record_cache). It is not
+ * for headless records. It won't free records of that type. */
 void drms_free_records(DRMS_RecordSet_t *rs)
 {
     int i;
@@ -3948,7 +3976,7 @@ void drms_free_records(DRMS_RecordSet_t *rs)
     if (!rs->cursor)
     {
         for (i=0; i<rs->n; i++)
-            if (rs->records[i]) 
+            if (IsCachedRecord(rs->env, rs->records[i])) 
             {
                 /* FIGURED IT OUT!! Go Art, go me! (sorry, this took a LONG time to understand the seg fault).
                  *
@@ -4036,6 +4064,7 @@ void drms_free_records(DRMS_RecordSet_t *rs)
                                 rslink->ss_starts = NULL;
                                 rslink->ss_currentrecs = NULL;
                                 rslink->cursor = NULL;
+                                rslink->env = NULL;
                                 
                                 delrec = lrec;
                                 drms_free_records(rslink);
@@ -4051,6 +4080,7 @@ void drms_free_records(DRMS_RecordSet_t *rs)
                     /* Don't do nuthin'. There is no return value from this function. */
                 }
                 
+                /* We could still have a problem. */
                 /* Free source record. */
                 delrec = rs->records[i];
                 drms_free_record(rs->records[i]);
@@ -4059,7 +4089,11 @@ void drms_free_records(DRMS_RecordSet_t *rs)
             }
         
         if (rs->n>0 && rs->records)
+        {
+           /* ART: This is not the correct thing to do. drms_free_record() may not have actually deleted all records. Only records whose 
+            * refcount was zero get deleted. */
             free(rs->records);
+        }
     }
     else
     {
@@ -4068,7 +4102,7 @@ void drms_free_records(DRMS_RecordSet_t *rs)
         {
             for (i=0; i < rs->cursor->chunksize; i++)
             {
-                if (rs->records[i]) 
+                if (IsCachedRecord(rs->env, rs->records[i])) 
                 {
                     /* FIGURED IT OUT!! Go Art, go me! (sorry, this took a LONG time to understand the seg fault).
                      *
@@ -4156,6 +4190,7 @@ void drms_free_records(DRMS_RecordSet_t *rs)
                                     rslink->ss_starts = NULL;
                                     rslink->ss_currentrecs = NULL;
                                     rslink->cursor = NULL;
+                                    rslink->env = NULL;
                                     
                                     delrec = lrec;
                                     drms_free_records(rslink);
@@ -4222,6 +4257,8 @@ void drms_free_records(DRMS_RecordSet_t *rs)
     {
         drms_free_cursor(&(rs->cursor));
     }
+
+    /* Do NOT free rs->env. That is still being used. */
     /* Must NOT set ss_n to 0 before calling drms_free_cursor(). */
     rs->ss_n = 0;
     
@@ -4291,6 +4328,7 @@ DRMS_Record_t *drms_clone_record(DRMS_Record_t *oldrec,
   rs_old.ss_starts = NULL;
   rs_old.ss_currentrecs = NULL;
   rs_old.cursor = NULL;
+  rs_old.env = oldrec->env;
 
   rs = drms_clone_records(&rs_old, lifetime, mode, status);
   if (rs && (rs->n==1))
@@ -4332,6 +4370,14 @@ int drms_close_record(DRMS_Record_t *rec, int action)
   rs_old->ss_starts = NULL;
   rs_old->ss_currentrecs = NULL;
   rs_old->cursor = NULL;
+  rs_old->env = rec->env; /* Frack - we really need to have env as an argument to this function
+                           * (rec could point to an invalid record). But this function is used,
+                           * and it typically should point to a valid record struct, so just
+                           * assume we can use the env struct that the record points to.
+                           * 
+                           * This function should really be deprecated since it is more efficient to
+                           * close sets of records.
+                           */
 
   return drms_close_records(rs_old, action);
 }
@@ -4362,6 +4408,8 @@ int drms_closeall_records(DRMS_Env_t *env, int action)
 
 /* Remove a record from the record cache and free any memory 
    allocated for it. */
+/* ART: This function is for records that have been cached (inv env->record_cache). It is not 
+ * for headless records. It won't free records of that type. */
 void drms_free_record(DRMS_Record_t *rec)
 {
    char hashkey[DRMS_MAXHASHKEYLEN];
@@ -4778,6 +4826,7 @@ static DRMS_RecordSet_t *drms_retrieve_records_internal(DRMS_Env_t *env,
   rs->ss_starts = NULL;
   rs->ss_currentrecs = NULL;
   rs->cursor = NULL;
+  rs->env = env;
 
   db_free_binary_result(qres);   
   free(query);
@@ -6344,6 +6393,7 @@ int drms_populate_record(DRMS_Env_t *env, DRMS_Record_t *rec, long long recnum)
   rs.ss_starts = NULL;
   rs.ss_currentrecs = NULL;
   rs.cursor = NULL;
+  rs.env = env;
 
   stat = drms_populate_records(env, &rs,qres);
   db_free_binary_result(qres);      
@@ -9576,6 +9626,8 @@ int drms_merge_record(DRMS_RecordSet_t *rs, DRMS_Record_t *rec)
          {
             drms_free_cursor(&(rs->cursor));
          }
+
+         /* Do not free rs->env. It is still being used. */
       } /* rs->ss_n > 0 */
 
       if (rs->records == NULL)
