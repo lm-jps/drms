@@ -7,6 +7,7 @@
 #undef DRMS_TYPES_C
 #include "xmem.h"
 #include "timeio.h"
+#include "atoinc.h"
 
 const char kDRMS_MISSING_VALUE[] = "DRMS_MISSING_VALUE";
 
@@ -2176,7 +2177,8 @@ double drms2double(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
   return result;  
 }
 
-
+/* Unit is used only if the input is a string. That string might be a time interval, not a time string, but 
+ * this function should still convert the time-interval string into a double */
 double drms2time(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
 {
   int stat;
@@ -2266,15 +2268,31 @@ double drms2time(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
     }
     break;
   case DRMS_TYPE_STRING: 
-    result = sscan_time(value->string_val);
-    /*    printf("Howdy! string='%s', result=%f, stat = %d\n",value->string_val,        result, stat); */
-    if (result < 0)	
-    {
-      stat = DRMS_BADSTRING;
-      result = DRMS_MISSING_TIME;
-    }
-    else
-      stat = DRMS_SUCCESS; 
+      {
+          TIME interval = 0;
+          
+          /* atoinc will return a number that is to be interpreted as a number of seconds. */
+          interval = atoinc(value->string_val);
+          if (interval > 0)
+          {
+              /* The string input is an interval, a number of seconds. */
+              result = interval;
+          }
+          else
+          {
+              /* The string input is a time string. */
+              result = sscan_time(value->string_val);
+              /*    printf("Howdy! string='%s', result=%f, stat = %d\n",value->string_val,        result, stat); */
+          }
+          
+          if (result < 0)	
+          {
+              stat = DRMS_BADSTRING;
+              result = DRMS_MISSING_TIME;
+          }
+          else
+              stat = DRMS_SUCCESS; 
+      }
     break;
   default:
     stat = DRMS_RANGE;

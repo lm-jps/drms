@@ -1284,67 +1284,102 @@ DRMS_Value_t drms_getkey_p(DRMS_Record_t *rec, const char *key, int *status)
 /***************** setkey_<type> family of functions **************/
 static int SetKeyInternal(DRMS_Record_t *rec, const char *key, DRMS_Value_t *value)
 {
-   DRMS_Keyword_t *keyword = NULL;;
-   DRMS_Keyword_t *indexkw = NULL;
-
-   if (rec ->readonly)
-   {
-      return DRMS_ERROR_RECORDREADONLY;
-   }
-
-   keyword = drms_keyword_lookup(rec, key, 0);
-   if (keyword != NULL )
-   {
-      if (keyword->info->islink || drms_keyword_isconstant(keyword))
-      {
-         return DRMS_ERROR_KEYWORDREADONLY;
-      }
-      else
-      {
-	 int retstat = drms_convert(keyword->info->type, 
-				    &keyword->value, 
-				    value->type, 
-				    &(value->value));
-
-         /* Catch conversion WARNINGS. drms_convert() can return
-         * non-zero statuses which are warnings, not errors.. */
-         /* retstat == DRMS_BADSTRING, DRMS_RANGE are really errors. */
-         if (retstat == DRMS_INEXACT)
-         {
-            retstat = DRMS_SUCCESS;
-         }
-
-	 if (!retstat && drms_keyword_isslotted(keyword))
-	 {
-	    /* Must also set index keyword */
-	    DRMS_Value_t indexval;
-	    DRMS_Value_t inval;
-
-	    inval.value = keyword->value;
-	    inval.type = keyword->info->type;
-
-	    retstat = drms_keyword_slotval2indexval(keyword, 
-						    &inval,
-						    &indexval,
-						    NULL);
-
-	    if (!retstat)
-	    {
-	       indexkw = drms_keyword_indexfromslot(keyword);
-	       retstat = drms_convert(indexkw->info->type,
-				      &(indexkw->value),
-				      indexval.type,
-				      &(indexval.value));
-	    }
-	 }
-
-	 return retstat;
-      }
-   }
-   else
-   {
-      return DRMS_ERROR_UNKNOWNKEYWORD; 
-   }
+    DRMS_Keyword_t *keyword = NULL;
+    DRMS_Keyword_t *indexkw = NULL;
+    int retstat = DRMS_MISSING_INT; /* Use the minimum value as a flag to track whether retstat was set. */
+    
+    if (rec ->readonly)
+    {
+        return DRMS_ERROR_RECORDREADONLY;
+    }
+    
+    keyword = drms_keyword_lookup(rec, key, 0);
+    if (keyword != NULL )
+    {
+        if (keyword->info->islink || drms_keyword_isconstant(keyword))
+        {
+            return DRMS_ERROR_KEYWORDREADONLY;
+        }
+        else
+        {
+            /* The input value could be a time-interval string. If so, then append the 
+             * keyword unit (like 'minutes') to the time-interval. */
+            if (value->type == DRMS_TYPE_STRING && keyword->info->unit && *keyword->info->unit)
+            {
+                TIME interval = atoinc(keyword->info->unit);
+                char *dupe = NULL;
+                size_t sz;
+                
+                if (interval > 0)
+                {
+                    DRMS_Type_Value_t bs;
+                    
+                    dupe = strdup(value->value.string_val);
+                    sz = strlen(dupe) + 1;
+                    dupe = base_strcatalloc(dupe, keyword->info->unit, &sz);
+                    if (dupe)
+                    {
+                        bs.string_val = dupe;
+                        retstat = drms_convert(keyword->info->type, 
+                                               &keyword->value, 
+                                               value->type, 
+                                               &bs);
+                        free(dupe);
+                    }
+                    else
+                    {
+                        return DRMS_ERROR_OUTOFMEMORY;
+                    }
+                }
+            }
+            
+            if (drms_ismissing_int(retstat))
+            {
+                retstat = drms_convert(keyword->info->type, 
+                                       &keyword->value, 
+                                       value->type, 
+                                       &(value->value));
+            }
+            
+            /* Catch conversion WARNINGS. drms_convert() can return
+             * non-zero statuses which are warnings, not errors.. */
+            /* retstat == DRMS_BADSTRING, DRMS_RANGE are really errors. */
+            if (retstat == DRMS_INEXACT)
+            {
+                retstat = DRMS_SUCCESS;
+            }
+            
+            if (!retstat && drms_keyword_isslotted(keyword))
+            {
+                /* Must also set index keyword */
+                DRMS_Value_t indexval;
+                DRMS_Value_t inval;
+                
+                inval.value = keyword->value;
+                inval.type = keyword->info->type;
+                
+                retstat = drms_keyword_slotval2indexval(keyword, 
+                                                        &inval,
+                                                        &indexval,
+                                                        NULL);
+                
+                if (!retstat)
+                {
+                    indexkw = drms_keyword_indexfromslot(keyword);
+                    retstat = drms_convert(indexkw->info->type,
+                                           &(indexkw->value),
+                                           indexval.type,
+                                           &(indexval.value));
+                }
+            }
+            
+            return retstat;
+        }
+    }
+    else
+    {
+        return DRMS_ERROR_UNKNOWNKEYWORD; 
+    }
 }
 
 static int AppendStrKeyInternal(DRMS_Record_t *rec, const char *key, const char *val, int newline)

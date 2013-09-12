@@ -552,6 +552,8 @@ struct DRMS_RecordSet_struct
   /** \brief DRMS record-set cursor - essentially a pointer into the return set of database records */
   /* NULL cursor means that this record-set is NOT chunked. */
   DRMS_RecSetCursor_t *cursor;
+  /** \brief The environment in which this record-set was created. */
+  DRMS_Env_t *env;
 };
 
 /** \brief DRMS record struct reference */
