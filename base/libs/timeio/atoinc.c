@@ -125,6 +125,55 @@ TIME atoinc(char *str)
     return rv;
 }
 
+/* Same as atoinc, but accepts time intervals of zero length. Returns -1 if the input str is not a valid interval. */
+TIME atoinc2(char *str)
+{
+    double num, mult;
+    char *units, *base_units;
+    TIME rv;
+    
+    if (!str) return 0;
+    num = strtod (str, &units);
+    if (str == units) num = 1;  /* only the units specified, assume 1 */
+    if (*units == '_') units++; /* to be backwards compatible with form like 1_minutes */
+    
+    base_units = mprefix(units, &mult);    /* units may have prefix like giga */
+    if (*base_units == '_') base_units++;  /* to handle form like giga_hertz */
+    
+    switch(lookup(base_units,tmunit))
+    {
+        case 1: /* seconds	*/
+            rv = (mult*num);
+            break;
+        case 2: /* minutes	*/
+            rv = (mult*num*60.0);
+            break;
+        case 3: /* hours	*/
+            rv = (mult*num*3600.0);
+            break;
+        case 4: /* days		*/
+            rv = (mult*num*86400);
+            break;
+        case 5: /* weeks	*/
+            rv = (num*604800);
+            break;
+        case 6: /* carrington degrees	*/
+            rv = (num);
+            break;
+        case 7: /* carrington rotations	*/
+            rv = (num*360);
+            break;
+        case 8:	/* hertz		*/
+            rv = (mult*num);
+            break;
+        default:
+            rv = -1;
+            break;
+    }
+    
+    return rv;
+}
+
 #define integral(x) ((x)==(long)(x))
 
 char *sprint_inc(char *str, TIME inc)

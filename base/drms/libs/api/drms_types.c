@@ -2272,8 +2272,8 @@ double drms2time(DRMS_Type_t type, DRMS_Type_Value_t *value, int *status)
           TIME interval = 0;
           
           /* atoinc will return a number that is to be interpreted as a number of seconds. */
-          interval = atoinc(value->string_val);
-          if (interval > 0)
+          interval = atoinc2(value->string_val);
+          if (interval >= 0)
           {
               /* The string input is an interval, a number of seconds. */
               result = interval;
