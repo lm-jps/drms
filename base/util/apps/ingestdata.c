@@ -88,7 +88,7 @@ static int IsWS(const char *ch)
     return rv;
 }
 
-static IDError_t SetValue(const char *val, LinkedList_t *objlist, DRMS_Record_t *rec, const char *series)
+static IDError_t SetValue(const char *val, LinkedList_t *objlist, DRMS_Record_t *rec, const char *series, int lineno)
 {
     ListNode_t *nextobj = NULL;
     const char *objname = NULL;
@@ -134,7 +134,7 @@ static IDError_t SetValue(const char *val, LinkedList_t *objlist, DRMS_Record_t 
             
             if (dstat != DRMS_SUCCESS)
             {
-                fprintf(stderr, "Unable to set key %s with value %s.\n", objname, val);
+                fprintf(stderr, "Unable to set key %s with value %s, source line number %d, DRMS returned %d.\n", objname, val, lineno, dstat);
                 rv = kIDErr_DRMS;
             }
             else
@@ -316,7 +316,7 @@ int DoIt(void)
                     {
                         /* Ready to set keyword/segment value. */
                         *pval = '\0';
-                        rv = SetValue(val, objlist, rec, series);
+                        rv = SetValue(val, objlist, rec, series, lineno);
                         if (rv != kIDErr_Success)
                         {
                             break;
@@ -344,7 +344,7 @@ int DoIt(void)
             if (*val != '\0')
             {
                 *pval = '\0';
-                rv = SetValue(val, objlist, rec, series);
+                rv = SetValue(val, objlist, rec, series, lineno);
                 *val = '\0';
                 if (rv != kIDErr_Success)
                 {
