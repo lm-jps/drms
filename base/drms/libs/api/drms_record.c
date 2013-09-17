@@ -168,191 +168,211 @@ static int IsValidPlainFileSpec(const char *recSetSpecIn,
 				char **pkeysout,
 				int *status)
 {
-   int isLocSpec = 0;
-   struct stat stBuf;
-   int lstat = DRMS_SUCCESS;
-   char *lbrack = NULL;
-   int keylistSize = sizeof(char) * (strlen(recSetSpecIn) + 1);
-   char *keylist;
-   char *recSetSpec = strdup(recSetSpecIn);
-
-   /* There could be an optional clause at the end of the file/directory spec. */
-   if ((lbrack = strchr(recSetSpec, '[')) != NULL)
-   {
-      if (strchr(lbrack, ']'))
-      {
-	 *lbrack = '\0';
-	 keylist = malloc(keylistSize);
-	 snprintf(keylist, keylistSize, "%s", lbrack + 1);
-	 *(strchr(keylist, ']')) = '\0';
-	 *pkeysout = strdup(keylist);
-	 free(keylist);
-      }
-   }
-   else
-   {
-      *pkeysout = NULL;
-   }
-
-   /* Basically, if recSetSpec is a FITS file, directory of FITS files, or 
-    * a link to either of these, then it refers to a set of local files */
-   if (recSetSpec && !stat(recSetSpec, &stBuf) && klarrout && segarrout)
-   {
-      if (S_ISREG(stBuf.st_mode) || S_ISLNK(stBuf.st_mode) || S_ISDIR(stBuf.st_mode))
-      {
-	 /* ensure these files are all fits files - okay to use libdsds.so for now 
-	  * but this should be divorced from Stanford-specific code in the future */
-	 if (!gAttemptedDSDS && !ghDSDS)
-	 {
-	    kDSDS_Stat_t dsdsstat;
-	    ghDSDS = DSDS_GetLibHandle(kLIBDSDS, &dsdsstat);
-	    if (dsdsstat != kDSDS_Stat_Success)
-	    {
-	       lstat = DRMS_ERROR_CANTOPENLIBRARY;
-	    }
-
-	    gAttemptedDSDS = 1;
-	 }
-
-	 if (lstat == DRMS_SUCCESS && ghDSDS)
-	 {
-	    DSDS_KeyList_t *kl = NULL;
-	    DRMS_Segment_t *seg = NULL;
-	    int iRec = 0;
-
-	    pDSDSFn_DSDS_read_fitsheader_t pFn_DSDS_read_fitsheader = 
-	      (pDSDSFn_DSDS_read_fitsheader_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_READ_FITSHEADER);
-	    pDSDSFn_DSDS_free_keylist_t pFn_DSDS_free_keylist = 
-	      (pDSDSFn_DSDS_free_keylist_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_FREE_KEYLIST);
-	    pDSDSFn_DSDS_steal_seginfo_t pFn_DSDS_steal_seginfo =
-	      (pDSDSFn_DSDS_steal_seginfo_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_STEAL_SEGINFO);
-	    pDSDSFn_DSDS_free_seg_t pFn_DSDS_free_seg = 
-	      (pDSDSFn_DSDS_free_seg_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_FREE_SEG);
-
-	    /* for each file, check for a valid FITS header */
-	    if (pFn_DSDS_read_fitsheader && pFn_DSDS_free_keylist &&
-		pFn_DSDS_steal_seginfo && pFn_DSDS_free_seg)
-	    {
-	       kDSDS_Stat_t dsdsStat;
-	       int fitshead = 1;
-
-	       if (S_ISREG(stBuf.st_mode) || S_ISLNK(stBuf.st_mode))
-	       {
-		  (*pFn_DSDS_read_fitsheader)(recSetSpec, &kl, &seg, kLocalSegName, &dsdsStat);
-
-		  if (dsdsStat == kDSDS_Stat_Success)
-		  {
-		     *klarrout = (DSDS_KeyList_t **)malloc(sizeof(DSDS_KeyList_t *));
-		     *segarrout = (DRMS_Segment_t *)malloc(sizeof(DRMS_Segment_t));
-
-		     (*klarrout)[0] = kl;
-		     (*pFn_DSDS_steal_seginfo)(&((*segarrout)[0]), seg);
-		     /* For local data, add filepath for use with later calls to 
-		      * drms_segment_read(). */
-		     snprintf((*segarrout)[0].filename, 
-			      DRMS_MAXSEGFILENAME, 
-			      "%s", 
-			      recSetSpec);
-		     (*pFn_DSDS_free_seg)(&seg);
-		     *nRecsout = 1;
-		  }
-		  else
-		  {
-		     fitshead = 0;
-		  }
-	       }
-	       else 
-	       {
-		  struct dirent **fileList = NULL;
-		  int nFiles = -1;
-
-		  if ((nFiles = scandir(recSetSpec, &fileList, NULL, NULL)) > 0 && 
-		      fileList != NULL)
-		  {
-		     int fileIndex = 0;
-		     iRec = 0;
-
-		     /* nFiles is the maximum number of fits files possible */
-		     *klarrout = (DSDS_KeyList_t **)malloc(sizeof(DSDS_KeyList_t *) * nFiles);
-		     *segarrout = (DRMS_Segment_t *)malloc(sizeof(DRMS_Segment_t) * nFiles);
-
-		     while (fileIndex < nFiles)
-		     {
-			struct dirent *entry = fileList[fileIndex];
-			if (entry != NULL)
-			{
-			   char *oneFile = entry->d_name;
-			   char dirEntry[PATH_MAX] = {0};
-			   snprintf(dirEntry, 
-				    sizeof(dirEntry), 
-				    "%s%s%s", 
-				    recSetSpec, 
-				    recSetSpec[strlen(recSetSpec) - 1] == '/' ? "" : "/",
-				    oneFile);
-			   if (*dirEntry !=  '\0' && !stat(dirEntry, &stBuf));
-			   {
-			      if (S_ISREG(stBuf.st_mode) || S_ISLNK(stBuf.st_mode))
-			      {
-				 (*pFn_DSDS_read_fitsheader)(dirEntry, 
-							     &kl, 
-							     &seg, 
-							     kLocalSegName, 
-							     &dsdsStat);
-
-				 if (dsdsStat == kDSDS_Stat_Success)
-				 {
-				    (*klarrout)[iRec] = kl;
-				    (*pFn_DSDS_steal_seginfo)(&((*segarrout)[iRec]), seg);
-				    /* For local data, add filepath for use with later calls to 
-				     * drms_segment_read(). */
-				    snprintf((*segarrout)[iRec].filename, 
-					     DRMS_MAXSEGFILENAME, 
-					     "%s", 
-					     dirEntry);
-				    (*pFn_DSDS_free_seg)(&seg);
-				    iRec++;
-				 }
-				 else
-				 {
-				    fitshead = 0;
-				    break;
-				 }
-			      }
-			   }
-
-			   free(entry);
-			}
-		 
-			fileIndex++;
-		     } /* while */
-
-		     if (nRecsout)
-		     {
-			*nRecsout = iRec;
-		     }
-	      
-		     free(fileList);
-		  }
-	       }
-
-	       isLocSpec = fitshead;
-	    }
-	 }
-      }	 
-   }
-   
-
-   if (recSetSpec)
-   {
-      free(recSetSpec);
-   }
-
-   if (status)
-   {
-      *status = lstat;
-   }
-
-   return isLocSpec;
+    int isLocSpec = 0;
+    struct stat stBuf;
+    int lstat = DRMS_SUCCESS;
+    char *lbrack = NULL;
+    int keylistSize = sizeof(char) * (strlen(recSetSpecIn) + 1);
+    char *keylist;
+    char *recSetSpec = strdup(recSetSpecIn);
+    
+    /* There could be an optional clause at the end of the file/directory spec. */
+    if ((lbrack = strchr(recSetSpec, '[')) != NULL)
+    {
+        if (strchr(lbrack, ']'))
+        {
+            *lbrack = '\0';
+            keylist = malloc(keylistSize);
+            snprintf(keylist, keylistSize, "%s", lbrack + 1);
+            *(strchr(keylist, ']')) = '\0';
+            *pkeysout = strdup(keylist);
+            free(keylist);
+        }
+    }
+    else
+    {
+        *pkeysout = NULL;
+    }
+    
+    /* Basically, if recSetSpec is a FITS file, directory of FITS files, or 
+     * a link to either of these, then it refers to a set of local files */
+    if (recSetSpec && !stat(recSetSpec, &stBuf) && klarrout && segarrout)
+    {
+        if (S_ISREG(stBuf.st_mode) || S_ISLNK(stBuf.st_mode) || S_ISDIR(stBuf.st_mode))
+        {
+            /* ensure these files are all fits files - okay to use libdsds.so for now 
+             * but this should be divorced from Stanford-specific code in the future */
+            if (!gAttemptedDSDS && !ghDSDS)
+            {
+                kDSDS_Stat_t dsdsstat;
+                ghDSDS = DSDS_GetLibHandle(kLIBDSDS, &dsdsstat);
+                if (dsdsstat != kDSDS_Stat_Success)
+                {
+                    lstat = DRMS_ERROR_CANTOPENLIBRARY;
+                }
+                
+                gAttemptedDSDS = 1;
+            }
+            
+            if (lstat == DRMS_SUCCESS && ghDSDS)
+            {
+                DSDS_KeyList_t *kl = NULL;
+                DRMS_Segment_t *seg = NULL;
+                int iRec = 0;
+                
+                pDSDSFn_DSDS_read_fitsheader_t pFn_DSDS_read_fitsheader = 
+                (pDSDSFn_DSDS_read_fitsheader_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_READ_FITSHEADER);
+                pDSDSFn_DSDS_free_keylist_t pFn_DSDS_free_keylist = 
+                (pDSDSFn_DSDS_free_keylist_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_FREE_KEYLIST);
+                pDSDSFn_DSDS_steal_seginfo_t pFn_DSDS_steal_seginfo =
+                (pDSDSFn_DSDS_steal_seginfo_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_STEAL_SEGINFO);
+                pDSDSFn_DSDS_free_seg_t pFn_DSDS_free_seg = 
+                (pDSDSFn_DSDS_free_seg_t)DSDS_GetFPtr(ghDSDS, kDSDS_DSDS_FREE_SEG);
+                
+                /* for each file, check for a valid FITS header */
+                if (pFn_DSDS_read_fitsheader && pFn_DSDS_free_keylist &&
+                    pFn_DSDS_steal_seginfo && pFn_DSDS_free_seg)
+                {
+                    kDSDS_Stat_t dsdsStat;
+                    int fitshead = 1;
+                    
+                    if (S_ISREG(stBuf.st_mode) || S_ISLNK(stBuf.st_mode))
+                    {
+                        (*pFn_DSDS_read_fitsheader)(recSetSpec, &kl, &seg, kLocalSegName, &dsdsStat);
+                        
+                        if (dsdsStat == kDSDS_Stat_Success)
+                        {
+                            if (kl == NULL)
+                            {
+                                /* Invalid FITS file. */
+                                fitshead = 0;
+                            }
+                            else
+                            {
+                                *klarrout = (DSDS_KeyList_t **)malloc(sizeof(DSDS_KeyList_t *));
+                                *segarrout = (DRMS_Segment_t *)malloc(sizeof(DRMS_Segment_t));
+                                
+                                (*klarrout)[0] = kl;
+                                (*pFn_DSDS_steal_seginfo)(&((*segarrout)[0]), seg);
+                                /* For local data, add filepath for use with later calls to 
+                                 * drms_segment_read(). */
+                                snprintf((*segarrout)[0].filename, 
+                                         DRMS_MAXSEGFILENAME, 
+                                         "%s", 
+                                         recSetSpec);
+                                (*pFn_DSDS_free_seg)(&seg);
+                                *nRecsout = 1;
+                            }
+                        }
+                        else
+                        {
+                            fitshead = 0;
+                        }
+                    }
+                    else 
+                    {
+                        struct dirent **fileList = NULL;
+                        int nFiles = -1;
+                        
+                        if ((nFiles = scandir(recSetSpec, &fileList, NULL, NULL)) > 0 && 
+                            fileList != NULL)
+                        {
+                            int fileIndex = 0;
+                            iRec = 0;
+                            
+                            /* nFiles is the maximum number of fits files possible */
+                            *klarrout = (DSDS_KeyList_t **)malloc(sizeof(DSDS_KeyList_t *) * nFiles);
+                            *segarrout = (DRMS_Segment_t *)malloc(sizeof(DRMS_Segment_t) * nFiles);
+                            
+                            while (fileIndex < nFiles)
+                            {
+                                struct dirent *entry = fileList[fileIndex];
+                                if (entry != NULL)
+                                {
+                                    char *oneFile = entry->d_name;
+                                    char dirEntry[PATH_MAX] = {0};
+                                    snprintf(dirEntry, 
+                                             sizeof(dirEntry), 
+                                             "%s%s%s", 
+                                             recSetSpec, 
+                                             recSetSpec[strlen(recSetSpec) - 1] == '/' ? "" : "/",
+                                             oneFile);
+                                    if (*dirEntry !=  '\0' && !stat(dirEntry, &stBuf));
+                                    {
+                                        if (S_ISREG(stBuf.st_mode) || S_ISLNK(stBuf.st_mode))
+                                        {
+                                            (*pFn_DSDS_read_fitsheader)(dirEntry, 
+                                                                        &kl, 
+                                                                        &seg, 
+                                                                        kLocalSegName, 
+                                                                        &dsdsStat);
+                                            
+                                            if (dsdsStat == kDSDS_Stat_Success)
+                                            {
+                                                /* If the file is not a valid DSDS fits file, then the SDS code will 
+                                                 * return a NULL SDS, and DSDS_read_fitsheader() will return a 
+                                                 * NULL DSDS_KeyList_t *. */
+                                                if (kl == NULL)
+                                                {
+                                                    /* Invalid FITS file. */
+                                                    fitshead = 0;
+                                                    break;
+                                                }
+                                                else
+                                                {
+                                                    (*klarrout)[iRec] = kl;
+                                                    (*pFn_DSDS_steal_seginfo)(&((*segarrout)[iRec]), seg);
+                                                    /* For local data, add filepath for use with later calls to 
+                                                     * drms_segment_read(). */
+                                                    snprintf((*segarrout)[iRec].filename, 
+                                                             DRMS_MAXSEGFILENAME, 
+                                                             "%s", 
+                                                             dirEntry);
+                                                    (*pFn_DSDS_free_seg)(&seg);
+                                                    iRec++;
+                                                }
+                                            }
+                                            else
+                                            {
+                                                fitshead = 0;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    
+                                    free(entry);
+                                }
+                                
+                                fileIndex++;
+                            } /* while */
+                            
+                            if (nRecsout)
+                            {
+                                *nRecsout = iRec;
+                            }
+                            
+                            free(fileList);
+                        }
+                    }
+                    
+                    isLocSpec = fitshead;
+                }
+            }
+        }	 
+    }
+    
+    
+    if (recSetSpec)
+    {
+        free(recSetSpec);
+    }
+    
+    if (status)
+    {
+        *status = lstat;
+    }
+    
+    return isLocSpec;
 }
 
 static void AddLocalPrimekey(DRMS_Record_t *template, int *status)
