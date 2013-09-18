@@ -2781,29 +2781,6 @@ int DoIt(void)
                                                                      * field is an int, so I think we just punt on this.
                                                                      */
           
-          /* Reject request if dataset contains a list of comma-separated record-set specifications. 
-           * Currently, the code supports only a single record-set specification. */
-          if (ParseRecSetSpec(dataset, &snames, &filts, &nsets, &info))
-          {
-              /* Can't parse, set this record's status to a failure status. */
-              /* export_log is the jsoc.export_new record. */
-              snprintf(msgbuf, sizeof(msgbuf), "Unable to parse the export record specification '%s'.", dataset);
-              ErrorOutExpNewRec(exports_new, &export_log, irec, 4, msgbuf);
-              continue;
-          }
-          else if (nsets > 1)
-          {
-              /* The export system does not support comma-separated list of record specification. */
-              /* export_log is the jsoc.export_new record. */
-              snprintf(msgbuf, sizeof(msgbuf), "The export system does not currently support comma-separated lists of record-set specifications.");
-              ErrorOutExpNewRec(exports_new, &export_log, irec, 4, msgbuf);
-              FreeRecSpecParts(&snames, &filts, nsets);
-              continue;
-          }
-
-          FreeRecSpecParts(&snames, &filts, nsets);
-          
-          
       printf("New Request #%d/%d: %s, Status=%d, Processing=%s, DataSet=%s, Protocol=%s, Method=%s\n",
 	irec, exports_new->n, requestid, status, process, dataset, protocol, method);
       fflush(stdout);
@@ -2880,6 +2857,31 @@ int DoIt(void)
             ErrorOutExpNewRec(exports_new, &export_log, irec, 4, msgbuf);
             continue;
         }
+          
+          /* Reject request if dataset contains a list of comma-separated record-set specifications. 
+           * Currently, the code supports only a single record-set specification. */
+          if (ParseRecSetSpec(dataset, &snames, &filts, &nsets, &info))
+          {
+              /* Can't parse, set this record's status to a failure status. */
+              /* export_log is the jsoc.export_new record. */
+              snprintf(msgbuf, sizeof(msgbuf), "Unable to parse the export record specification '%s'.", dataset);
+              ErrorOutExpRec(&export_rec, 4, msgbuf);
+              ErrorOutExpNewRec(exports_new, &export_log, irec, 4, msgbuf);
+              continue;
+          }
+          else if (nsets > 1)
+          {
+              /* The export system does not support comma-separated list of record specification. */
+              /* export_log is the jsoc.export_new record. */
+              snprintf(msgbuf, sizeof(msgbuf), "The export system does not currently support comma-separated lists of record-set specifications.");
+              ErrorOutExpRec(&export_rec, 4, msgbuf);
+              ErrorOutExpNewRec(exports_new, &export_log, irec, 4, msgbuf);
+              FreeRecSpecParts(&snames, &filts, nsets);
+              continue;
+          }
+          
+          FreeRecSpecParts(&snames, &filts, nsets);
+          
   
       drms_record_directory(export_rec, reqdir, 1);
 
