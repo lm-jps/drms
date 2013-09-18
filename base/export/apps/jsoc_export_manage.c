@@ -526,7 +526,7 @@ int nice_intro ()
 
 // generate qsub script
 /* requestid is the ID and requestorid is the name of the person making the request (and is the only member of the prime-key set.) */
-void static make_qsub_call(char *requestid, /* like JSOC_20120906_199_IN*/
+static void make_qsub_call(char *requestid, /* like JSOC_20120906_199_IN*/
                            char *reqdir, 
                            const char *requestorname, /* the name of the requestor in jsoc.export_user. */
                            const char *dbname, 
@@ -2681,7 +2681,7 @@ int DoIt(void)
   int iset;
   char msgbuf[1024];
   int submitcode = -1;
-
+      
   if (nice_intro ()) return (0);
 
   testmode = (TESTMODE || cmdparams_isflagset(&cmdparams, kArgTestmode));
@@ -2780,6 +2780,30 @@ int DoIt(void)
                                                                      * the requestor's name, not the record number. But the Requestor
                                                                      * field is an int, so I think we just punt on this.
                                                                      */
+          
+          /* Reject request if dataset contains a list of comma-separated record-set specifications. 
+           * Currently, the code supports only a single record-set specification. */
+          if (ParseRecSetSpec(dataset, &snames, &filts, &nsets, &info))
+          {
+              /* Can't parse, set this record's status to a failure status. */
+              /* export_log is the jsoc.export_new record. */
+              snprintf(msgbuf, sizeof(msgbuf), "Unable to parse the export record specification '%s'.", dataset);
+              ErrorOutExpNewRec(exports_new, &export_log, irec, 4, msgbuf);
+              continue;
+          }
+          else if (nsets > 1)
+          {
+              /* The export system does not support comma-separated list of record specification. */
+              /* export_log is the jsoc.export_new record. */
+              snprintf(msgbuf, sizeof(msgbuf), "The export system does not currently support comma-separated lists of record-set specifications.");
+              ErrorOutExpNewRec(exports_new, &export_log, irec, 4, msgbuf);
+              FreeRecSpecParts(&snames, &filts, nsets);
+              continue;
+          }
+
+          FreeRecSpecParts(&snames, &filts, nsets);
+          
+          
       printf("New Request #%d/%d: %s, Status=%d, Processing=%s, DataSet=%s, Protocol=%s, Method=%s\n",
 	irec, exports_new->n, requestid, status, process, dataset, protocol, method);
       fflush(stdout);
