@@ -57,7 +57,8 @@ BINTGT_$(d)     := $(addprefix $(d)/, sumget sum_rm sum_rm_0 sum_rm_1 sum_rm_2 i
 
 # debug apps
 ifneq ($(SUMS_TAPE_AVAILABLE), 0)
-BINTGT_2_$(d)	:= $(addprefix $(d)/, main main2 main3 main4 main5)
+# Not supposed to be part of the build.
+# BINTGT_2_$(d)	:= $(addprefix $(d)/, main main2 main3 main4 main5)
 endif
 
 # other tape apps
