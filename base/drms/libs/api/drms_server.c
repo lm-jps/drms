@@ -93,14 +93,13 @@ static int MakeSumsCall(DRMS_Env_t *env, int calltype, SUM_t **sumt, int (*histo
             else
             {
                 *sumt = SUM_open(server, db, history);
+                opcode = -1; /* not used for this call */
             }
             
             if (*sumt)
             {
                 ++nsumsconn;
             }
-            
-            opcode = -1; /* not used for this call */
             
             va_end(ap);
         }
@@ -123,6 +122,7 @@ static int MakeSumsCall(DRMS_Env_t *env, int calltype, SUM_t **sumt, int (*histo
         case DRMS_SUMCLOSE:
         {
             opcode = SUM_close(*sumt, history);
+            nsumsconn = 0;
         }
             break;
         case DRMS_SUMDELETESERIES:
