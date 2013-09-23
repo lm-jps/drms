@@ -24,10 +24,11 @@
 #endif
 
 #define kDELSERFILE "thefile.txt"
-#define kDelSerChunk 10000
-#define kMaxSleep   (90)
-#define kSUMSDead    -2
-#define kBrokenPipe -99
+#define kDelSerChunk       10000
+#define kMaxSleep         (90)
+#define kSUMSDead         -2
+#define kBrokenPipe       -99
+#define kTooManySumsOpen  -98
 
 sem_t *gShutdownsem = NULL; /* synchronization among signal thread, main thread, 
                                sums thread, and server threads during shutdown */
@@ -80,23 +81,25 @@ static int MakeSumsCall(DRMS_Env_t *env, int calltype, SUM_t **sumt, int (*histo
             va_start(ap, history);
             char *server = va_arg(ap, char *);
             char *db = va_arg(ap, char *);
-
+            
             /* SUMS allows a maximum of MAXSUMOPEN number of connections. The module should terminate if 
              * there is an attempt to open more than this number. */
             if (nsumsconn >= MAXSUMOPEN)
             {
-               *sumt = NULL;
+                *sumt = NULL;
+                fprintf(stderr, "Attempting to exceed maximum number of available SUM_open() calls per process.\n");
+                opcode = kTooManySumsOpen;
             }
             else
             {
-               *sumt = SUM_open(server, db, history);
+                *sumt = SUM_open(server, db, history);
             }
-
+            
             if (*sumt)
             {
-               ++nsumsconn;
+                ++nsumsconn;
             }
-
+            
             opcode = -1; /* not used for this call */
             
             va_end(ap);
@@ -2170,7 +2173,7 @@ void *drms_sums_thread(void *arg)
              }
 
              sumscallret = MakeSumsCall(env, DRMS_SUMOPEN, &sum, printkerr, NULL, NULL);
-             if (sumscallret == kBrokenPipe || sumscallret == kSUMSDead)
+             if (sumscallret == kBrokenPipe || sumscallret == kSUMSDead || sumscallret == kTooManySumsOpen)
              {
                 /* free a non-null sum? */
                 sum = NULL;
@@ -2184,7 +2187,7 @@ void *drms_sums_thread(void *arg)
 
              if (!sum)
              {
-                if (env->loopconn && sumscallret != kSUMSDead)
+                if (env->loopconn && sumscallret != kSUMSDead && sumscallret != kTooManySumsOpen)
                 {
                    fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
                    tryagain = 1;
