@@ -47,12 +47,7 @@ chomp($host);
 if(($pos = index($host, '.')) != -1) {
   $host = substr($host, 0, $pos);
 }
-#for specific script sum_start_xim.MULTI force xim
-$sumserver = "xim";     #!!!Special case for testing
-if($host ne $sumserver) {
-  print "This can only be run on $host.\n";
-  exit;
-}
+
 $ENV{'SUMSERVER'} = $sumserver;      #make sure we stay in this machine
 print "SUMSERVER is $sumserver\n";
 @def = grep(/^#define SUMS_MANAGER/, @servdefs);
