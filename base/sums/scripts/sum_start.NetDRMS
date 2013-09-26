@@ -102,7 +102,7 @@ print "SUMS db is $DB\n";
 $PID = getppid;
 $LOGFILE = "/tmp/sum_start.NetDRMS.$PID";
 open(LOG, ">$LOGFILE") || die "Can't open $LOGFILE: $!\n";
-($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+($sec,$min,$hour,$mday,$mon,$year) = localtime(time);
 $sec2 = sprintf("%02d", $sec);
 $min2 = sprintf("%02d", $min);
 $hour2 = sprintf("%02d", $hour);
