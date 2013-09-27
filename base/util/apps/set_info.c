@@ -157,8 +157,9 @@ int nice_intro(int help)
 
 DRMS_Type_Value_t cmdparams_get_type(CmdParams_t *cmdparams, char *keyname, DRMS_Type_t keytype, int *status);
 
-/* keys is an array of HContainer_t * */
-static int FitsImport(DRMS_Segment_t *seg, const char *file, HContainer_t **keys, HContainer_t *keylist)
+/* keys is an array of HContainer_t *, keys are the keys from the current fits file, keylist is the combined
+ * list of keywords from all fits files imported so far. */
+static int FitsImport(DRMS_Record_t *rec, DRMS_Segment_t *seg, const char *file, HContainer_t **keys, HContainer_t *keylist)
 {
    int err = 0;
    int drmsstat = DRMS_SUCCESS;
@@ -167,6 +168,8 @@ static int FitsImport(DRMS_Segment_t *seg, const char *file, HContainer_t **keys
    HIterator_t hit;
    const char *intstr = NULL;
    DRMS_Keyword_t *akey = NULL;
+    HContainer_t *keysintFiltered = NULL;
+    DRMS_Keyword_t *keycopy = NULL;
 
    /* Read data - don't apply bzero and bzero in fits file (leave israw == true). If
     * the segment requires conversion of the output array, this will happen in 
@@ -182,27 +185,51 @@ static int FitsImport(DRMS_Segment_t *seg, const char *file, HContainer_t **keys
       }
       else
       {
-         /* Since the ultimate DRMS record we are creating might contain multiple segments and, therefore, multiple
-          * data files, we have to ensure that for each keyword the data files have in common either 
-          * 1. the multiple keyword values match, or 2. the DRMS record belongs to a series that has a 
-          * per-segment keyword to accommodate the disparate keyword values. To that end, 
-          * store the keywords in a container with <keywordname>:<segnum> as the key and the DRMS_Keyword_t
-          * as the value. After the loop containing this function call ends, check all the keyword and
-          * resolve the conflicts between keyword values. */
-
-         keys[seg->info->segnum] = keysint;
-
-         /* Iterate through keys and add unique values to keylist */
-         hiter_new_sort(&hit, keysint, drms_keyword_ranksort);
-         while ((akey = hiter_extgetnext(&hit, &intstr)) != NULL)
-         {
-            if (!hcon_member(keylist, intstr))
-            {
-               hcon_insert(keylist, intstr, (const void *)&akey->info->rank); 
-            }
-         }
-
-         hiter_free(&hit);
+          /* Since the ultimate DRMS record we are creating might contain multiple segments and, therefore, multiple
+           * data files, we have to ensure that for each keyword the data files have in common either 
+           * 1. the multiple keyword values match, or 2. the DRMS record belongs to a series that has a 
+           * per-segment keyword to accommodate the disparate keyword values. To that end, 
+           * store the keywords in a container with <keywordname>:<segnum> as the key and the DRMS_Keyword_t
+           * as the value. After the loop containing this function call ends, check all the keyword and
+           * resolve the conflicts between keyword values. */
+          
+          /* Iterate through keys and add unique values to keylist. BUT DON'T ADD KEYS THAT DO NOT 
+           * BELONG TO THE SERIES BEING POPULATED. And do not attempt to add values for series' keywords
+           * that are constant. keysintFiltered has all the keys in keysint, minus the ones that are
+           * constant keywords. */
+          keysintFiltered = hcon_create(sizeof(DRMS_Keyword_t), 
+                                        DRMS_MAXKEYNAMELEN, 
+                                        (void (*)(const void *))drms_free_template_keyword_struct,
+                                        NULL, 
+                                        NULL,
+                                        NULL,
+                                        0);
+          
+          hiter_new_sort(&hit, keysint, drms_keyword_ranksort);
+          while ((akey = hiter_extgetnext(&hit, &intstr)) != NULL)
+          {
+              /* Remove constant keywords from final list of keywords to work with. */
+              if (!drms_keyword_isconstant(akey))
+              {
+                  /* This call copies the record ptr (which is NULL), the info ptr (so it steals the key info), and 
+                   * the keyword value from akey to the entry in keysintFiltered. */
+                  hcon_insert(keysintFiltered, intstr, akey);
+                  
+                  /* Ensure that when keysint is freed, that the info fields are not freed to (since
+                   * they are in use by keysintFiltered). */
+                  akey->info = NULL;
+              }
+              
+              if (!hcon_member(keylist, intstr))
+              {
+                  hcon_insert(keylist, intstr, (const void *)&akey->info->rank); 
+              }
+          }
+          
+          hiter_free(&hit);
+          
+          keys[seg->info->segnum] = keysintFiltered;
+          hcon_destroy(&keysint);
       }
    }
    else
@@ -846,7 +873,7 @@ int DoIt(void)
                   }
                   else if (seg->info->protocol == DRMS_FITS)
                   {
-                      if (FitsImport(seg, filename, segfilekeys, keylist) != 0)
+                      if (FitsImport(rec, seg, filename, segfilekeys, keylist) != 0)
                       {
                           char diebuf[256];
                           
