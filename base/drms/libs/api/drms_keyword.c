@@ -90,18 +90,22 @@ static DRMS_Keyword_t * __drms_keyword_lookup(DRMS_Record_t *rec,
 
 void drms_free_template_keyword_struct(DRMS_Keyword_t *key)
 {
-  if (key->info->type==DRMS_TYPE_STRING)
-    free(key->value.string_val);
-
-  free(key->info);
+    if (key && key->info)
+    {
+        if (key->info->type==DRMS_TYPE_STRING)
+            free(key->value.string_val);
+        
+        free(key->info);
+    }
 }
 
 void drms_free_keyword_struct(DRMS_Keyword_t *key)
 {
-  if (key->info->type==DRMS_TYPE_STRING)
-    free(key->value.string_val);
-
-  return;
+    if (key && key->info)
+    {
+        if (key->info->type==DRMS_TYPE_STRING)
+            free(key->value.string_val);
+    }
 }
 
 

@@ -169,7 +169,8 @@ static int FitsImport(DRMS_Record_t *rec, DRMS_Segment_t *seg, const char *file,
    const char *intstr = NULL;
    DRMS_Keyword_t *akey = NULL;
     HContainer_t *keysintFiltered = NULL;
-    DRMS_Keyword_t *keycopy = NULL;
+    DRMS_Keyword_t *drmskey = NULL;
+    
 
    /* Read data - don't apply bzero and bzero in fits file (leave israw == true). If
     * the segment requires conversion of the output array, this will happen in 
@@ -209,21 +210,26 @@ static int FitsImport(DRMS_Record_t *rec, DRMS_Segment_t *seg, const char *file,
           while ((akey = hiter_extgetnext(&hit, &intstr)) != NULL)
           {
               /* Remove constant keywords from final list of keywords to work with. */
-              if (!drms_keyword_isconstant(akey))
+              /* These keywords are NOT part of any drms record, so the only valid data in them is their name, type and value. To
+               * determine if they are constant or not, we must find the same-named keyword in the rec passed in. */
+              drmskey = drms_keyword_lookup(rec, akey->info->name, 0);
+              
+              if (drmskey && !drms_keyword_isconstant(drmskey))
               {
                   /* This call copies the record ptr (which is NULL), the info ptr (so it steals the key info), and 
                    * the keyword value from akey to the entry in keysintFiltered. */
                   hcon_insert(keysintFiltered, intstr, akey);
+                  
+                  if (!hcon_member(keylist, intstr))
+                  {
+                      hcon_insert(keylist, intstr, (const void *)&akey->info->rank); 
+                  }
                   
                   /* Ensure that when keysint is freed, that the info fields are not freed to (since
                    * they are in use by keysintFiltered). */
                   akey->info = NULL;
               }
               
-              if (!hcon_member(keylist, intstr))
-              {
-                  hcon_insert(keylist, intstr, (const void *)&akey->info->rank); 
-              }
           }
           
           hiter_free(&hit);
