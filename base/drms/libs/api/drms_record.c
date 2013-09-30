@@ -4928,21 +4928,22 @@ char *drms_query_string(DRMS_Env_t *env,
                         int recnumq,
                         int cursor) 
 {
-  DRMS_Record_t *template;
-  char *field_list, *query=0;
-  char *series_lower;
-  long long recsize, limit;
-  char pidx_names[1024]; // comma separated pidx keyword names
-  char pidx_names_desc[1200]; // comma separated pidx keyword names with DESC
-  char pidx_names_n[1024]; // comma separated pidx keyword names in 'limited' table
-  char pidx_names_bare[1024]; // comma separated pidx keyword names in 'limited' table
-  char pidx_names_desc_bare[1024]; // comma separated pidx keyword names in 'limited' table
-  char limitedtable[1024]; // for DRMS_QUERY_N, innermost table that has 4 * n rows
-  char *p;
-  int nrecs = 0;
-  int unique = 0;
-
-  int status = 0;
+    DRMS_Record_t *template;
+    char *field_list = NULL;
+    char *query=0;
+    char *series_lower;
+    long long recsize, limit;
+    char pidx_names[1024]; // comma separated pidx keyword names
+    char pidx_names_desc[1200]; // comma separated pidx keyword names with DESC
+    char pidx_names_n[1024]; // comma separated pidx keyword names in 'limited' table
+    char pidx_names_bare[1024]; // comma separated pidx keyword names in 'limited' table
+    char pidx_names_desc_bare[1024]; // comma separated pidx keyword names in 'limited' table
+    char limitedtable[1024]; // for DRMS_QUERY_N, innermost table that has 4 * n rows
+    char *p;
+    int nrecs = 0;
+    int unique = 0;
+    
+    int status = 0;
     
     char *rquery = NULL;
     int shadowexists = 0;
@@ -5221,6 +5222,7 @@ char *drms_query_string(DRMS_Env_t *env,
                                   printf("query (the big enchilada): %s\n", rquery);
                               }
                               
+                              free(field_list);
                               return rquery;
                           }
                           else
@@ -5258,6 +5260,7 @@ char *drms_query_string(DRMS_Env_t *env,
                                   printf("query (the big enchilada): %s\n", rquery);
                               }
                               
+                              free(field_list);
                               return rquery;
                           }
                           else
@@ -5297,6 +5300,7 @@ char *drms_query_string(DRMS_Env_t *env,
                                   printf("query (the big enchilada): %s\n", rquery);
                               }
                               
+                              free(field_list);
                               return rquery;
                           }
                           else
@@ -5327,6 +5331,7 @@ char *drms_query_string(DRMS_Env_t *env,
                                   printf("query (the big enchilada): %s\n", rquery);
                               }
                               
+                              free(field_list);
                               return rquery;
                           }
                           else
@@ -5385,6 +5390,7 @@ char *drms_query_string(DRMS_Env_t *env,
                                   printf("query (the big enchilada): %s\n", rquery);
                               }
                               
+                              free(field_list);
                               return rquery;
                           }
                           else
@@ -5420,6 +5426,7 @@ char *drms_query_string(DRMS_Env_t *env,
                                   printf("query (the big enchilada): %s\n", rquery);
                               }
                               
+                              free(field_list);
                               return rquery;
                           }
                           else
@@ -5456,6 +5463,7 @@ char *drms_query_string(DRMS_Env_t *env,
                                   printf("query (the big enchilada): %s\n", rquery);
                               }
 
+                              free(field_list);
                               return rquery;
                           }
                           else
@@ -5487,6 +5495,7 @@ char *drms_query_string(DRMS_Env_t *env,
                                   printf("query (the big enchilada): %s\n", rquery);
                               }
 
+                              free(field_list);
                               return rquery;
                           }
                           else
