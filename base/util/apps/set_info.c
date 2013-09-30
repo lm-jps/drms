@@ -16,8 +16,8 @@
 
 \code
 set_info [-h] 
-set_info [-cktv] [JSOC_FLAGS] ds=<seriesname> [<keyword>=<value>]... [<segment>=<filename>]... [<link>=<record-set specification>]...
-set_info [-Cmtv] [JSOC_FLAGS] ds=<record_set> [<keyword>=<value>]... [<segment>=<filename>]... [<link>=<record-set specification>]...
+set_info [-ciktv] [JSOC_FLAGS] ds=<seriesname> [<keyword>=<value>]... [<segment>=<filename>]... [<link>=<record-set specification>]...
+set_info [-Cimtv] [JSOC_FLAGS] ds=<record_set> [<keyword>=<value>]... [<segment>=<filename>]... [<link>=<record-set specification>]...
 set_info_soc {options as above}
 \endcode
 
@@ -39,10 +39,24 @@ of course as a where clause as part of the recordset specification)
 
 For each keyword specified in a \a keyword=value pair on the command line, \b set_info will set the values for all these clones' keywords to \a value.
 
-If a segment in the series is if type \e generic then set_info can be used to store a given file in
+If a segment in the series is of type \e generic then set_info can be used to store a given file in
 the SUMS directory associated with the record.
 In this case, for each \c segment=filename parameter the file found at filename will be copied into the
 record directory and the segment filename will be saved in the segment descriptor in DRMS.
+
+If a \c segment=<filename> argument specifies the path to a FITS file, then set_info will parse the FITS-file
+header. For each header keyword, set_info examines the set of series' DRMS keywords. If the header-keyword name matches the name of such
+a DRMS keyword, then set_info assigns the header-keyword's value to the DRMS keyword. If there exists
+such a DRMS header keyword, and the DRMS keyword also appears as the name of an argument on the 
+command line, then the command-line argument value takes precendence over the value in the FITS-file header. The
+header-keyword value is ignored in this case. This
+default behavior can be disabled with the \c -i flag. If the \c -i flag is present on the command line,
+along with the \c segment=<filename> argument where \c <filename> is a FITS file, then the entire FITS-file header 
+is not parsed and is essentially ignored by set_info. 
+
+In no case is a constant DRMS-keyword value updated by set_info. If a constant DRMS keyword is specified on the 
+command line, then set_info exits with an error. If a FITS file is specified on the command line, the module simply 
+ignores FITS-file header keywords that correspond to constant DRMS keywords. 
 
 In normal usage if NO segments are specified, any segments in the original version of an updated record will
 be shared with the new record.  This allows keyword metadata to be updated without making unnecessary copies
@@ -65,6 +79,7 @@ Only one instance of each keyword name or segment name is allowed.
 \li \c -k: Create a new set of records from stdin as if piped from show_info -k
 \li \c -C: Force-copy the storage unit of the original record to the cloned record
 \li \c -h: Print usage message and exit
+\li \c -i: Ignore the default behavior of parsing the FITS-file header for keyword values
 \li \c -m: Modify the keywords of multiple records. The \c -m flag should be
 used with caution.  A typo could damage many records. Do not use
 \c -m unless you are sure the query will specify ONLY the records
@@ -119,6 +134,7 @@ ModuleArgs_t module_args[] =
   {ARG_FLAG, "h", "0", "Print usage message and quit"},
   {ARG_FLAG, "c", "0", "Create a new record from command line keywords"},
   {ARG_FLAG, "C", "0", "Force cloning of needed records to be DRMS_COPY_SEGMENT mode"},
+  {ARG_FLAG, "i", NULL, "Ignore the default behavior of ingesting the FITS-file header"},
   {ARG_FLAG, "k", "0", "Create new records as specified from stdin"},
   {ARG_FLAG, "m", "0", "allow multiple records to be updated"},
   {ARG_FLAG, "t", "0", "create any needed records as DRMS_TRANSIENT, default is DRMS_PERMANENT"},
@@ -136,10 +152,11 @@ int nice_intro(int help)
   verbose = cmdparams_get_int(&cmdparams, "v", NULL) != 0;
   if (usage || help)
     {
-    printf("set_info {-c}|{-m} {-C} {-t} {-h} {-v}  "
+    printf("set_info (({-c}|{-k})|{-m}) {-C} {-i} {-t} {-h} {-v}  "
 	"ds=<recordset query> {keyword=value} ... \n"
 	"  -h: print this message\n"
 	"  -c: create - create new record\n"
+        "  -i: ignore - ignore the FITS-file header\n"
 	"  -k: create_many - create a set of new records\n"
 	"  -m: multiple - allow multiple records to be updated\n"
         "  -C: Force cloning of needed records to be DRMS_COPY_SEGMENT mode\n"
@@ -634,6 +651,7 @@ int DoIt(void)
   int nrecs, irec;
   int force_transient;
   int force_copyseg;
+  int ignoreHeader = 0;
   const char *keyname;
   char prime_names[100][32];
   char **pkeys;
@@ -656,6 +674,7 @@ int DoIt(void)
    query = strdup(cmdparams_get_str(&cmdparams, "ds", NULL));
 
    force_copyseg = cmdparams_get_int(&cmdparams, "C", NULL) != 0;
+   ignoreHeader = cmdparams_isflagset(&cmdparams, "i");
    force_transient = cmdparams_get_int(&cmdparams, "t", NULL) != 0;
 
    multiple = cmdparams_get_int(&cmdparams, "m", NULL) != 0;
@@ -879,15 +898,18 @@ int DoIt(void)
                   }
                   else if (seg->info->protocol == DRMS_FITS)
                   {
-                      if (FitsImport(rec, seg, filename, segfilekeys, keylist) != 0)
+                      if (!ignoreHeader)
                       {
-                          char diebuf[256];
-                          
-                          snprintf(diebuf, sizeof(diebuf), 
-                                   "File '%s' does not contain data compatible with segment '%s'.\n", 
-                                   filename, seg->info->name);
-                          if (query) { free(query); query = NULL; }
-                          DIE(diebuf);
+                          if (FitsImport(rec, seg, filename, segfilekeys, keylist) != 0)
+                          {
+                              char diebuf[256];
+                             
+                              snprintf(diebuf, sizeof(diebuf), 
+                                       "File '%s' does not contain data compatible with segment '%s'.\n", 
+                                       filename, seg->info->name);
+                              if (query) { free(query); query = NULL; }
+                              DIE(diebuf);
+                          }
                       }
                   }
                   else
