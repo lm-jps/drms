@@ -660,7 +660,7 @@ int SetKeyValues(DRMS_Env_t *env,
                             drms_merge_record(final, (*chunk)->records[isubirec]);
                             (*chunk)->records[isubirec] = NULL;
                         }
-                        
+                                                
                         /* final now owns the records *chunk used to own. */
                         drms_close_records(*chunk, DRMS_FREE_RECORD);
                         *chunk = NULL;
@@ -858,6 +858,10 @@ int DoIt(void)
                         memset(final, 0, sizeof(DRMS_RecordSet_t));
                         
                         chunk = drms_create_records(drms_env, kRecChunkSz, series, DRMS_PERMANENT, &istat);
+                        
+                        /* final will contain the cached records that chunk owns. */
+                        final->env = chunk->env;
+
                         SetNextTokIndex(1); /* Skip the top-level object - it isn't of the same format as the rest. */
                         if (SetKeyValues(drms_env, series, segname, &chunk, final, pkeys, npkeys, pkeyvals, 0, json, tokens, tokens[0].size, tokens[0].size, &nproc, &hasnpk, &irec, setdate))
                         {

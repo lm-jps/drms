@@ -10000,6 +10000,9 @@ int drms_close_recordchunk(DRMS_RecordSet_t *rs)
             rs->records[irec] = NULL;
         }
         
+        /* rs_new contains records that are cached in the env, so they are not detached records. */
+        rs_new->env = rs->env;
+        
         drms_close_records(rs_new, DRMS_FREE_RECORD);
         
         rs->cursor->currentchunk = -1;

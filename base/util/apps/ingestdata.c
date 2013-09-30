@@ -412,6 +412,10 @@ int DoIt(void)
                 }
                 
                 /* final now owns the records recset used to own. */
+                
+                /* final contains cached records, so it must point to the environment to which these records belong. */
+                final->env = recset->env;
+                
                 if (drms_close_records(recset, DRMS_FREE_RECORD))
                 {
                     fprintf(stderr, "Failure inserting records into the database.\n");

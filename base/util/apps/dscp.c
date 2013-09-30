@@ -429,6 +429,11 @@ int DoIt(void)
                        break;
                    }
                    
+                   /* rsfinal will own all records in rsout, so the records in rsfinal are not detached from
+                    * the environment, and must point to the environment for drms_close_records() to 
+                    * know how to free them from the environment record cache. */
+                   rsfinal->env = rsout->env;
+                   
                    irec = 0;
                }
                
