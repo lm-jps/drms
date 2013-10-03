@@ -15,6 +15,7 @@ kRetRegexp    = 3
 kTagCmd = '/home/jsoc/dlsource.pl -o tag'
 kUntagCmd = '/home/jsoc/dlsource.pl -o untag'
 kTmpFile = '/tmp/.versfile.tmp'
+kVersFile = 'base/jsoc_version.h'
 
 # Classes
 
@@ -159,10 +160,15 @@ if __name__ == "__main__":
     
 if not(optD is None):
     if not(optD['version'] is None) and not(optD['untag'] is None):
-        tree = optD['tree']
+        regexp = re.compile(r"(.+)/\s*$")
+        matchobj = regexp.match(optD['tree'])
+        if not (matchobj is None):
+            tree = matchobj.group(1)
+        else:
+            tree = optD['tree']
         version = optD['version']
         untag = optD['untag']
-        versfile = tree + '/base/jsoc_version.h'
+        versfile = tree + '/' + kVersFile
         verstuple = CreateVersString(version, 0)
         
         if verstuple is None:
@@ -178,7 +184,7 @@ if not(optD is None):
             try:
                 with Chdir(tree) as ret:
                     if ret == 0:
-                        cmd = 'cvs commit -m "Set the release versions of the version macros for the ' + version + ' release."' + versfile
+                        cmd = 'cvs commit -m "Set the release versions of the version macros for the ' + version + ' release." ' + kVersFile
                         ret = call(cmd, shell=True)
                     else:
                         print('Unable to cd to ' + tree + '.')
@@ -280,7 +286,7 @@ if not(optD is None):
             try:
                 with Chdir(tree) as ret:
                     if ret == 0:
-                        cmd = 'cvs commit -m "Set the development version of the version macros for the ' + version + ' release."' + versfile
+                        cmd = 'cvs commit -m "Set the development version of the version macros for the ' + version + ' release." ' + kVersFile
                         ret = call(cmd, shell=True)
                     else:
                         rv = kRetOS
