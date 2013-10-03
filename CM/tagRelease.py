@@ -195,6 +195,7 @@ if not(optD is None):
                 rv = kRetOS
 
         if rv == kRetSuccess:
+            print('Successfully edited ' + versfile + '; set release version.')
             # Create the tags
             try:
                 # Untag existing tags (if they exist). If the tag does not exist, then 
@@ -262,6 +263,7 @@ if not(optD is None):
                 rv = kRetOS
 
         if rv == kRetSuccess:
+            print('Successfully created DRMS and NetDRMS release CVS tags.')
             # Edit jsoc_version.h - set the development version of the version number.
             verstuple = CreateVersString(version, 1)
 
@@ -293,6 +295,8 @@ if not(optD is None):
                 print('cvs command ' + cmd + ' ran improperly.')
                 rv = kRetOS
 
+            if rv == kRetSuccess:
+                print('Successfully edited ' + versfile + '; set development version.')
     else:
         print('Invalid arguments.')
         rv = kRetArgs
