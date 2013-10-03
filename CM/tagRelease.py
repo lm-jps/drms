@@ -229,10 +229,10 @@ if not(optD is None):
                         print('ERROR: Unable to delete tag NetDRMS_Ver_' + verstuple[2])
                         rv = kRetOS
                 if rv == kRetSuccess:
-                    cmd = '/home/jsoc/dlsource.pl -o untag -f net -t Ver_DRMSLATEST'
+                    cmd = '/home/jsoc/dlsource.pl -o untag -f net -t NetDRMS_Ver_LATEST'
                     ret = call(cmd, shell=True)
                     if not(ret == 0):
-                        print('ERROR: Unable to delete tag Ver_DRMSLATEST')
+                        print('ERROR: Unable to delete tag NetDRMS_Ver_LATEST')
                         rv = kRetOS
             
                 # Create new tags
@@ -259,10 +259,10 @@ if not(optD is None):
                         print('ERROR: Unable to create tag NetDRMS_Ver_' + verstuple[2])
                         rv = kRetOS
                 if rv == kRetSuccess:
-                    cmd = '/home/jsoc/dlsource.pl -o tag -f net -t Ver_DRMSLATEST'
+                    cmd = '/home/jsoc/dlsource.pl -o tag -f net -t NetDRMS_Ver_LATEST'
                     ret = call(cmd, shell=True)
                     if not(ret == 0):
-                        print('ERROR: Unable to create tag Ver_DRMSLATEST')
+                        print('ERROR: Unable to create tag NetDRMS_Ver_LATEST')
                         rv = kRetOS
             except ValueError:
                 print('Unable to run cvs cmd: ' + cmd + '.')
