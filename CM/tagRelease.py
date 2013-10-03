@@ -29,7 +29,6 @@ class Chdir:
         self.savedPath = os.path.realpath(os.getcwd())
         os.chdir(self.newPath)
         cdir = os.path.realpath(os.getcwd())
-        print('new path is ' + self.newPath + ', cdir is ' + cdir)
         if cdir == self.newPath:
             return 0
         else:
@@ -112,8 +111,6 @@ def CreateVersString(versin, dev):
 def EditVersionFile(versfile, verstuple):
     rv = kRetSuccess
     
-    print(versfile)
-    
     try:
         with open(versfile, 'r') as fin, open(kTmpFile, 'w') as fout: 
             regexp1 = re.compile(r"#define\s+jsoc_version\s+\"\w+\"")
@@ -193,8 +190,9 @@ if not(optD is None):
                 print('Unable to run cvs cmd: ' + cmd + '.')
                 rv = kRetOS
             
-        if not(ret == 0):
-            rv = kRetOS
+            if not(ret == 0):
+                print('cvs command ' + cmd + ' ran improperly.')
+                rv = kRetOS
 
         if rv == kRetSuccess:
             # Create the tags
@@ -280,7 +278,7 @@ if not(optD is None):
             try:
                 with Chdir(tree) as ret:
                     if ret == 0:
-                        cmd = 'cvs commit -m "Set the development version of the version macros for the ' + version + ' release." versfile'
+                        cmd = 'cvs commit -m "Set the development version of the version macros for the ' + version + ' release."' + versfile
                         ret = call(cmd, shell=True)
                     else:
                         rv = kRetOS
@@ -292,6 +290,7 @@ if not(optD is None):
                 rv = kRetOS
 
             if not(ret == 0):
+                print('cvs command ' + cmd + ' ran improperly.')
                 rv = kRetOS
 
     else:
