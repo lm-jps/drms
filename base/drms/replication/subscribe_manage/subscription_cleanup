@@ -140,6 +140,24 @@ cleanup_counter=$(( $cleanup_counter + 1 ))
 	            
 		    logwrite "Moving subscriber table list"
 		    mv -f $tables_dir/$node.new.lst $tables_dir/$node.lst
+
+                    # ART - call into perl code to update db-table versions of the .lst files
+                    $kJSOCRoot/base/drms/replication/subscribe_manage/gentables.pl conf=$config_file op=replace --node=$node --lst=$node.new.lst 
+
+                    if [ $? -ne 0 ]
+                    then
+                        # If the database table update fails, set the local success variable to 
+                        # to false (it looks like that variable isn't used after this point 
+                        # anyway).
+                        #
+                        # Somehow we have to pass this failure back to subscription_manager.
+                        success=false
+
+                        # Need to clean up
+		        logwrite "Unable to update lst tables properly!"
+                        rm -rf $subscribers_dir/$node.new
+		        rm -f $tables_dir/$node.new.lst
+                    fi
 		else
 			# Success on old site!
 		    logwrite "Subscriber SQL was a success"
@@ -166,8 +184,25 @@ cleanup_counter=$(( $cleanup_counter + 1 ))
 		    rm -f $tables_dir/$node.lst
 		    logwrite "Moving new subscriber table list to old one"
 		    mv -f $tables_dir/$node.new.lst $tables_dir/$node.lst
+
+                    # ART - call into perl code to update db-table versions of the .lst files
+                    $kJSOCRoot/base/drms/replication/subscribe_manage/gentables.pl conf=$config_file op=replace --node=$node --lst=$node.new.lst 
+
+                    if [ $? -ne 0 ]
+                    then
+                        # If the database table update fails, set the local success variable to 
+                        # to false (it looks like that variable isn't used after this point 
+                        # anyway).
+                        #
+                        # Somehow we have to pass this failure back to subscription_manager.
+                        success=false
+
+                        # Need to clean up
+		        logwrite "Unable to update lst tables properly!"
+                        rm -rf $subscribers_dir/$node.new
+		        rm -f $tables_dir/$node.new.lst
+                    fi
 		fi
-	
 	    else
 		if [ $new_site == "true" ]
 		then
