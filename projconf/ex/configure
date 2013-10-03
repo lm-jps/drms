@@ -1,6 +1,0 @@
-#! /bin/csh -f
-
-# Project-specific configuration (like adding links to scripts to the $JSOCROOT/scripts
-# directory). 
-
-#find ../proj/blah/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
