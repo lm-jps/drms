@@ -45,6 +45,9 @@ static volatile sig_atomic_t gGotPipe = 0;
 HContainer_t *gSgPending = NULL;
 
 /******************* Main server thread(s) functions ************************/
+static void drms_delete_temporaries(DRMS_Env_t *env);
+static void drms_delete_emptyTases(DRMS_Env_t *env);
+
 
 /* returns the SUMS opcode, or -99 if a broken-pipe error occurred, or -1 if opcode is NA, 
  * or -2 if SUMS cannot be called again because DRMS timed-out waiting for SUMS. */
@@ -752,6 +755,14 @@ void drms_server_commit(DRMS_Env_t *env, int final)
   if (env->verbose)
     printf("Deleting temporary records from DRMS.\n");
   drms_delete_temporaries(env);
+    
+    /* Delete "empty" TAS files. If the TAS file has a corresponding .virgin file, 
+     * then it is empty (no slices were ever written to it). 
+     *
+     * Since this is called before drms_commit_all_units(), if this results in 
+     * the removal of all files from an SU, then that SU will never be committed to 
+     * SUMS.*/
+    drms_delete_emptyTases(env);
 
   /* Commit (SUM_put) all storage units to SUMS. */
   if (env->verbose)
@@ -2051,6 +2062,104 @@ void drms_delete_temporaries(DRMS_Env_t *env)
   }
 }
 
+void drms_delete_emptyTases(DRMS_Env_t *env)
+{
+    HIterator_t *hitOuter = NULL;
+    HIterator_t *hitInner = NULL;
+    HContainer_t *scon = NULL;
+    DRMS_StorageUnit_t *su = NULL;
+    const char *seriesName = NULL;
+    const char *sudir = NULL;
+    int nfiles;
+    int ifile;
+    struct dirent *entry = NULL;
+    char *loc = NULL;
+    char fbuf[PATH_MAX];
+    struct stat stBuf;
+    struct dirent **fileList = NULL;
+    int err;
+    
+    err = 0;
+
+    /* Iterate through cached records, examining each SUdir looking for TAS files. */
+    hitOuter = hiter_create(&env->storageunit_cache);
+    if (hitOuter)
+    {
+        while((scon = (HContainer_t *)hiter_extgetnext(hitOuter, &seriesName)) && !err)
+        {
+            /* loops over SUs within a single series */
+            hitInner = hiter_create(scon);
+            if (hitInner)
+            {   
+                while((su = (DRMS_StorageUnit_t *)hiter_getnext(hitInner)) && !err)
+                {                
+                    /* Obtain the SUdir from the storage unit su. */
+                    sudir = su->sudir;
+                    
+                    if ((nfiles = scandir(sudir, &fileList, NULL, NULL)) > 0)
+                    {
+                        ifile = 0;
+                        while (ifile < nfiles)
+                        {
+                            entry = fileList[ifile];
+                            
+                            if (entry != NULL)
+                            {
+                                char *oneFile = entry->d_name;
+                                char *dup = strdup(oneFile);
+                                
+                                if (!dup)
+                                {
+                                    /* Out of memory - bail - don't sweat it. */
+                                    err = 1;
+                                    break;
+                                }
+                                
+                                /* Iterate through .virigin files, and if there is a corresponding TAS file (a file with the .virgin file name, 
+                                 * but with the .virgin removed), then delete the TAS file. TAS files live in the SUdir, not in the slot dirs. */
+                                if ((loc = strstr(dup, ".virgin")) != NULL)
+                                {
+                                    *loc = '\0';
+                                    snprintf(fbuf, sizeof(fbuf), "%s/%s", sudir, dup);
+                                    if (!stat(fbuf, &stBuf))
+                                    {
+                                        /* Found an empty TAS file */
+                                        unlink(fbuf);
+                                    }
+                                    
+                                    /* Delete the .virgin file. */
+                                    snprintf(fbuf, sizeof(fbuf), "%s/%s", sudir, oneFile);
+                                    unlink(fbuf);
+                                }
+                                
+                                free(dup);
+                                free(entry);
+                            }
+                            
+                            ifile++;
+                        } /* loop over files in sudir */
+                    }
+                    
+                    free(fileList);
+                } /* look over sus within a series */
+            }
+            else
+            {
+                /* Out of memory, just let the calling function fail. */
+                break;
+            }
+
+            hiter_destroy(&hitInner);
+            
+        } /* loop over series */
+    
+        hiter_destroy(&hitOuter);
+    }
+    else
+    {
+        /* Out of memory, just let the calling function fail. */
+    }
+}
 
 /****************** SUMS server thread functions **********************/
 

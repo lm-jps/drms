@@ -1894,6 +1894,9 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
       break;   
     case DRMS_TAS:
       {
+          char virgin[PATH_MAX];
+          struct stat stBuf;
+          
          /* seg->bzero and seg->bscale cannot be overridden - all records must 
           * have the same bzero and bscale values, since they share the same
           * fits file */
@@ -1919,6 +1922,15 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
 
          if (status)
            goto bailout;
+          
+          /* We successfully wrote a slice to a TAS file, so now we have to delete the corresponding .virgin file. This
+           * will ensure that we do NOT delete the TAS file during module shutdown. */
+          snprintf(virgin, sizeof(virgin), "%s.virgin", filename);
+          if (!stat(virgin, &stBuf))
+          {
+              /* Virgin file exists, delete it. */
+              unlink(virgin);
+          }
       }
       break;
     case DRMS_FITZDEPRECATED:
@@ -2129,6 +2141,9 @@ int drms_segment_writeslice_ext(DRMS_Segment_t *seg,
           break;  
         case DRMS_TAS:
          {
+             char virgin[PATH_MAX];
+             struct stat stBuf;
+             
              /* seg->bzero and seg->bscale cannot be overridden - all records must 
               * have the same bzero and bscale values, since they share the same
               * fits file */
@@ -2152,6 +2167,15 @@ int drms_segment_writeslice_ext(DRMS_Segment_t *seg,
                                                    seg->record->slotnum, 
                                                    out)) != DRMS_SUCCESS)
                  goto bailout;
+             
+             /* We successfully wrote a slice to a TAS file, so now we have to delete the corresponding .virgin file. This
+              * will ensure that we do NOT delete the TAS file during module shutdown. */
+             snprintf(virgin, sizeof(virgin), "%s.virgin", filename);
+             if (!stat(virgin, &stBuf))
+             {
+                 /* Virgin file exists, delete it. */
+                 unlink(virgin);
+             }
          }
           break;
         default:

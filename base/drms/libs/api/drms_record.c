@@ -2436,6 +2436,15 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
 	  if (seg->info->protocol == DRMS_TAS)
 	  {
 	    drms_segment_filename(seg, filename);
+          
+          // drms_segment_filename has the unwanted side effect of setting seg->filname. This will cause
+          // the sg_XXX_file record value to be the base file name. This is bad because me might never
+          // actually write any records' slices to the TAS file. We also need to delete the TAS file altogether
+          // if we never actually write any records' slices (we never use any SU slots).
+          // 
+          // This will unset seg->filename. drms_segment_write() will re-set seg->filename in the event
+          // a record's slice of data gets written to the TAS file.
+          *(seg->filename) = '\0';
 	    seg->axis[seg->info->naxis] = rs->records[i]->seriesinfo->unitsize;
 	    seg->blocksize[seg->info->naxis] = 1; 
 #ifdef DEBUG
@@ -2453,6 +2462,22 @@ DRMS_RecordSet_t *drms_create_records_fromtemplate(DRMS_Env_t *env, int n,
 
 	    seg->axis[seg->info->naxis] = 0;
 	    seg->blocksize[seg->info->naxis] = 0; 
+          
+          /* OK, create a flag file that means "no record's slice has been written to this TAS file". If we write a TAS slice, then 
+           * in drms_segment_write(), we will delete this flag file. Then later in */
+          char fbuf[PATH_MAX];
+          FILE *virginPtr = NULL;
+          
+          snprintf(fbuf, sizeof(fbuf), "%s.virgin", filename);
+          virginPtr = fopen(fbuf, "w");
+          if (!virginPtr)
+          {
+              stat = DRMS_ERROR_FILECREATE;
+              goto failure;
+          }
+              
+          fclose(virginPtr);
+          virginPtr = NULL;
 	  }
 	}
 
