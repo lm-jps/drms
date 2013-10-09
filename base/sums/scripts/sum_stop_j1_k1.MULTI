@@ -1,0 +1,210 @@
+#!/usr/bin/perl
+#/home/production/cvs/JSOC/base/sums/scripts/sum_stop_j1_k1.MULTI
+#This is to stop the sum_svc and multiple related servers on j1.
+#
+$| = 1;                 #flush output as we go
+$mailflg = 1;
+$forceflg = 0;
+while ($ARGV[0] =~ /^-/) {
+  $_ = shift;
+  if (/^-M(.*)/) {
+    $mailflg = 0;
+  }
+  elsif (/^-f(.*)/) {
+    $forceflg = 1;
+  }
+  else {
+    print "Illegal switch\n";
+    exit;
+  }
+}
+
+#print "  If you are asked for a passphrase then you do not have \n";
+#print "  ssh-agent set up properly on $HOST.\n";
+#print "  Ctrl-C this script, and do this:\n";
+#print "  > ssh-agent | head -2 > /var/tmp/ssh-agent.env
+#  > chmod 600 /var/tmp/ssh-agent.env
+#  > source /var/tmp/ssh-agent.env
+#  > ssh-add
+#  (The production password)\n";
+
+$wdpath = `which $0`;
+chomp($wdpath);
+$pos = rindex($wdpath, "/");
+$wd = substr($wdpath, 0, $pos);
+$ldir = "$wd/../include/localization.h";
+$sdir = "$wd/../include/serverdefs.h";
+
+if(-e $ldir) {
+  $xdir = $ldir;
+  $localization = 1;
+}
+else {
+  $xdir = $sdir;
+  $localization = 0;
+}
+@servdefs = `cat $xdir`;
+@def = grep(/^#define SUM_NUMSUM/, @servdefs);
+($a,$b,$numsum) = split(/\s+/, shift(@def));
+if(!$numsum) {
+  print "ERROR: Can't get SUM_NUMSUM from $xdir\n";
+  exit(1);
+}
+#print "Number of SUM process sets to spawn = $numsum\n";
+@def = grep(/^#define SUM_MAXNUMSUM/, @servdefs);
+($a,$b,$maxnumsum) = split(/\s+/, shift(@def));
+#print "Max number of SUM process can spawn = $maxnumsum\n";
+
+if($numsum == 0 || $numsum > $maxnumsum) {
+  print "**ERROR: in $xdir def for SUM_NUMSUM\n";
+  print "Number must be between 1 and $maxnumsum\n";
+  exit;
+}
+
+@def = grep(/^#define SUMSERVER/, @servdefs);
+($a,$b,$sumserver) = split(/\s+/, shift(@def));
+if(($pos = index($sumserver, '.')) != -1) {
+  $sumserver = substr($sumserver, 0, $pos);
+}
+$sumserver = substr($sumserver, 1, -1); #get rid of quotes (")
+$host = `hostname`;
+chomp($host);
+if(($pos = index($host, '.')) != -1) {
+  $host = substr($host, 0, $pos);
+}
+#for specific script sum_start_j1.MULTI force j1
+#$sumserver = "xim";     #!!!Special case for testing
+if($host ne $sumserver) {
+  print "This can only be run on $host.\n";
+  exit;
+}
+@def = grep(/^#define SUMS_MANAGER/, @servdefs);
+($a,$b,$sumsmanager) = split(/\s+/, shift(@def));
+$sumsmanager = substr($sumsmanager, 1, -1); #get rid of quotes (")
+#print "SUMS_MANAGER is $sumsmanager\n";
+$user = $ENV{'USER'};
+if($user ne $sumsmanager) {
+  print "You must be user $sumsmanager to run\n";
+  exit;
+}
+@def = grep(/^#define SUMS_MANAGER_UID/, @servdefs);
+($a,$b,$sumsmanageruid) = split(/\s+/, shift(@def));
+$sumsmanageruid = substr($sumsmanageruid, 1, -1); #get rid of quotes (")
+#print "SUMS_MANAGER_UID is $sumsmanageruid\n";
+$GREPPS = $sumsmanageruid;
+
+@def = grep(/^#define DBNAME/, @servdefs);
+($a,$b,$dbname) = split(/\s+/, shift(@def));
+$dbname = substr($dbname, 1, -1); #get rid of quotes (")
+$DB = $dbname."_sums";
+
+$PID = getppid;
+$LOGFILE = "/tmp/sum_stop_j1_multi.$PID";
+$MLOGFILE = "/tmp/sum_stop_mail_j1_multi.$PID";
+$SSLOG = "/usr/local/logs/SUM/sum_start_stop.log";
+open(LOG, ">$LOGFILE") || die "Can't open $LOGFILE: $!\n";
+open(MLOG, ">$MLOGFILE") || die "Can't open $MLOGFILE: $!\n";
+($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime(time);
+$sec2 = sprintf("%02d", $sec);
+$min2 = sprintf("%02d", $min);
+$hour2 = sprintf("%02d", $hour);
+$mday2 = sprintf("%02d", $mday);
+$mon2 = sprintf("%02d", $mon+1);
+$year2 = sprintf("%02d", $year);
+$date = (1900 + $year).".".$mon2.".$mday2"._.$hour2.":$min2".":$sec2";
+print "\nsum_stop_j1.MULTI at $date\n\n";
+print LOG "sum_stop_j1.MULTI at $date\n\n";
+print MLOG "sum_stop_j1.MULTI at $date\n";
+print MLOG "See $LOGFILE on $host for more details\n";
+  print "NOTE: This will stop sum_svc and tape_svc. Make sure you want to do this\n";
+
+#goto SKIP;
+  print "Enter reason for stop (terminate with single '.' or ^D):\n>> ";
+  print LOG "Enter reason for stop (terminate with single '.' or ^D):\n";
+  print MLOG "Enter reason for stop (terminate with single '.' or ^D):\n";
+  while(<STDIN>) {
+    chomp($_);
+    if($_ eq ".") { last; }
+    else {
+      print LOG ">> $_\n"; print MLOG ">> $_\n";
+      print ">> ";
+    }
+  }
+  print "Please identify yourself:\n>> ";
+  print LOG "Please identify yourself:\n";
+  print MLOG "Please identify yourself:\n";
+  $ID = <STDIN>;
+  chomp($ID);
+  if(!$ID) { $ID = "<none>"; }
+  print LOG ">> $ID\n"; print MLOG ">> $ID\n";
+SKIP:
+  @ps_prod = `ps -ef | grep $GREPPS`;
+
+  #All possible sums processes to stop
+  @spawn = (sum_svc, Sdelser, Sinfo, Sinfo1, Sinfo2, Sinfo3, Sinfo4, Sinfo5, Sinfo6, Sinfo7, Sput, Sput1, Sput2, Sput3, Sput4, Sput5, Sput6, Sput7, Sget, Sget1, Sget2, Sget3, Sget4, Sget5, Sget6, Sget7, Salloc, Salloc1, Salloc2, Salloc3, Salloc4, Salloc5, Salloc6, Salloc7, Sopen, Sopen1, Sopen2, Sopen3, Sopen4, Sopen5, Sopen6, Sopen7, sum_pe_svc);
+
+  #first do sumck_j1M
+  @line = grep(/sumck_j1M/, @ps_prod);
+  $x = shift(@line);
+  ($a, $psid, $c) = split(/\s+/, $x);
+  print "Killing sumck_j1M with kill -9 $psid\n";
+  print LOG "Killing sumck_j1M with kill -9 $psid\n";
+  `kill -9 $psid`;
+
+  #Find if any sums process is still running.
+  #Assumes max of 8 sum process sets can be running.
+  while($p = shift(@spawn)) {
+    $name = "$p $db";
+    @line = grep(/$name/, @ps_prod);
+    if(@line) {
+      $x = shift(@line);
+      ($a, $psid, $c) = split(/\s+/, $x);
+      print "Killing $p with kill -9 $psid\n";
+      print LOG "Killing $p with kill -9 $psid\n";
+      `kill -9 $psid`;
+    }
+  }
+
+if(!$localization) {
+  #Now kill the tape_svc, etc on k1
+  `ssh k1.stanford.edu /home/production/cvs/JSOC/base/sums/scripts/sum_stop_k1_tape`;
+}
+else {
+    $name = "sum_rm $db";
+    @line = grep(/$name/, @ps_prod);
+    if(@line) {
+      $x = shift(@line);
+      ($a, $psid, $c) = split(/\s+/, $x);
+      print "Killing $p with kill -9 $psid\n";
+      print LOG "Killing sum_rm with kill -9 $psid\n";
+      `kill -9 $psid`;
+    }
+}
+
+#print "Removing lock file /usr/local/logs/soc/NOTAPEARC\n";
+#print LOG "Removing lock file /usr/local/logs/soc/NOTAPEARC\n";
+#`/bin/rm -f /usr/local/logs/soc/NOTAPEARC`;
+
+print "SUM Stop j1 MULTI Complete\n";
+print LOG "SUM Sto j1 MULTI Complete\n";
+close(LOG);
+close(MLOG);
+
+if(!open(MLOG, ">>$SSLOG")) {           #record stop info
+  print "Can't open for append: $SSLOG\n";
+}
+else {
+  print MLOG "STOP: MANUAL: $date\n";
+  $sql = "select max(ds_index) from sum_main";
+  $pcmd = "echo \"$sql\" | psql -q -h hmidb -p 5434 jsoc_sums";
+  @maxi = `$pcmd`;
+  $maxindex = @maxi[2];
+  print MLOG "STOP: MANUAL: $maxindex\n";
+  close(MLOG);
+}
+
+$mail = "Mail -s \"SUM Stop j1 MULTI Complete\"";
+$to = "jsoc_users";
+#$to = "jim";
+$cmd = "$mail $to < $MLOGFILE";
+if($mailflg) { system $cmd; }
