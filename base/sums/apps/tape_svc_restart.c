@@ -1,6 +1,6 @@
 /* tape_svc_restart.c
  *
- * This is for restarting a tape_svc on d02 and sending sum_svc a
+ * This is for restarting a tape_svc on k1 and sending sum_svc a
  * message to connect to the new tape_svc.
  *
  * Usage: tape_svc_restart
@@ -56,8 +56,8 @@ void get_cmd(int argc, char *argv[])
   gethostname(hostn, MAX_STR);
   cptr = index(hostn, '.');     // must be short form
   if(cptr) *cptr = (char)NULL;
-  if(strcmp(hostn, "d02")) {
-    printf("!!NOTE: tape_svc_restart must be run on d02!\n");
+  if(strcmp(hostn, "k1")) {
+    printf("!!NOTE: tape_svc_restart must be run on k1!\n");
     exit(1);
   }
 }
@@ -93,7 +93,7 @@ int main(int argc, char *argv[])
 //  }
 
   get_cmd(argc, argv);
-  printf("\nYou must first take these steps to stop and start a tape_svc on d02\n\n");
+  printf("\nYou must first take these steps to stop and start a tape_svc on k1\n\n");
   printf("Do you want sum_svc to disconnect from tape_svc (yes/no) [no] = ");
   if(gets(line) == NULL) { return; }
   if(!strcmp(line, "yes")) { 
@@ -239,8 +239,8 @@ int main(int argc, char *argv[])
 
 SKIPSUMSCALL:
 
-  printf("Do as production on d02:\n\n");
-  printf("> /home/production/cvs/JSOC/base/sums/scripts/sum_stop_d02_tape\n");
+  printf("Do as production on k1:\n\n");
+  printf("> /home/production/cvs/JSOC/base/sums/scripts/sum_stop_k1_tape\n");
   printf("> sum_forker jsoc_sums 2010.12.14.115800\n\n");
 
   printf("Have you successfully started a new tape_svc and now want sum_svc\n");
