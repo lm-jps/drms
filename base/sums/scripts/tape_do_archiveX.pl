@@ -1,5 +1,4 @@
-eval 'exec /home/jsoc/bin/linux_ia64/perl -S $0 "$@"'
-    if 0;
+#!/usr/bin/perl
 #/home/production/cvs/JSOC/base/sums/scripts/tape_do_archiveX.pl
 #
 #
@@ -122,8 +121,8 @@ sub forkarc {
 
   $host = `hostname -s`;
   chomp($host);
-  if($host ne "d02") {
-    print "Error: This must be run on d02\n";
+  if($host ne "k1") {
+    print "Error: This must be run on k1\n";
     exit;
   }
 
@@ -295,7 +294,7 @@ while($x = shift(@sarrayarray)) {
       if($filename) { 
         close(AR);
         print "Close $filename\n";
-        $cmd = "/home/production/cvs/JSOC/bin/linux_ia64/tapearcX $filename";
+        $cmd = "/home/production/cvs/JSOC/bin/linux_avx/tapearcX $filename";
         if(!(&forkarc($cmd))) {
           print "Exceeded max forks of $MAXFORKS. Will process later.\n";
           push(@pendcmds, $cmd);
@@ -367,7 +366,7 @@ while($x = shift(@sarrayarray)) {
 if($filename) { 
   close(AR);
   print "Close $filename\n";
-  $cmd = "/home/production/cvs/JSOC/bin/linux_ia64/tapearcX $filename";
+  $cmd = "/home/production/cvs/JSOC/bin/linux_avx/tapearcX $filename";
   if(!(&forkarc($cmd))) {
     print "Exceeded max forks of $MAXFORKS\n";
     push(@pendcmds, $cmd);

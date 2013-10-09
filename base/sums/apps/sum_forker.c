@@ -147,26 +147,26 @@ int main(int argc, char *argv[])
   }
   else if(pid == 0) {                   /* this is the beloved child */
     printf("execvp of tape_svc\n");
-    args[0] = "prctl";
-    args[1] = "--unaligned=silent";
-    args[2] = "tape_svc";
+    //args[0] = "prctl";
+    //args[1] = "--unaligned=silent";
+    args[0] = "tape_svc";
     //args[0] = "valgrind --leak-check=full tape_svc";
     if(tapeoffline) { 		/* overrides any sim flg */
-      args[3] = "-o";
-      args[4] = dbname;
-      args[5] = timetag;
-      args[6] = NULL;
+      args[1] = "-o";
+      args[2] = dbname;
+      args[3] = timetag;
+      args[4] = NULL;
     }
     else if(sim) { 
-      args[3] = "-s";
-      args[4] = dbname;
-      args[5] = timetag;
-      args[6] = NULL;
+      args[1] = "-s";
+      args[2] = dbname;
+      args[3] = timetag;
+      args[4] = NULL;
     }
     else {
-      args[3] = dbname;
-      args[4] = timetag;
-      args[5] = NULL;
+      args[1] = dbname;
+      args[2] = timetag;
+      args[3] = NULL;
     }
     if(execvp(args[0], args) < 0) {
       printf("***Can't execvp() tape_svc. errno=%d\n", errno);
