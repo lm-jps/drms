@@ -34,13 +34,48 @@ struct SUList_struct
 
 typedef struct SUList_struct SUList_t;
 
-static int EmptyDir(const char *dir)
+static char *EndsWith(const char *str, const char *suffix, int caseInsensitive)
+{
+   if (!str || !suffix)
+   {
+      return NULL;
+   }
+
+   size_t lenstr = strlen(str);
+   size_t lensuffix = strlen(suffix);
+   int found = 0;
+
+   if (lensuffix > lenstr)
+   {
+      return NULL;
+   }
+
+   if (caseInsensitive)
+   {
+      found = (strncasecmp(str + lenstr - lensuffix, suffix, lensuffix) == 0);
+   }
+   else
+   {
+      found = (strncmp(str + lenstr - lensuffix, suffix, lensuffix) == 0);
+   }
+
+   if (found)
+   {
+      return (char *)str + lenstr - lensuffix;
+   }
+   else
+   {
+      return NULL;
+   }
+}
+
+static int EmptyDir(const char *dir, int depth)
 {
   struct stat stBuf;
   struct dirent **fileList = NULL;
   int nfiles = 0;
   int notempty = 0;
-  
+
   notempty = (!stat(dir, &stBuf) && S_ISDIR(stBuf.st_mode) && (nfiles = scandir(dir, &fileList, NULL, NULL)) > 0 && fileList);
 
   if (notempty)
@@ -48,6 +83,7 @@ static int EmptyDir(const char *dir)
      /* Don't count "." and ".." */
      int ifile;
      struct dirent *entry = NULL;
+     char fbuf[PATH_MAX];
      char subdir[PATH_MAX];
 
      notempty = 0;
@@ -65,13 +101,87 @@ static int EmptyDir(const char *dir)
 
               if (strcmp(oneFile, ".") != 0 && strcmp(oneFile, "..") != 0)
               {
+                 /* There is no good place to put this, but this is the most efficient place (since we already have 
+                  * to iterate through all files in the SU and this function is always called before committing an SU).
+                  * Delete empty TAS files (TAS files that were created, but no slices were ever written to them). TAS
+                  * files live in the sudir, not in any slot dir. This is depth == 0. */
+
+                 /* Look for a TAS-file-virgin-file pair. If found, delete them both and go onto the next file.
+                  * Because we are iterating through a list that we are also deleting from, we have to check for the
+                  * existence of the files in the following code before doing anything with the files.
+                  * If there is no TAS-file-virgin-file pair, fall through to the code below. */
+                 
+                 snprintf(fbuf, sizeof(fbuf), "%s/%s", dir, oneFile);
+                 if (stat(fbuf, &stBuf))
+                 {
+                    /* oneFile no longer exists - go onto the next file. */
+                    free(entry);
+                    ifile++;
+                    continue;
+                 }
+
+                 if (depth == 0 && EndsWith(oneFile, ".tas.virgin", 1) || EndsWith(oneFile, ".tas", 1))
+                 {
+                    char *dup = strdup(oneFile);
+                    char *loc = NULL;
+
+                    if (dup)
+                    {
+                       if (loc = EndsWith(dup, ".virgin", 1))
+                       {
+                          /* We're looking at a .virgin file. Find the corresponding TAS file. */
+                          *loc = '\0';
+                          snprintf(fbuf, sizeof(fbuf), "%s/%s", dir, dup);
+                          if (!stat(fbuf, &stBuf))
+                          {
+                             /* Found the empty TAS file; delete it. */
+                             unlink(fbuf);
+
+                             /* Delete the .virgin file. */
+                             snprintf(fbuf, sizeof(fbuf), "%s/%s", dir, oneFile);
+                             unlink(fbuf);
+                             
+                             free(entry);
+                             ifile++;
+                             continue;
+                          }
+                       }
+                       else if (loc = EndsWith(dup, ".tas", 1))
+                       {
+                          /* We're looking at a TAS file. Find the corresponding .virgin file, if it exists. */
+                          snprintf(fbuf, sizeof(fbuf), "%s/%s.virgin", dir, dup);
+                          if (!stat(fbuf, &stBuf))
+                          {
+                             /* Found the corresponding .virgin file; delete it and the TAS file. */
+                             unlink(fbuf);
+
+                             /* Delete the TAS file. */
+                             snprintf(fbuf, sizeof(fbuf), "%s/%s", dir, oneFile);
+                             unlink(fbuf);
+
+                             free(entry);
+                             ifile++;
+                             continue;
+                          }
+                       }
+
+                       free(dup);
+                    }
+                    else
+                    {
+                       /* It isn't that important if we don't clean up the TAS files. Don't sweat this - if we get
+                        * here, though, most likely the code will fail elsewhere (at a place where code dereferences
+                        * a NULL pointer probably). */
+                    }
+                 }
+
                  snprintf(subdir, sizeof(subdir), "%s/%s", dir, oneFile);
                  
                  if (!stat(subdir, &stBuf))
                  {
                     if (S_ISDIR(stBuf.st_mode))
                     {
-                       notempty = !EmptyDir(subdir);
+                       notempty = !EmptyDir(subdir, depth + 1);
                     }
                     else
                     {
@@ -79,7 +189,7 @@ static int EmptyDir(const char *dir)
                     }
                  }
               }
-           }        
+           }
 
            free(entry);
         }
@@ -1369,7 +1479,7 @@ int drms_commitunit(DRMS_Env_t *env, DRMS_StorageUnit_t *su)
   int actualarchive = 0;
   int docommit = 0;
 
-  docommit = !EmptyDir(su->sudir);
+  docommit = !EmptyDir(su->sudir, 0);
   if (docommit)
   {
      if (env->archive != INT_MIN)
@@ -1513,7 +1623,7 @@ static int CommitUnits(DRMS_Env_t *env,
       {
          sunit = *((DRMS_StorageUnit_t **)(node->data));
 
-         if (!EmptyDir(sunit->sudir))
+         if (!EmptyDir(sunit->sudir, 0))
          {
             if (nsus == DRMS_MAX_REQCNT)
             {
@@ -2008,7 +2118,7 @@ int drms_su_commitsu(DRMS_Env_t *env,
   int docommit = 0;
 
   /* Don't commit a unit if its directory is empty */
-  docommit = !EmptyDir(sudir);
+  docommit = !EmptyDir(sudir, 0);
   if (docommit)
   {
      templaterec = drms_template_record(env, seriesname, &drmsst);
