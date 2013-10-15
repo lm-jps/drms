@@ -243,6 +243,7 @@ int db_maxbygroup(DB_Binary_Result_t *res, int maxcol, int num_cols, int *cols);
 /* Free result buffers allocated by db_query functions. */
 void db_free_binary_result(DB_Binary_Result_t *db_result);
 void db_free_text_result(DB_Text_Result_t *db_result);
+void db_free_binary_result_tuple(DB_Binary_Result_t ***tuple, unsigned int nelems);
 
 
 /* Sequence functions */
@@ -338,6 +339,7 @@ DB_Binary_Result_t *db_client_query_bin(int sockfd, char *query,
 DB_Binary_Result_t *db_client_query_bin_array(int sockfd, char *query, 
 					      int compress, int n_args,  
 					      DB_Type_t *intype, void **argin);
+DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, unsigned int nelems, unsigned int nargs, DB_Type_t *dbtypes, void **values);
 int db_client_dmsv(int sockfd,  int *row_count, char *query, 
 		   int n_rows, ...);
 int db_client_dms_array(int sockfd,  int *row_count, char *query, 

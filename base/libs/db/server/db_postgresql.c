@@ -10,6 +10,7 @@
 #include "db.h"
 #include "xassert.h"
 #include "xmem.h"
+#include "util.h"
 
 /* These are PG internal type codes. */
 #define PG_CHAR_OID    (18)
@@ -627,6 +628,379 @@ failure:
   return NULL;
 }
 
+/* A better name for this function would hvae been db_query_bin_array(), but that name was already taken, 
+ * despite the fact that that function has nothing to do with arrays. 
+ *
+ * The query string must have nargs placeholder. Each placeholder refers to an ntuple of values, which must all be of the 
+ * same data type. The data type of placeholders is specified in the dbtypes array, which has nargs elements. The 
+ * binary data that encodes actual values are specified in values. For all types, except strings, values[i] refers to an 
+ * array (contains the address of an array) with nelems elements, each of which contains X bytes of binary data, where X
+ * is determined by the data type provided in dbtypes. For strings, values[i] refers to an array of nelems char *s. Each
+ * element points (is the address of) a block of memory holding a string of chars. So nelems is the number of elements in the values
+ * tuples (and there is one such tuple for each for each placeholder).
+ */
+DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, unsigned int nelems, unsigned int nargs, DB_Type_t *dbtypes, void **values)
+{
+    PGconn *dbconn = NULL;
+    int ielem;
+    int iarg;
+    char *prepareStmnt = NULL;
+    char *prepareStmntClause = NULL;
+    int counter;
+    size_t stmntsz = 2048;
+    char buf[2048];
+    const char *pin = NULL;
+    char *pParamBuf = NULL;
+    char stmntName[64] = {0};
+    int buflen;
+    int paramLengths[MAXARG];
+    int paramFormats[MAXARG];
+    char *paramValues[MAXARG];
+    void *paramBuf = NULL;
+    PGresult *pgres = NULL;
+    DB_Binary_Result_t *dbres = NULL;
+    DB_Binary_Result_t **dbresults = NULL;
+    int icol;
+    int irow;
+    int colnameLength;
+    unsigned int width;
+    int err;
+    
+    err =  0;
+    
+    if (dbin)
+    {
+        /* Lock database connection if in multi-threaded mode. */
+        db_lock(dbin);
+        if (!dbin->abort_now)
+        {
+            if (nargs > MAXARG)
+            {
+                fprintf(stderr,"Maximum number of arguments exceeded (%d > %d).\n", nargs, MAXARG);
+                err = 1;
+            }
+            
+            if (!err)
+            {
+                dbconn = dbin->db_connection;
+                prepareStmntClause = calloc(1, stmntsz);
+                
+                if (!prepareStmntClause)
+                {
+                    /* Out of memory. */
+                    err = 1;
+                }
+            }
+                
+            if (!err)
+            {
+                pin = stmnt;
+                
+                /* Replace wildcards '?' with '$1', '$2', '$3' etc. */
+                counter = 1;
+                
+                while (*pin)
+                {
+                    if (*pin == '?')
+                    {
+                        snprintf(buf, sizeof(buf), "$%d", counter++);
+                    }
+                    else
+                    {
+                        snprintf(buf, sizeof(buf), "%c", *pin);    
+                    }
+                    
+                    pin++;
+                    prepareStmntClause = base_strcatalloc(prepareStmntClause, buf, &stmntsz);
+                    if (!prepareStmntClause)
+                    {
+                        /* Out of memory. */
+                        err = 1;
+                        break;
+                    }
+                }
+            }
+             
+            /* Create the prepared statement. */
+            if (!err)
+            {
+                stmntsz = 2048;
+                prepareStmnt = calloc(1, stmntsz);
+                
+                if (!prepareStmnt)
+                {
+                    /* Out of memory. */
+                    err = 1;
+                }
+            }
+                
+            if (!err)
+            {
+                
+                for (iarg = 0; iarg < nargs; iarg++)
+                {
+                    if (iarg == 0)
+                    {
+                        snprintf(stmntName, sizeof(stmntName), "db_tmp_stmt_%u", dbin->stmt_num);
+                        
+                        /* Increment the global statement counter (we're in a locked region of code). */
+                        ++dbin->stmt_num;
+                        
+                        snprintf(buf, sizeof(buf), "PREPARE %s(%s", stmntName, db_type_string(dbtypes[iarg]));
+                    }
+                    else
+                    {
+                        snprintf(buf, sizeof(buf), ", %s", db_type_string(dbtypes[iarg]));
+                    }
+                    
+                    prepareStmnt = base_strcatalloc(prepareStmnt, buf, &stmntsz);
+                    
+                    if (!prepareStmnt)
+                    {
+                        /* Out of memory. */
+                        err = 1;
+                    }
+                }
+            }
+                    
+            if (!err)
+            {
+                prepareStmnt = base_strcatalloc(prepareStmnt, ") AS ", &stmntsz);
+                
+                if (prepareStmnt)
+                {
+                    prepareStmnt = base_strcatalloc(prepareStmnt, prepareStmntClause, &stmntsz);
+                    if (!prepareStmnt)
+                    {
+                        /* Out of memory. */
+                        err = 1;
+                    }
+                    
+                    free(prepareStmntClause);
+                    prepareStmntClause = NULL;
+                }
+                else
+                {
+                    /* Out of memory. */
+                    err = 1;
+                }
+            }
+                    
+            if (!err)
+            {
+                /* Must unlock db - db_dms will lock/unlock db. */
+                db_unlock(dbin);
+                
+                /* Ask database server to prepare a statement executing the query. */
+                if (db_dms(dbin, NULL, prepareStmnt))
+                {
+                    /* Failed to create prepare statement. */
+                    err = 1;
+                }
+                
+                db_lock(dbin);
+                
+                free(prepareStmnt);
+                prepareStmnt = NULL;
+            }
+                        
+            if (!err)
+            {
+                void *tuple = NULL;
+                char *strAddr = NULL;
+                
+                for (ielem = 0; ielem < nelems; ielem++)
+                {
+                    /* Extract query parameters from function argument list. */
+                    for (iarg = 0, buflen = 0; iarg < nargs; iarg++)
+                    {
+                        tuple = values[iarg];
+                        
+                        if (dbtypes[iarg] == DB_STRING || dbtypes[iarg] == DB_VARCHAR)
+                        {
+                            paramLengths[iarg] = strlen(((char **)tuple)[ielem]);
+                        }
+                        else
+                        {
+                            paramLengths[iarg] = db_sizeof(dbtypes[iarg]);
+                        }
+                        
+                        paramFormats[iarg] = 1;
+                        buflen += paramLengths[iarg];
+                    }
+                    
+                    paramBuf = calloc(1, buflen);
+                    if (!paramBuf)
+                    {
+                        /* Out of memory. */
+                        err = 1;
+                        break;
+                    }
+                    
+                    pParamBuf = paramBuf;
+                    for (iarg = 0; iarg < nargs; iarg++)
+                    {
+                        tuple = values[iarg];
+                        paramValues[iarg] = pParamBuf;
+                        if (dbtypes[iarg] == DB_STRING || dbtypes[iarg] == DB_VARCHAR)
+                        {
+                            strAddr = *((char **)tuple + ielem);
+                            memcpy(pParamBuf, strAddr, paramLengths[iarg]);
+                        }
+                        else
+                        {
+                            /* The second argument point to the address of location containing binary integer data. */
+                            memcpy(pParamBuf, (uint8_t *)tuple + ielem * paramLengths[iarg], paramLengths[iarg]);
+                        }
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+                        db_byteswap(dbtypes[iarg], 1, pParamBuf);
+#endif
+                        pParamBuf += paramLengths[iarg];
+                    }
+                    
+                    /* Use prepare statement. */
+                    pgres = PQexecPrepared(dbconn, stmntName, nargs, (const char * const *)paramValues, paramLengths, paramFormats, 1);
+                    free(paramBuf);
+                    paramBuf = NULL;
+                    
+                    if (PQresultStatus(pgres) == PGRES_TUPLES_OK)
+                    {
+                        /* statement succeeded, process any data returned by it. */
+                        dbres = (DB_Binary_Result_t *)calloc(1, sizeof(DB_Binary_Result_t));
+                        if (!dbres)
+                        {
+                            /* Out of memory. */
+                            err = 1;
+                            break;
+                        }
+                        
+                        dbres->num_rows = PQntuples(pgres);
+                        dbres->num_cols = PQnfields(pgres);
+                        
+                        if (dbres->num_cols > 0)
+                        {
+                            dbres->column = (DB_Column_t *)malloc(dbres->num_cols * sizeof(DB_Column_t));
+                            if (!dbres->column)
+                            {
+                                /* Out of memory. */
+                                err = 1;
+                                break;
+                            }
+                            
+                            for (icol = 0; icol < dbres->num_cols; icol++)
+                            {
+                                colnameLength = strlen(PQfname(pgres, icol)) + 1;
+                                dbres->column[icol].column_name = malloc(colnameLength);
+                                if (!dbres->column[icol].column_name)
+                                {
+                                    /* Out of memory. */
+                                    err = 1;
+                                    break;
+                                }
+                                
+                                strcpy(dbres->column[icol].column_name, PQfname(pgres,icol)); 
+                                dbres->column[icol].type = pgsql2db_type(PQftype(pgres, icol));
+                                dbres->column[icol].num_rows = dbres->num_rows;
+                                dbres->column[icol].is_null = malloc(dbres->num_rows * sizeof(int));
+                                if (!dbres->column[icol].is_null)
+                                {
+                                    /* Out of memory. */
+                                    err = 1;
+                                    break;
+                                }
+                                
+                                /* The column size is the max(width of row). */
+                                dbres->column[icol].size = 0;
+                                for (irow = 0; irow < dbres->num_rows; irow++)
+                                {
+                                    width = PQgetlength(pgres, irow, icol);
+                                    if (width > dbres->column[icol].size)
+                                    {
+                                        dbres->column[icol].size = width;
+                                    }
+                                }
+                                
+                                /* The database does NOT store the trailing '\0' as part of the
+                                 string. Add it manually by setting size one larger. */
+                                if (dbres->column[icol].type == DB_STRING || dbres->column[icol].type == DB_VARCHAR)
+                                {
+                                    (dbres->column[icol].size)++;
+                                }
+                                
+                                dbres->column[icol].data = malloc(dbres->num_rows * dbres->column[icol].size);
+                                if (!dbres->column[icol].data)
+                                {
+                                    /* Out of memory. */
+                                    err = 1;
+                                    break;
+                                }
+                            }
+                            
+                            for (icol = 0; icol < dbres->num_cols; icol++)
+                            {
+                                for (irow = 0; irow < dbres->num_rows; irow++)
+                                {
+                                    dbres->column[icol].is_null[irow] = PQgetisnull(pgres, irow, icol);
+                                    if (!dbres->column[icol].is_null[irow])
+                                    {
+                                        memcpy(&dbres->column[icol].data[irow * dbres->column[icol].size], PQgetvalue(pgres, irow, icol), dbres->column[icol].size);
+                                    }
+                                    else
+                                    {
+                                        memset(&dbres->column[icol].data[irow * dbres->column[icol].size], 0, dbres->column[icol].size);
+                                    }
+                                }
+#if __BYTE_ORDER == __LITTLE_ENDIAN
+                                db_byteswap(dbres->column[icol].type, dbres->num_rows, dbres->column[icol].data);
+#endif
+                            }
+                        }
+                    }
+                    else
+                    {
+                        fprintf(stderr, "query failed: %s", PQerrorMessage(dbconn));
+                    }
+                    
+                    PQclear(pgres);
+                    if (!dbresults)
+                    {
+                        dbresults = (DB_Binary_Result_t **)calloc(nelems, sizeof(DB_Binary_Result_t *));    
+                    }
+                    
+                    dbresults[ielem] = dbres;
+                    dbres = NULL;
+                    
+                } /* loop over tuple elements. */
+            }
+            
+            /* All done with the prepared statement - deallocate it. */
+            if (*stmntName)
+            {
+                /* This could fail, but we don't care. */
+                snprintf(buf, sizeof(buf), "DEALLOCATE %s", stmntName);
+                
+                /* Must unlock db - db_dms will lock/unlock db. */
+                db_unlock(dbin);
+                
+                db_dms(dbin, NULL, buf);
+                
+                db_lock(dbin);
+            }
+        }
+
+        db_unlock(dbin);
+    }
+    
+    if (err)
+    {
+        if (dbresults)
+        {
+            db_free_binary_result_tuple(&dbresults, nelems);
+        }
+    }
+
+    return dbresults;
+}
 
 /* Execute a data manipulation statement (DMS). */
 int db_dms(DB_Handle_t  *dbin, int *row_count,  char *query_string)
@@ -750,7 +1124,7 @@ int db_dms_array(DB_Handle_t  *dbin, int *row_count,
       goto failure;
     }
     /* Buld the string for a PREPARE statement. */ 
-    sprintf(stmtname,"db_tmp_stmt_%d",dbin->stmt_num);
+    sprintf(stmtname,"db_tmp_stmt_%u",dbin->stmt_num);
     sprintf(dallocstmt,"deallocate %s",stmtname);
     /* Increment the global statement counter. */
     ++dbin->stmt_num;
@@ -1240,6 +1614,6 @@ int db_settimeout(DB_Handle_t *db, unsigned int timeoutval)
 {
     char stmnt[128];
 
-    snprintf(stmnt, sizeof(stmnt), "SET statement_timeout TO %d", timeoutval);    
+    snprintf(stmnt, sizeof(stmnt), "SET statement_timeout TO %u", timeoutval);    
     return db_dms(db, NULL, stmnt);
 }

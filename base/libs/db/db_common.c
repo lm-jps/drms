@@ -544,6 +544,26 @@ void db_free_text_result(DB_Text_Result_t *db_result)
   }
 }
   
+
+void db_free_binary_result_tuple(DB_Binary_Result_t ***tuple, unsigned int nelems)
+{
+    if (tuple && *tuple)
+    {
+        unsigned int ielem;
+        
+        for (ielem = 0 ; ielem < nelems; ielem++)
+        {
+            if ((*tuple)[ielem])
+            {
+                db_free_binary_result((*tuple)[ielem]);
+                (*tuple)[ielem] = NULL;
+            }
+        }
+        
+        free(*tuple);
+        *tuple = NULL;
+    }
+}
     
 char *search_replace(const char *string, const char *search, 
 		     const char *replace)
