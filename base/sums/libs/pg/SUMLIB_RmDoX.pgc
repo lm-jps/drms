@@ -242,7 +242,7 @@ EXEC SQL END DECLARE SECTION;
             EXEC SQL CONNECT TO :target;
             EXEC SQL WHENEVER SQLERROR GOTO sqljsocerror1;
             EXEC SQL EXECUTE IMMEDIATE :stmt;
-            //EXEC SQL COMMIT;
+            EXEC SQL COMMIT;
             EXEC SQL DISCONNECT;
             EXEC SQL WHENEVER SQLERROR GOTO sqlrmerror;
           }
