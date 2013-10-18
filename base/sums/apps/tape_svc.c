@@ -823,6 +823,7 @@ tapeprog_1(rqstp, transp)
             write_log("   current_client was NULL\n");
           }
           else {
+            /***********************only for ia64**********************************
             sprintf(heapcln, "%lx", current_client); 
             if(rdflg) {
               write_log("current_client = %s\n", heapcln); //!!TEMP for debug
@@ -832,6 +833,7 @@ tapeprog_1(rqstp, transp)
 			current_client);
             }
             else {
+            ***********************only for ia64**********************************/
               clnt_stat=clnt_call(current_client, procnum, (xdrproc_t)xdr_result, 
 			result, (xdrproc_t)xdr_void, 0, TIMEOUT);
               if(clnt_stat != 0) {
@@ -841,7 +843,7 @@ tapeprog_1(rqstp, transp)
                 write_log("%s %s\n", datestring(), call_err);
               }
               if(current_client_destroy) clnt_destroy(current_client);
-            }
+            //}
           }
           freekeylist((KEY **)&result);
         }
