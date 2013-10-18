@@ -30,7 +30,10 @@ DB_Binary_Result_t *drms_query_binv(DRMS_Session_t *session, char *query,
 DB_Binary_Result_t *drms_query_bin_array(DRMS_Session_t *session, 
 					  char *query,
 					 int n_args, DB_Type_t *intype, 
-					 void **argin);
+                                         void **argin);
+#ifndef DRMS_CLIENT
+DB_Binary_Result_t **drms_query_bin_ntuple(DRMS_Session_t *session, const char *stmnt, unsigned int nelems, unsigned int nargs, DB_Type_t *dbtypes, void **values);
+#endif
 /** \brief Perform query and receive query results in DB_Text_Result_t*/
 DB_Text_Result_t *drms_query_txt(DRMS_Session_t *session, char *query);
 /** \brief Execute a data manipulation statement (DMS). */

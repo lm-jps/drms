@@ -692,7 +692,15 @@ DB_Binary_Result_t *drms_query_bin_array(DRMS_Session_t *session,  char *query,
   }
 }
 
-
+    /* The client part of this function has not been implemented. */
+#ifndef DRMS_CLIENT
+DB_Binary_Result_t **drms_query_bin_ntuple(DRMS_Session_t *session, const char *stmnt, unsigned int nelems, unsigned int nargs, DB_Type_t *dbtypes, void **values)
+{
+    /* Server code. */
+    XASSERT(session->db_direct == 1);
+    return db_query_bin_ntuple(session->db_handle, stmnt, nelems, nargs, dbtypes, values);
+}
+#endif
 
 int drms_dms(DRMS_Session_t *session, int *row_count,  char *query)
 {
