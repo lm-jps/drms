@@ -238,6 +238,7 @@ int main(int argc, char *argv[])
     }
   }
   }
+  sleep(2);
   if(!rm_1_found) {		//only run if not already running
   if((pid = fork()) < 0) {
     printf("***Can't fork(). errno=%d\n", errno);
@@ -255,6 +256,7 @@ int main(int argc, char *argv[])
     }
   }
   }
+  sleep(2);
   if(!rm_2_found) {		//only run if not already running
   if((pid = fork()) < 0) {
     printf("***Can't fork(). errno=%d\n", errno);
@@ -272,6 +274,7 @@ int main(int argc, char *argv[])
     }
   }
   }
+  sleep(2);
 
   //printf("End of sum_forker to start tape services\n");
 }
