@@ -64,7 +64,9 @@
 
 #define CFG_FILE "/home/production/cvs/JSOC/base/sums/apps/data/sum_rm.cfg"
 #define NEWLOG_FILE "/home/production/cvs/JSOC/base/sums/apps/data/sum_rm_0.newlog"
+#define RM_ASSIGN "/usr/local/logs/SUM/sum_rm_assign.txt"
 
+int SUMN = 0;		//this is sum_rm_0
 int stat_storage();
 void get_cfg();
 static char *datestring(void);
@@ -91,6 +93,9 @@ char *dptr;
 int soi_errno = NO_ERROR;
 int logvers = 0;
 
+//indexes into ptab for this sum_rm_n
+//setup by reading sum_rm_assign.txt
+int ixptab[MAX_PART];
 
 /* the following are set from the .cfg file */
 int noopflg;		/* sum_rm does nothing if flg set */
@@ -219,7 +224,7 @@ void alrm_sig(int sig)
 int stat_storage()
 {
   PART *pptr;
-  int i, status;
+  int i, j, status;
   int updated = 0;
   int partnchange = 0;
   double df_avail, df_total, df_del, total, upercent;
@@ -228,8 +233,9 @@ int stat_storage()
   //for(i=0; i<MAX_PART-1; i++) {
   //for(i=0; i<11; i++) {		//for sum_rm_0 do 1st 11 partitions
 
-  for(i=0; i<17; i++) {		//for sum_rm_0 do 1st 15 partitions
-				//this help account for /SUM100s not used
+  for(j=0; j<MAX_PART-1; j++) {	//for sum_rm_0 partitions
+    i = ixptab[j];		//index into ptab
+    if(i == -1) break;
     pptr=(PART *)&ptab[i];
     if(pptr->name == NULL) break;
     //skip the special partitions for permanent aia.lev1 (save DB time)
@@ -456,10 +462,10 @@ void get_cmd(int argc, char *argv[])
 */
 void setup()
 {
-  FILE *fplog;
+  FILE *fplog, *asfp;
   char cmd[MAX_STR], lfile[MAX_STR], line[MAX_STR];
-  char target[80], gfile[MAX_STR];
-  int i, pid;
+  char target[80], gfile[MAX_STR], assignfile[80], spartname[80];
+  int i, j, pid, sumn, no_rm;
   char *cptr;
 
   gethostname(thishost,MAX_STR);
@@ -515,6 +521,32 @@ void setup()
   for(i=0; i < MAX_PART-1; i++) {
       //ponoff[i] = 0;		 //init the 98% off/ 95% on table
       ponoff[i] = ptab[i].pds_set_num;	 //init the 98% off/ 95% on table
+  }
+  sprintf(assignfile, "%s", RM_ASSIGN);
+  if((asfp=fopen(assignfile, "r")) == NULL) {
+    fprintf(stderr, "Can't open the assignment file %s\n", assignfile);
+    exit(1);
+  }
+  else {
+    i = 0;
+    //Note: an entry looks like
+    //#part   n       no_rm
+    ///SUM0   0       0
+    while(fgets(line, 128, asfp)) {  //Must be exactly 12 (MAX_DRIVES) entries
+      write_log("%s", line);
+      if(!strncmp(line, "#", 1)) {   //ignore line starting with #
+        continue;
+      }
+      sscanf(line, "%s %d %d", spartname, &sumn, &no_rm);
+      if(sumn != SUMN) continue;
+      //now find where this partn name is in the ptab table
+      for(j=0; j < MAX_PART-1; j++) {
+        if(ptab[j].name == NULL) break;
+        if(!strcmp(spartname, ptab[j].name)) ixptab[i++] = j;
+      }
+      ixptab[i] = -1;
+    }
+    fclose(asfp);
   }
   signal(SIGALRM, &alrm_sig);	/* setup for alarm signal */
   alarm(2);			/* set up first alarm */
