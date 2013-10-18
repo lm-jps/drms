@@ -356,8 +356,7 @@ KEY *getdo_1(KEY *params)
         getvers = getkey_int(params, "newflg");
       }
       else getvers = 0;
-      //if(getvers != GET_FIX_VER) {	//this is old code. !!Enable for release
-      if(!findkey(params, "newflg")) {	//this is old code 
+      if(getvers != GET_FIX_VER) {	//this is old code. !!Enable for release
         rinfo = 0;	  /* indicate error through STATUS below */
         send_ack();       /* ack original sum_svc caller */
         setkey_int(&retlist, "STATUS", 1);   /* give error back to caller */
