@@ -1765,7 +1765,7 @@ static int GenOutRSSpec(DRMS_Env_t *env,
                      * processing step has a suffix of _mod, then the output series name should be 
                      * hmi.v_45s_mod. Since this series already exists, there should be no attempt to create
                      * it (i.e., data->crout == 0). */
-                    if ((psuff = strcasestr(snamesIn[iset], suffix)) == NULL || psuff + strlen(suffix) != '\0')
+                    if ((psuff = strcasestr(snamesIn[iset], suffix)) == NULL || *(psuff + strlen(suffix)) != '\0')
                     {
                         /* The input series name does not end in the suffix. */
                         
