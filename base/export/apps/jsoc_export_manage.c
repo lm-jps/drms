@@ -1667,6 +1667,8 @@ static int KeyExists(DRMS_Env_t *env, const char *dbhost, const char *series, co
     return rv;
 }
 
+/* cpinfo - the current processing step's processing information
+ * ppinfo - the previous processing step's processing information. */
 static int GenOutRSSpec(DRMS_Env_t *env, 
                         const char *dbhost, 
                         ProcStepInfo_t *cpinfo, 
@@ -1744,23 +1746,46 @@ static int GenOutRSSpec(DRMS_Env_t *env,
             }
             else if (suffix && *suffix == '_')
             {
-                /* No suffix on input series names, but suffix on output series names. Append 
-                 * the output series' suffix onto the input series' names. */
+                /* No suffix on previous proc steps' series names (or there was no previous proc step), 
+                 * but suffix on output series names. Append the output series' suffix onto the input series' names, 
+                 * unless there was no previous proc step, and the input names already have the suffix. In 
+                 * that case, use the input series name as the output series name. */
                 char replname[DRMS_MAXSERIESNAMELEN];
+                char *psuff = NULL;
                 
+                /* Theoretically, outseries could be a comma-separated list of record-set specifications. We are 
+                 * going to add the suffix to each seriesname in that list. */
                 outseries = strdup(data->input);
+                data->crout = 0;
                 for (iset = 0; iset < nsetsIn; iset++)
                 {
-                    snprintf(replname, sizeof(replname), "%s%s", snamesIn[iset], suffix);
-                    newoutseries = base_strreplace(outseries, snamesIn[iset], replname);
-                    free(outseries);
-                    outseries = newoutseries;
-                }
-                
-                /* We are writing to an output series that differs fromt the input series. 
-                 * We need to run jsoc_export_clone from the drms_run script. If the output series
-                 * already exists, then jsoc_export_clone is a no-op. */
-                data->crout = 1;
+                    /* If the input series name already ends in the suffix that the processing step would
+                     * like to add to the input series name, then we are to use the input series name as
+                     * the output series name. For example, if the input series is hmi.v_45s_mod and the current 
+                     * processing step has a suffix of _mod, then the output series name should be 
+                     * hmi.v_45s_mod. Since this series already exists, there should be no attempt to create
+                     * it (i.e., data->crout == 0). */
+                    if ((psuff = strcasestr(snamesIn[iset], suffix)) == NULL || psuff + strlen(suffix) != '\0')
+                    {
+                        /* The input series name does not end in the suffix. */
+                        
+                        /* Set the output-series name to the input-series name with the suffix appeneded to it. */
+                        snprintf(replname, sizeof(replname), "%s%s", snamesIn[iset], suffix);
+                        newoutseries = base_strreplace(outseries, snamesIn[iset], replname);
+                        free(outseries);
+                        outseries = newoutseries;
+                        
+                        /* We are writing to at least one output series that differs fromt the input series. 
+                         * We need to run jsoc_export_clone from the drms_run script. If the output series
+                         * already exists, then jsoc_export_clone is a no-op. */
+                        data->crout = 1;
+                    }
+                    else
+                    {
+                        /* The input-series names end in the suffix. Do not modify the output series names (let them
+                         * stay as the input series names). */
+                    }
+                }                
             }
             else if (suffix && *suffix)
             {
