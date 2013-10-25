@@ -1,0 +1,49 @@
+	/home/production/cvs/JSOC/doc/xtape_svc.on_xim_for_simulation
+
+Login on xim as production.
+
+The xtape_svc will read the file /tmp/t950_status_dump.out to get
+its tape inventory. So set up this file as you want before you start.
+
+> cd /home/production/cvs/JSOC/base/sums/scripts
+> sum_stop_xim.MULTI
+> sum_start_xim.MULTI
+
+Also run on xim as production:
+> cd /home/production/cvs/JSOC/base/sums/scripts
+> tximview -i jim
+(connect to db jim, which is what xtape_svc is running with.)
+
+If the Imp/Exp button on the top of the gui lights up, then you 
+need to place a tape in the robot like so:
+Hit Imp/Exp
+A window comes up advising that 'We will unload n tapes(s)".
+Hit the 'Start Expired Tape Unload'
+You will see the tape unload into the import/export slots and
+a new window will appear labeled 'Import/Export Ops'.
+It will tell you what tapes it needs.
+Edit the file:
+/tmp/t950_status_dump.jmtx 
+(there's a copy save in /home/production/cvs/JSOC/base/sums/scripts)
+to include the new tapes to be put into the unit. 
+Make sure you change any 'Empty:' to 'Full :'
+and make sure there are spaces after the tapeid at the end of the line.
+This will simulate the reinventory that the t950 takes after you hit
+the red button on the 'Import/Export Ops' window:
+Exp/Exch Done
+
+Wait while the new inventory is simulated and you should then see the
+new tape start to read.
+
+
+On xim you can see the lastest xtape_svc and xsum_svc log files with:
+> logsum
+> logtape
+> logsumt  (tail -f)
+> logtapet (tail -f)
+
+If you need to remake xtape_svc do on n02 as production:
+(it's always best to do this with setenv JSOC_DEBUG 1)
+> cd /home/production/cvs/JSOC
+> make xtape_svc
+
