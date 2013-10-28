@@ -10572,6 +10572,12 @@ int drms_count_records(DRMS_Env_t *env, const char *recordsetname, int *status)
                     
                     free(where);
                     where = NULL;
+                    
+                    if (firstlast)
+                    {
+                        hcon_destroy(&firstlast);
+                    }
+                    
                     if (pkwhere)
                     {
                         free(pkwhere);
@@ -10614,6 +10620,7 @@ failure:
     if (seriesname) free(seriesname);
     if (query) free(query);
     if (where) free(where);
+    if (firstlast) hcon_destroy(&firstlast);
     if (pkwhere) free(pkwhere);
     if (npkwhere) free(npkwhere);
     if (pkwhereNFL) hcon_destroy(&pkwhereNFL);

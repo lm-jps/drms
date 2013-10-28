@@ -194,42 +194,108 @@ static int ProcessRecord(DRMS_Record_t *recin, DRMS_Record_t *recout)
             
             if (segout)
             {
-                *infile = '\0';
-                *outfile = '\0';
-                
                 if (recin->sunum != -1LL)
                 {
-                    /* skip input records that have no SU associated with them */
-                    drms_segment_filename(segin, infile);
-                    
-                    if (segout->info->protocol == DRMS_GENERIC)
+                    if (segin->info->type == segout->info->type)
                     {
-                        char *filename = NULL;
-                        filename = rindex(infile, '/');
-                        if (filename)
+                        /* Since the segment data types are the same, we can copy the source SUMS file directly into the 
+                         * newly created SU. */
+                        *infile = '\0';
+                        *outfile = '\0';
+                        
+                        /* skip input records that have no SU associated with them */
+                        drms_segment_filename(segin, infile);
+                        
+                        if (segout->info->protocol == DRMS_GENERIC)
                         {
-                            filename++;
+                            char *filename = NULL;
+                            filename = rindex(infile, '/');
+                            if (filename)
+                            {
+                                filename++;
+                            }
+                            else 
+                            {
+                                filename = infile;
+                            }
+                            
+                            CHECKSNPRINTF(snprintf(segout->filename, DRMS_MAXSEGFILENAME, "%s", filename), DRMS_MAXSEGFILENAME);
+                            drms_segment_filename(segout, outfile);
                         }
-                        else 
+                        else
                         {
-                            filename = infile;
+                            drms_segment_filename(segout, outfile);
                         }
                         
-                        CHECKSNPRINTF(snprintf(segout->filename, DRMS_MAXSEGFILENAME, "%s", filename), DRMS_MAXSEGFILENAME);
-                        drms_segment_filename(segout, outfile);
+                        if (*infile != '\0' && *outfile != '\0')
+                        {
+                            if (copyfile(infile, outfile) != 0)
+                            {
+                                fprintf(stderr, "failure copying file '%s' to '%s'.\n", infile, outfile);
+                                rv = 1;
+                                break;
+                            }
+                        }   
                     }
                     else
                     {
-                        drms_segment_filename(segout, outfile);
-                    }
-                    
-                    if (*infile != '\0' && *outfile != '\0')
-                    {
-                        if (copyfile(infile, outfile) != 0)
+                        /* The input and output segments are of different data types. We cannot directly copy the source SUMS file to the target. 
+                         * Instead, we need to read the source file with drms_segment_read(). */
+                        if (segin->info->protocol == DRMS_GENERIC || segout->info->protocol == DRMS_GENERIC)
                         {
-                            fprintf(stderr, "failure copying file '%s' to '%s'.\n", infile, outfile);
+                            /* If the input file is of a generic segment, and the output file is of a non-generic segment, or if the output
+                             * file is of a generic segment and the input file is of a non-generic segment, then we must fail. We cannot
+                             * convert to or from a generic segment. */
+                            fprintf(stderr, "Unable to convert to or from a generic segment.\n");
                             rv = 1;
                             break;
+                        }
+                        else
+                        {
+                            DRMS_Array_t *data = NULL;
+                            
+                            /* drms_segment_read() always returns an array in 'physical units' (or bscale/bzero are 1/0). It
+                             * is possible that drms_segment_read() could set data->israw to 1, but in that case, 
+                             * bscale == 1 and bzero == 0, so whether israw is 0 or not is irrelevant. The data are in 
+                             * physical units. */
+                            
+                            /* Do NOT convert to the output data type with drms_segment_read(). If conversion happens now, 
+                             * then files with binary double data that are to be converted to integer data will be integer
+                             * truncated. Read data as-is, and let drms_segment_write() do the inverse-scaling if needed. 
+                             * drms_segment_write() will preserve as much precision as possible. */
+                            data = drms_segment_read(segin, segin->info->type, &istat);
+                            if (!data || istat != DRMS_SUCCESS)
+                            {
+                                fprintf(stderr, "Unable to read input segment file.\n");
+                                rv = 1;
+                                if (data)
+                                {
+                                    drms_free_array(data);
+                                    data = NULL;
+                                }
+                                break;
+                            }
+                            
+                            /* Force inverse-scaling. If we don't, then input floating-point values will get TRUNCATED to int
+                             * values (integer truncation). */
+                            data->israw = 0;
+                            
+                            /* If israw == 0, then bzero and bscale are ignored by all code, except for drms_segment_write(), 
+                             * which will do inverse-scaling if the output segment data type is an integer.*/
+                            data->bzero = segout->bzero;
+                            data->bscale = segout->bscale;
+                            
+                            istat = drms_segment_write(segout, data, 0);
+                            
+                            drms_free_array(data);
+                            data = NULL;
+                            
+                            if (istat != DRMS_SUCCESS)
+                            {
+                                fprintf(stderr, "Unable to write output segment file.\n");
+                                rv = 1;
+                                break;
+                            }
                         }
                     }
                 }
@@ -238,8 +304,7 @@ static int ProcessRecord(DRMS_Record_t *recin, DRMS_Record_t *recout)
         
         if (iter)
         {
-            free(iter);
-            iter = NULL;
+            hiter_destroy(&iter);
         }
         
         /* If recin is linked to a record in another series, then
@@ -267,8 +332,7 @@ static int ProcessRecord(DRMS_Record_t *recin, DRMS_Record_t *recout)
         
         if (iter)
         {
-            free(iter);
-            iter = NULL;
+            hiter_destroy(&iter);
         }
     }
     else
