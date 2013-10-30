@@ -2,6 +2,9 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
     if 0;
 #/home/production/cvs/JSOC/base/sums/scripts/sumlookgroupX.pl
 #
+#Normally started by cron job on n02 by production:
+#05 5 * * 1 /home/production/cvs/JSOC/base/sums/scripts/sumlookgroupcron.pl
+
 #Show how the storage is distributed (free, del pend, arch pend, etc.)
 #for each SUM by group_id.
 #Prints a XHTML file to stdout that s/b redirected to a saved .html for later display.
@@ -170,7 +173,9 @@ print <<EOF;
   <body>
   <h3 align=center>/SUM for db=jsoc_sums by group_id $ldate (Full mode=$FULL)
   <a href="http://sun.stanford.edu/~jsoc/SUM/gChartBasicSums.html">Storage By User</a></h3>
-  <h4>Rounded down to nearest MegaByte</h4>
+  <h4>
+  <a href="http://sun.stanford.edu/~jsoc/SUM/ReadmeInfo.txt">Readme info</a>
+  <br>Rounded down to nearest MegaByte</h4>
   <table>
         <tr>
                 <th>Group</th>
