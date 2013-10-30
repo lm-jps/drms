@@ -126,115 +126,115 @@ h2 { text-align: center }
 #basicGChart0 {
 position:absolute;
 left:0px;
-top:60px;
+top:120px;
 width: 550px; height: 280px
 }
 #basicGChart99 {
 position:absolute;
 left:600px;
-top:60px;
+top:120px;
 width: 450px; height: 280px
 }
 #basicGChart98 {
 position:absolute;
 left:0px;
-top:360px;
+top:420px;
 width: 850px; height: 280px
 }
 #basicGChart1 {
 position:absolute;
 left:0px;
-top:660px;
+top:720px;
 width: 450px; height: 280px
 }
 #basicGChart2 {
 position:absolute;
 left:400px;
-top:660px;
+top:720px;
 width: 450px; height: 280px
 }
 #basicGChart3 {
 position:absolute;
 left:800px;
-top:660px;
+top:720px;
 width: 450px; height: 280px
 }
 #basicGChart4 {
 position:absolute;
 left:0px;
-top:960px;
+top:1020px;
 width: 450px; height: 280px
 }
 #basicGChart5 {
 position:absolute;
 left:400px;
-top:960px;
+top:1020px;
 width: 450px; height: 280px
 }
 #basicGChart6 {
 position:absolute;
 left:800px;
-top:960px;
+top:1020px;
 width: 450px; height: 280px
 }
 #basicGChart7 {
 position:absolute;
 left:0px;
-top:1260px;
+top:1320px;
 width: 450px; height: 280px
 }
 #basicGChart8 {
 position:absolute;
 left:400px;
-top:1260px;
+top:1320px;
 width: 450px; height: 280px
 }
 #basicGChart9 {
 position:absolute;
 left:800px;
-top:1260px;
+top:1320px;
 width: 450px; height: 280px
 }
 #basicGChart10 {
 position:absolute;
 left:0px;
-top:1560px;
+top:1620px;
 width: 450px; height: 280px
 }
 #basicGChart11 {
 position:absolute;
 left:400px;
-top:1560px;
+top:1620px;
 width: 450px; height: 280px
 }
 #basicGChart12 {
 position:absolute;
 left:800px;
-top:1560px;
+top:1620px;
 width: 450px; height: 280px
 }
 #basicGChart13 {
 position:absolute;
 left:0px;
-top:1860px;
+top:1920px;
 width: 450px; height: 280px
 }
 #basicGChart14 {
 position:absolute;
 left:400px;
-top:1860px;
+top:1920px;
 width: 450px; height: 280px
 }
 #basicGChart15 {
 position:absolute;
 left:800px;
-top:1860px;
+top:1920px;
 width: 450px; height: 280px
 }
 #basicGChart16 {
 position:absolute;
 left:0px;
-top:2160px;
+top:2220px;
 width: 450px; height: 280px
 }
 </style>
@@ -269,7 +269,8 @@ $in7 = $datafile.".".$ttag7;
 #728041440478 3 728,041,440,478 rick
 #552907211772 3 552,907,211,772 jps
 
-open(ID, $in1) || die "Can't open $in1: $!\n";
+#open(ID, $in1) || die "Can't open $in1: $!\n";
+open(ID, $in1) || goto IN2;
 while(<ID>) {
   if(/^#/ || /^\n/) { #ignore any comment or blank lines
     next;
@@ -288,8 +289,8 @@ while(<ID>) {
   }
 }
 close(ID);
-#open(ID, $in2) || die "Can't open $in2: $!\n";
-open(ID, $in2) || goto TEMP;
+IN2:
+open(ID, $in2) || goto IN3;
 while(<ID>) {
   if(/^#/ || /^\n/) { #ignore any comment or blank lines
     next;
@@ -307,8 +308,8 @@ while(<ID>) {
   }
 }
 close(ID);
-#open(ID, $in3) || die "Can't open $in3: $!\n";
-open(ID, $in3) || goto TEMP;
+IN3:
+open(ID, $in3) || goto IN4;
 while(<ID>) {
   if(/^#/ || /^\n/) { #ignore any comment or blank lines
     next;
@@ -327,8 +328,8 @@ while(<ID>) {
   }
 }
 close(ID);
-#open(ID, $in4) || die "Can't open $in4: $!\n";
-open(ID, $in4) || goto TEMP;
+IN4:
+open(ID, $in4) || goto IN5;
 while(<ID>) {
   if(/^#/ || /^\n/) { #ignore any comment or blank lines
     next;
@@ -347,8 +348,8 @@ while(<ID>) {
   }
 }
 close(ID);
-#open(ID, $in5) || die "Can't open $in5: $!\n";
-open(ID, $in5) || goto TEMP;
+IN5:
+open(ID, $in5) || goto IN6;
 while(<ID>) {
   if(/^#/ || /^\n/) { #ignore any comment or blank lines
     next;
@@ -367,8 +368,8 @@ while(<ID>) {
   }
 }
 close(ID);
-#open(ID, $in6) || die "Can't open $in6: $!\n";
-open(ID, $in6) || goto TEMP;
+IN6:
+open(ID, $in6) || goto IN7;
 while(<ID>) {
   if(/^#/ || /^\n/) { #ignore any comment or blank lines
     next;
@@ -387,7 +388,7 @@ while(<ID>) {
   }
 }
 close(ID);
-#open(ID, $in7) || die "Can't open $in7: $!\n";
+IN7:
 open(ID, $in7) || goto TEMP;
 while(<ID>) {
   if(/^#/ || /^\n/) { #ignore any comment or blank lines
@@ -523,6 +524,7 @@ close(MN);
 
 SKIPMEAN:
 $i = 0;
+$diver = 1;
 while($u = pop(@sortusers)) {
   $gchart = "basicGChart"."$i";
   ($by1, $ccnt1) = split(/\s+/, $HofUser1{$u});
@@ -667,6 +669,7 @@ print OUT <<EOF1;
 </head>
 <body>
 <h2>SUM storage (in descending order) by user per day (ending $ttag7)</h2>
+<h2>!!NOTE: Changed to once a week instead of daily!!</h2>
 <div id="basicGChart0">
 </div>
 <div id="basicGChart98">
