@@ -875,7 +875,6 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
   DRMS_Array_t *arr = NULL;
   char filename[DRMS_MAXPATHLEN];
   DRMS_Record_t *rec;
-  DRMS_SeriesVersion_t vers2_1 = {"2.1", ""};
 
   CHECKNULL_STAT(seg,status);
   
@@ -1234,27 +1233,6 @@ DRMS_Array_t *drms_segment_read(DRMS_Segment_t *seg, DRMS_Type_t type,
      }
   }
 
-  /* Ensure that the record's bzero/bscale matches the FITS header's values */
-  if (drms_series_isvers(seg->record->seriesinfo, &vers2_1) && 
-      (seg->info->protocol == DRMS_TAS || 
-       seg->info->protocol == DRMS_FITS ||
-       seg->info->protocol == DRMS_FITZ ||
-       seg->info->protocol == DRMS_BINARY ||
-       seg->info->protocol == DRMS_BINZIP))
-  {
-     /* The bzero/bscale values must be contained in record keywords - 
-      * they must be allowed to vary across records (for FITS protocol) and segments.  
-      * The keyword name convention is <segname>_bzero and <segname>_bscale. 
-      * These keywords must NOT be defined in the .jsd - they are created implicitly. 
-      * When the template record is populated, these values are copied from
-      * the keyword value to the seg->bzero and seg->bscale fields.
-      */
-     if (rec->env->verbose && !drms_segment_checkscaling(arr, seg->bzero, seg->bscale))
-     {
-        fprintf(stderr, "The data file's bzero/bscale values (%f, %f) do not match those of the segment (%f, %f).\n", arr->bzero, arr->bscale, seg->bzero, seg->bscale);
-     }
-  }
-
   for (i=0;i<arr->naxis;i++)
     arr->start[i] = 0;
 
@@ -1305,7 +1283,6 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
   DRMS_Array_t *arr, *tmp;
   char filename[DRMS_MAXPATHLEN];
   DRMS_Record_t *rec;
-  DRMS_SeriesVersion_t vers2_1 = {"2.1", ""};	
 
   CHECKNULL_STAT(seg,status);
   
@@ -1465,25 +1442,6 @@ DRMS_Array_t *drms_segment_readslice(DRMS_Segment_t *seg, DRMS_Type_t type,
            statint = DRMS_ERROR_SEGMENT_DATA_MISMATCH;
            goto bailout;
         }
-     }
-  }
-
-  /* Ensure that the record's bzero/bscale matches the FITS header's values */
-  if (drms_series_isvers(seg->record->seriesinfo, &vers2_1) && 
-      (seg->info->protocol == DRMS_TAS || 
-       seg->info->protocol == DRMS_FITS ||
-       seg->info->protocol == DRMS_FITZ))
-  {
-     /* The bzero/bscale values must be contained in record keywords - 
-      * they must be allowed to vary across records (for FITS protocol) and segments.  
-      * The keyword name convention is <segname>_bzero and <segname>_bscale. 
-      * These keywords must NOT be defined in the .jsd - they are created implicitly. 
-      * When the template record is populated, these values are copied from
-      * the keyword value to the seg->bzero and seg->bscale fields.
-      */
-     if (!drms_segment_checkscaling(arr, seg->bzero, seg->bscale))
-     {
-        fprintf(stderr, "The FITS file's bzero/bscale values (%f, %f) do not match those of the segment (%f, %f).\n", arr->bzero, arr->bscale, seg->bzero, seg->bscale);
      }
   }
 
@@ -1796,29 +1754,28 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
 
 	 if (!drms_fitsrw_SetImageInfo(out, &imginfo))
 	 {
-	    /* Need to change the compression parameter to something meaningful 
-	     * (although new users should just use the DRMS_FITS protocol )*/
-	    if (fitsrw_writeintfile(seg->record->env->verbose, filename, &imginfo, out->data, seg->cparms, fitskeys) != CFITSIO_SUCCESS)
-            {
-               status = DRMS_ERROR_FITSRW;
-               goto bailout;
-            }
-
-            /* imginfo will contain the correct bzero/bscale.  This may be different 
-             * that what lives in seg->bzero/bscale - those values can be overriden. 
-             * If they are overridden, then the new values must be saved in the 
-             * underlying keywords where they are stored. */
-            if (drms_series_isvers(seg->record->seriesinfo, &vers2_1))
-            {
-               if (!drms_segment_checkscaling(out, seg->bzero, seg->bscale))
-               {
-                  snprintf(key, sizeof(key), "%s_bzero", seg->info->name);
-                  drms_setkey_double(seg->record, key, imginfo.bzero);
-                  snprintf(key, sizeof(key), "%s_bscale", seg->info->name);
-                  drms_setkey_double(seg->record, key, imginfo.bscale);
-               }
-
-            }
+         /* Need to change the compression parameter to something meaningful 
+          * (although new users should just use the DRMS_FITS protocol )*/
+         if (fitsrw_writeintfile(seg->record->env->verbose, filename, &imginfo, out->data, seg->cparms, fitskeys) != CFITSIO_SUCCESS)
+         {
+             status = DRMS_ERROR_FITSRW;
+             goto bailout;
+         }
+         
+         /* imginfo will contain the correct bzero/bscale.  This may be different 
+          * that what lives in seg->bzero/bscale - those values can be overriden. 
+          * If they are overridden, then the new values must be saved in the 
+          * underlying keywords where they are stored. */
+         if (drms_series_isvers(seg->record->seriesinfo, &vers2_1))
+         {
+             if (!drms_segment_checkscaling(out, seg->bzero, seg->bscale))
+             {
+                 snprintf(key, sizeof(key), "%s_bzero", seg->info->name);
+                 drms_setkey_double(seg->record, key, drms_fitsrw_GetBzeroFromInfo(&imginfo));
+                 snprintf(key, sizeof(key), "%s_bscale", seg->info->name);
+                 drms_setkey_double(seg->record, key, drms_fitsrw_GetBscaleFromInfo(&imginfo));
+             }
+         }
 	 }
 	 else
 	 {
@@ -1869,11 +1826,11 @@ static int drms_segment_writeinternal(DRMS_Segment_t *seg, DRMS_Array_t *arr, in
             if (drms_series_isvers(seg->record->seriesinfo, &vers2_1))
             {
                if (!drms_segment_checkscaling(out, seg->bzero, seg->bscale))
-               {
-                  snprintf(key, sizeof(key), "%s_bzero", seg->info->name);
-                  drms_setkey_double(seg->record, key, imginfo.bzero);
-                  snprintf(key, sizeof(key), "%s_bscale", seg->info->name);
-                  drms_setkey_double(seg->record, key, imginfo.bscale);
+               {                   
+                   snprintf(key, sizeof(key), "%s_bzero", seg->info->name);
+                   drms_setkey_double(seg->record, key, drms_fitsrw_GetBzeroFromInfo(&imginfo));
+                   snprintf(key, sizeof(key), "%s_bscale", seg->info->name);
+                   drms_setkey_double(seg->record, key, drms_fitsrw_GetBscaleFromInfo(&imginfo));
                }
             }
 	 }

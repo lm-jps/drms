@@ -34,5 +34,10 @@ int drms_fitsrw_writeslice_ext(DRMS_Env_t *env,
                                int *end,
                                int *finaldims,
                                DRMS_Array_t *arrayout);
+int drms_fitsrw_GetSimpleFromInfo(CFITSIO_IMAGE_INFO *info);
+int drms_fitsrw_GetExtendFromInfo(CFITSIO_IMAGE_INFO *info);
+long long drms_fitsrw_GetBlankFromInfo(CFITSIO_IMAGE_INFO *info);
+double drms_fitsrw_GetBscaleFromInfo(CFITSIO_IMAGE_INFO *info);
+double drms_fitsrw_GetBzeroFromInfo(CFITSIO_IMAGE_INFO *info);
 
 #endif /* _DRMS_FITSRW_H */

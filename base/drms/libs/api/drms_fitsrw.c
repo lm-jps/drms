@@ -212,70 +212,152 @@ int drms_fitsrw_CreateDRMSArray(CFITSIO_IMAGE_INFO *info, void *data, DRMS_Array
 
 int drms_fitsrw_SetImageInfo(DRMS_Array_t *arr, CFITSIO_IMAGE_INFO *info)
 {
-   int err = 0;
-   int ia;
-
-   if (info)
-   {
-      memset(info, 0, sizeof(CFITSIO_IMAGE_INFO));
-      info->bitpix = drms_fitsrw_Type2Bitpix(arr->type, &err);
-
-      if (!err)
-      {
-	 if (arr->naxis > 0)
-	 {
-	    info->naxis = arr->naxis;
-	 }
-	 else
-	 {
-	    err = 1;
-	 }
-      }
-
-      if (!err)
-      {
-	 for (ia = 0; ia < arr->naxis; ia++)
-	 {
-	    info->naxes[ia] = (long)(arr->axis[ia]);
-	 }
-
-	 info->simple = 1;
-	 info->extend = 0; /* baby steps - trying to dupe what happens in FITS protocol. */
-	 info->bitfield = (info->bitfield | kInfoPresent_SIMPLE);
-	 
-	 if (info->bitpix > 0)
-	 {
-	    /* An integer type - need to set BLANK, and possibly BZERO and BSCALE. */
-	    DRMS_Type_Value_t missing;
-	    drms_missing(arr->type, &missing);
-
-	    info->blank = conv2longlong(arr->type, &missing, NULL);
-	    info->bitfield = (info->bitfield | kInfoPresent_BLANK);
-
-	    if (arr->israw)
-	    {
-	       /* This means that the data COULD BE not real values,
-		* and to get real values they need to be scaled by bzero/bscale. */
+    int err = 0;
+    int ia;
+    
+    if (info)
+    {
+        memset(info, 0, sizeof(CFITSIO_IMAGE_INFO));
+        info->bitpix = drms_fitsrw_Type2Bitpix(arr->type, &err);
+        
+        if (!err)
+        {
+            if (arr->naxis > 0)
+            {
+                info->naxis = arr->naxis;
+            }
+            else
+            {
+                err = 1;
+            }
+        }
+        
+        if (!err)
+        {
+            for (ia = 0; ia < arr->naxis; ia++)
+            {
+                info->naxes[ia] = (long)(arr->axis[ia]);
+            }
+            
+            info->simple = 1;
+            info->extend = 0; /* baby steps - trying to dupe what happens in FITS protocol. */
+            info->bitfield = (info->bitfield | kInfoPresent_SIMPLE);
+            
+            if (info->bitpix > 0)
+            {
+                /* An integer type - need to set BLANK, and possibly BZERO and BSCALE. */
+                DRMS_Type_Value_t missing;
+                drms_missing(arr->type, &missing);
+                
+                info->blank = conv2longlong(arr->type, &missing, NULL);
+                info->bitfield = (info->bitfield | kInfoPresent_BLANK);
+                
+                if (arr->israw)
+                {
+                    /* This means that the data COULD BE not real values,
+                     * and to get real values they need to be scaled by bzero/bscale. */
 #ifdef ICCCOMP
 #pragma warning (disable : 1572)
 #endif
-	       if (arr->bscale != 1.0 || fabs(arr->bzero) != 0.0)
-	       {
-		  info->bscale = arr->bscale;
-		  info->bzero = arr->bzero;
-
-		  info->bitfield = (info->bitfield | kInfoPresent_BSCALE);
-		  info->bitfield = (info->bitfield | kInfoPresent_BZERO);
-	       }
+                    if (arr->bscale != 1.0 || fabs(arr->bzero) != 0.0)
+                    {
+                        info->bscale = arr->bscale;
+                        info->bzero = arr->bzero;
+                        
+                        info->bitfield = (info->bitfield | kInfoPresent_BSCALE);
+                        info->bitfield = (info->bitfield | kInfoPresent_BZERO);
+                    }
 #ifdef ICCCOMP
 #pragma warning (default : 1572)
 #endif
-	    }
-	 }
-      }
-   }
+                }
+            }
+        }
+    }
+    
+    return err;
+}
 
-   return err;
+int drms_fitsrw_GetSimpleFromInfo(CFITSIO_IMAGE_INFO *info)
+{
+    if (info->bitfield & kInfoPresent_SIMPLE)
+    {
+        return info->simple;
+    }
+    else
+    {
+        /* If not set, then the assumption is true. */
+        return 1;
+    }
+}
+
+int drms_fitsrw_GetExtendFromInfo(CFITSIO_IMAGE_INFO *info)
+{
+    if (info->bitfield & kInfoPresent_EXTEND)
+    {
+        return info->extend;
+    }
+    else
+    {
+        /* If not set, then the assumption is false. */
+        return 0;
+    }
+}
+
+long long drms_fitsrw_GetBlankFromInfo(CFITSIO_IMAGE_INFO *info)
+{
+    if (info->bitfield & kInfoPresent_BLANK)
+    {
+        return info->blank;
+    }
+    else
+    {
+        /* If not set, then the assumption is the DRMS missing value. */
+        DRMS_Type_Value_t missing;
+        DRMS_Type_t dtype;
+        int err;
+        
+        dtype = drms_fitsrw_Bitpix2Type(info->bitpix, &err);
+        if (!err)
+        {
+            drms_missing(dtype, &missing);
+        }
+        else
+        {
+            /* Not sure what to do - we don't know the data type. I guess assume CHAR (the only value that will 'fit' in all data types)
+             * and print an error message. */
+            fprintf(stderr, "Unable to convert bitpix %d to a DRMS data type.\n", info->bitpix);
+            drms_missing(DRMS_TYPE_CHAR, &missing);
+        }
+        
+        return conv2longlong(dtype, &missing, NULL);
+    }
+}
+
+double drms_fitsrw_GetBscaleFromInfo(CFITSIO_IMAGE_INFO *info)
+{
+    if (info->bitfield & kInfoPresent_BSCALE)
+    {
+        return info->bscale;
+    }
+    else
+    {
+        /* If not set, then the assumption is 1.0. */
+        return 1.0;
+    }
+}
+
+double drms_fitsrw_GetBzeroFromInfo(CFITSIO_IMAGE_INFO *info)
+{
+    if (info->bitfield & kInfoPresent_BZERO)
+    {
+        return info->bzero;
+    }
+    else
+    {
+        /* If not set, then the assumption is 0.0. */
+        return 0.0;
+    }
 }
 
 void drms_fitsrw_term(int verbose)

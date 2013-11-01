@@ -13,6 +13,12 @@ DRMS_Array_t *drms_array_create(DRMS_Type_t type, int naxis,
   arr = malloc(sizeof(DRMS_Array_t));
   XASSERT(arr);
   memset(arr,0,sizeof(DRMS_Array_t));
+
+  /* Initialize the bscale and bzero values. If they are not 1.0 and 0.0, then the caller must set them to values appropriate for the 
+   * data. */
+  arr->bscale = 1.0;
+  arr->bzero = 0.0;
+
   if (naxis <= DRMS_MAXRANK)
   {
     arr->naxis = naxis;
