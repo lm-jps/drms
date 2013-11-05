@@ -199,7 +199,7 @@ if ($rv == kSuccess)
                # Running createns
                $checktab = 0;
 
-               if (RunCmd("$cfg{kModDir}/createns ns=$schema nsgroup=user dbusr=$dbuser > $sqlpath", 0) != 0)
+               if (RunCmd("$cfg{kModDir}/createns ns=$schema nsgroup=user dbusr=$dbuser > $sqlpath", 1) != 0)
                {
                   print STDERR "Failure to create schema '$schema' on slave host.\n";
                   $rv = kRunCmd;
