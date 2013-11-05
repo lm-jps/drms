@@ -108,100 +108,101 @@ open(CMDRET, $cmd);
 while (defined($line = <CMDRET>))
 {
     chomp($line);
-
+    
     if ($nextfile == 1)
     {
-	if ($line =~ /^description:.*/)
-	{
-	    $grabtext = 1;
-	    $nextfile = 0;
-	}
-
-	next;
+        if ($line =~ /^description:.*/)
+        {
+            $grabtext = 1;
+            $nextfile = 0;
+        }
+        
+        next;
     }
     elsif ($grabtext == 1)
     {
-	if ($line =~ /============.+/)
-	{
-	    $grabtext = 0;
-	    next;
-	}
-	else
-	{
-	    if ($line =~ /^date:\s*(.+?)\s*;\s+author:\s*(.+?);.*/)
-	    {
-		# Unfortunately, CVS!
-		# To work around this deficiency, use the first 256 bytes of the
-		# actual comment used during the commit.  Some people won't provide
-		# that - skip those lines.
-		$date = $1;
-		$author = $2;
-
-		# skip things caused by CVS's stink
-		@dateArr = GetTimeArgs($date);
-		$secs = timelocal(@dateArr);
-#		print "secs: $secs, desiredsecs: $desiredSecs\n";
-
-		if ($range eq "na")
-		{
-		    if ($secs != $desiredSecs)
-		    {
-			next;
-		    }
-		}
-		elsif ($range eq "lt")
-		{
-		    if ($secs > $desiredSecs)
-		    {
-			next;
-		    }
-		}
-		elsif ($range eq "gt")
-		{
-		    if ($secs < $desiredSecs)
-		    {
-			next;
-		    }
-		}
-		elsif ($range eq "int")
-		{
-		    if ($secs < $desiredSecsB || $secs > $desiredSecs)
-		    {
-			next;
-		    }
-		}
-
-		$line = <CMDRET>;
-		chomp($line);
-		$commprefix = substr($line, 0, $NCOMM);
-
-		if ($commprefix !~ /\S/)
-		{
-		    next;
-		}
-
-		$key = "::A:${author}::C:$commprefix";
-
-		if (defined($clmap{$key}))
-		{
-		    $fmap{$key} = "$fmap{$key}||$file";
-		}
-		else
-		{
-		    $clmap{$key} = $line;
-		    $fmap{$key} = $file;
-		    $tmap{$key} = "$date";
-		    push(@clarr, $key);
-		}
-
-	    }
-	}
+        if ($line =~ /============.+/)
+        {
+            $grabtext = 0;
+            next;
+        }
+        else
+        {
+            if ($line =~ /^date:\s*(.+?)\s*;\s+author:\s*(.+?);.*/)
+            {   
+                # Unfortunately, CVS!
+                # To work around this deficiency, use the first 256 bytes of the
+                # actual comment used during the commit.  Some people won't provide
+                # that - skip those lines.
+                $date = $1;
+                $author = $2;
+                
+                # skip things caused by CVS's stink
+                @dateArr = GetTimeArgs($date);
+                $secs = timelocal(@dateArr);
+                #		print "secs: $secs, desiredsecs: $desiredSecs\n";
+                
+                if ($range eq "na")
+                {
+                    if ($secs != $desiredSecs)
+                    {
+                        next;
+                    }
+                }
+                elsif ($range eq "lt")
+                {
+                    if ($secs > $desiredSecs)
+                    {
+                        next;
+                    }
+                }
+                elsif ($range eq "gt")
+                {
+                    if ($secs < $desiredSecs)
+                    {
+                        next;
+                    }
+                }
+                elsif ($range eq "int")
+                {
+                    if ($secs < $desiredSecsB || $secs > $desiredSecs)
+                    {
+                        next;
+                    }
+                }
+                
+                $commprefix = "";
+                
+                # There could be a newline at the beginning of the comment. If so, skip that line and go onto the next
+                while ($commprefix !~ /\s*\S/)
+                {
+                    $line = <CMDRET>;
+                    chomp($line);
+                    $commprefix = substr($line, 0, $NCOMM);
+                }            
+                
+                $key = "::A:${author}::C:$commprefix";
+                
+                if (defined($clmap{$key}))
+                {
+                    $fmap{$key} = "$fmap{$key}||$file";
+                }
+                else
+                {
+                    $clmap{$key} = $line;
+                    $fmap{$key} = $file;
+                    $tmap{$key} = "$date";
+                    push(@clarr, $key);
+                }
+                
+            }
+        }
     }
     elsif ($line =~ /^RCS file:\s*(.+)/)
     {
-	$file = $1;
-	$nextfile = 1;
-	next;
+        $file = $1;
+        $nextfile = 1;
+        next;
     }
 }
 
@@ -209,7 +210,7 @@ while (defined($key = shift(@clarr)))
 {
     if ($key =~ /::A:(\S+)::C:.+/)
     {
-	print STDOUT "date: $tmap{$key} ($1)\nfiles: $fmap{$key}\ncomments: $clmap{$key}\n\n";
+        print STDOUT "date: $tmap{$key} ($1)\nfiles: $fmap{$key}\ncomments: $clmap{$key}\n\n";
     }
 }
 
@@ -229,28 +230,28 @@ sub GetTimeArgs
     my($dom);
     my($month);
     my($year);
-
+    
     $date =~ s/\//-/g;
-
+    
     if ($date =~ /([0-9][0-9][0-9][0-9])\-([0-9]+)\-([0-9]+)/)
     {
-	$year = $1;
-	$month = $2;
-	$dom = $3;
+        $year = $1;
+        $month = $2;
+        $dom = $3;
     }
     else
     {
-	print STDERR "Invalid date '$date'\n";
-	exit(1);
+        print STDERR "Invalid date '$date'\n";
+        exit(1);
     }
-
+    
     push(@args, 0); # sec
     push(@args, 0); # min
     push(@args, 0); # hr
     push(@args, $dom); # day of month
     push(@args, $month - 1); # month, 0-based
     push(@args, $year - 1900); # year is relative to 1900
-
+    
     return @args;
 }
 
