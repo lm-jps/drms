@@ -32,7 +32,7 @@ set process = ""
 
 # loop through command line to extract image making params
 while ($#)
-  set parm = ` echo "$1" | sed -e 's/=/\t/'`
+  set parm = ` echo "$1" | sed -e 's/ //g' -e 's/=/\t/'`
   set pname = $parm[1]
   if ($#parm < 2) then
     echo $parm has no value part, param as given is $1
