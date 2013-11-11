@@ -598,33 +598,55 @@ def configureSdp(cfgfile, cfile, mfile, pfile, base, keymap):
     
     defs = {}
     cDefs = list()
-    mDefs = list()
+    mDefsGen = list()
+    mDefsMake = list()
+    mDefsComps = list()
     perlConstSection = list()
     perlInitSection = list()
     addenda = {}
     
-    addenda['a:BUILD_TYPE'] = 'JSOC_SDP'
+    addenda['a:USER'] = 'NULL'
+    addenda['a:PASSWD'] = 'NULL'
+    addenda['p:DSDS_SUPPORT'] = '1'
+    addenda['a:BUILD_TYPE'] = 'JSOC_SDP' # Means a Stanford build. This will set one additional macro used by make: JSOC_SDP_BUILD.
     
     try:
         with open(cfgfile, 'r') as fin:
-            rv = parseConfig(cfgfile, keymap, addenda, defs, cDefs, mDefs, perlConstSection, perlInitSection)
+            rv = parseConfig(cfgfile, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection)
             if rv == bool(0):
                 # Must add a parameter for the SUMS_MANAGER UID (for some reason)
                 uidParam = {}
                 rv = getMgrUIDLine(defs, uidParam)
                 if rv == bool(0):
-                    rv = parseConfig(None, keymap, uidParam, defs, cDefs, mDefs, perlConstSection, perlInitSection)
+                    rv = parseConfig(None, keymap, uidParam, defs, cDefs, mDefsGen, NONE, perlConstSection, perlInitSection)
                 
-                
-                # So, we need to rename __MAKE__ in configsdp.txt to something else (__PROJ_MK_RULES__).
-                # The only code that currently reads this file is configproj.pl, so we change that logic to use __PROJ_MK_RULES__
-                # for the make rules. 
+                # Configure the compiler-selection make variables.
                 if rv == bool(0):
-                    rv = writeFiles(base, cfile, mfile, pfile, cDefs, mDefs, perlConstSection, perlInitSection)
+                    rv = configureComps(defs, mDefsComps)
+                
+                if rv == bool(0):
+                    rv = writeFiles(base, cfile, mfile, pfile, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection)
     except IOError as exc:
         sys.stderr.write(exc.strerror)
         sys.stderr.write('Unable to read configuration file ' + cfgfile + '.')
-
+    except Exception as exc:
+        type, msg = exc.args
+        if type == 'unexpectedIccRet':
+            print('icc -V returned this unexpected message:\n' + msg, file=sys.stderr)
+            rv = bool(1)
+        elif type == 'unexpectedGccRet':
+            print('gcc -v returned this unexpected message:\n' + msg, file=sys.stderr)
+            rv = bool(1)
+        elif type == 'unexpectedIfortRet':
+            print('ifort -V returned this unexpected message:\n' + msg, file=sys.stderr)
+            rv = bool(1)
+        elif type == 'unexpectedGfortranRet':
+            print('gfortran -v returned this unexpected message:\n' + msg, file=sys.stderr)
+            rv = bool(1)
+        else:
+            # re-raise the exception
+            raise
+        
     return rv
 
 # Beginning of program
