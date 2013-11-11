@@ -4,6 +4,7 @@
 #Find all the ds marked del pend in the sum_partn_alloc table, and print out
 #those that don't have a valid directory. 
 #
+require("/home/jsoc/cvs/JSOC/base/libs/perl/JSOC_DB_INFO_INCLUDE.pl");
 use DBI;
 
 sub usage {
@@ -29,7 +30,8 @@ sub labeldate {
 
 $| = 1;			#flush output as we go
 $DB = jsoc;
-$HOSTDB = "hmidb";      #host where DB runs
+#$HOSTDB = "hmidb";      #host where DB runs
+$HOSTDB = $JSOC_DB_HOST;      #host where DB runs
 
 $ldate = &labeldate();
 print "$ldate\n";

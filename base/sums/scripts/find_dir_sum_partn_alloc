@@ -15,11 +15,13 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
 #sum_partn_alloc entry yet. This won't occure if you run this script when
 #the sum_svc is not running.
 #
+require("/home/jsoc/cvs/JSOC/base/libs/perl/JSOC_DB_INFO_INCLUDE.pl");
 use DBI;
 
 $| = 1;			#flush output as we go
 $DB = jsoc_sums;
-$HOSTDB = "hmidb";      #host where DB runs
+#$HOSTDB = "hmidb";      #host where DB runs
+$HOSTDB = $JSOC_DB_HOST;      #host where DB runs
 #$ENV{'PGPORT'} = "5434";
 if(!($PGPORT = $ENV{'SUMPGPORT'})) {
   print "You must have ENV SUMPGPORT set to the port number, e.g. 5430\n";
