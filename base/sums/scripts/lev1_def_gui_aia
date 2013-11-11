@@ -6,6 +6,7 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
 #Perl/Tk gui for use to make lev1 definitive data
 #
 #
+require("/home/jsoc/cvs/JSOC/base/libs/perl/JSOC_DB_INFO_INCLUDE.pl");
 use Tk;
 use DBI;
 use POSIX ":sys_wait_h";
@@ -13,7 +14,8 @@ use POSIX ":sys_wait_h";
 $IMGDIR = "/home/production/cvs/JSOC/base/sums/scripts/gallery"; #gif arrows
 $QDIR = "/usr/local/logs/lev1_gui"; #days queued to be executed
 $DB = jsoc;
-$HOSTDB = "hmidb";      #host where DB runs
+#$HOSTDB = "hmidb";      #host where DB runs
+$HOSTDB = $JSOC_DB_HOST;      #host where DB runs
 $PGPORT=5432;
 $RED = "orange";	#real color for 'red'
 $localhost = `hostname -s`;
