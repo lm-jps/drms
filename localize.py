@@ -68,6 +68,16 @@ PERL_FXNS_B = """sub get
 }
 1;"""
 
+ICC_MAJOR = 9
+ICC_MINOR = 0
+GCC_MAJOR = 3
+GCC_MINOR = 0
+IFORT_MAJOR = 9
+IFORT_MINOR = 0
+GFORT_MAJOR = 4
+GFORT_MINOR = 2
+
+
 # Read arguments
 #  d - localization directory
 #  b - base name of all parameter files (e.g., -b drmsparams --> drmsparams.h, drmsparams.mk, drmsparams.pm, etc.)
@@ -125,7 +135,42 @@ def createPerlConst(key, val, keyColLen, status):
         status = bool(0)
         return 'use constant ' + key + ' => ' + spaces + val + ';\n'
 
-def processParam(cfgfile, line, regexpComm, regexpDefs, regexpMake, regexpQuote, regexp, keymap, defs, cDefs, mDefs, perlConstSection, perlInitSection, section):
+def isSupportedPlat(plat):
+    regexp = re.compile(r"\s*(^x86_64|^ia32|^ia64|^avx)", re.IGNORECASE)
+    matchobj = regexp.match(plat);
+        
+    if not matchobj is None:
+        return bool(1);
+    else:
+        return bool(0);
+
+def processMakeParam(mDefs, key, val, platDict, matchDict):
+    varMach = None
+    regexp = re.compile(r"(\S+):(\S+)")
+    matchobj = regexp.match(key)
+    if not matchobj is None:
+        varName = matchobj.group(1)
+        varMach = matchobj.group(2)
+    else:
+        varName = key
+    
+    varValu = val
+        
+    if varMach is None:
+        mDefs.extend(list('\n' + varName + ' = ' + varValu))
+    else:
+        if isSupportedPlat(varMach):
+            # The guard will compare varValu to $JSOC_MACHINE.
+            if not varMach in platDict:
+                platDict[varMach] = {}
+            platDict[varMach][varName] = varValu
+        else:
+            # The guard will compare varValu to $MACHINETYPE (this is just the hostname of the machine on which localize.py is running).
+            if not varMach in machDict:
+                machDict[varMach] = {}
+            machDict[varMach][varName] = varValu
+
+def processParam(cfgfile, line, regexpComm, regexpDefs, regexpMake, regexpQuote, regexp, keymap, defs, cDefs, mDefs, perlConstSection, perlInitSection, platDict, machDict, section):
     status = 0
     
     matchobj = regexpComm.match(line)
@@ -135,13 +180,15 @@ def processParam(cfgfile, line, regexpComm, regexpDefs, regexpMake, regexpQuote,
     
     matchobj = regexpDefs.match(line)
     if not matchobj is None:
+        del section[:]
         section.extend(list('defs'))
         return bool(0)
     
     matchobj = regexpMake.match(line)
     if not matchobj is None:
-        section = 'make'
-        return bool(1)
+        del section[:]
+        section.extend(list('make'))
+        return bool(0)
             
     if ''.join(section) == 'defs' or not cfgfile:
         matchobj = regexp.match(line)
@@ -209,6 +256,18 @@ def processParam(cfgfile, line, regexpComm, regexpDefs, regexpMake, regexpQuote,
             else:
                 # No quote qualifier
                 raise Exception('missingQuoteQual', key)
+    elif ''.join(section) == 'make' and cfgfile:
+        # Configure the remaining make variables defined in the __MAKE__ section of the configuration file. Third-party
+        # library make variables are specified in the __MAKE__ section.
+        matchobj = regexp.match(line)
+        if not matchobj is None:
+            # We have a key-value line
+            key = matchobj.group(1)
+            val = matchobj.group(2)
+
+            # This information is for making make variables only. We do not need to worry about quoting any values
+            defs[key] = val
+            processMakeParam(mDefs, key, val, platDict, machDict)
     
     return bool(0)
 
@@ -225,15 +284,17 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefs, perlConstSection, perl
         regexpMake = re.compile(r"^__MAKE__")
         regexpComm = re.compile(r"^\s*#")
         regexpQuote = re.compile(r"^\s*(\w):(.+)")
-        regexp = re.compile(r"^\s*(\S+)\s+(.+)")
+        regexp = re.compile(r"^\s*(\S+)\s+(\S+)")
         
+        platDict = {}
+        machDict = {}
         section = list()
         
         # Process the parameters in the configuration file
         iscfg = bool(1)
         if not fin is None:
             for line in fin:
-                ppRet = processParam(iscfg, line, regexpComm, regexpDefs, regexpMake, regexpQuote, regexp, keymap, defs, cDefs, mDefs, perlConstSection, perlInitSection, section)
+                ppRet = processParam(iscfg, line, regexpComm, regexpDefs, regexpMake, regexpQuote, regexp, keymap, defs, cDefs, mDefs, perlConstSection, perlInitSection, platDict, machDict, section)
                 if ppRet:
                     break;
             
@@ -242,10 +303,9 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefs, perlConstSection, perl
         iscfg = bool(0)
         for key in addenda:
             item = key + ' ' + addenda[key]
-            ppRet = processParam(iscfg, item, regexpComm, regexpDefs, regexpMake, regexpQuote, regexp, keymap, defs, cDefs, mDefs, perlConstSection, perlInitSection, section)
+            ppRet = processParam(iscfg, item, regexpComm, regexpDefs, regexpMake, regexpQuote, regexp, keymap, defs, cDefs, mDefs, perlConstSection, perlInitSection, platDict, machDict, section)
             if ppRet:
                 break;
-
     except Exception as exc:
         msg, violator = exc.args
         if msg == 'badKeyMapKey':
@@ -268,6 +328,21 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefs, perlConstSection, perl
             # re-raise the exception
             raise
 
+    # Put information collected in platDict and machDict into mDefs
+    if not rv:
+        for plat in platDict:
+            mDefs.extend(list('\nifeq ($(JSOC_MACHINE), linux_' + plat.lower() + ')'))
+            for var in platDict[plat]:
+                mDefs.extend(list('\n' + var + ' = ' + platDict[plat][var]))
+            mDefs.extend(list('\nendif\n'))
+                             
+    if not rv:
+        for mach in machDict:
+            mDefs.extend(list('\nifeq ($(MACHTYPE), ' + mach + ')'))
+            for var in platDict[plat]:
+                mDefs.extend(list('\n' + var + ' = ' + platDict[plat][var]))
+            mDefs.extend(list('\nendif\n'))
+                             
     return rv
 
 def getMgrUIDLine(defs, uidParam):
@@ -283,6 +358,128 @@ def getMgrUIDLine(defs, uidParam):
     except CalledProcessError:
         print('Command ' + "'" + cmd + "'" + ' ran improperly.')
         rv = bool(1)
+
+    return rv
+
+def isVersion(maj, min, majDef, minDef):
+    res = 0
+    
+    if maj > majDef or (maj == majDef and min >= minDef):
+        res = 1
+    
+    return res
+
+def configureComps(defs, mDefs):
+    rv = bool(0)
+    autoConfig = (not defs['AUTOSELCOMP'] == '0')
+    
+    if autoConfig:
+        hasicc = bool(0)
+        hasgcc = bool(0)
+        hasifort = bool(0)
+        hasgfort = bool(0)
+        
+        # Try icc.
+        cmd = 'icc -V 2>&1'
+        try:
+            ret = check_output(cmd, shell=True)
+            ret = ret.decode("utf-8")
+        except CalledProcessError:
+            print('Command ' + "'" + cmd + "'" + ' ran improperly.')
+            rv = bool(1)
+        
+        if rv == bool(0):
+            regexp = re.compile(r".+Version\s+(\d+)[.](\d+)", re.DOTALL)
+            matchobj = regexp.match(ret)
+            if matchobj is None:
+                raise Exception('unexpectedIccRet', ret)
+            else:
+                major = matchobj.group(1)
+                minor = matchobj.group(2)
+                if isVersion(int(major), int(minor), ICC_MAJOR, ICC_MINOR):
+                    hasicc = bool(1)
+            
+        # Try gcc.
+        if not hasicc:
+            cmd = 'gcc -v 2>&1'
+            try:
+                ret = check_output(cmd, shell=True)
+                ret = ret.decode("utf-8")
+            except CalledProcessError:
+                print('Command ' + "'" + cmd + "'" + ' ran improperly.')
+                rv = bool(1)
+
+            if rv == bool(0):
+                regexp = re.compile(r".+gcc\s+version\s+(\d+)\.(\d+)", re.DOTALL)
+                matchobj = regexp.match(ret)
+                if matchobj is None:
+                    raise Exception('unexpectedGccRet', ret)
+                else:
+                    major = matchobj.group(1)
+                    minor = matchobj.group(2)
+                    if isVersion(int(major), int(minor), GCC_MAJOR, GCC_MINOR):
+                        hasgcc = bool(1)
+
+        # Try ifort.
+        cmd = 'ifort -V 2>&1'
+        try:
+            ret = check_output(cmd, shell=True)
+            ret = ret.decode("utf-8")
+        except CalledProcessError:
+            print('Command ' + "'" + cmd + "'" + ' ran improperly.')
+            rv = bool(1)
+
+        if rv == bool(0):
+            regexp = re.compile(r".+Version\s+(\d+)\.(\d+)", re.DOTALL)
+            matchobj = regexp.match(ret)
+            if matchobj is None:
+                raise Exception('unexpectedIfortRet', ret)
+            else:
+                major = matchobj.group(1)
+                minor = matchobj.group(2)
+                if isVersion(int(major), int(minor), IFORT_MAJOR, IFORT_MINOR):
+                    hasifort = bool(1)
+        
+        # Try gfortran
+        if not hasifort:
+            cmd = 'gfortran -v 2>&1'
+            try:
+                ret = check_output(cmd, shell=True)
+                ret = ret.decode("utf-8")
+            except CalledProcessError:
+                print('Command ' + "'" + cmd + "'" + ' ran improperly.')
+                rv = bool(1)
+
+            if rv == bool(0):
+                regexp = re.compile(r".+gcc\s+version\s+(\d+)\.(\d+)", re.DOTALL)
+                matchobj = regexp.match(ret)
+                if matchobj is None:
+                    raise Exception('unexpectedGfortranRet', ret)
+                else:
+                    major = matchobj.group(1)
+                    minor = matchobj.group(2)
+                    if isVersion(int(major), int(minor), GFORT_MAJOR, GFORT_MINOR):
+                        hasgfort = bool(1)
+        
+        # Append the compiler make variables to the make file 
+        if not hasicc and not hasgcc:
+            print('Fatal error: Acceptable C compiler not found! You will be unable to build the DRMS library.', file=sys.stderr)
+            rv = bool(1)
+        elif hasicc:
+            mDefs.extend(list('\nCOMPILER = icc'))
+        else:
+            mDefs.extend(list('\nCOMPILER = gcc'))
+
+        if not hasifort and not hasgfort:
+            print('Warning: Acceptable Fortran compiler not found! Fortran interface will not be built, and you will be unable to build Fortran modules.', file=sys.stderr)
+        elif hasifort:
+            mDefs.extend(list('\nFCOMPILER = ifort'))
+        else:
+            mDefs.extend(list('\nFCOMPILER = gfortran'))
+    
+        # Environment overrides. These get written, regardless of the disposition of auto-configuration.
+        mDefs.extend(list('\nifneq $(JSOC_COMPILER,)\n  COMPILER = $(JSOC_COMPILER)\nendif'))
+        mDefs.extend(list('\nifneq $(JSOC_FCOMPILER,)\n  FCOMPILER = $(JSOC_FCOMPILER)\nendif'))
 
     return rv
 
@@ -325,7 +522,7 @@ def writeFiles(base, cfile, mfile, pfile, cDefs, mDefs, perlConstSection, perlIn
         rv = bool(1)
 
     return rv
-            
+
 def configureNet(cfgfile, cfile, mfile, pfile, base, keymap):
     rv = bool(0)
     
@@ -347,19 +544,44 @@ def configureNet(cfgfile, cfile, mfile, pfile, base, keymap):
 
     try:
         with open(cfgfile, 'r') as fin:
+            # Process configuration parameters
             rv = parseConfig(fin, keymap, addenda, defs, cDefs, mDefs, perlConstSection, perlInitSection)
             if rv == bool(0):
-                # Must add a parameter for the SUMS_MANAGER UID (for some reason)
+                # Must add a parameter for the SUMS_MANAGER UID (for some reason). This must be done after the
+                # config file is processed since an input to getMgrUIDLine() is one of the config file's
+                # parameter values.
                 uidParam = {}
                 rv = getMgrUIDLine(defs, uidParam)
                 if rv == bool(0):
                     rv = parseConfig(None, keymap, uidParam, defs, cDefs, mDefs, perlConstSection, perlInitSection)
+                
+            # Configure the compiler-selection make variables.
+            if rv == bool(0):
+                rv = configureComps(defs, mDefs)
 
-                if rv == bool(0):
-                    rv = writeFiles(base, cfile, mfile, pfile, cDefs, mDefs, perlConstSection, perlInitSection)
+            # Write out the parameter files.
+            if rv == bool(0):
+                rv = writeFiles(base, cfile, mfile, pfile, cDefs, mDefs, perlConstSection, perlInitSection)
     except IOError as exc:
         sys.stderr.write(exc.strerror)
         sys.stderr.write('Unable to read configuration file ' + cfgfile + '.')
+    except Exception as exc:
+        type, msg = exc.args
+        if type == 'unexpectedIccRet':
+            print('icc -V returned this unexpected message:\n' + msg, file=sys.stderr)
+            rv = bool(1)
+        elif type == 'unexpectedGccRet':
+            print('gcc -v returned this unexpected message:\n' + msg, file=sys.stderr)
+            rv = bool(1)
+        elif type == 'unexpectedIfortRet':
+            print('ifort -V returned this unexpected message:\n' + msg, file=sys.stderr)
+            rv = bool(1)
+        elif type == 'unexpectedGfortranRet':
+            print('gfortran -v returned this unexpected message:\n' + msg, file=sys.stderr)
+            rv = bool(1)
+        else:
+            # re-raise the exception
+            raise
         
     return rv
 
@@ -385,7 +607,12 @@ def configureSdp(cfgfile, cfile, mfile, pfile, base, keymap):
                 if rv == bool(0):
                     rv = parseConfig(None, keymap, uidParam, defs, cDefs, mDefs, perlConstSection, perlInitSection)
                 
-                rv = writeFiles(base, cfile, mfile, pfile, cDefs, mDefs, perlConstSection, perlInitSection)
+                
+                # So, we need to rename __MAKE__ in configsdp.txt to something else (__PROJ_MK_RULES__).
+                # The only code that currently reads this file is configproj.pl, so we change that logic to use __PROJ_MK_RULES__
+                # for the make rules. 
+                if rv == bool(0):
+                    rv = writeFiles(base, cfile, mfile, pfile, cDefs, mDefs, perlConstSection, perlInitSection)
     except IOError as exc:
         sys.stderr.write(exc.strerror)
         sys.stderr.write('Unable to read configuration file ' + cfgfile + '.')
