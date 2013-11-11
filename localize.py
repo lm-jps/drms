@@ -170,7 +170,7 @@ def processMakeParam(mDefs, key, val, platDict, matchDict):
                 machDict[varMach] = {}
             machDict[varMach][varName] = varValu
 
-def processParam(cfgfile, line, regexpComm, regexpDefs, regexpMake, regexpQuote, regexp, keymap, defs, cDefs, mDefs, perlConstSection, perlInitSection, platDict, machDict, section):
+def processParam(cfgfile, line, regexpComm, regexpDefs, regexpMake, regexpQuote, regexp, keymap, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection, platDict, machDict, section):
     status = 0
     
     matchobj = regexpComm.match(line)
@@ -239,7 +239,7 @@ def processParam(cfgfile, line, regexpComm, regexpDefs, regexpMake, regexpQuote,
                     raise Exception('paramNameTooLong', key)
                 
                 # Make file - val should never be quoted; just use as is
-                mDefs.extend(list('\n' + key + ' = ' + val))
+                mDefsGen.extend(list('\n' + key + ' = ' + val))
                 
                 # Perl file - val should ALWAYS be single-quote quoted
                 # Save const info to a string
@@ -267,14 +267,14 @@ def processParam(cfgfile, line, regexpComm, regexpDefs, regexpMake, regexpQuote,
 
             # This information is for making make variables only. We do not need to worry about quoting any values
             defs[key] = val
-            processMakeParam(mDefs, key, val, platDict, machDict)
+            processMakeParam(mDefsMake, key, val, platDict, machDict)
     
     return bool(0)
 
 # We have some extraneous line or a newline - ignore.
 
 # defs is a dictionary containing all parameters (should they be needed in this script)
-def parseConfig(fin, keymap, addenda, defs, cDefs, mDefs, perlConstSection, perlInitSection):
+def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection):
     rv = bool(0)
     
     # Open required config file (config.local)
@@ -294,7 +294,7 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefs, perlConstSection, perl
         iscfg = bool(1)
         if not fin is None:
             for line in fin:
-                ppRet = processParam(iscfg, line, regexpComm, regexpDefs, regexpMake, regexpQuote, regexp, keymap, defs, cDefs, mDefs, perlConstSection, perlInitSection, platDict, machDict, section)
+                ppRet = processParam(iscfg, line, regexpComm, regexpDefs, regexpMake, regexpQuote, regexp, keymap, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection, platDict, machDict, section)
                 if ppRet:
                     break;
             
@@ -303,7 +303,7 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefs, perlConstSection, perl
         iscfg = bool(0)
         for key in addenda:
             item = key + ' ' + addenda[key]
-            ppRet = processParam(iscfg, item, regexpComm, regexpDefs, regexpMake, regexpQuote, regexp, keymap, defs, cDefs, mDefs, perlConstSection, perlInitSection, platDict, machDict, section)
+            ppRet = processParam(iscfg, item, regexpComm, regexpDefs, regexpMake, regexpQuote, regexp, keymap, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection, platDict, machDict, section)
             if ppRet:
                 break;
     except Exception as exc:
@@ -328,20 +328,21 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefs, perlConstSection, perl
             # re-raise the exception
             raise
 
-    # Put information collected in platDict and machDict into mDefs
+    # Put information collected in platDict and machDict into mDefs. Must do this here, and not in processParam, since
+    # we need to parse all platform-specific make variables before grouping them into platform categories.
     if not rv:
         for plat in platDict:
-            mDefs.extend(list('\nifeq ($(JSOC_MACHINE), linux_' + plat.lower() + ')'))
+            mDefsMake.extend(list('\nifeq ($(JSOC_MACHINE), linux_' + plat.lower() + ')'))
             for var in platDict[plat]:
-                mDefs.extend(list('\n' + var + ' = ' + platDict[plat][var]))
-            mDefs.extend(list('\nendif\n'))
+                mDefsMake.extend(list('\n' + var + ' = ' + platDict[plat][var]))
+            mDefsMake.extend(list('\nendif\n'))
                              
     if not rv:
         for mach in machDict:
-            mDefs.extend(list('\nifeq ($(MACHTYPE), ' + mach + ')'))
+            mDefsMake.extend(list('\nifeq ($(MACHTYPE), ' + mach + ')'))
             for var in platDict[plat]:
-                mDefs.extend(list('\n' + var + ' = ' + platDict[plat][var]))
-            mDefs.extend(list('\nendif\n'))
+                mDefsMake.extend(list('\n' + var + ' = ' + platDict[plat][var]))
+            mDefsMake.extend(list('\nendif\n'))
                              
     return rv
 
@@ -483,8 +484,12 @@ def configureComps(defs, mDefs):
 
     return rv
 
-def writeFiles(base, cfile, mfile, pfile, cDefs, mDefs, perlConstSection, perlInitSection):
+def writeFiles(base, cfile, mfile, pfile, cDefs, mDefsGen, mDefsMake, mDefsComps, perlConstSection, perlInitSection):
     rv = bool(0)
+
+    # Merge mDefsGen, mDefsMake, and mDefsComps into a single string with compiler configuration first, general parameters next, then
+    # make-specific make variables (e.g., third-party library information) last.
+    mDefs = '\n# Compiler Selection\n' + ''.join(mDefsComps) + '\n\n# General Parameters\n' + ''.join(mDefsGen) + '\n\n# Parameters to Configure make\n' + ''.join(mDefsMake)
     
     try:
         with open(cfile, 'w') as cout, open(mfile, 'w') as mout, open(pfile, 'w') as pout:
@@ -499,8 +504,8 @@ def writeFiles(base, cfile, mfile, pfile, cDefs, mDefs, perlConstSection, perlIn
             
             # Make file of make variables
             print(PREFIX, file=mout)
-            print('# This file contains a set of make-variable values - one for each configuration parameter.', file=mout)
-            print(''.join(mDefs), file=mout)
+            print('# This file contains a set of make-variable values. The first section contains compiler-selection variables, the second contains general configuration variables, and the third section contains variables that configure how make is run.', file=mout)
+            print(mDefs, file=mout)
             
             # Perl module
             print(PERL_BINPATH, file=pout)
@@ -529,6 +534,9 @@ def configureNet(cfgfile, cfile, mfile, pfile, base, keymap):
     defs = {}
     cDefs = list()
     mDefs = list()
+    mDefsGen = list()
+    mDefsMake = list()
+    mDefsComps = list()
     perlConstSection = list()
     perlInitSection = list()
     addenda = {}
@@ -545,7 +553,7 @@ def configureNet(cfgfile, cfile, mfile, pfile, base, keymap):
     try:
         with open(cfgfile, 'r') as fin:
             # Process configuration parameters
-            rv = parseConfig(fin, keymap, addenda, defs, cDefs, mDefs, perlConstSection, perlInitSection)
+            rv = parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection)
             if rv == bool(0):
                 # Must add a parameter for the SUMS_MANAGER UID (for some reason). This must be done after the
                 # config file is processed since an input to getMgrUIDLine() is one of the config file's
@@ -553,15 +561,15 @@ def configureNet(cfgfile, cfile, mfile, pfile, base, keymap):
                 uidParam = {}
                 rv = getMgrUIDLine(defs, uidParam)
                 if rv == bool(0):
-                    rv = parseConfig(None, keymap, uidParam, defs, cDefs, mDefs, perlConstSection, perlInitSection)
+                    rv = parseConfig(None, keymap, uidParam, defs, cDefs, mDefsGen, None, perlConstSection, perlInitSection)
                 
             # Configure the compiler-selection make variables.
             if rv == bool(0):
-                rv = configureComps(defs, mDefs)
+                rv = configureComps(defs, mDefsComps)
 
             # Write out the parameter files.
             if rv == bool(0):
-                rv = writeFiles(base, cfile, mfile, pfile, cDefs, mDefs, perlConstSection, perlInitSection)
+                rv = writeFiles(base, cfile, mfile, pfile, cDefs, mDefsGen, mDefsMake, mDefsComps, perlConstSection, perlInitSection)
     except IOError as exc:
         sys.stderr.write(exc.strerror)
         sys.stderr.write('Unable to read configuration file ' + cfgfile + '.')
