@@ -169,7 +169,11 @@ endif
                 echo "Error creating localization directory."
             endif
         endif
+
+        # TEMPORARILY create a link from ${LOCALIZATIONDIR}/drmsparams.h to JSOC/base/libs/perl/JSOC_DB_INFO_INCLUDE.pl
+        ln -s base/libs/perl/JSOC_DB_INFO_INCLUDE.pl ${LOCALIZATIONDIR}/drmsparams.h
         
+
         if (-e ${LOCALIZATIONDIR}/custom.mk) then
             rm ${LOCALIZATIONDIR}/custom.mk
         endif
