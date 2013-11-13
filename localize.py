@@ -1,9 +1,11 @@
 #!/home/jsoc/bin/linux_x86_64/activepython
 
-import os.path
 import sys
 import getopt
 import re
+import os
+import stat
+import xml.etree.ElementTree as ET
 from subprocess import check_output, CalledProcessError
 
 # Constants
@@ -67,6 +69,27 @@ PERL_FXNS_B = """sub get
     }
 }
 1;"""
+
+
+RULESPREFIX = """# Standard things
+sp 		:= $(sp).x
+dirstack_$(sp)	:= $(d)
+d		:= $(dir)
+"""
+
+RULESSUFFIX = """dir	:= $(d)/example
+-include		$(SRCDIR)/$(dir)/Rules.mk
+dir	:= $(d)/cookbook
+-include		$(SRCDIR)/$(dir)/Rules.mk
+dir	:= $(d)/myproj
+-include		$(SRCDIR)/$(dir)/Rules.mk
+
+# Standard things
+d		:= $(dirstack_$(sp))
+sp		:= $(basename $(sp))
+"""
+
+TARGETPREFIX = """$(PROJOBJDIR):\n\t+@[ -d $@ ] || mkdir -p $@"""
 
 ICC_MAJOR = 9
 ICC_MINOR = 0
@@ -144,7 +167,7 @@ def isSupportedPlat(plat):
     else:
         return bool(0);
 
-def processMakeParam(mDefs, key, val, platDict, matchDict):
+def processMakeParam(mDefs, key, val, platDict, machDict):
     varMach = None
     regexp = re.compile(r"(\S+):(\S+)")
     matchobj = regexp.match(key)
@@ -170,25 +193,8 @@ def processMakeParam(mDefs, key, val, platDict, matchDict):
                 machDict[varMach] = {}
             machDict[varMach][varName] = varValu
 
-def processParam(cfgfile, line, regexpComm, regexpDefs, regexpMake, regexpQuote, regexp, keymap, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection, platDict, machDict, section):
+def processParam(cfgfile, line, regexpQuote, regexp, keymap, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection, platDict, machDict, section):
     status = 0
-    
-    matchobj = regexpComm.match(line)
-    if not matchobj is None:
-        # Skip comment line
-        return bool(0)
-    
-    matchobj = regexpDefs.match(line)
-    if not matchobj is None:
-        del section[:]
-        section.extend(list('defs'))
-        return bool(0)
-    
-    matchobj = regexpMake.match(line)
-    if not matchobj is None:
-        del section[:]
-        section.extend(list('make'))
-        return bool(0)
             
     if ''.join(section) == 'defs' or not cfgfile:
         matchobj = regexp.match(line)
@@ -203,7 +209,8 @@ def processParam(cfgfile, line, regexpComm, regexpDefs, regexpMake, regexpQuote,
                 if keyCfgSp in keymap:
                     key = keymap[keyCfgSp]
                 elif keyCfgSp == 'LOCAL_CONFIG_SET' or keyCfgSp == 'DRMS_SAMPLE_NAMESPACE':
-                    # Ignore parameters that are not useful and shouldn't have been there in the first place
+                    # Ignore parameters that are not useful and shouldn't have been there in the first place. But
+                    # they have been released to the world, so we have to account for them.
                     return bool(0)
                 elif not cfgfile:
                     # Should not be doing mapping for addenda
@@ -273,8 +280,80 @@ def processParam(cfgfile, line, regexpComm, regexpDefs, regexpMake, regexpQuote,
 
 # We have some extraneous line or a newline - ignore.
 
+def processXML(xml, projRules, projTarget):
+    rv = bool(0)
+    
+    # <projects>
+    root = ET.fromstring(xml)
+    
+    # Iterate through each proj child.
+    for proj in root.iter('proj'):
+        # Rules.mk
+        nameElem = proj.find('name')
+        rulesStr = 'dir     := $(d)/' + nameElem.text + '\n-include          $(SRCDIR)/$(dir)/Rules.mk\n'
+        
+        # make doesn't support logical operations in ifeq conditionals (you can't do ifeq (A AND B)), 
+        # so we need to write:
+        #   ifeq (A)
+        #      ifeq (B)
+        #        <do something>
+        #      endif
+        #   endif
+            
+        rulesPref = '';
+        rulesSuff = '';
+    
+        filters = proj.find('filters')
+        if filters is not None:
+            for filter in filters.findall('filter'):
+                rulesPref += 'ifeq ($(' + filter.find('name').text + '),' + filter.find('value').text + ')\n'
+                rulesSuff += 'endif\n'
+            
+        if len(rulesPref) > 0 and len(rulesSuff) > 0:
+            projRules.extend(list(rulesPref))
+            projRules.extend(list(rulesStr))
+            projRules.extend(list(rulesSuff))
+        else:
+            projRules.extend(list(rulesStr))
+        
+        # target.mk
+        subdirs = proj.find('subdirs')
+        if subdirs is not None:
+            for subdir in subdirs.findall('subdir'):
+                targetStr = '\n\t+@[ -d $@/' + nameElem.text + '/' + subdir.text + ' ] || mkdir -p $@/' + nameElem.text + '/' + subdir.text
+                projTarget.extend(list(targetStr))
+
+    return rv
+
+def determineSection(line, regexpDefs, regexpMake, regexpProjMkRules, regexpProj, regexpProjCfg):
+    matchobj = regexpDefs.match(line)
+    if not matchobj is None:
+        return 'defs'
+        
+    matchobj = regexpMake.match(line)
+    if not matchobj is None:
+        return 'make'
+        
+    matchobj = regexpProjMkRules.match(line)
+    if not matchobj is None:
+        return 'projmkrules'
+        
+    matchobj = regexpProj.match(line)
+    if not matchobj is None:
+        return 'proj'
+        
+    matchobj = regexpProjCfg.match(line)
+    if not matchobj is None:
+        return 'projcfg'
+
+    return None
+
 # defs is a dictionary containing all parameters (should they be needed in this script)
-def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection):
+# projCfg is the list containing the configure script content.
+# projMkRules is the list containing the make_basic.mk content.
+# projRules is the list containing the Rules.mk content.
+# projTargert is the list containing the target.mk content.
+def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg, projMkRules, projRules, projTarget, perlConstSection, perlInitSection):
     rv = bool(0)
     
     # Open required config file (config.local)
@@ -282,51 +361,141 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, perlCons
         # Examine each line, looking for key=value pairs.
         regexpDefs = re.compile(r"^__DEFS__")
         regexpMake = re.compile(r"^__MAKE__")
+        regexpProjMkRules = re.compile(r"__PROJ_MK_RULES__")
+        regexpProj = re.compile(r"^__PROJ__")
+        regexpProjCfg = re.compile(r"^__PROJCFG__")
         regexpComm = re.compile(r"^\s*#")
+        regexpSp = re.compile(r"^s*$")
         regexpQuote = re.compile(r"^\s*(\w):(.+)")
+        regexpCustMkBeg = re.compile(r"^_CUST_")
+        regexpCustMkEnd = re.compile(r"^_ENDCUST_")
+        regexpDiv = re.compile(r"^__")
         regexp = re.compile(r"^\s*(\S+)\s+(\S+)")
         
         platDict = {}
         machDict = {}
-        section = list()
+        
+        xml = None
         
         # Process the parameters in the configuration file
-        iscfg = bool(1)
         if not fin is None:
             for line in fin:
-                ppRet = processParam(iscfg, line, regexpComm, regexpDefs, regexpMake, regexpQuote, regexp, keymap, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection, platDict, machDict, section)
-                if ppRet:
-                    break;
+                matchobj = regexpComm.match(line)
+                if not matchobj is None:
+                    # Skip comment line
+                    continue
+                
+                matchobj = regexpSp.match(line)
+                if not matchobj is None:
+                    # Skip whitespace line
+                    continue
             
-        # Process addenda - these are parameters that are not configurable and must be set in the 
-        # NetDRMS build.
-        iscfg = bool(0)
-        for key in addenda:
-            item = key + ' ' + addenda[key]
-            ppRet = processParam(iscfg, item, regexpComm, regexpDefs, regexpMake, regexpQuote, regexp, keymap, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection, platDict, machDict, section)
-            if ppRet:
-                break;
+                newSection = determineSection(line, regexpDefs, regexpMake, regexpProjMkRules, regexpProj, regexpProjCfg)
+                if not newSection is None:
+                    section = newSection
+    
+                if section == 'make':
+                    # There are some blocks of lines in the __MAKE__ section that must be copied ver batim to the output make file. 
+                    # The blocks are defined by _CUST_/_ENDCUST_ tags.
+                    matchobj = regexpCustMkBeg.match(line)
+                        
+                    if not matchobj is None:
+                        mDefsMake.extend(list('\n'))
+                        for line in fin:
+                            matchobj = regexpCustMkEnd.match(line)
+                            if not matchobj is None:
+                                break;
+                            mDefsMake.extend(list(line))
+                        newSection = determineSection(line, regexpDefs, regexpMake, regexpProjMkRules, regexpProj, regexpProjCfg)
+                        if not newSection is None:
+                            section = newSection
+                        continue
+                    # Intentional fall through to next if statement
+                if section == 'defs' or section == 'make':
+                    iscfg = bool(1)
+                    ppRet = processParam(iscfg, line, regexpQuote, regexp, keymap, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection, platDict, machDict, section)
+                                
+                    if ppRet:
+                        break;
+                elif section == 'projcfg':
+                    # Copy the line ver batim to the projCfg list (configure)
+                    for line in fin:
+                        matchobj = regexpDiv.match(line)
+                        if not matchobj is None:
+                            break;
+                        projCfg.extend(list(line))
+                    newSection = determineSection(line, regexpDefs, regexpMake, regexpProjMkRules, regexpProj, regexpProjCfg)
+                    if not newSection is None:
+                        section = newSection
+                    continue
+                elif section == 'projmkrules':
+                    # Copy the line ver batim to the projMkRules list (make_basic.mk)
+                    for line in fin:
+                        matchobj = regexpDiv.match(line)
+                        if not matchobj is None:
+                            break;
+                        projMkRules.extend(list(line))
+                    newSection = determineSection(line, regexpDefs, regexpMake, regexpProjMkRules, regexpProj, regexpProjCfg)
+                    if not newSection is None:
+                        section = newSection
+                    continue
+                elif section == 'proj':
+                    # Must parse xml and use the project-specific information to populate the Rules.mk and target.mk files.
+                    # Collect all xml lines for now, then process after file-read loop.
+                    if xml is None:
+                        xml = line
+                    else:
+                        xml += line
+                else:
+                    # Unknown section 
+                    raise Exception('unknownSection', section)
     except Exception as exc:
-        msg, violator = exc.args
+        msg = exc.args[0]
         if msg == 'badKeyMapKey':
             # If we are here, then there was a non-empty keymap, and the parameter came from
             # the configuration file.
+            violator = exc.args[1]
             print('Unknown parameter name ' + "'" + violator + "'" + ' in ' + cfgfile + '.', file=sys.stderr)
             rv = bool(1)
         elif msg == 'badQuoteQual':
             # The bad quote qualifier came from the configuration file, not the addenda, since
             # we will have fixed any bad qualifiers in the addenda (which is populated by code).
+            violator = exc.args[1]
             print('Unknown quote qualifier ' + "'" + violator + "'" + ' in ' + cfgfile + '.', file=sys.stderr)
             rv = bool(1)
         elif msg == 'missingQuoteQual':
+            violator = exc.args[1]
             print('Missing quote qualifier for parameter ' + "'" + violator + "'" + ' in ' + cfgfile + '.', file=sys.stderr)
             rv = bool(1)
         elif msg == 'paramNameTooLong':
+            violator = exc.args[1]
             print('Macro name ' + "'" + violator + "' is too long.", file=sys.stderr)
+            rv = bool(1)
+        elif msg == 'unknownSection':
+            violator = exc.args[1]
+            print('Unknown section ' + "'" + violator + "' in configuration file.", file=sys.stderr)
             rv = bool(1)
         else:
             # re-raise the exception
             raise
+
+    if not rv:
+        if not xml is None:
+            # Process xml.
+            projRules.extend(list(RULESPREFIX))
+            projTarget.extend(list(TARGETPREFIX))            
+            rv = processXML(xml, projRules, projTarget)
+            projRules.extend(RULESSUFFIX)
+
+    # Process addenda - these are parameters that are not configurable and must be set in the 
+    # NetDRMS build.
+    if not rv:
+        iscfg = bool(0)
+        for key in addenda:
+            item = key + ' ' + addenda[key]
+            ppRet = processParam(iscfg, item, regexpQuote, regexp, keymap, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection, platDict, machDict, 'defs')
+            if ppRet:
+                break;
 
     # Put information collected in platDict and machDict into mDefs. Must do this here, and not in processParam, since
     # we need to parse all platform-specific make variables before grouping them into platform categories.
@@ -372,7 +541,10 @@ def isVersion(maj, min, majDef, minDef):
 
 def configureComps(defs, mDefs):
     rv = bool(0)
-    autoConfig = (not defs['AUTOSELCOMP'] == '0')
+    autoConfig = bool(1)
+
+    if 'AUTOSELCOMP' in defs:
+        autoConfig = (not defs['AUTOSELCOMP'] == '0')
     
     if autoConfig:
         hasicc = bool(0)
@@ -389,7 +561,7 @@ def configureComps(defs, mDefs):
             print('Command ' + "'" + cmd + "'" + ' ran improperly.')
             rv = bool(1)
         
-        if rv == bool(0):
+        if not rv:
             regexp = re.compile(r".+Version\s+(\d+)[.](\d+)", re.DOTALL)
             matchobj = regexp.match(ret)
             if matchobj is None:
@@ -430,7 +602,7 @@ def configureComps(defs, mDefs):
             print('Command ' + "'" + cmd + "'" + ' ran improperly.')
             rv = bool(1)
 
-        if rv == bool(0):
+        if not rv:
             regexp = re.compile(r".+Version\s+(\d+)\.(\d+)", re.DOTALL)
             matchobj = regexp.match(ret)
             if matchobj is None:
@@ -484,7 +656,7 @@ def configureComps(defs, mDefs):
 
     return rv
 
-def writeFiles(base, cfile, mfile, pfile, cDefs, mDefsGen, mDefsMake, mDefsComps, perlConstSection, perlInitSection):
+def writeParamsFiles(base, cfile, mfile, pfile, cDefs, mDefsGen, mDefsMake, mDefsComps, perlConstSection, perlInitSection):
     rv = bool(0)
 
     # Merge mDefsGen, mDefsMake, and mDefsComps into a single string with compiler configuration first, general parameters next, then
@@ -522,29 +694,77 @@ def writeFiles(base, cfile, mfile, pfile, cDefs, mDefsGen, mDefsMake, mDefsComps
             print('}\n', file=pout)
             print(PERL_FXNS_B, file=pout)
     except IOError as exc:
-        sys.stderr.write(exc.strerror)
-        sys.stderr.write('Unable to open a parameter vile.')
+        type, value, traceback = sys.exc_info()
+        print(exc.strerror, file=sys.stderr)
+        print('Unable to open ' + "'" + value.filename + "'.", file=sys.stderr)        
         rv = bool(1)
 
     return rv
 
-def configureNet(cfgfile, cfile, mfile, pfile, base, keymap):
+def writeProjFiles(pCfile, pMfile, pRfile, pTfile, projCfg, projMkRules, projRules, projTarget):
+    rv = bool(0)
+
+    try:
+        if projCfg:
+            with open(pCfile, 'w') as cout:
+                # configure
+                print(''.join(projCfg), file=cout)
+        
+        if projMkRules:
+            with open(pMfile, 'w') as mout:
+                # make_basic.mk
+                print(PREFIX, file=mout)
+                print(''.join(projMkRules), file=mout)
+    
+        if projRules:
+            with open(pRfile, 'w') as rout:
+                # Rules.mk
+                print(PREFIX, file=rout)
+                print(''.join(projRules), file=rout)
+        
+        if projTarget:
+            with open(pTfile, 'w') as tout:
+                # target.mk
+                print(PREFIX, file=tout)
+                print(''.join(projTarget), file=tout)    
+    except IOError as exc:
+        type, value, traceback = sys.exc_info()
+        print(exc.strerror, file=sys.stderr)
+        print('Unable to open ' + "'" + value.filename + "'.", file=sys.stderr)
+        rv = bool(1)
+
+    if not rv:
+        try:
+            os.chmod(pCfile, stat.S_IRWXU | stat.S_IRGRP | stat.S_IROTH)
+        except OSError as exc:
+            print(exc.strerror, file=sys.stderr)
+            rv = bool(1)
+
+    return rv
+
+def configureNet(cfgfile, cfile, mfile, pfile, pCfile, pMfile, pRfile, pTfile, base, keymap):
     rv = bool(0)
     
     defs = {}
     cDefs = list()
-    mDefs = list()
     mDefsGen = list()
     mDefsMake = list()
     mDefsComps = list()
+    projCfg = list()
+    projMkRules = list()
+    projRules = list()
+    projTarget = list()
     perlConstSection = list()
     perlInitSection = list()
     addenda = {}
     
-    # There are three parameters that are not configurable and must be set.
+    # There are three parameters that were not included in the original config.local parameter set, for some reason.
+    # Due to this omission, then are not configurable, and must be set in the script.
     addenda['a:USER'] = 'NULL'
     addenda['a:PASSWD'] = 'NULL'
     addenda['p:DSDS_SUPPORT'] = '0'
+    
+    # This parameter is not configurable. BUILD_TYPE is used to distinguish between a NetDRMS and an JSOC-SDP build.
     addenda['a:BUILD_TYPE'] = 'NETDRMS' # Means a non-Stanford build. This will set two additional macros used by make:
                                         #   __LOCALIZED_DEFS__ and NETDRMS_BUILD. The former is to support legacy code
                                         #   which incorrectly used this macro, and the latter is for future use. 
@@ -553,26 +773,31 @@ def configureNet(cfgfile, cfile, mfile, pfile, base, keymap):
     try:
         with open(cfgfile, 'r') as fin:
             # Process configuration parameters
-            rv = parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection)
-            if rv == bool(0):
+            rv = parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg, projMkRules, projRules, projTarget, perlConstSection, perlInitSection)
+            if not rv:
                 # Must add a parameter for the SUMS_MANAGER UID (for some reason). This must be done after the
                 # config file is processed since an input to getMgrUIDLine() is one of the config file's
                 # parameter values.
                 uidParam = {}
                 rv = getMgrUIDLine(defs, uidParam)
                 if rv == bool(0):
-                    rv = parseConfig(None, keymap, uidParam, defs, cDefs, mDefsGen, None, perlConstSection, perlInitSection)
+                    rv = parseConfig(None, keymap, uidParam, defs, cDefs, mDefsGen, None, projCfg, projMkRules, projRules, projTarget, perlConstSection, perlInitSection)
                 
             # Configure the compiler-selection make variables.
-            if rv == bool(0):
+            if not rv:
                 rv = configureComps(defs, mDefsComps)
 
             # Write out the parameter files.
-            if rv == bool(0):
-                rv = writeFiles(base, cfile, mfile, pfile, cDefs, mDefsGen, mDefsMake, mDefsComps, perlConstSection, perlInitSection)
+            if not rv:
+                rv = writeParamsFiles(base, cfile, mfile, pfile, cDefs, mDefsGen, mDefsMake, mDefsComps, perlConstSection, perlInitSection)
+
+            # Write out the project-specific make files (make_basic.mk, Rules.mk, and target.mk).
+            if not rv:
+                rv = writeProjFiles(pCfile, pMfile, pRfile, pTfile, projCfg, projMkRules, projRules, projTarget)
+
     except IOError as exc:
-        sys.stderr.write(exc.strerror)
-        sys.stderr.write('Unable to read configuration file ' + cfgfile + '.')
+        print(exc.strerror, file=sys.stderr)
+        print('Unable to read configuration file ' + cfgfile + '.', file=sys.stderr)
     except Exception as exc:
         type, msg = exc.args
         if type == 'unexpectedIccRet':
@@ -593,54 +818,72 @@ def configureNet(cfgfile, cfile, mfile, pfile, base, keymap):
         
     return rv
 
-def configureSdp(cfgfile, cfile, mfile, pfile, base, keymap):
+def configureSdp(cfgfile, cfile, mfile, pfile, pCfile, pMfile, pRfile, pTfile, base):
     rv = bool(0)
     
     defs = {}
     cDefs = list()
     mDefsGen = list()
     mDefsMake = list()
+    projCfg = list()
+    projMkRules = list()
+    projRules = list()
+    projTarget = list()
     mDefsComps = list()
     perlConstSection = list()
     perlInitSection = list()
     addenda = {}
     
+    # There are three parameters that were not included in the original config.local parameter set, for some reason.
+    # Due to this omission, then are not configurable, and must be set in the script.
     addenda['a:USER'] = 'NULL'
     addenda['a:PASSWD'] = 'NULL'
     addenda['p:DSDS_SUPPORT'] = '1'
+    
+    # This parameter is not configurable. BUILD_TYPE is used to distinguish between a NetDRMS and an JSOC-SDP build.
     addenda['a:BUILD_TYPE'] = 'JSOC_SDP' # Means a Stanford build. This will set one additional macro used by make: JSOC_SDP_BUILD.
     
     try:
         with open(cfgfile, 'r') as fin:
-            rv = parseConfig(cfgfile, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection)
-            if rv == bool(0):
+            rv = parseConfig(fin, None, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg, projMkRules, projRules, projTarget, perlConstSection, perlInitSection)
+            
+            if not rv:
                 # Must add a parameter for the SUMS_MANAGER UID (for some reason)
                 uidParam = {}
                 rv = getMgrUIDLine(defs, uidParam)
-                if rv == bool(0):
-                    rv = parseConfig(None, keymap, uidParam, defs, cDefs, mDefsGen, NONE, perlConstSection, perlInitSection)
-                
+                if not rv:
+                    rv = parseConfig(None, None, uidParam, defs, cDefs, mDefsGen, None, projCfg, projMkRules, projRules, projTarget, perlConstSection, perlInitSection)
+
                 # Configure the compiler-selection make variables.
-                if rv == bool(0):
+                if not rv:
                     rv = configureComps(defs, mDefsComps)
                 
-                if rv == bool(0):
-                    rv = writeFiles(base, cfile, mfile, pfile, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection)
+                # Write out the parameter files.
+                if not rv:
+                    rv = writeParamsFiles(base, cfile, mfile, pfile, cDefs, mDefsGen, mDefsMake, mDefsComps, perlConstSection, perlInitSection)
+
+                # Write out the project-specific make files (make_basic.mk, Rules.mk, and target.mk).
+                if not rv:
+                    rv = writeProjFiles(pCfile, pMfile, pRfile, pTfile, projCfg, projMkRules, projRules, projTarget)
     except IOError as exc:
-        sys.stderr.write(exc.strerror)
-        sys.stderr.write('Unable to read configuration file ' + cfgfile + '.')
+        print(exc.strerror, file=sys.stderr)
+        print('Unable to read configuration file ' + cfgfile + '.', file=sys.stderr)
     except Exception as exc:
-        type, msg = exc.args
+        type = exc.args[0]
         if type == 'unexpectedIccRet':
+            msg = exc.args[1]
             print('icc -V returned this unexpected message:\n' + msg, file=sys.stderr)
             rv = bool(1)
         elif type == 'unexpectedGccRet':
+            msg = exc.args[1]
             print('gcc -v returned this unexpected message:\n' + msg, file=sys.stderr)
             rv = bool(1)
         elif type == 'unexpectedIfortRet':
+            msg = exc.args[1]
             print('ifort -V returned this unexpected message:\n' + msg, file=sys.stderr)
             rv = bool(1)
         elif type == 'unexpectedGfortranRet':
+            msg = exc.args[1]
             print('gfortran -v returned this unexpected message:\n' + msg, file=sys.stderr)
             rv = bool(1)
         else:
@@ -675,6 +918,10 @@ if rv == RET_SUCCESS:
     cfile = optD['dir'] + '/' + optD['base'] + '.h'
     mfile = optD['dir'] + '/' + optD['base'] + '.mk'
     pfile = optD['dir'] + '/' + optD['base'] + '.pm'
+    pCfile = optD['dir'] + '/configure'
+    pMfile = optD['dir'] + '/make_basic.mk'
+    pRfile = optD['dir'] + '/Rules.mk'
+    pTfile = optD['dir'] + '/target.mk'
 
     if net:
         try:
@@ -698,14 +945,12 @@ if rv == RET_SUCCESS:
         except OSError:
             sys.stderr.write('Unable to read configuration map-file ' + NET_CFGMAP + '.')
             rv = bool(1)
-            
-        
 
         # We also need to set the UID of the SUMS manager. We have the name of the
         # SUMS manager (it is in the configuration file)
-        configureNet(NET_CFG, cfile, mfile, pfile, optD['base'], keymap)
+        configureNet(NET_CFG, cfile, mfile, pfile, pCfile, pMfile, pRfile, pTfile, optD['base'], keymap)
     else:
-        configureSdp(SDP_CFG, cfile, mfile, pfile, optD['base'], {})
+        configureSdp(SDP_CFG, cfile, mfile, pfile, pCfile, pMfile, pRfile, pTfile, optD['base'])
     
     
 
