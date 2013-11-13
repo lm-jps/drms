@@ -950,7 +950,9 @@ if rv == RET_SUCCESS:
         # SUMS manager (it is in the configuration file)
         configureNet(NET_CFG, cfile, mfile, pfile, pCfile, pMfile, pRfile, pTfile, optD['base'], keymap)
     else:
-        configureSdp(SDP_CFG, cfile, mfile, pfile, pCfile, pMfile, pRfile, pTfile, optD['base'])
-    
-    
-
+        # A Stanford user can override the parameters in configsdp.txt by copying that file to config.local, 
+        # and then editing config.local. So, if config.local exists, use that.
+        if os.path.isfile(cdir + '/' + NET_CFG):
+            configureSdp(NET_CFG, cfile, mfile, pfile, pCfile, pMfile, pRfile, pTfile, optD['base'])
+        else:
+            configureSdp(SDP_CFG, cfile, mfile, pfile, pCfile, pMfile, pRfile, pTfile, optD['base'])
