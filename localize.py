@@ -509,8 +509,8 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
     if not rv:
         for mach in machDict:
             mDefsMake.extend(list('\nifeq ($(MACHTYPE), ' + mach + ')'))
-            for var in platDict[plat]:
-                mDefsMake.extend(list('\n' + var + ' = ' + platDict[plat][var]))
+            for var in machDict[mach]:
+                mDefsMake.extend(list('\n' + var + ' = ' + machDict[mach][var]))
             mDefsMake.extend(list('\nendif\n'))
                              
     return rv
@@ -651,8 +651,8 @@ def configureComps(defs, mDefs):
             mDefs.extend(list('\nFCOMPILER = gfortran'))
     
         # Environment overrides. These get written, regardless of the disposition of auto-configuration.
-        mDefs.extend(list('\nifneq $(JSOC_COMPILER,)\n  COMPILER = $(JSOC_COMPILER)\nendif'))
-        mDefs.extend(list('\nifneq $(JSOC_FCOMPILER,)\n  FCOMPILER = $(JSOC_FCOMPILER)\nendif'))
+        mDefs.extend(list('\nifneq ($(JSOC_COMPILER,))\n  COMPILER = $(JSOC_COMPILER)\nendif'))
+        mDefs.extend(list('\nifneq ($(JSOC_FCOMPILER,))\n  FCOMPILER = $(JSOC_FCOMPILER)\nendif'))
 
     return rv
 
