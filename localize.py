@@ -396,6 +396,7 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
                     section = newSection
     
                 if section == 'make':
+
                     # There are some blocks of lines in the __MAKE__ section that must be copied ver batim to the output make file. 
                     # The blocks are defined by _CUST_/_ENDCUST_ tags.
                     matchobj = regexpCustMkBeg.match(line)
@@ -415,9 +416,9 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
                 if section == 'defs' or section == 'make':
                     iscfg = bool(1)
                     ppRet = processParam(iscfg, line, regexpQuote, regexp, keymap, defs, cDefs, mDefsGen, mDefsMake, perlConstSection, perlInitSection, platDict, machDict, section)
-                                
+                    
                     if ppRet:
-                        break;
+                        break
                 elif section == 'projcfg':
                     # Copy the line ver batim to the projCfg list (configure)
                     for line in fin:
@@ -448,7 +449,7 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
                     else:
                         xml += line
                 else:
-                    # Unknown section 
+                    # Unknown section
                     raise Exception('unknownSection', section)
     except Exception as exc:
         msg = exc.args[0]
@@ -513,7 +514,6 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
             for var in machDict[mach]:
                 mDefsMake.extend(list('\n' + var + ' = ' + machDict[mach][var]))
             mDefsMake.extend(list('\nendif\n'))
-                             
     return rv
 
 def getMgrUIDLine(defs, uidParam):
@@ -727,7 +727,7 @@ def writeProjFiles(pCfile, pMfile, pRfile, pTfile, projCfg, projMkRules, projRul
             with open(pTfile, 'w') as tout:
                 # target.mk
                 print(PREFIX, file=tout)
-                print(''.join(projTarget), file=tout)    
+                print(''.join(projTarget), file=tout)
     except IOError as exc:
         type, value, traceback = sys.exc_info()
         print(exc.strerror, file=sys.stderr)
@@ -735,11 +735,14 @@ def writeProjFiles(pCfile, pMfile, pRfile, pTfile, projCfg, projMkRules, projRul
         rv = bool(1)
 
     if not rv:
-        try:
-            os.chmod(pCfile, stat.S_IRWXU | stat.S_IRGRP | stat.S_IROTH)
-        except OSError as exc:
-            print(exc.strerror, file=sys.stderr)
-            rv = bool(1)
+        if os.path.exists(pCfile):
+            try:
+                os.chmod(pCfile, stat.S_IRWXU | stat.S_IRGRP | stat.S_IROTH)
+            except OSError as exc:
+                type, value, traceback = sys.exc_info()
+                print('Unable to chmod file ' + "'" + value.filename + "'.", file=sys.stderr)
+                print(exc.strerror, file=sys.stderr)
+                rv = bool(1)
 
     return rv
 
@@ -783,7 +786,6 @@ def configureNet(cfgfile, cfile, mfile, pfile, pCfile, pMfile, pRfile, pTfile, b
                 rv = getMgrUIDLine(defs, uidParam)
                 if rv == bool(0):
                     rv = parseConfig(None, keymap, uidParam, defs, cDefs, mDefsGen, None, projCfg, projMkRules, projRules, projTarget, perlConstSection, perlInitSection)
-                
             # Configure the compiler-selection make variables.
             if not rv:
                 rv = configureComps(defs, mDefsComps)
@@ -791,11 +793,9 @@ def configureNet(cfgfile, cfile, mfile, pfile, pCfile, pMfile, pRfile, pTfile, b
             # Write out the parameter files.
             if not rv:
                 rv = writeParamsFiles(base, cfile, mfile, pfile, cDefs, mDefsGen, mDefsMake, mDefsComps, perlConstSection, perlInitSection)
-
             # Write out the project-specific make files (make_basic.mk, Rules.mk, and target.mk).
             if not rv:
                 rv = writeProjFiles(pCfile, pMfile, pRfile, pTfile, projCfg, projMkRules, projRules, projTarget)
-
     except IOError as exc:
         print(exc.strerror, file=sys.stderr)
         print('Unable to read configuration file ' + cfgfile + '.', file=sys.stderr)

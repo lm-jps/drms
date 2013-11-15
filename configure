@@ -5,12 +5,17 @@ set PERLBIN = ""
 set PYBIN = ""
 
 if ($PERLBIN == "") then
-    if (-e configsdp.txt) then
-        # at stanford, use 
+    if (-x /home/jsoc/bin/linux_x86_64/activeperl) then
         set PERLBIN = "/home/jsoc/bin/linux_x86_64/activeperl"
-        set PYBIN = "/home/jsoc/bin/linux_x86_64/activepython"
     else
         set PERLBIN = "perl"
+    endif
+endif
+
+if ($PYBIN == "") then
+    if (-x /home/jsoc/bin/linux_x86_64/activepython) then
+        set PYBIN = "/home/jsoc/bin/linux_x86_64/activepython"
+    else
         set PYBIN = "python"
     endif
 endif
