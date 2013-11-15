@@ -42,7 +42,8 @@ PERL_FXNS_A = """sub new
     };
     
     bless($self, $clname);
-    $self->{_paramsH} = $self->initialize();
+    $self->{_paramsH} = {};
+    $self->initialize();
     
     return $self;
 }
@@ -259,7 +260,7 @@ def processParam(cfgfile, line, regexpQuote, regexp, keymap, defs, cDefs, mDefsG
                 # constants (the names of which are the parameter names) 
                 # we can refer to those in the init section. The key variable holds the
                 # name of the constant.
-                perlInitSection.extend(list('\n  $self->{_paramsH}->{' + key + '} = ' + "'" + val + "';"))
+                perlInitSection.extend(list("\n  $self->{_paramsH}->{'" + key + "'} = " + key + ';'))
             else:
                 # No quote qualifier
                 raise Exception('missingQuoteQual', key)
@@ -651,8 +652,8 @@ def configureComps(defs, mDefs):
             mDefs.extend(list('\nFCOMPILER = gfortran'))
     
         # Environment overrides. These get written, regardless of the disposition of auto-configuration.
-        mDefs.extend(list('\nifneq ($(JSOC_COMPILER,))\n  COMPILER = $(JSOC_COMPILER)\nendif'))
-        mDefs.extend(list('\nifneq ($(JSOC_FCOMPILER,))\n  FCOMPILER = $(JSOC_FCOMPILER)\nendif'))
+        mDefs.extend(list('\nifneq ($(JSOC_COMPILER),)\n  COMPILER = $(JSOC_COMPILER)\nendif'))
+        mDefs.extend(list('\nifneq ($(JSOC_FCOMPILER),)\n  FCOMPILER = $(JSOC_FCOMPILER)\nendif'))
 
     return rv
 

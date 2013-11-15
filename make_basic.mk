@@ -11,10 +11,10 @@ CUSTOMSW =
 # Run a script to determine the machine on which make is being run. This
 # MAY return a machine type, if the host found falls into one of several
 # categories (like dbserver).
-MACHTYPE = $(shell $(SRCDIR)/getmachtype.pl)
+MACHTYPE = $(shell hostname)
 
 # If MACH was set when the make command was issued (eg., make MACH='N02'), then
-# use its value for the output/obj directory and use the custom.mk variables
+# use its value for the output/obj directory and use the drmsparams.mk variables
 # relevant to its value. Otherwise, use $(JSOC_MACHINE).
 ifeq ($(MACH),)
 MACH = $(JSOC_MACHINE)
@@ -29,7 +29,7 @@ FCOMPILER = ifort
 MPICOMPILER = $(MPI_PATH)/mpicc
 MPIFCOMPILER = $(MPI_PATH)/mpif90
 
-# can set through custom.mk or through environment
+# can set through drmsparams.mk or through environment
 ifneq ($(JSOC_COMPILER),)
 COMPILER = $(JSOC_COMPILER)
 endif
@@ -41,9 +41,9 @@ endif
 
 #***********************************************************************************************#
 # This optional file has custom definitions created by the configure script.
-# Do this after compiler selection since custom.mk might use $COMPILER or $FCOMPILER.
-# custom.mk might also set compiler (through moreconfigure.pl)
--include $(SRCDIR)/$(LOCALIZATIONDIR)/custom.mk
+# Do this after compiler selection since drmsparams.mk might use $COMPILER or $FCOMPILER.
+# drmsparams.mk might also set compiler (through moreconfigure.pl)
+-include $(SRCDIR)/$(LOCALIZATIONDIR)/drmsparams.mk
 #***********************************************************************************************#
 
 #***********************************************************************************************#
@@ -141,8 +141,19 @@ ifneq ($(DRMS_DEFAULT_RETENTION),)
 	CUSTOMSW := $(CUSTOMSW) -DDRMS_DEFAULT_RETENTION=$(DRMS_DEFAULT_RETENTION)
 endif
 
-ifneq ($(CUSTOM_DEFINES),)
-CUSTOMSW := $(CUSTOMSW) -D$(CUSTOM_DEFINES)
+# Due to legacy code, the name __LOCALIZED_DEFS__ must be used for NetDRMS builds. 
+# Despite the name, this macro has nothing to do with localized definitions. It means 
+# "not Stanford JSOC-SDP" (it essentially means NetDRMS). So, if __LOCALIZED_DEFS__ is set, then 
+# the binaries were built for use outside of Stanford. 
+# For future use, we also define the NETDRMS_BUILD as a synonym, but with a more appropriate name.
+# __LOCALIZED_DEFS__ is deprecated and should not be used in new code.
+ifeq ($(BUILD_TYPE),NETDRMS)
+CUSTOMSW := $(CUSTOMSW) -DNETDRMS_BUILD -D__LOCALIZED_DEFS__
+endif
+
+# Stanford builds are marked by the JSOC_SDP_BUILD  macro.
+ifeq ($(BUILD_TYPE),JSOC_SDP)
+CUSTOMSW := $(CUSTOMSW) -DJSOC_SDP_BUILD
 endif
 
 #
