@@ -371,7 +371,7 @@ def parseConfig(fin, keymap, addenda, defs, cDefs, mDefsGen, mDefsMake, projCfg,
         regexpCustMkBeg = re.compile(r"^_CUST_")
         regexpCustMkEnd = re.compile(r"^_ENDCUST_")
         regexpDiv = re.compile(r"^__")
-        regexp = re.compile(r"^\s*(\S+)\s+(\S+)")
+        regexp = re.compile(r"^\s*(\S+)\s+(\S.*)")
         
         platDict = {}
         machDict = {}
