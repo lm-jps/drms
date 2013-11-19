@@ -10,6 +10,9 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
 #use lib ("/home/jim/perl_tk_800.023.xim/lib/perl5/site_perl/5.8.5");
 use Tk;
 use DBI;
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
 
 #use Config;
 #$archname = $Config{'archname'};
@@ -19,9 +22,9 @@ sub usage {
   exit;
 }
 
-$DEFAULTDB = "jsoc";		#default DB
-$DBSUMS = "jsoc_sums";
-$HOSTDB = "hmidb";		#host where DB runs
+$DEFAULTDB = drmsparams::DBNAME;		#default DB
+$DBSUMS = $DEFAULTDB . "_sums";
+$HOSTDB = drmsparams::SUMS_DB_HOST;		#host where DB runs
 $PGPORT = 5434;			#for connection with jsoc_sum db
 $IMGDIR = "/home/jsoc/gallery"; #dir with the .gif files
 $INLOG = 0;			#use default tape_svc log
