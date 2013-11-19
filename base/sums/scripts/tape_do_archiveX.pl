@@ -4,6 +4,9 @@
 #
 use DBI;
 use POSIX ":sys_wait_h";
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
 
 #$MAXFORKS = 7;		#max tapearcX forks (i.e. limit of drives to write)
 $MAXFORKS = 6;		#max tapearcX forks (i.e. limit of drives to write)
@@ -131,7 +134,7 @@ sub forkarc {
 $ARCHPROBE = "/home/production/cvs/JSOC/proj/util/scripts/archprobe.pl";
 $ARCHFILEDIR = "/usr/local/logs/manifest";  #!!!TEMP noop
 #$ARCHFILEDIR = "/usr/local/logs/manifest_test"; #!!TEMP for testing
-$HOSTDB = "hmidb";      #host where DB runs
+$HOSTDB = drmsparams::SUMS_DB_HOST;      #host where DB runs
 $FAST = 0;
 while ($ARGV[0] =~ /^-/) {
   $_ = shift;

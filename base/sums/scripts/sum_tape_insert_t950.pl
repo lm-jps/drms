@@ -7,10 +7,13 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S  $0 "$@"'
 #
 use DBI;
 use Term::ReadKey;
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
 
 #$DB = "jsoc";
 #$DB = "jim";
-$DB = "jsoc_sums";
+$DB = drmsparams::DBNAME . "_sums";
 #$PGPORT=5434;
 if(!($PGPORT = $ENV{'SUMPGPORT'})) {
   print "You must have ENV SUMPGPORT set to the port number, e.g. 5430\n";
@@ -44,7 +47,7 @@ $IDTBL = $ARGV[0];
 #}
 $user = "production";
 #$password = "jimshoom";
-$hostdb = "hmidb";      #host where Postgres runs
+$hostdb = drmsparams::SUMS_DB_HOST;       #host where Postgres runs
 
 #First connect to database
   $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb;port=$PGPORT", "$user", "");

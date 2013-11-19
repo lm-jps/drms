@@ -9,6 +9,9 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -d -S $0 "$@"'
 #
 use DBI;
 use Term::ReadKey;
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
 
 sub usage {
   print "Moves data in sunum to the given /SUMx dir and updates the jsoc_sums DB\n";
@@ -44,7 +47,7 @@ $ACNT = $#ARGV;
 for($i=0; $i <= $ACNT; $i++) {
   push(@aval, $ARGV[$i]);
 }
-$HOSTDB = "hmidb";      #host where DB runs
+$HOSTDB = drmsparams::SUMS_DB_HOST;      #host where DB runs
 $SADMINUSER = "production"; #!!TBD ck w/Art for config info on SUMSADMIN user
 $MAX_BLOCKCNT = 10;	#how many sunums to do before process and commit
 #$DBIN = "jsoc_sums";	#target sums DB

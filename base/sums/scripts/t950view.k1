@@ -22,6 +22,9 @@ use Tk;
 use Tie::IxHash;
 use DBI;
 use Term::ReadKey;
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
 
 sub usage {
   print "Usage: t950view [-h] [-p] [-i] [-llog_file] [-Hdbhost] [DB]\n";
@@ -54,7 +57,7 @@ $OURPATH = "/home/production/cvs/JSOC/base/sums/scripts/t950view"; #!!this progr
 #$TAPEHOST = "d02.Stanford.EDU";	#machine where tape_svc log file is
 $TAPEHOST = "k1.stanford.edu";	#machine where tape_svc log file is
 $DEFAULTDB = "hmidbX";		#default DB
-$HOSTDB = "hmidb";		#host where DB runs
+$HOSTDB = drmsparams::SUMS_DB_HOST;		#host where DB runs
 $NOTAPEARC = "/usr/local/logs/soc/NOTAPEARC";
 $IMGDIR = "/home/jsoc/gallery"; #dir with the .gif files
 $INLOG = 0;			#use default tape_svc log

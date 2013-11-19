@@ -5,6 +5,9 @@ eval 'exec /home/jsoc/bin/linux_ia64/perl -S $0 "$@"'
 #
 use DBI;
 use POSIX ":sys_wait_h";
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
 
 $MAXFORKS = 4;		#max tapearcX forks (i.e. limit of drives to write)
 $CURRFORKS = 0;
@@ -128,7 +131,7 @@ $SIG{CHLD} = \&REAPCHILD;
 #$ARCHGRPCFG = "/home/production/cvs/JSOC/base/sums/apps/data/arch_group.cfg";
 $ARCHPROBE = "/home/production/cvs/JSOC/proj/util/scripts/archprobe.pl";
 $ARCHFILEDIR = "/usr/local/logs/manifest"; #!!TEMP
-$HOSTDB = "hmidb";      #host where DB runs
+$HOSTDB = drmsparams::SUMS_DB_HOST;      #host where DB runs
 $FAST = 0;
 while ($ARGV[0] =~ /^-/) {
   $_ = shift;

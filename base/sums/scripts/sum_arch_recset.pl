@@ -8,6 +8,9 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
 #
 #
 use DBI;
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
 
 sub usage {
   print "Mark the given record set sunums as archive pending\n";
@@ -58,9 +61,9 @@ sub reteffdate {
 }
 
 
-$HOSTDB = "hmidb";      #host where DB runs
-$DBIN = "jsoc_sums";
-$PORTIN = 5434;		#port for jsoc_sums DB
+$HOSTDB = drmsparams::SUMS_DB_HOST;      #host where DB runs
+$DBIN = drmsparams::DBNAME . "_sums";
+$PORTIN = drmsparams::SUMPGPORT;		#port for jsoc_sums DB
 $INFILE = 0;
 $TOUCH = 0;
 $GROUP = 0;

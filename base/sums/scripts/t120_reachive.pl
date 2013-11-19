@@ -9,6 +9,9 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
 #Also -l flag will give the last file number to read to.
 #
 use DBI;
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
 
 sub usage {
   print "Read t120 tape sequentially & update sum_partn_alloc to arch pend.\n";
@@ -40,8 +43,8 @@ sub commify {
              }
 
 
-$HOSTDB = "hmidb";      #host where DB runs
-$DB = "jsoc_sums";
+$HOSTDB = drmsparams::SUMS_DB_HOST;      #host where DB runs
+$DB = drmsparams::DBNAME . "_sums";
 $lastfnum = 0;
 #$PGPORT = 5434;
 if(!($PGPORT = $ENV{'SUMPGPORT'})) {

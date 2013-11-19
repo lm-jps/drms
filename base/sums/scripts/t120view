@@ -23,6 +23,9 @@ use Tk;
 use Tie::IxHash;
 use DBI;
 use Term::ReadKey;
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
 
 sub usage {
   print "Usage: t120view [-h] [-p] [-i] [-llog_file] [-Hdbhost] [DB]\n";
@@ -51,7 +54,7 @@ tie %Hofneed, "Tie::IxHash"; #lets you take out keys in input order
 $OURPATH = "/home/production/cvs/JSOC/base/sums/scripts/t120view"; #!!this program
 
 $DEFAULTDB = "hmidbX";		#default DB
-$HOSTDB = "hmidb";		#host where DB runs
+$HOSTDB = drmsparams::SUMS_DB_HOST;		#host where DB runs
 $NOTAPEARC = "/usr/local/logs/soc/NOTAPEARC";
 $INLOG = 0;			#use default tape_svc log
 #$login = "dsowner";

@@ -7,6 +7,9 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
 #
 #
 use DBI;
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
 
 sub usage {
   print "Mark given sunum(s) as archive pending in the given DB\n";
@@ -56,7 +59,7 @@ sub reteffdate {
 }
 
 
-$HOSTDB = "hmidb";      #host where DB runs
+$HOSTDB = drmsparams::SUMS_DB_HOST;      #host where DB runs
 $INFILE = 0;
 $TOUCH = 0;
 $UPDATEMODE = 0;

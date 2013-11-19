@@ -6,6 +6,9 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
 #for each /SUM partition in the sum_partn_avail table.
 #
 use DBI;
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
 
 sub usage {
   print "Show storage distribution for each /SUM partition.\n";
@@ -38,7 +41,7 @@ sub commify {
              }
 
 
-$HOSTDB = "hmidb";      #host where DB runs
+$HOSTDB = drmsparams::SUMS_DB_HOST;      #host where DB runs
 $PGPORT = 0;
 while ($ARGV[0] =~ /^-/) {
   $_ = shift;

@@ -10,6 +10,9 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
 #Prints a XHTML file to stdout that s/b redirected to a saved .html for later display.
 #
 use DBI;
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
 
 sub usage {
   print "Show storage distribution for each SUM group.\n";
@@ -60,7 +63,7 @@ sub commify {
                   return $_;
              }
 
-$HOSTDB = "hmidb";      #host where DB runs
+$HOSTDB = drmsparams::SUMS_DB_HOST;      #host where DB runs
 $FULL = 0;
 while ($ARGV[0] =~ /^-/) {
   $_ = shift;

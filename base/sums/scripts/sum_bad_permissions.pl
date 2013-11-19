@@ -30,8 +30,11 @@
 #
 use DBI;
 use Term::ReadKey;
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
 
-$DB = "jsoc";
+$DB = drmsparams::DBNAME;
 
 sub usage {
   print "Cleans up SUM storage and DB tables for Storage Units with bad permissions\n";
@@ -70,7 +73,7 @@ print "This is going to modify the SUMS DB tables.\n";
 #}
 $user = "jim";
 #$password = "jimshoom";
-$hostdb = "hmidb";      #host where Postgres runs
+$hostdb = drmsparams::SUMS_DB_HOST;      #host where Postgres runs
 open(ID, $infile) || die "Can't open $infile: $!\n";
 
 #connect to database

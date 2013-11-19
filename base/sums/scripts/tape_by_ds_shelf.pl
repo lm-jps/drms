@@ -6,6 +6,10 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
 #45 2 * * * /home/production/cvs/JSOC/base/sums/scripts/tape_by_ds_shelf.pl jsoc_sums
 
 use DBI;
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
+
 #use POSIX ":sys_wait_h";
 
 #query ds name for tapes
@@ -47,7 +51,7 @@ sub labeldate {
     exit;
   }
 
-$HOSTDB = "hmidb";      #host where DB runs
+$HOSTDB = drmsparams::SUMS_DB_HOST;      #host where DB runs
 $PGPORT = 5434;
 
 while ($ARGV[0] =~ /^-/) {

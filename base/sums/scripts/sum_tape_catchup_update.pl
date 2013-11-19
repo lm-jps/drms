@@ -10,8 +10,11 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -d -S  $0 "$@"'
 #
 use DBI;
 use Term::ReadKey;
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
 
-$DB = "jsoc_sums";
+$DB = drmsparams::DBNAME . "_sums";
 $PGPORT=5434;
 
 sub usage {
@@ -41,7 +44,7 @@ if($passwd ne "yes") {
   exit(1);
 }
 $user = "production";
-$hostdb = "hmidb";      #host where Postgres runs
+$hostdb = drmsparams::SUMS_DB_HOST;      #host where Postgres runs
 $cmd = "cat $DIR/tapeid.list";
 print "$cmd\n";
 @tapeids = `$cmd`;

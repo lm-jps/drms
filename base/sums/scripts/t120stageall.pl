@@ -7,6 +7,9 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
 #for.
 #
 use Term::ReadKey;
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
 
 sub usage {
   print "Keep 3 versions of t120_reachive.pl running\n";
@@ -30,8 +33,8 @@ sub labeldate {
   return($date);
 }
 
-$HOSTDB = "hmidb";      #host where DB runs
-$DB = "jsoc";
+$HOSTDB = drmsparams::SUMS_DB_HOST;      #host where DB runs
+$DB =  drmsparams::DBNAME;
 while ($ARGV[0] =~ /^-/) {
   $_ = shift;
   if (/^-h(.*)/) {

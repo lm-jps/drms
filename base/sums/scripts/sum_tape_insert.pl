@@ -6,8 +6,11 @@
 #
 use DBI;
 use Term::ReadKey;
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
 
-$DB = "jsoc";
+$DB = drmsparams::DBNAME;
 
 #$IDTBL = "/home/ora10/SUM/tapeid.list"; # our initial set of tapes
 #$IDTBL = "/home/jim/cvs/JSOC/base/sums/script/tapeid.list"; #for t120
@@ -40,7 +43,7 @@ $IDTBL = $ARGV[0];
 #}
 $user = "jim";
 #$password = "jimshoom";
-$hostdb = "hmidb";      #host where Postgres runs
+$hostdb = drmsparams::SUMS_DB_HOST;      #host where Postgres runs
 
 #First connect to database
   $dbh = DBI->connect("dbi:Pg:dbname=$DB;host=$hostdb;port=$PGPORT", "$user", "");

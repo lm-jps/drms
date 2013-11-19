@@ -28,6 +28,9 @@
 #NOTE: aia is always assumed to be on dsc0, and hmi on dcs1
 #
 use DBI;
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
 
 sub usage {
   print "Make a .parc file of archive info to send to a datacapture host.\n";
@@ -66,7 +69,7 @@ sub labeldate {
   return($date);
 }
 
-$HOSTDB = "hmidb";	#db machine
+$HOSTDB = drmsparams::SUMS_DB_HOST; 	#db machine
 $HOSTDC = "dcs0";	# (Obsolete) default datacapture to send to
 #$TLMDSHMI = "hmi.tlme"; #series of .tlm files to query
 #$TLMDSAIA = "aia.tlme"; #series of .tlm files to query
