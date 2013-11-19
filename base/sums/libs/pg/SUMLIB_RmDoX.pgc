@@ -236,7 +236,7 @@ EXEC SQL END DECLARE SECTION;
             sprintf(stmt, "%s);", stmt);
             printk("Records.txt statement is:\n%s\n", stmt);
             //sprintf(target.arr,  "%s@%s:%s", DBNAME, SERVER, DRMSPGPORT);
-            sprintf(target.arr,  "%s@%s:%s", DBNAME, SUMS_DB_HOST, DRMSPGPORT);
+            sprintf(target.arr,  "%s@%s:%s", DBNAME, SERVER, DRMSPGPORT);
             target.len = strlen(target.arr);
 
             EXEC SQL WHENEVER SQLERROR GOTO sqljsocerror0; //catch connect err
@@ -271,7 +271,7 @@ sqljsocerror0:
     printk("Error in DS_RmNowX() for del from Records.txt\n");
     //printk("Can't connect to jsoc@hmidb:5432\n");
     //printk("Can't connect to %s@%s:%s\n", DBNAME, SERVER, DRMSPGPORT);
-    printk("Can't connect to %s@%s:%s\n", DBNAME, SUMS_DB_HOST, DRMSPGPORT);
+    printk("Can't connect to %s@%s:%s\n", DBNAME, SERVER, DRMSPGPORT);
     printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
     //Assume error was in the connect so don't disconnect
     //EXEC SQL DISCONNECT;
@@ -283,7 +283,7 @@ sqljsocerror1:
     printk("Error in DS_RmNowX() for del from Records.txt\n");
     //printk("Error was after the connect to jsoc@hmidb:5432\n");
     //printk("Error was after the connect to %s@%s:%s\n", DBNAME, SERVER, DRMSPGPORT);
-    printk("Error was after the connect to %s@%s:%s\n", DBNAME, SUMS_DB_HOST, DRMSPGPORT);
+    printk("Error was after the connect to %s@%s:%s\n", DBNAME, SERVER, DRMSPGPORT);
     printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
     EXEC SQL DISCONNECT;
     //EXEC SQL ROLLBACK WORK;

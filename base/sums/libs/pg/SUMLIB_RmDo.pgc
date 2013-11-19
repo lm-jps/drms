@@ -217,7 +217,7 @@ EXEC SQL END DECLARE SECTION;
             sprintf(stmt, "%s);", stmt);
             printk("Records.txt statement is:\n%s\n", stmt);
             //sprintf(target.arr,  "%s@%s:%s", DBNAME, SERVER, DRMSPGPORT);
-            sprintf(target.arr,  "%s@%s:%s", DBNAME, SUMS_DB_HOST, DRMSPGPORT);
+            sprintf(target.arr,  "%s@%s:%s", DBNAME, SERVER, DRMSPGPORT);
             target.len = strlen(target.arr);
             EXEC SQL WHENEVER SQLERROR GOTO sqljsocerror;
             //Typically: EXEC SQL CONNECT TO jsoc@hmidb:5432;
