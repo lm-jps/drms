@@ -19,7 +19,7 @@
 __DEFS__
 q:SERVER                        hmidb
 q:DRMSPGPORT                    5432
-q:SUMS_DB_HOST                  hmidb
+q:SUMS_DB_HOST                  hmidb3
 q:SUMPGPORT                     5434
 a:DRMS_LOCAL_SITE_CODE          0x0000
 q:DBNAME                        jsoc
@@ -32,7 +32,7 @@ q:SUMS_MANAGER_UID              388
 q:SUMS_GROUP                    SOI
 q:SUMLOG_BASEDIR                /usr/local/logs/SUM
 q:SUMBIN_BASEDIR                /usr/local/bin
-q:SUMSERVER                     j1
+q:SUMSERVER                     k1
 # The number of SUMS process SETS to spawn. If this number is not 1, then the number of SUMS processes
 # is SUM_NUMSUM * 5 + 2.
 a:SUM_NUMSUM                    3
