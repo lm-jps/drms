@@ -62,6 +62,7 @@ def GetArgs(args):
         for opt, arg in opts:
             if opt == '-h':
                 print('tagRelease.py [-hu] -t <CVS tree with jsoc_version.h> -v <version string>')
+                exit(0)
             elif opt in ("-t", "--tree"):
                 regexp = re.compile(r"(\S+)/?")
                 matchobj = regexp.match(arg)
@@ -80,7 +81,10 @@ def GetArgs(args):
                 optD['version'] = arg
             else:
                 optD[opt] = arg
-	
+
+    if not rv == kRetSuccess:
+        return {}
+
     return optD
 
 # Create version strings for jsoc_version.h and CVS, returns a tuple
