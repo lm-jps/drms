@@ -25,7 +25,8 @@ EXEC SQL END DECLARE SECTION;
     //new 31Oct2008 always use localhost for dcs
     dbhost = "localhost";
 #else
-    if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = SERVER;
+    //if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = SERVER;
+    if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = SUMS_DB_HOST;
 #endif
 
   if (!(pgport = getenv("SUMPGPORT"))) {
@@ -86,7 +87,8 @@ EXEC SQL END DECLARE SECTION;
 #ifdef SUMDC
     if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = "dcs0";
 #else
-    if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = SERVER;
+    //if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = SERVER;
+    if(!(dbhost = (char *)getenv("DBHOSTNAME"))) dbhost = SUMS_DB_HOST;
 #endif
 
   if (!(pgport = getenv("SUMPGPORT"))) {

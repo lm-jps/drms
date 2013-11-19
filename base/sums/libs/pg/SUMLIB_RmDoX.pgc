@@ -235,15 +235,17 @@ EXEC SQL END DECLARE SECTION;
             if(cptr) *cptr = '\0';
             sprintf(stmt, "%s);", stmt);
             printk("Records.txt statement is:\n%s\n", stmt);
-            sprintf(target.arr,  "%s@%s:%s", DBNAME, SERVER, DRMSPGPORT);
+            //sprintf(target.arr,  "%s@%s:%s", DBNAME, SERVER, DRMSPGPORT);
+            sprintf(target.arr,  "%s@%s:%s", DBNAME, SUMS_DB_HOST, DRMSPGPORT);
             target.len = strlen(target.arr);
+
             EXEC SQL WHENEVER SQLERROR GOTO sqljsocerror0; //catch connect err
             //Typically: EXEC SQL CONNECT TO jsoc@hmidb:5432;
-            EXEC SQL CONNECT TO :target;
+            EXEC SQL CONNECT TO :target as jsocdb;
             EXEC SQL WHENEVER SQLERROR GOTO sqljsocerror1;
             EXEC SQL EXECUTE IMMEDIATE :stmt;
             EXEC SQL COMMIT;
-            EXEC SQL DISCONNECT;
+            EXEC SQL DISCONNECT jsocdb;
             EXEC SQL WHENEVER SQLERROR GOTO sqlrmerror;
           }
         }
@@ -268,7 +270,8 @@ sqlrmerror:
 sqljsocerror0:
     printk("Error in DS_RmNowX() for del from Records.txt\n");
     //printk("Can't connect to jsoc@hmidb:5432\n");
-    printk("Can't connect to %s@%s:%s\n", DBNAME, SERVER, DRMSPGPORT);
+    //printk("Can't connect to %s@%s:%s\n", DBNAME, SERVER, DRMSPGPORT);
+    printk("Can't connect to %s@%s:%s\n", DBNAME, SUMS_DB_HOST, DRMSPGPORT);
     printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
     //Assume error was in the connect so don't disconnect
     //EXEC SQL DISCONNECT;
@@ -279,7 +282,8 @@ sqljsocerror0:
 sqljsocerror1:
     printk("Error in DS_RmNowX() for del from Records.txt\n");
     //printk("Error was after the connect to jsoc@hmidb:5432\n");
-    printk("Error was after the connect to %s@%s:%s\n", DBNAME, SERVER, DRMSPGPORT);
+    //printk("Error was after the connect to %s@%s:%s\n", DBNAME, SERVER, DRMSPGPORT);
+    printk("Error was after the connect to %s@%s:%s\n", DBNAME, SUMS_DB_HOST, DRMSPGPORT);
     printk("% .70s \n", sqlca.sqlerrm.sqlerrmc);
     EXEC SQL DISCONNECT;
     //EXEC SQL ROLLBACK WORK;
@@ -289,3 +293,50 @@ sqljsocerror1:
     return DS_DATA_QRY;
 }
 
+//Test only function used by mainconn.c in base/sums/apps
+int DS_Conn_test()
+{
+EXEC SQL BEGIN DECLARE SECTION;
+  varchar target[80];
+  char stmt[256];
+EXEC SQL END DECLARE SECTION;
+  char conncmd[128];
+
+  sprintf(stmt, "%s;", "delete from aia_test.lev1p5 where recnum in (68917629)");
+
+//first connect to jsoc_sum before connect to jsoc:5432
+            sprintf(target.arr,  "%s@%s:%s", "jsoc_sums", "hmidb", "5434");
+            target.len = strlen(target.arr);
+            sprintf(conncmd, "EXEC SQL CONNECT TO %s", target.arr);
+            printf("connect command will be: %s\n", conncmd);
+            EXEC SQL WHENEVER SQLERROR GOTO sqljsocerror0; //catch connect err
+            EXEC SQL CONNECT TO :target;
+            printf("Connected to jsoc_sums. Will now disconnect\n");
+            EXEC SQL DISCONNECT;
+
+            printf("statement is:\n%s\n", stmt);
+            sprintf(target.arr,  "%s@%s:%s", "jsoc", "hmidb", "5432");
+            target.len = strlen(target.arr);
+            sprintf(conncmd, "EXEC SQL CONNECT TO %s@%s:%s", "jsoc", "hmidb", "5432");
+            printf("connect command will be: %s\n", conncmd);
+            EXEC SQL WHENEVER SQLERROR GOTO sqljsocerror0; //catch connect err
+            //Typically: EXEC SQL CONNECT TO jsoc@hmidb:5432;
+            EXEC SQL CONNECT TO :target;
+            EXEC SQL WHENEVER SQLERROR GOTO sqljsocerror1;
+            EXEC SQL EXECUTE IMMEDIATE :stmt;
+            EXEC SQL COMMIT;
+            EXEC SQL DISCONNECT;
+            return(0);
+
+sqljsocerror0:
+    printf("Error in connect!\n");
+    printf("% .70s \n", sqlca.sqlerrm.sqlerrmc);
+    return(1);
+
+sqljsocerror1:
+    printf("Error delete recnum\n");
+    printf("% .70s \n", sqlca.sqlerrm.sqlerrmc);
+    EXEC SQL DISCONNECT;
+    return(2);
+
+}
