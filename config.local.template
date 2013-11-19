@@ -82,6 +82,9 @@ SUMS_GROUP	drms
 #   the machine serving the Postgres SUMS database
 SUMS_SERVER_HOST	localhost
 
+# the machine hosting the SUMS database
+SUMS_DB_HOST            localhost
+
 # the port number for the DRMS database server - default should be okay
 #   unless in use otherwise
 SUMS_DBPORT	5434

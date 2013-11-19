@@ -15,6 +15,7 @@ SUMS_MANAGER               q:SUMS_MANAGER
 SUMS_MANAGER_UID           q:SUMS_MANAGER_UID
 SUMS_GROUP                 q:SUMS_GROUP
 SUMS_SERVER_HOST           q:SUMSERVER
+SUMS_DB_HOST               q:SUMS_DB_HOST
 SUMS_DBPORT                q:SUMPGPORT
 SUM_NUMSUM                 a:SUM_NUMSUM
 SUM_MAXNUMSUM              a:SUM_MAXNUMSUM
