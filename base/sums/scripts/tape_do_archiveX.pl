@@ -134,7 +134,13 @@ sub forkarc {
 $ARCHPROBE = "/home/production/cvs/JSOC/proj/util/scripts/archprobe.pl";
 $ARCHFILEDIR = "/usr/local/logs/manifest";  #!!!TEMP noop
 #$ARCHFILEDIR = "/usr/local/logs/manifest_test"; #!!TEMP for testing
+<<<<<<< tape_do_archiveX.pl
+#$HOSTDB = "hmidb";      #host where DB runs
 $HOSTDB = drmsparams::SUMS_DB_HOST;      #host where DB runs
+#$ENV{'SUMSERVER'} = drmsparams::SUMSERVER;
+=======
+$HOSTDB = drmsparams::SUMS_DB_HOST;      #host where DB runs
+>>>>>>> 1.5
 $FAST = 0;
 while ($ARGV[0] =~ /^-/) {
   $_ = shift;
@@ -231,7 +237,7 @@ if(!($PGPORT = $ENV{'SUMPGPORT'})) {
   $GBtotal = 0;
   print "\ngroup = $group\n";
   @fileinfo = ();
-  @dsdata = `$ARCHPROBE jsoc_sums hmidb 5434 production agg group ap ' ' $group 1`;
+  @dsdata = `$ARCHPROBE jsoc_sums $hostdb 5434 production agg group ap ' ' $group 1`;
   print "@dsdata\n";
   while($dat = shift(@dsdata)) {
     if(/^#/ || /^\n/) { #ignore any comment or blank lines
@@ -242,7 +248,7 @@ if(!($PGPORT = $ENV{'SUMPGPORT'})) {
   }
   print "Total GB for group $group to archive = $GBtotal\n";
     #now get the details by order of sunum
-    $cmd = "$ARCHPROBE jsoc_sums hmidb 5434 production raw group ap ' ' $group 1";
+    $cmd = "$ARCHPROBE jsoc_sums $hostdb 5434 production raw group ap ' ' $group 1";
     @datsunum = `$cmd`;
     $seriessave = "NONE";
     print "raw group $group:\n";
@@ -333,11 +339,11 @@ while($x = shift(@sarrayarray)) {
         } else {
           print AR " @fileinfo";
         }
-        $ttotal += $btotal;
-        if($ttotal >= 760000000000) { #!!TBD use cfg info
-          #print AR "EOT:\n";	#NO, causes tapearcX problem
-          $ttotal = 0;
-        }
+        #$ttotal += $btotal;
+        #if($ttotal >= 760000000000) { #!!TBD use cfg info
+        #  #print AR "EOT:\n";	#NO, causes tapearcX problem
+        #  $ttotal = 0;
+        #}
         $btotal = 0;
         $numsudir = 0;
         @fileinfo = ();
@@ -356,11 +362,11 @@ while($x = shift(@sarrayarray)) {
     } else {
       print AR " @fileinfo";
     }
-    $ttotal += $btotal;
-    if($ttotal >= 760000000000) { #!!TBD use cfg info
-      #print AR "EOT:\n";	#NO, causes tapearcX problem
-      $ttotal = 0;
-    }
+    #$ttotal += $btotal;
+    #if($ttotal >= 760000000000) { #!!TBD use cfg info
+    #  #print AR "EOT:\n";	#NO, causes tapearcX problem
+    #  $ttotal = 0;
+    #}
     $btotal = 0;
     $numsudir = 0;
     @fileinfo = ();
