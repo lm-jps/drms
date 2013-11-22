@@ -163,18 +163,19 @@ endif
 
         # Path to the configuration file - at some point, make this an argument to the configure script
         set LOCALIZATIONDIR = ""
+        set RELLOCALIZATIONDIR = ""
         set conflocal = "config.local"
 
         if (-e $conflocal) then
-            set LOCALIZATIONDIR = `perl -n -e 'if ($_ =~ /^LOCALIZATIONDIR\s+(.+)/) { print $1; }' $conflocal`
+            set RELLOCALIZATIONDIR = `perl -n -e 'if ($_ =~ /^LOCALIZATIONDIR\s+(.+)/) { print $1; }' $conflocal`
         endif
 
         if ($LOCALIZATIONDIR == "") then
-            set LOCALIZATIONDIR = localization
+            set RELLOCALIZATIONDIR = localization
         endif
 
         # Make the path absoluate
-        set LOCALIZATIONDIR = ${PWD}/${LOCALIZATIONDIR}
+        set LOCALIZATIONDIR = ${PWD}/${RELLOCALIZATIONDIR}
 
         # Eventually, dump all these generated files into a user-specified location.
         # This script will need to read the config.local file to get the 
@@ -257,11 +258,11 @@ endif
         # If we make a link from JSOC/base/drms/apps/serverdefs.h to ${LOCALIZATIONDIR}/drmsparams.h, then the script below will make links from 
         # JSOC/base/include/serverdefs.h and JSOC/include/serverdefs.h to JSOC/base/drms/apps/serverdefs.h, which then links to ${LOCALIZATIONDIR}/drmsparams.h.
         cd base/drms/apps
-            ln -s ../../../${LOCALIZATIONDIR}/drmsparams.h serverdefs.h
+            ln -s ../../../${RELLOCALIZATIONDIR}/drmsparams.h serverdefs.h
         cd ../../..
 
         cd base/include
-            ln -s ../../../${LOCALIZATIONDIR}/drmsparams.h localization.h
+            ln -s ../../../${RELLOCALIZATIONDIR}/drmsparams.h localization.h
         cd ../..
 
         cd base/include
