@@ -554,7 +554,7 @@ def configureComps(defs, mDefs):
         hasgfort = bool(0)
         
         # Try icc.
-        cmd = 'icc -V 2>&1'
+        cmd = 'icc --version 2>&1'
         try:
             ret = check_output(cmd, shell=True)
             ret = ret.decode("utf-8")
@@ -563,7 +563,7 @@ def configureComps(defs, mDefs):
             rv = bool(1)
         
         if not rv:
-            regexp = re.compile(r".+Version\s+(\d+)[.](\d+)", re.DOTALL)
+            regexp = re.compile(r"\s*\S+\s+\S+\s+(\d+)[.](\d+)", re.DOTALL)
             matchobj = regexp.match(ret)
             if matchobj is None:
                 raise Exception('unexpectedIccRet', ret)
@@ -595,7 +595,7 @@ def configureComps(defs, mDefs):
                         hasgcc = bool(1)
 
         # Try ifort.
-        cmd = 'ifort -V 2>&1'
+        cmd = 'ifort --version 2>&1'
         try:
             ret = check_output(cmd, shell=True)
             ret = ret.decode("utf-8")
@@ -604,7 +604,7 @@ def configureComps(defs, mDefs):
             rv = bool(1)
 
         if not rv:
-            regexp = re.compile(r".+Version\s+(\d+)\.(\d+)", re.DOTALL)
+            regexp = re.compile(r"\s*\S+\s+\S+\s+(\d+)\.(\d+)", re.DOTALL)
             matchobj = regexp.match(ret)
             if matchobj is None:
                 raise Exception('unexpectedIfortRet', ret)
