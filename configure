@@ -239,10 +239,8 @@ endif
         # DRMS / IDL-interface scripts
         find ../base/drms/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
 
-        echo iwashere
         # Project-specific scripts - these won't show up if you don't have the project source.
         if (-x ${LOCALIZATIONDIR}/configure) then
-            echo iamhere
             ${LOCALIZATIONDIR}/configure
         endif
 
