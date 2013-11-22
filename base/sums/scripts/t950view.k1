@@ -144,25 +144,26 @@ if(-e $runtag) {        #this user already running
   exit(1);
 }
 
-@pst950 = `ps -ef | grep tape_svc`;
-$findline = "tape_svc $DB";
-if(!grep(/$findline/,  @pst950)) {
-  print "t950view db=$DB does not match running sums\n";
-  exit;
+@pst950 = `ps -ef | grep sum_svc`;
+#@sumsvc = grep(/hmidb/, @pst950);
+#if($line = shift(@sumsvc)) {
+while($line = shift(@pst950)) {
+  ($x, $sumdb) = split(/sum_svc /, $line); 
+  if($sumdb) {
+    chomp($sumdb);
+    if($sumdb =~ /-s/) {
+      ($x, $sumdb) = split(/ /, $sumdb); #ignore any sim -s flag
+    }
+    if($sumdb ne $DB) {
+      print "t950view db=$DB does not match running sum_svc=$sumdb\n";
+      exit;
+    }
+    last;
+  }    
 }
-#while($line = shift(@pst950)) {
-#  ($x, $sumdb) = split(/sum_svc /, $line); 
-#  if($sumdb) {
-#    chomp($sumdb);
-#    if($sumdb =~ /-s/) {
-#      ($x, $sumdb) = split(/ /, $sumdb); #ignore any sim -s flag
-#    }
-#    if($sumdb ne $DB) {
-#      print "t950view db=$DB does not match running sum_svc=$sumdb\n";
-#      #exit;  #NOOP for now until can fix
-#    }
-#    last;
-#  }    
+#if($sumdb ne $DB) {
+#  print "t950view db=$DB does not match that of the running sum_svc=$sumdb\n";
+#  exit;
 #}
 
 if($interactive && !$restartmode) {
