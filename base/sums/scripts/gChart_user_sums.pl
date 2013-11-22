@@ -1,5 +1,4 @@
-eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
-    if 0;
+#!/usr/bin/perl
 #/home/production/cvs/JSOC/base/sums/scripts/gChart_user_sums.pl
 #
 #This is normally run as a cron job by production on d02:
