@@ -27,13 +27,13 @@
 $RUNHOST = "d02.Stanford.EDU";
 #$RUNHOST = "j0.Stanford.EDU";  #!!TEMP
 $shost = "d02";
-$SSHFILE = "/var/tmp/ssh-agent.prodtest.env";
-$sshfilesource = "/var/tmp/ssh-agent.prodtest.env.source";
+$SSHFILE = "/var/tmp/ssh-agent.env";
+$sshfilesource = "/var/tmp/ssh-agent.env.source";
 $PID = getppid;
 $MLOGFILE = "/tmp/probe_dcs_lev0.mail.$PID";
 $mailflg = 0;
-$dc0 = "dcs0x";
-$dc1 = "dcs1x";
+$dc0 = "dcs0";
+$dc1 = "dcs1";
 $nodelev0 = "cl1n001";
 $nodelev1 = "cl1n002";
 
@@ -79,7 +79,7 @@ else {
   $mailflg = 1;
 }
 
-#Make sure we have a new .arc file created on dcs0x and dcs1x for today.
+#Make sure we have a new .arc file created on dcs0 and dcs1 for today.
 #File name like: HMI_2010_36_00_05.arc.touch
 print "\n";
 $aiaarctst = `source $sshfilesource; ssh $dc0 "ls -t /usr/local/logs/arc/AIA*.touch | sed -n 1p"`;
@@ -126,13 +126,13 @@ print "Last $dc1 tape archive log is:\n$lastt\n"; #!!!TEMP
 #Now check all the crontab entries
 $found = 1;
 @ctabclean = ();
-print "\nNow check on crontab entries for dcs0x:\n";
-@ctab = `source $sshfilesource; ssh dcs0x crontab -l`;
-open(CR,">/tmp/crontab.dcs0x");
-print CR "#Last dcs0x 'crontab -u production -l' was on $fulldate\n";
+print "\nNow check on crontab entries for dcs0:\n";
+@ctab = `source $sshfilesource; ssh dcs0 crontab -l`;
+open(CR,">/tmp/crontab.dcs0");
+print CR "#Last dcs0 'crontab -u production -l' was on $fulldate\n";
 print CR "@ctab";
 close(CR);
-`source $sshfilesource; scp /tmp/crontab.dcs0x solarweb:/tmp/loglog`;
+`source $sshfilesource; scp /tmp/crontab.dcs0 solarweb:/tmp/loglog`;
 while($_ = shift(@ctab)) {
   if(/^#/ || /^\n/) { next; } #ignore any comment or blank lines
   push(@ctabclean, $_);
@@ -142,7 +142,7 @@ if(grep(/rsync_prod.pl/, @ctabclean)) {
 }
 else {
   print "rsync_prod.pl NOT FOUND*****\n";
-  print MLOG "dcs0x rsync_prod.pl NOT FOUND*****\n";
+  print MLOG "dcs0 rsync_prod.pl NOT FOUND*****\n";
   $found = 0;
 }
 if(grep(/tapearc_do_dc0/, @ctabclean)) {
@@ -150,7 +150,7 @@ if(grep(/tapearc_do_dc0/, @ctabclean)) {
 }
 else {
   print "tapearc_do_dc0 NOT FOUND*****\n";
-  print MLOG "dcs0x tapearc_do_dc0 NOT FOUND*****\n";
+  print MLOG "dcs0 tapearc_do_dc0 NOT FOUND*****\n";
   $found = 0;
 }
 if(grep(/build_arc_to_dds.pl/, @ctabclean)) {
@@ -158,7 +158,7 @@ if(grep(/build_arc_to_dds.pl/, @ctabclean)) {
 }
 else {
   print "build_arc_to_dds.pl NOT FOUND*****\n";
-  print MLOG "dcs0x build_arc_to_dds.pl NOT FOUND*****\n";
+  print MLOG "dcs0 build_arc_to_dds.pl NOT FOUND*****\n";
   $found = 0;
 }
 if(grep(/set_sum_main_offsite_ack_aia.pl/, @ctabclean)) {
@@ -166,7 +166,7 @@ if(grep(/set_sum_main_offsite_ack_aia.pl/, @ctabclean)) {
 }
 else {
   print "set_sum_main_offsite_ack_aia.pl NOT FOUND*****\n";
-  print MLOG "dcs0x set_sum_main_offsite_ack_aia.pl NOT FOUND*****\n";
+  print MLOG "dcs0 set_sum_main_offsite_ack_aia.pl NOT FOUND*****\n";
   $found = 0;
 }
 if(grep(/restart_touch.pl/, @ctabclean)) {
@@ -174,17 +174,17 @@ if(grep(/restart_touch.pl/, @ctabclean)) {
 }
 else {
   print "restart_touch.pl NOT FOUND*****\n";
-  print MLOG "dcs0x restart_touch.pl NOT FOUND*****\n";
+  print MLOG "dcs0 restart_touch.pl NOT FOUND*****\n";
   $found = 0;
 }
-print "\nNow check on crontab entries for dcs1x:\n";
+print "\nNow check on crontab entries for dcs1:\n";
 @ctabclean = ();
-@ctab = `source $sshfilesource; ssh dcs1x crontab -l`;
-open(CR,">/tmp/crontab.dcs1x");
-print CR "#Last dcs1x 'crontab -u production -l' was on $fulldate\n";
+@ctab = `source $sshfilesource; ssh dcs1 crontab -l`;
+open(CR,">/tmp/crontab.dcs1");
+print CR "#Last dcs1 'crontab -u production -l' was on $fulldate\n";
 print CR "@ctab";
 close(CR);
-`source $sshfilesource; scp /tmp/crontab.dcs1x solarweb:/tmp/loglog`;
+`source $sshfilesource; scp /tmp/crontab.dcs1 solarweb:/tmp/loglog`;
 while($_ = shift(@ctab)) {
   if(/^#/ || /^\n/) { next; } #ignore any comment or blank lines
   push(@ctabclean, $_);
@@ -284,46 +284,6 @@ close(CR);
 #print CR "@ctab";
 #close(CR);
 
-<<<<<<< probe_dcs_lev0.pl
-print "\nNow check on log entries for j1:\n";
-@ctab = `source $sshfilesource; ssh j1.stanford.edu "cd /usr/local/logs/SUM; find . -maxdepth 1 -ctime -14 -type f | grep -v .gz | xargs ls -lt"`;
-open(CR,">/tmp/logtab.j1");
-print CR "/usr/local/logs/SUM> find . -maxdepth 1 -ctime -14 -type f | grep -v \.gz | xargs ls -lt\n";
-print CR "@ctab";
-close(CR);
-`source $sshfilesource; scp /tmp/logtab.j1 solarweb:/tmp/loglog`;
-
-print "\nNow check on log entries for d02:\n";
-@ctab = `source $sshfilesource; ssh d02.stanford.edu "cd /usr/local/logs/SUM; find . -maxdepth 1 -ctime -14 -type f | grep -v .gz | xargs ls -lt"`;
-open(CR,">/tmp/logtab.d02");
-print CR "/usr/local/logs/SUM> find . -maxdepth 1 -ctime -14 -type f | grep -v \.gz | xargs ls -lt\n";
-print CR "@ctab";
-close(CR);
-`source $sshfilesource; scp /tmp/logtab.d02 solarweb:/tmp/loglog`;
-
-print "\nNow check on log entries for dcs0x:\n";
-@ctab = `source $sshfilesource; ssh dcs0x "cd /usr/local/logs/soc; find . -maxdepth 1 -ctime -14 -type f | grep -v .gz | xargs ls -lt"`;
-open(CR,">/tmp/logtab.dcs0x");
-print CR "/usr/local/logs/soc> find . -maxdepth 1 -ctime -14 -type f | grep -v \.gz | xargs ls -lt\n";
-print CR "@ctab";
-close(CR);
-`source $sshfilesource; scp /tmp/logtab.dcs0x solarweb:/tmp/loglog`;
-
-print "\nNow check on log entries for dcs1x:\n";
-@ctab = `source $sshfilesource; ssh dcs1x "cd /usr/local/logs/soc; find . -maxdepth 1 -ctime -14 -type f | grep -v .gz | xargs ls -lt"`;
-open(CR,">/tmp/logtab.dcs1x");
-print CR "/usr/local/logs/soc> find . -maxdepth 1 -ctime -14 -type f | grep -v \.gz | xargs ls -lt\n";
-print CR "@ctab";
-close(CR);
-`source $sshfilesource; scp /tmp/logtab.dcs1x solarweb:/tmp/loglog`;
-
-#Log entries for cl1n00[1,2,3] are done on the local machine and 
-#scp'd to solarweb
-
-close(MLOG);
-
-
-=======
 print "\nNow check on log entries for j1:\n";
 @ctab = `source $sshfilesource; ssh j1.stanford.edu "cd /usr/local/logs/SUM; find . -maxdepth 1 -ctime -14 -type f | grep -v .gz | xargs ls -lt"`;
 open(CR,">/tmp/logtab.j1");
@@ -360,6 +320,7 @@ close(CR);
 #scp'd to solarweb
 
 close(MLOG);
+
 
 if(!$found) { $mailflg = 1; }
 
@@ -398,7 +359,7 @@ sub labeldate {
   return($retdate);
 }
 
-#Check that a prodtest ssh-agent is running on the given host.
+#Check that a production (388) ssh-agent is running on the given host.
 #The agent is what is set up in /var/tmp/ssh-agent.env.
 #If $ckprime is set, then you are on the running machine, which must
 #be called first to see if the prime ssh-agent is setup.
@@ -414,19 +375,10 @@ sub ck_ssh_stuff() {
   while($x = shift(@ps_agent)) {
     chomp($x);
     #print "$x\n";
-    if($ckprime) {
-      if($x =~ /^prodtest /) {
-        ($a, $pid) = split(/\s+/, $x);
-        #print "$pid\n";
-        push(@pids, $pid);
-      }
-    }
-    else {
-      if($x =~ /^prodtest /) {
-        ($a, $pid) = split(/\s+/, $x);
-        #print "$pid\n";
-        push(@pids, $pid);
-      }
+    if($x =~ /^388 /) {
+      ($a, $pid) = split(/\s+/, $x);
+      #print "$pid\n";
+      push(@pids, $pid);
     }
   }
   $ffound = 0;

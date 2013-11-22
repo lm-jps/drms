@@ -69,9 +69,8 @@ sub labeldate {
   return($date);
 }
 
-#$HOSTDB = "hmidb";	#db machine
-$HOSTDB = drmsparams::SUMS_DB_HOST; #db machine
-$HOSTDC = "dcs0x";	# (Obsolete) default datacapture to send to
+$HOSTDB = drmsparams::SUMS_DB_HOST; 	#db machine
+$HOSTDC = "dcs0";	# (Obsolete) default datacapture to send to
 #$TLMDSHMI = "hmi.tlme"; #series of .tlm files to query
 #$TLMDSAIA = "aia.tlme"; #series of .tlm files to query
 #$TLMDSHMI = "hmi.tlm_reingest"; #series of .tlm files to query
@@ -134,11 +133,10 @@ if($user ne "production") {
 
 #Get the machine names where AIA and HMI processing live.
 #The dcstab.txt must be on either dcs0 or dcs1
-@dcsnodes = `cat /home/production/cvs/JSOC/proj/datacapture/scripts/dcstab.txt`;
-#@dcsnodes = `source $map; ssh dcs0 cat /home/production/cvs/JSOC/proj/datacapture/scripts/dcstab.txt`;
-#if(!@dcsnodes) {
-#  @dcsnodes = `source $map; ssh dcs1 cat /home/prodtest/cvs/JSOC/proj/datacapture/scripts/dcstab.txt`;
-#}
+@dcsnodes = `source $map; ssh dcs0 cat /home/production/cvs/JSOC/proj/datacapture/scripts/dcstab.txt`;
+if(!@dcsnodes) {
+  @dcsnodes = `source $map; ssh dcs1 cat /home/production/cvs/JSOC/proj/datacapture/scripts/dcstab.txt`;
+}
 if(!@dcsnodes) {
   print "ERROR: can't ssh or find /home/production/cvs/JSOC/proj/datacapture/scripts/dcstab.txt\n";
   exit;
@@ -172,7 +170,7 @@ for($i = 0; $i < 2; $i++) { 	#do first for HMI then AIA
   } else {
     open(PARC, ">$parcaia") || die "Can't open $parcaia: $!\n";
     $resultfile = $parcaia; $instru = "AIA";
-    $sql = "select online_loc, arch_tape, arch_tape_fn, arch_tape_date from sum_main where Arch_Tape_Date >= '$ldate' and Owning_Series = '$TLMDSAIA'";
+    $sql = "select online_loc, arch_tape, arch_tape_fn, arch_tape_date from sum_main where Arch_Tape_Date >= '$ldate' and Owning_Series = '$TLMDSAIA' and Online_Status='Y'";
   }
     print PARC "#Created by build_parc_file.pl for query past $ldate\n";
     print PARC "#owning_series_name                         tape_id  fn  date\n";
