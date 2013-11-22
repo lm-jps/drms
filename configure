@@ -173,6 +173,9 @@ endif
             set LOCALIZATIONDIR = localization
         endif
 
+        # Make the path absoluate
+        set LOCALIZATIONDIR = ${PWD}/${LOCALIZATIONDIR}
+
         # Eventually, dump all these generated files into a user-specified location.
         # This script will need to read the config.local file to get the 
         # localization directory. Otherwise, just use JSOC/localization as the default.
@@ -236,8 +239,10 @@ endif
         # DRMS / IDL-interface scripts
         find ../base/drms/scripts -mindepth 1 \( -path \*CVS -prune -o -exec ln -s {} . \; -a -exec echo "  " {} " OK" \; \) -o -exec echo "  " {} " ERROR - couldn't create link" \;
 
+        echo iwashere
         # Project-specific scripts - these won't show up if you don't have the project source.
         if (-x ${LOCALIZATIONDIR}/configure) then
+            echo iamhere
             ${LOCALIZATIONDIR}/configure
         endif
 
