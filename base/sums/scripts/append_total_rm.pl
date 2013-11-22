@@ -54,6 +54,9 @@ print "Run of $MODULE on $ldate\n";
 open(TF, $TFILE) || die "Can't open $TFILE: $!\n";
 seek TF, -120, 2;	#back up >1 line at EOF
 while(<TF>) {
+  if(/^#/ || /^\n/) { #ignore any comment or blank lines
+    next;
+  }
   $line = $_;
 }
 close(TF);
