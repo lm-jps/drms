@@ -116,7 +116,7 @@ int SUMLIB_TapeCatalog(char *tapeid)
 EXEC SQL BEGIN DECLARE SECTION;
   VARCHAR l_tapeid[20];
   int  l_closed;
-  unsigned int ablocks;
+  long ablocks;
 EXEC SQL END DECLARE SECTION;
 
     EXEC SQL WHENEVER NOT FOUND GOTO tapenotfound; 
