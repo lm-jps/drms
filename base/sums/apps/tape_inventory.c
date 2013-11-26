@@ -228,7 +228,7 @@ int tape_inventory(int sim, int catalog)
   */
   write_log("***ENDInvPhase:\n");       /* for tui to see */
   for(i=0; i < cx; i++) {
-      write_log("*Tp:ReClose: tapeid=%s\n", tapeidclosed[i]);
+      //write_log("*Tp:ReClose: tapeid=%s\n", tapeidclosed[i]);
   }
   return(1);
 }
