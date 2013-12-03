@@ -458,6 +458,12 @@ void setup()
 */
 }
 
+//This is called at the tape_svc exit via exit() or by return from main()
+void sumbye(void) {
+  printf("sumbye() called by atexit() at %s\n", datestring());
+  write_log("sumbye() called by atexit() at %s\n", datestring());
+}
+
 /*********************************************************/
 int main(int argc, char *argv[])
 {
@@ -468,6 +474,9 @@ int main(int argc, char *argv[])
 
   get_cmd(argc, argv);
   setup();
+  if(atexit(sumbye)) {
+    printf("Can't register sumbye() function in atexit()\n");
+  }
 
       /* register for sum_svc and tapearc to talk to us */
       (void) pmap_unset(TAPEPROG, TAPEVERS);
