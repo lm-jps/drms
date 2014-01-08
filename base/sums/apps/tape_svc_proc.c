@@ -286,7 +286,7 @@ int kick_next_entry_rd() {
 			ptmp->ds_index);
       insert_tq_entry_rd_need(ptmp); /* put at end of need rd q */
       write_log("NEED RD Q:\n");
-      rd_q_print(q_rd_need_front);	/* !!!TEMP */
+      //rd_q_print(q_rd_need_front);	/* !!!TEMP */
       sback = 0;
       continue;			/* see if there's more */
     }
