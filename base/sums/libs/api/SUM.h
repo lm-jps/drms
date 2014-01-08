@@ -55,6 +55,7 @@ typedef uint32_t SUMID_t;
 #define RETRIEVE 16     /* retrieve from tape */
 #define NORETRIEVE 32   /* don't retrieve from tape */
 #define FULL 1024	/* also set this to get full info from DB query */
+#define TAPERDON 2048   /* a SUM_get() call has a RESULT_PEND for this SUM_t */
 
 #define MAXSTR 256	/* max size of a string */
 #define MAX_TAPE_FN 7000     /* max allowed file number on a tape */
