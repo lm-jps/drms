@@ -2045,7 +2045,7 @@ static char *PrependFields(const char *list, const char *prefix, int *status)
     return qualfields;
 }
 
-static char *CreatePKeyList(DRMS_Env_t *env, const char *series, const char *prefix, const char *suffix, char *pkeyarr[], int *npkey, int *status)
+static char *CreatePKeyList(DRMS_Env_t *env, const char *series, const char *prefix, const char *suffix, char *pkeyarr[], int *npkey, int doTypes, int *status)
 {
     int istat = DRMS_SUCCESS;
     int ipkey;
@@ -2077,6 +2077,19 @@ static char *CreatePKeyList(DRMS_Env_t *env, const char *series, const char *pre
                     }
                     
                     pklist = base_strcatalloc(pklist, lckeyname, &stsz);
+                    
+                    if (doTypes)
+                    {
+                        pklist = base_strcatalloc(pklist, " ", &stsz);
+                        if (key->info->type == DRMS_TYPE_STRING)
+                        {
+                            pklist = base_strcatalloc(pklist, db_stringtype_maxlen(4000), &stsz);
+                        }
+                        else
+                        {
+                            pklist = base_strcatalloc(pklist, db_type_string(drms2dbtype(key->info->type)), &stsz);
+                        }
+                    }
                     
                     if (suffix)
                     {
@@ -2113,6 +2126,16 @@ static char *CreatePKeyList(DRMS_Env_t *env, const char *series, const char *pre
     }
     
     return pklist;
+}
+
+char *drms_series_createPkeyList(DRMS_Env_t *env, const char *series, const char *prefix, const char *suffix, char *pkeyarr[], int *npkey, int *status)
+{
+    return CreatePKeyList(env, series, prefix, suffix, pkeyarr, npkey, 0, status);
+}
+
+char *drms_series_createPkeyColList(DRMS_Env_t *env, const char *series, const char *prefix, const char *suffix, char *pkeyarr[], int *npkey, int *status)
+{
+    return CreatePKeyList(env, series, prefix, suffix, pkeyarr, npkey, 1, status);
 }
 
 static void DetermineDefval(DRMS_Keyword_t *key, char *defvalout)
@@ -5335,7 +5358,7 @@ char *drms_series_nrecords_querystringFL(DRMS_Env_t *env, const char *series, co
         {
             *query = '\0';
             snprintf(shadow, sizeof(shadow), "%s%s", lcseries, kShadowSuffix);
-            pkeylist = CreatePKeyList(env, series, NULL, NULL, pkey, &npkeys, &istat);
+            pkeylist = CreatePKeyList(env, series, NULL, NULL, pkey, &npkeys, 0, &istat);
             
             if (istat == DRMS_SUCCESS)
             {
@@ -5527,7 +5550,7 @@ char *drms_series_all_querystringA(DRMS_Env_t *env, const char *series, const ch
                 }
                 else
                 {
-                    qualpkeylist = CreatePKeyList(env, series, "", NULL, NULL, NULL, &istat);
+                    qualpkeylist = CreatePKeyList(env, series, "", NULL, NULL, NULL, 0, &istat);
                     
                     if (istat == DRMS_SUCCESS)
                     {
@@ -5561,7 +5584,7 @@ char *drms_series_all_querystringA(DRMS_Env_t *env, const char *series, const ch
                 qualfields = PrependFields(fields, "T1.", &istat);
                 
                 /* Create a list of all prime key names. */
-                qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, NULL, NULL, &istat);
+                qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, NULL, NULL, 0, &istat);
                 
                 if (istat == DRMS_SUCCESS)
                 {                
@@ -5674,7 +5697,7 @@ char *drms_series_all_querystringB(DRMS_Env_t *env, const char *series, const ch
                 }
                 else
                 {
-                    qualpkeylist = CreatePKeyList(env, series, "", NULL, NULL, NULL, &istat);
+                    qualpkeylist = CreatePKeyList(env, series, "", NULL, NULL, NULL, 0, &istat);
                     
                     if (istat == DRMS_SUCCESS)
                     {
@@ -5742,7 +5765,7 @@ char *drms_series_all_querystringB(DRMS_Env_t *env, const char *series, const ch
                 if (istat == DRMS_SUCCESS)
                 {
                     /* Create a list of all prime key names. */
-                    qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, NULL, NULL, &istat);
+                    qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, NULL, NULL, 0, &istat);
                 }
                 
                 if (istat == DRMS_SUCCESS)
@@ -5858,7 +5881,7 @@ char *drms_series_all_querystringC(DRMS_Env_t *env, const char *series, const ch
                 }
                 else
                 {
-                    qualpkeylist = CreatePKeyList(env, series, "", NULL, NULL, NULL, &istat);
+                    qualpkeylist = CreatePKeyList(env, series, "", NULL, NULL, NULL, 0, &istat);
                     
                     if (istat == DRMS_SUCCESS)
                     {
@@ -5895,7 +5918,7 @@ char *drms_series_all_querystringC(DRMS_Env_t *env, const char *series, const ch
                 /* Create a list of all prime key names. */
                 if (istat == DRMS_SUCCESS)
                 {
-                    qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, NULL, NULL, &istat);
+                    qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, NULL, NULL, 0, &istat);
                 }
                 
                 /* Must prepend all prime-key column names with T2., otherwise the query has an ambiguity
@@ -6021,7 +6044,7 @@ char *drms_series_all_querystringD(DRMS_Env_t *env, const char *series, const ch
                 }
                 else
                 {
-                    qualpkeylist = CreatePKeyList(env, series, "", NULL, NULL, NULL, &istat);
+                    qualpkeylist = CreatePKeyList(env, series, "", NULL, NULL, NULL, 0, &istat);
                     
                     if (istat == DRMS_SUCCESS)
                     {
@@ -6062,7 +6085,7 @@ char *drms_series_all_querystringD(DRMS_Env_t *env, const char *series, const ch
                 /* Create a list of all prime key names. */
                 if (istat == DRMS_SUCCESS)
                 {
-                    qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, NULL, NULL, &istat);
+                    qualpkeylist = CreatePKeyList(env, series, "T2.", NULL, NULL, NULL, 0, &istat);
                 }
                 
                 /* Must prepend all prime-key column names with T2., otherwise the query has an ambiguity
@@ -6190,7 +6213,7 @@ char *drms_series_all_querystringFL(DRMS_Env_t *env, const char *series, const c
             snprintf(shadow, sizeof(shadow), "%s%s", lcseries, kShadowSuffix);
             snprintf(limitstr, sizeof(limitstr), "%d", limit);
             
-            pkeylist = CreatePKeyList(env, series, NULL, NULL, pkey, &npkeys, &istat);
+            pkeylist = CreatePKeyList(env, series, NULL, NULL, pkey, &npkeys, 0, &istat);
             
             if (istat == DRMS_SUCCESS)
             {
@@ -6323,11 +6346,11 @@ char *drms_series_n_querystringA(DRMS_Env_t *env, const char *series, const char
             qualfields = PrependFields(fields, "T.", &istat);
             
             /* Create a list of all prime key names. */
-            qualpkeylist = CreatePKeyList(env, series, "T.", NULL, NULL, NULL, &istat);
+            qualpkeylist = CreatePKeyList(env, series, "T.", NULL, NULL, NULL, 0, &istat);
             
             /* Create the list of prime-key names that will be used for sorting the records 
              * before applying the limit to select the "n" records. */
-            orderpkeylist = CreatePKeyList(env, series, NULL, desc ? " DESC" : NULL, NULL, NULL, &istat);
+            orderpkeylist = CreatePKeyList(env, series, NULL, desc ? " DESC" : NULL, NULL, NULL, 0, &istat);
             
             if (istat == DRMS_SUCCESS)
             {
@@ -6469,11 +6492,11 @@ char *drms_series_n_querystringB(DRMS_Env_t *env, const char *series, const char
             qualfields = PrependFields(fields, "T1.", &istat);
             
             /* Create a list of all prime key names. */
-            qualpkeylist = CreatePKeyList(env, series, "T1.", NULL, NULL, NULL, &istat);
+            qualpkeylist = CreatePKeyList(env, series, "T1.", NULL, NULL, NULL, 0, &istat);
             
             /* Create the list of prime-key names that will be used for sorting the records 
              * before applying the limit to select the "n" records. */
-            orderpkeylist = CreatePKeyList(env, series, "T1.", desc ? " DESC" : NULL, NULL, NULL, &istat);
+            orderpkeylist = CreatePKeyList(env, series, "T1.", desc ? " DESC" : NULL, NULL, NULL, 0, &istat);
             
             if (istat == DRMS_SUCCESS)
             {
@@ -6628,11 +6651,11 @@ char *drms_series_n_querystringC(DRMS_Env_t *env, const char *series, const char
             qualfields = PrependFields(fields, "T.", &istat);
             
             /* Create a list of all prime key names. */
-            qualpkeylist = CreatePKeyList(env, series, "T.", NULL, NULL, NULL, &istat);
+            qualpkeylist = CreatePKeyList(env, series, "T.", NULL, NULL, NULL, 0, &istat);
             
             /* Create the list of prime-key names that will be used for sorting the records 
              * before applying the limit to select the "n" records. */
-            orderpkeylist = CreatePKeyList(env, series, NULL, desc ? " DESC" : NULL, NULL, NULL, &istat);
+            orderpkeylist = CreatePKeyList(env, series, NULL, desc ? " DESC" : NULL, NULL, NULL, 0, &istat);
             
             if (istat == DRMS_SUCCESS)
             {
@@ -6776,14 +6799,14 @@ char *drms_series_n_querystringD(DRMS_Env_t *env, const char *series, const char
             /* Create a list of all prime key names. */
             if (istat == DRMS_SUCCESS)
             {
-                qualpkeylist = CreatePKeyList(env, series, "T1.", NULL, NULL, NULL, &istat);
+                qualpkeylist = CreatePKeyList(env, series, "T1.", NULL, NULL, NULL, 0, &istat);
             }
             
             /* Create the list of prime-key names that will be used for sorting the records 
              * before applying the limit to select the "n" records. */
             if (istat == DRMS_SUCCESS)
             {
-                orderpkeylist = CreatePKeyList(env, series, "T1.", desc ? " DESC" : NULL, NULL, NULL, &istat);
+                orderpkeylist = CreatePKeyList(env, series, "T1.", desc ? " DESC" : NULL, NULL, NULL, 0, &istat);
             }
             
             if (istat == DRMS_SUCCESS)
@@ -6913,7 +6936,7 @@ char *drms_series_n_querystringFL(DRMS_Env_t *env, const char *series, const cha
             
             if (istat == DRMS_SUCCESS)
             {
-                pkeylist = CreatePKeyList(env, series, NULL, NULL, pkey, &npkeys, &istat);
+                pkeylist = CreatePKeyList(env, series, NULL, NULL, pkey, &npkeys, 0, &istat);
                 
                 if (istat == DRMS_SUCCESS)
                 {
@@ -6922,7 +6945,7 @@ char *drms_series_n_querystringFL(DRMS_Env_t *env, const char *series, const cha
                 
                 if (istat == DRMS_SUCCESS)
                 {
-                    qualpkeylist = CreatePKeyList(env, series, NULL, desc ? " DESC" : NULL, NULL, NULL, &istat);
+                    qualpkeylist = CreatePKeyList(env, series, NULL, desc ? " DESC" : NULL, NULL, NULL, 0, &istat);
                 }
                 
                 if (istat == DRMS_SUCCESS)

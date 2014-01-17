@@ -254,4 +254,7 @@ int drms_series_canupdatesummaries(DRMS_Env_t *env, const char *series, int *sta
 int drms_series_gethighestkeyrank(DRMS_Env_t *env, const char *series, int *status);
 int drms_series_hastemptab(const char *query);
 
+char *drms_series_createPkeyList(DRMS_Env_t *env, const char *series, const char *prefix, const char *suffix, char *pkeyarr[], int *npkey, int *status);
+char *drms_series_createPkeyColList(DRMS_Env_t *env, const char *series, const char *prefix, const char *suffix, char *pkeyarr[], int *npkey, int *status);
+
 #endif

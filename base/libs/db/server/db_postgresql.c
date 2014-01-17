@@ -450,7 +450,20 @@ failure:
 }
 
 
-
+/* This is confusing. db_dms_array() allows you to provide a prepared statement, query, with n_args parameters in it. You
+ * provide a table of data in argin that has n_args rows, and n_rows columns. argin[iArg] contains n_rows elements,
+ * in other words. db_drms_array() will then create a prepared statement for query, and then it will loop through
+ * the columns of argin. During each iteration of the loop, it will submit to PG a statement with n_args arguments,
+ * one for each of the placeholder parameters defined in query.
+ *
+ * The prepared statement in db_dms_array() cannot accept any return values (hence the "dms" in the function name).
+ *
+ * db_query_bin_array(), as the name suggests, should be a analog of db_dms_array() that allows you to retrieve
+ * SELECT results from a prepared statement executed on an array of n_rows argument lists. However, db_query_bin_array()
+ * does not do that. In fact, it does not use a prepared statement, and does not operate on an array of argument lists.
+ *
+ * The results-returning analog of db_drms_array() is db_query_bin_ntuple().
+ */
 DB_Binary_Result_t *db_query_bin_array(DB_Handle_t  *dbin, 
 				        char *query, int n_args,
 				       DB_Type_t *intype, void **argin )
@@ -628,16 +641,31 @@ failure:
   return NULL;
 }
 
-/* A better name for this function would hvae been db_query_bin_array(), but that name was already taken, 
+/* A better name for this function would have been db_query_bin_array(), but that name was already taken,
  * despite the fact that that function has nothing to do with arrays. 
  *
  * The query string must have nargs placeholder. Each placeholder refers to an ntuple of values, which must all be of the 
  * same data type. The data type of placeholders is specified in the dbtypes array, which has nargs elements. The 
  * binary data that encodes actual values are specified in values. For all types, except strings, values[i] refers to an 
  * array (contains the address of an array) with nelems elements, each of which contains X bytes of binary data, where X
- * is determined by the data type provided in dbtypes. For strings, values[i] refers to an array of nelems char *s. Each
+ * is determined by the data type provided in dbtypes. For strings, values[i] refers to an array of nelems chars. Each
  * element points (is the address of) a block of memory holding a string of chars. So nelems is the number of elements in the values
  * tuples (and there is one such tuple for each for each placeholder).
+ */
+
+/* This is confusing. db_dms_array() allows you to provide a prepared statement, query, with n_args parameters in it. You
+ * provide a table of data in argin that has n_args rows, and n_rows columns. argin[iArg] contains n_rows elements,
+ * in other words. db_drms_array() will then create a prepared statement for query, and then it will loop through
+ * the columns of argin. During each iteration of the loop, it will submit to PG a statement with n_args arguments,
+ * one for each of the placeholder parameters defined in query.
+ *
+ * The prepared statement in db_dms_array() cannot accept any return values (hence the "dms" in the function name).
+ *
+ * db_query_bin_array(), as the name suggests, should be a analog of db_dms_array() that allows you to retrieve
+ * SELECT results from a prepared statement executed on an array of n_rows argument lists. However, db_query_bin_array()
+ * does not do that. In fact, it does not use a prepared statement, and does not operate on an array of argument lists.
+ *
+ * The results-returning analog of db_drms_array() is db_query_bin_ntuple().
  */
 DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, unsigned int nelems, unsigned int nargs, DB_Type_t *dbtypes, void **values)
 {
@@ -1052,6 +1080,20 @@ int db_dms(DB_Handle_t  *dbin, int *row_count,  char *query_string)
 
 
 #define MAXARG 1024
+/* This is confusing. db_dms_array() allows you to provide a prepared statement, query, with n_args parameters in it. You
+ * provide a table of data in argin that has n_args rows, and n_rows columns. argin[iArg] contains n_rows elements, 
+ * in other words. db_drms_array() will then create a prepared statement for query, and then it will loop through 
+ * the columns of argin. During each iteration of the loop, it will submit to PG a statement with n_args arguments, 
+ * one for each of the placeholder parameters defined in query. 
+ *
+ * The prepared statement in db_dms_array() cannot accept any return values (hence the "dms" in the function name).
+ *
+ * db_query_bin_array(), as the name suggests, should be a analog of db_dms_array() that allows you to retrieve
+ * SELECT results from a prepared statement executed on an array of n_rows argument lists. However, db_query_bin_array()
+ * does not do that. In fact, it does not use a prepared statement, and does not operate on an array of argument lists.
+ *
+ * The results-returning analog of db_drms_array() is db_query_bin_ntuple().
+ */
 int db_dms_array(DB_Handle_t  *dbin, int *row_count, 
 		 char *query, int n_rows, 
 		 int n_args, DB_Type_t *intype, void **argin )

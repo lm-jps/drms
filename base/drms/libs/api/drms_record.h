@@ -218,6 +218,9 @@ DRMS_Record_t *drms_recordset_fetchnext(DRMS_Env_t *env,
                                         int *drmsstatus, 
                                         DRMS_RecChunking_t *chunkstat,
                                         int *newchunk);
+int drms_recordset_fetchnext_getcurrent(DRMS_RecordSet_t *rset);
+void drms_recordset_fetchnext_setcurrent(DRMS_RecordSet_t *rset, int current);
+
 void drms_free_cursor(DRMS_RecSetCursor_t **cursor);
 
 int drms_count_records(DRMS_Env_t *env, const char *recordsetname, int *status);

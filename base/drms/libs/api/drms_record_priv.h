@@ -118,6 +118,9 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
                                         int recnumq,
                                         int cursor, 
                                         int *status);
+
+DRMS_RecordSet_t *drms_record_retrievelinks(DRMS_Env_t *env, DRMS_RecordSet_t *rs, int *status);
+
 /* Insert multiple records in the database using the 
    fast bulk insert interface. */
 /**
