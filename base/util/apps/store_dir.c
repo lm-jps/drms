@@ -29,10 +29,6 @@
  *    String keywords of "dirname", "sel", and "note" should be included.
  *    If the series does not exist it is made from a standard template if the 
  *    -c flag is given or if the user answers "yes" when asked.  
- *    If a series is made the parameter "perm" supplies the series access 
- *    permissions.  Default is 1 which is like "perm=s" for create_series.  
- *    Set perm to 0 if you want to exclude other users from
- *    accessing your stored dir.
  */
 /**
 \defgroup store_dir store_dir - store a directory of files to SUMS
@@ -50,9 +46,8 @@ Files stored with
 \ref store_dir can be easily retrieved by the \ref retrieve_dir utility.
 
 If the series \a series_name does not exist, \ref store_dir will first create
-that  series,  provided  that  the user supplies the \a -c flag. If \a perm=1,
-then the series will be globally accessible, otherwise, only  the  user
-calling \ref store_dir will have access.  \ref store_dir then creates a record in
+that  series,  provided  that  the user supplies the \a -c flag. 
+\ref store_dir then creates a record in
 the series \a series_name and creates a subdirectory, \a subdir,  in  the
 record's  SUMS directory (for each record there is a single SUMS directory). 
 \ref store_dir copies all files from \a prefix/subdir to \a subdir in
@@ -66,8 +61,12 @@ in the series. They set the record's \a sel and \a note keywords to have  the
 values  \a sel_text  and \a note_text, respectively. In particular, \a sel
 can be used to differentiate between multiple calls to  \ref store_dir  with
 the  same  value  for \a prefix/subdir.  \a series_name must
-contain prime keywords \a dirname and \a sel, and it must  contain  the
+contain prime keywords \a dirname and \a sel, and it should contain  the
 keyword \a note.
+
+If a keyword named DATE is present, the current date will be stored as a standard DRMS time.  The template
+for automatic series generation includes DATE as a time keyword.  NOTE that DATE
+is not included as a prime key so the records must still be distinguised by sel and dirname
 
 
 \par Flags:
@@ -100,11 +99,6 @@ same file over time).
 An optional string that will be the keyword value for the \a note keyword
 of the record created.
 
-\param perm=0|1 
-<I> Not Implemented <\I> Relevant only when the \a -c flag is used and a series is created.  A \a perm
-of 0 will make the created series accessible only by the current user.
-A \a perm of 1 will make the series globally accessible.  
-
 \b Example: To store a directory of files,
 \code
 store_dir series=su_arta.TestStoreDir dirname=/auto/home2/arta/savedFilesJanuary 
@@ -125,7 +119,6 @@ ModuleArgs_t module_args[] = {
   {ARG_STRING, "dirname", "", "Dir to store. prime key"},
   {ARG_STRING, "sel", "", "selection name. prime key"}, 
   {ARG_STRING, "note", "N/A", "comment field"},
-  {ARG_INT, "perm", "1", ""}, /* permissions in case series is created */
   {ARG_FLAG, "c", "0", "create new series if needed"},
   {ARG_FLAG, "v", "0", "verbose flag"},
   {ARG_END}
@@ -143,7 +136,7 @@ int nice_intro () {
 /********************this is old stuff before Rick's arg handling *********
   int usage = cmdparams_get_int (&cmdparams, "h", NULL);
   if (usage) {
-    printf ("store_dir <series> {-c} {-h} {-v} in=<dir> {sel=<desc>} {note=<comment>} {perm=1}\n"
+    printf ("store_dir <series> {-c} {-h} {-v} in=<dir> {sel=<desc>} {note=<comment>} \n"
 	"  -c: Quietly create series if does not exist\n"
 	"  -h: print this message and exit\n"
 	"  -v: verbose\n"
@@ -151,7 +144,6 @@ int nice_intro () {
 	"in=    - dir to store\n"
 	"sel=   - optional description for retrieval key\n"
 	"note=  - optional description for dir\n"
-        "perm=1 - optional access permissions, use 0 for private.\n");
     return (1);
   }
 **********************************************************************/
@@ -163,7 +155,8 @@ int nice_intro () {
 int DoIt (void) {
 int status = 0;
 
-char *in, *series, *note, *dirname, *sel, *rsp;
+const char *in, *series, *note, *sel;
+char *dirname, *rsp;
 char path[DRMS_MAXPATHLEN];
 char cmd[DRMS_MAXPATHLEN+1024];
 DRMS_Record_t *rec, *template;
@@ -183,7 +176,7 @@ if (access(in, R_OK) != 0)
   printf("The requested dir can not be accessed.  %s\n", in);
   return(1);
   }
-  dirname = in;
+dirname = (char *)in;
 
 /* Look in the record spec to see if a sel is given, else use dirname */
 rsp = index(series, '[');
@@ -201,7 +194,7 @@ if (template==NULL && status == DRMS_ERROR_UNKNOWNSERIES)
   int user_says_yes();
   if (yes_create || user_says_yes(series))
     {
-    int create_series(char *series);
+    int create_series(const char *series);
     if (create_series(series))
       {
       printf("Series '%s' does not exist. Create_series failed. Give up.\n", series);
@@ -222,7 +215,7 @@ else
     }
 
 /* Now ready to make a new record and set keywords */
-rec = drms_create_record(drms_env, series, DRMS_PERMANENT, &status);
+rec = drms_create_record(drms_env, (char *)series, DRMS_PERMANENT, &status);
 if (!rec || status)
     {
     printf("drms_create_record failed, series=%s, status=%d.  Aborting.\n", series,status);
@@ -252,6 +245,8 @@ if ((status = drms_setkey_string(rec, "note", note)))
      printf("WARNING: drms_setkey_string failed for 'note'\n");
    printf("Your note was not saved: %s\n",note);
    }
+drms_setkey_time(rec, "DATE",  time(0) + UNIX_EPOCH);
+
 /* a SU should have been allocated since there is a segment in the series defn */
 drms_record_directory(rec, path, 1);
 if (! *path)
@@ -263,7 +258,7 @@ sprintf(cmd, "cp -rp %s %s", in, path);
 status = system(cmd);
 if (status)
     {
-    printf("Copy failed: %s\n", cmd);
+    printf("WARNING: Copy failed: %s, Your data is NOT stored in SUMS\n", cmd);
     return(status);
     }
 else
@@ -274,7 +269,7 @@ if ((status = drms_close_record(rec, DRMS_INSERT_RECORD)))
 return(status);
 }
 
-int user_says_yes(char *series)
+int user_says_yes(const char *series)
   {
   char resp[DRMS_MAXPATHLEN];
   printf("Series '%s' does not exist. Do you want a standard store_dir series to be created?\n", series);
@@ -284,7 +279,7 @@ int user_says_yes(char *series)
   return(strcasecmp(resp,"yes")==0);
   }
 
-char * make_series_jsd(char *series)
+char * make_series_jsd(const char *series)
   {
   char *user = getenv("USER");
   char jsd[1024];
@@ -298,18 +293,18 @@ char * make_series_jsd(char *series)
     "Tapegroup:      1\n"
     "Index:          dirname,sel\n"
     "Description:    \"Dir storage\"\n"
-    "Keyword: dirname,  string, variable, record, \" \",  %%s, none, \"Original dirname\"\n"
-    "Keyword: sel, string, variable, record, \" \",  %%s, none, \" \"\n"
-    "Keyword: note,      string, variable, record, \" \",  %%s, none, \" \"\n"
-    "Data: dir, constant, int, 0, none, generic, \" \"\n",
+    "Keyword: dirname,  string, variable, record, \" \",  %%s, none, \"Original dirname, source of files stored\"\n"
+    "Keyword: sel, string, variable, record, \" \",  %%s, none, \"Version for dirname save\"\n"
+    "Keyword: DATE, time, variable, record, \"JD_0\",  0, \"UTC\", \"Time of store_dir call\"\n" "Keyword: note,      string, variable, record, \" \",  %%s, none, \"Optional deacription\"\n"
+    "Data: dir, variable, int, 0, none, generic, \"Stored files\"\n",
     series, user, user);
   return (strdup(jsd));
   }
 
-int create_series(char *series)
+int create_series(const char *series)
   {
   char *jsd;
-  int perm = cmdparams_get_int(&cmdparams, "perm", NULL);
+  int perm = 1;
   DRMS_Record_t *template;
   jsd = make_series_jsd(series);
   template = drms_parse_description(drms_env, jsd);
