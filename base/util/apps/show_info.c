@@ -1623,6 +1623,7 @@ static int RecordLoopCursor(DRMS_Env_t *env, const char *rsq, DRMS_RecordSet_t *
     char *keys[1024];
     int nsegs = 0;
     char *segs[1024];
+    int iSeg;
     int linked_segs = 0;
     int nlinks = 0;
     char *links[1024];
@@ -1715,6 +1716,16 @@ static int RecordLoopCursor(DRMS_Env_t *env, const char *rsq, DRMS_RecordSet_t *
         irec++;
     } /* while */
     
+    /* Maybe have broken out of the while loop without freeing segs. */
+    for (iSeg = 0; iSeg < nsegs; iSeg++)
+    {
+        if (segs[iSeg])
+        {
+            free(segs[iSeg]);
+            segs[iSeg] = NULL;
+        }
+    }
+    
     if (!quiet && !atleastone)
     {
         printf ("** No records in selected data set, query was %s **\n", rsq);
@@ -1737,8 +1748,9 @@ static int RecordLoopNoCursor(DRMS_Env_t *env, DRMS_RecordSet_t *recordset, int 
     int nkeys = 0;
     char *keys[1024];
     int nsegs = 0;
+    int iSeg;
     int linked_segs = 0;
-    char *segs[1024];
+    char *segs[1024] = {0};
     int nlinks = 0;
     char *links[1024];
     
@@ -1783,6 +1795,15 @@ static int RecordLoopNoCursor(DRMS_Env_t *env, DRMS_RecordSet_t *recordset, int 
         if (PrintStuff(rec, NULL, keyword_list, show_recnum, show_sunum, show_recordspec, parseRS, show_online, show_retention, show_archive, show_tapeinfo, show_size, show_session, want_path, want_path_noret, want_dims, keys, nkeys, segs, nsegs, linked_segs, links, nlinks, recordset->n, irec != 0))
         {
             break;
+        }
+    }
+    
+    for (iSeg = 0; iSeg < nsegs; iSeg++)
+    {
+        if (segs[iSeg])
+        {
+            free(segs[iSeg]);
+            segs[iSeg] = NULL;
         }
     }
     

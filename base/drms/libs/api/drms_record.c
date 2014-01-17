@@ -3760,6 +3760,21 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
             /* Shallow-free the DRMS_RecordSet_t struct. We do not want to deep free the actual records, which have been cached. 
              * When the parent records in the original series have been freed, this will cause the linked records to be freed 
              * as well. */
+            
+            /* But we do need to free linkedrecs->ss_currentrecs. That was set in drms_record_retrievelinks() so that drms_recordset_fetchnext()
+             * could be used. */
+            if (linkedrecs->ss_currentrecs)
+            {
+                free(linkedrecs->ss_currentrecs);
+            }
+            
+            /* The records array needs to be freed to. Just don't free the DRMS_Record_ts that records[iRed] point to. */
+            if (linkedrecs->records)
+            {
+                free(linkedrecs->records);
+                linkedrecs->records = NULL;
+            }
+            
             free(linkedrecs);
         }
         
@@ -5868,10 +5883,10 @@ static int processFetchedRecs(DB_Binary_Result_t *dbres, const char *oSeries, DR
 /* This function operates on multiple target series. */
 DRMS_RecordSet_t *callRetrieveRecsPreparedQuery(DRMS_Env_t *env, HContainer_t *mapTseriesReclist, int *status)
 {
-    /* The number of placholders in the prepared statement. This is the number of recnums in the IN clause for 
+    /* The number of placholders in the prepared statement. This is the number of recnums in the IN clause for
      * the query that is fetching series-table data needed
      * to create the DRMS_Record_ts of the DRMS records being retrieved. If it changes, then the number of
-     * placeholders in the IN clause must also change. 
+     * placeholders in the IN clause must also change.
      */
     const int NUM_ARGS = 16;
     
@@ -5896,53 +5911,54 @@ DRMS_RecordSet_t *callRetrieveRecsPreparedQuery(DRMS_Env_t *env, HContainer_t *m
     char nbuf[32];
     int istat = DRMS_SUCCESS;
     
-    stsz = 512;
-    sql = calloc(stsz, sizeof(char));
-    if (sql)
+    iterTseries = hiter_create(mapTseriesReclist);
+    
+    if (iterTseries)
     {
-        iterTseries = hiter_create(mapTseriesReclist);
-        
-        if (iterTseries)
+        /* SELECT <column list> FROM <series> WHERE recnum IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) */
+        while ((iterGet = hiter_extgetnext(iterTseries, &seriesGet)) != NULL)
         {
-            /* SELECT <column list> FROM <series> WHERE recnum IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) */
-            while ((iterGet = hiter_extgetnext(iterTseries, &seriesGet)) != NULL)
+            rv = NULL;
+            rvSupp = NULL;
+            recList = *(LinkedList_t **)iterGet;
+            
+            if (!recList)
             {
-                rv = NULL;
-                rvSupp = NULL;
-                recList = *(LinkedList_t **)iterGet;
-                
-                if (!recList)
-                {
-                    istat = DRMS_ERROR_INVALIDDATA;
-                    break;
-                }
-                
-                templRec = drms_template_record(env, seriesGet, &istat);
-                
-                if (istat != DRMS_SUCCESS)
-                {
-                    break;
-                }
-                
-                colList = drms_field_list(templRec, NULL);
-                
-                if (!colList)
-                {
-                    istat = DRMS_ERROR_OUTOFMEMORY;
-                    break;
-                }
-                
-                if (recList->nitems <= 0)
-                {
-                    /* Nothing to do for this target series. */
-                    continue;
-                }
-                
-                list_llreset(recList);
-                
-                nExe = recList->nitems / NUM_ARGS; /* integer division - this is the number of times we will execute the prepared insert statement. */
-                
-                if (nExe > 0)
+                istat = DRMS_ERROR_INVALIDDATA;
+                break;
+            }
+            
+            templRec = drms_template_record(env, seriesGet, &istat);
+            
+            if (istat != DRMS_SUCCESS)
+            {
+                break;
+            }
+            
+            colList = drms_field_list(templRec, NULL);
+            
+            if (!colList)
+            {
+                istat = DRMS_ERROR_OUTOFMEMORY;
+                break;
+            }
+            
+            if (recList->nitems <= 0)
+            {
+                /* Nothing to do for this target series. */
+                free(colList);
+                continue;
+            }
+            
+            list_llreset(recList);
+            
+            nExe = recList->nitems / NUM_ARGS; /* integer division - this is the number of times we will execute the prepared insert statement. */
+            
+            if (nExe > 0)
+            {
+                stsz = 512;
+                sql = calloc(stsz, sizeof(char));
+                if (sql)
                 {
                     /* Create prepared statement. */
                     sql = base_strcatalloc(sql, "SELECT ", &stsz);
@@ -5997,105 +6013,111 @@ DRMS_RecordSet_t *callRetrieveRecsPreparedQuery(DRMS_Env_t *env, HContainer_t *m
                             argin[iArg] = NULL;
                         }
                     }
+                    
+                    free(sql);
+                    sql = NULL;
                 }
-                
-                if (istat == DRMS_SUCCESS)
+                else
                 {
-                    if (recList->nitems % NUM_ARGS != 0)
+                    istat = DRMS_ERROR_OUTOFMEMORY;
+                }
+            }
+            
+            if (istat == DRMS_SUCCESS)
+            {
+                if (recList->nitems % NUM_ARGS != 0)
+                {
+                    /* There are some left-over recnums to insert. The previous recnums were inserted in chunks of NUM_ARGS,
+                     * so there is work left to do if the total number of recnums is not a multiple of 16. */
+                    stsz = 512;
+                    sql = calloc(stsz, sizeof(char));
+                    if (sql)
                     {
-                        /* There are some left-over recnums to insert. The previous recnums were inserted in chunks of NUM_ARGS,
-                         * so there is work left to do if the total number of recnums is not a multiple of 16. */
-                        stsz = 512;
-                        sql = calloc(stsz, sizeof(char));
-                        if (sql)
+                        sql = base_strcatalloc(sql, "SELECT ", &stsz);
+                        sql = base_strcatalloc(sql, colList, &stsz);
+                        sql = base_strcatalloc(sql, " FROM ", &stsz);
+                        sql = base_strcatalloc(sql, seriesGet, &stsz);
+                        sql = base_strcatalloc(sql, " WHERE recnum IN (", &stsz);
+                        
+                        iRec = 0;
+                        while ((node = list_llnext(recList)) != NULL)
                         {
-                            sql = base_strcatalloc(sql, "SELECT ", &stsz);
-                            sql = base_strcatalloc(sql, colList, &stsz);
-                            sql = base_strcatalloc(sql, " FROM ", &stsz);
-                            sql = base_strcatalloc(sql, seriesGet, &stsz);
-                            sql = base_strcatalloc(sql, " WHERE recnum IN (", &stsz);
-                            
-                            iRec = 0;
-                            while ((node = list_llnext(recList)) != NULL)
+                            if (!node->data)
                             {
-                                if (!node->data)
-                                {
-                                    istat = DRMS_ERROR_DATASTRUCT;
-                                    break;
-                                }
-                                
-                                recnum = *(long long *)node->data;
-                                snprintf(nbuf, sizeof(nbuf), "%lld", recnum);
-                                sql = base_strcatalloc(sql, nbuf, &stsz);
-                                if (iRec < recList->nitems % NUM_ARGS - 1)
-                                {
-                                    sql = base_strcatalloc(sql, ", ", &stsz);
-                                }
-                                
-                                iRec++;
+                                istat = DRMS_ERROR_DATASTRUCT;
+                                break;
                             }
                             
-                            sql = base_strcatalloc(sql, ")", &stsz);
-
-                            rvSupp = drms_retrieve_records_internal(env, seriesGet, NULL, NULL, NULL, 0, 0, NULL, sql, 0, 0, NULL, NULL, 0, 0, &istat);
-                            if (!rv)
+                            recnum = *(long long *)node->data;
+                            snprintf(nbuf, sizeof(nbuf), "%lld", recnum);
+                            sql = base_strcatalloc(sql, nbuf, &stsz);
+                            if (iRec < recList->nitems % NUM_ARGS - 1)
                             {
-                               rv = rvSupp;
+                                sql = base_strcatalloc(sql, ", ", &stsz);
                             }
-                            else
-                            {
-                                /* Must merge the resulting of the following command with the results in rv. */
-                                
-                                /* Must create a new empty record-set and then merge the records from rv and rvSupp into the new
-                                 * record-set. */
-                                DRMS_RecordSet_t *rvMerge = calloc(1, sizeof(DRMS_RecordSet_t));
-                                
-                                if (rvMerge)
-                                {
-                                    for (iRec = 0; iRec < rv->n; iRec++)
-                                    {
-                                        drms_merge_record(rvMerge, rv->records[iRec]);
-                                        rv->records[iRec] = NULL; /* Relinquish ownership to rvMerge. */
-                                    }
-                                    
-                                    drms_close_records(rv, DRMS_FREE_RECORD);
-                                    
-                                    for (iRec = 0; iRec < rvSupp->n; iRec++)
-                                    {
-                                        drms_merge_record(rvMerge, rvSupp->records[iRec]);
-                                        rvSupp->records[iRec] = NULL; /* Relinquish ownership to rvMerge. */
-                                    }
-                                    
-                                    drms_close_records(rvSupp, DRMS_FREE_RECORD);
-                                    
-                                    rv = rvMerge;
-                                }
-                                else
-                                {
-                                    istat = DRMS_ERROR_OUTOFMEMORY;
-                                }
-                            }
-
-                            free(sql);
-                            sql = NULL;
+                            
+                            iRec++;
+                        }
+                        
+                        sql = base_strcatalloc(sql, ")", &stsz);
+                        
+                        rvSupp = drms_retrieve_records_internal(env, seriesGet, NULL, NULL, NULL, 0, 0, NULL, sql, 0, 0, NULL, NULL, 0, 0, &istat);
+                        if (!rv)
+                        {
+                            rv = rvSupp;
                         }
                         else
                         {
-                            istat = DRMS_ERROR_OUTOFMEMORY;
+                            /* Must merge the resulting of the following command with the results in rv. */
+                            
+                            /* Must create a new empty record-set and then merge the records from rv and rvSupp into the new
+                             * record-set. */
+                            DRMS_RecordSet_t *rvMerge = calloc(1, sizeof(DRMS_RecordSet_t));
+                            
+                            if (rvMerge)
+                            {
+                                for (iRec = 0; iRec < rv->n; iRec++)
+                                {
+                                    drms_merge_record(rvMerge, rv->records[iRec]);
+                                    rv->records[iRec] = NULL; /* Relinquish ownership to rvMerge. */
+                                }
+                                
+                                drms_close_records(rv, DRMS_FREE_RECORD);
+                                
+                                for (iRec = 0; iRec < rvSupp->n; iRec++)
+                                {
+                                    drms_merge_record(rvMerge, rvSupp->records[iRec]);
+                                    rvSupp->records[iRec] = NULL; /* Relinquish ownership to rvMerge. */
+                                }
+                                
+                                drms_close_records(rvSupp, DRMS_FREE_RECORD);
+                                
+                                rv = rvMerge;
+                            }
+                            else
+                            {
+                                istat = DRMS_ERROR_OUTOFMEMORY;
+                            }
                         }
+                        
+                        free(sql);
+                        sql = NULL;
+                    }
+                    else
+                    {
+                        istat = DRMS_ERROR_OUTOFMEMORY;
                     }
                 }
             }
             
-            hiter_destroy(&iterTseries);
-        }
-        else
-        {
-            istat = DRMS_ERROR_OUTOFMEMORY;
+            if (colList)
+            {
+                free(colList);
+                colList = NULL;
+            }
         }
         
-        free(sql);
-        sql = NULL;
+        hiter_destroy(&iterTseries);
     }
     else
     {
@@ -6461,11 +6483,15 @@ DRMS_RecordSet_t *drms_record_retrievelinks(DRMS_Env_t *env, DRMS_RecordSet_t *r
                          * record from the db. */
                         rv = callRetrieveRecsPreparedQuery(env, mapTseriesReclist, &istat);
                     }
+                    
+                    hcon_destroy(&mapTseriesReclist);
                 }
                 else
                 {
                     istat = DRMS_ERROR_OUTOFMEMORY;
                 }
+                
+                hcon_destroy(&mapOseriesTseriesCont);
             }
         }
         
@@ -11238,10 +11264,9 @@ int drms_merge_record(DRMS_RecordSet_t *rs, DRMS_Record_t *rec)
       if (rs->n == abs(rs->ss_n))
       {
          /* realloc */
-         void *tmp = realloc(rs->records, sizeof(DRMS_Record_t *) * abs(rs->ss_n) * 2);
-         if (tmp)
+         rs->records = realloc(rs->records, sizeof(DRMS_Record_t *) * abs(rs->ss_n) * 2);
+         if (rs->records)
          {
-            rs->records = tmp;
             rs->ss_n = -1 * abs(rs->ss_n) * 2;
          }
          else
