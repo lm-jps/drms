@@ -5159,6 +5159,12 @@ DRMS_RecordSet_t *drms_retrieve_records(DRMS_Env_t *env,
 /* prepared - A prepared statement when combined with argin that results in the retrieval of db information needed to create the DRMS records specified by the statement and argin. */
 static DRMS_RecordSet_t *drms_retrieve_records_prepared_query(DRMS_Env_t *env, const char *seriesName, DRMS_Record_t *templRec, const char *prepared, HContainer_t *goodsegcont, unsigned int nElems, int nArgs, DB_Type_t *intype, void **argin, int *status)
 {
+#ifdef DRMS_CLIENT
+    /* Hack to deal with issue with drms_retrieve_records_prepared_query() calling a direct-connect-only function
+     * drms_query_bin_ntuple(). */
+    return NULL;
+#endif
+    
     DB_Binary_Result_t *bres = NULL;
     DB_Binary_Result_t **pBres = NULL; /* pointer to bres */
     DRMS_RecordSet_t *rv = NULL;
@@ -6154,6 +6160,11 @@ DRMS_RecordSet_t *callRetrieveRecsPreparedQuery(DRMS_Env_t *env, HContainer_t *m
  * records from more than one series. */
 DRMS_RecordSet_t *drms_record_retrievelinks(DRMS_Env_t *env, DRMS_RecordSet_t *recordset, int *status)
 {
+#ifdef DRMS_CLIENT
+    /* Hack to deal with issue with drms_retrieve_records_prepared_query() calling a direct-connect-only function 
+     * drms_query_bin_ntuple(). */
+    return NULL;
+#endif
     DRMS_RecordSet_t *rv = NULL;
     HContainer_t *mapRec = NULL; /* map (original series, original recnum) to original-record struct */
     HContainer_t *mapOseriesTseriesCont = NULL; /* map original-series name to target-series list container. */
