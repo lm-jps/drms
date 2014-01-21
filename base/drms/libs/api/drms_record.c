@@ -4304,7 +4304,7 @@ void drms_free_records(DRMS_RecordSet_t *rs)
                                 rslink->ss_starts = NULL;
                                 rslink->ss_currentrecs = NULL;
                                 rslink->cursor = NULL;
-                                rslink->env = NULL;
+                                rslink->env = env;
                                 
                                 delrec = lrec;
                                 drms_free_records(rslink);
@@ -4430,7 +4430,7 @@ void drms_free_records(DRMS_RecordSet_t *rs)
                                     rslink->ss_starts = NULL;
                                     rslink->ss_currentrecs = NULL;
                                     rslink->cursor = NULL;
-                                    rslink->env = NULL;
+                                    rslink->env = env;
                                     
                                     delrec = lrec;
                                     drms_free_records(rslink);
