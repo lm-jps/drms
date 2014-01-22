@@ -57,31 +57,42 @@ static int drms_segment_checkscaling (const DRMS_Array_t* arr, double bzero,
 static DRMS_Segment_t * __drms_segment_lookup(DRMS_Record_t *rec, 
 					      const char *segname, int depth)
 {
-  int stat;
-  DRMS_Segment_t *segment;
-
-  segment = hcon_lookup_lower(&rec->segments, segname);
-  if (segment!=NULL && depth<DRMS_MAXLINKDEPTH )
-  {
-    if (segment->info->islink)
+    int stat;
+    DRMS_Segment_t *segment;
+    DRMS_Segment_t *rv = NULL;
+    
+    segment = hcon_lookup_lower(&rec->segments, segname);
+    if (segment!=NULL && depth<DRMS_MAXLINKDEPTH )
     {
-      rec = drms_link_follow(rec, segment->info->linkname, &stat);
-      if (stat)
-	return NULL;
-      else
-	return __drms_segment_lookup(rec, segment->info->target_seg, depth+1);
+        if (segment->info->islink)
+        {
+            DRMS_Record_t *linkedRec = NULL;
+            
+            linkedRec = drms_link_follow(rec, segment->info->linkname, &stat);
+            if (stat)
+                rv = NULL;
+            else
+            {
+                rv = __drms_segment_lookup(linkedRec, segment->info->target_seg, depth+1);
+            }
+            
+            /* Whatever you do, do not free linkedRec here. If it is freed, then the segment returned, 
+             * which has a reference to linkedRec, will have a pointer to garbage. In fact, the segment
+             * returned will be garbage because freeing the containing record frees the segment. */
+            return rv;
+            
+        }
+        else
+        {
+            return segment;
+        }
     }
-    else
-    {
-      return segment;
-    }
-  }
-  if (depth>=DRMS_MAXLINKDEPTH)
-    fprintf(stderr, "WARNING: Max link depth exceeded for segment '%s' in "
-	    "record %lld from series '%s'\n", segment->info->name, rec->recnum, 
-	    rec->seriesinfo->seriesname);
-  
-  return NULL;
+    if (depth>=DRMS_MAXLINKDEPTH)
+        fprintf(stderr, "WARNING: Max link depth exceeded for segment '%s' in "
+                "record %lld from series '%s'\n", segment->info->name, rec->recnum,
+                rec->seriesinfo->seriesname);
+    
+    return NULL;
 }
 
 int drms_segment_set_const(DRMS_Segment_t *seg) {
@@ -266,9 +277,9 @@ int drms_template_segments(DRMS_Record_t *template)
   env = template->env;
 
   /* Initialize container structure. */
-  hcon_init(&template->segments, sizeof(DRMS_Segment_t), DRMS_MAXSEGNAMELEN, 
-	    (void (*)(const void *)) drms_free_segment_struct, 
-	    (void (*)(const void *, const void *)) drms_copy_segment_struct);
+  hcon_init(&template->segments, sizeof(DRMS_Segment_t), DRMS_MAXSEGNAMELEN,
+            (void (*)(const void *)) drms_free_segment_struct,
+		    (void (*)(const void *, const void *)) drms_copy_segment_struct);
 
   /* Get segment definitions and add to template. */
   char *namespace = ns(template->seriesinfo->seriesname);
@@ -732,6 +743,69 @@ DRMS_Segment_t *drms_segment_lookupnum(DRMS_Record_t *rec, int segnum)
 
    return seg;
 }
+
+#if 0
+/* I was mistaken. See comment in drms_link_follow(). */
+
+/* When a linked segment is accessed (drms_segment_lookup() and drms_segment_lookupnum), the linked record 
+ * containing that segment is retrieved from the db. If the record is already in the cache, then instead 
+ * of retrieving the record information from the db, the refcount on this record is incremented. The 
+ * record must then be freed, otherwise memory will be leaked. If the refcount > 1, then no memory
+ * will be released during this call, but if for every access drms_segment_destroy() is also called,
+ * then the memory allocated to the linked record will be freed.
+ *
+ * Unfortunately, DRMS_Segment_t does not have any information to indicate if the segment is a linked segment.
+ * If the caller provides a non-linked segment to this function, then this will possibly delete the 
+ * containing record, which would be bad. Given the current design, there is no good way to protect against this.
+ * Have the caller provide the original segment too, and then verify that it links to the target segment.
+ */
+void drms_segment_destroy(DRMS_Segment_t *oSeg, DRMS_Segment_t **pSeg)
+{
+    DRMS_Segment_t *seg = NULL;
+    DRMS_Link_t *link = NULL;
+    char hashkey[DRMS_MAXHASHKEYLEN];
+    void *lookup = NULL;
+    DRMS_Record_t *linkedRec = NULL;
+    
+    if (oSeg && pSeg && (seg = *pSeg))
+    {
+        if (oSeg->record && oSeg->info->islink && *oSeg->info->linkname != '\0')
+        {
+            link = hcon_lookup_lower(&oSeg->record->links, oSeg->info->linkname);
+            
+            if (link)
+            {
+                if ((link->info->type == STATIC_LINK && link->recnum != -1) ||
+                    (link->info->type == DYNAMIC_LINK && link->isset))
+                {
+                    /* The link is set. */
+                    drms_make_hashkey(hashkey, link->info->target_series, link->recnum);
+                    lookup = hcon_lookup_lower(mapRec, hashkey);
+                    if (lookup)
+                    {
+                        
+                        linkedRec = *((DRMS_Record_t **)lookup);
+                        
+                        /* drms_free_record() will decrement the record's refcount, and if this results
+                         * in a refcount of 0, then the record is removed from the record cache. When this
+                         * happens, the segment (seg) gets freed, without freeing seg->seriesinfo.
+                         * Do NOT free seg->seriesinfo. Freeing the containing record in the series cache
+                         * will free the info struct.
+                         */
+                        if (linkedRec == seg->record)
+                        {
+                            drms_free_record(seg->record);
+                            seg->record = NULL;
+                            
+                            *pSeg = NULL;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+#endif
 
 /*************************** Segment Data functions **********************/
 

@@ -255,32 +255,66 @@ int drms_link_set(const char *linkname, DRMS_Record_t *baserec, DRMS_Record_t *s
 DRMS_Record_t *drms_link_follow(DRMS_Record_t *rec, const char *linkname, 
 				int *status)
 {
-  DRMS_Link_t *link;
-
-  if ( (link = hcon_lookup_lower(&rec->links,linkname)) == NULL )
-  {
-    if (status)
-      *status = DRMS_ERROR_UNKNOWNLINK;
-    return NULL;
-  }
-  if ((link->info->type == STATIC_LINK && link->recnum==-1) ||
-      (link->info->type == DYNAMIC_LINK && !link->isset))
-  {
-    if (status)
-      *status = DRMS_ERROR_LINKNOTSET;
-    return NULL;
-  }
-  if (drms_link_resolve(link))
-  {
-    if (status)
-      *status = DRMS_ERROR_BADLINK;
-    return NULL;
-  }
-  return drms_retrieve_record(rec->env, link->info->target_series, link->recnum,
-			      NULL,
-                              status);  
+    DRMS_Link_t *link = NULL;
+    char hashkey[DRMS_MAXHASHKEYLEN];
+    DRMS_Record_t *linkedRec = NULL;
+    
+    if ( (link = hcon_lookup_lower(&rec->links,linkname)) == NULL )
+    {
+        if (status)
+            *status = DRMS_ERROR_UNKNOWNLINK;
+        return NULL;
+    }
+    if ((link->info->type == STATIC_LINK && link->recnum==-1) ||
+        (link->info->type == DYNAMIC_LINK && !link->isset))
+    {
+        if (status)
+            *status = DRMS_ERROR_LINKNOTSET;
+        return NULL;
+    }
+    if (drms_link_resolve(link))
+    {
+        if (status)
+            *status = DRMS_ERROR_BADLINK;
+        return NULL;
+    }
+    
+    /* Do not call drms_retrieve_record() if the linked record has already been cached.
+     * A refcount is the number of handles to an object. All the handles
+     * will be freed in a well-written program. When you follow a link to a target record
+     * from a parent record, you do create a reference to the linked record, but only
+     * the first time the link is followed. You do not create additional references
+     * to the linked record each time the link is followed. It is possible to call drms_link_follow()
+     * on the same original record multiple times. In this case, there is really only a
+     * single handle to the linked record (which is the original record), so the refcount
+     * should only be 1 regardless how many times drms_link_follow() is called.
+     *
+     * The refcount should be incremented beyond 1 in only one case: when OPENING (e.g., drms_open_records())
+     * a (linked) record. Everytime a caller opens a record, the caller creates a handle
+     * to that record that the caller will eventually free. The increments due to
+     * drms_open_records() will balance the decrements due to drms_close_records(). But
+     * there is no such call to drms_close_records() after a call to drms_link_follow().
+     * If this function were to call drms_retrieve_record() every time it was called,
+     * the refcount would never decrement back to zero, and the record would never be
+     * freed from the record cache.
+     */
+    drms_make_hashkey(hashkey, link->info->target_series, link->recnum);
+    
+    if ((linkedRec = hcon_lookup(&rec->env->record_cache, hashkey)) != NULL)
+    {
+        /* Do not increase refcount on linked record. */
+        if (status)
+        {
+            *status = DRMS_SUCCESS;
+        }
+        return linkedRec;
+    }
+    else
+    {
+        /* Set refcount on linked record to 1. */
+        return drms_retrieve_record(rec->env, link->info->target_series, link->recnum, NULL, status);
+    }
 }
-
 
 
 /* Return all records pointed to by a named link in the given record. 
