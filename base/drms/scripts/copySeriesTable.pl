@@ -191,7 +191,7 @@ else
                 }
                 
                 # There might be some left-over recnums not yet processed.
-                if (@$reclist)
+                if (defined($reclist) && @$reclist)
                 {
                     $reclistStr = join(', ', @$reclist);
                     $stmnt = "INSERT INTO $newtable SELECT * FROM $oldtable WHERE recnum in ($reclistStr)";
