@@ -1,6 +1,6 @@
 #!/home/jsoc/bin/linux_x86_64/activeperl
 #
-# copySeriesTable.pl dbname=jsoc dbhost=hmidb dbport=5432 dbuser=postgres dfile=recList.txt newtable=test_table oldtable=hmi.cosmic_rays
+# copySeriesTable.pl dbname=jsoc dbhost=hmidb dbport=5432 dbuser=postgres dfile=recList.txt newtable=test_table oldtable=hmi.cosmic_rays -suffix=copied
 
 use strict;
 use warnings;
@@ -86,7 +86,7 @@ else
     $newtable = $args->Get(&kArgNewtable);
     $oldtable = $args->Get(&kArgOldtable);
     $suffix = $opts->Get(&kArgSuffix);
-    
+
     if (defined($newtable))
     {
         $newtable = lc($newtable);
@@ -139,23 +139,10 @@ else
                 {
                     # The output table does not exist. Create it.
                     $stmnt = "CREATE TABLE $newtable(LIKE $oldtable INCLUDING INDEXES)";
-                    $rv = ExeStmnt($dbh, $stmnt, 1, "Creating new table: $stmnt.\n");
-                    
-                    if ($rv == &kRetSuccess)
-                    {
-                        $stmnt = "ALTER TABLE $newtable ALTER COLUMN recnum SET NOT NULL";
-                        $rv = ExeStmnt($dbh, $stmnt, 1, "Setting recnum column constraint: $stmnt.\n");
-                    }
+                    $rv = ExeStmnt($dbh, $stmnt, 1, "Creating new table: $stmnt.\n");                    
                 }
             }
             
-            if ($rv == &kRetSuccess)
-            {
-                # Need to declare prime key and create indexes.
-                
-            }
-
-
             if ($rv == &kRetSuccess)
             {
                 $sth = $dbh->prepare("INSERT INTO $newtable SELECT * FROM $oldtable WHERE recnum in (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
