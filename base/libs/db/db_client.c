@@ -247,6 +247,105 @@ DB_Binary_Result_t *db_recv_binary_query(int sockfd, int comp, char **errmsg)
   return result;
 }
 
+/* db_recv_binary_query_ntuple() returns an array of DB_Binary_Result_t structs. Each element of this
+ * array is a DB_Binary_Result_t struct, one for each of the exes of the prepared statement.
+ */
+DB_Binary_Result_t **db_recv_binary_query_ntuple(int sockfd, char **errmsg)
+{
+    DB_Binary_Result_t **results = NULL;
+    DB_Binary_Result_t *exeResult = NULL;
+    
+    int nelems;
+    int iElem;
+
+    /* The number of elements in the DB_Binary_Result_t struct array. We need to loop this many times to
+     * fetch all DB_Binary_Result_t structs from the socket. */
+    nelems = Readint(sockfd);
+    
+    if (nelems == -1)
+    {
+        /* There was an error - no DB_Binary_Result_t structs were returned. */
+        char *msg = receive_string(sockfd);
+        
+        if (errmsg)
+        {
+            *errmsg = strdup(msg);
+        }
+        
+        return NULL;
+    }
+    
+    results = calloc(nelems, sizeof(DB_Binary_Result_t *));
+    XASSERT(results);
+    
+    for (iElem = 0; iElem < nelems; iElem++)
+    {
+#if 0
+        {
+            nrows = Readint(sockfd);
+            ncols = Readint(sockfd);
+            
+            exeResult = malloc(sizeof(DB_Binary_Result_t));
+            XASSERT(exeResult);
+            
+            exeResult->column = malloc(ncols * sizeof(DB_Column_t));
+            XASSERT(exeResult->column);
+            for (iCol = 0; iCol < ncols; iCol++)
+            {
+                pCol = &exeResult->column[iCol];
+                pCol->num_rows = nrows;
+                
+                /* Column name. */
+                pCol->column_name = receive_string(sockfd);
+                
+                /* Column data type. */
+                pCol->type = (DB_Type_t)Readint(sockfd);
+                
+                /* Column data size. */
+                pCol->size = Readint(sockfd);
+                
+                /* Column data. */
+                pCol->data = malloc(nrows * pCol->size);
+                XASSERT(pCol->data);
+                Readn(sockfd, pCol->data, nrows * pCol->size);
+                db_ntoh(pCol->type, exeResult->num_rows, pCol->data);
+                
+                /* If the next int in the socket is 0, then no null-indicator array was. */
+                anynull = Readint(sockfd);
+                
+                /* Null indicator array. */
+                pCol->is_null = calloc(nrows, sizeof(short));
+                XASSERT(pCol->is_null);
+                if (anynull)
+                {
+                    Readn(sockfd, pCol->is_null, nrows * sizeof(short));
+                    db_ntoh(DB_INT2, nrows, (void *)pCol->is_null);
+                }
+            }
+        }
+#endif
+        /* I believe we can call the function that retrieves a single DB_Binary_Result_t struct
+         * nelems times. This function will return NULL if an error occurred. */
+        exeResult = db_recv_binary_query(sockfd, 0, errmsg);
+        if (!exeResult)
+        {
+            char *msg = receive_string(sockfd);
+            
+            if (errmsg)
+            {
+                *errmsg = strdup(msg);
+            }
+            
+            return NULL;
+        }
+        
+        /* Push the resulting DB_Binary_Result_t into the return array. */
+        results[iElem] = exeResult;
+    }
+    
+    return results;
+}
+
 DB_Text_Result_t *db_client_query_txt(int sockfd, char *query, int compress, char **errmsg)
 {
   int len,ctmp;
@@ -291,7 +390,6 @@ DB_Binary_Result_t *db_client_query_bin(int sockfd, char *query, int compress, c
   /* Get result back from server. */
   return db_recv_binary_query(sockfd, compress, errmsg);
 }
-
 
 DB_Binary_Result_t *db_client_query_bin_array(int sockfd, char *query, 
 					      int compress, int n_args,  
@@ -370,6 +468,158 @@ DB_Binary_Result_t *db_client_query_bin_array(int sockfd, char *query,
   return db_recv_binary_query(sockfd, compress, &errmsg);
 }
 
+/* stmnt - the prepared statement.
+ * nexes - number of times the prepared statement will execute
+ * nargs - the number of placeholders in the prepared statement.
+ * dbtypes - an array of nargs elements describing the data types of the placeholders.
+ * values - an array of arrays of placeholder data values. Each values[iArg] array contains the data for
+ *          a single placeholder. There are nargs values[iArg] arrays.
+ */
+DB_Binary_Result_t **db_client_query_bin_ntuple(int sockfd, const char *stmnt, unsigned int nexes, unsigned int nargs, DB_Type_t *dbtypes, void **values)
+{
+    char *errmsg = NULL;
+    int *len = NULL; /* array of lengths */
+    int tmp[10 + MAXARG];
+    int tc;
+    int vc;
+    int sum;
+    char *str = NULL;
+    char *buffer[MAXARG];
+    char *pBuf = NULL;
+    void *stmntDup = NULL;
+    int iArg;
+    int iExe;
+    struct iovec *vec = NULL; /* struct iovec is a struct with two fields: the address of a buffer, and the length, in bytes, of the buffer. */
+    
+    tc = 0;
+    vc = 0;
+    len = malloc(nexes * sizeof(int)); /* one per execution of the prepared statement (one per exe). */
+    XASSERT(len);
+    vec = malloc((4 + nargs * 3) * sizeof(struct iovec)); /* The maximum number of needed vecs is three per placeholder (if all placeholders were strings).
+                                                           * One for the data types of the placeholders, one for
+                                                           * And there are four other vectors used to hold the length of the db statement, the db statement,
+                                                           * the number of statement exes, and the number of statement placeholders.
+                                                           */
+    XASSERT(vec);
+
+    stmntDup = (void *)strdup(stmnt);
+    XASSERT(stmntDup);
+    
+    /* Store the db statement. */
+    vec[1].iov_len = strlen(stmntDup);
+    vec[1].iov_base = stmntDup;
+    
+    /* Store the length of the db statement (in network-byte order). */
+    tmp[tc] = ntohl(vec[1].iov_len);
+    vec[0].iov_len =  sizeof(tmp[tc]);
+    vec[0].iov_base = &tmp[tc];
+    ++tc;
+    vc += 2;
+    
+    /* Store the number of statement exes. */
+    tmp[tc] = htonl(nexes);
+    vec[vc].iov_len =  sizeof(tmp[tc]);
+    vec[vc].iov_base = &tmp[tc];
+    ++tc; ++vc;
+    
+    /* Store the number of placeholders. */
+    tmp[tc] = htonl(nargs);
+    vec[vc].iov_len =  sizeof(tmp[tc]);
+    vec[vc].iov_base = &tmp[tc];
+    ++tc;
+    ++vc;
+    
+    /* Store the data types of the placeholders. */
+    for (iArg = 0; iArg < nargs; iArg++)
+    {
+        tmp[tc] = htonl((int)dbtypes[iArg]);
+        vec[vc].iov_len =  sizeof(tmp[tc]);
+        vec[vc].iov_base = &tmp[tc];
+        ++tc;
+        ++vc;
+    }
+    
+    for (iArg = 0; iArg < nargs; iArg++)
+    {
+        if (dbtypes[iArg] == DB_STRING || dbtypes[iArg] == DB_VARCHAR)
+        {
+            /* Count the number of BYTES of all nexes strings. The data for each placeholder resides in a C row (values[iArg]). The
+             * nexes strings are stored linearly in the row, separated by '\0's. */
+            sum = 0;
+            for (iExe = 0; iExe < nexes; iExe++)
+            {
+                str = ((char **)values[iArg])[iExe];
+                if (str)
+                {
+                    len[iExe] = strlen(str);
+                }
+                else
+                {
+                    len[iExe] = 0;
+                }
+                
+                sum += len[iExe] + 1; /* One extra byte for a NULL char at the end of each iExe's string.
+                                       * The nexes strings will be stored in an iovec with NULL chars separating them,
+                                       * just as they are stored in the values array. */
+            }
+            
+            /* Store the byte length of the placeholder data. */
+            tmp[tc] = htonl(sum);
+            vec[vc].iov_len = sizeof(tmp[tc]);
+            vec[vc].iov_base = &tmp[tc];
+            ++tc;
+            ++vc;
+            
+            /* Store the nexes strings for the placeholder, one after another, in the packet to be pushed into the socket. */
+            buffer[iArg] = malloc(sum);
+            XASSERT(buffer[iArg]);
+            pBuf = buffer[iArg];
+            for (iExe = 0; iExe < nexes; iExe++)
+            {
+                memcpy(pBuf, ((char **)values[iArg])[iExe], len[iExe]);
+                pBuf += len[iExe];
+                *pBuf++ = 0;
+            }
+            
+            vec[vc].iov_len = sum;
+            vec[vc].iov_base = buffer[iArg];
+            ++vc;
+        }
+        else
+        {
+            /* Store the nexes data values for the placeholder. */
+            buffer[iArg] = NULL;
+            db_hton(dbtypes[iArg], nexes, values[iArg]);
+            vec[vc].iov_len = db_sizeof(dbtypes[iArg]) * nexes;
+            vec[vc].iov_base = values[iArg];
+            ++vc;
+        }
+    }
+    
+    /* Push the iovec array into the socket. */
+    Writevn(sockfd, vec, vc);
+
+    free(stmntDup);
+    free(vec);
+    free(len);
+    
+    for (iArg = 0; iArg < nargs; iArg++)
+    {
+        if (buffer[iArg])
+        {
+            free(buffer[iArg]);
+            buffer[iArg] = NULL;
+        }
+        
+        if (!(dbtypes[iArg] == DB_STRING || dbtypes[iArg] == DB_VARCHAR))
+        {
+            db_ntoh(dbtypes[iArg], nexes, values[iArg]);
+        }
+    }
+    
+    /* Pull the results out of the socket. */
+    return db_recv_binary_query_ntuple(sockfd, &errmsg);
+}
 
 int db_client_dms(int sockfd, int *row_count, char *query)
 {

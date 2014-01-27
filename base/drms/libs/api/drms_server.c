@@ -1003,6 +1003,16 @@ void *drms_server_thread(void *arg)
 	printf("thread %d: Executing DRMS_BINQUERY_ARRAY.\n",tnum);
       status = db_server_query_bin_array(sockfd, db_handle);
       break;
+        case DRMS_BINQUERY_NTUPLE:
+        {
+            if (env->verbose)
+            {
+                printf("thread %d: Executing DRMS_BINQUERY_NTUPLE.\n", tnum);
+            }
+            
+            status = db_server_query_bin_ntuple(sockfd, db_handle);
+            break;
+        }
     case  DRMS_ALLOC_RECNUM:
       if (env->verbose)
 	printf("thread %d: Executing DRMS_ALLOC_RECNUM.\n",tnum);

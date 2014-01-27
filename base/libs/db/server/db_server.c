@@ -374,12 +374,153 @@ int db_server_query_bin_array(int sockfd, DB_Handle_t *db_handle)
     else
     {
       fprintf(stderr,"Query failed, check query string.\n");
+        
+        /* I think this is a bug. On error, I believe that -1 should be pushed into the socket. On error, 
+         * db_recv_binary_query() is expecting -1, not 0. But I don't want to change something that 
+         * "has been working" for several years.
+         *
+         *   -Art 2014/01/24 */
       Writeint(sockfd, 0);
     }
     free(query);
   }
 
   return status;  
+}
+
+int db_server_query_bin_ntuple(int sockfd, DB_Handle_t *db_handle)
+{
+    DB_Binary_Result_t **result = NULL;
+    DB_Binary_Result_t *exeResult = NULL;
+    int tmp;
+    int len;
+    char *stmnt = NULL;
+    int nexes;
+    int nargs;
+    int iExe;
+    int iArg;
+    DB_Type_t dbtypes[MAXARG];
+    void *values[MAXARG];
+    char *buffer[MAXARG];
+    char *pBuf = NULL;
+    int status = -1;
+    
+    /* Read the length of the db statement. */
+    if (Readn(sockfd, &tmp, sizeof(int)) == sizeof(int))
+    {
+        /* Read the db statement. */
+        len = ntohl(tmp);
+        stmnt = calloc(len + 1, sizeof(char));
+        XASSERT(stmnt);
+        Readn(sockfd, stmnt, len);
+
+        /* Read the number of statement exes.*/
+        nexes = Readint(sockfd);
+        
+        /* Read the number of placeholders. */
+        nargs = Readint(sockfd);
+        
+        /* Read the data types of the placeholders. */
+        for (iArg = 0; iArg < nargs; iArg++)
+        {
+            dbtypes[iArg] = (DB_Type_t)Readint(sockfd);
+        }
+        
+        /* Read the placeholder values. */
+        for (iArg = 0; iArg < nargs; iArg++)
+        {
+            if (dbtypes[iArg] == DB_STRING || dbtypes[iArg] == DB_VARCHAR)
+            {
+                /* Read the length of the string of placeholder string values, and allocate a buffer that size. */
+                len = Readint(sockfd);
+                buffer[iArg] = calloc(len, sizeof(char));
+                XASSERT(buffer[iArg]);
+                values[iArg] = calloc(nexes, sizeof(void *));
+                XASSERT(values[iArg]);
+                
+                /* Read the string of placeholder string values into the buffer. */
+                Readn(sockfd, buffer[iArg], len);
+                pBuf = buffer[iArg];
+                
+                /* Put the placholder strings into the values[iArg] array. */
+                for (iExe = 0; iExe < nexes; iExe++)
+                {
+                    ((char **)values[iArg])[iExe] = pBuf;
+                    while(*pBuf)
+                    {
+                        ++pBuf;
+                    }
+                    ++pBuf;
+                }
+            }
+            else
+            {
+                /* We do not need an additional buffer for non-string placeholder values. We just copy
+                 * in the data directly to values[iArg]. */
+                buffer[iArg] = NULL;
+
+                /* Allocate a buffer to hold the string containing the nexes placeholder values. */
+                len = nexes * db_sizeof(dbtypes[iArg]);
+                values[iArg] = calloc(len, sizeof(char));
+                XASSERT(values[iArg]);
+                Readn(sockfd, values[iArg], len);
+                db_ntoh(dbtypes[iArg], nexes, values[iArg]);
+            }
+        }
+        
+        result = db_query_bin_ntuple(db_handle, stmnt, nexes, nargs, dbtypes, values);
+        
+        if (result)
+        {
+            /* Send the number of DB_Binary_Result_t structs being returned. */
+            Writeint(sockfd, nexes);
+            
+            /* Send nexes DB_Binary_Result_t structs. */
+            status = 0; /* Assume success - a failure will short the loop and set status to -1. */
+            for (iExe = 0; iExe < nexes; iExe++)
+            {
+                exeResult = result[iExe];
+                if (db_send_binary_result(sockfd, exeResult, 0))
+                {
+                    fprintf(stderr, "Transmission of binary result failed.\n");
+                    status = -1;
+                    db_free_binary_result(exeResult);
+                    
+                    /* The client will interpret a -1 as an error. */
+                    Writeint(sockfd, -1);
+                    break;
+                }
+                
+                db_free_binary_result(exeResult);
+            }
+        }
+        else
+        {
+            fprintf(stderr, "Prepared statement failed: %s.\n", stmnt);
+            status = -1;
+            
+            /* The client will interpret a -1 as an error. */
+            Writeint(sockfd, -1);
+        }
+        
+        /* Free temporary buffers. */
+        free(stmnt);
+        
+        for (iArg = 0; iArg < nargs; iArg++)
+        {
+            if (buffer[iArg])
+            {
+                free(buffer[iArg]);
+            }
+            
+            if (values[iArg])
+            {
+                free(values[iArg]);
+            }
+        }        
+    }
+
+    return status;
 }
 
 

@@ -201,6 +201,7 @@ DB_Binary_Result_t *db_query_binv(DB_Handle_t  *dbin, char *query, ...);
 DB_Binary_Result_t *db_query_bin_array(DB_Handle_t  *dbin, 
 				        char *query, int n_args,
 				       DB_Type_t *intype, void **argin );
+DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, unsigned int nelems, unsigned int nargs, DB_Type_t *dbtypes, void **values);
 		
 
 /* Functions for extraction the field values from a binary table. */
@@ -319,6 +320,7 @@ void db_byteswap(DB_Type_t dbtype, int n, char *val);
 int db_server_query_txt(int sockfd, DB_Handle_t *db_handle);
 int db_server_query_bin(int sockfd, DB_Handle_t *db_handle);
 int db_server_query_bin_array(int sockfd, DB_Handle_t *db_handle);
+int db_server_query_bin_ntuple(int sockfd, DB_Handle_t *db_handle);
 int db_server_dms(int sockfd, DB_Handle_t *db_handle);
 int db_server_dms_array(int sockfd, DB_Handle_t *db_handle);
 int db_server_bulk_insert_array(int sockfd, DB_Handle_t *db_handle);
@@ -339,7 +341,7 @@ DB_Binary_Result_t *db_client_query_bin(int sockfd, char *query,
 DB_Binary_Result_t *db_client_query_bin_array(int sockfd, char *query, 
 					      int compress, int n_args,  
 					      DB_Type_t *intype, void **argin);
-DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, unsigned int nelems, unsigned int nargs, DB_Type_t *dbtypes, void **values);
+DB_Binary_Result_t **db_client_query_bin_ntuple(int sockfd, const char *stmnt, unsigned int nexes, unsigned int nargs, DB_Type_t *dbtypes, void **values);
 int db_client_dmsv(int sockfd,  int *row_count, char *query, 
 		   int n_rows, ...);
 int db_client_dms_array(int sockfd,  int *row_count, char *query, 
