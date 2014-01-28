@@ -5878,7 +5878,42 @@ static int processFetchedRecs(DB_Binary_Result_t *dbres, const char *oSeries, DR
     return istat;
 }
 
-
+int mergePreparedResults(DRMS_RecordSet_t **rvMerge, DRMS_RecordSet_t *rv)
+{
+    int istat = DRMS_SUCCESS;
+    int iRec;
+    
+    if (rvMerge && rv)
+    {
+        if (!*rvMerge)
+        {
+            /* Must create a new empty record-set and then merge the records from rv and rvSupp into the new
+             * record-set. */
+            *rvMerge = calloc(1, sizeof(DRMS_RecordSet_t));
+        }
+        
+        if (*rvMerge)
+        {
+            for (iRec = 0; iRec < rv->n; iRec++)
+            {
+                drms_merge_record(*rvMerge, rv->records[iRec]);
+                rv->records[iRec] = NULL; /* Relinquish ownership to rvMerge. */
+            }
+            
+            drms_close_records(rv, DRMS_FREE_RECORD);
+        }
+        else
+        {
+            istat = DRMS_ERROR_OUTOFMEMORY;
+        }
+    }
+    else
+    {
+        istat = DRMS_ERROR_INVALIDDATA;
+    }
+    
+    return istat;
+}
 
 /* This function operates on multiple target series. */
 DRMS_RecordSet_t *callRetrieveRecsPreparedQuery(DRMS_Env_t *env, HContainer_t *mapTseriesReclist, int *status)
@@ -5892,6 +5927,7 @@ DRMS_RecordSet_t *callRetrieveRecsPreparedQuery(DRMS_Env_t *env, HContainer_t *m
     
     DRMS_RecordSet_t *rv = NULL;
     DRMS_RecordSet_t *rvSupp = NULL;
+    DRMS_RecordSet_t *rvMerge = NULL;
     size_t stsz;
     char *sql = NULL;
     HIterator_t *iterTseries = NULL;
@@ -6003,7 +6039,16 @@ DRMS_RecordSet_t *callRetrieveRecsPreparedQuery(DRMS_Env_t *env, HContainer_t *m
                         iRec++;
                     }
                     
-                    rv = drms_retrieve_records_prepared_query(env, seriesGet, templRec, sql, NULL, (unsigned int)nExe, NUM_ARGS, intype, (void **)argin, &istat);
+                    if (istat == DRMS_SUCCESS)
+                    {
+                        rv = drms_retrieve_records_prepared_query(env, seriesGet, templRec, sql, NULL, (unsigned int)nExe, NUM_ARGS, intype, (void **)argin, &istat);
+                        
+                        istat = mergePreparedResults(&rvMerge, rv);
+                        if (istat != DRMS_SUCCESS)
+                        {
+                            break;
+                        }
+                    }
                     
                     for (iArg = 0; iArg < NUM_ARGS; iArg++)
                     {
@@ -6059,46 +6104,19 @@ DRMS_RecordSet_t *callRetrieveRecsPreparedQuery(DRMS_Env_t *env, HContainer_t *m
                             iRec++;
                         }
                         
-                        sql = base_strcatalloc(sql, ")", &stsz);
+                        if (istat == DRMS_SUCCESS)
+                        {
+                            sql = base_strcatalloc(sql, ")", &stsz);
+                            
+                            rvSupp = drms_retrieve_records_internal(env, seriesGet, NULL, NULL, NULL, 0, 0, NULL, sql, 0, 0, NULL, NULL, 0, 0, &istat);
+                            
+                            istat = mergePreparedResults(&rvMerge, rvSupp);
+                            if (istat != DRMS_SUCCESS)
+                            {
+                                break;
+                            }
+                        }
                         
-                        rvSupp = drms_retrieve_records_internal(env, seriesGet, NULL, NULL, NULL, 0, 0, NULL, sql, 0, 0, NULL, NULL, 0, 0, &istat);
-                        if (!rv)
-                        {
-                            rv = rvSupp;
-                        }
-                        else
-                        {
-                            /* Must merge the resulting of the following command with the results in rv. */
-                            
-                            /* Must create a new empty record-set and then merge the records from rv and rvSupp into the new
-                             * record-set. */
-                            DRMS_RecordSet_t *rvMerge = calloc(1, sizeof(DRMS_RecordSet_t));
-                            
-                            if (rvMerge)
-                            {
-                                for (iRec = 0; iRec < rv->n; iRec++)
-                                {
-                                    drms_merge_record(rvMerge, rv->records[iRec]);
-                                    rv->records[iRec] = NULL; /* Relinquish ownership to rvMerge. */
-                                }
-                                
-                                drms_close_records(rv, DRMS_FREE_RECORD);
-                                
-                                for (iRec = 0; iRec < rvSupp->n; iRec++)
-                                {
-                                    drms_merge_record(rvMerge, rvSupp->records[iRec]);
-                                    rvSupp->records[iRec] = NULL; /* Relinquish ownership to rvMerge. */
-                                }
-                                
-                                drms_close_records(rvSupp, DRMS_FREE_RECORD);
-                                
-                                rv = rvMerge;
-                            }
-                            else
-                            {
-                                istat = DRMS_ERROR_OUTOFMEMORY;
-                            }
-                        }
                         
                         free(sql);
                         sql = NULL;
@@ -6115,7 +6133,7 @@ DRMS_RecordSet_t *callRetrieveRecsPreparedQuery(DRMS_Env_t *env, HContainer_t *m
                 free(colList);
                 colList = NULL;
             }
-        }
+        } /* Loop on target series. */
         
         hiter_destroy(&iterTseries);
     }
@@ -6126,15 +6144,15 @@ DRMS_RecordSet_t *callRetrieveRecsPreparedQuery(DRMS_Env_t *env, HContainer_t *m
     
     if (istat == DRMS_SUCCESS)
     {
-        rv->ss_currentrecs = (int *)malloc(sizeof(int));
+        rvMerge->ss_currentrecs = (int *)malloc(sizeof(int));
         
-        /* Users should not use rv (a record-set of linked records) directly, so all the ss_* fields do not matter, and we can consider
-         * the record-set as originating from a single series (but in fact they could have derived from multiple series). The only
-         * ss_* field that does matter is ss_currentrecs, which is used by drms_recordset_fetchnext() for iteration over the records .
-         * DRMS, not clients, will use this function to iterate over records. */
-        if (rv->ss_currentrecs)
+        /* Users should not use rvMerge (a record-set of linked records) directly, so all the ss_* fields do not matter, and we can consider the 
+         * record-set as originating from a single series (but in fact they could have derived from multiple series). The only ss_* field that 
+         * does matter is ss_currentrecs, which is used by drms_recordset_fetchnext() for iteration over the records. DRMS, not clients, 
+         * will use this function to iterate over records. */
+        if (rvMerge->ss_currentrecs)
         {
-            *rv->ss_currentrecs = -1;
+            *rvMerge->ss_currentrecs = -1;
         }
         else
         {
@@ -6147,7 +6165,7 @@ DRMS_RecordSet_t *callRetrieveRecsPreparedQuery(DRMS_Env_t *env, HContainer_t *m
         *status = istat;
     }
     
-    return rv;
+    return rvMerge;
 }
 
 /* This function iterates through recordset and finds all linked records. recordset could contain

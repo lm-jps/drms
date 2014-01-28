@@ -603,7 +603,17 @@ DB_Binary_Result_t *db_query_bin_array(DB_Handle_t  *dbin,
 	 string. Add it manually by setting size one larger. */
       if ( db_res->column[i].type == DB_STRING || 
 	   db_res->column[i].type == DB_VARCHAR )
-	(db_res->column[i].size)++;
+        {
+            (db_res->column[i].size)++;
+        }
+        else
+        {
+            /* Make sure that db_res->column[i].size != 0. */
+            if (db_res->column[i].size == 0)
+            {
+                db_res->column[i].size = db_sizeof(db_res->column[i].type);
+            }
+        }
       
       db_res->column[i].data = malloc(db_res->num_rows * db_res->column[i].size);
       XASSERT(db_res->column[i].data);
@@ -938,6 +948,33 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
                                 }
                                 
                                 /* The column size is the max(width of row). */
+                                
+                                /* I grabbed this code from db_query_bin_array(), and apparently it has a bug. This method
+                                 * for determining the width of a column should apply to strings only. For numbers,
+                                 * the width of a column is determined by the data type. For example, if the data type
+                                 * is char, then size == 1 and if it is int, then size = 4.
+                                 *
+                                 * Ah, I found this code/comment in db_query_bin():
+                                 *
+                                 if (db_res->column[i].size == 0)
+                                 {
+                                   / If you malloc(0), then free() the resulting pointer, you get a crash,
+                                   * so make the size at least 1 (even though it won't be used).
+                                   * This is the simplest fix for something that should happen
+                                   * very often.
+                                   *
+                                   * size == 0 if the columns of data are all NULL, which can happen
+                                   * since we don't have the 'not null' modifier set on our table columns.
+                                   /
+                                   db_res->column[i].size = db_sizeof(db_res->column[i].type);
+                                 }
+                                 *
+                                 * The comment itself isn't 100% correct, but the gist of it agrees with my comment.
+                                 * The problem can happen with numbers only.
+                                 * 
+                                 * -Art 2014/01/28
+                                 */
+                                
                                 dbres->column[icol].size = 0;
                                 for (irow = 0; irow < dbres->num_rows; irow++)
                                 {
@@ -953,6 +990,14 @@ DB_Binary_Result_t **db_query_bin_ntuple(DB_Handle_t *dbin, const char *stmnt, u
                                 if (dbres->column[icol].type == DB_STRING || dbres->column[icol].type == DB_VARCHAR)
                                 {
                                     (dbres->column[icol].size)++;
+                                }
+                                else
+                                {
+                                    /* Make sure that dbres->column[icol].size != 0. */
+                                    if (dbres->column[icol].size == 0)
+                                    {
+                                        dbres->column[icol].size = db_sizeof(dbres->column[icol].type);
+                                    }
                                 }
                                 
                                 dbres->column[icol].data = malloc(dbres->num_rows * dbres->column[icol].size);
