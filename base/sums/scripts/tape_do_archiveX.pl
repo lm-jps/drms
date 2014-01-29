@@ -9,7 +9,8 @@ use lib "$RealBin/../../../localization";
 use drmsparams;
 
 #$MAXFORKS = 7;		#max tapearcX forks (i.e. limit of drives to write)
-$MAXFORKS = 6;		#max tapearcX forks (i.e. limit of drives to write)
+#$MAXFORKS = 6;		#max tapearcX forks (i.e. limit of drives to write)
+$MAXFORKS = 4;         #Temporary workaround until aia.lev1 archiving finished. Return to 6 when done - Hao
 $CURRFORKS = 0;
 $nochild = 0;
 
@@ -134,13 +135,7 @@ sub forkarc {
 $ARCHPROBE = "/home/production/cvs/JSOC/proj/util/scripts/archprobe.pl";
 $ARCHFILEDIR = "/usr/local/logs/manifest";  #!!!TEMP noop
 #$ARCHFILEDIR = "/usr/local/logs/manifest_test"; #!!TEMP for testing
-<<<<<<< tape_do_archiveX.pl
-#$HOSTDB = "hmidb";      #host where DB runs
 $HOSTDB = drmsparams::SUMS_DB_HOST;      #host where DB runs
-#$ENV{'SUMSERVER'} = drmsparams::SUMSERVER;
-=======
-$HOSTDB = drmsparams::SUMS_DB_HOST;      #host where DB runs
->>>>>>> 1.5
 $FAST = 0;
 while ($ARGV[0] =~ /^-/) {
   $_ = shift;
@@ -196,6 +191,9 @@ if(!($PGPORT = $ENV{'SUMPGPORT'})) {
   $i = 0;
   while ( @row = $sth->fetchrow() ) {	#do for all groups
     $group = shift(@row);
+if($group == 666) {
+  print "group $group\n"; #!!TEMP
+}
     $waitdays = shift(@row);
     $sec1970 = shift(@row);
     $date = shift(@row);
