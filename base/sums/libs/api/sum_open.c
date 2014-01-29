@@ -64,6 +64,7 @@ static SVCXPRT *transp[MAXSUMOPEN];
 static SUMID_t transpid[MAXSUMOPEN];
 static int numopened = 0;
 static int numSUM = 0;
+static int taperdon_cleared = 0;
 //KEY *infoparams;
 
 int rr_random(int min, int max)
@@ -1407,6 +1408,12 @@ int SUM_close(SUM_t *sum, int (*history)(const char *fmt, ...))
   setkey_int(&klist, "DEBUGFLG", sum->debugflg);
   setkey_int(&klist, "REQCODE", CLOSEDO);
   setkey_str(&klist, "USER", sum->username);
+  //printf("!!!TEMP In SUM_close() sum->mode=%x %d\n", sum->mode, sum->mode);
+  if(sum->mode & TAPERDON) {
+    if(!taperdon_cleared) {		//tape rd is still active. Notify sum_svc
+      setkey_int(&klist, "TAPERDACTIVE", 1);
+    }
+  }
   bzero((char *)&res, sizeof(res));
   //Use the same process that we opened with
   clprev = clclose;
@@ -1550,7 +1557,7 @@ int SUM_get(SUM_t *sum, int (*history)(const char *fmt, ...))
   KEY *klist;
   char *call_err;
   char **cptr;
-  int i, cnt, msgstat;
+  int i, cnt, msgstat, stat, xmode;
   char dsix_name[64];
   uint64_t *dxlong;
   uint32_t retstat;
@@ -1604,6 +1611,9 @@ int SUM_get(SUM_t *sum, int (*history)(const char *fmt, ...))
     clget = sum->clget7;
     break;
   }
+  sum->mode = sum->mode + TAPERDON; //set in case get ^C during call
+  stat = TAPERDON;
+  xmode = -stat-1;		//mask to clear bit
   clprev = clget;
   status = clnt_call(clget, GETDO, (xdrproc_t)xdr_Rkey, (char *)klist,
                       (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
@@ -1614,6 +1624,7 @@ int SUM_get(SUM_t *sum, int (*history)(const char *fmt, ...))
   */
   if(status != RPC_SUCCESS) {
     if(status != RPC_TIMEDOUT) {
+      sum->mode = sum->mode & xmode;  //clear TAPERDON bit
       call_err = clnt_sperror(clget, "Err clnt_call for GETDO");
       (*history)("%s %d %s\n", datestring(), status, call_err);
       freekeylist(&klist);
@@ -1626,8 +1637,15 @@ int SUM_get(SUM_t *sum, int (*history)(const char *fmt, ...))
   if(sum->debugflg) {
     (*history)("retstat in SUM_get = %ld\n", retstat);
   }
-  if(retstat == 1) return(1);			 /* error occured */
-  if(retstat == RESULT_PEND) return((int)retstat); /* caller to check later */
+  if(retstat == 1) {
+    sum->mode = sum->mode & xmode;  //clear TAPERDON bit
+    return(1);			 /* error occured */
+  }
+  if(retstat == RESULT_PEND) {
+    //sum->mode = sum->mode + TAPERDON;	//already set now
+    return((int)retstat); /* caller to check later */
+  }
+  sum->mode = sum->mode & xmode;  //clear TAPERDON bit
   msgstat = getanymsg(1);	/* answer avail now */
   if(msgstat == ERRMESS) return(ERRMESS);
   if(sum->debugflg) {
@@ -1912,10 +1930,16 @@ int SUM_delete_series(char *filename, char *seriesname, int (*history)(const cha
 */
 int SUM_poll(SUM_t *sum) 
 {
-  int stat;
+  int stat, xmode;
 
   stat = getanymsg(0);
-  if(stat == RPCMSG) return(0);		/* all done ok */
+  if(stat == RPCMSG) {
+    //stat = TAPERDON;
+    //xmode = -stat-1;
+    //sum->mode = sum->mode & xmode;  //clear TAPERDON bit. !!NO
+    taperdon_cleared = 1;
+    return(0);		/* all done ok */
+  }
   else return(stat);
 }
 
@@ -1927,7 +1951,7 @@ int SUM_poll(SUM_t *sum)
 */
 int SUM_wait(SUM_t *sum) 
 {
-  int stat;
+  int stat, xmode;
 
   while(1) {
     stat = getanymsg(0);
@@ -1937,7 +1961,13 @@ int SUM_wait(SUM_t *sum)
     }
     else break;
   }
-  if(stat == RPCMSG) return(0);		/* all done ok */
+  if(stat == RPCMSG) {
+    //stat = TAPERDON;
+    //xmode = -stat-1;
+    //sum->mode = sum->mode & xmode;  //clear TAPERDON bit !!NO
+    taperdon_cleared = 1;
+    return(0);		/* all done ok */
+  }
   else return(stat);
 }
 
@@ -2427,6 +2457,9 @@ KEY *respdo_1(KEY *params)
     dsindex = getkey_uint64(params, "ds_index");
     *cptr = wd;
     *dsixpt = dsindex;
+    if(findkey(params, "ERRSTR")) {
+      printf("%s\n", GETKEY_str(params, "ERRSTR"));
+    }
     break;
   case GETDO:
     for(i = 0; i < reqcnt; i++) {
