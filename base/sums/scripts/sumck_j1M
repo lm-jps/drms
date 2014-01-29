@@ -5,6 +5,11 @@
 #If not it will restart things as appropriate.
 #This is started by sum_start_j1.MULTI.
 #
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
+
+$hostdb = drmsparams::SUMS_DB_HOST;
 $| = 1;                 #flush output as we go
 $SSLOG = "/usr/local/logs/SUM/sum_start_stop.log";
 
@@ -131,7 +136,7 @@ while(1) {
       else {
         print SLOG "START: AUTO $p: $date\n";
         $sql = "select max(ds_index) from sum_main";
-        $pcmd = "echo \"$sql\" | psql -q -h hmidb -p 5434 jsoc_sums";
+        $pcmd = "echo \"$sql\" | psql -q -h $hostdb -p 5434 jsoc_sums";
         @maxi = `$pcmd`;
         $maxindex = @maxi[2];
         print SLOG "START: AUTO: $maxindex\n";
