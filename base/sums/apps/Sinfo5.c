@@ -306,6 +306,7 @@ int main(int argc, char *argv[])
   pid_t pid;
   char dsvcname[80], cmd[128];
   char *args[5], pgport[32];
+  char *simmode;
 
   get_cmd(argc, argv);
   printf("\nPlease wait for sum_svc and tape inventory to initialize...\n");
@@ -327,10 +328,14 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-  if(strcmp(hostn, "n02") && strcmp(hostn, "xim")) {  //!!TEMP for not n02, xim
+  //if(strcmp(hostn, "n02") && strcmp(hostn, "xim")) {  //!!TEMP for not n02, xim
+  if(!(simmode = (char *)getenv("SUMSIMMODE"))) {
       sprintf(pgport, SUMPGPORT);
       setenv("SUMPGPORT", pgport, 1); //connect to 5430,5431, or 5434
-      write_log("sum_svc sets SUMPGPORT env to %s\n", pgport);
+      write_log("Sinfo5 sets SUMPGPORT env to %s\n", pgport);
+  }
+  else {
+      write_log("Sinfo5 sim mode SUMPGPORT %s\n", (char *)getenv("SUMPGPORT"));
   }
 
 #ifndef __LOCALIZED_DEFS__
