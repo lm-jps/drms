@@ -1,5 +1,4 @@
-eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
-    if 0;
+#!/usr/bin/perl
 #
 #/home/production/cvs/JSOC/base/sums/scripts/t950view
 #Perl/Tk gui for use with tape_svc for Spectra-Logic T950.
@@ -55,7 +54,8 @@ tie %Hofneed, "Tie::IxHash"; #lets you take out keys in input order
 #NOTE: must have our full path name here for any restart signaled by sum_svc
 $OURPATH = "/home/production/cvs/JSOC/base/sums/scripts/t950view"; #!!this program
 
-$TAPEHOST = "d02.Stanford.EDU";	#machine where tape_svc log file is
+#$TAPEHOST = "d02.Stanford.EDU";	#machine where tape_svc log file is
+$TAPEHOST = "k1.stanford.edu";	#machine where tape_svc log file is
 $DEFAULTDB = "hmidbX";		#default DB
 $HOSTDB = drmsparams::SUMS_DB_HOST;		#host where DB runs
 $NOTAPEARC = "/usr/local/logs/soc/NOTAPEARC";
@@ -144,26 +144,25 @@ if(-e $runtag) {        #this user already running
   exit(1);
 }
 
-@pst950 = `ps -ef | grep sum_svc`;
-#@sumsvc = grep(/hmidb/, @pst950);
-#if($line = shift(@sumsvc)) {
-while($line = shift(@pst950)) {
-  ($x, $sumdb) = split(/sum_svc /, $line); 
-  if($sumdb) {
-    chomp($sumdb);
-    if($sumdb =~ /-s/) {
-      ($x, $sumdb) = split(/ /, $sumdb); #ignore any sim -s flag
-    }
-    if($sumdb ne $DB) {
-      print "t950view db=$DB does not match running sum_svc=$sumdb\n";
-      exit;
-    }
-    last;
-  }    
+@pst950 = `ps -ef | grep tape_svc`;
+$findline = "tape_svc $DB";
+if(!grep(/$findline/,  @pst950)) {
+  print "t950view db=$DB does not match running sums\n";
+  exit;
 }
-#if($sumdb ne $DB) {
-#  print "t950view db=$DB does not match that of the running sum_svc=$sumdb\n";
-#  exit;
+#while($line = shift(@pst950)) {
+#  ($x, $sumdb) = split(/sum_svc /, $line); 
+#  if($sumdb) {
+#    chomp($sumdb);
+#    if($sumdb =~ /-s/) {
+#      ($x, $sumdb) = split(/ /, $sumdb); #ignore any sim -s flag
+#    }
+#    if($sumdb ne $DB) {
+#      print "t950view db=$DB does not match running sum_svc=$sumdb\n";
+#      #exit;  #NOOP for now until can fix
+#    }
+#    last;
+#  }    
 #}
 
 if($interactive && !$restartmode) {

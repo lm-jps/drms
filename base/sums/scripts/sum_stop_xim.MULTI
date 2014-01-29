@@ -143,7 +143,7 @@ SKIP:
   @ps_prod = `ps -ef | grep $GREPPS`;
 
   #All possible sums processes to stop
-  @spawn = (xsum_svc, Sdelser, Sinfo, Sinfo1, Sinfo2, Sinfo3, Sinfo4, Sinfo5, Sinfo6, Sinfo7, Sput, Sput1, Sput2, Sput3, Sput4, Sput5, Sput6, Sput7, Sget, Sget1, Sget2, Sget3, Sget4, Sget5, Sget6, Sget7, Salloc, Salloc1, Salloc2, Salloc3, Salloc4, Salloc5, Salloc6, Salloc7, Sopen, Sopen1, Sopen2, Sopen3, Sopen4, Sopen5, Sopen6, Sopen7, xtape_svc, xdrive0_svc, xdrive1_svc, xdrive2_svc, xdrive3_svc, xdrive4_svc, xdrive5_svc, xdrive6_svc, xdrive7_svc, xdrive8_svc, xdrive9_svc, xdrive10_svc, xdrive11_svc, robot0_svc);
+  @spawn = (xsum_svc, Sdelser, Sinfo, Sinfo1, Sinfo2, Sinfo3, Sinfo4, Sinfo5, Sinfo6, Sinfo7, Sput, Sput1, Sput2, Sput3, Sput4, Sput5, Sput6, Sput7, Sget, Sget1, Sget2, Sget3, Sget4, Sget5, Sget6, Sget7, Salloc, Salloc1, Salloc2, Salloc3, Salloc4, Salloc5, Salloc6, Salloc7, Sopen, Sopen1, Sopen2, Sopen3, Sopen4, Sopen5, Sopen6, Sopen7, xtape_svc, xdrive0_svc, xdrive1_svc, xdrive2_svc, xdrive3_svc, xdrive4_svc, xdrive5_svc, xdrive6_svc, xdrive7_svc, xdrive8_svc, xdrive9_svc, xdrive10_svc, xdrive11_svc, xrobot0_svc);
 
   #first do sumck_ximM
   @line = grep(/sumck_ximM/, @ps_prod);

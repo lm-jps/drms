@@ -56,8 +56,8 @@ if(!$numsum) {
 }
 
 #!!FORCE numsum to 1 for testing w/xtape_svc
-print "!!NOTE: this is the version of sum_start_xim.MULTI w/numsum=1\n";
-$numsum = 1;
+#print "!!NOTE: this is the version of sum_start_xim.MULTI w/numsum=1\n";
+#$numsum = 1;
 
 print "Number of SUM process sets to spawn = $numsum\n";
 @def = grep(/^#define SUM_MAXNUMSUM/, @servdefs);
@@ -249,7 +249,7 @@ CKEND:
   print "** Now starting: xsum_svc $DB\n";
   print LOG "** Now starting: xsum_svc $DB\n";
   while($p = shift(@spawn)) {
-    $cmd = "$p $DB $sumlog &";
+    $cmd = "$p $DB $sumlog 1> /tmp/$p.log 2>&1 &";
     print "$cmd\n";
     if(system($cmd)) {
       print "Error: failure to spawn $p\n";
@@ -334,18 +334,18 @@ CKEND:
           print "Error: failure on $cmd\n";
         }
 	sleep 1;
-        $cmd = "robot0_svc $DB $dtag &";
+        $cmd = "xrobot0_svc $DB $dtag &";
         if(system($cmd)) {
           print "Error: failure on $cmd\n";
         }
 	sleep 1;
 
         #$cmd = "/home/production/cvs/JSOC/base/sums/scripts/sumck_ximM &";
-#Dont call this because we force $numsum = 1 above
-#        $cmd = "sumck_ximM &";
-#        if(system($cmd)) {
-#          print "Error: failure on sumck_ximM\n";
-#        }
+#Dont call this if we force $numsum = 1 above
+        $cmd = "sumck_ximM &";
+        if(system($cmd)) {
+          print "Error: failure on sumck_ximM\n";
+        }
         print "SUM xim MULTI Start Complete\n";
         print LOG "SUM xim MULTI Start Complete\n";
         close(LOG);

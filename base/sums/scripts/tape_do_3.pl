@@ -44,7 +44,8 @@ while(1) {			#keep it running for now
   $logfile = "/usr/local/logs/tapearc/tape_do_3_".$label;
   $cmd = "/home/production/cvs/JSOC/bin/linux_ia64/tapearc3 -v jsoc_sums";
   #$sleeptime = 3600;
-  $sleeptime = 120;
+  #$sleeptime = 120;
+  $sleeptime = 10;
   print "$cmd\n";
   if(system "$cmd 1> $logfile 2>&1") {
     print "Error on: $cmd\n";

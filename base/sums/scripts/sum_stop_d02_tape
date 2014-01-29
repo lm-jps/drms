@@ -102,18 +102,18 @@ while($_ = shift(@ps_prod)) {
       ($a, $psid, $c) = split(/\s+/, $_);
       $process = "robot0_svc";
     }
-    elsif(/sum_rm_0 $DB/) {			//also stop the sum_rm's
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "sum_rm_0";
-    }
-    elsif(/sum_rm_1 $DB/) {			//also stop the sum_rm's
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "sum_rm_1";
-    }
-    elsif(/sum_rm_2 $DB/) {			//also stop the sum_rm's
-      ($a, $psid, $c) = split(/\s+/, $_);
-      $process = "sum_rm_2";
-    }
+#    elsif(/sum_rm_0 $DB/) {			#also stop the sum_rm's
+#      ($a, $psid, $c) = split(/\s+/, $_);
+#      $process = "sum_rm_0";
+#    }
+#    elsif(/sum_rm_1 $DB/) {			#also stop the sum_rm's
+#      ($a, $psid, $c) = split(/\s+/, $_);
+#      $process = "sum_rm_1";
+#    }
+#    elsif(/sum_rm_2 $DB/) {			#also stop the sum_rm's
+#      ($a, $psid, $c) = split(/\s+/, $_);
+#      $process = "sum_rm_2";
+#    }
     elsif(/tapearcX /) {
       if(/manifest/) {
         ($a, $psid, $c) = split(/\s+/, $_);
