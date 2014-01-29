@@ -1,5 +1,4 @@
-eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
-    if 0;
+#!/usr/bin/perl
 #/home/production/cvs/JSOC/base/sums/scripts/sum_arch_recset.pl
 #
 #Takes a record set and marks all the storage units archive pending.
