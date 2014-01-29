@@ -5,6 +5,11 @@
 #Call with -M will not send mail notification.
 #Call with -f to force a stop if needed (vestigial). 
 #
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
+
+$hostdb = drmsparams::SUMS_DB_HOST;
 $| = 1;                 #flush output as we go
 $mailflg = 1;
 $forceflg = 0;
@@ -305,7 +310,7 @@ CKEND:
     else {
       print SLOG "START: MANUAL: $date\n";
       $sql = "select max(ds_index) from sum_main";
-      $pcmd = "echo \"$sql\" | psql -q -h hmidb -p 5434 jsoc_sums";
+      $pcmd = "echo \"$sql\" | psql -q -h $hostdb -p 5434 jsoc_sums";
       @maxi = `$pcmd`;
       $maxindex = @maxi[2];
       print SLOG "START: MANUAL: $maxindex\n";

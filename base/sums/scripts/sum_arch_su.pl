@@ -92,7 +92,7 @@ $addsec = 86400 * $TOUCH;    #sec in touch days
 $xeffdate = &reteffdate($addsec);
 #print "$xeffdate\n"; #!!TEMP
 
-$hostdb = $HOSTDB;      #host where Postgres runs
+#$hostdb = $HOSTDB;      #host where Postgres runs
 $user = $ENV{'USER'};
 if($user ne "production") {
   print "You must be user production to run\n";
@@ -100,9 +100,11 @@ if($user ne "production") {
 }
 
 if($DBIN eq "jim") {
+  $hostdb = drmsparams::SERVER;
   $PORTIN = 5432;
 }
 else {
+  $hostdb = drmsparams::SUMS_DB_HOST;
   $PORTIN = 5434;
 }
 

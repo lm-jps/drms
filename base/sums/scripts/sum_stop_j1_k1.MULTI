@@ -2,6 +2,11 @@
 #/home/production/cvs/JSOC/base/sums/scripts/sum_stop_j1_k1.MULTI
 #This is to stop the sum_svc and multiple related servers on j1.
 #
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
+
+$hostdb = drmsparams::SUMS_DB_HOST;
 $| = 1;                 #flush output as we go
 $mailflg = 1;
 $forceflg = 0;
@@ -196,7 +201,7 @@ if(!open(MLOG, ">>$SSLOG")) {           #record stop info
 else {
   print MLOG "STOP: MANUAL: $date\n";
   $sql = "select max(ds_index) from sum_main";
-  $pcmd = "echo \"$sql\" | psql -q -h hmidb -p 5434 jsoc_sums";
+  $pcmd = "echo \"$sql\" | psql -q -h $hostdb -p 5434 jsoc_sums";
   @maxi = `$pcmd`;
   $maxindex = @maxi[2];
   print MLOG "STOP: MANUAL: $maxindex\n";

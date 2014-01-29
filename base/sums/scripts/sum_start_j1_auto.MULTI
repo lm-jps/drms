@@ -6,6 +6,11 @@
 #Only called by sumck_j1M.
 #Call with -M will not send mail notification.
 #
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
+
+$hostdb = drmsparams::SUMS_DB_HOST;
 $| = 1;                 #flush output as we go
 $ENV{'SUMSERVER'} = "j1";      #make sure we stay in this machine
 $DB = "jsoc_sums";	#the "real" db that production uses for sums
@@ -67,7 +72,7 @@ print MLOG "See $LOGFILE for more details\n";
     else {
       print SLOG "START: AUTO: $date\n";
       $sql = "select max(ds_index) from sum_main";
-      $pcmd = "echo \"$sql\" | psql -q -h hmidb -p 5434 jsoc_sums";
+      $pcmd = "echo \"$sql\" | psql -q -h $hostdb -p 5434 jsoc_sums";
       @maxi = `$pcmd`;
       $maxindex = @maxi[2];
       print SLOG "START: AUTO: $maxindex\n";

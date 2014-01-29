@@ -11,6 +11,11 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S  $0 "$@"'
 #when it sees that sum_svc is
 #not running and we will now stop and restart all the SUMS processes.
 #
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
+
+$hostdb = drmsparams::SUMS_DB_HOST;
 $| = 1;                 #flush output as we go
 $ENV{'SUMSERVER'} = "j1";	#make sure we stay in this machine
 #$DB = "jim";	#the "real" db that production uses for sums
@@ -190,7 +195,7 @@ if(!open(MLOG, ">>$SSLOG")) {           #record stop info
 else {
   print MLOG "STOP: AUTO: $date\n";
   $sql = "select max(ds_index) from sum_main";
-  $pcmd = "echo \"$sql\" | psql -q -h hmidb -p 5434 jsoc_sums";
+  $pcmd = "echo \"$sql\" | psql -q -h $hostdb -p 5434 jsoc_sums";
   @maxi = `$pcmd`;
   $maxindex = @maxi[2];
   print MLOG "STOP: AUTO: $maxindex\n";
