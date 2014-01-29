@@ -71,12 +71,27 @@ $mix = $mox - 1;
 $amonth = @mo[$mix];
 #print "Find data for $date\n";
 
+$j = 0;
 for($i = 0; $i < 3; $i++) {
   $cmpfile = "sum_rm.log_$i.$date";
   @lslog = `cd $D; /bin/ls sum_rm.log_$i.*`;
+  #NOTE!!: May have 2 formats of file name, e.g.
+  #sum_rm.log_0.2013.11.19.1339.0 and sum_rm.log_0.2013.11.19_10:15:42.0
+  #This resulted in users starting sum_rm by hand with a non-standard
+  #date format. If yet another format is used, this may no longer work.
+  while($_ = shift(@lslog)) { #fix up arrary so can sort properly
+    push(@svname, $_);		#save order before sort
+    chomp();
+    $_ =~ s/\_/\./g;
+    $sv = "$_"." $j";
+    $j++;
+    push(@lslogsort, $sv);
+  }
+  @lslog_sorted = sort @lslogsort;
   @leq = ();
-  while ($x = shift(@lslog)) {
-    chomp($x);
+  while ($x = shift(@lslog_sorted)) {
+    ($a, $ix) = split(/\s+/, $x); 
+    $x = @svname[$ix];
     $lfile = substr($x, 0, 23);  #get in form sum_rm.log_0.2012.07.20
     if($lfile lt $cmpfile) {
       $lastlt = $x;		#save the last lt file
