@@ -112,6 +112,7 @@ $mon2 = sprintf("%02d", $mon+1);
 $date = (1900 + $year).".".$mon2.".$mday2"._.$hour2.":$min2".":$sec2";
 $dtag = (1900 + $year).".".$mon2.".$mday2".".$hour2"."$min2"."$sec2"; #for log name
 $sumlog = "sum_svc_$dtag.log";
+$sumrmlog = "sum_rm_$dtag.log";
 print "sum_start.NetDRMS at $date\n\n";
 print LOG "sum_start.NetDRMS at $date\n\n";
 
@@ -122,6 +123,12 @@ print LOG "The ps -ef for product is:\n@ps_prod\n";
 #Find if any sums process is still running. Set $active=1 if so.
 #Assumes max of 8 sum process sets can be running.
 $active = 0;
+$x = grep(/sum_rm $DB/, @ps_prod);
+if($x) {
+  $process = "sum_rm";
+  $active = 1;
+  goto CKEND;
+}
 $x = grep(/Sinfo $DB/, @ps_prod);
 $y = grep(/Sinfo[1,2,3,4,5,6,7] $DB/, @ps_prod);
 if($x || $y) {
@@ -235,6 +242,14 @@ CKEND:
       print "Abort sum_start.NetDRMS\n";
       exit;
     }
+  }
+  $p = "sum_rm";
+  $cmd = "$p $DB $sumrmlog &";
+  print "$cmd\n";
+  if(system($cmd)) {
+    print "Error: failure to spawn $p\n";
+    print "Abort sum_start.NetDRMS\n";
+    exit;
   }
 
 
