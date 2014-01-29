@@ -63,6 +63,8 @@ extern SLOT slots[];
 extern DRIVE drives[];
 extern TQ *poff;
 
+SUMOPENED *rdexitopened_hdr = NULL; /* linked list of rd client that exited */
+
 TQ *q_rd_front = NULL;		/* front of tape read Q */
 TQ *q_rd_rear = NULL;		/* rear of tape read Q */
 TQ *q_wrt_front = NULL;		/* front of tape write Q */
@@ -855,6 +857,30 @@ KEY *readdo_1(KEY *params) {
   return((KEY *)1);  /* just get rid of compiler warning */
 }
 
+/* Called from sum_svc closedo_1() when a user closes with sums
+ * while a tape read is still active.
+ * Make sure tape_svc doesn't try to send a completion msg to sums.
+ * REQCODE:        KEYTYP_INT      3
+ * DEBUGFLG:       KEYTYP_INT      1
+ * TAPERDACTIVE:   KEYTYP_INT      1
+ * USER:           KEYTYP_STRING   production
+ * uid:    KEYTYP_UINT64    574
+*/
+KEY *clntgone_1(KEY *params) { 
+  uint64_t uid;
+  char *user;
+
+  uid = getkey_uint64(params, "uid");
+  user = GETKEY_str(params, "USER");
+  write_log("CLNTGONE called in tape_svc for user=%s uid=%lu\n",
+                user, uid);
+  //put in list of exited clients w/rd still active
+  setsumopened(&rdexitopened_hdr, (uint32_t)uid, NULL, user);
+  rinfo = 0;
+  send_ack();
+  return((KEY *)1); //nothing to send
+}
+
 /* Called by tapearc doing: clnt_call(clnttape, WRITEDO, ...) 
  * when it has a SUM storage unit(s) to write to tape.
  * Any call is storage units for the same group_id.
@@ -1626,13 +1652,21 @@ KEY *taperespreaddo_1(KEY *params) {
   tmpflg = 0;			//!!TEMP
   /* now can send completion msg back */
   if((offptr->uniqcnt == offptr->offcnt) || tmpflg) {
-    write_log("!!TEMP remsumoffcnt uid=%lu\n", uid); //!!TEMP
-    remsumoffcnt(&offcnt_hdr, uid);
-    if(DS_DataRequest_WD(retlist, &retlist)) { /* get all wd's */
-      write_log("***Err: DS_DataRequest_WD() returned error.\n");
-      setkey_int(&retlist, "STATUS", 1);
+    if(getsumopened(rdexitopened_hdr, (uint32_t)uid)) { 
+      //client exited before rd completed. Don't send any msg
+      remsumopened(&rdexitopened_hdr, (uint32_t)uid); /* rem from linked list */
+      write_log("User=%s uid=%lu exited before tape rd completion. Ignore\n",
+		GETKEY_str(params, "username"), uid);
     }
-    return(retlist);
+    else {
+      write_log("!!TEMP remsumoffcnt uid=%lu\n", uid); //!!TEMP
+      remsumoffcnt(&offcnt_hdr, uid);
+      if(DS_DataRequest_WD(retlist, &retlist)) { /* get all wd's */
+        write_log("***Err: DS_DataRequest_WD() returned error.\n");
+        setkey_int(&retlist, "STATUS", 1);
+      }
+      return(retlist);
+    }
   }
   freekeylist((KEY **)&retlist); //NEW 11/15/2011
   return((KEY *)1);	/* our caller will try to kick off another read */
