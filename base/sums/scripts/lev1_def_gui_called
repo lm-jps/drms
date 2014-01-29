@@ -43,8 +43,10 @@ eval 'exec /home/jsoc/bin/$JSOC_MACHINE/perl -S $0 "$@"'
 #
 ######################################################################
 
-require("/home/jsoc/cvs/JSOC/base/libs/perl/JSOC_DB_INFO_INCLUDE.pl");
 use DBI;
+use FindBin qw($RealBin);
+use lib "$RealBin/../../../localization";
+use drmsparams;
 
 $XmitFlgDirHMI = "/dds/soc2pipe/hmi";
 $XmitFlgDirAIA = "/dds/soc2pipe/aia";
@@ -65,7 +67,7 @@ $EXECUTE = 0;
 $OVERRIDE = 0;
 $DB = jsoc;
 #$HOSTDB = "hmidb";      #host where DB runs
-$HOSTDB = $JSOC_DB_HOST;      #host where DB runs
+$HOSTDB = drmsparams::SERVER;      #host where DB runs
 $PGPORT=5432;
 $| = 1;
 
