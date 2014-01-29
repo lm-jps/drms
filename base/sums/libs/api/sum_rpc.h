@@ -264,6 +264,7 @@ extern KEY *repartndo_1();
 #define JMTXTAPEDO ((uint32_t)12)
 #define EXPCLOSEDO ((uint32_t)13)
 #define TAPENOPDO ((uint32_t)14)
+#define CLNTGONE ((uint32_t)15)
 
 extern KEY *readdo_1();
 extern KEY *writedo_1();
@@ -279,6 +280,7 @@ extern KEY *robotonoffdo_1();
 extern KEY *jmtxtapedo_1();
 extern KEY *expclosedo_1();
 extern KEY *tapenopdo_1();
+extern KEY *clntgone_1();
 
 /* This is the SUM client API code response handling registration */
 #define RESPPROG ((uint32_t)0x20000613)  /* 536872467 */
