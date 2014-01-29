@@ -792,6 +792,11 @@ tapeprog_1(rqstp, transp)
                 xdr_result = xdr_uint32_t;
 		local = (char *(*)()) tapenopdo_1;
 		break;
+        case CLNTGONE:
+		xdr_argument = xdr_Rkey;
+		xdr_result = xdr_Rkey;
+		local = (char *(*)()) clntgone_1;
+		break;
 	default:
                 write_log("**tapeprog_1() dispatch default procedure %d,ignore\n", rqstp->rq_proc);
 		svcerr_noproc(transp);
