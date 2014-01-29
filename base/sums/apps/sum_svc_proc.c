@@ -442,6 +442,11 @@ KEY *getdo_1(KEY *params)
         return((KEY *)1);
       }
       send_ack();
+      //Now remember that this uid has an active rd. When user does SUM_close()
+      //with an active read all the Sget processes will be given the uid so
+      //that they will not respond to the now closed user. New 1/7/2014
+      //!!!NO. This will be handled by closedo_1() calling tape_svc
+      //setsumopened(&sumopened_hdr, uid, NULL, GETKEY_str(params, "username"));
     }
     else {
       rinfo = 0;	/* eveything is ok and here are the results */
@@ -475,6 +480,7 @@ KEY *allocdo_1(KEY *params)
   uint64_t sunum = 0;
   double bytes;
   char *wd;
+  char errstr[80];
 
   sprintf(callername, "allocdo_1");	//!!TEMP
   if(findkey(params, "DEBUGFLG")) {
@@ -544,6 +550,9 @@ KEY *allocdo_1(KEY *params)
     free(wd);
     return(retlist);		/* return the ans now */
   }
+  sprintf(errstr, "Error ret from SUMLIB_PavailGet() sumuid=%lu user=%s\n",
+	uid, GETKEY_str(params, "USER"));
+  setkey_str(&retlist, "ERRSTR", errstr);
   rinfo = status;		/* ret err code back to caller */
   send_ack();
   freekeylist(&retlist);
@@ -816,21 +825,48 @@ KEY *putdo_1(KEY *params)
 /* Typical keylist is:
  * REQCODE:        KEYTYP_INT      3
  * DEBUGFLG:       KEYTYP_INT      1
+ * TAPERDACTIVE:   KEYTYP_INT      1
  * USER:   	   KEYTYP_STRING   production
  * uid:    KEYTYP_UINT64    574
 */
 KEY *closedo_1(KEY *params)
 {
   uint64_t uid;
+  uint32_t tapeback;
+  enum clnt_stat status;
+  char *call_err;
+  static struct timeval TIMEOUT = { 50, 0 };
 
   if(findkey(params, "DEBUGFLG")) {
-  debugflg = getkey_int(params, "DEBUGFLG");
-  if(debugflg) {
-    write_log("!!Keylist in closedo_1() is:\n");
-    keyiterate(logkey, params);
-  }
+    debugflg = getkey_int(params, "DEBUGFLG");
+    if(debugflg) {
+      write_log("!!Keylist in closedo_1() is:\n");
+      keyiterate(logkey, params);
+    }
   }
   uid = getkey_uint64(params, "uid");
+  if(findkey(params, "TAPERDACTIVE")) {  //client closed w/a rd active
+    //tell tape_svc to ignore completion msg to this client
+    if(clnttape != 0) {  //sum_svc still connected to tape_svc
+      retlist=newkeylist();
+      add_keys(params, &retlist);
+      write_log("Calling CLNTGONE from closedo_1() in sums uid=%lu\n", uid);
+      status = clnt_call(clnttape,CLNTGONE, (xdrproc_t)xdr_Rkey, (char *)retlist,
+                        (xdrproc_t)xdr_uint32_t, (char *)&tapeback, TIMEOUT);
+      if(status != RPC_SUCCESS) {
+          if(status != RPC_TIMEDOUT) {
+            call_err = clnt_sperror(clnttape, "Error clnt_call for CLNTGONE");
+            write_log("%s %d %s\n", datestring(), status, call_err);
+          } else {
+            write_log("%s timeout ignored in closedo_1() CLNTGONE\n", datestring());
+          }
+      }
+      if(tapeback == 1) {
+        write_log("**Error in CLNTGONE call to tape_svc in sum_svc_proc.c\n");
+      }
+      freekeylist(&retlist);
+    }
+  }
 //  if(!getsumopened(sumopened_hdr, (uint32_t)uid)) {
 //    write_log("**Error: closedo_1() called with unopened uid=%lu\n", uid);
 //    rinfo = 1;	/* give err status back to original caller */
