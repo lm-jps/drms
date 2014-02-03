@@ -481,9 +481,15 @@ static int drms_su_newslots_internal(DRMS_Env_t *env, int n, char *series,
 	}
       }
 
+        /* Do not use drms_su_size(). This function includes linked segments when calculating the size of an SU, 
+         * but when you allocate an SU, i.e., when creating records, you do not need to allocate space for linked segments
+         * since they reside in different SUs. Instead, simply provide a small number as an estimate (e.g., 100MB).
+         * SUMS actually does not do much with this argument. It is only used to ensure that at least that many
+         * bytes exist on the file system before an allocation attempt is made.
+         */
       sunum = drms_su_alloc(env, 
-                            drms_su_size(env, series) + 1000000, 
-			    &sudir,
+                            104857600,
+                            &sudir,
                             &(template->seriesinfo->tapegroup), 
                             &status);
       if (status)
