@@ -8746,6 +8746,12 @@ int drms_insert_records(DRMS_RecordSet_t *recset)
 
 
 /* Return an estimate of the size of a record's data segment files in bytes. */
+/* drms_record_size() inlcudes the size of linked segments, which is inappropriate for the
+ * current and only use of this function (to estimate the size of of the storage unit to
+ * be allocated by SUMS). This function is called by drms_su_size(), which in turn is called
+ * by drms_su_newslots_internal(). The last function should simply provide some small
+ * estimate (e.g., 100MB) of the number of bytes to allocate for a new SU.
+ */
 long long drms_record_size(DRMS_Record_t *rec)
 {
   long long  size;

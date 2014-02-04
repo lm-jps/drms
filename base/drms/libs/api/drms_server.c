@@ -674,6 +674,9 @@ void drms_server_abort(DRMS_Env_t *env, int final)
       // has to be dynamically allocated since it's going to be freed.
        /* This code simply tells the thread that made an unprocessed
         * SUMS request that there was an error (abort is happening). */
+        
+        /* This doesn't make sense. How do we know that the calling thread did 
+         * not already get a reply? */
       DRMS_SumRequest_t *reply;
       reply = malloc(sizeof(DRMS_SumRequest_t));
       XASSERT(reply);     
@@ -2155,106 +2158,143 @@ void *drms_sums_thread(void *arg)
 
      /* Wait for the next SUMS request to arrive in the inbox. */
      /* sum_tag is the thread id of the thread who made the original SUMS request */
+
+     /* Whoa! We're modifying env, but we haven't acquired the env lock. */
     env->sum_tag = 0;
     rv = tqueueDelAny(env->sum_inbox, &env->sum_tag,  &ptmp );
-
+      
     if (stop == 1)
     {
        empty = rv;
     }
 
     request = (DRMS_SumRequest_t *) ptmp;
+      
+      if (env->verbose)
+      {
+          printf("sums thread: Got request %d from thread %ld.\n", request->opcode, env->sum_tag);
+      }
 
     if (tryconnect && !connected && request->opcode!=DRMS_SUMCLOSE)
     {
-      /* Connect to SUMS. */
-       tryagain = 1;
-       sleepiness = 1;
-
-       while (tryagain)
-       {
-          tryagain = 0;
-
-          if (!sum)
-          {
-             /* SUMS not there - try to connect. */
-             if (env->verbose)
-             {
-                timer = CreateTimer();
-             }
-
-             sumscallret = MakeSumsCall(env, DRMS_SUMOPEN, &sum, printkerr, NULL, NULL);
-             if (sumscallret == kBrokenPipe || sumscallret == kSUMSDead || sumscallret == kTooManySumsOpen)
-             {
-                /* free a non-null sum? */
-                sum = NULL;
-             }
-
-             if (env->verbose && timer)
-             {
-                fprintf(stdout, "to call SUM_open: %f seconds.\n", GetElapsedTime(timer));
-                DestroyTimer(&timer);
-             }
-
-             if (!sum)
-             {
-                if (env->loopconn && sumscallret != kSUMSDead && sumscallret != kTooManySumsOpen)
+        int firstSumOpen = 1;
+        
+        /* Connect to SUMS. */
+        tryagain = 1;
+        sleepiness = 1;
+        
+        while (tryagain)
+        {
+            tryagain = 0;
+            
+            if (!sum)
+            {
+                /* SUMS not there - try to connect. */
+                if (env->verbose)
                 {
-                   fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
-                   tryagain = 1;
-                   sleep(sleepiness);
-                   GettingSleepier(&sleepiness);
+                    timer = CreateTimer();
+                }
+                
+                if (env->verbose)
+                {
+                    printf("sums thread: No SUMS connection, calling SUM_open(). First SUM_open()?: %d.\n", firstSumOpen);
+                }
+                
+                sumscallret = MakeSumsCall(env, DRMS_SUMOPEN, &sum, printkerr, NULL, NULL);
+                
+                firstSumOpen = 0;
+                
+                if (sumscallret == kBrokenPipe || sumscallret == kSUMSDead || sumscallret == kTooManySumsOpen)
+                {
+                    /* free a non-null sum? */
+                    if (env->verbose)
+                    {
+                        printf("sums thread: SUM_open() failed. MakeSumsCall() returned %d.\n", sumscallret);
+                    }
+                    
+                    sum = NULL;
+                }
+                
+                if (env->verbose && timer)
+                {
+                    fprintf(stdout, "to call SUM_open: %f seconds.\n", GetElapsedTime(timer));
+                    DestroyTimer(&timer);
+                }
+                
+                if (!sum)
+                {
+                    if (env->loopconn && sumscallret != kSUMSDead && sumscallret != kTooManySumsOpen)
+                    {
+                        fprintf(stderr, "Failed to connect to SUMS; trying again in %d seconds.\n", sleepiness);
+                        tryagain = 1;
+                        sleep(sleepiness);
+                        GettingSleepier(&sleepiness);
+                    }
+                    else
+                    {
+                        /* Default behavior - don't try again, just send message to clients to terminate, and let this
+                         * thread terminate as well. */
+                        stop = 1; /* exit main loop, after queue is empty (otherwise, keep going until queue is empty). */
+                        tryconnect = 0; /* don't try connecting to SUMS again. */
+                        empty = tqueueCork(env->sum_inbox); /* Don't allow new sums requests. */
+                        
+                        fprintf(stderr,"Failed to connect to SUMS; terminating.\n");
+                        fflush(stdout);
+                        
+                        sleep(1);
+                        pthread_kill(env->signal_thread, SIGTERM); /* the signal thread will cause a DRMS_SUMCLOSE
+                                                                    * SUMS request to be issued, which will terminate
+                                                                    * this thread. */
+                    }
                 }
                 else
                 {
-                   /* Default behavior - don't try again, just send message to clients to terminate, and let this 
-                    * thread terminate as well. */
-                   stop = 1; /* exit main loop, after queue is empty (otherwise, keep going until queue is empty). */
-                   tryconnect = 0; /* don't try connecting to SUMS again. */
-                   empty = tqueueCork(env->sum_inbox); /* Don't allow new sums requests. */
-
-                   fprintf(stderr,"Failed to connect to SUMS; terminating.\n");
-                   fflush(stdout);
-                  
-                   sleep(1);
-                   pthread_kill(env->signal_thread, SIGTERM); /* the signal thread will cause a DRMS_SUMCLOSE 
-                                                               * SUMS request to be issued, which will terminate
-                                                               * this thread. */
+                    connected = 1;
                 }
-             }
-             else
-             {
-                connected = 1;
-             }
-          }
-
-          /* check for user interrupting module. */
-          if (sdsem)
-          {
-             sem_wait(sdsem);
-             shuttingdown = (drms_server_getsd() != kSHUTDOWN_UNINITIATED);
-             sem_post(sdsem);
-          }
-
-          if (shuttingdown)
-          {
-             tryagain = 0;
-             tryconnect = 0;
-          }
-
-       } /* loop SUM_open() */
-
+            }
+            
+            /* check for user interrupting module. */
+            if (sdsem)
+            {
+                sem_wait(sdsem);
+                shuttingdown = (drms_server_getsd() != kSHUTDOWN_UNINITIATED);
+                sem_post(sdsem);
+            }
+            
+            if (shuttingdown)
+            {
+                if (env->verbose)
+                {
+                    printf("sums thread: Shutting down.\n");
+                }
+                
+                tryagain = 0;
+                tryconnect = 0;
+            }
+            
+        } /* loop SUM_open() */
+        
 #ifdef DEBUG
-      printf("drms_sums_thread connected to SUMS. SUMID = %llu\n",sum->uid);
-      fflush(stdout);
+        printf("drms_sums_thread connected to SUMS. SUMID = %llu\n",sum->uid);
+        fflush(stdout);
 #endif
     }
 
     /* Check for special CLOSE or ABORT codes. */
     if (request->opcode==DRMS_SUMCLOSE)
     {
+        if (env->verbose)
+        {
+            printf("sums thread: DRMS_SUMCLOSE requested.\n");
+        }
+        
       if (!stop)
       {
+          if (env->verbose)
+          {
+              printf("sums thread: stopping request loop.\n");
+          }
+          
          /* if stop == 1, then the first SUM_open() failed, so we already corked the queue.
           * Don't try to cork a corked queue. */
          stop = 1;
@@ -2278,46 +2318,108 @@ void *drms_sums_thread(void *arg)
     }
     else if ( request->opcode==DRMS_SUMABORT )
     {
+        if (env->verbose)
+        {
+            printf("sums thread: DRMS_SUMABORT requested.\n");
+        }
+        
       break;
     }
     else /* A regular request. */
     {
-       if (connected)
-       {
-          /* Send the request to SUMS. sum_svc could die while processing is happening. 
-           * If that is the case drms_process_sums_request() will attempt to re-open 
-           * sum_svc with a SUM_open() call. If that happens, drms_process_sums_request()
-           * will return the new SUM_t. */
-          reply = drms_process_sums_request(env, &sum, request);
-       }
-       else
-       {
-          /* Send a reply to the client saying that SUM_open() failed. */
-          reply = malloc(sizeof(DRMS_SumRequest_t));
-          XASSERT(reply);
-          reply->opcode = DRMS_ERROR_SUMOPEN;
-       }
-
-       if (reply)
-       {
-          if (!request->dontwait) {
-             /* Put the reply in the outbox. */
-             tqueueAdd(env->sum_outbox, env->sum_tag, (char *) reply);
-          } else {
-             /* If the calling thread waits for the reply, then it is the caller's responsibility 
-              * to clean up. Otherwise, clean up here. */
-             for (int i = 0; i < request->reqcnt; i++) {
-                if (reply->sudir[i])
+        int requestID = request->opcode;
+        
+        if (env->verbose)
+        {
+            printf("sums thread: Processing a non-close/abort DRMS request. request (ID): %d\n", requestID);
+        }
+        
+        if (connected)
+        {
+            if (env->verbose)
+            {
+                printf("sums thread: Already connected to SUMS.\n");
+            }
+            
+            /* Send the request to SUMS. sum_svc could die while processing is happening.
+             * If that is the case drms_process_sums_request() will attempt to re-open
+             * sum_svc with a SUM_open() call. If that happens, drms_process_sums_request()
+             * will return the new SUM_t. */
+            
+            reply = drms_process_sums_request(env, &sum, request);
+            if (!reply)
+            {
+                fprintf(stderr, "sums thread: drms_process_sums_request() returned NULL. Thread making the request (ID): %ld. Request (ID): %d\n", env->sum_tag, requestID);
+            }
+            
+            XASSERT(reply); /* If there is no reply, then the calling thread will hang (since it will
+                             * be blocked on env->sum_outbox). */
+        }
+        else
+        {
+            if (env->verbose)
+            {
+                printf("sums thread: Not connected to SUMS. Replying to main thread with a DRMS_ERROR_SUMOPEN code.\n");
+            }
+            
+            /* Send a reply to the client saying that SUM_open() failed. */
+            reply = malloc(sizeof(DRMS_SumRequest_t));
+            XASSERT(reply);
+            reply->opcode = DRMS_ERROR_SUMOPEN;
+        }
+        
+        if (reply)
+        {
+            if (env->verbose)
+            {
+                printf("sums thread: A reply was returned from SUMS, return code %d.\n", reply->opcode);
+            }
+            
+            if (!request->dontwait)
+            {
+                if (env->verbose)
                 {
-                   free(reply->sudir[i]);
+                    printf("sums thread: Requestor wants the reply, queueing reply.\n");
                 }
+                
+                /* Put the reply in the outbox. */
+                tqueueAdd(env->sum_outbox, env->sum_tag, (char *) reply);
+            }
+            else
+            {
+                if (env->verbose)
+                {
+                    printf("sums thread: Requestor does not want the reply.\n");
+                }
+                
+                /* If the calling thread waits for the reply, then it is the caller's responsibility
+                 * to clean up. Otherwise, clean up here. */
+                for (int i = 0; i < request->reqcnt; i++) {
+                    if (reply->sudir[i])
+                    {
+                        free(reply->sudir[i]);
+                    }
+                    
+                    /* The sunum array is statically defined - no need to free. */
+                }
+                free(reply);
+            }
+        }
+        else
+        {
+            if (env->verbose)
+            {
+                printf("sums thread: A reply was NOT returned from SUMS.\n");
+            }
 
-                /* The sunum array is statically defined - no need to free. */
-             }
-             free(reply);
-          }
-       }
-       env->sum_tag = 0; // done processing
+            if (!request->dontwait)
+            {
+                /* This shouldn't happen. The client is waiting for a reply, but no reply is available to return to the client. */
+                fprintf(stderr, "ERROR: The client has requested a reply from SUMS, but no such reply is available.\n");
+            }
+        }
+        
+        env->sum_tag = 0; // done processing
     }
 
     /* Note: request is only shallow-freed. The is the requestor's responsiblity 
