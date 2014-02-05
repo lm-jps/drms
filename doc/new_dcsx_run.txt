@@ -82,6 +82,10 @@ prodtest 120151 120150  0 Jun05 pts/0    00:00:00 -tcsh
 The dcs1x has been tested and the tararc also and is ready to go.
 A rsync has been done to save the code on a backend machine:
 
+NOTE: Chaged from original info below. Now does
+rsync's dcs1x:/home/prodtest/cvs/JSOC to dcs1x:/data-dcs2x/BACKUPS/dcs1x
+
+
 /usr/bin/rsync --rsh=/usr/bin/ssh --rsync-path=/usr/bin/rsync -avz
 /home/prodtest/cvs/JSOC d00:/scr21/jim/dcs1x_backup
 
