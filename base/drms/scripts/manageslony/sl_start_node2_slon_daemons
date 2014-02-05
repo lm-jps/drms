@@ -1,0 +1,8 @@
+#!/bin/bash
+
+. ../etc/slony.env
+
+# Start slave slon daemon
+
+slon -p ../log/slon.node2.pidfile -a /usr/local/pgsql/slon_logs -t 300000 $CLUSTERNAME "dbname=$SLAVEDBNAME port=$SLAVEPORT host=$SLAVEHOST user=$REPUSER"  > ../log/slon.node2.log 2>&1 &
+

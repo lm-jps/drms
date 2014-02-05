@@ -1,0 +1,9 @@
+#!/bin/bash
+
+. ../etc/slony.env
+
+# Starts the Master slon daemon
+
+
+slon -p ../log/slon.node1.pidfile -t 300000 $CLUSTERNAME "dbname=$MASTERDBNAME port=$MASTERPORT host=$MASTERHOST user=$REPUSER"  > ../log/slon.node1.log 2>&1 &
+

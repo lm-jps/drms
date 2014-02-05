@@ -1,0 +1,193 @@
+#!/bin/bash
+pidfile=$0.pid
+config_file=../etc/subscription_manager.cfg
+
+. $config_file
+
+#--------------------------------------------------------------------
+# Subscription Update
+# Syntax: ./subscription_update <node name> <new site (true/false)> <Config File>
+#--------------------------------------------------------------------
+
+#-------------------------------------------------------------------------
+# syntax check
+#-------------------------------------------------------------------------
+if [ $# -eq 6 ]
+then
+	node=$1
+	new_site=$2
+	archive=$3
+	retention=$4
+	tapegroup=$5
+	input_file=$6
+	usertables=$tables_dir/$node.lst
+else
+        error="ERROR: Usage: $0 <node> <new subscription, true/false> <subscription information file>"
+        echo $error
+	exit
+fi
+logfile=../log/$0.$node.log
+
+#--------------------------------------------------------------------
+# Setting up the log
+#--------------------------------------------------------------------
+echo > $logfile
+logwrite () {
+        echo `date +"%m-%d-%Y %H:%M:%S - "` "$1" >> $logfile
+        if [ ! $2 == "" ]
+        then
+                echo `date +"%m-%d-%Y %H:%M:%S - "` >> $logfile
+        fi
+}
+
+logwrite "Starting $0 $1" nl
+
+#-------------------------------------------------------------------------
+# Reads the subscription request file into the arrays:
+# $series[] is the name of the series
+# $request[] is what type of request it is (subscribe or unsubscribe)
+#-------------------------------------------------------------------------
+counter=0
+exec < $input_file
+        while read line
+        do
+                # skips blank lines
+                if [ ${#line} -eq 0 ]
+                then
+			continue
+                fi
+		set - $line
+		request[$counter]=$2
+		oldIFS="$IFS"
+		IFS="${IFS}."
+		set - $1
+		series[$counter]=$2
+		IFS="$oldIFS"
+
+		counter=$(( $counter + 1 ))
+			
+        done
+
+#-------------------------------------------------------------------------
+# Create directory $node.new and newtablefile $node.new.lst
+#-------------------------------------------------------------------------
+if [ $new_site == "true" ]
+then
+	logwrite "New site, making new directory $subscribers_dir/$node.new"
+	mkdir $subscribers_dir/$node.new
+	chmod a+rx $subscribers_dir/$node.new
+else
+	logwrite "Old site, copying directory $subscribers_dir/$node to $subscribers_dir/$node.new"
+	cp -far  $subscribers_dir/$node $subscribers_dir/$node.new
+fi
+newtablefile=$tables_dir/$node.new.lst
+echo > $newtablefile
+
+#-------------------------------------------------------------------------
+# Applies the subscription information to the usertables file
+#-------------------------------------------------------------------------
+# If new_site is true, adds all subscriptions in the config file to the end of the new usertables file
+if [ $new_site == "true" ]
+then
+	logwrite "The Subscription request is from a new site"
+	# Copy current user tables to the new usertables file
+	counter=0
+	while [ $counter -lt ${#series[*]} ]
+	do
+		logwrite "Adding [${series[$counter]} to $newtablefile"
+		echo "${series[$counter]}" >> $newtablefile
+		
+		counter=$(( $counter + 1 ))
+	done
+	logwrite " "
+
+# If new_site is false, does two things: 
+# First removes subscriptions with the tag "unsubscribe"
+# Second, adds all subscriptions with the tag "subscribe" to the end of the file
+elif [ $new_site == "false" ]
+then
+	logwrite "The Subscription request is from a current site"
+
+	# Removes subscriptions if $request[#] is "unsubscribe"
+	exec < $usertables
+        	while read line
+        	do
+			flag=0
+			counter=0
+
+			# skips blank lines
+	                if [ ${#line} -eq 0 ]
+	                then
+                	        continue
+			fi
+
+			# Loops through each entry in the $series array and $request array for each $line
+			while [ $counter -lt ${#series[*]} ]
+			do
+				linecompare="${series[$counter]}"
+				if [[ "$line" == "$linecompare" && ${request[$counter]} == "unsubscribe" ]]
+				then
+					# Found match, setting $flag to 1 so line doesn't get rewritten to tablelist
+					flag=1
+				fi
+				
+				counter=$(( $counter + 1 ))
+			done
+
+			# if a match was not found, write the line to the new user tables file
+			if [ $flag -eq 0 ]
+			then
+				logwrite "Writing $line to $newtablefile"
+				echo $line >> $newtablefile
+			fi
+			
+		done
+
+		
+	# adds all lines where request = subscribe to the end of the file	
+	counter=0
+	while [ $counter -lt ${#series[*]} ]
+	do
+		# if the request is subscribe, then add to the list, if not, do nothing.
+		if [ ${request[$counter]} == "subscribe" ]
+		then
+			logwrite "Checking to see if subscription request already exists"
+			logwrite "Executing [check=cat $newtablefile | grep ${series[$counter]}]"
+			check=`cat $newtablefile | grep "${series[$counter]}"`
+			logwrite "Check is [$check]"
+			if [ "$check" == "" ]
+			then
+				logwrite "Subscription does not already exist"
+				logwrite "Writing ${series[$counter]} to $newtablefile"
+				echo "${series[$counter]}" >> $newtablefile
+			else 
+				logwrite "The subscription request [${series[$counter]}] already exists"
+				logwrite "Removing the subscription request [${series[$counter]}] from [$input_file]"
+				cat $input_file | grep -v "${series[$counter]}" > newinputfile
+				mv -f newinputfile $input_file
+			fi
+			unset check
+		fi	
+		counter=$(( $counter + 1 ))
+	done
+		
+else
+	logwrite "ERROR: New subscription value must be either "true" or "false"" nl
+	exit
+fi
+
+#-------------------------------------------------------------------------
+# Adding the new entry to the slon log parser config file 
+#-------------------------------------------------------------------------
+logwrite "Adding the new entry to $parser_config"
+logwrite "[$subscribers_dir/$node.new	$newtablefile]" nl
+	
+echo "$subscribers_dir/$node.new	$newtablefile" >> $parser_config
+
+#-------------------------------------------------------------------------
+# Execute the sql_gen script [./sql_gen $node $new_site $input_file]"
+#-------------------------------------------------------------------------
+logwrite "Executing the sql_gen script [./sql_gen $node $new_site $input_file]" nl
+./sql_gen $node $new_site $archive $retention $tapegroup $input_file &
+logwrite "$0 finished"
+

@@ -1,0 +1,204 @@
+#!/usr/bin/perl
+
+#--------------------------------------------------------------
+#--| prep_slon_logs |  A perl script to parse the slon logs
+#--|                |   and create logs per remote subscriber
+#--|                |   with only the tables of concern for 
+#--|                |   each subscriber included in their files
+#--------------------------------------------------------------
+#--| Syntax         |  prep_slon_logs <source_file> <config_file> <logfile>
+#--------------------------------------------------------------
+#--| config file    |  output_dir  tablist_filename
+#--|  entries       |   where output_dir is the output dir
+#--|                |   for this subscriber and the
+#--|                |   tablist_filename is the list of tables
+#--|                |   that this subscriber is interested in
+#--------------------------------------------------------------
+#--| Author:        |  Kevin Kempter
+#--------------------------------------------------------------
+
+
+use locale;
+use FindBin qw($Bin);
+use lib "$Bin/../";
+use toolbox;
+use File::Basename;
+
+#--|----------------------------------------------
+#--| Program Variables
+#--|----------------------------------------------
+my $srcFile = ();
+my $cfgFile = ();
+my $logFile = ();
+my $msg = ();
+my $srcFN = ();
+my $targetFile = ();
+my @line = ();
+my $dataSection = 0;
+my $srcLine = ();
+my $prntLine = 0;
+
+
+#--|----------------------------------------------
+#--| Syntax Check
+#--|----------------------------------------------
+if ($#ARGV != 2) {
+	prnt_syntax();
+	exit;
+}
+else {
+	$srcFile = $ARGV[0];
+	$cfgFile = $ARGV[1];
+	$logFile = $ARGV[2];
+	$srcFN = basename($srcFile);
+}
+
+#--|----------------------------------------------
+#--| Start Log File
+#--|----------------------------------------------
+if (! open (LOG, ">$logFile") ) {
+	print "Error opening file [$logFile] - Aborting\n";
+	exit 1;
+}
+else {
+	close LOG;
+	$msg = "$0 started\n";
+	toolbox::logWrite ($logFile, $msg);
+
+	$msg = "[srcFile] = [$srcFile]\n";
+	$msg = $msg."[cfgFile] = [$cfgFile]\n";
+	$msg = $msg."[logFile] = [$logFile]\n";
+	$msg = $msg."[srcFN] = [$srcFN]\n";
+	toolbox::logWrite ($logFile, $msg);
+}
+
+
+#--|----------------------------------------------
+#--| Read Config File
+#--|----------------------------------------------
+if (! open (CFG, "$cfgFile") ) {
+	print "Error opening file [$cfgFile] - Aborting\n";
+	exit 1;
+}
+else {
+	$msg = "Opened cfgFile [$cfgFile]\n";
+	toolbox::logWrite ($logFile, $msg);
+	while (<CFG>) {
+		chomp;
+		$dataSection = 0;
+
+		$msg = "Read in cgf line [$_]\n";
+		toolbox::logWrite ($logFile, $msg);
+		@line = split;
+
+		if (! open (SRC, "$srcFile") ) {
+			print "Error opening file [$srcFile] - Aborting\n";
+			exit 1;
+		}
+		else {
+			$msg =  "opened [$srcFile]\n";
+			toolbox::logWrite ($logFile, $msg);
+			$targetFile = $line[0]."/".$srcFN;
+			if (! open (TGT, ">$targetFile") ) {
+				print "Error opening file [$targetFile] - Aborting\n";
+				exit 1;
+			}
+			else {
+				$msg = "opened [$targetFile]\n";
+				toolbox::logWrite ($logFile, $msg);
+				while (<SRC>) {
+					$srcLine = $_;
+
+					if ( $dataSection == 0 ) {
+						if ($srcLine =~ /end of log archiving header/) {
+							$dataSection = 1;
+							$msg = "found end of header\n";
+							toolbox::logWrite ($logFile, $msg);
+						}
+						print TGT "$srcLine";
+					}
+					elsif ($dataSection == 1) {
+						$prntLine = 0;
+						if ($srcLine =~ /End Of Archive Log/) {
+							$dataSection = 2;
+						}
+						if ($srcLine =~ /^--/) {
+							$prntLine = 1;
+						}
+						if ($srcLine =~ /^$/) {
+							$prntLine = 1;
+						}
+						if ($srcLine =~ /sequenceSetValue_offline/) {
+							$prntLine = 0;
+						}
+						if (! open (TL, "$line[1]") ) {
+							print "Error opening file [$line[1]] - Aborting\n";
+							exit 1;
+						}
+						else {
+							$msg = "opened [$line[1]]\n";
+							toolbox::logWrite ($logFile, $msg);
+							while (<TL>) {
+								chomp;
+
+								if (length($_) == 0) {
+									next;
+								}
+								if ($srcLine =~ /$_/) {
+									$prntLine = 1;
+								}
+							}
+						}
+						close TL;
+						if ($prntLine) {
+							print TGT "$srcLine";
+						}
+					}
+					elsif ($dataSection == 2) {
+							print TGT "$srcLine";
+					}
+
+
+				}
+			}
+			close TGT;
+		}
+		close SRC;
+	}
+	close CFG;
+}
+
+#--|----------------------------------------------------------
+#--| ################## Subroutines ######################
+#--|----------------------------------------------------------
+
+#--|----------------------------------------------------------------
+#--| prnt_syntax
+#--|----------------------------------------------------------------
+#--| inputs:    none
+#--|----------------------------------------------------------------
+#--| outputs:   usage statement and help info
+#--|----------------------------------------------------------------
+sub prnt_syntax {
+	print "\n\nUsage: $0 <source_file> <config_file> <logfile>\n";
+	print "------------------------------------------------------------------------\n";
+	print "--| source_file          |  the slon log dir/filename to be processed   \n";
+	print "--| config_file          |  the config file location/name \n";
+	print "--| logfile              |  the logfile location/name \n";
+	print "------------------------------------------------------------------------\n\n";
+	print "------------------------------------------------------------------------\n";
+	print "--| A perl script to parse the slon logs and create logs per remote subscriber\n";
+	print "--| with only the tables of concern for each subscriber included in their files\n";
+	print "------------------------------------------------------------------------\n\n";
+	print "------------------------------------------------------------------------\n";
+	print "--| config file format   |  <output_dir>  <tablist_filename>\n";
+	print "------------------------------------------------------------------------\n\n";
+	print "------------------------------------------------------------------------\n";
+	print "--| config file  entries |  output_dir  tablist_filename\n";
+	print "--|                      |   where output_dir is the output dir\n";
+	print "--|                      |   for this subscriber and the\n";
+	print "--|                      |   tablist_filename is the list of tables\n";
+	print "--|                      |   that this subscriber is interested in\n";
+	print "------------------------------------------------------------------------\n";
+	print "\n";
+}
