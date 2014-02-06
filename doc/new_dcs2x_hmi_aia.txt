@@ -25,7 +25,7 @@ JSOC_DBNAME=aiadb
 Run with 
 /home/prodtest/cvs/JSOC/proj/datacapture/scripts/socdc.dcs2x.aia
 
-Ths sums dir for aia is /SUM12. For hmi /SUM1.
+Ths sums dir is /SUM12.
 
 Use e.g.:
 dcs2x:/home/prodtest> psql -p 5434 aiadb_sums
