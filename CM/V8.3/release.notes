@@ -55,5 +55,34 @@ Changes since previous release (V8.2 - November 20, 2013)
 ----------------------------------------------------------
 
 NEW FEATURES:
++ When DRMS records are staged (their SUMS data are brought online from tape, if they were offline; storage-unit information is also cached in memory), if those records link to other records, the target records are first cached in memory, and then the records are staged.
++ Additional DRMS-SUMS interface logging was added, but is only seen in verbose mode. We are trying to trackdown a deadlock that occurs near the end of a module's run.
++ SQL to create the 'drms' namespace and the 'sumsadmin' user were moved to the NetDRMS.sql used for new NetDRMS installations. Previously, this SQL had to be typed and executed manually.
++ The script copySeriesTable.pl was added. It copies database records, identified by a file containing a list or recnums, from one drms-series database table to another.
++ The localization process was modified to allow the separation of the DRMS database host from the SUMS database host.
++ store_dir now now specifies a DATE keyword when creating the JSD for the output series. Also, the description for the 'perm' parameter was removed. This parameter had never been implemented.
++ The 'notify' and 'requestor' fields of the export web app have been revamped. The behavior has been improved.
++ The export-web-app cutout edit boxes will now retain their current settings when the user switches the input series. This allows users to quickly do analogous cutouts from similar series. Previously, a change in input series would cause the settings to be cleared.
++ New global helioseismology features: calculate image statistics and properly propagate the QUALITY keyword, add the MCORLevel2 keyword, change to c-style preprocessor directives, conditionally include lines from fitcom24.f, decrease detrending length and constant.
++ The make rule that checks source-code version consistency was optimized to run much faster.
++ Use of /scr21 was replaced with use of /surge40 in various places in our code tree.
++ The location of the SUMS server was changed. All supporting code was updated to "point" to the new location.
++ The disambiguation's log file is now being used as a lock file too. Several processes write to that log file.
++ brblossynoptic is a new module that produces both Br and Blos synpoptic charts.
++ Some flight-data files were updated.
++ A new parameter for sumstapestat.pl was added. When set, it allows users to print usage statistics on specified tape groups. Without the flag, the statistics are collected for all tape groups, which can take a long time.
++ The IRIS-processing status entries of the processing-status web page were modified so that longer delays are considered acceptable.
+The UI was correspondingly updated to account for these changes.
++ The --loopconn DRMS argument was added to the pipeline module command lines. The effect is for these modules to now wait for SUMS to be up and running and accepting requests if it is in fact down when the module first attempts to connect to SUMS.
++ The scripts in proj/rings, proj/timed, and proj/farside were modified to (a) further generalize options for run-time localization of scratch- and temp-directory roots; and (b) allow for gatekeeper functions to dynamically suspend script submission to queue.
++ The ephemeris-determination code used to build proj/rings/apps/rdcover was cleaned up.
 
 DEFECTS FIXED:
++ A problem in the localization script was fixed. It now properly obtains compiler versions if the auto-detect-compilers feature is enabled.
++ The refcount on linked records was inappropriately incremented at times (when in fact no reference was being created). Now the bookkeeping for record recounts is accurate.
++ The code that creates new DRMS records was requesting too large a storage unit because, for records linked to other records, it was accounting for the file sizes of linked segments. This code no longer estimates the size of the SU needed. Instead it always requests SUs of 100MB - a small amount that is virtually guaranteed to be present always.
++ There was a long-standing malloc(0) in some lower database-interface code that was triggered by new code. The code now uses the proper expression to determine the needed amount of bytes.
++ There was magnetic code that was misinterpreting CRPIX1-2. This has been fixed.
++ The computations of CRPIX1, CRPIX2, CRVAL1, and CRVAL2 by misynoptic were not correct. This has been fixed.
++ The makeimageslowhigh script in the gatekeeper was not checking for the existence of a directory before using it. This has been fixed.
+
