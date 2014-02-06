@@ -17,7 +17,7 @@ sub labeldate {
   return($date);
 }
 
-$ENV{'PATH'} = "/home/production/STAGING/bin/_linux_avx:/home/production/STAGING/bin/_linux4:/home/production/cvs/JSOC/base/sums/scripts:$ENV{'PATH'}";
+$ENV{'PATH'} = "/home/production/cvs/JSOC/base/sums/scripts:/home/jsoc/bin/linux_avx:$ENV{'PATH'}";
 $path = $ENV{'PATH'};
 $ENV{'JSOC_MACHINE'} = "linux_avx";  #cron job run on k1
 
