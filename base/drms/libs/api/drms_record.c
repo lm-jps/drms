@@ -4267,10 +4267,20 @@ void drms_free_records(DRMS_RecordSet_t *rs)
                 
                 env = rs->records[i]->env;
                 
-                /* Follow all links and free target records. */
-                hit = hiter_create(&rs->records[i]->links);
+                /* If this record was opened for reading, then it may have caused linked-records to be fetched from the db.
+                 * If so, they need to be freed. If this record was opened for writing, then it cannot have caused a linked
+                 * record to have been retrieved from the db. A record that was fetched from the db, one that is read-only, 
+                 * is marked as readonly (rec->readonly == 1).
+                 */
+                if (rs->records[i]->readonly == 1)
+                {
+                    hit = hiter_create(&rs->records[i]->links);
+                    /* Don't sweat a memory-alloc failure here. */
+                }
+                
                 if (hit)
                 {
+                    /* Follow all links and free target records. */
                     while ((link = (DRMS_Link_t *)hiter_getnext(hit)) != NULL)
                     {
                         if (link->recnum >= 0)
@@ -4314,10 +4324,6 @@ void drms_free_records(DRMS_RecordSet_t *rs)
                     }
                     
                     hiter_destroy(&hit);
-                }
-                else
-                {
-                    /* Don't do nuthin'. There is no return value from this function. */
                 }
                 
                 /* We could still have a problem. */
@@ -4393,10 +4399,20 @@ void drms_free_records(DRMS_RecordSet_t *rs)
 
                     env = rs->records[i]->env;
                     
-                    /* Follow all links and free target records. */
-                    hit = hiter_create(&rs->records[i]->links);
+                    /* If this record was opened for reading, then it may have caused linked-records to be fetched from the db.
+                     * If so, they need to be freed. If this record was opened for writing, then it cannot have caused a linked
+                     * record to have been retrieved from the db. A record that was fetched from the db, one that is read-only,
+                     * is marked as readonly (rec->readonly == 1).
+                     */
+                    if (rs->records[i]->readonly == 1)
+                    {
+                        hit = hiter_create(&rs->records[i]->links);
+                        /* Don't sweat a memory-alloc failure here. */
+                    }
+                    
                     if (hit)
                     {
+                        /* Follow all links and free target records. */
                         while ((link = (DRMS_Link_t *)hiter_getnext(hit)) != NULL)
                         {
                             if (link->recnum >= 0)
@@ -4440,10 +4456,6 @@ void drms_free_records(DRMS_RecordSet_t *rs)
                         }
                         
                         hiter_destroy(&hit);
-                    }
-                    else
-                    {
-                        /* Don't do nuthin'. There is no return value from this function. */
                     }
                     
                     /* Free source record. */
