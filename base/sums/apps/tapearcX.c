@@ -47,6 +47,7 @@ uint32_t rinfo;         /* info returned by XXXdo_1() calls */
 int TAPEARCDO_called;
 int curr_group_id;
 int filegroup;
+int thispid;
 PADATA *walker;
 PADATA *aplist = NULL;/* linked list of padata for archive pending status */
 KEY *alist;
@@ -209,6 +210,7 @@ void get_cmd(int argc, char *argv[])
   if(mfilename = rindex(manifest, '/'))  mfilename++;
   else mfilename = manifest;
   sprintf(manifestmv, "%s/%s.%ld", MANIFESTMVDIR, mfilename, TODAY);
+  thispid = getpid();
 }
 
 /* Release resources, disconnect from the db and exit with error */
@@ -302,6 +304,7 @@ int call_tape_svc() {
     WRTSTATUS = 0;
     StartTimer(0); //!!TEMP for debug. time call is case timeout 
     setkey_int(&alist, "tapearcvers", filegroup);
+    setkey_int(&alist, "tapearcXpid", thispid);
     status = clnt_call(clnttape, WRITEDO, (xdrproc_t)xdr_Rkey, (char *)alist,
                     (xdrproc_t)xdr_uint32_t, (char *)&retstat, TIMEOUT);
     if(status != 0) {
