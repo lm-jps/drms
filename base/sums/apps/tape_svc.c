@@ -692,6 +692,7 @@ tapeprog_1(rqstp, transp)
 	char *result, *call_err;
         int force = 0;
         int rdflg = 0;
+        int tapearcpid;
         uint32_t sprog;
         enum clnt_stat clnt_stat;
         SUMOFFCNT *offptr;
@@ -848,6 +849,39 @@ tapeprog_1(rqstp, transp)
             }
             else {
             ***********************only for ia64**********************************/
+              if(findkey(result, "tapearcXpid")) {
+                tapearcpid = getkey_int(result, "tapearcXpid");
+                if(tapearcpid == 0) {
+                  //this is an old tapearcX that doesn't call tape_svc with
+                  //its pid. Allow it to proceed.
+                }
+                else {
+                  //make sure this tapearcX is still running before talking to it
+FILE *pf;
+char command[128], data[128];
+int pidx;
+int found = 0;
+sprintf(command, "ps -eo pid,comm | grep tapearcX | grep -v defunct");
+pf = popen(command, "r");
+if(!pf) {
+  write_log("Can't open pipe for pid. Proceed anyway\n");
+  goto SENDANYWAY;
+}
+while (fgets(data, 128, pf)) {
+  sscanf(data, "%d", &pidx);
+  if(pidx == tapearcpid) {  //ok, tapearcX is there
+    found = 1;
+    break;
+  }
+}
+pclose(pf);
+if(!found) {             //tapearcX is gone. Don't send to it
+  write_log("Error: Don't send to missing pid %d for tapearcX\n", tapearcpid);
+  goto NOSEND;
+}
+                }
+              }
+SENDANYWAY:
               clnt_stat=clnt_call(current_client, procnum, (xdrproc_t)xdr_result, 
 			result, (xdrproc_t)xdr_void, 0, TIMEOUT);
               if(clnt_stat != 0) {
@@ -856,6 +890,7 @@ tapeprog_1(rqstp, transp)
                 call_err = clnt_sperror(current_client, "Err");
                 write_log("%s %s\n", datestring(), call_err);
               }
+NOSEND:
               if(current_client_destroy) clnt_destroy(current_client);
             //}
           }
