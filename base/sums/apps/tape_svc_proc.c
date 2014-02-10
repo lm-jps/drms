@@ -923,13 +923,14 @@ KEY *clntgone_1(KEY *params) {
  * availblocks: KEYTYP_UINT64   48828000 (NOTE: added here) 
  * tape_closed: KEYTYP_INT      -1       (NOTE: added here)
  * tapeid:      KEYTYP_STRING   000014S  (NOTE: added here)
+ * tapearcXpid:	KEYTYP_INT	129048   (New: 7Feb2014)
 */
 KEY *writedo_1(KEY *params) {
   static CLIENT *clresp;
   TAPE tapeinfo;
   TQ *p;
   int group_id, state, snum, dnum;
-  int tapearcvers;
+  int tapearcvers, pidx;
   char *tapeid, *user;
   uint64_t sumid, dsix;
   double total_bytes;
@@ -956,6 +957,10 @@ KEY *writedo_1(KEY *params) {
     free(user);
     return((KEY *)1);  /* error. nothing to be sent */
   }
+  if(findkey(params, "tapearcXpid")) 
+    pidx = getkey_int(params, "tapearcXpid");
+  else pidx = 0;
+  setkey_int(&params, "tapearcXpid", pidx);
   setkey_fileptr(&params, "current_client", (FILE *)clresp);
   current_client = clresp;	/* set for call to tapearc */
   procnum = TAPEARCDO;		/* for this proc number */
