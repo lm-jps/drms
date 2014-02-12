@@ -46,6 +46,15 @@ q:PRODUSER_DBHOST               hmidb:5432
 q:PRODUSER_DBNAME               jsoc
 q:PRODUSER_PRODTAB              su_production.produsers
 q:PRODUSER_COLUSER              username
+q:SUMRM_PART_PERCENT_FREE       3
+q:SUMRM_SLEEP                   300
+# This is a file in SUMLOG_BASEDIR.
+q:SUMRM_LOG                     sum_rm.cfg
+q:SUMRM_MAIL	      	        sys2@solar2
+q:SUMRM_NOOP		            0
+q:SUMRM_USER		            production
+q:SUMRM_NORUN_START	            0
+q:SUMRM_NORUN_STOP              0
 
 __MAKE__
 # JSOC_SDP third-party libraries used by base
