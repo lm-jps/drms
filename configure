@@ -28,7 +28,8 @@ echo ""
 set CLEAN = "no"
 set PROJCONFIG = ""
 set CLEANCMD = "d"
-
+set CFGSERVER = "no"
+set CFGSERVERARG = "s"
 set CUSTOMDEFSFILE = ""
 
 foreach THEARG ($argv)
@@ -37,6 +38,8 @@ foreach THEARG ($argv)
     
     if ($FLAG == $CLEANCMD) then
         set CLEAN = "yes"
+    else if ($FLAG == $CFGSERVERARG) then
+        set CFGSERVER = "yes"
     else if (-e $THEARG) then
         set PROJCONFIG = $THEARG
     endif
@@ -223,7 +226,11 @@ endif
         endif
         
         # We now call localize.py for both Stanford and NetDRMS builds.
-        $PYBIN ./localize.py -d ${LOCALIZATIONDIR} -b drmsparams
+        if ($CFGSERVER == "yes") then
+            $PYBIN ./localize.py -d ${LOCALIZATIONDIR} -b drmsparams -s
+        else
+            $PYBIN ./localize.py -d ${LOCALIZATIONDIR} -b drmsparams
+        endif
 
         echo "Setting links to scripts..."
         cd scripts
