@@ -5439,6 +5439,7 @@ static DB_Binary_Result_t *dbFetchRecsFromList(DRMS_Env_t *env, const char *oSer
     char tmpTab[64];
     char tmpTab2[64];
     size_t stsz;
+    size_t stsz1;
     size_t stsz2;
     size_t stsz3;
     size_t stsz4;
@@ -5523,8 +5524,8 @@ static DB_Binary_Result_t *dbFetchRecsFromList(DRMS_Env_t *env, const char *oSer
                     char *collist = NULL;
                     char *tpkey = NULL;
                     
-                    stsz = 2048;
-                    collist = calloc(stsz, sizeof(char));
+                    stsz1 = 2048;
+                    collist = calloc(stsz1, sizeof(char));
                     
                     /* tPkeyList is the same as collist, minus the column data types. */
                     stsz2 = 1024;
@@ -5552,8 +5553,8 @@ static DB_Binary_Result_t *dbFetchRecsFromList(DRMS_Env_t *env, const char *oSer
                             
                             strtolower(tpkey);
                             
-                            collist = base_strcatalloc(collist, tpkey, &stsz);
-                            collist = base_strcatalloc(collist, " ", &stsz);
+                            collist = base_strcatalloc(collist, tpkey, &stsz1);
+                            collist = base_strcatalloc(collist, " ", &stsz1);
                             
                             tPkeyList = base_strcatalloc(tPkeyList, tpkey, &stsz2);
                             
@@ -5565,11 +5566,11 @@ static DB_Binary_Result_t *dbFetchRecsFromList(DRMS_Env_t *env, const char *oSer
                             tQualPkeyList = base_strcatalloc(tQualPkeyList, "TARGET.", &stsz4);
                             tQualPkeyList = base_strcatalloc(tQualPkeyList, tpkey, &stsz4);
                             
-                            collist = base_strcatalloc(collist, db_type_string(drms2dbtype(linkTempl->info->pidx_type[ipkey])), &stsz);
+                            collist = base_strcatalloc(collist, db_type_string(drms2dbtype(linkTempl->info->pidx_type[ipkey])), &stsz1);
                             
                             if (ipkey < linkTempl->info->pidx_num - 1)
                             {
-                                collist = base_strcatalloc(collist, ", ", &stsz);
+                                collist = base_strcatalloc(collist, ", ", &stsz1);
                                 tPkeyList = base_strcatalloc(tPkeyList, ", ", &stsz2);
                                 oLinkColList = base_strcatalloc(oLinkColList, ", ", &stsz3);
                                 tQualPkeyList = base_strcatalloc(tQualPkeyList, ", ", &stsz4);
