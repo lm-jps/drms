@@ -13,9 +13,9 @@ use DBI;
 
 sub usage {
   print "Find all the /SUMs partitions on a server for a given time\n";
-  print "sum_time_server_scan.pl [-sd04] 2014.02.12_00:00:00 2014.02.12_00:06:00\n";
+  print "sum_time_server_scan.pl [-w] [-sd04] 2014.02.12_00:00:00 2014.02.12_00:06:00\n";
   print "       -s = The /SUM on this server, e.g. d04\n";
-  print "            An emty arg will search all servers.\n";
+  print "            An empty arg will search all servers.\n";
   print "       -w = Output the working dir only.\n"; 
   print "Range is inclusive local time\n";
   exit(1);
