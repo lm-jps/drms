@@ -65,7 +65,7 @@ if($server) {	#find the /SUM on the given server
   }
   #$sql = "select online_loc, owning_series, bytes, ds_index, creat_date, username  from sum_main where ds_index=524678104"; #!!TEMP for test
 
-  $sql = "select online_loc, owning_series, bytes, ds_index, creat_date, username  from sum_main where creat_date >= '$starttime' and  creat_date <= '$endtime'";
+  $sql = "select online_loc, owning_series, bytes, ds_index, creat_date, username  from sum_main where creat_date >= '$starttime' and  creat_date <= '$endtime' order by creat_date";
   #print "$sql\n";
 
       $sth = $dbh->prepare($sql);
