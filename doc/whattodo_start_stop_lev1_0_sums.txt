@@ -1,4 +1,5 @@
   /home/production/cvs/JSOC/doc/whattodo_start_stop_lev1_0_sums.txt 28Jun2012
+  /home/production/cvs/JSOC/doc/whattodo_start_stop_lev1_0_sums.txt 25Oct2013
 
 
 Do as user production or jsocprod as indicated. Do in this order:
@@ -68,6 +69,9 @@ START:
 
 On j1: Start SUMS as production
 -------------------------------------
+
+!!!NOTE: sums will be moved to k1. Use these:
+sum_start_k1.MULTI  sum_stop_k1.MULTI
 
 > cd /home/production/cvs/JSOC/base/sums/scripts
 > sum_start_j1.MULTI
