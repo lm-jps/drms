@@ -1,0 +1,152 @@
+
+!!!NOTE: The cvs/IRIS has been depricated. Use cvs/JSOC!!!!
+
+Make a iris_ground namespace on aia0 postgres:
+
+From Art 14Mar2012 9:18
+Run this command on n02 (let's say) and capture the output info in:
+/home/prodtest/cvs/IRIS/proj/lev0/apps/data/createns.iris,
+then put it in a file and psql -f it on aia0:
+> cd /home/prodtest/cvs/IRIS/proj/lev0/apps/data
+> script
+> createns ns=iris_ground nsgroup=sys dbusr=prodtest
+> ^d
+Now edit the typescript to remove ^M and comment lines and output
+to createns.iris
+
+Ran on aia0 as user postgres:
+psql -p 5432 -f createns.iris irisdb
+
+==============================================================================
+To run the datacapture gui on aia0:
+
+> cd /home/prodtest/cvs/IRIS/proj/datacapture/scripts
+> ./socdc
+
+==============================================================================
+To run ingest_lev0_iris on aia0:
+
+> ingest_lev0_iris vc=VC05 indir=/dds/soc2pipe/hmi logfile=/tmp/logVC05.iris.log
+
+==============================================================================
+The jsd files and a copy of the IRIS-ISP-version-6.89 are in:
+aia0:/home/prodtest/iris_isp> 
+
+The real IRIS-ISP-version-6.89 is in:
+aia0:/home/prodtest/cvs/TBL_JSOC/lev0/hk_config_file_iris/6.89> 
+
+==============================================================================
+Day files are at:
+/data/hk_hsb_dayfile
+
+==============================================================================
+To see all keywords in a nice format:
+
+> show_info -ka iris_ground.iris_isp_001 n=2
+
+==============================================================================
+To start SUMS on iris-dc0:
+su to sumsadmin via root.
+> cd /home/prodtest/cvs/IRIS/base/sums/scripts
+> sum_start (-f)
+
+You should see this:
+> px sum
+postgres  7044     1  0 09:00 pts/2    00:00:00
+/usr/local/pgsql-8.4/bin/postgres -D /var/lib/pgsql/data_sums
+root      7106  7086  0 09:03 pts/1    00:00:00 su sumsadmin
+505       7179     1  0 09:06 pts/1    00:00:00 sum_svc irisdb_sums
+505       7183  7179  0 09:06 pts/1    00:00:00 sum_rm irisdb_sums
+2012.08.15.090642
+postgres  7184  7044  0 09:06 ?        00:00:00 postgres: sumsadmin
+irisdb_sums 127.0.0.1(55040) idle        
+postgres  7191  7044  0 09:06 ?        00:00:00 postgres: sumsadmin
+irisdb_sums 127.0.0.1(55041) idle        
+
+==============================================================================
+
+The sum_svc db is irisdb_sums
+
+> psql -p 5434 irisdb_sums
+psql (8.4.7)
+
+==============================================================================
+Did a backup to xim:/home/jim/cvs/IRIS> on 04Apr2012
+!!NOTE: should use rsync instead to get links. See below.
+> cd /home/jim/cvs
+> scp -rp aia0:/home/prodtest/cvs/IRIS .
+> scp -rp aia0:/home/prodtest/cvs/TBL_JSOC .
+NOTE: This is now obsolete. Do:
+To make ingest_lev0_irisROT on backend machine:
+> ssh prodtest@n02
+> cd cvs/IRIS
+> make ingest_lev0_irisROT
+The full IRIS tree is in n02:/home/prodtest/cvs/IRIS.
+It should correspond to  "cvs co IRIS"
+n02:/home/prodtest/cvs/IRIS/proj/lev0/apps> cvs status ingest_lev0_irisROT.c 
+===================================================================
+File: ingest_lev0_irisROT.c     Status: Up-to-date
+
+The source code will be updated by prodtest on irisdc in its cvs/IRIS
+tree and then committed to the cvs repository on sunroom. Remember to do
+the cvs update on n02 as prodtest.
+
+When make a new prodtest executable on n02 be sure to
+tell Art to get the executable in /home/jsoc/cvs/Development/JSOC.
+To create lev0 on the backend, we run as jsocprod on cl1n001 which has 
+a path to cvs/Development.
+
+==============================================================================
+==============================================================================
+Must do on dc1 and dc2 at Lockheed:
+
+> cd /dds/dds2soc
+aia0:/dds/dds2soc> mkdir iris
+aia0:/dds/dds2soc> chmod g+w iris
+
+Also for /dds/soc2soc, /dds/soc2pipe, /dds/reject, /dds/soc2dds, /dds/pipe2soc
+
+==============================================================================
+
+The env vrbls for the hk processing are in 
+/home/prodtest/cvs/IRIS/proj/lev0/apps/SOURCE_ENV_FOR_HK_DECODE
+which is read in by ingest_lev0_iris when it starts.
+
+==============================================================================
+copy onto a flash drive:
+Plug in drive to xim. Get auto mount at:
+xim:/media/USB DISK>
+> rsync -e /usr/bin/ssh -avtHl aia0:/home/prodtest/cvs/IRIS .
+> rsync -e /usr/bin/ssh -avtHl aia0:/home/prodtest/cvs/TBL_JSOC .
+> rsync -e /usr/bin/ssh -avtHl aia0:/home/prodtest/jsd_files .
+#> rsync -e /usr/bin/ssh -avtHl aia0:/home/prodtest/iris_isp . (replace by
+jsd_files)
+
+NOTE: get rsync error on IRIS. So do scp.
+==============================================================================
+
+New dirs on aia0 02Apr2012:
+/home/prodtest/jsd_files        latest jsd files by Rock
+This has been updated from the new stuff:
+/home/prodtest/cvs/TBL_JSOC/lev0/hk_config_file_iris/6.89/IRIS-ISP-version-6.89
+
+/home/prodtest/iris_vacuum_cal_files/tlm  New data files from Rock
+
+==============================================================================
+Start/Stop postgres
+
+> su - postgres		(same passwd as prodtest)
+> pg_ctl -D /var/lib/pgsql/data_drms start
+> pg_ctl -D /var/lib/pgsql/data_drms stop
+
+> pg_ctl -D /var/lib/pgsql/data_sums start  
+> pg_ctl -D /var/lib/pgsql/data_sums stop 
+(or try:)
+> pg_ctl -D /var/lib/pgsql/data_sums stop -m fast
+
+(must be user sumsadmin to access tables)
+
+==============================================================================
+NOTE: Added to data_sums/pg_hba.conf and data_drms/pg_hba.conf:
+host   all       all             171.64.103.0/24    md5
+
