@@ -1,0 +1,326 @@
+        NotesOnConvert_dcs0,1,2_to_dcs0,1,2x.txt
+
+New datacapture machines:: 3/26/2013   dcs1x dcs2x
+dcs0x
+#production bn_dat4yu
+production j1!!-beer
+root: mdi:tng/  (try hfcsg0?a)
+postgres: j1ka-ale
+#jim: j1ka-ale
+jim: same as xim
+sumsadmin: j1ka-ale
+prodtest: j1ka-ale     (search forward to Password::)
+jsoc: _istwamwy
+Run > chsh  to change to /bin/tcsh shell
+As user postgres:
+dcs0x:/var/lib/pgsql> initdb -D /var/lib/pgsql/data_sums
+The files belonging to this database system will be owned by user "postgres".
+This user must also own the server process.
+
+The database cluster will be initialized with locale en_US.
+The default database encoding has accordingly been set to LATIN1.
+The default text search configuration will be set to "english".
+fixing permissions on existing directory /var/lib/pgsql/data_sums ... ok
+creating subdirectories ... ok
+selecting default max_connections ... 100
+selecting default shared_buffers ... 32MB
+creating configuration files ... ok
+creating template1 database in /var/lib/pgsql/data_sums/base/1 ... ok
+initializing pg_authid ... ok
+initializing dependencies ... ok
+creating system views ... ok
+loading system objects' descriptions ... ok
+creating conversions ... ok
+creating dictionaries ... ok
+setting privileges on built-in objects ... ok
+creating information schema ... ok
+vacuuming database template1 ... ok
+copying template1 to template0 ... ok
+copying template1 to postgres ... ok
+
+WARNING: enabling "trust" authentication for local connections
+You can change this by editing pg_hba.conf or using the -A option the
+next time you run initdb.
+
+Success. You can now start the database server using:
+
+    postgres -D /var/lib/pgsql/data_sums
+or
+    pg_ctl -D /var/lib/pgsql/data_sums -l /tmp/postgres.sums.log start
+
+Stop:
+     pg_ctl -D /var/lib/pgsql/data_sums stop [-m fast]
+
+#Also do:
+#dcs0x:/var/lib/pgsql> initdb -D /var/lib/pgsql/data_sums
+#[...]
+
+Start server:
+pg_ctl -D /var/lib/pgsql/data_sums -l /tmp/postgres.sums.log start
+
+##!! CAN skip this for dcs1x and dcs2x!!!!!!!!!!!!!!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+NOTE: Latter changed the name of the DB below from jsoc to aiadb,
+and from jsoc_sums to aiadb_sums.
+As user postgres:
+dcs0x:/var/lib/pgsql> psql template1
+psql (8.4.13)
+Type "help" for help.
+
+template1=# ALTER DATABASE jsoc RENAME TO aiadb;
+ALTER DATABASE
+template1=# \q
+(First stop sums as user sumsadmin sum_stop)
+dcs0x:/var/lib/pgsql> psql -p 5434 template1
+psql (8.4.13)
+Type "help" for help.
+
+template1=# ALTER DATABASE jsoc_sums RENAME TO aiadb_sums;
+ALTER DATABASE
+template1=# \q
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+edit  /home/prodtest/cvs/JSOC/config.local
+DRMS_DATABASE   aiadb
+
+> cd /home/prodtest/cvs/JSOC/base/sums/apps/data
+> cp sum_rm.cfg.jsoc_sums sum_rm.cfg.aiadb_sums
+
+===================================================================
+
+> createdb -p 5434 -U postgres aiadb_sums
+And edit data_sums/postgresql.conf for:
+port = 5434                             # (change requires restart)
+
+Also add:
+listen_addresses = '*'          # what IP address(es) to listen on;
+
+Make .pgpass for prodtest and sumsadmin. Fix pg_hba.conf and postgresql.conf.
+
+> cd /home/prodtest/cvs/JSOC/base/sums/scripts/postgres
+> psql -p 5434 -U postgres aiadb_sums
+aiadb_sums=# create user prodtest with password '????????';
+aiadb_sums=# create user sumsadmin with password '????????';
+aiadb_sums=# \i create_sums_tables.sql
+aiadb_sums=# insert into sum_partn_avail values ('/SUM1', 30000000000000, 30000000000000, 0, 0);
+aiadb_sums=# copy sum_arch_group from '/tmp/sum_arch_group.copy';
+aiadb_sums=# grant all on sum_tape to sumsadmin;
+GRANT
+aiadb_sums=# grant all on sum_ds_index_seq,sum_seq to sumsadmin;
+GRANT
+aiadb_sums=# grant all on sum_file,sum_group,sum_main,sum_open to sumsadmin;
+GRANT
+aiadb_sums=# grant all on sum_partn_alloc,sum_partn_avail to sumsadmin;
+GRANT
+aiadb_sums=# grant all on sum_tape to prodtest;
+GRANT
+aiadb_sums=# grant all on sum_ds_index_seq,sum_seq to prodtest;
+GRANT
+aiadb_sums=# grant all on sum_file,sum_group,sum_main,sum_open to prodtest;
+GRANT
+aiadb_sums=# grant all on sum_partn_alloc,sum_partn_avail to prodtest;
+aiadb_sums=# \q
+>
+
+> su - sumsadmin
+> scp irisdc:/home/sumsadmin/.tcshrc .     #NOTE use dcs0x subsequently for 1x and 2x
+(also .jimalias, .aliases, .setNEWJSOCenv)
+Comment out JSOC_COMPILER and JSOC_FCOMPILER in .tcshrc
+dcs0x:/home/sumsadmin> scp irisdc.stanford.edu:/home/sumsadmin/\* .
+edit /home/prodtest/cvs/JSOC/config.local to change iris to dcs0x stuff
+edit /home/sumsadmin/sum_start to add localhost check (!!No, going to take out)
+As root:
+mkdir /usr/local/logs/[soc,SUM]
+chmod g+ws soc SUM
+[root@dcs1x logs]# chown prodtest soc
+[root@dcs1x logs]# chgrp sums soc
+chown sumsadmin SUM
+chgrp sums SUM
+mkdir lev0
+chown prodtest lev0
+chgrp sums lev0
+chmod g+ws lev0
+
+dcs0x:/var/lib/pgsql> pg_ctl -D /var/lib/pgsql/data_drms -l /tmp/postgres.drms.log start
+
+> pg_ctl -D /var/lib/pgsql/data_drms stop
+
+Also do:
+> initdb -D /var/lib/pgsql/data_drms
+> createdb -p 5432 -U postgres aiadb
+And edit data_drms/postgresql.conf for:
+port = 5432                             # (change requires restart)
+
+Also add:
+listen_addresses = '*'          # what IP address(es) to listen on;
+
+> psql -p 5432 -U postgres aiadb
+jsoc=# create user postgres with password '????????';
+or
+hmidb=# ALTER USER postgres WITH PASSWORD 'j1ka-ale';
+ALTER ROLE
+or
+Edit /var/lib/pgsql/data_drms/pg_hba.conf for no password:
+local   all     all                             trust
+
+Also do the above for psql -p 5434 -U postgres hmidb_sums
+
+
+As root:
+cp /home/prodtest/cvs/JSOC/bin/linux_x86_64/../../_linux_x86_64/base/sums/apps/sum_chmown /usr/local/bin
+And do:
+chmod u+s /usr/local/bin/sum_chmown
+[root@dcs0x bin]# ls -l sum_chmown
+-rwsr-xr-x 1 root root 10661 May 13 10:01 sum_chmown
+
+Add to /etc/sudoers (do chmod +w and then after edit chmod -w)
+NOTE: the dcs0x will have to be changed to dcs0 later.
+jim dcs0x=NOPASSWD:/bin/chmod, /bin/chown, /usr/bin/mt, /bin/nice
+sumsadmin dcs0x=NOPASSWD:/bin/chmod, /bin/chown, /bin/mt, /bin/nice
+prodtest dcs0x=NOPASSWD:/bin/chmod, /bin/chown, /bin/mt, /bin/nice
+
+See: http://vso.stanford.edu/netdrms/setup.html for making
+the drms db tables. (as shown below)
+As user postgres:
+dcs0x:/var/lib/pgsql> createlang plpgsql aiadb
+dcs0x:/var/lib/pgsql>
+dcs0x:/var/lib/pgsql> psql -f /home/prodtest/cvs/JSOC/scripts/NetDRMS.sql aiadb
+CREATE SCHEMA
+GRANT
+CREATE TABLE
+CREATE TABLE
+GRANT
+GRANT
+dcs0x:/var/lib/pgsql> cd /home/prodtest/cvs/JSOC
+dcs0x:/home/prodtest/cvs/JSOC> scripts/createpgfuncs.pl aiadb
+dcs0x:/home/prodtest/cvs/JSOC> cd
+dcs0x:/var/lib/pgsql> psql -h dcs0x -d aiadb -U postgres
+jsoc=# create role drmsuser;
+CREATE ROLE
+jsoc=# create role sumsadmin;
+CREATE ROLE
+jsoc=# \q
+dcs0x:/var/lib/pgsql> psql -h dcs0x -d aiadb -U postgres
+jsoc=# create schema drms;
+CREATE SCHEMA
+jsoc=# create table drms.minvers (minversion text default '1.0' not null);
+CREATE TABLE
+jsoc=# grant select on drms.minvers to public;
+GRANT
+jsoc=# GRANT USAGE ON SCHEMA drms TO PUBLIC;
+GRANT
+jsoc=# insert into drms.minvers (minversion) values ('1.0');
+INSERT 0 1
+
+hmidb=# create user prodtest with password 'j1ka-ale';
+
+jsoc=# \q
+
+> masterlists dbuser=prodtest namespace=aia nsgrp=user JSOC_DBHOST=dcs0x
+
+> psql -U postgres aiadb
+Password for user postgres:
+psql (8.4.13)
+Type "help" for help.
+jsoc=# insert into admin.sessionns values ('prodtest', 'aia');
+INSERT 0 1
+jsoc=# \q
+
+dcs0x:/home/prodtest/cvs/JSOC/proj/lev0/apps/data> create_series JSOC_DBHOST=dcs0x aia.tlm.jsd
+Creating new series 'aia.tlm'...
+NOTICE:  CREATE TABLE / PRIMARY KEY will create implicit index "tlm_pkey" for table "tlm"
+
+And for now (until Art can fix):
+setenv JSOC_DBHOST dcs0x    (put in .tcshrc)
+
+And see if need:
+setenv JSOC_DBNAME aiadb    (put in .tcshrc)
+
+As user jsoc:
+[jsoc@dcs0x ~]$ cp /home/prodtest/.jimalias .
+source .jimalias
+dcs0x:/home/jsoc> mkdir -p bin/linux_x86_64/
+dcs0x:/home/jsoc/bin/linux_x86_64> ln -s /usr/bin/perl perl
+> cd
+> chmod 755 .
+
+On dcs1 that need the hmi mech tables:
+As user jsoc.
+dcs1x:/home/jsoc> mkdir -p cvs/Development/JSOC/proj/tables/
+> cd cvs/Development/JSOC/proj/tables/
+dcs1x:/home/jsoc/cvs/Development/JSOC/proj/tables> scp -rp xim:/home/jsoc/cvs/Development/JSOC/proj/tables/hmi_mech .
+
+Change ingest_lev0_hmiaia.c to use imgdecode_hmiaia.h to get lookup tables
+
+
+SEE: NOTE above about changing the db names to aiadb and aiadb_sums
+
+#Edit /home/prodtest/cvs/JSOC/proj/datacapture/apps/ingest_tlm.c
+##define DEFAULTDB "aiadb_sums"
+#Edit /home/prodtest/cvs/JSOC/include/serverdefs.h
+##define SERVER "dcs0x"
+#> make ingest_tlm
+
+See dcs0x:/home/prodtest/cvs/JSOC/proj/lev0/apps/ingest_lev0_hmiaia.c.
+and Rules.mk
+
+Edit /home/prodtest/cvs/JSOC/proj/lev0/apps/SOURCE_ENV_FOR_HK_DECODE to
+change production to prodtest.
+change /surge40 to /data  and make /data/jsocprod/lev0/hk_hsb_dayfile
+chmod g+ws  chgrp SOI chown prodtest
+
+mkdir /usr/local/logs/lev0 and fix perms.
+
+jsd in /home/prodtest/cvs/JSOC/proj/lev0/apps/data
+create_series aia.lev0_seq_0011.jsd
+create_series aia.lev0_isp_0011.jsd
+
+Don't forget to do:
+> cd /dds/soc2pipe/hmi
+> mkdir xday
+
+If need to make a new namespace, e.g. iris, see:
+irisdc:/home/prodtest/cvs/JSOC/proj/lev0/apps/data/createns.iris
+
+For apache on dcs1x:
+As root:
+> cd /
+> ln -s /srv web
+> cd /var
+> cp -rp www www.BAK
+> ln -s /web/www www
+Copy everything from dcs1 /web/www
+The apache logs are in /etc/httpd/logs
+
+#No:
+#>cd /etc/httpd
+#[root@dcs1x httpd]# scp dcs1:/etc/apache2/default-server.conf .
+
+Do as root:
+$ perl -MCPAN -e shell
+cpan[1]> install DBD::Pg
+
+In /web/www/cgi-bin/forms_jsocdc_dcs1_SUMS as root change:
+$HOST = "dcs1x";       #host where the cgi runs
+$user = "prodtest";
+$password = "j1ka-ale";
+$hostdb = "dcs1x";      #host where Postgres runs
+$PGPORT = 5434;
+
+[root@dcs1x prodtest]# cd /usr/local
+[root@dcs1x local]# mkdir -p rdb/bin
+[root@dcs1x local]# cd rdb/bin
+[root@dcs1x rdb]# scp dcs1:/usr/local/rdb/bin/justify .
+cd /web/www
+ln -s htdocs html
+
+Apache on dcs1x logs:  /var/log/httpd/
+
+===============================================================================
+irisarc:: j1ka-ale
+irisarc has been configured to communicate with irisdc
+over the 10g LMSAL link.  Its 14TB disk is now mounted
+on irisdc as /irisarc (owner/group sumsadmin/sums).
+
+*******************************************************************
+
