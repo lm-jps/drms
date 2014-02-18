@@ -1,3 +1,5 @@
+			/home/prodtest/cvs/JSOC/doc/iris_info.txt
+
 
 !!!NOTE: The cvs/IRIS has been depricated. Use cvs/JSOC!!!!
 
