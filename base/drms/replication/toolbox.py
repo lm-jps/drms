@@ -11,7 +11,7 @@ def expandVal(cfgDictTrans, key, val, regexpVarVal):
     valInt = val
     
     while True:
-        matchobj = regexpVarVal.match(valInt)
+        matchobj = regexpVarVal.search(valInt)
         if not matchobj is None:
             valKey = matchobj.group(1)
             valInt = re.sub(r"\${.+?}", cfgDictTrans[valKey], valInt)
