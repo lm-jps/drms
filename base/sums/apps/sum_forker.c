@@ -173,7 +173,7 @@ int main(int argc, char *argv[])
       exit(1);
     }
   }
-  sleep(4);				/* let tape_svc start */
+  sleep(2);				/* let tape_svc start */
   for(i=0; i < MAX_DRIVES; i++) { 	/* start all the driven_svc */
     if((pid = fork()) < 0) {
       printf("***Can't fork(). errno=%d\n", errno);

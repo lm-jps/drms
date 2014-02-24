@@ -497,7 +497,7 @@ int main(int argc, char *argv[])
   else {
     sprintf(sumhost, SUMSVCHOST);
   }
-  sleep(3); /* driven_svc & robotn_svc forked by sum_svc, let it start */
+  sleep(6); /* driven_svc & robotn_svc forked by sum_svc, let it start */
   for(i=0; i < MAX_DRIVES; i++) {
     retry = 0;
     while(retry < 2) {		//try twice
