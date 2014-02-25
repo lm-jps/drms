@@ -125,6 +125,7 @@ HContainer_t *drms_create_link_prototypes(DRMS_Record_t *target,
                     
                     tLink->recnum = sLink->recnum;
                     tLink->isset = sLink->isset;
+                    /* Do not set tLink->wasFollowed. That is reserved for links that are not detached. */
                 }
                 else
                 {
@@ -307,15 +308,39 @@ DRMS_Record_t *drms_link_follow(DRMS_Record_t *rec, const char *linkname,
         {
             *status = DRMS_SUCCESS;
         }
+
+        if (link->wasFollowed)
+        {
+            /* The caller has previously called drms_link_follow() on the same original record.
+             * No new handle (via original rec) to the link record will be created, so do not
+             * increment the refcount on the linked record. */
+        }
+        else
+        {
+           /* The caller has never called drms_link_follow() on this original record, but the
+            * linked record is in the cache, so drms_open_records() must have been called on 
+            * that linked record. In this case, we are creating a handle to the linked record
+            * (via original rec), so we do need to increment the refcount on the linked record.*/
+           ++linkedRec->refcount;
+           link->wasFollowed = 1;
+        }
+
         return linkedRec;
     }
     else
     {
         /* Set refcount on linked record to 1. */
+        XASSERT(!link->wasFollowed); /* Do not follow links more than once (for any given original
+                                      * record). */
+        link->wasFollowed = 1;
         return drms_retrieve_record(rec->env, link->info->target_series, link->recnum, NULL, status);
     }
 }
 
+
+#if 0
+// DON'T USE THIS FUNCTION - IT DOESN'T HANDLE REFCOUNTING OF LINKED RECORDS WELL. 
+// Use drms_link_follow(), in a loop if necessary.
 
 /* Return all records pointed to by a named link in the given record. 
    For dynamic links all records with the matching primary index value 
@@ -381,7 +406,7 @@ DRMS_RecordSet_t *drms_link_followall(DRMS_Record_t *rec, const char *linkname,
     *status = stat;
   return NULL;
 }
-
+#endif
 
 /* Recolve dynamic links by selecting the record with highest record number
    matching the value of the primary index given in the link structure. */
@@ -621,6 +646,7 @@ int drms_template_links(DRMS_Record_t *template)
          memset(&link->pidx_value[j],0,sizeof(DRMS_Type_Value_t));
       }     
       link->isset = 0;
+      link->wasFollowed = 0;
       link->recnum = -1; 
    }
    db_free_binary_result(qres);

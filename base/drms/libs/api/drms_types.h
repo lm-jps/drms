@@ -923,6 +923,16 @@ struct DRMS_Link_struct
   int isset;
   DRMS_Type_Value_t pidx_value[DRMS_MAXPRIMIDX]; /* Primary index values of
 						    target record(s). */
+
+  int wasFollowed; /* If a linked-record struct was allocated as a result of a visit to the database
+                    * (e.g., because drms_link_follow() was called), then this is set to 1. If this
+                    * is the case, then when the original record (source) is freed, then linked record
+                    * (target) is freed too. But if a user happens to open the original record
+                    * and the linked record independently, then wasFollowed == 0, and if the user
+                    * frees the original record, the linked record should not be freed.
+                    *
+                    * A linked record can be followed only once.
+                    */
 };
 
 /** \brief DRMS link struct reference */

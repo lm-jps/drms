@@ -4291,7 +4291,9 @@ void drms_free_records(DRMS_RecordSet_t *rs)
                             drms_make_hashkey(hashkey, link->info->target_series, link->recnum);
                             lrec = hcon_lookup(&env->record_cache, hashkey);
                             
-                            if (lrec && lrec->readonly)
+                            /* Only free a linked record if it got in the cache because it was 
+                             * followed from the original record. */
+                            if (lrec && lrec->readonly && link->wasFollowed)
                             {
                                 /* Don't free records that are writeable - those were not opened in 
                                  * response to following links. */
@@ -4329,7 +4331,7 @@ void drms_free_records(DRMS_RecordSet_t *rs)
                 /* We could still have a problem. */
                 /* Free source record. */
                 delrec = rs->records[i];
-                drms_free_record(rs->records[i]);
+                drms_free_record(rs->records[i]); /* checks refcount on record */
                 rs->records[i] = NULL;
                 TrackerInsertRec(tracker, delrec);
             }
@@ -4423,7 +4425,9 @@ void drms_free_records(DRMS_RecordSet_t *rs)
                                 drms_make_hashkey(hashkey, link->info->target_series, link->recnum);
                                 lrec = hcon_lookup(&env->record_cache, hashkey);
                                 
-                                if (lrec && lrec->readonly)
+                                /* Only free a linked record if it got in the cache because it was
+                                 * followed from the original record. */
+                                if (lrec && lrec->readonly && link->wasFollowed)
                                 {
                                     /* Don't free records that are writeable - those were not opened in 
                                      * response to following links. */
@@ -4460,7 +4464,7 @@ void drms_free_records(DRMS_RecordSet_t *rs)
                     
                     /* Free source record. */
                     delrec = rs->records[i];
-                    drms_free_record(rs->records[i]);
+                    drms_free_record(rs->records[i]); /* checks refcount on record */
                     rs->records[i] = NULL;
                     TrackerInsertRec(tracker, delrec);                    
                 }
@@ -5839,6 +5843,13 @@ static DB_Binary_Result_t *dbFetchRecsFromList(DRMS_Env_t *env, const char *oSer
  * Set the link->recnum field for a link for all records specified in dbres. The records in dbres belong to
  * the series oSeries. Since this field is already set for static links, linkTempl must be a template for
  * a dynamic link.
+ *
+ * dbres has info for just dynamic links. It contains the linked-record recnum that was obtained from the db. For 
+ * static links, the linked-record recnum was already available.
+ * 
+ *    oSeries is the linked series (target series)
+ *    linkTempl is a template link struct linking the oSeries to the linked series
+ *    recList is a list of linked-series recnums
  */
 static int processFetchedRecs(DB_Binary_Result_t *dbres, const char *oSeries, DRMS_Link_t *linkTempl, HContainer_t *mapRec, LinkedList_t *recList)
 {
@@ -5853,6 +5864,10 @@ static int processFetchedRecs(DB_Binary_Result_t *dbres, const char *oSeries, DR
     
     if (dbres && dbres->num_cols == 2 && oSeries && linkTempl && mapRec)
     {
+        /* Get the link struct to determine if the link is static or dynamic. We need the original record to get the link struct. */
+        
+        
+        
         for (iRow = 0; iRow < dbres->num_rows; iRow++)
         {
             oRecnum = db_binary_field_getlonglong(dbres, iRow, 0);
@@ -6185,7 +6200,9 @@ DRMS_RecordSet_t *callRetrieveRecsPreparedQuery(DRMS_Env_t *env, HContainer_t *m
  * records from more than one series. */
 DRMS_RecordSet_t *drms_record_retrievelinks(DRMS_Env_t *env, DRMS_RecordSet_t *recordset, int *status)
 {
+    DRMS_RecordSet_t *rvMerge = NULL;
     DRMS_RecordSet_t *rv = NULL;
+    DRMS_Record_t *linkedRec = NULL;
     HContainer_t *mapRec = NULL; /* map (original series, original recnum) to original-record struct */
     HContainer_t *mapOseriesTseriesCont = NULL; /* map original-series name to target-series list container. */
     HContainer_t *mapLinkList = NULL; /* map a DRMS link to a list of original records for which the target
@@ -6241,6 +6258,39 @@ DRMS_RecordSet_t *drms_record_retrievelinks(DRMS_Env_t *env, DRMS_RecordSet_t *r
              * link->recnum is set for all links for all record. */
             while ((link = drms_record_nextlink(rec, &last)))
             {
+                /* If the link has already been followed, get it directly from the record cache and skip the rest of the code in this loop. Merge
+                 * this record into a container, then merge the contents of this container with the return values from the callRetrieveRecsPreparedQuery()
+                 * call below. */
+                if (link->wasFollowed)
+                {
+                    /* This will not re-follow the link, it will just find it in the record cache and return a pointer. */
+                    linkedRec = drms_link_follow(rec, link->info->name, &istat);
+                    
+                    if (istat != DRMS_SUCCESS)
+                    {
+                        break;
+                    }
+                    
+                    if (!rvMerge)
+                    {
+                        /* Must create a new empty record-set and then merge the records from rv and rvSupp into the new
+                         * record-set. */
+                        rvMerge = calloc(1, sizeof(DRMS_RecordSet_t));
+                        
+                        if (!rvMerge)
+                        {
+                            istat = DRMS_ERROR_OUTOFMEMORY;
+                            break;
+                        }
+                        
+                    }
+                    
+                    drms_merge_record(rvMerge, linkedRec);
+                    linkedRec = NULL;
+                    
+                    continue;
+                }
+                
                 if (link->info->type == DYNAMIC_LINK)
                 {
                     if (link->isset)
@@ -6315,6 +6365,7 @@ DRMS_RecordSet_t *drms_record_retrievelinks(DRMS_Env_t *env, DRMS_RecordSet_t *r
                 }
                 else
                 {
+                    /* static link */
                     if (link->recnum != -1)
                     {
                         /* link is set - link->recnum is the recnum of the target record. */
@@ -6365,6 +6416,21 @@ DRMS_RecordSet_t *drms_record_retrievelinks(DRMS_Env_t *env, DRMS_RecordSet_t *r
                         list_llinserttail(recListT, &tRecnum);
                     }
                 }
+                
+                /* If everything succeeds, we will have followed the link and set the refcount on the linked record to 1.
+                 * Since we have the actual link struct, and we are going to retrieve the linked record from the db, now would
+                 * be a good time to set the link's wasFollowed flag. 
+                 * 
+                 * We are going to follow all links that are "set", so set the wasFollowed flag only if the link is actually set. If
+                 * the link struct points to an invalid/missing record, then the code will fail downstream, and the module run will terminate
+                 * so we do not have to worry about invalid/missing target records here.
+                 */
+                if ((link->info->type == STATIC_LINK && link->recnum !=- 1) || (link->info->type == DYNAMIC_LINK && link->isset))
+                {
+                    /* link is set */
+                    link->wasFollowed = 1;
+                }
+                
             } /* link loop */
             
             if (last)
@@ -6513,6 +6579,10 @@ DRMS_RecordSet_t *drms_record_retrievelinks(DRMS_Env_t *env, DRMS_RecordSet_t *r
                          * mapTseriesReclist. Iterate through that list and get the record information for each
                          * record from the db. */
                         rv = callRetrieveRecsPreparedQuery(env, mapTseriesReclist, &istat);
+                        if (rv)
+                        {
+                            istat = mergePreparedResults(&rvMerge, rv);
+                        }
                     }
                     
                     hcon_destroy(&mapTseriesReclist);
@@ -6529,17 +6599,35 @@ DRMS_RecordSet_t *drms_record_retrievelinks(DRMS_Env_t *env, DRMS_RecordSet_t *r
         hcon_destroy(&mapRec);
     }
     
+    if (istat == DRMS_SUCCESS && rvMerge)
+    {
+        rvMerge->ss_currentrecs = (int *)malloc(sizeof(int));
+        
+        /* Users should not use rvMerge (a record-set of linked records) directly, so all the ss_* fields do not matter, and we can consider the
+         * record-set as originating from a single series (but in fact they could have derived from multiple series). The only ss_* field that
+         * does matter is ss_currentrecs, which is used by drms_recordset_fetchnext() for iteration over the records. DRMS, not clients,
+         * will use this function to iterate over records. */
+        if (rvMerge->ss_currentrecs)
+        {
+            *rvMerge->ss_currentrecs = -1;
+        }
+        else
+        {
+            istat = DRMS_ERROR_OUTOFMEMORY;
+        }
+    }
+    
     if (status)
     {
         *status = istat;
     }
     
-    return rv;
+    return rvMerge;
 }
 
-char *drms_query_string(DRMS_Env_t *env, 
+char *drms_query_string(DRMS_Env_t *env,
                         const char *seriesname,
-                        char *where, 
+                        char *where,
                         const char *pkwhere,
                         const char *npkwhere,
                         int filter, 
