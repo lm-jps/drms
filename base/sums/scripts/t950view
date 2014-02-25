@@ -2857,6 +2857,11 @@ sub ExpHMItlm_sub {
       @txorder = @rdVpspecunloads;
       last SWITCH;
     }
+    if($grpn == 320) {		#hmi tdVtimes/tdVtrack
+      $xxcnt = $tdVtrackcnt;
+      @txorder = @tdVtrackunloads;
+      last SWITCH;
+    }
   }
   $grpnsave = $grpn;
   if(Exists($ExpHtlmf)) {
