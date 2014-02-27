@@ -3541,6 +3541,15 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
     {
         DRMS_RecordSet_t *linkedrecs = NULL;
         int nSUNUMs;
+        int currRec;
+        DRMS_Record_t *rec = NULL;
+        int drmsStatus = DRMS_SUCCESS;
+        DRMS_RecChunking_t cstat = kRecChunking_None;
+        int newchunk;
+        HIterator_t *hitSeg = NULL;
+        DRMS_Segment_t *seg = NULL;
+        int fetchLinks = 0;
+
         env = rs->records[0]->env;
         
         /* We need to combine all records in rs with all linked records that rs refers to. The linked records may or may
@@ -3553,11 +3562,42 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
         {
             bail = 1;
         }
+        
+        /* Before we ask SUMS to retrieve SUs for linked records, make sure that there is a least one segment 
+         * in rs->record[X]->segments that links to a linked segment. */
+        currRec = drms_recordset_fetchnext_getcurrent(rs);
+        drms_recordset_fetchnext_setcurrent(rs, -1); /* Reset current-rec pointer. */
+        
+        while ((rec = drms_recordset_fetchnext(env, rs, &drmsStatus, &cstat, &newchunk)) != NULL && !fetchLinks)
+        {
+            hitSeg = hiter_create(&rec->segments);
+            if (!hitSeg)
+            {
+                bail = 1;
+                status = DRMS_ERROR_OUTOFMEMORY;
+                break;
+            }
+            
+            while ((seg = (DRMS_Segment_t *)hiter_getnext(hitSeg)) != NULL)
+            {
+                if (seg->info->islink)
+                {
+                    fetchLinks = 1;
+                    break;
+                }
+            }
+            
+            hiter_destroy(&hitSeg);
+            hitSeg = NULL;
+        }
+        
+        drms_recordset_fetchnext_setcurrent(rs, currRec);
+        
 
         if (!bail)
         {
             nSUNUMs = rs->n;
-            if (linkedrecs)
+            if (linkedrecs && fetchLinks)
             {
                 nSUNUMs += linkedrecs->n;
             }
@@ -3615,7 +3655,7 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
             }
             else
             {
-                if (linkedrecs)
+                if (linkedrecs && fetchLinks)
                 {
                     if (insertIntoSunumList(env, linkedrecs, &suinfoauth, sortalso, sunumreqinfo, seriesreqinfo, &cntreqinfo, sunum, &cnt, suinfo))
                     {
@@ -3743,7 +3783,7 @@ static int drms_stage_records_internal(DRMS_RecordSet_t *rs, int retrieve, int d
                     }
                     else
                     {
-                        if (linkedrecs)
+                        if (linkedrecs && fetchLinks)
                         {
                             if (setSU(env, linkedrecs, sortalso, suinfoauth))
                             {
@@ -11503,6 +11543,11 @@ int drms_open_recordchunk(DRMS_Env_t *env,
           int iset;
           char sqlquery[DRMS_MAXQUERYLEN];
           char *seriesname = NULL;
+          char *psl = NULL;
+          char *seglist = NULL;
+          char *lasts = NULL;
+          char *ans = NULL;
+          HContainer_t *goodsegcont = NULL;
                     
           nrecs = 0;
           
@@ -11510,6 +11555,8 @@ int drms_open_recordchunk(DRMS_Env_t *env,
            * have been fetched OR until all available records have been fetched. */
           for (iset = 0; iset < rs->ss_n; iset++)
           {
+              goodsegcont = NULL;
+              
               if (nrecs == rs->cursor->chunksize)
               {
                   /* A whole chunk's worth of records have been retrieved from the db. */
@@ -11531,6 +11578,43 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                            rs->cursor->chunksize - nrecs,
                            rs->cursor->names[iset]);
                   
+                  /* Extract segment list from subset query. */
+                  psl = strchr(rs->ss_queries[iset], '{');
+                  if (psl)
+                  {
+                      seglist = strdup(psl);
+                      if (!seglist)
+                      {
+                          stat = DRMS_ERROR_OUTOFMEMORY;
+                          break;
+                      }
+                  }
+                  
+                  if (seglist)
+                  {
+                      char aseg[DRMS_MAXSEGNAMELEN];
+                      goodsegcont = hcon_create(DRMS_MAXSEGNAMELEN,
+                                                DRMS_MAXSEGNAMELEN,
+                                                NULL,
+                                                NULL,
+                                                NULL,
+                                                NULL,
+                                                0);
+                      
+                      ans = strtok_r(seglist, " ,;:{}", &lasts);
+                      
+                      do
+                      {
+                          /* ans is a segment name */
+                          snprintf(aseg, sizeof(aseg), "%s", ans);
+                          hcon_insert_lower(goodsegcont, aseg, aseg);
+                      }
+                      while ((ans = strtok_r(NULL, " ,;:{}", &lasts)) != NULL);
+                      
+                      free(seglist);
+                      seglist = NULL;
+                  }
+                  
                   /* Don't filter out unneeded segments - too painful with our current design */
                   fetchedrecs = drms_retrieve_records_internal(env, 
                                                                seriesname, 
@@ -11539,7 +11623,7 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                                                                NULL,
                                                                0, 
                                                                0, 
-                                                               NULL, /* seg filter */
+                                                               goodsegcont, /* seg filter */
                                                                sqlquery,
                                                                rs->cursor->allvers[iset],
                                                                0, 
@@ -11548,6 +11632,11 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                                                                0,
                                                                1,
                                                                &stat);
+                  
+                  if (goodsegcont)
+                  {
+                      hcon_destroy(&goodsegcont);
+                  }
 
                   free(seriesname);
                   seriesname = NULL;
