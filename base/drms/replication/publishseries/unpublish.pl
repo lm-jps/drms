@@ -1,4 +1,4 @@
-#!/home/jsoc/bin/linux_x86_64/perl -w
+#!/home/jsoc/bin/linux_x86_64/activeperl -w
 
 use FileHandle;
 use File::Copy;
@@ -210,7 +210,7 @@ if ($rv == kSuccess)
        if ($rv == kSuccess)
        {
           # Remove the just-unpublished series entries from the remote sites' .lst files.
-           if (EditLstFiles("$cfg{'kServerLockDir'}/subscribelock.txt", "$cfg{'kServerLockDir'}/parselock.txt", $cfg{kServerLockDir}/&kLockFile, "$cfg{'tables_dir'}", $cfg{kCfgTable}, $cfg{kLstTable}, $dbname, $dbhost, $dbport, $dbuser, $schema, $table, 1) != 0)
+           if (EditLstFiles("$cfg{'kServerLockDir'}/subscribelock.txt", "$cfg{'kServerLockDir'}/parselock.txt", $cfg{kServerLockDir} . "/" . &kLockFile, "$cfg{'tables_dir'}", $cfg{kCfgTable}, $cfg{kLstTable}, $dbname, $dbhost, $dbport, $dbuser, $schema, $table, 1) != 0)
           {
              $rv = kEditLstFailed;
           }
