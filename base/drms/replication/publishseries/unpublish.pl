@@ -36,12 +36,12 @@ my($rv);
 my(@cfgdata);
 my(%cfg);
 
-$rv = kSuccess;
+$rv = &kSuccess;
 
 if ($#ARGV != 1)
 {
    PrintUsage();
-   $rv = kInvalidArg;
+   $rv = &kInvalidArg;
 }
 else
 {
@@ -53,18 +53,18 @@ else
       # fetch needed parameter values from configuration file
       if (toolbox::GetCfg($conf, \%cfg))
       {
-         $rv = kInvalidArg;
+         $rv = &kInvalidArg;
       }
    }
    else
    {
-      $rv = kInvalidArg;
+      $rv = &kInvalidArg;
    }
 
    ($schema, $table) = ($series =~ /(\S+)\.(\S+)/);
 }
 
-if ($rv == kSuccess)
+if ($rv == &kSuccess)
 {
    # Connect to the db
    my($dbh);
@@ -97,19 +97,19 @@ if ($rv == kSuccess)
 
        if ($tabid == -2)
        {
-          $rv = kInvalidSQL;
+          $rv = &kInvalidSQL;
        }
        elsif ($tabid == -1)
        {
           print "Series '$series' does not appear to be under slony replication.\n";
-          $rv = kInvalidArg;
+          $rv = &kInvalidArg;
        }
        else
        {
           print "Table ID for series '$series' is $tabid.\n";
        }
 
-       if ($rv == kSuccess)
+       if ($rv == &kSuccess)
        {
           # Need to run a slonk command. To do this, we pipe some text to the slonik binary
           my($slonikcmd);
@@ -132,21 +132,21 @@ if ($rv == kSuccess)
           else
           {
              print STDERR "Failure running slonik.\n";
-             $rv = kSlonikFailed;
+             $rv = &kSlonikFailed;
           }
        }
 
-       if ($rv == kSuccess)
+       if ($rv == &kSuccess)
        {
           # Check that replicated table was successfully dropped from replication.
           if (GetRepTableID(\$dbh, $cfg{'CLUSTERNAME'}, $schema, $table) != -1)
           {
              print STDERR "Table-dropping Slonik failed.\n";
-             $rv = kSlonikFailed;
+             $rv = &kSlonikFailed;
           }
        }
 
-       if ($rv == kSuccess)
+       if ($rv == &kSuccess)
        {
           # Ensure that the unpublication has successfully propagated from the master
           # to the slave, then delete the data series from the slave.
@@ -178,7 +178,7 @@ if ($rv == kSuccess)
                 }
                 elsif ($id == -2)
                 {
-                   $rv = kInvalidSQL;
+                   $rv = &kInvalidSQL;
                    last;
                 }
                 else
@@ -190,11 +190,11 @@ if ($rv == kSuccess)
                 sleep(1);
              }
 
-             if ($rv == kSuccess)
+             if ($rv == &kSuccess)
              {
                 if (DeleteSeries(\$slavedbh, $schema, $table, 1) != 0)
                 {
-                   $rv = kDelSeriesFailed;
+                   $rv = &kDelSeriesFailed;
                 }
              }
 
@@ -207,12 +207,12 @@ if ($rv == kSuccess)
           }
        }
 
-       if ($rv == kSuccess)
+       if ($rv == &kSuccess)
        {
           # Remove the just-unpublished series entries from the remote sites' .lst files.
            if (EditLstFiles("$cfg{'kServerLockDir'}/subscribelock.txt", "$cfg{'kServerLockDir'}/parselock.txt", $cfg{kServerLockDir} . "/" . &kLockFile, "$cfg{'tables_dir'}", $cfg{kCfgTable}, $cfg{kLstTable}, $dbname, $dbhost, $dbport, $dbuser, $schema, $table, 1) != 0)
           {
-             $rv = kEditLstFailed;
+             $rv = &kEditLstFailed;
           }
        }
 
@@ -223,7 +223,7 @@ if ($rv == kSuccess)
       print STDERR "Failure connecting to database: '$DBI::errstr'\n";
    }
 
-   if ($rv == kSuccess)
+   if ($rv == &kSuccess)
    {
       print "Unpublication completed successfully!\n";
    }
@@ -539,13 +539,13 @@ sub EditLstFiles
                 if (!defined($tblmgr))
                 {
                     $tblmgr = new SubTableMgr($gentablck, $cfgtab, $lsttab, $dbname, $dbhost, $dbport, $dbuser);
-                    $rv = ($tblmgr->GetErr() != &kRetSuccess);
+                    $rv = ($tblmgr->GetErr() != &kSuccess);
                 }
                 
                 if ($rv == 0)
                 {
                     $tblmgr->RemoveSeries($series, undef);
-                    $rv = ($tblmgr->GetErr() != &kRetSuccess);
+                    $rv = ($tblmgr->GetErr() != &kSuccess);
                 }
             }
             
