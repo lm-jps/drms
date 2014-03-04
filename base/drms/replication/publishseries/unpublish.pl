@@ -539,13 +539,13 @@ sub EditLstFiles
                 if (!defined($tblmgr))
                 {
                     $tblmgr = new SubTableMgr($gentablck, $cfgtab, $lsttab, $dbname, $dbhost, $dbport, $dbuser);
-                    $rv = ($tblmgr->GetErr() != kRetSuccess);
+                    $rv = ($tblmgr->GetErr() != &kRetSuccess);
                 }
                 
                 if ($rv == 0)
                 {
                     $tblmgr->RemoveSeries($series, undef);
-                    $rv = ($tblmgr->GetErr() != kRetSuccess);
+                    $rv = ($tblmgr->GetErr() != &kRetSuccess);
                 }
             }
             
