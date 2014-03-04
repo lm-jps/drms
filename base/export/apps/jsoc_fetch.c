@@ -1943,7 +1943,7 @@ check for requestor to be valid remote DRMS site
                 
                 requestorid = requestor_rec->recnum;
                 drms_setkey_int(requestor_rec, "RequestorID", requestorid);
-                drms_setkey_string(requestor_rec, "Requestor", lcrequestor);
+                drms_setkey_string(requestor_rec, "Requestor", requestor);
                 if (strncasecmp(notify,"solarmail",9) == 0)
                 {
                     char tmp_notify[1024];
