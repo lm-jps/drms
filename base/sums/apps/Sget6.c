@@ -499,7 +499,8 @@ if(!strcmp(hostn, "xim")) {
   if(!clnttape) {       /* server not there */
     clnt_pcreateerror("Can't get client handle to tape_svc (xsum_svc)");
     write_log("tape_svc not there on %s\n", usedhost);
-//    exit(1);
+    fprintf(stderr, "tape_svc not there on %s\n", usedhost);
+    exit(1);
   }
   clnttape_old = clnttape;	//used by tapereconnectdo_1()
 }
