@@ -36,7 +36,8 @@ S_$(d)		:= $(notdir $(EXE_$(d)) $(MODEXE_SOCK_$(d)))
 # Local rules
 $(OBJ_$(d)):		$(SRCDIR)/$(d)/Rules.mk
 $(OBJ_$(d)):		CF_TGT := $(CF_TGT) -I$(SRCDIR)/$(d)/../../libs/json -I$(SRCDIR)/$(d)/../libs/util
-$(OBJ_$(d)):		CF_TGT := $(CF_TGT) -DCDIR="\"$(SRCDIR)/$(d)\""
+# DBMS is the POSTGRESQL macro needed so that jsoc_fetch can see db_int8_t
+$(OBJ_$(d)):		CF_TGT := $(CF_TGT) -DCDIR="\"$(SRCDIR)/$(d)\"" -D$(DBMS)
 
 $(CEXE_$(d)):		$(LIBJSON) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBQDECODER)
 $(MODEXE_$(d)):		$(LIBJSON) $(LIBEXPDRMS) $(LIBEXPUTL) $(LIBQDECODER)

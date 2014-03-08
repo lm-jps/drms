@@ -26,6 +26,7 @@
 #include "jsoc_main.h"
 #include "drms.h"
 #include "drms_names.h"
+#include "db.h"
 #include "json.h"
 #include "printk.h"
 #include "qDecoder.h"
@@ -880,6 +881,32 @@ static void LogReqInfo(const char *fname,
     WriteLog(fname, "**********************\n");
 }
 
+static int sunumComp(const void *val1, const void *val2)
+{
+    long long sunum1;
+    long long sunum2;
+    
+    if (val1)
+    {
+        sunum1 = *((long long *)val1);
+    }
+    else
+    {
+        sunum1 = -1;
+    }
+    
+    if (val2)
+    {
+        sunum2 = *((long long *)val2);
+    }
+    else
+    {
+        sunum2 = -1;
+    }
+    
+    return (sunum1 < sunum2) ? -1 : (sunum1 > sunum2 ? 1 : 0);
+}
+
 /* Module main function. */
 int DoIt(void)
 {
@@ -1102,6 +1129,7 @@ int DoIt(void)
   if (strcmp(op, kOpExpSu) == 0)
     {
     long long sunum;
+        const char *seriesKey = NULL;
     int count;
     int status=0;
     int sums_status = 0; //ISS
@@ -1162,12 +1190,516 @@ int DoIt(void)
        printkerr(msgbuf);
        sums_status = 1;
     }
+        
+        /* ART FETCH BLOCK - To block certain SUs, we have to get the earliest T_REC from the SU. We want this to be 
+         * quick, so batch this into a single db request. THERE MUST BE A DB INDEX on the sunum column of every 
+         * series that we wish to partially block, otherwise the following query will take a long time to 
+         * run. 
+         *
+         * Sample SQL - SELECT sunum, min(t_obs) FROM hmi.lev1 WHERE sunum IN (227768258, 227769522) GROUP BY sunum;
+         * 
+         * Complication - the sunums might be for different series - crap! Need to loop over series first. Make a container,
+         * keyed by series that contains a list of sorted sunums.
+         */
+        const int NUM_ARGS = 16;
+        int isunum;
+        char stmnt[256];
+        char *argin[NUM_ARGS];
+        DB_Type_t intype[NUM_ARGS];
+        int nExe;
+        int iArg; /* iter over placeholders in prepared statement. */
+        int iExe; /* number of times to call prepared statement. */
+        char nbuf[32];
+        HContainer_t *seriesSunums = NULL;
+        HContainer_t *seriesMinBadTimes = NULL;
+        HContainer_t *seriesMaxBadTimes = NULL;
+        HContainer_t *filterOut = NULL;
+        LinkedList_t *sunumList = NULL;
+        HIterator_t *hit = NULL;
+        void *iterGet = NULL;
+        void *hlookupGet = NULL;
+        DB_Binary_Result_t *bres = NULL;
+        DB_Binary_Result_t **pBres = NULL; /* pointer to bres */
+        int iBres;
+        DB_Text_Result_t *tres = NULL;
+        int irow;
+        ListNode_t *node = NULL;
+        char *tmpDup = NULL;
+        TIME minBadTime;
+        TIME maxBadTime;
+        long long *sunumArrSorted = NULL; /* sorted list of sunums for one series */
+        char *timeCol = NULL;
+        int dontFilter;
+        char timeValStr[256];
+        int istat = DRMS_SUCCESS;
+        
+        seriesSunums = hcon_create(sizeof(LinkedList_t *), DRMS_MAXSERIESNAMELEN, (void (*)(const void *value))list_llfree, NULL, NULL, NULL, 0);
+        seriesMinBadTimes = hcon_create(sizeof(TIME), DRMS_MAXSERIESNAMELEN, NULL, NULL, NULL, NULL, 0);
+        seriesMaxBadTimes = hcon_create(sizeof(TIME), DRMS_MAXSERIESNAMELEN, NULL, NULL, NULL, NULL, 0);
+        filterOut = hcon_create(sizeof(long long), 32, NULL, NULL, NULL, NULL, 0);
+        
+        if (!seriesSunums || !seriesMinBadTimes || !seriesMaxBadTimes || !filterOut)
+        {
+            istat = DRMS_ERROR_OUTOFMEMORY;
+        }
+        
+        if (istat == DRMS_SUCCESS)
+        {
+            for (isunum = 0; isunum < nsunums; isunum++)
+            {
+                sunum = sunumarr[isunum];
+                seriesKey = infostructs[isunum]->owning_series;
+                
+                dontFilter = 0;
+                
+                /* We should skip series that are not going to be blocked at all because the series does not appear in su_production.fetchblock. 
+                 * If this isn't fast, we can read the entire table into memory and then do the search via hash lookup. What I'm doing is really
+                 * inefficient - I can repeatedly look for a series that insn't in this table. But there are typically not that many sunums to lookup.
+                 */
+                
+                /* Don't query for this series if we have already. We put an empty list in seriesSunums if the series is not filtered. */
+                if (!hcon_member_lower(seriesSunums, seriesKey))
+                {
+                    char *tmpDup = strdup(seriesKey);
+                    if (!tmpDup)
+                    {
+                        istat = DRMS_ERROR_OUTOFMEMORY;
+                        break;
+                    }
+                    
+                    strtolower(tmpDup);
+                    snprintf(stmnt, sizeof(stmnt), "SELECT mindate, maxdate FROM su_production.fetchblock WHERE lower(seriesname) = '%s'", tmpDup);
+                    free(tmpDup);
+                    
+                    /* Don't retrieve data in binary format!! Who knows what PQexecParams() will do with a timestamp? */
+                    if ((tres = drms_query_txt(drms_env->session, stmnt)) == NULL)
+                    {
+                        fprintf(stderr, "Failed to query su_production.fetchblock.\n");
+                        istat = DRMS_ERROR_QUERYFAILED;
+                        break;
+                    }
+                    else
+                    {
+                        if (tres->num_cols != 2 || tres->num_rows > 1)
+                        {
+                            fprintf(stderr, "Unexpected query result.\n");
+                            istat = DRMS_ERROR_BADQUERYRESULT;
+                            break;
+                        }
+                        else
+                        {
+                            if (tres->num_rows == 0)
+                            {
+                                /* This series is not being filtered in any way. */
+                                dontFilter = 1;
+                            }
+                            else
+                            {
+                                snprintf(timeValStr, sizeof(timeValStr), "%s", tres->field[0][0]);
+                                minBadTime = sscan_time(timeValStr);
+
+                                snprintf(timeValStr, sizeof(timeValStr), "%s", tres->field[0][1]);
+                                maxBadTime = sscan_time(timeValStr);
+                            }
+                        }
+                    }
+                    
+                    db_free_text_result(tres);
+                    
+                    /* create an empty list. */
+                    sunumList = list_llcreate(sizeof(long long), NULL);
+                    if (!sunumList)
+                    {
+                        istat = DRMS_ERROR_OUTOFMEMORY;
+                        break;
+                    }
+                    
+                    hcon_insert_lower(seriesSunums, seriesKey, &sunumList);
+                    
+                    if (dontFilter)
+                    {
+                        continue;
+                    }
+                    
+                    hcon_insert_lower(seriesMinBadTimes, seriesKey, &minBadTime);
+                    hcon_insert_lower(seriesMaxBadTimes, seriesKey, &maxBadTime);
+                    list_llinserttail(sunumList, &sunum);
+                }
+                
+                hlookupGet = hcon_lookup_lower(seriesSunums, seriesKey);
+                if (!hlookupGet)
+                {
+                    istat = DRMS_ERROR_DATASTRUCT;
+                    break;
+                }
+                
+                sunumList = *(LinkedList_t **)hlookupGet;
+                
+                if (list_llgetnitems(sunumList) > 0)
+                {
+                    /* If the series is to be filtered, then there is at least one sunum in its list. */
+                    list_llinserttail(sunumList, &sunum);
+                }
+                else
+                {
+                    /* If the list contained in the container is empty, then we are not filtering for this series. */
+                }
+            } /* sunum loop*/
+        }
+        
+        /* Each sunumList now contains a list of UNSORTED sunums for a single series series. Loop over series (iterate over seriesSunums). */
+        if (istat == DRMS_SUCCESS)
+        {
+            int nSeriesSunums = 0;
+            size_t stsz;
+            char *sql = NULL;
+            TIME timeVal = 0;
+            int trueVal = 1;
+            DRMS_Record_t *template = NULL;
+            DRMS_Keyword_t *pkey = NULL;
+            int nPKeys;
+            int iKey;
+
+            hit = hiter_create(seriesSunums);
+            if (!hit)
+            {
+                istat = DRMS_ERROR_OUTOFMEMORY;
+            }
+            else
+            {
+                /* seriesKey is lowercase from here on. */
+                while ((iterGet = hiter_extgetnext(hit, &seriesKey)) != NULL && istat == DRMS_SUCCESS)
+                {
+                    sunumList = *(LinkedList_t **)iterGet;
+                    
+                    /* If sunumList is empty, there are no sunums for series seriesKey. */
+                    if ((nSeriesSunums = list_llgetnitems(sunumList)) == 0)
+                    {
+                        continue;
+                    }
+                    
+                    sunumArrSorted = calloc(nSeriesSunums, sizeof(long long));
+                    
+                    if (!sunumArrSorted)
+                    {
+                        istat = DRMS_ERROR_OUTOFMEMORY;
+                        break;
+                    }
+                    
+                    /* sunumList - a list of sunums for the series seriesKey. I guess we should sort the list of sunums. */
+                    isunum = 0;
+                    list_llreset(sunumList);
+                    while ((node = list_llnext(sunumList)) != NULL)
+                    {
+                        if (!node->data)
+                        {
+                            istat = DRMS_ERROR_DATASTRUCT;
+                            if (sunumArrSorted)
+                            {
+                                free(sunumArrSorted);
+                                sunumArrSorted = NULL;
+                            }
+                            break;
+                        }
+                        
+                        sunumArrSorted[isunum++] = *(long long *)node->data;
+                    }
+                    
+                    if (istat == DRMS_SUCCESS)
+                    {
+                        qsort(sunumArrSorted, nSeriesSunums, sizeof(long long), sunumComp);
+                        
+                        /* We need the column in seriesKey that serves as the time keyword. Iterate through the
+                         * prime keys and grab the first one that is a time keyword. */
+                        template = drms_template_record(drms_env, seriesKey, &istat);
+                        if (istat != DRMS_SUCCESS || !template)
+                        {
+                            istat = DRMS_ERROR_UNKNOWNSERIES;
+                            if (sunumArrSorted)
+                            {
+                                free(sunumArrSorted);
+                                sunumArrSorted = NULL;
+                            }
+                            break;
+                        }
+                        
+                        /* Identify the time prime-key keyword. */
+                        timeCol = NULL;
+                        iKey = 0;
+                        nPKeys = template->seriesinfo->pidx_num;
+                        
+                        while (iKey < nPKeys)
+                        {
+                            pkey = template->seriesinfo->pidx_keywords[iKey];
+                            
+                            if (drms_keyword_isindex(pkey))
+                            {
+                                /* Use slotted keyword */
+                                pkey = drms_keyword_slotfromindex(pkey);
+                            }
+                            
+                            if (drms_keyword_gettype(pkey) == DRMS_TYPE_TIME)
+                            {
+                                /* Got it! */
+                                timeCol = pkey->info->name;
+                                break;
+                            }
+                            
+                            iKey++;
+                        }
+                    }
+                    
+                    if (istat == DRMS_SUCCESS)
+                    {
+                        /* If there is no timeCol for this series, then continue onto the next series. We cannot filter this SUNUM based on 
+                         * its series' time keyword. */
+                        if (!timeCol)
+                        {
+                            if (sunumArrSorted)
+                            {
+                                free(sunumArrSorted);
+                                sunumArrSorted = NULL;
+                            }
+                            continue;
+                        }
+                    }
+                    
+                    if (istat == DRMS_SUCCESS)
+                    {
+                        /* We have a sorted list of nSeriesSunums sunums for series seriesKey. */
+                        nExe = nSeriesSunums / NUM_ARGS; /* integer division - this is the number of times we will execute the prepared insert statement. */
+                        
+                        if (nExe > 0)
+                        {
+                            for (iArg = 0; iArg < NUM_ARGS; iArg++)
+                            {
+                                argin[iArg] = calloc(nExe, sizeof(db_int8_t));
+                                intype[iArg] = DB_INT8;
+                            }
+                            
+                            iArg = 0;
+                            iExe = 0;
+                            isunum = 0;
+                            
+                            while (isunum < nExe * NUM_ARGS)
+                            {
+                                sunum = sunumArrSorted[isunum];
+                                
+                                if (iArg == NUM_ARGS)
+                                {
+                                    iArg = 0;
+                                    iExe++;
+                                }
+                                
+                                memcpy(argin[iArg] + iExe * db_sizeof(intype[iArg]), &sunum, db_sizeof(intype[iArg]));
+                                iArg++;
+                                isunum++;
+                            }
+                            
+                            stsz = 512;
+                            sql = calloc(stsz, sizeof(char));
+                            
+                            if (sql)
+                            {
+                                sql = base_strcatalloc(sql, "SELECT sunum, min(", &stsz);
+                                sql = base_strcatalloc(sql, timeCol, &stsz);
+                                sql = base_strcatalloc(sql, ") AS mindate FROM ", &stsz);
+                                sql = base_strcatalloc(sql, seriesKey, &stsz);
+                                sql = base_strcatalloc(sql, " WHERE sunum IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) GROUP BY sunum", &stsz);
+                                
+                                pBres = drms_query_bin_ntuple(drms_env->session, sql, nExe, NUM_ARGS, intype, (void **)argin);
+                                
+                                for (iArg = 0; iArg < NUM_ARGS; iArg++)
+                                {
+                                    if (argin[iArg])
+                                    {
+                                        free(argin[iArg]);
+                                        argin[iArg] = NULL;
+                                    }
+                                }
+
+                                if (pBres)
+                                {
+                                    for (iBres = 0; iBres < nExe; iBres++)
+                                    {
+                                        bres = pBres[iBres];
+                                        
+                                        if (bres)
+                                        {
+                                            /* Now need to iterate through returned rows to see which sunums need to be filtered out. If an sunum
+                                             * should be filtered out, then add it to the filterOut container. This container wil be consulted
+                                             * in the sunum loop below.
+                                             */
+                                            for (irow = 0; irow < bres->num_rows; irow++)
+                                            {
+                                                sunum = db_binary_field_getlonglong(bres, irow, 0);
+                                                timeVal = db_binary_field_getdouble(bres, irow, 1);
+                                                
+                                                /* Check timeval. */
+                                                if ((hlookupGet = hcon_lookup_lower(seriesMinBadTimes, seriesKey)) != NULL)
+                                                {
+                                                    minBadTime = *((TIME *)hlookupGet);
+                                                }
+                                                else
+                                                {
+                                                    minBadTime = -1;
+                                                }
+                                                
+                                                if ((hlookupGet = hcon_lookup_lower(seriesMaxBadTimes, seriesKey)) != NULL)
+                                                {
+                                                    maxBadTime = *((TIME *)hlookupGet);
+                                                }
+                                                else
+                                                {
+                                                    maxBadTime = -1;
+                                                }
+                                                
+                                                if (minBadTime >= 0 && maxBadTime < 0)
+                                                {
+                                                    maxBadTime = INFINITY;
+                                                }
+                                                
+                                                if (timeVal > minBadTime && timeVal < maxBadTime)
+                                                {
+                                                    snprintf(nbuf, sizeof(nbuf), "%lld", sunum);
+                                                    hcon_insert(filterOut, nbuf, &trueVal);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    
+                                    db_free_binary_result_tuple(&pBres, nExe);
+                                    pBres = NULL;
+                                }
+                                
+                                free(sql);
+                                sql = NULL;
+                            }
+                        }
+                    }
+                    
+                    if (istat == DRMS_SUCCESS)
+                    {
+                        if (nSeriesSunums % NUM_ARGS != 0)
+                        {
+                            /* There are some left-overs not accounted for by the previous loop on records. This loop doesn't require
+                             * using a prepared statement since it will be executed one time. */
+                            stsz = 512;
+                            sql = calloc(stsz, sizeof(char));
+                            
+                            if (sql)
+                            {
+                                sql = base_strcatalloc(sql, "SELECT sunum, min(", &stsz);
+                                sql = base_strcatalloc(sql, timeCol, &stsz);
+                                sql = base_strcatalloc(sql, ") AS mindate FROM ", &stsz);
+                                sql = base_strcatalloc(sql, seriesKey, &stsz);
+                                sql = base_strcatalloc(sql, " WHERE sunum IN (", &stsz);
+                                
+                                isunum = NUM_ARGS * nExe;
+                                while (isunum < nSeriesSunums)
+                                {
+                                    sunum = sunumArrSorted[isunum];
+                                    
+                                    snprintf(nbuf, sizeof(nbuf), "%lld", sunum);
+                                    sql = base_strcatalloc(sql, nbuf, &stsz);
+                                    if (isunum < nSeriesSunums - 1)
+                                    {
+                                        sql = base_strcatalloc(sql, ", ", &stsz);
+                                    }
+                                    
+                                    isunum++;
+                                }
+                                
+                                sql = base_strcatalloc(sql, ") GROUP BY sunum", &stsz);
+                                
+                                /* Blast a dookie...uh, I mean, run the query.*/
+                                if ((bres = drms_query_bin(drms_env->session, sql)) == NULL)
+                                {
+                                    fprintf(stderr, "Failed to obtain the earliest date of the data the SUS for series %s.\n", seriesKey);
+                                    istat = DRMS_ERROR_QUERYFAILED;
+                                }
+                                else
+                                {
+                                    if (bres->num_cols != 2)
+                                    {
+                                        fprintf(stderr, "Unexpected query result.\n");
+                                        istat = DRMS_ERROR_BADQUERYRESULT;
+                                    }
+                                    else
+                                    {
+                                        /* Now need to iterate through returned rows to see which sunums need to be filtered out. If an sunum
+                                         * should be filtered out, then add it to the filterOut container. This container wil be consulted
+                                         * in the sunum loop below. */
+                                        for (irow = 0; irow < bres->num_rows; irow++)
+                                        {
+                                            sunum = db_binary_field_getlonglong(bres, irow, 0);
+                                            timeVal = db_binary_field_getdouble(bres, irow, 1);
+                                            
+                                            /* Check timeval. */
+                                            if ((hlookupGet = hcon_lookup_lower(seriesMinBadTimes, seriesKey)) != NULL)
+                                            {
+                                                minBadTime = *((TIME *)hlookupGet);
+                                            }
+                                            else
+                                            {
+                                                minBadTime = -1;
+                                            }
+                                            
+                                            if ((hlookupGet = hcon_lookup_lower(seriesMaxBadTimes, seriesKey)) != NULL)
+                                            {
+                                                maxBadTime = *((TIME *)hlookupGet);
+                                            }
+                                            else
+                                            {
+                                                maxBadTime = -1;
+                                            }
+                                            
+                                            if (minBadTime >= 0 && maxBadTime < 0)
+                                            {
+                                                maxBadTime = INFINITY;
+                                            }
+                                            
+                                            if (timeVal > minBadTime && timeVal < maxBadTime)
+                                            {
+                                                snprintf(nbuf, sizeof(nbuf), "%lld", sunum);
+                                                hcon_insert(filterOut, nbuf, &trueVal);
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                db_free_binary_result(bres);
+                                bres = NULL;
+                                free(sql);
+                                sql = NULL;
+                            }
+                            else
+                            {
+                                istat = DRMS_ERROR_OUTOFMEMORY;
+                            }
+                        }
+                        
+                        if (sunumArrSorted)
+                        {
+                            free(sunumArrSorted);
+                            sunumArrSorted = NULL;
+                        }
+                    }
+                } /* filtered series loop */
+            }
+        }
+        
+        status = istat;
+        
+        /* What am I supposed to do if status != DRMS_SUCCESS? For now, it looks like we ignore filtering. */
+        
+        
 
     char onlinestat[128];
     long long dirsize;
     char supath[DRMS_MAXPATHLEN];
     char yabuff[64];
-    int isunum;
+
 
     for (isunum = 0; isunum < nsunums; isunum++)
       {
@@ -1181,6 +1713,22 @@ int DoIt(void)
       sunum = sunumarr[isunum];
 
       sinfo = infostructs[isunum];
+          
+          /* ART FETCH BLOCK - Block requests for data of a certain T_REC. A table, su_producton.fetchblock (text seriesname,
+           * timestamp mindate, timestamp maxdate), specifies a date range for each series whose records we wish to block
+           * from download. Data for that series with a T_REC that falls within this range will be marked with a sustatus of 'N',
+           * and all_online will be set to 0. 
+           *
+           * Code above has figured out if the sunum needs to be blocked. filterOut is a container keyed by sunum. If an sunum
+           * is in this container, then we want to return sustatus 'I' to the caller so that they do not attempt to download
+           * the SU.
+           */
+          snprintf(nbuf, sizeof(nbuf), "%lld", sunum);
+          if (hcon_member(filterOut, nbuf))
+          {
+              *(sinfo->online_loc) = '\0';
+          }
+          
       if (*(sinfo->online_loc) == '\0')
          {
          *onlinestat = 'I';
