@@ -3357,7 +3357,7 @@ int DoIt(void)
         fprintf(fp, "cp %s.* index.* ..\n", requestid);
         fprintf(fp, "tar  chf ../%s.tar ./\n", requestid);
         fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
-            fprintf(fp, "rm -rf $REQDIR/*");
+        fprintf(fp, "rm -rf $REQDIR/*\n");
         fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");            
         fprintf(fp, "mv ../%s.* ../index.* .\n", requestid);
         fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
