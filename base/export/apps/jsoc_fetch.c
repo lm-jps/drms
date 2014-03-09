@@ -1686,6 +1686,8 @@ int DoIt(void)
                         }
                     }
                 } /* filtered series loop */
+                
+                hiter_destroy(&hit);
             }
         }
         
@@ -1693,8 +1695,22 @@ int DoIt(void)
         
         /* What am I supposed to do if status != DRMS_SUCCESS? For now, it looks like we ignore filtering. */
         
+        if (seriesSunums)
+        {
+            hcon_destroy(&seriesSunums);
+        }
         
+        if (seriesMinBadTimes)
+        {
+            hcon_destroy(&seriesMinBadTimes);
+        }
+        
+        if (seriesMaxBadTimes)
+        {
+            hcon_destroy(&seriesMaxBadTimes);
+        }
 
+        
     char onlinestat[128];
     long long dirsize;
     char supath[DRMS_MAXPATHLEN];
@@ -1781,6 +1797,11 @@ int DoIt(void)
       free(sinfo);
       sinfo = NULL;
       } /* isunum */
+        
+        if (filterOut)
+        {
+            hcon_destroy(&filterOut);
+        }
 
     expsucount = count;
 
