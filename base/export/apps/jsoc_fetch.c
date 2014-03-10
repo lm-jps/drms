@@ -907,6 +907,36 @@ static int sunumComp(const void *val1, const void *val2)
     return (sunum1 < sunum2) ? -1 : (sunum1 > sunum2 ? 1 : 0);
 }
 
+int JFMin(int val, int maxVal)
+{
+    if (val > maxVal)
+    {
+        return maxVal;
+    }
+    else
+    {
+        return val;
+    }
+}
+
+/* Returns a random integer (almost) uniformly distributed on [1, range]. */
+int dieRoll(int range)
+{
+   int randVal;
+
+   srand(time(NULL));
+   randVal = rand(); /* ~ [0, RAND_MAX] uniformly */
+
+   /* Convert to [1,range]. 
+    * 
+    * randVal / RAND_MAX ~ [0, 1] uniformly
+    * floor((randVal / RAND_MAX) * range) ~ [0, range - 1] uniformly, plus a 1 / RAND_MAX chance of range
+    * floor((randVal / RAND_MAX) * range) + 1 ~ [1, range] uniformly, plus a 1 / RAND_MAX chance of range + 1
+    * MIN[floor((randVal / RAND_MAX) * range) + 1, range] ~ [1, range - 1] uniformly, plus a 1 / RAND_MAX greater chance (than all [1, range - 1]) of range
+    */
+   return JFMin((int)floor(((double)randVal / RAND_MAX) * range) + 1, range);
+}
+
 /* Module main function. */
 int DoIt(void)
 {
@@ -1200,6 +1230,11 @@ int DoIt(void)
          * 
          * Complication - the sunums might be for different series - crap! Need to loop over series first. Make a container,
          * keyed by series that contains a list of sorted sunums.
+         *
+         * 2014.03.10 - Added a new column 'acceptrate' to su_production.fetchblock. The value is the per-series percentage of 
+         * requests to accept. For example, an acceptrate of 75 means that 75 percent of all requests for old data in the
+         * seriesname series will be accepted. This feature was added so that we do not completly block access to all old
+         * data. 
          */
         const int NUM_ARGS = 16;
         int isunum;
@@ -1213,6 +1248,7 @@ int DoIt(void)
         HContainer_t *seriesSunums = NULL;
         HContainer_t *seriesMinBadTimes = NULL;
         HContainer_t *seriesMaxBadTimes = NULL;
+        HContainer_t *seriesAcceptRates = NULL;
         HContainer_t *filterOut = NULL;
         LinkedList_t *sunumList = NULL;
         HIterator_t *hit = NULL;
@@ -1227,16 +1263,19 @@ int DoIt(void)
         char *tmpDup = NULL;
         TIME minBadTime;
         TIME maxBadTime;
+        int acceptRate;
         long long *sunumArrSorted = NULL; /* sorted list of sunums for one series */
         char *timeCol = NULL;
         int dontFilter;
         char timeValStr[256];
+        char *endptr = NULL;
         int istat = DRMS_SUCCESS;
         
         seriesSunums = hcon_create(sizeof(LinkedList_t *), DRMS_MAXSERIESNAMELEN, (void (*)(const void *value))list_llfree, NULL, NULL, NULL, 0);
         seriesMinBadTimes = hcon_create(sizeof(TIME), DRMS_MAXSERIESNAMELEN, NULL, NULL, NULL, NULL, 0);
         seriesMaxBadTimes = hcon_create(sizeof(TIME), DRMS_MAXSERIESNAMELEN, NULL, NULL, NULL, NULL, 0);
-        filterOut = hcon_create(sizeof(long long), 32, NULL, NULL, NULL, NULL, 0);
+        seriesAcceptRates = hcon_create(sizeof(int), DRMS_MAXSERIESNAMELEN, NULL, NULL, NULL, NULL, 0);
+        filterOut = hcon_create(sizeof(int), sizeof(nbuf), NULL, NULL, NULL, NULL, 0);
         
         if (!seriesSunums || !seriesMinBadTimes || !seriesMaxBadTimes || !filterOut)
         {
@@ -1260,7 +1299,7 @@ int DoIt(void)
                 /* Don't query for this series if we have already. We put an empty list in seriesSunums if the series is not filtered. */
                 if (!hcon_member_lower(seriesSunums, seriesKey))
                 {
-                    char *tmpDup = strdup(seriesKey);
+                    tmpDup = strdup(seriesKey);
                     if (!tmpDup)
                     {
                         istat = DRMS_ERROR_OUTOFMEMORY;
@@ -1268,7 +1307,7 @@ int DoIt(void)
                     }
                     
                     strtolower(tmpDup);
-                    snprintf(stmnt, sizeof(stmnt), "SELECT mindate, maxdate FROM su_production.fetchblock WHERE lower(seriesname) = '%s'", tmpDup);
+                    snprintf(stmnt, sizeof(stmnt), "SELECT mindate, maxdate, acceptrate FROM su_production.fetchblock WHERE lower(seriesname) = '%s'", tmpDup);
                     free(tmpDup);
                     
                     /* Don't retrieve data in binary format!! Who knows what PQexecParams() will do with a timestamp? */
@@ -1280,7 +1319,7 @@ int DoIt(void)
                     }
                     else
                     {
-                        if (tres->num_cols != 2 || tres->num_rows > 1)
+                        if (tres->num_cols != 3 || tres->num_rows > 1)
                         {
                             fprintf(stderr, "Unexpected query result.\n");
                             istat = DRMS_ERROR_BADQUERYRESULT;
@@ -1300,6 +1339,12 @@ int DoIt(void)
 
                                 snprintf(timeValStr, sizeof(timeValStr), "%s", tres->field[0][1]);
                                 maxBadTime = sscan_time(timeValStr);
+
+                                acceptRate = strtoll(tres->field[0][2], &endptr, 0);
+                                if (acceptRate == 0 && endptr == tres->field[0][2])
+                                {
+                                   acceptRate = 0;
+                                }
                             }
                         }
                     }
@@ -1323,6 +1368,7 @@ int DoIt(void)
                     
                     hcon_insert_lower(seriesMinBadTimes, seriesKey, &minBadTime);
                     hcon_insert_lower(seriesMaxBadTimes, seriesKey, &maxBadTime);
+                    hcon_insert_lower(seriesAcceptRates, seriesKey, &acceptRate);
                     list_llinserttail(sunumList, &sunum);
                 }
                 
@@ -1354,7 +1400,7 @@ int DoIt(void)
             size_t stsz;
             char *sql = NULL;
             TIME timeVal = 0;
-            int trueVal = 1;
+            int zeroVal = 0;
             DRMS_Record_t *template = NULL;
             DRMS_Keyword_t *pkey = NULL;
             int nPKeys;
@@ -1562,7 +1608,15 @@ int DoIt(void)
                                                 if (timeVal > minBadTime && timeVal < maxBadTime)
                                                 {
                                                     snprintf(nbuf, sizeof(nbuf), "%lld", sunum);
-                                                    hcon_insert(filterOut, nbuf, &trueVal);
+                                                    if ((hlookupGet = hcon_lookup_lower(seriesAcceptRates, seriesKey)) != NULL)
+                                                    {
+                                                       acceptRate = *((int *)hlookupGet);
+                                                       hcon_insert(filterOut, nbuf, &acceptRate);
+                                                    }
+                                                    else
+                                                    {
+                                                       hcon_insert(filterOut, nbuf, &zeroVal);
+                                                    }
                                                 }
                                             }
                                         }
@@ -1662,7 +1716,15 @@ int DoIt(void)
                                             if (timeVal > minBadTime && timeVal < maxBadTime)
                                             {
                                                 snprintf(nbuf, sizeof(nbuf), "%lld", sunum);
-                                                hcon_insert(filterOut, nbuf, &trueVal);
+                                                if ((hlookupGet = hcon_lookup_lower(seriesAcceptRates, seriesKey)) != NULL)
+                                                {
+                                                   acceptRate = *((int *)hlookupGet);
+                                                   hcon_insert(filterOut, nbuf, &acceptRate);
+                                                }
+                                                else
+                                                {
+                                                   hcon_insert(filterOut, nbuf, &zeroVal);
+                                                }
                                             }
                                         }
                                     }
@@ -1710,12 +1772,17 @@ int DoIt(void)
             hcon_destroy(&seriesMaxBadTimes);
         }
 
+        if (seriesAcceptRates)
+        {
+           hcon_destroy(&seriesAcceptRates);
+        }
+
         
     char onlinestat[128];
     long long dirsize;
     char supath[DRMS_MAXPATHLEN];
     char yabuff[64];
-
+    int roll;
 
     for (isunum = 0; isunum < nsunums; isunum++)
       {
@@ -1735,14 +1802,22 @@ int DoIt(void)
            * from download. Data for that series with a T_REC that falls within this range will be marked with a sustatus of 'N',
            * and all_online will be set to 0. 
            *
-           * Code above has figured out if the sunum needs to be blocked. filterOut is a container keyed by sunum. If an sunum
-           * is in this container, then we want to return sustatus 'I' to the caller so that they do not attempt to download
+           * Code above has figured out if the sunum needs to be filtered. filterOut is a container keyed by sunum. The container
+           * values are the acceptance rate percentages. A value of 75 means that we want to accept 75% of the requests for
+           * this SU. To reject a request, we return sustatus 'I' to the caller so that they do not attempt to download
            * the SU.
            */
           snprintf(nbuf, sizeof(nbuf), "%lld", sunum);
-          if (hcon_member(filterOut, nbuf))
+          if ((hlookupGet = hcon_lookup(filterOut, nbuf)) != NULL)
           {
-              *(sinfo->online_loc) = '\0';
+              acceptRate = *((int *)hlookupGet);
+              roll = dieRoll(100); /* random variable ~ [1, 100] uniformly */
+
+              /* Reject this SUNUM if the number rolled on the die is above the acceptRate threshold. */
+              if (roll > acceptRate)
+              {
+                  *(sinfo->online_loc) = '\0';
+              }
           }
           
       if (*(sinfo->online_loc) == '\0')
