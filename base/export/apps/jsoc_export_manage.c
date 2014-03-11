@@ -3354,13 +3354,23 @@ int DoIt(void)
       dashp = rindex(method, '-');
       if (dashp && strcmp(dashp, "-tar") == 0)
         {
-        fprintf(fp, "cp %s.* index.* ..\n", requestid);
-        fprintf(fp, "tar  chf ../%s.tar ./\n", requestid);
-        fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
-        fprintf(fp, "rm -rf $REQDIR/*\n");
-        fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");            
-        fprintf(fp, "mv ../%s.* ../index.* .\n", requestid);
-        fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
+            /* $REQDIR is actually the slot dir, not the SU dir. The current directory is the slot dir.
+             */
+            
+            /* Create the tar file in the parent SU directory (you cannot put it in the current directory if you use '.' as the 
+             * source directory. tar will attempt to put the tar file in the tar file otherwise, with undefined results).
+             */
+            fprintf(fp, "tar  chf ../%s.tar ./\n", requestid);
+            fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
+            /* Delete all files, except for the manifest files and the scripts, in the current directory (the slot dir). */
+            fprintf(fp, "find . -not -path . -not -name '%s.*' -not -name 'index.*' -print0 | xargs -0 -L 32 rm -f'\n", requestid);
+            fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
+            /* Move the tar file from the parent SU dir to the current directory (the slot dir). */
+            fprintf(fp, "mv ../%s.tar .\n", requestid);
+            fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
+            
+            /* The current directory (the slot dir) now contains the tar file, the manifest files, and the export scripts. 
+             * The tar file also contains the manifest files and the export scripts. */
         }
 
       // DONE, Standard exit here only if no errors above
