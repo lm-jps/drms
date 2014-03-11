@@ -3363,7 +3363,7 @@ int DoIt(void)
             fprintf(fp, "tar  chf ../%s.tar ./\n", requestid);
             fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
             /* Delete all files, except for the manifest files and the scripts, in the current directory (the slot dir). */
-            fprintf(fp, "find . -not -path . -not -name '%s.*' -not -name 'index.*' -print0 | xargs -0 -L 32 rm -f'\n", requestid);
+            fprintf(fp, "find . -not -path . -not -name '%s.*' -not -name 'index.*' -print0 | xargs -0 -L 32 rm -f\n", requestid);
             fprintf(fp, "set RUNSTAT = $status\nif ($RUNSTAT) goto EXITPLACE\n");
             /* Move the tar file from the parent SU dir to the current directory (the slot dir). */
             fprintf(fp, "mv ../%s.tar .\n", requestid);
