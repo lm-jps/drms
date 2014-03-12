@@ -7,6 +7,7 @@
 # /home/arta/jsoctrees/JSOC/base/drms/replication/subscribe_manage/gentables.pl conf=/home/arta/jsoctrees/JSOC/proj/replication/etc/repserver.cfg --node=artatest op=add --sitedir=/solarport/pgsql/slon_logs/live/site_logs/artatest --lst=/c/pgsql/slon_logs/live/etc/artatest.lst
 # /home/arta/jsoctrees/JSOC/base/drms/replication/subscribe_manage/gentables.pl conf=/home/arta/jsoctrees/JSOC/proj/replication/etc/repserver.cfg op=create
 
+# Currently, this script creates tables in the jsoc database of the master host (hmidb).
 
 use strict;
 use warnings;
@@ -134,7 +135,8 @@ if (!$rv)
             exit(kInvalidArg);
         }
         
-        $rv = $tblmgr->Replace($node, $lstfile);
+        $tblmgr->Replace($node, $lstfile);
+        $rv = $tblmgr->Err();
     }
     elsif ($op =~ &kOpValAdd)
     {

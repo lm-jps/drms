@@ -777,7 +777,7 @@ sub new
     my($cols) = shift;
     my($pkey) = shift;
     
-    if (defined(@$cols))
+    if (defined($cols))
     {
         foreach $acol (@$cols)
         {
@@ -785,7 +785,7 @@ sub new
         }
     }
     
-    if (defined(@$pkey))
+    if (defined($pkey))
     {
         foreach $acol (@$pkey)
         {
@@ -1215,6 +1215,19 @@ sub Add
         # Bad query;
         $rv = 2;
     }
+    
+    return $rv;
+}
+
+sub Remove
+{
+    my($self) = shift;
+    my($node) = shift;
+    my($stmnt);
+    my($rows);
+    my($rv);
+    
+    $rv = $self->SUPER::Remove($node, 0);
     
     return $rv;
 }
