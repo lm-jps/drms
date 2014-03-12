@@ -1783,6 +1783,7 @@ int DoIt(void)
     char supath[DRMS_MAXPATHLEN];
     char yabuff[64];
     int roll;
+        int reject;
 
     for (isunum = 0; isunum < nsunums; isunum++)
       {
@@ -1807,6 +1808,7 @@ int DoIt(void)
            * this SU. To reject a request, we return sustatus 'I' to the caller so that they do not attempt to download
            * the SU.
            */
+          reject = 0;
           snprintf(nbuf, sizeof(nbuf), "%lld", sunum);
           if ((hlookupGet = hcon_lookup(filterOut, nbuf)) != NULL)
           {
@@ -1816,20 +1818,29 @@ int DoIt(void)
               /* Reject this SUNUM if the number rolled on the die is above the acceptRate threshold. */
               if (roll > acceptRate)
               {
+                  reject = 1;
                   *(sinfo->online_loc) = '\0';
               }
           }
           
       if (*(sinfo->online_loc) == '\0')
-         {
-         *onlinestat = 'I';
-         sunums[count] = sunum;
-         paths[count] = strdup("NA");
-         series[count] = strdup("NA");
-         sustatus[count] = strdup(onlinestat);
-         susize[count] = strdup("0");
-         count++;
-         }
+      {
+          if (!reject)
+          {
+              *onlinestat = 'I';
+          }
+          else
+          {
+              *onlinestat = 'N';
+          }
+          
+          sunums[count] = sunum;
+          paths[count] = strdup("NA");
+          series[count] = strdup("NA");
+          sustatus[count] = strdup(onlinestat);
+          susize[count] = strdup("0");
+          count++;
+      }
       else
          {
          size += (long long)sinfo->bytes;
