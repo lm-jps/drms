@@ -385,6 +385,19 @@ __PROJ__
             <subdir>apps</subdir>
         </subdirs>
    </proj>
+   <proj>
+        <name>cgem</name>
+        <subdirs>
+             <subdir>apps</subdir>
+             <subdir>lorentz/apps</subdir>
+        </subdirs>
+        <filters>
+             <filter>
+                  <name>COMPILER</name>
+                  <value>icc</value>
+             </filter>
+       </filters>
+   </proj>
 </projects>
 __PROJCFG__
 #! /bin/csh -f
