@@ -397,14 +397,9 @@ logwrite "counter [$counter] [${#series[*]}] request counter [${request[$counter
         # a period of time. If things go well, it replaces the contents of $node with 
         # the contets of $node.new.
 
-# ART - shoom.new.lst ?
-# exit 1;
-
         $kRepDir/subscribe_manage/gentables.pl op=replace conf=$config_file --node=$node.new --lst=$newtablefile
 
-# ART- shoom.new.lst is missing right here!
-
-exit 1;
+# ART- shoom.new.lst and shoom.new still exist here.
 
         if [ $? -ne 0 ]
         then
@@ -443,6 +438,9 @@ else
 	logwrite "ERROR: New subscription value must be either "true" or "false"" nl
 	exit
 fi
+
+# ART- shoom.new.lst?
+exit 1;
 
 #-------------------------------------------------------------------------
 # Adding the new entry to the slon log parser config file
