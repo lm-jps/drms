@@ -195,6 +195,8 @@ cleanup_counter=$(( $cleanup_counter + 1 ))
 		    logwrite "Removing old subscriber table list"
 		    rm -f $tables_dir/$node.lst
 		    logwrite "Updating lst table"
+
+            # ART - This is failing because $tables_dir/$node.new.lst doesn't exist.
 		    mv -f $tables_dir/$node.new.lst $tables_dir/$node.lst
 
             # ART LST - call into perl code to update db-table versions of the .lst files. Make sure

@@ -278,7 +278,7 @@ else
 ##	cp -far  $subscribers_dir/$node $subscribers_dir/$node.new
 fi
 
-exit 1;
+# ART - creation of shoom.new succeeds here. shoom.new.lst does NOT exist yet.
 
 # ART LST - the new lst file is referred to by both newtablefile and $tables_dir/$node.new.lst in many places.
 # The code creates $node.new.lst
@@ -396,7 +396,15 @@ logwrite "counter [$counter] [${#series[*]}] request counter [${request[$counter
         # subscription process keeps slony-log files for both $node and $node.new for 
         # a period of time. If things go well, it replaces the contents of $node with 
         # the contets of $node.new.
+
+# ART - shoom.new.lst ?
+# exit 1;
+
         $kRepDir/subscribe_manage/gentables.pl op=replace conf=$config_file --node=$node.new --lst=$newtablefile
+
+# ART- shoom.new.lst is missing right here!
+
+exit 1;
 
         if [ $? -ne 0 ]
         then
@@ -459,6 +467,7 @@ then
     # There were no new subscriptions, and at least one unsubscribe, so we need to
     # overwrite the old .lst file - the new one will be missing at least one series
     # ART - I'm not sure what the above comment has to do with this line of code.
+    logwrite "Deleting $subscribers_dir/$node.new" nl
     rm -fr $subscribers_dir/$node.new
 fi
 
