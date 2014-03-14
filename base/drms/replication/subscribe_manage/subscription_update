@@ -193,14 +193,14 @@ echo "#UPDATE PID:$$" >> $input_file;
         # 3. Removes $node.new from su_production.slonycfg, and 4. Removes $node.new from su_production.slonylst.
         # It acquires the gentables.txt lock, but it does not acquire any other locks. Because it modifies slon_parser.cfg,
         # it must be run inside the $subscribelockpath.
-        cmd=$kRepDir/subscribe_manage/gentables.pl op=remove conf=$config_file --node=$node.new
+        cmd="$kRepDir/subscribe_manage/gentables.pl op=remove conf=$config_file --node=$node.new"
         logwrite "Cleanup process: Deleting entry for $node.new from parser config file, deleting $node.new.lst, removing entry for $node.new from cfg db table, removing entries for $node.new from db lst table."
         logwrite "Running $cmd"
-        `cmd`
+        `$cmd`
 
         if [ $? -ne 0 ]
         then
-            logecho "ERROR: Failure to clean-up db-table entries for $node.new."
+            logwrite "ERROR: Failure to clean-up db-table entries for $node.new."
             exit 1;
         fi
 

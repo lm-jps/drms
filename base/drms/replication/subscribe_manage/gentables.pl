@@ -137,7 +137,7 @@ if (!$rv)
         }
         
         $tblmgr->Replace($node, $lstfile);
-        $rv = $tblmgr->Err();
+        $rv = GetScrptErr($tblmgr->GetErr());
     }
     elsif ($op =~ &kOpValAdd)
     {
