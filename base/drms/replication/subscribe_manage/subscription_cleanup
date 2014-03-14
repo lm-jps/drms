@@ -163,7 +163,7 @@ cleanup_counter=$(( $cleanup_counter + 1 ))
                 # Somehow we have to pass this failure back to subscription_manager.
                 success=false
                 # Need to clean up
-		        logwrite "Unable to update lst tables properly!"
+		        logwrite "ERROR new site: Unable to update lst tables properly!"
                 rm -rf $subscribers_dir/$node.new
 		        rm -f $tables_dir/$node.new.lst
             fi
@@ -194,11 +194,13 @@ cleanup_counter=$(( $cleanup_counter + 1 ))
             rm -rf $subscribers_dir/$node.new
 		    logwrite "Removing old subscriber table list"
 		    rm -f $tables_dir/$node.lst
-		    logwrite "Moving new subscriber table list to old one"
+		    logwrite "Updating lst table"
 		    mv -f $tables_dir/$node.new.lst $tables_dir/$node.lst
 
-            # ART LST - call into perl code to update db-table versions of the .lst files
-            $kRepDir/subscribe_manage/gentables.pl conf=$config_file op=replace --node=$node --lst=$node.new.lst
+            # ART LST - call into perl code to update db-table versions of the .lst files. Make sure
+            # to use $node.lst to populate the lst table, and not $node.new.lst - the latter got
+            # renamed to $node.lst.
+            $kRepDir/subscribe_manage/gentables.pl conf=$config_file op=replace --node=$node --lst=$node.lst
 
             if [ $? -ne 0 ]
             then
@@ -210,7 +212,7 @@ cleanup_counter=$(( $cleanup_counter + 1 ))
                 success=false
 
                 # Need to clean up
-                logwrite "Unable to update lst tables properly!"
+                logwrite "ERROR existing site: Unable to update lst tables properly!"
                 rm -rf $subscribers_dir/$node.new
 		        rm -f $tables_dir/$node.new.lst
             fi
