@@ -1,6 +1,16 @@
 #!/bin/bash
 pidfile=$0.pid
 
+# ART - my attempt at documenting this:
+#
+#   LST-file management:
+#   If $node is a new site, then all series being subscribed to get written to $node.new.lst. All series
+#   being unsubscribed from are ignored. If $node is an existing site, then all lines in $node.lst are examined.
+#   All items that are not in the unsubscribe list are added to $node.new.lst. The result is that $node.new.lst
+#   contains what it should had we started with $node.lst and made the appropriate additions for series in the
+#   subscribe list, and subtractions for series in the unsubscribe list.
+
+
 #--------------------------------------------------------------------
 # Subscription Update
 # Syntax: ./subscription_update <server configuration file> <node name> <new site (true/false)> <Config File>
@@ -75,6 +85,7 @@ exec >> $logfile 2>&1
 ## The ORDER things get sourced is IMPORTANT!!
 . $kRepDir/subscribe_manage/subscribe_functions
 
+# ART LST - usertables is used in exactly one place.
 usertables=$tables_dir/$node.lst
 
 
@@ -208,8 +219,16 @@ echo "#UPDATE PID:$$" >> $input_file;
 
  done
 
+# ART LST - The previous block of code made sure that aborted attempts to update $node have been cleaned up
+# by removing $node.new.lst from $parser_config, and by removing $node.new.lst. Perform the analogous 
+# clean-up in the db tables. 
+$kRepDir/subscribe_manage/gentables.pl op=remove conf=$config_file --node=$node.new
 
-
+if [ $? -ne 0 ]
+then
+    logecho "ERROR: Failure to clean-up db-table entries for $node.new."
+    exit 1;
+fi
 
 #-------------------------------------------------------------------------
 # Reads the subscription request file into the arrays:
@@ -262,6 +281,9 @@ else
 ## We don't need the copy anymore
 ##	cp -far  $subscribers_dir/$node $subscribers_dir/$node.new
 fi
+
+# ART LST - the new lst file is referred to by both newtablefile and $tables_dir/$node.new.lst in many places.
+# The code creates $node.new.lst
 newtablefile=$tables_dir/$node.new.lst
 logwrite "newtablefile is [$newtablefile]"
 echo > $newtablefile
@@ -275,7 +297,7 @@ newsubscription=0
 #   assumes that the node has specified "subscribe" for all series in $series, and that the node
 #   is a brand new subscriber. This is not a valid
 #   assumption and there should be error checking to catch the error that a node could have 
-#   specified "unsubscribe", even thought the node is a new node. 
+#   specified "unsubscribe", even though the node is a new node. 
 if [ $new_site == "true" ]
 then
 	logwrite "The Subscription request is from a new site"
@@ -284,8 +306,9 @@ then
 	while [ $counter -lt ${#series[*]} ]
 	do
 		logwrite "Adding [${series[$counter]} to $newtablefile"
+                # ART LST - for a single node, add all newly subscribed to series to the new lst file.
 		echo "${series[$counter]}" >> $newtablefile
-
+                
                 # ART - this was missing
                 newsubscription=1
                 
@@ -301,7 +324,8 @@ then
 # First removes subscriptions with the tag "unsubscribe"
 # Second, adds all subscriptions with the tag "subscribe" to the end of the file
 # ART - This section removes from the current node's lst file all series that the node is 
-#   removing from subscription.
+#   removing from subscription, and it adds to the current node's lst file all series
+#   that the node is subscribing to.
 elif [ $new_site == "false" ]
 then
     unsubhappening=0
@@ -309,6 +333,8 @@ then
 
 	# Removes subscriptions if $request[#] is "unsubscribe"
         # usertables is the subscribing node's .lst file
+        # ART - LST FILE
+        # 
 	exec < $usertables
         	while read line
         	do
@@ -363,9 +389,23 @@ logwrite "counter [$counter] [${#series[*]}] request counter [${request[$counter
 				echo $line >> $newtablefile
 			fi
 			
-		done
+		done # end loop over lst file entries.
 
-		
+        # ART LST - At this point, $newtablefile has the set of series to which $node
+        # will be subscribed, if the subscription process succeeds. Replace the node.new's
+        # su_production.slonylst information with the contents of $newtablefile. We must 
+        # have entries from two nodes at this point: $node.lst and $node.new.lst. The 
+        # subscription process keeps slony-log files for both $node and $node.new for 
+        # a period of time. If things go well, it replaces the contents of $node with 
+        # the contets of $node.new.
+        $kRepDir/subscribe_manage/gentables.pl op=replace conf=$config_file --node=$node.new --lst=$newtablefile
+
+        if [ $? -ne 0 ]
+        then
+            logecho "ERROR: Failure to update db-table entries for $node.new."
+            exit 1;
+        fi
+
 	# adds all lines where request = subscribe to the end of the file	
 	counter=0
 	while [ $counter -lt ${#series[*]} ]
@@ -400,7 +440,7 @@ fi
 
 #-------------------------------------------------------------------------
 # Adding the new entry to the slon log parser config file
-# This was added to the sql_gen script, right after sdo_slony1_dump.sh is started
+# This was moved to subscription_cleanup, into the critical region
 #-------------------------------------------------------------------------
 #logwrite "Adding the new entry to $parser_config"
 #logwrite "[$subscribers_dir/$node.new	$newtablefile]" nl

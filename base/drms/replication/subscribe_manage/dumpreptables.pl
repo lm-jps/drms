@@ -1,5 +1,10 @@
 #!/home/jsoc/bin/linux_x86_64/activeperl
 
+# This script creates the SQL dump of the series tables to which a node is subscribing. It ensures that there are no duplicate data
+# that exist in both the dump file and the slony logs. After performing the dump, it adds $node.new.lst to slony_parser.cfg and
+# to su_production.slonycfg. It has to navigate a critical region shared by other scripts.
+
+
 # Run like this:
 
 # config=/home/jsoc/cvs/Development/JSOC/proj/replication/etc/repserver.cfg client=cora sublist=hmi.v_avg120 idlist=89 newcl=1 filectr=/solarport/pgsql/slon_logs/live/triggers/slon_counter.cora.txt
@@ -12,6 +17,7 @@ use FindBin qw($Bin);
 use lib "$Bin/../../../libs/perl";
 use lib "$Bin/..";
 use toolbox qw(GetCfg);
+use subtablemgr;
 use DBI;
 use DBD::Pg;
 use drmsArgs;
@@ -32,7 +38,11 @@ use constant kRetParseSlonyLogs    => 2;
 use constant kRetDbQuery           => 3;
 use constant kRetLock              => 4;
 use constant kRetFileIO            => 5;
+use constant kRetSubTable          => 6;
 
+# Other
+use constant kLockFile             => "dumprep.txt"; # Not really needed, a higher-level lock will suffice, but
+                                                     # SubTableMgr constructor requires a lock file.
 
 my($argsinH);
 my($args);
@@ -332,6 +342,8 @@ else
                 
                 if ($? == 0)
                 {
+                    my($tblmgr);
+
                     $SIG{INT} = "DropLock";
                     $SIG{TERM} = "DropLock";
                     $SIG{HUP} = "DropLock";
@@ -342,6 +354,30 @@ else
                     {
                         print $fh $cfg{subscribers_dir} . "/$client.new        $newlst";
                         $fh->close();
+
+                        # ART LST - Add $node.new.lst to su_production.slonycfg.
+                        $tblmgr = new SubTableMgr($cfg{'kServerLockDir'} . "/" . &kLockFile, $cfg{'kCfgTable'}, $cfg{'kLstTable'}, $cfg{'MASTERDBNAME'}, $cfg{'MASTERHOST'}, $cfg{'MASTERPORT'}, $cfg{'REPUSER'});
+
+                        unless (&SubTableMgr::kRetSuccess == ($tblmgr->GetErr()))
+                        {
+                            $rv = &kRetSubTable;
+                        }
+                        else
+                        {
+                            $tblmgr->Add($client, $cfg{subscribers_dir} . "/$client.new"); # Don't provide lst-file argument.
+                                                                                           # This argument is used for
+                                                                                           # populating su_production.slonylst
+                                                                                           # which is something we don't want to
+                                                                                           # do. That table gets populated 
+                                                                                           # in subscription_update. In fact, at
+                                                                                           # this point, subscription_update will
+                                                                                           # have already updated this db table.
+
+                            unless (&SubTableMgr::kRetSuccess == ($tblmgr->GetErr()))
+                            {
+                                $rv = &kRetSubTable;
+                            }
+                        }
                     }
                     else
                     {

@@ -108,6 +108,10 @@ cleanup_counter=$(( $cleanup_counter + 1 ))
 	    logwrite "Removing new entry from $parser_config" 
 	    cat $parser_config | grep -v "$node.new.lst" > $parser_config.new
 	    mv -f $parser_config.new $parser_config
+
+        # ART LST - Remove $node.new from $parser_config and remove $node.new from su_production.slonycfg
+        # and remove all entries for $node.new from su_production.slonylst.
+        $kRepDir/subscribe_manage/gentables.pl config=$config_file op=remove --node=$node.new
 	
 	    if [ $success == "true" ]
 	    then
@@ -119,6 +123,11 @@ cleanup_counter=$(( $cleanup_counter + 1 ))
 		    logwrite "Adding the new entry to $parser_config "
 		    logwrite "[$subscribers_dir/$node   $tables_dir/$node.lst]" nl
 		    echo "$subscribers_dir/$node        $tables_dir/$node.lst" >> $parser_config
+
+            # ART LST - Add $node to su_production.slonycfg. At the same time, insert records for $node in
+            # su_production.slonylst. $subscribers_dir/$node, the sitedir, doesn't exit yet, but it will shortly.
+            $kRepDir/subscribe_manage/gentables.pl op=add config=$config_file --node=$node --sitedir=$subscribers_dir --lst=$tables_dir/$node.new.lst
+
 		    logwrite "Moving subscriber directory"
 	                ## remove any log files that might contain duplicates
 	            if [ -f $SMworkDir/slon_counter.$node.txt ]
@@ -136,10 +145,28 @@ cleanup_counter=$(( $cleanup_counter + 1 ))
 	            else
 	                logwrite "ERROR:: No $SMworkDir/slon_counter.$node.txt"
 	            fi
+
+            # Create the sitedir
 		    mv -f $subscribers_dir/$node.new $subscribers_dir/$node
 	            
 		    logwrite "Moving subscriber table list"
 		    mv -f $tables_dir/$node.new.lst $tables_dir/$node.lst
+            # ART LST - no need to populate su_production.slonylst for $node. That was done when gentables.pl op=add was called.
+
+
+            if [ $? -ne 0 ]
+            then
+                # If the database table update fails, set the local success variable to
+                # to false (it looks like that variable isn't used after this point
+                # anyway).
+                #
+                # Somehow we have to pass this failure back to subscription_manager.
+                success=false
+                # Need to clean up
+		        logwrite "Unable to update lst tables properly!"
+                rm -rf $subscribers_dir/$node.new
+		        rm -f $tables_dir/$node.new.lst
+            fi
 		else
 			# Success on old site!
 		    logwrite "Subscriber SQL was a success"
@@ -160,14 +187,34 @@ cleanup_counter=$(( $cleanup_counter + 1 ))
 	            else
 	                logwrite "NOTE:: No $SMworkDir/slon_counter.$node.txt (only needed if adding series to subscription list)"
 	            fi
+
+            # COPY the newly created log files to $subscribers_dir/$node. Don't move - this is an existing node so its sitdir
+            # might have existing logs.
 		    cp -pr $subscribers_dir/$node.new/* $subscribers_dir/$node
-	            rm -rf $subscribers_dir/$node.new
+            rm -rf $subscribers_dir/$node.new
 		    logwrite "Removing old subscriber table list"
 		    rm -f $tables_dir/$node.lst
 		    logwrite "Moving new subscriber table list to old one"
 		    mv -f $tables_dir/$node.new.lst $tables_dir/$node.lst
+
+            # ART LST - call into perl code to update db-table versions of the .lst files
+            $kRepDir/subscribe_manage/gentables.pl conf=$config_file op=replace --node=$node --lst=$node.new.lst
+
+            if [ $? -ne 0 ]
+            then
+                # If the database table update fails, set the local success variable to
+                # to false (it looks like that variable isn't used after this point
+                # anyway).
+                #
+                # Somehow we have to pass this failure back to subscription_manager.
+                success=false
+
+                # Need to clean up
+                logwrite "Unable to update lst tables properly!"
+                rm -rf $subscribers_dir/$node.new
+		        rm -f $tables_dir/$node.new.lst
+            fi
 		fi
-	
 	    else
 		if [ $new_site == "true" ]
 		then
@@ -177,6 +224,7 @@ cleanup_counter=$(( $cleanup_counter + 1 ))
 		    rm -rf $subscribers_dir/$node.new
 		    logwrite "Removing new subscriber table list"
 		    rm -f $tables_dir/$node.new.lst
+            # ART LST - $node.new was already removed from su_production.slonylst in a previous call to gentables.pl
 		else
 			# Failure on old site!
 		    logwrite "Subscriber SQL was not a success"
@@ -184,6 +232,7 @@ cleanup_counter=$(( $cleanup_counter + 1 ))
 		    rm -rf $subscribers_dir/$node.new
 		    logwrite "Removing new subscriber table list"
 		    rm -f $tables_dir/$node.new.lst
+            # ART LST - $node.new was already removed from su_production.slonylst in a previous call to gentables.pl
 		fi
 	    fi
 	
