@@ -356,7 +356,7 @@ else
                         $fh->close();
 
                         # ART LST - Add $node.new.lst to su_production.slonycfg.
-                        $tblmgr = new SubTableMgr($cfg{'kServerLockDir'} . "/" . &kLockFile, $cfg{'kCfgTable'}, $cfg{'kLstTable'}, $cfg{'MASTERDBNAME'}, $cfg{'MASTERHOST'}, $cfg{'MASTERPORT'}, $cfg{'REPUSER'});
+                        $tblmgr = new SubTableMgr($cfg{'kServerLockDir'} . "/" . &kLockFile, $cfg{'kCfgTable'}, $cfg{'kLstTable'}, $cfg{'tables_dir'}, $cfg{'MASTERDBNAME'}, $cfg{'MASTERHOST'}, $cfg{'MASTERPORT'}, $cfg{'REPUSER'});
 
                         unless (&SubTableMgr::kRetSuccess == ($tblmgr->GetErr()))
                         {

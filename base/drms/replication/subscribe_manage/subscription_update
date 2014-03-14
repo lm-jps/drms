@@ -159,12 +159,6 @@ echo "#UPDATE PID:$$" >> $input_file;
  	rm -rf $subscribers_dir/$node.new
  fi
 
-# Remove the node.new.lst list file
- if [[ -f $tables_dir/$node.new.lst ]]; then 
- 	logwrite "Cleanup process: $tables_dir/$node.new.lst exists, removing it"
- 	rm -f $tables_dir/$node.new.lst
- fi
-
 # Remove the node.sql.tar.gz tar file
  if [[ -f $triggerdir/$node.sql.tar.gz ]]; then
  	logwrite "Cleanup process: $triggerdir/$node.sql.tar.gz exists, removing it"
@@ -195,9 +189,20 @@ echo "#UPDATE PID:$$" >> $input_file;
 
 	    logwrite "Obtained lock"
 
-	    # Remove the node.new listing from the parser config file.
-	    cat $parser_config | grep -v "$node.new.lst" > $parser_config.new
-           mv -f $parser_config.new $parser_config
+        # ART LST - This call: 1. Deletes the $node.new entry from slon_parser.cfg, 2. Deletes $node.new.lst,
+        # 3. Removes $node.new from su_production.slonycfg, and 4. Removes $node.new from su_production.slonylst.
+        # It acquires the gentables.txt lock, but it does not acquire any other locks. Because it modifies slon_parser.cfg,
+        # it must be run inside the $subscribelockpath.
+        cmd=$kRepDir/subscribe_manage/gentables.pl op=remove conf=$config_file --node=$node.new
+        logwrite "Cleanup process: Deleting entry for $node.new from parser config file, deleting $node.new.lst, removing entry for $node.new from cfg db table, removing entries for $node.new from db lst table."
+        logwrite "Running $cmd"
+        `cmd`
+
+        if [ $? -ne 0 ]
+        then
+            logecho "ERROR: Failure to clean-up db-table entries for $node.new."
+            exit 1;
+        fi
 
 	    rm -f $subscribelockpath
 
@@ -219,16 +224,7 @@ echo "#UPDATE PID:$$" >> $input_file;
 
  done
 
-# ART LST - The previous block of code made sure that aborted attempts to update $node have been cleaned up
-# by removing $node.new.lst from $parser_config, and by removing $node.new.lst. Perform the analogous 
-# clean-up in the db tables. 
-$kRepDir/subscribe_manage/gentables.pl op=remove conf=$config_file --node=$node.new
 
-if [ $? -ne 0 ]
-then
-    logecho "ERROR: Failure to clean-up db-table entries for $node.new."
-    exit 1;
-fi
 
 #-------------------------------------------------------------------------
 # Reads the subscription request file into the arrays:

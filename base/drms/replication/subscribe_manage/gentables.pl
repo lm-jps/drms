@@ -45,6 +45,7 @@ use constant kBadQuery    => 4;
 use constant kTable       => 5;
 use constant kCfgTable    => 6;
 use constant kLstTable    => 7;
+use constant kIO          => 8;
 
 my($rv);
 my($argsin);
@@ -115,7 +116,7 @@ if (!$rv)
 {
     # Create a new SubTableMgr object. A lock will be acquired to 
     # prevent multiple instances.
-    $tblmgr = new SubTableMgr($cfg{kServerLockDir} . "/" . &kLockFile, $cfg{kCfgTable}, $cfg{kLstTable}, $cfg{'MASTERDBNAME'}, $cfg{'MASTERHOST'}, $cfg{'MASTERPORT'}, $cfg{'REPUSER'});
+    $tblmgr = new SubTableMgr($cfg{'kServerLockDir'} . "/" . &kLockFile, $cfg{'kCfgTable'}, $cfg{'kLstTable'}, $cfg{'tables_dir'}, $cfg{'MASTERDBNAME'}, $cfg{'MASTERHOST'}, $cfg{'MASTERPORT'}, $cfg{'REPUSER'});
     
     $rv = GetScrptErr($tblmgr->GetErr());
 }

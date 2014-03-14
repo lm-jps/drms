@@ -11,6 +11,7 @@ use DBD::Pg;
 use Data::UUID;
 use File::Copy;
 use File::Basename;
+use File::Spec;
 use FindBin qw($Bin);
 use lib "$Bin/..";
 use toolbox qw(GetCfg AcquireLock ReleaseLock);
@@ -57,6 +58,7 @@ sub new
         _lockfh => undef,
         _cfgtable => undef,
         _lsttable => undef,
+        _lstdir => undef,
         _dbh => undef,
         _err => undef
     };
@@ -71,6 +73,7 @@ sub new
     {
         my($cfgtable) = shift;
         my($lsttable) = shift;
+        my($lstdir) = shift;
         
         if (defined($cfgtable) && defined($lsttable))
         {
@@ -107,6 +110,16 @@ sub new
         else
         {
             print STDERR "Missing required argument (CFG table name or LST table name).\n";
+            $self->{_err} = &kRetInvalidArg;
+        }
+        
+        if (defined($lstdir))
+        {
+            $self->{_lstdir} = $lstdir;
+        }
+        else
+        {
+            print STDERR "Missing required argument lstdir.\n";
             $self->{_err} = &kRetInvalidArg;
         }
     }
@@ -207,9 +220,10 @@ sub Add
     }
 }
 
-# This function removes $node's records from the cfg and lst tables. Optionally,
+# This function removes $node's records from the cfg and lst db tables. Optionally,
 # in support of legacy software, it will remove the entry from the soon-to-be-obsolete
-# cfg file. It will also remove the $node's lst file altogether.
+# cfg file, and it will also remove the $node's lst file altogether. To support legacy
+# behavior, provide the optional $cfgfile parameter.
 sub Remove
 {
     my($self) = shift;
@@ -280,9 +294,8 @@ sub Remove
                     
                     if ($#nodeentries < 0)
                     {
+                        # This should not be an error. If $node is not in the cfg file, then this should be a noop.
                         print STDERR "No entry for $node in cfg file.\n";
-                        $err = 1;
-                        $self->{_err} = &kRetInvalidArg;                        
                     }
                     elsif ($#nodeentries > 0)
                     {
@@ -313,27 +326,44 @@ sub Remove
                         $curr = $nodeentries[0];
                     }
                     
-                    if ($curr =~ /^\s*\S+\s+(\S+)/)
+                    if (!$err)
                     {
-                        $lstfile = $1;
-                    }
-                    else
-                    {
-                        print STDERR "Invalid cfg table.\n";
-                        $err = 1;
-                        $self->{_err} = &kRetInvalidArg;
+                        if (defined($curr))
+                        {
+                            if ($curr =~ /^\s*\S+\s+(\S+)/)
+                            {
+                                $lstfile = $1;
+                            }
+                            else
+                            {
+                                print STDERR "Invalid cfg table.\n";
+                                $err = 1;
+                                $self->{_err} = &kRetInvalidArg;
+                            }
+                        }
                     }
                     
                     if (!$err)
                     {
-                        ($lstorig, $lstdir) = fileparse($lstfile);
-                        $lstbak = $lstorig . ".$uuid";
-                        
-                        if (!copy($lstfile, "$lstdir/$lstbak"))
+                        if (!defined($lstfile))
                         {
-                            print STDERR "Unable to back-up lst file.\n";
-                            $err = 1;
-                            $self->{_err} = &kRetIO;
+                            # The lst file was not listed in the cfg file. But it could still exist. Try $node.lst.
+                            # To get the path to $node.lst, we need to use the tables_dir parameter in the
+                            # server configuration file.
+                            $lstfile = File::Spec->catfile($self->{_lstdir}, "$node.lst");
+                        }
+
+                        if (-e $lstfile)
+                        {
+                            ($lstorig, $lstdir) = fileparse($lstfile);
+                            $lstbak = $lstorig . ".$uuid";
+                            
+                            if (!copy($lstfile, "$lstdir/$lstbak"))
+                            {
+                                print STDERR "Unable to back-up lst file.\n";
+                                $err = 1;
+                                $self->{_err} = &kRetIO;
+                            }
                         }
                     }
                     
@@ -341,21 +371,24 @@ sub Remove
                     
                     if (!$err)
                     {
-                        if (open(CFG, ">$cfgfile"))
+                        if (@newcontent)
                         {
-                            $newcontentstr = join("\n", @newcontent);
-                            print CFG $newcontentstr;
-                            if (!close(CFG))
+                            if (open(CFG, ">$cfgfile"))
                             {
+                                $newcontentstr = join("\n", @newcontent);
+                                print CFG $newcontentstr;
+                                if (!close(CFG))
+                                {
+                                    $err = 1;
+                                    $self->{_err} = &kRetIO;
+                                }
+                            }
+                            else
+                            {
+                                print STDERR "Can't open $cfgfile for writing.\n";
                                 $err = 1;
                                 $self->{_err} = &kRetIO;
                             }
-                        }
-                        else
-                        {
-                            print STDERR "Can't open $cfgfile for writing.\n";
-                            $err = 1;
-                            $self->{_err} = &kRetIO;
                         }
                     }
                 }
@@ -366,29 +399,54 @@ sub Remove
                     $self->{_err} = &kRetIO;
                 }
                 
-                # Delete lst file.
+                # Delete lst file, if it exists.
                 if (!$err)
                 {
-                    unless (unlink($lstfile))
+                    if (-e $lstfile)
                     {
-                        print STDERR "Can't delete $lstfile.\n";
-                        $err = 1;
-                        $self->{_err} = &kRetIO;
+                        unless (unlink($lstfile))
+                        {
+                            print STDERR "Can't delete $lstfile.\n";
+                            $err = 1;
+                            $self->{_err} = &kRetIO;
+                        }
                     }
                 }
                 
                 # If everything is okay, delete tmp files, else copy them back in place.
                 if (!$err)
                 {
-                    unlink("$cfgdir/$cfgbak");
-                    unlink("$lstdir/$lstbak");
+                    my($bak);
+                    
+                    # $cfgbak must exist, but $lstbak doesn't necessarily exist.
+                    $bak = File::Spec->catfile($cfgdir, $cfgbak);
+                    unlink($bak);
+                    
+                    $bak = File::Spec->catfile($lstdir, $lstbak);
+                    if (-e $bak)
+                    {
+                        unlink($bak);
+                    }
                 }
                 else
                 {
-                    if (!copy("$cfgdir/$cfgbak", $cfgfile) ||(-e "$lstdir/$lstbak") && !copy("$lstdir/$lstbak", $lstfile))
+                    my($bak);
+                    
+                    $bak = File::Spec->catfile($cfgdir, $cfgbak);
+                    if (!copy($bak, $cfgfile))
                     {
                         print STDERR "Unable to restore cfg and/or lst files.\n";
                         $self->{_err} = &kRetIO;
+                    }
+                    
+                    $bak = File::Spec->catfile($lstdir, $lstbak);
+                    if (-e $bak)
+                    {
+                        if (!copy($bak, $lstfile))
+                        {
+                            print STDERR "Unable to restore cfg and/or lst files.\n";
+                            $self->{_err} = &kRetIO;
+                        }
                     }
                 }
             }
