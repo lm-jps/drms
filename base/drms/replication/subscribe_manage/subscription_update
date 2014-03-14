@@ -278,6 +278,8 @@ else
 ##	cp -far  $subscribers_dir/$node $subscribers_dir/$node.new
 fi
 
+exit 1;
+
 # ART LST - the new lst file is referred to by both newtablefile and $tables_dir/$node.new.lst in many places.
 # The code creates $node.new.lst
 newtablefile=$tables_dir/$node.new.lst
