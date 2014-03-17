@@ -2,7 +2,7 @@
 # ----------
 # slony1_dump.sh
 #
-# $Id: sdo_slony1_dump.sh,v 1.10 2013/09/05 18:19:12 arta Exp $
+# $Id: sdo_slony1_dump.sh,v 1.11 2014/03/17 19:44:14 arta Exp $
 #
 #	This script creates a special data only dump from a subscriber
 #	node. The stdout of this script, fed into psql for a database that
@@ -258,8 +258,8 @@ for tab in $tables ; do
 done
 
 # The stdout of from this call will contain SQL that runs on the client end. It dumps the series tables.
-cmd="$kJSOCRoot/base/drms/replication/subscribe_manage/dumpreptables.pl config=$kJSOCRoot/proj/replication/etc/repserver.cfg client=$node sublist=$sublist idlist=$idlist newcl=$new_subscriber filectr=$output_filecounter 2>>$SMworkDir/slony1_dump.$node.log"
-echo "Executing $cmd" >$SMworkDir/slony1_dump.$node.log
+cmd="$kJSOCRoot/base/drms/replication/subscribe_manage/dumpreptables.pl config=$kJSOCRoot/proj/replication/etc/repserver.cfg client=$node sublist=$sublist idlist=$idlist newcl=$new_subscriber filectr=$output_filecounter 2>>$kSMlogDir/slony1_dump.$node.log"
+echo "Executing $cmd" > $kSMlogDir/slony1_dump.$node.log
 $cmd
 
 # ----

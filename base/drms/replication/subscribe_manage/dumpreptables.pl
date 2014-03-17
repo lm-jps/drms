@@ -16,6 +16,7 @@ use Data::Dumper;
 use FindBin qw($Bin);
 use lib "$Bin/../../../libs/perl";
 use lib "$Bin/..";
+use lib $Bin; # Location of subtablemgr.
 use toolbox qw(GetCfg);
 use subtablemgr;
 use DBI;

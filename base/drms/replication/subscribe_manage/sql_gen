@@ -254,9 +254,9 @@ fi
 #-------------------------------------------------------------------------
 # Execute sdo_slony1_dump.sh
 #-------------------------------------------------------------------------
-logwrite "Executing: [. $kRepDir/subscribe_manage/sdo_slony1_dump.sh $SLAVEDBNAME jsoc $SLAVEPORT $new_site_bool \"$SMworkDir/slon_counter.$node.txt\" ${schema_table[@]} >> $triggerdir/$node.subscribe_series.sql 2> $SMworkDir/slony1_dump.$node.log"
+logwrite "Executing: [. $kRepDir/subscribe_manage/sdo_slony1_dump.sh $SLAVEDBNAME jsoc $SLAVEPORT $new_site_bool \"$SMworkDir/slon_counter.$node.txt\" ${schema_table[@]} >> $triggerdir/$node.subscribe_series.sql 2> $kSMlogDir/slony1_dump.$node.log"
 
-. $kRepDir/subscribe_manage/sdo_slony1_dump.sh $SLAVEDBNAME $CLUSTERNAME $SLAVEPORT $new_site_bool "$SMworkDir/slon_counter.$node.txt" ${schema_table[@]} >> $triggerdir/$node.subscribe_series.sql 2> $SMworkDir/slony1_dump.$node.log
+. $kRepDir/subscribe_manage/sdo_slony1_dump.sh $SLAVEDBNAME $CLUSTERNAME $SLAVEPORT $new_site_bool "$SMworkDir/slon_counter.$node.txt" ${schema_table[@]} >> $triggerdir/$node.subscribe_series.sql 2> $kSMlogDir/slony1_dump.$node.log
 
 #-------------------------------------------------------------------------
 # Checking the status of slony1 dump
@@ -278,7 +278,7 @@ else
   exit 1
 fi
 
-rm -f $SMworkDir/slony1_dump.$node.log
+# rm -f $SMworkDir/slony1_dump.$node.log
 
 #-------------------------------------------------------------------------
 # End of check for new subscriptions
