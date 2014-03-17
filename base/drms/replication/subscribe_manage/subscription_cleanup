@@ -207,7 +207,7 @@ cleanup_counter=$(( $cleanup_counter + 1 ))
 		    cp -pr $subscribers_dir/$node.new/* $subscribers_dir/$node
             rm -rf $subscribers_dir/$node.new
 		    logwrite "Removing old subscriber table list"
-c		    rm -f $tables_dir/$node.lst
+            rm -f $tables_dir/$node.lst
 		    logwrite "Updating lst table"
 
             # ART - This is failing because $tables_dir/$node.new.lst doesn't exist.
