@@ -365,7 +365,7 @@ else
                         }
                         else
                         {
-                            $tblmgr->Add($client, $cfg{subscribers_dir} . "/$client.new"); # Don't provide lst-file argument.
+                            $tblmgr->Add("$client.new", $cfg{subscribers_dir} . "/$client.new"); # Don't provide lst-file argument.
                                                                                            # This argument is used for
                                                                                            # populating su_production.slonylst
                                                                                            # which is something we don't want to
