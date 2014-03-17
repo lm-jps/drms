@@ -365,6 +365,8 @@ else
                         }
                         else
                         {
+                            # Must not print to stdout! All stdout gets redirected to the sql dump file.
+                            $tblmgr->Silent();
                             $tblmgr->Add("$client.new", $cfg{subscribers_dir} . "/$client.new"); # Don't provide lst-file argument.
                                                                                            # This argument is used for
                                                                                            # populating su_production.slonylst

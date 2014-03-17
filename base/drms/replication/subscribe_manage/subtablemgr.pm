@@ -60,6 +60,7 @@ sub new
         _lsttable => undef,
         _lstdir => undef,
         _dbh => undef,
+        _silent => undef,
         _err => undef
     };
     
@@ -67,6 +68,7 @@ sub new
     my($lockfh);
     
     $self->{_err} = &kRetSuccess;
+    $self->{_silent} = 0;
     
     # Returns 1 if lock was acquired.
     if (toolbox::AcquireLock(shift, \$lockfh))
@@ -136,6 +138,23 @@ sub new
     
     bless($self, $clname);
     return $self;
+}
+
+sub Silent
+{
+    my($self) = shift;
+    
+    $self->{_silent} = 1;
+    
+    if (defined($self->{_cfgtable}))
+    {
+        $self->{_cfgtable}->Silent();
+    }
+    
+    if (defined($self->{_lsttable}))
+    {
+        $self->{_lsttable}->Silent();
+    }
 }
 
 # Replace the contents of the node's lst table records
@@ -828,7 +847,8 @@ sub new
         _name => shift,
         _cols => [],
         _pkey => [],
-        _exists => undef
+        _exists => undef,
+        _silent => undef
     };
     
     my($acol);
@@ -865,7 +885,16 @@ sub new
         $self->{_exists} = $exists;
     }
     
+    $self->{_silent} = 0;
+    
     return $self;
+}
+
+sub Silent
+{
+    my($self) = shift;
+    
+    $self->{_silent} = 1;
 }
 
 # Returns 1 if the Table exists, 0 if not, undef on bad query error.
@@ -1112,7 +1141,10 @@ sub Replace
                         }
                         else
                         {
-                            print "Inserted record ('$node', '$line') into $self->{_name} for node $node.\n";
+                            if (!$self->{_silent})
+                            {
+                                print "Inserted record ('$node', '$line') into $self->{_name} for node $node.\n";
+                            }
                         }
                     }
                 }
@@ -1198,7 +1230,10 @@ sub Ingest
     # For each file in the second column, read series-list contents and
     # ingest into lst table.
     # $content contains the contents of the slon_parser.cfg
-    print "Adding records to $self->{_name}.\n";
+    if (!$self->{_silent})
+    {
+        print "Adding records to $self->{_name}.\n";
+    }
     
     map({ $self->ProcessCfg($_, $nodecol, $seriescol) } @$content);
     
@@ -1218,6 +1253,13 @@ sub new
     
     bless($self, $clname);
     return $self;
+}
+
+sub Silent
+{
+    my($self) = shift;
+    
+    $self->{_silent} = 1;
 }
 
 # Returns 0 on success, 1 if a row already exists for this node, 2 if a bad db query 
@@ -1258,7 +1300,10 @@ sub Add
                 }
                 else
                 {
-                    print "Inserted record ('$node', '$sitedir') into $self->{_name} for node $node.\n";
+                    if (!$self->{_silent})
+                    {
+                        print "Inserted record ('$node', '$sitedir') into $self->{_name} for node $node.\n";
+                    }
                 }
             }
         }
@@ -1318,7 +1363,10 @@ sub ProcessCfg
             
             if ($rsp == 0)
             {
-                print "Inserted record ('$node', '$sitedir') into $self->{_name} for node $node.\n";
+                if (!$self->{_silent})
+                {
+                    print "Inserted record ('$node', '$sitedir') into $self->{_name} for node $node.\n";
+                }
             }
             elsif ($rsp == 1)
             {
@@ -1350,7 +1398,10 @@ sub Ingest
     # For each file in the second column, read series-list contents and
     # ingest into lst table.
     # $content contains the contents of the slon_parser.cfg
-    print "Adding records to $self->{_name}.\n";
+    if (!$self->{_silent})
+    {
+        print "Adding records to $self->{_name}.\n";
+    }
     
     map({ $self->ProcessCfg($_) } @$content);
     
