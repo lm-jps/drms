@@ -439,8 +439,7 @@ else
 	exit
 fi
 
-# ART- shoom.new.lst?
-exit 1;
+# ART- shoom.new.lst exists and has the series to subscribe to in it. shoom.new exists too, but is empty.
 
 #-------------------------------------------------------------------------
 # Adding the new entry to the slon log parser config file
