@@ -91,8 +91,7 @@ cleanup_counter=0
 while [[ 1 == 1 ]]; do
 cleanup_counter=$(( $cleanup_counter + 1 ))
 
-# ART - try here.
-exit 1;
+# ART - at this point, $node.new.lst exists and so does $node.new (but it is empty).
 
 	## lock parser
 	if ( set -o noclobber; echo "$$" > "$subscribelockpath") 2> /dev/null;
@@ -114,11 +113,24 @@ exit 1;
 
         # ART LST - Remove $node.new from $parser_config and remove $node.new from su_production.slonycfg
         # and remove all entries for $node.new from su_production.slonylst.
-        $kRepDir/subscribe_manage/gentables.pl config=$config_file op=remove --node=$node.new
-	
+        $kRepDir/subscribe_manage/gentables.pl op=remove --node=$node.new
+
+        if [ $? -ne 0 ]
+        then
+            # If the database table update fails, set the local success variable to
+            # to false (it looks like that variable isn't used after this point
+            # anyway).
+            #
+            # Somehow we have to pass this failure back to subscription_manager.
+            success=false
+            # Need to clean up
+            logwrite "ERROR new site: Unable to remove $node.new from config and lst tables!"
+            rm -rf $subscribers_dir/$node.new
+            rm -f $tables_dir/$node.new.lst
+        fi
+
 	    if [ $success == "true" ]
-	    then
-	
+	    then	
 		if [ $new_site == "true" ]
 		then
 			# Success on new site!
@@ -131,32 +143,6 @@ exit 1;
             # su_production.slonylst. $subscribers_dir/$node, the sitedir, doesn't exit yet, but it will shortly.
             $kRepDir/subscribe_manage/gentables.pl op=add config=$config_file --node=$node --sitedir=$subscribers_dir --lst=$tables_dir/$node.new.lst
 
-		    logwrite "Moving subscriber directory"
-	                ## remove any log files that might contain duplicates
-	            if [ -f $SMworkDir/slon_counter.$node.txt ]
-	            then
-	                slon_counter=`cat $SMworkDir/slon_counter.$node.txt`;
-	
-	                slon_file=`printf "$subscribers_dir/$node.new/slony1_log_2_020%d.log" $slon_counter`;
-	                while [ -f $slon_file ]
-	                do
-	                    rm -f $slon_file
-	                    slon_counter=$(($slon_counter-1));
-	                    slon_file=`printf "$subscribers_dir/$node.new/slony1_log_2_020%d.log" $slon_counter`;
-	                done
-	                rm -f $SMworkDir/slon_counter.$node.txt
-	            else
-	                logwrite "ERROR:: No $SMworkDir/slon_counter.$node.txt"
-	            fi
-
-            # Create the sitedir
-		    mv -f $subscribers_dir/$node.new $subscribers_dir/$node
-	            
-		    logwrite "Moving subscriber table list"
-		    mv -f $tables_dir/$node.new.lst $tables_dir/$node.lst
-            # ART LST - no need to populate su_production.slonylst for $node. That was done when gentables.pl op=add was called.
-
-
             if [ $? -ne 0 ]
             then
                 # If the database table update fails, set the local success variable to
@@ -166,10 +152,35 @@ exit 1;
                 # Somehow we have to pass this failure back to subscription_manager.
                 success=false
                 # Need to clean up
-		        logwrite "ERROR new site: Unable to update lst tables properly!"
+                logwrite "ERROR new site: Unable to add $node to config and lst db tables!"
                 rm -rf $subscribers_dir/$node.new
-		        rm -f $tables_dir/$node.new.lst
-            fi
+                rm -f $tables_dir/$node.new.lst
+           else
+                logwrite "Moving subscriber directory"
+	        ## remove any log files that might contain duplicates
+                if [ -f $SMworkDir/slon_counter.$node.txt ]
+                then
+                    slon_counter=`cat $SMworkDir/slon_counter.$node.txt`;
+                    
+                    slon_file=`printf "$subscribers_dir/$node.new/slony1_log_2_020%d.log" $slon_counter`;
+                    while [ -f $slon_file ]
+                    do
+                      rm -f $slon_file
+                      slon_counter=$(($slon_counter-1));
+                      slon_file=`printf "$subscribers_dir/$node.new/slony1_log_2_020%d.log" $slon_counter`;
+                    done
+                    rm -f $SMworkDir/slon_counter.$node.txt
+                else
+                    logwrite "ERROR:: No $SMworkDir/slon_counter.$node.txt"
+                fi
+                
+                # Create the sitedir
+                mv -f $subscribers_dir/$node.new $subscribers_dir/$node
+                
+                logwrite "Moving subscriber table list"
+                mv -f $tables_dir/$node.new.lst $tables_dir/$node.lst
+                # ART LST - no need to populate su_production.slonylst for $node. That was done when gentables.pl op=add was called.
+            fi # gentables.pl success.
 		else
 			# Success on old site!
 		    logwrite "Subscriber SQL was a success"
@@ -196,7 +207,7 @@ exit 1;
 		    cp -pr $subscribers_dir/$node.new/* $subscribers_dir/$node
             rm -rf $subscribers_dir/$node.new
 		    logwrite "Removing old subscriber table list"
-		    rm -f $tables_dir/$node.lst
+c		    rm -f $tables_dir/$node.lst
 		    logwrite "Updating lst table"
 
             # ART - This is failing because $tables_dir/$node.new.lst doesn't exist.
@@ -219,10 +230,10 @@ exit 1;
                 # Need to clean up
                 logwrite "ERROR existing site: Unable to update lst tables properly!"
                 rm -rf $subscribers_dir/$node.new
-		        rm -f $tables_dir/$node.new.lst
+                rm -f $tables_dir/$node.new.lst
             fi
-		fi
-	    else
+		fi # success on existing site
+	    else # if success
 		if [ $new_site == "true" ]
 		then
 			# Failure on new site!
