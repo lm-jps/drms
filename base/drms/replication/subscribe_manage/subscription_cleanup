@@ -91,6 +91,9 @@ cleanup_counter=0
 while [[ 1 == 1 ]]; do
 cleanup_counter=$(( $cleanup_counter + 1 ))
 
+# ART - try here.
+exit 1;
+
 	## lock parser
 	if ( set -o noclobber; echo "$$" > "$subscribelockpath") 2> /dev/null;
 	then
