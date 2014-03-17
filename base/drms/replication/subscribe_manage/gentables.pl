@@ -29,12 +29,13 @@ use constant kOptSiteDir    => "sitedir";  # Directory containing site-specific 
 use constant kOptPop        => "populate"; # Populate both tables from data files
 
 # Op values
-use constant kOpValRep  => qr(replace)i;
-use constant kOpValAdd  => qr(add)i;
-use constant kOpValRem  => qr(remove)i;
-use constant kOpValCrt  => qr(create)i;
-use constant kOpValDrp  => qr(drop)i;
-use constant kOpValPop  => qr(populate)i;
+use constant kOpValRep         => qr(replace)i;
+use constant kOpValAdd         => qr(add)i;
+use constant kOpValRem         => qr(remove)i;
+use constant kOpValRemWLegacy  => qr(removewlegacy)i;
+use constant kOpValCrt         => qr(create)i;
+use constant kOpValDrp         => qr(drop)i;
+use constant kOpValPop         => qr(populate)i;
 
 # Return codes
 use constant kSuccess     => 0;
@@ -162,6 +163,15 @@ if (!$rv)
     elsif ($op =~ &kOpValRem)
     {
         $node = $optsH->{&kOptNode};
+        
+        # Do not call legacy code.
+        $tblmgr->Remove($node);
+    }
+    elsif ($op =~ &kOpValRemWLegacy)
+    {
+        $node = $optsH->{&kOptNode};
+        
+        # Call legacy code.
         $tblmgr->Remove($node, $cfg{parser_config});
     }
     elsif ($op =~ &kOpValCrt)
@@ -261,9 +271,13 @@ sub Usage
     print "gentables.pl config=<server config file> op=add --node=<node> --sitedir=<site dir> [ --lst=<file with series list> ]\n";
     print "ADD a new node to the configuration table. Optionally populate the node's lst-table records with the series list in <file with series list>.\n\n";
     
-    # REMOVE a node from the configuration table.
+    # REMOVE a node from the configuration table, but do not call legacy code.
     print "gentables.pl config=<server config file> op=remove --node=<node>\n";
     print "REMOVE a node from the configuration and lst tables.\n\n";
+    
+    # REMOVE a node from the configuration table and call legacy code.
+    print "gentables.pl config=<server config file> op=removewlegacy --node=<node>\n";
+    print "REMOVE a node from the configuration and lst tables, and remove node's entry from the parser-configuration file and remove node's lst file.\n\n";
     
     # CREATE both configuration and lsts tables. Optionally populate both tables from data in the
     #   configuration and lst FILES.

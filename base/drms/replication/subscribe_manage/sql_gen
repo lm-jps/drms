@@ -118,7 +118,8 @@ then
 	mv -f $parser_config.new $parser_config
 
         # ART LST - We are restoring $node.lst and $parser_config. Update su_production.slonylst 
-        # and su_production.slonycfg.
+        # and su_production.slonycfg. Do not call legacy code in SubTableMgr::Remove! The legacy code
+        # attempts to remove the $node.new entry from $paser_config and delete $node.new.lst (already done).
         $kRepDir/subscribe_manage/gentables.pl op=remove conf=$config_file --node=$node.new
         
 	logwrite "Failure process: Writing [failure] to $triggerdir/$node.subscribe_series.sqldone"

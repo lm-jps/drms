@@ -111,9 +111,13 @@ cleanup_counter=$(( $cleanup_counter + 1 ))
 	    cat $parser_config | grep -v "$node.new.lst" > $parser_config.new
 	    mv -f $parser_config.new $parser_config
 
-        # ART LST - Remove $node.new from $parser_config and remove $node.new from su_production.slonycfg
-        # and remove all entries for $node.new from su_production.slonylst.
-        $kRepDir/subscribe_manage/gentables.pl op=remove --node=$node.new
+        # ART LST - Remove $node.new from $parser_config (lines above) and remove $node.new from su_production.slonycfg
+        # and remove all entries for $node.new from su_production.slonylst. Even though $node.new.lst exists, it cannot
+        # be used because the entry for $node.new has been removed from $parser_config. Do not call legacy code in
+        # SubTableMgr::Remove. This would delete $node.new.lst, but it is still being used.
+        cmd="$kRepDir/subscribe_manage/gentables.pl op=remove config=$config_file --node=$node.new"
+        logwrite "Running $cmd" nl
+        `$cmd`
 
         if [ $? -ne 0 ]
         then
@@ -124,7 +128,7 @@ cleanup_counter=$(( $cleanup_counter + 1 ))
             # Somehow we have to pass this failure back to subscription_manager.
             success=false
             # Need to clean up
-            logwrite "ERROR new site: Unable to remove $node.new from config and lst tables!"
+            logwrite "ERROR: Unable to remove $node.new from config and lst tables!"
             rm -rf $subscribers_dir/$node.new
             rm -f $tables_dir/$node.new.lst
         fi
@@ -177,14 +181,14 @@ cleanup_counter=$(( $cleanup_counter + 1 ))
                 # Create the sitedir
                 mv -f $subscribers_dir/$node.new $subscribers_dir/$node
                 
-                logwrite "Moving subscriber table list"
+                logwrite "Updating lst table"
                 mv -f $tables_dir/$node.new.lst $tables_dir/$node.lst
                 # ART LST - no need to populate su_production.slonylst for $node. That was done when gentables.pl op=add was called.
             fi # gentables.pl success.
 		else
 			# Success on old site!
 		    logwrite "Subscriber SQL was a success"
-		    logwrite "Moving new directory to the old file directory" nl
+		    logwrite "Moving new directory to the old file directory. A cp error doesn't necessarily mean anything. There could be no files in $node.new." nl
 	                ## remove any log files that might contain duplicates
 	            if [ -f $SMworkDir/slon_counter.$node.txt ]
 	            then
