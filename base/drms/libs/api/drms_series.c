@@ -4343,9 +4343,13 @@ int drms_series_isreplicated(DRMS_Env_t *env, const char *series)
 
    /* First, check for presence of drms_replicated(). If you don't do this and 
     * drms_replicated() doesn't exist and you try to use it, the entire transaction
-    * is hosed, and the error message you get from that isn't helpful. */
+    * is hosed, and the error message you get from that isn't helpful. 
+    *
+    * This query is faster than consulting the information_schema.routines table:
+    *   SELECT proname AS routine_name FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = 'drms_replicated';
+    */
    sprintf(query,
-           "select routine_name from information_schema.routines where routine_name like '%s'",
+           "SELECT proname AS routine_name FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname = '%s'",
            DRMS_REPLICATED_SERIES_TABLE);
 
    

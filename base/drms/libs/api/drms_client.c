@@ -2026,23 +2026,26 @@ int drms_create_series_fromprototype(DRMS_Record_t **prototype,
 
 int drms_series_hastableprivs(DRMS_Env_t *env, const char *schema, const char *table, const char *priv)
 {
-   char query[DRMS_MAXQUERYLEN];
-   int result = 0;
-   DB_Text_Result_t *qres = NULL;
-
-   sprintf(query, "select * from information_schema.table_privileges where table_schema = '%s' and table_name ~~* '%s' and privilege_type = '%s'", schema, table, priv);
-
-   if ((qres = drms_query_txt(env->session, query)) != NULL && qres->num_rows != 0) 
-   {
-      result = 1;
-   }
-
-   if (qres)
-   {
-      db_free_text_result(qres);
-   }
-
-   return result;
+    char query[DRMS_MAXQUERYLEN];
+    int result = 0;
+    DB_Text_Result_t *qres = NULL;
+    
+    sprintf(query, "SELECT has_table_privilege('%s.%s', '%s')", schema, table, priv);
+    
+    if ((qres = drms_query_txt(env->session, query)) != NULL && qres->num_rows == 1 && qres->num_cols == 1)
+    {
+        if (*(qres->field[0][0]) == 't')
+        {
+            result = 1;
+        }
+    }
+    
+    if (qres)
+    {
+        db_free_text_result(qres);
+    }
+    
+    return result;
 }
 
 static int drms_series_candosomething(DRMS_Env_t *env, const char *series, const char *perm)
@@ -2199,7 +2202,7 @@ int drms_series_isdbowner(DRMS_Env_t *env, const char *series, int *status)
 /* Table su_production.produsers has a single column, "user". This table is on the hmidb host, not the hmidb2 host. */
 int drms_client_isproduser(DRMS_Env_t *env, int *status)
 {
-    int isproduser = 0;
+    static int isproduser = -1;
     char query[1024];
     char *dbuser = NULL;
     char *dbhost = NULL; /* The host without the port. */
@@ -2208,6 +2211,15 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
     int istat = DRMS_SUCCESS;
     int forceconn = 0;
     DB_Handle_t *dbh = NULL;
+    
+    if (isproduser == -1)
+    {
+        isproduser = 0;
+    }
+    else
+    {
+        return isproduser;
+    }
     
 #ifdef PRODUSER_DBHOST
     /* Derive the db host machine from the PRODUSER_DBHOST string (which has the format host:port). */
@@ -2291,20 +2303,12 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
         }
         else
         {
-            snprintf(query, sizeof(query), "SELECT * FROM information_schema.tables WHERE table_schema = '%s' AND table_name = '%s'", schema, table);
+            tabexists = TableExists(env->session, schema, table);
             
-            if ((qres = db_query_txt(dbh, query)) != NULL)
-            {
-                if (qres->num_rows == 1)
-                {
-                    tabexists = 1;
-                }
-                
-                db_free_text_result(qres);
-            }
-            else
+            if (tabexists == -1)
             {
                 fprintf(stderr, "Unexpected database response to query '%s'.\n", query);
+                istat = DRMS_ERROR_BADDBQUERY;
             }
             
             free(schema);
@@ -2354,7 +2358,7 @@ int drms_client_isproduser(DRMS_Env_t *env, int *status)
     {
         *status = istat;
     }
-#endif
+#endif /* PRODUSER_DBHOST */
     
     return isproduser;
 }
