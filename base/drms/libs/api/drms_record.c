@@ -5806,6 +5806,9 @@ static DB_Binary_Result_t *dbFetchRecsFromList(DRMS_Env_t *env, const char *oSer
                 sql = base_strcatalloc(sql, tPkeyList, &stsz);
                 sql = base_strcatalloc(sql, ");", &stsz);
                 
+                /* This query can be slow. It probably doesn't make sense to do if the number of records being fetched from the target series is small. 
+                 * I might want to see if I can optimize for a small number of records.
+                 * - ART 20140321 */
                 if (drms_dms(env->session, NULL, sql))
                 {
                     istat = DRMS_ERROR_QUERYFAILED;
@@ -6039,6 +6042,10 @@ DRMS_RecordSet_t *callRetrieveRecsPreparedQuery(DRMS_Env_t *env, HContainer_t *m
                 break;
             }
             
+            /* Must call drms_link_getpidx() to set the links' pidx_num, pidx_type, and pidx_name fields. For some reason, 
+             * these are not set when the template is created. drms_link_getpidx() fetches the target-series template 
+             * record from the database, then fills in the DRMS_LinkInfo_t struct with the retrieved information. */
+            drms_link_getpidx(templRec);
             colList = drms_field_list(templRec, NULL);
             
             if (!colList)
@@ -11615,7 +11622,7 @@ int drms_open_recordchunk(DRMS_Env_t *env,
                       seglist = NULL;
                   }
                   
-                  /* Don't filter out unneeded segments - too painful with our current design */
+                  /* Unrequested segments are now filtered out. They didn't used to be filtered out. */
                   fetchedrecs = drms_retrieve_records_internal(env, 
                                                                seriesname, 
                                                                NULL,
