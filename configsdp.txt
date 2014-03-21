@@ -1,3 +1,4 @@
+# ART - test CVS admin locking.
 # This file contains JSOC_SDP-specific configuration information. It is used only if the '-sdp' flag is used 
 # as an argument to the check-out script (checkoutDRMS.pl). To change the configuration at Stanford, edit
 # this file directly, and commit those changes to the source-tree repository.
