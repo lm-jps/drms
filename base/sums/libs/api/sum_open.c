@@ -1549,16 +1549,17 @@ int SUM_nop(SUM_t *sum, int (*history)(const char *fmt, ...))
  * Return 0 on success w/data available, 1 on error, 4 on connection reset
  * by peer (sum_svc probably gone) or RESULT_PEND (32)
  * when data will be sent later and caller must do a sum_wait() or sum_poll() 
- * when he is ready for it.
+ * when he is ready for it. You can't make another SUM_get() with the
+ * samd SUM_t handle while one is still pending.
 */
 int SUM_get(SUM_t *sum, int (*history)(const char *fmt, ...))
 {
   int rr;
   KEY *klist;
-  char *call_err;
+  char *call_err, *dptr;
   char **cptr;
-  int i, cnt, msgstat, stat, xmode;
-  char dsix_name[64];
+  int i, cnt, msgstat, stat, xmode, pid;
+  char dsix_name[64], thishost[80];
   uint64_t *dxlong;
   uint32_t retstat;
   enum clnt_stat status;
@@ -1570,6 +1571,10 @@ int SUM_get(SUM_t *sum, int (*history)(const char *fmt, ...))
     (*history)("Requent count of %d > max of %d\n", sum->reqcnt, MAXSUMREQCNT);
     return(1);
   }
+  gethostname(thishost, 80);
+  dptr = index(thishost, '.');     // must be short form
+  if(dptr) *dptr = (char)NULL;
+  pid = getpid();
   klist = newkeylist();
   setkey_uint64(&klist, "uid", sum->uid); 
   setkey_int(&klist, "mode", sum->mode);
@@ -1579,6 +1584,9 @@ int SUM_get(SUM_t *sum, int (*history)(const char *fmt, ...))
   setkey_int(&klist, "REQCODE", GETDO);
   setkey_str(&klist, "username", sum->username);
   setkey_int(&klist, "newflg", GET_FIX_VER);
+  setkey_int(&klist, "pidcaller", pid);
+  setkey_str(&klist, "hostcaller", thishost);
+  //setkey_int(&klist, "DEBUGFLG", 1);   //!!TEMP put in debug flag
   dxlong = sum->dsix_ptr;
   for(i = 0; i < sum->reqcnt; i++) {
     sprintf(dsix_name, "dsix_%d", i);
