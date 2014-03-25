@@ -171,11 +171,13 @@ void alrm_sig(int sig)
   double bytesdeleted, availstore;
 
   if((tstfp=fopen(NEWLOG_FILE, "r"))) { //close current log & start new one
+    write_log("sum_rm_2: Close this log %d\n", logvers);
     fclose(tstfp);
     fclose(logfp);
     logvers++;
     sprintf(logname, "%s_2.%s.%d", xlogfile, timetag, logvers);
     open_log(logname);
+    write_log("sum_rm_2: Start new log file %d\n", logvers);
     sprintf(cmd, "/bin/rm %s", NEWLOG_FILE);
     if(system(cmd)) {
       write_log("sum_rm_2: Can't execute %s.\n", cmd);
