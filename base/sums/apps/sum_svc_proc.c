@@ -35,7 +35,7 @@ static int numSUM;
 
 void write_time();
 void logkey();
-
+char *trimwhitespace(char *str);
 /*********************************************************/
 /* Return ptr to "mmm dd hh:mm:ss". Uses global datestr[]. 
 */
@@ -1088,7 +1088,12 @@ KEY *delseriesdo_1(KEY *params)
 */
 KEY *sumrespdo_1(KEY *params)
 {
+  FILE *fin;
   uint64_t uid;
+  int pidcall;
+  int found = 0;
+  char idstr[128], string[196], pidstr[80];
+  char *hostcall, *newstr;
 
   if(findkey(params, "DEBUGFLG")) {
   debugflg = getkey_int(params, "DEBUGFLG");
@@ -1115,6 +1120,29 @@ KEY *sumrespdo_1(KEY *params)
     write_log("**No uid found in keylist in sumrespdo_1()??\n");
   }
 *************************************************************************/
+  //If keyword pidcaller is found it means that this is a tape read
+  //return from tape_svc from an original SUM_get() call by a user. 
+  //Make sure the orig process is  still running, else
+  //if you try to return info to it this Sget process will go away.
+  if(findkey(params, "pidcaller")) {
+    pidcall = getkey_int(params, "pidcaller");
+    hostcall = getkey_str(params, "hostcaller");
+    sprintf(idstr, "ssh -o \"StrictHostKeyChecking no\" %s ps -p %d -o pid= -o cmd=", hostcall, pidcall); 
+    if(fin = popen(idstr, "r")) {
+      sprintf(pidstr, "%d ", pidcall);
+      while(fgets(string, sizeof string, fin)) {  //get ps line
+        //newstr = trimwhitespace(string);
+        if(strstr(string, pidstr)) { found = 1; }
+      }
+      pclose(fin);
+    }
+    if(!found) { 		//the calling process is gone
+      write_log("**Error: %s process is gone when tape rd completes\n",
+		getkey_str(params, "username"));
+      return((KEY *)1);         // nothing will be sent
+    }
+  }
+
   return(retlist);
 }
 
@@ -1129,4 +1157,19 @@ void write_time()
   t_ptr = localtime((const time_t *)&tvalr);
   sprintf(datestr, "%s", asctime(t_ptr));
   write_log("**** %s", datestr);
+}
+
+//Returns a pointer to a substring of the original string.
+char *trimwhitespace(char *str)
+{
+  char *end;
+  // Trim leading space
+  while(isspace(*str)) str++;
+  if(*str == 0)  // All spaces?
+    return str;
+  // Trim trailing space
+  end = str + strlen(str) - 1;
+  while(end > str && isspace(*end)) end--;
+  *(end+1) = 0;		//new null terminator
+  return str;
 }
