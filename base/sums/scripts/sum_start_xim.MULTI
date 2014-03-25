@@ -130,6 +130,7 @@ $year2 = sprintf("%02d", $year);
 $date = (1900 + $year).".".$mon2.".$mday2"._.$hour2.":$min2".":$sec2";
 $dtag = (1900 + $year).".".$mon2.".$mday2".".$hour2"."$min2"."$sec2"; #for log name
 $sumlog = "sum_svc_$dtag.log";
+#$sumlog = "TMPLOG.log";    #!!TEMP name that already exist to get err
 $tapelog = "tape_svc_$dtag.log";
 print "sum_start_xim.MULTI at $date\n\n";
 print LOG "sum_start_xim.MULTI at $date\n\n";
@@ -249,7 +250,8 @@ CKEND:
   print "** Now starting: xsum_svc $DB\n";
   print LOG "** Now starting: xsum_svc $DB\n";
   while($p = shift(@spawn)) {
-    $cmd = "$p $DB $sumlog 1> /tmp/$p.log 2>&1 &";
+    #$cmd = "$p $DB $sumlog 1> /tmp/$p.log 2>&1 &";
+    $cmd = "$p $DB $sumlog 2> /tmp/$p.$dtag.log &";
     print "$cmd\n";
     if(system($cmd)) {
       print "Error: failure to spawn $p\n";
