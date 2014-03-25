@@ -480,7 +480,7 @@ if(strcmp(hostn, "lws") && strcmp(hostn, "n00") && strcmp(hostn, "d00") && strcm
     clnt_pcreateerror("Can't get client handle to tape_svc (xsum_svc)");
     write_log("tape_svc not there on %s\n", usedhost);
     fprintf(stderr, "tape_svc not there on %s\n", usedhost);
-    exit(1);
+    //exit(1);		//NEW 3/21/2014 Continue w/clnttape=0
   }
   clnttape_old = clnttape;	//used by tapereconnectdo_1()
 }
