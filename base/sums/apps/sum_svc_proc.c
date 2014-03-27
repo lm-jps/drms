@@ -967,7 +967,7 @@ KEY *nopdo_1(KEY *params)
 KEY *tapereconnectdo_1(KEY *params)
 {
   uint64_t uid;
-  char *cptr;
+  char *cptr, *dptr;
   char *user;
 
   rinfo = 0;
@@ -982,7 +982,11 @@ KEY *tapereconnectdo_1(KEY *params)
   else if(!strcmp(cptr, "reconnect")) {
     //connect to tape_svc
     clnttape_old = NULL;	//let nopdo_1() know that the old handle is NG
-    clnttape = clnt_create(TAPEHOST, TAPEPROG, TAPEVERS, "tcp");
+    dptr = getkey_str(params, "HOST");
+    if(!strcmp(dptr, "xim"))   //use xim if request is from xim
+      clnttape = clnt_create(dptr, TAPEPROG, TAPEVERS, "tcp");
+    else
+      clnttape = clnt_create(TAPEHOST, TAPEPROG, TAPEVERS, "tcp");
     if(!clnttape) {       /* server not there */
       clnt_pcreateerror("Can't get client handle to tape_svc (from sum_svc)");
       write_log("Cannot connect to new tape_svc on d02\n");
